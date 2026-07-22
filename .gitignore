@@ -15,4 +15,14 @@ Thumbs.db
 
 *.pdf
 
+frontend/cypress/screenshots/
+frontend/cypress/videos/
+frontend/cypress/downloads/
+frontend/cypress.env.json
+
+backend/backups/
+backend/logs/
+
 E-mail admin@hmengenharia.com.txt
+
+.claude/

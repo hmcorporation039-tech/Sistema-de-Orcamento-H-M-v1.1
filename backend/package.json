@@ -1,6 +1,6 @@
 {
   "name": "hm-eng-backend",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "API H&M Engenharia - Sistema de Orçamentos",
   "main": "src/server.js",
   "scripts": {
@@ -16,6 +16,7 @@
     "jsonwebtoken": "^9.0.2",
     "mailparser": "^3.9.14",
     "multer": "^2.2.0",
+    "nodemailer": "^9.0.3",
     "pdf-parse": "^2.4.5",
     "pg": "^8.11.3",
     "puppeteer": "^21.5.2",

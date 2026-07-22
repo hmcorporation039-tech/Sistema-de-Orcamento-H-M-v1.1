@@ -2,6 +2,13 @@ const { simpleParser } = require('mailparser');
 const pool = require('../config/database');
 const { conectar, credenciaisConfiguradas } = require('../utils/emailClient');
 const { extrairDoPdf, parseNFeXml } = require('../utils/notaFiscalParser');
+const { classificarPorDescricao } = require('../utils/classificadorMaterial');
+
+// Piso fixo: nunca busca e-mails anteriores a essa data. Toda verificação
+// (manual ou agendada) parte sempre daqui, nunca "N dias atrás". O backfill
+// histórico (desde 16/08/2025) já foi feito, então o piso avançou para a
+// data em que o monitoramento contínuo começou a valer.
+const DESDE_DATA = '2026/07/21';
 
 function normalizarDescricao(s) {
   return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -42,14 +49,16 @@ async function upsertMaterial(client, item, origem, margem) {
     return { criado: false };
   }
 
-  let categoria = 'Não classificado';
+  let categoria = null;
   if (item.ncm) {
     const parecido = await client.query(
-      `SELECT categoria FROM materiais WHERE ncm = $1 AND ativo = true LIMIT 1`,
+      `SELECT categoria FROM materiais WHERE ncm = $1 AND ativo = true AND categoria <> 'Não classificado' LIMIT 1`,
       [item.ncm]
     );
     if (parecido.rows.length > 0) categoria = parecido.rows[0].categoria;
   }
+  if (!categoria) categoria = classificarPorDescricao(item.descricao);
+  if (!categoria) categoria = 'Não classificado';
 
   await client.query(
     `INSERT INTO materiais (codigo, descricao, categoria, unidade, preco, preco_compra, marca, ncm, origem)
@@ -154,15 +163,25 @@ async function verificarCaixaDeEntrada() {
   }
 
   const dbClient = await pool.connect();
-  const imapClient = await conectar();
+  let imapClient;
 
   try {
+    try {
+      imapClient = await conectar();
+    } catch (err) {
+      const motivo = err.authenticationFailed
+        ? 'credenciais inválidas — confira EMAIL_IMAP_USER e a senha de app no .env, e se o IMAP está habilitado nas configurações do Gmail'
+        : err.responseText || err.message;
+      resumo.avisos.push(`Falha ao conectar ao e-mail: ${motivo}`);
+      return resumo;
+    }
+
     const margem = await obterMargemPadrao(dbClient);
 
     const lock = await imapClient.getMailboxLock('INBOX');
     try {
       const uids = await imapClient.search(
-        { gmraw: 'DANFE has:attachment newer_than:60d' },
+        { gmraw: `DANFE has:attachment after:${DESDE_DATA}` },
         { uid: true }
       );
       resumo.emailsEncontrados = uids.length;
@@ -196,7 +215,7 @@ async function verificarCaixaDeEntrada() {
     }
   } finally {
     dbClient.release();
-    await imapClient.logout().catch(() => {});
+    if (imapClient) await imapClient.logout().catch(() => {});
   }
 
   return resumo;

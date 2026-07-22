@@ -9,8 +9,11 @@ const NAV = [
   { to: '/historico', label: '📁 Histórico' },
 ];
 
+const NAV_ADMIN = { to: '/usuarios', label: '🔑 Usuários' };
+
 export default function Layout() {
   const { usuario, sair } = useAuth();
+  const navegacao = usuario?.role === 'admin' ? [...NAV, NAV_ADMIN] : NAV;
   const navigate = useNavigate();
 
   function handleSair() {
@@ -30,14 +33,11 @@ export default function Layout() {
         <div style={{
           width: 52, height: 52, borderRadius: '50%',
           border: '2px solid #c9a227', overflow: 'hidden',
-          background: '#111', flexShrink: 0
+          background: '#111', flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: '#c9a227', fontWeight: 700, fontSize: 15, letterSpacing: '.5px'
         }}>
-          <img
-            src="/logo.jpg"
-            alt="H&M"
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            onError={(e) => { e.target.style.display = 'none'; }}
-          />
+          H&amp;M
         </div>
 
         <div style={{ flex: 1 }}>
@@ -51,7 +51,7 @@ export default function Layout() {
 
         {/* Navegação */}
         <nav style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {NAV.map(({ to, label }) => (
+          {navegacao.map(({ to, label }) => (
             <NavLink key={to} to={to} style={({ isActive }) => ({
               padding: '6px 12px', borderRadius: 6, fontSize: 11,
               fontWeight: 700, cursor: 'pointer', textDecoration: 'none',

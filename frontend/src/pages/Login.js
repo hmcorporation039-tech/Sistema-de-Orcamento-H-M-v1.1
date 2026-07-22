@@ -43,14 +43,11 @@ export default function Login() {
           <div style={{
             width: 72, height: 72, borderRadius: '50%',
             border: '2px solid #c9a227', margin: '0 auto 16px',
-            overflow: 'hidden', background: '#000'
+            overflow: 'hidden', background: '#000',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#c9a227', fontWeight: 700, fontSize: 20, letterSpacing: '.5px'
           }}>
-            <img
-              src="/logo.jpg"
-              alt="H&M"
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              onError={(e) => { e.target.style.display = 'none'; }}
-            />
+            H&amp;M
           </div>
           <h1 style={{ color: '#c9a227', fontSize: 18, fontWeight: 700, marginBottom: 4 }}>
             H&M Engenharia

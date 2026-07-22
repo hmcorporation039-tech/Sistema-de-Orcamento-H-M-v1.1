@@ -1,7 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const router = express.Router();
-const { autenticar } = require('../middleware/auth');
+const { autenticar, admin } = require('../middleware/auth');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
@@ -10,6 +10,7 @@ const matCtrl = require('../controllers/materiaisController');
 const cliCtrl = require('../controllers/clientesController');
 const propCtrl = require('../controllers/propostasController');
 const integCtrl = require('../controllers/integracoesController');
+const usuCtrl = require('../controllers/usuariosController');
 
 // ── AUTH ──────────────────────────────────────────────────────────────
 router.post('/auth/login', authCtrl.login);
@@ -17,6 +18,7 @@ router.post('/auth/senha', autenticar, authCtrl.alterarSenha);
 
 // ── MATERIAIS ─────────────────────────────────────────────────────────
 router.get('/materiais', autenticar, matCtrl.listar);
+router.get('/materiais/categorias', autenticar, matCtrl.categorias);
 router.post('/materiais', autenticar, matCtrl.criar);
 router.put('/materiais/:id', autenticar, matCtrl.atualizar);
 router.delete('/materiais/:id', autenticar, matCtrl.remover);
@@ -33,15 +35,24 @@ router.delete('/clientes/:id', autenticar, cliCtrl.remover);
 router.get('/propostas', autenticar, propCtrl.listar);
 router.get('/propostas/proximo-numero', autenticar, propCtrl.proximoNum);
 router.get('/propostas/:id/pdf', autenticar, propCtrl.gerarPdf);
+router.post('/propostas/:id/enviar-email', autenticar, propCtrl.enviarEmail);
 router.get('/propostas/:id', autenticar, propCtrl.buscarUma);
 router.post('/propostas', autenticar, propCtrl.criar);
+router.post('/propostas/:id/duplicar', autenticar, propCtrl.duplicar);
 router.patch('/propostas/:id/status', autenticar, propCtrl.atualizarStatus);
 router.delete('/propostas/:id', autenticar, propCtrl.remover);
 
 // ── INTEGRAÇÕES ───────────────────────────────────────────────────────
 router.get('/integracoes/email/status', autenticar, integCtrl.statusEmail);
 router.post('/integracoes/email/verificar-agora', autenticar, integCtrl.verificarAgora);
+router.get('/integracoes/email/historico', autenticar, integCtrl.historico);
 router.get('/configuracoes/margem', autenticar, integCtrl.obterMargem);
 router.put('/configuracoes/margem', autenticar, integCtrl.atualizarMargem);
+
+// ── USUÁRIOS (admin) ─────────────────────────────────────────────────
+router.get('/usuarios', autenticar, admin, usuCtrl.listar);
+router.post('/usuarios', autenticar, admin, usuCtrl.criar);
+router.put('/usuarios/:id', autenticar, admin, usuCtrl.atualizar);
+router.post('/usuarios/:id/redefinir-senha', autenticar, admin, usuCtrl.redefinirSenha);
 
 module.exports = router;

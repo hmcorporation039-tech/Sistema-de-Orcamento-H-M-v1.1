@@ -1,12 +1,13 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Search, Pencil, Trash2, X, Upload, FileScan, Mail, RefreshCw } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, X, Upload, FileScan, Mail, RefreshCw, History } from 'lucide-react';
 import {
   getMateriais, criarMaterial, atualizarMaterial, removerMaterial,
-  importarMateriais, extrairNotaFiscal,
-  getStatusEmail, verificarEmailAgora, getMargemPadrao, atualizarMargemPadrao,
+  importarMateriais, extrairNotaFiscal, getCategoriasMateriais,
+  getStatusEmail, verificarEmailAgora, getHistoricoEmail, getMargemPadrao, atualizarMargemPadrao,
 } from '../services/api';
 import { formatarMoeda, formatarNcm, formatarData } from '../utils/format';
+import Paginacao from '../components/Paginacao';
 
 const VAZIO = { codigo: '', descricao: '', categoria: '', unidade: 'un', preco: '', preco_compra: '', marca: '', ncm: '' };
 const UNIDADES = ['un', 'm', 'm²', 'm³', 'kg', 'cx', 'pct', 'rl', 'sc', 'pç', 'kit', 'h'];
@@ -17,9 +18,12 @@ const ORIGEM_LABEL = {
 
 export default function Materiais() {
   const [materiais, setMateriais] = useState([]);
+  const [categorias, setCategorias] = useState([]);
   const [busca, setBusca] = useState('');
   const [categoriaFiltro, setCategoriaFiltro] = useState('');
   const [carregando, setCarregando] = useState(true);
+  const [pagina, setPagina] = useState(1);
+  const [paginacao, setPaginacao] = useState({ total: 0, totalPaginas: 1 });
   const [modalAberto, setModalAberto] = useState(false);
   const [modalImport, setModalImport] = useState(false);
   const [editandoId, setEditandoId] = useState(null);
@@ -40,11 +44,18 @@ export default function Materiais() {
   const [verificandoEmail, setVerificandoEmail] = useState(false);
   const [margemPadrao, setMargemPadrao] = useState('');
   const [salvandoMargem, setSalvandoMargem] = useState(false);
+  const [modalHistorico, setModalHistorico] = useState(false);
+  const [historicoEmail, setHistoricoEmail] = useState(null);
+
+  const carregarCategorias = useCallback(() => {
+    getCategoriasMateriais().then(res => setCategorias(res.data)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     getStatusEmail().then(res => setStatusEmail(res.data)).catch(() => {});
     getMargemPadrao().then(res => setMargemPadrao(String(res.data.margem))).catch(() => {});
-  }, []);
+    carregarCategorias();
+  }, [carregarCategorias]);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -52,24 +63,24 @@ export default function Materiais() {
       const res = await getMateriais({
         ...(busca ? { busca } : {}),
         ...(categoriaFiltro ? { categoria: categoriaFiltro } : {}),
+        pagina,
       });
-      setMateriais(res.data);
+      setMateriais(res.data.itens);
+      setPaginacao({ total: res.data.total, totalPaginas: res.data.totalPaginas });
+      carregarCategorias();
     } catch {
       toast.error('Erro ao carregar materiais');
     } finally {
       setCarregando(false);
     }
-  }, [busca, categoriaFiltro]);
+  }, [busca, categoriaFiltro, pagina, carregarCategorias]);
 
   useEffect(() => {
     const t = setTimeout(carregar, 300);
     return () => clearTimeout(t);
   }, [carregar]);
 
-  const categorias = useMemo(() => {
-    const set = new Set(materiais.map(m => m.categoria).filter(Boolean));
-    return [...set].sort();
-  }, [materiais]);
+  useEffect(() => { setPagina(1); }, [busca, categoriaFiltro]);
 
   function abrirNovo() {
     setEditandoId(null);
@@ -171,6 +182,16 @@ export default function Materiais() {
       toast.error(err.response?.data?.erro || 'Erro ao verificar caixa de entrada');
     } finally {
       setVerificandoEmail(false);
+    }
+  }
+
+  async function abrirHistorico() {
+    setModalHistorico(true);
+    try {
+      const res = await getHistoricoEmail();
+      setHistoricoEmail(res.data);
+    } catch {
+      toast.error('Erro ao carregar histórico de importação');
     }
   }
 
@@ -324,6 +345,10 @@ export default function Materiais() {
           </button>
         )}
 
+        <button onClick={abrirHistorico} style={{ ...btnSecundario, padding: '5px 10px' }}>
+          <History size={12} style={{ marginRight: 5 }} /> Ver histórico
+        </button>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
           <span style={{ color: '#666' }}>Margem padrão de venda:</span>
           <input
@@ -393,6 +418,8 @@ export default function Materiais() {
           </tbody>
         </table>
       </div>
+
+      <Paginacao pagina={pagina} totalPaginas={paginacao.totalPaginas} total={paginacao.total} onMudarPagina={setPagina} />
 
       {modalAberto && (
         <div style={overlay} onClick={() => setModalAberto(false)}>
@@ -605,6 +632,55 @@ export default function Materiais() {
                   <button onClick={confirmarImportacaoNota} disabled={importandoNota} style={btnPrimario}>
                     {importandoNota ? 'Importando...' : `Importar ${itensNota.length} itens`}
                   </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {modalHistorico && (
+        <div style={overlay} onClick={() => setModalHistorico(false)}>
+          <div style={{ ...modal, width: 620 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
+              <h3 style={{ color: '#c9a227', fontSize: 15, fontWeight: 700, flex: 1 }}>Histórico de Importação Automática</h3>
+              <button onClick={() => setModalHistorico(false)} style={{ ...btnIcone, background: 'transparent' }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            {!historicoEmail && <p style={{ color: '#666', fontSize: 12 }}>Carregando...</p>}
+
+            {historicoEmail && (
+              <>
+                <p style={{ fontSize: 11, color: '#777', marginBottom: 12 }}>
+                  {historicoEmail.totalEmailsProcessados} e-mails já processados no total ·
+                  {' '}{historicoEmail.notas.length} notas fiscais nos últimos registros
+                </p>
+                <div style={{ maxHeight: 400, overflowY: 'auto', border: '1px solid #1e1e1e', borderRadius: 8 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                    <thead>
+                      <tr style={{ background: '#0f0f0f', textAlign: 'left', position: 'sticky', top: 0 }}>
+                        <th style={th}>Data</th>
+                        <th style={th}>Chave de acesso da NF-e</th>
+                        <th style={{ ...th, textAlign: 'right' }}>Novos</th>
+                        <th style={{ ...th, textAlign: 'right' }}>Atualizados</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historicoEmail.notas.length === 0 && (
+                        <tr><td colSpan={4} style={tdVazio}>Nenhuma nota importada ainda</td></tr>
+                      )}
+                      {historicoEmail.notas.map(n => (
+                        <tr key={n.chave_acesso} style={{ borderTop: '1px solid #1e1e1e' }}>
+                          <td style={{ padding: '8px 10px', color: '#ccc' }}>{formatarData(n.processado_em)}</td>
+                          <td style={{ padding: '8px 10px', color: '#888', fontFamily: 'monospace', fontSize: 10 }}>{n.chave_acesso || '—'}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#3fb95f' }}>{n.itens_novos}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#c9a227' }}>{n.itens_atualizados}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </>
             )}

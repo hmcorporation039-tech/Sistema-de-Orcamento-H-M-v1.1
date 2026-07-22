@@ -41,31 +41,54 @@ REACT_APP_API_URL=http://localhost:3001
 
 ## 3. Instalar dependências e rodar
 
-### Backend (Terminal 1)
+Existem dois jeitos de rodar o sistema — escolha conforme o momento.
+
+### Modo desenvolvimento (dois terminais, com hot-reload)
+Use isso quando for mexer no código.
+
+**Backend (Terminal 1)**
 ```bash
 cd backend
 npm install
 npm run dev
 ```
 
-### Frontend (Terminal 2)
+**Frontend (Terminal 2)**
 ```bash
 cd frontend
 npm install
 npm start
 ```
+Acesse **http://localhost:3000**.
+
+### Modo produção (um processo só, sem terminal aberto)
+O backend também serve a interface pronta (build do React) na mesma porta —
+não precisa de dois terminais nem deixar nada visível na tela.
+
+```bash
+cd frontend && npm run build
+cd ../backend && npm start
+```
+Acesse **http://localhost:3001** (API e interface na mesma porta).
+
+> Sempre que você alterar algo em `frontend/src`, rode `npm run build` de
+> novo — senão o modo produção continua servindo a versão antiga.
+
+### Iniciar sozinho ao ligar o PC
+Um atalho em `shell:startup` (pasta Inicializar do Windows) já está
+configurado para rodar o backend em modo produção automaticamente, sem
+janela visível, toda vez que você faz login no Windows — veja a seção 8.
 
 ---
 
 ## 4. Acessar o sistema
 
-Abra no navegador: **http://localhost:3000**
+- Modo desenvolvimento: **http://localhost:3000**
+- Modo produção / inicialização automática: **http://localhost:3001**
 
 Login inicial:
-- Usuário: `admin`
-- Senha: `admin123`
-
-> ⚠️ Troque a senha após o primeiro acesso!
+- Usuário: `admin@hmengenharia.com`
+- Senha: `admin123` (troque assim que possível — veja seção 8.1)
 
 ---
 
@@ -85,16 +108,18 @@ confiável dos dados e o PDF só como comparação quando os dois vêm juntos.
    ```
    EMAIL_IMAP_HOST=imap.gmail.com
    EMAIL_IMAP_PORT=993
-   EMAIL_IMAP_USER=email-da-empresa@gmail.com
+   EMAIL_IMAP_USER=ha@gmail.com
    EMAIL_IMAP_APP_PASSWORD=senha-de-16-digitos-sem-espacos
    ```
 4. Reinicie o backend. Se as três variáveis estiverem preenchidas, a verificação
-   automática roda a cada 15 minutos (a primeira, 10 segundos após o servidor
-   subir). Também dá para disparar na hora pelo botão **"Verificar agora"** na
-   tela de Materiais.
+   automática roda **3 vezes por dia** (a cada 8h; a primeira, 10 segundos após
+   o servidor subir). Também dá para disparar na hora pelo botão **"Verificar
+   agora"** na tela de Materiais.
 
 ### Como funciona
-- Busca e-mails com "DANFE" e anexo dos últimos 60 dias que ainda não foram lidos.
+- Busca e-mails com "DANFE" e anexo a partir de uma data fixa (definida no
+  código, em `DESDE_DATA` no `notaFiscalEmailService.js`) que ainda não foram
+  lidos — nunca reprocessa nem olha para trás dessa data.
 - Se o e-mail tem **XML**, ele é a fonte de verdade (descrição, NCM, unidade,
   quantidade e preço de compra). Se também vier um PDF, ele só é usado para
   comparar e alertar divergências no log do servidor — nunca sobrescreve o XML.
@@ -114,11 +139,57 @@ continua disponível).
 
 ---
 
-## 6. Acesso em rede local
+## 6. Backup automático do banco
+
+Uma tarefa agendada do Windows ("HM-Engenharia Backup Diário") roda todo dia às
+2h da manhã e salva um `.sql.zip` do banco em `backend/backups/` (mantém os
+últimos 30 dias, apaga o resto sozinho). Para rodar manualmente:
+```powershell
+powershell -ExecutionPolicy Bypass -File backend\scripts\backup-db.ps1
+```
+Para restaurar um backup, descompacte o `.zip` e rode:
+```
+psql -h localhost -U postgres -d hm_orcamentos -f caminho\para\o\backup.sql
+```
+Recomendado copiar esses arquivos periodicamente para outro lugar (pen drive,
+nuvem) — um backup que só existe na mesma máquina não protege contra falha de
+disco.
+
+---
+
+## 7. Acesso em rede local
 
 Para outros computadores na mesma rede acessarem:
 1. Descubra o IP da sua máquina: `ipconfig` no terminal
-2. Outros computadores acessam: `http://SEU_IP:3000`
+2. Em modo desenvolvimento: `http://SEU_IP:3000`. Em modo produção /
+   inicialização automática: `http://SEU_IP:3001`
+
+---
+
+## 8. Iniciar automaticamente ao ligar o PC
+
+Um atalho oculto em `shell:startup` ("HM Engenharia - Sistema.lnk") sobe o
+backend em modo produção (mesma porta serve API + interface) toda vez que
+você faz login no Windows, sem abrir nenhuma janela.
+
+- **Log:** `backend/logs/sistema.log` — se algo não subir, olhe esse arquivo.
+- **Parar manualmente:** abra o Gerenciador de Tarefas, procure o processo
+  `node.exe` e finalize (ou `Get-Process node | Stop-Process` no PowerShell).
+- **Desativar o início automático:** apague o atalho em
+  `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`.
+- **Script usado:** `backend/scripts/iniciar-producao.ps1`.
+
+### 8.1 Segurança
+Já trocamos a senha padrão do admin e o `JWT_SECRET` nesta instalação. Se
+você recriar o banco do zero, o usuário volta a ser criado com a senha
+padrão `admin123` — troque assim que possível pela tela de login → seu
+usuário, ou peça para um administrador redefinir na tela **Usuários**.
+
+### 8.2 Quando estiver pronto para sair do computador local
+Hoje o sistema roda só neste PC. Quando fizer sentido para o negócio, dá para
+migrar para um servidor/VPS pequeno (ex.: DigitalOcean, Hetzner, Contabo) e
+manter tudo rodando 24/7 independente deste computador estar ligado — isso
+fica para uma etapa futura, quando você quiser dar esse passo.
 
 ---
 

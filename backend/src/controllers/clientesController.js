@@ -1,19 +1,25 @@
 const pool = require('../config/database');
+const { parsePaginacao, montarResposta } = require('../utils/paginacao');
 
 async function listar(req, res) {
   const { busca } = req.query;
-  let query = 'SELECT * FROM clientes WHERE ativo = true';
+  const { pagina, porPagina, offset } = parsePaginacao(req.query);
+
+  let condicoes = 'WHERE ativo = true';
   const params = [];
 
   if (busca) {
     params.push(`%${busca}%`);
-    query += ` AND (nome ILIKE $1 OR documento ILIKE $1 OR email ILIKE $1)`;
+    condicoes += ` AND (nome ILIKE $1 OR documento ILIKE $1 OR email ILIKE $1)`;
   }
-  query += ' ORDER BY nome';
 
   try {
-    const result = await pool.query(query, params);
-    res.json(result.rows);
+    const total = await pool.query(`SELECT count(*) FROM clientes ${condicoes}`, params);
+    const result = await pool.query(
+      `SELECT * FROM clientes ${condicoes} ORDER BY nome LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, porPagina, offset]
+    );
+    res.json(montarResposta(result.rows, parseInt(total.rows[0].count, 10), pagina, porPagina));
   } catch (err) {
     res.status(500).json({ erro: 'Erro ao listar clientes' });
   }

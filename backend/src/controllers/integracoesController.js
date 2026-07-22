@@ -27,6 +27,22 @@ async function verificarAgora(req, res) {
   }
 }
 
+async function historico(req, res) {
+  try {
+    const notas = await pool.query(
+      `SELECT chave_acesso, numero, itens_novos, itens_atualizados, processado_em
+       FROM notas_processadas ORDER BY processado_em DESC LIMIT 50`
+    );
+    const totalEmails = await pool.query('SELECT count(*) FROM emails_processados');
+    res.json({
+      notas: notas.rows,
+      totalEmailsProcessados: parseInt(totalEmails.rows[0].count, 10),
+    });
+  } catch (err) {
+    res.status(500).json({ erro: 'Erro ao buscar histórico de importação' });
+  }
+}
+
 async function obterMargem(req, res) {
   try {
     const r = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'margem_padrao'");
@@ -54,4 +70,4 @@ async function atualizarMargem(req, res) {
   }
 }
 
-module.exports = { statusEmail, verificarAgora, obterMargem, atualizarMargem };
+module.exports = { statusEmail, verificarAgora, historico, obterMargem, atualizarMargem };

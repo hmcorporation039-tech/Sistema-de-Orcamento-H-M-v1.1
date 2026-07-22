@@ -36,6 +36,7 @@ export const alterarSenha = (senhaAtual, novaSenha) =>
 
 // ── MATERIAIS ─────────────────────────────────────────────────────────
 export const getMateriais = (params) => api.get('/materiais', { params });
+export const getCategoriasMateriais = () => api.get('/materiais/categorias');
 export const criarMaterial = (data) => api.post('/materiais', data);
 export const atualizarMaterial = (id, data) => api.put(`/materiais/${id}`, data);
 export const removerMaterial = (id) => api.delete(`/materiais/${id}`);
@@ -57,6 +58,7 @@ export const removerCliente = (id) => api.delete(`/clientes/${id}`);
 // ── INTEGRAÇÕES ───────────────────────────────────────────────────────
 export const getStatusEmail = () => api.get('/integracoes/email/status');
 export const verificarEmailAgora = () => api.post('/integracoes/email/verificar-agora');
+export const getHistoricoEmail = () => api.get('/integracoes/email/historico');
 export const getMargemPadrao = () => api.get('/configuracoes/margem');
 export const atualizarMargemPadrao = (margem) => api.put('/configuracoes/margem', { margem });
 
@@ -65,7 +67,16 @@ export const getPropostas = (params) => api.get('/propostas', { params });
 export const getProposta = (id) => api.get(`/propostas/${id}`);
 export const getProximoNumero = () => api.get('/propostas/proximo-numero');
 export const criarProposta = (data) => api.post('/propostas', data);
+export const duplicarProposta = (id) => api.post(`/propostas/${id}/duplicar`);
 export const atualizarStatus = (id, status) => api.patch(`/propostas/${id}/status`, { status });
 export const removerProposta = (id) => api.delete(`/propostas/${id}`);
+export const enviarPropostaPorEmail = (id, destinatario, mensagem) =>
+  api.post(`/propostas/${id}/enviar-email`, { destinatario, mensagem });
+
+// ── USUÁRIOS ──────────────────────────────────────────────────────────
+export const getUsuarios = () => api.get('/usuarios');
+export const criarUsuario = (data) => api.post('/usuarios', data);
+export const atualizarUsuario = (id, data) => api.put(`/usuarios/${id}`, data);
+export const redefinirSenhaUsuario = (id, novaSenha) => api.post(`/usuarios/${id}/redefinir-senha`, { novaSenha });
 
 export default api;

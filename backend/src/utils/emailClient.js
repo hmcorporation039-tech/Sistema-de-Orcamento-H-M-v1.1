@@ -24,6 +24,13 @@ async function conectar() {
     logger: false,
   });
 
+  // Sem isso, um erro de socket emitido fora da promise de connect() (ex: timeout
+  // após falha de autenticação) sobe como 'error' não tratado no EventEmitter e
+  // derruba o processo Node inteiro — não só a verificação de e-mail.
+  client.on('error', err => {
+    console.error('Erro na conexão IMAP:', err.message);
+  });
+
   await client.connect();
   return client;
 }

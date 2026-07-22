@@ -1,4 +1,6 @@
 require('dotenv').config();
+const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const routes = require('./routes');
@@ -8,7 +10,8 @@ const { verificarCaixaDeEntrada } = require('./services/notaFiscalEmailService')
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const INTERVALO_VERIFICACAO_EMAIL_MS = 15 * 60 * 1000;
+const VERIFICACOES_EMAIL_POR_DIA = 3;
+const INTERVALO_VERIFICACAO_EMAIL_MS = (24 / VERIFICACOES_EMAIL_POR_DIA) * 60 * 60 * 1000;
 
 // Middlewares
 app.use(cors({
@@ -23,8 +26,18 @@ app.use('/api', routes);
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', sistema: 'H&M Engenharia', versao: '1.0.0' });
+  res.json({ status: 'ok', sistema: 'H&M Engenharia', versao: '1.1.0' });
 });
+
+// Serve o build de produção do frontend, se existir (permite um único
+// processo/porta em vez de precisar do "npm start" do React separado).
+const buildFrontend = path.join(__dirname, '..', '..', 'frontend', 'build');
+if (fs.existsSync(buildFrontend)) {
+  app.use(express.static(buildFrontend));
+  app.get(/^(?!\/api|\/health).*/, (req, res) => {
+    res.sendFile(path.join(buildFrontend, 'index.html'));
+  });
+}
 
 function agendarVerificacaoDeEmail() {
   if (!credenciaisConfiguradas()) {
@@ -46,7 +59,7 @@ function agendarVerificacaoDeEmail() {
 
   setTimeout(rodar, 10 * 1000);
   setInterval(rodar, INTERVALO_VERIFICACAO_EMAIL_MS);
-  console.log(`📧 Importação automática de notas por e-mail ativa (a cada ${INTERVALO_VERIFICACAO_EMAIL_MS / 60000} min)`);
+  console.log(`📧 Importação automática de notas por e-mail ativa (${VERIFICACOES_EMAIL_POR_DIA}x por dia, a cada ${INTERVALO_VERIFICACAO_EMAIL_MS / 3600000}h)`);
 }
 
 // Inicializar

@@ -42,8 +42,8 @@ export default function Orcamento() {
 
   useEffect(() => {
     getProximoNumero().then(res => setProximoNumero(res.data.proximo)).catch(() => {});
-    getClientes().then(res => setClientes(res.data)).catch(() => {});
-    getMateriais().then(res => setMateriais(res.data)).catch(() => {});
+    getClientes({ porPagina: 1000 }).then(res => setClientes(res.data.itens)).catch(() => {});
+    getMateriais({ porPagina: 1000 }).then(res => setMateriais(res.data.itens)).catch(() => {});
   }, []);
 
   const clienteResolvido = useMemo(

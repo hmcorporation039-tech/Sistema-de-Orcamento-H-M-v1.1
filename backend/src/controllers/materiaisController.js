@@ -1,25 +1,30 @@
 const pool = require('../config/database');
 const { extrairNotaFiscal } = require('../utils/notaFiscalParser');
+const { parsePaginacao, montarResposta } = require('../utils/paginacao');
 
 async function listar(req, res) {
   const { busca, categoria } = req.query;
-  let query = 'SELECT * FROM materiais WHERE ativo = true';
+  const { pagina, porPagina, offset } = parsePaginacao(req.query);
+
+  let condicoes = 'WHERE ativo = true';
   const params = [];
 
   if (categoria) {
     params.push(categoria);
-    query += ` AND categoria = $${params.length}`;
+    condicoes += ` AND categoria = $${params.length}`;
   }
   if (busca) {
     params.push(`%${busca}%`);
-    query += ` AND (descricao ILIKE $${params.length} OR codigo ILIKE $${params.length} OR marca ILIKE $${params.length})`;
+    condicoes += ` AND (descricao ILIKE $${params.length} OR codigo ILIKE $${params.length} OR marca ILIKE $${params.length})`;
   }
 
-  query += ' ORDER BY categoria, descricao';
-
   try {
-    const result = await pool.query(query, params);
-    res.json(result.rows);
+    const total = await pool.query(`SELECT count(*) FROM materiais ${condicoes}`, params);
+    const result = await pool.query(
+      `SELECT * FROM materiais ${condicoes} ORDER BY categoria, descricao LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, porPagina, offset]
+    );
+    res.json(montarResposta(result.rows, parseInt(total.rows[0].count, 10), pagina, porPagina));
   } catch (err) {
     res.status(500).json({ erro: 'Erro ao listar materiais' });
   }
@@ -120,4 +125,15 @@ async function extrairNota(req, res) {
   }
 }
 
-module.exports = { listar, criar, atualizar, remover, importar, extrairNota };
+async function categorias(req, res) {
+  try {
+    const result = await pool.query(
+      "SELECT DISTINCT categoria FROM materiais WHERE ativo = true ORDER BY categoria"
+    );
+    res.json(result.rows.map(r => r.categoria));
+  } catch (err) {
+    res.status(500).json({ erro: 'Erro ao listar categorias' });
+  }
+}
+
+module.exports = { listar, criar, atualizar, remover, importar, extrairNota, categorias };

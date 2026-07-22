@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
-import { Search, Trash2, Eye, X, FileDown } from 'lucide-react';
-import { getPropostas, getProposta, atualizarStatus, removerProposta } from '../services/api';
+import { Search, Trash2, X, FileDown, Copy, Send } from 'lucide-react';
+import { getPropostas, getProposta, atualizarStatus, removerProposta, duplicarProposta, enviarPropostaPorEmail } from '../services/api';
 import api from '../services/api';
 import { formatarMoeda, formatarData, formatarNcm } from '../utils/format';
+import Paginacao from '../components/Paginacao';
 
 const STATUS_CORES = {
   Ativa: { bg: '#1a1a0a', cor: '#c9a227', borda: '#4a3d10' },
@@ -20,6 +21,13 @@ export default function Historico() {
   const [detalhe, setDetalhe] = useState(null);
   const [carregandoDetalhe, setCarregandoDetalhe] = useState(false);
   const [gerandoPdf, setGerandoPdf] = useState(false);
+  const [duplicando, setDuplicando] = useState(false);
+  const [modalEmail, setModalEmail] = useState(false);
+  const [destinatarioEmail, setDestinatarioEmail] = useState('');
+  const [mensagemEmail, setMensagemEmail] = useState('');
+  const [enviandoEmail, setEnviandoEmail] = useState(false);
+  const [pagina, setPagina] = useState(1);
+  const [paginacao, setPaginacao] = useState({ total: 0, totalPaginas: 1 });
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -27,14 +35,18 @@ export default function Historico() {
       const res = await getPropostas({
         ...(busca ? { busca } : {}),
         ...(statusFiltro ? { status: statusFiltro } : {}),
+        pagina,
       });
-      setPropostas(res.data);
+      setPropostas(res.data.itens);
+      setPaginacao({ total: res.data.total, totalPaginas: res.data.totalPaginas });
     } catch {
       toast.error('Erro ao carregar propostas');
     } finally {
       setCarregando(false);
     }
-  }, [busca, statusFiltro]);
+  }, [busca, statusFiltro, pagina]);
+
+  useEffect(() => { setPagina(1); }, [busca, statusFiltro]);
 
   useEffect(() => {
     const t = setTimeout(carregar, 300);
@@ -75,6 +87,44 @@ export default function Historico() {
       if (detalhe?.id === p.id) setDetalhe(null);
     } catch {
       toast.error('Erro ao excluir proposta');
+    }
+  }
+
+  async function duplicar(id) {
+    setDuplicando(true);
+    try {
+      const res = await duplicarProposta(id);
+      toast.success(res.data.mensagem);
+      setDetalhe(null);
+      carregar();
+    } catch (err) {
+      toast.error(err.response?.data?.erro || 'Erro ao duplicar proposta');
+    } finally {
+      setDuplicando(false);
+    }
+  }
+
+  function abrirModalEmail() {
+    setDestinatarioEmail('');
+    setMensagemEmail('');
+    setModalEmail(true);
+  }
+
+  async function enviarEmail(e) {
+    e.preventDefault();
+    if (!destinatarioEmail.trim()) {
+      toast.error('Informe o e-mail de destino');
+      return;
+    }
+    setEnviandoEmail(true);
+    try {
+      const res = await enviarPropostaPorEmail(detalhe.id, destinatarioEmail.trim(), mensagemEmail.trim());
+      toast.success(res.data.mensagem);
+      setModalEmail(false);
+    } catch (err) {
+      toast.error(err.response?.data?.erro || 'Erro ao enviar proposta por e-mail');
+    } finally {
+      setEnviandoEmail(false);
     }
   }
 
@@ -167,6 +217,8 @@ export default function Historico() {
         </table>
       </div>
 
+      <Paginacao pagina={pagina} totalPaginas={paginacao.totalPaginas} total={paginacao.total} onMudarPagina={setPagina} />
+
       {detalhe && (
         <div style={overlay} onClick={() => setDetalhe(null)}>
           <div style={modal} onClick={e => e.stopPropagation()}>
@@ -235,15 +287,71 @@ export default function Historico() {
                     </button>
                   ))}
                   <button
+                    onClick={() => duplicar(detalhe.id)}
+                    disabled={duplicando}
+                    style={{ ...btnSecundario, marginLeft: 'auto' }}
+                  >
+                    <Copy size={13} /> {duplicando ? 'Duplicando...' : 'Duplicar'}
+                  </button>
+                  <button onClick={abrirModalEmail} style={btnSecundario}>
+                    <Send size={13} /> Enviar por E-mail
+                  </button>
+                  <button
                     onClick={() => baixarPdf(detalhe.id, detalhe.numero)}
                     disabled={gerandoPdf}
-                    style={{ ...btnPrimario, marginLeft: 'auto' }}
+                    style={btnPrimario}
                   >
                     <FileDown size={13} /> {gerandoPdf ? 'Gerando...' : 'Baixar PDF'}
                   </button>
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {modalEmail && (
+        <div style={overlay} onClick={() => setModalEmail(false)}>
+          <div style={{ ...modal, width: 420 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18 }}>
+              <h3 style={{ color: '#c9a227', fontSize: 15, fontWeight: 700, flex: 1 }}>
+                Enviar Proposta {detalhe?.numero} por E-mail
+              </h3>
+              <button onClick={() => setModalEmail(false)} style={{ ...btnIcone, background: 'transparent' }}>
+                <X size={16} />
+              </button>
+            </div>
+            <form onSubmit={enviarEmail}>
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ display: 'block', fontSize: 10, color: '#666', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+                  E-mail do cliente *
+                </label>
+                <input
+                  type="email"
+                  value={destinatarioEmail}
+                  onChange={e => setDestinatarioEmail(e.target.value)}
+                  placeholder="cliente@empresa.com"
+                  autoFocus
+                />
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ display: 'block', fontSize: 10, color: '#666', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+                  Mensagem (opcional)
+                </label>
+                <textarea
+                  rows={4}
+                  value={mensagemEmail}
+                  onChange={e => setMensagemEmail(e.target.value)}
+                  placeholder="Deixe em branco para usar a mensagem padrão"
+                />
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 18, justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setModalEmail(false)} style={btnSecundario}>Cancelar</button>
+                <button type="submit" disabled={enviandoEmail} style={btnPrimario}>
+                  <Send size={13} /> {enviandoEmail ? 'Enviando...' : 'Enviar'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -268,6 +376,12 @@ const btnPrimario = {
   display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px',
   background: '#c9a227', border: 'none', borderRadius: 6, color: '#000',
   fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
+};
+
+const btnSecundario = {
+  display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px',
+  background: 'transparent', border: '1px solid #2a2a2a', borderRadius: 6,
+  color: '#999', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
 };
 
 const btnIcone = {

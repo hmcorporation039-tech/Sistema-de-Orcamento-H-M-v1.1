@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { Plus, Search, Pencil, Trash2, X } from 'lucide-react';
 import { getClientes, criarCliente, atualizarCliente, removerCliente } from '../services/api';
+import Paginacao from '../components/Paginacao';
 
 const VAZIO = { nome: '', documento: '', tipo: 'Empresa', responsavel: '', telefone: '', email: '', endereco: '' };
 
@@ -13,23 +14,28 @@ export default function Clientes() {
   const [editandoId, setEditandoId] = useState(null);
   const [form, setForm] = useState(VAZIO);
   const [salvando, setSalvando] = useState(false);
+  const [pagina, setPagina] = useState(1);
+  const [paginacao, setPaginacao] = useState({ total: 0, totalPaginas: 1 });
 
   const carregar = useCallback(async () => {
     setCarregando(true);
     try {
-      const res = await getClientes(busca ? { busca } : {});
-      setClientes(res.data);
+      const res = await getClientes({ ...(busca ? { busca } : {}), pagina });
+      setClientes(res.data.itens);
+      setPaginacao({ total: res.data.total, totalPaginas: res.data.totalPaginas });
     } catch {
       toast.error('Erro ao carregar clientes');
     } finally {
       setCarregando(false);
     }
-  }, [busca]);
+  }, [busca, pagina]);
 
   useEffect(() => {
     const t = setTimeout(carregar, 300);
     return () => clearTimeout(t);
   }, [carregar]);
+
+  useEffect(() => { setPagina(1); }, [busca]);
 
   function abrirNovo() {
     setEditandoId(null);
@@ -143,6 +149,8 @@ export default function Clientes() {
           </tbody>
         </table>
       </div>
+
+      <Paginacao pagina={pagina} totalPaginas={paginacao.totalPaginas} total={paginacao.total} onMudarPagina={setPagina} />
 
       {modalAberto && (
         <div style={overlay} onClick={() => setModalAberto(false)}>
