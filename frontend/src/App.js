@@ -4,10 +4,12 @@ import { AuthProvider, useAuth } from './hooks/useAuth';
 
 import Login from './pages/Login';
 import Layout from './components/Layout';
+import Dashboard from './pages/Dashboard';
 import Orcamento from './pages/Orcamento';
 import Materiais from './pages/Materiais';
 import Clientes from './pages/Clientes';
 import Historico from './pages/Historico';
+import Relatorios from './pages/Relatorios';
 import Usuarios from './pages/Usuarios';
 
 function RotaProtegida({ children }) {
@@ -21,7 +23,7 @@ function RotaAdmin({ children }) {
   const { usuario, carregando } = useAuth();
   if (carregando) return <div className="loading">Carregando...</div>;
   if (!usuario) return <Navigate to="/login" replace />;
-  if (usuario.role !== 'admin') return <Navigate to="/orcamento" replace />;
+  if (usuario.role !== 'admin') return <Navigate to="/dashboard" replace />;
   return children;
 }
 
@@ -37,12 +39,14 @@ export default function App() {
               <Layout />
             </RotaProtegida>
           }>
-            <Route index element={<Navigate to="/orcamento" replace />} />
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="dashboard" element={<Dashboard />} />
             <Route path="orcamento" element={<Orcamento />} />
             <Route path="orcamento/:id" element={<Orcamento />} />
             <Route path="materiais" element={<Materiais />} />
             <Route path="clientes" element={<Clientes />} />
             <Route path="historico" element={<Historico />} />
+            <Route path="relatorios" element={<Relatorios />} />
             <Route path="usuarios" element={<RotaAdmin><Usuarios /></RotaAdmin>} />
           </Route>
         </Routes>

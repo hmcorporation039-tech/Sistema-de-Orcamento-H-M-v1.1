@@ -11,6 +11,8 @@ const cliCtrl = require('../controllers/clientesController');
 const propCtrl = require('../controllers/propostasController');
 const integCtrl = require('../controllers/integracoesController');
 const usuCtrl = require('../controllers/usuariosController');
+const dashCtrl = require('../controllers/dashboardController');
+const relCtrl = require('../controllers/relatoriosController');
 
 // ── AUTH ──────────────────────────────────────────────────────────────
 router.post('/auth/login', authCtrl.login);
@@ -55,5 +57,17 @@ router.get('/usuarios', autenticar, admin, usuCtrl.listar);
 router.post('/usuarios', autenticar, admin, usuCtrl.criar);
 router.put('/usuarios/:id', autenticar, admin, usuCtrl.atualizar);
 router.post('/usuarios/:id/redefinir-senha', autenticar, admin, usuCtrl.redefinirSenha);
+
+// ── DASHBOARD ─────────────────────────────────────────────────────────
+router.get('/dashboard/resumo', autenticar, dashCtrl.resumo);
+router.get('/dashboard/por-mes', autenticar, dashCtrl.porMes);
+router.get('/dashboard/top-clientes', autenticar, dashCtrl.topClientes);
+router.get('/dashboard/top-materiais', autenticar, dashCtrl.topMateriais);
+router.get('/dashboard/ultimas-propostas', autenticar, dashCtrl.ultimasPropostas);
+
+// ── RELATÓRIOS ────────────────────────────────────────────────────────
+router.get('/relatorios/propostas', autenticar, relCtrl.listar);
+router.get('/relatorios/propostas/csv', autenticar, relCtrl.exportarCsv);
+router.get('/relatorios/propostas/pdf', autenticar, relCtrl.exportarPdf);
 
 module.exports = router;

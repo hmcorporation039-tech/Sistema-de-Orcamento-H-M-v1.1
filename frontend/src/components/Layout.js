@@ -3,10 +3,12 @@ import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
 
 const NAV = [
+  { to: '/dashboard', label: '📊 Dashboard' },
   { to: '/orcamento', label: '📋 Orçamento' },
   { to: '/materiais', label: '🗄️ Materiais' },
   { to: '/clientes', label: '👥 Clientes' },
   { to: '/historico', label: '📁 Histórico' },
+  { to: '/relatorios', label: '📈 Relatórios' },
 ];
 
 const NAV_ADMIN = { to: '/usuarios', label: '🔑 Usuários' };

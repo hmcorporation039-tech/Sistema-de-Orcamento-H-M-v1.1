@@ -60,6 +60,6 @@ describe('Usuários (admin)', () => {
   it('usuário comum não acessa a tela de usuários', () => {
     cy.login(email, 'novaSenhaQA456');
     cy.visit('/usuarios');
-    cy.url().should('include', '/orcamento');
+    cy.url().should('include', '/dashboard');
   });
 });

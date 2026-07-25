@@ -207,4 +207,4 @@ function gerarFooterTemplate() {
   `;
 }
 
-module.exports = { gerarHtmlProposta, gerarFooterTemplate };
+module.exports = { gerarHtmlProposta, gerarFooterTemplate, EMPRESA, cabecalhoDataUri };

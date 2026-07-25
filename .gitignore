@@ -26,3 +26,6 @@ backend/logs/
 E-mail admin@hmengenharia.com.txt
 
 .claude/
+
+# Cópias locais de backup do sistema (não fazem parte do código-fonte)
+Orçamentos V*/

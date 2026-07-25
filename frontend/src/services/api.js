@@ -82,4 +82,14 @@ export const criarUsuario = (data) => api.post('/usuarios', data);
 export const atualizarUsuario = (id, data) => api.put(`/usuarios/${id}`, data);
 export const redefinirSenhaUsuario = (id, novaSenha) => api.post(`/usuarios/${id}/redefinir-senha`, { novaSenha });
 
+// ── DASHBOARD ─────────────────────────────────────────────────────────
+export const getDashboardResumo = (params) => api.get('/dashboard/resumo', { params });
+export const getDashboardPorMes = (params) => api.get('/dashboard/por-mes', { params });
+export const getDashboardTopClientes = (params) => api.get('/dashboard/top-clientes', { params });
+export const getDashboardTopMateriais = (params) => api.get('/dashboard/top-materiais', { params });
+export const getDashboardUltimas = (params) => api.get('/dashboard/ultimas-propostas', { params });
+
+// ── RELATÓRIOS ────────────────────────────────────────────────────────
+export const getRelatorioPropostas = (params) => api.get('/relatorios/propostas', { params });
+
 export default api;
