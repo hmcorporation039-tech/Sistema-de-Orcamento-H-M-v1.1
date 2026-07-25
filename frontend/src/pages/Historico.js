@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Search, Trash2, X, FileDown, Copy, Send } from 'lucide-react';
+import { Search, Trash2, X, FileDown, Copy, Send, Pencil } from 'lucide-react';
 import { getPropostas, getProposta, atualizarStatus, removerProposta, duplicarProposta } from '../services/api';
 import api from '../services/api';
 import { formatarMoeda, formatarData, formatarNcm } from '../utils/format';
@@ -15,6 +16,7 @@ const STATUS_CORES = {
 };
 
 export default function Historico() {
+  const navigate = useNavigate();
   const [propostas, setPropostas] = useState([]);
   const [busca, setBusca] = useState('');
   const [statusFiltro, setStatusFiltro] = useState('');
@@ -237,9 +239,15 @@ export default function Historico() {
                   </div>
                 ))}
 
-                <div style={{ borderTop: '1px solid #2a2a2a', paddingTop: 14, marginTop: 6, display: 'flex', justifyContent: 'flex-end', gap: 26, fontSize: 12 }}>
+                <div style={{ borderTop: '1px solid #2a2a2a', paddingTop: 14, marginTop: 6, display: 'flex', justifyContent: 'flex-end', gap: 26, fontSize: 12, flexWrap: 'wrap' }}>
                   <span style={{ color: '#888' }}>Materiais: <b style={{ color: '#ccc' }}>{formatarMoeda(detalhe.subtotal_materiais)}</b></span>
+                  {Number(detalhe.imposto_venda) > 0 && (
+                    <span style={{ color: '#888' }}>Imp. Vendas ({detalhe.imposto_venda}%): <b style={{ color: '#ccc' }}>{formatarMoeda(detalhe.valor_imposto_venda)}</b></span>
+                  )}
                   <span style={{ color: '#888' }}>Mão de obra: <b style={{ color: '#ccc' }}>{formatarMoeda(detalhe.subtotal_mao_obra)}</b></span>
+                  {Number(detalhe.imposto_servico) > 0 && (
+                    <span style={{ color: '#888' }}>Imp. Serviços ({detalhe.imposto_servico}%): <b style={{ color: '#ccc' }}>{formatarMoeda(detalhe.valor_imposto_servico)}</b></span>
+                  )}
                   <span style={{ color: '#888' }}>BDI ({detalhe.bdi}%): <b style={{ color: '#ccc' }}>{formatarMoeda(detalhe.valor_bdi)}</b></span>
                   <span style={{ color: '#c9a227', fontSize: 14 }}>Total: <b>{formatarMoeda(detalhe.total)}</b></span>
                 </div>
@@ -261,9 +269,15 @@ export default function Historico() {
                     </button>
                   ))}
                   <button
+                    onClick={() => navigate(`/orcamento/${detalhe.id}`)}
+                    style={{ ...btnSecundario, marginLeft: 'auto' }}
+                  >
+                    <Pencil size={13} /> Editar
+                  </button>
+                  <button
                     onClick={() => duplicar(detalhe.id)}
                     disabled={duplicando}
-                    style={{ ...btnSecundario, marginLeft: 'auto' }}
+                    style={btnSecundario}
                   >
                     <Copy size={13} /> {duplicando ? 'Duplicando...' : 'Duplicar'}
                   </button>

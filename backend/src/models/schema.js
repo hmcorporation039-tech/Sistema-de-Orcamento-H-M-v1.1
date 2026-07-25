@@ -78,9 +78,13 @@ async function criarTabelas() {
         pagamento TEXT,
         observacoes TEXT,
         bdi DECIMAL(5,2) DEFAULT 0,
+        imposto_venda DECIMAL(5,2) DEFAULT 0,
+        imposto_servico DECIMAL(5,2) DEFAULT 0,
         subtotal_materiais DECIMAL(12,2) DEFAULT 0,
         subtotal_mao_obra DECIMAL(12,2) DEFAULT 0,
         valor_bdi DECIMAL(12,2) DEFAULT 0,
+        valor_imposto_venda DECIMAL(12,2) DEFAULT 0,
+        valor_imposto_servico DECIMAL(12,2) DEFAULT 0,
         total DECIMAL(12,2) DEFAULT 0,
         status VARCHAR(20) DEFAULT 'Ativa',
         usuario_id INTEGER REFERENCES usuarios(id),
@@ -88,6 +92,10 @@ async function criarTabelas() {
         atualizado_em TIMESTAMP DEFAULT NOW()
       )
     `);
+    await client.query(`ALTER TABLE propostas ADD COLUMN IF NOT EXISTS imposto_venda DECIMAL(5,2) DEFAULT 0`);
+    await client.query(`ALTER TABLE propostas ADD COLUMN IF NOT EXISTS imposto_servico DECIMAL(5,2) DEFAULT 0`);
+    await client.query(`ALTER TABLE propostas ADD COLUMN IF NOT EXISTS valor_imposto_venda DECIMAL(12,2) DEFAULT 0`);
+    await client.query(`ALTER TABLE propostas ADD COLUMN IF NOT EXISTS valor_imposto_servico DECIMAL(12,2) DEFAULT 0`);
 
     // Tabela de seções da proposta
     await client.query(`

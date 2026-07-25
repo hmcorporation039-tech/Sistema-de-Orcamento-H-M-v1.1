@@ -83,8 +83,9 @@ async function criar(req, res) {
   const {
     data, validade, tipo, porte,
     cliente_id, cliente_nome, responsavel, local_obra,
-    pagamento, observacoes, bdi,
-    subtotal_materiais, subtotal_mao_obra, valor_bdi, total,
+    pagamento, observacoes, bdi, imposto_venda, imposto_servico,
+    subtotal_materiais, subtotal_mao_obra, valor_bdi,
+    valor_imposto_venda, valor_imposto_servico, total,
     secoes, itens
   } = req.body;
 
@@ -99,16 +100,18 @@ async function criar(req, res) {
       `INSERT INTO propostas (
         numero, sequencial, data, validade, tipo, porte,
         cliente_id, cliente_nome, responsavel, local_obra,
-        pagamento, observacoes, bdi,
-        subtotal_materiais, subtotal_mao_obra, valor_bdi, total,
+        pagamento, observacoes, bdi, imposto_venda, imposto_servico,
+        subtotal_materiais, subtotal_mao_obra, valor_bdi,
+        valor_imposto_venda, valor_imposto_servico, total,
         usuario_id
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
       RETURNING *`,
       [
         numero, seq, data, validade || 5, tipo, porte,
         cliente_id || null, cliente_nome, responsavel, local_obra,
-        pagamento, observacoes, bdi || 0,
-        subtotal_materiais || 0, subtotal_mao_obra || 0, valor_bdi || 0, total || 0,
+        pagamento, observacoes, bdi || 0, imposto_venda || 0, imposto_servico || 0,
+        subtotal_materiais || 0, subtotal_mao_obra || 0, valor_bdi || 0,
+        valor_imposto_venda || 0, valor_imposto_servico || 0, total || 0,
         req.usuario.id
       ]
     );
@@ -152,6 +155,87 @@ async function criar(req, res) {
   }
 }
 
+async function atualizar(req, res) {
+  const { id } = req.params;
+  const {
+    data, validade, tipo, porte,
+    cliente_id, cliente_nome, responsavel, local_obra,
+    pagamento, observacoes, bdi, imposto_venda, imposto_servico,
+    subtotal_materiais, subtotal_mao_obra, valor_bdi,
+    valor_imposto_venda, valor_imposto_servico, total,
+    secoes, itens
+  } = req.body;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const propResult = await client.query(
+      `UPDATE propostas SET
+        data=$1, validade=$2, tipo=$3, porte=$4,
+        cliente_id=$5, cliente_nome=$6, responsavel=$7, local_obra=$8,
+        pagamento=$9, observacoes=$10, bdi=$11, imposto_venda=$12, imposto_servico=$13,
+        subtotal_materiais=$14, subtotal_mao_obra=$15, valor_bdi=$16,
+        valor_imposto_venda=$17, valor_imposto_servico=$18, total=$19,
+        atualizado_em=NOW()
+       WHERE id=$20
+       RETURNING *`,
+      [
+        data, validade || 5, tipo, porte,
+        cliente_id || null, cliente_nome, responsavel, local_obra,
+        pagamento, observacoes, bdi || 0, imposto_venda || 0, imposto_servico || 0,
+        subtotal_materiais || 0, subtotal_mao_obra || 0, valor_bdi || 0,
+        valor_imposto_venda || 0, valor_imposto_servico || 0, total || 0,
+        id
+      ]
+    );
+
+    if (propResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ erro: 'Proposta não encontrada' });
+    }
+
+    const proposta = propResult.rows[0];
+
+    // Substitui seções e itens antigos pelos novos (numero/sequencial da proposta não mudam)
+    await client.query('DELETE FROM proposta_secoes WHERE proposta_id = $1', [proposta.id]);
+
+    if (Array.isArray(secoes)) {
+      for (let i = 0; i < secoes.length; i++) {
+        const sec = secoes[i];
+        const secResult = await client.query(
+          'INSERT INTO proposta_secoes (proposta_id, nome, ordem) VALUES ($1,$2,$3) RETURNING id',
+          [proposta.id, sec.nome, i]
+        );
+        const secId = secResult.rows[0].id;
+
+        const secItens = (itens || []).filter(it => it.sid === sec.id || it.secao_nome === sec.nome);
+        for (let j = 0; j < secItens.length; j++) {
+          const it = secItens[j];
+          await client.query(
+            `INSERT INTO proposta_itens
+             (proposta_id, secao_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, codigo, ordem)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+            [proposta.id, secId, it.desc || it.descricao, it.qtd || it.quantidade || 1,
+             it.un || it.unidade, it.vu || it.valor_unitario || 0,
+             (it.qtd || 1) * (it.vu || 0), it.ncm || null, it.codigo || null, j]
+          );
+        }
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({ ...proposta, mensagem: `Proposta ${proposta.numero} atualizada com sucesso!` });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Erro ao atualizar proposta:', err);
+    res.status(500).json({ erro: 'Erro ao atualizar proposta' });
+  } finally {
+    client.release();
+  }
+}
+
 async function duplicar(req, res) {
   const { id } = req.params;
   const client = await pool.connect();
@@ -179,16 +263,18 @@ async function duplicar(req, res) {
       `INSERT INTO propostas (
         numero, sequencial, data, validade, tipo, porte,
         cliente_id, cliente_nome, responsavel, local_obra,
-        pagamento, observacoes, bdi,
-        subtotal_materiais, subtotal_mao_obra, valor_bdi, total,
+        pagamento, observacoes, bdi, imposto_venda, imposto_servico,
+        subtotal_materiais, subtotal_mao_obra, valor_bdi,
+        valor_imposto_venda, valor_imposto_servico, total,
         status, usuario_id
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'Ativa',$18)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,'Ativa',$22)
       RETURNING *`,
       [
         numero, seq, hoje, p.validade, p.tipo, p.porte,
         p.cliente_id, p.cliente_nome, p.responsavel, p.local_obra,
-        p.pagamento, p.observacoes, p.bdi,
-        p.subtotal_materiais, p.subtotal_mao_obra, p.valor_bdi, p.total,
+        p.pagamento, p.observacoes, p.bdi, p.imposto_venda, p.imposto_servico,
+        p.subtotal_materiais, p.subtotal_mao_obra, p.valor_bdi,
+        p.valor_imposto_venda, p.valor_imposto_servico, p.total,
         req.usuario.id
       ]
     );
@@ -345,4 +431,4 @@ async function enviarEmail(req, res) {
   }
 }
 
-module.exports = { listar, buscarUma, criar, duplicar, atualizarStatus, remover, proximoNum, gerarPdf, enviarEmail };
+module.exports = { listar, buscarUma, criar, atualizar, duplicar, atualizarStatus, remover, proximoNum, gerarPdf, enviarEmail };

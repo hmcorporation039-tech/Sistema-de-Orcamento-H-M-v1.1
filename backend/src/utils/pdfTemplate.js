@@ -93,7 +93,7 @@ function gerarHtmlProposta(proposta) {
   tr.secao td { background: #f2f2f2; font-weight: 700; color: #333; padding: 5px 8px; }
   td.total { font-weight: 700; }
   .totais { display: flex; justify-content: flex-end; margin-bottom: 14px; }
-  .totais table { width: 260px; margin-bottom: 0; }
+  .totais table { width: 300px; margin-bottom: 0; }
   .totais td { border: none; padding: 3px 8px; font-size: 10.5px; }
   .totais tr.final td { border-top: 2px solid #c9a227; padding-top: 6px; font-size: 14px; font-weight: 700; color: #c9a227; }
   .bloco { margin-bottom: 12px; }
@@ -148,7 +148,9 @@ function gerarHtmlProposta(proposta) {
   <div class="totais">
     <table>
       <tr><td>Subtotal materiais</td><td class="num">${formatarMoeda(proposta.subtotal_materiais)}</td></tr>
+      ${Number(proposta.imposto_venda) > 0 ? `<tr><td>Imposto sobre vendas (${proposta.imposto_venda}%)</td><td class="num">${formatarMoeda(proposta.valor_imposto_venda)}</td></tr>` : ''}
       <tr><td>Subtotal mão de obra</td><td class="num">${formatarMoeda(proposta.subtotal_mao_obra)}</td></tr>
+      ${Number(proposta.imposto_servico) > 0 ? `<tr><td>Imposto sobre serviços (${proposta.imposto_servico}%)</td><td class="num">${formatarMoeda(proposta.valor_imposto_servico)}</td></tr>` : ''}
       <tr><td>BDI (${proposta.bdi}%)</td><td class="num">${formatarMoeda(proposta.valor_bdi)}</td></tr>
       <tr class="final"><td>Total geral</td><td class="num">${formatarMoeda(proposta.total)}</td></tr>
     </table>

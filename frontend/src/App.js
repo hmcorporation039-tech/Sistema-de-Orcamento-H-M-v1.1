@@ -39,6 +39,7 @@ export default function App() {
           }>
             <Route index element={<Navigate to="/orcamento" replace />} />
             <Route path="orcamento" element={<Orcamento />} />
+            <Route path="orcamento/:id" element={<Orcamento />} />
             <Route path="materiais" element={<Materiais />} />
             <Route path="clientes" element={<Clientes />} />
             <Route path="historico" element={<Historico />} />

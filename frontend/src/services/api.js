@@ -69,6 +69,7 @@ export const getPropostas = (params) => api.get('/propostas', { params });
 export const getProposta = (id) => api.get(`/propostas/${id}`);
 export const getProximoNumero = () => api.get('/propostas/proximo-numero');
 export const criarProposta = (data) => api.post('/propostas', data);
+export const atualizarProposta = (id, data) => api.put(`/propostas/${id}`, data);
 export const duplicarProposta = (id) => api.post(`/propostas/${id}/duplicar`);
 export const atualizarStatus = (id, status) => api.patch(`/propostas/${id}/status`, { status });
 export const removerProposta = (id) => api.delete(`/propostas/${id}`);

@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Plus, Trash2, FolderPlus, FileDown, Send, FilePlus2 } from 'lucide-react';
-import { getClientes, getMateriais, getProximoNumero, criarProposta } from '../services/api';
+import { getClientes, getMateriais, getProximoNumero, criarProposta, atualizarProposta, getProposta } from '../services/api';
 import api from '../services/api';
 import { formatarMoeda } from '../utils/format';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
@@ -20,6 +21,8 @@ const FORM_VAZIO = {
   pagamento: '',
   observacoes: '',
   bdi: 20,
+  imposto_venda: 0,
+  imposto_servico: 0,
 };
 
 const SECOES_PADRAO = () => [
@@ -37,6 +40,9 @@ const CATEGORIAS_MAO_DE_OBRA = [
 ];
 
 export default function Orcamento() {
+  const { id: editandoId } = useParams();
+  const navigate = useNavigate();
+
   const [proximoNumero, setProximoNumero] = useState(null);
   const [clientes, setClientes] = useState([]);
   const [materiais, setMateriais] = useState([]);
@@ -48,12 +54,49 @@ export default function Orcamento() {
   const [propostaSalva, setPropostaSalva] = useState(null);
   const [gerandoPdf, setGerandoPdf] = useState(false);
   const [modalEmail, setModalEmail] = useState(false);
+  const [carregandoEdicao, setCarregandoEdicao] = useState(!!editandoId);
+  const [numeroEditando, setNumeroEditando] = useState('');
 
   useEffect(() => {
-    getProximoNumero().then(res => setProximoNumero(res.data.proximo)).catch(() => {});
     getClientes({ porPagina: 1000 }).then(res => setClientes(res.data.itens)).catch(() => {});
     getMateriais({ porPagina: 1000 }).then(res => setMateriais(res.data.itens)).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!editandoId) {
+      getProximoNumero().then(res => setProximoNumero(res.data.proximo)).catch(() => {});
+      return;
+    }
+    setCarregandoEdicao(true);
+    getProposta(editandoId).then(res => {
+      const p = res.data;
+      setNumeroEditando(p.numero);
+      setForm({
+        data: (p.data || '').slice(0, 10),
+        validade: p.validade,
+        tipo: p.tipo || '',
+        porte: p.porte || '',
+        cliente_nome: p.cliente_nome || '',
+        responsavel: p.responsavel || '',
+        local_obra: p.local_obra || '',
+        pagamento: p.pagamento || '',
+        observacoes: p.observacoes || '',
+        bdi: Number(p.bdi) || 0,
+        imposto_venda: Number(p.imposto_venda) || 0,
+        imposto_servico: Number(p.imposto_servico) || 0,
+      });
+      setSecoes((p.secoes || []).map(s => ({ id: s.id, nome: s.nome })));
+      setItens((p.itens || []).map(it => ({
+        id: gerarId(), sid: it.secao_id, material_id: it.material_id,
+        descricao: it.descricao, quantidade: Number(it.quantidade), unidade: it.unidade,
+        valor_unitario: Number(it.valor_unitario), ncm: it.ncm || '', codigo: it.codigo || ''
+      })));
+      setPropostaSalva(null);
+    }).catch(() => {
+      toast.error('Erro ao carregar proposta para edição');
+      navigate('/orcamento');
+    }).finally(() => setCarregandoEdicao(false));
+  }, [editandoId, navigate]);
 
   const clienteResolvido = useMemo(
     () => clientes.find(c => c.nome.toLowerCase() === form.cliente_nome.trim().toLowerCase()),
@@ -66,7 +109,7 @@ export default function Orcamento() {
       .reduce((s, it) => s + (Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0), 0);
   }
 
-  const { subtotalMateriais, subtotalMaoObra, valorBdi, total } = useMemo(() => {
+  const { subtotalMateriais, subtotalMaoObra, valorBdi, valorImpostoVenda, valorImpostoServico, total } = useMemo(() => {
     let mat = 0, mao = 0;
     for (const sec of secoes) {
       const sub = subtotalSecao(sec.id);
@@ -75,8 +118,14 @@ export default function Orcamento() {
     }
     const bdiPct = Number(form.bdi) || 0;
     const vBdi = (mat + mao) * (bdiPct / 100);
-    return { subtotalMateriais: mat, subtotalMaoObra: mao, valorBdi: vBdi, total: mat + mao + vBdi };
-  }, [itens, secoes, form.bdi]);
+    const vImpVenda = mat * ((Number(form.imposto_venda) || 0) / 100);
+    const vImpServico = mao * ((Number(form.imposto_servico) || 0) / 100);
+    return {
+      subtotalMateriais: mat, subtotalMaoObra: mao, valorBdi: vBdi,
+      valorImpostoVenda: vImpVenda, valorImpostoServico: vImpServico,
+      total: mat + mao + vBdi + vImpVenda + vImpServico,
+    };
+  }, [itens, secoes, form.bdi, form.imposto_venda, form.imposto_servico]);
 
   function adicionarSecao() {
     setSecoes(s => [...s, { id: gerarId(), nome: 'Nova Seção' }]);
@@ -130,7 +179,11 @@ export default function Orcamento() {
   function novoOrcamento() {
     limparFormulario();
     setPropostaSalva(null);
-    getProximoNumero().then(r => setProximoNumero(r.data.proximo)).catch(() => {});
+    if (editandoId) {
+      navigate('/orcamento');
+    } else {
+      getProximoNumero().then(r => setProximoNumero(r.data.proximo)).catch(() => {});
+    }
   }
 
   async function baixarPdf() {
@@ -177,9 +230,13 @@ export default function Orcamento() {
         pagamento: form.pagamento,
         observacoes: form.observacoes,
         bdi: Number(form.bdi) || 0,
+        imposto_venda: Number(form.imposto_venda) || 0,
+        imposto_servico: Number(form.imposto_servico) || 0,
         subtotal_materiais: subtotalMateriais,
         subtotal_mao_obra: subtotalMaoObra,
         valor_bdi: valorBdi,
+        valor_imposto_venda: valorImpostoVenda,
+        valor_imposto_servico: valorImpostoServico,
         total,
         secoes: secoes.map(s => ({ id: s.id, nome: s.nome })),
         itens: itens.map(it => ({
@@ -188,7 +245,7 @@ export default function Orcamento() {
           codigo: it.codigo || null
         })),
       };
-      const res = await criarProposta(payload);
+      const res = editandoId ? await atualizarProposta(editandoId, payload) : await criarProposta(payload);
       toast.success(res.data.mensagem || 'Proposta salva com sucesso!');
       setPropostaSalva(res.data);
     } catch (err) {
@@ -198,11 +255,17 @@ export default function Orcamento() {
     }
   }
 
+  if (carregandoEdicao) {
+    return <p style={{ color: '#666', textAlign: 'center', padding: 40 }}>Carregando proposta...</p>;
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18 }}>
-        <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>📋 Novo Orçamento</h2>
-        {proximoNumero != null && (
+        <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>
+          {editandoId ? `✏️ Editando Proposta ${numeroEditando}` : '📋 Novo Orçamento'}
+        </h2>
+        {!editandoId && proximoNumero != null && (
           <span style={{ fontSize: 12, color: '#666' }}>
             Próxima proposta: <b style={{ color: '#c9a227' }}>P{String(proximoNumero).padStart(3, '0')}</b>
           </span>
@@ -314,7 +377,7 @@ export default function Orcamento() {
                 {!maoDeObra && (
                   <input value={it.ncm} onChange={e => atualizarItem(it.id, 'ncm', e.target.value.replace(/[^\d.]/g, ''))} placeholder="NCM/SH" />
                 )}
-                <input type="number" step="0.01" min="0" value={it.quantidade} onChange={e => atualizarItem(it.id, 'quantidade', e.target.value)} />
+                <input type="number" step="1" min="0" value={it.quantidade} onChange={e => atualizarItem(it.id, 'quantidade', e.target.value)} />
                 <input value={it.unidade} onChange={e => atualizarItem(it.id, 'unidade', e.target.value)} />
                 <input type="number" step="0.01" min="0" value={it.valor_unitario} onChange={e => atualizarItem(it.id, 'valor_unitario', e.target.value)} />
                 <span style={{ fontSize: 12, color: '#ccc', textAlign: 'right', paddingRight: 4 }}>
@@ -339,20 +402,32 @@ export default function Orcamento() {
 
       {/* Totais */}
       <div style={{ ...card, position: 'sticky', bottom: 16 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: 20, alignItems: 'center' }}>
-          <Totalzinho label="Materiais" valor={subtotalMateriais} />
-          <Totalzinho label="Mão de obra" valor={subtotalMaoObra} />
-          <div>
-            <label style={rotulo}>BDI (%)</label>
-            <input type="number" step="0.1" min="0" value={form.bdi} onChange={e => setForm({ ...form, bdi: e.target.value })} style={{ width: 90 }} />
-            <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>{formatarMoeda(valorBdi)}</div>
-          </div>
-          <div>
-            <div style={rotulo}>Total geral</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: '#c9a227' }}>{formatarMoeda(total)}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'center' }}>
+            <Totalzinho label="Materiais" valor={subtotalMateriais} />
+            <Totalzinho label="Mão de obra" valor={subtotalMaoObra} />
+            <div>
+              <label style={rotulo}>Imp. Vendas (%)</label>
+              <input type="number" step="0.1" min="0" value={form.imposto_venda} onChange={e => setForm({ ...form, imposto_venda: e.target.value })} style={{ width: 80 }} />
+              <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>{formatarMoeda(valorImpostoVenda)}</div>
+            </div>
+            <div>
+              <label style={rotulo}>Imp. Serviços (%)</label>
+              <input type="number" step="0.1" min="0" value={form.imposto_servico} onChange={e => setForm({ ...form, imposto_servico: e.target.value })} style={{ width: 80 }} />
+              <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>{formatarMoeda(valorImpostoServico)}</div>
+            </div>
+            <div>
+              <label style={rotulo}>BDI (%)</label>
+              <input type="number" step="0.1" min="0" value={form.bdi} onChange={e => setForm({ ...form, bdi: e.target.value })} style={{ width: 80 }} />
+              <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>{formatarMoeda(valorBdi)}</div>
+            </div>
+            <div>
+              <div style={rotulo}>Total geral</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#c9a227' }}>{formatarMoeda(total)}</div>
+            </div>
           </div>
           {propostaSalva ? (
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
               <span style={{ fontSize: 11, color: '#3fb95f', marginRight: 4, whiteSpace: 'nowrap' }}>
                 ✓ Proposta {propostaSalva.numero} salva
               </span>
@@ -368,7 +443,7 @@ export default function Orcamento() {
             </div>
           ) : (
             <button onClick={salvar} disabled={salvando} style={{ ...btnPrimario, padding: '13px 26px', fontSize: 13 }}>
-              {salvando ? 'Salvando...' : 'Salvar Proposta'}
+              {salvando ? 'Salvando...' : (editandoId ? 'Salvar Alterações' : 'Salvar Proposta')}
             </button>
           )}
         </div>

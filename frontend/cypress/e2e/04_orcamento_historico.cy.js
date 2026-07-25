@@ -23,11 +23,15 @@ describe('Orçamento → Histórico (fluxo completo)', () => {
     cy.get('input[placeholder="Descrição do item"]').last().as('itemServico').type('Item Cypress Serviço');
     cy.get('@itemServico').closest('div').find('input').eq(3).clear().type('200');
 
-    // Materiais 100 + Mão de obra 200 = 300; BDI padrão 20% = 60; total = 360
+    // Imposto sobre vendas 10% dos materiais (100) = 10; imposto sobre serviços 5% da mão de obra (200) = 10
+    cy.contains('label', 'Imp. Vendas (%)').next('input').clear().type('10');
+    cy.contains('label', 'Imp. Serviços (%)').next('input').clear().type('5');
+
+    // Materiais 100 + Mão de obra 200 = 300; BDI padrão 20% = 60; impostos 10+10; total = 380
     cy.contains(/R\$\s?100,00/).should('be.visible');
     cy.contains(/R\$\s?200,00/).should('be.visible');
     cy.contains(/R\$\s?60,00/).should('be.visible');
-    cy.contains(/R\$\s?360,00/).should('be.visible');
+    cy.contains(/R\$\s?380,00/).should('be.visible');
 
     cy.contains('button', 'Salvar Proposta').click();
     cy.contains(/salva com sucesso/i, { timeout: 10000 }).should('be.visible');
@@ -52,7 +56,7 @@ describe('Orçamento → Histórico (fluxo completo)', () => {
 
     cy.contains('h3', 'Proposta').should('be.visible');
     cy.contains(clienteNome).should('be.visible');
-    cy.contains(/R\$\s?360,00/).should('be.visible');
+    cy.contains(/R\$\s?380,00/).should('be.visible');
 
     cy.contains('button', 'Aprovada').click();
     cy.contains(/status atualizado para Aprovada/i).should('be.visible');
@@ -62,6 +66,40 @@ describe('Orçamento → Histórico (fluxo completo)', () => {
     cy.wait('@baixarPdf').its('response.statusCode').should('eq', 200);
 
     cy.get('h3').contains('Proposta').parent().find('button').click();
+  });
+
+  it('edita a proposta pelo Histórico e confirma que o número não muda', () => {
+    cy.login();
+    cy.get('nav').contains('Histórico').click();
+    cy.get('input[placeholder*="Buscar por número"]').type(clienteNome);
+    cy.contains('tr', clienteNome, { timeout: 8000 }).click();
+
+    cy.contains('h3', 'Proposta').invoke('text').then(texto => {
+      const numeroOriginal = texto.replace('Proposta ', '').trim();
+      cy.wrap(numeroOriginal).as('numeroOriginal');
+    });
+
+    cy.contains('button', 'Editar').click();
+    cy.url().should('match', /\/orcamento\/\d+$/);
+    cy.get('@numeroOriginal').then(numeroOriginal => {
+      cy.contains('h2', `Editando Proposta ${numeroOriginal}`).should('be.visible');
+    });
+
+    cy.contains('label', 'Local da obra').next('input').clear().type('Obra de teste Cypress (editada)');
+    cy.contains('button', 'Salvar Alterações').click();
+    cy.contains(/atualizada com sucesso/i, { timeout: 10000 }).should('be.visible');
+
+    cy.get('@numeroOriginal').then(numeroOriginal => {
+      cy.contains(new RegExp(`proposta ${numeroOriginal} salva`, 'i')).should('be.visible');
+    });
+
+    cy.get('nav').contains('Histórico').click();
+    cy.get('input[placeholder*="Buscar por número"]').type(clienteNome);
+    cy.contains('tr', clienteNome, { timeout: 8000 }).click();
+    cy.get('@numeroOriginal').then(numeroOriginal => {
+      cy.contains('h3', `Proposta ${numeroOriginal}`).should('be.visible');
+    });
+    cy.contains('Obra de teste Cypress (editada)').should('be.visible');
   });
 
   it('remove a proposta de teste e confirma que sumiu da lista', () => {

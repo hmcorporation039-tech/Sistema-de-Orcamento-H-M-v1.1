@@ -38,6 +38,7 @@ router.get('/propostas/:id/pdf', autenticar, propCtrl.gerarPdf);
 router.post('/propostas/:id/enviar-email', autenticar, propCtrl.enviarEmail);
 router.get('/propostas/:id', autenticar, propCtrl.buscarUma);
 router.post('/propostas', autenticar, propCtrl.criar);
+router.put('/propostas/:id', autenticar, propCtrl.atualizar);
 router.post('/propostas/:id/duplicar', autenticar, propCtrl.duplicar);
 router.patch('/propostas/:id/status', autenticar, propCtrl.atualizarStatus);
 router.delete('/propostas/:id', autenticar, propCtrl.remover);
