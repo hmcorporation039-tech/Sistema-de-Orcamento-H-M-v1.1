@@ -17,9 +17,11 @@ describe('Orçamento → Histórico (fluxo completo)', () => {
     cy.get('@itemMaterial').closest('div').find('input').eq(4).clear().type('50');
 
     // Item na seção "Mão de Obra" (2ª seção): 1 x R$ 200,00 = R$ 200,00
+    // (linha de mão de obra não tem NCM, então os índices dos campos mudam:
+    // 0=descrição, 1=quantidade, 2=unidade, 3=valor unitário)
     cy.get('button:contains("Adicionar item")').eq(1).click();
     cy.get('input[placeholder="Descrição do item"]').last().as('itemServico').type('Item Cypress Serviço');
-    cy.get('@itemServico').closest('div').find('input').eq(4).clear().type('200');
+    cy.get('@itemServico').closest('div').find('input').eq(3).clear().type('200');
 
     // Materiais 100 + Mão de obra 200 = 300; BDI padrão 20% = 60; total = 360
     cy.contains(/R\$\s?100,00/).should('be.visible');
@@ -29,6 +31,15 @@ describe('Orçamento → Histórico (fluxo completo)', () => {
 
     cy.contains('button', 'Salvar Proposta').click();
     cy.contains(/salva com sucesso/i, { timeout: 10000 }).should('be.visible');
+
+    // Após salvar, a proposta continua visível na própria aba Orçamento,
+    // com os botões de ação, em vez de sumir/voltar ao formulário vazio.
+    cy.contains(/proposta .* salva/i).should('be.visible');
+    cy.contains('button', 'Baixar PDF').should('be.visible');
+    cy.contains('button', 'Enviar E-mail').should('be.visible');
+    cy.contains('button', 'Novo Orçamento').should('be.visible');
+    cy.contains('button', 'Salvar Proposta').should('not.exist');
+    cy.get('input[placeholder="Nome do cliente"]').should('have.value', clienteNome);
   });
 
   it('encontra a proposta no Histórico, muda o status e baixa o PDF', () => {

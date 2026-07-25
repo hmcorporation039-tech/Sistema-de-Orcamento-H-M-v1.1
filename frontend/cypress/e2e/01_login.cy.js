@@ -15,6 +15,7 @@ describe('Login', () => {
       expect(response.statusCode).to.eq(401);
       expect(response.body.erro).to.match(/e-mail ou senha incorretos/i);
     });
+    cy.contains(/e-mail ou senha incorretos/i).should('be.visible');
     cy.url().should('include', '/login');
   });
 

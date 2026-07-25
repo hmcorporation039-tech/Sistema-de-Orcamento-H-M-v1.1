@@ -1,6 +1,6 @@
 const puppeteer = require('puppeteer');
 const pool = require('../config/database');
-const { gerarHtmlProposta } = require('../utils/pdfTemplate');
+const { gerarHtmlProposta, gerarFooterTemplate } = require('../utils/pdfTemplate');
 const { criarTransportador } = require('../utils/smtpClient');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
 
@@ -51,7 +51,13 @@ async function listar(req, res) {
 async function buscarUma(req, res) {
   const { id } = req.params;
   try {
-    const proposta = await pool.query('SELECT * FROM propostas WHERE id = $1', [id]);
+    const proposta = await pool.query(
+      `SELECT p.*, c.email AS cliente_email
+       FROM propostas p
+       LEFT JOIN clientes c ON p.cliente_id = c.id
+       WHERE p.id = $1`,
+      [id]
+    );
     if (proposta.rows.length === 0) return res.status(404).json({ erro: 'Proposta não encontrada' });
 
     const secoes = await pool.query(
@@ -124,11 +130,11 @@ async function criar(req, res) {
           const it = secItens[j];
           await client.query(
             `INSERT INTO proposta_itens
-             (proposta_id, secao_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, ordem)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+             (proposta_id, secao_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, codigo, ordem)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
             [proposta.id, secId, it.desc || it.descricao, it.qtd || it.quantidade || 1,
              it.un || it.unidade, it.vu || it.valor_unitario || 0,
-             (it.qtd || 1) * (it.vu || 0), it.ncm || null, j]
+             (it.qtd || 1) * (it.vu || 0), it.ncm || null, it.codigo || null, j]
           );
         }
       }
@@ -199,9 +205,9 @@ async function duplicar(req, res) {
       for (const it of itensDaSecao) {
         await client.query(
           `INSERT INTO proposta_itens
-           (proposta_id, secao_id, material_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, ordem)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-          [nova.id, novoSecId, it.material_id, it.descricao, it.quantidade, it.unidade, it.valor_unitario, it.valor_total, it.ncm, it.ordem]
+           (proposta_id, secao_id, material_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, codigo, ordem)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [nova.id, novoSecId, it.material_id, it.descricao, it.quantidade, it.unidade, it.valor_unitario, it.valor_total, it.ncm, it.codigo, it.ordem]
         );
       }
     }
@@ -278,7 +284,13 @@ async function montarPdfBuffer(id) {
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });
-    const pdf = await page.pdf({ format: 'A4', printBackground: true, margin: { top: '18mm', bottom: '16mm', left: '14mm', right: '14mm' } });
+    const pdf = await page.pdf({
+      format: 'A4', printBackground: true,
+      margin: { top: '12mm', bottom: '24mm', left: '14mm', right: '14mm' },
+      displayHeaderFooter: true,
+      headerTemplate: '<div></div>',
+      footerTemplate: gerarFooterTemplate(),
+    });
     return { proposta: proposta.rows[0], pdf };
   } finally {
     await browser.close();

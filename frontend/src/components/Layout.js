@@ -27,24 +27,32 @@ export default function Layout() {
       {/* Header */}
       <header style={{
         background: '#0f0f0f', borderBottom: '2px solid #c9a227',
-        padding: '10px 20px', display: 'flex', alignItems: 'center',
-        gap: 14, position: 'sticky', top: 0, zIndex: 50
+        padding: '8px 20px', display: 'flex', alignItems: 'center',
+        gap: 16, position: 'sticky', top: 0, zIndex: 50
       }}>
         <div style={{
-          width: 52, height: 52, borderRadius: '50%',
-          border: '2px solid #c9a227', overflow: 'hidden',
-          background: '#111', flexShrink: 0,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: '#c9a227', fontWeight: 700, fontSize: 15, letterSpacing: '.5px'
+          width: 76, height: 76, flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
         }}>
-          H&amp;M
+          <img src="/logo.png" alt="H&M" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         </div>
 
-        <div style={{ flex: 1 }}>
-          <h1 style={{ fontSize: 15, fontWeight: 700, color: '#c9a227' }}>
-            H&M Engenharia e Tecnologia
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h1 style={{
+            fontFamily: "'Playfair Display', Georgia, serif",
+            fontSize: 20, fontWeight: 700, color: '#c9a227',
+            letterSpacing: '.5px', lineHeight: 1, whiteSpace: 'nowrap'
+          }}>
+            H&amp;M
           </h1>
-          <p style={{ fontSize: 10, color: '#555', marginTop: 2 }}>
+          <p style={{
+            fontFamily: "'Playfair Display', Georgia, serif",
+            fontSize: 11, color: '#c9a227', letterSpacing: '.3px',
+            marginTop: 3, whiteSpace: 'nowrap'
+          }}>
+            Engenharia e Tecnologia LTDA
+          </p>
+          <p style={{ fontSize: 10, color: '#555', marginTop: 3, letterSpacing: '.2px', whiteSpace: 'nowrap' }}>
             CNPJ 04.003.376/0001-00 · Taguatinga Norte, Brasília-DF
           </p>
         </div>

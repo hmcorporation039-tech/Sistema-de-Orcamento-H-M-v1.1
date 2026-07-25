@@ -26,15 +26,19 @@ app.use('/api', routes);
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', sistema: 'H&M Engenharia', versao: '1.1.0' });
+  res.json({ status: 'ok', sistema: 'H&M Engenharia', versao: '1.3.0' });
 });
 
 // Serve o build de produção do frontend, se existir (permite um único
 // processo/porta em vez de precisar do "npm start" do React separado).
 const buildFrontend = path.join(__dirname, '..', '..', 'frontend', 'build');
 if (fs.existsSync(buildFrontend)) {
-  app.use(express.static(buildFrontend));
+  // index.html nunca pode ficar em cache: ele referencia os arquivos JS/CSS
+  // com hash do build atual, e um index.html velho no navegador faz a
+  // interface parecer "sem as mudanças" mesmo depois de recarregar a página.
+  app.use(express.static(buildFrontend, { index: false }));
   app.get(/^(?!\/api|\/health).*/, (req, res) => {
+    res.set('Cache-Control', 'no-store');
     res.sendFile(path.join(buildFrontend, 'index.html'));
   });
 }

@@ -1,8 +1,10 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, FolderPlus } from 'lucide-react';
+import { Plus, Trash2, FolderPlus, FileDown, Send, FilePlus2 } from 'lucide-react';
 import { getClientes, getMateriais, getProximoNumero, criarProposta } from '../services/api';
+import api from '../services/api';
 import { formatarMoeda } from '../utils/format';
+import ModalEnviarEmail from '../components/ModalEnviarEmail';
 
 let contador = 0;
 const gerarId = () => `tmp_${Date.now()}_${contador++}`;
@@ -30,6 +32,10 @@ function ehMaoDeObra(nome) {
   return /m[ãa]o.?de.?obra|serviç|servic/i.test(nome || '');
 }
 
+const CATEGORIAS_MAO_DE_OBRA = [
+  'Elétrica', 'Projetos', 'Automação', 'Cabeamento Estruturado', 'Controle de Acesso', 'CFTV', 'Configuração',
+];
+
 export default function Orcamento() {
   const [proximoNumero, setProximoNumero] = useState(null);
   const [clientes, setClientes] = useState([]);
@@ -39,6 +45,9 @@ export default function Orcamento() {
   const [secoes, setSecoes] = useState(SECOES_PADRAO);
   const [itens, setItens] = useState([]);
   const [salvando, setSalvando] = useState(false);
+  const [propostaSalva, setPropostaSalva] = useState(null);
+  const [gerandoPdf, setGerandoPdf] = useState(false);
+  const [modalEmail, setModalEmail] = useState(false);
 
   useEffect(() => {
     getProximoNumero().then(res => setProximoNumero(res.data.proximo)).catch(() => {});
@@ -86,7 +95,7 @@ export default function Orcamento() {
   function adicionarItem(sid) {
     setItens(it => [...it, {
       id: gerarId(), sid, material_id: null,
-      descricao: '', quantidade: 1, unidade: 'un', valor_unitario: 0, ncm: ''
+      descricao: '', quantidade: 1, unidade: 'un', valor_unitario: 0, ncm: '', codigo: ''
     }]);
   }
 
@@ -99,8 +108,13 @@ export default function Orcamento() {
     if (!mat) return;
     setItens(it => it.map(i => i.id === id ? {
       ...i, material_id: mat.id, descricao: mat.descricao, unidade: mat.unidade,
-      valor_unitario: mat.preco, ncm: mat.ncm || ''
+      valor_unitario: mat.preco, ncm: mat.ncm || '', codigo: mat.codigo || ''
     } : i));
+  }
+
+  function aplicarCategoriaMaoDeObra(id, categoria) {
+    if (!categoria) return;
+    setItens(it => it.map(i => i.id === id ? { ...i, descricao: categoria } : i));
   }
 
   function removerItem(id) {
@@ -111,6 +125,32 @@ export default function Orcamento() {
     setForm(FORM_VAZIO);
     setSecoes(SECOES_PADRAO());
     setItens([]);
+  }
+
+  function novoOrcamento() {
+    limparFormulario();
+    setPropostaSalva(null);
+    getProximoNumero().then(r => setProximoNumero(r.data.proximo)).catch(() => {});
+  }
+
+  async function baixarPdf() {
+    if (!propostaSalva) return;
+    setGerandoPdf(true);
+    try {
+      const res = await api.get(`/propostas/${propostaSalva.id}/pdf`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Proposta_${propostaSalva.numero}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Erro ao gerar PDF');
+    } finally {
+      setGerandoPdf(false);
+    }
   }
 
   async function salvar() {
@@ -144,13 +184,13 @@ export default function Orcamento() {
         secoes: secoes.map(s => ({ id: s.id, nome: s.nome })),
         itens: itens.map(it => ({
           sid: it.sid, desc: it.descricao, qtd: Number(it.quantidade) || 0,
-          un: it.unidade, vu: Number(it.valor_unitario) || 0, ncm: it.ncm || null
+          un: it.unidade, vu: Number(it.valor_unitario) || 0, ncm: it.ncm || null,
+          codigo: it.codigo || null
         })),
       };
       const res = await criarProposta(payload);
       toast.success(res.data.mensagem || 'Proposta salva com sucesso!');
-      limparFormulario();
-      getProximoNumero().then(r => setProximoNumero(r.data.proximo)).catch(() => {});
+      setPropostaSalva(res.data);
     } catch (err) {
       toast.error(err.response?.data?.erro || 'Erro ao salvar proposta');
     } finally {
@@ -226,53 +266,72 @@ export default function Orcamento() {
       </div>
 
       {/* Seções e itens */}
-      {secoes.map(sec => (
-        <div key={sec.id} style={card}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <input
-              value={sec.nome}
-              onChange={e => renomearSecao(sec.id, e.target.value)}
-              style={{ fontWeight: 700, color: '#c9a227', fontSize: 13, flex: 1, background: 'transparent', border: '1px solid transparent' }}
-              onFocus={e => e.target.style.border = '1px solid #2a2a2a'}
-              onBlur={e => e.target.style.border = '1px solid transparent'}
-            />
-            <span style={{ fontSize: 12, color: '#666' }}>Subtotal: <b style={{ color: '#c9a227' }}>{formatarMoeda(subtotalSecao(sec.id))}</b></span>
-            <button onClick={() => removerSecao(sec.id)} style={{ ...btnIcone, color: '#b04040' }} title="Remover seção">
-              <Trash2 size={13} />
-            </button>
-          </div>
+      {secoes.map(sec => {
+        const maoDeObra = ehMaoDeObra(sec.nome);
+        const colunas = maoDeObra
+          ? '1.2fr 3.1fr 0.7fr 0.7fr 0.9fr 0.9fr 32px'
+          : '1.2fr 2.4fr 0.9fr 0.7fr 0.7fr 0.9fr 0.9fr 32px';
 
-          {itens.filter(it => it.sid === sec.id).length > 0 && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 2.4fr 0.9fr 0.7fr 0.7fr 0.9fr 0.9fr 32px', gap: 8, marginBottom: 6, fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px' }}>
-              <span>Catálogo</span><span>Descrição</span><span>NCM/SH</span><span>Qtd</span><span>Un.</span><span>Vlr. Unit.</span><span>Total</span><span />
-            </div>
-          )}
-
-          {itens.filter(it => it.sid === sec.id).map(it => (
-            <div key={it.id} style={{ display: 'grid', gridTemplateColumns: '1.2fr 2.4fr 0.9fr 0.7fr 0.7fr 0.9fr 0.9fr 32px', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-              <select value="" onChange={e => aplicarMaterialNoItem(it.id, e.target.value)}>
-                <option value="">+ catálogo</option>
-                {materiais.map(m => <option key={m.id} value={m.id}>{m.descricao}</option>)}
-              </select>
-              <input value={it.descricao} onChange={e => atualizarItem(it.id, 'descricao', e.target.value)} placeholder="Descrição do item" />
-              <input value={it.ncm} onChange={e => atualizarItem(it.id, 'ncm', e.target.value.replace(/[^\d.]/g, ''))} placeholder="NCM/SH" />
-              <input type="number" step="0.01" min="0" value={it.quantidade} onChange={e => atualizarItem(it.id, 'quantidade', e.target.value)} />
-              <input value={it.unidade} onChange={e => atualizarItem(it.id, 'unidade', e.target.value)} />
-              <input type="number" step="0.01" min="0" value={it.valor_unitario} onChange={e => atualizarItem(it.id, 'valor_unitario', e.target.value)} />
-              <span style={{ fontSize: 12, color: '#ccc', textAlign: 'right', paddingRight: 4 }}>
-                {formatarMoeda((Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0))}
-              </span>
-              <button onClick={() => removerItem(it.id)} style={{ ...btnIcone, color: '#b04040' }} title="Remover item">
-                <Trash2 size={12} />
+        return (
+          <div key={sec.id} style={card}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <input
+                value={sec.nome}
+                onChange={e => renomearSecao(sec.id, e.target.value)}
+                style={{ fontWeight: 700, color: '#c9a227', fontSize: 13, flex: 1, background: 'transparent', border: '1px solid transparent' }}
+                onFocus={e => e.target.style.border = '1px solid #2a2a2a'}
+                onBlur={e => e.target.style.border = '1px solid transparent'}
+              />
+              <span style={{ fontSize: 12, color: '#666' }}>Subtotal: <b style={{ color: '#c9a227' }}>{formatarMoeda(subtotalSecao(sec.id))}</b></span>
+              <button onClick={() => removerSecao(sec.id)} style={{ ...btnIcone, color: '#b04040' }} title="Remover seção">
+                <Trash2 size={13} />
               </button>
             </div>
-          ))}
 
-          <button onClick={() => adicionarItem(sec.id)} style={{ ...btnSecundario, marginTop: 4 }}>
-            <Plus size={13} style={{ marginRight: 4 }} /> Adicionar item
-          </button>
-        </div>
-      ))}
+            {itens.filter(it => it.sid === sec.id).length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, marginBottom: 6, fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px' }}>
+                <span>{maoDeObra ? 'Categoria' : 'Catálogo'}</span>
+                <span>Descrição</span>
+                {!maoDeObra && <span>NCM/SH</span>}
+                <span>Qtd</span><span>Un.</span><span>Vlr. Unit.</span><span>Total</span><span />
+              </div>
+            )}
+
+            {itens.filter(it => it.sid === sec.id).map(it => (
+              <div key={it.id} style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                {maoDeObra ? (
+                  <select value="" onChange={e => aplicarCategoriaMaoDeObra(it.id, e.target.value)}>
+                    <option value="">+ categoria</option>
+                    {CATEGORIAS_MAO_DE_OBRA.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                ) : (
+                  <select value="" onChange={e => aplicarMaterialNoItem(it.id, e.target.value)}>
+                    <option value="">+ catálogo</option>
+                    {materiais.map(m => <option key={m.id} value={m.id}>{m.descricao}</option>)}
+                  </select>
+                )}
+                <input value={it.descricao} onChange={e => atualizarItem(it.id, 'descricao', e.target.value)} placeholder="Descrição do item" />
+                {!maoDeObra && (
+                  <input value={it.ncm} onChange={e => atualizarItem(it.id, 'ncm', e.target.value.replace(/[^\d.]/g, ''))} placeholder="NCM/SH" />
+                )}
+                <input type="number" step="0.01" min="0" value={it.quantidade} onChange={e => atualizarItem(it.id, 'quantidade', e.target.value)} />
+                <input value={it.unidade} onChange={e => atualizarItem(it.id, 'unidade', e.target.value)} />
+                <input type="number" step="0.01" min="0" value={it.valor_unitario} onChange={e => atualizarItem(it.id, 'valor_unitario', e.target.value)} />
+                <span style={{ fontSize: 12, color: '#ccc', textAlign: 'right', paddingRight: 4 }}>
+                  {formatarMoeda((Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0))}
+                </span>
+                <button onClick={() => removerItem(it.id)} style={{ ...btnIcone, color: '#b04040' }} title="Remover item">
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ))}
+
+            <button onClick={() => adicionarItem(sec.id)} style={{ ...btnSecundario, marginTop: 4 }}>
+              <Plus size={13} style={{ marginRight: 4 }} /> Adicionar item
+            </button>
+          </div>
+        );
+      })}
 
       <button onClick={adicionarSecao} style={{ ...btnSecundario, marginBottom: 18 }}>
         <FolderPlus size={13} style={{ marginRight: 4 }} /> Adicionar seção
@@ -292,11 +351,35 @@ export default function Orcamento() {
             <div style={rotulo}>Total geral</div>
             <div style={{ fontSize: 22, fontWeight: 700, color: '#c9a227' }}>{formatarMoeda(total)}</div>
           </div>
-          <button onClick={salvar} disabled={salvando} style={{ ...btnPrimario, padding: '13px 26px', fontSize: 13 }}>
-            {salvando ? 'Salvando...' : 'Salvar Proposta'}
-          </button>
+          {propostaSalva ? (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: '#3fb95f', marginRight: 4, whiteSpace: 'nowrap' }}>
+                ✓ Proposta {propostaSalva.numero} salva
+              </span>
+              <button onClick={baixarPdf} disabled={gerandoPdf} style={btnSecundario}>
+                <FileDown size={13} style={{ marginRight: 4 }} /> {gerandoPdf ? 'Gerando...' : 'Baixar PDF'}
+              </button>
+              <button onClick={() => setModalEmail(true)} style={btnSecundario}>
+                <Send size={13} style={{ marginRight: 4 }} /> Enviar E-mail
+              </button>
+              <button onClick={novoOrcamento} style={{ ...btnPrimario, padding: '13px 20px', fontSize: 13 }}>
+                <FilePlus2 size={13} style={{ marginRight: 4 }} /> Novo Orçamento
+              </button>
+            </div>
+          ) : (
+            <button onClick={salvar} disabled={salvando} style={{ ...btnPrimario, padding: '13px 26px', fontSize: 13 }}>
+              {salvando ? 'Salvando...' : 'Salvar Proposta'}
+            </button>
+          )}
         </div>
       </div>
+
+      <ModalEnviarEmail
+        aberto={modalEmail}
+        onFechar={() => setModalEmail(false)}
+        proposta={propostaSalva}
+        emailInicial={clienteResolvido?.email || ''}
+      />
     </div>
   );
 }

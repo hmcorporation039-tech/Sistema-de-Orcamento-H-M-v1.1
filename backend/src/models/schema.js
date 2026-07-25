@@ -116,6 +116,7 @@ async function criarTabelas() {
       )
     `);
     await client.query(`ALTER TABLE proposta_itens ADD COLUMN IF NOT EXISTS ncm VARCHAR(10)`);
+    await client.query(`ALTER TABLE proposta_itens ADD COLUMN IF NOT EXISTS codigo VARCHAR(20)`);
 
     // Tabela de sequência de propostas
     await client.query(`

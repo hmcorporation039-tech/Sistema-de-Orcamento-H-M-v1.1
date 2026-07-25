@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { Search, Trash2, X, FileDown, Copy, Send } from 'lucide-react';
-import { getPropostas, getProposta, atualizarStatus, removerProposta, duplicarProposta, enviarPropostaPorEmail } from '../services/api';
+import { getPropostas, getProposta, atualizarStatus, removerProposta, duplicarProposta } from '../services/api';
 import api from '../services/api';
 import { formatarMoeda, formatarData, formatarNcm } from '../utils/format';
 import Paginacao from '../components/Paginacao';
+import ModalEnviarEmail from '../components/ModalEnviarEmail';
 
 const STATUS_CORES = {
   Ativa: { bg: '#1a1a0a', cor: '#c9a227', borda: '#4a3d10' },
@@ -23,9 +24,6 @@ export default function Historico() {
   const [gerandoPdf, setGerandoPdf] = useState(false);
   const [duplicando, setDuplicando] = useState(false);
   const [modalEmail, setModalEmail] = useState(false);
-  const [destinatarioEmail, setDestinatarioEmail] = useState('');
-  const [mensagemEmail, setMensagemEmail] = useState('');
-  const [enviandoEmail, setEnviandoEmail] = useState(false);
   const [pagina, setPagina] = useState(1);
   const [paginacao, setPaginacao] = useState({ total: 0, totalPaginas: 1 });
 
@@ -101,30 +99,6 @@ export default function Historico() {
       toast.error(err.response?.data?.erro || 'Erro ao duplicar proposta');
     } finally {
       setDuplicando(false);
-    }
-  }
-
-  function abrirModalEmail() {
-    setDestinatarioEmail('');
-    setMensagemEmail('');
-    setModalEmail(true);
-  }
-
-  async function enviarEmail(e) {
-    e.preventDefault();
-    if (!destinatarioEmail.trim()) {
-      toast.error('Informe o e-mail de destino');
-      return;
-    }
-    setEnviandoEmail(true);
-    try {
-      const res = await enviarPropostaPorEmail(detalhe.id, destinatarioEmail.trim(), mensagemEmail.trim());
-      toast.success(res.data.mensagem);
-      setModalEmail(false);
-    } catch (err) {
-      toast.error(err.response?.data?.erro || 'Erro ao enviar proposta por e-mail');
-    } finally {
-      setEnviandoEmail(false);
     }
   }
 
@@ -293,7 +267,7 @@ export default function Historico() {
                   >
                     <Copy size={13} /> {duplicando ? 'Duplicando...' : 'Duplicar'}
                   </button>
-                  <button onClick={abrirModalEmail} style={btnSecundario}>
+                  <button onClick={() => setModalEmail(true)} style={btnSecundario}>
                     <Send size={13} /> Enviar por E-mail
                   </button>
                   <button
@@ -310,51 +284,12 @@ export default function Historico() {
         </div>
       )}
 
-      {modalEmail && (
-        <div style={overlay} onClick={() => setModalEmail(false)}>
-          <div style={{ ...modal, width: 420 }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18 }}>
-              <h3 style={{ color: '#c9a227', fontSize: 15, fontWeight: 700, flex: 1 }}>
-                Enviar Proposta {detalhe?.numero} por E-mail
-              </h3>
-              <button onClick={() => setModalEmail(false)} style={{ ...btnIcone, background: 'transparent' }}>
-                <X size={16} />
-              </button>
-            </div>
-            <form onSubmit={enviarEmail}>
-              <div style={{ marginBottom: 12 }}>
-                <label style={{ display: 'block', fontSize: 10, color: '#666', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>
-                  E-mail do cliente *
-                </label>
-                <input
-                  type="email"
-                  value={destinatarioEmail}
-                  onChange={e => setDestinatarioEmail(e.target.value)}
-                  placeholder="cliente@empresa.com"
-                  autoFocus
-                />
-              </div>
-              <div style={{ marginBottom: 12 }}>
-                <label style={{ display: 'block', fontSize: 10, color: '#666', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>
-                  Mensagem (opcional)
-                </label>
-                <textarea
-                  rows={4}
-                  value={mensagemEmail}
-                  onChange={e => setMensagemEmail(e.target.value)}
-                  placeholder="Deixe em branco para usar a mensagem padrão"
-                />
-              </div>
-              <div style={{ display: 'flex', gap: 10, marginTop: 18, justifyContent: 'flex-end' }}>
-                <button type="button" onClick={() => setModalEmail(false)} style={btnSecundario}>Cancelar</button>
-                <button type="submit" disabled={enviandoEmail} style={btnPrimario}>
-                  <Send size={13} /> {enviandoEmail ? 'Enviando...' : 'Enviar'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <ModalEnviarEmail
+        aberto={modalEmail}
+        onFechar={() => setModalEmail(false)}
+        proposta={detalhe}
+        emailInicial={detalhe?.cliente_email || ''}
+      />
     </div>
   );
 }

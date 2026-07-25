@@ -14,11 +14,13 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Trata erros de autenticação globalmente
+// Trata erros de autenticação globalmente — exceto na própria tela de login,
+// onde um 401 é só "senha errada" e precisa aparecer na tela, não recarregar.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 || error.response?.status === 403) {
+    const isLogin = error.config?.url?.includes('/auth/login');
+    if (!isLogin && (error.response?.status === 401 || error.response?.status === 403)) {
       localStorage.removeItem('hm_token');
       localStorage.removeItem('hm_usuario');
       window.location.href = '/login';

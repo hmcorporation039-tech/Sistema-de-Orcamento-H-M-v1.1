@@ -1,20 +1,13 @@
 @echo off
+title H^&M Engenharia - Sistema
 echo ================================
 echo  H^&M Engenharia - Sistema
 echo ================================
 echo.
 
-echo [1/2] Iniciando Backend (API)...
-start "H&M Backend" cmd /k "cd backend && npm run dev"
-
-timeout /t 3 /nobreak > nul
-
-echo [2/2] Iniciando Frontend (Interface)...
-start "H&M Frontend" cmd /k "cd frontend && npm start"
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "if (-not (Get-NetTCPConnection -LocalPort 3001 -ErrorAction SilentlyContinue)) { Write-Host 'Iniciando o sistema...'; Start-Process powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','C:\HM-Engenharia\hm-eng\backend\scripts\iniciar-producao.ps1' -WindowStyle Hidden; Start-Sleep -Seconds 5 } else { Write-Host 'Sistema ja esta em execucao.' }"
 
 echo.
-echo Sistema iniciando...
-echo Aguarde o navegador abrir automaticamente.
-echo.
-echo Para encerrar, feche as duas janelas do terminal.
-pause
+echo Abrindo o sistema no navegador...
+explorer.exe "http://localhost:3001"

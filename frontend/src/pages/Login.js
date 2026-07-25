@@ -7,13 +7,15 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState('');
   const { entrar } = useAuth();
   const navigate = useNavigate();
 
   async function handleSubmit(e) {
     e.preventDefault();
+    setErro('');
     if (!email || !senha) {
-      toast.error('Preencha e-mail e senha');
+      setErro('Preencha e-mail e senha');
       return;
     }
     setCarregando(true);
@@ -22,7 +24,7 @@ export default function Login() {
       navigate('/orcamento');
       toast.success('Bem-vindo ao sistema!');
     } catch (err) {
-      toast.error(err.response?.data?.erro || 'Erro ao fazer login');
+      setErro(err.response?.data?.erro || 'Erro ao fazer login');
     } finally {
       setCarregando(false);
     }
@@ -35,27 +37,38 @@ export default function Login() {
     }}>
       <div style={{
         background: '#131313', border: '1px solid #1e1e1e',
-        borderRadius: 12, padding: '40px 36px', width: 380,
+        borderRadius: 12, padding: '40px 36px', width: 420,
         boxShadow: '0 20px 60px #000000aa'
       }}>
         {/* Logo / Cabeçalho */}
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+        <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <div style={{
-            width: 72, height: 72, borderRadius: '50%',
-            border: '2px solid #c9a227', margin: '0 auto 16px',
-            overflow: 'hidden', background: '#000',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#c9a227', fontWeight: 700, fontSize: 20, letterSpacing: '.5px'
+            width: 160, height: 160, margin: '0 auto 18px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
           }}>
-            H&amp;M
+            <img src="/logo.png" alt="H&M" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
           </div>
-          <h1 style={{ color: '#c9a227', fontSize: 18, fontWeight: 700, marginBottom: 4 }}>
-            H&M Engenharia
+          <h1 style={{
+            fontFamily: "'Playfair Display', Georgia, serif",
+            color: '#c9a227', fontSize: 20, fontWeight: 700, marginBottom: 6,
+            letterSpacing: '.4px', textTransform: 'uppercase', lineHeight: 1.25
+          }}>
+            H&amp;M Engenharia e Tecnologia LTDA
           </h1>
           <p style={{ color: '#555', fontSize: 12 }}>Sistema de Orçamentos</p>
         </div>
 
         <form onSubmit={handleSubmit}>
+          {erro && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              background: '#1a0a0a', border: '1px solid #4a1a1a', borderRadius: 6,
+              padding: '10px 12px', marginBottom: 16, color: '#e08080', fontSize: 12
+            }}>
+              ⚠️ {erro}
+            </div>
+          )}
+
           <div style={{ marginBottom: 16 }}>
             <label style={{ display: 'block', fontSize: 11, color: '#666', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.5px' }}>
               E-mail
@@ -63,7 +76,7 @@ export default function Login() {
             <input
               type="email"
               value={email}
-              onChange={e => setEmail(e.target.value)}
+              onChange={e => { setEmail(e.target.value); setErro(''); }}
               placeholder="admin@hmengenharia.com"
               style={{
                 width: '100%', padding: '10px 12px', background: '#0b0b0b',
@@ -80,7 +93,7 @@ export default function Login() {
             <input
               type="password"
               value={senha}
-              onChange={e => setSenha(e.target.value)}
+              onChange={e => { setSenha(e.target.value); setErro(''); }}
               placeholder="••••••••"
               style={{
                 width: '100%', padding: '10px 12px', background: '#0b0b0b',
@@ -102,10 +115,6 @@ export default function Login() {
             {carregando ? 'Entrando...' : 'Entrar'}
           </button>
         </form>
-
-        <p style={{ textAlign: 'center', marginTop: 20, fontSize: 11, color: '#333' }}>
-          Login padrão: admin@hmengenharia.com / admin123
-        </p>
       </div>
     </div>
   );
