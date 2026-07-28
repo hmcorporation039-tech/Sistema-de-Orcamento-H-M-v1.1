@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Users, Package } from 'lucide-react';
+import { Users, Package, AlertTriangle } from 'lucide-react';
 import {
   getDashboardResumo, getDashboardPorMes, getDashboardTopClientes,
   getDashboardTopMateriais, getDashboardUltimas
@@ -67,7 +67,7 @@ export default function Dashboard() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18, gap: 12 }}>
-        <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>📊 Dashboard</h2>
+        <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>Dashboard</h2>
         <div style={{ display: 'flex', gap: 6 }}>
           {[3, 6, 12].map(m => (
             <button
@@ -85,6 +85,29 @@ export default function Dashboard() {
           ))}
         </div>
       </div>
+
+      {(resumo.vencidas > 0 || resumo.vencendoEmBreve > 0) && (
+        <div
+          onClick={() => navigate('/historico')}
+          style={{
+            ...card, marginBottom: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10,
+            borderColor: resumo.vencidas > 0 ? '#4a1a1a' : '#4a3a10',
+            background: resumo.vencidas > 0 ? '#1a0a0a' : '#1a1408',
+          }}
+        >
+          <AlertTriangle size={16} color={resumo.vencidas > 0 ? '#b04040' : '#d69a2d'} />
+          <span style={{ fontSize: 12, color: '#ccc' }}>
+            {resumo.vencidas > 0 && (
+              <span>{resumo.vencidas} proposta{resumo.vencidas > 1 ? 's' : ''} <b style={{ color: '#b04040' }}>vencida{resumo.vencidas > 1 ? 's' : ''}</b></span>
+            )}
+            {resumo.vencidas > 0 && resumo.vencendoEmBreve > 0 && ' · '}
+            {resumo.vencendoEmBreve > 0 && (
+              <span>{resumo.vencendoEmBreve} <b style={{ color: '#d69a2d' }}>vencendo</b> nos próximos 3 dias</span>
+            )}
+            {' '}— clique para ver no Histórico
+          </span>
+        </div>
+      )}
 
       {/* Cards de resumo */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, marginBottom: 18 }}>

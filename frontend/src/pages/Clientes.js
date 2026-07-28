@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { Plus, Search, Pencil, Trash2, X } from 'lucide-react';
 import { getClientes, criarCliente, atualizarCliente, removerCliente } from '../services/api';
 import Paginacao from '../components/Paginacao';
+import { formatarTelefone } from '../utils/format';
 
 const VAZIO = { nome: '', documento: '', tipo: 'Empresa', responsavel: '', telefone: '', email: '', endereco: '' };
 
@@ -91,7 +92,7 @@ export default function Clientes() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
-        <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>👥 Clientes</h2>
+        <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>Clientes</h2>
 
         <div style={{ position: 'relative', width: 260 }}>
           <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: '#555' }} />
@@ -134,7 +135,7 @@ export default function Clientes() {
                 <td style={td}>{c.tipo}</td>
                 <td style={td}>{c.documento || '—'}</td>
                 <td style={td}>{c.responsavel || '—'}</td>
-                <td style={td}>{c.telefone || '—'}</td>
+                <td style={td}>{formatarTelefone(c.telefone) || '—'}</td>
                 <td style={td}>{c.email || '—'}</td>
                 <td style={{ ...td, display: 'flex', gap: 6 }}>
                   <button onClick={() => abrirEdicao(c)} style={btnIcone} title="Editar">
@@ -189,7 +190,13 @@ export default function Clientes() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                 <Campo label="Telefone">
-                  <input value={form.telefone} onChange={e => setForm({ ...form, telefone: e.target.value })} />
+                  <input
+                    type="tel"
+                    value={form.telefone}
+                    onChange={e => setForm({ ...form, telefone: formatarTelefone(e.target.value) })}
+                    placeholder="(11) 99999-9999"
+                    maxLength={15}
+                  />
                 </Campo>
                 <Campo label="E-mail">
                   <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />

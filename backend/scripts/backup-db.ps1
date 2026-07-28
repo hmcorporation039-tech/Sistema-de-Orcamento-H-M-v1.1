@@ -1,4 +1,4 @@
-# Backup diario do banco hm_orcamentos. Gera um .sql.zip em backend/backups/
+﻿# Backup diario do banco hm_orcamentos. Gera um .sql.zip em backend/backups/
 # e apaga backups com mais de 30 dias. Pensado para rodar via Agendador de
 # Tarefas do Windows (veja instrucoes-agendador.txt na mesma pasta).
 
@@ -51,3 +51,19 @@ Get-ChildItem $backupDir -Filter "*.sql.zip" |
     Remove-Item -Force
 
 Write-Output "Backup concluido: $arquivoZip"
+
+# Sincroniza uma copia com o share de rede, para nao depender so do disco local.
+# Se a rede estiver indisponivel, o backup local (que ja terminou acima) nao e afetado.
+$destinoRede = "\\MARCIO-SERVER\Arquivos Gerais 2\H&M\Projeto do sistema de orçamentos\Backups"
+try {
+    if (-not (Test-Path $destinoRede)) { New-Item -ItemType Directory -Path $destinoRede -Force | Out-Null }
+    Copy-Item -Path $arquivoZip -Destination $destinoRede -Force
+
+    Get-ChildItem $destinoRede -Filter "*.sql.zip" |
+        Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-30) } |
+        Remove-Item -Force
+
+    Write-Output "Copia sincronizada com a rede: $destinoRede"
+} catch {
+    Write-Warning "Nao foi possivel sincronizar o backup com a rede ($destinoRede): $($_.Exception.Message)"
+}

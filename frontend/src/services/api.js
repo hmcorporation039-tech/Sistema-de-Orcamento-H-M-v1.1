@@ -81,6 +81,7 @@ export const getUsuarios = () => api.get('/usuarios');
 export const criarUsuario = (data) => api.post('/usuarios', data);
 export const atualizarUsuario = (id, data) => api.put(`/usuarios/${id}`, data);
 export const redefinirSenhaUsuario = (id, novaSenha) => api.post(`/usuarios/${id}/redefinir-senha`, { novaSenha });
+export const removerUsuario = (id) => api.delete(`/usuarios/${id}`);
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────
 export const getDashboardResumo = (params) => api.get('/dashboard/resumo', { params });

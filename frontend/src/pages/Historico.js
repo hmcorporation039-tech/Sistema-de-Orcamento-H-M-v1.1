@@ -15,6 +15,23 @@ const STATUS_CORES = {
   Cancelada: { bg: '#141414', cor: '#666', borda: '#2a2a2a' },
 };
 
+const ACAO_LABEL = {
+  criada: 'Criada',
+  editada: 'Editada',
+  status: 'Status alterado',
+  duplicada: 'Duplicada',
+};
+
+// Só faz sentido avisar sobre vencimento de propostas que ainda estão em aberto.
+function diasParaVencer(p) {
+  if (p.status !== 'Ativa' || !p.data) return null;
+  const dataLimite = new Date(p.data);
+  dataLimite.setUTCDate(dataLimite.getUTCDate() + (Number(p.validade) || 0));
+  const hoje = new Date();
+  const hojeUTC = Date.UTC(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+  return Math.round((dataLimite.getTime() - hojeUTC) / 86400000);
+}
+
 export default function Historico() {
   const navigate = useNavigate();
   const [propostas, setPropostas] = useState([]);
@@ -72,7 +89,7 @@ export default function Historico() {
       await atualizarStatus(id, status);
       toast.success(`Status atualizado para ${status}`);
       carregar();
-      if (detalhe?.id === id) setDetalhe(d => ({ ...d, status }));
+      if (detalhe?.id === id) abrirDetalhe(id);
     } catch {
       toast.error('Erro ao atualizar status');
     }
@@ -126,7 +143,7 @@ export default function Historico() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
-        <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>📁 Histórico de Propostas</h2>
+        <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>Histórico de Propostas</h2>
 
         <select value={statusFiltro} onChange={e => setStatusFiltro(e.target.value)} style={{ width: 150 }}>
           <option value="">Todos status</option>
@@ -169,6 +186,7 @@ export default function Historico() {
             )}
             {!carregando && propostas.map(p => {
               const cor = STATUS_CORES[p.status] || STATUS_CORES.Ativa;
+              const dias = diasParaVencer(p);
               return (
                 <tr key={p.id} style={{ borderTop: '1px solid #1e1e1e', cursor: 'pointer' }} onClick={() => abrirDetalhe(p.id)}>
                   <td style={{ ...td, color: '#c9a227', fontWeight: 700 }}>{p.numero}</td>
@@ -176,10 +194,20 @@ export default function Historico() {
                   <td style={td}>{p.cliente_nome}</td>
                   <td style={td}>{p.local_obra || '—'}</td>
                   <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{formatarMoeda(p.total)}</td>
-                  <td style={td}>
+                  <td style={{ ...td, whiteSpace: 'nowrap' }}>
                     <span style={{ padding: '3px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: cor.bg, color: cor.cor, border: `1px solid ${cor.borda}` }}>
                       {p.status}
                     </span>
+                    {dias !== null && dias < 0 && (
+                      <span style={{ marginLeft: 6, padding: '3px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: '#1a0a0a', color: '#b04040', border: '1px solid #4a1a1a' }}>
+                        Vencida
+                      </span>
+                    )}
+                    {dias !== null && dias >= 0 && dias <= 3 && (
+                      <span style={{ marginLeft: 6, padding: '3px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: '#1a1408', color: '#d69a2d', border: '1px solid #4a3a10' }}>
+                        {dias === 0 ? 'Vence hoje' : `Vence em ${dias}d`}
+                      </span>
+                    )}
                   </td>
                   <td style={{ ...td }} onClick={e => e.stopPropagation()}>
                     <button onClick={() => excluir(p)} style={{ ...btnIcone, color: '#b04040' }} title="Excluir">
@@ -292,6 +320,26 @@ export default function Historico() {
                     <FileDown size={13} /> {gerandoPdf ? 'Gerando...' : 'Baixar PDF'}
                   </button>
                 </div>
+
+                {detalhe.eventos?.length > 0 && (
+                  <div style={{ marginTop: 22, borderTop: '1px solid #2a2a2a', paddingTop: 14 }}>
+                    <h4 style={{ fontSize: 11, color: '#666', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 10 }}>
+                      Histórico de alterações
+                    </h4>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {detalhe.eventos.map((ev, i) => (
+                        <div key={i} style={{ display: 'flex', gap: 10, fontSize: 11, color: '#888', alignItems: 'baseline' }}>
+                          <span style={{ color: '#555', whiteSpace: 'nowrap' }}>
+                            {new Date(ev.criado_em).toLocaleString('pt-BR')}
+                          </span>
+                          <span style={{ color: '#c9a227', fontWeight: 700 }}>{ACAO_LABEL[ev.acao] || ev.acao}</span>
+                          <span>{ev.detalhes}</span>
+                          <span style={{ marginLeft: 'auto', color: '#666' }}>{ev.usuario_nome || '—'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>

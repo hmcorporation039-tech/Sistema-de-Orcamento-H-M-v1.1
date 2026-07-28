@@ -242,7 +242,7 @@ export default function Orcamento() {
         itens: itens.map(it => ({
           sid: it.sid, desc: it.descricao, qtd: Number(it.quantidade) || 0,
           un: it.unidade, vu: Number(it.valor_unitario) || 0, ncm: it.ncm || null,
-          codigo: it.codigo || null
+          codigo: it.codigo || null, material_id: it.material_id || null
         })),
       };
       const res = editandoId ? await atualizarProposta(editandoId, payload) : await criarProposta(payload);
@@ -263,7 +263,7 @@ export default function Orcamento() {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18 }}>
         <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>
-          {editandoId ? `✏️ Editando Proposta ${numeroEditando}` : '📋 Novo Orçamento'}
+          {editandoId ? `Editando Proposta ${numeroEditando}` : 'Novo Orçamento'}
         </h2>
         {!editandoId && proximoNumero != null && (
           <span style={{ fontSize: 12, color: '#666' }}>
@@ -429,7 +429,7 @@ export default function Orcamento() {
           {propostaSalva ? (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
               <span style={{ fontSize: 11, color: '#3fb95f', marginRight: 4, whiteSpace: 'nowrap' }}>
-                ✓ Proposta {propostaSalva.numero} salva
+                Proposta {propostaSalva.numero} salva
               </span>
               <button onClick={baixarPdf} disabled={gerandoPdf} style={btnSecundario}>
                 <FileDown size={13} style={{ marginRight: 4 }} /> {gerandoPdf ? 'Gerando...' : 'Baixar PDF'}

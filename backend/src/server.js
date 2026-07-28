@@ -45,7 +45,7 @@ if (fs.existsSync(buildFrontend)) {
 
 function agendarVerificacaoDeEmail() {
   if (!credenciaisConfiguradas()) {
-    console.log('ℹ️  Importação automática de notas por e-mail não configurada (veja EMAIL_IMAP_* no .env)');
+    console.log('Importação automática de notas por e-mail não configurada (veja EMAIL_IMAP_* no .env)');
     return;
   }
 
@@ -53,17 +53,17 @@ function agendarVerificacaoDeEmail() {
     try {
       const resumo = await verificarCaixaDeEntrada();
       if (resumo.emailsProcessados > 0) {
-        console.log(`📧 E-mails verificados: ${resumo.emailsProcessados}/${resumo.emailsEncontrados} — ${resumo.materiaisCriados} materiais criados, ${resumo.materiaisAtualizados} atualizados`);
+        console.log(`E-mails verificados: ${resumo.emailsProcessados}/${resumo.emailsEncontrados} — ${resumo.materiaisCriados} materiais criados, ${resumo.materiaisAtualizados} atualizados`);
       }
-      resumo.avisos.forEach(a => console.warn('📧 Aviso:', a));
+      resumo.avisos.forEach(a => console.warn('Aviso:', a));
     } catch (err) {
-      console.error('❌ Erro na verificação automática de e-mail:', err.message);
+      console.error('Erro na verificação automática de e-mail:', err.message);
     }
   };
 
   setTimeout(rodar, 10 * 1000);
   setInterval(rodar, INTERVALO_VERIFICACAO_EMAIL_MS);
-  console.log(`📧 Importação automática de notas por e-mail ativa (${VERIFICACOES_EMAIL_POR_DIA}x por dia, a cada ${INTERVALO_VERIFICACAO_EMAIL_MS / 3600000}h)`);
+  console.log(`Importação automática de notas por e-mail ativa (${VERIFICACOES_EMAIL_POR_DIA}x por dia, a cada ${INTERVALO_VERIFICACAO_EMAIL_MS / 3600000}h)`);
 }
 
 // Inicializar
@@ -71,14 +71,14 @@ async function iniciar() {
   try {
     await criarTabelas();
     app.listen(PORT, '0.0.0.0', () => {
-      console.log(`\n🚀 H&M Engenharia - API rodando na porta ${PORT}`);
-      console.log(`📡 Local:    http://localhost:${PORT}`);
-      console.log(`🌐 Rede:     http://SEU_IP:${PORT}`);
-      console.log(`❤️  Health:   http://localhost:${PORT}/health\n`);
+      console.log(`\nH&M Engenharia - API rodando na porta ${PORT}`);
+      console.log(`Local:    http://localhost:${PORT}`);
+      console.log(`Rede:     http://SEU_IP:${PORT}`);
+      console.log(`Health:   http://localhost:${PORT}/health\n`);
       agendarVerificacaoDeEmail();
     });
   } catch (err) {
-    console.error('❌ Erro ao iniciar servidor:', err.message);
+    console.error('Erro ao iniciar servidor:', err.message);
     process.exit(1);
   }
 }

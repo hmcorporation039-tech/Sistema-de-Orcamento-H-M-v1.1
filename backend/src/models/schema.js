@@ -126,6 +126,18 @@ async function criarTabelas() {
     await client.query(`ALTER TABLE proposta_itens ADD COLUMN IF NOT EXISTS ncm VARCHAR(10)`);
     await client.query(`ALTER TABLE proposta_itens ADD COLUMN IF NOT EXISTS codigo VARCHAR(20)`);
 
+    // Trilha de auditoria: registra criação, edição, mudança de status e duplicação de propostas
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS proposta_eventos (
+        id SERIAL PRIMARY KEY,
+        proposta_id INTEGER REFERENCES propostas(id) ON DELETE CASCADE,
+        usuario_id INTEGER REFERENCES usuarios(id),
+        acao VARCHAR(30) NOT NULL,
+        detalhes TEXT,
+        criado_em TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
     // Tabela de sequência de propostas
     await client.query(`
       CREATE TABLE IF NOT EXISTS configuracoes (
@@ -182,15 +194,15 @@ async function criarTabelas() {
         INSERT INTO usuarios (nome, email, senha, role)
         VALUES ('Administrador', 'admin@hmengenharia.com', $1, 'admin')
       `, [senhaHash]);
-      console.log('👤 Usuário admin criado: admin@hmengenharia.com / admin123');
+      console.log('Usuário admin criado: admin@hmengenharia.com / admin123');
     }
 
     await client.query('COMMIT');
-    console.log('✅ Tabelas criadas/verificadas com sucesso');
+    console.log('Tabelas criadas/verificadas com sucesso');
 
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error('❌ Erro ao criar tabelas:', err.message);
+    console.error('Erro ao criar tabelas:', err.message);
     throw err;
   } finally {
     client.release();

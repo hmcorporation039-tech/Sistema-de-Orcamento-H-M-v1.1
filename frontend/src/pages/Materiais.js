@@ -175,7 +175,7 @@ export default function Materiais() {
       const res = await verificarEmailAgora();
       const r = res.data;
       toast.success(`${r.emailsProcessados}/${r.emailsEncontrados} e-mails · ${r.materiaisCriados} materiais criados, ${r.materiaisAtualizados} atualizados`);
-      r.avisos?.forEach(a => toast(a, { icon: '⚠️' }));
+      r.avisos?.forEach(a => toast(a));
       setStatusEmail(s => ({ ...s, ultimaVerificacao: new Date().toISOString() }));
       carregar();
     } catch (err) {
@@ -242,7 +242,7 @@ export default function Materiais() {
         };
       }));
       if (res.data.fonte === 'pdf') {
-        toast('Leitura por PDF: confira categoria, unidade e preço antes de importar', { icon: '⚠️' });
+        toast('Leitura por PDF: confira categoria, unidade e preço antes de importar');
       } else {
         toast.success(`${res.data.itens.length} itens lidos do XML da NF-e`);
       }
@@ -295,7 +295,7 @@ export default function Materiais() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
-        <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>🗄️ Materiais</h2>
+        <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>Materiais</h2>
 
         <select value={categoriaFiltro} onChange={e => setCategoriaFiltro(e.target.value)} style={{ width: 170 }}>
           <option value="">Todas categorias</option>

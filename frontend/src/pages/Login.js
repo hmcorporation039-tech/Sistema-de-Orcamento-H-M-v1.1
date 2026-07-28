@@ -65,7 +65,7 @@ export default function Login() {
               background: '#1a0a0a', border: '1px solid #4a1a1a', borderRadius: 6,
               padding: '10px 12px', marginBottom: 16, color: '#e08080', fontSize: 12
             }}>
-              ⚠️ {erro}
+              {erro}
             </div>
           )}
 

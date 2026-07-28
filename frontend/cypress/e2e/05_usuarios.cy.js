@@ -62,4 +62,12 @@ describe('Usuários (admin)', () => {
     cy.visit('/usuarios');
     cy.url().should('include', '/dashboard');
   });
+
+  it('exclui o usuário de teste e confirma que sumiu da lista', () => {
+    cy.login();
+    cy.visit('/usuarios');
+    cy.contains('tr', email, { timeout: 8000 }).find('button[title="Excluir"]').click();
+    cy.contains(/usuário excluído/i).should('be.visible');
+    cy.contains('td', email).should('not.exist');
+  });
 });

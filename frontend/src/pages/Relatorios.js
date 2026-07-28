@@ -82,7 +82,7 @@ export default function Relatorios() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18 }}>
-        <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>📈 Relatórios</h2>
+        <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>Relatórios</h2>
       </div>
 
       {/* Filtros */}

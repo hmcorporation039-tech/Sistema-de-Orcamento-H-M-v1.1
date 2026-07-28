@@ -4,6 +4,14 @@ const { gerarHtmlProposta, gerarFooterTemplate } = require('../utils/pdfTemplate
 const { criarTransportador } = require('../utils/smtpClient');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
 
+// Registra um evento na trilha de auditoria da proposta (criação, edição, status, duplicação)
+async function registrarEvento(client, propostaId, usuarioId, acao, detalhes) {
+  await client.query(
+    'INSERT INTO proposta_eventos (proposta_id, usuario_id, acao, detalhes) VALUES ($1,$2,$3,$4)',
+    [propostaId, usuarioId, acao, detalhes || null]
+  );
+}
+
 // Pega e incrementa o número sequencial
 async function proximoNumero(client) {
   const result = await client.query(
@@ -68,11 +76,20 @@ async function buscarUma(req, res) {
       'SELECT * FROM proposta_itens WHERE proposta_id = $1 ORDER BY ordem',
       [id]
     );
+    const eventos = await pool.query(
+      `SELECT pe.acao, pe.detalhes, pe.criado_em, u.nome AS usuario_nome
+       FROM proposta_eventos pe
+       LEFT JOIN usuarios u ON pe.usuario_id = u.id
+       WHERE pe.proposta_id = $1
+       ORDER BY pe.criado_em DESC`,
+      [id]
+    );
 
     res.json({
       ...proposta.rows[0],
       secoes: secoes.rows,
-      itens: itens.rows
+      itens: itens.rows,
+      eventos: eventos.rows
     });
   } catch (err) {
     res.status(500).json({ erro: 'Erro ao buscar proposta' });
@@ -133,15 +150,17 @@ async function criar(req, res) {
           const it = secItens[j];
           await client.query(
             `INSERT INTO proposta_itens
-             (proposta_id, secao_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, codigo, ordem)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-            [proposta.id, secId, it.desc || it.descricao, it.qtd || it.quantidade || 1,
+             (proposta_id, secao_id, material_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, codigo, ordem)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+            [proposta.id, secId, it.material_id || null, it.desc || it.descricao, it.qtd || it.quantidade || 1,
              it.un || it.unidade, it.vu || it.valor_unitario || 0,
              (it.qtd || 1) * (it.vu || 0), it.ncm || null, it.codigo || null, j]
           );
         }
       }
     }
+
+    await registrarEvento(client, proposta.id, req.usuario.id, 'criada', `Proposta ${numero} criada`);
 
     await client.query('COMMIT');
     res.status(201).json({ ...proposta, mensagem: `Proposta ${numero} salva com sucesso!` });
@@ -214,15 +233,17 @@ async function atualizar(req, res) {
           const it = secItens[j];
           await client.query(
             `INSERT INTO proposta_itens
-             (proposta_id, secao_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, codigo, ordem)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-            [proposta.id, secId, it.desc || it.descricao, it.qtd || it.quantidade || 1,
+             (proposta_id, secao_id, material_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, codigo, ordem)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+            [proposta.id, secId, it.material_id || null, it.desc || it.descricao, it.qtd || it.quantidade || 1,
              it.un || it.unidade, it.vu || it.valor_unitario || 0,
              (it.qtd || 1) * (it.vu || 0), it.ncm || null, it.codigo || null, j]
           );
         }
       }
     }
+
+    await registrarEvento(client, proposta.id, req.usuario.id, 'editada', 'Dados e itens da proposta foram editados');
 
     await client.query('COMMIT');
     res.json({ ...proposta, mensagem: `Proposta ${proposta.numero} atualizada com sucesso!` });
@@ -298,6 +319,8 @@ async function duplicar(req, res) {
       }
     }
 
+    await registrarEvento(client, nova.id, req.usuario.id, 'duplicada', `Duplicada a partir da proposta ${p.numero}`);
+
     await client.query('COMMIT');
     res.status(201).json({ ...nova, mensagem: `Proposta duplicada como ${numero}` });
   } catch (err) {
@@ -324,6 +347,7 @@ async function atualizarStatus(req, res) {
       [status, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Proposta não encontrada' });
+    await registrarEvento(pool, id, req.usuario.id, 'status', `Status alterado para ${status}`);
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ erro: 'Erro ao atualizar status' });

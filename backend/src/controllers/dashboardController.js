@@ -38,6 +38,15 @@ async function resumo(req, res) {
         (SELECT count(*) FROM materiais WHERE ativo = true) AS materiais`
     );
 
+    // Independe da janela de meses selecionada: reflete o estado atual das propostas em aberto
+    const vencimentos = await pool.query(
+      `SELECT
+        count(*) FILTER (WHERE (data + (validade || ' days')::interval)::date < CURRENT_DATE) AS vencidas,
+        count(*) FILTER (WHERE (data + (validade || ' days')::interval)::date BETWEEN CURRENT_DATE AND CURRENT_DATE + 3) AS vencendo_em_breve
+       FROM propostas
+       WHERE status = 'Ativa'`
+    );
+
     const t = totais.rows[0];
     const decididas = Number(t.aprovadas) + Number(t.recusadas);
     const taxaAprovacao = decididas > 0 ? (Number(t.aprovadas) / decididas) * 100 : 0;
@@ -56,6 +65,8 @@ async function resumo(req, res) {
       status,
       clientes: Number(cadastros.rows[0].clientes),
       materiais: Number(cadastros.rows[0].materiais),
+      vencidas: Number(vencimentos.rows[0].vencidas),
+      vencendoEmBreve: Number(vencimentos.rows[0].vencendo_em_breve),
     });
   } catch (err) {
     console.error('Erro ao buscar resumo do dashboard:', err);

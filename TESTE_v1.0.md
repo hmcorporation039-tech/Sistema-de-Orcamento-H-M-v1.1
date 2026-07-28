@@ -10,12 +10,12 @@
 
 | Módulo | Descrição | Status |
 |---|---|---|
-| Login / Autenticação | JWT, usuário admin padrão | ✅ Concluído |
-| Clientes | Cadastro, edição, busca, remoção | ✅ Concluído |
-| Materiais | Catálogo, categorias, busca, importação em massa | ✅ Concluído |
-| Orçamento | Montagem de proposta por seções/itens, cálculo de BDI e totais | ✅ Concluído |
-| Histórico | Listagem, filtro por status, detalhe, mudança de status | ✅ Concluído |
-| PDF | Geração da proposta em PDF para envio ao cliente | ✅ Concluído |
+| Login / Autenticação | JWT, usuário admin padrão | Concluído |
+| Clientes | Cadastro, edição, busca, remoção | Concluído |
+| Materiais | Catálogo, categorias, busca, importação em massa | Concluído |
+| Orçamento | Montagem de proposta por seções/itens, cálculo de BDI e totais | Concluído |
+| Histórico | Listagem, filtro por status, detalhe, mudança de status | Concluído |
+| PDF | Geração da proposta em PDF para envio ao cliente | Concluído |
 
 ---
 
@@ -25,17 +25,17 @@ Os testes abaixo foram executados de ponta a ponta contra o backend real, com o 
 
 | # | Teste | Resultado |
 |---|---|---|
-| 1 | `GET /health` | ✅ `{"status":"ok"}` |
-| 2 | `POST /auth/login` com `admin@hmengenharia.com` / `admin123` | ✅ Token JWT emitido |
-| 3 | `POST /clientes` — criar cliente | ✅ Cliente criado (id 1) |
-| 4 | `POST /materiais` — criar material | ✅ Material criado (id 1) |
-| 5 | `POST /propostas` — criar proposta com 2 seções e 2 itens | ✅ Proposta **P142** gerada, total R$ 900,00 calculado corretamente |
-| 6 | `GET /propostas/1` — detalhar proposta | ✅ Retornou seções e itens corretamente vinculados |
-| 7 | `PATCH /propostas/1/status` → `Aprovada` | ✅ Status atualizado |
-| 8 | `GET /propostas/1/pdf` | ✅ PDF de 34 KB gerado, cabeçalho `%PDF-1.4` válido |
-| 9 | Limpeza dos dados de teste (`DELETE`) | ✅ Cliente, material e proposta de teste removidos |
-| 10 | Reset do contador de numeração de propostas | ✅ Próximo número volta a ser **P142** |
-| 11 | `npm run build` do frontend (react-scripts) | ✅ Compilou sem erros |
+| 1 | `GET /health` | `{"status":"ok"}` |
+| 2 | `POST /auth/login` com `admin@hmengenharia.com` / `admin123` | Token JWT emitido |
+| 3 | `POST /clientes` — criar cliente | Cliente criado (id 1) |
+| 4 | `POST /materiais` — criar material | Material criado (id 1) |
+| 5 | `POST /propostas` — criar proposta com 2 seções e 2 itens | Proposta **P142** gerada, total R$ 900,00 calculado corretamente |
+| 6 | `GET /propostas/1` — detalhar proposta | Retornou seções e itens corretamente vinculados |
+| 7 | `PATCH /propostas/1/status` → `Aprovada` | Status atualizado |
+| 8 | `GET /propostas/1/pdf` | PDF de 34 KB gerado, cabeçalho `%PDF-1.4` válido |
+| 9 | Limpeza dos dados de teste (`DELETE`) | Cliente, material e proposta de teste removidos |
+| 10 | Reset do contador de numeração de propostas | Próximo número volta a ser **P142** |
+| 11 | `npm run build` do frontend (react-scripts) | Compilou sem erros |
 
 O PDF gerado durante o teste 8 foi salvo em [`Proposta_P142_teste.pdf`](Proposta_P142_teste.pdf), na raiz do projeto, como evidência do layout final (cabeçalho da empresa, seções, itens, subtotais, BDI e total).
 

@@ -3,15 +3,15 @@ import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
 
 const NAV = [
-  { to: '/dashboard', label: '📊 Dashboard' },
-  { to: '/orcamento', label: '📋 Orçamento' },
-  { to: '/materiais', label: '🗄️ Materiais' },
-  { to: '/clientes', label: '👥 Clientes' },
-  { to: '/historico', label: '📁 Histórico' },
-  { to: '/relatorios', label: '📈 Relatórios' },
+  { to: '/dashboard', label: 'Dashboard' },
+  { to: '/orcamento', label: 'Orçamento' },
+  { to: '/materiais', label: 'Materiais' },
+  { to: '/clientes', label: 'Clientes' },
+  { to: '/historico', label: 'Histórico' },
+  { to: '/relatorios', label: 'Relatórios' },
 ];
 
-const NAV_ADMIN = { to: '/usuarios', label: '🔑 Usuários' };
+const NAV_ADMIN = { to: '/usuarios', label: 'Usuários' };
 
 export default function Layout() {
   const { usuario, sair } = useAuth();
@@ -78,7 +78,7 @@ export default function Layout() {
         {/* Usuário */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 8 }}>
           <span style={{ fontSize: 11, color: '#666' }}>
-            👤 {usuario?.nome}
+            {usuario?.nome}
           </span>
           <button
             onClick={handleSair}

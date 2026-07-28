@@ -66,6 +66,27 @@ async function atualizar(req, res) {
   }
 }
 
+async function remover(req, res) {
+  const { id } = req.params;
+
+  if (Number(id) === req.usuario.id) {
+    return res.status(400).json({ erro: 'Você não pode excluir seu próprio usuário' });
+  }
+
+  try {
+    const result = await pool.query('DELETE FROM usuarios WHERE id=$1 RETURNING id', [id]);
+    if (result.rows.length === 0) return res.status(404).json({ erro: 'Usuário não encontrado' });
+    res.json({ mensagem: 'Usuário excluído com sucesso' });
+  } catch (err) {
+    if (err.code === '23503') {
+      return res.status(409).json({
+        erro: 'Este usuário já tem propostas ou ações registradas no sistema e não pode ser excluído. Desative-o em vez de excluir.'
+      });
+    }
+    res.status(500).json({ erro: 'Erro ao excluir usuário' });
+  }
+}
+
 async function redefinirSenha(req, res) {
   const { id } = req.params;
   const { novaSenha } = req.body;
@@ -87,4 +108,4 @@ async function redefinirSenha(req, res) {
   }
 }
 
-module.exports = { listar, criar, atualizar, redefinirSenha };
+module.exports = { listar, criar, atualizar, remover, redefinirSenha };

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, KeyRound, X } from 'lucide-react';
-import { getUsuarios, criarUsuario, atualizarUsuario, redefinirSenhaUsuario } from '../services/api';
+import { Plus, Pencil, KeyRound, X, Trash2 } from 'lucide-react';
+import { getUsuarios, criarUsuario, atualizarUsuario, removerUsuario, redefinirSenhaUsuario } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { formatarData } from '../utils/format';
 
@@ -87,6 +87,21 @@ export default function Usuarios() {
     }
   }
 
+  async function excluir(u) {
+    if (u.id === usuarioLogado.id) {
+      toast.error('Você não pode excluir seu próprio usuário');
+      return;
+    }
+    if (!window.confirm(`Excluir o usuário "${u.nome}"? Esta ação não pode ser desfeita.`)) return;
+    try {
+      await removerUsuario(u.id);
+      toast.success('Usuário excluído');
+      carregar();
+    } catch (err) {
+      toast.error(err.response?.data?.erro || 'Erro ao excluir usuário');
+    }
+  }
+
   async function confirmarRedefinirSenha(e) {
     e.preventDefault();
     if (!novaSenha || novaSenha.length < 6) {
@@ -106,7 +121,7 @@ export default function Usuarios() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
-        <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>🔑 Usuários</h2>
+        <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>Usuários</h2>
         <button onClick={abrirNovo} style={btnPrimario}>
           <Plus size={14} /> Novo Usuário
         </button>
@@ -121,7 +136,7 @@ export default function Usuarios() {
               <th style={th}>Perfil</th>
               <th style={th}>Status</th>
               <th style={th}>Último acesso</th>
-              <th style={{ ...th, width: 110 }}></th>
+              <th style={{ ...th, width: 150 }}></th>
             </tr>
           </thead>
           <tbody>
@@ -156,6 +171,14 @@ export default function Usuarios() {
                     disabled={u.id === usuarioLogado.id}
                   >
                     {u.ativo ? 'Desativar' : 'Reativar'}
+                  </button>
+                  <button
+                    onClick={() => excluir(u)}
+                    style={{ ...btnIcone, color: '#b04040' }}
+                    title="Excluir"
+                    disabled={u.id === usuarioLogado.id}
+                  >
+                    <Trash2 size={13} />
                   </button>
                 </td>
               </tr>

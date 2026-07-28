@@ -57,6 +57,7 @@ router.get('/usuarios', autenticar, admin, usuCtrl.listar);
 router.post('/usuarios', autenticar, admin, usuCtrl.criar);
 router.put('/usuarios/:id', autenticar, admin, usuCtrl.atualizar);
 router.post('/usuarios/:id/redefinir-senha', autenticar, admin, usuCtrl.redefinirSenha);
+router.delete('/usuarios/:id', autenticar, admin, usuCtrl.remover);
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────
 router.get('/dashboard/resumo', autenticar, dashCtrl.resumo);
