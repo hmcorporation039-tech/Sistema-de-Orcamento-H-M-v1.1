@@ -9,6 +9,7 @@ const NAV = [
   { to: '/clientes', label: 'Clientes' },
   { to: '/historico', label: 'Histórico' },
   { to: '/relatorios', label: 'Relatórios' },
+  { to: '/financeiro', label: 'Financeiro' },
 ];
 
 const NAV_ADMIN = { to: '/usuarios', label: 'Usuários' };
@@ -39,7 +40,7 @@ export default function Layout() {
           <img src="/logo.png" alt="H&M" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         </div>
 
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
           <h1 style={{
             fontFamily: "'Playfair Display', Georgia, serif",
             fontSize: 20, fontWeight: 700, color: '#c9a227',

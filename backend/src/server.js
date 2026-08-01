@@ -7,6 +7,7 @@ const routes = require('./routes');
 const { criarTabelas } = require('./models/schema');
 const { credenciaisConfiguradas } = require('./utils/emailClient');
 const { verificarCaixaDeEntrada } = require('./services/notaFiscalEmailService');
+const { verificarPixNaCaixaDeEntrada } = require('./services/financeiroEmailService');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -66,6 +67,26 @@ function agendarVerificacaoDeEmail() {
   console.log(`Importação automática de notas por e-mail ativa (${VERIFICACOES_EMAIL_POR_DIA}x por dia, a cada ${INTERVALO_VERIFICACAO_EMAIL_MS / 3600000}h)`);
 }
 
+function agendarVerificacaoDePix() {
+  if (!credenciaisConfiguradas()) return;
+
+  const rodar = async () => {
+    try {
+      const resumo = await verificarPixNaCaixaDeEntrada();
+      if (resumo.movimentosImportados > 0) {
+        console.log(`Pix verificados: ${resumo.movimentosImportados}/${resumo.emailsEncontrados} movimentos importados`);
+      }
+      resumo.avisos.forEach(a => console.warn('Aviso (Pix):', a));
+    } catch (err) {
+      console.error('Erro na verificação automática de Pix:', err.message);
+    }
+  };
+
+  setTimeout(rodar, 30 * 1000);
+  setInterval(rodar, INTERVALO_VERIFICACAO_EMAIL_MS);
+  console.log(`Controle financeiro de Pix por e-mail ativo (${VERIFICACOES_EMAIL_POR_DIA}x por dia, a cada ${INTERVALO_VERIFICACAO_EMAIL_MS / 3600000}h)`);
+}
+
 // Inicializar
 async function iniciar() {
   try {
@@ -76,6 +97,7 @@ async function iniciar() {
       console.log(`Rede:     http://SEU_IP:${PORT}`);
       console.log(`Health:   http://localhost:${PORT}/health\n`);
       agendarVerificacaoDeEmail();
+      agendarVerificacaoDePix();
     });
   } catch (err) {
     console.error('Erro ao iniciar servidor:', err.message);

@@ -13,6 +13,7 @@ const integCtrl = require('../controllers/integracoesController');
 const usuCtrl = require('../controllers/usuariosController');
 const dashCtrl = require('../controllers/dashboardController');
 const relCtrl = require('../controllers/relatoriosController');
+const finCtrl = require('../controllers/financeiroController');
 
 // ── AUTH ──────────────────────────────────────────────────────────────
 router.post('/auth/login', authCtrl.login);
@@ -70,5 +71,13 @@ router.get('/dashboard/ultimas-propostas', autenticar, dashCtrl.ultimasPropostas
 router.get('/relatorios/propostas', autenticar, relCtrl.listar);
 router.get('/relatorios/propostas/csv', autenticar, relCtrl.exportarCsv);
 router.get('/relatorios/propostas/pdf', autenticar, relCtrl.exportarPdf);
+
+// ── FINANCEIRO ────────────────────────────────────────────────────────
+router.get('/financeiro/movimentos', autenticar, finCtrl.listar);
+router.get('/financeiro/movimentos/csv', autenticar, finCtrl.exportarCsv);
+router.post('/financeiro/movimentos', autenticar, finCtrl.criar);
+router.put('/financeiro/movimentos/:id', autenticar, finCtrl.atualizar);
+router.delete('/financeiro/movimentos/:id', autenticar, finCtrl.remover);
+router.post('/financeiro/verificar-agora', autenticar, finCtrl.verificarAgora);
 
 module.exports = router;

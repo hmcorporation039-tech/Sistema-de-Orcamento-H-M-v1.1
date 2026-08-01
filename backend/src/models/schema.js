@@ -183,6 +183,25 @@ async function criarTabelas() {
       )
     `);
 
+    // Controle financeiro: Pix recebidos/realizados importados automaticamente dos
+    // e-mails de notificação do Banco Inter (veja financeiroEmailService.js), ou
+    // lançados manualmente (ex: movimentos anteriores a existir a integração de e-mail)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS financeiro_movimentos (
+        id SERIAL PRIMARY KEY,
+        tipo VARCHAR(20) NOT NULL,
+        nome VARCHAR(200),
+        valor DECIMAL(12,2) NOT NULL,
+        data_hora TIMESTAMP NOT NULL,
+        id_transacao VARCHAR(100),
+        email_message_id VARCHAR(998) UNIQUE,
+        criado_em TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await client.query(`ALTER TABLE financeiro_movimentos ALTER COLUMN email_message_id DROP NOT NULL`);
+    await client.query(`ALTER TABLE financeiro_movimentos ADD COLUMN IF NOT EXISTS origem VARCHAR(20) NOT NULL DEFAULT 'email'`);
+    await client.query(`ALTER TABLE financeiro_movimentos ADD COLUMN IF NOT EXISTS usuario_id INTEGER REFERENCES usuarios(id)`);
+
     // Criar admin padrão se não existir
     const adminExiste = await client.query(
       "SELECT id FROM usuarios WHERE email = 'admin@hmengenharia.com'"

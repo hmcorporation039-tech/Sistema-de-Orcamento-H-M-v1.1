@@ -93,4 +93,11 @@ export const getDashboardUltimas = (params) => api.get('/dashboard/ultimas-propo
 // ── RELATÓRIOS ────────────────────────────────────────────────────────
 export const getRelatorioPropostas = (params) => api.get('/relatorios/propostas', { params });
 
+// ── FINANCEIRO ────────────────────────────────────────────────────────
+export const getFinanceiroMovimentos = (params) => api.get('/financeiro/movimentos', { params });
+export const criarFinanceiroMovimento = (data) => api.post('/financeiro/movimentos', data);
+export const atualizarFinanceiroMovimento = (id, data) => api.put(`/financeiro/movimentos/${id}`, data);
+export const removerFinanceiroMovimento = (id) => api.delete(`/financeiro/movimentos/${id}`);
+export const verificarPixAgora = () => api.post('/financeiro/verificar-agora');
+
 export default api;

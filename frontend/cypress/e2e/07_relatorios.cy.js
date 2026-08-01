@@ -13,7 +13,7 @@ describe('Relatórios', () => {
     cy.get('input[type="date"]').eq(1).invoke('val').should('not.be.empty');
 
     // Amplia o período pra garantir que existam propostas listadas
-    cy.get('input[type="date"]').eq(0).invoke('val', '2020-01-01').trigger('change');
+    cy.get('input[type="date"]').eq(0).clear().type('2020-01-01');
     cy.contains('td', /^P\d+/, { timeout: 8000 }).should('be.visible');
 
     cy.contains('button', 'Exportar CSV').should('not.be.disabled');

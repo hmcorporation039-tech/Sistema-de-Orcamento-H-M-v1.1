@@ -10,6 +10,7 @@ import Materiais from './pages/Materiais';
 import Clientes from './pages/Clientes';
 import Historico from './pages/Historico';
 import Relatorios from './pages/Relatorios';
+import Financeiro from './pages/Financeiro';
 import Usuarios from './pages/Usuarios';
 
 function RotaProtegida({ children }) {
@@ -47,6 +48,7 @@ export default function App() {
             <Route path="clientes" element={<Clientes />} />
             <Route path="historico" element={<Historico />} />
             <Route path="relatorios" element={<Relatorios />} />
+            <Route path="financeiro" element={<Financeiro />} />
             <Route path="usuarios" element={<RotaAdmin><Usuarios /></RotaAdmin>} />
           </Route>
         </Routes>
