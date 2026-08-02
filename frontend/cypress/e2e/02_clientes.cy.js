@@ -11,7 +11,7 @@ describe('Clientes', () => {
     cy.contains('button', 'Novo Cliente').click();
     cy.get('form').should('be.visible').within(() => {
       cy.get('input').eq(0).type(nome);
-      cy.get('input').eq(1).type('12.345.678/0001-99');
+      cy.get('input').eq(1).type('11.222.333/0001-81');
       cy.get('input').eq(2).type('Responsável Cypress');
       cy.get('input').eq(3).type('61999999999');
       cy.get('input').eq(4).type('cypress@teste.com');
@@ -42,5 +42,38 @@ describe('Clientes', () => {
     cy.contains('tr', nome, { timeout: 8000 }).find('button[title="Remover"]').click();
     cy.contains(/cliente removido/i).should('be.visible');
     cy.contains('td', nome).should('not.exist');
+  });
+
+  it('formata CPF/CNPJ ao digitar e bloqueia documento inválido', () => {
+    const nomeCnpj = `Cypress QA CNPJ ${Date.now()}`;
+    const nomeCpf = `Cypress QA CPF ${Date.now()}`;
+
+    cy.contains('button', 'Novo Cliente').click();
+    cy.contains('label', 'Nome / Razão Social *').parent().find('input').type(nomeCnpj);
+    cy.contains('label', 'Documento (CNPJ)').parent().find('input').type('11222333000181');
+    cy.contains('label', 'Documento (CNPJ)').parent().find('input').should('have.value', '11.222.333/0001-81');
+    cy.contains('button', 'Salvar').click();
+    cy.contains(/cliente cadastrado/i).should('be.visible');
+    cy.contains('td', '11.222.333/0001-81', { timeout: 8000 }).should('be.visible');
+    cy.contains('tr', nomeCnpj).find('button[title="Remover"]').click();
+    cy.contains(/cliente removido/i);
+
+    cy.contains('button', 'Novo Cliente').click();
+    cy.contains('label', 'Nome / Razão Social *').parent().find('input').type(nomeCpf);
+    cy.get('select').select('Pessoa Física');
+    cy.contains('label', 'Documento (CPF)').parent().find('input').type('11144477735');
+    cy.contains('label', 'Documento (CPF)').parent().find('input').should('have.value', '111.444.777-35');
+    cy.contains('button', 'Salvar').click();
+    cy.contains(/cliente cadastrado/i).should('be.visible');
+    cy.contains('td', '111.444.777-35', { timeout: 8000 }).should('be.visible');
+    cy.contains('tr', nomeCpf).find('button[title="Remover"]').click();
+    cy.contains(/cliente removido/i);
+
+    cy.contains('button', 'Novo Cliente').click();
+    cy.contains('label', 'Nome / Razão Social *').parent().find('input').type('Cypress QA CNPJ Invalido');
+    cy.contains('label', 'Documento (CNPJ)').parent().find('input').type('11222333000100');
+    cy.contains('button', 'Salvar').click();
+    cy.contains('CNPJ inválido').should('be.visible');
+    cy.contains('button', 'Cancelar').click();
   });
 });

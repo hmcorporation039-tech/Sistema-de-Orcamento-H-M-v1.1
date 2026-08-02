@@ -14,6 +14,7 @@ const usuCtrl = require('../controllers/usuariosController');
 const dashCtrl = require('../controllers/dashboardController');
 const relCtrl = require('../controllers/relatoriosController');
 const finCtrl = require('../controllers/financeiroController');
+const prestCtrl = require('../controllers/prestadoresController');
 
 // ── AUTH ──────────────────────────────────────────────────────────────
 router.post('/auth/login', authCtrl.login);
@@ -77,7 +78,14 @@ router.get('/financeiro/movimentos', autenticar, finCtrl.listar);
 router.get('/financeiro/movimentos/csv', autenticar, finCtrl.exportarCsv);
 router.post('/financeiro/movimentos', autenticar, finCtrl.criar);
 router.put('/financeiro/movimentos/:id', autenticar, finCtrl.atualizar);
+router.patch('/financeiro/movimentos/:id/categorizar', autenticar, finCtrl.categorizar);
 router.delete('/financeiro/movimentos/:id', autenticar, finCtrl.remover);
 router.post('/financeiro/verificar-agora', autenticar, finCtrl.verificarAgora);
+
+// ── PRESTADORES DE SERVIÇOS ──────────────────────────────────────────────
+router.get('/prestadores', autenticar, prestCtrl.listar);
+router.post('/prestadores', autenticar, prestCtrl.criar);
+router.put('/prestadores/:id', autenticar, prestCtrl.atualizar);
+router.delete('/prestadores/:id', autenticar, prestCtrl.remover);
 
 module.exports = router;

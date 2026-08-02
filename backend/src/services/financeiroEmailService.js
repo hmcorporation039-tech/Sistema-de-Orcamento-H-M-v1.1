@@ -1,6 +1,7 @@
 const { simpleParser } = require('mailparser');
 const pool = require('../config/database');
 const { conectar, credenciaisConfiguradas } = require('../utils/emailClient');
+const { vincularPrestadores } = require('../utils/vincularPrestadores');
 
 // Converte o HTML do e-mail transacional do Inter em linhas de texto limpas,
 // já que esses e-mails não têm uma versão text/plain.
@@ -33,6 +34,17 @@ function pegarValorAposRotulo(linhas, rotulo) {
   return idx >= 0 ? linhas[idx + 1] : null;
 }
 
+// Alguns favorecidos/pagadores aparecem com um código numérico (matrícula/cadastro)
+// na frente do nome, ex: "51818695 Wilson Batista Lima" ou "28.253.229 Thais Pereira
+// Andrade Sodre". Remove esse prefixo para não atrapalhar o cadastro de prestadores.
+function limparNomeFavorecido(nome) {
+  const texto = String(nome || '').trim();
+  const m = texto.match(/^(\d[\d.\s]*\d)\s+([A-Za-zÀ-ÖØ-öø-ÿ].*)$/);
+  if (!m) return texto;
+  const codigo = m[1].replace(/\D/g, '');
+  return codigo.length >= 6 ? m[2].trim() : texto;
+}
+
 // "Você recebeu um Pix no valor de R$ 25.500,00 de Hospital Prontonorte S A, na conta ..."
 function parsePixRecebido(html, dataEmail) {
   const linhas = paraLinhas(html);
@@ -42,7 +54,7 @@ function parsePixRecebido(html, dataEmail) {
   return {
     tipo: 'recebido',
     valor: valorParaNumero(m[1]),
-    nome: m[2].trim(),
+    nome: limparNomeFavorecido(m[2]),
     dataHora: dataEmail,
     idTransacao: null,
   };
@@ -60,7 +72,7 @@ function parsePixRealizado(html, dataEmail) {
   return {
     tipo: 'realizado',
     valor: valorParaNumero(m[1]),
-    nome: pegarValorAposRotulo(linhas, 'Nome:'),
+    nome: limparNomeFavorecido(pegarValorAposRotulo(linhas, 'Nome:')),
     dataHora: parseDataHoraBr(dataTexto, dataEmail),
     idTransacao: pegarValorAposRotulo(linhas, 'ID Transação:'),
   };
@@ -144,7 +156,11 @@ async function verificarPixNaCaixaDeEntrada() {
     if (imapClient) await imapClient.logout().catch(() => {});
   }
 
+  if (resumo.movimentosImportados > 0) {
+    await vincularPrestadores().catch(err => resumo.avisos.push(`Erro ao vincular prestadores: ${err.message}`));
+  }
+
   return resumo;
 }
 
-module.exports = { verificarPixNaCaixaDeEntrada, parsePixRecebido, parsePixRealizado };
+module.exports = { verificarPixNaCaixaDeEntrada, parsePixRecebido, parsePixRealizado, limparNomeFavorecido };

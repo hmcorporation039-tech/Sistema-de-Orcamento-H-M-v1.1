@@ -183,6 +183,24 @@ async function criarTabelas() {
       )
     `);
 
+    // Prestadores de serviços: mão de obra, material e despesas diárias pagos a
+    // terceiros. Pagamentos feitos a eles (financeiro_movimentos.tipo='realizado')
+    // são vinculados automaticamente pelo nome (veja vincularPrestadores.js)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS prestadores (
+        id SERIAL PRIMARY KEY,
+        nome VARCHAR(200) NOT NULL,
+        email VARCHAR(100),
+        telefone VARCHAR(20),
+        cpf VARCHAR(14),
+        chave_pix VARCHAR(200),
+        ativo BOOLEAN DEFAULT true,
+        criado_em TIMESTAMP DEFAULT NOW(),
+        atualizado_em TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await client.query(`ALTER TABLE prestadores ADD COLUMN IF NOT EXISTS categoria VARCHAR(20)`);
+
     // Controle financeiro: Pix recebidos/realizados importados automaticamente dos
     // e-mails de notificação do Banco Inter (veja financeiroEmailService.js), ou
     // lançados manualmente (ex: movimentos anteriores a existir a integração de e-mail)
@@ -201,6 +219,8 @@ async function criarTabelas() {
     await client.query(`ALTER TABLE financeiro_movimentos ALTER COLUMN email_message_id DROP NOT NULL`);
     await client.query(`ALTER TABLE financeiro_movimentos ADD COLUMN IF NOT EXISTS origem VARCHAR(20) NOT NULL DEFAULT 'email'`);
     await client.query(`ALTER TABLE financeiro_movimentos ADD COLUMN IF NOT EXISTS usuario_id INTEGER REFERENCES usuarios(id)`);
+    await client.query(`ALTER TABLE financeiro_movimentos ADD COLUMN IF NOT EXISTS prestador_id INTEGER REFERENCES prestadores(id)`);
+    await client.query(`ALTER TABLE financeiro_movimentos ADD COLUMN IF NOT EXISTS categoria VARCHAR(20)`);
 
     // Criar admin padrão se não existir
     const adminExiste = await client.query(

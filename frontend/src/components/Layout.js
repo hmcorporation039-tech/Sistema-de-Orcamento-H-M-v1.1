@@ -10,6 +10,7 @@ const NAV = [
   { to: '/historico', label: 'Histórico' },
   { to: '/relatorios', label: 'Relatórios' },
   { to: '/financeiro', label: 'Financeiro' },
+  { to: '/prestadores', label: 'Prestadores' },
 ];
 
 const NAV_ADMIN = { to: '/usuarios', label: 'Usuários' };

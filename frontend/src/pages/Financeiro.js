@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
-import { FileSpreadsheet, RefreshCw, Search, ArrowDownCircle, ArrowUpCircle, Plus, Pencil, Trash2, X } from 'lucide-react';
+import { FileSpreadsheet, RefreshCw, Search, ArrowDownCircle, ArrowUpCircle, Plus, Pencil, Trash2, X, Tag } from 'lucide-react';
 import {
-  getFinanceiroMovimentos, verificarPixAgora,
-  criarFinanceiroMovimento, atualizarFinanceiroMovimento, removerFinanceiroMovimento,
+  getFinanceiroMovimentos, verificarPixAgora, getPrestadores,
+  criarFinanceiroMovimento, atualizarFinanceiroMovimento, categorizarFinanceiroMovimento, removerFinanceiroMovimento,
 } from '../services/api';
 import api from '../services/api';
 import { formatarMoeda } from '../utils/format';
@@ -13,7 +13,14 @@ const TIPO_INFO = {
   realizado: { label: 'Realizado', cor: '#e08080', bg: '#1a0a0a', borda: '#4a1a1a' },
 };
 
+const CATEGORIA_INFO = {
+  mao_de_obra: 'Mão de obra',
+  material: 'Material',
+  despesa: 'Despesa diária',
+};
+
 const VAZIO = { tipo: 'recebido', nome: '', valor: '', dataHora: '', idTransacao: '' };
+const VAZIO_VINCULO = { prestadorId: '', categoria: '' };
 
 function paraDatetimeLocal(iso) {
   const d = iso ? new Date(iso) : new Date();
@@ -26,6 +33,9 @@ export default function Financeiro() {
   const [dataFim, setDataFim] = useState('');
   const [tipo, setTipo] = useState('');
   const [busca, setBusca] = useState('');
+  const [categoria, setCategoria] = useState('');
+  const [prestadorId, setPrestadorId] = useState('');
+  const [prestadores, setPrestadores] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [movimentos, setMovimentos] = useState([]);
   const [totais, setTotais] = useState({ recebido: 0, realizado: 0, saldo: 0 });
@@ -36,6 +46,10 @@ export default function Financeiro() {
   const [editandoId, setEditandoId] = useState(null);
   const [form, setForm] = useState(VAZIO);
   const [salvando, setSalvando] = useState(false);
+  const [vinculoAberto, setVinculoAberto] = useState(false);
+  const [vinculandoId, setVinculandoId] = useState(null);
+  const [formVinculo, setFormVinculo] = useState(VAZIO_VINCULO);
+  const [salvandoVinculo, setSalvandoVinculo] = useState(false);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -45,6 +59,8 @@ export default function Financeiro() {
       if (dataFim) params.dataFim = dataFim;
       if (tipo) params.tipo = tipo;
       if (busca) params.busca = busca;
+      if (categoria) params.categoria = categoria;
+      if (prestadorId) params.prestadorId = prestadorId;
 
       const res = await getFinanceiroMovimentos(params);
       setMovimentos(res.data.movimentos);
@@ -59,12 +75,16 @@ export default function Financeiro() {
     } finally {
       setCarregando(false);
     }
-  }, [dataInicio, dataFim, tipo, busca, inicializado]);
+  }, [dataInicio, dataFim, tipo, busca, categoria, prestadorId, inicializado]);
 
   useEffect(() => {
     const t = setTimeout(carregar, 300);
     return () => clearTimeout(t);
   }, [carregar]);
+
+  useEffect(() => {
+    getPrestadores({ porPagina: 1000 }).then(res => setPrestadores(res.data.itens)).catch(() => {});
+  }, []);
 
   async function verificarAgora() {
     setVerificando(true);
@@ -135,6 +155,30 @@ export default function Financeiro() {
     }
   }
 
+  function abrirVinculo(m) {
+    setVinculandoId(m.id);
+    setFormVinculo({ prestadorId: m.prestador_id || '', categoria: m.categoria || '' });
+    setVinculoAberto(true);
+  }
+
+  async function salvarVinculo(e) {
+    e.preventDefault();
+    setSalvandoVinculo(true);
+    try {
+      await categorizarFinanceiroMovimento(vinculandoId, {
+        prestadorId: formVinculo.prestadorId || null,
+        categoria: formVinculo.categoria || null,
+      });
+      toast.success('Vínculo salvo');
+      setVinculoAberto(false);
+      carregar();
+    } catch (err) {
+      toast.error(err.response?.data?.erro || 'Erro ao salvar vínculo');
+    } finally {
+      setSalvandoVinculo(false);
+    }
+  }
+
   async function exportarCsv() {
     if (!dataInicio || !dataFim) return;
     setExportando(true);
@@ -142,6 +186,8 @@ export default function Financeiro() {
       const params = { dataInicio, dataFim };
       if (tipo) params.tipo = tipo;
       if (busca) params.busca = busca;
+      if (categoria) params.categoria = categoria;
+      if (prestadorId) params.prestadorId = prestadorId;
 
       const res = await api.get('/financeiro/movimentos/csv', { params, responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
@@ -173,7 +219,7 @@ export default function Financeiro() {
 
       {/* Filtros */}
       <div style={card}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 2fr auto', gap: 12, alignItems: 'end' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 2fr auto', gap: 12, alignItems: 'end', marginBottom: 12 }}>
           <Campo label="Data início">
             <input type="date" value={dataInicio} onChange={e => setDataInicio(e.target.value)} />
           </Campo>
@@ -202,6 +248,22 @@ export default function Financeiro() {
             <FileSpreadsheet size={13} style={{ marginRight: 4 }} /> {exportando ? 'Gerando...' : 'Exportar CSV'}
           </button>
         </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Campo label="Categoria">
+            <select value={categoria} onChange={e => setCategoria(e.target.value)}>
+              <option value="">Todas</option>
+              <option value="mao_de_obra">Mão de obra</option>
+              <option value="material">Material</option>
+              <option value="despesa">Despesa diária</option>
+            </select>
+          </Campo>
+          <Campo label="Prestador">
+            <select value={prestadorId} onChange={e => setPrestadorId(e.target.value)}>
+              <option value="">Todos</option>
+              {prestadores.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
+            </select>
+          </Campo>
+        </div>
       </div>
 
       {/* Resumo */}
@@ -219,16 +281,18 @@ export default function Financeiro() {
               <th style={th}>Data</th>
               <th style={th}>Tipo</th>
               <th style={th}>Nome</th>
+              <th style={th}>Prestador</th>
+              <th style={th}>Categoria</th>
               <th style={{ ...th, textAlign: 'right' }}>Valor</th>
-              <th style={{ ...th, width: 70 }}></th>
+              <th style={{ ...th, width: 100 }}></th>
             </tr>
           </thead>
           <tbody>
             {carregando && (
-              <tr><td colSpan={5} style={tdVazio}>Carregando...</td></tr>
+              <tr><td colSpan={7} style={tdVazio}>Carregando...</td></tr>
             )}
             {!carregando && movimentos.length === 0 && (
-              <tr><td colSpan={5} style={tdVazio}>Nenhum movimento encontrado no período.</td></tr>
+              <tr><td colSpan={7} style={tdVazio}>Nenhum movimento encontrado no período.</td></tr>
             )}
             {!carregando && movimentos.map(m => {
               const info = TIPO_INFO[m.tipo] || TIPO_INFO.recebido;
@@ -241,11 +305,16 @@ export default function Financeiro() {
                     </span>
                   </td>
                   <td style={td}>{m.nome || '—'}</td>
+                  <td style={td}>{m.prestador_nome || '—'}</td>
+                  <td style={td}>{CATEGORIA_INFO[m.categoria] || '—'}</td>
                   <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: info.cor }}>
                     {m.tipo === 'realizado' ? '- ' : '+ '}{formatarMoeda(m.valor)}
                   </td>
                   <td style={{ ...td, display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                    {m.origem === 'manual' ? (
+                    <button onClick={() => abrirVinculo(m)} style={btnIcone} title="Vincular prestador/categoria">
+                      <Tag size={12} />
+                    </button>
+                    {m.origem === 'manual' && (
                       <>
                         <button onClick={() => abrirEdicao(m)} style={btnIcone} title="Editar">
                           <Pencil size={12} />
@@ -254,8 +323,6 @@ export default function Financeiro() {
                           <Trash2 size={12} />
                         </button>
                       </>
-                    ) : (
-                      <span style={{ fontSize: 9, color: '#555', textTransform: 'uppercase' }}>E-mail</span>
                     )}
                   </td>
                 </tr>
@@ -317,6 +384,53 @@ export default function Financeiro() {
                 <button type="button" onClick={() => setModalAberto(false)} style={btnSecundario}>Cancelar</button>
                 <button type="submit" disabled={salvando} style={btnPrimario}>
                   {salvando ? 'Salvando...' : 'Salvar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {vinculoAberto && (
+        <div style={overlay} onClick={() => setVinculoAberto(false)}>
+          <div style={modal} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20 }}>
+              <h3 style={{ color: '#c9a227', fontSize: 15, fontWeight: 700, flex: 1 }}>Vincular Prestador</h3>
+              <button onClick={() => setVinculoAberto(false)} style={{ ...btnIcone, background: 'transparent' }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={salvarVinculo}>
+              <div style={{ marginBottom: 12 }}>
+                <Campo label="Prestador">
+                  <select
+                    value={formVinculo.prestadorId}
+                    onChange={e => setFormVinculo({ ...formVinculo, prestadorId: e.target.value })}
+                    autoFocus
+                  >
+                    <option value="">Nenhum</option>
+                    {prestadores.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
+                  </select>
+                </Campo>
+              </div>
+
+              <Campo label="Categoria">
+                <select
+                  value={formVinculo.categoria}
+                  onChange={e => setFormVinculo({ ...formVinculo, categoria: e.target.value })}
+                >
+                  <option value="">Nenhuma</option>
+                  <option value="mao_de_obra">Mão de obra</option>
+                  <option value="material">Material</option>
+                  <option value="despesa">Despesa diária</option>
+                </select>
+              </Campo>
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 22, justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setVinculoAberto(false)} style={btnSecundario}>Cancelar</button>
+                <button type="submit" disabled={salvandoVinculo} style={btnPrimario}>
+                  {salvandoVinculo ? 'Salvando...' : 'Salvar'}
                 </button>
               </div>
             </form>

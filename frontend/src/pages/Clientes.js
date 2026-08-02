@@ -3,7 +3,7 @@ import toast from 'react-hot-toast';
 import { Plus, Search, Pencil, Trash2, X } from 'lucide-react';
 import { getClientes, criarCliente, atualizarCliente, removerCliente } from '../services/api';
 import Paginacao from '../components/Paginacao';
-import { formatarTelefone } from '../utils/format';
+import { formatarTelefone, formatarCpfCnpj, validarCpf, validarCnpj } from '../utils/format';
 
 const VAZIO = { nome: '', documento: '', tipo: 'Empresa', responsavel: '', telefone: '', email: '', endereco: '' };
 
@@ -59,6 +59,18 @@ export default function Clientes() {
     if (!form.nome.trim()) {
       toast.error('Informe o nome do cliente');
       return;
+    }
+    if (form.documento.trim()) {
+      const digitos = form.documento.replace(/\D/g, '');
+      if (form.tipo === 'Pessoa Física') {
+        if (digitos.length !== 11 || !validarCpf(digitos)) {
+          toast.error('CPF inválido');
+          return;
+        }
+      } else if (digitos.length !== 14 || !validarCnpj(digitos)) {
+        toast.error('CNPJ inválido');
+        return;
+      }
     }
     setSalvando(true);
     try {
@@ -133,7 +145,7 @@ export default function Clientes() {
               <tr key={c.id} style={{ borderTop: '1px solid #1e1e1e' }}>
                 <td style={td}>{c.nome}</td>
                 <td style={td}>{c.tipo}</td>
-                <td style={td}>{c.documento || '—'}</td>
+                <td style={td}>{formatarCpfCnpj(c.documento) || '—'}</td>
                 <td style={td}>{c.responsavel || '—'}</td>
                 <td style={td}>{formatarTelefone(c.telefone) || '—'}</td>
                 <td style={td}>{c.email || '—'}</td>
@@ -180,8 +192,13 @@ export default function Clientes() {
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-                <Campo label="Documento (CNPJ/CPF)">
-                  <input value={form.documento} onChange={e => setForm({ ...form, documento: e.target.value })} />
+                <Campo label={form.tipo === 'Pessoa Física' ? 'Documento (CPF)' : 'Documento (CNPJ)'}>
+                  <input
+                    value={form.documento}
+                    onChange={e => setForm({ ...form, documento: formatarCpfCnpj(e.target.value) })}
+                    placeholder={form.tipo === 'Pessoa Física' ? '000.000.000-00' : '00.000.000/0000-00'}
+                    maxLength={18}
+                  />
                 </Campo>
                 <Campo label="Responsável">
                   <input value={form.responsavel} onChange={e => setForm({ ...form, responsavel: e.target.value })} />

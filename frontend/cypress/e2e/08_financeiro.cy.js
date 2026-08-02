@@ -17,10 +17,10 @@ describe('Financeiro', () => {
     cy.get('table tbody tr', { timeout: 8000 }).should('have.length.greaterThan', 0);
 
     // Filtro por tipo
-    cy.get('select').select('Realizado');
+    cy.contains('label', 'Tipo').parent().find('select').select('Realizado');
     cy.get('table tbody td').contains('Realizado').should('be.visible');
 
-    cy.get('select').select('Todos');
+    cy.contains('label', 'Tipo').parent().find('select').select('Todos');
 
     cy.contains('button', 'Exportar CSV').should('not.be.disabled');
     cy.intercept('GET', '**/financeiro/movimentos/csv*').as('csv');
@@ -60,5 +60,32 @@ describe('Financeiro', () => {
     cy.contains('tr', nomeEditado).find('button[title="Remover"]').click();
     cy.contains('Lançamento removido');
     cy.contains(nomeEditado).should('not.exist');
+  });
+
+  it('vincula categoria a um lançamento pelo botão Vincular', () => {
+    const nome = 'Cliente Teste Cypress Vinculo';
+
+    cy.login();
+    cy.visit('/financeiro');
+
+    cy.contains('button', 'Novo lançamento').click();
+    cy.get('input[type="number"]').type('88.00');
+    cy.contains('label', 'Nome do favorecido/pagador').parent().find('input').type(nome);
+    cy.get('input[type="datetime-local"]').type('2025-04-05T09:00');
+    cy.contains('button', 'Salvar').click();
+    cy.contains('Lançamento cadastrado');
+
+    cy.get('input[type="date"]').eq(0).clear().type('2025-01-01');
+    cy.contains('tr', nome, { timeout: 8000 }).find('button[title*="Vincular"]').click();
+    cy.get('form').within(() => {
+      cy.contains('label', 'Categoria').parent().find('select').select('Despesa diária');
+      cy.contains('button', 'Salvar').click();
+    });
+    cy.contains('Vínculo salvo');
+    cy.contains('tr', nome).contains('td', 'Despesa diária', { timeout: 8000 }).should('be.visible');
+
+    cy.on('window:confirm', () => true);
+    cy.contains('tr', nome).find('button[title="Remover"]').click();
+    cy.contains('Lançamento removido');
   });
 });

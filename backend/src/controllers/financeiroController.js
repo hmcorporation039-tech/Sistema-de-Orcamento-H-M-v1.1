@@ -1,6 +1,8 @@
 const pool = require('../config/database');
 const { verificarPixNaCaixaDeEntrada } = require('../services/financeiroEmailService');
 
+const CATEGORIA_LABEL = { mao_de_obra: 'Mão de obra', material: 'Material', despesa: 'Despesa diária' };
+
 // Primeiro dia do mês atual até hoje, se as datas não forem informadas
 function periodoPadrao() {
   const hoje = new Date();
@@ -15,18 +17,26 @@ function montarFiltro(query) {
   const padrao = periodoPadrao();
   const dataInicio = query.dataInicio || padrao.dataInicio;
   const dataFim = query.dataFim || padrao.dataFim;
-  const { tipo, busca } = query;
+  const { tipo, busca, categoria, prestadorId } = query;
 
-  const condicoes = ['data_hora >= $1', 'data_hora < ($2::date + 1)'];
+  const condicoes = ['fm.data_hora >= $1', 'fm.data_hora < ($2::date + 1)'];
   const params = [dataInicio, dataFim];
 
   if (tipo) {
     params.push(tipo);
-    condicoes.push(`tipo = $${params.length}`);
+    condicoes.push(`fm.tipo = $${params.length}`);
   }
   if (busca) {
     params.push(`%${busca}%`);
-    condicoes.push(`nome ILIKE $${params.length}`);
+    condicoes.push(`fm.nome ILIKE $${params.length}`);
+  }
+  if (categoria) {
+    params.push(categoria);
+    condicoes.push(`fm.categoria = $${params.length}`);
+  }
+  if (prestadorId) {
+    params.push(prestadorId);
+    condicoes.push(`fm.prestador_id = $${params.length}`);
   }
 
   return { where: `WHERE ${condicoes.join(' AND ')}`, params, dataInicio, dataFim };
@@ -36,20 +46,22 @@ async function buscarMovimentosEtotais(query) {
   const { where, params, dataInicio, dataFim } = montarFiltro(query);
 
   const movimentos = await pool.query(
-    `SELECT id, tipo, nome, valor, data_hora, id_transacao, origem
-     FROM financeiro_movimentos
+    `SELECT fm.id, fm.tipo, fm.nome, fm.valor, fm.data_hora, fm.id_transacao, fm.origem,
+            fm.categoria, fm.prestador_id, p.nome AS prestador_nome
+     FROM financeiro_movimentos fm
+     LEFT JOIN prestadores p ON p.id = fm.prestador_id
      ${where}
-     ORDER BY data_hora DESC`,
+     ORDER BY fm.data_hora DESC`,
     params
   );
 
   const totaisResult = await pool.query(
     `SELECT
-      COALESCE(SUM(valor) FILTER (WHERE tipo = 'recebido'), 0) AS total_recebido,
-      COALESCE(SUM(valor) FILTER (WHERE tipo = 'realizado'), 0) AS total_realizado,
-      count(*) FILTER (WHERE tipo = 'recebido') AS qtd_recebido,
-      count(*) FILTER (WHERE tipo = 'realizado') AS qtd_realizado
-     FROM financeiro_movimentos
+      COALESCE(SUM(fm.valor) FILTER (WHERE fm.tipo = 'recebido'), 0) AS total_recebido,
+      COALESCE(SUM(fm.valor) FILTER (WHERE fm.tipo = 'realizado'), 0) AS total_realizado,
+      count(*) FILTER (WHERE fm.tipo = 'recebido') AS qtd_recebido,
+      count(*) FILTER (WHERE fm.tipo = 'realizado') AS qtd_realizado
+     FROM financeiro_movimentos fm
      ${where}`,
     params
   );
@@ -90,13 +102,15 @@ async function exportarCsv(req, res) {
   try {
     const { movimentos } = await buscarMovimentosEtotais(req.query);
 
-    const cabecalho = ['Data', 'Tipo', 'Nome', 'Valor', 'ID Transacao'];
+    const cabecalho = ['Data', 'Tipo', 'Nome', 'Valor', 'ID Transacao', 'Prestador', 'Categoria'];
     const linhas = movimentos.map(m => [
       new Date(m.data_hora).toLocaleString('pt-BR'),
       m.tipo === 'recebido' ? 'Recebido' : 'Realizado',
       m.nome || '',
       Number(m.valor).toFixed(2),
       m.id_transacao || '',
+      m.prestador_nome || '',
+      CATEGORIA_LABEL[m.categoria] || '',
     ].map(escaparCsv).join(';'));
 
     const csv = [cabecalho.join(';'), ...linhas].join('\r\n');
@@ -177,6 +191,30 @@ async function remover(req, res) {
   }
 }
 
+const CATEGORIAS_VALIDAS = Object.keys(CATEGORIA_LABEL);
+
+async function categorizar(req, res) {
+  try {
+    const { prestadorId, categoria } = req.body;
+    if (categoria && !CATEGORIAS_VALIDAS.includes(categoria)) {
+      return res.status(400).json({ erro: 'Categoria inválida' });
+    }
+
+    const resultado = await pool.query(
+      `UPDATE financeiro_movimentos
+       SET prestador_id = $1, categoria = $2
+       WHERE id = $3
+       RETURNING id, prestador_id, categoria`,
+      [prestadorId || null, categoria || null, req.params.id]
+    );
+    if (resultado.rows.length === 0) return res.status(404).json({ erro: 'Movimento não encontrado' });
+    res.json(resultado.rows[0]);
+  } catch (err) {
+    console.error('Erro ao categorizar movimento financeiro:', err);
+    res.status(500).json({ erro: 'Erro ao categorizar movimento financeiro' });
+  }
+}
+
 async function verificarAgora(req, res) {
   try {
     const resumo = await verificarPixNaCaixaDeEntrada();
@@ -187,4 +225,4 @@ async function verificarAgora(req, res) {
   }
 }
 
-module.exports = { listar, criar, atualizar, remover, exportarCsv, verificarAgora };
+module.exports = { listar, criar, atualizar, remover, categorizar, exportarCsv, verificarAgora };
