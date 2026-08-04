@@ -107,4 +107,9 @@ export const criarPrestador = (data) => api.post('/prestadores', data);
 export const atualizarPrestador = (id, data) => api.put(`/prestadores/${id}`, data);
 export const removerPrestador = (id) => api.delete(`/prestadores/${id}`);
 
+// ── CONTRATOS DE PRESTAÇÃO DE SERVIÇO ─────────────────────────────────────
+export const getContratos = (params) => api.get('/contratos', { params });
+export const criarContrato = (data) => api.post('/contratos', data);
+export const removerContrato = (id) => api.delete(`/contratos/${id}`);
+
 export default api;

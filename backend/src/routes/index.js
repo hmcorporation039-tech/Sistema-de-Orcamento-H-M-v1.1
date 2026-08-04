@@ -15,6 +15,7 @@ const dashCtrl = require('../controllers/dashboardController');
 const relCtrl = require('../controllers/relatoriosController');
 const finCtrl = require('../controllers/financeiroController');
 const prestCtrl = require('../controllers/prestadoresController');
+const contrCtrl = require('../controllers/contratosController');
 
 // ── AUTH ──────────────────────────────────────────────────────────────
 router.post('/auth/login', authCtrl.login);
@@ -87,5 +88,11 @@ router.get('/prestadores', autenticar, prestCtrl.listar);
 router.post('/prestadores', autenticar, prestCtrl.criar);
 router.put('/prestadores/:id', autenticar, prestCtrl.atualizar);
 router.delete('/prestadores/:id', autenticar, prestCtrl.remover);
+
+// ── CONTRATOS DE PRESTAÇÃO DE SERVIÇO ────────────────────────────────────
+router.get('/contratos', autenticar, contrCtrl.listar);
+router.post('/contratos', autenticar, contrCtrl.criar);
+router.get('/contratos/:id/pdf', autenticar, contrCtrl.gerarPdf);
+router.delete('/contratos/:id', autenticar, contrCtrl.remover);
 
 module.exports = router;

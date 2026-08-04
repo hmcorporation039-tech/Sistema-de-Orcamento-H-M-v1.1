@@ -111,4 +111,31 @@ describe('Prestadores de Serviços', () => {
     cy.contains('tr', nomeCategoria, { timeout: 8000 }).find('button[title="Remover"]').click();
     cy.contains(/prestador removido/i);
   });
+
+  it('cadastra prestador Pessoa Jurídica com CNPJ formatado e valida CNPJ inválido', () => {
+    const nomePJ = `Cypress QA Empresa ${Date.now()} LTDA`;
+
+    cy.contains('button', 'Novo Prestador').click();
+    cy.contains('label', 'Nome *').parent().find('input').type(nomePJ);
+    cy.contains('label', 'Tipo').parent().find('select').select('Pessoa Jurídica');
+    cy.contains('label', 'CNPJ').parent().find('input').type('11222333000181');
+    cy.contains('label', 'CNPJ').parent().find('input').should('have.value', '11.222.333/0001-81');
+    cy.contains('button', 'Salvar').click();
+    cy.contains(/prestador cadastrado/i).should('be.visible');
+
+    cy.get('input[placeholder*="Buscar"]').type(nomePJ);
+    cy.contains('tr', nomePJ, { timeout: 8000 }).contains('td', 'PJ').should('be.visible');
+    cy.contains('tr', nomePJ).contains('td', '11.222.333/0001-81').should('be.visible');
+
+    cy.contains('tr', nomePJ).find('button[title="Remover"]').click();
+    cy.contains(/prestador removido/i);
+
+    cy.contains('button', 'Novo Prestador').click();
+    cy.contains('label', 'Nome *').parent().find('input').type('Cypress QA CNPJ Invalido');
+    cy.contains('label', 'Tipo').parent().find('select').select('Pessoa Jurídica');
+    cy.contains('label', 'CNPJ').parent().find('input').type('11222333000100');
+    cy.contains('button', 'Salvar').click();
+    cy.contains('CNPJ inválido').should('be.visible');
+    cy.contains('button', 'Cancelar').click();
+  });
 });

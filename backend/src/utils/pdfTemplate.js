@@ -194,6 +194,140 @@ function gerarHtmlProposta(proposta) {
   `;
 }
 
+function formatarDocumentoPorTipo(documento, tipo) {
+  const digitos = String(documento || '').replace(/\D/g, '');
+  if (tipo === 'Pessoa Jurídica' || digitos.length === 14) {
+    return digitos.length === 14
+      ? `${digitos.slice(0, 2)}.${digitos.slice(2, 5)}.${digitos.slice(5, 8)}/${digitos.slice(8, 12)}-${digitos.slice(12, 14)}`
+      : documento || '—';
+  }
+  return digitos.length === 11
+    ? `${digitos.slice(0, 3)}.${digitos.slice(3, 6)}.${digitos.slice(6, 9)}-${digitos.slice(9, 11)}`
+    : documento || '—';
+}
+
+function gerarHtmlContrato(contrato) {
+  const ehPJ = contrato.prestador_tipo === 'Pessoa Jurídica';
+  const rotuloDocumento = ehPJ ? 'CNPJ' : 'CPF';
+  const documentoFormatado = formatarDocumentoPorTipo(contrato.prestador_documento, contrato.prestador_tipo);
+  const objeto = contrato.objeto?.trim()
+    || 'prestação de serviços técnicos de engenharia elétrica e automação';
+
+  return `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Dancing+Script:wght@700&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; font-size: 11px; }
+  .banner { width: 100%; display: block; margin-bottom: 8px; }
+  .titulo { text-align: center; font-size: 15px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; margin: 10px 0 4px; color: #1a1a1a; }
+  .subtitulo { text-align: center; font-size: 9.5px; color: #888; margin-bottom: 18px; }
+  .qualificacao { font-size: 10.5px; line-height: 1.6; text-align: justify; margin-bottom: 10px; }
+  .qualificacao b { font-weight: 700; }
+  .clausula-titulo { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; margin: 14px 0 5px; color: #1a1a1a; }
+  .clausula-texto { font-size: 10.5px; line-height: 1.55; text-align: justify; }
+  .clausula-texto + .clausula-texto { margin-top: 5px; }
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; margin: 8px 0 4px; }
+  .info-item .label { font-size: 8px; text-transform: uppercase; letter-spacing: .5px; color: #888; margin-bottom: 1px; }
+  .info-item .valor { font-size: 10.5px; color: #1a1a1a; font-weight: 600; }
+  .local-data { text-align: center; font-size: 10.5px; margin-top: 26px; margin-bottom: 30px; }
+  .assinaturas { display: flex; justify-content: space-between; gap: 30px; margin-top: 10px; page-break-inside: avoid; }
+  .assinaturas .bloco-assinatura { flex: 1; text-align: center; }
+  .assinaturas .linha { width: 100%; border-top: 1px solid #555; margin-bottom: 6px; }
+  .assinaturas .parte { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
+  .assinaturas .nome-doc { font-size: 9.5px; color: #444; margin-top: 2px; }
+  .rodape-numero { text-align: right; font-size: 9px; color: #888; margin-top: 20px; }
+</style>
+</head>
+<body>
+  ${cabecalhoDataUri ? `<img src="${cabecalhoDataUri}" class="banner" alt="H&amp;M Engenharia e Tecnologia LTDA" />` : ''}
+
+  <div class="titulo">Contrato de Prestação de Serviços</div>
+  <div class="subtitulo">Contrato Nº ${String(contrato.id).padStart(4, '0')}</div>
+
+  <div class="qualificacao">
+    <b>CONTRATANTE:</b> ${escapeHtml(EMPRESA.razaoSocial)}, pessoa jurídica de direito privado, inscrita no CNPJ
+    sob o nº ${escapeHtml(EMPRESA.cnpj)}, com sede em ${escapeHtml(EMPRESA.endereco)}, CEP ${escapeHtml(EMPRESA.cep)},
+    neste ato representada por ${escapeHtml(EMPRESA.representanteLegal)}.
+  </div>
+  <div class="qualificacao">
+    <b>CONTRATADO(A):</b> ${escapeHtml(contrato.prestador_nome)}, ${ehPJ ? 'pessoa jurídica' : 'pessoa física'},
+    inscrito(a) no ${rotuloDocumento} sob o nº ${escapeHtml(documentoFormatado)}.
+  </div>
+
+  <div class="clausula-titulo">Cláusula 1ª — Do Objeto</div>
+  <div class="clausula-texto">
+    O presente contrato tem como objeto a ${escapeHtml(objeto)}, a ser executado(a) pelo(a) CONTRATADO(A)
+    em favor do CONTRATANTE, conforme condições estabelecidas nas cláusulas seguintes.
+  </div>
+
+  <div class="clausula-titulo">Cláusula 2ª — Do Local e Prazo de Execução</div>
+  <div class="clausula-texto">
+    Os serviços serão prestados no seguinte local: <b>${escapeHtml(contrato.local_obra) || '—'}</b>, durante o período
+    de <b>${formatarData(contrato.periodo_inicio)}</b> a <b>${formatarData(contrato.periodo_fim)}</b>.
+  </div>
+
+  <div class="clausula-titulo">Cláusula 3ª — Do Valor e Forma de Pagamento</div>
+  <div class="clausula-texto">
+    Pelos serviços objeto deste contrato, o CONTRATANTE pagará ao(à) CONTRATADO(A) o valor total de
+    <b>${formatarMoeda(contrato.valor)}</b>, mediante transferência via Pix para a chave cadastrada pelo(a) CONTRATADO(A),
+    ou outra forma de pagamento acordada entre as partes.
+  </div>
+
+  <div class="clausula-titulo">Cláusula 4ª — Das Obrigações das Partes</div>
+  <div class="clausula-texto">
+    O(A) CONTRATADO(A) obriga-se a executar os serviços com zelo, diligência e observância das normas técnicas e de
+    segurança aplicáveis, respondendo por eventuais danos causados por sua ação ou omissão.
+  </div>
+  <div class="clausula-texto">
+    O CONTRATANTE obriga-se a fornecer as condições necessárias para a execução dos serviços e a efetuar o pagamento
+    na forma e prazo acordados.
+  </div>
+
+  <div class="clausula-titulo">Cláusula 5ª — Da Natureza da Relação</div>
+  <div class="clausula-texto">
+    Este contrato tem natureza eminentemente civil, de prestação de serviços autônoma, não gerando qualquer vínculo
+    empregatício, societário ou de subordinação entre as partes, nos termos da legislação civil vigente.
+  </div>
+
+  <div class="clausula-titulo">Cláusula 6ª — Da Rescisão</div>
+  <div class="clausula-texto">
+    O presente contrato poderá ser rescindido por qualquer das partes, mediante comunicação prévia, em caso de
+    descumprimento de quaisquer das cláusulas aqui estabelecidas.
+  </div>
+
+  <div class="clausula-titulo">Cláusula 7ª — Do Foro</div>
+  <div class="clausula-texto">
+    As partes elegem o foro da Comarca de Brasília-DF para dirimir quaisquer dúvidas ou controvérsias oriundas deste
+    contrato, com renúncia expressa a qualquer outro, por mais privilegiado que seja.
+  </div>
+
+  <div class="local-data">Brasília-DF, ${formatarData(contrato.criado_em || new Date())}.</div>
+
+  <div class="assinaturas">
+    <div class="bloco-assinatura">
+      <div class="linha"></div>
+      <div class="parte">Contratante</div>
+      <div class="nome-doc">${escapeHtml(EMPRESA.razaoSocial)}</div>
+      <div class="nome-doc">CNPJ ${escapeHtml(EMPRESA.cnpj)}</div>
+    </div>
+    <div class="bloco-assinatura">
+      <div class="linha"></div>
+      <div class="parte">Contratado(a)</div>
+      <div class="nome-doc">${escapeHtml(contrato.prestador_nome)}</div>
+      <div class="nome-doc">${rotuloDocumento} ${escapeHtml(documentoFormatado)}</div>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+}
+
 function gerarFooterTemplate() {
   return `
     <div style="width:100%; font-family: Arial, Helvetica, sans-serif; font-size: 8px; color: #888;
@@ -207,4 +341,4 @@ function gerarFooterTemplate() {
   `;
 }
 
-module.exports = { gerarHtmlProposta, gerarFooterTemplate, EMPRESA, cabecalhoDataUri };
+module.exports = { gerarHtmlProposta, gerarHtmlContrato, gerarFooterTemplate, EMPRESA, cabecalhoDataUri };

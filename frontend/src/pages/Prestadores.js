@@ -3,9 +3,9 @@ import toast from 'react-hot-toast';
 import { Plus, Search, Pencil, Trash2, X } from 'lucide-react';
 import { getPrestadores, criarPrestador, atualizarPrestador, removerPrestador } from '../services/api';
 import Paginacao from '../components/Paginacao';
-import { formatarTelefone, formatarCpfCnpj, validarCpf, formatarMoeda } from '../utils/format';
+import { formatarTelefone, formatarCpfCnpj, validarCpf, validarCnpj, formatarMoeda } from '../utils/format';
 
-const VAZIO = { nome: '', email: '', telefone: '', cpf: '', chavePix: '', categoria: '' };
+const VAZIO = { nome: '', email: '', telefone: '', documento: '', chavePix: '', categoria: '', tipo: 'Pessoa Física' };
 
 const CATEGORIA_INFO = {
   mao_de_obra: { label: 'Mão de obra', cor: '#c9a227', bg: '#1a1710', borda: '#4a3f1a' },
@@ -58,7 +58,8 @@ export default function Prestadores() {
     setEditandoId(p.id);
     setForm({
       nome: p.nome || '', email: p.email || '', telefone: p.telefone || '',
-      cpf: p.cpf || '', chavePix: p.chave_pix || '', categoria: p.categoria || '',
+      documento: p.documento || '', chavePix: p.chave_pix || '', categoria: p.categoria || '',
+      tipo: p.tipo || 'Pessoa Física',
     });
     setModalAberto(true);
   }
@@ -69,9 +70,14 @@ export default function Prestadores() {
       toast.error('Informe o nome do prestador');
       return;
     }
-    if (form.cpf.trim()) {
-      const digitos = form.cpf.replace(/\D/g, '');
-      if (digitos.length !== 11 || !validarCpf(digitos)) {
+    if (form.documento.trim()) {
+      const digitos = form.documento.replace(/\D/g, '');
+      if (form.tipo === 'Pessoa Jurídica') {
+        if (digitos.length !== 14 || !validarCnpj(digitos)) {
+          toast.error('CNPJ inválido');
+          return;
+        }
+      } else if (digitos.length !== 11 || !validarCpf(digitos)) {
         toast.error('CPF inválido');
         return;
       }
@@ -115,7 +121,7 @@ export default function Prestadores() {
           <input
             value={busca}
             onChange={e => setBusca(e.target.value)}
-            placeholder="Buscar por nome, CPF ou e-mail..."
+            placeholder="Buscar por nome, CPF/CNPJ ou e-mail..."
             style={{ paddingLeft: 30 }}
           />
         </div>
@@ -137,8 +143,9 @@ export default function Prestadores() {
           <thead>
             <tr style={{ background: '#0f0f0f', textAlign: 'left' }}>
               <th style={th}>Nome</th>
+              <th style={th}>Tipo</th>
               <th style={th}>Categoria</th>
-              <th style={th}>CPF</th>
+              <th style={th}>CPF/CNPJ</th>
               <th style={th}>Telefone</th>
               <th style={th}>E-mail</th>
               <th style={th}>Chave Pix</th>
@@ -148,16 +155,17 @@ export default function Prestadores() {
           </thead>
           <tbody>
             {carregando && (
-              <tr><td colSpan={8} style={tdVazio}>Carregando...</td></tr>
+              <tr><td colSpan={9} style={tdVazio}>Carregando...</td></tr>
             )}
             {!carregando && prestadores.length === 0 && (
-              <tr><td colSpan={8} style={tdVazio}>Nenhum prestador encontrado</td></tr>
+              <tr><td colSpan={9} style={tdVazio}>Nenhum prestador encontrado</td></tr>
             )}
             {!carregando && prestadores.map(p => {
               const info = CATEGORIA_INFO[p.categoria];
               return (
               <tr key={p.id} style={{ borderTop: '1px solid #1e1e1e' }}>
                 <td style={td}>{p.nome}</td>
+                <td style={td}>{p.tipo === 'Pessoa Jurídica' ? 'PJ' : 'PF'}</td>
                 <td style={td}>
                   {info ? (
                     <span style={{ padding: '3px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: info.bg, color: info.cor, border: `1px solid ${info.borda}` }}>
@@ -165,7 +173,7 @@ export default function Prestadores() {
                     </span>
                   ) : '—'}
                 </td>
-                <td style={td}>{formatarCpfCnpj(p.cpf) || '—'}</td>
+                <td style={td}>{formatarCpfCnpj(p.documento) || '—'}</td>
                 <td style={td}>{formatarTelefone(p.telefone) || '—'}</td>
                 <td style={td}>{p.email || '—'}</td>
                 <td style={td}>{p.chave_pix || '—'}</td>
@@ -224,9 +232,21 @@ export default function Prestadores() {
             </div>
 
             <form onSubmit={salvar}>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12, marginBottom: 12 }}>
+              <div style={{ marginBottom: 12 }}>
                 <Campo label="Nome *">
                   <input value={form.nome} onChange={e => setForm({ ...form, nome: e.target.value })} autoFocus />
+                </Campo>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                <Campo label="Tipo">
+                  <select
+                    value={form.tipo}
+                    onChange={e => setForm({ ...form, tipo: e.target.value, documento: '' })}
+                  >
+                    <option value="Pessoa Física">Pessoa Física</option>
+                    <option value="Pessoa Jurídica">Pessoa Jurídica</option>
+                  </select>
                 </Campo>
                 <Campo label="Categoria">
                   <select value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })}>
@@ -239,12 +259,12 @@ export default function Prestadores() {
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-                <Campo label="CPF">
+                <Campo label={form.tipo === 'Pessoa Jurídica' ? 'CNPJ' : 'CPF'}>
                   <input
-                    value={form.cpf}
-                    onChange={e => setForm({ ...form, cpf: formatarCpfCnpj(e.target.value) })}
-                    placeholder="000.000.000-00"
-                    maxLength={14}
+                    value={form.documento}
+                    onChange={e => setForm({ ...form, documento: formatarCpfCnpj(e.target.value) })}
+                    placeholder={form.tipo === 'Pessoa Jurídica' ? '00.000.000/0000-00' : '000.000.000-00'}
+                    maxLength={18}
                   />
                 </Campo>
                 <Campo label="Telefone">

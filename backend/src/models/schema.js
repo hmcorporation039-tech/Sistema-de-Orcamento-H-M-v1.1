@@ -200,6 +200,32 @@ async function criarTabelas() {
       )
     `);
     await client.query(`ALTER TABLE prestadores ADD COLUMN IF NOT EXISTS categoria VARCHAR(20)`);
+    await client.query(`ALTER TABLE prestadores ADD COLUMN IF NOT EXISTS tipo VARCHAR(20) DEFAULT 'Pessoa Física'`);
+    await client.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'prestadores' AND column_name = 'cpf')
+           AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'prestadores' AND column_name = 'documento') THEN
+          ALTER TABLE prestadores RENAME COLUMN cpf TO documento;
+        END IF;
+      END $$;
+    `);
+    await client.query(`ALTER TABLE prestadores ALTER COLUMN documento TYPE VARCHAR(20)`);
+
+    // Contratos de prestação de serviço gerados automaticamente para os prestadores
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS contratos (
+        id SERIAL PRIMARY KEY,
+        prestador_id INTEGER NOT NULL REFERENCES prestadores(id),
+        objeto TEXT,
+        local_obra VARCHAR(300),
+        periodo_inicio DATE NOT NULL,
+        periodo_fim DATE NOT NULL,
+        valor DECIMAL(12,2) NOT NULL,
+        usuario_id INTEGER REFERENCES usuarios(id),
+        criado_em TIMESTAMP DEFAULT NOW()
+      )
+    `);
 
     // Controle financeiro: Pix recebidos/realizados importados automaticamente dos
     // e-mails de notificação do Banco Inter (veja financeiroEmailService.js), ou

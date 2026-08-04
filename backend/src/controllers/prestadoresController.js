@@ -13,7 +13,7 @@ async function listar(req, res) {
 
   if (busca) {
     params.push(`%${busca}%`);
-    condicoes += ` AND (p.nome ILIKE $1 OR p.cpf ILIKE $1 OR p.email ILIKE $1)`;
+    condicoes += ` AND (p.nome ILIKE $1 OR p.documento ILIKE $1 OR p.email ILIKE $1)`;
   }
   if (categoria) {
     params.push(categoria);
@@ -44,18 +44,23 @@ async function listar(req, res) {
   }
 }
 
+const TIPOS_VALIDOS = ['Pessoa Física', 'Pessoa Jurídica'];
+
 async function criar(req, res) {
-  const { nome, email, telefone, cpf, chavePix, categoria } = req.body;
+  const { nome, email, telefone, documento, chavePix, categoria, tipo } = req.body;
   if (!nome) return res.status(400).json({ erro: 'Nome é obrigatório' });
   if (categoria && !CATEGORIAS_VALIDAS.includes(categoria)) {
     return res.status(400).json({ erro: 'Categoria inválida' });
   }
+  if (tipo && !TIPOS_VALIDOS.includes(tipo)) {
+    return res.status(400).json({ erro: 'Tipo inválido' });
+  }
 
   try {
     const result = await pool.query(
-      `INSERT INTO prestadores (nome, email, telefone, cpf, chave_pix, categoria)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [nome, email, telefone, cpf, chavePix, categoria || null]
+      `INSERT INTO prestadores (nome, email, telefone, documento, chave_pix, categoria, tipo)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [nome, email, telefone, documento, chavePix, categoria || null, tipo || 'Pessoa Física']
     );
     await vincularPrestadores();
     res.status(201).json(result.rows[0]);
@@ -67,16 +72,19 @@ async function criar(req, res) {
 
 async function atualizar(req, res) {
   const { id } = req.params;
-  const { nome, email, telefone, cpf, chavePix, categoria } = req.body;
+  const { nome, email, telefone, documento, chavePix, categoria, tipo } = req.body;
   if (categoria && !CATEGORIAS_VALIDAS.includes(categoria)) {
     return res.status(400).json({ erro: 'Categoria inválida' });
+  }
+  if (tipo && !TIPOS_VALIDOS.includes(tipo)) {
+    return res.status(400).json({ erro: 'Tipo inválido' });
   }
 
   try {
     const result = await pool.query(
-      `UPDATE prestadores SET nome=$1, email=$2, telefone=$3, cpf=$4, chave_pix=$5, categoria=$6, atualizado_em=NOW()
-       WHERE id=$7 AND ativo=true RETURNING *`,
-      [nome, email, telefone, cpf, chavePix, categoria || null, id]
+      `UPDATE prestadores SET nome=$1, email=$2, telefone=$3, documento=$4, chave_pix=$5, categoria=$6, tipo=$7, atualizado_em=NOW()
+       WHERE id=$8 AND ativo=true RETURNING *`,
+      [nome, email, telefone, documento, chavePix, categoria || null, tipo || 'Pessoa Física', id]
     );
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Prestador não encontrado' });
     await vincularPrestadores();
