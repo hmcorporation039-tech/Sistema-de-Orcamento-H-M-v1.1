@@ -22,7 +22,7 @@ const FORM_VAZIO = {
   observacoes: '',
   bdi: 20,
   imposto_venda: 0,
-  imposto_servico: 0,
+  imposto_servico: 6,
 };
 
 const SECOES_PADRAO = () => [
