@@ -63,14 +63,16 @@ export default function Contratos() {
     setModalAberto(true);
   }
 
-  async function baixarPdf(id) {
+  async function baixarPdf(contrato) {
+    const { id, prestador_nome, codigo_registro } = contrato;
     setBaixandoId(id);
     try {
       const res = await api.get(`/contratos/${id}/pdf`, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const nomeArquivo = (prestador_nome || 'Contrato').trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_');
       const link = document.createElement('a');
       link.href = url;
-      link.download = `Contrato_${id}.pdf`;
+      link.download = codigo_registro ? `Contrato_${nomeArquivo}_${codigo_registro}.pdf` : `Contrato_${nomeArquivo}.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -183,7 +185,7 @@ export default function Contratos() {
                   <button onClick={() => abrirEdicao(c)} style={btnIcone} title="Editar">
                     <Pencil size={13} />
                   </button>
-                  <button onClick={() => baixarPdf(c.id)} disabled={baixandoId === c.id} style={btnIcone} title="Baixar PDF">
+                  <button onClick={() => baixarPdf(c)} disabled={baixandoId === c.id} style={btnIcone} title="Baixar PDF">
                     <FileDown size={13} />
                   </button>
                   <button onClick={() => excluir(c)} style={{ ...btnIcone, color: '#b04040' }} title="Remover">

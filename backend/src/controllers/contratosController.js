@@ -129,9 +129,10 @@ async function gerarPdf(req, res) {
 
     const pdf = await montarPdfBuffer(contrato);
     const nomeArquivo = contrato.prestador_nome.replace(/[^a-zA-Z0-9]+/g, '_');
+    const sufixo = contrato.codigo_registro || contrato.id;
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="Contrato_${contrato.id}_${nomeArquivo}.pdf"`,
+      'Content-Disposition': `attachment; filename="Contrato_${nomeArquivo}_${sufixo}.pdf"`,
     });
     res.send(pdf);
   } catch (err) {

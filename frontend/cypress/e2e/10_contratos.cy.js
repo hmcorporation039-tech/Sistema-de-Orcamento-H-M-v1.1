@@ -53,11 +53,23 @@ describe('Contratos de Prestação de Serviço', () => {
     cy.contains('tr', nomePrestador).find('td').first().invoke('text').should('match', /^CT-\d{4}-\d{4}$/);
   });
 
-  it('baixa o PDF manualmente pelo botão da lista, sem download automático', () => {
+  it('baixa o PDF manualmente pelo botão da lista, sem download automático, nomeado com o prestador', () => {
     cy.get('input[placeholder*="Buscar"]').type(nomePrestador);
+    cy.contains('tr', nomePrestador, { timeout: 8000 });
+
+    cy.window().then(win => {
+      cy.stub(win.HTMLAnchorElement.prototype, 'click').callsFake(function () {
+        win.__ultimoNomeArquivo = this.download;
+      });
+    });
+
     cy.intercept('GET', '**/contratos/*/pdf').as('gerarPdf');
-    cy.contains('tr', nomePrestador, { timeout: 8000 }).find('button[title="Baixar PDF"]').click();
-    cy.wait('@gerarPdf').its('response.statusCode').should('eq', 200);
+    cy.contains('tr', nomePrestador).find('button[title="Baixar PDF"]').click();
+    cy.wait('@gerarPdf', { timeout: 15000 }).its('response.statusCode').should('eq', 200);
+
+    cy.window().should(win => {
+      expect(win.__ultimoNomeArquivo).to.match(/^Contrato_Cypress_QA_Prestador_Contrato_\d+_CT-\d{4}-\d{4}\.pdf$/);
+    });
   });
 
   it('edita um contrato existente mantendo o mesmo código de registro', () => {
