@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Search, FileDown, Trash2, X } from 'lucide-react';
-import { getContratos, criarContrato, removerContrato, getPrestadores } from '../services/api';
+import { Plus, Search, FileDown, Pencil, Trash2, X } from 'lucide-react';
+import { getContratos, criarContrato, atualizarContrato, removerContrato, getPrestadores } from '../services/api';
 import api from '../services/api';
 import Paginacao from '../components/Paginacao';
 import { formatarMoeda, formatarData } from '../utils/format';
@@ -14,6 +14,7 @@ export default function Contratos() {
   const [busca, setBusca] = useState('');
   const [carregando, setCarregando] = useState(true);
   const [modalAberto, setModalAberto] = useState(false);
+  const [editandoId, setEditandoId] = useState(null);
   const [form, setForm] = useState(VAZIO);
   const [salvando, setSalvando] = useState(false);
   const [baixandoId, setBaixandoId] = useState(null);
@@ -47,7 +48,18 @@ export default function Contratos() {
   }, []);
 
   function abrirNovo() {
+    setEditandoId(null);
     setForm(VAZIO);
+    setModalAberto(true);
+  }
+
+  function abrirEdicao(c) {
+    setEditandoId(c.id);
+    setForm({
+      prestadorId: c.prestador_id, objeto: c.objeto || '', localObra: c.local_obra || '',
+      periodoInicio: (c.periodo_inicio || '').slice(0, 10), periodoFim: (c.periodo_fim || '').slice(0, 10),
+      valor: String(c.valor),
+    });
     setModalAberto(true);
   }
 
@@ -90,13 +102,17 @@ export default function Contratos() {
     }
     setSalvando(true);
     try {
-      const res = await criarContrato(form);
-      toast.success('Contrato gerado');
+      if (editandoId) {
+        await atualizarContrato(editandoId, form);
+        toast.success('Contrato atualizado');
+      } else {
+        await criarContrato(form);
+        toast.success('Contrato gerado — clique em "Baixar PDF" para baixá-lo');
+      }
       setModalAberto(false);
       carregar();
-      await baixarPdf(res.data.id);
     } catch (err) {
-      toast.error(err.response?.data?.erro || 'Erro ao gerar contrato');
+      toast.error(err.response?.data?.erro || 'Erro ao salvar contrato');
     } finally {
       setSalvando(false);
     }
@@ -123,7 +139,7 @@ export default function Contratos() {
           <input
             value={busca}
             onChange={e => setBusca(e.target.value)}
-            placeholder="Buscar por nome do prestador..."
+            placeholder="Buscar por prestador ou código..."
             style={{ paddingLeft: 30 }}
           />
         </div>
@@ -137,13 +153,13 @@ export default function Contratos() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr style={{ background: '#0f0f0f', textAlign: 'left' }}>
-              <th style={th}>Nº</th>
+              <th style={th}>Código</th>
               <th style={th}>Prestador</th>
               <th style={th}>Tipo</th>
               <th style={th}>Local da Obra</th>
               <th style={th}>Período</th>
               <th style={{ ...th, textAlign: 'right' }}>Valor</th>
-              <th style={{ ...th, width: 90 }}></th>
+              <th style={{ ...th, width: 116 }}></th>
             </tr>
           </thead>
           <tbody>
@@ -155,7 +171,7 @@ export default function Contratos() {
             )}
             {!carregando && contratos.map(c => (
               <tr key={c.id} style={{ borderTop: '1px solid #1e1e1e' }}>
-                <td style={td}>{String(c.id).padStart(4, '0')}</td>
+                <td style={{ ...td, fontWeight: 700, color: '#c9a227' }}>{c.codigo_registro || '—'}</td>
                 <td style={td}>{c.prestador_nome}</td>
                 <td style={td}>{c.prestador_tipo === 'Pessoa Jurídica' ? 'PJ' : 'PF'}</td>
                 <td style={td}>{c.local_obra || '—'}</td>
@@ -164,6 +180,9 @@ export default function Contratos() {
                   {formatarMoeda(c.valor)}
                 </td>
                 <td style={{ ...td, display: 'flex', gap: 6 }}>
+                  <button onClick={() => abrirEdicao(c)} style={btnIcone} title="Editar">
+                    <Pencil size={13} />
+                  </button>
                   <button onClick={() => baixarPdf(c.id)} disabled={baixandoId === c.id} style={btnIcone} title="Baixar PDF">
                     <FileDown size={13} />
                   </button>
@@ -183,7 +202,9 @@ export default function Contratos() {
         <div style={overlay} onClick={() => setModalAberto(false)}>
           <div style={modal} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20 }}>
-              <h3 style={{ color: '#c9a227', fontSize: 15, fontWeight: 700, flex: 1 }}>Novo Contrato</h3>
+              <h3 style={{ color: '#c9a227', fontSize: 15, fontWeight: 700, flex: 1 }}>
+                {editandoId ? 'Editar Contrato' : 'Novo Contrato'}
+              </h3>
               <button onClick={() => setModalAberto(false)} style={{ ...btnIcone, background: 'transparent' }}>
                 <X size={16} />
               </button>
@@ -239,7 +260,9 @@ export default function Contratos() {
               <div style={{ display: 'flex', gap: 10, marginTop: 22, justifyContent: 'flex-end' }}>
                 <button type="button" onClick={() => setModalAberto(false)} style={btnSecundario}>Cancelar</button>
                 <button type="submit" disabled={salvando} style={btnPrimario}>
-                  {salvando ? 'Gerando...' : 'Gerar Contrato'}
+                  {salvando
+                    ? (editandoId ? 'Salvando...' : 'Gerando...')
+                    : (editandoId ? 'Salvar Alterações' : 'Gerar Contrato')}
                 </button>
               </div>
             </form>

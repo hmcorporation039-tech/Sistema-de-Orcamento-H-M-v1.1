@@ -92,6 +92,7 @@ router.delete('/prestadores/:id', autenticar, prestCtrl.remover);
 // ── CONTRATOS DE PRESTAÇÃO DE SERVIÇO ────────────────────────────────────
 router.get('/contratos', autenticar, contrCtrl.listar);
 router.post('/contratos', autenticar, contrCtrl.criar);
+router.put('/contratos/:id', autenticar, contrCtrl.atualizar);
 router.get('/contratos/:id/pdf', autenticar, contrCtrl.gerarPdf);
 router.delete('/contratos/:id', autenticar, contrCtrl.remover);
 

@@ -12,7 +12,7 @@ async function listar(req, res) {
 
   if (busca) {
     params.push(`%${busca}%`);
-    condicoes += ` AND p.nome ILIKE $1`;
+    condicoes += ` AND (p.nome ILIKE $1 OR c.codigo_registro ILIKE $1)`;
   }
 
   try {
@@ -85,13 +85,40 @@ async function criar(req, res) {
 
     const result = await pool.query(
       `INSERT INTO contratos (prestador_id, objeto, local_obra, periodo_inicio, periodo_fim, valor, usuario_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, criado_em`,
       [prestadorId, objeto || null, localObra || null, periodoInicio, periodoFim, valor, req.usuario.id]
     );
-    res.status(201).json({ id: result.rows[0].id });
+    const { id, criado_em } = result.rows[0];
+    const codigoRegistro = `CT-${new Date(criado_em).getFullYear()}-${String(id).padStart(4, '0')}`;
+    await pool.query('UPDATE contratos SET codigo_registro = $1 WHERE id = $2', [codigoRegistro, id]);
+
+    res.status(201).json({ id, codigoRegistro });
   } catch (err) {
     console.error('Erro ao criar contrato:', err);
     res.status(500).json({ erro: 'Erro ao criar contrato' });
+  }
+}
+
+async function atualizar(req, res) {
+  const erro = validar(req.body);
+  if (erro) return res.status(400).json({ erro });
+
+  const { id } = req.params;
+  const { prestadorId, objeto, localObra, periodoInicio, periodoFim, valor } = req.body;
+  try {
+    const prestador = await pool.query('SELECT id FROM prestadores WHERE id = $1 AND ativo = true', [prestadorId]);
+    if (prestador.rows.length === 0) return res.status(404).json({ erro: 'Prestador não encontrado' });
+
+    const result = await pool.query(
+      `UPDATE contratos SET prestador_id=$1, objeto=$2, local_obra=$3, periodo_inicio=$4, periodo_fim=$5, valor=$6
+       WHERE id=$7 RETURNING id`,
+      [prestadorId, objeto || null, localObra || null, periodoInicio, periodoFim, valor, id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ erro: 'Contrato não encontrado' });
+    res.json({ id: result.rows[0].id });
+  } catch (err) {
+    console.error('Erro ao atualizar contrato:', err);
+    res.status(500).json({ erro: 'Erro ao atualizar contrato' });
   }
 }
 
@@ -123,4 +150,4 @@ async function remover(req, res) {
   }
 }
 
-module.exports = { listar, criar, gerarPdf, remover };
+module.exports = { listar, criar, atualizar, gerarPdf, remover };

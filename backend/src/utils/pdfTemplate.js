@@ -248,7 +248,7 @@ function gerarHtmlContrato(contrato) {
   ${cabecalhoDataUri ? `<img src="${cabecalhoDataUri}" class="banner" alt="H&amp;M Engenharia e Tecnologia LTDA" />` : ''}
 
   <div class="titulo">Contrato de Prestação de Serviços</div>
-  <div class="subtitulo">Contrato Nº ${String(contrato.id).padStart(4, '0')}</div>
+  <div class="subtitulo">Contrato Nº ${String(contrato.id).padStart(4, '0')} · Código de Registro ${escapeHtml(contrato.codigo_registro) || '—'}</div>
 
   <div class="qualificacao">
     <b>CONTRATANTE:</b> ${escapeHtml(EMPRESA.razaoSocial)}, pessoa jurídica de direito privado, inscrita no CNPJ
@@ -307,7 +307,7 @@ function gerarHtmlContrato(contrato) {
     contrato, com renúncia expressa a qualquer outro, por mais privilegiado que seja.
   </div>
 
-  <div class="local-data">Brasília-DF, ${formatarData(contrato.criado_em || new Date())}.</div>
+  <div class="local-data">Brasília-DF, ${formatarData(new Date())}.</div>
 
   <div class="assinaturas">
     <div class="bloco-assinatura">

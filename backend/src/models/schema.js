@@ -226,6 +226,13 @@ async function criarTabelas() {
         criado_em TIMESTAMP DEFAULT NOW()
       )
     `);
+    await client.query(`ALTER TABLE contratos ADD COLUMN IF NOT EXISTS codigo_registro VARCHAR(30) UNIQUE`);
+    // Contratos antigos sem código (ex: criados antes desta coluna existir) recebem um agora
+    await client.query(`
+      UPDATE contratos
+      SET codigo_registro = 'CT-' || EXTRACT(YEAR FROM criado_em) || '-' || LPAD(id::text, 4, '0')
+      WHERE codigo_registro IS NULL
+    `);
 
     // Controle financeiro: Pix recebidos/realizados importados automaticamente dos
     // e-mails de notificação do Banco Inter (veja financeiroEmailService.js), ou

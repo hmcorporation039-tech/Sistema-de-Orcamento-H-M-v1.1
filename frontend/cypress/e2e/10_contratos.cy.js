@@ -43,15 +43,48 @@ describe('Contratos de Prestação de Serviço', () => {
     cy.contains('label', 'Valor (R$) *').parent().find('input').type('1500');
 
     cy.intercept('POST', '**/contratos').as('criarContrato');
-    cy.intercept('GET', '**/contratos/*/pdf').as('gerarPdf');
     cy.contains('button', 'Gerar Contrato').click();
     cy.wait('@criarContrato').its('response.statusCode').should('eq', 201);
-    cy.contains('Contrato gerado').should('be.visible');
-    cy.wait('@gerarPdf').its('response.statusCode').should('eq', 200);
+    cy.contains(/contrato gerado/i).should('be.visible');
 
     cy.contains('td', nomePrestador, { timeout: 8000 }).should('be.visible');
     cy.contains('tr', nomePrestador).contains('td', 'Obra Cypress QA').should('be.visible');
     cy.contains('tr', nomePrestador).contains('td', 'R$ 1.500,00').should('be.visible');
+    cy.contains('tr', nomePrestador).find('td').first().invoke('text').should('match', /^CT-\d{4}-\d{4}$/);
+  });
+
+  it('baixa o PDF manualmente pelo botão da lista, sem download automático', () => {
+    cy.get('input[placeholder*="Buscar"]').type(nomePrestador);
+    cy.intercept('GET', '**/contratos/*/pdf').as('gerarPdf');
+    cy.contains('tr', nomePrestador, { timeout: 8000 }).find('button[title="Baixar PDF"]').click();
+    cy.wait('@gerarPdf').its('response.statusCode').should('eq', 200);
+  });
+
+  it('edita um contrato existente mantendo o mesmo código de registro', () => {
+    cy.get('input[placeholder*="Buscar"]').type(nomePrestador);
+    cy.contains('tr', nomePrestador, { timeout: 8000 }).find('td').first().invoke('text').then(codigoOriginal => {
+      cy.contains('tr', nomePrestador).find('button[title="Editar"]').click();
+      cy.contains('h3', 'Editar Contrato').should('be.visible');
+      cy.contains('label', 'Local da obra').parent().find('input').clear().type('Obra Cypress QA Editada');
+      cy.contains('label', 'Valor (R$) *').parent().find('input').clear().type('2000');
+
+      cy.intercept('PUT', '**/contratos/*').as('atualizarContrato');
+      cy.contains('button', 'Salvar Alterações').click();
+      cy.wait('@atualizarContrato').its('response.statusCode').should('eq', 200);
+      cy.contains(/contrato atualizado/i).should('be.visible');
+
+      cy.contains('tr', nomePrestador, { timeout: 8000 }).contains('td', 'Obra Cypress QA Editada').should('be.visible');
+      cy.contains('tr', nomePrestador).contains('td', 'R$ 2.000,00').should('be.visible');
+      cy.contains('tr', nomePrestador).find('td').first().invoke('text').should('eq', codigoOriginal);
+    });
+  });
+
+  it('busca o contrato pelo código de registro', () => {
+    cy.get('input[placeholder*="Buscar"]').type(nomePrestador);
+    cy.contains('tr', nomePrestador, { timeout: 8000 }).find('td').first().invoke('text').then(codigo => {
+      cy.get('input[placeholder*="Buscar"]').clear().type(codigo);
+      cy.contains('td', nomePrestador, { timeout: 8000 }).should('be.visible');
+    });
   });
 
   it('busca o contrato gerado e remove', () => {
