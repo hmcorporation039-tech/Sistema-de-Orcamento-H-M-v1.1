@@ -8,7 +8,7 @@ const { criarTabelas } = require('./models/schema');
 const { credenciaisConfiguradas } = require('./utils/emailClient');
 const { verificarCaixaDeEntrada } = require('./services/notaFiscalEmailService');
 const { verificarPixNaCaixaDeEntrada } = require('./services/financeiroEmailService');
-const { verificarPastaFornecedores, PASTA_FORNECEDORES } = require('./services/cotacaoFornecedorService');
+const { verificarPastaFornecedores, PASTAS_FORNECEDORES } = require('./services/cotacaoFornecedorService');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -104,7 +104,7 @@ function agendarVerificacaoDePastaFornecedores() {
 
   setTimeout(rodar, 15 * 1000);
   setInterval(rodar, INTERVALO_VERIFICACAO_FORNECEDORES_MS);
-  console.log(`Leitura automática de orçamentos de fornecedores ativa (a cada ${INTERVALO_VERIFICACAO_FORNECEDORES_MS / 60000}min) — pasta: ${PASTA_FORNECEDORES}`);
+  console.log(`Leitura automática de orçamentos de fornecedores ativa (a cada ${INTERVALO_VERIFICACAO_FORNECEDORES_MS / 60000}min) — pastas: ${PASTAS_FORNECEDORES.join(' | ')}`);
 }
 
 // Inicializar

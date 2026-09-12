@@ -5,9 +5,12 @@ const pool = require('../config/database');
 const { extrairCotacaoPdf } = require('../utils/cotacaoFornecedorParser');
 const { classificarPorDescricao } = require('../utils/classificadorMaterial');
 
-// Pasta onde o usuário salva manualmente os orçamentos/cotações de fornecedor
-// recebidos por WhatsApp (hoje só em PDF). Fica ao lado de backend/ e frontend/.
-const PASTA_FORNECEDORES = path.join(__dirname, '..', '..', '..', 'Orçamentos recebidos fornecedores');
+// Pastas onde o usuário salva manualmente os orçamentos/cotações de fornecedor
+// recebidos por WhatsApp (hoje só em PDF). A local fica ao lado de backend/ e
+// frontend/; a de rede é compartilhada no servidor de arquivos da empresa.
+const PASTA_FORNECEDORES_LOCAL = path.join(__dirname, '..', '..', '..', 'Orçamentos recebidos fornecedores');
+const PASTA_FORNECEDORES_REDE = '\\\\MARCIO-SERVER\\Arquivos Gerais 2\\H&M\\Orçamentos Recebidos';
+const PASTAS_FORNECEDORES = [PASTA_FORNECEDORES_LOCAL, PASTA_FORNECEDORES_REDE];
 
 function normalizarDescricao(s) {
   return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -71,26 +74,46 @@ async function upsertMaterialMenorPreco(client, item, origem, margem) {
   return { criado: true, mudou: true };
 }
 
+// Lista os PDFs de uma pasta de cotações. Pastas de rede podem estar
+// temporariamente indisponíveis (servidor desligado, sem VPN, etc.) — nesse
+// caso só avisa e segue pras outras pastas, não derruba o job inteiro.
+function listarPdfs(pasta, resumo, criarSeNaoExistir) {
+  try {
+    if (!fs.existsSync(pasta)) {
+      if (criarSeNaoExistir) {
+        fs.mkdirSync(pasta, { recursive: true });
+      } else {
+        resumo.avisos.push(`Pasta de fornecedores não encontrada (verifique a rede): ${pasta}`);
+        return [];
+      }
+    }
+    return fs.readdirSync(pasta)
+      .filter(nome => /\.pdf$/i.test(nome))
+      .map(nome => ({ pasta, nome }));
+  } catch (err) {
+    resumo.avisos.push(`Não foi possível acessar a pasta "${pasta}": ${err.message}`);
+    return [];
+  }
+}
+
 async function verificarPastaFornecedores() {
   const resumo = {
     arquivosEncontrados: 0, arquivosProcessados: 0,
     materiaisCriados: 0, materiaisAtualizados: 0, avisos: [],
   };
 
-  if (!fs.existsSync(PASTA_FORNECEDORES)) {
-    fs.mkdirSync(PASTA_FORNECEDORES, { recursive: true });
-  }
-
-  const arquivos = fs.readdirSync(PASTA_FORNECEDORES)
-    .filter(nome => /\.pdf$/i.test(nome));
+  const arquivos = [
+    ...listarPdfs(PASTA_FORNECEDORES_LOCAL, resumo, true),
+    ...listarPdfs(PASTA_FORNECEDORES_REDE, resumo, false),
+  ];
   resumo.arquivosEncontrados = arquivos.length;
 
   const client = await pool.connect();
   try {
     const margem = await obterMargemPadrao(client);
 
-    for (const nome of arquivos) {
-      const caminho = path.join(PASTA_FORNECEDORES, nome);
+    for (const { pasta, nome } of arquivos) {
+      const caminho = path.join(pasta, nome);
       let buffer;
       try {
         buffer = fs.readFileSync(caminho);
@@ -149,4 +172,4 @@ async function verificarPastaFornecedores() {
   return resumo;
 }
 
-module.exports = { verificarPastaFornecedores, PASTA_FORNECEDORES };
+module.exports = { verificarPastaFornecedores, PASTAS_FORNECEDORES };
