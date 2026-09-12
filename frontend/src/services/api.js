@@ -76,6 +76,17 @@ export const removerProposta = (id) => api.delete(`/propostas/${id}`);
 export const enviarPropostaPorEmail = (id, destinatario, mensagem) =>
   api.post(`/propostas/${id}/enviar-email`, { destinatario, mensagem });
 
+// ── ANÁLISE DE PROJETO (compatibilização) ────────────────────────────────
+export const analisarProjeto = (arquivos) => {
+  const formData = new FormData();
+  arquivos.forEach(arquivo => formData.append('arquivos', arquivo));
+  return api.post('/projetos/analisar', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+export const gerarRelatorioCompatibilizacao = (analise) =>
+  api.post('/projetos/relatorio-compatibilizacao', analise, { responseType: 'blob' });
+
 // ── USUÁRIOS ──────────────────────────────────────────────────────────
 export const getUsuarios = () => api.get('/usuarios');
 export const criarUsuario = (data) => api.post('/usuarios', data);

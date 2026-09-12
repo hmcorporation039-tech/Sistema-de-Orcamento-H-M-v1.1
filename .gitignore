@@ -33,3 +33,7 @@ Orçamentos V*/
 # PDFs de cotação de fornecedores recebidos por WhatsApp (dados comerciais reais,
 # não fazem parte do código-fonte — o sistema só lê essa pasta em produção)
 Orçamentos recebidos fornecedores/
+
+# Projetos de clientes (PDF/DWG) enviados para gerar rascunho de orçamento
+# automaticamente — dados de projeto reais, não fazem parte do código-fonte
+Projetos recebidos clientes/

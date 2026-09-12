@@ -14,6 +14,7 @@ import Financeiro from './pages/Financeiro';
 import Prestadores from './pages/Prestadores';
 import Contratos from './pages/Contratos';
 import Usuarios from './pages/Usuarios';
+import AnaliseProjeto from './pages/AnaliseProjeto';
 
 function RotaProtegida({ children }) {
   const { usuario, carregando } = useAuth();
@@ -53,6 +54,7 @@ export default function App() {
             <Route path="financeiro" element={<Financeiro />} />
             <Route path="prestadores" element={<Prestadores />} />
             <Route path="contratos" element={<Contratos />} />
+            <Route path="analise-projeto" element={<AnaliseProjeto />} />
             <Route path="usuarios" element={<RotaAdmin><Usuarios /></RotaAdmin>} />
           </Route>
         </Routes>

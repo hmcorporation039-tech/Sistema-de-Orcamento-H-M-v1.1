@@ -12,6 +12,7 @@ const NAV = [
   { to: '/financeiro', label: 'Financeiro' },
   { to: '/prestadores', label: 'Prestadores' },
   { to: '/contratos', label: 'Contratos' },
+  { to: '/analise-projeto', label: 'Análise de Projeto' },
 ];
 
 const NAV_ADMIN = { to: '/usuarios', label: 'Usuários' };
