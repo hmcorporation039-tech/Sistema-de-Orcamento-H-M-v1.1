@@ -125,6 +125,10 @@ async function criarTabelas() {
     `);
     await client.query(`ALTER TABLE proposta_itens ADD COLUMN IF NOT EXISTS ncm VARCHAR(10)`);
     await client.query(`ALTER TABLE proposta_itens ADD COLUMN IF NOT EXISTS codigo VARCHAR(20)`);
+    // Subgrupo: agrupamento visual opcional dentro de uma seção (ex: "Alarme" dentro de "Mão de Obra")
+    await client.query(`ALTER TABLE proposta_itens ADD COLUMN IF NOT EXISTS subgrupo VARCHAR(100)`);
+    // Status do item: 'confirmado' (preço fechado) ou 'a_cotar' (preço estimado, pendente de confirmação)
+    await client.query(`ALTER TABLE proposta_itens ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'confirmado'`);
 
     // Trilha de auditoria: registra criação, edição, mudança de status e duplicação de propostas
     await client.query(`

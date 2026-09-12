@@ -50,7 +50,18 @@ function gerarHtmlProposta(proposta) {
   const linhasSecoes = secoes.map(sec => {
     const itensSecao = itens.filter(it => it.secao_id === sec.id);
     if (itensSecao.length === 0) return '';
-    const linhasItens = itensSecao.map(it => `
+    // Agrupa por subgrupo (ex: "Cabeamento/Rede/CFTV", "Alarme"), na ordem em que os itens
+    // foram lançados, inserindo uma linha de sub-cabeçalho a cada troca de subgrupo. O status
+    // interno do item (confirmado/a cotar) é uso interno da equipe e não aparece no PDF do cliente.
+    let ultimoSubgrupo = null;
+    const linhasItens = itensSecao.map(it => {
+      const sg = (it.subgrupo || '').trim() || null;
+      let cabecalho = '';
+      if (sg !== ultimoSubgrupo) {
+        if (sg) cabecalho = `<tr class="subgrupo"><td colspan="6">${escapeHtml(sg)}</td></tr>`;
+        ultimoSubgrupo = sg;
+      }
+      return `${cabecalho}
       <tr>
         <td>${escapeHtml(it.descricao)}</td>
         <td class="num">${escapeHtml(it.codigo) || '—'}</td>
@@ -58,8 +69,8 @@ function gerarHtmlProposta(proposta) {
         <td class="num">${escapeHtml(it.unidade)}</td>
         <td class="num">${formatarMoeda(it.valor_unitario)}</td>
         <td class="num total">${formatarMoeda(it.valor_total)}</td>
-      </tr>
-    `).join('');
+      </tr>`;
+    }).join('');
     return `
       <tr class="secao"><td colspan="6">${escapeHtml(sec.nome)}</td></tr>
       ${linhasItens}
@@ -91,6 +102,7 @@ function gerarHtmlProposta(proposta) {
   th.num, td.num { text-align: right; }
   td { padding: 5px 8px; border-bottom: 1px solid #e5e5e5; font-size: 10px; }
   tr.secao td { background: #f2f2f2; font-weight: 700; color: #333; padding: 5px 8px; }
+  tr.subgrupo td { font-weight: 700; color: #666; padding: 4px 8px 3px 12px; font-size: 9px; text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid #e5e5e5; }
   td.total { font-weight: 700; }
   .totais { display: flex; justify-content: flex-end; margin-bottom: 14px; }
   .totais table { width: 300px; margin-bottom: 0; }

@@ -150,11 +150,12 @@ async function criar(req, res) {
           const it = secItens[j];
           await client.query(
             `INSERT INTO proposta_itens
-             (proposta_id, secao_id, material_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, codigo, ordem)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+             (proposta_id, secao_id, material_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, codigo, subgrupo, status, ordem)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
             [proposta.id, secId, it.material_id || null, it.desc || it.descricao, it.qtd || it.quantidade || 1,
              it.un || it.unidade, it.vu || it.valor_unitario || 0,
-             (it.qtd || 1) * (it.vu || 0), it.ncm || null, it.codigo || null, j]
+             (it.qtd || 1) * (it.vu || 0), it.ncm || null, it.codigo || null,
+             it.subgrupo || null, it.status || 'confirmado', j]
           );
         }
       }
@@ -233,11 +234,12 @@ async function atualizar(req, res) {
           const it = secItens[j];
           await client.query(
             `INSERT INTO proposta_itens
-             (proposta_id, secao_id, material_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, codigo, ordem)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+             (proposta_id, secao_id, material_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, codigo, subgrupo, status, ordem)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
             [proposta.id, secId, it.material_id || null, it.desc || it.descricao, it.qtd || it.quantidade || 1,
              it.un || it.unidade, it.vu || it.valor_unitario || 0,
-             (it.qtd || 1) * (it.vu || 0), it.ncm || null, it.codigo || null, j]
+             (it.qtd || 1) * (it.vu || 0), it.ncm || null, it.codigo || null,
+             it.subgrupo || null, it.status || 'confirmado', j]
           );
         }
       }
@@ -312,9 +314,9 @@ async function duplicar(req, res) {
       for (const it of itensDaSecao) {
         await client.query(
           `INSERT INTO proposta_itens
-           (proposta_id, secao_id, material_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, codigo, ordem)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-          [nova.id, novoSecId, it.material_id, it.descricao, it.quantidade, it.unidade, it.valor_unitario, it.valor_total, it.ncm, it.codigo, it.ordem]
+           (proposta_id, secao_id, material_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, codigo, subgrupo, status, ordem)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [nova.id, novoSecId, it.material_id, it.descricao, it.quantidade, it.unidade, it.valor_unitario, it.valor_total, it.ncm, it.codigo, it.subgrupo, it.status, it.ordem]
         );
       }
     }
@@ -407,6 +409,11 @@ async function montarPdfBuffer(id) {
   }
 }
 
+function nomeArquivoProposta(proposta) {
+  const nomeCliente = String(proposta.cliente_nome || '').trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_');
+  return `${nomeCliente}_${proposta.numero}.pdf`;
+}
+
 async function gerarPdf(req, res) {
   const { id } = req.params;
   try {
@@ -415,7 +422,7 @@ async function gerarPdf(req, res) {
 
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="Proposta_${resultado.proposta.numero}.pdf"`,
+      'Content-Disposition': `attachment; filename="${nomeArquivoProposta(resultado.proposta)}"`,
     });
     res.send(resultado.pdf);
   } catch (err) {
@@ -444,7 +451,7 @@ async function enviarEmail(req, res) {
       subject: `Proposta ${proposta.numero} — H&M Engenharia e Tecnologia`,
       text: mensagem || `Olá,\n\nSegue em anexo a proposta ${proposta.numero}.\n\nAtenciosamente,\nH&M Engenharia e Tecnologia`,
       attachments: [
-        { filename: `Proposta_${proposta.numero}.pdf`, content: pdf, contentType: 'application/pdf' },
+        { filename: nomeArquivoProposta(proposta), content: pdf, contentType: 'application/pdf' },
       ],
     });
 

@@ -89,7 +89,8 @@ export default function Orcamento() {
       setItens((p.itens || []).map(it => ({
         id: gerarId(), sid: it.secao_id, material_id: it.material_id,
         descricao: it.descricao, quantidade: Number(it.quantidade), unidade: it.unidade,
-        valor_unitario: Number(it.valor_unitario), ncm: it.ncm || '', codigo: it.codigo || ''
+        valor_unitario: Number(it.valor_unitario), ncm: it.ncm || '', codigo: it.codigo || '',
+        subgrupo: it.subgrupo || '', status: it.status || 'confirmado'
       })));
       setPropostaSalva(null);
     }).catch(() => {
@@ -144,8 +145,33 @@ export default function Orcamento() {
   function adicionarItem(sid) {
     setItens(it => [...it, {
       id: gerarId(), sid, material_id: null,
-      descricao: '', quantidade: 1, unidade: 'un', valor_unitario: 0, ncm: '', codigo: ''
+      descricao: '', quantidade: 1, unidade: 'un', valor_unitario: 0, ncm: '', codigo: '',
+      subgrupo: '', status: 'confirmado'
     }]);
+  }
+
+  // Subgrupos já usados em uma seção (para sugerir reaproveitar o mesmo nome, ex: "Alarme")
+  function subgruposDaSecao(sid) {
+    return Array.from(new Set(
+      itens.filter(it => it.sid === sid).map(it => (it.subgrupo || '').trim()).filter(Boolean)
+    ));
+  }
+
+  // Agrupa os itens de uma seção por subgrupo, na ordem em que aparecem (não reordena),
+  // emitindo um cabeçalho toda vez que o subgrupo muda (igual ao "Bloco X" do PDF de referência).
+  function itensAgrupados(sid) {
+    const lista = itens.filter(it => it.sid === sid);
+    const linhas = [];
+    let ultimoSubgrupo = null;
+    for (const it of lista) {
+      const sg = (it.subgrupo || '').trim() || null;
+      if (sg !== ultimoSubgrupo) {
+        if (sg) linhas.push({ tipo: 'cabecalho', nome: sg, key: `cab_${it.id}` });
+        ultimoSubgrupo = sg;
+      }
+      linhas.push({ tipo: 'item', item: it });
+    }
+    return linhas;
   }
 
   function atualizarItem(id, campo, valor) {
@@ -194,7 +220,8 @@ export default function Orcamento() {
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
       const link = document.createElement('a');
       link.href = url;
-      link.download = `Proposta_${propostaSalva.numero}.pdf`;
+      const nomeCliente = form.cliente_nome.trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_');
+      link.download = `${nomeCliente}_${propostaSalva.numero}.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -242,7 +269,8 @@ export default function Orcamento() {
         itens: itens.map(it => ({
           sid: it.sid, desc: it.descricao, qtd: Number(it.quantidade) || 0,
           un: it.unidade, vu: Number(it.valor_unitario) || 0, ncm: it.ncm || null,
-          codigo: it.codigo || null, material_id: it.material_id || null
+          codigo: it.codigo || null, material_id: it.material_id || null,
+          subgrupo: it.subgrupo?.trim() || null, status: it.status || 'confirmado'
         })),
       };
       const res = editandoId ? await atualizarProposta(editandoId, payload) : await criarProposta(payload);
@@ -332,8 +360,9 @@ export default function Orcamento() {
       {secoes.map(sec => {
         const maoDeObra = ehMaoDeObra(sec.nome);
         const colunas = maoDeObra
-          ? '1.2fr 3.1fr 0.7fr 0.7fr 0.9fr 0.9fr 32px'
-          : '1.2fr 2.4fr 0.9fr 0.7fr 0.7fr 0.9fr 0.9fr 32px';
+          ? '0.9fr 1.2fr 3.1fr 0.7fr 0.7fr 0.9fr 0.9fr 1fr 32px'
+          : '0.9fr 1.2fr 2.4fr 0.9fr 0.7fr 0.7fr 0.9fr 0.9fr 1fr 32px';
+        const datalistId = `subgrupos-${sec.id}`;
 
         return (
           <div key={sec.id} style={card}>
@@ -353,41 +382,74 @@ export default function Orcamento() {
 
             {itens.filter(it => it.sid === sec.id).length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, marginBottom: 6, fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px' }}>
+                <span>Subgrupo</span>
                 <span>{maoDeObra ? 'Categoria' : 'Catálogo'}</span>
                 <span>Descrição</span>
                 {!maoDeObra && <span>NCM/SH</span>}
-                <span>Qtd</span><span>Un.</span><span>Vlr. Unit.</span><span>Total</span><span />
+                <span>Qtd</span><span>Un.</span><span>Vlr. Unit.</span><span>Total</span><span>Status</span><span />
               </div>
             )}
 
-            {itens.filter(it => it.sid === sec.id).map(it => (
-              <div key={it.id} style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, marginBottom: 8, alignItems: 'center' }}>
-                {maoDeObra ? (
-                  <select value="" onChange={e => aplicarCategoriaMaoDeObra(it.id, e.target.value)}>
-                    <option value="">+ categoria</option>
-                    {CATEGORIAS_MAO_DE_OBRA.map(c => <option key={c} value={c}>{c}</option>)}
+            <datalist id={datalistId}>
+              {subgruposDaSecao(sec.id).map(sg => <option key={sg} value={sg} />)}
+            </datalist>
+
+            {itensAgrupados(sec.id).map(linha => {
+              if (linha.tipo === 'cabecalho') {
+                return (
+                  <div key={linha.key} style={{ fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '.5px', borderTop: '1px solid #222', paddingTop: 8, marginTop: 4, marginBottom: 6 }}>
+                    {linha.nome}
+                  </div>
+                );
+              }
+              const it = linha.item;
+              const aCotar = it.status === 'a_cotar';
+              return (
+                <div
+                  key={it.id}
+                  style={{
+                    display: 'grid', gridTemplateColumns: colunas, gap: 8, marginBottom: 8, alignItems: 'center',
+                    background: aCotar ? 'rgba(201,162,39,0.08)' : 'transparent',
+                    borderRadius: 4, padding: aCotar ? '4px 4px' : 0,
+                  }}
+                >
+                  <input
+                    list={datalistId}
+                    value={it.subgrupo}
+                    onChange={e => atualizarItem(it.id, 'subgrupo', e.target.value)}
+                    placeholder="Subgrupo (opc.)"
+                  />
+                  {maoDeObra ? (
+                    <select value="" onChange={e => aplicarCategoriaMaoDeObra(it.id, e.target.value)}>
+                      <option value="">+ categoria</option>
+                      {CATEGORIAS_MAO_DE_OBRA.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  ) : (
+                    <select value="" onChange={e => aplicarMaterialNoItem(it.id, e.target.value)}>
+                      <option value="">+ catálogo</option>
+                      {materiais.map(m => <option key={m.id} value={m.id}>{m.descricao}</option>)}
+                    </select>
+                  )}
+                  <input value={it.descricao} onChange={e => atualizarItem(it.id, 'descricao', e.target.value)} placeholder="Descrição do item" />
+                  {!maoDeObra && (
+                    <input value={it.ncm} onChange={e => atualizarItem(it.id, 'ncm', e.target.value.replace(/[^\d.]/g, ''))} placeholder="NCM/SH" />
+                  )}
+                  <input type="number" step="1" min="0" value={it.quantidade} onChange={e => atualizarItem(it.id, 'quantidade', e.target.value)} />
+                  <input value={it.unidade} onChange={e => atualizarItem(it.id, 'unidade', e.target.value)} />
+                  <input type="number" step="0.01" min="0" value={it.valor_unitario} onChange={e => atualizarItem(it.id, 'valor_unitario', e.target.value)} />
+                  <span style={{ fontSize: 12, color: '#ccc', textAlign: 'right', paddingRight: 4 }}>
+                    {formatarMoeda((Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0))}
+                  </span>
+                  <select value={it.status || 'confirmado'} onChange={e => atualizarItem(it.id, 'status', e.target.value)}>
+                    <option value="confirmado">Confirmado</option>
+                    <option value="a_cotar">A cotar</option>
                   </select>
-                ) : (
-                  <select value="" onChange={e => aplicarMaterialNoItem(it.id, e.target.value)}>
-                    <option value="">+ catálogo</option>
-                    {materiais.map(m => <option key={m.id} value={m.id}>{m.descricao}</option>)}
-                  </select>
-                )}
-                <input value={it.descricao} onChange={e => atualizarItem(it.id, 'descricao', e.target.value)} placeholder="Descrição do item" />
-                {!maoDeObra && (
-                  <input value={it.ncm} onChange={e => atualizarItem(it.id, 'ncm', e.target.value.replace(/[^\d.]/g, ''))} placeholder="NCM/SH" />
-                )}
-                <input type="number" step="1" min="0" value={it.quantidade} onChange={e => atualizarItem(it.id, 'quantidade', e.target.value)} />
-                <input value={it.unidade} onChange={e => atualizarItem(it.id, 'unidade', e.target.value)} />
-                <input type="number" step="0.01" min="0" value={it.valor_unitario} onChange={e => atualizarItem(it.id, 'valor_unitario', e.target.value)} />
-                <span style={{ fontSize: 12, color: '#ccc', textAlign: 'right', paddingRight: 4 }}>
-                  {formatarMoeda((Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0))}
-                </span>
-                <button onClick={() => removerItem(it.id)} style={{ ...btnIcone, color: '#b04040' }} title="Remover item">
-                  <Trash2 size={12} />
-                </button>
-              </div>
-            ))}
+                  <button onClick={() => removerItem(it.id)} style={{ ...btnIcone, color: '#b04040' }} title="Remover item">
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              );
+            })}
 
             <button onClick={() => adicionarItem(sec.id)} style={{ ...btnSecundario, marginTop: 4 }}>
               <Plus size={13} style={{ marginRight: 4 }} /> Adicionar item
