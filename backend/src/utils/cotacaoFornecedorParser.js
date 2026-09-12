@@ -141,6 +141,41 @@ function extrairModeloPedidoVenda(linhas) {
   return itens;
 }
 
+// Layout "Orçamento" da BAND Tecnologia Comércio — outro sistema ainda. Cada
+// item é: código, descrição, quantidade, valor total, unidade e, por fim, o
+// preço unitário — nessa ordem estranha porque o texto extraído do PDF junta
+// o "Valor total" antes do "Valor unit." mesmo a coluna visual sendo o
+// contrário, e às vezes um "." solto (observação vazia) quebra a linha antes
+// do preço unitário. Confirmado batendo quantidade × preço unitário = valor
+// total. Como o "." pode estar em linha própria, aqui a extração roda sobre
+// o texto inteiro normalizado (linhas juntas por espaço, "." solto removido),
+// não linha a linha como os outros modelos.
+const RE_LINHA_BAND = /(\d{1,6})\s+([A-ZÀ-Ÿ][^\t\n]+?)\s+(\d{1,4})\s+R\$\s*([\d.,]+)\s+([A-Za-z]{1,4})\s+R\$\s*([\d.,]+)/g;
+
+function extrairModeloBand(texto) {
+  const normalizado = String(texto || '')
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l && l !== '.')
+    .join(' ');
+
+  const itens = [];
+  for (const m of normalizado.matchAll(RE_LINHA_BAND)) {
+    const [, codigo, descricaoBruta, quantidade, , unidade, precoUnit] = m;
+    const descricao = descricaoBruta.replace(/\s{2,}/g, ' ').trim();
+    if (descricao.length < 3) continue;
+
+    itens.push({
+      codigo,
+      descricao,
+      unidade: unidade.toLowerCase(),
+      quantidade: paraNumeroBR(quantidade),
+      preco: paraNumeroBR(precoUnit),
+    });
+  }
+  return itens;
+}
+
 // Unidades comuns em orçamento/cotação de material — usado só pelo modo
 // genérico, pra reconhecer a coluna de unidade dentro de uma linha de texto.
 const UNIDADES = /^(un|und|unid|pç|pc|peça|peças|cx|caixa|m|mt|metro|metros|kg|cj|conj|conjunto|par|pares|vb|verba|rl|rolo|pt|ponto|pontos|l|litro)\.?$/i;
@@ -185,6 +220,9 @@ function extrairDoTexto(texto) {
 
   const doPedidoVenda = extrairModeloPedidoVenda(linhas);
   if (doPedidoVenda.length > 0) return doPedidoVenda;
+
+  const daBand = extrairModeloBand(texto);
+  if (daBand.length > 0) return daBand;
 
   return extrairGenerico(linhas);
 }
