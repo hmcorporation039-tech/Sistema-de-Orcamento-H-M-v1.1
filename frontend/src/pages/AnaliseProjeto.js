@@ -128,13 +128,13 @@ export default function AnaliseProjeto() {
   }
 
   return (
-    <div>
+    <div style={paginaLargaTela}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18 }}>
-        <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>Análise de Projeto (Compatibilização)</h2>
+        <h2 style={{ fontSize: 20, color: '#c9a227', fontWeight: 700, flex: 1 }}>Análise de Projeto (Compatibilização)</h2>
       </div>
 
       <div style={card}>
-        <p style={{ fontSize: 11, color: '#777', marginBottom: 12, lineHeight: 1.6 }}>
+        <p style={{ fontSize: 13, color: '#777', marginBottom: 12, lineHeight: 1.6 }}>
           Envie os PDFs do projeto do cliente (plantas de CFTV, cabeamento estruturado, etc.). O sistema extrai
           ambientes, contagem de câmeras e a legenda de cabos automaticamente (sem IA — leitura direta do texto do
           PDF), e monta um rascunho de serviços/materiais pra você revisar antes de gerar o relatório.
@@ -164,9 +164,9 @@ export default function AnaliseProjeto() {
             <div style={card}>
               <h3 style={tituloSecao}>Compatibilização — Pendências e Observações</h3>
               {analise.achados.map((a, i) => (
-                <div key={i} style={{ padding: '8px 0', borderTop: i > 0 ? '1px solid #1e1e1e' : 'none' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#c9a227', marginBottom: 2 }}>{a.tema}</div>
-                  <div style={{ fontSize: 11, color: '#999' }}>{a.observacao}</div>
+                <div key={i} style={{ padding: '10px 0', borderTop: i > 0 ? '1px solid #1e1e1e' : 'none' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#c9a227', marginBottom: 3 }}>{a.tema}</div>
+                  <div style={{ fontSize: 13, color: '#999' }}>{a.observacao}</div>
                 </div>
               ))}
             </div>
@@ -179,7 +179,7 @@ export default function AnaliseProjeto() {
                 <Plus size={12} style={{ marginRight: 4 }} /> Adicionar serviço
               </button>
             </div>
-            <p style={{ fontSize: 10, color: '#666', marginBottom: 10 }}>
+            <p style={{ fontSize: 12, color: '#666', marginBottom: 10 }}>
               Marque "Já pronto" pra serviços que não fazem parte do seu escopo (ex.: cabeamento já passado) — eles não entram no relatório como pendência de mão de obra.
             </p>
             <TabelaServicos itens={analise.servicos} onAtualizar={atualizarServico} onRemover={removerServico} />
@@ -193,7 +193,7 @@ export default function AnaliseProjeto() {
               </button>
             </div>
             {analise.materiais.length === 0 && (
-              <p style={{ fontSize: 11, color: '#666', fontStyle: 'italic' }}>Nenhum material lançado ainda — adicione manualmente, ou lance na tela de Materiais e traga a lista final aqui.</p>
+              <p style={{ fontSize: 13, color: '#666', fontStyle: 'italic' }}>Nenhum material lançado ainda — adicione manualmente, ou lance na tela de Materiais e traga a lista final aqui.</p>
             )}
             <TabelaMateriais
               itens={analise.materiais}
@@ -217,12 +217,12 @@ export default function AnaliseProjeto() {
 
 function TabelaServicos({ itens, onAtualizar, onRemover, semObservacao }) {
   const colunas = semObservacao
-    ? '3fr 0.8fr 0.7fr 1fr 32px'
-    : '2.2fr 0.7fr 0.6fr 1fr 2fr 32px';
+    ? '3fr 0.8fr 0.7fr 1.2fr 32px'
+    : '2.2fr 0.7fr 0.6fr 1.2fr 2fr 32px';
 
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, marginBottom: 6, fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, marginBottom: 8, fontSize: 12, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px' }}>
         <span>Descrição</span><span>Qtd</span><span>Un.</span><span>Status</span>
         {!semObservacao && <span>Observação</span>}
         <span />
@@ -230,23 +230,23 @@ function TabelaServicos({ itens, onAtualizar, onRemover, semObservacao }) {
       {agruparPorSubgrupo(itens).map(linha => {
         if (linha.tipo === 'cabecalho') {
           return (
-            <div key={linha.key} style={{ fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '.5px', borderTop: '1px solid #222', paddingTop: 8, marginTop: 4, marginBottom: 6 }}>
+            <div key={linha.key} style={{ fontSize: 13, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '.5px', borderTop: '1px solid #222', paddingTop: 10, marginTop: 6, marginBottom: 8 }}>
               {linha.nome}
             </div>
           );
         }
         const it = linha.item;
         return (
-          <div key={it.id} style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, marginBottom: 8, alignItems: 'center' }}>
-            <input value={it.descricao} onChange={e => onAtualizar(it.id, 'descricao', e.target.value)} placeholder="Descrição" />
-            <input type="number" step="1" min="0" value={it.quantidade ?? ''} onChange={e => onAtualizar(it.id, 'quantidade', e.target.value)} />
-            <input value={it.unidade || ''} onChange={e => onAtualizar(it.id, 'unidade', e.target.value)} />
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: it.pronto ? '#3fb95f' : '#999' }}>
+          <div key={it.id} style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, marginBottom: 10, alignItems: 'center', fontSize: 13 }}>
+            <input value={it.descricao} onChange={e => onAtualizar(it.id, 'descricao', e.target.value)} placeholder="Descrição" style={{ fontSize: 13 }} />
+            <input type="number" step="1" min="0" value={it.quantidade ?? ''} onChange={e => onAtualizar(it.id, 'quantidade', e.target.value)} style={{ fontSize: 13 }} />
+            <input value={it.unidade || ''} onChange={e => onAtualizar(it.id, 'unidade', e.target.value)} style={{ fontSize: 13 }} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: it.pronto ? '#3fb95f' : '#999', whiteSpace: 'nowrap' }}>
               <input type="checkbox" checked={!!it.pronto} onChange={e => onAtualizar(it.id, 'pronto', e.target.checked)} />
               Já pronto
             </label>
             {!semObservacao && (
-              <input value={it.observacao || ''} onChange={e => onAtualizar(it.id, 'observacao', e.target.value)} placeholder="Observação" />
+              <input value={it.observacao || ''} onChange={e => onAtualizar(it.id, 'observacao', e.target.value)} placeholder="Observação" style={{ fontSize: 13 }} />
             )}
             <button onClick={() => onRemover(it.id)} style={{ ...btnIcone, color: '#b04040' }} title="Remover">
               <Trash2 size={12} />
@@ -268,13 +268,13 @@ function TabelaMateriais({ itens, onAtualizar, onRemover, pesquisas, onPesquisar
 
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, marginBottom: 6, fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, marginBottom: 8, fontSize: 12, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px' }}>
         <span>Descrição</span><span>Referência</span><span>Qtd</span><span>Un.</span><span>Catálogo / Mercado</span><span>Status</span><span />
       </div>
       {agruparPorSubgrupo(itens).map(linha => {
         if (linha.tipo === 'cabecalho') {
           return (
-            <div key={linha.key} style={{ fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '.5px', borderTop: '1px solid #222', paddingTop: 8, marginTop: 4, marginBottom: 6 }}>
+            <div key={linha.key} style={{ fontSize: 13, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '.5px', borderTop: '1px solid #222', paddingTop: 10, marginTop: 6, marginBottom: 8 }}>
               {linha.nome}
             </div>
           );
@@ -282,17 +282,17 @@ function TabelaMateriais({ itens, onAtualizar, onRemover, pesquisas, onPesquisar
         const it = linha.item;
         const pesquisa = pesquisas[it.id];
         return (
-          <div key={it.id} style={{ marginBottom: 10, borderBottom: '1px solid #1e1e1e', paddingBottom: 10 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, alignItems: 'center' }}>
-              <input value={it.descricao} onChange={e => onAtualizar(it.id, 'descricao', e.target.value)} placeholder="Descrição" />
-              <input value={it.referencia_fabricante || ''} onChange={e => onAtualizar(it.id, 'referencia_fabricante', e.target.value)} placeholder="Ref. fabricante" style={{ fontSize: 10 }} />
-              <input type="number" step="1" min="0" value={it.quantidade ?? ''} onChange={e => onAtualizar(it.id, 'quantidade', e.target.value)} />
-              <input value={it.unidade || ''} onChange={e => onAtualizar(it.id, 'unidade', e.target.value)} />
-              <div style={{ fontSize: 10 }}>
+          <div key={it.id} style={{ marginBottom: 12, borderBottom: '1px solid #1e1e1e', paddingBottom: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, alignItems: 'center', fontSize: 13 }}>
+              <input value={it.descricao} onChange={e => onAtualizar(it.id, 'descricao', e.target.value)} placeholder="Descrição" style={{ fontSize: 13 }} />
+              <input value={it.referencia_fabricante || ''} onChange={e => onAtualizar(it.id, 'referencia_fabricante', e.target.value)} placeholder="Ref. fabricante" style={{ fontSize: 12 }} />
+              <input type="number" step="1" min="0" value={it.quantidade ?? ''} onChange={e => onAtualizar(it.id, 'quantidade', e.target.value)} style={{ fontSize: 13 }} />
+              <input value={it.unidade || ''} onChange={e => onAtualizar(it.id, 'unidade', e.target.value)} style={{ fontSize: 13 }} />
+              <div style={{ fontSize: 12 }}>
                 {it.preco_catalogo != null ? (
                   <div style={{ color: it.confianca_catalogo >= 70 ? '#3fb95f' : '#c9a227' }}>
                     <b>{formatarMoeda(it.preco_catalogo)}</b> ({it.confianca_catalogo}% match)
-                    <div style={{ color: '#777', fontSize: 9 }} title={it.descricao_catalogo}>{it.descricao_catalogo}</div>
+                    <div style={{ color: '#777', fontSize: 11 }} title={it.descricao_catalogo}>{it.descricao_catalogo}</div>
                   </div>
                 ) : (
                   <span style={{ color: '#666' }}>Sem correspondência no catálogo</span>
@@ -301,12 +301,12 @@ function TabelaMateriais({ itens, onAtualizar, onRemover, pesquisas, onPesquisar
                   type="button"
                   onClick={() => onPesquisar(it)}
                   disabled={pesquisa?.carregando}
-                  style={{ ...btnSecundario, padding: '3px 8px', fontSize: 9, marginTop: 4 }}
+                  style={{ ...btnSecundario, padding: '4px 10px', fontSize: 11, marginTop: 5 }}
                 >
-                  <Search size={10} style={{ marginRight: 3 }} /> {pesquisa?.carregando ? 'Pesquisando...' : 'Pesquisar mercado'}
+                  <Search size={11} style={{ marginRight: 4 }} /> {pesquisa?.carregando ? 'Pesquisando...' : 'Pesquisar mercado'}
                 </button>
               </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: it.pronto ? '#3fb95f' : '#999' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: it.pronto ? '#3fb95f' : '#999' }}>
                 <input type="checkbox" checked={!!it.pronto} onChange={e => onAtualizar(it.id, 'pronto', e.target.checked)} />
                 Já pronto
               </label>
@@ -315,7 +315,7 @@ function TabelaMateriais({ itens, onAtualizar, onRemover, pesquisas, onPesquisar
               </button>
             </div>
             {pesquisa?.resultado && (
-              <div style={{ marginTop: 8, padding: 10, background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, fontSize: 10, color: '#bbb', whiteSpace: 'pre-wrap' }}>
+              <div style={{ marginTop: 10, padding: 12, background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, fontSize: 12, color: '#bbb', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
                 <b style={{ color: '#c9a227' }}>
                   Pesquisa de mercado ({pesquisa.fonte === 'claude' ? 'Claude, fallback pago' : 'Gemini'} — confira antes de usar):
                 </b><br />
@@ -323,7 +323,7 @@ function TabelaMateriais({ itens, onAtualizar, onRemover, pesquisas, onPesquisar
               </div>
             )}
             {pesquisa?.erro && (
-              <div style={{ marginTop: 8, fontSize: 10, color: '#b04040' }}>{pesquisa.erro}</div>
+              <div style={{ marginTop: 8, fontSize: 12, color: '#b04040' }}>{pesquisa.erro}</div>
             )}
           </div>
         );
@@ -335,29 +335,38 @@ function TabelaMateriais({ itens, onAtualizar, onRemover, pesquisas, onPesquisar
 function Info({ label, valor }) {
   return (
     <div>
-      <div style={{ fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 16, color: '#c9a227', fontWeight: 700 }}>{valor}</div>
+      <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>{label}</div>
+      <div style={{ fontSize: 19, color: '#c9a227', fontWeight: 700 }}>{valor}</div>
     </div>
   );
 }
 
-const card = {
-  background: '#131313', border: '1px solid #1e1e1e', borderRadius: 10,
-  padding: 20, marginBottom: 16
+// Quebra o limite de largura (max-width: 1280) do <main> do Layout — essa
+// tela tem tabelas largas (Serviços/Materiais) que ficam melhor ocupando a
+// largura inteira da janela em vez de ficarem espremidas no centro.
+const paginaLargaTela = {
+  width: '100vw', maxWidth: '100vw',
+  marginLeft: 'calc(50% - 50vw)', marginRight: 'calc(50% - 50vw)',
+  padding: '0 32px', boxSizing: 'border-box',
 };
 
-const tituloSecao = { fontSize: 13, color: '#c9a227', fontWeight: 700, marginBottom: 10 };
+const card = {
+  background: '#131313', border: '1px solid #1e1e1e', borderRadius: 10,
+  padding: 22, marginBottom: 16
+};
+
+const tituloSecao = { fontSize: 15, color: '#c9a227', fontWeight: 700, marginBottom: 10 };
 
 const btnPrimario = {
   display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px',
   background: '#c9a227', border: 'none', borderRadius: 6, color: '#000',
-  fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
+  fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap'
 };
 
 const btnSecundario = {
   display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent',
   border: '1px dashed #333', borderRadius: 6, color: '#999', fontWeight: 700,
-  fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap'
+  fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
 };
 
 const btnIcone = {
