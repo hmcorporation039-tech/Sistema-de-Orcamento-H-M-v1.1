@@ -94,7 +94,7 @@ export default function AnaliseProjeto() {
     setPesquisas(p => ({ ...p, [material.id]: { carregando: true } }));
     try {
       const res = await pesquisarPrecoMercado(material.descricao);
-      setPesquisas(p => ({ ...p, [material.id]: { resultado: res.data.resultado } }));
+      setPesquisas(p => ({ ...p, [material.id]: { resultado: res.data.resultado, fonte: res.data.fonte } }));
     } catch (err) {
       setPesquisas(p => ({ ...p, [material.id]: { erro: err.response?.data?.erro || 'Erro ao pesquisar' } }));
     }
@@ -316,7 +316,9 @@ function TabelaMateriais({ itens, onAtualizar, onRemover, pesquisas, onPesquisar
             </div>
             {pesquisa?.resultado && (
               <div style={{ marginTop: 8, padding: 10, background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, fontSize: 10, color: '#bbb', whiteSpace: 'pre-wrap' }}>
-                <b style={{ color: '#c9a227' }}>Pesquisa de mercado (IA, confira antes de usar):</b><br />
+                <b style={{ color: '#c9a227' }}>
+                  Pesquisa de mercado ({pesquisa.fonte === 'claude' ? 'Claude, fallback pago' : 'Gemini'} — confira antes de usar):
+                </b><br />
                 {pesquisa.resultado}
               </div>
             )}
