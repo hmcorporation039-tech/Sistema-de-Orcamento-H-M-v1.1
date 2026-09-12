@@ -49,16 +49,16 @@ async function upsertMaterialMenorPreco(client, item, origem, margem) {
     const mudou = compraAtual == null || menorCompra !== compraAtual;
 
     if (mat.preco_manual) {
-      // preço de venda foi ajustado manualmente — preserva, só atualiza custo/marca/NCM de referência
+      // preço de venda foi ajustado manualmente — preserva, só atualiza custo/código/marca/NCM de referência
       await client.query(
-        `UPDATE materiais SET preco_compra=$1, marca=COALESCE(NULLIF(marca,''), $2), ncm=COALESCE(NULLIF(ncm,''), $3), origem=$4, atualizado_em=NOW() WHERE id=$5`,
-        [menorCompra, item.marca || null, item.ncm || null, origem, mat.id]
+        `UPDATE materiais SET preco_compra=$1, codigo=COALESCE(NULLIF(codigo,''), $2), marca=COALESCE(NULLIF(marca,''), $3), ncm=COALESCE(NULLIF(ncm,''), $4), origem=$5, atualizado_em=NOW() WHERE id=$6`,
+        [menorCompra, item.codigo || null, item.marca || null, item.ncm || null, origem, mat.id]
       );
     } else {
       const precoVenda = Math.round(menorCompra * (1 + margem / 100) * 100) / 100;
       await client.query(
-        `UPDATE materiais SET preco_compra=$1, preco=$2, marca=COALESCE(NULLIF(marca,''), $3), ncm=COALESCE(NULLIF(ncm,''), $4), origem=$5, atualizado_em=NOW() WHERE id=$6`,
-        [menorCompra, precoVenda, item.marca || null, item.ncm || null, origem, mat.id]
+        `UPDATE materiais SET preco_compra=$1, preco=$2, codigo=COALESCE(NULLIF(codigo,''), $3), marca=COALESCE(NULLIF(marca,''), $4), ncm=COALESCE(NULLIF(ncm,''), $5), origem=$6, atualizado_em=NOW() WHERE id=$7`,
+        [menorCompra, precoVenda, item.codigo || null, item.marca || null, item.ncm || null, origem, mat.id]
       );
     }
     return { criado: false, mudou };
@@ -69,7 +69,7 @@ async function upsertMaterialMenorPreco(client, item, origem, margem) {
   await client.query(
     `INSERT INTO materiais (codigo, descricao, categoria, unidade, preco, preco_compra, marca, ncm, origem)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-    [null, item.descricao, categoria, item.unidade || 'un', precoVenda, precoRecebido, item.marca || '', item.ncm || null, origem]
+    [item.codigo || null, item.descricao, categoria, item.unidade || 'un', precoVenda, precoRecebido, item.marca || '', item.ncm || null, origem]
   );
   return { criado: true, mudou: true };
 }

@@ -42,7 +42,8 @@ function extrairModeloAdmBloco(linhas) {
   const itens = [];
 
   for (let i = 0; i < linhas.length; i++) {
-    if (!RE_INICIO_ITEM.test(linhas[i])) continue;
+    const inicioMatch = linhas[i].match(RE_INICIO_ITEM);
+    if (!inicioMatch) continue;
 
     const descricaoLinha = linhas[i + 1] || '';
     const qtdMatch = (linhas[i + 2] || '').match(RE_UNIDADE_QTD);
@@ -61,6 +62,7 @@ function extrairModeloAdmBloco(linhas) {
     if (descricao.length < 3) continue;
 
     itens.push({
+      codigo: inicioMatch[2],
       descricao,
       marca,
       unidade: qtdMatch[1].toLowerCase(),
@@ -108,6 +110,37 @@ function extrairModeloAdmGrade(linhas) {
   return itens;
 }
 
+// Layout "PEDIDO DE VENDA" (visto num orçamento da Dispel Eletrônica) — outro
+// sistema, diferente do "ADM". Cada item é uma linha dividida em 3 blocos por
+// tabulação: [código, quantidade, valor bruto] \t [descrição, desconto,
+// acréscimo] \t [preço unitário, valor líquido]. Ex.:
+//   070530 25,00 142,50	CABO PARALELO BIC. 2X2,50MM POMPEIA 0,00 0,00	5,70 142,50
+// O preço unitário real é o 1º número do último bloco (confirmado batendo
+// quantidade × preço unitário = valor líquido) — o valor bruto do 1º bloco
+// é o total da linha, não o unitário (só coincidem quando quantidade = 1).
+const RE_LINHA_PEDIDO_VENDA = /^(\d+)\s+([\d.,]+)\s+([\d.,]+)\t(.+?)\s+([\d.,]+)\s+([\d.,]+)\t([\d.,]+)\s+([\d.,]+)\s*$/;
+
+function extrairModeloPedidoVenda(linhas) {
+  const itens = [];
+  for (const linha of linhas) {
+    const m = linha.match(RE_LINHA_PEDIDO_VENDA);
+    if (!m) continue;
+
+    const [, codigo, quantidade, , descricaoBruta, , , precoUnit] = m;
+    const descricao = descricaoBruta.replace(/\s{2,}/g, ' ').trim();
+    if (descricao.length < 3) continue;
+
+    itens.push({
+      codigo,
+      descricao,
+      unidade: 'un',
+      quantidade: paraNumeroBR(quantidade),
+      preco: paraNumeroBR(precoUnit),
+    });
+  }
+  return itens;
+}
+
 // Unidades comuns em orçamento/cotação de material — usado só pelo modo
 // genérico, pra reconhecer a coluna de unidade dentro de uma linha de texto.
 const UNIDADES = /^(un|und|unid|pç|pc|peça|peças|cx|caixa|m|mt|metro|metros|kg|cj|conj|conjunto|par|pares|vb|verba|rl|rolo|pt|ponto|pontos|l|litro)\.?$/i;
@@ -149,6 +182,9 @@ function extrairDoTexto(texto) {
 
   const daGrade = extrairModeloAdmGrade(linhas);
   if (daGrade.length > 0) return daGrade;
+
+  const doPedidoVenda = extrairModeloPedidoVenda(linhas);
+  if (doPedidoVenda.length > 0) return doPedidoVenda;
 
   return extrairGenerico(linhas);
 }
