@@ -121,14 +121,15 @@ export default function Historico() {
     }
   }
 
-  async function baixarPdf(id, numero) {
+  async function baixarPdf(id, numero, clienteNome) {
     setGerandoPdf(true);
     try {
       const res = await api.get(`/propostas/${id}/pdf`, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
       const link = document.createElement('a');
       link.href = url;
-      link.download = `Proposta_${numero}.pdf`;
+      const nomeCliente = (clienteNome || '').trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_');
+      link.download = `${nomeCliente}_${numero}.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -313,7 +314,7 @@ export default function Historico() {
                     <Send size={13} /> Enviar por E-mail
                   </button>
                   <button
-                    onClick={() => baixarPdf(detalhe.id, detalhe.numero)}
+                    onClick={() => baixarPdf(detalhe.id, detalhe.numero, detalhe.cliente_nome)}
                     disabled={gerandoPdf}
                     style={btnPrimario}
                   >
