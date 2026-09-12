@@ -150,10 +150,12 @@ export default function AnaliseProjeto() {
       {analise && (
         <>
           <div style={card}>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr', gap: 16 }}>
               <Info label="Cliente" valor={analise.cliente || '—'} />
               <Info label="Ambientes" valor={analise.ambientes.length} />
               <Info label="Câmeras" valor={analise.cameras.total} />
+              <Info label="Pontos de rede" valor={analise.pontosRedeAntena?.rede?.total ?? 0} />
+              <Info label="Pontos de TV/antena" valor={analise.pontosRedeAntena?.antena?.total ?? 0} />
               <Info label="Pendências" valor={analise.achados.length} />
             </div>
           </div>

@@ -40,12 +40,15 @@ function extrairAmbientes(texto) {
   return ambientes;
 }
 
-// Códigos de câmera (ex.: CAM1, CAM76) — aparecem como texto direto no desenho
-// de CFTV, um por marcação de câmera na planta. Detecta duplicatas (câmeras
-// físicas diferentes com número repetido por engano do projetista) e números
-// ausentes na sequência (furos na numeração), pra sinalizar ao usuário.
-function extrairCameras(texto) {
-  const numeros = [...String(texto || '').matchAll(/\bCAM(\d+)\b/g)].map(m => parseInt(m[1], 10));
+// Extrai todas as ocorrências de um código tipo "PREFIXOnn" (ex.: CAM1,
+// R23, A15) e resume: quantas ocorrências, quantos números únicos,
+// duplicatas (mesmo número aparecendo mais de uma vez — comum quando o
+// projetista repete um código por engano em pontos físicos diferentes) e
+// números faltando na sequência (furos de numeração). Usado tanto para
+// câmeras (CAMx) quanto para pontos de rede (Rx) e antena/TV (Ax).
+function extrairPontosPorCodigo(texto, prefixo) {
+  const regex = new RegExp(`\\b${prefixo}(\\d+)\\b`, 'g');
+  const numeros = [...String(texto || '').matchAll(regex)].map(m => parseInt(m[1], 10));
   if (numeros.length === 0) {
     return { ocorrencias: 0, total: 0, unicas: [], repetidas: [], faltando: [] };
   }
@@ -62,6 +65,23 @@ function extrairCameras(texto) {
     unicas,
     repetidas,
     faltando,
+  };
+}
+
+// Códigos de câmera (ex.: CAM1, CAM76) — aparecem como texto direto no desenho
+// de CFTV, um por marcação de câmera na planta.
+function extrairCameras(texto) {
+  return extrairPontosPorCodigo(texto, 'CAM');
+}
+
+// Códigos de ponto de rede (Rx) e antena/TV (Ax) — aparecem como texto direto
+// no desenho de cabeamento estruturado (ex.: "A1/R1", depois "R25", "R69"
+// isolados quando não há antena no mesmo ponto). Mesma lógica de detectar
+// duplicatas/furos usada nas câmeras.
+function extrairPontosRedeAntena(texto) {
+  return {
+    rede: extrairPontosPorCodigo(texto, 'R'),
+    antena: extrairPontosPorCodigo(texto, 'A'),
   };
 }
 
@@ -93,11 +113,12 @@ async function analisarProjeto(buffer, nomeArquivo) {
     arquivo: nomeArquivo,
     ambientes: extrairAmbientes(texto),
     cameras: extrairCameras(texto),
+    pontosRedeAntena: extrairPontosRedeAntena(texto),
     tabelaCabos: extrairTabelaCabos(texto),
     textoBruto: texto,
   };
 }
 
 module.exports = {
-  analisarProjeto, extrairTexto, extrairAmbientes, extrairCameras, extrairTabelaCabos,
+  analisarProjeto, extrairTexto, extrairAmbientes, extrairCameras, extrairPontosRedeAntena, extrairTabelaCabos,
 };

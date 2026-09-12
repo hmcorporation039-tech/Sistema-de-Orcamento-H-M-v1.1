@@ -36,6 +36,7 @@ function linhasAgrupadasPorSubgrupo(itens, colunas, gerarLinhaTr) {
 function gerarHtmlRelatorioCompatibilizacao(analise) {
   const {
     cliente, arquivosAnalisados = [], ambientes = [], cameras = { total: 0, detalhePorArquivo: [] },
+    pontosRedeAntena = { rede: { total: 0 }, antena: { total: 0 } },
     tabelaCabos = [], achados = [], servicos = [], materiais = [],
   } = analise;
 
@@ -123,6 +124,14 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
     <div class="info-item">
       <div class="label">Data do relatório</div>
       <div class="valor">${formatarData()}</div>
+    </div>
+    <div class="info-item">
+      <div class="label">Pontos de rede</div>
+      <div class="valor">${pontosRedeAntena.rede?.total ?? 0}</div>
+    </div>
+    <div class="info-item">
+      <div class="label">Pontos de TV/antena</div>
+      <div class="valor">${pontosRedeAntena.antena?.total ?? 0}</div>
     </div>
     <div class="info-item" style="grid-column: 1 / -1;">
       <div class="label">Arquivos analisados</div>

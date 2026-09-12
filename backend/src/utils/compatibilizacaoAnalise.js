@@ -59,23 +59,38 @@ function extrairCliente(texto) {
 // Gera os "achados" (pendências/observações) de compatibilização a partir do
 // que foi possível detectar automaticamente nos arquivos analisados. Cada
 // achado é só uma observação objetiva — a decisão final é sempre do usuário.
+// Gera um achado de "numeração repetida"/"numeração com falha" pra qualquer
+// tipo de ponto codificado (câmera, rede, antena) — mesma lógica, só muda o
+// prefixo do código e o rótulo usado na mensagem.
+function achadosDeNumeracao(arquivo, dados, prefixo, rotulo) {
+  const achados = [];
+  if (dados.repetidas.length > 0) {
+    achados.push({
+      tema: `${rotulo}: numeração repetida`,
+      observacao: `Em "${arquivo}", os códigos ${dados.repetidas.map(n => prefixo + n).join(', ')} aparecem mais de uma vez na planta. Confirme visualmente se são pontos físicos distintos com número repetido por engano (contagem real = ${dados.ocorrencias}) ou duplicidade de rótulo (contagem real = ${dados.total}).`,
+    });
+  }
+  if (dados.faltando.length > 0) {
+    achados.push({
+      tema: `${rotulo}: numeração com falha`,
+      observacao: `Em "${arquivo}", a numeração vai até ${prefixo}${Math.max(...dados.unicas)} mas ${dados.faltando.map(n => prefixo + n).join(', ')} não aparece — provável falha de numeração do projetista, não necessariamente ponto faltando.`,
+    });
+  }
+  return achados;
+}
+
 function gerarAchados(analises) {
   const achados = [];
 
   for (const a of analises) {
-    if (a.cameras.ocorrencias === 0) continue;
-
-    if (a.cameras.repetidas.length > 0) {
-      achados.push({
-        tema: 'Câmeras: numeração repetida',
-        observacao: `Em "${a.arquivo}", os códigos ${a.cameras.repetidas.map(n => 'CAM' + n).join(', ')} aparecem mais de uma vez na planta. Confirme visualmente se são câmeras físicas distintas com número repetido por engano (contagem real = ${a.cameras.ocorrencias}) ou duplicidade de rótulo (contagem real = ${a.cameras.total}).`,
-      });
+    if (a.cameras.ocorrencias > 0) {
+      achados.push(...achadosDeNumeracao(a.arquivo, a.cameras, 'CAM', 'Câmeras'));
     }
-    if (a.cameras.faltando.length > 0) {
-      achados.push({
-        tema: 'Câmeras: numeração com falha',
-        observacao: `Em "${a.arquivo}", a numeração vai até CAM${Math.max(...a.cameras.unicas)} mas ${a.cameras.faltando.map(n => 'CAM' + n).join(', ')} não aparece — provável falha de numeração do projetista, não necessariamente câmera faltando.`,
-      });
+    if (a.pontosRedeAntena.rede.ocorrencias > 0) {
+      achados.push(...achadosDeNumeracao(a.arquivo, a.pontosRedeAntena.rede, 'R', 'Pontos de rede'));
+    }
+    if (a.pontosRedeAntena.antena.ocorrencias > 0) {
+      achados.push(...achadosDeNumeracao(a.arquivo, a.pontosRedeAntena.antena, 'A', 'Pontos de antena/TV'));
     }
   }
 
@@ -99,14 +114,16 @@ function gerarAchados(analises) {
 // pronto quando for o caso (projeto onde só falta a parte elétrica, cabo já
 // passado, etc.).
 //
-// Só a quantidade de câmeras vem preenchida automaticamente (tem código
-// individual — CAMx — no desenho, dá pra contar com confiança). Pontos de
-// rede/TV e quantidades de alarme (sensores, sirene, teclado) não têm
-// código individual nesses projetos — não tem como contar pelo texto do
-// PDF sem arriscar inventar número. Ficam com quantidade 0 e um aviso pra
-// o usuário confirmar direto na planta antes de fechar.
+// Câmeras, pontos de rede e pontos de antena/TV vêm preenchidos
+// automaticamente quando o desenho usa código individual por ponto (CAMx,
+// Rx, Ax) — já validado que esses códigos aparecem como texto direto no
+// PDF, sem precisar de IA nem risco de inventar número. Quantidades de
+// alarme (sensores, sirene, teclado) não têm código individual nesses
+// projetos — ficam com quantidade 0 e aviso pra confirmar direto na planta.
 function montarServicosPadrao(analises) {
   const totalCameras = analises.reduce((s, a) => s + a.cameras.ocorrencias, 0);
+  const totalRede = analises.reduce((s, a) => s + a.pontosRedeAntena.rede.ocorrencias, 0);
+  const totalAntena = analises.reduce((s, a) => s + a.pontosRedeAntena.antena.ocorrencias, 0);
   const SEM_CODIGO = 'Sem código individual no desenho — confirme a quantidade direto na planta antes de fechar.';
 
   const item = (descricao, quantidade, unidade, subgrupo, observacao) => ({
@@ -114,10 +131,12 @@ function montarServicosPadrao(analises) {
   });
 
   return [
-    item('Conectorização de ponto de rede/dados (RJ-45 + patch panel + teste)', 0, 'pt', 'Cabeamento / Rede / CFTV', SEM_CODIGO),
+    item('Conectorização de ponto de rede/dados (RJ-45 + patch panel + teste)', totalRede, 'pt', 'Cabeamento / Rede / CFTV',
+      totalRede > 0 ? 'Quantidade = total de códigos de ponto de rede (Rx) encontrados no desenho.' : SEM_CODIGO),
     item('Conectorização de ponto de câmera (RJ-45 + patch panel + teste)', totalCameras, 'pt', 'Cabeamento / Rede / CFTV',
       totalCameras > 0 ? `Quantidade = total de códigos de câmera (CAMx) encontrados no desenho. Confira duplicatas/numeração antes de fechar (veja Compatibilização).` : SEM_CODIGO),
-    item('Conectorização de ponto de TV/antena (conector coaxial RG-6)', 0, 'pt', 'Cabeamento / Rede / CFTV', SEM_CODIGO),
+    item('Conectorização de ponto de TV/antena (conector coaxial RG-6)', totalAntena, 'pt', 'Cabeamento / Rede / CFTV',
+      totalAntena > 0 ? 'Quantidade = total de códigos de ponto de antena/TV (Ax) encontrados no desenho.' : SEM_CODIGO),
     item('Instalação/config. de câmera interna (dome)', 0, 'un', 'Cabeamento / Rede / CFTV',
       totalCameras > 0 ? `Total de câmeras no desenho: ${totalCameras} — divida entre interna/externa aqui.` : SEM_CODIGO),
     item('Instalação/config. de câmera externa (bullet)', 0, 'un', 'Cabeamento / Rede / CFTV', SEM_CODIGO),
@@ -125,8 +144,8 @@ function montarServicosPadrao(analises) {
     item('Instalação e config. de switches', 0, 'un', 'Cabeamento / Rede / CFTV', SEM_CODIGO),
     item('Instalação e config. de access points (Wi-Fi)', 0, 'un', 'Cabeamento / Rede / CFTV', SEM_CODIGO),
     item('Instalação de nobreaks + kit de ventilação', 0, 'un', 'Cabeamento / Rede / CFTV', SEM_CODIGO),
-    item('Certificação e etiquetagem dos pontos (rede + câmeras)', totalCameras, 'pt', 'Cabeamento / Rede / CFTV',
-      'Quantidade inicial = só câmeras; some os pontos de rede/TV depois de confirmar.'),
+    item('Certificação e etiquetagem dos pontos (rede + câmeras)', totalRede + totalCameras, 'pt', 'Cabeamento / Rede / CFTV',
+      (totalRede > 0 || totalCameras > 0) ? 'Quantidade = pontos de rede + câmeras encontrados no desenho.' : SEM_CODIGO),
     item('Instalação de sensor de abertura (magnético) porta/janela', 0, 'un', 'Alarme', SEM_CODIGO),
     item('Instalação de sensor infravermelho passivo (IVP)', 0, 'un', 'Alarme', SEM_CODIGO),
     item('Instalação de sirene', 0, 'un', 'Alarme', SEM_CODIGO),
@@ -140,12 +159,12 @@ function montarServicosPadrao(analises) {
 
 // Lista padrão de material de instalação (Bloco 2 nos orçamentos de
 // referência) — itens de terminação/fixação que não vêm de nenhuma cotação
-// de fornecedor, calculados a partir dos pontos do projeto. Como os pontos
-// de rede/TV ainda não são conhecidos automaticamente (veja acima), fica
-// como checklist com quantidade 0 e a fórmula na observação, pra o usuário
-// calcular rápido depois de confirmar os pontos.
+// de fornecedor, calculados a partir dos pontos do projeto (câmeras, rede e
+// antena/TV, quando o desenho tem código individual para eles).
 function montarMateriaisInstalacaoPadrao(analises) {
   const totalCameras = analises.reduce((s, a) => s + a.cameras.ocorrencias, 0);
+  const totalRede = analises.reduce((s, a) => s + a.pontosRedeAntena.rede.ocorrencias, 0);
+  const totalAntena = analises.reduce((s, a) => s + a.pontosRedeAntena.antena.ocorrencias, 0);
 
   const item = (descricao, quantidade, unidade, observacao) => ({
     descricao, quantidade, unidade, subgrupo: 'Material de Instalação', pronto: false, observacao,
@@ -153,9 +172,12 @@ function montarMateriaisInstalacaoPadrao(analises) {
   });
 
   return [
-    item('Keystone/jack RJ-45 Cat.6 (lado usuário — pontos de rede)', 0, 'un', 'Quantidade = nº de pontos de rede.'),
-    item('Espelho/placa 4x2 + suporte (pontos de rede)', 0, 'un', 'Quantidade = nº de pontos de rede.'),
-    item('Tomada coaxial RG-6 + conector (TV/antena)', 0, 'un', 'Quantidade = nº de pontos de TV/antena.'),
+    item('Keystone/jack RJ-45 Cat.6 (lado usuário — pontos de rede)', totalRede, 'un',
+      totalRede > 0 ? `Quantidade = pontos de rede encontrados no desenho (${totalRede}).` : 'Quantidade = nº de pontos de rede.'),
+    item('Espelho/placa 4x2 + suporte (pontos de rede)', totalRede, 'un',
+      totalRede > 0 ? `Quantidade = pontos de rede encontrados no desenho (${totalRede}).` : 'Quantidade = nº de pontos de rede.'),
+    item('Tomada coaxial RG-6 + conector (TV/antena)', totalAntena, 'un',
+      totalAntena > 0 ? `Quantidade = pontos de antena/TV encontrados no desenho (${totalAntena}).` : 'Quantidade = nº de pontos de TV/antena.'),
     item('Plug RJ-45 Cat.6 (terminação de câmeras) + reserva', totalCameras > 0 ? totalCameras + 24 : 0, 'un',
       totalCameras > 0 ? `Quantidade = câmeras (${totalCameras}) + reserva estimada (24) — ajuste conforme necessário.` : 'Quantidade = nº de câmeras + reserva.'),
     item('Suporte/braço de fixação p/ câmera externa (bullet)', 0, 'un', 'Quantidade = nº de câmeras externas (bullet).'),
@@ -229,12 +251,21 @@ async function analisarProjetoCompleto(arquivos) {
   const ambientes = analises.reduce((maior, a) => a.ambientes.length > maior.length ? a.ambientes : maior, []);
 
   const totalCameras = analises.reduce((s, a) => s + a.cameras.ocorrencias, 0);
+  const totalRede = analises.reduce((s, a) => s + a.pontosRedeAntena.rede.ocorrencias, 0);
+  const totalAntena = analises.reduce((s, a) => s + a.pontosRedeAntena.antena.ocorrencias, 0);
   const tabelaCabos = analises.find(a => a.tabelaCabos.length > 0)?.tabelaCabos || [];
 
   const achados = gerarAchados(analises);
+
+  // Alarme nunca tem código individual nesses projetos (confirmado em vários
+  // arquivos reais) — sempre precisa de confirmação manual. Rede/antena só
+  // entram no aviso se não foram encontrados neste projeto específico.
+  const faltando = ['quantidades de alarme (sensores, sirene, teclado)'];
+  if (totalRede === 0) faltando.unshift('pontos de rede');
+  if (totalAntena === 0) faltando.unshift('pontos de TV/antena');
   achados.push({
     tema: 'Quantidades a confirmar manualmente',
-    observacao: 'Pontos de rede/TV e quantidades de alarme (sensores, sirene, teclado) não têm código individual nesses desenhos — diferente das câmeras (CAMx), não dá pra contar pelo texto do PDF sem arriscar inventar número. Os itens de "Serviços" e "Material de Instalação" que dependem disso vieram com quantidade 0 — confirme direto na planta antes de gerar o relatório final.',
+    observacao: `${faltando.join(', ')} não têm código individual identificado neste projeto — diferente das câmeras/rede/antena quando o desenho traz código por ponto, não dá pra contar pelo texto do PDF sem arriscar inventar número. Os itens de "Serviços" que dependem disso vieram com quantidade 0 — confirme direto na planta antes de gerar o relatório final.`,
   });
   const equipamentos = await extrairEquipamentosDosArquivos(analises, achados);
   const materiaisEquipamentos = await montarMateriais(equipamentos);
@@ -247,6 +278,10 @@ async function analisarProjetoCompleto(arquivos) {
     cameras: {
       total: totalCameras,
       detalhePorArquivo: analises.filter(a => a.cameras.ocorrencias > 0).map(a => ({ arquivo: a.arquivo, ...a.cameras })),
+    },
+    pontosRedeAntena: {
+      rede: { total: totalRede },
+      antena: { total: totalAntena },
     },
     tabelaCabos,
     achados,
