@@ -11,6 +11,12 @@ import Paginacao from '../components/Paginacao';
 
 const VAZIO = { codigo: '', descricao: '', categoria: '', unidade: 'un', preco: '', preco_compra: '', marca: '', ncm: '' };
 const UNIDADES = ['un', 'm', 'm²', 'm³', 'kg', 'cx', 'pct', 'rl', 'sc', 'pç', 'kit', 'h'];
+// Categorias padrão sugeridas (mesmas que o classificador automático usa, veja
+// backend/src/utils/classificadorMaterial.js) — além destas, qualquer categoria
+// já usada em algum material também vira sugestão, e dá pra digitar uma nova.
+const CATEGORIAS_PADRAO = [
+  'Elétrica', 'CFTV', 'Redes / Cabeamento Estruturado', 'Infraestrutura', 'Ferragens', 'Ferramentas', 'EPI', 'Não classificado',
+];
 const ORIGEM_LABEL = {
   manual: 'Manual', importacao: 'Importação', nota_xml: 'NF-e (XML)', nota_pdf: 'NF-e (PDF)',
   email_xml: 'E-mail (XML)', email_pdf: 'E-mail (PDF)',
@@ -50,6 +56,9 @@ export default function Materiais() {
   const carregarCategorias = useCallback(() => {
     getCategoriasMateriais().then(res => setCategorias(res.data)).catch(() => {});
   }, []);
+
+  // Sugestões de categoria: as padrão da empresa + as que já estão em uso no banco
+  const categoriasSugeridas = Array.from(new Set([...CATEGORIAS_PADRAO, ...categorias]));
 
   useEffect(() => {
     getStatusEmail().then(res => setStatusEmail(res.data)).catch(() => {});
@@ -302,6 +311,12 @@ export default function Materiais() {
           {categorias.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
 
+        {/* Datalist único de sugestões de categoria, usado pelos campos editáveis
+            de categoria em qualquer modal desta página (edição, importação de nota) */}
+        <datalist id="categorias-lista">
+          {categoriasSugeridas.map(c => <option key={c} value={c} />)}
+        </datalist>
+
         <div style={{ position: 'relative', width: 240 }}>
           <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: '#555' }} />
           <input
@@ -446,9 +461,6 @@ export default function Materiais() {
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
                 <Campo label="Categoria *">
                   <input list="categorias-lista" value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })} />
-                  <datalist id="categorias-lista">
-                    {categorias.map(c => <option key={c} value={c} />)}
-                  </datalist>
                 </Campo>
                 <Campo label="Unidade *">
                   <select value={form.unidade} onChange={e => setForm({ ...form, unidade: e.target.value })}>
