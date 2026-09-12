@@ -38,7 +38,7 @@ const RE_INICIO_ITEM = /^(\d+)\s+([\d.]+)$/;
 const RE_UNIDADE_QTD = /^([A-Za-zÀ-ÿ]{1,10})\s+([\d.,]+)$/;
 const RE_PRECOS = /^([\d.,]+)\s+([\d.,]+)$/;
 
-function extrairModeloAdm(linhas) {
+function extrairModeloAdmBloco(linhas) {
   const itens = [];
 
   for (let i = 0; i < linhas.length; i++) {
@@ -72,6 +72,39 @@ function extrairModeloAdm(linhas) {
     i += 4; // pula o resto do bloco já lido
   }
 
+  return itens;
+}
+
+// Segunda variação do mesmo sistema "ADM" (usada pela SOL Atacadista): uma
+// linha de tabela por item, agrupada por "ambiente" (ex.: REDES, ALARME,
+// CFTV — cabeçalhos que só servem pra organizar visualmente, ignorados aqui).
+// A extração de texto do PDF gruda o código do produto direto na descrição
+// (sem espaço), então a linha fica assim:
+//   1 805CABO U/UTP CAT 5E 24 AWGX4P AZUL (CX 305MT) CX 3,000 9,000 816,4100 2.449,23 85444900
+//   |item| |código| |descrição....................| |un| |qtd| |peso| |preço unit.| |total| |ncm|
+// O código vem com ponto de milhar (ex. "7.425"), por isso a captura inclui
+// grupos "(?:\.\d+)*" — sem isso, "7.425RACK..." vira código "7" + lixo.
+const RE_LINHA_GRADE_ADM = /^\d+\s+(\d+(?:\.\d+)*)([^\s\d].*?)\s+([A-Za-zÀ-ÿ]{1,4})\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+(\d{6,10})\s*$/;
+
+function extrairModeloAdmGrade(linhas) {
+  const itens = [];
+  for (const linha of linhas) {
+    const m = linha.match(RE_LINHA_GRADE_ADM);
+    if (!m) continue;
+
+    const [, codigo, descricaoBruta, unidade, quantidade, , precoUnit, , ncm] = m;
+    const descricao = descricaoBruta.replace(/\s{2,}/g, ' ').trim();
+    if (descricao.length < 3) continue;
+
+    itens.push({
+      codigo,
+      descricao,
+      unidade: unidade.toLowerCase(),
+      quantidade: paraNumeroBR(quantidade),
+      preco: paraNumeroBR(precoUnit),
+      ncm,
+    });
+  }
   return itens;
 }
 
@@ -110,8 +143,13 @@ function extrairGenerico(linhas) {
 
 function extrairDoTexto(texto) {
   const linhas = String(texto || '').split('\n').map(l => l.trim()).filter(Boolean);
-  const doModelo = extrairModeloAdm(linhas);
-  if (doModelo.length > 0) return doModelo;
+
+  const doBloco = extrairModeloAdmBloco(linhas);
+  if (doBloco.length > 0) return doBloco;
+
+  const daGrade = extrairModeloAdmGrade(linhas);
+  if (daGrade.length > 0) return daGrade;
+
   return extrairGenerico(linhas);
 }
 
