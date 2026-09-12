@@ -39,6 +39,11 @@ const CATEGORIAS_MAO_DE_OBRA = [
   'Elétrica', 'Projetos', 'Automação', 'Cabeamento Estruturado', 'Controle de Acesso', 'CFTV', 'Configuração',
 ];
 
+// Subgrupos sugeridos por padrão (além destes, qualquer nome digitado no item vira sugestão também)
+const SUBGRUPOS_PADRAO = [
+  'Alarme', 'Automação', 'CFTV', 'Controle de Acesso', 'Elétrica', 'Redes', 'Sonorização', 'Climatização',
+];
+
 export default function Orcamento() {
   const { id: editandoId } = useParams();
   const navigate = useNavigate();
@@ -150,11 +155,11 @@ export default function Orcamento() {
     }]);
   }
 
-  // Subgrupos já usados em uma seção (para sugerir reaproveitar o mesmo nome, ex: "Alarme")
+  // Sugestões de subgrupo: os padrões da empresa + os que já foram usados nessa seção
+  // (permite tanto escolher um dos padrões quanto reaproveitar um nome digitado antes)
   function subgruposDaSecao(sid) {
-    return Array.from(new Set(
-      itens.filter(it => it.sid === sid).map(it => (it.subgrupo || '').trim()).filter(Boolean)
-    ));
+    const usados = itens.filter(it => it.sid === sid).map(it => (it.subgrupo || '').trim()).filter(Boolean);
+    return Array.from(new Set([...SUBGRUPOS_PADRAO, ...usados]));
   }
 
   // Agrupa os itens de uma seção por subgrupo, na ordem em que aparecem (não reordena),
