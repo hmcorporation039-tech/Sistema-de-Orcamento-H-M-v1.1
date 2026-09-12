@@ -7,6 +7,22 @@ import { formatarMoeda } from '../utils/format';
 let contador = 0;
 const gerarId = () => `tmp_${Date.now()}_${contador++}`;
 
+// Agrupa itens por subgrupo (na ordem em que aparecem, sem reordenar) —
+// mesma ideia do agrupamento por subgrupo já usado no Orçamento.
+function agruparPorSubgrupo(itens) {
+  const linhas = [];
+  let ultimo = null;
+  for (const it of itens) {
+    const sg = (it.subgrupo || '').trim() || null;
+    if (sg !== ultimo) {
+      if (sg) linhas.push({ tipo: 'cabecalho', nome: sg, key: `cab_${it.id}` });
+      ultimo = sg;
+    }
+    linhas.push({ tipo: 'item', item: it });
+  }
+  return linhas;
+}
+
 export default function AnaliseProjeto() {
   const [arquivos, setArquivos] = useState([]);
   const [analisando, setAnalisando] = useState(false);
@@ -209,23 +225,33 @@ function TabelaServicos({ itens, onAtualizar, onRemover, semObservacao }) {
         {!semObservacao && <span>Observação</span>}
         <span />
       </div>
-      {itens.map(it => (
-        <div key={it.id} style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, marginBottom: 8, alignItems: 'center' }}>
-          <input value={it.descricao} onChange={e => onAtualizar(it.id, 'descricao', e.target.value)} placeholder="Descrição" />
-          <input type="number" step="1" min="0" value={it.quantidade ?? ''} onChange={e => onAtualizar(it.id, 'quantidade', e.target.value)} />
-          <input value={it.unidade || ''} onChange={e => onAtualizar(it.id, 'unidade', e.target.value)} />
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: it.pronto ? '#3fb95f' : '#999' }}>
-            <input type="checkbox" checked={!!it.pronto} onChange={e => onAtualizar(it.id, 'pronto', e.target.checked)} />
-            Já pronto
-          </label>
-          {!semObservacao && (
-            <input value={it.observacao || ''} onChange={e => onAtualizar(it.id, 'observacao', e.target.value)} placeholder="Observação" />
-          )}
-          <button onClick={() => onRemover(it.id)} style={{ ...btnIcone, color: '#b04040' }} title="Remover">
-            <Trash2 size={12} />
-          </button>
-        </div>
-      ))}
+      {agruparPorSubgrupo(itens).map(linha => {
+        if (linha.tipo === 'cabecalho') {
+          return (
+            <div key={linha.key} style={{ fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '.5px', borderTop: '1px solid #222', paddingTop: 8, marginTop: 4, marginBottom: 6 }}>
+              {linha.nome}
+            </div>
+          );
+        }
+        const it = linha.item;
+        return (
+          <div key={it.id} style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, marginBottom: 8, alignItems: 'center' }}>
+            <input value={it.descricao} onChange={e => onAtualizar(it.id, 'descricao', e.target.value)} placeholder="Descrição" />
+            <input type="number" step="1" min="0" value={it.quantidade ?? ''} onChange={e => onAtualizar(it.id, 'quantidade', e.target.value)} />
+            <input value={it.unidade || ''} onChange={e => onAtualizar(it.id, 'unidade', e.target.value)} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: it.pronto ? '#3fb95f' : '#999' }}>
+              <input type="checkbox" checked={!!it.pronto} onChange={e => onAtualizar(it.id, 'pronto', e.target.checked)} />
+              Já pronto
+            </label>
+            {!semObservacao && (
+              <input value={it.observacao || ''} onChange={e => onAtualizar(it.id, 'observacao', e.target.value)} placeholder="Observação" />
+            )}
+            <button onClick={() => onRemover(it.id)} style={{ ...btnIcone, color: '#b04040' }} title="Remover">
+              <Trash2 size={12} />
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -243,7 +269,15 @@ function TabelaMateriais({ itens, onAtualizar, onRemover, pesquisas, onPesquisar
       <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, marginBottom: 6, fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px' }}>
         <span>Descrição</span><span>Referência</span><span>Qtd</span><span>Un.</span><span>Catálogo / Mercado</span><span>Status</span><span />
       </div>
-      {itens.map(it => {
+      {agruparPorSubgrupo(itens).map(linha => {
+        if (linha.tipo === 'cabecalho') {
+          return (
+            <div key={linha.key} style={{ fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '.5px', borderTop: '1px solid #222', paddingTop: 8, marginTop: 4, marginBottom: 6 }}>
+              {linha.nome}
+            </div>
+          );
+        }
+        const it = linha.item;
         const pesquisa = pesquisas[it.id];
         return (
           <div key={it.id} style={{ marginBottom: 10, borderBottom: '1px solid #1e1e1e', paddingBottom: 10 }}>

@@ -13,6 +13,22 @@ function formatarMoedaLocal(v) {
   return (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+// Monta as linhas de uma tabela agrupando por subgrupo (na ordem em que os
+// itens aparecem, sem reordenar) — mesmo padrão usado no PDF comercial de
+// proposta: um cabeçalho de sub-bloco toda vez que o subgrupo muda.
+function linhasAgrupadasPorSubgrupo(itens, colunas, gerarLinhaTr) {
+  let ultimo = null;
+  return itens.map(it => {
+    const sg = (it.subgrupo || '').trim() || null;
+    let cabecalho = '';
+    if (sg !== ultimo) {
+      if (sg) cabecalho = `<tr class="subgrupo"><td colspan="${colunas}">${escapeHtml(sg)}</td></tr>`;
+      ultimo = sg;
+    }
+    return cabecalho + gerarLinhaTr(it);
+  }).join('');
+}
+
 // Relatório de compatibilização de projeto — documento interno, separado do
 // PDF comercial de orçamento. Consolida o que foi extraído automaticamente
 // dos arquivos do projeto (ambientes, câmeras, cabos) e a lista de serviços
@@ -48,7 +64,7 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
     <tr><td>${escapeHtml(a.tema)}</td><td>${escapeHtml(a.observacao)}</td></tr>
   `).join('');
 
-  const linhasServicos = servicos.map(s => `
+  const linhasServicos = linhasAgrupadasPorSubgrupo(servicos, 5, s => `
     <tr class="${s.pronto ? 'pronto' : ''}">
       <td>${escapeHtml(s.descricao)}</td>
       <td class="num">${s.quantidade ?? '—'}</td>
@@ -56,9 +72,9 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
       <td>${s.pronto ? 'Já pronto (não orçado)' : 'A executar'}</td>
       <td class="obs">${escapeHtml(s.observacao || '')}</td>
     </tr>
-  `).join('');
+  `);
 
-  const linhasMateriais = materiais.map(m => `
+  const linhasMateriais = linhasAgrupadasPorSubgrupo(materiais, 5, m => `
     <tr class="${m.pronto ? 'pronto' : ''}">
       <td>${escapeHtml(m.descricao)}${m.referencia_fabricante ? `<div class="obs">Ref.: ${escapeHtml(m.referencia_fabricante)}</div>` : ''}</td>
       <td class="num">${m.quantidade ?? '—'}</td>
@@ -66,7 +82,7 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
       <td class="num">${m.preco_catalogo != null ? formatarMoedaLocal(m.preco_catalogo) + (m.confianca_catalogo != null ? ` (${m.confianca_catalogo}% match)` : '') : '—'}</td>
       <td>${m.pronto ? 'Já disponível (não orçado)' : 'A fornecer'}</td>
     </tr>
-  `).join('');
+  `);
 
   return `
 <!DOCTYPE html>
@@ -88,6 +104,7 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
   th.num, td.num { text-align: right; }
   td { padding: 5px 8px; border-bottom: 1px solid #e5e5e5; font-size: 10px; vertical-align: top; }
   td.obs { color: #666; font-size: 9px; }
+  tr.subgrupo td { background: #f2f2f2; font-weight: 700; color: #333; padding: 5px 8px; }
   tr.pronto td { color: #999; background: #f7f7f7; }
   tr.pronto td:nth-child(4) { color: #3a8a4a; font-weight: 700; }
   .vazio { padding: 10px 8px; color: #999; font-size: 10px; font-style: italic; }

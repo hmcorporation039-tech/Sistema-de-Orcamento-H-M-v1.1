@@ -91,35 +91,76 @@ function gerarAchados(analises) {
   return achados;
 }
 
-// Monta a lista de serviços (mão de obra) candidatos a partir do que foi
-// extraído com confiança. Cada serviço tem "pronto" (já executado / não
-// orçar) editável pelo usuário antes de gerar o relatório final — no
-// cabeamento estruturado, por exemplo, o padrão é vir como pendente, mas o
-// usuário pode marcar como já pronto quando for o caso (projeto onde só a
-// parte elétrica falta, cabo já passado, etc.).
+// Monta a lista completa de serviços (mão de obra) candidatos, na mesma
+// estrutura usada nos orçamentos de referência da empresa: dividida em
+// "Cabeamento / Rede / CFTV" e "Alarme". Cada item tem "pronto" (já
+// executado / não orçar) editável pelo usuário — no cabeamento estruturado,
+// por exemplo, o padrão é vir como pendente, mas dá pra marcar como já
+// pronto quando for o caso (projeto onde só falta a parte elétrica, cabo já
+// passado, etc.).
+//
+// Só a quantidade de câmeras vem preenchida automaticamente (tem código
+// individual — CAMx — no desenho, dá pra contar com confiança). Pontos de
+// rede/TV e quantidades de alarme (sensores, sirene, teclado) não têm
+// código individual nesses projetos — não tem como contar pelo texto do
+// PDF sem arriscar inventar número. Ficam com quantidade 0 e um aviso pra
+// o usuário confirmar direto na planta antes de fechar.
 function montarServicosPadrao(analises) {
-  const servicos = [];
-
   const totalCameras = analises.reduce((s, a) => s + a.cameras.ocorrencias, 0);
-  if (totalCameras > 0) {
-    servicos.push({
-      descricao: 'Instalação e configuração de câmeras',
-      quantidade: totalCameras,
-      unidade: 'un',
-      pronto: false,
-      observacao: 'Quantidade = total de códigos de câmera encontrados no(s) desenho(s). Confira duplicatas/numeração antes de fechar (veja Compatibilização).',
-    });
-  }
+  const SEM_CODIGO = 'Sem código individual no desenho — confirme a quantidade direto na planta antes de fechar.';
 
-  servicos.push({
-    descricao: 'Passagem de cabeamento (infraestrutura + lançamento de cabos)',
-    quantidade: 1,
-    unidade: 'vb',
-    pronto: false,
-    observacao: 'Marque como "já pronto" se o cabeamento já estiver passado no local (não entra na mão de obra).',
+  const item = (descricao, quantidade, unidade, subgrupo, observacao) => ({
+    descricao, quantidade, unidade, subgrupo, pronto: false, observacao,
   });
 
-  return servicos;
+  return [
+    item('Conectorização de ponto de rede/dados (RJ-45 + patch panel + teste)', 0, 'pt', 'Cabeamento / Rede / CFTV', SEM_CODIGO),
+    item('Conectorização de ponto de câmera (RJ-45 + patch panel + teste)', totalCameras, 'pt', 'Cabeamento / Rede / CFTV',
+      totalCameras > 0 ? `Quantidade = total de códigos de câmera (CAMx) encontrados no desenho. Confira duplicatas/numeração antes de fechar (veja Compatibilização).` : SEM_CODIGO),
+    item('Conectorização de ponto de TV/antena (conector coaxial RG-6)', 0, 'pt', 'Cabeamento / Rede / CFTV', SEM_CODIGO),
+    item('Instalação/config. de câmera interna (dome)', 0, 'un', 'Cabeamento / Rede / CFTV',
+      totalCameras > 0 ? `Total de câmeras no desenho: ${totalCameras} — divida entre interna/externa aqui.` : SEM_CODIGO),
+    item('Instalação/config. de câmera externa (bullet)', 0, 'un', 'Cabeamento / Rede / CFTV', SEM_CODIGO),
+    item('Montagem e organização dos racks (patch panels, guias, PDU)', 0, 'un', 'Cabeamento / Rede / CFTV', 'Confirme quantos racks o projeto prevê.'),
+    item('Instalação e config. de switches', 0, 'un', 'Cabeamento / Rede / CFTV', SEM_CODIGO),
+    item('Instalação e config. de access points (Wi-Fi)', 0, 'un', 'Cabeamento / Rede / CFTV', SEM_CODIGO),
+    item('Instalação de nobreaks + kit de ventilação', 0, 'un', 'Cabeamento / Rede / CFTV', SEM_CODIGO),
+    item('Certificação e etiquetagem dos pontos (rede + câmeras)', totalCameras, 'pt', 'Cabeamento / Rede / CFTV',
+      'Quantidade inicial = só câmeras; some os pontos de rede/TV depois de confirmar.'),
+    item('Instalação de sensor de abertura (magnético) porta/janela', 0, 'un', 'Alarme', SEM_CODIGO),
+    item('Instalação de sensor infravermelho passivo (IVP)', 0, 'un', 'Alarme', SEM_CODIGO),
+    item('Instalação de sirene', 0, 'un', 'Alarme', SEM_CODIGO),
+    item('Instalação de teclado de comando', 0, 'un', 'Alarme', SEM_CODIGO),
+    item('Instalação de repetidor de sinal', 0, 'un', 'Alarme', SEM_CODIGO),
+    item('Instalação e configuração da central de alarme', 0, 'un', 'Alarme', 'Normalmente 1 unidade — confirme.'),
+    item('Passagem de cabeamento (infraestrutura + lançamento de cabos)', 1, 'vb', 'Geral',
+      'Marque como "já pronto" se o cabeamento já estiver passado no local (não entra na mão de obra).'),
+  ];
+}
+
+// Lista padrão de material de instalação (Bloco 2 nos orçamentos de
+// referência) — itens de terminação/fixação que não vêm de nenhuma cotação
+// de fornecedor, calculados a partir dos pontos do projeto. Como os pontos
+// de rede/TV ainda não são conhecidos automaticamente (veja acima), fica
+// como checklist com quantidade 0 e a fórmula na observação, pra o usuário
+// calcular rápido depois de confirmar os pontos.
+function montarMateriaisInstalacaoPadrao(analises) {
+  const totalCameras = analises.reduce((s, a) => s + a.cameras.ocorrencias, 0);
+
+  const item = (descricao, quantidade, unidade, observacao) => ({
+    descricao, quantidade, unidade, subgrupo: 'Material de Instalação', pronto: false, observacao,
+    referencia_fabricante: null, preco_catalogo: null, material_id: null, confianca_catalogo: null,
+  });
+
+  return [
+    item('Keystone/jack RJ-45 Cat.6 (lado usuário — pontos de rede)', 0, 'un', 'Quantidade = nº de pontos de rede.'),
+    item('Espelho/placa 4x2 + suporte (pontos de rede)', 0, 'un', 'Quantidade = nº de pontos de rede.'),
+    item('Tomada coaxial RG-6 + conector (TV/antena)', 0, 'un', 'Quantidade = nº de pontos de TV/antena.'),
+    item('Plug RJ-45 Cat.6 (terminação de câmeras) + reserva', totalCameras > 0 ? totalCameras + 24 : 0, 'un',
+      totalCameras > 0 ? `Quantidade = câmeras (${totalCameras}) + reserva estimada (24) — ajuste conforme necessário.` : 'Quantidade = nº de câmeras + reserva.'),
+    item('Suporte/braço de fixação p/ câmera externa (bullet)', 0, 'un', 'Quantidade = nº de câmeras externas (bullet).'),
+    item('Identificação (etiquetas/anilhas), abraçadeiras, parafusos e miudezas', 1, 'vb', 'Verba — ajuste conforme o porte do projeto.'),
+  ];
 }
 
 // Extrai os equipamentos de cada arquivo (via IA, reformatando o texto já
@@ -164,6 +205,7 @@ async function montarMateriais(equipamentos) {
       referencia_fabricante: eq.referencia_fabricante || null,
       quantidade: 1,
       unidade: correspondencia?.unidade_catalogo || 'un',
+      subgrupo: 'Material e Equipamentos',
       pronto: false,
       preco_catalogo: correspondencia?.preco_catalogo ?? null,
       material_id: correspondencia?.material_id ?? null,
@@ -190,8 +232,13 @@ async function analisarProjetoCompleto(arquivos) {
   const tabelaCabos = analises.find(a => a.tabelaCabos.length > 0)?.tabelaCabos || [];
 
   const achados = gerarAchados(analises);
+  achados.push({
+    tema: 'Quantidades a confirmar manualmente',
+    observacao: 'Pontos de rede/TV e quantidades de alarme (sensores, sirene, teclado) não têm código individual nesses desenhos — diferente das câmeras (CAMx), não dá pra contar pelo texto do PDF sem arriscar inventar número. Os itens de "Serviços" e "Material de Instalação" que dependem disso vieram com quantidade 0 — confirme direto na planta antes de gerar o relatório final.',
+  });
   const equipamentos = await extrairEquipamentosDosArquivos(analises, achados);
-  const materiais = await montarMateriais(equipamentos);
+  const materiaisEquipamentos = await montarMateriais(equipamentos);
+  const materiais = [...montarMateriaisInstalacaoPadrao(analises), ...materiaisEquipamentos];
 
   return {
     cliente,
