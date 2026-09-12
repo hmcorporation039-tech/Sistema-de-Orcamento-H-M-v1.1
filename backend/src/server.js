@@ -8,11 +8,13 @@ const { criarTabelas } = require('./models/schema');
 const { credenciaisConfiguradas } = require('./utils/emailClient');
 const { verificarCaixaDeEntrada } = require('./services/notaFiscalEmailService');
 const { verificarPixNaCaixaDeEntrada } = require('./services/financeiroEmailService');
+const { verificarPastaFornecedores, PASTA_FORNECEDORES } = require('./services/cotacaoFornecedorService');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 const VERIFICACOES_EMAIL_POR_DIA = 3;
 const INTERVALO_VERIFICACAO_EMAIL_MS = (24 / VERIFICACOES_EMAIL_POR_DIA) * 60 * 60 * 1000;
+const INTERVALO_VERIFICACAO_FORNECEDORES_MS = 15 * 60 * 1000;
 
 // Middlewares
 app.use(cors({
@@ -87,6 +89,24 @@ function agendarVerificacaoDePix() {
   console.log(`Controle financeiro de Pix por e-mail ativo (${VERIFICACOES_EMAIL_POR_DIA}x por dia, a cada ${INTERVALO_VERIFICACAO_EMAIL_MS / 3600000}h)`);
 }
 
+function agendarVerificacaoDePastaFornecedores() {
+  const rodar = async () => {
+    try {
+      const resumo = await verificarPastaFornecedores();
+      if (resumo.arquivosProcessados > 0) {
+        console.log(`Orçamentos de fornecedores verificados: ${resumo.arquivosProcessados}/${resumo.arquivosEncontrados} arquivos — ${resumo.materiaisCriados} materiais criados, ${resumo.materiaisAtualizados} atualizados`);
+      }
+      resumo.avisos.forEach(a => console.warn('Aviso (orçamentos de fornecedores):', a));
+    } catch (err) {
+      console.error('Erro na verificação da pasta de orçamentos de fornecedores:', err.message);
+    }
+  };
+
+  setTimeout(rodar, 15 * 1000);
+  setInterval(rodar, INTERVALO_VERIFICACAO_FORNECEDORES_MS);
+  console.log(`Leitura automática de orçamentos de fornecedores ativa (a cada ${INTERVALO_VERIFICACAO_FORNECEDORES_MS / 60000}min) — pasta: ${PASTA_FORNECEDORES}`);
+}
+
 // Inicializar
 async function iniciar() {
   try {
@@ -98,6 +118,7 @@ async function iniciar() {
       console.log(`Health:   http://localhost:${PORT}/health\n`);
       agendarVerificacaoDeEmail();
       agendarVerificacaoDePix();
+      agendarVerificacaoDePastaFornecedores();
     });
   } catch (err) {
     console.error('Erro ao iniciar servidor:', err.message);

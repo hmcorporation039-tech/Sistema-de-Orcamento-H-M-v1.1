@@ -187,6 +187,20 @@ async function criarTabelas() {
       )
     `);
 
+    // Orçamentos de fornecedores recebidos por WhatsApp (PDFs salvos manualmente em
+    // uma pasta local) já importados — evita reprocessar o mesmo arquivo a cada
+    // varredura. Identificado pelo hash do conteúdo (não pelo nome, que pode mudar).
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS arquivos_fornecedores_processados (
+        id SERIAL PRIMARY KEY,
+        arquivo VARCHAR(255) NOT NULL,
+        hash VARCHAR(64) UNIQUE NOT NULL,
+        itens_novos INTEGER DEFAULT 0,
+        itens_atualizados INTEGER DEFAULT 0,
+        processado_em TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
     // Prestadores de serviços: mão de obra, material e despesas diárias pagos a
     // terceiros. Pagamentos feitos a eles (financeiro_movimentos.tipo='realizado')
     // são vinculados automaticamente pelo nome (veja vincularPrestadores.js)

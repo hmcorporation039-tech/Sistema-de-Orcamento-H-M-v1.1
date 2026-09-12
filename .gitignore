@@ -29,3 +29,7 @@ E-mail admin@hmengenharia.com.txt
 
 # Cópias locais de backup do sistema (não fazem parte do código-fonte)
 Orçamentos V*/
+
+# PDFs de cotação de fornecedores recebidos por WhatsApp (dados comerciais reais,
+# não fazem parte do código-fonte — o sistema só lê essa pasta em produção)
+Orçamentos recebidos fornecedores/
