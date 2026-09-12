@@ -5,6 +5,7 @@ import {
   getMateriais, criarMaterial, atualizarMaterial, removerMaterial,
   importarMateriais, extrairNotaFiscal, getCategoriasMateriais,
   getStatusEmail, verificarEmailAgora, getHistoricoEmail, getMargemPadrao, atualizarMargemPadrao,
+  pesquisarPrecoMercado,
 } from '../services/api';
 import { formatarMoeda, formatarNcm, formatarData } from '../utils/format';
 import Paginacao from '../components/Paginacao';
@@ -34,6 +35,7 @@ export default function Materiais() {
   const [modalImport, setModalImport] = useState(false);
   const [editandoId, setEditandoId] = useState(null);
   const [form, setForm] = useState(VAZIO);
+  const [pesquisaMercado, setPesquisaMercado] = useState(null); // { carregando, resultado, erro }
   const [categoriaCustom, setCategoriaCustom] = useState(false); // true = campo de categoria em modo "digitar nova"
   const [salvando, setSalvando] = useState(false);
   const [textoImport, setTextoImport] = useState('');
@@ -96,6 +98,7 @@ export default function Materiais() {
     setEditandoId(null);
     setForm(VAZIO);
     setCategoriaCustom(false);
+    setPesquisaMercado(null);
     setModalAberto(true);
   }
 
@@ -108,7 +111,22 @@ export default function Materiais() {
     });
     // Se a categoria atual não está na lista de sugestões, abre já no modo "digitar categoria nova"
     setCategoriaCustom(!!m.categoria && !categoriasSugeridas.includes(m.categoria));
+    setPesquisaMercado(null);
     setModalAberto(true);
+  }
+
+  async function pesquisarMercadoDoForm() {
+    if (!form.descricao.trim()) {
+      toast.error('Preencha a descrição antes de pesquisar');
+      return;
+    }
+    setPesquisaMercado({ carregando: true });
+    try {
+      const res = await pesquisarPrecoMercado(form.descricao);
+      setPesquisaMercado({ resultado: res.data.resultado });
+    } catch (err) {
+      setPesquisaMercado({ erro: err.response?.data?.erro || 'Erro ao pesquisar preço de mercado' });
+    }
   }
 
   async function salvar(e) {
@@ -520,6 +538,27 @@ export default function Materiais() {
                 >
                   Sugerir com margem
                 </button>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <button
+                  type="button"
+                  onClick={pesquisarMercadoDoForm}
+                  disabled={pesquisaMercado?.carregando}
+                  style={{ ...btnSecundario, fontSize: 11 }}
+                >
+                  <Search size={12} style={{ marginRight: 6 }} />
+                  {pesquisaMercado?.carregando ? 'Pesquisando preço de mercado...' : 'Pesquisar preço de mercado'}
+                </button>
+                {pesquisaMercado?.resultado && (
+                  <div style={{ marginTop: 8, padding: 10, background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, fontSize: 11, color: '#bbb', whiteSpace: 'pre-wrap', maxHeight: 180, overflowY: 'auto' }}>
+                    <b style={{ color: '#c9a227' }}>Pesquisa de mercado (IA, confira antes de usar):</b><br />
+                    {pesquisaMercado.resultado}
+                  </div>
+                )}
+                {pesquisaMercado?.erro && (
+                  <div style={{ marginTop: 8, fontSize: 11, color: '#b04040' }}>{pesquisaMercado.erro}</div>
+                )}
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

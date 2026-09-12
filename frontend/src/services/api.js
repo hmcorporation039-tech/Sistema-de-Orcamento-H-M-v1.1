@@ -80,12 +80,18 @@ export const enviarPropostaPorEmail = (id, destinatario, mensagem) =>
 export const analisarProjeto = (arquivos) => {
   const formData = new FormData();
   arquivos.forEach(arquivo => formData.append('arquivos', arquivo));
+  // Extrai equipamentos via IA (uma chamada por arquivo) — pode passar bem
+  // do timeout padrão de 15s, por isso o prazo maior só nessa chamada.
   return api.post('/projetos/analisar', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 180000,
   });
 };
 export const gerarRelatorioCompatibilizacao = (analise) =>
   api.post('/projetos/relatorio-compatibilizacao', analise, { responseType: 'blob' });
+
+// ── PESQUISA DE MERCADO ───────────────────────────────────────────────
+export const pesquisarPrecoMercado = (descricao) => api.post('/pesquisa-mercado', { descricao }, { timeout: 60000 });
 
 // ── USUÁRIOS ──────────────────────────────────────────────────────────
 export const getUsuarios = () => api.get('/usuarios');

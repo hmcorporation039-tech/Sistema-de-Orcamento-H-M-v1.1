@@ -1,4 +1,53 @@
+const pool = require('../config/database');
 const { analisarProjeto } = require('./projetoParser');
+const { extrairEquipamentosComIA } = require('./equipamentoExtratorIA');
+
+function normalizarPalavras(s) {
+  return String(s || '')
+    .toUpperCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '') // tira acento
+    .replace(/[^A-Z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(p => p.length > 2); // ignora palavras curtas (DE, OU, UN...)
+}
+
+// Casa a descrição de um equipamento extraído do projeto com o catálogo de
+// materiais já cadastrado, por sobreposição de palavras (sem exigir texto
+// idêntico — a redação do projeto quase nunca bate exatamente com a do
+// catálogo). Só assume uma correspondência quando a sobreposição é forte o
+// suficiente (>= 45% das palavras do lado menor) — senão, fica sem preço
+// sugerido, pra não arriscar comparar coisas diferentes.
+// `catalogo` é passado pronto (não busca no banco a cada chamada) — pra
+// comparar vários equipamentos sem repetir a mesma consulta N vezes.
+function compararComCatalogo(descricao, catalogo) {
+  const palavrasAlvo = normalizarPalavras(descricao);
+  if (palavrasAlvo.length === 0) return null;
+
+  let melhor = null;
+  for (const mat of catalogo) {
+    const palavrasMat = normalizarPalavras(mat.descricao);
+    if (palavrasMat.length === 0) continue;
+
+    const setAlvo = new Set(palavrasAlvo);
+    const setMat = new Set(palavrasMat);
+    const comuns = [...setAlvo].filter(p => setMat.has(p)).length;
+    const menorTamanho = Math.min(setAlvo.size, setMat.size);
+    const score = comuns / menorTamanho;
+
+    if (score >= 0.45 && (!melhor || score > melhor.score)) {
+      melhor = { score, material: mat };
+    }
+  }
+
+  if (!melhor) return null;
+  return {
+    material_id: melhor.material.id,
+    descricao_catalogo: melhor.material.descricao,
+    preco_catalogo: Number(melhor.material.preco),
+    unidade_catalogo: melhor.material.unidade,
+    confianca: Math.round(melhor.score * 100),
+  };
+}
 
 // Tenta achar o nome do cliente no bloco de título do desenho (padrão
 // "CLIENTE: NOME DO CLIENTE" usado nesses projetos de engenharia).
@@ -73,6 +122,56 @@ function montarServicosPadrao(analises) {
   return servicos;
 }
 
+// Extrai os equipamentos de cada arquivo (via IA, reformatando o texto já
+// obtido do PDF) e junta tudo numa lista só, sem duplicar itens que
+// aparecem repetidos entre arquivos (mesma descrição + mesma referência).
+// Um arquivo não espera o outro — as chamadas ao Gemini rodam em paralelo
+// (senão, com 3 arquivos, o tempo total vira a soma de cada chamada).
+async function extrairEquipamentosDosArquivos(analises, achados) {
+  const resultados = await Promise.all(
+    analises.map(a => extrairEquipamentosComIA(a.textoBruto).then(r => ({ arquivo: a.arquivo, ...r })))
+  );
+
+  const vistos = new Set();
+  const equipamentos = [];
+  for (const { arquivo, itens, aviso } of resultados) {
+    if (aviso) {
+      achados.push({ tema: 'Extração de equipamentos por IA', observacao: `"${arquivo}": ${aviso}` });
+    }
+    for (const it of itens) {
+      const chave = it.descricao.toUpperCase() + '|' + (it.referencia_fabricante || '');
+      if (vistos.has(chave)) continue;
+      vistos.add(chave);
+      equipamentos.push(it);
+    }
+  }
+
+  return equipamentos;
+}
+
+// Monta a lista final de materiais pra revisão: um item por equipamento
+// encontrado, com preço sugerido do catálogo quando há correspondência
+// razoável — nunca preenche preço "no chute" quando não achou nada parecido.
+async function montarMateriais(equipamentos) {
+  const catalogo = (await pool.query(
+    'SELECT id, descricao, preco, unidade, categoria FROM materiais WHERE ativo = true'
+  )).rows;
+
+  return equipamentos.map(eq => {
+    const correspondencia = compararComCatalogo(eq.descricao, catalogo);
+    return {
+      descricao: eq.descricao,
+      referencia_fabricante: eq.referencia_fabricante || null,
+      quantidade: 1,
+      unidade: correspondencia?.unidade_catalogo || 'un',
+      pronto: false,
+      preco_catalogo: correspondencia?.preco_catalogo ?? null,
+      material_id: correspondencia?.material_id ?? null,
+      confianca_catalogo: correspondencia?.confianca ?? null,
+    };
+  });
+}
+
 async function analisarProjetoCompleto(arquivos) {
   // arquivos: [{ buffer, nomeArquivo }]
   const analises = [];
@@ -90,6 +189,10 @@ async function analisarProjetoCompleto(arquivos) {
   const totalCameras = analises.reduce((s, a) => s + a.cameras.ocorrencias, 0);
   const tabelaCabos = analises.find(a => a.tabelaCabos.length > 0)?.tabelaCabos || [];
 
+  const achados = gerarAchados(analises);
+  const equipamentos = await extrairEquipamentosDosArquivos(analises, achados);
+  const materiais = await montarMateriais(equipamentos);
+
   return {
     cliente,
     arquivosAnalisados: analises.map(a => a.arquivo),
@@ -99,10 +202,10 @@ async function analisarProjetoCompleto(arquivos) {
       detalhePorArquivo: analises.filter(a => a.cameras.ocorrencias > 0).map(a => ({ arquivo: a.arquivo, ...a.cameras })),
     },
     tabelaCabos,
-    achados: gerarAchados(analises),
+    achados,
     servicos: montarServicosPadrao(analises),
-    materiais: [],
+    materiais,
   };
 }
 
-module.exports = { analisarProjetoCompleto, extrairCliente, gerarAchados, montarServicosPadrao };
+module.exports = { analisarProjetoCompleto, extrairCliente, gerarAchados, montarServicosPadrao, compararComCatalogo };

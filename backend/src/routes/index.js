@@ -17,6 +17,7 @@ const finCtrl = require('../controllers/financeiroController');
 const prestCtrl = require('../controllers/prestadoresController');
 const contrCtrl = require('../controllers/contratosController');
 const projCtrl = require('../controllers/projetosController');
+const pesqCtrl = require('../controllers/pesquisaMercadoController');
 
 // ── AUTH ──────────────────────────────────────────────────────────────
 router.post('/auth/login', authCtrl.login);
@@ -100,5 +101,8 @@ router.delete('/contratos/:id', autenticar, contrCtrl.remover);
 // ── ANÁLISE DE PROJETO (compatibilização) ────────────────────────────────
 router.post('/projetos/analisar', autenticar, upload.array('arquivos', 10), projCtrl.analisar);
 router.post('/projetos/relatorio-compatibilizacao', autenticar, projCtrl.gerarRelatorio);
+
+// ── PESQUISA DE MERCADO (Gemini + busca real) ────────────────────────────
+router.post('/pesquisa-mercado', autenticar, pesqCtrl.pesquisar);
 
 module.exports = router;

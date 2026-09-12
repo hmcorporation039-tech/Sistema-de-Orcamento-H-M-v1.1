@@ -80,6 +80,13 @@ function extrairTabelaCabos(texto) {
   return itens;
 }
 
+// Nota: a lista de equipamentos/materiais técnicos (com código REF. de
+// fabricante) não é extraída aqui por regex — testamos e o texto quebra de
+// linha demais pra separar itens com confiança (descrições saíam cortadas
+// ou coladas). Essa parte é feita pelo Gemini reformatando o texto já obtido
+// abaixo (utils/equipamentoExtratorIA.js) — validado como confiável porque é
+// reformatação de texto já dado a ele, não leitura livre do PDF.
+
 async function analisarProjeto(buffer, nomeArquivo) {
   const texto = await extrairTexto(buffer);
   return {
@@ -91,4 +98,6 @@ async function analisarProjeto(buffer, nomeArquivo) {
   };
 }
 
-module.exports = { analisarProjeto, extrairTexto, extrairAmbientes, extrairCameras, extrairTabelaCabos };
+module.exports = {
+  analisarProjeto, extrairTexto, extrairAmbientes, extrairCameras, extrairTabelaCabos,
+};

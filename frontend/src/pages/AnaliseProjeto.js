@@ -1,7 +1,8 @@
 import { useState, useRef } from 'react';
 import toast from 'react-hot-toast';
-import { Upload, FileDown, Plus, Trash2, FolderSearch } from 'lucide-react';
-import { analisarProjeto, gerarRelatorioCompatibilizacao } from '../services/api';
+import { Upload, FileDown, Plus, Trash2, FolderSearch, Search } from 'lucide-react';
+import { analisarProjeto, gerarRelatorioCompatibilizacao, pesquisarPrecoMercado } from '../services/api';
+import { formatarMoeda } from '../utils/format';
 
 let contador = 0;
 const gerarId = () => `tmp_${Date.now()}_${contador++}`;
@@ -11,6 +12,7 @@ export default function AnaliseProjeto() {
   const [analisando, setAnalisando] = useState(false);
   const [analise, setAnalise] = useState(null);
   const [gerando, setGerando] = useState(false);
+  const [pesquisas, setPesquisas] = useState({}); // { [materialId]: { carregando, resultado, erro } }
   const inputRef = useRef(null);
 
   function selecionarArquivos(e) {
@@ -66,6 +68,20 @@ export default function AnaliseProjeto() {
       ...a,
       materiais: [...a.materiais, { id: gerarId(), descricao: '', quantidade: 1, unidade: 'un', pronto: false }],
     }));
+  }
+
+  async function pesquisarMercado(material) {
+    if (!material.descricao.trim()) {
+      toast.error('Preencha a descrição antes de pesquisar');
+      return;
+    }
+    setPesquisas(p => ({ ...p, [material.id]: { carregando: true } }));
+    try {
+      const res = await pesquisarPrecoMercado(material.descricao);
+      setPesquisas(p => ({ ...p, [material.id]: { resultado: res.data.resultado } }));
+    } catch (err) {
+      setPesquisas(p => ({ ...p, [material.id]: { erro: err.response?.data?.erro || 'Erro ao pesquisar' } }));
+    }
   }
 
   async function baixarRelatorio() {
@@ -161,7 +177,13 @@ export default function AnaliseProjeto() {
             {analise.materiais.length === 0 && (
               <p style={{ fontSize: 11, color: '#666', fontStyle: 'italic' }}>Nenhum material lançado ainda — adicione manualmente, ou lance na tela de Materiais e traga a lista final aqui.</p>
             )}
-            <TabelaServicos itens={analise.materiais} onAtualizar={atualizarMaterial} onRemover={removerMaterial} semObservacao />
+            <TabelaMateriais
+              itens={analise.materiais}
+              onAtualizar={atualizarMaterial}
+              onRemover={removerMaterial}
+              pesquisas={pesquisas}
+              onPesquisar={pesquisarMercado}
+            />
           </div>
 
           <div style={{ ...card, display: 'flex', justifyContent: 'flex-end' }}>
@@ -204,6 +226,70 @@ function TabelaServicos({ itens, onAtualizar, onRemover, semObservacao }) {
           </button>
         </div>
       ))}
+    </div>
+  );
+}
+
+// Tabela de materiais/equipamentos: além dos campos editáveis, mostra o
+// preço do catálogo quando o sistema achou uma correspondência (com a
+// confiança e a descrição do catálogo lado a lado — pra ficar visível
+// quando bateu errado, ex.: categoria de cabo diferente) e permite pesquisar
+// o preço de mercado sob demanda (Gemini + busca real, nunca automático).
+function TabelaMateriais({ itens, onAtualizar, onRemover, pesquisas, onPesquisar }) {
+  const colunas = '2fr 1fr 0.6fr 0.6fr 1.6fr 1fr 32px';
+
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, marginBottom: 6, fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px' }}>
+        <span>Descrição</span><span>Referência</span><span>Qtd</span><span>Un.</span><span>Catálogo / Mercado</span><span>Status</span><span />
+      </div>
+      {itens.map(it => {
+        const pesquisa = pesquisas[it.id];
+        return (
+          <div key={it.id} style={{ marginBottom: 10, borderBottom: '1px solid #1e1e1e', paddingBottom: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, alignItems: 'center' }}>
+              <input value={it.descricao} onChange={e => onAtualizar(it.id, 'descricao', e.target.value)} placeholder="Descrição" />
+              <input value={it.referencia_fabricante || ''} onChange={e => onAtualizar(it.id, 'referencia_fabricante', e.target.value)} placeholder="Ref. fabricante" style={{ fontSize: 10 }} />
+              <input type="number" step="1" min="0" value={it.quantidade ?? ''} onChange={e => onAtualizar(it.id, 'quantidade', e.target.value)} />
+              <input value={it.unidade || ''} onChange={e => onAtualizar(it.id, 'unidade', e.target.value)} />
+              <div style={{ fontSize: 10 }}>
+                {it.preco_catalogo != null ? (
+                  <div style={{ color: it.confianca_catalogo >= 70 ? '#3fb95f' : '#c9a227' }}>
+                    <b>{formatarMoeda(it.preco_catalogo)}</b> ({it.confianca_catalogo}% match)
+                    <div style={{ color: '#777', fontSize: 9 }} title={it.descricao_catalogo}>{it.descricao_catalogo}</div>
+                  </div>
+                ) : (
+                  <span style={{ color: '#666' }}>Sem correspondência no catálogo</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onPesquisar(it)}
+                  disabled={pesquisa?.carregando}
+                  style={{ ...btnSecundario, padding: '3px 8px', fontSize: 9, marginTop: 4 }}
+                >
+                  <Search size={10} style={{ marginRight: 3 }} /> {pesquisa?.carregando ? 'Pesquisando...' : 'Pesquisar mercado'}
+                </button>
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: it.pronto ? '#3fb95f' : '#999' }}>
+                <input type="checkbox" checked={!!it.pronto} onChange={e => onAtualizar(it.id, 'pronto', e.target.checked)} />
+                Já pronto
+              </label>
+              <button onClick={() => onRemover(it.id)} style={{ ...btnIcone, color: '#b04040' }} title="Remover">
+                <Trash2 size={12} />
+              </button>
+            </div>
+            {pesquisa?.resultado && (
+              <div style={{ marginTop: 8, padding: 10, background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, fontSize: 10, color: '#bbb', whiteSpace: 'pre-wrap' }}>
+                <b style={{ color: '#c9a227' }}>Pesquisa de mercado (IA, confira antes de usar):</b><br />
+                {pesquisa.resultado}
+              </div>
+            )}
+            {pesquisa?.erro && (
+              <div style={{ marginTop: 8, fontSize: 10, color: '#b04040' }}>{pesquisa.erro}</div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

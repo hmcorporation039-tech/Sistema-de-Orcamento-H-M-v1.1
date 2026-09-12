@@ -9,6 +9,10 @@ function formatarData(v) {
   return d.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
 }
 
+function formatarMoedaLocal(v) {
+  return (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
 // Relatório de compatibilização de projeto — documento interno, separado do
 // PDF comercial de orçamento. Consolida o que foi extraído automaticamente
 // dos arquivos do projeto (ambientes, câmeras, cabos) e a lista de serviços
@@ -56,9 +60,10 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
 
   const linhasMateriais = materiais.map(m => `
     <tr class="${m.pronto ? 'pronto' : ''}">
-      <td>${escapeHtml(m.descricao)}</td>
+      <td>${escapeHtml(m.descricao)}${m.referencia_fabricante ? `<div class="obs">Ref.: ${escapeHtml(m.referencia_fabricante)}</div>` : ''}</td>
       <td class="num">${m.quantidade ?? '—'}</td>
       <td>${escapeHtml(m.unidade || '')}</td>
+      <td class="num">${m.preco_catalogo != null ? formatarMoedaLocal(m.preco_catalogo) + (m.confianca_catalogo != null ? ` (${m.confianca_catalogo}% match)` : '') : '—'}</td>
       <td>${m.pronto ? 'Já disponível (não orçado)' : 'A fornecer'}</td>
     </tr>
   `).join('');
@@ -152,7 +157,7 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
   <h2>Materiais / Equipamentos</h2>
   ${materiais.length > 0 ? `
   <table>
-    <thead><tr><th>Descrição</th><th class="num">Qtd.</th><th>Un.</th><th>Status</th></tr></thead>
+    <thead><tr><th>Descrição</th><th class="num">Qtd.</th><th>Un.</th><th class="num">Preço catálogo</th><th>Status</th></tr></thead>
     <tbody>${linhasMateriais}</tbody>
   </table>` : `<div class="vazio">Nenhum material lançado.</div>`}
 </body>
