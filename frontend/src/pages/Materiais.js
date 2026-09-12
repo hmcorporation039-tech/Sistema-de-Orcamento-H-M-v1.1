@@ -34,6 +34,7 @@ export default function Materiais() {
   const [modalImport, setModalImport] = useState(false);
   const [editandoId, setEditandoId] = useState(null);
   const [form, setForm] = useState(VAZIO);
+  const [categoriaCustom, setCategoriaCustom] = useState(false); // true = campo de categoria em modo "digitar nova"
   const [salvando, setSalvando] = useState(false);
   const [textoImport, setTextoImport] = useState('');
   const [importando, setImportando] = useState(false);
@@ -94,6 +95,7 @@ export default function Materiais() {
   function abrirNovo() {
     setEditandoId(null);
     setForm(VAZIO);
+    setCategoriaCustom(false);
     setModalAberto(true);
   }
 
@@ -104,6 +106,8 @@ export default function Materiais() {
       unidade: m.unidade || 'un', preco: m.preco || '', preco_compra: m.preco_compra || '',
       marca: m.marca || '', ncm: m.ncm || ''
     });
+    // Se a categoria atual não está na lista de sugestões, abre já no modo "digitar categoria nova"
+    setCategoriaCustom(!!m.categoria && !categoriasSugeridas.includes(m.categoria));
     setModalAberto(true);
   }
 
@@ -460,7 +464,36 @@ export default function Materiais() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
                 <Campo label="Categoria *">
-                  <input list="categorias-lista" value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })} />
+                  {categoriaCustom ? (
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input
+                        value={form.categoria}
+                        onChange={e => setForm({ ...form, categoria: e.target.value })}
+                        placeholder="Digite a nova categoria"
+                        autoFocus
+                        style={{ flex: 1 }}
+                      />
+                      <button type="button" onClick={() => setCategoriaCustom(false)} style={{ ...btnSecundario, padding: '9px 12px', fontSize: 10 }}>
+                        Lista
+                      </button>
+                    </div>
+                  ) : (
+                    <select
+                      value={form.categoria}
+                      onChange={e => {
+                        if (e.target.value === '__nova__') {
+                          setCategoriaCustom(true);
+                          setForm({ ...form, categoria: '' });
+                        } else {
+                          setForm({ ...form, categoria: e.target.value });
+                        }
+                      }}
+                    >
+                      <option value="" disabled>Selecione...</option>
+                      {categoriasSugeridas.map(c => <option key={c} value={c}>{c}</option>)}
+                      <option value="__nova__">+ Nova categoria...</option>
+                    </select>
+                  )}
                 </Campo>
                 <Campo label="Unidade *">
                   <select value={form.unidade} onChange={e => setForm({ ...form, unidade: e.target.value })}>
