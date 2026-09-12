@@ -9,7 +9,7 @@
 // estourada, não adianta tentar de novo o mesmo modelo (só reseta no dia
 // seguinte). Por isso a lista de modelos abaixo: se o principal estourar a
 // cota do dia, cai automaticamente pro próximo (cota separada por modelo).
-const MODELOS_EM_ORDEM = ['gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-2.0-flash'];
+const MODELOS_EM_ORDEM = ['gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-3.6-flash'];
 
 function configurado() {
   return !!process.env.GEMINI_API_KEY;

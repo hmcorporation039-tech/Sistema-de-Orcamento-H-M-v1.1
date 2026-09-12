@@ -232,6 +232,7 @@ async function montarMateriais(equipamentos) {
       preco_catalogo: correspondencia?.preco_catalogo ?? null,
       material_id: correspondencia?.material_id ?? null,
       confianca_catalogo: correspondencia?.confianca ?? null,
+      descricao_catalogo: correspondencia?.descricao_catalogo ?? null,
     };
   });
 }
