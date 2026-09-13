@@ -205,6 +205,22 @@ async function criarTabelas() {
       );
     }
 
+    // Cache de pesquisas de mercado (ver utils/pesquisaMercadoService.js) —
+    // a mesma descrição pesquisada de novo dentro de 48h reaproveita o
+    // resultado salvo aqui em vez de gastar cota do Gemini/dinheiro do
+    // Claude de novo. Como bônus, vira um histórico de preços pesquisados.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS pesquisas_mercado (
+        id SERIAL PRIMARY KEY,
+        descricao VARCHAR(500) NOT NULL,
+        descricao_normalizada VARCHAR(500) NOT NULL,
+        resultado TEXT NOT NULL,
+        fonte VARCHAR(20) NOT NULL,
+        criado_em TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_pesquisas_mercado_desc ON pesquisas_mercado(descricao_normalizada, criado_em DESC)');
+
     // Tabela de sequência de propostas
     await client.query(`
       CREATE TABLE IF NOT EXISTS configuracoes (

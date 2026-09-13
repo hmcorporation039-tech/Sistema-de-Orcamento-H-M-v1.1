@@ -41,6 +41,27 @@ const limiteLogin = rateLimit({
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
+// Limite de uso nos endpoints que chamam IA — sem isso, só o login tinha
+// proteção. Cada pesquisa de mercado gasta cota do Gemini (ou dinheiro do
+// Claude, no fallback); cada análise de projeto chama o Gemini por arquivo
+// enviado. Um clique em loop (por engano ou não) pode estourar a cota do dia
+// pra empresa inteira ou gerar custo. Limites generosos pro uso normal —
+// aqui pra travar abuso, não pra atrapalhar o trabalho do dia a dia.
+const limitePesquisaMercado = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 40,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { erro: 'Muitas pesquisas de mercado em pouco tempo. Aguarde um pouco e tente novamente.' },
+});
+const limiteAnaliseProjeto = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 15,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { erro: 'Muitas análises de projeto em pouco tempo. Aguarde um pouco e tente novamente.' },
+});
+
 const authCtrl = require('../controllers/authController');
 const matCtrl = require('../controllers/materiaisController');
 const cliCtrl = require('../controllers/clientesController');
@@ -138,7 +159,7 @@ router.delete('/contratos/:id', autenticar, validarId, admin, posseContrato, con
 // ── ANÁLISE DE PROJETO (compatibilização) ────────────────────────────────
 // Caminhos específicos antes do /:id genérico (mesma regra usada em /propostas)
 router.get('/projetos/analises', autenticar, projCtrl.listar);
-router.post('/projetos/analisar', autenticar, upload.array('arquivos', 10), projCtrl.analisar);
+router.post('/projetos/analisar', autenticar, limiteAnaliseProjeto, upload.array('arquivos', 10), projCtrl.analisar);
 router.get('/projetos/analises/:id/relatorio', autenticar, validarId, projCtrl.gerarRelatorio);
 router.get('/projetos/analises/:id', autenticar, validarId, projCtrl.buscarUma);
 router.put('/projetos/analises/:id', autenticar, validarId, posseAnalise, projCtrl.atualizar);
@@ -153,6 +174,6 @@ router.get('/precos-mao-de-obra', autenticar, admin, precosMOCtrl.listar);
 router.put('/precos-mao-de-obra', autenticar, admin, precosMOCtrl.atualizar);
 
 // ── PESQUISA DE MERCADO (Gemini + busca real) ────────────────────────────
-router.post('/pesquisa-mercado', autenticar, pesqCtrl.pesquisar);
+router.post('/pesquisa-mercado', autenticar, limitePesquisaMercado, pesqCtrl.pesquisar);
 
 module.exports = router;

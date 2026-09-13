@@ -193,6 +193,65 @@ fica para uma etapa futura, quando você quiser dar esse passo.
 
 ---
 
+## 9. Servidor MCP (Claude Desktop)
+
+O sistema tem um servidor MCP (`backend/mcp-server.js`) que permite conversar
+com o Claude Desktop e pedir pra ele consultar o catálogo, pesquisar preço de
+mercado, ler um PDF de projeto ou consultar propostas — sem precisar abrir o
+sistema. Ele roda local (não abre porta de rede) e reaproveita a mesma lógica
+que a tela do sistema já usa; nada de decisão automática — o resultado é
+sempre pra você revisar na conversa.
+
+**Pré-requisito:** o sistema principal (seção 3) precisa já ter rodado pelo
+menos uma vez (é o que cria as tabelas do banco) — o servidor MCP só lê/grava
+nelas, não recria o schema sozinho.
+
+### 9.1 Registrar no Claude Desktop
+
+1. Feche o Claude Desktop se estiver aberto.
+2. Abra (ou crie) o arquivo de configuração:
+   `%APPDATA%\Claude\claude_desktop_config.json`
+3. Adicione (ou junte, se o arquivo já tiver outros servidores MCP):
+   ```json
+   {
+     "mcpServers": {
+       "hm-orcamentos": {
+         "command": "node",
+         "args": ["C:\\HM-Engenharia\\hm-eng\\backend\\mcp-server.js"]
+       }
+     }
+   }
+   ```
+4. Abra o Claude Desktop de novo. Um ícone de ferramentas (🔨) na conversa
+   confirma que o servidor conectou — clique nele pra ver as ferramentas
+   disponíveis.
+
+### 9.2 Ferramentas disponíveis
+
+| Ferramenta | O que faz |
+|---|---|
+| `buscar_material` | Busca no catálogo por descrição/código/marca. |
+| `comparar_com_catalogo` | Verifica se uma descrição livre já existe no catálogo, com confiança. |
+| `pesquisar_preco_mercado` | Pesquisa preço real na web (Gemini/Claude) — usa o mesmo cache de 48h da tela. |
+| `analisar_projeto` | Lê um PDF de projeto do PC e devolve ambientes, pontos, achados e rascunho de serviços/materiais — **não salva no sistema**, é só leitura pra conversa. |
+| `listar_propostas` / `buscar_proposta` | Consulta o histórico de orçamentos já cadastrados. |
+| `historico_preco` | Preço atual no catálogo + pesquisas de mercado já feitas pra descrições parecidas. |
+
+Exemplo de uso na conversa: *"Pesquise o preço de mercado de câmera dome 4MP
+e compare com o que temos no catálogo."*
+
+### 9.3 Atalho sem código: MCP de arquivos
+
+O Claude Desktop também tem um servidor MCP oficial de sistema de arquivos
+(configurável em Settings → Developer, sem precisar editar JSON à mão nas
+versões mais novas). Apontando ele para `Projetos recebidos clientes` e
+`Orçamentos recebidos fornecedores`, o Claude já consegue ler os PDFs que
+chegam por e-mail/WhatsApp direto numa conversa — sem precisar do servidor
+customizado acima. É a forma mais rápida de testar antes de decidir usar o
+servidor MCP completo no dia a dia.
+
+---
+
 ## Estrutura do projeto
 ```
 hm-eng/

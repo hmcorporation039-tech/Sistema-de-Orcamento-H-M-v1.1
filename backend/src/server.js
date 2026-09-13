@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const routes = require('./routes');
 const { tratarErros } = require('./middleware/erros');
 const { criarTabelas } = require('./models/schema');
@@ -18,10 +19,37 @@ const INTERVALO_VERIFICACAO_EMAIL_MS = (24 / VERIFICACOES_EMAIL_POR_DIA) * 60 * 
 const INTERVALO_VERIFICACAO_FORNECEDORES_MS = 15 * 60 * 1000;
 
 // Middlewares
+app.use(helmet({
+  // CSP fica desligado: o app serve seu próprio build (mesma origem, sem
+  // scripts de CDN), então o ganho de uma CSP customizada é pequeno hoje —
+  // e configurar errado quebraria a tela sem aviso. Os outros cabeçalhos do
+  // helmet (X-Content-Type-Options, X-Frame-Options etc.) já valem por si só.
+  contentSecurityPolicy: false,
+}));
+
+// Origens liberadas: configurável via CORS_ORIGINS no .env (separado por
+// vírgula), com o valor de hoje (localhost + rede local) como padrão — só
+// existe pra não precisar mexer em código quando o sistema sair do PC local
+// pra uma VPS (ver README, seção 8.2).
+const origensPadrao = ['http://localhost:3000', /^http:\/\/192\.168\.\d+\.\d+:3000$/];
+const origensConfiguradas = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
+  : null;
 app.use(cors({
-  origin: ['http://localhost:3000', /^http:\/\/192\.168\.\d+\.\d+:3000$/],
+  origin: origensConfiguradas || origensPadrao,
   credentials: true
 }));
+
+// Atrás de um proxy reverso (nginx numa VPS, por exemplo), toda requisição
+// chega ao Express com o IP do proxy, não o do cliente real — sem isso, o
+// rate limit (express-rate-limit, usado no login e nos endpoints de IA)
+// contaria todo mundo como um único IP e bloquearia todo mundo junto no
+// primeiro abuso. Em LAN local (o ambiente de hoje) isso fica desligado por
+// padrão — só ativa definindo TRUST_PROXY no .env quando for pra produção.
+if (process.env.TRUST_PROXY) {
+  app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : process.env.TRUST_PROXY);
+}
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 

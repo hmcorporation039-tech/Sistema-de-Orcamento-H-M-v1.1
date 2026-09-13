@@ -12,20 +12,24 @@ const Anthropic = require('@anthropic-ai/sdk');
 //   é direto: ~20s e ~45k tokens por pesquisa, resposta completa e honesta
 //   (inclusive quando não acha o código exato, sugere equivalentes reais).
 //   É essa versão que usamos aqui.
+// Modelo fixo em código antes; agora dá pra trocar sem editar nada, só
+// mudando o .env — útil quando um modelo mais novo for lançado (conferir
+// sempre a documentação oficial da Anthropic antes de trocar).
+const MODELO_CLAUDE = process.env.CLAUDE_MODELO_PESQUISA || 'claude-sonnet-5';
+
 function configurado() {
   return !!process.env.ANTHROPIC_API_KEY;
 }
 
-async function pesquisarMercadoComClaude(descricao) {
+// `prompt` vem pronto de quem chama (utils/pesquisaMercadoService.js) — antes
+// esta função montava o próprio prompt, quase igual ao de
+// pesquisaMercadoController.js, só com pequenas diferenças de texto; agora
+// existe um só lugar de verdade pro prompt.
+async function pesquisarMercadoComClaude(prompt) {
   const client = new Anthropic();
 
-  const prompt = `Pesquise o preço de mercado atual no Brasil para o seguinte material/equipamento: "${descricao}".
-Traga de 3 a 5 resultados reais de sites, fornecedores ou distribuidores brasileiros, com nome do produto, preço e link.
-Se algum resultado for de uma variação diferente do material pedido (marca, categoria, especificação), diga isso explicitamente.
-Responda em texto corrido organizado, curto e direto — não precisa ser JSON.`;
-
   const response = await client.messages.create({
-    model: 'claude-sonnet-5',
+    model: MODELO_CLAUDE,
     max_tokens: 2500,
     tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
     messages: [{ role: 'user', content: prompt }],

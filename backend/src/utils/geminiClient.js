@@ -9,7 +9,12 @@
 // estourada, não adianta tentar de novo o mesmo modelo (só reseta no dia
 // seguinte). Por isso a lista de modelos abaixo: se o principal estourar a
 // cota do dia, cai automaticamente pro próximo (cota separada por modelo).
-const MODELOS_EM_ORDEM = ['gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-3.6-flash'];
+// Configurável via .env (GEMINI_MODELOS, separado por vírgula) — sem isso,
+// trocar de modelo (ex.: quando o Google aposentar um, como já aconteceu com
+// o gemini-2.0-flash) exigia editar código. Mantém esta lista como padrão.
+const MODELOS_EM_ORDEM = process.env.GEMINI_MODELOS
+  ? process.env.GEMINI_MODELOS.split(',').map(m => m.trim()).filter(Boolean)
+  : ['gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-3.6-flash'];
 
 function configurado() {
   return !!process.env.GEMINI_API_KEY;
