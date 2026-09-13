@@ -328,6 +328,28 @@ async function criarTabelas() {
       console.log('=============================================================\n');
     }
 
+    // Índices nas chaves estrangeiras e colunas de filtro/ordenação. Nenhuma
+    // tabela tinha índice além da PK: hoje as consultas respondem em poucos
+    // milissegundos, mas financeiro_movimentos cresce 3x por dia pela
+    // importação automática de e-mail, e proposta_itens é lido a cada abertura
+    // de proposta e a cada geração de PDF. Criados com IF NOT EXISTS, então
+    // rodar de novo é inofensivo.
+    const indices = [
+      'CREATE INDEX IF NOT EXISTS idx_proposta_itens_proposta ON proposta_itens(proposta_id)',
+      'CREATE INDEX IF NOT EXISTS idx_proposta_secoes_proposta ON proposta_secoes(proposta_id)',
+      'CREATE INDEX IF NOT EXISTS idx_proposta_eventos_proposta ON proposta_eventos(proposta_id)',
+      'CREATE INDEX IF NOT EXISTS idx_propostas_sequencial ON propostas(sequencial DESC)',
+      'CREATE INDEX IF NOT EXISTS idx_propostas_cliente ON propostas(cliente_id)',
+      'CREATE INDEX IF NOT EXISTS idx_propostas_status ON propostas(status)',
+      'CREATE INDEX IF NOT EXISTS idx_propostas_data ON propostas(data)',
+      'CREATE INDEX IF NOT EXISTS idx_materiais_ativo ON materiais(ativo)',
+      'CREATE INDEX IF NOT EXISTS idx_financeiro_data ON financeiro_movimentos(data_hora DESC)',
+      'CREATE INDEX IF NOT EXISTS idx_financeiro_prestador ON financeiro_movimentos(prestador_id)',
+      'CREATE INDEX IF NOT EXISTS idx_contratos_prestador ON contratos(prestador_id)',
+      'CREATE INDEX IF NOT EXISTS idx_analises_atualizado ON analises_projeto(atualizado_em DESC)',
+    ];
+    for (const sql of indices) await client.query(sql);
+
     await client.query('COMMIT');
     console.log('Tabelas criadas/verificadas com sucesso');
 

@@ -70,7 +70,7 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
   const linhasServicos = linhasAgrupadasPorSubgrupo(servicos, 5, s => `
     <tr class="${s.pronto ? 'pronto' : ''}">
       <td>${escapeHtml(s.descricao)}</td>
-      <td class="num">${s.quantidade ?? '—'}</td>
+      <td class="num">${escapeHtml(s.quantidade ?? '—')}</td>
       <td>${escapeHtml(s.unidade || '')}</td>
       <td>${s.pronto ? 'Já pronto (não orçado)' : 'A executar'}</td>
       <td class="obs">${escapeHtml(s.observacao || '')}</td>
@@ -80,9 +80,9 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
   const linhasMateriais = linhasAgrupadasPorSubgrupo(materiais, 5, m => `
     <tr class="${m.pronto ? 'pronto' : ''}">
       <td>${escapeHtml(m.descricao)}${m.referencia_fabricante ? `<div class="obs">Ref.: ${escapeHtml(m.referencia_fabricante)}</div>` : ''}</td>
-      <td class="num">${m.quantidade ?? '—'}</td>
+      <td class="num">${escapeHtml(m.quantidade ?? '—')}</td>
       <td>${escapeHtml(m.unidade || '')}</td>
-      <td class="num">${m.preco_catalogo != null ? formatarMoedaLocal(m.preco_catalogo) + (m.confianca_catalogo != null ? ` (${m.confianca_catalogo}% match)` : '') : '—'}</td>
+      <td class="num">${m.preco_catalogo != null ? formatarMoedaLocal(m.preco_catalogo) + (m.confianca_catalogo != null ? ` (${escapeHtml(m.confianca_catalogo)}% match)` : '') : '—'}</td>
       <td>${m.pronto ? 'Já disponível (não orçado)' : 'A fornecer'}</td>
     </tr>
   `);
@@ -130,12 +130,12 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
     ${disciplinas.includes('rede') ? `
     <div class="info-item">
       <div class="label">Pontos de rede</div>
-      <div class="valor">${pontosRedeAntena.rede?.total ?? 0}</div>
+      <div class="valor">${escapeHtml(pontosRedeAntena.rede?.total ?? 0)}</div>
     </div>` : ''}
     ${disciplinas.includes('antena') ? `
     <div class="info-item">
       <div class="label">Pontos de TV/antena</div>
-      <div class="valor">${pontosRedeAntena.antena?.total ?? 0}</div>
+      <div class="valor">${escapeHtml(pontosRedeAntena.antena?.total ?? 0)}</div>
     </div>` : ''}
     <div class="info-item" style="grid-column: 1 / -1;">
       <div class="label">Arquivos analisados</div>
@@ -159,7 +159,7 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
   </table>` : `<div class="vazio">Nenhum ambiente identificado.</div>`}
 
   ${disciplinas.includes('cftv') ? `
-  <h2>CFTV — Câmeras (total: ${cameras.total || 0})</h2>
+  <h2>CFTV — Câmeras (total: ${escapeHtml(cameras.total || 0)})</h2>
   ${(cameras.detalhePorArquivo || []).length > 0 ? `
   <table>
     <thead><tr><th>Arquivo</th><th class="num">Ocorrências</th><th class="num">Códigos únicos</th><th>Repetidos</th><th>Faltando na sequência</th></tr></thead>

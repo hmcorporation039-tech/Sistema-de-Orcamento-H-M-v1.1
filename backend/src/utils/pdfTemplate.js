@@ -16,16 +16,46 @@ function formatarMoeda(v) {
   return (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+// Data vinda de coluna DATE do banco ("2026-01-15"): o driver devolve meia-noite
+// UTC, então formatar em UTC é o certo — em horário de Brasília viraria o dia
+// anterior.
 function formatarData(v) {
   if (!v) return '—';
   const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '—'; // evita imprimir "Invalid Date"
   return d.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+}
+
+// Data de HOJE (assinatura de contrato, emissão do documento): precisa do fuso
+// local, não de UTC. Com UTC, um contrato gerado às 21h30 de Brasília saía
+// datado do dia seguinte — num documento com valor jurídico.
+function formatarDataDeHoje() {
+  return new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 }
 
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
+}
+
+// Quantidade era o único número do PDF sem formatação pt-BR: a coluna é
+// DECIMAL(10,3), então 2,5 m de cabo saía como "2.5" com ponto, e um valor
+// ausente viraria "NaN" no documento do cliente (todos os outros campos são
+// protegidos por formatarMoeda).
+function formatarQuantidade(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '—';
+  return n.toLocaleString('pt-BR', { maximumFractionDigits: 3 });
+}
+
+// Percentuais vêm do driver do pg como string ("15.50", coluna DECIMAL(5,2)),
+// e eram impressos crus — "BDI (15.50%)" com ponto decimal, num documento em
+// que todo o resto está em pt-BR.
+function formatarPercentual(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '0';
+  return n.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 }
 
 const EMPRESA = {
@@ -65,7 +95,7 @@ function gerarHtmlProposta(proposta) {
       <tr>
         <td>${escapeHtml(it.descricao)}</td>
         <td class="num">${escapeHtml(it.codigo) || '—'}</td>
-        <td class="num">${Number(it.quantidade)}</td>
+        <td class="num">${formatarQuantidade(it.quantidade)}</td>
         <td class="num">${escapeHtml(it.unidade)}</td>
         <td class="num">${formatarMoeda(it.valor_unitario)}</td>
         <td class="num total">${formatarMoeda(it.valor_total)}</td>
@@ -160,10 +190,10 @@ function gerarHtmlProposta(proposta) {
   <div class="totais">
     <table>
       <tr><td>Subtotal materiais</td><td class="num">${formatarMoeda(proposta.subtotal_materiais)}</td></tr>
-      ${Number(proposta.imposto_venda) > 0 ? `<tr><td>Imposto sobre vendas (${proposta.imposto_venda}%)</td><td class="num">${formatarMoeda(proposta.valor_imposto_venda)}</td></tr>` : ''}
+      ${Number(proposta.imposto_venda) > 0 ? `<tr><td>Imposto sobre vendas (${formatarPercentual(proposta.imposto_venda)}%)</td><td class="num">${formatarMoeda(proposta.valor_imposto_venda)}</td></tr>` : ''}
       <tr><td>Subtotal mão de obra</td><td class="num">${formatarMoeda(proposta.subtotal_mao_obra)}</td></tr>
-      ${Number(proposta.imposto_servico) > 0 ? `<tr><td>Imposto sobre serviços (${proposta.imposto_servico}%)</td><td class="num">${formatarMoeda(proposta.valor_imposto_servico)}</td></tr>` : ''}
-      <tr><td>BDI (${proposta.bdi}%)</td><td class="num">${formatarMoeda(proposta.valor_bdi)}</td></tr>
+      ${Number(proposta.imposto_servico) > 0 ? `<tr><td>Imposto sobre serviços (${formatarPercentual(proposta.imposto_servico)}%)</td><td class="num">${formatarMoeda(proposta.valor_imposto_servico)}</td></tr>` : ''}
+      <tr><td>BDI (${formatarPercentual(proposta.bdi)}%)</td><td class="num">${formatarMoeda(proposta.valor_bdi)}</td></tr>
       <tr class="final"><td>Total geral</td><td class="num">${formatarMoeda(proposta.total)}</td></tr>
     </table>
   </div>
@@ -319,7 +349,7 @@ function gerarHtmlContrato(contrato) {
     contrato, com renúncia expressa a qualquer outro, por mais privilegiado que seja.
   </div>
 
-  <div class="local-data">Brasília-DF, ${formatarData(new Date())}.</div>
+  <div class="local-data">Brasília-DF, ${formatarDataDeHoje()}.</div>
 
   <div class="assinaturas">
     <div class="bloco-assinatura">
