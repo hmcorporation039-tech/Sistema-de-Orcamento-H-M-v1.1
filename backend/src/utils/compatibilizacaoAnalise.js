@@ -32,8 +32,18 @@ function compararComCatalogo(descricao, catalogo) {
     const setAlvo = new Set(palavrasAlvo);
     const setMat = new Set(palavrasMat);
     const comuns = [...setAlvo].filter(p => setMat.has(p)).length;
-    const menorTamanho = Math.min(setAlvo.size, setMat.size);
-    const score = comuns / menorTamanho;
+
+    // Índice de Jaccard (comuns / união) em vez de "comuns / lado menor".
+    //
+    // Com o denominador sendo o lado menor, qualquer material de descrição
+    // curta virava subconjunto trivial e cravava 100%: "CABO COAXIAL" ganhava
+    // de "CABO COAXIAL RG-6 BLINDADO 75 OHMS BRANCO" ao comparar com um alvo
+    // detalhado, e "PARAFUSO" casava 100% com "PARAFUSO AUTOBROCANTE 4.2X32
+    // CAIXA 100UN (R$ 99)" — sugerindo R$ 99 como preço de UM parafuso, com o
+    // rótulo "100% match" no relatório. Jaccard penaliza a diferença de
+    // tamanho: quanto mais termos sobram de um lado, menor a confiança.
+    const uniao = new Set([...setAlvo, ...setMat]).size;
+    const score = comuns / uniao;
 
     if (score >= 0.45 && (!melhor || score > melhor.score)) {
       melhor = { score, material: mat };
@@ -300,7 +310,10 @@ async function extrairEquipamentosDosArquivos(analises, achados) {
 // razoável — nunca preenche preço "no chute" quando não achou nada parecido.
 async function montarMateriais(equipamentos) {
   const catalogo = (await pool.query(
-    'SELECT id, descricao, preco, unidade, categoria FROM materiais WHERE ativo = true'
+    // ORDER BY fixo: sem ele o PostgreSQL não garante ordem estável, e como o
+    // desempate é "o primeiro com o maior score", a mesma análise rodada duas
+    // vezes podia sugerir preços diferentes para o mesmo item.
+    'SELECT id, descricao, preco, unidade, categoria FROM materiais WHERE ativo = true ORDER BY id'
   )).rows;
 
   return equipamentos.map(eq => {

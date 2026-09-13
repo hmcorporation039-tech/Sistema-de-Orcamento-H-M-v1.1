@@ -67,6 +67,7 @@ export default function AnaliseProjeto() {
   const [carregandoLista, setCarregandoLista] = useState(false);
   const inputRef = useRef(null);
   const idAutosaveRef = useRef(null);
+  const pendenteRef = useRef(false); // há edição aguardando o autosave disparar
 
   const carregarListaSalvas = useCallback(async () => {
     setCarregandoLista(true);
@@ -189,15 +190,30 @@ export default function AnaliseProjeto() {
   // assim a primeira renderização de cada análise não dispara um autosave à toa.
   useEffect(() => { idAutosaveRef.current = null; }, [analise?.id]);
 
+  // Mantém a última versão da função de salvar acessível ao efeito de saída
+  // abaixo, sem reativar o debounce a cada digitada.
+  const salvarAgoraRef = useRef(salvarAgora);
+  useEffect(() => { salvarAgoraRef.current = salvarAgora; }, [salvarAgora]);
+
   useEffect(() => {
     if (!analise?.id) return;
     if (idAutosaveRef.current !== analise.id) {
       idAutosaveRef.current = analise.id;
       return;
     }
-    const timer = setTimeout(() => { salvarAgora(); }, 1500);
+    pendenteRef.current = true;
+    const timer = setTimeout(() => { pendenteRef.current = false; salvarAgora(); }, 1500);
     return () => clearTimeout(timer);
   }, [analise?.servicos, analise?.materiais, analise?.cliente]);
+
+  // Salva o que ficou pendente ao sair da tela. O efeito acima cancela o timer
+  // quando o componente desmonta, então quem editasse e trocasse de tela em
+  // menos de 1,5s perdia a última alteração — justamente no recurso feito para
+  // nada se perder. Deps vazias: este cleanup só roda na saída, não a cada
+  // digitada.
+  useEffect(() => () => {
+    if (pendenteRef.current) salvarAgoraRef.current?.();
+  }, []);
 
   function atualizarCliente(valor) {
     setAnalise(a => ({ ...a, cliente: valor }));

@@ -46,18 +46,53 @@ function extrairAmbientes(texto) {
 // projetista repete um código por engano em pontos físicos diferentes) e
 // números faltando na sequência (furos de numeração). Usado tanto para
 // câmeras (CAMx) quanto para pontos de rede (Rx) e antena/TV (Ax).
+// Termos que aparecem antes de um "código" e mostram que NÃO é ponto de
+// projeto: prancha/folha em formato A1..A4, raio de curvatura R25, revisão
+// R00, bitola de tubo, escala. Testado com texto real de prancha, onde
+// "PRANCHA A1 FORMATO A3 RAIO R25 CURVA R50 TUBO PVC R100" produzia 4 pontos
+// de antena e 5 de rede que não existem — e esses números viravam quantidade
+// orçada.
+// Procurado em qualquer posição da janela anterior (e não só colado no
+// código), porque na prática vem separado: "TUBO PVC R100", "FOLHA 02 A3".
+const RE_CONTEXTO_FALSO = /(prancha|folha|formato|escala|revis[ãa]o|rev\.|raio|curva|tubo|bitola|norma|detalhe|corte|refer[êe]ncia)/i;
+
+// Acima deste valor o número quase certamente não é um ponto de projeto
+// (R2026 = ano, A4000 = cota). Sem o teto, um único "R100" solto fazia a
+// lista de "faltando" ir de 1 a 99 — 95 pendências falsas no relatório.
+const MAIOR_NUMERO_PLAUSIVEL = 500;
+
+// Extrai todas as ocorrências de um código tipo "PREFIXOnn" (ex.: CAM1,
+// R23, A15) e resume: quantas ocorrências, quantos números únicos,
+// duplicatas (mesmo número aparecendo mais de uma vez — comum quando o
+// projetista repete um código por engano em pontos físicos diferentes) e
+// números faltando na sequência (furos de numeração). Usado tanto para
+// câmeras (CAMx) quanto para pontos de rede (Rx) e antena/TV (Ax).
 function extrairPontosPorCodigo(texto, prefixo) {
+  const conteudo = String(texto || '');
   const regex = new RegExp(`\\b${prefixo}(\\d+)\\b`, 'g');
-  const numeros = [...String(texto || '').matchAll(regex)].map(m => parseInt(m[1], 10));
+
+  const numeros = [];
+  const descartados = [];
+  for (const m of conteudo.matchAll(regex)) {
+    const numero = parseInt(m[1], 10);
+    // Zero não é ponto (R00 é revisão), e número alto demais é ano/cota/código.
+    if (numero < 1 || numero > MAIOR_NUMERO_PLAUSIVEL) { descartados.push(m[0]); continue; }
+    // Olha as ~14 letras antes da ocorrência pra descartar "PRANCHA A1" e afins.
+    const antes = conteudo.slice(Math.max(0, m.index - 14), m.index);
+    if (RE_CONTEXTO_FALSO.test(antes)) { descartados.push(m[0]); continue; }
+    numeros.push(numero);
+  }
+
   if (numeros.length === 0) {
-    return { ocorrencias: 0, total: 0, unicas: [], repetidas: [], faltando: [] };
+    return { ocorrencias: 0, total: 0, unicas: [], repetidas: [], faltando: [], descartados };
   }
 
   const unicas = [...new Set(numeros)].sort((a, b) => a - b);
+  const setUnicas = new Set(unicas);
   const repetidas = [...new Set(numeros.filter((n, i) => numeros.indexOf(n) !== i))].sort((a, b) => a - b);
-  const max = Math.max(...numeros);
+  const max = unicas[unicas.length - 1];
   const faltando = [];
-  for (let i = 1; i <= max; i++) if (!unicas.includes(i)) faltando.push(i);
+  for (let i = 1; i <= max; i++) if (!setUnicas.has(i)) faltando.push(i);
 
   return {
     ocorrencias: numeros.length,
@@ -65,6 +100,7 @@ function extrairPontosPorCodigo(texto, prefixo) {
     unicas,
     repetidas,
     faltando,
+    descartados, // o que o filtro ignorou — útil para conferência
   };
 }
 
@@ -142,6 +178,6 @@ async function analisarProjeto(buffer, nomeArquivo) {
 }
 
 module.exports = {
-  analisarProjeto, extrairTexto, extrairAmbientes, extrairCameras, extrairPontosRedeAntena,
+  analisarProjeto, extrairTexto, extrairAmbientes, extrairCameras, extrairPontosRedeAntena, extrairPontosPorCodigo,
   extrairTabelaCabos, extrairTabelaQuantitativa,
 };

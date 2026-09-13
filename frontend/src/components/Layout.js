@@ -1,6 +1,7 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
+import ErrorBoundary from './ErrorBoundary';
 
 const NAV = [
   { to: '/dashboard', label: 'Dashboard' },
@@ -27,6 +28,7 @@ export default function Layout() {
   const { usuario, sair } = useAuth();
   const navegacao = usuario?.role === 'admin' ? [...NAV, ...NAV_ADMIN] : NAV;
   const navigate = useNavigate();
+  const location = useLocation();
 
   function handleSair() {
     sair();
@@ -103,9 +105,13 @@ export default function Layout() {
         </div>
       </header>
 
-      {/* Conteúdo */}
+      {/* Conteúdo — dentro do ErrorBoundary para que um erro numa tela não
+          derrube a aplicação inteira (o menu e o botão Sair continuam aí).
+          A `key` faz o boundary se recuperar sozinho ao trocar de rota. */}
       <main style={{ padding: '16px 20px', maxWidth: 1280, margin: '0 auto' }}>
-        <Outlet />
+        <ErrorBoundary key={location.pathname}>
+          <Outlet />
+        </ErrorBoundary>
       </main>
     </div>
   );
