@@ -1,5 +1,6 @@
 const xml2js = require('xml2js');
 const { PDFParse } = require('pdf-parse');
+const { paraNumeroBR } = require('./numeroBR');
 
 async function parseNFeXml(buffer) {
   const parsed = await xml2js.parseStringPromise(buffer.toString('utf8'), {
@@ -40,12 +41,6 @@ async function parseNFeXml(buffer) {
 async function extrairDoXml(buffer) {
   const { itens } = await parseNFeXml(buffer);
   return itens;
-}
-
-function paraNumeroBR(s) {
-  if (!s) return null;
-  const n = parseFloat(String(s).replace(/\./g, '').replace(',', '.'));
-  return Number.isNaN(n) ? null : n;
 }
 
 // Linha completa no layout padrão do DANFE: código, descrição, NCM/SH, CST,

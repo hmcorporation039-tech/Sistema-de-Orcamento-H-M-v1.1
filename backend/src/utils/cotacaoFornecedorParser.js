@@ -1,10 +1,6 @@
 const { PDFParse } = require('pdf-parse');
+const { paraNumeroBR } = require('./numeroBR');
 
-function paraNumeroBR(s) {
-  if (!s) return null;
-  const n = parseFloat(String(s).replace(/\./g, '').replace(',', '.'));
-  return Number.isNaN(n) ? null : n;
-}
 
 // A última palavra da descrição costuma ser a marca (ex.: "... 56127/022
 // TRAMONTINA"), pelo menos no layout do sistema "ADM" — só separa quando é

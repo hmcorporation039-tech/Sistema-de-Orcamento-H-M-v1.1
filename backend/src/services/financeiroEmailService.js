@@ -144,7 +144,11 @@ async function verificarPixNaCaixaDeEntrada() {
           );
           await dbClient.query('COMMIT');
         } catch (err) {
-          await dbClient.query('ROLLBACK');
+          // ROLLBACK protegido: se o erro original foi a queda da conexão,
+          // o próprio rollback rejeita — antes isso escapava do catch, o erro
+          // real nunca era logado e a conexão voltava suja para o pool.
+          await dbClient.query('ROLLBACK').catch(() => {});
+          console.error('Erro ao processar e-mail de Pix:', err);
           resumo.avisos.push(`Erro ao processar e-mail "${assunto || uid}": ${err.message}`);
         }
       }

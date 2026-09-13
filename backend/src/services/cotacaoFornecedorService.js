@@ -1,4 +1,4 @@
-const fs = require('fs');
+const fsp = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
 const pool = require('../config/database');
@@ -77,17 +77,25 @@ async function upsertMaterialMenorPreco(client, item, origem, margem) {
 // Lista os PDFs de uma pasta de cotações. Pastas de rede podem estar
 // temporariamente indisponíveis (servidor desligado, sem VPN, etc.) — nesse
 // caso só avisa e segue pras outras pastas, não derruba o job inteiro.
-function listarPdfs(pasta, resumo, criarSeNaoExistir) {
+// Usa fs.promises: as versões síncronas (existsSync/readdirSync/readFileSync)
+// BLOQUEIAM a thread única do Node. Sobre caminho de rede (\\MARCIO-SERVER\...)
+// com o servidor desligado, cada chamada trava até o timeout SMB do Windows —
+// segundos a ~45s — e nesse intervalo a API inteira congela: ninguém loga,
+// nenhuma tela carrega, nenhum PDF sai. E isso rodava a cada 15 minutos.
+async function listarPdfs(pasta, resumo, criarSeNaoExistir) {
   try {
-    if (!fs.existsSync(pasta)) {
+    try {
+      await fsp.access(pasta);
+    } catch {
       if (criarSeNaoExistir) {
-        fs.mkdirSync(pasta, { recursive: true });
+        await fsp.mkdir(pasta, { recursive: true });
       } else {
         resumo.avisos.push(`Pasta de fornecedores não encontrada (verifique a rede): ${pasta}`);
         return [];
       }
     }
-    return fs.readdirSync(pasta)
+    const nomes = await fsp.readdir(pasta);
+    return nomes
       .filter(nome => /\.pdf$/i.test(nome))
       .map(nome => ({ pasta, nome }));
   } catch (err) {
@@ -103,8 +111,8 @@ async function verificarPastaFornecedores() {
   };
 
   const arquivos = [
-    ...listarPdfs(PASTA_FORNECEDORES_LOCAL, resumo, true),
-    ...listarPdfs(PASTA_FORNECEDORES_REDE, resumo, false),
+    ...(await listarPdfs(PASTA_FORNECEDORES_LOCAL, resumo, true)),
+    ...(await listarPdfs(PASTA_FORNECEDORES_REDE, resumo, false)),
   ];
   resumo.arquivosEncontrados = arquivos.length;
 
@@ -116,7 +124,7 @@ async function verificarPastaFornecedores() {
       const caminho = path.join(pasta, nome);
       let buffer;
       try {
-        buffer = fs.readFileSync(caminho);
+        buffer = await fsp.readFile(caminho);
       } catch (err) {
         resumo.avisos.push(`Não foi possível ler "${nome}": ${err.message}`);
         continue;
@@ -161,8 +169,22 @@ async function verificarPastaFornecedores() {
         resumo.materiaisCriados += criados;
         resumo.materiaisAtualizados += atualizados;
       } catch (err) {
-        await client.query('ROLLBACK');
+        await client.query('ROLLBACK').catch(() => {});
         resumo.avisos.push(`Erro ao processar "${nome}": ${err.message}`);
+        console.error(`Erro ao processar cotação "${nome}":`, err);
+
+        // Marca o arquivo como visto mesmo tendo falhado. Antes o hash só era
+        // gravado no caminho de sucesso, então um PDF protegido por senha, um
+        // arquivo truncado ou um .jpg renomeado para .pdf era relido,
+        // reparseado e refalhado a cada 15 minutos, para sempre — consumindo
+        // CPU e enchendo o log. Fica registrado com a contagem zerada; se o
+        // arquivo for corrigido, o conteúdo muda, o hash muda e ele volta a
+        // ser processado normalmente.
+        await client.query(
+          `INSERT INTO arquivos_fornecedores_processados (arquivo, hash) VALUES ($1,$2)
+           ON CONFLICT (hash) DO NOTHING`,
+          [nome, hash]
+        ).catch(e => console.error('Falha ao registrar arquivo com erro:', e.message));
       }
     }
   } finally {

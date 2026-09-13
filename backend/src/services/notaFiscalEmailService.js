@@ -25,13 +25,22 @@ async function upsertMaterial(client, item, origem, margem) {
   const descricaoNorm = normalizarDescricao(item.descricao);
   if (!descricaoNorm) return null;
 
+  // Preço zero/ausente não entra no catálogo. O parser de DANFE em PDF tem um
+  // fallback que reconhece "qualquer palavra seguida de 8 dígitos" como
+  // material (pega número de pedido, código de barras, data) e devolve esses
+  // itens com preço 0. Sem esta guarda — que o serviço irmão de fornecedores
+  // já tinha — um item desses casando com um material existente fazia o UPDATE
+  // gravar preco = 0 e preco_compra = 0, destruindo o preço do catálogo.
+  // Diferente do upload manual, este caminho grava sem revisão humana.
+  const precoCompra = Number(item.preco);
+  if (!Number.isFinite(precoCompra) || precoCompra <= 0) return null;
+
+  const precoVenda = Math.round(precoCompra * (1 + margem / 100) * 100) / 100;
+
   const existente = await client.query(
     `SELECT * FROM materiais WHERE LOWER(TRIM(descricao)) = $1 AND ativo = true LIMIT 1`,
     [descricaoNorm]
   );
-
-  const precoCompra = item.preco || 0;
-  const precoVenda = Math.round(precoCompra * (1 + margem / 100) * 100) / 100;
 
   if (existente.rows.length > 0) {
     const mat = existente.rows[0];
@@ -206,7 +215,9 @@ async function verificarCaixaDeEntrada() {
           await dbClient.query('COMMIT');
           resumo.emailsProcessados++;
         } catch (err) {
-          await dbClient.query('ROLLBACK');
+          // ROLLBACK protegido (ver comentário equivalente no serviço de Pix).
+          await dbClient.query('ROLLBACK').catch(() => {});
+          console.error('Erro ao processar e-mail de nota fiscal:', err);
           resumo.avisos.push(`Erro ao processar e-mail "${parsedEmail.subject || uid}": ${err.message}`);
         }
       }
