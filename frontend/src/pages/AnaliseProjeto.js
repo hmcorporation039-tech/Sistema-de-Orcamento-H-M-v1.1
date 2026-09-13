@@ -86,20 +86,22 @@ export default function AnaliseProjeto() {
   useEffect(() => { carregarListaSalvas(); }, [carregarListaSalvas]);
 
   const popularAnalise = useCallback((dados) => {
+    const servicosComId = dados.servicos.map(s => ({ ...s, id: gerarId() }));
     const materiaisComId = dados.materiais.map(m => ({ ...m, id: gerarId() }));
     setAnalise({
       ...dados,
-      servicos: dados.servicos.map(s => ({ ...s, id: gerarId() })),
+      servicos: servicosComId,
       materiais: materiaisComId,
     });
     setSalvoEm(dados.atualizadoEm ? new Date(dados.atualizadoEm) : null);
-    // Repõe as pesquisas de mercado já feitas antes — elas ficam salvas dentro
-    // do próprio material (pesquisa_mercado), não só na memória do navegador,
-    // então voltar a essa análise depois de trocar de tela (ou até no dia
-    // seguinte) continua mostrando o resultado sem precisar pesquisar de novo.
+    // Repõe as pesquisas de mercado já feitas antes (de serviços e de
+    // materiais) — elas ficam salvas dentro do próprio item (pesquisa_mercado),
+    // não só na memória do navegador, então voltar a essa análise depois de
+    // trocar de tela (ou até no dia seguinte) continua mostrando o resultado
+    // sem precisar pesquisar de novo.
     const pesquisasSalvas = {};
-    for (const m of materiaisComId) {
-      if (m.pesquisa_mercado) pesquisasSalvas[m.id] = { resultado: m.pesquisa_mercado.resultado, fonte: m.pesquisa_mercado.fonte, pesquisadoEm: m.pesquisa_mercado.pesquisadoEm };
+    for (const it of [...servicosComId, ...materiaisComId]) {
+      if (it.pesquisa_mercado) pesquisasSalvas[it.id] = { resultado: it.pesquisa_mercado.resultado, fonte: it.pesquisa_mercado.fonte, pesquisadoEm: it.pesquisa_mercado.pesquisadoEm };
     }
     setPesquisas(pesquisasSalvas);
   }, []);
@@ -261,23 +263,29 @@ export default function AnaliseProjeto() {
     }));
   }
 
-  async function pesquisarMercado(material) {
-    if (!material.descricao.trim()) {
+  // Pesquisa de mercado — serve tanto pra materiais quanto pra serviços de
+  // mão de obra (a busca em si é a mesma, só muda onde o resultado é
+  // persistido). `tipo` decide se grava em analise.servicos ou
+  // analise.materiais; os ids são gerados por um contador único
+  // (gerarId), então não colidem entre as duas listas dentro de `pesquisas`.
+  async function pesquisarMercado(item, tipo) {
+    if (!item.descricao.trim()) {
       toast.error('Preencha a descrição antes de pesquisar');
       return;
     }
-    setPesquisas(p => ({ ...p, [material.id]: { carregando: true } }));
+    setPesquisas(p => ({ ...p, [item.id]: { carregando: true } }));
     try {
-      const res = await pesquisarPrecoMercado(material.descricao);
+      const res = await pesquisarPrecoMercado(item.descricao);
       const pesquisadoEm = new Date().toISOString();
       const resultado = { resultado: res.data.resultado, fonte: res.data.fonte, pesquisadoEm };
-      setPesquisas(p => ({ ...p, [material.id]: resultado }));
-      // Grava dentro do próprio material (autosave já observa `analise.materiais`)
+      setPesquisas(p => ({ ...p, [item.id]: resultado }));
+      // Grava dentro do próprio item (autosave já observa servicos/materiais)
       // — é isso que resolve a pesquisa sumir ao trocar de tela: antes ficava só
       // no estado local do componente, nunca chegava a ser salva no banco.
-      atualizarMaterial(material.id, 'pesquisa_mercado', resultado);
+      if (tipo === 'servico') atualizarServico(item.id, 'pesquisa_mercado', resultado);
+      else atualizarMaterial(item.id, 'pesquisa_mercado', resultado);
     } catch (err) {
-      setPesquisas(p => ({ ...p, [material.id]: { erro: err.response?.data?.erro || 'Erro ao pesquisar' } }));
+      setPesquisas(p => ({ ...p, [item.id]: { erro: err.response?.data?.erro || 'Erro ao pesquisar' } }));
     }
   }
 
@@ -535,7 +543,13 @@ export default function AnaliseProjeto() {
             <p style={{ fontSize: 12, color: '#666', marginBottom: 10 }}>
               Marque "Já pronto" pra serviços que não fazem parte do seu escopo (ex.: cabeamento já passado) — eles não entram no relatório como pendência de mão de obra.
             </p>
-            <TabelaServicos itens={analise.servicos} onAtualizar={atualizarServico} onRemover={removerServico} />
+            <TabelaServicos
+              itens={analise.servicos}
+              onAtualizar={atualizarServico}
+              onRemover={removerServico}
+              pesquisas={pesquisas}
+              onPesquisar={(it) => pesquisarMercado(it, 'servico')}
+            />
           </div>
 
           <div style={card}>
@@ -553,7 +567,7 @@ export default function AnaliseProjeto() {
               onAtualizar={atualizarMaterial}
               onRemover={removerMaterial}
               pesquisas={pesquisas}
-              onPesquisar={pesquisarMercado}
+              onPesquisar={(it) => pesquisarMercado(it, 'material')}
             />
           </div>
 
@@ -579,10 +593,12 @@ export default function AnaliseProjeto() {
 
 // Vlr. unit./Vlr. total: mesma estrutura de colunas da planilha de referência
 // da empresa (Qtd. | Un. | Vlr unit. | Vlr total). O valor unitário começa em
-// 0 (o sistema não tem tabela de preço de mão de obra pra sugerir sozinho) —
-// fica editável aqui, e alimenta tanto o resumo do orçamento quanto o
-// orçamento provisório gerado na aba Orçamentos.
-function TabelaServicos({ itens, onAtualizar, onRemover, semObservacao }) {
+// 0 — fica editável aqui, com duas fontes de apoio pra decidir o preço:
+// a referência de mão de obra cadastrada pelo admin ("Ref.: R$ X · usar") e,
+// agora, a mesma pesquisa de mercado sob demanda (Gemini + busca real) que
+// já existia só pra materiais — útil quando não há referência cadastrada ou
+// pra confirmar se ela ainda está atualizada.
+function TabelaServicos({ itens, onAtualizar, onRemover, pesquisas, onPesquisar, semObservacao }) {
   const colunas = semObservacao
     ? '2.4fr 0.6fr 0.6fr 0.9fr 0.9fr 1.2fr 32px'
     : '1.8fr 0.6fr 0.5fr 0.9fr 0.9fr 1.2fr 1.7fr 32px';
@@ -604,40 +620,68 @@ function TabelaServicos({ itens, onAtualizar, onRemover, semObservacao }) {
         }
         const it = linha.item;
         const valorTotal = (Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0);
-        // Referência de mercado (ver utils/precosMaoDeObraReferencia.js, backend) —
-        // SUGESTÃO, nunca aplicada sozinha: só aparece um "usar" que copia o
-        // valor pro campo se o usuário decidir. Só mostra quando ainda não
-        // coincide com o valor atual (senão fica um "usar" sem função depois
-        // que já foi aplicado).
+        // Referência de mão de obra (ver utils/precosMaoDeObraReferencia.js,
+        // backend) — SUGESTÃO fixa cadastrada pelo admin, nunca aplicada
+        // sozinha: só aparece um "usar" que copia o valor pro campo se o
+        // usuário decidir. Só mostra quando ainda não coincide com o valor
+        // atual (senão fica um "usar" sem função depois que já foi aplicado).
         const temSugestao = it.valor_referencia_mercado != null && Number(it.valor_referencia_mercado) !== Number(it.valor_unitario || 0);
+        const pesquisa = pesquisas?.[it.id];
         return (
-          <div key={it.id} style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, marginBottom: 10, alignItems: 'start', fontSize: 13 }}>
-            <input value={it.descricao} onChange={e => onAtualizar(it.id, 'descricao', e.target.value)} placeholder="Descrição" style={{ fontSize: 13 }} />
-            <input type="number" step="1" min="0" value={it.quantidade ?? ''} onChange={e => onAtualizar(it.id, 'quantidade', e.target.value)} style={{ fontSize: 13 }} />
-            <input value={it.unidade || ''} onChange={e => onAtualizar(it.id, 'unidade', e.target.value)} style={{ fontSize: 13 }} />
-            <div>
-              <input type="number" step="0.01" min="0" value={it.valor_unitario ?? 0} onChange={e => onAtualizar(it.id, 'valor_unitario', e.target.value)} placeholder="0,00" style={{ fontSize: 13, width: '100%' }} />
-              {temSugestao && (
-                <div style={{ fontSize: 10.5, color: '#8a7333', marginTop: 3, whiteSpace: 'nowrap' }}>
-                  Ref.: {formatarMoeda(it.valor_referencia_mercado)}{' '}
-                  <button type="button" onClick={() => onAtualizar(it.id, 'valor_unitario', it.valor_referencia_mercado)}
-                    style={{ background: 'none', border: 'none', color: '#c9a227', textDecoration: 'underline', cursor: 'pointer', fontSize: 10.5, padding: 0 }}>
-                    usar
+          <div key={it.id} style={{ marginBottom: 12, borderBottom: !semObservacao ? '1px solid #1e1e1e' : 'none', paddingBottom: !semObservacao ? 10 : 0 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, alignItems: 'start', fontSize: 13 }}>
+              <input value={it.descricao} onChange={e => onAtualizar(it.id, 'descricao', e.target.value)} placeholder="Descrição" style={{ fontSize: 13 }} />
+              <input type="number" step="1" min="0" value={it.quantidade ?? ''} onChange={e => onAtualizar(it.id, 'quantidade', e.target.value)} style={{ fontSize: 13 }} />
+              <input value={it.unidade || ''} onChange={e => onAtualizar(it.id, 'unidade', e.target.value)} style={{ fontSize: 13 }} />
+              <div>
+                <input type="number" step="0.01" min="0" value={it.valor_unitario ?? 0} onChange={e => onAtualizar(it.id, 'valor_unitario', e.target.value)} placeholder="0,00" style={{ fontSize: 13, width: '100%' }} />
+                {temSugestao && (
+                  <div style={{ fontSize: 10.5, color: '#8a7333', marginTop: 3, whiteSpace: 'nowrap' }}>
+                    Ref.: {formatarMoeda(it.valor_referencia_mercado)}{' '}
+                    <button type="button" onClick={() => onAtualizar(it.id, 'valor_unitario', it.valor_referencia_mercado)}
+                      style={{ background: 'none', border: 'none', color: '#c9a227', textDecoration: 'underline', cursor: 'pointer', fontSize: 10.5, padding: 0 }}>
+                      usar
+                    </button>
+                  </div>
+                )}
+                {onPesquisar && (
+                  <button
+                    type="button"
+                    onClick={() => onPesquisar(it)}
+                    disabled={pesquisa?.carregando}
+                    style={{ ...btnSecundario, padding: '3px 8px', fontSize: 10.5, marginTop: 4, whiteSpace: 'nowrap' }}
+                  >
+                    <Search size={10} style={{ marginRight: 3 }} /> {pesquisa?.carregando ? 'Pesquisando...' : 'Pesquisar mercado'}
                   </button>
-                </div>
+                )}
+              </div>
+              <span style={{ color: valorTotal > 0 ? '#c9a227' : '#555', fontWeight: 700 }}>{formatarMoeda(valorTotal)}</span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: it.pronto ? '#3fb95f' : '#999', whiteSpace: 'nowrap' }}>
+                <input type="checkbox" checked={!!it.pronto} onChange={e => onAtualizar(it.id, 'pronto', e.target.checked)} />
+                Já pronto
+              </label>
+              {!semObservacao && (
+                <input value={it.observacao || ''} onChange={e => onAtualizar(it.id, 'observacao', e.target.value)} placeholder="Observação" style={{ fontSize: 13 }} />
               )}
+              <button onClick={() => onRemover(it.id)} style={{ ...btnIcone, color: '#b04040' }} title="Remover">
+                <Trash2 size={12} />
+              </button>
             </div>
-            <span style={{ color: valorTotal > 0 ? '#c9a227' : '#555', fontWeight: 700 }}>{formatarMoeda(valorTotal)}</span>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: it.pronto ? '#3fb95f' : '#999', whiteSpace: 'nowrap' }}>
-              <input type="checkbox" checked={!!it.pronto} onChange={e => onAtualizar(it.id, 'pronto', e.target.checked)} />
-              Já pronto
-            </label>
-            {!semObservacao && (
-              <input value={it.observacao || ''} onChange={e => onAtualizar(it.id, 'observacao', e.target.value)} placeholder="Observação" style={{ fontSize: 13 }} />
+            {pesquisa?.resultado && (
+              <div style={{ marginTop: 10, padding: 12, background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, fontSize: 12, color: '#bbb', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
+                <b style={{ color: '#c9a227' }}>
+                  Pesquisa de mercado ({pesquisa.fonte === 'claude' ? 'Claude, fallback pago' : 'Gemini'} — confira antes de usar):
+                </b>
+                {pesquisa.pesquisadoEm && (
+                  <span style={{ color: '#666', fontWeight: 400 }}> — salva, feita em {new Date(pesquisa.pesquisadoEm).toLocaleString('pt-BR')}</span>
+                )}
+                <br />
+                {pesquisa.resultado}
+              </div>
             )}
-            <button onClick={() => onRemover(it.id)} style={{ ...btnIcone, color: '#b04040' }} title="Remover">
-              <Trash2 size={12} />
-            </button>
+            {pesquisa?.erro && (
+              <div style={{ marginTop: 8, fontSize: 12, color: '#b04040' }}>{pesquisa.erro}</div>
+            )}
           </div>
         );
       })}
