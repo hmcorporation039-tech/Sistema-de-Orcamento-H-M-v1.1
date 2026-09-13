@@ -57,6 +57,11 @@ export default function Orcamento() {
   const [itens, setItens] = useState([]);
   const [salvando, setSalvando] = useState(false);
   const [propostaSalva, setPropostaSalva] = useState(null);
+  // Vira true quando o usuário edita algo DEPOIS de já ter salvo — nesse caso o
+  // botão de salvar reaparece. Antes ele sumia para sempre após o primeiro
+  // salvamento, mas os campos continuavam editáveis: a pessoa corrigia um
+  // preço, via o total mudar na tela e não tinha como gravar a correção.
+  const [alteracoesPendentes, setAlteracoesPendentes] = useState(false);
   const [gerandoPdf, setGerandoPdf] = useState(false);
   const [modalEmail, setModalEmail] = useState(false);
   const [carregandoEdicao, setCarregandoEdicao] = useState(!!editandoId);
@@ -105,9 +110,17 @@ export default function Orcamento() {
   }, [editandoId, navigate]);
 
   const clienteResolvido = useMemo(
-    () => clientes.find(c => c.nome.toLowerCase() === form.cliente_nome.trim().toLowerCase()),
+    // `c.nome` pode vir nulo do banco; sem a guarda, um único cliente sem nome
+    // derrubava a tela inteira a cada tecla digitada no campo Cliente.
+    () => clientes.find(c => (c.nome || '').toLowerCase() === form.cliente_nome.trim().toLowerCase()),
     [clientes, form.cliente_nome]
   );
+
+  // Marca que há edição não salva depois de a proposta já ter sido gravada.
+  useEffect(() => {
+    if (propostaSalva) setAlteracoesPendentes(true);
+    // eslint-disable-next-line
+  }, [form, secoes, itens]);
 
   function subtotalSecao(sid) {
     return itens
@@ -210,6 +223,7 @@ export default function Orcamento() {
   function novoOrcamento() {
     limparFormulario();
     setPropostaSalva(null);
+    setAlteracoesPendentes(false);
     if (editandoId) {
       navigate('/orcamento');
     } else {
@@ -247,6 +261,24 @@ export default function Orcamento() {
       toast.error('Adicione ao menos um item à proposta');
       return;
     }
+    // Validação por item: o backend recusa (400), mas é melhor apontar o
+    // problema aqui, dizendo qual item está errado, do que só repassar o erro.
+    for (const [i, it] of itens.entries()) {
+      if (!String(it.descricao || '').trim()) {
+        toast.error(`O item ${i + 1} está sem descrição`);
+        return;
+      }
+      const qtd = Number(it.quantidade);
+      if (!Number.isFinite(qtd) || qtd < 0) {
+        toast.error(`Quantidade inválida no item ${i + 1}`);
+        return;
+      }
+      const vu = Number(it.valor_unitario);
+      if (!Number.isFinite(vu) || vu < 0) {
+        toast.error(`Valor unitário inválido no item ${i + 1}`);
+        return;
+      }
+    }
 
     setSalvando(true);
     try {
@@ -264,12 +296,10 @@ export default function Orcamento() {
         bdi: Number(form.bdi) || 0,
         imposto_venda: Number(form.imposto_venda) || 0,
         imposto_servico: Number(form.imposto_servico) || 0,
-        subtotal_materiais: subtotalMateriais,
-        subtotal_mao_obra: subtotalMaoObra,
-        valor_bdi: valorBdi,
-        valor_imposto_venda: valorImpostoVenda,
-        valor_imposto_servico: valorImpostoServico,
-        total,
+        // Subtotais/BDI/impostos/total não são mais enviados: o backend
+        // recalcula tudo a partir dos itens (antes ele gravava o que o
+        // navegador mandasse, e uma quantidade zerada fazia o PDF sair com a
+        // linha valendo o preço cheio e o total geral sem ela).
         secoes: secoes.map(s => ({ id: s.id, nome: s.nome })),
         itens: itens.map(it => ({
           sid: it.sid, desc: it.descricao, qtd: Number(it.quantidade) || 0,
@@ -278,9 +308,14 @@ export default function Orcamento() {
           subgrupo: it.subgrupo?.trim() || null, status: it.status || 'confirmado'
         })),
       };
-      const res = editandoId ? await atualizarProposta(editandoId, payload) : await criarProposta(payload);
+      // Depois de salvar uma proposta nova, novas gravações precisam ATUALIZAR
+      // aquela proposta — antes o botão sumia e as correções feitas em seguida
+      // não tinham como ser salvas (o PDF saía com os valores antigos).
+      const idAlvo = editandoId || propostaSalva?.id;
+      const res = idAlvo ? await atualizarProposta(idAlvo, payload) : await criarProposta(payload);
       toast.success(res.data.mensagem || 'Proposta salva com sucesso!');
       setPropostaSalva(res.data);
+      setAlteracoesPendentes(false);
     } catch (err) {
       toast.error(err.response?.data?.erro || 'Erro ao salvar proposta');
     } finally {
@@ -495,13 +530,22 @@ export default function Orcamento() {
           </div>
           {propostaSalva ? (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-              <span style={{ fontSize: 11, color: '#3fb95f', marginRight: 4, whiteSpace: 'nowrap' }}>
-                Proposta {propostaSalva.numero} salva
+              <span style={{ fontSize: 11, color: alteracoesPendentes ? '#c9a227' : '#3fb95f', marginRight: 4, whiteSpace: 'nowrap' }}>
+                {alteracoesPendentes
+                  ? `Proposta ${propostaSalva.numero} — alterações não salvas`
+                  : `Proposta ${propostaSalva.numero} salva`}
               </span>
-              <button onClick={baixarPdf} disabled={gerandoPdf} style={btnSecundario}>
+              {alteracoesPendentes && (
+                <button onClick={salvar} disabled={salvando} style={{ ...btnPrimario, padding: '13px 20px', fontSize: 13 }}>
+                  {salvando ? 'Salvando...' : 'Salvar Alterações'}
+                </button>
+              )}
+              <button onClick={baixarPdf} disabled={gerandoPdf || alteracoesPendentes} style={btnSecundario}
+                title={alteracoesPendentes ? 'Salve as alterações antes de gerar o PDF' : ''}>
                 <FileDown size={13} style={{ marginRight: 4 }} /> {gerandoPdf ? 'Gerando...' : 'Baixar PDF'}
               </button>
-              <button onClick={() => setModalEmail(true)} style={btnSecundario}>
+              <button onClick={() => setModalEmail(true)} disabled={alteracoesPendentes} style={btnSecundario}
+                title={alteracoesPendentes ? 'Salve as alterações antes de enviar' : ''}>
                 <Send size={13} style={{ marginRight: 4 }} /> Enviar E-mail
               </button>
               <button onClick={novoOrcamento} style={{ ...btnPrimario, padding: '13px 20px', fontSize: 13 }}>

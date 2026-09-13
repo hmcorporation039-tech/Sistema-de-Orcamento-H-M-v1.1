@@ -4,6 +4,36 @@ const { gerarHtmlProposta, gerarFooterTemplate } = require('../utils/pdfTemplate
 const { criarTransportador } = require('../utils/smtpClient');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
 const { comTransacao } = require('../utils/transacao');
+const { calcularTotais, normalizarItem } = require('../utils/calculoProposta');
+const { validarProposta, validadeOuPadrao } = require('../utils/validacaoProposta');
+
+// Insere as seções e seus itens, com quantidade e valor_total recalculados no
+// backend. Compartilhado por criar/atualizar para que as duas rotas não possam
+// divergir (antes o mesmo bloco estava duplicado nas duas, com o mesmo bug).
+async function inserirSecoesEItens(client, propostaId, secoes, itens) {
+  if (!Array.isArray(secoes)) return;
+
+  for (let i = 0; i < secoes.length; i++) {
+    const sec = secoes[i];
+    const secResult = await client.query(
+      'INSERT INTO proposta_secoes (proposta_id, nome, ordem) VALUES ($1,$2,$3) RETURNING id',
+      [propostaId, sec.nome, i]
+    );
+    const secId = secResult.rows[0].id;
+
+    const itensDaSecao = (itens || []).filter(it => it.sid === sec.id || it.secao_nome === sec.nome);
+    for (let j = 0; j < itensDaSecao.length; j++) {
+      const item = normalizarItem(itensDaSecao[j], j);
+      await client.query(
+        `INSERT INTO proposta_itens
+         (proposta_id, secao_id, material_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, codigo, subgrupo, status, ordem)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        [propostaId, secId, item.material_id, item.descricao, item.quantidade, item.unidade,
+         item.valor_unitario, item.valor_total, item.ncm, item.codigo, item.subgrupo, item.status, item.ordem]
+      );
+    }
+  }
+}
 
 // Registra um evento na trilha de auditoria da proposta (criação, edição, status, duplicação)
 async function registrarEvento(client, propostaId, usuarioId, acao, detalhes) {
@@ -102,10 +132,14 @@ async function criar(req, res, next) {
     data, validade, tipo, porte,
     cliente_id, cliente_nome, responsavel, local_obra,
     pagamento, observacoes, bdi, imposto_venda, imposto_servico,
-    subtotal_materiais, subtotal_mao_obra, valor_bdi,
-    valor_imposto_venda, valor_imposto_servico, total,
     secoes, itens
   } = req.body;
+
+  const erroValidacao = validarProposta(req.body);
+  if (erroValidacao) return res.status(400).json({ erro: erroValidacao });
+
+  // Totais recalculados aqui — os valores enviados pelo cliente são ignorados.
+  const totais = calcularTotais({ secoes, itens, bdi, imposto_venda, imposto_servico });
 
   try {
     const { proposta, numero } = await comTransacao(async (client) => {
@@ -123,42 +157,18 @@ async function criar(req, res, next) {
       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
       RETURNING *`,
       [
-        numero, seq, data, validade || 5, tipo, porte,
+        numero, seq, data, validadeOuPadrao(validade), tipo, porte,
         cliente_id || null, cliente_nome, responsavel, local_obra,
         pagamento, observacoes, bdi || 0, imposto_venda || 0, imposto_servico || 0,
-        subtotal_materiais || 0, subtotal_mao_obra || 0, valor_bdi || 0,
-        valor_imposto_venda || 0, valor_imposto_servico || 0, total || 0,
+        totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi,
+        totais.valor_imposto_venda, totais.valor_imposto_servico, totais.total,
         req.usuario.id
       ]
     );
 
     const proposta = propResult.rows[0];
 
-    // Inserir seções e itens
-    if (Array.isArray(secoes)) {
-      for (let i = 0; i < secoes.length; i++) {
-        const sec = secoes[i];
-        const secResult = await client.query(
-          'INSERT INTO proposta_secoes (proposta_id, nome, ordem) VALUES ($1,$2,$3) RETURNING id',
-          [proposta.id, sec.nome, i]
-        );
-        const secId = secResult.rows[0].id;
-
-        const secItens = (itens || []).filter(it => it.sid === sec.id || it.secao_nome === sec.nome);
-        for (let j = 0; j < secItens.length; j++) {
-          const it = secItens[j];
-          await client.query(
-            `INSERT INTO proposta_itens
-             (proposta_id, secao_id, material_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, codigo, subgrupo, status, ordem)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-            [proposta.id, secId, it.material_id || null, it.desc || it.descricao, it.qtd || it.quantidade || 1,
-             it.un || it.unidade, it.vu || it.valor_unitario || 0,
-             (it.qtd || 1) * (it.vu || 0), it.ncm || null, it.codigo || null,
-             it.subgrupo || null, it.status || 'confirmado', j]
-          );
-        }
-      }
-    }
+    await inserirSecoesEItens(client, proposta.id, secoes, itens);
 
     await registrarEvento(client, proposta.id, req.usuario.id, 'criada', `Proposta ${numero} criada`);
 
@@ -178,10 +188,13 @@ async function atualizar(req, res, next) {
     data, validade, tipo, porte,
     cliente_id, cliente_nome, responsavel, local_obra,
     pagamento, observacoes, bdi, imposto_venda, imposto_servico,
-    subtotal_materiais, subtotal_mao_obra, valor_bdi,
-    valor_imposto_venda, valor_imposto_servico, total,
     secoes, itens
   } = req.body;
+
+  const erroValidacao = validarProposta(req.body);
+  if (erroValidacao) return res.status(400).json({ erro: erroValidacao });
+
+  const totais = calcularTotais({ secoes, itens, bdi, imposto_venda, imposto_servico });
 
   try {
     const proposta = await comTransacao(async (client) => {
@@ -196,11 +209,11 @@ async function atualizar(req, res, next) {
        WHERE id=$20
        RETURNING *`,
       [
-        data, validade || 5, tipo, porte,
+        data, validadeOuPadrao(validade), tipo, porte,
         cliente_id || null, cliente_nome, responsavel, local_obra,
         pagamento, observacoes, bdi || 0, imposto_venda || 0, imposto_servico || 0,
-        subtotal_materiais || 0, subtotal_mao_obra || 0, valor_bdi || 0,
-        valor_imposto_venda || 0, valor_imposto_servico || 0, total || 0,
+        totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi,
+        totais.valor_imposto_venda, totais.valor_imposto_servico, totais.total,
         id
       ]
     );
@@ -211,31 +224,7 @@ async function atualizar(req, res, next) {
 
     // Substitui seções e itens antigos pelos novos (numero/sequencial da proposta não mudam)
     await client.query('DELETE FROM proposta_secoes WHERE proposta_id = $1', [proposta.id]);
-
-    if (Array.isArray(secoes)) {
-      for (let i = 0; i < secoes.length; i++) {
-        const sec = secoes[i];
-        const secResult = await client.query(
-          'INSERT INTO proposta_secoes (proposta_id, nome, ordem) VALUES ($1,$2,$3) RETURNING id',
-          [proposta.id, sec.nome, i]
-        );
-        const secId = secResult.rows[0].id;
-
-        const secItens = (itens || []).filter(it => it.sid === sec.id || it.secao_nome === sec.nome);
-        for (let j = 0; j < secItens.length; j++) {
-          const it = secItens[j];
-          await client.query(
-            `INSERT INTO proposta_itens
-             (proposta_id, secao_id, material_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, codigo, subgrupo, status, ordem)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-            [proposta.id, secId, it.material_id || null, it.desc || it.descricao, it.qtd || it.quantidade || 1,
-             it.un || it.unidade, it.vu || it.valor_unitario || 0,
-             (it.qtd || 1) * (it.vu || 0), it.ncm || null, it.codigo || null,
-             it.subgrupo || null, it.status || 'confirmado', j]
-          );
-        }
-      }
-    }
+    await inserirSecoesEItens(client, proposta.id, secoes, itens);
 
     await registrarEvento(client, proposta.id, req.usuario.id, 'editada', 'Dados e itens da proposta foram editados');
 
