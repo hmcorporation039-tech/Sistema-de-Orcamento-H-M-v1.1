@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../config/database');
+const { JWT_SECRET } = require('../config/segredos');
 
 async function login(req, res) {
   const { email, senha } = req.body;
@@ -34,7 +35,7 @@ async function login(req, res) {
 
     const token = jwt.sign(
       { id: usuario.id, nome: usuario.nome, email: usuario.email, role: usuario.role },
-      process.env.JWT_SECRET || 'hm_secret',
+      JWT_SECRET,
       { expiresIn: '8h' }
     );
 

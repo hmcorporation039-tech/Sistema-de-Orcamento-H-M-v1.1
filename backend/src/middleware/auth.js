@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const { JWT_SECRET } = require('../config/segredos');
 
 function autenticar(req, res, next) {
   const authHeader = req.headers['authorization'];
@@ -9,11 +10,13 @@ function autenticar(req, res, next) {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'hm_secret');
+    const decoded = jwt.verify(token, JWT_SECRET);
     req.usuario = decoded;
     next();
   } catch (err) {
-    return res.status(403).json({ erro: 'Token inválido ou expirado' });
+    // 401 (e não 403): token expirado/inválido significa "autentique-se de novo".
+    // O frontend já trata os dois, mas 401 é o código correto para sessão inválida.
+    return res.status(401).json({ erro: 'Token inválido ou expirado' });
   }
 }
 

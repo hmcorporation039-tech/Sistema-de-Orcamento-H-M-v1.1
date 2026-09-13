@@ -301,22 +301,52 @@ async function criarTabelas() {
     await client.query(`ALTER TABLE financeiro_movimentos ADD COLUMN IF NOT EXISTS prestador_id INTEGER REFERENCES prestadores(id)`);
     await client.query(`ALTER TABLE financeiro_movimentos ADD COLUMN IF NOT EXISTS categoria VARCHAR(20)`);
 
-    // Criar admin padrão se não existir
-    const adminExiste = await client.query(
-      "SELECT id FROM usuarios WHERE email = 'admin@hmengenharia.com'"
-    );
+    // Primeiro administrador — criado SOMENTE quando não existe nenhum usuário
+    // no sistema (instalação nova). Antes a checagem era pelo e-mail fixo
+    // 'admin@hmengenharia.com', o que significava que apagar ou renomear essa
+    // conta fazia o próximo restart recriá-la com a senha de fábrica — uma
+    // porta de entrada que reaparecia sozinha.
+    //
+    // A senha inicial vem de ADMIN_SENHA_INICIAL (.env) ou é sorteada. Em
+    // nenhum caso usamos senha fixa em código, e a senha só aparece no log no
+    // instante da criação (é a única forma de o primeiro acesso acontecer).
+    const algumUsuario = await client.query('SELECT id FROM usuarios LIMIT 1');
 
-    if (adminExiste.rows.length === 0) {
-      const senhaHash = await bcrypt.hash('admin123', 10);
+    if (algumUsuario.rows.length === 0) {
+      const senhaInicial = process.env.ADMIN_SENHA_INICIAL
+        || require('crypto').randomBytes(9).toString('base64url');
+      const senhaHash = await bcrypt.hash(senhaInicial, 10);
       await client.query(`
         INSERT INTO usuarios (nome, email, senha, role)
-        VALUES ('Administrador', 'admin@hmengenharia.com', $1, 'admin')
-      `, [senhaHash]);
-      console.log('Usuário admin criado: admin@hmengenharia.com / admin123');
+        VALUES ('Administrador', $1, $2, 'admin')
+      `, [process.env.ADMIN_EMAIL_INICIAL || 'admin@hmengenharia.com', senhaHash]);
+      console.log('\n=============================================================');
+      console.log(' PRIMEIRO ACESSO — usuário administrador criado');
+      console.log(` E-mail: ${process.env.ADMIN_EMAIL_INICIAL || 'admin@hmengenharia.com'}`);
+      console.log(` Senha:  ${senhaInicial}`);
+      console.log(' TROQUE ESSA SENHA no primeiro login (menu Usuários).');
+      console.log('=============================================================\n');
     }
 
     await client.query('COMMIT');
     console.log('Tabelas criadas/verificadas com sucesso');
+
+    // Alerta de senha de fábrica ainda ativa. Instalações antigas foram criadas
+    // com 'admin123' fixo; se ninguém trocou, o sistema inteiro está acessível
+    // a qualquer pessoa da rede que conheça o padrão. Só avisa — não força nada.
+    const contas = await client.query("SELECT nome, email, senha FROM usuarios WHERE ativo = true");
+    const comSenhaPadrao = [];
+    for (const conta of contas.rows) {
+      if (await bcrypt.compare('admin123', conta.senha)) comSenhaPadrao.push(conta.email);
+    }
+    if (comSenhaPadrao.length > 0) {
+      console.warn('\n*************************************************************');
+      console.warn(' ATENÇÃO: conta(s) ainda usando a senha padrão "admin123":');
+      comSenhaPadrao.forEach(e => console.warn(`   - ${e}`));
+      console.warn(' Qualquer pessoa na rede consegue entrar como administrador.');
+      console.warn(' Troque agora em: menu Usuários > Redefinir senha.');
+      console.warn('*************************************************************\n');
+    }
 
   } catch (err) {
     await client.query('ROLLBACK');

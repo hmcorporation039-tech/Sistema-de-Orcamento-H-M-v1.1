@@ -1,7 +1,26 @@
 const express = require('express');
 const multer = require('multer');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const { autenticar, admin } = require('../middleware/auth');
+
+// Limite de tentativas de login: sem isso, um atacante na rede local pode
+// testar milhares de senhas por minuto contra /auth/login (o bcrypt sozinho
+// não segura força bruta).
+//
+// Calibragem pensada para uso interno: 20 erros em 10 minutos. Força bruta
+// real precisa de milhares de tentativas — 120/hora inviabiliza o ataque —
+// enquanto quem simplesmente errou a senha algumas vezes não fica trancado
+// fora do próprio sistema. `skipSuccessfulRequests` faz o acerto não contar,
+// então o contador só sobe com erro de verdade.
+const limiteLogin = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 20,
+  skipSuccessfulRequests: true,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { erro: 'Muitas tentativas de login sem sucesso. Aguarde 10 minutos e tente novamente.' },
+});
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
@@ -20,7 +39,7 @@ const projCtrl = require('../controllers/projetosController');
 const pesqCtrl = require('../controllers/pesquisaMercadoController');
 
 // ── AUTH ──────────────────────────────────────────────────────────────
-router.post('/auth/login', authCtrl.login);
+router.post('/auth/login', limiteLogin, authCtrl.login);
 router.post('/auth/senha', autenticar, authCtrl.alterarSenha);
 
 // ── MATERIAIS ─────────────────────────────────────────────────────────
