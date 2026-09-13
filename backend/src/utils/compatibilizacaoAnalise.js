@@ -3,6 +3,7 @@ const { analisarProjeto } = require('./projetoParser');
 const { extrairEquipamentosComIA } = require('./equipamentoExtratorIA');
 const { nomeDaDisciplina } = require('./disciplinasProjeto');
 const { calcularPontosPorAmbiente } = require('./pontosPorAmbiente');
+const { buscarPrecosReferencia } = require('./precosMaoDeObraReferencia');
 
 function normalizarPalavras(s) {
   return String(s || '')
@@ -168,86 +169,90 @@ function gerarAchados(analises) {
 // A MENOS que a tabela quantitativa do arquivo (ver extrairTabelaQuantitativa
 // em projetoParser.js) tenha achado uma contagem de verdade em texto (ex.:
 // um "quadro de cargas" no mesmo formato usado pra portas/janelas).
-function montarServicosPadrao(analises, disciplinasEfetivas) {
+function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = {}) {
   const totalCameras = somarPorDisciplina(analises, 'cftv', a => a.cameras.ocorrencias);
   const totalRede = somarPorDisciplina(analises, 'rede', a => a.pontosRedeAntena.rede.ocorrencias);
   const totalAntena = somarPorDisciplina(analises, 'antena', a => a.pontosRedeAntena.antena.ocorrencias);
   const SEM_CODIGO = 'Símbolo gráfico no desenho, sem código de texto individual — confirme a quantidade direto na planta antes de fechar.';
 
-  // valor_unitario começa em 0 (editável na tela) — o sistema não tem uma
-  // tabela de preços de mão de obra pra sugerir automaticamente, e chutar um
-  // valor seria pior do que deixar em branco pra quem monta o orçamento
-  // preencher. Existe só pra dar a mesma estrutura de colunas da planilha de
-  // referência (Qtd. | Un. | Vlr unit. | Vlr total) e alimentar o Bloco 1 do
-  // resumo e o orçamento provisório gerado na aba Orçamentos.
-  const item = (descricao, quantidade, unidade, disciplina, observacao) => ({
-    descricao, quantidade, unidade, valor_unitario: 0, subgrupo: nomeDaDisciplina(disciplina), disciplina, pronto: false, observacao,
+  // valor_unitario começa em 0 (editável na tela) — não é preenchido
+  // automaticamente com a referência de mercado (valor_referencia_mercado,
+  // abaixo), mesmo quando existe uma: é só uma SUGESTÃO exibida ao lado do
+  // campo na tela (ver utils/precosMaoDeObraReferencia.js), que o usuário
+  // aceita clicando ou ignora. Preencher sozinho marcaria o item como
+  // "confirmado" no orçamento gerado (ver gerarOrcamento em
+  // projetosController.js) — errado pra um preço que ainda não foi validado
+  // por ninguém.
+  const item = (codigo, descricao, quantidade, unidade, disciplina, observacao) => ({
+    descricao, quantidade, unidade, valor_unitario: 0,
+    valor_referencia_mercado: precosReferencia[codigo] ?? null,
+    subgrupo: nomeDaDisciplina(disciplina), disciplina, pronto: false, observacao,
   });
 
   const todos = [
     // Redes de Computadores (dados)
-    item('Conectorização de ponto de rede/dados (RJ-45 + patch panel + teste)', totalRede, 'pt', 'rede',
+    item('rede_ponto', 'Conectorização de ponto de rede/dados (RJ-45 + patch panel + teste)', totalRede, 'pt', 'rede',
       totalRede > 0 ? 'Quantidade = total de códigos de ponto de rede (Rx) encontrados no desenho.' : SEM_CODIGO),
-    item('Instalação e config. de switches', 0, 'un', 'rede', SEM_CODIGO),
-    item('Instalação e config. de access points (Wi-Fi)', 0, 'un', 'rede', SEM_CODIGO),
+    item('rede_switch', 'Instalação e config. de switches', 0, 'un', 'rede', SEM_CODIGO),
+    item('rede_ap', 'Instalação e config. de access points (Wi-Fi)', 0, 'un', 'rede', SEM_CODIGO),
 
     // CFTV
-    item('Conectorização de ponto de câmera (RJ-45 + patch panel + teste)', totalCameras, 'pt', 'cftv',
+    item('cftv_ponto', 'Conectorização de ponto de câmera (RJ-45 + patch panel + teste)', totalCameras, 'pt', 'cftv',
       totalCameras > 0 ? 'Quantidade = total de códigos de câmera (CAMx) encontrados no desenho. Confira duplicatas/numeração antes de fechar (veja Compatibilização).' : SEM_CODIGO),
-    item('Instalação/config. de câmera interna (dome)', 0, 'un', 'cftv',
+    item('cftv_camera_interna', 'Instalação/config. de câmera interna (dome)', 0, 'un', 'cftv',
       totalCameras > 0 ? `Total de câmeras no desenho: ${totalCameras} — divida entre interna/externa aqui.` : SEM_CODIGO),
-    item('Instalação/config. de câmera externa (bullet)', 0, 'un', 'cftv', SEM_CODIGO),
+    item('cftv_camera_externa', 'Instalação/config. de câmera externa (bullet)', 0, 'un', 'cftv', SEM_CODIGO),
 
     // Antena/TV
-    item('Conectorização de ponto de TV/antena (conector coaxial RG-6)', totalAntena, 'pt', 'antena',
+    item('antena_ponto', 'Conectorização de ponto de TV/antena (conector coaxial RG-6)', totalAntena, 'pt', 'antena',
       totalAntena > 0 ? 'Quantidade = total de códigos de ponto de antena/TV (Ax) encontrados no desenho.' : SEM_CODIGO),
 
     // Infraestrutura de Cabeamento Estruturado (compartilhada por rede/CFTV/telefonia)
-    item('Montagem e organização dos racks (patch panels, guias, PDU)', 0, 'un', 'cabeamento', 'Confirme quantos racks o projeto prevê.'),
-    item('Instalação de nobreaks + kit de ventilação', 0, 'un', 'cabeamento', SEM_CODIGO),
-    item('Certificação e etiquetagem dos pontos (rede + câmeras + telefonia)', totalRede + totalCameras, 'pt', 'cabeamento',
+    item('cab_racks', 'Montagem e organização dos racks (patch panels, guias, PDU)', 0, 'un', 'cabeamento', 'Confirme quantos racks o projeto prevê.'),
+    item('cab_nobreak', 'Instalação de nobreaks + kit de ventilação', 0, 'un', 'cabeamento', SEM_CODIGO),
+    item('cab_certificacao', 'Certificação e etiquetagem dos pontos (rede + câmeras + telefonia)', totalRede + totalCameras, 'pt', 'cabeamento',
       (totalRede > 0 || totalCameras > 0) ? 'Quantidade = pontos de rede + câmeras encontrados no desenho.' : SEM_CODIGO),
-    item('Passagem de cabeamento (infraestrutura + lançamento de cabos)', 1, 'vb', 'cabeamento',
+    item('cab_passagem', 'Passagem de cabeamento (infraestrutura + lançamento de cabos)', 1, 'vb', 'cabeamento',
       'Marque como "já pronto" se o cabeamento já estiver passado no local (não entra na mão de obra).'),
 
     // Telefonia
-    item('Conectorização de ponto de telefonia (RJ-11/RJ-45 + teste)', 0, 'pt', 'telefonia', SEM_CODIGO),
-    item('Instalação de central telefônica / PABX', 0, 'un', 'telefonia', SEM_CODIGO),
+    item('tel_ponto', 'Conectorização de ponto de telefonia (RJ-11/RJ-45 + teste)', 0, 'pt', 'telefonia', SEM_CODIGO),
+    item('tel_central', 'Instalação de central telefônica / PABX', 0, 'un', 'telefonia', SEM_CODIGO),
 
     // Elétrica — categorias na mesma nomenclatura de uma legenda real de
     // projeto (tomada baixa/média/alta/emergência por altura de instalação,
     // ponto de energia teto/piso) — lista pra cobrir um orçamento de elétrica
     // do zero, mesmo sem contagem automática (ver nota acima).
-    item('Instalação de quadro de distribuição geral (QDG)', 0, 'un', 'eletrica', SEM_CODIGO),
-    item('Instalação de quadros de distribuição setoriais/por pavimento', 0, 'un', 'eletrica', SEM_CODIGO),
-    item('Instalação de disjuntores (termomagnéticos/DR)', 0, 'un', 'eletrica', SEM_CODIGO),
-    item('Passagem de eletrodutos e fiação (circuitos de tomada/força)', 1, 'vb', 'eletrica',
+    item('ele_qdg', 'Instalação de quadro de distribuição geral (QDG)', 0, 'un', 'eletrica', SEM_CODIGO),
+    item('ele_qd_setorial', 'Instalação de quadros de distribuição setoriais/por pavimento', 0, 'un', 'eletrica', SEM_CODIGO),
+    item('ele_disjuntores', 'Instalação de disjuntores (termomagnéticos/DR)', 0, 'un', 'eletrica', SEM_CODIGO),
+    item('ele_eletrodutos', 'Passagem de eletrodutos e fiação (circuitos de tomada/força)', 1, 'vb', 'eletrica',
       'Marque como "já pronto" se a infraestrutura elétrica já estiver executada.'),
-    item('Instalação de tomada baixa (30/60cm)', 0, 'un', 'eletrica', SEM_CODIGO),
-    item('Instalação de tomada média (110/140cm)', 0, 'un', 'eletrica', SEM_CODIGO),
-    item('Instalação de tomada alta (180cm)', 0, 'un', 'eletrica', SEM_CODIGO),
-    item('Instalação de tomada de emergência (baixa/média/alta)', 0, 'un', 'eletrica', SEM_CODIGO),
-    item('Instalação de interruptor simples/paralelo', 0, 'un', 'eletrica', SEM_CODIGO),
-    item('Instalação de ponto de energia (teto/piso)', 0, 'un', 'eletrica', SEM_CODIGO),
-    item('Aterramento (malha/SPDA)', 0, 'vb', 'eletrica', SEM_CODIGO),
+    item('ele_tomada_baixa', 'Instalação de tomada baixa (30/60cm)', 0, 'un', 'eletrica', SEM_CODIGO),
+    item('ele_tomada_media', 'Instalação de tomada média (110/140cm)', 0, 'un', 'eletrica', SEM_CODIGO),
+    item('ele_tomada_alta', 'Instalação de tomada alta (180cm)', 0, 'un', 'eletrica', SEM_CODIGO),
+    item('ele_tomada_emergencia', 'Instalação de tomada de emergência (baixa/média/alta)', 0, 'un', 'eletrica', SEM_CODIGO),
+    item('ele_interruptor', 'Instalação de interruptor simples/paralelo', 0, 'un', 'eletrica', SEM_CODIGO),
+    item('ele_ponto_energia', 'Instalação de ponto de energia (teto/piso)', 0, 'un', 'eletrica', SEM_CODIGO),
+    item('ele_aterramento', 'Aterramento (malha/SPDA)', 0, 'vb', 'eletrica', SEM_CODIGO),
 
     // Iluminação
-    item('Instalação de luminária de embutir', 0, 'un', 'iluminacao', SEM_CODIGO),
-    item('Instalação de luminária de sobrepor', 0, 'un', 'iluminacao', SEM_CODIGO),
-    item('Instalação de perfil LED linear (embutir/sobrepor/marcenaria)', 0, 'm', 'iluminacao', SEM_CODIGO),
-    item('Instalação de interruptor/dimmer de iluminação', 0, 'un', 'iluminacao', SEM_CODIGO),
+    item('ilum_luminaria_embutir', 'Instalação de luminária de embutir', 0, 'un', 'iluminacao', SEM_CODIGO),
+    item('ilum_luminaria_sobrepor', 'Instalação de luminária de sobrepor', 0, 'un', 'iluminacao', SEM_CODIGO),
+    item('ilum_perfil_led', 'Instalação de perfil LED linear (embutir/sobrepor/marcenaria)', 0, 'm', 'iluminacao', SEM_CODIGO),
+    item('ilum_interruptor_dimmer', 'Instalação de interruptor/dimmer de iluminação', 0, 'un', 'iluminacao', SEM_CODIGO),
 
     // Automação
-    item('Instalação e configuração de central de automação', 0, 'un', 'automacao', SEM_CODIGO),
-    item('Instalação de atuadores/módulos de automação (tomadas, cortinas, cenas)', 0, 'un', 'automacao', SEM_CODIGO),
+    item('auto_central', 'Instalação e configuração de central de automação', 0, 'un', 'automacao', SEM_CODIGO),
+    item('auto_atuadores', 'Instalação de atuadores/módulos de automação (tomadas, cortinas, cenas)', 0, 'un', 'automacao', SEM_CODIGO),
 
     // Alarme
-    item('Instalação de sensor de abertura (magnético) porta/janela', 0, 'un', 'alarme', SEM_CODIGO),
-    item('Instalação de sensor infravermelho passivo (IVP)', 0, 'un', 'alarme', SEM_CODIGO),
-    item('Instalação de sirene', 0, 'un', 'alarme', SEM_CODIGO),
-    item('Instalação de teclado de comando', 0, 'un', 'alarme', SEM_CODIGO),
-    item('Instalação de repetidor de sinal', 0, 'un', 'alarme', SEM_CODIGO),
-    item('Instalação e configuração da central de alarme', 0, 'un', 'alarme', 'Normalmente 1 unidade — confirme.'),
+    item('alarme_sensor_abertura', 'Instalação de sensor de abertura (magnético) porta/janela', 0, 'un', 'alarme', SEM_CODIGO),
+    item('alarme_ivp', 'Instalação de sensor infravermelho passivo (IVP)', 0, 'un', 'alarme', SEM_CODIGO),
+    item('alarme_sirene', 'Instalação de sirene', 0, 'un', 'alarme', SEM_CODIGO),
+    item('alarme_teclado', 'Instalação de teclado de comando', 0, 'un', 'alarme', SEM_CODIGO),
+    item('alarme_repetidor', 'Instalação de repetidor de sinal', 0, 'un', 'alarme', SEM_CODIGO),
+    item('alarme_central', 'Instalação e configuração da central de alarme', 0, 'un', 'alarme', 'Normalmente 1 unidade — confirme.'),
   ];
 
   return todos.filter(it => disciplinasEfetivas.includes(it.disciplina));
@@ -434,6 +439,12 @@ async function analisarProjetoCompleto(arquivos) {
     arquivos.map(({ buffer }) => calcularPontosPorAmbiente(buffer).catch(() => []))
   );
 
+  // Preços de referência de mão de obra (sugestão editável pelo admin — ver
+  // utils/precosMaoDeObraReferencia.js). Se a tabela ainda não existir por
+  // algum motivo (ambiente sem a migração mais nova), a análise continua
+  // funcionando normalmente, só sem a sugestão de preço.
+  const precosReferencia = await buscarPrecosReferencia().catch(() => ({}));
+
   // Disciplina "efetiva" da análise inteira = união das tags de todos os
   // arquivos — decide quais itens-modelo de serviço/material aparecem.
   const disciplinasEfetivas = [...new Set(analises.flatMap(a => a.disciplinas))];
@@ -505,7 +516,7 @@ async function analisarProjetoCompleto(arquivos) {
     },
     tabelaCabos,
     achados,
-    servicos: montarServicosPadrao(analises, disciplinasEfetivas),
+    servicos: montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia),
     materiais,
   };
 }

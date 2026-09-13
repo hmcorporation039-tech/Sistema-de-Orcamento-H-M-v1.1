@@ -604,12 +604,29 @@ function TabelaServicos({ itens, onAtualizar, onRemover, semObservacao }) {
         }
         const it = linha.item;
         const valorTotal = (Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0);
+        // Referência de mercado (ver utils/precosMaoDeObraReferencia.js, backend) —
+        // SUGESTÃO, nunca aplicada sozinha: só aparece um "usar" que copia o
+        // valor pro campo se o usuário decidir. Só mostra quando ainda não
+        // coincide com o valor atual (senão fica um "usar" sem função depois
+        // que já foi aplicado).
+        const temSugestao = it.valor_referencia_mercado != null && Number(it.valor_referencia_mercado) !== Number(it.valor_unitario || 0);
         return (
-          <div key={it.id} style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, marginBottom: 10, alignItems: 'center', fontSize: 13 }}>
+          <div key={it.id} style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, marginBottom: 10, alignItems: 'start', fontSize: 13 }}>
             <input value={it.descricao} onChange={e => onAtualizar(it.id, 'descricao', e.target.value)} placeholder="Descrição" style={{ fontSize: 13 }} />
             <input type="number" step="1" min="0" value={it.quantidade ?? ''} onChange={e => onAtualizar(it.id, 'quantidade', e.target.value)} style={{ fontSize: 13 }} />
             <input value={it.unidade || ''} onChange={e => onAtualizar(it.id, 'unidade', e.target.value)} style={{ fontSize: 13 }} />
-            <input type="number" step="0.01" min="0" value={it.valor_unitario ?? 0} onChange={e => onAtualizar(it.id, 'valor_unitario', e.target.value)} placeholder="0,00" style={{ fontSize: 13 }} />
+            <div>
+              <input type="number" step="0.01" min="0" value={it.valor_unitario ?? 0} onChange={e => onAtualizar(it.id, 'valor_unitario', e.target.value)} placeholder="0,00" style={{ fontSize: 13, width: '100%' }} />
+              {temSugestao && (
+                <div style={{ fontSize: 10.5, color: '#8a7333', marginTop: 3, whiteSpace: 'nowrap' }}>
+                  Ref.: {formatarMoeda(it.valor_referencia_mercado)}{' '}
+                  <button type="button" onClick={() => onAtualizar(it.id, 'valor_unitario', it.valor_referencia_mercado)}
+                    style={{ background: 'none', border: 'none', color: '#c9a227', textDecoration: 'underline', cursor: 'pointer', fontSize: 10.5, padding: 0 }}>
+                    usar
+                  </button>
+                </div>
+              )}
+            </div>
             <span style={{ color: valorTotal > 0 ? '#c9a227' : '#555', fontWeight: 700 }}>{formatarMoeda(valorTotal)}</span>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: it.pronto ? '#3fb95f' : '#999', whiteSpace: 'nowrap' }}>
               <input type="checkbox" checked={!!it.pronto} onChange={e => onAtualizar(it.id, 'pronto', e.target.checked)} />

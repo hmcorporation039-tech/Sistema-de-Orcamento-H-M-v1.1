@@ -103,6 +103,10 @@ export const gerarOrcamentoDaAnalise = (id) => api.post(`/projetos/analises/${id
 // ── PESQUISA DE MERCADO ───────────────────────────────────────────────
 export const pesquisarPrecoMercado = (descricao) => api.post('/pesquisa-mercado', { descricao }, { timeout: 60000 });
 
+// ── PREÇOS DE REFERÊNCIA DE MÃO DE OBRA (admin) ─────────────────────────
+export const getPrecosMaoDeObra = () => api.get('/precos-mao-de-obra');
+export const atualizarPrecosMaoDeObra = (itens) => api.put('/precos-mao-de-obra', { itens });
+
 // ── USUÁRIOS ──────────────────────────────────────────────────────────
 export const getUsuarios = () => api.get('/usuarios');
 export const criarUsuario = (data) => api.post('/usuarios', data);

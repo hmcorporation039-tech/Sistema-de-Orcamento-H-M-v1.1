@@ -22,6 +22,7 @@ const NAV_ADMIN = [
   { to: '/prestadores', label: 'Prestadores' },
   { to: '/contratos', label: 'Contratos' },
   { to: '/usuarios', label: 'Usuários' },
+  { to: '/precos-mao-de-obra', label: 'Preços de Mão de Obra' },
 ];
 
 export default function Layout() {

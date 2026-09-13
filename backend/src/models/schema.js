@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const bcrypt = require('bcryptjs');
+const { ITENS_REFERENCIA } = require('../utils/precosMaoDeObraReferencia');
 
 async function criarTabelas() {
   const client = await pool.connect();
@@ -175,6 +176,34 @@ async function criarTabelas() {
     // até o primeiro clique; um segundo clique atualiza a mesma proposta em
     // vez de criar outra.
     await client.query(`ALTER TABLE analises_projeto ADD COLUMN IF NOT EXISTS proposta_id INTEGER REFERENCES propostas(id)`);
+
+    // Preços de referência de mão de obra (valor médio de mercado, editado
+    // por um admin) — usados só como SUGESTÃO ao lado do campo de valor
+    // unitário na Análise de Projeto, nunca preenchidos automaticamente no
+    // item (ver utils/precosMaoDeObraReferencia.js e montarServicosPadrao em
+    // compatibilizacaoAnalise.js).
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS precos_mao_de_obra_referencia (
+        codigo VARCHAR(50) PRIMARY KEY,
+        descricao VARCHAR(200) NOT NULL,
+        unidade VARCHAR(10),
+        disciplina VARCHAR(30),
+        valor_referencia DECIMAL(10,2),
+        atualizado_em TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    // Semeia os códigos conhecidos sem sobrescrever um valor_referencia já
+    // preenchido pelo admin — só a descrição/unidade/disciplina são mantidas
+    // sincronizadas com a lista canônica (podem mudar de texto entre versões
+    // do sistema; o valor de referência é dado do usuário, nunca é tocado).
+    for (const it of ITENS_REFERENCIA) {
+      await client.query(
+        `INSERT INTO precos_mao_de_obra_referencia (codigo, descricao, unidade, disciplina)
+         VALUES ($1,$2,$3,$4)
+         ON CONFLICT (codigo) DO UPDATE SET descricao = $2, unidade = $3, disciplina = $4`,
+        [it.codigo, it.descricao, it.unidade, it.disciplina]
+      );
+    }
 
     // Tabela de sequência de propostas
     await client.query(`

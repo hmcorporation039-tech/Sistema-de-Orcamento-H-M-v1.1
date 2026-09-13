@@ -54,6 +54,7 @@ const prestCtrl = require('../controllers/prestadoresController');
 const contrCtrl = require('../controllers/contratosController');
 const projCtrl = require('../controllers/projetosController');
 const pesqCtrl = require('../controllers/pesquisaMercadoController');
+const precosMOCtrl = require('../controllers/precosMaoDeObraController');
 
 // ── AUTH ──────────────────────────────────────────────────────────────
 router.post('/auth/login', limiteLogin, authCtrl.login);
@@ -143,6 +144,13 @@ router.get('/projetos/analises/:id', autenticar, validarId, projCtrl.buscarUma);
 router.put('/projetos/analises/:id', autenticar, validarId, posseAnalise, projCtrl.atualizar);
 router.delete('/projetos/analises/:id', autenticar, validarId, posseAnalise, projCtrl.remover);
 router.post('/projetos/analises/:id/gerar-orcamento', autenticar, validarId, posseAnalise, projCtrl.gerarOrcamento);
+
+// ── PREÇOS DE REFERÊNCIA DE MÃO DE OBRA (admin) ──────────────────────────
+// Tela de administração — a sugestão em si já vem embutida em cada serviço
+// da Análise de Projeto (montarServicosPadrao lê a tabela direto), então só
+// quem PODE EDITAR essa referência precisa dessas rotas.
+router.get('/precos-mao-de-obra', autenticar, admin, precosMOCtrl.listar);
+router.put('/precos-mao-de-obra', autenticar, admin, precosMOCtrl.atualizar);
 
 // ── PESQUISA DE MERCADO (Gemini + busca real) ────────────────────────────
 router.post('/pesquisa-mercado', autenticar, pesqCtrl.pesquisar);
