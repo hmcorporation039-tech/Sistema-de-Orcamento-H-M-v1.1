@@ -454,4 +454,9 @@ async function enviarEmail(req, res) {
   }
 }
 
-module.exports = { listar, buscarUma, criar, atualizar, duplicar, atualizarStatus, remover, proximoNum, gerarPdf, enviarEmail };
+module.exports = {
+  listar, buscarUma, criar, atualizar, duplicar, atualizarStatus, remover, proximoNum, gerarPdf, enviarEmail,
+  // Reaproveitados por projetosController.gerarOrcamento (Análise de Projeto -> Orçamentos),
+  // pra criar/atualizar uma proposta sem duplicar a regra de numeração e inserção de itens.
+  inserirSecoesEItens, proximoNumero, registrarEvento,
+};

@@ -98,6 +98,7 @@ export const atualizarAnaliseProjeto = (id, data) => api.put(`/projetos/analises
 export const removerAnaliseProjeto = (id) => api.delete(`/projetos/analises/${id}`);
 export const gerarRelatorioCompatibilizacao = (id) =>
   api.get(`/projetos/analises/${id}/relatorio`, { responseType: 'blob' });
+export const gerarOrcamentoDaAnalise = (id) => api.post(`/projetos/analises/${id}/gerar-orcamento`);
 
 // ── PESQUISA DE MERCADO ───────────────────────────────────────────────
 export const pesquisarPrecoMercado = (descricao) => api.post('/pesquisa-mercado', { descricao }, { timeout: 60000 });

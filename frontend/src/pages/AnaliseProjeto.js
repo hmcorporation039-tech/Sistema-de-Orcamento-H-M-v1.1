@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { FileDown, Plus, Trash2, FolderSearch, Search, FilePlus2 } from 'lucide-react';
+import { FileDown, Plus, Trash2, FolderSearch, Search, FilePlus2, Receipt } from 'lucide-react';
 import {
   analisarProjeto, gerarRelatorioCompatibilizacao, pesquisarPrecoMercado,
   getAnalisesProjeto, getAnaliseProjeto, atualizarAnaliseProjeto, removerAnaliseProjeto,
+  gerarOrcamentoDaAnalise,
 } from '../services/api';
 import { formatarMoeda } from '../utils/format';
 
@@ -60,6 +61,7 @@ export default function AnaliseProjeto() {
   const [carregandoAnalise, setCarregandoAnalise] = useState(false);
   const [analise, setAnalise] = useState(null);
   const [gerando, setGerando] = useState(false);
+  const [gerandoOrcamento, setGerandoOrcamento] = useState(false);
   const [pesquisas, setPesquisas] = useState({}); // { [materialId]: { carregando, resultado, erro } }
   const [salvando, setSalvando] = useState(false);
   const [salvoEm, setSalvoEm] = useState(null);
@@ -84,12 +86,22 @@ export default function AnaliseProjeto() {
   useEffect(() => { carregarListaSalvas(); }, [carregarListaSalvas]);
 
   const popularAnalise = useCallback((dados) => {
+    const materiaisComId = dados.materiais.map(m => ({ ...m, id: gerarId() }));
     setAnalise({
       ...dados,
       servicos: dados.servicos.map(s => ({ ...s, id: gerarId() })),
-      materiais: dados.materiais.map(m => ({ ...m, id: gerarId() })),
+      materiais: materiaisComId,
     });
     setSalvoEm(dados.atualizadoEm ? new Date(dados.atualizadoEm) : null);
+    // Repõe as pesquisas de mercado já feitas antes — elas ficam salvas dentro
+    // do próprio material (pesquisa_mercado), não só na memória do navegador,
+    // então voltar a essa análise depois de trocar de tela (ou até no dia
+    // seguinte) continua mostrando o resultado sem precisar pesquisar de novo.
+    const pesquisasSalvas = {};
+    for (const m of materiaisComId) {
+      if (m.pesquisa_mercado) pesquisasSalvas[m.id] = { resultado: m.pesquisa_mercado.resultado, fonte: m.pesquisa_mercado.fonte, pesquisadoEm: m.pesquisa_mercado.pesquisadoEm };
+    }
+    setPesquisas(pesquisasSalvas);
   }, []);
 
   useEffect(() => {
@@ -230,7 +242,7 @@ export default function AnaliseProjeto() {
   function adicionarServico() {
     setAnalise(a => ({
       ...a,
-      servicos: [...a.servicos, { id: gerarId(), descricao: '', quantidade: 1, unidade: 'un', pronto: false, observacao: '' }],
+      servicos: [...a.servicos, { id: gerarId(), descricao: '', quantidade: 1, unidade: 'un', valor_unitario: 0, pronto: false, observacao: '' }],
     }));
   }
 
@@ -257,7 +269,13 @@ export default function AnaliseProjeto() {
     setPesquisas(p => ({ ...p, [material.id]: { carregando: true } }));
     try {
       const res = await pesquisarPrecoMercado(material.descricao);
-      setPesquisas(p => ({ ...p, [material.id]: { resultado: res.data.resultado, fonte: res.data.fonte } }));
+      const pesquisadoEm = new Date().toISOString();
+      const resultado = { resultado: res.data.resultado, fonte: res.data.fonte, pesquisadoEm };
+      setPesquisas(p => ({ ...p, [material.id]: resultado }));
+      // Grava dentro do próprio material (autosave já observa `analise.materiais`)
+      // — é isso que resolve a pesquisa sumir ao trocar de tela: antes ficava só
+      // no estado local do componente, nunca chegava a ser salva no banco.
+      atualizarMaterial(material.id, 'pesquisa_mercado', resultado);
     } catch (err) {
       setPesquisas(p => ({ ...p, [material.id]: { erro: err.response?.data?.erro || 'Erro ao pesquisar' } }));
     }
@@ -284,6 +302,30 @@ export default function AnaliseProjeto() {
     }
   }
 
+  // Cria (ou atualiza, se já existir) uma proposta rascunho na aba Orçamentos
+  // a partir dos serviços/materiais desta análise — é lá que o orçamento é
+  // concluído (BDI, impostos, itens "a cotar"). Nunca automático: só quando o
+  // usuário clica no botão, pra não encher a lista de Orçamentos toda vez que
+  // a análise é salva.
+  async function gerarOrcamento() {
+    setGerandoOrcamento(true);
+    try {
+      await salvarAgora(); // o orçamento tem que refletir a última edição, não uma versão atrasada
+      const res = await gerarOrcamentoDaAnalise(analise.id);
+      const { propostaId, numero, criada, mensagem } = res.data;
+      setAnalise(a => ({ ...a, propostaId, propostaNumero: numero }));
+      toast.success(mensagem, {
+        duration: 6000,
+        icon: criada ? '🧾' : '🔄',
+      });
+      navigate(`/orcamento/${propostaId}`);
+    } catch (err) {
+      toast.error(err.response?.data?.erro || 'Erro ao gerar orçamento');
+    } finally {
+      setGerandoOrcamento(false);
+    }
+  }
+
   // O rótulo traz o prefixo do código (CAMx/Rx/Ax) pra nunca deixar ambíguo
   // qual tipo de ponto está sendo contado — "Ambientes" (salas/áreas, sem
   // relação nenhuma com esses códigos) aparece à parte, com o mesmo cuidado.
@@ -294,6 +336,18 @@ export default function AnaliseProjeto() {
     ...(analise.disciplinas?.includes('antena') ? [{ label: 'Pontos de TV/antena — código Anº', valor: analise.pontosRedeAntena?.antena?.total ?? 0 }] : []),
     { label: 'Pendências', valor: analise.achados.length },
   ] : [];
+
+  // Mesmo cálculo do resumo "Orçamento Geral" do relatório PDF (ver
+  // calcularResumo em relatorioCompatibilizacaoTemplate.js) — refeito aqui
+  // pra atualizar em tempo real conforme o usuário edita quantidade/preço,
+  // sem esperar o próximo download do PDF.
+  const resumoOrcamento = analise ? (() => {
+    const blocoMaoDeObra = analise.servicos.filter(s => !s.pronto)
+      .reduce((soma, s) => soma + (Number(s.quantidade) || 0) * (Number(s.valor_unitario) || 0), 0);
+    const blocoMateriais = analise.materiais.filter(m => !m.pronto)
+      .reduce((soma, m) => soma + (Number(m.quantidade) || 0) * (Number(m.preco_catalogo) || 0), 0);
+    return { blocoMaoDeObra, blocoMateriais, total: blocoMaoDeObra + blocoMateriais };
+  })() : null;
 
   return (
     <div style={paginaLargaTela}>
@@ -416,6 +470,19 @@ export default function AnaliseProjeto() {
             </div>
           </div>
 
+          <div style={card}>
+            <h3 style={tituloSecao}>Resumo do Orçamento</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+              <ResumoBloco rotulo="Bloco 1 — Mão de obra" valor={resumoOrcamento.blocoMaoDeObra} />
+              <ResumoBloco rotulo="Bloco 2 — Materiais e equipamentos" valor={resumoOrcamento.blocoMateriais} />
+              <ResumoBloco rotulo="Total geral" valor={resumoOrcamento.total} destaque />
+            </div>
+            <p style={{ fontSize: 11, color: '#666', marginTop: 12, lineHeight: 1.5 }}>
+              Soma dos itens não marcados "já pronto". Item sem valor unitário preenchido, ou material sem
+              correspondência no catálogo, entra como R$ 0,00 aqui — preencha ou confirme antes de considerar fechado.
+            </p>
+          </div>
+
           {(analise.disciplinas?.includes('cftv') || analise.disciplinas?.includes('rede') || analise.disciplinas?.includes('antena')) && (
             <div style={card}>
               <h3 style={tituloSecao}>Pontos Identificados no Projeto</h3>
@@ -433,6 +500,16 @@ export default function AnaliseProjeto() {
               {analise.disciplinas.includes('antena') && (
                 <TabelaPontos titulo="Pontos de TV/antena" prefixo="A" detalhe={analise.pontosRedeAntena?.antena?.detalhePorArquivo} />
               )}
+
+              <div style={{ marginTop: 22, paddingTop: 18, borderTop: '1px solid #1e1e1e' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#c9a227', marginBottom: 6 }}>Pontos por Ambiente</div>
+                <p style={{ fontSize: 12, color: '#666', marginBottom: 12, lineHeight: 1.6 }}>
+                  Distribuição <b>aproximada</b> — calculada pela posição de cada código no desenho, sem noção de
+                  parede ou fronteira entre salas. Confira sempre contra a planta antes de usar. Só aparece ambiente
+                  com pelo menos 1 ponto identificado.
+                </p>
+                <TabelaPontosPorAmbiente linhas={analise.pontosPorAmbiente} disciplinas={analise.disciplinas} />
+              </div>
             </div>
           )}
 
@@ -480,7 +557,16 @@ export default function AnaliseProjeto() {
             />
           </div>
 
-          <div style={{ ...card, display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{ ...card, display: 'flex', justifyContent: 'flex-end', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            {analise.propostaNumero && (
+              <span style={{ fontSize: 12, color: '#666', marginRight: 'auto' }}>
+                Vinculada ao orçamento <b style={{ color: '#c9a227' }}>{analise.propostaNumero}</b>
+              </span>
+            )}
+            <button onClick={gerarOrcamento} disabled={gerandoOrcamento} style={{ ...btnSecundario, padding: '13px 20px', fontSize: 13, borderStyle: 'solid', borderColor: '#c9a227', color: '#c9a227' }}>
+              <Receipt size={14} style={{ marginRight: 6 }} />
+              {gerandoOrcamento ? 'Gerando...' : analise.propostaNumero ? `Atualizar Orçamento (${analise.propostaNumero})` : 'Gerar Orçamento'}
+            </button>
             <button onClick={baixarRelatorio} disabled={gerando} style={{ ...btnPrimario, padding: '13px 26px', fontSize: 13 }}>
               <FileDown size={14} style={{ marginRight: 6 }} /> {gerando ? 'Gerando...' : 'Baixar Relatório PDF'}
             </button>
@@ -491,15 +577,20 @@ export default function AnaliseProjeto() {
   );
 }
 
+// Vlr. unit./Vlr. total: mesma estrutura de colunas da planilha de referência
+// da empresa (Qtd. | Un. | Vlr unit. | Vlr total). O valor unitário começa em
+// 0 (o sistema não tem tabela de preço de mão de obra pra sugerir sozinho) —
+// fica editável aqui, e alimenta tanto o resumo do orçamento quanto o
+// orçamento provisório gerado na aba Orçamentos.
 function TabelaServicos({ itens, onAtualizar, onRemover, semObservacao }) {
   const colunas = semObservacao
-    ? '3fr 0.8fr 0.7fr 1.2fr 32px'
-    : '2.2fr 0.7fr 0.6fr 1.2fr 2fr 32px';
+    ? '2.4fr 0.6fr 0.6fr 0.9fr 0.9fr 1.2fr 32px'
+    : '1.8fr 0.6fr 0.5fr 0.9fr 0.9fr 1.2fr 1.7fr 32px';
 
   return (
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, marginBottom: 8, fontSize: 12, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px' }}>
-        <span>Descrição</span><span>Qtd</span><span>Un.</span><span>Status</span>
+        <span>Descrição</span><span>Qtd</span><span>Un.</span><span>Vlr. unit.</span><span>Vlr. total</span><span>Status</span>
         {!semObservacao && <span>Observação</span>}
         <span />
       </div>
@@ -512,11 +603,14 @@ function TabelaServicos({ itens, onAtualizar, onRemover, semObservacao }) {
           );
         }
         const it = linha.item;
+        const valorTotal = (Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0);
         return (
           <div key={it.id} style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, marginBottom: 10, alignItems: 'center', fontSize: 13 }}>
             <input value={it.descricao} onChange={e => onAtualizar(it.id, 'descricao', e.target.value)} placeholder="Descrição" style={{ fontSize: 13 }} />
             <input type="number" step="1" min="0" value={it.quantidade ?? ''} onChange={e => onAtualizar(it.id, 'quantidade', e.target.value)} style={{ fontSize: 13 }} />
             <input value={it.unidade || ''} onChange={e => onAtualizar(it.id, 'unidade', e.target.value)} style={{ fontSize: 13 }} />
+            <input type="number" step="0.01" min="0" value={it.valor_unitario ?? 0} onChange={e => onAtualizar(it.id, 'valor_unitario', e.target.value)} placeholder="0,00" style={{ fontSize: 13 }} />
+            <span style={{ color: valorTotal > 0 ? '#c9a227' : '#555', fontWeight: 700 }}>{formatarMoeda(valorTotal)}</span>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: it.pronto ? '#3fb95f' : '#999', whiteSpace: 'nowrap' }}>
               <input type="checkbox" checked={!!it.pronto} onChange={e => onAtualizar(it.id, 'pronto', e.target.checked)} />
               Já pronto
@@ -594,7 +688,11 @@ function TabelaMateriais({ itens, onAtualizar, onRemover, pesquisas, onPesquisar
               <div style={{ marginTop: 10, padding: 12, background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, fontSize: 12, color: '#bbb', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
                 <b style={{ color: '#c9a227' }}>
                   Pesquisa de mercado ({pesquisa.fonte === 'claude' ? 'Claude, fallback pago' : 'Gemini'} — confira antes de usar):
-                </b><br />
+                </b>
+                {pesquisa.pesquisadoEm && (
+                  <span style={{ color: '#666', fontWeight: 400 }}> — salva, feita em {new Date(pesquisa.pesquisadoEm).toLocaleString('pt-BR')}</span>
+                )}
+                <br />
                 {pesquisa.resultado}
               </div>
             )}
@@ -641,6 +739,55 @@ function TabelaPontos({ titulo, prefixo, detalhe }) {
         ))
       )}
     </div>
+  );
+}
+
+function ResumoBloco({ rotulo, valor, destaque }) {
+  return (
+    <div style={{
+      border: '1px solid #1e1e1e', borderRadius: 8, padding: '12px 14px',
+      background: destaque ? '#1a1a1a' : 'transparent',
+    }}>
+      <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.5px', color: destaque ? '#c9a227' : '#777', marginBottom: 4 }}>{rotulo}</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color: destaque ? '#fff' : '#ccc' }}>{formatarMoeda(valor)}</div>
+    </div>
+  );
+}
+
+// Tabela "Pontos por Ambiente" — mesmo formato da planilha de referência da
+// empresa (Ambiente | Rede | TV/Antena | Câmeras | Total), colunas variando
+// conforme a disciplina selecionada. Sempre aproximada (ver
+// utils/pontosPorAmbiente.js no backend) — daí o aviso logo acima, no card.
+function TabelaPontosPorAmbiente({ linhas, disciplinas }) {
+  const colunas = [
+    disciplinas?.includes('rede') && { chave: 'rede', titulo: 'Rede' },
+    disciplinas?.includes('antena') && { chave: 'antena', titulo: 'TV/Antena' },
+    disciplinas?.includes('cftv') && { chave: 'cftv', titulo: 'Câmeras' },
+  ].filter(Boolean);
+
+  if (!linhas || linhas.length === 0) {
+    return <p style={{ fontSize: 13, color: '#666', fontStyle: 'italic' }}>Não foi possível estimar a distribuição por ambiente nos arquivos analisados.</p>;
+  }
+
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+      <thead>
+        <tr style={{ fontSize: 11, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', textAlign: 'left' }}>
+          <th style={{ padding: '4px 8px 8px 0' }}>Ambiente</th>
+          {colunas.map(c => <th key={c.chave} style={{ padding: '4px 8px 8px 0', textAlign: 'right' }}>{c.titulo}</th>)}
+          <th style={{ padding: '4px 0 8px 0', textAlign: 'right' }}>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {linhas.map(l => (
+          <tr key={l.ambiente} style={{ borderTop: '1px solid #1e1e1e' }}>
+            <td style={{ padding: '6px 8px 6px 0' }}>{l.ambiente}</td>
+            {colunas.map(c => <td key={c.chave} style={{ padding: '6px 8px 6px 0', textAlign: 'right', color: '#999' }}>{l[c.chave]}</td>)}
+            <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 700, color: '#c9a227' }}>{l.total}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

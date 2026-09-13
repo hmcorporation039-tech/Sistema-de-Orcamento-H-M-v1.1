@@ -169,6 +169,12 @@ async function criarTabelas() {
         atualizado_em TIMESTAMP DEFAULT NOW()
       )
     `);
+    // Distribuição aproximada de pontos por ambiente (ver utils/pontosPorAmbiente.js)
+    await client.query(`ALTER TABLE analises_projeto ADD COLUMN IF NOT EXISTS pontos_por_ambiente JSONB NOT NULL DEFAULT '[]'`);
+    // Proposta gerada a partir desta análise (botão "Gerar Orçamento") — nula
+    // até o primeiro clique; um segundo clique atualiza a mesma proposta em
+    // vez de criar outra.
+    await client.query(`ALTER TABLE analises_projeto ADD COLUMN IF NOT EXISTS proposta_id INTEGER REFERENCES propostas(id)`);
 
     // Tabela de sequência de propostas
     await client.query(`

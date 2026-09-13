@@ -142,6 +142,7 @@ router.get('/projetos/analises/:id/relatorio', autenticar, validarId, projCtrl.g
 router.get('/projetos/analises/:id', autenticar, validarId, projCtrl.buscarUma);
 router.put('/projetos/analises/:id', autenticar, validarId, posseAnalise, projCtrl.atualizar);
 router.delete('/projetos/analises/:id', autenticar, validarId, posseAnalise, projCtrl.remover);
+router.post('/projetos/analises/:id/gerar-orcamento', autenticar, validarId, posseAnalise, projCtrl.gerarOrcamento);
 
 // ── PESQUISA DE MERCADO (Gemini + busca real) ────────────────────────────
 router.post('/pesquisa-mercado', autenticar, pesqCtrl.pesquisar);

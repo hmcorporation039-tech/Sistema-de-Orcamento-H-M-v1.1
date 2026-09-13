@@ -2,6 +2,7 @@ const pool = require('../config/database');
 const { analisarProjeto } = require('./projetoParser');
 const { extrairEquipamentosComIA } = require('./equipamentoExtratorIA');
 const { nomeDaDisciplina } = require('./disciplinasProjeto');
+const { calcularPontosPorAmbiente } = require('./pontosPorAmbiente');
 
 function normalizarPalavras(s) {
   return String(s || '')
@@ -173,8 +174,14 @@ function montarServicosPadrao(analises, disciplinasEfetivas) {
   const totalAntena = somarPorDisciplina(analises, 'antena', a => a.pontosRedeAntena.antena.ocorrencias);
   const SEM_CODIGO = 'Símbolo gráfico no desenho, sem código de texto individual — confirme a quantidade direto na planta antes de fechar.';
 
+  // valor_unitario começa em 0 (editável na tela) — o sistema não tem uma
+  // tabela de preços de mão de obra pra sugerir automaticamente, e chutar um
+  // valor seria pior do que deixar em branco pra quem monta o orçamento
+  // preencher. Existe só pra dar a mesma estrutura de colunas da planilha de
+  // referência (Qtd. | Un. | Vlr unit. | Vlr total) e alimentar o Bloco 1 do
+  // resumo e o orçamento provisório gerado na aba Orçamentos.
   const item = (descricao, quantidade, unidade, disciplina, observacao) => ({
-    descricao, quantidade, unidade, subgrupo: nomeDaDisciplina(disciplina), disciplina, pronto: false, observacao,
+    descricao, quantidade, unidade, valor_unitario: 0, subgrupo: nomeDaDisciplina(disciplina), disciplina, pronto: false, observacao,
   });
 
   const todos = [
@@ -346,6 +353,33 @@ async function montarMateriais(equipamentos) {
   });
 }
 
+// Junta a distribuição aproximada de pontos por ambiente (ver
+// pontosPorAmbiente.js) de todos os arquivos, zerando os tipos de ponto que
+// não são da disciplina daquele arquivo (mesmo cuidado de somarPorDisciplina
+// — um arquivo de iluminação não pode contribuir "câmeras" mesmo se algum
+// texto batesse por coincidência com o regex de CAMx) e somando por nome de
+// ambiente entre arquivos da mesma disciplina (ex.: CFTV 1 + CFTV 2 somam
+// câmeras no mesmo ambiente). Só entram ambientes com pelo menos 1 ponto.
+function montarPontosPorAmbiente(arquivos, analises, brutosPorArquivo) {
+  const porAmbiente = new Map();
+
+  brutosPorArquivo.forEach((linhas, i) => {
+    const disciplinas = analises[i].disciplinas;
+    for (const linha of linhas) {
+      const atual = porAmbiente.get(linha.ambiente) || { ambiente: linha.ambiente, cftv: 0, rede: 0, antena: 0 };
+      if (disciplinas.includes('cftv')) atual.cftv += linha.cftv;
+      if (disciplinas.includes('rede')) atual.rede += linha.rede;
+      if (disciplinas.includes('antena')) atual.antena += linha.antena;
+      porAmbiente.set(linha.ambiente, atual);
+    }
+  });
+
+  return [...porAmbiente.values()]
+    .map(a => ({ ...a, total: a.cftv + a.rede + a.antena }))
+    .filter(a => a.total > 0)
+    .sort((a, b) => b.total - a.total);
+}
+
 // Transforma os itens da tabela quantitativa genérica (extrairTabelaQuantitativa
 // em projetoParser.js — padrão "CÓDIGO - descrição - N unidade(s);", achado de
 // verdade num projeto real na seção de portas/janelas) em linhas de material,
@@ -391,6 +425,14 @@ async function analisarProjetoCompleto(arquivos) {
     arquivos.map(({ buffer, nomeArquivo }) => analisarProjeto(buffer, nomeArquivo))
   );
   const analises = analisesBrutas.map((a, i) => ({ ...a, disciplinas: arquivos[i].disciplinas }));
+
+  // Distribuição de pontos por ambiente: aproximada (ver pontosPorAmbiente.js)
+  // e por isso isolada num Promise.all com catch por arquivo — uma falha aqui
+  // nunca deve derrubar a análise inteira, já que o resto dela (totais,
+  // serviços, materiais) não depende disso.
+  const pontosPorAmbienteBrutos = await Promise.all(
+    arquivos.map(({ buffer }) => calcularPontosPorAmbiente(buffer).catch(() => []))
+  );
 
   // Disciplina "efetiva" da análise inteira = união das tags de todos os
   // arquivos — decide quais itens-modelo de serviço/material aparecem.
@@ -452,6 +494,7 @@ async function analisarProjetoCompleto(arquivos) {
     disciplinas: disciplinasEfetivas,
     arquivosAnalisados: analises.map(a => ({ arquivo: a.arquivo, disciplinas: a.disciplinas })),
     ambientes,
+    pontosPorAmbiente: montarPontosPorAmbiente(arquivos, analises, pontosPorAmbienteBrutos),
     cameras: {
       total: totalCameras,
       detalhePorArquivo: detalhePorArquivo(analises, 'cftv', a => a.cameras),
