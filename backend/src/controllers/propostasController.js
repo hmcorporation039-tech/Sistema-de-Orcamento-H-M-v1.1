@@ -123,6 +123,7 @@ async function buscarUma(req, res) {
       eventos: eventos.rows
     });
   } catch (err) {
+    console.error('Erro ao buscar proposta:', err);
     res.status(500).json({ erro: 'Erro ao buscar proposta' });
   }
 }
@@ -371,6 +372,7 @@ async function proximoNum(req, res) {
     );
     res.json({ proximo: parseInt(result.rows[0].valor) });
   } catch (err) {
+    console.error('Erro ao buscar número:', err);
     res.status(500).json({ erro: 'Erro ao buscar número' });
   }
 }

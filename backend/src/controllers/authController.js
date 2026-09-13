@@ -69,8 +69,14 @@ async function alterarSenha(req, res) {
   try {
     const result = await pool.query('SELECT senha FROM usuarios WHERE id = $1', [userId]);
     const usuario = result.rows[0];
-    const ok = await bcrypt.compare(senhaAtual, usuario.senha);
+    // Sem esta checagem, um token de usuário já excluído causava
+    // "Cannot read properties of undefined" → 500 sem nenhum log, impossível
+    // de diagnosticar pelo suporte.
+    if (!usuario) {
+      return res.status(401).json({ erro: 'Conta não encontrada. Faça login novamente.' });
+    }
 
+    const ok = await bcrypt.compare(senhaAtual, usuario.senha);
     if (!ok) {
       return res.status(401).json({ erro: 'Senha atual incorreta' });
     }
@@ -80,6 +86,7 @@ async function alterarSenha(req, res) {
 
     res.json({ mensagem: 'Senha alterada com sucesso' });
   } catch (err) {
+    console.error('Erro ao alterar senha:', err);
     res.status(500).json({ erro: 'Erro ao alterar senha' });
   }
 }

@@ -21,6 +21,7 @@ async function listar(req, res) {
     );
     res.json(montarResposta(result.rows, parseInt(total.rows[0].count, 10), pagina, porPagina));
   } catch (err) {
+    console.error('Erro ao listar clientes:', err);
     res.status(500).json({ erro: 'Erro ao listar clientes' });
   }
 }
@@ -37,6 +38,7 @@ async function criar(req, res) {
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
+    console.error('Erro ao criar cliente:', err);
     res.status(500).json({ erro: 'Erro ao criar cliente' });
   }
 }
@@ -55,6 +57,7 @@ async function atualizar(req, res) {
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Cliente não encontrado' });
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('Erro ao atualizar cliente:', err);
     res.status(500).json({ erro: 'Erro ao atualizar cliente' });
   }
 }
@@ -65,6 +68,7 @@ async function remover(req, res) {
     await pool.query('UPDATE clientes SET ativo=false WHERE id=$1', [id]);
     res.json({ mensagem: 'Cliente removido' });
   } catch (err) {
+    console.error('Erro ao remover cliente:', err);
     res.status(500).json({ erro: 'Erro ao remover cliente' });
   }
 }

@@ -27,6 +27,7 @@ async function listar(req, res) {
     );
     res.json(montarResposta(result.rows, parseInt(total.rows[0].count, 10), pagina, porPagina));
   } catch (err) {
+    console.error('Erro ao listar materiais:', err);
     res.status(500).json({ erro: 'Erro ao listar materiais' });
   }
 }
@@ -46,6 +47,7 @@ async function criar(req, res) {
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
+    console.error('Erro ao criar material:', err);
     res.status(500).json({ erro: 'Erro ao criar material' });
   }
 }
@@ -64,6 +66,7 @@ async function atualizar(req, res) {
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Material não encontrado' });
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('Erro ao atualizar material:', err);
     res.status(500).json({ erro: 'Erro ao atualizar material' });
   }
 }
@@ -74,6 +77,7 @@ async function remover(req, res) {
     await pool.query('UPDATE materiais SET ativo=false WHERE id=$1', [id]);
     res.json({ mensagem: 'Material removido' });
   } catch (err) {
+    console.error('Erro ao remover material:', err);
     res.status(500).json({ erro: 'Erro ao remover material' });
   }
 }
@@ -135,6 +139,7 @@ async function categorias(req, res) {
     );
     res.json(result.rows.map(r => r.categoria));
   } catch (err) {
+    console.error('Erro ao listar categorias:', err);
     res.status(500).json({ erro: 'Erro ao listar categorias' });
   }
 }

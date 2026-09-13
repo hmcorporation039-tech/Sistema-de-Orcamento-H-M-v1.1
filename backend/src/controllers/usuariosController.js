@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const pool = require('../config/database');
+const { invalidarCacheUsuario } = require('../middleware/auth');
 
 async function listar(req, res) {
   try {
@@ -9,6 +10,7 @@ async function listar(req, res) {
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('Erro ao listar usuários:', err);
     res.status(500).json({ erro: 'Erro ao listar usuários' });
   }
 }
@@ -57,11 +59,15 @@ async function atualizar(req, res) {
       [nome, email, role === 'admin' ? 'admin' : 'user', ativo !== false, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Usuário não encontrado' });
+    // Desativar ou rebaixar precisa valer imediatamente, não só quando o cache
+    // de 30s expirar.
+    invalidarCacheUsuario(id);
     res.json(result.rows[0]);
   } catch (err) {
     if (err.code === '23505') {
       return res.status(409).json({ erro: 'Já existe um usuário com esse e-mail' });
     }
+    console.error('Erro ao atualizar usuário:', err);
     res.status(500).json({ erro: 'Erro ao atualizar usuário' });
   }
 }
@@ -76,6 +82,7 @@ async function remover(req, res) {
   try {
     const result = await pool.query('DELETE FROM usuarios WHERE id=$1 RETURNING id', [id]);
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Usuário não encontrado' });
+    invalidarCacheUsuario(id);
     res.json({ mensagem: 'Usuário excluído com sucesso' });
   } catch (err) {
     if (err.code === '23503') {
@@ -104,6 +111,7 @@ async function redefinirSenha(req, res) {
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Usuário não encontrado' });
     res.json({ mensagem: 'Senha redefinida com sucesso' });
   } catch (err) {
+    console.error('Erro ao redefinir senha:', err);
     res.status(500).json({ erro: 'Erro ao redefinir senha' });
   }
 }

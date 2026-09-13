@@ -13,6 +13,7 @@ async function statusEmail(req, res) {
       ultimaVerificacao: ultima.rows[0]?.processado_em || null,
     });
   } catch (err) {
+    console.error('Erro ao consultar status da integração:', err);
     res.status(500).json({ erro: 'Erro ao consultar status da integração' });
   }
 }
@@ -39,6 +40,7 @@ async function historico(req, res) {
       totalEmailsProcessados: parseInt(totalEmails.rows[0].count, 10),
     });
   } catch (err) {
+    console.error('Erro ao buscar histórico de importação:', err);
     res.status(500).json({ erro: 'Erro ao buscar histórico de importação' });
   }
 }
@@ -48,6 +50,7 @@ async function obterMargem(req, res) {
     const r = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'margem_padrao'");
     res.json({ margem: parseFloat(r.rows[0]?.valor) || 0 });
   } catch (err) {
+    console.error('Erro ao buscar margem padrão:', err);
     res.status(500).json({ erro: 'Erro ao buscar margem padrão' });
   }
 }
@@ -66,6 +69,7 @@ async function atualizarMargem(req, res) {
     );
     res.json({ margem: valor });
   } catch (err) {
+    console.error('Erro ao atualizar margem padrão:', err);
     res.status(500).json({ erro: 'Erro ao atualizar margem padrão' });
   }
 }
