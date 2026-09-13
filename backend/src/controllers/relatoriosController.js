@@ -1,4 +1,4 @@
-const puppeteer = require('puppeteer');
+const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
 const pool = require('../config/database');
 const { gerarHtmlRelatorio, gerarFooterTemplateRelatorio } = require('../utils/relatorioTemplate');
 
@@ -120,17 +120,12 @@ async function exportarCsv(req, res) {
   }
 }
 
-async function exportarPdf(req, res) {
-  let browser;
+async function exportarPdf(req, res, next) {
   try {
     const dados = await buscarPropostasEtotais(req.query);
     const html = gerarHtmlRelatorio(dados);
 
-    browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    const pdf = await page.pdf({
-      format: 'A4', printBackground: true,
+    const pdf = await gerarPdfDeHtml(html, {
       margin: { top: '12mm', bottom: '24mm', left: '14mm', right: '14mm' },
       displayHeaderFooter: true,
       headerTemplate: '<div></div>',
@@ -142,9 +137,7 @@ async function exportarPdf(req, res) {
     res.send(pdf);
   } catch (err) {
     console.error('Erro ao exportar PDF do relatório:', err);
-    res.status(500).json({ erro: 'Erro ao exportar PDF do relatório' });
-  } finally {
-    if (browser) await browser.close();
+    next(err);
   }
 }
 

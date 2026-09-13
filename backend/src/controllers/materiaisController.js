@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const { extrairNotaFiscal } = require('../utils/notaFiscalParser');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
+const { comTransacao } = require('../utils/transacao');
 
 async function listar(req, res) {
   const { busca, categoria } = req.query;
@@ -77,15 +78,14 @@ async function remover(req, res) {
   }
 }
 
-async function importar(req, res) {
+async function importar(req, res, next) {
   const { materiais } = req.body;
   if (!Array.isArray(materiais) || materiais.length === 0) {
     return res.status(400).json({ erro: 'Lista de materiais inválida' });
   }
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
+    const importados = await comTransacao(async (client) => {
     let importados = 0;
     for (const m of materiais) {
       if (!m.descricao || !m.categoria || !m.unidade) continue;
@@ -98,13 +98,16 @@ async function importar(req, res) {
       );
       importados++;
     }
-    await client.query('COMMIT');
+      return importados;
+    });
+
     res.json({ mensagem: `${importados} materiais importados com sucesso` });
   } catch (err) {
-    await client.query('ROLLBACK');
-    res.status(500).json({ erro: 'Erro ao importar materiais' });
-  } finally {
-    client.release();
+    // Antes esse catch descartava o erro sem logar: o usuário importava 500
+    // materiais, recebia "Erro ao importar materiais" e não havia nenhum
+    // rastro de qual linha causou o problema.
+    console.error('Erro ao importar materiais:', err);
+    next(err);
   }
 }
 

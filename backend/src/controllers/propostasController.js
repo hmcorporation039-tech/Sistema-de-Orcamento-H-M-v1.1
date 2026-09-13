@@ -1,8 +1,9 @@
-const puppeteer = require('puppeteer');
+const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
 const pool = require('../config/database');
 const { gerarHtmlProposta, gerarFooterTemplate } = require('../utils/pdfTemplate');
 const { criarTransportador } = require('../utils/smtpClient');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
+const { comTransacao } = require('../utils/transacao');
 
 // Registra um evento na trilha de auditoria da proposta (criação, edição, status, duplicação)
 async function registrarEvento(client, propostaId, usuarioId, acao, detalhes) {
@@ -96,7 +97,7 @@ async function buscarUma(req, res) {
   }
 }
 
-async function criar(req, res) {
+async function criar(req, res, next) {
   const {
     data, validade, tipo, porte,
     cliente_id, cliente_nome, responsavel, local_obra,
@@ -106,10 +107,8 @@ async function criar(req, res) {
     secoes, itens
   } = req.body;
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-
+    const { proposta, numero } = await comTransacao(async (client) => {
     const seq = await proximoNumero(client);
     const numero = 'P' + String(seq).padStart(3, '0');
 
@@ -163,19 +162,17 @@ async function criar(req, res) {
 
     await registrarEvento(client, proposta.id, req.usuario.id, 'criada', `Proposta ${numero} criada`);
 
-    await client.query('COMMIT');
-    res.status(201).json({ ...proposta, mensagem: `Proposta ${numero} salva com sucesso!` });
+      return { proposta, numero };
+    });
 
+    res.status(201).json({ ...proposta, mensagem: `Proposta ${numero} salva com sucesso!` });
   } catch (err) {
-    await client.query('ROLLBACK');
     console.error('Erro ao criar proposta:', err);
-    res.status(500).json({ erro: 'Erro ao criar proposta' });
-  } finally {
-    client.release();
+    next(err);
   }
 }
 
-async function atualizar(req, res) {
+async function atualizar(req, res, next) {
   const { id } = req.params;
   const {
     data, validade, tipo, porte,
@@ -186,10 +183,8 @@ async function atualizar(req, res) {
     secoes, itens
   } = req.body;
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-
+    const proposta = await comTransacao(async (client) => {
     const propResult = await client.query(
       `UPDATE propostas SET
         data=$1, validade=$2, tipo=$3, porte=$4,
@@ -210,10 +205,7 @@ async function atualizar(req, res) {
       ]
     );
 
-    if (propResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ erro: 'Proposta não encontrada' });
-    }
+    if (propResult.rows.length === 0) return null;
 
     const proposta = propResult.rows[0];
 
@@ -247,24 +239,28 @@ async function atualizar(req, res) {
 
     await registrarEvento(client, proposta.id, req.usuario.id, 'editada', 'Dados e itens da proposta foram editados');
 
-    await client.query('COMMIT');
-    res.json({ ...proposta, mensagem: `Proposta ${proposta.numero} atualizada com sucesso!` });
+      return proposta;
+    });
 
+    if (!proposta) return res.status(404).json({ erro: 'Proposta não encontrada' });
+    res.json({ ...proposta, mensagem: `Proposta ${proposta.numero} atualizada com sucesso!` });
   } catch (err) {
-    await client.query('ROLLBACK');
     console.error('Erro ao atualizar proposta:', err);
-    res.status(500).json({ erro: 'Erro ao atualizar proposta' });
-  } finally {
-    client.release();
+    next(err);
   }
 }
 
-async function duplicar(req, res) {
+async function duplicar(req, res, next) {
   const { id } = req.params;
-  const client = await pool.connect();
   try {
+    const resultado = await comTransacao(async (client) => {
+    // As três leituras agora acontecem DENTRO da transação. Antes rodavam em
+    // autocommit, cada uma num snapshot diferente: se alguém editasse a
+    // proposta entre a leitura das seções e a dos itens (o `atualizar` apaga e
+    // recria as seções com novos ids), a cópia saía com as seções mas sem
+    // nenhum item — e ainda assim respondia "duplicada com sucesso".
     const original = await client.query('SELECT * FROM propostas WHERE id = $1', [id]);
-    if (original.rows.length === 0) return res.status(404).json({ erro: 'Proposta não encontrada' });
+    if (original.rows.length === 0) return null;
     const p = original.rows[0];
 
     const secoesOriginais = await client.query(
@@ -275,8 +271,6 @@ async function duplicar(req, res) {
       'SELECT * FROM proposta_itens WHERE proposta_id = $1 ORDER BY ordem',
       [id]
     );
-
-    await client.query('BEGIN');
 
     const seq = await proximoNumero(client);
     const numero = 'P' + String(seq).padStart(3, '0');
@@ -323,18 +317,18 @@ async function duplicar(req, res) {
 
     await registrarEvento(client, nova.id, req.usuario.id, 'duplicada', `Duplicada a partir da proposta ${p.numero}`);
 
-    await client.query('COMMIT');
-    res.status(201).json({ ...nova, mensagem: `Proposta duplicada como ${numero}` });
+      return { nova, numero };
+    });
+
+    if (!resultado) return res.status(404).json({ erro: 'Proposta não encontrada' });
+    res.status(201).json({ ...resultado.nova, mensagem: `Proposta duplicada como ${resultado.numero}` });
   } catch (err) {
-    await client.query('ROLLBACK');
     console.error('Erro ao duplicar proposta:', err);
-    res.status(500).json({ erro: 'Erro ao duplicar proposta' });
-  } finally {
-    client.release();
+    next(err);
   }
 }
 
-async function atualizarStatus(req, res) {
+async function atualizarStatus(req, res, next) {
   const { id } = req.params;
   const { status } = req.body;
   const statusValidos = ['Ativa', 'Aprovada', 'Recusada', 'Cancelada'];
@@ -344,25 +338,40 @@ async function atualizarStatus(req, res) {
   }
 
   try {
-    const result = await pool.query(
-      'UPDATE propostas SET status=$1, atualizado_em=NOW() WHERE id=$2 RETURNING *',
-      [status, id]
-    );
-    if (result.rows.length === 0) return res.status(404).json({ erro: 'Proposta não encontrada' });
-    await registrarEvento(pool, id, req.usuario.id, 'status', `Status alterado para ${status}`);
-    res.json(result.rows[0]);
+    // As duas escritas precisam ser atômicas: antes o UPDATE usava o `pool`
+    // (conexão qualquer, sem transação) e o registro do evento vinha depois.
+    // Se o evento falhasse, o status já estava gravado de forma irreversível,
+    // mas o usuário recebia erro 500 e a tela não atualizava — o banco dizia
+    // "Aprovada" e a tela dizia que não deu certo.
+    const proposta = await comTransacao(async (client) => {
+      const result = await client.query(
+        'UPDATE propostas SET status=$1, atualizado_em=NOW() WHERE id=$2 RETURNING *',
+        [status, id]
+      );
+      if (result.rows.length === 0) return null;
+      await registrarEvento(client, id, req.usuario.id, 'status', `Status alterado para ${status}`);
+      return result.rows[0];
+    });
+
+    if (!proposta) return res.status(404).json({ erro: 'Proposta não encontrada' });
+    res.json(proposta);
   } catch (err) {
-    res.status(500).json({ erro: 'Erro ao atualizar status' });
+    console.error('Erro ao atualizar status:', err);
+    next(err);
   }
 }
 
-async function remover(req, res) {
+async function remover(req, res, next) {
   const { id } = req.params;
   try {
-    await pool.query('DELETE FROM propostas WHERE id=$1', [id]);
+    // Checa rowCount: antes respondia "Proposta removida" mesmo para id
+    // inexistente, o que mascarava erro de id errado vindo da tela.
+    const result = await pool.query('DELETE FROM propostas WHERE id=$1 RETURNING id', [id]);
+    if (result.rowCount === 0) return res.status(404).json({ erro: 'Proposta não encontrada' });
     res.json({ mensagem: 'Proposta removida' });
   } catch (err) {
-    res.status(500).json({ erro: 'Erro ao remover proposta' });
+    console.error('Erro ao remover proposta:', err);
+    next(err);
   }
 }
 
@@ -392,21 +401,13 @@ async function montarPdfBuffer(id) {
 
   const html = gerarHtmlProposta({ ...proposta.rows[0], secoes: secoes.rows, itens: itens.rows });
 
-  const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
-  try {
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    const pdf = await page.pdf({
-      format: 'A4', printBackground: true,
-      margin: { top: '12mm', bottom: '24mm', left: '14mm', right: '14mm' },
-      displayHeaderFooter: true,
-      headerTemplate: '<div></div>',
-      footerTemplate: gerarFooterTemplate(),
-    });
-    return { proposta: proposta.rows[0], pdf };
-  } finally {
-    await browser.close();
-  }
+  const pdf = await gerarPdfDeHtml(html, {
+    margin: { top: '12mm', bottom: '24mm', left: '14mm', right: '14mm' },
+    displayHeaderFooter: true,
+    headerTemplate: '<div></div>',
+    footerTemplate: gerarFooterTemplate(),
+  });
+  return { proposta: proposta.rows[0], pdf };
 }
 
 function nomeArquivoProposta(proposta) {

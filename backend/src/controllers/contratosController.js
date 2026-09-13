@@ -1,5 +1,5 @@
 const pool = require('../config/database');
-const puppeteer = require('puppeteer');
+const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
 const { gerarHtmlContrato, gerarFooterTemplate } = require('../utils/pdfTemplate');
 
@@ -58,20 +58,12 @@ async function buscarContratoCompleto(id) {
 
 async function montarPdfBuffer(contrato) {
   const html = gerarHtmlContrato(contrato);
-  const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
-  try {
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    return await page.pdf({
-      format: 'A4', printBackground: true,
-      margin: { top: '12mm', bottom: '24mm', left: '14mm', right: '14mm' },
-      displayHeaderFooter: true,
-      headerTemplate: '<div></div>',
-      footerTemplate: gerarFooterTemplate(),
-    });
-  } finally {
-    await browser.close();
-  }
+  return gerarPdfDeHtml(html, {
+    margin: { top: '12mm', bottom: '24mm', left: '14mm', right: '14mm' },
+    displayHeaderFooter: true,
+    headerTemplate: '<div></div>',
+    footerTemplate: gerarFooterTemplate(),
+  });
 }
 
 async function criar(req, res) {

@@ -1,4 +1,4 @@
-const puppeteer = require('puppeteer');
+const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
 const pool = require('../config/database');
 const { analisarProjetoCompleto } = require('../utils/compatibilizacaoAnalise');
 const { gerarHtmlRelatorioCompatibilizacao } = require('../utils/relatorioCompatibilizacaoTemplate');
@@ -184,7 +184,7 @@ async function remover(req, res) {
 // Gera o relatório de compatibilização em PDF a partir do que está salvo no
 // banco (não do que o navegador tem em memória) — sempre reflete a última
 // versão persistida, inclusive edições feitas antes de navegar pra outra tela.
-async function gerarRelatorio(req, res) {
+async function gerarRelatorio(req, res, next) {
   const { id } = req.params;
   try {
     const result = await pool.query('SELECT * FROM analises_projeto WHERE id = $1', [id]);
@@ -192,29 +192,24 @@ async function gerarRelatorio(req, res) {
     const analise = linhaParaAnalise(result.rows[0]);
 
     const html = gerarHtmlRelatorioCompatibilizacao(analise);
-    const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
-    try {
-      const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: 'networkidle0' });
-      const pdf = await page.pdf({
-        format: 'A4', printBackground: true,
-        margin: { top: '12mm', bottom: '20mm', left: '14mm', right: '14mm' },
-        displayHeaderFooter: true,
-        headerTemplate: '<div></div>',
-        footerTemplate: gerarFooterTemplate(),
-      });
-      const nomeCliente = String(analise.cliente || 'projeto').trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_');
-      res.set({
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="Compatibilizacao_${nomeCliente}.pdf"`,
-      });
-      res.send(pdf);
-    } finally {
-      await browser.close();
-    }
+    // O PDF fica pronto (e o navegador é fechado) ANTES de qualquer resposta —
+    // assim não existe mais o caso de um erro acontecer depois do res.send.
+    const pdf = await gerarPdfDeHtml(html, {
+      margin: { top: '12mm', bottom: '20mm', left: '14mm', right: '14mm' },
+      displayHeaderFooter: true,
+      headerTemplate: '<div></div>',
+      footerTemplate: gerarFooterTemplate(),
+    });
+
+    const nomeCliente = String(analise.cliente || 'projeto').trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_');
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="Compatibilizacao_${nomeCliente}.pdf"`,
+    });
+    res.send(pdf);
   } catch (err) {
     console.error('Erro ao gerar relatório de compatibilização:', err);
-    res.status(500).json({ erro: 'Erro ao gerar relatório de compatibilização' });
+    next(err);
   }
 }
 

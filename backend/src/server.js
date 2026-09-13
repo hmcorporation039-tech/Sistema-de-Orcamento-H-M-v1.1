@@ -4,6 +4,7 @@ const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const routes = require('./routes');
+const { tratarErros } = require('./middleware/erros');
 const { criarTabelas } = require('./models/schema');
 const { credenciaisConfiguradas } = require('./utils/emailClient');
 const { verificarCaixaDeEntrada } = require('./services/notaFiscalEmailService');
@@ -45,6 +46,23 @@ if (fs.existsSync(buildFrontend)) {
     res.sendFile(path.join(buildFrontend, 'index.html'));
   });
 }
+
+// Middleware de erro — precisa vir DEPOIS de todas as rotas. Sem ele, erros de
+// upload (multer) caíam no handler padrão do Express, que responde HTML com o
+// stack trace completo, vazando o caminho de instalação do servidor.
+app.use(tratarErros);
+
+// Rede de segurança do processo. No Node 24, uma promise rejeitada sem
+// tratamento encerra o processo por padrão — um pico no banco ou um
+// browser.close() falhando derrubava o sistema inteiro e desconectava todos os
+// usuários. Aqui registramos e seguimos em frente: um erro isolado numa
+// requisição não pode tirar a API do ar.
+process.on('unhandledRejection', (motivo) => {
+  console.error('[unhandledRejection] Promise rejeitada sem tratamento:', motivo);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException] Exceção não capturada:', err);
+});
 
 function agendarVerificacaoDeEmail() {
   if (!credenciaisConfiguradas()) {
