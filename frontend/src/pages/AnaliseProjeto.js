@@ -50,8 +50,12 @@ export default function AnaliseProjeto() {
   const { id: idParam } = useParams();
   const navigate = useNavigate();
 
-  const [arquivos, setArquivos] = useState([]);
-  const [disciplinasSelecionadas, setDisciplinasSelecionadas] = useState([]);
+  // Cada arquivo escolhido carrega sua PRÓPRIA lista de disciplinas — não uma
+  // lista única pro lote inteiro. Isso evita que, por exemplo, um arquivo de
+  // iluminação enviado junto com arquivos de CFTV/rede contamine a contagem
+  // de câmeras/pontos de rede (só arquivos marcados com aquela disciplina
+  // entram na soma). [{ id, arquivo: File, disciplinas: string[] }]
+  const [arquivosComDisciplinas, setArquivosComDisciplinas] = useState([]);
   const [analisando, setAnalisando] = useState(false);
   const [carregandoAnalise, setCarregandoAnalise] = useState(false);
   const [analise, setAnalise] = useState(null);
@@ -84,7 +88,6 @@ export default function AnaliseProjeto() {
       servicos: dados.servicos.map(s => ({ ...s, id: gerarId() })),
       materiais: dados.materiais.map(m => ({ ...m, id: gerarId() })),
     });
-    setDisciplinasSelecionadas(dados.disciplinas || []);
     setSalvoEm(dados.atualizadoEm ? new Date(dados.atualizadoEm) : null);
   }, []);
 
@@ -104,25 +107,29 @@ export default function AnaliseProjeto() {
   }, [idParam, navigate, popularAnalise]);
 
   function selecionarArquivos(e) {
-    setArquivos(Array.from(e.target.files || []));
+    const lista = Array.from(e.target.files || []);
+    setArquivosComDisciplinas(lista.map(arquivo => ({ id: gerarId(), arquivo, disciplinas: [] })));
   }
 
-  function alternarDisciplina(chave) {
-    setDisciplinasSelecionadas(sel => sel.includes(chave) ? sel.filter(c => c !== chave) : [...sel, chave]);
+  function alternarDisciplinaDoArquivo(itemId, chave) {
+    setArquivosComDisciplinas(lista => lista.map(it => it.id !== itemId ? it : {
+      ...it,
+      disciplinas: it.disciplinas.includes(chave) ? it.disciplinas.filter(c => c !== chave) : [...it.disciplinas, chave],
+    }));
   }
 
   async function analisar() {
-    if (arquivos.length === 0) {
+    if (arquivosComDisciplinas.length === 0) {
       toast.error('Selecione ao menos um PDF do projeto');
       return;
     }
-    if (disciplinasSelecionadas.length === 0) {
-      toast.error('Selecione ao menos uma disciplina pra analisar');
+    if (arquivosComDisciplinas.some(it => it.disciplinas.length === 0)) {
+      toast.error('Marque ao menos uma disciplina pra cada arquivo enviado');
       return;
     }
     setAnalisando(true);
     try {
-      const res = await analisarProjeto(arquivos, disciplinasSelecionadas);
+      const res = await analisarProjeto(arquivosComDisciplinas);
       popularAnalise(res.data);
       navigate(`/analise-projeto/${res.data.id}`);
       toast.success(`Projeto analisado: ${res.data.ambientes.length} ambientes, ${res.data.cameras.total} câmeras`);
@@ -136,8 +143,7 @@ export default function AnaliseProjeto() {
 
   function novaAnalise() {
     navigate('/analise-projeto');
-    setArquivos([]);
-    setDisciplinasSelecionadas([]);
+    setArquivosComDisciplinas([]);
     setPesquisas({});
     setSalvoEm(null);
   }
@@ -333,32 +339,40 @@ export default function AnaliseProjeto() {
       {!analise && (
         <div style={card}>
           <p style={{ fontSize: 13, color: '#777', marginBottom: 14, lineHeight: 1.6 }}>
-            Envie os PDFs do projeto do cliente (plantas de CFTV, cabeamento estruturado, etc.) e selecione as
-            disciplinas que esse projeto cobre. O sistema extrai ambientes, contagem de câmeras/pontos de rede e a
-            legenda de cabos automaticamente (sem IA — leitura direta do texto do PDF), e monta um rascunho de
-            serviços/materiais só das disciplinas selecionadas, pra você revisar antes de gerar o relatório.
+            Envie os PDFs do projeto do cliente (plantas de CFTV, cabeamento estruturado, elétrica, iluminação
+            etc.) e marque a disciplina de CADA arquivo — um projeto real costuma vir em várias plantas separadas
+            (ex.: CFTV 1 + CFTV 2 do mesmo cliente), e cada uma pode ser de uma disciplina diferente. Arquivos da
+            mesma disciplina continuam somando entre si (câmeras de CFTV 1 + CFTV 2, por exemplo); um arquivo de
+            outra disciplina nunca entra na contagem que não é dele.
           </p>
 
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 11, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 }}>
-              Disciplinas deste projeto
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 18px' }}>
-              {DISCIPLINAS.map(d => (
-                <label key={d.chave} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: disciplinasSelecionadas.includes(d.chave) ? '#c9a227' : '#999', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={disciplinasSelecionadas.includes(d.chave)} onChange={() => alternarDisciplina(d.chave)} />
-                  {d.nome}
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: arquivosComDisciplinas.length > 0 ? 18 : 0 }}>
             <input ref={inputRef} type="file" accept=".pdf" multiple onChange={selecionarArquivos} />
-            <button onClick={analisar} disabled={analisando} style={btnPrimario}>
+            <button onClick={analisar} disabled={analisando || arquivosComDisciplinas.length === 0} style={btnPrimario}>
               <FolderSearch size={13} style={{ marginRight: 6 }} /> {analisando ? 'Analisando...' : 'Analisar projeto'}
             </button>
           </div>
+
+          {arquivosComDisciplinas.length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 10 }}>
+                Disciplina de cada arquivo (marque pelo menos uma)
+              </div>
+              {arquivosComDisciplinas.map(it => (
+                <div key={it.id} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: '1px solid #1e1e1e' }}>
+                  <div style={{ fontSize: 13, color: '#c9a227', fontWeight: 700, marginBottom: 6 }}>{it.arquivo.name}</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px' }}>
+                    {DISCIPLINAS.map(d => (
+                      <label key={d.chave} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: it.disciplinas.includes(d.chave) ? '#c9a227' : '#999', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={it.disciplinas.includes(d.chave)} onChange={() => alternarDisciplinaDoArquivo(it.id, d.chave)} />
+                        {d.nome}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

@@ -77,10 +77,14 @@ export const enviarPropostaPorEmail = (id, destinatario, mensagem) =>
   api.post(`/propostas/${id}/enviar-email`, { destinatario, mensagem });
 
 // ── ANÁLISE DE PROJETO (compatibilização) ────────────────────────────────
-export const analisarProjeto = (arquivos, disciplinas) => {
+// `arquivosComDisciplinas`: [{ arquivo: File, disciplinas: string[] }] — cada
+// arquivo carrega sua própria lista de disciplinas (não uma lista única pro
+// lote), por isso vai como um array posicional (mesma ordem dos arquivos
+// anexados) em vez de um campo só.
+export const analisarProjeto = (arquivosComDisciplinas) => {
   const formData = new FormData();
-  arquivos.forEach(arquivo => formData.append('arquivos', arquivo));
-  formData.append('disciplinas', JSON.stringify(disciplinas));
+  arquivosComDisciplinas.forEach(({ arquivo }) => formData.append('arquivos', arquivo));
+  formData.append('disciplinasPorArquivo', JSON.stringify(arquivosComDisciplinas.map(a => a.disciplinas)));
   // Extrai equipamentos via IA (uma chamada por arquivo) — pode passar bem
   // do timeout padrão de 15s, por isso o prazo maior só nessa chamada.
   return api.post('/projetos/analisar', formData, {

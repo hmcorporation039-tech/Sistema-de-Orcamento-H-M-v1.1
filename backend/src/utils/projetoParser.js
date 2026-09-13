@@ -100,6 +100,27 @@ function extrairTabelaCabos(texto) {
   return itens;
 }
 
+// Tabela quantitativa genérica — padrão "CÓDIGO - descrição... - N unidade(s);"
+// usado em projetos desses escritórios pra listar esquadrias (portas/janelas) e,
+// quando existir, quadros de carga/memoriais de outras disciplinas (ex.: um
+// "quadro de cargas" de elétrica no mesmo formato). Achado real testando um
+// projeto de iluminação (a legenda "PORTAS / JANELAS" vem exatamente assim:
+// "PMA070 - Porta de giro de PVC... - 1 unidade;", "PMA080 - ... - 11
+// unidades;"). Diferente de câmera/rede/antena (um código por ponto físico),
+// aqui uma linha já traz a quantidade agregada como texto — não precisa contar
+// ocorrências, só ler o número que já está escrito.
+function extrairTabelaQuantitativa(texto) {
+  const linhas = String(texto || '').split('\n').map(l => l.trim());
+  const itens = [];
+  const RE_ITEM_QUANTIFICADO = /^([A-Z0-9]{2,10})\s*-\s*(.+?)\s*-\s*(\d+)\s*unidades?\s*;?\s*$/;
+
+  for (const linha of linhas) {
+    const m = linha.match(RE_ITEM_QUANTIFICADO);
+    if (m) itens.push({ codigo: m[1], descricao: m[2].trim(), quantidade: parseInt(m[3], 10) });
+  }
+  return itens;
+}
+
 // Nota: a lista de equipamentos/materiais técnicos (com código REF. de
 // fabricante) não é extraída aqui por regex — testamos e o texto quebra de
 // linha demais pra separar itens com confiança (descrições saíam cortadas
@@ -115,10 +136,12 @@ async function analisarProjeto(buffer, nomeArquivo) {
     cameras: extrairCameras(texto),
     pontosRedeAntena: extrairPontosRedeAntena(texto),
     tabelaCabos: extrairTabelaCabos(texto),
+    tabelaQuantitativa: extrairTabelaQuantitativa(texto),
     textoBruto: texto,
   };
 }
 
 module.exports = {
-  analisarProjeto, extrairTexto, extrairAmbientes, extrairCameras, extrairPontosRedeAntena, extrairTabelaCabos,
+  analisarProjeto, extrairTexto, extrairAmbientes, extrairCameras, extrairPontosRedeAntena,
+  extrairTabelaCabos, extrairTabelaQuantitativa,
 };

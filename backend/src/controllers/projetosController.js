@@ -73,25 +73,40 @@ async function buscarUma(req, res) {
   }
 }
 
-// Recebe um ou mais PDFs de projeto (plantas de CFTV, cabeamento, etc.) e as
-// disciplinas selecionadas pelo usuário, roda a análise já restrita a elas
-// (ambientes, câmeras, cabos, achados de compatibilização e uma lista
-// inicial de serviços/materiais) e PERSISTE o resultado — a partir daqui o
-// frontend guarda o `id` retornado e usa ele pra autosave/relatório, em vez
-// de manter tudo só em memória no navegador (que sumia ao trocar de tela).
+// Recebe um ou mais PDFs de projeto (plantas de CFTV, cabeamento, etc.) e a
+// disciplina de CADA arquivo (não uma lista única pro lote inteiro — ver
+// utils/compatibilizacaoAnalise.js sobre por que isso evita um arquivo de uma
+// disciplina contaminar a contagem de outra), roda a análise (ambientes,
+// câmeras, cabos, achados de compatibilização e uma lista inicial de
+// serviços/materiais) e PERSISTE o resultado — a partir daqui o frontend
+// guarda o `id` retornado e usa ele pra autosave/relatório, em vez de manter
+// tudo só em memória no navegador (que sumia ao trocar de tela).
 async function analisar(req, res) {
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({ erro: 'Envie ao menos um arquivo PDF de projeto' });
   }
 
-  const disciplinas = normalizarDisciplinas(req.body.disciplinas);
-  if (disciplinas.length === 0) {
-    return res.status(400).json({ erro: 'Selecione ao menos uma disciplina para analisar' });
+  let disciplinasPorArquivo;
+  try {
+    disciplinasPorArquivo = JSON.parse(req.body.disciplinasPorArquivo || '[]');
+  } catch {
+    return res.status(400).json({ erro: 'Formato inválido de disciplinas por arquivo' });
+  }
+  if (!Array.isArray(disciplinasPorArquivo) || disciplinasPorArquivo.length !== req.files.length) {
+    return res.status(400).json({ erro: 'Cada arquivo enviado precisa ter sua lista de disciplinas correspondente' });
+  }
+
+  const arquivos = req.files.map((f, i) => ({
+    buffer: f.buffer,
+    nomeArquivo: f.originalname,
+    disciplinas: normalizarDisciplinas(disciplinasPorArquivo[i]),
+  }));
+  if (arquivos.some(a => a.disciplinas.length === 0)) {
+    return res.status(400).json({ erro: 'Selecione ao menos uma disciplina para cada arquivo enviado' });
   }
 
   try {
-    const arquivos = req.files.map(f => ({ buffer: f.buffer, nomeArquivo: f.originalname }));
-    const resultado = await analisarProjetoCompleto(arquivos, disciplinas);
+    const resultado = await analisarProjetoCompleto(arquivos);
 
     const insert = await pool.query(
       `INSERT INTO analises_projeto
@@ -101,7 +116,7 @@ async function analisar(req, res) {
        RETURNING *`,
       [
         resultado.cliente,
-        JSON.stringify(disciplinas),
+        JSON.stringify(resultado.disciplinas),
         JSON.stringify(resultado.arquivosAnalisados),
         JSON.stringify(resultado.ambientes),
         JSON.stringify(resultado.cameras),

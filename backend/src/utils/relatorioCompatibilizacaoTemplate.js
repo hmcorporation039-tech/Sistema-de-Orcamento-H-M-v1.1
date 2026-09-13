@@ -1,3 +1,5 @@
+const { nomeDaDisciplina } = require('./disciplinasProjeto');
+
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -137,7 +139,9 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
     </div>` : ''}
     <div class="info-item" style="grid-column: 1 / -1;">
       <div class="label">Arquivos analisados</div>
-      <div class="valor">${arquivosAnalisados.map(escapeHtml).join(' · ') || '—'}</div>
+      <div class="valor">${arquivosAnalisados.map(a =>
+        `${escapeHtml(a.arquivo)} (${(a.disciplinas || []).map(nomeDaDisciplina).join(', ')})`
+      ).join(' · ') || '—'}</div>
     </div>
   </div>
 
