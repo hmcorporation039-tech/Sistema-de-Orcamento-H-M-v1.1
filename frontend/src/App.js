@@ -55,6 +55,7 @@ export default function App() {
             <Route path="prestadores" element={<Prestadores />} />
             <Route path="contratos" element={<Contratos />} />
             <Route path="analise-projeto" element={<AnaliseProjeto />} />
+            <Route path="analise-projeto/:id" element={<AnaliseProjeto />} />
             <Route path="usuarios" element={<RotaAdmin><Usuarios /></RotaAdmin>} />
           </Route>
         </Routes>

@@ -35,7 +35,7 @@ function linhasAgrupadasPorSubgrupo(itens, colunas, gerarLinhaTr) {
 // revisada pelo usuário (com o que já está pronto e não entra na mão de obra).
 function gerarHtmlRelatorioCompatibilizacao(analise) {
   const {
-    cliente, arquivosAnalisados = [], ambientes = [], cameras = { total: 0, detalhePorArquivo: [] },
+    cliente, disciplinas = [], arquivosAnalisados = [], ambientes = [], cameras = { total: 0, detalhePorArquivo: [] },
     pontosRedeAntena = { rede: { total: 0 }, antena: { total: 0 } },
     tabelaCabos = [], achados = [], servicos = [], materiais = [],
   } = analise;
@@ -125,14 +125,16 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
       <div class="label">Data do relatório</div>
       <div class="valor">${formatarData()}</div>
     </div>
+    ${disciplinas.includes('rede') ? `
     <div class="info-item">
       <div class="label">Pontos de rede</div>
       <div class="valor">${pontosRedeAntena.rede?.total ?? 0}</div>
-    </div>
+    </div>` : ''}
+    ${disciplinas.includes('antena') ? `
     <div class="info-item">
       <div class="label">Pontos de TV/antena</div>
       <div class="valor">${pontosRedeAntena.antena?.total ?? 0}</div>
-    </div>
+    </div>` : ''}
     <div class="info-item" style="grid-column: 1 / -1;">
       <div class="label">Arquivos analisados</div>
       <div class="valor">${arquivosAnalisados.map(escapeHtml).join(' · ') || '—'}</div>
@@ -152,12 +154,13 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
     <tbody>${linhasAmbientes}</tbody>
   </table>` : `<div class="vazio">Nenhum ambiente identificado.</div>`}
 
+  ${disciplinas.includes('cftv') ? `
   <h2>CFTV — Câmeras (total: ${cameras.total || 0})</h2>
   ${(cameras.detalhePorArquivo || []).length > 0 ? `
   <table>
     <thead><tr><th>Arquivo</th><th class="num">Ocorrências</th><th class="num">Códigos únicos</th><th>Repetidos</th><th>Faltando na sequência</th></tr></thead>
     <tbody>${linhasCameras}</tbody>
-  </table>` : `<div class="vazio">Nenhuma câmera identificada nos arquivos.</div>`}
+  </table>` : `<div class="vazio">Nenhuma câmera identificada nos arquivos.</div>`}` : ''}
 
   <h2>Tabela de Cabos (legenda do projeto)</h2>
   ${tabelaCabos.length > 0 ? `

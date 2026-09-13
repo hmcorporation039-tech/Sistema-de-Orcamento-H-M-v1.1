@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const { analisarProjeto } = require('./projetoParser');
 const { extrairEquipamentosComIA } = require('./equipamentoExtratorIA');
+const { nomeDaDisciplina } = require('./disciplinasProjeto');
 
 function normalizarPalavras(s) {
   return String(s || '')
@@ -79,110 +80,149 @@ function achadosDeNumeracao(arquivo, dados, prefixo, rotulo) {
   return achados;
 }
 
-function gerarAchados(analises) {
+// `disciplinas`: chaves selecionadas pelo usuário (ver utils/disciplinasProjeto.js).
+// A extração por regex sempre roda (é grátis e instantânea), mas um achado só
+// é gerado se a disciplina correspondente foi selecionada — senão o usuário
+// que só quer analisar, por exemplo, Elétrica, veria pendências de CFTV que
+// não pediu pra ver.
+function gerarAchados(analises, disciplinas) {
   const achados = [];
 
   for (const a of analises) {
-    if (a.cameras.ocorrencias > 0) {
+    if (disciplinas.includes('cftv') && a.cameras.ocorrencias > 0) {
       achados.push(...achadosDeNumeracao(a.arquivo, a.cameras, 'CAM', 'Câmeras'));
     }
-    if (a.pontosRedeAntena.rede.ocorrencias > 0) {
+    if (disciplinas.includes('rede') && a.pontosRedeAntena.rede.ocorrencias > 0) {
       achados.push(...achadosDeNumeracao(a.arquivo, a.pontosRedeAntena.rede, 'R', 'Pontos de rede'));
     }
-    if (a.pontosRedeAntena.antena.ocorrencias > 0) {
+    if (disciplinas.includes('antena') && a.pontosRedeAntena.antena.ocorrencias > 0) {
       achados.push(...achadosDeNumeracao(a.arquivo, a.pontosRedeAntena.antena, 'A', 'Pontos de antena/TV'));
     }
   }
 
-  const arquivosComCamera = analises.filter(a => a.cameras.ocorrencias > 0).map(a => a.arquivo);
-  const arquivosSemCamera = analises.filter(a => a.cameras.ocorrencias === 0).map(a => a.arquivo);
-  if (arquivosComCamera.length > 0 && arquivosSemCamera.length > 0 && analises.length > 1) {
-    achados.push({
-      tema: 'Arquivo sem câmeras identificadas',
-      observacao: `${arquivosSemCamera.join(', ')} não tem nenhum código de câmera (CAMx) no texto — confirme se é realmente uma prancha de CFTV ou se é outra disciplina (ex.: alarme, cabeamento) enviada com nome parecido.`,
-    });
+  if (disciplinas.includes('cftv')) {
+    const arquivosComCamera = analises.filter(a => a.cameras.ocorrencias > 0).map(a => a.arquivo);
+    const arquivosSemCamera = analises.filter(a => a.cameras.ocorrencias === 0).map(a => a.arquivo);
+    if (arquivosComCamera.length > 0 && arquivosSemCamera.length > 0 && analises.length > 1) {
+      achados.push({
+        tema: 'Arquivo sem câmeras identificadas',
+        observacao: `${arquivosSemCamera.join(', ')} não tem nenhum código de câmera (CAMx) no texto — confirme se é realmente uma prancha de CFTV ou se é outra disciplina (ex.: alarme, cabeamento) enviada com nome parecido.`,
+      });
+    }
   }
 
   return achados;
 }
 
 // Monta a lista completa de serviços (mão de obra) candidatos, na mesma
-// estrutura usada nos orçamentos de referência da empresa: dividida em
-// "Cabeamento / Rede / CFTV" e "Alarme". Cada item tem "pronto" (já
-// executado / não orçar) editável pelo usuário — no cabeamento estruturado,
-// por exemplo, o padrão é vir como pendente, mas dá pra marcar como já
-// pronto quando for o caso (projeto onde só falta a parte elétrica, cabo já
-// passado, etc.).
+// estrutura usada nos orçamentos de referência da empresa. Cada item tem
+// "pronto" (já executado / não orçar) editável pelo usuário, e agora também
+// uma "disciplina" (ver utils/disciplinasProjeto.js) — o subgrupo visual
+// exibido na tela/relatório é o nome dessa disciplina, e só entram na lista
+// final os itens cuja disciplina foi selecionada pelo usuário.
 //
 // Câmeras, pontos de rede e pontos de antena/TV vêm preenchidos
 // automaticamente quando o desenho usa código individual por ponto (CAMx,
 // Rx, Ax) — já validado que esses códigos aparecem como texto direto no
-// PDF, sem precisar de IA nem risco de inventar número. Quantidades de
-// alarme (sensores, sirene, teclado) não têm código individual nesses
-// projetos — ficam com quantidade 0 e aviso pra confirmar direto na planta.
-function montarServicosPadrao(analises) {
+// PDF, sem precisar de IA nem risco de inventar número. As demais
+// disciplinas (Elétrica, Telefonia, Iluminação, Automação, Alarme) ainda não
+// têm nenhuma extração automática nesses projetos — ficam com quantidade 0 e
+// aviso pra confirmar direto na planta, mesmo padrão que Alarme já usava.
+function montarServicosPadrao(analises, disciplinas) {
   const totalCameras = analises.reduce((s, a) => s + a.cameras.ocorrencias, 0);
   const totalRede = analises.reduce((s, a) => s + a.pontosRedeAntena.rede.ocorrencias, 0);
   const totalAntena = analises.reduce((s, a) => s + a.pontosRedeAntena.antena.ocorrencias, 0);
   const SEM_CODIGO = 'Sem código individual no desenho — confirme a quantidade direto na planta antes de fechar.';
 
-  const item = (descricao, quantidade, unidade, subgrupo, observacao) => ({
-    descricao, quantidade, unidade, subgrupo, pronto: false, observacao,
+  const item = (descricao, quantidade, unidade, disciplina, observacao) => ({
+    descricao, quantidade, unidade, subgrupo: nomeDaDisciplina(disciplina), disciplina, pronto: false, observacao,
   });
 
-  return [
-    item('Conectorização de ponto de rede/dados (RJ-45 + patch panel + teste)', totalRede, 'pt', 'Cabeamento / Rede / CFTV',
+  const todos = [
+    // Redes de Computadores (dados)
+    item('Conectorização de ponto de rede/dados (RJ-45 + patch panel + teste)', totalRede, 'pt', 'rede',
       totalRede > 0 ? 'Quantidade = total de códigos de ponto de rede (Rx) encontrados no desenho.' : SEM_CODIGO),
-    item('Conectorização de ponto de câmera (RJ-45 + patch panel + teste)', totalCameras, 'pt', 'Cabeamento / Rede / CFTV',
-      totalCameras > 0 ? `Quantidade = total de códigos de câmera (CAMx) encontrados no desenho. Confira duplicatas/numeração antes de fechar (veja Compatibilização).` : SEM_CODIGO),
-    item('Conectorização de ponto de TV/antena (conector coaxial RG-6)', totalAntena, 'pt', 'Cabeamento / Rede / CFTV',
-      totalAntena > 0 ? 'Quantidade = total de códigos de ponto de antena/TV (Ax) encontrados no desenho.' : SEM_CODIGO),
-    item('Instalação/config. de câmera interna (dome)', 0, 'un', 'Cabeamento / Rede / CFTV',
+    item('Instalação e config. de switches', 0, 'un', 'rede', SEM_CODIGO),
+    item('Instalação e config. de access points (Wi-Fi)', 0, 'un', 'rede', SEM_CODIGO),
+
+    // CFTV
+    item('Conectorização de ponto de câmera (RJ-45 + patch panel + teste)', totalCameras, 'pt', 'cftv',
+      totalCameras > 0 ? 'Quantidade = total de códigos de câmera (CAMx) encontrados no desenho. Confira duplicatas/numeração antes de fechar (veja Compatibilização).' : SEM_CODIGO),
+    item('Instalação/config. de câmera interna (dome)', 0, 'un', 'cftv',
       totalCameras > 0 ? `Total de câmeras no desenho: ${totalCameras} — divida entre interna/externa aqui.` : SEM_CODIGO),
-    item('Instalação/config. de câmera externa (bullet)', 0, 'un', 'Cabeamento / Rede / CFTV', SEM_CODIGO),
-    item('Montagem e organização dos racks (patch panels, guias, PDU)', 0, 'un', 'Cabeamento / Rede / CFTV', 'Confirme quantos racks o projeto prevê.'),
-    item('Instalação e config. de switches', 0, 'un', 'Cabeamento / Rede / CFTV', SEM_CODIGO),
-    item('Instalação e config. de access points (Wi-Fi)', 0, 'un', 'Cabeamento / Rede / CFTV', SEM_CODIGO),
-    item('Instalação de nobreaks + kit de ventilação', 0, 'un', 'Cabeamento / Rede / CFTV', SEM_CODIGO),
-    item('Certificação e etiquetagem dos pontos (rede + câmeras)', totalRede + totalCameras, 'pt', 'Cabeamento / Rede / CFTV',
+    item('Instalação/config. de câmera externa (bullet)', 0, 'un', 'cftv', SEM_CODIGO),
+
+    // Antena/TV
+    item('Conectorização de ponto de TV/antena (conector coaxial RG-6)', totalAntena, 'pt', 'antena',
+      totalAntena > 0 ? 'Quantidade = total de códigos de ponto de antena/TV (Ax) encontrados no desenho.' : SEM_CODIGO),
+
+    // Infraestrutura de Cabeamento Estruturado (compartilhada por rede/CFTV/telefonia)
+    item('Montagem e organização dos racks (patch panels, guias, PDU)', 0, 'un', 'cabeamento', 'Confirme quantos racks o projeto prevê.'),
+    item('Instalação de nobreaks + kit de ventilação', 0, 'un', 'cabeamento', SEM_CODIGO),
+    item('Certificação e etiquetagem dos pontos (rede + câmeras + telefonia)', totalRede + totalCameras, 'pt', 'cabeamento',
       (totalRede > 0 || totalCameras > 0) ? 'Quantidade = pontos de rede + câmeras encontrados no desenho.' : SEM_CODIGO),
-    item('Instalação de sensor de abertura (magnético) porta/janela', 0, 'un', 'Alarme', SEM_CODIGO),
-    item('Instalação de sensor infravermelho passivo (IVP)', 0, 'un', 'Alarme', SEM_CODIGO),
-    item('Instalação de sirene', 0, 'un', 'Alarme', SEM_CODIGO),
-    item('Instalação de teclado de comando', 0, 'un', 'Alarme', SEM_CODIGO),
-    item('Instalação de repetidor de sinal', 0, 'un', 'Alarme', SEM_CODIGO),
-    item('Instalação e configuração da central de alarme', 0, 'un', 'Alarme', 'Normalmente 1 unidade — confirme.'),
-    item('Passagem de cabeamento (infraestrutura + lançamento de cabos)', 1, 'vb', 'Geral',
+    item('Passagem de cabeamento (infraestrutura + lançamento de cabos)', 1, 'vb', 'cabeamento',
       'Marque como "já pronto" se o cabeamento já estiver passado no local (não entra na mão de obra).'),
+
+    // Telefonia
+    item('Conectorização de ponto de telefonia (RJ-11/RJ-45 + teste)', 0, 'pt', 'telefonia', SEM_CODIGO),
+    item('Instalação de central telefônica / PABX', 0, 'un', 'telefonia', SEM_CODIGO),
+
+    // Elétrica
+    item('Instalação de quadro de distribuição e disjuntores', 0, 'un', 'eletrica', SEM_CODIGO),
+    item('Passagem de eletrodutos e fiação (circuitos de tomada/força)', 1, 'vb', 'eletrica',
+      'Marque como "já pronto" se a infraestrutura elétrica já estiver executada.'),
+    item('Instalação de tomadas e interruptores', 0, 'un', 'eletrica', SEM_CODIGO),
+
+    // Iluminação
+    item('Instalação de luminárias', 0, 'un', 'iluminacao', SEM_CODIGO),
+    item('Instalação de interruptores/dimmers de iluminação', 0, 'un', 'iluminacao', SEM_CODIGO),
+
+    // Automação
+    item('Instalação e configuração de central de automação', 0, 'un', 'automacao', SEM_CODIGO),
+    item('Instalação de atuadores/módulos de automação (tomadas, cortinas, cenas)', 0, 'un', 'automacao', SEM_CODIGO),
+
+    // Alarme
+    item('Instalação de sensor de abertura (magnético) porta/janela', 0, 'un', 'alarme', SEM_CODIGO),
+    item('Instalação de sensor infravermelho passivo (IVP)', 0, 'un', 'alarme', SEM_CODIGO),
+    item('Instalação de sirene', 0, 'un', 'alarme', SEM_CODIGO),
+    item('Instalação de teclado de comando', 0, 'un', 'alarme', SEM_CODIGO),
+    item('Instalação de repetidor de sinal', 0, 'un', 'alarme', SEM_CODIGO),
+    item('Instalação e configuração da central de alarme', 0, 'un', 'alarme', 'Normalmente 1 unidade — confirme.'),
   ];
+
+  return todos.filter(it => disciplinas.includes(it.disciplina));
 }
 
 // Lista padrão de material de instalação (Bloco 2 nos orçamentos de
 // referência) — itens de terminação/fixação que não vêm de nenhuma cotação
 // de fornecedor, calculados a partir dos pontos do projeto (câmeras, rede e
-// antena/TV, quando o desenho tem código individual para eles).
-function montarMateriaisInstalacaoPadrao(analises) {
+// antena/TV, quando o desenho tem código individual para eles). Cada item
+// também carrega a disciplina, pro mesmo filtro usado em montarServicosPadrao.
+function montarMateriaisInstalacaoPadrao(analises, disciplinas) {
   const totalCameras = analises.reduce((s, a) => s + a.cameras.ocorrencias, 0);
   const totalRede = analises.reduce((s, a) => s + a.pontosRedeAntena.rede.ocorrencias, 0);
   const totalAntena = analises.reduce((s, a) => s + a.pontosRedeAntena.antena.ocorrencias, 0);
 
-  const item = (descricao, quantidade, unidade, observacao) => ({
-    descricao, quantidade, unidade, subgrupo: 'Material de Instalação', pronto: false, observacao,
-    referencia_fabricante: null, preco_catalogo: null, material_id: null, confianca_catalogo: null,
+  const item = (descricao, quantidade, unidade, disciplina, observacao) => ({
+    descricao, quantidade, unidade, subgrupo: nomeDaDisciplina(disciplina), disciplina, pronto: false, observacao,
+    referencia_fabricante: null, preco_catalogo: null, material_id: null, confianca_catalogo: null, descricao_catalogo: null,
   });
 
-  return [
-    item('Keystone/jack RJ-45 Cat.6 (lado usuário — pontos de rede)', totalRede, 'un',
+  const todos = [
+    item('Keystone/jack RJ-45 Cat.6 (lado usuário — pontos de rede)', totalRede, 'un', 'rede',
       totalRede > 0 ? `Quantidade = pontos de rede encontrados no desenho (${totalRede}).` : 'Quantidade = nº de pontos de rede.'),
-    item('Espelho/placa 4x2 + suporte (pontos de rede)', totalRede, 'un',
+    item('Espelho/placa 4x2 + suporte (pontos de rede)', totalRede, 'un', 'rede',
       totalRede > 0 ? `Quantidade = pontos de rede encontrados no desenho (${totalRede}).` : 'Quantidade = nº de pontos de rede.'),
-    item('Tomada coaxial RG-6 + conector (TV/antena)', totalAntena, 'un',
+    item('Tomada coaxial RG-6 + conector (TV/antena)', totalAntena, 'un', 'antena',
       totalAntena > 0 ? `Quantidade = pontos de antena/TV encontrados no desenho (${totalAntena}).` : 'Quantidade = nº de pontos de TV/antena.'),
-    item('Plug RJ-45 Cat.6 (terminação de câmeras) + reserva', totalCameras > 0 ? totalCameras + 24 : 0, 'un',
+    item('Plug RJ-45 Cat.6 (terminação de câmeras) + reserva', totalCameras > 0 ? totalCameras + 24 : 0, 'un', 'cftv',
       totalCameras > 0 ? `Quantidade = câmeras (${totalCameras}) + reserva estimada (24) — ajuste conforme necessário.` : 'Quantidade = nº de câmeras + reserva.'),
-    item('Suporte/braço de fixação p/ câmera externa (bullet)', 0, 'un', 'Quantidade = nº de câmeras externas (bullet).'),
-    item('Identificação (etiquetas/anilhas), abraçadeiras, parafusos e miudezas', 1, 'vb', 'Verba — ajuste conforme o porte do projeto.'),
+    item('Suporte/braço de fixação p/ câmera externa (bullet)', 0, 'un', 'cftv', 'Quantidade = nº de câmeras externas (bullet).'),
+    item('Identificação (etiquetas/anilhas), abraçadeiras, parafusos e miudezas', 1, 'vb', 'cabeamento', 'Verba — ajuste conforme o porte do projeto.'),
   ];
+
+  return todos.filter(it => disciplinas.includes(it.disciplina));
 }
 
 // Extrai os equipamentos de cada arquivo (via IA, reformatando o texto já
@@ -237,12 +277,14 @@ async function montarMateriais(equipamentos) {
   });
 }
 
-async function analisarProjetoCompleto(arquivos) {
+async function analisarProjetoCompleto(arquivos, disciplinas) {
   // arquivos: [{ buffer, nomeArquivo }]
-  const analises = [];
-  for (const { buffer, nomeArquivo } of arquivos) {
-    analises.push(await analisarProjeto(buffer, nomeArquivo));
-  }
+  // Cada arquivo é lido/analisado em paralelo (pdf-parse + regex é I/O-bound
+  // e independente por arquivo) — antes rodava um de cada vez (sequencial),
+  // o que somava o tempo de N arquivos à toa.
+  const analises = await Promise.all(
+    arquivos.map(({ buffer, nomeArquivo }) => analisarProjeto(buffer, nomeArquivo))
+  );
 
   const cliente = analises.map(a => extrairCliente(a.textoBruto)).find(Boolean) || null;
 
@@ -256,24 +298,41 @@ async function analisarProjetoCompleto(arquivos) {
   const totalAntena = analises.reduce((s, a) => s + a.pontosRedeAntena.antena.ocorrencias, 0);
   const tabelaCabos = analises.find(a => a.tabelaCabos.length > 0)?.tabelaCabos || [];
 
-  const achados = gerarAchados(analises);
+  const achados = gerarAchados(analises, disciplinas);
 
-  // Alarme nunca tem código individual nesses projetos (confirmado em vários
-  // arquivos reais) — sempre precisa de confirmação manual. Rede/antena só
-  // entram no aviso se não foram encontrados neste projeto específico.
-  const faltando = ['quantidades de alarme (sensores, sirene, teclado)'];
-  if (totalRede === 0) faltando.unshift('pontos de rede');
-  if (totalAntena === 0) faltando.unshift('pontos de TV/antena');
-  achados.push({
-    tema: 'Quantidades a confirmar manualmente',
-    observacao: `${faltando.join(', ')} não têm código individual identificado neste projeto — diferente das câmeras/rede/antena quando o desenho traz código por ponto, não dá pra contar pelo texto do PDF sem arriscar inventar número. Os itens de "Serviços" que dependem disso vieram com quantidade 0 — confirme direto na planta antes de gerar o relatório final.`,
-  });
-  const equipamentos = await extrairEquipamentosDosArquivos(analises, achados);
+  // Cada disciplina selecionada que não tem extração automática de
+  // quantidade entra num único aviso — alarme nunca tem código individual
+  // nesses projetos (confirmado em vários arquivos reais); rede/antena só
+  // entram aqui se não foram encontrados neste projeto específico (quando
+  // encontrados, já vêm preenchidos automaticamente).
+  const faltando = [];
+  if (disciplinas.includes('rede') && totalRede === 0) faltando.push('pontos de rede');
+  if (disciplinas.includes('antena') && totalAntena === 0) faltando.push('pontos de TV/antena');
+  if (disciplinas.includes('alarme')) faltando.push('quantidades de alarme (sensores, sirene, teclado)');
+  if (disciplinas.includes('eletrica')) faltando.push('quantidades de elétrica (pontos, quadros, disjuntores)');
+  if (disciplinas.includes('telefonia')) faltando.push('quantidades de telefonia');
+  if (disciplinas.includes('iluminacao')) faltando.push('quantidades de iluminação (luminárias, pontos)');
+  if (disciplinas.includes('automacao')) faltando.push('quantidades de automação');
+  if (faltando.length > 0) {
+    achados.push({
+      tema: 'Quantidades a confirmar manualmente',
+      observacao: `${faltando.join(', ')} não têm código individual identificado neste projeto — diferente das câmeras/rede/antena quando o desenho traz código por ponto, não dá pra contar pelo texto do PDF sem arriscar inventar número. Os itens de "Serviços" que dependem disso vieram com quantidade 0 — confirme direto na planta antes de gerar o relatório final.`,
+    });
+  }
+
+  // Extração de equipamentos via IA: só vale a pena chamar o Gemini se o
+  // texto tiver algum trecho "REF.:" (padrão de legenda de equipamento
+  // nesses projetos) — evita uma chamada inteira (alguns segundos) quando
+  // não há nada pra achar, independente da disciplina selecionada.
+  const textoCombinado = analises.map(a => a.textoBruto).join('\n');
+  const temLegendaDeEquipamento = /REF\.?:/i.test(textoCombinado);
+  const equipamentos = temLegendaDeEquipamento ? await extrairEquipamentosDosArquivos(analises, achados) : [];
   const materiaisEquipamentos = await montarMateriais(equipamentos);
-  const materiais = [...montarMateriaisInstalacaoPadrao(analises), ...materiaisEquipamentos];
+  const materiais = [...montarMateriaisInstalacaoPadrao(analises, disciplinas), ...materiaisEquipamentos];
 
   return {
     cliente,
+    disciplinas,
     arquivosAnalisados: analises.map(a => a.arquivo),
     ambientes,
     cameras: {
@@ -286,7 +345,7 @@ async function analisarProjetoCompleto(arquivos) {
     },
     tabelaCabos,
     achados,
-    servicos: montarServicosPadrao(analises),
+    servicos: montarServicosPadrao(analises, disciplinas),
     materiais,
   };
 }

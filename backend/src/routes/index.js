@@ -99,8 +99,13 @@ router.get('/contratos/:id/pdf', autenticar, contrCtrl.gerarPdf);
 router.delete('/contratos/:id', autenticar, contrCtrl.remover);
 
 // ── ANÁLISE DE PROJETO (compatibilização) ────────────────────────────────
+// Caminhos específicos antes do /:id genérico (mesma regra usada em /propostas)
+router.get('/projetos/analises', autenticar, projCtrl.listar);
 router.post('/projetos/analisar', autenticar, upload.array('arquivos', 10), projCtrl.analisar);
-router.post('/projetos/relatorio-compatibilizacao', autenticar, projCtrl.gerarRelatorio);
+router.get('/projetos/analises/:id/relatorio', autenticar, projCtrl.gerarRelatorio);
+router.get('/projetos/analises/:id', autenticar, projCtrl.buscarUma);
+router.put('/projetos/analises/:id', autenticar, projCtrl.atualizar);
+router.delete('/projetos/analises/:id', autenticar, projCtrl.remover);
 
 // ── PESQUISA DE MERCADO (Gemini + busca real) ────────────────────────────
 router.post('/pesquisa-mercado', autenticar, pesqCtrl.pesquisar);

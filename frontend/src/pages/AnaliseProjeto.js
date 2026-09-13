@@ -1,11 +1,30 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Upload, FileDown, Plus, Trash2, FolderSearch, Search } from 'lucide-react';
-import { analisarProjeto, gerarRelatorioCompatibilizacao, pesquisarPrecoMercado } from '../services/api';
+import { FileDown, Plus, Trash2, FolderSearch, Search, FilePlus2 } from 'lucide-react';
+import {
+  analisarProjeto, gerarRelatorioCompatibilizacao, pesquisarPrecoMercado,
+  getAnalisesProjeto, getAnaliseProjeto, atualizarAnaliseProjeto, removerAnaliseProjeto,
+} from '../services/api';
 import { formatarMoeda } from '../utils/format';
 
 let contador = 0;
 const gerarId = () => `tmp_${Date.now()}_${contador++}`;
+
+// Taxonomia fixa de disciplinas — mesma lista de chaves/nomes do backend
+// (utils/disciplinasProjeto.js). É estática, não vale o round-trip de uma
+// chamada de API só pra isso.
+const DISCIPLINAS = [
+  { chave: 'eletrica', nome: 'Elétrica (infraestrutura)' },
+  { chave: 'rede', nome: 'Redes de Computadores (dados)' },
+  { chave: 'cabeamento', nome: 'Infra. de Cabeamento Estruturado' },
+  { chave: 'telefonia', nome: 'Telefonia' },
+  { chave: 'cftv', nome: 'CFTV' },
+  { chave: 'iluminacao', nome: 'Iluminação' },
+  { chave: 'automacao', nome: 'Automação' },
+  { chave: 'alarme', nome: 'Alarme' },
+  { chave: 'antena', nome: 'Antena/TV' },
+];
 
 // Agrupa itens por subgrupo (na ordem em que aparecem, sem reordenar) —
 // mesma ideia do agrupamento por subgrupo já usado no Orçamento.
@@ -23,16 +42,73 @@ function agruparPorSubgrupo(itens) {
   return linhas;
 }
 
+function formatarHora(data) {
+  return data ? data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+}
+
 export default function AnaliseProjeto() {
+  const { id: idParam } = useParams();
+  const navigate = useNavigate();
+
   const [arquivos, setArquivos] = useState([]);
+  const [disciplinasSelecionadas, setDisciplinasSelecionadas] = useState([]);
   const [analisando, setAnalisando] = useState(false);
+  const [carregandoAnalise, setCarregandoAnalise] = useState(false);
   const [analise, setAnalise] = useState(null);
   const [gerando, setGerando] = useState(false);
   const [pesquisas, setPesquisas] = useState({}); // { [materialId]: { carregando, resultado, erro } }
+  const [salvando, setSalvando] = useState(false);
+  const [salvoEm, setSalvoEm] = useState(null);
+  const [analisesSalvas, setAnalisesSalvas] = useState([]);
+  const [carregandoLista, setCarregandoLista] = useState(false);
   const inputRef = useRef(null);
+  const idAutosaveRef = useRef(null);
+
+  const carregarListaSalvas = useCallback(async () => {
+    setCarregandoLista(true);
+    try {
+      const res = await getAnalisesProjeto({ porPagina: 20 });
+      setAnalisesSalvas(res.data.itens);
+    } catch {
+      // lista salva é conveniência — não bloqueia a tela principal se falhar
+    } finally {
+      setCarregandoLista(false);
+    }
+  }, []);
+
+  useEffect(() => { carregarListaSalvas(); }, [carregarListaSalvas]);
+
+  const popularAnalise = useCallback((dados) => {
+    setAnalise({
+      ...dados,
+      servicos: dados.servicos.map(s => ({ ...s, id: gerarId() })),
+      materiais: dados.materiais.map(m => ({ ...m, id: gerarId() })),
+    });
+    setDisciplinasSelecionadas(dados.disciplinas || []);
+    setSalvoEm(dados.atualizadoEm ? new Date(dados.atualizadoEm) : null);
+  }, []);
+
+  useEffect(() => {
+    if (!idParam) {
+      setAnalise(null);
+      return;
+    }
+    setCarregandoAnalise(true);
+    getAnaliseProjeto(idParam)
+      .then(res => popularAnalise(res.data))
+      .catch(() => {
+        toast.error('Análise não encontrada');
+        navigate('/analise-projeto');
+      })
+      .finally(() => setCarregandoAnalise(false));
+  }, [idParam, navigate, popularAnalise]);
 
   function selecionarArquivos(e) {
     setArquivos(Array.from(e.target.files || []));
+  }
+
+  function alternarDisciplina(chave) {
+    setDisciplinasSelecionadas(sel => sel.includes(chave) ? sel.filter(c => c !== chave) : [...sel, chave]);
   }
 
   async function analisar() {
@@ -40,20 +116,85 @@ export default function AnaliseProjeto() {
       toast.error('Selecione ao menos um PDF do projeto');
       return;
     }
+    if (disciplinasSelecionadas.length === 0) {
+      toast.error('Selecione ao menos uma disciplina pra analisar');
+      return;
+    }
     setAnalisando(true);
     try {
-      const res = await analisarProjeto(arquivos);
-      setAnalise({
-        ...res.data,
-        servicos: res.data.servicos.map(s => ({ ...s, id: gerarId() })),
-        materiais: res.data.materiais.map(m => ({ ...m, id: gerarId() })),
-      });
+      const res = await analisarProjeto(arquivos, disciplinasSelecionadas);
+      popularAnalise(res.data);
+      navigate(`/analise-projeto/${res.data.id}`);
       toast.success(`Projeto analisado: ${res.data.ambientes.length} ambientes, ${res.data.cameras.total} câmeras`);
+      carregarListaSalvas();
     } catch (err) {
       toast.error(err.response?.data?.erro || 'Erro ao analisar o projeto');
     } finally {
       setAnalisando(false);
     }
+  }
+
+  function novaAnalise() {
+    navigate('/analise-projeto');
+    setArquivos([]);
+    setDisciplinasSelecionadas([]);
+    setPesquisas({});
+    setSalvoEm(null);
+  }
+
+  function abrirAnaliseSalva(item) {
+    navigate(`/analise-projeto/${item.id}`);
+  }
+
+  async function excluirAnaliseSalva(item) {
+    if (!window.confirm(`Excluir a análise de "${item.cliente_nome || 'projeto sem cliente'}"? Esta ação não pode ser desfeita.`)) return;
+    try {
+      await removerAnaliseProjeto(item.id);
+      toast.success('Análise excluída');
+      carregarListaSalvas();
+      if (String(analise?.id) === String(item.id)) novaAnalise();
+    } catch {
+      toast.error('Erro ao excluir análise');
+    }
+  }
+
+  // Salva automaticamente as edições (cliente, serviços, materiais) — é
+  // exatamente o que resolve a análise sumir ao trocar de tela: a partir do
+  // momento em que existe um id (a análise já foi persistida), toda edição
+  // vira uma gravação no banco, não só um estado do React.
+  const salvarAgora = useCallback(async () => {
+    if (!analise?.id) return;
+    setSalvando(true);
+    try {
+      await atualizarAnaliseProjeto(analise.id, {
+        cliente_nome: analise.cliente,
+        servicos: analise.servicos.map(({ id, ...s }) => s),
+        materiais: analise.materiais.map(({ id, ...m }) => m),
+      });
+      setSalvoEm(new Date());
+    } catch {
+      toast.error('Erro ao salvar automaticamente — tente novamente em instantes');
+    } finally {
+      setSalvando(false);
+    }
+  }, [analise?.id, analise?.cliente, analise?.servicos, analise?.materiais]);
+
+  // Reseta o "já assentou" toda vez que o id muda (nova análise carregada) —
+  // assim a primeira renderização de cada análise não dispara um autosave à toa.
+  useEffect(() => { idAutosaveRef.current = null; }, [analise?.id]);
+
+  useEffect(() => {
+    if (!analise?.id) return;
+    if (idAutosaveRef.current !== analise.id) {
+      idAutosaveRef.current = analise.id;
+      return;
+    }
+    const timer = setTimeout(() => { salvarAgora(); }, 1500);
+    return () => clearTimeout(timer);
+  }, [analise?.servicos, analise?.materiais, analise?.cliente]);
+
+  function atualizarCliente(valor) {
+    setAnalise(a => ({ ...a, cliente: valor }));
   }
 
   function atualizarServico(id, campo, valor) {
@@ -103,14 +244,8 @@ export default function AnaliseProjeto() {
   async function baixarRelatorio() {
     setGerando(true);
     try {
-      // eslint-disable-next-line no-unused-vars
-      const { servicos, materiais, ...resto } = analise;
-      const payload = {
-        ...resto,
-        servicos: servicos.map(({ id, ...s }) => s),
-        materiais: materiais.map(({ id, ...m }) => m),
-      };
-      const res = await gerarRelatorioCompatibilizacao(payload);
+      await salvarAgora(); // garante que o PDF reflete a última edição, não uma versão atrasada
+      const res = await gerarRelatorioCompatibilizacao(analise.id);
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
       const link = document.createElement('a');
       link.href = url;
@@ -127,36 +262,124 @@ export default function AnaliseProjeto() {
     }
   }
 
+  const tilesResumo = analise ? [
+    { label: 'Ambientes', valor: analise.ambientes.length },
+    ...(analise.disciplinas?.includes('cftv') ? [{ label: 'Câmeras', valor: analise.cameras.total }] : []),
+    ...(analise.disciplinas?.includes('rede') ? [{ label: 'Pontos de rede', valor: analise.pontosRedeAntena?.rede?.total ?? 0 }] : []),
+    ...(analise.disciplinas?.includes('antena') ? [{ label: 'Pontos de TV/antena', valor: analise.pontosRedeAntena?.antena?.total ?? 0 }] : []),
+    { label: 'Pendências', valor: analise.achados.length },
+  ] : [];
+
   return (
     <div style={paginaLargaTela}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18 }}>
         <h2 style={{ fontSize: 20, color: '#c9a227', fontWeight: 700, flex: 1 }}>Análise de Projeto (Compatibilização)</h2>
+        {analise && (
+          <button onClick={novaAnalise} style={btnSecundario}>
+            <FilePlus2 size={13} style={{ marginRight: 5 }} /> Nova análise
+          </button>
+        )}
       </div>
 
       <div style={card}>
-        <p style={{ fontSize: 13, color: '#777', marginBottom: 12, lineHeight: 1.6 }}>
-          Envie os PDFs do projeto do cliente (plantas de CFTV, cabeamento estruturado, etc.). O sistema extrai
-          ambientes, contagem de câmeras e a legenda de cabos automaticamente (sem IA — leitura direta do texto do
-          PDF), e monta um rascunho de serviços/materiais pra você revisar antes de gerar o relatório.
-        </p>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <input ref={inputRef} type="file" accept=".pdf" multiple onChange={selecionarArquivos} />
-          <button onClick={analisar} disabled={analisando} style={btnPrimario}>
-            <FolderSearch size={13} style={{ marginRight: 6 }} /> {analisando ? 'Analisando...' : 'Analisar projeto'}
-          </button>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
+          <h3 style={{ ...tituloSecao, flex: 1, marginBottom: 0 }}>Análises salvas</h3>
         </div>
+        {carregandoLista ? (
+          <p style={{ fontSize: 12, color: '#666' }}>Carregando...</p>
+        ) : analisesSalvas.length === 0 ? (
+          <p style={{ fontSize: 12, color: '#666', fontStyle: 'italic' }}>Nenhuma análise salva ainda.</p>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ fontSize: 11, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', textAlign: 'left' }}>
+                <th style={{ padding: '4px 8px 8px 0' }}>Cliente</th>
+                <th style={{ padding: '4px 8px 8px 0' }}>Disciplinas</th>
+                <th style={{ padding: '4px 8px 8px 0' }}>Atualizado em</th>
+                <th style={{ padding: '4px 8px 8px 0' }}>Pendências</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {analisesSalvas.map(item => (
+                <tr
+                  key={item.id}
+                  onClick={() => abrirAnaliseSalva(item)}
+                  style={{
+                    cursor: 'pointer', borderTop: '1px solid #1e1e1e',
+                    background: String(analise?.id) === String(item.id) ? '#1a1a1a' : 'transparent',
+                  }}
+                >
+                  <td style={{ padding: '8px 8px 8px 0' }}>{item.cliente_nome || '—'}</td>
+                  <td style={{ padding: '8px 8px 8px 0', color: '#999' }}>
+                    {(item.disciplinas || []).map(c => DISCIPLINAS.find(d => d.chave === c)?.nome || c).join(', ') || '—'}
+                  </td>
+                  <td style={{ padding: '8px 8px 8px 0', color: '#999' }}>
+                    {new Date(item.atualizado_em).toLocaleString('pt-BR')}
+                  </td>
+                  <td style={{ padding: '8px 8px 8px 0', color: '#999' }}>{item.total_achados ?? 0}</td>
+                  <td style={{ padding: '8px 0', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+                    <button onClick={() => excluirAnaliseSalva(item)} style={{ ...btnIcone, color: '#b04040' }} title="Excluir">
+                      <Trash2 size={12} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
-      {analise && (
+      {!analise && (
+        <div style={card}>
+          <p style={{ fontSize: 13, color: '#777', marginBottom: 14, lineHeight: 1.6 }}>
+            Envie os PDFs do projeto do cliente (plantas de CFTV, cabeamento estruturado, etc.) e selecione as
+            disciplinas que esse projeto cobre. O sistema extrai ambientes, contagem de câmeras/pontos de rede e a
+            legenda de cabos automaticamente (sem IA — leitura direta do texto do PDF), e monta um rascunho de
+            serviços/materiais só das disciplinas selecionadas, pra você revisar antes de gerar o relatório.
+          </p>
+
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 }}>
+              Disciplinas deste projeto
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 18px' }}>
+              {DISCIPLINAS.map(d => (
+                <label key={d.chave} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: disciplinasSelecionadas.includes(d.chave) ? '#c9a227' : '#999', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={disciplinasSelecionadas.includes(d.chave)} onChange={() => alternarDisciplina(d.chave)} />
+                  {d.nome}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <input ref={inputRef} type="file" accept=".pdf" multiple onChange={selecionarArquivos} />
+            <button onClick={analisar} disabled={analisando} style={btnPrimario}>
+              <FolderSearch size={13} style={{ marginRight: 6 }} /> {analisando ? 'Analisando...' : 'Analisar projeto'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {carregandoAnalise && (
+        <div style={card}><p style={{ fontSize: 13, color: '#777' }}>Carregando análise...</p></div>
+      )}
+
+      {analise && !carregandoAnalise && (
         <>
           <div style={card}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr', gap: 16 }}>
-              <Info label="Cliente" valor={analise.cliente || '—'} />
-              <Info label="Ambientes" valor={analise.ambientes.length} />
-              <Info label="Câmeras" valor={analise.cameras.total} />
-              <Info label="Pontos de rede" valor={analise.pontosRedeAntena?.rede?.total ?? 0} />
-              <Info label="Pontos de TV/antena" valor={analise.pontosRedeAntena?.antena?.total ?? 0} />
-              <Info label="Pendências" valor={analise.achados.length} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 260px' }}>
+                <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Cliente</div>
+                <input value={analise.cliente || ''} onChange={e => atualizarCliente(e.target.value)} placeholder="Nome do cliente" style={{ fontSize: 15, fontWeight: 700, color: '#c9a227', background: 'transparent', border: 'none', padding: '2px 0' }} />
+              </div>
+              <div style={{ fontSize: 11, color: '#666' }}>
+                {salvando ? 'Salvando...' : salvoEm ? `Salvo às ${formatarHora(salvoEm)}` : ''}
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${tilesResumo.length}, 1fr)`, gap: 16 }}>
+              {tilesResumo.map(t => <Info key={t.label} label={t.label} valor={t.valor} />)}
             </div>
           </div>
 

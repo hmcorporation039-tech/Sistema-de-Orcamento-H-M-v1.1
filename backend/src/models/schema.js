@@ -142,6 +142,34 @@ async function criarTabelas() {
       )
     `);
 
+    // Análises de Projeto (Compatibilização): rascunho persistido do que foi
+    // extraído automaticamente do(s) PDF(s) do projeto do cliente + a revisão
+    // de serviços/materiais feita pelo usuário. Diferente de propostas (que
+    // normalizam seções/itens em tabelas próprias porque alimentam relatório
+    // financeiro e duplicação item a item), aqui os campos de lista viram
+    // JSONB: o frontend já trata cada um como um array opaco, salvo e
+    // carregado por inteiro (autosave), sem necessidade de consulta SQL por
+    // item individual — normalizar teria só o custo, sem benefício real.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS analises_projeto (
+        id SERIAL PRIMARY KEY,
+        cliente_id INTEGER REFERENCES clientes(id),
+        cliente_nome VARCHAR(200),
+        disciplinas JSONB NOT NULL DEFAULT '[]',
+        arquivos_analisados JSONB NOT NULL DEFAULT '[]',
+        ambientes JSONB NOT NULL DEFAULT '[]',
+        cameras JSONB NOT NULL DEFAULT '{}',
+        pontos_rede_antena JSONB NOT NULL DEFAULT '{}',
+        tabela_cabos JSONB NOT NULL DEFAULT '[]',
+        achados JSONB NOT NULL DEFAULT '[]',
+        servicos JSONB NOT NULL DEFAULT '[]',
+        materiais JSONB NOT NULL DEFAULT '[]',
+        usuario_id INTEGER REFERENCES usuarios(id),
+        criado_em TIMESTAMP DEFAULT NOW(),
+        atualizado_em TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
     // Tabela de sequência de propostas
     await client.query(`
       CREATE TABLE IF NOT EXISTS configuracoes (

@@ -77,9 +77,10 @@ export const enviarPropostaPorEmail = (id, destinatario, mensagem) =>
   api.post(`/propostas/${id}/enviar-email`, { destinatario, mensagem });
 
 // ── ANÁLISE DE PROJETO (compatibilização) ────────────────────────────────
-export const analisarProjeto = (arquivos) => {
+export const analisarProjeto = (arquivos, disciplinas) => {
   const formData = new FormData();
   arquivos.forEach(arquivo => formData.append('arquivos', arquivo));
+  formData.append('disciplinas', JSON.stringify(disciplinas));
   // Extrai equipamentos via IA (uma chamada por arquivo) — pode passar bem
   // do timeout padrão de 15s, por isso o prazo maior só nessa chamada.
   return api.post('/projetos/analisar', formData, {
@@ -87,8 +88,12 @@ export const analisarProjeto = (arquivos) => {
     timeout: 180000,
   });
 };
-export const gerarRelatorioCompatibilizacao = (analise) =>
-  api.post('/projetos/relatorio-compatibilizacao', analise, { responseType: 'blob' });
+export const getAnalisesProjeto = (params) => api.get('/projetos/analises', { params });
+export const getAnaliseProjeto = (id) => api.get(`/projetos/analises/${id}`);
+export const atualizarAnaliseProjeto = (id, data) => api.put(`/projetos/analises/${id}`, data);
+export const removerAnaliseProjeto = (id) => api.delete(`/projetos/analises/${id}`);
+export const gerarRelatorioCompatibilizacao = (id) =>
+  api.get(`/projetos/analises/${id}/relatorio`, { responseType: 'blob' });
 
 // ── PESQUISA DE MERCADO ───────────────────────────────────────────────
 export const pesquisarPrecoMercado = (descricao) => api.post('/pesquisa-mercado', { descricao }, { timeout: 60000 });
