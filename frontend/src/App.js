@@ -51,9 +51,11 @@ export default function App() {
             <Route path="clientes" element={<Clientes />} />
             <Route path="historico" element={<Historico />} />
             <Route path="relatorios" element={<Relatorios />} />
-            <Route path="financeiro" element={<Financeiro />} />
-            <Route path="prestadores" element={<Prestadores />} />
-            <Route path="contratos" element={<Contratos />} />
+            {/* Áreas restritas: a API exige admin nessas rotas, então o
+                acesso direto pela URL também precisa ser barrado aqui. */}
+            <Route path="financeiro" element={<RotaAdmin><Financeiro /></RotaAdmin>} />
+            <Route path="prestadores" element={<RotaAdmin><Prestadores /></RotaAdmin>} />
+            <Route path="contratos" element={<RotaAdmin><Contratos /></RotaAdmin>} />
             <Route path="analise-projeto" element={<AnaliseProjeto />} />
             <Route path="analise-projeto/:id" element={<AnaliseProjeto />} />
             <Route path="usuarios" element={<RotaAdmin><Usuarios /></RotaAdmin>} />

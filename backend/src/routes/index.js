@@ -4,6 +4,22 @@ const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const { autenticar, admin } = require('../middleware/auth');
 const { validarId } = require('../middleware/validarId');
+const { exigirPosse } = require('../middleware/posse');
+
+// Quem pode ALTERAR/APAGAR cada tipo de registro: o dono ou um administrador.
+// Ver/listar continua livre para qualquer usuário autenticado.
+const posseProposta = exigirPosse('propostas', {
+  naoEncontrado: 'Proposta não encontrada.',
+  semPermissao: 'Esta proposta foi criada por outro usuário. Peça a ele ou a um administrador para alterar.',
+});
+const posseAnalise = exigirPosse('analises_projeto', {
+  naoEncontrado: 'Análise não encontrada.',
+  semPermissao: 'Esta análise foi criada por outro usuário. Peça a ele ou a um administrador para alterar.',
+});
+const posseContrato = exigirPosse('contratos', {
+  naoEncontrado: 'Contrato não encontrado.',
+  semPermissao: 'Este contrato foi criado por outro usuário. Peça a ele ou a um administrador para alterar.',
+});
 
 // Limite de tentativas de login: sem isso, um atacante na rede local pode
 // testar milhares de senhas por minuto contra /auth/login (o bcrypt sozinho
@@ -65,10 +81,10 @@ router.get('/propostas/:id/pdf', autenticar, validarId, propCtrl.gerarPdf);
 router.post('/propostas/:id/enviar-email', autenticar, validarId, propCtrl.enviarEmail);
 router.get('/propostas/:id', autenticar, validarId, propCtrl.buscarUma);
 router.post('/propostas', autenticar, propCtrl.criar);
-router.put('/propostas/:id', autenticar, validarId, propCtrl.atualizar);
+router.put('/propostas/:id', autenticar, validarId, posseProposta, propCtrl.atualizar);
 router.post('/propostas/:id/duplicar', autenticar, validarId, propCtrl.duplicar);
-router.patch('/propostas/:id/status', autenticar, validarId, propCtrl.atualizarStatus);
-router.delete('/propostas/:id', autenticar, validarId, propCtrl.remover);
+router.patch('/propostas/:id/status', autenticar, validarId, posseProposta, propCtrl.atualizarStatus);
+router.delete('/propostas/:id', autenticar, validarId, posseProposta, propCtrl.remover);
 
 // ── INTEGRAÇÕES ───────────────────────────────────────────────────────
 router.get('/integracoes/email/status', autenticar, integCtrl.statusEmail);
@@ -97,26 +113,26 @@ router.get('/relatorios/propostas/csv', autenticar, relCtrl.exportarCsv);
 router.get('/relatorios/propostas/pdf', autenticar, relCtrl.exportarPdf);
 
 // ── FINANCEIRO ────────────────────────────────────────────────────────
-router.get('/financeiro/movimentos', autenticar, finCtrl.listar);
-router.get('/financeiro/movimentos/csv', autenticar, finCtrl.exportarCsv);
-router.post('/financeiro/movimentos', autenticar, finCtrl.criar);
-router.put('/financeiro/movimentos/:id', autenticar, validarId, finCtrl.atualizar);
-router.patch('/financeiro/movimentos/:id/categorizar', autenticar, validarId, finCtrl.categorizar);
-router.delete('/financeiro/movimentos/:id', autenticar, validarId, finCtrl.remover);
-router.post('/financeiro/verificar-agora', autenticar, finCtrl.verificarAgora);
+router.get('/financeiro/movimentos', autenticar, admin, finCtrl.listar);
+router.get('/financeiro/movimentos/csv', autenticar, admin, finCtrl.exportarCsv);
+router.post('/financeiro/movimentos', autenticar, admin, finCtrl.criar);
+router.put('/financeiro/movimentos/:id', autenticar, validarId, admin, finCtrl.atualizar);
+router.patch('/financeiro/movimentos/:id/categorizar', autenticar, validarId, admin, finCtrl.categorizar);
+router.delete('/financeiro/movimentos/:id', autenticar, validarId, admin, finCtrl.remover);
+router.post('/financeiro/verificar-agora', autenticar, admin, finCtrl.verificarAgora);
 
 // ── PRESTADORES DE SERVIÇOS ──────────────────────────────────────────────
-router.get('/prestadores', autenticar, prestCtrl.listar);
-router.post('/prestadores', autenticar, prestCtrl.criar);
-router.put('/prestadores/:id', autenticar, validarId, prestCtrl.atualizar);
-router.delete('/prestadores/:id', autenticar, validarId, prestCtrl.remover);
+router.get('/prestadores', autenticar, admin, prestCtrl.listar);
+router.post('/prestadores', autenticar, admin, prestCtrl.criar);
+router.put('/prestadores/:id', autenticar, validarId, admin, prestCtrl.atualizar);
+router.delete('/prestadores/:id', autenticar, validarId, admin, prestCtrl.remover);
 
 // ── CONTRATOS DE PRESTAÇÃO DE SERVIÇO ────────────────────────────────────
-router.get('/contratos', autenticar, contrCtrl.listar);
-router.post('/contratos', autenticar, contrCtrl.criar);
-router.put('/contratos/:id', autenticar, validarId, contrCtrl.atualizar);
-router.get('/contratos/:id/pdf', autenticar, validarId, contrCtrl.gerarPdf);
-router.delete('/contratos/:id', autenticar, validarId, contrCtrl.remover);
+router.get('/contratos', autenticar, admin, contrCtrl.listar);
+router.post('/contratos', autenticar, admin, contrCtrl.criar);
+router.put('/contratos/:id', autenticar, validarId, admin, posseContrato, contrCtrl.atualizar);
+router.get('/contratos/:id/pdf', autenticar, validarId, admin, contrCtrl.gerarPdf);
+router.delete('/contratos/:id', autenticar, validarId, admin, posseContrato, contrCtrl.remover);
 
 // ── ANÁLISE DE PROJETO (compatibilização) ────────────────────────────────
 // Caminhos específicos antes do /:id genérico (mesma regra usada em /propostas)
@@ -124,8 +140,8 @@ router.get('/projetos/analises', autenticar, projCtrl.listar);
 router.post('/projetos/analisar', autenticar, upload.array('arquivos', 10), projCtrl.analisar);
 router.get('/projetos/analises/:id/relatorio', autenticar, validarId, projCtrl.gerarRelatorio);
 router.get('/projetos/analises/:id', autenticar, validarId, projCtrl.buscarUma);
-router.put('/projetos/analises/:id', autenticar, validarId, projCtrl.atualizar);
-router.delete('/projetos/analises/:id', autenticar, validarId, projCtrl.remover);
+router.put('/projetos/analises/:id', autenticar, validarId, posseAnalise, projCtrl.atualizar);
+router.delete('/projetos/analises/:id', autenticar, validarId, posseAnalise, projCtrl.remover);
 
 // ── PESQUISA DE MERCADO (Gemini + busca real) ────────────────────────────
 router.post('/pesquisa-mercado', autenticar, pesqCtrl.pesquisar);

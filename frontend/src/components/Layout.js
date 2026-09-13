@@ -9,17 +9,23 @@ const NAV = [
   { to: '/clientes', label: 'Clientes' },
   { to: '/historico', label: 'Histórico' },
   { to: '/relatorios', label: 'Relatórios' },
-  { to: '/financeiro', label: 'Financeiro' },
-  { to: '/prestadores', label: 'Prestadores' },
-  { to: '/contratos', label: 'Contratos' },
   { to: '/analise-projeto', label: 'Análise de Projeto' },
 ];
 
-const NAV_ADMIN = { to: '/usuarios', label: 'Usuários' };
+// Áreas restritas a administradores. Financeiro, Prestadores e Contratos
+// expõem faturamento, pagamentos e dados de terceiros — a API agora exige
+// admin nessas rotas, então o menu precisa acompanhar, senão o usuário comum
+// veria itens que abrem numa tela de erro.
+const NAV_ADMIN = [
+  { to: '/financeiro', label: 'Financeiro' },
+  { to: '/prestadores', label: 'Prestadores' },
+  { to: '/contratos', label: 'Contratos' },
+  { to: '/usuarios', label: 'Usuários' },
+];
 
 export default function Layout() {
   const { usuario, sair } = useAuth();
-  const navegacao = usuario?.role === 'admin' ? [...NAV, NAV_ADMIN] : NAV;
+  const navegacao = usuario?.role === 'admin' ? [...NAV, ...NAV_ADMIN] : NAV;
   const navigate = useNavigate();
 
   function handleSair() {
