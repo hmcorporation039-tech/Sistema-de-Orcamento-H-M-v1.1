@@ -76,6 +76,19 @@ function somarPorDisciplina(analises, disciplina, obterValor) {
     .reduce((s, a) => s + obterValor(a), 0);
 }
 
+// Monta o detalhe por arquivo de um tipo de ponto codificado (câmera, rede ou
+// antena) — mesma tabela que já existia só para câmeras, agora reutilizada
+// pros três tipos, pra não deixar rede/antena com só um número solto no
+// relatório sem dizer quais códigos foram encontrados nem em qual arquivo.
+// O prefixo do código (CAM/R/A) não entra aqui — quem exibe já sabe qual é
+// pelo tipo de ponto que está montando (ver relatorioCompatibilizacaoTemplate
+// e a tela de Análise de Projeto).
+function detalhePorArquivo(analises, disciplina, obterDados) {
+  return analises
+    .filter(a => a.disciplinas.includes(disciplina) && obterDados(a).ocorrencias > 0)
+    .map(a => ({ arquivo: a.arquivo, ...obterDados(a) }));
+}
+
 // Gera os "achados" (pendências/observações) de compatibilização a partir do
 // que foi possível detectar automaticamente nos arquivos analisados. Cada
 // achado é só uma observação objetiva — a decisão final é sempre do usuário.
@@ -441,11 +454,11 @@ async function analisarProjetoCompleto(arquivos) {
     ambientes,
     cameras: {
       total: totalCameras,
-      detalhePorArquivo: analises.filter(a => a.disciplinas.includes('cftv') && a.cameras.ocorrencias > 0).map(a => ({ arquivo: a.arquivo, ...a.cameras })),
+      detalhePorArquivo: detalhePorArquivo(analises, 'cftv', a => a.cameras),
     },
     pontosRedeAntena: {
-      rede: { total: totalRede },
-      antena: { total: totalAntena },
+      rede: { total: totalRede, detalhePorArquivo: detalhePorArquivo(analises, 'rede', a => a.pontosRedeAntena.rede) },
+      antena: { total: totalAntena, detalhePorArquivo: detalhePorArquivo(analises, 'antena', a => a.pontosRedeAntena.antena) },
     },
     tabelaCabos,
     achados,

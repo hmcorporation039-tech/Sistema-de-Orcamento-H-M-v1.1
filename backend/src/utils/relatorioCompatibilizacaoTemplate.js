@@ -49,15 +49,44 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
     </tr>
   `).join('');
 
-  const linhasCameras = (cameras.detalhePorArquivo || []).map(c => `
-    <tr>
-      <td>${escapeHtml(c.arquivo)}</td>
-      <td class="num">${c.ocorrencias}</td>
-      <td class="num">${c.total}</td>
-      <td>${c.repetidas.length ? c.repetidas.map(n => 'CAM' + n).join(', ') : '—'}</td>
-      <td>${c.faltando.length ? c.faltando.map(n => 'CAM' + n).join(', ') : '—'}</td>
-    </tr>
-  `).join('');
+  // Tabela de detalhe por arquivo, usada igualmente para os três tipos de
+  // ponto codificado (câmera CAMx, rede Rx, antena/TV Ax) — antes só câmeras
+  // tinham essa tabela; rede e antena ficavam só com um número total, sem
+  // dizer quais códigos foram encontrados nem em qual arquivo. O prefixo vem
+  // por parâmetro (não de dentro do dado salvo) porque análises salvas antes
+  // desta correção não tinham esse campo — ler `d.prefixo` delas imprimiria
+  // "undefinedN" nos códigos.
+  function linhasDetalhePorArquivo(detalhe, prefixo) {
+    return (detalhe || []).map(d => `
+      <tr>
+        <td>${escapeHtml(d.arquivo)}</td>
+        <td class="num">${d.ocorrencias}</td>
+        <td class="num">${d.total}</td>
+        <td class="obs">${d.unicas.map(n => prefixo + n).join(', ')}</td>
+        <td>${d.repetidas.length ? d.repetidas.map(n => prefixo + n).join(', ') : '—'}</td>
+        <td>${d.faltando.length ? d.faltando.map(n => prefixo + n).join(', ') : '—'}</td>
+      </tr>
+    `).join('');
+  }
+
+  // Uma seção completa de tipo de ponto (título, legenda explicando o código
+  // e o que cada coluna quer dizer, e a tabela por arquivo ou o aviso de que
+  // nada foi encontrado).
+  function secaoTipoDePonto(titulo, prefixo, exemplo, detalhe) {
+    return `
+    <h2>${escapeHtml(titulo)} — código ${escapeHtml(prefixo)}nº (ex.: ${escapeHtml(prefixo + exemplo)})</h2>
+    ${(detalhe || []).length > 0 ? `
+    <p class="legenda">
+      Cada ponto deste tipo aparece na planta com um código individual (${escapeHtml(prefixo)}1, ${escapeHtml(prefixo)}2...).
+      <b>Ocorrências</b> = quantas vezes o código aparece no texto do PDF; <b>pontos únicos</b> = quantidade real de
+      pontos físicos distintos — é esse o número usado no orçamento. <b>Repetidos</b> e <b>faltando na numeração</b>
+      ajudam a conferir a planta antes de fechar.
+    </p>
+    <table>
+      <thead><tr><th>Arquivo</th><th class="num">Ocorrências</th><th class="num">Pontos únicos</th><th>Códigos encontrados</th><th>Repetidos</th><th>Faltando na numeração</th></tr></thead>
+      <tbody>${linhasDetalhePorArquivo(detalhe, prefixo)}</tbody>
+    </table>` : `<div class="vazio">Nenhum código ${escapeHtml(prefixo)}nº identificado nos arquivos analisados.</div>`}`;
+  }
 
   const linhasCabos = tabelaCabos.map(c => `
     <tr><td class="num">${escapeHtml(c.sigla)}</td><td>${escapeHtml(c.descricao)}</td></tr>
@@ -112,6 +141,7 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
   tr.pronto td:nth-child(4) { color: #3a8a4a; font-weight: 700; }
   .vazio { padding: 10px 8px; color: #999; font-size: 10px; font-style: italic; }
   .aviso { background: #fff8e6; border: 1px solid #e8d29a; border-radius: 6px; padding: 10px 12px; font-size: 10px; color: #7a5c00; margin-bottom: 14px; }
+  .legenda { font-size: 9.5px; color: #666; margin-bottom: 8px; line-height: 1.5; }
 </style>
 </head>
 <body>
@@ -127,14 +157,19 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
       <div class="label">Data do relatório</div>
       <div class="valor">${formatarData()}</div>
     </div>
+    ${disciplinas.includes('cftv') ? `
+    <div class="info-item">
+      <div class="label">Câmeras (código CAMnº)</div>
+      <div class="valor">${escapeHtml(cameras.total ?? 0)}</div>
+    </div>` : ''}
     ${disciplinas.includes('rede') ? `
     <div class="info-item">
-      <div class="label">Pontos de rede</div>
+      <div class="label">Pontos de rede (código Rnº)</div>
       <div class="valor">${escapeHtml(pontosRedeAntena.rede?.total ?? 0)}</div>
     </div>` : ''}
     ${disciplinas.includes('antena') ? `
     <div class="info-item">
-      <div class="label">Pontos de TV/antena</div>
+      <div class="label">Pontos de TV/antena (código Anº)</div>
       <div class="valor">${escapeHtml(pontosRedeAntena.antena?.total ?? 0)}</div>
     </div>` : ''}
     <div class="info-item" style="grid-column: 1 / -1;">
@@ -151,20 +186,23 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
     na seção de Compatibilização antes de fechar o orçamento.
   </div>
 
-  <h2>Pontos por Ambiente (${ambientes.length})</h2>
+  <h2>Ambientes Identificados (${ambientes.length})</h2>
+  <p class="legenda">
+    Espaços físicos (salas/setores) citados no projeto, com a área de cada um — não confundir com os
+    pontos de câmera/rede/antena listados a seguir, que são outra coisa.
+  </p>
   ${ambientes.length > 0 ? `
   <table>
     <thead><tr><th>Ambiente</th><th class="num">Área</th></tr></thead>
     <tbody>${linhasAmbientes}</tbody>
   </table>` : `<div class="vazio">Nenhum ambiente identificado.</div>`}
 
-  ${disciplinas.includes('cftv') ? `
-  <h2>CFTV — Câmeras (total: ${escapeHtml(cameras.total || 0)})</h2>
-  ${(cameras.detalhePorArquivo || []).length > 0 ? `
-  <table>
-    <thead><tr><th>Arquivo</th><th class="num">Ocorrências</th><th class="num">Códigos únicos</th><th>Repetidos</th><th>Faltando na sequência</th></tr></thead>
-    <tbody>${linhasCameras}</tbody>
-  </table>` : `<div class="vazio">Nenhuma câmera identificada nos arquivos.</div>`}` : ''}
+  ${(disciplinas.includes('cftv') || disciplinas.includes('rede') || disciplinas.includes('antena')) ? `
+  <h2 style="margin-top:26px; border-bottom:none; padding-bottom:0;">Pontos Identificados no Projeto</h2>
+  ${disciplinas.includes('cftv') ? secaoTipoDePonto('Câmeras', 'CAM', '1', cameras.detalhePorArquivo) : ''}
+  ${disciplinas.includes('rede') ? secaoTipoDePonto('Pontos de rede', 'R', '1', pontosRedeAntena.rede?.detalhePorArquivo) : ''}
+  ${disciplinas.includes('antena') ? secaoTipoDePonto('Pontos de TV/antena', 'A', '1', pontosRedeAntena.antena?.detalhePorArquivo) : ''}
+  ` : ''}
 
   <h2>Tabela de Cabos (legenda do projeto)</h2>
   ${tabelaCabos.length > 0 ? `

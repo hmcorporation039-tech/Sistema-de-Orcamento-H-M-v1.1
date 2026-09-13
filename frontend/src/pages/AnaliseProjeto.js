@@ -284,11 +284,14 @@ export default function AnaliseProjeto() {
     }
   }
 
+  // O rótulo traz o prefixo do código (CAMx/Rx/Ax) pra nunca deixar ambíguo
+  // qual tipo de ponto está sendo contado — "Ambientes" (salas/áreas, sem
+  // relação nenhuma com esses códigos) aparece à parte, com o mesmo cuidado.
   const tilesResumo = analise ? [
-    { label: 'Ambientes', valor: analise.ambientes.length },
-    ...(analise.disciplinas?.includes('cftv') ? [{ label: 'Câmeras', valor: analise.cameras.total }] : []),
-    ...(analise.disciplinas?.includes('rede') ? [{ label: 'Pontos de rede', valor: analise.pontosRedeAntena?.rede?.total ?? 0 }] : []),
-    ...(analise.disciplinas?.includes('antena') ? [{ label: 'Pontos de TV/antena', valor: analise.pontosRedeAntena?.antena?.total ?? 0 }] : []),
+    { label: 'Ambientes (salas/áreas)', valor: analise.ambientes.length },
+    ...(analise.disciplinas?.includes('cftv') ? [{ label: 'Câmeras — código CAMnº', valor: analise.cameras.total }] : []),
+    ...(analise.disciplinas?.includes('rede') ? [{ label: 'Pontos de rede — código Rnº', valor: analise.pontosRedeAntena?.rede?.total ?? 0 }] : []),
+    ...(analise.disciplinas?.includes('antena') ? [{ label: 'Pontos de TV/antena — código Anº', valor: analise.pontosRedeAntena?.antena?.total ?? 0 }] : []),
     { label: 'Pendências', valor: analise.achados.length },
   ] : [];
 
@@ -412,6 +415,26 @@ export default function AnaliseProjeto() {
               {tilesResumo.map(t => <Info key={t.label} label={t.label} valor={t.valor} />)}
             </div>
           </div>
+
+          {(analise.disciplinas?.includes('cftv') || analise.disciplinas?.includes('rede') || analise.disciplinas?.includes('antena')) && (
+            <div style={card}>
+              <h3 style={tituloSecao}>Pontos Identificados no Projeto</h3>
+              <p style={{ fontSize: 12, color: '#666', marginBottom: 14, lineHeight: 1.6 }}>
+                Cada ponto abaixo é identificado na planta por um código individual. "Ocorrências" é quantas vezes o
+                código aparece no texto do PDF; "Pontos únicos" é a quantidade real de pontos físicos distintos — é
+                esse o número usado no orçamento.
+              </p>
+              {analise.disciplinas.includes('cftv') && (
+                <TabelaPontos titulo="Câmeras" prefixo="CAM" detalhe={analise.cameras?.detalhePorArquivo} />
+              )}
+              {analise.disciplinas.includes('rede') && (
+                <TabelaPontos titulo="Pontos de rede" prefixo="R" detalhe={analise.pontosRedeAntena?.rede?.detalhePorArquivo} />
+              )}
+              {analise.disciplinas.includes('antena') && (
+                <TabelaPontos titulo="Pontos de TV/antena" prefixo="A" detalhe={analise.pontosRedeAntena?.antena?.detalhePorArquivo} />
+              )}
+            </div>
+          )}
 
           {analise.achados.length > 0 && (
             <div style={card}>
@@ -581,6 +604,42 @@ function TabelaMateriais({ itens, onAtualizar, onRemover, pesquisas, onPesquisar
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// Tabela de um tipo de ponto codificado (câmera/rede/antena) — mostra, por
+// arquivo, quantas ocorrências do código apareceram, quantos pontos únicos
+// isso representa, a lista dos próprios códigos encontrados e os avisos de
+// duplicidade/numeração com falha. Sem essa lista, o número sozinho ("77")
+// não dizia se era câmera, rede ou antena, nem dava pra conferir contra a
+// planta quais códigos entraram na conta.
+function TabelaPontos({ titulo, prefixo, detalhe }) {
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#c9a227', marginBottom: 8 }}>
+        {titulo} — código {prefixo}nº (ex.: {prefixo}1, {prefixo}2...)
+      </div>
+      {!detalhe || detalhe.length === 0 ? (
+        <p style={{ fontSize: 12, color: '#666', fontStyle: 'italic' }}>Nenhum código {prefixo}nº identificado nos arquivos analisados.</p>
+      ) : (
+        detalhe.map((d, i) => (
+          <div key={i} style={{ padding: '10px 0', borderTop: i > 0 ? '1px solid #1e1e1e' : 'none', fontSize: 13 }}>
+            <div style={{ color: '#ccc', marginBottom: 4 }}>
+              <b>{d.arquivo}</b> — {d.ocorrencias} ocorrências, {d.total} pontos únicos
+            </div>
+            <div style={{ color: '#777', fontSize: 12, marginBottom: 4 }}>
+              Códigos: {d.unicas.map(n => prefixo + n).join(', ')}
+            </div>
+            {d.repetidas.length > 0 && (
+              <div style={{ color: '#c9a227', fontSize: 12 }}>Repetidos: {d.repetidas.map(n => prefixo + n).join(', ')}</div>
+            )}
+            {d.faltando.length > 0 && (
+              <div style={{ color: '#c9a227', fontSize: 12 }}>Faltando na numeração: {d.faltando.map(n => prefixo + n).join(', ')}</div>
+            )}
+          </div>
+        ))
+      )}
     </div>
   );
 }
