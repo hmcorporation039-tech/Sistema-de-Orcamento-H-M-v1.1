@@ -28,8 +28,8 @@ async function criar(req, res) {
   try {
     const senhaHash = await bcrypt.hash(senha, 10);
     const result = await pool.query(
-      `INSERT INTO usuarios (nome, email, senha, role)
-       VALUES ($1,$2,$3,$4) RETURNING id, nome, email, role, ativo, criado_em`,
+      `INSERT INTO usuarios (nome, email, senha, role, senha_provisoria)
+       VALUES ($1,$2,$3,$4, true) RETURNING id, nome, email, role, ativo, criado_em`,
       [nome, email, senhaHash, role === 'admin' ? 'admin' : 'user']
     );
     res.status(201).json(result.rows[0]);
@@ -105,7 +105,7 @@ async function redefinirSenha(req, res) {
   try {
     const senhaHash = await bcrypt.hash(novaSenha, 10);
     const result = await pool.query(
-      'UPDATE usuarios SET senha=$1 WHERE id=$2 RETURNING id',
+      'UPDATE usuarios SET senha=$1, senha_provisoria=true WHERE id=$2 RETURNING id',
       [senhaHash, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Usuário não encontrado' });

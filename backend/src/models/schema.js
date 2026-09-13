@@ -328,6 +328,11 @@ async function criarTabelas() {
       console.log('=============================================================\n');
     }
 
+    // Marca que a senha atual é provisória (criada pelo admin ou gerada no
+    // primeiro acesso). Enquanto true, o sistema exige a troca logo após o
+    // login — quem recebe a senha de outra pessoa nunca continua usando ela.
+    await client.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS senha_provisoria BOOLEAN DEFAULT false`);
+
     // Índices nas chaves estrangeiras e colunas de filtro/ordenação. Nenhuma
     // tabela tinha índice além da PK: hoje as consultas respondem em poucos
     // milissegundos, mas financeiro_movimentos cresce 3x por dia pela

@@ -31,8 +31,19 @@ export function AuthProvider({ children }) {
     setUsuario(null);
   }
 
+  // Chamado quando a pessoa define a própria senha: tira a marca de provisória
+  // sem precisar deslogar e logar de novo.
+  function senhaDefinida() {
+    setUsuario(atual => {
+      if (!atual) return atual;
+      const atualizado = { ...atual, senhaProvisoria: false };
+      localStorage.setItem('hm_usuario', JSON.stringify(atualizado));
+      return atualizado;
+    });
+  }
+
   return (
-    <AuthContext.Provider value={{ usuario, entrar, sair, carregando }}>
+    <AuthContext.Provider value={{ usuario, entrar, sair, carregando, senhaDefinida }}>
       {children}
     </AuthContext.Provider>
   );

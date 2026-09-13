@@ -46,6 +46,9 @@ async function login(req, res) {
         nome: usuario.nome,
         email: usuario.email,
         role: usuario.role,
+        // Quando true, o frontend abre a tela de troca de senha logo após o
+        // login e só libera o sistema depois que a pessoa definir a sua.
+        senhaProvisoria: usuario.senha_provisoria === true,
       }
     });
 
@@ -62,8 +65,17 @@ async function alterarSenha(req, res) {
   if (!senhaAtual || !novaSenha) {
     return res.status(400).json({ erro: 'Preencha todos os campos' });
   }
-  if (novaSenha.length < 6) {
-    return res.status(400).json({ erro: 'A nova senha deve ter ao menos 6 caracteres' });
+  if (novaSenha.length < 8) {
+    return res.status(400).json({ erro: 'A nova senha deve ter ao menos 8 caracteres' });
+  }
+  if (novaSenha === senhaAtual) {
+    return res.status(400).json({ erro: 'A nova senha precisa ser diferente da atual' });
+  }
+  // Barra as senhas óbvias — não adianta exigir troca e a pessoa colocar
+  // "admin123" de novo.
+  const SENHAS_PROIBIDAS = ['admin123', 'senha123', '12345678', 'password', 'hmengenharia'];
+  if (SENHAS_PROIBIDAS.includes(novaSenha.toLowerCase())) {
+    return res.status(400).json({ erro: 'Essa senha é muito comum. Escolha outra.' });
   }
 
   try {
@@ -82,7 +94,12 @@ async function alterarSenha(req, res) {
     }
 
     const hash = await bcrypt.hash(novaSenha, 10);
-    await pool.query('UPDATE usuarios SET senha = $1 WHERE id = $2', [hash, userId]);
+    // Ao definir a própria senha, ela deixa de ser provisória e o aviso de
+    // troca obrigatória some.
+    await pool.query(
+      'UPDATE usuarios SET senha = $1, senha_provisoria = false WHERE id = $2',
+      [hash, userId]
+    );
 
     res.json({ mensagem: 'Senha alterada com sucesso' });
   } catch (err) {

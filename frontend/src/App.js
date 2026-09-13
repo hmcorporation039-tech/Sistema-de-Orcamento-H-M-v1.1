@@ -3,6 +3,7 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 
 import Login from './pages/Login';
+import DefinirSenha from './pages/DefinirSenha';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Orcamento from './pages/Orcamento';
@@ -20,6 +21,10 @@ function RotaProtegida({ children }) {
   const { usuario, carregando } = useAuth();
   if (carregando) return <div className="loading">Carregando...</div>;
   if (!usuario) return <Navigate to="/login" replace />;
+  // Senha provisória (conta nova ou senha redefinida por um administrador):
+  // o sistema só abre depois que a pessoa definir a própria senha. É o que
+  // impede uma senha entregue por terceiro de continuar valendo.
+  if (usuario.senhaProvisoria) return <DefinirSenha />;
   return children;
 }
 
@@ -27,6 +32,7 @@ function RotaAdmin({ children }) {
   const { usuario, carregando } = useAuth();
   if (carregando) return <div className="loading">Carregando...</div>;
   if (!usuario) return <Navigate to="/login" replace />;
+  if (usuario.senhaProvisoria) return <DefinirSenha />;
   if (usuario.role !== 'admin') return <Navigate to="/dashboard" replace />;
   return children;
 }
