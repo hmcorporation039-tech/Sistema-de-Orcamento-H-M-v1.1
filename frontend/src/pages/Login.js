@@ -75,9 +75,10 @@ export default function Login() {
             </label>
             <input
               type="email"
+              autoComplete="off"
               value={email}
               onChange={e => { setEmail(e.target.value); setErro(''); }}
-              placeholder="admin@hmengenharia.com"
+              placeholder="seu@email.com"
               style={{
                 width: '100%', padding: '10px 12px', background: '#0b0b0b',
                 border: '1px solid #2a2a2a', borderRadius: 6, color: '#e8e0cc',
@@ -92,6 +93,7 @@ export default function Login() {
             </label>
             <input
               type="password"
+              autoComplete="off"
               value={senha}
               onChange={e => { setSenha(e.target.value); setErro(''); }}
               placeholder="••••••••"
