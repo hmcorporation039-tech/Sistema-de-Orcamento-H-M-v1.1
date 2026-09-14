@@ -97,12 +97,19 @@ export default function Orcamento() {
         imposto_servico: Number(p.imposto_servico) || 0,
       });
       setSecoes((p.secoes || []).map(s => ({ id: s.id, nome: s.nome })));
-      setItens((p.itens || []).map(it => ({
+      // Reagrupa por subgrupo já ao carregar — sem isso, uma proposta salva
+      // antes dessa correção (ou com itens lançados fora de ordem) só ficava
+      // reorganizada depois que alguém mexesse manualmente num subgrupo.
+      let itensCarregados = (p.itens || []).map(it => ({
         id: gerarId(), sid: it.secao_id, material_id: it.material_id,
         descricao: it.descricao, quantidade: Number(it.quantidade), unidade: it.unidade,
         valor_unitario: Number(it.valor_unitario), ncm: it.ncm || '', codigo: it.codigo || '',
         subgrupo: it.subgrupo || '', status: it.status || 'confirmado'
-      })));
+      }));
+      for (const sid of new Set(itensCarregados.map(it => it.sid))) {
+        itensCarregados = reordenarPorSubgrupo(itensCarregados, sid);
+      }
+      setItens(itensCarregados);
       setPropostaSalva(null);
     }).catch(() => {
       toast.error('Erro ao carregar proposta para edição');
@@ -176,20 +183,32 @@ export default function Orcamento() {
     return Array.from(new Set([...SUBGRUPOS_PADRAO, ...usados]));
   }
 
-  // Agrupa os itens de uma seção por subgrupo, na ordem em que aparecem (não reordena),
-  // emitindo um cabeçalho toda vez que o subgrupo muda (igual ao "Bloco X" do PDF de referência).
+  // Agrupa os itens de uma seção por subgrupo, na ordem em que aparecem (os
+  // itens já chegam reordenados por reordenarPorSubgrupo — isso só monta os
+  // cabeçalhos e o subtotal de cada grupo), igual ao "Bloco X" do PDF de
+  // referência. Fecha o grupo anterior com um subtotal (soma dos totais dos
+  // itens dele) sempre que o subgrupo muda ou a lista acaba — sem subtotal
+  // pros itens sem subgrupo (não formam um "bloco" de verdade).
   function itensAgrupados(sid) {
     const lista = itens.filter(it => it.sid === sid);
     const linhas = [];
     let ultimoSubgrupo = null;
+    let somaGrupo = 0;
+    const fecharGrupo = () => {
+      if (ultimoSubgrupo) linhas.push({ tipo: 'subtotal', nome: ultimoSubgrupo, soma: somaGrupo, key: `sub_${linhas.length}` });
+    };
     for (const it of lista) {
       const sg = (it.subgrupo || '').trim() || null;
       if (sg !== ultimoSubgrupo) {
+        fecharGrupo();
         if (sg) linhas.push({ tipo: 'cabecalho', nome: sg, key: `cab_${it.id}` });
         ultimoSubgrupo = sg;
+        somaGrupo = 0;
       }
+      somaGrupo += (Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0);
       linhas.push({ tipo: 'item', item: it });
     }
+    fecharGrupo();
     return linhas;
   }
 
@@ -465,6 +484,13 @@ export default function Orcamento() {
                 return (
                   <div key={linha.key} style={{ fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '.5px', borderTop: '1px solid #222', paddingTop: 8, marginTop: 4, marginBottom: 6 }}>
                     {linha.nome}
+                  </div>
+                );
+              }
+              if (linha.tipo === 'subtotal') {
+                return (
+                  <div key={linha.key} style={{ textAlign: 'right', fontSize: 11, color: '#777', paddingRight: 4, marginBottom: 10 }}>
+                    Subtotal {linha.nome}: <b style={{ color: '#c9a227' }}>{formatarMoeda(linha.soma)}</b>
                   </div>
                 );
               }
