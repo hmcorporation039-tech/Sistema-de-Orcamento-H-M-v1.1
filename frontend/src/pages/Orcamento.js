@@ -6,6 +6,7 @@ import { getClientes, getMateriais, getProximoNumero, criarProposta, atualizarPr
 import api from '../services/api';
 import { formatarMoeda } from '../utils/format';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
+import CampoMoeda from '../components/CampoMoeda';
 
 let contador = 0;
 const gerarId = () => `tmp_${Date.now()}_${contador++}`;
@@ -402,7 +403,7 @@ export default function Orcamento() {
         const colunas = maoDeObra
           ? '0.9fr 1.2fr 3.1fr 0.7fr 0.7fr 0.9fr 0.9fr 1fr 32px'
           : '0.9fr 1.2fr 2.4fr 0.9fr 0.7fr 0.7fr 0.9fr 0.9fr 1fr 32px';
-        const datalistId = `subgrupos-${sec.id}`;
+        const opcoesSubgrupo = subgruposDaSecao(sec.id);
 
         return (
           <div key={sec.id} style={card}>
@@ -430,10 +431,6 @@ export default function Orcamento() {
               </div>
             )}
 
-            <datalist id={datalistId}>
-              {subgruposDaSecao(sec.id).map(sg => <option key={sg} value={sg} />)}
-            </datalist>
-
             {itensAgrupados(sec.id).map(linha => {
               if (linha.tipo === 'cabecalho') {
                 return (
@@ -453,12 +450,24 @@ export default function Orcamento() {
                     borderRadius: 4, padding: aCotar ? '4px 4px' : 0,
                   }}
                 >
-                  <input
-                    list={datalistId}
-                    value={it.subgrupo}
-                    onChange={e => atualizarItem(it.id, 'subgrupo', e.target.value)}
-                    placeholder="Subgrupo (opc.)"
-                  />
+                  <select
+                    value={it.subgrupo || ''}
+                    onChange={e => {
+                      if (e.target.value === '__novo__') {
+                        const novo = window.prompt('Nome do novo subgrupo:', it.subgrupo || '');
+                        if (novo !== null) atualizarItem(it.id, 'subgrupo', novo.trim());
+                        return;
+                      }
+                      atualizarItem(it.id, 'subgrupo', e.target.value);
+                    }}
+                  >
+                    <option value="">(sem subgrupo)</option>
+                    {opcoesSubgrupo.map(sg => <option key={sg} value={sg}>{sg}</option>)}
+                    {it.subgrupo && !opcoesSubgrupo.includes(it.subgrupo) && (
+                      <option value={it.subgrupo}>{it.subgrupo}</option>
+                    )}
+                    <option value="__novo__">+ novo subgrupo...</option>
+                  </select>
                   {maoDeObra ? (
                     <select value="" onChange={e => aplicarCategoriaMaoDeObra(it.id, e.target.value)}>
                       <option value="">+ categoria</option>
@@ -476,7 +485,7 @@ export default function Orcamento() {
                   )}
                   <input type="number" step="1" min="0" value={it.quantidade} onChange={e => atualizarItem(it.id, 'quantidade', e.target.value)} />
                   <input value={it.unidade} onChange={e => atualizarItem(it.id, 'unidade', e.target.value)} />
-                  <input type="number" step="0.01" min="0" value={it.valor_unitario} onChange={e => atualizarItem(it.id, 'valor_unitario', e.target.value)} />
+                  <CampoMoeda value={it.valor_unitario} onChange={v => atualizarItem(it.id, 'valor_unitario', v)} />
                   <span style={{ fontSize: 12, color: '#ccc', textAlign: 'right', paddingRight: 4 }}>
                     {formatarMoeda((Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0))}
                   </span>
