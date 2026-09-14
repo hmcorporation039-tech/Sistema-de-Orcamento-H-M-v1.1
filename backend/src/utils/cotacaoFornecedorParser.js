@@ -76,13 +76,21 @@ function extrairModeloAdmBloco(linhas) {
 // Segunda variação do mesmo sistema "ADM" (usada pela SOL Atacadista): uma
 // linha de tabela por item, agrupada por "ambiente" (ex.: REDES, ALARME,
 // CFTV — cabeçalhos que só servem pra organizar visualmente, ignorados aqui).
-// A extração de texto do PDF gruda o código do produto direto na descrição
-// (sem espaço), então a linha fica assim:
 //   1 805CABO U/UTP CAT 5E 24 AWGX4P AZUL (CX 305MT) CX 3,000 9,000 816,4100 2.449,23 85444900
 //   |item| |código| |descrição....................| |un| |qtd| |peso| |preço unit.| |total| |ncm|
 // O código vem com ponto de milhar (ex. "7.425"), por isso a captura inclui
 // grupos "(?:\.\d+)*" — sem isso, "7.425RACK..." vira código "7" + lixo.
-const RE_LINHA_GRADE_ADM = /^\d+\s+(\d+(?:\.\d+)*)([^\s\d].*?)\s+([A-Za-zÀ-ÿ]{1,4})\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+(\d{6,10})\s*$/;
+//
+// A cola entre campos (código-descrição, total-NCM) varia de orçamento pra
+// orçamento — confirmado comparando duas cotações reais da mesma SOL
+// Atacadista em datas diferentes: numa, código e descrição vêm colados
+// ("805CABO...") e total/NCM vêm com espaço ("2.449,23 85444900"); noutra,
+// código e descrição vêm com espaço ("7.425 RACK...") e total/NCM colados
+// sem espaço ("1.810,6694031000"). Por isso todo separador aqui é opcional
+// (\s*, não \s+) e o NCM fica fixo em 8 dígitos (padrão oficial do NCM
+// brasileiro) — sem isso, "1.810,6694031000" quebraria errado entre total e
+// NCM (o valor "colado" é ambíguo sem saber que o NCM tem sempre 8 dígitos).
+const RE_LINHA_GRADE_ADM = /^(?:\([^)]{0,3}\)\s*)?\d+\s+(\d+(?:\.\d+)*)\s*([^\s\d].*?)\s+([A-Za-zÀ-ÿ]{1,4})\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s*(\d{8})\s*$/;
 
 function extrairModeloAdmGrade(linhas) {
   const itens = [];
