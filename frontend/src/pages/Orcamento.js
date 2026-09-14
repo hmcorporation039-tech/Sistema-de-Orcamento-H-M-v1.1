@@ -193,8 +193,37 @@ export default function Orcamento() {
     return linhas;
   }
 
+  // Reagrupa os itens de UMA seção por subgrupo (mantendo as outras seções
+  // exatamente onde estavam) — sem isso, mudar o subgrupo de um item só
+  // trocava o rótulo dele, mas a posição na lista continuava a mesma, então
+  // ele não "se juntava" visualmente aos outros itens do mesmo subgrupo
+  // (itensAgrupados só detecta troca entre vizinhos, não reordena sozinho).
+  // Ordena pela primeira vez que cada subgrupo aparece na lista atual — o
+  // sort é estável, então a ordem relativa dentro de cada subgrupo não muda.
+  function reordenarPorSubgrupo(lista, sid) {
+    const primeiraOcorrencia = new Map();
+    let posicao = 0;
+    for (const it of lista) {
+      if (it.sid !== sid) continue;
+      const sg = (it.subgrupo || '').trim();
+      if (!primeiraOcorrencia.has(sg)) primeiraOcorrencia.set(sg, posicao);
+      posicao++;
+    }
+    const daSecao = lista.filter(it => it.sid === sid);
+    const ordenados = [...daSecao].sort((a, b) =>
+      primeiraOcorrencia.get((a.subgrupo || '').trim()) - primeiraOcorrencia.get((b.subgrupo || '').trim())
+    );
+    let cursor = 0;
+    return lista.map(it => (it.sid === sid ? ordenados[cursor++] : it));
+  }
+
   function atualizarItem(id, campo, valor) {
-    setItens(it => it.map(i => i.id === id ? { ...i, [campo]: valor } : i));
+    setItens(it => {
+      const atualizado = it.map(i => i.id === id ? { ...i, [campo]: valor } : i);
+      if (campo !== 'subgrupo') return atualizado;
+      const item = atualizado.find(i => i.id === id);
+      return reordenarPorSubgrupo(atualizado, item.sid);
+    });
   }
 
   function aplicarMaterialNoItem(id, materialId) {
