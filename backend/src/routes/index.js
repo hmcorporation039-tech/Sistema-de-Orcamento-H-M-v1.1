@@ -89,6 +89,7 @@ router.put('/materiais/:id', autenticar, validarId, matCtrl.atualizar);
 router.delete('/materiais/:id', autenticar, validarId, matCtrl.remover);
 router.post('/materiais/importar', autenticar, matCtrl.importar);
 router.post('/materiais/extrair-nota', autenticar, upload.single('arquivo'), matCtrl.extrairNota);
+router.post('/materiais/comparar', autenticar, matCtrl.comparar);
 
 // ── CLIENTES ──────────────────────────────────────────────────────────
 router.get('/clientes', autenticar, cliCtrl.listar);
@@ -175,5 +176,6 @@ router.put('/precos-mao-de-obra', autenticar, admin, precosMOCtrl.atualizar);
 
 // ── PESQUISA DE MERCADO (Gemini + busca real) ────────────────────────────
 router.post('/pesquisa-mercado', autenticar, limitePesquisaMercado, pesqCtrl.pesquisar);
+router.get('/pesquisa-mercado/historico', autenticar, pesqCtrl.historico);
 
 module.exports = router;

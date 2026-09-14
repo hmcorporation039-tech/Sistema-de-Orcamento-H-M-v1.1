@@ -195,52 +195,41 @@ fica para uma etapa futura, quando você quiser dar esse passo.
 
 ## 9. Servidor MCP (Claude Desktop)
 
-O sistema tem um servidor MCP (`backend/mcp-server.js`) que permite conversar
-com o Claude Desktop e pedir pra ele consultar o catálogo, pesquisar preço de
-mercado, ler um PDF de projeto ou consultar propostas — sem precisar abrir o
-sistema. Ele roda local (não abre porta de rede) e reaproveita a mesma lógica
-que a tela do sistema já usa; nada de decisão automática — o resultado é
-sempre pra você revisar na conversa.
+O sistema tem um servidor MCP (`backend/src/mcp/mcpServer.mjs`) que permite
+conversar com o Claude Desktop e pedir pra ele consultar o catálogo,
+pesquisar preço de mercado, ler um PDF de projeto, consultar propostas ou até
+criar um rascunho de proposta — sem precisar abrir o sistema.
 
-**Pré-requisito:** o sistema principal (seção 3) precisa já ter rodado pelo
-menos uma vez (é o que cria as tabelas do banco) — o servidor MCP só lê/grava
-nelas, não recria o schema sozinho.
+Ele roda local (não abre porta de rede) e fala com a API **exatamente como o
+navegador fala**: faz login com um usuário dedicado e chama os mesmos
+endpoints que a tela usa — não acessa o banco direto. Isso significa que toda
+ferramenta herda de graça a validação, o recálculo de totais e a trilha de
+auditoria que já protegem o resto do sistema.
 
-### 9.1 Registrar no Claude Desktop
+Passo a passo completo (criar o usuário dedicado, configurar o `.env`,
+registrar no Claude Desktop): **`backend/src/mcp/README.md`**.
 
-1. Feche o Claude Desktop se estiver aberto.
-2. Abra (ou crie) o arquivo de configuração:
-   `%APPDATA%\Claude\claude_desktop_config.json`
-3. Adicione (ou junte, se o arquivo já tiver outros servidores MCP):
-   ```json
-   {
-     "mcpServers": {
-       "hm-orcamentos": {
-         "command": "node",
-         "args": ["C:\\HM-Engenharia\\hm-eng\\backend\\mcp-server.js"]
-       }
-     }
-   }
-   ```
-4. Abra o Claude Desktop de novo. Um ícone de ferramentas (🔨) na conversa
-   confirma que o servidor conectou — clique nele pra ver as ferramentas
-   disponíveis.
-
-### 9.2 Ferramentas disponíveis
+### 9.1 Ferramentas disponíveis
 
 | Ferramenta | O que faz |
 |---|---|
 | `buscar_material` | Busca no catálogo por descrição/código/marca. |
 | `comparar_com_catalogo` | Verifica se uma descrição livre já existe no catálogo, com confiança. |
 | `pesquisar_preco_mercado` | Pesquisa preço real na web (Gemini/Claude) — usa o mesmo cache de 48h da tela. |
-| `analisar_projeto` | Lê um PDF de projeto do PC e devolve ambientes, pontos, achados e rascunho de serviços/materiais — **não salva no sistema**, é só leitura pra conversa. |
-| `listar_propostas` / `buscar_proposta` | Consulta o histórico de orçamentos já cadastrados. |
 | `historico_preco` | Preço atual no catálogo + pesquisas de mercado já feitas pra descrições parecidas. |
+| `analisar_projeto` | Envia um PDF do PC pro mesmo analisador da tela — **cria uma análise salva** (aparece em "Análises salvas"). |
+| `listar_propostas` / `buscar_proposta` | Consulta o histórico de orçamentos já cadastrados. |
+| `criar_rascunho_proposta` | **Cria uma proposta** no sistema pelo mesmo caminho da tela de Orçamento — nasce como rascunho no Histórico, pra revisão antes de fechar. |
 
-Exemplo de uso na conversa: *"Pesquise o preço de mercado de câmera dome 4MP
-e compare com o que temos no catálogo."*
+As duas marcadas em negrito gravam algo no sistema — sempre como
+rascunho/análise pra revisão humana depois, nunca finalizando ou enviando
+nada ao cliente sozinhas.
 
-### 9.3 Atalho sem código: MCP de arquivos
+Exemplo de uso na conversa: *"Analise o PDF do projeto tal, compare os itens
+com o catálogo, pesquise o que faltar e monte um rascunho de proposta para o
+cliente X."*
+
+### 9.2 Atalho sem código: MCP de arquivos
 
 O Claude Desktop também tem um servidor MCP oficial de sistema de arquivos
 (configurável em Settings → Developer, sem precisar editar JSON à mão nas

@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "mcp": "node mcp-server.js"
+    "mcp": "node src/mcp/mcpServer.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",

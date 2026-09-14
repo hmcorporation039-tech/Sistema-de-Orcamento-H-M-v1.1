@@ -2,6 +2,29 @@ const pool = require('../config/database');
 const { extrairNotaFiscal } = require('../utils/notaFiscalParser');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
 const { comTransacao } = require('../utils/transacao');
+const { compararComCatalogo } = require('../utils/compatibilizacaoAnalise');
+
+// Compara uma descrição livre (ex.: vinda de um projeto, de uma cotação, ou
+// perguntada na conversa via MCP) com o catálogo — mesma lógica de
+// correspondência (Jaccard) já usada na Análise de Projeto. Só existe uma
+// correspondência se o índice de Jaccard for >= 45%; senão não arrisca sugerir
+// preço de coisa diferente.
+async function comparar(req, res) {
+  const { descricao } = req.body;
+  if (!descricao || !descricao.trim()) {
+    return res.status(400).json({ erro: 'Informe a descrição a comparar' });
+  }
+  try {
+    const catalogo = (await pool.query(
+      'SELECT id, descricao, preco, unidade, categoria FROM materiais WHERE ativo = true ORDER BY id'
+    )).rows;
+    const correspondencia = compararComCatalogo(descricao, catalogo);
+    res.json({ descricao, correspondencia });
+  } catch (err) {
+    console.error('Erro ao comparar material com o catálogo:', err);
+    res.status(500).json({ erro: 'Erro ao comparar com o catálogo' });
+  }
+}
 
 async function listar(req, res) {
   const { busca, categoria } = req.query;
@@ -144,4 +167,4 @@ async function categorias(req, res) {
   }
 }
 
-module.exports = { listar, criar, atualizar, remover, importar, extrairNota, categorias };
+module.exports = { listar, criar, atualizar, remover, importar, extrairNota, categorias, comparar };
