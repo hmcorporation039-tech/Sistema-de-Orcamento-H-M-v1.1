@@ -4,8 +4,9 @@ const { gerarHtmlProposta, gerarFooterTemplate } = require('../utils/pdfTemplate
 const { criarTransportador } = require('../utils/smtpClient');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
 const { comTransacao } = require('../utils/transacao');
-const { calcularTotais, normalizarItem } = require('../utils/calculoProposta');
+const { calcularTotais, normalizarItem, ehMaoDeObra } = require('../utils/calculoProposta');
 const { validarProposta, validadeOuPadrao } = require('../utils/validacaoProposta');
+const { garantirMaterialCadastrado, garantirMaoDeObraCadastrada } = require('../utils/catalogoAutoCadastro');
 
 // Assinatura padrão da empresa — entra sempre no final de todo e-mail
 // enviado ao cliente (mensagem padrão ou digitada à mão), sem exceção.
@@ -27,6 +28,7 @@ async function inserirSecoesEItens(client, propostaId, secoes, itens) {
 
   for (let i = 0; i < secoes.length; i++) {
     const sec = secoes[i];
+    const maoDeObra = ehMaoDeObra(sec.nome);
     const secResult = await client.query(
       'INSERT INTO proposta_secoes (proposta_id, nome, ordem) VALUES ($1,$2,$3) RETURNING id',
       [propostaId, sec.nome, i]
@@ -36,11 +38,29 @@ async function inserirSecoesEItens(client, propostaId, secoes, itens) {
     const itensDaSecao = (itens || []).filter(it => it.sid === sec.id || it.secao_nome === sec.nome);
     for (let j = 0; j < itensDaSecao.length; j++) {
       const item = normalizarItem(itensDaSecao[j], j);
+
+      // Padroniza o catálogo: um item digitado à mão (não veio do "+
+      // catálogo", então material_id chega nulo) é comparado com o que já
+      // existe — só vira material novo se não existir nada parecido. Item de
+      // mão de obra não tem uma FK própria em proposta_itens, mas a
+      // descrição entra (ou já está) no catálogo de mão de obra pra virar
+      // sugestão da próxima vez, em qualquer proposta de qualquer cliente.
+      let materialId = item.material_id;
+      if (maoDeObra) {
+        await garantirMaoDeObraCadastrada(client, {
+          descricao: item.descricao, unidade: item.unidade, valor_unitario: item.valor_unitario
+        });
+      } else if (!materialId) {
+        materialId = await garantirMaterialCadastrado(client, {
+          descricao: item.descricao, unidade: item.unidade, ncm: item.ncm, valor_unitario: item.valor_unitario
+        });
+      }
+
       await client.query(
         `INSERT INTO proposta_itens
          (proposta_id, secao_id, material_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, codigo, subgrupo, status, ordem)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-        [propostaId, secId, item.material_id, item.descricao, item.quantidade, item.unidade,
+        [propostaId, secId, materialId, item.descricao, item.quantidade, item.unidade,
          item.valor_unitario, item.valor_total, item.ncm, item.codigo, item.subgrupo, item.status, item.ordem]
       );
     }

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Plus, Trash2, FolderPlus, FileDown, Send, FilePlus2 } from 'lucide-react';
-import { getClientes, getMateriais, getProximoNumero, criarProposta, atualizarProposta, getProposta } from '../services/api';
+import { getClientes, getMateriais, getMaoDeObraItens, getProximoNumero, criarProposta, atualizarProposta, getProposta } from '../services/api';
 import api from '../services/api';
 import { formatarMoeda } from '../utils/format';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
@@ -64,6 +64,11 @@ export default function Orcamento() {
   const [proximoNumero, setProximoNumero] = useState(null);
   const [clientes, setClientes] = useState([]);
   const [materiais, setMateriais] = useState([]);
+  // Catálogo de itens de mão de obra já usados em qualquer proposta (de
+  // qualquer cliente) — sugestão em dropdown pra padronizar a descrição
+  // (ver aplicarMaoDeObraNoItem). Cresce sozinho no backend quando alguém
+  // digita um item novo à mão (ver garantirMaoDeObraCadastrada no backend).
+  const [maoDeObraItens, setMaoDeObraItens] = useState([]);
 
   const [form, setForm] = useState(FORM_VAZIO);
   const [secoes, setSecoes] = useState(SECOES_PADRAO);
@@ -93,6 +98,7 @@ export default function Orcamento() {
   useEffect(() => {
     getClientes({ porPagina: 1000 }).then(res => setClientes(res.data.itens)).catch(() => {});
     getMateriais({ porPagina: 1000 }).then(res => setMateriais(res.data.itens)).catch(() => {});
+    getMaoDeObraItens({ porPagina: 1000 }).then(res => setMaoDeObraItens(res.data.itens)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -323,6 +329,18 @@ export default function Orcamento() {
     setItens(it => it.map(i => i.id === id ? { ...i, descricao: categoria } : i));
   }
 
+  // Preenche descrição, unidade e valor a partir de um item de mão de obra já
+  // usado antes (em qualquer proposta) — mesma ideia de aplicarMaterialNoItem,
+  // pra padronizar a descrição do mesmo serviço entre clientes diferentes.
+  function aplicarMaoDeObraNoItem(id, itemCatalogoId) {
+    const item = maoDeObraItens.find(m => String(m.id) === String(itemCatalogoId));
+    if (!item) return;
+    setItens(it => it.map(i => i.id === id ? {
+      ...i, descricao: item.descricao, unidade: item.unidade || i.unidade,
+      valor_unitario: Number(item.valor_unitario) || i.valor_unitario
+    } : i));
+  }
+
   function removerItem(id) {
     setItens(it => it.filter(i => i.id !== id));
   }
@@ -538,7 +556,7 @@ export default function Orcamento() {
             {itens.filter(it => it.sid === sec.id).length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, marginBottom: 6, fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px' }}>
                 <span>Subgrupo</span>
-                <span>{maoDeObra ? 'Categoria' : 'Catálogo'}</span>
+                <span>{maoDeObra ? 'Sugestão' : 'Catálogo'}</span>
                 <span>Descrição</span>
                 {!maoDeObra && <span>NCM/SH</span>}
                 <span>Qtd</span><span>Un.</span><span>Vlr. Unit.</span><span>Total</span><span>Status</span><span />
@@ -590,9 +608,20 @@ export default function Orcamento() {
                     <option value="__novo__">+ novo subgrupo...</option>
                   </select>
                   {maoDeObra ? (
-                    <select value="" onChange={e => aplicarCategoriaMaoDeObra(it.id, e.target.value)}>
-                      <option value="">+ categoria</option>
-                      {CATEGORIAS_MAO_DE_OBRA.map(c => <option key={c} value={c}>{c}</option>)}
+                    <select value="" onChange={e => {
+                      const [tipo, valor] = e.target.value.split('::');
+                      if (tipo === 'cat') aplicarCategoriaMaoDeObra(it.id, valor);
+                      else if (tipo === 'item') aplicarMaoDeObraNoItem(it.id, valor);
+                    }}>
+                      <option value="">+ sugestão</option>
+                      <optgroup label="Categorias">
+                        {CATEGORIAS_MAO_DE_OBRA.map(c => <option key={c} value={`cat::${c}`}>{c}</option>)}
+                      </optgroup>
+                      {maoDeObraItens.length > 0 && (
+                        <optgroup label="Itens já usados">
+                          {maoDeObraItens.map(m => <option key={m.id} value={`item::${m.id}`}>{m.descricao}</option>)}
+                        </optgroup>
+                      )}
                     </select>
                   ) : (
                     <select value="" onChange={e => aplicarMaterialNoItem(it.id, e.target.value)}>

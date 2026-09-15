@@ -62,6 +62,26 @@ async function criarTabelas() {
     await client.query(`ALTER TABLE materiais ADD COLUMN IF NOT EXISTS origem VARCHAR(30) DEFAULT 'manual'`);
     await client.query(`ALTER TABLE materiais ADD COLUMN IF NOT EXISTS preco_manual BOOLEAN DEFAULT false`);
 
+    // Catálogo de itens de mão de obra — cresce sozinho conforme os itens são
+    // lançados nos orçamentos (ver garantirMaoDeObraCadastrada em
+    // utils/catalogoAutoCadastro.js), pra virar sugestão em dropdown na
+    // próxima vez que alguém for lançar um item de mão de obra — mesmo
+    // objetivo do catálogo de materiais (padronizar a descrição do mesmo
+    // serviço entre propostas de clientes diferentes), mas numa tabela
+    // separada porque mão de obra não tem categoria/NCM/comparação com
+    // fornecedor como materiais tem.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS mao_de_obra_itens (
+        id SERIAL PRIMARY KEY,
+        descricao VARCHAR(300) NOT NULL,
+        unidade VARCHAR(10),
+        valor_unitario DECIMAL(10,2) DEFAULT 0,
+        ativo BOOLEAN DEFAULT true,
+        criado_em TIMESTAMP DEFAULT NOW(),
+        atualizado_em TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
     // Tabela de propostas
     await client.query(`
       CREATE TABLE IF NOT EXISTS propostas (
@@ -413,6 +433,7 @@ async function criarTabelas() {
       'CREATE INDEX IF NOT EXISTS idx_propostas_status ON propostas(status)',
       'CREATE INDEX IF NOT EXISTS idx_propostas_data ON propostas(data)',
       'CREATE INDEX IF NOT EXISTS idx_materiais_ativo ON materiais(ativo)',
+      'CREATE INDEX IF NOT EXISTS idx_mao_de_obra_itens_ativo ON mao_de_obra_itens(ativo)',
       'CREATE INDEX IF NOT EXISTS idx_financeiro_data ON financeiro_movimentos(data_hora DESC)',
       'CREATE INDEX IF NOT EXISTS idx_financeiro_prestador ON financeiro_movimentos(prestador_id)',
       'CREATE INDEX IF NOT EXISTS idx_contratos_prestador ON contratos(prestador_id)',

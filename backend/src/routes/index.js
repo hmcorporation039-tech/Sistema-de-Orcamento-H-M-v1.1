@@ -76,6 +76,7 @@ const contrCtrl = require('../controllers/contratosController');
 const projCtrl = require('../controllers/projetosController');
 const pesqCtrl = require('../controllers/pesquisaMercadoController');
 const precosMOCtrl = require('../controllers/precosMaoDeObraController');
+const maoObraCtrl = require('../controllers/maoDeObraController');
 
 // ── AUTH ──────────────────────────────────────────────────────────────
 router.post('/auth/login', limiteLogin, authCtrl.login);
@@ -90,6 +91,11 @@ router.delete('/materiais/:id', autenticar, validarId, matCtrl.remover);
 router.post('/materiais/importar', autenticar, matCtrl.importar);
 router.post('/materiais/extrair-nota', autenticar, upload.single('arquivo'), matCtrl.extrairNota);
 router.post('/materiais/comparar', autenticar, matCtrl.comparar);
+
+// ── MÃO DE OBRA (catálogo de itens já lançados em propostas, usado como
+// sugestão em dropdown — diferente de /precos-mao-de-obra, que é a tabela de
+// preços de referência da Análise de Projeto) ───────────────────────────
+router.get('/mao-de-obra-itens', autenticar, maoObraCtrl.listar);
 
 // ── CLIENTES ──────────────────────────────────────────────────────────
 router.get('/clientes', autenticar, cliCtrl.listar);

@@ -51,6 +51,10 @@ export const extrairNotaFiscal = (arquivo) => {
   });
 };
 
+// ── MÃO DE OBRA (catálogo de itens já lançados em propostas, sugestão em
+// dropdown na aba Orçamento) ─────────────────────────────────────────────
+export const getMaoDeObraItens = (params) => api.get('/mao-de-obra-itens', { params });
+
 // ── CLIENTES ──────────────────────────────────────────────────────────
 export const getClientes = (params) => api.get('/clientes', { params });
 export const criarCliente = (data) => api.post('/clientes', data);
