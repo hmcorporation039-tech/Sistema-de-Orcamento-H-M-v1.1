@@ -97,11 +97,20 @@ async function criarTabelas() {
     await client.query(`ALTER TABLE propostas ADD COLUMN IF NOT EXISTS imposto_servico DECIMAL(5,2) DEFAULT 0`);
     await client.query(`ALTER TABLE propostas ADD COLUMN IF NOT EXISTS valor_imposto_venda DECIMAL(12,2) DEFAULT 0`);
     await client.query(`ALTER TABLE propostas ADD COLUMN IF NOT EXISTS valor_imposto_servico DECIMAL(12,2) DEFAULT 0`);
-    // Ajuste geral: único percentual que aceita negativo (desconto) — aumenta
-    // ou desconta todos os valores da proposta de uma vez, sobre a mesma base
-    // do BDI (materiais + mão de obra). DECIMAL(6,2) por causa do sinal.
-    await client.query(`ALTER TABLE propostas ADD COLUMN IF NOT EXISTS ajuste_geral DECIMAL(6,2) DEFAULT 0`);
-    await client.query(`ALTER TABLE propostas ADD COLUMN IF NOT EXISTS valor_ajuste_geral DECIMAL(12,2) DEFAULT 0`);
+    // ajuste_geral/valor_ajuste_geral existiram por pouco tempo nesta mesma
+    // sessão de desenvolvimento — um percentual somado no total sem tocar
+    // nos itens, igual o BDI. O usuário pediu pra mudar: reajuste/desconto
+    // agora reescreve o valor_unitario de cada item direto (ver
+    // aplicarAjustePercentual em Orcamento.js) — a única proposta real que
+    // chegou a usar o mecanismo antigo (P228) já foi migrada manualmente
+    // pelo próprio botão novo antes de tirar as colunas daqui.
+    await client.query(`ALTER TABLE propostas DROP COLUMN IF EXISTS ajuste_geral`);
+    await client.query(`ALTER TABLE propostas DROP COLUMN IF EXISTS valor_ajuste_geral`);
+    // Só um registro informativo do ÚLTIMO reajuste/desconto aplicado em
+    // cada categoria — não entra em nenhuma conta de total, é usado só pro
+    // PDF avisar quando o valor já embutido nos itens foi um desconto.
+    await client.query(`ALTER TABLE propostas ADD COLUMN IF NOT EXISTS desconto_materiais_pct DECIMAL(6,2)`);
+    await client.query(`ALTER TABLE propostas ADD COLUMN IF NOT EXISTS desconto_mao_obra_pct DECIMAL(6,2)`);
 
     // Tabela de seções da proposta
     await client.query(`

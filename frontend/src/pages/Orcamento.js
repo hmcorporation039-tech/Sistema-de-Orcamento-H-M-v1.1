@@ -24,7 +24,11 @@ const FORM_VAZIO = {
   bdi: 20,
   imposto_venda: 0,
   imposto_servico: 6,
-  ajuste_geral: 0,
+  // Só registram o percentual do ÚLTIMO reajuste/desconto aplicado direto
+  // nos valores unitários (ver aplicarAjustePercentual) — não entram em
+  // nenhuma conta de total, servem só pro PDF avisar quando foi desconto.
+  desconto_materiais_pct: null,
+  desconto_mao_obra_pct: null,
 };
 
 const SECOES_PADRAO = () => [
@@ -57,6 +61,11 @@ export default function Orcamento() {
   const [form, setForm] = useState(FORM_VAZIO);
   const [secoes, setSecoes] = useState(SECOES_PADRAO);
   const [itens, setItens] = useState([]);
+  // Campos transientes do reajuste/desconto — só existem enquanto o usuário
+  // digita; "Aplicar" consome o valor e reescreve os itens (ver
+  // aplicarAjustePercentual), não fica guardado como parte da proposta.
+  const [ajusteMateriaisInput, setAjusteMateriaisInput] = useState('');
+  const [ajusteMaoDeObraInput, setAjusteMaoDeObraInput] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [propostaSalva, setPropostaSalva] = useState(null);
   // Vira true quando o usuário edita algo DEPOIS de já ter salvo — nesse caso o
@@ -96,7 +105,8 @@ export default function Orcamento() {
         bdi: Number(p.bdi) || 0,
         imposto_venda: Number(p.imposto_venda) || 0,
         imposto_servico: Number(p.imposto_servico) || 0,
-        ajuste_geral: Number(p.ajuste_geral) || 0,
+        desconto_materiais_pct: p.desconto_materiais_pct != null ? Number(p.desconto_materiais_pct) : null,
+        desconto_mao_obra_pct: p.desconto_mao_obra_pct != null ? Number(p.desconto_mao_obra_pct) : null,
       });
       setSecoes((p.secoes || []).map(s => ({ id: s.id, nome: s.nome })));
       // Reagrupa por subgrupo já ao carregar — sem isso, uma proposta salva
@@ -138,7 +148,7 @@ export default function Orcamento() {
       .reduce((s, it) => s + (Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0), 0);
   }
 
-  const { subtotalMateriais, subtotalMaoObra, valorBdi, valorImpostoVenda, valorImpostoServico, valorAjusteGeral, total } = useMemo(() => {
+  const { subtotalMateriais, subtotalMaoObra, valorBdi, valorImpostoVenda, valorImpostoServico, total } = useMemo(() => {
     let mat = 0, mao = 0;
     for (const sec of secoes) {
       const sub = subtotalSecao(sec.id);
@@ -149,15 +159,12 @@ export default function Orcamento() {
     const vBdi = (mat + mao) * (bdiPct / 100);
     const vImpVenda = mat * ((Number(form.imposto_venda) || 0) / 100);
     const vImpServico = mao * ((Number(form.imposto_servico) || 0) / 100);
-    // Único percentual assinado (pode ser negativo pra desconto) — mesma base
-    // do BDI, soma ou subtrai igual sobre todos os valores da proposta.
-    const vAjuste = (mat + mao) * ((Number(form.ajuste_geral) || 0) / 100);
     return {
       subtotalMateriais: mat, subtotalMaoObra: mao, valorBdi: vBdi,
-      valorImpostoVenda: vImpVenda, valorImpostoServico: vImpServico, valorAjusteGeral: vAjuste,
-      total: mat + mao + vBdi + vImpVenda + vImpServico + vAjuste,
+      valorImpostoVenda: vImpVenda, valorImpostoServico: vImpServico,
+      total: mat + mao + vBdi + vImpVenda + vImpServico,
     };
-  }, [itens, secoes, form.bdi, form.imposto_venda, form.imposto_servico, form.ajuste_geral]);
+  }, [itens, secoes, form.bdi, form.imposto_venda, form.imposto_servico]);
 
   function adicionarSecao() {
     setSecoes(s => [...s, { id: gerarId(), nome: 'Nova Seção' }]);
@@ -248,6 +255,42 @@ export default function Orcamento() {
       const item = atualizado.find(i => i.id === id);
       return reordenarPorSubgrupo(atualizado, item.sid);
     });
+  }
+
+  // Reescreve de vez o valor_unitario de cada item de UMA categoria
+  // (materiais ou mão de obra) — (+) aumenta, (-) desconta, aplicado sobre o
+  // valor que o item já tem hoje. É uma ação (bem diferente de BDI/impostos,
+  // que recalculam ao vivo): rodar de novo aplica em cima do que já foi
+  // ajustado — dois "+10%" seguidos viram +21%, não +20%. Só um desconto
+  // fica anotado (desconto_materiais_pct/desconto_mao_obra_pct) pra avisar
+  // no PDF — um aumento limpa a anotação, já que o efeito deixou de ser um
+  // desconto.
+  function aplicarAjustePercentual(categoria, pctTexto) {
+    const pct = Number(String(pctTexto).replace(',', '.'));
+    if (!Number.isFinite(pct) || pct === 0) {
+      toast.error('Informe um percentual diferente de zero');
+      return;
+    }
+    const ehCategoriaMaoDeObra = categoria === 'maoDeObra';
+    const sidsDaCategoria = secoes.filter(sec => ehMaoDeObra(sec.nome) === ehCategoriaMaoDeObra).map(sec => sec.id);
+    const qtdItens = itens.filter(it => sidsDaCategoria.includes(it.sid)).length;
+    const rotulo = ehCategoriaMaoDeObra ? 'Mão de Obra' : 'Materiais';
+    if (qtdItens === 0) {
+      toast.error(`Nenhum item de ${rotulo} encontrado`);
+      return;
+    }
+    const sinal = pct > 0 ? '+' : '';
+    if (!window.confirm(`Isso vai multiplicar o valor unitário de ${qtdItens} item(ns) de ${rotulo} em ${sinal}${pct}%. Não tem desfazer automático. Confirma?`)) {
+      return;
+    }
+    const fator = 1 + pct / 100;
+    setItens(it => it.map(item => sidsDaCategoria.includes(item.sid)
+      ? { ...item, valor_unitario: Math.round((Number(item.valor_unitario) || 0) * fator * 100) / 100 }
+      : item
+    ));
+    const campoDesconto = ehCategoriaMaoDeObra ? 'desconto_mao_obra_pct' : 'desconto_materiais_pct';
+    setForm(f => ({ ...f, [campoDesconto]: pct < 0 ? pct : null }));
+    toast.success(`${qtdItens} item(ns) de ${rotulo} ajustado(s) em ${sinal}${pct}%`);
   }
 
   function aplicarMaterialNoItem(id, materialId) {
@@ -350,7 +393,8 @@ export default function Orcamento() {
         bdi: Number(form.bdi) || 0,
         imposto_venda: Number(form.imposto_venda) || 0,
         imposto_servico: Number(form.imposto_servico) || 0,
-        ajuste_geral: Number(form.ajuste_geral) || 0,
+        desconto_materiais_pct: form.desconto_materiais_pct,
+        desconto_mao_obra_pct: form.desconto_mao_obra_pct,
         // Subtotais/BDI/impostos/total não são mais enviados: o backend
         // recalcula tudo a partir dos itens (antes ele gravava o que o
         // navegador mandasse, e uma quantidade zerada fazia o PDF sair com a
@@ -594,9 +638,36 @@ export default function Orcamento() {
               <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>{formatarMoeda(valorBdi)}</div>
             </div>
             <div>
-              <label style={rotulo} title="Aumenta ou desconta todos os valores da proposta de uma vez. Use (+) pra aumentar, (-) pra descontar.">Ajuste Geral (%)</label>
-              <input type="number" step="0.1" value={form.ajuste_geral} onChange={e => setForm({ ...form, ajuste_geral: e.target.value })} style={{ width: 80 }} />
-              <div style={{ fontSize: 11, color: Number(form.ajuste_geral) < 0 ? '#e08080' : '#666', marginTop: 4 }}>{formatarMoeda(valorAjusteGeral)}</div>
+              <label style={rotulo} title="Multiplica o valor unitário de cada item de Materiais por esse percentual. (+) aumenta, (-) desconta. Roda na hora, ao clicar em Aplicar — não recalcula sozinho depois.">Reajuste Materiais (%)</label>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <input type="number" step="0.1" value={ajusteMateriaisInput} onChange={e => setAjusteMateriaisInput(e.target.value)} placeholder="+10 / -10" style={{ width: 70 }} />
+                <button
+                  type="button"
+                  onClick={() => { aplicarAjustePercentual('materiais', ajusteMateriaisInput); setAjusteMateriaisInput(''); }}
+                  style={{ ...btnSecundario, padding: '4px 8px', fontSize: 11 }}
+                >
+                  Aplicar
+                </button>
+              </div>
+              {form.desconto_materiais_pct < 0 && (
+                <div style={{ fontSize: 10.5, color: '#e08080', marginTop: 4 }}>Desconto de {Math.abs(form.desconto_materiais_pct)}% já aplicado</div>
+              )}
+            </div>
+            <div>
+              <label style={rotulo} title="Multiplica o valor unitário de cada item de Mão de Obra por esse percentual. (+) aumenta, (-) desconta. Roda na hora, ao clicar em Aplicar — não recalcula sozinho depois.">Reajuste Mão de Obra (%)</label>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <input type="number" step="0.1" value={ajusteMaoDeObraInput} onChange={e => setAjusteMaoDeObraInput(e.target.value)} placeholder="+10 / -10" style={{ width: 70 }} />
+                <button
+                  type="button"
+                  onClick={() => { aplicarAjustePercentual('maoDeObra', ajusteMaoDeObraInput); setAjusteMaoDeObraInput(''); }}
+                  style={{ ...btnSecundario, padding: '4px 8px', fontSize: 11 }}
+                >
+                  Aplicar
+                </button>
+              </div>
+              {form.desconto_mao_obra_pct < 0 && (
+                <div style={{ fontSize: 10.5, color: '#e08080', marginTop: 4 }}>Desconto de {Math.abs(form.desconto_mao_obra_pct)}% já aplicado</div>
+              )}
             </div>
             <div>
               <div style={rotulo}>Total geral</div>

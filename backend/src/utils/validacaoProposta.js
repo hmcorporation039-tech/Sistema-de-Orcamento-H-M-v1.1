@@ -26,7 +26,7 @@ function dataValida(valor) {
 }
 
 function validarProposta(body) {
-  const { data, cliente_nome, secoes, itens, bdi, imposto_venda, imposto_servico, ajuste_geral, validade } = body;
+  const { data, cliente_nome, secoes, itens, bdi, imposto_venda, imposto_servico, desconto_materiais_pct, desconto_mao_obra_pct, validade } = body;
 
   if (!data) return 'Informe a data da proposta.';
   if (!dataValida(data)) return 'Data inválida. Use o formato AAAA-MM-DD.';
@@ -50,12 +50,15 @@ function validarProposta(body) {
     }
   }
 
-  // Ajuste geral é o único percentual que aceita negativo (desconto) — os
-  // demais (bdi/impostos) não fazem sentido como valor negativo.
-  if (ajuste_geral !== undefined && ajuste_geral !== null && ajuste_geral !== '') {
-    const n = Number(ajuste_geral);
+  // Só um registro informativo do último reajuste/desconto aplicado direto
+  // nos valores unitários (ver aplicarAjustePercentual no frontend) — não
+  // entra em nenhuma conta aqui, só é exibido no PDF quando negativo (ver
+  // pdfTemplate.js). Aceita negativo, diferente de bdi/impostos.
+  for (const [campo, valor] of [['desconto_materiais_pct', desconto_materiais_pct], ['desconto_mao_obra_pct', desconto_mao_obra_pct]]) {
+    if (valor === undefined || valor === null || valor === '') continue;
+    const n = Number(valor);
     if (!Number.isFinite(n) || n < -100 || n > 999.99) {
-      return 'O campo "ajuste_geral" deve ser um percentual entre -100 e 999,99.';
+      return `O campo "${campo}" deve ser um percentual entre -100 e 999,99.`;
     }
   }
 

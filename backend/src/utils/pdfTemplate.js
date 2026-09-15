@@ -194,7 +194,8 @@ function gerarHtmlProposta(proposta) {
       <tr><td>Subtotal mão de obra</td><td class="num">${formatarMoeda(proposta.subtotal_mao_obra)}</td></tr>
       ${Number(proposta.imposto_servico) > 0 ? `<tr><td>Imposto sobre serviços (${formatarPercentual(proposta.imposto_servico)}%)</td><td class="num">${formatarMoeda(proposta.valor_imposto_servico)}</td></tr>` : ''}
       <tr><td>BDI (${formatarPercentual(proposta.bdi)}%)</td><td class="num">${formatarMoeda(proposta.valor_bdi)}</td></tr>
-      ${Number(proposta.ajuste_geral) !== 0 ? `<tr><td>${Number(proposta.ajuste_geral) < 0 ? 'Desconto geral' : 'Acréscimo geral'} (${formatarPercentual(proposta.ajuste_geral)}%)</td><td class="num">${formatarMoeda(proposta.valor_ajuste_geral)}</td></tr>` : ''}
+      ${Number(proposta.desconto_materiais_pct) < 0 ? `<tr><td colspan="2" style="font-style:italic;color:#666;font-size:9px;">Desconto de ${formatarPercentual(Math.abs(proposta.desconto_materiais_pct))}% já aplicado aos valores de materiais</td></tr>` : ''}
+      ${Number(proposta.desconto_mao_obra_pct) < 0 ? `<tr><td colspan="2" style="font-style:italic;color:#666;font-size:9px;">Desconto de ${formatarPercentual(Math.abs(proposta.desconto_mao_obra_pct))}% já aplicado aos valores de mão de obra</td></tr>` : ''}
       <tr class="final"><td>Total geral</td><td class="num">${formatarMoeda(proposta.total)}</td></tr>
     </table>
   </div>
