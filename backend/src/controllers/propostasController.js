@@ -7,6 +7,18 @@ const { comTransacao } = require('../utils/transacao');
 const { calcularTotais, normalizarItem } = require('../utils/calculoProposta');
 const { validarProposta, validadeOuPadrao } = require('../utils/validacaoProposta');
 
+// Assinatura padrão da empresa — entra sempre no final de todo e-mail
+// enviado ao cliente (mensagem padrão ou digitada à mão), sem exceção.
+const ASSINATURA_EMPRESA = `H&M Engenharia e Tecnologia LTDA
+Engenharia • Tecnologia • Segurança Eletrônica
+
+📞 WhatsApp: (61) 99185-9745
+✉ E-mail: hemengetecnologia@gmail.com
+🌐 Site: www.hemengetecnologia.com
+
+📍 Quadra CNF 03 Lote 16 Loja 04
+Taguatinga Norte – DF | CEP 72.125-535`;
+
 // Insere as seções e seus itens, com quantidade e valor_total recalculados no
 // backend. Compartilhado por criar/atualizar para que as duas rotas não possam
 // divergir (antes o mesmo bloco estava duplicado nas duas, com o mesmo bug).
@@ -444,12 +456,19 @@ async function enviarEmail(req, res) {
     if (!resultado) return res.status(404).json({ erro: 'Proposta não encontrada' });
     const { proposta, pdf } = resultado;
 
+    // A assinatura padrão sempre vai no final — tanto na mensagem padrão
+    // quanto numa digitada pelo usuário, sem exceção (não dá pra mandar sem
+    // ela por esquecimento ou por apagar sem querer).
+    const corpoMensagem = (mensagem && mensagem.trim())
+      || `Olá,\n\nSegue em anexo a proposta ${proposta.numero}.`;
+    const textoCompleto = `${corpoMensagem}\n\n${ASSINATURA_EMPRESA}`;
+
     const transportador = criarTransportador();
     await transportador.sendMail({
       from: `"H&M Engenharia" <${process.env.EMAIL_IMAP_USER}>`,
       to: destinatario,
       subject: `Proposta ${proposta.numero} — H&M Engenharia e Tecnologia`,
-      text: mensagem || `Olá,\n\nSegue em anexo a proposta ${proposta.numero}.\n\nAtenciosamente,\nH&M Engenharia e Tecnologia`,
+      text: textoCompleto,
       attachments: [
         { filename: nomeArquivoProposta(proposta), content: pdf, contentType: 'application/pdf' },
       ],

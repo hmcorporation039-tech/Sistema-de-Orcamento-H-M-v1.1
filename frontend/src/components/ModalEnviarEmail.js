@@ -71,6 +71,10 @@ export default function ModalEnviarEmail({ aberto, onFechar, proposta, emailInic
               onChange={e => setMensagemEmail(e.target.value)}
               placeholder="Deixe em branco para usar a mensagem padrão"
             />
+            <p style={{ fontSize: 10, color: '#666', marginTop: 5 }}>
+              A assinatura padrão da empresa (contatos, endereço) é adicionada automaticamente
+              no final — não precisa (nem deve) digitar de novo aqui.
+            </p>
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 18, justifyContent: 'flex-end' }}>
             <button type="button" onClick={onFechar} style={btnSecundario}>Cancelar</button>
