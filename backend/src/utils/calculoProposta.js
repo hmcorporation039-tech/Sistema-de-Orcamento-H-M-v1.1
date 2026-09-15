@@ -56,9 +56,9 @@ function normalizarItem(it, ordem) {
   };
 }
 
-// Recalcula subtotais, BDI, impostos e total a partir das seções e itens.
-// `secoes` e `itens` são os arrays crus do corpo da requisição.
-function calcularTotais({ secoes, itens, bdi, imposto_venda, imposto_servico }) {
+// Recalcula subtotais, BDI, impostos, ajuste geral e total a partir das
+// seções e itens. `secoes` e `itens` são os arrays crus do corpo da requisição.
+function calcularTotais({ secoes, itens, bdi, imposto_venda, imposto_servico, ajuste_geral }) {
   const listaSecoes = Array.isArray(secoes) ? secoes : [];
   const listaItens = Array.isArray(itens) ? itens : [];
 
@@ -82,10 +82,15 @@ function calcularTotais({ secoes, itens, bdi, imposto_venda, imposto_servico }) 
   const percentualBdi = numeroSeguro(bdi, 0);
   const percentualVenda = numeroSeguro(imposto_venda, 0);
   const percentualServico = numeroSeguro(imposto_servico, 0);
+  // Único percentual que aceita negativo — mesma base do BDI (materiais +
+  // mão de obra), positivo aumenta todos os valores da proposta, negativo dá
+  // desconto igual sobre o total.
+  const percentualAjuste = numeroSeguro(ajuste_geral, 0);
 
   const valorBdi = arredondar((subtotalMateriais + subtotalMaoObra) * (percentualBdi / 100));
   const valorImpostoVenda = arredondar(subtotalMateriais * (percentualVenda / 100));
   const valorImpostoServico = arredondar(subtotalMaoObra * (percentualServico / 100));
+  const valorAjusteGeral = arredondar((subtotalMateriais + subtotalMaoObra) * (percentualAjuste / 100));
 
   return {
     subtotal_materiais: subtotalMateriais,
@@ -93,7 +98,8 @@ function calcularTotais({ secoes, itens, bdi, imposto_venda, imposto_servico }) 
     valor_bdi: valorBdi,
     valor_imposto_venda: valorImpostoVenda,
     valor_imposto_servico: valorImpostoServico,
-    total: arredondar(subtotalMateriais + subtotalMaoObra + valorBdi + valorImpostoVenda + valorImpostoServico),
+    valor_ajuste_geral: valorAjusteGeral,
+    total: arredondar(subtotalMateriais + subtotalMaoObra + valorBdi + valorImpostoVenda + valorImpostoServico + valorAjusteGeral),
   };
 }
 

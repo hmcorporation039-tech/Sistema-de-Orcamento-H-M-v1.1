@@ -97,6 +97,11 @@ async function criarTabelas() {
     await client.query(`ALTER TABLE propostas ADD COLUMN IF NOT EXISTS imposto_servico DECIMAL(5,2) DEFAULT 0`);
     await client.query(`ALTER TABLE propostas ADD COLUMN IF NOT EXISTS valor_imposto_venda DECIMAL(12,2) DEFAULT 0`);
     await client.query(`ALTER TABLE propostas ADD COLUMN IF NOT EXISTS valor_imposto_servico DECIMAL(12,2) DEFAULT 0`);
+    // Ajuste geral: único percentual que aceita negativo (desconto) — aumenta
+    // ou desconta todos os valores da proposta de uma vez, sobre a mesma base
+    // do BDI (materiais + mão de obra). DECIMAL(6,2) por causa do sinal.
+    await client.query(`ALTER TABLE propostas ADD COLUMN IF NOT EXISTS ajuste_geral DECIMAL(6,2) DEFAULT 0`);
+    await client.query(`ALTER TABLE propostas ADD COLUMN IF NOT EXISTS valor_ajuste_geral DECIMAL(12,2) DEFAULT 0`);
 
     // Tabela de seções da proposta
     await client.query(`

@@ -24,6 +24,7 @@ const FORM_VAZIO = {
   bdi: 20,
   imposto_venda: 0,
   imposto_servico: 6,
+  ajuste_geral: 0,
 };
 
 const SECOES_PADRAO = () => [
@@ -95,6 +96,7 @@ export default function Orcamento() {
         bdi: Number(p.bdi) || 0,
         imposto_venda: Number(p.imposto_venda) || 0,
         imposto_servico: Number(p.imposto_servico) || 0,
+        ajuste_geral: Number(p.ajuste_geral) || 0,
       });
       setSecoes((p.secoes || []).map(s => ({ id: s.id, nome: s.nome })));
       // Reagrupa por subgrupo já ao carregar — sem isso, uma proposta salva
@@ -136,7 +138,7 @@ export default function Orcamento() {
       .reduce((s, it) => s + (Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0), 0);
   }
 
-  const { subtotalMateriais, subtotalMaoObra, valorBdi, valorImpostoVenda, valorImpostoServico, total } = useMemo(() => {
+  const { subtotalMateriais, subtotalMaoObra, valorBdi, valorImpostoVenda, valorImpostoServico, valorAjusteGeral, total } = useMemo(() => {
     let mat = 0, mao = 0;
     for (const sec of secoes) {
       const sub = subtotalSecao(sec.id);
@@ -147,12 +149,15 @@ export default function Orcamento() {
     const vBdi = (mat + mao) * (bdiPct / 100);
     const vImpVenda = mat * ((Number(form.imposto_venda) || 0) / 100);
     const vImpServico = mao * ((Number(form.imposto_servico) || 0) / 100);
+    // Único percentual assinado (pode ser negativo pra desconto) — mesma base
+    // do BDI, soma ou subtrai igual sobre todos os valores da proposta.
+    const vAjuste = (mat + mao) * ((Number(form.ajuste_geral) || 0) / 100);
     return {
       subtotalMateriais: mat, subtotalMaoObra: mao, valorBdi: vBdi,
-      valorImpostoVenda: vImpVenda, valorImpostoServico: vImpServico,
-      total: mat + mao + vBdi + vImpVenda + vImpServico,
+      valorImpostoVenda: vImpVenda, valorImpostoServico: vImpServico, valorAjusteGeral: vAjuste,
+      total: mat + mao + vBdi + vImpVenda + vImpServico + vAjuste,
     };
-  }, [itens, secoes, form.bdi, form.imposto_venda, form.imposto_servico]);
+  }, [itens, secoes, form.bdi, form.imposto_venda, form.imposto_servico, form.ajuste_geral]);
 
   function adicionarSecao() {
     setSecoes(s => [...s, { id: gerarId(), nome: 'Nova Seção' }]);
@@ -345,6 +350,7 @@ export default function Orcamento() {
         bdi: Number(form.bdi) || 0,
         imposto_venda: Number(form.imposto_venda) || 0,
         imposto_servico: Number(form.imposto_servico) || 0,
+        ajuste_geral: Number(form.ajuste_geral) || 0,
         // Subtotais/BDI/impostos/total não são mais enviados: o backend
         // recalcula tudo a partir dos itens (antes ele gravava o que o
         // navegador mandasse, e uma quantidade zerada fazia o PDF sair com a
@@ -586,6 +592,11 @@ export default function Orcamento() {
               <label style={rotulo}>BDI (%)</label>
               <input type="number" step="0.1" min="0" value={form.bdi} onChange={e => setForm({ ...form, bdi: e.target.value })} style={{ width: 80 }} />
               <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>{formatarMoeda(valorBdi)}</div>
+            </div>
+            <div>
+              <label style={rotulo} title="Aumenta ou desconta todos os valores da proposta de uma vez. Use (+) pra aumentar, (-) pra descontar.">Ajuste Geral (%)</label>
+              <input type="number" step="0.1" value={form.ajuste_geral} onChange={e => setForm({ ...form, ajuste_geral: e.target.value })} style={{ width: 80 }} />
+              <div style={{ fontSize: 11, color: Number(form.ajuste_geral) < 0 ? '#e08080' : '#666', marginTop: 4 }}>{formatarMoeda(valorAjusteGeral)}</div>
             </div>
             <div>
               <div style={rotulo}>Total geral</div>

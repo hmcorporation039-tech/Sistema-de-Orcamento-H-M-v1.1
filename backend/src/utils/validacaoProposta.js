@@ -26,7 +26,7 @@ function dataValida(valor) {
 }
 
 function validarProposta(body) {
-  const { data, cliente_nome, secoes, itens, bdi, imposto_venda, imposto_servico, validade } = body;
+  const { data, cliente_nome, secoes, itens, bdi, imposto_venda, imposto_servico, ajuste_geral, validade } = body;
 
   if (!data) return 'Informe a data da proposta.';
   if (!dataValida(data)) return 'Data inválida. Use o formato AAAA-MM-DD.';
@@ -47,6 +47,15 @@ function validarProposta(body) {
     // Coluna DECIMAL(5,2): acima de 999.99 o INSERT estourava com erro 500.
     if (!Number.isFinite(n) || n < 0 || n > 999.99) {
       return `O campo "${campo}" deve ser um percentual entre 0 e 999,99.`;
+    }
+  }
+
+  // Ajuste geral é o único percentual que aceita negativo (desconto) — os
+  // demais (bdi/impostos) não fazem sentido como valor negativo.
+  if (ajuste_geral !== undefined && ajuste_geral !== null && ajuste_geral !== '') {
+    const n = Number(ajuste_geral);
+    if (!Number.isFinite(n) || n < -100 || n > 999.99) {
+      return 'O campo "ajuste_geral" deve ser um percentual entre -100 e 999,99.';
     }
   }
 
