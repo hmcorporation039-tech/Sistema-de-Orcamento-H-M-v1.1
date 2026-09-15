@@ -36,6 +36,13 @@ const SECOES_PADRAO = () => [
   { id: gerarId(), nome: 'Mão de Obra' },
 ];
 
+// Remove acentuação e normaliza caixa/espaços — usado pra comparar nome de
+// cliente sem falhar por causa de "CLINICA" x "CLÍNICA", maiúscula/minúscula
+// ou espaço a mais.
+function normalizarNome(txt) {
+  return (txt || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
+}
+
 // Seções cujo nome sugere trabalho/serviço entram no subtotal de mão de obra; o restante conta como material.
 function ehMaoDeObra(nome) {
   return /m[ãa]o.?de.?obra|serviç|servic/i.test(nome || '');
@@ -77,6 +84,11 @@ export default function Orcamento() {
   const [modalEmail, setModalEmail] = useState(false);
   const [carregandoEdicao, setCarregandoEdicao] = useState(!!editandoId);
   const [numeroEditando, setNumeroEditando] = useState('');
+  // E-mail do cliente já resolvido pelo backend via cliente_id (JOIN com a
+  // tabela clientes) ao carregar uma proposta salva — mais confiável do que
+  // bater o texto de cliente_nome contra a lista de clientes, que falha se o
+  // nome tiver alguma diferença de digitação/espaço.
+  const [clienteEmailCadastro, setClienteEmailCadastro] = useState('');
 
   useEffect(() => {
     getClientes({ porPagina: 1000 }).then(res => setClientes(res.data.itens)).catch(() => {});
@@ -92,6 +104,7 @@ export default function Orcamento() {
     getProposta(editandoId).then(res => {
       const p = res.data;
       setNumeroEditando(p.numero);
+      setClienteEmailCadastro(p.cliente_email || '');
       setForm({
         data: (p.data || '').slice(0, 10),
         validade: p.validade,
@@ -132,7 +145,10 @@ export default function Orcamento() {
   const clienteResolvido = useMemo(
     // `c.nome` pode vir nulo do banco; sem a guarda, um único cliente sem nome
     // derrubava a tela inteira a cada tecla digitada no campo Cliente.
-    () => clientes.find(c => (c.nome || '').toLowerCase() === form.cliente_nome.trim().toLowerCase()),
+    // Ignora acentuação na comparação — "CLINICA" (proposta antiga, sem
+    // acento) e "CLÍNICA" (nome certo no cadastro) são o mesmo cliente, mas
+    // sem normalizar isso a busca falhava e o e-mail nunca era encontrado.
+    () => clientes.find(c => normalizarNome(c.nome) === normalizarNome(form.cliente_nome)),
     [clientes, form.cliente_nome]
   );
 
@@ -710,7 +726,7 @@ export default function Orcamento() {
         aberto={modalEmail}
         onFechar={() => setModalEmail(false)}
         proposta={propostaSalva}
-        emailInicial={clienteResolvido?.email || ''}
+        emailInicial={clienteEmailCadastro || clienteResolvido?.email || ''}
       />
     </div>
   );

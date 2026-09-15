@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Search, Trash2, X, FileDown, Copy, Send, Pencil } from 'lucide-react';
-import { getPropostas, getProposta, atualizarStatus, removerProposta, duplicarProposta } from '../services/api';
+import { getPropostas, getProposta, getClientes, atualizarStatus, removerProposta, duplicarProposta } from '../services/api';
 import api from '../services/api';
 import { formatarMoeda, formatarData, formatarNcm } from '../utils/format';
 import Paginacao from '../components/Paginacao';
@@ -22,6 +22,13 @@ const ACAO_LABEL = {
   duplicada: 'Duplicada',
 };
 
+// Remove acentuação e normaliza caixa/espaços — usado pra achar o cliente pelo
+// nome quando a proposta não está linkada por cliente_id (ex.: "CLINICA" na
+// proposta x "CLÍNICA" no cadastro são o mesmo cliente).
+function normalizarNome(txt) {
+  return (txt || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
+}
+
 // Só faz sentido avisar sobre vencimento de propostas que ainda estão em aberto.
 function diasParaVencer(p) {
   if (p.status !== 'Ativa' || !p.data) return null;
@@ -35,6 +42,7 @@ function diasParaVencer(p) {
 export default function Historico() {
   const navigate = useNavigate();
   const [propostas, setPropostas] = useState([]);
+  const [clientes, setClientes] = useState([]);
   const [busca, setBusca] = useState('');
   const [statusFiltro, setStatusFiltro] = useState('');
   const [carregando, setCarregando] = useState(true);
@@ -45,6 +53,13 @@ export default function Historico() {
   const [modalEmail, setModalEmail] = useState(false);
   const [pagina, setPagina] = useState(1);
   const [paginacao, setPaginacao] = useState({ total: 0, totalPaginas: 1 });
+
+  // Fallback pro e-mail do cliente quando a proposta não está linkada por
+  // cliente_id (detalhe.cliente_email vem nulo) — busca pelo nome no cadastro.
+  const clienteResolvidoPeloNome = useMemo(
+    () => clientes.find(c => normalizarNome(c.nome) === normalizarNome(detalhe?.cliente_nome)),
+    [clientes, detalhe?.cliente_nome]
+  );
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -62,6 +77,10 @@ export default function Historico() {
       setCarregando(false);
     }
   }, [busca, statusFiltro, pagina]);
+
+  useEffect(() => {
+    getClientes({ porPagina: 1000 }).then(res => setClientes(res.data.itens)).catch(() => {});
+  }, []);
 
   useEffect(() => { setPagina(1); }, [busca, statusFiltro]);
 
@@ -351,7 +370,7 @@ export default function Historico() {
         aberto={modalEmail}
         onFechar={() => setModalEmail(false)}
         proposta={detalhe}
-        emailInicial={detalhe?.cliente_email || ''}
+        emailInicial={detalhe?.cliente_email || clienteResolvidoPeloNome?.email || ''}
       />
     </div>
   );
