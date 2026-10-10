@@ -36,8 +36,8 @@ echo    OK: dependencias do backend instaladas.
 echo.
 
 REM --- 2/4) Backend: testes ---
-echo [2/4] Rodando os testes do backend (npm test)...
-call npm test
+echo [2/4] Rodando os testes do backend, se existirem (npm test)...
+call npm run test --if-present
 if errorlevel 1 (
   echo.
   echo    AVISO: algum teste falhou. Veja a saida acima.
@@ -68,8 +68,7 @@ echo   TUDO PRONTO
 echo ============================================================
 echo.
 echo Agora REINICIE o backend para as mudancas valerem:
-echo   - Feche o processo node.exe atual (Gerenciador de Tarefas)
-echo     ou pare/inicie do jeito que voce ja usa.
+echo   - Rode reiniciar-backend.bat (ele pede administrador sozinho).
 echo.
 echo Depois confira em: http://localhost:3001/health
 echo (deve responder com o status e a versao)

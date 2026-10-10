@@ -168,7 +168,7 @@ async function categorias(req, res) {
   }
 }
 
-// Dispara na hora a mesma varredura que já roda sozinha a cada 15min (ver
+// Dispara na hora a mesma varredura que já roda sozinha às 06:00 e às 18:00 (ver
 // agendarVerificacaoDePastaFornecedores em server.js) — pra quem acabou de
 // salvar um PDF na pasta e não quer esperar o ciclo automático nem reiniciar o backend.
 async function verificarFornecedoresAgora(req, res) {

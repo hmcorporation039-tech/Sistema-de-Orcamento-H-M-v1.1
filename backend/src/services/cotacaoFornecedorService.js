@@ -104,7 +104,7 @@ async function listarPdfs(pasta, resumo, criarSeNaoExistir) {
   }
 }
 
-// A varredura roda sozinha a cada 15min e também pelo botão "Verificar agora".
+// A varredura roda sozinha às 06:00 e às 18:00 e também pelo botão "Verificar agora".
 // Duas execuções simultâneas leriam o mesmo PDF como "não processado" antes de
 // qualquer uma gravar o hash, e o upsert (consulta-e-depois-insere, sem
 // restrição única em materiais) criaria o mesmo material duas vezes. Quem

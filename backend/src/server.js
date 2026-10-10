@@ -14,9 +14,10 @@ const { verificarPastaFornecedores, PASTAS_FORNECEDORES } = require('./services/
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const VERIFICACOES_EMAIL_POR_DIA = 3;
-const INTERVALO_VERIFICACAO_EMAIL_MS = (24 / VERIFICACOES_EMAIL_POR_DIA) * 60 * 60 * 1000;
-const INTERVALO_VERIFICACAO_FORNECEDORES_MS = 15 * 60 * 1000;
+// Horários fixos (hora local do PC) das leituras automáticas de e-mail (notas
+// e Pix) e da pasta de orçamentos de fornecedores. Fora deles, os botões
+// "Verificar agora" das telas Materiais e Financeiro continuam rodando na hora.
+const HORARIOS_VERIFICACAO_AUTOMATICA = ['06:00', '18:00'];
 
 // Middlewares
 app.use(helmet({
@@ -58,7 +59,7 @@ app.use('/api', routes);
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', sistema: 'H&M Engenharia', versao: '1.6.0' });
+  res.json({ status: 'ok', sistema: 'H&M Engenharia', versao: '1.6.1' });
 });
 
 // Serve o build de produção do frontend, se existir (permite um único
@@ -92,6 +93,38 @@ process.on('uncaughtException', (err) => {
   console.error('[uncaughtException] Exceção não capturada:', err);
 });
 
+// Milissegundos até o próximo dos HORARIOS_VERIFICACAO_AUTOMATICA, somando
+// `atrasoSegundos` (escalona as tarefas pra não abrirem duas conexões IMAP no
+// mesmo segundo).
+function msAteProximoHorario(agora = new Date(), atrasoSegundos = 0) {
+  const candidatos = [];
+  for (const diasAFrente of [0, 1]) {
+    for (const horario of HORARIOS_VERIFICACAO_AUTOMATICA) {
+      const [hora, minuto] = horario.split(':').map(Number);
+      const alvo = new Date(agora);
+      alvo.setDate(alvo.getDate() + diasAFrente);
+      alvo.setHours(hora, minuto, atrasoSegundos, 0);
+      candidatos.push(alvo - agora);
+    }
+  }
+  // Folga de 1s: se o timer disparar uns milissegundos antes do horário, o
+  // próximo cálculo não pode cair no mesmo horário e rodar a tarefa duas vezes.
+  return Math.min(...candidatos.filter(ms => ms > 1000));
+}
+
+// Encadeia setTimeout em vez de setInterval: recalcula o próximo horário a
+// cada execução, então não acumula desvio nem depende da hora em que o
+// backend subiu.
+function agendarNosHorariosFixos(rodar, atrasoSegundos) {
+  const agendarProxima = () => {
+    setTimeout(async () => {
+      await rodar();
+      agendarProxima();
+    }, msAteProximoHorario(new Date(), atrasoSegundos));
+  };
+  agendarProxima();
+}
+
 function agendarVerificacaoDeEmail() {
   if (!credenciaisConfiguradas()) {
     console.log('Importação automática de notas por e-mail não configurada (veja EMAIL_IMAP_* no .env)');
@@ -110,9 +143,8 @@ function agendarVerificacaoDeEmail() {
     }
   };
 
-  setTimeout(rodar, 10 * 1000);
-  setInterval(rodar, INTERVALO_VERIFICACAO_EMAIL_MS);
-  console.log(`Importação automática de notas por e-mail ativa (${VERIFICACOES_EMAIL_POR_DIA}x por dia, a cada ${INTERVALO_VERIFICACAO_EMAIL_MS / 3600000}h)`);
+  agendarNosHorariosFixos(rodar, 0);
+  console.log(`Importação automática de notas por e-mail ativa (às ${HORARIOS_VERIFICACAO_AUTOMATICA.join(' e às ')})`);
 }
 
 function agendarVerificacaoDePix() {
@@ -130,9 +162,8 @@ function agendarVerificacaoDePix() {
     }
   };
 
-  setTimeout(rodar, 30 * 1000);
-  setInterval(rodar, INTERVALO_VERIFICACAO_EMAIL_MS);
-  console.log(`Controle financeiro de Pix por e-mail ativo (${VERIFICACOES_EMAIL_POR_DIA}x por dia, a cada ${INTERVALO_VERIFICACAO_EMAIL_MS / 3600000}h)`);
+  agendarNosHorariosFixos(rodar, 30);
+  console.log(`Controle financeiro de Pix por e-mail ativo (às ${HORARIOS_VERIFICACAO_AUTOMATICA.join(' e às ')})`);
 }
 
 function agendarVerificacaoDePastaFornecedores() {
@@ -148,9 +179,8 @@ function agendarVerificacaoDePastaFornecedores() {
     }
   };
 
-  setTimeout(rodar, 15 * 1000);
-  setInterval(rodar, INTERVALO_VERIFICACAO_FORNECEDORES_MS);
-  console.log(`Leitura automática de orçamentos de fornecedores ativa (a cada ${INTERVALO_VERIFICACAO_FORNECEDORES_MS / 60000}min) — pastas: ${PASTAS_FORNECEDORES.join(' | ')}`);
+  agendarNosHorariosFixos(rodar, 15);
+  console.log(`Leitura automática de orçamentos de fornecedores ativa (às ${HORARIOS_VERIFICACAO_AUTOMATICA.join(' e às ')}) — pastas: ${PASTAS_FORNECEDORES.join(' | ')}`);
 }
 
 // Inicializar

@@ -398,7 +398,7 @@ export default function Materiais() {
           </button>
         )}
 
-        <button onClick={verificarFornecedores} disabled={verificandoFornecedores} style={{ ...btnSecundario, padding: '5px 10px' }} title="Lê agora os PDFs salvos em 'Orçamentos recebidos fornecedores', sem esperar o ciclo automático de 15min">
+        <button onClick={verificarFornecedores} disabled={verificandoFornecedores} style={{ ...btnSecundario, padding: '5px 10px' }} title="Lê agora os PDFs salvos em 'Orçamentos recebidos fornecedores', sem esperar a leitura automática das 06:00 e das 18:00">
           <RefreshCw size={12} style={{ marginRight: 5 }} /> {verificandoFornecedores ? 'Verificando...' : 'Verificar orçamentos de fornecedores'}
         </button>
 
