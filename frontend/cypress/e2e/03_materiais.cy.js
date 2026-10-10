@@ -1,6 +1,6 @@
 describe('Materiais', () => {
   const descricao = `Cypress QA Material ${Date.now()}`;
-  const categoria = 'Cypress QA';
+  const campo = (rotulo) => cy.contains('label', rotulo).parent();
 
   beforeEach(() => {
     cy.login();
@@ -11,19 +11,21 @@ describe('Materiais', () => {
   it('cadastra um novo material com NCM', () => {
     cy.contains('button', 'Novo Material').click();
     cy.get('form').should('be.visible').within(() => {
-      cy.get('input').eq(0).type('CYP001');
-      cy.get('input').eq(1).type(descricao);
-      cy.get('input').eq(2).type(categoria);
-      cy.get('select').select('un');
-      cy.get('input').eq(3).type('5'); // preço de compra
-      cy.get('input').eq(4).type('10'); // preço de venda
-      cy.get('input').eq(5).type('Marca Cypress');
-      cy.get('input').eq(6).type('8544.42.00'); // NCM
+      campo('Código').find('input').type('CYP001');
+      campo('Descrição *').find('input').type(descricao);
+      campo('Categoria *').find('select').select('Elétrica');
+      campo('Unidade *').find('select').select('un');
+      campo('Preço Compra (R$)').find('input').type('5');
+      campo('Preço Venda (R$) *').find('input').type('10');
+      campo('Marca').find('input').type('Marca Cypress');
+      campo('NCM/SH').find('input').type('8544.42.00');
       cy.contains('button', 'Salvar').click();
     });
     cy.contains(/material cadastrado/i).should('be.visible');
-    cy.contains('td', descricao).should('be.visible');
-    cy.contains('td', '8544.42.00').should('be.visible');
+    // O catálogo tem centenas de itens paginados — busca pelo novo antes de conferir.
+    cy.get('input[placeholder*="Buscar descrição"]').type(descricao);
+    cy.contains('td', descricao, { timeout: 8000 }).should('be.visible');
+    cy.contains('tr', descricao).contains('td', '8544.42.00').should('be.visible');
   });
 
   it('filtra por categoria e busca pela descrição', () => {
@@ -35,7 +37,7 @@ describe('Materiais', () => {
     cy.get('input[placeholder*="Buscar descrição"]').type(descricao);
     cy.contains('tr', descricao, { timeout: 8000 }).find('button[title="Editar"]').click();
     cy.get('form').should('be.visible').within(() => {
-      cy.get('input').eq(4).clear().type('15.90');
+      campo('Preço Venda (R$) *').find('input').clear().type('15.90');
       cy.contains('button', 'Salvar').click();
     });
     cy.contains(/material atualizado/i).should('be.visible');

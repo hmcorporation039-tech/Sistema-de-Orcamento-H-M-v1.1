@@ -101,7 +101,11 @@ export default function AnaliseProjeto() {
     // sem precisar pesquisar de novo.
     const pesquisasSalvas = {};
     for (const it of [...servicosComId, ...materiaisComId]) {
-      if (it.pesquisa_mercado) pesquisasSalvas[it.id] = { resultado: it.pesquisa_mercado.resultado, fonte: it.pesquisa_mercado.fonte, pesquisadoEm: it.pesquisa_mercado.pesquisadoEm };
+      // recolhidaInicial: ao REABRIR a análise, a pesquisa volta RECOLHIDA (só
+      // o cabeçalho), pra não poluir a tela quando há vários itens já
+      // pesquisados — o usuário expande a que quiser. Uma pesquisa NOVA (feita
+      // agora) não tem essa marca, então nasce expandida.
+      if (it.pesquisa_mercado) pesquisasSalvas[it.id] = { resultado: it.pesquisa_mercado.resultado, fonte: it.pesquisa_mercado.fonte, pesquisadoEm: it.pesquisa_mercado.pesquisadoEm, recolhidaInicial: true };
     }
     setPesquisas(pesquisasSalvas);
   }, []);
@@ -191,6 +195,8 @@ export default function AnaliseProjeto() {
         cliente_nome: analise.cliente,
         servicos: analise.servicos.map(({ id, ...s }) => s),
         materiais: analise.materiais.map(({ id, ...m }) => m),
+        funcionamento: analise.funcionamento ?? '',
+        pontos_por_disciplina: analise.pontosPorDisciplina ?? [],
       });
       setSalvoEm(new Date());
     } catch {
@@ -198,7 +204,7 @@ export default function AnaliseProjeto() {
     } finally {
       setSalvando(false);
     }
-  }, [analise?.id, analise?.cliente, analise?.servicos, analise?.materiais]);
+  }, [analise?.id, analise?.cliente, analise?.servicos, analise?.materiais, analise?.funcionamento, analise?.pontosPorDisciplina]);
 
   // Reseta o "já assentou" toda vez que o id muda (nova análise carregada) —
   // assim a primeira renderização de cada análise não dispara um autosave à toa.
@@ -218,7 +224,7 @@ export default function AnaliseProjeto() {
     pendenteRef.current = true;
     const timer = setTimeout(() => { pendenteRef.current = false; salvarAgora(); }, 1500);
     return () => clearTimeout(timer);
-  }, [analise?.servicos, analise?.materiais, analise?.cliente]);
+  }, [analise?.servicos, analise?.materiais, analise?.cliente, analise?.funcionamento, analise?.pontosPorDisciplina]);
 
   // Salva o que ficou pendente ao sair da tela. O efeito acima cancela o timer
   // quando o componente desmonta, então quem editasse e trocasse de tela em
@@ -261,6 +267,43 @@ export default function AnaliseProjeto() {
       ...a,
       materiais: [...a.materiais, { id: gerarId(), descricao: '', quantidade: 1, unidade: 'un', pronto: false }],
     }));
+  }
+
+  // ── Enriquecimento (Claude Desktop): funcionamento + pontos por disciplina ──
+  // Campos ADICIONAIS, editáveis, salvos pelo mesmo autosave. Os pontos por
+  // disciplina só aparecem/são editados para as disciplinas SELECIONADAS na
+  // análise (é o que evita sair caçando disciplina que não foi escolhida).
+  function atualizarFuncionamento(valor) {
+    setAnalise(a => ({ ...a, funcionamento: valor }));
+  }
+
+  function atualizarPontoDisciplina(disciplina, idx, campo, valor) {
+    setAnalise(a => ({
+      ...a,
+      pontosPorDisciplina: (a.pontosPorDisciplina || []).map(g =>
+        g.disciplina !== disciplina ? g : { ...g, itens: g.itens.map((it, i) => i === idx ? { ...it, [campo]: valor } : it) }
+      ),
+    }));
+  }
+
+  function removerPontoDisciplina(disciplina, idx) {
+    setAnalise(a => ({
+      ...a,
+      pontosPorDisciplina: (a.pontosPorDisciplina || []).map(g =>
+        g.disciplina !== disciplina ? g : { ...g, itens: g.itens.filter((_, i) => i !== idx) }
+      ),
+    }));
+  }
+
+  function adicionarPontoDisciplina(disciplina) {
+    setAnalise(a => {
+      const lista = a.pontosPorDisciplina || [];
+      const novoItem = { descricao: '', tipo: '', modelo: '', quantidade: 0, observacao: '' };
+      if (lista.some(g => g.disciplina === disciplina)) {
+        return { ...a, pontosPorDisciplina: lista.map(g => g.disciplina === disciplina ? { ...g, itens: [...g.itens, novoItem] } : g) };
+      }
+      return { ...a, pontosPorDisciplina: [...lista, { disciplina, itens: [novoItem] }] };
+    });
   }
 
   // Pesquisa de mercado — serve tanto pra materiais quanto pra serviços de
@@ -491,6 +534,20 @@ export default function AnaliseProjeto() {
             </p>
           </div>
 
+          <div style={card}>
+            <h3 style={tituloSecao}>Funcionamento do Projeto</h3>
+            <p style={{ fontSize: 12, color: '#666', marginBottom: 10, lineHeight: 1.6 }}>
+              Como o projeto opera — preenchido pela análise do Claude Desktop (visão do PDF) e editável aqui. Cobre só as disciplinas selecionadas.
+            </p>
+            <textarea
+              value={analise.funcionamento || ''}
+              onChange={(e) => atualizarFuncionamento(e.target.value)}
+              placeholder="Ex.: CFTV com N câmeras gravando em NVR de X canais; rede com switch PoE alimentando as câmeras; elétrica com quadro dedicado alimentando os racks..."
+              rows={5}
+              style={{ width: '100%', background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, color: '#ddd', fontSize: 13, padding: 10, lineHeight: 1.5, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
+            />
+          </div>
+
           {(analise.disciplinas?.includes('cftv') || analise.disciplinas?.includes('rede') || analise.disciplinas?.includes('antena')) && (
             <div style={card}>
               <h3 style={tituloSecao}>Pontos Identificados no Projeto</h3>
@@ -520,6 +577,52 @@ export default function AnaliseProjeto() {
               </div>
             </div>
           )}
+
+          <div style={card}>
+            <h3 style={tituloSecao}>Pontos por Disciplina</h3>
+            <p style={{ fontSize: 12, color: '#666', marginBottom: 14, lineHeight: 1.6 }}>
+              Marcação por disciplina com tipo, modelo e quantidade — preenchida pela análise do Claude Desktop (inclusive elétrica, iluminação e outras que a contagem por código não alcança) e editável aqui. Só aparecem as disciplinas selecionadas na análise; sempre confira contra a planta.
+            </p>
+            {(analise.disciplinas || []).length === 0 && (
+              <p style={{ fontSize: 12, color: '#666', fontStyle: 'italic', margin: 0 }}>Nenhuma disciplina selecionada nesta análise.</p>
+            )}
+            {(analise.disciplinas || []).map(disc => {
+              const grupo = (analise.pontosPorDisciplina || []).find(g => g.disciplina === disc);
+              const itens = grupo?.itens || [];
+              const nomeDisc = DISCIPLINAS.find(d => d.chave === disc)?.nome || disc;
+              return (
+                <div key={disc} style={{ marginBottom: 18, paddingBottom: 14, borderBottom: '1px solid #1e1e1e' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+                    <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: '#c9a227' }}>{nomeDisc}</div>
+                    <button type="button" onClick={() => adicionarPontoDisciplina(disc)} style={{ ...btnSecundario, padding: '3px 8px', fontSize: 11 }}>
+                      <Plus size={11} style={{ marginRight: 3 }} /> Adicionar ponto
+                    </button>
+                  </div>
+                  {itens.length === 0 ? (
+                    <p style={{ fontSize: 12, color: '#666', fontStyle: 'italic', margin: 0 }}>Nenhum ponto marcado ainda para esta disciplina.</p>
+                  ) : (
+                    <div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '2.2fr 1fr 1.4fr 0.7fr 1.6fr 28px', gap: 8, fontSize: 11, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>
+                        <span>Descrição</span><span>Tipo</span><span>Modelo</span><span>Qtd</span><span>Observação</span><span />
+                      </div>
+                      {itens.map((it, idx) => (
+                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2.2fr 1fr 1.4fr 0.7fr 1.6fr 28px', gap: 8, marginBottom: 6, alignItems: 'center' }}>
+                          <input value={it.descricao || ''} onChange={(e) => atualizarPontoDisciplina(disc, idx, 'descricao', e.target.value)} style={inputPonto} />
+                          <input value={it.tipo || ''} onChange={(e) => atualizarPontoDisciplina(disc, idx, 'tipo', e.target.value)} style={inputPonto} />
+                          <input value={it.modelo || ''} onChange={(e) => atualizarPontoDisciplina(disc, idx, 'modelo', e.target.value)} style={inputPonto} />
+                          <input type="number" min="0" value={it.quantidade ?? 0} onChange={(e) => atualizarPontoDisciplina(disc, idx, 'quantidade', e.target.value === '' ? 0 : Number(e.target.value))} style={{ ...inputPonto, textAlign: 'right' }} />
+                          <input value={it.observacao || ''} onChange={(e) => atualizarPontoDisciplina(disc, idx, 'observacao', e.target.value)} style={inputPonto} />
+                          <button type="button" onClick={() => removerPontoDisciplina(disc, idx)} title="Remover ponto" style={{ background: 'none', border: 'none', color: '#8a4040', cursor: 'pointer', padding: 0 }}>
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
 
           {analise.achados.length > 0 && (
             <div style={card}>
@@ -598,6 +701,42 @@ export default function AnaliseProjeto() {
 // agora, a mesma pesquisa de mercado sob demanda (Gemini + busca real) que
 // já existia só pra materiais — útil quando não há referência cadastrada ou
 // pra confirmar se ela ainda está atualizada.
+// Bloco do resultado da pesquisa de mercado, agora RECOLHÍVEL. O resultado
+// continua salvo no item (pesquisa_mercado) — recolher/expandir é só visual,
+// não refaz a busca nem grava nada no banco. Começa expandido logo após a
+// pesquisa; o usuário recolhe pra tirar da frente e clica de novo pra rever,
+// sem custo e sem nova pesquisa.
+function BlocoPesquisaMercado({ pesquisa }) {
+  // Começa recolhida só quando a pesquisa veio salva de uma análise reaberta
+  // (recolhidaInicial). Pesquisa feita agora nasce expandida.
+  const [recolhida, setRecolhida] = useState(!!pesquisa?.recolhidaInicial);
+  if (!pesquisa?.resultado) return null;
+  const fonteLabel = pesquisa.fonte === 'claude' ? 'Claude, fallback pago'
+    : pesquisa.fonte === 'gemini' ? 'Gemini'
+    : (pesquisa.fonte || 'IA');
+  return (
+    <div style={{ marginTop: 10, padding: 12, background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, fontSize: 12, color: '#bbb', lineHeight: 1.5 }}>
+      <div
+        onClick={() => setRecolhida(r => !r)}
+        title={recolhida ? 'Clique para expandir a pesquisa' : 'Clique para recolher a pesquisa'}
+        style={{ display: 'flex', alignItems: 'baseline', gap: 6, cursor: 'pointer', userSelect: 'none' }}
+      >
+        <span style={{ color: '#c9a227', fontSize: 11, width: 12, display: 'inline-block' }}>{recolhida ? '▸' : '▾'}</span>
+        <b style={{ color: '#c9a227' }}>Pesquisa de mercado ({fonteLabel} — confira antes de usar):</b>
+        {pesquisa.pesquisadoEm && (
+          <span style={{ color: '#666', fontWeight: 400 }}> — salva, feita em {new Date(pesquisa.pesquisadoEm).toLocaleString('pt-BR')}</span>
+        )}
+        <span style={{ marginLeft: 'auto', color: '#777', fontSize: 11, textDecoration: 'underline', whiteSpace: 'nowrap' }}>
+          {recolhida ? 'expandir' : 'recolher'}
+        </span>
+      </div>
+      {!recolhida && (
+        <div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{pesquisa.resultado}</div>
+      )}
+    </div>
+  );
+}
+
 function TabelaServicos({ itens, onAtualizar, onRemover, pesquisas, onPesquisar, semObservacao }) {
   const colunas = semObservacao
     ? '2.4fr 0.6fr 0.6fr 0.9fr 0.9fr 1.2fr 32px'
@@ -667,18 +806,7 @@ function TabelaServicos({ itens, onAtualizar, onRemover, pesquisas, onPesquisar,
                 <Trash2 size={12} />
               </button>
             </div>
-            {pesquisa?.resultado && (
-              <div style={{ marginTop: 10, padding: 12, background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, fontSize: 12, color: '#bbb', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
-                <b style={{ color: '#c9a227' }}>
-                  Pesquisa de mercado ({pesquisa.fonte === 'claude' ? 'Claude, fallback pago' : 'Gemini'} — confira antes de usar):
-                </b>
-                {pesquisa.pesquisadoEm && (
-                  <span style={{ color: '#666', fontWeight: 400 }}> — salva, feita em {new Date(pesquisa.pesquisadoEm).toLocaleString('pt-BR')}</span>
-                )}
-                <br />
-                {pesquisa.resultado}
-              </div>
-            )}
+            <BlocoPesquisaMercado pesquisa={pesquisa} />
             {pesquisa?.erro && (
               <div style={{ marginTop: 8, fontSize: 12, color: '#b04040' }}>{pesquisa.erro}</div>
             )}
@@ -745,18 +873,7 @@ function TabelaMateriais({ itens, onAtualizar, onRemover, pesquisas, onPesquisar
                 <Trash2 size={12} />
               </button>
             </div>
-            {pesquisa?.resultado && (
-              <div style={{ marginTop: 10, padding: 12, background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, fontSize: 12, color: '#bbb', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
-                <b style={{ color: '#c9a227' }}>
-                  Pesquisa de mercado ({pesquisa.fonte === 'claude' ? 'Claude, fallback pago' : 'Gemini'} — confira antes de usar):
-                </b>
-                {pesquisa.pesquisadoEm && (
-                  <span style={{ color: '#666', fontWeight: 400 }}> — salva, feita em {new Date(pesquisa.pesquisadoEm).toLocaleString('pt-BR')}</span>
-                )}
-                <br />
-                {pesquisa.resultado}
-              </div>
-            )}
+            <BlocoPesquisaMercado pesquisa={pesquisa} />
             {pesquisa?.erro && (
               <div style={{ marginTop: 8, fontSize: 12, color: '#b04040' }}>{pesquisa.erro}</div>
             )}
@@ -876,6 +993,7 @@ const card = {
 };
 
 const tituloSecao = { fontSize: 15, color: '#c9a227', fontWeight: 700, marginBottom: 10 };
+const inputPonto = { width: '100%', background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 5, color: '#ddd', fontSize: 12, padding: '5px 7px', boxSizing: 'border-box', fontFamily: 'inherit' };
 
 const btnPrimario = {
   display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px',

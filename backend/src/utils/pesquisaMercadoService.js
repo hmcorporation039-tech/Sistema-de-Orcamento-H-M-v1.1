@@ -94,4 +94,24 @@ async function pesquisarPrecoMercado(descricao) {
   throw new ErroPesquisaMercado('Gemini falhou e não há ANTHROPIC_API_KEY configurada pra fallback', 502);
 }
 
-module.exports = { pesquisarPrecoMercado, ErroPesquisaMercado };
+// Grava no sistema uma pesquisa de preço feita FORA da API paga — tipicamente
+// uma busca que o Claude Desktop fez com a própria ferramenta de web (sem
+// gastar cota do Gemini nem crédito do Claude via API). Fica no mesmo lugar
+// das pesquisas automáticas: alimenta o cache de 48h e o histórico, então o
+// botão da tela também passa a mostrar o que foi pesquisado por aqui.
+async function salvarPesquisaManual(descricao, resultado, fonte = 'claude_desktop') {
+  const desc = (descricao || '').trim();
+  const texto = (resultado || '').trim();
+  if (!desc) throw new ErroPesquisaMercado('Informe a descrição do material pesquisado', 400);
+  if (!texto) throw new ErroPesquisaMercado('Informe o resultado da pesquisa a salvar', 400);
+
+  // Coluna fonte é VARCHAR(20); descricao/descricao_normalizada são VARCHAR(500).
+  const fonteLimpa = (String(fonte || 'claude_desktop').trim() || 'claude_desktop').slice(0, 20);
+  const descCurta = desc.slice(0, 500);
+  const normalizada = normalizarDescricao(descCurta).slice(0, 500);
+
+  await salvarCache(descCurta, normalizada, texto, fonteLimpa);
+  return { descricao: descCurta, fonte: fonteLimpa, salvo: true };
+}
+
+module.exports = { pesquisarPrecoMercado, salvarPesquisaManual, ErroPesquisaMercado };

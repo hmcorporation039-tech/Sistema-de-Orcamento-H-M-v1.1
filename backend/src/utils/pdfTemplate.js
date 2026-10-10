@@ -125,8 +125,7 @@ function gerarHtmlProposta(proposta) {
   .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; margin-bottom: 12px; }
   .info-item .label { font-size: 8px; text-transform: uppercase; letter-spacing: .5px; color: #888; margin-bottom: 1px; }
   .info-item .valor { font-size: 10.5px; color: #1a1a1a; }
-  .saudacao { font-size: 10.5px; margin-bottom: 5px; }
-  .intro { font-size: 10px; line-height: 1.4; margin-bottom: 12px; white-space: pre-wrap; }
+  .saudacao { font-size: 10.5px; margin-bottom: 8px; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
   th { background: #1a1a1a; color: #c9a227; font-size: 9px; text-transform: uppercase; letter-spacing: .5px; padding: 6px 8px; text-align: left; }
   th.num, td.num { text-align: right; }
@@ -138,9 +137,9 @@ function gerarHtmlProposta(proposta) {
   .totais table { width: 300px; margin-bottom: 0; }
   .totais td { border: none; padding: 3px 8px; font-size: 10.5px; }
   .totais tr.final td { border-top: 2px solid #c9a227; padding-top: 6px; font-size: 14px; font-weight: 700; color: #c9a227; }
-  .bloco { margin-bottom: 12px; }
-  .bloco .label { font-size: 9px; text-transform: uppercase; letter-spacing: .5px; color: #888; margin-bottom: 3px; }
-  .bloco .texto { font-size: 10px; white-space: pre-wrap; }
+  .bloco { margin-bottom: 12px; background: #faf9f6; border-left: 3px solid #c9a227; border-radius: 0 4px 4px 0; padding: 8px 10px; page-break-inside: avoid; }
+  .bloco .label { font-size: 9px; text-transform: uppercase; letter-spacing: .5px; color: #a9842f; font-weight: 700; margin-bottom: 3px; }
+  .bloco .texto { font-size: 10px; line-height: 1.4; white-space: pre-wrap; color: #333; }
   .encerramento { margin-top: 14px; padding-top: 10px; border-top: 1px solid #ddd; page-break-inside: avoid; }
   .empresa-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 24px; font-size: 9px; color: #333; margin-bottom: 14px; }
   .empresa-grid b { display: block; color: #888; font-weight: 700; text-transform: uppercase; font-size: 7.5px; letter-spacing: .4px; margin-bottom: 1px; }
@@ -169,7 +168,11 @@ function gerarHtmlProposta(proposta) {
   </div>
 
   <div class="saudacao">Prezado(a) ${escapeHtml(proposta.cliente_nome)},</div>
-  ${proposta.observacoes ? `<div class="intro">${escapeHtml(proposta.observacoes)}</div>` : ''}
+  ${proposta.escopo ? `
+  <div class="bloco">
+    <div class="label">Escopo</div>
+    <div class="texto">${escapeHtml(proposta.escopo)}</div>
+  </div>` : ''}
 
   <table>
     <thead>
@@ -204,6 +207,11 @@ function gerarHtmlProposta(proposta) {
   <div class="bloco">
     <div class="label">Condições de pagamento</div>
     <div class="texto">${escapeHtml(proposta.pagamento)}</div>
+  </div>` : ''}
+  ${proposta.observacoes ? `
+  <div class="bloco">
+    <div class="label">Observações</div>
+    <div class="texto">${escapeHtml(proposta.observacoes)}</div>
   </div>` : ''}
 
   <div class="encerramento">

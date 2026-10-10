@@ -19,6 +19,7 @@ const FORM_VAZIO = {
   cliente_nome: '',
   responsavel: '',
   local_obra: '',
+  escopo: '',
   pagamento: '',
   observacoes: '',
   bdi: 20,
@@ -56,6 +57,26 @@ const CATEGORIAS_MAO_DE_OBRA = [
 const SUBGRUPOS_PADRAO = [
   'Alarme', 'Automação', 'CFTV', 'Controle de Acesso', 'Elétrica', 'Redes', 'Sonorização', 'Climatização',
 ];
+
+// Mesma lista usada no cadastro de Materiais (ver CATEGORIAS_PADRAO em
+// Materiais.js) — nas seções de Materiais do orçamento, o campo que antes era
+// "Subgrupo" (texto livre) virou "Categoria", com as mesmas opções do
+// cadastro, pra ficar coligado com o catálogo (ver opcoesAgrupamento).
+const CATEGORIAS_PADRAO_MATERIAIS = [
+  'Elétrica', 'CFTV', 'Redes / Cabeamento Estruturado', 'Infraestrutura', 'Ferragens', 'Ferramentas', 'EPI', 'Não classificado',
+];
+
+// Propostas antigas guardam no item subgrupos de texto livre que não batem com
+// as categorias do catálogo ("Redes de Computadores (dados)", "Controle de
+// Acesso" x "Controle de acesso"...). Comparar sem diferenciar maiúsculas e,
+// sem nenhuma correspondência, mostrar o catálogo inteiro evita que o
+// "+ catálogo" dessas linhas apareça vazio.
+function filtrarCatalogoPorCategoria(materiais, categoria) {
+  const alvo = (categoria || '').trim().toLowerCase();
+  if (!alvo) return materiais;
+  const daCategoria = materiais.filter(m => (m.categoria || '').trim().toLowerCase() === alvo);
+  return daCategoria.length > 0 ? daCategoria : materiais;
+}
 
 export default function Orcamento() {
   const { id: editandoId } = useParams();
@@ -119,6 +140,7 @@ export default function Orcamento() {
         cliente_nome: p.cliente_nome || '',
         responsavel: p.responsavel || '',
         local_obra: p.local_obra || '',
+        escopo: p.escopo || '',
         pagamento: p.pagamento || '',
         observacoes: p.observacoes || '',
         bdi: Number(p.bdi) || 0,
@@ -318,10 +340,19 @@ export default function Orcamento() {
   function aplicarMaterialNoItem(id, materialId) {
     const mat = materiais.find(m => String(m.id) === String(materialId));
     if (!mat) return;
-    setItens(it => it.map(i => i.id === id ? {
-      ...i, material_id: mat.id, descricao: mat.descricao, unidade: mat.unidade,
-      valor_unitario: mat.preco, ncm: mat.ncm || '', codigo: mat.codigo || ''
-    } : i));
+    setItens(it => {
+      // Se o item ainda não tem categoria escolhida, herda a do material do
+      // catálogo — assim a categoria já reflete de onde o material veio,
+      // mesmo que a pessoa tenha pulado direto pro catálogo sem escolher a
+      // categoria antes.
+      const atualizado = it.map(i => i.id === id ? {
+        ...i, material_id: mat.id, descricao: mat.descricao, unidade: mat.unidade,
+        valor_unitario: mat.preco, ncm: mat.ncm || '', codigo: mat.codigo || '',
+        subgrupo: i.subgrupo || mat.categoria || '',
+      } : i);
+      const item = atualizado.find(i => i.id === id);
+      return reordenarPorSubgrupo(atualizado, item.sid);
+    });
   }
 
   function aplicarCategoriaMaoDeObra(id, categoria) {
@@ -422,6 +453,7 @@ export default function Orcamento() {
         cliente_nome: form.cliente_nome.trim(),
         responsavel: form.responsavel,
         local_obra: form.local_obra,
+        escopo: form.escopo,
         pagamento: form.pagamento,
         observacoes: form.observacoes,
         bdi: Number(form.bdi) || 0,
@@ -519,12 +551,18 @@ export default function Orcamento() {
           </Campo>
         </div>
 
+        <div style={{ marginBottom: 12 }}>
+          <Campo label="Escopo">
+            <textarea rows={3} value={form.escopo} onChange={e => setForm({ ...form, escopo: e.target.value })} placeholder="O que está sendo executado/fornecido — aparece logo após a saudação no PDF" />
+          </Campo>
+        </div>
+
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <Campo label="Condições de pagamento">
-            <textarea rows={2} value={form.pagamento} onChange={e => setForm({ ...form, pagamento: e.target.value })} />
+            <textarea rows={3} value={form.pagamento} onChange={e => setForm({ ...form, pagamento: e.target.value })} />
           </Campo>
           <Campo label="Observações">
-            <textarea rows={2} value={form.observacoes} onChange={e => setForm({ ...form, observacoes: e.target.value })} />
+            <textarea rows={3} value={form.observacoes} onChange={e => setForm({ ...form, observacoes: e.target.value })} placeholder="Notas gerais — aparece logo após as condições de pagamento no PDF" />
           </Campo>
         </div>
       </div>
@@ -535,7 +573,12 @@ export default function Orcamento() {
         const colunas = maoDeObra
           ? '0.9fr 1.2fr 3.1fr 0.7fr 0.7fr 0.9fr 0.9fr 1fr 32px'
           : '0.9fr 1.2fr 2.4fr 0.9fr 0.7fr 0.7fr 0.9fr 0.9fr 1fr 32px';
-        const opcoesSubgrupo = subgruposDaSecao(sec.id);
+        // Seções de Materiais usam as categorias do cadastro de Materiais (coligado
+        // com o catálogo — ver filtro no dropdown "+ catálogo" abaixo); seções de
+        // Mão de Obra continuam com os subgrupos livres de sempre.
+        const opcoesSubgrupo = maoDeObra
+          ? subgruposDaSecao(sec.id)
+          : Array.from(new Set([...CATEGORIAS_PADRAO_MATERIAIS, ...materiais.map(m => m.categoria).filter(Boolean)]));
 
         return (
           <div key={sec.id} style={card}>
@@ -555,7 +598,7 @@ export default function Orcamento() {
 
             {itens.filter(it => it.sid === sec.id).length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, marginBottom: 6, fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px' }}>
-                <span>Subgrupo</span>
+                <span>{maoDeObra ? 'Subgrupo' : 'Categoria'}</span>
                 <span>{maoDeObra ? 'Sugestão' : 'Catálogo'}</span>
                 <span>Descrição</span>
                 {!maoDeObra && <span>NCM/SH</span>}
@@ -593,19 +636,19 @@ export default function Orcamento() {
                     value={it.subgrupo || ''}
                     onChange={e => {
                       if (e.target.value === '__novo__') {
-                        const novo = window.prompt('Nome do novo subgrupo:', it.subgrupo || '');
+                        const novo = window.prompt(maoDeObra ? 'Nome do novo subgrupo:' : 'Nome da nova categoria:', it.subgrupo || '');
                         if (novo !== null) atualizarItem(it.id, 'subgrupo', novo.trim());
                         return;
                       }
                       atualizarItem(it.id, 'subgrupo', e.target.value);
                     }}
                   >
-                    <option value="">(sem subgrupo)</option>
+                    <option value="">{maoDeObra ? '(sem subgrupo)' : '(sem categoria)'}</option>
                     {opcoesSubgrupo.map(sg => <option key={sg} value={sg}>{sg}</option>)}
                     {it.subgrupo && !opcoesSubgrupo.includes(it.subgrupo) && (
                       <option value={it.subgrupo}>{it.subgrupo}</option>
                     )}
-                    <option value="__novo__">+ novo subgrupo...</option>
+                    <option value="__novo__">{maoDeObra ? '+ novo subgrupo...' : '+ nova categoria...'}</option>
                   </select>
                   {maoDeObra ? (
                     <select value="" onChange={e => {
@@ -625,8 +668,8 @@ export default function Orcamento() {
                     </select>
                   ) : (
                     <select value="" onChange={e => aplicarMaterialNoItem(it.id, e.target.value)}>
-                      <option value="">+ catálogo</option>
-                      {materiais.map(m => <option key={m.id} value={m.id}>{m.descricao}</option>)}
+                      <option value="">{it.subgrupo ? `+ catálogo (${it.subgrupo})` : '+ catálogo'}</option>
+                      {filtrarCatalogoPorCategoria(materiais, it.subgrupo).map(m => <option key={m.id} value={m.id}>{m.descricao}</option>)}
                     </select>
                   )}
                   <input value={it.descricao} onChange={e => atualizarItem(it.id, 'descricao', e.target.value)} placeholder="Descrição do item" />

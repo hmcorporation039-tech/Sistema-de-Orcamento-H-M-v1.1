@@ -60,6 +60,7 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
     cameras = { total: 0, detalhePorArquivo: [] },
     pontosRedeAntena = { rede: { total: 0 }, antena: { total: 0 } },
     tabelaCabos = [], achados = [], servicos = [], materiais = [],
+    funcionamento = '', pontosPorDisciplina = [],
   } = analise;
 
   const resumo = calcularResumo(servicos, materiais);
@@ -139,6 +140,33 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
     </tr>
   `);
 
+  // Funcionamento do projeto (texto do enriquecimento via Claude Desktop).
+  const htmlFuncionamento = (funcionamento && funcionamento.trim())
+    ? `<h2>Funcionamento do Projeto</h2><p class="funcionamento">${escapeHtml(funcionamento).replace(/\n/g, '<br/>')}</p>`
+    : '';
+
+  // Pontos por disciplina (tipo/modelo/quantidade) — uma tabela por disciplina,
+  // só as que têm itens marcados.
+  const gruposComItens = (pontosPorDisciplina || []).filter(g => g && Array.isArray(g.itens) && g.itens.length > 0);
+  const htmlPontosPorDisciplina = gruposComItens.length > 0 ? `
+  <h2>Pontos por Disciplina</h2>
+  <p class="legenda">Marcação por disciplina (tipo, modelo e quantidade), inclusive as que não têm código individual no desenho. Confira contra a planta antes de fechar.</p>
+  ${gruposComItens.map(g => `
+    <h3 class="disc">${escapeHtml(nomeDaDisciplina(g.disciplina))}</h3>
+    <table>
+      <thead><tr><th>Descrição</th><th>Tipo</th><th>Modelo</th><th class="num">Qtd.</th><th>Observação</th></tr></thead>
+      <tbody>${g.itens.map(it => `
+        <tr>
+          <td>${escapeHtml(it.descricao || '')}</td>
+          <td>${escapeHtml(it.tipo || '—')}</td>
+          <td>${escapeHtml(it.modelo || '—')}</td>
+          <td class="num">${escapeHtml(it.quantidade ?? '—')}</td>
+          <td class="obs">${escapeHtml(it.observacao || '')}</td>
+        </tr>
+      `).join('')}</tbody>
+    </table>
+  `).join('')}` : '';
+
   const linhasMateriais = linhasAgrupadasPorSubgrupo(materiais, 6, m => `
     <tr class="${m.pronto ? 'pronto' : ''}">
       <td>${escapeHtml(m.descricao)}${m.referencia_fabricante ? `<div class="obs">Ref.: ${escapeHtml(m.referencia_fabricante)}</div>` : ''}</td>
@@ -176,6 +204,8 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
   .vazio { padding: 10px 8px; color: #999; font-size: 10px; font-style: italic; }
   .aviso { background: #fff8e6; border: 1px solid #e8d29a; border-radius: 6px; padding: 10px 12px; font-size: 10px; color: #7a5c00; margin-bottom: 14px; }
   .legenda { font-size: 9.5px; color: #666; margin-bottom: 8px; line-height: 1.5; }
+  .funcionamento { font-size: 10.5px; color: #333; line-height: 1.6; margin-bottom: 14px; }
+  h3.disc { font-size: 10.5px; color: #333; font-weight: 700; margin: 12px 0 4px; }
   .resumo-blocos { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 18px; }
   .resumo-bloco { border: 1px solid #e5e5e5; border-radius: 6px; padding: 10px 12px; }
   .resumo-bloco .rotulo { font-size: 8px; text-transform: uppercase; letter-spacing: .5px; color: #888; margin-bottom: 3px; }
@@ -227,6 +257,8 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
     na seção de Compatibilização antes de fechar o orçamento.
   </div>
 
+  ${htmlFuncionamento}
+
   <h2>Resumo do Orçamento</h2>
   <div class="resumo-blocos">
     <div class="resumo-bloco">
@@ -266,6 +298,8 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
     <tbody>${linhasPontosPorAmbiente}</tbody>
   </table>` : `<div class="vazio">Não foi possível estimar a distribuição por ambiente nos arquivos analisados.</div>`}
   ` : ''}
+
+  ${htmlPontosPorDisciplina}
 
   <h2>Tabela de Cabos (legenda do projeto)</h2>
   ${tabelaCabos.length > 0 ? `

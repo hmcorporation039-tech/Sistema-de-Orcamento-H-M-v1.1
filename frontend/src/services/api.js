@@ -50,6 +50,7 @@ export const extrairNotaFiscal = (arquivo) => {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
 };
+export const verificarFornecedoresAgora = () => api.post('/materiais/fornecedores/verificar-agora');
 
 // ── MÃO DE OBRA (catálogo de itens já lançados em propostas, sugestão em
 // dropdown na aba Orçamento) ─────────────────────────────────────────────

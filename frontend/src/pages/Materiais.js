@@ -5,7 +5,7 @@ import {
   getMateriais, criarMaterial, atualizarMaterial, removerMaterial,
   importarMateriais, extrairNotaFiscal, getCategoriasMateriais,
   getStatusEmail, verificarEmailAgora, getHistoricoEmail, getMargemPadrao, atualizarMargemPadrao,
-  pesquisarPrecoMercado,
+  pesquisarPrecoMercado, verificarFornecedoresAgora,
 } from '../services/api';
 import { formatarMoeda, formatarNcm, formatarData } from '../utils/format';
 import Paginacao from '../components/Paginacao';
@@ -20,7 +20,7 @@ const CATEGORIAS_PADRAO = [
 ];
 const ORIGEM_LABEL = {
   manual: 'Manual', importacao: 'Importação', nota_xml: 'NF-e (XML)', nota_pdf: 'NF-e (PDF)',
-  email_xml: 'E-mail (XML)', email_pdf: 'E-mail (PDF)',
+  email_xml: 'E-mail (XML)', email_pdf: 'E-mail (PDF)', fornecedor_whatsapp: 'Orçamento fornecedor (PDF)',
 };
 
 export default function Materiais() {
@@ -51,6 +51,7 @@ export default function Materiais() {
 
   const [statusEmail, setStatusEmail] = useState(null);
   const [verificandoEmail, setVerificandoEmail] = useState(false);
+  const [verificandoFornecedores, setVerificandoFornecedores] = useState(false);
   const [margemPadrao, setMargemPadrao] = useState('');
   const [salvandoMargem, setSalvandoMargem] = useState(false);
   const [modalHistorico, setModalHistorico] = useState(false);
@@ -213,6 +214,21 @@ export default function Materiais() {
       toast.error(err.response?.data?.erro || 'Erro ao verificar caixa de entrada');
     } finally {
       setVerificandoEmail(false);
+    }
+  }
+
+  async function verificarFornecedores() {
+    setVerificandoFornecedores(true);
+    try {
+      const res = await verificarFornecedoresAgora();
+      const r = res.data;
+      toast.success(`${r.arquivosProcessados}/${r.arquivosEncontrados} orçamentos de fornecedores · ${r.materiaisCriados} materiais criados, ${r.materiaisAtualizados} atualizados`);
+      r.avisos?.forEach(a => toast(a));
+      carregar();
+    } catch (err) {
+      toast.error(err.response?.data?.erro || 'Erro ao verificar orçamentos de fornecedores');
+    } finally {
+      setVerificandoFornecedores(false);
     }
   }
 
@@ -381,6 +397,10 @@ export default function Materiais() {
             <RefreshCw size={12} style={{ marginRight: 5 }} /> {verificandoEmail ? 'Verificando...' : 'Verificar agora'}
           </button>
         )}
+
+        <button onClick={verificarFornecedores} disabled={verificandoFornecedores} style={{ ...btnSecundario, padding: '5px 10px' }} title="Lê agora os PDFs salvos em 'Orçamentos recebidos fornecedores', sem esperar o ciclo automático de 15min">
+          <RefreshCw size={12} style={{ marginRight: 5 }} /> {verificandoFornecedores ? 'Verificando...' : 'Verificar orçamentos de fornecedores'}
+        </button>
 
         <button onClick={abrirHistorico} style={{ ...btnSecundario, padding: '5px 10px' }}>
           <History size={12} style={{ marginRight: 5 }} /> Ver histórico

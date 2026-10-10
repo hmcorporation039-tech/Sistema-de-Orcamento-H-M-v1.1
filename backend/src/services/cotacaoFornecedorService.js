@@ -104,7 +104,21 @@ async function listarPdfs(pasta, resumo, criarSeNaoExistir) {
   }
 }
 
-async function verificarPastaFornecedores() {
+// A varredura roda sozinha a cada 15min e também pelo botão "Verificar agora".
+// Duas execuções simultâneas leriam o mesmo PDF como "não processado" antes de
+// qualquer uma gravar o hash, e o upsert (consulta-e-depois-insere, sem
+// restrição única em materiais) criaria o mesmo material duas vezes. Quem
+// chegar enquanto uma varredura está em andamento recebe o resultado dela.
+let varreduraEmAndamento = null;
+
+function verificarPastaFornecedores() {
+  if (!varreduraEmAndamento) {
+    varreduraEmAndamento = executarVarredura().finally(() => { varreduraEmAndamento = null; });
+  }
+  return varreduraEmAndamento;
+}
+
+async function executarVarredura() {
   const resumo = {
     arquivosEncontrados: 0, arquivosProcessados: 0,
     materiaisCriados: 0, materiaisAtualizados: 0, avisos: [],

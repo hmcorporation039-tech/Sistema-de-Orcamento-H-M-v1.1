@@ -91,6 +91,7 @@ router.delete('/materiais/:id', autenticar, validarId, matCtrl.remover);
 router.post('/materiais/importar', autenticar, matCtrl.importar);
 router.post('/materiais/extrair-nota', autenticar, upload.single('arquivo'), matCtrl.extrairNota);
 router.post('/materiais/comparar', autenticar, matCtrl.comparar);
+router.post('/materiais/fornecedores/verificar-agora', autenticar, matCtrl.verificarFornecedoresAgora);
 
 // ── MÃO DE OBRA (catálogo de itens já lançados em propostas, usado como
 // sugestão em dropdown — diferente de /precos-mao-de-obra, que é a tabela de
@@ -183,5 +184,8 @@ router.put('/precos-mao-de-obra', autenticar, admin, precosMOCtrl.atualizar);
 // ── PESQUISA DE MERCADO (Gemini + busca real) ────────────────────────────
 router.post('/pesquisa-mercado', autenticar, limitePesquisaMercado, pesqCtrl.pesquisar);
 router.get('/pesquisa-mercado/historico', autenticar, pesqCtrl.historico);
+// Salvar uma pesquisa feita fora da API (ex.: busca do próprio Claude Desktop) —
+// só grava no banco, não chama IA, então não precisa do limite de IA.
+router.post('/pesquisa-mercado/salvar', autenticar, pesqCtrl.salvar);
 
 module.exports = router;

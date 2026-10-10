@@ -164,7 +164,7 @@ async function criar(req, res, next) {
   const {
     data, validade, tipo, porte,
     cliente_id, cliente_nome, responsavel, local_obra,
-    pagamento, observacoes, bdi, imposto_venda, imposto_servico,
+    escopo, pagamento, observacoes, bdi, imposto_venda, imposto_servico,
     desconto_materiais_pct, desconto_mao_obra_pct,
     secoes, itens
   } = req.body;
@@ -184,17 +184,17 @@ async function criar(req, res, next) {
       `INSERT INTO propostas (
         numero, sequencial, data, validade, tipo, porte,
         cliente_id, cliente_nome, responsavel, local_obra,
-        pagamento, observacoes, bdi, imposto_venda, imposto_servico,
+        escopo, pagamento, observacoes, bdi, imposto_venda, imposto_servico,
         desconto_materiais_pct, desconto_mao_obra_pct,
         subtotal_materiais, subtotal_mao_obra, valor_bdi,
         valor_imposto_venda, valor_imposto_servico, total,
         usuario_id
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
       RETURNING *`,
       [
         numero, seq, data, validadeOuPadrao(validade), tipo, porte,
         cliente_id || null, cliente_nome, responsavel, local_obra,
-        pagamento, observacoes, bdi || 0, imposto_venda || 0, imposto_servico || 0,
+        escopo, pagamento, observacoes, bdi || 0, imposto_venda || 0, imposto_servico || 0,
         desconto_materiais_pct ?? null, desconto_mao_obra_pct ?? null,
         totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi,
         totais.valor_imposto_venda, totais.valor_imposto_servico, totais.total,
@@ -223,7 +223,7 @@ async function atualizar(req, res, next) {
   const {
     data, validade, tipo, porte,
     cliente_id, cliente_nome, responsavel, local_obra,
-    pagamento, observacoes, bdi, imposto_venda, imposto_servico,
+    escopo, pagamento, observacoes, bdi, imposto_venda, imposto_servico,
     desconto_materiais_pct, desconto_mao_obra_pct,
     secoes, itens
   } = req.body;
@@ -239,17 +239,17 @@ async function atualizar(req, res, next) {
       `UPDATE propostas SET
         data=$1, validade=$2, tipo=$3, porte=$4,
         cliente_id=$5, cliente_nome=$6, responsavel=$7, local_obra=$8,
-        pagamento=$9, observacoes=$10, bdi=$11, imposto_venda=$12, imposto_servico=$13,
-        desconto_materiais_pct=$14, desconto_mao_obra_pct=$15,
-        subtotal_materiais=$16, subtotal_mao_obra=$17, valor_bdi=$18,
-        valor_imposto_venda=$19, valor_imposto_servico=$20, total=$21,
+        escopo=$9, pagamento=$10, observacoes=$11, bdi=$12, imposto_venda=$13, imposto_servico=$14,
+        desconto_materiais_pct=$15, desconto_mao_obra_pct=$16,
+        subtotal_materiais=$17, subtotal_mao_obra=$18, valor_bdi=$19,
+        valor_imposto_venda=$20, valor_imposto_servico=$21, total=$22,
         atualizado_em=NOW()
-       WHERE id=$22
+       WHERE id=$23
        RETURNING *`,
       [
         data, validadeOuPadrao(validade), tipo, porte,
         cliente_id || null, cliente_nome, responsavel, local_obra,
-        pagamento, observacoes, bdi || 0, imposto_venda || 0, imposto_servico || 0,
+        escopo, pagamento, observacoes, bdi || 0, imposto_venda || 0, imposto_servico || 0,
         desconto_materiais_pct ?? null, desconto_mao_obra_pct ?? null,
         totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi,
         totais.valor_imposto_venda, totais.valor_imposto_servico, totais.total,
@@ -308,17 +308,17 @@ async function duplicar(req, res, next) {
       `INSERT INTO propostas (
         numero, sequencial, data, validade, tipo, porte,
         cliente_id, cliente_nome, responsavel, local_obra,
-        pagamento, observacoes, bdi, imposto_venda, imposto_servico,
+        escopo, pagamento, observacoes, bdi, imposto_venda, imposto_servico,
         desconto_materiais_pct, desconto_mao_obra_pct,
         subtotal_materiais, subtotal_mao_obra, valor_bdi,
         valor_imposto_venda, valor_imposto_servico, total,
         status, usuario_id
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,'Ativa',$24)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,'Ativa',$25)
       RETURNING *`,
       [
         numero, seq, hoje, p.validade, p.tipo, p.porte,
         p.cliente_id, p.cliente_nome, p.responsavel, p.local_obra,
-        p.pagamento, p.observacoes, p.bdi, p.imposto_venda, p.imposto_servico,
+        p.escopo, p.pagamento, p.observacoes, p.bdi, p.imposto_venda, p.imposto_servico,
         p.desconto_materiais_pct, p.desconto_mao_obra_pct,
         p.subtotal_materiais, p.subtotal_mao_obra, p.valor_bdi,
         p.valor_imposto_venda, p.valor_imposto_servico, p.total,

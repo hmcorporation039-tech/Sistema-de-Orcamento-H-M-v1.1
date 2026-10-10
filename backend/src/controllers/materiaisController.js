@@ -3,6 +3,7 @@ const { extrairNotaFiscal } = require('../utils/notaFiscalParser');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
 const { comTransacao } = require('../utils/transacao');
 const { compararComCatalogo } = require('../utils/compatibilizacaoAnalise');
+const { verificarPastaFornecedores } = require('../services/cotacaoFornecedorService');
 
 // Compara uma descrição livre (ex.: vinda de um projeto, de uma cotação, ou
 // perguntada na conversa via MCP) com o catálogo — mesma lógica de
@@ -167,4 +168,17 @@ async function categorias(req, res) {
   }
 }
 
-module.exports = { listar, criar, atualizar, remover, importar, extrairNota, categorias, comparar };
+// Dispara na hora a mesma varredura que já roda sozinha a cada 15min (ver
+// agendarVerificacaoDePastaFornecedores em server.js) — pra quem acabou de
+// salvar um PDF na pasta e não quer esperar o ciclo automático nem reiniciar o backend.
+async function verificarFornecedoresAgora(req, res) {
+  try {
+    const resumo = await verificarPastaFornecedores();
+    res.json(resumo);
+  } catch (err) {
+    console.error('Erro ao verificar pasta de orçamentos de fornecedores:', err);
+    res.status(500).json({ erro: err.message || 'Erro ao verificar pasta de orçamentos de fornecedores' });
+  }
+}
+
+module.exports = { listar, criar, atualizar, remover, importar, extrairNota, categorias, comparar, verificarFornecedoresAgora };

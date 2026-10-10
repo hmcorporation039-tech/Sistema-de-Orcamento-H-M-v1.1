@@ -210,8 +210,14 @@ function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = 
     // Infraestrutura de Cabeamento Estruturado (compartilhada por rede/CFTV/telefonia)
     item('cab_racks', 'Montagem e organização dos racks (patch panels, guias, PDU)', 0, 'un', 'cabeamento', 'Confirme quantos racks o projeto prevê.'),
     item('cab_nobreak', 'Instalação de nobreaks + kit de ventilação', 0, 'un', 'cabeamento', SEM_CODIGO),
-    item('cab_certificacao', 'Certificação e etiquetagem dos pontos (rede + câmeras + telefonia)', totalRede + totalCameras, 'pt', 'cabeamento',
-      (totalRede > 0 || totalCameras > 0) ? 'Quantidade = pontos de rede + câmeras encontrados no desenho.' : SEM_CODIGO),
+    // Este item de cabeamento CONTA pontos de rede + câmeras — só faz sentido
+    // quando rede ou CFTV também foram escolhidos. Se nenhuma das duas está na
+    // análise, ele não entra (evita trazer um item que depende de disciplina
+    // não selecionada). Só disciplinas estritamente escolhidas.
+    ...((disciplinasEfetivas.includes('rede') || disciplinasEfetivas.includes('cftv'))
+      ? [item('cab_certificacao', 'Certificação e etiquetagem dos pontos (rede + câmeras)', totalRede + totalCameras, 'pt', 'cabeamento',
+          (totalRede > 0 || totalCameras > 0) ? 'Quantidade = pontos de rede + câmeras encontrados no desenho.' : SEM_CODIGO)]
+      : []),
     item('cab_passagem', 'Passagem de cabeamento (infraestrutura + lançamento de cabos)', 1, 'vb', 'cabeamento',
       'Marque como "já pronto" se o cabeamento já estiver passado no local (não entra na mão de obra).'),
 

@@ -58,7 +58,16 @@ describe('Usuários (admin)', () => {
   });
 
   it('usuário comum não acessa a tela de usuários', () => {
+    // A senha acabou de ser redefinida pelo admin, então é provisória: o
+    // sistema exige trocá-la antes de liberar qualquer tela.
     cy.login(email, 'novaSenhaQA456');
+    cy.contains('Defina sua senha').should('be.visible');
+    cy.contains('label', 'Senha provisória').parent().find('input').type('novaSenhaQA456');
+    cy.contains('label', 'Nova senha').parent().find('input').type('senhaFinalQA789');
+    cy.contains('label', 'Repita a nova senha').parent().find('input').type('senhaFinalQA789');
+    cy.contains('button', 'Salvar e entrar').click();
+    cy.contains(/senha definida/i).should('be.visible');
+
     cy.visit('/usuarios');
     cy.url().should('include', '/dashboard');
   });

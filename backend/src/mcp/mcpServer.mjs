@@ -212,6 +212,34 @@ server.registerTool(
   }
 );
 
+// ── salvar_pesquisa_mercado ───────────────────────────────────────────────
+// Caminho recomendado de pesquisa de preço: o próprio Claude Desktop busca na
+// web (pela assinatura, sem chave/cota) e grava o resultado aqui. Vira
+// histórico no sistema e alimenta o cache de 48h — o botão da tela também
+// passa a mostrar o que foi pesquisado por aqui.
+server.registerTool(
+  'salvar_pesquisa_mercado',
+  {
+    title: 'Salvar pesquisa de preço no sistema',
+    description: 'Grava no sistema uma pesquisa de preço de mercado que VOCÊ (Claude) acabou de fazer com a SUA PRÓPRIA busca na web — sem usar a cota do Gemini nem crédito de API. Esta é a forma recomendada de pesquisar preço: busque na web aqui na conversa e salve o resultado com esta ferramenta. Fica no histórico do sistema e no cache (a mesma pesquisa não precisa ser refeita por 48h). No campo "resultado", inclua de 3 a 6 achados reais com nome do produto, preço e link, e observe variações relevantes.',
+    inputSchema: {
+      descricao: z.string().describe('O material/equipamento pesquisado (ex.: "câmera IP dome 4MP")'),
+      resultado: z.string().describe('O texto da pesquisa: achados reais com produto, preço e link, organizados e curtos.'),
+    },
+  },
+  async ({ descricao, resultado }) => {
+    try {
+      const r = await chamarApi('/api/pesquisa-mercado/salvar', {
+        method: 'POST',
+        body: JSON.stringify({ descricao, resultado, fonte: 'claude_desktop' }),
+      });
+      return textoOk(`Pesquisa de "${r.descricao}" salva no sistema (fonte: ${r.fonte}). Aparece no histórico e no cache de 48h — o botão da tela também mostra ela agora.`);
+    } catch (err) {
+      return textoErro(err.message);
+    }
+  }
+);
+
 // ── analisar_projeto ──────────────────────────────────────────────────────
 server.registerTool(
   'analisar_projeto',
@@ -259,6 +287,49 @@ server.registerTool(
       partes.push(`\n(Salva como análise #${resultado.id} — abra "Análise de Projeto" no sistema pra revisar, editar preços e gerar um orçamento a partir dela, ou peça pra criar_rascunho_proposta direto por aqui.)`);
 
       return textoOk(partes.join('\n'));
+    } catch (err) {
+      return textoErro(err.message);
+    }
+  }
+);
+
+// ── enriquecer_analise_projeto ────────────────────────────────────────────
+// Complementa uma análise JÁ criada (via analisar_projeto) com o que a visão do
+// Claude lê do PDF anexado e a contagem por texto não alcança: o FUNCIONAMENTO
+// do projeto e os PONTOS POR DISCIPLINA (tipo/modelo/quantidade), inclusive as
+// disciplinas que são só símbolo gráfico (elétrica, iluminação, telefonia,
+// automação, alarme). Só ADICIONA — nada do que a análise já tinha muda.
+server.registerTool(
+  'enriquecer_analise_projeto',
+  {
+    title: 'Enriquecer análise de projeto',
+    description: `Adiciona a uma análise já criada (pelo analisar_projeto) o FUNCIONAMENTO do projeto e os PONTOS POR DISCIPLINA (com tipo, modelo e quantidade) que você leu VISUALMENTE do PDF anexado na conversa. Use depois do analisar_projeto, com o id que ele retornou. REGRA IMPORTANTE: descreva e marque APENAS as disciplinas SELECIONADAS naquela análise (o campo "disciplinas" que o analisar_projeto retornou) — não saia procurando disciplinas que não foram escolhidas. Isso é proposital: economiza tempo, porque é comum vir projeto só de uma disciplina (só elétrica, só CFTV, etc.). Não substitui nada do que a análise já tem; só acrescenta. Disciplinas válidas: ${DISCIPLINAS_VALIDAS.join(', ')}.`,
+    inputSchema: {
+      id: z.number().int().positive().describe('Id da análise (retornado por analisar_projeto)'),
+      funcionamento: z.string().optional().describe('Como o projeto funciona/opera — só das disciplinas selecionadas'),
+      pontos_por_disciplina: z.array(z.object({
+        disciplina: z.string().describe(`Disciplina — uma entre: ${DISCIPLINAS_VALIDAS.join(', ')}`),
+        itens: z.array(z.object({
+          descricao: z.string().describe('O que é o ponto/item (ex.: "Tomada 2P+T 10A baixa")'),
+          tipo: z.string().optional().describe('Tipo (ex.: tomada, luminária, quadro, sensor)'),
+          modelo: z.string().optional().describe('Marca/modelo quando o desenho mostra (senão vazio)'),
+          quantidade: z.number().optional().describe('Quantidade contada no desenho'),
+          observacao: z.string().optional(),
+        })),
+      })).optional().describe('Pontos por disciplina — só das disciplinas selecionadas na análise'),
+    },
+  },
+  async ({ id, funcionamento, pontos_por_disciplina }) => {
+    try {
+      const body = {};
+      if (funcionamento !== undefined) body.funcionamento = funcionamento;
+      if (pontos_por_disciplina !== undefined) body.pontos_por_disciplina = pontos_por_disciplina;
+      if (Object.keys(body).length === 0) {
+        return textoErro('Informe pelo menos funcionamento e/ou pontos_por_disciplina.');
+      }
+      await chamarApi(`/api/projetos/analises/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+      const oQue = Object.keys(body).map(k => (k === 'pontos_por_disciplina' ? 'pontos por disciplina' : k)).join(' e ');
+      return textoOk(`Análise #${id} enriquecida (${oQue}). Abra "Análise de Projeto" no sistema pra revisar e ajustar antes de gerar o orçamento.`);
     } catch (err) {
       return textoErro(err.message);
     }

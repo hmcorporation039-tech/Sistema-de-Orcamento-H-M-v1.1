@@ -58,7 +58,7 @@ app.use('/api', routes);
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', sistema: 'H&M Engenharia', versao: '1.5.0' });
+  res.json({ status: 'ok', sistema: 'H&M Engenharia', versao: '1.6.0' });
 });
 
 // Serve o build de produção do frontend, se existir (permite um único

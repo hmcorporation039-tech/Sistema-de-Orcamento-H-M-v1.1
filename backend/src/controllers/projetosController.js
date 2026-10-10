@@ -23,6 +23,9 @@ function linhaParaAnalise(row) {
     arquivosAnalisados: row.arquivos_analisados,
     ambientes: row.ambientes,
     pontosPorAmbiente: row.pontos_por_ambiente,
+    // Enriquecimento do Claude Desktop (visão do PDF) — só das disciplinas escolhidas.
+    funcionamento: row.funcionamento,
+    pontosPorDisciplina: row.pontos_por_disciplina,
     cameras: row.cameras,
     pontosRedeAntena: row.pontos_rede_antena,
     tabelaCabos: row.tabela_cabos,
@@ -158,7 +161,19 @@ async function analisar(req, res) {
 // a cada mudança) quanto por uma ação explícita de salvar.
 async function atualizar(req, res) {
   const { id } = req.params;
-  const { cliente_nome, servicos, materiais } = req.body;
+  const { cliente_nome, servicos, materiais, funcionamento, pontos_por_disciplina } = req.body;
+
+  // A tela e o relatório PDF iteram esses campos (.find/.filter/.map); um valor
+  // fora do formato gravado aqui quebraria os dois para essa análise.
+  if (funcionamento != null && typeof funcionamento !== 'string') {
+    return res.status(400).json({ erro: 'funcionamento deve ser um texto' });
+  }
+  if (pontos_por_disciplina != null && (
+    !Array.isArray(pontos_por_disciplina) ||
+    pontos_por_disciplina.some(g => !g || typeof g.disciplina !== 'string' || !Array.isArray(g.itens))
+  )) {
+    return res.status(400).json({ erro: 'pontos_por_disciplina deve ser uma lista de { disciplina, itens: [] }' });
+  }
 
   try {
     const result = await pool.query(
@@ -166,13 +181,17 @@ async function atualizar(req, res) {
         cliente_nome = COALESCE($1, cliente_nome),
         servicos = COALESCE($2::jsonb, servicos),
         materiais = COALESCE($3::jsonb, materiais),
+        funcionamento = COALESCE($4, funcionamento),
+        pontos_por_disciplina = COALESCE($5::jsonb, pontos_por_disciplina),
         atualizado_em = NOW()
-       WHERE id = $4
+       WHERE id = $6
        RETURNING *`,
       [
         cliente_nome ?? null,
         servicos ? JSON.stringify(servicos) : null,
         materiais ? JSON.stringify(materiais) : null,
+        funcionamento ?? null,
+        pontos_por_disciplina ? JSON.stringify(pontos_por_disciplina) : null,
         id,
       ]
     );
@@ -301,7 +320,7 @@ async function gerarOrcamento(req, res, next) {
       ...(materiaisParaOrcar.length > 0 ? [{ id: 2, nome: NOME_SECAO_MATERIAIS }] : []),
     ];
 
-    const observacoes = `Gerado automaticamente a partir da Análise de Projeto #${analise.id}` +
+    const escopo = `Gerado automaticamente a partir da Análise de Projeto #${analise.id}` +
       (analise.propostaId ? ' (atualizado — itens substituídos pela versão mais recente da análise).' : '.') +
       ' Revise quantidades, preços e os itens marcados "A cotar" antes de enviar ao cliente.';
     const dataHoje = new Date().toISOString().slice(0, 10);
@@ -317,11 +336,11 @@ async function gerarOrcamento(req, res, next) {
         if (propostaAtual.rows.length > 0) {
           await client.query(
             `UPDATE propostas SET
-              data=$1, cliente_id=$2, cliente_nome=$3, responsavel=$4, observacoes=$5,
+              data=$1, cliente_id=$2, cliente_nome=$3, responsavel=$4, escopo=$5,
               subtotal_materiais=$6, subtotal_mao_obra=$7, valor_bdi=$8,
               valor_imposto_venda=$9, valor_imposto_servico=$10, total=$11, atualizado_em=NOW()
              WHERE id=$12`,
-            [dataHoje, clienteId, analise.cliente.trim(), req.usuario.nome, observacoes,
+            [dataHoje, clienteId, analise.cliente.trim(), req.usuario.nome, escopo,
              totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi,
              totais.valor_imposto_venda, totais.valor_imposto_servico, totais.total, analise.propostaId]
           );
@@ -337,12 +356,12 @@ async function gerarOrcamento(req, res, next) {
       const numeroGerado = 'P' + String(seq).padStart(3, '0');
       const propResult = await client.query(
         `INSERT INTO propostas (
-          numero, sequencial, data, validade, cliente_id, cliente_nome, responsavel, observacoes,
+          numero, sequencial, data, validade, cliente_id, cliente_nome, responsavel, escopo,
           bdi, imposto_venda, imposto_servico, subtotal_materiais, subtotal_mao_obra, valor_bdi,
           valor_imposto_venda, valor_imposto_servico, total, usuario_id
         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
         RETURNING id`,
-        [numeroGerado, seq, dataHoje, 5, clienteId, analise.cliente.trim(), req.usuario.nome, observacoes,
+        [numeroGerado, seq, dataHoje, 5, clienteId, analise.cliente.trim(), req.usuario.nome, escopo,
          0, 0, 0, totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi,
          totais.valor_imposto_venda, totais.valor_imposto_servico, totais.total, req.usuario.id]
       );

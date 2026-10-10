@@ -9,13 +9,19 @@
 // acento — problema real de dado não confirmado aqui como foi com nome de
 // cliente; se aparecer, ajusta-se do mesmo jeito).
 
+// materiais.descricao e mao_de_obra_itens.descricao são VARCHAR(300), mas o
+// item da proposta aceita texto livre. Uma descrição maior que isso não é um
+// item reutilizável de catálogo, e tentar cadastrá-la estourava o tamanho da
+// coluna e derrubava o salvamento da PROPOSTA inteira (a transação é única).
+const TAMANHO_MAX_DESCRICAO_CATALOGO = 300;
+
 // Acha o material do catálogo com a mesma descrição (ignorando
 // caixa/espaços) ou cadastra um novo a partir dos dados do item. Só é
 // chamado quando o item NÃO veio do "+ catálogo" (material_id já nulo) —
 // itens escolhidos do catálogo já têm o vínculo certo e não passam por aqui.
 async function garantirMaterialCadastrado(client, { descricao, unidade, ncm, valor_unitario }) {
   const desc = (descricao || '').trim();
-  if (!desc) return null;
+  if (!desc || desc.length > TAMANHO_MAX_DESCRICAO_CATALOGO) return null;
 
   const existente = await client.query(
     `SELECT id FROM materiais WHERE ativo = true AND TRIM(LOWER(descricao)) = TRIM(LOWER($1)) LIMIT 1`,
@@ -37,7 +43,7 @@ async function garantirMaterialCadastrado(client, { descricao, unidade, ncm, val
 // alimentar a sugestão em dropdown na tela de Orçamento).
 async function garantirMaoDeObraCadastrada(client, { descricao, unidade, valor_unitario }) {
   const desc = (descricao || '').trim();
-  if (!desc) return;
+  if (!desc || desc.length > TAMANHO_MAX_DESCRICAO_CATALOGO) return;
 
   const existente = await client.query(
     `SELECT id FROM mao_de_obra_itens WHERE ativo = true AND TRIM(LOWER(descricao)) = TRIM(LOWER($1)) LIMIT 1`,

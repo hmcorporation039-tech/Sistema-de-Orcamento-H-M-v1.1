@@ -132,6 +132,22 @@ async function criarTabelas() {
     await client.query(`ALTER TABLE propostas ADD COLUMN IF NOT EXISTS desconto_materiais_pct DECIMAL(6,2)`);
     await client.query(`ALTER TABLE propostas ADD COLUMN IF NOT EXISTS desconto_mao_obra_pct DECIMAL(6,2)`);
 
+    // O campo livre de texto que descrevia o que está sendo executado (exibido
+    // logo após a saudação no PDF) estava rotulado "Observações", mas é na
+    // verdade o escopo da proposta — renomeado para refletir isso. O nome
+    // "observacoes" fica livre para um campo novo, de notas gerais, exibido
+    // depois das condições de pagamento tanto no formulário quanto no PDF.
+    await client.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'propostas' AND column_name = 'observacoes')
+           AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'propostas' AND column_name = 'escopo') THEN
+          ALTER TABLE propostas RENAME COLUMN observacoes TO escopo;
+        END IF;
+      END $$;
+    `);
+    await client.query(`ALTER TABLE propostas ADD COLUMN IF NOT EXISTS observacoes TEXT`);
+
     // Tabela de seções da proposta
     await client.query(`
       CREATE TABLE IF NOT EXISTS proposta_secoes (
@@ -206,6 +222,12 @@ async function criarTabelas() {
     `);
     // Distribuição aproximada de pontos por ambiente (ver utils/pontosPorAmbiente.js)
     await client.query(`ALTER TABLE analises_projeto ADD COLUMN IF NOT EXISTS pontos_por_ambiente JSONB NOT NULL DEFAULT '[]'`);
+    // Enriquecimento vindo do Claude Desktop (visão do PDF): funcionamento do
+    // projeto (texto) e pontos por disciplina (com tipo/modelo/quantidade),
+    // inclusive as disciplinas que são só símbolo gráfico e a contagem por
+    // código não alcança. São campos ADICIONAIS — nada do resto muda.
+    await client.query(`ALTER TABLE analises_projeto ADD COLUMN IF NOT EXISTS funcionamento TEXT`);
+    await client.query(`ALTER TABLE analises_projeto ADD COLUMN IF NOT EXISTS pontos_por_disciplina JSONB NOT NULL DEFAULT '[]'`);
     // Proposta gerada a partir desta análise (botão "Gerar Orçamento") — nula
     // até o primeiro clique; um segundo clique atualiza a mesma proposta em
     // vez de criar outra.

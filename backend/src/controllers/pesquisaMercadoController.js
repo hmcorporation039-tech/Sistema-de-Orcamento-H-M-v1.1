@@ -1,5 +1,5 @@
 const pool = require('../config/database');
-const { pesquisarPrecoMercado, ErroPesquisaMercado } = require('../utils/pesquisaMercadoService');
+const { pesquisarPrecoMercado, salvarPesquisaManual, ErroPesquisaMercado } = require('../utils/pesquisaMercadoService');
 
 // Endpoint HTTP — a lógica de verdade (prompt, fallback Gemini→Claude, cache)
 // mora em utils/pesquisaMercadoService.js, reaproveitada também pelas
@@ -14,6 +14,23 @@ async function pesquisar(req, res) {
     }
     console.error('Erro inesperado na pesquisa de mercado:', err);
     res.status(500).json({ erro: 'Erro ao pesquisar preço de mercado' });
+  }
+}
+
+// Salva no sistema uma pesquisa de preço feita FORA da API paga — tipicamente
+// a busca que o próprio Claude Desktop fez na web (sem gastar cota/dinheiro).
+// Usado pela ferramenta MCP salvar_pesquisa_mercado.
+async function salvar(req, res) {
+  try {
+    const { descricao, resultado, fonte } = req.body;
+    const r = await salvarPesquisaManual(descricao, resultado, fonte);
+    res.status(201).json(r);
+  } catch (err) {
+    if (err instanceof ErroPesquisaMercado) {
+      return res.status(err.status).json({ erro: err.message });
+    }
+    console.error('Erro ao salvar pesquisa de mercado:', err);
+    res.status(500).json({ erro: 'Erro ao salvar pesquisa de mercado' });
   }
 }
 
@@ -39,4 +56,4 @@ async function historico(req, res) {
   }
 }
 
-module.exports = { pesquisar, historico };
+module.exports = { pesquisar, salvar, historico };
