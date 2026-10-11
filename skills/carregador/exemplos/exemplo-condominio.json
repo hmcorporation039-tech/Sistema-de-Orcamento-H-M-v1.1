@@ -1,0 +1,72 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "Recarga de VE — apartamento (exemplo)",
+  "prefixo": "Recarga_VE_Exemplo",
+  "data": "2026-10-10",
+  "revisao": "R00",
+  "dados_ilustrativos": true,
+  "observacao": "Baseado no projeto de carregador AP-1103 (wallbox 7,4 kW) da biblioteca técnica, com dados do cliente substituídos."
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "CONDOMÍNIO EXEMPLO",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "Vaga do apartamento 1103 — Condomínio Exemplo",
+  "uso": "Residencial multifamiliar — vaga privativa"
+ },
+ "instalacao": {
+  "tensao_fn": 220,
+  "tensao_ff": 380,
+  "sistema": "trifasico",
+  "esquema": "TN-S",
+  "metodo": "B1",
+  "temperatura": 30,
+  "disjuntor_geral_existente_a": 50,
+  "demanda_existente_kva": 8,
+  "comprimento_alimentador_m": 10,
+  "uso_publico": false,
+  "controle_recarga": false,
+  "limite_controle_a": null,
+  "quadro_recarga_dedicado": false,
+  "eletroduto": "de aço galvanizado"
+ },
+ "pontos": [
+  {
+   "id": "VE1",
+   "descricao": "Vaga do apartamento 1103",
+   "modo": "modo3_ac",
+   "potencia_kw": 7.4,
+   "fases": "1",
+   "comprimento_m": 30,
+   "rdc_dd_incorporado": true,
+   "ao_tempo": false,
+   "protecao_impacto": true,
+   "fornecido_cliente": true,
+   "modelo": "Wallbox 7,4 kW"
+  }
+ ],
+ "inspecao": {
+  "tipo": "vistoria",
+  "documento_n": "",
+  "checklist": [],
+  "ncs": [],
+  "ensaios_dr": [],
+  "isolamento": [],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

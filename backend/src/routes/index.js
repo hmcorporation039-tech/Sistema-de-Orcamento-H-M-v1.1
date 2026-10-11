@@ -16,6 +16,10 @@ const posseAnalise = exigirPosse('analises_projeto', {
   naoEncontrado: 'Análise não encontrada.',
   semPermissao: 'Esta análise foi criada por outro usuário. Peça a ele ou a um administrador para alterar.',
 });
+const posseLaudo = exigirPosse('laudos_projetos', {
+  naoEncontrado: 'Laudo não encontrado.',
+  semPermissao: 'Este laudo foi criado por outro usuário. Peça a ele ou a um administrador para alterar.',
+});
 const posseContrato = exigirPosse('contratos', {
   naoEncontrado: 'Contrato não encontrado.',
   semPermissao: 'Este contrato foi criado por outro usuário. Peça a ele ou a um administrador para alterar.',
@@ -77,6 +81,10 @@ const projCtrl = require('../controllers/projetosController');
 const pesqCtrl = require('../controllers/pesquisaMercadoController');
 const precosMOCtrl = require('../controllers/precosMaoDeObraController');
 const maoObraCtrl = require('../controllers/maoDeObraController');
+const laudoCtrl = require('../controllers/laudosController');
+
+// Fotos de inspeção: até 20 por envio, 15 MB cada (o tipo é conferido no controller)
+const uploadFotos = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 20 } });
 
 // ── AUTH ──────────────────────────────────────────────────────────────
 router.post('/auth/login', limiteLogin, authCtrl.login);
@@ -173,6 +181,22 @@ router.get('/projetos/analises/:id', autenticar, validarId, projCtrl.buscarUma);
 router.put('/projetos/analises/:id', autenticar, validarId, posseAnalise, projCtrl.atualizar);
 router.delete('/projetos/analises/:id', autenticar, validarId, posseAnalise, projCtrl.remover);
 router.post('/projetos/analises/:id/gerar-orcamento', autenticar, validarId, posseAnalise, projCtrl.gerarOrcamento);
+
+// ── LAUDOS E PROJETOS POR DISCIPLINA (aba Análise de Projeto) ─────────────
+// Caminhos específicos antes do /:id genérico
+router.get('/laudos/disciplinas', autenticar, laudoCtrl.disciplinas);
+router.get('/laudos/modelo/:disciplina', autenticar, laudoCtrl.modelo);
+router.get('/laudos', autenticar, laudoCtrl.listar);
+router.post('/laudos', autenticar, laudoCtrl.criar);
+router.get('/laudos/:id/documento/:tipo', autenticar, validarId, laudoCtrl.documento);
+router.get('/laudos/:id/fotos/:fotoId', autenticar, validarId, laudoCtrl.verFoto);
+router.post('/laudos/:id/fotos', autenticar, validarId, posseLaudo, uploadFotos.array('fotos', 20), laudoCtrl.enviarFotos);
+router.delete('/laudos/:id/fotos/:fotoId', autenticar, validarId, posseLaudo, laudoCtrl.removerFoto);
+router.post('/laudos/:id/calcular', autenticar, validarId, laudoCtrl.calcular);
+router.post('/laudos/:id/gerar-orcamento', autenticar, validarId, posseLaudo, laudoCtrl.gerarOrcamento);
+router.get('/laudos/:id', autenticar, validarId, laudoCtrl.buscarUm);
+router.put('/laudos/:id', autenticar, validarId, posseLaudo, laudoCtrl.atualizar);
+router.delete('/laudos/:id', autenticar, validarId, posseLaudo, laudoCtrl.remover);
 
 // ── PREÇOS DE REFERÊNCIA DE MÃO DE OBRA (admin) ──────────────────────────
 // Tela de administração — a sugestão em si já vem embutida em cada serviço

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import LaudosProjetos from '../components/laudos/LaudosProjetos';
 import toast from 'react-hot-toast';
 import { FileDown, Plus, Trash2, FolderSearch, Search, FilePlus2, Receipt } from 'lucide-react';
 import {
@@ -47,7 +48,42 @@ function formatarHora(data) {
   return data ? data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
 }
 
+// A aba Análise de Projeto tem duas partes: a compatibilização de projetos
+// em PDF (abaixo) e os laudos/projetos por disciplina (SPDA e as próximas),
+// que geram documentos e orçamento integrado ao catálogo de materiais.
+const ABAS = [
+  { chave: 'compatibilizacao', rotulo: 'Compatibilização de projetos' },
+  { chave: 'laudos', rotulo: 'Laudos e projetos por disciplina' },
+];
+
 export default function AnaliseProjeto() {
+  const [busca, setBusca] = useSearchParams();
+  const aba = busca.get('aba') === 'laudos' ? 'laudos' : 'compatibilizacao';
+  return (
+    <div style={paginaLargaTela}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
+        <h2 style={{ fontSize: 20, color: '#c9a227', fontWeight: 700 }}>Análise de Projeto</h2>
+        <div style={{ display: 'flex', gap: 4, background: '#111', border: '1px solid #1e1e1e', borderRadius: 8, padding: 3 }}>
+          {ABAS.map(a => (
+            <button
+              key={a.chave}
+              onClick={() => setBusca(a.chave === 'laudos' ? { aba: 'laudos' } : {})}
+              style={{
+                padding: '7px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700,
+                background: aba === a.chave ? '#c9a227' : 'transparent', color: aba === a.chave ? '#000' : '#999',
+              }}
+            >
+              {a.rotulo}
+            </button>
+          ))}
+        </div>
+      </div>
+      {aba === 'laudos' ? <LaudosProjetos /> : <Compatibilizacao />}
+    </div>
+  );
+}
+
+function Compatibilizacao() {
   const { id: idParam } = useParams();
   const navigate = useNavigate();
 
@@ -401,15 +437,14 @@ export default function AnaliseProjeto() {
   })() : null;
 
   return (
-    <div style={paginaLargaTela}>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18 }}>
-        <h2 style={{ fontSize: 20, color: '#c9a227', fontWeight: 700, flex: 1 }}>Análise de Projeto (Compatibilização)</h2>
-        {analise && (
+    <div>
+      {analise && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
           <button onClick={novaAnalise} style={btnSecundario}>
             <FilePlus2 size={13} style={{ marginRight: 5 }} /> Nova análise
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>

@@ -48,6 +48,13 @@ if errorlevel 1 (
   echo.
 )
 
+REM --- Skills de disciplina (laudos da aba Analise de Projeto) ---
+echo Instalando dependencias das skills (pasta skills)...
+cd /d "%~dp0skills"
+call npm install --no-audit --no-fund
+if errorlevel 1 goto :erro_npm
+echo.
+
 REM --- 3/4) Frontend: instalar dependencias ---
 echo [3/4] Instalando dependencias do frontend (npm install)...
 cd /d "%~dp0frontend"

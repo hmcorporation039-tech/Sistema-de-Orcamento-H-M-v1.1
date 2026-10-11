@@ -1,0 +1,135 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "",
+  "prefixo": "",
+  "data": "AAAA-MM-DD",
+  "revisao": "R00",
+  "observacao": ""
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "",
+  "uf": ""
+ },
+ "obra": {
+  "nome": "",
+  "uso": "",
+  "pavimentos": null,
+  "area_construida_m2": null
+ },
+ "estrutura": {
+  "L": null,
+  "W": null,
+  "H": null,
+  "localizacao": "isolada",
+  "tipo_construcao": "concreto_armado",
+  "ambiente": "urbano",
+  "municipio": "",
+  "uf": "",
+  "ng": null,
+  "ng_fonte": "",
+  "saliencias": [],
+  "sistemas_criticos": false
+ },
+ "spda": {
+  "np": "III",
+  "isolado": false,
+  "descida_natural": false,
+  "descidas_naturais_8_1_2_b": false,
+  "cobertura_metalica_natural": false,
+  "wm_m": null,
+  "resistividade_solo_ohm_m": null,
+  "material_captacao": "cobre_35",
+  "material_aterramento": "cobre_50",
+  "aterramento": "anel",
+  "perimetro_m": null,
+  "captores_verticais": [],
+  "planos": []
+ },
+ "linhas": [
+  {
+   "id": "ENERGIA",
+   "nome": "",
+   "tipo": "energia",
+   "instalacao": "enterrada",
+   "ct": "bt_ou_sinal",
+   "LL_m": 1000,
+   "cld_cli": "enterrada_nao_blindada",
+   "blindagem_rs": "nao_blindada",
+   "peb_np": "nenhum",
+   "zonas": [
+    "todas"
+   ]
+  }
+ ],
+ "zonas": [
+  {
+   "nome": "Externa (até 3 m da edificação)",
+   "tipo": "externa",
+   "nz": 0,
+   "tz": 8760,
+   "piso": "terra_concreto",
+   "medidas_pta": []
+  },
+  {
+   "nome": "",
+   "tipo": "interna",
+   "nz": 0,
+   "tz": 8760,
+   "ocupacao": "outros",
+   "piso": "marmore_ceramica",
+   "carga_incendio": "incendio_normal",
+   "protecao_incendio": "nenhuma",
+   "perigo_especial": "nenhum",
+   "sistemas": [
+    {
+     "nome": "Energia",
+     "linha": "ENERGIA",
+     "uw_kv": 2.5,
+     "dps_np": "nenhum",
+     "ks3": "sem_preocupacao",
+     "rede_equipotencial_malha": false
+    }
+   ]
+  }
+ ],
+ "inspecao": {
+  "tipo": "periodica",
+  "data_inspecao": "",
+  "documento_n": "",
+  "equipe": "",
+  "norma_origem": "",
+  "servico_essencial": false,
+  "area_classificada": false,
+  "corrosao_severa": false,
+  "explosivos": false,
+  "abrangencia": "",
+  "fora_escopo": "",
+  "itens_adicionais": "",
+  "documentos": [],
+  "dados_projeto": [],
+  "contador_anterior": "",
+  "contador_atual": "",
+  "instrumentos": [],
+  "continuidade": [],
+  "aterramento": [],
+  "fotos": [],
+  "pasta_fotos": "",
+  "ncs": [],
+  "checklist": [],
+  "justificativa_norma": "",
+  "fotos_obs": ""
+ },
+ "desenhos": []
+}

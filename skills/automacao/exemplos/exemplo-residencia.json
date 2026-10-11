@@ -1,0 +1,135 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "Residência exemplo — automação",
+  "prefixo": "Automacao_Residencia",
+  "data": "2026-10-10",
+  "revisao": "R00",
+  "dados_ilustrativos": true
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "CLIENTE EXEMPLO",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "Residência Exemplo",
+  "uso": "Residencial"
+ },
+ "sistema": {
+  "uso": "residencial",
+  "protocolo": "bacnet",
+  "reserva_pct": 20,
+  "pontos_por_controlador": 32,
+  "controladores_por_quadro": 2,
+  "dispositivos_por_segmento": 32,
+  "distancia_media_ponto_m": 25,
+  "zonas_no_bms": true,
+  "ocupacao_media_pct": 60,
+  "consumo_climatizacao_kwh_mes": null,
+  "consumo_outros_kwh_mes": null,
+  "tarifa_kwh": null
+ },
+ "equipamentos": [],
+ "zonas": [],
+ "funcoes": {
+  "atual": {
+   "emissao": "",
+   "geracao": "",
+   "bombas": "",
+   "ventilacao": "",
+   "iluminacao": "",
+   "luz_natural": "",
+   "persianas": "",
+   "gestao": ""
+  },
+  "proposta": {
+   "emissao": "",
+   "geracao": "",
+   "bombas": "",
+   "ventilacao": "",
+   "iluminacao": "",
+   "luz_natural": "",
+   "persianas": "",
+   "gestao": ""
+  }
+ },
+ "residencial": {
+  "tecnologia": "zigbee",
+  "distancia_media_m": 12,
+  "assistente_voz": 2,
+  "ambientes": [
+   {
+    "nome": "Sala de estar",
+    "ilum_onoff": 3,
+    "ilum_dimer": 2,
+    "cortinas": 1,
+    "ar_condicionado": 1,
+    "tomadas": 1,
+    "sensores": 1,
+    "cenas": 1
+   },
+   {
+    "nome": "Cozinha",
+    "ilum_onoff": 2,
+    "ilum_dimer": 0,
+    "cortinas": 0,
+    "ar_condicionado": 0,
+    "tomadas": 1,
+    "sensores": 0,
+    "cenas": 0
+   },
+   {
+    "nome": "Suíte master",
+    "ilum_onoff": 2,
+    "ilum_dimer": 1,
+    "cortinas": 1,
+    "ar_condicionado": 1,
+    "tomadas": 0,
+    "sensores": 0,
+    "cenas": 1
+   },
+   {
+    "nome": "Quarto 2",
+    "ilum_onoff": 1,
+    "ilum_dimer": 0,
+    "cortinas": 0,
+    "ar_condicionado": 1,
+    "tomadas": 0,
+    "sensores": 0,
+    "cenas": 0
+   },
+   {
+    "nome": "Área externa",
+    "ilum_onoff": 3,
+    "ilum_dimer": 0,
+    "cortinas": 0,
+    "ar_condicionado": 0,
+    "tomadas": 1,
+    "sensores": 2,
+    "cenas": 0
+   }
+  ]
+ },
+ "inspecao": {
+  "tipo": "comissionamento",
+  "documento_n": "",
+  "checklist": [],
+  "ncs": [],
+  "testes_pontos": [],
+  "sensores": [],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "hm-skills",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Skills de disciplina da H&M Engenharia (laudos e projetos) — dependências compartilhadas",
+  "scripts": {
+    "test": "node testar-todas.js"
+  },
+  "dependencies": {
+    "docx": "^9.5.1",
+    "exceljs": "^4.4.0"
+  }
+}

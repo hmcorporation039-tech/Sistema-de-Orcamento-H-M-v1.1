@@ -20,7 +20,9 @@ const CATEGORIAS_PADRAO = [
 ];
 const ORIGEM_LABEL = {
   manual: 'Manual', importacao: 'Importação', nota_xml: 'NF-e (XML)', nota_pdf: 'NF-e (PDF)',
-  email_xml: 'E-mail (XML)', email_pdf: 'E-mail (PDF)', fornecedor_whatsapp: 'Orçamento fornecedor (PDF)',
+  email_xml: 'E-mail (XML)', email_pdf: 'E-mail (PDF)', fornecedor_whatsapp: 'Orçamento fornecedor (pasta)',
+  fornecedor_whatsapp_ocr: 'Orçamento fornecedor (pasta, OCR)', fornecedor_whatsapp_ia: 'Orçamento fornecedor (pasta, IA)',
+  fornecedor_email: 'Orçamento fornecedor (e-mail)', fornecedor_email_ocr: 'Orçamento fornecedor (e-mail, OCR)', fornecedor_email_ia: 'Orçamento fornecedor (e-mail, IA)',
 };
 
 export default function Materiais() {
@@ -206,7 +208,7 @@ export default function Materiais() {
     try {
       const res = await verificarEmailAgora();
       const r = res.data;
-      toast.success(`${r.emailsProcessados}/${r.emailsEncontrados} e-mails · ${r.materiaisCriados} materiais criados, ${r.materiaisAtualizados} atualizados`);
+      toast.success(`${r.emailsProcessados}/${r.emailsEncontrados} e-mails (${r.orcamentosImportados || 0} orçamentos de fornecedor) · ${r.materiaisCriados} materiais novos cadastrados, ${r.materiaisAtualizados} atualizados`);
       r.avisos?.forEach(a => toast(a));
       setStatusEmail(s => ({ ...s, ultimaVerificacao: new Date().toISOString() }));
       carregar();
@@ -222,7 +224,7 @@ export default function Materiais() {
     try {
       const res = await verificarFornecedoresAgora();
       const r = res.data;
-      toast.success(`${r.arquivosProcessados}/${r.arquivosEncontrados} orçamentos de fornecedores · ${r.materiaisCriados} materiais criados, ${r.materiaisAtualizados} atualizados`);
+      toast.success(`${r.arquivosProcessados} orçamento(s) novo(s) lido(s) de ${r.arquivosEncontrados} na pasta · ${r.materiaisCriados} materiais novos cadastrados, ${r.materiaisJaCadastrados || 0} já existiam no catálogo (preço mantido)`);
       r.avisos?.forEach(a => toast(a));
       carregar();
     } catch (err) {
@@ -398,7 +400,7 @@ export default function Materiais() {
           </button>
         )}
 
-        <button onClick={verificarFornecedores} disabled={verificandoFornecedores} style={{ ...btnSecundario, padding: '5px 10px' }} title="Lê agora os PDFs salvos em 'Orçamentos recebidos fornecedores', sem esperar a leitura automática das 06:00 e das 18:00">
+        <button onClick={verificarFornecedores} disabled={verificandoFornecedores} style={{ ...btnSecundario, padding: '5px 10px' }} title="Lê agora os orçamentos (PDF, PDF escaneado ou foto, de qualquer fornecedor) salvos em 'Orçamentos recebidos fornecedores', sem esperar a leitura automática das 06:00 e das 18:00">
           <RefreshCw size={12} style={{ marginRight: 5 }} /> {verificandoFornecedores ? 'Verificando...' : 'Verificar orçamentos de fornecedores'}
         </button>
 

@@ -1,0 +1,542 @@
+[
+ {
+  "cod": "D1",
+  "secao": "Documentação",
+  "item": "Projeto/as built com desenhos em escala, materiais e posições",
+  "requisito": "NBR 5419-3:2026, 7.5.3 f",
+  "onde": "Escritório / documentos do cliente",
+  "como": "Solicitar ao cliente e analisar o documento",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D2",
+  "secao": "Documentação",
+  "item": "Análise de risco e seleção do NP, com premissas",
+  "requisito": "NBR 5419-3:2026, 7.5.3 b",
+  "onde": "Escritório / documentos do cliente",
+  "como": "Solicitar ao cliente e analisar o documento",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D3",
+  "secao": "Documentação",
+  "item": "Identificação dos responsáveis técnicos com ART/TRT",
+  "requisito": "NBR 5419-3:2026, 7.5.3 a",
+  "onde": "Escritório / documentos do cliente",
+  "como": "Solicitar ao cliente e analisar o documento",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D4",
+  "secao": "Documentação",
+  "item": "Validação documentada de componentes naturais",
+  "requisito": "NBR 5419-3:2026, 7.5.3 c; F.1.2.2",
+  "onde": "Escritório / documentos do cliente",
+  "como": "Solicitar ao cliente e analisar o documento",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D5",
+  "secao": "Documentação",
+  "item": "Dados de resistividade/estratificação do solo",
+  "requisito": "NBR 5419-3:2026, 7.5.3 d",
+  "onde": "Escritório / documentos do cliente",
+  "como": "Solicitar ao cliente e analisar o documento",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D6",
+  "secao": "Documentação",
+  "item": "Definição de isolado/não isolado e método de posicionamento",
+  "requisito": "NBR 5419-3:2026, 7.5.3 e",
+  "onde": "Escritório / documentos do cliente",
+  "como": "Solicitar ao cliente e analisar o documento",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D7",
+  "secao": "Documentação",
+  "item": "Registro de medidas contra toque e passo",
+  "requisito": "NBR 5419-3:2026, 7.5.3 g",
+  "onde": "Escritório / documentos do cliente",
+  "como": "Solicitar ao cliente e analisar o documento",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D8",
+  "secao": "Documentação",
+  "item": "Distância de segurança (s) e parcelas de corrente para DPS",
+  "requisito": "NBR 5419-3:2026, 7.5.3 h",
+  "onde": "Escritório / documentos do cliente",
+  "como": "Solicitar ao cliente e analisar o documento",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D9",
+  "secao": "Documentação",
+  "item": "Relatório de inspeção anterior disponível e dentro do prazo",
+  "requisito": "NBR 5419-3:2026, 7.3.3 b",
+  "onde": "Escritório / documentos do cliente",
+  "como": "Solicitar ao cliente e analisar o documento",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D10",
+  "secao": "Documentação",
+  "item": "Plano de inspeção e manutenção documentado",
+  "requisito": "NBR 5419-3:2026, 7.2.1",
+  "onde": "Escritório / documentos do cliente",
+  "como": "Solicitar ao cliente e analisar o documento",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D11",
+  "secao": "Documentação",
+  "item": "Projeto conforme a norma de origem",
+  "requisito": "NBR 5419-3:2026, 7.3.1 a; 7.5.4 b",
+  "onde": "Escritório / documentos do cliente",
+  "como": "Solicitar ao cliente e analisar o documento",
+  "prioridade_padrao": "P4"
+ },
+ {
+  "cod": "D12",
+  "secao": "Documentação",
+  "item": "Instalação conforme o projeto (sem divergências do as built)",
+  "requisito": "NBR 5419-3:2026, 7.3.1 a; 7.5.1",
+  "onde": "Escritório / documentos do cliente",
+  "como": "Solicitar ao cliente e analisar o documento",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "D13",
+  "secao": "Documentação",
+  "item": "ART do SPDA com observações exigidas pelo órgão licenciador e notas fiscais/certificados dos componentes",
+  "requisito": "NBR 5419-3:2026, 7.5.3 a; exigência do licenciamento",
+  "onde": "Escritório / documentos do cliente",
+  "como": "Solicitar ao cliente e analisar o documento",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "CP1",
+  "secao": "Captação",
+  "item": "Posicionamento atende ao método e ao NP (volume de proteção)",
+  "requisito": "NBR 5419-3:2026, 5.3.2; Tab. 2; Anexo A",
+  "onde": "Cobertura",
+  "como": "Conferir método de captação e malha/captores × NP (trena, croqui da cobertura)",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "CP2",
+  "secao": "Captação",
+  "item": "Elementos salientes (antenas, condensadoras, chaminés, FV) protegidos ou interligados",
+  "requisito": "NBR 5419-3:2026, 5.3.2; 6.2",
+  "onde": "Cobertura",
+  "como": "Listar antenas, condensadoras, FV, chaminés; verificar captor/ligação de cada um (foto)",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "CP3",
+  "secao": "Captação",
+  "item": "Material e seção mínima dos condutores e captores",
+  "requisito": "NBR 5419-3:2026, 5.7.2; Tab. 7",
+  "onde": "Cobertura",
+  "como": "Medir seção/diâmetro do condutor e captores (paquímetro) e identificar material",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "CP4",
+  "secao": "Captação",
+  "item": "Captação natural (telhas, chapas): espessura medida ≥ Tab. 3/4",
+  "requisito": "NBR 5419-3:2026, 5.3.2.16",
+  "onde": "Cobertura",
+  "como": "Medir espessura de telhas/chapas usadas como captação natural (paquímetro/medidor)",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "CP5",
+  "secao": "Captação",
+  "item": "Fixação ≤ 1,0 m (horizontal) e ≤ 1,5 m (vertical/inclinado)",
+  "requisito": "NBR 5419-3:2026, 5.6.2.2",
+  "onde": "Cobertura",
+  "como": "Medir distância entre fixadores (≤ 1,0 m horizontal; ≤ 1,5 m vertical)",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "CP6",
+  "secao": "Captação",
+  "item": "Conexões firmes, por solda ou conector de pressão/compressão",
+  "requisito": "NBR 5419-3:2026, 5.6.3.1",
+  "onde": "Cobertura",
+  "como": "Inspecionar conexões (aperto, solda, conectores) — foto de cada tipo",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "CP7",
+  "secao": "Captação",
+  "item": "Ausência de corrosão, deformação, ruptura ou contato bimetálico",
+  "requisito": "NBR 5419-3:2026, 7.3.3 c; 5.5.1.5",
+  "onde": "Cobertura",
+  "como": "Inspecionar condutores e conexões: corrosão, deformação, ruptura e contato entre metais diferentes (cobre × zinco/alumínio)",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "CP8",
+  "secao": "Captação",
+  "item": "Proteção lateral (estruturas > 60 m)",
+  "requisito": "NBR 5419-3:2026, 5.3.2.14",
+  "onde": "Cobertura",
+  "como": "Só para estruturas > 60 m: verificar proteção lateral nos 20 % superiores",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "CP9",
+  "secao": "Captação",
+  "item": "Sinais de impacto de descarga (fusão, marcas)",
+  "requisito": "NBR 5419-3:2026, 7.3.2 e; 7.5.2",
+  "onde": "Cobertura",
+  "como": "Procurar marcas de fusão/impacto em captores e condutores",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DS1",
+  "secao": "Descidas",
+  "item": "Nº de descidas ≥ perímetro/espaçamento da Tab. 5 (mín. 2); espaçamento ≤ +20 %",
+  "requisito": "NBR 5419-3:2026, 5.4.3; Tab. 5",
+  "onde": "Fachadas / descidas",
+  "como": "Contar as descidas e medir o perímetro; comparar com perímetro ÷ espaçamento da Tabela 5",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DS2",
+  "secao": "Descidas",
+  "item": "Distribuição uniforme, com preferência pelos cantos",
+  "requisito": "NBR 5419-3:2026, 5.4.3.1",
+  "onde": "Fachadas / descidas",
+  "como": "Marcar as descidas em planta e conferir a distribuição e os cantos",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DS3",
+  "secao": "Descidas",
+  "item": "Trajeto retilíneo e vertical, sem laços (ou laço compatível com s)",
+  "requisito": "NBR 5419-3:2026, 5.4.4.2",
+  "onde": "Fachadas / descidas",
+  "como": "Percorrer o trajeto das descidas; registrar laços e medir s quando houver",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DS4",
+  "secao": "Descidas",
+  "item": "Não instalada em calhas/tubos pluviais",
+  "requisito": "NBR 5419-3:2026, 5.4.4.3",
+  "onde": "Fachadas / descidas",
+  "como": "Verificar se há condutor dentro de calha ou tubo pluvial",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DS5",
+  "secao": "Descidas",
+  "item": "Distância de segurança de portas, janelas e massas",
+  "requisito": "NBR 5419-3:2026, 5.4.4.4; 6.3",
+  "onde": "Fachadas / descidas",
+  "como": "Medir a distância das descidas a portas, janelas e massas metálicas",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DS6",
+  "secao": "Descidas",
+  "item": "Afastamento ≥ 0,10 m de materiais combustíveis (ou seção equivalente)",
+  "requisito": "NBR 5419-3:2026, 5.4.4.5; 5.4.4.6",
+  "onde": "Fachadas / descidas",
+  "como": "Medir o afastamento de materiais combustíveis (≥ 0,10 m)",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DS7",
+  "secao": "Descidas",
+  "item": "Material e seção mínima",
+  "requisito": "NBR 5419-3:2026, Tab. 7",
+  "onde": "Fachadas / descidas",
+  "como": "Identificar material e medir seção/diâmetro (paquímetro)",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DS8",
+  "secao": "Descidas",
+  "item": "Sem emendas (exceto o conector de ensaio)",
+  "requisito": "NBR 5419-3:2026, 5.6.3.2",
+  "onde": "Fachadas / descidas",
+  "como": "Procurar emendas no trajeto (só o conector de ensaio é permitido)",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DS9",
+  "secao": "Descidas",
+  "item": "Fixação dentro das distâncias máximas",
+  "requisito": "NBR 5419-3:2026, 5.6.2.2",
+  "onde": "Fachadas / descidas",
+  "como": "Medir a distância entre fixadores (≤ 1,5 m na vertical)",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DS10",
+  "secao": "Descidas",
+  "item": "Conector de ensaio em cada descida, a ~1,5 m, abre só com ferramenta, sem contato com o solo",
+  "requisito": "NBR 5419-3:2026, 5.4.6",
+  "onde": "Fachadas / descidas",
+  "como": "Conferir conector de ensaio em cada descida a ~1,5 m, aberto só com ferramenta",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DS11",
+  "secao": "Descidas",
+  "item": "Anéis intermediários (quando previstos)",
+  "requisito": "NBR 5419-3:2026, 5.4.1.2; Tab. 5",
+  "onde": "Fachadas / descidas",
+  "como": "Verificar anéis intermediários quando previstos no projeto",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DS12",
+  "secao": "Descidas",
+  "item": "Descidas naturais validadas (Anexo F ou documentação)",
+  "requisito": "NBR 5419-3:2026, 5.4.5; 5.1.3.2",
+  "onde": "Fachadas / descidas",
+  "como": "Ensaio de continuidade F.1/F.2 ou documentação da obra (F.1.2.2)",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DS13",
+  "secao": "Descidas",
+  "item": "Integridade: corrosão, danos mecânicos, furto",
+  "requisito": "NBR 5419-3:2026, 7.3.3 c",
+  "onde": "Fachadas / descidas",
+  "como": "Inspeção visual: corrosão, danos mecânicos, furtos",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "AT1",
+  "secao": "Aterramento",
+  "item": "Arranjo conforme a ordem preferencial (fundação / anel / malha)",
+  "requisito": "NBR 5419-3:2026, 5.5.2.1",
+  "onde": "Solo/caixas",
+  "como": "Identificar arranjo (fundação, anel, malha) pelas caixas de inspeção e projeto",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "AT2",
+  "secao": "Aterramento",
+  "item": "Anel enterrado ≥ 0,5 m e a ~1 m das paredes",
+  "requisito": "NBR 5419-3:2026, 5.5.3",
+  "onde": "Solo/caixas",
+  "como": "Abrir caixas e medir profundidade do anel e distância às paredes",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "AT3",
+  "secao": "Aterramento",
+  "item": "Condição re ≥ l1 ou complementação/medidas da Seção 8",
+  "requisito": "NBR 5419-3:2026, 5.5.2.3; 5.5.2.4",
+  "onde": "Escritório + campo",
+  "como": "Conferir re ≥ l1 (Fig. 3) com resistividade/projeto",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "AT4",
+  "secao": "Aterramento",
+  "item": "Material e dimensões mínimas do eletrodo",
+  "requisito": "NBR 5419-3:2026, Tab. 8",
+  "onde": "Solo/caixas",
+  "como": "Medir seção/diâmetro do eletrodo e hastes; identificar material",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "AT5",
+  "secao": "Aterramento",
+  "item": "Conexões enterradas em caixa de inspeção acessível (exceto compressão/exotérmica/fusão)",
+  "requisito": "NBR 5419-3:2026, 5.6.3.3",
+  "onde": "Solo/caixas",
+  "como": "Verificar conexões enterradas dentro de caixa acessível",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "AT6",
+  "secao": "Aterramento",
+  "item": "Caixas de inspeção localizáveis, desobstruídas e não alagadas",
+  "requisito": "NBR 5419-3:2026, 5.6.3.3",
+  "onde": "Solo / caixas de inspeção",
+  "como": "Abrir e limpar as caixas; verificar tampa, identificação, entulho e água",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "AT7",
+  "secao": "Aterramento",
+  "item": "Eletrodo exposto ou danificado; corrosão",
+  "requisito": "NBR 5419-3:2026, 7.3.3 c",
+  "onde": "Solo/caixas",
+  "como": "Procurar eletrodo exposto, danificado ou corroído",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "AT8",
+  "secao": "Aterramento",
+  "item": "Aterramento único e integrado (energia, sinal, SPDA)",
+  "requisito": "NBR 5419-3:2026, 5.5.1.3",
+  "onde": "Quadro geral/BEP",
+  "como": "Confirmar interligação SPDA × aterramento elétrico × telecom",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "AT9",
+  "secao": "Aterramento",
+  "item": "Medidas contra toque/passo nas descidas (acesso 3 m, isolação, camada isolante, barreiras, avisos)",
+  "requisito": "NBR 5419-3:2026, Seção 8",
+  "onde": "Base das descidas",
+  "como": "Avaliar toque/passo: acesso a 3 m, isolação, asfalto, barreiras, avisos",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "EQ1",
+  "secao": "Equipotencialização",
+  "item": "BEP existente, acessível e ligado diretamente ao aterramento",
+  "requisito": "NBR 5419-3:2026, 6.2.2",
+  "onde": "Entrada de energia",
+  "como": "Localizar BEP, verificar acesso e ligação direta ao aterramento (foto)",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "EQ2",
+  "secao": "Equipotencialização",
+  "item": "BEL em estruturas extensas (> 20 m)",
+  "requisito": "NBR 5419-3:2026, 6.2.2",
+  "onde": "Pavimentos",
+  "como": "Verificar BEL em estruturas > 20 m",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "EQ3",
+  "secao": "Equipotencialização",
+  "item": "Instalações metálicas (tubulações, dutos, elevadores, estruturas) ligadas",
+  "requisito": "NBR 5419-3:2026, 6.2.2",
+  "onde": "Shafts/casa de máquinas",
+  "como": "Verificar ligação de tubulações, dutos, elevadores, estruturas metálicas",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "EQ4",
+  "secao": "Equipotencialização",
+  "item": "Partes condutivas externas e linhas que entram, ligadas na entrada",
+  "requisito": "NBR 5419-3:2026, 6.2.3; 6.2.4",
+  "onde": "Entradas de linhas",
+  "como": "Verificar ligação das linhas/partes metálicas que entram (água, gás, energia, telecom)",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "EQ5",
+  "secao": "Equipotencialização",
+  "item": "Seção dos condutores de equipotencialização",
+  "requisito": "NBR 5419-3:2026, 6.2.2.4; NBR 5419-4 Tab. 1",
+  "onde": "BEP/BEL",
+  "como": "Medir seção dos condutores de equipotencialização",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "EQ6",
+  "secao": "Equipotencialização",
+  "item": "Distância de segurança s entre o SPDA e as partes internas",
+  "requisito": "NBR 5419-3:2026, 6.3",
+  "onde": "Cobertura/interior",
+  "como": "Medir distância de segurança s entre SPDA e instalações internas",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "EQ7",
+  "secao": "Equipotencialização",
+  "item": "Centelhadores de isolação (quando existentes)",
+  "requisito": "NBR 5419-3:2026, 6.2.2.10; 7.3.5",
+  "onde": "Onde houver",
+  "como": "Inspecionar centelhadores de isolação",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "EQ8",
+  "secao": "Equipotencialização",
+  "item": "Novas instalações desde a última inspeção incorporadas",
+  "requisito": "NBR 5419-3:2026, 7.3.1 c",
+  "onde": "Edificação",
+  "como": "Identificar instalações novas desde a última inspeção (FV, antenas, ampliações)",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DP1",
+  "secao": "DPS",
+  "item": "DPS classe I nas entradas de energia (Iimp conforme projeto; NBR IEC 61643-11)",
+  "requisito": "NBR 5419-3:2026, 6.2.4; 7.3.3 g",
+  "onde": "Quadros e entradas de linhas",
+  "como": "Anotar marca, modelo, Iimp, Up e indicador de cada DPS classe I; fotografar a placa",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DP2",
+  "secao": "DPS",
+  "item": "DPS nas linhas de sinal (IEC 61643-21)",
+  "requisito": "NBR 5419-3:2026, 6.2.5.6",
+  "onde": "Quadros e entradas de linhas",
+  "como": "Verificar DPS de sinal no DG de telecom e racks; anotar modelo",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DP3",
+  "secao": "DPS",
+  "item": "Indicador de estado/fim de vida do DPS",
+  "requisito": "NBR 5419-3:2026, 7.3.3 g; 5419-4 9.2.5 e",
+  "onde": "Quadros e entradas de linhas",
+  "como": "Conferir o indicador de fim de vida de todos os DPS",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DP4",
+  "secao": "DPS",
+  "item": "Dispositivo de sobrecorrente a montante íntegro e não atuado",
+  "requisito": "NBR 5419-3:2026, 7.3.3 g; 5419-4 9.2.5 f",
+  "onde": "Quadros e entradas de linhas",
+  "como": "Verificar o disjuntor/fusível de backup dos DPS: ligado e sem atuação",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DP5",
+  "secao": "DPS",
+  "item": "Condutores de conexão do DPS curtos, firmes e sem corrosão",
+  "requisito": "NBR 5419-4:2026 9.2.5 a",
+  "onde": "Quadros e entradas de linhas",
+  "como": "Medir o comprimento das conexões fase→DPS→PE (≤ 0,5 m no total)",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DP6",
+  "secao": "DPS",
+  "item": "DPS instalado de forma que permita inspeção",
+  "requisito": "NBR 5419-3:2026, 6.2.1.4",
+  "onde": "Quadros e entradas de linhas",
+  "como": "Verificar se o DPS está acessível para inspeção",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DP7",
+  "secao": "DPS",
+  "item": "Contador de descargas: integridade e registro de atuações",
+  "requisito": "NBR 5419-3:2026, 7.3.3 h",
+  "onde": "Quadros e entradas de linhas",
+  "como": "Ler o contador de descargas e registrar as atuações",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DP8",
+  "secao": "DPS",
+  "item": "DPS coordenados nos quadros (MPS), se no escopo",
+  "requisito": "NBR 5419-4:2026 Seção 9",
+  "onde": "Quadros e entradas de linhas",
+  "como": "Listar os quadros com DPS coordenados e anotar In, Up e estado",
+  "prioridade_padrao": "P3"
+ }
+]

@@ -2,87 +2,30 @@ const fsp = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
 const pool = require('../config/database');
-const { extrairCotacaoPdf } = require('../utils/cotacaoFornecedorParser');
-const { classificarPorDescricao } = require('../utils/classificadorMaterial');
+const { lerDocumentoCotacao, encerrarOcr, VERSAO_LEITOR, EXTENSOES } = require('../utils/leitorCotacao');
+const { carregarIndice, registrarItemCotacao, obterMargemPadrao } = require('./catalogoMateriais');
 
-// Pastas onde o usuário salva manualmente os orçamentos/cotações de fornecedor
-// recebidos por WhatsApp (hoje só em PDF). A local fica ao lado de backend/ e
-// frontend/; a de rede é compartilhada no servidor de arquivos da empresa.
+// Pastas onde o usuário salva os orçamentos/cotações de fornecedor recebidos
+// (WhatsApp etc.): PDF com texto, PDF escaneado ou foto (PNG/JPG). A local
+// fica ao lado de backend/ e frontend/; a de rede é compartilhada no servidor.
 const PASTA_FORNECEDORES_LOCAL = path.join(__dirname, '..', '..', '..', 'Orçamentos recebidos fornecedores');
 const PASTA_FORNECEDORES_REDE = '\\\\MARCIO-SERVER\\Arquivos Gerais 2\\H&M\\Orçamentos Recebidos';
 const PASTAS_FORNECEDORES = [PASTA_FORNECEDORES_LOCAL, PASTA_FORNECEDORES_REDE];
-
-function normalizarDescricao(s) {
-  return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-async function obterMargemPadrao(client) {
-  const r = await client.query("SELECT valor FROM configuracoes WHERE chave = 'margem_padrao'");
-  return parseFloat(r.rows[0]?.valor) || 0;
-}
+// Teto de leituras por IA numa varredura (só para arquivos que o leitor local
+// não reconheceu) — evita custo alto se cair uma pasta cheia de arquivos estranhos.
+const MAX_IA_POR_VARREDURA = Number(process.env.COTACAO_IA_MAX_POR_VARREDURA) || 15;
 
 function hashArquivo(buffer) {
   return crypto.createHash('sha256').update(buffer).digest('hex');
 }
 
-// Cria o material se a descrição for nova, ou atualiza o custo se já existir —
-// mas, diferente da importação de nota fiscal (que sempre grava o valor mais
-// recente), aqui mantém sempre o MENOR preço de custo já visto, já que a
-// margem de venda é aplicada em cima e um fornecedor mais caro num dia
-// específico não deveria puxar o preço de referência pra cima.
-async function upsertMaterialMenorPreco(client, item, origem, margem) {
-  const descricaoNorm = normalizarDescricao(item.descricao);
-  if (!descricaoNorm) return null;
-
-  const precoRecebido = Number(item.preco) || 0;
-  if (precoRecebido <= 0) return null; // preço não identificado com confiança — não grava lixo no catálogo
-
-  const existente = await client.query(
-    `SELECT * FROM materiais WHERE LOWER(TRIM(descricao)) = $1 AND ativo = true LIMIT 1`,
-    [descricaoNorm]
-  );
-
-  if (existente.rows.length > 0) {
-    const mat = existente.rows[0];
-    const compraAtual = mat.preco_compra != null ? Number(mat.preco_compra) : null;
-    const menorCompra = compraAtual != null ? Math.min(compraAtual, precoRecebido) : precoRecebido;
-    const mudou = compraAtual == null || menorCompra !== compraAtual;
-
-    if (mat.preco_manual) {
-      // preço de venda foi ajustado manualmente — preserva, só atualiza custo/código/marca/NCM de referência
-      await client.query(
-        `UPDATE materiais SET preco_compra=$1, codigo=COALESCE(NULLIF(codigo,''), $2), marca=COALESCE(NULLIF(marca,''), $3), ncm=COALESCE(NULLIF(ncm,''), $4), origem=$5, atualizado_em=NOW() WHERE id=$6`,
-        [menorCompra, item.codigo || null, item.marca || null, item.ncm || null, origem, mat.id]
-      );
-    } else {
-      const precoVenda = Math.round(menorCompra * (1 + margem / 100) * 100) / 100;
-      await client.query(
-        `UPDATE materiais SET preco_compra=$1, preco=$2, codigo=COALESCE(NULLIF(codigo,''), $3), marca=COALESCE(NULLIF(marca,''), $4), ncm=COALESCE(NULLIF(ncm,''), $5), origem=$6, atualizado_em=NOW() WHERE id=$7`,
-        [menorCompra, precoVenda, item.codigo || null, item.marca || null, item.ncm || null, origem, mat.id]
-      );
-    }
-    return { criado: false, mudou };
-  }
-
-  const categoria = classificarPorDescricao(item.descricao) || 'Não classificado';
-  const precoVenda = Math.round(precoRecebido * (1 + margem / 100) * 100) / 100;
-  await client.query(
-    `INSERT INTO materiais (codigo, descricao, categoria, unidade, preco, preco_compra, marca, ncm, origem)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-    [item.codigo || null, item.descricao, categoria, item.unidade || 'un', precoVenda, precoRecebido, item.marca || '', item.ncm || null, origem]
-  );
-  return { criado: true, mudou: true };
-}
-
-// Lista os PDFs de uma pasta de cotações. Pastas de rede podem estar
+// Lista os arquivos de uma pasta de cotações. Pastas de rede podem estar
 // temporariamente indisponíveis (servidor desligado, sem VPN, etc.) — nesse
 // caso só avisa e segue pras outras pastas, não derruba o job inteiro.
-// Usa fs.promises: as versões síncronas (existsSync/readdirSync/readFileSync)
-// BLOQUEIAM a thread única do Node. Sobre caminho de rede (\\MARCIO-SERVER\...)
-// com o servidor desligado, cada chamada trava até o timeout SMB do Windows —
-// segundos a ~45s — e nesse intervalo a API inteira congela: ninguém loga,
-// nenhuma tela carrega, nenhum PDF sai. E isso rodava a cada 15 minutos.
-async function listarPdfs(pasta, resumo, criarSeNaoExistir) {
+// Usa fs.promises: as versões síncronas BLOQUEIAM a thread única do Node, e
+// sobre caminho de rede com o servidor desligado cada chamada trava até o
+// timeout SMB do Windows — nesse intervalo a API inteira congela.
+async function listarArquivos(pasta, resumo, criarSeNaoExistir) {
   try {
     try {
       await fsp.access(pasta);
@@ -95,19 +38,50 @@ async function listarPdfs(pasta, resumo, criarSeNaoExistir) {
       }
     }
     const nomes = await fsp.readdir(pasta);
-    return nomes
-      .filter(nome => /\.pdf$/i.test(nome))
-      .map(nome => ({ pasta, nome }));
+    return nomes.filter(nome => EXTENSOES.test(nome)).map(nome => ({ pasta, nome }));
   } catch (err) {
     resumo.avisos.push(`Não foi possível acessar a pasta "${pasta}": ${err.message}`);
     return [];
   }
 }
 
+// Já lido de vez: teve itens, ou foi lido com 0 itens pela versão atual do
+// leitor. Arquivo com 0 itens de uma versão antiga é lido de novo.
+async function jaProcessado(client, hash) {
+  const r = await client.query('SELECT itens_lidos, itens_novos, itens_atualizados, leitor_versao FROM arquivos_fornecedores_processados WHERE hash = $1', [hash]);
+  if (!r.rows.length) return false;
+  const x = r.rows[0];
+  return (x.itens_lidos || 0) > 0 || (x.itens_novos || 0) > 0 || (x.itens_atualizados || 0) > 0 || (x.leitor_versao || 1) >= VERSAO_LEITOR;
+}
+
+async function registrarArquivo(client, nome, hash, dados) {
+  await client.query(
+    `INSERT INTO arquivos_fornecedores_processados (arquivo, hash, itens_novos, itens_atualizados, itens_lidos, metodo, confere_total, leitor_versao)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     ON CONFLICT (hash) DO UPDATE SET arquivo=EXCLUDED.arquivo, itens_novos=EXCLUDED.itens_novos, itens_atualizados=EXCLUDED.itens_atualizados,
+       itens_lidos=EXCLUDED.itens_lidos, metodo=EXCLUDED.metodo, confere_total=EXCLUDED.confere_total, leitor_versao=EXCLUDED.leitor_versao, processado_em=NOW()`,
+    // pendente (precisava de IA e ela estava indisponível): versão anterior, para ser relido
+    [nome, hash, dados.criados || 0, dados.atualizados || 0, dados.lidos || 0, dados.metodo || null, dados.confere ?? null, dados.pendente ? VERSAO_LEITOR - 1 : VERSAO_LEITOR]
+  );
+}
+
+// Grava no catálogo os itens de UM documento já lido (pasta ou e-mail):
+// material novo é cadastrado, existente mantém o menor custo.
+async function importarItens(client, indice, leitura, origemBase, margem) {
+  const origem = leitura.metodo?.startsWith('IA') ? `${origemBase}_ia` : leitura.viaOcr ? `${origemBase}_ocr` : origemBase;
+  let criados = 0, atualizados = 0, existentes = 0;
+  for (const item of leitura.itens) {
+    const r = await registrarItemCotacao(client, indice, item, origem, margem);
+    if (!r) continue;
+    if (r.criado) criados++;
+    else { existentes++; if (r.mudou) atualizados++; }
+  }
+  return { criados, atualizados, existentes };
+}
+
 // A varredura roda sozinha às 06:00 e às 18:00 e também pelo botão "Verificar agora".
-// Duas execuções simultâneas leriam o mesmo PDF como "não processado" antes de
-// qualquer uma gravar o hash, e o upsert (consulta-e-depois-insere, sem
-// restrição única em materiais) criaria o mesmo material duas vezes. Quem
+// Duas execuções simultâneas leriam o mesmo arquivo como "não processado" antes de
+// qualquer uma gravar o hash e criariam o mesmo material duas vezes. Quem
 // chegar enquanto uma varredura está em andamento recebe o resultado dela.
 let varreduraEmAndamento = null;
 
@@ -121,91 +95,68 @@ function verificarPastaFornecedores() {
 async function executarVarredura() {
   const resumo = {
     arquivosEncontrados: 0, arquivosProcessados: 0,
-    materiaisCriados: 0, materiaisAtualizados: 0, avisos: [],
+    materiaisCriados: 0, materiaisAtualizados: 0, materiaisJaCadastrados: 0,
+    leiturasPorIA: 0, arquivos: [], avisos: [],
   };
 
   const arquivos = [
-    ...(await listarPdfs(PASTA_FORNECEDORES_LOCAL, resumo, true)),
-    ...(await listarPdfs(PASTA_FORNECEDORES_REDE, resumo, false)),
+    ...(await listarArquivos(PASTA_FORNECEDORES_LOCAL, resumo, true)),
+    ...(await listarArquivos(PASTA_FORNECEDORES_REDE, resumo, false)),
   ];
   resumo.arquivosEncontrados = arquivos.length;
 
   const client = await pool.connect();
   try {
     const margem = await obterMargemPadrao(client);
+    const indice = await carregarIndice(client);
 
     for (const { pasta, nome } of arquivos) {
-      const caminho = path.join(pasta, nome);
       let buffer;
       try {
-        buffer = await fsp.readFile(caminho);
+        buffer = await fsp.readFile(path.join(pasta, nome));
       } catch (err) {
         resumo.avisos.push(`Não foi possível ler "${nome}": ${err.message}`);
         continue;
       }
-
       const hash = hashArquivo(buffer);
-      const jaProcessado = await client.query(
-        'SELECT id FROM arquivos_fornecedores_processados WHERE hash = $1',
-        [hash]
-      );
-      if (jaProcessado.rows.length > 0) continue;
+      if (await jaProcessado(client, hash)) continue;
+
+      let leitura;
+      try {
+        leitura = await lerDocumentoCotacao(buffer, nome, { permitirIA: resumo.leiturasPorIA < MAX_IA_POR_VARREDURA });
+      } catch (err) {
+        leitura = { itens: [], metodo: null, avisos: [`erro na leitura: ${err.message}`] };
+      }
+      if (leitura.usouIA) resumo.leiturasPorIA++;
 
       await client.query('BEGIN');
       try {
-        const itens = await extrairCotacaoPdf(buffer);
-        if (itens.length === 0) {
-          resumo.avisos.push(`Nenhum item reconhecido em "${nome}" — confira o layout do arquivo`);
-          await client.query(
-            `INSERT INTO arquivos_fornecedores_processados (arquivo, hash) VALUES ($1,$2) ON CONFLICT (hash) DO NOTHING`,
-            [nome, hash]
-          );
-          await client.query('COMMIT');
-          continue;
-        }
-
-        let criados = 0, atualizados = 0;
-        for (const item of itens) {
-          const r = await upsertMaterialMenorPreco(client, item, 'fornecedor_whatsapp', margem);
-          if (!r) continue;
-          if (r.criado) criados++;
-          else if (r.mudou) atualizados++;
-        }
-
-        await client.query(
-          `INSERT INTO arquivos_fornecedores_processados (arquivo, hash, itens_novos, itens_atualizados)
-           VALUES ($1,$2,$3,$4) ON CONFLICT (hash) DO NOTHING`,
-          [nome, hash, criados, atualizados]
-        );
+        const r = leitura.itens.length ? await importarItens(client, indice, leitura, 'fornecedor_whatsapp', margem) : { criados: 0, atualizados: 0, existentes: 0 };
+        await registrarArquivo(client, nome, hash, { ...r, lidos: leitura.itens.length, metodo: leitura.metodo || (leitura.pendente ? 'aguardando IA' : null), confere: leitura.conferencia?.confere, pendente: leitura.pendente });
         await client.query('COMMIT');
-
         resumo.arquivosProcessados++;
-        resumo.materiaisCriados += criados;
-        resumo.materiaisAtualizados += atualizados;
+        resumo.materiaisCriados += r.criados;
+        resumo.materiaisAtualizados += r.atualizados;
+        resumo.materiaisJaCadastrados += r.existentes;
+        resumo.arquivos.push({ arquivo: nome, metodo: leitura.metodo, itensLidos: leitura.itens.length, novos: r.criados, atualizados: r.atualizados, jaCadastrados: r.existentes, confereTotal: leitura.conferencia?.confere ?? null });
+        if (leitura.pendente) resumo.pendentes = (resumo.pendentes || 0) + 1;
+        if (!leitura.itens.length && !leitura.daHM) resumo.avisos.push(`Nenhum item reconhecido em "${nome}"${leitura.avisos?.length ? ` (${leitura.avisos.join('; ')})` : ''}`);
+        else for (const a of leitura.avisos || []) resumo.avisos.push(`"${nome}": ${a}`);
       } catch (err) {
         await client.query('ROLLBACK').catch(() => {});
         resumo.avisos.push(`Erro ao processar "${nome}": ${err.message}`);
         console.error(`Erro ao processar cotação "${nome}":`, err);
-
-        // Marca o arquivo como visto mesmo tendo falhado. Antes o hash só era
-        // gravado no caminho de sucesso, então um PDF protegido por senha, um
-        // arquivo truncado ou um .jpg renomeado para .pdf era relido,
-        // reparseado e refalhado a cada 15 minutos, para sempre — consumindo
-        // CPU e enchendo o log. Fica registrado com a contagem zerada; se o
-        // arquivo for corrigido, o conteúdo muda, o hash muda e ele volta a
-        // ser processado normalmente.
-        await client.query(
-          `INSERT INTO arquivos_fornecedores_processados (arquivo, hash) VALUES ($1,$2)
-           ON CONFLICT (hash) DO NOTHING`,
-          [nome, hash]
-        ).catch(e => console.error('Falha ao registrar arquivo com erro:', e.message));
+        // Marca como visto (versão atual, 0 itens) para não refalhar a cada
+        // varredura; se o arquivo for corrigido, o hash muda e ele é relido.
+        await registrarArquivo(client, nome, hash, { metodo: 'erro' }).catch(e => console.error('Falha ao registrar arquivo com erro:', e.message));
       }
     }
   } finally {
     client.release();
+    await encerrarOcr();
   }
 
   return resumo;
 }
 
-module.exports = { verificarPastaFornecedores, PASTAS_FORNECEDORES };
+module.exports = { verificarPastaFornecedores, importarItens, PASTAS_FORNECEDORES };

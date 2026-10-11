@@ -123,6 +123,35 @@
 
 **v1.6.1.** As leituras automáticas (notas e Pix por e-mail e as pastas de fornecedores) deixaram de rodar a cada 15 minutos / 8 horas e passaram a rodar só às **06:00 e às 18:00**. Também deixaram de rodar logo ao ligar o backend. Os scripts `reiniciar-backend.bat` (pede administrador sozinho), `enviar-para-github.bat` (reutilizável) e `atualizar-sistema.bat` foram ajustados. Arquivos: `server.js`, `pages/Materiais.js` e os `.bat` da raiz.
 
+**v1.7.0 — orçamentos de fornecedor em qualquer layout (pasta e e-mail), 10/10/2026.**
+
+- **Leitura** (`utils/leitorCotacao.js`), da mais barata para a mais cara:
+  1. layouts conhecidos (`cotacaoFornecedorParser.js`: ADM/SOL/DF Atacadista, Dispel, BAND, ECO Automação);
+  2. **leitor universal** (`leitorCotacaoUniversal.js`): acha em cada linha o trio quantidade × unitário = total, monta a descrição (também quebrada em várias linhas ou em blocos) e confere a soma com o total impresso. Sozinho, leu os 28 PDFs reais da pasta com as mesmas 587 descrições dos leitores específicos, e todos conferiram com o total;
+  3. **OCR local** (tesseract.js, português embutido) para PDF escaneado e foto PNG/JPG;
+  4. **IA**, só para documentos com cara de lista de preços que o local não leu (`leitorCotacaoIA.js`). Ordem pedida pelo usuário: **Claude pela assinatura Claude Max** (Claude Code `claude -p`, modelo Sonnet, sem crédito de API) → Claude pela API (se houver crédito) → Gemini como complemento.
+- **Proteções:**
+  - item só entra com a conta fechando;
+  - leitura por OCR ou IA só entra se a soma bater com um total do documento, ou se OCR e IA concordarem;
+  - propostas da própria H&M são ignoradas;
+  - no e-mail, o documento precisa estar endereçado à H&M (separa cotação de carta-convite, RFQ e planilha de licitação);
+  - imagens de assinatura não gastam IA;
+  - limite de 15 leituras por IA por varredura.
+- **Catálogo** (`services/catalogoMateriais.js`): cadastra automaticamente **só materiais novos**. Para decidir se o material já existe, compara a descrição igual, a descrição sem acentos e pontuação, ou o mesmo código de fabricante (ex.: 5SY4102-7). Material existente **não tem preço alterado por cotação**; a cotação só completa custo, código, marca e NCM vazios. As notas fiscais continuam gravando o último preço pago e usam a mesma comparação.
+- **E-mail:** além das notas (DANFE), lê os e-mails com orçamento, cotação, proposta ou pedido anexado (PDF ou imagem).
+- **Releitura:**
+  - arquivo ou e-mail lido com 0 itens é relido quando `VERSAO_LEITOR` sobe;
+  - quando a IA estava indisponível, ele fica pendente e é tentado na próxima varredura;
+  - colunas novas: `itens_lidos`, `metodo`, `confere_total` e `leitor_versao` em `arquivos_fornecedores_processados`; `tipo`, `itens_lidos` e `leitor_versao` em `emails_processados`.
+- **Classificação:** componentes elétricos (relé, contator, fusível, comutador…) não caem mais em Ferragens/CFTV.
+- **Teste:** `npm test` no backend (`testes/leitorCotacoes.test.js`, textos sintéticos).
+- **Configuração opcional no `.env`:**
+  - `COTACAO_IA=desligada` desliga toda a IA;
+  - `COTACAO_IA_CLI=desligada` desliga só o Claude Max;
+  - `CLAUDE_CLI_MODELO` (padrão `sonnet`) e `CLAUDE_CLI_PATH` controlam a CLI;
+  - `COTACAO_IA_MAX_POR_VARREDURA` (padrão 15) limita as leituras por IA.
+- **Atenção:** o backend precisa rodar com o mesmo usuário do Windows que fez login no Claude Code (hoje, Laboratorio).
+
 **Pendências conhecidas da auditoria (decisão do usuário):**
 - Dependências com alertas no `npm audit`. No backend, a crítica (`proxy-addr`) não se aplica, porque `TRUST_PROXY` não está definida. Há alertas altos em multer, nodemailer, mailparser, imapflow e puppeteer. No frontend, os alertas são quase todos de ferramentas de build; no navegador, só axios e react-router. Atualizar em uma etapa separada, com testes.
 - A senha provisória só é exigida pela tela, não pelo servidor (risco baixo).
@@ -156,7 +185,30 @@
 
 ---
 
+## 3.1 Skills de projeto (Claude Code)
+
+As skills ficam em `skills/<disciplina>/` no repositório e são ligadas em `%USERPROFILE%\.claude\skills\`. O servidor MCP `hm-orcamentos` está registrado para o Claude Code no `.mcp.json` da raiz (as credenciais continuam no `backend/.env`). O material de referência (NBRs, laudos-modelo) está em `\\MARCIO-SERVER\Arquivos Gerais\Pos em Engenharia eletrica\Biblioteca\Engenharia eletrica`. As skills originais foram criadas no Claude Teams e não ficaram em disco: estão sendo reconstruídas a partir dos trabalhos entregues e das normas.
+
+| Skill | Situação | Base |
+|---|---|---|
+| `spda-nbr5419` | **Pronta (10/10/2026)** — risco NBR 5419-2:2026 (com F × FT), dimensionamento NBR 5419-3, laudo, memorial, relatório de risco, checklist de campo, planilhas e orçamento. Teste de regressão: 38/38 contra o laudo original | Laudo HM do Santa Lúcia (R06) e NBR 5419 partes 1–4 (2026) |
+| `eletrica-nbr5410` | **Pronta (10/10/2026)** — previsão de cargas (9.5.2), circuitos, seção por capacidade/proteção/queda (Tabelas 36–39, 40, 42, 46, 47, 58), balanceamento, demanda, alimentador; memorial, quadro de cargas, laudo NBR 5410/NR-10, checklist (37 itens) e orçamento. Teste 37/37 | NBR 5410; fatores de demanda [CONFERIR com a Neoenergia DIS-NOR-030/053] |
+| `incendio-nbr17240` | **Pronta (10/10/2026)** — grade de detectores (raio = lado/√2, vigas), acionadores/avisadores, laços, bateria (Anexo B), iluminação de emergência; memorial, planilha, laudo, checklist (32 itens) e orçamento. Teste 17/17 | NBR 17240:2010, NBR 10898:2023 |
+| `cabeamento-nbr14565` | **Pronta (10/10/2026)** — tomadas por área de trabalho e AP, Tabela 3 com redução por temperatura, distribuidores de piso, racks, backbone OM3; memorial, planilha, relatório de certificação (18 itens) e orçamento. Teste 13/13 | NBR 14565:2019 |
+| `carregador-veicular-nbr17019` | **Pronta (10/10/2026)** — circuito exclusivo (motor da elétrica), tipo de DR, DPS, carga no padrão de entrada; memorial, planilha, laudo (18 itens) e orçamento. Teste 14/14 | NBR 17019:2022, projeto AP-1103 |
+| `cftv-iec62676` | **Pronta (10/10/2026)** — densidade de pixels DORI por câmera, armazenamento, NVR, discos, PoE, nobreak, cabo ≤ 90 m, LGPD; memorial, planilha, laudo de vistoria (17 itens) e orçamento. Teste 13/13 | IEC 62676-4, NBR 14565, LGPD; bitrates típicos [CONFERIR] |
+| `usina-solar-fotovoltaica` | **Pronta (10/10/2026)** — potência pelo consumo (CRESESB Eq. 6.28), strings por temperatura (Eq. 6.30–6.32), FDI, fusível gPV, cabo CC (NBR 16612 Tab. C.2), DPS, lado CA pela elétrica, potência disponibilizada, geração; memorial no modelo da distribuidora, planilha, relatório de comissionamento NBR 16274 (28 itens) e orçamento. Teste 24/24 | Manual de Engenharia FV CRESESB 2014, NBR 16690/16612/16274, REN 1000, Lei 14.300; HSP do SunData [CONFERIR] |
+| `automacao-bms` | **Pronta (10/10/2026)** — lista de pontos BMS (pontos típicos por equipamento, reserva, controladores, segmentos RS-485, licença), descritivo de funcionamento, zonas de climatização com ar externo da NBR 16401-3 e controle por CO₂, classe de eficiência D–A atual × proposta com economia pelos fatores BAC, automação residencial Zigbee/Wi-Fi/KNX; memorial, lista de pontos (Excel), relatório de comissionamento/diagnóstico, checklist (29 itens) e orçamento. Teste 30/30 | ISO 16484, ISO 52120-1/EN 15232 (fatores [CONFERIR]), NBR 16401-3, KNX; orçamentos H&M de automação residencial e HVAC de salas cirúrgicas |
+
+Todas as skills usam a base comum `skills/_comum` (documentos Word/Excel no padrão H&M, checklist/não conformidades/parecer, formulário, CLI `node skills/_comum/cli.js <disciplina> calcular|documentos|orcamento|modelo`). `npm test` na pasta `skills` roda os testes de todas (186 verificações). "Projeto de instalações" está coberto pela elétrica predial; hidráulica/outras instalações ainda não têm skill.
+
+**No sistema:** todas as disciplinas ficam na aba **Análise de Projeto → Laudos e projetos por disciplina** (`frontend/src/components/laudos/`). O backend (`controllers/laudosController.js`, rotas `/api/laudos/*`, tabelas `laudos_projetos` e `laudos_projetos_fotos`) usa a skill da disciplina pelo contrato de `skills/<disciplina>/scripts/lib/index.js`, registrada em `backend/src/utils/disciplinasLaudo.js`. O orçamento gerado casa cada material com o catálogo (preço → "confirmado"; material novo entra no catálogo ao salvar a proposta) e põe a mão de obra pelo preço de referência (sempre "a cotar"). Para incluir uma nova disciplina: criar a skill com o mesmo contrato, registrar a `pasta` em `disciplinasLaudo.js` — a tela é montada sozinha pelo esquema `formulario` da skill (`FormularioGenerico`/`ResultadoGenerico`); só o SPDA tem tela própria em `TELAS_POR_DISCIPLINA` (`LaudosProjetos.js`). Os códigos de mão de obra de cada disciplina ficam em `utils/precosMaoDeObraReferencia.js` (preencher os preços na tela Preços de Mão de Obra). Teste: `cypress/e2e/11_laudos.cy.js` (SPDA, usina solar e automação).
+
+Uso de cada skill: `skills/<disciplina>/SKILL.md`. Formulário da obra (JSON): `skills/spda/exemplos/modelo-vazio.json`, campos em `skills/spda/referencia/esquema-dados.md`.
+
 ## 4. Projeto Elétrica Predial: objetivo e próximos passos
+
+**Situação em 10/10/2026:** o cálculo de elétrica predial (NBR 5410) foi implementado como skill (`skills/eletrica`) e já roda na aba Análise de Projeto → Laudos e projetos, com memorial, laudo e orçamento. A proposta abaixo fica como histórico; o que ainda falta é o material do Teams (modelos de laudo e parâmetros de campo) para ajustar os documentos ao padrão antigo.
 
 **Objetivo declarado:** um aplicativo em que só se informam os **dados do cliente** e os **parâmetros de campo**, e o sistema gera o projeto/levantamento elétrico predial **integrado ao Sistema de Orçamentos**.
 
@@ -189,4 +241,4 @@
 - [ ] Atualizar as dependências apontadas pelo `npm audit` (ver o fim da seção 2).
 - [ ] Trazer o material do Teams e da pasta Elétrica Predial (seção 4).
 - [ ] O uso por ambiente (`pontosPorAmbiente.js`) é aproximado: mostrar sempre com aviso, como já é feito hoje.
-- [ ] Novos fornecedores de cotação exigem um parser novo em `cotacaoFornecedorParser.js`, seguindo o padrão SOL / Dispel / BAND.
+- [x] ~~Novos fornecedores de cotação exigem um parser novo~~ — desde a v1.7.0 o leitor universal + OCR + IA lê qualquer layout (ver seção 2, v1.7.0).

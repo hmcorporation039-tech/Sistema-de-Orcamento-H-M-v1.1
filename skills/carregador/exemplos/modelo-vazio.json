@@ -1,0 +1,56 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "",
+  "prefixo": "",
+  "data": "AAAA-MM-DD",
+  "revisao": "R00"
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "",
+  "uf": ""
+ },
+ "obra": {
+  "nome": "",
+  "uso": ""
+ },
+ "instalacao": {
+  "tensao_fn": 220,
+  "tensao_ff": 380,
+  "sistema": "trifasico",
+  "esquema": "TN-S",
+  "metodo": "B1",
+  "temperatura": 30,
+  "disjuntor_geral_existente_a": null,
+  "demanda_existente_kva": null,
+  "comprimento_alimentador_m": 10,
+  "uso_publico": false,
+  "controle_recarga": false,
+  "limite_controle_a": null,
+  "quadro_recarga_dedicado": false,
+  "eletroduto": "de aço galvanizado"
+ },
+ "pontos": [],
+ "inspecao": {
+  "tipo": "vistoria",
+  "documento_n": "",
+  "checklist": [],
+  "ncs": [],
+  "ensaios_dr": [],
+  "isolamento": [],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

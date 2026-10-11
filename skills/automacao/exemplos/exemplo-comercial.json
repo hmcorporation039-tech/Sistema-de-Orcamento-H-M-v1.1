@@ -1,0 +1,190 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "Edifício comercial exemplo — automação",
+  "prefixo": "Automacao_Exemplo",
+  "data": "2026-10-10",
+  "revisao": "R00",
+  "dados_ilustrativos": true
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "CONDOMÍNIO EXEMPLO",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "Edifício Comercial Exemplo",
+  "uso": "Escritórios"
+ },
+ "sistema": {
+  "uso": "escritorio",
+  "protocolo": "bacnet",
+  "reserva_pct": 20,
+  "pontos_por_controlador": 32,
+  "controladores_por_quadro": 2,
+  "dispositivos_por_segmento": 32,
+  "distancia_media_ponto_m": 25,
+  "zonas_no_bms": true,
+  "ocupacao_media_pct": 60,
+  "consumo_climatizacao_kwh_mes": 42000,
+  "consumo_outros_kwh_mes": 18000,
+  "tarifa_kwh": 0.85
+ },
+ "equipamentos": [
+  {
+   "id": "CH",
+   "tipo": "chiller",
+   "descricao": "Chiller a ar 150 TR",
+   "local": "Cobertura",
+   "quantidade": 2
+  },
+  {
+   "id": "BAG",
+   "tipo": "bomba",
+   "descricao": "Bomba de água gelada primária",
+   "local": "Cobertura",
+   "quantidade": 3
+  },
+  {
+   "id": "FC",
+   "tipo": "ahu",
+   "descricao": "Fancoil de pavimento",
+   "local": "Pavimentos 1 a 4",
+   "quantidade": 4
+  },
+  {
+   "id": "EX",
+   "tipo": "exaustor",
+   "descricao": "Exaustor de sanitários",
+   "local": "Cobertura",
+   "quantidade": 2
+  },
+  {
+   "id": "IL",
+   "tipo": "iluminacao",
+   "descricao": "Circuitos de iluminação das áreas comuns",
+   "local": "Térreo e pavimentos",
+   "quantidade": 12
+  },
+  {
+   "id": "ME",
+   "tipo": "medidor",
+   "descricao": "Medidor de energia dos quadros gerais",
+   "local": "Subsolo",
+   "quantidade": 3
+  }
+ ],
+ "zonas": [
+  {
+   "id": "Z1",
+   "nome": "Escritório 1º pav.",
+   "uso": "escritorio",
+   "area_m2": 400,
+   "pessoas": null,
+   "controle": "co2",
+   "setpoint": 24
+  },
+  {
+   "id": "Z2",
+   "nome": "Escritório 2º pav.",
+   "uso": "escritorio",
+   "area_m2": 400,
+   "pessoas": null,
+   "controle": "co2",
+   "setpoint": 24
+  },
+  {
+   "id": "Z3",
+   "nome": "Auditório",
+   "uso": "auditorio",
+   "area_m2": 150,
+   "pessoas": 120,
+   "controle": "co2",
+   "setpoint": 23
+  },
+  {
+   "id": "Z4",
+   "nome": "Sala de reunião",
+   "uso": "reuniao",
+   "area_m2": 40,
+   "pessoas": 16,
+   "controle": "sensor_tur",
+   "setpoint": 23
+  }
+ ],
+ "funcoes": {
+  "atual": {
+   "emissao": "central",
+   "geracao": "fixo",
+   "bombas": "liga",
+   "ventilacao": "sem",
+   "iluminacao": "manual",
+   "luz_natural": "manual",
+   "persianas": "manual",
+   "gestao": "sem"
+  },
+  "proposta": {
+   "emissao": "comunicacao",
+   "geracao": "carga",
+   "bombas": "variavel",
+   "ventilacao": "co2",
+   "iluminacao": "auto",
+   "luz_natural": "automatico",
+   "persianas": "automatico",
+   "gestao": "medicao"
+  }
+ },
+ "residencial": {
+  "tecnologia": "zigbee",
+  "distancia_media_m": 12,
+  "assistente_voz": 0,
+  "ambientes": []
+ },
+ "inspecao": {
+  "tipo": "comissionamento",
+  "documento_n": "",
+  "checklist": [],
+  "ncs": [],
+  "testes_pontos": [
+   {
+    "tag": "CH-01.LIGA",
+    "tipo": "DO",
+    "descricao": "Comando liga chiller 1",
+    "ok": true
+   },
+   {
+    "tag": "FC-01.TINS",
+    "tipo": "AI",
+    "descricao": "Temperatura de insuflamento fancoil 1",
+    "ok": true
+   }
+  ],
+  "sensores": [
+   {
+    "sensor": "Z1 — temperatura",
+    "valor_bms": 23.8,
+    "valor_referencia": 23.5,
+    "tolerancia": 0.5
+   },
+   {
+    "sensor": "Z1 — CO₂ (ppm)",
+    "valor_bms": 820,
+    "valor_referencia": 790,
+    "tolerancia": 75
+   }
+  ],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

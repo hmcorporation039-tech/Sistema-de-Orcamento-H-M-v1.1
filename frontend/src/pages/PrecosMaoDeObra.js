@@ -15,6 +15,10 @@ const NOMES_DISCIPLINA = {
   automacao: 'Automação',
   alarme: 'Alarme',
   antena: 'Antena/TV',
+  spda: 'SPDA (para-raios) — Laudos e projetos',
+  carregador: 'Recarga de veículo elétrico — Laudos e projetos',
+  incendio: 'Incêndio (detecção, alarme e iluminação de emergência)',
+  solar: 'Usina solar fotovoltaica',
 };
 
 export default function PrecosMaoDeObra() {

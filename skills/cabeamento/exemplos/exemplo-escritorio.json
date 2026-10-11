@@ -1,0 +1,82 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "Escritório exemplo — cabeamento",
+  "prefixo": "Cabeamento_Exemplo",
+  "data": "2026-10-10",
+  "revisao": "R00",
+  "dados_ilustrativos": true
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "EMPRESA EXEMPLO LTDA",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "Escritório Exemplo — 2 pavimentos",
+  "uso": "Escritório"
+ },
+ "sistema": {
+  "categoria": "6",
+  "modelo": "interconexao",
+  "blindado": false,
+  "temperatura": 20,
+  "patch_cords_total_m": 10,
+  "area_trabalho_m2": 10,
+  "tomadas_por_area": 2,
+  "portas_patch_panel": 24,
+  "portas_switch": 48,
+  "folga_por_ponto_m": 5,
+  "reserva_rack_pct": 30,
+  "pe_direito_m": 3.5
+ },
+ "pavimentos": [
+  {
+   "nome": "Térreo",
+   "area_util_m2": 400,
+   "distancia_media_m": 35,
+   "distancia_max_m": 70,
+   "aps": 3,
+   "pontos_extra": 6
+  },
+  {
+   "nome": "1º pavimento",
+   "area_util_m2": 380,
+   "distancia_media_m": 30,
+   "distancia_max_m": 60,
+   "aps": 3,
+   "pontos_extra": 4
+  }
+ ],
+ "inspecao": {
+  "tipo": "certificacao",
+  "documento_n": "",
+  "checklist": [],
+  "ncs": [],
+  "certificacao": [
+   {
+    "ponto": "T-001",
+    "comprimento_m": 42,
+    "resultado_teste": "aprovado"
+   },
+   {
+    "ponto": "T-002",
+    "comprimento_m": 93,
+    "resultado_teste": "aprovado"
+   }
+  ],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

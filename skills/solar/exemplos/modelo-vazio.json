@@ -1,0 +1,114 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "",
+  "prefixo": "",
+  "data": "AAAA-MM-DD",
+  "revisao": "R00"
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "",
+  "uf": ""
+ },
+ "obra": {
+  "nome": "",
+  "uso": ""
+ },
+ "consumo": {
+  "media_kwh": null,
+  "jan": null,
+  "fev": null,
+  "mar": null,
+  "abr": null,
+  "mai": null,
+  "jun": null,
+  "jul": null,
+  "ago": null,
+  "set": null,
+  "out": null,
+  "nov": null,
+  "dez": null
+ },
+ "local": {
+  "tipo_local": "telhado",
+  "tipo_telha": "",
+  "orientacao": "Norte",
+  "inclinacao_graus": null,
+  "hsp": null,
+  "tamb_min": 10,
+  "tamb_max": 35,
+  "area_disponivel_m2": null,
+  "dist_arranjo_inversor_m": null,
+  "dist_inversor_quadro_m": null
+ },
+ "modulo": {
+  "modelo": "",
+  "potencia_wp": null,
+  "voc": null,
+  "vmp": null,
+  "isc": null,
+  "imp": null,
+  "coef_voc_pct": -0.28,
+  "coef_pmax_pct": -0.35,
+  "noct": 45,
+  "comprimento_m": null,
+  "largura_m": null,
+  "corrente_reversa_max_a": null,
+  "tensao_max_sistema": 1500
+ },
+ "inversor": {
+  "modelo": "",
+  "potencia_ca_w": null,
+  "quantidade": null,
+  "fases": "1",
+  "vmax_cc": null,
+  "mppt_min": null,
+  "mppt_max": null,
+  "n_mppt": 2,
+  "strings_por_mppt": 1,
+  "imax_mppt": null,
+  "isc_max_mppt": null
+ },
+ "sistema": {
+  "pr": 0.8,
+  "fracao_pct": 100,
+  "n_modulos": null,
+  "modulos_por_string": null,
+  "tarifa_kwh": null,
+  "queda_cc_max_pct": 3,
+  "temp_cabo": 50,
+  "cabo_exposto_sol": true,
+  "string_box": true,
+  "aterramento_existente": true
+ },
+ "instalacao": {
+  "tensao_fn": 127,
+  "tensao_ff": 220,
+  "sistema": "bifasico",
+  "disjuntor_geral_a": null,
+  "metodo": "B1",
+  "temperatura": 30,
+  "queda_ca_max_pct": 2
+ },
+ "inspecao": {
+  "tipo": "comissionamento",
+  "documento_n": "",
+  "checklist": [],
+  "ncs": [],
+  "strings": [],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

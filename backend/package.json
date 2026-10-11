@@ -1,16 +1,18 @@
 {
   "name": "hm-eng-backend",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "description": "API H&M Engenharia - Sistema de Orçamentos",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "mcp": "node src/mcp/mcpServer.mjs"
+    "mcp": "node src/mcp/mcpServer.mjs",
+    "test": "node testes/leitorCotacoes.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@tesseract.js-data/por": "^1.0.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -25,6 +27,7 @@
     "pdf-parse": "^2.4.5",
     "pg": "^8.11.3",
     "puppeteer": "^21.5.2",
+    "tesseract.js": "^7.0.0",
     "xml2js": "^0.6.2",
     "zod": "^4.6.4"
   },

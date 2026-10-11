@@ -1,0 +1,164 @@
+[
+ {
+  "cod": "D1",
+  "secao": "Documentação",
+  "item": "Projeto do ponto de recarga (diagrama unifilar, memorial) e ART",
+  "requisito": "NBR 17019; NBR 5410, 6.1.8",
+  "onde": "Escritório / cliente",
+  "como": "Verificar documentos e ART",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D2",
+  "secao": "Documentação",
+  "item": "Autorização do condomínio / aumento de carga junto à distribuidora quando necessário",
+  "requisito": "NBR 17019, 7.1.101; norma da distribuidora",
+  "onde": "Escritório / cliente",
+  "como": "Verificar se a carga adicional cabe no padrão de entrada",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D3",
+  "secao": "Documentação",
+  "item": "Manual e certificação do carregador (IEC 61851) e configuração da corrente máxima por pessoa qualificada",
+  "requisito": "NBR 17019, 4.2.1.1.101 e 6.1.2.101",
+  "onde": "Carregador",
+  "como": "Verificar ficha técnica e a corrente configurada",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "C1",
+  "secao": "Circuito",
+  "item": "Circuito terminal exclusivo para cada ponto de conexão",
+  "requisito": "NBR 17019, 4.2.5.101 e 6.3.4.101",
+  "onde": "Quadro",
+  "como": "Conferir circuito dedicado",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "C2",
+  "secao": "Circuito",
+  "item": "Proteção contra sobrecorrente individual compatível com o cabo (Ib ≤ In ≤ Iz)",
+  "requisito": "NBR 17019, 6.3.4.101; NBR 5410, 5.3.4",
+  "onde": "Quadro",
+  "como": "Comparar disjuntor e seção",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "C3",
+  "secao": "Circuito",
+  "item": "Esquema TN sem condutor PEN no circuito do ponto de conexão",
+  "requisito": "NBR 17019, 4.2.2.2.1.101",
+  "onde": "Quadro / circuito",
+  "como": "Verificar neutro e PE separados",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "C4",
+  "secao": "Circuito",
+  "item": "Fator de demanda 1 no circuito terminal e na distribuição (sem controle de recarga)",
+  "requisito": "NBR 17019, 4.2.1.1.102 e 4.2.1.1.103",
+  "onde": "Projeto",
+  "como": "Conferir cálculo do alimentador",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "P1",
+  "secao": "Proteção diferencial",
+  "item": "DR individual por ponto de conexão com IΔn ≤ 30 mA",
+  "requisito": "NBR 17019, 5.1.1.3",
+  "onde": "Quadro / carregador",
+  "como": "Verificar DR exclusivo do ponto",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "P2",
+  "secao": "Proteção diferencial",
+  "item": "DR no mínimo tipo A (tipo AC não é permitido)",
+  "requisito": "NBR 17019, 6.3.3.2.101",
+  "onde": "Quadro / carregador",
+  "como": "Ler a marcação do DR",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "P3",
+  "secao": "Proteção diferencial",
+  "item": "Modo 3 com tomada IEC 62196: DR tipo B, ou tipo A/F com detector de corrente contínua (RDC-DD, IEC 62955), se não incorporado no carregador",
+  "requisito": "NBR 17019, 6.3.3.2.102",
+  "onde": "Quadro / carregador",
+  "como": "Verificar ficha do carregador (detecção 6 mA CC) ou DR tipo B",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "P4",
+  "secao": "Proteção contra surtos",
+  "item": "DPS nos pontos de conexão em locais de afluência de público",
+  "requisito": "NBR 17019, 5.4.2.1.101",
+  "onde": "Quadro",
+  "como": "Verificar DPS e indicador de estado",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "E1",
+  "secao": "Equipamento",
+  "item": "Grau de proteção IPX4 e IP4X quando instalado ao tempo",
+  "requisito": "NBR 17019, 6.1.3.2.101 e 6.1.3.2.102",
+  "onde": "Carregador",
+  "como": "Verificar placa do equipamento",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "E2",
+  "secao": "Equipamento",
+  "item": "Grau de proteção contra impactos IK08 e proteção mecânica onde houver risco de colisão",
+  "requisito": "NBR 17019, 6.1.3.2.103",
+  "onde": "Carregador / vaga",
+  "como": "Verificar IK e batente/proteção",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "E3",
+  "secao": "Equipamento",
+  "item": "Tomada no padrão correto (IEC 62196-2, IEC 60309 ou NBR 14136 quando exigida pelo fabricante) com contato de terra",
+  "requisito": "NBR 17019, 6.5.101.1 e 6.5.101.2",
+  "onde": "Ponto de conexão",
+  "como": "Verificar padrão e PE",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "E4",
+  "secao": "Equipamento",
+  "item": "Sem extensões ou adaptadores múltiplos; distância compatível com o cabo de recarga",
+  "requisito": "NBR 17019, 6.5.101.3 e 6.5.101.4",
+  "onde": "Vaga",
+  "como": "Inspeção visual",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "E5",
+  "secao": "Equipamento",
+  "item": "Cabo de modo 2 (IC-CPD) não dispensa as proteções da instalação fixa",
+  "requisito": "NBR 17019, 6.3.103",
+  "onde": "Ponto de conexão",
+  "como": "Verificar proteções do circuito",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "S1",
+  "secao": "Sinalização e acesso",
+  "item": "Estação de uso público com acesso facilitado e sinalização",
+  "requisito": "NBR 17019, 6.5.102.1",
+  "onde": "Vaga",
+  "como": "Verificar sinalização",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "S2",
+  "secao": "Sinalização e acesso",
+  "item": "Identificação do circuito no quadro e advertência de risco elétrico",
+  "requisito": "NBR 5410, 6.1.5; NR-10, 10.10",
+  "onde": "Quadro",
+  "como": "Verificar etiquetas",
+  "prioridade_padrao": "P3"
+ }
+]

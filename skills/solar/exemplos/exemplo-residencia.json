@@ -1,0 +1,134 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "Residência exemplo — usina solar",
+  "prefixo": "Solar_Exemplo",
+  "data": "2026-10-10",
+  "revisao": "R00",
+  "dados_ilustrativos": true
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "CLIENTE EXEMPLO",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "Residência Exemplo",
+  "uso": "Residencial"
+ },
+ "consumo": {
+  "media_kwh": null,
+  "jan": 820,
+  "fev": 780,
+  "mar": 800,
+  "abr": 760,
+  "mai": 700,
+  "jun": 650,
+  "jul": 640,
+  "ago": 700,
+  "set": 780,
+  "out": 850,
+  "nov": 830,
+  "dez": 810
+ },
+ "local": {
+  "tipo_local": "telhado",
+  "tipo_telha": "cerâmica",
+  "orientacao": "Norte",
+  "inclinacao_graus": 15,
+  "hsp": 5.2,
+  "tamb_min": 8,
+  "tamb_max": 33,
+  "area_disponivel_m2": 60,
+  "dist_arranjo_inversor_m": 25,
+  "dist_inversor_quadro_m": 8
+ },
+ "modulo": {
+  "modelo": "Módulo exemplo 550 W (dados ilustrativos)",
+  "potencia_wp": 550,
+  "voc": 49.6,
+  "vmp": 41.8,
+  "isc": 14,
+  "imp": 13.16,
+  "coef_voc_pct": -0.27,
+  "coef_pmax_pct": -0.35,
+  "noct": 45,
+  "comprimento_m": 2.279,
+  "largura_m": 1.134,
+  "corrente_reversa_max_a": 25,
+  "tensao_max_sistema": 1500
+ },
+ "inversor": {
+  "modelo": "Inversor exemplo 5 kW (dados ilustrativos)",
+  "potencia_ca_w": 5000,
+  "quantidade": null,
+  "fases": "1",
+  "vmax_cc": 600,
+  "mppt_min": 90,
+  "mppt_max": 550,
+  "n_mppt": 2,
+  "strings_por_mppt": 1,
+  "imax_mppt": 16,
+  "isc_max_mppt": 20
+ },
+ "sistema": {
+  "pr": 0.8,
+  "fracao_pct": 100,
+  "n_modulos": null,
+  "modulos_por_string": null,
+  "tarifa_kwh": 0.85,
+  "queda_cc_max_pct": 3,
+  "temp_cabo": 50,
+  "cabo_exposto_sol": true,
+  "string_box": true,
+  "aterramento_existente": true
+ },
+ "instalacao": {
+  "tensao_fn": 220,
+  "tensao_ff": 380,
+  "sistema": "bifasico",
+  "disjuntor_geral_a": 63,
+  "metodo": "B1",
+  "temperatura": 30,
+  "queda_ca_max_pct": 2
+ },
+ "inspecao": {
+  "tipo": "comissionamento",
+  "documento_n": "",
+  "checklist": [],
+  "ncs": [],
+  "strings": [
+   {
+    "string": "S1",
+    "modulos": 6,
+    "temp_modulo": 40,
+    "voc_medido": 285,
+    "isc_medido": 11.8,
+    "iso_pos_mohm": 40,
+    "iso_neg_mohm": 38
+   },
+   {
+    "string": "S2",
+    "modulos": 6,
+    "temp_modulo": 40,
+    "voc_medido": 286.1,
+    "isc_medido": 11.9,
+    "iso_pos_mohm": 45,
+    "iso_neg_mohm": 41
+   }
+  ],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

@@ -1,0 +1,53 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "",
+  "prefixo": "",
+  "data": "AAAA-MM-DD",
+  "revisao": "R00"
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "",
+  "uf": ""
+ },
+ "obra": {
+  "nome": "",
+  "uso": ""
+ },
+ "sistema": {
+  "categoria": "6",
+  "modelo": "interconexao",
+  "blindado": false,
+  "temperatura": 20,
+  "patch_cords_total_m": 10,
+  "area_trabalho_m2": 10,
+  "tomadas_por_area": 2,
+  "portas_patch_panel": 24,
+  "portas_switch": 48,
+  "folga_por_ponto_m": 5,
+  "reserva_rack_pct": 30,
+  "pe_direito_m": 3.5
+ },
+ "pavimentos": [],
+ "inspecao": {
+  "tipo": "certificacao",
+  "documento_n": "",
+  "checklist": [],
+  "ncs": [],
+  "certificacao": [],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

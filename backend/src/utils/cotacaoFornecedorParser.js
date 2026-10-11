@@ -180,55 +180,83 @@ function extrairModeloBand(texto) {
   return itens;
 }
 
-// Unidades comuns em orçamento/cotação de material — usado só pelo modo
-// genérico, pra reconhecer a coluna de unidade dentro de uma linha de texto.
-const UNIDADES = /^(un|und|unid|pç|pc|peça|peças|cx|caixa|m|mt|metro|metros|kg|cj|conj|conjunto|par|pares|vb|verba|rl|rolo|pt|ponto|pontos|l|litro)\.?$/i;
+// Layout da ECO Automação Industrial (distribuidor Siemens). A descrição vem
+// em 1 a 4 linhas (a última termina com o código Siemens e a marca) e o item
+// fecha numa linha com quantidade, preços, código ECO, nº do item, NCM, ICMS%,
+// IPI% e prazo — às vezes a descrição curta vem colada no começo dessa linha:
+//   MINIDISJUNTOR TRIPOLAR 16A CURVA C
+//   5SY4316-7 SIEMENS
+//   2 R$ 754,19 R$ 1.508,38<TAB>P019635<TAB>1 8536.20.00 4 6,5 15 Dias
+// O preço unitário vem SEM IPI (o rodapé soma "Vlr. Cotação" + IPI = "Vlr.
+// Produtos"); como a H&M paga o IPI, o custo gravado é unitário × (1 + IPI%).
+// Os itens só começam depois do cabeçalho "Código<TAB>It NCM ICMS% IPI%", que
+// se repete a cada página — o acúmulo de descrição zera nele e em "Página:".
+const RE_CABECALHO_ECO = /It\s+NCM\s+ICMS%\s+IPI%/;
+const RE_LINHA_ECO = /^(?:(.*\S)\s+)?(\d+(?:,\d+)?)\s+R\$\s*([\d.,]+)\s+R\$\s*([\d.,]+)\t(\S+)\t(\d+)\s+(\d{4})\.(\d{2})\.(\d{2})\s+([\d,]+)\s+([\d,]+)\b/;
 
-const LINHA_ITEM_GENERICA = /^\s*(?:\d+(?:\.\d+)*\s+)?(.{3,}?)\s+(\d+(?:[.,]\d+)?)\s+([A-Za-zÀ-ÿçÇ]{1,8}\.?)\s+R?\$?\s*([\d.,]+)(?:\s+R?\$?\s*([\d.,]+))?\s*$/;
-const LINHA_IGNORAR = /^(item|descri[çc][ãa]o|c[óo]digo|qtd|quant|unid|un\.|vlr|valor|total|subtotal|sub-total|p[áa]gina)\b/i;
-
-// Modo genérico (fallback): tenta reconhecer uma linha de tabela "descrição
-// qtd un valor [valor total]" numa única linha. Layout livre — cada
-// fornecedor monta o PDF do jeito dele, então isso é só uma tentativa quando
-// o layout conhecido (ADM) não bate.
-function extrairGenerico(linhas) {
+function extrairModeloEco(texto) {
+  const linhas = String(texto || '').split('\n').map(l => l.trim());
+  if (!linhas.some(l => RE_CABECALHO_ECO.test(l))) return [];
   const itens = [];
+  let dentro = false;
+  let buffer = [];
   for (const linha of linhas) {
-    if (!linha || LINHA_IGNORAR.test(linha)) continue;
-    const m = linha.match(LINHA_ITEM_GENERICA);
-    if (!m) continue;
-
-    const [, descricaoBruta, quantidade, unidade, valorA, valorB] = m;
-    if (!UNIDADES.test(unidade)) continue;
-
-    const descricao = descricaoBruta.replace(/\s{2,}/g, ' ').trim();
+    if (RE_CABECALHO_ECO.test(linha)) { dentro = true; buffer = []; continue; }
+    if (!dentro) continue;
+    if (/^Página:|^-- \d+ of \d+ --$|^Observações:/.test(linha)) { buffer = []; if (/^Observações:/.test(linha)) dentro = false; continue; }
+    const m = linha.match(RE_LINHA_ECO);
+    if (!m) {
+      if (linha.length > 2) buffer = [...buffer, linha].slice(-5); // letras soltas (texto vertical) não entram
+      continue;
+    }
+    const [, prefixo, qtdTxt, unitTxt, totalTxt, codigo, , n1, n2, n3, , ipiTxt] = m;
+    const quantidade = paraNumeroBR(qtdTxt);
+    const unitario = paraNumeroBR(unitTxt);
+    const total = paraNumeroBR(totalTxt);
+    const { descricao, marca } = separarMarca([...buffer, prefixo || ''].join(' ').replace(/\s{2,}/g, ' '));
+    buffer = [];
+    // Confere quantidade × unitário = total (±1 %) antes de aceitar o item
+    if (!quantidade || !unitario || !total || Math.abs(quantidade * unitario - total) > Math.max(0.05, total * 0.01)) continue;
     if (descricao.length < 3) continue;
-
-    const nums = [paraNumeroBR(valorA), paraNumeroBR(valorB)].filter(n => n != null && n > 0);
-    if (nums.length === 0) continue;
-    const preco = nums.length > 1 ? Math.min(...nums) : nums[0];
-
-    itens.push({ descricao, quantidade: paraNumeroBR(quantidade), unidade: unidade.replace(/\.$/, ''), preco });
+    const ipi = paraNumeroBR(ipiTxt) || 0;
+    itens.push({
+      codigo,
+      descricao,
+      marca,
+      unidade: 'un',
+      quantidade,
+      preco: Math.round(unitario * (1 + ipi / 100) * 100) / 100,
+      ncm: `${n1}${n2}${n3}`,
+    });
   }
   return itens;
 }
 
-function extrairDoTexto(texto) {
+// Layouts conhecidos, do mais específico ao mais geral. Para qualquer outro
+// layout, quem chama usa o leitor universal (leitorCotacaoUniversal.js) — o
+// antigo modo "genérico" daqui (descrição qtd un valor numa linha) foi
+// substituído por ele, que confere quantidade × unitário = total em cada item.
+function extrairLayoutsConhecidos(texto) {
   const linhas = String(texto || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const modelos = [
+    ['ADM (blocos)', () => extrairModeloAdmBloco(linhas)],
+    ['ADM (grade)', () => extrairModeloAdmGrade(linhas)],
+    ['Pedido de venda', () => extrairModeloPedidoVenda(linhas)],
+    ['BAND', () => extrairModeloBand(texto)],
+    ['ECO Automação', () => extrairModeloEco(texto)],
+  ];
+  for (const [modelo, extrair] of modelos) {
+    const itens = extrair();
+    if (itens.length > 0) return { modelo, itens };
+  }
+  return { modelo: null, itens: [] };
+}
 
-  const doBloco = extrairModeloAdmBloco(linhas);
-  if (doBloco.length > 0) return doBloco;
-
-  const daGrade = extrairModeloAdmGrade(linhas);
-  if (daGrade.length > 0) return daGrade;
-
-  const doPedidoVenda = extrairModeloPedidoVenda(linhas);
-  if (doPedidoVenda.length > 0) return doPedidoVenda;
-
-  const daBand = extrairModeloBand(texto);
-  if (daBand.length > 0) return daBand;
-
-  return extrairGenerico(linhas);
+// Compatibilidade: layout conhecido ou, se nenhum bater, o leitor universal.
+function extrairDoTexto(texto) {
+  const conhecido = extrairLayoutsConhecidos(texto);
+  if (conhecido.itens.length > 0) return conhecido.itens;
+  return require('./leitorCotacaoUniversal').extrairUniversal(texto).itens;
 }
 
 async function extrairCotacaoPdf(buffer) {
@@ -241,4 +269,4 @@ async function extrairCotacaoPdf(buffer) {
   }
 }
 
-module.exports = { extrairCotacaoPdf, extrairDoTexto };
+module.exports = { extrairCotacaoPdf, extrairDoTexto, extrairLayoutsConhecidos };

@@ -1,0 +1,83 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "",
+  "prefixo": "",
+  "data": "AAAA-MM-DD",
+  "revisao": "R00"
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "",
+  "uf": ""
+ },
+ "obra": {
+  "nome": "",
+  "uso": ""
+ },
+ "sistema": {
+  "uso": "escritorio",
+  "protocolo": "bacnet",
+  "reserva_pct": 20,
+  "pontos_por_controlador": 32,
+  "controladores_por_quadro": 2,
+  "dispositivos_por_segmento": 32,
+  "distancia_media_ponto_m": 25,
+  "zonas_no_bms": true,
+  "ocupacao_media_pct": 60,
+  "consumo_climatizacao_kwh_mes": null,
+  "consumo_outros_kwh_mes": null,
+  "tarifa_kwh": null
+ },
+ "equipamentos": [],
+ "zonas": [],
+ "funcoes": {
+  "atual": {
+   "emissao": "",
+   "geracao": "",
+   "bombas": "",
+   "ventilacao": "",
+   "iluminacao": "",
+   "luz_natural": "",
+   "persianas": "",
+   "gestao": ""
+  },
+  "proposta": {
+   "emissao": "",
+   "geracao": "",
+   "bombas": "",
+   "ventilacao": "",
+   "iluminacao": "",
+   "luz_natural": "",
+   "persianas": "",
+   "gestao": ""
+  }
+ },
+ "residencial": {
+  "tecnologia": "zigbee",
+  "distancia_media_m": 12,
+  "assistente_voz": 0,
+  "ambientes": []
+ },
+ "inspecao": {
+  "tipo": "comissionamento",
+  "documento_n": "",
+  "checklist": [],
+  "ncs": [],
+  "testes_pontos": [],
+  "sensores": [],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

@@ -1,0 +1,100 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "Loja exemplo — CFTV",
+  "prefixo": "CFTV_Exemplo",
+  "data": "2026-10-10",
+  "revisao": "R00",
+  "dados_ilustrativos": true
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "COMÉRCIO EXEMPLO LTDA",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "Loja Exemplo",
+  "uso": "Comércio"
+ },
+ "sistema": {
+  "codec": "H.265",
+  "fps": 15,
+  "dias_gravacao": 30,
+  "horas_dia": 24,
+  "modo_gravacao": "continua",
+  "atividade_pct": 40,
+  "hd_tb": 8,
+  "raid": "nenhum",
+  "portas_switch": 24,
+  "autonomia_min": 30,
+  "acessos": 2
+ },
+ "cameras": [
+  {
+   "id": "CAM1",
+   "local": "Entrada (identificação de rostos)",
+   "tipo": "bullet",
+   "quantidade": 1,
+   "resolucao_mp": "4",
+   "hfov_graus": 40,
+   "objetivo": "identificacao",
+   "distancia_alvo_m": 5,
+   "distancia_cabo_m": 25,
+   "externa": true
+  },
+  {
+   "id": "CAM2",
+   "local": "Salão de vendas",
+   "tipo": "dome",
+   "quantidade": 4,
+   "resolucao_mp": "4",
+   "hfov_graus": 100,
+   "objetivo": "observacao",
+   "distancia_alvo_m": 12,
+   "distancia_cabo_m": 35
+  },
+  {
+   "id": "CAM3",
+   "local": "Estacionamento",
+   "tipo": "bullet",
+   "quantidade": 2,
+   "resolucao_mp": "4",
+   "hfov_graus": 100,
+   "objetivo": "reconhecimento",
+   "distancia_alvo_m": 20,
+   "distancia_cabo_m": 95,
+   "externa": true
+  },
+  {
+   "id": "CAM4",
+   "local": "Caixa",
+   "tipo": "dome",
+   "quantidade": 1,
+   "resolucao_mp": "5",
+   "hfov_graus": 80,
+   "objetivo": "identificacao",
+   "distancia_alvo_m": 3,
+   "distancia_cabo_m": 20
+  }
+ ],
+ "inspecao": {
+  "tipo": "vistoria",
+  "documento_n": "",
+  "checklist": [],
+  "ncs": [],
+  "teste_cameras": [],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

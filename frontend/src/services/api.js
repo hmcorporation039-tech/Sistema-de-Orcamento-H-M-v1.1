@@ -105,6 +105,26 @@ export const gerarRelatorioCompatibilizacao = (id) =>
   api.get(`/projetos/analises/${id}/relatorio`, { responseType: 'blob' });
 export const gerarOrcamentoDaAnalise = (id) => api.post(`/projetos/analises/${id}/gerar-orcamento`);
 
+// ── LAUDOS E PROJETOS POR DISCIPLINA (aba Análise de Projeto) ─────────────
+export const getDisciplinasLaudo = () => api.get('/laudos/disciplinas');
+export const getModeloLaudo = (disciplina) => api.get(`/laudos/modelo/${disciplina}`);
+export const getLaudos = (params) => api.get('/laudos', { params });
+export const getLaudo = (id) => api.get(`/laudos/${id}`);
+export const criarLaudo = (disciplina, dados) => api.post('/laudos', { disciplina, dados });
+export const atualizarLaudo = (id, dados) => api.put(`/laudos/${id}`, { dados });
+export const removerLaudo = (id) => api.delete(`/laudos/${id}`);
+export const calcularLaudo = (id) => api.post(`/laudos/${id}/calcular`, null, { timeout: 60000 });
+export const baixarDocumentoLaudo = (id, tipo) =>
+  api.get(`/laudos/${id}/documento/${tipo}`, { responseType: 'blob', timeout: 120000 });
+export const enviarFotosLaudo = (id, arquivos) => {
+  const formData = new FormData();
+  arquivos.forEach(a => formData.append('fotos', a));
+  return api.post(`/laudos/${id}/fotos`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 });
+};
+export const getFotoLaudo = (id, fotoId) => api.get(`/laudos/${id}/fotos/${fotoId}`, { responseType: 'blob' });
+export const removerFotoLaudo = (id, fotoId) => api.delete(`/laudos/${id}/fotos/${fotoId}`);
+export const gerarOrcamentoDoLaudo = (id, modo) => api.post(`/laudos/${id}/gerar-orcamento`, { modo }, { timeout: 60000 });
+
 // ── PESQUISA DE MERCADO ───────────────────────────────────────────────
 export const pesquisarPrecoMercado = (descricao) => api.post('/pesquisa-mercado', { descricao }, { timeout: 60000 });
 

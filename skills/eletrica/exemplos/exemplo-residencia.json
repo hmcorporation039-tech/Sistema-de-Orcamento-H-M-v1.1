@@ -1,0 +1,168 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "Residência Exemplo",
+  "prefixo": "Residencia_Exemplo",
+  "data": "2026-10-10",
+  "revisao": "R00",
+  "dados_ilustrativos": true
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "CLIENTE EXEMPLO",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "Endereço de exemplo",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "Residência Exemplo",
+  "uso": "Residencial unifamiliar"
+ },
+ "instalacao": {
+  "tensao_fn": 127,
+  "tensao_ff": 220,
+  "sistema": "bifasico",
+  "esquema": "TN-S",
+  "ponto_entrega": "bt",
+  "isolacao": "PVC",
+  "metodo": "B1",
+  "temperatura": 30,
+  "agrupamento": 3,
+  "comprimento_medio_circuito_m": 15,
+  "comprimento_alimentador_m": 12,
+  "fp": 0.92,
+  "queda_max_terminal_pct": 4,
+  "queda_max_alimentador_pct": 1,
+  "limite_circuito_tug_a": 15,
+  "limite_circuito_iluminacao_a": 10,
+  "fd_ilum_tug": [],
+  "fd_tue": []
+ },
+ "ambientes": [
+  {
+   "nome": "Sala",
+   "tipo": "sala",
+   "area_m2": 20,
+   "perimetro_m": 18
+  },
+  {
+   "nome": "Dormitório 1",
+   "tipo": "dormitorio",
+   "area_m2": 12,
+   "perimetro_m": 14
+  },
+  {
+   "nome": "Dormitório 2",
+   "tipo": "dormitorio",
+   "area_m2": 10,
+   "perimetro_m": 13
+  },
+  {
+   "nome": "Cozinha",
+   "tipo": "cozinha",
+   "area_m2": 10,
+   "perimetro_m": 13
+  },
+  {
+   "nome": "Área de serviço",
+   "tipo": "area_servico",
+   "area_m2": 5,
+   "perimetro_m": 9
+  },
+  {
+   "nome": "Banheiro",
+   "tipo": "banheiro",
+   "area_m2": 4,
+   "perimetro_m": 8
+  },
+  {
+   "nome": "Varanda",
+   "tipo": "varanda",
+   "area_m2": 4,
+   "perimetro_m": 8
+  }
+ ],
+ "tues": [
+  {
+   "ambiente": "Dormitório 1",
+   "descricao": "Ar-condicionado 12000 BTU",
+   "potencia_w": 1400,
+   "ligacao": "FF",
+   "fp": 0.9
+  },
+  {
+   "ambiente": "Cozinha",
+   "descricao": "Micro-ondas",
+   "potencia_w": 1200,
+   "ligacao": "FN",
+   "fp": 1
+  },
+  {
+   "ambiente": "Banheiro",
+   "descricao": "Chuveiro",
+   "potencia_w": 5500,
+   "ligacao": "FF",
+   "fp": 1
+  }
+ ],
+ "circuitos": [],
+ "inspecao": {
+  "tipo": "periodica",
+  "data_inspecao": "",
+  "documento_n": "HM-ELE-2026-EXEMPLO",
+  "equipe": "",
+  "abrangencia": "",
+  "fora_escopo": "",
+  "documentos": [],
+  "instrumentos": [],
+  "checklist": [
+   {
+    "cod": "Q1",
+    "situacao": "C",
+    "obs": "Circuitos identificados"
+   },
+   {
+    "cod": "P2",
+    "situacao": "NC",
+    "obs": "Sem DR no circuito do banheiro",
+    "prioridade": "P2"
+   },
+   {
+    "cod": "C1",
+    "situacao": "C"
+   }
+  ],
+  "ncs": [],
+  "isolamento": [
+   {
+    "circuito": "1 — Iluminação",
+    "tensao_v": 127,
+    "valor_mohm": 150
+   },
+   {
+    "circuito": "8 — Chuveiro",
+    "tensao_v": 220,
+    "valor_mohm": 0.3
+   }
+  ],
+  "continuidade_pe": [],
+  "ensaios_dr": [
+   {
+    "circuito": "DR geral",
+    "corrente_ma": 30,
+    "tempo_ms": 28,
+    "botao_teste": true
+   }
+  ],
+  "aterramento": [],
+  "fotos": []
+ }
+}

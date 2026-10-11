@@ -4,6 +4,14 @@ const CATEGORIAS = [
     regex: /\bepi\b|\bbotina\b|\bcapacete\b|\b[oó]culos\b|protetor auditivo|\bcolete\b|cinto de seguran[cç]a|\btalabarte\b|\bluva(s)? de (seguran[cç]a|prote[cç][aã]o|vaqueta|raspa|nitr[ií]lica|latex)\b/i,
   },
   {
+    // Componentes elétricos inequívocos vêm antes de CFTV e Ferragens: nas
+    // cotações de painel (ex.: ECO/Siemens) "RELE ... PARAFUSO" caía em
+    // Ferragens e "CONTATOR DE ALARME" em CFTV, porque a primeira categoria
+    // que casa é a que vale.
+    nome: 'Elétrica',
+    regex: /\b(mini)?disjuntor|\bcontator|\brel[ée]\b|bloco de contato|contato auxiliar|\bfus[ií]vel|\bcomutador|\bsinaleiro|multimedidor|\btransformador|\bdps\b|seccionadora|chave seletora|inversor de frequ[eê]ncia|soft.?starter|\bbotoeira/i,
+  },
+  {
     nome: 'CFTV',
     regex: /\bcftv\b|c[aâ]mera|\bdvr\b|\bnvr\b|central de alarme|\balarme\b|\bsirene\b|sensor iv|infravermelho passivo|cerca el[ée]trica|controle de acesso|biometria|interfone|videoporteiro|seguran[cç]a eletr[oô]nica|cart[aã]o de mem[oó]ria|micro ?sd|cabo coaxial|fonte a?ut\.? ac\/dc/i,
   },

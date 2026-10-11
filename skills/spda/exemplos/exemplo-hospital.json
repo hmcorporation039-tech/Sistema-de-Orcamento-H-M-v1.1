@@ -1,0 +1,1340 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "SPDA — Hospital Exemplo (etapa térreo)",
+  "prefixo": "Hospital_Exemplo",
+  "dados_ilustrativos": true,
+  "observacao": "Exemplo baseado em um laudo real da H&M, com os dados do cliente substituídos. Serve de modelo de preenchimento e de teste de regressão (os números devem bater com o laudo original).",
+  "data": "2026-10-07",
+  "revisao": "R00"
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "HOSPITAL EXEMPLO S/A",
+  "cnpj": "00.000.000/0001-00",
+  "contato": "(61) 0000-0000",
+  "endereco": "Quadra 00, Área Especial 00 — CEP 70000-000",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "Hospital Exemplo — etapa de inauguração do térreo",
+  "uso": "Hospital — nesta etapa em operação apenas o térreo: PS adulto e infantil, reanimação, imagem (TC, RM, RX) e consultórios",
+  "pavimentos": 2,
+  "area_construida_m2": 4400
+ },
+ "estrutura": {
+  "L": 85,
+  "W": 55,
+  "H": 10.5,
+  "localizacao": "isolada",
+  "tipo_construcao": "concreto_armado",
+  "ambiente": "urbano",
+  "municipio": "Brasília",
+  "uf": "DF",
+  "ng": 16,
+  "ng_fonte": "NBR 5419-2:2026, Tabela F.1 (Brasília/DF)",
+  "saliencias": [],
+  "sistemas_criticos": true
+ },
+ "spda": {
+  "np": "III",
+  "descida_natural": true,
+  "cobertura_metalica_natural": false,
+  "wm_m": 5,
+  "resistividade_solo_ohm_m": null
+ },
+ "linhas": [
+  {
+   "id": "ENERGIA",
+   "nome": "Entrada em MT 13,8 kV (cubículo de medição) com subestação própria TR-1 e TR-2 de 1000 kVA a óleo — cabos MT blindados [CONFERIR]",
+   "tipo": "energia",
+   "instalacao": "enterrada",
+   "ct": "at_trafo",
+   "LL_m": 1000,
+   "cld_cli": "blindada_ligada_bep",
+   "blindagem_rs": "nao_blindada",
+   "peb_np": "melhor_I",
+   "zonas": [
+    "todas"
+   ]
+  },
+  {
+   "id": "TELECOM",
+   "nome": "Telecom/dados por fibra óptica (sem condutor metálico) — [CONFERIR em campo]",
+   "tipo": "sinal",
+   "instalacao": "enterrada",
+   "ct": "bt_ou_sinal",
+   "LL_m": 1000,
+   "cld_cli": "fibra_optica",
+   "blindagem_rs": "nao_blindada",
+   "peb_np": "melhor_I",
+   "zonas": [
+    "todas"
+   ]
+  }
+ ],
+ "zonas": [
+  {
+   "nome": "Externa (acessos, estacionamento até 3 m das descidas)",
+   "tipo": "externa",
+   "nz": 15,
+   "tz": 4000,
+   "piso": "terra_concreto",
+   "medidas_pta": [
+    "avisos"
+   ]
+  },
+  {
+   "nome": "Áreas de suporte à vida: centro cirúrgico, hemodinâmica, UTI, reanimação e imagem (TC, RM, RX)",
+   "tipo": "interna",
+   "nz": 60,
+   "tz": 8760,
+   "ocupacao": "hospital_uti_cc",
+   "piso": "asfalto_linoleo_madeira",
+   "carga_incendio": "incendio_normal",
+   "protecao_incendio": "automatica",
+   "perigo_especial": "dificuldade_evacuacao",
+   "d3_em_R1": true,
+   "sistemas": [
+    {
+     "nome": "Energia (quadros, equipamentos de imagem e suporte à vida)",
+     "linha": "ENERGIA",
+     "uw_kv": 2.5,
+     "dps_np": "melhor_I",
+     "ks3": "evitando_lacos_medios",
+     "rede_equipotencial_malha": true
+    },
+    {
+     "nome": "Dados / monitorização / PACS",
+     "linha": "TELECOM",
+     "uw_kv": 1.5,
+     "dps_np": "melhor_I",
+     "ks3": "evitando_lacos_medios",
+     "rede_equipotencial_malha": true
+    }
+   ]
+  },
+  {
+   "nome": "Consultórios, recepção, apoio e administração",
+   "tipo": "interna",
+   "nz": 240,
+   "tz": 8760,
+   "ocupacao": "hospital_geral",
+   "piso": "marmore_ceramica",
+   "carga_incendio": "incendio_normal",
+   "protecao_incendio": "automatica",
+   "perigo_especial": "dificuldade_evacuacao",
+   "d3_em_R1": false,
+   "sistemas": [
+    {
+     "nome": "Energia",
+     "linha": "ENERGIA",
+     "uw_kv": 2.5,
+     "dps_np": "melhor_I",
+     "ks3": "evitando_lacos_medios"
+    },
+    {
+     "nome": "Dados / TI",
+     "linha": "TELECOM",
+     "uw_kv": 1.5,
+     "dps_np": "melhor_I",
+     "ks3": "evitando_lacos_medios"
+    }
+   ]
+  }
+ ],
+ "inspecao": {
+  "tipo": "provisorio",
+  "data_inspecao": "",
+  "documento_n": "HM-SPDA-2026-EXEMPLO-01",
+  "equipe": "",
+  "norma_origem": "ABNT NBR 5419-3:2015 (nota do projeto aprovado no Corpo de Bombeiros)",
+  "servico_essencial": true,
+  "area_classificada": false,
+  "corrosao_severa": false,
+  "explosivos": false,
+  "abrangencia": "Edificação na configuração atual (térreo + 2º pavimento em obra, cobertura provisória a ≈ +10,50 m) e anexos do lote: subestação, reservatórios, casa de bombas, central de gases, guarita e área técnica",
+  "fora_escopo": "Pavimentos definitivos e cobertura final (+14,94 m) previstos no PPCI — exigem nova inspeção e novo laudo quando implantados (7.3.2 c)",
+  "itens_adicionais": "MPS/DPS nos quadros das salas de imagem e no rack de TI (NBR 5419-4)",
+  "documentos": [
+   {
+    "documento": "Comprovante CNPJ 00.000.000/0001-00 (emitido 14/01/2025)",
+    "recebido": "Sim",
+    "data_rev": "14/01/2025",
+    "situacao": "OK — identificação do contratante"
+   },
+   {
+    "documento": "Alvará de Construção (nº e órgão)",
+    "recebido": "Sim",
+    "data_rev": "26/02/2025",
+    "situacao": "OK — uso 86-1 atendimento hospitalar"
+   },
+   {
+    "documento": "Arquitetura — projeto básico PRJ 03, 06 a 11/12 (R13)",
+    "recebido": "Sim",
+    "data_rev": "07/07/2026 R13",
+    "situacao": "Usado para dimensões, cotas e ocupação"
+   },
+   {
+    "documento": "PPCI aprovado aprovado no CBM (29 pranchas) — SPDA nas pranchas 23 a 29",
+    "recebido": "Sim",
+    "data_rev": "15/07/2026",
+    "situacao": "Projeto de SPDA NP III (esfera rolante R = 45 m) — base da verificação de conformidade"
+   },
+   {
+    "documento": "Projeto elétrico executivo PRJ-01 a 42 (DWG, R00–R04)",
+    "recebido": "Sim",
+    "data_rev": "11/2025 a 04/2026",
+    "situacao": "Lidas as pranchas 01–03, 18–26, 28–38 e 40–42; as plantas grandes (04–17, 27, 39) não abriram no conversor"
+   },
+   {
+    "documento": "Croqui manuscrito da obra 'Projeto aterramento cobertura' (cordoalha 35 mm², presilhas, tubo Ø50 — 26 barras)",
+    "recebido": "Sim (foto)",
+    "data_rev": "07/10/2026",
+    "situacao": "Representa o SPDA provisório executado; deve virar as built em escala com ART"
+   },
+   {
+    "documento": "Análise de risco (NBR 5419-2)",
+    "recebido": "Não",
+    "data_rev": "",
+    "situacao": "Elaborada pela HM (Relatorio_Risco_NBR5419-2.docx) — premissas [CONFERIR]"
+   },
+   {
+    "documento": "ART de projeto e de execução do SPDA",
+    "recebido": "Não",
+    "data_rev": "",
+    "situacao": "► Solicitar"
+   },
+   {
+    "documento": "Relatório de continuidade das armaduras durante a obra (Anexo F)",
+    "recebido": "Não",
+    "data_rev": "",
+    "situacao": "► Solicitar à construtora"
+   },
+   {
+    "documento": "Estratificação do solo (NBR 7117-1)",
+    "recebido": "Não",
+    "data_rev": "",
+    "situacao": "► Solicitar"
+   }
+  ],
+  "dados_projeto": [
+   {
+    "dado": "Contratante",
+    "valor": "Hospital Exemplo S/A, CNPJ 00.000.000/0001-00",
+    "fonte": "Cartão CNPJ"
+   },
+   {
+    "dado": "Atividade",
+    "valor": "86.10-1-02 pronto-socorro/urgência; 86.30-5-01/02 ambulatorial com cirurgia e exames",
+    "fonte": "Cartão CNPJ"
+   },
+   {
+    "dado": "Licença / finalidade",
+    "valor": "Alvará de Construção (nº) — Institucional 86-1, área total 14.802,35 m² (obra inicial)",
+    "fonte": "Alvará de construção"
+   },
+   {
+    "dado": "Projeção do bloco principal",
+    "valor": "≈ 85 × 55 m (planta irregular), perímetro ≈ 280 m [CONFERIR]",
+    "fonte": "Prancha 03/12 COB R13 — cotas"
+   },
+   {
+    "dado": "Configuração atual",
+    "valor": "2 pavimentos com cobertura provisória sobre o 2º pavimento; topo da platibanda ≈ +10,50 m, ponto mais alto ≈ +11,53 m [CONFERIR]; definitivo: térreo + 3 pavimentos a +14,94 m",
+    "fonte": "Cliente (09/10/2026); arquitetura FAC R13; PPCI"
+   },
+   {
+    "dado": "SPDA provisório (croqui da obra)",
+    "valor": "Cordoalha de cobre nu 35 mm² com presilhas na cobertura provisória, contorno + condutores transversais (módulo aparente ≈ 17 × 25 m), torres/captores [levantar posições e alturas em campo]",
+    "fonte": "Croqui da obra (F-03) e fotos F-01/F-02"
+   },
+   {
+    "dado": "Cobertura",
+    "valor": "telha metálica termoacústica i = 4 % com platibanda h = 1,20 m; trechos em laje de concreto impermeabilizada",
+    "fonte": "Prancha 03/12 COB R13"
+   },
+   {
+    "dado": "Fachadas",
+    "valor": "ACM, textura, ripado e logomarca luminosa — elementos metálicos a ligar/avaliar como captores",
+    "fonte": "Prancha 11/12 FAC R13"
+   },
+   {
+    "dado": "Ambientes críticos",
+    "valor": "Reanimação, PS adulto/infantil, tomografia, ressonância (blindagem), raio X, ultrassom, Rack TI/Data Center, Sala de Quadros",
+    "fonte": "Prancha 07/12 FOR R13"
+   },
+   {
+    "dado": "Instalações a equipotencializar",
+    "valor": "gases medicinais (oxigênio, vácuo), sprinklers, elevadores, escadas pressurizadas, reservatórios e casa de bombas",
+    "fonte": "Pranchas 03 e 07/12 R13"
+   },
+   {
+    "dado": "Projeto de SPDA aprovado",
+    "valor": "Classe/NP III, método da esfera rolante R = 45 m, norma de origem NBR 5419-3:2015; autor (nome e CREA do projetista); parecer do CBM",
+    "fonte": "PPCI pranchas 23 e 28"
+   },
+   {
+    "dado": "Captação (projeto)",
+    "valor": "Malha em barra chata de alumínio 1/8\" × 7/8\" (≈ 70 mm²) sobre a laje; terminais aéreos Ø3/8\" h = 600 mm a cada ≈ 5–6 m; para-raios Franklin h = 315 mm em mastro de 6 m; estruturas metálicas da cobertura (chillers, boilers, escadas, antenas) ligadas à captação",
+    "fonte": "PPCI prancha 23 — simbologia e notas 4 e 5"
+   },
+   {
+    "dado": "Descidas (projeto)",
+    "valor": "Em cada pilar: condutor de descida em cabo de cobre nu 35 mm² interligado ao rebar (≈ 28 pontos — DET-05/06); a nota 1 fala em 15 descidas não naturais aparentes em barra chata de alumínio 1/4\" × 3/4\" com caixa de inspeção suspensa e PVC até 3 m (inconsistência a esclarecer)",
+    "fonte": "PPCI pranchas 23, 27 e 29"
+   },
+   {
+    "dado": "Aterramento (projeto)",
+    "valor": "Anel em cabo de cobre nu 50 mm² a ≥ 0,5 m de profundidade + hastes de cobre Ø3/4\" × 3 m + caixas de inspeção PVC Ø300 × 400 mm com tampa de ferro fundido; ligação às ferragens da fundação (rebar, solda exotérmica, Aterrinsert)",
+    "fonte": "PPCI pranchas 27 e 29 (DET-07)"
+   },
+   {
+    "dado": "Equipotencialização (projeto)",
+    "valor": "BEP em aço 200 × 200 mm; BEL indicados; interligação em cabo de cobre nu 50 mm²; todas as instalações e objetos metálicos ligados ao BEP (nota 3)",
+    "fonte": "PPCI pranchas 28 e 29"
+   },
+   {
+    "dado": "Alimentação de emergência",
+    "valor": "Grupo motogerador com autonomia de 4 h",
+    "fonte": "PPCI prancha 1"
+   },
+   {
+    "dado": "Entrada de energia",
+    "valor": "Rede 13,8 kV → cubículo de medição → TR-1 e TR-2 de 1000 kVA (13,8 kV/380-220 V, a óleo) → PGBT-1 predial (3200 A) e PGBT-INC; esquema TN-S",
+    "fonte": "Elétrico PE-01, PE-02 e PE-03"
+   },
+   {
+    "dado": "Geração de emergência",
+    "valor": "GMG-1, GMG-2 e GMG-3 de 750 kVA/600 kW com BGE (barramento geral) e QTA/PTA",
+    "fonte": "Elétrico PE-01, PE-38 e PE-42"
+   },
+   {
+    "dado": "DPS — 1º nível (classe I)",
+    "valor": "No PGBT/BGE: DPS unipolares fase e neutro, Iimp 25 kA (10/350), In 20 kA, Imax 45 kA, Up 1,5 kV (fase, 2,5 kV na nota do BGE), proteção de backup 100 A",
+    "fonte": "Elétrico PE-02 e PE-03"
+   },
+   {
+    "dado": "DPS — quadros",
+    "valor": "DPS-A/B/C/N nos quadros de distribuição: In 12,5 kA (8/20), Up ≤ 4 kV (especificação) — conferir coordenação com a suportabilidade dos equipamentos (NBR 5419-4)",
+    "fonte": "Elétrico PE-03 e diagramas dos quadros"
+   },
+   {
+    "dado": "Quadros críticos (IT-médico e imagem)",
+    "valor": "QFE-1P-CC e QFE-1P-CC-IT, QFE-1P-CC-SALA-01 a 05, QFE-1P-HM-01/02 (hemodinâmica), QFE-2P-UTI e QFE-2P-UTI-IT, QG-TE-RM e QG-ARC-TE-RM (ressonância), QG-TE-TM (tomografia), QG-TE-RAD (raio X), QG-TE-RAV-PSA/PSI (reanimação), QFE-1P-CME, QFE-2P-AGT",
+    "fonte": "Elétrico PE-01 e PE-18 a PE-26"
+   },
+   {
+    "dado": "Sala de painéis",
+    "valor": "PGBT-1, PGBT-INC, QPG-1, QTA/PPG, PTA-1 e QDG-EXT, com leitos de cabos a 3,5–3,9 m",
+    "fonte": "Elétrico PE-38"
+   },
+   {
+    "dado": "Captores Franklin (SPDA provisório)",
+    "valor": "2 captores em torres de 4 m: caixa d'água 1 (7,90 × 7,60 m, extremidade direita) e caixa d'água 2 (15,00 × 11,80 m, extremidade esquerda), topo das caixas a +12,0 m, distância de 58 m entre elas. Esfera rolante R = 45 m: raio protegido ≈ 23,6 m no plano da telha (+9,3 m) e ≈ 21,6 m no topo da platibanda (+10,5 m); ≈ 55–63 % da cobertura. Restante pela malha (módulo ≤ 15 × 15 m)",
+    "fonte": "Cliente (10/10/2026) e estudo HM"
+   }
+  ],
+  "contador_anterior": "",
+  "contador_atual": "",
+  "instrumentos": [],
+  "continuidade": [
+   {
+    "ponto": "T01",
+    "tipo_ensaio": "F.2",
+    "origem": "Topo pilar canto NO",
+    "destino": "Base mesmo pilar",
+    "valor_ohm": null
+   },
+   {
+    "ponto": "T02",
+    "tipo_ensaio": "F.2",
+    "origem": "Topo pilar canto NE",
+    "destino": "Base mesmo pilar",
+    "valor_ohm": null
+   },
+   {
+    "ponto": "T03",
+    "tipo_ensaio": "F.2",
+    "origem": "Topo pilar canto SE",
+    "destino": "Base mesmo pilar",
+    "valor_ohm": null
+   },
+   {
+    "ponto": "T04",
+    "tipo_ensaio": "F.2",
+    "origem": "Topo pilar canto SO",
+    "destino": "Base mesmo pilar",
+    "valor_ohm": null
+   },
+   {
+    "ponto": "T05",
+    "tipo_ensaio": "F.1",
+    "origem": "Topo pilar canto NO",
+    "destino": "Base pilar canto SE (cruzada)",
+    "valor_ohm": null
+   },
+   {
+    "ponto": "T06",
+    "tipo_ensaio": "F.1",
+    "origem": "Topo pilar canto NE",
+    "destino": "Base pilar canto SO (cruzada)",
+    "valor_ohm": null
+   },
+   {
+    "ponto": "T07",
+    "tipo_ensaio": "F.1",
+    "origem": "Base pilar NO",
+    "destino": "BEP (Sala de Quadros)",
+    "valor_ohm": null
+   },
+   {
+    "ponto": "T08",
+    "tipo_ensaio": "F.1",
+    "origem": "Base pilar SE",
+    "destino": "BEP (Sala de Quadros)",
+    "valor_ohm": null
+   },
+   {
+    "ponto": "T09",
+    "tipo_ensaio": "F.4",
+    "origem": "Malha de captação — platibanda N",
+    "destino": "BEP",
+    "valor_ohm": null
+   },
+   {
+    "ponto": "T10",
+    "tipo_ensaio": "F.4",
+    "origem": "Malha de captação — platibanda S",
+    "destino": "BEP",
+    "valor_ohm": null
+   },
+   {
+    "ponto": "T11",
+    "tipo_ensaio": "F.7",
+    "origem": "Blindagem RF da ressonância",
+    "destino": "BEP/BEL",
+    "valor_ohm": null,
+    "material": "cobre",
+    "secao_mm2": 16,
+    "comprimento_m": 10
+   },
+   {
+    "ponto": "T12",
+    "tipo_ensaio": "F.7",
+    "origem": "Tubulação de oxigênio (entrada no prédio)",
+    "destino": "BEL",
+    "valor_ohm": null,
+    "material": "cobre",
+    "secao_mm2": 16,
+    "comprimento_m": 10
+   },
+   {
+    "ponto": "T13",
+    "tipo_ensaio": "F.7",
+    "origem": "Barra PE do PGBT-1",
+    "destino": "BEP (Sala de Painéis)",
+    "valor_ohm": null,
+    "material": "cobre",
+    "secao_mm2": 16,
+    "comprimento_m": 10
+   },
+   {
+    "ponto": "T14",
+    "tipo_ensaio": "F.7",
+    "origem": "Carcaça GMG-1 (repetir GMG-2/3)",
+    "destino": "BEP",
+    "valor_ohm": null,
+    "material": "cobre",
+    "secao_mm2": 16,
+    "comprimento_m": 10
+   },
+   {
+    "ponto": "T15",
+    "tipo_ensaio": "F.7",
+    "origem": "Barra EQ do QFE-2P-UTI-IT",
+    "destino": "BEL/BEP",
+    "valor_ohm": null,
+    "material": "cobre",
+    "secao_mm2": 16,
+    "comprimento_m": 10
+   },
+   {
+    "ponto": "T16",
+    "tipo_ensaio": "F.7",
+    "origem": "Estrutura dos chillers (cobertura)",
+    "destino": "Malha de captação",
+    "valor_ohm": null,
+    "material": "cobre",
+    "secao_mm2": 16,
+    "comprimento_m": 10
+   }
+  ],
+  "aterramento": [],
+  "fotos": [
+   {
+    "id": "F-01",
+    "local": "Cobertura provisória — vista geral",
+    "subsistema": "Captação",
+    "descricao": "Telhas metálicas trapezoidais em vários planos, platibandas com rufo metálico e volumes técnicos em alvenaria",
+    "ref": "",
+    "arquivo": "fotos/F-01.jpg",
+    "largura_cm": 7
+   },
+   {
+    "id": "F-02",
+    "local": "Cobertura provisória",
+    "subsistema": "Captação",
+    "descricao": "Cordoalha de cobre nu lançada sobre a telha como condutor da malha provisória",
+    "ref": "CP1, CP5",
+    "arquivo": "fotos/F-02.jpg",
+    "largura_cm": 7
+   },
+   {
+    "id": "F-03",
+    "local": "Platibanda — rufo",
+    "subsistema": "Captação",
+    "descricao": "Conexão da cordoalha com conector de pressão aparafusado sobre o rufo de aço galvanizado",
+    "ref": "CP6, CP7",
+    "arquivo": "fotos/F-03.jpg",
+    "largura_cm": 7
+   },
+   {
+    "id": "F-04",
+    "local": "Platibanda",
+    "subsistema": "Captação",
+    "descricao": "Captor vertical (haste) fixado no rufo, ligado à cordoalha; cordoalha presa por grampos",
+    "ref": "CP1, CP5",
+    "arquivo": "fotos/F-04.jpg",
+    "largura_cm": 7
+   },
+   {
+    "id": "F-05",
+    "local": "Platibanda — canto",
+    "subsistema": "Captação",
+    "descricao": "Captor vertical em canto da platibanda ligado à malha",
+    "ref": "CP1",
+    "arquivo": "fotos/F-05.jpg",
+    "largura_cm": 7
+   },
+   {
+    "id": "F-06",
+    "local": "Platibanda",
+    "subsistema": "Captação/descida",
+    "descricao": "Cruzamento de condutores sobre o rufo e condutor descendo pela face da platibanda",
+    "ref": "CP6, DS3",
+    "arquivo": "fotos/F-06.jpg",
+    "largura_cm": 7
+   },
+   {
+    "id": "F-07",
+    "local": "Platibanda",
+    "subsistema": "Captação/descida",
+    "descricao": "Condutores da malha sobre a telha e descida pela platibanda",
+    "ref": "DS3, DS9",
+    "arquivo": "fotos/F-07.jpg",
+    "largura_cm": 7
+   },
+   {
+    "id": "F-08",
+    "local": "Base de descida",
+    "subsistema": "Descida/aterramento",
+    "descricao": "Ligação da descida (cobre) a barra de aço junto ao piso, com conector de pressão, exposta no contrapiso, sem caixa",
+    "ref": "DS10, AT5",
+    "arquivo": "fotos/F-08.jpg",
+    "largura_cm": 7
+   },
+   {
+    "id": "F-09",
+    "local": "Fachada/volume técnico",
+    "subsistema": "Descida",
+    "descricao": "Condutor de descida aparente em parede de volume técnico",
+    "ref": "DS3, DS9",
+    "arquivo": "fotos/F-09.jpg",
+    "largura_cm": 7
+   },
+   {
+    "id": "F-10",
+    "local": "Platibanda",
+    "subsistema": "Captação",
+    "descricao": "Cordoalha atravessando o rufo e a telha, com conector de pressão",
+    "ref": "CP6, CP7",
+    "arquivo": "fotos/F-10.jpg",
+    "largura_cm": 7
+   },
+   {
+    "id": "F-11",
+    "local": "Cobertura",
+    "subsistema": "Captação",
+    "descricao": "Rolo de cordoalha ainda na cobertura — execução em andamento",
+    "ref": "CP1",
+    "arquivo": "fotos/F-11.jpg",
+    "largura_cm": 7
+   },
+   {
+    "id": "F-12",
+    "local": "Caixa de inspeção",
+    "subsistema": "Aterramento",
+    "descricao": "Caixa PVC Ø300 com haste e cabo de cobre ligados por conector; sem tampa no momento da foto",
+    "ref": "AT5, AT6",
+    "arquivo": "fotos/F-12.jpg",
+    "largura_cm": 7
+   },
+   {
+    "id": "F-13",
+    "local": "Caixa de inspeção",
+    "subsistema": "Aterramento",
+    "descricao": "Caixa de inspeção com entulho, conexão não visível",
+    "ref": "AT6",
+    "arquivo": "fotos/F-13.jpg",
+    "largura_cm": 7
+   },
+   {
+    "id": "F-14",
+    "local": "Caixa de inspeção",
+    "subsistema": "Aterramento",
+    "descricao": "Caixa de inspeção com entulho, conexão não visível",
+    "ref": "AT6",
+    "arquivo": "fotos/F-14.jpg",
+    "largura_cm": 7
+   },
+   {
+    "id": "F-15",
+    "local": "Sala de Painéis",
+    "subsistema": "Equipotencialização",
+    "descricao": "Caixa identificada BEP instalada junto aos painéis, com eletrocalha",
+    "ref": "EQ1",
+    "arquivo": "fotos/F-15.jpg",
+    "largura_cm": 7
+   },
+   {
+    "id": "F-16",
+    "local": "Sala de Painéis — BEP",
+    "subsistema": "Equipotencialização",
+    "descricao": "Barramento de cobre do BEP com 3 condutores de cobre e ligação da porta; terminais livres para as demais ligações",
+    "ref": "EQ1, EQ3",
+    "arquivo": "fotos/F-16.jpg",
+    "largura_cm": 7
+   },
+   {
+    "id": "F-17",
+    "local": "Canteiro",
+    "subsistema": "SPDA provisório",
+    "descricao": "Croqui da obra com a distribuição da captação provisória (cordoalha 35 mm²)",
+    "ref": "CP1; pendência PROV",
+    "arquivo": "fotos/F-17.jpg",
+    "largura_cm": 12
+   },
+   {
+    "id": "F-18",
+    "local": "Projeto",
+    "subsistema": "Documentação",
+    "descricao": "PPCI aprovado — prancha 23/29 (captação definitiva)",
+    "ref": "Projeto definitivo",
+    "arquivo": "fotos/F-18.jpg",
+    "largura_cm": 16
+   },
+   {
+    "id": "F-19",
+    "local": "Estudo HM",
+    "subsistema": "Captação provisória",
+    "descricao": "Área protegida pelos 2 Franklin nas caixas d'água (esfera rolante R = 45 m) e trechos que dependem da malha ≤ 15 × 15 m — posições a confirmar",
+    "ref": "CP1",
+    "arquivo": "fotos/F-19.jpg",
+    "largura_cm": 16
+   }
+  ],
+  "ncs": [
+   {
+    "item": "CP7",
+    "local": "Cobertura — rufos e telhas",
+    "descricao": "Cordoalha de cobre e conectores apoiados diretamente sobre rufo/telha de aço galvanizado (contato bimetálico) [fotos 09/10/2026]",
+    "requisito": "NBR 5419-3, 5.5.1.5 e 7.3.3 c",
+    "recomendacao": "Usar suportes/espaçadores próprios para telha e rufo, conectores bimetálicos ou estanhados e vedação nos furos",
+    "prioridade": "P3",
+    "foto": "F-03, F-10"
+   },
+   {
+    "item": "DS10",
+    "local": "Base das descidas",
+    "descricao": "Ligação descida–barra de aço feita com conector de pressão exposto no contrapiso, sem caixa de inspeção e sem conector de ensaio [foto 09/10/2026]",
+    "requisito": "NBR 5419-3, 5.4.6 e 5.6.3.3",
+    "recomendacao": "Executar conexão por solda exotérmica ou compressão, ou instalar caixa de inspeção; prever conector de ensaio em cada descida antes do acabamento do piso",
+    "prioridade": "P3",
+    "foto": "F-08"
+   },
+   {
+    "item": "AT6",
+    "local": "Caixas de inspeção do aterramento",
+    "descricao": "Caixas com entulho e sem tampa, conexões não inspecionáveis [fotos 09/10/2026]",
+    "requisito": "NBR 5419-3, 5.6.3.3",
+    "recomendacao": "Limpar, instalar tampas de ferro fundido e identificar as caixas",
+    "prioridade": "P3",
+    "foto": "F-12, F-13, F-14"
+   },
+   {
+    "item": "D2",
+    "local": "Documentação",
+    "descricao": "O projeto aprovado adota Classe/NP III sem apresentar a análise de risco (NBR 5419-2). A análise HM, com premissas estimadas para uso hospitalar, indica NP I com DPS coordenados para R1 ≤ 10⁻⁵",
+    "requisito": "NBR 5419-2; NBR 5419-3, 7.5.3 b",
+    "recomendacao": "Solicitar ao projetista a análise de risco que fundamentou o NP III; se não houver, revisar o projeto com base na análise de risco (pessoas, sistemas de suporte à vida e linhas reais)",
+    "prioridade": "P3",
+    "foto": ""
+   },
+   {
+    "item": "D11",
+    "local": "Documentação — projeto definitivo",
+    "descricao": "Inconsistências internas no projeto: nota 1 cita perímetro de 147,35 m e 15 descidas não naturais aparentes, mas a planta indica ≈ 28 descidas interligadas ao rebar e a edificação tem perímetro ≈ 270 m; nota 6 adota 10 Ω como critério, que não é critério de aceitação da NBR 5419",
+    "requisito": "NBR 5419-3, 7.5.3 e; 7.1.4 (2026)",
+    "recomendacao": "Corrigir as notas no as built e definir claramente o tipo de descida (natural pelo rebar × não natural aparente)",
+    "prioridade": "P4",
+    "foto": "F-04"
+   }
+  ],
+  "checklist": [
+   {
+    "cod": "D1",
+    "secao": "Documentação",
+    "item": "Projeto/as built com desenhos em escala, materiais e posições",
+    "requisito": "NBR 5419-3:2026, 7.5.3 f",
+    "situacao": "C",
+    "prioridade": "P3",
+    "obs": "Projeto definitivo aprovado (PPCI pranchas 23–29). O SPDA provisório ainda não tem as built em escala — ver pendência PROV",
+    "foto": ""
+   },
+   {
+    "cod": "D2",
+    "secao": "Documentação",
+    "item": "Análise de risco e seleção do NP, com premissas",
+    "requisito": "NBR 5419-3:2026, 7.5.3 b",
+    "situacao": "NC",
+    "prioridade": "P3",
+    "obs": "PPCI adota NP III sem análise de risco apresentada; análise HM indica NP I (ver NC)",
+    "foto": ""
+   },
+   {
+    "cod": "D3",
+    "secao": "Documentação",
+    "item": "Identificação dos responsáveis técnicos com ART/TRT",
+    "requisito": "NBR 5419-3:2026, 7.5.3 a",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "PPCI traz responsável técnico/autor; solicitar a ART específica do SPDA (projeto e execução)",
+    "foto": ""
+   },
+   {
+    "cod": "D4",
+    "secao": "Documentação",
+    "item": "Validação documentada de componentes naturais",
+    "requisito": "NBR 5419-3:2026, 7.5.3 c; F.1.2.2",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Obra nova: pedir à construtora o relatório de continuidade das armaduras (Anexo F) feito durante a concretagem",
+    "foto": ""
+   },
+   {
+    "cod": "D5",
+    "secao": "Documentação",
+    "item": "Dados de resistividade/estratificação do solo",
+    "requisito": "NBR 5419-3:2026, 7.5.3 d",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Solicitar sondagem/estratificação do solo do lote",
+    "foto": ""
+   },
+   {
+    "cod": "D6",
+    "secao": "Documentação",
+    "item": "Definição de isolado/não isolado e método de posicionamento",
+    "requisito": "NBR 5419-3:2026, 7.5.3 e",
+    "situacao": "C",
+    "prioridade": "P3",
+    "obs": "Não isolado (descidas interligadas ao rebar); método da esfera rolante R = 45 m (prancha 28)",
+    "foto": ""
+   },
+   {
+    "cod": "D7",
+    "secao": "Documentação",
+    "item": "Registro de medidas contra toque e passo",
+    "requisito": "NBR 5419-3:2026, 7.5.3 g",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Projeto prevê descidas aparentes protegidas por eletroduto de PVC rígido até 3 m — conferir em campo e nas áreas de circulação",
+    "foto": ""
+   },
+   {
+    "cod": "D8",
+    "secao": "Documentação",
+    "item": "Distância de segurança (s) e parcelas de corrente para DPS",
+    "requisito": "NBR 5419-3:2026, 7.5.3 h",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "",
+    "foto": ""
+   },
+   {
+    "cod": "D9",
+    "secao": "Documentação",
+    "item": "Relatório de inspeção anterior disponível e dentro do prazo",
+    "requisito": "NBR 5419-3:2026, 7.3.3 b",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Edificação nova (alvará 2025): provavelmente primeira inspeção — confirmar",
+    "foto": ""
+   },
+   {
+    "cod": "D10",
+    "secao": "Documentação",
+    "item": "Plano de inspeção e manutenção documentado",
+    "requisito": "NBR 5419-3:2026, 7.2.1",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "",
+    "foto": ""
+   },
+   {
+    "cod": "D11",
+    "secao": "Documentação",
+    "item": "Projeto conforme a norma de origem",
+    "requisito": "NBR 5419-3:2026, 7.3.1 a; 7.5.4 b",
+    "situacao": "NC",
+    "prioridade": "P4",
+    "obs": "Projeto segue a NBR 5419-3:2015, com inconsistências nas notas 1 e 6 (ver NC)",
+    "foto": ""
+   },
+   {
+    "cod": "D12",
+    "secao": "Documentação",
+    "item": "Instalação conforme o projeto (sem divergências do as built)",
+    "requisito": "NBR 5419-3:2026, 7.3.1 a; 7.5.1",
+    "situacao": "NV",
+    "prioridade": "P2",
+    "obs": "Etapa provisória: a captação difere do projeto por concepção. Conferir que descidas, aterramento e BEP seguem o projeto e que a captação provisória está ligada a eles",
+    "foto": ""
+   },
+   {
+    "cod": "D13",
+    "secao": "Documentação",
+    "item": "ART do SPDA com observações exigidas pelo órgão licenciador e notas fiscais/certificados dos componentes",
+    "requisito": "NBR 5419-3:2026, 7.5.3 a; exigência do licenciamento",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Solicitar à construtora/instaladora a ART de execução do SPDA e as notas fiscais dos componentes (barra chata, terminais aéreos, cabos, hastes, conectores, caixas)",
+    "foto": ""
+   },
+   {
+    "cod": "CP1",
+    "secao": "Captação",
+    "item": "Posicionamento atende ao método e ao NP (volume de proteção)",
+    "requisito": "NBR 5419-3:2026, 5.3.2; Tab. 2; Anexo A",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "SPDA provisório: 2 Franklin a +16,0 m (torres de 4 m sobre as caixas d'água) protegem ≈ 23,6 m de raio cada; a faixa central (≈ 11 m no eixo, mais larga nas bordas) e os cantos do bloco ficam fora e dependem da malha com módulo ≤ 15 × 15 m (croqui da obra indica ≈ 17 × 25 m — completar). Conferir em campo: posição real das caixas, altura das torres, módulo da malha e captores de 0,30 m nas bordas (estudo F-19)",
+    "foto": "F-02, F-04, F-05, F-11"
+   },
+   {
+    "cod": "CP2",
+    "secao": "Captação",
+    "item": "Elementos salientes (antenas, condensadoras, chaminés, FV) protegidos ou interligados",
+    "requisito": "NBR 5419-3:2026, 5.3.2; 6.2",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Caixas d'água elevadas (topo +12,0 m) e torres dos Franklin: ligar as torres à malha por no mínimo 2 caminhos; ligar ou afastar (distância de segurança) tubulações, boias e escadas metálicas das caixas. Demais estruturas metálicas da cobertura também ligadas à captação",
+    "foto": ""
+   },
+   {
+    "cod": "CP3",
+    "secao": "Captação",
+    "item": "Material e seção mínima dos condutores e captores",
+    "requisito": "NBR 5419-3:2026, 5.7.2; Tab. 7",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Projeto: barra chata Al 1/8\"×7/8\" (≈ 70 mm²). Fotos: cordoalha de cobre ~35 mm² — medir e anotar o que foi executado",
+    "foto": ""
+   },
+   {
+    "cod": "CP4",
+    "secao": "Captação",
+    "item": "Captação natural (telhas, chapas): espessura medida ≥ Tab. 3/4",
+    "requisito": "NBR 5419-3:2026, 5.3.2.16",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Telha trapezoidal metálica (fotos). Verificar se é simples ou termoacústica (sanduíche): medir espessura da chapa superior; se < 4 mm aço sobre isolante combustível, não vale como captor natural",
+    "foto": ""
+   },
+   {
+    "cod": "CP5",
+    "secao": "Captação",
+    "item": "Fixação ≤ 1,0 m (horizontal) e ≤ 1,5 m (vertical/inclinado)",
+    "requisito": "NBR 5419-3:2026, 5.6.2.2",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "[constatado nas fotos de 09/10/2026 — confirmar na visita] cordoalha presa por grampos no rufo (F-04) e solta sobre a telha em trechos (F-02) — medir espaçamento dos fixadores (≤ 1,0 m)",
+    "foto": "F-02, F-04"
+   },
+   {
+    "cod": "CP6",
+    "secao": "Captação",
+    "item": "Conexões firmes, por solda ou conector de pressão/compressão",
+    "requisito": "NBR 5419-3:2026, 5.6.3.1",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "[constatado nas fotos de 09/10/2026 — confirmar na visita] conexões por conector de pressão aparafusado (F-03, F-06, F-10) — conferir aperto e material",
+    "foto": "F-03, F-06, F-10"
+   },
+   {
+    "cod": "CP7",
+    "secao": "Captação",
+    "item": "Ausência de corrosão, deformação, ruptura ou contato bimetálico",
+    "requisito": "NBR 5419-3:2026, 7.3.3 c; 5.5.1.5",
+    "situacao": "NC",
+    "prioridade": "P3",
+    "obs": "[constatado nas fotos de 09/10/2026 — confirmar na visita] cordoalha de cobre e conectores apoiados diretamente sobre rufo/telha de aço galvanizado (F-03, F-10): contato bimetálico cobre × zinco sujeito a corrosão galvânica",
+    "foto": "F-03, F-10"
+   },
+   {
+    "cod": "CP8",
+    "secao": "Captação",
+    "item": "Proteção lateral (estruturas > 60 m)",
+    "requisito": "NBR 5419-3:2026, 5.3.2.14",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "",
+    "foto": ""
+   },
+   {
+    "cod": "CP9",
+    "secao": "Captação",
+    "item": "Sinais de impacto de descarga (fusão, marcas)",
+    "requisito": "NBR 5419-3:2026, 7.3.2 e; 7.5.2",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "",
+    "foto": ""
+   },
+   {
+    "cod": "DS1",
+    "secao": "Descidas",
+    "item": "Nº de descidas ≥ perímetro/espaçamento da Tab. 5 (mín. 2); espaçamento ≤ +20 %",
+    "requisito": "NBR 5419-3:2026, 5.4.3; Tab. 5",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Contar as descidas que recebem a captação provisória (pilares/rebar ou cabos externos) — perímetro atual ≈ 280 m → NP III exige ≥ 19 descidas (15 m)",
+    "foto": ""
+   },
+   {
+    "cod": "DS2",
+    "secao": "Descidas",
+    "item": "Distribuição uniforme, com preferência pelos cantos",
+    "requisito": "NBR 5419-3:2026, 5.4.3.1",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "",
+    "foto": ""
+   },
+   {
+    "cod": "DS3",
+    "secao": "Descidas",
+    "item": "Trajeto retilíneo e vertical, sem laços (ou laço compatível com s)",
+    "requisito": "NBR 5419-3:2026, 5.4.4.2",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "[constatado nas fotos de 09/10/2026 — confirmar na visita] descidas aparentes pelas faces das platibandas e paredes dos volumes técnicos (F-06, F-07, F-09) — verificar trajeto e laços",
+    "foto": "F-06, F-07, F-09"
+   },
+   {
+    "cod": "DS4",
+    "secao": "Descidas",
+    "item": "Não instalada em calhas/tubos pluviais",
+    "requisito": "NBR 5419-3:2026, 5.4.4.3",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Foto de 07/10 (F-02) mostra cabo na calha/laje durante a execução — confirmar que nenhum condutor ficou em calha ou área de escoamento",
+    "foto": ""
+   },
+   {
+    "cod": "DS5",
+    "secao": "Descidas",
+    "item": "Distância de segurança de portas, janelas e massas",
+    "requisito": "NBR 5419-3:2026, 5.4.4.4; 6.3",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "",
+    "foto": ""
+   },
+   {
+    "cod": "DS6",
+    "secao": "Descidas",
+    "item": "Afastamento ≥ 0,10 m de materiais combustíveis (ou seção equivalente)",
+    "requisito": "NBR 5419-3:2026, 5.4.4.5; 5.4.4.6",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "",
+    "foto": ""
+   },
+   {
+    "cod": "DS7",
+    "secao": "Descidas",
+    "item": "Material e seção mínima",
+    "requisito": "NBR 5419-3:2026, Tab. 7",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "",
+    "foto": ""
+   },
+   {
+    "cod": "DS8",
+    "secao": "Descidas",
+    "item": "Sem emendas (exceto o conector de ensaio)",
+    "requisito": "NBR 5419-3:2026, 5.6.3.2",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "",
+    "foto": ""
+   },
+   {
+    "cod": "DS9",
+    "secao": "Descidas",
+    "item": "Fixação dentro das distâncias máximas",
+    "requisito": "NBR 5419-3:2026, 5.6.2.2",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "[constatado nas fotos de 09/10/2026 — confirmar na visita] conferir fixação das descidas aparentes (F-07, F-09)",
+    "foto": "F-07, F-09"
+   },
+   {
+    "cod": "DS10",
+    "secao": "Descidas",
+    "item": "Conector de ensaio em cada descida, a ~1,5 m, abre só com ferramenta, sem contato com o solo",
+    "requisito": "NBR 5419-3:2026, 5.4.6",
+    "situacao": "NC",
+    "prioridade": "P3",
+    "obs": "[constatado nas fotos de 09/10/2026 — confirmar na visita] ligação da descida à barra de aço junto ao piso feita com conector de pressão exposto no contrapiso, sem caixa de inspeção nem conector de ensaio (F-08)",
+    "foto": "F-08"
+   },
+   {
+    "cod": "DS11",
+    "secao": "Descidas",
+    "item": "Anéis intermediários (quando previstos)",
+    "requisito": "NBR 5419-3:2026, 5.4.1.2; Tab. 5",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "",
+    "foto": ""
+   },
+   {
+    "cod": "DS12",
+    "secao": "Descidas",
+    "item": "Descidas naturais validadas (Anexo F ou documentação)",
+    "requisito": "NBR 5419-3:2026, 5.4.5; 5.1.3.2",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Descidas pelo rebar: executar T01–T08; pedir à construtora o registro de continuidade das armaduras feito na obra",
+    "foto": ""
+   },
+   {
+    "cod": "DS13",
+    "secao": "Descidas",
+    "item": "Integridade: corrosão, danos mecânicos, furto",
+    "requisito": "NBR 5419-3:2026, 7.3.3 c",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "",
+    "foto": ""
+   },
+   {
+    "cod": "AT1",
+    "secao": "Aterramento",
+    "item": "Arranjo conforme a ordem preferencial (fundação / anel / malha)",
+    "requisito": "NBR 5419-3:2026, 5.5.2.1",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Malha de aterramento no solo executada conforme projeto (informado): localizar caixas de inspeção (DET-07), conferir cabo 50 mm² e hastes, e ligação às descidas usadas pela captação provisória",
+    "foto": ""
+   },
+   {
+    "cod": "AT2",
+    "secao": "Aterramento",
+    "item": "Anel enterrado ≥ 0,5 m e a ~1 m das paredes",
+    "requisito": "NBR 5419-3:2026, 5.5.3",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "",
+    "foto": ""
+   },
+   {
+    "cod": "AT3",
+    "secao": "Aterramento",
+    "item": "Condição re ≥ l1 ou complementação/medidas da Seção 8",
+    "requisito": "NBR 5419-3:2026, 5.5.2.3; 5.5.2.4",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "",
+    "foto": ""
+   },
+   {
+    "cod": "AT4",
+    "secao": "Aterramento",
+    "item": "Material e dimensões mínimas do eletrodo",
+    "requisito": "NBR 5419-3:2026, Tab. 8",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Projeto: cobre nu 50 mm² e hastes Ø3/4\" × 3 m — conferir material e seção nas caixas",
+    "foto": ""
+   },
+   {
+    "cod": "AT5",
+    "secao": "Aterramento",
+    "item": "Conexões enterradas em caixa de inspeção acessível (exceto compressão/exotérmica/fusão)",
+    "requisito": "NBR 5419-3:2026, 5.6.3.3",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "[constatado nas fotos de 09/10/2026 — confirmar na visita] caixa com haste e cabo ligados por conector de pressão (F-12) — conferir as demais após limpeza",
+    "foto": "F-08, F-12"
+   },
+   {
+    "cod": "AT6",
+    "secao": "Aterramento",
+    "item": "Caixas de inspeção localizáveis, desobstruídas e não alagadas",
+    "requisito": "NBR 5419-3:2026, 5.6.3.3",
+    "situacao": "NC",
+    "prioridade": "P3",
+    "obs": "[constatado nas fotos de 09/10/2026 — confirmar na visita] caixas de inspeção com entulho e sem tampa (F-12, F-13, F-14) — conexões não inspecionáveis",
+    "foto": "F-12, F-13, F-14"
+   },
+   {
+    "cod": "AT7",
+    "secao": "Aterramento",
+    "item": "Eletrodo exposto ou danificado; corrosão",
+    "requisito": "NBR 5419-3:2026, 7.3.3 c",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "",
+    "foto": ""
+   },
+   {
+    "cod": "AT8",
+    "secao": "Aterramento",
+    "item": "Aterramento único e integrado (energia, sinal, SPDA)",
+    "requisito": "NBR 5419-3:2026, 5.5.1.3",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Aterramento único: malha da subestação (TR-1/TR-2), GMG-1/2/3, SPDA, BEP e telecom interligados — verificar condutores de interligação 50 mm² (PPCI)",
+    "foto": ""
+   },
+   {
+    "cod": "AT9",
+    "secao": "Aterramento",
+    "item": "Medidas contra toque/passo nas descidas (acesso 3 m, isolação, camada isolante, barreiras, avisos)",
+    "requisito": "NBR 5419-3:2026, Seção 8",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Acessos de pedestres, entrada do PS e estacionamento próximos às fachadas: verificar medidas contra toque/passo nas descidas externas",
+    "foto": ""
+   },
+   {
+    "cod": "EQ1",
+    "secao": "Equipotencialização",
+    "item": "BEP existente, acessível e ligado diretamente ao aterramento",
+    "requisito": "NBR 5419-3:2026, 6.2.2",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "[constatado nas fotos de 09/10/2026 — confirmar na visita] BEP instalado na Sala de Painéis, barramento de cobre com 3 condutores ligados (F-15, F-16). Conferir para onde vai cada condutor (anel, ferragem, neutro dos trafos, GMG) e completar as ligações previstas",
+    "foto": "F-15, F-16"
+   },
+   {
+    "cod": "EQ2",
+    "secao": "Equipotencialização",
+    "item": "BEL em estruturas extensas (> 20 m)",
+    "requisito": "NBR 5419-3:2026, 6.2.2",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Projeto indica BEL (prancha 28) — localizar nas áreas técnicas e salas de imagem",
+    "foto": ""
+   },
+   {
+    "cod": "EQ3",
+    "secao": "Equipotencialização",
+    "item": "Instalações metálicas (tubulações, dutos, elevadores, estruturas) ligadas",
+    "requisito": "NBR 5419-3:2026, 6.2.2",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Ligar ao BEP/BEL: gases medicinais (O2, vácuo), sprinklers e hidrantes, 13 reservatórios, chillers e boilers, dutos de pressurização das escadas, elevadores, blindagem da ressonância e barras de equipotencialização dos quadros IT-médico (CC, UTI, hemodinâmica)",
+    "foto": ""
+   },
+   {
+    "cod": "EQ4",
+    "secao": "Equipotencialização",
+    "item": "Partes condutivas externas e linhas que entram, ligadas na entrada",
+    "requisito": "NBR 5419-3:2026, 6.2.3; 6.2.4",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Na entrada: blindagem dos cabos MT 13,8 kV ligada no cubículo de medição/subestação; tubulação de água, gás e O2; cabos de telecom/fibra com elemento metálico",
+    "foto": ""
+   },
+   {
+    "cod": "EQ5",
+    "secao": "Equipotencialização",
+    "item": "Seção dos condutores de equipotencialização",
+    "requisito": "NBR 5419-3:2026, 6.2.2.4; NBR 5419-4 Tab. 1",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "",
+    "foto": ""
+   },
+   {
+    "cod": "EQ6",
+    "secao": "Equipotencialização",
+    "item": "Distância de segurança s entre o SPDA e as partes internas",
+    "requisito": "NBR 5419-3:2026, 6.3",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Conferir distância de segurança entre a malha da cobertura e condensadoras/eletrocalhas na cobertura",
+    "foto": ""
+   },
+   {
+    "cod": "EQ7",
+    "secao": "Equipotencialização",
+    "item": "Centelhadores de isolação (quando existentes)",
+    "requisito": "NBR 5419-3:2026, 6.2.2.10; 7.3.5",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "",
+    "foto": ""
+   },
+   {
+    "cod": "EQ8",
+    "secao": "Equipotencialização",
+    "item": "Novas instalações desde a última inspeção incorporadas",
+    "requisito": "NBR 5419-3:2026, 7.3.1 c",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "",
+    "foto": ""
+   },
+   {
+    "cod": "DP1",
+    "secao": "DPS",
+    "item": "DPS classe I nas entradas de energia (Iimp conforme projeto; NBR IEC 61643-11)",
+    "requisito": "NBR 5419-3:2026, 6.2.4; 7.3.3 g",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Sala de Painéis — PGBT-1 (3200 A) e BGE/PGBT-INC: DPS classe I de 1º nível em cada fase e no neutro. Projeto: Iimp 25 kA (10/350), In 20 kA, Imax 45 kA, Up 1,5 kV, backup 100 A. Anotar marca, modelo, Iimp, Up e estado do indicador; fotografar placa",
+    "foto": ""
+   },
+   {
+    "cod": "DP2",
+    "secao": "DPS",
+    "item": "DPS nas linhas de sinal (IEC 61643-21)",
+    "requisito": "NBR 5419-3:2026, 6.2.5.6",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "DG de telecom/fibra e Rack TI: verificar DPS de sinal; projeto elétrico não especifica — anotar o que existir",
+    "foto": ""
+   },
+   {
+    "cod": "DP3",
+    "secao": "DPS",
+    "item": "Indicador de estado/fim de vida do DPS",
+    "requisito": "NBR 5419-3:2026, 7.3.3 g; 5419-4 9.2.5 e",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Conferir indicador de fim de vida de TODOS os DPS dos quadros da lista do DP8 e do PGBT/BGE",
+    "foto": ""
+   },
+   {
+    "cod": "DP4",
+    "secao": "DPS",
+    "item": "Dispositivo de sobrecorrente a montante íntegro e não atuado",
+    "requisito": "NBR 5419-3:2026, 7.3.3 g; 5419-4 9.2.5 f",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Projeto: disjuntor de backup dos DPS de 100 A — verificar que está ligado e sem atuação",
+    "foto": ""
+   },
+   {
+    "cod": "DP5",
+    "secao": "DPS",
+    "item": "Condutores de conexão do DPS curtos, firmes e sem corrosão",
+    "requisito": "NBR 5419-4:2026 9.2.5 a",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Medir comprimento das conexões dos DPS (fase→DPS→PE ≤ 0,5 m total) no PGBT-1, BGE e quadros IT-médico",
+    "foto": ""
+   },
+   {
+    "cod": "DP6",
+    "secao": "DPS",
+    "item": "DPS instalado de forma que permita inspeção",
+    "requisito": "NBR 5419-3:2026, 6.2.1.4",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "",
+    "foto": ""
+   },
+   {
+    "cod": "DP7",
+    "secao": "DPS",
+    "item": "Contador de descargas: integridade e registro de atuações",
+    "requisito": "NBR 5419-3:2026, 7.3.3 h",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "",
+    "foto": ""
+   },
+   {
+    "cod": "DP8",
+    "secao": "DPS",
+    "item": "DPS coordenados nos quadros (MPS), se no escopo",
+    "requisito": "NBR NBR 5419-4:2026 Seção 9",
+    "situacao": "NV",
+    "prioridade": "P3",
+    "obs": "Quadros a inspecionar: QFE-1P-CC, QFE-1P-CC-IT, QFE-1P-CC-SALA-01 a 05, QFE-1P-HM-01/02, QFE-2P-UTI, QFE-2P-UTI-IT, QG-TE-RM, QG-ARC-TE-RM, QG-TE-TM, QG-TE-RAD, QG-TE-RAV-PSA/PSI, QFE-1P-CME, QFE-2P-AGT. Projeto especifica DPS 12,5 kA com Up ≤ 4 kV — anotar o Up real: para equipamentos de 1,5–2,5 kV é preciso Up efetivo menor (NBR 5419-4)",
+    "foto": ""
+   }
+  ],
+  "justificativa_norma": "Edição adotada como norma de origem: ABNT NBR 5419:2015, indicada no projeto aprovado. A conformidade do projeto e da instalação foi verificada contra a edição de 2015; os procedimentos de inspeção e ensaio seguem a Seção 7 e o Anexo F da NBR 5419-3:2026. [CONFERIR a data do protocolo do projeto]",
+  "fotos_obs": "Fotos da visita na pasta fotos/ ao lado deste arquivo"
+ },
+ "spda_provisorio": {
+  "etapa": "Inauguração do térreo — 2 pavimentos com cobertura provisória sobre o 2º pavimento",
+  "definitivo": "Térreo + 3 pavimentos, cobertura em laje a +14,94 m, SPDA NP III conforme projeto aprovado no CBM",
+  "previsao": "",
+  "validade": "Até a execução dos pavimentos definitivos ou qualquer alteração da captação provisória, limitada a 1 ano (estabelecimento de saúde)",
+  "descricao": "A edificação está em etapa intermediária: apenas o térreo será inaugurado, com dois pavimentos executados e cobertura provisória sobre o 2º pavimento. Para essa etapa foi instalado um SPDA provisório na cobertura (distribuição de captores, torres e malha própria da cobertura provisória), ligado às partes do sistema definitivo já executadas conforme o projeto aprovado. O SPDA provisório deve proteger a geometria atual com o mesmo nível de proteção do projeto (NP III, esfera rolante R = 45 m). Quando os pavimentos definitivos forem construídos, a captação provisória será removida e o projeto aprovado implantado integralmente, com nova inspeção e novo laudo.",
+  "partes": [
+   {
+    "subsistema": "Entrada de energia (MT 13,8 kV, subestação TR-1/TR-2)",
+    "situacao": "Definitiva — conforme projeto (informado; confirmar em campo)",
+    "referencia": "Elétrico PE-01/02/03"
+   },
+   {
+    "subsistema": "BEP da subestação / Sala de Painéis",
+    "situacao": "Definitivo — executado (informado; confirmar ligações em campo)",
+    "referencia": "PPCI prancha 29"
+   },
+   {
+    "subsistema": "Malha de aterramento no solo, hastes e caixas de inspeção",
+    "situacao": "Definitiva — conforme projeto (informado; localizar caixas e ensaiar)",
+    "referencia": "PPCI pranchas 27 e 29 (DET-07)"
+   },
+   {
+    "subsistema": "Descidas",
+    "situacao": "Definitivas pelo rebar dos pilares até o nível atual [CONFERIR quais pontos já recebem a captação provisória]",
+    "referencia": "PPCI pranchas 23 e 29"
+   },
+   {
+    "subsistema": "Captação (malha, captores, torres/mastros)",
+    "situacao": "PROVISÓRIA — malha em cordoalha de cobre 35 mm² com captores de 0,30 m nas platibandas + 2 captores Franklin em torres de 4 m sobre as caixas d'água (topo das caixas +12,0 m, ponta dos captores +16,0 m), uma em cada extremidade do comprimento, 58 m entre si. Os Franklin protegem raio ≈ 23,6 m no plano da telha; a faixa central e os cantos dependem da malha com módulo ≤ 15 × 15 m",
+    "referencia": "As built provisório a elaborar"
+   }
+  ]
+ }
+}

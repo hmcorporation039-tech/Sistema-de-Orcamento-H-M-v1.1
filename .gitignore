@@ -37,3 +37,6 @@ Orçamentos recebidos fornecedores/
 # Projetos de clientes (PDF/DWG) enviados para gerar rascunho de orçamento
 # automaticamente — dados de projeto reais, não fazem parte do código-fonte
 Projetos recebidos clientes/
+
+# Documentos gerados pelas skills ao rodar o CLI nos exemplos
+skills/*/exemplos/documentos/

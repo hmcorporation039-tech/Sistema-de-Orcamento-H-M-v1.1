@@ -49,13 +49,15 @@ async function chamarUmModelo({ modelo, body, tentativas }) {
   throw new Error(`Gemini (${modelo}): ${ultimoErro?.message || 'erro desconhecido'}`);
 }
 
-async function chamarGemini({ prompt, json = false, busca = false, tentativas = 3, modelo }) {
+// `anexos`: [{ mime, base64 }] — PDF ou imagem enviados junto (leitura de
+// orçamento de fornecedor, sempre conferida por quem chama: ver leitorCotacaoIA.js).
+async function chamarGemini({ prompt, json = false, busca = false, tentativas = 3, modelo, anexos = [] }) {
   if (!configurado()) {
     throw new Error('GEMINI_API_KEY não configurada no .env');
   }
 
   const body = {
-    contents: [{ parts: [{ text: prompt }] }],
+    contents: [{ parts: [...anexos.map(a => ({ inline_data: { mime_type: a.mime, data: a.base64 } })), { text: prompt }] }],
   };
   if (busca) body.tools = [{ google_search: {} }];
   // A API não permite combinar tools (busca) com responseMimeType — só usa

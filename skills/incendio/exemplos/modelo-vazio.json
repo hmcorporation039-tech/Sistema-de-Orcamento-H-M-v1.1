@@ -1,0 +1,51 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "",
+  "prefixo": "",
+  "data": "AAAA-MM-DD",
+  "revisao": "R00"
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "",
+  "uf": ""
+ },
+ "obra": {
+  "nome": "",
+  "uso": ""
+ },
+ "sistema": {
+  "tipo": "enderecavel",
+  "dispositivos_por_laco": 125,
+  "dispositivos_por_zona": 20,
+  "modulos_comando": 0,
+  "area_por_avisador_m2": 400,
+  "tempo_repouso_h": 24,
+  "tempo_alarme_min": 5
+ },
+ "pavimentos": [],
+ "ambientes": [],
+ "inspecao": {
+  "tipo": "periodica",
+  "documento_n": "",
+  "checklist": [],
+  "ncs": [],
+  "teste_dispositivos": [],
+  "iluminancia": [],
+  "autonomia": [],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

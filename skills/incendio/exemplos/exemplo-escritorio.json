@@ -1,0 +1,133 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "Escritório exemplo — detecção e alarme",
+  "prefixo": "Incendio_Exemplo",
+  "data": "2026-10-10",
+  "revisao": "R00",
+  "dados_ilustrativos": true
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "EMPRESA EXEMPLO LTDA",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "Escritório Exemplo — 1 pavimento",
+  "uso": "Escritório"
+ },
+ "sistema": {
+  "tipo": "enderecavel",
+  "dispositivos_por_laco": 125,
+  "dispositivos_por_zona": 20,
+  "modulos_comando": 2,
+  "area_por_avisador_m2": 400,
+  "tempo_repouso_h": 24,
+  "tempo_alarme_min": 5
+ },
+ "pavimentos": [
+  {
+   "nome": "Térreo",
+   "area_m2": 520,
+   "maior_caminhamento_m": 48,
+   "saidas_emergencia": 2
+  }
+ ],
+ "ambientes": [
+  {
+   "nome": "Escritório aberto",
+   "pavimento": "Térreo",
+   "comprimento_m": 23,
+   "largura_m": 12,
+   "pe_direito_m": 3,
+   "detector": "fumaca",
+   "rota_fuga": true,
+   "saidas": 1,
+   "mudancas_direcao": 1
+  },
+  {
+   "nome": "Corredor",
+   "pavimento": "Térreo",
+   "comprimento_m": 25,
+   "largura_m": 3,
+   "pe_direito_m": 3,
+   "detector": "fumaca",
+   "rota_fuga": true,
+   "saidas": 1,
+   "mudancas_direcao": 2
+  },
+  {
+   "nome": "Sala de reunião",
+   "pavimento": "Térreo",
+   "comprimento_m": 9,
+   "largura_m": 9,
+   "pe_direito_m": 3,
+   "detector": "fumaca"
+  },
+  {
+   "nome": "Copa",
+   "pavimento": "Térreo",
+   "comprimento_m": 6,
+   "largura_m": 6,
+   "pe_direito_m": 3,
+   "detector": "temperatura"
+  },
+  {
+   "nome": "Depósito com vigas",
+   "pavimento": "Térreo",
+   "comprimento_m": 12,
+   "largura_m": 8,
+   "pe_direito_m": 4,
+   "detector": "fumaca",
+   "altura_viga_m": 0.4
+  },
+  {
+   "nome": "Escada",
+   "pavimento": "Térreo",
+   "comprimento_m": 5,
+   "largura_m": 3,
+   "pe_direito_m": 3,
+   "detector": "fumaca",
+   "rota_fuga": true,
+   "escada": true,
+   "saidas": 1
+  }
+ ],
+ "inspecao": {
+  "tipo": "periodica",
+  "documento_n": "",
+  "checklist": [],
+  "ncs": [],
+  "teste_dispositivos": [],
+  "iluminancia": [
+   {
+    "local": "Corredor",
+    "lux": 4
+   },
+   {
+    "local": "Escada",
+    "lux": 4,
+    "escada": true
+   }
+  ],
+  "autonomia": [
+   {
+    "local": "Blocos autônomos — térreo",
+    "horas": 2.5
+   }
+  ],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

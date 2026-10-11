@@ -1,0 +1,164 @@
+[
+ {
+  "cod": "D1",
+  "secao": "Documentação",
+  "item": "Projeto as built com plantas, diagrama de racks e tabela de identificação dos pontos",
+  "requisito": "NBR 14565, Seção 13; ISO/IEC 14763-1",
+  "onde": "Escritório / cliente",
+  "como": "Conferir documentos",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D2",
+  "secao": "Documentação",
+  "item": "Relatório de certificação de todos os canais/enlaces com resultado aprovado",
+  "requisito": "NBR 14565, Seções 7 e 8",
+  "onde": "Escritório / cliente",
+  "como": "Verificar relatórios do certificador",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D3",
+  "secao": "Documentação",
+  "item": "Registro de alterações (gerenciamento do cabeamento)",
+  "requisito": "NBR 14565, Seção 13",
+  "onde": "Escritório / cliente",
+  "como": "Verificar registro",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "T1",
+  "secao": "Topologia e distâncias",
+  "item": "Topologia estrela a partir do distribuidor de piso",
+  "requisito": "NBR 14565, 6.3.4 e 15.3.3",
+  "onde": "Racks",
+  "como": "Verificar ligações",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "T2",
+  "secao": "Topologia e distâncias",
+  "item": "Cabo horizontal ≤ 90 m e canal ≤ 100 m (Tabela 3 com F e temperatura)",
+  "requisito": "NBR 14565, 8.2.1.2 e Tabela 3",
+  "onde": "Certificação",
+  "como": "Conferir comprimentos no relatório",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "T3",
+  "secao": "Topologia e distâncias",
+  "item": "Patch cords e jumpers ≤ 5 m; total de patch cords ≤ 10 m",
+  "requisito": "NBR 14565, Tabela 2 e 8.2.1.2 e)",
+  "onde": "Racks / tomadas",
+  "como": "Medir patch cords",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "T4",
+  "secao": "Topologia e distâncias",
+  "item": "Ponto de consolidação a ≥ 15 m do distribuidor e ≥ 5 m da tomada",
+  "requisito": "NBR 14565, 8.2.1.2 c)",
+  "onde": "Forros / pisos",
+  "como": "Verificar CP",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "T5",
+  "secao": "Topologia e distâncias",
+  "item": "Ao menos um distribuidor por piso e um a cada 1 000 m² de escritório",
+  "requisito": "NBR 14565, 6.7.3",
+  "onde": "Pavimentos",
+  "como": "Conferir distribuição",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "A1",
+  "secao": "Área de trabalho",
+  "item": "Mínimo de duas tomadas por área de trabalho, a primeira com cabo de 4 pares",
+  "requisito": "NBR 14565, 6.7.7.1",
+  "onde": "Áreas de trabalho",
+  "como": "Contar tomadas",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "A2",
+  "secao": "Área de trabalho",
+  "item": "Tomadas identificadas de forma permanente e visível",
+  "requisito": "NBR 14565, 6.7.7.1",
+  "onde": "Áreas de trabalho",
+  "como": "Verificar etiquetas",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "A3",
+  "secao": "Área de trabalho",
+  "item": "Áreas de cobertura sem fio com no mínimo duas tomadas (recomendado Cat 6A/OM3)",
+  "requisito": "NBR 14565, 15.3.4 e 15.4",
+  "onde": "Áreas com AP",
+  "como": "Verificar tomadas dos APs",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "R1",
+  "secao": "Racks e distribuidores",
+  "item": "Racks organizados, com guias de cabos, identificação de portas e espaço de reserva",
+  "requisito": "NBR 14565, 6.7.9 e Seção 13",
+  "onde": "Salas de telecom",
+  "como": "Inspeção visual",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "R2",
+  "secao": "Racks e distribuidores",
+  "item": "Aterramento dos racks e blindagens ligados ao BEP",
+  "requisito": "NBR 14565, 12.3; NBR 5410; NBR 5419",
+  "onde": "Salas de telecom",
+  "como": "Verificar condutor de aterramento",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "R3",
+  "secao": "Racks e distribuidores",
+  "item": "DPS nos circuitos que entram/saem da edificação (avaliar)",
+  "requisito": "NBR 14565, 12.3; NBR 5419-4",
+  "onde": "Entrada de telecom",
+  "como": "Verificar DPS de sinal",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "I1",
+  "secao": "Instalação",
+  "item": "Raio de curvatura e tração respeitados; sem esmagamento por abraçadeiras",
+  "requisito": "NBR 16415; instruções do fabricante",
+  "onde": "Encaminhamentos",
+  "como": "Inspeção por amostragem",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "I2",
+  "secao": "Instalação",
+  "item": "Separação entre cabos de dados e de energia",
+  "requisito": "NBR 16415",
+  "onde": "Encaminhamentos",
+  "como": "Verificar distâncias e septos",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "I3",
+  "secao": "Instalação",
+  "item": "Categoria dos componentes compatível em todo o canal (sem mistura que rebaixe a classe)",
+  "requisito": "NBR 14565, 8.2",
+  "onde": "Tomadas / racks",
+  "como": "Verificar marcação dos componentes",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "I4",
+  "secao": "Instalação",
+  "item": "Blindagem contínua até o conector quando houver cabo blindado",
+  "requisito": "NBR 14565, 12.2",
+  "onde": "Tomadas / racks",
+  "como": "Verificar terminação",
+  "prioridade_padrao": "P3"
+ }
+]

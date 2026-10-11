@@ -1,0 +1,335 @@
+[
+ {
+  "cod": "D1",
+  "secao": "Documentação",
+  "item": "Projeto elétrico / as built atualizado (plantas, diagramas unifilares e quadros de cargas)",
+  "requisito": "NBR 5410, 6.1.8 e 8.3; NR-10, 10.2.3",
+  "onde": "Escritório / cliente",
+  "como": "Conferir se os documentos existem e correspondem ao instalado",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D2",
+  "secao": "Documentação",
+  "item": "ART de projeto e execução das instalações",
+  "requisito": "Lei 6.496/77; NR-10, 10.2.3",
+  "onde": "Escritório / cliente",
+  "como": "Solicitar e anotar os números",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D3",
+  "secao": "Documentação",
+  "item": "Prontuário das instalações elétricas (carga instalada > 75 kW)",
+  "requisito": "NR-10, 10.2.4",
+  "onde": "Escritório / cliente",
+  "como": "Verificar existência e conteúdo mínimo (procedimentos, EPI, laudos, certificações)",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D4",
+  "secao": "Documentação",
+  "item": "Laudo de SPDA e de aterramento vigentes",
+  "requisito": "NR-10, 10.2.4 b; NBR 5419-3, 7.3",
+  "onde": "Escritório / cliente",
+  "como": "Verificar validade",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D5",
+  "secao": "Documentação",
+  "item": "Relatório de inspeção anterior e plano de manutenção",
+  "requisito": "NBR 5410, 8.1; NR-10, 10.4.4",
+  "onde": "Escritório / cliente",
+  "como": "Verificar existência e prazos",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "Q1",
+  "secao": "Quadros",
+  "item": "Identificação dos circuitos no quadro (etiquetas) conforme o projeto",
+  "requisito": "NBR 5410, 6.1.5.1 e 6.5.4.10",
+  "onde": "Quadros",
+  "como": "Conferir etiqueta de cada disjuntor com o circuito real",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "Q2",
+  "secao": "Quadros",
+  "item": "Proteção contra contato direto: barramentos e partes vivas protegidos (tampa/contra-tampa)",
+  "requisito": "NBR 5410, 5.1.2.2 e 6.5.4",
+  "onde": "Quadros",
+  "como": "Abrir a porta e verificar a contra-tampa e espelhos",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "Q3",
+  "secao": "Quadros",
+  "item": "Sinalização de advertência (risco de choque) e identificação do quadro",
+  "requisito": "NR-10, 10.10; NBR 5410, 6.5.4.10",
+  "onde": "Quadros",
+  "como": "Verificar placa de advertência",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "Q4",
+  "secao": "Quadros",
+  "item": "Espaço de reserva para ampliações (Tabela 59)",
+  "requisito": "NBR 5410, 6.5.4.7",
+  "onde": "Quadros",
+  "como": "Contar circuitos e espaços livres",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "Q5",
+  "secao": "Quadros",
+  "item": "Barramentos de neutro e terra separados (TN-S) e condutores bem conectados",
+  "requisito": "NBR 5410, 6.4.3 e 6.5.4",
+  "onde": "Quadros",
+  "como": "Verificar barramentos, apertos e ausência de neutro no terra",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "Q6",
+  "secao": "Quadros",
+  "item": "Ausência de aquecimento, oxidação, marcas de arco ou conexões frouxas",
+  "requisito": "NBR 5410, 6.2.8 e 8.2",
+  "onde": "Quadros",
+  "como": "Inspeção visual e, se possível, termografia",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "Q7",
+  "secao": "Quadros",
+  "item": "Grau de proteção do invólucro adequado ao local (IP)",
+  "requisito": "NBR 5410, 5.2.2 e Tabela 32",
+  "onde": "Quadros",
+  "como": "Verificar IP do quadro em áreas externas/molhadas",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "P1",
+  "secao": "Proteção",
+  "item": "Disjuntor de cada circuito compatível com a seção do condutor (Ib ≤ In ≤ Iz)",
+  "requisito": "NBR 5410, 5.3.4 e 6.3.4.2",
+  "onde": "Quadros",
+  "como": "Comparar corrente nominal do disjuntor com a seção do cabo",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "P2",
+  "secao": "Proteção",
+  "item": "Dispositivo DR ≤ 30 mA nos circuitos obrigatórios (banheiros, cozinhas, áreas de serviço, externas, garagens)",
+  "requisito": "NBR 5410, 5.1.3.2.2",
+  "onde": "Quadros",
+  "como": "Verificar existência do DR e testar pelo botão",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "P3",
+  "secao": "Proteção",
+  "item": "DPS no quadro de entrada/distribuição, com Uc e In adequados e indicador de estado",
+  "requisito": "NBR 5410, 5.4 e 6.3.5",
+  "onde": "Quadros",
+  "como": "Anotar modelo, Uc, In e estado do indicador",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "P4",
+  "secao": "Proteção",
+  "item": "Seccionamento de todos os condutores de fase dos circuitos (dispositivos multipolares)",
+  "requisito": "NBR 5410, 9.5.4",
+  "onde": "Quadros",
+  "como": "Verificar disjuntores multipolares em circuitos bi/trifásicos",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "P5",
+  "secao": "Proteção",
+  "item": "Dispositivo geral de seccionamento e proteção na origem",
+  "requisito": "NBR 5410, 6.3.2 e 6.5.4",
+  "onde": "Quadro geral",
+  "como": "Verificar existência e capacidade",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "C1",
+  "secao": "Condutores",
+  "item": "Cores dos condutores: neutro azul-claro, proteção verde-amarelo (ou verde)",
+  "requisito": "NBR 5410, 6.1.5.3",
+  "onde": "Quadros / caixas",
+  "como": "Verificar cores nas terminações",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "C2",
+  "secao": "Condutores",
+  "item": "Seção mínima: 1,5 mm² iluminação e 2,5 mm² força (Tabela 47)",
+  "requisito": "NBR 5410, 6.2.6.1.1",
+  "onde": "Quadros / caixas",
+  "como": "Medir/identificar a seção",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "C3",
+  "secao": "Condutores",
+  "item": "Isolação íntegra, sem emendas fora de caixas e sem condutores expostos",
+  "requisito": "NBR 5410, 6.2.8.8 e 6.2.9",
+  "onde": "Caixas / eletrodutos",
+  "como": "Inspeção visual por amostragem",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "C4",
+  "secao": "Condutores",
+  "item": "Neutro não compartilhado entre circuitos",
+  "requisito": "NBR 5410, 6.2.6.2.1",
+  "onde": "Quadros",
+  "como": "Verificar um neutro por circuito",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "C5",
+  "secao": "Condutores",
+  "item": "Ocupação de eletrodutos e taxa de preenchimento adequadas",
+  "requisito": "NBR 5410, 6.2.11.1.6",
+  "onde": "Eletrodutos",
+  "como": "Verificar por amostragem",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "T1",
+  "secao": "Tomadas e pontos",
+  "item": "Tomadas no padrão NBR 14136 com contato de aterramento ligado ao PE",
+  "requisito": "NBR 5410, 6.5.3; NBR 14136",
+  "onde": "Ambientes",
+  "como": "Testar com testador de tomada",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "T2",
+  "secao": "Tomadas e pontos",
+  "item": "Quantidade mínima de tomadas e pontos de luz por cômodo (9.5.2)",
+  "requisito": "NBR 5410, 9.5.2",
+  "onde": "Ambientes",
+  "como": "Contar e comparar com a previsão",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "T3",
+  "secao": "Tomadas e pontos",
+  "item": "Equipamentos > 10 A em circuito independente (chuveiro, ar-condicionado, forno)",
+  "requisito": "NBR 5410, 9.5.3.1",
+  "onde": "Quadros / ambientes",
+  "como": "Verificar circuito exclusivo",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "T4",
+  "secao": "Tomadas e pontos",
+  "item": "Aquecedor de água ligado diretamente, sem tomada",
+  "requisito": "NBR 5410, 9.5.2.3",
+  "onde": "Banheiros",
+  "como": "Verificar ligação do chuveiro/aquecedor",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "T5",
+  "secao": "Tomadas e pontos",
+  "item": "Banheiros: tomadas e equipamentos fora dos volumes proibidos",
+  "requisito": "NBR 5410, 9.1",
+  "onde": "Banheiros",
+  "como": "Verificar distâncias ao box/banheira",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "T6",
+  "secao": "Tomadas e pontos",
+  "item": "Tomadas de cozinha/área de serviço em circuitos exclusivos",
+  "requisito": "NBR 5410, 9.5.3.2",
+  "onde": "Quadros",
+  "como": "Conferir circuitos",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "A1",
+  "secao": "Aterramento",
+  "item": "Eletrodo de aterramento e condutor de aterramento íntegros e acessíveis",
+  "requisito": "NBR 5410, 6.4.1",
+  "onde": "Caixa de aterramento",
+  "como": "Abrir caixa, verificar conexões e corrosão",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "A2",
+  "secao": "Aterramento",
+  "item": "Barramento de equipotencialização principal (BEP) com tubulações e massas ligadas",
+  "requisito": "NBR 5410, 6.4.2.1",
+  "onde": "Entrada / BEP",
+  "como": "Verificar ligações de água, gás, SPDA, telecom",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "A3",
+  "secao": "Aterramento",
+  "item": "Esquema de aterramento definido e coerente (TN-S, TN-C-S ou TT)",
+  "requisito": "NBR 5410, 4.2.2.2",
+  "onde": "Entrada / quadro geral",
+  "como": "Identificar o esquema e conferir com o projeto",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "A4",
+  "secao": "Aterramento",
+  "item": "Condutor de proteção (PE) em todos os circuitos, com seção da Tabela 58",
+  "requisito": "NBR 5410, 6.4.3",
+  "onde": "Quadros / caixas",
+  "como": "Verificar PE em cada circuito",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "A5",
+  "secao": "Aterramento",
+  "item": "Equipotencialização suplementar em banheiros/locais especiais",
+  "requisito": "NBR 5410, 9.1.3",
+  "onde": "Banheiros",
+  "como": "Verificar ligações locais",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "S1",
+  "secao": "Segurança NR-10",
+  "item": "Possibilidade de bloqueio/travamento e sinalização para desenergização",
+  "requisito": "NR-10, 10.5",
+  "onde": "Quadros",
+  "como": "Verificar dispositivos para cadeado/etiqueta",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "S2",
+  "secao": "Segurança NR-10",
+  "item": "Distâncias e barreiras em salas elétricas / acesso restrito",
+  "requisito": "NR-10, 10.3 e 10.8",
+  "onde": "Salas técnicas",
+  "como": "Verificar acesso e sinalização",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "S3",
+  "secao": "Segurança NR-10",
+  "item": "Iluminação de emergência e extintor classe C próximo aos quadros principais",
+  "requisito": "NR-10, 10.9; NR-23",
+  "onde": "Salas técnicas",
+  "como": "Verificar existência e validade",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "S4",
+  "secao": "Segurança NR-10",
+  "item": "Ausência de improvisos: benjamins, extensões permanentes, fios soltos",
+  "requisito": "NBR 5410, 6.1; NR-10, 10.4",
+  "onde": "Ambientes",
+  "como": "Inspeção visual",
+  "prioridade_padrao": "P2"
+ }
+]

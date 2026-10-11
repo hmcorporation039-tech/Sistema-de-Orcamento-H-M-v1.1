@@ -2,7 +2,9 @@ const { simpleParser } = require('mailparser');
 const pool = require('../config/database');
 const { conectar, credenciaisConfiguradas } = require('../utils/emailClient');
 const { extrairDoPdf, parseNFeXml } = require('../utils/notaFiscalParser');
-const { classificarPorDescricao } = require('../utils/classificadorMaterial');
+const { lerDocumentoCotacao, encerrarOcr, VERSAO_LEITOR } = require('../utils/leitorCotacao');
+const { carregarIndice, registrarItemNotaFiscal, obterMargemPadrao } = require('./catalogoMateriais');
+const { importarItens } = require('./cotacaoFornecedorService');
 
 // Piso fixo: nunca busca e-mails anteriores a essa data. Toda verificação
 // (manual ou agendada) parte sempre daqui, nunca "N dias atrás". O backfill
@@ -10,71 +12,17 @@ const { classificarPorDescricao } = require('../utils/classificadorMaterial');
 // data em que o monitoramento contínuo começou a valer.
 const DESDE_DATA = '2026/07/21';
 
-function normalizarDescricao(s) {
-  return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
-}
+// Teto de leituras por IA de anexos de orçamento por varredura (só quando o
+// leitor local não reconhece o documento) — evita custo alto num backfill.
+const MAX_IA_POR_VARREDURA = Number(process.env.COTACAO_IA_MAX_POR_VARREDURA) || 15;
+const TAMANHO_MAX_ANEXO = 15 * 1024 * 1024;
 
-async function obterMargemPadrao(client) {
-  const r = await client.query("SELECT valor FROM configuracoes WHERE chave = 'margem_padrao'");
-  return parseFloat(r.rows[0]?.valor) || 0;
-}
-
-// Cria o material se a descrição for nova, ou atualiza custo/preço se já existir.
-// Preserva o preço de venda quando ele foi ajustado manualmente (preco_manual = true).
-async function upsertMaterial(client, item, origem, margem) {
-  const descricaoNorm = normalizarDescricao(item.descricao);
-  if (!descricaoNorm) return null;
-
-  // Preço zero/ausente não entra no catálogo. O parser de DANFE em PDF tem um
-  // fallback que reconhece "qualquer palavra seguida de 8 dígitos" como
-  // material (pega número de pedido, código de barras, data) e devolve esses
-  // itens com preço 0. Sem esta guarda — que o serviço irmão de fornecedores
-  // já tinha — um item desses casando com um material existente fazia o UPDATE
-  // gravar preco = 0 e preco_compra = 0, destruindo o preço do catálogo.
-  // Diferente do upload manual, este caminho grava sem revisão humana.
-  const precoCompra = Number(item.preco);
-  if (!Number.isFinite(precoCompra) || precoCompra <= 0) return null;
-
-  const precoVenda = Math.round(precoCompra * (1 + margem / 100) * 100) / 100;
-
-  const existente = await client.query(
-    `SELECT * FROM materiais WHERE LOWER(TRIM(descricao)) = $1 AND ativo = true LIMIT 1`,
-    [descricaoNorm]
-  );
-
-  if (existente.rows.length > 0) {
-    const mat = existente.rows[0];
-    if (mat.preco_manual) {
-      await client.query(
-        `UPDATE materiais SET preco_compra=$1, ncm=COALESCE(NULLIF(ncm,''), $2), origem=$3, atualizado_em=NOW() WHERE id=$4`,
-        [precoCompra, item.ncm || null, origem, mat.id]
-      );
-    } else {
-      await client.query(
-        `UPDATE materiais SET preco_compra=$1, preco=$2, ncm=COALESCE(NULLIF(ncm,''), $3), origem=$4, atualizado_em=NOW() WHERE id=$5`,
-        [precoCompra, precoVenda, item.ncm || null, origem, mat.id]
-      );
-    }
-    return { criado: false };
-  }
-
-  let categoria = null;
-  if (item.ncm) {
-    const parecido = await client.query(
-      `SELECT categoria FROM materiais WHERE ncm = $1 AND ativo = true AND categoria <> 'Não classificado' LIMIT 1`,
-      [item.ncm]
-    );
-    if (parecido.rows.length > 0) categoria = parecido.rows[0].categoria;
-  }
-  if (!categoria) categoria = classificarPorDescricao(item.descricao);
-  if (!categoria) categoria = 'Não classificado';
-
-  await client.query(
-    `INSERT INTO materiais (codigo, descricao, categoria, unidade, preco, preco_compra, marca, ncm, origem)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-    [item.codigo || null, item.descricao, categoria, item.unidade || 'un', precoVenda, precoCompra, '', item.ncm || null, origem]
-  );
-  return { criado: true };
+// Material novo é cadastrado; existente (mesma descrição, descrição sem
+// acentos/pontuação ou mesmo código de fabricante) recebe o último preço pago.
+// Preço zero/ausente nunca entra (o parser de DANFE em PDF tem fallback que
+// pode devolver itens sem preço) — ver catalogoMateriais.registrarItemNotaFiscal.
+async function upsertMaterial(client, item, origem, margem, indice) {
+  return registrarItemNotaFiscal(client, indice || await carregarIndice(client), item, origem, margem);
 }
 
 function encontrarAnexos(parsedEmail) {
@@ -99,7 +47,7 @@ function compararComPdf(itensXml, itensPdf, avisos) {
   });
 }
 
-async function processarMensagem(client, parsedEmail, margem, resumo) {
+async function processarMensagem(client, parsedEmail, margem, resumo, indice) {
   const { xml, pdf } = encontrarAnexos(parsedEmail);
   if (!xml && !pdf) return;
 
@@ -141,7 +89,7 @@ async function processarMensagem(client, parsedEmail, margem, resumo) {
 
   let criados = 0, atualizados = 0;
   for (const item of itens) {
-    const r = await upsertMaterial(client, item, origem, margem);
+    const r = await upsertMaterial(client, item, origem, margem, indice);
     if (!r) continue;
     if (r.criado) criados++; else atualizados++;
   }
@@ -159,11 +107,73 @@ async function processarMensagem(client, parsedEmail, margem, resumo) {
   }
 }
 
+// Orçamentos/cotações de fornecedor recebidos por e-mail (qualquer layout, PDF
+// ou imagem). Ignora notas fiscais (tratadas acima), e-mails enviados pela
+// própria H&M e PDFs de proposta da própria H&M (ex.: cliente respondendo).
+// E-mail lido com 0 itens volta a ser lido quando a versão do leitor sobe.
+async function processarOrcamentosPorEmail(imapClient, dbClient, margem, indice, resumo) {
+  const uids = await imapClient.search(
+    { gmraw: `has:attachment -DANFE (orçamento OR orcamento OR cotação OR cotacao OR proposta OR "pedido de venda" OR pedido) after:${DESDE_DATA}` },
+    { uid: true }
+  );
+  const proprio = String(process.env.EMAIL_IMAP_USER || '').toLowerCase();
+  for (const uid of uids) {
+    const lido = await dbClient.query('SELECT itens_lidos, leitor_versao FROM emails_processados WHERE message_id = $1', [String(uid)]);
+    if (lido.rows.length && ((lido.rows[0].itens_lidos || 0) > 0 || (lido.rows[0].leitor_versao || 0) >= VERSAO_LEITOR || lido.rows[0].leitor_versao == null)) continue;
+    resumo.emailsEncontrados++;
+
+    const { content } = await imapClient.download(uid, undefined, { uid: true });
+    const email = await simpleParser(content);
+    const remetente = String(email.from?.value?.[0]?.address || '').toLowerCase();
+    const anexos = remetente && remetente === proprio ? [] : (email.attachments || [])
+      .filter(a => /\.(pdf|png|jpe?g)$/i.test(a.filename || '') || /pdf|image\/(png|jpe?g)/i.test(a.contentType || ''))
+      .filter(a => (a.size || a.content?.length || 0) <= TAMANHO_MAX_ANEXO);
+
+    // lê todos os anexos antes de abrir a transação (OCR/IA podem demorar)
+    const leituras = [];
+    let pendente = false;
+    for (const anexo of anexos) {
+      try {
+        const leitura = await lerDocumentoCotacao(anexo.content, anexo.filename || 'anexo', { permitirIA: resumo.leiturasPorIA < MAX_IA_POR_VARREDURA, exigirClienteHM: true });
+        if (leitura.usouIA) resumo.leiturasPorIA++;
+        if (leitura.pendente) pendente = true;
+        if (leitura.itens.length) leituras.push({ anexo, leitura });
+      } catch (err) {
+        resumo.avisos.push(`"${email.subject || uid}" / ${anexo.filename}: erro na leitura — ${err.message}`);
+      }
+    }
+
+    let lidosNoEmail = 0;
+    await dbClient.query('BEGIN');
+    try {
+      for (const { anexo, leitura } of leituras) {
+        const r = await importarItens(dbClient, indice, leitura, 'fornecedor_email', margem);
+        lidosNoEmail += leitura.itens.length;
+        resumo.materiaisCriados += r.criados;
+        resumo.materiaisAtualizados += r.atualizados;
+        resumo.orcamentosImportados++;
+        for (const a of leitura.avisos || []) resumo.avisos.push(`"${email.subject || uid}" / ${anexo.filename}: ${a}`);
+      }
+      await dbClient.query(
+        `INSERT INTO emails_processados (message_id, assunto, tipo, itens_lidos, leitor_versao) VALUES ($1,$2,'orcamento',$3,$4)
+         ON CONFLICT (message_id) DO UPDATE SET tipo='orcamento', itens_lidos=EXCLUDED.itens_lidos, leitor_versao=EXCLUDED.leitor_versao, processado_em=NOW()`,
+        [String(uid), email.subject || '', lidosNoEmail, pendente && !lidosNoEmail ? VERSAO_LEITOR - 1 : VERSAO_LEITOR]
+      );
+      await dbClient.query('COMMIT');
+      resumo.emailsProcessados++;
+    } catch (err) {
+      await dbClient.query('ROLLBACK').catch(() => {});
+      console.error('Erro ao processar e-mail de orçamento:', err);
+      resumo.avisos.push(`Erro ao processar orçamento "${email.subject || uid}": ${err.message}`);
+    }
+  }
+}
+
 async function verificarCaixaDeEntrada() {
   const resumo = {
     emailsEncontrados: 0, emailsProcessados: 0,
     materiaisCriados: 0, materiaisAtualizados: 0,
-    notasImportadas: 0, avisos: [],
+    notasImportadas: 0, orcamentosImportados: 0, leiturasPorIA: 0, avisos: [],
   };
 
   if (!credenciaisConfiguradas()) {
@@ -186,6 +196,7 @@ async function verificarCaixaDeEntrada() {
     }
 
     const margem = await obterMargemPadrao(dbClient);
+    const indice = await carregarIndice(dbClient);
 
     const lock = await imapClient.getMailboxLock('INBOX');
     try {
@@ -207,7 +218,7 @@ async function verificarCaixaDeEntrada() {
 
         await dbClient.query('BEGIN');
         try {
-          await processarMensagem(dbClient, parsedEmail, margem, resumo);
+          await processarMensagem(dbClient, parsedEmail, margem, resumo, indice);
           await dbClient.query(
             'INSERT INTO emails_processados (message_id, assunto) VALUES ($1,$2) ON CONFLICT DO NOTHING',
             [String(uid), parsedEmail.subject || '']
@@ -221,8 +232,11 @@ async function verificarCaixaDeEntrada() {
           resumo.avisos.push(`Erro ao processar e-mail "${parsedEmail.subject || uid}": ${err.message}`);
         }
       }
+
+      await processarOrcamentosPorEmail(imapClient, dbClient, margem, indice, resumo);
     } finally {
       lock.release();
+      await encerrarOcr();
     }
   } finally {
     dbClient.release();

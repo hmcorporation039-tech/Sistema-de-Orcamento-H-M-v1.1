@@ -7,4 +7,5 @@
 - Toda rota nova passa por `autenticar` (e por `posse`/admin quando for o caso). Todo HTML de PDF usa `escapeHtml`.
 - Para implantar: no backend, rode `reiniciar-backend.bat`; no frontend, `cd frontend && npm run build`. Depois recarregue com Ctrl+F5.
 - Commits em português, explicando o porquê, no mesmo padrão do histórico.
+- Skills de projeto ficam em `skills/<disciplina>/` (ver seção 3.1 do resumo). Antes de mudar uma skill, rode `npm test` na pasta dela; o teste compara com um laudo real já entregue. Dados de obras reais ficam na pasta do cliente no servidor, nunca no repositório.
 - Não versionar: `.env`, PDFs, `backend/backups`, `backend/logs`, `Orçamentos V*`, pastas de clientes/fornecedores, `projetos-recebidos`.

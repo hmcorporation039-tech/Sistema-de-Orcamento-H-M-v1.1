@@ -1,0 +1,52 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "",
+  "prefixo": "",
+  "data": "AAAA-MM-DD",
+  "revisao": "R00"
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "",
+  "uf": ""
+ },
+ "obra": {
+  "nome": "",
+  "uso": ""
+ },
+ "sistema": {
+  "codec": "H.265",
+  "fps": 15,
+  "dias_gravacao": 30,
+  "horas_dia": 24,
+  "modo_gravacao": "continua",
+  "atividade_pct": 40,
+  "hd_tb": 8,
+  "raid": "nenhum",
+  "portas_switch": 24,
+  "autonomia_min": 30,
+  "acessos": 1
+ },
+ "cameras": [],
+ "inspecao": {
+  "tipo": "vistoria",
+  "documento_n": "",
+  "checklist": [],
+  "ncs": [],
+  "teste_cameras": [],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

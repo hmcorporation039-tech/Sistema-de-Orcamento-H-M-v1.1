@@ -1,0 +1,263 @@
+[
+ {
+  "cod": "D1",
+  "secao": "Documentação",
+  "item": "Lista de pontos (E/S e integrações) atualizada, com tag, descrição e endereço",
+  "requisito": "ISO 16484-2; boas práticas",
+  "onde": "Escritório / cliente",
+  "como": "Conferir documento",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D2",
+  "secao": "Documentação",
+  "item": "Arquitetura de rede (controladores, segmentos, endereços IP/MAC) e diagramas dos quadros",
+  "requisito": "ISO 16484-2",
+  "onde": "Escritório",
+  "como": "Conferir documento",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D3",
+  "secao": "Documentação",
+  "item": "Descritivo de funcionamento (sequências de controle, setpoints e intertravamentos)",
+  "requisito": "ISO 16484-3",
+  "onde": "Escritório",
+  "como": "Conferir documento",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "D4",
+  "secao": "Documentação",
+  "item": "Backup da programação dos controladores e do supervisório entregue ao cliente",
+  "requisito": "Boas práticas",
+  "onde": "Cliente",
+  "como": "Verificar mídia/arquivo",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "D5",
+  "secao": "Documentação",
+  "item": "Manual de operação e treinamento dos operadores",
+  "requisito": "Boas práticas",
+  "onde": "Cliente",
+  "como": "Verificar registro",
+  "prioridade_padrao": "P4"
+ },
+ {
+  "cod": "Q1",
+  "secao": "Quadros e campo",
+  "item": "Quadros identificados, com alimentação protegida, nobreak e aterramento",
+  "requisito": "NBR 5410",
+  "onde": "Quadros de automação",
+  "como": "Inspeção visual",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "Q2",
+  "secao": "Quadros e campo",
+  "item": "Cabos de sinal separados dos cabos de força e com blindagem aterrada em uma única extremidade",
+  "requisito": "NBR 5410, 6.2.9; boas práticas",
+  "onde": "Eletrocalhas / quadros",
+  "como": "Inspeção visual",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "Q3",
+  "secao": "Quadros e campo",
+  "item": "Sensores de ambiente a 1,5 m do piso, longe de sol, difusores, equipamentos e paredes externas",
+  "requisito": "Boas práticas; fabricante",
+  "onde": "Ambientes",
+  "como": "Inspeção visual",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "Q4",
+  "secao": "Quadros e campo",
+  "item": "Válvulas e dampers com curso completo e posição de falha segura",
+  "requisito": "ISO 16484-3",
+  "onde": "Casa de máquinas / forro",
+  "como": "Ensaio funcional",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "Q5",
+  "secao": "Quadros e campo",
+  "item": "Cabos e bornes identificados conforme a lista de pontos",
+  "requisito": "Boas práticas",
+  "onde": "Quadros",
+  "como": "Inspeção visual",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "R1",
+  "secao": "Rede",
+  "item": "Barramentos RS-485 em topologia de barramento (sem derivações em estrela), com terminação de 120 Ω nas pontas",
+  "requisito": "TIA-485; ISO 16484-5",
+  "onde": "Barramentos",
+  "como": "Inspeção e medição",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "R2",
+  "secao": "Rede",
+  "item": "Endereços únicos e velocidade igual em todos os dispositivos do segmento",
+  "requisito": "ISO 16484-5",
+  "onde": "Supervisório",
+  "como": "Conferir configuração",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "R3",
+  "secao": "Rede",
+  "item": "Rede de automação segregada (VLAN/firewall) e acesso remoto apenas por VPN",
+  "requisito": "Boas práticas de segurança cibernética",
+  "onde": "Rede",
+  "como": "Conferir configuração",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "S1",
+  "secao": "Supervisório",
+  "item": "Alarmes configurados com prioridade, destinatário e registro de reconhecimento",
+  "requisito": "ISO 16484-3",
+  "onde": "Supervisório",
+  "como": "Conferir configuração",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "S2",
+  "secao": "Supervisório",
+  "item": "Tendências (históricos) das variáveis principais e medição de energia",
+  "requisito": "ISO 52120-1 (gestão técnica)",
+  "onde": "Supervisório",
+  "como": "Conferir configuração",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "S3",
+  "secao": "Supervisório",
+  "item": "Usuários individuais com senha, níveis de acesso e senhas padrão trocadas",
+  "requisito": "Boas práticas de segurança cibernética",
+  "onde": "Supervisório / controladores",
+  "como": "Conferir configuração",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "S4",
+  "secao": "Supervisório",
+  "item": "Programação horária e feriados configurados",
+  "requisito": "ISO 52120-1",
+  "onde": "Supervisório",
+  "como": "Conferir configuração",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "F1",
+  "secao": "Funções de controle",
+  "item": "Controle de temperatura por zona com setpoints e limites de ajuste do usuário",
+  "requisito": "ISO 52120-1; NBR 16401-2",
+  "onde": "Ambientes / supervisório",
+  "como": "Ensaio funcional",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "F2",
+  "secao": "Funções de controle",
+  "item": "Vazão de ar externo atende a NBR 16401-3 (e controle por CO₂ quando previsto)",
+  "requisito": "NBR 16401-3",
+  "onde": "Climatizadores / ambientes",
+  "como": "Medição e conferência",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "F3",
+  "secao": "Funções de controle",
+  "item": "Intertravamentos de segurança (incêndio desliga ventilação, pressostatos, termostatos de segurança)",
+  "requisito": "NBR 16401-1; projeto",
+  "onde": "Quadros / campo",
+  "como": "Ensaio funcional",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "F4",
+  "secao": "Funções de controle",
+  "item": "Retorno automático ao estado correto após queda de energia e após falha de comunicação",
+  "requisito": "ISO 16484-3",
+  "onde": "Controladores",
+  "como": "Ensaio funcional",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "F5",
+  "secao": "Funções de controle",
+  "item": "Salas com pressão, temperatura e umidade controladas dentro dos limites do projeto",
+  "requisito": "NBR 7256 (saúde); projeto",
+  "onde": "Salas críticas",
+  "como": "Medição",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "T1",
+  "secao": "Ensaios",
+  "item": "Teste ponto a ponto de 100 % das entradas e saídas",
+  "requisito": "ISO 16484-2",
+  "onde": "Campo / supervisório",
+  "como": "Ensaio",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "T2",
+  "secao": "Ensaios",
+  "item": "Conferência dos sensores com instrumento de referência (tolerância do projeto)",
+  "requisito": "Boas práticas",
+  "onde": "Ambientes",
+  "como": "Medição",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "T3",
+  "secao": "Ensaios",
+  "item": "Ensaio das malhas de controle (estabilidade, sem oscilação, atinge o setpoint)",
+  "requisito": "ISO 16484-3",
+  "onde": "Supervisório",
+  "como": "Ensaio / tendências",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "H1",
+  "secao": "Residencial",
+  "item": "Módulos com neutro, bem fixados e com espaço na caixa; sem aquecimento",
+  "requisito": "NBR 5410; fabricante",
+  "onde": "Caixas de interruptor",
+  "como": "Inspeção visual",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "H2",
+  "secao": "Residencial",
+  "item": "Cobertura da rede sem fio / barramento em todos os dispositivos, sem falhas de comunicação",
+  "requisito": "Fabricante",
+  "onde": "Ambientes",
+  "como": "Teste no app",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "H3",
+  "secao": "Residencial",
+  "item": "Cenas, horários e comandos por voz funcionando e app entregue ao cliente",
+  "requisito": "Boas práticas",
+  "onde": "Cliente",
+  "como": "Teste funcional",
+  "prioridade_padrao": "P4"
+ },
+ {
+  "cod": "H4",
+  "secao": "Residencial",
+  "item": "Comando manual local continua funcionando sem internet",
+  "requisito": "Boas práticas",
+  "onde": "Ambientes",
+  "como": "Teste funcional",
+  "prioridade_padrao": "P2"
+ }
+]

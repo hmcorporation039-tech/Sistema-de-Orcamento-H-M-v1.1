@@ -261,6 +261,38 @@ async function criarTabelas() {
       );
     }
 
+    // Laudos e projetos por disciplina (aba Análise de Projeto). `dados` é o
+    // formulário inteiro da obra, no formato do JSON da skill da disciplina
+    // (ver skills/<disciplina>/referencia/esquema-dados.md); `propostas`
+    // guarda o orçamento gerado por modo, ex.: { "inspecao": 12, "execucao": 15 }.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS laudos_projetos (
+        id SERIAL PRIMARY KEY,
+        disciplina VARCHAR(30) NOT NULL,
+        titulo VARCHAR(200),
+        cliente_nome VARCHAR(200),
+        dados JSONB NOT NULL DEFAULT '{}',
+        propostas JSONB NOT NULL DEFAULT '{}',
+        usuario_id INTEGER REFERENCES usuarios(id),
+        criado_em TIMESTAMP DEFAULT NOW(),
+        atualizado_em TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_laudos_projetos_disciplina ON laudos_projetos (disciplina, atualizado_em DESC)');
+    // Fotos da inspeção ficam no banco (entram no backup diário junto com o
+    // laudo); o formulário referencia cada uma como "foto:<id>".
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS laudos_projetos_fotos (
+        id SERIAL PRIMARY KEY,
+        laudo_id INTEGER NOT NULL REFERENCES laudos_projetos(id) ON DELETE CASCADE,
+        nome_arquivo VARCHAR(200),
+        mime VARCHAR(50) NOT NULL,
+        conteudo BYTEA NOT NULL,
+        criado_em TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_laudos_fotos_laudo ON laudos_projetos_fotos (laudo_id)');
+
     // Cache de pesquisas de mercado (ver utils/pesquisaMercadoService.js) —
     // a mesma descrição pesquisada de novo dentro de 48h reaproveita o
     // resultado salvo aqui em vez de gastar cota do Gemini/dinheiro do
@@ -335,6 +367,16 @@ async function criarTabelas() {
         processado_em TIMESTAMP DEFAULT NOW()
       )
     `);
+    // Leitor de orçamentos em qualquer layout (utils/leitorCotacao.js): guarda
+    // quantos itens foram lidos, por qual método e com qual versão do leitor —
+    // arquivo/e-mail lido com 0 itens volta a ser lido quando a versão sobe.
+    await client.query(`ALTER TABLE arquivos_fornecedores_processados ADD COLUMN IF NOT EXISTS itens_lidos INTEGER DEFAULT 0`);
+    await client.query(`ALTER TABLE arquivos_fornecedores_processados ADD COLUMN IF NOT EXISTS metodo VARCHAR(80)`);
+    await client.query(`ALTER TABLE arquivos_fornecedores_processados ADD COLUMN IF NOT EXISTS confere_total BOOLEAN`);
+    await client.query(`ALTER TABLE arquivos_fornecedores_processados ADD COLUMN IF NOT EXISTS leitor_versao INTEGER DEFAULT 1`);
+    await client.query(`ALTER TABLE emails_processados ADD COLUMN IF NOT EXISTS tipo VARCHAR(20)`);
+    await client.query(`ALTER TABLE emails_processados ADD COLUMN IF NOT EXISTS itens_lidos INTEGER DEFAULT 0`);
+    await client.query(`ALTER TABLE emails_processados ADD COLUMN IF NOT EXISTS leitor_versao INTEGER`);
 
     // Prestadores de serviços: mão de obra, material e despesas diárias pagos a
     // terceiros. Pagamentos feitos a eles (financeiro_movimentos.tipo='realizado')

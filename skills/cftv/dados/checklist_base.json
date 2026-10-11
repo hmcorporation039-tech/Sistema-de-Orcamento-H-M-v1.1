@@ -1,0 +1,155 @@
+[
+ {
+  "cod": "D1",
+  "secao": "Documentação",
+  "item": "Projeto/as built com posição, tipo e campo de visão de cada câmera",
+  "requisito": "Boas práticas; IEC 62676-4",
+  "onde": "Escritório / cliente",
+  "como": "Conferir documentos",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D2",
+  "secao": "Documentação",
+  "item": "Política de retenção e de acesso às gravações (quem acessa, por quanto tempo)",
+  "requisito": "Lei 13.709/2018 (LGPD), art. 6º e 46",
+  "onde": "Escritório / cliente",
+  "como": "Verificar política escrita",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "D3",
+  "secao": "Documentação",
+  "item": "Sinalização de ambiente monitorado nos acessos",
+  "requisito": "Lei 13.709/2018 (LGPD), transparência; legislação local",
+  "onde": "Acessos",
+  "como": "Verificar placas",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "C1",
+  "secao": "Câmeras",
+  "item": "Cobertura e objetivo de cada câmera atendidos (detecção/observação/reconhecimento/identificação)",
+  "requisito": "IEC 62676-4 (DORI)",
+  "onde": "Câmeras",
+  "como": "Conferir imagem no gravador com alvo na distância de projeto",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "C2",
+  "secao": "Câmeras",
+  "item": "Câmeras externas com grau de proteção IP66 e IK10 onde houver risco de vandalismo",
+  "requisito": "IEC 60529; IEC 62262",
+  "onde": "Câmeras externas",
+  "como": "Verificar ficha técnica",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "C3",
+  "secao": "Câmeras",
+  "item": "Imagem noturna adequada (IR/iluminação) sem ofuscamento ou reflexo",
+  "requisito": "IEC 62676-4",
+  "onde": "Câmeras",
+  "como": "Testar à noite ou com ambiente escurecido",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "C4",
+  "secao": "Câmeras",
+  "item": "Fixação firme, ângulo correto e lente limpa",
+  "requisito": "Boas práticas",
+  "onde": "Câmeras",
+  "como": "Inspeção visual",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "G1",
+  "secao": "Gravação",
+  "item": "Gravação de todas as câmeras ativa, com retenção igual ou maior que a contratada",
+  "requisito": "Projeto / contrato",
+  "onde": "Gravador",
+  "como": "Buscar gravação do primeiro dia do período",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "G2",
+  "secao": "Gravação",
+  "item": "Data e hora sincronizadas (NTP) em gravador e câmeras",
+  "requisito": "Boas práticas (valor probatório)",
+  "onde": "Gravador",
+  "como": "Comparar horário",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "G3",
+  "secao": "Gravação",
+  "item": "Exportação de vídeo testada e funcionando",
+  "requisito": "Boas práticas",
+  "onde": "Gravador",
+  "como": "Exportar um trecho",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "G4",
+  "secao": "Gravação",
+  "item": "Discos sem erros (S.M.A.R.T.) e, se houver, RAID íntegro",
+  "requisito": "Boas práticas",
+  "onde": "Gravador",
+  "como": "Ver estado dos discos",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "S1",
+  "secao": "Segurança cibernética",
+  "item": "Senhas padrão alteradas, usuários individuais e firmware atualizado",
+  "requisito": "Boas práticas; LGPD art. 46",
+  "onde": "Gravador / câmeras",
+  "como": "Verificar usuários e versões",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "S2",
+  "secao": "Segurança cibernética",
+  "item": "Acesso remoto seguro (VPN/serviço do fabricante) sem portas abertas desnecessárias",
+  "requisito": "Boas práticas; LGPD art. 46",
+  "onde": "Roteador / gravador",
+  "como": "Verificar redirecionamento de portas",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "I1",
+  "secao": "Infraestrutura",
+  "item": "Cabos UTP até 90 m (ou extensor/fibra) e conectores bem crimpados",
+  "requisito": "NBR 14565, 8.2.1.2",
+  "onde": "Infraestrutura",
+  "como": "Testar cabos por amostragem",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "I2",
+  "secao": "Infraestrutura",
+  "item": "Orçamento de potência PoE do switch suficiente com margem",
+  "requisito": "IEEE 802.3af/at/bt",
+  "onde": "Rack",
+  "como": "Somar consumo e comparar",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "I3",
+  "secao": "Infraestrutura",
+  "item": "Nobreak com autonomia adequada para gravador, switch e câmeras",
+  "requisito": "Projeto",
+  "onde": "Rack",
+  "como": "Testar desligando a rede",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "I4",
+  "secao": "Infraestrutura",
+  "item": "Aterramento e DPS para câmeras externas e cabos que saem da edificação",
+  "requisito": "NBR 5410; NBR 5419-4",
+  "onde": "Câmeras externas / rack",
+  "como": "Verificar DPS de rede/alimentação",
+  "prioridade_padrao": "P3"
+ }
+]

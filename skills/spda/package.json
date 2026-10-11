@@ -1,0 +1,12 @@
+{
+  "name": "hm-skill-spda",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Skill de SPDA (NBR 5419:2026) da H&M Engenharia — análise de risco, dimensionamento, laudo, memorial e orçamento",
+  "scripts": {
+    "calcular": "node scripts/calcular.js",
+    "documentos": "node scripts/gerar-documentos.js",
+    "orcamento": "node scripts/orcamento.js",
+    "test": "node testes/teste-regressao.js"
+  }
+}

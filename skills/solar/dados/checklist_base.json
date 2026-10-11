@@ -1,0 +1,254 @@
+[
+ {
+  "cod": "D1",
+  "secao": "Documentação",
+  "item": "Projeto com diagrama unifilar, memorial descritivo e lista de equipamentos",
+  "requisito": "NBR 16274; REN 1000",
+  "onde": "Escritório / cliente",
+  "como": "Conferir documentos",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D2",
+  "secao": "Documentação",
+  "item": "ART de projeto e de execução",
+  "requisito": "Lei 6.496/1977",
+  "onde": "Escritório / cliente",
+  "como": "Conferir ART",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "D3",
+  "secao": "Documentação",
+  "item": "Parecer de acesso / aprovação da distribuidora e medidor bidirecional instalado",
+  "requisito": "REN 1000",
+  "onde": "Padrão de entrada",
+  "como": "Conferir parecer e medidor",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "D4",
+  "secao": "Documentação",
+  "item": "Folhas de dados e registro Inmetro dos módulos e do inversor",
+  "requisito": "Portaria Inmetro; NBR 16274",
+  "onde": "Escritório",
+  "como": "Conferir registros",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D5",
+  "secao": "Documentação",
+  "item": "Manual de operação e manutenção entregue ao cliente",
+  "requisito": "NBR 16274",
+  "onde": "Cliente",
+  "como": "Verificar entrega",
+  "prioridade_padrao": "P4"
+ },
+ {
+  "cod": "A1",
+  "secao": "Arranjo fotovoltaico",
+  "item": "Módulos sem trincas, delaminação, pontos quentes ou sujeira excessiva; sem sombreamento relevante",
+  "requisito": "NBR 16274; boas práticas",
+  "onde": "Telhado / solo",
+  "como": "Inspeção visual (termografia se possível)",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "A2",
+  "secao": "Arranjo fotovoltaico",
+  "item": "Estrutura firme, sem corrosão, com vedação do telhado e torque dos fixadores",
+  "requisito": "Fabricante da estrutura",
+  "onde": "Telhado / solo",
+  "como": "Inspeção visual e aperto por amostragem",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "A3",
+  "secao": "Arranjo fotovoltaico",
+  "item": "Cabos CC fixados, protegidos de UV e de bordas cortantes, com área de laços mínima",
+  "requisito": "NBR 16690; NBR 16612",
+  "onde": "Telhado / eletrodutos",
+  "como": "Inspeção visual",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "A4",
+  "secao": "Arranjo fotovoltaico",
+  "item": "Conectores MC4 do mesmo fabricante, crimpados com ferramenta própria e sem contato com a telha",
+  "requisito": "NBR 16690",
+  "onde": "Arranjo",
+  "como": "Inspeção visual",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "A5",
+  "secao": "Arranjo fotovoltaico",
+  "item": "Equipotencialização das molduras e estruturas ligada ao aterramento",
+  "requisito": "NBR 16690",
+  "onde": "Arranjo",
+  "como": "Inspeção visual e continuidade",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "P1",
+  "secao": "Proteção CC",
+  "item": "Chave seccionadora CC sob carga (string box ou integrada ao inversor)",
+  "requisito": "NBR 16690",
+  "onde": "String box / inversor",
+  "como": "Inspeção e manobra",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "P2",
+  "secao": "Proteção CC",
+  "item": "Fusíveis gPV nos polos + e − quando há 3 ou mais strings em paralelo",
+  "requisito": "NBR 16690; IEC 60269-6",
+  "onde": "String box",
+  "como": "Conferir valores",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "P3",
+  "secao": "Proteção CC",
+  "item": "DPS CC classe II (junto ao inversor e também no arranjo se a distância passar de 10 m)",
+  "requisito": "NBR 16690; IEC 61643-31",
+  "onde": "String box",
+  "como": "Conferir Ucpv e instalação",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "P4",
+  "secao": "Proteção CC",
+  "item": "Polaridade identificada (cores/etiquetas) e sinalização de tensão CC",
+  "requisito": "NBR 16690; NBR 16274",
+  "onde": "String box / quadros",
+  "como": "Inspeção visual",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "I1",
+  "secao": "Inversor",
+  "item": "Instalado em local ventilado, protegido de sol e chuva, com os afastamentos do fabricante",
+  "requisito": "Fabricante; NBR 16274",
+  "onde": "Local do inversor",
+  "como": "Inspeção visual",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "I2",
+  "secao": "Inversor",
+  "item": "Parâmetros de rede e proteção anti-ilhamento configurados conforme a distribuidora",
+  "requisito": "ABNT NBR 16149 / NBR 16150; norma da distribuidora",
+  "onde": "Inversor",
+  "como": "Conferir configuração",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "I3",
+  "secao": "Inversor",
+  "item": "Monitoramento comunicando e cliente com acesso",
+  "requisito": "Boas práticas",
+  "onde": "Inversor / aplicativo",
+  "como": "Verificar",
+  "prioridade_padrao": "P4"
+ },
+ {
+  "cod": "C1",
+  "secao": "Lado CA e conexão",
+  "item": "Disjuntor CA dedicado por inversor, dimensionado para a corrente de saída",
+  "requisito": "NBR 5410, 5.3",
+  "onde": "Quadro CA",
+  "como": "Conferir",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "C2",
+  "secao": "Lado CA e conexão",
+  "item": "DPS CA classe II no quadro de conexão",
+  "requisito": "NBR 5410, 6.3.5.2",
+  "onde": "Quadro CA",
+  "como": "Conferir",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "C3",
+  "secao": "Lado CA e conexão",
+  "item": "Seção do cabo CA e queda de tensão compatíveis (evita desligamento por sobretensão)",
+  "requisito": "NBR 5410, 6.2",
+  "onde": "Circuito CA",
+  "como": "Conferir seção e medir tensão",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "C4",
+  "secao": "Lado CA e conexão",
+  "item": "Aterramento do inversor e dos quadros ligado ao BEP da edificação",
+  "requisito": "NBR 5410, 6.4",
+  "onde": "Quadros",
+  "como": "Inspeção e continuidade",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "C5",
+  "secao": "Lado CA e conexão",
+  "item": "Placa de advertência de geração própria no padrão de entrada",
+  "requisito": "Norma da distribuidora",
+  "onde": "Padrão de entrada",
+  "como": "Inspeção visual",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "E1",
+  "secao": "Ensaios",
+  "item": "Continuidade do condutor de proteção e da equipotencialização",
+  "requisito": "NBR 16274",
+  "onde": "Arranjo / quadros",
+  "como": "Ensaio",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "E2",
+  "secao": "Ensaios",
+  "item": "Polaridade de todas as strings antes da conexão",
+  "requisito": "NBR 16274",
+  "onde": "String box",
+  "como": "Ensaio",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "E3",
+  "secao": "Ensaios",
+  "item": "Tensão de circuito aberto (Voc) de cada string comparada com a esperada",
+  "requisito": "NBR 16274",
+  "onde": "String box",
+  "como": "Ensaio",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "E4",
+  "secao": "Ensaios",
+  "item": "Corrente (Isc ou de operação) de cada string",
+  "requisito": "NBR 16274",
+  "onde": "String box",
+  "como": "Ensaio",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "E5",
+  "secao": "Ensaios",
+  "item": "Resistência de isolamento do arranjo (≥ 1 MΩ)",
+  "requisito": "NBR 16274",
+  "onde": "String box",
+  "como": "Ensaio com megôhmetro",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "E6",
+  "secao": "Ensaios",
+  "item": "Ensaio funcional e de desconexão (anti-ilhamento) ao abrir o disjuntor CA",
+  "requisito": "NBR 16274",
+  "onde": "Quadro CA / inversor",
+  "como": "Ensaio",
+  "prioridade_padrao": "P1"
+ }
+]

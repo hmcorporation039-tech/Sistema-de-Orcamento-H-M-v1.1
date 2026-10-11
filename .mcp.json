@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "hm-orcamentos": {
+      "command": "node",
+      "args": ["backend/src/mcp/mcpServer.mjs"]
+    }
+  }
+}

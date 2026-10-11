@@ -418,12 +418,13 @@ server.registerTool(
       cliente_nome: z.string().describe('Nome do cliente'),
       data: z.string().optional().describe('Data no formato AAAA-MM-DD — padrão: hoje'),
       responsavel: z.string().optional(),
-      observacoes: z.string().optional(),
+      escopo: z.string().optional().describe('Escopo do serviço — sai no PDF logo após a saudação'),
+      observacoes: z.string().optional().describe('Observações gerais — saem no PDF após as condições de pagamento'),
       bdi: z.number().min(0).max(999.99).optional().describe('Percentual de BDI — padrão 0, ajustável depois na tela'),
       itens: z.array(ItemPropostaSchema).min(1).describe('Itens da proposta, cada um já dizendo a que seção pertence'),
     },
   },
-  async ({ cliente_nome, data, responsavel, observacoes, bdi, itens }) => {
+  async ({ cliente_nome, data, responsavel, escopo, observacoes, bdi, itens }) => {
     try {
       const nomesSecoes = [...new Set(itens.map(it => it.secao))];
       const secoes = nomesSecoes.map((nome, i) => ({ id: i + 1, nome }));
@@ -444,6 +445,7 @@ server.registerTool(
           data: dataProposta,
           cliente_nome,
           responsavel: responsavel || null,
+          escopo: escopo || null,
           observacoes: observacoes || 'Criada via Claude Desktop (MCP) — revise antes de enviar ao cliente.',
           bdi: bdi || 0,
           secoes,
