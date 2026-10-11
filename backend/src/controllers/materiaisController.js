@@ -17,7 +17,7 @@ async function comparar(req, res) {
   }
   try {
     const catalogo = (await pool.query(
-      'SELECT id, descricao, preco, unidade, categoria FROM materiais WHERE ativo = true ORDER BY id'
+      'SELECT id, descricao, preco, unidade, categoria FROM materiais WHERE ativo = true ORDER BY categoria, descricao'
     )).rows;
     const correspondencia = compararComCatalogo(descricao, catalogo);
     res.json({ descricao, correspondencia });

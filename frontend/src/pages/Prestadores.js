@@ -4,6 +4,7 @@ import { Plus, Search, Pencil, Trash2, X } from 'lucide-react';
 import { getPrestadores, criarPrestador, atualizarPrestador, removerPrestador } from '../services/api';
 import Paginacao from '../components/Paginacao';
 import { formatarTelefone, formatarCpfCnpj, validarCpf, validarCnpj, formatarMoeda } from '../utils/format';
+import Select from '../components/Select';
 
 const VAZIO = { nome: '', email: '', telefone: '', documento: '', chavePix: '', categoria: '', tipo: 'Pessoa Física' };
 
@@ -126,12 +127,12 @@ export default function Prestadores() {
           />
         </div>
 
-        <select value={categoriaFiltro} onChange={e => setCategoriaFiltro(e.target.value)} style={{ width: 170 }}>
+        <Select value={categoriaFiltro} onChange={e => setCategoriaFiltro(e.target.value)} style={{ width: 170 }}>
           <option value="">Todas as categorias</option>
           <option value="mao_de_obra">Mão de obra</option>
           <option value="material">Material</option>
           <option value="despesa">Despesa diária</option>
-        </select>
+        </Select>
 
         <button onClick={abrirNovo} style={btnPrimario}>
           <Plus size={14} /> Novo Prestador
@@ -240,21 +241,21 @@ export default function Prestadores() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                 <Campo label="Tipo">
-                  <select
+                  <Select
                     value={form.tipo}
                     onChange={e => setForm({ ...form, tipo: e.target.value, documento: '' })}
                   >
                     <option value="Pessoa Física">Pessoa Física</option>
                     <option value="Pessoa Jurídica">Pessoa Jurídica</option>
-                  </select>
+                  </Select>
                 </Campo>
                 <Campo label="Categoria">
-                  <select value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })}>
+                  <Select value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })}>
                     <option value="">Nenhuma</option>
                     <option value="mao_de_obra">Mão de obra</option>
                     <option value="material">Material</option>
                     <option value="despesa">Despesa diária</option>
-                  </select>
+                  </Select>
                 </Campo>
               </div>
 

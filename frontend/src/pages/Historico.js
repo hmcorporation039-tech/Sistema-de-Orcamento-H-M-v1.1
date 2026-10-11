@@ -7,6 +7,7 @@ import api from '../services/api';
 import { formatarMoeda, formatarData, formatarNcm } from '../utils/format';
 import Paginacao from '../components/Paginacao';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
+import Select from '../components/Select';
 
 const STATUS_CORES = {
   Ativa: { bg: '#1a1a0a', cor: '#c9a227', borda: '#4a3d10' },
@@ -165,13 +166,13 @@ export default function Historico() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
         <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>Histórico de Propostas</h2>
 
-        <select value={statusFiltro} onChange={e => setStatusFiltro(e.target.value)} style={{ width: 150 }}>
+        <Select value={statusFiltro} onChange={e => setStatusFiltro(e.target.value)} style={{ width: 150 }}>
           <option value="">Todos status</option>
           <option value="Ativa">Ativa</option>
           <option value="Aprovada">Aprovada</option>
           <option value="Recusada">Recusada</option>
           <option value="Cancelada">Cancelada</option>
-        </select>
+        </Select>
 
         <div style={{ position: 'relative', width: 260 }}>
           <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: '#555' }} />

@@ -5,6 +5,7 @@ import { getContratos, criarContrato, atualizarContrato, removerContrato, getPre
 import api from '../services/api';
 import Paginacao from '../components/Paginacao';
 import { formatarMoeda, formatarData } from '../utils/format';
+import Select from '../components/Select';
 
 const VAZIO = { prestadorId: '', objeto: '', localObra: '', periodoInicio: '', periodoFim: '', valor: '' };
 
@@ -215,14 +216,14 @@ export default function Contratos() {
             <form onSubmit={salvar}>
               <div style={{ marginBottom: 12 }}>
                 <Campo label="Prestador *">
-                  <select value={form.prestadorId} onChange={e => setForm({ ...form, prestadorId: e.target.value })} autoFocus>
+                  <Select value={form.prestadorId} onChange={e => setForm({ ...form, prestadorId: e.target.value })} autoFocus>
                     <option value="">Selecione...</option>
                     {prestadores.map(p => (
                       <option key={p.id} value={p.id}>
                         {p.nome} ({p.tipo === 'Pessoa Jurídica' ? 'PJ' : 'PF'})
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </Campo>
               </div>
 

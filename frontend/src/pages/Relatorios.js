@@ -5,6 +5,7 @@ import { FileDown, FileSpreadsheet, Search } from 'lucide-react';
 import { getRelatorioPropostas } from '../services/api';
 import api from '../services/api';
 import { formatarMoeda, formatarData } from '../utils/format';
+import Select from '../components/Select';
 
 const STATUS_CORES = {
   Ativa: { bg: '#1a1a0a', cor: '#c9a227', borda: '#4a3d10' },
@@ -95,13 +96,13 @@ export default function Relatorios() {
             <input type="date" value={dataFim} onChange={e => setDataFim(e.target.value)} />
           </Campo>
           <Campo label="Status">
-            <select value={status} onChange={e => setStatus(e.target.value)}>
+            <Select value={status} onChange={e => setStatus(e.target.value)}>
               <option value="">Todos</option>
               <option value="Ativa">Ativa</option>
               <option value="Aprovada">Aprovada</option>
               <option value="Recusada">Recusada</option>
               <option value="Cancelada">Cancelada</option>
-            </select>
+            </Select>
           </Campo>
           <Campo label="Buscar">
             <div style={{ position: 'relative' }}>

@@ -152,6 +152,17 @@
   - `COTACAO_IA_MAX_POR_VARREDURA` (padrão 15) limita as leituras por IA.
 - **Atenção:** o backend precisa rodar com o mesmo usuário do Windows que fez login no Claude Code (hoje, Laboratorio).
 
+**Regras permanentes de interface e catálogo (pedido do usuário, 10/10/2026).**
+- **Toda lista suspensa em ordem alfabética.** As telas usam `components/Select.js` (`<Select>` no lugar de `<select>`; `<Sugestoes>` no lugar de `<datalist>`). O componente ordena as opções em ordem do português (sem diferenciar acentos, números em ordem natural) e mantém no topo a opção vazia ("Todos", "Selecione…"). **Lista nova deve usar esse componente.** O teste `cypress/e2e/12_listas_ordenadas.cy.js` confere as telas.
+- **Todo material tem categoria.** `services/classificacaoMateriais.js` decide, nesta ordem:
+  1. NCM igual a materiais já classificados;
+  2. material mais parecido já classificado no catálogo;
+  3. palavras-chave (`utils/classificadorMaterial.js`, que já conhece Alarme, Controle de acesso, Interfonia, Automação, Sonorização, Nobreaks, Antena coletiva e Informática);
+  4. IA (Claude Max e, de complemento, Gemini), só entre as categorias existentes.
+- Isso vale para as cotações (pasta e e-mail), para o cadastro automático pela proposta (que antes gravava "Geral") e para os orçamentos gerados pelos laudos.
+- A rotina `classificarPendentes` roda depois de cada varredura e de cada proposta salva. Em 10/10/2026, os 14 materiais em "Geral" foram classificados (13 pelas regras, 1 pela IA) e o catálogo ficou 469/469 classificado.
+- O catálogo enviado à tela de Orçamento sai ordenado por categoria e descrição.
+
 **Pendências conhecidas da auditoria (decisão do usuário):**
 - Dependências com alertas no `npm audit`. No backend, a crítica (`proxy-addr`) não se aplica, porque `TRUST_PROXY` não está definida. Há alertas altos em multer, nodemailer, mailparser, imapflow e puppeteer. No frontend, os alertas são quase todos de ferramentas de build; no navegador, só axios e react-router. Atualizar em uma etapa separada, com testes.
 - A senha provisória só é exigida pela tela, não pelo servidor (risco baixo).

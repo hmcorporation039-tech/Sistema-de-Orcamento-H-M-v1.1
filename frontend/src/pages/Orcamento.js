@@ -7,6 +7,7 @@ import api from '../services/api';
 import { formatarMoeda } from '../utils/format';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
 import CampoMoeda from '../components/CampoMoeda';
+import Select, { Sugestoes } from '../components/Select';
 
 let contador = 0;
 const gerarId = () => `tmp_${Date.now()}_${contador++}`;
@@ -63,7 +64,10 @@ const SUBGRUPOS_PADRAO = [
 // "Subgrupo" (texto livre) virou "Categoria", com as mesmas opções do
 // cadastro, pra ficar coligado com o catálogo (ver opcoesAgrupamento).
 const CATEGORIAS_PADRAO_MATERIAIS = [
-  'Elétrica', 'CFTV', 'Redes / Cabeamento Estruturado', 'Infraestrutura', 'Ferragens', 'Ferramentas', 'EPI', 'Não classificado',
+  // categorias usadas no catálogo (a tela mostra em ordem alfabética); 'Não classificado'
+  // só aparece se algum material ainda estiver aguardando a classificação automática
+  'Alarme', 'Antena coletiva', 'Automação', 'CFTV', 'Controle de acesso', 'Elétrica', 'EPI', 'Ferragens', 'Ferramentas',
+  'Informatica', 'Infraestrutura', 'Interfonia', 'Nobreaks', 'Redes / Cabeamento Estruturado', 'Sonorização',
 ];
 
 // Propostas antigas guardam no item subgrupos de texto livre que não batem com
@@ -515,9 +519,9 @@ export default function Orcamento() {
               onChange={e => setForm({ ...form, cliente_nome: e.target.value })}
               placeholder="Nome do cliente"
             />
-            <datalist id="clientes-lista">
+            <Sugestoes id="clientes-lista">
               {clientes.map(c => <option key={c.id} value={c.nome} />)}
-            </datalist>
+            </Sugestoes>
           </Campo>
           <Campo label="Data">
             <input type="date" value={form.data} onChange={e => setForm({ ...form, data: e.target.value })} />
@@ -530,15 +534,15 @@ export default function Orcamento() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
           <Campo label="Tipo">
             <input list="tipos-lista" value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })} placeholder="Instalação, Manutenção..." />
-            <datalist id="tipos-lista">
+            <Sugestoes id="tipos-lista">
               <option value="Instalação" /><option value="Manutenção" /><option value="Reforma" /><option value="Projeto" />
-            </datalist>
+            </Sugestoes>
           </Campo>
           <Campo label="Porte">
             <input list="portes-lista" value={form.porte} onChange={e => setForm({ ...form, porte: e.target.value })} placeholder="Pequeno, Médio, Grande" />
-            <datalist id="portes-lista">
+            <Sugestoes id="portes-lista">
               <option value="Pequeno" /><option value="Médio" /><option value="Grande" />
-            </datalist>
+            </Sugestoes>
           </Campo>
           <Campo label="Responsável técnico">
             <input value={form.responsavel} onChange={e => setForm({ ...form, responsavel: e.target.value })} />
@@ -578,7 +582,7 @@ export default function Orcamento() {
         // Mão de Obra continuam com os subgrupos livres de sempre.
         const opcoesSubgrupo = maoDeObra
           ? subgruposDaSecao(sec.id)
-          : Array.from(new Set([...CATEGORIAS_PADRAO_MATERIAIS, ...materiais.map(m => m.categoria).filter(Boolean)]));
+          : Array.from(new Set([...CATEGORIAS_PADRAO_MATERIAIS, ...materiais.map(m => m.categoria).filter(Boolean)])).sort((x, y) => x.localeCompare(y, 'pt-BR'));
 
         return (
           <div key={sec.id} style={card}>
@@ -632,7 +636,7 @@ export default function Orcamento() {
                     borderRadius: 4, padding: aCotar ? '4px 4px' : 0,
                   }}
                 >
-                  <select
+                  <Select
                     value={it.subgrupo || ''}
                     onChange={e => {
                       if (e.target.value === '__novo__') {
@@ -649,9 +653,9 @@ export default function Orcamento() {
                       <option value={it.subgrupo}>{it.subgrupo}</option>
                     )}
                     <option value="__novo__">{maoDeObra ? '+ novo subgrupo...' : '+ nova categoria...'}</option>
-                  </select>
+                  </Select>
                   {maoDeObra ? (
-                    <select value="" onChange={e => {
+                    <Select value="" onChange={e => {
                       const [tipo, valor] = e.target.value.split('::');
                       if (tipo === 'cat') aplicarCategoriaMaoDeObra(it.id, valor);
                       else if (tipo === 'item') aplicarMaoDeObraNoItem(it.id, valor);
@@ -665,12 +669,12 @@ export default function Orcamento() {
                           {maoDeObraItens.map(m => <option key={m.id} value={`item::${m.id}`}>{m.descricao}</option>)}
                         </optgroup>
                       )}
-                    </select>
+                    </Select>
                   ) : (
-                    <select value="" onChange={e => aplicarMaterialNoItem(it.id, e.target.value)}>
+                    <Select value="" onChange={e => aplicarMaterialNoItem(it.id, e.target.value)}>
                       <option value="">{it.subgrupo ? `+ catálogo (${it.subgrupo})` : '+ catálogo'}</option>
                       {filtrarCatalogoPorCategoria(materiais, it.subgrupo).map(m => <option key={m.id} value={m.id}>{m.descricao}</option>)}
-                    </select>
+                    </Select>
                   )}
                   <input value={it.descricao} onChange={e => atualizarItem(it.id, 'descricao', e.target.value)} placeholder="Descrição do item" />
                   {!maoDeObra && (
@@ -682,10 +686,10 @@ export default function Orcamento() {
                   <span style={{ fontSize: 12, color: '#ccc', textAlign: 'right', paddingRight: 4 }}>
                     {formatarMoeda((Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0))}
                   </span>
-                  <select value={it.status || 'confirmado'} onChange={e => atualizarItem(it.id, 'status', e.target.value)}>
+                  <Select value={it.status || 'confirmado'} onChange={e => atualizarItem(it.id, 'status', e.target.value)}>
                     <option value="confirmado">Confirmado</option>
                     <option value="a_cotar">A cotar</option>
-                  </select>
+                  </Select>
                   <button onClick={() => removerItem(it.id)} style={{ ...btnIcone, color: '#b04040' }} title="Remover item">
                     <Trash2 size={12} />
                   </button>

@@ -87,4 +87,15 @@ caso('componentes elétricos não caem em Ferragens/CFTV', () => {
   assert.strictEqual(classificarPorDescricao('PARAFUSO SEXTAVADO 1/4'), 'Ferragens');
 });
 
+caso('categorias da H&M: alarme, acesso, automação, interfonia e infraestrutura', () => {
+  assert.strictEqual(classificarPorDescricao('SIRENE S/ FIO XSS 8000'), 'Alarme');
+  assert.strictEqual(classificarPorDescricao('CATRACA SWING LED DS-K3B211LX'), 'Controle de acesso');
+  assert.strictEqual(classificarPorDescricao('INTERRUPTOR SMART WIFI TOUCH 2 EWS 1002'), 'Automação');
+  assert.strictEqual(classificarPorDescricao('SWITCH SMART GIGABIT 24 PORTAS POE'), 'Redes / Cabeamento Estruturado');
+  assert.strictEqual(classificarPorDescricao('CABO CI 50 10 PARES INTERNO'), 'Interfonia');
+  assert.strictEqual(classificarPorDescricao('LUVA DE EMENDA 3/4 LISA'), 'Infraestrutura');
+  assert.strictEqual(classificarPorDescricao('BUCHA P/ ELETRODUTO 3/4'), 'Infraestrutura');
+  assert.strictEqual(classificarPorDescricao('LUVA FLEXTACTIL PRETO GG'), 'EPI');
+});
+
 console.log(`leitor de cotações: ${ok} casos ok`);

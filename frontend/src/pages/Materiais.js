@@ -9,6 +9,7 @@ import {
 } from '../services/api';
 import { formatarMoeda, formatarNcm, formatarData } from '../utils/format';
 import Paginacao from '../components/Paginacao';
+import Select, { Sugestoes } from '../components/Select';
 
 const VAZIO = { codigo: '', descricao: '', categoria: '', unidade: 'un', preco: '', preco_compra: '', marca: '', ncm: '' };
 const UNIDADES = ['un', 'm', 'm²', 'm³', 'kg', 'cx', 'pct', 'rl', 'sc', 'pç', 'kit', 'h'];
@@ -16,7 +17,10 @@ const UNIDADES = ['un', 'm', 'm²', 'm³', 'kg', 'cx', 'pct', 'rl', 'sc', 'pç',
 // backend/src/utils/classificadorMaterial.js) — além destas, qualquer categoria
 // já usada em algum material também vira sugestão, e dá pra digitar uma nova.
 const CATEGORIAS_PADRAO = [
-  'Elétrica', 'CFTV', 'Redes / Cabeamento Estruturado', 'Infraestrutura', 'Ferragens', 'Ferramentas', 'EPI', 'Não classificado',
+  // categorias usadas no catálogo (a tela mostra em ordem alfabética); 'Não classificado'
+  // só aparece se algum material ainda estiver aguardando a classificação automática
+  'Alarme', 'Antena coletiva', 'Automação', 'CFTV', 'Controle de acesso', 'Elétrica', 'EPI', 'Ferragens', 'Ferramentas',
+  'Informatica', 'Infraestrutura', 'Interfonia', 'Nobreaks', 'Redes / Cabeamento Estruturado', 'Sonorização',
 ];
 const ORIGEM_LABEL = {
   manual: 'Manual', importacao: 'Importação', nota_xml: 'NF-e (XML)', nota_pdf: 'NF-e (PDF)',
@@ -64,7 +68,7 @@ export default function Materiais() {
   }, []);
 
   // Sugestões de categoria: as padrão da empresa + as que já estão em uso no banco
-  const categoriasSugeridas = Array.from(new Set([...CATEGORIAS_PADRAO, ...categorias]));
+  const categoriasSugeridas = Array.from(new Set([...CATEGORIAS_PADRAO, ...categorias])).sort((x, y) => x.localeCompare(y, 'pt-BR'));
 
   useEffect(() => {
     getStatusEmail().then(res => setStatusEmail(res.data)).catch(() => {});
@@ -346,16 +350,16 @@ export default function Materiais() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
         <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>Materiais</h2>
 
-        <select value={categoriaFiltro} onChange={e => setCategoriaFiltro(e.target.value)} style={{ width: 170 }}>
+        <Select value={categoriaFiltro} onChange={e => setCategoriaFiltro(e.target.value)} style={{ width: 170 }}>
           <option value="">Todas categorias</option>
           {categorias.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
+        </Select>
 
         {/* Datalist único de sugestões de categoria, usado pelos campos editáveis
             de categoria em qualquer modal desta página (edição, importação de nota) */}
-        <datalist id="categorias-lista">
+        <Sugestoes id="categorias-lista">
           {categoriasSugeridas.map(c => <option key={c} value={c} />)}
-        </datalist>
+        </Sugestoes>
 
         <div style={{ position: 'relative', width: 240 }}>
           <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: '#555' }} />
@@ -518,7 +522,7 @@ export default function Materiais() {
                       </button>
                     </div>
                   ) : (
-                    <select
+                    <Select
                       value={form.categoria}
                       onChange={e => {
                         if (e.target.value === '__nova__') {
@@ -532,13 +536,13 @@ export default function Materiais() {
                       <option value="" disabled>Selecione...</option>
                       {categoriasSugeridas.map(c => <option key={c} value={c}>{c}</option>)}
                       <option value="__nova__">+ Nova categoria...</option>
-                    </select>
+                    </Select>
                   )}
                 </Campo>
                 <Campo label="Unidade *">
-                  <select value={form.unidade} onChange={e => setForm({ ...form, unidade: e.target.value })}>
+                  <Select value={form.unidade} onChange={e => setForm({ ...form, unidade: e.target.value })}>
                     {UNIDADES.map(u => <option key={u} value={u}>{u}</option>)}
-                  </select>
+                  </Select>
                 </Campo>
                 <Campo label="Preço Compra (R$)">
                   <input type="number" step="0.01" min="0" value={form.preco_compra} onChange={e => setForm({ ...form, preco_compra: e.target.value })} />

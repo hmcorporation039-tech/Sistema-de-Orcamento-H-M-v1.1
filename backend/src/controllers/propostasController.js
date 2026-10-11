@@ -7,6 +7,7 @@ const { comTransacao } = require('../utils/transacao');
 const { calcularTotais, normalizarItem, ehMaoDeObra } = require('../utils/calculoProposta');
 const { validarProposta, validadeOuPadrao } = require('../utils/validacaoProposta');
 const { garantirMaterialCadastrado, garantirMaoDeObraCadastrada } = require('../utils/catalogoAutoCadastro');
+const { classificarPendentesEmSegundoPlano } = require('../services/classificacaoMateriais');
 
 // Assinatura padrão da empresa — entra sempre no final de todo e-mail
 // enviado ao cliente (mensagem padrão ou digitada à mão), sem exceção.
@@ -212,6 +213,7 @@ async function criar(req, res, next) {
     });
 
     res.status(201).json({ ...proposta, mensagem: `Proposta ${numero} salva com sucesso!` });
+    classificarPendentesEmSegundoPlano(); // material novo cadastrado sem categoria → IA, sem travar a resposta
   } catch (err) {
     console.error('Erro ao criar proposta:', err);
     next(err);
@@ -272,6 +274,7 @@ async function atualizar(req, res, next) {
 
     if (!proposta) return res.status(404).json({ erro: 'Proposta não encontrada' });
     res.json({ ...proposta, mensagem: `Proposta ${proposta.numero} atualizada com sucesso!` });
+    classificarPendentesEmSegundoPlano();
   } catch (err) {
     console.error('Erro ao atualizar proposta:', err);
     next(err);

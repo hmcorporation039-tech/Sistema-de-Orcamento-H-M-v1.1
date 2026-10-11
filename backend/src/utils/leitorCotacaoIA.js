@@ -92,33 +92,55 @@ async function comClaude(buffer, tipo) {
   return uso.input || {};
 }
 
-// Claude Code não interativo, com a conta Max logada no PC. O arquivo vai para
-// uma pasta temporária própria (a CLI só pode usar a ferramenta Read, nada de
-// comandos ou escrita) e é apagado no fim.
-function comClaudeMax(buffer, tipo) {
-  const pasta = fs.mkdtempSync(path.join(os.tmpdir(), 'hm-cotacao-'));
-  const arquivo = `cotacao-${crypto.randomBytes(4).toString('hex')}.${tipo}`;
-  fs.writeFileSync(path.join(pasta, arquivo), buffer);
-  const prompt = `${INSTRUCOES}\nO documento é o arquivo ${arquivo} desta pasta (leia com a ferramenta Read). `
-    + `Responda SOMENTE com JSON neste formato, sem texto antes ou depois: ${FORMATO}`;
+// Claude Code não interativo, com a conta Max logada no PC. Se houver
+// arquivo, ele vai para uma pasta temporária própria (a CLI só pode usar a
+// ferramenta Read, nada de comandos ou escrita) e é apagado no fim. Devolve o
+// JSON da resposta.
+function executarClaudeMax(prompt, anexo) {
+  const pasta = fs.mkdtempSync(path.join(os.tmpdir(), 'hm-ia-'));
+  let texto = prompt;
+  if (anexo) {
+    const arquivo = `documento-${crypto.randomBytes(4).toString('hex')}.${anexo.tipo}`;
+    fs.writeFileSync(path.join(pasta, arquivo), anexo.buffer);
+    texto = `${prompt}\nO documento é o arquivo ${arquivo} desta pasta (leia com a ferramenta Read).`;
+  }
+  texto += '\nResponda SOMENTE com o JSON pedido, sem texto antes ou depois.';
+  const args = ['-p', texto, '--output-format', 'json', '--model', MODELO_CLI, '--max-turns', anexo ? '4' : '2'];
+  if (anexo) args.push('--allowedTools', 'Read');
   return new Promise((resolve, reject) => {
-    const filho = execFile(CAMINHO_CLI, ['-p', prompt, '--output-format', 'json', '--allowedTools', 'Read', '--model', MODELO_CLI, '--max-turns', '4'],
-      { cwd: pasta, timeout: 240000, maxBuffer: 20 * 1024 * 1024, windowsHide: true },
+    const filho = execFile(CAMINHO_CLI, args, { cwd: pasta, timeout: 240000, maxBuffer: 20 * 1024 * 1024, windowsHide: true },
       (erro, stdout, stderr) => {
         fs.rmSync(pasta, { recursive: true, force: true });
         if (erro) return reject(new Error(`Claude Code: ${(stderr || erro.message).trim().slice(0, 200)}`));
         try {
           const saida = JSON.parse(stdout);
           if (saida.is_error) return reject(new Error(`Claude Code: ${String(saida.result || 'erro').slice(0, 200)}`));
-          const texto = String(saida.result || '');
-          const json = texto.slice(texto.indexOf('{'), texto.lastIndexOf('}') + 1);
-          resolve(JSON.parse(json));
+          const r = String(saida.result || '');
+          resolve(JSON.parse(r.slice(r.indexOf('{'), r.lastIndexOf('}') + 1)));
         } catch (e) {
           reject(new Error(`Claude Code: resposta fora do formato (${e.message})`));
         }
       });
     filho.stdin.end(); // sem isso a CLI espera 3 s por dados na entrada padrão
   });
+}
+
+const comClaudeMax = (buffer, tipo) => executarClaudeMax(`${INSTRUCOES}\nFormato do JSON: ${FORMATO}`, { buffer, tipo });
+
+// Pergunta de texto que espera JSON (ex.: classificar materiais em categorias):
+// Claude Max primeiro, Gemini como complemento. Erro com `indisponivel` se nenhuma responder.
+async function perguntarJSON(prompt) {
+  const erros = [];
+  if (!desligada() && cliDisponivel()) {
+    try { return { fonte: 'Claude Max', json: await executarClaudeMax(prompt) }; } catch (e) { erros.push(e.message); }
+  }
+  if (!desligada() && geminiConfigurado()) {
+    try {
+      const texto = await chamarGemini({ prompt: `${prompt}\nResponda SOMENTE com o JSON pedido.`, json: true, tentativas: 2 });
+      return { fonte: 'Gemini', json: JSON.parse(texto.replace(/^```(?:json)?\s*|\s*```$/g, '')) };
+    } catch (e) { erros.push(`Gemini: ${e.message}`); }
+  }
+  throw Object.assign(new Error(erros.join(' | ') || 'nenhuma IA configurada'), { indisponivel: true });
 }
 
 function normalizarResposta(r, fonte) {
@@ -158,4 +180,4 @@ async function extrairComIA(buffer, tipo) {
   throw Object.assign(new Error(erros.join(' | ') || 'nenhuma IA configurada'), { indisponivel: true });
 }
 
-module.exports = { extrairComIA, iaDisponivel, MODELO_CLAUDE };
+module.exports = { extrairComIA, perguntarJSON, iaDisponivel, MODELO_CLAUDE };

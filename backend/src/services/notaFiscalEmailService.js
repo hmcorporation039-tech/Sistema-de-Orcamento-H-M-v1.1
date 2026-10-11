@@ -5,6 +5,7 @@ const { extrairDoPdf, parseNFeXml } = require('../utils/notaFiscalParser');
 const { lerDocumentoCotacao, encerrarOcr, VERSAO_LEITOR } = require('../utils/leitorCotacao');
 const { carregarIndice, registrarItemNotaFiscal, obterMargemPadrao } = require('./catalogoMateriais');
 const { importarItens } = require('./cotacaoFornecedorService');
+const { classificarPendentes } = require('./classificacaoMateriais');
 
 // Piso fixo: nunca busca e-mails anteriores a essa data. Toda verificação
 // (manual ou agendada) parte sempre daqui, nunca "N dias atrás". O backfill
@@ -243,6 +244,8 @@ async function verificarCaixaDeEntrada() {
     if (imapClient) await imapClient.logout().catch(() => {});
   }
 
+  // material que ficou sem categoria (nem NCM, nem parecido, nem palavra-chave) → IA
+  if (resumo.materiaisCriados) resumo.classificacao = await classificarPendentes().catch(e => ({ erro: e.message }));
   return resumo;
 }
 

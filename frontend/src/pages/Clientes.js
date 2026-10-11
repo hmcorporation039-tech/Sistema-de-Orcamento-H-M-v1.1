@@ -4,6 +4,7 @@ import { Plus, Search, Pencil, Trash2, X } from 'lucide-react';
 import { getClientes, criarCliente, atualizarCliente, removerCliente } from '../services/api';
 import Paginacao from '../components/Paginacao';
 import { formatarTelefone, formatarCpfCnpj, validarCpf, validarCnpj } from '../utils/format';
+import Select from '../components/Select';
 
 const VAZIO = { nome: '', documento: '', tipo: 'Empresa', responsavel: '', telefone: '', email: '', endereco: '' };
 
@@ -183,11 +184,11 @@ export default function Clientes() {
                   <input value={form.nome} onChange={e => setForm({ ...form, nome: e.target.value })} autoFocus />
                 </Campo>
                 <Campo label="Tipo">
-                  <select value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })}>
+                  <Select value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })}>
                     <option>Empresa</option>
                     <option>Pessoa Física</option>
                     <option>Órgão Público</option>
-                  </select>
+                  </Select>
                 </Campo>
               </div>
 

@@ -4,6 +4,7 @@ import { Plus, Pencil, KeyRound, X, Trash2 } from 'lucide-react';
 import { getUsuarios, criarUsuario, atualizarUsuario, removerUsuario, redefinirSenhaUsuario } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { formatarData } from '../utils/format';
+import Select from '../components/Select';
 
 const VAZIO = { nome: '', email: '', senha: '', role: 'user' };
 
@@ -220,10 +221,10 @@ export default function Usuarios() {
               )}
 
               <Campo label="Perfil">
-                <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
+                <Select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
                   <option value="user">Usuário</option>
                   <option value="admin">Administrador</option>
-                </select>
+                </Select>
               </Campo>
 
               <div style={{ display: 'flex', gap: 10, marginTop: 22, justifyContent: 'flex-end' }}>

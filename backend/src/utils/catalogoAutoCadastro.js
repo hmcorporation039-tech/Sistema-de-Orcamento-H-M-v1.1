@@ -14,6 +14,7 @@
 // item reutilizável de catálogo, e tentar cadastrá-la estourava o tamanho da
 // coluna e derrubava o salvamento da PROPOSTA inteira (a transação é única).
 const TAMANHO_MAX_DESCRICAO_CATALOGO = 300;
+const { categoriaLocal } = require('../services/classificacaoMateriais');
 
 // Acha o material do catálogo com a mesma descrição (ignorando
 // caixa/espaços) ou cadastra um novo a partir dos dados do item. Só é
@@ -29,11 +30,15 @@ async function garantirMaterialCadastrado(client, { descricao, unidade, ncm, val
   );
   if (existente.rows.length > 0) return existente.rows[0].id;
 
+  // Categoria pelo NCM, pelo material mais parecido do catálogo ou por
+  // palavras-chave; sem nenhum, "Não classificado" até a rotina de IA rodar
+  // (disparada depois que a proposta é salva). Antes entrava sempre "Geral".
+  const c = await categoriaLocal(client, { descricao: desc, ncm });
   const novo = await client.query(
     `INSERT INTO materiais (descricao, categoria, unidade, preco, ncm, origem, preco_manual)
-     VALUES ($1, 'Geral', $2, $3, $4, 'proposta', true)
+     VALUES ($1, $2, $3, $4, $5, 'proposta', true)
      RETURNING id`,
-    [desc, unidade || 'un', valor_unitario || 0, ncm || null]
+    [desc, c ? c.categoria : 'Não classificado', unidade || 'un', valor_unitario || 0, ncm || null]
   );
   return novo.rows[0].id;
 }

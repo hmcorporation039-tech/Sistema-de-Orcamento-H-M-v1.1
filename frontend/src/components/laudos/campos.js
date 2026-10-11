@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
+import Select from '../Select';
 
 // Componentes de formulário compartilhados pelos formulários de laudo/projeto
 // de todas as disciplinas (aba Análise de Projeto → Laudos e projetos).
@@ -58,9 +59,9 @@ export function Selecao({ rotulo, valor, onChange, opcoes, largura }) {
   return (
     <div style={{ minWidth: 0, gridColumn: largura === 'inteira' ? '1 / -1' : undefined }}>
       {rotulo && <label style={estiloRotulo}>{rotulo}</label>}
-      <select style={estiloInput} value={valor ?? ''} onChange={e => onChange(e.target.value)}>
+      <Select style={estiloInput} value={valor ?? ''} onChange={e => onChange(e.target.value)}>
         {opcoes.map(o => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
-      </select>
+      </Select>
     </div>
   );
 }
@@ -141,9 +142,9 @@ export function TabelaEditavel({ colunas, linhas, onChange, novaLinha, rotuloAdi
 function CelulaEditavel({ coluna, valor, onChange }) {
   if (coluna.tipo === 'selecao') {
     return (
-      <select style={estiloInput} value={valor ?? ''} onChange={e => onChange(e.target.value)}>
+      <Select style={estiloInput} value={valor ?? ''} onChange={e => onChange(e.target.value)}>
         {coluna.opcoes.map(o => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
-      </select>
+      </Select>
     );
   }
   if (coluna.tipo === 'check') return <input type="checkbox" checked={!!valor} onChange={e => onChange(e.target.checked)} style={{ marginTop: 7 }} />;

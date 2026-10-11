@@ -1,4 +1,4 @@
-const { classificarPorDescricao } = require('../utils/classificadorMaterial');
+const { categoriaLocal, carregarReferencia, termos } = require('./classificacaoMateriais');
 
 // Comparação dos itens lidos (cotação de fornecedor ou nota fiscal) com o
 // catálogo, para cadastrar automaticamente SÓ o que é novo. Um item é
@@ -64,19 +64,17 @@ async function encontrarExistente(client, indice, descricao) {
   return r.rows.length ? { material: r.rows[0], criterio } : null;
 }
 
-async function categoriaDoItem(client, item) {
-  if (item.ncm) {
-    const parecido = await client.query(
-      `SELECT categoria FROM materiais WHERE ncm = $1 AND ativo = true AND categoria NOT IN ('Não classificado', 'Geral') GROUP BY categoria ORDER BY count(*) DESC LIMIT 1`,
-      [item.ncm]
-    );
-    if (parecido.rows.length) return parecido.rows[0].categoria;
-  }
-  return classificarPorDescricao(item.descricao) || 'Não classificado';
+// Categoria do material novo: NCM, material mais parecido do catálogo ou
+// palavras-chave (services/classificacaoMateriais.js). Sem nenhum, fica
+// "Não classificado" e a rotina classificarPendentes resolve com IA depois.
+async function categoriaDoItem(client, item, indice) {
+  if (indice && !indice.referencia) indice.referencia = await carregarReferencia(client);
+  const c = await categoriaLocal(client, item, indice?.referencia);
+  return c ? c.categoria : 'Não classificado';
 }
 
 async function inserirMaterial(client, indice, item, origem, margem) {
-  const categoria = await categoriaDoItem(client, item);
+  const categoria = await categoriaDoItem(client, item, indice);
   const preco = Number(item.preco);
   const precoVenda = Math.round(preco * (1 + margem / 100) * 100) / 100;
   const r = await client.query(
@@ -85,6 +83,7 @@ async function inserirMaterial(client, indice, item, origem, margem) {
     [item.codigo || null, item.descricao, categoria, item.unidade || 'un', precoVenda, preco, item.marca || '', item.ncm || null, origem]
   );
   indexar(indice, r.rows[0]);
+  if (indice.referencia && categoria !== 'Não classificado') indice.referencia.push({ descricao: item.descricao, categoria, ncm: item.ncm || null, termos: termos(item.descricao) });
   return r.rows[0];
 }
 

@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { Upload, Trash2 } from 'lucide-react';
 import { Nota, btnAdicionar, estiloInput } from './campos';
+import Select from '../Select';
 
 // Peças de inspeção compartilhadas por todas as disciplinas: checklist com
 // situação/observação/prioridade e registro fotográfico com upload.
@@ -42,16 +43,16 @@ export function ChecklistEditor({ base, lista, onChange }) {
                     <td style={{ padding: '5px 6px 5px 0', width: 44, color: '#c9a227', fontWeight: 700 }}>{b.cod}</td>
                     <td style={{ padding: '5px 6px 5px 0', color: '#ccc' }} title={`${b.requisito}\nOnde: ${b.onde || '—'}\nComo: ${b.como || '—'}`}>{b.item}</td>
                     <td style={{ padding: '5px 6px 5px 0', width: 150 }}>
-                      <select style={{ ...estiloInput, background: corSituacao(item.situacao) }} value={item.situacao || 'NV'} onChange={e => setItem(b, 'situacao', e.target.value)}>
+                      <Select style={{ ...estiloInput, background: corSituacao(item.situacao) }} value={item.situacao || 'NV'} onChange={e => setItem(b, 'situacao', e.target.value)}>
                         {SITUACOES.map(([v, r]) => <option key={v} value={v}>{r}</option>)}
-                      </select>
+                      </Select>
                     </td>
                     <td style={{ padding: '5px 6px 5px 0', width: '34%' }}><input style={estiloInput} placeholder="Observação" value={item.obs || ''} onChange={e => setItem(b, 'obs', e.target.value)} /></td>
                     <td style={{ padding: '5px 6px 5px 0', width: 90 }}><input style={estiloInput} placeholder="Fotos" value={item.foto || ''} onChange={e => setItem(b, 'foto', e.target.value)} /></td>
                     <td style={{ padding: '5px 0', width: 120 }}>
-                      <select style={estiloInput} value={item.prioridade || b.prioridade_padrao || 'P3'} onChange={e => setItem(b, 'prioridade', e.target.value)}>
+                      <Select style={estiloInput} value={item.prioridade || b.prioridade_padrao || 'P3'} onChange={e => setItem(b, 'prioridade', e.target.value)}>
                         {PRIORIDADES.map(([v, r]) => <option key={v} value={v}>{r}</option>)}
-                      </select>
+                      </Select>
                     </td>
                   </tr>
                 );

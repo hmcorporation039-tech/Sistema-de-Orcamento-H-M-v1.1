@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const pool = require('../config/database');
 const { lerDocumentoCotacao, encerrarOcr, VERSAO_LEITOR, EXTENSOES } = require('../utils/leitorCotacao');
 const { carregarIndice, registrarItemCotacao, obterMargemPadrao } = require('./catalogoMateriais');
+const { classificarPendentes } = require('./classificacaoMateriais');
 
 // Pastas onde o usuário salva os orçamentos/cotações de fornecedor recebidos
 // (WhatsApp etc.): PDF com texto, PDF escaneado ou foto (PNG/JPG). A local
@@ -156,6 +157,8 @@ async function executarVarredura() {
     await encerrarOcr();
   }
 
+  // material que ficou sem categoria (nem NCM, nem parecido, nem palavra-chave) → IA
+  if (resumo.materiaisCriados) resumo.classificacao = await classificarPendentes().catch(e => ({ erro: e.message }));
   return resumo;
 }
 

@@ -10,6 +10,7 @@ import FormularioSpda from './FormularioSpda';
 import ResultadoSpda from './ResultadoSpda';
 import FormularioGenerico from './FormularioGenerico';
 import ResultadoGenerico from './ResultadoGenerico';
+import Select from '../Select';
 
 // Laudos e projetos por disciplina — dentro da aba Análise de Projeto.
 // O SPDA tem tela própria; as demais disciplinas usam o formulário genérico,
@@ -257,10 +258,10 @@ export default function LaudosProjetos() {
       <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
           <h3 style={{ ...tituloSecao, marginBottom: 0, flex: 1 }}>Laudos e projetos por disciplina</h3>
-          <select value={disciplina} onChange={e => { setDisciplina(e.target.value); setLaudo(null); setDados(null); setResumo(null); }}
+          <Select value={disciplina} onChange={e => { setDisciplina(e.target.value); setLaudo(null); setDados(null); setResumo(null); }}
             style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, color: '#ddd', padding: '8px 10px', fontSize: 13 }}>
             {disciplinas.map(d => <option key={d.chave} value={d.chave}>{d.nome}{d.disponivel ? '' : ' — em preparação'}</option>)}
-          </select>
+          </Select>
         </div>
 
         {infoDisciplina && !infoDisciplina.disponivel ? (

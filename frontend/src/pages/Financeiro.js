@@ -7,6 +7,7 @@ import {
 } from '../services/api';
 import api from '../services/api';
 import { formatarMoeda } from '../utils/format';
+import Select from '../components/Select';
 
 const TIPO_INFO = {
   recebido: { label: 'Recebido', cor: '#3fb95f', bg: '#0a1a0f', borda: '#1a4a26' },
@@ -227,11 +228,11 @@ export default function Financeiro() {
             <input type="date" value={dataFim} onChange={e => setDataFim(e.target.value)} />
           </Campo>
           <Campo label="Tipo">
-            <select value={tipo} onChange={e => setTipo(e.target.value)}>
+            <Select value={tipo} onChange={e => setTipo(e.target.value)}>
               <option value="">Todos</option>
               <option value="recebido">Recebido</option>
               <option value="realizado">Realizado</option>
-            </select>
+            </Select>
           </Campo>
           <Campo label="Buscar">
             <div style={{ position: 'relative' }}>
@@ -250,18 +251,18 @@ export default function Financeiro() {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <Campo label="Categoria">
-            <select value={categoria} onChange={e => setCategoria(e.target.value)}>
+            <Select value={categoria} onChange={e => setCategoria(e.target.value)}>
               <option value="">Todas</option>
               <option value="mao_de_obra">Mão de obra</option>
               <option value="material">Material</option>
               <option value="despesa">Despesa diária</option>
-            </select>
+            </Select>
           </Campo>
           <Campo label="Prestador">
-            <select value={prestadorId} onChange={e => setPrestadorId(e.target.value)}>
+            <Select value={prestadorId} onChange={e => setPrestadorId(e.target.value)}>
               <option value="">Todos</option>
               {prestadores.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
-            </select>
+            </Select>
           </Campo>
         </div>
       </div>
@@ -347,10 +348,10 @@ export default function Financeiro() {
             <form onSubmit={salvar}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                 <Campo label="Tipo">
-                  <select value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })}>
+                  <Select value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })}>
                     <option value="recebido">Recebido</option>
                     <option value="realizado">Realizado</option>
-                  </select>
+                  </Select>
                 </Campo>
                 <Campo label="Valor (R$) *">
                   <input
@@ -404,19 +405,19 @@ export default function Financeiro() {
             <form onSubmit={salvarVinculo}>
               <div style={{ marginBottom: 12 }}>
                 <Campo label="Prestador">
-                  <select
+                  <Select
                     value={formVinculo.prestadorId}
                     onChange={e => setFormVinculo({ ...formVinculo, prestadorId: e.target.value })}
                     autoFocus
                   >
                     <option value="">Nenhum</option>
                     {prestadores.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
-                  </select>
+                  </Select>
                 </Campo>
               </div>
 
               <Campo label="Categoria">
-                <select
+                <Select
                   value={formVinculo.categoria}
                   onChange={e => setFormVinculo({ ...formVinculo, categoria: e.target.value })}
                 >
@@ -424,7 +425,7 @@ export default function Financeiro() {
                   <option value="mao_de_obra">Mão de obra</option>
                   <option value="material">Material</option>
                   <option value="despesa">Despesa diária</option>
-                </select>
+                </Select>
               </Campo>
 
               <div style={{ display: 'flex', gap: 10, marginTop: 22, justifyContent: 'flex-end' }}>

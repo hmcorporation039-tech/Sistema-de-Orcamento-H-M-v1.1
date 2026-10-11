@@ -8,6 +8,7 @@ const { comTransacao } = require('../utils/transacao');
 const { calcularTotais } = require('../utils/calculoProposta');
 const { validarProposta } = require('../utils/validacaoProposta');
 const { inserirSecoesEItens, proximoNumero, registrarEvento } = require('./propostasController');
+const { classificarPendentesEmSegundoPlano } = require('../services/classificacaoMateriais');
 
 // Laudos e projetos por disciplina (aba Análise de Projeto). O cálculo e os
 // documentos vêm da skill da disciplina (utils/disciplinasLaudo.js) — o mesmo
@@ -375,6 +376,7 @@ async function gerarOrcamento(req, res) {
       return { propostaId: novaId, numero: numeroGerado, criada: true };
     });
 
+    classificarPendentesEmSegundoPlano(); // materiais novos do orçamento sem categoria → IA
     res.json({
       propostaId, numero, criada, estatistica,
       mensagem: `Orçamento ${numero} ${criada ? 'criado' : 'atualizado'} (${rotuloModo}): ${estatistica.materiaisNoCatalogo} materiais com preço do catálogo, ` +
