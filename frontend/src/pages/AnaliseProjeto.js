@@ -2,11 +2,12 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import LaudosProjetos from '../components/laudos/LaudosProjetos';
 import toast from 'react-hot-toast';
+import PainelPasta from '../components/PainelPasta';
 import { FileDown, Plus, Trash2, FolderSearch, Search, FilePlus2, Receipt } from 'lucide-react';
 import {
   analisarProjeto, gerarRelatorioCompatibilizacao, pesquisarPrecoMercado,
   getAnalisesProjeto, getAnaliseProjeto, atualizarAnaliseProjeto, removerAnaliseProjeto,
-  gerarOrcamentoDaAnalise,
+  gerarOrcamentoDaAnalise, getPastaAnalise, abrirPastaAnalise,
 } from '../services/api';
 import { formatarMoeda } from '../utils/format';
 
@@ -93,6 +94,7 @@ function Compatibilizacao() {
   // de câmeras/pontos de rede (só arquivos marcados com aquela disciplina
   // entram na soma). [{ id, arquivo: File, disciplinas: string[] }]
   const [arquivosComDisciplinas, setArquivosComDisciplinas] = useState([]);
+  const [nomeProjetoNovo, setNomeProjetoNovo] = useState(''); // nome da pasta do projeto em Arquivos do Sistema
   const [analisando, setAnalisando] = useState(false);
   const [carregandoAnalise, setCarregandoAnalise] = useState(false);
   const [analise, setAnalise] = useState(null);
@@ -184,7 +186,8 @@ function Compatibilizacao() {
     }
     setAnalisando(true);
     try {
-      const res = await analisarProjeto(arquivosComDisciplinas);
+      const res = await analisarProjeto(arquivosComDisciplinas, nomeProjetoNovo.trim());
+      setNomeProjetoNovo('');
       popularAnalise(res.data);
       navigate(`/analise-projeto/${res.data.id}`);
       toast.success(`Projeto analisado: ${res.data.ambientes.length} ambientes, ${res.data.cameras.total} câmeras`);
@@ -229,6 +232,7 @@ function Compatibilizacao() {
     try {
       await atualizarAnaliseProjeto(analise.id, {
         cliente_nome: analise.cliente,
+        nome_projeto: analise.nomeProjeto ?? '',
         servicos: analise.servicos.map(({ id, ...s }) => s),
         materiais: analise.materiais.map(({ id, ...m }) => m),
         funcionamento: analise.funcionamento ?? '',
@@ -240,7 +244,7 @@ function Compatibilizacao() {
     } finally {
       setSalvando(false);
     }
-  }, [analise?.id, analise?.cliente, analise?.servicos, analise?.materiais, analise?.funcionamento, analise?.pontosPorDisciplina]);
+  }, [analise?.id, analise?.cliente, analise?.nomeProjeto, analise?.servicos, analise?.materiais, analise?.funcionamento, analise?.pontosPorDisciplina]);
 
   // Reseta o "já assentou" toda vez que o id muda (nova análise carregada) —
   // assim a primeira renderização de cada análise não dispara um autosave à toa.
@@ -260,7 +264,7 @@ function Compatibilizacao() {
     pendenteRef.current = true;
     const timer = setTimeout(() => { pendenteRef.current = false; salvarAgora(); }, 1500);
     return () => clearTimeout(timer);
-  }, [analise?.servicos, analise?.materiais, analise?.cliente, analise?.funcionamento, analise?.pontosPorDisciplina]);
+  }, [analise?.servicos, analise?.materiais, analise?.cliente, analise?.nomeProjeto, analise?.funcionamento, analise?.pontosPorDisciplina]);
 
   // Salva o que ficou pendente ao sair da tela. O efeito acima cancela o timer
   // quando o componente desmonta, então quem editasse e trocasse de tela em
@@ -273,6 +277,13 @@ function Compatibilizacao() {
 
   function atualizarCliente(valor) {
     setAnalise(a => ({ ...a, cliente: valor }));
+  }
+
+  const carregarPasta = useCallback(() => getPastaAnalise(analise.id), [analise?.id]);
+  const abrirPasta = useCallback(() => abrirPastaAnalise(analise.id), [analise?.id]);
+
+  function atualizarNomeProjeto(valor) {
+    setAnalise(a => ({ ...a, nomeProjeto: valor }));
   }
 
   function atualizarServico(id, campo, valor) {
@@ -505,7 +516,8 @@ function Compatibilizacao() {
             outra disciplina nunca entra na contagem que não é dele.
           </p>
 
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: arquivosComDisciplinas.length > 0 ? 18 : 0 }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: arquivosComDisciplinas.length > 0 ? 18 : 0, flexWrap: 'wrap' }}>
+            <input value={nomeProjetoNovo} onChange={e => setNomeProjetoNovo(e.target.value)} placeholder="Nome do projeto (nome da pasta; vazio = nome do cliente)" style={{ flex: '1 1 280px', maxWidth: 420 }} />
             <input ref={inputRef} type="file" accept=".pdf" multiple onChange={selecionarArquivos} />
             <button onClick={analisar} disabled={analisando || arquivosComDisciplinas.length === 0} style={btnPrimario}>
               <FolderSearch size={13} style={{ marginRight: 6 }} /> {analisando ? 'Analisando...' : 'Analisar projeto'}
@@ -544,6 +556,10 @@ function Compatibilizacao() {
           <div style={card}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
               <div style={{ flex: '1 1 260px' }}>
+                <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Nome do projeto (pasta)</div>
+                <input value={analise.nomeProjeto || ''} onChange={e => atualizarNomeProjeto(e.target.value)} placeholder={analise.cliente || 'Nome do projeto'} style={{ fontSize: 15, fontWeight: 700, color: '#e8e8e8', background: 'transparent', border: 'none', padding: '2px 0' }} />
+              </div>
+              <div style={{ flex: '1 1 260px' }}>
                 <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Cliente</div>
                 <input value={analise.cliente || ''} onChange={e => atualizarCliente(e.target.value)} placeholder="Nome do cliente" style={{ fontSize: 15, fontWeight: 700, color: '#c9a227', background: 'transparent', border: 'none', padding: '2px 0' }} />
               </div>
@@ -551,6 +567,7 @@ function Compatibilizacao() {
                 {salvando ? 'Salvando...' : salvoEm ? `Salvo às ${formatarHora(salvoEm)}` : ''}
               </div>
             </div>
+            <PainelPasta carregar={carregarPasta} abrir={abrirPasta} atualizarQuando={salvoEm} />
             <div style={{ display: 'grid', gridTemplateColumns: `repeat(${tilesResumo.length}, 1fr)`, gap: 16 }}>
               {tilesResumo.map(t => <Info key={t.label} label={t.label} valor={t.valor} />)}
             </div>

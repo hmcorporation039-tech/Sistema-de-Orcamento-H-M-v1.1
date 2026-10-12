@@ -8,6 +8,7 @@ const { calcularTotais, normalizarItem, ehMaoDeObra } = require('../utils/calcul
 const { validarProposta, validadeOuPadrao } = require('../utils/validacaoProposta');
 const { garantirMaterialCadastrado, garantirMaoDeObraCadastrada } = require('../utils/catalogoAutoCadastro');
 const { classificarPendentesEmSegundoPlano } = require('../services/classificacaoMateriais');
+const { salvarPdfPropostaNasPastas } = require('../services/pastasRegistros');
 
 // Assinatura padrão da empresa — entra sempre no final de todo e-mail
 // enviado ao cliente (mensagem padrão ou digitada à mão), sem exceção.
@@ -454,6 +455,8 @@ async function gerarPdf(req, res) {
   try {
     const resultado = await montarPdfBuffer(id);
     if (!resultado) return res.status(404).json({ erro: 'Proposta não encontrada' });
+    // orçamento vindo de análise/laudo: a cópia na pasta deles vira esta versão
+    await salvarPdfPropostaNasPastas(resultado.proposta, resultado.pdf);
 
     res.set({
       'Content-Type': 'application/pdf',
@@ -478,6 +481,7 @@ async function enviarEmail(req, res) {
     const resultado = await montarPdfBuffer(id);
     if (!resultado) return res.status(404).json({ erro: 'Proposta não encontrada' });
     const { proposta, pdf } = resultado;
+    await salvarPdfPropostaNasPastas(proposta, pdf);
 
     // A assinatura padrão sempre vai no final — tanto na mensagem padrão
     // quanto numa digitada pelo usuário, sem exceção (não dá pra mandar sem
@@ -509,4 +513,6 @@ module.exports = {
   // Reaproveitados por projetosController.gerarOrcamento (Análise de Projeto -> Orçamentos),
   // pra criar/atualizar uma proposta sem duplicar a regra de numeração e inserção de itens.
   inserirSecoesEItens, proximoNumero, registrarEvento,
+  // PDF da proposta sem resposta HTTP (cópia na pasta do projeto/laudo)
+  montarPdfBuffer,
 };

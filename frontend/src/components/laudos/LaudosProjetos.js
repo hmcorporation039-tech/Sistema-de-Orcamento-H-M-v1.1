@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { FilePlus2, FileDown, Upload, Calculator, Receipt, Trash2, Download, BookOpen } from 'lucide-react';
+import { FilePlus2, FileDown, Upload, Calculator, Receipt, Trash2, Download, BookOpen, FolderDown } from 'lucide-react';
 import {
   getDisciplinasLaudo, getModeloLaudo, getLaudos, getLaudo, criarLaudo, atualizarLaudo, removerLaudo,
   calcularLaudo, baixarDocumentoLaudo, enviarFotosLaudo, getFotoLaudo, removerFotoLaudo, gerarOrcamentoDoLaudo,
+  salvarDocumentosLaudo, getPastaLaudo, abrirPastaLaudo,
 } from '../../services/api';
+import PainelPasta from '../PainelPasta';
 import FormularioSpda from './FormularioSpda';
 import ResultadoSpda from './ResultadoSpda';
 import FormularioGenerico from './FormularioGenerico';
@@ -38,7 +40,7 @@ export default function LaudosProjetos() {
   const [disciplina, setDisciplina] = useState('spda');
   const [modelo, setModelo] = useState(null); // { modelo, exemplo, checklistBase }
   const [lista, setLista] = useState([]);
-  const [laudo, setLaudo] = useState(null); // { id, disciplina, propostas, usuario_id }
+  const [laudo, setLaudo] = useState(null); // { id, disciplina, propostas, gerar_orcamento }
   const [dados, setDados] = useState(null);
   const [fotos, setFotos] = useState([]);
   const [urlsFotos, setUrlsFotos] = useState({});
@@ -46,6 +48,7 @@ export default function LaudosProjetos() {
   const [sujo, setSujo] = useState(false);
   const [salvoEm, setSalvoEm] = useState(null);
   const [ocupado, setOcupado] = useState('');
+  const [pastaMudou, setPastaMudou] = useState(0); // recarrega o painel da pasta após gravar arquivos
   const entradaJson = useRef(null);
   const salvandoRef = useRef(null);
 
@@ -103,7 +106,7 @@ export default function LaudosProjetos() {
   async function abrir(id) {
     try {
       const r = await getLaudo(id);
-      setLaudo({ id: r.data.id, disciplina: r.data.disciplina, propostas: r.data.propostas || {} });
+      setLaudo({ id: r.data.id, disciplina: r.data.disciplina, propostas: r.data.propostas || {}, gerar_orcamento: r.data.gerar_orcamento !== false });
       setDados(r.data.dados);
       setFotos(r.data.fotos);
       setResumo(null);
@@ -147,6 +150,9 @@ export default function LaudosProjetos() {
     }
   }
 
+  const carregarPasta = useCallback(() => getPastaLaudo(laudo.id), [laudo?.id]);
+  const abrirPasta = useCallback(() => abrirPastaLaudo(laudo.id), [laudo?.id]);
+
   const salvarAgora = useCallback(async () => {
     if (!laudo || !dados) return;
     if (salvandoRef.current) await salvandoRef.current;
@@ -183,6 +189,37 @@ export default function LaudosProjetos() {
     }
   }
 
+  // Gera todos os documentos do padrão da disciplina e grava na pasta do laudo
+  // (substituindo as versões anteriores, sem acumular cópias).
+  async function salvarDocumentosNaPasta() {
+    setOcupado('pasta');
+    try {
+      await salvarAgora();
+      const r = await salvarDocumentosLaudo(laudo.id);
+      const gravados = r.data.documentos.filter(d => d.gravado).length;
+      toast.success(`${gravados} documento(s) salvos na pasta do laudo`);
+      if (gravados < r.data.documentos.length) toast.error('Algum documento não pôde ser gravado — feche-o no Word/Excel e tente de novo', { duration: 8000 });
+      setPastaMudou(Date.now());
+    } catch (err) {
+      toast.error(err.response?.data?.erro || 'Erro ao salvar os documentos na pasta', { duration: 8000 });
+    } finally {
+      setOcupado('');
+    }
+  }
+
+  // "Só laudo": desliga os orçamentos deste laudo (os documentos continuam iguais)
+  async function alternarOrcamento(valor) {
+    try {
+      await salvarAgora().catch(() => {});
+      const r = await atualizarLaudo(laudo.id, dados, valor);
+      setLaudo(l => ({ ...l, gerar_orcamento: r.data.gerar_orcamento }));
+      carregarLista();
+      toast.success(valor ? 'Laudo com orçamento de material' : 'Só laudo — sem orçamento de material');
+    } catch (err) {
+      toast.error(err.response?.data?.erro || 'Erro ao alterar a opção de orçamento');
+    }
+  }
+
   async function baixar(doc) {
     setOcupado(`doc_${doc.tipo}`);
     try {
@@ -190,6 +227,7 @@ export default function LaudosProjetos() {
       const r = await baixarDocumentoLaudo(laudo.id, doc.tipo);
       const nome = decodeURIComponent(r.headers['x-nome-arquivo'] || `${doc.tipo}.${doc.formato === 'Excel' ? 'xlsx' : 'docx'}`);
       baixarBlob(r.data, nome);
+      setPastaMudou(Date.now()); // a cópia também foi gravada na pasta do laudo
     } catch (err) {
       let msg = 'Erro ao gerar o documento';
       try { msg = JSON.parse(await err.response.data.text()).erro || msg; } catch { /* resposta não-JSON */ }
@@ -329,20 +367,28 @@ export default function LaudosProjetos() {
               <button style={btnSecundario} onClick={exportarJson}><Download size={13} style={{ marginRight: 5 }} /> Exportar JSON</button>
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+              <button style={{ ...btnSecundario, borderColor: '#2f5a2f', color: '#8fd18f' }} disabled={!!ocupado} onClick={salvarDocumentosNaPasta} title="Gera todos os documentos do padrão (Word e Excel) e grava na pasta do laudo, substituindo as versões anteriores">
+                <FolderDown size={13} style={{ marginRight: 5 }} /> {ocupado === 'pasta' ? 'Salvando…' : 'Salvar documentos na pasta'}
+              </button>
               {(infoDisciplina?.documentos || []).map(doc => (
                 <button key={doc.tipo} style={btnSecundario} disabled={!!ocupado} onClick={() => baixar(doc)} title={`Gerar ${doc.rotulo} (${doc.formato})`}>
                   <FileDown size={13} style={{ marginRight: 5 }} /> {ocupado === `doc_${doc.tipo}` ? 'Gerando…' : doc.rotulo}
                 </button>
               ))}
             </div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-              {(infoDisciplina?.modosOrcamento || []).map(m => (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, alignItems: 'center' }}>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#bbb', marginRight: 6, cursor: 'pointer', whiteSpace: 'nowrap' }} title="Desmarque quando for emitido só o laudo, sem orçamento de material">
+                <input type="checkbox" style={{ width: 'auto', margin: 0 }} checked={laudo.gerar_orcamento !== false} onChange={e => alternarOrcamento(e.target.checked)} /> Gerar orçamento de material
+              </label>
+              {laudo.gerar_orcamento === false && <span style={{ fontSize: 12, color: '#777' }}>Só laudo — os documentos são emitidos sem orçamento.</span>}
+              {laudo.gerar_orcamento !== false && (infoDisciplina?.modosOrcamento || []).map(m => (
                 <button key={m.modo} style={{ ...btnSecundario, borderColor: '#5a4a12', color: '#c9a227' }} disabled={!!ocupado} onClick={() => orcar(m)} title={m.descricao}>
                   <Receipt size={13} style={{ marginRight: 5 }} />
                   {ocupado === `orc_${m.modo}` ? 'Gerando…' : `${laudo.propostas?.[m.modo] ? 'Atualizar' : 'Gerar'} orçamento — ${m.rotulo}`}
                 </button>
               ))}
             </div>
+            <PainelPasta carregar={carregarPasta} abrir={abrirPasta} atualizarQuando={`${salvoEm}-${pastaMudou}`} />
           </div>
 
           {resumo && (

@@ -9,6 +9,8 @@ const { comTransacao } = require('../utils/transacao');
 const { calcularTotais } = require('../utils/calculoProposta');
 const { validarProposta } = require('../utils/validacaoProposta');
 const { inserirSecoesEItens, proximoNumero, registrarEvento } = require('./propostasController');
+const P = require('../utils/pastasSistema');
+const { sincronizarProjeto, pastaDoProjeto, resumoPasta, pedidoLocal, seguro } = require('../services/pastasRegistros');
 
 // Converte uma linha de analises_projeto (colunas snake_case, JSONB já
 // parseado pelo driver do pg) para o mesmo formato camelCase que o restante
@@ -18,6 +20,9 @@ function linhaParaAnalise(row) {
   return {
     id: row.id,
     cliente: row.cliente_nome,
+    // Nome do projeto = nome da pasta em "Arquivos do Sistema/Projetos" (editável na tela)
+    nomeProjeto: row.nome_projeto,
+    caminhoPasta: row.pasta ? P.caminhoDe('projeto', row.pasta) : null,
     clienteId: row.cliente_id,
     disciplinas: row.disciplinas,
     arquivosAnalisados: row.arquivos_analisados,
@@ -53,13 +58,13 @@ async function listar(req, res) {
   const params = [];
   if (busca) {
     params.push(`%${busca}%`);
-    condicoes += ` AND cliente_nome ILIKE $${params.length}`;
+    condicoes += ` AND (cliente_nome ILIKE ${params.length} OR nome_projeto ILIKE ${params.length})`;
   }
 
   try {
     const total = await pool.query(`SELECT count(*) FROM analises_projeto ${condicoes}`, params);
     const result = await pool.query(
-      `SELECT id, cliente_id, cliente_nome, disciplinas, arquivos_analisados,
+      `SELECT id, cliente_id, cliente_nome, nome_projeto, disciplinas, arquivos_analisados,
               jsonb_array_length(achados) AS total_achados,
               criado_em, atualizado_em
        FROM analises_projeto ${condicoes}
@@ -130,8 +135,8 @@ async function analisar(req, res) {
     const insert = await pool.query(
       `INSERT INTO analises_projeto
         (cliente_nome, disciplinas, arquivos_analisados, ambientes, pontos_por_ambiente, cameras,
-         pontos_rede_antena, tabela_cabos, achados, servicos, materiais, usuario_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         pontos_rede_antena, tabela_cabos, achados, servicos, materiais, usuario_id, nome_projeto)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        RETURNING *`,
       [
         resultado.cliente,
@@ -146,10 +151,14 @@ async function analisar(req, res) {
         JSON.stringify(resultado.servicos),
         JSON.stringify(resultado.materiais),
         req.usuario.id,
+        String(req.body.nome_projeto || '').trim().slice(0, 200) || null,
       ]
     );
 
-    res.json(linhaParaAnalise(insert.rows[0]));
+    // Pasta do projeto: guarda os PDFs recebidos (antes eram lidos e descartados)
+    await sincronizarProjeto(insert.rows[0], arquivos);
+    const salvo = await pool.query('SELECT * FROM analises_projeto WHERE id = $1', [insert.rows[0].id]);
+    res.json(linhaParaAnalise(salvo.rows[0]));
   } catch (err) {
     console.error('Erro ao analisar projeto:', err);
     res.status(422).json({ erro: err.message || 'Erro ao analisar os arquivos do projeto' });
@@ -161,7 +170,7 @@ async function analisar(req, res) {
 // a cada mudança) quanto por uma ação explícita de salvar.
 async function atualizar(req, res) {
   const { id } = req.params;
-  const { cliente_nome, servicos, materiais, funcionamento, pontos_por_disciplina } = req.body;
+  const { cliente_nome, nome_projeto, servicos, materiais, funcionamento, pontos_por_disciplina } = req.body;
 
   // A tela e o relatório PDF iteram esses campos (.find/.filter/.map); um valor
   // fora do formato gravado aqui quebraria os dois para essa análise.
@@ -183,6 +192,7 @@ async function atualizar(req, res) {
         materiais = COALESCE($3::jsonb, materiais),
         funcionamento = COALESCE($4, funcionamento),
         pontos_por_disciplina = COALESCE($5::jsonb, pontos_por_disciplina),
+        nome_projeto = COALESCE($7, nome_projeto),
         atualizado_em = NOW()
        WHERE id = $6
        RETURNING *`,
@@ -193,10 +203,14 @@ async function atualizar(req, res) {
         funcionamento ?? null,
         pontos_por_disciplina ? JSON.stringify(pontos_por_disciplina) : null,
         id,
+        nome_projeto != null ? String(nome_projeto).trim().slice(0, 200) : null,
       ]
     );
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Análise não encontrada' });
-    res.json(linhaParaAnalise(result.rows[0]));
+    // pasta acompanha o nome (renomeia) e o JSON de dados é sobrescrito
+    await sincronizarProjeto(result.rows[0]);
+    const salvo = await pool.query('SELECT * FROM analises_projeto WHERE id = $1', [id]);
+    res.json(linhaParaAnalise(salvo.rows[0]));
   } catch (err) {
     console.error('Erro ao atualizar análise de projeto:', err);
     res.status(500).json({ erro: 'Erro ao atualizar análise de projeto' });
@@ -208,9 +222,11 @@ async function atualizar(req, res) {
 async function remover(req, res) {
   const { id } = req.params;
   try {
-    const result = await pool.query('DELETE FROM analises_projeto WHERE id = $1 RETURNING id', [id]);
+    const result = await pool.query('DELETE FROM analises_projeto WHERE id = $1 RETURNING id, pasta', [id]);
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Análise não encontrada' });
-    res.json({ mensagem: 'Análise removida' });
+    // a pasta não é apagada: vai para "Arquivos do Sistema/_Excluídos"
+    await seguro(`excluir análise ${id}`, () => P.moverParaExcluidos('projeto', result.rows[0].pasta));
+    res.json({ mensagem: 'Análise removida (a pasta foi movida para _Excluídos)' });
   } catch (err) {
     console.error('Erro ao remover análise de projeto:', err);
     res.status(500).json({ erro: 'Erro ao remover análise de projeto' });
@@ -237,7 +253,10 @@ async function gerarRelatorio(req, res, next) {
       footerTemplate: gerarFooterTemplate(),
     });
 
-    const nomeCliente = String(analise.cliente || 'projeto').trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_');
+    // cópia na pasta do projeto (sobrescreve a versão anterior)
+    await seguro(`relatório análise ${id}`, async () => P.gravarArquivo(await pastaDoProjeto(result.rows[0]), 'Relatório de compatibilização.pdf', pdf));
+
+    const nomeCliente = String(analise.nomeProjeto || analise.cliente || 'projeto').trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_');
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="Compatibilizacao_${nomeCliente}.pdf"`,
@@ -246,6 +265,30 @@ async function gerarRelatorio(req, res, next) {
   } catch (err) {
     console.error('Erro ao gerar relatório de compatibilização:', err);
     next(err);
+  }
+}
+
+// Pasta do projeto: caminho e arquivos (cria/renomeia se preciso).
+async function pasta(req, res) {
+  try {
+    const r = await pool.query('SELECT * FROM analises_projeto WHERE id = $1', [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ erro: 'Análise não encontrada' });
+    res.json({ ...(await resumoPasta(await pastaDoProjeto(r.rows[0]))), podeAbrir: pedidoLocal(req) });
+  } catch (err) {
+    console.error('Erro ao consultar pasta do projeto:', err);
+    res.status(500).json({ erro: `Erro ao acessar a pasta do projeto: ${err.message}` });
+  }
+}
+
+async function abrirPasta(req, res) {
+  if (!pedidoLocal(req)) return res.status(400).json({ erro: 'A pasta só pode ser aberta no PC onde o sistema roda' });
+  try {
+    const r = await pool.query('SELECT * FROM analises_projeto WHERE id = $1', [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ erro: 'Análise não encontrada' });
+    P.abrirNoExplorer(await pastaDoProjeto(r.rows[0]));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ erro: `Erro ao abrir a pasta: ${err.message}` });
   }
 }
 
@@ -382,4 +425,4 @@ async function gerarOrcamento(req, res, next) {
   }
 }
 
-module.exports = { listar, buscarUma, analisar, atualizar, remover, gerarRelatorio, gerarOrcamento };
+module.exports = { listar, buscarUma, analisar, atualizar, remover, gerarRelatorio, gerarOrcamento, pasta, abrirPasta };

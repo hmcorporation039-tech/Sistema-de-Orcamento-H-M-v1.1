@@ -86,8 +86,9 @@ export const enviarPropostaPorEmail = (id, destinatario, mensagem) =>
 // arquivo carrega sua própria lista de disciplinas (não uma lista única pro
 // lote), por isso vai como um array posicional (mesma ordem dos arquivos
 // anexados) em vez de um campo só.
-export const analisarProjeto = (arquivosComDisciplinas) => {
+export const analisarProjeto = (arquivosComDisciplinas, nomeProjeto) => {
   const formData = new FormData();
+  if (nomeProjeto) formData.append('nome_projeto', nomeProjeto);
   arquivosComDisciplinas.forEach(({ arquivo }) => formData.append('arquivos', arquivo));
   formData.append('disciplinasPorArquivo', JSON.stringify(arquivosComDisciplinas.map(a => a.disciplinas)));
   // Extrai equipamentos via IA (uma chamada por arquivo) — pode passar bem
@@ -104,6 +105,9 @@ export const removerAnaliseProjeto = (id) => api.delete(`/projetos/analises/${id
 export const gerarRelatorioCompatibilizacao = (id) =>
   api.get(`/projetos/analises/${id}/relatorio`, { responseType: 'blob' });
 export const gerarOrcamentoDaAnalise = (id) => api.post(`/projetos/analises/${id}/gerar-orcamento`);
+// Pasta do projeto em Arquivos do Sistema/Projetos
+export const getPastaAnalise = (id) => api.get(`/projetos/analises/${id}/pasta`);
+export const abrirPastaAnalise = (id) => api.post(`/projetos/analises/${id}/pasta/abrir`);
 
 // ── LAUDOS E PROJETOS POR DISCIPLINA (aba Análise de Projeto) ─────────────
 export const getDisciplinasLaudo = () => api.get('/laudos/disciplinas');
@@ -111,7 +115,12 @@ export const getModeloLaudo = (disciplina) => api.get(`/laudos/modelo/${discipli
 export const getLaudos = (params) => api.get('/laudos', { params });
 export const getLaudo = (id) => api.get(`/laudos/${id}`);
 export const criarLaudo = (disciplina, dados) => api.post('/laudos', { disciplina, dados });
-export const atualizarLaudo = (id, dados) => api.put(`/laudos/${id}`, { dados });
+// gerarOrcamento: true/false ("só laudo"); omitido mantém o que está salvo
+export const atualizarLaudo = (id, dados, gerarOrcamento) => api.put(`/laudos/${id}`, gerarOrcamento == null ? { dados } : { dados, gerar_orcamento: gerarOrcamento });
+// Pasta do laudo em Arquivos do Sistema/Laudos
+export const salvarDocumentosLaudo = (id) => api.post(`/laudos/${id}/salvar-documentos`, null, { timeout: 300000 });
+export const getPastaLaudo = (id) => api.get(`/laudos/${id}/pasta`);
+export const abrirPastaLaudo = (id) => api.post(`/laudos/${id}/pasta/abrir`);
 export const removerLaudo = (id) => api.delete(`/laudos/${id}`);
 export const calcularLaudo = (id) => api.post(`/laudos/${id}/calcular`, null, { timeout: 60000 });
 export const baixarDocumentoLaudo = (id, tipo) =>

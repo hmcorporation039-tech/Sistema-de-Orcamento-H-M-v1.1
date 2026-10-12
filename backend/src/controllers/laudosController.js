@@ -9,6 +9,8 @@ const { calcularTotais } = require('../utils/calculoProposta');
 const { validarProposta } = require('../utils/validacaoProposta');
 const { inserirSecoesEItens, proximoNumero, registrarEvento } = require('./propostasController');
 const { classificarPendentesEmSegundoPlano } = require('../services/classificacaoMateriais');
+const P = require('../utils/pastasSistema');
+const { sincronizarLaudo, pastaDoLaudo, resumoPasta, pedidoLocal, seguro } = require('../services/pastasRegistros');
 
 // Laudos e projetos por disciplina (aba Análise de Projeto). O cálculo e os
 // documentos vêm da skill da disciplina (utils/disciplinasLaudo.js) — o mesmo
@@ -70,7 +72,7 @@ async function listar(req, res) {
       where = 'WHERE l.disciplina = $1';
     }
     const { rows } = await pool.query(
-      `SELECT l.id, l.disciplina, l.titulo, l.cliente_nome, l.propostas, l.atualizado_em,
+      `SELECT l.id, l.disciplina, l.titulo, l.cliente_nome, l.propostas, l.gerar_orcamento, l.atualizado_em,
               l.dados->'meta'->>'revisao' AS revisao, u.nome AS usuario_nome,
               (SELECT count(*)::int FROM laudos_projetos_fotos f WHERE f.laudo_id = l.id) AS total_fotos
          FROM laudos_projetos l LEFT JOIN usuarios u ON u.id = l.usuario_id
@@ -92,7 +94,7 @@ async function buscarUm(req, res) {
       'SELECT id, nome_arquivo, mime, octet_length(conteudo) AS tamanho FROM laudos_projetos_fotos WHERE laudo_id = $1 ORDER BY id',
       [laudo.id]
     );
-    res.json({ ...laudo, fotos: fotos.rows });
+    res.json({ ...laudo, fotos: fotos.rows, caminhoPasta: laudo.pasta ? P.caminhoDe('laudo', laudo.pasta) : null });
   } catch (err) {
     responderErro(res, err, 'buscar');
   }
@@ -111,11 +113,13 @@ async function criar(req, res) {
     const dados = req.body.dados || motor.modeloVazio();
     const erro = validarDados(dados);
     if (erro) return res.status(400).json({ erro });
+    const gerarOrc = req.body.gerar_orcamento !== false;
     const { rows } = await pool.query(
-      `INSERT INTO laudos_projetos (disciplina, titulo, cliente_nome, dados, usuario_id)
-       VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-      [disciplina, tituloDe(dados), dados.cliente?.nome || null, dados, req.usuario.id]
+      `INSERT INTO laudos_projetos (disciplina, titulo, cliente_nome, dados, usuario_id, gerar_orcamento)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [disciplina, tituloDe(dados), dados.cliente?.nome || null, dados, req.usuario.id, gerarOrc]
     );
+    await sincronizarLaudo(rows[0]); // cria Arquivos do Sistema\Laudos\<nome> com os dados
     res.status(201).json({ id: rows[0].id });
   } catch (err) {
     responderErro(res, err, 'criar');
@@ -127,11 +131,16 @@ async function atualizar(req, res) {
     const { dados } = req.body;
     const erro = validarDados(dados);
     if (erro) return res.status(400).json({ erro });
-    await pool.query(
-      `UPDATE laudos_projetos SET dados = $1, titulo = $2, cliente_nome = $3, atualizado_em = NOW() WHERE id = $4`,
-      [dados, tituloDe(dados), dados.cliente?.nome || null, req.params.id]
+    // gerar_orcamento: false = "só laudo" (sem orçamento de material); ausente mantém o atual
+    const gerarOrc = typeof req.body.gerar_orcamento === 'boolean' ? req.body.gerar_orcamento : null;
+    const { rows } = await pool.query(
+      `UPDATE laudos_projetos SET dados = $1, titulo = $2, cliente_nome = $3, gerar_orcamento = COALESCE($5, gerar_orcamento), atualizado_em = NOW()
+        WHERE id = $4 RETURNING *`,
+      [dados, tituloDe(dados), dados.cliente?.nome || null, req.params.id, gerarOrc]
     );
-    res.json({ ok: true, atualizado_em: new Date() });
+    // pasta acompanha o nome do laudo (renomeia) e "Dados do laudo.json" é sobrescrito
+    const pasta = rows[0] ? await sincronizarLaudo(rows[0]) : null;
+    res.json({ ok: true, atualizado_em: new Date(), caminhoPasta: pasta, gerar_orcamento: rows[0]?.gerar_orcamento });
   } catch (err) {
     responderErro(res, err, 'atualizar');
   }
@@ -139,7 +148,9 @@ async function atualizar(req, res) {
 
 async function remover(req, res) {
   try {
-    await pool.query('DELETE FROM laudos_projetos WHERE id = $1', [req.params.id]);
+    const { rows } = await pool.query('DELETE FROM laudos_projetos WHERE id = $1 RETURNING pasta', [req.params.id]);
+    // a pasta não é apagada: vai para Arquivos do Sistema\_Excluídos
+    if (rows[0]) await seguro(`excluir laudo ${req.params.id}`, () => P.moverParaExcluidos('laudo', rows[0].pasta));
     res.json({ ok: true });
   } catch (err) {
     responderErro(res, err, 'remover');
@@ -184,25 +195,45 @@ async function prepararFotos(laudoId, dados) {
   return { dados: copia, limpar: () => fs.rmSync(pasta, { recursive: true, force: true }) };
 }
 
+// Gera os documentos pedidos do padrão da disciplina e grava cada um na pasta
+// do laudo com nome fixo (o rótulo do documento) — a versão nova SOBRESCREVE a
+// anterior, sem acumular cópias. Devolve os gerados (buffer e nomes).
+async function gerarDocumentosDoLaudo(laudo, tipos) {
+  const motor = motorDaDisciplina(laudo.disciplina);
+  const preparado = await prepararFotos(laudo.id, laudo.dados);
+  try {
+    const resultado = processarComMotor(motor, preparado.dados);
+    const pasta = await seguro(`pasta laudo ${laudo.id}`, () => pastaDoLaudo(laudo));
+    const gerados = [];
+    for (const tipo of tipos) {
+      const doc = motor.documentos.find(d => d.tipo === tipo);
+      let gerado;
+      try {
+        gerado = await motor.gerarDocumento(resultado, tipo);
+      } catch (e) {
+        const err = new Error(e.message);
+        err.status = 400;
+        throw err;
+      }
+      const extensao = path.extname(gerado.nomeArquivo) || '';
+      const nomeNaPasta = `${P.nomeSeguro(doc?.rotulo || tipo)}${extensao}`;
+      const gravado = pasta ? await seguro(`documento ${tipo} laudo ${laudo.id}`, () => P.gravarArquivo(pasta, nomeNaPasta, gerado.buffer)) : null;
+      gerados.push({ tipo, ...gerado, nomeNaPasta, gravadoNaPasta: !!gravado });
+    }
+    return { gerados, pasta };
+  } finally {
+    preparado.limpar();
+  }
+}
+
 async function documento(req, res) {
-  let limpar = () => {};
   try {
     const laudo = await carregarLaudo(req.params.id);
     if (!laudo) return res.status(404).json({ erro: 'Laudo não encontrado.' });
     const motor = motorDaDisciplina(laudo.disciplina);
     const tipo = req.params.tipo;
     if (!motor.documentos.some(d => d.tipo === tipo)) return res.status(400).json({ erro: 'Tipo de documento inválido.' });
-    const preparado = await prepararFotos(laudo.id, laudo.dados);
-    limpar = preparado.limpar;
-    const resultado = processarComMotor(motor, preparado.dados);
-    let gerado;
-    try {
-      gerado = await motor.gerarDocumento(resultado, tipo);
-    } catch (e) {
-      const err = new Error(e.message);
-      err.status = 400;
-      throw err;
-    }
+    const { gerados: [gerado] } = await gerarDocumentosDoLaudo(laudo, [tipo]);
     const ascii = gerado.nomeArquivo.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '');
     res.setHeader('Content-Type', gerado.mime);
     res.setHeader('Content-Disposition', `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(gerado.nomeArquivo)}`);
@@ -210,8 +241,44 @@ async function documento(req, res) {
     res.send(gerado.buffer);
   } catch (err) {
     responderErro(res, err, 'documento');
-  } finally {
-    limpar();
+  }
+}
+
+// "Salvar documentos na pasta": gera TODOS os documentos do padrão da
+// disciplina (Word e Excel) e grava na pasta do laudo, substituindo os anteriores.
+async function salvarDocumentos(req, res) {
+  try {
+    const laudo = await carregarLaudo(req.params.id);
+    if (!laudo) return res.status(404).json({ erro: 'Laudo não encontrado.' });
+    const motor = motorDaDisciplina(laudo.disciplina);
+    const tipos = (motor.tiposDisponiveis ? motor.tiposDisponiveis(processarComMotor(motor, laudo.dados)) : motor.documentos.map(d => d.tipo));
+    const { gerados, pasta } = await gerarDocumentosDoLaudo(laudo, tipos);
+    if (!pasta) return res.status(500).json({ erro: 'Não foi possível acessar a pasta do laudo (veja se ela está aberta em outro programa).' });
+    res.json({ caminhoPasta: pasta, documentos: gerados.map(g => ({ tipo: g.tipo, arquivo: g.nomeNaPasta, gravado: g.gravadoNaPasta })) });
+  } catch (err) {
+    responderErro(res, err, 'salvar documentos');
+  }
+}
+
+async function pasta(req, res) {
+  try {
+    const laudo = await carregarLaudo(req.params.id);
+    if (!laudo) return res.status(404).json({ erro: 'Laudo não encontrado.' });
+    res.json({ ...(await resumoPasta(await pastaDoLaudo(laudo))), podeAbrir: pedidoLocal(req) });
+  } catch (err) {
+    responderErro(res, err, 'pasta');
+  }
+}
+
+async function abrirPasta(req, res) {
+  if (!pedidoLocal(req)) return res.status(400).json({ erro: 'A pasta só pode ser aberta no PC onde o sistema roda.' });
+  try {
+    const laudo = await carregarLaudo(req.params.id);
+    if (!laudo) return res.status(404).json({ erro: 'Laudo não encontrado.' });
+    P.abrirNoExplorer(await pastaDoLaudo(laudo));
+    res.json({ ok: true });
+  } catch (err) {
+    responderErro(res, err, 'abrir pasta');
   }
 }
 
@@ -233,6 +300,11 @@ async function enviarFotos(req, res) {
       inseridas.push(rows[0]);
     }
     await pool.query('UPDATE laudos_projetos SET atualizado_em = NOW() WHERE id = $1', [req.params.id]);
+    // cópia das fotos em <pasta do laudo>\Fotos (o banco continua sendo a fonte, entra no backup)
+    await seguro(`fotos laudo ${req.params.id}`, async () => {
+      const pasta = path.join(await pastaDoLaudo(await carregarLaudo(req.params.id)), 'Fotos');
+      for (let i = 0; i < arquivos.length; i++) await P.gravarArquivo(pasta, `${inseridas[i].id} - ${inseridas[i].nome_arquivo}`, arquivos[i].buffer);
+    });
     res.status(201).json(inseridas);
   } catch (err) {
     responderErro(res, err, 'enviar fotos');
@@ -262,7 +334,10 @@ async function verFoto(req, res) {
 async function removerFoto(req, res) {
   try {
     if (!idFotoValido(req.params.fotoId)) return res.status(400).json({ erro: 'Identificador inválido.' });
-    await pool.query('DELETE FROM laudos_projetos_fotos WHERE id = $1 AND laudo_id = $2', [req.params.fotoId, req.params.id]);
+    const { rows } = await pool.query('DELETE FROM laudos_projetos_fotos WHERE id = $1 AND laudo_id = $2 RETURNING id, nome_arquivo', [req.params.fotoId, req.params.id]);
+    if (rows[0]) {
+      await seguro(`remover foto laudo ${req.params.id}`, async () => P.removerArquivo(path.join(await pastaDoLaudo(await carregarLaudo(req.params.id)), 'Fotos'), `${rows[0].id} - ${rows[0].nome_arquivo}`));
+    }
     res.json({ ok: true });
   } catch (err) {
     responderErro(res, err, 'remover foto');
@@ -308,6 +383,7 @@ async function gerarOrcamento(req, res) {
   try {
     const laudo = await carregarLaudo(req.params.id);
     if (!laudo) return res.status(404).json({ erro: 'Laudo não encontrado.' });
+    if (laudo.gerar_orcamento === false) return res.status(409).json({ erro: 'Este laudo está marcado como "só laudo" (sem orçamento). Ative a opção de orçamento para gerar.' });
     const motor = motorDaDisciplina(laudo.disciplina);
     const modo = req.body?.modo;
     if (!motor.modosOrcamento.some(m => m.modo === modo)) return res.status(400).json({ erro: 'Escolha o tipo de orçamento.' });
@@ -389,5 +465,5 @@ async function gerarOrcamento(req, res) {
 
 module.exports = {
   disciplinas, modelo, listar, buscarUm, criar, atualizar, remover, calcular, documento,
-  enviarFotos, verFoto, removerFoto, gerarOrcamento,
+  enviarFotos, verFoto, removerFoto, gerarOrcamento, salvarDocumentos, pasta, abrirPasta,
 };

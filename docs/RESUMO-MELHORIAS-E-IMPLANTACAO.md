@@ -152,6 +152,27 @@
   - `COTACAO_IA_MAX_POR_VARREDURA` (padrão 15) limita as leituras por IA.
 - **Atenção:** o backend precisa rodar com o mesmo usuário do Windows que fez login no Claude Code (hoje, Laboratorio).
 
+**Pasta do sistema para projetos e laudos (pedido do usuário, 11/10/2026).**
+- **Onde:** base `C:\HM-Engenharia\Arquivos do Sistema` (muda pelo `.env` em `PASTA_ARQUIVOS_SISTEMA`, ex.: uma pasta no servidor), com as subpastas `Projetos\<nome do projeto>` e `Laudos\<nome do laudo>`. Código: `utils/pastasSistema.js` e `services/pastasRegistros.js`.
+- **Projeto (Análise de Projeto):**
+  - "Arquivos do projeto" guarda os PDFs recebidos (antes eram lidos e descartados);
+  - "Relatório de compatibilização.pdf" é atualizado a cada geração;
+  - "Orçamento Pxxx.pdf" é atualizado a cada PDF ou e-mail da proposta;
+  - "Dados da análise.json" é atualizado a cada salvamento.
+  - O campo novo "Nome do projeto" dá nome à pasta (vazio = nome do cliente).
+- **Laudo:**
+  - documentos do padrão da disciplina (Word e Excel) com nome fixo pelo rótulo;
+  - "Fotos";
+  - "Orçamento Pxxx.pdf", quando houver orçamento;
+  - "Dados do laudo.json" (reimportável).
+  - O botão "Salvar documentos na pasta" gera o conjunto completo, e cada documento baixado também é gravado lá.
+  - A opção "Gerar orçamento de material" (desmarcada = **só laudo**) esconde e bloqueia os orçamentos sem mudar os documentos (coluna `laudos_projetos.gerar_orcamento`).
+- **Versões:** os arquivos têm nome fixo e cada versão nova sobrescreve a anterior (gravação segura: temporário + troca). Quando o nome do projeto ou do laudo muda, a pasta é renomeada; nome repetido ganha " (A14)" / " (L3)".
+- **Exclusão:** excluir no sistema move a pasta para `_Excluídos` (não apaga às cegas).
+- **Erros:** falha de disco (arquivo aberto no Word, rede fora) nunca impede salvar no sistema; só gera aviso.
+- **Na tela:** painel "Pasta dos arquivos" com caminho, lista, "Copiar caminho" e "Abrir pasta" (abre o Explorer só quando o acesso é deste PC). Rotas `GET /projetos/analises/:id/pasta`, `POST .../pasta/abrir`, `POST /laudos/:id/salvar-documentos`, `GET /laudos/:id/pasta` e `POST .../pasta/abrir`. Colunas `pasta`/`nome_projeto` em `analises_projeto` e `pasta` em `laudos_projetos`.
+- **Situação em 11/10/2026:** as 3 análises existentes ganharam pasta, com os PDFs originais (achados em "Projetos recebidos clientes"), relatório, dados e o orçamento P228. Teste: `cypress/e2e/11_laudos.cy.js` (pasta e só laudo).
+
 **Regras permanentes de interface e catálogo (pedido do usuário, 10/10/2026).**
 - **Toda lista suspensa em ordem alfabética.** As telas usam `components/Select.js` (`<Select>` no lugar de `<select>`; `<Sugestoes>` no lugar de `<datalist>`). O componente ordena as opções em ordem do português (sem diferenciar acentos, números em ordem natural) e mantém no topo a opção vazia ("Todos", "Selecione…"). **Lista nova deve usar esse componente.** O teste `cypress/e2e/12_listas_ordenadas.cy.js` confere as telas.
 - **Todo material tem categoria.** `services/classificacaoMateriais.js` decide, nesta ordem:

@@ -232,6 +232,9 @@ async function criarTabelas() {
     // até o primeiro clique; um segundo clique atualiza a mesma proposta em
     // vez de criar outra.
     await client.query(`ALTER TABLE analises_projeto ADD COLUMN IF NOT EXISTS proposta_id INTEGER REFERENCES propostas(id)`);
+    // Pasta do projeto no disco (utils/pastasSistema.js): nome do projeto editável e nome da pasta em uso
+    await client.query(`ALTER TABLE analises_projeto ADD COLUMN IF NOT EXISTS nome_projeto VARCHAR(200)`);
+    await client.query(`ALTER TABLE analises_projeto ADD COLUMN IF NOT EXISTS pasta VARCHAR(255)`);
 
     // Preços de referência de mão de obra (valor médio de mercado, editado
     // por um admin) — usados só como SUGESTÃO ao lado do campo de valor
@@ -292,6 +295,9 @@ async function criarTabelas() {
       )
     `);
     await client.query('CREATE INDEX IF NOT EXISTS idx_laudos_fotos_laudo ON laudos_projetos_fotos (laudo_id)');
+    // Pasta do laudo no disco e opção "só laudo" (sem orçamento de material)
+    await client.query(`ALTER TABLE laudos_projetos ADD COLUMN IF NOT EXISTS pasta VARCHAR(255)`);
+    await client.query(`ALTER TABLE laudos_projetos ADD COLUMN IF NOT EXISTS gerar_orcamento BOOLEAN NOT NULL DEFAULT true`);
 
     // Cache de pesquisas de mercado (ver utils/pesquisaMercadoService.js) —
     // a mesma descrição pesquisada de novo dentro de 48h reaproveita o

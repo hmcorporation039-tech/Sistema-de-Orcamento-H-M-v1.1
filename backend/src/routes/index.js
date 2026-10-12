@@ -177,6 +177,9 @@ router.delete('/contratos/:id', autenticar, validarId, admin, posseContrato, con
 router.get('/projetos/analises', autenticar, projCtrl.listar);
 router.post('/projetos/analisar', autenticar, limiteAnaliseProjeto, upload.array('arquivos', 10), projCtrl.analisar);
 router.get('/projetos/analises/:id/relatorio', autenticar, validarId, projCtrl.gerarRelatorio);
+// Pasta do projeto em "Arquivos do Sistema/Projetos" (consultar e abrir no Explorer deste PC)
+router.get('/projetos/analises/:id/pasta', autenticar, validarId, projCtrl.pasta);
+router.post('/projetos/analises/:id/pasta/abrir', autenticar, validarId, projCtrl.abrirPasta);
 router.get('/projetos/analises/:id', autenticar, validarId, projCtrl.buscarUma);
 router.put('/projetos/analises/:id', autenticar, validarId, posseAnalise, projCtrl.atualizar);
 router.delete('/projetos/analises/:id', autenticar, validarId, posseAnalise, projCtrl.remover);
@@ -189,6 +192,10 @@ router.get('/laudos/modelo/:disciplina', autenticar, laudoCtrl.modelo);
 router.get('/laudos', autenticar, laudoCtrl.listar);
 router.post('/laudos', autenticar, laudoCtrl.criar);
 router.get('/laudos/:id/documento/:tipo', autenticar, validarId, laudoCtrl.documento);
+// Pasta do laudo em "Arquivos do Sistema/Laudos": gravar todos os documentos, consultar e abrir
+router.post('/laudos/:id/salvar-documentos', autenticar, validarId, posseLaudo, laudoCtrl.salvarDocumentos);
+router.get('/laudos/:id/pasta', autenticar, validarId, laudoCtrl.pasta);
+router.post('/laudos/:id/pasta/abrir', autenticar, validarId, laudoCtrl.abrirPasta);
 router.get('/laudos/:id/fotos/:fotoId', autenticar, validarId, laudoCtrl.verFoto);
 router.post('/laudos/:id/fotos', autenticar, validarId, posseLaudo, uploadFotos.array('fotos', 20), laudoCtrl.enviarFotos);
 router.delete('/laudos/:id/fotos/:fotoId', autenticar, validarId, posseLaudo, laudoCtrl.removerFoto);

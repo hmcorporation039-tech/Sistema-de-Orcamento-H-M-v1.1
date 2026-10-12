@@ -26,6 +26,24 @@ describe('Laudos e projetos por disciplina', () => {
     cy.contains('Lista de pontos (por equipamento)').should('be.visible');
   });
 
+  it('pasta do laudo: salva os documentos e permite emitir só o laudo', () => {
+    cy.get('select').first().select('cftv');
+    cy.intercept('POST', '/api/laudos').as('criar');
+    cy.contains('button', 'Novo a partir do exemplo').click();
+    cy.wait('@criar');
+    cy.contains('Pasta dos arquivos').should('be.visible');
+    cy.intercept('POST', '/api/laudos/*/salvar-documentos').as('salvarDocs');
+    cy.contains('button', 'Salvar documentos na pasta').click();
+    cy.wait('@salvarDocs', { timeout: 120000 }).its('response.statusCode').should('eq', 200);
+    cy.contains('documento(s) salvos na pasta do laudo').should('be.visible');
+    cy.contains('label', 'Gerar orçamento de material').find('input').uncheck();
+    cy.contains('Só laudo — os documentos são emitidos sem orçamento.').should('be.visible');
+    cy.contains('button', 'Gerar orçamento —').should('not.exist');
+    cy.contains('Pasta dos arquivos').click();
+    cy.contains('Laudo de vistoria do CFTV.docx').should('be.visible');
+    cy.screenshot('laudos-pasta', { capture: 'viewport' });
+  });
+
   it('usina solar (formulário genérico): exemplo, cálculo, documento e orçamento', () => {
     cy.get('select').first().select('solar');
     cy.intercept('POST', '/api/laudos').as('criar');
