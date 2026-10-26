@@ -176,6 +176,16 @@ async function criarTabelas() {
     `);
     await client.query(`ALTER TABLE proposta_itens ADD COLUMN IF NOT EXISTS ncm VARCHAR(10)`);
     await client.query(`ALTER TABLE proposta_itens ADD COLUMN IF NOT EXISTS codigo VARCHAR(20)`);
+    // códigos de serviço das skills chegam a 26 caracteres (spda_ensaio_continuidade,
+    // antena_amplificador_linha…): com 20, gerar o orçamento do laudo dava erro 500
+    await client.query(`
+      DO $$ BEGIN
+        IF (SELECT character_maximum_length FROM information_schema.columns
+             WHERE table_name = 'proposta_itens' AND column_name = 'codigo') < 50 THEN
+          ALTER TABLE proposta_itens ALTER COLUMN codigo TYPE VARCHAR(50);
+        END IF;
+      END $$;
+    `);
     // Subgrupo: agrupamento visual opcional dentro de uma seção (ex: "Alarme" dentro de "Mão de Obra")
     await client.query(`ALTER TABLE proposta_itens ADD COLUMN IF NOT EXISTS subgrupo VARCHAR(100)`);
     // Status do item: 'confirmado' (preço fechado) ou 'a_cotar' (preço estimado, pendente de confirmação)
