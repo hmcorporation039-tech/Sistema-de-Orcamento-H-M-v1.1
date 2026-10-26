@@ -926,12 +926,21 @@ function TabelaServicos({ itens, onAtualizar, onRemover, pesquisas, onPesquisar,
                 {temSugestao && (
                   <div style={{ fontSize: 10.5, color: '#8a7333', marginTop: 3, whiteSpace: 'nowrap' }}>
                     Ref.: {formatarMoeda(it.valor_referencia_mercado)}{' '}
-                    <button type="button" onClick={() => onAtualizar(it.id, 'valor_unitario', it.valor_referencia_mercado)}
-                      style={{ background: 'none', border: 'none', color: '#c9a227', textDecoration: 'underline', cursor: 'pointer', fontSize: 10.5, padding: 0 }}>
+                    <button type="button" onClick={() => onAtualizar(it.id, 'valor_unitario', it.valor_referencia_mercado)} style={btnUsar}>
                       usar
                     </button>
                   </div>
                 )}
+                {/* referências de mercado por segmento (tela Preços de Mão de Obra) */}
+                {it.referencias_mercado && [['publico', 'oficial'], ['privado', 'particular']].map(([seg, rot]) => (
+                  it.referencias_mercado[seg] != null && Number(it.referencias_mercado[seg]) !== Number(it.valor_unitario || 0) && (
+                    <div key={seg} style={{ fontSize: 10.5, color: '#6f7f8f', marginTop: 2, whiteSpace: 'nowrap' }}
+                      title={seg === 'publico' ? 'Referência oficial / governo (SINAPI, ORSE, licitações)' : 'Referência do mercado particular'}>
+                      {rot}: {formatarMoeda(it.referencias_mercado[seg])}{' '}
+                      <button type="button" onClick={() => onAtualizar(it.id, 'valor_unitario', it.referencias_mercado[seg])} style={btnUsar}>usar</button>
+                    </div>
+                  )
+                ))}
                 {onPesquisar && (
                   <button
                     type="button"
@@ -1155,6 +1164,9 @@ const btnPrimario = {
   background: '#c9a227', border: 'none', borderRadius: 6, color: '#000',
   fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap'
 };
+
+// link "usar" das sugestões de preço de referência
+const btnUsar = { background: 'none', border: 'none', color: '#c9a227', textDecoration: 'underline', cursor: 'pointer', fontSize: 10.5, padding: 0 };
 
 const btnSecundario = {
   display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent',

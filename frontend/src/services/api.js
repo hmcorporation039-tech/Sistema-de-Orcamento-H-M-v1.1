@@ -154,6 +154,9 @@ export const pesquisarPrecoMercado = (descricao, tipo = 'material') => api.post(
 // ── PREÇOS DE REFERÊNCIA DE MÃO DE OBRA (admin) ─────────────────────────
 export const getPrecosMaoDeObra = () => api.get('/precos-mao-de-obra');
 export const atualizarPrecosMaoDeObra = (itens) => api.put('/precos-mao-de-obra', { itens });
+// referência de mercado de um serviço: segmento 'publico' (oficial/governo) ou 'privado' (particular)
+export const pesquisarReferenciaMaoDeObra = (codigo, segmento) =>
+  api.post(`/precos-mao-de-obra/${encodeURIComponent(codigo)}/pesquisar`, { segmento }, { timeout: 300000 });
 
 // ── USUÁRIOS ──────────────────────────────────────────────────────────
 export const getUsuarios = () => api.get('/usuarios');

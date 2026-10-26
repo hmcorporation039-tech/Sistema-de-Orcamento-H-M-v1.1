@@ -253,6 +253,8 @@ router.delete('/laudos/:id', autenticar, validarId, posseLaudo, laudoCtrl.remove
 // quem PODE EDITAR essa referência precisa dessas rotas.
 router.get('/precos-mao-de-obra', autenticar, admin, precosMOCtrl.listar);
 router.put('/precos-mao-de-obra', autenticar, admin, precosMOCtrl.atualizar);
+// referência de mercado oficial/governo ou particular pesquisada na web (mesmo limite da pesquisa de mercado)
+router.post('/precos-mao-de-obra/:codigo/pesquisar', autenticar, admin, limitePesquisaMercado, precosMOCtrl.pesquisar);
 
 // ── PESQUISA DE MERCADO (Gemini + busca real) ────────────────────────────
 router.post('/pesquisa-mercado', autenticar, limitePesquisaMercado, pesqCtrl.pesquisar);

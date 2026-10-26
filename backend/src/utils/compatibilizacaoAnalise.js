@@ -3,7 +3,7 @@ const { analisarProjeto } = require('./projetoParser');
 const { extrairEquipamentosComIA } = require('./equipamentoExtratorIA');
 const { nomeDaDisciplina } = require('./disciplinasProjeto');
 const { calcularPontosPorAmbiente } = require('./pontosPorAmbiente');
-const { buscarPrecosReferencia } = require('./precosMaoDeObraReferencia');
+const { buscarReferencias, valorSugerido, segmentoPorNomeDoCliente } = require('./precosMaoDeObraReferencia');
 const { detectarDisciplinas } = require('./leitoresTabelaProjeto');
 const { lerPdfVetorial } = require('./pdfVetorial');
 
@@ -220,7 +220,7 @@ const circuitosDosQuadros = (analises) => analises
   .filter(a => a.disciplinas.some(d => d.startsWith('eletrica')))
   .reduce((s, a) => s + (a.quadroCargas?.length || 0), 0);
 
-function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = {}) {
+function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = {}, referencias = {}) {
   const { cameras: totalCameras, rede: totalRede, antena: totalAntena } = totaisCodificados(analises);
   const circuitos = circuitosDosQuadros(analises);
   const quadros = analises.filter(a => a.disciplinas.some(d => d.startsWith('eletrica')) && a.quadroCargas?.length).length;
@@ -239,6 +239,9 @@ function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = 
   const item = (codigo, descricao, quantidade, unidade, disciplina, observacao) => ({
     codigo, descricao, quantidade, unidade, valor_unitario: 0,
     valor_referencia_mercado: precosReferencia[codigo] ?? null,
+    // referências de mercado dos dois segmentos (oficial/governo e particular) para a tela
+    referencias_mercado: referencias[codigo] && (referencias[codigo].publico != null || referencias[codigo].privado != null)
+      ? { publico: referencias[codigo].publico, privado: referencias[codigo].privado } : null,
     subgrupo: nomeDaDisciplina(disciplina), disciplina, pronto: false, observacao,
   });
 
@@ -606,17 +609,20 @@ async function analisarProjetoCompleto(arquivos) {
     analises.map((a, i) => (a.semTexto ? Promise.resolve([]) : lerPdfVetorial(arquivos[i].buffer, { maxPaginas: 6 }).catch(() => [])))
   );
 
-  // Preços de referência de mão de obra (sugestão editável pelo admin — ver
-  // utils/precosMaoDeObraReferencia.js). Se a tabela ainda não existir por
-  // algum motivo (ambiente sem a migração mais nova), a análise continua
-  // funcionando normalmente, só sem a sugestão de preço.
-  const precosReferencia = await buscarPrecosReferencia().catch(() => ({}));
-
   // Disciplina "efetiva" da análise inteira = união das tags de todos os
   // arquivos — decide quais itens-modelo de serviço/material aparecem.
   const disciplinasEfetivas = [...new Set(analises.flatMap(a => a.disciplinas))];
 
   const cliente = analises.map(a => extrairCliente(a.textoBruto) || a.carimbo?.cliente).find(Boolean) || null;
+
+  // Preços de referência de mão de obra (sugestão — ver
+  // utils/precosMaoDeObraReferencia.js): o adotado pela H&M ou a referência de
+  // mercado do segmento do cliente (órgão público → oficial; demais →
+  // particular), mais as duas referências para a tela mostrar. Se a tabela
+  // falhar, a análise continua, só sem a sugestão de preço.
+  const segmento = await segmentoPorNomeDoCliente(cliente).catch(() => 'privado');
+  const referencias = await buscarReferencias().catch(() => ({}));
+  const precosReferencia = Object.fromEntries(Object.entries(referencias).map(([c, r]) => [c, valorSugerido(r, segmento)]).filter(([, v]) => v != null));
 
   // Ambientes e tabela de cabos: dados de contexto geral do projeto (a mesma
   // planta de fundo se repete em todo desenho, e o padrão de tabela de cabos
@@ -691,6 +697,7 @@ async function analisarProjetoCompleto(arquivos) {
 
   return {
     cliente,
+    segmentoPreco: segmento, // órgão público → referência oficial; demais → mercado particular
     disciplinas: disciplinasEfetivas,
     arquivosAnalisados: analises.map(a => ({ arquivo: a.arquivo, disciplinas: a.disciplinas })),
     ambientes,
@@ -705,7 +712,7 @@ async function analisarProjetoCompleto(arquivos) {
     },
     tabelaCabos,
     achados,
-    servicos: montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia),
+    servicos: montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia, referencias),
     materiais,
     dadosExtraidos,
   };

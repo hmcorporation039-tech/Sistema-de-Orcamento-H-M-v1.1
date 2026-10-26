@@ -251,6 +251,17 @@ async function criarTabelas() {
         atualizado_em TIMESTAMP DEFAULT NOW()
       )
     `);
+    // Referência de MERCADO por segmento, ao lado do valor adotado pela H&M
+    // (valor_referencia): oficial/governo (SINAPI, ORSE, SICRO, tabelas de
+    // órgãos, Painel de Preços) e privado/particular. Pesquisadas na web pela
+    // tela (fonte, link e ofertas guardados para conferência) ou digitadas.
+    for (const seg of ['publico', 'privado']) {
+      await client.query(`ALTER TABLE precos_mao_de_obra_referencia ADD COLUMN IF NOT EXISTS valor_${seg} DECIMAL(12,2)`);
+      await client.query(`ALTER TABLE precos_mao_de_obra_referencia ADD COLUMN IF NOT EXISTS fonte_${seg} VARCHAR(300)`);
+      await client.query(`ALTER TABLE precos_mao_de_obra_referencia ADD COLUMN IF NOT EXISTS link_${seg} VARCHAR(500)`);
+      await client.query(`ALTER TABLE precos_mao_de_obra_referencia ADD COLUMN IF NOT EXISTS data_${seg} TIMESTAMP`);
+      await client.query(`ALTER TABLE precos_mao_de_obra_referencia ADD COLUMN IF NOT EXISTS ofertas_${seg} JSONB`);
+    }
     // Semeia os códigos conhecidos sem sobrescrever um valor_referencia já
     // preenchido pelo admin — só a descrição/unidade/disciplina são mantidas
     // sincronizadas com a lista canônica (podem mudar de texto entre versões

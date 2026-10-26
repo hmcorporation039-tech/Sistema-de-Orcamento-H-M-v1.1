@@ -225,15 +225,38 @@ const ITENS_REFERENCIA = [
   { codigo: 'antena_relatorio', descricao: 'Antena coletiva: relatório de medição/comissionamento com ART', unidade: 'vb', disciplina: 'antena' },
 ];
 
-// Usado por montarServicosPadrao pra anexar a referência (sugestão, nunca
-// preenchida sozinha no valor_unitario) a cada item gerado.
-async function buscarPrecosReferencia() {
-  const result = await pool.query(
-    'SELECT codigo, valor_referencia FROM precos_mao_de_obra_referencia WHERE valor_referencia IS NOT NULL'
-  );
+// Segmento do cliente para a referência de mercado: órgão público usa a
+// referência OFICIAL (SINAPI, ORSE, tabelas de órgãos — teto de licitação);
+// os demais, a do mercado particular. Sem cadastro, decide pelo nome.
+const RE_ORGAO_PUBLICO = /\b(MINIST[ÉE]RIO|SECRETARIA|GOVERNO|PREFEITURA|C[ÂA]MARA (MUNICIPAL|DOS DEPUTADOS|LEGISLATIVA)|ASSEMBLEIA LEGISLATIVA|SENADO|TRIBUNAL|PROCURADORIA|DEFENSORIA|AUTARQUIA|INSTITUTO FEDERAL|UNIVERSIDADE FEDERAL|UNIVERSIDADE ESTADUAL|DETRAN|DNIT|DER\b|NOVACAP|CAESB|POL[ÍI]CIA|CORPO DE BOMBEIROS|EX[ÉE]RCITO|MARINHA|AERON[ÁA]UTICA|ANATEL|ANEEL|ANVISA|INSS|IBAMA|ICMBIO|EMBRAPA|FUNDA[ÇC][ÃA]O (HOSPITALAR|DE SA[ÚU]DE)|HOSPITAL (REGIONAL|UNIVERSIT[ÁA]RIO|DAS FOR[ÇC]AS)|SEEDF|SES-?DF|GDF)\b/i;
+function segmentoDoCliente(tipo, nome) {
+  if (tipo) return /p[úu]blico/i.test(tipo) ? 'publico' : 'privado';
+  return RE_ORGAO_PUBLICO.test(String(nome || '')) ? 'publico' : 'privado';
+}
+async function segmentoPorNomeDoCliente(nome) {
+  if (!nome) return 'privado';
+  const { rows: [c] } = await pool.query('SELECT tipo FROM clientes WHERE LOWER(nome) = LOWER($1) AND ativo = true LIMIT 1', [String(nome).trim()]).catch(() => ({ rows: [] }));
+  return segmentoDoCliente(c?.tipo, nome);
+}
+
+// Sugestão de preço de um serviço: o valor adotado pela H&M, se preenchido;
+// senão a referência de mercado do segmento do cliente. Nunca preenchida
+// sozinha como preço fechado (o orçamento sai "a cotar").
+const valorSugerido = (r, segmento) => r.hm ?? (segmento === 'publico' ? r.publico : r.privado) ?? null;
+
+async function buscarReferencias() {
+  const { rows } = await pool.query('SELECT codigo, valor_referencia, valor_publico, valor_privado FROM precos_mao_de_obra_referencia');
+  const num = (v) => (v == null ? null : Number(v));
+  return Object.fromEntries(rows.map(r => [r.codigo, { hm: num(r.valor_referencia), publico: num(r.valor_publico), privado: num(r.valor_privado) }]));
+}
+
+// codigo → valor sugerido para o segmento (usado por montarServicosPadrao e
+// pelos laudos); só entram códigos com algum valor
+async function buscarPrecosReferencia(segmento = 'privado') {
+  const refs = await buscarReferencias();
   const mapa = {};
-  for (const row of result.rows) mapa[row.codigo] = Number(row.valor_referencia);
+  for (const [codigo, r] of Object.entries(refs)) { const v = valorSugerido(r, segmento); if (v != null) mapa[codigo] = v; }
   return mapa;
 }
 
-module.exports = { ITENS_REFERENCIA, buscarPrecosReferencia };
+module.exports = { ITENS_REFERENCIA, buscarPrecosReferencia, buscarReferencias, valorSugerido, segmentoDoCliente, segmentoPorNomeDoCliente };

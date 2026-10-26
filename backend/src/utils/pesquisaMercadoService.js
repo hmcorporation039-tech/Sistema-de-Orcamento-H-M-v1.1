@@ -40,6 +40,33 @@ Marque "mesmo_item": false quando a oferta for de outra variação (especificaç
 Responda SOMENTE com JSON neste formato: ${FORMATO}`;
 }
 
+// Referência de preço de MÃO DE OBRA por segmento (tela Preços de Mão de Obra):
+// oficial/governo (o que limita preço em licitação) × mercado particular.
+// Região configurável: PESQUISA_UF (padrão DF) e PESQUISA_REGIAO.
+const SEGMENTOS_MO = {
+  publico: {
+    rotulo: 'oficial / governo',
+    fontes: (uf) => `SINAPI (Caixa — composições ou insumos de mão de obra, UF ${uf}, mês de referência mais recente; diga se é desonerado ou não desonerado), ORSE, SICRO/DNIT, SEINFRA, tabelas de preços de órgãos públicos (ex.: NOVACAP, CAESB, DER) e preços praticados em licitações e atas de registro de preços (Painel de Preços do governo federal, Compras.gov.br)`,
+    formatoFonte: 'a fonte com código e data (ex.: "SINAPI 91926 — 08/2026 — DF não desonerado")',
+  },
+  privado: {
+    rotulo: 'mercado particular',
+    fontes: (uf, regiao) => `preços praticados para clientes particulares (residências, condomínios, comércio e empresas) em ${regiao} ou, sem dado local, no Brasil: sites de orçamento e de prestadores (GetNinjas, Habitissimo, Triider e similares), tabelas publicadas por sindicatos e associações de eletricistas e instaladores, tabelas e anúncios de empresas do ramo e, quando o serviço for projeto, laudo ou ART, as tabelas de honorários de engenharia (CREA, SENGE, IBAPE)`,
+    formatoFonte: 'a fonte (site, empresa ou tabela) com a data da publicação, quando houver',
+  },
+};
+
+function promptServicoSegmento(descricao, unidade, segmento) {
+  const s = SEGMENTOS_MO[segmento];
+  const uf = process.env.PESQUISA_UF || 'DF';
+  const regiao = process.env.PESQUISA_REGIAO || 'Brasília/Distrito Federal';
+  return `Pesquise na web a referência de preço de MÃO DE OBRA (serviço, sem material) do segmento ${s.rotulo} para: "${descricao}" — unidade: ${unidade || 'un'}.
+Use estas fontes: ${s.fontes(uf, regiao)}.
+Traga de 2 a 5 referências REAIS: em "fonte", ${s.formatoFonte}; em "produto", a descrição exata do item/composição encontrado; em "preco", o valor em reais por ${unidade || 'unidade'} só da MÃO DE OBRA (número, ponto como separador decimal); em "link", a página consultada.
+${segmento === 'publico' ? 'Composição de "fornecimento e instalação" (com material): calcule a parcela de mão de obra pela composição analítica (coeficiente de cada profissional — eletricista, encarregado, ajudante/servente — × custo horário com encargos da mesma tabela e data) e ponha esse valor em "preco", com a conta em "observacao".\n' : ''}"mesmo_item": true quando for o mesmo serviço de mão de obra na mesma unidade — mesmo que de outra região, outra data ou uma faixa de preço (use o valor médio da faixa); diga isso em "observacao". "mesmo_item": false só quando o escopo ou a unidade forem diferentes, ou quando o preço incluir material e não der para separar a mão de obra. Não invente código, preço nem link — se não achar, devolva menos referências.
+Responda SOMENTE com JSON neste formato: ${FORMATO}`;
+}
+
 const numero = (v) => {
   if (typeof v === 'number') return v;
   const s = String(v ?? '').replace(/[^\d.,]/g, '');
@@ -108,7 +135,9 @@ async function salvarCache(descricaoOriginal, descricaoNormalizada, resultado, f
 // Ordem (preferência do usuário): Claude Max pela assinatura (sem custo por
 // uso) → Gemini com busca → Claude pela API. Cada provedor devolve o JSON de
 // ofertas; o texto continua sendo gravado para a tela e o histórico.
-async function pesquisarPrecoMercado(descricao, { tipo = 'material' } = {}) {
+// `prompt` e `chaveCache` permitem pesquisas com roteiro próprio (referência
+// de mão de obra por segmento) no mesmo cache, histórico e ordem de provedores.
+async function pesquisarPrecoMercado(descricao, { tipo = 'material', prompt: promptProprio, chaveCache } = {}) {
   const desc = (descricao || '').trim();
   if (!desc) throw new ErroPesquisaMercado('Informe a descrição do material a pesquisar', 400);
 
@@ -117,7 +146,7 @@ async function pesquisarPrecoMercado(descricao, { tipo = 'material' } = {}) {
     throw new ErroPesquisaMercado('Pesquisa de mercado desativada — nenhuma IA disponível (Claude Code com a assinatura Max, GEMINI_API_KEY ou ANTHROPIC_API_KEY)', 422);
   }
 
-  const normalizada = normalizarDescricao(`${tipo === 'servico' ? '[servico] ' : ''}${desc}`);
+  const normalizada = normalizarDescricao(chaveCache || `${tipo === 'servico' ? '[servico] ' : ''}${desc}`).slice(0, 500);
   // Cache é só otimização de custo — se a tabela falhar por qualquer motivo,
   // a pesquisa segue normalmente (não trava por causa disso).
   const emCache = await buscarCache(normalizada).catch(() => null);
@@ -126,7 +155,7 @@ async function pesquisarPrecoMercado(descricao, { tipo = 'material' } = {}) {
     return { descricao: desc, resultado: emCache.resultado, fonte: emCache.fonte, deCache: true, pesquisadoEm: emCache.criado_em, ofertas, estatistica: estatistica(ofertas), precoSugerido: emCache.preco_sugerido != null ? Number(emCache.preco_sugerido) : null };
   }
 
-  const prompt = montarPrompt(desc, tipo);
+  const prompt = promptProprio || montarPrompt(desc, tipo);
   const provedores = [
     temClaudeMax && ['claude_max', () => pesquisarWebClaudeMax(prompt)],
     geminiConfigurado() && ['gemini', async () => extrairJson(await chamarGemini({ prompt, busca: true, tentativas: 2 }))],
@@ -141,7 +170,7 @@ async function pesquisarPrecoMercado(descricao, { tipo = 'material' } = {}) {
       if (!ofertas.length && provedores.at(-1)[0] !== fonte) { erros.push(`${fonte}: nenhuma oferta`); continue; }
       const est = estatistica(ofertas);
       const texto = textoDasOfertas(ofertas, est, json?.observacao ? String(json.observacao).slice(0, 300) : '');
-      await salvarCache(desc, normalizada, texto, fonte, ofertas, est.media).catch(() => {});
+      await salvarCache(desc.slice(0, 500), normalizada, texto, fonte, ofertas, est.media).catch(() => {});
       return { descricao: desc, resultado: texto, fonte, deCache: false, ofertas, estatistica: est, precoSugerido: est.media };
     } catch (err) {
       erros.push(`${fonte}: ${err.message}`);
@@ -171,4 +200,24 @@ async function salvarPesquisaManual(descricao, resultado, fonte = 'claude_deskto
   return { descricao: descCurta, fonte: fonteLimpa, salvo: true };
 }
 
-module.exports = { pesquisarPrecoMercado, salvarPesquisaManual, ErroPesquisaMercado, normalizarOfertas, estatistica };
+// Referência de mão de obra de um segmento ('publico' | 'privado'): média das
+// referências equivalentes (mesmo_item), com as fontes e o 1º link
+async function pesquisarReferenciaMaoDeObra(descricao, unidade, segmento) {
+  if (!SEGMENTOS_MO[segmento]) throw new ErroPesquisaMercado('Segmento inválido (use publico ou privado)', 400);
+  const r = await pesquisarPrecoMercado(descricao, {
+    tipo: 'servico',
+    prompt: promptServicoSegmento(descricao, unidade, segmento),
+    // versão do roteiro na chave: roteiro novo não reaproveita pesquisa antiga do cache
+    chaveCache: `[mo_${segmento} v2] ${descricao} /${unidade || ''}`,
+  });
+  const equivalentes = r.ofertas.filter(o => o.mesmo_item);
+  return {
+    ...r,
+    segmento,
+    valor: r.estatistica.media,
+    fontes: [...new Set(equivalentes.map(o => o.fonte))].join('; ').slice(0, 300) || null,
+    link: equivalentes.find(o => o.link)?.link || null,
+  };
+}
+
+module.exports = { pesquisarPrecoMercado, pesquisarReferenciaMaoDeObra, salvarPesquisaManual, ErroPesquisaMercado, normalizarOfertas, estatistica, promptServicoSegmento, SEGMENTOS_MO };

@@ -14,6 +14,7 @@ const P = require('../utils/pastasSistema');
 const { tipoPorConteudo } = require('../utils/tipoArquivo');
 const { versaoDoPedido, responderConflitoOuAusente } = require('../utils/versao');
 const { dadosDaAnalise, tipoAmbiente } = require('../utils/ponteAnaliseSkill');
+const { buscarPrecosReferencia, segmentoDoCliente } = require('../utils/precosMaoDeObraReferencia');
 const { sincronizarLaudo, pastaDoLaudo, resumoPasta, pedidoLocal, seguro } = require('../services/pastasRegistros');
 
 // Laudos e projetos por disciplina (aba Análise de Projeto). O cálculo e os
@@ -550,16 +551,16 @@ async function removerFoto(req, res) {
 //   achou com preço → entra com o preço e "confirmado"; senão "a_cotar" e o
 //   próprio salvamento da proposta cadastra o material novo no catálogo;
 // - serviço: valor da tabela de preços de referência de mão de obra (pelo
-//   `codigo`), sempre "a_cotar" — referência é sugestão, não preço fechado.
-async function montarItensProposta(orcamento) {
+//   `codigo`) — o adotado pela H&M ou, sem ele, a referência de mercado do
+//   segmento do cliente (órgão público → oficial; demais → particular) —,
+//   sempre "a_cotar": referência é sugestão, não preço fechado.
+async function montarItensProposta(orcamento, segmento = 'privado') {
   const catalogo = (await pool.query(
     'SELECT id, descricao, preco, unidade, categoria FROM materiais WHERE ativo = true ORDER BY id'
   )).rows;
-  const ref = {};
-  (await pool.query('SELECT codigo, valor_referencia FROM precos_mao_de_obra_referencia WHERE valor_referencia IS NOT NULL'))
-    .rows.forEach(r => { ref[r.codigo] = Number(r.valor_referencia); });
+  const ref = await buscarPrecosReferencia(segmento);
 
-  const estatistica = { materiaisNoCatalogo: 0, materiaisNovos: 0, servicosComReferencia: 0, servicosSemReferencia: 0 };
+  const estatistica = { materiaisNoCatalogo: 0, materiaisNovos: 0, servicosComReferencia: 0, servicosSemReferencia: 0, segmento };
   const itens = orcamento.itens.map(it => {
     // `codigo` vai para proposta_itens: liga o serviço à tabela de preços de referência
     const base = { secao_nome: it.secao, codigo: it.codigo || null, descricao: String(it.descricao).slice(0, 500), quantidade: Number(it.quantidade) || 0, unidade: it.unidade || null, subgrupo: it.subgrupo || null };
@@ -598,7 +599,9 @@ async function gerarOrcamento(req, res) {
     const clienteNome = (orcamento.cliente_nome || '').trim();
     if (!clienteNome) return res.status(400).json({ erro: 'Preencha o nome do cliente no formulário antes de gerar o orçamento.' });
 
-    const { itens, estatistica } = await montarItensProposta(orcamento);
+    const clienteEncontrado = await pool.query('SELECT id, tipo FROM clientes WHERE LOWER(nome) = LOWER($1) AND ativo = true LIMIT 1', [clienteNome]);
+    const clienteId = clienteEncontrado.rows[0]?.id || null;
+    const { itens, estatistica } = await montarItensProposta(orcamento, segmentoDoCliente(clienteEncontrado.rows[0]?.tipo, clienteNome));
     const nomesSecoes = [...new Set(itens.map(i => i.secao_nome))];
     // `id` distinto por seção: inserirSecoesEItens casa item→seção por sid OU nome
     const secoes = nomesSecoes.map((nome, i) => ({ id: i + 1, nome }));
@@ -606,8 +609,6 @@ async function gerarOrcamento(req, res) {
     const erroValidacao = validarProposta({ data: dataHoje, cliente_nome: clienteNome, secoes, itens });
     if (erroValidacao) return res.status(400).json({ erro: erroValidacao });
 
-    const clienteEncontrado = await pool.query('SELECT id FROM clientes WHERE LOWER(nome) = LOWER($1) AND ativo = true LIMIT 1', [clienteNome]);
-    const clienteId = clienteEncontrado.rows[0]?.id || null;
     const rotuloModo = motor.modosOrcamento.find(m => m.modo === modo).rotulo;
     const origem = `Laudos e projetos #${laudo.id} (${laudo.disciplina.toUpperCase()} — ${rotuloModo})`;
     // Proposta vinculada: só é atualizada enquanto estiver "Ativa" (aprovada ou
@@ -665,7 +666,7 @@ async function gerarOrcamento(req, res) {
     res.json({
       propostaId, numero, criada, estatistica,
       mensagem: `Orçamento ${numero} ${criada ? 'criado' : 'atualizado'} (${rotuloModo}): ${estatistica.materiaisNoCatalogo} materiais com preço do catálogo, ` +
-        `${estatistica.materiaisNovos} a cotar, ${estatistica.servicosComReferencia} serviços com preço de referência.`,
+        `${estatistica.materiaisNovos} a cotar, ${estatistica.servicosComReferencia} serviços com preço de referência (${estatistica.segmento === 'publico' ? 'referência oficial — cliente órgão público' : 'mercado particular'}).`,
     });
   } catch (err) {
     responderErro(res, err, 'gerar orçamento');
