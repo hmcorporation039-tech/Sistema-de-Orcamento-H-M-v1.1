@@ -1,6 +1,6 @@
 {
   "name": "hm-eng-backend",
-  "version": "1.8.2",
+  "version": "1.8.3",
   "description": "API H&M Engenharia - Sistema de Orçamentos",
   "main": "src/server.js",
   "scripts": {

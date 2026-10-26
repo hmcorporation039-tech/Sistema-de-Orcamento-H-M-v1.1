@@ -63,7 +63,9 @@ async function gerarPdfDeHtml(html, opcoesPdf = {}) {
         // O conteúdo do documento é local; só as fontes vêm de fora.
         console.warn('Recurso externo demorou a carregar no PDF, seguindo sem ele:', err.message);
       }
-      return await page.pdf({ format: 'A4', printBackground: true, timeout: 60000, ...opcoesPdf });
+      // puppeteer 25 devolve Uint8Array; o res.send do Express 4 transforma isso em
+      // JSON ({"0":37,...}). Buffer garante o binário no download e na gravação.
+      return Buffer.from(await page.pdf({ format: 'A4', printBackground: true, timeout: 60000, ...opcoesPdf }));
     } finally {
       await browser.close().catch(err =>
         console.error('Falha ao fechar o navegador do PDF (documento não foi afetado):', err.message)
