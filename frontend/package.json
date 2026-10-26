@@ -1,6 +1,6 @@
 {
   "name": "hm-eng-frontend",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "private": true,
   "dependencies": {
     "@headlessui/react": "^1.7.17",
@@ -14,7 +14,8 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "react-scripts build"
+    "build": "node scripts/build-seguro.js",
+    "build:direto": "react-scripts build"
   },
   "proxy": "http://localhost:3001",
   "browserslist": {

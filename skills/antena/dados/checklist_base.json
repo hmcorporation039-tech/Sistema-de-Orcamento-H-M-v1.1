@@ -1,0 +1,146 @@
+[
+ {
+  "cod": "D1",
+  "secao": "Documentação",
+  "item": "Projeto/as built com diagrama de distribuição, níveis calculados por ponto e identificação dos componentes (derivadores, multiswitch, amplificadores)",
+  "requisito": "IEC/EN 60728-1; NBR 14565, Seção 13",
+  "onde": "Escritório / administração",
+  "como": "Conferir documentos e versão",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D2",
+  "secao": "Documentação",
+  "item": "Registro das medições de comissionamento (nível, MER e BER por canal em cada ponto)",
+  "requisito": "IEC/EN 60728-1",
+  "onde": "Escritório / administração",
+  "como": "Conferir relatório de medição anterior",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "A1",
+  "secao": "Antenas e mastro",
+  "item": "Antena UHF apontada para as emissoras, polarização horizontal, fixação firme e conexão protegida contra umidade",
+  "requisito": "ISDB-Tb (NBR 15601) [CONFERIR]",
+  "onde": "Cobertura",
+  "como": "Visual + nível/MER no headend por canal",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "A2",
+  "secao": "Antenas e mastro",
+  "item": "Parabólica banda Ku apontada (azimute, elevação e skew) com LNBF quattro adequado ao multiswitch",
+  "requisito": "Satélite banda Ku [CONFERIR]",
+  "onde": "Cobertura",
+  "como": "Medidor de satélite: nível e MER por polarização/banda",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "A3",
+  "secao": "Antenas e mastro",
+  "item": "Mastro, base, estais e abraçadeiras íntegros, sem corrosão, dimensionados para o vento",
+  "requisito": "NBR 6123",
+  "onde": "Cobertura",
+  "como": "Visual + teste manual de firmeza",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "A4",
+  "secao": "Antenas e mastro",
+  "item": "Mastro dentro do volume de proteção do SPDA e ligado à equipotencialização (≥ 16 mm² Cu) — sem ligação = risco de surto na prumada",
+  "requisito": "NBR 5419-3; IEC/EN 60728-11",
+  "onde": "Cobertura",
+  "como": "Visual da ligação + continuidade ao SPDA/BEP",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "H1",
+  "secao": "Headend",
+  "item": "Amplificador/headend ventilado, alimentado por circuito protegido e com ganho ajustado conforme o projeto (sem saturação/intermodulação)",
+  "requisito": "IEC/EN 60728-1; cálculo de níveis",
+  "onde": "Headend",
+  "como": "Medir nível de saída por canal e comparar com o máximo do amplificador",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "H2",
+  "secao": "Headend",
+  "item": "Saídas não usadas de divisores, derivadores e multiswitch terminadas com carga de 75 Ω",
+  "requisito": "IEC/EN 60728-1 (casamento de impedância)",
+  "onde": "Headend e caixas de prumada",
+  "como": "Visual",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "R1",
+  "secao": "Distribuição",
+  "item": "Derivadores/multiswitches de cada pavimento com o valor de derivação do projeto e terminação de 75 Ω no fim da prumada",
+  "requisito": "Cálculo de níveis (memorial)",
+  "onde": "Caixas de prumada",
+  "como": "Conferir etiqueta do componente × planilha de níveis",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "R2",
+  "secao": "Distribuição",
+  "item": "Cabos RG-6 75 Ω sem emendas, esmagamento ou raio de curvatura excessivo, com conectores F de compressão adequados, separados dos circuitos de energia",
+  "requisito": "NBR 14565 (caminhos); NBR 5410",
+  "onde": "Prumada e unidades (amostra)",
+  "como": "Visual + conferência do conector",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "R3",
+  "secao": "Distribuição",
+  "item": "Identificação de cabos, caixas de prumada e saídas por pavimento/unidade",
+  "requisito": "NBR 14565, Seção 13",
+  "onde": "Headend e caixas de prumada",
+  "como": "Visual",
+  "prioridade_padrao": "P4"
+ },
+ {
+  "cod": "N1",
+  "secao": "Tomadas e níveis",
+  "item": "Nível de TV digital em todas as tomadas dentro da faixa de projeto (≈ 50–80 dBµV), inclusive a mais próxima e a mais distante do headend",
+  "requisito": "IEC/EN 60728-1; NBR 15604 [CONFERIR faixa]",
+  "onde": "Tomadas (todas ou amostra acordada)",
+  "como": "Analisador de TV digital, canal a canal",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "N2",
+  "secao": "Tomadas e níveis",
+  "item": "MER ≥ 25 dB e BER pós-Viterbi ≤ 2×10⁻⁴ em todos os canais medidos",
+  "requisito": "IEC/EN 60728-1 [CONFERIR critério]",
+  "onde": "Tomadas medidas",
+  "como": "Analisador de TV digital",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "N3",
+  "secao": "Tomadas e níveis",
+  "item": "Nível de satélite nas tomadas SAT/TV-SAT entre ≈ 47 e 77 dBµV e MER ≥ 11 dB nas quatro polarizações/bandas",
+  "requisito": "IEC/EN 60728-1 [CONFERIR]",
+  "onde": "Tomadas com satélite",
+  "como": "Medidor de satélite (com alimentação do LNBF/multiswitch)",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "P1",
+  "secao": "Proteção e aterramento",
+  "item": "DPS coaxial em cada cabo de antena na entrada do edifício, ligado ao BEL do headend",
+  "requisito": "NBR 5419-4; NBR 5410",
+  "onde": "Headend / entrada dos cabos",
+  "como": "Visual + continuidade ao BEL",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "P2",
+  "secao": "Proteção e aterramento",
+  "item": "Blindagens dos cabos, carcaças do headend e BEL interligados ao BEP da edificação",
+  "requisito": "NBR 5410 (equipotencialização); IEC/EN 60728-11",
+  "onde": "Headend",
+  "como": "Continuidade (Ω) BEL–BEP",
+  "prioridade_padrao": "P2"
+ }
+]

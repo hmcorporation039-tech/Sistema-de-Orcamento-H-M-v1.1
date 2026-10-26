@@ -1,0 +1,67 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "",
+  "prefixo": "",
+  "data": "AAAA-MM-DD",
+  "revisao": "R00"
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "titulo": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "",
+  "uf": ""
+ },
+ "obra": {
+  "nome": "",
+  "uso": ""
+ },
+ "projeto": {
+  "conservacao_padrao": "normal",
+  "fator_espacamento": 1.5,
+  "razao_max_espacamento": 1.5,
+  "eficacia_minima_lm_w": 100,
+  "sensor_diametro_m": 8,
+  "dimmer_capacidade_w": 200,
+  "rele_sensor_w": 400,
+  "drivers_por_controlador_010": 20,
+  "enderecos_dali": 64,
+  "fp_driver": 0.92,
+  "fonte_perfil_w": 100,
+  "potencia_max_circuito_va": null
+ },
+ "instalacao": {
+  "tensao_fn": 220,
+  "tensao_ff": 380,
+  "ligacao_iluminacao": "FN",
+  "limite_circuito_iluminacao_a": 10,
+  "isolacao": "PVC",
+  "metodo": "B1",
+  "temperatura": 30,
+  "agrupamento": 3,
+  "comprimento_medio_circuito_m": 15,
+  "queda_max_terminal_pct": 4
+ },
+ "luminarias": [],
+ "ambientes": [],
+ "inspecao": {
+  "tipo": "comissionamento",
+  "documento_n": "",
+  "checklist": [],
+  "ncs": [],
+  "medicoes_iluminancia": [],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

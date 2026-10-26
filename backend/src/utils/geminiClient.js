@@ -16,6 +16,8 @@ const MODELOS_EM_ORDEM = process.env.GEMINI_MODELOS
   ? process.env.GEMINI_MODELOS.split(',').map(m => m.trim()).filter(Boolean)
   : ['gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-3.6-flash'];
 
+const TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS) || 120000;
+
 function configurado() {
   return !!process.env.GEMINI_API_KEY;
 }
@@ -23,11 +25,24 @@ function configurado() {
 async function chamarUmModelo({ modelo, body, tentativas }) {
   let ultimoErro;
   for (let tentativa = 1; tentativa <= tentativas; tentativa++) {
-    const resp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
-    );
-    const data = await resp.json();
+    // chave no cabeçalho, não na URL (URL vai parar em logs e mensagens de erro);
+    // timeout: sem ele, uma conexão pendurada travava a análise/leitura para sempre
+    let data;
+    try {
+      const resp = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelo)}:generateContent`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        }
+      );
+      data = await resp.json().catch(() => ({ error: { message: `resposta HTTP ${resp.status} sem JSON`, status: resp.status >= 500 ? 'UNAVAILABLE' : '' } }));
+    } catch (err) {
+      if (err.name !== 'TimeoutError' && err.name !== 'AbortError') throw err;
+      data = { error: { message: `sem resposta em ${TIMEOUT_MS / 1000} s`, status: 'UNAVAILABLE' } };
+    }
 
     if (!data.error) {
       const texto = data.candidates?.[0]?.content?.parts?.find(p => p.text)?.text;

@@ -33,6 +33,15 @@ O mesmo motor roda no Sistema de Orçamentos: **Análise de Projeto → Laudos e
    ```
 5. **Orçamento:** `node _comum/cli.js cftv orcamento <obra>.json --modo execucao` gera o rascunho (modos: `execucao` (Instalação do CFTV) ou `vistoria` (Vistoria e laudo)). Para criar no sistema, use a ferramenta MCP `criar_rascunho_proposta` (servidor `hm-orcamentos`) com os itens gerados, ou o botão na aba Análise de Projeto.
 
+## Projeto a partir da arquitetura (AutoCAD)
+
+Com a planta de arquitetura do cliente em DXF (no AutoCAD: Salvar como → DXF 2018; ambientes = polilinhas fechadas com o nome escrito dentro):
+
+1. `node skills/_comum/cli.js cftv ambientes arquitetura.dwg` (ou .dxf) — lista os ambientes com área e perímetro reais e as portas (use para preencher o formulário).
+2. `node skills/_comum/cli.js cftv planta dados.json --arquitetura arquitetura.dwg [--saida planta.dxf] [--escala 50]` — gera a planta DXF (milímetros, AutoCAD 2018+) com a arquitetura em cinza (ARQ-BASE), os pontos nas layers da disciplina (padrão H&M `<DISC>-<ELEMENTO>`, `skills/_comum/cad/padrao-hm.json`), legenda com quantidades, notas e o carimbo `HM-CARIMBO` com atributos.
+
+Regra de posicionamento: câmeras nos cantos do ambiente indicado em "local", apontando para o centro. Posições são indicativas — o projetista revisa no AutoCAD, completa eletrodutos/infraestrutura e emite. No sistema: aba Laudos e projetos → "Enviar arquitetura (DXF)" e "Baixar planta (DXF)".
+
 ## Critérios adotados
 
 - Densidade de pixels: px/m = resolução horizontal ÷ (2·d·tg(abertura/2)), comparada com DORI da IEC 62676-4 (25/62/125/250 px/m).

@@ -1,0 +1,100 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "Escritório Exemplo",
+  "prefixo": "Escritorio_Exemplo",
+  "data": "2026-10-25",
+  "revisao": "R00",
+  "dados_ilustrativos": true
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "titulo": "Engenheiro Eletricista",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "CLIENTE EXEMPLO",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "Endereço de exemplo",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "Escritório Exemplo — pavimento térreo",
+  "uso": "Escritório corporativo"
+ },
+ "projeto": {
+  "conservacao_padrao": "normal",
+  "fator_espacamento": 1.5,
+  "razao_max_espacamento": 1.5,
+  "eficacia_minima_lm_w": 100,
+  "sensor_diametro_m": 8,
+  "dimmer_capacidade_w": 200,
+  "rele_sensor_w": 400,
+  "drivers_por_controlador_010": 20,
+  "enderecos_dali": 64,
+  "fp_driver": 0.92,
+  "fonte_perfil_w": 100,
+  "potencia_max_circuito_va": 1200
+ },
+ "instalacao": {
+  "tensao_fn": 220,
+  "tensao_ff": 380,
+  "ligacao_iluminacao": "FN",
+  "limite_circuito_iluminacao_a": 10,
+  "isolacao": "PVC",
+  "metodo": "B1",
+  "temperatura": 30,
+  "agrupamento": 3,
+  "comprimento_medio_circuito_m": 15,
+  "queda_max_terminal_pct": 4
+ },
+ "luminarias": [
+  { "codigo": "PL1", "descricao": "Painel LED 60 × 60 cm (exemplo)", "tipo": "embutir", "potencia_w": 32, "fluxo_lm": 4000, "ra": 80, "tcc_k": 4000, "ugr": 19, "fu": null },
+  { "codigo": "DL1", "descricao": "Downlight LED Ø 15 cm (exemplo)", "tipo": "embutir", "potencia_w": 18, "fluxo_lm": 1800, "ra": 90, "tcc_k": 3000, "ugr": 19, "fu": null },
+  { "codigo": "SB1", "descricao": "Plafon LED de sobrepor 30 × 30 cm (exemplo)", "tipo": "sobrepor", "potencia_w": 15, "fluxo_lm": 1500, "ra": 80, "tcc_k": 4000, "ugr": null, "fu": null },
+  { "codigo": "PD1", "descricao": "Pendente LED linear 1,2 m (exemplo)", "tipo": "pendente", "potencia_w": 40, "fluxo_lm": 5000, "ra": 80, "tcc_k": 4000, "ugr": 19, "suspensao_m": 0.8, "fu": null },
+  { "codigo": "PF1", "descricao": "Perfil LED de embutir com difusor (exemplo)", "tipo": "perfil", "potencia_w": 12, "fluxo_lm": 1200, "ra": 90, "tcc_k": 3000, "ugr": null, "comprimento_m": 1, "fu": null }
+ ],
+ "ambientes": [
+  { "nome": "Escritório aberto", "atividade": "escritorio", "comprimento_m": 10, "largura_m": 8, "pe_direito_m": 3, "plano_trabalho_m": 0.75, "refl_teto": "0.8", "refl_parede": "0.5", "refl_piso": "0.2", "luminaria": "PL1", "controle": "dali", "sensor_presenca": true, "conservacao": "limpo", "fu": 0.6, "portas": 2, "distancia_quadro_m": 12 },
+  { "nome": "Sala de reunião", "atividade": "reuniao", "comprimento_m": 5, "largura_m": 4, "pe_direito_m": 3, "refl_teto": "0.7", "refl_parede": "0.5", "refl_piso": "0.2", "luminaria": "DL1", "controle": "cena", "conservacao": "limpo", "portas": 1, "distancia_quadro_m": 15 },
+  { "nome": "Recepção", "atividade": "recepcao", "comprimento_m": 6, "largura_m": 5, "pe_direito_m": 3, "refl_teto": "0.7", "refl_parede": "0.5", "refl_piso": "0.2", "luminaria": "PF1", "controle": "dali", "portas": 1, "distancia_quadro_m": 8 },
+  { "nome": "Diretoria", "atividade": "escritorio", "comprimento_m": 4.5, "largura_m": 4, "pe_direito_m": 3.2, "refl_teto": "0.7", "refl_parede": "0.5", "refl_piso": "0.2", "luminaria": "PD1", "controle": "010", "conservacao": "limpo", "portas": 1, "distancia_quadro_m": 18 },
+  { "nome": "Circulação", "atividade": "circulacao", "comprimento_m": 15, "largura_m": 1.8, "pe_direito_m": 2.7, "refl_teto": "0.7", "refl_parede": "0.5", "refl_piso": "0.2", "luminaria": "SB1", "controle": "sensor", "portas": 2, "distancia_quadro_m": 10 },
+  { "nome": "Banheiros", "atividade": "banheiro", "comprimento_m": 3, "largura_m": 2.5, "pe_direito_m": 2.7, "refl_teto": "0.7", "refl_parede": "0.5", "refl_piso": "0.2", "luminaria": "DL1", "controle": "sensor", "portas": 1, "distancia_quadro_m": 14 },
+  { "nome": "Copa", "atividade": "copa", "comprimento_m": 4, "largura_m": 3, "pe_direito_m": 2.7, "refl_teto": "0.7", "refl_parede": "0.5", "refl_piso": "0.2", "luminaria": "SB1", "controle": "interruptor", "portas": 1, "distancia_quadro_m": 16 },
+  { "nome": "Depósito", "atividade": "deposito", "comprimento_m": 4, "largura_m": 3, "pe_direito_m": 2.7, "refl_teto": "0.5", "refl_parede": "0.3", "refl_piso": "0.1", "luminaria": "SB1", "controle": "interruptor", "conservacao": "sujo", "portas": 1, "distancia_quadro_m": 20 }
+ ],
+ "inspecao": {
+  "tipo": "comissionamento",
+  "data_inspecao": "2026-10-20",
+  "documento_n": "HM-ILUM-EX-001",
+  "equipe": "Equipe de exemplo",
+  "abrangencia": "Todos os ambientes do pavimento térreo",
+  "fora_escopo": "Iluminação de emergência (NBR 10898) e iluminação de fachada",
+  "documentos": [
+   { "documento": "Projeto luminotécnico R00 (exemplo)", "recebido": "Sim", "data_rev": "R00", "situacao": "Conforme" }
+  ],
+  "instrumentos": [
+   { "instrumento": "Luxímetro digital", "fabricante": "(exemplo)", "modelo": "(exemplo)", "serie": "", "certificado": "", "validade": "" }
+  ],
+  "checklist": [
+   { "cod": "L1", "situacao": "C", "obs": "Quantidades e grade conforme planta" },
+   { "cod": "N1", "situacao": "NC", "obs": "Sala de reunião abaixo de 500 lx" },
+   { "cod": "C2", "situacao": "NC", "obs": "Sensor dos banheiros desliga com ocupante parado — aumentar o retardo", "prioridade": "P3" },
+   { "cod": "E1", "situacao": "C" }
+  ],
+  "ncs": [],
+  "medicoes_iluminancia": [
+   { "ambiente": "Escritório aberto", "leituras": "612; 598; 575; 560; 590; 605; 580; 540; 520; 555; 571; 566", "observacao": "Malha reduzida — dados ilustrativos" },
+   { "ambiente": "Sala de reunião", "leituras": "420; 450; 470; 440", "observacao": "Dados ilustrativos" },
+   { "ambiente": "Circulação", "leituras": "180; 165; 150; 120", "observacao": "Dados ilustrativos" }
+  ],
+  "fotos": []
+ }
+}

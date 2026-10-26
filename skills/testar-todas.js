@@ -4,6 +4,14 @@ const fs = require('fs');
 const path = require('path');
 
 let falhou = false;
+// base comum de CAD (DXF, leitura de arquitetura, posicionamento, plantas)
+try {
+  process.stdout.write(execFileSync(process.execPath, [path.join(__dirname, '_comum', 'cad', 'teste-cad.js')], { encoding: 'utf8' }));
+} catch (e) {
+  falhou = true;
+  process.stdout.write(e.stdout || '');
+  console.log('_comum/cad/teste-cad.js: FALHOU');
+}
 for (const pasta of fs.readdirSync(__dirname)) {
   if (pasta.startsWith('_') || pasta === 'node_modules') continue;
   const dir = path.join(__dirname, pasta, 'testes');

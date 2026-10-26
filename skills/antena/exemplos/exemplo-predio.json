@@ -1,0 +1,190 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "Condomínio exemplo — antena coletiva",
+  "prefixo": "Antena_Exemplo",
+  "data": "2026-10-25",
+  "revisao": "R00",
+  "dados_ilustrativos": true
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "titulo": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "Cliente Exemplo",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "Residencial Exemplo — 2 torres",
+  "uso": "Residencial multifamiliar"
+ },
+ "sistema": {
+  "tipo": "ambos",
+  "rede_terrestre": "separada",
+  "nivel_medido": "estimado",
+  "antenas_uhf": 1,
+  "canais": [
+   {
+    "canal": 16,
+    "emissora": "Emissora A",
+    "nivel_dbuv": 68
+   },
+   {
+    "canal": 20,
+    "emissora": "Emissora B",
+    "nivel_dbuv": 66
+   },
+   {
+    "canal": 27,
+    "emissora": "Emissora C",
+    "nivel_dbuv": 72
+   },
+   {
+    "canal": 33,
+    "emissora": "Emissora D",
+    "nivel_dbuv": 65
+   },
+   {
+    "canal": 41,
+    "emissora": "Emissora E",
+    "nivel_dbuv": 69
+   },
+   {
+    "canal": 47,
+    "emissora": "Emissora F",
+    "nivel_dbuv": 66
+   }
+  ],
+  "satelite": {
+   "nome": "(informar — TV aberta banda Ku) [CONFERIR]",
+   "posicao": "[CONFERIR]",
+   "transponders": "[CONFERIR]",
+   "diametro_cm": 60,
+   "nivel_lnbf_dbuv": 80,
+   "nivel_lnbf_max_dbuv": 83,
+   "topologia": "cascata",
+   "saidas_multiswitch": 32,
+   "ganho_multiswitch_db": 5,
+   "perda_passagem_db": 2,
+   "perda_terrestre_db": 12,
+   "nivel_min_dbuv": 47,
+   "nivel_max_dbuv": 77,
+   "mer_min_db": 11
+  },
+  "distancia_antena_headend_m": 15,
+  "amp_ganho_max_db": 50,
+  "amp_nivel_max_dbuv": 122,
+  "amp_figura_ruido_db": 7,
+  "amp_linha_ganho_max_db": 30,
+  "cabo_prumada": "RG-6",
+  "pe_direito_m": 2.9,
+  "distancia_interna_m": 6,
+  "perda_tomada_db": 1,
+  "nivel_min_dbuv": 50,
+  "nivel_max_dbuv": 80,
+  "mer_min_db": 25,
+  "reserva_cabo_pct": 10,
+  "distancia_aterramento_m": 8
+ },
+ "edificacao": {
+  "torres": [
+   {
+    "nome": "Torre A",
+    "pavimentos": 10,
+    "primeiro_pavimento": 1,
+    "unidades_por_pavimento": 4,
+    "pontos_por_unidade": 2,
+    "pontos_sat_por_unidade": 1,
+    "distancia_prumada_m": 8,
+    "distancia_min_m": 5,
+    "distancia_max_m": 12,
+    "distancia_headend_m": 0,
+    "ambientes_tv": "Sala, Suíte"
+   },
+   {
+    "nome": "Torre B",
+    "pavimentos": 8,
+    "primeiro_pavimento": 1,
+    "unidades_por_pavimento": 4,
+    "pontos_por_unidade": 2,
+    "pontos_sat_por_unidade": 1,
+    "distancia_prumada_m": 8,
+    "distancia_min_m": 5,
+    "distancia_max_m": 12,
+    "distancia_headend_m": 20,
+    "ambientes_tv": "Sala, Suíte"
+   }
+  ],
+  "areas_comuns": [
+   {
+    "nome": "Salão de festas",
+    "pontos": 2,
+    "pontos_sat": 1,
+    "distancia_m": 45
+   },
+   {
+    "nome": "Portaria",
+    "pontos": 1,
+    "pontos_sat": 0,
+    "distancia_m": 40
+   },
+   {
+    "nome": "Academia",
+    "pontos": 1,
+    "pontos_sat": 0,
+    "distancia_m": 50
+   }
+  ]
+ },
+ "inspecao": {
+  "tipo": "comissionamento",
+  "documento_n": "",
+  "pontos_a_medir": null,
+  "checklist": [
+   {
+    "cod": "A4",
+    "situacao": "NC",
+    "obs": "Mastro sem ligação ao SPDA (exemplo ilustrativo)"
+   }
+  ],
+  "ncs": [],
+  "medicoes": [
+   {
+    "ponto": "Torre A 1001 — Sala",
+    "servico": "terrestre",
+    "canal": "33",
+    "nivel_dbuv": 63.5,
+    "mer_db": 31,
+    "ber": "1E-8"
+   },
+   {
+    "ponto": "Torre B 101 — Suíte",
+    "servico": "terrestre",
+    "canal": "33",
+    "nivel_dbuv": 47.8,
+    "mer_db": 23,
+    "ber": "5E-4"
+   },
+   {
+    "ponto": "Torre A 101 — Sala (SAT)",
+    "servico": "satelite",
+    "canal": "TP V-baixa",
+    "nivel_dbuv": 58,
+    "mer_db": 12.5,
+    "ber": ""
+   }
+  ],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

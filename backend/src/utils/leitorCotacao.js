@@ -45,17 +45,42 @@ function mencionaHM(texto) {
   return /H\s*&\s*M\s+ENGENHARIA|HEM\s+ENGENHARIA|04\.?003\.?376|hm\s?engetecnologia|hemengetecnologia|MARCIO\s+HENRIQUE/i.test(String(texto || ''));
 }
 
-let ocrWorker = null;
+// Worker de OCR compartilhado pelas leituras (pasta e e-mail). Antes, a
+// leitura que terminava primeiro encerrava o worker no meio do trabalho da
+// outra. Agora encerrarOcr só agenda o desligamento para depois de 1 minuto
+// sem uso, e nunca enquanto houver reconhecimento em andamento.
+let ocrWorker = null; // Promise do worker
+let ocrEmUso = 0;
+let ocrTimer = null;
 async function ocr(imagens) {
   const Tesseract = require('tesseract.js');
   const dadosPor = require('@tesseract.js-data/por');
-  if (!ocrWorker) ocrWorker = await Tesseract.createWorker('por', 1, { langPath: dadosPor.langPath, gzip: dadosPor.gzip, cacheMethod: 'none' });
-  const partes = [];
-  for (const img of imagens) partes.push((await ocrWorker.recognize(img)).data.text);
-  return partes.join('\n');
+  clearTimeout(ocrTimer);
+  ocrEmUso++;
+  try {
+    if (!ocrWorker) ocrWorker = Tesseract.createWorker('por', 1, { langPath: dadosPor.langPath, gzip: dadosPor.gzip, cacheMethod: 'none' });
+    const worker = await ocrWorker;
+    const partes = [];
+    for (const img of imagens) partes.push((await worker.recognize(img)).data.text);
+    return partes.join('\n');
+  } catch (e) {
+    ocrWorker = null; // worker quebrado: o próximo uso cria outro
+    throw e;
+  } finally {
+    ocrEmUso--;
+  }
 }
-async function encerrarOcr() {
-  if (ocrWorker) { await ocrWorker.terminate().catch(() => {}); ocrWorker = null; }
+function encerrarOcr() {
+  clearTimeout(ocrTimer);
+  ocrTimer = setTimeout(async () => {
+    if (ocrEmUso > 0 || !ocrWorker) return;
+    const w = ocrWorker;
+    ocrWorker = null;
+    const worker = await w.catch(() => null);
+    if (worker) await worker.terminate().catch(() => {});
+  }, 60000);
+  if (ocrTimer.unref) ocrTimer.unref();
+  return Promise.resolve();
 }
 
 async function textoDoPdf(buffer) {
@@ -113,6 +138,7 @@ async function lerDocumentoCotacao(buffer, nome, opcoes = {}) {
 
   let texto = '';
   let viaOcr = false;
+  let falhaOcr = false;
   if (tipo === 'pdf') {
     try { texto = await textoDoPdf(buffer); } catch (e) { avisos.push(`PDF ilegível: ${e.message}`); }
   }
@@ -130,8 +156,12 @@ async function lerDocumentoCotacao(buffer, nome, opcoes = {}) {
       resultado.metodo = `OCR + ${resultado.metodo}`;
     } catch (e) {
       avisos.push(`OCR falhou: ${e.message}`);
+      falhaOcr = true; // falha passageira: o arquivo fica pendente e é relido na próxima varredura
     }
   }
+  // leitura que precisa conferir com o total do documento para entrar: OCR e leitor universal
+  // (layout conhecido já é específico do fornecedor)
+  const exigeConferencia = viaOcr || /leitor universal/.test(resultado.metodo || '');
 
   // opcoes.exigirClienteHM (e-mail): documento que não cita a H&M não é cotação para nós
   if (opcoes.exigirClienteHM && letras(texto) >= 40 && !mencionaHM(texto)) {
@@ -144,7 +174,7 @@ async function lerDocumentoCotacao(buffer, nome, opcoes = {}) {
   // reais): proposta de preço global, logotipo de assinatura, boleto ou
   // contrato não gastam a cota do Claude Max.
   const linhasComValor = String(texto || '').split('\n').filter(l => /\d,\d{2}(?!\d)/.test(l)).length;
-  const precisaIA = linhasComValor >= 3 && (!resultado.itens.length || (viaOcr && !resultado.conferencia?.confere));
+  const precisaIA = linhasComValor >= 3 && (!resultado.itens.length || (exigeConferencia && !resultado.conferencia?.confere));
   if (precisaIA && opcoes.permitirIA === false && iaDisponivel()) pendente = true;
   if (precisaIA && opcoes.permitirIA !== false && iaDisponivel()) {
     try {
@@ -157,7 +187,7 @@ async function lerDocumentoCotacao(buffer, nome, opcoes = {}) {
         // Da IA só entra leitura conferida: a soma bate com um total do
         // documento, ou duas leituras independentes (OCR local e IA) chegam
         // aos mesmos itens e à mesma soma (ex.: foto sem a página do total).
-        const concordam = viaOcr && resultado.itens.length === ia.itens.length
+        const concordam = exigeConferencia && resultado.itens.length === ia.itens.length
           && Math.abs(resultado.conferencia.soma - ia.conferencia.soma) <= Math.max(0.1, ia.conferencia.soma * 0.002);
         if (ia.itens.length && (ia.conferencia.confere || concordam)) {
           resultado = { itens: ia.itens, metodo: concordam && !ia.conferencia.confere ? `OCR + IA (${r.fonte}) concordantes` : `IA (${r.fonte})`,
@@ -173,17 +203,17 @@ async function lerDocumentoCotacao(buffer, nome, opcoes = {}) {
     }
   }
 
-  // OCR sem conferência não entra: a conta de cada linha fecha, mas a
-  // descrição lida de imagem pode vir com ruído e não há como saber se faltou
-  // linha. Fica como aviso para revisão manual (o arquivo é relido se o leitor melhorar).
-  if (viaOcr && resultado.itens.length && !resultado.conferencia?.confere) {
-    avisos.push(`OCR leu ${resultado.itens.length} itens, mas sem conferência com o total do documento — não importados; revise o arquivo`);
-    return { itens: [], metodo: 'OCR sem conferência', conferencia: resultado.conferencia, viaOcr, usouIA, pendente: pendente || !usouIA, avisos };
+  // OCR ou leitor universal sem conferência não entram: a conta de cada linha
+  // fecha, mas não há como saber se faltou linha (e, no OCR, a descrição pode vir
+  // com ruído). Fica como aviso para revisão manual (relido se o leitor melhorar).
+  if (exigeConferencia && !/^IA/.test(resultado.metodo || '') && resultado.itens.length && !resultado.conferencia?.confere) {
+    avisos.push(`${viaOcr ? 'OCR' : 'Leitor universal'} leu ${resultado.itens.length} itens, mas a soma não confere com o total do documento — não importados; revise o arquivo`);
+    return { itens: [], metodo: `${viaOcr ? 'OCR' : 'leitor universal'} sem conferência`, conferencia: resultado.conferencia, viaOcr, usouIA, pendente: pendente || falhaOcr || !usouIA, avisos };
   }
   if (resultado.itens.length && resultado.conferencia && !resultado.conferencia.confere) {
     avisos.push(`soma dos itens (R$ ${resultado.conferencia.soma.toFixed(2)}) não bate com nenhum total do documento — pode faltar item ou o total incluir impostos/frete`);
   }
-  return { ...resultado, viaOcr, usouIA, pendente: pendente && !resultado.itens.length, avisos };
+  return { ...resultado, viaOcr, usouIA, pendente: (pendente || falhaOcr) && !resultado.itens.length, avisos };
 }
 
 module.exports = { lerDocumentoCotacao, encerrarOcr, ehDocumentoDaHM, mencionaHM, tipoDoArquivo, VERSAO_LEITOR, EXTENSOES };

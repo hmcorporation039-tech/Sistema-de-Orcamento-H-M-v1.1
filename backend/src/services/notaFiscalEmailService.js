@@ -6,6 +6,8 @@ const { lerDocumentoCotacao, encerrarOcr, VERSAO_LEITOR } = require('../utils/le
 const { carregarIndice, registrarItemNotaFiscal, obterMargemPadrao } = require('./catalogoMateriais');
 const { importarItens } = require('./cotacaoFornecedorService');
 const { classificarPendentes } = require('./classificacaoMateriais');
+const { verificarAutenticidade, listaDoEnv } = require('../utils/autenticidadeEmail');
+const { executarComTrava } = require('../utils/travaJob');
 
 // Piso fixo: nunca busca e-mails anteriores a essa data. Toda verificação
 // (manual ou agendada) parte sempre daqui, nunca "N dias atrás". O backfill
@@ -52,12 +54,26 @@ async function processarMensagem(client, parsedEmail, margem, resumo, indice) {
   const { xml, pdf } = encontrarAnexos(parsedEmail);
   if (!xml && !pdf) return;
 
+  // Origem comprovada (DKIM/DMARC conferidos pelo Gmail): sem isso qualquer
+  // pessoa mandaria uma "NF-e" e mudaria preços do catálogo.
+  const aut = verificarAutenticidade(parsedEmail);
+  if (!aut.autentico) {
+    resumo.avisos.push(`NF de ${aut.remetente || 'remetente desconhecido'} ignorada: a assinatura do e-mail (DKIM/DMARC) não confere`);
+    return;
+  }
+
   let itens = [];
   let origem = null;
   let chaveAcesso = null;
 
   if (xml) {
     const resultado = await parseNFeXml(xml.content);
+    // a nota precisa ter a H&M como destinatária (CNPJ, raiz em NF_DESTINATARIOS_PERMITIDOS)
+    const destinos = listaDoEnv('NF_DESTINATARIOS_PERMITIDOS', '04003376');
+    if (!resultado.destDocumento || !destinos.some(d => resultado.destDocumento.startsWith(d.replace(/\D/g, '')))) {
+      resumo.avisos.push(`NF ${resultado.numero || ''} de ${aut.remetente} ignorada: o destinatário não é a H&M`);
+      return;
+    }
     itens = resultado.itens;
     chaveAcesso = resultado.chaveAcesso;
     origem = 'email_xml';
@@ -88,12 +104,15 @@ async function processarMensagem(client, parsedEmail, margem, resumo, indice) {
     }
   }
 
-  let criados = 0, atualizados = 0;
+  let criados = 0, atualizados = 0, emRevisao = 0;
   for (const item of itens) {
     const r = await upsertMaterial(client, item, origem, margem, indice);
     if (!r) continue;
-    if (r.criado) criados++; else atualizados++;
+    if (r.criado) criados++;
+    else if (r.aplicado === false) { emRevisao++; resumo.avisos.push(`Preço de "${item.descricao}" NÃO alterado (${r.motivo}) — veja o histórico de preços`); }
+    else atualizados++;
   }
+  resumo.precosEmRevisao = (resumo.precosEmRevisao || 0) + emRevisao;
 
   resumo.materiaisCriados += criados;
   resumo.materiaisAtualizados += atualizados;
@@ -170,7 +189,12 @@ async function processarOrcamentosPorEmail(imapClient, dbClient, margem, indice,
   }
 }
 
-async function verificarCaixaDeEntrada() {
+// Trava contra execução simultânea (horário automático × "Verificar agora" × outra instância)
+function verificarCaixaDeEntrada() {
+  return executarComTrava('email-notas-orcamentos', lerCaixaDeEntrada);
+}
+
+async function lerCaixaDeEntrada() {
   const resumo = {
     emailsEncontrados: 0, emailsProcessados: 0,
     materiaisCriados: 0, materiaisAtualizados: 0,

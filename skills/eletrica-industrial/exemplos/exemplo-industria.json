@@ -1,0 +1,114 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "Elétrica industrial — fábrica (exemplo)",
+  "prefixo": "Industria_Exemplo",
+  "data": "2026-10-25",
+  "revisao": "R00",
+  "dados_ilustrativos": true,
+  "observacao": "Dados ilustrativos (Cliente Exemplo). Não usar como projeto real."
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "titulo": "Engenheiro Eletricista",
+  "cnpj": "",
+  "nome": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "CLIENTE EXEMPLO INDÚSTRIA LTDA",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "Setor de Indústria, Quadra 1",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "Galpão de produção — Cliente Exemplo",
+  "uso": "Industrial — produção e utilidades"
+ },
+ "instalacao": {
+  "tensao_ff": 380,
+  "tensao_fn": 220,
+  "frequencia_hz": 60,
+  "esquema": "TN-S",
+  "ponto_entrega": "trafo",
+  "trafo_kva": 500,
+  "trafo_z_pct": 5,
+  "trafo_perdas_cobre_w": null,
+  "scc_rede_mva": null,
+  "cabo_entrada_secao_mm2": 240,
+  "cabo_entrada_paralelos": 2,
+  "cabo_entrada_comprimento_m": 12,
+  "fornecer_cabo_entrada": true,
+  "isolacao": "EPR",
+  "metodo": "E",
+  "metodo_alimentador": "F",
+  "temperatura": 35,
+  "agrupamento": 1,
+  "agrupamento_alimentador": 1,
+  "queda_max_terminal_pct": 4,
+  "queda_max_alimentador_pct": 2,
+  "queda_max_partida_pct": 10,
+  "fp_medido": 0.8,
+  "fp_alvo": 0.92,
+  "demanda_medida_kw": null,
+  "tipo_banco": "auto",
+  "estagios_controlador": 6,
+  "banco_distancia_m": 5,
+  "fator_simultaneidade": 1,
+  "contribuicao_motores": true
+ },
+ "quadros": [
+  { "id": "CCM-01", "descricao": "CCM da produção", "tipo": "CCM", "distancia_qgbt_m": 30, "forma": "3b", "ip": "IP54", "eletrocalha_m": null },
+  { "id": "CCM-02", "descricao": "CCM de utilidades", "tipo": "CCM", "distancia_qgbt_m": 50, "forma": "3b", "ip": "IP54", "eletrocalha_m": null },
+  { "id": "QD-01", "descricao": "Quadro de iluminação e tomadas", "tipo": "QD", "distancia_qgbt_m": 40, "forma": "1", "ip": "IP42", "eletrocalha_m": 60 }
+ ],
+ "motores": [
+  { "tag": "M-01", "descricao": "Compressor de ar", "quadro": "CCM-01", "potencia": 50, "unidade": "cv", "tensao_placa": "380/660", "rendimento": 0.93, "fp": 0.86, "ip_in": 7.5, "fs": 1.15, "partida": "estrela_triangulo", "regime": "S1", "distancia_m": 40, "quantidade": 1, "simultaneos": 1, "protecao": "auto" },
+  { "tag": "M-02", "descricao": "Bomba d'água (1 + 1 reserva)", "quadro": "CCM-01", "potencia": 10, "unidade": "cv", "tensao_placa": "220/380", "rendimento": 0.89, "fp": 0.85, "ip_in": 7.0, "fs": 1.15, "partida": "direta", "regime": "S1", "distancia_m": 25, "quantidade": 2, "simultaneos": 1, "protecao": "auto" },
+  { "tag": "M-03", "descricao": "Exaustor", "quadro": "CCM-01", "potencia": 7.5, "unidade": "cv", "tensao_placa": "220/380", "rendimento": 0.885, "fp": 0.83, "ip_in": 7.0, "fs": 1.15, "partida": "inversor", "regime": "S1", "distancia_m": 30, "quantidade": 1, "simultaneos": 1, "protecao": "auto" },
+  { "tag": "M-04", "descricao": "Esteira transportadora", "quadro": "CCM-01", "potencia": 3, "unidade": "cv", "tensao_placa": "220/380", "rendimento": 0.85, "fp": 0.8, "ip_in": 6.5, "fs": 1.15, "partida": "direta", "regime": "S1", "distancia_m": 50, "quantidade": 3, "simultaneos": 3, "protecao": "auto", "seccionadora_local": true },
+  { "tag": "M-05", "descricao": "Moinho", "quadro": "CCM-02", "potencia": 100, "unidade": "cv", "tensao_placa": "380/660", "rendimento": 0.945, "fp": 0.87, "ip_in": 7.0, "fs": 1.0, "partida": "soft_starter", "regime": "S1", "distancia_m": 20, "quantidade": 1, "simultaneos": 1, "protecao": "auto" },
+  { "tag": "M-06", "descricao": "Ventilador da torre de resfriamento", "quadro": "CCM-02", "potencia": 15, "unidade": "cv", "tensao_placa": "220/380", "rendimento": 0.91, "fp": 0.84, "ip_in": 7.2, "fs": 1.15, "partida": "direta", "regime": "S1", "distancia_m": 60, "quantidade": 1, "simultaneos": 1, "protecao": "auto", "seccionadora_local": true },
+  { "tag": "M-07", "descricao": "Extrusora", "quadro": "CCM-02", "potencia": 110, "unidade": "kW", "tensao_placa": "380/660", "rendimento": 0.95, "fp": 0.87, "ip_in": 7.0, "fs": 1.0, "partida": "inversor", "regime": "S1", "distancia_m": 35, "quantidade": 1, "simultaneos": 1, "protecao": "auto" }
+ ],
+ "outras_cargas": [
+  { "id": "IL-01", "quadro": "QD-01", "descricao": "Iluminação do galpão (LED)", "tipo": "iluminacao", "potencia_kw": 12, "fp": 0.95, "fd": null, "ligacao": "FFF", "comprimento_m": 60 },
+  { "id": "TM-01", "quadro": "QD-01", "descricao": "Tomadas de uso geral", "tipo": "tomadas", "potencia_kw": 8, "fp": 0.92, "fd": null, "ligacao": "FFF", "comprimento_m": 40 },
+  { "id": "ES-01", "quadro": "CCM-02", "descricao": "Estufa de secagem (resistiva)", "tipo": "resistiva", "potencia_kw": 18, "fp": 1, "fd": null, "ligacao": "FFF", "comprimento_m": 15 }
+ ],
+ "inspecao": {
+  "tipo": "periodica",
+  "data_inspecao": "",
+  "documento_n": "HM-IND-001",
+  "equipe": "",
+  "abrangencia": "QGBT, CCM-01, CCM-02, QD-01, motores M-01 a M-07 e banco de capacitores",
+  "fora_escopo": "Subestação de média tensão e transformador (laudo próprio, NBR 14039)",
+  "documentos": [
+   { "documento": "Diagrama unifilar do QGBT e CCMs", "recebido": "Sim", "data_rev": "", "situacao": "Desatualizado [CONFERIR]" }
+  ],
+  "instrumentos": [],
+  "checklist": [
+   { "cod": "A1", "situacao": "C", "obs": "Carcaças dos motores ligadas ao PE" },
+   { "cod": "S2", "situacao": "NC", "obs": "CCM-01 sem botão de emergência na porta", "prioridade": "P2" }
+  ],
+  "ncs": [],
+  "isolamento_motores": [
+   { "motor": "M-01", "tensao_ensaio_v": 1000, "valor_mohm": 250 },
+   { "motor": "M-06", "tensao_ensaio_v": 1000, "valor_mohm": 3.2 }
+  ],
+  "continuidade_pe": [
+   { "ponto": "Carcaça M-01 → barra PE do CCM-01", "valor_ohm": 0.12 }
+  ],
+  "reles": [
+   { "motor": "M-02-1", "ajuste_a": 14.8, "corrente_medida_a": 12.9 },
+   { "motor": "M-06", "ajuste_a": 28, "corrente_medida_a": 19 }
+  ],
+  "termografia": [
+   { "ponto": "CCM-01 — barramento fase R", "temperatura_c": 48, "referencia_c": 41 }
+  ],
+  "fotos": []
+ }
+}

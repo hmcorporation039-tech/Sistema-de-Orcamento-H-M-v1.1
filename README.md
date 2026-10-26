@@ -147,10 +147,15 @@ Uma tarefa agendada do Windows ("HM-Engenharia Backup Diário") roda todo dia à
 ```powershell
 powershell -ExecutionPolicy Bypass -File backend\scripts\backup-db.ps1
 ```
-Para restaurar um backup, descompacte o `.zip` e rode:
+Para restaurar um backup (`.dump` ou os `.sql.zip` antigos), use o script, que
+primeiro restaura num banco separado para conferir:
 ```
-psql -h localhost -U postgres -d hm_orcamentos -f caminho\para\o\backup.sql
+cd backend\scripts
+.\restaurar-backup.ps1 -Arquivo ..\backups\hm_orcamentos_AAAA-MM-DD_HH-mm.dump
 ```
+Para trocar o banco em uso, pare o backend e acrescente `-SubstituirProducao`
+(ele faz um backup de segurança do banco atual antes). O `psql -f` direto num
+banco que já tem tabelas falha, por isso o script cria um banco novo.
 Recomendado copiar esses arquivos periodicamente para outro lugar (pen drive,
 nuvem) — um backup que só existe na mesma máquina não protege contra falha de
 disco.

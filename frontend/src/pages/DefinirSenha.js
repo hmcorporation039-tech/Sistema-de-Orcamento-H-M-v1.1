@@ -38,8 +38,9 @@ export default function DefinirSenha() {
 
     setSalvando(true);
     try {
-      await alterarSenha(senhaAtual, novaSenha);
-      senhaDefinida();
+      // a troca derruba as sessões antigas; o servidor devolve um token novo para esta
+      const r = await alterarSenha(senhaAtual, novaSenha);
+      senhaDefinida(r.data?.token);
       toast.success('Senha definida! Bem-vindo ao sistema.');
     } catch (err) {
       toast.error(err.response?.data?.erro || 'Não foi possível alterar a senha');

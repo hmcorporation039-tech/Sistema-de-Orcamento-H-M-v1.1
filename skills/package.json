@@ -7,7 +7,13 @@
     "test": "node testar-todas.js"
   },
   "dependencies": {
+    "@mlightcad/libredwg-web": "0.8.2",
+    "@tarikjabiri/dxf": "2.9.0",
     "docx": "^9.5.1",
+    "dxf": "5.3.1",
     "exceljs": "^4.4.0"
+  },
+  "devDependencies": {
+    "hyperformula": "3.0.1"
   }
 }

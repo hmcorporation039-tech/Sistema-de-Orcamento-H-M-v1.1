@@ -1,0 +1,113 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "",
+  "prefixo": "",
+  "data": "AAAA-MM-DD",
+  "revisao": "R00"
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "titulo": "Engenheiro Eletricista",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "",
+  "uso": ""
+ },
+ "fornecimento": {
+  "distribuidora": "Neoenergia Brasília",
+  "tensao_primaria_kv": 13.8,
+  "tensao_secundaria_v": 380,
+  "tensao_secundaria_fn": 220,
+  "icc_3f_ka": null,
+  "scc_mva": null,
+  "icc_ft_ka": null,
+  "neutro_aterrado": true,
+  "tipo_se": "auto",
+  "protecao": "auto",
+  "tempo_eliminacao_s": 0.5
+ },
+ "cargas": {
+  "demanda_total_kw": null,
+  "fp_total": 0.92,
+  "carga_instalada_kw": null,
+  "fator_diversidade": 1,
+  "crescimento_pct": 20,
+  "carregamento_max_pct": 100,
+  "quadros": [],
+  "arquivo_eletrica": ""
+ },
+ "transformador": {
+  "potencia_kva": null,
+  "z_pct": null,
+  "isolamento": "oleo",
+  "ligacao": "Dyn1"
+ },
+ "cabo_mt": {
+  "comprimento_m": null,
+  "metodo": "eletroduto_enterrado",
+  "isolacao": "EPR",
+  "secao_minima_mm2": 35,
+  "fator_correcao": 1,
+  "secao_mm2": null
+ },
+ "protecao": {
+  "curva": "MI",
+  "fator_partida_fase": 1.2,
+  "fator_partida_neutro": 0.3,
+  "dial": 0.1
+ },
+ "bt": {
+  "comprimento_m": 10,
+  "metodo": "F",
+  "temperatura": 30,
+  "queda_max_pct": 1,
+  "fca": null,
+  "xr": 5
+ },
+ "aterramento": {
+  "rho1_ohm_m": null,
+  "h1_m": null,
+  "rho2_ohm_m": null,
+  "comprimento_m": null,
+  "largura_m": null,
+  "espacamento_m": 3,
+  "profundidade_m": 0.5,
+  "n_hastes": null,
+  "comprimento_haste_m": 2.4,
+  "rho_brita_ohm_m": 3000,
+  "espessura_brita_m": 0.1,
+  "tempo_defeito_s": null,
+  "fator_divisao": 1,
+  "peso_kg": 50,
+  "conexao": "exotermica",
+  "resistencia_max_ohm": 10,
+  "secao_condutor_mm2": null
+ },
+ "inspecao": {
+  "tipo": "preventiva",
+  "documento_n": "",
+  "checklist": [],
+  "ncs": [],
+  "isolamento": [],
+  "oleo": [],
+  "termografia": [],
+  "rele": [],
+  "malha": [],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

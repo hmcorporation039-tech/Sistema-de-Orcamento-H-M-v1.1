@@ -1,5 +1,11 @@
+import { RefreshCw } from 'lucide-react';
 import { Campo, Selecao, Marcador, Grade, Secao, TabelaEditavel, Nota } from './campos';
 import { ChecklistEditor, FotosInspecao, resumoChecklist } from './inspecaoUi';
+
+const btnPreencher = {
+  display: 'inline-flex', alignItems: 'center', padding: '5px 10px', marginBottom: 8, background: 'transparent',
+  border: '1px solid #2f4f6f', borderRadius: 6, color: '#8ab4f8', fontWeight: 700, fontSize: 11,
+};
 
 // Formulário desenhado a partir do esquema da disciplina (skills/_comum/formulario.js).
 // Qualquer disciplina nova aparece na tela sem precisar de componente próprio.
@@ -39,7 +45,23 @@ function resumoSecao(secao, dados) {
   return ler(dados, secao.resumo) || '';
 }
 
-export default function FormularioGenerico({ esquema, dados, onChange, checklistBase, fotos, urlsFotos, onEnviarFotos, onRemoverFoto }) {
+// Tabela que pode ser preenchida com o resultado do último cálculo (ex.: os
+// circuitos da divisão automática, para o projetista editar só o que quiser)
+function BotaoPreencher({ item, resumo, linhas, onPreencher }) {
+  const valores = resumo?.preencher?.[item.preencherDe];
+  const trazer = () => {
+    if ((linhas || []).length && !window.confirm(`Substituir as ${linhas.length} linha(s) atuais pelos valores calculados?`)) return;
+    onPreencher(JSON.parse(JSON.stringify(valores)));
+  };
+  return (
+    <button onClick={trazer} disabled={!valores?.length} style={{ ...btnPreencher, opacity: valores?.length ? 1 : 0.5, cursor: valores?.length ? 'pointer' : 'not-allowed' }}
+      title={valores?.length ? 'Copia os valores calculados para a tabela, para editar' : 'Clique em "Calcular" primeiro'}>
+      <RefreshCw size={12} style={{ marginRight: 4 }} /> {item.rotuloPreencher || 'Trazer do cálculo'}
+    </button>
+  );
+}
+
+export default function FormularioGenerico({ esquema, dados, onChange, checklistBase, fotos, urlsFotos, onEnviarFotos, onRemoverFoto, resumo }) {
   const d = dados || {};
   const set = (caminho) => (valor) => onChange(atual => definir(atual, caminho, valor));
 
@@ -63,8 +85,11 @@ export default function FormularioGenerico({ esquema, dados, onChange, checklist
             }
             if (item.tipo === 'tabela') {
               return (
-                <TabelaEditavel key={i} linhas={ler(d, item.caminho)} onChange={set(item.caminho)} rotuloAdicionar={item.rotuloAdicionar}
-                  novaLinha={(lista) => linhaNova(item.novaLinha, lista)} colunas={item.colunas} />
+                <div key={i}>
+                  {item.preencherDe && <BotaoPreencher item={item} resumo={resumo} linhas={ler(d, item.caminho)} onPreencher={set(item.caminho)} />}
+                  <TabelaEditavel linhas={ler(d, item.caminho)} onChange={set(item.caminho)} rotuloAdicionar={item.rotuloAdicionar}
+                    novaLinha={(lista) => linhaNova(item.novaLinha, lista)} colunas={item.colunas} />
+                </div>
               );
             }
             if (item.tipo === 'checklist') {

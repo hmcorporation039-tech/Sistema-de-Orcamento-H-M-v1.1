@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { registrarAuditoria } = require('../utils/auditoria');
 const { verificarPixNaCaixaDeEntrada } = require('../services/financeiroEmailService');
 
 const CATEGORIA_LABEL = { mao_de_obra: 'Mão de obra', material: 'Material', despesa: 'Despesa diária' };
@@ -178,12 +179,13 @@ async function atualizar(req, res) {
 async function remover(req, res) {
   try {
     const resultado = await pool.query(
-      `DELETE FROM financeiro_movimentos WHERE id = $1 AND origem = 'manual' RETURNING id`,
+      `DELETE FROM financeiro_movimentos WHERE id = $1 AND origem = 'manual' RETURNING *`,
       [req.params.id]
     );
     if (resultado.rows.length === 0) {
       return res.status(404).json({ erro: 'Lançamento manual não encontrado (movimentos importados de e-mail não podem ser excluídos)' });
     }
+    await registrarAuditoria(pool, { entidade: 'financeiro_movimentos', entidadeId: resultado.rows[0].id, acao: 'excluir', usuarioId: req.usuario.id, detalhes: { movimento: resultado.rows[0] } });
     res.json({ sucesso: true });
   } catch (err) {
     console.error('Erro ao remover movimento financeiro:', err);

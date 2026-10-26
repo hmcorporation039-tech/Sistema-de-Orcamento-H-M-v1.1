@@ -7,27 +7,16 @@ import { FileDown, Plus, Trash2, FolderSearch, Search, FilePlus2, Receipt } from
 import {
   analisarProjeto, gerarRelatorioCompatibilizacao, pesquisarPrecoMercado,
   getAnalisesProjeto, getAnaliseProjeto, atualizarAnaliseProjeto, removerAnaliseProjeto,
-  gerarOrcamentoDaAnalise, getPastaAnalise, abrirPastaAnalise,
+  gerarOrcamentoDaAnalise, getPastaAnalise, abrirPastaAnalise, getDisciplinasProjeto, criarLaudoDeAnalise,
 } from '../services/api';
 import { formatarMoeda } from '../utils/format';
 
 let contador = 0;
 const gerarId = () => `tmp_${Date.now()}_${contador++}`;
 
-// Taxonomia fixa de disciplinas — mesma lista de chaves/nomes do backend
-// (utils/disciplinasProjeto.js). É estática, não vale o round-trip de uma
-// chamada de API só pra isso.
-const DISCIPLINAS = [
-  { chave: 'eletrica', nome: 'Elétrica (infraestrutura)' },
-  { chave: 'rede', nome: 'Redes de Computadores (dados)' },
-  { chave: 'cabeamento', nome: 'Infra. de Cabeamento Estruturado' },
-  { chave: 'telefonia', nome: 'Telefonia' },
-  { chave: 'cftv', nome: 'CFTV' },
-  { chave: 'iluminacao', nome: 'Iluminação' },
-  { chave: 'automacao', nome: 'Automação' },
-  { chave: 'alarme', nome: 'Alarme' },
-  { chave: 'antena', nome: 'Antena/TV' },
-];
+// As disciplinas vêm do servidor (GET /projetos/disciplinas — fonte única em
+// backend/src/utils/disciplinasProjeto.js): cada área de atuação é uma
+// disciplina separada, e a lista cresce junto com as skills.
 
 // Agrupa itens por subgrupo (na ordem em que aparecem, sem reordenar) —
 // mesma ideia do agrupamento por subgrupo já usado no Orçamento.
@@ -87,6 +76,17 @@ export default function AnaliseProjeto() {
 function Compatibilizacao() {
   const { id: idParam } = useParams();
   const navigate = useNavigate();
+  const [DISCIPLINAS, setDisciplinasLista] = useState([]);
+  useEffect(() => {
+    getDisciplinasProjeto()
+      .then(r => setDisciplinasLista(r.data))
+      .catch(() => toast.error('Não foi possível carregar a lista de disciplinas'));
+  }, []);
+  // agrupadas para a tela (Elétrica, Energia, Proteção, Telecom, Segurança, Automação)
+  const gruposDisciplinas = DISCIPLINAS.reduce((acc, d) => {
+    (acc[d.grupo] = acc[d.grupo] || []).push(d);
+    return acc;
+  }, {});
 
   // Cada arquivo escolhido carrega sua PRÓPRIA lista de disciplinas — não uma
   // lista única pro lote inteiro. Isso evita que, por exemplo, um arquivo de
@@ -108,6 +108,11 @@ function Compatibilizacao() {
   const inputRef = useRef(null);
   const idAutosaveRef = useRef(null);
   const pendenteRef = useRef(false); // há edição aguardando o autosave disparar
+  // Versão gravada no servidor (bloqueio otimista). Em ref, não em estado:
+  // mudar a versão não pode disparar outro autosave.
+  const versaoRef = useRef(null);
+  const filaSalvarRef = useRef(Promise.resolve()); // gravações em sequência, cada uma com a versão da anterior
+  const conflitoRef = useRef(false); // outra pessoa gravou: para o autosave até recarregar
 
   const carregarListaSalvas = useCallback(async () => {
     setCarregandoLista(true);
@@ -131,6 +136,8 @@ function Compatibilizacao() {
       servicos: servicosComId,
       materiais: materiaisComId,
     });
+    versaoRef.current = dados.versao ?? null;
+    conflitoRef.current = false;
     setSalvoEm(dados.atualizadoEm ? new Date(dados.atualizadoEm) : null);
     // Repõe as pesquisas de mercado já feitas antes (de serviços e de
     // materiais) — elas ficam salvas dentro do próprio item (pesquisa_mercado),
@@ -143,7 +150,7 @@ function Compatibilizacao() {
       // o cabeçalho), pra não poluir a tela quando há vários itens já
       // pesquisados — o usuário expande a que quiser. Uma pesquisa NOVA (feita
       // agora) não tem essa marca, então nasce expandida.
-      if (it.pesquisa_mercado) pesquisasSalvas[it.id] = { resultado: it.pesquisa_mercado.resultado, fonte: it.pesquisa_mercado.fonte, pesquisadoEm: it.pesquisa_mercado.pesquisadoEm, recolhidaInicial: true };
+      if (it.pesquisa_mercado) pesquisasSalvas[it.id] = { ...it.pesquisa_mercado, recolhidaInicial: true };
     }
     setPesquisas(pesquisasSalvas);
   }, []);
@@ -226,24 +233,38 @@ function Compatibilizacao() {
   // exatamente o que resolve a análise sumir ao trocar de tela: a partir do
   // momento em que existe um id (a análise já foi persistida), toda edição
   // vira uma gravação no banco, não só um estado do React.
-  const salvarAgora = useCallback(async () => {
-    if (!analise?.id) return;
-    setSalvando(true);
-    try {
-      await atualizarAnaliseProjeto(analise.id, {
-        cliente_nome: analise.cliente,
-        nome_projeto: analise.nomeProjeto ?? '',
-        servicos: analise.servicos.map(({ id, ...s }) => s),
-        materiais: analise.materiais.map(({ id, ...m }) => m),
-        funcionamento: analise.funcionamento ?? '',
-        pontos_por_disciplina: analise.pontosPorDisciplina ?? [],
-      });
-      setSalvoEm(new Date());
-    } catch {
-      toast.error('Erro ao salvar automaticamente — tente novamente em instantes');
-    } finally {
-      setSalvando(false);
-    }
+  const salvarAgora = useCallback(() => {
+    if (!analise?.id || conflitoRef.current) return Promise.resolve();
+    const id = analise.id;
+    const corpo = {
+      cliente_nome: analise.cliente,
+      nome_projeto: analise.nomeProjeto ?? '',
+      servicos: analise.servicos.map(({ id: _id, ...s }) => s),
+      materiais: analise.materiais.map(({ id: _id, ...m }) => m),
+      funcionamento: analise.funcionamento ?? '',
+      pontos_por_disciplina: analise.pontosPorDisciplina ?? [],
+    };
+    // em fila: duas gravações ao mesmo tempo mandariam a mesma versão e a
+    // segunda seria recusada como conflito (falso alarme)
+    filaSalvarRef.current = filaSalvarRef.current.then(async () => {
+      if (conflitoRef.current) return;
+      setSalvando(true);
+      try {
+        const res = await atualizarAnaliseProjeto(id, { ...corpo, versao: versaoRef.current });
+        versaoRef.current = res.data?.versao ?? null;
+        setSalvoEm(new Date());
+      } catch (err) {
+        if (err.response?.status === 409) {
+          conflitoRef.current = true;
+          toast.error(err.response.data?.erro || 'A análise foi alterada em outro lugar. Recarregue a página.', { duration: 15000 });
+        } else {
+          toast.error('Erro ao salvar automaticamente — tente novamente em instantes');
+        }
+      } finally {
+        setSalvando(false);
+      }
+    });
+    return filaSalvarRef.current;
   }, [analise?.id, analise?.cliente, analise?.nomeProjeto, analise?.servicos, analise?.materiais, analise?.funcionamento, analise?.pontosPorDisciplina]);
 
   // Reseta o "já assentou" toda vez que o id muda (nova análise carregada) —
@@ -365,9 +386,12 @@ function Compatibilizacao() {
     }
     setPesquisas(p => ({ ...p, [item.id]: { carregando: true } }));
     try {
-      const res = await pesquisarPrecoMercado(item.descricao);
+      const res = await pesquisarPrecoMercado(item.descricao, tipo === 'servico' ? 'servico' : 'material');
       const pesquisadoEm = new Date().toISOString();
-      const resultado = { resultado: res.data.resultado, fonte: res.data.fonte, pesquisadoEm };
+      const resultado = {
+        resultado: res.data.resultado, fonte: res.data.fonte, pesquisadoEm,
+        ofertas: res.data.ofertas || [], estatistica: res.data.estatistica || null, precoSugerido: res.data.precoSugerido ?? null,
+      };
       setPesquisas(p => ({ ...p, [item.id]: resultado }));
       // Grava dentro do próprio item (autosave já observa servicos/materiais)
       // — é isso que resolve a pesquisa sumir ao trocar de tela: antes ficava só
@@ -421,6 +445,23 @@ function Compatibilizacao() {
       toast.error(err.response?.data?.erro || 'Erro ao gerar orçamento');
     } finally {
       setGerandoOrcamento(false);
+    }
+  }
+
+  // Cria o laudo/projeto da disciplina a partir desta análise e abre na aba
+  // "Laudos e projetos" (o aviso lista o que foi estimado e precisa conferir)
+  const [criandoLaudo, setCriandoLaudo] = useState('');
+  async function calcularPelaNorma(d) {
+    setCriandoLaudo(d.skill);
+    try {
+      await salvarAgora();
+      const r = await criarLaudoDeAnalise(analise.id, d.skill);
+      (r.data.avisos || []).forEach(a => toast(a, { duration: 12000, icon: /\[CONFERIR\]/.test(a) ? '⚠️' : 'ℹ️' }));
+      navigate(`/analise-projeto?aba=laudos&laudo=${r.data.id}`);
+    } catch (err) {
+      toast.error(err.response?.data?.erro || 'Erro ao preparar o cálculo');
+    } finally {
+      setCriandoLaudo('');
     }
   }
 
@@ -532,14 +573,17 @@ function Compatibilizacao() {
               {arquivosComDisciplinas.map(it => (
                 <div key={it.id} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: '1px solid #1e1e1e' }}>
                   <div style={{ fontSize: 13, color: '#c9a227', fontWeight: 700, marginBottom: 6 }}>{it.arquivo.name}</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px' }}>
-                    {DISCIPLINAS.map(d => (
-                      <label key={d.chave} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: it.disciplinas.includes(d.chave) ? '#c9a227' : '#999', cursor: 'pointer' }}>
-                        <input type="checkbox" checked={it.disciplinas.includes(d.chave)} onChange={() => alternarDisciplinaDoArquivo(it.id, d.chave)} />
-                        {d.nome}
-                      </label>
-                    ))}
-                  </div>
+                  {Object.entries(gruposDisciplinas).map(([grupo, lista]) => (
+                    <div key={grupo} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 16px', marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, color: '#666', width: 76, textTransform: 'uppercase' }}>{grupo}</span>
+                      {lista.map(d => (
+                        <label key={d.chave} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: it.disciplinas.includes(d.chave) ? '#c9a227' : '#999', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={it.disciplinas.includes(d.chave)} onChange={() => alternarDisciplinaDoArquivo(it.id, d.chave)} />
+                          {d.nome}
+                        </label>
+                      ))}
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>
@@ -726,6 +770,29 @@ function Compatibilizacao() {
             />
           </div>
 
+          {/* Ponte PDF → skill: abre o cálculo normativo da disciplina já preenchido com o que o PDF tem */}
+          {(() => {
+            const comSkill = DISCIPLINAS.filter(d => d.skill && (analise.disciplinas || []).includes(d.chave));
+            const skills = [...new Map(comSkill.map(d => [d.skill, d])).values()];
+            if (!skills.length) return null;
+            return (
+              <div style={card}>
+                <h3 style={{ fontSize: 14, color: '#c9a227', marginBottom: 6 }}>Calcular pela norma</h3>
+                <p style={{ fontSize: 12, color: '#777', marginBottom: 10 }}>
+                  Abre o projeto/laudo da disciplina já preenchido com o que foi lido deste PDF (ambientes, câmeras, pontos, quadro de cargas).
+                  O que for estimado vem marcado para conferir; depois é só calcular, gerar os documentos e o orçamento detalhado.
+                </p>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {skills.map(d => (
+                    <button key={d.skill} onClick={() => calcularPelaNorma(d)} disabled={!!criandoLaudo} style={{ ...btnSecundario, padding: '9px 14px', fontSize: 12 }}>
+                      {criandoLaudo === d.skill ? 'Preparando...' : d.nome}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           <div style={{ ...card, display: 'flex', justifyContent: 'flex-end', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             {analise.propostaNumero && (
               <span style={{ fontSize: 12, color: '#666', marginRight: 'auto' }}>
@@ -758,14 +825,17 @@ function Compatibilizacao() {
 // não refaz a busca nem grava nada no banco. Começa expandido logo após a
 // pesquisa; o usuário recolhe pra tirar da frente e clica de novo pra rever,
 // sem custo e sem nova pesquisa.
-function BlocoPesquisaMercado({ pesquisa }) {
+function BlocoPesquisaMercado({ pesquisa, onUsarPreco, precoAtual }) {
   // Começa recolhida só quando a pesquisa veio salva de uma análise reaberta
   // (recolhidaInicial). Pesquisa feita agora nasce expandida.
   const [recolhida, setRecolhida] = useState(!!pesquisa?.recolhidaInicial);
   if (!pesquisa?.resultado) return null;
-  const fonteLabel = pesquisa.fonte === 'claude' ? 'Claude, fallback pago'
+  const fonteLabel = pesquisa.fonte === 'claude' ? 'Claude, API paga'
+    : pesquisa.fonte === 'claude_max' ? 'Claude Max'
     : pesquisa.fonte === 'gemini' ? 'Gemini'
     : (pesquisa.fonte || 'IA');
+  const sugerido = Number(pesquisa.precoSugerido) || 0;
+  const est = pesquisa.estatistica;
   return (
     <div style={{ marginTop: 10, padding: 12, background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, fontSize: 12, color: '#bbb', lineHeight: 1.5 }}>
       <div
@@ -782,9 +852,36 @@ function BlocoPesquisaMercado({ pesquisa }) {
           {recolhida ? 'expandir' : 'recolher'}
         </span>
       </div>
-      {!recolhida && (
-        <div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{pesquisa.resultado}</div>
+      {sugerido > 0 && onUsarPreco && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+          <button type="button" onClick={() => onUsarPreco(sugerido)} style={{ ...btnSecundario, padding: '4px 10px', fontSize: 11, borderColor: '#c9a227', color: '#c9a227' }}>
+            Usar {formatarMoeda(sugerido)}
+          </button>
+          <span style={{ color: '#777' }}>
+            média de {est?.n || 0} oferta(s){est?.n ? ` — mín. ${formatarMoeda(est.minimo)}, máx. ${formatarMoeda(est.maximo)}` : ''}
+            {Number(precoAtual) === sugerido ? ' · em uso' : ''}
+          </span>
+        </div>
       )}
+      {!recolhida && (pesquisa.ofertas?.length ? (
+        <table style={{ width: '100%', marginTop: 8, borderCollapse: 'collapse' }}>
+          <tbody>
+            {pesquisa.ofertas.map((o, i) => (
+              <tr key={i} style={{ borderTop: '1px solid #1e1e1e', color: o.mesmo_item ? '#bbb' : '#777' }}>
+                <td style={{ padding: '4px 6px', whiteSpace: 'nowrap' }}>{o.fonte}</td>
+                <td style={{ padding: '4px 6px', whiteSpace: 'nowrap', color: '#c9a227' }}>{formatarMoeda(o.preco)}</td>
+                <td style={{ padding: '4px 6px' }}>
+                  {o.link ? <a href={o.link} target="_blank" rel="noopener noreferrer" style={{ color: '#8ab4f8' }}>{o.produto || 'ver oferta'}</a> : o.produto}
+                  {!o.mesmo_item && <span> (variação diferente — fora da média)</span>}
+                  {o.observacao && <div style={{ color: '#777', fontSize: 11 }}>{o.observacao}</div>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{pesquisa.resultado}</div>
+      ))}
     </div>
   );
 }
@@ -858,7 +955,7 @@ function TabelaServicos({ itens, onAtualizar, onRemover, pesquisas, onPesquisar,
                 <Trash2 size={12} />
               </button>
             </div>
-            <BlocoPesquisaMercado pesquisa={pesquisa} />
+            <BlocoPesquisaMercado pesquisa={pesquisa} precoAtual={it.valor_unitario} onUsarPreco={(v) => onAtualizar(it.id, "valor_unitario", v)} />
             {pesquisa?.erro && (
               <div style={{ marginTop: 8, fontSize: 12, color: '#b04040' }}>{pesquisa.erro}</div>
             )}
@@ -908,6 +1005,12 @@ function TabelaMateriais({ itens, onAtualizar, onRemover, pesquisas, onPesquisar
                 ) : (
                   <span style={{ color: '#666' }}>Sem correspondência no catálogo</span>
                 )}
+                {Number(it.preco_unitario) > 0 && (
+                  <div style={{ color: '#c9a227', fontSize: 12, marginTop: 3 }}>
+                    Preço adotado: <b>{formatarMoeda(it.preco_unitario)}</b> (pesquisa de mercado)
+                    <button type="button" onClick={() => onAtualizar(it.id, 'preco_unitario', null)} style={{ ...btnIcone, marginLeft: 4, fontSize: 11 }} title="Voltar ao preço do catálogo">×</button>
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={() => onPesquisar(it)}
@@ -925,7 +1028,7 @@ function TabelaMateriais({ itens, onAtualizar, onRemover, pesquisas, onPesquisar
                 <Trash2 size={12} />
               </button>
             </div>
-            <BlocoPesquisaMercado pesquisa={pesquisa} />
+            <BlocoPesquisaMercado pesquisa={pesquisa} precoAtual={it.preco_unitario} onUsarPreco={(v) => onAtualizar(it.id, "preco_unitario", v)} />
             {pesquisa?.erro && (
               <div style={{ marginTop: 8, fontSize: 12, color: '#b04040' }}>{pesquisa.erro}</div>
             )}

@@ -1,0 +1,230 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "Subestação abrigada 13,8 kV — exemplo",
+  "prefixo": "SE_Exemplo",
+  "data": "2026-10-25",
+  "revisao": "R00",
+  "dados_ilustrativos": true,
+  "observacao": "Dados ilustrativos (cliente, curto da concessionária, solo e medições de inspeção) — não usar como valores reais."
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "titulo": "Engenheiro Eletricista",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "CLIENTE EXEMPLO",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "Endereço de exemplo",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "Edifício Comercial Exemplo — subestação 13,8 kV",
+  "uso": "Comercial (escritórios e lojas)"
+ },
+ "fornecimento": {
+  "distribuidora": "Neoenergia Brasília",
+  "tensao_primaria_kv": 13.8,
+  "tensao_secundaria_v": 380,
+  "tensao_secundaria_fn": 220,
+  "icc_3f_ka": 8,
+  "scc_mva": null,
+  "icc_ft_ka": 3,
+  "neutro_aterrado": true,
+  "tipo_se": "abrigada",
+  "protecao": "auto",
+  "tempo_eliminacao_s": 0.5
+ },
+ "cargas": {
+  "demanda_total_kw": null,
+  "fp_total": 0.92,
+  "carga_instalada_kw": 620,
+  "fator_diversidade": 1,
+  "crescimento_pct": 20,
+  "carregamento_max_pct": 100,
+  "quadros": [
+   {
+    "id": "QGL",
+    "descricao": "Iluminação e tomadas (QDs dos pavimentos)",
+    "demanda_kw": 120,
+    "fp": 0.92
+   },
+   {
+    "id": "QAC",
+    "descricao": "Climatização (VRF)",
+    "demanda_kw": 180,
+    "fp": 0.88
+   },
+   {
+    "id": "QFM",
+    "descricao": "Elevadores e bombas",
+    "demanda_kw": 45,
+    "fp": 0.85
+   }
+  ],
+  "arquivo_eletrica": ""
+ },
+ "transformador": {
+  "potencia_kva": null,
+  "z_pct": 5,
+  "isolamento": "oleo",
+  "ligacao": "Dyn1"
+ },
+ "cabo_mt": {
+  "comprimento_m": 60,
+  "metodo": "eletroduto_enterrado",
+  "isolacao": "EPR",
+  "secao_minima_mm2": 35,
+  "fator_correcao": 1,
+  "secao_mm2": null
+ },
+ "protecao": {
+  "curva": "MI",
+  "fator_partida_fase": 1.2,
+  "fator_partida_neutro": 0.3,
+  "dial": 0.1
+ },
+ "bt": {
+  "comprimento_m": 12,
+  "metodo": "F",
+  "temperatura": 30,
+  "queda_max_pct": 1,
+  "fca": null,
+  "xr": 5
+ },
+ "aterramento": {
+  "rho1_ohm_m": 400,
+  "h1_m": 1.5,
+  "rho2_ohm_m": 150,
+  "comprimento_m": 15,
+  "largura_m": 10,
+  "espacamento_m": 2.5,
+  "profundidade_m": 0.5,
+  "n_hastes": 10,
+  "comprimento_haste_m": 2.4,
+  "rho_brita_ohm_m": 3000,
+  "espessura_brita_m": 0.15,
+  "tempo_defeito_s": null,
+  "fator_divisao": 0.25,
+  "peso_kg": 50,
+  "conexao": "exotermica",
+  "resistencia_max_ohm": 10,
+  "secao_condutor_mm2": null
+ },
+ "inspecao": {
+  "tipo": "preventiva",
+  "documento_n": "HM-MT-0001",
+  "data_inspecao": "2026-10-20",
+  "equipe": "Equipe H&M (2 eletricistas NR-10 SEP + engenheiro)",
+  "abrangencia": "Subestação abrigada 13,8 kV: entrada, proteção geral, transformador, QGBT e malha de aterramento",
+  "fora_escopo": "Rede de distribuição da concessionária e quadros terminais",
+  "checklist": [
+   {
+    "cod": "D1",
+    "situacao": "C",
+    "obs": "Projeto aprovado e unifilar afixado"
+   },
+   {
+    "cod": "D2",
+    "situacao": "NC",
+    "obs": "Prontuário NR-10 desatualizado (último laudo de 2023)",
+    "prioridade": "P2"
+   },
+   {
+    "cod": "S2",
+    "situacao": "C"
+   },
+   {
+    "cod": "T1",
+    "situacao": "C",
+    "obs": "Nível de óleo normal; sílica-gel rosa (trocar na próxima manutenção)"
+   },
+   {
+    "cod": "T5",
+    "situacao": "NC",
+    "obs": "Conexão da bucha X2 com ΔT de 28 °C",
+    "foto": "F01",
+    "prioridade": "P2"
+   },
+   {
+    "cod": "N1",
+    "situacao": "NC",
+    "obs": "Tapete isolante sem certificado de ensaio",
+    "prioridade": "P3"
+   }
+  ],
+  "ncs": [],
+  "isolamento": [
+   {
+    "equipamento": "Transformador",
+    "ensaio": "AT – massa",
+    "tensao_ensaio_v": 5000,
+    "valor_mohm": 4800,
+    "minimo_mohm": null
+   },
+   {
+    "equipamento": "Transformador",
+    "ensaio": "BT – massa",
+    "tensao_ensaio_v": 1000,
+    "valor_mohm": 950,
+    "minimo_mohm": null
+   },
+   {
+    "equipamento": "Cabo de MT fase A",
+    "ensaio": "condutor – blindagem",
+    "tensao_ensaio_v": 5000,
+    "valor_mohm": 12000,
+    "minimo_mohm": null
+   }
+  ],
+  "oleo": [
+   {
+    "equipamento": "Transformador 500 kVA",
+    "rigidez_kv": 48,
+    "agua_ppm": 18
+   }
+  ],
+  "termografia": [
+   {
+    "ponto": "Bucha X2 do transformador",
+    "temperatura_c": 63,
+    "referencia_c": 35
+   },
+   {
+    "ponto": "Terminais de saída do disjuntor geral BT",
+    "temperatura_c": 41,
+    "referencia_c": 36
+   }
+  ],
+  "rele": [
+   {
+    "funcao": "51 fase",
+    "corrente_a": 100,
+    "tempo_esperado_s": null,
+    "tempo_medido_s": 0.43
+   },
+   {
+    "funcao": "50 fase",
+    "corrente_a": 600,
+    "tempo_esperado_s": 0.05,
+    "tempo_medido_s": 0.045
+   }
+  ],
+  "malha": [
+   {
+    "ponto": "Caixa de inspeção junto ao transformador",
+    "metodo": "queda de potencial (62 %)",
+    "valor_ohm": 8.7
+   }
+  ],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

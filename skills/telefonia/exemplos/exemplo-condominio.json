@@ -1,0 +1,88 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "Condomínio exemplo — interfonia",
+  "prefixo": "Interfonia_Exemplo",
+  "data": "2026-10-25",
+  "revisao": "R00",
+  "dados_ilustrativos": true
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "titulo": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "Cliente Exemplo",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "Condomínio Residencial Exemplo",
+  "uso": "Residencial multifamiliar — 2 torres de 9 pavimentos"
+ },
+ "sistema": {
+  "tipo": "analogica",
+  "topologia": "prumada",
+  "ramais_por_unidade": 1,
+  "reserva_pct": 20,
+  "ramais_por_placa": 16,
+  "terminais_portaria": 1,
+  "local_portaria": "Portaria",
+  "distancia_portaria_m": 8,
+  "local_dg": "Sala técnica / DG (térreo da Torre A)",
+  "troncos": 1,
+  "tipo_tronco": "analogico",
+  "cabo_ramal": "cci2",
+  "reserva_pares_pct": 20,
+  "fator_cabo": 1.15,
+  "ambiente_terminal": "Cozinha",
+  "nobreak": true,
+  "autonomia_h": 4,
+  "dps_linha": true,
+  "distancia_bep_m": 10,
+  "infra_existente": true,
+  "portas_switch": 24
+ },
+ "blocos": [
+  { "nome": "Torre A", "pavimentos": 9, "unidades_por_pavimento": 3, "primeiro_pavimento": 1, "pe_direito_m": 2.9, "distancia_dg_m": 12, "distancia_media_unidade_m": 15, "ramais_por_unidade": null, "rota_externa": false },
+  { "nome": "Torre B", "pavimentos": 9, "unidades_por_pavimento": 3, "primeiro_pavimento": 1, "pe_direito_m": 2.9, "distancia_dg_m": 40, "distancia_media_unidade_m": 15, "ramais_por_unidade": null, "rota_externa": true }
+ ],
+ "areas_comuns": [
+  { "nome": "Salão de festas", "ramais": 1, "distancia_m": 30, "externo": false },
+  { "nome": "Academia", "ramais": 1, "distancia_m": 35, "externo": false },
+  { "nome": "Zeladoria", "ramais": 1, "distancia_m": 20, "externo": false },
+  { "nome": "Garagem (subsolo)", "ramais": 1, "distancia_m": 25, "externo": false },
+  { "nome": "Piscina", "ramais": 1, "distancia_m": 45, "externo": true }
+ ],
+ "portoes": [
+  { "nome": "Portão social", "distancia_m": 25, "fechadura": "existente" },
+  { "nome": "Portão da garagem", "distancia_m": 35, "fechadura": "nova" }
+ ],
+ "inspecao": {
+  "tipo": "comissionamento",
+  "documento_n": "HM-TEL-001",
+  "abrangencia": "Central, DG, prumadas das Torres A e B, unidades, áreas comuns, portaria e portões",
+  "fora_escopo": "Rede elétrica do condomínio (exceto circuito da central)",
+  "checklist": [
+   { "cod": "C1", "situacao": "C", "obs": "Central na sala técnica, ventilada e com chave" },
+   { "cod": "P2", "situacao": "NC", "obs": "Porteiro do portão da garagem sem vedação na caixa (entrada de água)", "foto": "F01" }
+  ],
+  "ncs": [],
+  "teste_ramais": [
+   { "ramal": "1101", "local": "Torre A — 101", "chamada_ok": true, "audio_ok": true, "identificacao_ok": true, "observacao": "" },
+   { "ramal": "2903", "local": "Torre B — 903", "chamada_ok": true, "audio_ok": false, "identificacao_ok": true, "observacao": "Zumbido no áudio — conferir par e aterramento" }
+  ],
+  "fotos": [
+   { "id": "F01", "arquivo": "", "local": "Portão da garagem", "descricao": "Caixa do porteiro sem vedação", "ref": "P2" }
+  ],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

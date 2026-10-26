@@ -79,9 +79,13 @@ async function inserirMaterial(client, indice, item, origem, margem) {
   const precoVenda = Math.round(preco * (1 + margem / 100) * 100) / 100;
   const r = await client.query(
     `INSERT INTO materiais (codigo, descricao, categoria, unidade, preco, preco_compra, marca, ncm, origem)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id, descricao`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+     ON CONFLICT ((LOWER(TRIM(descricao)))) WHERE ativo = true DO NOTHING RETURNING id, descricao`,
     [item.codigo || null, item.descricao, categoria, item.unidade || 'un', precoVenda, preco, item.marca || '', item.ncm || null, origem]
   );
+  // outra leitura (e-mail/pasta/proposta) cadastrou o mesmo material no meio do caminho:
+  // o índice único do banco segura a duplicata e fica valendo o que já existe
+  if (!r.rows.length) return (await client.query('SELECT id, descricao FROM materiais WHERE LOWER(TRIM(descricao)) = LOWER(TRIM($1)) AND ativo = true', [item.descricao])).rows[0];
   indexar(indice, r.rows[0]);
   if (indice.referencia && categoria !== 'Não classificado') indice.referencia.push({ descricao: item.descricao, categoria, ncm: item.ncm || null, termos: termos(item.descricao) });
   return r.rows[0];
@@ -113,8 +117,29 @@ async function registrarItemCotacao(client, indice, item, origem, margem) {
   return { criado: false, mudou: semCusto, criterio: achado.criterio };
 }
 
+// Unidade comparável: "UN", "und", "PÇ" → un; "MT", "metro" → m; etc.
+const UNIDADES_EQUIVALENTES = { un: 'un', und: 'un', unid: 'un', unidade: 'un', pc: 'un', 'pç': 'un', pca: 'un', 'peça': 'un', peca: 'un',
+  m: 'm', mt: 'm', mts: 'm', metro: 'm', metros: 'm', cx: 'cx', caixa: 'cx', rl: 'rl', rolo: 'rl', pct: 'pct', pcte: 'pct', pacote: 'pct',
+  kg: 'kg', cj: 'cj', conj: 'cj', jg: 'cj', kit: 'kit', par: 'par', br: 'br', barra: 'br', l: 'l', lt: 'l' };
+const unidadeBase = (u) => UNIDADES_EQUIVALENTES[String(u || '').trim().toLowerCase().replace(/\.$/, '')] || null;
+const LIMITE_VARIACAO = Number(process.env.NF_LIMITE_VARIACAO_PRECO) || 0.5; // 50 %
+
+async function registrarHistoricoPreco(client, mat, dados) {
+  await client.query(
+    `INSERT INTO materiais_precos_historico (material_id, origem, preco_compra_anterior, preco_compra_novo, preco_anterior, preco_novo, unidade_material, unidade_item, aplicado, motivo, referencia)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [mat.id, dados.origem, mat.preco_compra, dados.precoCompra, mat.preco, dados.precoVenda ?? mat.preco, mat.unidade, dados.unidade || null, dados.aplicado, dados.motivo || null, dados.referencia || null]
+  );
+}
+
 // Nota fiscal: material novo é cadastrado; existente recebe o ÚLTIMO preço
 // pago (é o custo real mais recente). Preço de venda manual é preservado.
+// Proteções (auditoria de 25/10/2026) — a mudança NÃO é aplicada, só
+// registrada no histórico para conferência, quando:
+//   • o preço varia mais de 50 % para cima ou para baixo (NF_LIMITE_VARIACAO_PRECO);
+//   • a unidade da nota é diferente da do cadastro (CX × un muda o custo em 100×);
+//   • a nota veio só em PDF (sem XML — leitura menos confiável).
+// Toda mudança aplicada também vai para o histórico (materiais_precos_historico).
 async function registrarItemNotaFiscal(client, indice, item, origem, margem) {
   if (!normalizar(item.descricao)) return null;
   const preco = Number(item.preco);
@@ -125,13 +150,25 @@ async function registrarItemNotaFiscal(client, indice, item, origem, margem) {
     return { criado: true };
   }
   const mat = achado.material;
+  const anterior = Number(mat.preco_compra) || 0;
+  let motivo = null;
+  if (origem === 'email_pdf') motivo = 'nota sem XML';
+  else if (unidadeBase(item.unidade) && unidadeBase(mat.unidade) && unidadeBase(item.unidade) !== unidadeBase(mat.unidade)) motivo = `unidade diferente (nota: ${item.unidade}, cadastro: ${mat.unidade})`;
+  else if (anterior > 0 && Math.abs(preco - anterior) / anterior > LIMITE_VARIACAO) motivo = `variação de ${Math.round((preco / anterior - 1) * 100)} % (de R$ ${anterior.toFixed(2)} para R$ ${preco.toFixed(2)})`;
+  const referencia = item.referencia || null;
+  if (motivo) {
+    await registrarHistoricoPreco(client, mat, { origem, precoCompra: preco, unidade: item.unidade, aplicado: false, motivo, referencia });
+    return { criado: false, aplicado: false, motivo, criterio: achado.criterio };
+  }
+  const precoVenda = mat.preco_manual ? Number(mat.preco) : Math.round(preco * (1 + margem / 100) * 100) / 100;
+  if (anterior !== preco) await registrarHistoricoPreco(client, mat, { origem, precoCompra: preco, precoVenda, unidade: item.unidade, aplicado: true, referencia });
   if (mat.preco_manual) {
     await client.query(`UPDATE materiais SET preco_compra=$1, ncm=COALESCE(NULLIF(ncm,''), $2), origem=$3, atualizado_em=NOW() WHERE id=$4`, [preco, item.ncm || null, origem, mat.id]);
   } else {
     await client.query(`UPDATE materiais SET preco_compra=$1, preco=$2, ncm=COALESCE(NULLIF(ncm,''), $3), origem=$4, atualizado_em=NOW() WHERE id=$5`,
-      [preco, Math.round(preco * (1 + margem / 100) * 100) / 100, item.ncm || null, origem, mat.id]);
+      [preco, precoVenda, item.ncm || null, origem, mat.id]);
   }
-  return { criado: false, criterio: achado.criterio };
+  return { criado: false, aplicado: true, criterio: achado.criterio };
 }
 
 async function obterMargemPadrao(client) {
@@ -139,4 +176,4 @@ async function obterMargemPadrao(client) {
   return parseFloat(r.rows[0]?.valor) || 0;
 }
 
-module.exports = { carregarIndice, encontrarExistente, registrarItemCotacao, registrarItemNotaFiscal, obterMargemPadrao, chaveDescricao, codigosFabricante };
+module.exports = { carregarIndice, encontrarExistente, registrarItemCotacao, registrarItemNotaFiscal, registrarHistoricoPreco, obterMargemPadrao, chaveDescricao, codigosFabricante, unidadeBase };

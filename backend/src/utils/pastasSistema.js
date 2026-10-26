@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const fsp = require('fs/promises');
 const path = require('path');
 const { execFile } = require('child_process');
@@ -61,8 +62,11 @@ async function sincronizarPasta(client, { tipo, tabela, id, nome, pastaAtual }) 
 async function gravarArquivo(pasta, nomeArquivo, conteudo) {
   const destino = path.join(pasta, nomeSeguro(nomeArquivo, 'arquivo'));
   await fsp.mkdir(path.dirname(destino), { recursive: true });
-  const tmp = `${destino}.${process.pid}.tmp`;
-  await fsp.writeFile(tmp, conteudo);
+  // nome aleatório: duas gravações simultâneas do mesmo arquivo (autosave +
+  // clique) no mesmo processo usavam o mesmo temporário e se atropelavam.
+  // 'wx' = falha se já existir, nunca escreve por cima de outro arquivo.
+  const tmp = `${destino}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+  await fsp.writeFile(tmp, conteudo, { flag: 'wx' });
   try {
     await fsp.rename(tmp, destino);
   } catch (e) {

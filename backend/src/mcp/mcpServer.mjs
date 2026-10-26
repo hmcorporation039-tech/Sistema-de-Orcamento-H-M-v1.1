@@ -25,6 +25,7 @@ import { z } from 'zod';
 import fs from 'node:fs';
 import path from 'node:path';
 import dotenv from 'dotenv';
+import { createRequire } from 'node:module';
 
 // Processo à parte do resto do backend — não herda o .env sozinho (o Claude
 // Desktop spawna isto direto, sem passar pela inicialização normal do
@@ -35,7 +36,8 @@ const API_URL = process.env.MCP_API_URL || 'http://localhost:3001';
 const LOGIN_EMAIL = process.env.MCP_LOGIN_EMAIL;
 const LOGIN_SENHA = process.env.MCP_LOGIN_SENHA;
 
-const DISCIPLINAS_VALIDAS = ['eletrica', 'rede', 'cabeamento', 'telefonia', 'cftv', 'iluminacao', 'automacao', 'alarme', 'antena'];
+// mesma lista do backend (utils/disciplinasProjeto.js, fonte única)
+const DISCIPLINAS_VALIDAS = createRequire(import.meta.url)('../utils/disciplinasProjeto.js').DISCIPLINAS.map(d => d.chave);
 
 // ── Autenticação ──────────────────────────────────────────────────────────
 // Faz login uma vez e reaproveita o token por até ~7h30 (o token real dura
@@ -253,7 +255,10 @@ server.registerTool(
   },
   async ({ caminho_pdf, disciplinas }) => {
     try {
+      // só PDF: a ferramenta lê um caminho qualquer do PC e envia ao backend
+      if (!/\.pdf$/i.test(caminho_pdf)) return textoErro('Informe o caminho de um arquivo .pdf');
       if (!fs.existsSync(caminho_pdf)) return textoErro(`Arquivo não encontrado: ${caminho_pdf}`);
+      if (fs.statSync(caminho_pdf).size > 15 * 1024 * 1024) return textoErro('PDF acima de 15 MB — o sistema não aceita');
       const validas = disciplinas.filter(d => DISCIPLINAS_VALIDAS.includes(d));
       if (validas.length === 0) return textoErro(`Nenhuma disciplina válida informada. Use uma ou mais entre: ${DISCIPLINAS_VALIDAS.join(', ')}`);
 

@@ -27,9 +27,21 @@ function config(dados) {
     quedaAlimentador: Number(i.queda_max_alimentador_pct) || 1,
     limiteIluminacaoA: Number(i.limite_circuito_iluminacao_a) || 10,
     limiteTugA: Number(i.limite_circuito_tug_a) || 15,
-    fdIlumTug: (i.fd_ilum_tug && i.fd_ilum_tug.length) ? i.fd_ilum_tug : T.DEMANDA_ILUM_TUG_PADRAO,
-    fdTue: (i.fd_tue && i.fd_tue.length) ? i.fd_tue : T.DEMANDA_TUE_PADRAO,
+    fdIlumTug: tabelaFd(i.fd_ilum_tug, 'ate_kw') || T.DEMANDA_ILUM_TUG_PADRAO,
+    fdTue: tabelaFd(i.fd_tue, 'ate_qtd') || T.DEMANDA_TUE_PADRAO,
+    // fator único definido pelo projetista (substitui a tabela por faixas)
+    fdIlumTugFixo: numeroOuNulo(i.fd_ilum_tug_fixo),
+    fdTueFixo: numeroOuNulo(i.fd_tue_fixo),
   };
+}
+
+const numeroOuNulo = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
+
+// faixas válidas do formulário, em ordem crescente (linha incompleta é ignorada)
+function tabelaFd(linhas, chave) {
+  const ok = (linhas || []).map(l => ({ [chave]: numeroOuNulo(l[chave]), fator: numeroOuNulo(l.fator) }))
+    .filter(l => l[chave] != null && l.fator != null).sort((a, b) => a[chave] - b[chave]);
+  return ok.length ? ok : null;
 }
 
 // ── 9.5.2 Previsão de cargas por ambiente ─────────────────────────────────
@@ -67,12 +79,13 @@ function preverCargas(dados) {
   const ate600 = total600 > 6 ? 2 : 3; // 9.5.2.2.2 a)
   return ambientes.map(a => {
     const nTug = tomadasMinimas(a) + (Number(a.tugs_adicionais) || 0);
-    const iluminacao = a.iluminacao_va != null && a.iluminacao_va !== '' ? Number(a.iluminacao_va) : iluminacaoMinima(Number(a.area_m2));
-    let tugVa;
-    if (T.LOCAIS_600VA.includes(a.tipo)) tugVa = Math.min(nTug, ate600) * 600 + Math.max(0, nTug - ate600) * 100;
-    else tugVa = nTug * 100;
+    const iluminacaoMin = iluminacaoMinima(Number(a.area_m2));
+    const iluminacao = numeroOuNulo(a.iluminacao_va) ?? iluminacaoMin;
+    const tugVaMin = T.LOCAIS_600VA.includes(a.tipo) ? Math.min(nTug, ate600) * 600 + Math.max(0, nTug - ate600) * 100 : nTug * 100;
+    // o projetista pode adotar outra potência de tomadas (ex.: 200 VA por tomada de sala)
+    const tugVa = numeroOuNulo(a.tug_va) ?? tugVaMin;
     const tues = (a.tues || []).filter(t => Number(t.potencia_w) > 0);
-    return { ...a, iluminacao, nTug, tugVa, tues };
+    return { ...a, iluminacaoMin, iluminacao, nTug, nTugMin: tomadasMinimas(a), tugVaMin, tugVa, tues };
   });
 }
 
@@ -114,6 +127,7 @@ function sugerirCircuitos(previsao, c) {
     for (const t of a.tues) {
       const fp = Number(t.fp) || 1;
       add('tue', `${t.descricao || 'TUE'} — ${a.nome}`, Number(t.potencia_w) / fp, [a.nome], t.ligacao || (Number(t.potencia_w) > 4000 ? 'FF' : 'FN'));
+      circuitos[circuitos.length - 1].fp = fp;
     }
   }
   return circuitos;
@@ -138,33 +152,45 @@ function dimensionarCircuito(circ, c, { minimo, limiteQueda }) {
   const L = Number(circ.comprimento_m) || c.comprimentoPadrao;
   const k = tri ? Math.sqrt(3) : 2;
   const smin = Math.max(minimo, Number(circ.secao_minima) || 0);
-  let escolha = null;
-  for (const s of T.SECOES.filter(x => x >= smin)) {
+  // disjuntor e seção podem ser fixados pelo projetista: o cálculo confere e avisa
+  const inFixo = numeroOuNulo(circ.disjuntor);
+  const sFixa = numeroOuNulo(circ.secao);
+  const inDisj = inFixo ?? T.DISJUNTORES.find(d => d >= ib);
+  const avalia = (s) => {
     const izRef = T.capacidade(s, metodo, carregados, c.isolacao);
-    if (izRef == null) continue;
+    if (izRef == null) return null;
     const iz = izRef * fct * fca;
-    const inDisj = T.DISJUNTORES.find(d => d >= ib);
     const queda = (k * T.RHO_COBRE * L * ib) / (s * v) * 100;
-    const okCap = iz >= ib;
-    const okProt = inDisj != null && inDisj <= iz;
-    const okQueda = queda <= limiteQueda;
-    if (okCap && okProt && okQueda) {
-      const criterio = (() => {
-        const sCap = T.SECOES.find(x => x >= smin && (T.capacidade(x, metodo, carregados, c.isolacao) || 0) * fct * fca >= ib && T.DISJUNTORES.find(d => d >= ib) <= (T.capacidade(x, metodo, carregados, c.isolacao) || 0) * fct * fca);
-        if (s === smin && s === sCap) return 'seção mínima (Tab. 47)';
-        return s === sCap ? 'capacidade de condução / proteção' : 'queda de tensão';
-      })();
-      escolha = { secao: s, iz, izRef, inDisj, queda, criterio };
-      break;
+    return { secao: s, izRef, iz, queda, okCap: iz >= ib, okProt: inDisj != null && ib <= inDisj && inDisj <= iz, okQueda: queda <= limiteQueda, okMin: s >= smin };
+  };
+  const avisos = [];
+  let escolha;
+  const nome = `Circuito ${circ.id}${circ.descricao ? ` (${circ.descricao})` : ''}`;
+  if (inFixo != null && inFixo < ib) avisos.push(`${nome}: disjuntor de ${inFixo} A menor que a corrente de projeto Ib = ${arred(ib, 1)} A (5.3.4).`);
+  if (sFixa != null) {
+    escolha = avalia(sFixa);
+    if (!escolha) throw new Error(`${nome}: seção ${sFixa} mm² não existe na Tabela 36–39.`);
+    escolha.criterio = 'adotada pelo projetista';
+    if (!escolha.okMin) avisos.push(`${nome}: seção ${sFixa} mm² abaixo da mínima de ${smin} mm² (Tabela 47).`);
+    if (!escolha.okProt) avisos.push(`${nome}: proteção não atende Ib ≤ In ≤ Iz (${arred(ib, 1)} ≤ ${inDisj} ≤ ${arred(escolha.iz, 1)} A) com ${sFixa} mm² (5.3.4).`);
+    if (!escolha.okQueda) avisos.push(`${nome}: queda de tensão de ${arred(escolha.queda)} % acima do limite de ${arred(limiteQueda)} % (6.2.7).`);
+  } else {
+    for (const s of T.SECOES.filter(x => x >= smin)) {
+      const a = avalia(s);
+      if (a && a.okCap && a.okProt && a.okQueda) { escolha = a; break; }
     }
+    if (!escolha) throw new Error(`${nome}: nenhuma seção atende — revise potência, comprimento, método ou o disjuntor escolhido.`);
+    const sCap = T.SECOES.find(x => { const a = x >= smin && avalia(x); return a && a.okCap && a.okProt; });
+    escolha.criterio = escolha.secao === smin && escolha.secao === sCap ? 'seção mínima (Tab. 47)'
+      : escolha.secao === sCap ? (inFixo != null ? 'disjuntor adotado / capacidade' : 'capacidade de condução / proteção') : 'queda de tensão';
   }
-  if (!escolha) throw new Error(`Circuito ${circ.id} (${circ.descricao || ''}): nenhuma seção atende — revise potência, comprimento ou método.`);
   const neutro = ligacao === 'FF' ? null : (tri && escolha.secao > 25 && circ.neutro_reduzido ? T.NEUTRO_REDUZIDO[escolha.secao] : escolha.secao);
+  const fp = numeroOuNulo(circ.fp) ?? c.fp;
   return {
-    ...circ, ligacao, tensao: v, ib, carregados, metodo, fct, fca, comprimento: L,
-    secao: escolha.secao, secaoNeutro: neutro, secaoPE: T.secaoPE(escolha.secao),
-    izRef: escolha.izRef, iz: escolha.iz, disjuntor: escolha.inDisj, polos: tri ? 3 : ligacao === 'FF' ? 2 : 1,
-    queda: escolha.queda, criterio: escolha.criterio,
+    ...circ, ligacao, tensao: v, ib, carregados, metodo, fct, fca, comprimento: L, fp, potencia_w: va * fp,
+    secaoMinima: smin, secao: escolha.secao, secaoNeutro: neutro, secaoPE: T.secaoPE(escolha.secao),
+    izRef: escolha.izRef, iz: escolha.iz, disjuntor: inDisj, polos: tri ? 3 : ligacao === 'FF' ? 2 : 1,
+    queda: escolha.queda, criterio: escolha.criterio, disjuntorFixo: inFixo != null, secaoFixa: sFixa != null, avisos,
   };
 }
 
@@ -173,7 +199,19 @@ function dimensionarCircuito(circ, c, { minimo, limiteQueda }) {
 function balancearFases(circuitos, sistema) {
   const fases = sistema === 'trifasico' ? ['A', 'B', 'C'] : sistema === 'bifasico' ? ['A', 'B'] : ['A'];
   const carga = Object.fromEntries(fases.map(f => [f, 0]));
-  const ordenados = [...circuitos].sort((a, b) => b.potencia_va - a.potencia_va);
+  // fases fixadas pelo projetista entram primeiro; o resto é balanceado em volta delas
+  const fixas = (ci) => {
+    const f = String(ci.fases_fixas || '').toUpperCase().replace(/[^ABC]/g, '');
+    const n = ci.ligacao === 'FFF' ? 3 : ci.ligacao === 'FF' ? 2 : 1;
+    return f.length === n && [...f].every(x => fases.includes(x)) ? [...new Set(f)].sort().join('') : null;
+  };
+  for (const ci of circuitos) {
+    const f = fixas(ci);
+    if (!f) continue;
+    ci.fases = f;
+    for (const x of f) carga[x] += (Number(ci.potencia_va) || 0) / f.length;
+  }
+  const ordenados = [...circuitos].filter(ci => !fixas(ci)).sort((a, b) => b.potencia_va - a.potencia_va);
   for (const ci of ordenados) {
     const va = Number(ci.potencia_va) || 0;
     if (ci.ligacao === 'FFF' && fases.length === 3) {
@@ -203,8 +241,8 @@ function demanda(circuitos, c) {
   const tues = circuitos.filter(x => x.tipo === 'tue');
   const tueVa = tues.reduce((s, x) => s + Number(x.potencia_va), 0);
   const ilumTugKw = ilumTugVa * c.fp / 1000;
-  const fd1 = fatorTabela(c.fdIlumTug, ilumTugKw, 'ate_kw');
-  const fd2 = fatorTabela(c.fdTue, tues.length, 'ate_qtd');
+  const fd1 = c.fdIlumTugFixo ?? fatorTabela(c.fdIlumTug, ilumTugKw, 'ate_kw');
+  const fd2 = c.fdTueFixo ?? fatorTabela(c.fdTue, tues.length, 'ate_qtd');
   const dVa = ilumTugVa * fd1 + tueVa * fd2;
   return { instaladaVa: ilumTugVa + tueVa, ilumTugVa, tueVa, fdIlumTug: fd1, fdTue: fd2, nTue: tues.length, demandaVa: dVa, demandaKw: dVa * c.fp / 1000 };
 }
@@ -273,11 +311,13 @@ function materiais(circuitos, alim, quadro, previsao, c) {
 function calcular(dados) {
   const c = config(dados);
   const previsao = preverCargas(dados);
-  const informados = (dados.circuitos || []).filter(x => Number(x.potencia_va) > 0);
+  // potência em VA ou em W com o FP do circuito; "fases" do formulário = fases fixas
+  const vaDe = (x) => numeroOuNulo(x.potencia_va) ?? (numeroOuNulo(x.potencia_w) != null ? x.potencia_w / (numeroOuNulo(x.fp) || c.fp) : null);
+  const informados = (dados.circuitos || []).filter(x => vaDe(x) > 0);
   const base = informados.length
     ? informados.map((x, i) => ({
-      id: x.id || String(i + 1), ...x,
-      ambientes: Array.isArray(x.ambientes) ? x.ambientes : String(x.ambientes || '').split(',').map(s => s.trim()).filter(Boolean),
+      ...x, id: x.id || String(i + 1), potencia_va: vaDe(x), fases_fixas: x.fases || null, fases: undefined,
+      ambientes: Array.isArray(x.ambientes) ? x.ambientes : String(x.ambientes || '').split(/[,;]/).map(s => s.trim()).filter(Boolean),
     }))
     : sugerirCircuitos(previsao, c);
   const semAmbiente = (dados.tues || []).filter(t => !(dados.ambientes || []).some(a => (a.nome || '').trim() === (t.ambiente || '').trim()));
@@ -291,6 +331,7 @@ function calcular(dados) {
     const exigeDr = locais.some(t => T.LOCAIS_DR.includes(t));
     d.dr = ci.dr === true || exigeDr;
     d.drObrigatorio = exigeDr;
+    if (exigeDr && ci.dr === false) d.avisos.push(`Circuito ${ci.id}: atende local que exige DR 30 mA (5.1.3.2.2) — DR mantido.`);
     return d;
   });
   const fases = balancearFases(circuitos, c.sistema);
@@ -307,10 +348,10 @@ function calcular(dados) {
   const quadro = { circuitos: circuitos.length, reserva, modulos: Math.ceil(modulos / 6) * 6, dpsQtd, dpsUc };
   const mat = materiais(circuitos, alim, quadro, previsao, c);
   const quedaTotal = alim.queda + maiorQueda;
-  const avisos = [];
+  const avisos = circuitos.flatMap(x => x.avisos);
   if (fases.desequilibrio > 0.2) avisos.push(`Desequilíbrio entre fases de ${Math.round(fases.desequilibrio * 100)} % — redistribuir circuitos.`);
-  if (!informados.length) avisos.push('Circuitos sugeridos automaticamente (9.5.3) com comprimento padrão — informe os comprimentos reais no formulário. [CONFERIR]');
-  avisos.push('Fatores de demanda típicos de concessionária — conferir com a norma da distribuidora local. [CONFERIR]');
+  if (!informados.length) avisos.push('Circuitos sugeridos automaticamente (9.5.3) com comprimento padrão — informe os comprimentos reais no formulário (botão "Trazer os circuitos calculados" na seção 4). [CONFERIR]');
+  if (c.fdIlumTugFixo == null || c.fdTueFixo == null) avisos.push('Fatores de demanda típicos de concessionária — conferir com a norma da distribuidora local. [CONFERIR]');
   return { config: c, previsao, circuitos, fases, demanda: dem, alimentador: alim, quadro, materiais: mat.itens, cabos: mat.cabos, maiorQueda, quedaTotal, avisos, circuitosSugeridos: !informados.length };
 }
 

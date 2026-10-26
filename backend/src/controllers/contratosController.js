@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { registrarAuditoria } = require('../utils/auditoria');
 const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
 const { gerarHtmlContrato, gerarFooterTemplate } = require('../utils/pdfTemplate');
@@ -135,7 +136,10 @@ async function gerarPdf(req, res) {
 
 async function remover(req, res) {
   try {
-    await pool.query('DELETE FROM contratos WHERE id = $1', [req.params.id]);
+    const { rows } = await pool.query('DELETE FROM contratos WHERE id = $1 RETURNING *', [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ erro: 'Contrato não encontrado' });
+    // cópia completa na auditoria: a exclusão é definitiva
+    await registrarAuditoria(pool, { entidade: 'contratos', entidadeId: rows[0].id, acao: 'excluir', usuarioId: req.usuario.id, detalhes: { contrato: rows[0] } });
     res.json({ mensagem: 'Contrato removido' });
   } catch (err) {
     console.error('Erro ao remover contrato:', err);

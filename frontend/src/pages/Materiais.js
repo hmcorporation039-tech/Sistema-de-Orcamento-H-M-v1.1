@@ -10,6 +10,7 @@ import {
 import { formatarMoeda, formatarNcm, formatarData } from '../utils/format';
 import Paginacao from '../components/Paginacao';
 import Select, { Sugestoes } from '../components/Select';
+import { useAuth } from '../hooks/useAuth';
 
 const VAZIO = { codigo: '', descricao: '', categoria: '', unidade: 'un', preco: '', preco_compra: '', marca: '', ncm: '' };
 const UNIDADES = ['un', 'm', 'm²', 'm³', 'kg', 'cx', 'pct', 'rl', 'sc', 'pç', 'kit', 'h'];
@@ -30,6 +31,8 @@ const ORIGEM_LABEL = {
 };
 
 export default function Materiais() {
+  const { usuario } = useAuth();
+  const ehAdmin = usuario?.role === 'admin';
   const [materiais, setMateriais] = useState([]);
   const [categorias, setCategorias] = useState([]);
   const [busca, setBusca] = useState('');
@@ -250,16 +253,16 @@ export default function Materiais() {
 
   async function salvarMargem() {
     const valor = parseFloat(margemPadrao);
-    if (Number.isNaN(valor) || valor < 0) {
-      toast.error('Margem inválida');
+    if (Number.isNaN(valor) || valor < 0 || valor > 300) {
+      toast.error('Margem inválida (de 0 a 300%)');
       return;
     }
     setSalvandoMargem(true);
     try {
       await atualizarMargemPadrao(valor);
       toast.success('Margem padrão atualizada');
-    } catch {
-      toast.error('Erro ao atualizar margem padrão');
+    } catch (err) {
+      toast.error(err.response?.data?.erro || 'Erro ao atualizar margem padrão');
     } finally {
       setSalvandoMargem(false);
     }
@@ -414,15 +417,19 @@ export default function Materiais() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
           <span style={{ color: '#666' }}>Margem padrão de venda:</span>
+          {/* só o administrador altera a margem (vale para todo o catálogo) */}
           <input
-            type="number" step="0.1" min="0" value={margemPadrao}
+            type="number" step="0.1" min="0" max="300" value={margemPadrao}
             onChange={e => setMargemPadrao(e.target.value)}
+            disabled={!ehAdmin}
             style={{ width: 60, padding: '4px 6px' }}
           />
           <span style={{ color: '#666' }}>%</span>
-          <button onClick={salvarMargem} disabled={salvandoMargem} style={{ ...btnSecundario, padding: '5px 10px' }}>
-            {salvandoMargem ? '...' : 'Salvar'}
-          </button>
+          {ehAdmin && (
+            <button onClick={salvarMargem} disabled={salvandoMargem} style={{ ...btnSecundario, padding: '5px 10px' }}>
+              {salvandoMargem ? '...' : 'Salvar'}
+            </button>
+          )}
         </div>
       </div>
 

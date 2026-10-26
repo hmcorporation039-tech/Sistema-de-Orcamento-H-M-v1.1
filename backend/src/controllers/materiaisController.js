@@ -4,6 +4,8 @@ const { parsePaginacao, montarResposta } = require('../utils/paginacao');
 const { comTransacao } = require('../utils/transacao');
 const { compararComCatalogo } = require('../utils/compatibilizacaoAnalise');
 const { verificarPastaFornecedores } = require('../services/cotacaoFornecedorService');
+const { registrarAuditoria } = require('../utils/auditoria');
+const { registrarHistoricoPreco } = require('../services/catalogoMateriais');
 
 // Compara uma descrição livre (ex.: vinda de um projeto, de uma cotação, ou
 // perguntada na conversa via MCP) com o catálogo — mesma lógica de
@@ -62,8 +64,12 @@ async function criar(req, res) {
   if (!descricao || !categoria || !unidade) {
     return res.status(400).json({ erro: 'Descrição, categoria e unidade são obrigatórios' });
   }
+  if (Number(preco) < 0 || Number(preco_compra) < 0) return res.status(400).json({ erro: 'Preço não pode ser negativo' });
 
   try {
+    // o banco não aceita dois materiais ativos com a mesma descrição (índice único)
+    const existente = await pool.query('SELECT id FROM materiais WHERE ativo = true AND LOWER(TRIM(descricao)) = LOWER(TRIM($1))', [descricao]);
+    if (existente.rows.length) return res.status(409).json({ erro: 'Já existe um material com essa descrição no catálogo' });
     const result = await pool.query(
       `INSERT INTO materiais (codigo, descricao, categoria, unidade, preco, preco_compra, marca, ncm, origem, preco_manual)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'manual',true) RETURNING *`,
@@ -71,6 +77,7 @@ async function criar(req, res) {
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ erro: 'Já existe um material com essa descrição no catálogo' });
     console.error('Erro ao criar material:', err);
     res.status(500).json({ erro: 'Erro ao criar material' });
   }
@@ -80,7 +87,9 @@ async function atualizar(req, res) {
   const { id } = req.params;
   const { codigo, descricao, categoria, unidade, preco, preco_compra, marca, ncm } = req.body;
 
+  if (Number(preco) < 0 || Number(preco_compra) < 0) return res.status(400).json({ erro: 'Preço não pode ser negativo' });
   try {
+    const antes = (await pool.query('SELECT * FROM materiais WHERE id = $1 AND ativo = true', [id])).rows[0];
     const result = await pool.query(
       `UPDATE materiais SET codigo=$1, descricao=$2, categoria=$3,
        unidade=$4, preco=$5, preco_compra=$6, marca=$7, ncm=$8, origem='manual', preco_manual=true, atualizado_em=NOW()
@@ -88,8 +97,15 @@ async function atualizar(req, res) {
       [codigo, descricao, categoria, unidade, preco || 0, preco_compra || null, marca, ncm, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Material não encontrado' });
-    res.json(result.rows[0]);
+    // histórico de preço: edição manual também fica registrada
+    const depois = result.rows[0];
+    if (antes && (Number(antes.preco) !== Number(depois.preco) || Number(antes.preco_compra || 0) !== Number(depois.preco_compra || 0))) {
+      await registrarHistoricoPreco(pool, antes, { origem: 'manual', precoCompra: depois.preco_compra, precoVenda: depois.preco, unidade: depois.unidade, aplicado: true, referencia: `editado por ${req.usuario.nome}` })
+        .catch(e => console.warn('Histórico de preço:', e.message));
+    }
+    res.json(depois);
   } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ erro: 'Já existe outro material com essa descrição no catálogo' });
     console.error('Erro ao atualizar material:', err);
     res.status(500).json({ erro: 'Erro ao atualizar material' });
   }
@@ -98,7 +114,8 @@ async function atualizar(req, res) {
 async function remover(req, res) {
   const { id } = req.params;
   try {
-    await pool.query('UPDATE materiais SET ativo=false WHERE id=$1', [id]);
+    const r = await pool.query('UPDATE materiais SET ativo=false WHERE id=$1 AND ativo=true RETURNING id, descricao, preco', [id]);
+    if (r.rows[0]) await registrarAuditoria(pool, { entidade: 'material', entidadeId: Number(id), acao: 'excluido', detalhes: r.rows[0], usuarioId: req.usuario.id });
     res.json({ mensagem: 'Material removido' });
   } catch (err) {
     console.error('Erro ao remover material:', err);
@@ -117,14 +134,17 @@ async function importar(req, res, next) {
     let importados = 0;
     for (const m of materiais) {
       if (!m.descricao || !m.categoria || !m.unidade) continue;
-      await client.query(
+      if (Number(m.preco || m.pr || 0) < 0) continue;
+      // descrição que já existe no catálogo é ignorada (índice único do banco)
+      const r = await client.query(
         `INSERT INTO materiais (codigo, descricao, categoria, unidade, preco, preco_compra, marca, ncm, origem)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         ON CONFLICT ((LOWER(TRIM(descricao)))) WHERE ativo = true DO NOTHING`,
         [m.codigo || m.cod, m.descricao || m.desc, m.categoria || m.cat,
          m.unidade || m.un, m.preco || m.pr || 0, m.preco_compra || null, m.marca || '', m.ncm || null,
          m.origem || 'importacao']
       );
-      importados++;
+      importados += r.rowCount;
     }
       return importados;
     });

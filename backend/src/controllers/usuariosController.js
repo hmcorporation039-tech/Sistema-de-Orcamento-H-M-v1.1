@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const pool = require('../config/database');
 const { invalidarCacheUsuario } = require('../middleware/auth');
+const { registrarAuditoria } = require('../utils/auditoria');
 
 async function listar(req, res) {
   try {
@@ -21,12 +22,12 @@ async function criar(req, res) {
   if (!nome || !email || !senha) {
     return res.status(400).json({ erro: 'Nome, e-mail e senha são obrigatórios' });
   }
-  if (senha.length < 6) {
-    return res.status(400).json({ erro: 'A senha deve ter ao menos 6 caracteres' });
+  if (senha.length < 8) {
+    return res.status(400).json({ erro: 'A senha deve ter ao menos 8 caracteres' });
   }
 
   try {
-    const senhaHash = await bcrypt.hash(senha, 10);
+    const senhaHash = await bcrypt.hash(senha, 12);
     const result = await pool.query(
       `INSERT INTO usuarios (nome, email, senha, role, senha_provisoria)
        VALUES ($1,$2,$3,$4, true) RETURNING id, nome, email, role, ativo, criado_em`,
@@ -62,6 +63,7 @@ async function atualizar(req, res) {
     // Desativar ou rebaixar precisa valer imediatamente, não só quando o cache
     // de 30s expirar.
     invalidarCacheUsuario(id);
+    await registrarAuditoria(pool, { entidade: 'usuario', entidadeId: Number(id), acao: 'alterado', detalhes: { role: result.rows[0].role, ativo: result.rows[0].ativo, email: result.rows[0].email }, usuarioId: req.usuario.id });
     res.json(result.rows[0]);
   } catch (err) {
     if (err.code === '23505') {
@@ -80,9 +82,10 @@ async function remover(req, res) {
   }
 
   try {
-    const result = await pool.query('DELETE FROM usuarios WHERE id=$1 RETURNING id', [id]);
+    const result = await pool.query('DELETE FROM usuarios WHERE id=$1 RETURNING id, nome, email, role', [id]);
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Usuário não encontrado' });
     invalidarCacheUsuario(id);
+    await registrarAuditoria(pool, { entidade: 'usuario', entidadeId: Number(id), acao: 'excluido', detalhes: result.rows[0], usuarioId: req.usuario.id });
     res.json({ mensagem: 'Usuário excluído com sucesso' });
   } catch (err) {
     if (err.code === '23503') {
@@ -98,17 +101,19 @@ async function redefinirSenha(req, res) {
   const { id } = req.params;
   const { novaSenha } = req.body;
 
-  if (!novaSenha || novaSenha.length < 6) {
-    return res.status(400).json({ erro: 'A nova senha deve ter ao menos 6 caracteres' });
+  if (!novaSenha || novaSenha.length < 8) {
+    return res.status(400).json({ erro: 'A nova senha deve ter ao menos 8 caracteres' });
   }
 
   try {
-    const senhaHash = await bcrypt.hash(novaSenha, 10);
+    const senhaHash = await bcrypt.hash(novaSenha, 12);
     const result = await pool.query(
-      'UPDATE usuarios SET senha=$1, senha_provisoria=true WHERE id=$2 RETURNING id',
+      'UPDATE usuarios SET senha=$1, senha_provisoria=true, senha_alterada_em=NOW() WHERE id=$2 RETURNING id',
       [senhaHash, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Usuário não encontrado' });
+    invalidarCacheUsuario(id); // sessões abertas com a senha antiga caem na hora
+    await registrarAuditoria(pool, { entidade: 'usuario', entidadeId: Number(id), acao: 'senha_redefinida', usuarioId: req.usuario.id });
     res.json({ mensagem: 'Senha redefinida com sucesso' });
   } catch (err) {
     console.error('Erro ao redefinir senha:', err);

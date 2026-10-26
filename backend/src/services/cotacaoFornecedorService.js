@@ -5,6 +5,7 @@ const pool = require('../config/database');
 const { lerDocumentoCotacao, encerrarOcr, VERSAO_LEITOR, EXTENSOES } = require('../utils/leitorCotacao');
 const { carregarIndice, registrarItemCotacao, obterMargemPadrao } = require('./catalogoMateriais');
 const { classificarPendentes } = require('./classificacaoMateriais');
+const { executarComTrava } = require('../utils/travaJob');
 
 // Pastas onde o usuário salva os orçamentos/cotações de fornecedor recebidos
 // (WhatsApp etc.): PDF com texto, PDF escaneado ou foto (PNG/JPG). A local
@@ -26,11 +27,24 @@ function hashArquivo(buffer) {
 // Usa fs.promises: as versões síncronas BLOQUEIAM a thread única do Node, e
 // sobre caminho de rede com o servidor desligado cada chamada trava até o
 // timeout SMB do Windows — nesse intervalo a API inteira congela.
-async function listarArquivos(pasta, resumo, criarSeNaoExistir) {
-  try {
+// Pasta de rede: às 06:00 o servidor de arquivos pode ainda estar acordando
+// (ou a rede do PC ainda subindo). Tenta de novo por até ~1 minuto antes de
+// desistir da rodada — senão os orçamentos só seriam lidos 12 h depois.
+async function pastaAcessivel(pasta, tentativas = 4, intervaloMs = 20000) {
+  for (let i = 1; ; i++) {
     try {
       await fsp.access(pasta);
+      return true;
     } catch {
+      if (i >= tentativas) return false;
+      await new Promise(r => setTimeout(r, intervaloMs));
+    }
+  }
+}
+
+async function listarArquivos(pasta, resumo, criarSeNaoExistir) {
+  try {
+    if (!(await pastaAcessivel(pasta, criarSeNaoExistir ? 1 : 4))) {
       if (criarSeNaoExistir) {
         await fsp.mkdir(pasta, { recursive: true });
       } else {
@@ -88,7 +102,8 @@ let varreduraEmAndamento = null;
 
 function verificarPastaFornecedores() {
   if (!varreduraEmAndamento) {
-    varreduraEmAndamento = executarVarredura().finally(() => { varreduraEmAndamento = null; });
+    // também trava entre instâncias do sistema (advisory lock do PostgreSQL)
+    varreduraEmAndamento = executarComTrava('pasta-fornecedores', executarVarredura).finally(() => { varreduraEmAndamento = null; });
   }
   return varreduraEmAndamento;
 }

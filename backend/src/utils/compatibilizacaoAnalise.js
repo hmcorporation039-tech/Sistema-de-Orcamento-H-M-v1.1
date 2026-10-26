@@ -4,6 +4,8 @@ const { extrairEquipamentosComIA } = require('./equipamentoExtratorIA');
 const { nomeDaDisciplina } = require('./disciplinasProjeto');
 const { calcularPontosPorAmbiente } = require('./pontosPorAmbiente');
 const { buscarPrecosReferencia } = require('./precosMaoDeObraReferencia');
+const { detectarDisciplinas } = require('./leitoresTabelaProjeto');
+const { lerPdfVetorial } = require('./pdfVetorial');
 
 function normalizarPalavras(s) {
   return String(s || '')
@@ -124,6 +126,40 @@ function gerarAchados(analises) {
   const achados = [];
 
   for (const a of analises) {
+    if (a.semTexto) {
+      achados.push({
+        tema: 'Arquivo sem texto legível',
+        observacao: `"${a.arquivo}" não tem camada de texto (PDF escaneado, ou textos do CAD exportados como linhas). Nada pôde ser lido automaticamente — confira as quantidades na planta ou peça ao projetista o PDF exportado com texto (ou o DWG).`,
+      });
+      continue;
+    }
+    // Disciplina marcada × conteúdo (caso real: prancha "CFTV 2" que era de alarme)
+    const detectadas = a.disciplinasDetectadas || [];
+    const principal = detectadas[0];
+    if (principal && principal.ocorrencias >= 5 && a.disciplinas.length
+      && !a.disciplinas.some(d => detectadas.slice(0, 3).some(x => x.chave === d))) {
+      achados.push({
+        tema: 'Disciplina do arquivo a conferir',
+        observacao: `"${a.arquivo}" foi marcado como ${a.disciplinas.map(nomeDaDisciplina).join(', ')}, mas o conteúdo indica ${nomeDaDisciplina(principal.chave)} (${principal.ocorrencias} termos típicos). Confira a disciplina marcada — as contagens só valem para a disciplina certa.`,
+      });
+    }
+    if (a.esquadrias?.length) {
+      const total = a.esquadrias.reduce((s, e) => s + e.quantidade, 0);
+      achados.push({
+        tema: 'Legenda de esquadrias (arquitetura)',
+        observacao: `"${a.arquivo}" traz ${a.esquadrias.length} tipos de portas/janelas (${total} unidades). Não entram como material da disciplina${a.disciplinas.includes('alarme') ? ' — use como referência para os sensores de abertura do alarme' : ''}.`,
+      });
+    }
+    const cb = a.carimbo || {};
+    if (cb.escala === 'INDICADA' || (cb.escalasNaFolha || []).length > 1) {
+      achados.push({
+        tema: 'Escala da prancha',
+        observacao: `"${a.arquivo}" tem escala ${cb.escala === 'INDICADA' ? '"indicada" (varia por vista)' : `variada (${cb.escalasNaFolha.join(', ')})`} — medições de comprimento na planta precisam da escala de cada vista.`,
+      });
+    }
+  }
+
+  for (const a of analises) {
     if (a.disciplinas.includes('cftv') && a.cameras.ocorrencias > 0) {
       achados.push(...achadosDeNumeracao(a.arquivo, a.cameras, 'CAM', 'Câmeras'));
     }
@@ -169,10 +205,25 @@ function gerarAchados(analises) {
 // A MENOS que a tabela quantitativa do arquivo (ver extrairTabelaQuantitativa
 // em projetoParser.js) tenha achado uma contagem de verdade em texto (ex.:
 // um "quadro de cargas" no mesmo formato usado pra portas/janelas).
+// Pontos codificados (CAMx, Rx, Ax): o orçamento usa os códigos ÚNICOS — é o
+// que a tela e o relatório sempre disseram ("pontos únicos… é esse o número
+// usado no orçamento"), mas o código somava as ocorrências, contando em dobro
+// um rótulo repetido. Repetições continuam como achado para conferência.
+const totaisCodificados = (analises) => ({
+  cameras: somarPorDisciplina(analises, 'cftv', a => a.cameras.total),
+  rede: somarPorDisciplina(analises, 'rede', a => a.pontosRedeAntena.rede.total),
+  antena: somarPorDisciplina(analises, 'antena', a => a.pontosRedeAntena.antena.total),
+});
+
+// Circuitos lidos dos quadros de carga dos arquivos de elétrica
+const circuitosDosQuadros = (analises) => analises
+  .filter(a => a.disciplinas.some(d => d.startsWith('eletrica')))
+  .reduce((s, a) => s + (a.quadroCargas?.length || 0), 0);
+
 function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = {}) {
-  const totalCameras = somarPorDisciplina(analises, 'cftv', a => a.cameras.ocorrencias);
-  const totalRede = somarPorDisciplina(analises, 'rede', a => a.pontosRedeAntena.rede.ocorrencias);
-  const totalAntena = somarPorDisciplina(analises, 'antena', a => a.pontosRedeAntena.antena.ocorrencias);
+  const { cameras: totalCameras, rede: totalRede, antena: totalAntena } = totaisCodificados(analises);
+  const circuitos = circuitosDosQuadros(analises);
+  const quadros = analises.filter(a => a.disciplinas.some(d => d.startsWith('eletrica')) && a.quadroCargas?.length).length;
   const SEM_CODIGO = 'Símbolo gráfico no desenho, sem código de texto individual — confirme a quantidade direto na planta antes de fechar.';
 
   // valor_unitario começa em 0 (editável na tela) — não é preenchido
@@ -183,8 +234,10 @@ function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = 
   // "confirmado" no orçamento gerado (ver gerarOrcamento em
   // projetosController.js) — errado pra um preço que ainda não foi validado
   // por ninguém.
+  // `codigo` vai junto até a proposta (proposta_itens.codigo): sem ele o item
+  // perdia o vínculo com a tabela de preços de referência de mão de obra
   const item = (codigo, descricao, quantidade, unidade, disciplina, observacao) => ({
-    descricao, quantidade, unidade, valor_unitario: 0,
+    codigo, descricao, quantidade, unidade, valor_unitario: 0,
     valor_referencia_mercado: precosReferencia[codigo] ?? null,
     subgrupo: nomeDaDisciplina(disciplina), disciplina, pronto: false, observacao,
   });
@@ -230,8 +283,10 @@ function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = 
     // ponto de energia teto/piso) — lista pra cobrir um orçamento de elétrica
     // do zero, mesmo sem contagem automática (ver nota acima).
     item('ele_qdg', 'Instalação de quadro de distribuição geral (QDG)', 0, 'un', 'eletrica', SEM_CODIGO),
-    item('ele_qd_setorial', 'Instalação de quadros de distribuição setoriais/por pavimento', 0, 'un', 'eletrica', SEM_CODIGO),
-    item('ele_disjuntores', 'Instalação de disjuntores (termomagnéticos/DR)', 0, 'un', 'eletrica', SEM_CODIGO),
+    item('ele_qd_setorial', 'Instalação de quadros de distribuição setoriais/por pavimento', quadros, 'un', 'eletrica',
+      quadros > 0 ? `Quantidade = quadros de carga encontrados nos arquivos de elétrica (${quadros}).` : SEM_CODIGO),
+    item('ele_disjuntores', 'Instalação de disjuntores (termomagnéticos/DR)', circuitos > 0 ? circuitos + quadros : 0, 'un', 'eletrica',
+      circuitos > 0 ? `Quantidade = ${circuitos} circuitos dos quadros de carga + ${quadros} disjuntor(es) geral(is).` : SEM_CODIGO),
     item('ele_eletrodutos', 'Passagem de eletrodutos e fiação (circuitos de tomada/força)', 1, 'vb', 'eletrica',
       'Marque como "já pronto" se a infraestrutura elétrica já estiver executada.'),
     item('ele_tomada_baixa', 'Instalação de tomada baixa (30/60cm)', 0, 'un', 'eletrica', SEM_CODIGO),
@@ -271,9 +326,7 @@ function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = 
 // dos arquivos marcados com a disciplina certa). Cada item também carrega a
 // disciplina, pro mesmo filtro usado em montarServicosPadrao.
 function montarMateriaisInstalacaoPadrao(analises, disciplinasEfetivas) {
-  const totalCameras = somarPorDisciplina(analises, 'cftv', a => a.cameras.ocorrencias);
-  const totalRede = somarPorDisciplina(analises, 'rede', a => a.pontosRedeAntena.rede.ocorrencias);
-  const totalAntena = somarPorDisciplina(analises, 'antena', a => a.pontosRedeAntena.antena.ocorrencias);
+  const { cameras: totalCameras, rede: totalRede, antena: totalAntena } = totaisCodificados(analises);
 
   const item = (descricao, quantidade, unidade, disciplina, observacao) => ({
     descricao, quantidade, unidade, subgrupo: nomeDaDisciplina(disciplina), disciplina, pronto: false, observacao,
@@ -339,14 +392,16 @@ async function extrairEquipamentosDosArquivos(analises, achados) {
 // Monta a lista final de materiais pra revisão: um item por equipamento
 // encontrado, com preço sugerido do catálogo quando há correspondência
 // razoável — nunca preenche preço "no chute" quando não achou nada parecido.
-async function montarMateriais(equipamentos) {
-  const catalogo = (await pool.query(
+async function carregarCatalogo() {
+  return (await pool.query(
     // ORDER BY fixo: sem ele o PostgreSQL não garante ordem estável, e como o
     // desempate é "o primeiro com o maior score", a mesma análise rodada duas
     // vezes podia sugerir preços diferentes para o mesmo item.
     'SELECT id, descricao, preco, unidade, categoria FROM materiais WHERE ativo = true ORDER BY id'
   )).rows;
+}
 
+function montarMateriais(equipamentos, catalogo) {
   return equipamentos.map(eq => {
     const correspondencia = compararComCatalogo(eq.descricao, catalogo);
     return {
@@ -423,6 +478,108 @@ function montarMateriaisQuantitativos(analises) {
   return materiais;
 }
 
+// Listas de materiais lidas do texto do PDF (ver leitoresTabelaProjeto.js):
+// quantidade e unidade REAIS, cada item na disciplina indicada pela própria
+// descrição (um memorial de cotação traz vários sistemas juntos). Item de
+// disciplina que não foi marcada no arquivo fica de fora, com aviso — mesma
+// regra de não contaminar uma disciplina com outra.
+function montarMateriaisDaLista(analises, catalogo, achados) {
+  const materiais = [];
+  const foraDaSelecao = new Map();
+  for (const a of analises) {
+    if (!a.listaMateriais?.length || !a.disciplinas.length) continue;
+    for (const it of a.listaMateriais) {
+      // título da seção do memorial primeiro; depois a própria descrição
+      const sugerida = it.disciplinaSecao || detectarDisciplinas(it.descricao)[0]?.chave;
+      const disciplina = sugerida && a.disciplinas.includes(sugerida) ? sugerida
+        : (sugerida && !a.disciplinas.includes(sugerida) ? null : a.disciplinas[0]);
+      if (!disciplina) { foraDaSelecao.set(sugerida, (foraDaSelecao.get(sugerida) || 0) + 1); continue; }
+      const descricao = [it.descricao, it.fabricante && `${it.fabricante} ${it.modelo}`.trim()].filter(Boolean).join(' — ');
+      const corr = compararComCatalogo(descricao, catalogo);
+      materiais.push({
+        descricao,
+        referencia_fabricante: it.modelo || null,
+        quantidade: it.qtd,
+        unidade: it.unidade || corr?.unidade_catalogo || 'un',
+        subgrupo: nomeDaDisciplina(disciplina),
+        disciplina,
+        pronto: false,
+        preco_catalogo: corr?.preco_catalogo ?? null,
+        material_id: corr?.material_id ?? null,
+        confianca_catalogo: corr?.confianca ?? null,
+        descricao_catalogo: corr?.descricao_catalogo ?? null,
+        observacao: `Lista de materiais do próprio projeto ("${a.arquivo}"${it.item ? `, item ${it.item}` : it.tag ? `, TAG ${it.tag}` : ''}).`,
+      });
+    }
+  }
+  if (foraDaSelecao.size) {
+    achados.push({
+      tema: 'Itens de outras disciplinas na lista de materiais',
+      observacao: `A lista de materiais traz itens de ${[...foraDaSelecao].map(([d, n]) => `${nomeDaDisciplina(d)} (${n})`).join(', ')}, que não foram marcadas para o arquivo e ficaram de fora. Marque essas disciplinas e analise de novo se forem fazer parte do orçamento.`,
+    });
+  }
+  return materiais;
+}
+
+// Contagem pelo DESENHO (PDF vetorial, ver pdfVetorial.js): símbolos e linhas
+// identificados pela legenda da própria prancha. Vira material só em arquivo
+// SEM lista de materiais (a lista do projeto manda) e só item não ambíguo;
+// a disciplina sai da descrição da legenda (fica de fora a que não foi marcada).
+const semMarcador = (s) => String(s).replace(/^[-–•\s]+/, '');
+const metrosBR = (m) => `${String(m).replace('.', ',')} m`;
+
+function montarMateriaisDoDesenho(analises, vetoriais, catalogo) {
+  const materiais = [];
+  analises.forEach((a, i) => {
+    if (a.listaMateriais?.length || !a.disciplinas.length) return;
+    for (const pag of vetoriais[i] || []) {
+      for (const it of pag.itens) {
+        if (it.ambiguo || (it.tipo === 'linha' && it.metros == null)) continue;
+        const sugerida = detectarDisciplinas(it.descricao)[0]?.chave;
+        const disciplina = sugerida ? (a.disciplinas.includes(sugerida) ? sugerida : null) : a.disciplinas[0];
+        if (!disciplina) continue;
+        const descricao = semMarcador(it.descricao).slice(0, 240);
+        const corr = compararComCatalogo(descricao, catalogo);
+        materiais.push({
+          descricao,
+          referencia_fabricante: null,
+          // linha: + 10 % de sobra (curvas, descidas e subidas que a planta não mostra)
+          quantidade: it.tipo === 'simbolo' ? it.quantidade : Math.ceil(it.metros * 1.1),
+          unidade: it.tipo === 'simbolo' ? (corr?.unidade_catalogo || 'un') : 'm',
+          subgrupo: nomeDaDisciplina(disciplina),
+          disciplina,
+          pronto: false,
+          preco_catalogo: corr?.preco_catalogo ?? null,
+          material_id: corr?.material_id ?? null,
+          confianca_catalogo: corr?.confianca ?? null,
+          descricao_catalogo: corr?.descricao_catalogo ?? null,
+          observacao: it.tipo === 'simbolo'
+            ? `Contado no desenho de "${a.arquivo}" (pág. ${pag.pagina}): símbolo da legenda × ${it.quantidade} — conferir na planta.`
+            : `Medido no desenho de "${a.arquivo}" (pág. ${pag.pagina}): ${metrosBR(it.metros)} na escala 1:${pag.escala} + 10 % de sobra — conferir.`,
+        });
+      }
+    }
+  });
+  return materiais;
+}
+
+function achadosDoDesenho(analises, vetoriais) {
+  const achados = [];
+  analises.forEach((a, i) => {
+    const itens = (vetoriais[i] || []).flatMap(p => p.itens);
+    if (!itens.length) return;
+    const fmt = (it) => `${semMarcador(it.descricao).slice(0, 70)}: ${it.tipo === 'simbolo' ? it.quantidade : it.metros != null ? metrosBR(it.metros) : `${it.comprimento_pt} pt (sem escala no carimbo)`}`;
+    const claros = itens.filter(it => !it.ambiguo), ambiguos = itens.filter(it => it.ambiguo);
+    achados.push({
+      tema: 'Contagem pelo desenho (PDF vetorial)',
+      observacao: `"${a.arquivo}": ${claros.length ? claros.slice(0, 15).map(fmt).join('; ') : 'nenhum item da legenda com símbolo próprio'}${claros.length > 15 ? ` (+${claros.length - 15})` : ''}.`
+        + (ambiguos.length ? ` ${ambiguos.length} item(ns) da legenda com o mesmo símbolo/estilo de outro — não separados.` : '')
+        + (a.listaMateriais?.length ? ' O arquivo tem lista de materiais: ela é que vale; a contagem serve para conferir.' : ' Conferir na planta antes de emitir.'),
+    });
+  });
+  return achados;
+}
+
 // `arquivos`: [{ buffer, nomeArquivo, disciplinas }] — cada arquivo carrega
 // SUAS PRÓPRIAS disciplinas (não uma lista única pro lote inteiro). Isso evita
 // que um arquivo de uma disciplina contamine a contagem de outra (ex.: um
@@ -444,6 +601,10 @@ async function analisarProjetoCompleto(arquivos) {
   const pontosPorAmbienteBrutos = await Promise.all(
     arquivos.map(({ buffer }) => calcularPontosPorAmbiente(buffer).catch(() => []))
   );
+  // geometria do desenho (símbolos/linhas pela legenda): mesma regra, falha não derruba
+  const vetoriais = await Promise.all(
+    analises.map((a, i) => (a.semTexto ? Promise.resolve([]) : lerPdfVetorial(arquivos[i].buffer, { maxPaginas: 6 }).catch(() => [])))
+  );
 
   // Preços de referência de mão de obra (sugestão editável pelo admin — ver
   // utils/precosMaoDeObraReferencia.js). Se a tabela ainda não existir por
@@ -455,7 +616,7 @@ async function analisarProjetoCompleto(arquivos) {
   // arquivos — decide quais itens-modelo de serviço/material aparecem.
   const disciplinasEfetivas = [...new Set(analises.flatMap(a => a.disciplinas))];
 
-  const cliente = analises.map(a => extrairCliente(a.textoBruto)).find(Boolean) || null;
+  const cliente = analises.map(a => extrairCliente(a.textoBruto) || a.carimbo?.cliente).find(Boolean) || null;
 
   // Ambientes e tabela de cabos: dados de contexto geral do projeto (a mesma
   // planta de fundo se repete em todo desenho, e o padrão de tabela de cabos
@@ -464,11 +625,10 @@ async function analisarProjetoCompleto(arquivos) {
   const ambientes = analises.reduce((maior, a) => a.ambientes.length > maior.length ? a.ambientes : maior, []);
   const tabelaCabos = analises.find(a => a.tabelaCabos.length > 0)?.tabelaCabos || [];
 
-  const totalCameras = somarPorDisciplina(analises, 'cftv', a => a.cameras.ocorrencias);
-  const totalRede = somarPorDisciplina(analises, 'rede', a => a.pontosRedeAntena.rede.ocorrencias);
-  const totalAntena = somarPorDisciplina(analises, 'antena', a => a.pontosRedeAntena.antena.ocorrencias);
+  const { cameras: totalCameras, rede: totalRede, antena: totalAntena } = totaisCodificados(analises);
 
   const achados = gerarAchados(analises);
+  achados.push(...achadosDoDesenho(analises, vetoriais));
 
   // Cada disciplina selecionada que não tem extração automática de
   // quantidade entra num único aviso — os símbolos de elétrica/iluminação/
@@ -476,18 +636,21 @@ async function analisarProjetoCompleto(arquivos) {
   // (confirmado lendo um projeto real); rede/antena só entram aqui se não
   // foram encontrados em nenhum arquivo marcado com essa disciplina (quando
   // encontrados, já vêm preenchidos automaticamente).
+  const temLista = (d) => analises.some(a => a.disciplinas.includes(d) && a.listaMateriais?.length);
   const faltando = [];
   if (disciplinasEfetivas.includes('rede') && totalRede === 0) faltando.push('pontos de rede');
   if (disciplinasEfetivas.includes('antena') && totalAntena === 0) faltando.push('pontos de TV/antena');
-  if (disciplinasEfetivas.includes('alarme')) faltando.push('quantidades de alarme (sensores, sirene, teclado)');
-  if (disciplinasEfetivas.includes('eletrica')) faltando.push('quantidades de elétrica (tomadas, quadros, disjuntores, cabos)');
-  if (disciplinasEfetivas.includes('telefonia')) faltando.push('quantidades de telefonia');
-  if (disciplinasEfetivas.includes('iluminacao')) faltando.push('quantidades de iluminação (luminárias, pontos)');
-  if (disciplinasEfetivas.includes('automacao')) faltando.push('quantidades de automação');
+  if (disciplinasEfetivas.includes('alarme') && !temLista('alarme')) faltando.push('quantidades de alarme (sensores, sirene, teclado)');
+  if (disciplinasEfetivas.includes('eletrica') && !temLista('eletrica')) faltando.push('quantidades de elétrica (tomadas, interruptores, cabos)');
+  if (disciplinasEfetivas.includes('telefonia') && !temLista('telefonia')) faltando.push('quantidades de telefonia');
+  if (disciplinasEfetivas.includes('iluminacao') && !temLista('iluminacao')) faltando.push('quantidades de iluminação (luminárias, pontos)');
+  if (disciplinasEfetivas.includes('automacao') && !temLista('automacao')) faltando.push('quantidades de automação');
   if (faltando.length > 0) {
+    const contouNoDesenho = vetoriais.some(v => v.some(p => p.itens.some(it => !it.ambiguo)));
     achados.push({
       tema: 'Quantidades a confirmar manualmente',
-      observacao: `${faltando.join(', ')} não têm código de texto individual no(s) arquivo(s) analisado(s) — são símbolos gráficos no desenho (diferente de câmera/rede/antena, que usam código por ponto), não dá pra contar pelo texto do PDF sem arriscar inventar número. Os itens de "Serviços"/"Materiais" que dependem disso vieram com quantidade 0 — confirme direto na planta (ou no memorial/quadro de cargas, se houver) antes de gerar o relatório final.`,
+      observacao: `${faltando.join(', ')} não têm código de texto individual no(s) arquivo(s) analisado(s) — são símbolos gráficos no desenho (diferente de câmera/rede/antena, que usam código por ponto), não dá pra contar pelo texto do PDF sem arriscar inventar número. Os itens de "Serviços"/"Materiais" que dependem disso vieram com quantidade 0 — confirme direto na planta (ou no memorial/quadro de cargas, se houver) antes de gerar o relatório final.`
+        + (contouNoDesenho ? ' Os símbolos que a legenda identifica foram contados pela geometria do desenho — veja "Contagem pelo desenho (PDF vetorial)" e os materiais marcados "Contado no desenho".' : ''),
     });
   }
 
@@ -495,16 +658,36 @@ async function analisarProjetoCompleto(arquivos) {
   // texto tiver algum trecho "REF.:" (padrão de legenda de equipamento
   // nesses projetos) — evita uma chamada inteira (alguns segundos) quando
   // não há nada pra achar, independente da disciplina selecionada.
-  const textoCombinado = analises.map(a => a.textoBruto).join('\n');
-  const temLegendaDeEquipamento = /REF\.?:/i.test(textoCombinado);
-  const equipamentos = temLegendaDeEquipamento ? await extrairEquipamentosDosArquivos(analises, achados) : [];
-  const materiaisEquipamentos = await montarMateriais(equipamentos);
+  // A IA também é chamada quando há cabeçalho de lista de materiais que os
+  // leitores de texto não conseguiram ler (antes, só com "REF.:" — a lista de
+  // 18 itens de um projeto de BMS nem chegava a ela). Arquivo cuja lista já foi
+  // lida pelo texto não vai para a IA (evita item em dobro).
+  const precisaIA = (a) => !a.listaMateriais?.length
+    && (/REF\.?:/i.test(a.textoBruto) || /LISTA DE MATERIA|\bQTD\.?\s|\bQUANT\.?\s/i.test(a.textoBruto));
+  const paraIA = analises.filter(precisaIA);
+  const equipamentos = paraIA.length ? await extrairEquipamentosDosArquivos(paraIA, achados) : [];
+  const catalogo = await carregarCatalogo();
+  const materiaisEquipamentos = montarMateriais(equipamentos, catalogo);
   const materiaisQuantitativos = montarMateriaisQuantitativos(analises);
   const materiais = [
     ...montarMateriaisInstalacaoPadrao(analises, disciplinasEfetivas),
+    ...montarMateriaisDaLista(analises, catalogo, achados),
     ...materiaisQuantitativos,
     ...materiaisEquipamentos,
+    ...montarMateriaisDoDesenho(analises, vetoriais, catalogo),
   ];
+  const dadosExtraidos = analises.map((a, i) => ({
+    arquivo: a.arquivo,
+    disciplinas: a.disciplinas,
+    semTexto: a.semTexto,
+    carimbo: a.carimbo,
+    disciplinasDetectadas: a.disciplinasDetectadas,
+    quadroCargas: a.quadroCargas,
+    totaisQuadro: a.totaisQuadro,
+    listaMateriais: a.listaMateriais,
+    esquadrias: a.esquadrias,
+    desenho: (vetoriais[i] || []).map(p => ({ pagina: p.pagina, escala: p.escala, itens: p.itens.map(({ posicoes, ...it }) => it) })),
+  }));
 
   return {
     cliente,
@@ -524,6 +707,7 @@ async function analisarProjetoCompleto(arquivos) {
     achados,
     servicos: montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia),
     materiais,
+    dadosExtraidos,
   };
 }
 

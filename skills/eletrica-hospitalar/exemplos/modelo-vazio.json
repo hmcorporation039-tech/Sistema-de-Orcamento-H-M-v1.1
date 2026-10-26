@@ -1,0 +1,90 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "",
+  "prefixo": "",
+  "data": "AAAA-MM-DD",
+  "revisao": "R00"
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "titulo": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "",
+  "uf": ""
+ },
+ "obra": {
+  "nome": "",
+  "uso": ""
+ },
+ "instalacao": {
+  "tensao_fn": 220,
+  "tensao_ff": 380,
+  "sistema": "trifasico",
+  "esquema": "TN-S",
+  "ponto_entrega": "trafo",
+  "isolacao": "EPR",
+  "metodo": "B1",
+  "temperatura": 30,
+  "agrupamento": 3,
+  "comprimento_medio_circuito_m": 15,
+  "comprimento_alimentador_m": 30,
+  "fp": 0.92,
+  "queda_max_terminal_pct": 4,
+  "queda_max_alimentador_pct": 2,
+  "tensao_it_v": 220,
+  "ligacao_tomadas_tn": "FN",
+  "va_tomada_it": 150,
+  "va_tomada_tn": 100,
+  "fator_simultaneidade_it": 0.7,
+  "limite_circuito_it_a": 10,
+  "limite_circuito_tn_a": 16,
+  "limite_circuito_iluminacao_a": 10,
+  "max_tomadas_circuito": 8,
+  "fator_demanda_quadros": 0.8,
+  "va_luminaria": 40,
+  "comprimento_primario_it_m": 10
+ },
+ "fonte_seguranca": {
+  "gerador": "prever",
+  "gerador_kva": null,
+  "gerador_autonomia_h": 24,
+  "tempo_transferencia_s": 10,
+  "ups": "prever",
+  "ups_kva": null,
+  "ups_autonomia_min": 15,
+  "tensao_banco_v": 192,
+  "outras_cargas_essenciais_kva": 0
+ },
+ "quadros": [],
+ "ambientes": [],
+ "equipamentos": [],
+ "existente": [],
+ "inspecao": {
+  "tipo": "inicial",
+  "data_inspecao": "",
+  "documento_n": "",
+  "equipe": "",
+  "abrangencia": "",
+  "fora_escopo": "",
+  "documentos": [],
+  "instrumentos": [],
+  "checklist": [],
+  "ncs": [],
+  "isolamento": [],
+  "equipotencializacao": [],
+  "dsi": [],
+  "ensaios_dr": [],
+  "comutacao": [],
+  "fotos": []
+ }
+}

@@ -98,6 +98,7 @@ export const analisarProjeto = (arquivosComDisciplinas, nomeProjeto) => {
     timeout: 180000,
   });
 };
+export const getDisciplinasProjeto = () => api.get('/projetos/disciplinas');
 export const getAnalisesProjeto = (params) => api.get('/projetos/analises', { params });
 export const getAnaliseProjeto = (id) => api.get(`/projetos/analises/${id}`);
 export const atualizarAnaliseProjeto = (id, data) => api.put(`/projetos/analises/${id}`, data);
@@ -115,8 +116,20 @@ export const getModeloLaudo = (disciplina) => api.get(`/laudos/modelo/${discipli
 export const getLaudos = (params) => api.get('/laudos', { params });
 export const getLaudo = (id) => api.get(`/laudos/${id}`);
 export const criarLaudo = (disciplina, dados) => api.post('/laudos', { disciplina, dados });
+export const criarLaudoDeAnalise = (analiseId, disciplina) => api.post('/laudos/de-analise', { analise_id: analiseId, disciplina });
+export const enviarArquiteturaLaudo = (id, arquivo) => {
+  const fd = new FormData();
+  fd.append('arquivo', arquivo);
+  return api.post(`/laudos/${id}/arquitetura`, fd, { timeout: 180000 });
+};
+export const getArquiteturaLaudo = (id) => api.get(`/laudos/${id}/arquitetura`);
+export const baixarUnifilarLaudo = (id) => api.get(`/laudos/${id}/unifilar`, { responseType: 'blob', timeout: 120000 });
+export const baixarPlantaLaudo = (id) => api.get(`/laudos/${id}/planta`, { responseType: 'blob', timeout: 180000 });
 // gerarOrcamento: true/false ("só laudo"); omitido mantém o que está salvo
-export const atualizarLaudo = (id, dados, gerarOrcamento) => api.put(`/laudos/${id}`, gerarOrcamento == null ? { dados } : { dados, gerar_orcamento: gerarOrcamento });
+// versao: a que a tela carregou (bloqueio otimista — o servidor recusa com 409 se outro gravou antes)
+export const atualizarLaudo = (id, dados, gerarOrcamento, versao) => api.put(`/laudos/${id}`, {
+  dados, versao, ...(gerarOrcamento == null ? {} : { gerar_orcamento: gerarOrcamento }),
+});
 // Pasta do laudo em Arquivos do Sistema/Laudos
 export const salvarDocumentosLaudo = (id) => api.post(`/laudos/${id}/salvar-documentos`, null, { timeout: 300000 });
 export const getPastaLaudo = (id) => api.get(`/laudos/${id}/pasta`);
@@ -135,7 +148,8 @@ export const removerFotoLaudo = (id, fotoId) => api.delete(`/laudos/${id}/fotos/
 export const gerarOrcamentoDoLaudo = (id, modo) => api.post(`/laudos/${id}/gerar-orcamento`, { modo }, { timeout: 60000 });
 
 // ── PESQUISA DE MERCADO ───────────────────────────────────────────────
-export const pesquisarPrecoMercado = (descricao) => api.post('/pesquisa-mercado', { descricao }, { timeout: 60000 });
+// a pesquisa pelo Claude Max (busca na web real) leva de 30 s a 1 min
+export const pesquisarPrecoMercado = (descricao, tipo = 'material') => api.post('/pesquisa-mercado', { descricao, tipo }, { timeout: 300000 });
 
 // ── PREÇOS DE REFERÊNCIA DE MÃO DE OBRA (admin) ─────────────────────────
 export const getPrecosMaoDeObra = () => api.get('/precos-mao-de-obra');

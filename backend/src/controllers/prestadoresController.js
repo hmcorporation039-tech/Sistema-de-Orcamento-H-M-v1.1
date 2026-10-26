@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { registrarAuditoria } = require('../utils/auditoria');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
 const { vincularPrestadores } = require('../utils/vincularPrestadores');
 
@@ -98,7 +99,8 @@ async function atualizar(req, res) {
 async function remover(req, res) {
   const { id } = req.params;
   try {
-    await pool.query('UPDATE prestadores SET ativo=false WHERE id=$1', [id]);
+    const { rows } = await pool.query('UPDATE prestadores SET ativo=false WHERE id=$1 AND ativo=true RETURNING id, nome', [id]);
+    if (rows[0]) await registrarAuditoria(pool, { entidade: 'prestadores', entidadeId: rows[0].id, acao: 'desativar', usuarioId: req.usuario.id, detalhes: { nome: rows[0].nome } });
     res.json({ mensagem: 'Prestador removido' });
   } catch (err) {
     console.error('Erro ao remover prestador:', err);

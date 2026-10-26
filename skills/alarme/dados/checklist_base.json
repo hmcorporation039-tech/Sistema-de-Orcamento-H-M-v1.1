@@ -1,0 +1,236 @@
+[
+ {
+  "cod": "D1",
+  "secao": "Documentação",
+  "item": "Projeto/as built com posição dos dispositivos, lista de zonas e partições",
+  "requisito": "EN 50131-7 (guia de aplicação)",
+  "onde": "Escritório / cliente",
+  "como": "Conferir documentos com a instalação",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D2",
+  "secao": "Documentação",
+  "item": "Grau de segurança e classe ambiental definidos e compatíveis com os equipamentos instalados",
+  "requisito": "EN 50131-1 (graus 1 a 4; classes I a IV)",
+  "onde": "Projeto / etiquetas dos equipamentos",
+  "como": "Conferir grau e classe indicados na ficha técnica de central, detectores e sirenes",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "D3",
+  "secao": "Documentação",
+  "item": "Manual de operação, lista de usuários e contatos de emergência entregues; usuário treinado",
+  "requisito": "EN 50131-7",
+  "onde": "Cliente",
+  "como": "Verificar termo de entrega e treinamento",
+  "prioridade_padrao": "P4"
+ },
+ {
+  "cod": "D4",
+  "secao": "Documentação",
+  "item": "Conta cadastrada na central de monitoramento (protocolo, zonas, procedimento de atendimento e senha de coação)",
+  "requisito": "EN 50136-1; contrato de monitoramento",
+  "onde": "Central de monitoramento",
+  "como": "Conferir cadastro e ficha de zonas com a empresa de monitoramento",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "CA1",
+  "secao": "Central e alimentação",
+  "item": "Central em local protegido (dentro da área supervisionada, fora da vista) com tamper de abertura (e de remoção nos graus 3 e 4)",
+  "requisito": "EN 50131-3; EN 50131-1 (tamper)",
+  "onde": "Central",
+  "como": "Abrir o gabinete com o sistema desarmado e verificar o evento de tamper",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "CA2",
+  "secao": "Central e alimentação",
+  "item": "Alimentação por circuito exclusivo, com disjuntor identificado e DPS",
+  "requisito": "ABNT NBR 5410; ABNT NBR 5419-4",
+  "onde": "Quadro de distribuição / central",
+  "como": "Inspeção visual e identificação do circuito",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "CA3",
+  "secao": "Central e alimentação",
+  "item": "Bateria com capacidade para a autonomia do grau, dentro da validade e sustentando o sistema com a rede desligada",
+  "requisito": "EN 50131-6; EN 50131-1 (autonomia por grau)",
+  "onde": "Central / fonte auxiliar",
+  "como": "Desligar a rede e medir a tensão da bateria sob carga; conferir data de fabricação",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "CA4",
+  "secao": "Central e alimentação",
+  "item": "Sinalização de falta de rede, bateria baixa e falha de fonte (local e na central de monitoramento)",
+  "requisito": "EN 50131-6; EN 50131-1",
+  "onde": "Central / teclado",
+  "como": "Simular falta de rede e verificar indicação e evento transmitido",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "DT1",
+  "secao": "Detecção",
+  "item": "Teste de disparo de cada zona (walk test) com identificação correta da zona e da partição",
+  "requisito": "EN 50131-7; EN 50131-2-x",
+  "onde": "Todas as zonas",
+  "como": "Acionar cada detector com o sistema em teste e conferir o evento na central e no teclado",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "DT2",
+  "secao": "Detecção",
+  "item": "IVP na altura e orientação do fabricante, sem visada para janelas, fontes de calor ou saídas de ar-condicionado",
+  "requisito": "EN 50131-2-2; manual do fabricante",
+  "onde": "Ambientes com IVP",
+  "como": "Inspeção visual e teste de cobertura caminhando nas bordas da área",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DT3",
+  "secao": "Detecção",
+  "item": "Sensores magnéticos alinhados, com folga dentro do especificado e fixação firme",
+  "requisito": "EN 50131-2-6",
+  "onde": "Portas e janelas",
+  "como": "Abrir cada esquadria e verificar o disparo antes de 2 cm de abertura [CONFERIR]",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "DT4",
+  "secao": "Detecção",
+  "item": "Tamper dos detectores e caixas funcionando; antimascaramento nos graus 3 e 4",
+  "requisito": "EN 50131-1 (detecção de violação); EN 50131-2-2/2-4",
+  "onde": "Detectores",
+  "como": "Abrir a tampa de cada detector e verificar o evento de tamper",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "DT5",
+  "secao": "Detecção",
+  "item": "Dispositivos sem fio supervisionados (presença), com nível de sinal adequado e bateria em bom estado",
+  "requisito": "EN 50131-5-3",
+  "onde": "Dispositivos sem fio / repetidores",
+  "como": "Conferir no software da central o nível de sinal, a supervisão e a bateria de cada dispositivo",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "DT6",
+  "secao": "Detecção",
+  "item": "Barreiras e detectores externos alinhados, classe ambiental IV, sem obstrução por vegetação ou objetos",
+  "requisito": "EN 50131-1 (classe ambiental IV); manual do fabricante",
+  "onde": "Perímetro externo",
+  "como": "Interromper os feixes em vários pontos do trecho e medir o sinal de alinhamento",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "AV1",
+  "secao": "Dispositivos de aviso",
+  "item": "Sirene interna audível nos ambientes; sirene externa em local de difícil acesso, com tamper",
+  "requisito": "EN 50131-4",
+  "onde": "Sirenes",
+  "como": "Disparar o alarme e verificar audibilidade e evento de tamper da sirene externa",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "AV2",
+  "secao": "Dispositivos de aviso",
+  "item": "Tempo de sirene programado e compatível com a legislação municipal de ruído",
+  "requisito": "EN 50131-4; legislação local [CONFERIR]",
+  "onde": "Central",
+  "como": "Conferir a programação do tempo de sirene",
+  "prioridade_padrao": "P4"
+ },
+ {
+  "cod": "CO1",
+  "secao": "Comando e operação",
+  "item": "Tempos de entrada e saída programados (entrada ≤ 45 s) e zonas temporizadas só no caminho de acesso",
+  "requisito": "EN 50131-1; EN 50131-3 [CONFERIR limite]",
+  "onde": "Central / acesso principal",
+  "como": "Armar, sair, entrar e cronometrar até o disparo",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "CO2",
+  "secao": "Comando e operação",
+  "item": "Senhas de fábrica (instalador e mestre) alteradas; usuários com níveis de acesso e senha com os dígitos do grau",
+  "requisito": "EN 50131-1 (códigos de acesso por grau)",
+  "onde": "Central / teclado",
+  "como": "Tentar a senha de fábrica e conferir a lista de usuários",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "CO3",
+  "secao": "Comando e operação",
+  "item": "Partições e armação parcial (modo presença) funcionando conforme o projeto",
+  "requisito": "EN 50131-3; projeto",
+  "onde": "Teclados",
+  "como": "Armar cada partição e o modo parcial e verificar as zonas ativas",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "CO4",
+  "secao": "Comando e operação",
+  "item": "Botão de pânico e senha de coação geram evento silencioso na central de monitoramento",
+  "requisito": "EN 50131-1; procedimento da central de monitoramento",
+  "onde": "Botões de pânico / teclado",
+  "como": "Acionar com aviso prévio à central de monitoramento e confirmar o recebimento",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "TX1",
+  "secao": "Comunicação e monitoramento",
+  "item": "Eventos de teste (disparo, armar/desarmar, falta de rede, tamper) recebidos e identificados pela central de monitoramento",
+  "requisito": "EN 50136-1; Contact ID / SIA DC-09",
+  "onde": "Comunicador / central de monitoramento",
+  "como": "Gerar cada evento e confirmar por telefone ou software o recebimento, com horário",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "TX2",
+  "secao": "Comunicação e monitoramento",
+  "item": "Teste periódico (supervisão do canal) programado no intervalo da categoria do sistema de transmissão",
+  "requisito": "EN 50136-1 (categorias SP/DP)",
+  "onde": "Central",
+  "como": "Conferir a programação do teste periódico e o último teste recebido",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "TX3",
+  "secao": "Comunicação e monitoramento",
+  "item": "Segunda via de comunicação testada; falha da via principal sinalizada e transmitida pela via reserva",
+  "requisito": "EN 50136-1 (sistemas de dupla via — DP)",
+  "onde": "Comunicadores",
+  "como": "Desconectar a via principal e verificar o evento pela via reserva",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "TX4",
+  "secao": "Comunicação e monitoramento",
+  "item": "Verificação por imagem/vídeo: acesso restrito, finalidade informada e retenção definida",
+  "requisito": "Lei 13.709/2018 (LGPD), art. 6º e 46",
+  "onde": "Central de monitoramento / cliente",
+  "como": "Verificar política de acesso às imagens e registro de quem acessa",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "IN1",
+  "secao": "Infraestrutura",
+  "item": "Cabos em eletroduto/canaleta, identificados, sem emendas expostas e separados dos circuitos de energia",
+  "requisito": "ABNT NBR 5410 (separação de circuitos); boas práticas",
+  "onde": "Infraestrutura",
+  "como": "Inspeção visual dos trechos acessíveis e caixas de passagem",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "IN2",
+  "secao": "Infraestrutura",
+  "item": "DPS na entrada de energia e nas linhas de comunicação (rede/linha telefônica) que saem da edificação",
+  "requisito": "ABNT NBR 5419-4; ABNT NBR 5410",
+  "onde": "Central / comunicador",
+  "como": "Inspeção visual do DPS e da ligação ao aterramento",
+  "prioridade_padrao": "P3"
+ }
+]

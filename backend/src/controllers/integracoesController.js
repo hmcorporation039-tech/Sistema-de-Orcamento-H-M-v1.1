@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const { credenciaisConfiguradas } = require('../utils/emailClient');
 const { verificarCaixaDeEntrada } = require('../services/notaFiscalEmailService');
+const { registrarAuditoria } = require('../utils/auditoria');
 
 async function statusEmail(req, res) {
   try {
@@ -58,15 +59,21 @@ async function obterMargem(req, res) {
 async function atualizarMargem(req, res) {
   const { margem } = req.body;
   const valor = parseFloat(margem);
-  if (Number.isNaN(valor) || valor < 0) {
-    return res.status(400).json({ erro: 'Margem inválida' });
+  // 300% já é muito acima de qualquer margem real; acima disso é erro de digitação
+  if (!Number.isFinite(valor) || valor < 0 || valor > 300) {
+    return res.status(400).json({ erro: 'Margem inválida (de 0 a 300%)' });
   }
   try {
+    const anterior = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'margem_padrao'");
     await pool.query(
       `INSERT INTO configuracoes (chave, valor) VALUES ('margem_padrao', $1)
        ON CONFLICT (chave) DO UPDATE SET valor = $1, atualizado_em = NOW()`,
       [String(valor)]
     );
+    await registrarAuditoria(pool, {
+      entidade: 'configuracoes', acao: 'margem_padrao', usuarioId: req.usuario.id,
+      detalhes: { anterior: anterior.rows[0]?.valor ?? null, nova: valor },
+    });
     res.json({ margem: valor });
   } catch (err) {
     console.error('Erro ao atualizar margem padrão:', err);

@@ -1,0 +1,61 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "",
+  "prefixo": "",
+  "data": "AAAA-MM-DD",
+  "revisao": "R00"
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "titulo": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "",
+  "uf": ""
+ },
+ "obra": {
+  "nome": "",
+  "uso": ""
+ },
+ "sistema": {
+  "tecnologia": "mifare",
+  "comunicacao": "wiegand",
+  "grau_seguranca": "2",
+  "portas_por_controladora": 4,
+  "leitores_por_controladora": 4,
+  "reserva_pct": 20,
+  "autonomia_h": 4,
+  "integracao_incendio": true,
+  "distancia_central_incendio_m": 20,
+  "integracao_cftv": false,
+  "usuarios": null,
+  "visitantes_simultaneos": 0,
+  "veiculos": 0,
+  "credencial_cartao": true,
+  "passagem_acessivel": false,
+  "infra_existente": false,
+  "switch_existente": false,
+  "portas_switch": 8
+ },
+ "portas": [],
+ "perfis": [],
+ "inspecao": {
+  "tipo": "comissionamento",
+  "documento_n": "",
+  "checklist": [],
+  "ncs": [],
+  "teste_portas": [],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

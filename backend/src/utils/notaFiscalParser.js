@@ -34,8 +34,11 @@ async function parseNFeXml(buffer) {
   const idNota = infNFe.$?.Id || '';
   const chaveAcesso = idNota.replace(/^NFe/i, '').replace(/\D/g, '').slice(0, 44) || null;
   const numero = infNFe.ide?.nNF || null;
+  // destinatário e emitente (para conferir que a nota é PARA a H&M)
+  const destDocumento = String(infNFe.dest?.CNPJ || infNFe.dest?.CPF || '').replace(/\D/g, '') || null;
+  const emitCnpj = String(infNFe.emit?.CNPJ || infNFe.emit?.CPF || '').replace(/\D/g, '') || null;
 
-  return { itens, chaveAcesso, numero };
+  return { itens, chaveAcesso, numero, destDocumento, emitCnpj };
 }
 
 async function extrairDoXml(buffer) {

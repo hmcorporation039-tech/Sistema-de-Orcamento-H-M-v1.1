@@ -43,7 +43,15 @@ const limiteLogin = rateLimit({
   message: { erro: 'Muitas tentativas de login sem sucesso. Aguarde 10 minutos e tente novamente.' },
 });
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
+// Projetos: só PDF — conferido no controller pelos bytes iniciais "%PDF", com
+// mensagem clara (um filtro aqui descartaria o arquivo calado)
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 10 } });
+// Nota fiscal: PDF (DANFE) ou XML (NF-e)
+const uploadNota = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => cb(null, /\.(pdf|xml)$/i.test(file.originalname || '')),
+});
 
 // Limite de uso nos endpoints que chamam IA — sem isso, só o login tinha
 // proteção. Cada pesquisa de mercado gasta cota do Gemini (ou dinheiro do
@@ -57,6 +65,26 @@ const limitePesquisaMercado = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { erro: 'Muitas pesquisas de mercado em pouco tempo. Aguarde um pouco e tente novamente.' },
+});
+// Limite por CONTA (além do limite por IP): impede tentar senhas de uma
+// mesma conta a partir de vários computadores.
+const limiteLoginConta = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => `conta:${String(req.body?.email || '').trim().toLowerCase()}`,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { erro: 'Muitas tentativas de login nesta conta. Aguarde 15 minutos e tente novamente.' },
+});
+// Envio de proposta por e-mail sai da caixa da empresa: limite por usuário.
+const limiteEnvioEmail = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 30,
+  keyGenerator: (req) => `usuario:${req.usuario?.id}`,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { erro: 'Muitos e-mails enviados em pouco tempo. Aguarde um pouco e tente novamente.' },
 });
 const limiteAnaliseProjeto = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -83,11 +111,17 @@ const precosMOCtrl = require('../controllers/precosMaoDeObraController');
 const maoObraCtrl = require('../controllers/maoDeObraController');
 const laudoCtrl = require('../controllers/laudosController');
 
-// Fotos de inspeção: até 20 por envio, 15 MB cada (o tipo é conferido no controller)
+// Fotos de inspeção: JPG/PNG, até 20 por envio, 15 MB cada (o conteúdo é conferido no controller pelos bytes iniciais)
 const uploadFotos = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 20 } });
+// Arquitetura do projeto: DXF (texto) até 40 MB; o conteúdo é conferido no controller
+const uploadArquitetura = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 40 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => cb(null, /\.(dxf|dwg)$/i.test(file.originalname || '')),
+});
 
 // ── AUTH ──────────────────────────────────────────────────────────────
-router.post('/auth/login', limiteLogin, authCtrl.login);
+router.post('/auth/login', limiteLogin, limiteLoginConta, authCtrl.login);
 router.post('/auth/senha', autenticar, authCtrl.alterarSenha);
 
 // ── MATERIAIS ─────────────────────────────────────────────────────────
@@ -97,7 +131,7 @@ router.post('/materiais', autenticar, matCtrl.criar);
 router.put('/materiais/:id', autenticar, validarId, matCtrl.atualizar);
 router.delete('/materiais/:id', autenticar, validarId, matCtrl.remover);
 router.post('/materiais/importar', autenticar, matCtrl.importar);
-router.post('/materiais/extrair-nota', autenticar, upload.single('arquivo'), matCtrl.extrairNota);
+router.post('/materiais/extrair-nota', autenticar, uploadNota.single('arquivo'), matCtrl.extrairNota);
 router.post('/materiais/comparar', autenticar, matCtrl.comparar);
 router.post('/materiais/fornecedores/verificar-agora', autenticar, matCtrl.verificarFornecedoresAgora);
 
@@ -116,7 +150,8 @@ router.delete('/clientes/:id', autenticar, validarId, cliCtrl.remover);
 router.get('/propostas', autenticar, propCtrl.listar);
 router.get('/propostas/proximo-numero', autenticar, propCtrl.proximoNum);
 router.get('/propostas/:id/pdf', autenticar, validarId, propCtrl.gerarPdf);
-router.post('/propostas/:id/enviar-email', autenticar, validarId, propCtrl.enviarEmail);
+router.get('/propostas/:id/planilha', autenticar, validarId, propCtrl.gerarPlanilha);
+router.post('/propostas/:id/enviar-email', autenticar, validarId, posseProposta, limiteEnvioEmail, propCtrl.enviarEmail);
 router.get('/propostas/:id', autenticar, validarId, propCtrl.buscarUma);
 router.post('/propostas', autenticar, propCtrl.criar);
 router.put('/propostas/:id', autenticar, validarId, posseProposta, propCtrl.atualizar);
@@ -129,7 +164,7 @@ router.get('/integracoes/email/status', autenticar, integCtrl.statusEmail);
 router.post('/integracoes/email/verificar-agora', autenticar, integCtrl.verificarAgora);
 router.get('/integracoes/email/historico', autenticar, integCtrl.historico);
 router.get('/configuracoes/margem', autenticar, integCtrl.obterMargem);
-router.put('/configuracoes/margem', autenticar, integCtrl.atualizarMargem);
+router.put('/configuracoes/margem', autenticar, admin, integCtrl.atualizarMargem);
 
 // ── USUÁRIOS (admin) ─────────────────────────────────────────────────
 router.get('/usuarios', autenticar, admin, usuCtrl.listar);
@@ -174,6 +209,7 @@ router.delete('/contratos/:id', autenticar, validarId, admin, posseContrato, con
 
 // ── ANÁLISE DE PROJETO (compatibilização) ────────────────────────────────
 // Caminhos específicos antes do /:id genérico (mesma regra usada em /propostas)
+router.get('/projetos/disciplinas', autenticar, (req, res) => res.json(require('../utils/disciplinasProjeto').DISCIPLINAS));
 router.get('/projetos/analises', autenticar, projCtrl.listar);
 router.post('/projetos/analisar', autenticar, limiteAnaliseProjeto, upload.array('arquivos', 10), projCtrl.analisar);
 router.get('/projetos/analises/:id/relatorio', autenticar, validarId, projCtrl.gerarRelatorio);
@@ -191,6 +227,7 @@ router.get('/laudos/disciplinas', autenticar, laudoCtrl.disciplinas);
 router.get('/laudos/modelo/:disciplina', autenticar, laudoCtrl.modelo);
 router.get('/laudos', autenticar, laudoCtrl.listar);
 router.post('/laudos', autenticar, laudoCtrl.criar);
+router.post('/laudos/de-analise', autenticar, laudoCtrl.criarDeAnalise);
 router.get('/laudos/:id/documento/:tipo', autenticar, validarId, laudoCtrl.documento);
 // Pasta do laudo em "Arquivos do Sistema/Laudos": gravar todos os documentos, consultar e abrir
 router.post('/laudos/:id/salvar-documentos', autenticar, validarId, posseLaudo, laudoCtrl.salvarDocumentos);
@@ -198,6 +235,11 @@ router.get('/laudos/:id/pasta', autenticar, validarId, laudoCtrl.pasta);
 router.post('/laudos/:id/pasta/abrir', autenticar, validarId, laudoCtrl.abrirPasta);
 router.get('/laudos/:id/fotos/:fotoId', autenticar, validarId, laudoCtrl.verFoto);
 router.post('/laudos/:id/fotos', autenticar, validarId, posseLaudo, uploadFotos.array('fotos', 20), laudoCtrl.enviarFotos);
+// arquitetura (.dxf) do projeto e planta gerada pela skill da disciplina
+router.post('/laudos/:id/arquitetura', autenticar, validarId, posseLaudo, uploadArquitetura.single('arquivo'), laudoCtrl.enviarArquitetura);
+router.get('/laudos/:id/arquitetura', autenticar, validarId, laudoCtrl.verArquitetura);
+router.get('/laudos/:id/planta', autenticar, validarId, laudoCtrl.gerarPlantaDxf);
+router.get('/laudos/:id/unifilar', autenticar, validarId, laudoCtrl.gerarUnifilarQet);
 router.delete('/laudos/:id/fotos/:fotoId', autenticar, validarId, posseLaudo, laudoCtrl.removerFoto);
 router.post('/laudos/:id/calcular', autenticar, validarId, laudoCtrl.calcular);
 router.post('/laudos/:id/gerar-orcamento', autenticar, validarId, posseLaudo, laudoCtrl.gerarOrcamento);

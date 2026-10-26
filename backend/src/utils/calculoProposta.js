@@ -40,7 +40,9 @@ function ehMaoDeObra(nome) {
 // desc/qtd/un/vu; o duplicar manda o nome completo da coluna).
 function normalizarItem(it, ordem) {
   const quantidade = numeroSeguro(it.qtd ?? it.quantidade, 1);
-  const valorUnitario = numeroSeguro(it.vu ?? it.valor_unitario, 0);
+  // arredonda o unitário para 2 casas ANTES de multiplicar: é o valor gravado
+  // (DECIMAL 10,2) e impresso, então qtd × unitário da linha sempre fecha
+  const valorUnitario = arredondar(numeroSeguro(it.vu ?? it.valor_unitario, 0));
   return {
     material_id: it.material_id || null,
     descricao: it.desc ?? it.descricao ?? '',

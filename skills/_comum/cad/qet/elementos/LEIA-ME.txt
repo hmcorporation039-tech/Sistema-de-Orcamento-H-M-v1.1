@@ -1,0 +1,16 @@
+Símbolos (.elmt) da coleção oficial do QElectroTech
+https://github.com/qelectrotech/qelectrotech-elements
+
+Copiados sem alteração, na mesma árvore de pastas da coleção, para que os
+diagramas gerados pelas skills da H&M (skills/_comum/cad/qet) embutam os
+símbolos no próprio arquivo .qet e abram em qualquer PC com o QElectroTech
+0.100 (estável) ou mais novo, sem depender da coleção instalada.
+
+Licença da coleção: os símbolos podem ser usados livremente dentro de
+esquemas; a redistribuição fora de esquemas (como aqui, no repositório)
+exige a atribuição Creative Commons CC-BY ao projeto QElectroTech e aos
+autores indicados em cada arquivo .elmt. A licença também PROÍBE usar os
+símbolos como dados de treinamento de IA — gerar esquemas com eles não é
+treinamento.
+
+Autoria: projeto QElectroTech (qelectrotech.org) e colaboradores.

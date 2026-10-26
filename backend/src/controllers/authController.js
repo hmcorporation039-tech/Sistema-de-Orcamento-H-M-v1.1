@@ -1,7 +1,17 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../config/database');
+const { invalidarCacheUsuario } = require('../middleware/auth');
 const { JWT_SECRET } = require('../config/segredos');
+
+// Hash de comparação para e-mail inexistente: o login leva o mesmo tempo com
+// ou sem conta, então não dá para descobrir quais e-mails existem pelo tempo.
+const HASH_FICTICIO = bcrypt.hashSync('senha-que-nao-existe-' + Date.now(), 12);
+const CUSTO_BCRYPT = 12;
+
+function emitirToken(usuario) {
+  return jwt.sign({ id: usuario.id, nome: usuario.nome, email: usuario.email, role: usuario.role }, JWT_SECRET, { expiresIn: '8h', algorithm: 'HS256' });
+}
 
 async function login(req, res) {
   const { email, senha } = req.body;
@@ -16,12 +26,11 @@ async function login(req, res) {
       [email]
     );
 
-    if (result.rows.length === 0) {
+    const usuario = result.rows[0];
+    const senhaOk = await bcrypt.compare(String(senha), usuario ? usuario.senha : HASH_FICTICIO);
+    if (!usuario) {
       return res.status(401).json({ erro: 'E-mail ou senha incorretos' });
     }
-
-    const usuario = result.rows[0];
-    const senhaOk = await bcrypt.compare(senha, usuario.senha);
 
     if (!senhaOk) {
       return res.status(401).json({ erro: 'E-mail ou senha incorretos' });
@@ -33,11 +42,7 @@ async function login(req, res) {
       [usuario.id]
     );
 
-    const token = jwt.sign(
-      { id: usuario.id, nome: usuario.nome, email: usuario.email, role: usuario.role },
-      JWT_SECRET,
-      { expiresIn: '8h' }
-    );
+    const token = emitirToken(usuario);
 
     res.json({
       token,
@@ -79,7 +84,7 @@ async function alterarSenha(req, res) {
   }
 
   try {
-    const result = await pool.query('SELECT senha FROM usuarios WHERE id = $1', [userId]);
+    const result = await pool.query('SELECT id, nome, email, role, senha FROM usuarios WHERE id = $1', [userId]);
     const usuario = result.rows[0];
     // Sem esta checagem, um token de usuário já excluído causava
     // "Cannot read properties of undefined" → 500 sem nenhum log, impossível
@@ -93,15 +98,18 @@ async function alterarSenha(req, res) {
       return res.status(401).json({ erro: 'Senha atual incorreta' });
     }
 
-    const hash = await bcrypt.hash(novaSenha, 10);
+    const hash = await bcrypt.hash(novaSenha, CUSTO_BCRYPT);
     // Ao definir a própria senha, ela deixa de ser provisória e o aviso de
-    // troca obrigatória some.
+    // troca obrigatória some. senha_alterada_em derruba as outras sessões; esta
+    // continua com o token novo devolvido abaixo.
     await pool.query(
-      'UPDATE usuarios SET senha = $1, senha_provisoria = false WHERE id = $2',
+      'UPDATE usuarios SET senha = $1, senha_provisoria = false, senha_alterada_em = NOW() WHERE id = $2',
       [hash, userId]
     );
+    invalidarCacheUsuario(userId);
+    await new Promise(r => setTimeout(r, 1100)); // token novo com emissão posterior à troca
 
-    res.json({ mensagem: 'Senha alterada com sucesso' });
+    res.json({ mensagem: 'Senha alterada com sucesso', token: emitirToken(usuario) });
   } catch (err) {
     console.error('Erro ao alterar senha:', err);
     res.status(500).json({ erro: 'Erro ao alterar senha' });

@@ -511,6 +511,129 @@ async function criarTabelas() {
     ];
     for (const sql of indices) await client.query(sql);
 
+    // ── Auditoria de segurança/integridade (25/10/2026) ─────────────────────
+    // Histórico de preço dos materiais: toda mudança vinda de nota fiscal (e
+    // as recusadas pela quarentena — variação acima do limite, unidade
+    // diferente, nota sem XML) e as edições manuais.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS materiais_precos_historico (
+        id SERIAL PRIMARY KEY,
+        material_id INTEGER REFERENCES materiais(id) ON DELETE CASCADE,
+        origem VARCHAR(40),
+        preco_compra_anterior NUMERIC(12,2),
+        preco_compra_novo NUMERIC(12,2),
+        preco_anterior NUMERIC(12,2),
+        preco_novo NUMERIC(12,2),
+        unidade_material VARCHAR(20),
+        unidade_item VARCHAR(20),
+        aplicado BOOLEAN NOT NULL DEFAULT true,
+        motivo TEXT,
+        referencia TEXT,
+        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+        criado_em TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_precos_hist_material ON materiais_precos_historico(material_id, criado_em DESC)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_precos_hist_pendentes ON materiais_precos_historico(criado_em DESC) WHERE aplicado = false');
+
+    // Trilha de auditoria geral: exclusões e alterações sensíveis que não têm
+    // histórico próprio (proposta excluída leva junto os proposta_eventos).
+    // Não tem FK para a entidade de propósito: o registro sobrevive à exclusão.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS auditoria (
+        id SERIAL PRIMARY KEY,
+        entidade VARCHAR(40) NOT NULL,
+        entidade_id INTEGER,
+        acao VARCHAR(40) NOT NULL,
+        detalhes JSONB,
+        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+        criado_em TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_auditoria_entidade ON auditoria(entidade, entidade_id, criado_em DESC)');
+
+    // Troca/redefinição de senha derruba as sessões (tokens emitidos antes)
+    await client.query('ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS senha_alterada_em TIMESTAMP');
+
+    // Excluir proposta vinculada a uma análise falhava com erro de FK: agora a
+    // análise só perde o vínculo.
+    await client.query(`
+      DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'analises_projeto_proposta_id_fkey' AND confdeltype <> 'n') THEN
+          ALTER TABLE analises_projeto DROP CONSTRAINT analises_projeto_proposta_id_fkey;
+          ALTER TABLE analises_projeto ADD CONSTRAINT analises_projeto_proposta_id_fkey
+            FOREIGN KEY (proposta_id) REFERENCES propostas(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
+    `);
+
+    // O banco passa a impedir material ativo duplicado (mesma descrição sem
+    // diferenciar maiúsculas/espaços) — antes só o código conferia, e leituras
+    // simultâneas (e-mail + pasta + proposta) podiam duplicar. Se já houver
+    // duplicata, o índice não é criado e o aviso aparece no log (unir à mão).
+    await client.query(`
+      DO $$ BEGIN
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_materiais_descricao_ativa ON materiais (LOWER(TRIM(descricao))) WHERE ativo = true;
+      EXCEPTION WHEN unique_violation THEN
+        RAISE WARNING 'Materiais duplicados impedem o índice único ux_materiais_descricao_ativa';
+      END $$;
+    `);
+
+    // Validações básicas no próprio banco (NOT VALID + VALIDATE: não trava se
+    // existir dado antigo fora da regra; nesse caso fica valendo só para os novos).
+    const checks = [
+      ['materiais', 'ck_materiais_precos', 'preco >= 0 AND (preco_compra IS NULL OR preco_compra >= 0)'],
+      ['proposta_itens', 'ck_itens_valores', 'quantidade >= 0 AND valor_unitario >= 0'],
+      ['usuarios', 'ck_usuarios_role', "role IN ('admin', 'user')"],
+    ];
+    for (const [tabela, nome, condicao] of checks) {
+      await client.query(`
+        DO $$ BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '${nome}') THEN
+            ALTER TABLE ${tabela} ADD CONSTRAINT ${nome} CHECK (${condicao}) NOT VALID;
+            BEGIN
+              ALTER TABLE ${tabela} VALIDATE CONSTRAINT ${nome};
+            EXCEPTION WHEN check_violation THEN
+              RAISE WARNING 'Dados antigos fora da regra ${nome}: vale só para registros novos';
+            END;
+          END IF;
+        END $$;
+      `);
+    }
+
+    // Controle de versão (bloqueio otimista): cada gravação soma 1. A tela manda
+    // a versão que carregou; se outra pessoa (ou outra aba, ou a Análise de
+    // Projeto regenerando o orçamento) gravou antes, a gravação é recusada com
+    // 409 em vez de apagar o trabalho do outro sem aviso.
+    for (const tabela of ['propostas', 'analises_projeto', 'laudos_projetos']) {
+      await client.query(`ALTER TABLE ${tabela} ADD COLUMN IF NOT EXISTS versao INTEGER NOT NULL DEFAULT 0`);
+    }
+
+    // O que a leitura do PDF achou em cada arquivo, além das contagens:
+    // carimbo (escala, revisão, RT), quadros de carga, listas de materiais,
+    // esquadrias e disciplinas detectadas pelo conteúdo. É a entrada da ponte
+    // "análise do PDF → cálculo da skill da disciplina".
+    await client.query(`ALTER TABLE analises_projeto ADD COLUMN IF NOT EXISTS dados_extraidos JSONB NOT NULL DEFAULT '[]'`);
+
+    // Pesquisa de mercado estruturada: ofertas (loja, produto, preço, link) e
+    // preço sugerido (média das ofertas do mesmo item) — alimenta a aba
+    // "Pesquisa de Preços" da planilha do cliente e o "usar preço" da tela.
+    // Arquitetura (DXF) enviada para um laudo/projeto: base da planta gerada
+    // pela skill. No banco (como as fotos) para entrar no backup.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS laudos_projetos_arquitetura (
+        laudo_id INTEGER PRIMARY KEY REFERENCES laudos_projetos(id) ON DELETE CASCADE,
+        nome_arquivo VARCHAR(200) NOT NULL,
+        conteudo BYTEA NOT NULL,
+        resumo JSONB NOT NULL DEFAULT '{}',
+        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+        criado_em TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    await client.query('ALTER TABLE pesquisas_mercado ADD COLUMN IF NOT EXISTS ofertas JSONB');
+    await client.query('ALTER TABLE pesquisas_mercado ADD COLUMN IF NOT EXISTS preco_sugerido NUMERIC(12,2)');
+
     await client.query('COMMIT');
     console.log('Tabelas criadas/verificadas com sucesso');
 

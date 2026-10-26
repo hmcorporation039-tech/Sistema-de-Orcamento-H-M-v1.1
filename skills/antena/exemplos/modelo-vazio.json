@@ -1,0 +1,87 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "",
+  "prefixo": "",
+  "data": "AAAA-MM-DD",
+  "revisao": "R00"
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "titulo": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "",
+  "uf": ""
+ },
+ "obra": {
+  "nome": "",
+  "uso": ""
+ },
+ "sistema": {
+  "tipo": "terrestre",
+  "rede_terrestre": "multiswitch",
+  "nivel_medido": "estimado",
+  "nivel_antena_dbuv": null,
+  "nivel_antena_max_dbuv": null,
+  "canais_qtd": null,
+  "antenas_uhf": 1,
+  "canais": [],
+  "satelite": {
+   "nome": "",
+   "posicao": "",
+   "transponders": "",
+   "diametro_cm": 60,
+   "nivel_lnbf_dbuv": 75,
+   "nivel_lnbf_max_dbuv": null,
+   "topologia": "cascata",
+   "saidas_multiswitch": 32,
+   "ganho_multiswitch_db": 0,
+   "perda_passagem_db": 2,
+   "perda_terrestre_db": 12,
+   "nivel_min_dbuv": 47,
+   "nivel_max_dbuv": 77,
+   "mer_min_db": 11
+  },
+  "distancia_antena_headend_m": 15,
+  "amp_ganho_max_db": 40,
+  "amp_nivel_max_dbuv": 114,
+  "amp_figura_ruido_db": 7,
+  "amp_linha_ganho_max_db": 30,
+  "cabo_prumada": "RG-6",
+  "atenuacao_fmax_db_100m": null,
+  "atenuacao_fmin_db_100m": null,
+  "pe_direito_m": 3,
+  "distancia_interna_m": 8,
+  "perda_tomada_db": 1,
+  "nivel_min_dbuv": 50,
+  "nivel_max_dbuv": 80,
+  "nivel_alvo_dbuv": null,
+  "mer_min_db": 25,
+  "reserva_cabo_pct": 10,
+  "distancia_aterramento_m": 10
+ },
+ "edificacao": {
+  "torres": [],
+  "areas_comuns": []
+ },
+ "inspecao": {
+  "tipo": "comissionamento",
+  "documento_n": "",
+  "pontos_a_medir": null,
+  "checklist": [],
+  "ncs": [],
+  "medicoes": [],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

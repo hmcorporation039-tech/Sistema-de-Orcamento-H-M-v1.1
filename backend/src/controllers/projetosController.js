@@ -1,5 +1,6 @@
 const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
 const pool = require('../config/database');
+const { registrarAuditoria } = require('../utils/auditoria');
 const { analisarProjetoCompleto } = require('../utils/compatibilizacaoAnalise');
 const { gerarHtmlRelatorioCompatibilizacao } = require('../utils/relatorioCompatibilizacaoTemplate');
 const { gerarFooterTemplate } = require('../utils/pdfTemplate');
@@ -10,6 +11,8 @@ const { calcularTotais } = require('../utils/calculoProposta');
 const { validarProposta } = require('../utils/validacaoProposta');
 const { inserirSecoesEItens, proximoNumero, registrarEvento } = require('./propostasController');
 const P = require('../utils/pastasSistema');
+const { tipoPorConteudo } = require('../utils/tipoArquivo');
+const { versaoDoPedido, responderConflitoOuAusente } = require('../utils/versao');
 const { sincronizarProjeto, pastaDoProjeto, resumoPasta, pedidoLocal, seguro } = require('../services/pastasRegistros');
 
 // Converte uma linha de analises_projeto (colunas snake_case, JSONB já
@@ -37,6 +40,8 @@ function linhaParaAnalise(row) {
     achados: row.achados,
     servicos: row.servicos,
     materiais: row.materiais,
+    // Por arquivo: carimbo, quadros de carga, listas de materiais, disciplinas detectadas
+    dadosExtraidos: row.dados_extraidos,
     // Proposta gerada a partir desta análise (botão "Gerar Orçamento"), se
     // já existir — o número só vem quando a consulta faz o LEFT JOIN com
     // propostas (buscarUma); nas demais fica undefined, sem problema.
@@ -44,6 +49,7 @@ function linhaParaAnalise(row) {
     propostaNumero: row.proposta_numero,
     criadoEm: row.criado_em,
     atualizadoEm: row.atualizado_em,
+    versao: row.versao,
   };
 }
 
@@ -58,7 +64,7 @@ async function listar(req, res) {
   const params = [];
   if (busca) {
     params.push(`%${busca}%`);
-    condicoes += ` AND (cliente_nome ILIKE ${params.length} OR nome_projeto ILIKE ${params.length})`;
+    condicoes += ` AND (cliente_nome ILIKE $${params.length} OR nome_projeto ILIKE $${params.length})`;
   }
 
   try {
@@ -109,6 +115,10 @@ async function analisar(req, res) {
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({ erro: 'Envie ao menos um arquivo PDF de projeto' });
   }
+  const naoPdf = req.files.find(f => tipoPorConteudo(f.buffer) !== 'application/pdf');
+  if (naoPdf) {
+    return res.status(400).json({ erro: `"${naoPdf.originalname}" não é um arquivo PDF válido` });
+  }
 
   let disciplinasPorArquivo;
   try {
@@ -135,8 +145,8 @@ async function analisar(req, res) {
     const insert = await pool.query(
       `INSERT INTO analises_projeto
         (cliente_nome, disciplinas, arquivos_analisados, ambientes, pontos_por_ambiente, cameras,
-         pontos_rede_antena, tabela_cabos, achados, servicos, materiais, usuario_id, nome_projeto)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+         pontos_rede_antena, tabela_cabos, achados, servicos, materiais, usuario_id, nome_projeto, dados_extraidos)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        RETURNING *`,
       [
         resultado.cliente,
@@ -152,6 +162,7 @@ async function analisar(req, res) {
         JSON.stringify(resultado.materiais),
         req.usuario.id,
         String(req.body.nome_projeto || '').trim().slice(0, 200) || null,
+        JSON.stringify(resultado.dadosExtraidos || []),
       ]
     );
 
@@ -161,7 +172,8 @@ async function analisar(req, res) {
     res.json(linhaParaAnalise(salvo.rows[0]));
   } catch (err) {
     console.error('Erro ao analisar projeto:', err);
-    res.status(422).json({ erro: err.message || 'Erro ao analisar os arquivos do projeto' });
+    // erros do banco/sistema (têm `code`) não vão para a tela — só os da leitura do projeto
+    res.status(422).json({ erro: (!err.code && err.message) || 'Erro ao analisar os arquivos do projeto' });
   }
 }
 
@@ -193,8 +205,8 @@ async function atualizar(req, res) {
         funcionamento = COALESCE($4, funcionamento),
         pontos_por_disciplina = COALESCE($5::jsonb, pontos_por_disciplina),
         nome_projeto = COALESCE($7, nome_projeto),
-        atualizado_em = NOW()
-       WHERE id = $6
+        atualizado_em = NOW(), versao = versao + 1
+       WHERE id = $6 AND ($8::int IS NULL OR versao = $8)
        RETURNING *`,
       [
         cliente_nome ?? null,
@@ -204,9 +216,10 @@ async function atualizar(req, res) {
         pontos_por_disciplina ? JSON.stringify(pontos_por_disciplina) : null,
         id,
         nome_projeto != null ? String(nome_projeto).trim().slice(0, 200) : null,
+        versaoDoPedido(req.body),
       ]
     );
-    if (result.rows.length === 0) return res.status(404).json({ erro: 'Análise não encontrada' });
+    if (result.rows.length === 0) return responderConflitoOuAusente(pool, res, 'analises_projeto', id);
     // pasta acompanha o nome (renomeia) e o JSON de dados é sobrescrito
     await sincronizarProjeto(result.rows[0]);
     const salvo = await pool.query('SELECT * FROM analises_projeto WHERE id = $1', [id]);
@@ -222,8 +235,9 @@ async function atualizar(req, res) {
 async function remover(req, res) {
   const { id } = req.params;
   try {
-    const result = await pool.query('DELETE FROM analises_projeto WHERE id = $1 RETURNING id, pasta', [id]);
+    const result = await pool.query('DELETE FROM analises_projeto WHERE id = $1 RETURNING *', [id]);
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Análise não encontrada' });
+    await registrarAuditoria(pool, { entidade: 'analises_projeto', entidadeId: result.rows[0].id, acao: 'excluir', usuarioId: req.usuario.id, detalhes: { analise: result.rows[0] } });
     // a pasta não é apagada: vai para "Arquivos do Sistema/_Excluídos"
     await seguro(`excluir análise ${id}`, () => P.moverParaExcluidos('projeto', result.rows[0].pasta));
     res.json({ mensagem: 'Análise removida (a pasta foi movida para _Excluídos)' });
@@ -310,10 +324,15 @@ async function gerarOrcamento(req, res, next) {
 
     // Itens marcados como "já pronto" não fazem parte do escopo orçado —
     // mesmo critério que já vale pro relatório de compatibilização.
-    const servicosParaOrcar = (analise.servicos || []).filter(s => !s.pronto);
-    const materiaisParaOrcar = (analise.materiais || []).filter(m => !m.pronto);
+    // Itens com quantidade 0 (modelo da disciplina ainda não conferido na
+    // planta) também ficam de fora: entravam como "a cotar" com quantidade 0 e
+    // poluíam o orçamento. A resposta diz quantos ficaram de fora.
+    const temQtd = (x) => Number(x.quantidade) > 0;
+    const servicosParaOrcar = (analise.servicos || []).filter(s => !s.pronto && temQtd(s));
+    const materiaisParaOrcar = (analise.materiais || []).filter(m => !m.pronto && temQtd(m));
+    const semQuantidade = [...(analise.servicos || []), ...(analise.materiais || [])].filter(x => !x.pronto && !temQtd(x)).length;
     if (servicosParaOrcar.length === 0 && materiaisParaOrcar.length === 0) {
-      return res.status(400).json({ erro: 'Não há serviços nem materiais a orçar (tudo marcado como "já pronto")' });
+      return res.status(400).json({ erro: 'Não há serviços nem materiais a orçar (itens marcados como "já pronto" ou com quantidade 0)' });
     }
 
     // Tenta casar com um cliente já cadastrado pelo nome — se não achar, a
@@ -334,6 +353,7 @@ async function gerarOrcamento(req, res, next) {
     const itens = [
       ...servicosParaOrcar.map(s => ({
         secao_nome: NOME_SECAO_SERVICOS,
+        codigo: s.codigo || null,
         descricao: s.descricao,
         quantidade: s.quantidade,
         unidade: s.unidade,
@@ -347,9 +367,11 @@ async function gerarOrcamento(req, res, next) {
         descricao: m.descricao,
         quantidade: m.quantidade,
         unidade: m.unidade,
-        valor_unitario: m.preco_catalogo || 0,
+        // preço adotado da pesquisa de mercado (botão "Usar") tem prioridade sobre o catálogo
+        valor_unitario: Number(m.preco_unitario) > 0 ? Number(m.preco_unitario) : (m.preco_catalogo || 0),
         subgrupo: m.subgrupo || null,
-        status: (Number(m.quantidade) > 0 && m.preco_catalogo != null) ? 'confirmado' : 'a_cotar',
+        // preço 0 no catálogo (padrão da coluna) não é preço: antes saía "confirmado" a R$ 0
+        status: (Number(m.quantidade) > 0 && (Number(m.preco_unitario) > 0 || Number(m.preco_catalogo) > 0)) ? 'confirmado' : 'a_cotar',
       })),
     ];
     // `id` aqui não é opcional: inserirSecoesEItens casa item->seção por
@@ -371,17 +393,28 @@ async function gerarOrcamento(req, res, next) {
     const erroValidacao = validarProposta({ data: dataHoje, cliente_nome: analise.cliente.trim(), secoes, itens });
     if (erroValidacao) return res.status(400).json({ erro: erroValidacao });
 
-    const totais = calcularTotais({ secoes, itens, bdi: 0, imposto_venda: 0, imposto_servico: 0 });
+    // Proposta vinculada: só é atualizada enquanto estiver "Ativa" — aprovada ou
+    // recusada fica intacta e uma proposta NOVA é criada (antes a aprovada era
+    // sobrescrita). Ao atualizar, mantém BDI e impostos que já estavam nela
+    // (antes o total era recalculado com BDI/impostos zerados).
+    const vinculadaInfo = analise.propostaId
+      ? (await pool.query('SELECT numero, status, bdi, imposto_venda, imposto_servico FROM propostas WHERE id = $1', [analise.propostaId])).rows[0]
+      : null;
+    const atualizarVinculada = !!vinculadaInfo && vinculadaInfo.status === 'Ativa';
+    const totais = calcularTotais({ secoes, itens,
+      bdi: atualizarVinculada ? Number(vinculadaInfo.bdi) || 0 : 0,
+      imposto_venda: atualizarVinculada ? Number(vinculadaInfo.imposto_venda) || 0 : 0,
+      imposto_servico: atualizarVinculada ? Number(vinculadaInfo.imposto_servico) || 0 : 0 });
 
     const { propostaId, numero, criada } = await comTransacao(async (client) => {
-      if (analise.propostaId) {
-        const propostaAtual = await client.query('SELECT numero FROM propostas WHERE id = $1', [analise.propostaId]);
+      if (atualizarVinculada) {
+        const propostaAtual = await client.query("SELECT numero FROM propostas WHERE id = $1 AND status = 'Ativa' FOR UPDATE", [analise.propostaId]);
         if (propostaAtual.rows.length > 0) {
           await client.query(
             `UPDATE propostas SET
               data=$1, cliente_id=$2, cliente_nome=$3, responsavel=$4, escopo=$5,
               subtotal_materiais=$6, subtotal_mao_obra=$7, valor_bdi=$8,
-              valor_imposto_venda=$9, valor_imposto_servico=$10, total=$11, atualizado_em=NOW()
+              valor_imposto_venda=$9, valor_imposto_servico=$10, total=$11, atualizado_em=NOW(), versao=versao+1
              WHERE id=$12`,
             [dataHoje, clienteId, analise.cliente.trim(), req.usuario.nome, escopo,
              totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi,
@@ -415,9 +448,10 @@ async function gerarOrcamento(req, res, next) {
       return { propostaId: novaPropostaId, numero: numeroGerado, criada: true };
     });
 
+    const aviso = semQuantidade ? ` (${semQuantidade} item(ns) com quantidade 0 ficaram de fora — preencha na análise se fizerem parte)` : '';
     res.json({
-      propostaId, numero, criada,
-      mensagem: criada ? `Orçamento ${numero} criado a partir desta análise` : `Orçamento ${numero} atualizado com os itens desta análise`,
+      propostaId, numero, criada, semQuantidade,
+      mensagem: (criada ? `Orçamento ${numero} criado a partir desta análise` : `Orçamento ${numero} atualizado com os itens desta análise`) + aviso,
     });
   } catch (err) {
     console.error('Erro ao gerar orçamento a partir da análise:', err);

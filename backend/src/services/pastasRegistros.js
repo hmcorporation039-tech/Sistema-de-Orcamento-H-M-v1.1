@@ -72,8 +72,10 @@ async function resumoPasta(pastaAbs) {
 
 // Só abre o Explorer quando o pedido vem deste PC (quem usa o sistema por
 // outro computador não veria a janela abrir no servidor).
+// Usa o endereço da conexão, nunca req.ip: com `trust proxy` ligado, req.ip
+// vem do cabeçalho X-Forwarded-For, que qualquer um pode forjar.
 function pedidoLocal(req) {
-  const ip = String(req.ip || req.socket?.remoteAddress || '');
+  const ip = String(req.socket?.remoteAddress || '');
   return /^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(ip);
 }
 

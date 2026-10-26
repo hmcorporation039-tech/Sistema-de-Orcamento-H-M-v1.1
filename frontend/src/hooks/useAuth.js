@@ -49,7 +49,8 @@ export function AuthProvider({ children }) {
 
   // Chamado quando a pessoa define a própria senha: tira a marca de provisória
   // sem precisar deslogar e logar de novo.
-  function senhaDefinida() {
+  function senhaDefinida(tokenNovo) {
+    if (tokenNovo) localStorage.setItem('hm_token', tokenNovo);
     setUsuario(atual => {
       if (!atual) return atual;
       const atualizado = { ...atual, senhaProvisoria: false };

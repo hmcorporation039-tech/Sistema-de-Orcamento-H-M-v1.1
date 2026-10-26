@@ -1,19 +1,30 @@
-// Taxonomia fixa de disciplinas de um projeto de engenharia elétrica/baixa
-// tensão — usada pra restringir a Análise de Projeto (Compatibilização) só
-// ao que o usuário selecionou (ex.: um projeto que só tem CFTV não precisa
-// vir com itens de Iluminação/Automação). Lista pequena e estável, por isso
-// fixa em código (não é um cadastro livre como materiais.categoria) — o
-// frontend replica a mesma lista de chaves/nomes.
+// Disciplinas de projeto da H&M — FONTE ÚNICA. Cada área de atuação é uma
+// disciplina separada (pedido do usuário, 25/10/2026): elétrica predial não se
+// mistura com hospitalar ou industrial, cabeamento não se mistura com CFTV etc.
+// Usada pela Análise de Projeto (restringe itens e contagens ao que foi
+// marcado em cada arquivo), pelo relatório, pela tela (GET /projetos/disciplinas)
+// e pelo servidor MCP.
+//
+// `skill`: pasta em skills/<skill> com o cálculo normativo da disciplina
+// (null = skill ainda a criar). `grupo` só organiza a tela.
 const DISCIPLINAS = [
-  { chave: 'eletrica', nome: 'Elétrica (infraestrutura)' },
-  { chave: 'rede', nome: 'Redes de Computadores (dados)' },
-  { chave: 'cabeamento', nome: 'Infraestrutura de Cabeamento Estruturado' },
-  { chave: 'telefonia', nome: 'Telefonia' },
-  { chave: 'cftv', nome: 'CFTV' },
-  { chave: 'iluminacao', nome: 'Iluminação' },
-  { chave: 'automacao', nome: 'Automação' },
-  { chave: 'alarme', nome: 'Alarme' },
-  { chave: 'antena', nome: 'Antena/TV' },
+  { chave: 'eletrica', nome: 'Elétrica predial/residencial (NBR 5410)', grupo: 'Elétrica', skill: 'eletrica' },
+  { chave: 'eletrica_hospitalar', nome: 'Elétrica hospitalar (NBR 13534)', grupo: 'Elétrica', skill: 'eletrica_hospitalar' },
+  { chave: 'eletrica_industrial', nome: 'Elétrica industrial (motores, CCM, correção de FP)', grupo: 'Elétrica', skill: 'eletrica_industrial' },
+  { chave: 'media_tensao', nome: 'Média tensão / subestação (NBR 14039)', grupo: 'Elétrica', skill: 'media_tensao' },
+  { chave: 'iluminacao', nome: 'Iluminação (NBR ISO/CIE 8995-1)', grupo: 'Elétrica', skill: 'iluminacao' },
+  { chave: 'solar', nome: 'Energia solar fotovoltaica', grupo: 'Energia', skill: 'solar' },
+  { chave: 'carregador', nome: 'Carregadores veiculares (NBR 17019)', grupo: 'Energia', skill: 'carregador' },
+  { chave: 'spda', nome: 'SPDA (NBR 5419)', grupo: 'Proteção', skill: 'spda' },
+  { chave: 'cabeamento', nome: 'Cabeamento estruturado — infraestrutura (NBR 14565)', grupo: 'Telecom', skill: 'cabeamento' },
+  { chave: 'rede', nome: 'Redes de computadores (dados/Wi-Fi)', grupo: 'Telecom', skill: 'cabeamento' },
+  { chave: 'telefonia', nome: 'Telefonia / interfonia', grupo: 'Telecom', skill: 'telefonia' },
+  { chave: 'antena', nome: 'Antena / TV', grupo: 'Telecom', skill: 'antena' },
+  { chave: 'cftv', nome: 'CFTV', grupo: 'Segurança', skill: 'cftv' },
+  { chave: 'controle_acesso', nome: 'Controle de acesso', grupo: 'Segurança', skill: 'controle_acesso' },
+  { chave: 'alarme', nome: 'Alarme de intrusão monitorado', grupo: 'Segurança', skill: 'alarme' },
+  { chave: 'incendio', nome: 'Detecção e alarme de incêndio (NBR 17240)', grupo: 'Segurança', skill: 'incendio' },
+  { chave: 'automacao', nome: 'Automação predial / BMS / climatização', grupo: 'Automação', skill: 'automacao' },
 ];
 
 const CHAVES_VALIDAS = new Set(DISCIPLINAS.map(d => d.chave));
@@ -38,4 +49,4 @@ function nomeDaDisciplina(chave) {
   return DISCIPLINAS.find(d => d.chave === chave)?.nome || chave;
 }
 
-module.exports = { DISCIPLINAS, normalizarDisciplinas, nomeDaDisciplina };
+module.exports = { DISCIPLINAS, CHAVES_VALIDAS, normalizarDisciplinas, nomeDaDisciplina };

@@ -6,7 +6,8 @@ const { pesquisarPrecoMercado, salvarPesquisaManual, ErroPesquisaMercado } = req
 // ferramentas do servidor MCP (mcp-server.js).
 async function pesquisar(req, res) {
   try {
-    const resultado = await pesquisarPrecoMercado(req.body.descricao);
+    const tipo = req.body.tipo === 'servico' ? 'servico' : 'material';
+    const resultado = await pesquisarPrecoMercado(typeof req.body.descricao === 'string' ? req.body.descricao.slice(0, 500) : '', { tipo });
     res.json(resultado);
   } catch (err) {
     if (err instanceof ErroPesquisaMercado) {

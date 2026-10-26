@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { FilePlus2, FileDown, Upload, Calculator, Receipt, Trash2, Download, BookOpen, FolderDown } from 'lucide-react';
 import {
   getDisciplinasLaudo, getModeloLaudo, getLaudos, getLaudo, criarLaudo, atualizarLaudo, removerLaudo,
   calcularLaudo, baixarDocumentoLaudo, enviarFotosLaudo, getFotoLaudo, removerFotoLaudo, gerarOrcamentoDoLaudo,
   salvarDocumentosLaudo, getPastaLaudo, abrirPastaLaudo,
+  enviarArquiteturaLaudo, getArquiteturaLaudo, baixarPlantaLaudo, baixarUnifilarLaudo,
 } from '../../services/api';
 import PainelPasta from '../PainelPasta';
 import FormularioSpda from './FormularioSpda';
@@ -22,6 +23,10 @@ const TELAS_POR_DISCIPLINA = {
   spda: { Formulario: FormularioSpda, Resultado: ResultadoSpda },
 };
 const TELA_GENERICA = { Formulario: FormularioGenerico, Resultado: ResultadoGenerico };
+// disciplinas com unifilar para o QElectroTech (skills/_comum/cad/unifilar.js)
+const DISCIPLINAS_COM_UNIFILAR = ['eletrica', 'eletrica_industrial', 'media_tensao'];
+// disciplinas com planta automática (skills/_comum/cad/plantasDisciplina.js)
+const DISCIPLINAS_COM_PLANTA = ['eletrica', 'incendio', 'cftv', 'cabeamento', 'alarme', 'iluminacao', 'eletrica_hospitalar', 'controle_acesso', 'telefonia', 'antena'];
 
 function baixarBlob(blob, nome) {
   const url = window.URL.createObjectURL(blob);
@@ -51,6 +56,8 @@ export default function LaudosProjetos() {
   const [pastaMudou, setPastaMudou] = useState(0); // recarrega o painel da pasta após gravar arquivos
   const entradaJson = useRef(null);
   const salvandoRef = useRef(null);
+  const versaoRef = useRef(null); // versão no servidor (bloqueio otimista)
+  const conflitoRef = useRef(false); // outro gravou: para o salvamento automático até reabrir
 
   // A barra de ações fica presa logo abaixo do menu do sistema (que também é
   // fixo e muda de altura quando os botões quebram linha em telas estreitas)
@@ -107,6 +114,8 @@ export default function LaudosProjetos() {
     try {
       const r = await getLaudo(id);
       setLaudo({ id: r.data.id, disciplina: r.data.disciplina, propostas: r.data.propostas || {}, gerar_orcamento: r.data.gerar_orcamento !== false });
+      versaoRef.current = r.data.versao ?? null;
+      conflitoRef.current = false;
       setDados(r.data.dados);
       setFotos(r.data.fotos);
       setResumo(null);
@@ -117,6 +126,18 @@ export default function LaudosProjetos() {
       toast.error(err.response?.data?.erro || 'Erro ao abrir o laudo');
     }
   }
+
+  // ?aba=laudos&laudo=ID — vindo da Análise de Projeto ("Calcular pela norma"):
+  // seleciona a disciplina do laudo e abre o formulário já preenchido
+  const [busca, setBusca] = useSearchParams();
+  const laudoDaUrl = busca.get('laudo');
+  useEffect(() => {
+    if (!laudoDaUrl) return;
+    getLaudo(laudoDaUrl)
+      .then(r => { setDisciplina(r.data.disciplina); return abrir(r.data.id); })
+      .catch(() => toast.error('Laudo não encontrado'))
+      .finally(() => setBusca({ aba: 'laudos' }, { replace: true }));
+  }, [laudoDaUrl]); // só quando o id da URL muda
 
   async function novo(base) {
     try {
@@ -155,10 +176,20 @@ export default function LaudosProjetos() {
 
   const salvarAgora = useCallback(async () => {
     if (!laudo || !dados) return;
-    if (salvandoRef.current) await salvandoRef.current;
-    const promessa = atualizarLaudo(laudo.id, dados)
-      .then(() => { setSujo(false); setSalvoEm(new Date()); })
-      .catch(err => { toast.error(err.response?.data?.erro || 'Erro ao salvar'); throw err; })
+    if (conflitoRef.current) {
+      throw Object.assign(new Error('conflito de versão'), {
+        response: { data: { erro: 'Este laudo foi alterado em outro lugar depois que você o abriu. Reabra-o para continuar.' } },
+      });
+    }
+    if (salvandoRef.current) await salvandoRef.current.catch(() => {});
+    const promessa = atualizarLaudo(laudo.id, dados, null, versaoRef.current)
+      .then((r) => { versaoRef.current = r.data?.versao ?? null; setSujo(false); setSalvoEm(new Date()); })
+      .catch(err => {
+        const conflito = err.response?.status === 409;
+        if (conflito) conflitoRef.current = true;
+        toast.error(err.response?.data?.erro || 'Erro ao salvar', conflito ? { duration: 15000 } : undefined);
+        throw err;
+      })
       .finally(() => { salvandoRef.current = null; });
     salvandoRef.current = promessa;
     return promessa;
@@ -211,7 +242,8 @@ export default function LaudosProjetos() {
   async function alternarOrcamento(valor) {
     try {
       await salvarAgora().catch(() => {});
-      const r = await atualizarLaudo(laudo.id, dados, valor);
+      const r = await atualizarLaudo(laudo.id, dados, valor, versaoRef.current);
+      versaoRef.current = r.data?.versao ?? null;
       setLaudo(l => ({ ...l, gerar_orcamento: r.data.gerar_orcamento }));
       carregarLista();
       toast.success(valor ? 'Laudo com orçamento de material' : 'Só laudo — sem orçamento de material');
@@ -230,6 +262,68 @@ export default function LaudosProjetos() {
       setPastaMudou(Date.now()); // a cópia também foi gravada na pasta do laudo
     } catch (err) {
       let msg = 'Erro ao gerar o documento';
+      try { msg = JSON.parse(await err.response.data.text()).erro || msg; } catch { /* resposta não-JSON */ }
+      toast.error(msg, { duration: 8000 });
+    } finally {
+      setOcupado('');
+    }
+  }
+
+  // ── Arquitetura (DWG/DXF) e planta gerada ──
+  const entradaArquitetura = useRef(null);
+  const [arquitetura, setArquitetura] = useState(null);
+  useEffect(() => {
+    setArquitetura(null);
+    if (laudo?.id && DISCIPLINAS_COM_PLANTA.includes(laudo.disciplina)) {
+      getArquiteturaLaudo(laudo.id).then(r => setArquitetura(r.data)).catch(() => {});
+    }
+  }, [laudo?.id, laudo?.disciplina]);
+
+  async function enviarArquiteturaDoLaudo(arquivo) {
+    setOcupado('arquitetura');
+    try {
+      await salvarAgora();
+      const r = await enviarArquiteturaLaudo(laudo.id, arquivo);
+      toast.success(`${r.data.ambientes.length} ambientes e ${r.data.portas ?? 0} portas lidos da arquitetura${r.data.origem === 'dwg' ? ' (DWG)' : ''}${r.data.preenchidos ? ` — ${r.data.preenchidos} preenchidos no formulário (área e perímetro reais)` : ''}`, { duration: 8000 });
+      if (r.data.preenchidos) await abrir(laudo.id); // recarrega o formulário com os ambientes
+      else setArquitetura((await getArquiteturaLaudo(laudo.id)).data);
+      setPastaMudou(Date.now());
+    } catch (err) {
+      toast.error(err.response?.data?.erro || 'Erro ao ler a arquitetura', { duration: 9000 });
+    } finally {
+      setOcupado('');
+    }
+  }
+
+  async function baixarUnifilar() {
+    setOcupado('unifilar');
+    try {
+      await salvarAgora();
+      const r = await baixarUnifilarLaudo(laudo.id);
+      const nome = decodeURIComponent((r.headers['content-disposition'] || '').match(/filename="([^"]+)"/)?.[1] || 'unifilar.qet');
+      baixarBlob(r.data, nome);
+      setPastaMudou(Date.now());
+    } catch (err) {
+      let msg = 'Erro ao gerar o unifilar';
+      try { msg = JSON.parse(await err.response.data.text()).erro || msg; } catch { /* resposta não-JSON */ }
+      toast.error(msg, { duration: 8000 });
+    } finally {
+      setOcupado('');
+    }
+  }
+
+  async function baixarPlanta() {
+    setOcupado('planta');
+    try {
+      await salvarAgora();
+      const r = await baixarPlantaLaudo(laudo.id);
+      const nome = decodeURIComponent((r.headers['content-disposition'] || '').match(/filename="([^"]+)"/)?.[1] || 'planta.dxf');
+      baixarBlob(r.data, nome);
+      const faltaram = decodeURIComponent(r.headers['x-ambientes-nao-encontrados'] || '');
+      if (faltaram) toast(`Ambientes do formulário que não estão na arquitetura (sem pontos na planta): ${faltaram}`, { duration: 10000, icon: '⚠️' });
+      setPastaMudou(Date.now());
+    } catch (err) {
+      let msg = 'Erro ao gerar a planta';
       try { msg = JSON.parse(await err.response.data.text()).erro || msg; } catch { /* resposta não-JSON */ }
       toast.error(msg, { duration: 8000 });
     } finally {
@@ -388,6 +482,36 @@ export default function LaudosProjetos() {
                 </button>
               ))}
             </div>
+            {(DISCIPLINAS_COM_PLANTA.includes(laudo.disciplina) || DISCIPLINAS_COM_UNIFILAR.includes(laudo.disciplina)) && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, alignItems: 'center' }}>
+                <span style={{ fontSize: 12, color: '#bbb', marginRight: 4 }}>Desenhos (AutoCAD / QElectroTech):</span>
+                {DISCIPLINAS_COM_PLANTA.includes(laudo.disciplina) && (<>
+                <input ref={entradaArquitetura} type="file" accept=".dxf,.dwg" style={{ display: 'none' }}
+                  onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) enviarArquiteturaDoLaudo(f); }} />
+                <button style={btnSecundario} disabled={!!ocupado} onClick={() => entradaArquitetura.current?.click()}
+                  title="Planta de arquitetura do cliente em DWG ou DXF (AutoCAD 2004 ou mais novo). Ambientes pela polilinha de área ou pelas paredes, com o nome dentro; portas pelo arco de abertura.">
+                  <Upload size={13} style={{ marginRight: 5 }} /> {ocupado === 'arquitetura' ? 'Lendo…' : arquitetura ? 'Trocar arquitetura (DWG/DXF)' : 'Enviar arquitetura (DWG/DXF)'}
+                </button>
+                {arquitetura && (
+                  <>
+                    <span style={{ fontSize: 12, color: '#777' }}>{arquitetura.nome_arquivo} — {arquitetura.resumo?.ambientes?.length || 0} ambientes{arquitetura.resumo?.portas != null ? `, ${arquitetura.resumo.portas} portas` : ''} lidos</span>
+                    <button style={{ ...btnSecundario, borderColor: '#2f4f6f', color: '#8ab4f8' }} disabled={!!ocupado} onClick={baixarPlanta}
+                      title="Gera a planta (DXF) com os pontos da disciplina posicionados pela norma, legenda, quantitativo e carimbo — para revisar no AutoCAD">
+                      <FileDown size={13} style={{ marginRight: 5 }} /> {ocupado === 'planta' ? 'Gerando…' : 'Baixar planta (DXF)'}
+                    </button>
+                  </>
+                )}
+                </>)}
+                {DISCIPLINAS_COM_UNIFILAR.includes(laudo.disciplina) && (
+                  <button style={{ ...btnSecundario, borderColor: '#2f4f6f', color: '#8ab4f8' }} disabled={!!ocupado} onClick={baixarUnifilar}
+                    title={laudo.disciplina === 'media_tensao'
+                      ? 'Diagrama unifilar da subestação para o QElectroTech (0.100 ou mais novo): entrada, para-raios, medição, proteção com relé, transformador e QGBT'
+                      : 'Diagrama unifilar do quadro para o QElectroTech (0.100 ou mais novo): disjuntor geral, DPS, barramento e circuitos com seção, disjuntor e DR'}>
+                    <FileDown size={13} style={{ marginRight: 5 }} /> {ocupado === 'unifilar' ? 'Gerando…' : 'Unifilar (QElectroTech)'}
+                  </button>
+                )}
+              </div>
+            )}
             <PainelPasta carregar={carregarPasta} abrir={abrirPasta} atualizarQuando={`${salvoEm}-${pastaMudou}`} />
           </div>
 
@@ -401,7 +525,7 @@ export default function LaudosProjetos() {
           <div style={card}>
             <tela.Formulario
               esquema={modelo?.formulario}
-              dados={dados} onChange={alterarDados} checklistBase={modelo?.checklistBase || []}
+              dados={dados} onChange={alterarDados} checklistBase={modelo?.checklistBase || []} resumo={resumo}
               fotos={fotos} urlsFotos={urlsFotos} onEnviarFotos={enviarFotos} onRemoverFoto={removerFoto}
             />
           </div>

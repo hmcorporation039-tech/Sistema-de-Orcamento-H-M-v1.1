@@ -1,0 +1,83 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "",
+  "prefixo": "",
+  "data": "AAAA-MM-DD",
+  "revisao": "R00"
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "titulo": "Engenheiro Eletricista",
+  "cnpj": "",
+  "nome": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "",
+  "uf": ""
+ },
+ "obra": {
+  "nome": "",
+  "uso": ""
+ },
+ "instalacao": {
+  "tensao_ff": 380,
+  "tensao_fn": 220,
+  "frequencia_hz": 60,
+  "esquema": "TN-S",
+  "ponto_entrega": "trafo",
+  "trafo_kva": null,
+  "trafo_z_pct": 5,
+  "trafo_perdas_cobre_w": null,
+  "scc_rede_mva": null,
+  "icc_entrada_ka": null,
+  "cabo_entrada_secao_mm2": null,
+  "cabo_entrada_paralelos": null,
+  "cabo_entrada_comprimento_m": 10,
+  "fornecer_cabo_entrada": true,
+  "disjuntor_geral_a": null,
+  "isolacao": "EPR",
+  "metodo": "E",
+  "metodo_alimentador": "F",
+  "temperatura": 30,
+  "agrupamento": 1,
+  "agrupamento_alimentador": 1,
+  "queda_max_terminal_pct": 4,
+  "queda_max_alimentador_pct": 2,
+  "queda_max_partida_pct": 10,
+  "fp_medido": null,
+  "fp_alvo": 0.92,
+  "demanda_medida_kw": null,
+  "tipo_banco": "auto",
+  "estagios_controlador": 6,
+  "banco_distancia_m": 5,
+  "fator_simultaneidade": 1,
+  "contribuicao_motores": true
+ },
+ "quadros": [],
+ "motores": [],
+ "outras_cargas": [],
+ "inspecao": {
+  "tipo": "periodica",
+  "data_inspecao": "",
+  "documento_n": "",
+  "equipe": "",
+  "abrangencia": "",
+  "fora_escopo": "",
+  "documentos": [],
+  "instrumentos": [],
+  "checklist": [],
+  "ncs": [],
+  "isolamento_motores": [],
+  "continuidade_pe": [],
+  "reles": [],
+  "termografia": [],
+  "fotos": []
+ }
+}

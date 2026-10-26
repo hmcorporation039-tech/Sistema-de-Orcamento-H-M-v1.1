@@ -1,0 +1,78 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "",
+  "prefixo": "",
+  "data": "AAAA-MM-DD",
+  "revisao": "R00"
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "titulo": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "",
+  "uf": ""
+ },
+ "obra": {
+  "nome": "",
+  "uso": ""
+ },
+ "sistema": {
+  "grau": "2",
+  "classe_ambiental": "II",
+  "tecnologia": "com_fio",
+  "particoes": 1,
+  "monitorado": true,
+  "com_ethernet": true,
+  "com_gprs": true,
+  "com_linha": false,
+  "protocolo": "contact_id",
+  "autonomia_h": null,
+  "tempo_alarme_min": 15,
+  "reserva_zonas_pct": 20,
+  "agrupar_magneticos": true,
+  "magneticos_janelas": "acessiveis",
+  "magnetico_por_porta": 1,
+  "magnetico_por_janela": 1,
+  "ivp_alcance_m": 12,
+  "ivp_abertura_graus": 90,
+  "ivp_externo_alcance_m": 12,
+  "distancia_media_m": 15,
+  "fator_cabo": 1.3,
+  "area_radio_m2": 300,
+  "sirenes_externas": 1,
+  "sirene_autoalimentada": false,
+  "botoes_panico": 0,
+  "controles_remotos": 0,
+  "fonte_central_a": 1.5,
+  "verificacao_video": false,
+  "central_modelo": "",
+  "consumos": {}
+ },
+ "ambientes": [],
+ "areas_externas": [],
+ "orcamento": {
+  "incluir_mensalidade": false,
+  "mensalidade_valor": null
+ },
+ "inspecao": {
+  "tipo": "vistoria",
+  "documento_n": "",
+  "checklist": [],
+  "ncs": [],
+  "ensaios": {},
+  "teste_zonas": [],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

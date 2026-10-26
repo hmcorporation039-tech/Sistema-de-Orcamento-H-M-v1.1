@@ -1,0 +1,77 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "Clínica exemplo — controle de acesso",
+  "prefixo": "Acesso_Exemplo",
+  "data": "2026-10-25",
+  "revisao": "R00",
+  "dados_ilustrativos": true
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "titulo": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "Cliente Exemplo",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "Clínica Exemplo",
+  "uso": "Clínica médica (serviço de saúde)"
+ },
+ "sistema": {
+  "tecnologia": "mifare",
+  "comunicacao": "wiegand",
+  "grau_seguranca": "2",
+  "portas_por_controladora": 4,
+  "leitores_por_controladora": 4,
+  "reserva_pct": 20,
+  "autonomia_h": 4,
+  "integracao_incendio": true,
+  "distancia_central_incendio_m": 25,
+  "integracao_cftv": true,
+  "usuarios": null,
+  "visitantes_simultaneos": 30,
+  "veiculos": 0,
+  "credencial_cartao": true,
+  "passagem_acessivel": true,
+  "infra_existente": false,
+  "switch_existente": false,
+  "portas_switch": 8
+ },
+ "portas": [
+  { "id": "P1", "local": "Recepção — entrada principal", "tipo": "dupla", "quantidade": 1, "sentido": "entrada", "rota_fuga": true, "fechadura": "eletroima", "modo_falha": "fail_safe", "material": "vidro", "forca_kgf": null, "peso_kg": null, "tecnologia": "", "distancia_m": 15 },
+  { "id": "P2", "local": "Corredor dos consultórios", "tipo": "simples", "quantidade": 1, "sentido": "entrada", "rota_fuga": false, "fechadura": "eletroima", "modo_falha": "fail_safe", "material": "madeira", "forca_kgf": null, "peso_kg": null, "tecnologia": "", "distancia_m": 20 },
+  { "id": "P3", "local": "Farmácia / medicamentos controlados", "tipo": "simples", "quantidade": 1, "sentido": "entrada_saida", "rota_fuga": false, "fechadura": "eletroima", "modo_falha": "fail_safe", "material": "metal", "forca_kgf": null, "peso_kg": null, "tecnologia": "biometria", "distancia_m": 35 },
+  { "id": "P4", "local": "Arquivo de prontuários", "tipo": "simples", "quantidade": 1, "sentido": "entrada_livre", "rota_fuga": false, "fechadura": "fecho", "modo_falha": "fail_secure", "material": "madeira", "forca_kgf": null, "peso_kg": null, "tecnologia": "", "distancia_m": 30 },
+  { "id": "P5", "local": "Sala de TI / rack", "tipo": "simples", "quantidade": 1, "sentido": "entrada", "rota_fuga": false, "fechadura": "solenoide", "modo_falha": "fail_secure", "material": "madeira", "forca_kgf": null, "peso_kg": null, "tecnologia": "biometria", "distancia_m": 8 },
+  { "id": "P6", "local": "Portão de pedestres — funcionários", "tipo": "portao", "quantidade": 1, "sentido": "entrada_livre", "rota_fuga": true, "fechadura": "fecho", "modo_falha": "fail_secure", "material": "metal", "forca_kgf": null, "peso_kg": null, "tecnologia": "", "distancia_m": 110 },
+  { "id": "CT1", "local": "Recepção — acesso aos consultórios", "tipo": "catraca", "quantidade": 2, "sentido": "entrada_saida", "rota_fuga": false, "fechadura": "nenhuma", "modo_falha": "", "material": "", "forca_kgf": null, "peso_kg": null, "tecnologia": "facial", "distancia_m": 12 }
+ ],
+ "perfis": [
+  { "perfil": "Médicos", "usuarios": 25, "portas": "P1, P2, CT1, P6", "horario": "Seg–sáb, 06:00–22:00" },
+  { "perfil": "Enfermagem", "usuarios": 40, "portas": "P1, P2, P3, CT1, P6", "horario": "24 h (escala)" },
+  { "perfil": "Recepção e administrativo", "usuarios": 30, "portas": "P1, P4, CT1, P6", "horario": "Seg–sex, 07:00–19:00" },
+  { "perfil": "Farmácia", "usuarios": 6, "portas": "P1, P3, CT1, P6", "horario": "Seg–sáb, 07:00–19:00" },
+  { "perfil": "TI e manutenção", "usuarios": 5, "portas": "Todas", "horario": "24 h" },
+  { "perfil": "Limpeza", "usuarios": 14, "portas": "P1, P2, CT1, P6", "horario": "Seg–sáb, 06:00–20:00" }
+ ],
+ "inspecao": {
+  "tipo": "comissionamento",
+  "documento_n": "",
+  "checklist": [],
+  "ncs": [],
+  "teste_portas": [],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

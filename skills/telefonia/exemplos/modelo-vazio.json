@@ -1,0 +1,65 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "",
+  "prefixo": "",
+  "data": "AAAA-MM-DD",
+  "revisao": "R00"
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "titulo": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "",
+  "uf": ""
+ },
+ "obra": {
+  "nome": "",
+  "uso": ""
+ },
+ "sistema": {
+  "tipo": "analogica",
+  "topologia": "prumada",
+  "ramais_por_unidade": 1,
+  "reserva_pct": 20,
+  "ramais_por_placa": 16,
+  "terminais_portaria": 1,
+  "local_portaria": "Portaria",
+  "distancia_portaria_m": 10,
+  "local_dg": "Sala técnica / DG",
+  "troncos": 0,
+  "tipo_tronco": "analogico",
+  "cabo_ramal": "cci2",
+  "reserva_pares_pct": 20,
+  "fator_cabo": 1.15,
+  "ambiente_terminal": "Cozinha",
+  "nobreak": true,
+  "autonomia_h": 4,
+  "dps_linha": true,
+  "distancia_bep_m": 10,
+  "infra_existente": false,
+  "portas_switch": 24
+ },
+ "blocos": [],
+ "areas_comuns": [],
+ "portoes": [],
+ "inspecao": {
+  "tipo": "comissionamento",
+  "documento_n": "",
+  "checklist": [],
+  "ncs": [],
+  "teste_ramais": [],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

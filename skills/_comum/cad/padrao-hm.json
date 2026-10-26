@@ -1,0 +1,1334 @@
+{
+ "origem": "Padrão H&M de layers para os desenhos gerados pelas skills (25/10/2026), consolidado a partir das pranchas de automação usadas pela H&M — não havia carimbo H&M nos DWGs. Regra: <DISC>-<ELEMENTO>[-SUB][-EXIST|-DEMOL]; G- = folha; QD- = painel; ARQ-BASE = arquitetura de referência.",
+ "regra": [
+  "<DISC>-<ELEMENTO>[-<SUB>][-EXIST|-DEMOL]; maiúsculas, sem acento, hífen como separador; G- = folha/anotação; QD- = desenho de painel; geometria de bloco na layer 0 (cor/tipo ByLayer) e a inserção na layer da disciplina",
+  "mantém AUT-INFRA, AUT-REDE-ETH (cor 141, FENCELINE1), REDE MODBUS (cor 6, ACAD_ISO05W100), REDE BACNET (cor 4, HIDDEN), símbolos de automação em azul (5) e infraestrutura em vermelho (1) do (padrão de automação existente); CARIMBO/LEGENDA referência viram G-CARIMBO/G-LEGENDA; layers por ponto de E/S (DI01-OFB028…) foram substituídas por atributos no bloco"
+ ],
+ "layers": [
+  {
+   "nome": "0",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": "Default",
+   "plota": true,
+   "uso": "geometria interna de blocos (herda a layer da inserção)"
+  },
+  {
+   "nome": "Defpoints",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": "Default",
+   "plota": false,
+   "uso": "não plota"
+  },
+  {
+   "nome": "G-VIEWPORT",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.09,
+   "plota": false,
+   "uso": "contorno de viewport — não plota"
+  },
+  {
+   "nome": "G-FOLHA-MARGEM",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.5,
+   "plota": true,
+   "uso": "moldura da folha"
+  },
+  {
+   "nome": "G-CARIMBO",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": "carimbo (equivale a CARIMBO da referência)"
+  },
+  {
+   "nome": "G-LEGENDA",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": "legenda/simbologia (equivale a LEGENDA referência)"
+  },
+  {
+   "nome": "G-NOTA",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": "notas gerais"
+  },
+  {
+   "nome": "G-COTA",
+   "cor": 3,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.13,
+   "plota": true,
+   "uso": "cotas"
+  },
+  {
+   "nome": "G-TEXTO",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": "textos gerais"
+  },
+  {
+   "nome": "G-REVISAO",
+   "cor": 1,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": "nuvens/triângulos de revisão"
+  },
+  {
+   "nome": "ARQ-BASE",
+   "cor": 8,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.09,
+   "plota": true,
+   "uso": "base de arquitetura (paredes)"
+  },
+  {
+   "nome": "ARQ-BASE-TEXTO",
+   "cor": 9,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.09,
+   "plota": true,
+   "uso": "nomes de ambientes da base"
+  },
+  {
+   "nome": "ARQ-BASE-MOBILIARIO",
+   "cor": 252,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.05,
+   "plota": true,
+   "uso": "mobiliário/equipamentos de terceiros"
+  },
+  {
+   "nome": "QD-PAINEL",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.35,
+   "plota": true,
+   "uso": "contorno do painel/porta"
+  },
+  {
+   "nome": "QD-TRILHO",
+   "cor": 3,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": "trilho DIN"
+  },
+  {
+   "nome": "QD-CANALETA",
+   "cor": 3,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": "canaleta"
+  },
+  {
+   "nome": "QD-COMPONENTE",
+   "cor": 3,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": "disjuntores, DPS, fontes, controladores (blocos)"
+  },
+  {
+   "nome": "QD-BORNE",
+   "cor": 3,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": "bornes e postes"
+  },
+  {
+   "nome": "QD-FIO",
+   "cor": 3,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": "cabo singelo/fiação"
+  },
+  {
+   "nome": "QD-FIO-BLINDADO",
+   "cor": 3,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": "cabo blindado 2V/3V"
+  },
+  {
+   "nome": "QD-ANILHA",
+   "cor": 3,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.13,
+   "plota": true,
+   "uso": "identificação de fio"
+  },
+  {
+   "nome": "QD-REDE",
+   "cor": 141,
+   "tipoLinha": "FENCELINE1",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": "Ethernet/BACnet IP no diagrama"
+  },
+  {
+   "nome": "QD-TEXTO",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": "textos do diagrama"
+  },
+  {
+   "nome": "QD-COTA",
+   "cor": 3,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.13,
+   "plota": true,
+   "uso": "cotas do painel"
+  },
+  {
+   "nome": "ELE-UNIFILAR",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": "diagrama unifilar/multifilar do QDF"
+  },
+  {
+   "nome": "ELE-UNIFILAR-TEXTO",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": "textos do unifilar"
+  },
+  {
+   "nome": "ELE-TOMADA",
+   "cor": 1,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ELE-TOMADA-ESPECIAL",
+   "cor": 1,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ELE-QUADRO",
+   "cor": 1,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.35,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ELE-CIRCUITO",
+   "cor": 1,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ELE-CIRCUITO-PISO",
+   "cor": 1,
+   "tipoLinha": "HIDDEN",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ELE-ELETRODUTO",
+   "cor": 1,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ELE-ELETROCALHA",
+   "cor": 1,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ELE-CAIXA",
+   "cor": 1,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ELE-NUM-CIRCUITO",
+   "cor": 1,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ELE-TEXTO",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ELE-EXIST",
+   "cor": 8,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ELE-DEMOL",
+   "cor": 2,
+   "tipoLinha": "DASHED",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ILU-LUMINARIA",
+   "cor": 2,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ILU-INTERRUPTOR",
+   "cor": 2,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ILU-SENSOR",
+   "cor": 2,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ILU-CIRCUITO",
+   "cor": 2,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ILU-CIRCUITO-PISO",
+   "cor": 2,
+   "tipoLinha": "HIDDEN",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ILU-TEXTO",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ILU-EXIST",
+   "cor": 8,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ILU-DEMOL",
+   "cor": 2,
+   "tipoLinha": "DASHED",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "CAB-PONTO",
+   "cor": 4,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "CAB-RACK",
+   "cor": 4,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.35,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "CAB-DISTRIBUIDOR",
+   "cor": 4,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.35,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "CAB-INFRA",
+   "cor": 4,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "CAB-INFRA-PISO",
+   "cor": 4,
+   "tipoLinha": "HIDDEN",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "CAB-BACKBONE-OPTICO",
+   "cor": 4,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "CAB-ELETROCALHA",
+   "cor": 4,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "CAB-TEXTO",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "CAB-EXIST",
+   "cor": 8,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "CAB-DEMOL",
+   "cor": 2,
+   "tipoLinha": "DASHED",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "TEL-PONTO",
+   "cor": 4,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": "interfone/telefone"
+  },
+  {
+   "nome": "TEL-PORTEIRO",
+   "cor": 4,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": "porteiro eletrônico"
+  },
+  {
+   "nome": "TEL-DG",
+   "cor": 4,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.35,
+   "plota": true,
+   "uso": "DG, central, caixas de andar"
+  },
+  {
+   "nome": "TEL-INFRA",
+   "cor": 4,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "TEL-TEXTO",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "TEL-EXIST",
+   "cor": 8,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "TEL-DEMOL",
+   "cor": 2,
+   "tipoLinha": "DASHED",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ANT-PONTO",
+   "cor": 4,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": "tomada de TV/SAT"
+  },
+  {
+   "nome": "ANT-EQUIP",
+   "cor": 4,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.35,
+   "plota": true,
+   "uso": "antena, headend, derivador, multiswitch"
+  },
+  {
+   "nome": "ANT-INFRA",
+   "cor": 4,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ANT-TEXTO",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ANT-EXIST",
+   "cor": 8,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ANT-DEMOL",
+   "cor": 2,
+   "tipoLinha": "DASHED",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "CFTV-CAMERA",
+   "cor": 6,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "CFTV-COBERTURA",
+   "cor": 6,
+   "tipoLinha": "DASHED",
+   "espessura_mm": 0.13,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "CFTV-NVR",
+   "cor": 6,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "CFTV-INFRA",
+   "cor": 6,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "CFTV-CABO",
+   "cor": 6,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "CFTV-TEXTO",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "CFTV-EXIST",
+   "cor": 8,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "CFTV-DEMOL",
+   "cor": 2,
+   "tipoLinha": "DASHED",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ACE-LEITORA",
+   "cor": 30,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ACE-FECHADURA",
+   "cor": 30,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ACE-BOTOEIRA",
+   "cor": 30,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ACE-CONTROLADORA",
+   "cor": 30,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ACE-INFRA",
+   "cor": 30,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ACE-CABO",
+   "cor": 30,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ACE-TEXTO",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ACE-EXIST",
+   "cor": 8,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ACE-DEMOL",
+   "cor": 2,
+   "tipoLinha": "DASHED",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ALM-SENSOR",
+   "cor": 210,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ALM-CENTRAL",
+   "cor": 210,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.35,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ALM-SIRENE",
+   "cor": 210,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ALM-INFRA",
+   "cor": 210,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ALM-CABO",
+   "cor": 210,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ALM-TEXTO",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ALM-EXIST",
+   "cor": 8,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "ALM-DEMOL",
+   "cor": 2,
+   "tipoLinha": "DASHED",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "INC-DETECTOR",
+   "cor": 10,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "INC-ACIONADOR",
+   "cor": 10,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "INC-AVISADOR",
+   "cor": 10,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "INC-CENTRAL",
+   "cor": 10,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.35,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "INC-LACO",
+   "cor": 10,
+   "tipoLinha": "HIDDEN",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "INC-ILUM-EMERG",
+   "cor": 10,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "INC-BALIZAMENTO",
+   "cor": 10,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "INC-INFRA",
+   "cor": 10,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "INC-TEXTO",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "INC-EXIST",
+   "cor": 8,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "INC-DEMOL",
+   "cor": 2,
+   "tipoLinha": "DASHED",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "SPDA-CAPTOR",
+   "cor": 3,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "SPDA-CAPTACAO",
+   "cor": 3,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "SPDA-DESCIDA",
+   "cor": 3,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "SPDA-ANEL-ATERRAMENTO",
+   "cor": 3,
+   "tipoLinha": "HIDDEN",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "SPDA-HASTE",
+   "cor": 3,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "SPDA-CAIXA-INSPECAO",
+   "cor": 3,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "SPDA-EQUIPOT",
+   "cor": 3,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "SPDA-ZONA-PROTECAO",
+   "cor": 3,
+   "tipoLinha": "DASHED",
+   "espessura_mm": 0.13,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "SPDA-TEXTO",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "SPDA-EXIST",
+   "cor": 8,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "SPDA-DEMOL",
+   "cor": 2,
+   "tipoLinha": "DASHED",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "AUT-SENSOR",
+   "cor": 5,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "AUT-ATUADOR",
+   "cor": 5,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "AUT-VALVULA",
+   "cor": 5,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "AUT-QA",
+   "cor": 5,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.35,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "AUT-CONTROLADOR",
+   "cor": 5,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "AUT-INFRA",
+   "cor": 5,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "AUT-INFRA-COMANDO",
+   "cor": 5,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "AUT-REDE-ETH",
+   "cor": 141,
+   "tipoLinha": "FENCELINE1",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "AUT-REDE-BACNET-MSTP",
+   "cor": 4,
+   "tipoLinha": "HIDDEN",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "AUT-REDE-MODBUS",
+   "cor": 6,
+   "tipoLinha": "ACAD_ISO05W100",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "AUT-TEXTO",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "AUT-EXIST",
+   "cor": 8,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "AUT-DEMOL",
+   "cor": 2,
+   "tipoLinha": "DASHED",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "FV-MODULO",
+   "cor": 40,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "FV-STRING-CC",
+   "cor": 40,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "FV-CABO-CA",
+   "cor": 40,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "FV-INVERSOR",
+   "cor": 40,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.35,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "FV-STRING-BOX",
+   "cor": 40,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "FV-ESTRUTURA",
+   "cor": 40,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "FV-SOMBRA",
+   "cor": 40,
+   "tipoLinha": "DASHED",
+   "espessura_mm": 0.13,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "FV-TEXTO",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "FV-EXIST",
+   "cor": 8,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "FV-DEMOL",
+   "cor": 2,
+   "tipoLinha": "DASHED",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "VE-CARREGADOR",
+   "cor": 90,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "VE-CIRCUITO",
+   "cor": 90,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "VE-QUADRO",
+   "cor": 90,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.35,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "VE-VAGA",
+   "cor": 90,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "VE-TEXTO",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "VE-EXIST",
+   "cor": 8,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "VE-DEMOL",
+   "cor": 2,
+   "tipoLinha": "DASHED",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  }
+ ],
+ "carimbo": {
+  "bloco": "HM-CARIMBO",
+  "largura_mm": 180,
+  "altura_mm": 90,
+  "tags": [
+   {
+    "tag": "CLIENTE",
+    "prompt": "Cliente"
+   },
+   {
+    "tag": "OBRA",
+    "prompt": "Obra / empreendimento"
+   },
+   {
+    "tag": "ENDERECO",
+    "prompt": "Endereço da obra"
+   },
+   {
+    "tag": "DISCIPLINA",
+    "prompt": "Disciplina (ELE, ILU, CAB, CFTV, ACE, ALM, INC, SPDA, AUT, FV, VE)"
+   },
+   {
+    "tag": "TITULO1",
+    "prompt": "Título linha 1"
+   },
+   {
+    "tag": "TITULO2",
+    "prompt": "Título linha 2"
+   },
+   {
+    "tag": "FASE",
+    "prompt": "Fase (EP, AP, PE, PB/as built)"
+   },
+   {
+    "tag": "ESCALA",
+    "prompt": "Escala"
+   },
+   {
+    "tag": "DATA",
+    "prompt": "Data"
+   },
+   {
+    "tag": "FOLHA",
+    "prompt": "Folha (01/05)"
+   },
+   {
+    "tag": "REVISAO",
+    "prompt": "Revisão atual (R00)"
+   },
+   {
+    "tag": "ARQUIVO",
+    "prompt": "Nº do arquivo/código"
+   },
+   {
+    "tag": "FORMATO",
+    "prompt": "Formato (A1…)"
+   },
+   {
+    "tag": "DESENHO",
+    "prompt": "Desenhista"
+   },
+   {
+    "tag": "PROJETO",
+    "prompt": "Projetista"
+   },
+   {
+    "tag": "VERIFICACAO",
+    "prompt": "Verificado por"
+   },
+   {
+    "tag": "APROVACAO",
+    "prompt": "Aprovado por"
+   },
+   {
+    "tag": "RT_NOME",
+    "prompt": "Responsável técnico"
+   },
+   {
+    "tag": "RT_CREA",
+    "prompt": "CREA/CFT do RT"
+   },
+   {
+    "tag": "ART",
+    "prompt": "Nº ART/TRT"
+   },
+   {
+    "tag": "REV0_DATA",
+    "prompt": "Rev 0 data"
+   },
+   {
+    "tag": "REV0_DESC",
+    "prompt": "Rev 0 descrição"
+   },
+   {
+    "tag": "REV0_POR",
+    "prompt": "Rev 0 por"
+   },
+   {
+    "tag": "REV1_DATA"
+   },
+   {
+    "tag": "REV1_DESC"
+   },
+   {
+    "tag": "REV1_POR"
+   },
+   {
+    "tag": "REV2_DATA"
+   },
+   {
+    "tag": "REV2_DESC"
+   },
+   {
+    "tag": "REV2_POR"
+   },
+   {
+    "tag": "REV3_DATA"
+   },
+   {
+    "tag": "REV3_DESC"
+   },
+   {
+    "tag": "REV3_POR"
+   }
+  ]
+ },
+ "textos": {
+  "fonte": "romans.shx",
+  "alturas_mm": {
+   "quadros_mm": {
+    "carimbo": [
+     1.44,
+     1.6,
+     1.8,
+     2,
+     2.4
+    ],
+    "titulo": 7,
+    "notas": 1.5,
+    "bornes": [
+     1.5,
+     1.8
+    ]
+   },
+   "plantas_mm_papel": {
+    "carimbo": [
+     1.5,
+     2,
+     3
+    ],
+    "legenda": [
+     2,
+     2.5
+    ]
+   }
+  }
+ }
+}

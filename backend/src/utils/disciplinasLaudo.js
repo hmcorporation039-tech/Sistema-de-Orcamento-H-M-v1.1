@@ -14,6 +14,14 @@ const DISCIPLINAS_LAUDO = [
   { chave: 'solar', nome: 'Usina solar fotovoltaica (NBR 16690 / REN 1000)', pasta: 'solar' },
   { chave: 'carregador', nome: 'Carregador veicular (NBR 17019)', pasta: 'carregador' },
   { chave: 'automacao', nome: 'Automação — BMS, climatização e residencial (ISO 16484 / ISO 52120-1)', pasta: 'automacao' },
+  { chave: 'controle_acesso', nome: 'Controle de acesso (IEC 60839-11 / NBR 9077 / LGPD)', pasta: 'controle-acesso' },
+  { chave: 'alarme', nome: 'Alarme de intrusão monitorado (EN 50131 / EN 50136)', pasta: 'alarme' },
+  { chave: 'iluminacao', nome: 'Iluminação — luminotécnico e automação (NBR ISO/CIE 8995-1)', pasta: 'iluminacao' },
+  { chave: 'eletrica_hospitalar', nome: 'Elétrica hospitalar (NBR 13534 / RDC 50)', pasta: 'eletrica-hospitalar' },
+  { chave: 'media_tensao', nome: 'Média tensão — subestação (NBR 14039)', pasta: 'media-tensao' },
+  { chave: 'eletrica_industrial', nome: 'Elétrica industrial (motores, CCM, correção de FP, curto-circuito)', pasta: 'eletrica-industrial' },
+  { chave: 'telefonia', nome: 'Telefonia e interfonia (práticas Telebrás / NBR 14565 / NBR 14306)', pasta: 'telefonia' },
+  { chave: 'antena', nome: 'Antena coletiva / TV (ISDB-Tb e satélite)', pasta: 'antena' },
 ];
 
 const RAIZ_SKILLS = path.join(__dirname, '..', '..', '..', 'skills');
@@ -57,4 +65,20 @@ function listarDisciplinas() {
   });
 }
 
-module.exports = { DISCIPLINAS_LAUDO, motorDaDisciplina, listarDisciplinas };
+// Base comum de CAD das skills (skills/_comum/cad): leitura de arquitetura e
+// geração de planta DXF; DWG convertido em processo à parte. Carregada só quando usada, como as skills.
+function cad() {
+  if (!cache.__cad) {
+    const base = path.join(RAIZ_SKILLS, '_comum', 'cad');
+    cache.__cad = {
+      ...require(path.join(base, 'arquitetura.js')),
+      ...require(path.join(base, 'planta.js')),
+      ...require(path.join(base, 'plantasDisciplina.js')),
+      ...require(path.join(base, 'unifilar.js')),
+      ...require(path.join(base, 'dwg.js')),
+    };
+  }
+  return cache.__cad;
+}
+
+module.exports = { DISCIPLINAS_LAUDO, motorDaDisciplina, listarDisciplinas, cad };

@@ -7,6 +7,7 @@ const F = require('../../../_comum/formulario');
 const B = require('../../../_comum/docx-base');
 const T = require('./tabelas');
 const { calcular } = require('./calculo');
+const { gerarPlanilhaQuadro } = require('./planilhaQuadro');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
 const MODELO = require('../../exemplos/modelo-vazio.json');
@@ -24,7 +25,6 @@ const SECOES_CHECKLIST = ['Documentação', 'Quadros', 'Proteção', 'Condutores
 
 const num = (v, c = 2) => (v == null || Number.isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: c }));
 const sec = (s) => (s == null ? '—' : `${String(s).replace('.', ',')} mm²`);
-const ROTULO_TIPO = { iluminacao: 'Iluminação', tug: 'TUG', tue: 'TUE', alimentador: 'Alimentador' };
 
 // ── Inspeção (laudo NBR 5410 seção 7 / NR-10) ───────────────────────────────
 
@@ -76,9 +76,29 @@ function resumir(res) {
       ...(temInspecao ? [{ rotulo: 'Parecer da inspeção', valor: res.parecer.situacao.replace(/_/g, ' '), ok: res.parecer.situacao === 'CONFORME' ? true : res.parecer.situacao === 'INCONCLUSIVO' ? undefined : false, detalhe: `NC ${res.parecer.cont.NC} · NV ${res.parecer.cont.NV}` }] : []),
     ],
     textos: calc.avisos,
+    // valores que a tela copia para o formulário ("Trazer os circuitos calculados" / "Trazer os fatores padrão")
+    preencher: {
+      circuitos: calc.circuitos.map(c => ({
+        id: c.id, descricao: c.descricao, tipo: c.tipo, ligacao: c.ligacao, fases: c.fases_fixas || '', // fase automática continua automática
+        potencia_va: Math.round(c.potencia_va), comprimento_m: c.comprimento, metodo: c.metodo === calc.config.metodo ? '' : c.metodo,
+        agrupamento: c.agrupamento ?? null, disjuntor: c.disjuntorFixo ? c.disjuntor : null, secao: c.secaoFixa ? c.secao : null,
+        dr: !!c.dr, ambientes: (c.ambientes || []).join(', '),
+      })),
+      fd_ilum_tug: calc.config.fdIlumTug.map(l => ({ ate_kw: l.ate_kw, fator: l.fator })),
+      fd_tue: calc.config.fdTue.map(l => ({ ate_qtd: l.ate_qtd, fator: l.fator })),
+    },
     tabelas: [
-      { titulo: 'Quadro de cargas', colunas: ['Circ.', 'Descrição', 'VA', 'Lig.', 'Fases', 'Ib (A)', 'Seção', 'Disj.', 'ΔV %', 'DR', 'Critério'],
-        linhas: calc.circuitos.map(c => [c.id, c.descricao, num(c.potencia_va, 0), c.ligacao, c.fases, num(c.ib, 1), sec(c.secao), `${c.polos}P ${c.disjuntor} A`, num(c.queda), c.dr ? (c.drObrigatorio ? 'sim (obrig.)' : 'sim') : '—', c.criterio]) },
+      { titulo: 'Quadro de cargas', colunas: ['Circ.', 'Descrição', 'VA', 'W', 'Lig.', 'Fases', 'Ib (A)', 'L (m)', 'FCT·FCA', 'Disj.', 'Seção F/N/PE', 'Iz (A)', 'ΔV %', 'DR', 'Critério'],
+        linhas: calc.circuitos.map(c => [c.id, c.descricao, num(c.potencia_va, 0), num(c.potencia_w, 0), c.ligacao, c.fases, num(c.ib, 1), num(c.comprimento, 0), num(c.fct * c.fca), `${c.polos}P ${c.disjuntor} A`,
+          `${sec(c.secao)} / ${c.secaoNeutro ? sec(c.secaoNeutro) : '—'} / ${sec(c.secaoPE)}`, num(c.iz, 1), num(c.queda), c.dr ? (c.drObrigatorio ? 'sim (obrig.)' : 'sim') : '—', c.criterio]) },
+      { titulo: 'Demanda e alimentador', colunas: ['Item', 'Valor'],
+        linhas: [
+          ['Iluminação + TUG instalada', `${num(calc.demanda.ilumTugVa, 0)} VA × FD ${num(calc.demanda.fdIlumTug)}${calc.config.fdIlumTugFixo != null ? ' (fixo)' : ''}`],
+          ['TUE instalada', `${num(calc.demanda.tueVa, 0)} VA (${calc.demanda.nTue}) × FD ${num(calc.demanda.fdTue)}${calc.config.fdTueFixo != null ? ' (fixo)' : ''}`],
+          ['Demanda', `${num(calc.demanda.demandaVa, 0)} VA = ${num(calc.demanda.demandaKw)} kW`],
+          ['Alimentador', `${sec(calc.alimentador.secao)} · disjuntor ${calc.alimentador.polos}P ${calc.alimentador.disjuntor} A · Ib ${num(calc.alimentador.ib, 1)} A · ΔV ${num(calc.alimentador.queda)} %`],
+          ['Cargas por fase', Object.entries(calc.fases.carga).map(([f, v]) => `${f} ${num(v, 0)} VA`).join(' · ')],
+        ] },
       { titulo: 'Previsão de cargas por ambiente (9.5.2)', colunas: ['Ambiente', 'Tipo', 'Área (m²)', 'Iluminação (VA)', 'Tomadas', 'TUG (VA)', 'TUEs'],
         linhas: calc.previsao.map(p => [p.nome, p.tipo, num(p.area_m2), num(p.iluminacao, 0), p.nTug, num(p.tugVa, 0), p.tues.map(t => `${t.descricao} ${num(t.potencia_w, 0)} W`).join('; ') || '—']) },
     ],
@@ -189,22 +209,9 @@ function cfgChecklist(res) {
 const DOCUMENTOS = [
   { tipo: 'memorial', rotulo: 'Memorial descritivo e de cálculo', formato: 'Word', nome: 'Memorial_Eletrico',
     gerar: (res) => D.docxParaBuffer(D.gerarMemorial(res.dados, { titulo: 'MEMORIAL DESCRITIVO E DE CÁLCULO — INSTALAÇÕES ELÉTRICAS', subtitulo: 'ABNT NBR 5410:2004 (versão corrigida 2008)', tituloCurto: 'Memorial — instalações elétricas', sigla: 'MEM-ELE', secoes: secoesMemorial(res), listaNormas: NORMAS })) },
-  { tipo: 'planilha', rotulo: 'Quadro de cargas e materiais', formato: 'Excel', nome: 'Quadro_de_Cargas',
-    gerar: (res) => D.gerarPlanilha([
-      { nome: 'Quadro de cargas', colunas: [
-        { header: 'Circuito', key: 'id', width: 9 }, { header: 'Descrição', key: 'descricao', width: 44 }, { header: 'Tipo', key: 'tipo', width: 11 },
-        { header: 'Potência (VA)', key: 'potencia_va', width: 12 }, { header: 'Ligação', key: 'ligacao', width: 8 }, { header: 'Fases', key: 'fases', width: 7 },
-        { header: 'Ib (A)', key: 'ib', width: 8, numFmt: '0.0' }, { header: 'Comprimento (m)', key: 'comprimento', width: 12 },
-        { header: 'Seção (mm²)', key: 'secao', width: 10 }, { header: 'Iz corrigida (A)', key: 'iz', width: 12, numFmt: '0.0' },
-        { header: 'Disjuntor (A)', key: 'disjuntor', width: 11 }, { header: 'Polos', key: 'polos', width: 6 }, { header: 'Queda (%)', key: 'queda', width: 9, numFmt: '0.00' },
-        { header: 'DR', key: 'dr', width: 6 }, { header: 'Critério', key: 'criterio', width: 30 }],
-        linhas: [...res.calc.circuitos, res.calc.alimentador].map(x => ({ ...x, tipo: ROTULO_TIPO[x.tipo] || x.tipo, dr: x.dr ? 'sim' : '' })) },
-      { nome: 'Previsão de cargas', colunas: [
-        { header: 'Ambiente', key: 'nome', width: 22 }, { header: 'Tipo', key: 'tipo', width: 14 }, { header: 'Área (m²)', key: 'area_m2', width: 10 },
-        { header: 'Perímetro (m)', key: 'perimetro_m', width: 12 }, { header: 'Iluminação (VA)', key: 'iluminacao', width: 14 }, { header: 'Tomadas', key: 'nTug', width: 9 }, { header: 'TUG (VA)', key: 'tugVa', width: 10 }],
-        linhas: res.calc.previsao },
-      D.abaMateriais(res.calc.materiais),
-    ]) },
+  // quadro de cargas com as fórmulas da NBR 5410 vivas e campos editáveis (ver planilhaQuadro.js)
+  { tipo: 'planilha', rotulo: 'Quadro de cargas (Excel com fórmulas editáveis)', formato: 'Excel', nome: 'Quadro_de_Cargas',
+    gerar: (res) => gerarPlanilhaQuadro(res) },
   { tipo: 'laudo', rotulo: 'Laudo de inspeção (NBR 5410 / NR-10)', formato: 'Word', nome: 'Laudo_Eletrico',
     gerar: (res) => D.docxParaBuffer(D.gerarLaudoInspecao(res.dados, res.insp, cfgLaudo(res), { checklist: res.checklist, ncs: res.ncs, parecer: res.parecer, baseDir: res.baseDir, pastaFotos: res.pastaFotos })) },
   { tipo: 'checklist', rotulo: 'Checklist de campo', formato: 'Word', nome: 'Checklist_Campo_Eletrico',
@@ -266,6 +273,8 @@ const OP = {
   tipoAmb: F.op([['sala', 'Sala'], ['dormitorio', 'Dormitório'], ['cozinha', 'Cozinha / copa'], ['area_servico', 'Área de serviço / lavanderia'], ['banheiro', 'Banheiro'], ['varanda', 'Varanda'], ['garagem', 'Garagem'], ['externa', 'Área externa'], ['outros', 'Outros (escritório, circulação…)']]),
   ligacao: F.op([['FN', 'F-N'], ['FF', 'F-F'], ['FFF', '3F']]),
   tipoCirc: F.op([['iluminacao', 'Iluminação'], ['tug', 'TUG'], ['tue', 'TUE']]),
+  fases: F.op([['', 'auto'], ['A', 'A'], ['B', 'B'], ['C', 'C'], ['AB', 'AB'], ['BC', 'BC'], ['AC', 'AC'], ['ABC', 'ABC']]),
+  metodoCirc: F.op([['', 'padrão'], ...Object.keys(T.METODOS).map(k => [k, k])]),
   tipoInsp: F.op([['periodica', 'Inspeção periódica'], ['inicial', 'Verificação inicial (obra nova)'], ['reforma', 'Após reforma/ampliação']]),
 };
 
@@ -292,13 +301,14 @@ const FORMULARIO = [
     ] },
   ] },
   { titulo: '3. Ambientes', aberta: true, itens: [
-    { tipo: 'nota', texto: 'A previsão de iluminação e tomadas sai pela NBR 5410 (9.5.2) a partir da área e do perímetro. Use "tomadas extras" para pontos além do mínimo e "iluminação (VA)" para substituir o mínimo.' },
+    { tipo: 'nota', texto: 'A previsão de iluminação e tomadas sai pela NBR 5410 (9.5.2) a partir da área e do perímetro. Use "tomadas extras" para pontos além do mínimo; "iluminação (VA)" e "TUG (VA)" substituem a potência mínima da norma pela adotada no projeto (vazio = mínimo da norma).' },
     { tipo: 'tabela', caminho: 'ambientes', rotuloAdicionar: 'Adicionar ambiente',
-      novaLinha: { nome: '', tipo: 'sala', area_m2: null, perimetro_m: null, tugs_adicionais: 0, iluminacao_va: null },
+      novaLinha: { nome: '', tipo: 'sala', area_m2: null, perimetro_m: null, tugs_adicionais: 0, iluminacao_va: null, tug_va: null },
       colunas: [
         { campo: 'nome', rotulo: 'Ambiente' }, { campo: 'tipo', rotulo: 'Tipo', tipo: 'selecao', opcoes: OP.tipoAmb, largura: 200 },
         { campo: 'area_m2', rotulo: 'Área (m²)', tipo: 'numero', largura: 90 }, { campo: 'perimetro_m', rotulo: 'Perímetro (m)', tipo: 'numero', largura: 100 },
         { campo: 'tugs_adicionais', rotulo: 'Tomadas extras', tipo: 'numero', largura: 90 }, { campo: 'iluminacao_va', rotulo: 'Iluminação (VA)', tipo: 'numero', largura: 110 },
+        { campo: 'tug_va', rotulo: 'TUG (VA)', tipo: 'numero', largura: 100 },
       ] },
     { tipo: 'nota', texto: 'Equipamentos de uso específico (chuveiro, ar-condicionado, forno…). O nome do ambiente deve ser igual ao da tabela acima.' },
     { tipo: 'tabela', caminho: 'tues', rotuloAdicionar: 'Adicionar equipamento (TUE)',
@@ -309,22 +319,29 @@ const FORMULARIO = [
         { campo: 'fp', rotulo: 'FP', tipo: 'numero', largura: 70 },
       ] },
   ] },
-  { titulo: '4. Circuitos (opcional — substitui a divisão automática)', itens: [
-    { tipo: 'nota', texto: 'Deixe vazio para o sistema dividir os circuitos pelas regras de 9.5.3. Preencha para usar a sua divisão (com os comprimentos reais). Em "Ambientes", liste os ambientes atendidos separados por vírgula (define o DR obrigatório).' },
-    { tipo: 'tabela', caminho: 'circuitos', rotuloAdicionar: 'Adicionar circuito',
-      novaLinha: { id: '{n}', descricao: '', tipo: 'tug', ligacao: 'FN', potencia_va: null, comprimento_m: null, agrupamento: null, ambientes: '' },
+  { titulo: '4. Quadro de cargas — circuitos (editável)', itens: [
+    { tipo: 'nota', texto: 'Vazio: o sistema divide os circuitos pelas regras de 9.5.3. Para editar o quadro, clique em "Calcular" e depois em "Trazer os circuitos calculados": a divisão automática vem para a tabela e cada campo pode ser alterado (descrição, potência, comprimento, fases, método, agrupamento, disjuntor, seção, DR). Campos vazios = calculados pela norma; disjuntor e seção informados são conferidos (Ib ≤ In ≤ Iz, Tabela 47, queda) e o que não atender aparece nos avisos. Em "Ambientes", liste os ambientes atendidos separados por vírgula (define o DR obrigatório).' },
+    { tipo: 'tabela', caminho: 'circuitos', rotuloAdicionar: 'Adicionar circuito', preencherDe: 'circuitos', rotuloPreencher: 'Trazer os circuitos calculados',
+      novaLinha: { id: '{n}', descricao: '', tipo: 'tug', ligacao: 'FN', fases: '', potencia_va: null, comprimento_m: null, metodo: '', agrupamento: null, disjuntor: null, secao: null, dr: false, ambientes: '' },
       colunas: [
         { campo: 'id', rotulo: 'Nº', largura: 50 }, { campo: 'descricao', rotulo: 'Descrição' },
         { campo: 'tipo', rotulo: 'Tipo', tipo: 'selecao', opcoes: OP.tipoCirc, largura: 110 }, { campo: 'ligacao', rotulo: 'Lig.', tipo: 'selecao', opcoes: OP.ligacao, largura: 80 },
+        { campo: 'fases', rotulo: 'Fases', tipo: 'selecao', opcoes: OP.fases, largura: 80 },
         { campo: 'potencia_va', rotulo: 'Potência (VA)', tipo: 'numero', largura: 100 }, { campo: 'comprimento_m', rotulo: 'Compr. (m)', tipo: 'numero', largura: 85 },
-        { campo: 'agrupamento', rotulo: 'Agrup.', tipo: 'numero', largura: 70 }, { campo: 'ambientes', rotulo: 'Ambientes atendidos', largura: 200 },
+        { campo: 'metodo', rotulo: 'Método', tipo: 'selecao', opcoes: OP.metodoCirc, largura: 90 }, { campo: 'agrupamento', rotulo: 'Agrup.', tipo: 'numero', largura: 70 },
+        { campo: 'disjuntor', rotulo: 'Disjuntor (A)', tipo: 'numero', largura: 90 }, { campo: 'secao', rotulo: 'Seção (mm²)', tipo: 'numero', largura: 90 },
+        { campo: 'dr', rotulo: 'DR', tipo: 'check', largura: 50 }, { campo: 'ambientes', rotulo: 'Ambientes atendidos', largura: 200 },
       ] },
   ] },
   { titulo: '5. Fatores de demanda (concessionária)', itens: [
-    { tipo: 'nota', texto: 'A NBR 5410 não define demanda. Se ficar vazio, valem fatores típicos de concessionária. Para usar a tabela da distribuidora (no DF, Neoenergia DIS-NOR-030), preencha as faixas abaixo.' },
-    { tipo: 'tabela', caminho: 'instalacao.fd_ilum_tug', rotuloAdicionar: 'Adicionar faixa (iluminação e tomadas)', novaLinha: { ate_kw: null, fator: null },
+    { tipo: 'nota', texto: 'A NBR 5410 não define demanda (4.2.3). Um fator fixo abaixo vale para toda a carga daquele grupo; vazio = tabela por faixas. Sem faixas próprias valem fatores típicos de concessionária — "Trazer os fatores padrão" copia a tabela para editar (no DF, conferir com a Neoenergia DIS-NOR-030).' },
+    { tipo: 'grade', colunas: 2, campos: [
+      { caminho: 'instalacao.fd_ilum_tug_fixo', rotulo: 'Fator de demanda iluminação + TUG (fixo)', tipo: 'numero', dica: 'vazio = tabela por faixas de kW' },
+      { caminho: 'instalacao.fd_tue_fixo', rotulo: 'Fator de demanda TUE (fixo)', tipo: 'numero', dica: 'vazio = tabela por quantidade' },
+    ] },
+    { tipo: 'tabela', caminho: 'instalacao.fd_ilum_tug', rotuloAdicionar: 'Adicionar faixa (iluminação e tomadas)', preencherDe: 'fd_ilum_tug', rotuloPreencher: 'Trazer os fatores padrão', novaLinha: { ate_kw: null, fator: null },
       colunas: [{ campo: 'ate_kw', rotulo: 'Carga até (kW)', tipo: 'numero' }, { campo: 'fator', rotulo: 'Fator de demanda', tipo: 'numero' }] },
-    { tipo: 'tabela', caminho: 'instalacao.fd_tue', rotuloAdicionar: 'Adicionar faixa (TUE por quantidade)', novaLinha: { ate_qtd: null, fator: null },
+    { tipo: 'tabela', caminho: 'instalacao.fd_tue', rotuloAdicionar: 'Adicionar faixa (TUE por quantidade)', preencherDe: 'fd_tue', rotuloPreencher: 'Trazer os fatores padrão', novaLinha: { ate_qtd: null, fator: null },
       colunas: [{ campo: 'ate_qtd', rotulo: 'Quantidade de TUE até', tipo: 'numero' }, { campo: 'fator', rotulo: 'Fator de demanda', tipo: 'numero' }] },
   ] },
   F.secaoInspecao(6, OP.tipoInsp),

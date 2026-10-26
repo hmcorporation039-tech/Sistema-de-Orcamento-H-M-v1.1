@@ -9,6 +9,9 @@ const { validarProposta, validadeOuPadrao } = require('../utils/validacaoPropost
 const { garantirMaterialCadastrado, garantirMaoDeObraCadastrada } = require('../utils/catalogoAutoCadastro');
 const { classificarPendentesEmSegundoPlano } = require('../services/classificacaoMateriais');
 const { salvarPdfPropostaNasPastas } = require('../services/pastasRegistros');
+const { versaoDoPedido, responderConflitoOuAusente } = require('../utils/versao');
+const { registrarAuditoria } = require('../utils/auditoria');
+const { gerarPlanilhaCliente } = require('../utils/planilhaOrcamentoCliente');
 
 // Assinatura padrão da empresa — entra sempre no final de todo e-mail
 // enviado ao cliente (mensagem padrão ou digitada à mão), sem exceção.
@@ -246,8 +249,8 @@ async function atualizar(req, res, next) {
         desconto_materiais_pct=$15, desconto_mao_obra_pct=$16,
         subtotal_materiais=$17, subtotal_mao_obra=$18, valor_bdi=$19,
         valor_imposto_venda=$20, valor_imposto_servico=$21, total=$22,
-        atualizado_em=NOW()
-       WHERE id=$23
+        atualizado_em=NOW(), versao=versao+1
+       WHERE id=$23 AND ($24::int IS NULL OR versao = $24)
        RETURNING *`,
       [
         data, validadeOuPadrao(validade), tipo, porte,
@@ -256,7 +259,7 @@ async function atualizar(req, res, next) {
         desconto_materiais_pct ?? null, desconto_mao_obra_pct ?? null,
         totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi,
         totais.valor_imposto_venda, totais.valor_imposto_servico, totais.total,
-        id
+        id, versaoDoPedido(req.body)
       ]
     );
 
@@ -273,7 +276,7 @@ async function atualizar(req, res, next) {
       return proposta;
     });
 
-    if (!proposta) return res.status(404).json({ erro: 'Proposta não encontrada' });
+    if (!proposta) return responderConflitoOuAusente(pool, res, 'propostas', id);
     res.json({ ...proposta, mensagem: `Proposta ${proposta.numero} atualizada com sucesso!` });
     classificarPendentesEmSegundoPlano();
   } catch (err) {
@@ -379,7 +382,7 @@ async function atualizarStatus(req, res, next) {
     // "Aprovada" e a tela dizia que não deu certo.
     const proposta = await comTransacao(async (client) => {
       const result = await client.query(
-        'UPDATE propostas SET status=$1, atualizado_em=NOW() WHERE id=$2 RETURNING *',
+        'UPDATE propostas SET status=$1, atualizado_em=NOW(), versao=versao+1 WHERE id=$2 RETURNING *',
         [status, id]
       );
       if (result.rows.length === 0) return null;
@@ -400,8 +403,22 @@ async function remover(req, res, next) {
   try {
     // Checa rowCount: antes respondia "Proposta removida" mesmo para id
     // inexistente, o que mascarava erro de id errado vindo da tela.
-    const result = await pool.query('DELETE FROM propostas WHERE id=$1 RETURNING id', [id]);
-    if (result.rowCount === 0) return res.status(404).json({ erro: 'Proposta não encontrada' });
+    // A exclusão apaga seções, itens e histórico em cascata: guarda uma cópia
+    // completa na auditoria (dá para reconstruir a proposta se foi engano).
+    const removida = await comTransacao(async (client) => {
+      const secoes = await client.query(
+        `SELECT s.nome, s.ordem, COALESCE(json_agg(i.* ORDER BY i.id) FILTER (WHERE i.id IS NOT NULL), '[]') AS itens
+           FROM proposta_secoes s LEFT JOIN proposta_itens i ON i.secao_id = s.id
+          WHERE s.proposta_id = $1 GROUP BY s.id ORDER BY s.ordem`, [id]);
+      const result = await client.query('DELETE FROM propostas WHERE id=$1 RETURNING *', [id]);
+      if (result.rowCount === 0) return null;
+      await registrarAuditoria(client, {
+        entidade: 'propostas', entidadeId: Number(id), acao: 'excluir', usuarioId: req.usuario.id,
+        detalhes: { proposta: result.rows[0], secoes: secoes.rows },
+      });
+      return result.rows[0];
+    });
+    if (!removida) return res.status(404).json({ erro: 'Proposta não encontrada' });
     res.json({ mensagem: 'Proposta removida' });
   } catch (err) {
     console.error('Erro ao remover proposta:', err);
@@ -469,12 +486,35 @@ async function gerarPdf(req, res) {
   }
 }
 
+// Planilha Excel do orçamento para o cliente (modelo H&M: parâmetros,
+// orçamento, resumo, quantitativos, pesquisa de preços, fornecedores e
+// cronograma — ver utils/planilhaOrcamentoCliente.js)
+async function gerarPlanilha(req, res) {
+  try {
+    const r = await gerarPlanilhaCliente(req.params.id);
+    if (!r) return res.status(404).json({ erro: 'Proposta não encontrada' });
+    const nome = nomeArquivoProposta(r.proposta).replace(/\.pdf$/i, '.xlsx');
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${nome}"`,
+    });
+    res.send(Buffer.from(r.buffer));
+  } catch (err) {
+    console.error('Erro ao gerar planilha da proposta:', err);
+    res.status(500).json({ erro: 'Erro ao gerar a planilha da proposta' });
+  }
+}
+
 async function enviarEmail(req, res) {
   const { id } = req.params;
   const { destinatario, mensagem } = req.body;
 
-  if (!destinatario || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destinatario)) {
+  if (!destinatario || typeof destinatario !== 'string' || destinatario.length > 254
+    || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destinatario)) {
     return res.status(400).json({ erro: 'Informe um e-mail de destino válido' });
+  }
+  if (mensagem != null && (typeof mensagem !== 'string' || mensagem.length > 10000)) {
+    return res.status(400).json({ erro: 'A mensagem deve ser um texto de até 10.000 caracteres' });
   }
 
   try {
@@ -501,15 +541,19 @@ async function enviarEmail(req, res) {
       ],
     });
 
+    // fica no histórico da proposta quem enviou e para onde (sai da caixa da empresa)
+    await registrarEvento(pool, proposta.id, req.usuario.id, 'email', `Enviada por e-mail para ${destinatario}`)
+      .catch(e => console.warn('Evento de envio por e-mail não registrado:', e.message));
     res.json({ mensagem: `Proposta ${proposta.numero} enviada para ${destinatario}` });
   } catch (err) {
+    // detalhes do SMTP (servidor, conta, resposta) só no log
     console.error('Erro ao enviar proposta por e-mail:', err);
-    res.status(500).json({ erro: err.message || 'Erro ao enviar proposta por e-mail' });
+    res.status(500).json({ erro: 'Não foi possível enviar a proposta por e-mail. Tente de novo; se persistir, avise o administrador.' });
   }
 }
 
 module.exports = {
-  listar, buscarUma, criar, atualizar, duplicar, atualizarStatus, remover, proximoNum, gerarPdf, enviarEmail,
+  listar, buscarUma, criar, atualizar, duplicar, atualizarStatus, remover, proximoNum, gerarPdf, gerarPlanilha, enviarEmail,
   // Reaproveitados por projetosController.gerarOrcamento (Análise de Projeto -> Orçamentos),
   // pra criar/atualizar uma proposta sem duplicar a regra de numeração e inserção de itens.
   inserirSecoesEItens, proximoNumero, registrarEvento,

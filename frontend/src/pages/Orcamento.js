@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Plus, Trash2, FolderPlus, FileDown, Send, FilePlus2 } from 'lucide-react';
@@ -8,6 +8,9 @@ import { formatarMoeda } from '../utils/format';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
 import CampoMoeda from '../components/CampoMoeda';
 import Select, { Sugestoes } from '../components/Select';
+
+// arredondamento a 2 casas igual ao do servidor (calculoProposta.arredondar)
+const arred2 = (v) => Math.round(((Number(v) || 0) + Number.EPSILON) * 100) / 100;
 
 let contador = 0;
 const gerarId = () => `tmp_${Date.now()}_${contador++}`;
@@ -105,6 +108,9 @@ export default function Orcamento() {
   const [ajusteMaoDeObraInput, setAjusteMaoDeObraInput] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [propostaSalva, setPropostaSalva] = useState(null);
+  // versão da proposta no servidor (bloqueio otimista): quem gravou depois
+  // que esta tela abriu faz o salvar daqui ser recusado, em vez de sobrescrito
+  const versaoRef = useRef(null);
   // Vira true quando o usuário edita algo DEPOIS de já ter salvo — nesse caso o
   // botão de salvar reaparece. Antes ele sumia para sempre após o primeiro
   // salvamento, mas os campos continuavam editáveis: a pessoa corrigia um
@@ -134,6 +140,7 @@ export default function Orcamento() {
     setCarregandoEdicao(true);
     getProposta(editandoId).then(res => {
       const p = res.data;
+      versaoRef.current = p.versao ?? null;
       setNumeroEditando(p.numero);
       setClienteEmailCadastro(p.cliente_email || '');
       setForm({
@@ -190,10 +197,13 @@ export default function Orcamento() {
     // eslint-disable-next-line
   }, [form, secoes, itens]);
 
+  // Mesma conta do servidor (backend/src/utils/calculoProposta.js): unitário
+  // arredondado a 2 casas, total de cada linha arredondado, e cada componente
+  // (subtotais, BDI, impostos, total) arredondado — tela e PDF batem no centavo.
   function subtotalSecao(sid) {
     return itens
       .filter(it => it.sid === sid)
-      .reduce((s, it) => s + (Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0), 0);
+      .reduce((s, it) => s + arred2((Number(it.quantidade) || 0) * arred2(Number(it.valor_unitario) || 0)), 0);
   }
 
   const { subtotalMateriais, subtotalMaoObra, valorBdi, valorImpostoVenda, valorImpostoServico, total } = useMemo(() => {
@@ -203,14 +213,16 @@ export default function Orcamento() {
       if (ehMaoDeObra(sec.nome)) mao += sub;
       else mat += sub;
     }
+    mat = arred2(mat);
+    mao = arred2(mao);
     const bdiPct = Number(form.bdi) || 0;
-    const vBdi = (mat + mao) * (bdiPct / 100);
-    const vImpVenda = mat * ((Number(form.imposto_venda) || 0) / 100);
-    const vImpServico = mao * ((Number(form.imposto_servico) || 0) / 100);
+    const vBdi = arred2((mat + mao) * (bdiPct / 100));
+    const vImpVenda = arred2(mat * ((Number(form.imposto_venda) || 0) / 100));
+    const vImpServico = arred2(mao * ((Number(form.imposto_servico) || 0) / 100));
     return {
       subtotalMateriais: mat, subtotalMaoObra: mao, valorBdi: vBdi,
       valorImpostoVenda: vImpVenda, valorImpostoServico: vImpServico,
-      total: mat + mao + vBdi + vImpVenda + vImpServico,
+      total: arred2(mat + mao + vBdi + vImpVenda + vImpServico),
     };
   }, [itens, secoes, form.bdi, form.imposto_venda, form.imposto_servico]);
 
@@ -397,6 +409,27 @@ export default function Orcamento() {
     }
   }
 
+  const [gerandoPlanilha, setGerandoPlanilha] = useState(false);
+  async function baixarPlanilha() {
+    if (!propostaSalva) return;
+    setGerandoPlanilha(true);
+    try {
+      const res = await api.get(`/propostas/${propostaSalva.id}/planilha`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${form.cliente_nome.trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_')}_${propostaSalva.numero}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Erro ao gerar a planilha');
+    } finally {
+      setGerandoPlanilha(false);
+    }
+  }
+
   async function baixarPdf() {
     if (!propostaSalva) return;
     setGerandoPdf(true);
@@ -481,12 +514,14 @@ export default function Orcamento() {
       // aquela proposta — antes o botão sumia e as correções feitas em seguida
       // não tinham como ser salvas (o PDF saía com os valores antigos).
       const idAlvo = editandoId || propostaSalva?.id;
-      const res = idAlvo ? await atualizarProposta(idAlvo, payload) : await criarProposta(payload);
+      const res = idAlvo ? await atualizarProposta(idAlvo, { ...payload, versao: versaoRef.current }) : await criarProposta(payload);
+      versaoRef.current = res.data.versao ?? null;
       toast.success(res.data.mensagem || 'Proposta salva com sucesso!');
       setPropostaSalva(res.data);
       setAlteracoesPendentes(false);
     } catch (err) {
-      toast.error(err.response?.data?.erro || 'Erro ao salvar proposta');
+      const conflito = err.response?.status === 409;
+      toast.error(err.response?.data?.erro || 'Erro ao salvar proposta', conflito ? { duration: 15000 } : undefined);
     } finally {
       setSalvando(false);
     }
@@ -781,6 +816,10 @@ export default function Orcamento() {
               <button onClick={baixarPdf} disabled={gerandoPdf || alteracoesPendentes} style={btnSecundario}
                 title={alteracoesPendentes ? 'Salve as alterações antes de gerar o PDF' : ''}>
                 <FileDown size={13} style={{ marginRight: 4 }} /> {gerandoPdf ? 'Gerando...' : 'Baixar PDF'}
+              </button>
+              <button onClick={baixarPlanilha} disabled={gerandoPlanilha || alteracoesPendentes} style={btnSecundario}
+                title={alteracoesPendentes ? 'Salve as alterações antes de gerar a planilha' : 'Planilha para o cliente: orçamento, resumo, pesquisa de preços, fornecedores e cronograma'}>
+                <FileDown size={13} style={{ marginRight: 4 }} /> {gerandoPlanilha ? 'Gerando...' : 'Planilha Excel'}
               </button>
               <button onClick={() => setModalEmail(true)} disabled={alteracoesPendentes} style={btnSecundario}
                 title={alteracoesPendentes ? 'Salve as alterações antes de enviar' : ''}>

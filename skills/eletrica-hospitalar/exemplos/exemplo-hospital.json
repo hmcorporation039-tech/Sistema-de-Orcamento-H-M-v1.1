@@ -1,0 +1,137 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "Hospital Exemplo — ala cirúrgica, UTI e internação",
+  "prefixo": "Hospital_Exemplo_Hospitalar",
+  "data": "2026-10-25",
+  "revisao": "R00",
+  "dados_ilustrativos": true
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "titulo": "Engenheiro Eletricista",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "Cliente Exemplo",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "Endereço de exemplo",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "Hospital Exemplo — ala cirúrgica, UTI e internação",
+  "uso": "Estabelecimento assistencial de saúde (EAS) — internação e centro cirúrgico"
+ },
+ "instalacao": {
+  "tensao_fn": 220,
+  "tensao_ff": 380,
+  "sistema": "trifasico",
+  "esquema": "TN-S",
+  "ponto_entrega": "trafo",
+  "isolacao": "EPR",
+  "metodo": "B1",
+  "temperatura": 30,
+  "agrupamento": 3,
+  "comprimento_medio_circuito_m": 15,
+  "comprimento_alimentador_m": 30,
+  "fp": 0.92,
+  "queda_max_terminal_pct": 4,
+  "queda_max_alimentador_pct": 2,
+  "tensao_it_v": 220,
+  "ligacao_tomadas_tn": "FN",
+  "va_tomada_it": 150,
+  "va_tomada_tn": 100,
+  "fator_simultaneidade_it": 0.7,
+  "limite_circuito_it_a": 10,
+  "limite_circuito_tn_a": 16,
+  "limite_circuito_iluminacao_a": 10,
+  "max_tomadas_circuito": 8,
+  "fator_demanda_quadros": 0.8,
+  "va_luminaria": 40,
+  "comprimento_primario_it_m": 10
+ },
+ "fonte_seguranca": {
+  "gerador": "prever",
+  "gerador_kva": null,
+  "gerador_autonomia_h": 24,
+  "tempo_transferencia_s": 10,
+  "ups": "prever",
+  "ups_kva": null,
+  "ups_autonomia_min": 15,
+  "tensao_banco_v": 192,
+  "outras_cargas_essenciais_kva": 30
+ },
+ "quadros": [
+  { "id": "QD-CC", "nome": "Centro cirúrgico", "setor": "Centro cirúrgico", "comprimento_alimentador_m": 40 },
+  { "id": "QD-UTI", "nome": "UTI adulto", "setor": "Internação intensiva", "comprimento_alimentador_m": 30 },
+  { "id": "QD-INT", "nome": "Internação", "setor": "Internação", "comprimento_alimentador_m": 25 }
+ ],
+ "ambientes": [
+  { "nome": "Sala cirúrgica 1", "tipo": "sala_cirurgica", "grupo": "", "classe": "", "area_m2": 40, "leitos": 1, "quadro": "QD-CC", "comprimento_m": 12, "tomadas_it_extras": 0, "tomadas_tn_extras": 0, "iluminacao_va": null, "sistema_it": "" },
+  { "nome": "Sala cirúrgica 2", "tipo": "sala_cirurgica", "grupo": "", "classe": "", "area_m2": 40, "leitos": 1, "quadro": "QD-CC", "comprimento_m": 14, "tomadas_it_extras": 0, "tomadas_tn_extras": 0, "iluminacao_va": null, "sistema_it": "" },
+  { "nome": "UTI adulto", "tipo": "uti_adulto", "grupo": "", "classe": "", "area_m2": 120, "leitos": 6, "quadro": "QD-UTI", "comprimento_m": 20, "tomadas_it_extras": 0, "tomadas_tn_extras": 0, "iluminacao_va": null, "sistema_it": "" },
+  { "nome": "Posto de enfermagem UTI", "tipo": "posto_enfermagem", "grupo": "", "classe": "", "area_m2": 15, "leitos": 1, "quadro": "QD-UTI", "comprimento_m": 15, "tomadas_it_extras": 0, "tomadas_tn_extras": 0, "iluminacao_va": null, "sistema_it": "" },
+  { "nome": "Enfermaria 101", "tipo": "enfermaria", "grupo": "", "classe": "", "area_m2": 30, "leitos": 4, "quadro": "QD-INT", "comprimento_m": 18, "tomadas_it_extras": 0, "tomadas_tn_extras": 0, "iluminacao_va": null, "sistema_it": "" },
+  { "nome": "Circulação da ala", "tipo": "circulacao", "grupo": "", "classe": "", "area_m2": 60, "leitos": 1, "quadro": "QD-INT", "comprimento_m": 30, "tomadas_it_extras": 0, "tomadas_tn_extras": 0, "iluminacao_va": null, "sistema_it": "" }
+ ],
+ "equipamentos": [
+  { "ambiente": "Sala cirúrgica 1", "descricao": "Foco cirúrgico LED (2 cúpulas)", "quantidade": 1, "potencia_w": 300, "fp": 0.95, "suporte_vida": false, "classe": "0.5", "sistema": "IT", "circuito_exclusivo": true },
+  { "ambiente": "Sala cirúrgica 1", "descricao": "Bisturi elétrico", "quantidade": 1, "potencia_w": 500, "fp": 0.9, "suporte_vida": false, "classe": "", "sistema": "", "circuito_exclusivo": false },
+  { "ambiente": "Sala cirúrgica 1", "descricao": "Aparelho de anestesia", "quantidade": 1, "potencia_w": 300, "fp": 0.9, "suporte_vida": true, "classe": "", "sistema": "", "circuito_exclusivo": false },
+  { "ambiente": "Sala cirúrgica 1", "descricao": "Monitor multiparamétrico", "quantidade": 1, "potencia_w": 150, "fp": 0.9, "suporte_vida": true, "classe": "", "sistema": "", "circuito_exclusivo": false },
+  { "ambiente": "Sala cirúrgica 1", "descricao": "Bomba de infusão", "quantidade": 3, "potencia_w": 30, "fp": 0.9, "suporte_vida": true, "classe": "", "sistema": "", "circuito_exclusivo": false },
+  { "ambiente": "Sala cirúrgica 1", "descricao": "Mesa cirúrgica elétrica (movimentação)", "quantidade": 1, "potencia_w": 800, "fp": 0.9, "suporte_vida": false, "classe": "15", "sistema": "TN", "circuito_exclusivo": true },
+  { "ambiente": "Sala cirúrgica 2", "descricao": "Foco cirúrgico LED (2 cúpulas)", "quantidade": 1, "potencia_w": 300, "fp": 0.95, "suporte_vida": false, "classe": "0.5", "sistema": "IT", "circuito_exclusivo": true },
+  { "ambiente": "Sala cirúrgica 2", "descricao": "Bisturi elétrico", "quantidade": 1, "potencia_w": 500, "fp": 0.9, "suporte_vida": false, "classe": "", "sistema": "", "circuito_exclusivo": false },
+  { "ambiente": "Sala cirúrgica 2", "descricao": "Aparelho de anestesia", "quantidade": 1, "potencia_w": 300, "fp": 0.9, "suporte_vida": true, "classe": "", "sistema": "", "circuito_exclusivo": false },
+  { "ambiente": "Sala cirúrgica 2", "descricao": "Monitor multiparamétrico", "quantidade": 1, "potencia_w": 150, "fp": 0.9, "suporte_vida": true, "classe": "", "sistema": "", "circuito_exclusivo": false },
+  { "ambiente": "Sala cirúrgica 2", "descricao": "Bomba de infusão", "quantidade": 3, "potencia_w": 30, "fp": 0.9, "suporte_vida": true, "classe": "", "sistema": "", "circuito_exclusivo": false },
+  { "ambiente": "Sala cirúrgica 2", "descricao": "Mesa cirúrgica elétrica (movimentação)", "quantidade": 1, "potencia_w": 800, "fp": 0.9, "suporte_vida": false, "classe": "15", "sistema": "TN", "circuito_exclusivo": true },
+  { "ambiente": "UTI adulto", "descricao": "Ventilador pulmonar", "quantidade": 6, "potencia_w": 250, "fp": 0.9, "suporte_vida": true, "classe": "", "sistema": "", "circuito_exclusivo": false },
+  { "ambiente": "UTI adulto", "descricao": "Monitor multiparamétrico", "quantidade": 6, "potencia_w": 150, "fp": 0.9, "suporte_vida": true, "classe": "", "sistema": "", "circuito_exclusivo": false },
+  { "ambiente": "UTI adulto", "descricao": "Bomba de infusão", "quantidade": 18, "potencia_w": 30, "fp": 0.9, "suporte_vida": true, "classe": "", "sistema": "", "circuito_exclusivo": false },
+  { "ambiente": "UTI adulto", "descricao": "Cama hospitalar elétrica", "quantidade": 6, "potencia_w": 200, "fp": 0.9, "suporte_vida": false, "classe": "", "sistema": "", "circuito_exclusivo": false },
+  { "ambiente": "UTI adulto", "descricao": "Raios X móvel", "quantidade": 1, "potencia_w": 5500, "fp": 0.9, "suporte_vida": false, "classe": "", "sistema": "", "circuito_exclusivo": true, "ligacao": "FN" },
+  { "ambiente": "Enfermaria 101", "descricao": "Cama hospitalar elétrica", "quantidade": 4, "potencia_w": 200, "fp": 0.9, "suporte_vida": false, "classe": "", "sistema": "", "circuito_exclusivo": false }
+ ],
+ "existente": [],
+ "inspecao": {
+  "tipo": "inicial",
+  "data_inspecao": "",
+  "documento_n": "HM-HOSP-2026-EXEMPLO",
+  "equipe": "",
+  "abrangencia": "Ala cirúrgica (2 salas), UTI adulto (6 leitos), posto de enfermagem, enfermaria 101 e circulação",
+  "fora_escopo": "Equipamentos eletromédicos (NBR IEC 60601), gases medicinais e climatização",
+  "documentos": [],
+  "instrumentos": [],
+  "checklist": [
+   { "cod": "D1", "situacao": "C", "obs": "Classificação acordada com a direção clínica (dados ilustrativos)" },
+   { "cod": "IT6", "situacao": "NC", "obs": "Painel de alarme do IT2 dentro do QDIT, fora da vista da equipe (dado ilustrativo)" }
+  ],
+  "ncs": [],
+  "isolamento": [
+   { "circuito": "IT1.1", "tensao_v": 220, "valor_mohm": 200 }
+  ],
+  "equipotencializacao": [
+   { "ambiente": "Sala cirúrgica 1", "ponto": "Tomada IT1.1 → BEL", "valor_ohm": 0.12 },
+   { "ambiente": "Sala cirúrgica 1", "ponto": "Painel de gases → BEL", "valor_ohm": 0.25 }
+  ],
+  "dsi": [
+   { "sistema": "IT1", "ajuste_kohm": 50, "alarme_visual": true, "alarme_sonoro": true, "fuga_trafo_ma": 0.3 },
+   { "sistema": "IT2", "ajuste_kohm": 40, "alarme_visual": true, "alarme_sonoro": true, "fuga_trafo_ma": 0.3 }
+  ],
+  "ensaios_dr": [
+   { "circuito": "QD-INT.01", "tipo": "A", "corrente_ma": 30, "tempo_ms": 24, "botao_teste": true }
+  ],
+  "comutacao": [
+   { "fonte": "UPS", "classe": "0.5", "tempo_s": 0 },
+   { "fonte": "Gerador", "classe": "15", "tempo_s": 11 }
+  ],
+  "fotos": []
+ }
+}

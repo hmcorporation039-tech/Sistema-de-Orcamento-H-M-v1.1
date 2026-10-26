@@ -37,10 +37,13 @@ async function garantirMaterialCadastrado(client, { descricao, unidade, ncm, val
   const novo = await client.query(
     `INSERT INTO materiais (descricao, categoria, unidade, preco, ncm, origem, preco_manual)
      VALUES ($1, $2, $3, $4, $5, 'proposta', true)
+     ON CONFLICT ((LOWER(TRIM(descricao)))) WHERE ativo = true DO NOTHING
      RETURNING id`,
     [desc, c ? c.categoria : 'Não classificado', unidade || 'un', valor_unitario || 0, ncm || null]
   );
-  return novo.rows[0].id;
+  if (novo.rows.length) return novo.rows[0].id;
+  // cadastrado ao mesmo tempo por outra gravação: usa o que já existe (índice único do banco)
+  return (await client.query('SELECT id FROM materiais WHERE ativo = true AND TRIM(LOWER(descricao)) = TRIM(LOWER($1)) LIMIT 1', [desc])).rows[0]?.id || null;
 }
 
 // Mesma ideia pro catálogo de mão de obra — não retorna id porque

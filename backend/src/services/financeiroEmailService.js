@@ -2,6 +2,8 @@ const { simpleParser } = require('mailparser');
 const pool = require('../config/database');
 const { conectar, credenciaisConfiguradas } = require('../utils/emailClient');
 const { vincularPrestadores } = require('../utils/vincularPrestadores');
+const { verificarAutenticidade, dominioPermitido, listaDoEnv } = require('../utils/autenticidadeEmail');
+const { executarComTrava } = require('../utils/travaJob');
 
 // Converte o HTML do e-mail transacional do Inter em linhas de texto limpas,
 // já que esses e-mails não têm uma versão text/plain.
@@ -78,7 +80,12 @@ function parsePixRealizado(html, dataEmail) {
   };
 }
 
-async function verificarPixNaCaixaDeEntrada() {
+// Trava contra execução simultânea (horário automático × "Verificar agora" × outra instância)
+function verificarPixNaCaixaDeEntrada() {
+  return executarComTrava('email-pix', lerPixNaCaixaDeEntrada);
+}
+
+async function lerPixNaCaixaDeEntrada() {
   const resumo = { emailsEncontrados: 0, movimentosImportados: 0, avisos: [] };
 
   if (!credenciaisConfiguradas()) {
@@ -117,6 +124,15 @@ async function verificarPixNaCaixaDeEntrada() {
         const { content } = await imapClient.download(uid, undefined, { uid: true });
         const parsedEmail = await simpleParser(content);
         const assunto = parsedEmail.subject || '';
+
+        // Só o banco (Inter) com assinatura válida: antes qualquer e-mail com o
+        // assunto "Pix recebido" virava lançamento no financeiro.
+        const aut = verificarAutenticidade(parsedEmail);
+        if (!aut.autentico || !dominioPermitido(aut.dominio, listaDoEnv('PIX_REMETENTES_PERMITIDOS', 'inter.co'))) {
+          resumo.avisos.push(`E-mail "${assunto}" de ${aut.remetente || 'remetente desconhecido'} ignorado: não é do banco ou a assinatura (DKIM/DMARC) não confere`);
+          await dbClient.query('INSERT INTO emails_processados (message_id, assunto) VALUES ($1,$2) ON CONFLICT DO NOTHING', [String(uid), `[rejeitado] ${assunto}`.slice(0, 500)]);
+          continue;
+        }
 
         await dbClient.query('BEGIN');
         try {

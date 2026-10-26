@@ -1,4 +1,5 @@
 const { PDFParse } = require('pdf-parse');
+const { quadroDeCargas, totaisQuadro, listaMateriais, carimbo, detectarDisciplinas } = require('./leitoresTabelaProjeto');
 
 async function extrairTexto(buffer) {
   const parser = new PDFParse({ data: buffer });
@@ -14,18 +15,26 @@ async function extrairTexto(buffer) {
 // ou mais linhas, seguido de uma linha "A= NN,NNm²" com a área. Junta até 3
 // linhas anteriores como nome (o próprio nome às vezes quebra em várias linhas
 // no export), parando se bater em outra área ou linha em branco.
+// Linhas que não são nome de ambiente: carimbo, cotas, alturas, lotação
+// ("40 ALUNOS"), textos de nota — viravam pedaço do nome ("SALA 01 PROPRIETÁRIO:…").
+const RE_NAO_NOME = /:|\d{2}\/\d{2}\/\d{2,4}|^\d+([.,]\d+)?\s*(m|cm|mm)?$|^(H|PD|PE|NA|NPA)\s*=|^(ESCALA|PRANCHA|FOLHA|REVIS|DESENHO|RESPONS|PROPRIET|CREA|CLIENTE|ENDERE)|^(DATA|PROJETO|OBRA)$|^\d+\s+(ALUNOS|PESSOAS|LUGARES)$/i;
+
 function extrairAmbientes(texto) {
   const linhas = String(texto || '').split('\n');
   const ambientes = [];
 
   for (let i = 0; i < linhas.length; i++) {
-    const m = linhas[i].match(/^A=\s*([\d.,]+)\s*m[²2]\s*$/i);
+    // "A= 12,50m²" ou "A = 12,50 m²" (com espaço, padrão de outro escritório)
+    const m = linhas[i].trim().match(/^A\s*=\s*([\d.,]+)\s*m[²2]\s*$/i);
     if (!m) continue;
 
     const partesNome = [];
     for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
-      const linha = linhas[j].trim();
-      if (!linha || /^A=/i.test(linha)) break;
+      // linha da tabela de revisões ("01 17/04/2025 ALTERAÇÃO… O AUTOR") encerra o nome
+      if (/\d{2}\/\d{2}\/\d{2,4}/.test(linhas[j])) break;
+      // "40 ALUNOS \tSALA 102": rótulos vizinhos na mesma linha — vale o último
+      const linha = linhas[j].split('\t').pop().trim();
+      if (!linha || /^A\s*=/i.test(linha) || RE_NAO_NOME.test(linha) || linha.length > 60) break;
       partesNome.unshift(linha);
     }
     const nome = partesNome.join(' ').trim();
@@ -127,7 +136,9 @@ function extrairPontosRedeAntena(texto) {
 function extrairTabelaCabos(texto) {
   const linhas = String(texto || '').split('\n').map(l => l.trim());
   const itens = [];
-  const RE_SIGLA_DESC = /^([A-Z]{2,4})\s+(CABO\s+.+\.)\s*$/;
+  // Sigla com dígito (CAT6, RG6) e ponto final opcional: a versão anterior
+  // ([A-Z]{2,4} e ponto obrigatório) perdia justamente CAT6, RG6 e FO.
+  const RE_SIGLA_DESC = /^([A-Z][A-Z0-9]{1,5})\s+(CABO\s+.+?)\.?\s*$/;
 
   for (const linha of linhas) {
     const m = linha.match(RE_SIGLA_DESC);
@@ -135,6 +146,11 @@ function extrairTabelaCabos(texto) {
   }
   return itens;
 }
+
+// Legenda de esquadrias (portas/janelas) é ARQUITETURA, não material da
+// disciplina — caía como "material de iluminação" com quantidade. Fica
+// separada (útil, por exemplo, para conferir sensores de abertura do alarme).
+const RE_ESQUADRIA = /\b(porta|janela|esquadria|basculante|maxim-?ar|veneziana|vidro fixo|portão|caixilho)\b/i;
 
 // Tabela quantitativa genérica — padrão "CÓDIGO - descrição... - N unidade(s);"
 // usado em projetos desses escritórios pra listar esquadrias (portas/janelas) e,
@@ -166,13 +182,23 @@ function extrairTabelaQuantitativa(texto) {
 
 async function analisarProjeto(buffer, nomeArquivo) {
   const texto = await extrairTexto(buffer);
+  const quantitativa = extrairTabelaQuantitativa(texto);
   return {
     arquivo: nomeArquivo,
+    // PDF escaneado ou com todo o texto convertido em linhas (fonte SHX): sem
+    // isso, a análise voltava vazia sem nenhum aviso
+    semTexto: String(texto || '').replace(/\s|--\s*\d+\s+of\s+\d+\s*--/g, '').length < 80,
     ambientes: extrairAmbientes(texto),
     cameras: extrairCameras(texto),
     pontosRedeAntena: extrairPontosRedeAntena(texto),
     tabelaCabos: extrairTabelaCabos(texto),
-    tabelaQuantitativa: extrairTabelaQuantitativa(texto),
+    tabelaQuantitativa: quantitativa.filter(it => !RE_ESQUADRIA.test(it.descricao)),
+    esquadrias: quantitativa.filter(it => RE_ESQUADRIA.test(it.descricao)),
+    quadroCargas: quadroDeCargas(texto),
+    totaisQuadro: totaisQuadro(texto),
+    listaMateriais: listaMateriais(texto),
+    carimbo: carimbo(texto),
+    disciplinasDetectadas: detectarDisciplinas(texto),
     textoBruto: texto,
   };
 }

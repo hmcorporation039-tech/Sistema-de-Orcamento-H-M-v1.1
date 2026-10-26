@@ -11,6 +11,9 @@ const { credenciaisConfiguradas } = require('./utils/emailClient');
 const { verificarCaixaDeEntrada } = require('./services/notaFiscalEmailService');
 const { verificarPixNaCaixaDeEntrada } = require('./services/financeiroEmailService');
 const { verificarPastaFornecedores, PASTAS_FORNECEDORES } = require('./services/cotacaoFornecedorService');
+const { pedidoLocal } = require('./services/pastasRegistros');
+const pool = require('./config/database');
+const { version: VERSAO } = require('../package.json');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -21,11 +24,30 @@ const HORARIOS_VERIFICACAO_AUTOMATICA = ['06:00', '18:00'];
 
 // Middlewares
 app.use(helmet({
-  // CSP fica desligado: o app serve seu próprio build (mesma origem, sem
-  // scripts de CDN), então o ganho de uma CSP customizada é pequeno hoje —
-  // e configurar errado quebraria a tela sem aviso. Os outros cabeçalhos do
-  // helmet (X-Content-Type-Options, X-Frame-Options etc.) já valem por si só.
-  contentSecurityPolicy: false,
+  // CSP: o navegador só executa scripts do próprio sistema. Se algum texto
+  // gravado (nome de cliente, descrição de material, conteúdo vindo de e-mail
+  // ou de IA) conseguir virar HTML na tela, o script injetado não roda — e o
+  // token de login, guardado no navegador, não vaza. O build não tem script
+  // inline (frontend/.env.production: INLINE_RUNTIME_CHUNK=false).
+  contentSecurityPolicy: {
+    useDefaults: false,
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      // 'unsafe-inline' em estilos: o react-hot-toast injeta <style>; estilo não executa código
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+      // blob: = fotos do laudo e PDFs/CSV gerados abertos pelo navegador
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      frameSrc: ["'self'", 'blob:'],
+      objectSrc: ["'none'"],
+      connectSrc: ["'self'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      frameAncestors: ["'none'"],
+      // sem upgrade-insecure-requests: o sistema roda em HTTP na rede local
+    },
+  },
 }));
 
 // Origens liberadas: configurável via CORS_ORIGINS no .env (separado por
@@ -36,10 +58,9 @@ const origensPadrao = ['http://localhost:3000', /^http:\/\/192\.168\.\d+\.\d+:30
 const origensConfiguradas = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
   : null;
-app.use(cors({
-  origin: origensConfiguradas || origensPadrao,
-  credentials: true
-}));
+// Sem `credentials`: o login vai no cabeçalho Authorization (token no
+// navegador), não em cookie — então nenhuma outra origem precisa enviar cookies.
+app.use(cors({ origin: origensConfiguradas || origensPadrao }));
 
 // Atrás de um proxy reverso (nginx numa VPS, por exemplo), toda requisição
 // chega ao Express com o IP do proxy, não o do cliente real — sem isso, o
@@ -51,20 +72,30 @@ if (process.env.TRUST_PROXY) {
   app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : process.env.TRUST_PROXY);
 }
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+// 5 MB: o maior corpo JSON real é o formulário do laudo (limitado a 2 MB no
+// controller) ou uma análise grande; arquivos vêm por upload (multer), não aqui.
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Rotas
 app.use('/api', routes);
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', sistema: 'H&M Engenharia', versao: '1.7.0' });
+// Health check: "ok" só se o banco responde (antes dizia ok com o banco fora).
+// A versão só aparece para quem pede deste PC (o reiniciar-backend.bat a mostra).
+app.get('/health', async (req, res) => {
+  try {
+    await pool.query('SELECT 1');
+    res.json({ status: 'ok', banco: 'ok', ...(pedidoLocal(req) ? { versao: VERSAO } : {}) });
+  } catch {
+    res.status(503).json({ status: 'erro', banco: 'indisponível' });
+  }
 });
 
 // Serve o build de produção do frontend, se existir (permite um único
 // processo/porta em vez de precisar do "npm start" do React separado).
-const buildFrontend = path.join(__dirname, '..', '..', 'frontend', 'build');
+// FRONTEND_BUILD_DIR: só para uma instância de teste servir um build novo
+// sem tocar no que está em produção
+const buildFrontend = process.env.FRONTEND_BUILD_DIR || path.join(__dirname, '..', '..', 'frontend', 'build');
 if (fs.existsSync(buildFrontend)) {
   // index.html nunca pode ficar em cache: ele referencia os arquivos JS/CSS
   // com hash do build atual, e um index.html velho no navegador faz a
@@ -89,9 +120,30 @@ app.use(tratarErros);
 process.on('unhandledRejection', (motivo) => {
   console.error('[unhandledRejection] Promise rejeitada sem tratamento:', motivo);
 });
+// Exceção síncrona não capturada é diferente: o processo pode ter ficado em
+// estado inconsistente (transação pela metade, trava presa). Registra e sai —
+// o iniciar-producao.ps1 sobe o backend de novo em alguns segundos.
 process.on('uncaughtException', (err) => {
-  console.error('[uncaughtException] Exceção não capturada:', err);
+  console.error('[uncaughtException] Exceção não capturada — reiniciando:', err);
+  process.exitCode = 1;
+  encerrar('uncaughtException');
 });
+
+// Desligamento ordenado (Ctrl+C, reinício): para de aceitar conexões, deixa
+// as requisições em andamento terminarem e fecha o pool do banco. Se travar,
+// sai à força depois de 10 s.
+let servidor = null;
+let encerrando = false;
+function encerrar(sinal) {
+  if (encerrando) return;
+  encerrando = true;
+  console.log(`Encerrando o backend (${sinal})...`);
+  setTimeout(() => process.exit(process.exitCode || 1), 10000).unref();
+  const fecharBanco = () => pool.end().catch(() => {}).finally(() => process.exit(process.exitCode || 0));
+  if (servidor) servidor.close(fecharBanco); else fecharBanco();
+}
+process.on('SIGINT', () => encerrar('SIGINT'));
+process.on('SIGTERM', () => encerrar('SIGTERM'));
 
 // Milissegundos até o próximo dos HORARIOS_VERIFICACAO_AUTOMATICA, somando
 // `atrasoSegundos` (escalona as tarefas pra não abrirem duas conexões IMAP no
@@ -184,10 +236,26 @@ function agendarVerificacaoDePastaFornecedores() {
 }
 
 // Inicializar
+// Na partida do Windows o backend pode subir antes do serviço do PostgreSQL:
+// tenta o banco por até ~2 minutos antes de desistir.
+async function aguardarBanco(tentativas = 24, intervaloMs = 5000) {
+  for (let i = 1; ; i++) {
+    try {
+      await pool.query('SELECT 1');
+      return;
+    } catch (err) {
+      if (i >= tentativas) throw err;
+      console.warn(`Banco de dados ainda indisponível (${err.code || err.message}) — nova tentativa em ${intervaloMs / 1000}s (${i}/${tentativas})`);
+      await new Promise(r => setTimeout(r, intervaloMs));
+    }
+  }
+}
+
 async function iniciar() {
   try {
+    await aguardarBanco();
     await criarTabelas();
-    app.listen(PORT, '0.0.0.0', () => {
+    servidor = app.listen(PORT, '0.0.0.0', () => {
       console.log(`\nH&M Engenharia - API rodando na porta ${PORT}`);
       console.log(`Local:    http://localhost:${PORT}`);
       console.log(`Rede:     http://SEU_IP:${PORT}`);

@@ -40,3 +40,7 @@ Projetos recebidos clientes/
 
 # Documentos gerados pelas skills ao rodar o CLI nos exemplos
 skills/*/exemplos/documentos/
+
+# build seguro do frontend (scripts/build-seguro.js)
+frontend/build-novo/
+frontend/build-anterior/
