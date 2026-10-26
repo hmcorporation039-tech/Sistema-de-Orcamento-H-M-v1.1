@@ -441,11 +441,12 @@ async function gerarOrcamento(req, res, next) {
     // sobrescrita). Ao atualizar, mantém BDI e impostos que já estavam nela
     // (antes o total era recalculado com BDI/impostos zerados).
     const vinculadaInfo = analise.propostaId
-      ? (await pool.query('SELECT numero, status, bdi, imposto_venda, imposto_servico FROM propostas WHERE id = $1', [analise.propostaId])).rows[0]
+      ? (await pool.query('SELECT numero, status, bdi, bdi_materiais, imposto_venda, imposto_servico FROM propostas WHERE id = $1', [analise.propostaId])).rows[0]
       : null;
     const atualizarVinculada = !!vinculadaInfo && vinculadaInfo.status === 'Ativa';
     const totais = calcularTotais({ secoes, itens,
       bdi: atualizarVinculada ? Number(vinculadaInfo.bdi) || 0 : 0,
+      bdi_materiais: atualizarVinculada ? vinculadaInfo.bdi_materiais : null, // BDI diferenciado (2.0, Fase 3F) também é mantido
       imposto_venda: atualizarVinculada ? Number(vinculadaInfo.imposto_venda) || 0 : 0,
       imposto_servico: atualizarVinculada ? Number(vinculadaInfo.imposto_servico) || 0 : 0 });
 

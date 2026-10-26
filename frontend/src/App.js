@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './hooks/useAuth';
 
 import Login from './pages/Login';
 import DefinirSenha from './pages/DefinirSenha';
+import AprovacaoPublica from './pages/AprovacaoPublica';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import ObrasHub from './pages/hubs/ObrasHub';
@@ -62,6 +63,9 @@ export default function App() {
         <Toaster position="top-right" />
         <Routes>
           <Route path="/login" element={<Login />} />
+          {/* PÚBLICA (2.0, Fase 3I): o cliente abre pelo link enviado pela H&M — sem
+              login e fora do Layout; fala só com /api/publico/aprovacao */}
+          <Route path="/aprovacao/:token" element={<AprovacaoPublica />} />
           <Route path="/" element={
             <RotaProtegida>
               <Layout />

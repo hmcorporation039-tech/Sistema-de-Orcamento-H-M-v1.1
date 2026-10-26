@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, FolderPlus, FileDown, Send, FilePlus2, Search, ArrowLeft } from 'lucide-react';
+import { Plus, Trash2, FolderPlus, FileDown, Send, FilePlus2, Search, ArrowLeft, Calculator, BarChart3 } from 'lucide-react';
 import {
   getClientes, getMateriais, getServicos, getSegmentoCliente, getProximoNumero, criarProposta, atualizarProposta, getProposta,
-  pesquisarPrecoMercado, getAnaliseProjeto, getLaudo,
+  pesquisarPrecoMercado, getAnaliseProjeto, getLaudo, getObra,
 } from '../services/api';
 import api from '../services/api';
 import { formatarMoeda } from '../utils/format';
@@ -14,6 +14,16 @@ import BlocoPesquisaMercado, { resultadoDaPesquisa } from '../components/Pesquis
 import ObraSelect from '../components/ObraSelect';
 import Select, { Sugestoes, comparador } from '../components/Select';
 import { nomeDisciplina, ROTULO_SEGMENTO } from '../utils/disciplinasServico';
+// Fase 3F (2.0): BDI pela fórmula do TCU e curva ABC da proposta
+import CalculadoraBdi from '../components/CalculadoraBdi';
+import CurvaAbcPainel from '../components/CurvaAbcPainel';
+import { normalizarMemoriaBdi, tributosBdi } from '../utils/bdiTcu';
+// Fase 3 (2.0): kits da base de preços e aprovação da proposta por link
+import InserirComposicao, { distribuirNasSecoes } from '../components/InserirComposicao';
+import BotaoLinkAprovacao from '../components/BotaoLinkAprovacao';
+
+// BDI diferenciado de materiais preenchido? (vazio/null = mesmo BDI para tudo — calculoProposta.bdiMateriaisDefinido)
+const temBdiMateriais = (v) => v !== undefined && v !== null && v !== '' && Number.isFinite(Number(v));
 
 // arredondamento a 2 casas igual ao do servidor (calculoProposta.arredondar)
 const arred2 = (v) => Math.round(((Number(v) || 0) + Number.EPSILON) * 100) / 100;
@@ -33,6 +43,10 @@ const FORM_VAZIO = {
   pagamento: '',
   observacoes: '',
   bdi: 20,
+  // BDI diferenciado dos materiais (null = o mesmo BDI) e memória do cálculo
+  // pelo TCU (null = BDI digitado à mão) — 2.0, Fase 3F
+  bdi_materiais: null,
+  bdi_memoria: null,
   imposto_venda: 0,
   imposto_servico: 6,
   // Só registram o percentual do ÚLTIMO reajuste/desconto aplicado direto
@@ -173,6 +187,13 @@ export default function Orcamento() {
   const [pesquisas, setPesquisas] = useState({});
   // { tipo: 'analise'|'laudo', id, rotulo?, titulo?, existe?, vinculada?, faltando? }
   const [origem, setOrigem] = useState(null);
+  // Fase 3F: calculador de BDI (TCU), painel da curva ABC e anexos opcionais do PDF
+  const [calculadoraBdiAberta, setCalculadoraBdiAberta] = useState(false);
+  const [mostrarCurvaAbc, setMostrarCurvaAbc] = useState(false);
+  const [anexosPdf, setAnexosPdf] = useState({ curva_abc: false, composicao_bdi: false });
+  // segmento da obra (obras.segmento) — órgão público pela obra OU pelo cliente
+  const [segmentoObra, setSegmentoObra] = useState(null);
+  const calculadoraJaSugerida = useRef(null); // id da proposta em que o calculador já abriu sozinho
 
   useEffect(() => {
     getClientes({ porPagina: 1000 }).then(res => setClientes(res.data.itens)).catch(() => {});
@@ -190,6 +211,27 @@ export default function Orcamento() {
     }, 500);
     return () => clearTimeout(t);
   }, [form.cliente_nome]);
+
+  useEffect(() => {
+    if (!form.obra_id) { setSegmentoObra(null); return; }
+    getObra(form.obra_id).then(res => setSegmentoObra(res.data?.segmento ?? res.data?.obra?.segmento ?? null)).catch(() => setSegmentoObra(null));
+  }, [form.obra_id]);
+
+  // Órgão público (cliente ou obra): a proposta precisa da composição do BDI
+  // (memória do cálculo pelo TCU). Ao abrir uma proposta salva de órgão
+  // público sem memória, o calculador abre sozinho (uma vez), já sugerido;
+  // o PDF passa a sugerir o anexo da composição.
+  const ehPublico = segmento === 'publico' || segmentoObra === 'publico';
+  const memoriaBdi = useMemo(() => normalizarMemoriaBdi(form.bdi_memoria), [form.bdi_memoria]);
+  useEffect(() => {
+    if (!editandoId || carregandoEdicao || !ehPublico || form.bdi_memoria) return;
+    if (calculadoraJaSugerida.current === editandoId) return;
+    calculadoraJaSugerida.current = editandoId;
+    setCalculadoraBdiAberta(true);
+  }, [editandoId, carregandoEdicao, ehPublico, form.bdi_memoria]);
+  useEffect(() => {
+    setAnexosPdf(a => ({ ...a, composicao_bdi: ehPublico && !!memoriaBdi }));
+  }, [ehPublico, memoriaBdi]);
 
   const servicosPorCodigo = useMemo(() => Object.fromEntries(servicos.map(s => [s.codigo, s])), [servicos]);
   // lista suspensa: um grupo por disciplina, grupos em ordem alfabética (as
@@ -234,6 +276,8 @@ export default function Orcamento() {
         pagamento: p.pagamento || '',
         observacoes: p.observacoes || '',
         bdi: Number(p.bdi) || 0,
+        bdi_materiais: temBdiMateriais(p.bdi_materiais) ? Number(p.bdi_materiais) : null,
+        bdi_memoria: p.bdi_memoria || null,
         imposto_venda: Number(p.imposto_venda) || 0,
         imposto_servico: Number(p.imposto_servico) || 0,
         desconto_materiais_pct: p.desconto_materiais_pct != null ? Number(p.desconto_materiais_pct) : null,
@@ -366,7 +410,7 @@ export default function Orcamento() {
       .reduce((s, it) => s + arred2((Number(it.quantidade) || 0) * arred2(Number(it.valor_unitario) || 0)), 0);
   }
 
-  const { subtotalMateriais, subtotalMaoObra, valorBdi, valorImpostoVenda, valorImpostoServico, total } = useMemo(() => {
+  const { subtotalMateriais, subtotalMaoObra, valorBdi, valorBdiMateriais, valorBdiMaoObra, valorImpostoVenda, valorImpostoServico, total } = useMemo(() => {
     let mat = 0, mao = 0;
     for (const sec of secoes) {
       const sub = subtotalSecao(sec.id);
@@ -376,15 +420,64 @@ export default function Orcamento() {
     mat = arred2(mat);
     mao = arred2(mao);
     const bdiPct = Number(form.bdi) || 0;
-    const vBdi = arred2((mat + mao) * (bdiPct / 100));
+    // BDI diferenciado (calculoProposta.detalharBdi): sem ele, a expressão de sempre
+    let vBdi, vBdiMat = null, vBdiMao = null;
+    if (temBdiMateriais(form.bdi_materiais)) {
+      vBdiMat = arred2(mat * (Number(form.bdi_materiais) / 100));
+      vBdiMao = arred2(mao * (bdiPct / 100));
+      vBdi = arred2(vBdiMat + vBdiMao);
+    } else {
+      vBdi = arred2((mat + mao) * (bdiPct / 100));
+    }
     const vImpVenda = arred2(mat * ((Number(form.imposto_venda) || 0) / 100));
     const vImpServico = arred2(mao * ((Number(form.imposto_servico) || 0) / 100));
     return {
-      subtotalMateriais: mat, subtotalMaoObra: mao, valorBdi: vBdi,
+      subtotalMateriais: mat, subtotalMaoObra: mao, valorBdi: vBdi, valorBdiMateriais: vBdiMat, valorBdiMaoObra: vBdiMao,
       valorImpostoVenda: vImpVenda, valorImpostoServico: vImpServico,
       total: arred2(mat + mao + vBdi + vImpVenda + vImpServico),
     };
-  }, [itens, secoes, form.bdi, form.imposto_venda, form.imposto_servico]);
+  }, [itens, secoes, form.bdi, form.bdi_materiais, form.imposto_venda, form.imposto_servico]);
+
+  // itens para a curva ABC (tipo pela seção, como no PDF e na planilha)
+  const itensCurvaAbc = useMemo(() => {
+    const tipoDaSecao = new Map(secoes.map(s => [s.id, ehMaoDeObra(s.nome) ? 'servico' : 'material']));
+    return itens.map(it => ({
+      descricao: it.descricao, quantidade: Number(it.quantidade) || 0, unidade: it.unidade,
+      valor_unitario: Number(it.valor_unitario) || 0, codigo: it.codigo, tipo: tipoDaSecao.get(it.sid) || 'material',
+    }));
+  }, [itens, secoes]);
+
+  // Avisos do BDI (Fase 3F): memória com tributos dentro + impostos por fora
+  // (imposto contado duas vezes) e BDI mudado à mão depois do cálculo.
+  const avisosBdi = useMemo(() => {
+    const lista = [];
+    if (!memoriaBdi) return lista;
+    const tributosDentro = tributosBdi(memoriaBdi.parcelas, memoriaBdi.regime) > 0;
+    if (tributosDentro && ((Number(form.imposto_venda) || 0) > 0 || (Number(form.imposto_servico) || 0) > 0)) {
+      lista.push('O BDI calculado já inclui os tributos (PIS, COFINS, ISS…) e a proposta ainda soma "Imp. Vendas"/"Imp. Serviços" por fora — o imposto entra duas vezes. Zere esses campos ou recalcule o BDI sem tributos.');
+    }
+    if (Math.abs((Number(form.bdi) || 0) - memoriaBdi.bdi) > 0.005) {
+      lista.push(`O BDI da proposta (${form.bdi} %) não é o da composição calculada (${memoriaBdi.bdi.toLocaleString('pt-BR')} %) — o anexo do PDF vai avisar a diferença. Abra o calculador e aplique de novo, ou remova a composição.`);
+    }
+    if (memoriaBdi.materiais && (!temBdiMateriais(form.bdi_materiais) || Math.abs(Number(form.bdi_materiais) - memoriaBdi.materiais.bdi) > 0.005)) {
+      lista.push(`O BDI de materiais da proposta não é o da composição (${memoriaBdi.materiais.bdi.toLocaleString('pt-BR')} %).`);
+    }
+    return lista;
+  }, [memoriaBdi, form.bdi, form.bdi_materiais, form.imposto_venda, form.imposto_servico]);
+
+  function aplicarBdiCalculado({ bdi, bdi_materiais, memoria, zerarImpostos }) {
+    setForm(f => ({
+      ...f, bdi, bdi_materiais, bdi_memoria: memoria,
+      ...(zerarImpostos ? { imposto_venda: 0, imposto_servico: 0 } : {}),
+    }));
+    setCalculadoraBdiAberta(false);
+    toast.success(`BDI ${bdi.toLocaleString('pt-BR')} %${bdi_materiais != null ? ` (materiais ${bdi_materiais.toLocaleString('pt-BR')} %)` : ''} aplicado — salve a proposta para gravar a composição`);
+  }
+
+  function removerComposicaoBdi() {
+    if (!window.confirm('Remover a composição do BDI (memória do cálculo pelo TCU) e o BDI diferenciado de materiais? O BDI atual fica como está.')) return;
+    setForm(f => ({ ...f, bdi_memoria: null, bdi_materiais: null }));
+  }
 
   function adicionarSecao() {
     setSecoes(s => [...s, { id: gerarId(), nome: 'Nova Seção' }]);
@@ -451,6 +544,29 @@ export default function Orcamento() {
   // (itensAgrupados só detecta troca entre vizinhos, não reordena sozinho).
   // Ordena pela primeira vez que cada subgrupo aparece na lista atual — o
   // sort é estável, então a ordem relativa dentro de cada subgrupo não muda.
+  // itens de um kit (InserirComposicao) entram como itens normais, cada um na
+  // seção de materiais ou de serviços (criada se faltar), agrupados pelo subgrupo
+  function inserirItensDoKit(novos) {
+    const { secoes: secoesNovas, itens: comSid } = distribuirNasSecoes(novos, secoes, { gerarId, ehMaoDeObra });
+    setSecoes(secoesNovas);
+    setItens(lista => {
+      let l = [...lista, ...comSid];
+      for (const sid of new Set(comSid.map(i => i.sid))) l = reordenarPorSubgrupo(l, sid);
+      return l;
+    });
+    if (propostaSalva) setAlteracoesPendentes(true);
+  }
+
+  // o cliente aprovou/recusou pelo link: o status (e a versão) mudam no servidor;
+  // sem isso o próximo "Salvar" daria conflito de versão à toa
+  function atualizarStatusSalvo() {
+    if (!propostaSalva) return;
+    getProposta(propostaSalva.id).then(res => {
+      if (!alteracoesPendentes) versaoRef.current = res.data.versao ?? versaoRef.current;
+      setPropostaSalva(ps => (ps ? { ...ps, status: res.data.status } : ps));
+    }).catch(() => {});
+  }
+
   function reordenarPorSubgrupo(lista, sid) {
     const primeiraOcorrencia = new Map();
     let posicao = 0;
@@ -597,7 +713,11 @@ export default function Orcamento() {
     if (!propostaSalva) return;
     setGerandoPdf(true);
     try {
-      const res = await api.get(`/propostas/${propostaSalva.id}/pdf`, { responseType: 'blob' });
+      // anexos opcionais (Fase 3F): curva ABC e composição do BDI — desligados por padrão
+      const params = {};
+      if (anexosPdf.curva_abc) params.curva_abc = 1;
+      if (anexosPdf.composicao_bdi) params.composicao_bdi = 1;
+      const res = await api.get(`/propostas/${propostaSalva.id}/pdf`, { responseType: 'blob', params });
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
       const link = document.createElement('a');
       link.href = url;
@@ -657,6 +777,9 @@ export default function Orcamento() {
         pagamento: form.pagamento,
         observacoes: form.observacoes,
         bdi: Number(form.bdi) || 0,
+        // Fase 3F: sempre enviados — null limpa (BDI único / sem composição)
+        bdi_materiais: temBdiMateriais(form.bdi_materiais) ? Number(form.bdi_materiais) : null,
+        bdi_memoria: form.bdi_memoria || null,
         imposto_venda: Number(form.imposto_venda) || 0,
         imposto_servico: Number(form.imposto_servico) || 0,
         desconto_materiais_pct: form.desconto_materiais_pct,
@@ -760,6 +883,24 @@ export default function Orcamento() {
           </div>
         );
       })()}
+
+      {/* BDI (Fase 3F): órgão público sem composição do BDI e avisos da composição */}
+      {((ehPublico && !memoriaBdi) || avisosBdi.length > 0) && (
+        <div style={{ ...card, padding: '10px 16px', borderColor: '#4a3a12', fontSize: 12, color: '#c9a227' }}>
+          {ehPublico && !memoriaBdi && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ flex: 1, minWidth: 260 }}>
+                Cliente órgão público{segmentoObra === 'publico' && segmento !== 'publico' ? ' (pela obra)' : ''}: a proposta não tem a <b>composição do BDI</b>
+                <span style={{ color: '#777' }}> (memória do cálculo pela fórmula do TCU, Acórdão 2.622/2013), que costuma ser exigida pelo órgão.</span>
+              </span>
+              <button type="button" onClick={() => setCalculadoraBdiAberta(true)} style={{ ...btnSecundario, borderStyle: 'solid', borderColor: '#5a4a12', color: '#c9a227' }}>
+                <Calculator size={13} style={{ marginRight: 4 }} /> Calcular BDI (TCU)
+              </button>
+            </div>
+          )}
+          {avisosBdi.map(a => <div key={a} style={{ marginTop: ehPublico && !memoriaBdi ? 6 : 0 }}>⚠ {a}</div>)}
+        </div>
+      )}
 
       {/* Dados gerais */}
       <div style={card}>
@@ -1006,9 +1147,24 @@ export default function Orcamento() {
         );
       })}
 
-      <button onClick={adicionarSecao} style={{ ...btnSecundario, marginBottom: 18 }}>
-        <FolderPlus size={13} style={{ marginRight: 4 }} /> Adicionar seção
-      </button>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
+        <button onClick={adicionarSecao} style={btnSecundario}>
+          <FolderPlus size={13} style={{ marginRight: 4 }} /> Adicionar seção
+        </button>
+        <InserirComposicao segmento={ehPublico ? 'publico' : 'privado'} onInserir={inserirItensDoKit} />
+        <button type="button" onClick={() => setMostrarCurvaAbc(v => !v)} disabled={itens.length === 0}
+          style={{ ...btnSecundario, ...(mostrarCurvaAbc ? { borderStyle: 'solid', borderColor: '#5a4a12', color: '#c9a227' } : {}) }}
+          title="Itens do maior para o menor valor, com % do total, % acumulado e classe A/B/C">
+          <BarChart3 size={13} style={{ marginRight: 4 }} /> {mostrarCurvaAbc ? 'Fechar curva ABC' : 'Curva ABC'}
+        </button>
+      </div>
+
+      {mostrarCurvaAbc && itens.length > 0 && (
+        <div style={card}>
+          <div style={{ fontWeight: 700, color: '#c9a227', fontSize: 13, marginBottom: 10 }}>Curva ABC da proposta</div>
+          <CurvaAbcPainel itens={itensCurvaAbc} />
+        </div>
+      )}
 
       {/* Totais */}
       <div style={{ ...card, position: 'sticky', bottom: 16 }}>
@@ -1027,10 +1183,31 @@ export default function Orcamento() {
               <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>{formatarMoeda(valorImpostoServico)}</div>
             </div>
             <div>
-              <label style={rotulo}>BDI (%)</label>
-              <input type="number" step="0.1" min="0" value={form.bdi} onChange={e => setForm({ ...form, bdi: e.target.value })} style={{ width: 80 }} />
-              <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>{formatarMoeda(valorBdi)}</div>
+              <label style={rotulo}>{temBdiMateriais(form.bdi_materiais) ? 'BDI mão de obra (%)' : 'BDI (%)'}</label>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <input type="number" step="0.01" min="0" value={form.bdi} onChange={e => setForm({ ...form, bdi: e.target.value })} style={{ width: 80 }} />
+                <button type="button" onClick={() => setCalculadoraBdiAberta(true)}
+                  style={{ ...btnSecundario, padding: '4px 8px', fontSize: 11, ...(ehPublico && !memoriaBdi ? { borderStyle: 'solid', borderColor: '#c9a227', color: '#c9a227' } : {}) }}
+                  title="Calcular o BDI pela fórmula do TCU (Acórdão 2.622/2013) — tipo de obra, regime, parcelas e faixas de referência">
+                  <Calculator size={12} style={{ marginRight: 3 }} /> TCU
+                </button>
+              </div>
+              <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
+                {formatarMoeda(temBdiMateriais(form.bdi_materiais) ? valorBdiMaoObra : valorBdi)}
+                {memoriaBdi && (
+                  <span title={`Composição pelo TCU guardada na proposta (${memoriaBdi.regime === 'desonerado' ? 'desonerado' : 'não desonerado'})`} style={{ color: '#8a7333' }}>
+                    {' '}· composição <button type="button" onClick={removerComposicaoBdi} style={btnUsar} title="Remover a composição do BDI">remover</button>
+                  </span>
+                )}
+              </div>
             </div>
+            {form.bdi_materiais != null && (
+              <div>
+                <label style={rotulo} title="BDI diferenciado (reduzido) para o fornecimento de materiais — Acórdão 2.622/2013-TCU. Vazio = o mesmo BDI para tudo.">BDI materiais (%)</label>
+                <input type="number" step="0.01" min="0" value={form.bdi_materiais} onChange={e => setForm({ ...form, bdi_materiais: e.target.value })} style={{ width: 80 }} />
+                <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>{formatarMoeda(valorBdiMateriais)}</div>
+              </div>
+            )}
             <div>
               <label style={rotulo} title="Multiplica o valor unitário de cada item de Materiais por esse percentual. (+) aumenta, (-) desconta. Roda na hora, ao clicar em Aplicar — não recalcula sozinho depois.">Reajuste Materiais (%)</label>
               <div style={{ display: 'flex', gap: 4 }}>
@@ -1084,6 +1261,18 @@ export default function Orcamento() {
                 title={alteracoesPendentes ? 'Salve as alterações antes de gerar o PDF' : ''}>
                 <FileDown size={13} style={{ marginRight: 4 }} /> {gerandoPdf ? 'Gerando...' : 'Baixar PDF'}
               </button>
+              {/* anexos opcionais do PDF (Fase 3F) */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 10.5, color: '#888' }} title="Anexos no fim do PDF da proposta">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  <input type="checkbox" checked={anexosPdf.curva_abc} onChange={e => setAnexosPdf(a => ({ ...a, curva_abc: e.target.checked }))} style={{ width: 'auto' }} />
+                  anexo curva ABC
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  title={memoriaBdi ? 'Composição do BDI pela fórmula do TCU (exigida em proposta para órgão público)' : 'Sem composição calculada: o anexo mostra só o BDI adotado'}>
+                  <input type="checkbox" checked={anexosPdf.composicao_bdi} onChange={e => setAnexosPdf(a => ({ ...a, composicao_bdi: e.target.checked }))} style={{ width: 'auto' }} />
+                  anexo composição do BDI
+                </label>
+              </div>
               <button onClick={baixarPlanilha} disabled={gerandoPlanilha || alteracoesPendentes} style={btnSecundario}
                 title={alteracoesPendentes ? 'Salve as alterações antes de gerar a planilha' : 'Planilha para o cliente: orçamento, resumo, pesquisa de preços, fornecedores e cronograma'}>
                 <FileDown size={13} style={{ marginRight: 4 }} /> {gerandoPlanilha ? 'Gerando...' : 'Planilha Excel'}
@@ -1092,6 +1281,8 @@ export default function Orcamento() {
                 title={alteracoesPendentes ? 'Salve as alterações antes de enviar' : ''}>
                 <Send size={13} style={{ marginRight: 4 }} /> Enviar E-mail
               </button>
+              <BotaoLinkAprovacao propostaId={propostaSalva.id} numero={propostaSalva.numero}
+                status={propostaSalva.status} onAlterado={atualizarStatusSalvo} />
               <button onClick={novoOrcamento} style={{ ...btnPrimario, padding: '13px 20px', fontSize: 13 }}>
                 <FilePlus2 size={13} style={{ marginRight: 4 }} /> Novo Orçamento
               </button>
@@ -1109,6 +1300,16 @@ export default function Orcamento() {
         onFechar={() => setModalEmail(false)}
         proposta={propostaSalva}
         emailInicial={clienteEmailCadastro || clienteResolvido?.email || ''}
+      />
+
+      <CalculadoraBdi
+        aberto={calculadoraBdiAberta}
+        onFechar={() => setCalculadoraBdiAberta(false)}
+        memoria={form.bdi_memoria}
+        publico={ehPublico}
+        impostoVenda={form.imposto_venda}
+        impostoServico={form.imposto_servico}
+        onAplicar={aplicarBdiCalculado}
       />
     </div>
   );

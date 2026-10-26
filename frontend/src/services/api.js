@@ -242,3 +242,61 @@ export const criarLaudoNaObra = (disciplina, dados, obraId) =>
 // sem obraId, o laudo herda a obra da análise de origem
 export const criarLaudoDeAnaliseNaObra = (analiseId, disciplina, obraId) =>
   api.post('/laudos/de-analise', { analise_id: analiseId, disciplina, ...(obraId ? { obra_id: obraId } : {}) });
+// ── APROVAÇÃO DA PROPOSTA POR LINK (2.0, Fase 3I) ─────────────────────────
+// Internas (login). Gerar devolve o token EM CLARO uma única vez:
+//   { id, token, caminho: '/aprovacao/<token>', url_publica_base, expira_em, numero, cliente_nome, total }
+// dias (opcional, 1–90): validade do link; vazio = até o fim da validade da proposta
+export const gerarLinkAprovacao = (propostaId, dias) =>
+  api.post(`/propostas/${propostaId}/link-aprovacao`, dias ? { dias: Number(dias) } : {});
+// { url_publica_base, links: [{ id, criado_em, criado_por_nome, expira_em, revogado_em, ultimo_acesso_em, acessos, estado, decisao }] }
+export const getLinksAprovacao = (propostaId) => api.get(`/propostas/${propostaId}/links-aprovacao`);
+export const revogarLinkAprovacao = (propostaId, linkId) => api.post(`/propostas/${propostaId}/links-aprovacao/${linkId}/revogar`);
+// [{ id, link_id, codigo, decisao, nome, documento, cargo, email, observacao, decidido_em, ip, user_agent, hash_conteudo, ... }]
+export const getDecisoesAprovacao = (propostaId) => api.get(`/propostas/${propostaId}/decisoes-aprovacao`);
+
+// Públicas (sem login): instância própria, SEM o token do sistema e sem o
+// redirecionamento para /login do interceptor acima (o cliente não tem conta).
+const apiPublica = axios.create({
+  baseURL: process.env.REACT_APP_API_URL ? `${process.env.REACT_APP_API_URL}/api/publico` : '/api/publico',
+  timeout: 20000,
+});
+export const getAprovacaoPublica = (token) => apiPublica.get(`/aprovacao/${encodeURIComponent(token)}`);
+// dados: { decisao: 'aprovada'|'recusada', nome, documento, cargo, email, observacao, aceite, hash_conteudo }
+export const enviarDecisaoAprovacao = (token, dados) => apiPublica.post(`/aprovacao/${encodeURIComponent(token)}/decisao`, dados);
+export const urlPdfAprovacaoPublica = (token) =>
+  `${process.env.REACT_APP_API_URL || ''}/api/publico/aprovacao/${encodeURIComponent(token)}/pdf`;
+
+// ── COMPOSIÇÕES E KITS (2.0, Fase 3H) ────────────────────────────────────
+// Lista: params { busca, disciplina, inativos: '1' } → { itens: [{ id, codigo, descricao,
+//   unidade, disciplina, observacao, ativo, origem, versao, n_itens,
+//   custo: { publico: { custo_unitario, itens_a_cotar, completo }, privado: {...} } }] }
+export const getComposicoes = (params) => api.get('/composicoes', { params });
+// { ...composicao, itens: [...], custo: { publico: calculo, privado: calculo } }
+export const getComposicao = (id) => api.get(`/composicoes/${id}`);
+// data: { codigo?, descricao*, unidade, disciplina, observacao, itens: [{ tipo: 'material'|'servico',
+//   material_id?, servico_codigo?, coeficiente*, descricao, unidade }] } (+ versao no PUT) — admin
+export const criarComposicao = (data) => api.post('/composicoes', data);
+export const atualizarComposicao = (id, data) => api.put(`/composicoes/${id}`, data);
+export const duplicarComposicao = (id) => api.post(`/composicoes/${id}/duplicar`);
+export const definirComposicaoAtiva = (id, ativo) => api.put(`/composicoes/${id}/ativo`, { ativo });
+export const removerComposicao = (id) => api.delete(`/composicoes/${id}`);
+// custo de um rascunho de itens nos dois segmentos (não grava)
+export const calcularComposicao = (itens) => api.post('/composicoes/calcular', { itens });
+// itens prontos para a proposta: { codigo, quantidade, segmento: 'publico'|'privado' }
+export const explodirComposicao = (codigo, quantidade, segmento) =>
+  api.post('/composicoes/explodir', { codigo, quantidade, segmento });
+
+// ── CRONOGRAMA FÍSICO-FINANCEIRO E MEDIÇÕES DA OBRA (2.0, Fase 3G) ─────────
+// GET: { cronograma, etapas, calculo (curva S, resumo), medicoes (histórico), propostas, pode_editar }
+export const getCronogramaObra = (obraId, params) => api.get(`/obras/${obraId}/cronograma`, { params });
+// data: { proposta_id?, data_inicio?, periodicidade?, custo_hh?, equipe?, incluir_etapas_fixas? }
+export const gerarCronogramaObra = (obraId, data) => api.post(`/obras/${obraId}/cronograma/gerar`, data, { timeout: 60000 });
+// data: { versao, periodicidade, criterio_peso, data_inicio, etapas: [{ id?, nome, valor, peso, inicio, fim, distribuicao? }] }
+export const salvarCronogramaObra = (obraId, data) => api.put(`/obras/${obraId}/cronograma`, data);
+export const getMedicoesObra = (obraId) => api.get(`/obras/${obraId}/medicoes`);
+// data: { data_medicao, periodo?, observacao?, itens: [{ etapa_id, percentual_acumulado?, valor_medido?, observacao? }] }
+export const registrarMedicaoObra = (obraId, data) => api.post(`/obras/${obraId}/medicoes`, data);
+export const baixarPlanilhaCronogramaObra = (obraId) =>
+  api.get(`/obras/${obraId}/cronograma/planilha`, { responseType: 'blob', timeout: 120000 });
+export const baixarBoletimMedicaoObra = (obraId, periodo) =>
+  api.get(`/obras/${obraId}/medicoes/boletim`, { params: { periodo }, responseType: 'blob', timeout: 120000 });

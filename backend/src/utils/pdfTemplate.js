@@ -1,5 +1,10 @@
 const fs = require('fs');
 const path = require('path');
+const { ehMaoDeObra, detalharBdi } = require('./calculoProposta');
+const { calcularCurvaAbc } = require('./curvaAbc');
+const {
+  FONTE_BDI_TCU, FORNECIMENTO_TCU, REGIMES_BDI, PARCELAS_BDI, referenciaTcu, tributosBdi, normalizarMemoriaBdi,
+} = require('./bdiTcu');
 
 function carregarImagem(nome) {
   try {
@@ -80,8 +85,124 @@ const EMPRESA = {
   chavePix: '04003376000100',
 };
 
-function gerarHtmlProposta(proposta) {
+// ── Anexos opcionais da proposta (versão 2.0, Fase 3F) ──
+// Desligados por padrão; ligados ao gerar o PDF (?curva_abc=1&composicao_bdi=1).
+
+function formatarPct2(v) {
+  const n = Number(v);
+  return (Number.isFinite(n) ? n : 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Curva ABC dos itens (custo direto, sem BDI/impostos). Código interno de
+// serviço não aparece (codigoParaCliente), como no corpo da proposta.
+function htmlAnexoCurvaAbc(proposta) {
   const { secoes = [], itens = [] } = proposta;
+  const tipoDaSecao = new Map(secoes.map(s => [s.id, ehMaoDeObra(s.nome) ? 'servico' : 'material']));
+  const curva = calcularCurvaAbc(itens.map(it => ({
+    descricao: it.descricao, quantidade: it.quantidade, unidade: it.unidade, valor_unitario: it.valor_unitario,
+    codigo: it.codigo, tipo: tipoDaSecao.get(it.secao_id) || 'material',
+  })));
+  const maior = curva.itens.length ? curva.itens[0].total : 0;
+  const linhas = curva.itens.map(l => `
+      <tr class="abc-${l.classe}">
+        <td class="num">${l.posicao}</td>
+        <td>${escapeHtml(l.descricao)}${codigoParaCliente(l.codigo) ? ` <span class="cod">${escapeHtml(codigoParaCliente(l.codigo))}</span>` : ''}</td>
+        <td>${l.tipo === 'servico' ? 'Serviço' : 'Material'}</td>
+        <td class="num">${formatarQuantidade(l.quantidade)} ${escapeHtml(l.unidade)}</td>
+        <td class="num">${formatarMoeda(l.total)}</td>
+        <td class="num">${formatarPct2(l.pct)}%</td>
+        <td class="num">${formatarPct2(l.pct_acumulado)}%</td>
+        <td class="barra"><div style="width:${maior > 0 ? Math.max(1, Math.round((l.total / maior) * 100)) : 0}%"></div></td>
+        <td class="classe">${l.classe}</td>
+      </tr>`).join('');
+  const r = curva.resumo;
+  const resumo = ['A', 'B', 'C'].map(c => `<td><b>Classe ${c}</b> — ${r[c].itens} item(ns), ${formatarMoeda(r[c].valor)} (${formatarPct2(r[c].pct)}%)</td>`).join('');
+  return `
+  <div class="anexo">
+    <div class="anexo-titulo">Anexo — Curva ABC dos itens</div>
+    <div class="anexo-sub">Itens (materiais e serviços) ordenados pelo valor total, com o percentual de cada um e o acumulado.
+      Classe A: até ${formatarPercentual(curva.limites.A)}% do valor acumulado; B: até ${formatarPercentual(curva.limites.B)}%; C: o restante.
+      Valores de custo direto (sem BDI e impostos), somando o mesmo item lançado em mais de uma linha.</div>
+    <table class="resumo-abc"><tr>${resumo}</tr></table>
+    <table class="tabela-abc">
+      <thead><tr><th class="num">#</th><th>Descrição</th><th>Tipo</th><th class="num">Qtd.</th><th class="num">Valor total</th><th class="num">%</th><th class="num">% acum.</th><th></th><th>Classe</th></tr></thead>
+      <tbody>${linhas}
+        <tr class="total"><td></td><td colspan="3"><b>Total (custo direto)</b></td><td class="num"><b>${formatarMoeda(curva.total)}</b></td><td class="num">100,00%</td><td colspan="3"></td></tr>
+      </tbody>
+    </table>
+  </div>`;
+}
+
+// Composição do BDI pela fórmula do TCU (memória gravada pelo calculador do
+// editor em propostas.bdi_memoria). Exigida em proposta para órgão público.
+function htmlTabelaBdi(titulo, parcelas, regime, bdi, ref) {
+  const faixa = (k) => (ref && ref[k] ? ref[k].map(v => `${formatarPct2(v)}%`) : ['—', '—', '—']);
+  const linhasParcelas = PARCELAS_BDI.map(([k, nome]) => {
+    const [q1, med, q3] = faixa(k);
+    return `<tr><td>${escapeHtml(nome)}</td><td class="num"><b>${formatarPct2(parcelas[k])}%</b></td><td class="num">${q1}</td><td class="num">${med}</td><td class="num">${q3}</td></tr>`;
+  }).join('');
+  const base = parcelas.iss_base == null ? 100 : Number(parcelas.iss_base);
+  const linhasTributos = [
+    ['PIS', parcelas.pis],
+    ['COFINS', parcelas.cofins],
+    [`ISS${base !== 100 ? ` (${formatarPct2(parcelas.iss)}% sobre ${formatarPct2(base)}% do preço)` : ''}`, Number(parcelas.iss) * (base / 100)],
+    ...(regime === 'desonerado' ? [['CPRB — contribuição previdenciária sobre a receita bruta', parcelas.cprb]] : []),
+  ].map(([nome, v]) => `<tr><td>${escapeHtml(nome)}</td><td class="num">${formatarPct2(v)}%</td><td colspan="3"></td></tr>`).join('');
+  const [bq1, bmed, bq3] = faixa('bdi');
+  return `
+    <div class="bdi-bloco">
+      <div class="bdi-titulo">${escapeHtml(titulo)}</div>
+      <table class="tabela-bdi">
+        <thead><tr><th>Parcela</th><th class="num">Adotado</th><th class="num">TCU 1º quartil</th><th class="num">TCU médio</th><th class="num">TCU 3º quartil</th></tr></thead>
+        <tbody>
+          ${linhasParcelas}
+          <tr class="sub"><td colspan="5">Tributos sobre o preço (I)</td></tr>
+          ${linhasTributos}
+          <tr class="sub"><td>Total de tributos (I)</td><td class="num">${formatarPct2(tributosBdi(parcelas, regime))}%</td><td colspan="3"></td></tr>
+          <tr class="final"><td>BDI resultante</td><td class="num">${formatarPct2(bdi)}%</td><td class="num">${bq1}</td><td class="num">${bmed}</td><td class="num">${bq3}</td></tr>
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function htmlAnexoComposicaoBdi(proposta) {
+  const m = normalizarMemoriaBdi(proposta.bdi_memoria);
+  if (!m) {
+    return `
+  <div class="anexo">
+    <div class="anexo-titulo">Anexo — Composição do BDI</div>
+    <div class="anexo-sub">BDI adotado nesta proposta: <b>${formatarPct2(proposta.bdi)}%</b>. A composição detalhada (parcelas pela fórmula do
+      Acórdão 2.622/2013-TCU-Plenário) não foi registrada para esta proposta.</div>
+  </div>`;
+  }
+  const tipo = referenciaTcu(m.tipo_obra);
+  const avisos = [];
+  if (Math.abs(Number(proposta.bdi) - m.bdi) > 0.005) avisos.push(`O BDI aplicado na proposta (${formatarPct2(proposta.bdi)}%) difere do calculado nesta composição (${formatarPct2(m.bdi)}%).`);
+  const bdiMat = proposta.bdi_materiais;
+  if (m.materiais && (bdiMat == null || Math.abs(Number(bdiMat) - m.materiais.bdi) > 0.005)) {
+    avisos.push(`O BDI de materiais aplicado na proposta (${bdiMat == null ? 'o mesmo BDI' : `${formatarPct2(bdiMat)}%`}) difere do calculado nesta composição (${formatarPct2(m.materiais.bdi)}%).`);
+  }
+  return `
+  <div class="anexo">
+    <div class="anexo-titulo">Anexo — Composição do BDI</div>
+    <div class="anexo-sub">
+      Tipo de obra: <b>${escapeHtml(tipo ? tipo.nome : m.tipo_obra)}</b> · Regime: <b>${escapeHtml(REGIMES_BDI[m.regime] || m.regime)}</b>${m.regime === 'desonerado' && m.ano_cprb ? ` · CPRB de ${escapeHtml(m.ano_cprb)}` : ''}<br/>
+      Fórmula: BDI = [ (1 + AC + S + R + G) × (1 + DF) × (1 + L) / (1 − I) ] − 1 &nbsp;—&nbsp; ${escapeHtml(FONTE_BDI_TCU)}.
+      Faixas de referência (1º quartil, médio e 3º quartil) do mesmo acórdão; a tabela do TCU publica seguro e garantia juntos.
+      ${m.regime === 'desonerado' ? 'As faixas de BDI do acórdão são de orçamentos sem desoneração: a CPRB soma por cima delas.' : ''}
+    </div>
+    ${htmlTabelaBdi(m.materiais ? 'BDI dos serviços (mão de obra e execução)' : 'BDI da proposta', m.parcelas, m.regime, m.bdi, tipo)}
+    ${m.materiais ? htmlTabelaBdi('BDI diferenciado — fornecimento de materiais e equipamentos', m.materiais.parcelas, m.regime, m.materiais.bdi, FORNECIMENTO_TCU) : ''}
+    ${avisos.map(a => `<div class="anexo-aviso">${escapeHtml(a)}</div>`).join('')}
+  </div>`;
+}
+
+function gerarHtmlProposta(proposta, anexos = {}) {
+  const { secoes = [], itens = [] } = proposta;
+  const bdiDetalhe = detalharBdi({
+    subtotalMateriais: proposta.subtotal_materiais, subtotalMaoObra: proposta.subtotal_mao_obra,
+    bdi: proposta.bdi, bdi_materiais: proposta.bdi_materiais,
+  });
 
   const linhasSecoes = secoes.map(sec => {
     const itensSecao = itens.filter(it => it.secao_id === sec.id);
@@ -155,6 +276,25 @@ function gerarHtmlProposta(proposta) {
   .assinatura .nome { font-family: 'Dancing Script', cursive; font-size: 19px; color: #1a1a1a; }
   .assinatura .linha { width: 220px; border-top: 1px solid #999; margin: 4px auto 4px; }
   .assinatura .cargo { font-size: 9px; color: #666; }
+  .anexo { page-break-before: always; }
+  .anexo-titulo { font-size: 13px; font-weight: 700; color: #c9a227; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+  .anexo-sub { font-size: 9.5px; color: #555; line-height: 1.45; margin-bottom: 10px; }
+  .anexo-aviso { font-size: 9.5px; color: #8a5a00; background: #fff6df; border-left: 3px solid #c9a227; padding: 5px 8px; margin-top: 6px; }
+  .tabela-abc td { font-size: 9px; padding: 3px 6px; }
+  .tabela-abc .cod { color: #888; font-size: 8px; }
+  .tabela-abc td.barra { width: 90px; }
+  .tabela-abc td.barra div { height: 7px; background: #c9a227; border-radius: 2px; }
+  .tabela-abc tr.abc-B td.barra div { background: #8c8c8c; }
+  .tabela-abc tr.abc-C td.barra div { background: #c8c8c8; }
+  .tabela-abc td.classe { font-weight: 700; text-align: center; }
+  .tabela-abc td.num { white-space: nowrap; }
+  .tabela-abc tr.total td { border-top: 2px solid #c9a227; border-bottom: none; page-break-inside: avoid; }
+  .resumo-abc td { border: none; font-size: 9.5px; padding: 0 8px 6px 0; }
+  .bdi-bloco { margin-bottom: 12px; page-break-inside: avoid; }
+  .bdi-titulo { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: #333; margin-bottom: 4px; }
+  .tabela-bdi td { font-size: 9.5px; padding: 3px 8px; }
+  .tabela-bdi tr.sub td { background: #f5f5f5; font-weight: 700; color: #444; }
+  .tabela-bdi tr.final td { border-top: 2px solid #c9a227; font-weight: 700; font-size: 11px; color: #a9842f; }
 </style>
 </head>
 <body>
@@ -202,7 +342,10 @@ function gerarHtmlProposta(proposta) {
       ${Number(proposta.imposto_venda) > 0 ? `<tr><td>Imposto sobre vendas (${formatarPercentual(proposta.imposto_venda)}%)</td><td class="num">${formatarMoeda(proposta.valor_imposto_venda)}</td></tr>` : ''}
       <tr><td>Subtotal mão de obra</td><td class="num">${formatarMoeda(proposta.subtotal_mao_obra)}</td></tr>
       ${Number(proposta.imposto_servico) > 0 ? `<tr><td>Imposto sobre serviços (${formatarPercentual(proposta.imposto_servico)}%)</td><td class="num">${formatarMoeda(proposta.valor_imposto_servico)}</td></tr>` : ''}
-      <tr><td>BDI (${formatarPercentual(proposta.bdi)}%)</td><td class="num">${formatarMoeda(proposta.valor_bdi)}</td></tr>
+      ${bdiDetalhe.diferenciado
+        ? `<tr><td>BDI materiais (${formatarPercentual(proposta.bdi_materiais)}%)</td><td class="num">${formatarMoeda(bdiDetalhe.valor_bdi_materiais)}</td></tr>
+      <tr><td>BDI mão de obra (${formatarPercentual(proposta.bdi)}%)</td><td class="num">${formatarMoeda(bdiDetalhe.valor_bdi_mao_obra)}</td></tr>`
+        : `<tr><td>BDI (${formatarPercentual(proposta.bdi)}%)</td><td class="num">${formatarMoeda(proposta.valor_bdi)}</td></tr>`}
       ${Number(proposta.desconto_materiais_pct) < 0 ? `<tr><td colspan="2" style="font-style:italic;color:#666;font-size:9px;">Desconto de ${formatarPercentual(Math.abs(proposta.desconto_materiais_pct))}% já aplicado aos valores de materiais</td></tr>` : ''}
       ${Number(proposta.desconto_mao_obra_pct) < 0 ? `<tr><td colspan="2" style="font-style:italic;color:#666;font-size:9px;">Desconto de ${formatarPercentual(Math.abs(proposta.desconto_mao_obra_pct))}% já aplicado aos valores de mão de obra</td></tr>` : ''}
       <tr class="final"><td>Total geral</td><td class="num">${formatarMoeda(proposta.total)}</td></tr>
@@ -247,6 +390,8 @@ function gerarHtmlProposta(proposta) {
       <div class="cargo">Representante Legal</div>
     </div>
   </div>
+  ${anexos.composicaoBdi ? htmlAnexoComposicaoBdi(proposta) : ''}
+  ${anexos.curvaAbc ? htmlAnexoCurvaAbc(proposta) : ''}
 </body>
 </html>
   `;

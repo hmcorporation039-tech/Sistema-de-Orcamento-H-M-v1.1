@@ -93,6 +93,22 @@ fica com o que foi extraído do PDF (leitura) e o botão "Gerar orçamento".
   a proposta, aprova ou recusa com nome e documento; registro de data/hora/IP;
   aceite eletrônico simples, não ICP-Brasil).
 
+### Como ficou (implementado)
+
+| Recurso | Migração | Backend | Frontend |
+|---|---|---|---|
+| Curva ABC e BDI TCU | 2.0-06 (`bdi_memoria` JSONB, `bdi_materiais`) | `utils/curvaAbc.js`, `utils/bdiTcu.js`, `calculoProposta.js` (BDI diferenciado opcional), anexos no `pdfTemplate.js` (`?curva_abc=1&composicao_bdi=1`), aba "Curva ABC" na planilha | `CalculadoraBdi`, `CurvaAbcPainel` no editor; `utils/curvaAbc.js` e `utils/bdiTcu.js` são cópias do núcleo do backend (o teste confere que são iguais) |
+| Cronograma e medições | 2.0-07 (`obra_cronogramas`, `obra_etapas`, `obra_etapa_periodos`, `obra_medicoes`) | `utils/cronograma.js`, `utils/duracaoCronograma.js` (regra de duração compartilhada com a planilha do cliente), `planilhaCronograma.js` (Gantt + curva S nativa do Excel), boletim de medição em PDF, `routes/v2/cronograma.js` | `pages/obras/CronogramaObra.js`, `CurvaS.js` na aba Execução |
+| Composições e kits | 2.0-08 (`composicoes`, `composicao_itens`; kits-modelo uma vez só, marca `composicoes_kits_modelo`) | `utils/composicoes.js` (custo por segmento com `valorSugerido`; sem preço = "a cotar"), `routes/v2/composicoes.js` (`/composicoes/explodir`) | aba "Composições e kits" na Base de preços; `InserirComposicao` no editor |
+| Aprovação por link | 2.0-09 (`proposta_links_aprovacao` com hash sha-256 do token, `proposta_decisoes_aprovacao` com hash do conteúdo aprovado) | `utils/aprovacaoLink.js`, `routes/v2/aprovacao.js`; públicas em `/api/publico/aprovacao/:token` com limite de taxa e 404 igual para token inválido/expirado/revogado; o status muda por `aplicarStatusProposta` (o mesmo da tela) | página pública `/aprovacao/:token` (fora do login); `BotaoLinkAprovacao` no editor |
+
+Para o cliente abrir o link de fora da rede, o sistema precisa estar publicado
+na internet e `URL_PUBLICA` definida no `.env`.
+
+Itens marcados `[CONFERIR]` no `bdiTcu.js`: ISS padrão de 2 % (depende do
+município), cronograma da CPRB pela Lei 14.973/2024 e a comparação da faixa do
+TCU no regime desonerado (feita sem a CPRB).
+
 ## Fase 4 — campo
 
 - **App de campo (PWA)**: ordens de serviço por obra, checklist (o mesmo dos

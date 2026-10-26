@@ -5,8 +5,9 @@ import { ArrowLeft, Plus, Save, Trash2, Unlink, Link2, FileText, ClipboardList, 
 import {
   getObra, atualizarObra, removerObra, vincularItemObra, getPastaObra, abrirPastaObra,
   getClientes, getUsuarios, getAnalisesProjeto, getLaudos, getPropostas, getContratos, getFinanceiroMovimentos,
-  getPastaAnalise, abrirPastaAnalise, getPastaLaudo, abrirPastaLaudo,
+  getPastaAnalise, abrirPastaAnalise, getPastaLaudo, abrirPastaLaudo, getCronogramaObra,
 } from '../../services/api';
+import CronogramaObra from './CronogramaObra';
 import { useAuth } from '../../hooks/useAuth';
 import Select from '../../components/Select';
 import PainelPasta from '../../components/PainelPasta';
@@ -118,6 +119,9 @@ function Resumo({ obra, recarregar, podeEditar }) {
   const [salvando, setSalvando] = useState(false);
   useEffect(() => setForm(inicial), [inicial]);
   useEffect(() => { getClientes({ porPagina: 1000 }).then(r => setClientes(r.data.itens || [])).catch(() => {}); }, []);
+  // % físico executado (cronograma da aba Execução, Fase 3G)
+  const [fisico, setFisico] = useState(null);
+  useEffect(() => { getCronogramaObra(obra.id).then(r => setFisico(r.data.etapas.length ? r.data.calculo.resumo : false)).catch(() => setFisico(false)); }, [obra.id]);
   useEffect(() => {
     // a lista de usuários é só de admin; para os demais, o atual responsável e "eu"
     if (ehAdmin) getUsuarios().then(r => setUsuarios((r.data.itens || r.data || []).filter(u => u.ativo !== false))).catch(() => {});
@@ -176,6 +180,8 @@ function Resumo({ obra, recarregar, podeEditar }) {
         <Cartao rotulo="Recebido" valor={restrito ? '—' : moeda(r.recebido)} cor="#3fb95f" nota={restrito ? 'só administradores' : `a receber: ${moeda(r.a_receber)}`} />
         <Cartao rotulo="Margem" valor={restrito ? '—' : moeda(r.margem)} cor={corMargem(restrito ? null : r.margem)}
           nota={restrito ? 'só administradores' : (r.margem_pct != null ? `${pct(r.margem_pct)} do orçado (orçado − realizado)` : 'orçado − realizado')} />
+        <Cartao rotulo="% físico executado" valor={fisico ? pct(fisico.fisico_realizado.toFixed(1)) : '—'} cor="#5fc9c0"
+          nota={fisico ? `previsto até hoje: ${pct(fisico.fisico_previsto.toFixed(1))}` : (fisico === false ? 'sem cronograma (aba Execução)' : '...')} />
       </div>
 
       <form style={E.card} onSubmit={salvar}>
@@ -375,7 +381,7 @@ function Propostas({ obra, ligar, desligar, podeEditar }) {
   );
 }
 
-// ── Execução (contratos; cronograma e medições na Fase 3) ─────────────
+// ── Execução (contratos; cronograma físico-financeiro e medições — Fase 3G, CronogramaObra.js) ──
 function Execucao({ obra, ligar, desligar }) {
   const carregar = useCallback(() => getContratos({ obra_id: 'sem', porPagina: 300 })
     .then(r => (r.data.itens || []).map(c => ({ id: c.id, rotulo: `${c.codigo_registro} — ${c.prestador_nome}${c.local_obra ? ` — ${c.local_obra}` : ''}` }))), []);
@@ -401,10 +407,7 @@ function Execucao({ obra, ligar, desligar }) {
             ))}
           </Tabela>
         )}
-      <div style={{ ...E.card, marginTop: 16, borderStyle: 'dashed' }}>
-        <h4 style={{ color: '#888', fontSize: 13, margin: '0 0 6px' }}>Cronograma físico-financeiro e medições</h4>
-        <p style={{ color: '#666', fontSize: 12, margin: 0 }}>Em preparação (Fase 3 da versão 2.0): etapas por período, medições do realizado × previsto e o cronograma da planilha do cliente aparecem aqui.</p>
-      </div>
+      <CronogramaObra obra={obra} />
     </div>
   );
 }

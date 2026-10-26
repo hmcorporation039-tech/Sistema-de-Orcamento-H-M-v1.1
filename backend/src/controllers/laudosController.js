@@ -643,11 +643,12 @@ async function gerarOrcamento(req, res) {
     // recusada fica intacta e nasce uma nova), mantendo BDI e impostos dela.
     const vinculadaId = (laudo.propostas || {})[modo];
     const vinculadaInfo = vinculadaId
-      ? (await pool.query('SELECT status, bdi, imposto_venda, imposto_servico FROM propostas WHERE id = $1', [vinculadaId])).rows[0]
+      ? (await pool.query('SELECT status, bdi, bdi_materiais, imposto_venda, imposto_servico FROM propostas WHERE id = $1', [vinculadaId])).rows[0]
       : null;
     const vinculada = vinculadaInfo && vinculadaInfo.status === 'Ativa' ? vinculadaId : null;
     const totais = calcularTotais({ secoes, itens,
       bdi: vinculada ? Number(vinculadaInfo.bdi) || 0 : 0,
+      bdi_materiais: vinculada ? vinculadaInfo.bdi_materiais : null, // BDI diferenciado (2.0, Fase 3F) também é mantido
       imposto_venda: vinculada ? Number(vinculadaInfo.imposto_venda) || 0 : 0,
       imposto_servico: vinculada ? Number(vinculadaInfo.imposto_servico) || 0 : 0 });
 
