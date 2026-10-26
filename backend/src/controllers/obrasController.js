@@ -316,7 +316,8 @@ async function remover(req, res, next) {
                 (SELECT count(*) FROM laudos_projetos WHERE obra_id = $1 OR pasta_obra_id = $1)::int AS laudos,
                 (SELECT count(*) FROM propostas WHERE obra_id = $1)::int AS propostas,
                 (SELECT count(*) FROM contratos WHERE obra_id = $1)::int AS contratos,
-                (SELECT count(*) FROM financeiro_movimentos WHERE obra_id = $1)::int AS movimentos`, [id]);
+                (SELECT count(*) FROM financeiro_movimentos WHERE obra_id = $1)::int AS movimentos,
+                (SELECT count(*) FROM ordens_servico WHERE obra_id = $1)::int AS ordens_servico`, [id]);
       const total = Object.values(n).reduce((s, v) => s + v, 0);
       if (total > 0) return { status: 409, vinculos: n };
       await client.query('DELETE FROM obras WHERE id = $1', [id]);
@@ -326,7 +327,7 @@ async function remover(req, res, next) {
     if (resultado.status === 404) return res.status(404).json({ erro: 'Obra não encontrada.' });
     if (resultado.status === 409) {
       const v = resultado.vinculos;
-      const partes = [['analises', 'análise(s)'], ['laudos', 'laudo(s)'], ['propostas', 'proposta(s)'], ['contratos', 'contrato(s)'], ['movimentos', 'movimento(s)']]
+      const partes = [['analises', 'análise(s)'], ['laudos', 'laudo(s)'], ['propostas', 'proposta(s)'], ['contratos', 'contrato(s)'], ['movimentos', 'movimento(s)'], ['ordens_servico', 'ordem(ns) de serviço']]
         .filter(([k]) => v[k] > 0).map(([k, r]) => `${v[k]} ${r}`);
       return res.status(409).json({
         codigo: 'OBRA_COM_VINCULOS', vinculos: v,

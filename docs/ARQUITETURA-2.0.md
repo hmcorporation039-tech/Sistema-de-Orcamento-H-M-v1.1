@@ -114,3 +114,21 @@ TCU no regime desonerado (feita sem a CPRB).
 - **App de campo (PWA)**: ordens de serviço por obra, checklist (o mesmo dos
   laudos/inspeções), fotos, assinatura do cliente, funcionamento offline com
   sincronização; relatório PDF da OS.
+
+### Como ficou (implementado)
+
+- **Backend:** migração 2.0-10 (`ordens_servico`, `os_fotos`, `campo_operacoes`),
+  regras puras em `utils/campo.js`, `controllers/campoController.js`,
+  `routes/v2/campo.js`, PDF em `utils/osPdfTemplate.js`. Fotos e assinatura na
+  pasta da obra, em `Campo/<numero da OS>/`. Contrato completo em
+  `docs/CAMPO-API.md`.
+- **Escritório:** aba "Campo (OS)" na página da obra
+  (`pages/obras/OrdensServicoObra.js`) e cartão "OS abertas" no Resumo.
+- **App:** `/campo/*` fora do Layout e carregado à parte
+  (`frontend/src/pages/campo/`); IndexedDB por usuário, fila de operações com
+  `op_uuid`, fotos reduzidas no aparelho (até 1600 px), service worker
+  `public/sw-campo.js` com escopo `/campo/` e manifesto `manifest-campo.json`.
+  O escritório não tem service worker.
+- **HTTP × HTTPS:** em HTTP o app funciona com rede e guarda os dados offline,
+  mas precisa estar aberto antes de a rede cair; com HTTPS configurado ele abre
+  também sem rede.

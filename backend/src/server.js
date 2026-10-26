@@ -45,6 +45,9 @@ app.use(helmet({
       // sem upgrade-insecure-requests: o sistema roda em HTTP na rede local
     },
   },
+  // HTTPS opcional (HTTPS_PORTA) convive com o HTTP de sempre: HSTS faria o
+  // navegador que abriu o HTTPS passar a recusar o endereço HTTP do mesmo host
+  ...(process.env.HTTPS_PORTA ? { strictTransportSecurity: false } : {}),
 }));
 
 // Origens liberadas: configurável via CORS_ORIGINS no .env (separado por
@@ -130,6 +133,7 @@ process.on('uncaughtException', (err) => {
 // as requisições em andamento terminarem e fecha o pool do banco. Se travar,
 // sai à força depois de 10 s.
 let servidor = null;
+let servidorHttps = null;
 let encerrando = false;
 function encerrar(sinal) {
   if (encerrando) return;
@@ -137,6 +141,7 @@ function encerrar(sinal) {
   console.log(`Encerrando o backend (${sinal})...`);
   setTimeout(() => process.exit(process.exitCode || 1), 10000).unref();
   const fecharBanco = () => pool.end().catch(() => {}).finally(() => process.exit(process.exitCode || 0));
+  if (servidorHttps) servidorHttps.close();
   if (servidor) servidor.close(fecharBanco); else fecharBanco();
 }
 process.on('SIGINT', () => encerrar('SIGINT'));
@@ -158,6 +163,29 @@ async function aguardarBanco(tentativas = 24, intervaloMs = 5000) {
   }
 }
 
+// HTTPS opcional, com o MESMO app (o service worker do app de campo só vale em
+// HTTPS — docs/CAMPO-API.md). Liga com HTTPS_PORTA + HTTPS_CERTIFICADO e
+// HTTPS_CHAVE (.pem/.crt + .key) ou HTTPS_CERTIFICADO .pfx/.p12 (HTTPS_SENHA,
+// se tiver). Sem essas variáveis nada muda; certificado ilegível só gera aviso
+// e o HTTP segue normal.
+function iniciarHttps() {
+  const { HTTPS_PORTA, HTTPS_CERTIFICADO, HTTPS_CHAVE, HTTPS_SENHA } = process.env;
+  if (!HTTPS_PORTA || !HTTPS_CERTIFICADO) return;
+  try {
+    const pfx = /\.(pfx|p12)$/i.test(HTTPS_CERTIFICADO);
+    if (!pfx && !HTTPS_CHAVE) throw new Error('falta HTTPS_CHAVE (arquivo .key do certificado)');
+    const opcoes = pfx
+      ? { pfx: fs.readFileSync(HTTPS_CERTIFICADO), passphrase: HTTPS_SENHA || undefined }
+      : { cert: fs.readFileSync(HTTPS_CERTIFICADO), key: fs.readFileSync(HTTPS_CHAVE), passphrase: HTTPS_SENHA || undefined };
+    servidorHttps = require('https').createServer(opcoes, app);
+    servidorHttps.on('error', (err) => console.error(`HTTPS desligado (${err.message}). O HTTP segue normal.`));
+    servidorHttps.listen(Number(HTTPS_PORTA), '0.0.0.0', () => console.log(`HTTPS:    https://SEU_IP:${HTTPS_PORTA}  (app de campo: /campo)\n`));
+  } catch (err) {
+    servidorHttps = null;
+    console.error(`HTTPS desligado: não foi possível ler o certificado (${err.message}). O HTTP segue normal.`);
+  }
+}
+
 async function iniciar() {
   try {
     await aguardarBanco();
@@ -171,6 +199,7 @@ async function iniciar() {
       // caixa de e-mail nem as pastas de fornecedores da produção
       agendarRotinas();
     });
+    iniciarHttps();
   } catch (err) {
     console.error('Erro ao iniciar servidor:', err.message);
     process.exit(1);

@@ -300,3 +300,26 @@ export const baixarPlanilhaCronogramaObra = (obraId) =>
   api.get(`/obras/${obraId}/cronograma/planilha`, { responseType: 'blob', timeout: 120000 });
 export const baixarBoletimMedicaoObra = (obraId, periodo) =>
   api.get(`/obras/${obraId}/medicoes/boletim`, { params: { periodo }, responseType: 'blob', timeout: 120000 });
+
+// ── ORDENS DE SERVIÇO DE CAMPO — tela do escritório (2.0, Fase 4J) ────────
+// Contrato em docs/CAMPO-API.md. O app de campo (/campo) tem o seu próprio
+// cliente de API; aqui só as chamadas da aba "Campo (OS)" da obra.
+// { itens: [OS], agora } — OS que o usuário vê, todas as situações
+export const getOrdensServicoObra = (obraId) => api.get('/campo/os', { params: { obra_id: obraId, status: 'todas' } });
+// OS completa, com `historico` (respostas substituídas)
+export const getOrdemServico = (id) => api.get(`/campo/os/${id}`);
+// { itens: [{ chave, rotulo, disciplina, itens: [{ id, grupo, texto }] }] }
+export const getModelosChecklist = (disciplina) => api.get('/campo/modelos-checklist', { params: disciplina ? { disciplina } : {} });
+// data: { titulo*, descricao, tipo, disciplina, responsavel_id, agendada_para, modelo_checklist } (dono da obra ou admin)
+export const criarOrdemServico = (obraId, data) => api.post(`/obras/${obraId}/os`, data);
+// data: mesmos campos + versao (409 se mudou); { status: 'cancelada' } só admin
+export const atualizarOrdemServico = (id, data) => api.put(`/campo/os/${id}`, data);
+// admin: sem fotos/assinatura exclui; com elas, cancela → { cancelada, mensagem }
+export const removerOrdemServico = (id) => api.delete(`/campo/os/${id}`);
+export const baixarPdfOrdemServico = (id) => api.get(`/campo/os/${id}/pdf`, { responseType: 'blob', timeout: 120000 });
+// foto/assinatura (autenticadas): `url` como o servidor devolve ("/api/campo/...") → blob
+export const getArquivoCampo = (url) => {
+  const rota = String(url || '').replace(/^\/api(?=\/campo\/)/, '');
+  if (!/^\/campo\/(fotos\/[0-9a-f-]{36}|os\/\d+\/assinatura)$/i.test(rota)) return Promise.reject(new Error('Endereço de arquivo de campo inválido'));
+  return api.get(rota, { responseType: 'blob', timeout: 60000 });
+};

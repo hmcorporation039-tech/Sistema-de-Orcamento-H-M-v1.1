@@ -260,6 +260,21 @@
 - Baixado direto pela API, o nome do PDF sai com os acentos estragados (só estético: a tela e o e-mail usam o nome certo).
 - Windows 10 fora do suporte da Microsoft, sistema em HTTP na rede local (sem TLS) e backup só no prédio (PC e servidor): decisões do usuário.
 
+### 1.8.2 e 1.8.3 (25/10/2026): correções em produção
+- 1.8.2: `proposta_itens.codigo` passou a VARCHAR(50) — códigos de serviço longos das skills davam erro 500 ao gerar o orçamento do laudo.
+- 1.8.3: `gerarPdfDeHtml` devolve `Buffer`. Desde o puppeteer 25 (v1.8.0) o PDF vinha como `Uint8Array`, que o `res.send` do Express 4 transforma em JSON: o PDF baixado (proposta, contrato, projeto, relatório) saía corrompido; a cópia gravada na pasta não era afetada.
+
+### 26/10/2026: versão 2.0.0 (ramo `versao-2.0`)
+Plano, modelo e decisões em `docs/ARQUITETURA-2.0.md`; contrato do app de campo em `docs/CAMPO-API.md`. Fora da 2.0, por decisão do usuário: emissão de NF (já existe sistema próprio) e cobranças. Portal do cliente e BIM/IFC ficaram para depois.
+- **Fase 1 — arrumação:** menu em 6 grupos (Painel, Obras, Propostas, Base de preços, Financeiro, Cadastros e administração) com as rotas antigas redirecionando; base única de serviços (`GET /servicos`); módulo único de IA (`utils/ia.js`, Claude Max → API → Gemini) e painel Integrações com as rotinas automáticas e o registro das execuções.
+- **Fase 2 — Obra e editor único:** entidade Obra (`OB-AAAA-NNN`) ligando análise, laudos, propostas, contratos e financeiro, com orçado × realizado; os dados existentes foram ligados por uma migração única. Análise e laudos geram o rascunho e o orçamento é editado num lugar só (`Orcamento.js`), com origem estruturada (`origem_tipo`/`origem_id`).
+- **Fase 3 — recursos de mercado:** curva ABC (tela, anexo do PDF, aba da planilha); BDI pela fórmula do Acórdão 2.622/2013-TCU com faixas por tipo de obra, desonerado/não desonerado, BDI diferenciado de materiais opcional e memória do cálculo no PDF; cronograma físico-financeiro com medições e curva S; composições e kits (10 kits-modelo); aprovação da proposta por link (aceite eletrônico simples, não ICP-Brasil).
+- **Fase 4 — campo:** ordens de serviço por obra (`OS-AAAA-NNNN`) com checklist das skills, fotos, assinatura do cliente e PDF; app `/campo` para celular que guarda os dados no aparelho (IndexedDB) e sincroniza sem duplicar quando a rede volta; HTTPS opcional (`HTTPS_PORTA`/`HTTPS_CERTIFICADO`/`HTTPS_CHAVE`) para o app abrir também sem rede.
+- **Banco:** só migrações idempotentes em `backend/src/models/migracoes/2.0-01` a `2.0-10`, rodadas no fim de `criarTabelas`. Rotas novas em `backend/src/routes/v2/`.
+- **Testes:** `npm test` do backend (inclui regressão de totais das propostas, que só roda no banco de teste) e `CI=true npx react-scripts test --watchAll=false src/pages/campo` no frontend.
+- **Para implantar a 2.0 no PC de produção:** backup do banco e do código, mesclar `versao-2.0` em `main`, `npm install` no backend e no frontend, `reiniciar-backend.bat` (roda as migrações), `npm run build`, Ctrl+F5. Para o link de aprovação funcionar fora do escritório, o sistema precisa estar publicado na internet e `URL_PUBLICA` no `.env`.
+- **A conferir:** itens `[CONFERIR]` em `backend/src/utils/bdiTcu.js` (ISS do município, cronograma da CPRB pela Lei 14.973/2024, faixa do TCU no regime desonerado); materiais do catálogo em rolo/caixa ficam "a cotar" nos kits (que contam em metro).
+
 ---
 
 ## 3. Skills e ferramentas do Claude (servidor MCP `hm-orcamentos`)

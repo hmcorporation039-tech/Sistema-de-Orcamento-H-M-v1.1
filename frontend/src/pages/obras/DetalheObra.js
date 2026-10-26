@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Plus, Save, Trash2, Unlink, Link2, FileText, ClipboardList, Briefcase, Wallet, FolderOpen, LayoutDashboard, Layers } from 'lucide-react';
+import { ArrowLeft, Plus, Save, Trash2, Unlink, Link2, FileText, ClipboardList, Briefcase, Wallet, FolderOpen, LayoutDashboard, Layers, ClipboardCheck } from 'lucide-react';
 import {
   getObra, atualizarObra, removerObra, vincularItemObra, getPastaObra, abrirPastaObra,
   getClientes, getUsuarios, getAnalisesProjeto, getLaudos, getPropostas, getContratos, getFinanceiroMovimentos,
-  getPastaAnalise, abrirPastaAnalise, getPastaLaudo, abrirPastaLaudo, getCronogramaObra,
+  getPastaAnalise, abrirPastaAnalise, getPastaLaudo, abrirPastaLaudo, getCronogramaObra, getOrdensServicoObra,
 } from '../../services/api';
 import CronogramaObra from './CronogramaObra';
+import OrdensServicoObra from './OrdensServicoObra';
 import { useAuth } from '../../hooks/useAuth';
 import Select from '../../components/Select';
 import PainelPasta from '../../components/PainelPasta';
@@ -24,6 +25,7 @@ const SECOES = [
   { chave: 'disciplinas', rotulo: 'Disciplinas', icone: Layers },
   { chave: 'propostas', rotulo: 'Propostas', icone: ClipboardList },
   { chave: 'execucao', rotulo: 'Execução', icone: Briefcase },
+  { chave: 'campo', rotulo: 'Campo (OS)', icone: ClipboardCheck },
   { chave: 'financeiro', rotulo: 'Financeiro', icone: Wallet },
   { chave: 'arquivos', rotulo: 'Arquivos', icone: FolderOpen },
 ];
@@ -94,6 +96,7 @@ export default function DetalheObra() {
       {secao === 'disciplinas' && <Disciplinas {...ctx} />}
       {secao === 'propostas' && <Propostas {...ctx} />}
       {secao === 'execucao' && <Execucao {...ctx} />}
+      {secao === 'campo' && <OrdensServicoObra obra={obra} podeEditar={obra.pode_editar} />}
       {secao === 'financeiro' && <Financeiro {...ctx} />}
       {secao === 'arquivos' && <Arquivos {...ctx} />}
     </div>
@@ -122,6 +125,14 @@ function Resumo({ obra, recarregar, podeEditar }) {
   // % físico executado (cronograma da aba Execução, Fase 3G)
   const [fisico, setFisico] = useState(null);
   useEffect(() => { getCronogramaObra(obra.id).then(r => setFisico(r.data.etapas.length ? r.data.calculo.resumo : false)).catch(() => setFisico(false)); }, [obra.id]);
+  // OS de campo abertas (aba Campo (OS), Fase 4J)
+  const [osCampo, setOsCampo] = useState(null);
+  useEffect(() => {
+    getOrdensServicoObra(obra.id).then(r => {
+      const itens = r.data.itens || [];
+      setOsCampo({ abertas: itens.filter(o => o.status === 'aberta').length, execucao: itens.filter(o => o.status === 'em_execucao').length });
+    }).catch(() => setOsCampo(false));
+  }, [obra.id]);
   useEffect(() => {
     // a lista de usuários é só de admin; para os demais, o atual responsável e "eu"
     if (ehAdmin) getUsuarios().then(r => setUsuarios((r.data.itens || r.data || []).filter(u => u.ativo !== false))).catch(() => {});
@@ -182,6 +193,8 @@ function Resumo({ obra, recarregar, podeEditar }) {
           nota={restrito ? 'só administradores' : (r.margem_pct != null ? `${pct(r.margem_pct)} do orçado (orçado − realizado)` : 'orçado − realizado')} />
         <Cartao rotulo="% físico executado" valor={fisico ? pct(fisico.fisico_realizado.toFixed(1)) : '—'} cor="#5fc9c0"
           nota={fisico ? `previsto até hoje: ${pct(fisico.fisico_previsto.toFixed(1))}` : (fisico === false ? 'sem cronograma (aba Execução)' : '...')} />
+        <Cartao rotulo="OS abertas" valor={osCampo ? osCampo.abertas + osCampo.execucao : '—'} cor="#8aa4c8"
+          nota={osCampo ? `${osCampo.execucao} em execução no campo · aba Campo (OS)` : (osCampo === false ? 'não foi possível carregar' : '...')} />
       </div>
 
       <form style={E.card} onSubmit={salvar}>

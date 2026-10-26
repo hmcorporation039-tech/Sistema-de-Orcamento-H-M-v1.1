@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './hooks/useAuth';
@@ -12,6 +13,20 @@ import PropostasHub from './pages/hubs/PropostasHub';
 import BasePrecosHub from './pages/hubs/BasePrecosHub';
 import FinanceiroHub from './pages/hubs/FinanceiroHub';
 import CadastrosHub from './pages/hubs/CadastrosHub';
+
+// App de campo (Fase 4K): arquivo JS à parte — o escritório não baixa o código
+// do celular, e o service worker do /campo guarda esse pedaço para abrir sem rede.
+const CampoApp = lazy(() => import('./pages/campo/CampoApp'));
+
+// /campo exige login; sem login vai para /login e volta para a mesma tela depois.
+function RotaCampo({ children }) {
+  const { usuario, carregando } = useAuth();
+  const { pathname, search } = useLocation();
+  if (carregando) return <div className="loading">Carregando...</div>;
+  if (!usuario) return <Navigate to={`/login?volta=${encodeURIComponent(pathname + search)}`} replace />;
+  if (usuario.senhaProvisoria) return <DefinirSenha />;
+  return children;
+}
 
 function RotaProtegida({ children }) {
   const { usuario, carregando } = useAuth();
@@ -66,6 +81,14 @@ export default function App() {
           {/* PÚBLICA (2.0, Fase 3I): o cliente abre pelo link enviado pela H&M — sem
               login e fora do Layout; fala só com /api/publico/aprovacao */}
           <Route path="/aprovacao/:token" element={<AprovacaoPublica />} />
+          {/* App de campo (celular, funciona sem rede): fora do Layout do escritório */}
+          <Route path="/campo/*" element={
+            <RotaCampo>
+              <Suspense fallback={<div className="loading">Abrindo o app de campo…</div>}>
+                <CampoApp />
+              </Suspense>
+            </RotaCampo>
+          } />
           <Route path="/" element={
             <RotaProtegida>
               <Layout />
