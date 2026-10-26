@@ -260,6 +260,12 @@ async function iniciar() {
       console.log(`Local:    http://localhost:${PORT}`);
       console.log(`Rede:     http://SEU_IP:${PORT}`);
       console.log(`Health:   http://localhost:${PORT}/health\n`);
+      // instância de teste/homologação (ROTINAS_AUTOMATICAS=desligadas): não lê a
+      // caixa de e-mail nem as pastas de fornecedores da produção
+      if (/^(desligad|off|nao|não|0|false)/i.test(process.env.ROTINAS_AUTOMATICAS || '')) {
+        console.log('Rotinas automáticas desligadas (ROTINAS_AUTOMATICAS) — e-mail de notas, Pix e cotações não rodam nesta instância');
+        return;
+      }
       agendarVerificacaoDeEmail();
       agendarVerificacaoDePix();
       agendarVerificacaoDePastaFornecedores();
