@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import LaudosProjetos from '../components/laudos/LaudosProjetos';
+import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import PainelPasta from '../components/PainelPasta';
 import { FileDown, Plus, Trash2, FolderSearch, Search, FilePlus2, Receipt } from 'lucide-react';
@@ -38,42 +37,11 @@ function formatarHora(data) {
   return data ? data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
 }
 
-// A aba Análise de Projeto tem duas partes: a compatibilização de projetos
-// em PDF (abaixo) e os laudos/projetos por disciplina (SPDA e as próximas),
-// que geram documentos e orçamento integrado ao catálogo de materiais.
-const ABAS = [
-  { chave: 'compatibilizacao', rotulo: 'Compatibilização de projetos' },
-  { chave: 'laudos', rotulo: 'Laudos e projetos por disciplina' },
-];
-
-export default function AnaliseProjeto() {
-  const [busca, setBusca] = useSearchParams();
-  const aba = busca.get('aba') === 'laudos' ? 'laudos' : 'compatibilizacao';
-  return (
-    <div style={paginaLargaTela}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
-        <h2 style={{ fontSize: 20, color: '#c9a227', fontWeight: 700 }}>Análise de Projeto</h2>
-        <div style={{ display: 'flex', gap: 4, background: '#111', border: '1px solid #1e1e1e', borderRadius: 8, padding: 3 }}>
-          {ABAS.map(a => (
-            <button
-              key={a.chave}
-              onClick={() => setBusca(a.chave === 'laudos' ? { aba: 'laudos' } : {})}
-              style={{
-                padding: '7px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700,
-                background: aba === a.chave ? '#c9a227' : 'transparent', color: aba === a.chave ? '#000' : '#999',
-              }}
-            >
-              {a.rotulo}
-            </button>
-          ))}
-        </div>
-      </div>
-      {aba === 'laudos' ? <LaudosProjetos /> : <Compatibilizacao />}
-    </div>
-  );
-}
-
-function Compatibilizacao() {
+// Análise de projeto (PDF): compatibilização de projetos em PDF. Na versão
+// 2.0 vira a aba "Análise de projeto (PDF)" do hub Obras (pages/hubs/ObrasHub.js);
+// a aba "Laudos e projetos por disciplina", que antes ficava aqui dentro
+// (?aba=laudos), passou a ser aba do próprio hub.
+export default function Compatibilizacao() {
   const { id: idParam } = useParams();
   const navigate = useNavigate();
   const [DISCIPLINAS, setDisciplinasLista] = useState([]);
@@ -165,7 +133,7 @@ function Compatibilizacao() {
       .then(res => popularAnalise(res.data))
       .catch(() => {
         toast.error('Análise não encontrada');
-        navigate('/analise-projeto');
+        navigate('/obras');
       })
       .finally(() => setCarregandoAnalise(false));
   }, [idParam, navigate, popularAnalise]);
@@ -196,7 +164,7 @@ function Compatibilizacao() {
       const res = await analisarProjeto(arquivosComDisciplinas, nomeProjetoNovo.trim());
       setNomeProjetoNovo('');
       popularAnalise(res.data);
-      navigate(`/analise-projeto/${res.data.id}`);
+      navigate(`/obras/analise/${res.data.id}`);
       toast.success(`Projeto analisado: ${res.data.ambientes.length} ambientes, ${res.data.cameras.total} câmeras`);
       carregarListaSalvas();
     } catch (err) {
@@ -207,14 +175,14 @@ function Compatibilizacao() {
   }
 
   function novaAnalise() {
-    navigate('/analise-projeto');
+    navigate('/obras');
     setArquivosComDisciplinas([]);
     setPesquisas({});
     setSalvoEm(null);
   }
 
   function abrirAnaliseSalva(item) {
-    navigate(`/analise-projeto/${item.id}`);
+    navigate(`/obras/analise/${item.id}`);
   }
 
   async function excluirAnaliseSalva(item) {
@@ -440,7 +408,7 @@ function Compatibilizacao() {
         duration: 6000,
         icon: criada ? '🧾' : '🔄',
       });
-      navigate(`/orcamento/${propostaId}`);
+      navigate(`/propostas/editar/${propostaId}`);
     } catch (err) {
       toast.error(err.response?.data?.erro || 'Erro ao gerar orçamento');
     } finally {
@@ -457,7 +425,7 @@ function Compatibilizacao() {
       await salvarAgora();
       const r = await criarLaudoDeAnalise(analise.id, d.skill);
       (r.data.avisos || []).forEach(a => toast(a, { duration: 12000, icon: /\[CONFERIR\]/.test(a) ? '⚠️' : 'ℹ️' }));
-      navigate(`/analise-projeto?aba=laudos&laudo=${r.data.id}`);
+      navigate(`/obras?aba=laudos&laudo=${r.data.id}`);
     } catch (err) {
       toast.error(err.response?.data?.erro || 'Erro ao preparar o cálculo');
     } finally {
@@ -1141,15 +1109,6 @@ function Info({ label, valor }) {
     </div>
   );
 }
-
-// Quebra o limite de largura (max-width: 1280) do <main> do Layout — essa
-// tela tem tabelas largas (Serviços/Materiais) que ficam melhor ocupando a
-// largura inteira da janela em vez de ficarem espremidas no centro.
-const paginaLargaTela = {
-  width: '100vw', maxWidth: '100vw',
-  marginLeft: 'calc(50% - 50vw)', marginRight: 'calc(50% - 50vw)',
-  padding: '0 32px', boxSizing: 'border-box',
-};
 
 const card = {
   background: '#131313', border: '1px solid #1e1e1e', borderRadius: 10,

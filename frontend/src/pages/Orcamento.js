@@ -2,12 +2,13 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Plus, Trash2, FolderPlus, FileDown, Send, FilePlus2 } from 'lucide-react';
-import { getClientes, getMateriais, getMaoDeObraItens, getProximoNumero, criarProposta, atualizarProposta, getProposta } from '../services/api';
+import { getClientes, getMateriais, getServicos, getSegmentoCliente, getProximoNumero, criarProposta, atualizarProposta, getProposta } from '../services/api';
 import api from '../services/api';
 import { formatarMoeda } from '../utils/format';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
 import CampoMoeda from '../components/CampoMoeda';
-import Select, { Sugestoes } from '../components/Select';
+import Select, { Sugestoes, comparador } from '../components/Select';
+import { nomeDisciplina, ROTULO_SEGMENTO } from '../utils/disciplinasServico';
 
 // arredondamento a 2 casas igual ao do servidor (calculoProposta.arredondar)
 const arred2 = (v) => Math.round(((Number(v) || 0) + Number.EPSILON) * 100) / 100;
@@ -92,11 +93,15 @@ export default function Orcamento() {
   const [proximoNumero, setProximoNumero] = useState(null);
   const [clientes, setClientes] = useState([]);
   const [materiais, setMateriais] = useState([]);
-  // Catálogo de itens de mão de obra já usados em qualquer proposta (de
-  // qualquer cliente) — sugestão em dropdown pra padronizar a descrição
-  // (ver aplicarMaoDeObraNoItem). Cresce sozinho no backend quando alguém
-  // digita um item novo à mão (ver garantirMaoDeObraCadastrada no backend).
-  const [maoDeObraItens, setMaoDeObraItens] = useState([]);
+  // Base única de serviços de mão de obra (versão 2.0): os padrão da Análise
+  // de Projeto/laudos + os já lançados em qualquer proposta, com as
+  // referências oficial e particular e a sugestão por segmento (ver
+  // aplicarServicoNoItem). Um serviço digitado à mão entra na base ao salvar
+  // a proposta (backend: utils/servicosBase.js).
+  const [servicos, setServicos] = useState([]);
+  // segmento do cliente da proposta: 'publico' (cadastro "Órgão Público" ou
+  // nome de órgão) usa a referência oficial; os demais, a particular
+  const [segmento, setSegmento] = useState('privado');
 
   const [form, setForm] = useState(FORM_VAZIO);
   const [secoes, setSecoes] = useState(SECOES_PADRAO);
@@ -129,8 +134,31 @@ export default function Orcamento() {
   useEffect(() => {
     getClientes({ porPagina: 1000 }).then(res => setClientes(res.data.itens)).catch(() => {});
     getMateriais({ porPagina: 1000 }).then(res => setMateriais(res.data.itens)).catch(() => {});
-    getMaoDeObraItens({ porPagina: 1000 }).then(res => setMaoDeObraItens(res.data.itens)).catch(() => {});
+    getServicos().then(res => setServicos(res.data.itens || [])).catch(() => {});
   }, []);
+
+  // Segmento pelo backend (mesma regra dos laudos e da Análise de Projeto),
+  // só depois que o nome do cliente para de mudar
+  useEffect(() => {
+    const nome = (form.cliente_nome || '').trim();
+    if (!nome) { setSegmento('privado'); return undefined; }
+    const t = setTimeout(() => {
+      getSegmentoCliente(nome).then(res => setSegmento(res.data.segmento === 'publico' ? 'publico' : 'privado')).catch(() => {});
+    }, 500);
+    return () => clearTimeout(t);
+  }, [form.cliente_nome]);
+
+  const servicosPorCodigo = useMemo(() => Object.fromEntries(servicos.map(s => [s.codigo, s])), [servicos]);
+  // lista suspensa: um grupo por disciplina, grupos em ordem alfabética (as
+  // opções dentro de cada grupo o Select já ordena A–Z)
+  const gruposServicos = useMemo(() => {
+    const grupos = {};
+    for (const s of servicos) (grupos[s.disciplina || 'outros'] = grupos[s.disciplina || 'outros'] || []).push(s);
+    return Object.entries(grupos)
+      .map(([disc, lista]) => ({ disc, nome: nomeDisciplina(disc), lista }))
+      .sort((a, b) => comparador.compare(a.nome, b.nome));
+  }, [servicos]);
+  const sugestaoDoServico = (s) => (s?.sugerido ? s.sugerido[segmento] : null);
 
   useEffect(() => {
     if (!editandoId) {
@@ -376,15 +404,18 @@ export default function Orcamento() {
     setItens(it => it.map(i => i.id === id ? { ...i, descricao: categoria } : i));
   }
 
-  // Preenche descrição, unidade e valor a partir de um item de mão de obra já
-  // usado antes (em qualquer proposta) — mesma ideia de aplicarMaterialNoItem,
-  // pra padronizar a descrição do mesmo serviço entre clientes diferentes.
-  function aplicarMaoDeObraNoItem(id, itemCatalogoId) {
-    const item = maoDeObraItens.find(m => String(m.id) === String(itemCatalogoId));
-    if (!item) return;
+  // Preenche descrição, unidade, valor e código a partir de um serviço da
+  // base única — mesma ideia de aplicarMaterialNoItem, pra padronizar a
+  // descrição do mesmo serviço entre clientes diferentes. O valor é a
+  // sugestão do segmento do cliente (valor H&M adotado ?? referência do
+  // segmento); sem sugestão, o valor digitado na linha fica como está.
+  function aplicarServicoNoItem(id, codigo) {
+    const s = servicosPorCodigo[codigo];
+    if (!s) return;
+    const sugestao = sugestaoDoServico(s);
     setItens(it => it.map(i => i.id === id ? {
-      ...i, descricao: item.descricao, unidade: item.unidade || i.unidade,
-      valor_unitario: Number(item.valor_unitario) || i.valor_unitario
+      ...i, descricao: s.descricao, unidade: s.unidade || i.unidade, codigo: s.codigo,
+      valor_unitario: sugestao != null ? sugestao : i.valor_unitario,
     } : i));
   }
 
@@ -629,6 +660,11 @@ export default function Orcamento() {
                 onFocus={e => e.target.style.border = '1px solid #2a2a2a'}
                 onBlur={e => e.target.style.border = '1px solid transparent'}
               />
+              {maoDeObra && (
+                <span style={{ fontSize: 11, color: '#6f7f8f' }} title={'Define qual referência de mercado a lista de serviços sugere (cadastro do cliente: tipo "Órgão Público" → oficial)'}>
+                  Preços sugeridos: cliente {segmento === 'publico' ? 'órgão público (referência oficial)' : 'particular'}
+                </span>
+              )}
               <span style={{ fontSize: 12, color: '#666' }}>Subtotal: <b style={{ color: '#c9a227' }}>{formatarMoeda(subtotalSecao(sec.id))}</b></span>
               <button onClick={() => removerSecao(sec.id)} style={{ ...btnIcone, color: '#b04040' }} title="Remover seção">
                 <Trash2 size={13} />
@@ -638,7 +674,7 @@ export default function Orcamento() {
             {itens.filter(it => it.sid === sec.id).length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, marginBottom: 6, fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px' }}>
                 <span>{maoDeObra ? 'Subgrupo' : 'Categoria'}</span>
-                <span>{maoDeObra ? 'Sugestão' : 'Catálogo'}</span>
+                <span>{maoDeObra ? 'Serviço' : 'Catálogo'}</span>
                 <span>Descrição</span>
                 {!maoDeObra && <span>NCM/SH</span>}
                 <span>Qtd</span><span>Un.</span><span>Vlr. Unit.</span><span>Total</span><span>Status</span><span />
@@ -693,17 +729,20 @@ export default function Orcamento() {
                     <Select value="" onChange={e => {
                       const [tipo, valor] = e.target.value.split('::');
                       if (tipo === 'cat') aplicarCategoriaMaoDeObra(it.id, valor);
-                      else if (tipo === 'item') aplicarMaoDeObraNoItem(it.id, valor);
-                    }}>
-                      <option value="">+ sugestão</option>
+                      else if (tipo === 'srv') aplicarServicoNoItem(it.id, valor);
+                    }} title="Serviços da base única (padrão + já lançados em propostas), com o preço sugerido para o segmento do cliente">
+                      <option value="">+ serviço</option>
                       <optgroup label="Categorias">
                         {CATEGORIAS_MAO_DE_OBRA.map(c => <option key={c} value={`cat::${c}`}>{c}</option>)}
                       </optgroup>
-                      {maoDeObraItens.length > 0 && (
-                        <optgroup label="Itens já usados">
-                          {maoDeObraItens.map(m => <option key={m.id} value={`item::${m.id}`}>{m.descricao}</option>)}
+                      {gruposServicos.map(g => (
+                        <optgroup key={g.disc} label={g.nome}>
+                          {g.lista.map(s => {
+                            const sug = sugestaoDoServico(s);
+                            return <option key={s.codigo} value={`srv::${s.codigo}`}>{s.descricao}{sug != null ? ` — ${formatarMoeda(sug)}` : ''}</option>;
+                          })}
                         </optgroup>
-                      )}
+                      ))}
                     </Select>
                   ) : (
                     <Select value="" onChange={e => aplicarMaterialNoItem(it.id, e.target.value)}>
@@ -717,7 +756,15 @@ export default function Orcamento() {
                   )}
                   <input type="number" step="1" min="0" value={it.quantidade} onChange={e => atualizarItem(it.id, 'quantidade', e.target.value)} />
                   <input value={it.unidade} onChange={e => atualizarItem(it.id, 'unidade', e.target.value)} />
-                  <CampoMoeda value={it.valor_unitario} onChange={v => atualizarItem(it.id, 'valor_unitario', v)} />
+                  {maoDeObra ? (
+                    <div>
+                      <CampoMoeda value={it.valor_unitario} onChange={v => atualizarItem(it.id, 'valor_unitario', v)} />
+                      <DicasReferencia servico={servicosPorCodigo[it.codigo]} segmento={segmento} valor={it.valor_unitario}
+                        onUsar={v => atualizarItem(it.id, 'valor_unitario', v)} />
+                    </div>
+                  ) : (
+                    <CampoMoeda value={it.valor_unitario} onChange={v => atualizarItem(it.id, 'valor_unitario', v)} />
+                  )}
                   <span style={{ fontSize: 12, color: '#ccc', textAlign: 'right', paddingRight: 4 }}>
                     {formatarMoeda((Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0))}
                   </span>
@@ -847,6 +894,23 @@ export default function Orcamento() {
   );
 }
 
+// Referências de mercado do serviço do item (oficial / particular), como na
+// Análise de Projeto: só aparecem quando diferem do valor da linha; a do
+// segmento do cliente vem destacada. "usar" troca o valor unitário.
+function DicasReferencia({ servico, segmento, valor, onUsar }) {
+  if (!servico) return null;
+  const dicas = [['publico', servico.valor_publico, servico.fonte_publico], ['privado', servico.valor_privado, servico.fonte_privado]]
+    .filter(([, v]) => v != null && Number(v) !== Number(valor || 0));
+  if (!dicas.length) return null;
+  return dicas.map(([seg, v, fonte]) => (
+    <div key={seg} style={{ fontSize: 10.5, color: seg === segmento ? '#8a7333' : '#6f7f8f', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+      title={`Referência ${ROTULO_SEGMENTO[seg]}${seg === segmento ? ' (segmento do cliente)' : ''}${fonte ? ` — ${fonte}` : ''}`}>
+      {seg === 'publico' ? 'oficial' : 'particular'}: {formatarMoeda(v)}{' '}
+      <button type="button" onClick={() => onUsar(Number(v))} style={btnUsar}>usar</button>
+    </div>
+  ));
+}
+
 function Totalzinho({ label, valor }) {
   return (
     <div>
@@ -864,6 +928,8 @@ function Campo({ label, children }) {
     </div>
   );
 }
+
+const btnUsar = { background: 'none', border: 'none', color: '#c9a227', textDecoration: 'underline', cursor: 'pointer', fontSize: 10.5, padding: 0 };
 
 const rotulo = { display: 'block', fontSize: 10, color: '#666', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' };
 

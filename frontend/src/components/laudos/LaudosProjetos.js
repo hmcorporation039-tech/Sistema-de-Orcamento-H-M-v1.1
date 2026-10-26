@@ -343,7 +343,7 @@ export default function LaudosProjetos() {
       const r = await gerarOrcamentoDoLaudo(laudo.id, modo.modo);
       setLaudo(l => ({ ...l, propostas: { ...l.propostas, [modo.modo]: r.data.propostaId } }));
       toast.success(r.data.mensagem, { duration: 9000 });
-      navigate(`/orcamento/${r.data.propostaId}`);
+      navigate(`/propostas/editar/${r.data.propostaId}`);
     } catch (err) {
       toast.error(err.response?.data?.erro || 'Erro ao gerar o orçamento', { duration: 8000 });
     } finally {

@@ -1,29 +1,9 @@
-import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react';
 import toast from 'react-hot-toast';
-import { Save, Search, ExternalLink, ChevronDown, ChevronRight, Square } from 'lucide-react';
-import { getPrecosMaoDeObra, atualizarPrecosMaoDeObra, pesquisarReferenciaMaoDeObra } from '../services/api';
-
-// Mesmos nomes de disciplina usados em Análise de Projeto — só pra exibição
-// (agrupa visualmente), a chave que realmente importa é o código de cada item.
-const NOMES_DISCIPLINA = {
-  eletrica: 'Elétrica (infraestrutura)',
-  rede: 'Redes de Computadores (dados)',
-  cabeamento: 'Infra. de Cabeamento Estruturado',
-  telefonia: 'Telefonia e interfonia',
-  cftv: 'CFTV',
-  iluminacao: 'Iluminação',
-  automacao: 'Automação',
-  alarme: 'Alarme',
-  antena: 'Antena coletiva / TV',
-  spda: 'SPDA (para-raios) — Laudos e projetos',
-  carregador: 'Recarga de veículo elétrico — Laudos e projetos',
-  incendio: 'Incêndio (detecção, alarme e iluminação de emergência)',
-  solar: 'Usina solar fotovoltaica',
-  controle_acesso: 'Controle de acesso',
-  eletrica_hospitalar: 'Elétrica hospitalar',
-  eletrica_industrial: 'Elétrica industrial',
-  media_tensao: 'Média tensão / subestação',
-};
+import { Save, Search, ExternalLink, ChevronDown, ChevronRight, Square, GitMerge, EyeOff, RotateCcw } from 'lucide-react';
+import { getPrecosMaoDeObra, atualizarPrecosMaoDeObra, pesquisarReferenciaMaoDeObra, fundirServico, definirServicoAtivo } from '../services/api';
+import Select, { comparador } from '../components/Select';
+import { NOMES_DISCIPLINA, nomeDisciplina } from '../utils/disciplinasServico';
 
 // Dois segmentos de referência de MERCADO (além do valor adotado pela H&M)
 const SEGMENTOS = [
@@ -33,6 +13,7 @@ const SEGMENTOS = [
 
 const moeda = (v) => (v == null || v === '' ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
 const data = (v) => (v ? new Date(v).toLocaleDateString('pt-BR') : '');
+const semAcento = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 export default function PrecosMaoDeObra() {
   const [itens, setItens] = useState([]);
@@ -43,6 +24,10 @@ export default function PrecosMaoDeObra() {
   const [abertos, setAbertos] = useState(new Set());
   const [lote, setLote] = useState(null); // { disciplina, feitos, total }
   const pararLote = useRef(false);
+  // serviços lançados em propostas (livres): busca, mostrar inativos e qual está escolhendo o "é o mesmo que…"
+  const [buscaLivres, setBuscaLivres] = useState('');
+  const [verInativos, setVerInativos] = useState(false);
+  const [fundindo, setFundindo] = useState(null);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -123,13 +108,192 @@ export default function PrecosMaoDeObra() {
     toast.success(`Pesquisa da disciplina concluída${falhas ? ` (${falhas} sem resposta)` : ''}`);
   }
 
+  // "É o mesmo que…": o livre sai da lista de serviços e as próximas propostas
+  // com essa descrição usam o padrão escolhido; propostas antigas ficam como estão
+  async function fundir(it, destino) {
+    setFundindo(null);
+    if (!destino) return;
+    const alvo = itens.find(x => x.codigo === destino);
+    if (alterados[it.codigo] && Object.keys(alterados[it.codigo]).length && !window.confirm('Há alterações não salvas neste serviço; elas serão descartadas. Continuar?')) return;
+    if (!window.confirm(`"${it.descricao}"\n\né o mesmo serviço que\n\n"${alvo?.descricao || destino}"?\n\nEle sai da lista de serviços e as próximas propostas passam a usar o serviço padrão. Propostas já gravadas não mudam.`)) return;
+    try {
+      await fundirServico(it.codigo, destino);
+      toast.success('Serviço fundido no padrão');
+      carregar();
+    } catch (err) {
+      toast.error(err.response?.data?.erro || 'Erro ao fundir o serviço');
+    }
+  }
+
+  async function mudarAtivo(it, ativo) {
+    if (!ativo && !window.confirm(`Desativar "${it.descricao}"? Ele sai da lista de serviços do Orçamento (propostas já gravadas não mudam).`)) return;
+    try {
+      await definirServicoAtivo(it.codigo, ativo);
+      toast.success(ativo ? 'Serviço reativado' : 'Serviço desativado');
+      carregar();
+    } catch (err) {
+      toast.error(err.response?.data?.erro || 'Erro ao alterar o serviço');
+    }
+  }
+
+  const padrao = useMemo(() => itens.filter(it => it.origem !== 'proposta'), [itens]);
+  const livres = useMemo(() => itens.filter(it => it.origem === 'proposta'), [itens]);
+  const porCodigo = useMemo(() => Object.fromEntries(itens.map(it => [it.codigo, it])), [itens]);
+
   const porDisciplina = {};
-  for (const it of itens) {
+  for (const it of padrao) {
     const chave = it.disciplina || 'outros';
     (porDisciplina[chave] = porDisciplina[chave] || []).push(it);
   }
+  // destinos do "é o mesmo que…": os serviços padrão, por disciplina (grupos A–Z)
+  const gruposPadrao = useMemo(() => Object.entries(
+    padrao.reduce((g, it) => { (g[it.disciplina || 'outros'] = g[it.disciplina || 'outros'] || []).push(it); return g; }, {})
+  ).map(([disc, lista]) => ({ disc, nome: nomeDisciplina(disc), lista })).sort((a, b) => comparador.compare(a.nome, b.nome)), [padrao]);
+
+  const termo = semAcento(buscaLivres.trim());
+  const livresVisiveis = livres
+    .filter(it => (verInativos || it.ativo !== false) && (!termo || semAcento(it.descricao).includes(termo)))
+    .sort((a, b) => comparador.compare(a.descricao, b.descricao));
+  const nInativos = livres.filter(it => it.ativo === false).length;
+
   const nAlterados = Object.values(alterados).filter(c => Object.keys(c).length).length;
-  const comReferencia = itens.filter(it => it.valor_publico != null || it.valor_privado != null).length;
+  const comReferencia = padrao.filter(it => it.valor_publico != null || it.valor_privado != null).length;
+
+  // Linha de um serviço (padrão ou livre): descrição, unidade, as duas
+  // referências de mercado com a lupa de pesquisa e o valor H&M adotado.
+  function linhaServico(it, extra = null) {
+    const aberto = abertos.has(it.codigo);
+    const ofertas = SEGMENTOS.flatMap(s => (it[`ofertas_${s.chave}`] || []).map(o => ({ ...o, segmento: s.rotulo })));
+    const inativo = it.ativo === false;
+    return (
+      <Fragment key={it.codigo}>
+        <div style={{ ...grade, marginBottom: extra ? 2 : 8, alignItems: 'start', fontSize: 13, opacity: inativo ? 0.55 : 1 }}>
+          <button onClick={() => setAbertos(a => { const n = new Set(a); n.has(it.codigo) ? n.delete(it.codigo) : n.add(it.codigo); return n; })}
+            title={ofertas.length ? 'Ver as referências consultadas' : 'Sem referências pesquisadas'} style={{ ...btnIcone, opacity: ofertas.length ? 1 : 0.35 }}>
+            {aberto ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          </button>
+          <span style={{ color: '#ccc', paddingTop: 6 }}>{it.descricao}</span>
+          {it.origem === 'proposta' ? (
+            <input value={it.unidade ?? ''} maxLength={10} onChange={e => alterar(it.codigo, 'unidade', e.target.value)}
+              style={{ fontSize: 13, minWidth: 0, borderColor: alterados[it.codigo] && 'unidade' in alterados[it.codigo] ? '#c9a227' : undefined }} />
+          ) : (
+            <span style={{ color: '#777', paddingTop: 6 }}>{it.unidade}</span>
+          )}
+          {SEGMENTOS.map(s => {
+            const k = `${it.codigo}|${s.chave}`;
+            const mudou = alterados[it.codigo] && `valor_${s.chave}` in alterados[it.codigo];
+            return (
+              <div key={s.chave}>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <input type="number" step="0.01" min="0" placeholder="Sem referência" value={it[`valor_${s.chave}`] ?? ''}
+                    onChange={e => alterar(it.codigo, `valor_${s.chave}`, e.target.value)}
+                    style={{ fontSize: 13, flex: 1, minWidth: 0, borderColor: mudou ? '#c9a227' : undefined }} />
+                  <button onClick={() => pesquisar(it, s.chave)} disabled={!!pesquisando[k] || !!lote} title={`Pesquisar referência ${s.rotulo.toLowerCase()} na web`} style={btnIcone}>
+                    <Search size={12} />
+                  </button>
+                </div>
+                <div style={{ fontSize: 10.5, color: '#777', marginTop: 3, lineHeight: 1.35 }}>
+                  {pesquisando[k] ? 'Pesquisando na web…' : (
+                    <>
+                      {it[`fonte_${s.chave}`] && <span title={it[`fonte_${s.chave}`]}>{String(it[`fonte_${s.chave}`]).slice(0, 70)}{String(it[`fonte_${s.chave}`]).length > 70 ? '…' : ''} </span>}
+                      {it[`link_${s.chave}`] && <a href={it[`link_${s.chave}`]} target="_blank" rel="noopener noreferrer" style={{ color: '#8ab4f8' }}><ExternalLink size={10} /></a>}
+                      {it[`data_${s.chave}`] && <span> · {data(it[`data_${s.chave}`])}</span>}
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          <input type="number" step="0.01" min="0" placeholder="Usar referência" value={it.valor_referencia ?? ''}
+            onChange={e => alterar(it.codigo, 'valor_referencia', e.target.value)}
+            style={{ fontSize: 13, borderColor: alterados[it.codigo] && 'valor_referencia' in alterados[it.codigo] ? '#c9a227' : undefined }} />
+        </div>
+        {extra}
+        {aberto && (
+          <div style={{ margin: '0 0 12px 34px', padding: 10, background: '#0e0e0e', border: '1px solid #1e1e1e', borderRadius: 6, fontSize: 12 }}>
+            {ofertas.length ? (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ color: '#777', textAlign: 'left' }}>
+                    <th style={th}>Segmento</th><th style={th}>Fonte</th><th style={th}>Item / composição</th><th style={th}>Preço</th><th style={th}>Obs.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ofertas.map((o, i) => (
+                    <tr key={i} style={{ color: o.mesmo_item ? '#ccc' : '#777' }}>
+                      <td style={td}>{o.segmento}</td>
+                      <td style={td}>{o.link ? <a href={o.link} target="_blank" rel="noopener noreferrer" style={{ color: '#8ab4f8' }}>{o.fonte}</a> : o.fonte}</td>
+                      <td style={td}>{o.produto}</td>
+                      <td style={{ ...td, whiteSpace: 'nowrap' }}>{moeda(o.preco)}</td>
+                      <td style={td}>{o.mesmo_item ? '' : 'não equivalente (fora da média). '}{o.observacao}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : <span style={{ color: '#777' }}>Nenhuma referência pesquisada ainda — use a lupa de cada segmento.</span>}
+            <p style={{ color: '#666', fontSize: 11, marginTop: 6 }}>Valor do segmento = média das referências equivalentes. Confira a unidade e o escopo (só mão de obra) antes de adotar.</p>
+          </div>
+        )}
+      </Fragment>
+    );
+  }
+
+  // ações de um serviço lançado em proposta: disciplina, "é o mesmo que…", desativar/reativar
+  function acoesLivre(it) {
+    const inativo = it.ativo === false;
+    const destino = it.fundido_em ? porCodigo[it.fundido_em] : null;
+    return (
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, margin: '0 0 12px 34px', fontSize: 11.5, color: '#777' }}>
+        <span>Disciplina:</span>
+        <Select value={it.disciplina || 'outros'} onChange={e => alterar(it.codigo, 'disciplina', e.target.value)} disabled={inativo}
+          style={{ width: 'auto', flex: '0 0 auto', fontSize: 11.5, padding: '3px 6px', borderColor: alterados[it.codigo] && 'disciplina' in alterados[it.codigo] ? '#c9a227' : undefined }}>
+          {Object.entries(NOMES_DISCIPLINA).map(([k, nome]) => <option key={k} value={k}>{nome}</option>)}
+        </Select>
+        {it.criado_em && <span>· lançado em {data(it.criado_em)}</span>}
+        <span style={{ flex: 1 }} />
+        {inativo ? (
+          <>
+            <span style={{ color: '#8a7333' }}>
+              {destino ? <>Fundido em: <b>{destino.descricao}</b></> : 'Desativado'}
+            </span>
+            <button onClick={() => mudarAtivo(it, true)} style={btnSecundario} title={destino ? 'Desfaz a fusão e volta a mostrar este serviço na lista' : 'Volta a mostrar este serviço na lista'}>
+              <RotateCcw size={11} style={{ marginRight: 4 }} /> Reativar
+            </button>
+          </>
+        ) : fundindo === it.codigo ? (
+          <>
+            <Select autoFocus value="" onChange={e => fundir(it, e.target.value)} style={{ width: 'auto', flex: '0 1 auto', fontSize: 11.5, padding: '3px 6px', maxWidth: 420 }}>
+              <option value="">Escolha o serviço padrão equivalente…</option>
+              {gruposPadrao.map(g => (
+                <optgroup key={g.disc} label={g.nome}>
+                  {g.lista.map(p => <option key={p.codigo} value={p.codigo}>{p.descricao}</option>)}
+                </optgroup>
+              ))}
+            </Select>
+            <button onClick={() => setFundindo(null)} style={btnSecundario}>Cancelar</button>
+          </>
+        ) : (
+          <>
+            <button onClick={() => setFundindo(it.codigo)} style={btnSecundario} title="Este serviço é um padrão com outro nome: ele sai da lista e as próximas propostas usam o padrão (propostas antigas não mudam)">
+              <GitMerge size={11} style={{ marginRight: 4 }} /> É o mesmo que…
+            </button>
+            <button onClick={() => mudarAtivo(it, false)} style={{ ...btnSecundario, borderColor: '#4f2f2f', color: '#e08080' }} title="Tira da lista de serviços do Orçamento">
+              <EyeOff size={11} style={{ marginRight: 4 }} /> Desativar
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  const cabecalho = (
+    <div style={{ ...grade, fontSize: 11, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 }}>
+      <span />
+      <span>Descrição</span><span>Un.</span>
+      {SEGMENTOS.map(s => <span key={s.chave} title={s.dica}>{s.rotulo} (R$)</span>)}
+      <span title="Preço que a H&M pratica — tem prioridade sobre as referências de mercado">Valor H&M adotado (R$)</span>
+    </div>
+  );
 
   return (
     <div>
@@ -137,10 +301,11 @@ export default function PrecosMaoDeObra() {
         <div style={{ flex: 1 }}>
           <h2 style={{ fontSize: 20, color: '#c9a227', fontWeight: 700, marginBottom: 4 }}>Preços de Mão de Obra (Referência)</h2>
           <p style={{ fontSize: 13, color: '#777', maxWidth: 860, lineHeight: 1.6 }}>
-            Para cada serviço, duas referências de <b>preço de mercado</b> — <b>oficial / governo</b> (SINAPI, ORSE, SICRO, tabelas de
+            Base única de serviços: os <b>serviços padrão</b> (Análise de Projeto e laudos) e os <b>lançados em propostas</b>. Para cada
+            serviço, duas referências de <b>preço de mercado</b> — <b>oficial / governo</b> (SINAPI, ORSE, SICRO, tabelas de
             órgãos e preços de licitações) e <b>privado / particular</b> — pesquisadas na web com fonte e link, ou digitadas. O
             orçamento usa como <b>sugestão</b> (nunca preço fechado): o <b>valor H&M adotado</b>, se preenchido; senão a referência do
-            segmento do cliente (cadastro "Órgão Público" → oficial; demais → particular). {comReferencia} de {itens.length} serviços com referência de mercado.
+            segmento do cliente (cadastro "Órgão Público" → oficial; demais → particular). {comReferencia} de {padrao.length} serviços padrão com referência de mercado.
           </p>
         </div>
         <button onClick={salvar} disabled={salvando || nAlterados === 0} style={btnPrimario}>
@@ -151,7 +316,7 @@ export default function PrecosMaoDeObra() {
       {lote && (
         <div style={{ ...card, padding: 12, display: 'flex', alignItems: 'center', gap: 12, borderColor: '#2f4f6f' }}>
           <span style={{ fontSize: 13, color: '#8ab4f8' }}>
-            Pesquisando {NOMES_DISCIPLINA[lote.disciplina] || lote.disciplina}: {lote.feitos} de {lote.total}…
+            Pesquisando {nomeDisciplina(lote.disciplina)}: {lote.feitos} de {lote.total}…
           </span>
           <button onClick={() => { pararLote.current = true; }} style={btnSecundario}><Square size={11} style={{ marginRight: 4 }} /> Parar</button>
         </div>
@@ -160,92 +325,47 @@ export default function PrecosMaoDeObra() {
       {carregando ? (
         <div style={card}><p style={{ fontSize: 13, color: '#777' }}>Carregando...</p></div>
       ) : (
-        Object.entries(porDisciplina).map(([disciplina, lista]) => (
-          <div key={disciplina} style={card}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
-              <h3 style={{ ...tituloSecao, marginBottom: 0, flex: 1 }}>{NOMES_DISCIPLINA[disciplina] || disciplina}</h3>
-              <button onClick={() => pesquisarDisciplina(disciplina, lista)} disabled={!!lote} style={btnSecundario}
-                title="Pesquisa na web as referências oficial e particular que ainda faltam nesta disciplina">
-                <Search size={11} style={{ marginRight: 4 }} /> Pesquisar referências que faltam
-              </button>
+        <>
+          {Object.entries(porDisciplina).map(([disciplina, lista]) => (
+            <div key={disciplina} style={card}>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
+                <h3 style={{ ...tituloSecao, marginBottom: 0, flex: 1 }}>{nomeDisciplina(disciplina)}</h3>
+                <button onClick={() => pesquisarDisciplina(disciplina, lista)} disabled={!!lote} style={btnSecundario}
+                  title="Pesquisa na web as referências oficial e particular que ainda faltam nesta disciplina">
+                  <Search size={11} style={{ marginRight: 4 }} /> Pesquisar referências que faltam
+                </button>
+              </div>
+              {cabecalho}
+              {lista.map(it => linhaServico(it))}
             </div>
-            <div style={{ ...grade, fontSize: 11, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 }}>
-              <span />
-              <span>Descrição</span><span>Un.</span>
-              {SEGMENTOS.map(s => <span key={s.chave} title={s.dica}>{s.rotulo} (R$)</span>)}
-              <span title="Preço que a H&M pratica — tem prioridade sobre as referências de mercado">Valor H&M adotado (R$)</span>
+          ))}
+
+          <div style={card}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+              <h3 style={{ ...tituloSecao, marginBottom: 0, flex: 1 }}>Serviços lançados em propostas ({livres.length - nInativos})</h3>
+              <input value={buscaLivres} onChange={e => setBuscaLivres(e.target.value)} placeholder="Buscar serviço…" style={{ fontSize: 12.5, width: 240 }} />
+              {nInativos > 0 && (
+                <label style={{ fontSize: 12, color: '#777', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={verInativos} onChange={e => setVerInativos(e.target.checked)} />
+                  Mostrar desativados e fundidos ({nInativos})
+                </label>
+              )}
             </div>
-            {lista.map(it => {
-              const aberto = abertos.has(it.codigo);
-              const ofertas = SEGMENTOS.flatMap(s => (it[`ofertas_${s.chave}`] || []).map(o => ({ ...o, segmento: s.rotulo })));
-              return (
-                <Fragment key={it.codigo}>
-                  <div style={{ ...grade, marginBottom: 8, alignItems: 'start', fontSize: 13 }}>
-                    <button onClick={() => setAbertos(a => { const n = new Set(a); n.has(it.codigo) ? n.delete(it.codigo) : n.add(it.codigo); return n; })}
-                      title={ofertas.length ? 'Ver as referências consultadas' : 'Sem referências pesquisadas'} style={{ ...btnIcone, opacity: ofertas.length ? 1 : 0.35 }}>
-                      {aberto ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                    </button>
-                    <span style={{ color: '#ccc', paddingTop: 6 }}>{it.descricao}</span>
-                    <span style={{ color: '#777', paddingTop: 6 }}>{it.unidade}</span>
-                    {SEGMENTOS.map(s => {
-                      const k = `${it.codigo}|${s.chave}`;
-                      const mudou = alterados[it.codigo] && `valor_${s.chave}` in alterados[it.codigo];
-                      return (
-                        <div key={s.chave}>
-                          <div style={{ display: 'flex', gap: 4 }}>
-                            <input type="number" step="0.01" min="0" placeholder="Sem referência" value={it[`valor_${s.chave}`] ?? ''}
-                              onChange={e => alterar(it.codigo, `valor_${s.chave}`, e.target.value)}
-                              style={{ fontSize: 13, flex: 1, minWidth: 0, borderColor: mudou ? '#c9a227' : undefined }} />
-                            <button onClick={() => pesquisar(it, s.chave)} disabled={!!pesquisando[k] || !!lote} title={`Pesquisar referência ${s.rotulo.toLowerCase()} na web`} style={btnIcone}>
-                              <Search size={12} />
-                            </button>
-                          </div>
-                          <div style={{ fontSize: 10.5, color: '#777', marginTop: 3, lineHeight: 1.35 }}>
-                            {pesquisando[k] ? 'Pesquisando na web…' : (
-                              <>
-                                {it[`fonte_${s.chave}`] && <span title={it[`fonte_${s.chave}`]}>{String(it[`fonte_${s.chave}`]).slice(0, 70)}{String(it[`fonte_${s.chave}`]).length > 70 ? '…' : ''} </span>}
-                                {it[`link_${s.chave}`] && <a href={it[`link_${s.chave}`]} target="_blank" rel="noopener noreferrer" style={{ color: '#8ab4f8' }}><ExternalLink size={10} /></a>}
-                                {it[`data_${s.chave}`] && <span> · {data(it[`data_${s.chave}`])}</span>}
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                    <input type="number" step="0.01" min="0" placeholder="Usar referência" value={it.valor_referencia ?? ''}
-                      onChange={e => alterar(it.codigo, 'valor_referencia', e.target.value)}
-                      style={{ fontSize: 13, borderColor: alterados[it.codigo] && 'valor_referencia' in alterados[it.codigo] ? '#c9a227' : undefined }} />
-                  </div>
-                  {aberto && (
-                    <div style={{ margin: '0 0 12px 34px', padding: 10, background: '#0e0e0e', border: '1px solid #1e1e1e', borderRadius: 6, fontSize: 12 }}>
-                      {ofertas.length ? (
-                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                          <thead>
-                            <tr style={{ color: '#777', textAlign: 'left' }}>
-                              <th style={th}>Segmento</th><th style={th}>Fonte</th><th style={th}>Item / composição</th><th style={th}>Preço</th><th style={th}>Obs.</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {ofertas.map((o, i) => (
-                              <tr key={i} style={{ color: o.mesmo_item ? '#ccc' : '#777' }}>
-                                <td style={td}>{o.segmento}</td>
-                                <td style={td}>{o.link ? <a href={o.link} target="_blank" rel="noopener noreferrer" style={{ color: '#8ab4f8' }}>{o.fonte}</a> : o.fonte}</td>
-                                <td style={td}>{o.produto}</td>
-                                <td style={{ ...td, whiteSpace: 'nowrap' }}>{moeda(o.preco)}</td>
-                                <td style={td}>{o.mesmo_item ? '' : 'não equivalente (fora da média). '}{o.observacao}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      ) : <span style={{ color: '#777' }}>Nenhuma referência pesquisada ainda — use a lupa de cada segmento.</span>}
-                      <p style={{ color: '#666', fontSize: 11, marginTop: 6 }}>Valor do segmento = média das referências equivalentes. Confira a unidade e o escopo (só mão de obra) antes de adotar.</p>
-                    </div>
-                  )}
-                </Fragment>
-              );
-            })}
+            <p style={{ fontSize: 12, color: '#666', marginBottom: 14, lineHeight: 1.5 }}>
+              Serviços digitados à mão nas propostas entram aqui sozinhos ao salvar (o valor usado na primeira proposta vira o valor H&M
+              adotado) e aparecem na lista de serviços do Orçamento. Se um deles for um serviço padrão com outro nome, use
+              <b> É o mesmo que…</b>: ele sai da lista e as próximas propostas passam a usar o padrão — as já gravadas não mudam.
+            </p>
+            {livresVisiveis.length ? (
+              <>
+                {cabecalho}
+                {livresVisiveis.map(it => linhaServico(it, acoesLivre(it)))}
+              </>
+            ) : (
+              <p style={{ fontSize: 13, color: '#777' }}>{termo ? 'Nenhum serviço encontrado.' : 'Nenhum serviço lançado em proposta ainda.'}</p>
+            )}
           </div>
-        ))
+        </>
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 
@@ -6,17 +6,11 @@ import Login from './pages/Login';
 import DefinirSenha from './pages/DefinirSenha';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
-import Orcamento from './pages/Orcamento';
-import Materiais from './pages/Materiais';
-import Clientes from './pages/Clientes';
-import Historico from './pages/Historico';
-import Relatorios from './pages/Relatorios';
-import Financeiro from './pages/Financeiro';
-import Prestadores from './pages/Prestadores';
-import Contratos from './pages/Contratos';
-import Usuarios from './pages/Usuarios';
-import AnaliseProjeto from './pages/AnaliseProjeto';
-import PrecosMaoDeObra from './pages/PrecosMaoDeObra';
+import ObrasHub from './pages/hubs/ObrasHub';
+import PropostasHub from './pages/hubs/PropostasHub';
+import BasePrecosHub from './pages/hubs/BasePrecosHub';
+import FinanceiroHub from './pages/hubs/FinanceiroHub';
+import CadastrosHub from './pages/hubs/CadastrosHub';
 
 function RotaProtegida({ children }) {
   const { usuario, carregando } = useAuth();
@@ -38,6 +32,29 @@ function RotaAdmin({ children }) {
   return children;
 }
 
+// Rotas da versão 1.x (itens soltos do menu) → hub do grupo, na aba certa.
+// Links salvos, e-mails e favoritos continuam funcionando. Os outros
+// parâmetros da URL são mantidos (ex.: ?laudo=ID da Análise de Projeto).
+//   para: caminho de destino, ou função (params, busca) => caminho (pode
+//         ajustar a `busca` antes do redirecionamento)
+//   aba:  valor de ?aba= no destino
+function Redirecionar({ para, aba }) {
+  const params = useParams();
+  const { search, hash } = useLocation();
+  const busca = new URLSearchParams(search);
+  const caminho = typeof para === 'function' ? para(params, busca) : para;
+  if (aba) busca.set('aba', aba);
+  const qs = busca.toString();
+  return <Navigate to={`${caminho}${qs ? `?${qs}` : ''}${hash}`} replace />;
+}
+
+// /analise-projeto?aba=laudos&laudo=ID ("Calcular pela norma") → aba de laudos;
+// qualquer outro ?aba= da tela antiga → análise de projeto.
+function destinoAnaliseProjeto(params, busca) {
+  busca.set('aba', busca.get('aba') === 'laudos' ? 'laudos' : 'analise');
+  return '/obras';
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -51,22 +68,36 @@ export default function App() {
             </RotaProtegida>
           }>
             <Route index element={<Navigate to="/dashboard" replace />} />
+
+            {/* Menu da versão 2.0: seis grupos, cada um uma página com abas
+                (pages/hubs). Abas só de admin somem para os demais usuários
+                dentro do próprio hub; a API continua exigindo admin. */}
             <Route path="dashboard" element={<Dashboard />} />
-            <Route path="orcamento" element={<Orcamento />} />
-            <Route path="orcamento/:id" element={<Orcamento />} />
-            <Route path="materiais" element={<Materiais />} />
-            <Route path="clientes" element={<Clientes />} />
-            <Route path="historico" element={<Historico />} />
-            <Route path="relatorios" element={<Relatorios />} />
-            {/* Áreas restritas: a API exige admin nessas rotas, então o
-                acesso direto pela URL também precisa ser barrado aqui. */}
-            <Route path="financeiro" element={<RotaAdmin><Financeiro /></RotaAdmin>} />
-            <Route path="prestadores" element={<RotaAdmin><Prestadores /></RotaAdmin>} />
-            <Route path="contratos" element={<RotaAdmin><Contratos /></RotaAdmin>} />
-            <Route path="analise-projeto" element={<AnaliseProjeto />} />
-            <Route path="analise-projeto/:id" element={<AnaliseProjeto />} />
-            <Route path="usuarios" element={<RotaAdmin><Usuarios /></RotaAdmin>} />
-            <Route path="precos-mao-de-obra" element={<RotaAdmin><PrecosMaoDeObra /></RotaAdmin>} />
+            <Route path="obras" element={<ObrasHub />} />
+            <Route path="obras/analise/:id" element={<ObrasHub abaFixa="analise" />} />
+            <Route path="propostas" element={<PropostasHub />} />
+            <Route path="propostas/editar" element={<PropostasHub abaFixa="editar" />} />
+            <Route path="propostas/editar/:id" element={<PropostasHub abaFixa="editar" />} />
+            <Route path="base-precos" element={<BasePrecosHub />} />
+            {/* Financeiro inteiro é restrito: faturamento, pagamentos e dados de terceiros */}
+            <Route path="financeiro" element={<RotaAdmin><FinanceiroHub /></RotaAdmin>} />
+            <Route path="cadastros" element={<CadastrosHub />} />
+
+            {/* Rotas antigas (1.x) → hub na aba certa */}
+            <Route path="orcamento" element={<Redirecionar para="/propostas" aba="editar" />} />
+            <Route path="orcamento/:id" element={<Redirecionar para={p => `/propostas/editar/${encodeURIComponent(p.id)}`} />} />
+            <Route path="historico" element={<Redirecionar para="/propostas" aba="lista" />} />
+            <Route path="relatorios" element={<Redirecionar para="/propostas" aba="lista" />} />
+            <Route path="analise-projeto" element={<Redirecionar para={destinoAnaliseProjeto} />} />
+            <Route path="analise-projeto/:id" element={<Redirecionar para={p => `/obras/analise/${encodeURIComponent(p.id)}`} />} />
+            <Route path="materiais" element={<Redirecionar para="/base-precos" aba="materiais" />} />
+            <Route path="precos-mao-de-obra" element={<Redirecionar para="/base-precos" aba="mao-de-obra" />} />
+            <Route path="prestadores" element={<Redirecionar para="/financeiro" aba="prestadores" />} />
+            <Route path="contratos" element={<Redirecionar para="/financeiro" aba="contratos" />} />
+            <Route path="clientes" element={<Redirecionar para="/cadastros" aba="clientes" />} />
+            <Route path="usuarios" element={<Redirecionar para="/cadastros" aba="usuarios" />} />
+
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Route>
         </Routes>
       </BrowserRouter>

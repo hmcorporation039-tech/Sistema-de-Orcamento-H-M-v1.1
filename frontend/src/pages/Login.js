@@ -21,7 +21,7 @@ export default function Login() {
     setCarregando(true);
     try {
       await entrar(email, senha);
-      navigate('/orcamento');
+      navigate('/propostas?aba=editar');
       toast.success('Bem-vindo ao sistema!');
     } catch (err) {
       setErro(err.response?.data?.erro || 'Erro ao fazer login');

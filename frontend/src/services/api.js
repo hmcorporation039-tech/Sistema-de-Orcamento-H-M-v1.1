@@ -158,6 +158,13 @@ export const atualizarPrecosMaoDeObra = (itens) => api.put('/precos-mao-de-obra'
 export const pesquisarReferenciaMaoDeObra = (codigo, segmento) =>
   api.post(`/precos-mao-de-obra/${encodeURIComponent(codigo)}/pesquisar`, { segmento }, { timeout: 300000 });
 
+// ── BASE ÚNICA DE SERVIÇOS (versão 2.0): padrão + lançados em propostas ──
+export const getServicos = (params) => api.get('/servicos', { params });
+export const getSegmentoCliente = (cliente) => api.get('/servicos/segmento', { params: { cliente } });
+// "é o mesmo que…": o livre sai da lista e as próximas propostas usam o destino (admin)
+export const fundirServico = (codigo, destino) => api.post(`/servicos/${encodeURIComponent(codigo)}/fundir`, { destino });
+export const definirServicoAtivo = (codigo, ativo) => api.put(`/servicos/${encodeURIComponent(codigo)}/ativo`, { ativo });
+
 // ── USUÁRIOS ──────────────────────────────────────────────────────────
 export const getUsuarios = () => api.get('/usuarios');
 export const criarUsuario = (data) => api.post('/usuarios', data);
@@ -196,3 +203,10 @@ export const atualizarContrato = (id, data) => api.put(`/contratos/${id}`, data)
 export const removerContrato = (id) => api.delete(`/contratos/${id}`);
 
 export default api;
+
+// ── INTEGRAÇÕES: ROTINAS AUTOMÁTICAS E IA (2.0, admin) ─────────────────────
+export const getRotinasIntegracoes = () => api.get('/integracoes/rotinas');
+// a rotina roda na hora (e-mail/pastas podem levar minutos)
+export const executarRotinaIntegracao = (chave) =>
+  api.post(`/integracoes/rotinas/${encodeURIComponent(chave)}/executar`, null, { timeout: 600000 });
+export const testarIAIntegracoes = () => api.post('/integracoes/ia/testar', null, { timeout: 180000 });

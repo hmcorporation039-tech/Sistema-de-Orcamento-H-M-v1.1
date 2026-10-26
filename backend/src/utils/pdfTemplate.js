@@ -39,6 +39,12 @@ function escapeHtml(s) {
   }[c]));
 }
 
+// Código de serviço da base de mão de obra (ele_qdg, rede_switch, livre_12…) é
+// uso interno: não vai para o PDF do cliente. Código de material (catálogo,
+// fabricante) continua aparecendo.
+const CODIGO_INTERNO_SERVICO = /^[a-z][a-z0-9]*_[a-z0-9_]+$/;
+const codigoParaCliente = (codigo) => (CODIGO_INTERNO_SERVICO.test(String(codigo || '')) ? '' : codigo);
+
 // Quantidade era o único número do PDF sem formatação pt-BR: a coluna é
 // DECIMAL(10,3), então 2,5 m de cabo saía como "2.5" com ponto, e um valor
 // ausente viraria "NaN" no documento do cliente (todos os outros campos são
@@ -94,7 +100,7 @@ function gerarHtmlProposta(proposta) {
       return `${cabecalho}
       <tr>
         <td>${escapeHtml(it.descricao)}</td>
-        <td class="num">${escapeHtml(it.codigo) || '—'}</td>
+        <td class="num">${escapeHtml(codigoParaCliente(it.codigo)) || '—'}</td>
         <td class="num">${formatarQuantidade(it.quantidade)}</td>
         <td class="num">${escapeHtml(it.unidade)}</td>
         <td class="num">${formatarMoeda(it.valor_unitario)}</td>
@@ -393,4 +399,4 @@ function gerarFooterTemplate() {
   `;
 }
 
-module.exports = { gerarHtmlProposta, gerarHtmlContrato, gerarFooterTemplate, EMPRESA, cabecalhoDataUri };
+module.exports = { gerarHtmlProposta, gerarHtmlContrato, gerarFooterTemplate, EMPRESA, cabecalhoDataUri, codigoParaCliente };

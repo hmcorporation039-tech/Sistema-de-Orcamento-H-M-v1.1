@@ -1,21 +1,29 @@
 const pool = require('../config/database');
 const { comTransacao } = require('../utils/transacao');
 const { pesquisarReferenciaMaoDeObra, ErroPesquisaMercado } = require('../utils/pesquisaMercadoService');
+const { ITENS_REFERENCIA } = require('../utils/precosMaoDeObraReferencia');
+const { DISCIPLINA_OUTROS } = require('../utils/servicosBase');
+
+// disciplinas aceitas para um serviço lançado em proposta (as da lista padrão + 'outros')
+const DISCIPLINAS = new Set([...ITENS_REFERENCIA.map(i => i.disciplina), DISCIPLINA_OUTROS]);
 
 const SEGMENTOS = ['publico', 'privado'];
 const COLUNAS = [
   'codigo', 'descricao', 'unidade', 'disciplina', 'valor_referencia', 'atualizado_em',
+  // base única (versão 2.0): 'padrao' | 'proposta', ativo e fusão — ver utils/servicosBase.js
+  'origem', 'ativo', 'fundido_em', 'criado_em',
   ...SEGMENTOS.flatMap(s => [`valor_${s}`, `fonte_${s}`, `link_${s}`, `data_${s}`, `ofertas_${s}`]),
 ];
 
-// Lista os itens de referência de mão de obra (admin) — ordenados por
+// Lista os serviços da base única (admin): os padrão e os lançados em
+// propostas (ativos, desativados e fundidos — a tela separa) — ordenados por
 // disciplina pra ficar fácil de conferir tudo de uma categoria de uma vez,
 // mesmo agrupamento visual usado no resto do sistema (Análise de Projeto,
 // Orçamento). Cada item traz o valor adotado pela H&M e as referências de
 // mercado oficial/governo e privado/particular, com fonte e link.
 async function listar(req, res) {
   try {
-    const result = await pool.query(`SELECT ${COLUNAS.join(', ')} FROM precos_mao_de_obra_referencia ORDER BY disciplina, codigo`);
+    const result = await pool.query(`SELECT ${COLUNAS.join(', ')} FROM precos_mao_de_obra_referencia ORDER BY origem DESC, disciplina, codigo`);
     res.json(result.rows);
   } catch (err) {
     console.error('Erro ao listar preços de referência de mão de obra:', err);
@@ -27,8 +35,10 @@ const valorValido = (v) => v === null || v === '' || v === undefined || (Number.
 const valorOuNulo = (v) => (v === '' || v === undefined || v === null ? null : Number(v));
 const textoOuNulo = (v, max) => (v == null || String(v).trim() === '' ? null : String(v).trim().slice(0, max));
 
-// Atualiza um ou mais códigos — nunca cria/exclui código (a lista é fixa,
-// definida em utils/precosMaoDeObraReferencia.js e semeada pelo schema).
+// Atualiza um ou mais códigos — nunca cria/exclui código (os padrão vêm de
+// utils/precosMaoDeObraReferencia.js; os livres nascem ao salvar proposta).
+// Num serviço lançado em proposta, também a disciplina e a unidade (nos
+// padrão elas vêm da lista canônica e o schema as ressincroniza).
 // `itens`: [{ codigo, valor_referencia?, valor_publico?, fonte_publico?,
 // valor_privado?, fonte_privado? }] — só os campos enviados são alterados.
 async function atualizar(req, res) {
@@ -43,6 +53,8 @@ async function atualizar(req, res) {
     for (const campo of ['valor_referencia', 'valor_publico', 'valor_privado']) {
       if (campo in it && !valorValido(it[campo])) return res.status(400).json({ erro: `Valor inválido em "${it.codigo}" (${campo})` });
     }
+    if ('disciplina' in it && !DISCIPLINAS.has(it.disciplina)) return res.status(400).json({ erro: `Disciplina inválida em "${it.codigo}"` });
+    if ('unidade' in it && !textoOuNulo(it.unidade, 10)) return res.status(400).json({ erro: `Unidade inválida em "${it.codigo}"` });
   }
 
   try {
@@ -59,6 +71,13 @@ async function atualizar(req, res) {
             sets.push(`data_${s} = NOW()`);
           }
           if (`fonte_${s}` in it) por(`fonte_${s}`, textoOuNulo(it[`fonte_${s}`], 300));
+        }
+        if ('disciplina' in it || 'unidade' in it) {
+          await client.query(
+            `UPDATE precos_mao_de_obra_referencia SET disciplina = COALESCE($1, disciplina), unidade = COALESCE($2, unidade), atualizado_em = NOW()
+              WHERE codigo = $3 AND origem = 'proposta'`,
+            ['disciplina' in it ? it.disciplina : null, 'unidade' in it ? textoOuNulo(it.unidade, 10) : null, it.codigo]
+          );
         }
         if (!sets.length) continue;
         vals.push(it.codigo);

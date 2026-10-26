@@ -67,7 +67,7 @@ export default function Dashboard() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18, gap: 12 }}>
-        <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>Dashboard</h2>
+        <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>Painel</h2>
         <div style={{ display: 'flex', gap: 6 }}>
           {[3, 6, 12].map(m => (
             <button
@@ -88,7 +88,7 @@ export default function Dashboard() {
 
       {(resumo.vencidas > 0 || resumo.vencendoEmBreve > 0) && (
         <div
-          onClick={() => navigate('/historico')}
+          onClick={() => navigate('/propostas?aba=lista')}
           style={{
             ...card, marginBottom: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10,
             borderColor: resumo.vencidas > 0 ? '#4a1a1a' : '#4a3a10',
@@ -104,7 +104,7 @@ export default function Dashboard() {
             {resumo.vencendoEmBreve > 0 && (
               <span>{resumo.vencendoEmBreve} <b style={{ color: '#d69a2d' }}>vencendo</b> nos próximos 3 dias</span>
             )}
-            {' '}— clique para ver no Histórico
+            {' '}— clique para ver na lista de propostas
           </span>
         </div>
       )}
@@ -245,7 +245,7 @@ export default function Dashboard() {
               return (
                 <div
                   key={p.id}
-                  onClick={() => navigate('/historico')}
+                  onClick={() => navigate('/propostas?aba=lista')}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 10, padding: '8px 4px',
                     borderTop: '1px solid #1e1e1e', cursor: 'pointer', fontSize: 12

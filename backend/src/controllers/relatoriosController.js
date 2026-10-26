@@ -37,7 +37,7 @@ async function buscarPropostasEtotais(query) {
   const { where, params, dataInicio, dataFim, status, busca } = montarFiltro(query);
 
   const propostas = await pool.query(
-    `SELECT id, numero, data, cliente_nome, local_obra, status,
+    `SELECT id, numero, data, validade, cliente_nome, local_obra, status,
        subtotal_materiais, subtotal_mao_obra, valor_bdi,
        imposto_venda, imposto_servico, valor_imposto_venda, valor_imposto_servico,
        bdi, total

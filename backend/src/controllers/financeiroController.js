@@ -1,6 +1,6 @@
 const pool = require('../config/database');
 const { registrarAuditoria } = require('../utils/auditoria');
-const { verificarPixNaCaixaDeEntrada } = require('../services/financeiroEmailService');
+const rotinas = require('../services/rotinas');
 
 const CATEGORIA_LABEL = { mao_de_obra: 'Mão de obra', material: 'Material', despesa: 'Despesa diária' };
 
@@ -219,7 +219,8 @@ async function categorizar(req, res) {
 
 async function verificarAgora(req, res) {
   try {
-    const resumo = await verificarPixNaCaixaDeEntrada();
+    // pelo registro comum das rotinas (services/rotinas.js) — aparece no painel de Integrações
+    const resumo = await rotinas.executarRotina('pix-email', { origem: 'manual', usuarioId: req.usuario?.id });
     res.json(resumo);
   } catch (err) {
     console.error('Erro ao verificar Pix na caixa de entrada:', err);

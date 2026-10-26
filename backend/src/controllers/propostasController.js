@@ -48,12 +48,15 @@ async function inserirSecoesEItens(client, propostaId, secoes, itens) {
       // catálogo", então material_id chega nulo) é comparado com o que já
       // existe — só vira material novo se não existir nada parecido. Item de
       // mão de obra não tem uma FK própria em proposta_itens, mas a
-      // descrição entra (ou já está) no catálogo de mão de obra pra virar
-      // sugestão da próxima vez, em qualquer proposta de qualquer cliente.
+      // descrição entra (ou já está) na base única de serviços (versão 2.0,
+      // utils/servicosBase.js) pra virar sugestão da próxima vez, em qualquer
+      // proposta de qualquer cliente. O código do item não é reescrito: um
+      // serviço fundido depois não muda propostas já gravadas.
       let materialId = item.material_id;
       if (maoDeObra) {
         await garantirMaoDeObraCadastrada(client, {
-          descricao: item.descricao, unidade: item.unidade, valor_unitario: item.valor_unitario
+          descricao: item.descricao, unidade: item.unidade, valor_unitario: item.valor_unitario,
+          codigo: item.codigo, subgrupo: item.subgrupo
         });
       } else if (!materialId) {
         materialId = await garantirMaterialCadastrado(client, {

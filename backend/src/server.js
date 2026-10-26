@@ -7,20 +7,17 @@ const helmet = require('helmet');
 const routes = require('./routes');
 const { tratarErros } = require('./middleware/erros');
 const { criarTabelas } = require('./models/schema');
-const { credenciaisConfiguradas } = require('./utils/emailClient');
-const { verificarCaixaDeEntrada } = require('./services/notaFiscalEmailService');
-const { verificarPixNaCaixaDeEntrada } = require('./services/financeiroEmailService');
-const { verificarPastaFornecedores, PASTAS_FORNECEDORES } = require('./services/cotacaoFornecedorService');
+const { agendarRotinas } = require('./services/rotinas');
 const { pedidoLocal } = require('./services/pastasRegistros');
 const pool = require('./config/database');
 const { version: VERSAO } = require('../package.json');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-// Horários fixos (hora local do PC) das leituras automáticas de e-mail (notas
-// e Pix) e da pasta de orçamentos de fornecedores. Fora deles, os botões
-// "Verificar agora" das telas Materiais e Financeiro continuam rodando na hora.
-const HORARIOS_VERIFICACAO_AUTOMATICA = ['06:00', '18:00'];
+// As leituras automáticas (e-mail de notas, Pix e pasta de orçamentos de
+// fornecedores, às 06:00 e 18:00) ficam em services/rotinas.js, com registro
+// de cada execução para o painel de Integrações. Os botões "Verificar agora"
+// das telas Materiais e Financeiro passam pelo mesmo registro.
 
 // Middlewares
 app.use(helmet({
@@ -145,96 +142,6 @@ function encerrar(sinal) {
 process.on('SIGINT', () => encerrar('SIGINT'));
 process.on('SIGTERM', () => encerrar('SIGTERM'));
 
-// Milissegundos até o próximo dos HORARIOS_VERIFICACAO_AUTOMATICA, somando
-// `atrasoSegundos` (escalona as tarefas pra não abrirem duas conexões IMAP no
-// mesmo segundo).
-function msAteProximoHorario(agora = new Date(), atrasoSegundos = 0) {
-  const candidatos = [];
-  for (const diasAFrente of [0, 1]) {
-    for (const horario of HORARIOS_VERIFICACAO_AUTOMATICA) {
-      const [hora, minuto] = horario.split(':').map(Number);
-      const alvo = new Date(agora);
-      alvo.setDate(alvo.getDate() + diasAFrente);
-      alvo.setHours(hora, minuto, atrasoSegundos, 0);
-      candidatos.push(alvo - agora);
-    }
-  }
-  // Folga de 1s: se o timer disparar uns milissegundos antes do horário, o
-  // próximo cálculo não pode cair no mesmo horário e rodar a tarefa duas vezes.
-  return Math.min(...candidatos.filter(ms => ms > 1000));
-}
-
-// Encadeia setTimeout em vez de setInterval: recalcula o próximo horário a
-// cada execução, então não acumula desvio nem depende da hora em que o
-// backend subiu.
-function agendarNosHorariosFixos(rodar, atrasoSegundos) {
-  const agendarProxima = () => {
-    setTimeout(async () => {
-      await rodar();
-      agendarProxima();
-    }, msAteProximoHorario(new Date(), atrasoSegundos));
-  };
-  agendarProxima();
-}
-
-function agendarVerificacaoDeEmail() {
-  if (!credenciaisConfiguradas()) {
-    console.log('Importação automática de notas por e-mail não configurada (veja EMAIL_IMAP_* no .env)');
-    return;
-  }
-
-  const rodar = async () => {
-    try {
-      const resumo = await verificarCaixaDeEntrada();
-      if (resumo.emailsProcessados > 0) {
-        console.log(`E-mails verificados: ${resumo.emailsProcessados}/${resumo.emailsEncontrados} — ${resumo.materiaisCriados} materiais criados, ${resumo.materiaisAtualizados} atualizados`);
-      }
-      resumo.avisos.forEach(a => console.warn('Aviso:', a));
-    } catch (err) {
-      console.error('Erro na verificação automática de e-mail:', err.message);
-    }
-  };
-
-  agendarNosHorariosFixos(rodar, 0);
-  console.log(`Importação automática de notas por e-mail ativa (às ${HORARIOS_VERIFICACAO_AUTOMATICA.join(' e às ')})`);
-}
-
-function agendarVerificacaoDePix() {
-  if (!credenciaisConfiguradas()) return;
-
-  const rodar = async () => {
-    try {
-      const resumo = await verificarPixNaCaixaDeEntrada();
-      if (resumo.movimentosImportados > 0) {
-        console.log(`Pix verificados: ${resumo.movimentosImportados}/${resumo.emailsEncontrados} movimentos importados`);
-      }
-      resumo.avisos.forEach(a => console.warn('Aviso (Pix):', a));
-    } catch (err) {
-      console.error('Erro na verificação automática de Pix:', err.message);
-    }
-  };
-
-  agendarNosHorariosFixos(rodar, 30);
-  console.log(`Controle financeiro de Pix por e-mail ativo (às ${HORARIOS_VERIFICACAO_AUTOMATICA.join(' e às ')})`);
-}
-
-function agendarVerificacaoDePastaFornecedores() {
-  const rodar = async () => {
-    try {
-      const resumo = await verificarPastaFornecedores();
-      if (resumo.arquivosProcessados > 0) {
-        console.log(`Orçamentos de fornecedores verificados: ${resumo.arquivosProcessados}/${resumo.arquivosEncontrados} arquivos — ${resumo.materiaisCriados} materiais criados, ${resumo.materiaisAtualizados} atualizados`);
-      }
-      resumo.avisos.forEach(a => console.warn('Aviso (orçamentos de fornecedores):', a));
-    } catch (err) {
-      console.error('Erro na verificação da pasta de orçamentos de fornecedores:', err.message);
-    }
-  };
-
-  agendarNosHorariosFixos(rodar, 15);
-  console.log(`Leitura automática de orçamentos de fornecedores ativa (às ${HORARIOS_VERIFICACAO_AUTOMATICA.join(' e às ')}) — pastas: ${PASTAS_FORNECEDORES.join(' | ')}`);
-}
-
 // Inicializar
 // Na partida do Windows o backend pode subir antes do serviço do PostgreSQL:
 // tenta o banco por até ~2 minutos antes de desistir.
@@ -262,13 +169,7 @@ async function iniciar() {
       console.log(`Health:   http://localhost:${PORT}/health\n`);
       // instância de teste/homologação (ROTINAS_AUTOMATICAS=desligadas): não lê a
       // caixa de e-mail nem as pastas de fornecedores da produção
-      if (/^(desligad|off|nao|não|0|false)/i.test(process.env.ROTINAS_AUTOMATICAS || '')) {
-        console.log('Rotinas automáticas desligadas (ROTINAS_AUTOMATICAS) — e-mail de notas, Pix e cotações não rodam nesta instância');
-        return;
-      }
-      agendarVerificacaoDeEmail();
-      agendarVerificacaoDePix();
-      agendarVerificacaoDePastaFornecedores();
+      agendarRotinas();
     });
   } catch (err) {
     console.error('Erro ao iniciar servidor:', err.message);

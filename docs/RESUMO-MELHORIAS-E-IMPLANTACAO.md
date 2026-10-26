@@ -36,8 +36,8 @@
 - **Frontend:** React (CRA). Páginas em `frontend/src/pages`, chamadas de API em `frontend/src/services/api.js` e login em `hooks/useAuth.js`.
 - **Produção:** um único processo. O backend serve a API e o build do React em `http://localhost:3001` e sobe sozinho quando o Windows faz login (`scripts/iniciar-producao.ps1`).
 - **IA:**
-  - Gemini (`utils/geminiClient.js`), com troca para um modelo alternativo quando a cota estoura.
-  - Claude via API (`utils/claudeClient.js`), usado como fallback.
+  - Versão 2.0: módulo único `utils/ia.js` com uma cadeia só, na ordem Claude Max (CLI `claude -p` isolada) → Claude via API → Gemini (`IA_ORDEM` troca a ordem). Painel em Administração › Integrações (`GET /integracoes/rotinas`, `POST /integracoes/ia/testar`).
+  - Gemini (`utils/geminiClient.js`, transporte usado por `ia.js`), com troca para um modelo alternativo quando a cota estoura.
   - Claude Desktop via servidor MCP: é o caminho recomendado, porque não gasta cota.
 - **Tabelas:** usuarios, clientes, materiais, mao_de_obra_itens, propostas, proposta_secoes, proposta_itens, proposta_eventos, analises_projeto, precos_mao_de_obra_referencia, pesquisas_mercado, configuracoes, emails_processados, notas_processadas, arquivos_fornecedores_processados, prestadores, contratos, financeiro_movimentos.
 - **Testes:** Cypress E2E em `frontend/cypress/e2e/01..10` (43 testes), cobrindo login, clientes, materiais, orçamento/histórico, usuários, dashboard, relatórios, financeiro, prestadores e contratos. O backend ainda **não** tem testes automatizados (`npm test`); o passo 2 da seção 4 propõe começar por `calculoEletrico.js`.
