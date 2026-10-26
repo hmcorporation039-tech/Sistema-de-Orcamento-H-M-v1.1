@@ -129,6 +129,30 @@ caso('quem vê e quem edita', () => {
   assert.ok(C.podeEditarOS(admin, { usuario_id: 2 }));
 });
 
+caso('quem abre OS pelo campo (criar_os e GET /obras?pode_abrir_os=1)', () => {
+  const admin = { id: 1, role: 'admin' };
+  const tec = { id: 5, role: 'user' };
+  assert.ok(C.podeAbrirOS(admin, { usuario_id: 2, responsavel_id: 2 }));
+  assert.ok(C.podeAbrirOS(tec, { usuario_id: 5, responsavel_id: null }), 'dono da obra');
+  assert.ok(C.podeAbrirOS(tec, { usuario_id: null, responsavel_id: null }), 'obra sem dono: livre');
+  assert.ok(C.podeAbrirOS(tec, { usuario_id: 2, responsavel_id: 5 }), 'responsável da obra');
+  assert.ok(!C.podeAbrirOS(tec, { usuario_id: 2, responsavel_id: 3 }), 'nem dono nem responsável');
+  assert.ok(C.podeAbrirOS(tec, { usuario_id: 2, responsavel_id: 3 }, { temOSNaObra: true }), 'já é responsável por OS da obra');
+  assert.ok(!C.podeAbrirOS(null, { usuario_id: null }));
+  // SQL equivalente: mesmos quatro caminhos, parâmetro só do usuário, obra cancelada fora
+  const p = ['x'];
+  const sql = C.condicaoPodeAbrirOS(tec, p, 'o');
+  assert.deepStrictEqual(p, ['x', 5]);
+  for (const trecho of ["o.status <> 'cancelada'", 'o.usuario_id IS NULL', 'o.usuario_id = $2', 'o.responsavel_id = $2', 'os_ab.responsavel_id = $2', 'os_ab.obra_id = o.id']) {
+    assert.ok(sql.includes(trecho), `falta ${trecho}`);
+  }
+  const pa = [];
+  assert.strictEqual(C.condicaoPodeAbrirOS(admin, pa, 'o'), "o.status <> 'cancelada'");
+  assert.strictEqual(pa.length, 0, 'admin não usa parâmetro');
+  assert.strictEqual(C.condicaoPodeAbrirOS(null, [], 'o'), 'FALSE');
+  assert.throws(() => C.condicaoPodeAbrirOS(tec, [], 'o; DROP'), /alias/);
+});
+
 caso('transições: iniciar só de aberta; concluir de em_execucao ou de aberta (inicia e conclui)', () => {
   const r1 = aplicar(base(), op('iniciar', { lat: -15.83, lon: -48.05 }, '2026-11-03T13:00:00Z'));
   assert.ok(r1.ok);

@@ -118,7 +118,10 @@ async function conferirVinculos(executor, itens) {
     if (it.material_id) {
       const mt = mats.get(it.material_id);
       if (!mt) return { erro: `Item ${i + 1}: material #${it.material_id} não existe no catálogo` };
-      saida.push({ ...it, descricao: String(mt.descricao).slice(0, 300), unidade: String(mt.unidade || it.unidade).slice(0, 10) });
+      // rolo/caixa com metragem escrita contado em metro: o item continua em m
+      // (o coeficiente é em metros; trocar para RL multiplicaria o custo)
+      const unidade = C.conversaoEmbalagem(mt, it.unidade) ? it.unidade : (mt.unidade || it.unidade);
+      saida.push({ ...it, descricao: String(mt.descricao).slice(0, 300), unidade: String(unidade).slice(0, 10) });
     } else if (it.servico_codigo) {
       const sv = srvs.get(it.servico_codigo);
       if (!sv) return { erro: `Item ${i + 1}: serviço "${it.servico_codigo}" não existe na base de serviços` };

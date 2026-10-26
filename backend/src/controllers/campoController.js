@@ -27,6 +27,7 @@ const { pastaDaObraPorId, seguro } = require('../services/pastasRegistros');
 const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
 const { gerarFooterTemplate } = require('../utils/pdfTemplate');
 const { gerarHtmlOS } = require('../utils/osPdfTemplate');
+const { contentDisposition } = require('../utils/nomeArquivoDownload');
 
 const ehAdmin = (u) => u?.role === 'admin';
 const CHAVES_DISCIPLINA = DISCIPLINAS_LAUDO.map(d => d.chave);
@@ -457,10 +458,11 @@ async function opCriarOS(client, op, usuario) {
   if (!Number.isInteger(obraId) || obraId < 1 || obraId > 2147483647) throw new ErroRegra('Obra inválida.');
   const { rows: [obra] } = await client.query('SELECT id, status, usuario_id, responsavel_id FROM obras WHERE id = $1', [obraId]);
   if (!obra) throw new ErroRegra('Obra não encontrada.');
-  let pode = C.podeEditarOS(usuario, obra) || obra.responsavel_id === usuario.id;
+  // regra única de quem abre OS: utils/campo.js (a lista do app usa a mesma em SQL)
+  let pode = C.podeAbrirOS(usuario, obra);
   if (!pode) {
     const { rows } = await client.query('SELECT 1 FROM ordens_servico WHERE obra_id = $1 AND responsavel_id = $2 LIMIT 1', [obraId, usuario.id]);
-    pode = rows.length > 0;
+    pode = C.podeAbrirOS(usuario, obra, { temOSNaObra: rows.length > 0 });
   }
   if (!pode) throw new ErroRegra('Você não pode abrir OS nesta obra. Peça ao escritório.');
   if (obra.status === 'cancelada') throw new ErroRegra('Esta obra está cancelada; não recebe novas OS.');
@@ -581,7 +583,7 @@ async function pdf(req, res, next) {
     });
     // cópia na pasta da obra (Campo\<numero>\Relatório <numero>.pdf), sobrescrita a cada geração
     await seguro(`pdf ${row.numero}`, () => gravarArquivoCampo(row, `Relatório ${row.numero}.pdf`, arquivoPdf));
-    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${row.numero}.pdf"` });
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': contentDisposition(`Relatório ${row.numero}.pdf`) });
     res.send(arquivoPdf);
   } catch (err) {
     responderErro(res, next, err);

@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { contentDisposition } = require('../utils/nomeArquivoDownload');
 const { registrarAuditoria } = require('../utils/auditoria');
 const rotinas = require('../services/rotinas');
 const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
@@ -129,7 +130,7 @@ async function exportarCsv(req, res) {
     const bom = '﻿';
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="financeiro-pix.csv"');
+    res.setHeader('Content-Disposition', contentDisposition('financeiro-pix.csv'));
     res.send(bom + csv);
   } catch (err) {
     console.error('Erro ao exportar CSV financeiro:', err);

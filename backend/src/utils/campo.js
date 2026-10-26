@@ -206,6 +206,30 @@ function podeEditarOS(usuario, obra) {
   if (!usuario) return false;
   return usuario.role === 'admin' || (!!obra && (obra.usuario_id == null || obra.usuario_id === usuario.id));
 }
+// Abrir OS pelo campo (operação criar_os): dono da obra ou admin
+// (podeEditarOS), o responsável da obra ou quem já é responsável por alguma
+// OS dessa obra. `temOSNaObra` vem do banco. A mesma regra em SQL está em
+// condicaoPodeAbrirOS (lista de obras do app: GET /obras?pode_abrir_os=1) —
+// mudou uma, mude a outra (campo.test.js confere as duas).
+function podeAbrirOS(usuario, obra, { temOSNaObra = false } = {}) {
+  if (!usuario || !obra) return false;
+  if (podeEditarOS(usuario, obra)) return true;
+  if (obra.responsavel_id != null && obra.responsavel_id === usuario.id) return true;
+  return !!temOSNaObra;
+}
+// Condição SQL equivalente a podeAbrirOS sobre a tabela de obras com o apelido
+// `alias` (params recebe o id do usuário). Deixa de fora também a obra
+// cancelada, que o servidor recusa ao criar a OS.
+function condicaoPodeAbrirOS(usuario, params, alias = 'o') {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error('alias inválido');
+  const naoCancelada = `${alias}.status <> 'cancelada'`;
+  if (!usuario || usuario.id == null) return 'FALSE';
+  if (usuario.role === 'admin') return naoCancelada;
+  params.push(usuario.id);
+  const n = `$${params.length}`;
+  return `(${naoCancelada} AND (${alias}.usuario_id IS NULL OR ${alias}.usuario_id = ${n} OR ${alias}.responsavel_id = ${n}`
+    + ` OR EXISTS (SELECT 1 FROM ordens_servico os_ab WHERE os_ab.obra_id = ${alias}.id AND os_ab.responsavel_id = ${n})))`;
+}
 
 // ── aplicar uma operação de campo sobre o estado ────────────────────────
 function recusa(erro) { return { ok: false, erro }; }
@@ -444,6 +468,6 @@ module.exports = {
   DIAS_TOLERANCIA_CONCLUIDA, MODELO_GENERICO, EXTENSAO,
   uuidValido, normalizarUuid, formatarNumeroOS, proximoNumeroOS, tipoImagem, ehPng, decodificarPngBase64,
   instanteDoAparelho, latitude, longitude, dataOuNull, normalizarChecklistBase, checklistDoModelo,
-  validarDadosOS, chaveModelo, podeVerOS, podeEditarOS, aplicarOperacao, conferirFoto, dadosDaFoto,
+  validarDadosOS, chaveModelo, podeVerOS, podeEditarOS, podeAbrirOS, condicaoPodeAbrirOS, aplicarOperacao, conferirFoto, dadosDaFoto,
   osParaApi, fotoParaApi, resumoChecklist, filtroAbertas,
 };

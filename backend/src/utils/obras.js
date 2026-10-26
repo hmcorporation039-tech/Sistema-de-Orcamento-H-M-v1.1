@@ -200,13 +200,30 @@ function lerObraId(body) {
   return { presente: true, valor: n };
 }
 
+// Tabelas cujo registro pode ser ligado a uma obra pelo obra_id do corpo
+// (literais do código — nunca vêm do usuário).
+const TABELAS_COM_OBRA = new Set(['propostas', 'analises_projeto', 'laudos_projetos', 'contratos', 'financeiro_movimentos']);
+
 // Confere se a obra existe (executor = pool ou client). Devolve a mensagem de
 // erro ou null.
-async function conferirObra(executor, leitura) {
+// Com `usuario`, aplica a mesma regra do "ligar à obra" (PUT /obras/:id/vinculos):
+// só liga a uma obra o administrador, o dono dela ou qualquer um se ela não tem
+// dono — senão um usuário levaria a própria proposta para o orçado (e, aprovada,
+// mudaria o status) da obra de outro. Na edição (`tabela` + `id`), manter a obra
+// que o registro já tem não é ligar de novo e passa sempre.
+async function conferirObra(executor, leitura, { usuario = null, tabela = null, id = null } = {}) {
   if (leitura.erro) return leitura.erro;
   if (!leitura.presente || leitura.valor == null) return null;
-  const { rows } = await executor.query('SELECT 1 FROM obras WHERE id = $1', [leitura.valor]);
-  return rows.length ? null : 'Obra não encontrada.';
+  const { rows } = await executor.query('SELECT usuario_id FROM obras WHERE id = $1', [leitura.valor]);
+  if (!rows.length) return 'Obra não encontrada.';
+  if (!usuario || usuario.role === 'admin') return null;
+  const dono = rows[0].usuario_id;
+  if (dono == null || dono === usuario.id) return null;
+  if (tabela && id != null && TABELAS_COM_OBRA.has(tabela)) {
+    const atual = await executor.query(`SELECT obra_id FROM ${tabela} WHERE id = $1`, [id]);
+    if (atual.rows[0] && atual.rows[0].obra_id === leitura.valor) return null;
+  }
+  return 'Esta obra foi criada por outro usuário. Peça a ele ou a um administrador para ligar à obra.';
 }
 
 // Trecho de SELECT que devolve { id, codigo, nome } da obra (ou null).

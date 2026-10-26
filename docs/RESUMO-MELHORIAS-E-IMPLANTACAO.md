@@ -273,6 +273,15 @@ Plano, modelo e decisões em `docs/ARQUITETURA-2.0.md`; contrato do app de campo
 - **Banco:** só migrações idempotentes em `backend/src/models/migracoes/2.0-01` a `2.0-10`, rodadas no fim de `criarTabelas`. Rotas novas em `backend/src/routes/v2/`.
 - **Testes:** `npm test` do backend (inclui regressão de totais das propostas, que só roda no banco de teste) e `CI=true npx react-scripts test --watchAll=false src/pages/campo` no frontend.
 - **Para implantar a 2.0 no PC de produção:** backup do banco e do código, mesclar `versao-2.0` em `main`, `npm install` no backend e no frontend, `reiniciar-backend.bat` (roda as migrações), `npm run build`, Ctrl+F5. Para o link de aprovação funcionar fora do escritório, o sistema precisa estar publicado na internet e `URL_PUBLICA` no `.env`.
+- **Antes da produção (26/10/2026):** revisão independente de segurança (sem achado crítico) e correções:
+  - `obra_id` no corpo de proposta/laudo/análise segue a regra do "ligar à obra" (`conferirObra` com o usuário): ninguém leva o próprio item para a obra de outro;
+  - proposta aprovada pelo cliente no link não é mais editável (409; só admin), o normal é duplicar;
+  - cronograma com BDI diferenciado reparte o valor por etapa com o BDI de cada parte;
+  - obra com medição não é excluída;
+  - a página pública, depois da decisão, mostra o CPF/CNPJ mascarado e sem e-mail/IP (LGPD); o registro completo fica para a H&M;
+  - PDF do link some com a proposta cancelada/recusada; JSON inválido responde 400; `pedidoLocal` é falso quando há cabeçalho de proxy.
+  Também: decisão do cliente e acesso ao link na lista de propostas; filtro `GET /obras?pode_abrir_os=1` no app de campo; kits convertem rolo/caixa com metragem na descrição para preço por metro (migração 2.0-11); nome do arquivo baixado com acento (`utils/nomeArquivoDownload.js`). Suíte Cypress atualizada para a 2.0 (13 specs, 63 testes; rodar com `env -u ELECTRON_RUN_AS_NODE node node_modules/cypress/bin/cypress run --config baseUrl=http://localhost:3002` no Git Bash do VS Code).
+- **Ambiente de teste:** `C:\HM-Engenharia\Teste 2.0` (fora dos repositórios) — `iniciar-teste-2.0.bat`, `parar-teste-2.0.bat`, `liberar-porta-teste.bat` (administrador, porta 3002 só na rede local) e `atualizar-banco-teste.ps1` (recria `hm_orcamentos_v2` com cópia atual da produção). A instância de teste tem `AMBIENTE=teste` no `.env` (faixa vermelha "AMBIENTE DE TESTE" e "[TESTE]" no título), e-mails em branco e rotinas desligadas.
 - **A conferir:** itens `[CONFERIR]` em `backend/src/utils/bdiTcu.js` (ISS do município, cronograma da CPRB pela Lei 14.973/2024, faixa do TCU no regime desonerado); materiais do catálogo em rolo/caixa ficam "a cotar" nos kits (que contam em metro).
 
 ---

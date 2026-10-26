@@ -21,6 +21,7 @@ const { comTransacao } = require('../utils/transacao');
 const { registrarAuditoria } = require('../utils/auditoria');
 const { registrarEvento, aplicarStatusProposta, montarPdfBuffer } = require('./propostasController');
 const A = require('../utils/aprovacaoLink');
+const { contentDisposition } = require('../utils/nomeArquivoDownload');
 
 const SQL_PROPOSTA = "SELECT p.*, to_char(p.data, 'YYYY-MM-DD') AS data_iso FROM propostas p WHERE p.id = $1";
 
@@ -41,15 +42,26 @@ function urlPublicaBase() {
   return /^https?:\/\/[^\s/]+/i.test(u) ? u : null;
 }
 
-function comprovante(d) {
-  return {
+// CPF/CNPJ com o meio à mostra (padrão de comprovante): ***.456.789-** / **.345.678/0001-**
+function mascararDocumento(formatado) {
+  const t = String(formatado || '');
+  if (t.length < 8) return t ? '***' : t;
+  return t.replace(/^(.{3})/, m => m.replace(/[0-9A-Za-z]/g, '*')).replace(/(.{2})$/, m => m.replace(/[0-9A-Za-z]/g, '*'));
+}
+
+// publico: a página aberta pelo link (que costuma ser encaminhado) mostra o
+// documento mascarado e não mostra e-mail nem IP — o registro completo fica
+// para a H&M (listarDecisoes), conforme a LGPD.
+function comprovante(d, { publico = false } = {}) {
+  const documento = A.formatarDocumento(d.documento, d.tipo_documento);
+  const completo = {
     codigo: A.codigoComprovante(d.id, d.hash_conteudo),
     decisao: d.decisao,
     numero: d.numero_proposta,
     total: Number(d.total),
     nome: d.nome,
     tipo_documento: d.tipo_documento,
-    documento: A.formatarDocumento(d.documento, d.tipo_documento),
+    documento,
     cargo: d.cargo || null,
     email: d.email || null,
     observacao: d.observacao || null,
@@ -60,6 +72,7 @@ function comprovante(d) {
     texto_declaracao: d.texto_declaracao,
     aviso: A.AVISO_JURIDICO,
   };
+  return publico ? { ...completo, documento: mascararDocumento(documento), email: null, ip: null } : completo;
 }
 
 // ════════════════════════ PARTE INTERNA (com login) ════════════════════════
@@ -252,7 +265,7 @@ async function verPublico(req, res) {
       texto_declaracao_aprovar: A.textoDeclaracao('aprovada', pub),
       texto_declaracao_recusar: A.textoDeclaracao('recusada', pub),
       aviso: A.AVISO_JURIDICO,
-      comprovante: decisao ? comprovante(decisao) : null,
+      comprovante: decisao ? comprovante(decisao, { publico: true }) : null,
     });
   } catch (err) {
     falhaPublica(res, 'ver proposta', err);
@@ -264,10 +277,13 @@ async function pdfPublico(req, res) {
     const link = await buscarLinkValido(pool, req.params.token);
     if (!link) return linkInvalido(res);
     // o mesmo PDF do cliente (gerarHtmlProposta como está); nada é gravado em pasta
+    // proposta cancelada ou recusada: a página já diz "indisponível"; o PDF também some
+    const { rows: [st] } = await pool.query('SELECT status FROM propostas WHERE id = $1', [link.proposta_id]);
+    if (!st || st.status === 'Cancelada' || st.status === 'Recusada') return linkInvalido(res);
     const r = await montarPdfBuffer(link.proposta_id);
     if (!r) return linkInvalido(res);
     const nome = `Proposta_${String(r.proposta.numero || '').replace(/[^A-Za-z0-9_-]+/g, '_')}_HM_Engenharia.pdf`;
-    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${nome}"` });
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': contentDisposition(nome, 'inline') });
     // puppeteer 25 devolve Uint8Array; sem Buffer.from o Express 4 responde JSON ({"0":37,...})
     res.send(Buffer.from(r.pdf));
   } catch (err) {

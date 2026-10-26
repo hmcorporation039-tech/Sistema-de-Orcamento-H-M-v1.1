@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { contentDisposition } = require('../utils/nomeArquivoDownload');
 const { registrarAuditoria } = require('../utils/auditoria');
 const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
@@ -143,11 +144,12 @@ async function gerarPdf(req, res) {
 
     const pdf = await montarPdfBuffer(contrato);
     await salvarPdfContratoNaObra(contrato, pdf); // cópia em Obras\<obra>\Contratos (contrato ligado a obra)
-    const nomeArquivo = contrato.prestador_nome.replace(/[^a-zA-Z0-9]+/g, '_');
+    // acentos ficam (o cabeçalho leva o nome em UTF-8 — utils/nomeArquivoDownload)
+    const nomeArquivo = String(contrato.prestador_nome || '').replace(/[^\p{L}\p{N}]+/gu, '_');
     const sufixo = contrato.codigo_registro || contrato.id;
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="Contrato_${nomeArquivo}_${sufixo}.pdf"`,
+      'Content-Disposition': contentDisposition(`Contrato_${nomeArquivo}_${sufixo}.pdf`),
     });
     res.send(pdf);
   } catch (err) {

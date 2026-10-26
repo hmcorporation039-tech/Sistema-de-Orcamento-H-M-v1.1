@@ -97,6 +97,16 @@ caso('etapas por sistema com BDI e impostos rateados: soma = total da proposta',
   assert.strictEqual(etapas.reduce((s, e) => s + e.valor, 0), totais.total);
 });
 
+caso('BDI diferenciado: cada parte leva o próprio BDI (não o proporcional)', () => {
+  const props = { ...dadosFalsos, proposta: { ...dadosFalsos.proposta, bdi: 20, bdi_materiais: 10 } };
+  const { etapas, totais } = C.etapasDaProposta(props);
+  assert.strictEqual(totais.valor_bdi_materiais, 300);
+  assert.strictEqual(totais.valor_bdi_mao_obra, 400);
+  // material 3000 + BDI 300 + venda 300 = 3600 (1/3 CFTV, 2/3 Rede); MO 2000 + BDI 400 + serviço 100 = 2500 (1/4, 3/4)
+  assert.deepStrictEqual(etapas.map(e => e.valor), [1825, 4275]);
+  assert.strictEqual(etapas.reduce((s, e) => s + e.valor, 0), totais.total);
+});
+
 caso('arredondamento: soma das etapas fecha centavo a centavo com o total', () => {
   const props = { ...dadosFalsos, proposta: { ...dadosFalsos.proposta, bdi: 17.37, imposto_venda: 7.11, imposto_servico: 3.33 },
     itens: [...dadosFalsos.itens, { id: 13, secao_id: 1, descricao: 'x', quantidade: 3, valor_unitario: 33.33, subgrupo: 'Alarme' }] };

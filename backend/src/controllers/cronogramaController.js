@@ -7,6 +7,7 @@
 // registrar medição = quem pode editar a obra (dono, obra sem dono ou admin —
 // middleware de posse da obra nas rotas).
 const pool = require('../config/database');
+const { contentDisposition } = require('../utils/nomeArquivoDownload');
 const C = require('../utils/cronograma');
 const D = require('../utils/duracaoCronograma');
 const { comTransacao } = require('../utils/transacao');
@@ -459,7 +460,7 @@ async function listarMedicoes(req, res, next) {
 }
 
 const nomeArquivo = (obra, sufixo, ext) =>
-  `${String(obra.codigo || `obra-${obra.id}`)}_${String(obra.nome || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 60)}_${sufixo}.${ext}`.replace(/_+/g, '_');
+  `${String(obra.codigo || `obra-${obra.id}`)}_${String(obra.nome || '').replace(/[^\p{L}\p{N}]+/gu, '_').slice(0, 60)}_${sufixo}.${ext}`.replace(/_+/g, '_');
 
 // ── GET /obras/:id/cronograma/planilha ──────────────────────────────────
 async function planilha(req, res, next) {
@@ -473,7 +474,7 @@ async function planilha(req, res, next) {
     const buffer = await gerarPlanilhaCronograma({ obra, config: dados.config, proposta, etapas: dados.etapas, historico, calc });
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename="${nomeArquivo(obra, 'cronograma', 'xlsx')}"`,
+      'Content-Disposition': contentDisposition(nomeArquivo(obra, 'cronograma', 'xlsx')),
     });
     res.send(buffer);
   } catch (err) {
@@ -506,7 +507,7 @@ async function boletim(req, res, next) {
       headerTemplate: '<div></div>',
       footerTemplate: gerarFooterTemplate(),
     });
-    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${nomeArquivo(obra, `boletim_${String(b.numero).padStart(2, '0')}_${b.periodo}`, 'pdf')}"` });
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': contentDisposition(nomeArquivo(obra, `boletim_${String(b.numero).padStart(2, '0')}_${b.periodo}`, 'pdf')) });
     res.send(Buffer.from(pdf));
   } catch (err) {
     if (err instanceof ErroPedido) return res.status(err.status).json({ erro: err.message });

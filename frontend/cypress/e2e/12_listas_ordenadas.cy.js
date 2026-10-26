@@ -17,7 +17,13 @@ describe('Listas suspensas em ordem alfabética', () => {
   beforeEach(() => cy.login());
 
   // (a tela de Orçamento só tem listas depois de criar seções; usa o mesmo componente)
-  ['/materiais', '/historico', '/financeiro', '/prestadores', '/relatorios', '/analise-projeto?aba=laudos'].forEach(rota => {
+  // 2.0: as telas viraram abas dos hubs (as rotas antigas redirecionam para
+  // estas); entram também as telas novas (obras, composições, mão de obra).
+  [
+    '/base-precos?aba=materiais', '/base-precos?aba=mao-de-obra', '/base-precos?aba=composicoes',
+    '/propostas?aba=lista', '/financeiro?aba=movimentos', '/financeiro?aba=prestadores',
+    '/obras?aba=obras', '/obras?aba=laudos',
+  ].forEach(rota => {
     it(`todas as listas de ${rota}`, () => {
       cy.visit(rota);
       cy.get('select', { timeout: 10000 }).should('exist');
@@ -26,7 +32,7 @@ describe('Listas suspensas em ordem alfabética', () => {
   });
 
   it('categorias do catálogo: lista de filtro completa e sem "Geral"', () => {
-    cy.visit('/materiais');
+    cy.visit('/base-precos?aba=materiais');
     // as categorias chegam do servidor depois da página: espera a lista encher
     cy.contains('option', 'Todas categorias').parent('select').find('option').should('have.length.greaterThan', 5).then(ops => {
       const nomes = [...ops].map(o => o.textContent.trim());

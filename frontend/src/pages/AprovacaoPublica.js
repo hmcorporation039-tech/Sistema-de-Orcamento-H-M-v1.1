@@ -394,7 +394,7 @@ function Comprovante({ c, token }) {
         <Info rotuloTexto={c.tipo_documento} valor={c.documento} />
         {c.cargo && <Info rotuloTexto="Cargo" valor={c.cargo} />}
         {c.email && <Info rotuloTexto="E-mail" valor={c.email} />}
-        <Info rotuloTexto="Endereço IP" valor={c.ip} />
+        {c.ip && <Info rotuloTexto="Endereço IP" valor={c.ip} />}
       </div>
       {c.observacao && <div style={{ fontSize: 13.5, marginTop: 10 }}><b>{aprovada ? 'Observação' : 'Motivo'}:</b> {c.observacao}</div>}
       <div style={{ marginTop: 12, fontSize: 12, color: SUAVE, lineHeight: 1.5 }}>

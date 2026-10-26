@@ -96,7 +96,10 @@ export const listarModelos = () => requisitar('/campo/modelos-checklist');
 
 // Obras para a OS nova criada no campo (GET /obras?campos=basico devolve
 // { itens: [{ id, codigo, nome, cliente_id, cliente_nome, local, status, segmento }], … }).
-export const listarObras = () => requisitar('/obras?campos=basico&porPagina=1000');
+// pode_abrir_os=1: só as obras em que este usuário pode abrir OS (a mesma regra
+// que o servidor usa para aceitar o criar_os) — o técnico não escolhe uma obra
+// que depois seria recusada.
+export const listarObras = () => requisitar('/obras?campos=basico&pode_abrir_os=1&porPagina=1000');
 
 export const sincronizarOperacoes = (operacoes) =>
   requisitar('/campo/sincronizar', { metodo: 'POST', corpo: { operacoes }, tempoLimite: 45000 });

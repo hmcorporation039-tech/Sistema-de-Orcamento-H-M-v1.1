@@ -10,6 +10,9 @@
 //                          mostra uma decisão do cliente (o pai pode recarregar a proposta
 //                          para ver o status novo)
 //     estiloBotao object   opcional; mescla no estilo do botão (para encaixar na barra do editor)
+//     aberto      boolean  opcional — modo CONTROLADO (lista de propostas): o pai decide quando o
+//                          modal está aberto e o componente não desenha o próprio botão
+//     onFechar    function com `aberto`: chamada quando o usuário fecha o modal
 //   O componente é autocontido: abre o próprio modal, chama a API (services/api.js:
 //   gerarLinkAprovacao, getLinksAprovacao, revogarLinkAprovacao, getDecisoesAprovacao)
 //   e mostra os toasts. Não mexe no estado do editor.
@@ -71,8 +74,11 @@ Qualquer dúvida, estamos à disposição.
 H&M Engenharia e Tecnologia — WhatsApp (61) 99185-9745`;
 }
 
-export default function BotaoLinkAprovacao({ propostaId, numero, status, onAlterado, estiloBotao }) {
-  const [aberto, setAberto] = useState(false);
+export default function BotaoLinkAprovacao({ propostaId, numero, status, onAlterado, estiloBotao, aberto: abertoPai, onFechar }) {
+  const controlado = abertoPai !== undefined;
+  const [abertoInterno, setAberto] = useState(false);
+  const aberto = controlado ? !!abertoPai : abertoInterno;
+  const fechar = () => (controlado ? onFechar?.() : setAberto(false));
   const [carregando, setCarregando] = useState(false);
   const [links, setLinks] = useState([]);
   const [decisoes, setDecisoes] = useState([]);
@@ -148,7 +154,7 @@ export default function BotaoLinkAprovacao({ propostaId, numero, status, onAlter
 
   return (
     <>
-      <button
+      {!controlado && <button
         type="button"
         onClick={() => setAberto(true)}
         disabled={!propostaId}
@@ -156,15 +162,15 @@ export default function BotaoLinkAprovacao({ propostaId, numero, status, onAlter
         style={{ ...btnSecundario, opacity: propostaId ? 1 : 0.5, cursor: propostaId ? 'pointer' : 'not-allowed', ...estiloBotao }}
       >
         <Link2 size={13} /> Link de aprovação
-      </button>
+      </button>}
 
       {aberto && (
-        <div style={overlay} onClick={() => setAberto(false)}>
+        <div style={overlay} onClick={fechar}>
           <div style={modal} onClick={e => e.stopPropagation()} role="dialog" aria-label="Link de aprovação">
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
               <h3 style={{ color: '#c9a227', fontSize: 15, fontWeight: 700, flex: 1 }}>Link de aprovação {numero ? `— ${numero}` : ''}</h3>
               <button onClick={carregar} title="Atualizar" style={{ ...btnIcone, marginRight: 6 }}><RefreshCw size={14} /></button>
-              <button onClick={() => setAberto(false)} title="Fechar" style={{ ...btnIcone, background: 'transparent' }}><X size={16} /></button>
+              <button onClick={fechar} title="Fechar" style={{ ...btnIcone, background: 'transparent' }}><X size={16} /></button>
             </div>
 
             <div style={{ display: 'flex', gap: 8, fontSize: 11, color: '#999', lineHeight: 1.5, background: '#0e0e0e', border: '1px solid #222', borderRadius: 6, padding: '9px 11px', marginBottom: 14 }}>

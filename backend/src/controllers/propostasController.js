@@ -17,6 +17,8 @@ const { versaoDoPedido, responderConflitoOuAusente } = require('../utils/versao'
 const { registrarAuditoria } = require('../utils/auditoria');
 const { gerarPlanilhaCliente } = require('../utils/planilhaOrcamentoCliente');
 const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
+const { sqlDecisaoCliente } = require('../utils/aprovacaoLink');
+const { contentDisposition } = require('../utils/nomeArquivoDownload');
 
 // Assinatura padrão da empresa — entra sempre no final de todo e-mail
 // enviado ao cliente (mensagem padrão ou digitada à mão), sem exceção.
@@ -124,11 +126,15 @@ async function listar(req, res) {
 
   try {
     const total = await pool.query(`SELECT count(*) FROM propostas p ${condicoes}`, params);
+    // decisao_cliente: a última decisão do cliente pelo link de aprovação
+    // ({ decisao: 'aprovada'|'recusada', nome, data }) ou null, na mesma consulta
+    const dc = sqlDecisaoCliente('p');
     const result = await pool.query(
-      `SELECT p.*, c.nome as cliente_nome_cadastro, ${sqlObraJson('ob')} AS obra
+      `SELECT p.*, c.nome as cliente_nome_cadastro, ${sqlObraJson('ob')} AS obra, ${dc.coluna}
        FROM propostas p
        LEFT JOIN clientes c ON p.cliente_id = c.id
        LEFT JOIN obras ob ON ob.id = p.obra_id
+       ${dc.join}
        ${condicoes}
        ORDER BY p.sequencial DESC
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -205,7 +211,7 @@ async function criar(req, res, next) {
   try {
     // obra (2.0): proposta nova já nasce ligada à obra aberta (obra_id opcional)
     const obra = lerObraId(req.body);
-    const erroObra = await conferirObra(pool, obra);
+    const erroObra = await conferirObra(pool, obra, { usuario: req.usuario });
     if (erroObra) return res.status(400).json({ erro: erroObra });
 
     const { proposta, numero } = await comTransacao(async (client) => {
@@ -265,6 +271,21 @@ async function atualizar(req, res, next) {
   if (erroValidacao) return res.status(400).json({ erro: erroValidacao });
 
   try {
+    // Aprovada pelo cliente no link (2.0, Fase 3I): o aceite guarda o hash do
+    // que ele viu; editar depois deixaria o sistema diferente do aceito sem
+    // aviso. Só o administrador altera (para corrigir); o normal é duplicar.
+    if (req.usuario?.role !== 'admin') {
+      const { rows: [aceite] } = await pool.query(
+        `SELECT 1 FROM propostas p
+          WHERE p.id = $1 AND p.status = 'Aprovada'
+            AND EXISTS (SELECT 1 FROM proposta_decisoes_aprovacao d WHERE d.proposta_id = p.id AND d.decisao = 'aprovada')`,
+        [id]
+      );
+      if (aceite) {
+        return res.status(409).json({ erro: 'Esta proposta foi aprovada pelo cliente pelo link e não pode mais ser alterada. Use "Duplicar" para fazer uma nova versão (ou peça a um administrador).' });
+      }
+    }
+
     // BDI diferenciado e memória do BDI (2.0, Fase 3F): ausentes no corpo
     // (cliente antigo, MCP) mantêm o que a proposta já tem — e o total é
     // recalculado com o BDI de materiais gravado, para não mudar sozinho
@@ -280,7 +301,7 @@ async function atualizar(req, res, next) {
 
     // obra (2.0): obra_id no corpo liga/desliga (null); ausente mantém a atual
     const obra = lerObraId(req.body);
-    const erroObra = await conferirObra(pool, obra);
+    const erroObra = await conferirObra(pool, obra, { usuario: req.usuario, tabela: 'propostas', id });
     if (erroObra) return res.status(400).json({ erro: erroObra });
 
     const proposta = await comTransacao(async (client) => {
@@ -550,7 +571,7 @@ async function gerarPdf(req, res) {
 
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="${nomeArquivoProposta(resultado.proposta)}"`,
+      'Content-Disposition': contentDisposition(nomeArquivoProposta(resultado.proposta)),
     });
     res.send(resultado.pdf);
   } catch (err) {
@@ -569,7 +590,7 @@ async function gerarPlanilha(req, res) {
     const nome = nomeArquivoProposta(r.proposta).replace(/\.pdf$/i, '.xlsx');
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename="${nome}"`,
+      'Content-Disposition': contentDisposition(nome),
     });
     res.send(Buffer.from(r.buffer));
   } catch (err) {

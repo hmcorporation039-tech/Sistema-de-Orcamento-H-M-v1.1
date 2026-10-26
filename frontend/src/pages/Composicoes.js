@@ -20,6 +20,11 @@ import { useAuth } from '../hooks/useAuth';
 const SEGMENTOS = ['privado', 'publico'];
 const moeda = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
 const numero = (v) => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
+// rolo/caixa contado em metro: "convertido de RL 100 m (R$ 283,04 a embalagem)"
+const precoEmbalagem = (l) => (l.conversao?.preco_embalagem != null
+  ? `${l.observacao_preco} (${moeda(l.conversao.preco_embalagem)} a embalagem)`
+  : l.observacao_preco);
+const notaConversao = { color: '#8fb3d9', fontSize: 10.5 };
 const semAcento = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const casaBusca = (txt, busca) => {
   const palavras = semAcento(busca).split(/\s+/).filter(Boolean);
@@ -256,6 +261,7 @@ function DetalheItens({ comp }) {
                 <td style={td}>
                   {l.descricao}
                   {l.a_cotar && <div style={{ color: '#d9a441', fontSize: 10.5 }}>{l.motivo}</div>}
+                  {!l.a_cotar && l.observacao_preco && <div style={notaConversao}>{precoEmbalagem(l)}</div>}
                 </td>
                 <td style={{ ...td, textAlign: 'right' }}>{numero(l.coeficiente)}</td>
                 <td style={td}>{l.unidade}</td>
@@ -426,9 +432,18 @@ function EditorComposicao({ form, setForm, onFechar }) {
                       onChange={e => alterarItem(it.chave, 'descricao', e.target.value)} />
                   )}
                   {lp?.a_cotar && <div style={{ color: '#d9a441', fontSize: 10.5 }}>{lp.motivo}</div>}
+                  {lp && !lp.a_cotar && lp.observacao_preco && <div style={notaConversao}>{precoEmbalagem(lp)}</div>}
                 </td>
                 <td style={td}><input inputMode="decimal" value={it.coeficiente} onChange={e => alterarItem(it.chave, 'coeficiente', e.target.value)} aria-label="Coeficiente" /></td>
-                <td style={td}>{vinculado ? it.unidade : <input value={it.unidade} maxLength={10} onChange={e => alterarItem(it.chave, 'unidade', e.target.value)} aria-label="Unidade" />}</td>
+                <td style={td}>
+                  {/* rolo/caixa com a metragem na descrição: dá para contar o item em metro */}
+                  {it.material_id && lp?.embalagem_metros ? (
+                    <Select value={it.unidade} onChange={e => alterarItem(it.chave, 'unidade', e.target.value)} aria-label="Unidade"
+                      title={`Contar em metro: preço do ${lp.unidade_catalogo} ÷ ${String(lp.embalagem_metros).replace('.', ',')} m`}>
+                      {[...new Set([lp.unidade_catalogo, 'm', it.unidade].filter(Boolean))].map(u => <option key={u} value={u}>{u}</option>)}
+                    </Select>
+                  ) : vinculado ? it.unidade : <input value={it.unidade} maxLength={10} onChange={e => alterarItem(it.chave, 'unidade', e.target.value)} aria-label="Unidade" />}
+                </td>
                 <td style={{ ...td, textAlign: 'right' }}>{lp ? (lp.a_cotar ? <span style={{ color: '#d9a441' }}>a cotar</span> : moeda(lp.custo)) : '—'}</td>
                 <td style={{ ...td, textAlign: 'right' }}>{lo ? (lo.a_cotar ? <span style={{ color: '#d9a441' }}>a cotar</span> : moeda(lo.custo)) : '—'}</td>
                 <td style={td}>

@@ -144,8 +144,12 @@ function etapasDaProposta({ proposta = {}, secoes = [], itens = [] }) {
   const mat = num(totais.subtotal_materiais);
   const mo = num(totais.subtotal_mao_obra);
   const base = mat + mo;
-  // parte do total que cabe ao material: material + BDI proporcional + imposto de venda; o resto é da mão de obra
-  const parteMat = base > 0 ? mat + num(totais.valor_bdi) * (mat / base) + num(totais.valor_imposto_venda) : 0;
+  // parte do total que cabe ao material: material + BDI dos materiais + imposto de venda; o resto é da mão de obra.
+  // Com BDI diferenciado (bdi_materiais) cada parte leva o seu; sem ele, o BDI único é proporcional.
+  const bdiMat = totais.valor_bdi_materiais != null
+    ? num(totais.valor_bdi_materiais)
+    : (base > 0 ? num(totais.valor_bdi) * (mat / base) : 0);
+  const parteMat = base > 0 ? mat + bdiMat + num(totais.valor_imposto_venda) : 0;
   const parteMo = num(totais.total) - parteMat;
   const lista = [...sistemas.values()].map(s => ({
     ...s,

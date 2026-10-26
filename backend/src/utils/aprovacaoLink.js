@@ -338,7 +338,27 @@ function ipDoPedido(req) {
   return String(req.ip || req.socket?.remoteAddress || '').replace(/^::ffff:/, '').slice(0, 64) || null;
 }
 
+// Última decisão do cliente pelo link, para as LISTAS de propostas (uma só
+// consulta: LATERAL pelo índice idx_decisoes_aprovacao_proposta, sem uma ida ao
+// banco por linha). `alias` é o apelido da tabela propostas na consulta; as
+// colunas do LATERAL têm prefixo dc_ para não ficarem ambíguas com as da proposta.
+// coluna → decisao_cliente: { decisao: 'aprovada'|'recusada', nome, data } ou null.
+function sqlDecisaoCliente(alias = 'p') {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error('alias inválido');
+  return {
+    coluna: `CASE WHEN dc_ap.dc_decisao IS NULL THEN NULL
+      ELSE json_build_object('decisao', dc_ap.dc_decisao, 'nome', dc_ap.dc_nome, 'data', dc_ap.dc_data) END AS decisao_cliente`,
+    join: `LEFT JOIN LATERAL (
+      SELECT d.decisao AS dc_decisao, d.nome AS dc_nome, d.decidido_em AS dc_data
+        FROM proposta_decisoes_aprovacao d
+       WHERE d.proposta_id = ${alias}.id
+       ORDER BY d.decidido_em DESC, d.id DESC LIMIT 1
+    ) dc_ap ON TRUE`,
+  };
+}
+
 module.exports = {
+  sqlDecisaoCliente,
   gerarToken, hashToken, formatoTokenValido, hashesIguais,
   limparDocumento, cpfValido, cnpjValido, analisarDocumento, formatarDocumento,
   hojeBrasilia, vencimentoProposta, propostaVencida, calcularExpiracao, DIAS_MAX_LINK,

@@ -2,6 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const pool = require('../config/database');
+const { contentDisposition } = require('../utils/nomeArquivoDownload');
 const { registrarAuditoria } = require('../utils/auditoria');
 const { listarDisciplinas, motorDaDisciplina, cad } = require('../utils/disciplinasLaudo');
 const { compararComCatalogo } = require('../utils/compatibilizacaoAnalise');
@@ -134,7 +135,7 @@ async function criar(req, res) {
     const gerarOrc = req.body.gerar_orcamento !== false;
     // obra (2.0): laudo novo ligado à obra → pasta em Obras\<obra>\Laudos\<disciplina>
     const leituraObra = lerObraId(req.body);
-    const erroObra = await conferirObra(pool, leituraObra);
+    const erroObra = await conferirObra(pool, leituraObra, { usuario: req.usuario });
     if (erroObra) return res.status(400).json({ erro: erroObra });
     const { rows } = await pool.query(
       `INSERT INTO laudos_projetos (disciplina, titulo, cliente_nome, dados, usuario_id, gerar_orcamento, obra_id)
@@ -173,9 +174,12 @@ async function criarDeAnalise(req, res) {
     // obra (2.0): herda a obra da análise de origem (obra_id no corpo tem prioridade)
     // e guarda de qual análise veio (analise_id)
     const leituraObra = lerObraId(req.body);
-    const erroObra = await conferirObra(pool, leituraObra);
+    const erroObra = await conferirObra(pool, leituraObra, { usuario: req.usuario });
     if (erroObra) return res.status(400).json({ erro: erroObra });
-    const obraId = leituraObra.presente ? leituraObra.valor : (linha.obra_id || null);
+    let obraId = leituraObra.presente ? leituraObra.valor : (linha.obra_id || null);
+    // herdada da análise: só se este usuário puder ligar itens àquela obra
+    if (!leituraObra.presente && obraId
+      && await conferirObra(pool, { presente: true, valor: obraId }, { usuario: req.usuario })) obraId = null;
     const { rows } = await pool.query(
       `INSERT INTO laudos_projetos (disciplina, titulo, cliente_nome, dados, usuario_id, gerar_orcamento, obra_id, analise_id, cliente_id)
        VALUES ($1,$2,$3,$4,$5,true,$6,$7,$8) RETURNING *`,
@@ -197,7 +201,7 @@ async function atualizar(req, res) {
     const gerarOrc = typeof req.body.gerar_orcamento === 'boolean' ? req.body.gerar_orcamento : null;
     // obra (2.0): obra_id presente liga/desliga (null); ausente mantém
     const leituraObra = lerObraId(req.body);
-    const erroObra = await conferirObra(pool, leituraObra);
+    const erroObra = await conferirObra(pool, leituraObra, { usuario: req.usuario, tabela: 'laudos_projetos', id: req.params.id });
     if (erroObra) return res.status(400).json({ erro: erroObra });
     const { rows } = await pool.query(
       `UPDATE laudos_projetos SET dados = $1, titulo = $2, cliente_nome = $3, gerar_orcamento = COALESCE($5, gerar_orcamento),
@@ -318,9 +322,8 @@ async function documento(req, res) {
     const tipo = req.params.tipo;
     if (!motor.documentos.some(d => d.tipo === tipo)) return res.status(400).json({ erro: 'Tipo de documento inválido.' });
     const { gerados: [gerado] } = await gerarDocumentosDoLaudo(laudo, [tipo]);
-    const ascii = gerado.nomeArquivo.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '');
     res.setHeader('Content-Type', gerado.mime);
-    res.setHeader('Content-Disposition', `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(gerado.nomeArquivo)}`);
+    res.setHeader('Content-Disposition', contentDisposition(gerado.nomeArquivo));
     res.setHeader('X-Nome-Arquivo', encodeURIComponent(gerado.nomeArquivo));
     res.send(gerado.buffer);
   } catch (err) {
@@ -440,7 +443,7 @@ async function gerarPlantaDxf(req, res) {
     });
     const nome = `${nomeSeguroArquivo(laudo.titulo)} - Planta ${laudo.disciplina}.dxf`;
     await seguro(`planta laudo ${laudo.id}`, async () => P.gravarArquivo(await pastaDoLaudo(laudo), nome, Buffer.from(out.dxf, 'utf8')));
-    res.set({ 'Content-Type': 'application/dxf', 'Content-Disposition': `attachment; filename="${encodeURIComponent(nome)}"`, 'X-Ambientes-Nao-Encontrados': encodeURIComponent(out.naoEncontrados.join('; ')) });
+    res.set({ 'Content-Type': 'application/dxf', 'Content-Disposition': contentDisposition(nome), 'X-Nome-Arquivo': encodeURIComponent(nome), 'X-Ambientes-Nao-Encontrados': encodeURIComponent(out.naoEncontrados.join('; ')) });
     res.send(Buffer.from(out.dxf, 'utf8'));
   } catch (err) {
     responderErro(res, err, 'gerar a planta');
@@ -460,7 +463,7 @@ async function gerarUnifilarQet(req, res) {
     const { xml } = gerar(processarComMotor(motor, laudo.dados), { quadro: 'QD-01' });
     const nome = `${nomeSeguroArquivo(laudo.titulo)} - Unifilar.qet`;
     await seguro(`unifilar laudo ${laudo.id}`, async () => P.gravarArquivo(await pastaDoLaudo(laudo), nome, Buffer.from(xml, 'utf8')));
-    res.set({ 'Content-Type': 'application/xml', 'Content-Disposition': `attachment; filename="${encodeURIComponent(nome)}"` });
+    res.set({ 'Content-Type': 'application/xml', 'Content-Disposition': contentDisposition(nome), 'X-Nome-Arquivo': encodeURIComponent(nome) });
     res.send(Buffer.from(xml, 'utf8'));
   } catch (err) {
     responderErro(res, err, 'gerar o unifilar');

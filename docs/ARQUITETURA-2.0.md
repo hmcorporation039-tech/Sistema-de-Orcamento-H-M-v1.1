@@ -105,6 +105,24 @@ fica com o que foi extraído do PDF (leitura) e o botão "Gerar orçamento".
 Para o cliente abrir o link de fora da rede, o sistema precisa estar publicado
 na internet e `URL_PUBLICA` definida no `.env`.
 
+Ajustes antes da produção (26/10/2026):
+
+- **Rolo/caixa → metro nos kits:** material do catálogo em RL/CX com a
+  metragem escrita na descrição ("100MT", "CX 305M", "caixa com 305 metros")
+  vale para item do kit em metro (preço ÷ metragem, "convertido de RL 100 m");
+  sem metragem clara continua "a cotar". Calcular/explodir nunca liga item
+  sozinho. Migração 2.0-11 (uma vez, marca `composicoes_kits_metragem`) liga
+  os cabos/eletrodutos "sem catálogo" dos kits-modelo nunca editados
+  (`versao = 0`) quando o casamento acha rolo/caixa com metragem; o seed 2.0-08
+  já casa assim numa instalação nova. Na tela do kit, item ligado a rolo/caixa
+  com metragem pode ser contado em "m" (a unidade continua em m ao salvar).
+- **Lista de propostas:** selo "Cliente aprovou/recusou" (`decisao_cliente`
+  da listagem e do relatório por período, uma consulta só) e ícone do link de
+  aprovação nas propostas Ativas.
+- **Downloads:** `utils/nomeArquivoDownload.js` monta o `Content-Disposition`
+  com `filename` ASCII + `filename*` UTF-8 (RFC 5987) em todas as rotas.
+- **App de campo:** `GET /obras?pode_abrir_os=1` (ver `docs/CAMPO-API.md`).
+
 Itens marcados `[CONFERIR]` no `bdiTcu.js`: ISS padrão de 2 % (depende do
 município), cronograma da CPRB pela Lei 14.973/2024 e a comparação da faixa do
 TCU no regime desonerado (feita sem a CPRB).

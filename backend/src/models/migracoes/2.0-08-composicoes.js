@@ -14,7 +14,8 @@
 // 'composicoes_kits_modelo' em configuracoes impede recriar um kit que o
 // usuário editou ou apagou; o código fixo (ON CONFLICT DO NOTHING) impede
 // duplicar mesmo se a marca for apagada. Materiais são casados ao catálogo
-// pela descrição (compararComCatalogo + mesma unidade + mesmas medidas); o
+// pela descrição (compararComCatalogo + mesma unidade — ou rolo/caixa com a
+// metragem escrita para item em metro — + mesmas medidas); o
 // que não casa entra como material sem catálogo.
 const { KITS_MODELO, casarComCatalogo } = require('../../utils/composicoes');
 const { compararComCatalogo } = require('../../utils/compatibilizacaoAnalise');
@@ -91,7 +92,8 @@ module.exports = async (client) => {
          VALUES ($1, $2, 'material', $3, $4, $5, $6)`,
         [nova.id, ordem, achado ? achado.material_id : null, it.coeficiente,
          String(achado ? achado.descricao_catalogo : it.descricao).slice(0, 300),
-         String(achado ? achado.unidade_catalogo : it.unidade).slice(0, 10)]
+         // rolo/caixa com metragem (achado.conversao): o item continua em metro
+         String(achado && !achado.conversao ? achado.unidade_catalogo : it.unidade).slice(0, 10)]
       );
     }
   }

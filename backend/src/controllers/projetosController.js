@@ -1,5 +1,6 @@
 const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
 const pool = require('../config/database');
+const { contentDisposition } = require('../utils/nomeArquivoDownload');
 const { registrarAuditoria } = require('../utils/auditoria');
 const { analisarProjetoCompleto } = require('../utils/compatibilizacaoAnalise');
 const { gerarHtmlRelatorioCompatibilizacao } = require('../utils/relatorioCompatibilizacaoTemplate');
@@ -166,7 +167,7 @@ async function analisar(req, res) {
   // obra (2.0): campo multipart obra_id — a análise nasce ligada à obra e a
   // pasta dela fica em Obras\<obra>\Projeto
   const leituraObra = lerObraId(req.body);
-  const erroObra = await conferirObra(pool, leituraObra).catch(() => 'Obra não encontrada.');
+  const erroObra = await conferirObra(pool, leituraObra, { usuario: req.usuario }).catch(() => 'Obra não encontrada.');
   if (erroObra) return res.status(400).json({ erro: erroObra });
   const obraDaAnalise = leituraObra.valor
     ? (await pool.query('SELECT id, cliente_id, cliente_nome FROM obras WHERE id = $1', [leituraObra.valor])).rows[0]
@@ -236,7 +237,7 @@ async function atualizar(req, res) {
   try {
     // obra (2.0): obra_id presente liga/desliga (null); ausente mantém
     const leituraObra = lerObraId(req.body);
-    const erroObra = await conferirObra(pool, leituraObra);
+    const erroObra = await conferirObra(pool, leituraObra, { usuario: req.usuario, tabela: 'analises_projeto', id });
     if (erroObra) return res.status(400).json({ erro: erroObra });
     const result = await pool.query(
       `UPDATE analises_projeto SET
@@ -316,7 +317,7 @@ async function gerarRelatorio(req, res, next) {
     const nomeCliente = String(analise.nomeProjeto || analise.cliente || 'projeto').trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_');
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="Compatibilizacao_${nomeCliente}.pdf"`,
+      'Content-Disposition': contentDisposition(`Compatibilização_${nomeCliente}.pdf`),
     });
     res.send(pdf);
   } catch (err) {

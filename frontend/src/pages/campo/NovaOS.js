@@ -14,6 +14,7 @@ export default function NovaOS() {
   const navigate = useNavigate();
   const { dados, online, sincronizarAgora, estadoSync } = useCampo();
   const [obras, setObras] = useState([]);
+  const [obrasBaixadas, setObrasBaixadas] = useState(false);
   const [modelos, setModelos] = useState([]);
   const [busca, setBusca] = useState('');
   const [obraId, setObraId] = useState(null);
@@ -25,9 +26,10 @@ export default function NovaOS() {
   useEffect(() => {
     let vivo = true;
     (async () => {
-      const [o, m] = [await dados.lista('obras'), await dados.lista('modelos')];
+      const [o, m, baixadas] = [await dados.lista('obras'), await dados.lista('modelos'), await dados.temLista('obras')];
       if (!vivo) return;
       setObras(o);
+      setObrasBaixadas(baixadas);
       setModelos(m);
       setModelo(atual => atual || (m.find(x => x.chave === 'generico') || m[0])?.chave || '');
     })();
@@ -65,7 +67,9 @@ export default function NovaOS() {
         <label htmlFor="busca-obra" style={{ marginTop: 0 }}>Obra</label>
         {obras.length === 0 ? (
           <div style={{ color: COR.texto2 }}>
-            {online ? 'Baixando a lista de obras…' : 'Sem lista de obras neste aparelho. Abra o app com rede uma vez para baixá-la.'}
+            {obrasBaixadas
+              ? 'Nenhuma obra em que você possa abrir OS. Peça ao escritório para ser o responsável pela obra.'
+              : online ? 'Baixando a lista de obras…' : 'Sem lista de obras neste aparelho. Abra o app com rede uma vez para baixá-la.'}
             {online && <div style={{ marginTop: 8 }}><Botao variante="contorno" onClick={sincronizarAgora}>Baixar agora</Botao></div>}
           </div>
         ) : (

@@ -152,6 +152,11 @@ Detalhes da sincronização (Fase 4J, backend pronto):
 - `criar_os`: pode quem é dono da obra/admin, o `responsavel_id` da obra ou
   quem já é responsável por alguma OS dessa obra; o responsável da OS nova é
   quem a criou. `os_uuid` que já existe e o usuário vê → `ok:true` (idempotente).
+  A regra fica em `utils/campo.js` (`podeAbrirOS` e a mesma em SQL,
+  `condicaoPodeAbrirOS`); a lista de obras do app usa
+  `GET /obras?campos=basico&pode_abrir_os=1&porPagina=1000`, que devolve só as
+  obras em que o usuário pode abrir OS (e nenhuma cancelada) — o técnico não
+  escolhe uma obra que o servidor depois recusaria.
 - `item_extra`: `item_id` começa com `x-`; repetido com o mesmo texto →
   `ok:true` sem mudar; com outro texto → `ok:false`.
 - `assinar` em OS concluída: até 7 dias depois da conclusão, como as fotos.

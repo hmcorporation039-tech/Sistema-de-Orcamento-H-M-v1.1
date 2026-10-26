@@ -22,6 +22,11 @@ export function criarDados({ loja, usuario, agora = () => new Date(), uuid = nov
     return reg?.itens || [];
   }
 
+  // a lista já veio do servidor alguma vez (vazia ≠ ainda não baixada)
+  async function temLista(chave) {
+    return !!(await loja.get('listas', chave));
+  }
+
   async function contexto() {
     return { modelos: await lista('modelos'), obras: await lista('obras'), usuario };
   }
@@ -220,7 +225,7 @@ export function criarDados({ loja, usuario, agora = () => new Date(), uuid = nov
     contexto, fila, fotosMeta, visoes, visao, resumo,
     registrar, criarOS, guardarFoto, lerArquivo, descartarRecusada, tentarDeNovo,
     salvarDoServidor, confirmarOperacao, removerOperacao, recusarOperacao, marcarFoto,
-    salvarLista, lista, meta, salvarMeta, podarAusentes, limparAntigas,
+    salvarLista, lista, temLista, meta, salvarMeta, podarAusentes, limparAntigas,
     hoje: () => diaLocal(agora()),
   };
 }

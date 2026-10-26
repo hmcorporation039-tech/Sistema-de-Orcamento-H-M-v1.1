@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Search, Trash2, X, FileDown, FileSpreadsheet, Copy, Send, Pencil, Plus } from 'lucide-react';
+import { Search, Trash2, X, FileDown, FileSpreadsheet, Copy, Send, Pencil, Plus, Link2, CheckCircle2, XCircle } from 'lucide-react';
 import { getPropostas, getProposta, getClientes, atualizarStatus, removerProposta, duplicarProposta, getRelatorioPropostas } from '../services/api';
 import api from '../services/api';
 import { formatarMoeda, formatarData, formatarNcm } from '../utils/format';
 import Paginacao from '../components/Paginacao';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
 import Select from '../components/Select';
+import BotaoLinkAprovacao from '../components/BotaoLinkAprovacao';
 
 const STATUS_CORES = {
   Ativa: { bg: '#1a1a0a', cor: '#c9a227', borda: '#4a3d10' },
@@ -21,7 +22,39 @@ const ACAO_LABEL = {
   editada: 'Editada',
   status: 'Status alterado',
   duplicada: 'Duplicada',
+  email: 'Enviada por e-mail',
+  link_aprovacao: 'Link de aprovação',
+  link_revogado: 'Link revogado',
+  aprovada_link: 'Aprovada pelo cliente (link)',
+  recusada_link: 'Recusada pelo cliente (link)',
 };
+
+const dataHoraCurta = (d) => d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+// Decisão do cliente pelo link de aprovação (decisao_cliente da listagem:
+// { decisao, nome, data } da última decisão). Selo pequeno ao lado do status;
+// o nome e a hora ficam na dica (title) para não alargar a tabela.
+function SeloDecisaoCliente({ decisao }) {
+  if (!decisao?.decisao) return null;
+  const aprovou = decisao.decisao === 'aprovada';
+  const quando = decisao.data ? new Date(decisao.data) : null;
+  const dica = `${aprovou ? 'Aprovada' : 'Recusada'} pelo cliente pelo link de aprovação`
+    + (decisao.nome ? ` — ${decisao.nome}` : '')
+    + (quando ? `, ${dataHoraCurta(quando)}` : '');
+  const Icone = aprovou ? CheckCircle2 : XCircle;
+  return (
+    <span title={dica} aria-label={dica} data-testid="selo-decisao-cliente"
+      style={{
+        marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 20,
+        fontSize: 10, fontWeight: 700, verticalAlign: 'middle',
+        background: aprovou ? '#0a1a0f' : '#1a0a0a', color: aprovou ? '#3fb95f' : '#d06060',
+        border: `1px dashed ${aprovou ? '#1a4a26' : '#4a1a1a'}`,
+      }}>
+      <Icone size={11} /> {aprovou ? 'Cliente aprovou' : 'Cliente recusou'}
+      {quando ? ` ${quando.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}` : ''}
+    </span>
+  );
+}
 
 // Remove acentuação e normaliza caixa/espaços — usado pra achar o cliente pelo
 // nome quando a proposta não está linkada por cliente_id (ex.: "CLINICA" na
@@ -103,6 +136,10 @@ export default function Historico() {
   const [modalEmail, setModalEmail] = useState(false);
   const [pagina, setPagina] = useState(1);
   const [paginacao, setPaginacao] = useState({ total: 0, totalPaginas: 1 });
+  // Proposta com o modal do link de aprovação aberto ({ id, numero, status }).
+  // Um modal só, fora da tabela: recarregar a lista (depois de gerar o link ou de
+  // uma decisão do cliente) não o fecha — o endereço novo só aparece uma vez.
+  const [linkAprovacao, setLinkAprovacao] = useState(null);
 
   const temPeriodo = Boolean(dataInicio || dataFim);
   const inicioEfetivo = dataInicio || INICIO_DO_HISTORICO;
@@ -171,6 +208,10 @@ export default function Historico() {
     ? doPeriodo.slice((paginaPeriodo - 1) * POR_PAGINA, paginaPeriodo * POR_PAGINA)
     : propostas;
   const carregandoLista = temPeriodo ? carregandoRelatorio : carregando;
+  // status atual da proposta do modal (a decisão do cliente pode mudá-lo)
+  const statusLinkAprovacao = linkAprovacao
+    ? (linhas.find(l => l.id === linkAprovacao.id)?.status || linkAprovacao.status)
+    : null;
   const totais = relatorio.totais || { propostas: 0, valorTotal: 0, valorAprovado: 0 };
 
   function aplicarAtalho(atalho) {
@@ -376,7 +417,7 @@ export default function Historico() {
               <th style={th}>Local</th>
               <th style={{ ...th, textAlign: 'right' }}>Total</th>
               <th style={th}>Status</th>
-              <th style={{ ...th, width: 80 }}></th>
+              <th style={{ ...th, width: 100 }}></th>
             </tr>
           </thead>
           <tbody>
@@ -410,12 +451,22 @@ export default function Historico() {
                         {dias === 0 ? 'Vence hoje' : `Vence em ${dias}d`}
                       </span>
                     )}
+                    <SeloDecisaoCliente decisao={p.decisao_cliente} />
                   </td>
                   <td style={{ ...td }} onClick={e => e.stopPropagation()}>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button onClick={() => editar(p.id)} style={btnIcone} title="Editar">
                         <Pencil size={13} />
                       </button>
+                      {p.status === 'Ativa' && (
+                        <button onClick={() => setLinkAprovacao({ id: p.id, numero: p.numero, status: p.status })}
+                          style={btnIcone} title="Link de aprovação para o cliente"
+                          aria-label={`Link de aprovação da proposta ${p.numero}`} data-testid="abrir-link-aprovacao">
+                          <Link2 size={13} />
+                        </button>
+                      )}
+                      {/* mantém o "excluir" alinhado nas linhas sem o ícone do link */}
+                      {p.status !== 'Ativa' && <span aria-hidden="true" style={{ width: 26, flex: '0 0 26px' }} />}
                       <button onClick={() => excluir(p)} style={{ ...btnIcone, color: '#b04040' }} title="Excluir">
                         <Trash2 size={13} />
                       </button>
@@ -556,6 +607,16 @@ export default function Historico() {
           </div>
         </div>
       )}
+
+      <BotaoLinkAprovacao
+        key={linkAprovacao?.id || 'nenhuma'}
+        aberto={!!linkAprovacao}
+        onFechar={() => setLinkAprovacao(null)}
+        propostaId={linkAprovacao?.id}
+        numero={linkAprovacao?.numero}
+        status={statusLinkAprovacao}
+        onAlterado={recarregar}
+      />
 
       <ModalEnviarEmail
         aberto={modalEmail}

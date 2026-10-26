@@ -7,6 +7,7 @@ import Login from './pages/Login';
 import DefinirSenha from './pages/DefinirSenha';
 import AprovacaoPublica from './pages/AprovacaoPublica';
 import Layout from './components/Layout';
+import FaixaAmbiente from './components/FaixaAmbiente';
 import Dashboard from './pages/Dashboard';
 import ObrasHub from './pages/hubs/ObrasHub';
 import PropostasHub from './pages/hubs/PropostasHub';
@@ -76,6 +77,7 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Toaster position="top-right" />
+        <FaixaAmbiente />
         <Routes>
           <Route path="/login" element={<Login />} />
           {/* PÚBLICA (2.0, Fase 3I): o cliente abre pelo link enviado pela H&M — sem

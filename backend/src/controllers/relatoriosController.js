@@ -1,6 +1,8 @@
 const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
 const pool = require('../config/database');
 const { gerarHtmlRelatorio, gerarFooterTemplateRelatorio } = require('../utils/relatorioTemplate');
+const { sqlDecisaoCliente } = require('../utils/aprovacaoLink');
+const { contentDisposition } = require('../utils/nomeArquivoDownload');
 
 // Primeiro dia do mês atual até hoje, se as datas não forem informadas
 function periodoPadrao() {
@@ -36,12 +38,15 @@ function montarFiltro(query) {
 async function buscarPropostasEtotais(query) {
   const { where, params, dataInicio, dataFim, status, busca } = montarFiltro(query);
 
+  // decisao_cliente: última decisão do cliente pelo link (a lista com período usa)
+  const dc = sqlDecisaoCliente('propostas');
   const propostas = await pool.query(
     `SELECT id, numero, data, validade, cliente_nome, local_obra, status,
        subtotal_materiais, subtotal_mao_obra, valor_bdi,
        imposto_venda, imposto_servico, valor_imposto_venda, valor_imposto_servico,
-       bdi, total
+       bdi, total, ${dc.coluna}
      FROM propostas
+     ${dc.join}
      ${where}
      ORDER BY sequencial DESC`,
     params
@@ -112,7 +117,7 @@ async function exportarCsv(req, res) {
     const bom = '﻿';
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="relatorio-propostas.csv"');
+    res.setHeader('Content-Disposition', contentDisposition('relatório-propostas.csv'));
     res.send(bom + csv);
   } catch (err) {
     console.error('Erro ao exportar CSV do relatório:', err);
@@ -133,7 +138,7 @@ async function exportarPdf(req, res, next) {
     });
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename="relatorio-propostas.pdf"');
+    res.setHeader('Content-Disposition', contentDisposition('relatório-propostas.pdf'));
     res.send(pdf);
   } catch (err) {
     console.error('Erro ao exportar PDF do relatório:', err);

@@ -171,8 +171,12 @@ async function resumoPasta(pastaAbs) {
 // outro computador não veria a janela abrir no servidor).
 // Usa o endereço da conexão, nunca req.ip: com `trust proxy` ligado, req.ip
 // vem do cabeçalho X-Forwarded-For, que qualquer um pode forjar.
+// Pedido que passou por um proxy/túnel no próprio PC (para o link de aprovação
+// na internet) chega de 127.0.0.1 mas não é local: o cabeçalho de
+// encaminhamento denuncia — nesse caso não conta como local.
 function pedidoLocal(req) {
   const ip = String(req.socket?.remoteAddress || '');
+  if (req.headers?.['x-forwarded-for'] || req.headers?.forwarded || req.headers?.['x-real-ip']) return false;
   return /^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(ip);
 }
 

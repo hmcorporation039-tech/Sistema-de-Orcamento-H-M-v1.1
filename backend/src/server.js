@@ -85,7 +85,9 @@ app.use('/api', routes);
 app.get('/health', async (req, res) => {
   try {
     await pool.query('SELECT 1');
-    res.json({ status: 'ok', banco: 'ok', ...(pedidoLocal(req) ? { versao: VERSAO } : {}) });
+    // ambiente: a tela mostra a faixa "AMBIENTE DE TESTE" quando AMBIENTE=teste
+    const ambiente = process.env.AMBIENTE === 'teste' ? { ambiente: 'teste' } : {};
+    res.json({ status: 'ok', banco: 'ok', ...ambiente, ...(pedidoLocal(req) ? { versao: VERSAO } : {}) });
   } catch {
     res.status(503).json({ status: 'erro', banco: 'indisponível' });
   }

@@ -201,7 +201,8 @@ export default function InserirComposicao({ segmento = 'privado', onInserir, dis
                     {previa.itens.map((it, i) => (
                       <tr key={i} style={{ borderTop: '1px solid #1c1c1c' }}>
                         <td style={{ ...td, color: '#888', whiteSpace: 'nowrap' }}>{it.tipo === 'servico' ? 'Mão de obra' : 'Material'}</td>
-                        <td style={td}>{it.descricao}{it.a_cotar && <div style={{ color: '#d9a441', fontSize: 10.5 }}>{it.motivo}</div>}</td>
+                        <td style={td}>{it.descricao}{it.a_cotar && <div style={{ color: '#d9a441', fontSize: 10.5 }}>{it.motivo}</div>}
+                          {!it.a_cotar && it.observacao_preco && <div style={{ color: '#8fb3d9', fontSize: 10.5 }}>{it.observacao_preco}</div>}</td>
                         <td style={{ ...td, textAlign: 'right' }}>{qtdBR(it.quantidade)}</td>
                         <td style={td}>{it.unidade}</td>
                         <td style={{ ...td, textAlign: 'right' }}>{it.a_cotar ? <span style={{ color: '#d9a441' }}>a cotar</span> : moeda(it.valor_unitario)}</td>

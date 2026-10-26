@@ -58,6 +58,11 @@ function tratarErros(err, req, res, next) {
     return res.status(status).json({ erro });
   }
 
+  // corpo que não é JSON válido ou grande demais (express.json): erro de quem
+  // enviou, não do servidor
+  if (err && err.type === 'entity.parse.failed') return res.status(400).json({ erro: 'Dados enviados em formato inválido.' });
+  if (err && err.type === 'entity.too.large') return res.status(413).json({ erro: 'Dados enviados grandes demais.' });
+
   if (err && ERROS_DE_ENTRADA[err.code]) {
     console.error(`Erro de entrada (${err.code}) em ${req.method} ${req.originalUrl}:`, err.message);
     return res.status(400).json({ erro: ERROS_DE_ENTRADA[err.code] });
