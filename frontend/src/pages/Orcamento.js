@@ -1,12 +1,17 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, FolderPlus, FileDown, Send, FilePlus2 } from 'lucide-react';
-import { getClientes, getMateriais, getServicos, getSegmentoCliente, getProximoNumero, criarProposta, atualizarProposta, getProposta } from '../services/api';
+import { Plus, Trash2, FolderPlus, FileDown, Send, FilePlus2, Search, ArrowLeft } from 'lucide-react';
+import {
+  getClientes, getMateriais, getServicos, getSegmentoCliente, getProximoNumero, criarProposta, atualizarProposta, getProposta,
+  pesquisarPrecoMercado, getAnaliseProjeto, getLaudo,
+} from '../services/api';
 import api from '../services/api';
 import { formatarMoeda } from '../utils/format';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
 import CampoMoeda from '../components/CampoMoeda';
+import BlocoPesquisaMercado, { resultadoDaPesquisa } from '../components/PesquisaMercado';
+import ObraSelect from '../components/ObraSelect';
 import Select, { Sugestoes, comparador } from '../components/Select';
 import { nomeDisciplina, ROTULO_SEGMENTO } from '../utils/disciplinasServico';
 
@@ -35,6 +40,9 @@ const FORM_VAZIO = {
   // nenhuma conta de total, servem só pro PDF avisar quando foi desconto.
   desconto_materiais_pct: null,
   desconto_mao_obra_pct: null,
+  // obra (2.0, Fase 2D/2E): a proposta pertence a uma obra (ou a nenhuma);
+  // proposta nova aberta a partir da obra (?obra=ID) já vem com ela
+  obra_id: null,
 };
 
 const SECOES_PADRAO = () => [
@@ -86,9 +94,37 @@ function filtrarCatalogoPorCategoria(materiais, categoria) {
   return daCategoria.length > 0 ? daCategoria : materiais;
 }
 
+// Origem do rascunho (versão 2.0 — editor único de orçamento): a Análise de
+// Projeto e os laudos GERAM a proposta e abrem este editor. A proposta guarda
+// a origem em origem_tipo/origem_id (migração 2.0-05); propostas sem esse
+// campo caem na leitura do histórico ("… a partir da Análise de Projeto #12"
+// / "… a partir de Laudos e projetos #5 (SPDA — Execução)"; vale o evento mais
+// antigo) e do escopo. O vínculo é conferido depois na própria origem
+// (analises_projeto.proposta_id / laudos_projetos.propostas), porque uma
+// proposta duplicada herda o escopo sem ser a vinculada.
+function origemDaProposta(p) {
+  if ((p.origem_tipo === 'analise' || p.origem_tipo === 'laudo') && p.origem_id) {
+    const doHistorico = [...(p.eventos || [])].map(e => /Laudos e projetos #\d+\s*\(([^)]*)\)/i.exec(String(e.detalhes || ''))).find(Boolean);
+    return { tipo: p.origem_tipo, id: Number(p.origem_id), rotulo: doHistorico ? doHistorico[1] : '' };
+  }
+  const textos = [...(p.eventos || [])].reverse().map(e => String(e.detalhes || ''));
+  textos.push(String(p.escopo || ''));
+  for (const t of textos) {
+    let m = /An[áa]lise de Projeto #(\d+)/i.exec(t);
+    if (m) return { tipo: 'analise', id: Number(m[1]) };
+    m = /Laudos e projetos #(\d+)(?:\s*\(([^)]*)\))?/i.exec(t);
+    if (m) return { tipo: 'laudo', id: Number(m[1]), rotulo: m[2] || '' };
+  }
+  return null;
+}
+
+const linkDaOrigem = (o) => (o.tipo === 'analise' ? `/obras/analise/${o.id}` : `/obras?aba=laudos&laudo=${o.id}`);
+
 export default function Orcamento() {
   const { id: editandoId } = useParams();
   const navigate = useNavigate();
+  const [busca] = useSearchParams();
+  const obraDaUrl = Number(busca.get('obra')) || null; // /propostas?aba=editar&obra=ID
 
   const [proximoNumero, setProximoNumero] = useState(null);
   const [clientes, setClientes] = useState([]);
@@ -130,6 +166,13 @@ export default function Orcamento() {
   // bater o texto de cliente_nome contra a lista de clientes, que falha se o
   // nome tiver alguma diferença de digitação/espaço.
   const [clienteEmailCadastro, setClienteEmailCadastro] = useState('');
+  // Pesquisa de mercado por item (editor único: antes só a Análise de Projeto
+  // tinha) — { [id do item na tela]: { carregando } | resultado | { erro } }.
+  // Fica na memória da tela; repetir a pesquisa da mesma descrição em até 48 h
+  // vem do histórico do servidor, sem gastar outra consulta.
+  const [pesquisas, setPesquisas] = useState({});
+  // { tipo: 'analise'|'laudo', id, rotulo?, titulo?, existe?, vinculada?, faltando? }
+  const [origem, setOrigem] = useState(null);
 
   useEffect(() => {
     getClientes({ porPagina: 1000 }).then(res => setClientes(res.data.itens)).catch(() => {});
@@ -159,10 +202,18 @@ export default function Orcamento() {
       .sort((a, b) => comparador.compare(a.nome, b.nome));
   }, [servicos]);
   const sugestaoDoServico = (s) => (s?.sugerido ? s.sugerido[segmento] : null);
+  // item sem código (veio digitado, ou de uma análise antiga) ainda acha o
+  // serviço da base pela descrição, para mostrar as referências
+  const servicosPorDescricao = useMemo(() => Object.fromEntries(servicos.map(s => [normalizarNome(s.descricao), s])), [servicos]);
+  const servicoDoItem = (it) => servicosPorCodigo[it.codigo] || servicosPorDescricao[normalizarNome(it.descricao)];
+  const materiaisPorId = useMemo(() => Object.fromEntries(materiais.map(m => [String(m.id), m])), [materiais]);
 
   useEffect(() => {
+    setPesquisas({});
+    setOrigem(null);
     if (!editandoId) {
       getProximoNumero().then(res => setProximoNumero(res.data.proximo)).catch(() => {});
+      if (obraDaUrl) setForm(f => ({ ...f, obra_id: obraDaUrl }));
       return;
     }
     setCarregandoEdicao(true);
@@ -187,6 +238,7 @@ export default function Orcamento() {
         imposto_servico: Number(p.imposto_servico) || 0,
         desconto_materiais_pct: p.desconto_materiais_pct != null ? Number(p.desconto_materiais_pct) : null,
         desconto_mao_obra_pct: p.desconto_mao_obra_pct != null ? Number(p.desconto_mao_obra_pct) : null,
+        obra_id: p.obra_id ?? null,
       });
       setSecoes((p.secoes || []).map(s => ({ id: s.id, nome: s.nome })));
       // Reagrupa por subgrupo já ao carregar — sem isso, uma proposta salva
@@ -203,11 +255,91 @@ export default function Orcamento() {
       }
       setItens(itensCarregados);
       setPropostaSalva(null);
+      carregarOrigem(p, itensCarregados);
     }).catch(() => {
       toast.error('Erro ao carregar proposta para edição');
       navigate('/orcamento');
     }).finally(() => setCarregandoEdicao(false));
-  }, [editandoId, navigate]);
+  }, [editandoId, navigate, obraDaUrl]);
+
+  // Origem do rascunho (análise ou laudo): mostra no topo com o link de volta.
+  // Da análise, traz também (1) as pesquisas de mercado que ficaram salvas
+  // nos itens dela — reabertas recolhidas, sem pesquisar de novo — e (2) os
+  // itens que o gerar deixou de fora por estarem com quantidade 0, para
+  // incluir aqui (a Análise não edita mais quantidade).
+  function carregarOrigem(p, itensCarregados) {
+    const org = origemDaProposta(p);
+    if (!org) return;
+    setOrigem(org);
+    const ehDestaProposta = (id) => id != null && String(id) === String(p.id);
+    if (org.tipo === 'analise') {
+      getAnaliseProjeto(org.id).then(({ data: a }) => {
+        const doItem = [...(a.servicos || []).map(s => ({ ...s, tipo: 'servico' })), ...(a.materiais || []).map(m => ({ ...m, tipo: 'material' }))];
+        const pesquisaPorDescricao = new Map(doItem.filter(x => x.pesquisa_mercado?.resultado && x.descricao)
+          .map(x => [normalizarNome(x.descricao), x.pesquisa_mercado]));
+        const salvas = {};
+        for (const it of itensCarregados) {
+          const pm = pesquisaPorDescricao.get(normalizarNome(it.descricao));
+          if (pm) salvas[it.id] = { ...pm, recolhidaInicial: true, daAnalise: true };
+        }
+        setPesquisas(atual => ({ ...salvas, ...atual }));
+        const naProposta = new Set(itensCarregados.map(it => normalizarNome(it.descricao)));
+        const faltando = doItem.filter(x => !x.pronto && !(Number(x.quantidade) > 0) && String(x.descricao || '').trim()
+          && !naProposta.has(normalizarNome(x.descricao)));
+        setOrigem({ ...org, existe: true, vinculada: ehDestaProposta(a.propostaId), titulo: a.nomeProjeto || a.cliente || '', faltando });
+      }).catch(() => setOrigem({ ...org, existe: false }));
+    } else {
+      getLaudo(org.id).then(({ data: l }) => {
+        setOrigem({
+          ...org, existe: true, vinculada: Object.values(l.propostas || {}).some(ehDestaProposta),
+          titulo: l.dados?.obra?.nome || l.titulo || l.cliente_nome || '',
+        });
+      }).catch(() => setOrigem({ ...org, existe: false }));
+    }
+  }
+
+  // Inclui um item que ficou fora do rascunho (quantidade 0 na análise), com
+  // quantidade 0 e "a cotar": a pessoa informa a quantidade aqui.
+  function incluirFaltante(x) {
+    const ehServico = x.tipo === 'servico';
+    const nomeSecao = ehServico ? 'Serviços (Mão de Obra)' : 'Materiais e Equipamentos';
+    let sec = secoes.find(s => ehMaoDeObra(s.nome) === ehServico);
+    if (!sec) {
+      sec = { id: gerarId(), nome: nomeSecao };
+      setSecoes(s => [...s, sec]);
+    }
+    const valor = ehServico ? Number(x.valor_unitario) || 0
+      : (Number(x.preco_unitario) > 0 ? Number(x.preco_unitario) : Number(x.preco_catalogo) || 0);
+    const novo = {
+      id: gerarId(), sid: sec.id, material_id: ehServico ? null : (x.material_id || null),
+      descricao: x.descricao, quantidade: 0, unidade: x.unidade || 'un', valor_unitario: valor,
+      ncm: '', codigo: x.codigo || '', subgrupo: x.subgrupo || '', status: 'a_cotar',
+    };
+    setItens(it => reordenarPorSubgrupo([...it, novo], sec.id));
+    if (x.pesquisa_mercado?.resultado) setPesquisas(ps => ({ ...ps, [novo.id]: { ...x.pesquisa_mercado, recolhidaInicial: true, daAnalise: true } }));
+    setOrigem(o => ({ ...o, faltando: (o.faltando || []).filter(f => f !== x) }));
+    toast.success('Item incluído com quantidade 0 — informe a quantidade');
+  }
+
+  // Pesquisa de mercado de um item — mesma API e comportamento da Análise de
+  // Projeto (busca real na web pela cadeia de IA; de 30 s a 1 min). Serviço
+  // pesquisa como serviço; o "Usar R$ X" troca o valor unitário da linha
+  // (para material, é o preço adotado). Nunca grava nada sozinha.
+  async function pesquisarMercado(item, maoDeObra) {
+    const descricao = String(item.descricao || '').trim();
+    if (!descricao) {
+      toast.error('Preencha a descrição antes de pesquisar');
+      return;
+    }
+    setPesquisas(p => ({ ...p, [item.id]: { ...(p[item.id] || {}), erro: null, carregando: true } }));
+    try {
+      const res = await pesquisarPrecoMercado(descricao, maoDeObra ? 'servico' : 'material');
+      setPesquisas(p => ({ ...p, [item.id]: resultadoDaPesquisa(res.data) }));
+    } catch (err) {
+      const erro = err.response?.data?.erro || (err.code === 'ECONNABORTED' ? 'A pesquisa demorou demais — tente de novo' : 'Erro ao pesquisar');
+      setPesquisas(p => ({ ...p, [item.id]: { ...(p[item.id] || {}), carregando: false, erro } }));
+    }
+  }
 
   const clienteResolvido = useMemo(
     // `c.nome` pode vir nulo do banco; sem a guarda, um único cliente sem nome
@@ -529,6 +661,8 @@ export default function Orcamento() {
         imposto_servico: Number(form.imposto_servico) || 0,
         desconto_materiais_pct: form.desconto_materiais_pct,
         desconto_mao_obra_pct: form.desconto_mao_obra_pct,
+        // obra (2.0): sempre enviada — no PUT, null desliga a proposta da obra
+        obra_id: form.obra_id || null,
         // Subtotais/BDI/impostos/total não são mais enviados: o backend
         // recalcula tudo a partir dos itens (antes ele gravava o que o
         // navegador mandasse, e uma quantidade zerada fazia o PDF sair com a
@@ -575,6 +709,58 @@ export default function Orcamento() {
         )}
       </div>
 
+      {origem && (
+        <div style={{ ...card, padding: '12px 16px', borderColor: '#3a3216' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 260, fontSize: 12, color: '#bbb', lineHeight: 1.5 }}>
+              Rascunho gerado a partir {origem.tipo === 'analise'
+                ? <>da <b style={{ color: '#c9a227' }}>Análise de Projeto #{origem.id}</b></>
+                : <>do <b style={{ color: '#c9a227' }}>laudo/projeto #{origem.id}</b>{origem.rotulo ? ` (${origem.rotulo})` : ''}</>}
+              {origem.titulo ? ` — ${origem.titulo}` : ''}.{' '}
+              <span style={{ color: '#777' }}>
+                {origem.existe === false
+                  ? (origem.tipo === 'analise' ? 'A análise foi excluída.' : 'O laudo foi excluído.')
+                  : origem.vinculada === false
+                    ? 'A origem hoje está vinculada a outra proposta (esta pode ser uma cópia).'
+                    : `Quantidades, preços, pesquisa de mercado e referências são revisados aqui. ${origem.tipo === 'analise' ? '"Atualizar orçamento" na análise' : '"Atualizar e abrir" no laudo'} substitui os itens desta proposta pelos de lá.`}
+              </span>
+            </div>
+            {origem.existe !== false && (
+              <Link to={linkDaOrigem(origem)} style={{ ...btnSecundario, textDecoration: 'none', borderStyle: 'solid', borderColor: '#5a4a12', color: '#c9a227' }}>
+                <ArrowLeft size={13} style={{ marginRight: 4 }} /> Voltar {origem.tipo === 'analise' ? 'à análise' : 'ao laudo'}
+              </Link>
+            )}
+          </div>
+          {origem.faltando?.length > 0 && (
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #222', fontSize: 12, color: '#999' }}>
+              <div style={{ marginBottom: 6 }}>
+                {origem.faltando.length} item(ns) da análise ficaram fora do rascunho por estarem com <b>quantidade 0</b> (modelo ainda não conferido na planta). Inclua os que fizerem parte e informe a quantidade:
+              </div>
+              {origem.faltando.map((x, i) => (
+                <div key={`${x.tipo}_${i}_${x.descricao}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}>
+                  <span style={{ flex: 1, color: '#bbb' }}>{x.descricao} <span style={{ color: '#666' }}>({x.tipo === 'servico' ? 'serviço' : 'material'}{x.subgrupo ? ` — ${x.subgrupo}` : ''})</span></span>
+                  <button type="button" onClick={() => incluirFaltante(x)} style={{ ...btnSecundario, padding: '3px 10px', fontSize: 11 }}>
+                    <Plus size={11} style={{ marginRight: 3 }} /> Incluir
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {(() => {
+        const aCotar = itens.filter(it => it.status === 'a_cotar').length;
+        const semPreco = itens.filter(it => !(Number(it.valor_unitario) > 0)).length;
+        if (!aCotar && !semPreco) return null;
+        return (
+          <div style={{ ...card, padding: '10px 16px', borderColor: '#4a3a12', fontSize: 12, color: '#c9a227' }}>
+            {[aCotar && `${aCotar} item(ns) "a cotar"`, semPreco && `${semPreco} item(ns) sem preço (R$ 0,00)`].filter(Boolean).join(' · ')}
+            <span style={{ color: '#777' }}> — revise antes de enviar ao cliente: use "Pesquisar mercado", as referências ("usar") ou o catálogo em cada linha.</span>
+          </div>
+        );
+      })()}
+
       {/* Dados gerais */}
       <div style={card}>
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
@@ -615,7 +801,19 @@ export default function Orcamento() {
           </Campo>
         </div>
 
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+          <Campo label="Obra">
+            <ObraSelect
+              value={form.obra_id}
+              clienteId={clienteResolvido?.id || null}
+              clienteNome={form.cliente_nome}
+              onChange={(id, obra) => setForm(f => ({
+                ...f, obra_id: id,
+                // obra escolhida numa proposta ainda sem cliente: traz o cliente da obra
+                cliente_nome: f.cliente_nome.trim() || !obra?.cliente_nome ? f.cliente_nome : obra.cliente_nome,
+              }))}
+            />
+          </Campo>
           <Campo label="Local da obra">
             <input value={form.local_obra} onChange={e => setForm({ ...form, local_obra: e.target.value })} />
           </Campo>
@@ -698,15 +896,17 @@ export default function Orcamento() {
               }
               const it = linha.item;
               const aCotar = it.status === 'a_cotar';
+              const semPreco = !(Number(it.valor_unitario) > 0);
+              const pesquisa = pesquisas[it.id];
               return (
                 <div
                   key={it.id}
                   style={{
-                    display: 'grid', gridTemplateColumns: colunas, gap: 8, marginBottom: 8, alignItems: 'center',
-                    background: aCotar ? 'rgba(201,162,39,0.08)' : 'transparent',
+                    marginBottom: 8, background: aCotar ? 'rgba(201,162,39,0.08)' : 'transparent',
                     borderRadius: 4, padding: aCotar ? '4px 4px' : 0,
                   }}
                 >
+                <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, alignItems: 'start' }}>
                   <Select
                     value={it.subgrupo || ''}
                     onChange={e => {
@@ -750,7 +950,18 @@ export default function Orcamento() {
                       {filtrarCatalogoPorCategoria(materiais, it.subgrupo).map(m => <option key={m.id} value={m.id}>{m.descricao}</option>)}
                     </Select>
                   )}
-                  <input value={it.descricao} onChange={e => atualizarItem(it.id, 'descricao', e.target.value)} placeholder="Descrição do item" />
+                  <div>
+                    <input value={it.descricao} onChange={e => atualizarItem(it.id, 'descricao', e.target.value)} placeholder="Descrição do item" style={{ width: '100%' }} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3, flexWrap: 'wrap' }}>
+                      <button type="button" onClick={() => pesquisarMercado(it, maoDeObra)} disabled={pesquisa?.carregando}
+                        title={maoDeObra ? 'Pesquisa o preço deste serviço no mercado (busca real na web; leva de 30 s a 1 min)' : 'Pesquisa o preço deste material no mercado (busca real na web; leva de 30 s a 1 min)'}
+                        style={btnPesquisar}>
+                        <Search size={10} style={{ marginRight: 3 }} /> {pesquisa?.carregando ? 'Pesquisando...' : 'Pesquisar mercado'}
+                      </button>
+                      {aCotar && <span style={{ ...etiqueta, color: '#c9a227', borderColor: '#5a4a12' }} title='Preço estimado ou pendente — confirme antes de enviar ao cliente'>a cotar</span>}
+                      {semPreco && <span style={{ ...etiqueta, color: '#e08080', borderColor: '#5a2a2a' }} title="Item com valor unitário R$ 0,00">sem preço</span>}
+                    </div>
+                  </div>
                   {!maoDeObra && (
                     <input value={it.ncm} onChange={e => atualizarItem(it.id, 'ncm', e.target.value.replace(/[^\d.]/g, ''))} placeholder="NCM/SH" />
                   )}
@@ -759,11 +970,15 @@ export default function Orcamento() {
                   {maoDeObra ? (
                     <div>
                       <CampoMoeda value={it.valor_unitario} onChange={v => atualizarItem(it.id, 'valor_unitario', v)} />
-                      <DicasReferencia servico={servicosPorCodigo[it.codigo]} segmento={segmento} valor={it.valor_unitario}
+                      <DicasReferencia servico={servicoDoItem(it)} segmento={segmento} valor={it.valor_unitario}
                         onUsar={v => atualizarItem(it.id, 'valor_unitario', v)} />
                     </div>
                   ) : (
-                    <CampoMoeda value={it.valor_unitario} onChange={v => atualizarItem(it.id, 'valor_unitario', v)} />
+                    <div>
+                      <CampoMoeda value={it.valor_unitario} onChange={v => atualizarItem(it.id, 'valor_unitario', v)} />
+                      <DicaCatalogo material={it.material_id ? materiaisPorId[String(it.material_id)] : null} valor={it.valor_unitario}
+                        onUsar={v => atualizarItem(it.id, 'valor_unitario', v)} />
+                    </div>
                   )}
                   <span style={{ fontSize: 12, color: '#ccc', textAlign: 'right', paddingRight: 4 }}>
                     {formatarMoeda((Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0))}
@@ -775,6 +990,11 @@ export default function Orcamento() {
                   <button onClick={() => removerItem(it.id)} style={{ ...btnIcone, color: '#b04040' }} title="Remover item">
                     <Trash2 size={12} />
                   </button>
+                </div>
+                {/* key com a data: a pesquisa que chega salva (da análise) já nasce recolhida */}
+                <BlocoPesquisaMercado key={`${it.id}_${pesquisa?.pesquisadoEm || ''}`} pesquisa={pesquisa} precoAtual={it.valor_unitario}
+                  onUsarPreco={v => atualizarItem(it.id, 'valor_unitario', v)} />
+                {pesquisa?.erro && <div style={{ marginTop: 6, fontSize: 12, color: '#b04040' }}>{pesquisa.erro}</div>}
                 </div>
               );
             })}
@@ -894,21 +1114,38 @@ export default function Orcamento() {
   );
 }
 
-// Referências de mercado do serviço do item (oficial / particular), como na
-// Análise de Projeto: só aparecem quando diferem do valor da linha; a do
+// Referências do serviço do item, como na Análise de Projeto: "Ref." é o valor
+// H&M adotado (tela Preços de Mão de Obra) e oficial / particular são as
+// referências de mercado; só aparecem quando diferem do valor da linha, e a do
 // segmento do cliente vem destacada. "usar" troca o valor unitário.
 function DicasReferencia({ servico, segmento, valor, onUsar }) {
   if (!servico) return null;
-  const dicas = [['publico', servico.valor_publico, servico.fonte_publico], ['privado', servico.valor_privado, servico.fonte_privado]]
-    .filter(([, v]) => v != null && Number(v) !== Number(valor || 0));
+  const dicas = [
+    ['hm', servico.valor_referencia, 'valor adotado pela H&M (tela Preços de Mão de Obra)'],
+    ['publico', servico.valor_publico, servico.fonte_publico],
+    ['privado', servico.valor_privado, servico.fonte_privado],
+  ].filter(([, v]) => v != null && Number(v) !== Number(valor || 0));
   if (!dicas.length) return null;
   return dicas.map(([seg, v, fonte]) => (
-    <div key={seg} style={{ fontSize: 10.5, color: seg === segmento ? '#8a7333' : '#6f7f8f', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-      title={`Referência ${ROTULO_SEGMENTO[seg]}${seg === segmento ? ' (segmento do cliente)' : ''}${fonte ? ` — ${fonte}` : ''}`}>
-      {seg === 'publico' ? 'oficial' : 'particular'}: {formatarMoeda(v)}{' '}
+    <div key={seg} style={{ fontSize: 10.5, color: seg === 'hm' || seg === segmento ? '#8a7333' : '#6f7f8f', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+      title={seg === 'hm' ? `Referência: ${fonte}` : `Referência ${ROTULO_SEGMENTO[seg]}${seg === segmento ? ' (segmento do cliente)' : ''}${fonte ? ` — ${fonte}` : ''}`}>
+      {seg === 'hm' ? 'Ref.' : seg === 'publico' ? 'oficial' : 'particular'}: {formatarMoeda(v)}{' '}
       <button type="button" onClick={() => onUsar(Number(v))} style={btnUsar}>usar</button>
     </div>
   ));
+}
+
+// Preço do material no catálogo, quando o item está ligado a ele e o valor da
+// linha é outro (pesquisa de mercado adotada, reajuste, digitado à mão).
+function DicaCatalogo({ material, valor, onUsar }) {
+  if (!material || material.preco == null || !(Number(material.preco) > 0) || Number(material.preco) === Number(valor || 0)) return null;
+  return (
+    <div style={{ fontSize: 10.5, color: '#8a7333', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+      title={`Preço do catálogo de materiais — ${material.descricao}`}>
+      catálogo: {formatarMoeda(material.preco)}{' '}
+      <button type="button" onClick={() => onUsar(Number(material.preco))} style={btnUsar}>usar</button>
+    </div>
+  );
 }
 
 function Totalzinho({ label, valor }) {
@@ -930,6 +1167,11 @@ function Campo({ label, children }) {
 }
 
 const btnUsar = { background: 'none', border: 'none', color: '#c9a227', textDecoration: 'underline', cursor: 'pointer', fontSize: 10.5, padding: 0 };
+const btnPesquisar = {
+  display: 'inline-flex', alignItems: 'center', padding: '2px 7px', background: 'transparent', border: '1px dashed #333',
+  borderRadius: 5, color: '#999', fontWeight: 700, fontSize: 10.5, cursor: 'pointer', whiteSpace: 'nowrap',
+};
+const etiqueta = { fontSize: 10, border: '1px solid', borderRadius: 4, padding: '0 5px', textTransform: 'uppercase', letterSpacing: '.4px' };
 
 const rotulo = { display: 'block', fontSize: 10, color: '#666', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' };
 

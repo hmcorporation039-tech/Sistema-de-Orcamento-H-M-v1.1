@@ -6,13 +6,16 @@ import api from '../services/api';
 import Paginacao from '../components/Paginacao';
 import { formatarMoeda, formatarData } from '../utils/format';
 import Select from '../components/Select';
+import ObraSelect from '../components/ObraSelect';
+import { Link, useSearchParams } from 'react-router-dom';
 
-const VAZIO = { prestadorId: '', objeto: '', localObra: '', periodoInicio: '', periodoFim: '', valor: '' };
+const VAZIO = { prestadorId: '', objeto: '', localObra: '', periodoInicio: '', periodoFim: '', valor: '', obraId: null };
 
 export default function Contratos() {
   const [contratos, setContratos] = useState([]);
   const [prestadores, setPrestadores] = useState([]);
   const [busca, setBusca] = useState('');
+  const [obraFiltro, setObraFiltro] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [modalAberto, setModalAberto] = useState(false);
   const [editandoId, setEditandoId] = useState(null);
@@ -27,6 +30,7 @@ export default function Contratos() {
     try {
       const params = { pagina };
       if (busca) params.busca = busca;
+      if (obraFiltro) params.obra_id = obraFiltro;
       const res = await getContratos(params);
       setContratos(res.data.itens);
       setPaginacao({ total: res.data.total, totalPaginas: res.data.totalPaginas });
@@ -35,18 +39,30 @@ export default function Contratos() {
     } finally {
       setCarregando(false);
     }
-  }, [busca, pagina]);
+  }, [busca, pagina, obraFiltro]);
 
   useEffect(() => {
     const t = setTimeout(carregar, 300);
     return () => clearTimeout(t);
   }, [carregar]);
 
-  useEffect(() => { setPagina(1); }, [busca]);
+  useEffect(() => { setPagina(1); }, [busca, obraFiltro]);
 
   useEffect(() => {
     getPrestadores({ porPagina: 1000 }).then(res => setPrestadores(res.data.itens)).catch(() => {});
   }, []);
+
+  // /financeiro?aba=contratos&obra=ID (botão "Novo contrato nesta obra" da tela da obra):
+  // abre o formulário já com a obra
+  const [parametros, setParametros] = useSearchParams();
+  useEffect(() => {
+    const obra = Number(parametros.get('obra'));
+    if (!Number.isInteger(obra) || obra < 1) return;
+    setEditandoId(null);
+    setForm({ ...VAZIO, obraId: obra });
+    setModalAberto(true);
+    const p = new URLSearchParams(parametros); p.delete('obra'); setParametros(p, { replace: true });
+  }, [parametros, setParametros]);
 
   function abrirNovo() {
     setEditandoId(null);
@@ -59,7 +75,7 @@ export default function Contratos() {
     setForm({
       prestadorId: c.prestador_id, objeto: c.objeto || '', localObra: c.local_obra || '',
       periodoInicio: (c.periodo_inicio || '').slice(0, 10), periodoFim: (c.periodo_fim || '').slice(0, 10),
-      valor: String(c.valor),
+      valor: String(c.valor), obraId: c.obra_id || null,
     });
     setModalAberto(true);
   }
@@ -142,9 +158,13 @@ export default function Contratos() {
           <input
             value={busca}
             onChange={e => setBusca(e.target.value)}
-            placeholder="Buscar por prestador ou código..."
+            placeholder="Buscar por prestador, código ou obra..."
             style={{ paddingLeft: 30 }}
           />
+        </div>
+
+        <div style={{ width: 380 }}>
+          <ObraSelect value={obraFiltro} onChange={id => setObraFiltro(id)} rotuloVazio="Todas as obras" permitirNova={false} />
         </div>
 
         <button onClick={abrirNovo} style={btnPrimario}>
@@ -159,6 +179,7 @@ export default function Contratos() {
               <th style={th}>Código</th>
               <th style={th}>Prestador</th>
               <th style={th}>Tipo</th>
+              <th style={th}>Obra</th>
               <th style={th}>Local da Obra</th>
               <th style={th}>Período</th>
               <th style={{ ...th, textAlign: 'right' }}>Valor</th>
@@ -167,16 +188,21 @@ export default function Contratos() {
           </thead>
           <tbody>
             {carregando && (
-              <tr><td colSpan={7} style={tdVazio}>Carregando...</td></tr>
+              <tr><td colSpan={8} style={tdVazio}>Carregando...</td></tr>
             )}
             {!carregando && contratos.length === 0 && (
-              <tr><td colSpan={7} style={tdVazio}>Nenhum contrato encontrado</td></tr>
+              <tr><td colSpan={8} style={tdVazio}>Nenhum contrato encontrado</td></tr>
             )}
             {!carregando && contratos.map(c => (
               <tr key={c.id} style={{ borderTop: '1px solid #1e1e1e' }}>
                 <td style={{ ...td, fontWeight: 700, color: '#c9a227' }}>{c.codigo_registro || '—'}</td>
                 <td style={td}>{c.prestador_nome}</td>
                 <td style={td}>{c.prestador_tipo === 'Pessoa Jurídica' ? 'PJ' : 'PF'}</td>
+                <td style={td}>
+                  {c.obra
+                    ? <Link to={`/obras/${c.obra.id}`} style={{ color: '#c9a227', textDecoration: 'none' }} title={c.obra.nome}>{c.obra.codigo}</Link>
+                    : '—'}
+                </td>
                 <td style={td}>{c.local_obra || '—'}</td>
                 <td style={td}>{formatarData(c.periodo_inicio)} a {formatarData(c.periodo_fim)}</td>
                 <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#c9a227' }}>
@@ -239,7 +265,16 @@ export default function Contratos() {
               </div>
 
               <div style={{ marginBottom: 12 }}>
-                <Campo label="Local da obra">
+                <Campo label="Obra">
+                  <ObraSelect
+                    value={form.obraId}
+                    onChange={(id, obra) => setForm(f => ({ ...f, obraId: id, localObra: f.localObra || obra?.local || obra?.nome || '' }))}
+                  />
+                </Campo>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <Campo label="Local da obra (sai no contrato)">
                   <input value={form.localObra} onChange={e => setForm({ ...form, localObra: e.target.value })} />
                 </Campo>
               </div>

@@ -12,6 +12,7 @@ const { salvarPdfPropostaNasPastas } = require('../services/pastasRegistros');
 const { versaoDoPedido, responderConflitoOuAusente } = require('../utils/versao');
 const { registrarAuditoria } = require('../utils/auditoria');
 const { gerarPlanilhaCliente } = require('../utils/planilhaOrcamentoCliente');
+const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
 
 // Assinatura padrão da empresa — entra sempre no final de todo e-mail
 // enviado ao cliente (mensagem padrão ou digitada à mão), sem exceção.
@@ -108,13 +109,22 @@ async function listar(req, res) {
     params.push(`%${busca}%`);
     condicoes += ` AND (p.numero ILIKE $${params.length} OR p.cliente_nome ILIKE $${params.length} OR p.local_obra ILIKE $${params.length})`;
   }
+  // ?obra_id=ID (propostas da obra) ou ?obra_id=sem (sem obra)
+  if (req.query.obra_id === 'sem') condicoes += ' AND p.obra_id IS NULL';
+  else if (req.query.obra_id) {
+    const n = Number(req.query.obra_id);
+    if (!Number.isInteger(n) || n < 1) return res.status(400).json({ erro: 'Obra inválida.' });
+    params.push(n);
+    condicoes += ` AND p.obra_id = $${params.length}`;
+  }
 
   try {
     const total = await pool.query(`SELECT count(*) FROM propostas p ${condicoes}`, params);
     const result = await pool.query(
-      `SELECT p.*, c.nome as cliente_nome_cadastro
+      `SELECT p.*, c.nome as cliente_nome_cadastro, ${sqlObraJson('ob')} AS obra
        FROM propostas p
        LEFT JOIN clientes c ON p.cliente_id = c.id
+       LEFT JOIN obras ob ON ob.id = p.obra_id
        ${condicoes}
        ORDER BY p.sequencial DESC
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -131,9 +141,10 @@ async function buscarUma(req, res) {
   const { id } = req.params;
   try {
     const proposta = await pool.query(
-      `SELECT p.*, c.email AS cliente_email
+      `SELECT p.*, c.email AS cliente_email, ${sqlObraJson('ob')} AS obra
        FROM propostas p
        LEFT JOIN clientes c ON p.cliente_id = c.id
+       LEFT JOIN obras ob ON ob.id = p.obra_id
        WHERE p.id = $1`,
       [id]
     );
@@ -184,6 +195,11 @@ async function criar(req, res, next) {
   const totais = calcularTotais({ secoes, itens, bdi, imposto_venda, imposto_servico });
 
   try {
+    // obra (2.0): proposta nova já nasce ligada à obra aberta (obra_id opcional)
+    const obra = lerObraId(req.body);
+    const erroObra = await conferirObra(pool, obra);
+    if (erroObra) return res.status(400).json({ erro: erroObra });
+
     const { proposta, numero } = await comTransacao(async (client) => {
     const seq = await proximoNumero(client);
     const numero = 'P' + String(seq).padStart(3, '0');
@@ -196,8 +212,8 @@ async function criar(req, res, next) {
         desconto_materiais_pct, desconto_mao_obra_pct,
         subtotal_materiais, subtotal_mao_obra, valor_bdi,
         valor_imposto_venda, valor_imposto_servico, total,
-        usuario_id
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+        usuario_id, obra_id
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
       RETURNING *`,
       [
         numero, seq, data, validadeOuPadrao(validade), tipo, porte,
@@ -206,7 +222,7 @@ async function criar(req, res, next) {
         desconto_materiais_pct ?? null, desconto_mao_obra_pct ?? null,
         totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi,
         totais.valor_imposto_venda, totais.valor_imposto_servico, totais.total,
-        req.usuario.id
+        req.usuario.id, obra.valor
       ]
     );
 
@@ -243,6 +259,11 @@ async function atualizar(req, res, next) {
   const totais = calcularTotais({ secoes, itens, bdi, imposto_venda, imposto_servico });
 
   try {
+    // obra (2.0): obra_id no corpo liga/desliga (null); ausente mantém a atual
+    const obra = lerObraId(req.body);
+    const erroObra = await conferirObra(pool, obra);
+    if (erroObra) return res.status(400).json({ erro: erroObra });
+
     const proposta = await comTransacao(async (client) => {
     const propResult = await client.query(
       `UPDATE propostas SET
@@ -252,6 +273,7 @@ async function atualizar(req, res, next) {
         desconto_materiais_pct=$15, desconto_mao_obra_pct=$16,
         subtotal_materiais=$17, subtotal_mao_obra=$18, valor_bdi=$19,
         valor_imposto_venda=$20, valor_imposto_servico=$21, total=$22,
+        obra_id = CASE WHEN $25::boolean THEN $26::int ELSE obra_id END,
         atualizado_em=NOW(), versao=versao+1
        WHERE id=$23 AND ($24::int IS NULL OR versao = $24)
        RETURNING *`,
@@ -262,7 +284,7 @@ async function atualizar(req, res, next) {
         desconto_materiais_pct ?? null, desconto_mao_obra_pct ?? null,
         totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi,
         totais.valor_imposto_venda, totais.valor_imposto_servico, totais.total,
-        id, versaoDoPedido(req.body)
+        id, versaoDoPedido(req.body), obra.presente, obra.valor
       ]
     );
 
@@ -322,8 +344,8 @@ async function duplicar(req, res, next) {
         desconto_materiais_pct, desconto_mao_obra_pct,
         subtotal_materiais, subtotal_mao_obra, valor_bdi,
         valor_imposto_venda, valor_imposto_servico, total,
-        status, usuario_id
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,'Ativa',$25)
+        status, usuario_id, obra_id
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,'Ativa',$25,$26)
       RETURNING *`,
       [
         numero, seq, hoje, p.validade, p.tipo, p.porte,
@@ -332,7 +354,7 @@ async function duplicar(req, res, next) {
         p.desconto_materiais_pct, p.desconto_mao_obra_pct,
         p.subtotal_materiais, p.subtotal_mao_obra, p.valor_bdi,
         p.valor_imposto_venda, p.valor_imposto_servico, p.total,
-        req.usuario.id
+        req.usuario.id, p.obra_id // a cópia fica na mesma obra
       ]
     );
     const nova = novaResult.rows[0];
@@ -390,6 +412,13 @@ async function atualizarStatus(req, res, next) {
       );
       if (result.rows.length === 0) return null;
       await registrarEvento(client, id, req.usuario.id, 'status', `Status alterado para ${status}`);
+      // obra (2.0): proposta aprovada leva a obra em prospecção/orçamento para "contratada"
+      if (status === 'Aprovada' && result.rows[0].obra_id) {
+        await client.query(
+          "UPDATE obras SET status = 'contratada', atualizado_em = NOW(), versao = versao + 1 WHERE id = $1 AND status IN ('prospeccao', 'orcamento')",
+          [result.rows[0].obra_id]
+        );
+      }
       return result.rows[0];
     });
 

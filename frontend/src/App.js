@@ -75,6 +75,8 @@ export default function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="obras" element={<ObrasHub />} />
             <Route path="obras/analise/:id" element={<ObrasHub abaFixa="analise" />} />
+            {/* página da obra (Fase 2D): abas Resumo, Projeto, Disciplinas… em ?secao= */}
+            <Route path="obras/:id" element={<ObrasHub abaFixa="obras" />} />
             <Route path="propostas" element={<PropostasHub />} />
             <Route path="propostas/editar" element={<PropostasHub abaFixa="editar" />} />
             <Route path="propostas/editar/:id" element={<PropostasHub abaFixa="editar" />} />

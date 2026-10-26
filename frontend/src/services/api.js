@@ -210,3 +210,35 @@ export const getRotinasIntegracoes = () => api.get('/integracoes/rotinas');
 export const executarRotinaIntegracao = (chave) =>
   api.post(`/integracoes/rotinas/${encodeURIComponent(chave)}/executar`, null, { timeout: 600000 });
 export const testarIAIntegracoes = () => api.post('/integracoes/ia/testar', null, { timeout: 180000 });
+// ── OBRAS (2.0, Fase 2D) ───────────────────────────────────────────────────
+// Lista: params { busca, status, cliente_id, segmento, pagina, porPagina, campos }
+//   campos: 'basico' → só { id, codigo, nome, cliente_id, cliente_nome, status, segmento }
+//   (sem contagens/totais; usado pelo ObraSelect, porPagina até 1000)
+export const getObras = (params) => api.get('/obras', { params });
+export const getObra = (id) => api.get(`/obras/${id}`);
+// data: { nome*, cliente_id, cliente_nome, local, segmento, status, inicio_previsto,
+//         fim_previsto, responsavel_id, observacoes } (+ versao no PUT)
+export const criarObra = (data) => api.post('/obras', data);
+export const atualizarObra = (id, data) => api.put(`/obras/${id}`, data);
+export const removerObra = (id) => api.delete(`/obras/${id}`);
+// liga/desliga um item existente: tipo 'proposta' | 'analise' | 'laudo' | 'contrato' | 'movimento'
+export const vincularItemObra = (obraId, tipo, itemId, ligar = true) =>
+  api.put(`/obras/${obraId}/vinculos`, { tipo, id: itemId, ligar });
+export const getPastaObra = (id) => api.get(`/obras/${id}/pasta`);
+export const abrirPastaObra = (id) => api.post(`/obras/${id}/pasta/abrir`);
+// Criação já ligada a uma obra (obraId null/undefined = sem obra; o backend
+// também aceita obra_id direto no corpo de POST/PUT /propostas, /contratos,
+// /financeiro/movimentos e PATCH categorizar)
+export const analisarProjetoNaObra = (arquivosComDisciplinas, nomeProjeto, obraId) => {
+  const formData = new FormData();
+  if (nomeProjeto) formData.append('nome_projeto', nomeProjeto);
+  if (obraId) formData.append('obra_id', String(obraId));
+  arquivosComDisciplinas.forEach(({ arquivo }) => formData.append('arquivos', arquivo));
+  formData.append('disciplinasPorArquivo', JSON.stringify(arquivosComDisciplinas.map(a => a.disciplinas)));
+  return api.post('/projetos/analisar', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 });
+};
+export const criarLaudoNaObra = (disciplina, dados, obraId) =>
+  api.post('/laudos', { disciplina, dados, obra_id: obraId || null });
+// sem obraId, o laudo herda a obra da análise de origem
+export const criarLaudoDeAnaliseNaObra = (analiseId, disciplina, obraId) =>
+  api.post('/laudos/de-analise', { analise_id: analiseId, disciplina, ...(obraId ? { obra_id: obraId } : {}) });

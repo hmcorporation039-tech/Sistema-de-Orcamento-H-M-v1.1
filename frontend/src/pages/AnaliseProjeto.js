@@ -1,14 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import PainelPasta from '../components/PainelPasta';
-import { FileDown, Plus, Trash2, FolderSearch, Search, FilePlus2, Receipt } from 'lucide-react';
+import { FileDown, Plus, Trash2, FolderSearch, FilePlus2, Receipt, ExternalLink } from 'lucide-react';
 import {
-  analisarProjeto, gerarRelatorioCompatibilizacao, pesquisarPrecoMercado,
+  analisarProjetoNaObra, gerarRelatorioCompatibilizacao,
   getAnalisesProjeto, getAnaliseProjeto, atualizarAnaliseProjeto, removerAnaliseProjeto,
   gerarOrcamentoDaAnalise, getPastaAnalise, abrirPastaAnalise, getDisciplinasProjeto, criarLaudoDeAnalise,
 } from '../services/api';
 import { formatarMoeda } from '../utils/format';
+import BlocoPesquisaMercado from '../components/PesquisaMercado';
+import ObraSelect from '../components/ObraSelect';
 
 let contador = 0;
 const gerarId = () => `tmp_${Date.now()}_${contador++}`;
@@ -63,12 +65,17 @@ export default function Compatibilizacao() {
   // entram na soma). [{ id, arquivo: File, disciplinas: string[] }]
   const [arquivosComDisciplinas, setArquivosComDisciplinas] = useState([]);
   const [nomeProjetoNovo, setNomeProjetoNovo] = useState(''); // nome da pasta do projeto em Arquivos do Sistema
+  // obra da análise nova (2.0): vem pré-selecionada de /obras?aba=analise&obra=ID
+  // e vai no multipart (obra_id) — a pasta passa a morar dentro da obra
+  const [busca] = useSearchParams();
+  const obraDaUrl = Number(busca.get('obra')) || null;
+  const [obraNova, setObraNova] = useState(obraDaUrl);
+  useEffect(() => { if (obraDaUrl) setObraNova(obraDaUrl); }, [obraDaUrl]);
   const [analisando, setAnalisando] = useState(false);
   const [carregandoAnalise, setCarregandoAnalise] = useState(false);
   const [analise, setAnalise] = useState(null);
   const [gerando, setGerando] = useState(false);
   const [gerandoOrcamento, setGerandoOrcamento] = useState(false);
-  const [pesquisas, setPesquisas] = useState({}); // { [materialId]: { carregando, resultado, erro } }
   const [salvando, setSalvando] = useState(false);
   const [salvoEm, setSalvoEm] = useState(null);
   const [analisesSalvas, setAnalisesSalvas] = useState([]);
@@ -107,20 +114,10 @@ export default function Compatibilizacao() {
     versaoRef.current = dados.versao ?? null;
     conflitoRef.current = false;
     setSalvoEm(dados.atualizadoEm ? new Date(dados.atualizadoEm) : null);
-    // Repõe as pesquisas de mercado já feitas antes (de serviços e de
-    // materiais) — elas ficam salvas dentro do próprio item (pesquisa_mercado),
-    // não só na memória do navegador, então voltar a essa análise depois de
-    // trocar de tela (ou até no dia seguinte) continua mostrando o resultado
-    // sem precisar pesquisar de novo.
-    const pesquisasSalvas = {};
-    for (const it of [...servicosComId, ...materiaisComId]) {
-      // recolhidaInicial: ao REABRIR a análise, a pesquisa volta RECOLHIDA (só
-      // o cabeçalho), pra não poluir a tela quando há vários itens já
-      // pesquisados — o usuário expande a que quiser. Uma pesquisa NOVA (feita
-      // agora) não tem essa marca, então nasce expandida.
-      if (it.pesquisa_mercado) pesquisasSalvas[it.id] = { ...it.pesquisa_mercado, recolhidaInicial: true };
-    }
-    setPesquisas(pesquisasSalvas);
+    // A pesquisa de mercado que já tinha ficado salva num item
+    // (pesquisa_mercado, de antes do editor único) continua aparecendo aqui,
+    // recolhida e só como informação (ver TabelaItensLeitura); o editor da
+    // proposta também a reaproveita.
   }, []);
 
   useEffect(() => {
@@ -161,7 +158,7 @@ export default function Compatibilizacao() {
     }
     setAnalisando(true);
     try {
-      const res = await analisarProjeto(arquivosComDisciplinas, nomeProjetoNovo.trim());
+      const res = await analisarProjetoNaObra(arquivosComDisciplinas, nomeProjetoNovo.trim(), obraNova);
       setNomeProjetoNovo('');
       popularAnalise(res.data);
       navigate(`/obras/analise/${res.data.id}`);
@@ -177,7 +174,6 @@ export default function Compatibilizacao() {
   function novaAnalise() {
     navigate('/obras');
     setArquivosComDisciplinas([]);
-    setPesquisas({});
     setSalvoEm(null);
   }
 
@@ -275,34 +271,13 @@ export default function Compatibilizacao() {
     setAnalise(a => ({ ...a, nomeProjeto: valor }));
   }
 
-  function atualizarServico(id, campo, valor) {
-    setAnalise(a => ({ ...a, servicos: a.servicos.map(s => s.id === id ? { ...s, [campo]: valor } : s) }));
-  }
-
-  function removerServico(id) {
-    setAnalise(a => ({ ...a, servicos: a.servicos.filter(s => s.id !== id) }));
-  }
-
-  function adicionarServico() {
-    setAnalise(a => ({
-      ...a,
-      servicos: [...a.servicos, { id: gerarId(), descricao: '', quantidade: 1, unidade: 'un', valor_unitario: 0, pronto: false, observacao: '' }],
-    }));
-  }
-
-  function atualizarMaterial(id, campo, valor) {
-    setAnalise(a => ({ ...a, materiais: a.materiais.map(m => m.id === id ? { ...m, [campo]: valor } : m) }));
-  }
-
-  function removerMaterial(id) {
-    setAnalise(a => ({ ...a, materiais: a.materiais.filter(m => m.id !== id) }));
-  }
-
-  function adicionarMaterial() {
-    setAnalise(a => ({
-      ...a,
-      materiais: [...a.materiais, { id: gerarId(), descricao: '', quantidade: 1, unidade: 'un', pronto: false }],
-    }));
+  // Versão 2.0 (editor único de orçamento): os itens extraídos do PDF ficam em
+  // LEITURA aqui — quantidade, preço, pesquisa de mercado e referências são
+  // revisados no editor da proposta. Da análise sobra só o "Já pronto"
+  // (o que já existe na obra e sai do escopo), que também vale para o
+  // relatório de compatibilização.
+  function alternarPronto(lista, id, pronto) {
+    setAnalise(a => ({ ...a, [lista]: a[lista].map(x => x.id === id ? { ...x, pronto } : x) }));
   }
 
   // ── Enriquecimento (Claude Desktop): funcionamento + pontos por disciplina ──
@@ -342,35 +317,6 @@ export default function Compatibilizacao() {
     });
   }
 
-  // Pesquisa de mercado — serve tanto pra materiais quanto pra serviços de
-  // mão de obra (a busca em si é a mesma, só muda onde o resultado é
-  // persistido). `tipo` decide se grava em analise.servicos ou
-  // analise.materiais; os ids são gerados por um contador único
-  // (gerarId), então não colidem entre as duas listas dentro de `pesquisas`.
-  async function pesquisarMercado(item, tipo) {
-    if (!item.descricao.trim()) {
-      toast.error('Preencha a descrição antes de pesquisar');
-      return;
-    }
-    setPesquisas(p => ({ ...p, [item.id]: { carregando: true } }));
-    try {
-      const res = await pesquisarPrecoMercado(item.descricao, tipo === 'servico' ? 'servico' : 'material');
-      const pesquisadoEm = new Date().toISOString();
-      const resultado = {
-        resultado: res.data.resultado, fonte: res.data.fonte, pesquisadoEm,
-        ofertas: res.data.ofertas || [], estatistica: res.data.estatistica || null, precoSugerido: res.data.precoSugerido ?? null,
-      };
-      setPesquisas(p => ({ ...p, [item.id]: resultado }));
-      // Grava dentro do próprio item (autosave já observa servicos/materiais)
-      // — é isso que resolve a pesquisa sumir ao trocar de tela: antes ficava só
-      // no estado local do componente, nunca chegava a ser salva no banco.
-      if (tipo === 'servico') atualizarServico(item.id, 'pesquisa_mercado', resultado);
-      else atualizarMaterial(item.id, 'pesquisa_mercado', resultado);
-    } catch (err) {
-      setPesquisas(p => ({ ...p, [item.id]: { erro: err.response?.data?.erro || 'Erro ao pesquisar' } }));
-    }
-  }
-
   async function baixarRelatorio() {
     setGerando(true);
     try {
@@ -392,22 +338,34 @@ export default function Compatibilizacao() {
     }
   }
 
-  // Cria (ou atualiza, se já existir) uma proposta rascunho na aba Orçamentos
-  // a partir dos serviços/materiais desta análise — é lá que o orçamento é
-  // concluído (BDI, impostos, itens "a cotar"). Nunca automático: só quando o
-  // usuário clica no botão, pra não encher a lista de Orçamentos toda vez que
-  // a análise é salva.
+  // Cria (ou atualiza, se já existir) a proposta rascunho a partir dos
+  // serviços/materiais SALVOS desta análise (o backend lê o banco, não a tela)
+  // e abre o editor único de orçamento — é lá que quantidades, preços,
+  // pesquisa de mercado, BDI e impostos são revisados. Nunca automático: só
+  // pelo botão, pra não encher a lista de propostas a cada gravação.
+  // Atualizar SUBSTITUI os itens da proposta vinculada (enquanto "Ativa") pelos
+  // da análise — por isso pede confirmação: o que foi ajustado no editor se perde.
   async function gerarOrcamento() {
+    if (analise.propostaNumero && !window.confirm(
+      `Atualizar o orçamento ${analise.propostaNumero} com os itens desta análise?\n\n` +
+      'Os itens da proposta serão SUBSTITUÍDOS pelos da análise — quantidades e preços ajustados no editor se perdem ' +
+      '(BDI e impostos ficam). Se a proposta já foi aprovada ou recusada, é criada uma nova.\n\n' +
+      'Para só continuar a revisão, use "Abrir no editor".'
+    )) return;
     setGerandoOrcamento(true);
     try {
       await salvarAgora(); // o orçamento tem que refletir a última edição, não uma versão atrasada
       const res = await gerarOrcamentoDaAnalise(analise.id);
-      const { propostaId, numero, criada, mensagem } = res.data;
+      const { propostaId, numero, criada, semQuantidade } = res.data;
       setAnalise(a => ({ ...a, propostaId, propostaNumero: numero }));
-      toast.success(mensagem, {
+      toast.success(criada ? `Orçamento ${numero} criado a partir desta análise` : `Orçamento ${numero} atualizado com os itens desta análise`, {
         duration: 6000,
         icon: criada ? '🧾' : '🔄',
       });
+      // a mensagem do servidor manda "preencher na análise", que não edita mais quantidade
+      if (semQuantidade) {
+        toast(`${semQuantidade} item(ns) com quantidade 0 ficaram fora do rascunho — o editor lista esses itens para incluir com a quantidade certa.`, { duration: 10000, icon: '⚠️' });
+      }
       navigate(`/propostas/editar/${propostaId}`);
     } catch (err) {
       toast.error(err.response?.data?.erro || 'Erro ao gerar orçamento');
@@ -444,10 +402,9 @@ export default function Compatibilizacao() {
     { label: 'Pendências', valor: analise.achados.length },
   ] : [];
 
-  // Mesmo cálculo do resumo "Orçamento Geral" do relatório PDF (ver
-  // calcularResumo em relatorioCompatibilizacaoTemplate.js) — refeito aqui
-  // pra atualizar em tempo real conforme o usuário edita quantidade/preço,
-  // sem esperar o próximo download do PDF.
+  // Estimativa pelo que foi extraído — mesmo cálculo do resumo "Orçamento
+  // Geral" do relatório PDF (calcularResumo em relatorioCompatibilizacaoTemplate.js).
+  // Só informação: o valor que vale é o da proposta, revisada no editor.
   const resumoOrcamento = analise ? (() => {
     const blocoMaoDeObra = analise.servicos.filter(s => !s.pronto)
       .reduce((soma, s) => soma + (Number(s.quantidade) || 0) * (Number(s.valor_unitario) || 0), 0);
@@ -455,6 +412,11 @@ export default function Compatibilizacao() {
       .reduce((soma, m) => soma + (Number(m.quantidade) || 0) * (Number(m.preco_catalogo) || 0), 0);
     return { blocoMaoDeObra, blocoMateriais, total: blocoMaoDeObra + blocoMateriais };
   })() : null;
+  // itens que o "Gerar orçamento" deixa de fora (quantidade 0, fora do "Já pronto")
+  const foraPorQuantidade = analise
+    ? [...analise.servicos, ...analise.materiais].filter(x => !x.pronto && !(Number(x.quantidade) > 0)).length
+    : 0;
+  const abrirNoEditor = () => navigate(`/propostas/editar/${analise.propostaId}`);
 
   return (
     <div>
@@ -527,6 +489,9 @@ export default function Compatibilizacao() {
 
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: arquivosComDisciplinas.length > 0 ? 18 : 0, flexWrap: 'wrap' }}>
             <input value={nomeProjetoNovo} onChange={e => setNomeProjetoNovo(e.target.value)} placeholder="Nome do projeto (nome da pasta; vazio = nome do cliente)" style={{ flex: '1 1 280px', maxWidth: 420 }} />
+            <div style={{ flex: '1 1 320px', maxWidth: 480 }} title="Obra a que este projeto pertence (opcional) — a análise, a pasta e o orçamento gerado ficam ligados a ela">
+              <ObraSelect value={obraNova} onChange={(id) => setObraNova(id)} rotuloVazio="Sem obra (opcional)" />
+            </div>
             <input ref={inputRef} type="file" accept=".pdf" multiple onChange={selecionarArquivos} />
             <button onClick={analisar} disabled={analisando || arquivosComDisciplinas.length === 0} style={btnPrimario}>
               <FolderSearch size={13} style={{ marginRight: 6 }} /> {analisando ? 'Analisando...' : 'Analisar projeto'}
@@ -575,6 +540,12 @@ export default function Compatibilizacao() {
                 <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Cliente</div>
                 <input value={analise.cliente || ''} onChange={e => atualizarCliente(e.target.value)} placeholder="Nome do cliente" style={{ fontSize: 15, fontWeight: 700, color: '#c9a227', background: 'transparent', border: 'none', padding: '2px 0' }} />
               </div>
+              {analise.obra && (
+                <div style={{ flex: '0 1 260px' }}>
+                  <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Obra</div>
+                  <div style={{ fontSize: 13, color: '#ccc' }}>{analise.obra.nome} <span style={{ color: '#777' }}>({analise.obra.codigo})</span></div>
+                </div>
+              )}
               <div style={{ fontSize: 11, color: '#666' }}>
                 {salvando ? 'Salvando...' : salvoEm ? `Salvo às ${formatarHora(salvoEm)}` : ''}
               </div>
@@ -586,15 +557,23 @@ export default function Compatibilizacao() {
           </div>
 
           <div style={card}>
-            <h3 style={tituloSecao}>Resumo do Orçamento</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+              <h3 style={{ ...tituloSecao, flex: 1, marginBottom: 0 }}>Estimativa pelo que foi extraído</h3>
+              {analise.propostaId && (
+                <button onClick={abrirNoEditor} style={{ ...btnSecundario, padding: '6px 12px' }}>
+                  <ExternalLink size={12} style={{ marginRight: 5 }} /> Orçamento {analise.propostaNumero} no editor
+                </button>
+              )}
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
               <ResumoBloco rotulo="Bloco 1 — Mão de obra" valor={resumoOrcamento.blocoMaoDeObra} />
               <ResumoBloco rotulo="Bloco 2 — Materiais e equipamentos" valor={resumoOrcamento.blocoMateriais} />
-              <ResumoBloco rotulo="Total geral" valor={resumoOrcamento.total} destaque />
+              <ResumoBloco rotulo="Total estimado" valor={resumoOrcamento.total} destaque />
             </div>
             <p style={{ fontSize: 11, color: '#666', marginTop: 12, lineHeight: 1.5 }}>
-              Soma dos itens não marcados "já pronto". Item sem valor unitário preenchido, ou material sem
-              correspondência no catálogo, entra como R$ 0,00 aqui — preencha ou confirme antes de considerar fechado.
+              Só informação: soma dos itens não marcados "já pronto", com o valor sugerido pela análise (serviço sem
+              referência ou material sem correspondência no catálogo entra como R$ 0,00). Quantidades, preços, pesquisa
+              de mercado e referências são revisados no editor do orçamento — o valor que vale é o da proposta.
             </p>
           </div>
 
@@ -701,41 +680,24 @@ export default function Compatibilizacao() {
           )}
 
           <div style={card}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
-              <h3 style={{ ...tituloSecao, flex: 1, marginBottom: 0 }}>Serviços (Mão de Obra)</h3>
-              <button onClick={adicionarServico} style={btnSecundario}>
-                <Plus size={12} style={{ marginRight: 4 }} /> Adicionar serviço
-              </button>
-            </div>
-            <p style={{ fontSize: 12, color: '#666', marginBottom: 10 }}>
-              Marque "Já pronto" pra serviços que não fazem parte do seu escopo (ex.: cabeamento já passado) — eles não entram no relatório como pendência de mão de obra.
+            <h3 style={tituloSecao}>Serviços (Mão de Obra) — extraídos do projeto</h3>
+            <p style={{ fontSize: 12, color: '#666', marginBottom: 10, lineHeight: 1.6 }}>
+              Leitura do que a análise montou a partir do PDF. Quantidade, preço, pesquisa de mercado e referências são
+              revisados no editor do orçamento ("Gerar orçamento e abrir no editor", abaixo). Marque "Já pronto" para o que
+              não faz parte do seu escopo (ex.: cabeamento já passado) — sai do orçamento e do relatório como pendência.
             </p>
-            <TabelaServicos
-              itens={analise.servicos}
-              onAtualizar={atualizarServico}
-              onRemover={removerServico}
-              pesquisas={pesquisas}
-              onPesquisar={(it) => pesquisarMercado(it, 'servico')}
-            />
+            <TabelaItensLeitura tipo="servico" itens={analise.servicos} disciplinas={DISCIPLINAS}
+              onPronto={(id, v) => alternarPronto('servicos', id, v)} />
           </div>
 
           <div style={card}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
-              <h3 style={{ ...tituloSecao, flex: 1, marginBottom: 0 }}>Materiais / Equipamentos</h3>
-              <button onClick={adicionarMaterial} style={btnSecundario}>
-                <Plus size={12} style={{ marginRight: 4 }} /> Adicionar material
-              </button>
-            </div>
-            {analise.materiais.length === 0 && (
-              <p style={{ fontSize: 13, color: '#666', fontStyle: 'italic' }}>Nenhum material lançado ainda — adicione manualmente, ou lance na tela de Materiais e traga a lista final aqui.</p>
+            <h3 style={tituloSecao}>Materiais / Equipamentos — extraídos do projeto</h3>
+            {analise.materiais.length === 0 ? (
+              <p style={{ fontSize: 13, color: '#666', fontStyle: 'italic' }}>Nenhum material extraído do projeto — lance os materiais no editor do orçamento (catálogo ou digitados).</p>
+            ) : (
+              <TabelaItensLeitura tipo="material" itens={analise.materiais} disciplinas={DISCIPLINAS}
+                onPronto={(id, v) => alternarPronto('materiais', id, v)} />
             )}
-            <TabelaMateriais
-              itens={analise.materiais}
-              onAtualizar={atualizarMaterial}
-              onRemover={removerMaterial}
-              pesquisas={pesquisas}
-              onPesquisar={(it) => pesquisarMercado(it, 'material')}
-            />
           </div>
 
           {/* Ponte PDF → skill: abre o cálculo normativo da disciplina já preenchido com o que o PDF tem */}
@@ -762,14 +724,21 @@ export default function Compatibilizacao() {
           })()}
 
           <div style={{ ...card, display: 'flex', justifyContent: 'flex-end', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            {analise.propostaNumero && (
-              <span style={{ fontSize: 12, color: '#666', marginRight: 'auto' }}>
-                Vinculada ao orçamento <b style={{ color: '#c9a227' }}>{analise.propostaNumero}</b>
-              </span>
+            <span style={{ fontSize: 12, color: '#666', marginRight: 'auto', lineHeight: 1.5 }}>
+              {analise.propostaNumero
+                ? <>Vinculada ao orçamento <b style={{ color: '#c9a227' }}>{analise.propostaNumero}</b>.</>
+                : 'O orçamento é revisado no editor de propostas.'}
+              {foraPorQuantidade > 0 && <><br /><span style={{ color: '#a08a3a' }}>{foraPorQuantidade} item(ns) com quantidade 0 ficam fora do rascunho — o editor lista para incluir.</span></>}
+            </span>
+            {analise.propostaId && (
+              <button onClick={abrirNoEditor} style={{ ...btnSecundario, padding: '13px 18px', fontSize: 13 }}>
+                <ExternalLink size={14} style={{ marginRight: 6 }} /> Abrir no editor
+              </button>
             )}
-            <button onClick={gerarOrcamento} disabled={gerandoOrcamento} style={{ ...btnSecundario, padding: '13px 20px', fontSize: 13, borderStyle: 'solid', borderColor: '#c9a227', color: '#c9a227' }}>
+            <button onClick={gerarOrcamento} disabled={gerandoOrcamento} style={{ ...btnSecundario, padding: '13px 20px', fontSize: 13, borderStyle: 'solid', borderColor: '#c9a227', color: '#c9a227' }}
+              title={analise.propostaNumero ? 'Substitui os itens da proposta pelos desta análise e abre o editor' : 'Cria a proposta rascunho com os itens desta análise e abre o editor'}>
               <Receipt size={14} style={{ marginRight: 6 }} />
-              {gerandoOrcamento ? 'Gerando...' : analise.propostaNumero ? `Atualizar Orçamento (${analise.propostaNumero})` : 'Gerar Orçamento'}
+              {gerandoOrcamento ? 'Gerando...' : analise.propostaNumero ? `Atualizar orçamento (${analise.propostaNumero}) e abrir` : 'Gerar orçamento e abrir no editor'}
             </button>
             <button onClick={baixarRelatorio} disabled={gerando} style={{ ...btnPrimario, padding: '13px 26px', fontSize: 13 }}>
               <FileDown size={14} style={{ marginRight: 6 }} /> {gerando ? 'Gerando...' : 'Baixar Relatório PDF'}
@@ -781,90 +750,22 @@ export default function Compatibilizacao() {
   );
 }
 
-// Vlr. unit./Vlr. total: mesma estrutura de colunas da planilha de referência
-// da empresa (Qtd. | Un. | Vlr unit. | Vlr total). O valor unitário começa em
-// 0 — fica editável aqui, com duas fontes de apoio pra decidir o preço:
-// a referência de mão de obra cadastrada pelo admin ("Ref.: R$ X · usar") e,
-// agora, a mesma pesquisa de mercado sob demanda (Gemini + busca real) que
-// já existia só pra materiais — útil quando não há referência cadastrada ou
-// pra confirmar se ela ainda está atualizada.
-// Bloco do resultado da pesquisa de mercado, agora RECOLHÍVEL. O resultado
-// continua salvo no item (pesquisa_mercado) — recolher/expandir é só visual,
-// não refaz a busca nem grava nada no banco. Começa expandido logo após a
-// pesquisa; o usuário recolhe pra tirar da frente e clica de novo pra rever,
-// sem custo e sem nova pesquisa.
-function BlocoPesquisaMercado({ pesquisa, onUsarPreco, precoAtual }) {
-  // Começa recolhida só quando a pesquisa veio salva de uma análise reaberta
-  // (recolhidaInicial). Pesquisa feita agora nasce expandida.
-  const [recolhida, setRecolhida] = useState(!!pesquisa?.recolhidaInicial);
-  if (!pesquisa?.resultado) return null;
-  const fonteLabel = pesquisa.fonte === 'claude' ? 'Claude, API paga'
-    : pesquisa.fonte === 'claude_max' ? 'Claude Max'
-    : pesquisa.fonte === 'gemini' ? 'Gemini'
-    : (pesquisa.fonte || 'IA');
-  const sugerido = Number(pesquisa.precoSugerido) || 0;
-  const est = pesquisa.estatistica;
-  return (
-    <div style={{ marginTop: 10, padding: 12, background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, fontSize: 12, color: '#bbb', lineHeight: 1.5 }}>
-      <div
-        onClick={() => setRecolhida(r => !r)}
-        title={recolhida ? 'Clique para expandir a pesquisa' : 'Clique para recolher a pesquisa'}
-        style={{ display: 'flex', alignItems: 'baseline', gap: 6, cursor: 'pointer', userSelect: 'none' }}
-      >
-        <span style={{ color: '#c9a227', fontSize: 11, width: 12, display: 'inline-block' }}>{recolhida ? '▸' : '▾'}</span>
-        <b style={{ color: '#c9a227' }}>Pesquisa de mercado ({fonteLabel} — confira antes de usar):</b>
-        {pesquisa.pesquisadoEm && (
-          <span style={{ color: '#666', fontWeight: 400 }}> — salva, feita em {new Date(pesquisa.pesquisadoEm).toLocaleString('pt-BR')}</span>
-        )}
-        <span style={{ marginLeft: 'auto', color: '#777', fontSize: 11, textDecoration: 'underline', whiteSpace: 'nowrap' }}>
-          {recolhida ? 'expandir' : 'recolher'}
-        </span>
-      </div>
-      {sugerido > 0 && onUsarPreco && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
-          <button type="button" onClick={() => onUsarPreco(sugerido)} style={{ ...btnSecundario, padding: '4px 10px', fontSize: 11, borderColor: '#c9a227', color: '#c9a227' }}>
-            Usar {formatarMoeda(sugerido)}
-          </button>
-          <span style={{ color: '#777' }}>
-            média de {est?.n || 0} oferta(s){est?.n ? ` — mín. ${formatarMoeda(est.minimo)}, máx. ${formatarMoeda(est.maximo)}` : ''}
-            {Number(precoAtual) === sugerido ? ' · em uso' : ''}
-          </span>
-        </div>
-      )}
-      {!recolhida && (pesquisa.ofertas?.length ? (
-        <table style={{ width: '100%', marginTop: 8, borderCollapse: 'collapse' }}>
-          <tbody>
-            {pesquisa.ofertas.map((o, i) => (
-              <tr key={i} style={{ borderTop: '1px solid #1e1e1e', color: o.mesmo_item ? '#bbb' : '#777' }}>
-                <td style={{ padding: '4px 6px', whiteSpace: 'nowrap' }}>{o.fonte}</td>
-                <td style={{ padding: '4px 6px', whiteSpace: 'nowrap', color: '#c9a227' }}>{formatarMoeda(o.preco)}</td>
-                <td style={{ padding: '4px 6px' }}>
-                  {o.link ? <a href={o.link} target="_blank" rel="noopener noreferrer" style={{ color: '#8ab4f8' }}>{o.produto || 'ver oferta'}</a> : o.produto}
-                  {!o.mesmo_item && <span> (variação diferente — fora da média)</span>}
-                  {o.observacao && <div style={{ color: '#777', fontSize: 11 }}>{o.observacao}</div>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{pesquisa.resultado}</div>
-      ))}
-    </div>
-  );
-}
-
-function TabelaServicos({ itens, onAtualizar, onRemover, pesquisas, onPesquisar, semObservacao }) {
-  const colunas = semObservacao
-    ? '2.4fr 0.6fr 0.6fr 0.9fr 0.9fr 1.2fr 32px'
-    : '1.8fr 0.6fr 0.5fr 0.9fr 0.9fr 1.2fr 1.7fr 32px';
-
+// Itens extraídos do projeto (serviços ou materiais), só LEITURA — versão 2.0,
+// editor único de orçamento: quantidade, valor unitário, "Ref.: … usar",
+// referências oficial/particular e "Pesquisar mercado" por item saíram daqui
+// e estão no editor da proposta (pages/Orcamento.js). Fica o que a análise
+// leu do PDF (descrição, quantidade, unidade, disciplina, observação/origem)
+// e a sugestão de preço como informação. Quantidade 0 = modelo da disciplina
+// ainda não conferido na planta: o gerar deixa de fora (o editor lista para
+// incluir). Só o "Já pronto" continua editável (escopo da obra).
+function TabelaItensLeitura({ tipo, itens, disciplinas, onPronto }) {
+  const servico = tipo === 'servico';
+  const colunas = '2.4fr 1fr 0.5fr 0.5fr 1.5fr 1.8fr 0.8fr';
+  const nomeDisc = (chave) => disciplinas.find(d => d.chave === chave)?.nome || chave;
   return (
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, marginBottom: 8, fontSize: 12, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px' }}>
-        <span>Descrição</span><span>Qtd</span><span>Un.</span><span>Vlr. unit.</span><span>Vlr. total</span><span>Status</span>
-        {!semObservacao && <span>Observação</span>}
-        <span />
+        <span>Descrição</span><span>Disciplina</span><span>Qtd</span><span>Un.</span><span>Sugestão de preço</span><span>Observação / origem</span><span>Escopo</span>
       </div>
       {agruparPorSubgrupo(itens).map(linha => {
         if (linha.tipo === 'cabecalho') {
@@ -875,66 +776,36 @@ function TabelaServicos({ itens, onAtualizar, onRemover, pesquisas, onPesquisar,
           );
         }
         const it = linha.item;
-        const valorTotal = (Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0);
-        // Referência de mão de obra (ver utils/precosMaoDeObraReferencia.js,
-        // backend) — SUGESTÃO fixa cadastrada pelo admin, nunca aplicada
-        // sozinha: só aparece um "usar" que copia o valor pro campo se o
-        // usuário decidir. Só mostra quando ainda não coincide com o valor
-        // atual (senão fica um "usar" sem função depois que já foi aplicado).
-        const temSugestao = it.valor_referencia_mercado != null && Number(it.valor_referencia_mercado) !== Number(it.valor_unitario || 0);
-        const pesquisa = pesquisas?.[it.id];
+        const semQtd = !it.pronto && !(Number(it.quantidade) > 0);
         return (
-          <div key={it.id} style={{ marginBottom: 12, borderBottom: !semObservacao ? '1px solid #1e1e1e' : 'none', paddingBottom: !semObservacao ? 10 : 0 }}>
+          <div key={it.id} style={{ marginBottom: 10, borderBottom: '1px solid #1e1e1e', paddingBottom: 10, opacity: it.pronto ? 0.55 : 1 }}>
             <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, alignItems: 'start', fontSize: 13 }}>
-              <input value={it.descricao} onChange={e => onAtualizar(it.id, 'descricao', e.target.value)} placeholder="Descrição" style={{ fontSize: 13 }} />
-              <input type="number" step="1" min="0" value={it.quantidade ?? ''} onChange={e => onAtualizar(it.id, 'quantidade', e.target.value)} style={{ fontSize: 13 }} />
-              <input value={it.unidade || ''} onChange={e => onAtualizar(it.id, 'unidade', e.target.value)} style={{ fontSize: 13 }} />
-              <div>
-                <input type="number" step="0.01" min="0" value={it.valor_unitario ?? 0} onChange={e => onAtualizar(it.id, 'valor_unitario', e.target.value)} placeholder="0,00" style={{ fontSize: 13, width: '100%' }} />
-                {temSugestao && (
-                  <div style={{ fontSize: 10.5, color: '#8a7333', marginTop: 3, whiteSpace: 'nowrap' }}>
-                    Ref.: {formatarMoeda(it.valor_referencia_mercado)}{' '}
-                    <button type="button" onClick={() => onAtualizar(it.id, 'valor_unitario', it.valor_referencia_mercado)} style={btnUsar}>
-                      usar
-                    </button>
-                  </div>
-                )}
-                {/* referências de mercado por segmento (tela Preços de Mão de Obra) */}
-                {it.referencias_mercado && [['publico', 'oficial'], ['privado', 'particular']].map(([seg, rot]) => (
-                  it.referencias_mercado[seg] != null && Number(it.referencias_mercado[seg]) !== Number(it.valor_unitario || 0) && (
-                    <div key={seg} style={{ fontSize: 10.5, color: '#6f7f8f', marginTop: 2, whiteSpace: 'nowrap' }}
-                      title={seg === 'publico' ? 'Referência oficial / governo (SINAPI, ORSE, licitações)' : 'Referência do mercado particular'}>
-                      {rot}: {formatarMoeda(it.referencias_mercado[seg])}{' '}
-                      <button type="button" onClick={() => onAtualizar(it.id, 'valor_unitario', it.referencias_mercado[seg])} style={btnUsar}>usar</button>
-                    </div>
-                  )
-                ))}
-                {onPesquisar && (
-                  <button
-                    type="button"
-                    onClick={() => onPesquisar(it)}
-                    disabled={pesquisa?.carregando}
-                    style={{ ...btnSecundario, padding: '3px 8px', fontSize: 10.5, marginTop: 4, whiteSpace: 'nowrap' }}
-                  >
-                    <Search size={10} style={{ marginRight: 3 }} /> {pesquisa?.carregando ? 'Pesquisando...' : 'Pesquisar mercado'}
-                  </button>
-                )}
+              <div style={{ color: '#ddd' }}>
+                {it.descricao || <i style={{ color: '#666' }}>(sem descrição)</i>}
+                {it.referencia_fabricante && <div style={{ color: '#777', fontSize: 11 }}>Ref. fabricante: {it.referencia_fabricante}</div>}
               </div>
-              <span style={{ color: valorTotal > 0 ? '#c9a227' : '#555', fontWeight: 700 }}>{formatarMoeda(valorTotal)}</span>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: it.pronto ? '#3fb95f' : '#999', whiteSpace: 'nowrap' }}>
-                <input type="checkbox" checked={!!it.pronto} onChange={e => onAtualizar(it.id, 'pronto', e.target.checked)} />
+              <span style={{ color: '#999', fontSize: 12 }}>{it.disciplina ? nomeDisc(it.disciplina) : (it.subgrupo || '—')}</span>
+              <span style={{ color: semQtd ? '#c9a227' : '#ccc', fontWeight: semQtd ? 700 : 400 }}
+                title={semQtd ? 'Quantidade 0: confira na planta — este item fica fora do rascunho do orçamento' : undefined}>
+                {Number(it.quantidade) || 0}
+              </span>
+              <span style={{ color: '#999' }}>{it.unidade || '—'}</span>
+              <div style={{ fontSize: 12 }}>
+                {servico ? <SugestaoServico it={it} /> : <SugestaoMaterial it={it} />}
+              </div>
+              <span style={{ color: '#888', fontSize: 12, lineHeight: 1.45 }}>
+                {it.observacao || '—'}
+                {semQtd && <div style={{ color: '#a08a3a', marginTop: 3 }}>Quantidade 0 — fica fora do rascunho; inclua no editor se fizer parte.</div>}
+              </span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: it.pronto ? '#3fb95f' : '#999', whiteSpace: 'nowrap' }}
+                title='"Já pronto": já existe na obra, não faz parte do escopo orçado'>
+                <input type="checkbox" checked={!!it.pronto} onChange={e => onPronto(it.id, e.target.checked)} />
                 Já pronto
               </label>
-              {!semObservacao && (
-                <input value={it.observacao || ''} onChange={e => onAtualizar(it.id, 'observacao', e.target.value)} placeholder="Observação" style={{ fontSize: 13 }} />
-              )}
-              <button onClick={() => onRemover(it.id)} style={{ ...btnIcone, color: '#b04040' }} title="Remover">
-                <Trash2 size={12} />
-              </button>
             </div>
-            <BlocoPesquisaMercado pesquisa={pesquisa} precoAtual={it.valor_unitario} onUsarPreco={(v) => onAtualizar(it.id, "valor_unitario", v)} />
-            {pesquisa?.erro && (
-              <div style={{ marginTop: 8, fontSize: 12, color: '#b04040' }}>{pesquisa.erro}</div>
+            {/* pesquisa que ficou salva no item (de antes do editor único), só para consulta */}
+            {it.pesquisa_mercado?.resultado && (
+              <BlocoPesquisaMercado pesquisa={{ ...it.pesquisa_mercado, recolhidaInicial: true }} />
             )}
           </div>
         );
@@ -943,76 +814,45 @@ function TabelaServicos({ itens, onAtualizar, onRemover, pesquisas, onPesquisar,
   );
 }
 
-// Tabela de materiais/equipamentos: além dos campos editáveis, mostra o
-// preço do catálogo quando o sistema achou uma correspondência (com a
-// confiança e a descrição do catálogo lado a lado — pra ficar visível
-// quando bateu errado, ex.: categoria de cabo diferente) e permite pesquisar
-// o preço de mercado sob demanda (Gemini + busca real, nunca automático).
-function TabelaMateriais({ itens, onAtualizar, onRemover, pesquisas, onPesquisar }) {
-  const colunas = '2fr 1fr 0.6fr 0.6fr 1.6fr 1fr 32px';
-
+// Serviço: o valor que a análise sugeriu (vai para o rascunho) e as referências
+// de mão de obra (H&M, oficial/governo, particular) — tudo como informação.
+function SugestaoServico({ it }) {
+  const valor = Number(it.valor_unitario) || 0;
+  const refs = [
+    ['Ref.', it.valor_referencia_mercado, 'Referência H&M (tela Preços de Mão de Obra)'],
+    ['oficial', it.referencias_mercado?.publico, 'Referência oficial / governo (SINAPI, ORSE, licitações)'],
+    ['particular', it.referencias_mercado?.privado, 'Referência do mercado particular'],
+  ].filter(([, v]) => v != null && Number(v) !== valor);
   return (
-    <div>
-      <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, marginBottom: 8, fontSize: 12, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px' }}>
-        <span>Descrição</span><span>Referência</span><span>Qtd</span><span>Un.</span><span>Catálogo / Mercado</span><span>Status</span><span />
-      </div>
-      {agruparPorSubgrupo(itens).map(linha => {
-        if (linha.tipo === 'cabecalho') {
-          return (
-            <div key={linha.key} style={{ fontSize: 13, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '.5px', borderTop: '1px solid #222', paddingTop: 10, marginTop: 6, marginBottom: 8 }}>
-              {linha.nome}
-            </div>
-          );
-        }
-        const it = linha.item;
-        const pesquisa = pesquisas[it.id];
-        return (
-          <div key={it.id} style={{ marginBottom: 12, borderBottom: '1px solid #1e1e1e', paddingBottom: 12 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, alignItems: 'center', fontSize: 13 }}>
-              <input value={it.descricao} onChange={e => onAtualizar(it.id, 'descricao', e.target.value)} placeholder="Descrição" style={{ fontSize: 13 }} />
-              <input value={it.referencia_fabricante || ''} onChange={e => onAtualizar(it.id, 'referencia_fabricante', e.target.value)} placeholder="Ref. fabricante" style={{ fontSize: 12 }} />
-              <input type="number" step="1" min="0" value={it.quantidade ?? ''} onChange={e => onAtualizar(it.id, 'quantidade', e.target.value)} style={{ fontSize: 13 }} />
-              <input value={it.unidade || ''} onChange={e => onAtualizar(it.id, 'unidade', e.target.value)} style={{ fontSize: 13 }} />
-              <div style={{ fontSize: 12 }}>
-                {it.preco_catalogo != null ? (
-                  <div style={{ color: it.confianca_catalogo >= 70 ? '#3fb95f' : '#c9a227' }}>
-                    <b>{formatarMoeda(it.preco_catalogo)}</b> ({it.confianca_catalogo}% match)
-                    <div style={{ color: '#777', fontSize: 11 }} title={it.descricao_catalogo}>{it.descricao_catalogo}</div>
-                  </div>
-                ) : (
-                  <span style={{ color: '#666' }}>Sem correspondência no catálogo</span>
-                )}
-                {Number(it.preco_unitario) > 0 && (
-                  <div style={{ color: '#c9a227', fontSize: 12, marginTop: 3 }}>
-                    Preço adotado: <b>{formatarMoeda(it.preco_unitario)}</b> (pesquisa de mercado)
-                    <button type="button" onClick={() => onAtualizar(it.id, 'preco_unitario', null)} style={{ ...btnIcone, marginLeft: 4, fontSize: 11 }} title="Voltar ao preço do catálogo">×</button>
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={() => onPesquisar(it)}
-                  disabled={pesquisa?.carregando}
-                  style={{ ...btnSecundario, padding: '4px 10px', fontSize: 11, marginTop: 5 }}
-                >
-                  <Search size={11} style={{ marginRight: 4 }} /> {pesquisa?.carregando ? 'Pesquisando...' : 'Pesquisar mercado'}
-                </button>
-              </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: it.pronto ? '#3fb95f' : '#999' }}>
-                <input type="checkbox" checked={!!it.pronto} onChange={e => onAtualizar(it.id, 'pronto', e.target.checked)} />
-                Já pronto
-              </label>
-              <button onClick={() => onRemover(it.id)} style={{ ...btnIcone, color: '#b04040' }} title="Remover">
-                <Trash2 size={12} />
-              </button>
-            </div>
-            <BlocoPesquisaMercado pesquisa={pesquisa} precoAtual={it.preco_unitario} onUsarPreco={(v) => onAtualizar(it.id, "preco_unitario", v)} />
-            {pesquisa?.erro && (
-              <div style={{ marginTop: 8, fontSize: 12, color: '#b04040' }}>{pesquisa.erro}</div>
-            )}
-          </div>
-        );
-      })}
-    </div>
+    <>
+      {valor > 0
+        ? <div style={{ color: '#c9a227' }}><b>{formatarMoeda(valor)}</b> <span style={{ color: '#777' }}>(vai para o rascunho)</span></div>
+        : <div style={{ color: '#a08a3a' }}>Sem preço — entra "a cotar"</div>}
+      {refs.map(([rot, v, titulo]) => (
+        <div key={rot} style={{ fontSize: 11, color: '#6f7f8f', marginTop: 2 }} title={titulo}>{rot}: {formatarMoeda(v)}</div>
+      ))}
+    </>
+  );
+}
+
+// Material: preço adotado de uma pesquisa (tem prioridade ao gerar) e/ou a
+// correspondência no catálogo, com a confiança e a descrição do catálogo.
+function SugestaoMaterial({ it }) {
+  const adotado = Number(it.preco_unitario) > 0;
+  return (
+    <>
+      {adotado && (
+        <div style={{ color: '#c9a227' }}><b>{formatarMoeda(it.preco_unitario)}</b> <span style={{ color: '#777' }}>(pesquisa de mercado adotada)</span></div>
+      )}
+      {it.preco_catalogo != null ? (
+        <div style={{ color: adotado ? '#777' : it.confianca_catalogo >= 70 ? '#3fb95f' : '#c9a227' }}>
+          {adotado ? 'catálogo: ' : ''}<b>{formatarMoeda(it.preco_catalogo)}</b> ({it.confianca_catalogo}% match)
+          <div style={{ color: '#777', fontSize: 11 }} title={it.descricao_catalogo}>{it.descricao_catalogo}</div>
+        </div>
+      ) : !adotado && (
+        <div style={{ color: '#a08a3a' }}>Sem correspondência no catálogo — entra "a cotar"</div>
+      )}
+    </>
   );
 }
 
@@ -1123,9 +963,6 @@ const btnPrimario = {
   background: '#c9a227', border: 'none', borderRadius: 6, color: '#000',
   fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap'
 };
-
-// link "usar" das sugestões de preço de referência
-const btnUsar = { background: 'none', border: 'none', color: '#c9a227', textDecoration: 'underline', cursor: 'pointer', fontSize: 10.5, padding: 0 };
 
 const btnSecundario = {
   display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent',

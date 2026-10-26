@@ -1,21 +1,30 @@
+import { useParams } from 'react-router-dom';
 import Hub from './Hub';
 import Compatibilizacao from '../AnaliseProjeto';
 import LaudosProjetos from '../../components/laudos/LaudosProjetos';
+import ListaObras from '../obras/ListaObras';
+import DetalheObra from '../obras/DetalheObra';
 
-// Grupo "Obras". Por enquanto reúne a Análise de Projeto (PDF) e os laudos e
-// projetos por disciplina (antes uma aba interna da Análise, em ?aba=laudos).
+// Grupo "Obras" (versão 2.0). A lista de obras é a primeira aba; a Análise de
+// Projeto (PDF) e os laudos e projetos por disciplina continuam como abas.
 //
 // Rotas:
-//   /obras                          → análise de projeto (nova)
+//   /obras                          → lista de obras (Fase 2D)
+//   /obras/:id[?secao=...]          → página da obra (abaFixa 'obras'; o :id é numérico)
+//   /obras?aba=analise[&obra=ID]    → análise de projeto (nova); ?obra= = já ligada à obra
 //   /obras/analise/:id              → análise salva (Compatibilizacao lê o :id)
-//   /obras?aba=laudos[&laudo=ID]    → laudos; o ?laudo= abre o laudo direto
-//                                     ("Calcular pela norma" da análise)
+//   /obras?aba=laudos[&laudo=ID][&obra=ID] → laudos; o ?laudo= abre o laudo direto
+//                                     ("Calcular pela norma" da análise); ?obra= = novo laudo na obra
 //
-// Fase 2 (entidade Obra): as novas abas entram nesta lista — ex.: a lista de
-// obras como primeira aba e, dentro da obra, projetos/laudos/propostas dela.
 // A chave 'laudos' não deve mudar: o LaudosProjetos, ao abrir um laudo pelo
 // ?laudo=, regrava a URL como ?aba=laudos.
+function AbaObras() {
+  const { id } = useParams();
+  return id ? <DetalheObra key={id} /> : <ListaObras />;
+}
+
 const ABAS = [
+  { chave: 'obras', rotulo: 'Obras', para: '/obras?aba=obras', render: () => <AbaObras /> },
   { chave: 'analise', rotulo: 'Análise de projeto (PDF)', render: () => <Compatibilizacao /> },
   { chave: 'laudos', rotulo: 'Laudos e projetos por disciplina', render: () => <LaudosProjetos /> },
 ];

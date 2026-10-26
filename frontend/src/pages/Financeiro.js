@@ -8,6 +8,8 @@ import {
 import api from '../services/api';
 import { formatarMoeda } from '../utils/format';
 import Select from '../components/Select';
+import ObraSelect from '../components/ObraSelect';
+import { Link } from 'react-router-dom';
 
 const TIPO_INFO = {
   recebido: { label: 'Recebido', cor: '#3fb95f', bg: '#0a1a0f', borda: '#1a4a26' },
@@ -20,8 +22,8 @@ const CATEGORIA_INFO = {
   despesa: 'Despesa diária',
 };
 
-const VAZIO = { tipo: 'recebido', nome: '', valor: '', dataHora: '', idTransacao: '' };
-const VAZIO_VINCULO = { prestadorId: '', categoria: '' };
+const VAZIO = { tipo: 'recebido', nome: '', valor: '', dataHora: '', idTransacao: '', obraId: null };
+const VAZIO_VINCULO = { prestadorId: '', categoria: '', obraId: null };
 
 function paraDatetimeLocal(iso) {
   const d = iso ? new Date(iso) : new Date();
@@ -36,6 +38,7 @@ export default function Financeiro() {
   const [busca, setBusca] = useState('');
   const [categoria, setCategoria] = useState('');
   const [prestadorId, setPrestadorId] = useState('');
+  const [obraFiltro, setObraFiltro] = useState(null);
   const [prestadores, setPrestadores] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [movimentos, setMovimentos] = useState([]);
@@ -62,6 +65,7 @@ export default function Financeiro() {
       if (busca) params.busca = busca;
       if (categoria) params.categoria = categoria;
       if (prestadorId) params.prestadorId = prestadorId;
+      if (obraFiltro) params.obraId = obraFiltro;
 
       const res = await getFinanceiroMovimentos(params);
       setMovimentos(res.data.movimentos);
@@ -76,7 +80,7 @@ export default function Financeiro() {
     } finally {
       setCarregando(false);
     }
-  }, [dataInicio, dataFim, tipo, busca, categoria, prestadorId, inicializado]);
+  }, [dataInicio, dataFim, tipo, busca, categoria, prestadorId, obraFiltro, inicializado]);
 
   useEffect(() => {
     const t = setTimeout(carregar, 300);
@@ -111,7 +115,7 @@ export default function Financeiro() {
     setEditandoId(m.id);
     setForm({
       tipo: m.tipo, nome: m.nome || '', valor: String(m.valor),
-      dataHora: paraDatetimeLocal(m.data_hora), idTransacao: m.id_transacao || '',
+      dataHora: paraDatetimeLocal(m.data_hora), idTransacao: m.id_transacao || '', obraId: m.obra_id || null,
     });
     setModalAberto(true);
   }
@@ -158,7 +162,7 @@ export default function Financeiro() {
 
   function abrirVinculo(m) {
     setVinculandoId(m.id);
-    setFormVinculo({ prestadorId: m.prestador_id || '', categoria: m.categoria || '' });
+    setFormVinculo({ prestadorId: m.prestador_id || '', categoria: m.categoria || '', obraId: m.obra_id || null });
     setVinculoAberto(true);
   }
 
@@ -169,6 +173,7 @@ export default function Financeiro() {
       await categorizarFinanceiroMovimento(vinculandoId, {
         prestadorId: formVinculo.prestadorId || null,
         categoria: formVinculo.categoria || null,
+        obraId: formVinculo.obraId || null,
       });
       toast.success('Vínculo salvo');
       setVinculoAberto(false);
@@ -189,6 +194,7 @@ export default function Financeiro() {
       if (busca) params.busca = busca;
       if (categoria) params.categoria = categoria;
       if (prestadorId) params.prestadorId = prestadorId;
+      if (obraFiltro) params.obraId = obraFiltro;
 
       const res = await api.get('/financeiro/movimentos/csv', { params, responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
@@ -249,7 +255,7 @@ export default function Financeiro() {
             <FileSpreadsheet size={13} style={{ marginRight: 4 }} /> {exportando ? 'Gerando...' : 'Exportar CSV'}
           </button>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr', gap: 12 }}>
           <Campo label="Categoria">
             <Select value={categoria} onChange={e => setCategoria(e.target.value)}>
               <option value="">Todas</option>
@@ -263,6 +269,9 @@ export default function Financeiro() {
               <option value="">Todos</option>
               {prestadores.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
             </Select>
+          </Campo>
+          <Campo label="Obra">
+            <ObraSelect value={obraFiltro} onChange={id => setObraFiltro(id)} rotuloVazio="Todas" permitirNova={false} />
           </Campo>
         </div>
       </div>
@@ -284,16 +293,17 @@ export default function Financeiro() {
               <th style={th}>Nome</th>
               <th style={th}>Prestador</th>
               <th style={th}>Categoria</th>
+              <th style={th}>Obra</th>
               <th style={{ ...th, textAlign: 'right' }}>Valor</th>
               <th style={{ ...th, width: 100 }}></th>
             </tr>
           </thead>
           <tbody>
             {carregando && (
-              <tr><td colSpan={7} style={tdVazio}>Carregando...</td></tr>
+              <tr><td colSpan={8} style={tdVazio}>Carregando...</td></tr>
             )}
             {!carregando && movimentos.length === 0 && (
-              <tr><td colSpan={7} style={tdVazio}>Nenhum movimento encontrado no período.</td></tr>
+              <tr><td colSpan={8} style={tdVazio}>Nenhum movimento encontrado no período.</td></tr>
             )}
             {!carregando && movimentos.map(m => {
               const info = TIPO_INFO[m.tipo] || TIPO_INFO.recebido;
@@ -308,6 +318,11 @@ export default function Financeiro() {
                   <td style={td}>{m.nome || '—'}</td>
                   <td style={td}>{m.prestador_nome || '—'}</td>
                   <td style={td}>{CATEGORIA_INFO[m.categoria] || '—'}</td>
+                  <td style={td}>
+                    {m.obra
+                      ? <Link to={`/obras/${m.obra.id}`} style={{ color: '#c9a227', textDecoration: 'none' }} title={m.obra.nome}>{m.obra.codigo}</Link>
+                      : '—'}
+                  </td>
                   <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: info.cor }}>
                     {m.tipo === 'realizado' ? '- ' : '+ '}{formatarMoeda(m.valor)}
                   </td>
@@ -381,6 +396,12 @@ export default function Financeiro() {
                 </Campo>
               </div>
 
+              <div style={{ marginBottom: 12 }}>
+                <Campo label="Obra">
+                  <ObraSelect value={form.obraId} onChange={id => setForm(f => ({ ...f, obraId: id }))} />
+                </Campo>
+              </div>
+
               <div style={{ display: 'flex', gap: 10, marginTop: 22, justifyContent: 'flex-end' }}>
                 <button type="button" onClick={() => setModalAberto(false)} style={btnSecundario}>Cancelar</button>
                 <button type="submit" disabled={salvando} style={btnPrimario}>
@@ -427,6 +448,12 @@ export default function Financeiro() {
                   <option value="despesa">Despesa diária</option>
                 </Select>
               </Campo>
+
+              <div style={{ marginTop: 12 }}>
+                <Campo label="Obra">
+                  <ObraSelect value={formVinculo.obraId} onChange={id => setFormVinculo(f => ({ ...f, obraId: id }))} />
+                </Campo>
+              </div>
 
               <div style={{ display: 'flex', gap: 10, marginTop: 22, justifyContent: 'flex-end' }}>
                 <button type="button" onClick={() => setVinculoAberto(false)} style={btnSecundario}>Cancelar</button>
