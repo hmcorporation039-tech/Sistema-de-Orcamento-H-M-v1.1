@@ -22,6 +22,7 @@ const DISCIPLINAS_LAUDO = [
   { chave: 'eletrica_industrial', nome: 'Elétrica industrial (motores, CCM, correção de FP, curto-circuito)', pasta: 'eletrica-industrial' },
   { chave: 'telefonia', nome: 'Telefonia e interfonia (práticas Telebrás / NBR 14565 / NBR 14306)', pasta: 'telefonia' },
   { chave: 'antena', nome: 'Antena coletiva / TV (ISDB-Tb e satélite)', pasta: 'antena' },
+  { chave: 'pressurizacao', nome: 'Pressurização de escadas — controle de fumaça e automação (NBR 14880 / CBMDF)', pasta: 'pressurizacao' },
 ];
 
 const RAIZ_SKILLS = path.join(__dirname, '..', '..', '..', 'skills');

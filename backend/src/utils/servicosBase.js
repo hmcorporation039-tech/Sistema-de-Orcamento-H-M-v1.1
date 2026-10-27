@@ -48,6 +48,7 @@ const SUBGRUPO_PARA_DISCIPLINA = {
   eletrica_hospitalar: ['Elétrica hospitalar'],
   eletrica_industrial: ['Elétrica industrial'],
   media_tensao: ['Média tensão', 'Subestação', 'Média tensão / subestação'],
+  pressurizacao: ['Pressurização de escadas', 'Pressurização', 'Escada pressurizada'],
 };
 const MAPA_SUBGRUPO = new Map(
   Object.entries(SUBGRUPO_PARA_DISCIPLINA).flatMap(([disc, nomes]) => [disc, ...nomes].map(n => [normalizarTexto(n), disc]))
@@ -111,6 +112,18 @@ function planejarFusao(servicos, codigoOrigem, codigoDestino) {
 async function garantirServicoCadastrado(client, { descricao, unidade, valor_unitario, codigo, subgrupo }) {
   const desc = String(descricao || '').trim();
   if (!desc || desc.length > TAMANHO_MAX_DESCRICAO) return null;
+
+  // 0) o item já veio com o código de um serviço da base (escolhido na lista ou
+  //    gerado por um laudo): é esse serviço, mesmo que a descrição na proposta
+  //    tenha sido detalhada — senão cada orçamento de laudo criava um livre_
+  //    novo para cada variação de texto do mesmo serviço
+  if (codigo) {
+    const { rows: [porCodigo] } = await client.query(
+      'SELECT codigo, fundido_em FROM precos_mao_de_obra_referencia WHERE codigo = $1',
+      [String(codigo).trim()]
+    );
+    if (porCodigo) return porCodigo.fundido_em || porCodigo.codigo;
+  }
 
   // 1) já existe (padrão, livre ativo, desativado ou fundido) → não recria
   const { rows: [existente] } = await client.query(

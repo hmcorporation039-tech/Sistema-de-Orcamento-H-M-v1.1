@@ -38,13 +38,13 @@ describe('Laudos e projetos por disciplina', () => {
     laudosCriados.forEach(id => cy.api({ method: 'DELETE', url: `/api/laudos/${id}`, failOnStatusCode: false }));
   });
 
-  it('mostra as 16 disciplinas, todas prontas', () => {
+  it('mostra as 17 disciplinas, todas prontas', () => {
     cy.contains('Laudos e projetos por disciplina').should('be.visible');
-    cy.get('select').first().find('option').should('have.length', 16);
+    cy.get('select').first().find('option').should('have.length', 17);
     cy.get('select').first().find('option').each(op => expect(op.text()).not.to.contain('em preparação'));
     cy.get('select').first().find('option').then(ops => {
       const valores = [...ops].map(o => o.value);
-      ['spda', 'cftv', 'automacao', 'solar'].forEach(d => expect(valores).to.include(d));
+      ['spda', 'cftv', 'automacao', 'solar', 'pressurizacao'].forEach(d => expect(valores).to.include(d));
     });
     cy.get('select').first().select('cftv');
     cy.contains('button', 'Novo a partir do exemplo').should('be.visible');

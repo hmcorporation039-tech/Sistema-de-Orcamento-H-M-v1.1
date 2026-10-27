@@ -82,6 +82,13 @@ caso('carimbo e disciplina pelo conteúdo', () => {
   assert.strictEqual(L.detectarDisciplinas(t)[0].chave, 'alarme');
 });
 
+caso('pressurização de escada pelo conteúdo, sem puxar bomba de pressurização nem damper de climatização', () => {
+  assert.strictEqual(L.detectarDisciplinas('PRESSURIZAÇÃO DE ESCADA - PLANTA DO 5º PAVIMENTO\nDAMPER DE ALÍVIO 600x400\nNBR 14880')[0].chave, 'pressurizacao');
+  assert.strictEqual(L.detectarDisciplinas('Escada pressurizada — ventilador de pressurização V1')[0].chave, 'pressurizacao');
+  assert.deepStrictEqual(L.detectarDisciplinas('BOMBA DE PRESSURIZAÇÃO JOCKEY DOS HIDRANTES'), []);
+  assert.ok(!L.detectarDisciplinas('DAMPER MOTORIZADO 24 V PARA FANCOIL').some(d => d.chave === 'pressurizacao'));
+});
+
 caso('ambientes: "A = " com espaço, sem lixo de carimbo/revisão/lotação', () => {
   const t = ['01 \t17/04/2025 \tALTERAÇÃO DE LAYOUT \tO AUTOR', 'ARMÁRIOS', 'A= 6,20m²', '40 ALUNOS \tSALA 102', 'A = 48,00 m²'].join('\n');
   assert.deepStrictEqual(extrairAmbientes(t).map(a => [a.nome, a.area_m2]), [['ARMÁRIOS', 6.2], ['SALA 102', 48]]);

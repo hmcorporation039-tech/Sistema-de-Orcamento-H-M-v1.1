@@ -194,6 +194,9 @@ const ASSINATURAS = {
   carregador: /RECARGA DE VE[ÍI]CULO|CARREGADOR VEICULAR|WALLBOX|ELETROPOSTO|NBR\s?17019/gi,
   antena: /\bANTENA\b|COAXIAL|\bRG-?6\b|TV A CABO/gi,
   telefonia: /TELEFONIA|\bPABX\b|RAMAL|INTERFONE|PORTEIRO/gi,
+  // pressurização de escada: "damper" só de alívio/sobrepressão e "pressurização" sem
+  // bomba/hidráulica, para não puxar itens de climatização (BMS) nem de hidrantes
+  pressurizacao: /ESCADAS? (DE SEGURAN[ÇC]A )?PRESSURIZADAS?|PRESSURIZA[ÇC][ÃA]O DE ESCADAS?|(?<!BOMBAS? (DE )?)PRESSURIZA[ÇC][ÃA]O(?! HIDR)|NBR\s?14880|DAMPER DE (AL[ÍI]VIO|SOBREPRESS[ÃA]O)|REGISTRO DE SOBREPRESS[ÃA]O|VENTILADOR(ES)? DE PRESSURIZA|CONTROLE DE FUMA[ÇC]A POR PRESSURIZA/gi,
 };
 
 function detectarDisciplinas(texto) {

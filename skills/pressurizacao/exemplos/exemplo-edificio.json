@@ -1,0 +1,132 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "Edifício Exemplo — pressurização da escada de segurança",
+  "prefixo": "Pressurizacao_Exemplo",
+  "data": "2026-10-27",
+  "revisao": "R00",
+  "dados_ilustrativos": true,
+  "observacao": "Dados ilustrativos. A geometria (18 pavimentos, 17 PCF de acesso + 1 de saída, 2 PCF abertas, duto metálico) é a do Anexo F da CBMGO NT 13/2025, usada para conferir o cálculo; as medições de inspeção são fictícias."
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "titulo": "Engenheiro Eletricista",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "CLIENTE EXEMPLO",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "Endereço de exemplo",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "Edifício Exemplo — escada pressurizada",
+  "uso": "Serviço profissional (escritórios), 18 pavimentos"
+ },
+ "edificacao": {
+  "ocupacao": "D",
+  "altura_m": 54,
+  "pavimentos": 18,
+  "local_reuniao_publico": false,
+  "sistema": "1_estagio",
+  "jurisdicao": "DF",
+  "altitude_m": 1100,
+  "temperatura_c": 30
+ },
+ "escada": {
+  "nome": "Escada 1",
+  "antecamara": false,
+  "portas_abertas": null,
+  "portas": [
+   { "descricao": "PCF de ingresso — pavimentos-tipo", "tipo": "simples", "sentido": "acesso", "quantidade": 17, "largura_m": 0.89, "altura_m": 2.1, "fresta_m2": null, "vao_m2": null },
+   { "descricao": "PCF de saída — piso de descarga", "tipo": "simples", "sentido": "saida", "quantidade": 1, "largura_m": 0.89, "altura_m": 2.1, "fresta_m2": null, "vao_m2": null }
+  ],
+  "elevadores": [],
+  "janelas": []
+ },
+ "sistema": {
+  "pressao_projeto_pa": 50,
+  "pressao_max_pa": 60,
+  "velocidade_porta_ms": 1,
+  "tipo_duto": "metalico",
+  "velocidade_duto_ms": null,
+  "largura_duto_m": null,
+  "altura_duto_m": null,
+  "comprimento_duto_m": 64,
+  "curvas": 4,
+  "perda_tomada_ar_pa": null,
+  "perda_grelha_pa": null,
+  "perda_registro_pa": null,
+  "rendimento_ventilador": 0.6,
+  "arranjo": "auto",
+  "partida": "inversor",
+  "alivio": "inversor_e_gravidade",
+  "sensores": "meio",
+  "tomada_ar": "terreo",
+  "acionadores_remotos": 2,
+  "deteccao_existente": true,
+  "limite_forca_n": 133,
+  "forca_fechador_n": 40,
+  "tempo_partida_max_s": 60,
+  "tempo_reversao_s": 15
+ },
+ "alimentacao": {
+  "tensao_ff": 380,
+  "tensao_fn": 220,
+  "comprimento_m": 40,
+  "metodo": "B1",
+  "isolacao": "EPR",
+  "temperatura": 30,
+  "fonte": "auto"
+ },
+ "existente": {
+  "vazao_m3h": null,
+  "pressao_pa": null,
+  "potencia_cv": null,
+  "quantidade": null
+ },
+ "inspecao": {
+  "tipo": "comissionamento",
+  "documento_n": "HM-EX-001",
+  "data_inspecao": "2026-10-20",
+  "equipe": "Equipe H&M",
+  "abrangencia": "Escada 1 — 18 pavimentos, casa de máquinas, painel de comando e integração com a central de alarme",
+  "checklist": [
+   { "cod": "E1", "situacao": "C", "obs": "Todas as PCF fecham sozinhas com o sistema ligado." },
+   { "cod": "E4", "situacao": "NC", "obs": "Sem placa \"ESCADA PRESSURIZADA\" no 7º e no 8º pavimento." },
+   { "cod": "A3", "situacao": "NC", "obs": "O rearme da central desligou os ventiladores." },
+   { "cod": "R1", "situacao": "C", "obs": "Detector do hall do 10º pavimento acionou a pressurização." }
+  ],
+  "ncs": [],
+  "pressoes": [
+   { "pavimento": "Térreo (descarga)", "dp_pa": 61 },
+   { "pavimento": "6º pavimento", "dp_pa": 54 },
+   { "pavimento": "12º pavimento", "dp_pa": 51 },
+   { "pavimento": "18º pavimento", "dp_pa": 47 }
+  ],
+  "velocidades": [
+   { "porta": "PCF de saída (térreo) + PCF do 9º — portas abertas", "media_ms": 1.15, "pontos": 12 },
+   { "porta": "PCF do 9º pavimento (aberta com a do térreo)", "media_ms": 0.92, "pontos": 12 }
+  ],
+  "forcas": [
+   { "porta": "PCF do 6º pavimento", "forca_n": 96 },
+   { "porta": "PCF do 15º pavimento", "forca_n": 104 }
+  ],
+  "ensaios": [
+   { "ensaio": "Partida pelo detector de fumaça do hall (10º) até 50 Pa", "tempo_s": 38, "resultado": "" },
+   { "ensaio": "Reversão automática V1 → V2 (disjuntor do V1 desarmado)", "tempo_s": 22, "resultado": "" },
+   { "ensaio": "Rearme da central com o sistema em operação (não pode desligar)", "tempo_s": null, "resultado": "NC" }
+  ],
+  "ventiladores": [
+   { "equipamento": "V1", "vazao_m3h": 19800, "pressao_pa": 300, "corrente_a": 7.1 }
+  ],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}

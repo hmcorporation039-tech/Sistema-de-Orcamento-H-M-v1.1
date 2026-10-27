@@ -119,14 +119,14 @@ const SUBGRUPO_MATERIAL = {
   media_tensao: 'Elétrica', spda: 'Elétrica', carregador: 'Elétrica', solar: 'Elétrica',
   rede: 'Redes / Cabeamento Estruturado', cabeamento: 'Redes / Cabeamento Estruturado',
   telefonia: 'Interfonia', cftv: 'CFTV', alarme: 'Alarme', antena: 'Antena coletiva',
-  automacao: 'Automação', controle_acesso: 'Controle de acesso', incendio: 'Incêndio', outros: 'Outros',
+  automacao: 'Automação', controle_acesso: 'Controle de acesso', incendio: 'Incêndio', pressurizacao: 'Pressurização', outros: 'Outros',
 };
 const SUBGRUPO_SERVICO = {
   eletrica: 'Elétrica', rede: 'Redes', cabeamento: 'Cabeamento Estruturado', telefonia: 'Telefonia', cftv: 'CFTV',
   iluminacao: 'Iluminação', automacao: 'Automação', alarme: 'Alarme', antena: 'Antena', spda: 'SPDA',
   carregador: 'Recarga de veículo elétrico', incendio: 'Incêndio', solar: 'Solar', controle_acesso: 'Controle de Acesso',
   eletrica_hospitalar: 'Elétrica hospitalar', eletrica_industrial: 'Elétrica industrial', media_tensao: 'Média tensão',
-  outros: 'Outros',
+  pressurizacao: 'Pressurização de escadas', outros: 'Outros',
 };
 const subgrupoDoItem = (tipo, disciplina) => (tipo === 'servico' ? SUBGRUPO_SERVICO : SUBGRUPO_MATERIAL)[disciplina || DISCIPLINA_OUTROS] || 'Outros';
 
@@ -134,7 +134,7 @@ const subgrupoDoItem = (tipo, disciplina) => (tipo === 'servico' ? SUBGRUPO_SERV
 const SIGLA_DISCIPLINA = {
   eletrica: 'ELE', rede: 'REDE', cabeamento: 'CAB', telefonia: 'TEL', cftv: 'CFTV', iluminacao: 'ILUM',
   automacao: 'AUT', alarme: 'ALM', antena: 'ANT', spda: 'SPDA', carregador: 'VE', incendio: 'INC', solar: 'SOL',
-  controle_acesso: 'ACE', eletrica_hospitalar: 'HOSP', eletrica_industrial: 'IND', media_tensao: 'MT', outros: 'OUT',
+  controle_acesso: 'ACE', eletrica_hospitalar: 'HOSP', eletrica_industrial: 'IND', media_tensao: 'MT', pressurizacao: 'PRES', outros: 'OUT',
 };
 const RE_CODIGO = /^[A-Z0-9][A-Z0-9._-]{1,29}$/;
 const normalizarCodigo = (c) => String(c || '').trim().toUpperCase().replace(/\s+/g, '-');
@@ -514,6 +514,34 @@ const KITS_MODELO = [
       mat(ELETRODUTO_3_4, 8),
       srv('antena_passagem_ponto', 1),
       srv('antena_ponto', 1),
+    ],
+  },
+  // Pressurização de escadas (skills/pressurizacao) — semeados pela migração 2.0-12
+  // no banco em que o seed 2.0-08 já rodou; numa instalação nova o 2.0-08 já os cria.
+  {
+    codigo: 'KIT-PRES-01', disciplina: 'pressurizacao', unidade: 'pt',
+    descricao: 'Ponto de medição de pressão diferencial da escada pressurizada (transmissor 0–100 Pa, cabo blindado e infraestrutura)',
+    observacao: 'Kit-modelo da H&M: transmissor de ΔP 4–20 mA com tomadas de pressão (escada × pavimento), 40 m de cabo blindado e 20 m de eletroduto até o painel de comando. Ajuste ao projeto (posição no meio da altura da escada).',
+    itens: [
+      mat({ tipo: 'material', descricao: 'Transmissor de pressão diferencial 0–100 Pa, saída 4–20 mA, com display e tomadas de pressão', unidade: 'un', busca: ['Transmissor de pressão diferencial 0-100 Pa', 'Transmissor pressão diferencial ar 4-20 mA'] }, 1),
+      mat({ tipo: 'material', descricao: 'Cabo de instrumentação blindado 2 × 0,75 mm²', unidade: 'm', busca: ['Cabo blindado 2x0,75 mm', 'Cabo manga blindado 2 vias 0,75'] }, 40),
+      mat({ tipo: 'material', descricao: 'Eletroduto de aço galvanizado 3/4" com conexões', unidade: 'm', busca: ['Eletroduto galvanizado 3/4', 'Eletroduto aço galvanizado 3/4'] }, 20),
+      srv('pres_sensores', 1),
+      srv('pres_cabo_comando', 40),
+      srv('pres_infra', 20),
+    ],
+  },
+  {
+    codigo: 'KIT-PRES-02', disciplina: 'pressurizacao', unidade: 'pt',
+    descricao: 'Acionador remoto "LIGA pressurização" (botoeira com tampa e sinaleiro, cabo resistente ao fogo e infraestrutura)',
+    observacao: 'Kit-modelo da H&M: acionador na portaria/sala de controle (CBMDF NT 10, 4.3.1.10.5 f), 60 m de cabo de comando resistente ao fogo e 30 m de eletroduto galvanizado até o painel. Ajuste ao projeto.',
+    itens: [
+      mat({ tipo: 'material', descricao: 'Acionador remoto "LIGA PRESSURIZAÇÃO" com tampa de proteção, sinaleiro e placa', unidade: 'un', busca: ['Botoeira liga com tampa de proteção', 'Acionador remoto pressurização'] }, 1),
+      mat({ tipo: 'material', descricao: 'Cabo de comando blindado 2 × 1,5 mm² resistente ao fogo', unidade: 'm', busca: ['Cabo resistente ao fogo 2x1,5 mm', 'Cabo blindado 2x1,5 mm'] }, 60),
+      mat({ tipo: 'material', descricao: 'Eletroduto de aço galvanizado 3/4" com conexões', unidade: 'm', busca: ['Eletroduto galvanizado 3/4', 'Eletroduto aço galvanizado 3/4'] }, 30),
+      srv('pres_acionador', 1),
+      srv('pres_cabo_comando', 60),
+      srv('pres_infra', 30),
     ],
   },
 ];

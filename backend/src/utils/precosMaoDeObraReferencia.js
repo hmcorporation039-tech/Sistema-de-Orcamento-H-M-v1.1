@@ -184,6 +184,25 @@ const ITENS_REFERENCIA = [
   { codigo: 'mt_medicao_malha', descricao: 'MT: medição da malha de aterramento e da continuidade', unidade: 'un', disciplina: 'media_tensao' },
   { codigo: 'mt_laudo', descricao: 'MT: laudo técnico da subestação com ART', unidade: 'vb', disciplina: 'media_tensao' },
 
+  // Pressurização de escadas — controle de fumaça e automação (skills/pressurizacao)
+  { codigo: 'pres_ventilador', descricao: 'Pressurização: instalação do conjunto motoventilador (base, junta flexível, alinhamento e ligação)', unidade: 'un', disciplina: 'pressurizacao' },
+  { codigo: 'pres_duto', descricao: 'Pressurização: fabricação e montagem de duto de chapa galvanizada com suportes e vedação', unidade: 'm²', disciplina: 'pressurizacao' },
+  { codigo: 'pres_grelha', descricao: 'Pressurização: instalação e balanceamento de grelha de insuflação / veneziana de tomada de ar', unidade: 'un', disciplina: 'pressurizacao' },
+  { codigo: 'pres_damper', descricao: 'Pressurização: instalação de damper de alívio ou registro de retenção', unidade: 'un', disciplina: 'pressurizacao' },
+  { codigo: 'pres_sensores', descricao: 'Pressurização: instalação de transmissor de pressão diferencial ou pressostato de fluxo', unidade: 'un', disciplina: 'pressurizacao' },
+  { codigo: 'pres_painel', descricao: 'Pressurização: montagem e instalação do painel de comando (inversor/soft-starter, controlador e sinalização)', unidade: 'un', disciplina: 'pressurizacao' },
+  { codigo: 'pres_programacao', descricao: 'Pressurização: programação do controlador e parametrização (PID de ΔP, reversão, modos, supervisão)', unidade: 'vb', disciplina: 'pressurizacao' },
+  { codigo: 'pres_cabo_forca', descricao: 'Pressurização: lançamento de cabo de força resistente ao fogo (por metro de circuito)', unidade: 'm', disciplina: 'pressurizacao' },
+  { codigo: 'pres_cabo_comando', descricao: 'Pressurização: lançamento de cabos de comando, sinal e instrumentação', unidade: 'm', disciplina: 'pressurizacao' },
+  { codigo: 'pres_infra', descricao: 'Pressurização: infraestrutura em eletroduto de aço galvanizado', unidade: 'm', disciplina: 'pressurizacao' },
+  { codigo: 'pres_acionador', descricao: 'Pressurização: instalação de acionador remoto "LIGA pressurização"', unidade: 'un', disciplina: 'pressurizacao' },
+  { codigo: 'pres_integracao_alarme', descricao: 'Pressurização: integração com a central de detecção e alarme (módulos, matriz e testes)', unidade: 'vb', disciplina: 'pressurizacao' },
+  { codigo: 'pres_comissionamento', descricao: 'Pressurização: comissionamento e testes de aceitação (ΔP, velocidade, força, tempos) com relatório', unidade: 'vb', disciplina: 'pressurizacao' },
+  { codigo: 'pres_projeto', descricao: 'Pressurização: projeto (memorial de cálculo, desenhos, diagrama de comando) com ART e aprovação no CBMDF', unidade: 'vb', disciplina: 'pressurizacao' },
+  { codigo: 'pres_inspecao', descricao: 'Pressurização: inspeção e ensaios do sistema existente (ΔP, velocidade, força, tempos e reversão)', unidade: 'vb', disciplina: 'pressurizacao' },
+  { codigo: 'pres_manutencao', descricao: 'Pressurização: manutenção preventiva (ventiladores, filtros, damper, painel e sensores)', unidade: 'vb', disciplina: 'pressurizacao' },
+  { codigo: 'pres_laudo', descricao: 'Pressurização: laudo técnico de inspeção com ART', unidade: 'vb', disciplina: 'pressurizacao' },
+
   // Controle de acesso (skills/controle-acesso)
   { codigo: 'ace_leitor', descricao: 'Controle de acesso: instalação e configuração de leitor (cartão, biometria ou facial)', unidade: 'un', disciplina: 'controle_acesso' },
   { codigo: 'ace_fechadura', descricao: 'Controle de acesso: instalação de fechadura eletromagnética/fecho elétrico/solenoide com suporte', unidade: 'un', disciplina: 'controle_acesso' },

@@ -351,7 +351,7 @@ caso('kits-modelo: 8–12 kits, códigos únicos, serviços da base padrão e it
     }
   }
   const disciplinas = new Set(kits.map(k => k.disciplina));
-  for (const d of ['eletrica', 'rede', 'cftv', 'alarme', 'incendio', 'antena']) assert.ok(disciplinas.has(d), `falta kit de ${d}`);
+  for (const d of ['eletrica', 'rede', 'cftv', 'alarme', 'incendio', 'antena', 'pressurizacao']) assert.ok(disciplinas.has(d), `falta kit de ${d}`);
 });
 
 Promise.all(pendentes).then(() => console.log(`composicoes: ${ok} de ${pendentes.length} casos ok`));

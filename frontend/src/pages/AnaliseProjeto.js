@@ -53,10 +53,12 @@ export default function Compatibilizacao() {
       .catch(() => toast.error('Não foi possível carregar a lista de disciplinas'));
   }, []);
   // agrupadas para a tela (Elétrica, Energia, Proteção, Telecom, Segurança, Automação)
+  // grupos na ordem da fonte única; dentro de cada grupo, A–Z (regra do usuário: listas sempre em ordem alfabética)
   const gruposDisciplinas = DISCIPLINAS.reduce((acc, d) => {
     (acc[d.grupo] = acc[d.grupo] || []).push(d);
     return acc;
   }, {});
+  Object.values(gruposDisciplinas).forEach(lista => lista.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base', numeric: true })));
 
   // Cada arquivo escolhido carrega sua PRÓPRIA lista de disciplinas — não uma
   // lista única pro lote inteiro. Isso evita que, por exemplo, um arquivo de

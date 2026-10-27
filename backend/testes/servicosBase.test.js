@@ -96,6 +96,7 @@ function clienteFalso() {
         antigos.push(novo);
         return { rows: [{ id: novo.id }] };
       }
+      if (/^SELECT codigo, fundido_em FROM precos_mao_de_obra_referencia WHERE codigo/.test(sql)) return { rows: ref.filter(r => r.codigo === p[0]).slice(0, 1) };
       if (/^SELECT disciplina FROM precos_mao_de_obra_referencia WHERE codigo/.test(sql)) return { rows: ref.filter(r => r.codigo === p[0] && r.origem === 'padrao') };
       if (/^\s*INSERT INTO precos_mao_de_obra_referencia/.test(sql)) {
         if (ref.some(r => r.codigo === p[0] || (r.origem === 'proposta' && chave(r.descricao) === chave(p[1])))) return { rowCount: 0, rows: [] };
@@ -133,9 +134,17 @@ caso('salvar proposta: serviço novo entra na base única (livre_<id>) e na tabe
   assert.strictEqual(c.ref.find(r => r.codigo === 'livre_6').valor_referencia, 85); // preço existente não muda
 });
 
-caso('salvar proposta: disciplina pelo código padrão do item; sem valor não vira referência', async () => {
+caso('salvar proposta: item com código da base é aquele serviço, mesmo com descrição detalhada (não cria livre)', async () => {
   const c = clienteFalso();
-  await garantirServicoCadastrado(c, { descricao: 'Instalação de switch 48 portas', codigo: 'rede_switch', subgrupo: 'CFTV', valor_unitario: 0 });
+  assert.strictEqual(await garantirServicoCadastrado(c, { descricao: 'Instalação de switch 48 portas no rack do 2º andar', codigo: 'rede_switch', valor_unitario: 0 }), 'rede_switch');
+  assert.strictEqual(await garantirServicoCadastrado(c, { descricao: 'Switch PoE do térreo', codigo: 'livre_5', valor_unitario: 10 }), 'rede_switch'); // fundido → destino
+  assert.strictEqual(c.ref.length, 2);
+  assert.strictEqual(c.antigos.length, 1);
+});
+
+caso('salvar proposta: código que não existe mais na base vira livre (disciplina pelo subgrupo); sem valor não vira referência', async () => {
+  const c = clienteFalso();
+  await garantirServicoCadastrado(c, { descricao: 'Instalação de switch 48 portas', codigo: 'cftv_inexistente', subgrupo: 'Redes de Computadores (dados)', valor_unitario: 0 });
   const novo = c.ref.find(r => r.descricao === 'Instalação de switch 48 portas');
   assert.strictEqual(novo.disciplina, 'rede');
   assert.strictEqual(novo.valor_referencia, null);

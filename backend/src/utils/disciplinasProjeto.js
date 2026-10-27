@@ -24,6 +24,7 @@ const DISCIPLINAS = [
   { chave: 'controle_acesso', nome: 'Controle de acesso', grupo: 'Segurança', skill: 'controle_acesso' },
   { chave: 'alarme', nome: 'Alarme de intrusão monitorado', grupo: 'Segurança', skill: 'alarme' },
   { chave: 'incendio', nome: 'Detecção e alarme de incêndio (NBR 17240)', grupo: 'Segurança', skill: 'incendio' },
+  { chave: 'pressurizacao', nome: 'Pressurização de escadas (NBR 14880)', grupo: 'Segurança', skill: 'pressurizacao' },
   { chave: 'automacao', nome: 'Automação predial / BMS / climatização', grupo: 'Automação', skill: 'automacao' },
 ];
 

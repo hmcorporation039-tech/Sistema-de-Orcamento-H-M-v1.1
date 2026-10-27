@@ -20,6 +20,7 @@ export const NOMES_DISCIPLINA = {
   eletrica_hospitalar: 'Elétrica hospitalar',
   eletrica_industrial: 'Elétrica industrial',
   media_tensao: 'Média tensão / subestação',
+  pressurizacao: 'Pressurização de escadas',
   outros: 'Outros serviços',
 };
 

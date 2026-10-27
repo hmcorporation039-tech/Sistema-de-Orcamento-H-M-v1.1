@@ -1,0 +1,102 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "",
+  "prefixo": "",
+  "data": "AAAA-MM-DD",
+  "revisao": "R00"
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "titulo": "Engenheiro Eletricista",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "",
+  "uso": ""
+ },
+ "edificacao": {
+  "ocupacao": "A",
+  "altura_m": null,
+  "pavimentos": null,
+  "local_reuniao_publico": false,
+  "sistema": "1_estagio",
+  "jurisdicao": "DF",
+  "altitude_m": 1100,
+  "temperatura_c": 30
+ },
+ "escada": {
+  "nome": "Escada 1",
+  "antecamara": false,
+  "portas_abertas": null,
+  "portas": [],
+  "elevadores": [],
+  "janelas": []
+ },
+ "sistema": {
+  "pressao_projeto_pa": 50,
+  "pressao_max_pa": 60,
+  "velocidade_porta_ms": 1,
+  "tipo_duto": "metalico",
+  "velocidade_duto_ms": null,
+  "largura_duto_m": null,
+  "altura_duto_m": null,
+  "comprimento_duto_m": null,
+  "curvas": 4,
+  "perda_tomada_ar_pa": null,
+  "perda_grelha_pa": null,
+  "perda_registro_pa": null,
+  "rendimento_ventilador": 0.6,
+  "arranjo": "auto",
+  "partida": "inversor",
+  "alivio": "inversor_e_gravidade",
+  "sensores": "meio",
+  "tomada_ar": "terreo",
+  "acionadores_remotos": 2,
+  "deteccao_existente": true,
+  "limite_forca_n": 133,
+  "forca_fechador_n": 40,
+  "tempo_partida_max_s": 60,
+  "tempo_reversao_s": 15
+ },
+ "alimentacao": {
+  "tensao_ff": 380,
+  "tensao_fn": 220,
+  "comprimento_m": null,
+  "metodo": "B1",
+  "isolacao": "EPR",
+  "temperatura": 30,
+  "fonte": "auto"
+ },
+ "existente": {
+  "vazao_m3h": null,
+  "pressao_pa": null,
+  "potencia_cv": null,
+  "quantidade": null
+ },
+ "inspecao": {
+  "tipo": "comissionamento",
+  "documento_n": "",
+  "checklist": [],
+  "ncs": [],
+  "pressoes": [],
+  "velocidades": [],
+  "forcas": [],
+  "ensaios": [],
+  "ventiladores": [],
+  "fotos": [],
+  "documentos": [],
+  "instrumentos": []
+ }
+}
