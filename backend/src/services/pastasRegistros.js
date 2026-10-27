@@ -20,6 +20,7 @@ const { DISCIPLINAS_LAUDO } = require('../utils/disciplinasLaudo');
 //   Obras/<nome da obra>/
 //     Projeto/                    (análise NOVA ligada à obra; a 2ª vira "Projeto (A15)")
 //     Laudos/<disciplina>/        (laudo NOVO ligado à obra; ex.: Laudos\SPDA)
+//     Projetos/<disciplina>/      (versão 2.1: projeto por disciplina; Entrega\ = arquivos da entrega)
 //     Propostas/Orçamento P123.pdf
 //     Contratos/Contrato CT-2026-0001.pdf
 // "Novo" = o item ainda não tinha pasta quando foi ligado à obra: a coluna
@@ -73,36 +74,60 @@ async function pastaDoProjeto(row, client = pool) {
     escopo: { coluna: 'pasta_obra_id', valor: null } });
 }
 
+// Versão 2.1: registro de disciplina é projeto ou laudo, cada um na sua
+// pasta-mãe — laudo em Laudos\ (Obras\<obra>\Laudos\<disciplina>), projeto em
+// Projetos\ (Obras\<obra>\Projetos\<disciplina>). `pasta_raiz` grava onde a
+// pasta foi criada; as pastas de antes da 2.1 ficam em 'laudos' (migração
+// 2.0-13 — nada é movido).
+const RAIZ_REGISTRO = {
+  laudos: { tipoPasta: 'laudo', subpastaObra: 'Laudos' },
+  projetos: { tipoPasta: 'projeto_disciplina', subpastaObra: 'Projetos' },
+};
+const raizDoRegistro = (row) => row.pasta_raiz || (row.pasta ? 'laudos' : (row.tipo === 'projeto' ? 'projetos' : 'laudos'));
+
 async function pastaDoLaudo(row, client = pool) {
+  const raiz = raizDoRegistro(row);
+  if (!row.pasta_raiz) {
+    // grava a raiz ANTES de criar a pasta: a pasta nunca muda de lugar depois
+    await client.query('UPDATE laudos_projetos SET pasta_raiz = $1 WHERE id = $2 AND pasta_raiz IS NULL', [raiz, row.id]);
+    row.pasta_raiz = raiz;
+  }
+  const { tipoPasta, subpastaObra } = RAIZ_REGISTRO[raiz];
+  const mesmaRaiz = { coluna: "COALESCE(pasta_raiz, 'laudos')", valor: raiz };
   const obra = await obraDoItem(row, 'laudos_projetos', client);
   if (obra) {
-    return P.sincronizarPasta(client, { tipo: 'laudo', tabela: 'laudos_projetos', id: row.id, nome: nomeCurtoDisciplina(row.disciplina), pastaAtual: row.pasta,
-      raiz: path.join(await pastaDaObra(obra, client), 'Laudos'), escopo: { coluna: 'pasta_obra_id', valor: obra.id } });
+    return P.sincronizarPasta(client, { tipo: tipoPasta, tabela: 'laudos_projetos', id: row.id, nome: nomeCurtoDisciplina(row.disciplina), pastaAtual: row.pasta,
+      raiz: path.join(await pastaDaObra(obra, client), subpastaObra), escopo: [{ coluna: 'pasta_obra_id', valor: obra.id }, mesmaRaiz] });
   }
-  return P.sincronizarPasta(client, { tipo: 'laudo', tabela: 'laudos_projetos', id: row.id, nome: row.titulo || `Laudo ${row.id}`, pastaAtual: row.pasta,
-    escopo: { coluna: 'pasta_obra_id', valor: null } });
+  return P.sincronizarPasta(client, { tipo: tipoPasta, tabela: 'laudos_projetos', id: row.id, nome: row.titulo || `${raiz === 'projetos' ? 'Projeto' : 'Laudo'} ${row.id}`, pastaAtual: row.pasta,
+    escopo: [{ coluna: 'pasta_obra_id', valor: null }, mesmaRaiz] });
 }
+
+// tipo 'laudo' (qualquer registro de laudos_projetos) → pasta-mãe pela raiz do registro
+const tipoPastaDe = (tipo, row) => (tipo === 'laudo' ? RAIZ_REGISTRO[raizDoRegistro(row)] : { tipoPasta: tipo, subpastaObra: null });
 
 // Caminho já registrado da pasta (sem criar nada). `row.pasta_obra_dir` = pasta
 // da obra (obras.pasta), quando a consulta fez o JOIN; senão consulta.
 async function caminhoRegistrado(tipo, row, client = pool) {
   if (!row?.pasta) return null;
-  if (!row.pasta_obra_id) return P.caminhoDe(tipo, row.pasta);
+  const { tipoPasta, subpastaObra } = tipoPastaDe(tipo, row);
+  if (!row.pasta_obra_id) return P.caminhoDe(tipoPasta, row.pasta);
   let dirObra = row.pasta_obra_dir;
   if (dirObra === undefined) dirObra = (await client.query('SELECT pasta FROM obras WHERE id = $1', [row.pasta_obra_id])).rows[0]?.pasta;
   if (!dirObra) return null;
-  return path.join(P.RAIZES.obra, dirObra, ...(tipo === 'laudo' ? ['Laudos'] : []), row.pasta);
+  return path.join(P.RAIZES.obra, dirObra, ...(subpastaObra ? [subpastaObra] : []), row.pasta);
 }
 
-// Exclusão de análise/laudo: a pasta vai para _Excluídos (mesmo dentro de uma obra).
+// Exclusão de análise/laudo/projeto: a pasta vai para _Excluídos (mesmo dentro de uma obra).
 async function excluirPastaDoItem(tipo, row) {
   return seguro(`excluir ${tipo} ${row.id}`, async () => {
     if (!row.pasta) return null;
-    if (!row.pasta_obra_id) return P.moverParaExcluidos(tipo, row.pasta);
+    const { tipoPasta, subpastaObra } = tipoPastaDe(tipo, row);
+    if (!row.pasta_obra_id) return P.moverParaExcluidos(tipoPasta, row.pasta);
     const { rows: [obra] } = await pool.query('SELECT nome, pasta FROM obras WHERE id = $1', [row.pasta_obra_id]);
     if (!obra?.pasta) return null;
-    const raiz = path.join(P.RAIZES.obra, obra.pasta, ...(tipo === 'laudo' ? ['Laudos'] : []));
-    return P.moverParaExcluidos(tipo, row.pasta, { raiz, rotulo: obra.nome });
+    const raiz = path.join(P.RAIZES.obra, obra.pasta, ...(subpastaObra ? [subpastaObra] : []));
+    return P.moverParaExcluidos(tipoPasta, row.pasta, { raiz, rotulo: obra.nome });
   });
 }
 
@@ -124,7 +149,9 @@ function sincronizarProjeto(row, arquivosRecebidos = []) {
 function sincronizarLaudo(row) {
   return seguro(`laudo ${row.id}`, async () => {
     const pasta = await pastaDoLaudo(row);
-    await P.gravarArquivo(pasta, 'Dados do laudo.json', JSON.stringify(row.dados || {}, null, 1));
+    // 2.1: projeto (pasta em Projetos\) grava "Dados do projeto.json"; as pastas de antes continuam com o nome antigo
+    const nome = raizDoRegistro(row) === 'projetos' ? 'Dados do projeto.json' : 'Dados do laudo.json';
+    await P.gravarArquivo(pasta, nome, JSON.stringify(row.dados || {}, null, 1));
     return pasta;
   });
 }

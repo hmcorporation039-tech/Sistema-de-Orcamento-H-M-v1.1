@@ -110,13 +110,21 @@ export const gerarOrcamentoDaAnalise = (id) => api.post(`/projetos/analises/${id
 export const getPastaAnalise = (id) => api.get(`/projetos/analises/${id}/pasta`);
 export const abrirPastaAnalise = (id) => api.post(`/projetos/analises/${id}/pasta/abrir`);
 
-// ── LAUDOS E PROJETOS POR DISCIPLINA (aba Análise de Projeto) ─────────────
+// ── PROJETOS E LAUDOS POR DISCIPLINA (hub Obras) ──────────────────────────
+// Versão 2.1: /laudos guarda os dois tipos (params.tipo = 'projeto' | 'laudo')
 export const getDisciplinasLaudo = () => api.get('/laudos/disciplinas');
 export const getModeloLaudo = (disciplina) => api.get(`/laudos/modelo/${disciplina}`);
 export const getLaudos = (params) => api.get('/laudos', { params });
 export const getLaudo = (id) => api.get(`/laudos/${id}`);
-export const criarLaudo = (disciplina, dados) => api.post('/laudos', { disciplina, dados });
-export const criarLaudoDeAnalise = (analiseId, disciplina) => api.post('/laudos/de-analise', { analise_id: analiseId, disciplina });
+export const criarLaudo = (disciplina, dados, tipo = 'laudo') => api.post('/laudos', { disciplina, dados, tipo });
+// cria o PROJETO da disciplina a partir da análise (análise nunca gera laudo);
+// se a análise já tem o projeto desta disciplina, o servidor devolve o existente
+export const criarProjetoDeAnalise = (analiseId, disciplina) => api.post('/laudos/de-analise', { analise_id: analiseId, disciplina });
+// entregas do projeto: catálogo e geração (destino 'zip' = baixa o pacote; 'pasta' = só grava na pasta)
+export const getEntregasProjeto = () => api.get('/laudos/entregas');
+export const gerarEntregaProjeto = (id, corpo, destino = 'zip') => api.post(`/laudos/${id}/entrega`, corpo, {
+  params: { destino }, responseType: destino === 'zip' ? 'blob' : 'json', timeout: 300000,
+});
 export const enviarArquiteturaLaudo = (id, arquivo) => {
   const fd = new FormData();
   fd.append('arquivo', arquivo);
@@ -229,18 +237,21 @@ export const abrirPastaObra = (id) => api.post(`/obras/${id}/pasta/abrir`);
 // Criação já ligada a uma obra (obraId null/undefined = sem obra; o backend
 // também aceita obra_id direto no corpo de POST/PUT /propostas, /contratos,
 // /financeiro/movimentos e PATCH categorizar)
-export const analisarProjetoNaObra = (arquivosComDisciplinas, nomeProjeto, obraId) => {
+// finalidade (2.1): 'orcamento' | 'elaboracao'
+export const analisarProjetoNaObra = (arquivosComDisciplinas, nomeProjeto, obraId, finalidade = 'orcamento') => {
   const formData = new FormData();
   if (nomeProjeto) formData.append('nome_projeto', nomeProjeto);
   if (obraId) formData.append('obra_id', String(obraId));
+  formData.append('finalidade', finalidade);
   arquivosComDisciplinas.forEach(({ arquivo }) => formData.append('arquivos', arquivo));
   formData.append('disciplinasPorArquivo', JSON.stringify(arquivosComDisciplinas.map(a => a.disciplinas)));
   return api.post('/projetos/analisar', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 });
 };
-export const criarLaudoNaObra = (disciplina, dados, obraId) =>
-  api.post('/laudos', { disciplina, dados, obra_id: obraId || null });
-// sem obraId, o laudo herda a obra da análise de origem
-export const criarLaudoDeAnaliseNaObra = (analiseId, disciplina, obraId) =>
+// tipo (2.1): 'projeto' | 'laudo' (padrão laudo)
+export const criarLaudoNaObra = (disciplina, dados, obraId, tipo = 'laudo') =>
+  api.post('/laudos', { disciplina, dados, obra_id: obraId || null, tipo });
+// sem obraId, o projeto herda a obra da análise de origem
+export const criarProjetoDeAnaliseNaObra = (analiseId, disciplina, obraId) =>
   api.post('/laudos/de-analise', { analise_id: analiseId, disciplina, ...(obraId ? { obra_id: obraId } : {}) });
 // ── APROVAÇÃO DA PROPOSTA POR LINK (2.0, Fase 3I) ─────────────────────────
 // Internas (login). Gerar devolve o token EM CLARO uma única vez:

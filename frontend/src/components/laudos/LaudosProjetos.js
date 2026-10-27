@@ -14,9 +14,19 @@ import FormularioSpda from './FormularioSpda';
 import ResultadoSpda from './ResultadoSpda';
 import FormularioGenerico from './FormularioGenerico';
 import ResultadoGenerico from './ResultadoGenerico';
+import EntregasProjeto from './EntregasProjeto';
 import Select from '../Select';
 
-// Laudos e projetos por disciplina — dentro da aba Análise de Projeto.
+// Projetos e laudos por disciplina — abas "Projetos por disciplina" e
+// "Laudos" do hub Obras (versão 2.1: separados). O mesmo componente atende os
+// dois tipos de registro (prop `tipo`):
+//   projeto — documentos de projeto (memorial, planilhas), desenhos (planta DXF,
+//             unifilar QElectroTech), ENTREGAS e orçamento de execução;
+//   laudo   — documentos de laudo (inspeção, checklist, medições), fotos e
+//             orçamento de inspeção/correção. Laudo é pedido quando necessário
+//             e nunca nasce da análise de projeto.
+// O que é de cada tipo vem do servidor (`uso` em cada documento e modo de
+// orçamento — skills/_comum/tipos-documento.js).
 // O SPDA tem tela própria; as demais disciplinas usam o formulário genérico,
 // desenhado a partir do esquema que a skill envia (skills/_comum/formulario.js).
 // O backend usa a skill da disciplina (mesmo motor do Claude Code).
@@ -24,10 +34,37 @@ const TELAS_POR_DISCIPLINA = {
   spda: { Formulario: FormularioSpda, Resultado: ResultadoSpda },
 };
 const TELA_GENERICA = { Formulario: FormularioGenerico, Resultado: ResultadoGenerico };
-// disciplinas com unifilar para o QElectroTech (skills/_comum/cad/unifilar.js)
+// reserva, caso o servidor não diga (versão antiga): disciplinas com unifilar
+// (skills/_comum/cad/unifilar.js) e com planta automática (cad/plantasDisciplina.js)
 const DISCIPLINAS_COM_UNIFILAR = ['eletrica', 'eletrica_industrial', 'media_tensao'];
-// disciplinas com planta automática (skills/_comum/cad/plantasDisciplina.js)
 const DISCIPLINAS_COM_PLANTA = ['eletrica', 'incendio', 'cftv', 'cabeamento', 'alarme', 'iluminacao', 'eletrica_hospitalar', 'controle_acesso', 'telefonia', 'antena'];
+
+const TEXTOS = {
+  projeto: {
+    titulo: 'Projetos por disciplina', aba: 'projetos', novo: 'Novo projeto', criado: 'Projeto criado', item: 'projeto', semTitulo: 'Projeto sem título',
+    vazio: 'Nenhum projeto salvo nesta disciplina.', semObra: 'Novo projeto sem obra',
+    intro: 'Projeto que a H&M elabora e entrega: memorial e planilhas (definições técnicas), desenhos e entregas — as-built, DXF, QElectroTech e PDF. Pode nascer aqui ou da Análise de projeto ("Elaborar projeto da disciplina"). Não é laudo.',
+  },
+  laudo: {
+    titulo: 'Laudos', aba: 'laudos', novo: 'Novo laudo', criado: 'Laudo criado', item: 'laudo', semTitulo: 'Laudo sem título',
+    vazio: 'Nenhum laudo salvo nesta disciplina.', semObra: 'Novo laudo sem obra',
+    intro: 'Laudo de inspeção, vistoria, medição ou comissionamento — criado só quando o cliente pede: checklist, não conformidades, ensaios, fotos e orçamento de inspeção/correção. Análise de projeto não gera laudo.',
+  },
+};
+const serve = (uso, tipo) => uso === 'ambos' || uso === tipo || uso == null;
+
+// Projeto: o painel de resultado não mostra o parecer/checklist da inspeção
+// (é do laudo). O "Trazer do cálculo" do formulário continua com o resumo inteiro.
+const DA_INSPECAO = /inspe[cç][aã]o|parecer|checklist|n[aã]o conformidade/i;
+function resumoDoTipo(resumo, tipo) {
+  if (!resumo || tipo !== 'projeto') return resumo;
+  return {
+    ...resumo,
+    inspecao: undefined, // SPDA
+    indicadores: resumo.indicadores?.filter(i => !DA_INSPECAO.test(`${i.rotulo} ${i.detalhe || ''}`)),
+    tabelas: resumo.tabelas?.filter(t => !DA_INSPECAO.test(t.titulo || '')),
+  };
+}
 
 function baixarBlob(blob, nome) {
   const url = window.URL.createObjectURL(blob);
@@ -40,13 +77,15 @@ function baixarBlob(blob, nome) {
   window.URL.revokeObjectURL(url);
 }
 
-export default function LaudosProjetos() {
+export default function LaudosProjetos({ tipo = 'laudo' }) {
+  const T = TEXTOS[tipo] || TEXTOS.laudo;
+  const ehProjeto = tipo === 'projeto';
   const navigate = useNavigate();
   const [disciplinas, setDisciplinas] = useState([]);
   const [disciplina, setDisciplina] = useState('spda');
   const [modelo, setModelo] = useState(null); // { modelo, exemplo, checklistBase }
   const [lista, setLista] = useState([]);
-  const [laudo, setLaudo] = useState(null); // { id, disciplina, propostas, gerar_orcamento }
+  const [laudo, setLaudo] = useState(null); // { id, tipo, disciplina, propostas, gerar_orcamento, obra, analise_id, entregas }
   const [dados, setDados] = useState(null);
   const [fotos, setFotos] = useState([]);
   const [urlsFotos, setUrlsFotos] = useState({});
@@ -72,13 +111,18 @@ export default function LaudosProjetos() {
 
   const infoDisciplina = disciplinas.find(d => d.chave === disciplina);
   const tela = TELAS_POR_DISCIPLINA[disciplina] || (modelo?.formulario ? TELA_GENERICA : null);
+  // o que serve a este tipo de registro (projeto ou laudo)
+  const documentosDoTipo = (infoDisciplina?.documentos || []).filter(d => serve(d.uso, tipo));
+  const desenhos = infoDisciplina?.desenhos || {
+    planta: DISCIPLINAS_COM_PLANTA.includes(disciplina), unifilar: DISCIPLINAS_COM_UNIFILAR.includes(disciplina),
+  };
 
   const carregarLista = useCallback(async () => {
     try {
-      const r = await getLaudos({ disciplina });
+      const r = await getLaudos({ disciplina, tipo });
       setLista(r.data);
     } catch { /* lista vazia já informa */ }
-  }, [disciplina]);
+  }, [disciplina, tipo]);
 
   useEffect(() => {
     getDisciplinasLaudo().then(r => setDisciplinas(r.data)).catch(() => toast.error('Erro ao carregar as disciplinas'));
@@ -114,7 +158,10 @@ export default function LaudosProjetos() {
   async function abrir(id) {
     try {
       const r = await getLaudo(id);
-      setLaudo({ id: r.data.id, disciplina: r.data.disciplina, propostas: r.data.propostas || {}, gerar_orcamento: r.data.gerar_orcamento !== false, obra: r.data.obra || null });
+      setLaudo({
+        id: r.data.id, tipo: r.data.tipo || 'laudo', disciplina: r.data.disciplina, propostas: r.data.propostas || {},
+        gerar_orcamento: r.data.gerar_orcamento !== false, obra: r.data.obra || null, analise_id: r.data.analise_id || null, entregas: r.data.entregas || null,
+      });
       versaoRef.current = r.data.versao ?? null;
       conflitoRef.current = false;
       setDados(r.data.dados);
@@ -124,34 +171,45 @@ export default function LaudosProjetos() {
       setSalvoEm(new Date(r.data.atualizado_em));
       carregarFotos(r.data.id, r.data.fotos);
     } catch (err) {
-      toast.error(err.response?.data?.erro || 'Erro ao abrir o laudo');
+      toast.error(err.response?.data?.erro || `Erro ao abrir o ${T.item}`);
     }
   }
 
-  // ?aba=laudos&laudo=ID — vindo da Análise de Projeto ("Calcular pela norma"):
-  // seleciona a disciplina do laudo e abre o formulário já preenchido
+  // ?aba=projetos|laudos&laudo=ID — vindo da Análise de Projeto ("Elaborar
+  // projeto da disciplina"), da página da obra ou de um link antigo: seleciona
+  // a disciplina e abre o registro. Registro do OUTRO tipo (ex.: link antigo
+  // ?aba=laudos&laudo=ID de um projeto) vai para a aba certa, mantendo o ?laudo=.
   const [busca, setBusca] = useSearchParams();
   const laudoDaUrl = busca.get('laudo');
-  // obra do laudo novo (2.0): /obras?aba=laudos&obra=ID já pré-seleciona
+  // obra do registro novo (2.0): /obras?aba=laudos&obra=ID já pré-seleciona
   const obraDaUrl = Number(busca.get('obra')) || null;
   const [obraNovo, setObraNovo] = useState(obraDaUrl);
   useEffect(() => { if (obraDaUrl) setObraNovo(obraDaUrl); }, [obraDaUrl]);
   useEffect(() => {
     if (!laudoDaUrl) return;
+    const comObra = (aba, extra = {}) => ({ aba, ...extra, ...(obraDaUrl ? { obra: String(obraDaUrl) } : {}) });
     getLaudo(laudoDaUrl)
-      .then(r => { setDisciplina(r.data.disciplina); return abrir(r.data.id); })
-      .catch(() => toast.error('Laudo não encontrado'))
-      .finally(() => setBusca(obraDaUrl ? { aba: 'laudos', obra: String(obraDaUrl) } : { aba: 'laudos' }, { replace: true }));
+      .then(r => {
+        const tipoDoRegistro = r.data.tipo || 'laudo';
+        if (tipoDoRegistro !== tipo) {
+          setBusca(comObra(TEXTOS[tipoDoRegistro].aba, { laudo: String(r.data.id) }), { replace: true });
+          return;
+        }
+        setDisciplina(r.data.disciplina);
+        abrir(r.data.id);
+        setBusca(comObra(T.aba), { replace: true });
+      })
+      .catch(() => { toast.error('Registro não encontrado'); setBusca(comObra(T.aba), { replace: true }); });
   }, [laudoDaUrl]); // só quando o id da URL muda
 
   async function novo(base) {
     try {
-      const r = await criarLaudoNaObra(disciplina, base, obraNovo);
-      toast.success('Laudo criado');
+      const r = await criarLaudoNaObra(disciplina, base, obraNovo, tipo);
+      toast.success(T.criado);
       await carregarLista();
       await abrir(r.data.id);
     } catch (err) {
-      toast.error(err.response?.data?.erro || 'Erro ao criar o laudo');
+      toast.error(err.response?.data?.erro || `Erro ao criar o ${T.item}`);
     }
   }
 
@@ -166,7 +224,7 @@ export default function LaudosProjetos() {
   }
 
   async function excluir(item) {
-    if (!window.confirm(`Excluir o laudo "${item.titulo}"? As fotos dele também serão apagadas.`)) return;
+    if (!window.confirm(`Excluir o ${T.item} "${item.titulo}"? As fotos dele também serão apagadas.`)) return;
     try {
       await removerLaudo(item.id);
       if (laudo?.id === item.id) { setLaudo(null); setDados(null); setResumo(null); }
@@ -183,7 +241,7 @@ export default function LaudosProjetos() {
     if (!laudo || !dados) return;
     if (conflitoRef.current) {
       throw Object.assign(new Error('conflito de versão'), {
-        response: { data: { erro: 'Este laudo foi alterado em outro lugar depois que você o abriu. Reabra-o para continuar.' } },
+        response: { data: { erro: `Este ${T.item} foi alterado em outro lugar depois que você o abriu. Reabra-o para continuar.` } },
       });
     }
     if (salvandoRef.current) await salvandoRef.current.catch(() => {});
@@ -198,7 +256,7 @@ export default function LaudosProjetos() {
       .finally(() => { salvandoRef.current = null; });
     salvandoRef.current = promessa;
     return promessa;
-  }, [laudo, dados]);
+  }, [laudo, dados, T.item]);
 
   // Salvamento automático 2 s depois da última alteração
   useEffect(() => {
@@ -233,7 +291,7 @@ export default function LaudosProjetos() {
       await salvarAgora();
       const r = await salvarDocumentosLaudo(laudo.id);
       const gravados = r.data.documentos.filter(d => d.gravado).length;
-      toast.success(`${gravados} documento(s) salvos na pasta do laudo`);
+      toast.success(`${gravados} documento(s) salvos na pasta do ${T.item}`);
       if (gravados < r.data.documentos.length) toast.error('Algum documento não pôde ser gravado — feche-o no Word/Excel e tente de novo', { duration: 8000 });
       setPastaMudou(Date.now());
     } catch (err) {
@@ -243,7 +301,8 @@ export default function LaudosProjetos() {
     }
   }
 
-  // "Só laudo": desliga os orçamentos deste laudo (os documentos continuam iguais)
+  // "Sem orçamento" ("só laudo" / projeto sem orçamento): desliga os orçamentos
+  // deste registro (os documentos continuam iguais)
   async function alternarOrcamento(valor) {
     try {
       await salvarAgora().catch(() => {});
@@ -251,7 +310,7 @@ export default function LaudosProjetos() {
       versaoRef.current = r.data?.versao ?? null;
       setLaudo(l => ({ ...l, gerar_orcamento: r.data.gerar_orcamento }));
       carregarLista();
-      toast.success(valor ? 'Laudo com orçamento de material' : 'Só laudo — sem orçamento de material');
+      toast.success(valor ? `${ehProjeto ? 'Projeto' : 'Laudo'} com orçamento` : (ehProjeto ? 'Projeto sem orçamento' : 'Só laudo — sem orçamento'));
     } catch (err) {
       toast.error(err.response?.data?.erro || 'Erro ao alterar a opção de orçamento');
     }
@@ -279,10 +338,10 @@ export default function LaudosProjetos() {
   const [arquitetura, setArquitetura] = useState(null);
   useEffect(() => {
     setArquitetura(null);
-    if (laudo?.id && DISCIPLINAS_COM_PLANTA.includes(laudo.disciplina)) {
+    if (laudo?.id && laudo.tipo === 'projeto' && desenhos.planta) {
       getArquiteturaLaudo(laudo.id).then(r => setArquitetura(r.data)).catch(() => {});
     }
-  }, [laudo?.id, laudo?.disciplina]);
+  }, [laudo?.id, laudo?.tipo, desenhos.planta]);
 
   async function enviarArquiteturaDoLaudo(arquivo) {
     setOcupado('arquitetura');
@@ -347,7 +406,7 @@ export default function LaudosProjetos() {
   // proposta vinculada (enquanto "Ativa"), por isso pede confirmação.
   async function orcar(modo) {
     if (laudo.propostas?.[modo.modo] && !window.confirm(
-      `Atualizar o orçamento "${modo.rotulo}" com o cálculo atual deste laudo?\n\n` +
+      `Atualizar o orçamento "${modo.rotulo}" com o cálculo atual deste ${T.item}?\n\n` +
       'Os itens da proposta serão SUBSTITUÍDOS — quantidades e preços ajustados no editor se perdem (BDI e impostos ficam). ' +
       'Se a proposta já foi aprovada ou recusada, é criada uma nova.\n\nPara só continuar a revisão, use "Abrir no editor".'
     )) return;
@@ -403,38 +462,39 @@ export default function LaudosProjetos() {
     <div>
       <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-          <h3 style={{ ...tituloSecao, marginBottom: 0, flex: 1 }}>Laudos e projetos por disciplina</h3>
+          <h3 style={{ ...tituloSecao, marginBottom: 0, flex: 1 }}>{T.titulo}</h3>
           <Select value={disciplina} onChange={e => { setDisciplina(e.target.value); setLaudo(null); setDados(null); setResumo(null); }}
             style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, color: '#ddd', padding: '8px 10px', fontSize: 13 }}>
             {disciplinas.map(d => <option key={d.chave} value={d.chave}>{d.nome}{d.disponivel ? '' : ' — em preparação'}</option>)}
           </Select>
         </div>
+        <p style={{ fontSize: 12, color: '#888', lineHeight: 1.6, margin: '-4px 0 14px' }}>{T.intro}</p>
 
         {infoDisciplina && !infoDisciplina.disponivel ? (
           <p style={{ fontSize: 13, color: '#888', lineHeight: 1.6 }}>
             A disciplina <b>{infoDisciplina.nome}</b> ainda está em preparação. Ela vai usar este mesmo fluxo: formulário,
-            cálculo pela norma, laudo/memorial em Word e orçamento integrado ao catálogo de materiais.
+            cálculo pela norma, documentos em Word e orçamento integrado ao catálogo de materiais.
             {infoDisciplina.erro && <><br /><span style={{ color: '#e05050' }}>{infoDisciplina.erro}</span></>}
           </p>
         ) : (
           <>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-              <button style={btnPrimario} disabled={!modelo} onClick={() => novo(modelo?.modelo)}><FilePlus2 size={14} /> Novo laudo</button>
-              <button style={btnSecundario} disabled={!modelo} onClick={() => novo(modelo?.exemplo)} title="Cria um laudo preenchido com o exemplo, para conhecer o formulário">
+              <button style={btnPrimario} disabled={!modelo} onClick={() => novo(modelo?.modelo)}><FilePlus2 size={14} /> {T.novo}</button>
+              <button style={btnSecundario} disabled={!modelo} onClick={() => novo(modelo?.exemplo)} title={`Cria um ${T.item} preenchido com o exemplo, para conhecer o formulário`}>
                 <BookOpen size={13} style={{ marginRight: 5 }} /> Novo a partir do exemplo
               </button>
-              <button style={btnSecundario} onClick={() => entradaJson.current?.click()} title="Importa um arquivo JSON de laudo (ex.: ST_Lucia_dados_SPDA.json)">
+              <button style={btnSecundario} onClick={() => entradaJson.current?.click()} title={`Importa um arquivo JSON de dados da disciplina (ex.: ST_Lucia_dados_SPDA.json) como ${T.item}`}>
                 <Upload size={13} style={{ marginRight: 5 }} /> Importar JSON
               </button>
               <input ref={entradaJson} type="file" accept=".json,application/json" style={{ display: 'none' }}
                 onChange={e => { if (e.target.files[0]) importarJson(e.target.files[0]); e.target.value = ''; }} />
-              <div style={{ flex: '1 1 320px', maxWidth: 480, marginLeft: 'auto' }} title="Obra do próximo laudo criado aqui (novo, exemplo ou JSON importado) — opcional">
-                <ObraSelect value={obraNovo} onChange={(id) => setObraNovo(id)} rotuloVazio="Novo laudo sem obra" />
+              <div style={{ flex: '1 1 320px', maxWidth: 480, marginLeft: 'auto' }} title={`Obra do próximo ${T.item} criado aqui (novo, exemplo ou JSON importado) — opcional`}>
+                <ObraSelect value={obraNovo} onChange={(id) => setObraNovo(id)} rotuloVazio={T.semObra} />
               </div>
             </div>
 
             {lista.length === 0 ? (
-              <p style={{ fontSize: 12, color: '#666', fontStyle: 'italic' }}>Nenhum laudo salvo nesta disciplina.</p>
+              <p style={{ fontSize: 12, color: '#666', fontStyle: 'italic' }}>{T.vazio}</p>
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
@@ -469,35 +529,42 @@ export default function LaudosProjetos() {
           <div style={{ ...card, position: 'sticky', top: alturaMenu, zIndex: 40, boxShadow: '0 6px 14px rgba(0,0,0,.45)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <div style={{ flex: 1, minWidth: 220 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#ddd' }}>{dados.obra?.nome || dados.cliente?.nome || 'Laudo sem título'}</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#ddd' }}>
+                  <span style={{ ...selo, ...(ehProjeto ? seloProjeto : seloLaudo) }}>{ehProjeto ? 'PROJETO' : 'LAUDO'}</span>
+                  {dados.obra?.nome || dados.cliente?.nome || T.semTitulo}
+                </div>
                 <div style={{ fontSize: 11, color: '#777' }}>
                   {sujo ? 'Alterações não salvas…' : salvoEm ? `Salvo às ${salvoEm.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : ''}
                   {laudo.obra && <> · Obra: <span style={{ color: '#bbb' }}>{laudo.obra.nome} ({laudo.obra.codigo})</span></>}
+                  {laudo.analise_id && <> · elaborado a partir da <a href={`/obras/analise/${laudo.analise_id}`} onClick={e => { e.preventDefault(); navigate(`/obras/analise/${laudo.analise_id}`); }} style={{ color: '#8ab4f8' }}>análise #{laudo.analise_id}</a></>}
                 </div>
               </div>
               <button style={btnPrimario} onClick={calcular} disabled={!!ocupado}><Calculator size={14} /> {ocupado === 'calcular' ? 'Calculando…' : 'Calcular'}</button>
               <button style={btnSecundario} onClick={exportarJson}><Download size={13} style={{ marginRight: 5 }} /> Exportar JSON</button>
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
-              <button style={{ ...btnSecundario, borderColor: '#2f5a2f', color: '#8fd18f' }} disabled={!!ocupado} onClick={salvarDocumentosNaPasta} title="Gera todos os documentos do padrão (Word e Excel) e grava na pasta do laudo, substituindo as versões anteriores">
+              <button style={{ ...btnSecundario, borderColor: '#2f5a2f', color: '#8fd18f' }} disabled={!!ocupado} onClick={salvarDocumentosNaPasta} title={`Gera os documentos ${ehProjeto ? 'de projeto' : 'do laudo'} (Word e Excel) e grava na pasta do ${T.item}, substituindo as versões anteriores`}>
                 <FolderDown size={13} style={{ marginRight: 5 }} /> {ocupado === 'pasta' ? 'Salvando…' : 'Salvar documentos na pasta'}
               </button>
-              {(infoDisciplina?.documentos || []).map(doc => (
+              {documentosDoTipo.map(doc => (
                 <button key={doc.tipo} style={btnSecundario} disabled={!!ocupado} onClick={() => baixar(doc)} title={`Gerar ${doc.rotulo} (${doc.formato})`}>
                   <FileDown size={13} style={{ marginRight: 5 }} /> {ocupado === `doc_${doc.tipo}` ? 'Gerando…' : doc.rotulo}
                 </button>
               ))}
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, alignItems: 'center' }}>
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#bbb', marginRight: 6, cursor: 'pointer', whiteSpace: 'nowrap' }} title="Desmarque quando for emitido só o laudo, sem orçamento de material">
-                <input type="checkbox" style={{ width: 'auto', margin: 0 }} checked={laudo.gerar_orcamento !== false} onChange={e => alternarOrcamento(e.target.checked)} /> Gerar orçamento de material
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#bbb', marginRight: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                title={ehProjeto ? 'Desmarque quando o projeto for entregue sem orçamento de execução' : 'Desmarque quando for emitido só o laudo, sem orçamento'}>
+                <input type="checkbox" style={{ width: 'auto', margin: 0 }} checked={laudo.gerar_orcamento !== false} onChange={e => alternarOrcamento(e.target.checked)} />
+                {ehProjeto ? 'Gerar orçamento de execução' : 'Gerar orçamento (inspeção/correção)'}
               </label>
-              {laudo.gerar_orcamento === false && <span style={{ fontSize: 12, color: '#777' }}>Só laudo — os documentos são emitidos sem orçamento.</span>}
-              {laudo.gerar_orcamento !== false && (infoDisciplina?.modosOrcamento || []).map(m => (
+              {laudo.gerar_orcamento === false && <span style={{ fontSize: 12, color: '#777' }}>{ehProjeto ? 'Projeto sem orçamento — só os documentos e as entregas.' : 'Só laudo — os documentos são emitidos sem orçamento.'}</span>}
+              {/* só os modos do tipo do registro; proposta já ligada em outro modo (antes da 2.1) continua acessível */}
+              {laudo.gerar_orcamento !== false && (infoDisciplina?.modosOrcamento || []).filter(m => serve(m.uso, tipo) || laudo.propostas?.[m.modo]).map(m => (
                 <span key={m.modo} style={{ display: 'inline-flex', gap: 4 }}>
                   {laudo.propostas?.[m.modo] && (
                     <button style={{ ...btnSecundario, borderStyle: 'solid', borderColor: '#5a4a12', color: '#c9a227' }} disabled={!!ocupado}
-                      onClick={() => navigate(`/propostas/editar/${laudo.propostas[m.modo]}`)} title="Abre a proposta deste laudo no editor de orçamento, sem mudar os itens">
+                      onClick={() => navigate(`/propostas/editar/${laudo.propostas[m.modo]}`)} title={`Abre a proposta deste ${T.item} no editor de orçamento, sem mudar os itens`}>
                       <ExternalLink size={13} style={{ marginRight: 5 }} /> Abrir no editor — {m.rotulo}
                     </button>
                   )}
@@ -509,10 +576,11 @@ export default function LaudosProjetos() {
                 </span>
               ))}
             </div>
-            {(DISCIPLINAS_COM_PLANTA.includes(laudo.disciplina) || DISCIPLINAS_COM_UNIFILAR.includes(laudo.disciplina)) && (
+            {/* desenhos são do PROJETO (planta DXF e unifilar) */}
+            {ehProjeto && (desenhos.planta || desenhos.unifilar) && (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, alignItems: 'center' }}>
                 <span style={{ fontSize: 12, color: '#bbb', marginRight: 4 }}>Desenhos (AutoCAD / QElectroTech):</span>
-                {DISCIPLINAS_COM_PLANTA.includes(laudo.disciplina) && (<>
+                {desenhos.planta && (<>
                 <input ref={entradaArquitetura} type="file" accept=".dxf,.dwg" style={{ display: 'none' }}
                   onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) enviarArquiteturaDoLaudo(f); }} />
                 <button style={btnSecundario} disabled={!!ocupado} onClick={() => entradaArquitetura.current?.click()}
@@ -529,7 +597,7 @@ export default function LaudosProjetos() {
                   </>
                 )}
                 </>)}
-                {DISCIPLINAS_COM_UNIFILAR.includes(laudo.disciplina) && (
+                {desenhos.unifilar && (
                   <button style={{ ...btnSecundario, borderColor: '#2f4f6f', color: '#8ab4f8' }} disabled={!!ocupado} onClick={baixarUnifilar}
                     title={laudo.disciplina === 'media_tensao'
                       ? 'Diagrama unifilar da subestação para o QElectroTech (0.100 ou mais novo): entrada, para-raios, medição, proteção com relé, transformador e QGBT'
@@ -542,10 +610,18 @@ export default function LaudosProjetos() {
             <PainelPasta carregar={carregarPasta} abrir={abrirPasta} atualizarQuando={`${salvoEm}-${pastaMudou}`} />
           </div>
 
+          {ehProjeto && (
+            <div style={card}>
+              <EntregasProjeto key={laudo.id} laudo={laudo} desenhos={desenhos} temArquitetura={!!arquitetura}
+                revisaoAtual={dados.meta?.revisao} salvarAgora={salvarAgora} ocupado={ocupado} setOcupado={setOcupado}
+                onGerado={(entregas) => { setLaudo(l => ({ ...l, entregas: { ...entregas, gerado_em: new Date().toISOString() } })); setPastaMudou(Date.now()); }} />
+            </div>
+          )}
+
           {resumo && (
             <div style={card}>
               <h3 style={tituloSecao}>Resultado</h3>
-              <tela.Resultado resumo={resumo} />
+              <tela.Resultado resumo={resumoDoTipo(resumo, laudo.tipo)} />
             </div>
           )}
 
@@ -554,6 +630,7 @@ export default function LaudosProjetos() {
               esquema={modelo?.formulario}
               dados={dados} onChange={alterarDados} checklistBase={modelo?.checklistBase || []} resumo={resumo}
               fotos={fotos} urlsFotos={urlsFotos} onEnviarFotos={enviarFotos} onRemoverFoto={removerFoto}
+              tipo={laudo.tipo}
             />
           </div>
         </>
@@ -563,6 +640,9 @@ export default function LaudosProjetos() {
 }
 
 const card = { background: '#131313', border: '1px solid #1e1e1e', borderRadius: 10, padding: 18, marginBottom: 16 };
+const selo = { display: 'inline-block', fontSize: 10, fontWeight: 800, letterSpacing: '.6px', padding: '2px 7px', borderRadius: 4, marginRight: 8, verticalAlign: 'middle' };
+const seloProjeto = { background: '#12304a', color: '#8ab4f8', border: '1px solid #2f4f6f' };
+const seloLaudo = { background: '#3a2a10', color: '#e0b050', border: '1px solid #5a4a12' };
 const tituloSecao = { fontSize: 15, color: '#c9a227', fontWeight: 700, marginBottom: 10 };
 const btnPrimario = {
   display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', background: '#c9a227', border: 'none',

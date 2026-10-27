@@ -4,7 +4,11 @@ const path = require('path');
 const pool = require('../config/database');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');
 const { registrarAuditoria } = require('../utils/auditoria');
-const { listarDisciplinas, motorDaDisciplina, cad } = require('../utils/disciplinasLaudo');
+const { listarDisciplinas, motorDaDisciplina, cad, tiposDocumento, entrega } = require('../utils/disciplinasLaudo');
+const { lerTipoRegistro, lerPedidoEntrega, ENTREGAS } = require('../utils/projetoLaudo');
+const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
+const { gerarFooterTemplate } = require('../utils/pdfTemplate');
+const { gerarHtmlFolhaEntrega } = require('../utils/folhaEntregaTemplate');
 const { compararComCatalogo } = require('../utils/compatibilizacaoAnalise');
 const { comTransacao } = require('../utils/transacao');
 const { calcularTotais } = require('../utils/calculoProposta');
@@ -19,9 +23,17 @@ const { buscarPrecosReferencia, segmentoDoCliente } = require('../utils/precosMa
 const { sincronizarLaudo, pastaDoLaudo, resumoPasta, pedidoLocal, seguro, caminhoRegistrado, excluirPastaDoItem } = require('../services/pastasRegistros');
 const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
 
-// Laudos e projetos por disciplina (aba Análise de Projeto). O cálculo e os
-// documentos vêm da skill da disciplina (utils/disciplinasLaudo.js) — o mesmo
-// motor que o Claude Code usa, então tela e skill sempre batem.
+// Projetos e laudos por disciplina (hub Obras → "Projetos por disciplina" e
+// "Laudos"). O cálculo e os documentos vêm da skill da disciplina
+// (utils/disciplinasLaudo.js) — o mesmo motor que o Claude Code usa, então
+// tela e skill sempre batem.
+//
+// Versão 2.1: cada registro de laudos_projetos é OU um projeto OU um laudo
+// (coluna `tipo`). O projeto gera só os documentos de projeto, os desenhos, as
+// entregas e o orçamento de execução; o laudo gera só os documentos de laudo e
+// o orçamento de inspeção/correção (classificação em
+// skills/_comum/tipos-documento.js). Laudo nunca nasce de análise de projeto:
+// /laudos/de-analise cria um PROJETO.
 
 const TAMANHO_MAX_DADOS = 2 * 1024 * 1024; // o formulário é texto; 2 MB é muita folga
 const TIPOS_FOTO = { 'image/jpeg': 'jpg', 'image/png': 'png' };
@@ -42,6 +54,16 @@ async function carregarLaudo(id) {
   const { rows } = await pool.query('SELECT * FROM laudos_projetos WHERE id = $1', [id]);
   return rows[0] || null;
 }
+
+// O documento/desenho/modo de orçamento serve a este registro (projeto ou laudo)?
+// Senão, erro 400 com o caminho certo.
+function conferirUso(laudo, uso, oque) {
+  if (tiposDocumento().serve(uso, laudo.tipo)) return null;
+  return laudo.tipo === 'laudo'
+    ? `${oque} é de projeto — este registro é um LAUDO. Abra (ou crie) o projeto da disciplina na aba "Projetos por disciplina".`
+    : `${oque} é de laudo — este registro é um PROJETO. Laudo é pedido quando necessário: crie em "Laudos" › "Novo laudo".`;
+}
+const nomeDoTipo = (laudo) => (laudo?.tipo === 'projeto' ? 'Projeto' : 'Laudo');
 
 function processarComMotor(motor, dados) {
   try {
@@ -78,6 +100,20 @@ async function listar(req, res) {
       params.push(String(req.query.disciplina));
       cond.push(`l.disciplina = $${params.length}`);
     }
+    // ?tipo=projeto|laudo (2.1); ausente = todos
+    if (req.query.tipo) {
+      const tipo = lerTipoRegistro(req.query.tipo, null);
+      if (!tipo) return res.status(400).json({ erro: 'Tipo inválido (projeto ou laudo).' });
+      params.push(tipo);
+      cond.push(`l.tipo = $${params.length}`);
+    }
+    // ?analise_id=ID: projetos elaborados a partir de uma análise
+    if (req.query.analise_id) {
+      const n = Number(req.query.analise_id);
+      if (!Number.isInteger(n) || n < 1) return res.status(400).json({ erro: 'Análise inválida.' });
+      params.push(n);
+      cond.push(`l.analise_id = $${params.length}`);
+    }
     // ?obra_id=ID (laudos da obra) ou ?obra_id=sem (sem obra)
     if (req.query.obra_id === 'sem') cond.push('l.obra_id IS NULL');
     else if (req.query.obra_id) {
@@ -88,7 +124,7 @@ async function listar(req, res) {
     }
     const where = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
     const { rows } = await pool.query(
-      `SELECT l.id, l.disciplina, l.titulo, l.cliente_nome, l.propostas, l.gerar_orcamento, l.atualizado_em,
+      `SELECT l.id, l.tipo, l.disciplina, l.titulo, l.cliente_nome, l.propostas, l.gerar_orcamento, l.atualizado_em,
               l.dados->'meta'->>'revisao' AS revisao, u.nome AS usuario_nome,
               (SELECT count(*)::int FROM laudos_projetos_fotos f WHERE f.laudo_id = l.id) AS total_fotos,
               l.obra_id, l.analise_id, ${sqlObraJson('ob')} AS obra
@@ -107,7 +143,7 @@ async function listar(req, res) {
 async function buscarUm(req, res) {
   try {
     const laudo = await carregarLaudo(req.params.id);
-    if (!laudo) return res.status(404).json({ erro: 'Laudo não encontrado.' });
+    if (!laudo) return res.status(404).json({ erro: 'Registro não encontrado.' });
     const fotos = await pool.query(
       'SELECT id, nome_arquivo, mime, octet_length(conteudo) AS tamanho FROM laudos_projetos_fotos WHERE laudo_id = $1 ORDER BY id',
       [laudo.id]
@@ -133,26 +169,34 @@ async function criar(req, res) {
     const erro = validarDados(dados);
     if (erro) return res.status(400).json({ erro });
     const gerarOrc = req.body.gerar_orcamento !== false;
-    // obra (2.0): laudo novo ligado à obra → pasta em Obras\<obra>\Laudos\<disciplina>
+    // tipo (2.1): 'projeto' ou 'laudo' — ausente = laudo (o "Novo laudo" de sempre)
+    const tipo = lerTipoRegistro(req.body.tipo);
+    if (!tipo) return res.status(400).json({ erro: 'Tipo inválido (projeto ou laudo).' });
+    // obra (2.0): registro novo ligado à obra → pasta em Obras\<obra>\Laudos\<disciplina>
+    // (laudo) ou Obras\<obra>\Projetos\<disciplina> (projeto)
     const leituraObra = lerObraId(req.body);
     const erroObra = await conferirObra(pool, leituraObra, { usuario: req.usuario });
     if (erroObra) return res.status(400).json({ erro: erroObra });
     const { rows } = await pool.query(
-      `INSERT INTO laudos_projetos (disciplina, titulo, cliente_nome, dados, usuario_id, gerar_orcamento, obra_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [disciplina, tituloDe(dados), dados.cliente?.nome || null, dados, req.usuario.id, gerarOrc, leituraObra.valor]
+      `INSERT INTO laudos_projetos (disciplina, titulo, cliente_nome, dados, usuario_id, gerar_orcamento, obra_id, tipo)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [disciplina, tituloDe(dados), dados.cliente?.nome || null, dados, req.usuario.id, gerarOrc, leituraObra.valor, tipo]
     );
-    await sincronizarLaudo(rows[0]); // cria Arquivos do Sistema\Laudos\<nome> (ou a pasta na obra) com os dados
-    res.status(201).json({ id: rows[0].id });
+    await sincronizarLaudo(rows[0]); // cria Arquivos do Sistema\Laudos|Projetos\<nome> (ou a pasta na obra) com os dados
+    res.status(201).json({ id: rows[0].id, tipo });
   } catch (err) {
     responderErro(res, err, 'criar');
   }
 }
 
-// Cria o laudo/projeto de uma disciplina a partir de uma Análise de Projeto
-// (PDF já lido): o formulário da skill nasce preenchido com o que o PDF tem
-// (ambientes, câmeras, pontos, quadro de cargas, carimbo) e a lista do que foi
-// estimado e precisa de conferência. Body: { analise_id, disciplina }.
+// Cria o PROJETO de uma disciplina a partir de uma Análise de Projeto (PDF já
+// lido) — "Elaborar projeto da disciplina" / "Dimensionar pela norma": o
+// formulário da skill nasce preenchido com o que o PDF tem (ambientes,
+// câmeras, pontos, quadro de cargas, carimbo) e a lista do que foi estimado e
+// precisa de conferência. Body: { analise_id, disciplina }.
+// Versão 2.1: sempre tipo 'projeto' — análise nunca gera laudo. Se a análise
+// já tem o projeto desta disciplina, devolve o existente (existente: true) em
+// vez de criar outro.
 async function criarDeAnalise(req, res) {
   try {
     const { disciplina } = req.body;
@@ -161,6 +205,9 @@ async function criarDeAnalise(req, res) {
     const motor = motorDaDisciplina(disciplina);
     const { rows: [linha] } = await pool.query('SELECT * FROM analises_projeto WHERE id = $1', [analiseId]);
     if (!linha) return res.status(404).json({ erro: 'Análise não encontrada.' });
+    const { rows: [jaExiste] } = await pool.query(
+      "SELECT id FROM laudos_projetos WHERE analise_id = $1 AND disciplina = $2 AND tipo = 'projeto' ORDER BY id LIMIT 1", [analiseId, disciplina]);
+    if (jaExiste && req.body.novo !== true) return res.json({ id: jaExiste.id, tipo: 'projeto', existente: true, avisos: [] });
     const analise = {
       cliente: linha.cliente_nome, nomeProjeto: linha.nome_projeto, ambientes: linha.ambientes,
       pontosPorAmbiente: linha.pontos_por_ambiente, cameras: linha.cameras, pontosRedeAntena: linha.pontos_rede_antena,
@@ -181,12 +228,12 @@ async function criarDeAnalise(req, res) {
     if (!leituraObra.presente && obraId
       && await conferirObra(pool, { presente: true, valor: obraId }, { usuario: req.usuario })) obraId = null;
     const { rows } = await pool.query(
-      `INSERT INTO laudos_projetos (disciplina, titulo, cliente_nome, dados, usuario_id, gerar_orcamento, obra_id, analise_id, cliente_id)
-       VALUES ($1,$2,$3,$4,$5,true,$6,$7,$8) RETURNING *`,
+      `INSERT INTO laudos_projetos (disciplina, titulo, cliente_nome, dados, usuario_id, gerar_orcamento, obra_id, analise_id, cliente_id, tipo)
+       VALUES ($1,$2,$3,$4,$5,true,$6,$7,$8,'projeto') RETURNING *`,
       [disciplina, tituloDe(dados), dados.cliente?.nome || null, dados, req.usuario.id, obraId, linha.id, linha.cliente_id || null]
     );
     await sincronizarLaudo(rows[0]);
-    res.status(201).json({ id: rows[0].id, avisos });
+    res.status(201).json({ id: rows[0].id, tipo: 'projeto', avisos });
   } catch (err) {
     responderErro(res, err, 'criar a partir da análise');
   }
@@ -237,7 +284,7 @@ async function remover(req, res) {
 async function calcular(req, res) {
   try {
     const laudo = await carregarLaudo(req.params.id);
-    if (!laudo) return res.status(404).json({ erro: 'Laudo não encontrado.' });
+    if (!laudo) return res.status(404).json({ erro: 'Registro não encontrado.' });
     const motor = motorDaDisciplina(laudo.disciplina);
     res.json(motor.resumir(processarComMotor(motor, laudo.dados)));
   } catch (err) {
@@ -317,10 +364,13 @@ async function gerarDocumentosDoLaudo(laudo, tipos) {
 async function documento(req, res) {
   try {
     const laudo = await carregarLaudo(req.params.id);
-    if (!laudo) return res.status(404).json({ erro: 'Laudo não encontrado.' });
+    if (!laudo) return res.status(404).json({ erro: 'Registro não encontrado.' });
     const motor = motorDaDisciplina(laudo.disciplina);
     const tipo = req.params.tipo;
-    if (!motor.documentos.some(d => d.tipo === tipo)) return res.status(400).json({ erro: 'Tipo de documento inválido.' });
+    const doc = motor.documentos.find(d => d.tipo === tipo);
+    if (!doc) return res.status(400).json({ erro: 'Tipo de documento inválido.' });
+    const erroUso = conferirUso(laudo, tiposDocumento().usoDoDocumento(laudo.disciplina, tipo), `"${doc.rotulo}"`);
+    if (erroUso) return res.status(400).json({ erro: erroUso });
     const { gerados: [gerado] } = await gerarDocumentosDoLaudo(laudo, [tipo]);
     res.setHeader('Content-Type', gerado.mime);
     res.setHeader('Content-Disposition', contentDisposition(gerado.nomeArquivo));
@@ -378,7 +428,7 @@ const AMBIENTES_DA_ARQUITETURA = {
 async function enviarArquitetura(req, res) {
   try {
     const laudo = await carregarLaudo(req.params.id);
-    if (!laudo) return res.status(404).json({ erro: 'Laudo não encontrado.' });
+    if (!laudo) return res.status(404).json({ erro: 'Registro não encontrado.' });
     const arq = req.file;
     if (!arq) return res.status(400).json({ erro: 'Envie o arquivo da arquitetura (.dwg ou .dxf).' });
     // DWG: convertido para DXF num processo à parte (com tempo limite); guarda-se o
@@ -420,53 +470,180 @@ async function verArquitetura(req, res) {
   res.json(a || null);
 }
 
+const erro400 = (mensagem) => Object.assign(new Error(mensagem), { status: 400 });
+
+// Planta DXF com os pontos da disciplina sobre a arquitetura enviada.
+// asBuilt ({ data, revisao }): carimbo "AS BUILT — conforme executado".
+async function montarPlanta(laudo, { asBuilt = null } = {}) {
+  const C = cad();
+  const gerador = C.PLANTAS[laudo.disciplina];
+  if (!gerador) throw erro400('A planta automática ainda não existe para esta disciplina (disponível: elétrica predial e hospitalar, iluminação, incêndio, alarme, controle de acesso, CFTV, cabeamento, telefonia e antena).');
+  const { rows: [arq] } = await pool.query('SELECT nome_arquivo, conteudo FROM laudos_projetos_arquitetura WHERE laudo_id = $1', [laudo.id]);
+  if (!arq) throw erro400('Envie primeiro a arquitetura (.dwg ou .dxf) deste projeto.');
+  const arquitetura = C.lerArquitetura(arq.conteudo.toString('utf8'));
+  const motor = motorDaDisciplina(laudo.disciplina);
+  const resultado = processarComMotor(motor, laudo.dados);
+  const { pontos, notas } = gerador(resultado, arquitetura);
+  const d = laudo.dados || {};
+  const out = C.gerarPlanta({
+    arquitetura, pontos, notas,
+    carimbo: {
+      cliente: d.cliente?.nome, obra: d.obra?.nome || laudo.titulo,
+      titulo: `${asBuilt ? 'AS BUILT — ' : ''}Projeto — ${motor.nome || laudo.disciplina} — planta baixa`,
+      data: asBuilt ? entrega().dataBr(asBuilt.data) : new Date().toLocaleDateString('pt-BR'),
+      revisao: asBuilt ? (asBuilt.revisao || d.meta?.revisao) : d.meta?.revisao,
+      responsavel: d.responsavel?.nome, crea: d.responsavel?.crea,
+      ...(asBuilt ? { fase: 'AS BUILT (conforme executado)', descricaoRevisao: entrega().textoAsBuilt(asBuilt) } : {}),
+    },
+  });
+  const nome = `${asBuilt ? 'AS BUILT - ' : ''}${nomeSeguroArquivo(laudo.titulo)} - Planta ${laudo.disciplina}.dxf`;
+  return { nome, buffer: Buffer.from(out.dxf, 'utf8'), naoEncontrados: out.naoEncontrados };
+}
+
+// Diagrama unifilar do quadro para o QElectroTech (formato 0.100, abre na
+// estável e nas mais novas), a partir do cálculo da elétrica predial (QD),
+// industrial (QGBT + CCMs, com os motores) ou da subestação de MT.
+function montarUnifilar(laudo, { asBuilt = null } = {}) {
+  const gerar = cad().UNIFILARES[laudo.disciplina];
+  if (!gerar) throw erro400('O unifilar automático está disponível para a elétrica predial, a industrial e a subestação de média tensão.');
+  const motor = motorDaDisciplina(laudo.disciplina);
+  let { xml } = gerar(processarComMotor(motor, laudo.dados), { quadro: 'QD-01' });
+  if (asBuilt) xml = entrega().marcarAsBuiltQet(xml, asBuilt);
+  const nome = `${asBuilt ? 'AS BUILT - ' : ''}${nomeSeguroArquivo(laudo.titulo)} - Unifilar.qet`;
+  return { nome, buffer: Buffer.from(xml, 'utf8') };
+}
+
 async function gerarPlantaDxf(req, res) {
   try {
     const laudo = await carregarLaudo(req.params.id);
-    if (!laudo) return res.status(404).json({ erro: 'Laudo não encontrado.' });
-    const C = cad();
-    const gerador = C.PLANTAS[laudo.disciplina];
-    if (!gerador) return res.status(400).json({ erro: 'A planta automática ainda não existe para esta disciplina (disponível: elétrica predial e hospitalar, iluminação, incêndio, alarme, controle de acesso, CFTV, cabeamento, telefonia e antena).' });
-    const { rows: [arq] } = await pool.query('SELECT nome_arquivo, conteudo FROM laudos_projetos_arquitetura WHERE laudo_id = $1', [laudo.id]);
-    if (!arq) return res.status(400).json({ erro: 'Envie primeiro a arquitetura (.dwg ou .dxf) deste projeto.' });
-    const arquitetura = C.lerArquitetura(arq.conteudo.toString('utf8'));
-    const motor = motorDaDisciplina(laudo.disciplina);
-    const resultado = processarComMotor(motor, laudo.dados);
-    const { pontos, notas } = gerador(resultado, arquitetura);
-    const d = laudo.dados || {};
-    const out = C.gerarPlanta({
-      arquitetura, pontos, notas,
-      carimbo: {
-        cliente: d.cliente?.nome, obra: d.obra?.nome || laudo.titulo, titulo: `Projeto — ${motor.nome || laudo.disciplina} — planta baixa`,
-        data: new Date().toLocaleDateString('pt-BR'), revisao: d.meta?.revisao, responsavel: d.responsavel?.nome, crea: d.responsavel?.crea,
-      },
-    });
-    const nome = `${nomeSeguroArquivo(laudo.titulo)} - Planta ${laudo.disciplina}.dxf`;
-    await seguro(`planta laudo ${laudo.id}`, async () => P.gravarArquivo(await pastaDoLaudo(laudo), nome, Buffer.from(out.dxf, 'utf8')));
-    res.set({ 'Content-Type': 'application/dxf', 'Content-Disposition': contentDisposition(nome), 'X-Nome-Arquivo': encodeURIComponent(nome), 'X-Ambientes-Nao-Encontrados': encodeURIComponent(out.naoEncontrados.join('; ')) });
-    res.send(Buffer.from(out.dxf, 'utf8'));
+    if (!laudo) return res.status(404).json({ erro: 'Registro não encontrado.' });
+    const erroUso = conferirUso(laudo, tiposDocumento().usoDoDocumento(laudo.disciplina, 'planta'), 'A planta (DXF)');
+    if (erroUso) return res.status(400).json({ erro: erroUso });
+    const { nome, buffer, naoEncontrados } = await montarPlanta(laudo);
+    await seguro(`planta laudo ${laudo.id}`, async () => P.gravarArquivo(await pastaDoLaudo(laudo), nome, buffer));
+    res.set({ 'Content-Type': 'application/dxf', 'Content-Disposition': contentDisposition(nome), 'X-Nome-Arquivo': encodeURIComponent(nome), 'X-Ambientes-Nao-Encontrados': encodeURIComponent(naoEncontrados.join('; ')) });
+    res.send(buffer);
   } catch (err) {
     responderErro(res, err, 'gerar a planta');
   }
 }
 
-// Diagrama unifilar do quadro para o QElectroTech (formato 0.100, abre na
-// estável e nas mais novas), a partir do cálculo da elétrica predial (QD) ou
-// industrial (QGBT + CCMs, com os motores)
 async function gerarUnifilarQet(req, res) {
   try {
     const laudo = await carregarLaudo(req.params.id);
-    if (!laudo) return res.status(404).json({ erro: 'Laudo não encontrado.' });
-    const gerar = cad().UNIFILARES[laudo.disciplina];
-    if (!gerar) return res.status(400).json({ erro: 'O unifilar automático está disponível para a elétrica predial, a industrial e a subestação de média tensão.' });
-    const motor = motorDaDisciplina(laudo.disciplina);
-    const { xml } = gerar(processarComMotor(motor, laudo.dados), { quadro: 'QD-01' });
-    const nome = `${nomeSeguroArquivo(laudo.titulo)} - Unifilar.qet`;
-    await seguro(`unifilar laudo ${laudo.id}`, async () => P.gravarArquivo(await pastaDoLaudo(laudo), nome, Buffer.from(xml, 'utf8')));
+    if (!laudo) return res.status(404).json({ erro: 'Registro não encontrado.' });
+    const erroUso = conferirUso(laudo, tiposDocumento().usoDoDocumento(laudo.disciplina, 'unifilar'), 'O unifilar (QElectroTech)');
+    if (erroUso) return res.status(400).json({ erro: erroUso });
+    const { nome, buffer } = montarUnifilar(laudo);
+    await seguro(`unifilar laudo ${laudo.id}`, async () => P.gravarArquivo(await pastaDoLaudo(laudo), nome, buffer));
     res.set({ 'Content-Type': 'application/xml', 'Content-Disposition': contentDisposition(nome), 'X-Nome-Arquivo': encodeURIComponent(nome) });
-    res.send(Buffer.from(xml, 'utf8'));
+    res.send(buffer);
   } catch (err) {
     responderErro(res, err, 'gerar o unifilar');
+  }
+}
+
+// ── Entregas do projeto (versão 2.1) ─────────────────────────────────────
+// O projetista escolhe o que entregar (utils/projetoLaudo.js → ENTREGAS):
+// definições técnicas (memorial e planilhas de projeto), as-built (a mesma
+// documentação marcada AS BUILT), DXF (planta — DWG não é gerado), QElectroTech
+// (unifilar) e PDF (folha de entrega com o resumo técnico). Os arquivos vão
+// para <pasta do projeto>\Entrega (nomes fixos, sobrescritos a cada versão) e,
+// pedido em ZIP, voltam num pacote só.
+
+async function catalogoEntregas(req, res) {
+  res.json(ENTREGAS);
+}
+
+async function montarEntrega(laudo, pedido, usuarioNome) {
+  const motor = motorDaDisciplina(laudo.disciplina);
+  const E = entrega();
+  const T = tiposDocumento();
+  const { asBuilt } = pedido;
+  const prefixo = asBuilt ? 'AS BUILT - ' : '';
+  const arquivos = []; // { nome, buffer, descricao }
+  const notas = [];
+  // dados "as built": revisão e data do as-built nos documentos (identificação)
+  const laudoDoc = asBuilt
+    ? { ...laudo, dados: { ...laudo.dados, meta: { ...(laudo.dados?.meta || {}), ...(asBuilt.revisao ? { revisao: asBuilt.revisao } : {}), data: asBuilt.data } } }
+    : laudo;
+
+  if (pedido.itens.includes('definicoes')) {
+    const resultado = processarComMotor(motor, laudoDoc.dados);
+    const disponiveis = motor.tiposDisponiveis ? motor.tiposDisponiveis(resultado) : motor.documentos.map(d => d.tipo);
+    // documentos SÓ de projeto (os 'ambos', como a análise de risco do SPDA, também entram)
+    const tipos = disponiveis.filter(t => T.serve(T.usoDoDocumento(laudo.disciplina, t), 'projeto'));
+    for (const tipo of tipos) {
+      const doc = motor.documentos.find(d => d.tipo === tipo);
+      let gerado;
+      try { gerado = await motor.gerarDocumento(resultado, tipo); } catch (e) { throw erro400(`${doc?.rotulo || tipo}: ${e.message}`); }
+      const ext = path.extname(gerado.nomeArquivo) || (doc?.formato === 'Excel' ? '.xlsx' : '.docx');
+      let buffer = gerado.buffer;
+      if (asBuilt) buffer = ext === '.xlsx' ? await E.marcarAsBuiltXlsx(buffer, asBuilt) : await E.marcarAsBuiltDocx(buffer, asBuilt);
+      arquivos.push({ nome: `${prefixo}${P.nomeSeguro(doc?.rotulo || tipo)}${ext}`, buffer, descricao: `${doc?.rotulo || tipo} (${doc?.formato || ext.slice(1)})` });
+    }
+    notas.push('O memorial em PDF é gerado pelo Word (Arquivo › Salvar como › PDF) — o sistema não converte Word em PDF.');
+  }
+  if (pedido.itens.includes('dxf')) {
+    const p = await montarPlanta(laudoDoc, { asBuilt });
+    arquivos.push({ nome: p.nome, buffer: p.buffer, descricao: 'Planta baixa com os pontos, legenda e carimbo — DXF (abre no AutoCAD; DWG não é gerado)' });
+    if (p.naoEncontrados.length) notas.push(`Ambientes do formulário que não estão na arquitetura (sem pontos na planta): ${p.naoEncontrados.join('; ')}.`);
+  }
+  if (pedido.itens.includes('qet')) {
+    const u = montarUnifilar(laudoDoc, { asBuilt });
+    arquivos.push({ nome: u.nome, buffer: u.buffer, descricao: 'Diagrama unifilar — QElectroTech (.qet)' });
+  }
+  if (pedido.itens.includes('pdf')) {
+    let resumo = null;
+    try { resumo = motor.resumir(processarComMotor(motor, laudoDoc.dados)); } catch { /* sem resumo: a folha avisa */ }
+    const nomeDisc = (listarDisciplinas().find(d => d.chave === laudo.disciplina)?.nome || laudo.disciplina);
+    const nomePdf = `${prefixo}Folha de entrega.pdf`;
+    const html = gerarHtmlFolhaEntrega({
+      disciplina: nomeDisc, titulo: laudo.titulo, dados: laudoDoc.dados, resumo, asBuilt, emitidoPor: usuarioNome,
+      arquivos: [...arquivos.map(a => ({ nome: a.nome, descricao: a.descricao })), { nome: nomePdf, descricao: 'Esta folha de entrega (PDF)' }],
+      notas,
+    });
+    const pdf = await gerarPdfDeHtml(html, {
+      margin: { top: '10mm', bottom: '22mm', left: '12mm', right: '12mm' },
+      displayHeaderFooter: true, headerTemplate: '<div></div>', footerTemplate: gerarFooterTemplate(),
+    });
+    arquivos.push({ nome: nomePdf, buffer: pdf, descricao: 'Folha de entrega com a lista dos arquivos e o resumo técnico (PDF)' });
+  }
+  return arquivos;
+}
+
+// POST /laudos/:id/entrega?destino=zip|pasta
+// body: { itens: ['definicoes','asbuilt','dxf','qet','pdf'], as_built: { data, revisao } }
+async function gerarEntrega(req, res) {
+  try {
+    const laudo = await carregarLaudo(req.params.id);
+    if (!laudo) return res.status(404).json({ erro: 'Registro não encontrado.' });
+    if (laudo.tipo !== 'projeto') return res.status(400).json({ erro: 'As entregas (definições técnicas, as-built, DXF, QElectroTech, PDF) são do PROJETO; este registro é um laudo.' });
+    const C = cad();
+    const pedido = lerPedidoEntrega(req.body, { temPlanta: !!C.PLANTAS[laudo.disciplina], temUnifilar: !!C.UNIFILARES[laudo.disciplina] });
+    if (pedido.erro) return res.status(400).json({ erro: pedido.erro });
+    const arquivos = await montarEntrega(laudo, pedido, req.usuario.nome);
+    // lembra a escolha (a tela abre com as mesmas entregas marcadas)
+    await pool.query('UPDATE laudos_projetos SET entregas = $1 WHERE id = $2', [{ itens: pedido.escolhidos, as_built: pedido.asBuilt, gerado_em: new Date().toISOString() }, laudo.id]);
+    // cópia na pasta do projeto: <pasta>\Entrega\<arquivo> (nome fixo, sobrescreve)
+    let gravados = 0;
+    const pasta = await seguro(`entrega ${laudo.id}`, () => pastaDoLaudo(laudo));
+    if (pasta) {
+      for (const a of arquivos) if (await seguro(`entrega ${laudo.id} ${a.nome}`, () => P.gravarArquivo(path.join(pasta, 'Entrega'), a.nome, a.buffer))) gravados++;
+    }
+    if (req.query.destino === 'pasta') {
+      if (!pasta) return res.status(500).json({ erro: 'Não foi possível acessar a pasta do projeto (veja se ela está aberta em outro programa).' });
+      return res.json({ caminhoPasta: path.join(pasta, 'Entrega'), arquivos: arquivos.map(a => a.nome), gravados });
+    }
+    const zip = await entrega().zipar(arquivos);
+    const nomeZip = `${pedido.asBuilt ? 'AS BUILT - ' : ''}Entrega - ${nomeSeguroArquivo(laudo.titulo)} - ${laudo.disciplina}.zip`;
+    res.set({
+      'Content-Type': 'application/zip', 'Content-Disposition': contentDisposition(nomeZip), 'X-Nome-Arquivo': encodeURIComponent(nomeZip),
+      'X-Arquivos': encodeURIComponent(arquivos.map(a => a.nome).join('; ')), 'X-Gravados-Na-Pasta': String(gravados),
+    });
+    res.send(zip);
+  } catch (err) {
+    responderErro(res, err, 'gerar a entrega');
   }
 }
 
@@ -475,9 +652,12 @@ const nomeSeguroArquivo = (s) => String(s || 'Projeto').replace(/[\\/:*?"<>|]+/g
 async function salvarDocumentos(req, res) {
   try {
     const laudo = await carregarLaudo(req.params.id);
-    if (!laudo) return res.status(404).json({ erro: 'Laudo não encontrado.' });
+    if (!laudo) return res.status(404).json({ erro: 'Registro não encontrado.' });
     const motor = motorDaDisciplina(laudo.disciplina);
-    const tipos = (motor.tiposDisponiveis ? motor.tiposDisponiveis(processarComMotor(motor, laudo.dados)) : motor.documentos.map(d => d.tipo));
+    // só os documentos do tipo do registro (projeto ou laudo)
+    const T = tiposDocumento();
+    const tipos = (motor.tiposDisponiveis ? motor.tiposDisponiveis(processarComMotor(motor, laudo.dados)) : motor.documentos.map(d => d.tipo))
+      .filter(t => T.serve(T.usoDoDocumento(laudo.disciplina, t), laudo.tipo));
     const { gerados, pasta } = await gerarDocumentosDoLaudo(laudo, tipos);
     if (!pasta) return res.status(500).json({ erro: 'Não foi possível acessar a pasta do laudo (veja se ela está aberta em outro programa).' });
     res.json({ caminhoPasta: pasta, documentos: gerados.map(g => ({ tipo: g.tipo, arquivo: g.nomeNaPasta, gravado: g.gravadoNaPasta })) });
@@ -489,7 +669,7 @@ async function salvarDocumentos(req, res) {
 async function pasta(req, res) {
   try {
     const laudo = await carregarLaudo(req.params.id);
-    if (!laudo) return res.status(404).json({ erro: 'Laudo não encontrado.' });
+    if (!laudo) return res.status(404).json({ erro: 'Registro não encontrado.' });
     res.json({ ...(await resumoPasta(await pastaDoLaudo(laudo))), podeAbrir: pedidoLocal(req) });
   } catch (err) {
     responderErro(res, err, 'pasta');
@@ -500,7 +680,7 @@ async function abrirPasta(req, res) {
   if (!pedidoLocal(req)) return res.status(400).json({ erro: 'A pasta só pode ser aberta no PC onde o sistema roda.' });
   try {
     const laudo = await carregarLaudo(req.params.id);
-    if (!laudo) return res.status(404).json({ erro: 'Laudo não encontrado.' });
+    if (!laudo) return res.status(404).json({ erro: 'Registro não encontrado.' });
     P.abrirNoExplorer(await pastaDoLaudo(laudo));
     res.json({ ok: true });
   } catch (err) {
@@ -614,11 +794,18 @@ async function montarItensProposta(orcamento, segmento = 'privado') {
 async function gerarOrcamento(req, res) {
   try {
     const laudo = await carregarLaudo(req.params.id);
-    if (!laudo) return res.status(404).json({ erro: 'Laudo não encontrado.' });
-    if (laudo.gerar_orcamento === false) return res.status(409).json({ erro: 'Este laudo está marcado como "só laudo" (sem orçamento). Ative a opção de orçamento para gerar.' });
+    if (!laudo) return res.status(404).json({ erro: 'Registro não encontrado.' });
+    if (laudo.gerar_orcamento === false) return res.status(409).json({ erro: `Este ${nomeDoTipo(laudo).toLowerCase()} está marcado como "sem orçamento". Ative a opção de orçamento para gerar.` });
     const motor = motorDaDisciplina(laudo.disciplina);
     const modo = req.body?.modo;
-    if (!motor.modosOrcamento.some(m => m.modo === modo)) return res.status(400).json({ erro: 'Escolha o tipo de orçamento.' });
+    const modoInfo = motor.modosOrcamento.find(m => m.modo === modo);
+    if (!modoInfo) return res.status(400).json({ erro: 'Escolha o tipo de orçamento.' });
+    // 2.1: projeto → orçamento de execução; laudo → orçamento de inspeção/correção.
+    // Proposta que já estava ligada no outro modo (antes da 2.1) continua atualizável.
+    if (!(laudo.propostas || {})[modo]) {
+      const erroUso = conferirUso(laudo, tiposDocumento().usoDoModo(laudo.disciplina, modo), `O orçamento "${modoInfo.rotulo}"`);
+      if (erroUso) return res.status(400).json({ erro: erroUso });
+    }
 
     const resultado = processarComMotor(motor, laudo.dados);
     let orcamento;
@@ -711,4 +898,5 @@ module.exports = {
   disciplinas, modelo, listar, buscarUm, criar, criarDeAnalise, atualizar, remover, calcular, documento,
   enviarArquitetura, verArquitetura, gerarPlantaDxf, gerarUnifilarQet,
   enviarFotos, verFoto, removerFoto, gerarOrcamento, salvarDocumentos, pasta, abrirPasta,
+  catalogoEntregas, gerarEntrega,
 };

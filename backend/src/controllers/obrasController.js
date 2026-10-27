@@ -138,7 +138,8 @@ function esconderFinanceiro(resumo, admin) {
 
 const SQL_CONTAGENS = `
   (SELECT count(*)::int FROM analises_projeto x WHERE x.obra_id = o.id) AS qtd_analises,
-  (SELECT count(*)::int FROM laudos_projetos x WHERE x.obra_id = o.id) AS qtd_laudos,
+  (SELECT count(*)::int FROM laudos_projetos x WHERE x.obra_id = o.id AND x.tipo = 'laudo') AS qtd_laudos,
+  (SELECT count(*)::int FROM laudos_projetos x WHERE x.obra_id = o.id AND x.tipo = 'projeto') AS qtd_projetos,
   (SELECT count(*)::int FROM propostas x WHERE x.obra_id = o.id) AS qtd_propostas,
   (SELECT count(*)::int FROM contratos x WHERE x.obra_id = o.id) AS qtd_contratos,
   (SELECT count(*)::int FROM financeiro_movimentos x WHERE x.obra_id = o.id) AS qtd_movimentos`;
@@ -223,11 +224,11 @@ async function buscarUma(req, res, next) {
     const id = obra.id;
     const admin = ehAdmin(req);
     const [analises, laudos, propostas] = await Promise.all([
-      pool.query(`SELECT a.id, a.nome_projeto, a.cliente_nome, a.disciplinas, a.proposta_id, p.numero AS proposta_numero,
+      pool.query(`SELECT a.id, a.nome_projeto, a.cliente_nome, a.finalidade, a.disciplinas, a.proposta_id, p.numero AS proposta_numero,
                          a.usuario_id, u.nome AS usuario_nome, a.criado_em, a.atualizado_em, (a.pasta_obra_id = a.obra_id) AS pasta_na_obra
                     FROM analises_projeto a LEFT JOIN propostas p ON p.id = a.proposta_id LEFT JOIN usuarios u ON u.id = a.usuario_id
                    WHERE a.obra_id = $1 ORDER BY a.atualizado_em DESC`, [id]),
-      pool.query(`SELECT l.id, l.disciplina, l.titulo, l.cliente_nome, l.propostas, l.gerar_orcamento, l.analise_id,
+      pool.query(`SELECT l.id, l.tipo, l.disciplina, l.titulo, l.cliente_nome, l.propostas, l.gerar_orcamento, l.analise_id,
                          l.dados->'meta'->>'revisao' AS revisao, l.usuario_id, u.nome AS usuario_nome, l.criado_em, l.atualizado_em,
                          (l.pasta_obra_id = l.obra_id) AS pasta_na_obra
                     FROM laudos_projetos l LEFT JOIN usuarios u ON u.id = l.usuario_id
@@ -334,7 +335,7 @@ async function remover(req, res, next) {
     if (resultado.status === 404) return res.status(404).json({ erro: 'Obra não encontrada.' });
     if (resultado.status === 409) {
       const v = resultado.vinculos;
-      const partes = [['analises', 'análise(s)'], ['laudos', 'laudo(s)'], ['propostas', 'proposta(s)'], ['contratos', 'contrato(s)'], ['movimentos', 'movimento(s)'], ['ordens_servico', 'ordem(ns) de serviço'], ['medicoes', 'medição(ões) do cronograma']]
+      const partes = [['analises', 'análise(s)'], ['laudos', 'projeto(s)/laudo(s) por disciplina'], ['propostas', 'proposta(s)'], ['contratos', 'contrato(s)'], ['movimentos', 'movimento(s)'], ['ordens_servico', 'ordem(ns) de serviço'], ['medicoes', 'medição(ões) do cronograma']]
         .filter(([k]) => v[k] > 0).map(([k, r]) => `${v[k]} ${r}`);
       return res.status(409).json({
         codigo: 'OBRA_COM_VINCULOS', vinculos: v,
@@ -394,7 +395,8 @@ async function pasta(req, res, next) {
     const analises = (await pool.query('SELECT a.*, o.pasta AS pasta_obra_dir FROM analises_projeto a LEFT JOIN obras o ON o.id = a.pasta_obra_id WHERE a.obra_id = $1 AND a.pasta IS NOT NULL AND a.pasta_obra_id IS DISTINCT FROM $1', [obra.id])).rows;
     for (const a of analises) outras.push({ tipo: 'analise', id: a.id, rotulo: a.nome_projeto || a.cliente_nome || `Análise ${a.id}`, caminho: await caminhoRegistrado('projeto', a) });
     const laudos = (await pool.query('SELECT l.*, o.pasta AS pasta_obra_dir FROM laudos_projetos l LEFT JOIN obras o ON o.id = l.pasta_obra_id WHERE l.obra_id = $1 AND l.pasta IS NOT NULL AND l.pasta_obra_id IS DISTINCT FROM $1', [obra.id])).rows;
-    for (const l of laudos) outras.push({ tipo: 'laudo', id: l.id, rotulo: l.titulo || `Laudo ${l.id}`, caminho: await caminhoRegistrado('laudo', l) });
+    // tipo_registro (2.1): 'projeto' | 'laudo' — a tela mostra "Projeto #…" ou "Laudo #…"
+    for (const l of laudos) outras.push({ tipo: 'laudo', tipo_registro: l.tipo, id: l.id, rotulo: l.titulo || `${l.tipo === 'projeto' ? 'Projeto' : 'Laudo'} ${l.id}`, caminho: await caminhoRegistrado('laudo', l) });
     res.json({ ...(await resumoPasta(dir)), podeAbrir: pedidoLocal(req), outras });
   } catch (err) {
     next(err);

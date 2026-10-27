@@ -132,7 +132,9 @@ function origemDaProposta(p) {
   return null;
 }
 
-const linkDaOrigem = (o) => (o.tipo === 'analise' ? `/obras/analise/${o.id}` : `/obras?aba=laudos&laudo=${o.id}`);
+// registro (2.1): 'projeto' | 'laudo' — sem ele, a aba Laudos leva o projeto para a aba certa
+const linkDaOrigem = (o) => (o.tipo === 'analise' ? `/obras/analise/${o.id}` : `/obras?aba=${o.registro === 'projeto' ? 'projetos' : 'laudos'}&laudo=${o.id}`);
+const nomeDoRegistro = (o) => (o.registro === 'projeto' ? 'projeto' : o.registro === 'laudo' ? 'laudo' : 'laudo/projeto');
 
 export default function Orcamento() {
   const { id: editandoId } = useParams();
@@ -337,6 +339,8 @@ export default function Orcamento() {
         setOrigem({
           ...org, existe: true, vinculada: Object.values(l.propostas || {}).some(ehDestaProposta),
           titulo: l.dados?.obra?.nome || l.titulo || l.cliente_nome || '',
+          registro: l.tipo === 'projeto' ? 'projeto' : 'laudo', // 2.1: projeto ou laudo
+
         });
       }).catch(() => setOrigem({ ...org, existe: false }));
     }
@@ -838,19 +842,19 @@ export default function Orcamento() {
             <div style={{ flex: 1, minWidth: 260, fontSize: 12, color: '#bbb', lineHeight: 1.5 }}>
               Rascunho gerado a partir {origem.tipo === 'analise'
                 ? <>da <b style={{ color: '#c9a227' }}>Análise de Projeto #{origem.id}</b></>
-                : <>do <b style={{ color: '#c9a227' }}>laudo/projeto #{origem.id}</b>{origem.rotulo ? ` (${origem.rotulo})` : ''}</>}
+                : <>do <b style={{ color: '#c9a227' }}>{nomeDoRegistro(origem)} #{origem.id}</b>{origem.rotulo ? ` (${origem.rotulo})` : ''}</>}
               {origem.titulo ? ` — ${origem.titulo}` : ''}.{' '}
               <span style={{ color: '#777' }}>
                 {origem.existe === false
-                  ? (origem.tipo === 'analise' ? 'A análise foi excluída.' : 'O laudo foi excluído.')
+                  ? (origem.tipo === 'analise' ? 'A análise foi excluída.' : `O ${nomeDoRegistro(origem)} foi excluído.`)
                   : origem.vinculada === false
                     ? 'A origem hoje está vinculada a outra proposta (esta pode ser uma cópia).'
-                    : `Quantidades, preços, pesquisa de mercado e referências são revisados aqui. ${origem.tipo === 'analise' ? '"Atualizar orçamento" na análise' : '"Atualizar e abrir" no laudo'} substitui os itens desta proposta pelos de lá.`}
+                    : `Quantidades, preços, pesquisa de mercado e referências são revisados aqui. ${origem.tipo === 'analise' ? '"Atualizar orçamento" na análise' : `"Atualizar e abrir" no ${nomeDoRegistro(origem)}`} substitui os itens desta proposta pelos de lá.`}
               </span>
             </div>
             {origem.existe !== false && (
               <Link to={linkDaOrigem(origem)} style={{ ...btnSecundario, textDecoration: 'none', borderStyle: 'solid', borderColor: '#5a4a12', color: '#c9a227' }}>
-                <ArrowLeft size={13} style={{ marginRight: 4 }} /> Voltar {origem.tipo === 'analise' ? 'à análise' : 'ao laudo'}
+                <ArrowLeft size={13} style={{ marginRight: 4 }} /> Voltar {origem.tipo === 'analise' ? 'à análise' : `ao ${nomeDoRegistro(origem)}`}
               </Link>
             )}
           </div>

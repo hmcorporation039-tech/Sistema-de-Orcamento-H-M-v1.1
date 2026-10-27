@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Plus, Save, Trash2, Unlink, Link2, FileText, ClipboardList, Briefcase, Wallet, FolderOpen, LayoutDashboard, Layers, ClipboardCheck } from 'lucide-react';
+import { ArrowLeft, Plus, Save, Trash2, Unlink, Link2, FileText, ClipboardList, Briefcase, Wallet, FolderOpen, LayoutDashboard, ClipboardCheck, DraftingCompass, FileSearch } from 'lucide-react';
 import {
   getObra, atualizarObra, removerObra, vincularItemObra, getPastaObra, abrirPastaObra,
   getClientes, getUsuarios, getAnalisesProjeto, getLaudos, getPropostas, getContratos, getFinanceiroMovimentos,
@@ -18,22 +18,29 @@ import { STATUS_OBRA, SEGMENTO, STATUS_PROPOSTA, BASE_ORCADO, Etiqueta, moeda, p
 
 // Página da obra (/obras/:id), dentro do hub Obras. Abas em ?secao= (F5 e
 // "voltar" mantêm a aba). Itens novos criados daqui nascem ligados à obra:
-// as telas de destino recebem ?obra=ID (análise, laudos, proposta, contrato).
+// as telas de destino recebem ?obra=ID (análise, projeto, laudo, proposta, contrato).
+// Versão 2.1: Análises (com a finalidade), Projetos e Laudos em seções
+// separadas — análise ≠ laudo. As chaves antigas continuam valendo:
+// ?secao=projeto → Análises; ?secao=disciplinas → Projetos.
 const SECOES = [
   { chave: 'resumo', rotulo: 'Resumo', icone: LayoutDashboard },
-  { chave: 'projeto', rotulo: 'Projeto', icone: FileText },
-  { chave: 'disciplinas', rotulo: 'Disciplinas', icone: Layers },
+  { chave: 'analises', rotulo: 'Análises', icone: FileSearch },
+  { chave: 'projetos', rotulo: 'Projetos', icone: DraftingCompass },
+  { chave: 'laudos', rotulo: 'Laudos', icone: FileText },
   { chave: 'propostas', rotulo: 'Propostas', icone: ClipboardList },
   { chave: 'execucao', rotulo: 'Execução', icone: Briefcase },
   { chave: 'campo', rotulo: 'Campo (OS)', icone: ClipboardCheck },
   { chave: 'financeiro', rotulo: 'Financeiro', icone: Wallet },
   { chave: 'arquivos', rotulo: 'Arquivos', icone: FolderOpen },
 ];
+const SECOES_ANTIGAS = { projeto: 'analises', disciplinas: 'projetos' };
+const FINALIDADE = { orcamento: 'Orçamento', elaboracao: 'Elaboração de projeto' };
 
 export default function DetalheObra() {
   const { id } = useParams();
   const [parametros, setParametros] = useSearchParams();
-  const secao = SECOES.some(s => s.chave === parametros.get('secao')) ? parametros.get('secao') : 'resumo';
+  const pedida = SECOES_ANTIGAS[parametros.get('secao')] || parametros.get('secao');
+  const secao = SECOES.some(s => s.chave === pedida) ? pedida : 'resumo';
   const [obra, setObra] = useState(null);
   const [erro, setErro] = useState(null);
   const [versaoTela, setVersaoTela] = useState(0);
@@ -68,6 +75,8 @@ export default function DetalheObra() {
   if (!obra) return <div className="loading">Carregando...</div>;
 
   const ctx = { obra, recarregar, ligar, desligar, podeEditar: obra.pode_editar };
+  const projetos = obra.laudos.filter(l => l.tipo === 'projeto');
+  const laudos = obra.laudos.filter(l => l.tipo !== 'projeto');
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
@@ -80,7 +89,7 @@ export default function DetalheObra() {
         {SECOES.map(s => {
           const Icone = s.icone;
           const ativa = s.chave === secao;
-          const qtd = { projeto: obra.analises.length, disciplinas: obra.laudos.length, propostas: obra.propostas.length,
+          const qtd = { analises: obra.analises.length, projetos: projetos.length, laudos: laudos.length, propostas: obra.propostas.length,
             execucao: obra.restrito_financeiro ? null : obra.contratos.length, financeiro: obra.restrito_financeiro ? null : obra.movimentos.length }[s.chave];
           return (
             <button key={s.chave} type="button" role="tab" aria-selected={ativa}
@@ -92,8 +101,9 @@ export default function DetalheObra() {
         })}
       </div>
       {secao === 'resumo' && <Resumo {...ctx} />}
-      {secao === 'projeto' && <Projeto {...ctx} />}
-      {secao === 'disciplinas' && <Disciplinas {...ctx} />}
+      {secao === 'analises' && <Analises {...ctx} />}
+      {secao === 'projetos' && <RegistrosDisciplina {...ctx} tipo="projeto" itens={projetos} />}
+      {secao === 'laudos' && <RegistrosDisciplina {...ctx} tipo="laudo" itens={laudos} />}
       {secao === 'propostas' && <Propostas {...ctx} />}
       {secao === 'execucao' && <Execucao {...ctx} />}
       {secao === 'campo' && <OrdensServicoObra obra={obra} podeEditar={obra.pode_editar} />}
@@ -310,20 +320,24 @@ function Tabela({ colunas, vazio, children }) {
 
 const tr = { borderTop: '1px solid #1e1e1e' };
 
-// ── Projeto (análises do PDF) ─────────────────────────────────────────
-function Projeto({ obra, ligar, desligar, podeEditar }) {
+const textoAjuda = { color: '#777', fontSize: 12, margin: '0 0 10px', lineHeight: 1.6 };
+
+// ── Análises de projeto (PDF recebido), com a finalidade ─────────────
+function Analises({ obra, ligar, desligar, podeEditar }) {
   const carregar = useCallback(() => getAnalisesProjeto({ obra_id: 'sem', porPagina: 200 })
-    .then(r => (r.data.itens || []).map(a => ({ id: a.id, rotulo: `#${a.id} — ${a.nome_projeto || a.cliente_nome || 'Sem nome'} (${formatarData(a.atualizado_em)})` }))), []);
+    .then(r => (r.data.itens || []).map(a => ({ id: a.id, rotulo: `#${a.id} — ${a.nome_projeto || a.cliente_nome || 'Sem nome'} — ${FINALIDADE[a.finalidade] || 'Orçamento'} (${formatarData(a.atualizado_em)})` }))), []);
   return (
     <div>
-      <Cabecalho titulo="Análises de projeto (PDF)">
+      <Cabecalho titulo="Análises de projeto (PDF recebido)">
         {podeEditar && <LigarExistente rotulo="Ligar análise existente" carregar={carregar} onLigar={(id) => ligar('analise', id)} />}
         <Link to={`/obras?aba=analise&obra=${obra.id}`} style={E.btnPrimario}><Plus size={13} /> Nova análise nesta obra</Link>
       </Cabecalho>
-      <Tabela colunas={[{ rotulo: 'Análise' }, { rotulo: 'Cliente' }, { rotulo: 'Disciplinas' }, { rotulo: 'Proposta' }, { rotulo: 'Atualizada' }, { rotulo: '' }]} vazio="Nenhuma análise ligada a esta obra.">
+      <p style={textoAjuda}>Leitura do projeto recebido, para <b>orçar</b> ou para a H&amp;M <b>elaborar o projeto</b>. Análise não gera laudo.</p>
+      <Tabela colunas={[{ rotulo: 'Análise' }, { rotulo: 'Finalidade' }, { rotulo: 'Cliente' }, { rotulo: 'Disciplinas' }, { rotulo: 'Proposta' }, { rotulo: 'Atualizada' }, { rotulo: '' }]} vazio="Nenhuma análise ligada a esta obra.">
         {obra.analises.map(a => (
           <tr key={a.id} style={tr}>
             <td style={E.td}><Link to={`/obras/analise/${a.id}`} style={E.link}>#{a.id} — {a.nome_projeto || a.cliente_nome || 'Sem nome'}</Link></td>
+            <td style={{ ...E.td, color: a.finalidade === 'elaboracao' ? '#8ab4f8' : '#c9a227', whiteSpace: 'nowrap' }}>{FINALIDADE[a.finalidade] || 'Orçamento'}</td>
             <td style={E.td}>{a.cliente_nome || '—'}</td>
             <td style={{ ...E.td, fontSize: 11, color: '#999' }}>{(a.disciplinas || []).join(', ') || '—'}</td>
             <td style={E.td}>{a.proposta_id ? <Link to={`/propostas/editar/${a.proposta_id}`} style={E.link}>{a.proposta_numero}</Link> : '—'}</td>
@@ -336,28 +350,47 @@ function Projeto({ obra, ligar, desligar, podeEditar }) {
   );
 }
 
-// ── Disciplinas (laudos e projetos por disciplina) ───────────────────
-function Disciplinas({ obra, ligar, desligar, podeEditar }) {
-  const carregar = useCallback(() => getLaudos({ obra_id: 'sem' })
-    .then(r => (r.data || []).map(l => ({ id: l.id, rotulo: `#${l.id} — ${String(l.disciplina).toUpperCase()} — ${l.titulo || 'Sem título'}` }))), []);
+// ── Projetos e Laudos por disciplina (versão 2.1: seções separadas) ──
+const REGISTRO = {
+  projeto: {
+    titulo: 'Projetos por disciplina', aba: 'projetos', item: 'projeto', novo: 'Novo projeto nesta obra', ligar: 'Ligar projeto existente',
+    vazio: 'Nenhum projeto ligado a esta obra.', semOrcamento: 'sem orçamento',
+    ajuda: 'Projeto que a H&M elabora e entrega (memorial, desenhos, as-built, DXF, QElectroTech, PDF). Nasce aqui ou da análise com finalidade "Elaboração de projeto".',
+  },
+  laudo: {
+    titulo: 'Laudos', aba: 'laudos', item: 'laudo', novo: 'Novo laudo nesta obra', ligar: 'Ligar laudo existente',
+    vazio: 'Nenhum laudo ligado a esta obra — crie só quando a inspeção for pedida.', semOrcamento: 'só laudo',
+    ajuda: 'Laudo de inspeção/vistoria pedido quando necessário (checklist, fotos, medições). Não nasce da análise de projeto.',
+  },
+};
+
+function RegistrosDisciplina({ obra, ligar, desligar, podeEditar, tipo, itens }) {
+  const R = REGISTRO[tipo];
+  const carregar = useCallback(() => getLaudos({ obra_id: 'sem', tipo })
+    .then(r => (r.data || []).map(l => ({ id: l.id, rotulo: `#${l.id} — ${String(l.disciplina).toUpperCase()} — ${l.titulo || 'Sem título'}` }))), [tipo]);
   return (
     <div>
-      <Cabecalho titulo="Laudos e projetos por disciplina">
-        {podeEditar && <LigarExistente rotulo="Ligar laudo existente" carregar={carregar} onLigar={(id) => ligar('laudo', id)} />}
-        <Link to={`/obras?aba=laudos&obra=${obra.id}`} style={E.btnPrimario}><Plus size={13} /> Novo laudo nesta obra</Link>
+      <Cabecalho titulo={R.titulo}>
+        {podeEditar && <LigarExistente rotulo={R.ligar} carregar={carregar} onLigar={(id) => ligar('laudo', id)} />}
+        <Link to={`/obras?aba=${R.aba}&obra=${obra.id}`} style={E.btnPrimario}><Plus size={13} /> {R.novo}</Link>
       </Cabecalho>
-      <Tabela colunas={[{ rotulo: 'Disciplina' }, { rotulo: 'Título' }, { rotulo: 'Revisão' }, { rotulo: 'Propostas' }, { rotulo: 'Atualizado' }, { rotulo: '' }]} vazio="Nenhum laudo ligado a esta obra.">
-        {obra.laudos.map(l => (
+      <p style={textoAjuda}>{R.ajuda}</p>
+      <Tabela colunas={[{ rotulo: 'Disciplina' }, { rotulo: 'Título' }, { rotulo: 'Revisão' }, { rotulo: 'Propostas' }, { rotulo: 'Atualizado' }, { rotulo: '' }]} vazio={R.vazio}>
+        {itens.map(l => (
           <tr key={l.id} style={tr}>
             <td style={{ ...E.td, fontWeight: 700 }}>{String(l.disciplina).toUpperCase()}</td>
-            <td style={E.td}><Link to={`/obras?aba=laudos&laudo=${l.id}`} style={E.link}>{l.titulo || `Laudo #${l.id}`}</Link>{l.gerar_orcamento === false && <span style={{ color: '#777', fontSize: 10 }}> · só laudo</span>}</td>
+            <td style={E.td}>
+              <Link to={`/obras?aba=${R.aba}&laudo=${l.id}`} style={E.link}>{l.titulo || `${tipo === 'projeto' ? 'Projeto' : 'Laudo'} #${l.id}`}</Link>
+              {l.gerar_orcamento === false && <span style={{ color: '#777', fontSize: 10 }}> · {R.semOrcamento}</span>}
+              {l.analise_id && <span style={{ color: '#777', fontSize: 10 }}> · da <Link to={`/obras/analise/${l.analise_id}`} style={E.link}>análise #{l.analise_id}</Link></span>}
+            </td>
             <td style={E.td}>{l.revisao || '—'}</td>
             <td style={{ ...E.td, fontSize: 11 }}>
               {Object.entries(l.propostas || {}).map(([modo, pid]) => <Link key={modo} to={`/propostas/editar/${pid}`} style={{ ...E.link, marginRight: 8 }}>{modo}</Link>)}
               {!Object.keys(l.propostas || {}).length && '—'}
             </td>
             <td style={E.td}>{formatarData(l.atualizado_em)}</td>
-            <td style={{ ...E.td, textAlign: 'right' }}>{podeEditar && <BotaoDesligar onClick={() => desligar('laudo', l.id, `o laudo #${l.id}`)} />}</td>
+            <td style={{ ...E.td, textAlign: 'right' }}>{podeEditar && <BotaoDesligar onClick={() => desligar('laudo', l.id, `o ${R.item} #${l.id}`)} />}</td>
           </tr>
         ))}
       </Tabela>
@@ -474,7 +507,7 @@ function Arquivos({ obra }) {
     <div>
       <Cabecalho titulo="Pasta da obra" />
       <p style={{ color: '#777', fontSize: 12, margin: '0 0 6px' }}>
-        Itens novos desta obra gravam aqui: <code>Projeto</code>, <code>Laudos\&lt;disciplina&gt;</code>, <code>Propostas</code> e <code>Contratos</code>.
+        Itens novos desta obra gravam aqui: <code>Projeto</code> (análise), <code>Projetos\&lt;disciplina&gt;</code> (com a <code>Entrega</code>), <code>Laudos\&lt;disciplina&gt;</code>, <code>Propostas</code> e <code>Contratos</code>.
       </p>
       <PainelPasta carregar={carregar} abrir={abrir} />
       {outras.length > 0 && (
@@ -493,7 +526,7 @@ function PastaItem({ item }) {
   const abrir = useCallback(() => (item.tipo === 'analise' ? abrirPastaAnalise(item.id) : abrirPastaLaudo(item.id)), [item]);
   return (
     <div>
-      <div style={{ color: '#aaa', fontSize: 12, marginTop: 8 }}>{item.tipo === 'analise' ? 'Análise' : 'Laudo'} #{item.id} — {item.rotulo}</div>
+      <div style={{ color: '#aaa', fontSize: 12, marginTop: 8 }}>{item.tipo === 'analise' ? 'Análise' : item.tipo_registro === 'projeto' ? 'Projeto' : 'Laudo'} #{item.id} — {item.rotulo}</div>
       <PainelPasta carregar={carregar} abrir={abrir} />
     </div>
   );

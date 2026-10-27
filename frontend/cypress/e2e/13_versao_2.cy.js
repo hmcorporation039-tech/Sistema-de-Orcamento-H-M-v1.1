@@ -1,6 +1,8 @@
 // Versão 2.0: menu em 6 grupos (páginas-hub com abas em ?aba=), rotas da 1.x
 // redirecionando, página da obra (?secao=), composições e kits, editor da
 // proposta (Curva ABC, BDI pelo TCU, + Kit/composição) e o app de campo.
+// 2.1: abas Análise de projeto / Projetos por disciplina / Laudos e a
+// finalidade da análise.
 //
 // Só leitura: não salva nada e não depende de ids fixos — usa a primeira
 // obra/proposta/análise que a API devolver.
@@ -11,8 +13,10 @@ const GRUPOS = [
   {
     menu: 'Obras', caminho: '/obras', abas: [
       { chave: 'obras', rotulo: 'Obras', mostra: () => cy.contains('h2', 'Obras') },
-      { chave: 'analise', rotulo: 'Análise de projeto (PDF)', mostra: () => cy.contains('h3', 'Análises salvas') },
-      { chave: 'laudos', rotulo: 'Laudos e projetos por disciplina', mostra: () => cy.contains('h3', 'Laudos e projetos por disciplina') },
+      // 2.1: análise ≠ laudo — projetos e laudos em abas separadas
+      { chave: 'analise', rotulo: 'Análise de projeto', mostra: () => cy.contains('h3', 'Análises salvas') },
+      { chave: 'projetos', rotulo: 'Projetos por disciplina', mostra: () => cy.contains('h3', 'Projetos por disciplina') },
+      { chave: 'laudos', rotulo: 'Laudos', mostra: () => cy.contains('h3', 'Laudos') },
     ],
   },
   {
@@ -121,7 +125,7 @@ describe('Versão 2.0 — menu, abas e telas novas', () => {
     cy.location('pathname').should('eq', '/dashboard');
   });
 
-  it('abre uma obra e as seções Resumo, Propostas, Execução, Campo e Financeiro (?secao=)', () => {
+  it('abre uma obra e as seções Resumo, Análises, Projetos, Laudos, Propostas, Execução, Campo e Financeiro (?secao=)', () => {
     cy.api({ url: '/api/obras?pagina=1' }).then(({ body }) => {
       const obra = (body.itens || [])[0];
       expect(obra, 'existe ao menos uma obra no banco').to.exist;
@@ -136,6 +140,10 @@ describe('Versão 2.0 — menu, abas e telas novas', () => {
       cy.contains('Orçado').should('be.visible');
 
       const secoes = [
+        // 2.1: análises (com a finalidade), projetos e laudos separados
+        ['analises', 'Análises', 'Análises de projeto (PDF recebido)'],
+        ['projetos', 'Projetos', 'Novo projeto nesta obra'],
+        ['laudos', 'Laudos', 'Novo laudo nesta obra'],
         ['propostas', 'Propostas', 'Propostas da obra'],
         ['execucao', 'Execução', 'Contratos de prestadores'],
         ['campo', 'Campo (OS)', 'Ordens de serviço de campo'],
@@ -148,13 +156,32 @@ describe('Versão 2.0 — menu, abas e telas novas', () => {
         cy.location('search').should('include', `secao=${chave}`);
         cy.contains(texto).should('be.visible');
       });
-      // abrindo direto pela URL
-      secoes.forEach(([chave, rotulo, texto]) => {
+      // abrindo direto pela URL (e as chaves antigas: projeto → Análises, disciplinas → Projetos)
+      [...secoes, ['projeto', 'Análises', 'Análises de projeto (PDF recebido)'], ['disciplinas', 'Projetos', 'Novo projeto nesta obra']].forEach(([chave, rotulo, texto]) => {
         cy.visit(`/obras/${obra.id}?secao=${chave}`);
         cy.get('[role=tablist][aria-label="Seções da obra"]').contains('[role=tab]', rotulo)
           .should('have.attr', 'aria-selected', 'true');
         cy.contains(texto).should('be.visible');
       });
+    });
+  });
+
+  it('análise de projeto tem finalidade (Orçamento × Elaboração de projeto) e não fala em laudo', () => {
+    cy.visit('/obras?aba=analise');
+    cy.contains('Para que é esta análise?').should('be.visible');
+    cy.get('input[name=finalidade][value=orcamento]').should('exist');
+    cy.get('input[name=finalidade][value=elaboracao]').should('exist');
+    cy.contains('Análise de projeto não gera laudo').should('be.visible');
+    cy.contains('th', 'Finalidade').should('be.visible');
+    cy.api({ url: '/api/projetos/analises' }).then(({ body }) => {
+      const a = (body.itens || [])[0];
+      if (!a) return;
+      expect(['orcamento', 'elaboracao']).to.include(a.finalidade);
+      cy.visit(`/obras/analise/${a.id}`);
+      cy.get('select[aria-label="Finalidade da análise"]').should('have.value', a.finalidade)
+        .find('option').then(ops => expect([...ops].map(o => o.textContent)).to.deep.equal(['Elaboração de projeto', 'Orçamento']));
+      cy.contains(a.finalidade === 'elaboracao' ? 'Elaborar projeto por disciplina' : 'Gerar orçamento e abrir no editor').should('exist');
+      cy.contains('Calcular pela norma').should('not.exist');
     });
   });
 

@@ -4,13 +4,16 @@ const fs = require('fs');
 const path = require('path');
 
 let falhou = false;
-// base comum de CAD (DXF, leitura de arquitetura, posicionamento, plantas)
-try {
-  process.stdout.write(execFileSync(process.execPath, [path.join(__dirname, '_comum', 'cad', 'teste-cad.js')], { encoding: 'utf8' }));
-} catch (e) {
-  falhou = true;
-  process.stdout.write(e.stdout || '');
-  console.log('_comum/cad/teste-cad.js: FALHOU');
+// base comum: CAD (DXF, leitura de arquitetura, posicionamento, plantas),
+// classificação projeto × laudo dos documentos e as entregas do projeto (as-built, ZIP)
+for (const teste of ['cad/teste-cad.js', 'teste-tipos-documento.js', 'teste-entrega.js']) {
+  try {
+    process.stdout.write(execFileSync(process.execPath, [path.join(__dirname, '_comum', ...teste.split('/'))], { encoding: 'utf8' }));
+  } catch (e) {
+    falhou = true;
+    process.stdout.write(e.stdout || '');
+    console.log(`_comum/${teste}: FALHOU`);
+  }
 }
 for (const pasta of fs.readdirSync(__dirname)) {
   if (pasta.startsWith('_') || pasta === 'node_modules') continue;

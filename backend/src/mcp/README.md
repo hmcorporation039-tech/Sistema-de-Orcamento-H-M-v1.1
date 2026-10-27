@@ -71,7 +71,7 @@ antes de usar as ferramentas — o servidor MCP só existe pra falar com ele.
 | `comparar_com_catalogo` | leitura | Confere se uma descrição livre já existe no catálogo, com % de confiança |
 | `pesquisar_preco_mercado` | leitura (cache 48h) | Pesquisa real na web — mesmo motor da tela |
 | `historico_preco` | leitura | Preço no catálogo + pesquisas de mercado já feitas |
-| `analisar_projeto` | **cria uma análise salva** | Envia um PDF do PC pro mesmo analisador da tela — fica em "Análises salvas" |
+| `analisar_projeto` | **cria uma análise salva** | Envia um PDF do PC pro mesmo analisador da tela — fica em "Análises salvas". `finalidade` opcional: `orcamento` (padrão) ou `elaboracao` (versão 2.1; a análise nunca gera laudo) |
 | `listar_propostas` / `buscar_proposta` | leitura | Consulta o histórico de orçamentos |
 | `criar_rascunho_proposta` | **cria uma proposta** | Monta uma proposta rascunho, pelo mesmo caminho da tela de Orçamento |
 

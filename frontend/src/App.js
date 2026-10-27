@@ -65,7 +65,8 @@ function Redirecionar({ para, aba }) {
   return <Navigate to={`${caminho}${qs ? `?${qs}` : ''}${hash}`} replace />;
 }
 
-// /analise-projeto?aba=laudos&laudo=ID ("Calcular pela norma") → aba de laudos;
+// /analise-projeto?aba=laudos&laudo=ID (antigo "Calcular pela norma") → aba Laudos, que leva
+// o registro para a aba "Projetos por disciplina" quando ele é projeto (2.1);
 // qualquer outro ?aba= da tela antiga → análise de projeto.
 function destinoAnaliseProjeto(params, busca) {
   busca.set('aba', busca.get('aba') === 'laudos' ? 'laudos' : 'analise');
@@ -104,7 +105,7 @@ export default function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="obras" element={<ObrasHub />} />
             <Route path="obras/analise/:id" element={<ObrasHub abaFixa="analise" />} />
-            {/* página da obra (Fase 2D): abas Resumo, Projeto, Disciplinas… em ?secao= */}
+            {/* página da obra (Fase 2D): abas Resumo, Análises, Projetos, Laudos… em ?secao= */}
             <Route path="obras/:id" element={<ObrasHub abaFixa="obras" />} />
             <Route path="propostas" element={<PropostasHub />} />
             <Route path="propostas/editar" element={<PropostasHub abaFixa="editar" />} />

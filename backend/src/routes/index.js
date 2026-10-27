@@ -221,9 +221,12 @@ router.put('/projetos/analises/:id', autenticar, validarId, posseAnalise, projCt
 router.delete('/projetos/analises/:id', autenticar, validarId, posseAnalise, projCtrl.remover);
 router.post('/projetos/analises/:id/gerar-orcamento', autenticar, validarId, posseAnalise, projCtrl.gerarOrcamento);
 
-// ── LAUDOS E PROJETOS POR DISCIPLINA (aba Análise de Projeto) ─────────────
+// ── PROJETOS E LAUDOS POR DISCIPLINA (hub Obras) ──────────────────────────
+// Versão 2.1: /laudos guarda os dois tipos de registro (?tipo=projeto|laudo);
+// /laudos/de-analise cria sempre um PROJETO (análise não gera laudo).
 // Caminhos específicos antes do /:id genérico
 router.get('/laudos/disciplinas', autenticar, laudoCtrl.disciplinas);
+router.get('/laudos/entregas', autenticar, laudoCtrl.catalogoEntregas);
 router.get('/laudos/modelo/:disciplina', autenticar, laudoCtrl.modelo);
 router.get('/laudos', autenticar, laudoCtrl.listar);
 router.post('/laudos', autenticar, laudoCtrl.criar);
@@ -243,6 +246,8 @@ router.get('/laudos/:id/unifilar', autenticar, validarId, laudoCtrl.gerarUnifila
 router.delete('/laudos/:id/fotos/:fotoId', autenticar, validarId, posseLaudo, laudoCtrl.removerFoto);
 router.post('/laudos/:id/calcular', autenticar, validarId, laudoCtrl.calcular);
 router.post('/laudos/:id/gerar-orcamento', autenticar, validarId, posseLaudo, laudoCtrl.gerarOrcamento);
+// entregas do projeto (definições técnicas, as-built, DXF, QElectroTech, PDF): ZIP (?destino=zip) ou só a pasta (?destino=pasta)
+router.post('/laudos/:id/entrega', autenticar, validarId, posseLaudo, laudoCtrl.gerarEntrega);
 router.get('/laudos/:id', autenticar, validarId, laudoCtrl.buscarUm);
 router.put('/laudos/:id', autenticar, validarId, posseLaudo, laudoCtrl.atualizar);
 router.delete('/laudos/:id', autenticar, validarId, posseLaudo, laudoCtrl.remover);

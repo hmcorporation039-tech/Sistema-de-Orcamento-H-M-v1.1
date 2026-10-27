@@ -112,7 +112,7 @@ export default function ListaObras() {
                   </td>
                   <td style={E.td}><Etiqueta info={STATUS_OBRA[o.status]}>{STATUS_OBRA[o.status]?.rotulo || o.status}</Etiqueta></td>
                   <td style={{ ...E.td, color: '#888', fontSize: 11, whiteSpace: 'nowrap' }}>
-                    {o.qtd_analises} análise · {o.qtd_laudos} laudo · {o.qtd_propostas} proposta
+                    {o.qtd_analises} análise · {o.qtd_projetos ?? 0} projeto · {o.qtd_laudos} laudo · {o.qtd_propostas} proposta
                     {!restrito && <div>{o.qtd_contratos} contrato · {o.qtd_movimentos} mov.</div>}
                   </td>
                   <td style={{ ...E.td, textAlign: 'right', whiteSpace: 'nowrap' }} title={BASE_ORCADO[r.orcado_base]}>

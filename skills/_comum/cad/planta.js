@@ -119,7 +119,8 @@ function carimbo(d, x, y, c, escalaPlotagem) {
       REVISAO: c.revisao || 'R00', FORMATO: c.formato || 'A1', ARQUIVO: c.arquivo || '',
       RT_NOME: c.responsavel || '', RT_CREA: c.crea ? `CREA ${c.crea}` : '', ART: c.art || '',
       DESENHO: 'Sistema H&M', PROJETO: c.projetista || '',
-      REV0_DATA: c.data || '', REV0_DESC: 'Emissão inicial gerada pelo sistema a partir da arquitetura — revisar antes de emitir', REV0_POR: 'H&M',
+      // descricaoRevisao: ex. "AS BUILT — conforme executado" (entrega do projeto, versão 2.1)
+      REV0_DATA: c.data || '', REV0_DESC: c.descricaoRevisao || 'Emissão inicial gerada pelo sistema a partir da arquitetura — revisar antes de emitir', REV0_POR: 'H&M',
     },
   });
 }

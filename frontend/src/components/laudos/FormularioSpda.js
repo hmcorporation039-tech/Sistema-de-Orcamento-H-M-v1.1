@@ -50,7 +50,8 @@ function definir(obj, caminho, valor) {
   return raiz;
 }
 
-export default function FormularioSpda({ dados, onChange, checklistBase, fotos, urlsFotos, onEnviarFotos, onRemoverFoto }) {
+// tipo (2.1): 'projeto' esconde as seções de inspeção; 'laudo' mostra tudo
+export default function FormularioSpda({ dados, onChange, checklistBase, fotos, urlsFotos, onEnviarFotos, onRemoverFoto, tipo = 'laudo' }) {
   const d = dados || {};
   const v = (caminho) => caminho.split('.').reduce((o, k) => (o == null ? undefined : o[k]), d);
   const set = (caminho) => (valor) => onChange(atual => definir(atual, caminho, valor));
@@ -201,6 +202,11 @@ export default function FormularioSpda({ dados, onChange, checklistBase, fotos, 
         </button>
       </Secao>
 
+      {/* 6 a 12 são do LAUDO (inspeção, checklist, NCs, ensaios, fotos, SPDA
+          provisório): no projeto ficam escondidas — os dados continuam salvos */}
+      {tipo === 'projeto' ? (
+        <Nota>Projeto: as seções de inspeção (checklist, não conformidades, ensaios de continuidade e fotos) ficam no laudo — crie em Laudos › Novo laudo quando a inspeção for pedida.</Nota>
+      ) : (<>
       <Secao titulo="6. Inspeção — dados gerais" resumo={insp.documento_n || ''}>
         <Grade colunas={4}>
           <Selecao rotulo="Tipo de inspeção" valor={insp.tipo || 'periodica'} onChange={set('inspecao.tipo')} opcoes={OPCOES.tipoInspecao} />
@@ -301,6 +307,7 @@ export default function FormularioSpda({ dados, onChange, checklistBase, fotos, 
           </div>
         )}
       </Secao>
+      </>)}
       {nomesZonas.length === 0 && <Nota>Cadastre ao menos uma zona de estudo para a análise de risco.</Nota>}
     </div>
   );

@@ -16,7 +16,14 @@ const { tipoPorConteudo } = require('../utils/tipoArquivo');
 const { versaoDoPedido, responderConflitoOuAusente } = require('../utils/versao');
 const { sincronizarProjeto, pastaDoProjeto, resumoPasta, pedidoLocal, seguro, excluirPastaDoItem } = require('../services/pastasRegistros');
 const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
+const { lerFinalidade } = require('../utils/projetoLaudo');
 const path = require('path');
+
+// Versão 2.1 — finalidade da análise (escolhida ao enviar, editável depois):
+//   'orcamento'  — orçar a partir do projeto recebido (itens + "Gerar orçamento")
+//   'elaboracao' — a H&M vai definir/entregar o projeto a partir do arquitetônico
+//                  ("Elaborar projeto da disciplina" → projeto por disciplina)
+// Nenhuma das duas cria laudo.
 
 // Análise completa com o número da proposta e a obra (2.0): `obra` = { id,
 // codigo, nome, status } e `pasta_obra_dir` = pasta da obra onde a pasta da
@@ -45,6 +52,7 @@ function linhaParaAnalise(row) {
     cliente: row.cliente_nome,
     // Nome do projeto = nome da pasta em "Arquivos do Sistema/Projetos" (editável na tela)
     nomeProjeto: row.nome_projeto,
+    finalidade: row.finalidade || 'orcamento',
     caminhoPasta: caminhoDaPasta(row),
     // Obra (2.0): obraId + obra { id, codigo, nome, status } quando a consulta faz o JOIN
     obraId: row.obra_id ?? null,
@@ -89,6 +97,13 @@ async function listar(req, res) {
     params.push(`%${busca}%`);
     condicoes += ` AND (ap.cliente_nome ILIKE $${params.length} OR ap.nome_projeto ILIKE $${params.length})`;
   }
+  // ?finalidade=orcamento|elaboracao (2.1)
+  if (req.query.finalidade) {
+    const finalidade = lerFinalidade(req.query.finalidade, null);
+    if (!finalidade) return res.status(400).json({ erro: 'Finalidade inválida (orcamento ou elaboracao).' });
+    params.push(finalidade);
+    condicoes += ` AND ap.finalidade = $${params.length}`;
+  }
   // ?obra_id=ID (análises da obra) ou ?obra_id=sem (sem obra)
   if (req.query.obra_id === 'sem') condicoes += ' AND ap.obra_id IS NULL';
   else if (req.query.obra_id) {
@@ -101,7 +116,7 @@ async function listar(req, res) {
   try {
     const total = await pool.query(`SELECT count(*) FROM analises_projeto ap ${condicoes}`, params);
     const result = await pool.query(
-      `SELECT ap.id, ap.cliente_id, ap.cliente_nome, ap.nome_projeto, ap.disciplinas, ap.arquivos_analisados,
+      `SELECT ap.id, ap.cliente_id, ap.cliente_nome, ap.nome_projeto, ap.finalidade, ap.disciplinas, ap.arquivos_analisados,
               jsonb_array_length(ap.achados) AS total_achados,
               ap.criado_em, ap.atualizado_em, ap.obra_id, ${sqlObraJson('ob')} AS obra
        FROM analises_projeto ap LEFT JOIN obras ob ON ob.id = ap.obra_id ${condicoes}
@@ -121,7 +136,10 @@ async function buscarUma(req, res) {
   try {
     const result = await pool.query(SQL_ANALISE_COMPLETA, [id]);
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Análise não encontrada' });
-    res.json(linhaParaAnalise(result.rows[0]));
+    // projetos por disciplina elaborados a partir desta análise (2.1)
+    const projetos = await pool.query(
+      `SELECT id, tipo, disciplina, titulo, propostas, atualizado_em FROM laudos_projetos WHERE analise_id = $1 ORDER BY disciplina, id`, [id]);
+    res.json({ ...linhaParaAnalise(result.rows[0]), projetos: projetos.rows });
   } catch (err) {
     console.error('Erro ao buscar análise de projeto:', err);
     res.status(500).json({ erro: 'Erro ao buscar análise de projeto' });
@@ -164,6 +182,11 @@ async function analisar(req, res) {
     return res.status(400).json({ erro: 'Selecione ao menos uma disciplina para cada arquivo enviado' });
   }
 
+  // finalidade (2.1): campo multipart; ausente = 'orcamento' (o uso de sempre,
+  // e o que o MCP manda quando não informa)
+  const finalidade = lerFinalidade(req.body.finalidade);
+  if (!finalidade) return res.status(400).json({ erro: 'Finalidade inválida: escolha "Orçamento" ou "Elaboração de projeto".' });
+
   // obra (2.0): campo multipart obra_id — a análise nasce ligada à obra e a
   // pasta dela fica em Obras\<obra>\Projeto
   const leituraObra = lerObraId(req.body);
@@ -180,8 +203,8 @@ async function analisar(req, res) {
       `INSERT INTO analises_projeto
         (cliente_nome, disciplinas, arquivos_analisados, ambientes, pontos_por_ambiente, cameras,
          pontos_rede_antena, tabela_cabos, achados, servicos, materiais, usuario_id, nome_projeto, dados_extraidos,
-         obra_id, cliente_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+         obra_id, cliente_id, finalidade)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
        RETURNING *`,
       [
         // sem cliente no carimbo do PDF, vale o cliente da obra
@@ -201,6 +224,7 @@ async function analisar(req, res) {
         JSON.stringify(resultado.dadosExtraidos || []),
         obraDaAnalise?.id || null,
         !resultado.cliente && obraDaAnalise ? obraDaAnalise.cliente_id : null,
+        finalidade,
       ]
     );
 
@@ -233,6 +257,11 @@ async function atualizar(req, res) {
   )) {
     return res.status(400).json({ erro: 'pontos_por_disciplina deve ser uma lista de { disciplina, itens: [] }' });
   }
+  // finalidade (2.1): presente troca; ausente mantém
+  const finalidade = req.body.finalidade == null ? null : lerFinalidade(req.body.finalidade, null);
+  if (req.body.finalidade != null && !finalidade) {
+    return res.status(400).json({ erro: 'Finalidade inválida: escolha "Orçamento" ou "Elaboração de projeto".' });
+  }
 
   try {
     // obra (2.0): obra_id presente liga/desliga (null); ausente mantém
@@ -248,6 +277,7 @@ async function atualizar(req, res) {
         pontos_por_disciplina = COALESCE($5::jsonb, pontos_por_disciplina),
         nome_projeto = COALESCE($7, nome_projeto),
         obra_id = CASE WHEN $9::boolean THEN $10::int ELSE obra_id END,
+        finalidade = COALESCE($11, finalidade),
         atualizado_em = NOW(), versao = versao + 1
        WHERE id = $6 AND ($8::int IS NULL OR versao = $8)
        RETURNING *`,
@@ -261,6 +291,7 @@ async function atualizar(req, res) {
         nome_projeto != null ? String(nome_projeto).trim().slice(0, 200) : null,
         versaoDoPedido(req.body),
         leituraObra.presente, leituraObra.valor,
+        finalidade,
       ]
     );
     if (result.rows.length === 0) return responderConflitoOuAusente(pool, res, 'analises_projeto', id);

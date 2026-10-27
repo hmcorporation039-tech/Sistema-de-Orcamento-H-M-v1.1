@@ -61,13 +61,32 @@ function BotaoPreencher({ item, resumo, linhas, onPreencher }) {
   );
 }
 
-export default function FormularioGenerico({ esquema, dados, onChange, checklistBase, fotos, urlsFotos, onEnviarFotos, onRemoverFoto, resumo }) {
+// Seção só de INSPEÇÃO (versão 2.1): todos os campos/tabelas dela ficam em
+// inspecao.* (dados gerais da inspeção, checklist, ensaios, NCs, fotos). Em
+// todas as 16 skills de formulário genérico essas seções vêm depois das de
+// projeto e não misturam campo de projeto — esconder no projeto é seguro.
+function soDeInspecao(secao) {
+  const caminhos = [];
+  for (const item of secao.itens || []) {
+    if (item.tipo === 'grade') (item.campos || []).forEach(c => caminhos.push(c.caminho));
+    else if (item.caminho) caminhos.push(item.caminho);
+  }
+  return caminhos.length > 0 && caminhos.every(c => String(c).startsWith('inspecao.'));
+}
+
+// tipo (2.1): 'projeto' esconde as seções de inspeção (os dados continuam salvos); 'laudo' mostra tudo
+export default function FormularioGenerico({ esquema, dados, onChange, checklistBase, fotos, urlsFotos, onEnviarFotos, onRemoverFoto, resumo, tipo = 'laudo' }) {
   const d = dados || {};
   const set = (caminho) => (valor) => onChange(atual => definir(atual, caminho, valor));
+  const secoes = (esquema || []).filter(s => tipo !== 'projeto' || !soDeInspecao(s));
+  const escondidas = (esquema || []).length - secoes.length;
 
   return (
     <div>
-      {(esquema || []).map((secao, iSec) => (
+      {escondidas > 0 && (
+        <Nota>Projeto: as {escondidas} seções de inspeção (checklist, ensaios, não conformidades e fotos) ficam no laudo — crie em Laudos › Novo laudo quando a inspeção for pedida.</Nota>
+      )}
+      {secoes.map((secao, iSec) => (
         <Secao key={iSec} titulo={secao.titulo} abertaInicial={!!secao.aberta} resumo={String(resumoSecao(secao, d))}>
           {secao.itens.map((item, i) => {
             if (item.tipo === 'nota') return <Nota key={i}>{item.texto}</Nota>;

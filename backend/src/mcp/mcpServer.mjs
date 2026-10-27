@@ -251,9 +251,12 @@ server.registerTool(
     inputSchema: {
       caminho_pdf: z.string().describe('Caminho completo do arquivo PDF no PC'),
       disciplinas: z.array(z.string()).describe(`Disciplinas desse arquivo (uma ou mais entre: ${DISCIPLINAS_VALIDAS.join(', ')})`),
+      // versão 2.1: a análise não gera laudo; a finalidade diz se é para orçar ou para a H&M elaborar o projeto
+      finalidade: z.enum(['orcamento', 'elaboracao']).optional()
+        .describe('Para que é a análise: "orcamento" (orçar a partir do projeto recebido — padrão) ou "elaboracao" (a H&M vai definir/entregar o projeto a partir do arquitetônico). Nenhuma das duas cria laudo.'),
     },
   },
-  async ({ caminho_pdf, disciplinas }) => {
+  async ({ caminho_pdf, disciplinas, finalidade }) => {
     try {
       // só PDF: a ferramenta lê um caminho qualquer do PC e envia ao backend
       if (!/\.pdf$/i.test(caminho_pdf)) return textoErro('Informe o caminho de um arquivo .pdf');
@@ -266,11 +269,13 @@ server.registerTool(
       const form = new FormData();
       form.append('arquivos', new Blob([buffer], { type: 'application/pdf' }), path.basename(caminho_pdf));
       form.append('disciplinasPorArquivo', JSON.stringify([validas]));
+      if (finalidade) form.append('finalidade', finalidade);
 
       const resultado = await chamarApi('/api/projetos/analisar', { method: 'POST', body: form });
 
       const partes = [];
       partes.push(`Análise salva (id ${resultado.id}) — cliente identificado: ${resultado.cliente || '(não identificado no texto do PDF)'}`);
+      partes.push(`Finalidade: ${resultado.finalidade === 'elaboracao' ? 'Elaboração de projeto' : 'Orçamento'} (análise não gera laudo)`);
       partes.push(`Ambientes identificados: ${resultado.ambientes.length}`);
       if (validas.includes('cftv')) partes.push(`Câmeras (código CAMx): ${resultado.cameras.total}`);
       if (validas.includes('rede')) partes.push(`Pontos de rede (código Rx): ${resultado.pontosRedeAntena.rede.total}`);

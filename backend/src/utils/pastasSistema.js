@@ -17,9 +17,11 @@ const BASE = process.env.PASTA_ARQUIVOS_SISTEMA || path.join(__dirname, '..', '.
 // Versão 2.0 (Fase 2D): cada obra tem a sua pasta em Obras\<nome da obra>;
 // análise/laudo NOVO ligado a uma obra grava dentro dela (Projeto,
 // Laudos\<disciplina>) — quem decide a raiz é services/pastasRegistros.js.
-const RAIZES = { projeto: path.join(BASE, 'Projetos'), laudo: path.join(BASE, 'Laudos'), obra: path.join(BASE, 'Obras') };
-const LETRA = { projeto: 'A', laudo: 'L', obra: 'O' };
-const PADRAO = { projeto: 'Projeto', laudo: 'Laudo', obra: 'Obra' };
+// Versão 2.1: 'projeto_disciplina' = projeto por disciplina (laudos_projetos com
+// tipo 'projeto'); sem obra, mora em Projetos\<nome>, ao lado das análises.
+const RAIZES = { projeto: path.join(BASE, 'Projetos'), laudo: path.join(BASE, 'Laudos'), obra: path.join(BASE, 'Obras'), projeto_disciplina: path.join(BASE, 'Projetos') };
+const LETRA = { projeto: 'A', laudo: 'L', obra: 'O', projeto_disciplina: 'P' };
+const PADRAO = { projeto: 'Projeto', laudo: 'Laudo', obra: 'Obra', projeto_disciplina: 'Projeto' };
 const EXCLUIDOS = path.join(BASE, '_Excluídos');
 const RESERVADOS = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
 
@@ -42,7 +44,8 @@ async function existe(p) {
 // `raiz` troca a pasta-mãe (padrão RAIZES[tipo]) — ex.: Obras\<obra> para a
 // pasta "Projeto" de uma análise da obra; `escopo` ({ coluna, valor }) limita
 // a checagem de nome repetido aos registros da mesma pasta-mãe (valor null =
-// coluna IS NULL). `coluna` é sempre um literal escolhido no código.
+// coluna IS NULL); pode ser uma lista dessas condições. `coluna` é sempre um
+// literal escolhido no código.
 async function sincronizarPasta(client, { tipo, tabela, id, nome, pastaAtual, raiz = RAIZES[tipo], escopo = null }) {
   const sufixo = ` (${LETRA[tipo]}${id})`;
   const base = nomeSeguro(nome, `${PADRAO[tipo]} ${id}`);
@@ -50,9 +53,9 @@ async function sincronizarPasta(client, { tipo, tabela, id, nome, pastaAtual, ra
   let desejada = base;
   const params = [desejada, id];
   let filtro = '';
-  if (escopo) {
-    if (escopo.valor == null) filtro = ` AND ${escopo.coluna} IS NULL`;
-    else { params.push(escopo.valor); filtro = ` AND ${escopo.coluna} = $3`; }
+  for (const e of [].concat(escopo || [])) {
+    if (e.valor == null) filtro += ` AND ${e.coluna} IS NULL`;
+    else { params.push(e.valor); filtro += ` AND ${e.coluna} = $${params.length}`; }
   }
   const ocupada = await client.query(`SELECT 1 FROM ${tabela} WHERE LOWER(pasta) = LOWER($1) AND id <> $2${filtro} LIMIT 1`, params);
   if (ocupada.rows.length || (desejada !== pastaAtual && await existe(caminho(desejada)) && !(pastaAtual && desejada.toLowerCase() === pastaAtual.toLowerCase()))) {

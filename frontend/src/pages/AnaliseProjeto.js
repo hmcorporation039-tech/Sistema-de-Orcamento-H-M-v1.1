@@ -2,18 +2,28 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import PainelPasta from '../components/PainelPasta';
-import { FileDown, Plus, Trash2, FolderSearch, FilePlus2, Receipt, ExternalLink } from 'lucide-react';
+import { FileDown, Plus, Trash2, FolderSearch, FilePlus2, Receipt, ExternalLink, DraftingCompass } from 'lucide-react';
 import {
   analisarProjetoNaObra, gerarRelatorioCompatibilizacao,
   getAnalisesProjeto, getAnaliseProjeto, atualizarAnaliseProjeto, removerAnaliseProjeto,
-  gerarOrcamentoDaAnalise, getPastaAnalise, abrirPastaAnalise, getDisciplinasProjeto, criarLaudoDeAnalise,
+  gerarOrcamentoDaAnalise, getPastaAnalise, abrirPastaAnalise, getDisciplinasProjeto, criarProjetoDeAnalise,
 } from '../services/api';
 import { formatarMoeda } from '../utils/format';
 import BlocoPesquisaMercado from '../components/PesquisaMercado';
 import ObraSelect from '../components/ObraSelect';
+import Select from '../components/Select';
 
 let contador = 0;
 const gerarId = () => `tmp_${Date.now()}_${contador++}`;
+
+// Finalidade da análise (versão 2.1 — análise ≠ laudo). Escolhida ao enviar e
+// editável depois; nenhuma das duas cria laudo (laudo é pedido quando
+// necessário, em Obras › Laudos). Ordem A–Z nas listas.
+const FINALIDADES = [
+  { valor: 'elaboracao', rotulo: 'Elaboração de projeto', descricao: 'A H&M vai DEFINIR e ENTREGAR o projeto a partir do arquitetônico recebido: projeto por disciplina com definições técnicas, as-built, DXF, QElectroTech e PDF.' },
+  { valor: 'orcamento', rotulo: 'Orçamento', descricao: 'Orçar a partir do projeto recebido: itens extraídos do PDF e "Gerar orçamento e abrir no editor".' },
+];
+const rotuloFinalidade = (v) => FINALIDADES.find(f => f.valor === v)?.rotulo || 'Orçamento';
 
 // As disciplinas vêm do servidor (GET /projetos/disciplinas — fonte única em
 // backend/src/utils/disciplinasProjeto.js): cada área de atuação é uma
@@ -40,9 +50,11 @@ function formatarHora(data) {
 }
 
 // Análise de projeto (PDF): compatibilização de projetos em PDF. Na versão
-// 2.0 vira a aba "Análise de projeto (PDF)" do hub Obras (pages/hubs/ObrasHub.js);
-// a aba "Laudos e projetos por disciplina", que antes ficava aqui dentro
-// (?aba=laudos), passou a ser aba do próprio hub.
+// 2.0 vira a aba "Análise de projeto" do hub Obras (pages/hubs/ObrasHub.js).
+// Versão 2.1: a análise tem FINALIDADE — "Orçamento" (itens + gerar orçamento)
+// ou "Elaboração de projeto" (elaborar o projeto de cada disciplina e
+// entregar). Em nenhuma das duas sai laudo: o antigo "Calcular pela norma"
+// cria um PROJETO da disciplina (aba "Projetos por disciplina").
 export default function Compatibilizacao() {
   const { id: idParam } = useParams();
   const navigate = useNavigate();
@@ -67,6 +79,7 @@ export default function Compatibilizacao() {
   // entram na soma). [{ id, arquivo: File, disciplinas: string[] }]
   const [arquivosComDisciplinas, setArquivosComDisciplinas] = useState([]);
   const [nomeProjetoNovo, setNomeProjetoNovo] = useState(''); // nome da pasta do projeto em Arquivos do Sistema
+  const [finalidadeNova, setFinalidadeNova] = useState(''); // 'orcamento' | 'elaboracao' — escolha obrigatória ao enviar
   // obra da análise nova (2.0): vem pré-selecionada de /obras?aba=analise&obra=ID
   // e vai no multipart (obra_id) — a pasta passa a morar dentro da obra
   const [busca] = useSearchParams();
@@ -158,10 +171,15 @@ export default function Compatibilizacao() {
       toast.error('Marque ao menos uma disciplina pra cada arquivo enviado');
       return;
     }
+    if (!finalidadeNova) {
+      toast.error('Escolha a finalidade da análise: Orçamento ou Elaboração de projeto');
+      return;
+    }
     setAnalisando(true);
     try {
-      const res = await analisarProjetoNaObra(arquivosComDisciplinas, nomeProjetoNovo.trim(), obraNova);
+      const res = await analisarProjetoNaObra(arquivosComDisciplinas, nomeProjetoNovo.trim(), obraNova, finalidadeNova);
       setNomeProjetoNovo('');
+      setFinalidadeNova('');
       popularAnalise(res.data);
       navigate(`/obras/analise/${res.data.id}`);
       toast.success(`Projeto analisado: ${res.data.ambientes.length} ambientes, ${res.data.cameras.total} câmeras`);
@@ -209,6 +227,7 @@ export default function Compatibilizacao() {
       materiais: analise.materiais.map(({ id: _id, ...m }) => m),
       funcionamento: analise.funcionamento ?? '',
       pontos_por_disciplina: analise.pontosPorDisciplina ?? [],
+      finalidade: analise.finalidade || 'orcamento',
     };
     // em fila: duas gravações ao mesmo tempo mandariam a mesma versão e a
     // segunda seria recusada como conflito (falso alarme)
@@ -231,7 +250,7 @@ export default function Compatibilizacao() {
       }
     });
     return filaSalvarRef.current;
-  }, [analise?.id, analise?.cliente, analise?.nomeProjeto, analise?.servicos, analise?.materiais, analise?.funcionamento, analise?.pontosPorDisciplina]);
+  }, [analise?.id, analise?.cliente, analise?.nomeProjeto, analise?.servicos, analise?.materiais, analise?.funcionamento, analise?.pontosPorDisciplina, analise?.finalidade]);
 
   // Reseta o "já assentou" toda vez que o id muda (nova análise carregada) —
   // assim a primeira renderização de cada análise não dispara um autosave à toa.
@@ -251,7 +270,7 @@ export default function Compatibilizacao() {
     pendenteRef.current = true;
     const timer = setTimeout(() => { pendenteRef.current = false; salvarAgora(); }, 1500);
     return () => clearTimeout(timer);
-  }, [analise?.servicos, analise?.materiais, analise?.cliente, analise?.nomeProjeto, analise?.funcionamento, analise?.pontosPorDisciplina]);
+  }, [analise?.servicos, analise?.materiais, analise?.cliente, analise?.nomeProjeto, analise?.funcionamento, analise?.pontosPorDisciplina, analise?.finalidade]);
 
   // Salva o que ficou pendente ao sair da tela. O efeito acima cancela o timer
   // quando o componente desmonta, então quem editasse e trocasse de tela em
@@ -376,21 +395,28 @@ export default function Compatibilizacao() {
     }
   }
 
-  // Cria o laudo/projeto da disciplina a partir desta análise e abre na aba
-  // "Laudos e projetos" (o aviso lista o que foi estimado e precisa conferir)
-  const [criandoLaudo, setCriandoLaudo] = useState('');
-  async function calcularPelaNorma(d) {
-    setCriandoLaudo(d.skill);
+  // Cria o PROJETO da disciplina a partir desta análise (nunca laudo) e abre
+  // na aba "Projetos por disciplina" (o aviso lista o que foi estimado e
+  // precisa conferir). Se a análise já tem o projeto da disciplina, abre o existente.
+  const [criandoProjeto, setCriandoProjeto] = useState('');
+  async function elaborarProjeto(d) {
+    const existente = (analise.projetos || []).find(p => p.disciplina === d.skill && p.tipo === 'projeto');
+    if (existente) { navigate(`/obras?aba=projetos&laudo=${existente.id}`); return; }
+    setCriandoProjeto(d.skill);
     try {
       await salvarAgora();
-      const r = await criarLaudoDeAnalise(analise.id, d.skill);
+      const r = await criarProjetoDeAnalise(analise.id, d.skill);
       (r.data.avisos || []).forEach(a => toast(a, { duration: 12000, icon: /\[CONFERIR\]/.test(a) ? '⚠️' : 'ℹ️' }));
-      navigate(`/obras?aba=laudos&laudo=${r.data.id}`);
+      navigate(`/obras?aba=projetos&laudo=${r.data.id}`);
     } catch (err) {
-      toast.error(err.response?.data?.erro || 'Erro ao preparar o cálculo');
+      toast.error(err.response?.data?.erro || 'Erro ao preparar o projeto');
     } finally {
-      setCriandoLaudo('');
+      setCriandoProjeto('');
     }
+  }
+
+  function alterarFinalidade(valor) {
+    setAnalise(a => ({ ...a, finalidade: valor }));
   }
 
   // O rótulo traz o prefixo do código (CAMx/Rx/Ax) pra nunca deixar ambíguo
@@ -420,6 +446,44 @@ export default function Compatibilizacao() {
     : 0;
   const abrirNoEditor = () => navigate(`/propostas/editar/${analise.propostaId}`);
 
+  // Finalidade (2.1) e as disciplinas da análise que têm skill (podem virar projeto)
+  const elaboracao = analise?.finalidade === 'elaboracao';
+  const disciplinasComSkill = analise ? [...new Map(DISCIPLINAS
+    .filter(d => d.skill && (analise.disciplinas || []).includes(d.chave))
+    .map(d => [d.skill, d])).values()] : [];
+  const projetoDa = (skill) => (analise?.projetos || []).find(p => p.disciplina === skill && p.tipo === 'projeto');
+
+  // Cartão "Elaborar projeto por disciplina" (foco na Elaboração de projeto) ou
+  // "Dimensionar pela norma (projeto)" (opção secundária no Orçamento)
+  const cartaoProjetos = (principal) => (
+    <div style={{ ...card, ...(principal ? { borderColor: '#2f4f6f' } : {}) }} data-testid="cartao-projetos">
+      <h3 style={{ ...tituloSecao, color: principal ? '#8ab4f8' : '#c9a227', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <DraftingCompass size={16} /> {principal ? 'Elaborar projeto por disciplina' : 'Dimensionar pela norma (projeto) — opcional'}
+      </h3>
+      <p style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.6 }}>
+        {principal
+          ? <>Cada disciplina vira um <b>projeto</b> (aba "Projetos por disciplina") já preenchido com o que foi lido deste PDF: calcule pela norma, gere o memorial e os desenhos e escolha as <b>entregas</b> — definições técnicas, as-built, DXF (abre no AutoCAD), QElectroTech e PDF. <b>Não gera laudo</b>: laudo é pedido quando necessário, em Obras › Laudos.</>
+          : <>Cria o <b>projeto</b> da disciplina (não é laudo) já preenchido com o que foi lido deste PDF, para quantificar melhor pela norma e gerar o orçamento de execução lá. O que for estimado vem marcado para conferir.</>}
+      </p>
+      {disciplinasComSkill.length === 0 ? (
+        <p style={{ fontSize: 12, color: '#666', fontStyle: 'italic', margin: 0 }}>Nenhuma disciplina desta análise tem cálculo pela norma ainda.</p>
+      ) : (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {disciplinasComSkill.map(d => {
+            const existente = projetoDa(d.skill);
+            return (
+              <button key={d.skill} onClick={() => elaborarProjeto(d)} disabled={!!criandoProjeto}
+                style={{ ...btnSecundario, padding: '9px 14px', fontSize: 12, ...(existente ? { borderStyle: 'solid', borderColor: '#2f4f6f', color: '#8ab4f8' } : {}) }}
+                title={existente ? `Abre o projeto #${existente.id} desta disciplina` : 'Cria o projeto da disciplina a partir desta análise'}>
+                {criandoProjeto === d.skill ? 'Preparando...' : existente ? `Abrir projeto — ${d.nome}` : `${principal ? 'Elaborar projeto — ' : ''}${d.nome}`}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div>
       {analise && (
@@ -443,6 +507,7 @@ export default function Compatibilizacao() {
             <thead>
               <tr style={{ fontSize: 11, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', textAlign: 'left' }}>
                 <th style={{ padding: '4px 8px 8px 0' }}>Cliente</th>
+                <th style={{ padding: '4px 8px 8px 0' }}>Finalidade</th>
                 <th style={{ padding: '4px 8px 8px 0' }}>Disciplinas</th>
                 <th style={{ padding: '4px 8px 8px 0' }}>Atualizado em</th>
                 <th style={{ padding: '4px 8px 8px 0' }}>Pendências</th>
@@ -460,6 +525,7 @@ export default function Compatibilizacao() {
                   }}
                 >
                   <td style={{ padding: '8px 8px 8px 0' }}>{item.cliente_nome || '—'}</td>
+                  <td style={{ padding: '8px 8px 8px 0', color: item.finalidade === 'elaboracao' ? '#8ab4f8' : '#c9a227', whiteSpace: 'nowrap' }}>{rotuloFinalidade(item.finalidade)}</td>
                   <td style={{ padding: '8px 8px 8px 0', color: '#999' }}>
                     {(item.disciplinas || []).map(c => DISCIPLINAS.find(d => d.chave === c)?.nome || c).join(', ') || '—'}
                   </td>
@@ -487,6 +553,27 @@ export default function Compatibilizacao() {
             (ex.: CFTV 1 + CFTV 2 do mesmo cliente), e cada uma pode ser de uma disciplina diferente. Arquivos da
             mesma disciplina continuam somando entre si (câmeras de CFTV 1 + CFTV 2, por exemplo); um arquivo de
             outra disciplina nunca entra na contagem que não é dele.
+          </p>
+
+          {/* Finalidade (2.1): obrigatória — define a tela da análise. Nenhuma gera laudo. */}
+          <div style={{ fontSize: 11, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 }}>Para que é esta análise?</div>
+          <div role="radiogroup" aria-label="Finalidade da análise" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10, marginBottom: 8 }}>
+            {[...FINALIDADES].reverse().map(f => {
+              const marcada = finalidadeNova === f.valor;
+              return (
+                <label key={f.valor} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 8, cursor: 'pointer',
+                  border: `1px solid ${marcada ? (f.valor === 'elaboracao' ? '#2f4f6f' : '#5a4a12') : '#2a2a2a'}`, background: marcada ? '#161616' : 'transparent' }}>
+                  <input type="radio" name="finalidade" value={f.valor} checked={marcada} onChange={() => setFinalidadeNova(f.valor)} style={{ width: 'auto', marginTop: 3 }} />
+                  <span>
+                    <b style={{ fontSize: 13, color: marcada ? (f.valor === 'elaboracao' ? '#8ab4f8' : '#c9a227') : '#ccc' }}>{f.rotulo}</b>
+                    <span style={{ display: 'block', fontSize: 12, color: '#888', lineHeight: 1.5, marginTop: 2 }}>{f.descricao}</span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+          <p style={{ fontSize: 11, color: '#666', margin: '0 0 14px' }}>
+            Análise de projeto não gera laudo. Laudo (inspeção, vistoria, medição) é pedido quando necessário, em Obras › Laudos.
           </p>
 
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: arquivosComDisciplinas.length > 0 ? 18 : 0, flexWrap: 'wrap' }}>
@@ -542,6 +629,13 @@ export default function Compatibilizacao() {
                 <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Cliente</div>
                 <input value={analise.cliente || ''} onChange={e => atualizarCliente(e.target.value)} placeholder="Nome do cliente" style={{ fontSize: 15, fontWeight: 700, color: '#c9a227', background: 'transparent', border: 'none', padding: '2px 0' }} />
               </div>
+              <div style={{ flex: '0 1 230px' }} title="Muda a tela desta análise: Orçamento (itens e gerar orçamento) ou Elaboração de projeto (projeto por disciplina e entregas). Nenhuma gera laudo.">
+                <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Finalidade</div>
+                <Select aria-label="Finalidade da análise" value={analise.finalidade || 'orcamento'} onChange={e => alterarFinalidade(e.target.value)}
+                  style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, color: elaboracao ? '#8ab4f8' : '#c9a227', padding: '6px 8px', fontSize: 13, fontWeight: 700 }}>
+                  {FINALIDADES.map(f => <option key={f.valor} value={f.valor}>{f.rotulo}</option>)}
+                </Select>
+              </div>
               {analise.obra && (
                 <div style={{ flex: '0 1 260px' }}>
                   <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Obra</div>
@@ -558,7 +652,10 @@ export default function Compatibilizacao() {
             </div>
           </div>
 
-          <div style={card}>
+          {/* Elaboração de projeto: o foco é o projeto por disciplina e as entregas */}
+          {elaboracao && cartaoProjetos(true)}
+
+          {!elaboracao && <div style={card}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
               <h3 style={{ ...tituloSecao, flex: 1, marginBottom: 0 }}>Estimativa pelo que foi extraído</h3>
               {analise.propostaId && (
@@ -577,7 +674,7 @@ export default function Compatibilizacao() {
               referência ou material sem correspondência no catálogo entra como R$ 0,00). Quantidades, preços, pesquisa
               de mercado e referências são revisados no editor do orçamento — o valor que vale é o da proposta.
             </p>
-          </div>
+          </div>}
 
           <div style={card}>
             <h3 style={tituloSecao}>Funcionamento do Projeto</h3>
@@ -681,67 +778,66 @@ export default function Compatibilizacao() {
             </div>
           )}
 
-          <div style={card}>
-            <h3 style={tituloSecao}>Serviços (Mão de Obra) — extraídos do projeto</h3>
-            <p style={{ fontSize: 12, color: '#666', marginBottom: 10, lineHeight: 1.6 }}>
-              Leitura do que a análise montou a partir do PDF. Quantidade, preço, pesquisa de mercado e referências são
-              revisados no editor do orçamento ("Gerar orçamento e abrir no editor", abaixo). Marque "Já pronto" para o que
-              não faz parte do seu escopo (ex.: cabeamento já passado) — sai do orçamento e do relatório como pendência.
-            </p>
-            <TabelaItensLeitura tipo="servico" itens={analise.servicos} disciplinas={DISCIPLINAS}
-              onPronto={(id, v) => alternarPronto('servicos', id, v)} />
-          </div>
-
-          <div style={card}>
-            <h3 style={tituloSecao}>Materiais / Equipamentos — extraídos do projeto</h3>
-            {analise.materiais.length === 0 ? (
-              <p style={{ fontSize: 13, color: '#666', fontStyle: 'italic' }}>Nenhum material extraído do projeto — lance os materiais no editor do orçamento (catálogo ou digitados).</p>
-            ) : (
-              <TabelaItensLeitura tipo="material" itens={analise.materiais} disciplinas={DISCIPLINAS}
-                onPronto={(id, v) => alternarPronto('materiais', id, v)} />
-            )}
-          </div>
-
-          {/* Ponte PDF → skill: abre o cálculo normativo da disciplina já preenchido com o que o PDF tem */}
           {(() => {
-            const comSkill = DISCIPLINAS.filter(d => d.skill && (analise.disciplinas || []).includes(d.chave));
-            const skills = [...new Map(comSkill.map(d => [d.skill, d])).values()];
-            if (!skills.length) return null;
-            return (
-              <div style={card}>
-                <h3 style={{ fontSize: 14, color: '#c9a227', marginBottom: 6 }}>Calcular pela norma</h3>
-                <p style={{ fontSize: 12, color: '#777', marginBottom: 10 }}>
-                  Abre o projeto/laudo da disciplina já preenchido com o que foi lido deste PDF (ambientes, câmeras, pontos, quadro de cargas).
-                  O que for estimado vem marcado para conferir; depois é só calcular, gerar os documentos e o orçamento detalhado.
-                </p>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {skills.map(d => (
-                    <button key={d.skill} onClick={() => calcularPelaNorma(d)} disabled={!!criandoLaudo} style={{ ...btnSecundario, padding: '9px 14px', fontSize: 12 }}>
-                      {criandoLaudo === d.skill ? 'Preparando...' : d.nome}
-                    </button>
-                  ))}
+            const tabelas = (
+              <>
+                <div style={card}>
+                  <h3 style={tituloSecao}>Serviços (Mão de Obra) — extraídos do projeto</h3>
+                  <p style={{ fontSize: 12, color: '#666', marginBottom: 10, lineHeight: 1.6 }}>
+                    Leitura do que a análise montou a partir do PDF. Quantidade, preço, pesquisa de mercado e referências são
+                    revisados no editor do orçamento ("Gerar orçamento e abrir no editor", abaixo). Marque "Já pronto" para o que
+                    não faz parte do seu escopo (ex.: cabeamento já passado) — sai do orçamento e do relatório como pendência.
+                  </p>
+                  <TabelaItensLeitura tipo="servico" itens={analise.servicos} disciplinas={DISCIPLINAS}
+                    onPronto={(id, v) => alternarPronto('servicos', id, v)} />
                 </div>
-              </div>
+
+                <div style={card}>
+                  <h3 style={tituloSecao}>Materiais / Equipamentos — extraídos do projeto</h3>
+                  {analise.materiais.length === 0 ? (
+                    <p style={{ fontSize: 13, color: '#666', fontStyle: 'italic' }}>Nenhum material extraído do projeto — lance os materiais no editor do orçamento (catálogo ou digitados).</p>
+                  ) : (
+                    <TabelaItensLeitura tipo="material" itens={analise.materiais} disciplinas={DISCIPLINAS}
+                      onPronto={(id, v) => alternarPronto('materiais', id, v)} />
+                  )}
+                </div>
+              </>
             );
+            // Elaboração de projeto: os itens do PDF ficam recolhidos, só como referência
+            return elaboracao ? (
+              <details style={{ ...card, padding: '14px 22px' }}>
+                <summary style={{ cursor: 'pointer', fontSize: 13, color: '#999', fontWeight: 700 }}>
+                  Itens extraídos do PDF (referência) — {analise.servicos.length} serviço(s), {analise.materiais.length} material(is)
+                </summary>
+                <div style={{ marginTop: 14 }}>{tabelas}</div>
+              </details>
+            ) : tabelas;
           })()}
+
+          {/* Orçamento: dimensionar pela norma é opção secundária — cria um PROJETO, não laudo */}
+          {!elaboracao && disciplinasComSkill.length > 0 && cartaoProjetos(false)}
 
           <div style={{ ...card, display: 'flex', justifyContent: 'flex-end', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, color: '#666', marginRight: 'auto', lineHeight: 1.5 }}>
-              {analise.propostaNumero
-                ? <>Vinculada ao orçamento <b style={{ color: '#c9a227' }}>{analise.propostaNumero}</b>.</>
-                : 'O orçamento é revisado no editor de propostas.'}
-              {foraPorQuantidade > 0 && <><br /><span style={{ color: '#a08a3a' }}>{foraPorQuantidade} item(ns) com quantidade 0 ficam fora do rascunho — o editor lista para incluir.</span></>}
+              {elaboracao
+                ? <>Elaboração de projeto: o orçamento de execução sai do projeto de cada disciplina.{analise.propostaNumero && <> Esta análise já tem o orçamento <b style={{ color: '#c9a227' }}>{analise.propostaNumero}</b>.</>}</>
+                : analise.propostaNumero
+                  ? <>Vinculada ao orçamento <b style={{ color: '#c9a227' }}>{analise.propostaNumero}</b>.</>
+                  : 'O orçamento é revisado no editor de propostas.'}
+              {!elaboracao && foraPorQuantidade > 0 && <><br /><span style={{ color: '#a08a3a' }}>{foraPorQuantidade} item(ns) com quantidade 0 ficam fora do rascunho — o editor lista para incluir.</span></>}
             </span>
             {analise.propostaId && (
               <button onClick={abrirNoEditor} style={{ ...btnSecundario, padding: '13px 18px', fontSize: 13 }}>
                 <ExternalLink size={14} style={{ marginRight: 6 }} /> Abrir no editor
               </button>
             )}
-            <button onClick={gerarOrcamento} disabled={gerandoOrcamento} style={{ ...btnSecundario, padding: '13px 20px', fontSize: 13, borderStyle: 'solid', borderColor: '#c9a227', color: '#c9a227' }}
-              title={analise.propostaNumero ? 'Substitui os itens da proposta pelos desta análise e abre o editor' : 'Cria a proposta rascunho com os itens desta análise e abre o editor'}>
-              <Receipt size={14} style={{ marginRight: 6 }} />
-              {gerandoOrcamento ? 'Gerando...' : analise.propostaNumero ? `Atualizar orçamento (${analise.propostaNumero}) e abrir` : 'Gerar orçamento e abrir no editor'}
-            </button>
+            {!elaboracao && (
+              <button onClick={gerarOrcamento} disabled={gerandoOrcamento} style={{ ...btnSecundario, padding: '13px 20px', fontSize: 13, borderStyle: 'solid', borderColor: '#c9a227', color: '#c9a227' }}
+                title={analise.propostaNumero ? 'Substitui os itens da proposta pelos desta análise e abre o editor' : 'Cria a proposta rascunho com os itens desta análise e abre o editor'}>
+                <Receipt size={14} style={{ marginRight: 6 }} />
+                {gerandoOrcamento ? 'Gerando...' : analise.propostaNumero ? `Atualizar orçamento (${analise.propostaNumero}) e abrir` : 'Gerar orçamento e abrir no editor'}
+              </button>
+            )}
             <button onClick={baixarRelatorio} disabled={gerando} style={{ ...btnPrimario, padding: '13px 26px', fontSize: 13 }}>
               <FileDown size={14} style={{ marginRight: 6 }} /> {gerando ? 'Gerando...' : 'Baixar Relatório PDF'}
             </button>
