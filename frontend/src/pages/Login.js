@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
 
@@ -10,6 +10,11 @@ export default function Login() {
   const [erro, setErro] = useState('');
   const { entrar } = useAuth();
   const navigate = useNavigate();
+  // ?volta=/campo/... — o app de campo manda para cá e volta para a mesma tela.
+  // Só caminho interno (começa com "/" e não "//"), para o link não levar a outro site.
+  const volta = new URLSearchParams(useLocation().search).get('volta');
+  const destino = volta && volta.startsWith('/') && !volta.startsWith('//') && !volta.startsWith('/login')
+    ? volta : '/propostas?aba=editar';
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -21,7 +26,7 @@ export default function Login() {
     setCarregando(true);
     try {
       await entrar(email, senha);
-      navigate('/orcamento');
+      navigate(destino, { replace: true });
       toast.success('Bem-vindo ao sistema!');
     } catch (err) {
       setErro(err.response?.data?.erro || 'Erro ao fazer login');
@@ -37,7 +42,7 @@ export default function Login() {
     }}>
       <div style={{
         background: '#131313', border: '1px solid #1e1e1e',
-        borderRadius: 12, padding: '40px 36px', width: 420,
+        borderRadius: 12, padding: '40px 36px', width: 'calc(100% - 32px)', maxWidth: 420,
         boxShadow: '0 20px 60px #000000aa'
       }}>
         {/* Logo / Cabeçalho */}

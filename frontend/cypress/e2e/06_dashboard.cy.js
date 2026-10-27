@@ -1,9 +1,10 @@
 describe('Dashboard', () => {
   it('carrega os indicadores, troca a janela de tempo e navega a partir das últimas propostas', () => {
     cy.login();
-    cy.get('nav').contains('Dashboard').click();
+    // 2.0: o item do menu e o título viraram "Painel" (a rota continua /dashboard)
+    cy.get('nav').contains('Painel').click();
     cy.url().should('include', '/dashboard');
-    cy.contains('h2', 'Dashboard').should('be.visible');
+    cy.contains('h2', 'Painel').should('be.visible');
 
     cy.contains('Propostas emitidas').should('be.visible');
     cy.contains('Valor aprovado').should('be.visible');

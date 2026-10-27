@@ -1,5 +1,39 @@
-describe('Orçamento → Histórico (fluxo completo)', () => {
+// 2.0: o formulário de orçamento é a aba "Nova / editar" do grupo Propostas
+// (/propostas?aba=editar, edição em /propostas/editar/:id) e o antigo
+// Histórico é a aba "Propostas" (/propostas?aba=lista), primeira do grupo.
+function abrirListaDePropostas() {
+  cy.get('nav').contains('Propostas').click();
+  cy.url().should('include', '/propostas');
+  cy.contains('[role=tab]', 'Propostas').click();
+  cy.contains('h2', 'Propostas').should('be.visible');
+}
+
+describe('Orçamento → lista de propostas (fluxo completo)', () => {
   const clienteNome = `Cypress QA Orçamento ${Date.now()}`;
+
+  // Se um teste do meio falhar, a proposta de teste não fica no banco.
+  // Salvar a proposta também cadastra sozinho os itens digitados à mão no
+  // catálogo (material "Item Cypress Material" e serviço "Item Cypress
+  // Serviço"): desativa os dois pela API (o sistema não apaga de vez itens de
+  // catálogo — só desativa).
+  after(() => {
+    cy.login();
+    cy.api({ url: `/api/propostas?busca=${encodeURIComponent(clienteNome)}` }).then(({ body }) => {
+      (body.itens || []).filter(p => p.cliente_nome === clienteNome).forEach(p => {
+        cy.api({ method: 'DELETE', url: `/api/propostas/${p.id}`, failOnStatusCode: false });
+      });
+    });
+    cy.api({ url: `/api/materiais?busca=${encodeURIComponent('Item Cypress Material')}` }).then(({ body }) => {
+      (body.itens || []).filter(m => m.descricao === 'Item Cypress Material').forEach(m => {
+        cy.api({ method: 'DELETE', url: `/api/materiais/${m.id}`, failOnStatusCode: false });
+      });
+    });
+    cy.api({ url: '/api/servicos' }).then(({ body }) => {
+      (body.itens || []).filter(s => s.descricao === 'Item Cypress Serviço' && s.origem === 'proposta').forEach(s => {
+        cy.api({ method: 'PUT', url: `/api/servicos/${encodeURIComponent(s.codigo)}/ativo`, body: { ativo: false }, failOnStatusCode: false });
+      });
+    });
+  });
 
   it('monta um orçamento com materiais e mão de obra, calcula os totais e salva', () => {
     cy.login();
@@ -13,15 +47,15 @@ describe('Orçamento → Histórico (fluxo completo)', () => {
     // Item na seção "Materiais" (1ª seção): 2 x R$ 50,00 = R$ 100,00
     cy.get('button:contains("Adicionar item")').eq(0).click();
     cy.get('input[placeholder="Descrição do item"]').last().as('itemMaterial').type('Item Cypress Material');
-    cy.get('@itemMaterial').closest('div').find('input').eq(2).clear().type('2');
-    cy.get('@itemMaterial').closest('div').find('input').eq(4).clear().type('50');
+    cy.get('@itemMaterial').closest('div').parent().find('input').eq(2).clear().type('2');
+    cy.get('@itemMaterial').closest('div').parent().find('input').eq(4).clear().type('50');
 
     // Item na seção "Mão de Obra" (2ª seção): 1 x R$ 200,00 = R$ 200,00
     // (linha de mão de obra não tem NCM, então os índices dos campos mudam:
     // 0=descrição, 1=quantidade, 2=unidade, 3=valor unitário)
     cy.get('button:contains("Adicionar item")').eq(1).click();
     cy.get('input[placeholder="Descrição do item"]').last().as('itemServico').type('Item Cypress Serviço');
-    cy.get('@itemServico').closest('div').find('input').eq(3).clear().type('200');
+    cy.get('@itemServico').closest('div').parent().find('input').eq(3).clear().type('200');
 
     // Imposto sobre vendas 10% dos materiais (100) = 10; imposto sobre serviços 5% da mão de obra (200) = 10
     cy.contains('label', 'Imp. Vendas (%)').next('input').clear().type('10');
@@ -46,12 +80,11 @@ describe('Orçamento → Histórico (fluxo completo)', () => {
     cy.get('input[placeholder="Nome do cliente"]').should('have.value', clienteNome);
   });
 
-  it('encontra a proposta no Histórico, muda o status e baixa o PDF', () => {
+  it('encontra a proposta na lista de propostas, muda o status e baixa o PDF', () => {
     cy.login();
-    cy.get('nav').contains('Histórico').click();
-    cy.url().should('include', '/historico');
+    abrirListaDePropostas();
 
-    cy.get('input[placeholder*="Buscar por número"]').type(clienteNome);
+    cy.get('input[placeholder*="Número, cliente"]').type(clienteNome);
     cy.contains('tr', clienteNome, { timeout: 8000 }).should('contain', 'R$').click();
 
     cy.contains('h3', 'Proposta').should('be.visible');
@@ -68,10 +101,10 @@ describe('Orçamento → Histórico (fluxo completo)', () => {
     cy.get('h3').contains('Proposta').parent().find('button').click();
   });
 
-  it('edita a proposta pelo Histórico e confirma que o número não muda', () => {
+  it('edita a proposta pela lista de propostas e confirma que o número não muda', () => {
     cy.login();
-    cy.get('nav').contains('Histórico').click();
-    cy.get('input[placeholder*="Buscar por número"]').type(clienteNome);
+    abrirListaDePropostas();
+    cy.get('input[placeholder*="Número, cliente"]').type(clienteNome);
     cy.contains('tr', clienteNome, { timeout: 8000 }).click();
 
     cy.contains('h3', 'Proposta').invoke('text').then(texto => {
@@ -80,7 +113,7 @@ describe('Orçamento → Histórico (fluxo completo)', () => {
     });
 
     cy.contains('button', 'Editar').click();
-    cy.url().should('match', /\/orcamento\/\d+$/);
+    cy.url().should('match', /\/propostas\/editar\/\d+$/);
     cy.get('@numeroOriginal').then(numeroOriginal => {
       cy.contains('h2', `Editando Proposta ${numeroOriginal}`).should('be.visible');
     });
@@ -93,8 +126,8 @@ describe('Orçamento → Histórico (fluxo completo)', () => {
       cy.contains(new RegExp(`proposta ${numeroOriginal} salva`, 'i')).should('be.visible');
     });
 
-    cy.get('nav').contains('Histórico').click();
-    cy.get('input[placeholder*="Buscar por número"]').type(clienteNome);
+    abrirListaDePropostas();
+    cy.get('input[placeholder*="Número, cliente"]').type(clienteNome);
     cy.contains('tr', clienteNome, { timeout: 8000 }).click();
     cy.get('@numeroOriginal').then(numeroOriginal => {
       cy.contains('h3', `Proposta ${numeroOriginal}`).should('be.visible');
@@ -104,8 +137,8 @@ describe('Orçamento → Histórico (fluxo completo)', () => {
 
   it('remove a proposta de teste e confirma que sumiu da lista', () => {
     cy.login();
-    cy.get('nav').contains('Histórico').click();
-    cy.get('input[placeholder*="Buscar por número"]').type(clienteNome);
+    abrirListaDePropostas();
+    cy.get('input[placeholder*="Número, cliente"]').type(clienteNome);
     cy.contains('tr', clienteNome, { timeout: 8000 })
       .find('button[title="Excluir"]')
       .click();

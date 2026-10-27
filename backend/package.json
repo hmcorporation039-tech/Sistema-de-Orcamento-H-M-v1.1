@@ -1,13 +1,13 @@
 {
   "name": "hm-eng-backend",
-  "version": "1.8.3",
+  "version": "2.0.0",
   "description": "API H&M Engenharia - Sistema de Orçamentos",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "mcp": "node src/mcp/mcpServer.mjs",
-    "test": "node testes/leitorCotacoes.test.js && node testes/leitoresProjeto.test.js && node testes/seguranca.test.js && node testes/pdfVetorial.test.js && node testes/precosReferencia.test.js"
+    "test": "node testes/leitorCotacoes.test.js && node testes/leitoresProjeto.test.js && node testes/seguranca.test.js && node testes/pdfVetorial.test.js && node testes/precosReferencia.test.js && node testes/servicosBase.test.js && node testes/ia.test.js && node testes/rotinas.test.js && node testes/obras.test.js && node testes/bdiCurvaAbc.test.js && node testes/regressaoTotais.test.js && node testes/cronograma.test.js && node testes/aprovacao.test.js && node testes/composicoes.test.js && node testes/campo.test.js && node testes/nomeArquivoDownload.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",

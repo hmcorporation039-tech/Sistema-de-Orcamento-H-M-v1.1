@@ -68,7 +68,20 @@ function normalizarItem(it, ordem) {
 // item (ver aplicarAjustePercentual em Orcamento.js, no frontend), então o
 // efeito dele já chega aqui embutido nos próprios itens, sem precisar de
 // nenhum termo a mais na conta.
-function calcularTotais({ secoes, itens, bdi, imposto_venda, imposto_servico }) {
+//
+// BDI diferenciado (versão 2.0, Fase 3F — BDI pela fórmula do TCU): com
+// `bdi_materiais` preenchido, o BDI dos materiais usa esse percentual e o da
+// mão de obra continua `bdi` (o TCU pede BDI reduzido para mero fornecimento
+// de materiais e equipamentos). Sem ele (null/vazio — todas as propostas
+// antigas), a conta é EXATAMENTE a de antes: (materiais + mão de obra) × BDI.
+// Os impostos de venda/serviço continuam somados por fora, sobre o custo
+// direto; se o BDI foi calculado com os tributos dentro (fórmula do TCU, I),
+// o editor avisa para zerá-los — senão o imposto entra duas vezes.
+function bdiMateriaisDefinido(bdiMateriais) {
+  return bdiMateriais !== undefined && bdiMateriais !== null && bdiMateriais !== '' && Number.isFinite(Number(bdiMateriais));
+}
+
+function calcularTotais({ secoes, itens, bdi, bdi_materiais, imposto_venda, imposto_servico }) {
   const listaSecoes = Array.isArray(secoes) ? secoes : [];
   const listaItens = Array.isArray(itens) ? itens : [];
 
@@ -93,7 +106,8 @@ function calcularTotais({ secoes, itens, bdi, imposto_venda, imposto_servico }) 
   const percentualVenda = numeroSeguro(imposto_venda, 0);
   const percentualServico = numeroSeguro(imposto_servico, 0);
 
-  const valorBdi = arredondar((subtotalMateriais + subtotalMaoObra) * (percentualBdi / 100));
+  const bdiDetalhe = detalharBdi({ subtotalMateriais, subtotalMaoObra, bdi: percentualBdi, bdi_materiais });
+  const valorBdi = bdiDetalhe.valor_bdi;
   const valorImpostoVenda = arredondar(subtotalMateriais * (percentualVenda / 100));
   const valorImpostoServico = arredondar(subtotalMaoObra * (percentualServico / 100));
 
@@ -101,10 +115,28 @@ function calcularTotais({ secoes, itens, bdi, imposto_venda, imposto_servico }) 
     subtotal_materiais: subtotalMateriais,
     subtotal_mao_obra: subtotalMaoObra,
     valor_bdi: valorBdi,
+    // só existem com BDI diferenciado (não são gravados; o PDF mostra as duas linhas)
+    valor_bdi_materiais: bdiDetalhe.valor_bdi_materiais,
+    valor_bdi_mao_obra: bdiDetalhe.valor_bdi_mao_obra,
     valor_imposto_venda: valorImpostoVenda,
     valor_imposto_servico: valorImpostoServico,
     total: arredondar(subtotalMateriais + subtotalMaoObra + valorBdi + valorImpostoVenda + valorImpostoServico),
   };
 }
 
-module.exports = { calcularTotais, normalizarItem, numeroSeguro, arredondar, ehMaoDeObra };
+// Valor do BDI a partir dos subtotais. Sem BDI diferenciado, a expressão é a
+// mesma de sempre (não troque por mat×b + mão×b: o arredondamento pode mudar
+// um centavo). Usado também pelo PDF para mostrar as duas linhas de BDI.
+function detalharBdi({ subtotalMateriais, subtotalMaoObra, bdi, bdi_materiais }) {
+  const mat = numeroSeguro(subtotalMateriais);
+  const mao = numeroSeguro(subtotalMaoObra);
+  const percentualBdi = numeroSeguro(bdi, 0);
+  if (!bdiMateriaisDefinido(bdi_materiais)) {
+    return { diferenciado: false, valor_bdi: arredondar((mat + mao) * (percentualBdi / 100)), valor_bdi_materiais: null, valor_bdi_mao_obra: null };
+  }
+  const valorMateriais = arredondar(mat * (Number(bdi_materiais) / 100));
+  const valorMaoObra = arredondar(mao * (percentualBdi / 100));
+  return { diferenciado: true, valor_bdi: arredondar(valorMateriais + valorMaoObra), valor_bdi_materiais: valorMateriais, valor_bdi_mao_obra: valorMaoObra };
+}
+
+module.exports = { calcularTotais, detalharBdi, bdiMateriaisDefinido, normalizarItem, numeroSeguro, arredondar, ehMaoDeObra };

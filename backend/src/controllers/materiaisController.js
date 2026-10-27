@@ -3,7 +3,7 @@ const { extrairNotaFiscal } = require('../utils/notaFiscalParser');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
 const { comTransacao } = require('../utils/transacao');
 const { compararComCatalogo } = require('../utils/compatibilizacaoAnalise');
-const { verificarPastaFornecedores } = require('../services/cotacaoFornecedorService');
+const rotinas = require('../services/rotinas');
 const { registrarAuditoria } = require('../utils/auditoria');
 const { registrarHistoricoPreco } = require('../services/catalogoMateriais');
 
@@ -193,7 +193,8 @@ async function categorias(req, res) {
 // salvar um PDF na pasta e não quer esperar o ciclo automático nem reiniciar o backend.
 async function verificarFornecedoresAgora(req, res) {
   try {
-    const resumo = await verificarPastaFornecedores();
+    // pelo registro comum das rotinas (services/rotinas.js) — aparece no painel de Integrações
+    const resumo = await rotinas.executarRotina('fornecedores-pastas', { origem: 'manual', usuarioId: req.usuario?.id });
     res.json(resumo);
   } catch (err) {
     console.error('Erro ao verificar pasta de orçamentos de fornecedores:', err);

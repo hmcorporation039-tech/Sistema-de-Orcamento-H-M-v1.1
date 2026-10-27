@@ -2,6 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const pool = require('../config/database');
+const { contentDisposition } = require('../utils/nomeArquivoDownload');
 const { registrarAuditoria } = require('../utils/auditoria');
 const { listarDisciplinas, motorDaDisciplina, cad } = require('../utils/disciplinasLaudo');
 const { compararComCatalogo } = require('../utils/compatibilizacaoAnalise');
@@ -15,7 +16,8 @@ const { tipoPorConteudo } = require('../utils/tipoArquivo');
 const { versaoDoPedido, responderConflitoOuAusente } = require('../utils/versao');
 const { dadosDaAnalise, tipoAmbiente } = require('../utils/ponteAnaliseSkill');
 const { buscarPrecosReferencia, segmentoDoCliente } = require('../utils/precosMaoDeObraReferencia');
-const { sincronizarLaudo, pastaDoLaudo, resumoPasta, pedidoLocal, seguro } = require('../services/pastasRegistros');
+const { sincronizarLaudo, pastaDoLaudo, resumoPasta, pedidoLocal, seguro, caminhoRegistrado, excluirPastaDoItem } = require('../services/pastasRegistros');
+const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
 
 // Laudos e projetos por disciplina (aba Análise de Projeto). O cálculo e os
 // documentos vêm da skill da disciplina (utils/disciplinasLaudo.js) — o mesmo
@@ -71,16 +73,27 @@ async function modelo(req, res) {
 async function listar(req, res) {
   try {
     const params = [];
-    let where = '';
+    const cond = [];
     if (req.query.disciplina) {
       params.push(String(req.query.disciplina));
-      where = 'WHERE l.disciplina = $1';
+      cond.push(`l.disciplina = $${params.length}`);
     }
+    // ?obra_id=ID (laudos da obra) ou ?obra_id=sem (sem obra)
+    if (req.query.obra_id === 'sem') cond.push('l.obra_id IS NULL');
+    else if (req.query.obra_id) {
+      const n = Number(req.query.obra_id);
+      if (!Number.isInteger(n) || n < 1) return res.status(400).json({ erro: 'Obra inválida.' });
+      params.push(n);
+      cond.push(`l.obra_id = $${params.length}`);
+    }
+    const where = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
     const { rows } = await pool.query(
       `SELECT l.id, l.disciplina, l.titulo, l.cliente_nome, l.propostas, l.gerar_orcamento, l.atualizado_em,
               l.dados->'meta'->>'revisao' AS revisao, u.nome AS usuario_nome,
-              (SELECT count(*)::int FROM laudos_projetos_fotos f WHERE f.laudo_id = l.id) AS total_fotos
+              (SELECT count(*)::int FROM laudos_projetos_fotos f WHERE f.laudo_id = l.id) AS total_fotos,
+              l.obra_id, l.analise_id, ${sqlObraJson('ob')} AS obra
          FROM laudos_projetos l LEFT JOIN usuarios u ON u.id = l.usuario_id
+         LEFT JOIN obras ob ON ob.id = l.obra_id
          ${where}
         ORDER BY l.atualizado_em DESC LIMIT 300`,
       params
@@ -99,7 +112,8 @@ async function buscarUm(req, res) {
       'SELECT id, nome_arquivo, mime, octet_length(conteudo) AS tamanho FROM laudos_projetos_fotos WHERE laudo_id = $1 ORDER BY id',
       [laudo.id]
     );
-    res.json({ ...laudo, fotos: fotos.rows, caminhoPasta: laudo.pasta ? P.caminhoDe('laudo', laudo.pasta) : null });
+    const obra = laudo.obra_id ? (await pool.query(`SELECT ${sqlObraJson('o')} AS obra FROM obras o WHERE o.id = $1`, [laudo.obra_id])).rows[0]?.obra || null : null;
+    res.json({ ...laudo, obra, fotos: fotos.rows, caminhoPasta: await caminhoRegistrado('laudo', laudo) });
   } catch (err) {
     responderErro(res, err, 'buscar');
   }
@@ -119,12 +133,16 @@ async function criar(req, res) {
     const erro = validarDados(dados);
     if (erro) return res.status(400).json({ erro });
     const gerarOrc = req.body.gerar_orcamento !== false;
+    // obra (2.0): laudo novo ligado à obra → pasta em Obras\<obra>\Laudos\<disciplina>
+    const leituraObra = lerObraId(req.body);
+    const erroObra = await conferirObra(pool, leituraObra, { usuario: req.usuario });
+    if (erroObra) return res.status(400).json({ erro: erroObra });
     const { rows } = await pool.query(
-      `INSERT INTO laudos_projetos (disciplina, titulo, cliente_nome, dados, usuario_id, gerar_orcamento)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [disciplina, tituloDe(dados), dados.cliente?.nome || null, dados, req.usuario.id, gerarOrc]
+      `INSERT INTO laudos_projetos (disciplina, titulo, cliente_nome, dados, usuario_id, gerar_orcamento, obra_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [disciplina, tituloDe(dados), dados.cliente?.nome || null, dados, req.usuario.id, gerarOrc, leituraObra.valor]
     );
-    await sincronizarLaudo(rows[0]); // cria Arquivos do Sistema\Laudos\<nome> com os dados
+    await sincronizarLaudo(rows[0]); // cria Arquivos do Sistema\Laudos\<nome> (ou a pasta na obra) com os dados
     res.status(201).json({ id: rows[0].id });
   } catch (err) {
     responderErro(res, err, 'criar');
@@ -153,10 +171,19 @@ async function criarDeAnalise(req, res) {
     if (erro) return res.status(400).json({ erro });
     // confere já que o cálculo roda com os dados mapeados (erro vira aviso, o formulário corrige)
     try { motor.processar(dados); } catch (e) { avisos.push(`O cálculo ainda não fecha com os dados lidos: ${e.message}`); }
+    // obra (2.0): herda a obra da análise de origem (obra_id no corpo tem prioridade)
+    // e guarda de qual análise veio (analise_id)
+    const leituraObra = lerObraId(req.body);
+    const erroObra = await conferirObra(pool, leituraObra, { usuario: req.usuario });
+    if (erroObra) return res.status(400).json({ erro: erroObra });
+    let obraId = leituraObra.presente ? leituraObra.valor : (linha.obra_id || null);
+    // herdada da análise: só se este usuário puder ligar itens àquela obra
+    if (!leituraObra.presente && obraId
+      && await conferirObra(pool, { presente: true, valor: obraId }, { usuario: req.usuario })) obraId = null;
     const { rows } = await pool.query(
-      `INSERT INTO laudos_projetos (disciplina, titulo, cliente_nome, dados, usuario_id, gerar_orcamento)
-       VALUES ($1,$2,$3,$4,$5,true) RETURNING *`,
-      [disciplina, tituloDe(dados), dados.cliente?.nome || null, dados, req.usuario.id]
+      `INSERT INTO laudos_projetos (disciplina, titulo, cliente_nome, dados, usuario_id, gerar_orcamento, obra_id, analise_id, cliente_id)
+       VALUES ($1,$2,$3,$4,$5,true,$6,$7,$8) RETURNING *`,
+      [disciplina, tituloDe(dados), dados.cliente?.nome || null, dados, req.usuario.id, obraId, linha.id, linha.cliente_id || null]
     );
     await sincronizarLaudo(rows[0]);
     res.status(201).json({ id: rows[0].id, avisos });
@@ -172,11 +199,16 @@ async function atualizar(req, res) {
     if (erro) return res.status(400).json({ erro });
     // gerar_orcamento: false = "só laudo" (sem orçamento de material); ausente mantém o atual
     const gerarOrc = typeof req.body.gerar_orcamento === 'boolean' ? req.body.gerar_orcamento : null;
+    // obra (2.0): obra_id presente liga/desliga (null); ausente mantém
+    const leituraObra = lerObraId(req.body);
+    const erroObra = await conferirObra(pool, leituraObra, { usuario: req.usuario, tabela: 'laudos_projetos', id: req.params.id });
+    if (erroObra) return res.status(400).json({ erro: erroObra });
     const { rows } = await pool.query(
       `UPDATE laudos_projetos SET dados = $1, titulo = $2, cliente_nome = $3, gerar_orcamento = COALESCE($5, gerar_orcamento),
+              obra_id = CASE WHEN $7::boolean THEN $8::int ELSE obra_id END,
               atualizado_em = NOW(), versao = versao + 1
         WHERE id = $4 AND ($6::int IS NULL OR versao = $6) RETURNING *`,
-      [dados, tituloDe(dados), dados.cliente?.nome || null, req.params.id, gerarOrc, versaoDoPedido(req.body)]
+      [dados, tituloDe(dados), dados.cliente?.nome || null, req.params.id, gerarOrc, versaoDoPedido(req.body), leituraObra.presente, leituraObra.valor]
     );
     if (!rows[0]) return responderConflitoOuAusente(pool, res, 'laudos_projetos', req.params.id);
     // pasta acompanha o nome do laudo (renomeia) e "Dados do laudo.json" é sobrescrito
@@ -193,7 +225,7 @@ async function remover(req, res) {
     // o formulário inteiro vai para a auditoria (as fotos ficam na pasta, que vai para _Excluídos)
     if (rows[0]) await registrarAuditoria(pool, { entidade: 'laudos_projetos', entidadeId: rows[0].id, acao: 'excluir', usuarioId: req.usuario.id, detalhes: { laudo: rows[0] } });
     // a pasta não é apagada: vai para Arquivos do Sistema\_Excluídos
-    if (rows[0]) await seguro(`excluir laudo ${req.params.id}`, () => P.moverParaExcluidos('laudo', rows[0].pasta));
+    if (rows[0]) await excluirPastaDoItem('laudo', rows[0]); // pasta antiga ou dentro da obra
     res.json({ ok: true });
   } catch (err) {
     responderErro(res, err, 'remover');
@@ -290,9 +322,8 @@ async function documento(req, res) {
     const tipo = req.params.tipo;
     if (!motor.documentos.some(d => d.tipo === tipo)) return res.status(400).json({ erro: 'Tipo de documento inválido.' });
     const { gerados: [gerado] } = await gerarDocumentosDoLaudo(laudo, [tipo]);
-    const ascii = gerado.nomeArquivo.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '');
     res.setHeader('Content-Type', gerado.mime);
-    res.setHeader('Content-Disposition', `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(gerado.nomeArquivo)}`);
+    res.setHeader('Content-Disposition', contentDisposition(gerado.nomeArquivo));
     res.setHeader('X-Nome-Arquivo', encodeURIComponent(gerado.nomeArquivo));
     res.send(gerado.buffer);
   } catch (err) {
@@ -412,7 +443,7 @@ async function gerarPlantaDxf(req, res) {
     });
     const nome = `${nomeSeguroArquivo(laudo.titulo)} - Planta ${laudo.disciplina}.dxf`;
     await seguro(`planta laudo ${laudo.id}`, async () => P.gravarArquivo(await pastaDoLaudo(laudo), nome, Buffer.from(out.dxf, 'utf8')));
-    res.set({ 'Content-Type': 'application/dxf', 'Content-Disposition': `attachment; filename="${encodeURIComponent(nome)}"`, 'X-Ambientes-Nao-Encontrados': encodeURIComponent(out.naoEncontrados.join('; ')) });
+    res.set({ 'Content-Type': 'application/dxf', 'Content-Disposition': contentDisposition(nome), 'X-Nome-Arquivo': encodeURIComponent(nome), 'X-Ambientes-Nao-Encontrados': encodeURIComponent(out.naoEncontrados.join('; ')) });
     res.send(Buffer.from(out.dxf, 'utf8'));
   } catch (err) {
     responderErro(res, err, 'gerar a planta');
@@ -432,7 +463,7 @@ async function gerarUnifilarQet(req, res) {
     const { xml } = gerar(processarComMotor(motor, laudo.dados), { quadro: 'QD-01' });
     const nome = `${nomeSeguroArquivo(laudo.titulo)} - Unifilar.qet`;
     await seguro(`unifilar laudo ${laudo.id}`, async () => P.gravarArquivo(await pastaDoLaudo(laudo), nome, Buffer.from(xml, 'utf8')));
-    res.set({ 'Content-Type': 'application/xml', 'Content-Disposition': `attachment; filename="${encodeURIComponent(nome)}"` });
+    res.set({ 'Content-Type': 'application/xml', 'Content-Disposition': contentDisposition(nome), 'X-Nome-Arquivo': encodeURIComponent(nome) });
     res.send(Buffer.from(xml, 'utf8'));
   } catch (err) {
     responderErro(res, err, 'gerar o unifilar');
@@ -615,11 +646,12 @@ async function gerarOrcamento(req, res) {
     // recusada fica intacta e nasce uma nova), mantendo BDI e impostos dela.
     const vinculadaId = (laudo.propostas || {})[modo];
     const vinculadaInfo = vinculadaId
-      ? (await pool.query('SELECT status, bdi, imposto_venda, imposto_servico FROM propostas WHERE id = $1', [vinculadaId])).rows[0]
+      ? (await pool.query('SELECT status, bdi, bdi_materiais, imposto_venda, imposto_servico FROM propostas WHERE id = $1', [vinculadaId])).rows[0]
       : null;
     const vinculada = vinculadaInfo && vinculadaInfo.status === 'Ativa' ? vinculadaId : null;
     const totais = calcularTotais({ secoes, itens,
       bdi: vinculada ? Number(vinculadaInfo.bdi) || 0 : 0,
+      bdi_materiais: vinculada ? vinculadaInfo.bdi_materiais : null, // BDI diferenciado (2.0, Fase 3F) também é mantido
       imposto_venda: vinculada ? Number(vinculadaInfo.imposto_venda) || 0 : 0,
       imposto_servico: vinculada ? Number(vinculadaInfo.imposto_servico) || 0 : 0 });
 
@@ -630,10 +662,10 @@ async function gerarOrcamento(req, res) {
           await client.query(
             `UPDATE propostas SET data=$1, cliente_id=$2, cliente_nome=$3, responsavel=$4, escopo=$5, observacoes=$6,
               subtotal_materiais=$7, subtotal_mao_obra=$8, valor_bdi=$9, valor_imposto_venda=$10, valor_imposto_servico=$11,
-              total=$12, atualizado_em=NOW(), versao=versao+1 WHERE id=$13`,
+              total=$12, atualizado_em=NOW(), versao=versao+1, obra_id=COALESCE(obra_id, $14) WHERE id=$13`,
             [dataHoje, clienteId, clienteNome, req.usuario.nome, orcamento.escopo, orcamento.observacoes,
              totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi, totais.valor_imposto_venda,
-             totais.valor_imposto_servico, totais.total, vinculada]
+             totais.valor_imposto_servico, totais.total, vinculada, laudo.obra_id || null]
           );
           await client.query('DELETE FROM proposta_secoes WHERE proposta_id = $1', [vinculada]);
           await inserirSecoesEItens(client, vinculada, secoes, itens);
@@ -646,11 +678,12 @@ async function gerarOrcamento(req, res) {
       const { rows } = await client.query(
         `INSERT INTO propostas (numero, sequencial, data, validade, cliente_id, cliente_nome, responsavel, escopo, observacoes,
           bdi, imposto_venda, imposto_servico, subtotal_materiais, subtotal_mao_obra, valor_bdi,
-          valor_imposto_venda, valor_imposto_servico, total, usuario_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING id`,
+          valor_imposto_venda, valor_imposto_servico, total, usuario_id, obra_id, origem_tipo, origem_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'laudo',$21) RETURNING id`,
         [numeroGerado, seq, dataHoje, 5, clienteId, clienteNome, req.usuario.nome, orcamento.escopo, orcamento.observacoes,
          0, 0, 0, totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi,
-         totais.valor_imposto_venda, totais.valor_imposto_servico, totais.total, req.usuario.id]
+         totais.valor_imposto_venda, totais.valor_imposto_servico, totais.total, req.usuario.id,
+         laudo.obra_id || null, laudo.id] // a proposta herda a obra do laudo e guarda a origem
       );
       const novaId = rows[0].id;
       await inserirSecoesEItens(client, novaId, secoes, itens);

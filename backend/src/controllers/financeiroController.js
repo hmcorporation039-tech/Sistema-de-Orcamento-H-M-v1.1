@@ -1,6 +1,8 @@
 const pool = require('../config/database');
+const { contentDisposition } = require('../utils/nomeArquivoDownload');
 const { registrarAuditoria } = require('../utils/auditoria');
-const { verificarPixNaCaixaDeEntrada } = require('../services/financeiroEmailService');
+const rotinas = require('../services/rotinas');
+const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
 
 const CATEGORIA_LABEL = { mao_de_obra: 'Mão de obra', material: 'Material', despesa: 'Despesa diária' };
 
@@ -39,6 +41,13 @@ function montarFiltro(query) {
     params.push(prestadorId);
     condicoes.push(`fm.prestador_id = $${params.length}`);
   }
+  // obra (2.0): ?obraId=ID (movimentos da obra) ou ?obraId=sem (sem obra)
+  const obraId = query.obraId ?? query.obra_id;
+  if (obraId === 'sem') condicoes.push('fm.obra_id IS NULL');
+  else if (obraId && Number.isInteger(Number(obraId)) && Number(obraId) > 0) {
+    params.push(Number(obraId));
+    condicoes.push(`fm.obra_id = $${params.length}`);
+  }
 
   return { where: `WHERE ${condicoes.join(' AND ')}`, params, dataInicio, dataFim };
 }
@@ -48,9 +57,11 @@ async function buscarMovimentosEtotais(query) {
 
   const movimentos = await pool.query(
     `SELECT fm.id, fm.tipo, fm.nome, fm.valor, fm.data_hora, fm.id_transacao, fm.origem,
-            fm.categoria, fm.prestador_id, p.nome AS prestador_nome
+            fm.categoria, fm.prestador_id, p.nome AS prestador_nome,
+            fm.obra_id, ${sqlObraJson('ob')} AS obra
      FROM financeiro_movimentos fm
      LEFT JOIN prestadores p ON p.id = fm.prestador_id
+     LEFT JOIN obras ob ON ob.id = fm.obra_id
      ${where}
      ORDER BY fm.data_hora DESC`,
     params
@@ -103,7 +114,7 @@ async function exportarCsv(req, res) {
   try {
     const { movimentos } = await buscarMovimentosEtotais(req.query);
 
-    const cabecalho = ['Data', 'Tipo', 'Nome', 'Valor', 'ID Transacao', 'Prestador', 'Categoria'];
+    const cabecalho = ['Data', 'Tipo', 'Nome', 'Valor', 'ID Transacao', 'Prestador', 'Categoria', 'Obra'];
     const linhas = movimentos.map(m => [
       new Date(m.data_hora).toLocaleString('pt-BR'),
       m.tipo === 'recebido' ? 'Recebido' : 'Realizado',
@@ -112,13 +123,14 @@ async function exportarCsv(req, res) {
       m.id_transacao || '',
       m.prestador_nome || '',
       CATEGORIA_LABEL[m.categoria] || '',
+      m.obra ? `${m.obra.codigo} ${m.obra.nome}` : '',
     ].map(escaparCsv).join(';'));
 
     const csv = [cabecalho.join(';'), ...linhas].join('\r\n');
     const bom = '﻿';
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="financeiro-pix.csv"');
+    res.setHeader('Content-Disposition', contentDisposition('financeiro-pix.csv'));
     res.send(bom + csv);
   } catch (err) {
     console.error('Erro ao exportar CSV financeiro:', err);
@@ -140,11 +152,14 @@ async function criar(req, res) {
     if (erro) return res.status(400).json({ erro });
 
     const { tipo, nome, valor, dataHora, idTransacao } = req.body;
+    const obra = lerObraId(req.body); // obra (2.0): obraId/obra_id opcional
+    const erroObra = await conferirObra(pool, obra);
+    if (erroObra) return res.status(400).json({ erro: erroObra });
     const resultado = await pool.query(
-      `INSERT INTO financeiro_movimentos (tipo, nome, valor, data_hora, id_transacao, origem, usuario_id)
-       VALUES ($1,$2,$3,$4,$5,'manual',$6)
-       RETURNING id, tipo, nome, valor, data_hora, id_transacao, origem`,
-      [tipo, nome || null, valor, dataHora, idTransacao || null, req.usuario.id]
+      `INSERT INTO financeiro_movimentos (tipo, nome, valor, data_hora, id_transacao, origem, usuario_id, obra_id)
+       VALUES ($1,$2,$3,$4,$5,'manual',$6,$7)
+       RETURNING id, tipo, nome, valor, data_hora, id_transacao, origem, obra_id`,
+      [tipo, nome || null, valor, dataHora, idTransacao || null, req.usuario.id, obra.valor]
     );
     res.status(201).json(resultado.rows[0]);
   } catch (err) {
@@ -159,12 +174,16 @@ async function atualizar(req, res) {
     if (erro) return res.status(400).json({ erro });
 
     const { tipo, nome, valor, dataHora, idTransacao } = req.body;
+    const obra = lerObraId(req.body); // presente liga/desliga (null); ausente mantém
+    const erroObra = await conferirObra(pool, obra);
+    if (erroObra) return res.status(400).json({ erro: erroObra });
     const resultado = await pool.query(
       `UPDATE financeiro_movimentos
-       SET tipo = $1, nome = $2, valor = $3, data_hora = $4, id_transacao = $5
+       SET tipo = $1, nome = $2, valor = $3, data_hora = $4, id_transacao = $5,
+           obra_id = CASE WHEN $7::boolean THEN $8::int ELSE obra_id END
        WHERE id = $6 AND origem = 'manual'
-       RETURNING id, tipo, nome, valor, data_hora, id_transacao, origem`,
-      [tipo, nome || null, valor, dataHora, idTransacao || null, req.params.id]
+       RETURNING id, tipo, nome, valor, data_hora, id_transacao, origem, obra_id`,
+      [tipo, nome || null, valor, dataHora, idTransacao || null, req.params.id, obra.presente, obra.valor]
     );
     if (resultado.rows.length === 0) {
       return res.status(404).json({ erro: 'Lançamento manual não encontrado (movimentos importados de e-mail não podem ser editados)' });
@@ -202,12 +221,18 @@ async function categorizar(req, res) {
       return res.status(400).json({ erro: 'Categoria inválida' });
     }
 
+    // obra (2.0): vale também para movimentos importados do e-mail (que não
+    // são editáveis); presente liga/desliga (null), ausente mantém
+    const obra = lerObraId(req.body);
+    const erroObra = await conferirObra(pool, obra);
+    if (erroObra) return res.status(400).json({ erro: erroObra });
+
     const resultado = await pool.query(
       `UPDATE financeiro_movimentos
-       SET prestador_id = $1, categoria = $2
+       SET prestador_id = $1, categoria = $2, obra_id = CASE WHEN $4::boolean THEN $5::int ELSE obra_id END
        WHERE id = $3
-       RETURNING id, prestador_id, categoria`,
-      [prestadorId || null, categoria || null, req.params.id]
+       RETURNING id, prestador_id, categoria, obra_id`,
+      [prestadorId || null, categoria || null, req.params.id, obra.presente, obra.valor]
     );
     if (resultado.rows.length === 0) return res.status(404).json({ erro: 'Movimento não encontrado' });
     res.json(resultado.rows[0]);
@@ -219,7 +244,8 @@ async function categorizar(req, res) {
 
 async function verificarAgora(req, res) {
   try {
-    const resumo = await verificarPixNaCaixaDeEntrada();
+    // pelo registro comum das rotinas (services/rotinas.js) — aparece no painel de Integrações
+    const resumo = await rotinas.executarRotina('pix-email', { origem: 'manual', usuarioId: req.usuario?.id });
     res.json(resumo);
   } catch (err) {
     console.error('Erro ao verificar Pix na caixa de entrada:', err);

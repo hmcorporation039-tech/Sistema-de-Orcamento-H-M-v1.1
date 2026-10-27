@@ -3,8 +3,11 @@ describe('Clientes', () => {
 
   beforeEach(() => {
     cy.login();
-    cy.get('nav').contains('Clientes').click();
-    cy.url().should('include', '/clientes');
+    // 2.0: Clientes é a primeira aba do grupo "Cadastros e administração"
+    cy.get('nav').contains('Cadastros').click();
+    cy.url().should('include', '/cadastros');
+    cy.contains('[role=tab]', 'Clientes').should('have.attr', 'aria-selected', 'true');
+    cy.contains('h2', 'Clientes').should('be.visible');
   });
 
   it('cadastra um novo cliente', () => {

@@ -23,14 +23,19 @@ describe('Login', () => {
     cy.login();
     cy.contains('h2', 'Novo Orçamento').should('be.visible');
 
-    cy.get('nav').contains('Materiais').click();
-    cy.url().should('include', '/materiais');
+    // 2.0: o menu tem só os grupos; Materiais, Clientes e o antigo Histórico
+    // são a primeira aba de cada grupo.
+    cy.get('nav').contains('Base de preços').click();
+    cy.url().should('include', '/base-precos');
+    cy.contains('h2', 'Materiais').should('be.visible');
 
-    cy.get('nav').contains('Clientes').click();
-    cy.url().should('include', '/clientes');
+    cy.get('nav').contains('Cadastros').click();
+    cy.url().should('include', '/cadastros');
+    cy.contains('h2', 'Clientes').should('be.visible');
 
-    cy.get('nav').contains('Histórico').click();
-    cy.url().should('include', '/historico');
+    cy.get('nav').contains('Propostas').click();
+    cy.url().should('include', '/propostas');
+    cy.contains('h2', 'Propostas').should('be.visible');
   });
 
   it('faz logout e volta para o login', () => {

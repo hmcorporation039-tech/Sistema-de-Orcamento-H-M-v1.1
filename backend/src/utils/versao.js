@@ -15,6 +15,8 @@ const MENSAGEM_CONFLITO = {
   propostas: 'Esta proposta foi alterada por outra pessoa (ou em outra aba) depois que você a abriu.',
   analises_projeto: 'Esta análise foi alterada por outra pessoa (ou em outra aba) depois que você a abriu.',
   laudos_projetos: 'Este laudo/projeto foi alterado por outra pessoa (ou em outra aba) depois que você o abriu.',
+  obras: 'Esta obra foi alterada por outra pessoa (ou em outra aba) depois que você a abriu.',
+  ordens_servico: 'Esta OS foi alterada (no escritório ou pelo app de campo) depois que você a abriu.',
 };
 
 // Responde 409 se o registro existe (então o UPDATE não pegou por versão) ou

@@ -1,3 +1,5 @@
+// 2.0: a tela tem também o filtro "Buscar obra..." (ObraSelect), por isso a
+// busca da lista é pega pelo placeholder completo "Buscar por prestador...".
 describe('Contratos de Prestação de Serviço', () => {
   const nomePrestador = `Cypress QA Prestador Contrato ${Date.now()}`;
   let prestadorId;
@@ -15,22 +17,26 @@ describe('Contratos de Prestação de Serviço', () => {
     }).then(res => { prestadorId = res.body.id; });
   });
 
+  // Faz login de novo: com o isolamento entre testes o token do último teste
+  // já foi limpo, e sem ele o DELETE caía em 401 calado e o prestador ficava
+  // no banco. Também apaga o contrato se o teste de remoção não chegou a rodar.
   after(() => {
-    cy.window().then(win => {
-      const token = win.localStorage.getItem('hm_token');
-      cy.request({
-        method: 'DELETE',
-        url: `/api/prestadores/${prestadorId}`,
-        headers: { Authorization: `Bearer ${token}` },
-        failOnStatusCode: false,
-      });
+    cy.login();
+    cy.api({ url: `/api/contratos?busca=${encodeURIComponent(nomePrestador)}`, failOnStatusCode: false }).then(({ body }) => {
+      const lista = Array.isArray(body) ? body : (body?.itens || body?.contratos || []);
+      lista.filter(c => c.prestador_id === prestadorId)
+        .forEach(c => cy.api({ method: 'DELETE', url: `/api/contratos/${c.id}`, failOnStatusCode: false }));
     });
+    cy.api({ method: 'DELETE', url: `/api/prestadores/${prestadorId}`, failOnStatusCode: false });
   });
 
   beforeEach(() => {
     cy.login();
-    cy.get('nav').contains('Contratos').click();
-    cy.url().should('include', '/contratos');
+    // 2.0: Contratos é uma aba do grupo Financeiro (/financeiro?aba=contratos)
+    cy.get('nav').contains('Financeiro').click();
+    cy.contains('[role=tab]', 'Contratos').click();
+    cy.url().should('include', '/financeiro?aba=contratos');
+    cy.contains('h2', 'Contratos de Prestação de Serviço').should('be.visible');
   });
 
   it('gera um contrato de prestação de serviço em PDF e lista no histórico', () => {
@@ -54,7 +60,7 @@ describe('Contratos de Prestação de Serviço', () => {
   });
 
   it('baixa o PDF manualmente pelo botão da lista, sem download automático, nomeado com o prestador', () => {
-    cy.get('input[placeholder*="Buscar"]').type(nomePrestador);
+    cy.get('input[placeholder*="Buscar por prestador"]').type(nomePrestador);
     cy.contains('tr', nomePrestador, { timeout: 8000 });
 
     cy.window().then(win => {
@@ -73,7 +79,7 @@ describe('Contratos de Prestação de Serviço', () => {
   });
 
   it('edita um contrato existente mantendo o mesmo código de registro', () => {
-    cy.get('input[placeholder*="Buscar"]').type(nomePrestador);
+    cy.get('input[placeholder*="Buscar por prestador"]').type(nomePrestador);
     cy.contains('tr', nomePrestador, { timeout: 8000 }).find('td').first().invoke('text').then(codigoOriginal => {
       cy.contains('tr', nomePrestador).find('button[title="Editar"]').click();
       cy.contains('h3', 'Editar Contrato').should('be.visible');
@@ -92,15 +98,15 @@ describe('Contratos de Prestação de Serviço', () => {
   });
 
   it('busca o contrato pelo código de registro', () => {
-    cy.get('input[placeholder*="Buscar"]').type(nomePrestador);
+    cy.get('input[placeholder*="Buscar por prestador"]').type(nomePrestador);
     cy.contains('tr', nomePrestador, { timeout: 8000 }).find('td').first().invoke('text').then(codigo => {
-      cy.get('input[placeholder*="Buscar"]').clear().type(codigo);
+      cy.get('input[placeholder*="Buscar por prestador"]').clear().type(codigo);
       cy.contains('td', nomePrestador, { timeout: 8000 }).should('be.visible');
     });
   });
 
   it('busca o contrato gerado e remove', () => {
-    cy.get('input[placeholder*="Buscar"]').type(nomePrestador);
+    cy.get('input[placeholder*="Buscar por prestador"]').type(nomePrestador);
     cy.contains('tr', nomePrestador, { timeout: 8000 }).should('be.visible');
 
     cy.on('window:confirm', () => true);

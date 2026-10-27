@@ -655,6 +655,10 @@ async function criarTabelas() {
     await client.query('ALTER TABLE pesquisas_mercado ADD COLUMN IF NOT EXISTS ofertas JSONB');
     await client.query('ALTER TABLE pesquisas_mercado ADD COLUMN IF NOT EXISTS preco_sugerido NUMERIC(12,2)');
 
+    // Versão 2.0: migrações por tema em models/migracoes/*.js (ordem do nome do
+    // arquivo; cada uma exporta async (client) => {} e precisa ser idempotente).
+    for (const m of listarMigracoes()) await require(m)(client);
+
     await client.query('COMMIT');
     console.log('Tabelas criadas/verificadas com sucesso');
 
@@ -682,6 +686,13 @@ async function criarTabelas() {
   } finally {
     client.release();
   }
+}
+
+function listarMigracoes() {
+  const pasta = require('path').join(__dirname, 'migracoes');
+  const fs = require('fs');
+  if (!fs.existsSync(pasta)) return [];
+  return fs.readdirSync(pasta).filter(f => /\.js$/.test(f)).sort().map(f => require('path').join(pasta, f));
 }
 
 module.exports = { criarTabelas };

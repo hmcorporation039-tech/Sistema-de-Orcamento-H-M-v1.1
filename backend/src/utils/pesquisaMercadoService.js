@@ -1,7 +1,9 @@
 const pool = require('../config/database');
-const { chamarGemini, configurado: geminiConfigurado } = require('./geminiClient');
-const { pesquisarMercadoComClaude, configurado: claudeConfigurado } = require('./claudeClient');
-const { pesquisarWebClaudeMax, cliDisponivel } = require('./leitorCotacaoIA');
+const ia = require('./ia');
+
+// Nome do provedor gravado em pesquisas_mercado.fonte (o mesmo da 1.x, para o
+// histórico e o cache continuarem iguais): a API da Anthropic era "claude".
+const FONTE_CACHE = { claude_max: 'claude_max', claude_api: 'claude', gemini: 'gemini' };
 
 // Lógica de pesquisa de mercado, isolada do Express — reaproveitada tanto
 // pelo endpoint HTTP (pesquisaMercadoController.js) quanto pelas ferramentas
@@ -104,13 +106,6 @@ function textoDasOfertas(ofertas, est, obs) {
   return linhas.join('\n') || 'Nenhuma oferta encontrada.';
 }
 
-function extrairJson(texto) {
-  const t = String(texto || '');
-  const i = t.indexOf('{'), f = t.lastIndexOf('}');
-  if (i < 0 || f <= i) return null;
-  try { return JSON.parse(t.slice(i, f + 1)); } catch { return null; }
-}
-
 async function buscarCache(descricaoNormalizada) {
   const r = await pool.query(
     `SELECT resultado, fonte, criado_em, ofertas, preco_sugerido FROM pesquisas_mercado
@@ -128,21 +123,21 @@ async function salvarCache(descricaoOriginal, descricaoNormalizada, resultado, f
   );
 }
 
-// Pesquisa o preço de mercado de um material/serviço com busca real na web
-// (Gemini gratuito primeiro, Claude pago como fallback quando a cota diária
-// do Gemini estoura). Sempre um resultado consultivo — quem decide se
-// atualiza o preço continua sendo o usuário.
-// Ordem (preferência do usuário): Claude Max pela assinatura (sem custo por
-// uso) → Gemini com busca → Claude pela API. Cada provedor devolve o JSON de
-// ofertas; o texto continua sendo gravado para a tela e o histórico.
+// Pesquisa o preço de mercado de um material/serviço com busca real na web.
+// Sempre um resultado consultivo — quem decide se atualiza o preço continua
+// sendo o usuário.
+// Provedores pela cadeia única de utils/ia.js (preferência do usuário: Claude
+// Max pela assinatura → Claude pela API → Gemini com busca; IA_ORDEM troca).
+// Resposta sem nenhuma oferta válida passa para o próximo provedor (o último é
+// aceito mesmo vazio, como na 1.x). Cada provedor devolve o JSON de ofertas; o
+// texto continua sendo gravado para a tela e o histórico.
 // `prompt` e `chaveCache` permitem pesquisas com roteiro próprio (referência
 // de mão de obra por segmento) no mesmo cache, histórico e ordem de provedores.
 async function pesquisarPrecoMercado(descricao, { tipo = 'material', prompt: promptProprio, chaveCache } = {}) {
   const desc = (descricao || '').trim();
   if (!desc) throw new ErroPesquisaMercado('Informe a descrição do material a pesquisar', 400);
 
-  const temClaudeMax = cliDisponivel();
-  if (!temClaudeMax && !geminiConfigurado() && !claudeConfigurado()) {
+  if (!ia.disponivel({ web: true })) {
     throw new ErroPesquisaMercado('Pesquisa de mercado desativada — nenhuma IA disponível (Claude Code com a assinatura Max, GEMINI_API_KEY ou ANTHROPIC_API_KEY)', 422);
   }
 
@@ -156,28 +151,23 @@ async function pesquisarPrecoMercado(descricao, { tipo = 'material', prompt: pro
   }
 
   const prompt = promptProprio || montarPrompt(desc, tipo);
-  const provedores = [
-    temClaudeMax && ['claude_max', () => pesquisarWebClaudeMax(prompt)],
-    geminiConfigurado() && ['gemini', async () => extrairJson(await chamarGemini({ prompt, busca: true, tentativas: 2 }))],
-    claudeConfigurado() && ['claude', async () => extrairJson(await pesquisarMercadoComClaude(prompt))],
-  ].filter(Boolean);
-
-  const erros = [];
-  for (const [fonte, executar] of provedores) {
-    try {
-      const json = await executar();
-      const ofertas = normalizarOfertas(json);
-      if (!ofertas.length && provedores.at(-1)[0] !== fonte) { erros.push(`${fonte}: nenhuma oferta`); continue; }
-      const est = estatistica(ofertas);
-      const texto = textoDasOfertas(ofertas, est, json?.observacao ? String(json.observacao).slice(0, 300) : '');
-      await salvarCache(desc.slice(0, 500), normalizada, texto, fonte, ofertas, est.media).catch(() => {});
-      return { descricao: desc, resultado: texto, fonte, deCache: false, ofertas, estatistica: est, precoSugerido: est.media };
-    } catch (err) {
-      erros.push(`${fonte}: ${err.message}`);
-      console.error(`Pesquisa de mercado (${fonte}) falhou:`, err.message);
-    }
+  let r;
+  try {
+    r = await ia.pesquisarWeb(prompt, {
+      finalidade: 'pesquisa de mercado',
+      aceitar: (json, { ultimo }) => ultimo || normalizarOfertas(json).length > 0,
+    });
+  } catch (err) {
+    const detalhe = (err.erros || []).map(e => `${FONTE_CACHE[e.provedor] || e.provedor}: ${e.mensagem === 'resposta sem dado aproveitável' ? 'nenhuma oferta' : e.mensagem}`).join(' | ') || err.message;
+    throw new ErroPesquisaMercado(`Não foi possível pesquisar o preço agora (${detalhe.slice(0, 300)})`, 502);
   }
-  throw new ErroPesquisaMercado(`Não foi possível pesquisar o preço agora (${erros.join(' | ').slice(0, 300)})`, 502);
+  const fonte = FONTE_CACHE[r.provedor] || r.provedor;
+  const json = r.json;
+  const ofertas = normalizarOfertas(json);
+  const est = estatistica(ofertas);
+  const texto = textoDasOfertas(ofertas, est, json?.observacao ? String(json.observacao).slice(0, 300) : '');
+  await salvarCache(desc.slice(0, 500), normalizada, texto, fonte, ofertas, est.media).catch(() => {});
+  return { descricao: desc, resultado: texto, fonte, deCache: false, ofertas, estatistica: est, precoSugerido: est.media };
 }
 
 // Grava no sistema uma pesquisa de preço feita FORA da API paga — tipicamente

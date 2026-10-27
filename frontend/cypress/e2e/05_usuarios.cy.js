@@ -2,10 +2,12 @@ describe('Usuários (admin)', () => {
   const nome = `Cypress QA Usuario ${Date.now()}`;
   const email = `cypress.qa.${Date.now()}@hmengenharia.com`;
 
+  // 2.0: Usuários é uma aba (só de admin) do grupo "Cadastros e administração"
   it('acessa a tela de usuários pelo menu (só aparece para admin)', () => {
     cy.login();
-    cy.get('nav').contains('Usuários').should('be.visible').click();
-    cy.url().should('include', '/usuarios');
+    cy.get('nav').contains('Cadastros e administração').should('be.visible').click();
+    cy.contains('[role=tab]', 'Usuários').should('be.visible').click();
+    cy.url().should('include', '/cadastros?aba=usuarios');
     cy.contains('h2', 'Usuários').should('be.visible');
   });
 
@@ -68,8 +70,19 @@ describe('Usuários (admin)', () => {
     cy.contains('button', 'Salvar e entrar').click();
     cy.contains(/senha definida/i).should('be.visible');
 
+    // 2.0: /usuarios leva ao hub Cadastros; para quem não é admin a aba
+    // Usuários (e Integrações) não existe e o hub abre em Clientes. O grupo
+    // perde o "e administração" e o Financeiro some do menu.
     cy.visit('/usuarios');
-    cy.url().should('include', '/dashboard');
+    cy.url().should('include', '/cadastros');
+    cy.contains('h2', 'Clientes').should('be.visible');
+    cy.contains('h2', 'Usuários').should('not.exist');
+    cy.contains('[role=tab]', 'Usuários').should('not.exist');
+    cy.get('nav').contains('Cadastros').should('be.visible');
+    cy.get('nav').contains('administração').should('not.exist');
+    cy.get('nav').contains('Financeiro').should('not.exist');
+    // e a API continua recusando
+    cy.api({ url: '/api/usuarios', failOnStatusCode: false }).its('status').should('eq', 403);
   });
 
   it('exclui o usuário de teste e confirma que sumiu da lista', () => {

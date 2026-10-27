@@ -1,6 +1,6 @@
 const pool = require('../config/database');
 const { classificarPorDescricao } = require('../utils/classificadorMaterial');
-const { perguntarJSON } = require('../utils/leitorCotacaoIA');
+const ia = require('../utils/ia');
 
 // Todo material do catálogo tem categoria (regra do usuário, 10/10/2026).
 // A categoria de um material novo sai, nesta ordem, de:
@@ -9,7 +9,7 @@ const { perguntarJSON } = require('../utils/leitorCotacaoIA');
 //      classificado à mão pela H&M, ensina (ex.: "SENSOR MAGNETICO XAS 8000"
 //      vai para Alarme porque "Sensor magnético XAS 8000 (abertura)" está lá);
 //   3. regras de palavras-chave (utils/classificadorMaterial.js);
-//   4. IA (Claude Max e, de complemento, Gemini), escolhendo SÓ entre as
+//   4. IA (cadeia única de utils/ia.js: Claude Max → API → Gemini), escolhendo SÓ entre as
 //      categorias que já existem — numa rotina em lote (classificarPendentes),
 //      fora da gravação da proposta ou da varredura.
 // Enquanto a IA não responde, o material fica "Não classificado" e a rotina
@@ -72,10 +72,11 @@ async function categoriasExistentes(client) {
 // IA em lote: só pode escolher categoria que já existe no catálogo.
 async function categoriasPorIA(itens, categorias) {
   const lista = itens.map(i => `${i.id}: ${i.descricao}`).join('\n');
-  const { fonte, json } = await perguntarJSON(
+  const { fonte, json } = await ia.perguntarJSON(
     'Você classifica materiais de um catálogo de uma empresa de engenharia elétrica e de sistemas (CFTV, redes, alarme, automação etc.). '
     + `Para cada material abaixo, escolha a categoria mais adequada ENTRE ESTAS, exatamente como escritas: ${JSON.stringify(categorias)}. `
-    + 'Responda em JSON no formato {"<id>": "<categoria>"}.\n\nMateriais:\n' + lista
+    + 'Responda em JSON no formato {"<id>": "<categoria>"}.\n\nMateriais:\n' + lista,
+    { finalidade: 'classificação de materiais' }
   );
   const resultado = {};
   for (const [id, cat] of Object.entries(json || {})) if (categorias.includes(cat)) resultado[id] = cat;

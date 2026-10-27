@@ -15,6 +15,7 @@
 // coluna e derrubava o salvamento da PROPOSTA inteira (a transação é única).
 const TAMANHO_MAX_DESCRICAO_CATALOGO = 300;
 const { categoriaLocal } = require('../services/classificacaoMateriais');
+const { garantirServicoCadastrado } = require('./servicosBase');
 
 // Acha o material do catálogo com a mesma descrição (ignorando
 // caixa/espaços) ou cadastra um novo a partir dos dados do item. Só é
@@ -46,23 +47,13 @@ async function garantirMaterialCadastrado(client, { descricao, unidade, ncm, val
   return (await client.query('SELECT id FROM materiais WHERE ativo = true AND TRIM(LOWER(descricao)) = TRIM(LOWER($1)) LIMIT 1', [desc])).rows[0]?.id || null;
 }
 
-// Mesma ideia pro catálogo de mão de obra — não retorna id porque
-// proposta_itens não tem uma FK pra mão de obra (a tabela só existe pra
-// alimentar a sugestão em dropdown na tela de Orçamento).
-async function garantirMaoDeObraCadastrada(client, { descricao, unidade, valor_unitario }) {
-  const desc = (descricao || '').trim();
-  if (!desc || desc.length > TAMANHO_MAX_DESCRICAO_CATALOGO) return;
-
-  const existente = await client.query(
-    `SELECT id FROM mao_de_obra_itens WHERE ativo = true AND TRIM(LOWER(descricao)) = TRIM(LOWER($1)) LIMIT 1`,
-    [desc]
-  );
-  if (existente.rows.length > 0) return;
-
-  await client.query(
-    `INSERT INTO mao_de_obra_itens (descricao, unidade, valor_unitario) VALUES ($1, $2, $3)`,
-    [desc, unidade || 'un', valor_unitario || 0]
-  );
+// Mão de obra: desde a versão 2.0 o item entra na BASE ÚNICA de serviços
+// (precos_mao_de_obra_referencia, origem 'proposta', código livre_<id>) — que
+// alimenta a lista suspensa da tela Orçamento e a tela Preços de Mão de Obra.
+// A tabela antiga mao_de_obra_itens continua sendo escrita junto (dá o id
+// estável do código e mantém a 1.x funcionando). Ver utils/servicosBase.js.
+async function garantirMaoDeObraCadastrada(client, { descricao, unidade, valor_unitario, codigo, subgrupo }) {
+  return garantirServicoCadastrado(client, { descricao, unidade, valor_unitario, codigo, subgrupo });
 }
 
 module.exports = { garantirMaterialCadastrado, garantirMaoDeObraCadastrada };

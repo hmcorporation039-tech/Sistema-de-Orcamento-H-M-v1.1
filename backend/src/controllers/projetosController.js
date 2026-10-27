@@ -1,5 +1,6 @@
 const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
 const pool = require('../config/database');
+const { contentDisposition } = require('../utils/nomeArquivoDownload');
 const { registrarAuditoria } = require('../utils/auditoria');
 const { analisarProjetoCompleto } = require('../utils/compatibilizacaoAnalise');
 const { gerarHtmlRelatorioCompatibilizacao } = require('../utils/relatorioCompatibilizacaoTemplate');
@@ -13,7 +14,26 @@ const { inserirSecoesEItens, proximoNumero, registrarEvento } = require('./propo
 const P = require('../utils/pastasSistema');
 const { tipoPorConteudo } = require('../utils/tipoArquivo');
 const { versaoDoPedido, responderConflitoOuAusente } = require('../utils/versao');
-const { sincronizarProjeto, pastaDoProjeto, resumoPasta, pedidoLocal, seguro } = require('../services/pastasRegistros');
+const { sincronizarProjeto, pastaDoProjeto, resumoPasta, pedidoLocal, seguro, excluirPastaDoItem } = require('../services/pastasRegistros');
+const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
+const path = require('path');
+
+// Análise completa com o número da proposta e a obra (2.0): `obra` = { id,
+// codigo, nome, status } e `pasta_obra_dir` = pasta da obra onde a pasta da
+// análise mora (análise nova ligada à obra), para o caminhoPasta.
+const SQL_ANALISE_COMPLETA = `
+  SELECT ap.*, p.numero AS proposta_numero, ${sqlObraJson('ob')} AS obra, obp.pasta AS pasta_obra_dir
+    FROM analises_projeto ap
+    LEFT JOIN propostas p ON p.id = ap.proposta_id
+    LEFT JOIN obras ob ON ob.id = ap.obra_id
+    LEFT JOIN obras obp ON obp.id = ap.pasta_obra_id
+   WHERE ap.id = $1`;
+
+function caminhoDaPasta(row) {
+  if (!row.pasta) return null;
+  if (row.pasta_obra_id) return row.pasta_obra_dir ? path.join(P.RAIZES.obra, row.pasta_obra_dir, row.pasta) : null;
+  return P.caminhoDe('projeto', row.pasta);
+}
 
 // Converte uma linha de analises_projeto (colunas snake_case, JSONB já
 // parseado pelo driver do pg) para o mesmo formato camelCase que o restante
@@ -25,7 +45,10 @@ function linhaParaAnalise(row) {
     cliente: row.cliente_nome,
     // Nome do projeto = nome da pasta em "Arquivos do Sistema/Projetos" (editável na tela)
     nomeProjeto: row.nome_projeto,
-    caminhoPasta: row.pasta ? P.caminhoDe('projeto', row.pasta) : null,
+    caminhoPasta: caminhoDaPasta(row),
+    // Obra (2.0): obraId + obra { id, codigo, nome, status } quando a consulta faz o JOIN
+    obraId: row.obra_id ?? null,
+    obra: row.obra ?? null,
     clienteId: row.cliente_id,
     disciplinas: row.disciplinas,
     arquivosAnalisados: row.arquivos_analisados,
@@ -64,17 +87,25 @@ async function listar(req, res) {
   const params = [];
   if (busca) {
     params.push(`%${busca}%`);
-    condicoes += ` AND (cliente_nome ILIKE $${params.length} OR nome_projeto ILIKE $${params.length})`;
+    condicoes += ` AND (ap.cliente_nome ILIKE $${params.length} OR ap.nome_projeto ILIKE $${params.length})`;
+  }
+  // ?obra_id=ID (análises da obra) ou ?obra_id=sem (sem obra)
+  if (req.query.obra_id === 'sem') condicoes += ' AND ap.obra_id IS NULL';
+  else if (req.query.obra_id) {
+    const n = Number(req.query.obra_id);
+    if (!Number.isInteger(n) || n < 1) return res.status(400).json({ erro: 'Obra inválida.' });
+    params.push(n);
+    condicoes += ` AND ap.obra_id = $${params.length}`;
   }
 
   try {
-    const total = await pool.query(`SELECT count(*) FROM analises_projeto ${condicoes}`, params);
+    const total = await pool.query(`SELECT count(*) FROM analises_projeto ap ${condicoes}`, params);
     const result = await pool.query(
-      `SELECT id, cliente_id, cliente_nome, nome_projeto, disciplinas, arquivos_analisados,
-              jsonb_array_length(achados) AS total_achados,
-              criado_em, atualizado_em
-       FROM analises_projeto ${condicoes}
-       ORDER BY atualizado_em DESC
+      `SELECT ap.id, ap.cliente_id, ap.cliente_nome, ap.nome_projeto, ap.disciplinas, ap.arquivos_analisados,
+              jsonb_array_length(ap.achados) AS total_achados,
+              ap.criado_em, ap.atualizado_em, ap.obra_id, ${sqlObraJson('ob')} AS obra
+       FROM analises_projeto ap LEFT JOIN obras ob ON ob.id = ap.obra_id ${condicoes}
+       ORDER BY ap.atualizado_em DESC
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, porPagina, offset]
     );
@@ -88,13 +119,7 @@ async function listar(req, res) {
 async function buscarUma(req, res) {
   const { id } = req.params;
   try {
-    const result = await pool.query(
-      `SELECT ap.*, p.numero AS proposta_numero
-       FROM analises_projeto ap
-       LEFT JOIN propostas p ON p.id = ap.proposta_id
-       WHERE ap.id = $1`,
-      [id]
-    );
+    const result = await pool.query(SQL_ANALISE_COMPLETA, [id]);
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Análise não encontrada' });
     res.json(linhaParaAnalise(result.rows[0]));
   } catch (err) {
@@ -139,17 +164,28 @@ async function analisar(req, res) {
     return res.status(400).json({ erro: 'Selecione ao menos uma disciplina para cada arquivo enviado' });
   }
 
+  // obra (2.0): campo multipart obra_id — a análise nasce ligada à obra e a
+  // pasta dela fica em Obras\<obra>\Projeto
+  const leituraObra = lerObraId(req.body);
+  const erroObra = await conferirObra(pool, leituraObra, { usuario: req.usuario }).catch(() => 'Obra não encontrada.');
+  if (erroObra) return res.status(400).json({ erro: erroObra });
+  const obraDaAnalise = leituraObra.valor
+    ? (await pool.query('SELECT id, cliente_id, cliente_nome FROM obras WHERE id = $1', [leituraObra.valor])).rows[0]
+    : null;
+
   try {
     const resultado = await analisarProjetoCompleto(arquivos);
 
     const insert = await pool.query(
       `INSERT INTO analises_projeto
         (cliente_nome, disciplinas, arquivos_analisados, ambientes, pontos_por_ambiente, cameras,
-         pontos_rede_antena, tabela_cabos, achados, servicos, materiais, usuario_id, nome_projeto, dados_extraidos)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+         pontos_rede_antena, tabela_cabos, achados, servicos, materiais, usuario_id, nome_projeto, dados_extraidos,
+         obra_id, cliente_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        RETURNING *`,
       [
-        resultado.cliente,
+        // sem cliente no carimbo do PDF, vale o cliente da obra
+        resultado.cliente || obraDaAnalise?.cliente_nome || resultado.cliente,
         JSON.stringify(resultado.disciplinas),
         JSON.stringify(resultado.arquivosAnalisados),
         JSON.stringify(resultado.ambientes),
@@ -163,12 +199,14 @@ async function analisar(req, res) {
         req.usuario.id,
         String(req.body.nome_projeto || '').trim().slice(0, 200) || null,
         JSON.stringify(resultado.dadosExtraidos || []),
+        obraDaAnalise?.id || null,
+        !resultado.cliente && obraDaAnalise ? obraDaAnalise.cliente_id : null,
       ]
     );
 
     // Pasta do projeto: guarda os PDFs recebidos (antes eram lidos e descartados)
     await sincronizarProjeto(insert.rows[0], arquivos);
-    const salvo = await pool.query('SELECT * FROM analises_projeto WHERE id = $1', [insert.rows[0].id]);
+    const salvo = await pool.query(SQL_ANALISE_COMPLETA, [insert.rows[0].id]);
     res.json(linhaParaAnalise(salvo.rows[0]));
   } catch (err) {
     console.error('Erro ao analisar projeto:', err);
@@ -197,6 +235,10 @@ async function atualizar(req, res) {
   }
 
   try {
+    // obra (2.0): obra_id presente liga/desliga (null); ausente mantém
+    const leituraObra = lerObraId(req.body);
+    const erroObra = await conferirObra(pool, leituraObra, { usuario: req.usuario, tabela: 'analises_projeto', id });
+    if (erroObra) return res.status(400).json({ erro: erroObra });
     const result = await pool.query(
       `UPDATE analises_projeto SET
         cliente_nome = COALESCE($1, cliente_nome),
@@ -205,6 +247,7 @@ async function atualizar(req, res) {
         funcionamento = COALESCE($4, funcionamento),
         pontos_por_disciplina = COALESCE($5::jsonb, pontos_por_disciplina),
         nome_projeto = COALESCE($7, nome_projeto),
+        obra_id = CASE WHEN $9::boolean THEN $10::int ELSE obra_id END,
         atualizado_em = NOW(), versao = versao + 1
        WHERE id = $6 AND ($8::int IS NULL OR versao = $8)
        RETURNING *`,
@@ -217,12 +260,13 @@ async function atualizar(req, res) {
         id,
         nome_projeto != null ? String(nome_projeto).trim().slice(0, 200) : null,
         versaoDoPedido(req.body),
+        leituraObra.presente, leituraObra.valor,
       ]
     );
     if (result.rows.length === 0) return responderConflitoOuAusente(pool, res, 'analises_projeto', id);
     // pasta acompanha o nome (renomeia) e o JSON de dados é sobrescrito
     await sincronizarProjeto(result.rows[0]);
-    const salvo = await pool.query('SELECT * FROM analises_projeto WHERE id = $1', [id]);
+    const salvo = await pool.query(SQL_ANALISE_COMPLETA, [id]);
     res.json(linhaParaAnalise(salvo.rows[0]));
   } catch (err) {
     console.error('Erro ao atualizar análise de projeto:', err);
@@ -239,7 +283,7 @@ async function remover(req, res) {
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Análise não encontrada' });
     await registrarAuditoria(pool, { entidade: 'analises_projeto', entidadeId: result.rows[0].id, acao: 'excluir', usuarioId: req.usuario.id, detalhes: { analise: result.rows[0] } });
     // a pasta não é apagada: vai para "Arquivos do Sistema/_Excluídos"
-    await seguro(`excluir análise ${id}`, () => P.moverParaExcluidos('projeto', result.rows[0].pasta));
+    await excluirPastaDoItem('projeto', result.rows[0]); // pasta antiga ou dentro da obra
     res.json({ mensagem: 'Análise removida (a pasta foi movida para _Excluídos)' });
   } catch (err) {
     console.error('Erro ao remover análise de projeto:', err);
@@ -273,7 +317,7 @@ async function gerarRelatorio(req, res, next) {
     const nomeCliente = String(analise.nomeProjeto || analise.cliente || 'projeto').trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_');
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="Compatibilizacao_${nomeCliente}.pdf"`,
+      'Content-Disposition': contentDisposition(`Compatibilização_${nomeCliente}.pdf`),
     });
     res.send(pdf);
   } catch (err) {
@@ -398,11 +442,12 @@ async function gerarOrcamento(req, res, next) {
     // sobrescrita). Ao atualizar, mantém BDI e impostos que já estavam nela
     // (antes o total era recalculado com BDI/impostos zerados).
     const vinculadaInfo = analise.propostaId
-      ? (await pool.query('SELECT numero, status, bdi, imposto_venda, imposto_servico FROM propostas WHERE id = $1', [analise.propostaId])).rows[0]
+      ? (await pool.query('SELECT numero, status, bdi, bdi_materiais, imposto_venda, imposto_servico FROM propostas WHERE id = $1', [analise.propostaId])).rows[0]
       : null;
     const atualizarVinculada = !!vinculadaInfo && vinculadaInfo.status === 'Ativa';
     const totais = calcularTotais({ secoes, itens,
       bdi: atualizarVinculada ? Number(vinculadaInfo.bdi) || 0 : 0,
+      bdi_materiais: atualizarVinculada ? vinculadaInfo.bdi_materiais : null, // BDI diferenciado (2.0, Fase 3F) também é mantido
       imposto_venda: atualizarVinculada ? Number(vinculadaInfo.imposto_venda) || 0 : 0,
       imposto_servico: atualizarVinculada ? Number(vinculadaInfo.imposto_servico) || 0 : 0 });
 
@@ -414,11 +459,12 @@ async function gerarOrcamento(req, res, next) {
             `UPDATE propostas SET
               data=$1, cliente_id=$2, cliente_nome=$3, responsavel=$4, escopo=$5,
               subtotal_materiais=$6, subtotal_mao_obra=$7, valor_bdi=$8,
-              valor_imposto_venda=$9, valor_imposto_servico=$10, total=$11, atualizado_em=NOW(), versao=versao+1
+              valor_imposto_venda=$9, valor_imposto_servico=$10, total=$11, atualizado_em=NOW(), versao=versao+1,
+              obra_id=COALESCE(obra_id, $13)
              WHERE id=$12`,
             [dataHoje, clienteId, analise.cliente.trim(), req.usuario.nome, escopo,
              totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi,
-             totais.valor_imposto_venda, totais.valor_imposto_servico, totais.total, analise.propostaId]
+             totais.valor_imposto_venda, totais.valor_imposto_servico, totais.total, analise.propostaId, analise.obraId]
           );
           await client.query('DELETE FROM proposta_secoes WHERE proposta_id = $1', [analise.propostaId]);
           await inserirSecoesEItens(client, analise.propostaId, secoes, itens);
@@ -434,12 +480,13 @@ async function gerarOrcamento(req, res, next) {
         `INSERT INTO propostas (
           numero, sequencial, data, validade, cliente_id, cliente_nome, responsavel, escopo,
           bdi, imposto_venda, imposto_servico, subtotal_materiais, subtotal_mao_obra, valor_bdi,
-          valor_imposto_venda, valor_imposto_servico, total, usuario_id
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+          valor_imposto_venda, valor_imposto_servico, total, usuario_id, obra_id, origem_tipo, origem_id
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'analise',$20)
         RETURNING id`,
         [numeroGerado, seq, dataHoje, 5, clienteId, analise.cliente.trim(), req.usuario.nome, escopo,
          0, 0, 0, totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi,
-         totais.valor_imposto_venda, totais.valor_imposto_servico, totais.total, req.usuario.id]
+         totais.valor_imposto_venda, totais.valor_imposto_servico, totais.total, req.usuario.id,
+         analise.obraId, analise.id] // a proposta herda a obra da análise e guarda a origem
       );
       const novaPropostaId = propResult.rows[0].id;
       await inserirSecoesEItens(client, novaPropostaId, secoes, itens);

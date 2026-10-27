@@ -7,20 +7,17 @@ const helmet = require('helmet');
 const routes = require('./routes');
 const { tratarErros } = require('./middleware/erros');
 const { criarTabelas } = require('./models/schema');
-const { credenciaisConfiguradas } = require('./utils/emailClient');
-const { verificarCaixaDeEntrada } = require('./services/notaFiscalEmailService');
-const { verificarPixNaCaixaDeEntrada } = require('./services/financeiroEmailService');
-const { verificarPastaFornecedores, PASTAS_FORNECEDORES } = require('./services/cotacaoFornecedorService');
+const { agendarRotinas } = require('./services/rotinas');
 const { pedidoLocal } = require('./services/pastasRegistros');
 const pool = require('./config/database');
 const { version: VERSAO } = require('../package.json');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-// Horários fixos (hora local do PC) das leituras automáticas de e-mail (notas
-// e Pix) e da pasta de orçamentos de fornecedores. Fora deles, os botões
-// "Verificar agora" das telas Materiais e Financeiro continuam rodando na hora.
-const HORARIOS_VERIFICACAO_AUTOMATICA = ['06:00', '18:00'];
+// As leituras automáticas (e-mail de notas, Pix e pasta de orçamentos de
+// fornecedores, às 06:00 e 18:00) ficam em services/rotinas.js, com registro
+// de cada execução para o painel de Integrações. Os botões "Verificar agora"
+// das telas Materiais e Financeiro passam pelo mesmo registro.
 
 // Middlewares
 app.use(helmet({
@@ -48,6 +45,9 @@ app.use(helmet({
       // sem upgrade-insecure-requests: o sistema roda em HTTP na rede local
     },
   },
+  // HTTPS opcional (HTTPS_PORTA) convive com o HTTP de sempre: HSTS faria o
+  // navegador que abriu o HTTPS passar a recusar o endereço HTTP do mesmo host
+  ...(process.env.HTTPS_PORTA ? { strictTransportSecurity: false } : {}),
 }));
 
 // Origens liberadas: configurável via CORS_ORIGINS no .env (separado por
@@ -85,7 +85,9 @@ app.use('/api', routes);
 app.get('/health', async (req, res) => {
   try {
     await pool.query('SELECT 1');
-    res.json({ status: 'ok', banco: 'ok', ...(pedidoLocal(req) ? { versao: VERSAO } : {}) });
+    // ambiente: a tela mostra a faixa "AMBIENTE DE TESTE" quando AMBIENTE=teste
+    const ambiente = process.env.AMBIENTE === 'teste' ? { ambiente: 'teste' } : {};
+    res.json({ status: 'ok', banco: 'ok', ...ambiente, ...(pedidoLocal(req) ? { versao: VERSAO } : {}) });
   } catch {
     res.status(503).json({ status: 'erro', banco: 'indisponível' });
   }
@@ -133,6 +135,7 @@ process.on('uncaughtException', (err) => {
 // as requisições em andamento terminarem e fecha o pool do banco. Se travar,
 // sai à força depois de 10 s.
 let servidor = null;
+let servidorHttps = null;
 let encerrando = false;
 function encerrar(sinal) {
   if (encerrando) return;
@@ -140,100 +143,11 @@ function encerrar(sinal) {
   console.log(`Encerrando o backend (${sinal})...`);
   setTimeout(() => process.exit(process.exitCode || 1), 10000).unref();
   const fecharBanco = () => pool.end().catch(() => {}).finally(() => process.exit(process.exitCode || 0));
+  if (servidorHttps) servidorHttps.close();
   if (servidor) servidor.close(fecharBanco); else fecharBanco();
 }
 process.on('SIGINT', () => encerrar('SIGINT'));
 process.on('SIGTERM', () => encerrar('SIGTERM'));
-
-// Milissegundos até o próximo dos HORARIOS_VERIFICACAO_AUTOMATICA, somando
-// `atrasoSegundos` (escalona as tarefas pra não abrirem duas conexões IMAP no
-// mesmo segundo).
-function msAteProximoHorario(agora = new Date(), atrasoSegundos = 0) {
-  const candidatos = [];
-  for (const diasAFrente of [0, 1]) {
-    for (const horario of HORARIOS_VERIFICACAO_AUTOMATICA) {
-      const [hora, minuto] = horario.split(':').map(Number);
-      const alvo = new Date(agora);
-      alvo.setDate(alvo.getDate() + diasAFrente);
-      alvo.setHours(hora, minuto, atrasoSegundos, 0);
-      candidatos.push(alvo - agora);
-    }
-  }
-  // Folga de 1s: se o timer disparar uns milissegundos antes do horário, o
-  // próximo cálculo não pode cair no mesmo horário e rodar a tarefa duas vezes.
-  return Math.min(...candidatos.filter(ms => ms > 1000));
-}
-
-// Encadeia setTimeout em vez de setInterval: recalcula o próximo horário a
-// cada execução, então não acumula desvio nem depende da hora em que o
-// backend subiu.
-function agendarNosHorariosFixos(rodar, atrasoSegundos) {
-  const agendarProxima = () => {
-    setTimeout(async () => {
-      await rodar();
-      agendarProxima();
-    }, msAteProximoHorario(new Date(), atrasoSegundos));
-  };
-  agendarProxima();
-}
-
-function agendarVerificacaoDeEmail() {
-  if (!credenciaisConfiguradas()) {
-    console.log('Importação automática de notas por e-mail não configurada (veja EMAIL_IMAP_* no .env)');
-    return;
-  }
-
-  const rodar = async () => {
-    try {
-      const resumo = await verificarCaixaDeEntrada();
-      if (resumo.emailsProcessados > 0) {
-        console.log(`E-mails verificados: ${resumo.emailsProcessados}/${resumo.emailsEncontrados} — ${resumo.materiaisCriados} materiais criados, ${resumo.materiaisAtualizados} atualizados`);
-      }
-      resumo.avisos.forEach(a => console.warn('Aviso:', a));
-    } catch (err) {
-      console.error('Erro na verificação automática de e-mail:', err.message);
-    }
-  };
-
-  agendarNosHorariosFixos(rodar, 0);
-  console.log(`Importação automática de notas por e-mail ativa (às ${HORARIOS_VERIFICACAO_AUTOMATICA.join(' e às ')})`);
-}
-
-function agendarVerificacaoDePix() {
-  if (!credenciaisConfiguradas()) return;
-
-  const rodar = async () => {
-    try {
-      const resumo = await verificarPixNaCaixaDeEntrada();
-      if (resumo.movimentosImportados > 0) {
-        console.log(`Pix verificados: ${resumo.movimentosImportados}/${resumo.emailsEncontrados} movimentos importados`);
-      }
-      resumo.avisos.forEach(a => console.warn('Aviso (Pix):', a));
-    } catch (err) {
-      console.error('Erro na verificação automática de Pix:', err.message);
-    }
-  };
-
-  agendarNosHorariosFixos(rodar, 30);
-  console.log(`Controle financeiro de Pix por e-mail ativo (às ${HORARIOS_VERIFICACAO_AUTOMATICA.join(' e às ')})`);
-}
-
-function agendarVerificacaoDePastaFornecedores() {
-  const rodar = async () => {
-    try {
-      const resumo = await verificarPastaFornecedores();
-      if (resumo.arquivosProcessados > 0) {
-        console.log(`Orçamentos de fornecedores verificados: ${resumo.arquivosProcessados}/${resumo.arquivosEncontrados} arquivos — ${resumo.materiaisCriados} materiais criados, ${resumo.materiaisAtualizados} atualizados`);
-      }
-      resumo.avisos.forEach(a => console.warn('Aviso (orçamentos de fornecedores):', a));
-    } catch (err) {
-      console.error('Erro na verificação da pasta de orçamentos de fornecedores:', err.message);
-    }
-  };
-
-  agendarNosHorariosFixos(rodar, 15);
-  console.log(`Leitura automática de orçamentos de fornecedores ativa (às ${HORARIOS_VERIFICACAO_AUTOMATICA.join(' e às ')}) — pastas: ${PASTAS_FORNECEDORES.join(' | ')}`);
-}
 
 // Inicializar
 // Na partida do Windows o backend pode subir antes do serviço do PostgreSQL:
@@ -251,6 +165,29 @@ async function aguardarBanco(tentativas = 24, intervaloMs = 5000) {
   }
 }
 
+// HTTPS opcional, com o MESMO app (o service worker do app de campo só vale em
+// HTTPS — docs/CAMPO-API.md). Liga com HTTPS_PORTA + HTTPS_CERTIFICADO e
+// HTTPS_CHAVE (.pem/.crt + .key) ou HTTPS_CERTIFICADO .pfx/.p12 (HTTPS_SENHA,
+// se tiver). Sem essas variáveis nada muda; certificado ilegível só gera aviso
+// e o HTTP segue normal.
+function iniciarHttps() {
+  const { HTTPS_PORTA, HTTPS_CERTIFICADO, HTTPS_CHAVE, HTTPS_SENHA } = process.env;
+  if (!HTTPS_PORTA || !HTTPS_CERTIFICADO) return;
+  try {
+    const pfx = /\.(pfx|p12)$/i.test(HTTPS_CERTIFICADO);
+    if (!pfx && !HTTPS_CHAVE) throw new Error('falta HTTPS_CHAVE (arquivo .key do certificado)');
+    const opcoes = pfx
+      ? { pfx: fs.readFileSync(HTTPS_CERTIFICADO), passphrase: HTTPS_SENHA || undefined }
+      : { cert: fs.readFileSync(HTTPS_CERTIFICADO), key: fs.readFileSync(HTTPS_CHAVE), passphrase: HTTPS_SENHA || undefined };
+    servidorHttps = require('https').createServer(opcoes, app);
+    servidorHttps.on('error', (err) => console.error(`HTTPS desligado (${err.message}). O HTTP segue normal.`));
+    servidorHttps.listen(Number(HTTPS_PORTA), '0.0.0.0', () => console.log(`HTTPS:    https://SEU_IP:${HTTPS_PORTA}  (app de campo: /campo)\n`));
+  } catch (err) {
+    servidorHttps = null;
+    console.error(`HTTPS desligado: não foi possível ler o certificado (${err.message}). O HTTP segue normal.`);
+  }
+}
+
 async function iniciar() {
   try {
     await aguardarBanco();
@@ -260,10 +197,11 @@ async function iniciar() {
       console.log(`Local:    http://localhost:${PORT}`);
       console.log(`Rede:     http://SEU_IP:${PORT}`);
       console.log(`Health:   http://localhost:${PORT}/health\n`);
-      agendarVerificacaoDeEmail();
-      agendarVerificacaoDePix();
-      agendarVerificacaoDePastaFornecedores();
+      // instância de teste/homologação (ROTINAS_AUTOMATICAS=desligadas): não lê a
+      // caixa de e-mail nem as pastas de fornecedores da produção
+      agendarRotinas();
     });
+    iniciarHttps();
   } catch (err) {
     console.error('Erro ao iniciar servidor:', err.message);
     process.exit(1);

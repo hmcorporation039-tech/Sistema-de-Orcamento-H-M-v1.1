@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { FilePlus2, FileDown, Upload, Calculator, Receipt, Trash2, Download, BookOpen, FolderDown } from 'lucide-react';
+import { FilePlus2, FileDown, Upload, Calculator, Receipt, Trash2, Download, BookOpen, FolderDown, ExternalLink } from 'lucide-react';
 import {
-  getDisciplinasLaudo, getModeloLaudo, getLaudos, getLaudo, criarLaudo, atualizarLaudo, removerLaudo,
+  getDisciplinasLaudo, getModeloLaudo, getLaudos, getLaudo, criarLaudoNaObra, atualizarLaudo, removerLaudo,
   calcularLaudo, baixarDocumentoLaudo, enviarFotosLaudo, getFotoLaudo, removerFotoLaudo, gerarOrcamentoDoLaudo,
   salvarDocumentosLaudo, getPastaLaudo, abrirPastaLaudo,
   enviarArquiteturaLaudo, getArquiteturaLaudo, baixarPlantaLaudo, baixarUnifilarLaudo,
 } from '../../services/api';
 import PainelPasta from '../PainelPasta';
+import ObraSelect from '../ObraSelect';
 import FormularioSpda from './FormularioSpda';
 import ResultadoSpda from './ResultadoSpda';
 import FormularioGenerico from './FormularioGenerico';
@@ -113,7 +114,7 @@ export default function LaudosProjetos() {
   async function abrir(id) {
     try {
       const r = await getLaudo(id);
-      setLaudo({ id: r.data.id, disciplina: r.data.disciplina, propostas: r.data.propostas || {}, gerar_orcamento: r.data.gerar_orcamento !== false });
+      setLaudo({ id: r.data.id, disciplina: r.data.disciplina, propostas: r.data.propostas || {}, gerar_orcamento: r.data.gerar_orcamento !== false, obra: r.data.obra || null });
       versaoRef.current = r.data.versao ?? null;
       conflitoRef.current = false;
       setDados(r.data.dados);
@@ -131,17 +132,21 @@ export default function LaudosProjetos() {
   // seleciona a disciplina do laudo e abre o formulário já preenchido
   const [busca, setBusca] = useSearchParams();
   const laudoDaUrl = busca.get('laudo');
+  // obra do laudo novo (2.0): /obras?aba=laudos&obra=ID já pré-seleciona
+  const obraDaUrl = Number(busca.get('obra')) || null;
+  const [obraNovo, setObraNovo] = useState(obraDaUrl);
+  useEffect(() => { if (obraDaUrl) setObraNovo(obraDaUrl); }, [obraDaUrl]);
   useEffect(() => {
     if (!laudoDaUrl) return;
     getLaudo(laudoDaUrl)
       .then(r => { setDisciplina(r.data.disciplina); return abrir(r.data.id); })
       .catch(() => toast.error('Laudo não encontrado'))
-      .finally(() => setBusca({ aba: 'laudos' }, { replace: true }));
+      .finally(() => setBusca(obraDaUrl ? { aba: 'laudos', obra: String(obraDaUrl) } : { aba: 'laudos' }, { replace: true }));
   }, [laudoDaUrl]); // só quando o id da URL muda
 
   async function novo(base) {
     try {
-      const r = await criarLaudo(disciplina, base);
+      const r = await criarLaudoNaObra(disciplina, base, obraNovo);
       toast.success('Laudo criado');
       await carregarLista();
       await abrir(r.data.id);
@@ -336,14 +341,23 @@ export default function LaudosProjetos() {
     baixarBlob(new Blob([JSON.stringify(dados, null, 1)], { type: 'application/json' }), nome);
   }
 
+  // Gera (ou atualiza) a proposta rascunho deste laudo e abre o editor único
+  // de orçamento (/propostas/editar/:id) — quantidades, preços, pesquisa de
+  // mercado e referências são revisados lá. Atualizar SUBSTITUI os itens da
+  // proposta vinculada (enquanto "Ativa"), por isso pede confirmação.
   async function orcar(modo) {
+    if (laudo.propostas?.[modo.modo] && !window.confirm(
+      `Atualizar o orçamento "${modo.rotulo}" com o cálculo atual deste laudo?\n\n` +
+      'Os itens da proposta serão SUBSTITUÍDOS — quantidades e preços ajustados no editor se perdem (BDI e impostos ficam). ' +
+      'Se a proposta já foi aprovada ou recusada, é criada uma nova.\n\nPara só continuar a revisão, use "Abrir no editor".'
+    )) return;
     setOcupado(`orc_${modo.modo}`);
     try {
       await salvarAgora();
       const r = await gerarOrcamentoDoLaudo(laudo.id, modo.modo);
       setLaudo(l => ({ ...l, propostas: { ...l.propostas, [modo.modo]: r.data.propostaId } }));
       toast.success(r.data.mensagem, { duration: 9000 });
-      navigate(`/orcamento/${r.data.propostaId}`);
+      navigate(`/propostas/editar/${r.data.propostaId}`);
     } catch (err) {
       toast.error(err.response?.data?.erro || 'Erro ao gerar o orçamento', { duration: 8000 });
     } finally {
@@ -414,6 +428,9 @@ export default function LaudosProjetos() {
               </button>
               <input ref={entradaJson} type="file" accept=".json,application/json" style={{ display: 'none' }}
                 onChange={e => { if (e.target.files[0]) importarJson(e.target.files[0]); e.target.value = ''; }} />
+              <div style={{ flex: '1 1 320px', maxWidth: 480, marginLeft: 'auto' }} title="Obra do próximo laudo criado aqui (novo, exemplo ou JSON importado) — opcional">
+                <ObraSelect value={obraNovo} onChange={(id) => setObraNovo(id)} rotuloVazio="Novo laudo sem obra" />
+              </div>
             </div>
 
             {lista.length === 0 ? (
@@ -455,6 +472,7 @@ export default function LaudosProjetos() {
                 <div style={{ fontSize: 15, fontWeight: 700, color: '#ddd' }}>{dados.obra?.nome || dados.cliente?.nome || 'Laudo sem título'}</div>
                 <div style={{ fontSize: 11, color: '#777' }}>
                   {sujo ? 'Alterações não salvas…' : salvoEm ? `Salvo às ${salvoEm.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : ''}
+                  {laudo.obra && <> · Obra: <span style={{ color: '#bbb' }}>{laudo.obra.nome} ({laudo.obra.codigo})</span></>}
                 </div>
               </div>
               <button style={btnPrimario} onClick={calcular} disabled={!!ocupado}><Calculator size={14} /> {ocupado === 'calcular' ? 'Calculando…' : 'Calcular'}</button>
@@ -476,10 +494,19 @@ export default function LaudosProjetos() {
               </label>
               {laudo.gerar_orcamento === false && <span style={{ fontSize: 12, color: '#777' }}>Só laudo — os documentos são emitidos sem orçamento.</span>}
               {laudo.gerar_orcamento !== false && (infoDisciplina?.modosOrcamento || []).map(m => (
-                <button key={m.modo} style={{ ...btnSecundario, borderColor: '#5a4a12', color: '#c9a227' }} disabled={!!ocupado} onClick={() => orcar(m)} title={m.descricao}>
-                  <Receipt size={13} style={{ marginRight: 5 }} />
-                  {ocupado === `orc_${m.modo}` ? 'Gerando…' : `${laudo.propostas?.[m.modo] ? 'Atualizar' : 'Gerar'} orçamento — ${m.rotulo}`}
-                </button>
+                <span key={m.modo} style={{ display: 'inline-flex', gap: 4 }}>
+                  {laudo.propostas?.[m.modo] && (
+                    <button style={{ ...btnSecundario, borderStyle: 'solid', borderColor: '#5a4a12', color: '#c9a227' }} disabled={!!ocupado}
+                      onClick={() => navigate(`/propostas/editar/${laudo.propostas[m.modo]}`)} title="Abre a proposta deste laudo no editor de orçamento, sem mudar os itens">
+                      <ExternalLink size={13} style={{ marginRight: 5 }} /> Abrir no editor — {m.rotulo}
+                    </button>
+                  )}
+                  <button style={{ ...btnSecundario, borderColor: '#5a4a12', color: '#c9a227' }} disabled={!!ocupado} onClick={() => orcar(m)}
+                    title={`${m.descricao || ''}${m.descricao ? ' — ' : ''}${laudo.propostas?.[m.modo] ? 'substitui os itens da proposta pelo cálculo atual e abre o editor' : 'cria a proposta rascunho e abre o editor'}`}>
+                    <Receipt size={13} style={{ marginRight: 5 }} />
+                    {ocupado === `orc_${m.modo}` ? 'Gerando…' : laudo.propostas?.[m.modo] ? `Atualizar e abrir — ${m.rotulo}` : `Gerar orçamento e abrir no editor — ${m.rotulo}`}
+                  </button>
+                </span>
               ))}
             </div>
             {(DISCIPLINAS_COM_PLANTA.includes(laudo.disciplina) || DISCIPLINAS_COM_UNIFILAR.includes(laudo.disciplina)) && (

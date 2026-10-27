@@ -1,6 +1,6 @@
 const pool = require('../config/database');
 const { credenciaisConfiguradas } = require('../utils/emailClient');
-const { verificarCaixaDeEntrada } = require('../services/notaFiscalEmailService');
+const rotinas = require('../services/rotinas');
 const { registrarAuditoria } = require('../utils/auditoria');
 
 async function statusEmail(req, res) {
@@ -21,7 +21,8 @@ async function statusEmail(req, res) {
 
 async function verificarAgora(req, res) {
   try {
-    const resumo = await verificarCaixaDeEntrada();
+    // pelo registro comum das rotinas (services/rotinas.js) — aparece no painel de Integrações
+    const resumo = await rotinas.executarRotina('notas-email', { origem: 'manual', usuarioId: req.usuario?.id });
     res.json(resumo);
   } catch (err) {
     console.error('Erro ao verificar caixa de entrada:', err);

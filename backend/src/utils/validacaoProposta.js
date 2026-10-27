@@ -26,7 +26,7 @@ function dataValida(valor) {
 }
 
 function validarProposta(body) {
-  const { data, cliente_nome, secoes, itens, bdi, imposto_venda, imposto_servico, desconto_materiais_pct, desconto_mao_obra_pct, validade } = body;
+  const { data, cliente_nome, secoes, itens, bdi, bdi_materiais, imposto_venda, imposto_servico, desconto_materiais_pct, desconto_mao_obra_pct, validade } = body;
 
   if (!data) return 'Informe a data da proposta.';
   if (!dataValida(data)) return 'Data inválida. Use o formato AAAA-MM-DD.';
@@ -41,7 +41,7 @@ function validarProposta(body) {
   if (secoes !== undefined && !Array.isArray(secoes)) return 'Formato inválido das seções.';
   if (itens !== undefined && !Array.isArray(itens)) return 'Formato inválido dos itens.';
 
-  for (const [campo, valor] of [['bdi', bdi], ['imposto_venda', imposto_venda], ['imposto_servico', imposto_servico]]) {
+  for (const [campo, valor] of [['bdi', bdi], ['bdi_materiais', bdi_materiais], ['imposto_venda', imposto_venda], ['imposto_servico', imposto_servico]]) {
     if (valor === undefined || valor === null || valor === '') continue;
     const n = Number(valor);
     // Coluna DECIMAL(5,2): acima de 999.99 o INSERT estourava com erro 500.
@@ -60,6 +60,13 @@ function validarProposta(body) {
     if (!Number.isFinite(n) || n < -100 || n > 999.99) {
       return `O campo "${campo}" deve ser um percentual entre -100 e 999,99.`;
     }
+  }
+
+  // memória do BDI (calculador do TCU, versão 2.0): objeto pequeno; o conteúdo
+  // é limpo e recalculado por utils/bdiTcu.normalizarMemoriaBdi
+  if (body.bdi_memoria != null && (typeof body.bdi_memoria !== 'object' || Array.isArray(body.bdi_memoria)
+    || JSON.stringify(body.bdi_memoria).length > 4000)) {
+    return 'Memória de cálculo do BDI inválida.';
   }
 
   if (validade !== undefined && validade !== null && validade !== '') {

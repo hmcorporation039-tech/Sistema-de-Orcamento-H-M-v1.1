@@ -4,7 +4,11 @@ const { gerarHtmlProposta, gerarFooterTemplate } = require('../utils/pdfTemplate
 const { criarTransportador } = require('../utils/smtpClient');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
 const { comTransacao } = require('../utils/transacao');
-const { calcularTotais, normalizarItem, ehMaoDeObra } = require('../utils/calculoProposta');
+const { calcularTotais, normalizarItem, ehMaoDeObra, bdiMateriaisDefinido, arredondar } = require('../utils/calculoProposta');
+const { normalizarMemoriaBdi } = require('../utils/bdiTcu');
+
+// BDI diferenciado de materiais (2.0, Fase 3F): vazio/null = mesmo BDI para tudo
+const lerBdiMateriais = (v) => (bdiMateriaisDefinido(v) ? arredondar(Number(v)) : null);
 const { validarProposta, validadeOuPadrao } = require('../utils/validacaoProposta');
 const { garantirMaterialCadastrado, garantirMaoDeObraCadastrada } = require('../utils/catalogoAutoCadastro');
 const { classificarPendentesEmSegundoPlano } = require('../services/classificacaoMateriais');
@@ -12,6 +16,9 @@ const { salvarPdfPropostaNasPastas } = require('../services/pastasRegistros');
 const { versaoDoPedido, responderConflitoOuAusente } = require('../utils/versao');
 const { registrarAuditoria } = require('../utils/auditoria');
 const { gerarPlanilhaCliente } = require('../utils/planilhaOrcamentoCliente');
+const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
+const { sqlDecisaoCliente } = require('../utils/aprovacaoLink');
+const { contentDisposition } = require('../utils/nomeArquivoDownload');
 
 // Assinatura padrão da empresa — entra sempre no final de todo e-mail
 // enviado ao cliente (mensagem padrão ou digitada à mão), sem exceção.
@@ -48,12 +55,15 @@ async function inserirSecoesEItens(client, propostaId, secoes, itens) {
       // catálogo", então material_id chega nulo) é comparado com o que já
       // existe — só vira material novo se não existir nada parecido. Item de
       // mão de obra não tem uma FK própria em proposta_itens, mas a
-      // descrição entra (ou já está) no catálogo de mão de obra pra virar
-      // sugestão da próxima vez, em qualquer proposta de qualquer cliente.
+      // descrição entra (ou já está) na base única de serviços (versão 2.0,
+      // utils/servicosBase.js) pra virar sugestão da próxima vez, em qualquer
+      // proposta de qualquer cliente. O código do item não é reescrito: um
+      // serviço fundido depois não muda propostas já gravadas.
       let materialId = item.material_id;
       if (maoDeObra) {
         await garantirMaoDeObraCadastrada(client, {
-          descricao: item.descricao, unidade: item.unidade, valor_unitario: item.valor_unitario
+          descricao: item.descricao, unidade: item.unidade, valor_unitario: item.valor_unitario,
+          codigo: item.codigo, subgrupo: item.subgrupo
         });
       } else if (!materialId) {
         materialId = await garantirMaterialCadastrado(client, {
@@ -105,13 +115,26 @@ async function listar(req, res) {
     params.push(`%${busca}%`);
     condicoes += ` AND (p.numero ILIKE $${params.length} OR p.cliente_nome ILIKE $${params.length} OR p.local_obra ILIKE $${params.length})`;
   }
+  // ?obra_id=ID (propostas da obra) ou ?obra_id=sem (sem obra)
+  if (req.query.obra_id === 'sem') condicoes += ' AND p.obra_id IS NULL';
+  else if (req.query.obra_id) {
+    const n = Number(req.query.obra_id);
+    if (!Number.isInteger(n) || n < 1) return res.status(400).json({ erro: 'Obra inválida.' });
+    params.push(n);
+    condicoes += ` AND p.obra_id = $${params.length}`;
+  }
 
   try {
     const total = await pool.query(`SELECT count(*) FROM propostas p ${condicoes}`, params);
+    // decisao_cliente: a última decisão do cliente pelo link de aprovação
+    // ({ decisao: 'aprovada'|'recusada', nome, data }) ou null, na mesma consulta
+    const dc = sqlDecisaoCliente('p');
     const result = await pool.query(
-      `SELECT p.*, c.nome as cliente_nome_cadastro
+      `SELECT p.*, c.nome as cliente_nome_cadastro, ${sqlObraJson('ob')} AS obra, ${dc.coluna}
        FROM propostas p
        LEFT JOIN clientes c ON p.cliente_id = c.id
+       LEFT JOIN obras ob ON ob.id = p.obra_id
+       ${dc.join}
        ${condicoes}
        ORDER BY p.sequencial DESC
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -128,9 +151,10 @@ async function buscarUma(req, res) {
   const { id } = req.params;
   try {
     const proposta = await pool.query(
-      `SELECT p.*, c.email AS cliente_email
+      `SELECT p.*, c.email AS cliente_email, ${sqlObraJson('ob')} AS obra
        FROM propostas p
        LEFT JOIN clientes c ON p.cliente_id = c.id
+       LEFT JOIN obras ob ON ob.id = p.obra_id
        WHERE p.id = $1`,
       [id]
     );
@@ -177,10 +201,19 @@ async function criar(req, res, next) {
   const erroValidacao = validarProposta(req.body);
   if (erroValidacao) return res.status(400).json({ erro: erroValidacao });
 
+  // BDI diferenciado de materiais e memória do calculador do TCU (2.0, Fase 3F)
+  const bdiMateriais = lerBdiMateriais(req.body.bdi_materiais);
+  const memoriaBdi = normalizarMemoriaBdi(req.body.bdi_memoria);
+
   // Totais recalculados aqui — os valores enviados pelo cliente são ignorados.
-  const totais = calcularTotais({ secoes, itens, bdi, imposto_venda, imposto_servico });
+  const totais = calcularTotais({ secoes, itens, bdi, bdi_materiais: bdiMateriais, imposto_venda, imposto_servico });
 
   try {
+    // obra (2.0): proposta nova já nasce ligada à obra aberta (obra_id opcional)
+    const obra = lerObraId(req.body);
+    const erroObra = await conferirObra(pool, obra, { usuario: req.usuario });
+    if (erroObra) return res.status(400).json({ erro: erroObra });
+
     const { proposta, numero } = await comTransacao(async (client) => {
     const seq = await proximoNumero(client);
     const numero = 'P' + String(seq).padStart(3, '0');
@@ -193,8 +226,8 @@ async function criar(req, res, next) {
         desconto_materiais_pct, desconto_mao_obra_pct,
         subtotal_materiais, subtotal_mao_obra, valor_bdi,
         valor_imposto_venda, valor_imposto_servico, total,
-        usuario_id
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+        usuario_id, obra_id, bdi_materiais, bdi_memoria
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
       RETURNING *`,
       [
         numero, seq, data, validadeOuPadrao(validade), tipo, porte,
@@ -203,7 +236,7 @@ async function criar(req, res, next) {
         desconto_materiais_pct ?? null, desconto_mao_obra_pct ?? null,
         totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi,
         totais.valor_imposto_venda, totais.valor_imposto_servico, totais.total,
-        req.usuario.id
+        req.usuario.id, obra.valor, bdiMateriais, memoriaBdi
       ]
     );
 
@@ -237,9 +270,40 @@ async function atualizar(req, res, next) {
   const erroValidacao = validarProposta(req.body);
   if (erroValidacao) return res.status(400).json({ erro: erroValidacao });
 
-  const totais = calcularTotais({ secoes, itens, bdi, imposto_venda, imposto_servico });
-
   try {
+    // Aprovada pelo cliente no link (2.0, Fase 3I): o aceite guarda o hash do
+    // que ele viu; editar depois deixaria o sistema diferente do aceito sem
+    // aviso. Só o administrador altera (para corrigir); o normal é duplicar.
+    if (req.usuario?.role !== 'admin') {
+      const { rows: [aceite] } = await pool.query(
+        `SELECT 1 FROM propostas p
+          WHERE p.id = $1 AND p.status = 'Aprovada'
+            AND EXISTS (SELECT 1 FROM proposta_decisoes_aprovacao d WHERE d.proposta_id = p.id AND d.decisao = 'aprovada')`,
+        [id]
+      );
+      if (aceite) {
+        return res.status(409).json({ erro: 'Esta proposta foi aprovada pelo cliente pelo link e não pode mais ser alterada. Use "Duplicar" para fazer uma nova versão (ou peça a um administrador).' });
+      }
+    }
+
+    // BDI diferenciado e memória do BDI (2.0, Fase 3F): ausentes no corpo
+    // (cliente antigo, MCP) mantêm o que a proposta já tem — e o total é
+    // recalculado com o BDI de materiais gravado, para não mudar sozinho
+    const temBdiMateriais = Object.prototype.hasOwnProperty.call(req.body, 'bdi_materiais');
+    const temMemoriaBdi = Object.prototype.hasOwnProperty.call(req.body, 'bdi_memoria');
+    let bdiMateriais = lerBdiMateriais(req.body.bdi_materiais);
+    if (!temBdiMateriais) {
+      const { rows: [atual] } = await pool.query('SELECT bdi_materiais FROM propostas WHERE id = $1', [id]);
+      bdiMateriais = atual ? lerBdiMateriais(atual.bdi_materiais) : null;
+    }
+    const memoriaBdi = normalizarMemoriaBdi(req.body.bdi_memoria);
+    const totais = calcularTotais({ secoes, itens, bdi, bdi_materiais: bdiMateriais, imposto_venda, imposto_servico });
+
+    // obra (2.0): obra_id no corpo liga/desliga (null); ausente mantém a atual
+    const obra = lerObraId(req.body);
+    const erroObra = await conferirObra(pool, obra, { usuario: req.usuario, tabela: 'propostas', id });
+    if (erroObra) return res.status(400).json({ erro: erroObra });
+
     const proposta = await comTransacao(async (client) => {
     const propResult = await client.query(
       `UPDATE propostas SET
@@ -249,6 +313,9 @@ async function atualizar(req, res, next) {
         desconto_materiais_pct=$15, desconto_mao_obra_pct=$16,
         subtotal_materiais=$17, subtotal_mao_obra=$18, valor_bdi=$19,
         valor_imposto_venda=$20, valor_imposto_servico=$21, total=$22,
+        obra_id = CASE WHEN $25::boolean THEN $26::int ELSE obra_id END,
+        bdi_materiais = $27,
+        bdi_memoria = CASE WHEN $28::boolean THEN $29::jsonb ELSE bdi_memoria END,
         atualizado_em=NOW(), versao=versao+1
        WHERE id=$23 AND ($24::int IS NULL OR versao = $24)
        RETURNING *`,
@@ -259,7 +326,8 @@ async function atualizar(req, res, next) {
         desconto_materiais_pct ?? null, desconto_mao_obra_pct ?? null,
         totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi,
         totais.valor_imposto_venda, totais.valor_imposto_servico, totais.total,
-        id, versaoDoPedido(req.body)
+        id, versaoDoPedido(req.body), obra.presente, obra.valor,
+        bdiMateriais, temMemoriaBdi, memoriaBdi
       ]
     );
 
@@ -319,8 +387,8 @@ async function duplicar(req, res, next) {
         desconto_materiais_pct, desconto_mao_obra_pct,
         subtotal_materiais, subtotal_mao_obra, valor_bdi,
         valor_imposto_venda, valor_imposto_servico, total,
-        status, usuario_id
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,'Ativa',$25)
+        status, usuario_id, obra_id, bdi_materiais, bdi_memoria
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,'Ativa',$25,$26,$27,$28)
       RETURNING *`,
       [
         numero, seq, hoje, p.validade, p.tipo, p.porte,
@@ -329,7 +397,8 @@ async function duplicar(req, res, next) {
         p.desconto_materiais_pct, p.desconto_mao_obra_pct,
         p.subtotal_materiais, p.subtotal_mao_obra, p.valor_bdi,
         p.valor_imposto_venda, p.valor_imposto_servico, p.total,
-        req.usuario.id
+        req.usuario.id, p.obra_id, // a cópia fica na mesma obra
+        p.bdi_materiais, p.bdi_memoria // e com o mesmo BDI (diferenciado e memória do cálculo)
       ]
     );
     const nova = novaResult.rows[0];
@@ -380,15 +449,7 @@ async function atualizarStatus(req, res, next) {
     // Se o evento falhasse, o status já estava gravado de forma irreversível,
     // mas o usuário recebia erro 500 e a tela não atualizava — o banco dizia
     // "Aprovada" e a tela dizia que não deu certo.
-    const proposta = await comTransacao(async (client) => {
-      const result = await client.query(
-        'UPDATE propostas SET status=$1, atualizado_em=NOW(), versao=versao+1 WHERE id=$2 RETURNING *',
-        [status, id]
-      );
-      if (result.rows.length === 0) return null;
-      await registrarEvento(client, id, req.usuario.id, 'status', `Status alterado para ${status}`);
-      return result.rows[0];
-    });
+    const proposta = await comTransacao(client => aplicarStatusProposta(client, id, status, req.usuario.id));
 
     if (!proposta) return res.status(404).json({ erro: 'Proposta não encontrada' });
     res.json(proposta);
@@ -396,6 +457,27 @@ async function atualizarStatus(req, res, next) {
     console.error('Erro ao atualizar status:', err);
     next(err);
   }
+}
+
+// Troca o status dentro da transação do chamador: grava, registra o evento e,
+// se aprovada, leva a obra para "contratada". Único caminho para mudar status —
+// a tela (atualizarStatus) e a aprovação por link (aprovacaoController, sem
+// usuário: usuarioId null) passam por aqui.
+async function aplicarStatusProposta(client, id, status, usuarioId, detalhes) {
+  const result = await client.query(
+    'UPDATE propostas SET status=$1, atualizado_em=NOW(), versao=versao+1 WHERE id=$2 RETURNING *',
+    [status, id]
+  );
+  if (result.rows.length === 0) return null;
+  await registrarEvento(client, id, usuarioId, 'status', detalhes || `Status alterado para ${status}`);
+  // obra (2.0): proposta aprovada leva a obra em prospecção/orçamento para "contratada"
+  if (status === 'Aprovada' && result.rows[0].obra_id) {
+    await client.query(
+      "UPDATE obras SET status = 'contratada', atualizado_em = NOW(), versao = versao + 1 WHERE id = $1 AND status IN ('prospeccao', 'orcamento')",
+      [result.rows[0].obra_id]
+    );
+  }
+  return result.rows[0];
 }
 
 async function remover(req, res, next) {
@@ -438,7 +520,17 @@ async function proximoNum(req, res) {
   }
 }
 
-async function montarPdfBuffer(id) {
+// Anexos opcionais do PDF (2.0, Fase 3F), todos desligados por padrão:
+// ?curva_abc=1 (curva ABC dos itens) e ?composicao_bdi=1 (memória do BDI pela
+// fórmula do TCU — exigida em proposta para órgão público). No e-mail, vêm em
+// req.body.anexos = { curva_abc, composicao_bdi }.
+const ligado = (v) => v === true || v === 1 || v === '1' || v === 'true' || v === 'sim';
+function lerAnexosPdf(fonte) {
+  const f = fonte && typeof fonte === 'object' ? fonte : {};
+  return { curvaAbc: ligado(f.curva_abc), composicaoBdi: ligado(f.composicao_bdi) };
+}
+
+async function montarPdfBuffer(id, anexos = {}) {
   const proposta = await pool.query('SELECT * FROM propostas WHERE id = $1', [id]);
   if (proposta.rows.length === 0) return null;
 
@@ -451,14 +543,16 @@ async function montarPdfBuffer(id) {
     [id]
   );
 
-  const html = gerarHtmlProposta({ ...proposta.rows[0], secoes: secoes.rows, itens: itens.rows });
+  const html = gerarHtmlProposta({ ...proposta.rows[0], secoes: secoes.rows, itens: itens.rows }, anexos);
 
-  const pdf = await gerarPdfDeHtml(html, {
+  // puppeteer 25 devolve Uint8Array: sem Buffer.from, o res.send do Express 4
+  // respondia JSON ({"0":37,"1":80,...}) no lugar do PDF (download e anexo)
+  const pdf = Buffer.from(await gerarPdfDeHtml(html, {
     margin: { top: '12mm', bottom: '24mm', left: '14mm', right: '14mm' },
     displayHeaderFooter: true,
     headerTemplate: '<div></div>',
     footerTemplate: gerarFooterTemplate(),
-  });
+  }));
   return { proposta: proposta.rows[0], pdf };
 }
 
@@ -470,14 +564,14 @@ function nomeArquivoProposta(proposta) {
 async function gerarPdf(req, res) {
   const { id } = req.params;
   try {
-    const resultado = await montarPdfBuffer(id);
+    const resultado = await montarPdfBuffer(id, lerAnexosPdf(req.query));
     if (!resultado) return res.status(404).json({ erro: 'Proposta não encontrada' });
     // orçamento vindo de análise/laudo: a cópia na pasta deles vira esta versão
     await salvarPdfPropostaNasPastas(resultado.proposta, resultado.pdf);
 
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="${nomeArquivoProposta(resultado.proposta)}"`,
+      'Content-Disposition': contentDisposition(nomeArquivoProposta(resultado.proposta)),
     });
     res.send(resultado.pdf);
   } catch (err) {
@@ -496,7 +590,7 @@ async function gerarPlanilha(req, res) {
     const nome = nomeArquivoProposta(r.proposta).replace(/\.pdf$/i, '.xlsx');
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename="${nome}"`,
+      'Content-Disposition': contentDisposition(nome),
     });
     res.send(Buffer.from(r.buffer));
   } catch (err) {
@@ -518,7 +612,7 @@ async function enviarEmail(req, res) {
   }
 
   try {
-    const resultado = await montarPdfBuffer(id);
+    const resultado = await montarPdfBuffer(id, lerAnexosPdf(req.body.anexos));
     if (!resultado) return res.status(404).json({ erro: 'Proposta não encontrada' });
     const { proposta, pdf } = resultado;
     await salvarPdfPropostaNasPastas(proposta, pdf);
@@ -559,4 +653,6 @@ module.exports = {
   inserirSecoesEItens, proximoNumero, registrarEvento,
   // PDF da proposta sem resposta HTTP (cópia na pasta do projeto/laudo)
   montarPdfBuffer,
+  // mudança de status numa transação já aberta (aprovação por link, 2.0)
+  aplicarStatusProposta,
 };

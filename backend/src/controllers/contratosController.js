@@ -1,8 +1,11 @@
 const pool = require('../config/database');
+const { contentDisposition } = require('../utils/nomeArquivoDownload');
 const { registrarAuditoria } = require('../utils/auditoria');
 const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
 const { gerarHtmlContrato, gerarFooterTemplate } = require('../utils/pdfTemplate');
+const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
+const { salvarPdfContratoNaObra } = require('../services/pastasRegistros');
 
 async function listar(req, res) {
   const { busca } = req.query;
@@ -13,18 +16,28 @@ async function listar(req, res) {
 
   if (busca) {
     params.push(`%${busca}%`);
-    condicoes += ` AND (p.nome ILIKE $1 OR c.codigo_registro ILIKE $1)`;
+    condicoes += ` AND (p.nome ILIKE $1 OR c.codigo_registro ILIKE $1 OR c.local_obra ILIKE $1 OR ob.nome ILIKE $1 OR ob.codigo ILIKE $1)`;
+  }
+  // ?obra_id=ID (contratos da obra) ou ?obra_id=sem (sem obra)
+  if (req.query.obra_id === 'sem') condicoes += ' AND c.obra_id IS NULL';
+  else if (req.query.obra_id) {
+    const n = Number(req.query.obra_id);
+    if (!Number.isInteger(n) || n < 1) return res.status(400).json({ erro: 'Obra inválida.' });
+    params.push(n);
+    condicoes += ` AND c.obra_id = $${params.length}`;
   }
 
   try {
     const total = await pool.query(
-      `SELECT count(*) FROM contratos c JOIN prestadores p ON p.id = c.prestador_id ${condicoes}`,
+      `SELECT count(*) FROM contratos c JOIN prestadores p ON p.id = c.prestador_id LEFT JOIN obras ob ON ob.id = c.obra_id ${condicoes}`,
       params
     );
     const result = await pool.query(
-      `SELECT c.*, p.nome AS prestador_nome, p.documento AS prestador_documento, p.tipo AS prestador_tipo
+      `SELECT c.*, p.nome AS prestador_nome, p.documento AS prestador_documento, p.tipo AS prestador_tipo,
+              ${sqlObraJson('ob')} AS obra
        FROM contratos c
        JOIN prestadores p ON p.id = c.prestador_id
+       LEFT JOIN obras ob ON ob.id = c.obra_id
        ${condicoes}
        ORDER BY c.id DESC
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -75,11 +88,15 @@ async function criar(req, res) {
   try {
     const prestador = await pool.query('SELECT id FROM prestadores WHERE id = $1 AND ativo = true', [prestadorId]);
     if (prestador.rows.length === 0) return res.status(404).json({ erro: 'Prestador não encontrado' });
+    // obra (2.0): obraId/obra_id opcional
+    const obra = lerObraId(req.body);
+    const erroObra = await conferirObra(pool, obra);
+    if (erroObra) return res.status(400).json({ erro: erroObra });
 
     const result = await pool.query(
-      `INSERT INTO contratos (prestador_id, objeto, local_obra, periodo_inicio, periodo_fim, valor, usuario_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, criado_em`,
-      [prestadorId, objeto || null, localObra || null, periodoInicio, periodoFim, valor, req.usuario.id]
+      `INSERT INTO contratos (prestador_id, objeto, local_obra, periodo_inicio, periodo_fim, valor, usuario_id, obra_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, criado_em`,
+      [prestadorId, objeto || null, localObra || null, periodoInicio, periodoFim, valor, req.usuario.id, obra.valor]
     );
     const { id, criado_em } = result.rows[0];
     const codigoRegistro = `CT-${new Date(criado_em).getFullYear()}-${String(id).padStart(4, '0')}`;
@@ -101,11 +118,16 @@ async function atualizar(req, res) {
   try {
     const prestador = await pool.query('SELECT id FROM prestadores WHERE id = $1 AND ativo = true', [prestadorId]);
     if (prestador.rows.length === 0) return res.status(404).json({ erro: 'Prestador não encontrado' });
+    // obra (2.0): presente liga/desliga (null); ausente mantém
+    const obra = lerObraId(req.body);
+    const erroObra = await conferirObra(pool, obra);
+    if (erroObra) return res.status(400).json({ erro: erroObra });
 
     const result = await pool.query(
-      `UPDATE contratos SET prestador_id=$1, objeto=$2, local_obra=$3, periodo_inicio=$4, periodo_fim=$5, valor=$6
+      `UPDATE contratos SET prestador_id=$1, objeto=$2, local_obra=$3, periodo_inicio=$4, periodo_fim=$5, valor=$6,
+              obra_id = CASE WHEN $8::boolean THEN $9::int ELSE obra_id END
        WHERE id=$7 RETURNING id`,
-      [prestadorId, objeto || null, localObra || null, periodoInicio, periodoFim, valor, id]
+      [prestadorId, objeto || null, localObra || null, periodoInicio, periodoFim, valor, id, obra.presente, obra.valor]
     );
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Contrato não encontrado' });
     res.json({ id: result.rows[0].id });
@@ -121,11 +143,13 @@ async function gerarPdf(req, res) {
     if (!contrato) return res.status(404).json({ erro: 'Contrato não encontrado' });
 
     const pdf = await montarPdfBuffer(contrato);
-    const nomeArquivo = contrato.prestador_nome.replace(/[^a-zA-Z0-9]+/g, '_');
+    await salvarPdfContratoNaObra(contrato, pdf); // cópia em Obras\<obra>\Contratos (contrato ligado a obra)
+    // acentos ficam (o cabeçalho leva o nome em UTF-8 — utils/nomeArquivoDownload)
+    const nomeArquivo = String(contrato.prestador_nome || '').replace(/[^\p{L}\p{N}]+/gu, '_');
     const sufixo = contrato.codigo_registro || contrato.id;
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="Contrato_${nomeArquivo}_${sufixo}.pdf"`,
+      'Content-Disposition': contentDisposition(`Contrato_${nomeArquivo}_${sufixo}.pdf`),
     });
     res.send(pdf);
   } catch (err) {

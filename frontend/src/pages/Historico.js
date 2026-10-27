@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Search, Trash2, X, FileDown, Copy, Send, Pencil } from 'lucide-react';
-import { getPropostas, getProposta, getClientes, atualizarStatus, removerProposta, duplicarProposta } from '../services/api';
+import { Search, Trash2, X, FileDown, FileSpreadsheet, Copy, Send, Pencil, Plus, Link2, CheckCircle2, XCircle } from 'lucide-react';
+import { getPropostas, getProposta, getClientes, atualizarStatus, removerProposta, duplicarProposta, getRelatorioPropostas } from '../services/api';
 import api from '../services/api';
 import { formatarMoeda, formatarData, formatarNcm } from '../utils/format';
 import Paginacao from '../components/Paginacao';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
 import Select from '../components/Select';
+import BotaoLinkAprovacao from '../components/BotaoLinkAprovacao';
 
 const STATUS_CORES = {
   Ativa: { bg: '#1a1a0a', cor: '#c9a227', borda: '#4a3d10' },
@@ -21,7 +22,39 @@ const ACAO_LABEL = {
   editada: 'Editada',
   status: 'Status alterado',
   duplicada: 'Duplicada',
+  email: 'Enviada por e-mail',
+  link_aprovacao: 'Link de aprovação',
+  link_revogado: 'Link revogado',
+  aprovada_link: 'Aprovada pelo cliente (link)',
+  recusada_link: 'Recusada pelo cliente (link)',
 };
+
+const dataHoraCurta = (d) => d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+// Decisão do cliente pelo link de aprovação (decisao_cliente da listagem:
+// { decisao, nome, data } da última decisão). Selo pequeno ao lado do status;
+// o nome e a hora ficam na dica (title) para não alargar a tabela.
+function SeloDecisaoCliente({ decisao }) {
+  if (!decisao?.decisao) return null;
+  const aprovou = decisao.decisao === 'aprovada';
+  const quando = decisao.data ? new Date(decisao.data) : null;
+  const dica = `${aprovou ? 'Aprovada' : 'Recusada'} pelo cliente pelo link de aprovação`
+    + (decisao.nome ? ` — ${decisao.nome}` : '')
+    + (quando ? `, ${dataHoraCurta(quando)}` : '');
+  const Icone = aprovou ? CheckCircle2 : XCircle;
+  return (
+    <span title={dica} aria-label={dica} data-testid="selo-decisao-cliente"
+      style={{
+        marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 20,
+        fontSize: 10, fontWeight: 700, verticalAlign: 'middle',
+        background: aprovou ? '#0a1a0f' : '#1a0a0a', color: aprovou ? '#3fb95f' : '#d06060',
+        border: `1px dashed ${aprovou ? '#1a4a26' : '#4a1a1a'}`,
+      }}>
+      <Icone size={11} /> {aprovou ? 'Cliente aprovou' : 'Cliente recusou'}
+      {quando ? ` ${quando.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}` : ''}
+    </span>
+  );
+}
 
 // Remove acentuação e normaliza caixa/espaços — usado pra achar o cliente pelo
 // nome quando a proposta não está linkada por cliente_id (ex.: "CLINICA" na
@@ -31,8 +64,11 @@ function normalizarNome(txt) {
 }
 
 // Só faz sentido avisar sobre vencimento de propostas que ainda estão em aberto.
+// As linhas que vêm do resumo por período (/relatorios/propostas) não trazem a
+// validade — sem ela não dá para calcular, e não se pode supor "0 dias" (isso
+// marcaria toda proposta ativa antiga como vencida).
 function diasParaVencer(p) {
-  if (p.status !== 'Ativa' || !p.data) return null;
+  if (p.status !== 'Ativa' || !p.data || p.validade == null) return null;
   const dataLimite = new Date(p.data);
   dataLimite.setUTCDate(dataLimite.getUTCDate() + (Number(p.validade) || 0));
   const hoje = new Date();
@@ -40,13 +76,59 @@ function diasParaVencer(p) {
   return Math.round((dataLimite.getTime() - hojeUTC) / 86400000);
 }
 
+// Mesmo tamanho de página do backend (utils/paginacao.js), para a lista ter o
+// mesmo jeito com ou sem período escolhido.
+const POR_PAGINA = 30;
+
+// A rota /relatorios/propostas sempre filtra por período (sem datas ela usa o
+// mês atual). Sem período escolhido aqui, a lista mostra todo o histórico —
+// então o resumo e a exportação vão de uma data bem antiga até hoje.
+const INICIO_DO_HISTORICO = '2000-01-01';
+
+function paraIso(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function hojeIso() {
+  return paraIso(new Date());
+}
+
+const ATALHOS_PERIODO = [
+  { rotulo: 'Todo o histórico', calcular: () => ['', ''] },
+  { rotulo: 'Este mês', calcular: () => { const d = new Date(); return [paraIso(new Date(d.getFullYear(), d.getMonth(), 1)), hojeIso()]; } },
+  { rotulo: 'Mês passado', calcular: () => { const d = new Date(); return [paraIso(new Date(d.getFullYear(), d.getMonth() - 1, 1)), paraIso(new Date(d.getFullYear(), d.getMonth(), 0))]; } },
+  { rotulo: 'Este ano', calcular: () => [`${new Date().getFullYear()}-01-01`, hojeIso()] },
+];
+
+function filtrosDoRelatorio(dataInicio, dataFim, status, busca) {
+  return {
+    dataInicio, dataFim,
+    ...(status ? { status } : {}),
+    ...(busca ? { busca } : {}),
+  };
+}
+
+// Lista de propostas (aba "Propostas" do hub Propostas). Na versão 2.0 juntou
+// o antigo Histórico com o antigo Relatórios: os filtros de período/status/
+// busca, os totais e a exportação CSV/PDF ficam no topo da lista.
+//   - Sem período: a lista vem de /propostas (paginada no servidor, com o aviso
+//     de vencimento) e o resumo de /relatorios/propostas com todo o histórico.
+//   - Com período: a mesma chamada de /relatorios/propostas dá o resumo e a
+//     lista (o /propostas não filtra por data), paginada aqui no navegador.
 export default function Historico() {
   const navigate = useNavigate();
   const [propostas, setPropostas] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [busca, setBusca] = useState('');
   const [statusFiltro, setStatusFiltro] = useState('');
+  const [dataInicio, setDataInicio] = useState('');
+  const [dataFim, setDataFim] = useState('');
   const [carregando, setCarregando] = useState(true);
+  const [relatorio, setRelatorio] = useState({ propostas: [], totais: { propostas: 0, valorTotal: 0, valorAprovado: 0 } });
+  const [carregandoRelatorio, setCarregandoRelatorio] = useState(true);
+  const [exportando, setExportando] = useState(null);
+  // Incrementa para recarregar lista e resumo depois de mudar status, excluir ou duplicar
+  const [versao, setVersao] = useState(0);
   const [detalhe, setDetalhe] = useState(null);
   const [carregandoDetalhe, setCarregandoDetalhe] = useState(false);
   const [gerandoPdf, setGerandoPdf] = useState(false);
@@ -54,6 +136,14 @@ export default function Historico() {
   const [modalEmail, setModalEmail] = useState(false);
   const [pagina, setPagina] = useState(1);
   const [paginacao, setPaginacao] = useState({ total: 0, totalPaginas: 1 });
+  // Proposta com o modal do link de aprovação aberto ({ id, numero, status }).
+  // Um modal só, fora da tabela: recarregar a lista (depois de gerar o link ou de
+  // uma decisão do cliente) não o fecha — o endereço novo só aparece uma vez.
+  const [linkAprovacao, setLinkAprovacao] = useState(null);
+
+  const temPeriodo = Boolean(dataInicio || dataFim);
+  const inicioEfetivo = dataInicio || INICIO_DO_HISTORICO;
+  const fimEfetivo = dataFim || hojeIso();
 
   // Fallback pro e-mail do cliente quando a proposta não está linkada por
   // cliente_id (detalhe.cliente_email vem nulo) — busca pelo nome no cadastro.
@@ -62,33 +152,105 @@ export default function Historico() {
     [clientes, detalhe?.cliente_nome]
   );
 
-  const carregar = useCallback(async () => {
-    setCarregando(true);
-    try {
-      const res = await getPropostas({
-        ...(busca ? { busca } : {}),
-        ...(statusFiltro ? { status: statusFiltro } : {}),
-        pagina,
-      });
-      setPropostas(res.data.itens);
-      setPaginacao({ total: res.data.total, totalPaginas: res.data.totalPaginas });
-    } catch {
-      toast.error('Erro ao carregar propostas');
-    } finally {
-      setCarregando(false);
-    }
-  }, [busca, statusFiltro, pagina]);
+  const recarregar = useCallback(() => setVersao(v => v + 1), []);
 
   useEffect(() => {
     getClientes({ porPagina: 1000 }).then(res => setClientes(res.data.itens)).catch(() => {});
   }, []);
 
-  useEffect(() => { setPagina(1); }, [busca, statusFiltro]);
+  useEffect(() => { setPagina(1); }, [busca, statusFiltro, dataInicio, dataFim]);
 
+  // Resumo (totais) — e, com período escolhido, também a lista
   useEffect(() => {
-    const t = setTimeout(carregar, 300);
-    return () => clearTimeout(t);
-  }, [carregar]);
+    let cancelado = false;
+    const t = setTimeout(async () => {
+      setCarregandoRelatorio(true);
+      try {
+        const res = await getRelatorioPropostas(filtrosDoRelatorio(inicioEfetivo, fimEfetivo, statusFiltro, busca));
+        if (!cancelado) setRelatorio(res.data);
+      } catch {
+        if (!cancelado) toast.error('Erro ao calcular o resumo das propostas');
+      } finally {
+        if (!cancelado) setCarregandoRelatorio(false);
+      }
+    }, 300);
+    return () => { cancelado = true; clearTimeout(t); };
+  }, [inicioEfetivo, fimEfetivo, statusFiltro, busca, versao]);
+
+  // Lista paginada no servidor (só sem período)
+  useEffect(() => {
+    if (temPeriodo) return undefined;
+    let cancelado = false;
+    const t = setTimeout(async () => {
+      setCarregando(true);
+      try {
+        const res = await getPropostas({
+          ...(busca ? { busca } : {}),
+          ...(statusFiltro ? { status: statusFiltro } : {}),
+          pagina,
+        });
+        if (cancelado) return;
+        setPropostas(res.data.itens);
+        setPaginacao({ total: res.data.total, totalPaginas: res.data.totalPaginas });
+      } catch {
+        if (!cancelado) toast.error('Erro ao carregar propostas');
+      } finally {
+        if (!cancelado) setCarregando(false);
+      }
+    }, 300);
+    return () => { cancelado = true; clearTimeout(t); };
+  }, [temPeriodo, busca, statusFiltro, pagina, versao]);
+
+  const doPeriodo = relatorio.propostas || [];
+  const totalPaginasPeriodo = Math.max(1, Math.ceil(doPeriodo.length / POR_PAGINA));
+  const paginaPeriodo = Math.min(pagina, totalPaginasPeriodo);
+  const linhas = temPeriodo
+    ? doPeriodo.slice((paginaPeriodo - 1) * POR_PAGINA, paginaPeriodo * POR_PAGINA)
+    : propostas;
+  const carregandoLista = temPeriodo ? carregandoRelatorio : carregando;
+  // status atual da proposta do modal (a decisão do cliente pode mudá-lo)
+  const statusLinkAprovacao = linkAprovacao
+    ? (linhas.find(l => l.id === linkAprovacao.id)?.status || linkAprovacao.status)
+    : null;
+  const totais = relatorio.totais || { propostas: 0, valorTotal: 0, valorAprovado: 0 };
+
+  function aplicarAtalho(atalho) {
+    const [ini, fim] = atalho.calcular();
+    setDataInicio(ini);
+    setDataFim(fim);
+  }
+
+  function atalhoAtivo(atalho) {
+    const [ini, fim] = atalho.calcular();
+    return ini === dataInicio && fim === dataFim;
+  }
+
+  async function exportar(tipo) {
+    setExportando(tipo);
+    try {
+      const params = filtrosDoRelatorio(inicioEfetivo, fimEfetivo, statusFiltro, busca);
+      const res = await api.get(`/relatorios/propostas/${tipo}`, { params, responseType: 'blob' });
+      const mime = tipo === 'csv' ? 'text/csv' : 'application/pdf';
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: mime }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = temPeriodo
+        ? `Relatorio_Propostas_${inicioEfetivo}_a_${fimEfetivo}.${tipo}`
+        : `Relatorio_Propostas_ate_${fimEfetivo}.${tipo}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      toast.error(`Erro ao exportar ${tipo.toUpperCase()}`);
+    } finally {
+      setExportando(null);
+    }
+  }
+
+  function editar(id) {
+    navigate(`/propostas/editar/${id}`);
+  }
 
   async function abrirDetalhe(id) {
     setCarregandoDetalhe(true);
@@ -108,7 +270,7 @@ export default function Historico() {
     try {
       await atualizarStatus(id, status);
       toast.success(`Status atualizado para ${status}`);
-      carregar();
+      recarregar();
       if (detalhe?.id === id) abrirDetalhe(id);
     } catch {
       toast.error('Erro ao atualizar status');
@@ -120,7 +282,7 @@ export default function Historico() {
     try {
       await removerProposta(p.id);
       toast.success('Proposta excluída');
-      carregar();
+      recarregar();
       if (detalhe?.id === p.id) setDetalhe(null);
     } catch {
       toast.error('Erro ao excluir proposta');
@@ -133,7 +295,7 @@ export default function Historico() {
       const res = await duplicarProposta(id);
       toast.success(res.data.mensagem);
       setDetalhe(null);
-      carregar();
+      recarregar();
     } catch (err) {
       toast.error(err.response?.data?.erro || 'Erro ao duplicar proposta');
     } finally {
@@ -163,29 +325,89 @@ export default function Historico() {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
-        <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>Histórico de Propostas</h2>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+        <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>Propostas</h2>
+        <button onClick={() => navigate('/propostas?aba=editar')} style={btnPrimario}>
+          <Plus size={13} /> Nova proposta
+        </button>
+      </div>
 
-        <Select value={statusFiltro} onChange={e => setStatusFiltro(e.target.value)} style={{ width: 150 }}>
-          <option value="">Todos status</option>
-          <option value="Ativa">Ativa</option>
-          <option value="Aprovada">Aprovada</option>
-          <option value="Recusada">Recusada</option>
-          <option value="Cancelada">Cancelada</option>
-        </Select>
-
-        <div style={{ position: 'relative', width: 260 }}>
-          <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: '#555' }} />
-          <input
-            value={busca}
-            onChange={e => setBusca(e.target.value)}
-            placeholder="Buscar por número, cliente, local..."
-            style={{ paddingLeft: 30 }}
-          />
+      {/* Filtros e exportação (antigo Relatórios) — valem para a lista e para os totais */}
+      <div style={card}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <Campo label="Data início" largura={150}>
+            <input type="date" value={dataInicio} onChange={e => setDataInicio(e.target.value)} />
+          </Campo>
+          <Campo label="Data fim" largura={150}>
+            <input type="date" value={dataFim} onChange={e => setDataFim(e.target.value)} />
+          </Campo>
+          <Campo label="Status" largura={150}>
+            <Select value={statusFiltro} onChange={e => setStatusFiltro(e.target.value)}>
+              <option value="">Todos</option>
+              <option value="Ativa">Ativa</option>
+              <option value="Aprovada">Aprovada</option>
+              <option value="Recusada">Recusada</option>
+              <option value="Cancelada">Cancelada</option>
+            </Select>
+          </Campo>
+          <Campo label="Buscar" flexivel>
+            <div style={{ position: 'relative' }}>
+              <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: '#555' }} />
+              <input
+                value={busca}
+                onChange={e => setBusca(e.target.value)}
+                placeholder="Número, cliente ou local..."
+                style={{ paddingLeft: 30 }}
+              />
+            </div>
+          </Campo>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              onClick={() => exportar('csv')}
+              disabled={!!exportando || totais.propostas === 0}
+              style={btnSecundario}
+            >
+              <FileSpreadsheet size={13} /> {exportando === 'csv' ? 'Gerando...' : 'Exportar CSV'}
+            </button>
+            <button
+              onClick={() => exportar('pdf')}
+              disabled={!!exportando || totais.propostas === 0}
+              style={btnPrimario}
+            >
+              <FileDown size={13} /> {exportando === 'pdf' ? 'Gerando...' : 'Exportar PDF'}
+            </button>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 12 }}>
+          <span style={{ ...rotulo, marginBottom: 0, marginRight: 4 }}>Período:</span>
+          {ATALHOS_PERIODO.map(a => {
+            const ativo = atalhoAtivo(a);
+            return (
+              <button
+                key={a.rotulo}
+                onClick={() => aplicarAtalho(a)}
+                style={{
+                  padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                  border: ativo ? '1px solid #c9a227' : '1px solid #2a2a2a',
+                  background: ativo ? '#c9a227' : 'transparent',
+                  color: ativo ? '#000' : '#999',
+                }}
+              >
+                {a.rotulo}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      <div style={{ background: '#131313', border: '1px solid #1e1e1e', borderRadius: 10, overflow: 'hidden' }}>
+      {/* Resumo */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 16 }}>
+        <CardResumo label={temPeriodo ? 'Propostas no período' : 'Propostas (todo o histórico)'} valor={totais.propostas} />
+        <CardResumo label="Valor total" valor={formatarMoeda(totais.valorTotal)} />
+        <CardResumo label="Valor aprovado" valor={formatarMoeda(totais.valorAprovado)} destaque />
+      </div>
+
+      <div style={{ background: '#131313', border: '1px solid #1e1e1e', borderRadius: 10, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr style={{ background: '#0f0f0f', textAlign: 'left' }}>
@@ -195,17 +417,17 @@ export default function Historico() {
               <th style={th}>Local</th>
               <th style={{ ...th, textAlign: 'right' }}>Total</th>
               <th style={th}>Status</th>
-              <th style={{ ...th, width: 70 }}></th>
+              <th style={{ ...th, width: 100 }}></th>
             </tr>
           </thead>
           <tbody>
-            {carregando && (
+            {carregandoLista && (
               <tr><td colSpan={7} style={tdVazio}>Carregando...</td></tr>
             )}
-            {!carregando && propostas.length === 0 && (
-              <tr><td colSpan={7} style={tdVazio}>Nenhuma proposta encontrada</td></tr>
+            {!carregandoLista && linhas.length === 0 && (
+              <tr><td colSpan={7} style={tdVazio}>{temPeriodo ? 'Nenhuma proposta encontrada no período.' : 'Nenhuma proposta encontrada'}</td></tr>
             )}
-            {!carregando && propostas.map(p => {
+            {!carregandoLista && linhas.map(p => {
               const cor = STATUS_CORES[p.status] || STATUS_CORES.Ativa;
               const dias = diasParaVencer(p);
               return (
@@ -229,11 +451,26 @@ export default function Historico() {
                         {dias === 0 ? 'Vence hoje' : `Vence em ${dias}d`}
                       </span>
                     )}
+                    <SeloDecisaoCliente decisao={p.decisao_cliente} />
                   </td>
                   <td style={{ ...td }} onClick={e => e.stopPropagation()}>
-                    <button onClick={() => excluir(p)} style={{ ...btnIcone, color: '#b04040' }} title="Excluir">
-                      <Trash2 size={13} />
-                    </button>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={() => editar(p.id)} style={btnIcone} title="Editar">
+                        <Pencil size={13} />
+                      </button>
+                      {p.status === 'Ativa' && (
+                        <button onClick={() => setLinkAprovacao({ id: p.id, numero: p.numero, status: p.status })}
+                          style={btnIcone} title="Link de aprovação para o cliente"
+                          aria-label={`Link de aprovação da proposta ${p.numero}`} data-testid="abrir-link-aprovacao">
+                          <Link2 size={13} />
+                        </button>
+                      )}
+                      {/* mantém o "excluir" alinhado nas linhas sem o ícone do link */}
+                      {p.status !== 'Ativa' && <span aria-hidden="true" style={{ width: 26, flex: '0 0 26px' }} />}
+                      <button onClick={() => excluir(p)} style={{ ...btnIcone, color: '#b04040' }} title="Excluir">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -242,7 +479,11 @@ export default function Historico() {
         </table>
       </div>
 
-      <Paginacao pagina={pagina} totalPaginas={paginacao.totalPaginas} total={paginacao.total} onMudarPagina={setPagina} />
+      {temPeriodo ? (
+        <Paginacao pagina={paginaPeriodo} totalPaginas={totalPaginasPeriodo} total={doPeriodo.length} onMudarPagina={setPagina} />
+      ) : (
+        <Paginacao pagina={pagina} totalPaginas={paginacao.totalPaginas} total={paginacao.total} onMudarPagina={setPagina} />
+      )}
 
       {detalhe && (
         <div style={overlay} onClick={() => setDetalhe(null)}>
@@ -318,7 +559,7 @@ export default function Historico() {
                     </button>
                   ))}
                   <button
-                    onClick={() => navigate(`/orcamento/${detalhe.id}`)}
+                    onClick={() => editar(detalhe.id)}
                     style={{ ...btnSecundario, marginLeft: 'auto' }}
                   >
                     <Pencil size={13} /> Editar
@@ -367,6 +608,16 @@ export default function Historico() {
         </div>
       )}
 
+      <BotaoLinkAprovacao
+        key={linkAprovacao?.id || 'nenhuma'}
+        aberto={!!linkAprovacao}
+        onFechar={() => setLinkAprovacao(null)}
+        propostaId={linkAprovacao?.id}
+        numero={linkAprovacao?.numero}
+        status={statusLinkAprovacao}
+        onAlterado={recarregar}
+      />
+
       <ModalEnviarEmail
         aberto={modalEmail}
         onFechar={() => setModalEmail(false)}
@@ -385,6 +636,32 @@ function InfoLinha({ label, valor }) {
     </div>
   );
 }
+
+function CardResumo({ label, valor, destaque }) {
+  return (
+    <div style={{ ...card, marginBottom: 0 }}>
+      <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 700, color: destaque ? '#c9a227' : '#e8e0cc' }}>{valor}</div>
+    </div>
+  );
+}
+
+// largura: coluna de tamanho fixo; flexivel: ocupa o que sobrar da linha
+function Campo({ label, children, largura, flexivel }) {
+  return (
+    <div style={flexivel ? { flex: '1 1 220px', minWidth: 0 } : { width: largura, flex: '0 1 auto' }}>
+      <label style={rotulo}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+const rotulo = { display: 'block', fontSize: 10, color: '#666', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' };
+
+const card = {
+  background: '#131313', border: '1px solid #1e1e1e', borderRadius: 10,
+  padding: 18, marginBottom: 16
+};
 
 const th = { padding: '10px 14px', fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', fontWeight: 700 };
 const td = { padding: '10px 14px', color: '#ccc', verticalAlign: 'middle' };

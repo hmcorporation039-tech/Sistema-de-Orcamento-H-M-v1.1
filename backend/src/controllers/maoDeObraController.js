@@ -1,9 +1,13 @@
 const pool = require('../config/database');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
 
-// Lista o catálogo de itens de mão de obra (ver utils/catalogoAutoCadastro.js
-// — a tabela cresce sozinha conforme itens são lançados nos orçamentos).
-// Usado pra alimentar o dropdown de sugestão na aba Orçamento.
+// Lista os serviços de mão de obra ATIVOS da base única (versão 2.0:
+// precos_mao_de_obra_referencia — os padrão + os lançados em propostas; ver
+// utils/servicosBase.js). Mantém o formato antigo de /mao-de-obra-itens
+// (id, descricao, unidade, valor_unitario) para quem ainda chama esta rota;
+// `id` agora é o código do serviço e valor_unitario é o valor H&M adotado ou,
+// sem ele, a referência particular. A tela Orçamento usa GET /servicos, que
+// traz também a sugestão por segmento do cliente.
 async function listar(req, res) {
   const { busca } = req.query;
   const { pagina, porPagina, offset } = parsePaginacao(req.query);
@@ -16,9 +20,12 @@ async function listar(req, res) {
   }
 
   try {
-    const total = await pool.query(`SELECT count(*) FROM mao_de_obra_itens ${condicoes}`, params);
+    const total = await pool.query(`SELECT count(*) FROM precos_mao_de_obra_referencia ${condicoes}`, params);
     const result = await pool.query(
-      `SELECT * FROM mao_de_obra_itens ${condicoes} ORDER BY descricao LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      `SELECT codigo AS id, codigo, descricao, unidade, disciplina, origem,
+              COALESCE(valor_referencia, valor_privado, 0) AS valor_unitario
+         FROM precos_mao_de_obra_referencia ${condicoes}
+        ORDER BY descricao LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, porPagina, offset]
     );
     res.json(montarResposta(result.rows, parseInt(total.rows[0].count, 10), pagina, porPagina));

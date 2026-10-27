@@ -3,8 +3,11 @@ describe('Prestadores de Serviços', () => {
 
   beforeEach(() => {
     cy.login();
-    cy.get('nav').contains('Prestadores').click();
-    cy.url().should('include', '/prestadores');
+    // 2.0: Prestadores é uma aba do grupo Financeiro (/financeiro?aba=prestadores)
+    cy.get('nav').contains('Financeiro').click();
+    cy.contains('[role=tab]', 'Prestadores').click();
+    cy.url().should('include', '/financeiro?aba=prestadores');
+    cy.contains('h2', 'Prestadores de Serviços').should('be.visible');
   });
 
   it('cadastra um novo prestador com CPF formatado', () => {

@@ -1,13 +1,29 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, FolderPlus, FileDown, Send, FilePlus2 } from 'lucide-react';
-import { getClientes, getMateriais, getMaoDeObraItens, getProximoNumero, criarProposta, atualizarProposta, getProposta } from '../services/api';
+import { Plus, Trash2, FolderPlus, FileDown, Send, FilePlus2, Search, ArrowLeft, Calculator, BarChart3 } from 'lucide-react';
+import {
+  getClientes, getMateriais, getServicos, getSegmentoCliente, getProximoNumero, criarProposta, atualizarProposta, getProposta,
+  pesquisarPrecoMercado, getAnaliseProjeto, getLaudo, getObra,
+} from '../services/api';
 import api from '../services/api';
 import { formatarMoeda } from '../utils/format';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
 import CampoMoeda from '../components/CampoMoeda';
-import Select, { Sugestoes } from '../components/Select';
+import BlocoPesquisaMercado, { resultadoDaPesquisa } from '../components/PesquisaMercado';
+import ObraSelect from '../components/ObraSelect';
+import Select, { Sugestoes, comparador } from '../components/Select';
+import { nomeDisciplina, ROTULO_SEGMENTO } from '../utils/disciplinasServico';
+// Fase 3F (2.0): BDI pela fórmula do TCU e curva ABC da proposta
+import CalculadoraBdi from '../components/CalculadoraBdi';
+import CurvaAbcPainel from '../components/CurvaAbcPainel';
+import { normalizarMemoriaBdi, tributosBdi } from '../utils/bdiTcu';
+// Fase 3 (2.0): kits da base de preços e aprovação da proposta por link
+import InserirComposicao, { distribuirNasSecoes } from '../components/InserirComposicao';
+import BotaoLinkAprovacao from '../components/BotaoLinkAprovacao';
+
+// BDI diferenciado de materiais preenchido? (vazio/null = mesmo BDI para tudo — calculoProposta.bdiMateriaisDefinido)
+const temBdiMateriais = (v) => v !== undefined && v !== null && v !== '' && Number.isFinite(Number(v));
 
 // arredondamento a 2 casas igual ao do servidor (calculoProposta.arredondar)
 const arred2 = (v) => Math.round(((Number(v) || 0) + Number.EPSILON) * 100) / 100;
@@ -27,6 +43,10 @@ const FORM_VAZIO = {
   pagamento: '',
   observacoes: '',
   bdi: 20,
+  // BDI diferenciado dos materiais (null = o mesmo BDI) e memória do cálculo
+  // pelo TCU (null = BDI digitado à mão) — 2.0, Fase 3F
+  bdi_materiais: null,
+  bdi_memoria: null,
   imposto_venda: 0,
   imposto_servico: 6,
   // Só registram o percentual do ÚLTIMO reajuste/desconto aplicado direto
@@ -34,6 +54,9 @@ const FORM_VAZIO = {
   // nenhuma conta de total, servem só pro PDF avisar quando foi desconto.
   desconto_materiais_pct: null,
   desconto_mao_obra_pct: null,
+  // obra (2.0, Fase 2D/2E): a proposta pertence a uma obra (ou a nenhuma);
+  // proposta nova aberta a partir da obra (?obra=ID) já vem com ela
+  obra_id: null,
 };
 
 const SECOES_PADRAO = () => [
@@ -85,18 +108,50 @@ function filtrarCatalogoPorCategoria(materiais, categoria) {
   return daCategoria.length > 0 ? daCategoria : materiais;
 }
 
+// Origem do rascunho (versão 2.0 — editor único de orçamento): a Análise de
+// Projeto e os laudos GERAM a proposta e abrem este editor. A proposta guarda
+// a origem em origem_tipo/origem_id (migração 2.0-05); propostas sem esse
+// campo caem na leitura do histórico ("… a partir da Análise de Projeto #12"
+// / "… a partir de Laudos e projetos #5 (SPDA — Execução)"; vale o evento mais
+// antigo) e do escopo. O vínculo é conferido depois na própria origem
+// (analises_projeto.proposta_id / laudos_projetos.propostas), porque uma
+// proposta duplicada herda o escopo sem ser a vinculada.
+function origemDaProposta(p) {
+  if ((p.origem_tipo === 'analise' || p.origem_tipo === 'laudo') && p.origem_id) {
+    const doHistorico = [...(p.eventos || [])].map(e => /Laudos e projetos #\d+\s*\(([^)]*)\)/i.exec(String(e.detalhes || ''))).find(Boolean);
+    return { tipo: p.origem_tipo, id: Number(p.origem_id), rotulo: doHistorico ? doHistorico[1] : '' };
+  }
+  const textos = [...(p.eventos || [])].reverse().map(e => String(e.detalhes || ''));
+  textos.push(String(p.escopo || ''));
+  for (const t of textos) {
+    let m = /An[áa]lise de Projeto #(\d+)/i.exec(t);
+    if (m) return { tipo: 'analise', id: Number(m[1]) };
+    m = /Laudos e projetos #(\d+)(?:\s*\(([^)]*)\))?/i.exec(t);
+    if (m) return { tipo: 'laudo', id: Number(m[1]), rotulo: m[2] || '' };
+  }
+  return null;
+}
+
+const linkDaOrigem = (o) => (o.tipo === 'analise' ? `/obras/analise/${o.id}` : `/obras?aba=laudos&laudo=${o.id}`);
+
 export default function Orcamento() {
   const { id: editandoId } = useParams();
   const navigate = useNavigate();
+  const [busca] = useSearchParams();
+  const obraDaUrl = Number(busca.get('obra')) || null; // /propostas?aba=editar&obra=ID
 
   const [proximoNumero, setProximoNumero] = useState(null);
   const [clientes, setClientes] = useState([]);
   const [materiais, setMateriais] = useState([]);
-  // Catálogo de itens de mão de obra já usados em qualquer proposta (de
-  // qualquer cliente) — sugestão em dropdown pra padronizar a descrição
-  // (ver aplicarMaoDeObraNoItem). Cresce sozinho no backend quando alguém
-  // digita um item novo à mão (ver garantirMaoDeObraCadastrada no backend).
-  const [maoDeObraItens, setMaoDeObraItens] = useState([]);
+  // Base única de serviços de mão de obra (versão 2.0): os padrão da Análise
+  // de Projeto/laudos + os já lançados em qualquer proposta, com as
+  // referências oficial e particular e a sugestão por segmento (ver
+  // aplicarServicoNoItem). Um serviço digitado à mão entra na base ao salvar
+  // a proposta (backend: utils/servicosBase.js).
+  const [servicos, setServicos] = useState([]);
+  // segmento do cliente da proposta: 'publico' (cadastro "Órgão Público" ou
+  // nome de órgão) usa a referência oficial; os demais, a particular
+  const [segmento, setSegmento] = useState('privado');
 
   const [form, setForm] = useState(FORM_VAZIO);
   const [secoes, setSecoes] = useState(SECOES_PADRAO);
@@ -125,16 +180,82 @@ export default function Orcamento() {
   // bater o texto de cliente_nome contra a lista de clientes, que falha se o
   // nome tiver alguma diferença de digitação/espaço.
   const [clienteEmailCadastro, setClienteEmailCadastro] = useState('');
+  // Pesquisa de mercado por item (editor único: antes só a Análise de Projeto
+  // tinha) — { [id do item na tela]: { carregando } | resultado | { erro } }.
+  // Fica na memória da tela; repetir a pesquisa da mesma descrição em até 48 h
+  // vem do histórico do servidor, sem gastar outra consulta.
+  const [pesquisas, setPesquisas] = useState({});
+  // { tipo: 'analise'|'laudo', id, rotulo?, titulo?, existe?, vinculada?, faltando? }
+  const [origem, setOrigem] = useState(null);
+  // Fase 3F: calculador de BDI (TCU), painel da curva ABC e anexos opcionais do PDF
+  const [calculadoraBdiAberta, setCalculadoraBdiAberta] = useState(false);
+  const [mostrarCurvaAbc, setMostrarCurvaAbc] = useState(false);
+  const [anexosPdf, setAnexosPdf] = useState({ curva_abc: false, composicao_bdi: false });
+  // segmento da obra (obras.segmento) — órgão público pela obra OU pelo cliente
+  const [segmentoObra, setSegmentoObra] = useState(null);
+  const calculadoraJaSugerida = useRef(null); // id da proposta em que o calculador já abriu sozinho
 
   useEffect(() => {
     getClientes({ porPagina: 1000 }).then(res => setClientes(res.data.itens)).catch(() => {});
     getMateriais({ porPagina: 1000 }).then(res => setMateriais(res.data.itens)).catch(() => {});
-    getMaoDeObraItens({ porPagina: 1000 }).then(res => setMaoDeObraItens(res.data.itens)).catch(() => {});
+    getServicos().then(res => setServicos(res.data.itens || [])).catch(() => {});
   }, []);
 
+  // Segmento pelo backend (mesma regra dos laudos e da Análise de Projeto),
+  // só depois que o nome do cliente para de mudar
   useEffect(() => {
+    const nome = (form.cliente_nome || '').trim();
+    if (!nome) { setSegmento('privado'); return undefined; }
+    const t = setTimeout(() => {
+      getSegmentoCliente(nome).then(res => setSegmento(res.data.segmento === 'publico' ? 'publico' : 'privado')).catch(() => {});
+    }, 500);
+    return () => clearTimeout(t);
+  }, [form.cliente_nome]);
+
+  useEffect(() => {
+    if (!form.obra_id) { setSegmentoObra(null); return; }
+    getObra(form.obra_id).then(res => setSegmentoObra(res.data?.segmento ?? res.data?.obra?.segmento ?? null)).catch(() => setSegmentoObra(null));
+  }, [form.obra_id]);
+
+  // Órgão público (cliente ou obra): a proposta precisa da composição do BDI
+  // (memória do cálculo pelo TCU). Ao abrir uma proposta salva de órgão
+  // público sem memória, o calculador abre sozinho (uma vez), já sugerido;
+  // o PDF passa a sugerir o anexo da composição.
+  const ehPublico = segmento === 'publico' || segmentoObra === 'publico';
+  const memoriaBdi = useMemo(() => normalizarMemoriaBdi(form.bdi_memoria), [form.bdi_memoria]);
+  useEffect(() => {
+    if (!editandoId || carregandoEdicao || !ehPublico || form.bdi_memoria) return;
+    if (calculadoraJaSugerida.current === editandoId) return;
+    calculadoraJaSugerida.current = editandoId;
+    setCalculadoraBdiAberta(true);
+  }, [editandoId, carregandoEdicao, ehPublico, form.bdi_memoria]);
+  useEffect(() => {
+    setAnexosPdf(a => ({ ...a, composicao_bdi: ehPublico && !!memoriaBdi }));
+  }, [ehPublico, memoriaBdi]);
+
+  const servicosPorCodigo = useMemo(() => Object.fromEntries(servicos.map(s => [s.codigo, s])), [servicos]);
+  // lista suspensa: um grupo por disciplina, grupos em ordem alfabética (as
+  // opções dentro de cada grupo o Select já ordena A–Z)
+  const gruposServicos = useMemo(() => {
+    const grupos = {};
+    for (const s of servicos) (grupos[s.disciplina || 'outros'] = grupos[s.disciplina || 'outros'] || []).push(s);
+    return Object.entries(grupos)
+      .map(([disc, lista]) => ({ disc, nome: nomeDisciplina(disc), lista }))
+      .sort((a, b) => comparador.compare(a.nome, b.nome));
+  }, [servicos]);
+  const sugestaoDoServico = (s) => (s?.sugerido ? s.sugerido[segmento] : null);
+  // item sem código (veio digitado, ou de uma análise antiga) ainda acha o
+  // serviço da base pela descrição, para mostrar as referências
+  const servicosPorDescricao = useMemo(() => Object.fromEntries(servicos.map(s => [normalizarNome(s.descricao), s])), [servicos]);
+  const servicoDoItem = (it) => servicosPorCodigo[it.codigo] || servicosPorDescricao[normalizarNome(it.descricao)];
+  const materiaisPorId = useMemo(() => Object.fromEntries(materiais.map(m => [String(m.id), m])), [materiais]);
+
+  useEffect(() => {
+    setPesquisas({});
+    setOrigem(null);
     if (!editandoId) {
       getProximoNumero().then(res => setProximoNumero(res.data.proximo)).catch(() => {});
+      if (obraDaUrl) setForm(f => ({ ...f, obra_id: obraDaUrl }));
       return;
     }
     setCarregandoEdicao(true);
@@ -155,10 +276,13 @@ export default function Orcamento() {
         pagamento: p.pagamento || '',
         observacoes: p.observacoes || '',
         bdi: Number(p.bdi) || 0,
+        bdi_materiais: temBdiMateriais(p.bdi_materiais) ? Number(p.bdi_materiais) : null,
+        bdi_memoria: p.bdi_memoria || null,
         imposto_venda: Number(p.imposto_venda) || 0,
         imposto_servico: Number(p.imposto_servico) || 0,
         desconto_materiais_pct: p.desconto_materiais_pct != null ? Number(p.desconto_materiais_pct) : null,
         desconto_mao_obra_pct: p.desconto_mao_obra_pct != null ? Number(p.desconto_mao_obra_pct) : null,
+        obra_id: p.obra_id ?? null,
       });
       setSecoes((p.secoes || []).map(s => ({ id: s.id, nome: s.nome })));
       // Reagrupa por subgrupo já ao carregar — sem isso, uma proposta salva
@@ -175,11 +299,91 @@ export default function Orcamento() {
       }
       setItens(itensCarregados);
       setPropostaSalva(null);
+      carregarOrigem(p, itensCarregados);
     }).catch(() => {
       toast.error('Erro ao carregar proposta para edição');
       navigate('/orcamento');
     }).finally(() => setCarregandoEdicao(false));
-  }, [editandoId, navigate]);
+  }, [editandoId, navigate, obraDaUrl]);
+
+  // Origem do rascunho (análise ou laudo): mostra no topo com o link de volta.
+  // Da análise, traz também (1) as pesquisas de mercado que ficaram salvas
+  // nos itens dela — reabertas recolhidas, sem pesquisar de novo — e (2) os
+  // itens que o gerar deixou de fora por estarem com quantidade 0, para
+  // incluir aqui (a Análise não edita mais quantidade).
+  function carregarOrigem(p, itensCarregados) {
+    const org = origemDaProposta(p);
+    if (!org) return;
+    setOrigem(org);
+    const ehDestaProposta = (id) => id != null && String(id) === String(p.id);
+    if (org.tipo === 'analise') {
+      getAnaliseProjeto(org.id).then(({ data: a }) => {
+        const doItem = [...(a.servicos || []).map(s => ({ ...s, tipo: 'servico' })), ...(a.materiais || []).map(m => ({ ...m, tipo: 'material' }))];
+        const pesquisaPorDescricao = new Map(doItem.filter(x => x.pesquisa_mercado?.resultado && x.descricao)
+          .map(x => [normalizarNome(x.descricao), x.pesquisa_mercado]));
+        const salvas = {};
+        for (const it of itensCarregados) {
+          const pm = pesquisaPorDescricao.get(normalizarNome(it.descricao));
+          if (pm) salvas[it.id] = { ...pm, recolhidaInicial: true, daAnalise: true };
+        }
+        setPesquisas(atual => ({ ...salvas, ...atual }));
+        const naProposta = new Set(itensCarregados.map(it => normalizarNome(it.descricao)));
+        const faltando = doItem.filter(x => !x.pronto && !(Number(x.quantidade) > 0) && String(x.descricao || '').trim()
+          && !naProposta.has(normalizarNome(x.descricao)));
+        setOrigem({ ...org, existe: true, vinculada: ehDestaProposta(a.propostaId), titulo: a.nomeProjeto || a.cliente || '', faltando });
+      }).catch(() => setOrigem({ ...org, existe: false }));
+    } else {
+      getLaudo(org.id).then(({ data: l }) => {
+        setOrigem({
+          ...org, existe: true, vinculada: Object.values(l.propostas || {}).some(ehDestaProposta),
+          titulo: l.dados?.obra?.nome || l.titulo || l.cliente_nome || '',
+        });
+      }).catch(() => setOrigem({ ...org, existe: false }));
+    }
+  }
+
+  // Inclui um item que ficou fora do rascunho (quantidade 0 na análise), com
+  // quantidade 0 e "a cotar": a pessoa informa a quantidade aqui.
+  function incluirFaltante(x) {
+    const ehServico = x.tipo === 'servico';
+    const nomeSecao = ehServico ? 'Serviços (Mão de Obra)' : 'Materiais e Equipamentos';
+    let sec = secoes.find(s => ehMaoDeObra(s.nome) === ehServico);
+    if (!sec) {
+      sec = { id: gerarId(), nome: nomeSecao };
+      setSecoes(s => [...s, sec]);
+    }
+    const valor = ehServico ? Number(x.valor_unitario) || 0
+      : (Number(x.preco_unitario) > 0 ? Number(x.preco_unitario) : Number(x.preco_catalogo) || 0);
+    const novo = {
+      id: gerarId(), sid: sec.id, material_id: ehServico ? null : (x.material_id || null),
+      descricao: x.descricao, quantidade: 0, unidade: x.unidade || 'un', valor_unitario: valor,
+      ncm: '', codigo: x.codigo || '', subgrupo: x.subgrupo || '', status: 'a_cotar',
+    };
+    setItens(it => reordenarPorSubgrupo([...it, novo], sec.id));
+    if (x.pesquisa_mercado?.resultado) setPesquisas(ps => ({ ...ps, [novo.id]: { ...x.pesquisa_mercado, recolhidaInicial: true, daAnalise: true } }));
+    setOrigem(o => ({ ...o, faltando: (o.faltando || []).filter(f => f !== x) }));
+    toast.success('Item incluído com quantidade 0 — informe a quantidade');
+  }
+
+  // Pesquisa de mercado de um item — mesma API e comportamento da Análise de
+  // Projeto (busca real na web pela cadeia de IA; de 30 s a 1 min). Serviço
+  // pesquisa como serviço; o "Usar R$ X" troca o valor unitário da linha
+  // (para material, é o preço adotado). Nunca grava nada sozinha.
+  async function pesquisarMercado(item, maoDeObra) {
+    const descricao = String(item.descricao || '').trim();
+    if (!descricao) {
+      toast.error('Preencha a descrição antes de pesquisar');
+      return;
+    }
+    setPesquisas(p => ({ ...p, [item.id]: { ...(p[item.id] || {}), erro: null, carregando: true } }));
+    try {
+      const res = await pesquisarPrecoMercado(descricao, maoDeObra ? 'servico' : 'material');
+      setPesquisas(p => ({ ...p, [item.id]: resultadoDaPesquisa(res.data) }));
+    } catch (err) {
+      const erro = err.response?.data?.erro || (err.code === 'ECONNABORTED' ? 'A pesquisa demorou demais — tente de novo' : 'Erro ao pesquisar');
+      setPesquisas(p => ({ ...p, [item.id]: { ...(p[item.id] || {}), carregando: false, erro } }));
+    }
+  }
 
   const clienteResolvido = useMemo(
     // `c.nome` pode vir nulo do banco; sem a guarda, um único cliente sem nome
@@ -206,7 +410,7 @@ export default function Orcamento() {
       .reduce((s, it) => s + arred2((Number(it.quantidade) || 0) * arred2(Number(it.valor_unitario) || 0)), 0);
   }
 
-  const { subtotalMateriais, subtotalMaoObra, valorBdi, valorImpostoVenda, valorImpostoServico, total } = useMemo(() => {
+  const { subtotalMateriais, subtotalMaoObra, valorBdi, valorBdiMateriais, valorBdiMaoObra, valorImpostoVenda, valorImpostoServico, total } = useMemo(() => {
     let mat = 0, mao = 0;
     for (const sec of secoes) {
       const sub = subtotalSecao(sec.id);
@@ -216,15 +420,64 @@ export default function Orcamento() {
     mat = arred2(mat);
     mao = arred2(mao);
     const bdiPct = Number(form.bdi) || 0;
-    const vBdi = arred2((mat + mao) * (bdiPct / 100));
+    // BDI diferenciado (calculoProposta.detalharBdi): sem ele, a expressão de sempre
+    let vBdi, vBdiMat = null, vBdiMao = null;
+    if (temBdiMateriais(form.bdi_materiais)) {
+      vBdiMat = arred2(mat * (Number(form.bdi_materiais) / 100));
+      vBdiMao = arred2(mao * (bdiPct / 100));
+      vBdi = arred2(vBdiMat + vBdiMao);
+    } else {
+      vBdi = arred2((mat + mao) * (bdiPct / 100));
+    }
     const vImpVenda = arred2(mat * ((Number(form.imposto_venda) || 0) / 100));
     const vImpServico = arred2(mao * ((Number(form.imposto_servico) || 0) / 100));
     return {
-      subtotalMateriais: mat, subtotalMaoObra: mao, valorBdi: vBdi,
+      subtotalMateriais: mat, subtotalMaoObra: mao, valorBdi: vBdi, valorBdiMateriais: vBdiMat, valorBdiMaoObra: vBdiMao,
       valorImpostoVenda: vImpVenda, valorImpostoServico: vImpServico,
       total: arred2(mat + mao + vBdi + vImpVenda + vImpServico),
     };
-  }, [itens, secoes, form.bdi, form.imposto_venda, form.imposto_servico]);
+  }, [itens, secoes, form.bdi, form.bdi_materiais, form.imposto_venda, form.imposto_servico]);
+
+  // itens para a curva ABC (tipo pela seção, como no PDF e na planilha)
+  const itensCurvaAbc = useMemo(() => {
+    const tipoDaSecao = new Map(secoes.map(s => [s.id, ehMaoDeObra(s.nome) ? 'servico' : 'material']));
+    return itens.map(it => ({
+      descricao: it.descricao, quantidade: Number(it.quantidade) || 0, unidade: it.unidade,
+      valor_unitario: Number(it.valor_unitario) || 0, codigo: it.codigo, tipo: tipoDaSecao.get(it.sid) || 'material',
+    }));
+  }, [itens, secoes]);
+
+  // Avisos do BDI (Fase 3F): memória com tributos dentro + impostos por fora
+  // (imposto contado duas vezes) e BDI mudado à mão depois do cálculo.
+  const avisosBdi = useMemo(() => {
+    const lista = [];
+    if (!memoriaBdi) return lista;
+    const tributosDentro = tributosBdi(memoriaBdi.parcelas, memoriaBdi.regime) > 0;
+    if (tributosDentro && ((Number(form.imposto_venda) || 0) > 0 || (Number(form.imposto_servico) || 0) > 0)) {
+      lista.push('O BDI calculado já inclui os tributos (PIS, COFINS, ISS…) e a proposta ainda soma "Imp. Vendas"/"Imp. Serviços" por fora — o imposto entra duas vezes. Zere esses campos ou recalcule o BDI sem tributos.');
+    }
+    if (Math.abs((Number(form.bdi) || 0) - memoriaBdi.bdi) > 0.005) {
+      lista.push(`O BDI da proposta (${form.bdi} %) não é o da composição calculada (${memoriaBdi.bdi.toLocaleString('pt-BR')} %) — o anexo do PDF vai avisar a diferença. Abra o calculador e aplique de novo, ou remova a composição.`);
+    }
+    if (memoriaBdi.materiais && (!temBdiMateriais(form.bdi_materiais) || Math.abs(Number(form.bdi_materiais) - memoriaBdi.materiais.bdi) > 0.005)) {
+      lista.push(`O BDI de materiais da proposta não é o da composição (${memoriaBdi.materiais.bdi.toLocaleString('pt-BR')} %).`);
+    }
+    return lista;
+  }, [memoriaBdi, form.bdi, form.bdi_materiais, form.imposto_venda, form.imposto_servico]);
+
+  function aplicarBdiCalculado({ bdi, bdi_materiais, memoria, zerarImpostos }) {
+    setForm(f => ({
+      ...f, bdi, bdi_materiais, bdi_memoria: memoria,
+      ...(zerarImpostos ? { imposto_venda: 0, imposto_servico: 0 } : {}),
+    }));
+    setCalculadoraBdiAberta(false);
+    toast.success(`BDI ${bdi.toLocaleString('pt-BR')} %${bdi_materiais != null ? ` (materiais ${bdi_materiais.toLocaleString('pt-BR')} %)` : ''} aplicado — salve a proposta para gravar a composição`);
+  }
+
+  function removerComposicaoBdi() {
+    if (!window.confirm('Remover a composição do BDI (memória do cálculo pelo TCU) e o BDI diferenciado de materiais? O BDI atual fica como está.')) return;
+    setForm(f => ({ ...f, bdi_memoria: null, bdi_materiais: null }));
+  }
 
   function adicionarSecao() {
     setSecoes(s => [...s, { id: gerarId(), nome: 'Nova Seção' }]);
@@ -291,6 +544,29 @@ export default function Orcamento() {
   // (itensAgrupados só detecta troca entre vizinhos, não reordena sozinho).
   // Ordena pela primeira vez que cada subgrupo aparece na lista atual — o
   // sort é estável, então a ordem relativa dentro de cada subgrupo não muda.
+  // itens de um kit (InserirComposicao) entram como itens normais, cada um na
+  // seção de materiais ou de serviços (criada se faltar), agrupados pelo subgrupo
+  function inserirItensDoKit(novos) {
+    const { secoes: secoesNovas, itens: comSid } = distribuirNasSecoes(novos, secoes, { gerarId, ehMaoDeObra });
+    setSecoes(secoesNovas);
+    setItens(lista => {
+      let l = [...lista, ...comSid];
+      for (const sid of new Set(comSid.map(i => i.sid))) l = reordenarPorSubgrupo(l, sid);
+      return l;
+    });
+    if (propostaSalva) setAlteracoesPendentes(true);
+  }
+
+  // o cliente aprovou/recusou pelo link: o status (e a versão) mudam no servidor;
+  // sem isso o próximo "Salvar" daria conflito de versão à toa
+  function atualizarStatusSalvo() {
+    if (!propostaSalva) return;
+    getProposta(propostaSalva.id).then(res => {
+      if (!alteracoesPendentes) versaoRef.current = res.data.versao ?? versaoRef.current;
+      setPropostaSalva(ps => (ps ? { ...ps, status: res.data.status } : ps));
+    }).catch(() => {});
+  }
+
   function reordenarPorSubgrupo(lista, sid) {
     const primeiraOcorrencia = new Map();
     let posicao = 0;
@@ -376,15 +652,18 @@ export default function Orcamento() {
     setItens(it => it.map(i => i.id === id ? { ...i, descricao: categoria } : i));
   }
 
-  // Preenche descrição, unidade e valor a partir de um item de mão de obra já
-  // usado antes (em qualquer proposta) — mesma ideia de aplicarMaterialNoItem,
-  // pra padronizar a descrição do mesmo serviço entre clientes diferentes.
-  function aplicarMaoDeObraNoItem(id, itemCatalogoId) {
-    const item = maoDeObraItens.find(m => String(m.id) === String(itemCatalogoId));
-    if (!item) return;
+  // Preenche descrição, unidade, valor e código a partir de um serviço da
+  // base única — mesma ideia de aplicarMaterialNoItem, pra padronizar a
+  // descrição do mesmo serviço entre clientes diferentes. O valor é a
+  // sugestão do segmento do cliente (valor H&M adotado ?? referência do
+  // segmento); sem sugestão, o valor digitado na linha fica como está.
+  function aplicarServicoNoItem(id, codigo) {
+    const s = servicosPorCodigo[codigo];
+    if (!s) return;
+    const sugestao = sugestaoDoServico(s);
     setItens(it => it.map(i => i.id === id ? {
-      ...i, descricao: item.descricao, unidade: item.unidade || i.unidade,
-      valor_unitario: Number(item.valor_unitario) || i.valor_unitario
+      ...i, descricao: s.descricao, unidade: s.unidade || i.unidade, codigo: s.codigo,
+      valor_unitario: sugestao != null ? sugestao : i.valor_unitario,
     } : i));
   }
 
@@ -434,7 +713,11 @@ export default function Orcamento() {
     if (!propostaSalva) return;
     setGerandoPdf(true);
     try {
-      const res = await api.get(`/propostas/${propostaSalva.id}/pdf`, { responseType: 'blob' });
+      // anexos opcionais (Fase 3F): curva ABC e composição do BDI — desligados por padrão
+      const params = {};
+      if (anexosPdf.curva_abc) params.curva_abc = 1;
+      if (anexosPdf.composicao_bdi) params.composicao_bdi = 1;
+      const res = await api.get(`/propostas/${propostaSalva.id}/pdf`, { responseType: 'blob', params });
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
       const link = document.createElement('a');
       link.href = url;
@@ -494,10 +777,15 @@ export default function Orcamento() {
         pagamento: form.pagamento,
         observacoes: form.observacoes,
         bdi: Number(form.bdi) || 0,
+        // Fase 3F: sempre enviados — null limpa (BDI único / sem composição)
+        bdi_materiais: temBdiMateriais(form.bdi_materiais) ? Number(form.bdi_materiais) : null,
+        bdi_memoria: form.bdi_memoria || null,
         imposto_venda: Number(form.imposto_venda) || 0,
         imposto_servico: Number(form.imposto_servico) || 0,
         desconto_materiais_pct: form.desconto_materiais_pct,
         desconto_mao_obra_pct: form.desconto_mao_obra_pct,
+        // obra (2.0): sempre enviada — no PUT, null desliga a proposta da obra
+        obra_id: form.obra_id || null,
         // Subtotais/BDI/impostos/total não são mais enviados: o backend
         // recalcula tudo a partir dos itens (antes ele gravava o que o
         // navegador mandasse, e uma quantidade zerada fazia o PDF sair com a
@@ -544,6 +832,76 @@ export default function Orcamento() {
         )}
       </div>
 
+      {origem && (
+        <div style={{ ...card, padding: '12px 16px', borderColor: '#3a3216' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 260, fontSize: 12, color: '#bbb', lineHeight: 1.5 }}>
+              Rascunho gerado a partir {origem.tipo === 'analise'
+                ? <>da <b style={{ color: '#c9a227' }}>Análise de Projeto #{origem.id}</b></>
+                : <>do <b style={{ color: '#c9a227' }}>laudo/projeto #{origem.id}</b>{origem.rotulo ? ` (${origem.rotulo})` : ''}</>}
+              {origem.titulo ? ` — ${origem.titulo}` : ''}.{' '}
+              <span style={{ color: '#777' }}>
+                {origem.existe === false
+                  ? (origem.tipo === 'analise' ? 'A análise foi excluída.' : 'O laudo foi excluído.')
+                  : origem.vinculada === false
+                    ? 'A origem hoje está vinculada a outra proposta (esta pode ser uma cópia).'
+                    : `Quantidades, preços, pesquisa de mercado e referências são revisados aqui. ${origem.tipo === 'analise' ? '"Atualizar orçamento" na análise' : '"Atualizar e abrir" no laudo'} substitui os itens desta proposta pelos de lá.`}
+              </span>
+            </div>
+            {origem.existe !== false && (
+              <Link to={linkDaOrigem(origem)} style={{ ...btnSecundario, textDecoration: 'none', borderStyle: 'solid', borderColor: '#5a4a12', color: '#c9a227' }}>
+                <ArrowLeft size={13} style={{ marginRight: 4 }} /> Voltar {origem.tipo === 'analise' ? 'à análise' : 'ao laudo'}
+              </Link>
+            )}
+          </div>
+          {origem.faltando?.length > 0 && (
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #222', fontSize: 12, color: '#999' }}>
+              <div style={{ marginBottom: 6 }}>
+                {origem.faltando.length} item(ns) da análise ficaram fora do rascunho por estarem com <b>quantidade 0</b> (modelo ainda não conferido na planta). Inclua os que fizerem parte e informe a quantidade:
+              </div>
+              {origem.faltando.map((x, i) => (
+                <div key={`${x.tipo}_${i}_${x.descricao}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}>
+                  <span style={{ flex: 1, color: '#bbb' }}>{x.descricao} <span style={{ color: '#666' }}>({x.tipo === 'servico' ? 'serviço' : 'material'}{x.subgrupo ? ` — ${x.subgrupo}` : ''})</span></span>
+                  <button type="button" onClick={() => incluirFaltante(x)} style={{ ...btnSecundario, padding: '3px 10px', fontSize: 11 }}>
+                    <Plus size={11} style={{ marginRight: 3 }} /> Incluir
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {(() => {
+        const aCotar = itens.filter(it => it.status === 'a_cotar').length;
+        const semPreco = itens.filter(it => !(Number(it.valor_unitario) > 0)).length;
+        if (!aCotar && !semPreco) return null;
+        return (
+          <div style={{ ...card, padding: '10px 16px', borderColor: '#4a3a12', fontSize: 12, color: '#c9a227' }}>
+            {[aCotar && `${aCotar} item(ns) "a cotar"`, semPreco && `${semPreco} item(ns) sem preço (R$ 0,00)`].filter(Boolean).join(' · ')}
+            <span style={{ color: '#777' }}> — revise antes de enviar ao cliente: use "Pesquisar mercado", as referências ("usar") ou o catálogo em cada linha.</span>
+          </div>
+        );
+      })()}
+
+      {/* BDI (Fase 3F): órgão público sem composição do BDI e avisos da composição */}
+      {((ehPublico && !memoriaBdi) || avisosBdi.length > 0) && (
+        <div style={{ ...card, padding: '10px 16px', borderColor: '#4a3a12', fontSize: 12, color: '#c9a227' }}>
+          {ehPublico && !memoriaBdi && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ flex: 1, minWidth: 260 }}>
+                Cliente órgão público{segmentoObra === 'publico' && segmento !== 'publico' ? ' (pela obra)' : ''}: a proposta não tem a <b>composição do BDI</b>
+                <span style={{ color: '#777' }}> (memória do cálculo pela fórmula do TCU, Acórdão 2.622/2013), que costuma ser exigida pelo órgão.</span>
+              </span>
+              <button type="button" onClick={() => setCalculadoraBdiAberta(true)} style={{ ...btnSecundario, borderStyle: 'solid', borderColor: '#5a4a12', color: '#c9a227' }}>
+                <Calculator size={13} style={{ marginRight: 4 }} /> Calcular BDI (TCU)
+              </button>
+            </div>
+          )}
+          {avisosBdi.map(a => <div key={a} style={{ marginTop: ehPublico && !memoriaBdi ? 6 : 0 }}>⚠ {a}</div>)}
+        </div>
+      )}
+
       {/* Dados gerais */}
       <div style={card}>
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
@@ -584,7 +942,19 @@ export default function Orcamento() {
           </Campo>
         </div>
 
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+          <Campo label="Obra">
+            <ObraSelect
+              value={form.obra_id}
+              clienteId={clienteResolvido?.id || null}
+              clienteNome={form.cliente_nome}
+              onChange={(id, obra) => setForm(f => ({
+                ...f, obra_id: id,
+                // obra escolhida numa proposta ainda sem cliente: traz o cliente da obra
+                cliente_nome: f.cliente_nome.trim() || !obra?.cliente_nome ? f.cliente_nome : obra.cliente_nome,
+              }))}
+            />
+          </Campo>
           <Campo label="Local da obra">
             <input value={form.local_obra} onChange={e => setForm({ ...form, local_obra: e.target.value })} />
           </Campo>
@@ -629,6 +999,11 @@ export default function Orcamento() {
                 onFocus={e => e.target.style.border = '1px solid #2a2a2a'}
                 onBlur={e => e.target.style.border = '1px solid transparent'}
               />
+              {maoDeObra && (
+                <span style={{ fontSize: 11, color: '#6f7f8f' }} title={'Define qual referência de mercado a lista de serviços sugere (cadastro do cliente: tipo "Órgão Público" → oficial)'}>
+                  Preços sugeridos: cliente {segmento === 'publico' ? 'órgão público (referência oficial)' : 'particular'}
+                </span>
+              )}
               <span style={{ fontSize: 12, color: '#666' }}>Subtotal: <b style={{ color: '#c9a227' }}>{formatarMoeda(subtotalSecao(sec.id))}</b></span>
               <button onClick={() => removerSecao(sec.id)} style={{ ...btnIcone, color: '#b04040' }} title="Remover seção">
                 <Trash2 size={13} />
@@ -638,7 +1013,7 @@ export default function Orcamento() {
             {itens.filter(it => it.sid === sec.id).length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, marginBottom: 6, fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px' }}>
                 <span>{maoDeObra ? 'Subgrupo' : 'Categoria'}</span>
-                <span>{maoDeObra ? 'Sugestão' : 'Catálogo'}</span>
+                <span>{maoDeObra ? 'Serviço' : 'Catálogo'}</span>
                 <span>Descrição</span>
                 {!maoDeObra && <span>NCM/SH</span>}
                 <span>Qtd</span><span>Un.</span><span>Vlr. Unit.</span><span>Total</span><span>Status</span><span />
@@ -662,15 +1037,17 @@ export default function Orcamento() {
               }
               const it = linha.item;
               const aCotar = it.status === 'a_cotar';
+              const semPreco = !(Number(it.valor_unitario) > 0);
+              const pesquisa = pesquisas[it.id];
               return (
                 <div
                   key={it.id}
                   style={{
-                    display: 'grid', gridTemplateColumns: colunas, gap: 8, marginBottom: 8, alignItems: 'center',
-                    background: aCotar ? 'rgba(201,162,39,0.08)' : 'transparent',
+                    marginBottom: 8, background: aCotar ? 'rgba(201,162,39,0.08)' : 'transparent',
                     borderRadius: 4, padding: aCotar ? '4px 4px' : 0,
                   }}
                 >
+                <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, alignItems: 'start' }}>
                   <Select
                     value={it.subgrupo || ''}
                     onChange={e => {
@@ -693,17 +1070,20 @@ export default function Orcamento() {
                     <Select value="" onChange={e => {
                       const [tipo, valor] = e.target.value.split('::');
                       if (tipo === 'cat') aplicarCategoriaMaoDeObra(it.id, valor);
-                      else if (tipo === 'item') aplicarMaoDeObraNoItem(it.id, valor);
-                    }}>
-                      <option value="">+ sugestão</option>
+                      else if (tipo === 'srv') aplicarServicoNoItem(it.id, valor);
+                    }} title="Serviços da base única (padrão + já lançados em propostas), com o preço sugerido para o segmento do cliente">
+                      <option value="">+ serviço</option>
                       <optgroup label="Categorias">
                         {CATEGORIAS_MAO_DE_OBRA.map(c => <option key={c} value={`cat::${c}`}>{c}</option>)}
                       </optgroup>
-                      {maoDeObraItens.length > 0 && (
-                        <optgroup label="Itens já usados">
-                          {maoDeObraItens.map(m => <option key={m.id} value={`item::${m.id}`}>{m.descricao}</option>)}
+                      {gruposServicos.map(g => (
+                        <optgroup key={g.disc} label={g.nome}>
+                          {g.lista.map(s => {
+                            const sug = sugestaoDoServico(s);
+                            return <option key={s.codigo} value={`srv::${s.codigo}`}>{s.descricao}{sug != null ? ` — ${formatarMoeda(sug)}` : ''}</option>;
+                          })}
                         </optgroup>
-                      )}
+                      ))}
                     </Select>
                   ) : (
                     <Select value="" onChange={e => aplicarMaterialNoItem(it.id, e.target.value)}>
@@ -711,13 +1091,36 @@ export default function Orcamento() {
                       {filtrarCatalogoPorCategoria(materiais, it.subgrupo).map(m => <option key={m.id} value={m.id}>{m.descricao}</option>)}
                     </Select>
                   )}
-                  <input value={it.descricao} onChange={e => atualizarItem(it.id, 'descricao', e.target.value)} placeholder="Descrição do item" />
+                  <div>
+                    <input value={it.descricao} onChange={e => atualizarItem(it.id, 'descricao', e.target.value)} placeholder="Descrição do item" style={{ width: '100%' }} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3, flexWrap: 'wrap' }}>
+                      <button type="button" onClick={() => pesquisarMercado(it, maoDeObra)} disabled={pesquisa?.carregando}
+                        title={maoDeObra ? 'Pesquisa o preço deste serviço no mercado (busca real na web; leva de 30 s a 1 min)' : 'Pesquisa o preço deste material no mercado (busca real na web; leva de 30 s a 1 min)'}
+                        style={btnPesquisar}>
+                        <Search size={10} style={{ marginRight: 3 }} /> {pesquisa?.carregando ? 'Pesquisando...' : 'Pesquisar mercado'}
+                      </button>
+                      {aCotar && <span style={{ ...etiqueta, color: '#c9a227', borderColor: '#5a4a12' }} title='Preço estimado ou pendente — confirme antes de enviar ao cliente'>a cotar</span>}
+                      {semPreco && <span style={{ ...etiqueta, color: '#e08080', borderColor: '#5a2a2a' }} title="Item com valor unitário R$ 0,00">sem preço</span>}
+                    </div>
+                  </div>
                   {!maoDeObra && (
                     <input value={it.ncm} onChange={e => atualizarItem(it.id, 'ncm', e.target.value.replace(/[^\d.]/g, ''))} placeholder="NCM/SH" />
                   )}
                   <input type="number" step="1" min="0" value={it.quantidade} onChange={e => atualizarItem(it.id, 'quantidade', e.target.value)} />
                   <input value={it.unidade} onChange={e => atualizarItem(it.id, 'unidade', e.target.value)} />
-                  <CampoMoeda value={it.valor_unitario} onChange={v => atualizarItem(it.id, 'valor_unitario', v)} />
+                  {maoDeObra ? (
+                    <div>
+                      <CampoMoeda value={it.valor_unitario} onChange={v => atualizarItem(it.id, 'valor_unitario', v)} />
+                      <DicasReferencia servico={servicoDoItem(it)} segmento={segmento} valor={it.valor_unitario}
+                        onUsar={v => atualizarItem(it.id, 'valor_unitario', v)} />
+                    </div>
+                  ) : (
+                    <div>
+                      <CampoMoeda value={it.valor_unitario} onChange={v => atualizarItem(it.id, 'valor_unitario', v)} />
+                      <DicaCatalogo material={it.material_id ? materiaisPorId[String(it.material_id)] : null} valor={it.valor_unitario}
+                        onUsar={v => atualizarItem(it.id, 'valor_unitario', v)} />
+                    </div>
+                  )}
                   <span style={{ fontSize: 12, color: '#ccc', textAlign: 'right', paddingRight: 4 }}>
                     {formatarMoeda((Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0))}
                   </span>
@@ -729,6 +1132,11 @@ export default function Orcamento() {
                     <Trash2 size={12} />
                   </button>
                 </div>
+                {/* key com a data: a pesquisa que chega salva (da análise) já nasce recolhida */}
+                <BlocoPesquisaMercado key={`${it.id}_${pesquisa?.pesquisadoEm || ''}`} pesquisa={pesquisa} precoAtual={it.valor_unitario}
+                  onUsarPreco={v => atualizarItem(it.id, 'valor_unitario', v)} />
+                {pesquisa?.erro && <div style={{ marginTop: 6, fontSize: 12, color: '#b04040' }}>{pesquisa.erro}</div>}
+                </div>
               );
             })}
 
@@ -739,9 +1147,24 @@ export default function Orcamento() {
         );
       })}
 
-      <button onClick={adicionarSecao} style={{ ...btnSecundario, marginBottom: 18 }}>
-        <FolderPlus size={13} style={{ marginRight: 4 }} /> Adicionar seção
-      </button>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
+        <button onClick={adicionarSecao} style={btnSecundario}>
+          <FolderPlus size={13} style={{ marginRight: 4 }} /> Adicionar seção
+        </button>
+        <InserirComposicao segmento={ehPublico ? 'publico' : 'privado'} onInserir={inserirItensDoKit} />
+        <button type="button" onClick={() => setMostrarCurvaAbc(v => !v)} disabled={itens.length === 0}
+          style={{ ...btnSecundario, ...(mostrarCurvaAbc ? { borderStyle: 'solid', borderColor: '#5a4a12', color: '#c9a227' } : {}) }}
+          title="Itens do maior para o menor valor, com % do total, % acumulado e classe A/B/C">
+          <BarChart3 size={13} style={{ marginRight: 4 }} /> {mostrarCurvaAbc ? 'Fechar curva ABC' : 'Curva ABC'}
+        </button>
+      </div>
+
+      {mostrarCurvaAbc && itens.length > 0 && (
+        <div style={card}>
+          <div style={{ fontWeight: 700, color: '#c9a227', fontSize: 13, marginBottom: 10 }}>Curva ABC da proposta</div>
+          <CurvaAbcPainel itens={itensCurvaAbc} />
+        </div>
+      )}
 
       {/* Totais */}
       <div style={{ ...card, position: 'sticky', bottom: 16 }}>
@@ -760,10 +1183,31 @@ export default function Orcamento() {
               <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>{formatarMoeda(valorImpostoServico)}</div>
             </div>
             <div>
-              <label style={rotulo}>BDI (%)</label>
-              <input type="number" step="0.1" min="0" value={form.bdi} onChange={e => setForm({ ...form, bdi: e.target.value })} style={{ width: 80 }} />
-              <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>{formatarMoeda(valorBdi)}</div>
+              <label style={rotulo}>{temBdiMateriais(form.bdi_materiais) ? 'BDI mão de obra (%)' : 'BDI (%)'}</label>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <input type="number" step="0.01" min="0" value={form.bdi} onChange={e => setForm({ ...form, bdi: e.target.value })} style={{ width: 80 }} />
+                <button type="button" onClick={() => setCalculadoraBdiAberta(true)}
+                  style={{ ...btnSecundario, padding: '4px 8px', fontSize: 11, ...(ehPublico && !memoriaBdi ? { borderStyle: 'solid', borderColor: '#c9a227', color: '#c9a227' } : {}) }}
+                  title="Calcular o BDI pela fórmula do TCU (Acórdão 2.622/2013) — tipo de obra, regime, parcelas e faixas de referência">
+                  <Calculator size={12} style={{ marginRight: 3 }} /> TCU
+                </button>
+              </div>
+              <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
+                {formatarMoeda(temBdiMateriais(form.bdi_materiais) ? valorBdiMaoObra : valorBdi)}
+                {memoriaBdi && (
+                  <span title={`Composição pelo TCU guardada na proposta (${memoriaBdi.regime === 'desonerado' ? 'desonerado' : 'não desonerado'})`} style={{ color: '#8a7333' }}>
+                    {' '}· composição <button type="button" onClick={removerComposicaoBdi} style={btnUsar} title="Remover a composição do BDI">remover</button>
+                  </span>
+                )}
+              </div>
             </div>
+            {form.bdi_materiais != null && (
+              <div>
+                <label style={rotulo} title="BDI diferenciado (reduzido) para o fornecimento de materiais — Acórdão 2.622/2013-TCU. Vazio = o mesmo BDI para tudo.">BDI materiais (%)</label>
+                <input type="number" step="0.01" min="0" value={form.bdi_materiais} onChange={e => setForm({ ...form, bdi_materiais: e.target.value })} style={{ width: 80 }} />
+                <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>{formatarMoeda(valorBdiMateriais)}</div>
+              </div>
+            )}
             <div>
               <label style={rotulo} title="Multiplica o valor unitário de cada item de Materiais por esse percentual. (+) aumenta, (-) desconta. Roda na hora, ao clicar em Aplicar — não recalcula sozinho depois.">Reajuste Materiais (%)</label>
               <div style={{ display: 'flex', gap: 4 }}>
@@ -817,6 +1261,18 @@ export default function Orcamento() {
                 title={alteracoesPendentes ? 'Salve as alterações antes de gerar o PDF' : ''}>
                 <FileDown size={13} style={{ marginRight: 4 }} /> {gerandoPdf ? 'Gerando...' : 'Baixar PDF'}
               </button>
+              {/* anexos opcionais do PDF (Fase 3F) */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 10.5, color: '#888' }} title="Anexos no fim do PDF da proposta">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  <input type="checkbox" checked={anexosPdf.curva_abc} onChange={e => setAnexosPdf(a => ({ ...a, curva_abc: e.target.checked }))} style={{ width: 'auto' }} />
+                  anexo curva ABC
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  title={memoriaBdi ? 'Composição do BDI pela fórmula do TCU (exigida em proposta para órgão público)' : 'Sem composição calculada: o anexo mostra só o BDI adotado'}>
+                  <input type="checkbox" checked={anexosPdf.composicao_bdi} onChange={e => setAnexosPdf(a => ({ ...a, composicao_bdi: e.target.checked }))} style={{ width: 'auto' }} />
+                  anexo composição do BDI
+                </label>
+              </div>
               <button onClick={baixarPlanilha} disabled={gerandoPlanilha || alteracoesPendentes} style={btnSecundario}
                 title={alteracoesPendentes ? 'Salve as alterações antes de gerar a planilha' : 'Planilha para o cliente: orçamento, resumo, pesquisa de preços, fornecedores e cronograma'}>
                 <FileDown size={13} style={{ marginRight: 4 }} /> {gerandoPlanilha ? 'Gerando...' : 'Planilha Excel'}
@@ -825,6 +1281,8 @@ export default function Orcamento() {
                 title={alteracoesPendentes ? 'Salve as alterações antes de enviar' : ''}>
                 <Send size={13} style={{ marginRight: 4 }} /> Enviar E-mail
               </button>
+              <BotaoLinkAprovacao propostaId={propostaSalva.id} numero={propostaSalva.numero}
+                status={propostaSalva.status} onAlterado={atualizarStatusSalvo} />
               <button onClick={novoOrcamento} style={{ ...btnPrimario, padding: '13px 20px', fontSize: 13 }}>
                 <FilePlus2 size={13} style={{ marginRight: 4 }} /> Novo Orçamento
               </button>
@@ -843,6 +1301,50 @@ export default function Orcamento() {
         proposta={propostaSalva}
         emailInicial={clienteEmailCadastro || clienteResolvido?.email || ''}
       />
+
+      <CalculadoraBdi
+        aberto={calculadoraBdiAberta}
+        onFechar={() => setCalculadoraBdiAberta(false)}
+        memoria={form.bdi_memoria}
+        publico={ehPublico}
+        impostoVenda={form.imposto_venda}
+        impostoServico={form.imposto_servico}
+        onAplicar={aplicarBdiCalculado}
+      />
+    </div>
+  );
+}
+
+// Referências do serviço do item, como na Análise de Projeto: "Ref." é o valor
+// H&M adotado (tela Preços de Mão de Obra) e oficial / particular são as
+// referências de mercado; só aparecem quando diferem do valor da linha, e a do
+// segmento do cliente vem destacada. "usar" troca o valor unitário.
+function DicasReferencia({ servico, segmento, valor, onUsar }) {
+  if (!servico) return null;
+  const dicas = [
+    ['hm', servico.valor_referencia, 'valor adotado pela H&M (tela Preços de Mão de Obra)'],
+    ['publico', servico.valor_publico, servico.fonte_publico],
+    ['privado', servico.valor_privado, servico.fonte_privado],
+  ].filter(([, v]) => v != null && Number(v) !== Number(valor || 0));
+  if (!dicas.length) return null;
+  return dicas.map(([seg, v, fonte]) => (
+    <div key={seg} style={{ fontSize: 10.5, color: seg === 'hm' || seg === segmento ? '#8a7333' : '#6f7f8f', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+      title={seg === 'hm' ? `Referência: ${fonte}` : `Referência ${ROTULO_SEGMENTO[seg]}${seg === segmento ? ' (segmento do cliente)' : ''}${fonte ? ` — ${fonte}` : ''}`}>
+      {seg === 'hm' ? 'Ref.' : seg === 'publico' ? 'oficial' : 'particular'}: {formatarMoeda(v)}{' '}
+      <button type="button" onClick={() => onUsar(Number(v))} style={btnUsar}>usar</button>
+    </div>
+  ));
+}
+
+// Preço do material no catálogo, quando o item está ligado a ele e o valor da
+// linha é outro (pesquisa de mercado adotada, reajuste, digitado à mão).
+function DicaCatalogo({ material, valor, onUsar }) {
+  if (!material || material.preco == null || !(Number(material.preco) > 0) || Number(material.preco) === Number(valor || 0)) return null;
+  return (
+    <div style={{ fontSize: 10.5, color: '#8a7333', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+      title={`Preço do catálogo de materiais — ${material.descricao}`}>
+      catálogo: {formatarMoeda(material.preco)}{' '}
+      <button type="button" onClick={() => onUsar(Number(material.preco))} style={btnUsar}>usar</button>
     </div>
   );
 }
@@ -864,6 +1366,13 @@ function Campo({ label, children }) {
     </div>
   );
 }
+
+const btnUsar = { background: 'none', border: 'none', color: '#c9a227', textDecoration: 'underline', cursor: 'pointer', fontSize: 10.5, padding: 0 };
+const btnPesquisar = {
+  display: 'inline-flex', alignItems: 'center', padding: '2px 7px', background: 'transparent', border: '1px dashed #333',
+  borderRadius: 5, color: '#999', fontWeight: 700, fontSize: 10.5, cursor: 'pointer', whiteSpace: 'nowrap',
+};
+const etiqueta = { fontSize: 10, border: '1px solid', borderRadius: 4, padding: '0 5px', textTransform: 'uppercase', letterSpacing: '.4px' };
 
 const rotulo = { display: 'block', fontSize: 10, color: '#666', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' };
 

@@ -14,7 +14,12 @@ const { execFile } = require('child_process');
 // projeto/laudo muda, a pasta é renomeada; quando o registro é excluído no
 // sistema, a pasta vai para "_Excluídos" (não é apagada às cegas).
 const BASE = process.env.PASTA_ARQUIVOS_SISTEMA || path.join(__dirname, '..', '..', '..', '..', 'Arquivos do Sistema');
-const RAIZES = { projeto: path.join(BASE, 'Projetos'), laudo: path.join(BASE, 'Laudos') };
+// Versão 2.0 (Fase 2D): cada obra tem a sua pasta em Obras\<nome da obra>;
+// análise/laudo NOVO ligado a uma obra grava dentro dela (Projeto,
+// Laudos\<disciplina>) — quem decide a raiz é services/pastasRegistros.js.
+const RAIZES = { projeto: path.join(BASE, 'Projetos'), laudo: path.join(BASE, 'Laudos'), obra: path.join(BASE, 'Obras') };
+const LETRA = { projeto: 'A', laudo: 'L', obra: 'O' };
+const PADRAO = { projeto: 'Projeto', laudo: 'Laudo', obra: 'Obra' };
 const EXCLUIDOS = path.join(BASE, '_Excluídos');
 const RESERVADOS = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
 
@@ -33,28 +38,39 @@ async function existe(p) {
 
 // Garante a pasta do registro com o nome atual. `tabela`/`id` identificam o
 // registro; a coluna `pasta` guarda o nome em uso (para renomear depois).
-// Nome repetido em outro registro ganha o sufixo " (A14)" / " (L3)".
-async function sincronizarPasta(client, { tipo, tabela, id, nome, pastaAtual }) {
-  const sufixo = ` (${tipo === 'projeto' ? 'A' : 'L'}${id})`;
-  const base = nomeSeguro(nome, `${tipo === 'projeto' ? 'Projeto' : 'Laudo'} ${id}`);
+// Nome repetido em outro registro ganha o sufixo " (A14)" / " (L3)" / " (O2)".
+// `raiz` troca a pasta-mãe (padrão RAIZES[tipo]) — ex.: Obras\<obra> para a
+// pasta "Projeto" de uma análise da obra; `escopo` ({ coluna, valor }) limita
+// a checagem de nome repetido aos registros da mesma pasta-mãe (valor null =
+// coluna IS NULL). `coluna` é sempre um literal escolhido no código.
+async function sincronizarPasta(client, { tipo, tabela, id, nome, pastaAtual, raiz = RAIZES[tipo], escopo = null }) {
+  const sufixo = ` (${LETRA[tipo]}${id})`;
+  const base = nomeSeguro(nome, `${PADRAO[tipo]} ${id}`);
+  const caminho = (p) => path.join(raiz, p);
   let desejada = base;
-  const ocupada = await client.query(`SELECT 1 FROM ${tabela} WHERE LOWER(pasta) = LOWER($1) AND id <> $2 LIMIT 1`, [desejada, id]);
-  if (ocupada.rows.length || (desejada !== pastaAtual && await existe(caminhoDe(tipo, desejada)) && !(pastaAtual && desejada.toLowerCase() === pastaAtual.toLowerCase()))) {
+  const params = [desejada, id];
+  let filtro = '';
+  if (escopo) {
+    if (escopo.valor == null) filtro = ` AND ${escopo.coluna} IS NULL`;
+    else { params.push(escopo.valor); filtro = ` AND ${escopo.coluna} = $3`; }
+  }
+  const ocupada = await client.query(`SELECT 1 FROM ${tabela} WHERE LOWER(pasta) = LOWER($1) AND id <> $2${filtro} LIMIT 1`, params);
+  if (ocupada.rows.length || (desejada !== pastaAtual && await existe(caminho(desejada)) && !(pastaAtual && desejada.toLowerCase() === pastaAtual.toLowerCase()))) {
     desejada = nomeSeguro(base.slice(0, 80) + sufixo);
   }
-  await fsp.mkdir(RAIZES[tipo], { recursive: true });
-  if (pastaAtual && pastaAtual !== desejada && await existe(caminhoDe(tipo, pastaAtual))) {
+  await fsp.mkdir(raiz, { recursive: true });
+  if (pastaAtual && pastaAtual !== desejada && await existe(caminho(pastaAtual))) {
     try {
-      await fsp.rename(caminhoDe(tipo, pastaAtual), caminhoDe(tipo, desejada));
+      await fsp.rename(caminho(pastaAtual), caminho(desejada));
     } catch (e) {
       // pasta aberta no Explorer/Word (EPERM/EBUSY): mantém o nome antigo e tenta na próxima gravação
       console.warn(`Não foi possível renomear a pasta "${pastaAtual}" → "${desejada}": ${e.message}`);
-      return caminhoDe(tipo, pastaAtual);
+      return caminho(pastaAtual);
     }
   }
-  await fsp.mkdir(caminhoDe(tipo, desejada), { recursive: true });
+  await fsp.mkdir(caminho(desejada), { recursive: true });
   if (desejada !== pastaAtual) await client.query(`UPDATE ${tabela} SET pasta = $1 WHERE id = $2`, [desejada, id]);
-  return caminhoDe(tipo, desejada);
+  return caminho(desejada);
 }
 
 // Grava sobrescrevendo de forma segura: escreve num temporário e troca — se
@@ -83,12 +99,15 @@ async function removerArquivo(pasta, nomeArquivo) {
 // Exclusão no sistema: a pasta vai para _Excluídos com a data (o usuário
 // apaga de vez quando quiser), em vez de sumir com arquivos que podem ter sido
 // colocados lá à mão.
-async function moverParaExcluidos(tipo, pasta) {
-  if (!pasta || !(await existe(caminhoDe(tipo, pasta)))) return null;
+// `raiz`: pasta-mãe quando não é a padrão (item dentro da pasta de uma obra);
+// `rotulo`: entra no nome em _Excluídos (ex.: o nome da obra).
+async function moverParaExcluidos(tipo, pasta, { raiz = RAIZES[tipo], rotulo = null } = {}) {
+  const origem = pasta ? path.join(raiz, pasta) : null;
+  if (!origem || !(await existe(origem))) return null;
   await fsp.mkdir(EXCLUIDOS, { recursive: true });
   const data = new Date().toISOString().slice(0, 10);
-  const destino = path.join(EXCLUIDOS, nomeSeguro(`${tipo === 'projeto' ? 'Projeto' : 'Laudo'} - ${pasta} - ${data}`));
-  await fsp.rename(caminhoDe(tipo, pasta), (await existe(destino)) ? `${destino} ${Date.now()}` : destino);
+  const destino = path.join(EXCLUIDOS, nomeSeguro(`${PADRAO[tipo]} - ${rotulo ? `${rotulo} - ` : ''}${pasta} - ${data}`));
+  await fsp.rename(origem, (await existe(destino)) ? `${destino} ${Date.now()}` : destino);
   return destino;
 }
 

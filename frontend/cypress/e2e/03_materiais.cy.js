@@ -4,8 +4,11 @@ describe('Materiais', () => {
 
   beforeEach(() => {
     cy.login();
-    cy.get('nav').contains('Materiais').click();
-    cy.url().should('include', '/materiais');
+    // 2.0: Materiais é a primeira aba do grupo "Base de preços"
+    cy.get('nav').contains('Base de preços').click();
+    cy.url().should('include', '/base-precos');
+    cy.contains('[role=tab]', 'Materiais').should('have.attr', 'aria-selected', 'true');
+    cy.contains('h2', 'Materiais').should('be.visible');
   });
 
   it('cadastra um novo material com NCM', () => {
