@@ -28,6 +28,9 @@ const ENERGIA = new Set(['eletrica', 'iluminacao', 'eletrica_hospitalar', 'eletr
 const TELECOM = new Set(['cabeamento', 'rede', 'cftv', 'telefonia', 'antena']);
 const TRACADO_DIST_M = 0.15;
 const MAX_CONFLITOS = 300;
+// segmento de traçado mais longo que isso não é eletroduto/eletrocalha de
+// verdade (linha de construção, erro de escala/unidade): fica de fora, com aviso
+const MAX_SEGMENTO_M = 1000;
 
 const normalizar = (s) => String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]+/g, ' ').trim();
 const br = (v, c = 2) => Number(v).toFixed(c).replace('.', ',');
@@ -121,6 +124,40 @@ function grade(itens, cel, caixa) {
   };
 }
 
+// Células por onde o SEGMENTO passa (com folga), andando ao longo dele em
+// passos de meia célula — e não todas as células da caixa dele: a caixa de uma
+// diagonal de 2 km tem 1 milhão de células de 2 m (1 s e 425 MB por segmento).
+function celulasDoSegmento([ax, ay, bx, by], cel, folga) {
+  const comp = Math.hypot(bx - ax, by - ay);
+  const n = Math.max(1, Math.ceil(comp / (cel / 2)));
+  // cada amostra cobre meio passo para cada lado ao longo do segmento, mais a folga
+  const meia = comp / (2 * n) + folga;
+  const ks = new Set();
+  for (let i = 0; i <= n; i++) {
+    const x = ax + ((bx - ax) * i) / n, y = ay + ((by - ay) * i) / n;
+    for (let cx = Math.floor((x - meia) / cel); cx <= Math.floor((x + meia) / cel); cx++) {
+      for (let cy = Math.floor((y - meia) / cel); cy <= Math.floor((y + meia) / cel); cy++) ks.add(`${cx},${cy}`);
+    }
+  }
+  return ks;
+}
+
+// Grade de segmentos: cada um entra só nas células ao longo dele (com a folga
+// de proximidade); a consulta anda ao longo do outro segmento do mesmo jeito.
+function gradeDeSegmentos(itens, cel, folga, segmentoDe) {
+  const g = new Map();
+  itens.forEach((it, i) => {
+    for (const k of celulasDoSegmento(segmentoDe(it), cel, folga)) (g.get(k) || g.set(k, []).get(k)).push(i);
+  });
+  return {
+    pertoDoSegmento(seg) {
+      const s = new Set();
+      for (const k of celulasDoSegmento(seg, cel, 0)) for (const i of g.get(k) || []) s.add(i);
+      return [...s];
+    },
+  };
+}
+
 function ambienteEm(ambientes, x, y) {
   return ambientes.filter(a => dentro([x, y], a.poligono)).sort((a, b) => a.area_m2 - b.area_m2)[0]?.nome || null;
 }
@@ -168,22 +205,26 @@ function conflitosDePontos(pontos, ambientesRef) {
 // traçados de energia e de telecomunicações no mesmo caminho
 function conflitosDeTracado(trechos, ambientesRef) {
   const segs = [];
+  // segmentos longos demais ignorados: { arquivo, layer, metros } (vira aviso nos achados)
+  const longos = [];
   for (const t of trechos) {
     const grupo = ENERGIA.has(t.disciplina) ? 'energia' : TELECOM.has(t.disciplina) ? 'telecom' : null;
     if (!grupo) continue;
     for (const s of t.segmentos) {
       const comp = Math.hypot(s[2] - s[0], s[3] - s[1]);
+      if (!Number.isFinite(comp)) continue;
+      if (comp > MAX_SEGMENTO_M) { longos.push({ arquivo: t.arquivo, layer: t.layer, metros: comp }); continue; }
       if (comp >= 0.3) segs.push({ s, comp, grupo, t });
     }
   }
   const tel = segs.filter(x => x.grupo === 'telecom');
-  if (!tel.length) return { conflitos: [], resumo: [] };
-  const g = grade(tel, 2, ({ s }) => [Math.min(s[0], s[2]) - TRACADO_DIST_M, Math.min(s[1], s[3]) - TRACADO_DIST_M, Math.max(s[0], s[2]) + TRACADO_DIST_M, Math.max(s[1], s[3]) + TRACADO_DIST_M]);
+  if (!tel.length) return { conflitos: [], resumo: [], longos };
+  const g = gradeDeSegmentos(tel, 2, TRACADO_DIST_M, ({ s }) => s);
   const porPar = new Map();
   for (const e of segs.filter(x => x.grupo === 'energia')) {
     const [ax, ay, bx, by] = e.s;
     const ux = (bx - ax) / e.comp, uy = (by - ay) / e.comp;
-    for (const i of g.perto(Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by))) {
+    for (const i of g.pertoDoSegmento(e.s)) {
       const d = tel[i];
       const [cx, cy, dx2, dy2] = d.s;
       const vx = (dx2 - cx) / d.comp, vy = (dy2 - cy) / d.comp;
@@ -215,7 +256,7 @@ function conflitosDeTracado(trechos, ambientesRef) {
         b: { arquivo: reg.telecom.arquivo, descricao: `layer "${reg.telecom.layer}"`, disciplina: reg.telecom.disciplina } });
     }
   }
-  return { conflitos, resumo };
+  return { conflitos, resumo, longos };
 }
 
 const NOME_DISC = { eletrica: 'elétrica', iluminacao: 'iluminação', incendio: 'incêndio', cftv: 'CFTV', cabeamento: 'cabeamento', rede: 'rede', alarme: 'alarme', telefonia: 'telefonia', antena: 'antena', controle_acesso: 'controle de acesso', automacao: 'automação' };
@@ -245,6 +286,7 @@ function compatibilizar(arquivos, { temPdf = false } = {}) {
 
   const conflitos = [];
   const contagem = new Map();
+  let espacialReferencia = null;
   grupos.forEach((g, gi) => {
     const ambRef = g.ref.espacial.ambientes;
     const pontos = [], trechos = [];
@@ -280,12 +322,29 @@ function compatibilizar(arquivos, { temPdf = false } = {}) {
         }
       }
     }
+    // grupo da referência: posições reais alinhadas, para o 3D mostrar o
+    // projeto como desenhado (services/modelo3d) — com limite, para não pesar o banco
+    if (gi === 0) {
+      let nSeg = 0;
+      espacialReferencia = {
+        referencia: g.ref.arquivo,
+        pontos: pontos.slice(0, 20000).map(({ x, y, descricao, disciplina, classe }) => ({ x, y, descricao, disciplina, classe })),
+        trechos: trechos.map(t => ({ disciplina: t.disciplina, layer: t.layer, segmentos: t.segmentos.slice(0, Math.max(0, 20000 - nSeg)).map(s => { nSeg++; return s.map(v => Math.round(v * 1000) / 1000); }) }))
+          .filter(t => t.segmentos.length),
+      };
+    }
     const novos = [...conflitosDePontos(pontos, ambRef)];
     const tr = conflitosDeTracado(trechos, ambRef);
     novos.push(...tr.conflitos);
     for (const c of novos) {
       contagem.set(c.tema, (contagem.get(c.tema) || []).concat([{ ...c, grupo: gi }]));
       if (conflitos.length < MAX_CONFLITOS) conflitos.push({ ...c, grupo: gi });
+    }
+    if (tr.longos.length) {
+      const porLayer = new Map();
+      for (const l of tr.longos) { const k = `"${l.layer}" ("${l.arquivo}")`; porLayer.set(k, (porLayer.get(k) || 0) + 1); }
+      achados.push({ tema: 'Traçados longos demais ignorados na compatibilização',
+        observacao: `${tr.longos.length} segmento(s) com mais de ${MAX_SEGMENTO_M} m não entraram na verificação de traçados (${[...porLayer].slice(0, 6).map(([k, n]) => `${n} na layer ${k}`).join('; ')}). Linha desse tamanho costuma ser erro de unidade/escala ou linha de construção — conferir no desenho.` });
     }
     for (const reg of tr.resumo) {
       achados.push({ tema: 'Energia e telecomunicações no mesmo caminho',
@@ -308,7 +367,7 @@ function compatibilizar(arquivos, { temPdf = false } = {}) {
   if (temPdf) {
     achados.push({ tema: 'Compatibilização por posição só entre DWG/DXF', observacao: 'Os PDFs do pacote entram na compatibilização pelo texto (códigos, quadros, listas); a verificação de posição entre componentes e traçados é feita só entre os desenhos DWG/DXF.' });
   }
-  return { conflitos, achados, referencia: grupos[0]?.ref.arquivo || null, grupos: grupos.map(g => ({ referencia: g.ref.arquivo, membros: g.membros.map(m => ({ arquivo: m.f.arquivo, dx: m.dx, dy: m.dy, por: m.por })) })) };
+  return { conflitos, achados, espacial: espacialReferencia, referencia: grupos[0]?.ref.arquivo || null, grupos: grupos.map(g => ({ referencia: g.ref.arquivo, membros: g.membros.map(m => ({ arquivo: m.f.arquivo, dx: m.dx, dy: m.dy, por: m.por })) })) };
 }
 
-module.exports = { compatibilizar, alinhar, conflitosDePontos, conflitosDeTracado, REGRAS };
+module.exports = { compatibilizar, alinhar, conflitosDePontos, conflitosDeTracado, celulasDoSegmento, REGRAS, MAX_SEGMENTO_M };

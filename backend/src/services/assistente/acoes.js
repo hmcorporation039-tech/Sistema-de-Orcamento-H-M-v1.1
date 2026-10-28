@@ -14,7 +14,7 @@
 // validação, limites e auditoria são os de sempre. O assistente não tem rota
 // para aplicar (o token dele é recusado em /assistente/acoes/*).
 const pool = require('../../config/database');
-const { propostaParaPayload, aplicarOperacoes, payloadParaEnvio, mesclarDados, ErroRascunho } = require('../../utils/assistenteRascunho');
+const { propostaParaPayload, aplicarOperacoes, payloadParaEnvio, mesclarDados, ErroRascunho, cortarTexto, citar } = require('../../utils/assistenteRascunho');
 
 class ErroAcao extends Error {
   constructor(msg, status = 400) { super(msg); this.status = status; }
@@ -30,15 +30,22 @@ async function proposta(id) {
   if (!p) throw new ErroAcao(`Proposta #${id} não encontrada.`, 404);
   return p;
 }
+// Valor de um campo no resumo do cartão (texto cortado em ~600 caracteres)
+const valorNoResumo = (v) => {
+  if (v == null || v === '') return '(vazio)';
+  if (typeof v === 'string') return citar(v);
+  if (typeof v === 'object') return cortarTexto(JSON.stringify(v));
+  return String(v);
+};
 const rotuloProposta = (p) => `${p.numero} — ${p.cliente_nome || 'sem cliente'}, ${brl(p.total)} (${p.status})`;
 
 async function analise(id) {
-  const { rows: [a] } = await pool.query('SELECT id, cliente_nome, nome_projeto, finalidade FROM analises_projeto WHERE id = $1', [id]);
+  const { rows: [a] } = await pool.query('SELECT id, cliente_nome, nome_projeto, finalidade, funcionamento, obra_id FROM analises_projeto WHERE id = $1', [id]);
   if (!a) throw new ErroAcao(`Análise #${id} não encontrada.`, 404);
   return a;
 }
 async function projeto(id) {
-  const { rows: [l] } = await pool.query('SELECT id, tipo, disciplina, titulo FROM laudos_projetos WHERE id = $1', [id]);
+  const { rows: [l] } = await pool.query('SELECT id, tipo, disciplina, titulo, dados FROM laudos_projetos WHERE id = $1', [id]);
   if (!l) throw new ErroAcao(`Projeto/laudo #${id} não encontrado.`, 404);
   return l;
 }
@@ -62,9 +69,17 @@ const TIPOS = {
       if (!emailValido(dados.destinatario)) throw new ErroAcao('Informe um e-mail de destino válido.');
       if (dados.mensagem != null && (typeof dados.mensagem !== 'string' || dados.mensagem.length > 10000)) throw new ErroAcao('Mensagem do e-mail inválida (até 10.000 caracteres).');
       const p = await proposta(id);
+      // o cartão mostra o e-mail INTEIRO que vai sair (mesmo assunto e corpo de
+      // propostasController.enviarEmail): antes dizia só "com a mensagem
+      // proposta" e o usuário aprovava sem ler o texto que o assistente escreveu
+      const corpo = (dados.mensagem && dados.mensagem.trim()) || `Olá,\nSegue em anexo a proposta ${p.numero}.`;
       return {
         payload: { destinatario: dados.destinatario, ...(dados.mensagem ? { mensagem: dados.mensagem } : {}) },
-        resumo: `Enviar a proposta ${rotuloProposta(p)} por e-mail para ${dados.destinatario}${dados.mensagem ? ', com a mensagem proposta' : ''}.`,
+        resumo: `Enviar a proposta ${rotuloProposta(p)} por e-mail.\n`
+          + `Para: ${dados.destinatario}\n`
+          + `Assunto: Proposta ${p.numero} — H&M Engenharia e Tecnologia\n`
+          + `Texto: ${citar(corpo)} (+ assinatura padrão da empresa)\n`
+          + `Anexo: PDF da proposta ${p.numero}`,
       };
     },
     executar: (id, d, api) => api('POST', `/api/propostas/${id}/enviar-email`, d),
@@ -118,8 +133,16 @@ const TIPOS = {
       const l = await projeto(id);
       if (!dados.dados || typeof dados.dados !== 'object' || Array.isArray(dados.dados)) throw new ErroAcao('Informe "dados" (objeto com os campos a alterar).');
       if (JSON.stringify(dados.dados).length > 200000) throw new ErroAcao('Dados grandes demais para uma ação.');
-      const campos = Object.keys(dados.dados).slice(0, 12).join(', ');
-      return { payload: { dados: dados.dados }, resumo: `Alterar o ${l.tipo} #${l.id} de ${l.disciplina} (${l.titulo || 'sem título'}): campos ${campos}.` };
+      // antes → depois de cada campo (depois = como fica mesclado, igual ao executar)
+      let final;
+      try { final = mesclarDados(l.dados || {}, dados.dados); } catch (e) {
+        if (e instanceof ErroRascunho) throw new ErroAcao(e.message);
+        throw e;
+      }
+      const chaves = Object.keys(dados.dados);
+      const mudancas = chaves.slice(0, 12).map(k => `${k}: ${valorNoResumo((l.dados || {})[k])} → ${valorNoResumo(final[k])}`);
+      if (chaves.length > 12) mudancas.push(`(+${chaves.length - 12} campos)`);
+      return { payload: { dados: dados.dados }, resumo: `Alterar o ${l.tipo} #${l.id} de ${l.disciplina} (${l.titulo || 'sem título'}):\n${mudancas.join('\n')}` };
     },
     async executar(id, d, api) {
       const atual = await api('GET', `/api/laudos/${id}`);
@@ -134,7 +157,8 @@ const TIPOS = {
       const payload = Object.fromEntries(Object.entries(dados || {}).filter(([k]) => permitidos.includes(k)));
       if (!Object.keys(payload).length) throw new ErroAcao(`Informe ao menos um destes campos: ${permitidos.join(', ')}.`);
       if (payload.finalidade != null && !['orcamento', 'elaboracao'].includes(payload.finalidade)) throw new ErroAcao('Finalidade inválida (orcamento ou elaboracao).');
-      return { payload, resumo: `Alterar a análise #${a.id} (${a.nome_projeto || a.cliente_nome || 'sem nome'}): ${Object.keys(payload).join(', ')}.` };
+      const mudancas = Object.entries(payload).map(([k, v]) => `${k}: ${valorNoResumo(a[k])} → ${valorNoResumo(v)}`);
+      return { payload, resumo: `Alterar a análise #${a.id} (${a.nome_projeto || a.cliente_nome || 'sem nome'}):\n${mudancas.join('\n')}` };
     },
     executar: (id, d, api) => api('PUT', `/api/projetos/analises/${id}`, d),
   },

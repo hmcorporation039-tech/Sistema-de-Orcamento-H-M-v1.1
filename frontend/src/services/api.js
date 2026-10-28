@@ -287,6 +287,14 @@ export const getPastaObra = (id) => api.get(`/obras/${id}/pasta`);
 export const abrirPastaObra = (id) => api.post(`/obras/${id}/pasta/abrir`);
 // 2.3: pacote de análise com os PDF/DWG/DXF/ZIP que já estão na pasta da obra
 export const pacoteDaPastaObra = (id) => api.post(`/obras/${id}/pasta/pacote`, null, { timeout: 600000 });
+// 2.3: pasta por cliente (no servidor) e novidades das pastas (arquivo novo/alterado/removido)
+export const getPastaCliente = (id) => api.get(`/clientes/${id}/pasta`, { timeout: 60000 });
+export const abrirPastaCliente = (id) => api.post(`/clientes/${id}/pasta/abrir`);
+export const getResumoNovidades = () => api.get('/novidades-pastas/resumo');
+// params: { cliente_id, obra_id, atualizar: '1' (varre a pasta agora) }
+export const getNovidadesPastas = (params) => api.get('/novidades-pastas', { params, timeout: 120000 });
+export const marcarNovidadesVistas = (ids) => api.post('/novidades-pastas/visto', { ids });
+export const pacoteDasNovidades = (ids) => api.post('/novidades-pastas/pacote', { ids }, { timeout: 600000 });
 // Criação já ligada a uma obra (obraId null/undefined = sem obra; o backend
 // também aceita obra_id direto no corpo de POST/PUT /propostas, /contratos,
 // /financeiro/movimentos e PATCH categorizar)

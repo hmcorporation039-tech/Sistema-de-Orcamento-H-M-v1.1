@@ -3,7 +3,7 @@
 // obra ou administrador. Excluir: administrador (e só obra sem itens ligados).
 const ctrl = require('../../controllers/obrasController');
 
-module.exports = (router, { autenticar, admin, validarId, exigirPosse }) => {
+module.exports = (router, { autenticar, admin, validarId, exigirPosse, limiteAnaliseProjeto }) => {
   const posseObra = exigirPosse('obras', {
     naoEncontrado: 'Obra não encontrada.',
     semPermissao: 'Esta obra foi criada por outro usuário. Peça a ele ou a um administrador para alterar.',
@@ -13,7 +13,7 @@ module.exports = (router, { autenticar, admin, validarId, exigirPosse }) => {
   router.get('/obras/:id/pasta', autenticar, validarId, ctrl.pasta);
   router.post('/obras/:id/pasta/abrir', autenticar, validarId, ctrl.abrirPasta);
   // 2.3: pacote de análise com os arquivos que já estão na pasta da obra
-  router.post('/obras/:id/pasta/pacote', autenticar, validarId, ctrl.pacoteDaPasta);
+  router.post('/obras/:id/pasta/pacote', autenticar, validarId, limiteAnaliseProjeto, ctrl.pacoteDaPasta);
   router.put('/obras/:id/vinculos', autenticar, validarId, posseObra, ctrl.vincular);
   router.get('/obras/:id', autenticar, validarId, ctrl.buscarUma);
   router.put('/obras/:id', autenticar, validarId, posseObra, ctrl.atualizar);

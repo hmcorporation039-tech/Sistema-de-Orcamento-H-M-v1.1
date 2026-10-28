@@ -133,7 +133,9 @@ router.get('/materiais', autenticar, matCtrl.listar);
 router.get('/materiais/categorias', autenticar, matCtrl.categorias);
 router.post('/materiais', autenticar, matCtrl.criar);
 router.put('/materiais/:id', autenticar, validarId, matCtrl.atualizar);
-router.delete('/materiais/:id', autenticar, validarId, matCtrl.remover);
+// apagar some com o material do catálogo de todos (e das sugestões de preço):
+// só administrador; criar e editar continuam livres para quem está logado
+router.delete('/materiais/:id', autenticar, validarId, admin, matCtrl.remover);
 router.post('/materiais/importar', autenticar, matCtrl.importar);
 router.post('/materiais/extrair-nota', autenticar, uploadNota.single('arquivo'), matCtrl.extrairNota);
 router.post('/materiais/comparar', autenticar, matCtrl.comparar);
@@ -148,7 +150,8 @@ router.get('/mao-de-obra-itens', autenticar, maoObraCtrl.listar);
 router.get('/clientes', autenticar, cliCtrl.listar);
 router.post('/clientes', autenticar, cliCtrl.criar);
 router.put('/clientes/:id', autenticar, validarId, cliCtrl.atualizar);
-router.delete('/clientes/:id', autenticar, validarId, cliCtrl.remover);
+// o cliente é compartilhado por propostas e obras de todos: apagar, só administrador
+router.delete('/clientes/:id', autenticar, validarId, admin, cliCtrl.remover);
 
 // ── PROPOSTAS ─────────────────────────────────────────────────────────
 router.get('/propostas', autenticar, propCtrl.listar);

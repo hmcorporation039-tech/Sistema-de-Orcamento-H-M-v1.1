@@ -17,6 +17,7 @@ import FormularioGenerico from './FormularioGenerico';
 import ResultadoGenerico from './ResultadoGenerico';
 import EntregasProjeto from './EntregasProjeto';
 import Select from '../Select';
+import { baixarArquivo, salvarBlob, mensagemDeErro } from '../../utils/download';
 import { useAuth } from '../../hooks/useAuth';
 import useAlteracoesNaoSalvas from '../../hooks/useAlteracoesNaoSalvas';
 
@@ -67,17 +68,6 @@ function resumoDoTipo(resumo, tipo) {
     indicadores: resumo.indicadores?.filter(i => !DA_INSPECAO.test(`${i.rotulo} ${i.detalhe || ''}`)),
     tabelas: resumo.tabelas?.filter(t => !DA_INSPECAO.test(t.titulo || '')),
   };
-}
-
-function baixarBlob(blob, nome) {
-  const url = window.URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = nome;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.URL.revokeObjectURL(url);
 }
 
 export default function LaudosProjetos({ tipo = 'laudo' }) {
@@ -140,13 +130,22 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
 
   // GET /laudos corta a lista (cabeçalho X-Lista-Truncada): avisa "lista parcial"
   const [listaParcial, setListaParcial] = useState(0);
+  const [busca, setBusca] = useSearchParams();
+  const laudoDaUrl = busca.get('laudo');
+  // obra do registro novo (2.0): /obras?aba=laudos&obra=ID já pré-seleciona
+  const obraDaUrl = Number(busca.get('obra')) || null;
+  const [obraNovo, setObraNovo] = useState(obraDaUrl);
+  useEffect(() => { if (obraDaUrl) setObraNovo(obraDaUrl); }, [obraDaUrl]);
+  // Com uma obra escolhida, a lista mostra SÓ os projetos/laudos dela (pedido do
+  // usuário, 28/10/2026: "novo projeto não pode puxar de outras obras") — antes
+  // aparecia o de outro cliente ao lado da obra selecionada.
   const carregarLista = useCallback(async () => {
     try {
-      const r = await getLaudos({ ...(disciplina ? { disciplina } : {}), tipo });
+      const r = await getLaudos({ ...(disciplina ? { disciplina } : {}), ...(obraNovo ? { obra_id: obraNovo } : {}), tipo });
       setLista(r.data);
       setListaParcial(r.headers?.['x-lista-truncada'] === "1" ? Number(r.headers['x-limite-lista']) || r.data.length : 0);
     } catch { /* lista vazia já informa */ }
-  }, [disciplina, tipo]);
+  }, [disciplina, tipo, obraNovo]);
 
   useEffect(() => {
     getDisciplinasLaudo().then(r => setDisciplinas(r.data)).catch(() => toast.error('Erro ao carregar as disciplinas'));
@@ -234,12 +233,7 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
   // projeto da disciplina"), da página da obra ou de um link antigo: seleciona
   // a disciplina e abre o registro. Registro do OUTRO tipo (ex.: link antigo
   // ?aba=laudos&laudo=ID de um projeto) vai para a aba certa, mantendo o ?laudo=.
-  const [busca, setBusca] = useSearchParams();
-  const laudoDaUrl = busca.get('laudo');
-  // obra do registro novo (2.0): /obras?aba=laudos&obra=ID já pré-seleciona
-  const obraDaUrl = Number(busca.get('obra')) || null;
-  const [obraNovo, setObraNovo] = useState(obraDaUrl);
-  useEffect(() => { if (obraDaUrl) setObraNovo(obraDaUrl); }, [obraDaUrl]);
+  // (busca, laudoDaUrl, obraDaUrl e obraNovo ficam lá em cima: a lista depende da obra)
   useEffect(() => {
     if (!laudoDaUrl) return;
     const comObra = (aba, extra = {}) => ({ aba, ...extra, ...(obraDaUrl ? { obra: String(obraDaUrl) } : {}) });
@@ -400,14 +394,10 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
     setOcupado(`doc_${doc.tipo}`);
     try {
       await salvarAgora();
-      const r = await baixarDocumentoLaudo(laudo.id, doc.tipo);
-      const nome = decodeURIComponent(r.headers['x-nome-arquivo'] || `${doc.tipo}.${doc.formato === 'Excel' ? 'xlsx' : 'docx'}`);
-      baixarBlob(r.data, nome);
+      await baixarArquivo(baixarDocumentoLaudo(laudo.id, doc.tipo), `${doc.tipo}.${doc.formato === 'Excel' ? 'xlsx' : 'docx'}`);
       setPastaMudou(Date.now()); // a cópia também foi gravada na pasta do laudo
     } catch (err) {
-      let msg = 'Erro ao gerar o documento';
-      try { msg = JSON.parse(await err.response.data.text()).erro || msg; } catch { /* resposta não-JSON */ }
-      toast.error(msg, { duration: 8000 });
+      toast.error(await mensagemDeErro(err, 'Erro ao gerar o documento'), { duration: 8000 });
     } finally {
       setOcupado('');
     }
@@ -443,14 +433,10 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
     setOcupado('unifilar');
     try {
       await salvarAgora();
-      const r = await baixarUnifilarLaudo(laudo.id);
-      const nome = decodeURIComponent((r.headers['content-disposition'] || '').match(/filename="([^"]+)"/)?.[1] || 'unifilar.qet');
-      baixarBlob(r.data, nome);
+      await baixarArquivo(baixarUnifilarLaudo(laudo.id), 'unifilar.qet');
       setPastaMudou(Date.now());
     } catch (err) {
-      let msg = 'Erro ao gerar o unifilar';
-      try { msg = JSON.parse(await err.response.data.text()).erro || msg; } catch { /* resposta não-JSON */ }
-      toast.error(msg, { duration: 8000 });
+      toast.error(await mensagemDeErro(err, 'Erro ao gerar o unifilar'), { duration: 8000 });
     } finally {
       setOcupado('');
     }
@@ -460,16 +446,12 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
     setOcupado('planta');
     try {
       await salvarAgora();
-      const r = await baixarPlantaLaudo(laudo.id);
-      const nome = decodeURIComponent((r.headers['content-disposition'] || '').match(/filename="([^"]+)"/)?.[1] || 'planta.dxf');
-      baixarBlob(r.data, nome);
+      const r = await baixarArquivo(baixarPlantaLaudo(laudo.id), 'planta.dxf');
       const faltaram = decodeURIComponent(r.headers['x-ambientes-nao-encontrados'] || '');
       if (faltaram) toast(`Ambientes do formulário que não estão na arquitetura (sem pontos na planta): ${faltaram}`, { duration: 10000, icon: '⚠️' });
       setPastaMudou(Date.now());
     } catch (err) {
-      let msg = 'Erro ao gerar a planta';
-      try { msg = JSON.parse(await err.response.data.text()).erro || msg; } catch { /* resposta não-JSON */ }
-      toast.error(msg, { duration: 8000 });
+      toast.error(await mensagemDeErro(err, 'Erro ao gerar a planta'), { duration: 8000 });
     } finally {
       setOcupado('');
     }
@@ -477,7 +459,7 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
 
   function exportarJson() {
     const nome = `${(dados?.meta?.prefixo || dados?.obra?.nome || 'laudo').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').slice(0, 40)}_dados_${disciplina.toUpperCase()}.json`;
-    baixarBlob(new Blob([JSON.stringify(dados, null, 1)], { type: 'application/json' }), nome);
+    salvarBlob(new Blob([JSON.stringify(dados, null, 1)], { type: 'application/json' }), nome);
   }
 
   // Gera (ou atualiza) a proposta rascunho deste laudo e abre o editor único
@@ -569,8 +551,8 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
               </button>
               <input ref={entradaJson} type="file" accept=".json,application/json" style={{ display: 'none' }}
                 onChange={e => { if (e.target.files[0]) importarJson(e.target.files[0]); e.target.value = ''; }} />
-              <div style={{ flex: '1 1 320px', maxWidth: 480, marginLeft: 'auto' }} title={`Obra do próximo ${T.item} criado aqui (novo, exemplo ou JSON importado) — opcional`}>
-                <ObraSelect value={obraNovo} onChange={(id) => setObraNovo(id)} rotuloVazio={T.semObra} />
+              <div style={{ flex: '1 1 320px', maxWidth: 480, marginLeft: 'auto' }} title={`Obra: a lista mostra só os ${T.item}s dela, e o próximo ${T.item} criado aqui (novo, exemplo ou JSON) nasce nela. Vazio = todas as obras.`}>
+                <ObraSelect value={obraNovo} onChange={(id) => setObraNovo(id)} rotuloVazio={`Todas as obras (${T.semObra.toLowerCase()})`} />
               </div>
             </div>
 
@@ -578,7 +560,7 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
               <p data-testid="lista-parcial" style={{ fontSize: 11.5, color: '#c9a227', margin: '0 0 8px' }}>Lista parcial: mostrando os {listaParcial} mais recentes — os mais antigos não aparecem aqui.</p>
             )}
             {lista.length === 0 ? (
-              <p style={{ fontSize: 12, color: '#666', fontStyle: 'italic' }}>{T.vazio}</p>
+              <p style={{ fontSize: 12, color: '#666', fontStyle: 'italic' }}>{obraNovo ? `Nenhum ${T.item} nesta obra${disciplina ? ' nesta disciplina' : ''} — escolha a disciplina e clique em "${T.novo}".` : T.vazio}</p>
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>

@@ -23,7 +23,10 @@ function jsonBemFormado(valor) {
 
 const ehClienteDeConexao = (executor) => !!executor && executor !== pool && typeof executor.release === 'function';
 
-async function registrarAuditoria(executor, { entidade, entidadeId = null, acao, detalhes = null, usuarioId = null }) {
+// `obrigatoria`: a falha da auditoria é LANÇADA (depois de desfazer o trecho
+// dela) para a operação principal não seguir sem registro — usado nas
+// exclusões, em que a auditoria é a única cópia do que foi apagado.
+async function registrarAuditoria(executor, { entidade, entidadeId = null, acao, detalhes = null, usuarioId = null, obrigatoria = false }) {
   const sql = 'INSERT INTO auditoria (entidade, entidade_id, acao, detalhes, usuario_id) VALUES ($1,$2,$3,$4,$5)';
   const params = [entidade, entidadeId, acao, detalhes ? jsonBemFormado(detalhes) : null, usuarioId];
   const avisar = (e) => console.warn(`Auditoria (${entidade} ${acao}): ${e.message}`);
@@ -33,6 +36,7 @@ async function registrarAuditoria(executor, { entidade, entidadeId = null, acao,
       await (executor || pool).query(sql, params);
     } catch (e) {
       avisar(e);
+      if (obrigatoria) throw e;
     }
     return;
   }
@@ -41,12 +45,13 @@ async function registrarAuditoria(executor, { entidade, entidadeId = null, acao,
     await executor.query(`SAVEPOINT ${SAVEPOINT}`);
   } catch (e) {
     if (e && e.code === '25P01') { // não há transação aberta: autocommit
-      try { await executor.query(sql, params); } catch (e2) { avisar(e2); }
+      try { await executor.query(sql, params); } catch (e2) { avisar(e2); if (obrigatoria) throw e2; }
       return;
     }
     // transação já abortada antes daqui (25P02) ou conexão caída: não há o que
     // registrar; quem abriu a transação recebe o erro no COMMIT (comTransacao)
     avisar(e);
+    if (obrigatoria) throw e;
     return;
   }
   try {
@@ -57,6 +62,7 @@ async function registrarAuditoria(executor, { entidade, entidadeId = null, acao,
     // se nem o ROLLBACK TO der certo, a conexão está comprometida: o erro sobe
     await executor.query(`ROLLBACK TO SAVEPOINT ${SAVEPOINT}`);
     await executor.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
+    if (obrigatoria) throw e;
   }
 }
 

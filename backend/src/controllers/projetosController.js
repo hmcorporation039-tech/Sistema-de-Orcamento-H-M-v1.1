@@ -37,17 +37,22 @@ const path = require('path');
 // codigo, nome, status } e `pasta_obra_dir` = pasta da obra onde a pasta da
 // análise mora (análise nova ligada à obra), para o caminhoPasta.
 const SQL_ANALISE_COMPLETA = `
-  SELECT ap.*, p.numero AS proposta_numero, ${sqlObraJson('ob')} AS obra, obp.pasta AS pasta_obra_dir
+  SELECT ap.*, p.numero AS proposta_numero, ${sqlObraJson('ob')} AS obra, obp.pasta AS pasta_obra_dir, obp.pasta_base AS pasta_obra_base
     FROM analises_projeto ap
     LEFT JOIN propostas p ON p.id = ap.proposta_id
     LEFT JOIN obras ob ON ob.id = ap.obra_id
     LEFT JOIN obras obp ON obp.id = ap.pasta_obra_id
    WHERE ap.id = $1`;
 
+// 2.3: obra/análise na pasta do cliente (pasta_base, relativa à raiz dos clientes no servidor)
+const naRaizDosClientes = (...partes) => path.join(P.RAIZ_CLIENTES_SERVIDOR, ...partes.flatMap(p => String(p).split('/')).filter(Boolean));
 function caminhoDaPasta(row) {
   if (!row.pasta) return null;
-  if (row.pasta_obra_id) return row.pasta_obra_dir ? path.join(P.RAIZES.obra, row.pasta_obra_dir, row.pasta) : null;
-  return P.caminhoDe('projeto', row.pasta);
+  if (row.pasta_obra_id) {
+    if (!row.pasta_obra_dir) return null;
+    return row.pasta_obra_base ? naRaizDosClientes(row.pasta_obra_base, row.pasta_obra_dir, row.pasta) : path.join(P.RAIZES.obra, row.pasta_obra_dir, row.pasta);
+  }
+  return row.pasta_base ? naRaizDosClientes(row.pasta_base, row.pasta) : P.caminhoDe('projeto', row.pasta);
 }
 
 // Converte uma linha de analises_projeto (colunas snake_case, JSONB já
@@ -234,12 +239,16 @@ async function executarAnalise(req, res, arquivos, corpo) {
   try {
     const resultado = await analisarProjetoCompleto(arquivos);
 
-    const insert = await pool.query(
+    // análise e arquitetura numa transação só: antes, uma falha no segundo
+    // INSERT deixava a análise gravada sem a base do 3D/compatibilização
+    // (e o usuário via erro, analisava de novo e ficava com duas)
+    const insert = await comTransacao(async (client) => {
+    const ins = await client.query(
       `INSERT INTO analises_projeto
         (cliente_nome, disciplinas, arquivos_analisados, ambientes, pontos_por_ambiente, cameras,
          pontos_rede_antena, tabela_cabos, achados, servicos, materiais, usuario_id, nome_projeto, dados_extraidos,
-         obra_id, cliente_id, finalidade, conflitos, compatibilizacao)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+         obra_id, cliente_id, finalidade, conflitos, compatibilizacao, espacial)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
        RETURNING *`,
       [
         // sem cliente no carimbo do PDF, vale o cliente da obra
@@ -262,19 +271,23 @@ async function executarAnalise(req, res, arquivos, corpo) {
         finalidade,
         JSON.stringify(resultado.conflitos || []),
         JSON.stringify(resultado.compatibilizacao || null),
+        // 2.3: posições reais dos DWG/DXF (alinhadas à referência) para o 3D
+        JSON.stringify(resultado.espacial || null),
       ]
     );
 
     // DWG/DXF com arquitetura: vira a base do modelo 3D desta análise (2.3)
     if (resultado.arquiteturaCad) {
       const a = resultado.arquiteturaCad;
-      await pool.query(
+      await client.query(
         `INSERT INTO analises_projeto_arquitetura (analise_id, nome_arquivo, conteudo, resumo, usuario_id) VALUES ($1,$2,$3,$4,$5)
          ON CONFLICT (analise_id) DO NOTHING`,
-        [insert.rows[0].id, String(a.nome_arquivo).slice(0, 200), Buffer.from(a.dxf, 'utf8'), a.resumo, req.usuario.id]);
+        [ins.rows[0].id, String(a.nome_arquivo).slice(0, 200), Buffer.from(a.dxf, 'utf8'), a.resumo, req.usuario.id]);
     }
+    return ins;
+    });
 
-    // Pasta do projeto: guarda os arquivos recebidos (antes eram lidos e descartados)
+    // Pasta do projeto (fora da transação): guarda os arquivos recebidos (antes eram lidos e descartados)
     await sincronizarProjeto(insert.rows[0], arquivos);
     const salvo = await pool.query(SQL_ANALISE_COMPLETA, [insert.rows[0].id]);
     res.json(linhaParaAnalise(salvo.rows[0]));
@@ -331,7 +344,12 @@ async function analisarPacote(req, res) {
   const corpo = { ...(req.body || {}) };
   const emPasta = arquivos.every(a => String(a.caminho || '').includes('/'));
   const raizes = [...new Set(arquivos.map(a => String(a.caminho || '').split('/')[0]))];
-  if (!String(corpo.nome_projeto || '').trim() && emPasta && raizes.length === 1) corpo.nome_projeto = raizes[0].replace(/\.zip$/i, '').trim().slice(0, 200);
+  if (!String(corpo.nome_projeto || '').trim()) {
+    let sugerido = null;
+    try { sugerido = Pacotes.manifesto(req.params.token, req.usuario).nome_sugerido; } catch { /* sem manifesto: usa a pasta */ }
+    if (sugerido) corpo.nome_projeto = String(sugerido).slice(0, 200);
+    else if (emPasta && raizes.length === 1) corpo.nome_projeto = raizes[0].replace(/\.zip$/i, '').trim().slice(0, 200);
+  }
   const ok = await executarAnalise(req, res, arquivos, corpo);
   if (ok) Pacotes.descartarPacote(req.params.token, req.usuario);
 }
@@ -349,9 +367,10 @@ async function compatibilizacaoDxf(req, res) {
     if (!an) return res.status(404).json({ erro: 'Análise não encontrada.' });
     const { rows: [arq] } = await pool.query('SELECT conteudo FROM analises_projeto_arquitetura WHERE analise_id = $1', [an.id]);
     if (!arq) return res.status(400).json({ erro: 'Esta análise não tem desenho DWG/DXF de referência: a compatibilização por posição precisa dos DWG/DXF do projeto.' });
-    const { gerarDxfCompatibilizacao } = require('../utils/dxfCompatibilizacao');
+    // em thread à parte: ler a arquitetura de referência inteira levava segundos de CPU
+    const { gerarDxfCompatibilizacaoNoWorker } = require('../utils/dxfCompatibilizacao');
     const nomeProj = String(an.nome_projeto || an.cliente_nome || 'Projeto').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80);
-    const dxf = gerarDxfCompatibilizacao({ dxfReferencia: arq.conteudo.toString('utf8'), conflitos: an.conflitos || [], titulo: `COMPATIBILIZAÇÃO — ${nomeProj.toUpperCase()}` });
+    const dxf = await gerarDxfCompatibilizacaoNoWorker({ dxfReferencia: arq.conteudo.toString('utf8'), conflitos: an.conflitos || [], titulo: `COMPATIBILIZAÇÃO — ${nomeProj.toUpperCase()}` });
     const nome = `Compatibilização - ${nomeProj}.dxf`;
     res.set({ 'Content-Type': 'application/dxf', 'Content-Disposition': contentDisposition(nome), 'X-Nome-Arquivo': encodeURIComponent(nome) });
     res.send(Buffer.from(dxf, 'utf8'));
@@ -432,9 +451,14 @@ async function atualizar(req, res) {
 async function remover(req, res) {
   const { id } = req.params;
   try {
-    const result = await pool.query('DELETE FROM analises_projeto WHERE id = $1 RETURNING *', [id]);
+    // DELETE e auditoria na mesma transação (auditoria obrigatória): antes, uma
+    // falha entre os dois apagava a análise sem deixar o registro dela na auditoria
+    const result = await comTransacao(async (client) => {
+      const r = await client.query('DELETE FROM analises_projeto WHERE id = $1 RETURNING *', [id]);
+      if (r.rows[0]) await registrarAuditoria(client, { entidade: 'analises_projeto', entidadeId: r.rows[0].id, acao: 'excluir', usuarioId: req.usuario.id, detalhes: { analise: r.rows[0] }, obrigatoria: true });
+      return r;
+    });
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Análise não encontrada' });
-    await registrarAuditoria(pool, { entidade: 'analises_projeto', entidadeId: result.rows[0].id, acao: 'excluir', usuarioId: req.usuario.id, detalhes: { analise: result.rows[0] } });
     // a pasta não é apagada: vai para "Arquivos do Sistema/_Excluídos"
     await excluirPastaDoItem('projeto', result.rows[0]); // pasta antiga ou dentro da obra
     res.json({ mensagem: 'Análise removida (a pasta foi movida para _Excluídos)' });

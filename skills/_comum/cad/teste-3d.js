@@ -8,7 +8,10 @@ const vm = require('vm');
 const { point3d } = require('@tarikjabiri/dxf');
 const { DesenhoDxf } = require('./dxf');
 const { lerArquitetura, dentro, distanciaContorno } = require('./arquitetura');
-const { montarCena } = require('./modelo3d');
+const fs = require('fs');
+const path = require('path');
+const { montarCena, regiaoDoModelo, ESPEC, TAM_FORMA, TRECHOS, LIMITE_SEGMENTOS, ESPESSURA_MIN_DESENHO } = require('./modelo3d');
+const { SIMBOLOS } = require('./simbolos');
 const { pontosDasDisciplinas } = require('./estimativaArquitetura');
 const { gerarHtml } = require('./visualizador3d');
 const { bundleAtualizado, SAIDA } = require('./visualizador3d/construir');
@@ -18,6 +21,7 @@ const caso = (nome, fn) => {
   try { fn(); ok++; console.log(`  ok  ${nome}`); } catch (e) { console.error(`  FALHOU ${nome}: ${e.message}`); process.exitCode = 1; }
 };
 const perto = (a, b, tol = 0.02) => Math.abs(a - b) <= tol;
+const r2t = (v) => Math.round(v * 100) / 100;
 const comp = (w) => Math.hypot(w[2] - w[0], w[3] - w[1]);
 
 function arquitetura() {
@@ -112,7 +116,7 @@ caso('dispositivos: quantidades da skill, altura típica de instalação e dentr
   assert.ok(tipo('HM-ELE-TOMADA-BAIXA').itens.every(i => i[2] === 0.3));
   assert.ok(tipo('HM-ELE-INTERRUPTOR').itens.every(i => i[2] === 1.1));
   assert.ok(tipo('HM-CAB-PONTO-REDE').itens.every(i => i[2] === 0.3));
-  assert.ok(tipo('HM-ELE-PONTO-LUZ').itens.every(i => perto(i[2], PD - 0.03)));
+  assert.ok(tipo('HM-ELE-PONTO-LUZ').itens.every(i => perto(i[2], PD - 0.01))); // fundo da peça no forro
   assert.ok(tipo('HM-CFTV-CAMERA').itens.every(i => perto(i[2], PD - 0.25)));
   // todo ponto fica dentro do seu ambiente (polígono pelas paredes: ± 8 cm da face)
   for (const t of cena.dispositivos) {
@@ -171,6 +175,144 @@ caso('HTML autossuficiente: three.js embutido, sem recurso externo, aviso de ilu
   // o bundle é JavaScript válido (compila)
   const bundle = html.match(/<script>(\/\* Visualizador 3D H&M[\s\S]*?)<\/script>/)[1];
   new vm.Script(bundle);
+});
+
+// ── Componentes legíveis: ESPEC com forma, tamanho e montagem ───────────────
+const FONTE_APP = fs.readFileSync(path.join(__dirname, 'visualizador3d', 'app.js'), 'utf8');
+const formasDoApp = new Set([...FONTE_APP.slice(FONTE_APP.indexOf('const FORMAS = {')).matchAll(/^\s+'?([a-z-]+)'?: \(w, h, d\)/gm)].map(m => m[1]));
+
+caso('ESPEC: todo símbolo da biblioteca tem forma desenhada no visualizador, tamanho e altura', () => {
+  for (const s of Object.keys(SIMBOLOS)) {
+    const e = ESPEC[s];
+    assert.ok(e, `${s} sem ESPEC`);
+    assert.ok(formasDoApp.has(e.forma), `${s}: forma "${e.forma}" sem desenho em visualizador3d/app.js`);
+    const tam = e.tam || TAM_FORMA[e.forma];
+    assert.ok(Array.isArray(tam) && tam.length === 3 && tam.every(v => v > 0 && v <= 1.2), `${s}: tam ${JSON.stringify(tam)}`);
+    assert.ok(typeof e.h === 'number' ? e.h > 0 && e.h < 3 : ['teto', 'canto', 'topo-porta', 'piso'].includes(e.h), `${s}: h ${e.h}`);
+  }
+  for (const f of Object.keys(TAM_FORMA)) assert.ok(formasDoApp.has(f), `forma ${f} sem desenho`);
+  // tamanhos de desenho: tomada 4×2 um pouco exagerada (10 × 16 cm), quadro 60 × 80 cm, detector Ø 16 cm
+  assert.deepStrictEqual(TAM_FORMA.tomada.slice(0, 2), [0.10, 0.16]);
+  assert.deepStrictEqual(ESPEC['HM-ELE-QUADRO'].tam.slice(0, 2), [0.60, 0.80]);
+  assert.strictEqual(TAM_FORMA.detector[0], 0.16);
+  // a cena leva o tamanho e a montagem de cada tipo (o visualizador desenha por eles)
+  for (const t of cena.dispositivos) {
+    assert.ok(Array.isArray(t.tam) && t.tam.length === 3, `${t.simbolo} sem tam`);
+    assert.ok(['parede', 'teto', 'canto', 'topo-porta', 'piso'].includes(t.montagem), `${t.simbolo}: montagem ${t.montagem}`);
+  }
+  assert.strictEqual(tipo('HM-ELE-TOMADA-BAIXA').montagem, 'parede');
+  assert.strictEqual(tipo('HM-ELE-PONTO-LUZ').montagem, 'teto');
+  assert.strictEqual(tipo('HM-CAB-PONTO-REDE').forma, 'rede');
+  assert.strictEqual(cena.versao, 2);
+});
+
+caso('parede em linha simples ganha a espessura mínima de desenho (15 cm)', () => {
+  const g = new DesenhoDxf({ layers: [{ nome: 'A-PAREDE', cor: 8 }, { nome: 'A-TEXTO', cor: 7 }] });
+  [[0, 0, 4000, 0], [4000, 0, 4000, 3000], [4000, 3000, 0, 3000], [0, 3000, 0, 0]].forEach(l => g.linha(...l, 'A-PAREDE'));
+  g.texto(2000, 1500, 200, 'DEPÓSITO', { layer: 'A-TEXTO' });
+  const a = lerArquitetura(g.toString().replace(/(\$INSUNITS\r?\n\s*70\r?\n\s*)6/, '$14'));
+  const c = montarCena(a, { peDireito: 2.8 });
+  assert.ok(c.paredes.length >= 4, `${c.paredes.length} paredes`);
+  assert.ok(c.paredes.every(w => perto(w[4], ESPESSURA_MIN_DESENHO, 0.001)), JSON.stringify(c.paredes.map(w => w[4])));
+  assert.strictEqual(ESPESSURA_MIN_DESENHO, 0.15);
+});
+
+// quadro e central com o símbolo no MEIO da sala: vão para a parede, inteiros
+// (sem cair no vão da porta nem no peitoril da janela) e lado a lado
+const sala = arq.ambientes.find(a => a.nome === 'SALA DE ESTAR');
+const cQ = montarCena(arq, { peDireito: PD, dispositivos: [
+  { simbolo: 'HM-ELE-QUADRO', id: 'QD-1', ambiente: 'SALA DE ESTAR', x: 2.5, y: 2.5, poligono: sala.poligono },
+  { simbolo: 'HM-INC-CENTRAL', id: 'CAI-1', ambiente: 'SALA DE ESTAR', x: 2.5, y: 2.5, poligono: sala.poligono },
+] });
+const facesQ = [...cQ.paredes, ...cQ.muretas];
+const distFaceQ = ([x, y, z]) => Math.min(...facesQ.filter(w => z >= w[5] && z <= w[6]).map(w => {
+  const vx = w[2] - w[0], vy = w[3] - w[1], L2 = vx * vx + vy * vy;
+  const t = Math.max(0, Math.min(1, ((x - w[0]) * vx + (y - w[1]) * vy) / L2));
+  return Math.hypot(x - w[0] - vx * t, y - w[1] - vy * t) - w[4] / 2;
+}));
+
+caso('quadro elétrico e central: encostados na parede mais próxima, inteiros, na altura certa e sem sobrepor', () => {
+  const q = cQ.dispositivos.find(t => t.simbolo === 'HM-ELE-QUADRO');
+  const ce = cQ.dispositivos.find(t => t.simbolo === 'HM-INC-CENTRAL');
+  const iq = q.itens[0], ic = ce.itens[0];
+  assert.strictEqual(q.forma, 'quadro');
+  assert.strictEqual(iq[2], 1.5);
+  for (const [t, it] of [[q, iq], [ce, ic]]) {
+    assert.ok(distFaceQ(it) <= 0.05, `${t.simbolo} a ${distFaceQ(it).toFixed(2)} m da parede`);
+    // as pontas da peça (± meia largura ao longo da parede, topo e base) também estão na parede
+    const tx = -it[4], ty = it[3];
+    for (const s of [-1, 1]) for (const dz of [-1, 1]) {
+      const p = [it[0] + tx * s * t.tam[0] / 2, it[1] + ty * s * t.tam[0] / 2, it[2] + dz * t.tam[1] / 2 * 0.95];
+      assert.ok(distFaceQ(p) <= 0.06, `${t.simbolo}: ponta ${s},${dz} fora da parede (${distFaceQ(p).toFixed(2)} m)`);
+    }
+  }
+  const ao = Math.abs((ic[0] - iq[0]) * -iq[4] + (ic[1] - iq[1]) * iq[3]);
+  assert.ok(ao >= (q.tam[0] + ce.tam[0]) / 2 + 0.09, `quadro e central sobrepostos (${ao.toFixed(2)} m entre centros)`);
+});
+
+// ── Infraestrutura (opcoes.trechos) ─────────────────────────────────────────
+const regiao = regiaoDoModelo(arq).caixa;
+const origem = [(regiao[0] + regiao[2]) / 2, (regiao[1] + regiao[3]) / 2];
+const cT = montarCena(arq, { peDireito: PD, trechos: [
+  { disciplina: 'eletrica', tipo: 'eletrocalha', layer: 'ELE-ELETROCALHA', segmentos: [[0.5, 4, 7.5, 4], [4, 4, 4, 1]] },
+  { disciplina: 'cabeamento', tipo: 'eletroduto', layer: 'CAB-ELETRODUTO', segmentos: [[1, 1, 1, 1.004], [1, 'x', 2, 2], [2, 2, 5, 2], [1000, 1000, 1010, 1000]] },
+  { disciplina: 'rede', tipo: 'leito', segmentos: [[6, 0.5, 6, 3.5]], altura: 2.5 },
+  { disciplina: 'alarme', tipo: 'inventado', segmentos: [[1, 3, 2, 3]] },
+] });
+const grupoInfra = (d, t) => cT.infra.find(g => g.disciplina === d && g.tipo === t);
+
+caso('trechos: eletrocalha 10 × 5 cm a 30 cm do teto, eletroduto perto do teto, comprimento total e coordenadas da cena', () => {
+  const ec = grupoInfra('eletrica', 'eletrocalha');
+  assert.ok(ec, JSON.stringify(cT.infra.map(g => [g.disciplina, g.tipo])));
+  assert.deepStrictEqual(ec.secao, [0.10, 0.05]);
+  assert.strictEqual(ec.z, r2t(PD - 0.3));
+  assert.strictEqual(ec.forma, 'caixa');
+  assert.strictEqual(ec.comprimento_m, 10);
+  assert.deepStrictEqual(ec.layers, ['ELE-ELETROCALHA']);
+  // mesma translação P() da arquitetura
+  assert.deepStrictEqual(ec.segmentos.slice(0, 4), [r2t(0.5 - origem[0]), r2t(4 - origem[1]), r2t(7.5 - origem[0]), r2t(4 - origem[1])]);
+  assert.strictEqual(ec.segmentos.length, 8);
+  // "cabeamento" vira a disciplina "rede"; segmento curto, inválido ou fora da região fica de fora
+  const ed = grupoInfra('rede', 'eletroduto');
+  assert.ok(ed && ed.forma === 'tubo' && ed.z === r2t(PD - TRECHOS.eletroduto.desce), JSON.stringify(ed));
+  assert.strictEqual(ed.segmentos.length, 4);
+  assert.strictEqual(ed.comprimento_m, 3);
+  // altura informada no trecho; tipo desconhecido é desenhado como eletroduto
+  assert.strictEqual(grupoInfra('rede', 'leito').z, 2.5);
+  assert.ok(grupoInfra('alarme', 'eletroduto'), 'tipo desconhecido');
+  assert.ok(cT.infra.every(g => /^#[0-9a-f]{6}$/i.test(g.cor)));
+  // números e botões: comprimento por grupo e a disciplina aparece mesmo sem pontos
+  assert.deepStrictEqual(cT.numeros.infraestrutura.find(g => g.tipo === 'eletrocalha'), { disciplina: 'eletrica', tipo: 'eletrocalha', rotulo: 'Eletrocalha', comprimento_m: 10, segmentos: 2 });
+  assert.ok(cT.disciplinas.rede && cT.disciplinas.eletrica && cT.disciplinas.alarme);
+  assert.deepStrictEqual(montarCena(arq).infra, []);
+});
+
+caso(`trechos: acima de ${LIMITE_SEGMENTOS.toLocaleString('pt-BR')} segmentos desenha os mais longos e avisa (comprimento conta todos)`, () => {
+  const muitos = [];
+  for (let i = 0; i < LIMITE_SEGMENTOS + 50; i++) muitos.push([0.1, 0.1 + (i % 400) * 0.01, 0.2 + (i < 50 ? 1 : 0), 0.1 + (i % 400) * 0.01]);
+  const c = montarCena(arq, { peDireito: PD, trechos: [{ disciplina: 'eletrica', tipo: 'fiacao', segmentos: muitos }] });
+  const g = c.infra[0];
+  assert.strictEqual(g.segmentos.length / 4, LIMITE_SEGMENTOS);
+  assert.strictEqual(g.segmentos_total, LIMITE_SEGMENTOS + 50);
+  assert.ok(Math.abs(g.comprimento_m - ((LIMITE_SEGMENTOS + 50) * 0.1 + 50)) < 1, `${g.comprimento_m} m`);
+  // os 50 mais longos (1,1 m) ficaram
+  let longos = 0;
+  for (let k = 0; k < g.segmentos.length; k += 4) if (g.segmentos[k + 2] - g.segmentos[k] > 1) longos++;
+  assert.strictEqual(longos, 50);
+  assert.ok(c.avisos.some(a => /mais longos/.test(a)), c.avisos.join(' | '));
+});
+
+caso('página: corte, infraestrutura, "Ir para ambiente" e painel de dentro do ambiente; infra na cena; texto escapado', () => {
+  const html = gerarHtml(cT);
+  for (const id of ['b-corte', 'b-infra', 'ir-ambiente', 'b-voltar', 'dentro', 'etiquetas-pontos', 'b-grandes', 'b-paredes']) assert.ok(html.includes(`id="${id}"`), `sem #${id}`);
+  assert.match(html, /Voltar à vista geral/);
+  const json = JSON.parse(html.match(/<script>window\.CENA=(.*?);document\.querySelectorAll/s)[1]);
+  assert.strictEqual(json.infra.length, cT.infra.length);
+  // o visualizador entra no ambiente, faz o corte no shader e escala os símbolos pela distância
+  for (const k of ['entrarAmbiente', 'voltarVistaGeral', 'zoomToCursor', 'aParede', 'uMinInfra', 'InstancedMesh', 'dblclick']) assert.ok(FONTE_APP.includes(k), `app.js sem ${k}`);
+  // nome de ambiente/rótulo vindo da cena nunca vai cru para o HTML
+  const cru = FONTE_APP.split('\n').filter(l => !/textContent/.test(l) && /\$\{(?:a|t|g|d|c\.t)\.(?:nome|rotulo|layers)\}/.test(l));
+  assert.deepStrictEqual(cru, [], 'texto da cena sem esc() em template de HTML');
 });
 
 console.log(`3d: ${ok} casos ok`);

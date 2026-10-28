@@ -23,19 +23,71 @@ const puppeteer = require('puppeteer');
 // PDF ao mesmo tempo (ou um clique repetido) esgotavam a memória do PC e
 // derrubavam o sistema. No máximo PDF_CONCORRENCIA ao mesmo tempo; o resto espera.
 const MAX_SIMULTANEOS = Number(process.env.PDF_CONCORRENCIA) || 2;
+// Prazo na fila: antes a espera não tinha fim — com o Chromium travado, os
+// pedidos se acumulavam para sempre (memória e conexões presas). Passou do
+// prazo, o pedido desiste com erro claro (503) e o usuário tenta de novo.
+const PRAZO_FILA_MS = Number(process.env.PDF_PRAZO_FILA_MS) || 120 * 1000;
+// tempo-limite de cada operação na página (setContent, waitForSelector, pdf...)
+const TEMPO_PAGINA_MS = 60 * 1000;
 let emUso = 0;
 const espera = [];
 
-async function comVaga(fn) {
-  if (emUso >= MAX_SIMULTANEOS) await new Promise(r => espera.push(r));
-  emUso++;
+const erroFilaCheia = () => Object.assign(
+  new Error('A fila de PDF está cheia (muitos documentos sendo gerados ao mesmo tempo). Tente de novo em instantes.'),
+  { status: 503, codigo: 'FILA_PDF_CHEIA' });
+
+function reservarVaga(prazoMs) {
+  if (emUso < MAX_SIMULTANEOS) { emUso++; return Promise.resolve(); }
+  return new Promise((ok, falha) => {
+    const item = { entrar: () => { clearTimeout(relogio); ok(); } };
+    const relogio = setTimeout(() => {
+      const i = espera.indexOf(item);
+      if (i >= 0) espera.splice(i, 1);
+      falha(erroFilaCheia());
+    }, prazoMs);
+    espera.push(item);
+  });
+}
+
+// A vaga passa direto para o próximo da fila (sem baixar e subir o contador:
+// assim ninguém "fura" a fila entre uma coisa e outra)
+function liberarVaga() {
+  const proximo = espera.shift();
+  if (proximo) proximo.entrar();
+  else emUso--;
+}
+
+async function comVaga(fn, prazoMs = PRAZO_FILA_MS) {
+  await reservarVaga(prazoMs);
   try {
     return await fn();
   } finally {
-    emUso--;
-    const proximo = espera.shift();
-    if (proximo) proximo();
+    liberarVaga();
   }
+}
+
+// Fecha o Chromium; se o close falhar ou travar, mata o processo — senão o
+// Chromium (~150 MB) ficava vivo no PC, e a vaga da fila era liberada mesmo assim.
+async function fecharNavegador(browser, contexto) {
+  try {
+    await Promise.race([
+      browser.close(),
+      new Promise((_, falha) => setTimeout(() => falha(new Error('o navegador não fechou em 10 s')), 10000).unref()),
+    ]);
+  } catch (err) {
+    console.error(`Falha ao fechar o navegador ${contexto} (documento não foi afetado):`, err.message);
+    try { browser.process()?.kill('SIGKILL'); } catch { /* já morreu */ }
+  }
+}
+
+// page.evaluate não tem tempo-limite próprio: um script da página que nunca
+// termina segurava a vaga da fila para sempre
+function comTempoLimite(promessa, ms, oque) {
+  let relogio;
+  return Promise.race([
+    promessa,
+    new Promise((_, falha) => { relogio = setTimeout(() => falha(new Error(`${oque} passou de ${ms / 1000} s`)), ms); }),
+  ]).finally(() => clearTimeout(relogio));
 }
 
 // O HTML junta dados digitados e importados (nomes, descrições, texto de
@@ -50,6 +102,7 @@ async function gerarPdfDeHtml(html, opcoesPdf = {}) {
     const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
     try {
       const page = await browser.newPage();
+      page.setDefaultTimeout(TEMPO_PAGINA_MS);
       await page.setJavaScriptEnabled(false);
       await page.setRequestInterception(true);
       page.on('request', (req) => {
@@ -67,9 +120,7 @@ async function gerarPdfDeHtml(html, opcoesPdf = {}) {
       // JSON ({"0":37,...}). Buffer garante o binário no download e na gravação.
       return Buffer.from(await page.pdf({ format: 'A4', printBackground: true, timeout: 60000, ...opcoesPdf }));
     } finally {
-      await browser.close().catch(err =>
-        console.error('Falha ao fechar o navegador do PDF (documento não foi afetado):', err.message)
-      );
+      await fecharNavegador(browser, 'do PDF');
     }
   });
 }
@@ -87,6 +138,7 @@ async function capturarImagemDeHtml(html, { largura = 1600, altura = 1000, esper
     });
     try {
       const page = await browser.newPage();
+      page.setDefaultTimeout(TEMPO_PAGINA_MS);
       await page.setRequestInterception(true);
       page.on('request', (req) => {
         if (/^(data:|about:blank)/.test(req.url())) req.continue().catch(() => {});
@@ -96,13 +148,13 @@ async function capturarImagemDeHtml(html, { largura = 1600, altura = 1000, esper
       await page.setContent(html, { waitUntil: 'load', timeout: 60000 });
       if (esperarSeletor) await page.waitForSelector(esperarSeletor, { timeout: 60000 });
       if (css) await page.addStyleTag({ content: css });
-      if (antes) await page.evaluate(antes);
+      if (antes) await comTempoLimite(page.evaluate(antes), 30000, 'o preparo da página para a captura');
       await new Promise(r => setTimeout(r, 400));
-      return Buffer.from(await page.screenshot({ type: 'png' }));
+      return Buffer.from(await comTempoLimite(page.screenshot({ type: 'png' }), TEMPO_PAGINA_MS, 'a captura da imagem'));
     } finally {
-      await browser.close().catch(err => console.error('Falha ao fechar o navegador da captura:', err.message));
+      await fecharNavegador(browser, 'da captura');
     }
   });
 }
 
-module.exports = { gerarPdfDeHtml, capturarImagemDeHtml };
+module.exports = { gerarPdfDeHtml, capturarImagemDeHtml, comVaga, fecharNavegador };

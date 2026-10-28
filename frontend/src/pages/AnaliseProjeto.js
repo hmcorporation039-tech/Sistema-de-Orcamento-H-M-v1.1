@@ -9,6 +9,7 @@ import {
   gerarOrcamentoDaAnalise, getPastaAnalise, abrirPastaAnalise, getDisciplinasProjeto, criarProjetoDeAnalise,
 } from '../services/api';
 import { formatarMoeda } from '../utils/format';
+import { baixarArquivo, mensagemDeErro } from '../utils/download';
 import BlocoPesquisaMercado from '../components/PesquisaMercado';
 import Select from '../components/Select';
 import { CartaoModelo3dAnalise } from '../components/Modelo3d';
@@ -282,18 +283,11 @@ export default function Compatibilizacao() {
     setGerando(true);
     try {
       await salvarAgora(); // garante que o PDF reflete a última edição, não uma versão atrasada
-      const res = await gerarRelatorioCompatibilizacao(analise.id);
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      const link = document.createElement('a');
-      link.href = url;
+      // nome do servidor (com acento); o montado aqui é só a reserva
       const nomeCliente = (analise.cliente || 'projeto').trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_');
-      link.download = `Compatibilizacao_${nomeCliente}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch {
-      toast.error('Erro ao gerar relatório');
+      await baixarArquivo(gerarRelatorioCompatibilizacao(analise.id), `Compatibilizacao_${nomeCliente}.pdf`);
+    } catch (err) {
+      toast.error(await mensagemDeErro(err, 'Erro ao gerar relatório'));
     } finally {
       setGerando(false);
     }

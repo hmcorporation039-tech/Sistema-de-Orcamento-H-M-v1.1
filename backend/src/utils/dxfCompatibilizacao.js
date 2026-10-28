@@ -43,4 +43,10 @@ function gerarDxfCompatibilizacao({ dxfReferencia, conflitos, titulo }) {
   return d.toString();
 }
 
-module.exports = { gerarDxfCompatibilizacao };
+// Para as rotas: a mesma geração numa thread à parte (services/tarefasCad) —
+// ler a arquitetura de referência inteira trava a thread principal por segundos
+function gerarDxfCompatibilizacaoNoWorker(dados) {
+  return require('../services/tarefasCad').dxfCompatibilizacaoNoWorker(dados);
+}
+
+module.exports = { gerarDxfCompatibilizacao, gerarDxfCompatibilizacaoNoWorker };

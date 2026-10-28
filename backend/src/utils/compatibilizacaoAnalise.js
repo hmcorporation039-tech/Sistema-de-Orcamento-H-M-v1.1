@@ -853,6 +853,7 @@ async function analisarProjetoCompleto(todosArquivos) {
     arquiteturaCad: [...cadsRef, ...cads].find(c => c?.arquitetura && c.arquitetura.nome_arquivo === compat.referencia)?.arquitetura
       || [...cadsRef, ...cads].find(c => c?.arquitetura)?.arquitetura || null,
     conflitos: compat.conflitos,
+    espacial: compat.espacial || null,
     compatibilizacao: { referencia: compat.referencia, grupos: compat.grupos },
   };
 }

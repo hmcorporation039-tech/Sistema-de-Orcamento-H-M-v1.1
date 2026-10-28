@@ -135,7 +135,8 @@ function CartaoAcao({ acao, aoMudar }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: cor, textTransform: 'uppercase', letterSpacing: '.4px' }}>
         {pendente ? <AlertTriangle size={13} /> : acao.status === 'aplicada' ? <CheckCircle2 size={13} /> : <XCircle size={13} />} {pendente ? 'Precisa da sua confirmação' : acao.status === 'aplicada' ? 'Aplicada' : acao.status === 'descartada' ? 'Descartada' : acao.status}
       </div>
-      <div style={{ fontSize: 13, color: TEXTO, margin: '6px 0', lineHeight: 1.45 }}>{resumo}</div>
+      {/* várias linhas (texto completo do e-mail, antes → depois de cada campo): confira antes de aplicar */}
+      <div style={{ fontSize: 13, color: TEXTO, margin: '6px 0', lineHeight: 1.45, whiteSpace: 'pre-wrap', maxHeight: 320, overflowY: 'auto' }}>{resumo}</div>
       {motivo && <div style={{ fontSize: 12, color: APAGADO, marginBottom: 6 }}>Motivo: {motivo}</div>}
       {acao.resultado?.erro && pendente && <div style={{ fontSize: 12, color: '#d06060', marginBottom: 6 }}>Última tentativa: {acao.resultado.erro}</div>}
       {pendente ? (

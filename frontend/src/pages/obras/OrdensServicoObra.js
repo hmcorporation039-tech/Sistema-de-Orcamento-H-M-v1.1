@@ -8,6 +8,7 @@ import {
 } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
 import Select from '../../components/Select';
+import { baixarArquivo, mensagemDeErro } from '../../utils/download';
 import { Etiqueta, estilos as E, Campo } from './comum';
 
 // Aba "Campo (OS)" da obra (versão 2.0, Fase 4J): ordens de serviço que o
@@ -37,21 +38,6 @@ const nomeDisciplina = (modelos, chave) => {
   const m = modelos.find(x => x.disciplina === chave);
   return m ? m.rotulo.replace(/^Inspeção — /, '') : (chave || '—');
 };
-
-function baixarBlob(blob, nome) {
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = nome;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => window.URL.revokeObjectURL(url), 1000);
-}
-
-async function erroDoBlob(e, padrao) {
-  try { return JSON.parse(await e.response.data.text()).erro || padrao; } catch { return padrao; }
-}
 
 export default function OrdensServicoObra({ obra, podeEditar }) {
   const { usuario } = useAuth();
@@ -151,10 +137,9 @@ function BotaoPdf({ os, icone = false }) {
   async function baixar() {
     setGerando(true);
     try {
-      const r = await baixarPdfOrdemServico(os.id);
-      baixarBlob(new Blob([r.data], { type: 'application/pdf' }), `${os.numero}.pdf`);
+      await baixarArquivo(baixarPdfOrdemServico(os.id), `${os.numero}.pdf`);
     } catch (e) {
-      toast.error(await erroDoBlob(e, 'Erro ao gerar o PDF da OS'));
+      toast.error(await mensagemDeErro(e, 'Erro ao gerar o PDF da OS'));
     } finally {
       setGerando(false);
     }

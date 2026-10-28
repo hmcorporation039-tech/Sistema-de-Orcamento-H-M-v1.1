@@ -23,6 +23,8 @@ try {
   // uma disciplina por vez: com o formulário do projeto, os pontos são os do
   // projeto; se ele ainda não fecha (ou não põe ponto nenhum na arquitetura),
   // cai na estimativa pela arquitetura, avisando
+  // 2.3: análise com o DWG do projeto → posições reais (services/modelo3d dispositivosDoEspacial)
+  if (w.dispositivosReais) dispositivos = w.dispositivosReais;
   for (const disc of w.disciplinas) {
     const dados = (w.dadosPorDisciplina || {})[disc];
     let pts = null;
@@ -43,7 +45,7 @@ try {
   }
   if (w.semPontos) avisos.push(w.semPontos);
   const cena = montarCena(arquitetura, {
-    peDireito, dispositivos, avisos,
+    peDireito, dispositivos, avisos, trechos: w.trechos || [],
     titulo: w.titulo, cliente: w.cliente, obra: w.obra, proposta: w.proposta,
   });
   parentPort.postMessage({ ok: true, html: gerarHtml(cena), numeros: cena.numeros, avisos: cena.avisos });

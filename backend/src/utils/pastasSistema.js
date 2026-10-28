@@ -22,8 +22,8 @@ const BASE = process.env.PASTA_ARQUIVOS_SISTEMA || path.join(__dirname, '..', '.
 // Versão 2.1: 'projeto_disciplina' = projeto por disciplina (laudos_projetos com
 // tipo 'projeto'); sem obra, mora em Projetos\<nome>, ao lado das análises.
 const RAIZES = { projeto: path.join(BASE, 'Projetos'), laudo: path.join(BASE, 'Laudos'), obra: path.join(BASE, 'Obras'), projeto_disciplina: path.join(BASE, 'Projetos') };
-const LETRA = { projeto: 'A', laudo: 'L', obra: 'O', projeto_disciplina: 'P' };
-const PADRAO = { projeto: 'Projeto', laudo: 'Laudo', obra: 'Obra', projeto_disciplina: 'Projeto' };
+const LETRA = { projeto: 'A', laudo: 'L', obra: 'O', projeto_disciplina: 'P', cliente: 'C' };
+const PADRAO = { projeto: 'Projeto', laudo: 'Laudo', obra: 'Obra', projeto_disciplina: 'Projeto', cliente: 'Cliente' };
 const EXCLUIDOS = path.join(BASE, '_Excluídos');
 const RESERVADOS = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
 
@@ -95,6 +95,7 @@ async function gravarArquivo(pasta, nomeArquivo, conteudo) {
     await fsp.rm(tmp, { force: true });
     throw new Error(`não foi possível gravar "${path.basename(destino)}" (está aberto em outro programa?): ${e.message}`);
   }
+  aoGravar.forEach(fn => fn(destino));
   return destino;
 }
 
@@ -107,13 +108,15 @@ async function removerArquivo(pasta, nomeArquivo) {
 // colocados lá à mão.
 // `raiz`: pasta-mãe quando não é a padrão (item dentro da pasta de uma obra);
 // `rotulo`: entra no nome em _Excluídos (ex.: o nome da obra).
-async function moverParaExcluidos(tipo, pasta, { raiz = RAIZES[tipo], rotulo = null } = {}) {
+// `excluidos`: pasta _Excluídos de destino (a da pasta dos clientes, para não
+// levar arquivos do servidor para este PC).
+async function moverParaExcluidos(tipo, pasta, { raiz = RAIZES[tipo], rotulo = null, excluidos = EXCLUIDOS } = {}) {
   const origem = pasta ? path.join(raiz, pasta) : null;
   if (!origem || !(await existe(origem))) return null;
-  await fsp.mkdir(EXCLUIDOS, { recursive: true });
+  await fsp.mkdir(excluidos, { recursive: true });
   const data = hojeBrasilia(); // data de Brasília (em UTC, depois das 21h já era amanhã)
-  const destino = path.join(EXCLUIDOS, nomeSeguro(`${PADRAO[tipo]} - ${rotulo ? `${rotulo} - ` : ''}${pasta} - ${data}`));
-  await fsp.rename(origem, (await existe(destino)) ? `${destino} ${Date.now()}` : destino);
+  const destino = path.join(excluidos, nomeSeguro(`${PADRAO[tipo]} - ${rotulo ? `${rotulo} - ` : ''}${pasta} - ${data}`));
+  await moverPasta(origem, (await existe(destino)) ? `${destino} ${Date.now()}` : destino);
   return destino;
 }
 
@@ -143,4 +146,75 @@ function abrirNoExplorer(pasta) {
   execFile('explorer.exe', [pasta], { windowsHide: false }, () => {}); // explorer devolve código 1 mesmo quando abre
 }
 
-module.exports = { BASE, RAIZES, nomeSeguro, sincronizarPasta, gravarArquivo, removerArquivo, moverParaExcluidos, listarArquivos, abrirNoExplorer, caminhoDe };
+// ── Pasta dos clientes (versão 2.3) ────────────────────────────────────────
+// Tudo de um cliente mora em Clientes\<cliente> — no servidor, pelo .env
+// PASTA_CLIENTES (ex.: \\MARCIO-SERVER\...\Clientes); sem ele, em
+// <base>\Clientes. Servidor fora do ar NÃO para o sistema: a gravação vai para
+// <base>\_Aguardando servidor\Clientes (mesmo caminho relativo) e
+// enviarPendentesAoServidor() leva tudo quando ele volta.
+const RAIZ_CLIENTES_SERVIDOR = process.env.PASTA_CLIENTES || path.join(BASE, 'Clientes');
+const RAIZ_CLIENTES_PENDENTE = path.join(BASE, '_Aguardando servidor', 'Clientes');
+const SEM_CLIENTE = '_Sem cliente';
+let disponibilidade = { ok: true, conferidoEm: 0 };
+
+// Pasta de rede inacessível costuma TRAVAR a chamada por 20 s ou mais: confere
+// com tempo-limite e guarda o resultado por 30 s.
+async function servidorDisponivel({ forcar = false } = {}) {
+  if (!forcar && Date.now() - disponibilidade.conferidoEm < 30000) return disponibilidade.ok;
+  const teste = fsp.mkdir(RAIZ_CLIENTES_SERVIDOR, { recursive: true }).then(() => fsp.access(RAIZ_CLIENTES_SERVIDOR)).then(() => true, () => false);
+  const ok = await Promise.race([teste, new Promise(r => setTimeout(() => r(false), 4000).unref?.())]);
+  if (ok !== disponibilidade.ok) console.warn(`Pasta dos clientes ${ok ? 'voltou' : 'INDISPONÍVEL'}: ${RAIZ_CLIENTES_SERVIDOR}`);
+  disponibilidade = { ok, conferidoEm: Date.now() };
+  return ok;
+}
+// raiz onde gravar agora: o servidor, ou a reserva local se ele estiver fora
+async function raizClientes() {
+  return (await servidorDisponivel()) ? RAIZ_CLIENTES_SERVIDOR : RAIZ_CLIENTES_PENDENTE;
+}
+
+// Move uma pasta, inclusive entre discos/rede (rename falha com EXDEV: copia e apaga)
+async function moverPasta(origem, destino) {
+  await fsp.mkdir(path.dirname(destino), { recursive: true });
+  try {
+    await fsp.rename(origem, destino);
+  } catch (e) {
+    if (e.code !== 'EXDEV' && e.code !== 'EPERM') throw e;
+    await fsp.cp(origem, destino, { recursive: true, errorOnExist: false, force: false });
+    await fsp.rm(origem, { recursive: true, force: true });
+  }
+  return destino;
+}
+
+// Leva o que ficou na reserva local para o servidor (arquivo a arquivo; o da
+// reserva é mais novo e substitui). Devolve quantos arquivos foram.
+async function enviarPendentesAoServidor() {
+  if (!(await existe(RAIZ_CLIENTES_PENDENTE)) || !(await servidorDisponivel({ forcar: true }))) return 0;
+  const lista = await listarArquivos(RAIZ_CLIENTES_PENDENTE);
+  let n = 0;
+  for (const a of lista) {
+    const de = path.join(RAIZ_CLIENTES_PENDENTE, a.arquivo);
+    const para = path.join(RAIZ_CLIENTES_SERVIDOR, a.arquivo);
+    try {
+      await fsp.mkdir(path.dirname(para), { recursive: true });
+      await fsp.copyFile(de, para);
+      await fsp.rm(de, { force: true });
+      n++;
+      aoGravar.forEach(fn => fn(para));
+    } catch (e) {
+      console.warn(`Não foi possível enviar "${a.arquivo}" ao servidor: ${e.message}`);
+    }
+  }
+  // pastas vazias que sobraram na reserva
+  if (n === lista.length) await fsp.rm(RAIZ_CLIENTES_PENDENTE, { recursive: true, force: true }).catch(() => {});
+  return n;
+}
+
+// Avisos de gravação: o monitor das pastas dos clientes registra o que o
+// PRÓPRIO sistema gravou, para não avisar como "arquivo novo do cliente".
+const aoGravar = [];
+const registrarAoGravar = (fn) => { aoGravar.push(fn); };
+
+module.exports = {
+  BASE, RAIZES, nomeSeguro, sincronizarPasta, gravarArquivo, removerArquivo, moverParaExcluidos, listarArquivos, abrirNoExplorer, caminhoDe,
+  RAIZ_CLIENTES_SERVIDOR, RAIZ_CLIENTES_PENDENTE, SEM_CLIENTE, servidorDisponivel, raizClientes, moverPasta, enviarPendentesAoServidor, registrarAoGravar, existe,
+};

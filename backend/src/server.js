@@ -228,6 +228,12 @@ async function iniciar() {
       agendarRotinas();
       // assistente virtual: guarda de 12 meses (só com ASSISTENTE_LIMPEZA=ligada)
       require('./services/assistente/limpeza').agendarLimpeza();
+      // pacotes de projeto não analisados e uploads interrompidos (pasta
+      // temporária do sistema): apaga o que passou de 3 h, agora e a cada 30 min
+      require('./services/pacotesProjeto').agendarLimpezaTemporarios();
+      // pasta por cliente (2.3): registra o que o sistema grava e varre as pastas
+      // a cada 10 min atrás de arquivo novo/alterado (MONITOR_PASTAS=desligado desliga)
+      require('./services/monitorPastas').iniciarMonitor();
     });
     servidor.on('error', (err) => {
       console.error(`Erro ao abrir a porta ${PORT}: ${err.message}`);

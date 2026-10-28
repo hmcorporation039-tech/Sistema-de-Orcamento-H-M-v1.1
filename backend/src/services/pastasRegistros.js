@@ -1,7 +1,93 @@
+const fsp = require('fs/promises');
 const path = require('path');
 const pool = require('../config/database');
 const P = require('../utils/pastasSistema');
 const { DISCIPLINAS_LAUDO } = require('../utils/disciplinasLaudo');
+
+// Versão 2.3 — PASTA POR CLIENTE (migração 2.0-19): obra e item sem obra moram
+// na pasta do cliente, na raiz dos clientes (servidor):
+//   Clientes\<cliente>\Obras\<obra>\...        (o conteúdo da obra é o de sempre)
+//   Clientes\<cliente>\Projetos\<análise ou projeto sem obra>
+//   Clientes\<cliente>\Laudos\<laudo sem obra>
+//   Clientes\<cliente>\Propostas\               (proposta sem obra)
+// `pasta_base` (relativa à raiz dos clientes, com "/") grava a pasta-mãe; NULL
+// = item ainda no lugar antigo (Arquivos do Sistema\Obras|Projetos|Laudos) até
+// o script scripts/mudar-pastas-para-clientes.js levar para o cliente.
+// Item sem cliente: Clientes\_Sem cliente\... Trocou o cliente ou o nome do
+// cliente: a pasta vai junto (e as pastas de dentro acompanham).
+const RECEBIDOS = 'Recebidos do cliente';
+const juntar = (raiz, rel) => path.join(raiz, ...String(rel).split('/').filter(Boolean));
+const normalizarNome = (s) => String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]+/g, ' ').trim();
+
+// cliente do item: cliente_id ou, sem ele, o único cliente ativo de mesmo nome
+async function clienteIdDoItem(row, client = pool) {
+  if (row.cliente_id) return row.cliente_id;
+  if (!row.cliente_nome) return null;
+  const alvo = normalizarNome(row.cliente_nome);
+  const { rows } = await client.query('SELECT id, nome FROM clientes WHERE ativo IS NOT FALSE');
+  const achados = rows.filter(c => normalizarNome(c.nome) === alvo);
+  return achados.length === 1 ? achados[0].id : null;
+}
+
+// Troca o começo de pasta_base (e do retrato das pastas) quando uma pasta-mãe
+// muda de nome/lugar: "Cliente A/Obras" → "Cliente B/Obras" etc.
+async function trocarPrefixo(client, antigo, novo) {
+  if (!antigo || antigo === novo) return;
+  for (const t of ['obras', 'analises_projeto', 'laudos_projetos']) {
+    await client.query(`UPDATE ${t} SET pasta_base = $2 || substr(pasta_base, length($1) + 1) WHERE pasta_base = $1 OR left(pasta_base, length($1) + 1) = $1 || '/'`, [antigo, novo]);
+  }
+  await client.query("UPDATE pasta_arquivos SET caminho = $2 || substr(caminho, length($1) + 1) WHERE left(caminho, length($1) + 1) = $1 || '/'", [antigo, novo]);
+}
+
+// Pasta do cliente (nome relativo à raiz dos clientes), criada/renomeada, com "Recebidos do cliente"
+async function pastaRelDoCliente(clienteId, client = pool) {
+  const raiz = await P.raizClientes();
+  const c = clienteId ? (await client.query('SELECT id, nome, pasta FROM clientes WHERE id = $1', [clienteId])).rows[0] : null;
+  let rel = P.SEM_CLIENTE;
+  if (c) {
+    // servidor fora: não renomeia (a reserva local não tem a pasta antiga para renomear)
+    if (c.pasta && !(await P.servidorDisponivel())) rel = c.pasta;
+    else {
+      rel = path.basename(await P.sincronizarPasta(client, { tipo: 'cliente', tabela: 'clientes', id: c.id, nome: c.nome, pastaAtual: c.pasta, raiz }));
+      if (c.pasta && rel !== c.pasta) await trocarPrefixo(client, c.pasta, rel);
+    }
+  }
+  await fsp.mkdir(path.join(raiz, rel, RECEBIDOS), { recursive: true });
+  return rel;
+}
+
+async function pastaDoCliente(clienteId, client = pool) {
+  return path.join(await P.raizClientes(), await pastaRelDoCliente(clienteId, client));
+}
+
+// Item (obra, ou análise/laudo sem obra) na pasta-mãe `base` do cliente: se
+// estava em outra (trocou de cliente), a pasta vai junto; depois o nome é
+// sincronizado como sempre. `escopo`: os mesmos filtros de nome repetido.
+async function pastaNaBase(client, { tabela, tipo, row, base, nome, escopo = [] }) {
+  const raiz = await P.raizClientes();
+  if (row.pasta && row.pasta_base && row.pasta_base !== base) {
+    const de = juntar(raiz, `${row.pasta_base}/${row.pasta}`);
+    if (await P.existe(de)) {
+      let destino = juntar(raiz, `${base}/${row.pasta}`);
+      if (await P.existe(destino)) destino = `${destino} (${row.id})`;
+      await P.moverPasta(de, destino);
+      await client.query(`UPDATE ${tabela} SET pasta = $1 WHERE id = $2`, [path.basename(destino), row.id]);
+      await trocarPrefixo(client, `${row.pasta_base}/${row.pasta}`, `${base}/${path.basename(destino)}`);
+      row.pasta = path.basename(destino);
+    }
+  }
+  if (row.pasta_base !== base) {
+    await client.query(`UPDATE ${tabela} SET pasta_base = $1 WHERE id = $2`, [base, row.id]);
+    row.pasta_base = base;
+  }
+  return P.sincronizarPasta(client, { tipo, tabela, id: row.id, nome, pastaAtual: row.pasta, raiz: juntar(raiz, base), escopo: [{ coluna: 'pasta_base', valor: base }, ...escopo] });
+}
+
+// Caminho da pasta de uma obra JÁ registrada (sem criar): nova (no cliente) ou antiga
+async function caminhoDaObra(obra) {
+  if (!obra?.pasta) return null;
+  return obra.pasta_base ? juntar(await P.raizClientes(), `${obra.pasta_base}/${obra.pasta}`) : path.join(P.RAIZES.obra, obra.pasta);
+}
 
 // Liga cada análise de projeto, cada laudo e cada obra à sua pasta no disco
 // (utils/pastasSistema.js). Conteúdo, sempre com nome fixo e sobrescrito a
@@ -39,12 +125,24 @@ function nomeCurtoDisciplina(chave) {
   return (d ? d.nome.split(/ — | \(/)[0].trim() : String(chave || 'Laudo').toUpperCase()) || 'Laudo';
 }
 
+const SQL_OBRA_PASTA = 'SELECT id, nome, pasta, pasta_base, cliente_id, cliente_nome FROM obras WHERE id = $1';
+
 async function pastaDaObra(obra, client = pool) {
-  return P.sincronizarPasta(client, { tipo: 'obra', tabela: 'obras', id: obra.id, nome: obra.nome || `Obra ${obra.id}`, pastaAtual: obra.pasta });
+  // a consulta de quem chamou pode não trazer cliente_id/pasta_base
+  if (!('pasta_base' in obra) || !('cliente_id' in obra) || !('cliente_nome' in obra)) obra = { ...obra, ...(await client.query(SQL_OBRA_PASTA, [obra.id])).rows[0] };
+  // obra antiga, ainda em Arquivos do Sistema\Obras (o script de mudança leva para o cliente)
+  if (obra.pasta && !obra.pasta_base) {
+    return P.sincronizarPasta(client, { tipo: 'obra', tabela: 'obras', id: obra.id, nome: obra.nome || `Obra ${obra.id}`, pastaAtual: obra.pasta, escopo: { coluna: 'pasta_base', valor: null } });
+  }
+  // cliente pelo cadastro ou, em obra antiga, pelo nome digitado
+  const base = `${await pastaRelDoCliente(await clienteIdDoItem(obra, client), client)}/Obras`;
+  const dir = await pastaNaBase(client, { tabela: 'obras', tipo: 'obra', row: obra, base, nome: obra.nome || `Obra ${obra.id}` });
+  await fsp.mkdir(path.join(dir, RECEBIDOS), { recursive: true });
+  return dir;
 }
 
 async function pastaDaObraPorId(obraId, client = pool) {
-  const { rows: [obra] } = await client.query('SELECT id, nome, pasta FROM obras WHERE id = $1', [obraId]);
+  const { rows: [obra] } = await client.query(SQL_OBRA_PASTA, [obraId]);
   return obra ? pastaDaObra(obra, client) : null;
 }
 
@@ -60,9 +158,12 @@ async function obraDoItem(row, tabela, client) {
     obraId = row.pasta_obra_id;
   }
   if (!obraId) return null;
-  const { rows: [obra] } = await client.query('SELECT id, nome, pasta FROM obras WHERE id = $1', [obraId]);
+  const { rows: [obra] } = await client.query(SQL_OBRA_PASTA, [obraId]);
   return obra || null;
 }
+
+// item sem obra que já tem pasta no lugar antigo (Projetos\ / Laudos\ de Arquivos do Sistema)
+const noLugarAntigo = (row) => row.pasta && !row.pasta_base;
 
 async function pastaDoProjeto(row, client = pool) {
   const obra = await obraDoItem(row, 'analises_projeto', client);
@@ -70,8 +171,13 @@ async function pastaDoProjeto(row, client = pool) {
     return P.sincronizarPasta(client, { tipo: 'projeto', tabela: 'analises_projeto', id: row.id, nome: 'Projeto', pastaAtual: row.pasta,
       raiz: await pastaDaObra(obra, client), escopo: { coluna: 'pasta_obra_id', valor: obra.id } });
   }
-  return P.sincronizarPasta(client, { tipo: 'projeto', tabela: 'analises_projeto', id: row.id, nome: nomeDoProjeto(row), pastaAtual: row.pasta,
-    escopo: { coluna: 'pasta_obra_id', valor: null } });
+  if (noLugarAntigo(row)) {
+    return P.sincronizarPasta(client, { tipo: 'projeto', tabela: 'analises_projeto', id: row.id, nome: nomeDoProjeto(row), pastaAtual: row.pasta,
+      escopo: [{ coluna: 'pasta_obra_id', valor: null }, { coluna: 'pasta_base', valor: null }] });
+  }
+  // 2.3: sem obra → Clientes\<cliente>\Projetos\<nome>
+  const base = `${await pastaRelDoCliente(await clienteIdDoItem(row, client), client)}/Projetos`;
+  return pastaNaBase(client, { tabela: 'analises_projeto', tipo: 'projeto', row, base, nome: nomeDoProjeto(row), escopo: [{ coluna: 'pasta_obra_id', valor: null }] });
 }
 
 // Versão 2.1: registro de disciplina é projeto ou laudo, cada um na sua
@@ -99,8 +205,14 @@ async function pastaDoLaudo(row, client = pool) {
     return P.sincronizarPasta(client, { tipo: tipoPasta, tabela: 'laudos_projetos', id: row.id, nome: nomeCurtoDisciplina(row.disciplina), pastaAtual: row.pasta,
       raiz: path.join(await pastaDaObra(obra, client), subpastaObra), escopo: [{ coluna: 'pasta_obra_id', valor: obra.id }, mesmaRaiz] });
   }
-  return P.sincronizarPasta(client, { tipo: tipoPasta, tabela: 'laudos_projetos', id: row.id, nome: row.titulo || `${raiz === 'projetos' ? 'Projeto' : 'Laudo'} ${row.id}`, pastaAtual: row.pasta,
-    escopo: [{ coluna: 'pasta_obra_id', valor: null }, mesmaRaiz] });
+  const nome = row.titulo || `${raiz === 'projetos' ? 'Projeto' : 'Laudo'} ${row.id}`;
+  if (noLugarAntigo(row)) {
+    return P.sincronizarPasta(client, { tipo: tipoPasta, tabela: 'laudos_projetos', id: row.id, nome, pastaAtual: row.pasta,
+      escopo: [{ coluna: 'pasta_obra_id', valor: null }, mesmaRaiz, { coluna: 'pasta_base', valor: null }] });
+  }
+  // 2.3: sem obra → Clientes\<cliente>\Projetos|Laudos\<título>
+  const base = `${await pastaRelDoCliente(await clienteIdDoItem(row, client), client)}/${subpastaObra}`;
+  return pastaNaBase(client, { tabela: 'laudos_projetos', tipo: tipoPasta, row, base, nome, escopo: [{ coluna: 'pasta_obra_id', valor: null }, mesmaRaiz] });
 }
 
 // tipo 'laudo' (qualquer registro de laudos_projetos) → pasta-mãe pela raiz do registro
@@ -108,26 +220,38 @@ const tipoPastaDe = (tipo, row) => (tipo === 'laudo' ? RAIZ_REGISTRO[raizDoRegis
 
 // Caminho já registrado da pasta (sem criar nada). `row.pasta_obra_dir` = pasta
 // da obra (obras.pasta), quando a consulta fez o JOIN; senão consulta.
-async function caminhoRegistrado(tipo, row, client = pool) {
-  if (!row?.pasta) return null;
+// Pasta-mãe já registrada de um item (sem criar): dentro da obra, no cliente
+// (2.3) ou no lugar antigo. { raiz, obra, noCliente } ou null.
+async function maeRegistrada(tipo, row, client = pool) {
   const { tipoPasta, subpastaObra } = tipoPastaDe(tipo, row);
-  if (!row.pasta_obra_id) return P.caminhoDe(tipoPasta, row.pasta);
-  let dirObra = row.pasta_obra_dir;
-  if (dirObra === undefined) dirObra = (await client.query('SELECT pasta FROM obras WHERE id = $1', [row.pasta_obra_id])).rows[0]?.pasta;
-  if (!dirObra) return null;
-  return path.join(P.RAIZES.obra, dirObra, ...(subpastaObra ? [subpastaObra] : []), row.pasta);
+  if (row.pasta_obra_id) {
+    const { rows: [obra] } = await client.query('SELECT nome, pasta, pasta_base FROM obras WHERE id = $1', [row.pasta_obra_id]);
+    const dirObra = await caminhoDaObra(obra);
+    if (!dirObra) return null;
+    return { raiz: subpastaObra ? path.join(dirObra, subpastaObra) : dirObra, obra, noCliente: !!obra.pasta_base };
+  }
+  if (row.pasta_base) return { raiz: juntar(await P.raizClientes(), row.pasta_base), obra: null, noCliente: true };
+  return { raiz: P.RAIZES[tipoPasta], obra: null, noCliente: false };
 }
 
-// Exclusão de análise/laudo/projeto: a pasta vai para _Excluídos (mesmo dentro de uma obra).
+async function caminhoRegistrado(tipo, row, client = pool) {
+  if (!row?.pasta) return null;
+  const mae = await maeRegistrada(tipo, row, client);
+  return mae ? path.join(mae.raiz, row.pasta) : null;
+}
+
+// Exclusão de análise/laudo/projeto: a pasta vai para _Excluídos (mesmo dentro
+// de uma obra). Na pasta dos clientes, para o _Excluídos de lá (não traz do servidor para o PC).
 async function excluirPastaDoItem(tipo, row) {
   return seguro(`excluir ${tipo} ${row.id}`, async () => {
     if (!row.pasta) return null;
-    const { tipoPasta, subpastaObra } = tipoPastaDe(tipo, row);
-    if (!row.pasta_obra_id) return P.moverParaExcluidos(tipoPasta, row.pasta);
-    const { rows: [obra] } = await pool.query('SELECT nome, pasta FROM obras WHERE id = $1', [row.pasta_obra_id]);
-    if (!obra?.pasta) return null;
-    const raiz = path.join(P.RAIZES.obra, obra.pasta, ...(subpastaObra ? [subpastaObra] : []));
-    return P.moverParaExcluidos(tipoPasta, row.pasta, { raiz, rotulo: obra.nome });
+    const { tipoPasta } = tipoPastaDe(tipo, row);
+    const mae = await maeRegistrada(tipo, row);
+    if (!mae) return null;
+    return P.moverParaExcluidos(tipoPasta, row.pasta, {
+      raiz: mae.raiz, rotulo: mae.obra?.nome || null,
+      ...(mae.noCliente ? { excluidos: path.join(await P.raizClientes(), '_Excluídos') } : {}),
+    });
   });
 }
 
@@ -175,6 +299,10 @@ function salvarPdfPropostaNasPastas(proposta, pdf) {
     if (proposta.obra_id) {
       const dir = await pastaDaObraPorId(proposta.obra_id);
       if (dir) { await P.gravarArquivo(path.join(dir, 'Propostas'), nome, pdf); naObra = 1; }
+    } else if (proposta.cliente_id) {
+      // 2.3: proposta sem obra → Clientes\<cliente>\Propostas
+      await P.gravarArquivo(path.join(await pastaDoCliente(proposta.cliente_id), 'Propostas'), nome, pdf);
+      naObra = 1;
     }
     return analises.length + laudos.length + naObra;
   });
@@ -211,4 +339,5 @@ module.exports = {
   pastaDoProjeto, pastaDoLaudo, pastaDaObra, pastaDaObraPorId, caminhoRegistrado, excluirPastaDoItem, nomeCurtoDisciplina,
   sincronizarProjeto, sincronizarLaudo, sincronizarObra, salvarPdfPropostaNasPastas, salvarPdfContratoNaObra,
   resumoPasta, pedidoLocal, seguro,
+  pastaDoCliente, pastaRelDoCliente, clienteIdDoItem, caminhoDaObra, RECEBIDOS,
 };

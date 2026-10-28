@@ -31,7 +31,31 @@ class TransacaoDesfeita extends Error {
   }
 }
 
-async function comTransacao(fn) {
+// Nível de isolamento opcional ({ isolamento: 'REPEATABLE READ' }): no padrão
+// (READ COMMITTED) cada comando enxerga o banco do seu próprio instante; quem
+// lê proposta, seções e itens em comandos separados pode pegar uma edição pela
+// metade (seções novas com os itens antigos). Em REPEATABLE READ todas as
+// leituras da transação veem o mesmo retrato.
+// Nesse nível, gravar uma linha que outra transação alterou depois do retrato
+// dá erro de serialização (40001): a transação inteira é refeita, até
+// `tentativas` vezes (padrão 3 em REPEATABLE READ/SERIALIZABLE, 1 no padrão).
+const ISOLAMENTOS = new Set(['READ COMMITTED', 'REPEATABLE READ', 'SERIALIZABLE']);
+const ERROS_DE_SERIALIZACAO = new Set(['40001', '40P01']);
+
+async function comTransacao(fn, { isolamento = null, tentativas = null } = {}) {
+  const nivel = isolamento == null ? null : String(isolamento).toUpperCase();
+  if (nivel && !ISOLAMENTOS.has(nivel)) throw new Error(`Nível de isolamento inválido: ${isolamento}`);
+  const maxTentativas = tentativas || (nivel && nivel !== 'READ COMMITTED' ? 3 : 1);
+  for (let tentativa = 1; ; tentativa++) {
+    try {
+      return await umaTransacao(fn, nivel);
+    } catch (err) {
+      if (tentativa >= maxTentativas || !ERROS_DE_SERIALIZACAO.has(err.code)) throw err;
+    }
+  }
+}
+
+async function umaTransacao(fn, nivel) {
   let client;
   try {
     client = await pool.connect();
@@ -41,7 +65,7 @@ async function comTransacao(fn) {
 
   let conexaoComprometida = false;
   try {
-    await client.query('BEGIN');
+    await client.query(nivel ? `BEGIN ISOLATION LEVEL ${nivel}` : 'BEGIN');
     const resultado = await fn(client);
     const fim = await client.query('COMMIT');
     if (fim && fim.command === 'ROLLBACK') throw new TransacaoDesfeita();

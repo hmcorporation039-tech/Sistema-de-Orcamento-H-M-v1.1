@@ -1,8 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 import useUltimoPedido from '../hooks/useUltimoPedido';
 import toast from 'react-hot-toast';
-import { Plus, Search, Pencil, Trash2, X } from 'lucide-react';
-import { getClientes, criarCliente, atualizarCliente, removerCliente } from '../services/api';
+import { Plus, Search, Pencil, Trash2, X, FolderOpen } from 'lucide-react';
+import { getClientes, criarCliente, atualizarCliente, removerCliente, getPastaCliente, abrirPastaCliente } from '../services/api';
+import PainelPasta from '../components/PainelPasta';
+import { AvisoNovidades } from '../components/NovidadesPastas';
 import Paginacao from '../components/Paginacao';
 import { formatarTelefone, formatarCpfCnpj, validarCpf, validarCnpj } from '../utils/format';
 import Select from '../components/Select';
@@ -19,6 +23,12 @@ export default function Clientes() {
   const [salvando, setSalvando] = useState(false);
   const [pagina, setPagina] = useState(1);
   const [paginacao, setPaginacao] = useState({ total: 0, totalPaginas: 1 });
+  // 2.3: pasta do cliente (servidor) com as novidades — ?pasta=ID abre direto (vindo do sininho do topo)
+  const [parametros] = useSearchParams();
+  const { usuario } = useAuth();
+  const ehAdmin = usuario?.role === 'admin'; // excluir cliente: só administrador (o servidor confere)
+  const [pastaDe, setPastaDe] = useState(null);
+  useEffect(() => { const id = Number(parametros.get('pasta')); if (id) setPastaDe({ id, nome: '' }); }, [parametros]);
 
   const novoPedido = useUltimoPedido();
   const carregar = useCallback(async () => {
@@ -155,12 +165,17 @@ export default function Clientes() {
                 <td style={td}>{formatarTelefone(c.telefone) || '—'}</td>
                 <td style={td}>{c.email || '—'}</td>
                 <td style={{ ...td, display: 'flex', gap: 6 }}>
+                  <button onClick={() => setPastaDe({ id: c.id, nome: c.nome })} style={btnIcone} title="Pasta do cliente (tudo dele: obras, projetos, propostas e o que ele mandar)" data-testid="pasta-cliente">
+                    <FolderOpen size={13} />
+                  </button>
                   <button onClick={() => abrirEdicao(c)} style={btnIcone} title="Editar">
                     <Pencil size={13} />
                   </button>
-                  <button onClick={() => excluir(c)} style={{ ...btnIcone, color: '#b04040' }} title="Remover">
-                    <Trash2 size={13} />
-                  </button>
+                  {ehAdmin && (
+                    <button onClick={() => excluir(c)} style={{ ...btnIcone, color: '#b04040' }} title="Remover">
+                      <Trash2 size={13} />
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -169,6 +184,23 @@ export default function Clientes() {
       </div>
 
       <Paginacao pagina={pagina} totalPaginas={paginacao.totalPaginas} total={paginacao.total} onMudarPagina={setPagina} />
+
+      {pastaDe && (
+        <div style={overlay} onClick={() => setPastaDe(null)}>
+          <div style={{ ...modal, maxWidth: 900, width: '95%' }} onClick={e => e.stopPropagation()} data-testid="modal-pasta-cliente">
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
+              <h3 style={{ color: '#c9a227', fontSize: 15, margin: 0, flex: 1 }}>Pasta do cliente{pastaDe.nome ? ` — ${pastaDe.nome}` : ''}</h3>
+              <button onClick={() => setPastaDe(null)} style={btnIcone} title="Fechar"><X size={14} /></button>
+            </div>
+            <p style={{ color: '#888', fontSize: 12, margin: '0 0 8px', lineHeight: 1.6 }}>
+              Tudo deste cliente fica aqui (no servidor): obras, projetos, laudos, propostas e contratos gerados pelo sistema. O que o cliente mandar,
+              salve em <code>Recebidos do cliente</code> (ou na pasta da obra) — o sistema procura arquivos novos e alterados e avisa.
+            </p>
+            <PastaDoCliente id={pastaDe.id} />
+            <AvisoNovidades clienteId={pastaDe.id} sempre />
+          </div>
+        </div>
+      )}
 
       {modalAberto && (
         <div style={overlay} onClick={() => setModalAberto(false)}>
@@ -241,6 +273,13 @@ export default function Clientes() {
       )}
     </div>
   );
+}
+
+// funções estáveis: o PainelPasta recarrega quando `carregar` muda
+function PastaDoCliente({ id }) {
+  const carregar = useCallback(() => getPastaCliente(id), [id]);
+  const abrir = useCallback(() => abrirPastaCliente(id), [id]);
+  return <PainelPasta carregar={carregar} abrir={abrir} />;
 }
 
 function Campo({ label, children }) {

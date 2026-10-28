@@ -76,7 +76,8 @@ function criarGerenciador(opcoes = {}) {
   // Ouvir a execução em andamento de uma conversa (retrato atual + eventos novos)
   function acompanhar(conversaId, ouvinte) {
     const estado = porConversa.get(Number(conversaId));
-    if (!estado) return null;
+    // reserva (iniciar ainda gravando a mensagem): nada para mostrar ainda
+    if (!estado || estado.reservado) return null;
     ouvinte(retrato(estado));
     estado.ouvintes.add(ouvinte);
     return () => estado.ouvintes.delete(ouvinte);
@@ -88,6 +89,7 @@ function criarGerenciador(opcoes = {}) {
     const estado = porConversa.get(Number(conversaId));
     if (!estado) return false;
     estado.cancelado = true;
+    if (estado.reservado) return true; // iniciar vê o cancelamento antes de entrar na fila
     if (!fila.remover(estado.exec)) estado.abort.abort();
     return true;
   }
@@ -155,18 +157,30 @@ function criarGerenciador(opcoes = {}) {
   // registrado; a resposta segue pelos ouvintes e é gravada no fim.
   async function iniciar({ usuario, conversa, texto, contexto, arquivos = [] }) {
     if (porConversa.has(conversa.id)) throw Object.assign(new Error('O assistente ainda está respondendo nesta conversa. Aguarde ou clique em Parar.'), { status: 409 });
-    const contextoTexto = await descreverContexto(contexto);
-    const { rows: [msgUsuario] } = await pool.query(
-      `INSERT INTO assistente_mensagens (conversa_id, papel, texto, contexto, arquivos) VALUES ($1,'usuario',$2,$3,$4) RETURNING *`,
-      [conversa.id, texto, contexto, JSON.stringify(arquivos.map(a => ({ id: a.id, nome: a.nome, tipo: a.tipo, tamanho: a.tamanho })))]);
-    const { rows: [msgAssist] } = await pool.query(
-      `INSERT INTO assistente_mensagens (conversa_id, papel, status, provedor) VALUES ($1,'assistente','fila',$2) RETURNING *`,
-      [conversa.id, cfg.provedor]);
-    const { rows: [conv] } = await pool.query(
-      `UPDATE assistente_conversas SET contexto = $2, atualizado_em = NOW(),
-              titulo = CASE WHEN titulo = 'Nova conversa' THEN $3 ELSE titulo END
-        WHERE id = $1 RETURNING titulo`,
-      [conversa.id, contexto, String(texto).replace(/\s+/g, ' ').trim().slice(0, 80) || 'Nova conversa']);
+    // Reserva a conversa JÁ (síncrono, antes de qualquer await): antes a marca
+    // só entrava depois dos INSERTs, e dois envios quase juntos passavam os dois
+    // pela conferência acima — duas execuções na mesma conversa e sessão.
+    const reserva = { reservado: true, cancelado: false };
+    porConversa.set(conversa.id, reserva);
+    const soltarReserva = () => { if (porConversa.get(conversa.id) === reserva) porConversa.delete(conversa.id); };
+    let contextoTexto, msgUsuario, msgAssist, conv;
+    try {
+      contextoTexto = await descreverContexto(contexto);
+      ({ rows: [msgUsuario] } = await pool.query(
+        `INSERT INTO assistente_mensagens (conversa_id, papel, texto, contexto, arquivos) VALUES ($1,'usuario',$2,$3,$4) RETURNING *`,
+        [conversa.id, texto, contexto, JSON.stringify(arquivos.map(a => ({ id: a.id, nome: a.nome, tipo: a.tipo, tamanho: a.tamanho })))]));
+      ({ rows: [msgAssist] } = await pool.query(
+        `INSERT INTO assistente_mensagens (conversa_id, papel, status, provedor) VALUES ($1,'assistente','fila',$2) RETURNING *`,
+        [conversa.id, cfg.provedor]));
+      ({ rows: [conv] } = await pool.query(
+        `UPDATE assistente_conversas SET contexto = $2, atualizado_em = NOW(),
+                titulo = CASE WHEN titulo = 'Nova conversa' THEN $3 ELSE titulo END
+          WHERE id = $1 RETURNING titulo`,
+        [conversa.id, contexto, String(texto).replace(/\s+/g, ' ').trim().slice(0, 80) || 'Nova conversa']));
+    } catch (e) {
+      soltarReserva();
+      throw e;
+    }
 
     const exec = S.novoIdExecucao();
     const registro = S.registrarExecucao({ exec, conversaId: conversa.id, usuarioId: usuario.id, mensagemId: msgAssist.id });
@@ -177,6 +191,8 @@ function criarGerenciador(opcoes = {}) {
     };
     // criados/ações registrados pelas rotas (middleware de escopo e propor_acao) chegam à tela na hora
     registro.ouvintes.add((ev) => emitir(estado, ev));
+    // "Parar" clicado enquanto a mensagem era gravada (reserva): não entra na fila
+    if (reserva.cancelado) estado.cancelado = true;
     porConversa.set(conversa.id, estado);
 
     const mensagem = montarMensagem({ contextoTexto, arquivos, texto, usuario });
@@ -184,10 +200,13 @@ function criarGerenciador(opcoes = {}) {
       let interpretador = null;
       let saida = null;
       let erro = null;
-      try {
-        await fila.adquirir(exec, (posicao) => { estado.posicao = posicao; emitir(estado, { tipo: 'fila', posicao }); });
-      } catch (e) {
-        erro = e.cancelado ? 'Cancelado pelo usuário.' : e.message;
+      if (estado.cancelado) erro = 'Cancelado pelo usuário.';
+      else {
+        try {
+          await fila.adquirir(exec, (posicao) => { estado.posicao = posicao; emitir(estado, { tipo: 'fila', posicao }); });
+        } catch (e) {
+          erro = e.cancelado ? 'Cancelado pelo usuário.' : e.message;
+        }
       }
       if (!erro) {
         try {
@@ -243,7 +262,8 @@ function criarGerenciador(opcoes = {}) {
         emitir(estado, { tipo: 'fim', mensagem: { id: msgAssist.id, papel: 'assistente', texto: textoFinal, passos: partes, criados: registro.criados, status: 'erro', erro: erro || 'Não foi possível gravar a resposta.' } });
       } finally {
         S.encerrarExecucao(exec);
-        porConversa.delete(conversa.id);
+        // só apaga se a marca ainda é desta execução (nunca a de outra que já começou)
+        if (porConversa.get(conversa.id) === estado) porConversa.delete(conversa.id);
         for (const f of estado.ouvintes) { try { f({ tipo: 'encerrado' }); } catch { /* idem */ } }
         estado.ouvintes.clear();
       }

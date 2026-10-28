@@ -117,9 +117,10 @@ async function lerPdf(buffer) {
 }
 
 async function lerCad(buffer, nome) {
-  const { cad } = require('../../utils/disciplinasLaudo');
-  const { texto, origem } = await cad().textoDxfDoArquivo(buffer, nome);
-  const leitura = cad().lerArquitetura(texto);
+  // conversão e leitura numa thread à parte (services/tarefasCad): na thread
+  // principal, um desenho grande travava o sistema para todos
+  const { lerArquiteturaNoWorker } = require('../tarefasCad');
+  const { origem, leitura } = await lerArquiteturaNoWorker(buffer, nome);
   return {
     tipo: origem === 'dwg' ? 'dwg' : 'dxf',
     ambientes: leitura.ambientes.slice(0, 80).map(a => ({ nome: a.nome, area_m2: a.area_m2, perimetro_m: a.perimetro_m })),
@@ -143,7 +144,28 @@ async function lerImagem(buffer, tipo) {
   };
 }
 
+// XLSX/DOCX são ZIP: um arquivo pequeno pode declarar centenas de MB por
+// dentro (ZIP-bomba). Confere o tamanho DECLARADO no índice antes de
+// descompactar — mesmo critério do pacote de projeto (services/pacotesProjeto.js).
+const MAX_PARTE_OFFICE = 40 * 1024 * 1024;
+const MAX_TOTAL_OFFICE = 100 * 1024 * 1024;
+async function conferirZipOffice(buffer) {
+  const JSZip = require('jszip');
+  const zip = await JSZip.loadAsync(buffer);
+  let total = 0;
+  for (const ent of Object.values(zip.files)) {
+    if (ent.dir) continue;
+    const declarado = Number(ent._data?.uncompressedSize) || 0;
+    total += declarado;
+    if (declarado > MAX_PARTE_OFFICE || total > MAX_TOTAL_OFFICE) {
+      throw new Error('arquivo grande demais por dentro (mais de 40 MB numa parte ou 100 MB no total) — envie uma versão menor ou em PDF');
+    }
+  }
+  return zip;
+}
+
 async function lerXlsx(buffer) {
+  await conferirZipOffice(buffer);
   const ExcelJS = require('exceljs');
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buffer);
@@ -166,8 +188,7 @@ async function lerXlsx(buffer) {
 }
 
 async function lerDocx(buffer) {
-  const JSZip = require('jszip');
-  const zip = await JSZip.loadAsync(buffer);
+  const zip = await conferirZipOffice(buffer);
   const xml = await zip.file('word/document.xml').async('string');
   const texto = xml.replace(/<w:tab\/>/g, '\t').replace(/<\/w:p>/g, '\n').replace(/<[^>]+>/g, '')
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
@@ -201,4 +222,4 @@ async function resumirArquivo(pool, registro) {
   return resumo;
 }
 
-module.exports = { detectarTipo, salvarArquivo, lerConteudo, resumirArquivo, pastaDaConversa, publico, TIPOS_ACEITOS, MIME };
+module.exports = { detectarTipo, salvarArquivo, lerConteudo, resumirArquivo, pastaDaConversa, publico, conferirZipOffice, TIPOS_ACEITOS, MIME };

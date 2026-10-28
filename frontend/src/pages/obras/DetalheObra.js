@@ -14,6 +14,7 @@ import { useAuth } from '../../hooks/useAuth';
 import Select from '../../components/Select';
 import PainelPasta from '../../components/PainelPasta';
 import EnviarParaAnalise from '../../components/analise/EnviarParaAnalise';
+import { AvisoNovidades } from '../../components/NovidadesPastas';
 import { invalidarCacheObras } from '../../components/ObraSelect';
 import { formatarData } from '../../utils/format';
 import { STATUS_OBRA, SEGMENTO, STATUS_PROPOSTA, BASE_ORCADO, Etiqueta, moeda, pct, corMargem, estilos as E, Campo } from './comum';
@@ -46,6 +47,7 @@ export default function DetalheObra() {
   const [obra, setObra] = useState(null);
   const [erro, setErro] = useState(null);
   const [versaoTela, setVersaoTela] = useState(0);
+  const [pacoteNovidades, setPacoteNovidades] = useState(null);
 
   const carregar = useCallback(() => {
     getObra(id).then(r => { setObra(r.data); setErro(null); }).catch(e => setErro(e.response?.data?.erro || 'Erro ao carregar a obra'));
@@ -76,7 +78,7 @@ export default function DetalheObra() {
   if (erro) return <div style={E.card}><p style={{ color: '#e08080' }}>{erro}</p><Link to="/obras" style={E.link}>Voltar para a lista</Link></div>;
   if (!obra) return <div className="loading">Carregando...</div>;
 
-  const ctx = { obra, recarregar, ligar, desligar, podeEditar: obra.pode_editar };
+  const ctx = { obra, recarregar, ligar, desligar, podeEditar: obra.pode_editar, pacoteNovidades, setPacoteNovidades };
   const projetos = obra.laudos.filter(l => l.tipo === 'projeto');
   const laudos = obra.laudos.filter(l => l.tipo !== 'projeto');
   return (
@@ -102,6 +104,8 @@ export default function DetalheObra() {
           );
         })}
       </div>
+      {/* 2.3: arquivo novo/alterado na pasta do cliente/obra — "Analisar" leva para a aba Análises */}
+      <AvisoNovidades obraId={obra.id} onAnalisar={(p) => { setPacoteNovidades(p); const q = new URLSearchParams(parametros); q.set('secao', 'analises'); setParametros(q, { replace: true }); }} />
       {secao === 'resumo' && <Resumo {...ctx} />}
       {secao === 'analises' && <Analises {...ctx} />}
       {secao === 'projetos' && <RegistrosDisciplina {...ctx} tipo="projeto" itens={projetos} />}
@@ -344,11 +348,12 @@ const textoAjuda = { color: '#777', fontSize: 12, margin: '0 0 10px', lineHeight
 // ── Análises de projeto (arquivos recebidos), com a finalidade ────────
 // 2.3: o envio dos arquivos fica AQUI, na obra (arquivos, pasta, ZIP ou os que
 // já estão na pasta da obra) — o mesmo bloco da aba Análise de projeto
-function Analises({ obra, ligar, desligar, podeEditar, recarregar }) {
+function Analises({ obra, ligar, desligar, podeEditar, recarregar, pacoteNovidades, setPacoteNovidades }) {
   const navigate = useNavigate();
   const [parametros] = useSearchParams();
   const daPasta = parametros.get('usarPasta') === '1';
-  const [enviando, setEnviando] = useState(daPasta || obra.analises.length === 0);
+  const [enviando, setEnviando] = useState(daPasta || !!pacoteNovidades || obra.analises.length === 0);
+  useEffect(() => { if (pacoteNovidades) setEnviando(true); }, [pacoteNovidades]);
   const [disciplinas, setDisciplinas] = useState([]);
   useEffect(() => { getDisciplinasProjeto().then(r => setDisciplinas(r.data)).catch(() => {}); }, []);
   const carregar = useCallback(() => getAnalisesProjeto({ obra_id: 'sem', porPagina: 200 })
@@ -366,8 +371,8 @@ function Analises({ obra, ligar, desligar, podeEditar, recarregar }) {
             <b style={{ color: '#c9a227', fontSize: 14, flex: 1 }}>Enviar o projeto para análise — {obra.nome}</b>
             {obra.analises.length > 0 && <button type="button" onClick={() => setEnviando(false)} style={{ background: 'none', border: 0, color: '#888', cursor: 'pointer', fontSize: 12 }}>Fechar</button>}
           </div>
-          <EnviarParaAnalise obraFixa={obra.id} disciplinas={disciplinas} iniciarComPasta={daPasta}
-            onCriada={(a) => navigate(`/obras/analise/${a.id}`)} />
+          <EnviarParaAnalise obraFixa={obra.id} disciplinas={disciplinas} iniciarComPasta={daPasta} pacoteInicial={pacoteNovidades}
+            onCriada={(a) => { setPacoteNovidades(null); navigate(`/obras/analise/${a.id}`); }} />
         </div>
       )}
       <Tabela colunas={[{ rotulo: 'Análise' }, { rotulo: 'Finalidade' }, { rotulo: 'Cliente' }, { rotulo: 'Disciplinas' }, { rotulo: 'Proposta' }, { rotulo: 'Atualizada' }, { rotulo: '' }]} vazio="Nenhuma análise ligada a esta obra.">
@@ -550,7 +555,7 @@ function Arquivos({ obra }) {
     <div>
       <Cabecalho titulo="Pasta da obra" />
       <p style={{ color: '#777', fontSize: 12, margin: '0 0 6px' }}>
-        Itens novos desta obra gravam aqui: <code>Projeto</code> (análise), <code>Projetos\&lt;disciplina&gt;</code> (com a <code>Entrega</code>), <code>Laudos\&lt;disciplina&gt;</code>, <code>Propostas</code> e <code>Contratos</code>.
+        A pasta da obra fica dentro da <b>pasta do cliente</b> (servidor); o que o cliente mandar vai em <code>Recebidos do cliente</code> e o sistema avisa arquivo novo ou alterado (sininho no topo). Itens desta obra gravam aqui: <code>Projeto</code> (análise), <code>Projetos\&lt;disciplina&gt;</code> (com a <code>Entrega</code>), <code>Laudos\&lt;disciplina&gt;</code>, <code>Propostas</code> e <code>Contratos</code>.
       </p>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '4px 0 10px', padding: '10px 12px', border: '1px solid #3a3215', borderRadius: 8, background: '#16140c' }}>
         <span style={{ color: '#bbb', fontSize: 12, flex: '1 1 320px', lineHeight: 1.5 }}>

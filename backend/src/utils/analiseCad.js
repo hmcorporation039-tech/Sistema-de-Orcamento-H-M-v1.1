@@ -12,7 +12,7 @@
 // Tudo marcado para conferir: o desenho manda, mas sigla de bloco é convenção
 // de cada escritório.
 const path = require('path');
-const { Worker } = require('worker_threads');
+const { executarNoWorker } = require('./executarNoWorker');
 const { analisarTexto } = require('./projetoParser');
 const { detectarDisciplinas } = require('./leitoresTabelaProjeto');
 
@@ -23,16 +23,18 @@ const ehArquivoCad = (nome) => RE_CAD.test(String(nome || ''));
 const RE_LAYER_LINHA = 'ELETRODUT|ELETROCALHA|PERFILADO|LEITO|CONDU[IÍ]TE|CONDUIT|INFRA|CABEAMENTO|FIA[ÇC][ÃA]O|FIACAO|TUBELE|INST.*TUBULA|EL[ÉE]T.*TUBULA|TUBULA.*EL[ÉE]T|TUB.*(L[ÓO]GIC|TELEF|DADOS|CFTV)|(L[ÓO]GIC|TELEF|DADOS|CFTV).*(TUB|INFRA|ELETROD)';
 const TEMPO_LIMITE_MS = 180 * 1000;
 
-function lerNoWorker(buffer, nome) {
-  return new Promise((ok, falha) => {
-    const w = new Worker(path.join(__dirname, '..', 'services', 'analiseCad', 'worker.js'), {
-      workerData: { buffer, nome, reLayerLinha: RE_LAYER_LINHA },
-      resourceLimits: { maxOldGenerationSizeMb: 2048 },
-    });
-    const relogio = setTimeout(() => { w.terminate(); falha(new Error(`a leitura de "${nome}" passou de ${TEMPO_LIMITE_MS / 1000} s`)); }, TEMPO_LIMITE_MS);
-    w.once('message', (m) => { clearTimeout(relogio); w.terminate(); m.ok ? ok(m) : falha(new Error(m.erro)); });
-    w.once('error', (e) => { clearTimeout(relogio); falha(e); });
-  });
+// worker com fila global (utils/executarNoWorker.js): no máximo 2 leituras de CAD ao mesmo tempo
+async function lerNoWorker(buffer, nome) {
+  let m;
+  try {
+    m = await executarNoWorker(path.join(__dirname, '..', 'services', 'analiseCad', 'worker.js'),
+      { buffer, nome, reLayerLinha: RE_LAYER_LINHA }, { tempoLimiteMs: TEMPO_LIMITE_MS, memoriaMb: 2048 });
+  } catch (e) {
+    if (e.codigo === 'TEMPO_ESGOTADO') throw new Error(`a leitura de "${nome}" passou de ${TEMPO_LIMITE_MS / 1000} s`);
+    throw e;
+  }
+  if (!m.ok) throw new Error(m.erro);
+  return m;
 }
 
 // ── O que é cada bloco ─────────────────────────────────────────────────────

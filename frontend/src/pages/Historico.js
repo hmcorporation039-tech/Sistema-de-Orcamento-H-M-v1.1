@@ -5,6 +5,7 @@ import { Search, Trash2, X, FileDown, FileSpreadsheet, Copy, Send, Pencil, Plus,
 import { getPropostas, getProposta, getClientes, atualizarStatus, removerProposta, duplicarProposta, getRelatorioPropostas } from '../services/api';
 import api from '../services/api';
 import { formatarMoeda, formatarData, formatarNcm } from '../utils/format';
+import { baixarArquivo, salvarBlob, mensagemDeErro } from '../utils/download';
 import Paginacao from '../components/Paginacao';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
 import Select from '../components/Select';
@@ -230,19 +231,13 @@ export default function Historico() {
     try {
       const params = filtrosDoRelatorio(inicioEfetivo, fimEfetivo, statusFiltro, busca);
       const res = await api.get(`/relatorios/propostas/${tipo}`, { params, responseType: 'blob' });
-      const mime = tipo === 'csv' ? 'text/csv' : 'application/pdf';
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: mime }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = temPeriodo
+      // o nome daqui (com o período) diz mais que o genérico do servidor
+      // ("relatório-propostas.csv"), então ele continua valendo
+      salvarBlob(res.data, temPeriodo
         ? `Relatorio_Propostas_${inicioEfetivo}_a_${fimEfetivo}.${tipo}`
-        : `Relatorio_Propostas_ate_${fimEfetivo}.${tipo}`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch {
-      toast.error(`Erro ao exportar ${tipo.toUpperCase()}`);
+        : `Relatorio_Propostas_ate_${fimEfetivo}.${tipo}`);
+    } catch (err) {
+      toast.error(await mensagemDeErro(err, `Erro ao exportar ${tipo.toUpperCase()}`));
     } finally {
       setExportando(null);
     }
@@ -315,18 +310,11 @@ export default function Historico() {
   async function baixarPdf(id, numero, clienteNome) {
     setGerandoPdf(true);
     try {
-      const res = await api.get(`/propostas/${id}/pdf`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      const link = document.createElement('a');
-      link.href = url;
+      // nome do servidor (o mesmo da cópia nas pastas); o montado aqui é só a reserva
       const nomeCliente = (clienteNome || '').trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_');
-      link.download = `${nomeCliente}_${numero}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch {
-      toast.error('Erro ao gerar PDF');
+      await baixarArquivo(api.get(`/propostas/${id}/pdf`, { responseType: 'blob' }), `${nomeCliente}_${numero}.pdf`);
+    } catch (err) {
+      toast.error(await mensagemDeErro(err, 'Erro ao gerar PDF'));
     } finally {
       setGerandoPdf(false);
     }

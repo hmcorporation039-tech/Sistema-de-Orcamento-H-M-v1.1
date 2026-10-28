@@ -23,6 +23,7 @@ const { dadosDaAnalise, tipoAmbiente } = require('../utils/ponteAnaliseSkill');
 const { buscarPrecosReferencia, segmentoDoCliente } = require('../utils/precosMaoDeObraReferencia');
 const { sincronizarLaudo, pastaDoLaudo, resumoPasta, pedidoLocal, seguro, caminhoRegistrado, excluirPastaDoItem } = require('../services/pastasRegistros');
 const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
+const { lerArquiteturaNoWorker, mensagemDaLeitura, gerarPlantaNoWorker } = require('../services/tarefasCad');
 
 // Projetos e laudos por disciplina (hub Obras → "Projetos por disciplina" e
 // "Laudos"). O cálculo e os documentos vêm da skill da disciplina
@@ -279,12 +280,62 @@ async function atualizar(req, res) {
   }
 }
 
+// Fotos da inspeção e arquitetura ficam SÓ no banco (laudos_projetos_fotos e
+// laudos_projetos_arquitetura, apagadas em cascata com o registro). Antes de
+// excluir, uma cópia vai para a pasta do registro — que depois vai inteira para
+// _Excluídos. Sem a cópia, a exclusão apagava as fotos de vez (a auditoria só
+// guardava o formulário). Devolve o que foi copiado (para a auditoria).
+const EXT_FOTO = { 'image/jpeg': 'jpg', 'image/png': 'png' };
+async function copiarAnexosParaPasta(laudo) {
+  const { rows: fotos } = await pool.query('SELECT id, nome_arquivo, mime, conteudo FROM laudos_projetos_fotos WHERE laudo_id = $1 ORDER BY id', [laudo.id]);
+  const { rows: [arq] } = await pool.query('SELECT nome_arquivo, conteudo, resumo FROM laudos_projetos_arquitetura WHERE laudo_id = $1', [laudo.id]);
+  if (!fotos.length && !arq) return { fotos: [], arquitetura: null, pasta: null };
+  const pasta = await pastaDoLaudo(laudo);
+  if (!pasta) throw new Error('a pasta do registro não está disponível');
+  const copiadas = [];
+  for (const f of fotos) {
+    const nome = `${f.id} - ${f.nome_arquivo || `foto.${EXT_FOTO[f.mime] || 'bin'}`}`;
+    await P.gravarArquivo(path.join(pasta, 'Fotos (cópia ao excluir)'), nome, f.conteudo);
+    copiadas.push({ id: f.id, nome_arquivo: f.nome_arquivo, mime: f.mime, bytes: f.conteudo.length });
+  }
+  let arquitetura = null;
+  if (arq) {
+    // DWG é guardado já convertido em DXF (texto): a cópia sai como .dxf
+    const nome = String(arq.nome_arquivo || 'arquitetura').replace(/\.dwg$/i, '.dxf');
+    await P.gravarArquivo(path.join(pasta, 'Arquitetura (cópia ao excluir)'), nome, arq.conteudo);
+    arquitetura = { nome_arquivo: arq.nome_arquivo, bytes: arq.conteudo.length, resumo: arq.resumo };
+  }
+  return { fotos: copiadas, arquitetura, pasta };
+}
+
 async function remover(req, res) {
   try {
-    const { rows } = await pool.query('DELETE FROM laudos_projetos WHERE id = $1 RETURNING *', [req.params.id]);
-    // o formulário inteiro vai para a auditoria (as fotos ficam na pasta, que vai para _Excluídos)
-    if (rows[0]) await registrarAuditoria(pool, { entidade: 'laudos_projetos', entidadeId: rows[0].id, acao: 'excluir', usuarioId: req.usuario.id, detalhes: { laudo: rows[0] } });
-    // a pasta não é apagada: vai para Arquivos do Sistema\_Excluídos
+    const { rows: [atual] } = await pool.query('SELECT * FROM laudos_projetos WHERE id = $1', [req.params.id]);
+    if (!atual) return res.json({ ok: true });
+    let copia;
+    try {
+      copia = await copiarAnexosParaPasta(atual);
+    } catch (e) {
+      console.error(`Exclusão do laudo ${atual.id} recusada: cópia das fotos/arquitetura falhou:`, e.message);
+      return res.status(409).json({ erro: 'Não foi possível guardar uma cópia das fotos e da arquitetura deste registro na pasta dele antes de excluir — nada foi excluído. Confira se a pasta está acessível (e não está aberta em outro programa) e tente de novo.' });
+    }
+    // DELETE e auditoria juntos: ou some com o registro na auditoria, ou não some
+    const rows = await comTransacao(async (client) => {
+      // trava o registro: foto enviada agora espera a exclusão terminar (e não fica sem cópia)
+      await client.query('SELECT id FROM laudos_projetos WHERE id = $1 FOR UPDATE', [atual.id]);
+      const { rows: novas } = await client.query('SELECT count(*)::int AS n FROM laudos_projetos_fotos WHERE laudo_id = $1 AND NOT (id = ANY($2::int[]))', [atual.id, copia.fotos.map(f => f.id)]);
+      if (novas[0].n > 0) throw Object.assign(new Error('Chegaram fotos novas neste registro enquanto ele era excluído — nada foi excluído. Tente de novo.'), { status: 409 });
+      const { rows: apagados } = await client.query('DELETE FROM laudos_projetos WHERE id = $1 RETURNING *', [atual.id]);
+      // o formulário inteiro e a lista do que foi copiado para a pasta vão para a
+      // auditoria (obrigatória: se ela falhar, nada é excluído)
+      if (apagados[0]) {
+        await registrarAuditoria(client, { entidade: 'laudos_projetos', entidadeId: apagados[0].id, acao: 'excluir', usuarioId: req.usuario.id,
+          detalhes: { laudo: apagados[0], fotos_copiadas: copia.fotos, arquitetura_copiada: copia.arquitetura, copia_na_pasta: copia.pasta },
+          obrigatoria: true });
+      }
+      return apagados;
+    });
+    // a pasta não é apagada: vai para Arquivos do Sistema\_Excluídos (com as cópias)
     if (rows[0]) await excluirPastaDoItem('laudo', rows[0]); // pasta antiga ou dentro da obra
     res.json({ ok: true });
   } catch (err) {
@@ -445,11 +496,11 @@ async function enviarArquitetura(req, res) {
     const arq = req.file;
     if (!arq) return res.status(400).json({ erro: 'Envie o arquivo da arquitetura (.dwg ou .dxf).' });
     // DWG: convertido para DXF num processo à parte (com tempo limite); guarda-se o
-    // DXF convertido para a planta não converter de novo — o original vai para a pasta
-    let texto, origem;
-    try { ({ texto, origem } = await cad().textoDxfDoArquivo(arq.buffer, arq.originalname)); } catch (e) { return res.status(400).json({ erro: e.message }); }
-    let leitura;
-    try { leitura = cad().lerArquitetura(texto); } catch (e) { return res.status(400).json({ erro: `Não consegui ler a arquitetura: ${e.message}` }); }
+    // DXF convertido para a planta não converter de novo — o original vai para a pasta.
+    // Conversão e leitura numa thread à parte (services/tarefasCad): na thread
+    // principal, um desenho grande travava o sistema para todos por segundos.
+    let texto, origem, leitura;
+    try { ({ texto, origem, leitura } = await lerArquiteturaNoWorker(arq.buffer, arq.originalname)); } catch (e) { return res.status(400).json({ erro: mensagemDaLeitura(e) }); }
     const resumo = {
       ambientes: leitura.ambientes.map(a => ({ nome: a.nome, area_m2: a.area_m2, perimetro_m: a.perimetro_m, origem: a.origem })),
       portas: leitura.portas.length,
@@ -493,22 +544,28 @@ async function montarPlanta(laudo, { asBuilt = null } = {}) {
   if (!gerador) throw erro400('A planta automática ainda não existe para esta disciplina (disponível: elétrica predial e hospitalar, iluminação, incêndio, alarme, controle de acesso, CFTV, cabeamento, telefonia e antena).');
   const { rows: [arq] } = await pool.query('SELECT nome_arquivo, conteudo FROM laudos_projetos_arquitetura WHERE laudo_id = $1', [laudo.id]);
   if (!arq) throw erro400('Envie primeiro a arquitetura (.dwg ou .dxf) deste projeto.');
-  const arquitetura = C.lerArquitetura(arq.conteudo.toString('utf8'));
   const motor = motorDaDisciplina(laudo.disciplina);
-  const resultado = processarComMotor(motor, laudo.dados);
-  const { pontos, notas } = gerador(resultado, arquitetura);
   const d = laudo.dados || {};
-  const out = C.gerarPlanta({
-    arquitetura, pontos, notas,
-    carimbo: {
-      cliente: d.cliente?.nome, obra: d.obra?.nome || laudo.titulo,
-      titulo: `${asBuilt ? 'AS BUILT — ' : ''}Projeto — ${motor.nome || laudo.disciplina} — planta baixa`,
-      data: asBuilt ? entrega().dataBr(asBuilt.data) : new Date().toLocaleDateString('pt-BR'),
-      revisao: asBuilt ? (asBuilt.revisao || d.meta?.revisao) : d.meta?.revisao,
-      responsavel: d.responsavel?.nome, crea: d.responsavel?.crea,
-      ...(asBuilt ? { fase: 'AS BUILT (conforme executado)', descricaoRevisao: entrega().textoAsBuilt(asBuilt) } : {}),
-    },
-  });
+  // leitura da arquitetura, cálculo da disciplina e desenho numa thread à parte
+  // (services/tarefasCad); o carimbo é montado aqui
+  let out;
+  try {
+    out = await gerarPlantaNoWorker({
+      dxf: arq.conteudo.toString('utf8'), disciplina: laudo.disciplina, dados: laudo.dados,
+      carimbo: {
+        cliente: d.cliente?.nome, obra: d.obra?.nome || laudo.titulo,
+        titulo: `${asBuilt ? 'AS BUILT — ' : ''}Projeto — ${motor.nome || laudo.disciplina} — planta baixa`,
+        data: asBuilt ? entrega().dataBr(asBuilt.data) : new Date().toLocaleDateString('pt-BR'),
+        revisao: asBuilt ? (asBuilt.revisao || d.meta?.revisao) : d.meta?.revisao,
+        responsavel: d.responsavel?.nome, crea: d.responsavel?.crea,
+        ...(asBuilt ? { fase: 'AS BUILT (conforme executado)', descricaoRevisao: entrega().textoAsBuilt(asBuilt) } : {}),
+      },
+    });
+  } catch (e) {
+    // mesma mensagem de processarComMotor (o cálculo agora roda no worker)
+    if (e.etapa === 'dados') throw erro400(`Dados incompletos ou inválidos: ${e.message}`);
+    throw e;
+  }
   const nome = `${asBuilt ? 'AS BUILT - ' : ''}${nomeSeguroArquivo(laudo.titulo)} - Planta ${laudo.disciplina}.dxf`;
   return { nome, buffer: Buffer.from(out.dxf, 'utf8'), naoEncontrados: out.naoEncontrados };
 }

@@ -9,25 +9,7 @@ import {
   abrirModelo3d, baixarModelo3d, urlModelo3d, enviarArquiteturaAnalise, getArquiteturaAnalise,
   getModelo3d, mostrarModelo3dAoCliente,
 } from '../services/api';
-
-async function mensagemDeErro(err, padrao) {
-  const dados = err.response?.data;
-  if (dados instanceof Blob) {
-    try { return JSON.parse(await dados.text()).erro || padrao; } catch { return padrao; }
-  }
-  return dados?.erro || padrao;
-}
-
-function baixarBlob(blob, nome) {
-  const url = window.URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = nome;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.URL.revokeObjectURL(url);
-}
+import { baixarArquivo, mensagemDeErro } from '../utils/download';
 
 // antes: chamado antes de gerar (ex.: salvar o formulário pendente)
 export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null, estilo = {} }) {
@@ -58,8 +40,7 @@ export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null,
     setOcupado('baixar');
     try {
       if (antes) await antes();
-      const r = await baixarModelo3d(origem, id);
-      baixarBlob(r.data, decodeURIComponent(r.headers['x-nome-arquivo'] || 'Modelo%203D.html'));
+      await baixarArquivo(baixarModelo3d(origem, id), 'Modelo 3D.html');
       toast.success('Modelo 3D baixado: abre em qualquer navegador, sem internet — pode mandar ao cliente.', { duration: 7000 });
     } catch (err) {
       toast.error(await mensagemDeErro(err, 'Erro ao gerar o modelo 3D'), { duration: 9000 });

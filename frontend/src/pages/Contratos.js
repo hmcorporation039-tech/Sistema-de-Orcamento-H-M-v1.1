@@ -6,6 +6,7 @@ import { getContratos, criarContrato, atualizarContrato, removerContrato, getPre
 import api from '../services/api';
 import Paginacao from '../components/Paginacao';
 import { formatarMoeda, formatarData } from '../utils/format';
+import { baixarArquivo, mensagemDeErro } from '../utils/download';
 import Select from '../components/Select';
 import ObraSelect from '../components/ObraSelect';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -88,18 +89,12 @@ export default function Contratos() {
     const { id, prestador_nome, codigo_registro } = contrato;
     setBaixandoId(id);
     try {
-      const res = await api.get(`/contratos/${id}/pdf`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      // nome do servidor (com acento); o montado aqui é só a reserva
       const nomeArquivo = (prestador_nome || 'Contrato').trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_');
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = codigo_registro ? `Contrato_${nomeArquivo}_${codigo_registro}.pdf` : `Contrato_${nomeArquivo}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch {
-      toast.error('Erro ao gerar PDF do contrato');
+      const padrao = codigo_registro ? `Contrato_${nomeArquivo}_${codigo_registro}.pdf` : `Contrato_${nomeArquivo}.pdf`;
+      await baixarArquivo(api.get(`/contratos/${id}/pdf`, { responseType: 'blob' }), padrao);
+    } catch (err) {
+      toast.error(await mensagemDeErro(err, 'Erro ao gerar PDF do contrato'));
     } finally {
       setBaixandoId(null);
     }

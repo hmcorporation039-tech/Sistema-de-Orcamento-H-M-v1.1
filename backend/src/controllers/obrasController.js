@@ -438,7 +438,7 @@ async function pacoteDaPasta(req, res, next) {
     // os recebidos primeiro (o pacote aceita até 60 arquivos)
     const ordenados = [...todos.filter(a => !RE_GERADO_PELO_SISTEMA.test(a.rel)), ...todos.filter(a => RE_GERADO_PELO_SISTEMA.test(a.rel))];
     const recebidos = ordenados.map(a => ({ originalname: a.rel.split('/').pop(), path: require('path').join(dir, a.arquivo), caminho: a.rel }));
-    const pacote = await require('../services/pacotesProjeto').receberPacote(recebidos, req.usuario);
+    const pacote = await require('../services/pacotesProjeto').receberPacote(recebidos, req.usuario, { nomeSugerido: obra.nome });
     for (const it of pacote.arquivos) it.incluirSugerido = !RE_GERADO_PELO_SISTEMA.test(it.caminho);
     res.status(201).json({ ...pacote, pasta: dir });
   } catch (err) {

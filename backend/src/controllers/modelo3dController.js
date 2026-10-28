@@ -3,7 +3,7 @@
 const path = require('path');
 const pool = require('../config/database');
 const M = require('../services/modelo3d');
-const { cad } = require('../utils/disciplinasLaudo');
+const { lerArquiteturaNoWorker, mensagemDaLeitura } = require('../services/tarefasCad');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');
 const { registrarAuditoria } = require('../utils/auditoria');
 const P = require('../utils/pastasSistema');
@@ -104,9 +104,10 @@ async function enviarArquiteturaAnalise(req, res) {
     if (!arq) return res.status(400).json({ erro: 'Envie o arquivo da arquitetura (.dwg ou .dxf).' });
     const { rows: [analise] } = await pool.query('SELECT * FROM analises_projeto WHERE id = $1', [req.params.id]);
     if (!analise) return res.status(404).json({ erro: 'Análise não encontrada.' });
+    // conversão do DWG e leitura numa thread à parte (services/tarefasCad): na
+    // thread principal, um desenho grande travava o sistema para todos
     let texto, origem, leitura;
-    try { ({ texto, origem } = await cad().textoDxfDoArquivo(arq.buffer, arq.originalname)); } catch (e) { return res.status(400).json({ erro: e.message }); }
-    try { leitura = cad().lerArquitetura(texto); } catch (e) { return res.status(400).json({ erro: `Não consegui ler a arquitetura: ${e.message}` }); }
+    try { ({ texto, origem, leitura } = await lerArquiteturaNoWorker(arq.buffer, arq.originalname)); } catch (e) { return res.status(400).json({ erro: mensagemDaLeitura(e) }); }
     // mesmo formato de laudos_projetos_arquitetura: o projeto criado da análise copia esta linha
     const resumo = {
       ambientes: leitura.ambientes.map(x => ({ nome: x.nome, area_m2: x.area_m2, perimetro_m: x.perimetro_m, origem: x.origem })),

@@ -9,6 +9,7 @@ import {
 import api from '../services/api';
 import { formatarMoeda } from '../utils/format';
 import { arred2, arredQtd, totalDaLinha } from '../utils/dinheiro';
+import { baixarArquivo, mensagemDeErro } from '../utils/download';
 import { useAuth } from '../hooks/useAuth';
 import useAlteracoesNaoSalvas from '../hooks/useAlteracoesNaoSalvas';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
@@ -839,17 +840,13 @@ export default function Orcamento() {
     if (!idAtual) return;
     setGerandoPlanilha(true);
     try {
-      const res = await api.get(`/propostas/${idAtual}/planilha`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${form.cliente_nome.trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_')}_${numeroAtual}.xlsx`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch {
-      toast.error('Erro ao gerar a planilha');
+      // nome do servidor; o montado aqui é só a reserva
+      await baixarArquivo(
+        api.get(`/propostas/${idAtual}/planilha`, { responseType: 'blob' }),
+        `${form.cliente_nome.trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_')}_${numeroAtual}.xlsx`,
+      );
+    } catch (err) {
+      toast.error(await mensagemDeErro(err, 'Erro ao gerar a planilha'));
     } finally {
       setGerandoPlanilha(false);
     }
@@ -863,18 +860,11 @@ export default function Orcamento() {
       const params = {};
       if (anexosPdf.curva_abc) params.curva_abc = 1;
       if (anexosPdf.composicao_bdi) params.composicao_bdi = 1;
-      const res = await api.get(`/propostas/${idAtual}/pdf`, { responseType: 'blob', params });
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      const link = document.createElement('a');
-      link.href = url;
+      // nome do servidor (o mesmo da cópia nas pastas); o montado aqui é só a reserva
       const nomeCliente = form.cliente_nome.trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_');
-      link.download = `${nomeCliente}_${numeroAtual}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch {
-      toast.error('Erro ao gerar PDF');
+      await baixarArquivo(api.get(`/propostas/${idAtual}/pdf`, { responseType: 'blob', params }), `${nomeCliente}_${numeroAtual}.pdf`);
+    } catch (err) {
+      toast.error(await mensagemDeErro(err, 'Erro ao gerar PDF'));
     } finally {
       setGerandoPdf(false);
     }

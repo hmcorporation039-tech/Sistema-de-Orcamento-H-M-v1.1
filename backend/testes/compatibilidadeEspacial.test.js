@@ -145,5 +145,156 @@ const pt = (x, y, descricao, disciplina, classe) => ({ x, y, descricao, discipli
     await assert.rejects(Pacotes.receberPacote([{ originalname: 'foto.jpg', buffer: Buffer.from('x') }], { id: 1 }), /Nenhum PDF, DWG ou DXF/);
   });
 
+  // ── Robustez (revisão de segurança 2.3) ──────────────────────────────────
+  const { conflitosDeTracado } = require('../src/utils/compatibilidadeEspacial');
+  const tr = (arquivo, layer, disciplina, segmentos) => ({ arquivo, layer, disciplina, segmentos });
+
+  await caso('diagonal de 20 km: ignorada com aviso e em menos de 1 s (antes: varria a caixa inteira)', async () => {
+    const t0 = Date.now();
+    const r20 = conflitosDeTracado([
+      tr('ELE.dwg', 'ELETROCALHA', 'eletrica', [[0, 0, 14142, 14142]]),
+      tr('LOG.dwg', 'INFRA LOGICA', 'cabeamento', [[0, 0.1, 14142, 14142.1], [3, 3.9, 12, 3.9]]),
+    ], []);
+    assert.ok(Date.now() - t0 < 1000, `${Date.now() - t0} ms`);
+    assert.strictEqual(r20.longos.length, 2);
+    assert.strictEqual(r20.conflitos.length, 0);
+    // e no compatibilizar vira achado
+    const amb = salas();
+    const rc = compatibilizar([
+      { arquivo: 'ELE.dwg', disciplinas: ['eletrica'], espacial: { ambientes: amb, pontos: [], trechos: [{ layer: 'ELETROCALHA', segmentos: [[0, 0, 14142, 14142]] }] } },
+      { arquivo: 'LOG.dwg', disciplinas: ['cabeamento'], espacial: { ambientes: amb, pontos: [], trechos: [{ layer: 'INFRA LOGICA', segmentos: [[0, 0.1, 14142, 14142.1]] }] } },
+    ]);
+    assert.ok(Date.now() - t0 < 1000, `${Date.now() - t0} ms`);
+    assert.ok(rc.achados.some(a => a.tema === 'Traçados longos demais ignorados na compatibilização' && /ELETROCALHA/.test(a.observacao)), JSON.stringify(rc.achados));
+  });
+
+  await caso('diagonal de 990 m paralela a 10 cm: sobreposição medida e rápida', async () => {
+    const t0 = Date.now();
+    const L = 700; // 990 m de diagonal
+    const r = conflitosDeTracado([
+      tr('ELE.dwg', 'ELETROCALHA', 'eletrica', [[0, 0, L, L]]),
+      tr('LOG.dwg', 'INFRA LOGICA', 'cabeamento', [[0, 0.1, L, L + 0.1]]),
+    ], []);
+    assert.ok(Date.now() - t0 < 1000, `${Date.now() - t0} ms`);
+    assert.strictEqual(r.resumo.length, 1);
+    assert.ok(Math.abs(r.resumo[0].metros - L * Math.SQRT2) < 1, String(r.resumo[0].metros));
+    // a 1,5 m de distância não é o mesmo caminho
+    const longe = conflitosDeTracado([
+      tr('ELE.dwg', 'ELETROCALHA', 'eletrica', [[0, 0, L, L]]),
+      tr('LOG.dwg', 'INFRA LOGICA', 'cabeamento', [[0, 1.5, L, L + 1.5]]),
+    ], []);
+    assert.strictEqual(longe.resumo.length, 0);
+  });
+
+  const zipCom = async (arquivos) => {
+    const z = new JSZip();
+    for (const [nome, conteudo] of arquivos) z.file(nome, conteudo);
+    return z.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE', compressionOptions: { level: 1 } });
+  };
+  const DXF_MIN = '  0\nSECTION\n  2\nENTITIES\n  0\nENDSEC\n  0\nEOF\n';
+  const dono = { id: 999002, role: 'usuario' };
+
+  await caso('pacote: escolhas a mais, ids repetidos e id inexistente (tudo conferido antes de ler)', async () => {
+    const p = await Pacotes.receberPacote([{ originalname: 'p.zip', buffer: await zipCom([['A/ELE-01.dxf', DXF_MIN], ['A/LOG-01.dxf', DXF_MIN]]) }], dono);
+    const [a, b] = p.arquivos;
+    // mesmo id repetido: entra uma vez só (a primeira escolha vale)
+    const r = Pacotes.arquivosDoPacote(p.token, dono, [{ id: a.id, disciplinas: ['eletrica'] }, { id: a.id, disciplinas: ['cftv'] }]);
+    assert.strictEqual(r.length, 1);
+    assert.deepStrictEqual(r[0].disciplinas, ['eletrica']);
+    // mais escolhas que itens do pacote: 400 sem ler nada
+    assert.throws(() => Pacotes.arquivosDoPacote(p.token, dono, [{ id: a.id }, { id: b.id }, { id: a.id }]), (e) => e.status === 400 && /tem 2 \(máximo de 60\)/.test(e.message));
+    // milhares de repetições: recusado logo (antes lia o mesmo arquivo milhares de vezes)
+    assert.throws(() => Pacotes.arquivosDoPacote(p.token, dono, Array.from({ length: 5000 }, () => ({ id: a.id }))), (e) => e.status === 400);
+    // id que não existe, mesmo depois de um válido: 400
+    assert.throws(() => Pacotes.arquivosDoPacote(p.token, dono, [{ id: a.id }, { id: '999' }]), (e) => e.status === 400 && /999/.test(e.message));
+    Pacotes.descartarPacote(p.token, dono);
+  });
+
+  await caso('pacote: ZIP-bomba — entrada acima de 40 MB pelo tamanho declarado e extensão não aceita, sem descompactar', async () => {
+    const grande = Buffer.alloc(41 * 1024 * 1024); // zeros: comprime para quase nada
+    const buf = await zipCom([['ELE-01.dxf', DXF_MIN], ['GRANDE.dwg', grande], ['Planilha.xlsx', grande]]);
+    assert.ok(buf.length < 1024 * 1024, `zip de teste com ${buf.length} bytes`);
+    const p = await Pacotes.receberPacote([{ originalname: 'bomba.zip', buffer: buf }], dono);
+    assert.deepStrictEqual(p.arquivos.map(x => x.nome), ['ELE-01.dxf']);
+    const motivos = Object.fromEntries(p.ignorados.map(i => [i.nome, i.motivo]));
+    assert.strictEqual(motivos['bomba.zip/GRANDE.dwg'], 'acima de 40 MB');
+    assert.strictEqual(motivos['bomba.zip/Planilha.xlsx'], 'não é PDF, DWG nem DXF');
+    Pacotes.descartarPacote(p.token, dono);
+  });
+
+  await caso('pacote: soma declarada acima de 600 MB é recusada antes de descompactar', async () => {
+    // ZIP pequeno com o tamanho DECLARADO adulterado no índice central (39 MB
+    // cada): 16 × 39 MB = 624 MB. As 15 primeiras passam pelo limite por arquivo,
+    // o tamanho real não bate (o JSZip recusa: "corrompido") e a 16ª estoura a
+    // soma ANTES de ser descompactada.
+    const buf = await zipCom(Array.from({ length: 16 }, (_, i) => [`P-${i}.dwg`, 'AC1027']));
+    const fim = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+    let pos = buf.readUInt32LE(fim + 16);
+    for (let i = 0; i < buf.readUInt16LE(fim + 10); i++) {
+      assert.strictEqual(buf.readUInt32LE(pos), 0x02014b50);
+      buf.writeUInt32LE(39 * 1024 * 1024, pos + 24); // tamanho descompactado declarado
+      pos += 46 + buf.readUInt16LE(pos + 28) + buf.readUInt16LE(pos + 30) + buf.readUInt16LE(pos + 32);
+    }
+    await assert.rejects(Pacotes.receberPacote([{ originalname: 'enorme.zip', buffer: buf }], dono), (e) => e.status === 400 && /600 MB/.test(e.message));
+    // um só adulterado: vira "corrompido" nos ignorados, o resto do pacote segue
+    const um = await zipCom([['ELE-01.dxf', DXF_MIN], ['X.dwg', 'AC1027']]);
+    const f1 = um.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+    let p1 = um.readUInt32LE(f1 + 16);
+    p1 += 46 + um.readUInt16LE(p1 + 28) + um.readUInt16LE(p1 + 30) + um.readUInt16LE(p1 + 32);
+    um.writeUInt32LE(30 * 1024 * 1024, p1 + 24);
+    const p = await Pacotes.receberPacote([{ originalname: 'um.zip', buffer: um }], dono);
+    assert.deepStrictEqual(p.arquivos.map(x => x.nome), ['ELE-01.dxf']);
+    assert.deepStrictEqual(p.ignorados, [{ nome: 'um.zip/X.dwg', motivo: 'arquivo corrompido dentro do ZIP' }]);
+    Pacotes.descartarPacote(p.token, dono);
+    // o contrário: declara 1 KB e tem 30 MB — a descompactação para no que passar do declarado
+    const mente = await zipCom([['ELE-01.dxf', DXF_MIN], ['Y.dwg', Buffer.alloc(30 * 1024 * 1024)]]);
+    const f2 = mente.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+    let p2 = mente.readUInt32LE(f2 + 16);
+    p2 += 46 + mente.readUInt16LE(p2 + 28) + mente.readUInt16LE(p2 + 30) + mente.readUInt16LE(p2 + 32);
+    mente.writeUInt32LE(1024, p2 + 24);
+    const pm = await Pacotes.receberPacote([{ originalname: 'mente.zip', buffer: mente }], dono);
+    assert.deepStrictEqual(pm.arquivos.map(x => x.nome), ['ELE-01.dxf']);
+    assert.deepStrictEqual(pm.ignorados, [{ nome: 'mente.zip/Y.dwg', motivo: 'arquivo corrompido dentro do ZIP' }]);
+    Pacotes.descartarPacote(pm.token, dono);
+  });
+
+  await caso('pacote: arquivo em disco acima do limite é ignorado pelo tamanho, sem ler', async () => {
+    const fs = require('fs');
+    const os = require('os');
+    const pathM = require('path');
+    const dir = fs.mkdtempSync(pathM.join(os.tmpdir(), 'hm-teste-pacote-'));
+    try {
+      const grande = pathM.join(dir, 'grande.dwg');
+      // arquivo esparso: 41 MB de tamanho sem gravar 41 MB
+      const fd = fs.openSync(grande, 'w'); fs.ftruncateSync(fd, 41 * 1024 * 1024); fs.closeSync(fd);
+      const pequeno = pathM.join(dir, 'ELE-01.dxf');
+      fs.writeFileSync(pequeno, DXF_MIN);
+      const p = await Pacotes.receberPacote([{ originalname: 'grande.dwg', path: grande }, { originalname: 'ELE-01.dxf', path: pequeno }], dono);
+      assert.deepStrictEqual(p.arquivos.map(x => x.nome), ['ELE-01.dxf']);
+      assert.deepStrictEqual(p.ignorados, [{ nome: 'grande.dwg', motivo: 'acima de 40 MB' }]);
+      Pacotes.descartarPacote(p.token, dono);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  await caso('limpeza das pastas temporárias por idade (mais de 3 h)', async () => {
+    const fs = require('fs');
+    const os = require('os');
+    const pathM = require('path');
+    const dir = fs.mkdtempSync(pathM.join(os.tmpdir(), 'hm-teste-limpeza-'));
+    try {
+      const velho = pathM.join(dir, 'velho'); fs.mkdirSync(velho); fs.writeFileSync(pathM.join(velho, '1.bin'), 'x');
+      const novo = pathM.join(dir, 'novo.bin'); fs.writeFileSync(novo, 'x');
+      const quatroHoras = new Date(Date.now() - 4 * 3600 * 1000);
+      fs.utimesSync(velho, quatroHoras, quatroHoras);
+      assert.strictEqual(Pacotes.limparPastaPorIdade(dir), 1);
+      assert.ok(!fs.existsSync(velho) && fs.existsSync(novo));
+      // pasta que não existe: não quebra
+      assert.strictEqual(Pacotes.limparPastaPorIdade(pathM.join(dir, 'nao-existe')), 0);
+      // o relógio de 30 min não segura o processo (unref)
+      const relogio = Pacotes.agendarLimpezaTemporarios();
+      assert.strictEqual(relogio.hasRef(), false);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
   console.log(`compatibilidadeEspacial + pacote: ${ok} casos ok`);
 })().catch((e) => { console.error('FALHOU:', e); process.exit(1); });

@@ -47,7 +47,7 @@ class ErroRegra extends Error {}
 // ── leitura ─────────────────────────────────────────────────────────────
 const SQL_OS = `
   SELECT os.*, o.codigo AS obra_codigo, o.nome AS obra_nome, o.cliente_nome AS obra_cliente_nome, o.local AS obra_local,
-         o.usuario_id AS obra_usuario_id, o.pasta AS obra_pasta, u.nome AS responsavel_nome, c.nome AS criado_por_nome
+         o.usuario_id AS obra_usuario_id, o.pasta AS obra_pasta, o.pasta_base AS obra_pasta_base, u.nome AS responsavel_nome, c.nome AS criado_por_nome
     FROM ordens_servico os
     JOIN obras o ON o.id = os.obra_id
     LEFT JOIN usuarios u ON u.id = os.responsavel_id
@@ -149,17 +149,21 @@ async function gravarArquivoCampo(row, nomeArquivo, buffer) {
   return path.join(rel, nomeArquivo).split(path.sep).join('/');
 }
 
-// caminho absoluto de um arquivo gravado (relativo à pasta da obra), sem sair dela
-function caminhoArquivoCampo(obraPasta, rel) {
+// caminho absoluto de um arquivo gravado (relativo à pasta da obra), sem sair dela.
+// 2.3: obra na pasta do cliente (obraBase = "<cliente>/Obras", no servidor).
+function caminhoArquivoCampo(obraPasta, rel, obraBase = null) {
   if (!obraPasta || !rel) return null;
-  const dirObra = path.resolve(P.caminhoDe('obra', obraPasta));
+  const dirObra = path.resolve(obraBase ? path.join(P.RAIZ_CLIENTES_SERVIDOR, ...obraBase.split('/'), obraPasta) : P.caminhoDe('obra', obraPasta));
   const abs = path.resolve(dirObra, rel);
   return abs.startsWith(dirObra + path.sep) ? abs : null;
 }
 
+// servidor fora quando o arquivo foi gravado: ele está na reserva local (pastasSistema)
 async function lerArquivo(abs) {
   if (!abs) return null;
-  try { return await fsp.readFile(abs); } catch { return null; }
+  try { return await fsp.readFile(abs); } catch { /* tenta a reserva */ }
+  if (!abs.startsWith(path.resolve(P.RAIZ_CLIENTES_SERVIDOR))) return null;
+  try { return await fsp.readFile(path.join(P.RAIZ_CLIENTES_PENDENTE, path.relative(path.resolve(P.RAIZ_CLIENTES_SERVIDOR), abs))); } catch { return null; }
 }
 
 // ── modelos de checklist (checklistBase das skills + genérico) ──────────
@@ -410,7 +414,7 @@ async function remover(req, res, next) {
       return res.json({ cancelada: true, mensagem: `A OS ${r.row.numero} tem fotos ou assinatura: foi cancelada em vez de excluída (nada se perde).` });
     }
     // pasta Campo\<numero> vazia (sem fotos) sai junto; com algo dentro, fica
-    const dir = caminhoArquivoCampo(r.row.obra_pasta, pastaCampoRel(r.row));
+    const dir = caminhoArquivoCampo(r.row.obra_pasta, pastaCampoRel(r.row), r.row.obra_pasta_base);
     if (dir) await fsp.rmdir(dir).catch(() => {});
     res.json({ cancelada: false, mensagem: `OS ${r.row.numero} excluída.` });
   } catch (err) {
@@ -553,11 +557,11 @@ async function verFoto(req, res, next) {
   try {
     if (!C.uuidValido(req.params.uuid)) throw new ErroPedido(400, 'Identificador de foto inválido.');
     const { rows: [f] } = await pool.query(
-      `SELECT f.arquivo, f.tipo_mime, os.responsavel_id, o.usuario_id AS obra_usuario_id, o.pasta AS obra_pasta
+      `SELECT f.arquivo, f.tipo_mime, os.responsavel_id, o.usuario_id AS obra_usuario_id, o.pasta AS obra_pasta, o.pasta_base AS obra_pasta_base
          FROM os_fotos f JOIN ordens_servico os ON os.id = f.os_id JOIN obras o ON o.id = os.obra_id
         WHERE f.uuid = $1`, [C.normalizarUuid(req.params.uuid)]);
     if (!f || !podeVer(req.usuario, f)) throw new ErroPedido(404, 'Foto não encontrada.');
-    const buf = await lerArquivo(caminhoArquivoCampo(f.obra_pasta, f.arquivo));
+    const buf = await lerArquivo(caminhoArquivoCampo(f.obra_pasta, f.arquivo, f.obra_pasta_base));
     if (!buf) throw new ErroPedido(404, 'O arquivo da foto não está na pasta da obra.');
     res.set({ 'Content-Type': f.tipo_mime, 'Cache-Control': 'private, max-age=86400' });
     res.send(buf);
@@ -571,7 +575,7 @@ async function verAssinatura(req, res, next) {
   try {
     const row = await carregarOS(req.params.id, req.usuario);
     if (!row.assinatura_arquivo) throw new ErroPedido(404, 'Esta OS ainda não tem assinatura.');
-    const buf = await lerArquivo(caminhoArquivoCampo(row.obra_pasta, row.assinatura_arquivo));
+    const buf = await lerArquivo(caminhoArquivoCampo(row.obra_pasta, row.assinatura_arquivo, row.obra_pasta_base));
     if (!buf || !C.ehPng(buf)) throw new ErroPedido(404, 'O arquivo da assinatura não está na pasta da obra.');
     res.set({ 'Content-Type': 'image/png', 'Cache-Control': 'private, no-cache' });
     res.send(buf);
@@ -590,14 +594,14 @@ async function pdf(req, res, next) {
     let total = 0;
     for (const f of fotos) {
       if (f.tamanho > FOTO_PDF_MAX || total + f.tamanho > FOTOS_PDF_TOTAL) { imagens.set(f.uuid, null); continue; }
-      const buf = await lerArquivo(caminhoArquivoCampo(row.obra_pasta, f.arquivo));
+      const buf = await lerArquivo(caminhoArquivoCampo(row.obra_pasta, f.arquivo, row.obra_pasta_base));
       const tipo = buf && C.tipoImagem(buf);
       imagens.set(f.uuid, tipo ? `data:${tipo};base64,${buf.toString('base64')}` : null);
       if (tipo) total += buf.length;
     }
     let assinaturaUri = null;
     if (row.assinatura_arquivo) {
-      const buf = await lerArquivo(caminhoArquivoCampo(row.obra_pasta, row.assinatura_arquivo));
+      const buf = await lerArquivo(caminhoArquivoCampo(row.obra_pasta, row.assinatura_arquivo, row.obra_pasta_base));
       if (buf && C.ehPng(buf)) assinaturaUri = `data:image/png;base64,${buf.toString('base64')}`;
     }
     const html = gerarHtmlOS({ os, imagens, assinaturaUri, emitidoPor: req.usuario?.nome });

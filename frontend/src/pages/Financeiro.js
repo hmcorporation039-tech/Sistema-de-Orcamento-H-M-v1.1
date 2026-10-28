@@ -8,6 +8,7 @@ import {
 } from '../services/api';
 import api from '../services/api';
 import { formatarMoeda } from '../utils/format';
+import { salvarBlob, mensagemDeErro } from '../utils/download';
 import Select from '../components/Select';
 import ObraSelect from '../components/ObraSelect';
 import { Link } from 'react-router-dom';
@@ -201,16 +202,11 @@ export default function Financeiro() {
       if (obraFiltro) params.obraId = obraFiltro;
 
       const res = await api.get('/financeiro/movimentos/csv', { params, responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Financeiro_Pix_${dataInicio}_a_${dataFim}.csv`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch {
-      toast.error('Erro ao exportar CSV');
+      // o nome daqui (com o período) diz mais que o genérico do servidor
+      // ("financeiro-pix.csv"), então ele continua valendo
+      salvarBlob(res.data, `Financeiro_Pix_${dataInicio}_a_${dataFim}.csv`);
+    } catch (err) {
+      toast.error(await mensagemDeErro(err, 'Erro ao exportar CSV'));
     } finally {
       setExportando(false);
     }

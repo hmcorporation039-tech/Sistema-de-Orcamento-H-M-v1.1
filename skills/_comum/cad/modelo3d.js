@@ -17,7 +17,7 @@
 //     1,10 m, alta 2,20 m, interruptor 1,10 m, luminária/detector no teto,
 //     câmera no alto do canto etc.), encostados na face da parede mais próxima.
 // Coordenadas em metros, relativas ao centro da região do modelo (origem).
-const { dentro, centroide, perimetro, RE_PAREDE, RE_NAO_PAREDE } = require('./arquitetura');
+const { dentro, centroide, perimetro, distanciaContorno, RE_PAREDE, RE_NAO_PAREDE } = require('./arquitetura');
 const { tipoDoAmbiente, ehAmbienteValido } = require('./estimativaArquitetura');
 const { SIMBOLOS } = require('./simbolos');
 
@@ -26,6 +26,9 @@ const PE_DIREITO_PADRAO = 2.8;
 const ALTURA_PORTA = 2.1;
 const PEITORIL = 1.1;
 const TOPO_JANELA = 2.1;
+// parede desenhada em linha simples: espessura de desenho (alvenaria comum),
+// para que a parede tenha corpo e o topo escuro apareça na vista de cima
+const ESPESSURA_MIN_DESENHO = 0.15;
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
@@ -248,12 +251,13 @@ function extrairElementos(arquitetura, caixa, peDireito) {
         if (!B.par) B.par = { esp, lado: -1 };
       }
       // sobras: trecho curto de uma face já pareada (canto, encontro de paredes)
-      // ganha a espessura dela; linha solta vira parede fina
+      // ganha a espessura dela; linha solta (planta em linha simples) vira parede
+      // com a espessura mínima de desenho — com 10 cm ela some na vista geral
       for (const l of linhas) {
         for (const [a, b] of l.rest) {
           if (b - a < 0.05) continue;
           if (l.par && b - a <= 1.2) add(a, b, l.d + (l.par.lado * l.par.esp) / 2, l.par.esp);
-          else add(a, b, l.d, c === 'guarda' ? 0.05 : 0.1);
+          else add(a, b, l.d, c === 'guarda' ? 0.05 : ESPESSURA_MIN_DESENHO);
         }
       }
     }
@@ -322,31 +326,69 @@ function extrairElementos(arquitetura, caixa, peDireito) {
 }
 
 // ── Dispositivos ────────────────────────────────────────────────────────────
-// altura de instalação típica (m) ou montagem: teto, canto (alto do canto),
-// topo-porta (acima do vão), piso
+// altura de instalação típica (m, no CENTRO do aparelho) ou montagem: teto,
+// canto (alto do canto), topo-porta (acima do vão), piso.
+// forma: desenho no visualizador (./visualizador3d/app.js, FORMAS); tam:
+// [largura, altura, profundidade] em m. Os pequenos são um pouco EXAGERADOS
+// (tomada 4×2 real: 7,5 × 12 cm → 10 × 16 cm) e iguais por tipo, para que o
+// cliente reconheça a peça de perto; de longe o visualizador ainda os aumenta
+// pela distância da câmera (tamanho mínimo na tela).
+const TAM_FORMA = {
+  tomada: [0.10, 0.16, 0.03], interruptor: [0.10, 0.16, 0.03], rede: [0.10, 0.16, 0.03], coaxial: [0.10, 0.16, 0.03],
+  quadro: [0.60, 0.80, 0.15], rack: [0.60, 0.60, 0.45], caixa: [0.18, 0.18, 0.07], teclado: [0.13, 0.17, 0.04],
+  acionador: [0.13, 0.13, 0.06], sirene: [0.14, 0.14, 0.09], barra: [0.30, 0.06, 0.05], emergencia: [0.34, 0.10, 0.06],
+  wallbox: [0.26, 0.38, 0.13], luminaria: [0.62, 0.62, 0.06], 'ponto-luz': [0.26, 0.26, 0.10], detector: [0.16, 0.16, 0.07],
+  sensor: [0.13, 0.13, 0.06], ap: [0.22, 0.22, 0.045], camera: [0.11, 0.11, 0.32], dome: [0.15, 0.15, 0.10],
+  'sensor-canto': [0.08, 0.13, 0.07], catraca: [0.30, 1.00, 0.80],
+};
+// formas de parede que vão ENCOSTADAS na parede mais próxima mesmo quando o
+// símbolo da planta está longe dela (quadro no meio da sala vira quadro na parede)
+const FORMAS_DE_PAREDE = new Set(['quadro', 'rack', 'caixa', 'teclado', 'acionador', 'sirene', 'emergencia', 'wallbox']);
 const ESPEC = {
   'HM-ELE-TOMADA-BAIXA': { h: 0.3, forma: 'tomada' }, 'HM-ELE-TOMADA-MEDIA': { h: 1.1, forma: 'tomada' }, 'HM-ELE-TOMADA-ALTA': { h: 2.2, forma: 'tomada' },
   'HM-ELE-TUE': { h: 1.1, hMolhado: 2.2, forma: 'tomada' }, 'HM-ELE-PONTO-LUZ': { h: 'teto', forma: 'ponto-luz' },
-  'HM-ELE-INTERRUPTOR': { h: 1.1, forma: 'interruptor' }, 'HM-ELE-QUADRO': { h: 1.5, forma: 'quadro' },
+  'HM-ELE-INTERRUPTOR': { h: 1.1, forma: 'interruptor' }, 'HM-ELE-QUADRO': { h: 1.5, forma: 'quadro', tam: [0.60, 0.80, 0.15] },
   'HM-ILU-LUMINARIA': { h: 'teto', forma: 'luminaria' }, 'HM-ILU-SENSOR': { h: 'teto', forma: 'sensor' }, 'HM-ILU-COMANDO': { h: 1.1, forma: 'interruptor' },
-  'HM-HOSP-TOMADA-IT': { h: 1.1, forma: 'tomada' }, 'HM-HOSP-BEL': { h: 0.3, forma: 'caixa' }, 'HM-HOSP-PAINEL-ALARME': { h: 1.5, forma: 'caixa' },
-  'HM-CAB-PONTO-REDE': { h: 0.3, forma: 'tomada' }, 'HM-CAB-AP': { h: 'teto', forma: 'sensor' }, 'HM-CAB-RACK': { h: 1.6, forma: 'rack' },
-  'HM-TEL-PONTO': { h: 1.4, forma: 'tomada' }, 'HM-TEL-PORTEIRO': { h: 1.4, forma: 'caixa' }, 'HM-TEL-DG': { h: 1.5, forma: 'quadro' },
-  'HM-ANT-PONTO': { h: 0.3, forma: 'tomada' }, 'HM-ANT-SAT': { h: 0.3, forma: 'tomada' },
+  'HM-HOSP-TOMADA-IT': { h: 1.1, forma: 'tomada' }, 'HM-HOSP-BEL': { h: 0.3, forma: 'caixa', tam: [0.20, 0.15, 0.07] }, 'HM-HOSP-PAINEL-ALARME': { h: 1.5, forma: 'teclado', tam: [0.24, 0.18, 0.06] },
+  'HM-CAB-PONTO-REDE': { h: 0.3, forma: 'rede' }, 'HM-CAB-AP': { h: 'teto', forma: 'ap' }, 'HM-CAB-RACK': { h: 1.6, forma: 'rack' },
+  'HM-TEL-PONTO': { h: 1.4, forma: 'rede' }, 'HM-TEL-PORTEIRO': { h: 1.4, forma: 'teclado' }, 'HM-TEL-DG': { h: 1.5, forma: 'quadro', tam: [0.50, 0.60, 0.15] },
+  'HM-ANT-PONTO': { h: 0.3, forma: 'coaxial' }, 'HM-ANT-SAT': { h: 0.3, forma: 'coaxial' },
   'HM-CFTV-CAMERA': { h: 'canto', forma: 'camera' },
-  'HM-ACE-LEITOR': { h: 1.1, forma: 'interruptor' }, 'HM-ACE-FECHADURA': { h: 'topo-porta', forma: 'barra' }, 'HM-ACE-SENSOR': { h: 'topo-porta', forma: 'barra' },
-  'HM-ACE-BOTOEIRA': { h: 1.1, forma: 'interruptor' }, 'HM-ACE-EMERGENCIA': { h: 1.2, forma: 'interruptor' }, 'HM-ACE-CONTROLADORA': { h: 2.0, forma: 'caixa' }, 'HM-ACE-CATRACA': { h: 'piso', forma: 'catraca' },
-  'HM-ALM-IVP': { h: 'canto', forma: 'sensor-canto' }, 'HM-ALM-MAGNETICO': { h: 'topo-porta', forma: 'barra' }, 'HM-ALM-SIRENE': { h: 2.4, forma: 'caixa' },
-  'HM-ALM-TECLADO': { h: 1.4, forma: 'caixa' }, 'HM-ALM-CENTRAL': { h: 1.6, forma: 'quadro' },
-  'HM-INC-DETECTOR-FUMACA': { h: 'teto', forma: 'detector' }, 'HM-INC-DETECTOR-TEMP': { h: 'teto', forma: 'detector' }, 'HM-INC-ACIONADOR': { h: 1.2, forma: 'caixa' },
-  'HM-INC-AVISADOR': { h: 2.3, forma: 'caixa' }, 'HM-INC-CENTRAL': { h: 1.5, forma: 'quadro' }, 'HM-INC-EMERGENCIA': { h: 2.2, forma: 'barra' },
+  'HM-ACE-LEITOR': { h: 1.1, forma: 'teclado', tam: [0.09, 0.14, 0.04] }, 'HM-ACE-FECHADURA': { h: 'topo-porta', forma: 'barra' }, 'HM-ACE-SENSOR': { h: 'topo-porta', forma: 'barra', tam: [0.12, 0.04, 0.03] },
+  'HM-ACE-BOTOEIRA': { h: 1.1, forma: 'interruptor' }, 'HM-ACE-EMERGENCIA': { h: 1.2, forma: 'acionador' }, 'HM-ACE-CONTROLADORA': { h: 2.0, forma: 'caixa', tam: [0.30, 0.30, 0.09] }, 'HM-ACE-CATRACA': { h: 'piso', forma: 'catraca' },
+  'HM-ALM-IVP': { h: 'canto', forma: 'sensor-canto' }, 'HM-ALM-MAGNETICO': { h: 'topo-porta', forma: 'barra', tam: [0.10, 0.03, 0.03] }, 'HM-ALM-SIRENE': { h: 2.4, forma: 'sirene' },
+  'HM-ALM-TECLADO': { h: 1.4, forma: 'teclado' }, 'HM-ALM-CENTRAL': { h: 1.6, forma: 'quadro', tam: [0.35, 0.40, 0.10] },
+  'HM-INC-DETECTOR-FUMACA': { h: 'teto', forma: 'detector' }, 'HM-INC-DETECTOR-TEMP': { h: 'teto', forma: 'detector' }, 'HM-INC-ACIONADOR': { h: 1.2, forma: 'acionador' },
+  'HM-INC-AVISADOR': { h: 2.3, forma: 'sirene' }, 'HM-INC-CENTRAL': { h: 1.5, forma: 'quadro', tam: [0.45, 0.55, 0.15] }, 'HM-INC-EMERGENCIA': { h: 2.2, forma: 'emergencia' },
+  'HM-AUT-CONTROLADOR': { h: 1.5, forma: 'quadro', tam: [0.50, 0.60, 0.15] }, 'HM-AUT-SENSOR': { h: 1.5, forma: 'caixa', tam: [0.09, 0.12, 0.04] },
+  'HM-SOL-INVERSOR': { h: 1.5, forma: 'quadro', tam: [0.45, 0.60, 0.20] }, 'HM-VE-CARREGADOR': { h: 1.2, forma: 'wallbox' },
+  // SPDA: o modelo não tem cobertura — captor fica no forro e a descida na parede, só para localizar
+  'HM-SPDA-CAIXA-INSPECAO': { h: 'piso', forma: 'caixa', tam: [0.30, 0.30, 0.05] }, 'HM-SPDA-CAPTOR': { h: 'teto', forma: 'barra', tam: [0.04, 0.04, 0.35] },
+  'HM-SPDA-DESCIDA': { h: 1.5, forma: 'barra', tam: [0.03, 0.40, 0.03] },
 };
+const ESPEC_PADRAO = { h: 1.1, forma: 'caixa' };
+// especificação completa (com o tamanho da forma quando o símbolo não traz o seu)
+const espec = (simbolo) => { const e = ESPEC[simbolo] || ESPEC_PADRAO; return { ...e, tam: e.tam || TAM_FORMA[e.forma] || TAM_FORMA.caixa }; };
 const DISCIPLINAS = {
   eletrica: { rotulo: 'Elétrica', cor: '#ff9f43' }, iluminacao: { rotulo: 'Iluminação', cor: '#ffe27a' }, rede: { rotulo: 'Rede (cabeamento)', cor: '#4fa3ff' },
   cftv: { rotulo: 'CFTV', cor: '#ff5c8a' }, incendio: { rotulo: 'Incêndio', cor: '#ff4b3e' }, alarme: { rotulo: 'Alarme', cor: '#b388ff' },
   'controle-acesso': { rotulo: 'Controle de acesso', cor: '#5ee38a' }, telefonia: { rotulo: 'Telefonia', cor: '#c49a6c' }, antena: { rotulo: 'Antena / TV', cor: '#3fd0c0' },
+  automacao: { rotulo: 'Automação', cor: '#7fe0ff' }, solar: { rotulo: 'Solar', cor: '#f6c90e' }, veicular: { rotulo: 'Recarga veicular', cor: '#a4e05a' }, spda: { rotulo: 'SPDA', cor: '#bfc5cc' },
 };
-const disciplinaDoSimbolo = (s) => ({ ELE: 'eletrica', ILU: 'iluminacao', CAB: 'rede', CFTV: 'cftv', INC: 'incendio', ALM: 'alarme', ACE: 'controle-acesso', TEL: 'telefonia', ANT: 'antena', HOSP: 'eletrica' })[s.split('-')[1]] || 'outros';
+const disciplinaDoSimbolo = (s) => ({ ELE: 'eletrica', ILU: 'iluminacao', CAB: 'rede', CFTV: 'cftv', INC: 'incendio', ALM: 'alarme', ACE: 'controle-acesso', TEL: 'telefonia', ANT: 'antena', HOSP: 'eletrica', AUT: 'automacao', SOL: 'solar', VE: 'veicular', SPDA: 'spda' })[s.split('-')[1]] || 'outros';
+
+// ── Infraestrutura (eletrocalhas, eletrodutos, leitos, perfilados, fiação) ───
+// seção [largura, altura] em m e quanto fica abaixo do teto (centro da seção):
+// a eletrocalha passa a 30 cm do teto (espaço para lançar os cabos por cima)
+const TRECHOS = {
+  eletrocalha: { rotulo: 'Eletrocalha', secao: [0.10, 0.05], desce: 0.30, forma: 'caixa' },
+  leito: { rotulo: 'Leito para cabos', secao: [0.30, 0.06], desce: 0.35, forma: 'caixa' },
+  perfilado: { rotulo: 'Perfilado', secao: [0.038, 0.038], desce: 0.22, forma: 'caixa' },
+  eletroduto: { rotulo: 'Eletroduto', secao: [0.032, 0.032], desce: 0.15, forma: 'tubo' },
+  fiacao: { rotulo: 'Fiação / cabos', secao: [0.012, 0.012], desce: 0.10, forma: 'linha' },
+};
+// acima disso a página fica pesada no celular: ficam os segmentos mais longos
+const LIMITE_SEGMENTOS = 20000;
 
 // variação de tom por tipo dentro da disciplina (o 1º tipo fica com a cor da disciplina)
 function tom(hex, k) {
@@ -358,24 +400,41 @@ function tom(hex, k) {
 }
 const alturaTexto = (e, pd) => (typeof e.h === 'number' ? `h = ${String(e.h.toFixed(2)).replace('.', ',')} m` : { teto: `no teto (${String(pd.toFixed(2)).replace('.', ',')} m)`, canto: 'no alto do canto', 'topo-porta': 'acima da porta', piso: 'no piso' }[e.h]);
 
-// face de parede mais próxima (até 0,8 m): o ponto encosta nela, virado para o ambiente
-function encostar(x, y, z, faces) {
-  let melhor = null;
-  for (const w of faces) {
-    if (z > w.z1 + 0.05 || z < w.z0 - 0.05) continue;
-    const v = [w.b[0] - w.a[0], w.b[1] - w.a[1]], L2 = v[0] * v[0] + v[1] * v[1];
-    if (L2 < 1e-6) continue;
-    const t = Math.max(0, Math.min(1, ((x - w.a[0]) * v[0] + (y - w.a[1]) * v[1]) / L2));
-    const q = [w.a[0] + v[0] * t, w.a[1] + v[1] * t];
-    const d = Math.hypot(x - q[0], y - q[1]);
-    if (d < 0.8 && (!melhor || d - w.esp / 2 < melhor.d - melhor.w.esp / 2)) melhor = { w, q, d };
-  }
-  if (!melhor) return null;
-  let nx = x - melhor.q[0], ny = y - melhor.q[1];
-  const L = Math.hypot(nx, ny);
-  if (L < 1e-6) { const v = [melhor.w.b[0] - melhor.w.a[0], melhor.w.b[1] - melhor.w.a[1]]; const Lv = Math.hypot(...v); [nx, ny] = [-v[1] / Lv, v[0] / Lv]; } else { nx /= L; ny /= L; }
-  const off = melhor.w.esp / 2 + 0.03;
-  return { x: melhor.q[0] + nx * off, y: melhor.q[1] + ny * off, nx, ny };
+// face de parede mais próxima (até `raio`): o ponto encosta nela, virado para o
+// ambiente. Com `largura`/`altura` (quadro, rack) a parede precisa caber a peça
+// inteira — não fica metade no vão da porta nem em cima do peitoril da janela —
+// e, com `poligono`, a peça tem de cair dentro do ambiente do símbolo.
+// O fundo da peça fica a 1 cm da face (no visualizador o fundo é o plano z = 0).
+function encostar(x, y, z, faces, { raio = 0.8, largura = 0, altura = 0, poligono = null } = {}) {
+  const tentar = (estrito) => {
+    const cand = [];
+    for (const w of faces) {
+      const meia = estrito ? altura / 2 : 0;
+      if (z + meia > w.z1 + 0.05 || z - meia < w.z0 - 0.05) continue;
+      const v = [w.b[0] - w.a[0], w.b[1] - w.a[1]], L2 = v[0] * v[0] + v[1] * v[1];
+      if (L2 < 1e-6) continue;
+      const L = Math.sqrt(L2);
+      if (estrito && largura && L < largura) continue;
+      const m = estrito && largura ? largura / 2 / L : 0;
+      const t = Math.max(m, Math.min(1 - m, ((x - w.a[0]) * v[0] + (y - w.a[1]) * v[1]) / L2));
+      const q = [w.a[0] + v[0] * t, w.a[1] + v[1] * t];
+      const d = Math.hypot(x - q[0], y - q[1]);
+      if (d < raio) cand.push({ w, q, d, v, L });
+    }
+    cand.sort((p, q) => (p.d - p.w.esp / 2) - (q.d - q.w.esp / 2));
+    for (const c of cand) {
+      let nx = x - c.q[0], ny = y - c.q[1];
+      const Ln = Math.hypot(nx, ny);
+      // símbolo em cima da linha da parede: lado esquerdo do segmento
+      if (Ln < 1e-6) [nx, ny] = [-c.v[1] / c.L, c.v[0] / c.L]; else { nx /= Ln; ny /= Ln; }
+      const off = c.w.esp / 2 + 0.01;
+      const p = { x: c.q[0] + nx * off, y: c.q[1] + ny * off, nx, ny };
+      if (estrito && poligono && !dentro([p.x, p.y], poligono) && distanciaContorno([p.x, p.y], poligono) > 0.1) continue;
+      return p;
+    }
+    return null;
+  };
+  return tentar(true) || ((largura || altura || poligono) ? tentar(false) : null);
 }
 
 // Recorte de polígono (qualquer) por um polígono CONVEXO (Sutherland–Hodgman)
@@ -411,10 +470,11 @@ function campoNoPiso(p, dir, alcance, pol, abertura = 90) {
 }
 
 function posicionar3d(d, faces, peDireito) {
-  const e = ESPEC[d.simbolo] || { h: 1.1, forma: 'caixa' };
+  const e = espec(d.simbolo);
   const pol = d.poligono;
   const c = pol ? centroide(pol) : [d.x, d.y];
-  if (e.h === 'teto') return { x: d.x, y: d.y, z: peDireito - 0.03, nx: 0, ny: 0 };
+  // no teto: o fundo da peça encosta no forro (o visualizador desenha para baixo)
+  if (e.h === 'teto') return { x: d.x, y: d.y, z: r2(peDireito - 0.01), nx: 0, ny: 0 };
   if (e.h === 'piso') return { x: d.x, y: d.y, z: 0, nx: 0, ny: 0 };
   if (e.h === 'canto') {
     // vértice do ambiente mais próximo do ponto da planta → no alto, olhando para o centro
@@ -429,17 +489,88 @@ function posicionar3d(d, faces, peDireito) {
     const z = ivp ? Math.min(2.4, peDireito - 0.2) : peDireito - 0.25;
     return { x: p[0], y: p[1], z, nx: dx, ny: dy, campo: campoNoPiso(p, [dx, dy], alcance, pol) };
   }
-  let z = e.h === 'topo-porta' ? Math.min(ALTURA_PORTA + 0.08, peDireito - 0.08) : Math.min(e.h, peDireito - 0.1);
-  if (e.hMolhado && /BANH|W\.?\s?C|SANIT|LAVABO/i.test(d.ambiente)) z = Math.min(e.hMolhado, peDireito - 0.1);
-  const enc = encostar(d.x, d.y, z, faces);
+  // z é o centro da peça: quadro alto não passa do forro
+  const teto = peDireito - Math.max(0.1, e.tam[1] / 2 + 0.05);
+  let z = e.h === 'topo-porta' ? Math.min(ALTURA_PORTA + 0.08, peDireito - 0.08) : Math.min(e.h, teto);
+  if (e.hMolhado && /BANH|W\.?\s?C|SANIT|LAVABO/i.test(d.ambiente)) z = Math.min(e.hMolhado, teto);
+  const deParede = FORMAS_DE_PAREDE.has(e.forma);
+  const enc = encostar(d.x, d.y, z, faces, deParede ? { raio: 3, largura: e.tam[0], altura: e.tam[1], poligono: pol } : { altura: e.tam[1] });
   if (enc) return { ...enc, z };
   // sem parede por perto: ponto da planta, virado para o centro do ambiente
   const dx = c[0] - d.x, dy = c[1] - d.y, L = Math.hypot(dx, dy) || 1;
   return { x: d.x, y: d.y, z, nx: dx / L, ny: dy / L };
 }
 
+// Trechos de infraestrutura → cena. Entrada (opcoes.trechos): [{ disciplina,
+// tipo: 'eletrocalha'|'eletroduto'|'leito'|'perfilado'|'fiacao', layer,
+// segmentos: [[x1, y1, x2, y2], …], altura? }] em metros, no MESMO sistema da
+// arquitetura lida por lerArquitetura (antes da translação da cena: P() leva
+// para a origem do modelo). Saída: um grupo por disciplina + tipo, com os
+// segmentos achatados [x1, y1, x2, y2, …], a altura do centro da seção e o
+// comprimento total (contado com TODOS os segmentos da região, mesmo quando o
+// desenho é limitado aos LIMITE_SEGMENTOS mais longos).
+function montarInfra(trechos, P, caixa, peDireito, avisos) {
+  const regiao = expandir(caixa, 2);
+  const grupos = new Map();
+  const todos = [];
+  for (const t of Array.isArray(trechos) ? trechos : []) {
+    if (!t || !Array.isArray(t.segmentos)) continue;
+    const tipo = TRECHOS[t.tipo] ? t.tipo : 'eletroduto';
+    const e = TRECHOS[tipo];
+    const disc = t.disciplina === 'cabeamento' ? 'rede' : (t.disciplina || 'eletrica');
+    const z = Number.isFinite(Number(t.altura)) && Number(t.altura) > 0 ? Math.min(Number(t.altura), peDireito - e.secao[1] / 2) : Math.max(0.1, peDireito - e.desce);
+    const chave = `${disc}|${tipo}|${r2(z)}`;
+    let g = grupos.get(chave);
+    if (!g) {
+      g = { disciplina: disc, tipo, rotulo: e.rotulo, forma: e.forma, secao: e.secao, z: r2(z), layers: [], comprimento: 0, n: 0, segs: [] };
+      grupos.set(chave, g);
+    }
+    if (t.layer && !g.layers.includes(String(t.layer))) g.layers.push(String(t.layer));
+    for (const s of t.segmentos) {
+      if (!Array.isArray(s) || s.length < 4) continue;
+      const [x1, y1, x2, y2] = s.map(Number);
+      if (![x1, y1, x2, y2].every(Number.isFinite)) continue;
+      const L = Math.hypot(x2 - x1, y2 - y1);
+      if (L < 0.01) continue;
+      if (!naCaixa(regiao, [x1, y1]) && !naCaixa(regiao, [x2, y2]) && !naCaixa(regiao, [(x1 + x2) / 2, (y1 + y2) / 2])) continue;
+      g.comprimento += L; g.n++;
+      const seg = { g, L, p: [...P([x1, y1]), ...P([x2, y2])] };
+      g.segs.push(seg); todos.push(seg);
+    }
+  }
+  if (todos.length > LIMITE_SEGMENTOS) {
+    const ficam = new Set(todos.sort((a, b) => b.L - a.L).slice(0, LIMITE_SEGMENTOS));
+    for (const g of grupos.values()) g.segs = g.segs.filter(s => ficam.has(s));
+    avisos.push(`Infraestrutura com ${todos.length.toLocaleString('pt-BR')} segmentos: o 3D desenha os ${LIMITE_SEGMENTOS.toLocaleString('pt-BR')} mais longos (o comprimento total conta todos).`);
+  }
+  return [...grupos.values()].filter(g => g.n).map(g => ({
+    disciplina: g.disciplina, tipo: g.tipo, rotulo: g.rotulo, forma: g.forma, secao: g.secao, z: g.z, layers: g.layers,
+    cor: (DISCIPLINAS[g.disciplina] || { cor: '#dddddd' }).cor,
+    comprimento_m: Math.round(g.comprimento * 10) / 10, segmentos_total: g.n,
+    segmentos: g.segs.flatMap(s => s.p),
+  }));
+}
+
+// Quadro, rack e central de disciplinas diferentes costumam cair no MESMO ponto
+// da parede (cada estimativa escolhe a sala técnica): lado a lado, com 10 cm
+// de folga, em vez de um dentro do outro. `p` é ajustado no lugar.
+function afastarDosVizinhos(p, tam, postos) {
+  const tx = -p.ny, ty = p.nx; // direção ao longo da parede
+  for (let k = 0; k < 8; k++) {
+    const viz = postos.find(q => q.nx * p.nx + q.ny * p.ny > 0.9 && Math.abs((p.x - q.x) * p.nx + (p.y - q.y) * p.ny) < 0.15
+      && Math.abs(p.z - q.z) < (tam[1] + q.tam[1]) / 2 && Math.abs((p.x - q.x) * tx + (p.y - q.y) * ty) < (tam[0] + q.tam[0]) / 2 + 0.1);
+    if (!viz) break;
+    const ao = (p.x - viz.x) * tx + (p.y - viz.y) * ty;
+    const passo = (tam[0] + viz.tam[0]) / 2 + 0.1 - Math.abs(ao);
+    const s = ao >= 0 ? 1 : -1;
+    p.x += tx * s * (passo + 0.001); p.y += ty * s * (passo + 0.001);
+  }
+  postos.push({ x: p.x, y: p.y, z: p.z, nx: p.nx, ny: p.ny, tam });
+}
+
 // ── Cena ────────────────────────────────────────────────────────────────────
-// opcoes: { peDireito, dispositivos (de pontosDasDisciplinas), titulo, cliente, obra, proposta, avisos }
+// opcoes: { peDireito, dispositivos (de pontosDasDisciplinas), trechos (ver
+// montarInfra), titulo, cliente, obra, proposta, avisos }
 function montarCena(arquitetura, opcoes = {}) {
   const peDireito = Number(opcoes.peDireito) > 1.5 ? Number(opcoes.peDireito) : PE_DIREITO_PADRAO;
   const { caixa, ambientes } = regiaoDoModelo(arquitetura);
@@ -456,19 +587,24 @@ function montarCena(arquitetura, opcoes = {}) {
   const faces = el.paredes.filter(w => w.classe !== 'guarda');
   const tipos = new Map();
   const porDisc = {};
+  const grandes = []; // quadros, racks e centrais já postos (para não sobrepor)
+  const indiceAmb = new Map();
+  ambs.forEach((a, i) => { if (!indiceAmb.has(a.nome)) indiceAmb.set(a.nome, i); });
   for (const d of opcoes.dispositivos || []) {
     if (!naCaixa(expandir(caixa, 1), [d.x, d.y])) continue;
     const disc = d.disciplina || disciplinaDoSimbolo(d.simbolo);
     let t = tipos.get(d.simbolo);
     if (!t) {
-      const e = ESPEC[d.simbolo] || { h: 1.1, forma: 'caixa' };
+      const e = espec(d.simbolo);
       const k = (porDisc[disc] = (porDisc[disc] ?? -1) + 1);
-      t = { simbolo: d.simbolo, disciplina: disc, rotulo: (SIMBOLOS[d.simbolo]?.legenda || d.simbolo).replace(/\s*\(h = [^)]*\)/, ''), forma: e.forma, altura: alturaTexto(e, peDireito), cor: tom((DISCIPLINAS[disc] || { cor: '#dddddd' }).cor, k), itens: [] };
+      // tam e montagem: o visualizador desenha a peça no tamanho e na posição (parede/teto/canto) certos
+      t = { simbolo: d.simbolo, disciplina: disc, rotulo: (SIMBOLOS[d.simbolo]?.legenda || d.simbolo).replace(/\s*\(h = [^)]*\)/, ''), forma: e.forma, tam: e.tam, montagem: typeof e.h === 'number' ? 'parede' : e.h, altura: alturaTexto(e, peDireito), cor: tom((DISCIPLINAS[disc] || { cor: '#dddddd' }).cor, k), itens: [] };
       tipos.set(d.simbolo, t);
     }
     const p = posicionar3d(d, faces, peDireito);
+    if (FORMAS_DE_PAREDE.has(t.forma)) afastarDosVizinhos(p, t.tam, grandes);
     const [x, y] = P([p.x, p.y]);
-    const amb = ambs.findIndex(a => a.nome === d.ambiente);
+    const amb = indiceAmb.has(d.ambiente) ? indiceAmb.get(d.ambiente) : -1;
     t.itens.push([x, y, r2(p.z), r2(p.nx), r2(p.ny), amb, d.id || '', ...(p.campo ? [p.campo.map(P).flat()] : [])]);
   }
 
@@ -476,6 +612,8 @@ function montarCena(arquitetura, opcoes = {}) {
   const caixaInt = internos.length ? internos.map(a => caixaDe(a.poligono)).reduce(uniao) : [0, 0, 0, 0];
   const compParedes = el.paredes.filter(w => w.classe === 'parede').reduce((s, w) => s + dist(w.a, w.b), 0);
   const listaTipos = [...tipos.values()];
+  const avisos = [...(opcoes.avisos || [])];
+  const infra = montarInfra(opcoes.trechos, P, caixa, peDireito, avisos);
   const numeros = {
     area_interna_m2: r2(internos.reduce((s, a) => s + a.area_m2, 0)),
     area_externa_m2: r2(ambs.filter(a => a.tipo === 'externo').reduce((s, a) => s + a.area_m2, 0)),
@@ -489,12 +627,13 @@ function montarCena(arquitetura, opcoes = {}) {
     janelas: el.janelas.length,
     pilares: el.pilares.filter(p => p.ehPilar).length,
     dispositivos: listaTipos.map(t => ({ disciplina: t.disciplina, simbolo: t.simbolo, rotulo: t.rotulo, quantidade: t.itens.length, altura: t.altura })),
+    infraestrutura: infra.map(g => ({ disciplina: g.disciplina, tipo: g.tipo, rotulo: g.rotulo, comprimento_m: g.comprimento_m, segmentos: g.segmentos_total })),
     por_ambiente: ambs.map(a => ({ nome: a.nome, tipo: a.tipo, area_m2: a.area_m2, perimetro_m: a.perimetro_m })),
   };
 
   const C = (w) => [...P(w.a), ...P(w.b), r2(w.esp), r2(w.z0), r2(w.z1)];
   return {
-    versao: 1,
+    versao: 2,
     aviso: AVISO,
     titulo: opcoes.titulo || 'Modelo 3D ilustrativo',
     cliente: opcoes.cliente || '', obra: opcoes.obra || '', proposta: opcoes.proposta || '',
@@ -511,11 +650,12 @@ function montarCena(arquitetura, opcoes = {}) {
     portas: el.portas.map(p => ({ id: p.id, meio: P(p.meio), largura: p.largura_m, dupla: p.dupla })),
     ambientes: ambs,
     tiposAmbiente: TIPOS,
-    disciplinas: Object.fromEntries([...new Set(listaTipos.map(t => t.disciplina))].map(k => [k, DISCIPLINAS[k] || { rotulo: k, cor: '#dddddd' }])),
+    disciplinas: Object.fromEntries([...new Set([...listaTipos.map(t => t.disciplina), ...infra.map(g => g.disciplina)])].map(k => [k, DISCIPLINAS[k] || { rotulo: k, cor: '#dddddd' }])),
     dispositivos: listaTipos,
+    infra,
     numeros,
-    avisos: opcoes.avisos || [],
+    avisos,
   };
 }
 
-module.exports = { montarCena, regiaoDoModelo, extrairElementos, classeDaLayer, ESPEC, DISCIPLINAS, TIPOS, AVISO, PE_DIREITO_PADRAO };
+module.exports = { montarCena, montarInfra, regiaoDoModelo, extrairElementos, classeDaLayer, encostar, espec, ESPEC, TAM_FORMA, TRECHOS, LIMITE_SEGMENTOS, ESPESSURA_MIN_DESENHO, DISCIPLINAS, TIPOS, AVISO, PE_DIREITO_PADRAO };

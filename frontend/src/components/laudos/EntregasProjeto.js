@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { PackageCheck, FolderDown } from 'lucide-react';
 import { getEntregasProjeto, gerarEntregaProjeto } from '../../services/api';
+import { baixarArquivo, mensagemDeErro } from '../../utils/download';
 
 // Entregas do PROJETO (versão 2.1): o projetista escolhe o que entregar —
 // Definições técnicas, As-built, DXF (DWG não é gerado), QElectroTech e PDF —
@@ -19,17 +20,6 @@ function revisaoAsBuiltSugerida(revisaoAtual) {
 }
 
 const hoje = () => new Date().toISOString().slice(0, 10);
-
-function baixarBlob(blob, nome) {
-  const url = window.URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = nome;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.URL.revokeObjectURL(url);
-}
 
 export default function EntregasProjeto({ laudo, desenhos, temArquitetura, revisaoAtual, salvarAgora, ocupado, setOcupado, onGerado }) {
   const [catalogo, setCatalogo] = useState(catalogoCache);
@@ -71,23 +61,17 @@ export default function EntregasProjeto({ laudo, desenhos, temArquitetura, revis
     try {
       await salvarAgora();
       const corpo = { itens: escolhidos, ...(itens.has('asbuilt') ? { as_built: asBuilt } : {}) };
-      const r = await gerarEntregaProjeto(laudo.id, corpo, destino);
       if (destino === 'zip') {
-        const nome = decodeURIComponent(r.headers['x-nome-arquivo'] || 'Entrega.zip');
-        baixarBlob(r.data, nome);
+        const r = await baixarArquivo(gerarEntregaProjeto(laudo.id, corpo, destino), 'Entrega.zip');
         const arquivos = decodeURIComponent(r.headers['x-arquivos'] || '').split('; ').filter(Boolean);
         toast.success(`Entrega baixada (${arquivos.length} arquivo(s)) e gravada na pasta do projeto, em Entrega`, { duration: 7000 });
       } else {
+        const r = await gerarEntregaProjeto(laudo.id, corpo, destino);
         toast.success(`${r.data.gravados} arquivo(s) gravados em ${r.data.caminhoPasta}`, { duration: 8000 });
       }
       onGerado?.({ itens: escolhidos, as_built: itens.has('asbuilt') ? asBuilt : null });
     } catch (err) {
-      let msg = 'Erro ao gerar a entrega';
-      try {
-        const corpoErro = err.response?.data instanceof Blob ? JSON.parse(await err.response.data.text()) : err.response?.data;
-        msg = corpoErro?.erro || msg;
-      } catch { /* resposta não-JSON */ }
-      toast.error(msg, { duration: 9000 });
+      toast.error(await mensagemDeErro(err, 'Erro ao gerar a entrega'), { duration: 9000 });
     } finally {
       setOcupado('');
     }

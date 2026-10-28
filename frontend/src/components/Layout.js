@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
 import ErrorBoundary from './ErrorBoundary';
 import PainelAssistente from './assistente/PainelAssistente';
+import { IndicadorNovidades } from './NovidadesPastas';
 
 // Menu da versão 2.0: seis grupos. Cada um abre uma página-"hub" com abas
 // internas (pages/hubs) que juntam as telas que antes eram itens soltos —
@@ -111,6 +112,8 @@ export default function Layout() {
 
         {/* Usuário */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 8, flexShrink: 0 }}>
+          {/* 2.3: arquivo novo/alterado nas pastas dos clientes */}
+          <IndicadorNovidades />
           <span style={{ fontSize: 11, color: '#666' }}>
             {usuario?.nome}
           </span>

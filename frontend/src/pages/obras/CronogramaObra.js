@@ -7,6 +7,7 @@ import {
 } from '../../services/api';
 import Select from '../../components/Select';
 import { formatarData } from '../../utils/format';
+import { baixarArquivo, mensagemDeErro } from '../../utils/download';
 import { moeda, estilos as E, Campo, Etiqueta } from './comum';
 import CurvaS from './CurvaS';
 
@@ -49,23 +50,6 @@ function inicioPeriodo(iso, periodicidade) {
 }
 const diasEntre = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
 
-function baixarBlob(blob, nome) {
-  const url = window.URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = nome;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.URL.revokeObjectURL(url);
-}
-const erroDe = async (e, padrao) => {
-  // respostas de erro em blob (downloads) trazem o JSON dentro do blob
-  const d = e.response?.data;
-  if (d instanceof Blob) { try { return JSON.parse(await d.text()).erro || padrao; } catch { return padrao; } }
-  return d?.erro || padrao;
-};
-
 export default function CronogramaObra({ obra }) {
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState(null);
@@ -89,10 +73,9 @@ export default function CronogramaObra({ obra }) {
   async function baixarExcel() {
     setBaixando('excel');
     try {
-      const r = await baixarPlanilhaCronogramaObra(obra.id);
-      baixarBlob(new Blob([r.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `${obra.codigo}_cronograma.xlsx`);
+      await baixarArquivo(baixarPlanilhaCronogramaObra(obra.id), `${obra.codigo}_cronograma.xlsx`);
     } catch (e) {
-      toast.error(await erroDe(e, 'Erro ao gerar a planilha'));
+      toast.error(await mensagemDeErro(e, 'Erro ao gerar a planilha'));
     } finally { setBaixando(''); }
   }
 
@@ -499,10 +482,9 @@ function Medicoes({ obra, dados, pode, onRegistrado }) {
   async function boletim(p, numero) {
     setBaixando(p);
     try {
-      const r = await baixarBoletimMedicaoObra(obra.id, p);
-      baixarBlob(new Blob([r.data], { type: 'application/pdf' }), `${obra.codigo}_boletim_${String(numero).padStart(2, '0')}.pdf`);
+      await baixarArquivo(baixarBoletimMedicaoObra(obra.id, p), `${obra.codigo}_boletim_${String(numero).padStart(2, '0')}.pdf`);
     } catch (e) {
-      toast.error(await erroDe(e, 'Erro ao gerar o boletim'));
+      toast.error(await mensagemDeErro(e, 'Erro ao gerar o boletim'));
     } finally { setBaixando(''); }
   }
 

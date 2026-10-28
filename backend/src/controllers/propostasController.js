@@ -373,6 +373,9 @@ async function duplicar(req, res, next) {
     // proposta entre a leitura das seções e a dos itens (o `atualizar` apaga e
     // recria as seções com novos ids), a cópia saía com as seções mas sem
     // nenhum item — e ainda assim respondia "duplicada com sucesso".
+    // Só a transação não bastava: em READ COMMITTED cada SELECT ainda vê o seu
+    // próprio instante. Em REPEATABLE READ as três leituras são do mesmo retrato
+    // (o número novo, se colidir com outra gravação, refaz a transação).
     const original = await client.query('SELECT * FROM propostas WHERE id = $1', [id]);
     if (original.rows.length === 0) return null;
     const p = original.rows[0];
@@ -435,7 +438,7 @@ async function duplicar(req, res, next) {
     await registrarEvento(client, nova.id, req.usuario.id, 'duplicada', `Duplicada a partir da proposta ${p.numero}`);
 
       return { nova, numero };
-    });
+    }, { isolamento: 'REPEATABLE READ' });
 
     if (!resultado) return res.status(404).json({ erro: 'Proposta não encontrada' });
     res.status(201).json({ ...resultado.nova, mensagem: `Proposta duplicada como ${resultado.numero}` });
@@ -569,17 +572,25 @@ function lerAnexosPdf(fonte) {
 }
 
 async function montarPdfBuffer(id, anexos = {}) {
-  const proposta = await pool.query('SELECT * FROM propostas WHERE id = $1', [id]);
-  if (proposta.rows.length === 0) return null;
-
-  const secoes = await pool.query(
-    'SELECT * FROM proposta_secoes WHERE proposta_id = $1 ORDER BY ordem',
-    [id]
-  );
-  const itens = await pool.query(
-    'SELECT * FROM proposta_itens WHERE proposta_id = $1 ORDER BY ordem',
-    [id]
-  );
+  // proposta, seções e itens do MESMO retrato (REPEATABLE READ): lidos em
+  // comandos soltos, um PDF gerado durante uma edição podia sair com as seções
+  // novas e os itens antigos (ou sem itens). Só as leituras ficam na transação;
+  // o 3D e o Chromium vêm depois, sem segurar conexão do banco.
+  const lido = await comTransacao(async (client) => {
+    const proposta = await client.query('SELECT * FROM propostas WHERE id = $1', [id]);
+    if (proposta.rows.length === 0) return null;
+    const secoes = await client.query(
+      'SELECT * FROM proposta_secoes WHERE proposta_id = $1 ORDER BY ordem',
+      [id]
+    );
+    const itens = await client.query(
+      'SELECT * FROM proposta_itens WHERE proposta_id = $1 ORDER BY ordem',
+      [id]
+    );
+    return { proposta, secoes, itens };
+  }, { isolamento: 'REPEATABLE READ' });
+  if (!lido) return null;
+  const { proposta, secoes, itens } = lido;
 
   // modelo 3D ligado para o cliente (2.3): imagem como anexo. Falha na captura
   // (sem arquitetura, WebGL indisponível) não impede o PDF — sai sem o anexo.
@@ -624,6 +635,8 @@ async function gerarPdf(req, res) {
     });
     res.send(resultado.pdf);
   } catch (err) {
+    // fila de PDF cheia (utils/pdfPuppeteer.js): passageiro, a mensagem diz o que fazer
+    if (err.codigo === 'FILA_PDF_CHEIA') return res.status(503).json({ erro: err.message });
     console.error('Erro ao gerar PDF:', err);
     res.status(500).json({ erro: 'Erro ao gerar PDF da proposta' });
   }

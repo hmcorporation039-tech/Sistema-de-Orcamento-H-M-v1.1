@@ -40,7 +40,7 @@ function protegerRotasAsync(router) {
 function mensagemDeUpload(err) {
   switch (err.code) {
     case 'LIMIT_FILE_SIZE':
-      return { status: 413, erro: 'Arquivo acima do limite de tamanho deste envio (15 MB; projeto DWG/DXF na análise, 40 MB).' };
+      return { status: 413, erro: 'Arquivo acima do limite de tamanho deste envio (15 MB; projeto PDF/DWG/DXF na análise, 40 MB; pacote ou ZIP do projeto, 150 MB).' };
     case 'LIMIT_FILE_COUNT':
       return { status: 413, erro: 'Número de arquivos acima do limite permitido.' };
     case 'LIMIT_UNEXPECTED_FILE':
@@ -83,6 +83,9 @@ function tratarErros(err, req, res, next) {
   // enviou, não do servidor
   if (err && err.type === 'entity.parse.failed') return res.status(400).json({ erro: 'Dados enviados em formato inválido.' });
   if (err && err.type === 'entity.too.large') return res.status(413).json({ erro: 'Dados enviados grandes demais.' });
+
+  // fila de PDF cheia (utils/pdfPuppeteer.js): passageiro, a mensagem diz o que fazer
+  if (err && err.codigo === 'FILA_PDF_CHEIA') return res.status(503).json({ erro: err.message });
 
   if (err && ERROS_DE_ENTRADA[err.code]) {
     console.error(`Erro de entrada (${err.code}) em ${req.method} ${req.originalUrl}:`, err.message);

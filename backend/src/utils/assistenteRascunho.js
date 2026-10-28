@@ -19,6 +19,19 @@ const MAX_OPERACOES = 300;
 
 class ErroRascunho extends Error {}
 
+// Resumo das alterações (cartão de ação que o usuário confirma): cada campo
+// alterado mostra o valor ANTES → DEPOIS, com o texto inteiro (até ~600
+// caracteres). Antes o cartão dizia só "escopo alterado" e o usuário aprovava
+// sem ver o que o assistente ia gravar.
+const LIMITE_TEXTO_RESUMO = 600;
+function cortarTexto(v, limite = LIMITE_TEXTO_RESUMO) {
+  // linha em branco no meio do texto quebraria a separação resumo/motivo do cartão
+  const t = String(v ?? '').replace(/\r/g, '').replace(/\n{2,}/g, '\n');
+  return t.length > limite ? `${t.slice(0, limite)}…` : t;
+}
+const citar = (v) => (v == null || v === '' ? '(vazio)' : `"${cortarTexto(v)}"`);
+const reais = (v) => `R$ ${Number(v || 0).toFixed(2)}`;
+
 const dataIso = (d) => (d ? String(d instanceof Date ? d.toISOString() : d).slice(0, 10) : d);
 
 // GET /propostas/:id → corpo do PUT (igual ao montarPayload da tela). Cada item
@@ -116,27 +129,30 @@ function aplicarOperacoes(payloadOriginal, ops = {}) {
 
   for (const id of ops.remover || []) {
     const i = acharItem(id);
-    resumo.push(`removido: ${payload.itens[i].desc}`);
+    const r = payload.itens[i];
+    resumo.push(`removido: ${cortarTexto(r.desc, 200)} — ${r.qtd} ${r.un || ''} × ${reais(r.vu)}`.replace(/\s+×/, ' ×'));
     payload.itens.splice(i, 1);
   }
   for (const alt of ops.alterar || []) {
     const it = payload.itens[acharItem(alt.item_id)];
+    const antes = { ...it };
     const mudou = [];
-    if (alt.quantidade != null) { it.qtd = arredondarQuantidade(numeroValido(alt.quantidade, 'Quantidade'), 1); mudou.push(`qtd ${it.qtd}`); }
-    if (alt.valor_unitario != null) { it.vu = arredondar(numeroValido(alt.valor_unitario, 'Valor unitário')); mudou.push(`unitário R$ ${it.vu.toFixed(2)}`); }
-    if (alt.descricao != null && String(alt.descricao).trim()) { it.desc = String(alt.descricao).trim().slice(0, 500); mudou.push('descrição'); }
-    if (alt.unidade != null) { it.un = String(alt.unidade).slice(0, 20) || null; mudou.push(`unidade ${it.un}`); }
-    if (alt.subgrupo != null) { it.subgrupo = String(alt.subgrupo).slice(0, 100) || null; mudou.push('subgrupo'); }
+    const rotuloStatus = (st) => (st === 'a_cotar' ? 'a cotar' : 'confirmado');
+    if (alt.quantidade != null) { it.qtd = arredondarQuantidade(numeroValido(alt.quantidade, 'Quantidade'), 1); mudou.push(`qtd ${antes.qtd} → ${it.qtd}`); }
+    if (alt.valor_unitario != null) { it.vu = arredondar(numeroValido(alt.valor_unitario, 'Valor unitário')); mudou.push(`unitário ${reais(antes.vu)} → ${reais(it.vu)}`); }
+    if (alt.descricao != null && String(alt.descricao).trim()) { it.desc = String(alt.descricao).trim().slice(0, 500); mudou.push(`descrição ${citar(antes.desc)} → ${citar(it.desc)}`); }
+    if (alt.unidade != null) { it.un = String(alt.unidade).slice(0, 20) || null; mudou.push(`unidade ${antes.un || '(vazio)'} → ${it.un || '(vazio)'}`); }
+    if (alt.subgrupo != null) { it.subgrupo = String(alt.subgrupo).slice(0, 100) || null; mudou.push(`subgrupo ${citar(antes.subgrupo)} → ${citar(it.subgrupo)}`); }
     if (alt.status != null) {
       if (!STATUS_ITEM.includes(alt.status)) throw new ErroRascunho(`Status de item inválido: ${alt.status} (use confirmado ou a_cotar).`);
-      it.status = alt.status; mudou.push(alt.status === 'a_cotar' ? 'a cotar' : 'confirmado');
+      it.status = alt.status; mudou.push(`${rotuloStatus(antes.status)} → ${rotuloStatus(it.status)}`);
     }
-    if (mudou.length) resumo.push(`alterado: ${it.desc} (${mudou.join(', ')})`);
+    if (mudou.length) resumo.push(`alterado: ${cortarTexto(antes.desc, 200)} (${mudou.join(', ')})`);
   }
   for (const novo of ops.adicionar || []) {
     const it = itemNovo(payload, novo);
     payload.itens.push(it);
-    resumo.push(`adicionado: ${it.desc} — ${it.qtd} ${it.un || ''} × R$ ${it.vu.toFixed(2)}${it.status === 'a_cotar' ? ' (a cotar)' : ''}`.replace(/\s+—/, ' —'));
+    resumo.push(`adicionado: ${cortarTexto(it.desc, 200)} — ${it.qtd} ${it.un || ''} × R$ ${it.vu.toFixed(2)}${it.status === 'a_cotar' ? ' (a cotar)' : ''}`.replace(/\s+—/, ' —'));
   }
 
   const campos = ops.campos || {};
@@ -144,16 +160,24 @@ function aplicarOperacoes(payloadOriginal, ops = {}) {
     if (campos[c] == null) continue;
     const n = numeroValido(campos[c], c);
     if (n > 999.99) throw new ErroRascunho(`${c} acima de 999,99 %.`);
-    payload[c] = n; resumo.push(`${c} = ${n} %`);
+    resumo.push(`${c} ${payload[c] ?? 0} % → ${n} %`);
+    payload[c] = n;
   }
   for (const c of CAMPOS_PROPOSTA) {
     if (campos[c] == null) continue;
-    payload[c] = String(campos[c]); resumo.push(`${c} alterado`);
+    const novo = String(campos[c]);
+    resumo.push(`${c}: ${citar(payload[c])} → ${citar(novo)}`);
+    payload[c] = novo;
   }
-  if (campos.validade != null) { payload.validade = Math.round(numeroValido(campos.validade, 'Validade', { min: 1 })); resumo.push(`validade ${payload.validade} dias`); }
+  if (campos.validade != null) {
+    const antes = payload.validade;
+    payload.validade = Math.round(numeroValido(campos.validade, 'Validade', { min: 1 }));
+    resumo.push(`validade ${antes ?? '(vazio)'} → ${payload.validade} dias`);
+  }
   if (Object.prototype.hasOwnProperty.call(campos, 'obra_id')) {
+    const antes = payload.obra_id;
     payload.obra_id = campos.obra_id == null ? null : Math.round(numeroValido(campos.obra_id, 'Obra', { min: 1 }));
-    resumo.push(payload.obra_id ? `ligada à obra #${payload.obra_id}` : 'desligada da obra');
+    resumo.push(payload.obra_id ? `ligada à obra #${payload.obra_id}${antes ? ` (antes: obra #${antes})` : ''}` : `desligada da obra${antes ? ` #${antes}` : ''}`);
   }
 
   // seções que já existiam ficam (mesmo vazias, como na tela); só não sobra seção nova vazia
@@ -182,6 +206,7 @@ function mesclarDados(base, parcial, profundidade = 0) {
 }
 
 module.exports = {
+  cortarTexto, citar,
   propostaParaPayload, aplicarOperacoes, payloadParaEnvio, mesclarDados, ErroRascunho,
   SECAO_SERVICOS, SECAO_MATERIAIS, STATUS_ITEM,
 };

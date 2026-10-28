@@ -5,6 +5,7 @@ import { useState } from 'react';
 import toast from 'react-hot-toast';
 import { FileDown, Layers } from 'lucide-react';
 import { baixarCompatibilizacaoDxf } from '../../services/api';
+import { baixarArquivo, mensagemDeErro } from '../../utils/download';
 
 const br = (v, c = 2) => Number(v).toFixed(c).replace('.', ',');
 const NOME_DISC = { eletrica: 'Elétrica', iluminacao: 'Iluminação', incendio: 'Incêndio', cftv: 'CFTV', cabeamento: 'Cabeamento', rede: 'Rede', alarme: 'Alarme', telefonia: 'Telefonia', antena: 'Antena', controle_acesso: 'Controle de acesso', automacao: 'Automação' };
@@ -24,17 +25,9 @@ export default function ConflitosCompatibilizacao({ analise, estiloCartao, estil
   async function baixarDxf() {
     setBaixando(true);
     try {
-      const r = await baixarCompatibilizacaoDxf(analise.id);
-      const url = window.URL.createObjectURL(r.data);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = decodeURIComponent(r.headers['x-nome-arquivo'] || 'Compatibilização.dxf');
-      document.body.appendChild(a); a.click(); a.remove();
-      window.URL.revokeObjectURL(url);
+      await baixarArquivo(baixarCompatibilizacaoDxf(analise.id), 'Compatibilização.dxf');
     } catch (err) {
-      let msg = 'Erro ao gerar o DXF da compatibilização';
-      try { msg = JSON.parse(await err.response.data.text()).erro || msg; } catch { /* sem corpo JSON */ }
-      toast.error(msg, { duration: 8000 });
+      toast.error(await mensagemDeErro(err, 'Erro ao gerar o DXF da compatibilização'), { duration: 8000 });
     } finally {
       setBaixando(false);
     }

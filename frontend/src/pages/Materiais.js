@@ -483,9 +483,11 @@ export default function Materiais() {
                   <button onClick={() => abrirEdicao(m)} style={btnIcone} title="Editar">
                     <Pencil size={13} />
                   </button>
-                  <button onClick={() => excluir(m)} style={{ ...btnIcone, color: '#b04040' }} title="Remover">
-                    <Trash2 size={13} />
-                  </button>
+                  {ehAdmin && (
+                    <button onClick={() => excluir(m)} style={{ ...btnIcone, color: '#b04040' }} title="Remover">
+                      <Trash2 size={13} />
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}

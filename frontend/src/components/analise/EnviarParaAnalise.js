@@ -21,7 +21,8 @@ export const FINALIDADES = [
 
 // obraFixa: id da obra (dentro da página da obra) — sem ela, a obra é escolhida aqui (opcional)
 // iniciarComPasta: já lê a pasta da obra ao abrir (vindo de Obra › Arquivos › "Analisar os arquivos desta pasta")
-export default function EnviarParaAnalise({ obraFixa = null, obraInicial = null, disciplinas, onCriada, iniciarComPasta = false }) {
+// pacoteInicial: pacote já recebido (ex.: "Analisar" das novidades da pasta do cliente)
+export default function EnviarParaAnalise({ obraFixa = null, obraInicial = null, disciplinas, onCriada, iniciarComPasta = false, pacoteInicial = null }) {
   const [finalidade, setFinalidade] = useState('');
   const [nomeProjeto, setNomeProjeto] = useState('');
   const [obra, setObra] = useState(obraFixa || obraInicial || null);
@@ -50,6 +51,7 @@ export default function EnviarParaAnalise({ obraFixa = null, obraInicial = null,
   }
 
   const jaLeu = useRef(false);
+  useEffect(() => { if (pacoteInicial) receber(pacoteInicial); }, [pacoteInicial]); // eslint-disable-line
   useEffect(() => {
     if (iniciarComPasta && obraId && !jaLeu.current) { jaLeu.current = true; usarPastaDaObra(); }
   }, [iniciarComPasta, obraId]); // eslint-disable-line
