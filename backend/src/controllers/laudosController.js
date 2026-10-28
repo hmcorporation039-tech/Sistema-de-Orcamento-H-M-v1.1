@@ -11,6 +11,7 @@ const { gerarFooterTemplate } = require('../utils/pdfTemplate');
 const { gerarHtmlFolhaEntrega } = require('../utils/folhaEntregaTemplate');
 const { compararComCatalogo } = require('../utils/compatibilizacaoAnalise');
 const { comTransacao } = require('../utils/transacao');
+const { hojeBrasilia } = require('../utils/dataHoje');
 const { calcularTotais } = require('../utils/calculoProposta');
 const { validarProposta } = require('../utils/validacaoProposta');
 const { inserirSecoesEItens, proximoNumero, registrarEvento } = require('./propostasController');
@@ -92,6 +93,7 @@ async function modelo(req, res) {
 
 // ── CRUD ────────────────────────────────────────────────────────────────────
 
+const LIMITE_LISTA_LAUDOS = 300;
 async function listar(req, res) {
   try {
     const params = [];
@@ -131,9 +133,15 @@ async function listar(req, res) {
          FROM laudos_projetos l LEFT JOIN usuarios u ON u.id = l.usuario_id
          LEFT JOIN obras ob ON ob.id = l.obra_id
          ${where}
-        ORDER BY l.atualizado_em DESC LIMIT 300`,
+        ORDER BY l.atualizado_em DESC LIMIT ${LIMITE_LISTA_LAUDOS + 1}`,
       params
     );
+    // Lista cortada: antes sumia em silêncio o que passasse de 300. A resposta
+    // continua sendo a lista (a tela não muda), com o aviso nos cabeçalhos.
+    if (rows.length > LIMITE_LISTA_LAUDOS) {
+      rows.length = LIMITE_LISTA_LAUDOS;
+      res.set({ 'X-Lista-Truncada': '1', 'X-Limite-Lista': String(LIMITE_LISTA_LAUDOS) });
+    }
     res.json(rows);
   } catch (err) {
     responderErro(res, err, 'listar');
@@ -823,42 +831,46 @@ async function gerarOrcamento(req, res) {
     const nomesSecoes = [...new Set(itens.map(i => i.secao_nome))];
     // `id` distinto por seção: inserirSecoesEItens casa item→seção por sid OU nome
     const secoes = nomesSecoes.map((nome, i) => ({ id: i + 1, nome }));
-    const dataHoje = new Date().toISOString().slice(0, 10);
+    const dataHoje = hojeBrasilia(); // toISOString daria amanhã depois das 21h
     const erroValidacao = validarProposta({ data: dataHoje, cliente_nome: clienteNome, secoes, itens });
     if (erroValidacao) return res.status(400).json({ erro: erroValidacao });
 
     const rotuloModo = motor.modosOrcamento.find(m => m.modo === modo).rotulo;
     const origem = `Laudos e projetos #${laudo.id} (${laudo.disciplina.toUpperCase()} — ${rotuloModo})`;
-    // Proposta vinculada: só é atualizada enquanto estiver "Ativa" (aprovada ou
-    // recusada fica intacta e nasce uma nova), mantendo BDI e impostos dela.
-    const vinculadaId = (laudo.propostas || {})[modo];
-    const vinculadaInfo = vinculadaId
-      ? (await pool.query('SELECT status, bdi, bdi_materiais, imposto_venda, imposto_servico FROM propostas WHERE id = $1', [vinculadaId])).rows[0]
-      : null;
-    const vinculada = vinculadaInfo && vinculadaInfo.status === 'Ativa' ? vinculadaId : null;
-    const totais = calcularTotais({ secoes, itens,
-      bdi: vinculada ? Number(vinculadaInfo.bdi) || 0 : 0,
-      bdi_materiais: vinculada ? vinculadaInfo.bdi_materiais : null, // BDI diferenciado (2.0, Fase 3F) também é mantido
-      imposto_venda: vinculada ? Number(vinculadaInfo.imposto_venda) || 0 : 0,
-      imposto_servico: vinculada ? Number(vinculadaInfo.imposto_servico) || 0 : 0 });
 
-    const { propostaId, numero, criada } = await comTransacao(async (client) => {
-      if (vinculada) {
-        const atual = await client.query("SELECT numero FROM propostas WHERE id = $1 AND status = 'Ativa' FOR UPDATE", [vinculada]);
-        if (atual.rows.length) {
-          await client.query(
-            `UPDATE propostas SET data=$1, cliente_id=$2, cliente_nome=$3, responsavel=$4, escopo=$5, observacoes=$6,
-              subtotal_materiais=$7, subtotal_mao_obra=$8, valor_bdi=$9, valor_imposto_venda=$10, valor_imposto_servico=$11,
-              total=$12, atualizado_em=NOW(), versao=versao+1, obra_id=COALESCE(obra_id, $14) WHERE id=$13`,
-            [dataHoje, clienteId, clienteNome, req.usuario.nome, orcamento.escopo, orcamento.observacoes,
-             totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi, totais.valor_imposto_venda,
-             totais.valor_imposto_servico, totais.total, vinculada, laudo.obra_id || null]
-          );
-          await client.query('DELETE FROM proposta_secoes WHERE proposta_id = $1', [vinculada]);
-          await inserirSecoesEItens(client, vinculada, secoes, itens);
-          await registrarEvento(client, vinculada, req.usuario.id, 'editada', `Atualizada a partir de ${origem}`);
-          return { propostaId: vinculada, numero: atual.rows[0].numero, criada: false };
-        }
+    const resultadoTx = await comTransacao(async (client) => {
+      // Trava o registro e relê o vínculo DENTRO da transação: com o vínculo
+      // lido antes (fora dela), dois cliques em "Gerar orçamento" criavam duas
+      // propostas. Agora o segundo espera o primeiro terminar e atualiza a
+      // proposta que ele criou (revisão de 27/10/2026).
+      const trava = await client.query('SELECT propostas FROM laudos_projetos WHERE id = $1 FOR UPDATE', [laudo.id]);
+      if (!trava.rows.length) return null;
+      // Proposta vinculada: só é atualizada enquanto estiver "Ativa" (aprovada ou
+      // recusada fica intacta e nasce uma nova), mantendo BDI e impostos dela.
+      const vinculadaId = (trava.rows[0].propostas || {})[modo] || null;
+      const vinculadaInfo = vinculadaId
+        ? (await client.query('SELECT numero, status, bdi, bdi_materiais, imposto_venda, imposto_servico FROM propostas WHERE id = $1 FOR UPDATE', [vinculadaId])).rows[0]
+        : null;
+      const vinculada = vinculadaInfo && vinculadaInfo.status === 'Ativa' ? vinculadaId : null;
+      const totais = calcularTotais({ secoes, itens,
+        bdi: vinculada ? Number(vinculadaInfo.bdi) || 0 : 0,
+        bdi_materiais: vinculada ? vinculadaInfo.bdi_materiais : null, // BDI diferenciado (2.0, Fase 3F) também é mantido
+        imposto_venda: vinculada ? Number(vinculadaInfo.imposto_venda) || 0 : 0,
+        imposto_servico: vinculada ? Number(vinculadaInfo.imposto_servico) || 0 : 0 });
+
+      if (vinculada) { // linha já travada acima
+        await client.query(
+          `UPDATE propostas SET data=$1, cliente_id=$2, cliente_nome=$3, responsavel=$4, escopo=$5, observacoes=$6,
+            subtotal_materiais=$7, subtotal_mao_obra=$8, valor_bdi=$9, valor_imposto_venda=$10, valor_imposto_servico=$11,
+            total=$12, atualizado_em=NOW(), versao=versao+1, obra_id=COALESCE(obra_id, $14) WHERE id=$13`,
+          [dataHoje, clienteId, clienteNome, req.usuario.nome, orcamento.escopo, orcamento.observacoes,
+           totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi, totais.valor_imposto_venda,
+           totais.valor_imposto_servico, totais.total, vinculada, laudo.obra_id || null]
+        );
+        await client.query('DELETE FROM proposta_secoes WHERE proposta_id = $1', [vinculada]);
+        await inserirSecoesEItens(client, vinculada, secoes, itens);
+        await registrarEvento(client, vinculada, req.usuario.id, 'editada', `Atualizada a partir de ${origem}`);
+        return { propostaId: vinculada, numero: vinculadaInfo.numero, criada: false };
       }
       const seq = await proximoNumero(client);
       const numeroGerado = 'P' + String(seq).padStart(3, '0');
@@ -881,6 +893,8 @@ async function gerarOrcamento(req, res) {
       );
       return { propostaId: novaId, numero: numeroGerado, criada: true };
     });
+    if (!resultadoTx) return res.status(404).json({ erro: 'Registro não encontrado.' });
+    const { propostaId, numero, criada } = resultadoTx;
 
     classificarPendentesEmSegundoPlano(); // materiais novos do orçamento sem categoria → IA
     res.json({

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { aguardarNovoLogin, avisarSenhaProvisoria, temOuvinteSessao } from './sessao';
 
 const api = axios.create({
   baseURL: process.env.REACT_APP_API_URL
@@ -14,30 +15,66 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Trata erros de autenticação globalmente — exceto na própria tela de login,
-// onde um 401 é só "senha errada" e precisa aparecer na tela, não recarregar.
+// Sessão (ver services/sessao.js):
+//   401 → a tela continua onde está; abre o "Entre de novo" e a requisição é
+//         repetida com o token novo depois do login (nada do que está na tela
+//         se perde). Desistir = sair e ir para /login.
+//   403 com codigo SENHA_PROVISORIA → tela de definir senha.
+//   Demais 403 (posse: registro de outro usuário; só admin) → só recusa; quem
+//         chamou mostra a mensagem. Antes o 403 também deslogava: salvar a
+//         proposta de outro usuário jogava fora tudo o que estava na tela.
+// `semSessao: true` na config: o 401 é resposta da própria tela (login, senha
+// atual errada) e não "sessão vencida".
+function sairParaLogin() {
+  localStorage.removeItem('hm_token');
+  localStorage.removeItem('hm_usuario');
+  window.location.href = '/login';
+}
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    const isLogin = error.config?.url?.includes('/auth/login');
-    if (!isLogin && (error.response?.status === 401 || error.response?.status === 403)) {
-      localStorage.removeItem('hm_token');
-      localStorage.removeItem('hm_usuario');
-      window.location.href = '/login';
+    const config = error.config || {};
+    const status = error.response?.status;
+    if (config.semSessao) return Promise.reject(error);
+    if (status === 401) {
+      if (config._repetidaAposLogin || !temOuvinteSessao() || !localStorage.getItem('hm_usuario')) {
+        sairParaLogin();
+        return Promise.reject(error);
+      }
+      return aguardarNovoLogin().then(
+        () => api({ ...config, _repetidaAposLogin: true }),
+        () => Promise.reject(error)
+      );
     }
+    if (status === 403 && error.response?.data?.codigo === 'SENHA_PROVISORIA') avisarSenhaProvisoria();
     return Promise.reject(error);
   }
 );
 
 // ── AUTH ──────────────────────────────────────────────────────────────
 export const login = (email, senha) =>
-  api.post('/auth/login', { email, senha });
+  api.post('/auth/login', { email, senha }, { semSessao: true });
 
+// 401 aqui é "senha atual incorreta" (DefinirSenha mostra na tela, sem deslogar)
 export const alterarSenha = (senhaAtual, novaSenha) =>
-  api.post('/auth/senha', { senhaAtual, novaSenha });
+  api.post('/auth/senha', { senhaAtual, novaSenha }, { semSessao: true });
 
 // ── MATERIAIS ─────────────────────────────────────────────────────────
 export const getMateriais = (params) => api.get('/materiais', { params });
+// Lista inteira, página a página (o servidor devolve no máximo 1000 por vez):
+// o "+ catálogo" do editor de orçamento precisa do catálogo completo.
+// `fn` é uma listagem paginada ({ itens, totalPaginas }); devolve { data: { itens } }.
+export async function buscarTodasPaginas(fn, params = {}, limitePaginas = 50) {
+  const itens = [];
+  for (let pagina = 1; pagina <= limitePaginas; pagina++) {
+    const { data } = await fn({ ...params, porPagina: 1000, pagina });
+    itens.push(...(data.itens || []));
+    if (!data.totalPaginas || pagina >= data.totalPaginas) break;
+  }
+  return { data: { itens } };
+}
+export const getTodosMateriais = (params) => buscarTodasPaginas(getMateriais, params);
 export const getCategoriasMateriais = () => api.get('/materiais/categorias');
 export const criarMaterial = (data) => api.post('/materiais', data);
 export const atualizarMaterial = (id, data) => api.put(`/materiais/${id}`, data);
@@ -58,6 +95,7 @@ export const getMaoDeObraItens = (params) => api.get('/mao-de-obra-itens', { par
 
 // ── CLIENTES ──────────────────────────────────────────────────────────
 export const getClientes = (params) => api.get('/clientes', { params });
+export const getTodosClientes = (params) => buscarTodasPaginas(getClientes, params);
 export const criarCliente = (data) => api.post('/clientes', data);
 export const atualizarCliente = (id, data) => api.put(`/clientes/${id}`, data);
 export const removerCliente = (id) => api.delete(`/clientes/${id}`);

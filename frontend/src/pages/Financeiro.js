@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import useUltimoPedido from '../hooks/useUltimoPedido';
 import toast from 'react-hot-toast';
 import { FileSpreadsheet, RefreshCw, Search, ArrowDownCircle, ArrowUpCircle, Plus, Pencil, Trash2, X, Tag } from 'lucide-react';
 import {
@@ -55,7 +56,9 @@ export default function Financeiro() {
   const [formVinculo, setFormVinculo] = useState(VAZIO_VINCULO);
   const [salvandoVinculo, setSalvandoVinculo] = useState(false);
 
+  const novoPedido = useUltimoPedido();
   const carregar = useCallback(async () => {
+    const vale = novoPedido(); // resposta de busca antiga não sobrescreve a atual
     setCarregando(true);
     try {
       const params = {};
@@ -68,6 +71,7 @@ export default function Financeiro() {
       if (obraFiltro) params.obraId = obraFiltro;
 
       const res = await getFinanceiroMovimentos(params);
+      if (!vale()) return;
       setMovimentos(res.data.movimentos);
       setTotais(res.data.totais);
       if (!inicializado) {
@@ -76,11 +80,11 @@ export default function Financeiro() {
         setInicializado(true);
       }
     } catch {
-      toast.error('Erro ao carregar movimentos financeiros');
+      if (vale()) toast.error('Erro ao carregar movimentos financeiros');
     } finally {
-      setCarregando(false);
+      if (vale()) setCarregando(false);
     }
-  }, [dataInicio, dataFim, tipo, busca, categoria, prestadorId, obraFiltro, inicializado]);
+  }, [dataInicio, dataFim, tipo, busca, categoria, prestadorId, obraFiltro, inicializado, novoPedido]);
 
   useEffect(() => {
     const t = setTimeout(carregar, 300);

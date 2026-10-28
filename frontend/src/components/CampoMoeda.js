@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { formatarMoeda } from '../utils/format';
+import { paraNumeroBR } from '../utils/dinheiro';
 
-// Converte texto digitado em formato brasileiro ("1.150,50", "1150,5" ou só
-// "1150") num número — mesma ideia do paraNumeroBR do backend, do lado do
-// navegador. Vírgula é sempre o separador decimal; ponto é só milhar.
-function paraNumero(texto) {
+// Converte texto digitado em formato brasileiro num número — a MESMA regra do
+// paraNumeroBR do backend (utils/dinheiro.js): "1.150,50" e "1150,5" com
+// vírgula decimal; "1.150" e "1.150.000" são milhar (antes viravam 1,15 e 0);
+// "12.5" sem vírgula é decimal. Símbolos (R$, espaços) são ignorados.
+export function paraNumero(texto) {
   const limpo = String(texto || '').trim().replace(/[^\d,.-]/g, '');
-  if (!limpo) return 0;
-  if (limpo.includes(',')) return Number(limpo.replace(/\./g, '').replace(',', '.')) || 0;
-  return Number(limpo) || 0;
+  return paraNumeroBR(limpo) ?? 0;
 }
 
 // Campo de valor monetário: mostra formatado ("R$ 1.150,00") fora de foco, e

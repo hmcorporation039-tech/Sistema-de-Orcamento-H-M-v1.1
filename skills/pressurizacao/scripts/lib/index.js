@@ -36,19 +36,23 @@ const m3h = (q) => `${num(q * 3600, 0)} m³/h`;
 
 // ── Inspeção: medições ──────────────────────────────────────────────────────
 
+// Critérios do laudo SEMPRE normativos (calc.criterios): ΔP ≥ 90 % do projeto — no mínimo
+// 90 % de 50 Pa — e ≤ 60 Pa (NT 13 GO 5.1.5.1 e 5.5.3 d); V ≥ 1 m/s (5.1.6.4 c); força
+// ≤ menor entre o limite do projeto e 133 N. Valor de projeto editado fora da norma não
+// afrouxa o critério da medição.
 function medicoes(insp, calc) {
   const { c, vent } = calc;
-  const dpMin = T.PRESSAO.minimo_medido_fracao * c.dp;
+  const k = calc.criterios;
   const pressoes = (insp.pressoes || []).map(m => ({
-    ...m, criterio: `${num(dpMin, 0)} a ${num(c.dpMax, 0)} Pa`,
-    resultado: vazio(m.dp_pa) ? 'NV' : Number(m.dp_pa) >= dpMin && Number(m.dp_pa) <= c.dpMax ? 'C' : 'NC',
+    ...m, criterio: `${num(k.dpMin, 0)} a ${num(k.dpMax, 0)} Pa`,
+    resultado: vazio(m.dp_pa) ? 'NV' : Number(m.dp_pa) >= k.dpMin && Number(m.dp_pa) <= k.dpMax ? 'C' : 'NC',
   }));
   const velocidades = (insp.velocidades || []).map(m => {
     const pts = Number(m.pontos) || null;
-    return { ...m, criterio: `≥ ${num(c.vPorta)} m/s (média de ≥ 12 pontos)`, obs: pts && pts < 12 ? `só ${pts} pontos (5.5.4 pede ≥ 12)` : '',
-      resultado: vazio(m.media_ms) ? 'NV' : Number(m.media_ms) >= c.vPorta ? 'C' : 'NC' };
+    return { ...m, criterio: `≥ ${num(k.vMin)} m/s (média de ≥ 12 pontos)`, obs: pts && pts < 12 ? `só ${pts} pontos (5.5.4 pede ≥ 12)` : '',
+      resultado: vazio(m.media_ms) ? 'NV' : Number(m.media_ms) >= k.vMin ? 'C' : 'NC' };
   });
-  const forcas = (insp.forcas || []).map(m => ({ ...m, criterio: `≤ ${num(c.limiteForca, 0)} N [CONFERIR]`, resultado: vazio(m.forca_n) ? 'NV' : Number(m.forca_n) <= c.limiteForca ? 'C' : 'NC' }));
+  const forcas = (insp.forcas || []).map(m => ({ ...m, criterio: `≤ ${num(k.forcaMax, 0)} N${c.limiteForcaPadrao ? ' (padrão NFPA 101)' : ''} [CONFERIR]`, resultado: vazio(m.forca_n) ? 'NV' : Number(m.forca_n) <= k.forcaMax ? 'C' : 'NC' }));
   const ensaios = (insp.ensaios || []).map(m => {
     const informado = ['C', 'NC'].includes(m.resultado) ? m.resultado : null;
     const r = informado || (vazio(m.tempo_s) ? 'NV' : Number(m.tempo_s) <= c.tempoPartidaMax ? 'C' : 'NC');
@@ -112,12 +116,13 @@ function resumir(res) {
   const fMax = Math.max(...v.forcas.map(f => f.f60), 0);
   return {
     indicadores: [
-      { rotulo: 'Edificação', valor: `${T.OCUPACOES[c.grupo].split(' — ')[1]} · ${num(c.altura, 1)} m`, detalhe: `${c.pavimentos} pavimentos · ${v.portas.length} PCF · PCF abertas no cálculo: ${v.npa} (Tabela B1${v.reuniao ? ' + reunião de público' : ''})` },
+      ...(calc.bloqueios.length ? [{ rotulo: 'Valores de projeto fora da norma', valor: `${calc.bloqueios.length} bloqueio(s) — memorial suspenso`, ok: false, detalhe: calc.bloqueios.join(' ') }] : []),
+      { rotulo: 'Edificação', valor: `${T.OCUPACOES[c.grupo].split(' — ')[1]} · ${num(c.altura, 1)} m${c.alturaEstimada ? ' (estimada — informe)' : ''}`, ok: c.alturaEstimada ? false : undefined, detalhe: `${c.pavimentos} pavimentos · ${v.portas.length} PCF · PCF abertas no cálculo: ${v.npa} (Tabela B1${v.acessosPorPavimento > 1 ? ` × ${v.acessosPorPavimento} acessos/pavimento — Nota 5` : ''}${v.reuniao ? ' + reunião de público' : ''})` },
       { rotulo: 'Vazão com PCF fechadas (QFT)', valor: `${num(v.qft, 2)} m³/s`, detalhe: `A = ${num(v.areas.total, 3)} m² · ΔP ${num(c.dp, 0)} Pa · Q = 0,827·A·ΔP^(1/N)` },
       { rotulo: 'Vazão com PCF abertas (QAT)', valor: `${num(v.qat, 2)} m³/s`, ok: true, detalhe: `APA = ${num(v.apa, 2)} m² · V com QFT = ${num(v.vpa, 2)} m/s → corrigida para ${num(c.vPorta)} m/s` },
       { rotulo: 'Vazão de projeto (QTS)', valor: `${num(v.qts, 2)} m³/s · ${m3h(v.qts)}`, detalhe: `QT = ${num(v.qt, 2)} m³/s (${v.criterio}) × ${num(v.fatorTotal)} (dutos ${T.ROTULO_DUTO[c.tipoDuto]} + não identificados)` },
       { rotulo: 'Alívio de sobrepressão', valor: v.qd > 0 ? `${num(v.qd, 2)} m³/s · ${num(v.areaDamper, 3)} m² livres` : 'não necessário', detalhe: `${T.ALIVIOS[c.alivio]} · QFT a ${num(c.dpMax, 0)} Pa = ${num(v.qftd, 2)} m³/s` },
-      { rotulo: 'Força de abertura (60 Pa)', valor: `${num(fMax, 0)} N`, ok: v.forcas.every(f => f.atende), detalhe: `limite ${num(c.limiteForca, 0)} N [CONFERIR] · fechador ${num(c.fechador, 0)} N` },
+      { rotulo: 'Força de abertura (60 Pa)', valor: `${num(fMax, 0)} N`, ok: v.forcas.every(f => f.atende), detalhe: `limite ${num(c.limiteForca, 0)} N${c.limiteForcaPadrao ? ' (não informado — padrão NFPA 101)' : ''} [CONFERIR] · fechador ${num(c.fechador, 0)} N` },
       { rotulo: 'Duto e grelhas', valor: `${num(d.largura)} × ${num(d.altura)} m · ${num(d.v, 1)} m/s`, ok: d.v <= c.vLimiteDuto, detalhe: `${d.nGrelhas} grelhas de ${m3h(d.qGrelha)} · tomada de ar ≥ ${num(d.areaTomada, 2)} m²` },
       { rotulo: 'Pressão estática do ventilador', valor: `${num(d.pressao, 0)} Pa`, detalhe: `estimada: atrito ${num(d.atrito, 0)} Pa + localizadas + ${num(c.dpMax, 0)} Pa na escada + ${num(T.PERDAS_PADRAO.efeito_sistema * 100, 0)} % efeito do sistema [CONFERIR]` },
       { rotulo: 'Ventiladores', valor: textoArranjo(calc), detalhe: `${m3h(vent.qVent)} cada · eixo ${num(vent.pEixo / 1000, 2)} kW (η ${num(c.rendimento)}) · In ${num(vent.in, 1)} A` },
@@ -156,7 +161,7 @@ function secoesMemorial(res) {
   s.push({ titulo: '2. Critérios de projeto', marcadores: [
     `Diferencial de pressão de projeto ${num(c.dp, 0)} Pa com todas as PCF fechadas, sem passar de ${num(c.dpMax, 0)} Pa (NT 13 Tabela A1 e 5.1.5.1; CBMDF NT 10, 4.3.1.10.2 r).`,
     `Velocidade mínima de ${num(c.vPorta)} m/s saindo pelas PCF consideradas abertas (5.1.6.4 c); 4 m/s em abertura permanente (5.1.6.4 b).`,
-    `PCF abertas no cálculo: ${v.npa} (Tabela B1: ${T.OCUPACOES[c.grupo].split(' — ')[1]} ${c.grupo === 'A' ? '≤ 80 m → 1, acima → 2' : c.grupo === 'D' ? '≤ 21 m → 1, acima → 2' : '→ 2'}${v.reuniao ? '; +1 por local de reunião de público, 5.1.6.4 f' : ''}).`,
+    `PCF abertas no cálculo: ${v.npa} (Tabela B1: ${T.OCUPACOES[c.grupo].split(' — ')[1]} ${c.grupo === 'A' ? '≤ 80 m → 1, acima → 2' : c.grupo === 'D' ? '≤ 21 m → 1, acima → 2' : '→ 2'}${v.acessosPorPavimento > 1 ? `; × ${v.acessosPorPavimento} PCF de acesso no pavimento mais desfavorável, Nota 5 do Anexo B` : ''}${v.reuniao ? '; +1 por local de reunião de público, 5.1.6.4 f' : ''}).`,
     `Vazamentos: +${num(v.fatorDuto * 100, 0)} % nos dutos (${T.ROTULO_DUTO[c.tipoDuto]}) e +25 % não identificados (5.1.6.6, Equação 5).`,
     `Velocidades nos dutos: captação ≤ 8 m/s; distribuição ≤ ${c.vLimiteDuto} m/s (${T.ROTULO_DUTO[c.tipoDuto]}) — adotado ${num(c.vDuto)} m/s de projeto para ruído ≤ 85 dB(A) na escada.`,
   ] });
@@ -182,7 +187,7 @@ function secoesMemorial(res) {
       : 'Vazão de projeto menor que a de 60 Pa: alívio não necessário pelo cálculo; mantido o dispositivo exigido de limitação a 60 Pa.',
   ] });
   s.push({ titulo: '8. Força de abertura das PCF', paragrafos: [
-    `F = Fdc + W·A·ΔP / (2·(W − d)), com fechador Fdc = ${num(c.fechador, 0)} N [CONFERIR] e maçaneta a d = ${num(T.FORCA.distancia_macaneta_m)} m da borda (ASHRAE/NFPA 92). Limite adotado ${num(c.limiteForca, 0)} N (NFPA 101; a EN 12101-6 usa 100 N) [CONFERIR na NBR 14880].`,
+    `F = Fdc + W·A·ΔP / (2·(W − d)), com fechador Fdc = ${num(c.fechador, 0)} N [CONFERIR] e maçaneta a d = ${num(T.FORCA.distancia_macaneta_m)} m da borda (ASHRAE/NFPA 92). Limite ${c.limiteForcaPadrao ? 'não escolhido no projeto — adotado o padrão de' : 'escolhido no projeto:'} ${num(c.limiteForca, 0)} N (NFPA 101 usa 133 N; a EN 12101-6 usa 100 N; a NT 13 GO não fixa valor) [CONFERIR na NBR 14880].`,
   ], tabela: { colunas: ['Porta', `F a ${num(c.dp, 0)} Pa (N)`, `F a ${num(c.dpMax, 0)} Pa (N)`, 'Limite (N)', 'Situação'], linhas: v.forcas.map(f => [f.descricao, num(f.f50, 0), num(f.f60, 0), num(f.limite, 0), sim(f.atende)]), proporcoes: [2.6, 1, 1, 0.8, 0.9] } });
   s.push({ titulo: '9. Distribuição de ar', marcadores: [
     `Duto vertical adjacente à escada, ${c.tipoDuto === 'metalico' ? 'em chapa de aço galvanizado com costuras seladas (SMACNA)' : 'em alvenaria rebocada internamente'}, ${num(d.largura)} × ${num(d.altura)} m (${num(d.area, 3)} m²), V = ${num(d.v, 2)} m/s ≤ ${c.vLimiteDuto} m/s — ${sim(d.v <= c.vLimiteDuto)}.`,
@@ -216,7 +221,7 @@ function secoesMemorial(res) {
   s.push({ titulo: '14. Diagrama de comando — sequência', paragrafos: ['Elementos de força e de comando na ordem do diagrama (base para o desenho do painel):'],
     tabela: { colunas: ['#', 'Id', 'Elemento', 'Circuito'], linhas: calc.diagrama.map(e => [e.ordem, e.id, e.rotulo, e.ligacao]), proporcoes: [0.3, 0.6, 4.6, 0.8], tamanho: 15 } });
   s.push({ titulo: '15. Comissionamento e manutenção', marcadores: [
-    `Teste de aceitação com o prédio concluído e os sistemas balanceados (NT 13 5.5): ΔP com todas as PCF fechadas em cada pavimento (manômetro com sonda pela fresta) entre ${num(T.PRESSAO.minimo_medido_fracao * c.dp, 0)} e ${num(c.dpMax, 0)} Pa; velocidade média ≥ ${num(c.vPorta)} m/s nas ${v.npa} PCF abertas (anemômetro, ≥ 12 pontos); força de abertura; tempos de partida pela detecção, pelo acionador manual e na reversão; operação no gerador.`,
+    `Teste de aceitação com o prédio concluído e os sistemas balanceados (NT 13 5.5): ΔP com todas as PCF fechadas em cada pavimento (manômetro com sonda pela fresta) entre ${num(calc.criterios.dpMin, 0)} e ${num(calc.criterios.dpMax, 0)} Pa; velocidade média ≥ ${num(calc.criterios.vMin)} m/s nas ${v.npa} PCF abertas (anemômetro, ≥ 12 pontos); força de abertura; tempos de partida pela detecção, pelo acionador manual e na reversão; operação no gerador.`,
     'Teste semanal de cada ventilador (modo TESTE), verificação anual dos diferenciais de pressão e manutenção de dutos, correias, filtros, damper, detectores e gerador (NT 13 5.3.12). Medições de campo conforme AMCA 203.',
   ] });
   s.push({ titulo: '16. Lista de materiais (preliminar)', tabela: { colunas: ['Cód.', 'Descrição', 'Un.', 'Qtd.', 'Referência'], linhas: calc.materiais.map(m => [m.codigo, m.descricao, m.unidade, num(m.quantidade, 2), m.referencia]), proporcoes: [0.7, 4.2, 0.45, 0.55, 1.6], tamanho: 15 } });
@@ -245,7 +250,7 @@ function cfgLaudo(res) {
       ['Vazão de projeto', `${num(v.qts, 2)} m³/s (${m3h(v.qts)}) — ${v.npa} PCF abertas a ${num(c.vPorta)} m/s`],
       ['Ventiladores', `${textoArranjo(calc)} · ${num(d.pressao, 0)} Pa estimados`],
       ['Controle / alívio', `${T.PARTIDAS[c.partida]} · ${T.ALIVIOS[c.alivio]}`],
-      ['Critérios', `ΔP ${num(T.PRESSAO.minimo_medido_fracao * c.dp, 0)}–${num(c.dpMax, 0)} Pa; V ≥ ${num(c.vPorta)} m/s; F ≤ ${num(c.limiteForca, 0)} N [CONFERIR]; partida ≤ ${num(c.tempoPartidaMax, 0)} s [CONFERIR]`],
+      ['Critérios', `ΔP ${num(calc.criterios.dpMin, 0)}–${num(calc.criterios.dpMax, 0)} Pa; V ≥ ${num(calc.criterios.vMin)} m/s (NT 13 GO 5.5.3 d e 5.1.6.4 c — critério normativo, independente do valor editado no projeto); F ≤ ${num(calc.criterios.forcaMax, 0)} N [CONFERIR]; partida ≤ ${num(c.tempoPartidaMax, 0)} s [CONFERIR]`],
     ],
     metodologia: [
       'Inspeção visual da escada, PCF, casa de máquinas, tomada de ar, dutos, grelhas, damper, painel e cabos.',
@@ -257,7 +262,7 @@ function cfgLaudo(res) {
     ],
     medicoes: [
       { titulo: '6.1 Diferencial de pressão com as PCF fechadas', colunas: ['Pavimento', 'ΔP (Pa)', 'Critério', 'Resultado'], proporcoes: [2.4, 0.8, 1.4, 0.8],
-        linhas: med.pressoes.map(m => [m.pavimento, m.dp_pa ?? '', m.criterio, m.resultado]), nota: 'Medido ≥ 90 % do projetado e ≤ 60 Pa (NT 13 5.5.3 d; CBMDF 4.3.1.10.2 r).' },
+        linhas: med.pressoes.map(m => [m.pavimento, m.dp_pa ?? '', m.criterio, m.resultado]), nota: 'Medido ≥ 90 % do projetado (projeto nunca abaixo de 50 Pa, Tabela A1) e ≤ 60 Pa (NT 13 5.1.5.1 e 5.5.3 d; CBMDF 4.3.1.10.2 r).' },
       { titulo: '6.2 Velocidade do ar nas PCF abertas', colunas: ['PCF', 'Média (m/s)', 'Pontos', 'Critério', 'Resultado'], proporcoes: [2.6, 0.8, 0.6, 1.4, 0.8],
         linhas: med.velocidades.map(m => [m.porta, m.media_ms ?? '', [m.pontos, m.obs].filter(Boolean).join(' — '), m.criterio, m.resultado]) },
       { titulo: '6.3 Força de abertura das PCF', colunas: ['PCF', 'Força (N)', 'Critério', 'Resultado'], proporcoes: [2.6, 0.8, 1.4, 0.8],
@@ -289,10 +294,10 @@ function cfgChecklist(res) {
       'Levar: manômetro digital 0–200 Pa com sonda em L, anemômetro de fio quente, dinamômetro, cronômetro, alicate amperímetro, fumaça de teste, rádio.',
     ],
     referencias: [
-      ['ΔP com PCF fechadas', `${num(T.PRESSAO.minimo_medido_fracao * c.dp, 0)} a ${num(c.dpMax, 0)} Pa`],
+      ['ΔP com PCF fechadas', `${num(calc.criterios.dpMin, 0)} a ${num(calc.criterios.dpMax, 0)} Pa`],
       ['PCF abertas no teste de velocidade', `${v.npa} (${linhasPortas(v).filter(g => g.abertas).map(g => `${g.abertas} × ${g.descricao}`).join('; ')})`],
-      ['Velocidade nas PCF abertas', `≥ ${num(c.vPorta)} m/s (média de 12 pontos)`],
-      ['Força de abertura', `≤ ${num(c.limiteForca, 0)} N [CONFERIR]`],
+      ['Velocidade nas PCF abertas', `≥ ${num(calc.criterios.vMin)} m/s (média de 12 pontos)`],
+      ['Força de abertura', `≤ ${num(calc.criterios.forcaMax, 0)} N [CONFERIR]`],
       ['Vazão de projeto (cada ventilador)', `${num(vent.qVentM3h, 0)} m³/h a ${num(vent.pressao, 0)} Pa · In ${num(vent.in, 1)} A`],
       ['Tempo de partida', `≤ ${num(c.tempoPartidaMax, 0)} s [CONFERIR]; reversão: pressostato em ${num(c.tempoReversao, 0)} s`],
     ],
@@ -372,6 +377,8 @@ async function gerarPlanilha(res) {
 
 const DOCUMENTOS = [
   { tipo: 'memorial', rotulo: 'Memorial descritivo e de cálculo', formato: 'Word', nome: 'Memorial_Pressurizacao',
+    exige: (res) => !res.calc.bloqueios.length,
+    motivo: 'Valores de projeto fora da norma (ΔP de projeto < 50 Pa, ΔP máxima > 60 Pa, velocidade < 1 m/s, PCF abertas abaixo da Tabela B1) ou altura da edificação não informada — veja os avisos BLOQUEANTE e corrija antes de gerar o memorial.',
     gerar: (res) => D.docxParaBuffer(D.gerarMemorial(res.dados, { titulo: 'MEMORIAL DESCRITIVO E DE CÁLCULO — PRESSURIZAÇÃO DE ESCADA DE SEGURANÇA', subtitulo: 'ABNT NBR 14880 — CBMDF NT 10/2015 — controle de fumaça e automação', tituloCurto: 'Memorial — pressurização de escada', sigla: 'MEM-PRES', secoes: secoesMemorial(res), listaNormas: NORMAS })) },
   { tipo: 'planilha', rotulo: 'Planilha de cálculo, automação e materiais', formato: 'Excel', nome: 'Pressurizacao', gerar: (res) => gerarPlanilha(res) },
   { tipo: 'laudo', rotulo: 'Laudo de inspeção / comissionamento', formato: 'Word', nome: 'Laudo_Pressurizacao',
@@ -478,7 +485,7 @@ const FORMULARIO = [
     { tipo: 'nota', texto: 'A ocupação e a altura definem o nº de portas abertas no cálculo (Tabela B1), o ventilador reserva e o gerador (CBMDF NT 10/2015, 4.3.1.10).' },
     { tipo: 'grade', colunas: 4, campos: [
       { caminho: 'edificacao.ocupacao', rotulo: 'Ocupação (grupo)', tipo: 'selecao', opcoes: OP.ocupacao },
-      { caminho: 'edificacao.altura_m', rotulo: 'Altura da edificação (m)', tipo: 'numero' },
+      { caminho: 'edificacao.altura_m', rotulo: 'Altura da edificação (m)', tipo: 'numero', dica: 'Obrigatória para o memorial (Tabela B1, ventilador único, gerador)' },
       { caminho: 'edificacao.pavimentos', rotulo: 'Pavimentos ligados à escada', tipo: 'numero' },
       { caminho: 'edificacao.sistema', rotulo: 'Sistema', tipo: 'selecao', opcoes: OP.sistema },
       { caminho: 'edificacao.jurisdicao', rotulo: 'Corpo de Bombeiros', tipo: 'selecao', opcoes: OP.jurisdicao },
@@ -492,6 +499,7 @@ const FORMULARIO = [
     { tipo: 'grade', colunas: 4, campos: [
       { caminho: 'escada.nome', rotulo: 'Escada' },
       { caminho: 'escada.portas_abertas', rotulo: 'PCF abertas no cálculo (vazio = Tabela B1)', tipo: 'numero' },
+      { caminho: 'escada.acessos_por_pavimento', rotulo: 'PCF de acesso no pavimento mais desfavorável', tipo: 'numero', dica: 'Nota 5 do Anexo B: com 2 ou mais, multiplica as PCF abertas da Tabela B1. Vazio = deduzido das portas' },
       { caminho: 'escada.antecamara', rotulo: 'Antecâmara não pressurizada (frestas em série)', tipo: 'check' },
     ] },
     { tipo: 'tabela', caminho: 'escada.portas', rotuloAdicionar: 'Adicionar grupo de PCF', novaLinha: { descricao: '', tipo: 'simples', sentido: 'acesso', quantidade: 1, largura_m: 0.89, altura_m: 2.1, fresta_m2: null, vao_m2: null },
@@ -505,7 +513,7 @@ const FORMULARIO = [
         { campo: 'permanente', rotulo: 'Abertura permanente', tipo: 'check', largura: 110 }, { campo: 'area_aberta_m2', rotulo: 'Área aberta (m²) — 4 m/s', tipo: 'numero', largura: 140 }] },
   ] },
   { titulo: '4. Critérios e distribuição de ar', itens: [
-    { tipo: 'nota', texto: 'Deixe vazio para usar os valores da norma e os típicos (perdas da tomada de ar, grelha e registro). A pressão do ventilador é estimada — confirme com o traçado e o catálogo.' },
+    { tipo: 'nota', texto: 'Deixe vazio para usar os valores da norma e os típicos (perdas da tomada de ar, grelha e registro). ΔP de projeto < 50 Pa, ΔP máxima > 60 Pa ou velocidade < 1 m/s bloqueiam o memorial; o laudo mede sempre pelo critério da norma. A pressão do ventilador é estimada — confirme com o traçado e o catálogo.' },
     { tipo: 'grade', colunas: 4, campos: [
       { caminho: 'sistema.pressao_projeto_pa', rotulo: 'ΔP de projeto (Pa)', tipo: 'numero' },
       { caminho: 'sistema.pressao_max_pa', rotulo: 'ΔP máxima (Pa)', tipo: 'numero' },
@@ -530,7 +538,7 @@ const FORMULARIO = [
       { caminho: 'sistema.alivio', rotulo: 'Alívio de sobrepressão', tipo: 'selecao', opcoes: OP.alivio },
       { caminho: 'sistema.sensores', rotulo: 'Sensores de ΔP', tipo: 'selecao', opcoes: OP.sensores },
       { caminho: 'sistema.acionadores_remotos', rotulo: 'Acionadores remotos LIGA', tipo: 'numero', dica: 'Portaria e sala de controle (CBMDF 4.3.1.10.5 f)' },
-      { caminho: 'sistema.limite_forca_n', rotulo: 'Força máx. de abertura (N)', tipo: 'numero', dica: '133 N (NFPA 101); EN 12101-6: 100 N [CONFERIR NBR 14880]' },
+      { caminho: 'sistema.limite_forca_n', rotulo: 'Força máx. de abertura (N)', tipo: 'numero', dica: 'Escolha: 133 N (NFPA 101) ou 100 N (EN 12101-6); a NT 13 GO não fixa. Vazio = 133 N com aviso [CONFERIR NBR 14880]' },
       { caminho: 'sistema.forca_fechador_n', rotulo: 'Força do fechador (N)', tipo: 'numero' },
       { caminho: 'sistema.tempo_partida_max_s', rotulo: 'Tempo máx. de partida (s)', tipo: 'numero' },
       { caminho: 'sistema.tempo_reversao_s', rotulo: 'Tempo para reversão ao reserva (s)', tipo: 'numero' },

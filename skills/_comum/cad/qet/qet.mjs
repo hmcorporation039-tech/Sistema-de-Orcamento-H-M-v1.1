@@ -28,8 +28,12 @@ export const ORIENT = { n: 0, e: 1, s: 2, w: 3 };
 const ORIENT_LETRA = ['n', 'e', 's', 'w'];
 const DOCK = [[0, 4], [-4, 0], [0, -4], [4, 0]]; // n, e, s, w → deslocamento até o encaixe
 export const uuid = () => `{${crypto.randomUUID()}}`;
-export const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/\n/g, '&#xa;');
-const escTexto = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// Caracteres de controle (exceto TAB e LF) são proibidos no XML 1.0 — um \x0B
+// ou \x0C vindo de texto colado deixava o .qet ilegível no QElectroTech.
+// CR vira LF (quebra de linha única).
+export const semControle = (s) => String(s ?? '').replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g, '');
+export const esc = (s) => semControle(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/\n/g, '&#xa;').replace(/\t/g, '&#x9;');
+const escTexto = (s) => semControle(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const attrs = (o) => Object.entries(o).filter(([, v]) => v !== undefined && v !== null).map(([k, v]) => `${k}="${esc(v)}"`).join(' ');
 const lerAttrs = (s) => Object.fromEntries([...s.matchAll(/([\w:-]+)="([^"]*)"/g)].map((m) => [m[1], m[2]]));
 export const fonte = (tam = 9, familia = 'Liberation Sans', negrito = false) => `${familia},${tam},-1,5,${negrito ? 75 : 50},0,0,0,0,0,${negrito ? 'Bold' : 'Regular'}`;

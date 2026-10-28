@@ -21,13 +21,19 @@ export default function Assinatura() {
   const [nome, setNome] = useState('');
   const [documento, setDocumento] = useState('');
   const [erro, setErro] = useState('');
+  const [aviso, setAviso] = useState('');
   const [salvando, setSalvando] = useState(false);
+  const larguraPreparada = useRef(0); // largura (CSS) com que o quadro foi preparado
+  const tracosRef = useRef(0);
+  useEffect(() => { tracosRef.current = tracos; }, [tracos]);
 
   function preparar() {
     const c = canvasRef.current;
     if (!c) return;
     const escala = Math.min(2, window.devicePixelRatio || 1);
     const r = c.getBoundingClientRect();
+    larguraPreparada.current = r.width;
+    setAviso('');
     c.width = Math.round(r.width * escala);
     c.height = Math.round(r.height * escala);
     const ctx = c.getContext('2d');
@@ -41,6 +47,34 @@ export default function Assinatura() {
     setTracos(0);
   }
   useEffect(() => { preparar(); }, []);
+
+  // Girar o celular (ou mudar a largura da janela) muda o tamanho do quadro:
+  // sem refazer, o traço sai deslocado do dedo. Refaz o quadro; se já havia
+  // assinatura, ela é apagada e a pessoa é avisada. A altura do quadro é fixa,
+  // então o teclado abrindo (só muda a altura da janela) não apaga nada.
+  useEffect(() => {
+    let t = null;
+    function aoMudar() {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        const c = canvasRef.current;
+        if (!c) return;
+        const largura = c.getBoundingClientRect().width;
+        if (!largura || Math.abs(largura - larguraPreparada.current) < 1) return;
+        desenhando.current = false;
+        const havia = tracosRef.current > 0;
+        preparar();
+        if (havia) setAviso('A tela girou — peça ao cliente para assinar de novo.');
+      }, 150);
+    }
+    window.addEventListener('resize', aoMudar);
+    window.addEventListener('orientationchange', aoMudar);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('resize', aoMudar);
+      window.removeEventListener('orientationchange', aoMudar);
+    };
+  }, []);
 
   function ponto(e) {
     const r = canvasRef.current.getBoundingClientRect();
@@ -117,6 +151,7 @@ export default function Assinatura() {
         <canvas ref={canvasRef} data-testid="canvas-assinatura" aria-label="Quadro para assinar" {...eventos}
           style={{ width: '100%', height: 230, background: '#fff', borderRadius: 10, border: `3px solid ${COR.ouro}`, touchAction: 'none', display: 'block' }} />
         <div style={{ color: COR.texto3, fontSize: 14, marginTop: 4 }}>Assine com o dedo dentro do quadro.</div>
+        {aviso && <div role="alert" data-testid="aviso-girou" style={{ color: COR.aviso, fontWeight: 700, marginTop: 6 }}>{aviso}</div>}
         <Botao variante="contorno" onClick={preparar} style={{ marginTop: 10, width: '100%' }}><Eraser size={20} />Limpar</Botao>
 
         <label htmlFor="ass-nome">Nome de quem assina</label>

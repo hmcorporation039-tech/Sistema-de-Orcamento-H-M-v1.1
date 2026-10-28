@@ -91,11 +91,11 @@ Zona interna:
 | `medidas_ptu` | `avisos` · `isolacao` · `restricoes` — Tabela B.6 |
 | `wm2_m` | malha de blindagem interna (KS2) |
 | `equipamento_zpr0a` | `true` se houver equipamento exposto a descarga direta (FB) |
-| `ft` | FT específico, só se imposto pela autoridade |
+| `ft` | FT específico, só se imposto pela autoridade e MAIS restritivo que o da norma (valor maior é ignorado e registrado no relatório de risco) |
 | `cz` | valor de patrimônio cultural da zona (R3) |
 | `sistemas` | `[{ "nome", "linha", "uw_kv", "dps_np", "ks3", "rede_equipotencial_malha", "blindado", "interface_optica", "pm_igual_1" }]` |
 
-Sistemas internos: `uw_kv` = suportabilidade de impulso (1; 1,5; 2,5; 4; 6 kV); `dps_np` como `peb_np`; `ks3` = `sem_preocupacao` · `evitando_lacos_grandes` · `evitando_lacos_medios` · `evitando_lacos_pequenos` · `blindado` (Tabela B.5); `rede_equipotencial_malha: true` reduz KS1 e KS2 à metade; `interface_optica: true` → PMS = 0 (B.4.11); `pm_igual_1: true` para equipamento sem suportabilidade normalizada (B.4.10).
+Sistemas internos: `uw_kv` = suportabilidade de impulso (1; 1,5; 2,5; 4; 6 kV); `dps_np` como `peb_np`; `ks3` = `sem_preocupacao` · `evitando_lacos_grandes` (= 0,2, igual a `evitando_lacos_medios`; a Tabela B.5 não tem 0,5) · `evitando_lacos_medios` · `evitando_lacos_pequenos` · `blindado` (Tabela B.5); `rede_equipotencial_malha: true` reduz KS1 e KS2 à metade; `interface_optica: true` → PMS = 0 (B.4.11); `pm_igual_1: true` para equipamento sem suportabilidade normalizada (B.4.10).
 
 ## inspecao
 

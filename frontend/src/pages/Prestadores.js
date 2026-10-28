@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import useUltimoPedido from '../hooks/useUltimoPedido';
 import toast from 'react-hot-toast';
 import { Plus, Search, Pencil, Trash2, X } from 'lucide-react';
 import { getPrestadores, criarPrestador, atualizarPrestador, removerPrestador } from '../services/api';
@@ -26,21 +27,24 @@ export default function Prestadores() {
   const [pagina, setPagina] = useState(1);
   const [paginacao, setPaginacao] = useState({ total: 0, totalPaginas: 1 });
 
+  const novoPedido = useUltimoPedido();
   const carregar = useCallback(async () => {
+    const vale = novoPedido(); // resposta de busca antiga não sobrescreve a atual
     setCarregando(true);
     try {
       const params = { pagina };
       if (busca) params.busca = busca;
       if (categoriaFiltro) params.categoria = categoriaFiltro;
       const res = await getPrestadores(params);
+      if (!vale()) return;
       setPrestadores(res.data.itens);
       setPaginacao({ total: res.data.total, totalPaginas: res.data.totalPaginas });
     } catch {
-      toast.error('Erro ao carregar prestadores');
+      if (vale()) toast.error('Erro ao carregar prestadores');
     } finally {
-      setCarregando(false);
+      if (vale()) setCarregando(false);
     }
-  }, [busca, categoriaFiltro, pagina]);
+  }, [busca, categoriaFiltro, pagina, novoPedido]);
 
   useEffect(() => {
     const t = setTimeout(carregar, 300);

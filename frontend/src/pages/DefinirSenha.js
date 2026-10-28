@@ -70,17 +70,17 @@ export default function DefinirSenha() {
         </p>
 
         <Campo label="Senha provisória (a que você acabou de usar)">
-          <input type="password" value={senhaAtual} onChange={e => setSenhaAtual(e.target.value)}
+          <input type="password" style={{ fontSize: 16 }} value={senhaAtual} onChange={e => setSenhaAtual(e.target.value)}
             autoFocus autoComplete="current-password" />
         </Campo>
 
         <Campo label="Nova senha (mínimo 8 caracteres)">
-          <input type="password" value={novaSenha} onChange={e => setNovaSenha(e.target.value)}
+          <input type="password" style={{ fontSize: 16 }} value={novaSenha} onChange={e => setNovaSenha(e.target.value)}
             autoComplete="new-password" />
         </Campo>
 
         <Campo label="Repita a nova senha">
-          <input type="password" value={confirmacao} onChange={e => setConfirmacao(e.target.value)}
+          <input type="password" style={{ fontSize: 16 }} value={confirmacao} onChange={e => setConfirmacao(e.target.value)}
             autoComplete="new-password" />
         </Campo>
 

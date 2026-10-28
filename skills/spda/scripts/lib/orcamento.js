@@ -22,6 +22,14 @@ function itensExecucao(res) {
     s('spda_hastes_caixas', 'Cravação de hastes e instalação de caixas de inspeção', dim.aterramento.hastes, 'un'),
     s('spda_bep', 'Instalação do BEP e ligações equipotenciais (instalações metálicas, linhas que entram)', 1, 'vb'),
   );
+  // Anéis intermediários e captação lateral: condutor horizontal na fachada, em
+  // altura — sem código próprio na tabela de referência (cotar; NR-35).
+  if (dim.descidas.aneis_intermediarios) {
+    itens.push({ secao: SECAO_SERVICOS, subgrupo: 'SPDA', descricao: `Instalação dos anéis intermediários de descida na fachada (${dim.descidas.aneis_intermediarios} anel(éis), trabalho em altura — NR-35)`, quantidade: Math.round(dim.descidas.aneis_comprimento_m), unidade: 'm' });
+  }
+  if (dim.captacao.lateral && dim.captacao.lateral.aneis) {
+    itens.push({ secao: SECAO_SERVICOS, subgrupo: 'SPDA', descricao: `Instalação da captação lateral nos 20 % superiores da fachada (${dim.captacao.lateral.aneis} anel(éis), trabalho em altura — NR-35)`, quantidade: Math.round(dim.captacao.lateral.comprimento_m), unidade: 'm' });
+  }
   const dps = dim.materiais.filter(m => m.codigo.startsWith('DPS')).length;
   if (dps) itens.push(s('spda_dps', 'Instalação de DPS (classe I nas entradas e coordenados nos quadros)', dps, 'un'));
   itens.push(
@@ -31,11 +39,29 @@ function itensExecucao(res) {
   return itens;
 }
 
+// Pontos de ensaio de continuidade. O código de mão de obra é por ponto ('pt'):
+// sem plano de ensaios, orçar "1 vb" saía como UM ponto. Estimativa: 1 ponto por
+// descida + 1 verificação comprobatória captação × BEP (F.4). Sem o NP do SPDA, as
+// descidas são estimadas pelo perímetro com o maior espaçamento da Tabela 5 (20 m,
+// NP IV) — limite inferior, marcado [CONFERIR].
+function pontosEnsaio(res) {
+  if (res.ensaios.length) return { qtd: res.ensaios.length, texto: '' };
+  if (res.dim) return { qtd: res.dim.descidas.quantidade + 1, texto: ` (estimado: ${res.dim.descidas.quantidade} descidas + 1 captação × BEP; [CONFERIR plano de ensaios])` };
+  const est = (res.dados && res.dados.estrutura) || {};
+  const perimetro = (res.dados.spda && res.dados.spda.perimetro_m) || (est.L && est.W ? 2 * (Number(est.L) + Number(est.W)) : 0);
+  if (!perimetro) return { qtd: 0, texto: '' };
+  const descidas = Math.max(2, Math.ceil(perimetro / 20));
+  return { qtd: descidas + 1, texto: ` (estimado pelo perímetro de ${Math.round(perimetro)} m: ${descidas} descidas a ≤ 20 m + 1 captação × BEP; [CONFERIR plano de ensaios])` };
+}
+
 function itensInspecao(res) {
   const s = (codigo, descricao, quantidade = 1, unidade = 'vb', subgrupo = 'Laudo SPDA') => ({ secao: SECAO_SERVICOS, subgrupo, codigo, descricao, quantidade, unidade });
+  const pontos = pontosEnsaio(res);
   const itens = [
     s('spda_inspecao', 'Inspeção do SPDA (NBR 5419-3:2026, Seção 7) — documental, visual e dimensional'),
-    s('spda_ensaio_continuidade', `Ensaios de continuidade elétrica (Anexo F) — ${res.ensaios.length || 'conforme plano de ensaios'} pontos`, res.ensaios.length || 1, res.ensaios.length ? 'pt' : 'vb'),
+    pontos.qtd
+      ? s('spda_ensaio_continuidade', `Ensaios de continuidade elétrica (Anexo F) — ${pontos.qtd} pontos${pontos.texto}`, pontos.qtd, 'pt')
+      : s('spda_ensaio_continuidade', 'Ensaios de continuidade elétrica (Anexo F) — conforme plano de ensaios [CONFERIR quantidade de pontos: informe as dimensões da estrutura ou o plano de ensaios]', 1, 'vb'),
   ];
   if (res.risco) itens.push(s('spda_analise_risco', 'Análise de risco (NBR 5419-2:2026) com relatório'));
   itens.push(s('spda_laudo', 'Laudo técnico de inspeção com registro fotográfico e ART'));

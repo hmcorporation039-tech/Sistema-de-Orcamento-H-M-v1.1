@@ -111,6 +111,24 @@ perto('circulação: uniformidade', r.medicoes[2].uo, 120 / 153.75);
 igual('E3 (emergência) fica NA — skill de incêndio', r.checklist.find(c => c.cod === 'E3').situacao, 'NA');
 igual('NCs do checklist', r.ncs.length, 2);
 
+// Achado A2.7 (revisão 27/10/2026): luminária sem Ra/UGR informados → o resumo dizia
+// "Em, Ra e UGR atendidos". Agora o requisito fica "não verificado" e o indicador não fica verde.
+{
+  const d = JSON.parse(JSON.stringify(motor.exemplo()));
+  d.luminarias = [{ codigo: 'X1', tipo: 'embutir', potencia_w: 30, fluxo_lm: 3600 }];
+  d.ambientes = [{ nome: 'Sala cirurgica', atividade: 'hosp_cirurgia', comprimento_m: 6, largura_m: 6, pe_direito_m: 3, luminaria: 'X1' }];
+  d.inspecao = {};
+  const rx = motor.processar(d);
+  const ind = motor.resumir(rx).indicadores.find(i => /8995/.test(i.rotulo));
+  igual('sem Ra/UGR: indicador não afirma atendimento', [/atendidos/.test(ind.detalhe), ind.ok, ind.valor], [false, undefined, '0 de 1']);
+  igual('sem Ra/UGR: detalhe aponta dado ausente', /não verificados/.test(ind.detalhe), true);
+  igual('sem Ra/UGR: avisos [CONFERIR] de Ra e de UGR', ['Ra da luminária', 'UGR da luminária'].map(t => rx.calc.avisos.some(a => a.includes(t) && /NÃO verificado/.test(a))), [true, true]);
+  // com Ra 90 e UGR 16 informados volta a "atendidos" (Em também atende com a grade calculada)
+  d.luminarias[0].ra = 90; d.luminarias[0].ugr = 16;
+  const ind2 = motor.resumir(motor.processar(d)).indicadores.find(i => /8995/.test(i.rotulo));
+  igual('com Ra/UGR informados e dentro do limite → atendidos', [ind2.ok, ind2.detalhe], [true, 'Em, Ra e UGR atendidos']);
+}
+
 (async () => {
   for (const t of motor.tiposDisponiveis(r)) igual(`documento ${t}`, (await motor.gerarDocumento(r, t)).buffer.slice(0, 2).toString(), 'PK');
   const exec = motor.montarOrcamento(r, 'execucao');

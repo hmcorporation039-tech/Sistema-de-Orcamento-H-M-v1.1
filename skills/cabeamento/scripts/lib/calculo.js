@@ -54,7 +54,7 @@ function calcular(dados) {
   const avisos = [];
   if (cfg.F > 10) avisos.push(`Patch cords somando ${cfg.F} m (> 10 m): o cabo horizontal foi reduzido pela Tabela 3.`);
 
-  const pavimentos = (dados.pavimentos || []).filter(p => Number(p.area_util_m2) > 0 || Number(p.pontos_extra) > 0).map(p => {
+  const pavimentos = (dados.pavimentos || []).filter(p => Number(p.area_util_m2) > 0 || Number(p.pontos_extra) > 0 || Number(p.aps) > 0).map(p => {
     const area = Number(p.area_util_m2) || 0;
     const areasTrabalho = Math.ceil(area / cfg.areaTrabalho);
     const tomadasAt = areasTrabalho * cfg.tomadasPorArea;
@@ -69,12 +69,22 @@ function calcular(dados) {
     const fds = Math.max(fdArea, fdDist);
     if (dMax > hMax) avisos.push(`${p.nome}: ponto mais distante a ${dMax} m excede o cabo horizontal máximo de ${hMax.toFixed(1)} m — previstos ${fds} distribuidores de piso. [CONFERIR posição]`);
     const cabo = pontos * (dMed + cfg.folgaPonto);
-    const paineis = Math.ceil(pontos / cfg.portasPainel);
-    const switches = Math.ceil(pontos / cfg.portasSwitch);
-    const uOcupado = paineis * 2 + switches + 2; // painel + organizador, switches, régua/bandeja
+    // Cada distribuidor de piso atende a sua parte dos pontos com os PRÓPRIOS
+    // patch panels e switches (um switch não é compartilhado entre racks distintos).
+    const pontosPorFd = Math.ceil(pontos / fds);
+    const paineisPorFd = Math.ceil(pontosPorFd / cfg.portasPainel);
+    const switchesPorFd = Math.ceil(pontosPorFd / cfg.portasSwitch);
+    const paineis = paineisPorFd * fds;
+    const switches = switchesPorFd * fds;
+    // U por rack: patch panel + organizador (2U), switch + organizador (2U), régua/bandeja (2U)
+    const uOcupado = paineisPorFd * 2 + switchesPorFd * 2 + 2;
     const uNecessario = Math.ceil(uOcupado * (1 + cfg.reservaRack / 100));
-    const rackU = RACKS_U.find(u => u >= Math.ceil(uNecessario / fds)) || 44;
-    return { ...p, area, areasTrabalho, tomadasAt, aps, tomadasAp, extra, pontos, dMed, dMax, fds, cabo, paineis, switches, uNecessario, rackU };
+    if (uNecessario > 44) avisos.push(`${p.nome}: ${uNecessario}U necessários por distribuidor — acima do rack de 44U; dividir em mais racks. [CONFERIR]`);
+    const rackU = RACKS_U.find(u => u >= uNecessario) || 44;
+    // Backbone até cada FD do pavimento: subida (i × pé-direito, somada abaixo) + 15 m de
+    // trecho horizontal; FDs adicionais no mesmo piso ficam afastados ≈ k × dMax ÷ fds. [CONFERIR posição]
+    const backboneHorizontal = Array.from({ length: fds }, (_, k) => 15 + k * dMax / fds);
+    return { ...p, area, areasTrabalho, tomadasAt, aps, tomadasAp, extra, pontos, dMed, dMax, fds, cabo, pontosPorFd, paineisPorFd, switchesPorFd, paineis, switches, uNecessario, rackU, backboneHorizontal };
   });
   if (!pavimentos.length) throw new Error('Cadastre ao menos um pavimento com área útil ou pontos.');
 
@@ -85,7 +95,8 @@ function calcular(dados) {
   const fds = total('fds');
   const backbone = pavimentos.length > 1 || fds > 1;
   const peDireito = Number((dados.sistema || {}).pe_direito_m) || 3.5;
-  const backboneM = backbone ? Math.ceil(pavimentos.reduce((a, _p, i) => a + i * peDireito + 15, 0) * 1.2) : 0;
+  // um lance de backbone por distribuidor de piso (antes: um por pavimento, e o 2º FD do piso ficava sem)
+  const backboneM = backbone ? Math.ceil(pavimentos.reduce((a, p, i) => a + p.backboneHorizontal.reduce((b, h) => b + i * peDireito + h, 0), 0) * 1.2) : 0;
   const cat = cfg.categoria;
   const materiais = [
     { codigo: 'CAB', descricao: `Cabo U/UTP ${cfg.blindado ? '(F/UTP blindado) ' : ''}Cat ${cat} 4 pares LSZH — caixa de 305 m`, unidade: 'cx', quantidade: caixas, referencia: 'NBR 14565, Seções 8 e 10' },
@@ -94,7 +105,7 @@ function calcular(dados) {
     { codigo: 'ORG', descricao: 'Organizador horizontal de cabos 1U', unidade: 'un', quantidade: total('paineis') + total('switches'), referencia: 'NBR 14565, 6.7.9' },
     { codigo: 'PC-R', descricao: `Patch cord Cat ${cat} 1,5 m (lado do rack)`, unidade: 'un', quantidade: pontos, referencia: 'NBR 14565, Tabela 2' },
     { codigo: 'PC-A', descricao: `Patch cord Cat ${cat} 2,5 m (área de trabalho)`, unidade: 'un', quantidade: pontos, referencia: 'NBR 14565, Tabela 2' },
-    ...pavimentos.map(p => ({ codigo: 'RACK', descricao: `Rack ${p.rackU}U 19" com régua de energia e bandeja — ${p.nome}`, unidade: 'un', quantidade: p.fds, referencia: 'NBR 14565, 6.7.9' })),
+    ...pavimentos.map(p => ({ codigo: 'RACK', descricao: `Rack ${p.rackU}U 19" com régua de energia e bandeja — ${p.nome}${p.fds > 1 ? ` (${p.fds} distribuidores, um rack por FD)` : ''}`, unidade: 'un', quantidade: p.fds, referencia: 'NBR 14565, 6.7.9' })),
     { codigo: 'SW', descricao: `Switch gerenciável ${cfg.portasSwitch} portas${total('aps') ? ' PoE+' : ''} (ativo — conferir especificação)`, unidade: 'un', quantidade: total('switches'), referencia: '—' },
     ...(backbone ? [{ codigo: 'FO', descricao: 'Cabo de fibra óptica multimodo OM3 6 fibras (backbone)', unidade: 'm', quantidade: backboneM, referencia: 'NBR 14565, 6.3.3 e Seção 9' },
       { codigo: 'DIO', descricao: 'Distribuidor interno óptico (DIO) 24 portas com acopladores LC', unidade: 'un', quantidade: fds, referencia: 'NBR 14565, Seção 11.3' }] : []),

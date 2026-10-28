@@ -52,8 +52,15 @@ function luminariasEmergencia(L, W, h) {
   return Math.max(1, Math.ceil(L / passo)) * Math.max(1, Math.ceil(W / passo));
 }
 
+// NBR 10898:2023, 4.9: autonomia mínima de 2 h da iluminação de emergência (a edição
+// de 2013 pedia 1 h) ou a maior exigida pela autoridade local (IT/NT do Corpo de
+// Bombeiros — CBMDF [CONFERIR]). Valor informado menor que 2 h não é aceito.
+const AUTONOMIA_EMERG_MIN_H = 2;
+
 function calcular(dados) {
   const sis = dados.sistema || {};
+  const autInf = Number(String(sis.autonomia_iluminacao_h ?? '').replace(',', '.'));
+  const autonomiaEmergH = Number.isFinite(autInf) && autInf > AUTONOMIA_EMERG_MIN_H ? autInf : AUTONOMIA_EMERG_MIN_H;
   const tipoSistema = sis.tipo || 'enderecavel';
   const consumo = { ...CONSUMO_PADRAO };
   for (const k of Object.keys(CONSUMO_PADRAO)) {
@@ -61,6 +68,7 @@ function calcular(dados) {
     if (c && (c.repouso != null || c.alarme != null)) consumo[k] = { repouso: Number(c.repouso ?? CONSUMO_PADRAO[k].repouso), alarme: Number(c.alarme ?? CONSUMO_PADRAO[k].alarme) };
   }
   const avisos = [];
+  if (Number.isFinite(autInf) && sis.autonomia_iluminacao_h !== '' && sis.autonomia_iluminacao_h != null && autInf < AUTONOMIA_EMERG_MIN_H) avisos.push(`Autonomia da iluminação de emergência informada (${String(autInf).replace('.', ',')} h) abaixo do mínimo de 2 h da NBR 10898:2023 (4.9) — adotadas 2 h.`);
   const ambientes = (dados.ambientes || []).filter(a => Number(a.comprimento_m) > 0 && Number(a.largura_m) > 0).map(a => {
     const tipo = a.detector || 'fumaca';
     const L = Number(a.comprimento_m);
@@ -129,15 +137,15 @@ function calcular(dados) {
     ...(nMod ? [{ codigo: 'MOD', descricao: 'Módulo de comando/monitoramento (interfaces: portas, HVAC)', unidade: 'un', quantidade: nMod, referencia: 'NBR 17240, 5.7' }] : []),
     { codigo: 'CAB', descricao: 'Cabo blindado 2 × 1,5 mm² para laço de detecção e alarme (estimativa)', unidade: 'm', quantidade: caboLaco, referencia: 'NBR 17240, 6.8' },
     { codigo: 'ELE', descricao: 'Eletroduto exclusivo do sistema de alarme (estimativa)', unidade: 'm', quantidade: caboLaco, referencia: 'NBR 17240, 6.7' },
-    ...(nAclar ? [{ codigo: 'LE', descricao: 'Luminária de emergência bloco autônomo LED ≥ 300 lm, autonomia ≥ 2 h', unidade: 'un', quantidade: nAclar, referencia: 'NBR 10898, 4.9 e 6.1.2.4' }] : []),
+    ...(nAclar ? [{ codigo: 'LE', descricao: `Luminária de emergência bloco autônomo LED ≥ 300 lm, autonomia ≥ ${String(autonomiaEmergH).replace('.', ',')} h`, unidade: 'un', quantidade: nAclar, referencia: 'NBR 10898, 4.9 e 6.1.2.4' }] : []),
     ...(nBaliz ? [{ codigo: 'SIN', descricao: 'Sinalização de saída/rota de fuga iluminada (balizamento ≥ 30 lm)', unidade: 'un', quantidade: nBaliz, referencia: 'NBR 10898, 5.2 e 14.18' }] : []),
   ].filter(m => m.quantidade > 0);
 
   return {
     tipoSistema, ambientes, pavimentos, iluminacao, nDet, nAc, nAv, nMod, dispositivos, lacos, zonas, limiteLaco,
     bateria: { linhas, iRepouso, iAlarme, tRepouso, tAlarme, fonteA, bateriaAh, bateriaEscolhida },
-    nAclar, nBaliz, materiais, avisos,
+    nAclar, nBaliz, autonomiaEmergH, materiais, avisos,
   };
 }
 
-module.exports = { calcular, gradeDetectores, fatorViga, luminariasEmergencia, RAIO, CONSUMO_PADRAO };
+module.exports = { calcular, AUTONOMIA_EMERG_MIN_H, gradeDetectores, fatorViga, luminariasEmergencia, RAIO, CONSUMO_PADRAO };

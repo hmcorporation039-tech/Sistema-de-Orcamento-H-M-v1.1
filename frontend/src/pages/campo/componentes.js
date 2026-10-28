@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Camera, Loader2 } from 'lucide-react';
 import { reduzirImagem, obterPosicao } from './imagem';
 import { baixarArquivo } from './apiCampo';
+import { criarCacheBlob } from './cacheBlob';
 
 export const COR = {
   fundo: '#000000',
@@ -137,28 +138,42 @@ export function BotaoFoto({ onFoto, rotulo = 'Tirar foto', variante = 'contorno'
 }
 
 // Miniatura: bytes do aparelho quando a foto está aqui; senão baixa do
-// servidor com o token (rota autenticada), se houver rede.
-const urlsMiniatura = new Map();
-export function Miniatura({ foto, dados, tamanho = 84, onClick }) {
-  const [url, setUrl] = useState(() => urlsMiniatura.get(foto.uuid) || null);
+// servidor com o token (rota autenticada), se houver rede. Os endereços blob:
+// ficam em cacheMiniaturas (com contagem de uso e revogação — cacheBlob.js).
+export const cacheMiniaturas = criarCacheBlob();
+
+// Endereço blob: de uma foto enquanto o componente estiver montado.
+export function useUrlFoto(foto, dados) {
+  const [url, setUrl] = useState(null);
   useEffect(() => {
     let vivo = true;
-    if (urlsMiniatura.has(foto.uuid)) { setUrl(urlsMiniatura.get(foto.uuid)); return undefined; }
-    (async () => {
-      try {
-        let blob = null;
-        const arq = await dados.lerArquivo(foto.uuid);
-        if (arq?.bytes) blob = new Blob([arq.bytes], { type: arq.tipo_mime || 'image/jpeg' });
-        else if (foto.url && navigator.onLine) blob = await baixarArquivo(foto.url);
-        if (blob && vivo) {
-          const u = URL.createObjectURL(blob);
-          urlsMiniatura.set(foto.uuid, u);
-          setUrl(u);
-        }
-      } catch { /* sem miniatura */ }
-    })();
-    return () => { vivo = false; };
+    let pego = false;
+    const chave = foto.uuid;
+    const existente = cacheMiniaturas.pegar(chave);
+    if (existente) { pego = true; setUrl(existente); }
+    else {
+      setUrl(null);
+      (async () => {
+        try {
+          let blob = null;
+          const arq = await dados.lerArquivo(chave);
+          if (arq?.bytes) blob = new Blob([arq.bytes], { type: arq.tipo_mime || 'image/jpeg' });
+          else if (foto.url && navigator.onLine) blob = await baixarArquivo(foto.url);
+          if (!blob) return;
+          const criada = URL.createObjectURL(blob);
+          if (!vivo) { URL.revokeObjectURL(criada); return; }
+          pego = true;
+          setUrl(cacheMiniaturas.guardar(chave, criada));
+        } catch { /* sem miniatura */ }
+      })();
+    }
+    return () => { vivo = false; if (pego) cacheMiniaturas.soltar(chave); };
   }, [foto.uuid, foto.url, dados]);
+  return url;
+}
+
+export function Miniatura({ foto, dados, tamanho = 84, onClick }) {
+  const url = useUrlFoto(foto, dados);
   const pendente = foto.estado_local === 'pendente';
   const recusada = foto.estado_local === 'recusada';
   return (
@@ -175,6 +190,37 @@ export function Miniatura({ foto, dados, tamanho = 84, onClick }) {
         background: recusada ? COR.vermelho : pendente ? COR.aviso : 'rgba(0,0,0,.7)', color: pendente ? '#000' : '#fff',
       }}>{recusada ? 'recusada' : pendente ? 'a enviar' : 'enviada'}</span>
     </button>
+  );
+}
+
+// Foto em tamanho grande (toque na miniatura). Só a foto que ainda não foi
+// enviada pode ser excluída aqui — o contrato não tem exclusão de foto já no
+// servidor (o escritório cuida dessas).
+export function VisorFoto({ foto, dados, onFechar, onExcluir, podeExcluir }) {
+  const url = useUrlFoto(foto, dados);
+  const estado = foto.estado_local === 'pendente' ? 'Ainda não enviada (guardada no aparelho)'
+    : foto.estado_local === 'recusada' ? `Recusada pelo servidor${foto.erro_local ? `: ${foto.erro_local}` : ''}`
+      : 'Enviada';
+  return (
+    <Modal titulo="Foto" onFechar={onFechar}>
+      <div style={{ background: COR.superficie2, borderRadius: 8, minHeight: 160, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {url ? <img src={url} alt={foto.legenda || 'Foto'} style={{ maxWidth: '100%', maxHeight: '60vh', objectFit: 'contain', borderRadius: 8 }} />
+          : <span style={{ color: COR.texto3 }}>{navigator.onLine ? 'Carregando…' : 'Foto no servidor (sem rede agora)'}</span>}
+      </div>
+      {foto.legenda && <div style={{ marginTop: 8, fontWeight: 700 }}>{foto.legenda}</div>}
+      <div style={{ color: COR.texto3, fontSize: 15, marginTop: 4 }}>
+        {formatarDataHora(foto.tirada_em)}{foto.tirada_em ? ' · ' : ''}{estado}
+      </div>
+      <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+        {podeExcluir && (
+          <Botao variante="vermelho" data-testid="excluir-foto"
+            onClick={() => { if (window.confirm('Excluir esta foto do aparelho? Ela ainda não foi enviada e não volta.')) onExcluir(foto); }}>
+            Excluir foto
+          </Botao>
+        )}
+        <Botao variante="contorno" onClick={onFechar}>Fechar</Botao>
+      </div>
+    </Modal>
   );
 }
 

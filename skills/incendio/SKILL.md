@@ -5,7 +5,7 @@ description: Projeto (memorial e quantitativos), laudo de inspeção/comissionam
 
 # Incêndio — detecção, alarme e iluminação de emergência (NBR 17240 / NBR 10898) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 17 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
+Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 20 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
 
 | Documento | Tipo | Formato |
 |---|---|---|
@@ -47,7 +47,7 @@ Regra de posicionamento: detectores em grade com a quantidade calculada por ambi
 
 - Raio de cobertura = lado/√2 (fumaça 9/√2 = 6,36 m; temperatura 6/√2 = 4,24 m), reduzido por vigas a 2/3 ou 1/2 (NBR 17240, 5.4.1.4).
 - Acionadores a no máximo 30 m de caminhamento, altura 0,90–1,35 m; avisadores 2,20–3,50 m. Bateria pelo Anexo B: 1,2 × (24·Irep + 5/60·Ialm).
-- Emergência (NBR 10898:2023): autonomia 2 h, 3 lx (5 lx em escadas), espaçamento ≤ 4 × altura, balizamento a cada 15 m.
+- Emergência (NBR 10898:2023): autonomia 2 h (4.9; a edição de 2013 pedia 1 h) ou a maior exigida pela IT/NT local (`sistema.autonomia_iluminacao_h`, nunca abaixo de 2 h) [CONFERIR CBMDF], 3 lx (5 lx em escadas), espaçamento ≤ 4 × altura, balizamento a cada 15 m.
 
 O checklist de inspeção (32 itens) está em `dados/checklist_base.json`; itens não conformes viram não conformidades com prioridade (P1 48 h, P2 30 dias, P3 90 dias, P4 manutenção) e entram no orçamento do modo de inspeção.
 

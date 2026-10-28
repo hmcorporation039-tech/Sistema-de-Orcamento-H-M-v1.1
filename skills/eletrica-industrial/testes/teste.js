@@ -46,8 +46,54 @@ igual('reserva fora da operação simultânea', u('M-02-2').emOperacao, false);
 const ccm1 = calc.quadros.find(q => q.id === 'CCM-01');
 perto('Ib do alimentador do CCM-01 (6.5.1)', ccm1.projeto.ib, 128.29, 0.002);
 igual('disjuntor do alimentador do CCM-01', ccm1.alim.disjuntor, 160);
-perto('Icc da fonte no QGBT (trafo + 2×240 mm², 12 m)', calc.qgbt.curto.iccFonte, 14623, 0.005);
-igual('Icu mínimo no QGBT (com motores)', calc.qgbt.curto.icuMin, 20);
+// Icc máximo pela IEC 60909-0 (antes c = 1,0 e sem K_T: 14 623 A, ≈ 8 % abaixo):
+//  trafo 500 kVA, Z 5 %, R 1 %: Zb = 380²/500 000 = 0,2888 Ω; R = 0,002888 Ω; X = √(0,01444² − 0,002888²) = 0,014148 Ω
+//  x_T = 0,014148/0,2888 = 0,04899 → K_T = 0,95 · 1,05 / (1 + 0,6 · 0,04899) = 0,96902
+//  K_T·Z_T = 0,0027985 + j0,013710; cabo 2 × 240 mm², 12 m: R = 0,0178·12/480 = 0,000445, X = 0,08e-3·12/2 = 0,00048
+//  |Z| = |0,0032435 + j0,014190| = 0,014556 Ω → Icc = 1,05 · 380 / (√3 · 0,014556) = 15 826 A
+perto('K_T do trafo 500 kVA / 5 % (IEC 60909-0, 6.3.3)', calc.kT, 0.96902, 0.0001);
+perto('Icc da fonte no QGBT com c_max = 1,05 e K_T (trafo + 2×240 mm², 12 m)', calc.qgbt.curto.iccFonte, 15826, 0.001);
+igual('Icu mínimo no QGBT (com motores: 15,8 + 1,8 = 17,7 kA → 20 kA)', calc.qgbt.curto.icuMin, 20);
+// c/K_T = (1 + 0,6·x_T)/0,95 não depende de c_max: trafo sozinho, rede infinita
+//  750 kVA, Z 5 %: In = 1139,5 A; Icc antigo = 22,79 kA → × 1,0836 = 24,69 kA (Icu 25 kA)
+//  1000 kVA, Z 4,5 %: Icc antigo = 33,76 kA → × 1,0803 = 36,48 kA (Icu 40 kA; antes escolhia 36 kA)
+{
+  const cfg = (kva, z) => C.config({ instalacao: { trafo_kva: kva, trafo_z_pct: z, tensao_ff: 380 } });
+  const icc = (kva, z) => { const c = cfg(kva, z); return C.iccTrifasico(380, C.impedanciaFonte(c, C.fatorKT(c)), c.fatorC); };
+  perto('Icc 750 kVA / 5 % com K_T', icc(750, 5), 24695, 0.001);
+  perto('Icc 1000 kVA / 4,5 % com K_T', icc(1000, 4.5), 36476, 0.001);
+}
+// DPS do QGBT pela função comum (Tabela 49): 380/220 V TN-S → 275 V; 440/254 V → 320 V (era 275 V fixo
+// no unifilar, abaixo de 1,1·254 = 279,4 V); IT sem neutro 380 V → Uc ≥ U = 380 V → 385 V
+igual('DPS 380/220 V TN-S: 275 V', calc.dps.uc, 275);
+{
+  const d440 = motor.exemplo(); Object.assign(d440.instalacao, { tensao_ff: 440, tensao_fn: 254 });
+  const r440 = motor.processar(d440);
+  igual('DPS 440/254 V: 320 V', r440.calc.dps.uc, 320);
+  igual('unifilar do QGBT 440 V: DPS 320 V', require('../scripts/lib/unifilar').dadosUnifilarQD(r440, { quadro: 'QGBT' }).dps.descricao, 'classe II\n320 V — 20 kA');
+  const dIt = motor.exemplo(); dIt.instalacao.esquema = 'IT';
+  igual('DPS IT sem neutro 380 V: 385 V', motor.processar(dIt).calc.dps.uc, 385);
+}
+// CCM só com motores reserva (antes derrubava o cálculo): alimentador pelo maior deles
+{
+  const d = motor.exemplo();
+  d.quadros.push({ id: 'CCM-R', descricao: 'Reservas', tipo: 'CCM', distancia_qgbt_m: 30 });
+  d.motores.push({ tag: 'MR', potencia: 20, unidade: 'cv', quadro: 'CCM-R', quantidade: 1, simultaneos: 0, rendimento: 0.9, fp: 0.85, ip_in: 7 });
+  const q = motor.processar(d).calc.quadros.find(x => x.id === 'CCM-R');
+  // In = 14 710/(√3·380·0,9·0,85) = 29,22 A → Ib = 1,25 × 29,22 = 36,52 A → disjuntor 40 A
+  perto('CCM só com reserva: Ib = 1,25 × In do maior', q.projeto.ib, 36.52, 0.001);
+  igual('CCM só com reserva: disjuntor 40 A', q.alim.disjuntor, 40);
+}
+// Motor de 450 cv em 380 V: In = 330,98 kW/(√3·380·0,96·0,88) = 595,2 A, Ib = 744,1 A → cabos em paralelo
+{
+  const d = motor.exemplo();
+  d.motores.push({ tag: 'MG', potencia: 450, unidade: 'cv', quantidade: 1, rendimento: 0.96, fp: 0.88, ip_in: 6, partida: 'soft_starter', distancia_m: 50 });
+  const mg = motor.processar(d).calc.unidades.find(x => x.tag === 'MG');
+  perto('450 cv: Ib 744 A', mg.circuito.ibLinha, 744.06, 0.001);
+  igual('450 cv: 2 × 240 mm² por fase (antes: erro "nenhuma seção atende")', [mg.circuito.paralelos, mg.circuito.secao], [2, 240]);
+  igual('450 cv: Iz total ≥ Ib', mg.circuito.izTotal >= mg.circuito.ibLinha, true);
+}
+igual('CCM com Ipk na especificação do conjunto', calc.materiais.some(m => m.codigo === 'CCM' && /Ipk ≥/.test(m.descricao)), true);
 igual('banco: 6 estágios de 15 kvar', [calc.banco.n, calc.banco.estagio], [6, 15]);
 igual('banco dessintonizado (inversores ≥ 20 %)', calc.banco.dessintonizado, true);
 igual('FP corrigido ≥ 0,92', calc.banco.fpDepois >= 0.92, true);

@@ -1,6 +1,7 @@
 const { simpleParser } = require('mailparser');
 const pool = require('../config/database');
-const { conectar, credenciaisConfiguradas } = require('../utils/emailClient');
+const { credenciaisConfiguradas } = require('../utils/emailClient');
+const { conectarComRetry, esperasDaOrigem, identificarMensagens, registroProcessado } = require('./conexaoEmail');
 const { vincularPrestadores } = require('../utils/vincularPrestadores');
 const { verificarAutenticidade, dominioPermitido, listaDoEnv } = require('../utils/autenticidadeEmail');
 const { executarComTrava } = require('../utils/travaJob');
@@ -81,48 +82,53 @@ function parsePixRealizado(html, dataEmail) {
 }
 
 // Trava contra execução simultânea (horário automático × "Verificar agora" × outra instância)
-function verificarPixNaCaixaDeEntrada() {
-  return executarComTrava('email-pix', lerPixNaCaixaDeEntrada);
+function verificarPixNaCaixaDeEntrada({ origem = 'manual' } = {}) {
+  return executarComTrava('email-pix', () => lerPixNaCaixaDeEntrada({ esperas: esperasDaOrigem(origem) }));
 }
 
-async function lerPixNaCaixaDeEntrada() {
+const conexaoCaiu = (imapClient) => imapClient && imapClient.usable === false;
+
+// deps: os testes passam banco, conexão e leitor de e-mail falsos
+async function lerPixNaCaixaDeEntrada({ esperas, db = pool, conectarEmail = conectarComRetry, configurado = credenciaisConfiguradas, lerEmail = simpleParser, vincular = vincularPrestadores } = {}) {
   const resumo = { emailsEncontrados: 0, movimentosImportados: 0, avisos: [] };
 
-  if (!credenciaisConfiguradas()) {
+  if (!configurado()) {
     resumo.avisos.push('Integração de e-mail não configurada');
     return resumo;
   }
 
-  const dbClient = await pool.connect();
-  let imapClient;
+  // Falha de conexão (depois das novas tentativas) LANÇA erro: a rodada fica
+  // com status "erro" e a agenda repesca em ~15 min (antes era só um aviso e
+  // a rodada contava como sucesso — revisão de 27/10/2026).
+  const imapClient = await conectarEmail({ esperas });
+  let dbClient;
 
   try {
-    try {
-      imapClient = await conectar();
-    } catch (err) {
-      const motivo = err.authenticationFailed
-        ? 'credenciais inválidas — confira EMAIL_IMAP_USER e a senha de app no .env'
-        : err.responseText || err.message;
-      resumo.avisos.push(`Falha ao conectar ao e-mail: ${motivo}`);
-      return resumo;
-    }
-
+    dbClient = await db.connect();
     const lock = await imapClient.getMailboxLock('INBOX');
     try {
       const uidsRecebido = await imapClient.search({ subject: 'Pix recebido' }, { uid: true });
       const uidsRealizado = await imapClient.search({ subject: 'Pix realizado' }, { uid: true });
-      const uids = [...new Set([...uidsRecebido, ...uidsRealizado])].sort((a, b) => a - b);
+      const uids = [...new Set([...(uidsRecebido || []), ...(uidsRealizado || [])])].sort((a, b) => a - b);
       resumo.emailsEncontrados = uids.length;
+      const idents = await identificarMensagens(imapClient, uids);
 
       for (const uid of uids) {
-        const jaLido = await dbClient.query(
-          'SELECT id FROM emails_processados WHERE message_id = $1',
-          [String(uid)]
-        );
-        if (jaLido.rows.length > 0) continue;
+        const ident = idents.get(uid);
+        if (!ident) continue; // sumiu da caixa entre a busca e a leitura
+        if (await registroProcessado(dbClient, ident)) continue;
 
-        const { content } = await imapClient.download(uid, undefined, { uid: true });
-        const parsedEmail = await simpleParser(content);
+        // Um e-mail ilegível não trava os seguintes (antes o download/parse
+        // ficava fora do try e derrubava a rodada inteira)
+        let parsedEmail;
+        try {
+          const { content } = await imapClient.download(uid, undefined, { uid: true });
+          parsedEmail = await lerEmail(content);
+        } catch (err) {
+          if (conexaoCaiu(imapClient)) throw new Error(`A conexão com o e-mail caiu no meio da leitura (${err.message}) — o que faltou será lido na próxima rodada`);
+          resumo.avisos.push(`E-mail "${ident.assunto || uid}" não pôde ser lido (${err.message}) — tenta de novo na próxima rodada`);
+          continue;
+        }
         const assunto = parsedEmail.subject || '';
 
         // Só o banco (Inter) com assinatura válida: antes qualquer e-mail com o
@@ -130,7 +136,7 @@ async function lerPixNaCaixaDeEntrada() {
         const aut = verificarAutenticidade(parsedEmail);
         if (!aut.autentico || !dominioPermitido(aut.dominio, listaDoEnv('PIX_REMETENTES_PERMITIDOS', 'inter.co'))) {
           resumo.avisos.push(`E-mail "${assunto}" de ${aut.remetente || 'remetente desconhecido'} ignorado: não é do banco ou a assinatura (DKIM/DMARC) não confere`);
-          await dbClient.query('INSERT INTO emails_processados (message_id, assunto) VALUES ($1,$2) ON CONFLICT DO NOTHING', [String(uid), `[rejeitado] ${assunto}`.slice(0, 500)]);
+          await dbClient.query('INSERT INTO emails_processados (message_id, assunto) VALUES ($1,$2) ON CONFLICT DO NOTHING', [ident.chave, `[rejeitado] ${assunto}`.slice(0, 500)]);
           continue;
         }
 
@@ -144,19 +150,28 @@ async function lerPixNaCaixaDeEntrada() {
           }
 
           if (movimento) {
-            await dbClient.query(
-              `INSERT INTO financeiro_movimentos (tipo, nome, valor, data_hora, id_transacao, email_message_id)
-               VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (email_message_id) DO NOTHING`,
-              [movimento.tipo, movimento.nome, movimento.valor, movimento.dataHora, movimento.idTransacao, String(uid)]
-            );
-            resumo.movimentosImportados++;
+            // Pix realizado traz o ID da transação: o mesmo pagamento em dois
+            // e-mails (reenvio do banco) não vira dois lançamentos
+            const repetido = movimento.idTransacao
+              ? (await dbClient.query('SELECT id FROM financeiro_movimentos WHERE id_transacao = $1 LIMIT 1', [movimento.idTransacao])).rows[0]
+              : null;
+            if (repetido) {
+              resumo.avisos.push(`Pix "${assunto}" (transação ${movimento.idTransacao}) já estava lançado — ignorado`);
+            } else {
+              const ins = await dbClient.query(
+                `INSERT INTO financeiro_movimentos (tipo, nome, valor, data_hora, id_transacao, email_message_id)
+                 VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (email_message_id) DO NOTHING`,
+                [movimento.tipo, movimento.nome, movimento.valor, movimento.dataHora, movimento.idTransacao, ident.chave]
+              );
+              if (ins.rowCount) resumo.movimentosImportados++;
+            }
           } else {
             resumo.avisos.push(`E-mail "${assunto}" não teve o formato reconhecido — ignorado`);
           }
 
           await dbClient.query(
             'INSERT INTO emails_processados (message_id, assunto) VALUES ($1,$2) ON CONFLICT DO NOTHING',
-            [String(uid), assunto]
+            [ident.chave, assunto]
           );
           await dbClient.query('COMMIT');
         } catch (err) {
@@ -172,15 +187,15 @@ async function lerPixNaCaixaDeEntrada() {
       lock.release();
     }
   } finally {
-    dbClient.release();
-    if (imapClient) await imapClient.logout().catch(() => {});
+    if (dbClient) dbClient.release();
+    await imapClient.logout().catch(() => {});
   }
 
   if (resumo.movimentosImportados > 0) {
-    await vincularPrestadores().catch(err => resumo.avisos.push(`Erro ao vincular prestadores: ${err.message}`));
+    await vincular().catch(err => resumo.avisos.push(`Erro ao vincular prestadores: ${err.message}`));
   }
 
   return resumo;
 }
 
-module.exports = { verificarPixNaCaixaDeEntrada, parsePixRecebido, parsePixRealizado, limparNomeFavorecido };
+module.exports = { verificarPixNaCaixaDeEntrada, lerPixNaCaixaDeEntrada, parsePixRecebido, parsePixRealizado, limparNomeFavorecido };

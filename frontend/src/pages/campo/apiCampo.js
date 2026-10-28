@@ -1,12 +1,13 @@
 // Chamadas HTTP do app de campo (contrato em docs/CAMPO-API.md).
 //
-// Separado de services/api.js de propósito: o interceptor de lá apaga o login
-// e recarrega a página em qualquer 401/403, e aqui um 403 de uma operação é só
-// "recusada" e um 401 precisa levar ao login SEM perder nada do que está na
-// fila (ela fica no IndexedDB, que o login não toca).
+// Separado de services/api.js de propósito: o interceptor de lá trata o 401/403
+// do escritório, e aqui um 403 de uma operação é só "recusada" e um 401 NUNCA
+// tira o técnico da tela (foto, assinatura ou texto em andamento se perderiam):
+// o app mostra a faixa "Sessão expirou — entrar" e a pessoa decide quando ir ao
+// login. A fila e as fotos continuam no IndexedDB, que o login não toca.
 //
 // Erros, do jeito que a sincronização precisa distinguir:
-//   ErroAutenticacao — 401: login vencido; vai para o login e volta depois
+//   ErroAutenticacao — 401: login vencido; a sincronização pausa até entrar de novo
 //   ErroRegra        — 4xx: o servidor recusou (não adianta reenviar)
 //   ErroRede         — sem resposta, tempo esgotado, 5xx, 408 ou 429: tentar depois
 
@@ -22,17 +23,12 @@ export class ErroAutenticacao extends Error {
   constructor(msg = 'Sessão expirada. Entre de novo.') { super(msg); this.name = 'ErroAutenticacao'; this.status = 401; this.autenticacao = true; }
 }
 
-function voltarAoLoginPadrao() {
-  // Só o login sai do navegador; a fila e as fotos continuam no IndexedDB.
-  localStorage.removeItem('hm_token');
-  localStorage.removeItem('hm_usuario');
-  const volta = window.location.pathname + window.location.search;
-  window.location.href = `/login?volta=${encodeURIComponent(volta)}`;
-}
-let aoNaoAutenticado = voltarAoLoginPadrao;
-export function definirAoNaoAutenticado(fn) { aoNaoAutenticado = fn || voltarAoLoginPadrao; }
+// Quem quer saber do 401 (o CampoApp acende a faixa). Recebe o token recusado.
+// Padrão: nada — o app nunca sai da tela sozinho.
+let aoNaoAutenticado = () => {};
+export function definirAoNaoAutenticado(fn) { aoNaoAutenticado = fn || (() => {}); }
 
-function token() {
+export function token() {
   try { return localStorage.getItem('hm_token'); } catch { return null; }
 }
 
@@ -66,7 +62,7 @@ export async function requisitar(caminho, { metodo = 'GET', corpo, formulario, t
     if (timer) clearTimeout(timer);
   }
   if (resp.status === 401) {
-    try { aoNaoAutenticado(); } catch { /* segue */ }
+    try { aoNaoAutenticado(t); } catch { /* segue */ }
     throw new ErroAutenticacao();
   }
   if (resp.status >= 500 || resp.status === 408 || resp.status === 429) {

@@ -1,7 +1,10 @@
 const express = require('express');
 const multer = require('multer');
 const rateLimit = require('express-rate-limit');
-const router = express.Router();
+const { protegerRotasAsync } = require('../middleware/erros');
+// toda rota (inclusive as de routes/v2) com asyncHandler: erro fora do try de
+// um controller vira resposta de erro, não pedido pendurado
+const router = protegerRotasAsync(express.Router());
 const { autenticar, admin } = require('../middleware/auth');
 const { validarId } = require('../middleware/validarId');
 const { exigirPosse } = require('../middleware/posse');

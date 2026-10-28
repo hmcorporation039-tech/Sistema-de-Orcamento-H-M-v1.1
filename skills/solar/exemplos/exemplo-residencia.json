@@ -47,7 +47,7 @@
   "orientacao": "Norte",
   "inclinacao_graus": 15,
   "hsp": 5.2,
-  "tamb_min": 8,
+  "tamb_min": 0,
   "tamb_max": 33,
   "area_disponivel_m2": 60,
   "dist_arranjo_inversor_m": 25,

@@ -244,5 +244,47 @@ caso('DWG: arquivo inválido devolve orientação clara, sem derrubar o processo
   await assert.rejects(textoDxfDoArquivo(Buffer.from('qualquer coisa'), 'x.txt'), /não é um DWG nem um DXF/);
 });
 
+// Revisão de 27/10/2026, achado A2.13
+caso('DXF: quebra de linha em texto/atributo não corrompe o arquivo (TEXT/ATTRIB são de uma linha)', () => {
+  const d = new DesenhoDxf();
+  definirSimbolos(d, ['HM-ELE-TOMADA-BAIXA']);
+  d.inserir('HM-ELE-TOMADA-BAIXA', 1, 1, { layer: 'ELE-TOMADA', atributos: { ID: 'T1', CIRCUITO: 'Tomadas\nCopa\r\n2º\x0Bandar' } });
+  d.texto(2, 2, 0.2, 'Linha 1\nLinha 2\ttab', { layer: '0' });
+  const lin = d.toString().split(/\r?\n/);
+  // pares código/valor: todo código de grupo é inteiro; antes "Copa" virava código
+  for (let i = 0; i + 1 < lin.length; i += 2) assert.match(lin[i].trim(), /^-?\d+$/, `código de grupo inválido na linha ${i + 1}: "${lin[i]}"`);
+  const helper = new Helper(d.toString());
+  const textos = helper.parsed.entities.map(e => (e.text && typeof e.text === 'object') ? e.text.string : (e.string || e.text)).filter(Boolean);
+  assert.ok(textos.includes('Tomadas / Copa / 2º andar'), `atributo: ${JSON.stringify(textos)}`);
+  assert.ok(textos.includes('Linha 1 / Linha 2 tab'), `texto: ${JSON.stringify(textos)}`);
+});
+
+caso('QElectroTech: caracteres de controle no texto não quebram o XML', () => {
+  const { SaxesParser } = require('saxes');
+  const { gerarUnifilarMT } = require('./unifilar');
+  const motor = require('../../media-tensao/scripts/lib/index.js');
+  const d = motor.exemplo();
+  d.obra = { ...(d.obra || {}), nome: 'SE & <Copa> "x"\x0B\x0C fim\r\nLinha 2' };
+  d.cliente = { ...(d.cliente || {}), nome: "D'Ávila & Cia\x01" };
+  const { xml } = gerarUnifilarMT(motor.processar(d));
+  const erros = [];
+  const p = new SaxesParser();
+  p.on('error', e => erros.push(e.message));
+  p.write(xml).close();
+  assert.deepStrictEqual(erros.slice(0, 2), []);
+  assert.ok(!/[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(xml), 'sobrou caractere de controle');
+});
+
+caso('casamento de nomes por palavra: "WC FEM" não cai no "WC"; "SALA" não casa com "SALAO"', () => {
+  const { acharAmbiente, casaNome } = require('./planta');
+  const arq = { ambientes: [{ nome: 'WC' }, { nome: 'SALÃO DE FESTAS' }, { nome: 'SALA DE ESTAR' }, { nome: 'WC MASC' }] };
+  assert.strictEqual(acharAmbiente(arq, 'WC FEM'), undefined, 'antes: casava com "WC"');
+  assert.strictEqual(acharAmbiente(arq, 'WC Masc.').nome, 'WC MASC');
+  assert.strictEqual(acharAmbiente(arq, 'Sala').nome, 'SALA DE ESTAR', 'antes podia casar com SALÃO');
+  assert.strictEqual(acharAmbiente(arq, 'Sala de estar e jantar').nome, 'SALA DE ESTAR', 'skill mais específica sem palavra distintiva');
+  assert.strictEqual(casaNome('Sala 2', 'SALA'), false);
+  assert.strictEqual(casaNome('Consultório', 'CONSULTÓRIO 1'), true);
+});
+
 // casos assíncronos (DWG) terminam depois dos síncronos
 process.on('beforeExit', () => { if (!process.__fimCad) { process.__fimCad = true; console.log(`cad: ${ok} casos ok`); } });

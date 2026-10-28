@@ -43,6 +43,16 @@ function gerarMemorial(res) {
       (dim.descidas.naturais
         ? 'naturais pelas armaduras do concreto, com continuidade conforme 5.4.5 e conexão de ensaio a 1,5 m do piso (5.4.6).'
         : `não naturais em ${dim.descidas.material}, retilíneas e verticais, com conexão de ensaio a 1,5 m do piso (5.4.6).`)));
+    if (dim.descidas.aneis_intermediarios) {
+      f.push(B.p(`Descidas interligadas por ${dim.descidas.aneis_intermediarios} anel(éis) intermediário(s) horizontal(is) no perímetro, a cada ${dim.descidas.espacamento_tabela_m} m de altura (espaçamento da Tabela 5; estrutura acima de 20 m — 5.4.1.2), ${B.fmtNum(dim.descidas.aneis_comprimento_m, 0)} m de condutor. [CONFERIR espaçamento na NBR 5419-3:2026]`));
+    }
+    if (cap.lateral && cap.lateral.exigida) {
+      f.push(B.p(`Estrutura com altura acima de 60 m: captação lateral nos 20 % superiores (${B.fmtNum(cap.lateral.faixa_m, 1)} m), 5.3.2.14 — ` +
+        (cap.lateral.aneis
+          ? `${cap.lateral.aneis} anel(éis) horizontal(is) no perímetro da fachada, ${B.fmtNum(cap.lateral.comprimento_m, 0)} m de condutor.`
+          : 'feita pelos anéis intermediários de descida que caem nessa faixa.') +
+        ' Elementos metálicos da fachada podem servir de captor natural se atenderem à Tabela 7. [CONFERIR]'));
+    }
     if (cap.captores_verticais.length) {
       f.push(B.titulo('3.1 Captores verticais — verificação pela esfera rolante', 2));
       f.push(B.tabela(['Captor', 'Ponta (m)', ...cap.captores_verticais[0].raio_por_plano.map(r => `Raio no plano ${r.plano} (${B.fmtNum(r.cota_m)} m)`)],

@@ -27,15 +27,22 @@ const ROTULO_MES = { jan: 'Jan', fev: 'Fev', mar: 'Mar', abr: 'Abr', mai: 'Mai',
 function processar(dados) {
   const calc = calcular(dados);
   const insp = dados.inspecao || {};
-  const checklist = I.mesclarChecklist(CHECKLIST, insp.checklist, calc.precisaFusivel ? {} : { P2: 'Até 2 strings em paralelo por MPPT — fusível não exigido' });
+  const checklist = I.mesclarChecklist(CHECKLIST, insp.checklist, calc.precisaFusivel ? {} : { P2: `Fusível de string não exigido: ${calc.motivoSemFusivel}` });
   const ncs = I.consolidarNcs(checklist, insp.ncs);
-  const bVoc = Number(dados.modulo?.coef_voc_pct ?? -0.28) / 100;
+  const bVoc = calc.bVoc; // coeficiente já com o sinal corrigido (negativo)
+  const vazio = (v) => v == null || v === '';
   const strings = (insp.strings || []).map(m => {
     const esperado = Number(m.modulos) > 0 ? Number(m.modulos) * Number(dados.modulo.voc) * (1 + bVoc * ((Number(m.temp_modulo) || 25) - 25)) : null;
     const desvio = esperado && Number(m.voc_medido) > 0 ? (Number(m.voc_medido) - esperado) / esperado * 100 : null;
-    const isoOk = [m.iso_pos_mohm, m.iso_neg_mohm].every(v => v == null || v === '' || Number(v) >= 1);
-    const medido = desvio != null || m.iso_pos_mohm != null;
-    return { ...m, esperado, desvio, resultado: !medido ? 'NV' : (desvio == null || Math.abs(desvio) <= 5) && isoOk ? 'C' : 'NC' };
+    // NBR 16274 (categoria 1): Voc E resistência de isolamento (+ e −) por string. Só é "C" com os
+    // dois ensaios feitos e dentro do critério; falta de medição deixa a string "NV" (inconclusiva)
+    const iso = [m.iso_pos_mohm, m.iso_neg_mohm];
+    const isoCompleto = iso.every(v => !vazio(v));
+    const isoFalha = iso.some(v => !vazio(v) && Number(v) < 1);
+    const vocFalha = desvio != null && Math.abs(desvio) > 5;
+    const resultado = vocFalha || isoFalha ? 'NC' : desvio != null && isoCompleto ? 'C' : 'NV';
+    const pendente = resultado === 'NV' ? [desvio == null ? 'Voc' : null, isoCompleto ? null : 'isolamento + / −'].filter(Boolean).join(' e ') : '';
+    return { ...m, esperado, desvio, resultado, pendente };
   });
   return { dados, calc, insp, checklist, ncs, strings, parecer: I.parecer(checklist, ncs, strings) };
 }
@@ -71,7 +78,7 @@ function linhasVerificacao(calc) {
     [`Vmp da maior string a ${t.tMin} °C`, `${num(calc.ns * t.vmpTmin, 0)} V`, `≤ MPPT máx.`, ok(calc.ns <= calc.faixa.maxMppt)],
     ['Corrente de operação por MPPT', `${num(calc.iMpptOp, 1)} A`, inv.imax_mppt ? `≤ ${inv.imax_mppt} A` : '—', inv.imax_mppt ? ok(calc.iMpptOp <= inv.imax_mppt) : '—'],
     ['Corrente máxima da string (1,25 × Isc)', `${num(calc.iscMax, 1)} A`, `cabo Iz ${num(calc.caboCc.iz, 1)} A`, ok(calc.caboCc.iz >= calc.caboCc.iProjeto)],
-    ['Fusível de string', calc.precisaFusivel ? `gPV ${calc.fusivel || '?'} A` : 'não exigido', calc.precisaFusivel ? `1,5–2,4 × Isc e ≤ ${calc.iReversa} A` : '≤ 2 strings por MPPT', '—'],
+    ['Fusível de string', calc.precisaFusivel ? `gPV ${calc.fusivel || '?'} A` : 'não exigido', calc.precisaFusivel ? `1,5–2,4 × Isc e ≤ ${calc.iReversa} A` : calc.motivoSemFusivel, '—'],
   ];
 }
 
@@ -90,19 +97,19 @@ function secoesMemorial(res) {
       `Consumo médio ${num(calc.media, 0)} kWh/mês${calc.meses ? ` (${calc.meses} meses de histórico)` : ''}; custo de disponibilidade ${calc.disponibilidade} kWh/mês; energia a compensar ${num(calc.energiaCompensar, 0)} kWh/mês.`,
     ] },
     { titulo: '3. Descrição geral da geração distribuída', paragrafos: [
-      `Gerador: ${calc.nTotal} módulos ${mod.modelo || ''} de ${calc.wp} Wp (Voc ${num(mod.voc)} V, Vmp ${num(mod.vmp)} V, Isc ${num(mod.isc)} A, coef. Voc ${num(mod.coef_voc_pct)} %/°C), em ${calc.nStrings} string(s) de ${calc.strings.join(' + ')} módulos, instalados em ${loc.tipo_local || 'telhado'}${loc.orientacao ? `, orientação ${loc.orientacao}` : ''}${loc.inclinacao_graus ? `, inclinação ${loc.inclinacao_graus}°` : ''}. Área estimada ${num(calc.area, 0)} m².`,
+      `Gerador: ${calc.nTotal} módulos ${mod.modelo || ''} de ${calc.wp} Wp (Voc ${num(mod.voc)} V, Vmp ${num(mod.vmp)} V, Isc ${num(mod.isc)} A, coef. Voc ${num(calc.bVoc * 100, 3)} %/°C), em ${calc.nStrings} string(s) de ${calc.strings.join(' + ')} módulos, instalados em ${loc.tipo_local || 'telhado'}${loc.orientacao ? `, orientação ${loc.orientacao}` : ''}${loc.inclinacao_graus ? `, inclinação ${loc.inclinacao_graus}°` : ''}. Área estimada ${num(calc.area, 0)} m².`,
       `Inversor: ${calc.nInv} × ${inv.modelo || ''} ${num(calc.pca)} kW, ${calc.nMppt} MPPT (faixa ${inv.mppt_min}–${inv.mppt_max} V, máx. ${inv.vmax_cc} V CC). FDI = ${num(calc.pcaTotal)} / ${num(calc.pfv)} = ${num(calc.fdi)} (faixa usual 0,75 a 1,05 — CRESESB Eq. 6.29).`,
     ],
     tabela: { colunas: ['Verificação', 'Valor', 'Limite', 'Situação'], linhas: linhasVerificacao({ ...calc, inversorDados: inv }), proporcoes: [2.6, 1, 1.3, 0.9] },
-    notas: [`Temperatura do módulo: Tmód = Tamb + (NOCT − 20)/800 × 1000 = ${num(calc.temperaturas.tModMax, 1)} °C (CRESESB Eq. 4.7); mínima adotada ${calc.temperaturas.tMin} °C.`] },
+    notas: [`Temperatura do módulo: Tmód = Tamb + (NOCT − 20)/800 × 1000 = ${num(calc.temperaturas.tModMax, 1)} °C (CRESESB Eq. 4.7). Temperatura mínima para o Voc máximo: ${num(calc.temperaturas.tMin, 1)} °C ${calc.tMinInformada ? '(informada para o local)' : '(adotada por falta do dado do local — [CONFERIR])'}; referência do DF: mínima histórica de 1,4 °C (INMET, Gama, 19/05/2022). Coeficiente do Voc usado: ${num(calc.bVoc * 100, 3)} %/°C.`] },
     { titulo: '3.1 Cabos e proteções CC (NBR 16690 / NBR 16612)', marcadores: [
       `Cabo solar ${sec(calc.caboCc.secao)} 1,8 kV CC, cobre estanhado classe 5, ${calc.caboCc.exposicao === 'exposto' ? 'exposto ao sol' : 'protegido do sol'}: capacidade ${num(calc.caboCc.iz, 1)} A a ${calc.caboCc.taCabo} °C (Tabela C.2 da NBR 16612 × ${num(calc.caboCc.kt, 3)}) ≥ ${num(calc.caboCc.iProjeto, 1)} A; queda ${num(calc.caboCc.queda)} % em ${num(calc.caboCc.lCc, 0)} m.`,
-      calc.precisaFusivel ? `Fusíveis gPV de ${calc.fusivel || '[definir]'} A nos polos + e − de cada string (${calc.stringsPorMppt} strings em paralelo por MPPT).` : 'Fusíveis de string não exigidos (até 2 strings em paralelo por MPPT; corrente reversa abaixo da suportável pelo módulo).',
+      calc.precisaFusivel ? `Fusíveis gPV de ${calc.fusivel || '[definir]'} A nos polos + e − de cada string (${calc.stringsPorMppt} strings em paralelo por MPPT).` : `Fusíveis de string não exigidos: ${calc.motivoSemFusivel}.`,
       `Chave seccionadora CC sob carga${calc.stringBox ? ' em string box' : ' integrada ao inversor'}; DPS CC classe II Ucpv ${calc.ucpv} V${calc.caboCc.lCc > 10 ? ' junto ao inversor e junto ao arranjo (distância > 10 m)' : ' junto ao inversor'}.`,
       'Molduras e estruturas equipotencializadas e ligadas ao aterramento da edificação; cabos fixados e com área de laços mínima.',
     ] },
-    { titulo: '3.2 Lado CA (NBR 5410)', paragrafos: [`Por inversor: circuito ${ca.ligacao} ${sec(ca.secao)} (PE ${sec(ca.secaoPE)}), ${num(ca.comprimento, 0)} m, disjuntor ${ca.polos}P ${ca.disjuntor} A (corrente de projeto 1,25 × nominal = ${num(ca.ib, 1)} A), queda ${num(ca.queda)} %; DPS CA classe II no quadro de conexão; placa de advertência de geração própria no padrão de entrada.`] },
-    { titulo: '4. Previsão da produção de energia', paragrafos: [`E = P × HSP × 30 × TD = ${num(calc.pfv)} × ${num(calc.hsp)} × 30 × ${num(calc.pr)} = ${num(calc.geracaoMes, 0)} kWh/mês (${num(calc.geracaoAno, 0)} kWh/ano), ${calc.cobertura == null ? '' : `${num(calc.cobertura * 100, 0)} % da energia compensável.`}${calc.economiaMes != null ? ` Economia estimada R$ ${num(calc.economiaMes, 0)}/mês à tarifa de R$ ${num(calc.tarifa, 2)}/kWh, antes do Fio B da Lei 14.300.` : ''}`],
+    { titulo: '3.2 Lado CA (NBR 5410)', paragrafos: [`Por inversor: circuito ${ca.ligacao} ${sec(ca.secao)} (PE ${sec(ca.secaoPE)}), ${num(ca.comprimento, 0)} m, disjuntor ${ca.polos}P ${ca.disjuntor} A (corrente de projeto 1,25 × nominal = ${num(ca.ib, 1)} A), queda ${num(ca.queda)} %; DPS CA classe II no quadro de conexão (${calc.dpsCa.texto}); placa de advertência de geração própria no padrão de entrada.`] },
+    { titulo: '4. Previsão da produção de energia', paragrafos: [`E(mês) = P × HSP(mês) × dias do mês × TD; ano = soma dos 12 meses = ${num(calc.geracaoAno, 0)} kWh/ano (P = ${num(calc.pfv)} kWp, HSP média ${num(calc.hsp)}, TD ${num(calc.pr)}); média de ${num(calc.geracaoMes, 0)} kWh/mês, ${calc.cobertura == null ? '' : `${num(calc.cobertura * 100, 0)} % da energia compensável.`}${calc.economiaMes != null ? ` Economia estimada R$ ${num(calc.economiaMes, 0)}/mês à tarifa de R$ ${num(calc.tarifa, 2)}/kWh, antes do Fio B da Lei 14.300.` : ''}`],
       tabela: { colunas: MESES.map(m => ROTULO_MES[m]), linhas: [calc.geracaoMensal.map(g => num(g.kwh, 0))], tamanho: 15 } },
     { titulo: '5. Lista de materiais (preliminar)', tabela: { colunas: ['Cód.', 'Descrição', 'Un.', 'Qtd.', 'Referência'], linhas: calc.materiais.map(m => [m.codigo, m.descricao, m.unidade, num(m.quantidade, 0), m.referencia]), proporcoes: [0.7, 4, 0.5, 0.6, 1.5] } },
     { titulo: '6. Anexos para a solicitação de acesso', marcadores: ['Formulário de solicitação de acesso da distribuidora', 'Diagrama unifilar', 'ART de projeto', 'Certificados de conformidade (Inmetro) dos inversores', 'Folhas de dados dos módulos e inversores'] },
@@ -125,11 +132,11 @@ const DOCUMENTOS = [
       titulo: 'RELATÓRIO DE COMISSIONAMENTO E INSPEÇÃO — SISTEMA FOTOVOLTAICO', tipoInspecao: 'Inspeção e ensaios conforme a ABNT NBR 16274', tituloCurto: 'Laudo — usina solar', sigla: 'LAUDO-FV',
       objetivo: 'Verificar a conformidade do sistema fotovoltaico conectado à rede com o projeto, a ABNT NBR 16690, a ABNT NBR 5410 e os requisitos da distribuidora, por inspeção visual e ensaios de comissionamento da ABNT NBR 16274.',
       listaNormas: NORMAS, secoesChecklist: SECOES_CHECKLIST,
-      descricao: [['Gerador', `${res.calc.nTotal} × ${res.calc.wp} Wp = ${num(res.calc.pfv)} kWp em ${res.calc.nStrings} string(s) (${res.calc.strings.join(' + ')})`], ['Inversor', `${res.calc.nInv} × ${res.dados.inversor?.modelo || ''} ${num(res.calc.pca)} kW`], ['Enquadramento', res.calc.enquadramento]],
+      descricao: [['Gerador', `${res.calc.nTotal} × ${res.calc.wp} Wp = ${num(res.calc.pfv)} kWp em ${res.calc.nStrings} string(s) (${res.calc.strings.join(' + ')})`], ['Inversor', `${res.calc.nInv} × ${res.dados.inversor?.modelo || ''} ${num(res.calc.pca)} kW`], ['Enquadramento', `${res.calc.enquadramento} — potência instalada ${num(res.calc.potenciaInstalada)} kW (menor entre módulos e inversores)`]],
       metodologia: ['Inspeção visual do arranjo, estrutura, cabos, string box, inversor e quadro CA.', 'Ensaios por string: polaridade, tensão de circuito aberto, corrente e resistência de isolamento (NBR 16274).', 'Ensaio funcional e de desconexão do inversor ao abrir o disjuntor CA.'],
-      medicoes: [{ titulo: '6.1 Ensaios por string (Voc esperado corrigido pela temperatura do módulo; tolerância ± 5 %; isolamento ≥ 1 MΩ)', colunas: ['String', 'Módulos', 'T mód. (°C)', 'Voc esperado', 'Voc medido', 'Desvio', 'Isc (A)', 'Iso + / − (MΩ)', 'Resultado'],
+      medicoes: [{ titulo: '6.1 Ensaios por string (Voc esperado corrigido pela temperatura do módulo; tolerância ± 5 %; isolamento + e − ≥ 1 MΩ; sem os dois ensaios a string fica NV)', colunas: ['String', 'Módulos', 'T mód. (°C)', 'Voc esperado', 'Voc medido', 'Desvio', 'Isc (A)', 'Iso + / − (MΩ)', 'Resultado'],
         proporcoes: [0.6, 0.6, 0.6, 0.8, 0.8, 0.6, 0.6, 0.9, 0.8],
-        linhas: res.strings.map(m => [m.string, m.modulos ?? '', m.temp_modulo ?? '', m.esperado ? num(m.esperado, 1) : '', m.voc_medido ?? '', m.desvio == null ? '' : `${num(m.desvio, 1)} %`, m.isc_medido ?? '', `${m.iso_pos_mohm ?? ''} / ${m.iso_neg_mohm ?? ''}`, m.resultado]) }],
+        linhas: res.strings.map(m => [m.string, m.modulos ?? '', m.temp_modulo ?? '', m.esperado ? num(m.esperado, 1) : '', m.voc_medido ?? '', m.desvio == null ? '' : `${num(m.desvio, 1)} %`, m.isc_medido ?? '', `${m.iso_pos_mohm ?? ''} / ${m.iso_neg_mohm ?? ''}`, m.resultado === 'NV' && m.pendente ? `NV (falta ${m.pendente})` : m.resultado]) }],
     }, { checklist: res.checklist, ncs: res.ncs, parecer: res.parecer, baseDir: res.baseDir, pastaFotos: res.pastaFotos })) },
 ];
 
@@ -187,7 +194,7 @@ const FORMULARIO = [
       { caminho: 'local.orientacao', rotulo: 'Orientação' },
       { caminho: 'local.inclinacao_graus', rotulo: 'Inclinação (°)', tipo: 'numero' },
       { caminho: 'local.hsp', rotulo: 'HSP no plano (kWh/m²·dia)', tipo: 'numero', dica: 'CRESESB SunData' },
-      { caminho: 'local.tamb_min', rotulo: 'Temperatura mínima (°C)', tipo: 'numero' },
+      { caminho: 'local.tamb_min', rotulo: 'Temperatura mínima (°C)', tipo: 'numero', dica: 'mínima histórica do local (DF: 1,4 °C, INMET); vazio = 0 °C [CONFERIR]' },
       { caminho: 'local.tamb_max', rotulo: 'Temperatura máxima (°C)', tipo: 'numero' },
       { caminho: 'local.area_disponivel_m2', rotulo: 'Área disponível (m²)', tipo: 'numero' },
       { caminho: 'local.dist_arranjo_inversor_m', rotulo: 'Distância arranjo → inversor (m)', tipo: 'numero' },
@@ -208,7 +215,7 @@ const FORMULARIO = [
       { caminho: 'modulo.vmp', rotulo: 'Vmp (V)', tipo: 'numero' },
       { caminho: 'modulo.isc', rotulo: 'Isc (A)', tipo: 'numero' },
       { caminho: 'modulo.imp', rotulo: 'Imp (A)', tipo: 'numero' },
-      { caminho: 'modulo.coef_voc_pct', rotulo: 'Coef. Voc (%/°C)', tipo: 'numero' },
+      { caminho: 'modulo.coef_voc_pct', rotulo: 'Coef. Voc (%/°C)', tipo: 'numero', dica: 'negativo, da folha de dados (ex.: −0,27)' },
       { caminho: 'modulo.coef_pmax_pct', rotulo: 'Coef. Pmáx (%/°C)', tipo: 'numero' },
       { caminho: 'modulo.noct', rotulo: 'NOCT (°C)', tipo: 'numero' },
       { caminho: 'modulo.comprimento_m', rotulo: 'Comprimento (m)', tipo: 'numero' },

@@ -13,18 +13,20 @@ const D = require('../utils/duracaoCronograma');
 const { comTransacao } = require('../utils/transacao');
 const { versaoDoPedido } = require('../utils/versao');
 const { registrarAuditoria } = require('../utils/auditoria');
+const { hojeBrasilia } = require('../utils/dataHoje');
 const { gerarPlanilhaCronograma } = require('../utils/planilhaCronograma');
 const { gerarHtmlBoletim, gerarFooterTemplate } = require('../utils/boletimMedicaoTemplate');
 const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
 
 // data de hoje no horário de Brasília (toISOString daria o dia seguinte depois das 21h)
-const hojeLocal = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+const hojeLocal = () => hojeBrasilia(); // utils/dataHoje.js (fonte única)
 const ehAdmin = (req) => req.usuario?.role === 'admin';
 const podeEditar = (req, obra) => ehAdmin(req) || obra.usuario_id == null || obra.usuario_id === req.usuario.id;
 
 class ErroPedido extends Error {
-  constructor(msg, status = 400) { super(msg); this.status = status; }
+  constructor(msg, status = 400, extra = {}) { super(msg); this.status = status; this.extra = extra; }
 }
+const MSG_CONFLITO = 'O cronograma foi alterado por outra pessoa (ou em outra aba) depois que você o abriu. Recarregue a página — suas alterações não foram gravadas.';
 
 // ── validação ───────────────────────────────────────────────────────────
 const DATA_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -141,7 +143,7 @@ async function obter(req, res, next) {
       pode_editar: podeEditar(req, obra),
     });
   } catch (err) {
-    if (err instanceof ErroPedido) return res.status(err.status).json({ erro: err.message });
+    if (err instanceof ErroPedido) return res.status(err.status).json({ ...err.extra, erro: err.message });
     next(err);
   }
 }
@@ -259,7 +261,7 @@ async function gerar(req, res, next) {
     const { calc, historico } = calcular(dados);
     res.json({ cronograma: dados.config, etapas: dados.etapas, calculo: calc, medicoes: historico, avisos, total_proposta: g.totais.total });
   } catch (err) {
-    if (err instanceof ErroPedido) return res.status(err.status).json({ erro: err.message });
+    if (err instanceof ErroPedido) return res.status(err.status).json({ ...err.extra, erro: err.message });
     next(err);
   }
 }
@@ -279,9 +281,9 @@ async function salvar(req, res, next) {
     const b = req.body || {};
     const atual = await carregarDados(obra.id);
     const versao = versaoDoPedido(b);
+    // conferência rápida aqui; a que vale é a de dentro da transação, abaixo
     if (versao != null && atual.config && atual.config.versao !== versao) {
-      return res.status(409).json({ codigo: 'CONFLITO_VERSAO', versaoAtual: atual.config.versao,
-        erro: 'O cronograma foi alterado por outra pessoa (ou em outra aba) depois que você o abriu. Recarregue a página — suas alterações não foram gravadas.' });
+      return res.status(409).json({ codigo: 'CONFLITO_VERSAO', versaoAtual: atual.config.versao, erro: MSG_CONFLITO });
     }
     const tem = (k) => Object.prototype.hasOwnProperty.call(b, k);
     const periodicidade = tem('periodicidade') ? b.periodicidade : (atual.config?.periodicidade || 'mensal');
@@ -334,16 +336,23 @@ async function salvar(req, res, next) {
         dias_uteis: inicio && fim ? C.diasUteisEntre(inicio, fim) : null };
     });
     const removidas = atual.etapas.filter(e => !vistos.has(e.id));
-    if (removidas.length) {
-      const { rows } = await pool.query('SELECT DISTINCT etapa_id FROM obra_medicoes WHERE etapa_id = ANY($1)', [removidas.map(e => e.id)]);
-      if (rows.length) {
-        const nomes = removidas.filter(e => rows.some(r => r.etapa_id === e.id)).map(e => `"${e.nome}"`).join(', ');
-        return res.status(409).json({ erro: `Não é possível remover ${nomes}: há medição registrada. Zere o valor/peso da etapa em vez de removê-la.` });
-      }
-    }
 
     await comTransacao(async (client) => {
       await client.query('SELECT id FROM obras WHERE id = $1 FOR UPDATE', [obra.id]);
+      // Versão e medições conferidas DEPOIS da trava (revisão de 27/10/2026):
+      // lidas antes, outra gravação ou uma medição nova no meio passava.
+      const { rows: [cfgAgora] } = await client.query('SELECT versao FROM obra_cronogramas WHERE obra_id = $1', [obra.id]);
+      const versaoAgora = cfgAgora ? cfgAgora.versao : null;
+      if (versaoAgora !== (atual.config ? atual.config.versao : null)) {
+        throw new ErroPedido(MSG_CONFLITO, 409, { codigo: 'CONFLITO_VERSAO', versaoAtual: versaoAgora });
+      }
+      if (removidas.length) {
+        const { rows } = await client.query('SELECT DISTINCT etapa_id FROM obra_medicoes WHERE etapa_id = ANY($1)', [removidas.map(e => e.id)]);
+        if (rows.length) {
+          const nomes = removidas.filter(e => rows.some(r => r.etapa_id === e.id)).map(e => `"${e.nome}"`).join(', ');
+          throw new ErroPedido(`Não é possível remover ${nomes}: há medição registrada. Zere o valor/peso da etapa em vez de removê-la.`, 409);
+        }
+      }
       for (const e of removidas) await client.query('DELETE FROM obra_etapas WHERE id = $1', [e.id]);
       for (const e of etapas) {
         let id = e.id;
@@ -368,7 +377,7 @@ async function salvar(req, res, next) {
     const { calc, historico } = calcular(dados);
     res.json({ cronograma: dados.config, etapas: dados.etapas, calculo: calc, medicoes: historico });
   } catch (err) {
-    if (err instanceof ErroPedido) return res.status(err.status).json({ erro: err.message });
+    if (err instanceof ErroPedido) return res.status(err.status).json({ ...err.extra, erro: err.message });
     next(err);
   }
 }
@@ -378,69 +387,81 @@ async function salvar(req, res, next) {
 //          percentual_acumulado?, valor_medido?, observacao? }] }
 // Cada item vira uma linha nova; se já havia medição da etapa no período, a
 // nova a corrige (substitui_id) e a anterior fica no histórico.
+// Valida o pedido de medição contra o cronograma ATUAL (lido dentro da
+// transação, com a obra travada) e devolve as linhas a gravar. Lança ErroPedido.
+function montarMedicao(atual, b) {
+  if (!atual.config || !atual.etapas.length) throw new ErroPedido('Monte o cronograma da obra antes de registrar medições.');
+  const per = atual.config.periodicidade;
+  const dataMed = data(b.data_medicao, 'a data da medição') || hojeLocal();
+  const periodo = C.inicioPeriodo(data(b.periodo, 'o período') || dataMed, per);
+  const obsGeral = texto(b.observacao, 2000);
+  if (!Array.isArray(b.itens) || !b.itens.length) throw new ErroPedido('Informe ao menos uma etapa medida.');
+  if (b.itens.length > 300) throw new ErroPedido('Itens demais.');
+  const etapaPorId = new Map(atual.etapas.map(e => [e.id, e]));
+  const vigentes = C.medicoesVigentes(atual.medicoes, per);
+  const linhas = [];
+  const vistos = new Set();
+  for (const it of b.itens) {
+    const etapaId = idPositivo(it.etapa_id);
+    const etapa = etapaId && etapaPorId.get(etapaId);
+    if (!etapa) throw new ErroPedido('Etapa da medição não pertence a esta obra.');
+    if (vistos.has(etapaId)) throw new ErroPedido(`A etapa "${etapa.nome}" aparece duas vezes na medição.`);
+    vistos.add(etapaId);
+    const pctAc = numero(it.percentual_acumulado, `o % acumulado de "${etapa.nome}"`, { min: 0, max: 100 });
+    const valor = numero(it.valor_medido, `o valor medido de "${etapa.nome}"`, { min: 0, max: 1e11 });
+    if (pctAc == null && valor == null) continue;
+    const anterior = vigentes.get(`${etapaId}|${periodo}`);
+    linhas.push({ etapa, pctAc, valor, obs: texto(it.observacao, 2000) || obsGeral, substitui: anterior ? anterior.id : null });
+  }
+  if (!linhas.length) throw new ErroPedido('Informe o % físico acumulado ou o valor medido de ao menos uma etapa.');
+  // simula a medição: o medido acumulado não pode passar o valor da etapa (isso pede aditivo)
+  const maiorId = atual.medicoes.reduce((m, x) => Math.max(m, x.id), 0);
+  const simulado = C.calcularCronograma({
+    etapas: atual.etapas, periodicidade: per, criterioPeso: atual.config.criterio_peso,
+    medicoes: [...atual.medicoes, ...linhas.map((l, i) => ({ id: maiorId + 1 + i, etapa_id: l.etapa.id, periodo, percentual_acumulado: l.pctAc, valor_medido: l.valor }))],
+  });
+  for (const l of linhas) {
+    const e = simulado.etapas.find(x => x.id === l.etapa.id);
+    const acum = e?.serie.length ? Math.max(...e.serie.map(x => x.realizado_valor_acum)) : 0;
+    if (l.valor != null && acum > (Number(l.etapa.valor) || 0) + 0.01) {
+      throw new ErroPedido(`O valor medido acumulado de "${l.etapa.nome}" (${acum.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}) passaria o valor da etapa (${(Number(l.etapa.valor) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}). Ajuste o valor da etapa no cronograma (aditivo) antes de medir.`);
+    }
+  }
+  return { dataMed, periodo, linhas };
+}
+
 async function registrarMedicao(req, res, next) {
   try {
     const obra = await carregarObra(req.params.id);
     if (!obra) return res.status(404).json({ erro: 'Obra não encontrada.' });
     const b = req.body || {};
-    const atual = await carregarDados(obra.id);
-    if (!atual.config || !atual.etapas.length) return res.status(400).json({ erro: 'Monte o cronograma da obra antes de registrar medições.' });
-    const per = atual.config.periodicidade;
-    const dataMed = data(b.data_medicao, 'a data da medição') || hojeLocal();
-    const periodo = C.inicioPeriodo(data(b.periodo, 'o período') || dataMed, per);
-    const obsGeral = texto(b.observacao, 2000);
-    if (!Array.isArray(b.itens) || !b.itens.length) return res.status(400).json({ erro: 'Informe ao menos uma etapa medida.' });
-    if (b.itens.length > 300) return res.status(400).json({ erro: 'Itens demais.' });
-    const etapaPorId = new Map(atual.etapas.map(e => [e.id, e]));
-    const vigentes = C.medicoesVigentes(atual.medicoes, per);
-    const linhas = [];
-    const vistos = new Set();
-    for (const it of b.itens) {
-      const etapaId = idPositivo(it.etapa_id);
-      const etapa = etapaId && etapaPorId.get(etapaId);
-      if (!etapa) return res.status(400).json({ erro: 'Etapa da medição não pertence a esta obra.' });
-      if (vistos.has(etapaId)) return res.status(400).json({ erro: `A etapa "${etapa.nome}" aparece duas vezes na medição.` });
-      vistos.add(etapaId);
-      const pctAc = numero(it.percentual_acumulado, `o % acumulado de "${etapa.nome}"`, { min: 0, max: 100 });
-      const valor = numero(it.valor_medido, `o valor medido de "${etapa.nome}"`, { min: 0, max: 1e11 });
-      if (pctAc == null && valor == null) continue;
-      const anterior = vigentes.get(`${etapaId}|${periodo}`);
-      linhas.push({ etapa, pctAc, valor, obs: texto(it.observacao, 2000) || obsGeral, substitui: anterior ? anterior.id : null });
-    }
-    if (!linhas.length) return res.status(400).json({ erro: 'Informe o % físico acumulado ou o valor medido de ao menos uma etapa.' });
-    // simula a medição: o medido acumulado não pode passar o valor da etapa (isso pede aditivo)
-    const maiorId = atual.medicoes.reduce((m, x) => Math.max(m, x.id), 0);
-    const simulado = C.calcularCronograma({
-      etapas: atual.etapas, periodicidade: per, criterioPeso: atual.config.criterio_peso,
-      medicoes: [...atual.medicoes, ...linhas.map((l, i) => ({ id: maiorId + 1 + i, etapa_id: l.etapa.id, periodo, percentual_acumulado: l.pctAc, valor_medido: l.valor }))],
-    });
-    for (const l of linhas) {
-      const e = simulado.etapas.find(x => x.id === l.etapa.id);
-      const acum = e?.serie.length ? Math.max(...e.serie.map(x => x.realizado_valor_acum)) : 0;
-      if (l.valor != null && acum > (Number(l.etapa.valor) || 0) + 0.01) {
-        return res.status(400).json({ erro: `O valor medido acumulado de "${l.etapa.nome}" (${acum.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}) passaria o valor da etapa (${(Number(l.etapa.valor) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}). Ajuste o valor da etapa no cronograma (aditivo) antes de medir.` });
-      }
-    }
-    const ids = await comTransacao(async (client) => {
+    // Tudo conferido com a obra travada (revisão de 27/10/2026): antes a
+    // medição anterior (substitui_id) e o teto do valor da etapa eram lidos
+    // fora da transação — duas medições ao mesmo tempo passavam do valor da
+    // etapa ou "corrigiam" a mesma linha.
+    const { ids, periodo } = await comTransacao(async (client) => {
+      await client.query('SELECT id FROM obras WHERE id = $1 FOR UPDATE', [obra.id]);
+      const atual = await carregarDados(obra.id, client);
+      const { dataMed, periodo: per, linhas } = montarMedicao(atual, b);
       const criados = [];
       for (const l of linhas) {
         const { rows } = await client.query(
           `INSERT INTO obra_medicoes (obra_id, etapa_id, etapa_nome, data_medicao, periodo, percentual_acumulado, valor_medido, observacao, substitui_id, usuario_id)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
-          [obra.id, l.etapa.id, l.etapa.nome, dataMed, periodo, l.pctAc, l.valor, l.obs, l.substitui, req.usuario.id]);
+          [obra.id, l.etapa.id, l.etapa.nome, dataMed, per, l.pctAc, l.valor, l.obs, l.substitui, req.usuario.id]);
         criados.push(rows[0].id);
       }
       await registrarAuditoria(client, {
         entidade: 'obra_medicao', entidadeId: obra.id, acao: 'registrar', usuarioId: req.usuario.id,
-        detalhes: { periodo, medicoes: criados, corrigidas: linhas.filter(l => l.substitui).map(l => l.substitui) },
+        detalhes: { periodo: per, medicoes: criados, corrigidas: linhas.filter(l => l.substitui).map(l => l.substitui) },
       });
-      return criados;
+      return { ids: criados, periodo: per };
     });
     const dados = await carregarDados(obra.id);
     const { calc, historico } = calcular(dados);
     res.status(201).json({ criadas: ids, periodo, calculo: calc, medicoes: historico });
   } catch (err) {
-    if (err instanceof ErroPedido) return res.status(err.status).json({ erro: err.message });
+    if (err instanceof ErroPedido) return res.status(err.status).json({ ...err.extra, erro: err.message });
     next(err);
   }
 }
@@ -510,9 +531,9 @@ async function boletim(req, res, next) {
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': contentDisposition(nomeArquivo(obra, `boletim_${String(b.numero).padStart(2, '0')}_${b.periodo}`, 'pdf')) });
     res.send(Buffer.from(pdf));
   } catch (err) {
-    if (err instanceof ErroPedido) return res.status(err.status).json({ erro: err.message });
+    if (err instanceof ErroPedido) return res.status(err.status).json({ ...err.extra, erro: err.message });
     next(err);
   }
 }
 
-module.exports = { obter, gerar, salvar, registrarMedicao, listarMedicoes, planilha, boletim };
+module.exports = { obter, gerar, salvar, registrarMedicao, listarMedicoes, planilha, boletim, _interno: { montarMedicao, ErroPedido } };

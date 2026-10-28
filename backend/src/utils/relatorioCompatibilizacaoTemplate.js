@@ -77,8 +77,8 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
   const linhasPontosPorAmbiente = pontosPorAmbiente.map(a => `
     <tr>
       <td>${escapeHtml(a.ambiente)}</td>
-      ${colunasPontos.map(c => `<td class="num">${a[c.chave]}</td>`).join('')}
-      <td class="num"><b>${a.total}</b></td>
+      ${colunasPontos.map(c => `<td class="num">${escapeHtml(a[c.chave])}</td>`).join('')}
+      <td class="num"><b>${escapeHtml(a.total)}</b></td>
     </tr>
   `).join('');
 
@@ -89,15 +89,18 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
   // por parâmetro (não de dentro do dado salvo) porque análises salvas antes
   // desta correção não tinham esse campo — ler `d.prefixo` delas imprimiria
   // "undefinedN" nos códigos.
+  // tudo escapado (reforço da revisão de 27/10/2026): o detalhe vem do JSON
+  // salvo da análise, que pode ser alterado pela API
   function linhasDetalhePorArquivo(detalhe, prefixo) {
+    const codigos = (lista) => escapeHtml((Array.isArray(lista) ? lista : []).map(n => prefixo + n).join(', '));
     return (detalhe || []).map(d => `
       <tr>
         <td>${escapeHtml(d.arquivo)}</td>
-        <td class="num">${d.ocorrencias}</td>
-        <td class="num">${d.total}</td>
-        <td class="obs">${d.unicas.map(n => prefixo + n).join(', ')}</td>
-        <td>${d.repetidas.length ? d.repetidas.map(n => prefixo + n).join(', ') : '—'}</td>
-        <td>${d.faltando.length ? d.faltando.map(n => prefixo + n).join(', ') : '—'}</td>
+        <td class="num">${escapeHtml(d.ocorrencias)}</td>
+        <td class="num">${escapeHtml(d.total)}</td>
+        <td class="obs">${codigos(d.unicas)}</td>
+        <td>${d.repetidas?.length ? codigos(d.repetidas) : '—'}</td>
+        <td>${d.faltando?.length ? codigos(d.faltando) : '—'}</td>
       </tr>
     `).join('');
   }
@@ -246,7 +249,7 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
     <div class="info-item" style="grid-column: 1 / -1;">
       <div class="label">Arquivos analisados</div>
       <div class="valor">${arquivosAnalisados.map(a =>
-        `${escapeHtml(a.arquivo)} (${(a.disciplinas || []).map(nomeDaDisciplina).join(', ')})`
+        `${escapeHtml(a.arquivo)} (${escapeHtml((a.disciplinas || []).map(nomeDaDisciplina).join(', '))})`
       ).join(' · ') || '—'}</div>
     </div>
   </div>

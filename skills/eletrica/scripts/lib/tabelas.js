@@ -9,7 +9,9 @@ const SECOES = [0.5, 0.75, 1, 1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 1
 // Colunas das Tabelas 36/37 (métodos A1 a D, 2 ou 3 condutores carregados)
 const COL_A_D = { A1: [0, 1], A2: [2, 3], B1: [4, 5], B2: [6, 7], C: [8, 9], D: [10, 11] };
 // Colunas das Tabelas 38/39 (métodos E e F, cabos multipolares/unipolares)
-const COL_E_F = { E: [0, 1], F: [2, 4] }; // F: 2 condutores justapostos / 3 em trifólio
+// F: 2 condutores justapostos (col. 4) / 3 condutores em trifólio (col. 5). A col. 6 (3 justapostos no
+// mesmo plano) dá valor maior; sem o arranjo definido vale o trifólio, o menor (lado da segurança).
+const COL_E_F = { E: [0, 1], F: [2, 3] };
 
 const METODOS = {
   A1: 'A1 — condutores isolados em eletroduto embutido em parede termicamente isolante',
@@ -47,9 +49,15 @@ const FCT_SOLO = {
   EPR: { 10: 1.07, 15: 1.04, 20: 1, 25: 0.96, 30: 0.93, 35: 0.89, 40: 0.85 },
 };
 function fatorTemperatura(temp, isolacao, enterrado) {
-  const t = (enterrado ? FCT_SOLO : FCT_AR)[isolacao === 'PVC' ? 'PVC' : 'EPR'];
+  const iso = isolacao === 'PVC' ? 'PVC' : 'EPR';
+  const t = (enterrado ? FCT_SOLO : FCT_AR)[iso];
   const chaves = Object.keys(t).map(Number).sort((a, b) => a - b);
-  const k = chaves.find(c => c >= temp) ?? chaves[chaves.length - 1]; // arredonda para cima (lado da segurança)
+  const tc = Number(temp);
+  const onde = enterrado ? 'do solo' : 'ambiente';
+  if (temp == null || temp === '' || !Number.isFinite(tc)) throw new Error(`Temperatura ${onde} inválida: "${temp}".`);
+  // acima do fim da Tabela 40 a isolação não serve para o local (não usar o último fator como se valesse)
+  if (tc > chaves[chaves.length - 1]) throw new Error(`Temperatura ${onde} de ${tc} °C acima da Tabela 40 para isolação ${iso === 'PVC' ? 'PVC' : 'EPR/XLPE'} (máximo ${chaves[chaves.length - 1]} °C) — use isolação para temperatura maior ou revise o valor.`);
+  const k = chaves.find(c => c >= tc); // arredonda para cima (lado da segurança)
   return t[k];
 }
 
@@ -91,6 +99,18 @@ const DISJUNTORES = [6, 10, 13, 16, 20, 25, 32, 40, 50, 63, 70, 80, 100, 125, 16
 
 // Resistividade do cobre em operação (Ω·mm²/m) — valor conservador para 70 °C
 const RHO_COBRE = 0.0225;
+// Resistividade do cobre a 20 °C (1/56 Ω·mm²/m) — curto-circuito máximo (capacidade de interrupção)
+const RHO_COBRE_20 = 0.0178;
+
+// Tabela 30 — k do condutor de cobre (integral de Joule k²S², 5.3.5.5.2)
+function kCurto(isolacao, secao) {
+  if (isolacao === 'EPR' || isolacao === 'XLPE') return 143;
+  return secao > 300 ? 103 : 115;
+}
+// Capacidades de interrupção usuais de disjuntores (kA): NBR NM 60898 (Icn) até 25 kA; acima, IEC 60947-2 (Icu)
+const ICN_KA = [3, 4.5, 6, 10, 15, 20, 25, 36, 50, 65, 85, 100];
+// Disparo instantâneo por curva (NBR NM 60898: B 3–5·In, C 5–10·In, D 10–20·In) — Ia = limite superior
+const CURVA_IA = { B: 5, C: 10, D: 20 };
 
 // Limites de queda de tensão (6.2.7)
 const QUEDA = { terminal: 4, total_bt: 5, total_trafo: 7 };
@@ -124,6 +144,6 @@ const LOCAIS_600VA = ['banheiro', 'cozinha', 'area_servico'];
 
 module.exports = {
   SECOES, METODOS, capacidade, fatorTemperatura, fatorAgrupamento, SECAO_MINIMA, NEUTRO_REDUZIDO, secaoPE,
-  reservaQuadro, DISJUNTORES, RHO_COBRE, QUEDA, ISOLAMENTO, DEMANDA_ILUM_TUG_PADRAO, DEMANDA_TUE_PADRAO,
+  reservaQuadro, DISJUNTORES, RHO_COBRE, RHO_COBRE_20, kCurto, ICN_KA, CURVA_IA, QUEDA, ISOLAMENTO, DEMANDA_ILUM_TUG_PADRAO, DEMANDA_TUE_PADRAO,
   LOCAIS_DR, LOCAIS_COZINHA, LOCAIS_600VA,
 };

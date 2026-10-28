@@ -42,14 +42,14 @@ function resumir(res) {
   return {
     indicadores: [
       { rotulo: 'Pontos de recarga', valor: String(calc.circuitos.length), detalhe: `${num(calc.somaVa / 1000)} kVA (fator de demanda 1)` },
-      { rotulo: 'Corrente na distribuição', valor: `${num(calc.iDistrib, 1)} A`, detalhe: calc.controle ? 'limitada pelo controle de recarga' : 'sem controle de recarga (FD = 1)' },
+      { rotulo: 'Corrente na distribuição', valor: `${num(calc.iDistrib, 1)} A na fase ${calc.faseCritica}`, detalhe: `${Object.entries(calc.correnteFaseDistrib).map(([f, i]) => `${f} ${num(i, 1)} A`).join(' · ')} — ${calc.controle ? 'limitada pelo controle de recarga' : 'sem controle de recarga (FD = 1)'}` },
       ...calc.circuitos.map(x => ({ rotulo: `Circuito ${x.id}`, valor: `${sec(x.secao)} · ${x.disjuntor} A`, detalhe: `Ib ${num(x.ib, 1)} A · ΔV ${num(x.queda)} % · DR ${x.dr.tipo}` })),
-      ...(cap ? [{ rotulo: 'Padrão de entrada', valor: `${num(cap.iTotal, 1)} A de ${cap.inGeral} A`, ok: cap.atende, detalhe: cap.atende ? 'carga adicional cabe' : 'pedir aumento de carga' }] : []),
-      { rotulo: 'DPS', valor: calc.dps.obrigatorio ? 'obrigatório' : 'recomendado', detalhe: `${calc.dps.qtd} un · Uc ≥ ${calc.dps.uc} V` },
+      ...(cap ? [{ rotulo: 'Padrão de entrada', valor: `${num(cap.iTotal, 1)} A de ${cap.inGeral} A (fase ${cap.fase})`, ok: cap.atende, detalhe: cap.atende ? 'carga adicional cabe na fase mais carregada' : 'pedir aumento de carga ou redistribuir as fases' }] : []),
+      { rotulo: 'DPS', valor: calc.dps.obrigatorio ? 'obrigatório' : 'recomendado', detalhe: `${calc.dps.qtd} un · ${calc.dps.texto}` },
     ],
     textos: calc.avisos,
-    tabelas: [{ titulo: 'Circuitos dos pontos de recarga', colunas: ['Ponto', 'Modo', 'Potência', 'Lig.', 'Ib (A)', 'Seção F/N/PE', 'Disjuntor', 'DR', 'ΔV %', 'Grau de proteção'],
-      linhas: calc.circuitos.map(x => [`${x.id} — ${x.descricao}`, MODO[x.ponto.modo] || x.ponto.modo, `${num(x.ponto.potencia_kw)} kW`, x.ligacao, num(x.ib, 1), `${sec(x.secao)} / ${x.secaoNeutro ? sec(x.secaoNeutro) : '—'} / ${sec(x.secaoPE)}`, `${x.polos}P ${x.disjuntor} A`, x.dr.tipo, num(x.queda), x.ip]) }],
+    tabelas: [{ titulo: 'Circuitos dos pontos de recarga', colunas: ['Ponto', 'Modo', 'Potência', 'Lig.', 'Fase', 'Ib (A)', 'Seção F/N/PE', 'Disjuntor', 'DR', 'ΔV %', 'Grau de proteção'],
+      linhas: calc.circuitos.map(x => [`${x.id} — ${x.descricao}`, MODO[x.ponto.modo] || x.ponto.modo, `${num(x.ponto.potencia_kw)} kW`, x.ligacao, x.fases, num(x.ib, 1), `${sec(x.secao)} / ${x.secaoNeutro ? sec(x.secaoNeutro) : '—'} / ${sec(x.secaoPE)}`, `${x.polos}P ${x.disjuntor} A`, x.dr.tipo, num(x.queda), x.ip]) }],
   };
 }
 
@@ -66,14 +66,14 @@ function secoesMemorial(res) {
       `DPS ${calc.publico ? 'obrigatório (local com público, 5.4.2.1.101)' : 'recomendado'}; ao tempo IPX4 e IP4X; IK08 e proteção mecânica onde houver risco de impacto (6.1.3.2).`,
     ] },
     { titulo: '3. Dimensionamento dos circuitos (NBR 5410, 6.2)', paragrafos: [`Cabos de cobre ${c.isolacao === 'PVC' ? 'PVC' : 'EPR/XLPE 90 °C, 0,6/1 kV'}, método ${c.metodo}, temperatura ${c.temperatura} °C. Seção pelo maior entre capacidade de condução (Iz ≥ Ib e In ≤ Iz) e queda de tensão ≤ ${num(c.quedaTerminal)} %. Estações CC: corrente de entrada com rendimento de 95 %.`],
-      tabela: { colunas: ['Ponto', 'Modo', 'kW', 'Lig.', 'Ib (A)', 'L (m)', 'Seção F/N/PE', 'Iz (A)', 'Disjuntor', 'DR', 'ΔV %'],
-        linhas: calc.circuitos.map(x => [x.id, (MODO[x.ponto.modo] || '').split(' (')[0], num(x.ponto.potencia_kw), x.ligacao, num(x.ib, 1), num(x.comprimento, 0), `${sec(x.secao)} / ${x.secaoNeutro ? sec(x.secaoNeutro) : '—'} / ${sec(x.secaoPE)}`, num(x.iz, 1), `${x.polos}P ${x.disjuntor} A`, `tipo ${x.dr.tipo}`, num(x.queda)]),
-        proporcoes: [0.6, 0.8, 0.5, 0.45, 0.6, 0.5, 1.6, 0.6, 0.9, 0.7, 0.5], tamanho: 15 },
+      tabela: { colunas: ['Ponto', 'Modo', 'kW', 'Lig.', 'Fase', 'Ib (A)', 'L (m)', 'Seção F/N/PE', 'Iz (A)', 'Disjuntor', 'DR', 'ΔV %'],
+        linhas: calc.circuitos.map(x => [x.id, (MODO[x.ponto.modo] || '').split(' (')[0], num(x.ponto.potencia_kw), x.ligacao, x.fases, num(x.ib, 1), num(x.comprimento, 0), `${sec(x.secao)} / ${x.secaoNeutro ? sec(x.secaoNeutro) : '—'} / ${sec(x.secaoPE)}`, num(x.iz, 1), `${x.polos}P ${x.disjuntor} A`, `tipo ${x.dr.tipo}`, num(x.queda)]),
+        proporcoes: [0.6, 0.8, 0.5, 0.45, 0.45, 0.6, 0.5, 1.6, 0.6, 0.9, 0.7, 0.5], tamanho: 15 },
       notas: calc.circuitos.map(x => `${x.id}: ${x.dr.texto}`) },
     { titulo: '4. Distribuição e capacidade do padrão de entrada (7.1.101)', paragrafos: [
-      `Corrente total dos pontos de recarga: ${num(calc.iDistrib, 1)} A${calc.controle ? ` (limitada a ${calc.inst.limite_controle_a} A pelo controle de recarga)` : ''}.`,
-      calc.capacidade ? `Padrão de entrada: disjuntor geral ${calc.capacidade.inGeral} A; corrente existente estimada ${num(calc.capacidade.iExistente, 1)} A + recarga ${num(calc.capacidade.iNovo, 1)} A = ${num(calc.capacidade.iTotal, 1)} A — ${calc.capacidade.atende ? 'a carga adicional cabe no padrão existente.' : 'EXCEDE o padrão existente: solicitar aumento de carga à distribuidora ou adotar controle de recarga.'}` : 'Capacidade do padrão de entrada não informada. [CONFERIR com a distribuidora antes da instalação]',
-      calc.alimentador ? `Alimentador do quadro de recarga: ${sec(calc.alimentador.secao)}, disjuntor ${calc.alimentador.polos}P ${calc.alimentador.disjuntor} A, queda ${num(calc.alimentador.queda)} %.` : '',
+      `Corrente dos pontos de recarga por fase (cada carregador monofásico numa fase; FD = 1): ${Object.entries(calc.correnteFaseDistrib).map(([f, i]) => `fase ${f} ${num(i, 1)} A`).join('; ')}${calc.controle ? ` (limitada a ${calc.inst.limite_controle_a} A por fase pelo controle de recarga)` : ''}. A verificação usa a fase mais carregada (${calc.faseCritica}: ${num(calc.iDistrib, 1)} A).`,
+      calc.capacidade ? `Padrão de entrada: disjuntor geral ${calc.capacidade.inGeral} A; demanda existente suposta equilibrada nas fases (${num(calc.capacidade.iExistente, 1)} A por fase) + recarga na fase ${calc.capacidade.fase} ${num(calc.capacidade.iNovo, 1)} A = ${num(calc.capacidade.iTotal, 1)} A — ${calc.capacidade.atende ? 'a carga adicional cabe no padrão existente.' : 'EXCEDE o padrão existente: solicitar aumento de carga à distribuidora, redistribuir as fases ou adotar controle de recarga.'} [CONFERIR a distribuição real das cargas existentes por fase]` : 'Capacidade do padrão de entrada não informada. [CONFERIR com a distribuidora antes da instalação]',
+      calc.alimentador ? `Alimentador do quadro de recarga: Ib = ${num(calc.alimentador.ib, 1)} A (fase mais carregada), ${sec(calc.alimentador.secao)}, disjuntor ${calc.alimentador.polos}P ${calc.alimentador.disjuntor} A (≥ Ib e ≥ o maior disjuntor a jusante, ${calc.alimentador.maiorJusante} A), queda ${num(calc.alimentador.queda)} %.` : '',
     ].filter(Boolean) },
     { titulo: '5. Lista de materiais (preliminar)', tabela: { colunas: ['Cód.', 'Descrição', 'Un.', 'Qtd.', 'Referência'], linhas: calc.materiais.map(m => [m.codigo, m.descricao, m.unidade, num(m.quantidade, 1), m.referencia]), proporcoes: [0.7, 4, 0.5, 0.6, 1.7] } },
     ...(calc.avisos.length ? [{ titulo: 'Avisos', marcadores: calc.avisos }] : []),
@@ -85,7 +85,7 @@ const DOCUMENTOS = [
     gerar: (res) => D.docxParaBuffer(D.gerarMemorial(res.dados, { titulo: 'MEMORIAL DESCRITIVO E DE CÁLCULO — RECARGA DE VEÍCULOS ELÉTRICOS', subtitulo: 'ABNT NBR 17019:2022 e ABNT NBR 5410', tituloCurto: 'Memorial — recarga de VE', sigla: 'MEM-VE', secoes: secoesMemorial(res), listaNormas: NORMAS })) },
   { tipo: 'planilha', rotulo: 'Planilha de circuitos e materiais', formato: 'Excel', nome: 'Recarga_VE',
     gerar: (res) => D.gerarPlanilha([
-      { nome: 'Circuitos', colunas: [{ header: 'Ponto', key: 'id' }, { header: 'Descrição', key: 'descricao', width: 30 }, { header: 'Ligação', key: 'ligacao' }, { header: 'Ib (A)', key: 'ib', numFmt: '0.0' }, { header: 'Comprimento (m)', key: 'comprimento' }, { header: 'Seção (mm²)', key: 'secao' }, { header: 'Disjuntor (A)', key: 'disjuntor' }, { header: 'DR tipo', key: 'drTipo' }, { header: 'Queda (%)', key: 'queda', numFmt: '0.00' }],
+      { nome: 'Circuitos', colunas: [{ header: 'Ponto', key: 'id' }, { header: 'Descrição', key: 'descricao', width: 30 }, { header: 'Ligação', key: 'ligacao' }, { header: 'Fase', key: 'fases' }, { header: 'Ib (A)', key: 'ib', numFmt: '0.0' }, { header: 'Comprimento (m)', key: 'comprimento' }, { header: 'Seção (mm²)', key: 'secao' }, { header: 'Disjuntor (A)', key: 'disjuntor' }, { header: 'DR tipo', key: 'drTipo' }, { header: 'Queda (%)', key: 'queda', numFmt: '0.00' }],
         linhas: res.calc.circuitos.map(x => ({ ...x, drTipo: x.dr.tipo })) },
       D.abaMateriais(res.calc.materiais),
     ]) },
@@ -135,6 +135,7 @@ const OP = {
   esquema: F.op([['TN-S', 'TN-S'], ['TN-C-S', 'TN-C-S'], ['TT', 'TT']]),
   modo: F.op(Object.entries(MODO)),
   fases: F.op([['1', 'Monofásico'], ['3', 'Trifásico']]),
+  faseQuadro: F.op([['', 'auto'], ['A', 'A'], ['B', 'B'], ['C', 'C'], ['AB', 'AB'], ['BC', 'BC'], ['AC', 'AC'], ['ABC', 'ABC']]),
   metodo: F.op([['B1', 'B1 — eletroduto aparente/embutido'], ['B2', 'B2 — cabo multipolar em eletroduto'], ['C', 'C — sobre parede/bandeja'], ['D', 'D — eletroduto enterrado'], ['E', 'E — bandeja perfurada']]),
 };
 
@@ -159,13 +160,13 @@ const FORMULARIO = [
     ] },
   ] },
   { titulo: '3. Pontos de recarga', aberta: true, itens: [
-    { tipo: 'nota', texto: 'Um ponto por linha. Wallbox comum: modo 3, 7,4 kW monofásico. Marque "RDC-DD no carregador" se a ficha técnica indicar detecção de 6 mA CC (permite DR tipo A).' },
+    { tipo: 'nota', texto: 'Um ponto por linha. Wallbox comum: modo 3, 7,4 kW monofásico. Marque "RDC-DD no carregador" se a ficha técnica indicar detecção de 6 mA CC (permite DR tipo A). "Fase no quadro": a fase de ligação de cada ponto (vazio = distribuição automática pela fase menos carregada) — o padrão de entrada e o alimentador são verificados pela fase mais carregada.' },
     { tipo: 'tabela', caminho: 'pontos', rotuloAdicionar: 'Adicionar ponto de recarga',
-      novaLinha: { id: 'VE{n}', descricao: '', modo: 'modo3_ac', potencia_kw: 7.4, fases: '1', comprimento_m: null, rdc_dd_incorporado: true, ao_tempo: false, protecao_impacto: false, fornecido_cliente: false, modelo: '' },
+      novaLinha: { id: 'VE{n}', descricao: '', modo: 'modo3_ac', potencia_kw: 7.4, fases: '1', fase: '', comprimento_m: null, rdc_dd_incorporado: true, ao_tempo: false, protecao_impacto: false, fornecido_cliente: false, modelo: '' },
       colunas: [
         { campo: 'id', rotulo: 'Id', largura: 60 }, { campo: 'descricao', rotulo: 'Local / vaga' },
         { campo: 'modo', rotulo: 'Modo', tipo: 'selecao', opcoes: OP.modo, largura: 200 }, { campo: 'potencia_kw', rotulo: 'kW', tipo: 'numero', largura: 70 },
-        { campo: 'fases', rotulo: 'Fases', tipo: 'selecao', opcoes: OP.fases, largura: 110 }, { campo: 'comprimento_m', rotulo: 'Distância do quadro (m)', tipo: 'numero', largura: 110 },
+        { campo: 'fases', rotulo: 'Fases', tipo: 'selecao', opcoes: OP.fases, largura: 110 }, { campo: 'fase', rotulo: 'Fase no quadro', tipo: 'selecao', opcoes: OP.faseQuadro, largura: 90 }, { campo: 'comprimento_m', rotulo: 'Distância do quadro (m)', tipo: 'numero', largura: 110 },
         { campo: 'modelo', rotulo: 'Modelo', largura: 130 },
         { campo: 'rdc_dd_incorporado', rotulo: 'RDC-DD no carregador', tipo: 'check', largura: 90 }, { campo: 'ao_tempo', rotulo: 'Ao tempo', tipo: 'check', largura: 70 },
         { campo: 'protecao_impacto', rotulo: 'Risco de impacto', tipo: 'check', largura: 80 }, { campo: 'fornecido_cliente', rotulo: 'Carregador do cliente', tipo: 'check', largura: 90 },

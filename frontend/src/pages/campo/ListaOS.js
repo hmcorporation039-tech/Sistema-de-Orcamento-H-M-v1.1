@@ -38,7 +38,9 @@ export function CartaoOS({ os }) {
               <UploadCloud size={15} /> {pend} a enviar
             </Selo>
           )}
-          {os.pendencias?.recusadas > 0 && <Selo cor={COR.vermelho}>{os.pendencias.recusadas} recusada(s)</Selo>}
+          {os.nao_aceita
+            ? <Selo cor={COR.vermelho}>não aceita pelo servidor</Selo>
+            : os.pendencias?.recusadas > 0 && <Selo cor={COR.vermelho}>{os.pendencias.recusadas} recusada(s)</Selo>}
         </div>
       </Cartao>
     </Link>

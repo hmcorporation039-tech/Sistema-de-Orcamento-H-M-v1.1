@@ -18,8 +18,12 @@
 //   COTACAO_IA_CLI=desligada  desliga só o Claude Max.
 //
 // API de alto nível:
-//   perguntarJSON(prompt, { documento, anexo, esquema, web, timeoutMs, aceitar, finalidade })
+//   perguntarJSON(prompt, { documento, anexo, esquema, web, timeoutMs, aceitar, finalidade, signal })
 //       → { provedor, fonte, json, ms }
+//   `signal` (AbortSignal, opcional) cancela a cadeia inteira. No tempo-limite
+//   de um provedor, ele é CANCELADO de verdade (processo da CLI morto, requisição
+//   da API/Gemini abortada) antes de passar ao próximo — antes só se parava de
+//   esperar e o Gemini seguia gastando cota em segundo plano.
 //   pesquisarWeb(prompt, opções)   = perguntarJSON com busca na web
 //   disponivel({ web })            → há algum provedor que pode responder?
 //   status()                       → painel de Integrações (sem chaves)
@@ -83,13 +87,31 @@ function jsonTolerante(texto) {
   try { return JSON.parse(t.slice(i, f + 1)); } catch { return null; }
 }
 
-function comTimeout(promessa, ms, rotulo) {
+// `aoEstourar` é chamado no tempo-limite (cancela o provedor que ficou para trás)
+function comTimeout(promessa, ms, rotulo, aoEstourar) {
   if (!ms) return promessa;
   let timer;
   const limite = new Promise((_, rej) => {
-    timer = setTimeout(() => rej(Object.assign(new Error(`${rotulo}: sem resposta em ${Math.round(ms / 1000)} s`), { timeout: true })), ms);
+    timer = setTimeout(() => {
+      const erro = Object.assign(new Error(`${rotulo}: sem resposta em ${Math.round(ms / 1000)} s`), { timeout: true });
+      try { aoEstourar?.(erro); } catch { /* cancelar não pode impedir o erro de chegar */ }
+      rej(erro);
+    }, ms);
   });
   return Promise.race([promessa, limite]).finally(() => clearTimeout(timer));
+}
+
+// Erro de cancelamento pedido por quem chamou (não é falha do provedor)
+const erroCancelado = (signal) => Object.assign(new Error('pedido à IA cancelado'), { cancelado: true, causa: signal?.reason });
+
+// Promessa que rejeita quando o sinal é abortado (para não ficar esperando um
+// provedor que ignora o sinal)
+function aoAbortar(signal) {
+  if (!signal) return null;
+  return new Promise((_, rej) => {
+    if (signal.aborted) return rej(erroCancelado(signal));
+    signal.addEventListener('abort', () => rej(erroCancelado(signal)), { once: true });
+  });
 }
 
 const MIME = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', txt: 'text/plain' };
@@ -106,22 +128,36 @@ const comDocumento = (prompt, documento) => (documento ? `${prompt}\n\nDOCUMENTO
 // ("--allowedTools Read", usado antes, SOMAVA às permissões do usuário em vez
 // de restringir — auditoria de 25/10/2026.) Testado: leitura fora da pasta
 // negada e comando node -e indisponível.
-//   modo 'web' (pesquisa de preço): só WebSearch/WebFetch — lêem páginas, sem
-//   arquivo nem comando. No modo restrito a ferramenta existe mas vem sem
-//   permissão; --allowedTools libera EXATAMENTE essas duas (as únicas
-//   disponíveis, por --tools). Página com instrução escondida no máximo gera
+//   modo 'web' (pesquisa de preço): só WebSearch — a busca roda nos servidores
+//   da Anthropic, sem arquivo nem comando. No modo restrito a ferramenta existe
+//   mas vem sem permissão; --allowedTools libera EXATAMENTE ela (a única
+//   disponível, por --tools). Página com instrução escondida no máximo gera
 //   preço errado, e o preço é sempre sugestão conferida por pessoa.
+//   WebFetch DESLIGADO (revisão de 27/10/2026): ele busca a página a partir
+//   deste PC, e um texto malicioso de uma página podia mandá-lo abrir endereço
+//   da rede local (192.168.x.x, roteador, servidor de arquivos) — o próprio
+//   WebFetch só recusa "localhost" e nomes sem ponto, não IP privado. A pesquisa
+//   pela API (provedor 2) também usa só a busca. IA_CLI_WEBFETCH=ligado no .env
+//   religa, negando os nomes locais conhecidos (o IP privado continua possível).
+const webFetchLigado = () => String(process.env.IA_CLI_WEBFETCH || '').toLowerCase() === 'ligado';
 function argsClaudeMax(texto, comArquivo, { web = false } = {}) {
   const base = ['-p', texto, '--output-format', 'json', '--model', MODELO_CLI,
     '--restricted', '--strict-mcp-config', '--disable-slash-commands'];
-  if (web) return [...base, '--max-turns', '16', '--tools', 'WebSearch,WebFetch', '--allowedTools', 'WebSearch', 'WebFetch'];
+  if (web && webFetchLigado()) {
+    const locais = ['localhost', '127.0.0.1', '0.0.0.0', '[::1]', '*.local', '*.lan', '*.internal', os.hostname().toLowerCase()];
+    return [...base, '--max-turns', '16', '--disallowedTools', ...locais.map(d => `WebFetch(domain:${d})`),
+      '--tools', 'WebSearch,WebFetch', '--allowedTools', 'WebSearch', 'WebFetch'];
+  }
+  if (web) return [...base, '--max-turns', '16', '--tools', 'WebSearch', '--allowedTools', 'WebSearch'];
   return [...base, '--max-turns', comArquivo ? '4' : '2', '--tools', comArquivo ? 'Read' : ''];
 }
 
 // O documento vai para uma pasta temporária própria (única pasta que a CLI
 // consegue ler) e é apagado no fim. Texto longo também vai por arquivo: a linha
 // de comando do Windows não aceita mais de ~32 mil caracteres.
-function executarClaudeMax(prompt, anexo, { web = false, timeoutMs } = {}) {
+// `signal`: abortado (tempo-limite da cadeia ou cancelamento) mata o processo da CLI.
+function executarClaudeMax(prompt, anexo, { web = false, timeoutMs, signal } = {}) {
+  if (signal?.aborted) return Promise.reject(erroCancelado(signal));
   // caminho completo: o modo restrito recusa nomes curtos do Windows (LABORA~1)
   const pasta = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'hm-ia-')));
   let texto = prompt;
@@ -135,9 +171,10 @@ function executarClaudeMax(prompt, anexo, { web = false, timeoutMs } = {}) {
   const args = argsClaudeMax(texto, !!anexo, { web });
   const limite = timeoutMs || (web ? 300000 : 240000);
   return new Promise((resolve, reject) => {
-    const filho = execFile(CAMINHO_CLI, args, { cwd: pasta, timeout: limite, maxBuffer: 20 * 1024 * 1024, windowsHide: true },
+    const filho = execFile(CAMINHO_CLI, args, { cwd: pasta, timeout: limite, maxBuffer: 20 * 1024 * 1024, windowsHide: true, ...(signal ? { signal } : {}) },
       (erro, stdout, stderr) => {
         fs.rmSync(pasta, { recursive: true, force: true });
+        if (erro && (erro.name === 'AbortError' || signal?.aborted)) return reject(erroCancelado(signal));
         if (erro) return reject(new Error(erro.killed ? `sem resposta em ${Math.round(limite / 1000)} s` : (stderr || erro.message).trim().slice(0, 200)));
         try {
           const saida = JSON.parse(stdout);
@@ -161,10 +198,10 @@ const claudeMax = {
   disponivel: () => !desligadaGeral() && cliDisponivel(),
   motivo: () => (cliDesligada() ? 'desligado (COTACAO_IA_CLI=desligada)' : !fs.existsSync(CAMINHO_CLI) ? 'Claude Code não encontrado neste PC' : null),
   timeoutPadrao: ({ web }) => (web ? 300000 : 240000),
-  executar({ prompt, documento, anexo, web, timeoutMs }) {
-    if (web) return executarClaudeMax(prompt, null, { web: true, timeoutMs });
+  executar({ prompt, documento, anexo, web, timeoutMs, signal }) {
+    if (web) return executarClaudeMax(prompt, null, { web: true, timeoutMs, signal });
     const arquivo = anexo || (documento ? { buffer: Buffer.from(documento, 'utf8'), tipo: 'txt' } : null);
-    return executarClaudeMax(prompt, arquivo, { timeoutMs });
+    return executarClaudeMax(prompt, arquivo, { timeoutMs, signal });
   },
 };
 
@@ -178,10 +215,11 @@ const claudeApi = {
   disponivel: ({ web } = {}) => !!process.env.ANTHROPIC_API_KEY && (web || !desligadaGeral()),
   motivo: () => (process.env.ANTHROPIC_API_KEY ? null : 'ANTHROPIC_API_KEY não configurada'),
   timeoutPadrao: ({ web }) => (web ? 360000 : 300000),
-  async executar({ prompt, literal, documento, anexo, esquema, web, timeoutMs, modeloApi }) {
+  async executar({ prompt, literal, documento, anexo, esquema, web, timeoutMs, modeloApi, signal }) {
     const Anthropic = require('@anthropic-ai/sdk');
     const client = new Anthropic();
-    const opcoes = timeoutMs ? { timeout: timeoutMs } : undefined;
+    // signal: o SDK aborta a requisição (para de cobrar a resposta em andamento)
+    const opcoes = (timeoutMs || signal) ? { ...(timeoutMs ? { timeout: timeoutMs } : {}), ...(signal ? { signal } : {}) } : undefined;
     if (web) {
       const r = await client.messages.create({
         model: modeloApi || MODELO_API_WEB, max_tokens: 2500,
@@ -227,12 +265,12 @@ const provGemini = {
   disponivel: ({ web } = {}) => gemini.configurado() && (web || !desligadaGeral()),
   motivo: () => (gemini.configurado() ? null : 'GEMINI_API_KEY não configurada'),
   timeoutPadrao: ({ web }) => (web ? 360000 : 300000),
-  async executar({ prompt, literal, documento, anexo, web }) {
-    if (web) return jsonTolerante(await gemini.chamarGemini({ prompt, busca: true, tentativas: 2 }));
+  async executar({ prompt, literal, documento, anexo, web, signal }) {
+    if (web) return jsonTolerante(await gemini.chamarGemini({ prompt, busca: true, tentativas: 2, signal }));
     const texto = comDocumento(prompt, documento);
     const texto2 = await gemini.chamarGemini({
       prompt: literal ? texto : `${texto}\nResponda SOMENTE com o JSON pedido.`,
-      json: true, tentativas: 2,
+      json: true, tentativas: 2, signal,
       anexos: anexo ? [{ mime: MIME[anexo.tipo], base64: anexo.buffer.toString('base64') }] : [],
     });
     return jsonEstrito(texto2, 'Gemini');
@@ -258,7 +296,8 @@ function criarIA({ provedores = PROVEDORES, ordem = ordemConfigurada, registrarL
   const naOrdem = () => ordem().map(id => provedores[id]).filter(Boolean);
   const ativos = ({ web = false } = {}) => naOrdem().filter(p => { try { return p.disponivel({ web }); } catch { return false; } });
 
-  async function perguntarJSON(prompt, { documento, anexo, esquema, web = false, timeoutMs, aceitar, finalidade = 'consulta', modeloApi } = {}) {
+  async function perguntarJSON(prompt, { documento, anexo, esquema, web = false, timeoutMs, aceitar, finalidade = 'consulta', modeloApi, signal } = {}) {
+    if (signal?.aborted) throw erroCancelado(signal);
     const lista = ativos({ web });
     if (!lista.length) {
       throw Object.assign(new Error('Nenhuma IA disponível (Claude Code com a assinatura Max, ANTHROPIC_API_KEY ou GEMINI_API_KEY)'), { indisponivel: true, erros: [] });
@@ -269,10 +308,16 @@ function criarIA({ provedores = PROVEDORES, ordem = ordemConfigurada, registrarL
       const ultimo = i === lista.length - 1;
       const limite = timeoutMs || p.timeoutPadrao?.({ web }) || 300000;
       const inicio = Date.now();
+      // um controlador por provedor: no tempo-limite ESTE provedor é cancelado;
+      // o `signal` de quem chamou cancela todos
+      const ctrl = new AbortController();
+      const sinal = signal ? AbortSignal.any([signal, ctrl.signal]) : ctrl.signal;
       try {
         const { prompt: texto, literal } = promptPara(prompt, p.id);
         // folga de 5 s: a CLI tem o próprio timeout (mata o processo) e erra primeiro
-        const json = await comTimeout(Promise.resolve().then(() => p.executar({ prompt: texto, literal, documento, anexo, esquema, web, timeoutMs: limite, modeloApi })), limite + 5000, p.rotulo);
+        const execucao = Promise.resolve().then(() => p.executar({ prompt: texto, literal, documento, anexo, esquema, web, timeoutMs: limite, modeloApi, signal: sinal }));
+        const cancelamento = aoAbortar(signal);
+        const json = await comTimeout(cancelamento ? Promise.race([execucao, cancelamento]) : execucao, limite + 5000, p.rotulo, (erro) => ctrl.abort(erro));
         if (aceitar && !aceitar(json, { ultimo, provedor: p.id })) {
           erros.push({ provedor: p.id, rotulo: p.rotulo, mensagem: 'resposta sem dado aproveitável' });
           est(p.id).falhas++;
@@ -285,6 +330,8 @@ function criarIA({ provedores = PROVEDORES, ordem = ordemConfigurada, registrarL
         if (registrarLog) console.log(`[IA] ${finalidade}: respondeu ${p.rotulo} em ${(ms / 1000).toFixed(1)} s${erros.length ? ` (antes falharam: ${erros.map(e => e.rotulo).join(', ')})` : ''}`);
         return { provedor: p.id, fonte: p.rotulo, json, ms };
       } catch (e) {
+        // cancelado por quem chamou: não é falha do provedor nem motivo para tentar o próximo
+        if (signal?.aborted) { ctrl.abort(); throw erroCancelado(signal); }
         const mensagem = String(e?.message || e).slice(0, 300);
         erros.push({ provedor: p.id, rotulo: p.rotulo, mensagem });
         est(p.id).falhas++;

@@ -14,6 +14,7 @@
 
 const E = require('../../../eletrica/scripts/lib/calculo');
 const T = require('../../../eletrica/scripts/lib/tabelas');
+const { ucDps } = require('../../../_comum/dps');
 const TIPOS = require('../../dados/tipos_ambiente_rdc50.json').tipos;
 
 const FOLGA = 1.1; // +10 % de cabo
@@ -285,7 +286,13 @@ function calcular(dados) {
     const maiorEquip = Math.max(0, ...equips.map(e => e.va));
     const kvaNec = Math.max(s.vaDemanda, maiorEquip) / 1000;
     s.unidades = Math.max(1, Math.ceil(kvaNec / IT.maxKva));
-    s.kvaPorUnidade = IT.comerciais.find(k => k >= kvaNec / s.unidades) || IT.maxKva;
+    // cada transformador tem de comportar sozinho o maior equipamento ligado a ele
+    s.kvaPorUnidade = IT.comerciais.find(k => k >= Math.max(kvaNec / s.unidades, Math.max(0, ...equips.map(e => e.vaUnit)) / 1000)) || IT.maxKva;
+    // um equipamento só acima de 10 kVA não cabe em nenhum transformador do IT médico — dividir
+    // a carga em vários sistemas não resolve (NBR 13534, 6.1.3.1.101 b): 0,5 a 10 kVA)
+    for (const e of equips.filter(x => x.vaUnit > IT.maxKva * 1000)) {
+      nc('IT2', s.id, `${e.descricao} (${arred(e.vaUnit / 1000, 1)} kVA por unidade) acima de ${IT.maxKva} kVA: não pode ser alimentado pelo transformador do IT médico (0,5 a 10 kVA, monofásico — NBR 13534, 6.1.3.1.101 b); alimentar em TN-S com DR 30 mA tipo A/B (equipamento > 5 kVA, 5.1.2.2.4.2 c) ou rever a potência com o fabricante.`);
+    }
     s.kvaNecessario = kvaNec;
     s.kvaTotal = s.kvaPorUnidade * s.unidades;
     s.carregamento = kvaNec / s.kvaTotal;
@@ -390,7 +397,9 @@ function calcular(dados) {
     q.nDr = q.circuitos.filter(x => x.dr).length;
     const nFases = c.sistema === 'trifasico' ? 3 : c.sistema === 'bifasico' ? 2 : 1;
     q.dpsQtd = nFases + (c.esquema === 'TT' || c.esquema === 'TN-S' ? 1 : 0);
-    q.dpsUc = c.vfn * 1.1 <= 175 ? 175 : 275;
+    const dps = ucDps({ vfn: c.vfn, vff: c.vff, esquema: c.esquema }); // NBR 5410, Tabela 49 — função comum
+    q.dpsUc = dps.uc;
+    q.dpsTexto = dps.texto;
     const modulos = todos.reduce((s, x) => s + x.polos, 0) + q.circuitos.filter(x => x.dr).reduce((s, x) => s + (x.ligacao === 'FFF' ? 4 : 2), 0) + q.reserva * 2 + (q.alimentador ? q.alimentador.polos : 0) + q.dpsQtd;
     q.modulos = Math.ceil(modulos / 6) * 6;
     q.essencial = todos.some(x => ordemClasse(x.classe) <= ordemClasse('15'));
@@ -535,7 +544,7 @@ function listaMateriais({ c, ambientes, sistemas, quadros, circuitos, fs }) {
   for (const q of quadros.filter(x => x.nCircuitos)) {
     add('Quadros e proteção', 'QD', `Quadro de distribuição setorial ${q.id}${q.nome && q.nome !== q.id ? ` (${q.nome})` : ''} em chapa de aço, ${q.modulos} módulos DIN, barramentos F/N/PE isolados${q.essencial ? ', identificado como alimentado pela fonte de segurança' : ''}`, 'un', 1, 'NBR 5410, 6.5.4; Tabela 59');
     if (q.alimentador) add('Quadros e proteção', 'DISJ-G', `Disjuntor geral ${q.alimentador.polos}P ${q.alimentador.disjuntor} A — ${q.id}`, 'un', 1, 'NBR 5410, 5.3.4');
-    add('Quadros e proteção', 'DPS', `DPS classe II Uc ≥ ${q.dpsUc} V, In ≥ 20 kA (8/20 µs) — ${q.id}`, 'un', q.dpsQtd, 'NBR 5410, 6.3.5.2 e Tabela 49');
+    add('Quadros e proteção', 'DPS', `DPS classe II Uc ≥ ${q.dpsUc} V, In ≥ 20 kA (8/20 µs) — ${q.id}`, 'un', q.dpsQtd, 'NBR 5410, 6.3.5.2.4 e Tabela 49');
   }
   const disjTn = {};
   const drs = {};

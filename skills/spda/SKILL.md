@@ -18,7 +18,7 @@ Gera, a partir de **um arquivo JSON por obra**, os documentos que a H&M entrega:
 
 e o **rascunho de orçamento** no Sistema de Orçamentos (ferramenta MCP `criar_rascunho_proposta`).
 
-Os cálculos estão em `scripts/lib/` e reproduzem o laudo HM original (teste `npm test`, 38 verificações). **Não refaça contas de cabeça: rode os scripts.**
+Os cálculos estão em `scripts/lib/` e reproduzem o laudo HM original (teste `npm test`: 38 verificações do laudo R06 + 42 de parecer, risco e materiais em `testes/teste-parecer.js`). **Não refaça contas de cabeça: rode os scripts.**
 
 ## Também no sistema (aba Análise de Projeto)
 
@@ -33,7 +33,7 @@ As dependências ficam em `skills/node_modules`, compartilhadas por todas as dis
 ```bash
 cd C:\HM-Engenharia\hm-eng\skills
 npm install              # instala docx e exceljs
-npm test                 # todas as disciplinas; o SPDA deve dar "38/38 verificações OK"
+npm test                 # todas as disciplinas; o SPDA deve dar "38/38 verificações OK" e "42/42" no teste de parecer
 ```
 
 ## Fluxo de trabalho
@@ -63,7 +63,7 @@ npm test                 # todas as disciplinas; o SPDA deve dar "38/38 verifica
    ```bash
    node scripts/gerar-documentos.js <obra>_dados_SPDA.json --saida "<pasta da obra>" [--fotos "<pasta das fotos>"] [--so laudo,memorial,risco,checklist,planilhas]
    ```
-   O parecer sai sozinho: CONFORME, NÃO CONFORME, NÃO CONFORME (preliminar) ou INCONCLUSIVO, conforme checklist, NCs e ensaios. Revise o texto gerado; para PDF, converta pelo Word (o PC tem o Office: abra via COM `Word.Application` e salve com formato 17). Para conferir visualmente, renderize as páginas do PDF com `Windows.Data.Pdf`.
+   O parecer sai sozinho: CONFORME, NÃO CONFORME, NÃO CONFORME (preliminar) ou INCONCLUSIVO, conforme checklist, NCs e ensaios. Sem nenhum ensaio de continuidade registrado o laudo não sai CONFORME (INCONCLUSIVO), e R1 > RT ou F > FT no cenário atual gera NC automática no item D2 (`scripts/lib/parecer-risco.js`). Revise o texto gerado; para PDF, converta pelo Word (o PC tem o Office: abra via COM `Word.Application` e salve com formato 17). Para conferir visualmente, renderize as páginas do PDF com `Windows.Data.Pdf`.
 
 6. **Orçamento.**
    ```bash

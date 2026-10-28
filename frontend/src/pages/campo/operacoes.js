@@ -125,13 +125,25 @@ export function aplicarOperacao(os, op, contexto = {}) {
   return r;
 }
 
+// OS criadas no aparelho cuja criação (criar_os) o servidor recusou:
+// Map os_uuid → operação criar_os. Enquanto a criação não for aceita, as
+// outras operações e as fotos dessa OS ficam retidas no aparelho (não vão ao
+// servidor, que as recusaria uma a uma com "OS não encontrada") e voltam
+// todas juntas em "Tentar de novo".
+export function criacoesRecusadas(ops = []) {
+  return new Map(ops.filter(o => o.tipo === 'criar_os' && o.estado === 'recusada').map(o => [o.os_uuid, o]));
+}
+
 // Visão da OS para a tela.
 //   servidor: última cópia confirmada (ou null se a OS nasceu no aparelho)
-//   ops: operações da fila desta OS, em ordem (as recusadas não entram)
+//   ops: operações da fila desta OS, em ordem (as recusadas não entram —
+//        exceto numa OS nascida aqui com a criação recusada: aí tudo entra,
+//        para a OS continuar na tela marcada "não aceita pelo servidor")
 //   fotos: fotos guardadas no aparelho desta OS (sem os bytes)
 export function montarVisao({ servidor, ops = [], fotos = [], contexto = {} }) {
   let v = servidor ? clonar(servidor) : null;
-  const pendentes = ops.filter(o => o.estado !== 'recusada');
+  const criacaoRecusada = servidor ? null : ops.find(o => o.tipo === 'criar_os' && o.estado === 'recusada');
+  const pendentes = criacaoRecusada ? ops : ops.filter(o => o.estado !== 'recusada');
   for (const op of pendentes) v = aplicarOperacao(v, op, contexto);
   if (!v) return null;
   v.checklist = v.checklist || [];
@@ -164,7 +176,24 @@ export function montarVisao({ servidor, ops = [], fotos = [], contexto = {} }) {
   };
   v.pendencias.total = v.pendencias.operacoes + v.pendencias.fotos;
   v.nao_enviada = !servidor;
+  if (criacaoRecusada) {
+    // nada disso vai ao servidor até "Tentar de novo"
+    v.nao_aceita = {
+      erro: criacaoRecusada.erro || 'Recusada pelo servidor.',
+      operacoes: ops.length - 1, fotos: fotos.length,
+    };
+    v.pendencias = { operacoes: 0, fotos: 0, recusadas: 1, total: 0 };
+  }
   return v;
+}
+
+// Próximo item do checklist sem resposta depois de `aposId` (dá a volta para
+// o começo); null quando todos têm resposta. Para o rodapé fixo da OS.
+export function proximoSemResposta(checklist = [], aposId = null) {
+  const sem = checklist.filter(i => !i.resposta);
+  if (!sem.length) return null;
+  const pos = aposId ? checklist.findIndex(i => i.id === aposId) : -1;
+  return checklist.slice(pos + 1).find(i => !i.resposta) || sem[0];
 }
 
 // Agrupa o checklist por grupo, mantendo a ordem de aparição.

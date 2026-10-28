@@ -7,15 +7,16 @@
 //   /campo/nova                OS nova (visita) para uma obra
 //   /campo/pendencias          o que o servidor recusou
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
-import { RefreshCw, Wifi, WifiOff, LogOut, AlertTriangle } from 'lucide-react';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { RefreshCw, Wifi, WifiOff, LogOut, AlertTriangle, LogIn } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { abrirLoja } from './armazenamento';
 import { criarDados } from './dados';
 import { criarSincronizador } from './sincronizar';
 import * as api from './apiCampo';
 import { instalarManifesto, registrarServiceWorker } from './pwa';
-import { COR, CSS_CAMPO, Botao, formatarDataHora } from './componentes';
+import { COR, CSS_CAMPO, Botao, formatarDataHora, cacheMiniaturas } from './componentes';
+import { descarregarTodos } from './gravacaoAdiada';
 import ListaOS from './ListaOS';
 import DetalheOS from './DetalheOS';
 import Assinatura from './Assinatura';
@@ -38,7 +39,7 @@ function useOnline() {
 }
 
 function Cabecalho() {
-  const { usuario, resumo, online, estadoSync, sincronizarAgora } = useCampo();
+  const { usuario, resumo, online, estadoSync, sincronizarAgora, sessaoExpirada } = useCampo();
   const { sair } = useAuth();
   const navigate = useNavigate();
   const pendentes = (resumo?.operacoes || 0) + (resumo?.fotos || 0);
@@ -71,6 +72,7 @@ function Cabecalho() {
       </div>
       <BarraSync pendentes={pendentes} recusadas={resumo?.recusadas?.length || 0}
         online={online} estado={estadoSync} aoSincronizar={sincronizarAgora} />
+      {(estadoSync?.precisaLogin || sessaoExpirada) && <FaixaSessao pendentes={pendentes} />}
     </header>
   );
 }
@@ -103,6 +105,43 @@ function BarraSync({ pendentes, recusadas, online, estado, aoSincronizar }) {
   );
 }
 
+// 401 (login vencido): o app NÃO sai da tela. A faixa fica fixa no topo; o
+// que a pessoa faz continua indo para o aparelho. "Entrar" grava o texto em
+// edição, avisa o que está guardado e só então vai ao login, que volta para
+// esta mesma tela.
+function FaixaSessao({ pendentes }) {
+  const navigate = useNavigate();
+  const { pathname, search } = useLocation();
+  const [indo, setIndo] = useState(false);
+  async function entrar() {
+    setIndo(true);
+    try {
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      await descarregarTodos(); // observações em digitação vão para o aparelho antes
+    } catch { /* segue */ }
+    if (pendentes && !window.confirm(`${pendentes} alteração(ões) ainda não enviada(s) ficam guardadas neste aparelho e vão para o servidor depois que você entrar. Ir para o login?`)) {
+      setIndo(false);
+      return;
+    }
+    navigate(`/login?volta=${encodeURIComponent(pathname + search)}`);
+  }
+  return (
+    <div role="alert" data-testid="faixa-sessao"
+      style={{ background: COR.vermelho, color: '#fff', borderTop: `1px solid ${COR.borda}` }}>
+      <div style={{ maxWidth: 520, margin: '0 auto', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ flex: 1, minWidth: 0, fontSize: 15, lineHeight: 1.3 }}>
+          <b>Sessão expirou — entrar.</b>{' '}
+          {pendentes ? `${pendentes} alteração(ões) guardada(s) no aparelho; nada se perde.` : 'Pode continuar: o que fizer fica guardado no aparelho.'}
+        </div>
+        <Botao variante="contorno" onClick={entrar} disabled={indo} data-testid="entrar-de-novo"
+          style={{ minHeight: 44, padding: '6px 12px', fontSize: 15, color: '#fff', borderColor: '#fff' }}>
+          <LogIn size={18} />Entrar
+        </Botao>
+      </div>
+    </div>
+  );
+}
+
 function AvisoHttp() {
   if (window.isSecureContext) return null;
   return (
@@ -120,8 +159,44 @@ export default function CampoApp() {
   const [resumo, setResumo] = useState(null);
   const [estadoSync, setEstadoSync] = useState(null);
   const [lojaTemporaria, setLojaTemporaria] = useState(false);
+  // 401 em qualquer chamada (miniatura, por exemplo) — não só na sincronização
+  const [sessaoExpirada, setSessaoExpirada] = useState(false);
   const online = useOnline();
   const syncRef = useRef(null);
+  // o mesmo usuário com outro objeto (login refeito em outra aba) não recria o banco nem a fila
+  const usuarioRef = useRef(usuario);
+  usuarioRef.current = usuario;
+  const usuarioId = usuario?.id;
+
+  // 401: acende a faixa (nunca sai da tela). Token trocado em outra aba (ou
+  // login feito): apaga a faixa e volta a sincronizar.
+  useEffect(() => {
+    api.definirAoNaoAutenticado(() => setSessaoExpirada(true));
+    function aoMudarToken(e) {
+      if (e.key !== 'hm_token' || !e.newValue || e.newValue === e.oldValue) return;
+      setSessaoExpirada(false);
+      syncRef.current?.retomar();
+    }
+    window.addEventListener('storage', aoMudarToken);
+    return () => { api.definirAoNaoAutenticado(null); window.removeEventListener('storage', aoMudarToken); };
+  }, []);
+
+  // Textos em digitação (observações) vão para o aparelho na hora quando o
+  // app sai da frente (bloqueio de tela, troca de app, fechar a aba).
+  useEffect(() => {
+    const gravar = () => { descarregarTodos().catch(() => {}); };
+    const aoVisibilidade = () => { if (document.visibilityState === 'hidden') gravar(); };
+    document.addEventListener('visibilitychange', aoVisibilidade);
+    window.addEventListener('pagehide', gravar);
+    return () => {
+      document.removeEventListener('visibilitychange', aoVisibilidade);
+      window.removeEventListener('pagehide', gravar);
+      gravar();
+    };
+  }, []);
+
+  // Miniaturas: os endereços blob: são deste usuário; saiu do app ou trocou de usuário, revoga.
+  useEffect(() => () => cacheMiniaturas.limpar(), [usuario?.id]);
 
   // Manifesto + service worker só aqui dentro
   useEffect(() => {
@@ -141,11 +216,13 @@ export default function CampoApp() {
     let vivo = true;
     let desfazer = () => {};
     (async () => {
-      const loja = await abrirLoja(usuario.id);
+      const loja = await abrirLoja(usuarioId);
       if (!vivo) return;
-      const d = criarDados({ loja, usuario });
+      const d = criarDados({ loja, usuario: usuarioRef.current });
       const ultima = await d.meta('ultima_sincronizacao');
-      const s = criarSincronizador({ dados: d, api, aoEstado: setEstadoSync, ultimaSincronizacao: ultima || null });
+      const s = criarSincronizador({
+        dados: d, api, aoEstado: setEstadoSync, ultimaSincronizacao: ultima || null, tokenAtual: api.token,
+      });
       setEstadoSync(s.estado());
       syncRef.current = s;
       setLojaTemporaria(loja.tipo === 'memoria');
@@ -177,12 +254,15 @@ export default function CampoApp() {
       if (navigator.onLine) s.sincronizar();
     })();
     return () => { vivo = false; desfazer(); };
-  }, [usuario]);
+  }, [usuarioId]);
 
-  const sincronizarAgora = useCallback(() => syncRef.current?.sincronizar({ forcarCompleto: true }), []);
+  const sincronizarAgora = useCallback(() => {
+    setSessaoExpirada(false); // se o 401 continuar, a sincronização acende a faixa de novo
+    return syncRef.current?.sincronizar({ forcarCompleto: true, manual: true });
+  }, []);
   const valor = useMemo(() => ({
-    usuario, dados, visoes, resumo, estadoSync, online, sincronizarAgora,
-  }), [usuario, dados, visoes, resumo, estadoSync, online, sincronizarAgora]);
+    usuario, dados, visoes, resumo, estadoSync, online, sincronizarAgora, sessaoExpirada,
+  }), [usuario, dados, visoes, resumo, estadoSync, online, sincronizarAgora, sessaoExpirada]);
 
   if (!dados) {
     return <div className="campo-app"><div className="loading">Abrindo o app de campo…</div></div>;

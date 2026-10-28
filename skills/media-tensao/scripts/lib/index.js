@@ -121,7 +121,7 @@ function processar(dados) {
 
 function textoProtecao(p) {
   if (p.modo === 'disjuntor') return `Disjuntor ${num(p.disjuntor.un)} kV ${p.disjuntor.in} A ${num(p.disjuntor.icn)} kA + relé 50/51/50N/51N`;
-  return p.hh ? `Seccionadora + fusíveis HH ${num(p.hh)} A` : `Chave fusível 100 A — elo ${p.elo}`;
+  return p.hh ? `Seccionadora + fusíveis HH ${num(p.hh)} A` : `Chave fusível ${p.chave ? p.chave.in : 100} A — elo ${p.elo}`;
 }
 
 function resumir(res) {
@@ -185,8 +185,8 @@ function secoesMemorial(res) {
   // proteção
   if (prot.modo === 'disjuntor') {
     s.push({ titulo: '5. Proteção geral de média tensão', paragrafos: [
-      `${trafo.kva > T.DISTRIBUIDORA.limite_fusivel_kva ? `Potência de transformação acima de ${T.DISTRIBUIDORA.limite_fusivel_kva} kVA` : `Potência de ${num(trafo.kva)} kVA (o fusível seria admitido até ${T.DISTRIBUIDORA.limite_fusivel_kva} kVA; disjuntor adotado por opção do projeto)`}: proteção geral por disjuntor acionado por relé secundário de ação indireta com funções 50/51 (fase) e 50N/51N (neutro), conforme a NBR 14039 e a norma da distribuidora [CONFERIR item vigente]. Seccionamento visível a montante do disjuntor.`,
-      `Disjuntor: ${prot.disjuntor.un} kV, ${prot.disjuntor.in} A, capacidade de interrupção ${num(prot.disjuntor.icn)} kA (≥ ${num(curto.icc3fKa, 2)} kA), NBI ${prot.disjuntor.nbi} kV. TCs de proteção ${prot.tcRelacao}, classe 10B100/10P20: primário ≥ Icc/20 = ${num(curto.icc3fKa * 1000 / 20, 0)} A (sem saturação no curto máximo). Fonte do relé por nobreak dedicado ou fonte capacitiva.`,
+      `${trafo.kva > T.DISTRIBUIDORA.limite_fusivel_kva ? `Potência de transformação acima de ${T.DISTRIBUIDORA.limite_fusivel_kva} kVA` : `Potência de ${num(trafo.kva)} kVA (o fusível seria admitido até ${T.DISTRIBUIDORA.limite_fusivel_kva} kVA; disjuntor adotado por opção do projeto)`}: proteção geral por disjuntor acionado por relé secundário de ação indireta com funções 50/51 (fase) e 50N/51N (neutro), conforme a NBR 14039 e a norma da distribuidora [CONFERIR item vigente]. Seccionamento visível a montante do disjuntor: ${se.tipo === 'poste' ? `chaves fusíveis de distribuição ${prot.chave.in} A no poste (abertura visível do porta-fusível)` : `chave seccionadora tripolar ${prot.classe.equipamento} kV com intertravamento`} [CONFERIR exigência da distribuidora].`,
+      `Disjuntor: ${prot.disjuntor.un} kV, ${prot.disjuntor.in} A, capacidade de interrupção ${num(prot.disjuntor.icn)} kA (${prot.checagens.disjuntorAtende ? `≥ ${num(curto.icc3fKa, 2)} kA` : `ABAIXO do curto de ${num(curto.icc3fKa, 2)} kA — NÃO ATENDE, consultar fabricante`}), NBI ${prot.disjuntor.nbi} kV. TCs de proteção ${prot.tcRelacao}, classe 10B100/10P20: primário ≥ Icc/20 = ${num(curto.icc3fKa * 1000 / 20, 0)} A (sem saturação no curto máximo); partidas no secundário: 51 = ${num(prot.pct51, 1)} % e 51N = ${num(prot.pct51n, 1)} % da nominal do TC${prot.checagens.faseNaFaixaTc && prot.checagens.neutroNaFaixaTc ? '' : ` — abaixo de ~${T.RELE_PARTIDA_MIN_PCT_TC} %, conferir a faixa de ajuste do relé ou usar TC de menor relação/neutro sensível [CONFERIR]`}. Fonte do relé por nobreak dedicado ou fonte capacitiva.`,
       'Ajustes INDICATIVOS (os definitivos saem do estudo de proteção e seletividade com os dados e as restrições da distribuidora): [CONFERIR]',
     ], tabela: { colunas: ['Função', 'Ajuste (A primários)', 'Critério'], proporcoes: [0.9, 1.2, 3.6], linhas: [
       ['51 — fase temporizada', `${num(prot.i51, 1)} A; curva ${prot.curvaRotulo}, dial ${num(prot.dial)}`, `${num(c.rele.fatorFase)} × In primária; curva abaixo do ponto ANSI (${num(prot.ansi.i, 0)} A em ${prot.ansi.t} s): t(ANSI) = ${num(prot.t51Ansi, 3)} s — ${sim(prot.checagens.protegeTrafo)}`],
@@ -197,7 +197,7 @@ function secoesMemorial(res) {
   } else {
     s.push({ titulo: '5. Proteção geral de média tensão', paragrafos: [
       `Potência de transformação ≤ ${T.DISTRIBUIDORA.limite_fusivel_kva} kVA: proteção geral por ${prot.hh ? 'chave seccionadora tripolar com fusíveis limitadores HH' : 'chaves fusíveis de distribuição'}, admitida pela NBR 14039 e pela norma da distribuidora [CONFERIR item vigente].`,
-      prot.hh ? `Fusível HH ${num(prot.hh)} A (≥ ${num(T.FATOR_HH, 1)} × In = ${num(T.FATOR_HH * corr.inPrim, 1)} A, acima da magnetização de ${num(prot.inrush.i, 0)} A por 0,1 s) [CONFERIR com a curva do fabricante].` : `Elo fusível ${prot.elo} para ${num(trafo.kva)} kVA em ${kv(c.kv)} kV [CONFERIR tabela da distribuidora]; chave ${prot.classe.equipamento} kV, 100 A, capacidade de interrupção ≥ ${num(curto.icc3fKa, 2)} kA.`,
+      prot.hh ? `Fusível HH ${num(prot.hh)} A (≥ ${num(T.FATOR_HH, 1)} × In = ${num(T.FATOR_HH * corr.inPrim, 1)} A, acima da magnetização de ${num(prot.inrush.i, 0)} A por 0,1 s) [CONFERIR com a curva do fabricante].` : `Elo fusível ${prot.elo} para ${num(trafo.kva)} kVA em ${kv(c.kv)} kV [CONFERIR tabela da distribuidora]; chave ${prot.classe.equipamento} kV, ${prot.chave.in} A (≥ In primária ${num(corr.inPrim, 1)} A), capacidade de interrupção ≥ ${num(curto.icc3fKa, 2)} kA${prot.chave.atendeCurto ? '' : ` — acima da capacidade usual de chave tipo expulsão (${num(prot.chave.icnSimKa, 1)} kA simétricos): equipamento a definir com a distribuidora [CONFERIR]`}.`,
     ] });
   }
   s.push({ titulo: '6. Ramal de entrada em média tensão', paragrafos: cabo ? [
@@ -206,12 +206,16 @@ function secoesMemorial(res) {
     `Seção adotada: ${cabo.secao} mm² — critério determinante: ${cabo.criterio}; Iz = ${num(cabo.iz, 0)} A; queda de tensão ${num(cabo.queda, 3)} %. Blindagem metálica e aterramento das blindagens a verificar para a corrente de curto fase-terra (I·√t = ${num(cabo.blindagemIt, 2)} kA·√s) com o fabricante [CONFERIR].`,
   ] : [se.tipo === 'poste' ? 'Subestação aérea em poste: o transformador é ligado diretamente à rede aérea da distribuidora, sem ramal subterrâneo.' : 'Comprimento do ramal não informado. [CONFERIR]'] });
   s.push({ titulo: '7. Proteção contra sobretensões', paragrafos: [
-    `${pr.descricao}, tensão nominal ${pr.ur} kV (MCOV ≈ ${num(pr.mcov, 1)} kV) para sistema de ${kv(c.kv)} kV ${c.neutroAterrado ? 'com neutro efetivamente aterrado' : 'não efetivamente aterrado'} [CONFERIR com a distribuidora]; ${pr.quantidade} unidades na ${pr.pontos.join('; ')}, ligadas à malha por condutor curto e direto (NBR 14039).`,
+    `${pr.descricao}, tensão nominal ${pr.ur} kV (MCOV ≈ ${num(pr.mcov, 1)} kV ≥ ${num(pr.mcovNecessaria, 2)} kV, tensão máxima ${c.neutroAterrado ? 'fase-neutro' : 'entre fases — em sistema não efetivamente aterrado as fases sãs ficam na tensão de linha durante a falta à terra'}) para sistema de ${kv(c.kv)} kV ${c.neutroAterrado ? 'com neutro efetivamente aterrado' : 'não efetivamente aterrado'} [CONFERIR com a distribuidora]; ${pr.quantidade} unidades na ${pr.pontos.join('; ')}, ligadas à malha por condutor curto e direto (NBR 14039).`,
   ] });
   s.push({ titulo: '8. Baixa tensão — disjuntor geral, barramento e cabos', paragrafos: [
-    `Disjuntor geral de BT ${bt.tipoDisj}, tripolar, In = ${bt.inDisj} A (≥ In secundária ${num(corr.inSec, 1)} A), capacidade de interrupção Icu ≥ ${bt.icu} kA (Icc ${num(corr.iccSecInfKa, 2)} kA) — NBR 5410, 5.3.4 e NBR IEC 60947-2.`,
-    `Barramento do QGBT: cobre ${bt.barramento.barra} por fase (~${bt.barramento.a} A, ordem de grandeza DIN 43671 [CONFERIR com o fabricante]), suportabilidade Icw ≥ ${num(bt.icw, 1)} kA / 1 s e ipk ≥ ${num(bt.ipk, 1)} kA.`,
-    `Cabos transformador → QGBT (${num(bt.cabos.L, 0)} m, método ${bt.cabos.metodo}, EPR 90 °C — tabelas da NBR 5410 da skill de elétrica): ${bt.cabos.descricao}; Iz = ${num(bt.cabos.iz, 0)} A (FCA ${num(bt.cabos.fca)} para ${bt.cabos.n} circuito(s) em paralelo) ≥ ${bt.inDisj} A; queda ${num(bt.cabos.queda)} % (limite total de 7 % a partir do transformador, NBR 5410 6.2.7).`,
+    bt.disjAtende
+      ? `Disjuntor geral de BT ${bt.tipoDisj}, tripolar, In = ${bt.inDisj} A (≥ In secundária ${num(corr.inSec, 1)} A), capacidade de interrupção Icu ≥ ${bt.icu} kA (Icc ${num(corr.iccSecInfKa, 2)} kA)${bt.icuAtende ? '' : ' — ABAIXO do curto, NÃO ATENDE [CONFERIR]'} — NBR 5410, 5.3.4 e NBR IEC 60947-2.`
+      : `ATENÇÃO: In secundária de ${num(corr.inSec, 0)} A acima do maior disjuntor geral de BT da tabela (${bt.inDisj} A) — NÃO HÁ proteção geral única que atenda; dividir em dois transformadores/QGBTs ou elevar a tensão secundária antes de emitir o projeto. [CONFERIR]`,
+    `Barramento do QGBT: cobre ${bt.barramento.barra} por fase (~${bt.barramento.a} A, ordem de grandeza DIN 43671 [CONFERIR com o fabricante])${bt.barramento.a < bt.inDisj ? ' — abaixo da corrente do disjuntor, dimensionar com o fabricante do painel' : ''}, suportabilidade Icw ≥ ${num(bt.icw, 1)} kA / 1 s e ipk ≥ ${num(bt.ipk, 1)} kA.`,
+    bt.cabos.tipo === 'barramento_blindado'
+      ? `Ligação transformador → QGBT (${num(bt.cabos.L, 0)} m): nenhuma combinação de até 10 cabos de até 300 mm² por fase atende ${bt.inDisj} A com os fatores de agrupamento da NBR 5410; adotado ${bt.cabos.descricao}.`
+      : `Cabos transformador → QGBT (${num(bt.cabos.L, 0)} m, método ${bt.cabos.metodo}, EPR 90 °C — tabelas da NBR 5410 da skill de elétrica): ${bt.cabos.descricao}; Iz = ${num(bt.cabos.iz, 0)} A (FCA ${num(bt.cabos.fca)} para ${bt.cabos.n} circuito(s) em paralelo) ≥ ${bt.inDisj} A; queda ${num(bt.cabos.queda)} % (limite total de 7 % a partir do transformador, NBR 5410 6.2.7).`,
   ] });
   s.push({ titulo: '9. Medição de energia', paragrafos: [`${med.descricao} — critério: ${med.criterio} [CONFERIR com a norma da distribuidora]. Equipamentos de medição fornecidos e lacrados pela distribuidora.`] });
   s.push({ titulo: '10. Malha de aterramento (NBR 15751)', paragrafos: [
@@ -219,7 +223,7 @@ function secoesMemorial(res) {
     `Malha ${num(malha.lx)} × ${num(malha.ly)} m (A = ${num(malha.area, 1)} m²), ${malha.nx} × ${malha.ny} condutores (espaçamentos ${num(malha.dx)} m e ${num(malha.dy)} m), profundidade ${num(malha.h)} m, cabo de cobre nu ${malha.sCond} mm² (LC = ${num(malha.lc, 0)} m) e ${malha.nHastes} hastes de ${num(malha.lHaste)} m no perímetro (LR = ${num(malha.lr, 1)} m).`,
     `Resistência (Sverak, IEEE 80): R = ρa·[1/LT + 1/√(20A)·(1 + 1/(1 + h·√(20/A)))] = ${num(malha.rg, 2)} Ω; conferência por Laurent-Niemann: ${num(malha.rgLaurent, 2)} Ω. Limite adotado ${num(malha.rMax)} Ω [CONFERIR exigência da distribuidora] — ${sim(malha.verif.resistencia)}.`,
     `Condutor (Onderdonk): S ≥ I·√t / K = ${num(curto.iccFtKa, 2)} kA × √${num(malha.ts)} / ${num(malha.kO, 3)} = ${num(malha.sCondMin, 1)} mm² (conexão por ${ROTULO_CONEXAO[malha.conexao]}, ${T.TEMP_CONEXAO[malha.conexao]} °C) → ${malha.sCond} mm² (mínimo usual ${T.SECAO_MIN_MALHA} mm² [CONFERIR]).`,
-    `Tensões de toque e passo — método simplificado (NBR 15751 / IEEE 80), pessoa de ${malha.pesoKg} kg, tempo de defeito ${num(malha.ts)} s, camada de brita ρs = ${num(malha.rhoBrita, 0)} Ω·m com ${num(malha.hs * 100, 0)} cm (Cs = ${num(malha.adm.cs, 3)}). Corrente de malha IG = Sf × Icc,ft = ${num(malha.sf)} × ${num(curto.iccFtKa, 2)} kA = ${num(malha.ig, 0)} A [CONFERIR fator de divisão com a distribuidora]; elevação de potencial GPR = ${num(malha.gpr, 0)} V. [CONFERIR — para o projeto definitivo, verificar com software de malha em solo estratificado]`,
+    `Tensões de toque e passo — método simplificado (NBR 15751 / IEEE 80), pessoa de ${malha.pesoKg} kg, tempo de defeito ${num(malha.ts)} s, ${malha.comBrita ? `camada de brita ρs = ${num(malha.rhoBrita, 0)} Ω·m com ${num(malha.hs * 100, 0)} cm (Cs = ${num(malha.adm.cs, 3)}) — a brita é premissa do cálculo e consta da lista de materiais` : `SEM camada superficial de brita (não informada): Cs = 1 e ρs = ρ do solo = ${num(malha.rho1, 0)} Ω·m [CONFERIR — se houver brita, informar ρs e espessura]`}. Corrente de malha IG = Sf × Icc,ft = ${num(malha.sf)} × ${num(curto.iccFtKa, 2)} kA = ${num(malha.ig, 0)} A [CONFERIR fator de divisão com a distribuidora]; elevação de potencial GPR = ${num(malha.gpr, 0)} V. [CONFERIR — para o projeto definitivo, verificar com software de malha em solo estratificado]`,
   ], tabela: { colunas: ['Grandeza', 'Calculado', 'Admissível', 'Situação'], proporcoes: [2, 1, 1, 1], linhas: [
     ['Tensão de toque (malha, Em)', `${num(malha.tm.em, 0)} V`, `${num(malha.adm.toque, 0)} V`, sim(malha.verif.toque)],
     ['Tensão de passo (Es)', `${num(malha.tm.es, 0)} V`, `${num(malha.adm.passo, 0)} V`, sim(malha.verif.passo)],
@@ -356,6 +360,7 @@ async function gerarPlanilha(res) {
     abaKv('Proteção', prot.modo === 'disjuntor' ? [
       ['Proteção geral', prot.dispositivo, '', 'NBR 14039; norma da distribuidora'],
       ['TC de proteção', prot.tcRelacao, '', 'primário ≥ Icc/20'],
+      ['51 / 51N no secundário do TC', `${Math.round(prot.pct51 * 10) / 10} / ${Math.round(prot.pct51n * 10) / 10}`, '% de 5 A', `≥ ~${T.RELE_PARTIDA_MIN_PCT_TC} % [CONFERIR faixa do relé]: ${sim(prot.checagens.faseNaFaixaTc && prot.checagens.neutroNaFaixaTc)}`],
       ['51 — partida de fase', prot.i51, 'A', `${c.rele.fatorFase} × In primária`],
       ['51 — curva / dial', `${prot.curva} / ${prot.dial}`, '', prot.curvaRotulo],
       ['51 — tempo no ponto ANSI', prot.t51Ansi, 's', `< ${prot.ansi.t} s: ${sim(prot.checagens.protegeTrafo)}`],
@@ -365,6 +370,7 @@ async function gerarPlanilha(res) {
       ['Disjuntor MT', `${prot.disjuntor.un} kV ${prot.disjuntor.in} A ${prot.disjuntor.icn} kA`, '', 'Icn ≥ Icc'],
       ['Para-raios', `${pr.ur} kV / ${pr.in} kA × ${pr.quantidade}`, '', 'NBR 16050 [CONFERIR]'],
       ['Elo da derivação', prot.eloDerivacao, '', 'tabela da distribuidora [CONFERIR]'],
+      ['Chave fusível da derivação', `${prot.chave.in} A`, '', `≥ In primária; Icn usual ${prot.chave.icnSimKa} kA sim.: ${sim(prot.chave.atendeCurto)} [CONFERIR]`],
       ['Medição', med.local, '', med.criterio],
     ] : [
       ['Proteção geral', prot.dispositivo, '', `≤ ${T.DISTRIBUIDORA.limite_fusivel_kva} kVA — NBR 14039`],
@@ -382,9 +388,13 @@ async function gerarPlanilha(res) {
         ['MT — comprimento', cabo.L, 'm', ''],
         ['MT — queda de tensão', cabo.queda, '%', ''],
       ] : [['MT', 'sem ramal subterrâneo', '', '']]),
-      ['BT — cabos trafo → QGBT', bt.cabos.descricao, '', `método ${bt.cabos.metodo}, EPR 90 °C`],
-      ['BT — Iz total', bt.cabos.iz, 'A', `≥ ${bt.inDisj} A (FCA ${bt.cabos.fca})`],
-      ['BT — queda de tensão', bt.cabos.queda, '%', `≤ ${c.bt.quedaMax} %`],
+      ...(bt.cabos.tipo === 'barramento_blindado' ? [
+        ['BT — trafo → QGBT', bt.cabos.descricao, '', 'cabos em paralelo não atendem [CONFERIR com o fabricante]'],
+      ] : [
+        ['BT — cabos trafo → QGBT', bt.cabos.descricao, '', `método ${bt.cabos.metodo}, EPR 90 °C`],
+        ['BT — Iz total', bt.cabos.iz, 'A', `≥ ${bt.inDisj} A (FCA ${bt.cabos.fca})`],
+        ['BT — queda de tensão', bt.cabos.queda, '%', `≤ ${c.bt.quedaMax} %`],
+      ]),
       ['BT — disjuntor geral', `${bt.inDisj} A / ${bt.icu} kA`, '', bt.tipoDisj],
       ['BT — barramento', bt.barramento.barra, '', `~${bt.barramento.a} A [CONFERIR]`],
     ]),
@@ -401,7 +411,7 @@ async function gerarPlanilha(res) {
       ['Seção adotada', malha.sCond, 'mm²', ''],
       ['Corrente de malha IG', malha.ig, 'A', `Sf ${malha.sf} × Icc,ft [CONFERIR]`],
       ['GPR', malha.gpr, 'V', ''],
-      ['Fator Cs', malha.adm.cs, '', `brita ${malha.rhoBrita} Ω·m, ${malha.hs} m`],
+      ['Fator Cs', malha.adm.cs, '', malha.comBrita ? `brita ${malha.rhoBrita} Ω·m, ${malha.hs} m` : 'sem brita (Cs = 1, ρs = ρ do solo)'],
       ['Toque admissível', malha.adm.toque, 'V', `${malha.pesoKg} kg, ${malha.ts} s`],
       ['Toque na malha (Em)', malha.tm.em, 'V', sim(malha.verif.toque)],
       ['Passo admissível', malha.adm.passo, 'V', ''],
@@ -582,7 +592,7 @@ const FORMULARIO = [
       { caminho: 'aterramento.profundidade_m', rotulo: 'Profundidade da malha (m)', tipo: 'numero' },
       { caminho: 'aterramento.n_hastes', rotulo: 'Nº de hastes (vazio = automático)', tipo: 'numero' },
       { caminho: 'aterramento.comprimento_haste_m', rotulo: 'Comprimento da haste (m)', tipo: 'numero' },
-      { caminho: 'aterramento.rho_brita_ohm_m', rotulo: 'Resistividade da brita (Ω·m)', tipo: 'numero' },
+      { caminho: 'aterramento.rho_brita_ohm_m', rotulo: 'Resistividade da brita (Ω·m)', tipo: 'numero', dica: 'Em branco = sem brita (Cs = 1). Informada, entra no toque/passo e na lista de materiais' },
       { caminho: 'aterramento.espessura_brita_m', rotulo: 'Espessura da brita (m)', tipo: 'numero' },
       { caminho: 'aterramento.fator_divisao', rotulo: 'Fator de divisão da corrente (Sf)', tipo: 'numero', dica: '1 = conservador; menor só com dado da distribuidora [CONFERIR]' },
       { caminho: 'aterramento.tempo_defeito_s', rotulo: 'Tempo de defeito (s) — vazio = eliminação', tipo: 'numero' },

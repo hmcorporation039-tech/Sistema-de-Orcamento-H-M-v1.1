@@ -16,7 +16,14 @@
 //     aparece para o técnico, que pode descartar ou tentar de novo.
 //   - Erro de rede, 5xx, 408 e 429: para a rodada e tenta depois, com espera
 //     crescente (5 s, 10 s, 20 s… até 5 min).
-//   - 401: para tudo e vai ao login (apiCampo); a fila continua no aparelho.
+//   - 401: para a rodada e PAUSA (precisaLogin) sem sair da tela; nada vira
+//     "recusada". Enquanto o token for o mesmo que levou o 401, as rodadas
+//     automáticas nem chamam o servidor; com token novo (login nesta ou em
+//     outra aba) volta a sincronizar. A fila continua no aparelho.
+//   - criar_os recusada: as outras operações e as fotos daquela OS ficam
+//     retidas (não são enviadas nem recusadas uma a uma) até "Tentar de novo".
+
+import { criacoesRecusadas } from './operacoes';
 
 const TAMANHO_LOTE = 25;
 const ESPERA_INICIAL = 5000;
@@ -41,10 +48,12 @@ export function criarSincronizador({
   dados, api, agora = () => new Date(),
   relogio = { setTimeout: (f, t) => setTimeout(f, t), clearTimeout: t => clearTimeout(t) },
   tamanhoLote = TAMANHO_LOTE, aoEstado = () => {}, ultimaSincronizacao = null,
+  tokenAtual = () => null,
 }) {
   let emAndamento = null;
   let timer = null;
   let tentativas = 0;
+  let tokenRecusado; // token que levou o 401 (undefined = sem pausa)
   const estado = {
     executando: false, ultimaSincronizacao, erro: null,
     proximaTentativa: null, precisaLogin: false, etapa: null,
@@ -55,6 +64,20 @@ export function criarSincronizador({
     if (timer) relogio.clearTimeout(timer);
     publicar({ proximaTentativa: new Date(agora().getTime() + ms).toISOString() });
     timer = relogio.setTimeout(() => { timer = null; sincronizar(); }, ms);
+  }
+
+  // os_uuid das OS com a criação recusada (as operações delas ficam retidas)
+  let retidas = new Set();
+
+  // Recusa por regra. A criação recusada retém a OS; uma operação de OS retida
+  // não é recusada (fica pendente, retida, e volta com a criação).
+  async function recusar(op, erro) {
+    if (op.tipo === 'criar_os') {
+      retidas.add(op.os_uuid);
+      await dados.recusarOperacao(op.seq, erro);
+    } else if (!retidas.has(op.os_uuid)) {
+      await dados.recusarOperacao(op.seq, erro);
+    }
   }
 
   async function processarResposta(lote, resp) {
@@ -69,17 +92,22 @@ export function criarSincronizador({
         if (!osVindas.has(op.os_uuid)) await dados.confirmarOperacao(op);
         await dados.removerOperacao(op.seq);
       } else {
-        await dados.recusarOperacao(op.seq, r.erro);
+        await recusar(op, r.erro);
       }
     }
     return semResultado;
   }
 
   async function enviarFila() {
-    const pendentes = (await dados.fila()).filter(o => o.estado !== 'recusada');
+    const todas = await dados.fila();
+    retidas = new Set(criacoesRecusadas(todas).keys());
+    const pendentes = todas.filter(o => o.estado !== 'recusada' && !retidas.has(o.os_uuid));
     let incompleto = 0;
+    const naoRetida = o => !retidas.has(o.os_uuid);
     for (let i = 0; i < pendentes.length; i += tamanhoLote) {
-      const lote = pendentes.slice(i, i + tamanhoLote);
+      // a criação de uma OS deste envio pode ter sido recusada num lote anterior
+      const lote = pendentes.slice(i, i + tamanhoLote).filter(naoRetida);
+      if (!lote.length) continue;
       publicar({ etapa: `Enviando ${Math.min(i + lote.length, pendentes.length)} de ${pendentes.length} alterações` });
       let resp;
       try {
@@ -89,12 +117,13 @@ export function criarSincronizador({
         // O lote inteiro foi recusado (corpo inválido, por exemplo): manda uma a
         // uma para recusar só a que tem problema.
         for (const op of lote) {
+          if (retidas.has(op.os_uuid)) continue;
           try {
             const r1 = await api.sincronizarOperacoes([paraEnvio(op)]);
             incompleto += await processarResposta([op], r1);
           } catch (e1) {
             if (!e1.regra) throw e1;
-            await dados.recusarOperacao(op.seq, e1.message);
+            await recusar(op, e1.message);
           }
         }
         dados.emitir();
@@ -107,8 +136,9 @@ export function criarSincronizador({
   }
 
   async function enviarFotos() {
+    const retidasAgora = new Set(criacoesRecusadas(await dados.fila()).keys());
     const pendentes = (await dados.fotosMeta())
-      .filter(f => f.estado === 'pendente')
+      .filter(f => f.estado === 'pendente' && !retidasAgora.has(f.os_uuid))
       .sort((a, b) => String(a.tirada_em).localeCompare(String(b.tirada_em)));
     let n = 0;
     for (const foto of pendentes) {
@@ -136,14 +166,26 @@ export function criarSincronizador({
     const ultimaCompleta = await dados.meta('ultima_completa');
     const completo = forcarCompleto || !desde || !ultimaCompleta
       || agora().getTime() - Date.parse(ultimaCompleta) > INTERVALO_COMPLETO;
-    const resp = await api.listarOS({ status: 'abertas', desde: completo ? undefined : desde });
-    const itens = resp?.itens || [];
+    let resp = await api.listarOS({ status: 'abertas', desde: completo ? undefined : desde });
+    let itens = resp?.itens || [];
     await dados.salvarDoServidor(itens);
-    if (completo) {
+    // `incompleto` (lista cortada no servidor): na lista completa NÃO poda as
+    // OS locais que não vieram (podem estar só fora do corte); no incremental,
+    // pede o resto a partir do `agora` devolvido
+    const parcialNaCompleta = completo && !!resp?.incompleto;
+    if (completo && !parcialNaCompleta) {
       await dados.podarAusentes(itens.map(o => o.uuid));
       await dados.salvarMeta('ultima_completa', agora().toISOString());
     }
-    if (resp?.agora) await dados.salvarMeta('desde', resp.agora);
+    if (resp?.agora && !parcialNaCompleta) await dados.salvarMeta('desde', resp.agora);
+    let voltas = 0;
+    while (!completo && resp?.incompleto && resp?.agora && voltas < 20) {
+      voltas += 1;
+      resp = await api.listarOS({ status: 'abertas', desde: resp.agora });
+      itens = resp?.itens || [];
+      await dados.salvarDoServidor(itens);
+      if (resp?.agora) await dados.salvarMeta('desde', resp.agora);
+    }
     await dados.limparAntigas();
   }
 
@@ -179,7 +221,10 @@ export function criarSincronizador({
       return { ok: true };
     } catch (err) {
       if (err.autenticacao) {
-        publicar({ precisaLogin: true, erro: err.message });
+        // pausa: sem nova tentativa agendada até haver um token novo
+        tokenRecusado = tokenAtual();
+        if (timer) { relogio.clearTimeout(timer); timer = null; }
+        publicar({ precisaLogin: true, erro: err.message, proximaTentativa: null });
         return { ok: false, erro: err };
       }
       tentativas++;
@@ -195,7 +240,13 @@ export function criarSincronizador({
   // Uma rodada por vez: chamadas durante uma rodada esperam a mesma rodada
   // e, se pediram, emendam mais uma no fim (pegam o que entrou na fila no meio).
   let pedirOutra = null;
+  // pausado pelo 401 e ainda com o mesmo token?
+  function pausado() {
+    return estado.precisaLogin && tokenRecusado !== undefined && tokenAtual() === tokenRecusado;
+  }
+  // opcoes.manual: o botão "Sincronizar" tenta mesmo pausado (mostra o 401 de novo)
   function sincronizar(opcoes = {}) {
+    if (!opcoes.manual && pausado()) return Promise.resolve({ ok: false, pausado: true });
     if (emAndamento) {
       pedirOutra = { forcarCompleto: !!(opcoes.forcarCompleto || pedirOutra?.forcarCompleto) };
       return emAndamento;
@@ -216,5 +267,14 @@ export function criarSincronizador({
     timer = null;
   }
 
-  return { sincronizar, parar, estado: () => ({ ...estado }), tentativas: () => tentativas };
+  // token trocado (login nesta aba ou em outra): sai da pausa e envia
+  function retomar() {
+    if (!estado.precisaLogin) return sincronizar();
+    if (pausado()) return Promise.resolve({ ok: false, pausado: true });
+    tokenRecusado = undefined;
+    publicar({ precisaLogin: false, erro: null });
+    return sincronizar();
+  }
+
+  return { sincronizar, retomar, parar, pausado, estado: () => ({ ...estado }), tentativas: () => tentativas };
 }

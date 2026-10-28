@@ -2,15 +2,18 @@
 // grupo, itens extras, fotos gerais, observação final, assinatura e concluir.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Play, CheckCircle2, XCircle, MinusCircle, ChevronDown, ChevronRight, Map as IconeMapa, PenLine, Flag, Plus, UploadCloud } from 'lucide-react';
+import { ArrowLeft, Play, CheckCircle2, XCircle, MinusCircle, ChevronDown, ChevronRight, Map as IconeMapa, PenLine, Flag, Plus, UploadCloud, AlertTriangle } from 'lucide-react';
 import { useCampo } from './CampoApp';
 import {
-  agruparChecklist, conferirConclusao, temAvisosConclusao, progresso, ROTULO_STATUS, ROTULO_TIPO_OS,
+  agruparChecklist, conferirConclusao, temAvisosConclusao, progresso, proximoSemResposta, ROTULO_STATUS, ROTULO_TIPO_OS,
 } from './operacoes';
 import { novoUuid } from './uuid';
 import { obterPosicao } from './imagem';
 import { baixarArquivo } from './apiCampo';
-import { COR, COR_STATUS, Botao, Cartao, Selo, BotaoFoto, Miniatura, Modal, formatarData, formatarDataHora } from './componentes';
+import { criarEditorItem, criarEditorTexto, descarregarTodos } from './gravacaoAdiada';
+import {
+  COR, COR_STATUS, Botao, Cartao, Selo, BotaoFoto, Miniatura, Modal, VisorFoto, cacheMiniaturas, formatarData, formatarDataHora,
+} from './componentes';
 
 const OPCOES = [
   ['conforme', 'Conforme', 'verde', CheckCircle2],
@@ -24,31 +27,58 @@ function useVisao(uuid) {
   return useMemo(() => visoes.find(v => v.uuid === uuid) || null, [visoes, uuid]);
 }
 
+// Foto tocada: abre grande; a que ainda não foi enviada pode ser excluída.
+function useVisorFoto() {
+  const { dados, estadoSync } = useCampo();
+  const [foto, setFoto] = useState(null);
+  const visor = foto && (
+    <VisorFoto foto={foto} dados={dados} onFechar={() => setFoto(null)}
+      podeExcluir={foto.local && foto.estado_local !== 'enviada' && !estadoSync?.executando}
+      onExcluir={async f => { await dados.excluirFotoLocal(f.uuid); cacheMiniaturas.esquecer(f.uuid); setFoto(null); }} />
+  );
+  return [setFoto, visor];
+}
+
 function ItemChecklist({ item, os, editavel }) {
   const { dados } = useCampo();
   const [obs, setObs] = useState(item.observacao || '');
   const [mostrarObs, setMostrarObs] = useState(!!item.observacao || item.resposta === 'nao_conforme');
+  const [abrirFoto, visor] = useVisorFoto();
   const focado = useRef(false);
   const ref = useRef(null);
-  useEffect(() => { if (!focado.current) setObs(item.observacao || ''); }, [item.observacao]);
+  // Resposta e observação passam pelo editor do item (gravacaoAdiada.js): a
+  // observação grava 1,5 s depois de parar de digitar, e a resposta usada é
+  // sempre a última tocada — nunca a antiga relida do aparelho.
+  const editorRef = useRef(null);
+  if (!editorRef.current) {
+    editorRef.current = criarEditorItem({
+      itemId: item.id, resposta: item.resposta ?? null, observacao: item.observacao || '',
+      registrar: d => dados.registrar('responder', os.uuid, d),
+    });
+  }
+  const editor = editorRef.current;
+  useEffect(() => () => { editor.encerrar(); }, [editor]);
+  useEffect(() => {
+    editor.atualizarDeFora({ resposta: item.resposta, observacao: item.observacao }, focado.current);
+    if (!focado.current && !editor.pendente()) setObs(item.observacao || '');
+  }, [editor, item.resposta, item.observacao]);
   const fotos = (os.fotos || []).filter(f => f.item_id === item.id || (item.fotos || []).includes(f.uuid));
   const nc = item.resposta === 'nao_conforme';
 
-  async function responder(resposta) {
-    await dados.registrar('responder', os.uuid, { item_id: item.id, resposta, observacao: obs });
+  function responder(resposta) {
+    editor.responder(resposta);
     if (resposta === 'nao_conforme') {
       setMostrarObs(true);
       setTimeout(() => ref.current && ref.current.focus(), 50);
     }
   }
-  async function salvarObs() {
+  function digitar(texto) {
+    setObs(texto);
+    editor.digitar(texto);
+  }
+  function aoSairDoCampo() {
     focado.current = false;
-    // Resposta atual lida do aparelho, não das props: logo depois de tocar em
-    // "Não conforme" a tela pode ainda não ter recarregado, e a observação
-    // gravaria a resposta antiga por cima.
-    const atual = (await dados.visao(os.uuid))?.checklist.find(i => i.id === item.id);
-    if (obs === (atual?.observacao || '')) return;
-    await dados.registrar('responder', os.uuid, { item_id: item.id, resposta: atual?.resposta ?? null, observacao: obs });
+    editor.descarregar();
   }
   return (
     <div data-testid="item-checklist" data-item={item.id}
@@ -73,7 +103,7 @@ function ItemChecklist({ item, os, editavel }) {
         <div style={{ marginTop: 8 }}>
           <textarea ref={ref} rows={2} value={obs} disabled={!editavel} placeholder={nc ? 'Descreva a não conformidade' : 'Observação'}
             aria-label={`Observação: ${item.texto}`}
-            onFocus={() => { focado.current = true; }} onChange={e => setObs(e.target.value)} onBlur={salvarObs}
+            onFocus={() => { focado.current = true; }} onChange={e => digitar(e.target.value)} onBlur={aoSairDoCampo}
             style={{ borderColor: nc && !obs.trim() ? COR.vermelho : undefined }} />
           {nc && !obs.trim() && <div style={{ color: '#ff8a8a', fontSize: 15, fontWeight: 700 }}>Não conforme: descreva o problema.</div>}
         </div>
@@ -84,20 +114,24 @@ function ItemChecklist({ item, os, editavel }) {
         </button>
       )}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 8 }}>
-        {fotos.map(f => <Miniatura key={f.uuid} foto={f} dados={dados} tamanho={68} />)}
+        {fotos.map(f => <Miniatura key={f.uuid} foto={f} dados={dados} tamanho={68} onClick={() => abrirFoto(f)} />)}
         {editavel && (
           <BotaoFoto rotulo={fotos.length ? 'Mais foto' : 'Foto'} style={{ flex: '1 1 120px' }} testId="foto-item"
             onFoto={img => dados.guardarFoto({ os_uuid: os.uuid, item_id: item.id, legenda: '', ...img })} />
         )}
       </div>
       {nc && fotos.length === 0 && <div style={{ color: COR.aviso, fontSize: 15, marginTop: 4 }}>Tire uma foto da não conformidade.</div>}
+      {visor}
     </div>
   );
 }
 
-function Grupo({ grupo, os, editavel }) {
+function Grupo({ grupo, os, editavel, alvo }) {
   const feitos = grupo.itens.filter(i => i.resposta).length;
   const [aberto, setAberto] = useState(true);
+  // "Próximo sem resposta" num grupo recolhido: abre o grupo
+  const contemAlvo = !!alvo && grupo.itens.some(i => i.id === alvo.id);
+  useEffect(() => { if (contemAlvo) setAberto(true); }, [alvo, contemAlvo]);
   return (
     <Cartao style={{ padding: 0 }}>
       <button type="button" onClick={() => setAberto(a => !a)} aria-expanded={aberto}
@@ -146,6 +180,7 @@ function ItemExtra({ os }) {
 function FotosGerais({ os, editavel }) {
   const { dados } = useCampo();
   const [legenda, setLegenda] = useState('');
+  const [abrirFoto, visor] = useVisorFoto();
   const gerais = (os.fotos || []).filter(f => !f.item_id);
   return (
     <Cartao>
@@ -153,7 +188,7 @@ function FotosGerais({ os, editavel }) {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
         {gerais.map(f => (
           <div key={f.uuid} style={{ width: 96 }}>
-            <Miniatura foto={f} dados={dados} tamanho={96} />
+            <Miniatura foto={f} dados={dados} tamanho={96} onClick={() => abrirFoto(f)} />
             <div style={{ fontSize: 13, color: COR.texto2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.legenda || '—'}</div>
           </div>
         ))}
@@ -166,6 +201,7 @@ function FotosGerais({ os, editavel }) {
             onFoto={async img => { await dados.guardarFoto({ os_uuid: os.uuid, item_id: null, legenda: legenda.trim(), ...img }); setLegenda(''); }} />
         </>
       )}
+      {visor}
     </Cartao>
   );
 }
@@ -174,18 +210,60 @@ function ObservacaoFinal({ os, editavel }) {
   const { dados } = useCampo();
   const [texto, setTexto] = useState(os.observacao_final || '');
   const focado = useRef(false);
-  useEffect(() => { if (!focado.current) setTexto(os.observacao_final || ''); }, [os.observacao_final]);
-  async function salvar() {
-    focado.current = false;
-    if (texto === (os.observacao_final || '')) return;
-    await dados.registrar('observacao', os.uuid, { texto });
+  // grava 1,5 s depois de parar de digitar, ao sair do campo, ao esconder o app
+  const editorRef = useRef(null);
+  if (!editorRef.current) {
+    editorRef.current = criarEditorTexto({
+      texto: os.observacao_final || '',
+      registrar: d => dados.registrar('observacao', os.uuid, d),
+    });
   }
+  const editor = editorRef.current;
+  useEffect(() => () => { editor.encerrar(); }, [editor]);
+  useEffect(() => {
+    editor.atualizarDeFora(os.observacao_final, focado.current);
+    if (!focado.current && !editor.pendente()) setTexto(os.observacao_final || '');
+  }, [editor, os.observacao_final]);
   return (
     <Cartao>
       <label htmlFor="obs-final" style={{ marginTop: 0, fontSize: 18, color: COR.texto }}>Observação final</label>
       <textarea id="obs-final" rows={4} value={texto} disabled={!editavel} onFocus={() => { focado.current = true; }}
-        onChange={e => setTexto(e.target.value)} onBlur={salvar} placeholder="Resumo do serviço, recomendações ao cliente…" />
+        onChange={e => { setTexto(e.target.value); editor.digitar(e.target.value); }}
+        onBlur={() => { focado.current = false; editor.descarregar(); }}
+        placeholder="Resumo do serviço, recomendações ao cliente…" />
     </Cartao>
+  );
+}
+
+// Rodapé fixo enquanto a OS está em execução: quanto falta e "Próximo sem resposta".
+function RodapeOS({ os, aoIrPara }) {
+  const ultimo = useRef(null);
+  const c = conferirConclusao(os);
+  const faltam = c.semResposta.length;
+  const ncSemFoto = c.ncSemFoto.length;
+  function proximo() {
+    const alvo = proximoSemResposta(os.checklist, ultimo.current);
+    if (!alvo) return;
+    ultimo.current = alvo.id;
+    aoIrPara(alvo);
+  }
+  if (!(os.checklist || []).length) return null;
+  return (
+    <div data-testid="rodape-os" style={{
+      position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 15, background: COR.superficie,
+      borderTop: `2px solid ${COR.ouro}`, paddingBottom: 'env(safe-area-inset-bottom)',
+    }}>
+      <div style={{ maxWidth: 520, margin: '0 auto', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 700 }}>
+          <span style={{ color: faltam ? COR.aviso : '#4ade80' }}>{faltam ? `Faltam ${faltam}` : 'Tudo respondido'}</span>
+          {ncSemFoto > 0 && <span style={{ color: '#ff8a8a' }}> · {ncSemFoto} NC sem foto</span>}
+        </div>
+        <Botao variante="contorno" onClick={proximo} disabled={!faltam} data-testid="proximo-sem-resposta"
+          style={{ minHeight: 44, padding: '6px 12px', fontSize: 15 }}>
+          Próximo sem resposta
+        </Botao>
+      </div>
+    </div>
   );
 }
 
@@ -224,6 +302,17 @@ export default function DetalheOS() {
   const os = useVisao(uuid);
   const [confirmar, setConfirmar] = useState(null);
   const [ocupado, setOcupado] = useState(false);
+  const [alvo, setAlvo] = useState(null); // { id, n } — "Próximo sem resposta"
+
+  // leva ao item (o grupo dele abre pelo `alvo`; a rolagem espera a tela montar)
+  useEffect(() => {
+    if (!alvo) return undefined;
+    const t = setTimeout(() => {
+      const el = Array.from(document.querySelectorAll('[data-testid="item-checklist"]')).find(x => x.getAttribute('data-item') === alvo.id);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 60);
+    return () => clearTimeout(t);
+  }, [alvo]);
 
   if (!os) {
     return (
@@ -247,8 +336,9 @@ export default function DetalheOS() {
       await dados.registrar('iniciar', os.uuid, pos);
     } finally { setOcupado(false); }
   }
-  function pedirConclusao() {
+  async function pedirConclusao() {
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); // grava a observação em edição
+    await descarregarTodos().catch(() => {});
     setConfirmar(conferirConclusao(os));
   }
   async function concluir() {
@@ -260,8 +350,10 @@ export default function DetalheOS() {
     } finally { setOcupado(false); }
   }
 
+  // key: outra OS na mesma tela remonta tudo — os editores de texto guardam o
+  // uuid da OS e os ids de item ('c1'…) se repetem entre OS
   return (
-    <div style={{ paddingTop: 12 }}>
+    <div key={os.uuid} style={{ paddingTop: 12 }}>
       <Botao variante="contorno" onClick={() => navigate('/campo/')} style={{ marginBottom: 12 }}><ArrowLeft size={20} />Minhas OS</Botao>
 
       <Cartao>
@@ -279,6 +371,20 @@ export default function DetalheOS() {
           </div>
         )}
       </Cartao>
+
+      {os.nao_aceita && (
+        <Cartao role="alert" data-testid="os-nao-aceita" style={{ borderColor: COR.vermelho, borderWidth: 2 }}>
+          <div style={{ fontWeight: 800, fontSize: 18, color: '#ff8a8a' }}>OS não aceita pelo servidor</div>
+          <div style={{ margin: '6px 0' }}>{os.nao_aceita.erro}</div>
+          <div style={{ color: COR.texto2, fontSize: 15 }}>
+            O que você fez nela ({os.nao_aceita.operacoes} alteração(ões), {os.nao_aceita.fotos} foto(s)) está guardado neste aparelho e não foi enviado.
+            Em "Recusadas" você tenta de novo (vai tudo junto) ou descarta.
+          </div>
+          <Botao variante="vermelho" onClick={() => navigate('/campo/pendencias')} style={{ width: '100%', marginTop: 10 }}>
+            <AlertTriangle size={20} />Ver em Recusadas
+          </Botao>
+        </Cartao>
+      )}
 
       {os.obra && (
         <Cartao>
@@ -308,7 +414,7 @@ export default function DetalheOS() {
       {grupos.length > 0 && (
         <h2 style={{ fontSize: 20, margin: '8px 0' }}>Checklist {p.feitos}/{p.total}{os.status === 'aberta' ? ' (toque em Iniciar para responder)' : ''}</h2>
       )}
-      {grupos.map(g => <Grupo key={g.nome} grupo={g} os={os} editavel={editavel} />)}
+      {grupos.map(g => <Grupo key={g.nome} grupo={g} os={os} editavel={editavel} alvo={alvo} />)}
       {editavel && <ItemExtra os={os} />}
 
       {os.status !== 'aberta' && <FotosGerais os={os} editavel={editavel} />}
@@ -322,6 +428,13 @@ export default function DetalheOS() {
               <ImagemAssinatura assinatura={os.assinatura} />
               <div style={{ marginTop: 6 }}>{os.assinatura.nome}{os.assinatura.documento ? ` · ${os.assinatura.documento}` : ''}</div>
               <div style={{ color: COR.texto3, fontSize: 14 }}>{formatarDataHora(os.assinatura.assinada_em)}</div>
+              {(os.status === 'em_execucao' || os.status === 'concluida') && (
+                // vale a assinatura mais recente; a anterior fica no histórico da OS (servidor)
+                <Botao variante="contorno" onClick={() => navigate(`/campo/os/${os.uuid}/assinatura`)} style={{ width: '100%', marginTop: 10 }}
+                  data-testid="assinar-de-novo">
+                  <PenLine size={20} />Assinar de novo
+                </Botao>
+              )}
             </>
           ) : (
             <Botao grande variante="contorno" onClick={() => navigate(`/campo/os/${os.uuid}/assinatura`)} style={{ width: '100%' }} data-testid="coletar-assinatura">
@@ -339,6 +452,7 @@ export default function DetalheOS() {
       {os.status === 'concluida' && (
         <Cartao style={{ borderColor: COR.verde }}>Concluída em {formatarDataHora(os.concluida_em)}.</Cartao>
       )}
+      {editavel && <RodapeOS os={os} aoIrPara={item => setAlvo({ id: item.id, n: Date.now() })} />}
 
       {confirmar && (
         <Modal titulo={temAvisosConclusao(confirmar) ? 'Antes de concluir' : 'Concluir a OS?'} onFechar={() => setConfirmar(null)}>

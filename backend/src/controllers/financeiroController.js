@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { periodoMesAtualBrasilia } = require('../utils/dataHoje');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');
 const { registrarAuditoria } = require('../utils/auditoria');
 const rotinas = require('../services/rotinas');
@@ -6,15 +7,9 @@ const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
 
 const CATEGORIA_LABEL = { mao_de_obra: 'Mão de obra', material: 'Material', despesa: 'Despesa diária' };
 
-// Primeiro dia do mês atual até hoje, se as datas não forem informadas
-function periodoPadrao() {
-  const hoje = new Date();
-  const inicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-  return {
-    dataInicio: inicio.toISOString().slice(0, 10),
-    dataFim: hoje.toISOString().slice(0, 10),
-  };
-}
+// Primeiro dia do mês atual até hoje (horário de Brasília), se as datas não
+// forem informadas — utils/dataHoje.js (toISOString dava o dia em UTC)
+const periodoPadrao = () => periodoMesAtualBrasilia();
 
 function montarFiltro(query) {
   const padrao = periodoPadrao();
@@ -249,7 +244,7 @@ async function verificarAgora(req, res) {
     res.json(resumo);
   } catch (err) {
     console.error('Erro ao verificar Pix na caixa de entrada:', err);
-    res.status(500).json({ erro: err.message || 'Erro ao verificar Pix na caixa de entrada' });
+    res.status(err.code === 'EMAIL_CONEXAO' ? 503 : 500).json({ erro: err.message || 'Erro ao verificar Pix na caixa de entrada' });
   }
 }
 

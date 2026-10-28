@@ -1,6 +1,7 @@
 const { simpleParser } = require('mailparser');
 const pool = require('../config/database');
-const { conectar, credenciaisConfiguradas } = require('../utils/emailClient');
+const { credenciaisConfiguradas } = require('../utils/emailClient');
+const { conectarComRetry, esperasDaOrigem, identificarMensagens, registroProcessado } = require('./conexaoEmail');
 const { extrairDoPdf, parseNFeXml } = require('../utils/notaFiscalParser');
 const { lerDocumentoCotacao, encerrarOcr, VERSAO_LEITOR } = require('../utils/leitorCotacao');
 const { carregarIndice, registrarItemNotaFiscal, obterMargemPadrao } = require('./catalogoMateriais');
@@ -131,21 +132,49 @@ async function processarMensagem(client, parsedEmail, margem, resumo, indice) {
 // ou imagem). Ignora notas fiscais (tratadas acima), e-mails enviados pela
 // própria H&M e PDFs de proposta da própria H&M (ex.: cliente respondendo).
 // E-mail lido com 0 itens volta a ser lido quando a versão do leitor sobe.
-async function processarOrcamentosPorEmail(imapClient, dbClient, margem, indice, resumo) {
-  const uids = await imapClient.search(
+// Só de remetente com assinatura válida (DKIM/DMARC), como as notas: antes
+// qualquer pessoa mandava um "orçamento" e cadastrava materiais e preços no
+// catálogo (revisão de 27/10/2026).
+async function processarOrcamentosPorEmail(imapClient, dbClient, margem, indice, resumo, { lerEmail = simpleParser, lerDocumento = lerDocumentoCotacao, importar = importarItens } = {}) {
+  const uids = (await imapClient.search(
     { gmraw: `has:attachment -DANFE (orçamento OR orcamento OR cotação OR cotacao OR proposta OR "pedido de venda" OR pedido) after:${DESDE_DATA}` },
     { uid: true }
-  );
+  )) || [];
+  const idents = await identificarMensagens(imapClient, uids);
   const proprio = String(process.env.EMAIL_IMAP_USER || '').toLowerCase();
   for (const uid of uids) {
-    const lido = await dbClient.query('SELECT itens_lidos, leitor_versao FROM emails_processados WHERE message_id = $1', [String(uid)]);
-    if (lido.rows.length && ((lido.rows[0].itens_lidos || 0) > 0 || (lido.rows[0].leitor_versao || 0) >= VERSAO_LEITOR || lido.rows[0].leitor_versao == null)) continue;
+    const ident = idents.get(uid);
+    if (!ident) continue; // sumiu da caixa entre a busca e a leitura
+    const lido = await registroProcessado(dbClient, ident, 'itens_lidos, leitor_versao');
+    if (lido && ((lido.itens_lidos || 0) > 0 || (lido.leitor_versao || 0) >= VERSAO_LEITOR || lido.leitor_versao == null)) continue;
     resumo.emailsEncontrados++;
 
-    const { content } = await imapClient.download(uid, undefined, { uid: true });
-    const email = await simpleParser(content);
+    // Um e-mail ilegível não trava os seguintes (antes o download/parse ficava
+    // fora do try e derrubava a rodada inteira)
+    let email;
+    try {
+      const { content } = await imapClient.download(uid, undefined, { uid: true });
+      email = await lerEmail(content);
+    } catch (err) {
+      if (conexaoCaiu(imapClient)) throw new Error(`A conexão com o e-mail caiu no meio da leitura (${err.message}) — o que faltou será lido na próxima rodada`);
+      resumo.avisos.push(`E-mail de orçamento "${ident.assunto || uid}" não pôde ser lido (${err.message}) — tenta de novo na próxima rodada`);
+      continue;
+    }
     const remetente = String(email.from?.value?.[0]?.address || '').toLowerCase();
-    const anexos = remetente && remetente === proprio ? [] : (email.attachments || [])
+    const doProprio = !!remetente && remetente === proprio;
+    if (!doProprio) {
+      const aut = verificarAutenticidade(email);
+      if (!aut.autentico) {
+        resumo.avisos.push(`Orçamento "${email.subject || uid}" de ${aut.remetente || 'remetente desconhecido'} ignorado: a assinatura do e-mail (DKIM/DMARC) não confere`);
+        await dbClient.query(
+          `INSERT INTO emails_processados (message_id, assunto, tipo, itens_lidos, leitor_versao) VALUES ($1,$2,'orcamento',0,$3)
+           ON CONFLICT (message_id) DO NOTHING`,
+          [ident.chave, `[rejeitado] ${email.subject || ''}`.slice(0, 500), VERSAO_LEITOR]
+        );
+        continue;
+      }
+    }
+    const anexos = doProprio ? [] : (email.attachments || [])
       .filter(a => /\.(pdf|png|jpe?g)$/i.test(a.filename || '') || /pdf|image\/(png|jpe?g)/i.test(a.contentType || ''))
       .filter(a => (a.size || a.content?.length || 0) <= TAMANHO_MAX_ANEXO);
 
@@ -154,7 +183,7 @@ async function processarOrcamentosPorEmail(imapClient, dbClient, margem, indice,
     let pendente = false;
     for (const anexo of anexos) {
       try {
-        const leitura = await lerDocumentoCotacao(anexo.content, anexo.filename || 'anexo', { permitirIA: resumo.leiturasPorIA < MAX_IA_POR_VARREDURA, exigirClienteHM: true });
+        const leitura = await lerDocumento(anexo.content, anexo.filename || 'anexo', { permitirIA: resumo.leiturasPorIA < MAX_IA_POR_VARREDURA, exigirClienteHM: true });
         if (leitura.usouIA) resumo.leiturasPorIA++;
         if (leitura.pendente) pendente = true;
         if (leitura.itens.length) leituras.push({ anexo, leitura });
@@ -167,7 +196,7 @@ async function processarOrcamentosPorEmail(imapClient, dbClient, margem, indice,
     await dbClient.query('BEGIN');
     try {
       for (const { anexo, leitura } of leituras) {
-        const r = await importarItens(dbClient, indice, leitura, 'fornecedor_email', margem);
+        const r = await importar(dbClient, indice, leitura, 'fornecedor_email', margem);
         lidosNoEmail += leitura.itens.length;
         resumo.materiaisCriados += r.criados;
         resumo.materiaisAtualizados += r.atualizados;
@@ -177,7 +206,7 @@ async function processarOrcamentosPorEmail(imapClient, dbClient, margem, indice,
       await dbClient.query(
         `INSERT INTO emails_processados (message_id, assunto, tipo, itens_lidos, leitor_versao) VALUES ($1,$2,'orcamento',$3,$4)
          ON CONFLICT (message_id) DO UPDATE SET tipo='orcamento', itens_lidos=EXCLUDED.itens_lidos, leitor_versao=EXCLUDED.leitor_versao, processado_em=NOW()`,
-        [String(uid), email.subject || '', lidosNoEmail, pendente && !lidosNoEmail ? VERSAO_LEITOR - 1 : VERSAO_LEITOR]
+        [ident.chave, email.subject || '', lidosNoEmail, pendente && !lidosNoEmail ? VERSAO_LEITOR - 1 : VERSAO_LEITOR]
       );
       await dbClient.query('COMMIT');
       resumo.emailsProcessados++;
@@ -189,64 +218,73 @@ async function processarOrcamentosPorEmail(imapClient, dbClient, margem, indice,
   }
 }
 
+const conexaoCaiu = (imapClient) => imapClient && imapClient.usable === false;
+
 // Trava contra execução simultânea (horário automático × "Verificar agora" × outra instância)
-function verificarCaixaDeEntrada() {
-  return executarComTrava('email-notas-orcamentos', lerCaixaDeEntrada);
+function verificarCaixaDeEntrada({ origem = 'manual' } = {}) {
+  return executarComTrava('email-notas-orcamentos', () => lerCaixaDeEntrada({ esperas: esperasDaOrigem(origem) }));
 }
 
-async function lerCaixaDeEntrada() {
+// deps: os testes passam banco, conexão e leitores falsos
+async function lerCaixaDeEntrada({
+  esperas, db = pool, conectarEmail = conectarComRetry, configurado = credenciaisConfiguradas, lerEmail = simpleParser,
+  processar = processarMensagem, orcamentos = processarOrcamentosPorEmail, margemPadrao = obterMargemPadrao,
+  indiceCatalogo = carregarIndice, encerrar = encerrarOcr, classificar = classificarPendentes,
+} = {}) {
   const resumo = {
     emailsEncontrados: 0, emailsProcessados: 0,
     materiaisCriados: 0, materiaisAtualizados: 0,
     notasImportadas: 0, orcamentosImportados: 0, leiturasPorIA: 0, avisos: [],
   };
 
-  if (!credenciaisConfiguradas()) {
+  if (!configurado()) {
     resumo.avisos.push('Integração de e-mail não configurada');
     return resumo;
   }
 
-  const dbClient = await pool.connect();
-  let imapClient;
+  // Falha de conexão (depois das novas tentativas) LANÇA erro: a rodada fica
+  // com status "erro" e a agenda repesca em ~15 min (antes era só um aviso e
+  // a rodada contava como sucesso — revisão de 27/10/2026).
+  const imapClient = await conectarEmail({ esperas });
+  let dbClient;
 
   try {
-    try {
-      imapClient = await conectar();
-    } catch (err) {
-      const motivo = err.authenticationFailed
-        ? 'credenciais inválidas — confira EMAIL_IMAP_USER e a senha de app no .env, e se o IMAP está habilitado nas configurações do Gmail'
-        : err.responseText || err.message;
-      resumo.avisos.push(`Falha ao conectar ao e-mail: ${motivo}`);
-      return resumo;
-    }
-
-    const margem = await obterMargemPadrao(dbClient);
-    const indice = await carregarIndice(dbClient);
+    dbClient = await db.connect();
+    const margem = await margemPadrao(dbClient);
+    const indice = await indiceCatalogo(dbClient);
 
     const lock = await imapClient.getMailboxLock('INBOX');
     try {
-      const uids = await imapClient.search(
+      const uids = (await imapClient.search(
         { gmraw: `DANFE has:attachment after:${DESDE_DATA}` },
         { uid: true }
-      );
+      )) || [];
       resumo.emailsEncontrados = uids.length;
+      const idents = await identificarMensagens(imapClient, uids);
 
       for (const uid of uids) {
-        const jaLido = await dbClient.query(
-          'SELECT id FROM emails_processados WHERE message_id = $1',
-          [String(uid)]
-        );
-        if (jaLido.rows.length > 0) continue;
+        const ident = idents.get(uid);
+        if (!ident) continue; // sumiu da caixa entre a busca e a leitura
+        if (await registroProcessado(dbClient, ident)) continue;
 
-        const { content } = await imapClient.download(uid, undefined, { uid: true });
-        const parsedEmail = await simpleParser(content);
+        // Um e-mail ilegível não trava os seguintes (antes o download/parse
+        // ficava fora do try e derrubava a rodada inteira)
+        let parsedEmail;
+        try {
+          const { content } = await imapClient.download(uid, undefined, { uid: true });
+          parsedEmail = await lerEmail(content);
+        } catch (err) {
+          if (conexaoCaiu(imapClient)) throw new Error(`A conexão com o e-mail caiu no meio da leitura (${err.message}) — o que faltou será lido na próxima rodada`);
+          resumo.avisos.push(`E-mail "${ident.assunto || uid}" não pôde ser lido (${err.message}) — tenta de novo na próxima rodada`);
+          continue;
+        }
 
         await dbClient.query('BEGIN');
         try {
-          await processarMensagem(dbClient, parsedEmail, margem, resumo, indice);
+          await processar(dbClient, parsedEmail, margem, resumo, indice);
           await dbClient.query(
             'INSERT INTO emails_processados (message_id, assunto) VALUES ($1,$2) ON CONFLICT DO NOTHING',
-            [String(uid), parsedEmail.subject || '']
+            [ident.chave, parsedEmail.subject || '']
           );
           await dbClient.query('COMMIT');
           resumo.emailsProcessados++;
@@ -258,19 +296,19 @@ async function lerCaixaDeEntrada() {
         }
       }
 
-      await processarOrcamentosPorEmail(imapClient, dbClient, margem, indice, resumo);
+      await orcamentos(imapClient, dbClient, margem, indice, resumo, { lerEmail });
     } finally {
       lock.release();
-      await encerrarOcr();
+      await encerrar();
     }
   } finally {
-    dbClient.release();
-    if (imapClient) await imapClient.logout().catch(() => {});
+    if (dbClient) dbClient.release();
+    await imapClient.logout().catch(() => {});
   }
 
   // material que ficou sem categoria (nem NCM, nem parecido, nem palavra-chave) → IA
-  if (resumo.materiaisCriados) resumo.classificacao = await classificarPendentes().catch(e => ({ erro: e.message }));
+  if (resumo.materiaisCriados) resumo.classificacao = await classificar().catch(e => ({ erro: e.message }));
   return resumo;
 }
 
-module.exports = { verificarCaixaDeEntrada, upsertMaterial, obterMargemPadrao };
+module.exports = { verificarCaixaDeEntrada, lerCaixaDeEntrada, processarOrcamentosPorEmail, upsertMaterial, obterMargemPadrao };

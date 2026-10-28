@@ -5,7 +5,7 @@ description: Projeto, memorial, laudo de vistoria e orçamento de pontos de reca
 
 # Carregador veicular (NBR 17019) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 14 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
+Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 26 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
 
 | Documento | Tipo | Formato |
 |---|---|---|
@@ -37,7 +37,8 @@ O mesmo motor roda no Sistema de Orçamentos: **Análise de Projeto → Laudos e
 
 - Circuito exclusivo por ponto, fator de demanda 1 (salvo controle de recarga), dimensionado pelo mesmo motor da skill de elétrica.
 - DR 30 mA no mínimo tipo A; modo 3 sem RDC-DD no carregador exige tipo B (6.3.3.2.102). Sem PEN no esquema TN.
-- Verificação da carga adicional no padrão de entrada (7.1.101) e DPS obrigatório em local com público.
+- Carregadores monofásicos não são somados como carga trifásica equilibrada: cada ponto fica numa fase (coluna "Fase no quadro" ou distribuição automática pela fase menos carregada) e a distribuição, o alimentador (Ib = fase mais carregada; disjuntor ≥ Ib e ≥ o maior a jusante) e o padrão de entrada (demanda existente equilibrada nas fases + recarga na fase mais carregada) são verificados por fase (NBR 5410, 5.3.4; NBR 17019, 7.1.101).
+- DPS obrigatório em local com público; Uc pela Tabela 49 da NBR 5410 (função comum `skills/_comum/dps.js`).
 
 O checklist de inspeção (18 itens) está em `dados/checklist_base.json`; itens não conformes viram não conformidades com prioridade (P1 48 h, P2 30 dias, P3 90 dias, P4 manutenção) e entram no orçamento do modo de inspeção.
 

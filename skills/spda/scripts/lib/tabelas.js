@@ -89,7 +89,10 @@ const CLD_CLI = {
 // Tabela B.5 — KS3 conforme a fiação interna
 const KS3 = {
   sem_preocupacao: 1,
-  evitando_lacos_grandes: 0.5,
+  // A Tabela B.5 (NBR 5419-2:2015 / IEC 62305-2) não tem 0,5: "precaução de roteamento
+  // para evitar laços grandes (~10 m²)" é 0,2 — mesmo valor de evitando_lacos_medios
+  // (chave mantida para os JSON antigos). [CONFERIR na NBR 5419-2:2026]
+  evitando_lacos_grandes: 0.2,
   evitando_lacos_medios: 0.2,
   evitando_lacos_pequenos: 0.01,
   blindado: 0.0001, // cabos blindados ou em conduto metálico ligado nas duas pontas

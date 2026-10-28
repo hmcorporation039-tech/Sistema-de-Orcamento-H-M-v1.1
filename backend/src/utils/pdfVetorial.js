@@ -81,7 +81,34 @@ async function lerPagina(pagina, OPS) {
   return { largura: vp.width, altura: vp.height, caminhos, textos, operadores: ops.fnArray.length };
 }
 
+// União-busca ITERATIVA (com compressão de caminho e união por tamanho). A versão
+// recursiva estourava a pilha (RangeError) com ~20 mil traços encadeados — um
+// eletroduto picado em segmentos — e o erro sumia no .catch da análise.
+function uniaoBusca(n) {
+  const pai = new Int32Array(n), tam = new Int32Array(n).fill(1);
+  for (let i = 0; i < n; i++) pai[i] = i;
+  const raiz = (i) => {
+    let r = i;
+    while (pai[r] !== r) r = pai[r];
+    while (pai[i] !== r) { const p = pai[i]; pai[i] = r; i = p; }
+    return r;
+  };
+  const unir = (a, b) => {
+    a = raiz(a); b = raiz(b);
+    if (a === b) return;
+    if (tam[a] < tam[b]) { const t = a; a = b; b = t; }
+    pai[b] = a; tam[a] += tam[b];
+  };
+  return { raiz, unir };
+}
+
 // ── 2) Símbolos: união de caminhos pequenos da mesma cor que se tocam ─────
+// Os pares candidatos saem de uma grade (célula maior que o tamanho máximo +
+// tolerância: dois caminhos que se tocam estão na mesma célula ou numa vizinha).
+// Antes era uma varredura só em x, quadrática quando muitos traços caem na mesma
+// coluna. O teste de "tocar" é o mesmo, no mesmo sentido (A = o de menor x
+// inicial; empate, o que vem antes na lista), e os grupos não dependem da ordem
+// das uniões: o resultado é idêntico ao da versão anterior.
 function simbolos(caminhos, { tamanhoMax = 40, tolerancia = 0.6 } = {}) {
   const grupos = new Map();
   caminhos.forEach((c) => {
@@ -94,15 +121,25 @@ function simbolos(caminhos, { tamanhoMax = 40, tolerancia = 0.6 } = {}) {
   });
   const blobs = [];
   for (const [chave, lista] of grupos) {
-    const pai = lista.map((_, i) => i);
-    const raiz = (i) => (pai[i] === i ? i : (pai[i] = raiz(pai[i])));
-    const ord = lista.map((_, i) => i).sort((i, j) => lista[i].caixa[0] - lista[j].caixa[0]);
-    for (let a = 0; a < ord.length; a++) {
-      const A = lista[ord[a]].caixa;
-      for (let b = a + 1; b < ord.length; b++) {
-        const B = lista[ord[b]].caixa;
-        if (B[0] > A[2] + tolerancia) break;
-        if (B[1] <= A[3] + tolerancia && B[3] >= A[1] - tolerancia) pai[raiz(ord[a])] = raiz(ord[b]);
+    const { raiz, unir } = uniaoBusca(lista.length);
+    const lado = tamanhoMax + Math.abs(tolerancia) + 1; // folga de 1 pt contra arredondamento na borda da célula
+    const celula = (c) => [Math.floor(c.caixa[0] / lado), Math.floor(c.caixa[1] / lado)];
+    const celulas = new Map();
+    lista.forEach((c, i) => { const [gx, gy] = celula(c); const k = `${gx},${gy}`; (celulas.get(k) || celulas.set(k, []).get(k)).push(i); });
+    for (let i = 0; i < lista.length; i++) {
+      const [gx, gy] = celula(lista[i]);
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          const vizinhos = celulas.get(`${gx + dx},${gy + dy}`);
+          if (!vizinhos) continue;
+          for (const j of vizinhos) {
+            if (j <= i) continue;
+            // A = menor x inicial (empate: o de menor índice), como na varredura antiga
+            const [A, B] = lista[j].caixa[0] < lista[i].caixa[0] ? [lista[j].caixa, lista[i].caixa] : [lista[i].caixa, lista[j].caixa];
+            if (B[0] > A[2] + tolerancia) continue;
+            if (B[1] <= A[3] + tolerancia && B[3] >= A[1] - tolerancia) unir(i, j);
+          }
+        }
       }
     }
     const porRaiz = new Map();
@@ -127,21 +164,76 @@ function simbolos(caminhos, { tamanhoMax = 40, tolerancia = 0.6 } = {}) {
 // ── 3) Legenda ─────────────────────────────────────────────────────────────
 const ehDescricao = (s) => s.length >= 5 && (s.match(/[A-Za-zÀ-ú]/g) || []).length >= 4 && !/^(LEGENDA|NOTAS?|OBS|SOBE|DESCE)/i.test(s);
 
+// Índice dos textos por altura (y), montado UMA vez por lista de textos: antes
+// cada caminho percorria todos os textos (30 mil caminhos × 8 mil textos = 70 s
+// com o servidor travado). O índice só restringe a busca a uma faixa de y; as
+// condições e o desempate (o 1º da lista com o menor dx) são os mesmos.
+const indicesTextos = new WeakMap();
+function primeiroAPartirDe(lista, y) { // 1ª posição com lista[k].y >= y
+  let lo = 0, hi = lista.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (lista[m].y < y) lo = m + 1; else hi = m; }
+  return lo;
+}
+function indiceTextos(textos) {
+  const pronto = indicesTextos.get(textos);
+  if (pronto && pronto.n === textos.length) return pronto;
+  const desc = [], horiz = [], foraDaFaixa = [];
+  let hMax = 0;
+  textos.forEach((t, i) => {
+    if (!t.horizontal) return;
+    horiz.push({ i, y: t.y });
+    if (!ehDescricao(t.s)) return;
+    const ty = t.y - t.h * 0.35; // meio da linha de texto (y da tela é a linha de base)
+    // y ou altura não finitos: conferidos um a um (mesmo resultado da busca linear)
+    if (!Number.isFinite(ty) || !Number.isFinite(t.h)) foraDaFaixa.push(i);
+    else { desc.push({ i, y: ty }); if (t.h > hMax) hMax = t.h; }
+  });
+  desc.sort((a, b) => a.y - b.y || a.i - b.i);
+  horiz.sort((a, b) => a.y - b.y || a.i - b.i);
+  const ix = { n: textos.length, desc, horiz, foraDaFaixa, hMax, horizFinito: horiz.every(e => Number.isFinite(e.y)) };
+  indicesTextos.set(textos, ix);
+  return ix;
+}
+
 // Linha de texto que fica logo à direita de uma caixa (mesma altura)
 function textoAoLado(caixa, textos, distMax = 70) {
   const cy = (caixa[1] + caixa[3]) / 2, h = Math.max(caixa[3] - caixa[1], 3);
-  let melhor = null;
-  for (const t of textos) {
-    if (!t.horizontal || !ehDescricao(t.s)) continue;
-    const ty = t.y - t.h * 0.35; // meio da linha de texto (y da tela é a linha de base)
-    if (Math.abs(ty - cy) > Math.max(h * 0.7, t.h * 0.8)) continue;
+  const ix = indiceTextos(textos);
+  let melhor = null, melhorI = -1;
+  const avaliar = (i) => {
+    const t = textos[i];
+    const ty = t.y - t.h * 0.35;
+    if (Math.abs(ty - cy) > Math.max(h * 0.7, t.h * 0.8)) return;
     const dx = t.x - caixa[2];
-    if (dx < -0.5 || dx > distMax) continue;
-    if (!melhor || dx < melhor.dx) melhor = { ...t, dx };
+    if (dx < -0.5 || dx > distMax) return;
+    if (!melhor || dx < melhor.dx || (dx === melhor.dx && i < melhorI)) { melhor = { ...t, dx }; melhorI = i; }
+  };
+  const raio = Math.max(h * 0.7, ix.hMax * 0.8);
+  if (Number.isFinite(cy) && Number.isFinite(raio)) {
+    // faixa um pouco mais larga que a condição exata, que é conferida em avaliar()
+    const folga = 1e-6 * (1 + Math.abs(cy) + raio);
+    for (let k = primeiroAPartirDe(ix.desc, cy - raio - folga); k < ix.desc.length && ix.desc[k].y <= cy + raio + folga; k++) avaliar(ix.desc[k].i);
+    ix.foraDaFaixa.forEach(avaliar);
+  } else {
+    for (let i = 0; i < textos.length; i++) if (textos[i].horizontal && ehDescricao(textos[i].s)) avaliar(i);
   }
   if (!melhor) return null;
   // junta os pedaços da mesma linha (o PDF quebra o texto em trechos)
-  const linha = textos.filter(t => t.horizontal && Math.abs(t.y - melhor.y) < melhor.h * 0.3 && t.x >= melhor.x - 0.5 && t.x < melhor.x + 400).sort((a, b) => a.x - b.x);
+  const naLinha = (t) => t.horizontal && Math.abs(t.y - melhor.y) < melhor.h * 0.3 && t.x >= melhor.x - 0.5 && t.x < melhor.x + 400;
+  const meia = Math.abs(melhor.h * 0.3);
+  let linha;
+  if (ix.horizFinito && Number.isFinite(melhor.y) && Number.isFinite(meia)) {
+    const folga = 1e-6 * (1 + Math.abs(melhor.y) + meia);
+    const idx = [];
+    for (let k = primeiroAPartirDe(ix.horiz, melhor.y - meia - folga); k < ix.horiz.length && ix.horiz[k].y <= melhor.y + meia + folga; k++) {
+      if (naLinha(textos[ix.horiz[k].i])) idx.push(ix.horiz[k].i);
+    }
+    // mesma ordem do filter + sort estável de antes: por x, empate pela posição na lista
+    idx.sort((a, b) => textos[a].x - textos[b].x || a - b);
+    linha = idx.map(i => textos[i]);
+  } else {
+    linha = textos.filter(naLinha).sort((a, b) => a.x - b.x);
+  }
   let fimX = melhor.x - 1;
   const partes = [];
   for (const t of linha) { if (t.x - fimX > melhor.h * 2.5) break; partes.push(t.s); fimX = t.x + t.w; }
@@ -236,9 +328,8 @@ function analisarGeometria({ caminhos, textos, largura, altura }, { escala } = {
   // partes de um mesmo símbolo (cheio + contorno, ou símbolo de 2 linhas de altura)
   // viram uma entrada só: a da 1ª linha de texto, com a assinatura da maior parte
   const simbs = candSimb.filter(c => naLegenda(c.caixa));
-  const pai = simbs.map((_, i) => i);
-  const raiz = (i) => (pai[i] === i ? i : (pai[i] = raiz(pai[i])));
-  for (let i = 0; i < simbs.length; i++) for (let j = i + 1; j < simbs.length; j++) if (tocam(simbs[i].caixa, simbs[j].caixa, 1.5)) pai[raiz(i)] = raiz(j);
+  const { raiz, unir } = uniaoBusca(simbs.length);
+  for (let i = 0; i < simbs.length; i++) for (let j = i + 1; j < simbs.length; j++) if (tocam(simbs[i].caixa, simbs[j].caixa, 1.5)) unir(i, j);
   const grupos = new Map();
   simbs.forEach((c, i) => { const r = raiz(i); (grupos.get(r) || grupos.set(r, []).get(r)).push(c); });
   const entradas = [];
@@ -300,9 +391,15 @@ function analisarGeometria({ caminhos, textos, largura, altura }, { escala } = {
   return { itens: itens.filter(valido), legenda: regiao ? regiao.map(Math.round) : null, legendas: regioes.map(r => r.map(Math.round)), escala: esc, pagina_pt: [Math.round(largura), Math.round(altura)] };
 }
 
+// Acima disto a página não é analisada (roda no processo do servidor): fica um
+// aviso e a contagem é feita na planta. Prancha comum fica bem abaixo.
+const MAX_CAMINHOS_PAGINA = 50000;
+
 // PDF (buffer) → por página: itens da legenda com quantidade (símbolos) e
 // metros (linhas). `paginas`: limita (padrão: até 10). PDF só com imagem → vazio.
-async function lerPdfVetorial(buffer, { paginas, escala, maxPaginas = 10 } = {}) {
+// Página com traços demais ou que falhe na análise volta com `aviso` (e sem
+// itens) em vez de derrubar as outras.
+async function lerPdfVetorial(buffer, { paginas, escala, maxPaginas = 10, maxCaminhos = MAX_CAMINHOS_PAGINA } = {}) {
   const { getDocument, OPS } = await pdfjs();
   const doc = await getDocument({ data: new Uint8Array(buffer), isEvalSupported: false, verbosity: 0, disableFontFace: true }).promise;
   try {
@@ -311,7 +408,12 @@ async function lerPdfVetorial(buffer, { paginas, escala, maxPaginas = 10 } = {})
     for (const n of lista) {
       const pag = await doc.getPage(n);
       const geo = await lerPagina(pag, OPS);
-      const r = geo.caminhos.length ? analisarGeometria(geo, { escala }) : { itens: [], legenda: null, escala: null };
+      let r = { itens: [], legenda: null, escala: null };
+      if (geo.caminhos.length > maxCaminhos) {
+        r.aviso = `página com ${geo.caminhos.length.toLocaleString('pt-BR')} traços (limite ${maxCaminhos.toLocaleString('pt-BR')}): contagem pelo desenho não feita — conferir na planta`;
+      } else if (geo.caminhos.length) {
+        try { r = analisarGeometria(geo, { escala }); } catch (e) { r.aviso = `falha ao ler o desenho (${e.message}) — conferir na planta`; }
+      }
       saida.push({ pagina: n, caminhos: geo.caminhos.length, ...r });
       pag.cleanup();
     }
@@ -321,4 +423,4 @@ async function lerPdfVetorial(buffer, { paginas, escala, maxPaginas = 10 } = {})
   }
 }
 
-module.exports = { lerPdfVetorial, analisarGeometria, simbolos, escalaDoCarimbo, paraTestes: { textoAoLado, regioesLegenda, lerPagina, pdfjs } };
+module.exports = { lerPdfVetorial, analisarGeometria, simbolos, escalaDoCarimbo, MAX_CAMINHOS_PAGINA, paraTestes: { textoAoLado, regioesLegenda, lerPagina, pdfjs, uniaoBusca } };

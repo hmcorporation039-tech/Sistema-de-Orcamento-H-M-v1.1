@@ -6,13 +6,19 @@
 // IEC 62676-4: densidade mínima de pixels (px/m) por objetivo
 const DORI = { deteccao: 25, observacao: 62, reconhecimento: 125, identificacao: 250 };
 const ROTULO_DORI = { deteccao: 'Detecção', observacao: 'Observação', reconhecimento: 'Reconhecimento', identificacao: 'Identificação' };
-// Resolução horizontal típica por megapixel
-const HRES = { 1: 1280, 2: 1920, 3: 2304, 4: 2560, 5: 2880, 6: 3072, 8: 3840, 12: 4000 };
+// Resolução horizontal típica por megapixel. 5 MP: 2592 × 1944 (sensor 4:3, o mais
+// comum) — o 2880 × 1620 (16:9) superestimava a densidade de pixels em 11 %.
+const HRES = { 1: 1280, 2: 1920, 3: 2304, 4: 2560, 5: 2592, 6: 3072, 8: 3840, 12: 4000 };
 // Bitrate típico (Mbps) em H.265 a 15 qps; H.264 ≈ 1,8 ×
 const BITRATE_H265 = { 1: 1, 2: 2, 3: 2.5, 4: 3.5, 5: 4, 6: 5, 8: 6, 12: 8 };
 const POE_PADRAO = { dome: 6, bullet: 8, ptz: 25, fisheye: 8 };
 const CANAIS_NVR = [4, 8, 16, 32, 64, 128, 256];
 const NOBREAK_VA = [600, 1000, 1500, 2200, 3000, 6000, 10000];
+// Potência disponível no equipamento alimentado (PD) por padrão PoE — IEEE 802.3af
+// 12,95 W; 802.3at (PoE+) 25,5 W; 802.3bt tipo 3 51 W e tipo 4 71,3 W.
+const POE_CLASSES = [{ w: 12.95, padrao: 'IEEE 802.3af' }, { w: 25.5, padrao: 'IEEE 802.3at' }, { w: 51, padrao: 'IEEE 802.3bt tipo 3' }, { w: 71.3, padrao: 'IEEE 802.3bt tipo 4' }];
+// quantidade: vazio → 1; 0 (ou negativo) → câmera fora do sistema
+const qtdDe = (c) => (c.quantidade == null || c.quantidade === '' ? 1 : Number(c.quantidade));
 
 function hresDe(c) {
   if (Number(c.hres) > 0) return Number(c.hres);
@@ -38,8 +44,8 @@ function calcular(dados) {
   const hdTb = Number(s.hd_tb) || 8;
   const avisos = [];
 
-  const cameras = (dados.cameras || []).filter(c => (Number(c.quantidade) || 1) > 0 && c.local !== undefined).map((c, i) => {
-    const qtd = Number(c.quantidade) || 1;
+  const cameras = (dados.cameras || []).filter(c => c && qtdDe(c) > 0 && c.local !== undefined).map((c, i) => {
+    const qtd = qtdDe(c);
     const tipo = c.tipo || 'dome';
     const hres = hresDe(c);
     const hfov = Number(c.hfov_graus) || 90;
@@ -55,7 +61,10 @@ function calcular(dados) {
     if (cabo > 90) avisos.push(`${c.id || `CAM${i + 1}`}: cabo de ${cabo} m excede 90 m (NBR 14565) — usar extensor PoE, switch intermediário ou fibra.`);
     const bitrate = bitrateDe(c, s);
     const poe = Number(c.poe_w) || POE_PADRAO[tipo] || 8;
-    return { ...c, id: c.id || `CAM${i + 1}`, qtd, tipo, hres, hfov, objetivo, ppmNecessario, dAlvo, ppm, dMax, atende, cabo, bitrate, poe, externa: !!c.externa };
+    const classePoe = POE_CLASSES.find(k => poe <= k.w) || null;
+    if (!classePoe) avisos.push(`${c.id || `CAM${i + 1}`}: consumo de ${br(poe, 1)} W acima de 71,3 W (limite do IEEE 802.3bt tipo 4) — alimentar por fonte/injetor próprio do fabricante.`);
+    else if (poe > 25.5) avisos.push(`${c.id || `CAM${i + 1}`}: consumo de ${br(poe, 1)} W acima de 25,5 W (PoE+ 802.3at) — exige porta ${classePoe.padrao} no switch (ou injetor PoE++).`);
+    return { ...c, id: c.id || `CAM${i + 1}`, qtd, tipo, hres, hfov, objetivo, ppmNecessario, dAlvo, ppm, dMax, atende, cabo, bitrate, poe, poePadrao: classePoe ? classePoe.padrao : 'fonte própria', externa: !!c.externa };
   });
   if (!cameras.length) throw new Error('Cadastre ao menos uma câmera.');
 
@@ -64,10 +73,14 @@ function calcular(dados) {
   // TB = Mbps × 3600 s × h × dias × atividade ÷ 8 (bits→bytes) ÷ 10^6 (MB→TB)
   const armazenamentoTb = banda * 3600 * horas * dias * atividade / 8 / 1e6;
   const raid = s.raid === 'raid5';
-  const hds = Math.max(1, Math.ceil(armazenamentoTb / hdTb)) + (raid ? 1 : 0);
+  // RAID 5 exige no mínimo 3 discos (2 de dados + 1 de paridade distribuída)
+  const hdsDados = Math.max(1, Math.ceil(armazenamentoTb / hdTb));
+  const hds = raid ? Math.max(3, hdsDados + 1) : hdsDados;
   // 25 % de canais de reserva para expansão
   const canais = CANAIS_NVR.find(n => n >= nCam * 1.25) || Math.ceil(nCam * 1.25 / 64) * 64;
   const poeTotal = cameras.reduce((a, c) => a + c.poe * c.qtd, 0);
+  const portasBt = cameras.filter(c => c.poe > 25.5 && c.poe <= 71.3).reduce((a, c) => a + c.qtd, 0);
+  const caboAcima90 = cameras.filter(c => c.cabo > 90);
   const poeComMargem = poeTotal * 1.2;
   const portasSwitch = nCam + 2;
   const switches = Math.ceil(portasSwitch / (Number(s.portas_switch) || 24));
@@ -88,7 +101,7 @@ function calcular(dados) {
     ...Object.entries(porModelo).map(([descricao, quantidade]) => ({ codigo: 'CAM', descricao, unidade: 'un', quantidade, referencia: 'IEC 62676-4' })),
     { codigo: 'NVR', descricao: `Gravador NVR ${canais} canais, banda de entrada ≥ ${Math.ceil(banda * 1.3)} Mbps, ${hds} baia(s) de disco`, unidade: 'un', quantidade: 1, referencia: 'Dimensionamento' },
     { codigo: 'HD', descricao: `Disco rígido ${hdTb} TB próprio para vigilância${raid ? ' (RAID 5)' : ''}`, unidade: 'un', quantidade: hds, referencia: `${br(armazenamentoTb, 1)} TB para ${dias} dias` },
-    { codigo: 'SW', descricao: `Switch PoE ${Number(s.portas_switch) || 24} portas, orçamento PoE ≥ ${Math.ceil(poeComMargem / switches)} W`, unidade: 'un', quantidade: switches, referencia: 'IEEE 802.3af/at' },
+    { codigo: 'SW', descricao: `Switch PoE ${Number(s.portas_switch) || 24} portas, orçamento PoE ≥ ${Math.ceil(poeComMargem / switches)} W${portasBt ? `, com ${portasBt} porta(s) IEEE 802.3bt (PoE++ até ${Math.max(...cameras.filter(c => c.poe > 25.5 && c.poe <= 71.3).map(c => c.poe > 51 ? 71.3 : 51)).toLocaleString('pt-BR')} W)` : ''}`, unidade: 'un', quantidade: switches, referencia: portasBt ? 'IEEE 802.3af/at/bt' : 'IEEE 802.3af/at' },
     { codigo: 'UTP', descricao: 'Cabo U/UTP Cat 6 externo/interno para câmeras', unidade: 'm', quantidade: caboM, referencia: 'NBR 14565' },
     { codigo: 'RJ', descricao: 'Conector RJ-45 Cat 6 (com capa) — 2 por câmera', unidade: 'un', quantidade: nCam * 2, referencia: '—' },
     { codigo: 'CX', descricao: 'Caixa de passagem/suporte para câmera', unidade: 'un', quantidade: nCam, referencia: '—' },
@@ -97,7 +110,7 @@ function calcular(dados) {
     { codigo: 'PLACA', descricao: 'Placa "Ambiente monitorado por câmeras" (LGPD — transparência)', unidade: 'un', quantidade: placas, referencia: 'Lei 13.709/2018' },
   ];
   avisos.push('Bitrate e consumos típicos de mercado — conferir com a ficha técnica dos equipamentos escolhidos. [CONFERIR]');
-  return { cameras, nCam, banda, dias, horas, atividade, armazenamentoTb, hdTb, hds, raid, canais, poeTotal, poeComMargem, switches, cargaW, nobreakVa, autonomiaMin, energiaWh, caboM, materiais, avisos };
+  return { cameras, nCam, banda, dias, horas, atividade, armazenamentoTb, hdTb, hds, hdsDados, portasBt, caboAcima90, raid, canais, poeTotal, poeComMargem, switches, cargaW, nobreakVa, autonomiaMin, energiaWh, caboM, materiais, avisos };
 }
 
-module.exports = { calcular, DORI, ROTULO_DORI, hresDe };
+module.exports = { calcular, DORI, ROTULO_DORI, POE_CLASSES, hresDe };

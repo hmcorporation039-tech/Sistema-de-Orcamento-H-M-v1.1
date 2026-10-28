@@ -18,7 +18,9 @@ igual('barreira 100 m, 1 trecho, 30 m → 4 pares', C.paresPerimetro(100, 1, 30)
 
 // ── Autonomia por grau (com/sem notificação da falta de rede)
 igual('grau 2 notificado → 12 h', C.autonomiaDoGrau(2, true), 12);
-igual('grau 2 sem notificação → 24 h', C.autonomiaDoGrau(2, false), 24);
+// Achado A2.11: EN 50131-1/-6 (fonte tipo A) dá 12 h nos graus 1 e 2, com ou sem notificação;
+// o valor antigo (24 h) não está na norma para o tipo A — teste corrigido. [CONFERIR edição vigente]
+igual('grau 2 sem notificação → 12 h (antes 24 h)', C.autonomiaDoGrau(2, false), 12);
 igual('grau 3 notificado → 30 h', C.autonomiaDoGrau(3, true), 30);
 igual('grau 4 sem notificação → 60 h', C.autonomiaDoGrau(4, false), 60);
 igual('grau 3 monitorado sem meio de comunicação → 60 h', motor.processar(comSistema({ grau: '3', com_ethernet: false, com_gprs: false })).calc.bateria.autonomiaH, 60);
@@ -84,7 +86,17 @@ igual('sem vídeo → TX4 NA', res.checklist.find(x => x.cod === 'TX4').situacao
   const exe = motor.montarOrcamento(res, 'execucao');
   igual('orçamento usa códigos alarme_* existentes', ['alarme_sensor_abertura', 'alarme_ivp', 'alarme_sirene', 'alarme_teclado', 'alarme_central'].every(k => exe.itens.some(i => i.codigo === k)), true);
   igual('seções do orçamento', [...new Set(exe.itens.map(i => i.secao))], ['Materiais e Equipamentos', 'Serviços (Mão de Obra)']);
-  igual('mensalidade informativa', exe.itens.some(i => i.codigo === 'alarme_monitoramento_mensal'), true);
+  // Achado A2.11: a mensalidade do monitoramento (contrato à parte) entrava como item da mão de obra e
+  // era somada ao total da instalação; agora fica só nas observações. Teste antigo esperava o item — corrigido.
+  const comMens = clonar(motor.exemplo());
+  comMens.orcamento = { incluir_mensalidade: true, mensalidade_valor: 120 };
+  const exeM = motor.montarOrcamento(motor.processar(comMens), 'execucao');
+  igual('mensalidade fora dos itens e citada nas observações', [exeM.itens.some(i => /monitoramento_mensal|mensalidade/i.test(`${i.codigo} ${i.descricao}`)), ['Mensalidade do monitoramento 24 h', 'R$ 120/mês', 'não compõe o total'].every(t => exeM.observacoes.includes(t))], [false, true]);
+  // reserva de zonas em texto virava NaN no memorial e na planilha → 20 % com aviso
+  const rz = clonar(motor.exemplo());
+  rz.sistema.reserva_zonas_pct = 'x';
+  const crz = motor.processar(rz).calc;
+  igual('reserva de zonas inválida → 20 % com aviso', [crz.zonasComReserva, crz.avisos.some(a => a.startsWith('Reserva de zonas "x"'))], [Math.ceil(25 * 1.2), true]);
   const insp = motor.montarOrcamento(res, 'inspecao');
   igual('vistoria por zona', insp.itens.find(i => i.codigo === 'alarme_vistoria').quantidade, 25);
   igual('modelo vazio não calcula sem ambientes', (() => { try { motor.processar(motor.modeloVazio()); return 'ok'; } catch (e) { return 'erro'; } })(), 'erro');

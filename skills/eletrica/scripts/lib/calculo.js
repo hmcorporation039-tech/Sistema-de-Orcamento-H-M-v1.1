@@ -1,12 +1,21 @@
 // Projeto de instalação elétrica de baixa tensão — ABNT NBR 5410:2004.
 // Previsão de cargas (9.5.2), divisão em circuitos (9.5.3), dimensionamento
 // de condutores (6.2.5 a 6.2.7), proteção (5.3.4, 5.1.3.2.2), quadro,
-// demanda (fatores de concessionária, editáveis) e lista de materiais.
+// demanda (fatores de concessionária, editáveis), seccionamento automático
+// (5.1.2.2.4: Zs·Ia ≤ Uo), curto-circuito no quadro (5.3.5.5), DPS (Tabela 49)
+// e lista de materiais.
 
 const T = require('./tabelas');
+const { ucDps } = require('../../../_comum/dps');
 
 const FOLGA = 1.1; // +10 % de cabo para sobras, emendas e chegada no quadro
 const arred = (v, c = 2) => Math.round(v * 10 ** c) / 10 ** c;
+// Icc presumida no ponto de entrega adotada quando a distribuidora não informa
+// (mesma premissa da skill industrial) — só para a capacidade de interrupção [CONFERIR]
+const ICC_ENTRADA_PADRAO_KA = 10;
+// Folga mínima de queda (total − maior terminal) para o alimentador correr atrás:
+// abaixo disso o problema é o circuito terminal, não o alimentador (critério de projeto H&M)
+const FOLGA_QUEDA_MIN = 0.5;
 
 function config(dados) {
   const i = dados.instalacao || {};
@@ -16,7 +25,8 @@ function config(dados) {
     sistema: i.sistema || 'bifasico',
     esquema: i.esquema || 'TN-S',
     pontoEntrega: i.ponto_entrega || 'bt',
-    temperatura: i.temperatura ?? 30,
+    // "" (campo vazio no formulário/CLI) não é 0 °C: vale o padrão de 30 °C
+    temperatura: numeroOuNulo(i.temperatura) ?? 30,
     isolacao: i.isolacao || 'PVC',
     metodo: i.metodo || 'B1',
     fp: Number(i.fp) || 0.92,
@@ -32,7 +42,15 @@ function config(dados) {
     // fator único definido pelo projetista (substitui a tabela por faixas)
     fdIlumTugFixo: numeroOuNulo(i.fd_ilum_tug_fixo),
     fdTueFixo: numeroOuNulo(i.fd_tue_fixo),
+    // Icc presumida no ponto de entrega (kA), informada pela distribuidora — opcional
+    iccEntradaKa: numeroOuNulo(i.icc_entrada_ka),
   };
+}
+
+// TUE de potência alta (> 4 kW) vai em F-F só onde a F-N é 127 V e existe a 2ª fase;
+// em 220/380 V (DF) o chuveiro de 5,5 kW é F-N 220 V, e no monofásico não há F-F.
+function ligacaoTue(potenciaW, c) {
+  return Number(potenciaW) > 4000 && c.vfn < 200 && c.sistema !== 'monofasico' ? 'FF' : 'FN';
 }
 
 const numeroOuNulo = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
@@ -126,7 +144,7 @@ function sugerirCircuitos(previsao, c) {
   for (const a of previsao) {
     for (const t of a.tues) {
       const fp = Number(t.fp) || 1;
-      add('tue', `${t.descricao || 'TUE'} — ${a.nome}`, Number(t.potencia_w) / fp, [a.nome], t.ligacao || (Number(t.potencia_w) > 4000 ? 'FF' : 'FN'));
+      add('tue', `${t.descricao || 'TUE'} — ${a.nome}`, Number(t.potencia_w) / fp, [a.nome], t.ligacao || ligacaoTue(t.potencia_w, c));
       circuitos[circuitos.length - 1].fp = fp;
     }
   }
@@ -229,7 +247,11 @@ function balancearFases(circuitos, sistema) {
   }
   const valores = Object.values(carga);
   const desequilibrio = valores.length > 1 ? (Math.max(...valores) - Math.min(...valores)) / Math.max(...valores) : 0;
-  return { carga, desequilibrio };
+  // corrente por fase: soma das correntes dos circuitos ligados a cada fase (F-N: P/Vfn; F-F: P/Vff
+  // nas duas fases; 3F: P/(√3·Vff) nas três) — soma aritmética, lado da segurança
+  const corrente = Object.fromEntries(fases.map(f => [f, 0]));
+  for (const ci of circuitos) for (const f of new Set(String(ci.fases || ''))) if (corrente[f] != null) corrente[f] += Number(ci.ib) || 0;
+  return { carga, corrente, desequilibrio };
 }
 
 function fatorTabela(tabela, valor, chave) {
@@ -247,21 +269,59 @@ function demanda(circuitos, c) {
   return { instaladaVa: ilumTugVa + tueVa, ilumTugVa, tueVa, fdIlumTug: fd1, fdTue: fd2, nTue: tues.length, demandaVa: dVa, demandaKw: dVa * c.fp / 1000 };
 }
 
-function alimentador(dem, c, maiorQuedaTerminal) {
+// Alimentador: Ib = maior corrente de fase × FD (demanda ÷ instalada). Dividir a demanda
+// total pelas fases supõe carga equilibrada e subdimensiona a fase mais carregada.
+function alimentador(dem, fases, c, maiorQuedaTerminal) {
   const limiteTotal = c.pontoEntrega === 'trafo' ? T.QUEDA.total_trafo : T.QUEDA.total_bt;
-  const limite = Math.min(c.quedaAlimentador, limiteTotal - maiorQuedaTerminal);
-  let ligacao;
-  let potencia = dem.demandaVa;
-  if (c.sistema === 'trifasico') ligacao = 'FFF';
-  else if (c.sistema === 'bifasico') { ligacao = 'FF'; } else ligacao = 'FN';
-  const circ = { id: 'ALIM', descricao: 'Alimentador do quadro', tipo: 'alimentador', ligacao, potencia_va: potencia, comprimento_m: c.comprimentoAlimentador, agrupamento: 1 };
-  // bifásico com neutro (F-F-N): corrente por fase = D / (2·Vfn); 3 condutores carregados (Tabela 46)
-  if (c.sistema === 'bifasico') { circ.potencia_va = potencia * c.vff / (2 * c.vfn); circ.carregados = 3; }
-  const d = dimensionarCircuito(circ, c, { minimo: T.SECAO_MINIMA.alimentador, limiteQueda: Math.max(limite, 0.1) });
-  d.potencia_va = potencia;
+  const folga = limiteTotal - maiorQuedaTerminal;
+  const limite = folga < FOLGA_QUEDA_MIN ? c.quedaAlimentador : Math.min(c.quedaAlimentador, folga);
+  const ligacao = c.sistema === 'trifasico' ? 'FFF' : c.sistema === 'bifasico' ? 'FF' : 'FN';
+  const fd = dem.instaladaVa > 0 ? dem.demandaVa / dem.instaladaVa : 0;
+  const iFaseMax = Math.max(0, ...Object.values(fases.corrente));
+  const ib = iFaseMax * fd;
+  // potência equivalente que dá Ib no motor de dimensionamento (3F: √3·Vff; 2F+N: Vff; F+N: Vfn)
+  const vEq = ligacao === 'FFF' ? Math.sqrt(3) * c.vff : ligacao === 'FF' ? c.vff : c.vfn;
+  const circ = { id: 'ALIM', descricao: 'Alimentador do quadro', tipo: 'alimentador', ligacao, potencia_va: ib * vEq, comprimento_m: c.comprimentoAlimentador, agrupamento: 1 };
+  if (c.sistema === 'bifasico') circ.carregados = 3; // F-F-N: 3 condutores carregados (Tabela 46)
+  const d = dimensionarCircuito(circ, c, { minimo: T.SECAO_MINIMA.alimentador, limiteQueda: limite });
+  d.potencia_va = dem.demandaVa;
+  d.fd = fd;
+  d.iFaseMax = iFaseMax;
   d.limiteQueda = limite;
+  d.folgaQuedaInsuficiente = folga < FOLGA_QUEDA_MIN;
   d.secaoNeutro = d.secao; // alimentador com neutro
   return d;
+}
+
+// ── Seccionamento automático (5.1.2.2.4) e curto-circuito no quadro (5.3.5.5) ──
+// Icc máxima no quadro (capacidade de interrupção): fonte com a Icc da entrada (X/R = 1)
+// + resistência de fase do alimentador a 20 °C. Laço de falta fase–PE (TN): fonte
+// (2·Uo/Icc, só com a Icc informada) + alimentador + circuito, resistências a 70 °C
+// (ρ = 0,0225), reatância dos cabos desprezada (seções pequenas). Ia = limite superior
+// do disparo instantâneo da curva C (10·In) → seccionamento em menos de 0,1 s, abaixo
+// dos tempos da Tabela 25.
+function protecaoFalta(circuitos, alim, c) {
+  const uo = c.vfn;
+  const iccInformada = c.iccEntradaKa != null && c.iccEntradaKa > 0;
+  const iccEntrada = (iccInformada ? c.iccEntradaKa : ICC_ENTRADA_PADRAO_KA) * 1000;
+  const zq = uo / iccEntrada;
+  const rAlim20 = T.RHO_COBRE_20 * alim.comprimento / alim.secao;
+  const iccQuadro = uo / Math.hypot(zq / Math.SQRT2 + rAlim20, zq / Math.SQRT2);
+  const icnKa = T.ICN_KA.find(k => k * 1000 >= iccQuadro) ?? null;
+  const zFonteLaco = iccInformada ? 2 * uo / iccEntrada : 0;
+  const zAlimLaco = T.RHO_COBRE * alim.comprimento * (1 / alim.secao + 1 / alim.secaoPE);
+  const zMontante = zFonteLaco + zAlimLaco;
+  const verificar = (x, zAntes) => {
+    const porMetro = T.RHO_COBRE * (1 / x.secao + 1 / x.secaoPE);
+    const zs = zAntes + porMetro * x.comprimento;
+    const ia = T.CURVA_IA.C * x.disjuntor;
+    const zsMax = uo / ia;
+    const k = T.kCurto(c.isolacao, x.secao);
+    return { zs, ia, zsMax, lMax: Math.max(0, (zsMax - zAntes) / porMetro), disjuntorSecciona: zs <= zsMax + 1e-12, k, k2s2: k * k * x.secao * x.secao };
+  };
+  for (const ci of circuitos) ci.falta = verificar(ci, zMontante);
+  alim.falta = verificar(alim, zFonteLaco);
+  return { iccInformada, iccEntradaKa: iccEntrada / 1000, iccQuadro, icnKa, zFonteLaco, zAlimLaco, zMontante, curva: 'C' };
 }
 
 // ── Materiais ──────────────────────────────────────────────────────────────
@@ -282,8 +342,9 @@ function materiais(circuitos, alim, quadro, previsao, c) {
   Object.keys(cabos).map(Number).sort((a, b) => a - b).forEach(s => add(`CAB-${String(s).replace('.', ',')}`, `Cabo de cobre flexível ${String(s).replace('.', ',')} mm² ${iso}`, 'm', Math.ceil(cabos[s]), 'NBR 5410, 6.2'));
   const disj = {};
   for (const ci of circuitos) { const k = `${ci.polos}P ${ci.disjuntor} A`; disj[k] = (disj[k] || 0) + 1; }
-  Object.entries(disj).forEach(([k, q]) => add('DISJ', `Disjuntor termomagnético ${k} curva C (NBR NM 60898)`, 'un', q, 'NBR 5410, 5.3.4 e 9.5.4'));
-  add('DISJ-G', `Disjuntor geral ${alim.polos === 3 ? '3P' : alim.polos === 2 ? '2P' : '1P'} ${alim.disjuntor} A`, 'un', 1, 'NBR 5410, 5.3.4');
+  const icn = quadro.icnKa ? `, capacidade de interrupção ≥ ${String(quadro.icnKa).replace('.', ',')} kA` : '';
+  Object.entries(disj).forEach(([k, q]) => add('DISJ', `Disjuntor termomagnético ${k} curva C (NBR NM 60898)${icn}`, 'un', q, 'NBR 5410, 5.3.4, 5.3.5.5.1 e 9.5.4'));
+  add('DISJ-G', `Disjuntor geral ${alim.polos === 3 ? '3P' : alim.polos === 2 ? '2P' : '1P'} ${alim.disjuntor} A${icn}`, 'un', 1, 'NBR 5410, 5.3.4 e 5.3.5.5.1');
   const drs = {};
   for (const ci of circuitos.filter(x => x.dr)) {
     const corrente = [25, 40, 63, 80, 100].find(x => x >= ci.disjuntor) || 100;
@@ -291,7 +352,7 @@ function materiais(circuitos, alim, quadro, previsao, c) {
     drs[k] = (drs[k] || 0) + 1;
   }
   Object.entries(drs).forEach(([k, q]) => add('DR', `Interruptor diferencial residual (DR) ${k} tipo AC/A`, 'un', q, 'NBR 5410, 5.1.3.2.2'));
-  add('DPS', `DPS classe II, Uc ≥ ${quadro.dpsUc} V, In ≥ 20 kA (8/20 µs)`, 'un', quadro.dpsQtd, 'NBR 5410, 6.3.5.2 e Tabela 49');
+  add('DPS', `DPS classe II, Uc ≥ ${quadro.dpsUc} V, In ≥ 20 kA (8/20 µs)`, 'un', quadro.dpsQtd, 'NBR 5410, 6.3.5.2.4 e Tabela 49');
   add('QD', `Quadro de distribuição de embutir para ${quadro.modulos} módulos DIN, com barramentos de fase, neutro e terra`, 'un', 1, 'NBR 5410, 6.5.4.7 e Tabela 59');
   const nTug = previsao.reduce((s, a) => s + a.nTug, 0);
   const nTue = circuitos.filter(x => x.tipo === 'tue').length;
@@ -331,28 +392,56 @@ function calcular(dados) {
     const exigeDr = locais.some(t => T.LOCAIS_DR.includes(t));
     d.dr = ci.dr === true || exigeDr;
     d.drObrigatorio = exigeDr;
+    d.drMotivos = exigeDr ? ['local de 5.1.3.2.2'] : [];
     if (exigeDr && ci.dr === false) d.avisos.push(`Circuito ${ci.id}: atende local que exige DR 30 mA (5.1.3.2.2) — DR mantido.`);
+    const nome = `Circuito ${ci.id}`;
+    if (c.sistema === 'monofasico' && d.ligacao !== 'FN') d.avisos.push(`${nome}: ligação ${d.ligacao} não existe em sistema monofásico (F+N) — use F-N ou mude o sistema.`);
+    if (c.sistema === 'bifasico' && d.ligacao === 'FFF') d.avisos.push(`${nome}: ligação trifásica em sistema bifásico (2F+N) — use F-F ou mude o sistema.`);
     return d;
   });
   const fases = balancearFases(circuitos, c.sistema);
   const dem = demanda(circuitos, c);
   const maiorQueda = Math.max(...circuitos.map(x => x.queda));
-  const alim = alimentador(dem, c, maiorQueda);
+  const alim = alimentador(dem, fases, c, maiorQueda);
+  const falta = protecaoFalta(circuitos, alim, c);
+  const avisosFalta = [];
+  for (const ci of circuitos) {
+    if (c.esquema === 'TT') {
+      // TT: o seccionamento automático é sempre por DR (5.1.2.2.4.3; RA·IΔn ≤ 50 V)
+      if (!ci.dr) { ci.dr = true; ci.drObrigatorio = true; }
+      ci.drMotivos.push('esquema TT (5.1.2.2.4.3)');
+    } else if (!ci.falta.disjuntorSecciona) {
+      const txt = `Circuito ${ci.id}: Zs = ${arred(ci.falta.zs, 2)} Ω > Uo/Ia = ${c.vfn}/${ci.falta.ia} = ${arred(ci.falta.zsMax, 2)} Ω — o disjuntor de ${ci.disjuntor} A curva C não garante o seccionamento automático (5.1.2.2.4.2; sem DR, comprimento máximo ${arred(ci.falta.lMax, 0)} m)`;
+      if (!ci.dr) { ci.dr = true; ci.drObrigatorio = true; avisosFalta.push(`${txt}: DR 30 mA incluído (ou aumentar a seção / encurtar o circuito).`); } else avisosFalta.push(`${txt}: o seccionamento fica a cargo do DR 30 mA do circuito.`);
+      ci.drMotivos.push('seccionamento automático (Zs·Ia > Uo)');
+    }
+  }
+  if (c.esquema !== 'TT' && !alim.falta.disjuntorSecciona && falta.iccInformada) avisosFalta.push(`Alimentador: Zs = ${arred(alim.falta.zs, 3)} Ω > Uo/Ia = ${arred(alim.falta.zsMax, 3)} Ω com o disjuntor geral de ${alim.disjuntor} A curva C — rever a proteção do alimentador (5.1.2.2.4.2).`);
+  if (falta.icnKa == null || falta.icnKa > 25) avisosFalta.push(`Icc presumida no quadro de ${arred(falta.iccQuadro / 1000, 1)} kA: acima da faixa da NBR NM 60898 — disjuntores IEC 60947-2 ou proteção de retaguarda (5.3.5.5.1).`);
   const polosCircuitos = circuitos.reduce((s, x) => s + x.polos, 0);
   const reserva = T.reservaQuadro(circuitos.length);
   const drModulos = circuitos.filter(x => x.dr).length * 2;
   const nFases = c.sistema === 'trifasico' ? 3 : c.sistema === 'bifasico' ? 2 : 1;
   const dpsQtd = nFases + (c.esquema === 'TT' || c.esquema === 'TN-S' ? 1 : 0);
-  const dpsUc = c.vfn * 1.1 <= 175 ? 175 : 275; // Tabela 49: Uc ≥ 1,1·Uo — valor comercial imediatamente superior
+  const dps = ucDps({ vfn: c.vfn, vff: c.vff, esquema: c.esquema }); // Tabela 49 — função comum das skills elétricas
   const modulos = polosCircuitos + drModulos + reserva + alim.polos + dpsQtd;
-  const quadro = { circuitos: circuitos.length, reserva, modulos: Math.ceil(modulos / 6) * 6, dpsQtd, dpsUc };
+  const quadro = { circuitos: circuitos.length, reserva, modulos: Math.ceil(modulos / 6) * 6, dpsQtd, dpsUc: dps.uc, dps, iccKa: falta.iccQuadro / 1000, icnKa: falta.icnKa };
   const mat = materiais(circuitos, alim, quadro, previsao, c);
   const quedaTotal = alim.queda + maiorQueda;
-  const avisos = circuitos.flatMap(x => x.avisos);
-  if (fases.desequilibrio > 0.2) avisos.push(`Desequilíbrio entre fases de ${Math.round(fases.desequilibrio * 100)} % — redistribuir circuitos.`);
+  const limiteTotal = c.pontoEntrega === 'trafo' ? T.QUEDA.total_trafo : T.QUEDA.total_bt;
+  const avisos = [...circuitos.flatMap(x => x.avisos), ...avisosFalta];
+  if (quedaTotal > limiteTotal + 1e-9) {
+    const pior = circuitos.find(x => x.queda === maiorQueda);
+    avisos.push(`Queda de tensão total de ${arred(quedaTotal)} % acima de ${limiteTotal} % (6.2.7.1): o circuito ${pior.id} sozinho tem ${arred(maiorQueda)} % — aumentar a seção desse circuito terminal${alim.folgaQuedaInsuficiente ? ` (o alimentador ficou no seu limite de ${arred(alim.limiteQueda)} %, sem ser superdimensionado para compensar)` : ''}.`);
+  }
+  if (fases.desequilibrio > 0.2) {
+    const [fMax, iMax] = Object.entries(fases.corrente).sort((a, b) => b[1] - a[1])[0];
+    avisos.push(`Desequilíbrio entre fases de ${Math.round(fases.desequilibrio * 100)} % — redistribuir circuitos. O alimentador foi dimensionado pela fase mais carregada (fase ${fMax}: ${arred(iMax, 1)} A instalados × FD ${arred(alim.fd, 2)} = ${arred(alim.ib, 1)} A).`);
+  }
   if (!informados.length) avisos.push('Circuitos sugeridos automaticamente (9.5.3) com comprimento padrão — informe os comprimentos reais no formulário (botão "Trazer os circuitos calculados" na seção 4). [CONFERIR]');
   if (c.fdIlumTugFixo == null || c.fdTueFixo == null) avisos.push('Fatores de demanda típicos de concessionária — conferir com a norma da distribuidora local. [CONFERIR]');
-  return { config: c, previsao, circuitos, fases, demanda: dem, alimentador: alim, quadro, materiais: mat.itens, cabos: mat.cabos, maiorQueda, quedaTotal, avisos, circuitosSugeridos: !informados.length };
+  if (!falta.iccInformada) avisos.push(`Icc presumida no ponto de entrega não informada: adotados ${ICC_ENTRADA_PADRAO_KA} kA para a capacidade de interrupção (Icc no quadro ≈ ${arred(falta.iccQuadro / 1000, 1)} kA) e laço de falta sem a impedância a montante do alimentador (Zs real maior) — informe a Icc da distribuidora. [CONFERIR]`);
+  return { config: c, previsao, circuitos, fases, demanda: dem, alimentador: alim, quadro, falta, materiais: mat.itens, cabos: mat.cabos, maiorQueda, quedaTotal, limiteQuedaTotal: limiteTotal, avisos, circuitosSugeridos: !informados.length };
 }
 
-module.exports = { calcular, preverCargas, iluminacaoMinima, tomadasMinimas, dimensionarCircuito, config };
+module.exports = { calcular, preverCargas, iluminacaoMinima, tomadasMinimas, dimensionarCircuito, config, ligacaoTue, balancearFases, protecaoFalta };

@@ -12,11 +12,13 @@
 // mercado e saem com [CONFERIR] — usar a ficha técnica do equipamento escolhido.
 
 // EN 50131-1 / EN 50131-6: autonomia mínima da fonte de alimentação secundária
-// (bateria) por grau, com e sem notificação da falta de rede a uma central de
-// monitoramento (ARC). [CONFERIR] na edição vigente da norma.
+// (bateria recarregada pela própria fonte — tipo A) por grau: 12 h nos graus 1 e 2;
+// 60 h nos graus 3 e 4, reduzidos a 30 h quando a falta de rede é notificada a uma
+// central de monitoramento (ARC). Antes o grau 2 sem notificação saía com 24 h, valor
+// que a norma não traz para o tipo A. [CONFERIR] na edição vigente da norma.
 const AUTONOMIA_H = {
   1: { notificado: 12, sem: 12 },
-  2: { notificado: 12, sem: 24 },
+  2: { notificado: 12, sem: 12 },
   3: { notificado: 30, sem: 60 },
   4: { notificado: 30, sem: 60 },
 };
@@ -130,7 +132,11 @@ function calcular(dados) {
   const alcance = Number(s.ivp_alcance_m) || 12;
   const abertura = Number(s.ivp_abertura_graus) || 90;
   const alcanceExt = Number(s.ivp_externo_alcance_m) || 12;
-  const reserva = (s.reserva_zonas_pct == null || s.reserva_zonas_pct === '' ? 20 : Number(s.reserva_zonas_pct)) / 100;
+  // reserva de zonas: vazio → 20 %; texto/negativo → 20 % com aviso (antes virava NaN em todo o documento)
+  const reservaInf = s.reserva_zonas_pct == null || s.reserva_zonas_pct === '' ? 20 : Number(String(s.reserva_zonas_pct).replace(',', '.'));
+  const reservaOk = Number.isFinite(reservaInf) && reservaInf >= 0;
+  const reserva = (reservaOk ? reservaInf : 20) / 100;
+  if (!reservaOk) avisos.push(`Reserva de zonas "${s.reserva_zonas_pct}" não é um percentual válido — adotados 20 %.`);
   const agrupar = s.agrupar_magneticos !== false && tecnologia !== 'sem_fio';
   const modoJanelas = s.magneticos_janelas || 'acessiveis';
   const porPorta = s.magnetico_por_porta == null || s.magnetico_por_porta === '' ? 1 : n0(s.magnetico_por_porta);

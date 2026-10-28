@@ -7,6 +7,6 @@
     "calcular": "node scripts/calcular.js",
     "documentos": "node scripts/gerar-documentos.js",
     "orcamento": "node scripts/orcamento.js",
-    "test": "node testes/teste-regressao.js"
+    "test": "node testes/teste-regressao.js && node testes/teste-parecer.js"
   }
 }

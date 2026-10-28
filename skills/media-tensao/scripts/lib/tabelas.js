@@ -72,13 +72,25 @@ const SECAO_MIN_DISTRIBUIDORA_MT = 35;
 // Reatância indutiva típica de cabo unipolar 15 kV em trifólio (Ω/km)
 const X_CABO_MT = 0.12;
 
-// Classe de isolamento do cabo e tensão nominal dos equipamentos por tensão primária
+// Classe de isolamento do cabo e tensão nominal dos equipamentos por tensão primária.
+// Para-raios em sistema NÃO efetivamente aterrado: na falta fase-terra as fases sãs
+// sobem à tensão de linha, e a MCOV precisa cobrir a tensão máxima entre fases
+// (≈ 1,05 × nominal). Em 13,8 kV: MCOV ≥ ~14,5 kV → 18 kV (MCOV 15,3 kV), par usual
+// de catálogo (IEEE C62.11/C62.22); 15 kV (MCOV ~12,7 kV) não serve. Para as outras
+// tensões o cálculo de paraRaios() sobe a Ur até a MCOV atender. [CONFERIR]
 const CLASSE_MT = {
-  13.8: { cabo: '8,7/15 kV', equipamento: 15, nbi: 95, paraRaiosAterrado: 12, paraRaiosIsolado: 15 },
-  13.2: { cabo: '8,7/15 kV', equipamento: 15, nbi: 95, paraRaiosAterrado: 12, paraRaiosIsolado: 15 },
+  13.8: { cabo: '8,7/15 kV', equipamento: 15, nbi: 95, paraRaiosAterrado: 12, paraRaiosIsolado: 18 },
+  13.2: { cabo: '8,7/15 kV', equipamento: 15, nbi: 95, paraRaiosAterrado: 12, paraRaiosIsolado: 18 },
   22: { cabo: '12/20 kV', equipamento: 24, nbi: 125, paraRaiosAterrado: 18, paraRaiosIsolado: 24 },
   34.5: { cabo: '20/35 kV', equipamento: 36.2, nbi: 170, paraRaiosAterrado: 30, paraRaiosIsolado: 36 },
 };
+// Tensões nominais usuais de para-raios ZnO (kV) e relação MCOV/Ur típica de catálogo
+// (0,75–0,85; adotado 0,85, o par 18 kV / 15,3 kV) [CONFERIR com o fabricante]
+const PARA_RAIOS_UR = [10, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48];
+const PARA_RAIOS_MCOV_UR = 0.85;
+// Tensão máxima de operação ≈ 1,05 × nominal [CONFERIR com a distribuidora]
+const FATOR_TENSAO_MAX = 1.05;
+
 function classeMt(kv) {
   const chaves = Object.keys(CLASSE_MT).map(Number).sort((a, b) => a - b);
   const k = chaves.find(c => c >= kv) ?? chaves[chaves.length - 1];
@@ -104,6 +116,20 @@ const FATOR_SOBRECORRENTE_TC = 20; // TC de proteção 10B/10P20: Icc ≤ 20 × 
 // Disjuntores de MT: correntes nominais e de interrupção usuais
 const DISJ_MT_IN = [630, 1250, 2000];
 const DISJ_MT_ICN = [12.5, 16, 20, 25, 31.5];
+// Partida mínima ajustável no secundário do TC, em % da corrente nominal do TC (5 A).
+// Relés digitais de sobrecorrente costumam começar em ~5 % de In (0,25 A) nas funções
+// de fase e neutro; abaixo disso o ajuste pode não existir [CONFERIR no catálogo do relé]
+const RELE_PARTIDA_MIN_PCT_TC = 5;
+
+// Chave fusível de distribuição tipo expulsão (NBR 7282), 15 kV: correntes nominais
+// usuais 100 e 200 A; capacidade de interrupção típica 7,1 kA simétricos / 10 kA
+// assimétricos (ex.: especificação de chaves fusíveis da Enel, MAT-OMBR-MAT-18-0277)
+// [CONFERIR na especificação da Neoenergia]. Acima disso: fusível limitador ou disjuntor.
+const CHAVE_FUSIVEL_IN = [100, 200];
+const CHAVE_FUSIVEL_ICN_SIM_KA = 7.1;
+// Elo tipo K: conduz continuamente ~150 % da nominal (elos de estanho) — o 80K, maior
+// da tabela, não cobre In primária acima de ~120 A [CONFERIR com o fabricante do elo]
+const ELO_K_FATOR_CONTINUO = 1.5;
 
 // Elo fusível de distribuição (tipo H até 75 kVA, tipo K acima) por potência do
 // transformador trifásico em 13,8 kV — tabela usual de concessionária [CONFERIR na norma da Neoenergia]
@@ -164,6 +190,7 @@ const HASTE_PADRAO = { comprimento_m: 2.4, descricao: 'Haste de aterramento aço
 module.exports = {
   POTENCIAS_TRAFO, impedanciaTipica, multiploInrush, tempoAnsi,
   METODOS_MT, CAPACIDADE_MT, SECOES_MT, capacidadeMt, K_CURTO, SECAO_MIN_NORMA_MT, SECAO_MIN_DISTRIBUIDORA_MT, X_CABO_MT, classeMt,
-  CURVAS_IEC, tempoCurva, TC_PRIMARIOS, FATOR_SOBRECORRENTE_TC, DISJ_MT_IN, DISJ_MT_ICN, ELO_FUSIVEL_13_8, FUSIVEL_HH, FATOR_HH,
+  CURVAS_IEC, tempoCurva, TC_PRIMARIOS, FATOR_SOBRECORRENTE_TC, DISJ_MT_IN, DISJ_MT_ICN, RELE_PARTIDA_MIN_PCT_TC, ELO_FUSIVEL_13_8, FUSIVEL_HH, FATOR_HH,
+  CHAVE_FUSIVEL_IN, CHAVE_FUSIVEL_ICN_SIM_KA, ELO_K_FATOR_CONTINUO, PARA_RAIOS_UR, PARA_RAIOS_MCOV_UR, FATOR_TENSAO_MAX,
   DISTRIBUIDORA, TIPOS_SE, DISJ_BT, ICU_BT, BARRAMENTOS, COBRE, TEMP_CONEXAO, SECAO_MIN_MALHA, HASTE_PADRAO,
 };

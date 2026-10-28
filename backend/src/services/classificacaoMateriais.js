@@ -83,6 +83,12 @@ async function categoriasPorIA(itens, categorias) {
   return { fonte, resultado };
 }
 
+// Só grava se o material AINDA está pendente: a IA demora segundos por lote e,
+// nesse meio-tempo, alguém pode ter escolhido a categoria na tela — antes a
+// classificação automática passava por cima (revisão de 27/10/2026).
+const SQL_GRAVAR_CATEGORIA = `UPDATE materiais SET categoria = $1, atualizado_em = NOW()
+  WHERE id = $2 AND (categoria IS NULL OR categoria = ANY($3))`;
+
 let emAndamento = null;
 function classificarPendentes() {
   if (!emAndamento) emAndamento = executar().finally(() => { emAndamento = null; });
@@ -101,8 +107,8 @@ async function executar() {
     for (const m of rows) {
       const c = await categoriaLocal(client, m, referencia);
       if (c) {
-        await client.query('UPDATE materiais SET categoria = $1, atualizado_em = NOW() WHERE id = $2', [c.categoria, m.id]);
-        resumo.classificadosLocal++;
+        const r = await client.query(SQL_GRAVAR_CATEGORIA, [c.categoria, m.id, PENDENTES]);
+        if (r.rowCount) resumo.classificadosLocal++;
       } else semLocal.push(m);
     }
     if (semLocal.length) {
@@ -114,13 +120,13 @@ async function executar() {
           resumo.fonteIA = fonte;
           for (const m of lote) {
             if (!resultado[m.id]) continue;
-            await client.query('UPDATE materiais SET categoria = $1, atualizado_em = NOW() WHERE id = $2', [resultado[m.id], m.id]);
-            resumo.classificadosIA++;
+            const r = await client.query(SQL_GRAVAR_CATEGORIA, [resultado[m.id], m.id, PENDENTES]);
+            if (r.rowCount) resumo.classificadosIA++;
           }
         } catch (e) {
           resumo.avisos.push(`Classificação por IA indisponível agora (${e.message.slice(0, 160)}) — tenta de novo na próxima rotina`);
           // marca como "Não classificado" (não "Geral") para aparecer no filtro e ser retentado
-          await client.query(`UPDATE materiais SET categoria = 'Não classificado' WHERE id = ANY($1) AND categoria <> 'Não classificado'`, [lote.map(m => m.id)]);
+          await client.query(`UPDATE materiais SET categoria = 'Não classificado' WHERE id = ANY($1) AND (categoria IS NULL OR categoria = ANY($2)) AND categoria IS DISTINCT FROM 'Não classificado'`, [lote.map(m => m.id), PENDENTES]);
           break;
         }
       }

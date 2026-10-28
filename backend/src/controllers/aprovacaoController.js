@@ -22,6 +22,7 @@ const { registrarAuditoria } = require('../utils/auditoria');
 const { registrarEvento, aplicarStatusProposta, montarPdfBuffer } = require('./propostasController');
 const A = require('../utils/aprovacaoLink');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');
+const { normalizarTextos } = require('../middleware/textoBemFormado');
 
 const SQL_PROPOSTA = "SELECT p.*, to_char(p.data, 'YYYY-MM-DD') AS data_iso FROM propostas p WHERE p.id = $1";
 
@@ -293,7 +294,9 @@ async function pdfPublico(req, res) {
 
 async function decidirPublico(req, res) {
   if (!A.formatoTokenValido(req.params.token)) return linkInvalido(res);
-  const { erro, dados } = A.validarDecisao(req.body || {});
+  // textos bem formados também aqui (o server.js já faz para todo corpo JSON):
+  // surrogate solto no nome derrubava a auditoria e a decisão sumia (revisão 27/10/2026)
+  const { erro, dados } = A.validarDecisao(normalizarTextos(req.body || {}));
   if (erro) return res.status(400).json({ erro });
 
   const ip = A.ipDoPedido(req);

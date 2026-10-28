@@ -19,6 +19,7 @@ const { gerarPlanilhaCliente } = require('../utils/planilhaOrcamentoCliente');
 const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
 const { sqlDecisaoCliente } = require('../utils/aprovacaoLink');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');
+const { hojeBrasilia } = require('../utils/dataHoje');
 
 // Assinatura padrão da empresa — entra sempre no final de todo e-mail
 // enviado ao cliente (mensagem padrão ou digitada à mão), sem exceção.
@@ -31,6 +32,16 @@ Engenharia • Tecnologia • Segurança Eletrônica
 
 📍 Quadra CNF 03 Lote 16 Loja 04
 Taguatinga Norte – DF | CEP 72.125-535`;
+
+// Item → seção: pelo id da seção (`sid`) ou pelo nome (`secao_nome`), mas só
+// quando os DOIS lados têm valor. Antes `it.sid === sec.id` com os dois
+// undefined dava true e o item entrava em TODAS as seções (100 → 200 no total;
+// revisão de 27/10/2026). Mesma regra do calculoProposta.calcularTotais.
+function itemPertenceASecao(it, sec) {
+  if (!it || !sec) return false;
+  return (sec.id != null && it.sid != null && it.sid === sec.id)
+    || (sec.nome != null && it.secao_nome != null && it.secao_nome === sec.nome);
+}
 
 // Insere as seções e seus itens, com quantidade e valor_total recalculados no
 // backend. Compartilhado por criar/atualizar para que as duas rotas não possam
@@ -47,7 +58,7 @@ async function inserirSecoesEItens(client, propostaId, secoes, itens) {
     );
     const secId = secResult.rows[0].id;
 
-    const itensDaSecao = (itens || []).filter(it => it.sid === sec.id || it.secao_nome === sec.nome);
+    const itensDaSecao = (itens || []).filter(it => itemPertenceASecao(it, sec));
     for (let j = 0; j < itensDaSecao.length; j++) {
       const item = normalizarItem(itensDaSecao[j], j);
 
@@ -377,7 +388,7 @@ async function duplicar(req, res, next) {
 
     const seq = await proximoNumero(client);
     const numero = 'P' + String(seq).padStart(3, '0');
-    const hoje = new Date().toISOString().slice(0, 10);
+    const hoje = hojeBrasilia(); // toISOString daria amanhã depois das 21h
 
     const novaResult = await client.query(
       `INSERT INTO propostas (
@@ -449,13 +460,39 @@ async function atualizarStatus(req, res, next) {
     // Se o evento falhasse, o status já estava gravado de forma irreversível,
     // mas o usuário recebia erro 500 e a tela não atualizava — o banco dizia
     // "Aprovada" e a tela dizia que não deu certo.
-    const proposta = await comTransacao(client => aplicarStatusProposta(client, id, status, req.usuario.id));
+    const proposta = await comTransacao(client => aplicarStatusProposta(client, id, status, req.usuario.id, null, { admin: req.usuario?.role === 'admin' }));
 
     if (!proposta) return res.status(404).json({ erro: 'Proposta não encontrada' });
     res.json(proposta);
   } catch (err) {
+    if (err instanceof ErroStatusProposta) return res.status(err.status).json({ erro: err.message, codigo: err.codigo });
     console.error('Erro ao atualizar status:', err);
     next(err);
+  }
+}
+
+class ErroStatusProposta extends Error {
+  constructor(mensagem, codigo, status = 409) { super(mensagem); this.codigo = codigo; this.status = status; }
+}
+
+// Aprovada pelo cliente no link (2.0, Fase 3I): o comprovante guarda o hash do
+// que ele aceitou. Tirar do status "Aprovada" (para Ativa, Recusada ou
+// Cancelada) deixaria o sistema contradizendo o aceite registrado — o mesmo
+// motivo que já bloqueia editar os itens. Só o administrador desfaz (revisão de
+// 27/10/2026: a troca de status não tinha essa trava).
+async function conferirSaidaDeAprovada(client, id, novoStatus, { admin = false } = {}) {
+  if (admin || novoStatus === 'Aprovada') return;
+  const { rows: [atual] } = await client.query(
+    `SELECT p.status,
+            EXISTS (SELECT 1 FROM proposta_decisoes_aprovacao d WHERE d.proposta_id = p.id AND d.decisao = 'aprovada') AS aceite_link
+       FROM propostas p WHERE p.id = $1 FOR UPDATE`,
+    [id]
+  );
+  if (atual && atual.status === 'Aprovada' && atual.aceite_link) {
+    throw new ErroStatusProposta(
+      'Esta proposta foi aprovada pelo cliente pelo link de aprovação e o status não pode mais ser alterado. Peça a um administrador se for mesmo preciso (o comprovante do cliente continua registrado).',
+      'APROVADA_PELO_CLIENTE'
+    );
   }
 }
 
@@ -463,7 +500,8 @@ async function atualizarStatus(req, res, next) {
 // se aprovada, leva a obra para "contratada". Único caminho para mudar status —
 // a tela (atualizarStatus) e a aprovação por link (aprovacaoController, sem
 // usuário: usuarioId null) passam por aqui.
-async function aplicarStatusProposta(client, id, status, usuarioId, detalhes) {
+async function aplicarStatusProposta(client, id, status, usuarioId, detalhes, opcoes = {}) {
+  await conferirSaidaDeAprovada(client, id, status, opcoes);
   const result = await client.query(
     'UPDATE propostas SET status=$1, atualizado_em=NOW(), versao=versao+1 WHERE id=$2 RETURNING *',
     [status, id]
@@ -654,5 +692,7 @@ module.exports = {
   // PDF da proposta sem resposta HTTP (cópia na pasta do projeto/laudo)
   montarPdfBuffer,
   // mudança de status numa transação já aberta (aprovação por link, 2.0)
-  aplicarStatusProposta,
+  aplicarStatusProposta, ErroStatusProposta,
+  // regra item → seção (testes/revisao-b1.test.js)
+  itemPertenceASecao,
 };

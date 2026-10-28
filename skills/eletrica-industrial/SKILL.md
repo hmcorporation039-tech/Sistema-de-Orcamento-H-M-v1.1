@@ -5,7 +5,7 @@ description: Projeto (memorial, motores, partidas, CCM, alimentadores, correçã
 
 # Elétrica industrial (motores, CCM, correção de FP) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 48 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.** Cada cabo é dimensionado pelo mesmo motor da skill de elétrica predial (`skills/eletrica/scripts/lib/calculo.js → dimensionarCircuito`), então tabelas e critérios da NBR 5410 são os mesmos.
+Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 61 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.** Cada cabo é dimensionado pelo mesmo motor da skill de elétrica predial (`skills/eletrica/scripts/lib/calculo.js → dimensionarCircuito`), então tabelas e critérios da NBR 5410 são os mesmos.
 
 | Documento | Tipo | Formato |
 |---|---|---|
@@ -51,9 +51,10 @@ node -e "const m=require('./eletrica-industrial/scripts/lib/index');console.log(
 - In = P / (√3·V·η·FP) (NBR 17094-1); In de placa prevalece quando informada.
 - Circuito de motor (NBR 5410, 6.5.1): Ib = max(1,25; FS) × In; capacidade (Tabelas 36–42), seção mínima 2,5 mm² (Tabela 47), queda em regime ≤ 4 % e total ≤ 7 % a partir do transformador (6.2.7). Y-Δ com 6 condutores a In/√3.
 - Queda na partida ≤ 10 % nos terminais do dispositivo de partida e no motor, com Ip por tipo de partida (direta Ip; Y-Δ Ip/3; soft 3 × In; inversor 1,5 × In) e FP de partida 0,35 [CONFERIR]; a seção do circuito e do alimentador sobem até atender.
-- Alimentador de CCM (6.5.1): 1,25·In do maior + ΣIn dos demais em operação + outras cargas; cabos em paralelo acima de 240 mm².
+- Alimentador de CCM (6.5.1): 1,25·In do maior + ΣIn dos demais em operação + outras cargas (quadro só com reservas: 1,25·In do maior deles); cabos em paralelo acima de 240 mm², também no circuito de motores grandes (ex.: 450 cv em 380 V → 2 × 240 mm²).
 - Partidas (NBR IEC 60947-4-1/-4-2): contatores AC-3; disjuntor-motor até 100 A, acima caixa moldada + relé; Y-Δ K1 = K2 ≥ In/√3, K3 ≥ In/3.
-- Curto-circuito (IEC 60909): Icc = c·V/(√3·|Z|) somando rede, transformador (Z %), cabos a 20 °C e contribuição dos motores → Icu mínimo dos disjuntores e Icw dos conjuntos (NBR IEC 61439).
+- Curto-circuito (IEC 60909-0): Icc = c_max·V/(√3·|Z|), c_max = 1,05 (Tabela 1, BT com +6 %; `fator_tensao_c` para 1,10), transformador corrigido por K_T = 0,95·c_max/(1 + 0,6·x_T) (6.3.3), cabos a 20 °C e contribuição dos motores → Icu mínimo dos disjuntores, Icw e Ipk dos conjuntos (NBR IEC 61439). Queda na partida e Icc mínimo com a impedância real.
+- DPS do QGBT: Uc pela Tabela 49 da NBR 5410 (função comum `skills/_comum/dps.js`; IT sem neutro → Uc ≥ U).
 - Correção do FP (REN ANEEL 1000/2021, FP 0,92): Qc = P·(tg φ1 − tg φ2); banco automático em estágios iguais, dessintonizado se inversores ≥ 20 % da demanda; cabo/proteção a 1,43·Ic.
 - Demanda: motores P/η × fator de utilização (0,70–0,87 por faixa [CONFERIR]); outras cargas com fatores típicos [CONFERIR]; carregamento do transformador antes e depois da correção.
 

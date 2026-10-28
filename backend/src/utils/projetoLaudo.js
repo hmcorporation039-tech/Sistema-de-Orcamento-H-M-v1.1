@@ -1,4 +1,5 @@
 const path = require('path');
+const { hojeBrasilia } = require('./dataHoje');
 
 // Versão 2.1 (pedido do usuário de 27/10/2026): "nem sempre uma análise de
 // projetos vai ter que gerar um laudo; laudos serão pedidos quando necessário".
@@ -83,7 +84,7 @@ function lerPedidoEntrega(corpo, { temPlanta = false, temUnifilar = false } = {}
   if (itens.includes('qet') && !temUnifilar) return { erro: 'O unifilar (QElectroTech) existe só para a elétrica predial, a industrial e a média tensão.' };
   let asBuilt = null;
   if (itens.includes('asbuilt')) {
-    const data = String(corpo?.as_built?.data || '').trim() || new Date().toISOString().slice(0, 10);
+    const data = String(corpo?.as_built?.data || '').trim() || hojeBrasilia();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) return { erro: 'Data do as-built inválida (use AAAA-MM-DD).' };
     asBuilt = { data, revisao: String(corpo?.as_built?.revisao || '').trim().slice(0, 60) };
   }

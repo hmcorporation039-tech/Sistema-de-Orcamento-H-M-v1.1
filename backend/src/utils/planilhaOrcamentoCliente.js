@@ -6,6 +6,10 @@
 // total fecha com o da proposta (mesma regra de calculoProposta.js: BDI sobre
 // material + mão de obra, imposto de venda sobre material e de serviço sobre
 // mão de obra).
+// Arredondamento (revisão de 27/10/2026): o mesmo do servidor/PDF — unitário
+// com 2 casas, total da linha ROUND(qtd × unitário; 2), BDI e cada imposto
+// ROUND(…; 2). Sem os ROUND a planilha somava os centavos "inteiros" e o preço
+// final saía alguns centavos diferente do PDF (ex.: 1.143,49 × 1.143,47).
 const ExcelJS = require('exceljs');
 const pool = require('../config/database');
 const { ehMaoDeObra, bdiMateriaisDefinido } = require('./calculoProposta');
@@ -122,7 +126,12 @@ function montarAbaCurvaAbc(ws, { itens, secoes, linhaNoOrcamento }) {
 async function gerarPlanilhaCliente(propostaId) {
   const dados = await carregarDados(propostaId);
   if (!dados) return null;
-  const { p, secoes, itens, pesquisaPor } = dados;
+  return montarPlanilhaCliente(dados);
+}
+
+// Monta a planilha a partir dos dados já carregados (separado para o teste
+// conferir o total da planilha com o do servidor sem banco).
+async function montarPlanilhaCliente({ p, secoes, itens, pesquisaPor = new Map() }) {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'H&M Engenharia e Tecnologia';
   wb.created = new Date();
@@ -260,12 +269,13 @@ async function gerarPlanilhaCliente(propostaId) {
       } else {
         const id = idPorItem.get(it.id);
         L.getCell(7).value = id;
-        L.getCell(8).value = { formula: `IFERROR(INDEX('Pesquisa de Preços'!$Q$4:$Q$${ultimaQ},MATCH(G${r},'Pesquisa de Preços'!$A$4:$A$${ultimaQ},0)),0)` };
+        // unitário com 2 casas, como na proposta (a MÉDIA das fontes pode ter mais)
+        L.getCell(8).value = { formula: `ROUND(IFERROR(INDEX('Pesquisa de Preços'!$Q$4:$Q$${ultimaQ},MATCH(G${r},'Pesquisa de Preços'!$A$4:$A$${ultimaQ},0)),0),2)` };
         L.getCell(9).value = 0;
         L.getCell(13).value = { formula: `IFERROR(INDEX('Pesquisa de Preços'!$O$4:$O$${ultimaQ},MATCH(G${r},'Pesquisa de Preços'!$A$4:$A$${ultimaQ},0)),"")` };
       }
-      L.getCell(10).value = { formula: `F${r}*H${r}` };
-      L.getCell(11).value = { formula: `F${r}*I${r}` };
+      L.getCell(10).value = { formula: `ROUND(F${r}*H${r},2)` };
+      L.getCell(11).value = { formula: `ROUND(F${r}*I${r},2)` };
       L.getCell(12).value = { formula: `J${r}+K${r}` };
       [8, 9, 10, 11, 12].forEach(c => { L.getCell(c).numFmt = MOEDA; });
       if (it.status === 'a_cotar') L.getCell(14).value = 'Preço a confirmar';
@@ -303,21 +313,27 @@ async function gerarPlanilhaCliente(propostaId) {
   });
   const lt = ultimoSis + 1;
   wsR.getCell(lt, 1).value = 'TOTAL CUSTO DIRETO';
-  ['B', 'C', 'D', 'E'].forEach((col, j) => { wsR.getCell(lt, 2 + j).value = { formula: `SUM(${col}5:${col}${ultimoSis})` }; });
+  // subtotais com 2 casas, como subtotal_materiais / subtotal_mao_obra da proposta
+  ['B', 'C', 'D', 'E'].forEach((col, j) => { wsR.getCell(lt, 2 + j).value = { formula: col === 'E' ? `SUM(E5:E${ultimoSis})` : `ROUND(SUM(${col}5:${col}${ultimoSis}),2)` }; });
   wsR.getCell(lt + 1, 1).value = 'Conferência com a aba Orçamento (deve dar 0)';
   wsR.getCell(lt + 1, 4).value = { formula: `D${lt}-Orçamento!L${linhaTotalO}` };
+  // BDI com o mesmo arredondamento de calculoProposta.detalharBdi: diferenciado =
+  // ROUND(material × BDI mat.) + ROUND(mão de obra × BDI); sem diferenciado (a
+  // célula do BDI dos materiais é = BDI) = ROUND(custo direto × BDI). Se alguém
+  // digitar outro BDI dos materiais numa proposta sem diferenciado, vale a conta
+  // do diferenciado — a mesma que o sistema faria.
+  const bdiDiferenciado = `ROUND(B${lt}*${P_.bdiMat},2)+ROUND(C${lt}*${P_.bdi},2)`;
   const linhasR = [
-    // material × BDI dos materiais + mão de obra × BDI; sem BDI diferenciado
-    // o dos materiais é igual ao BDI e a conta é a de sempre (custo direto × BDI)
-    [bdiMateriaisDefinido(p.bdi_materiais) ? 'BDI (materiais com BDI diferenciado + mão de obra)' : 'BDI', `B${lt}*${P_.bdiMat}+C${lt}*${P_.bdi}`],
-    ['Imposto sobre a venda de material', `B${lt}*${P_.impVenda}`],
-    ['Imposto sobre serviço', `C${lt}*${P_.impServico}`],
+    [bdiMateriaisDefinido(p.bdi_materiais) ? 'BDI (materiais com BDI diferenciado + mão de obra)' : 'BDI',
+      bdiMateriaisDefinido(p.bdi_materiais) ? bdiDiferenciado : `IF(${P_.bdiMat}=${P_.bdi},ROUND((B${lt}+C${lt})*${P_.bdi},2),${bdiDiferenciado})`],
+    ['Imposto sobre a venda de material', `ROUND(B${lt}*${P_.impVenda},2)`],
+    ['Imposto sobre serviço', `ROUND(C${lt}*${P_.impServico},2)`],
   ];
   linhasR.forEach(([rot, f], i) => { wsR.getCell(lt + 3 + i, 1).value = rot; wsR.getCell(lt + 3 + i, 4).value = { formula: f }; });
   const lf = lt + 3 + linhasR.length;
   wsR.getCell(lf, 1).value = 'PREÇO FINAL DA PROPOSTA';
   wsR.getCell(lf, 1).font = DOURADO;
-  wsR.getCell(lf, 4).value = { formula: `D${lt}+D${lt + 3}+D${lt + 4}+D${lt + 5}` };
+  wsR.getCell(lf, 4).value = { formula: `ROUND(D${lt}+D${lt + 3}+D${lt + 4}+D${lt + 5},2)` };
   wsR.getCell(lf, 4).font = { bold: true };
   for (let l = 5; l <= lf; l++) { [2, 3, 4].forEach(c => { wsR.getCell(l, c).numFmt = MOEDA; }); wsR.getCell(l, 5).numFmt = PCT; }
   wsR.getCell(lf + 2, 1).value = `Total da proposta ${p.numero} no sistema: R$ ${Number(p.total || 0).toFixed(2).replace('.', ',')} — com os parâmetros e preços padrão desta planilha, o preço final é o mesmo.`;
@@ -396,4 +412,4 @@ async function gerarPlanilhaCliente(propostaId) {
   return { buffer: await wb.xlsx.writeBuffer(), proposta: p };
 }
 
-module.exports = { gerarPlanilhaCliente };
+module.exports = { gerarPlanilhaCliente, montarPlanilhaCliente };

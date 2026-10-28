@@ -49,8 +49,16 @@ function numerosDaLinha(linha) {
 // tolerância = arredondamento do preço unitário (meio centavo por unidade) ou 0,1 % do total
 const confere = (q, u, t) => Math.abs(q * u - t) <= Math.max(0.02, q * 0.0051, t * 0.001);
 
+// Limites contra linha patológica (OCR de tabela inteira numa linha só, PDF com
+// texto sem quebra): ehRotulo é quadrático no tamanho da linha e melhorTrio é
+// cúbico no número de números — 300 números = 4,5 milhões de trios por linha.
+// Linha de item real tem bem menos que isso; o trio fica no fim da linha.
+const MAX_CARACTERES_LINHA = 2000;
+const MAX_NUMEROS_LINHA = 30;
+
 // Escolhe o trio (quantidade, unitário, total) mais plausível da linha.
-function melhorTrio(nums) {
+function melhorTrio(todos) {
+  const nums = todos.length > MAX_NUMEROS_LINHA ? todos.slice(-MAX_NUMEROS_LINHA) : todos;
   let melhor = null;
   for (let k = nums.length - 1; k >= 2; k--) {
     const t = nums[k];
@@ -102,7 +110,7 @@ function limparDescricao(texto) {
 }
 
 function extrairUniversal(texto) {
-  const linhas = String(texto || '').split('\n').map(l => separarColados(l.trim()));
+  const linhas = String(texto || '').split('\n').map(l => separarColados(l.trim().slice(0, MAX_CARACTERES_LINHA)));
   const itens = [];
   let buffer = [];
   const anteriores = [];
@@ -169,4 +177,4 @@ function conferirTotal(itens, texto) {
   return { soma, totalDocumento, confere: totalDocumento != null && Math.abs(totalDocumento - soma) <= Math.max(0.1, soma * 0.002) };
 }
 
-module.exports = { extrairUniversal, conferirTotal, numerosDaLinha, separarColados };
+module.exports = { extrairUniversal, conferirTotal, numerosDaLinha, separarColados, MAX_CARACTERES_LINHA, MAX_NUMEROS_LINHA };

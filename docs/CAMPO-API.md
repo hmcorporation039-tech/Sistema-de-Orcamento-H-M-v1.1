@@ -77,6 +77,11 @@ Detalhes das rotas (Fase 4J, backend pronto):
   seguinte algumas OS podem vir repetidas — o app só substitui pela mais nova.
   OS excluída ou passada para outro técnico não aparece no incremental: a lista
   completa (sem `desde`) é a referência.
+- `incompleto: true` na resposta de `GET /campo/os`: havia mais de 500 OS. Sem
+  `desde`, a lista veio cortada; com `desde`, as OS vêm em ordem de alteração
+  e `agora` é a alteração da última devolvida (nunca depois da hora com folga):
+  chame de novo com `desde=agora` até vir `incompleto: false`. Antes o incremental
+  cortava em 500 e o `agora` avançava assim mesmo (revisão de 27/10/2026).
 - **Quem vê** (`404` para quem não vê — não revela que existe): admin; o
   `responsavel_id` da OS; o dono da obra (`obras.usuario_id`; obra sem dono é
   livre, como na posse das outras rotas de obra).

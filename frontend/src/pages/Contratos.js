@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import useUltimoPedido from '../hooks/useUltimoPedido';
 import toast from 'react-hot-toast';
 import { Plus, Search, FileDown, Pencil, Trash2, X } from 'lucide-react';
 import { getContratos, criarContrato, atualizarContrato, removerContrato, getPrestadores } from '../services/api';
@@ -25,21 +26,24 @@ export default function Contratos() {
   const [pagina, setPagina] = useState(1);
   const [paginacao, setPaginacao] = useState({ total: 0, totalPaginas: 1 });
 
+  const novoPedido = useUltimoPedido();
   const carregar = useCallback(async () => {
+    const vale = novoPedido(); // resposta de busca antiga não sobrescreve a atual
     setCarregando(true);
     try {
       const params = { pagina };
       if (busca) params.busca = busca;
       if (obraFiltro) params.obra_id = obraFiltro;
       const res = await getContratos(params);
+      if (!vale()) return;
       setContratos(res.data.itens);
       setPaginacao({ total: res.data.total, totalPaginas: res.data.totalPaginas });
     } catch {
-      toast.error('Erro ao carregar contratos');
+      if (vale()) toast.error('Erro ao carregar contratos');
     } finally {
-      setCarregando(false);
+      if (vale()) setCarregando(false);
     }
-  }, [busca, pagina, obraFiltro]);
+  }, [busca, pagina, obraFiltro, novoPedido]);
 
   useEffect(() => {
     const t = setTimeout(carregar, 300);

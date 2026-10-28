@@ -7,7 +7,7 @@
 // fica marcada como "recusada" até o técnico descartar).
 
 import { novoUuid } from './uuid';
-import { isoLocal, montarVisao, aplicarOperacao, diaLocal } from './operacoes';
+import { isoLocal, montarVisao, aplicarOperacao, diaLocal, criacoesRecusadas } from './operacoes';
 
 const DIAS_GUARDAR_CONCLUIDAS = 7;
 
@@ -65,15 +65,24 @@ export function criarDados({ loja, usuario, agora = () => new Date(), uuid = nov
     return montarVisao({ servidor: reg?.servidor || null, ops, fotos, contexto: await contexto() });
   }
 
+  // OS com a criação recusada entram como UM item ('os'), com o que está
+  // retido dela (operações e fotos) — não como várias recusadas soltas.
   async function resumo() {
     const ops = await fila();
     const fotos = await fotosMeta();
+    const retidas = criacoesRecusadas(ops);
     return {
-      operacoes: ops.filter(o => o.estado !== 'recusada').length,
-      fotos: fotos.filter(f => f.estado === 'pendente').length,
+      operacoes: ops.filter(o => o.estado !== 'recusada' && !retidas.has(o.os_uuid)).length,
+      fotos: fotos.filter(f => f.estado === 'pendente' && !retidas.has(f.os_uuid)).length,
       recusadas: [
-        ...ops.filter(o => o.estado === 'recusada').map(o => ({ tipo: 'operacao', chave: o.seq, os_uuid: o.os_uuid, descricao: o.tipo, erro: o.erro })),
-        ...fotos.filter(f => f.estado === 'recusada').map(f => ({ tipo: 'foto', chave: f.uuid, os_uuid: f.os_uuid, descricao: 'foto', erro: f.erro })),
+        ...[...retidas.values()].map(o => ({
+          tipo: 'os', chave: o.os_uuid, os_uuid: o.os_uuid, descricao: 'criar_os', erro: o.erro,
+          titulo: o.dados?.titulo || '',
+          operacoes: ops.filter(x => x.os_uuid === o.os_uuid && x.seq !== o.seq).length,
+          fotos: fotos.filter(f => f.os_uuid === o.os_uuid).length,
+        })),
+        ...ops.filter(o => o.estado === 'recusada' && !retidas.has(o.os_uuid)).map(o => ({ tipo: 'operacao', chave: o.seq, os_uuid: o.os_uuid, descricao: o.tipo, erro: o.erro })),
+        ...fotos.filter(f => f.estado === 'recusada' && !retidas.has(f.os_uuid)).map(f => ({ tipo: 'foto', chave: f.uuid, os_uuid: f.os_uuid, descricao: 'foto', erro: f.erro })),
       ],
     };
   }
@@ -113,14 +122,40 @@ export function criarDados({ loja, usuario, agora = () => new Date(), uuid = nov
     return loja.get('arquivos', fotoUuid);
   }
 
+  // Foto que ainda não foi enviada (pendente ou recusada): o técnico pode
+  // excluir do aparelho. A já enviada não (o contrato não tem exclusão).
+  async function excluirFotoLocal(fotoUuid) {
+    const f = await loja.get('fotos', fotoUuid);
+    if (!f || f.estado === 'enviada') return false;
+    await loja.del('fotos', fotoUuid);
+    await loja.del('arquivos', fotoUuid);
+    emitir();
+    return true;
+  }
+
   async function descartarRecusada(item) {
-    if (item.tipo === 'operacao') await loja.del('fila', item.chave);
+    if (item.tipo === 'os') {
+      // a OS que o servidor não aceitou sai inteira: criação, operações e fotos
+      for (const op of (await fila()).filter(o => o.os_uuid === item.chave)) await loja.del('fila', op.seq);
+      await removerOSLocal(item.chave);
+    } else if (item.tipo === 'operacao') await loja.del('fila', item.chave);
     else { await loja.del('fotos', item.chave); await loja.del('arquivos', item.chave); }
     emitir();
   }
 
   async function tentarDeNovo(item) {
-    if (item.tipo === 'operacao') {
+    if (item.tipo === 'os') {
+      // tudo da OS volta para a fila junto, na ordem (seq) — a criação primeiro.
+      // op_uuid novo em todas: o servidor guardou a recusa de cada op_uuid já enviado.
+      for (const op of (await fila()).filter(o => o.os_uuid === item.chave)) {
+        op.estado = 'pendente'; op.op_uuid = uuid(); delete op.erro;
+        await loja.put('fila', op);
+      }
+      for (const f of (await fotosMeta()).filter(x => x.os_uuid === item.chave && x.estado === 'recusada')) {
+        f.estado = 'pendente'; delete f.erro;
+        await loja.put('fotos', f);
+      }
+    } else if (item.tipo === 'operacao') {
       const op = await loja.get('fila', item.chave);
       // op_uuid novo: o servidor guarda o resultado de cada op_uuid e devolveria
       // a mesma recusa. A recusada não foi aplicada, então não há o que duplicar.
@@ -223,7 +258,7 @@ export function criarDados({ loja, usuario, agora = () => new Date(), uuid = nov
     loja, usuario, emitir,
     assinar(fn) { ouvintes.add(fn); return () => ouvintes.delete(fn); },
     contexto, fila, fotosMeta, visoes, visao, resumo,
-    registrar, criarOS, guardarFoto, lerArquivo, descartarRecusada, tentarDeNovo,
+    registrar, criarOS, guardarFoto, lerArquivo, excluirFotoLocal, descartarRecusada, tentarDeNovo,
     salvarDoServidor, confirmarOperacao, removerOperacao, recusarOperacao, marcarFoto,
     salvarLista, lista, temLista, meta, salvarMeta, podarAusentes, limparAntigas,
     hoje: () => diaLocal(agora()),

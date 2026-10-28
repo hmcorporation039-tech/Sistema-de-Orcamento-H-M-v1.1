@@ -25,7 +25,9 @@ const SECOES_CHECKLIST = ['Documentação', 'Luminárias', 'Níveis de iluminaç
 
 const num = (v, c = 2) => (v == null || Number.isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: c }));
 const sec = (s) => (s == null ? '—' : `${String(s).replace('.', ',')} mm²`);
-const sim = (ok) => (ok == null ? '—' : ok ? 'atende' : 'NÃO atende');
+const sim = (ok, exigido) => (ok == null ? (exigido == null ? '—' : 'não verificado (dado da luminária ausente)') : ok ? 'atende' : 'NÃO atende');
+// requisito exigido pela atividade sem o dado da luminária para comparar
+const semDado = (a) => (a.okRa == null && a.raMin != null) || (a.okUgr == null && a.ugrL != null);
 const normalizar = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
 function comandosTexto(a) {
@@ -82,13 +84,14 @@ function resumir(res) {
   const { calc } = res;
   const t = calc.totais;
   const naoAtende = calc.ambientes.filter(a => !a.okEm || a.okRa === false || a.okUgr === false);
+  const naoVerificados = calc.ambientes.filter(a => !naoAtende.includes(a) && semDado(a));
   const tipos = Object.entries(t.porTipo).filter(([, q]) => q).map(([k, q]) => `${q} ${C.TIPOS_LUMINARIA[k]}`).join(' · ');
   const medidos = res.medicoes.filter(m => m.resultado !== 'NV');
   return {
     indicadores: [
       { rotulo: 'Ambientes', valor: String(t.ambientes), detalhe: `${num(t.area, 1)} m²` },
       { rotulo: 'Luminárias', valor: String(t.luminarias), detalhe: tipos + (t.metrosPerfil ? ` (${num(t.metrosPerfil, 1)} m de perfil)` : '') },
-      { rotulo: 'Requisitos da NBR ISO/CIE 8995-1', valor: `${t.ambientes - naoAtende.length} de ${t.ambientes}`, detalhe: naoAtende.length ? `revisar: ${naoAtende.map(a => a.nome).join(', ')}` : 'Em, Ra e UGR atendidos', ok: !naoAtende.length },
+      { rotulo: 'Requisitos da NBR ISO/CIE 8995-1', valor: `${t.ambientes - naoAtende.length - naoVerificados.length} de ${t.ambientes}`, detalhe: [naoAtende.length ? `revisar: ${naoAtende.map(a => a.nome).join(', ')}` : '', naoVerificados.length ? `Ra/UGR não verificados (dado da luminária ausente): ${naoVerificados.map(a => a.nome).join(', ')}` : ''].filter(Boolean).join(' · ') || 'Em, Ra e UGR atendidos', ok: naoAtende.length ? false : naoVerificados.length ? undefined : true },
       { rotulo: 'Potência instalada', valor: `${num(t.potencia / 1000, 2)} kW`, detalhe: `densidade média ${num(t.dpi, 1)} W/m²`, ok: calc.ambientes.some(a => a.okDpi === false) ? false : undefined },
       { rotulo: 'Circuitos de iluminação', valor: String(t.circuitos), detalhe: calc.circuitos.map(x => `${x.id}: ${sec(x.secao)} / ${x.disjuntor} A`).join(' · ') },
       { rotulo: 'Automação', valor: `${t.sensores} sensor(es)`, detalhe: `${t.comandos} comando(s) · ${t.enderecosDali} endereço(s) DALI em ${t.barramentos} linha(s)` },
@@ -137,7 +140,7 @@ function secoesMemorial(res) {
       linhas: calc.luminarias.map(l => [l.codigo, C.TIPOS_LUMINARIA[l.tipo], `${l.descricao || ''}${l.tipo === 'perfil' ? ` (peça de ${num(l.comprimento)} m)` : ''}${l.suspensao ? ` — suspensão ${num(l.suspensao)} m` : ''}`, num(l.potencia, 1), num(l.fluxo, 0), num(l.eficacia, 0), l.ra ?? '—', l.tcc ?? '—', l.ugr ?? '—', l.fu ? num(l.fu) : '—']),
       proporcoes: [0.6, 0.8, 2.4, 0.4, 0.5, 0.5, 0.4, 0.6, 0.4, 0.5], tamanho: 15 } },
     { titulo: '5. Requisitos por ambiente (NBR ISO/CIE 8995-1, Tabela 1)', tabela: { colunas: ['Ambiente', 'Atividade', 'Em (lx)', 'UGR_L', 'Ra mín.', 'Uo mín.', 'Luminária', 'Ra', 'UGR'],
-      linhas: amb.map(a => [a.nome, `${a.atividadeRotulo}${a.conferirAtividade ? ' [CONFERIR]' : ''}`, a.emExigida, a.ugrL ?? '—', a.raMin ?? '—', num(a.uoMin), a.luminaria.codigo, sim(a.okRa), sim(a.okUgr)]),
+      linhas: amb.map(a => [a.nome, `${a.atividadeRotulo}${a.conferirAtividade ? ' [CONFERIR]' : ''}`, a.emExigida, a.ugrL ?? '—', a.raMin ?? '—', num(a.uoMin), a.luminaria.codigo, sim(a.okRa, a.raMin), sim(a.okUgr, a.ugrL)]),
       proporcoes: [1.2, 2.2, 0.5, 0.5, 0.5, 0.5, 0.7, 0.7, 0.7], tamanho: 15 },
       notas: amb.filter(a => a.notaAtividade).map(a => `${a.nome}: ${a.notaAtividade}`) },
     { titulo: '6. Cálculo por ambiente (método dos lúmens)', tabela: { colunas: ['Ambiente', 'C × L (m)', 'A (m²)', 'hm (m)', 'k', 'FU', 'FM', 'N calc.', 'Grade', 'N', 'dx × dy (m)', 'smáx (m)', 'Em obtida (lx)'],

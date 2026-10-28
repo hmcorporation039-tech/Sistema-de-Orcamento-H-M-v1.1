@@ -87,6 +87,25 @@ function dimensionar(dados) {
     descidas.comprimento_m = nDescidas * (H + 1) * FOLGA_CONDUTOR; // até a caixa de inspeção
     descidas.fixadores = Math.ceil(nDescidas * H / 1.5); // 5.6.2.2: a cada 1,5 m na vertical
   }
+  // Anéis intermediários de descida (descidas não naturais acima de 20 m): desde a
+  // edição de 2015 o espaçamento vertical é o mesmo das descidas (Tabela 5), não mais
+  // os 20 m fixos da edição de 2005. Até 20 m são dispensados (5.4.1.2 — mesma regra
+  // do laudo R06). [CONFERIR NBR 5419-3:2026, 5.4.1.2 — espaçamento dos anéis]
+  descidas.aneis_intermediarios = (!spda.descida_natural && H > 20) ? Math.max(0, Math.ceil(H / nivel.descidas) - 1) : 0;
+  descidas.aneis_comprimento_m = descidas.aneis_intermediarios * perimetro * FOLGA_CONDUTOR;
+
+  // Captação lateral (estrutura com H > 60 m): nos 20 % superiores da altura
+  // (5.3.2.14 — item CP8 do checklist). Com descidas não naturais, os anéis
+  // intermediários que caem nessa faixa servem de captação lateral; com descidas
+  // naturais entram anéis próprios no perímetro, no espaçamento da Tabela 5.
+  // [CONFERIR NBR 5419-3:2026, 5.3.2.14 — fachada metálica pode ser captor natural]
+  const faixaLateral = H > 60 ? 0.2 * H : 0;
+  captacao.lateral = {
+    exigida: H > 60,
+    faixa_m: faixaLateral,
+    aneis: (H > 60 && spda.descida_natural) ? Math.max(1, Math.ceil(faixaLateral / nivel.descidas)) : 0,
+  };
+  captacao.lateral.comprimento_m = captacao.lateral.aneis * perimetro * FOLGA_CONDUTOR;
 
   // Aterramento (5.5): anel a ~1 m das paredes e ≥ 0,5 m de profundidade
   const anel = 2 * ((L + 2) + (W + 2));
@@ -158,6 +177,14 @@ function listaMateriais(dados, d) {
     add('DES-04', 'Proteção mecânica da descida até 3 m (eletroduto de PVC rígido)', 'un', d.descidas.quantidade, 'NBR 5419-3:2026, 8.1 (nota 2)');
   }
   add('DES-02', 'Terminal de ensaio embutido a ~1,5 m do piso', 'un', d.descidas.quantidade, 'NBR 5419-3:2026, 5.4.6');
+  if (d.descidas.aneis_intermediarios) {
+    add('DES-05', `Anéis intermediários de descida (${d.descidas.aneis_intermediarios} no perímetro, a cada ${d.descidas.espacamento_tabela_m} m de altura) — ${d.descidas.material}, com fixadores [CONFERIR 5.4.1.2]`, 'm',
+      arred(d.descidas.aneis_comprimento_m), 'NBR 5419-3:2026, 5.4.1.2 e Tabela 5');
+  }
+  if (d.captacao.lateral && d.captacao.lateral.aneis) {
+    add('CAP-05', `Captação lateral nos 20 % superiores (H > 60 m): ${d.captacao.lateral.aneis} anel(éis) no perímetro da fachada — ${d.captacao.material}, com fixadores [CONFERIR 5.3.2.14]`, 'm',
+      arred(d.captacao.lateral.comprimento_m), 'NBR 5419-3:2026, 5.3.2.14');
+  }
 
   add('ATE-01', `Condutor do anel de aterramento — ${d.aterramento.material} (ou equivalente da Tabela 8)`, 'm',
     arred(d.aterramento.anel_com_folga_m), 'NBR 5419-3:2026, Tabela 8 e 5.5');

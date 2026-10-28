@@ -6,6 +6,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const routes = require('./routes');
 const { tratarErros } = require('./middleware/erros');
+const { textosBemFormados } = require('./middleware/textoBemFormado');
 const { criarTabelas } = require('./models/schema');
 const { agendarRotinas } = require('./services/rotinas');
 const { pedidoLocal } = require('./services/pastasRegistros');
@@ -70,12 +71,20 @@ app.use(cors({ origin: origensConfiguradas || origensPadrao }));
 // padrão — só ativa definindo TRUST_PROXY no .env quando for pra produção.
 if (process.env.TRUST_PROXY) {
   app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : process.env.TRUST_PROXY);
+} else if (/^https:\/\//i.test(String(process.env.URL_PUBLICA || '').trim())) {
+  // Link de aprovação publicado (túnel/proxy na frente do Node) sem TRUST_PROXY:
+  // o IP gravado na decisão do cliente seria o do proxy (127.0.0.1) e o limite
+  // de taxa da página pública contaria todos os clientes como um só.
+  console.warn('ATENÇÃO: URL_PUBLICA está definida, mas TRUST_PROXY não. Se o sistema está publicado por túnel/proxy reverso, defina TRUST_PROXY no .env (ver .env.example).');
 }
 
 // 5 MB: o maior corpo JSON real é o formulário do laudo (limitado a 2 MB no
 // controller) ou uma análise grande; arquivos vêm por upload (multer), não aqui.
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+// surrogate solto ("\ud800") nos textos do corpo vira U+FFFD antes de chegar ao
+// banco (jsonb recusa; ver middleware/textoBemFormado.js)
+app.use(textosBemFormados);
 
 // Rotas
 app.use('/api', routes);
@@ -188,9 +197,26 @@ function iniciarHttps() {
   }
 }
 
+// Porta já ocupada (outra cópia do backend no ar): antes a segunda cópia
+// rodava as migrações inteiras e só então caía com EADDRINUSE. Agora confere a
+// porta ANTES de mexer no banco (criarTabelas ainda usa uma trava do PostgreSQL
+// para duas cópias que passem daqui ao mesmo tempo).
+function conferirPortaLivre(porta, host = '0.0.0.0') {
+  return new Promise((resolve, reject) => {
+    const teste = require('net').createServer();
+    teste.once('error', (err) => {
+      if (err.code === 'EADDRINUSE') reject(Object.assign(new Error(`A porta ${porta} já está em uso — outra cópia do backend está no ar? Nada foi alterado no banco.`), { code: 'EADDRINUSE' }));
+      else reject(err);
+    });
+    teste.once('listening', () => teste.close(() => resolve()));
+    teste.listen(Number(porta), host);
+  });
+}
+
 async function iniciar() {
   try {
     await aguardarBanco();
+    await conferirPortaLivre(PORT);
     await criarTabelas();
     servidor = app.listen(PORT, '0.0.0.0', () => {
       console.log(`\nH&M Engenharia - API rodando na porta ${PORT}`);
@@ -200,6 +226,10 @@ async function iniciar() {
       // instância de teste/homologação (ROTINAS_AUTOMATICAS=desligadas): não lê a
       // caixa de e-mail nem as pastas de fornecedores da produção
       agendarRotinas();
+    });
+    servidor.on('error', (err) => {
+      console.error(`Erro ao abrir a porta ${PORT}: ${err.message}`);
+      process.exit(1);
     });
     iniciarHttps();
   } catch (err) {

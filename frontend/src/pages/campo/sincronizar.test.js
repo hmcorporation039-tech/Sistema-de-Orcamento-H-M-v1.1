@@ -263,3 +263,171 @@ test('resposta de uma foto perdida: reenvia com o mesmo uuid e o servidor não d
   expect(srv.os.get('os-1').fotos).toHaveLength(1);
   expect((await dados.lerArquivo(u)).bytes.byteLength).toBe(3); // bytes ficam para a miniatura
 });
+
+test('401: pausa sem recusar nada; rodadas automáticas não chamam o servidor; token novo retoma', async () => {
+  const srv = servidorFalso();
+  let tokenAgora = 'velho';
+  const loja = criarLojaMemoria();
+  let n = 0;
+  const dados = criarDados({ loja, usuario: { id: 3, nome: 'Téc' }, uuid: () => `u-${++n}`, agora: () => new Date('2026-11-03T13:00:00Z') });
+  const timers = [];
+  const sync = criarSincronizador({
+    dados, api: srv.api, agora: () => new Date('2026-11-03T13:00:00Z'), tokenAtual: () => tokenAgora,
+    relogio: { setTimeout: (f, t) => { timers.push(t); return timers.length; }, clearTimeout: () => {} },
+  });
+  await sync.sincronizar();
+  const original = srv.api.sincronizarOperacoes;
+  srv.api.sincronizarOperacoes = async (ops) => {
+    if (tokenAgora === 'velho') throw new ErroAutenticacao();
+    return original(ops);
+  };
+  await dados.registrar('iniciar', 'os-1', {});
+  await dados.guardarFoto({ os_uuid: 'os-1', tipo_mime: 'image/jpeg', bytes: new ArrayBuffer(3) });
+  const timersAntes = timers.length;
+  const r = await sync.sincronizar();
+  expect(r.ok).toBe(false);
+  expect(sync.estado().precisaLogin).toBe(true);
+  expect(timers.length).toBe(timersAntes); // não agenda nova tentativa
+  expect((await dados.fila()).map(o => o.estado)).toEqual(['pendente']); // nada recusado
+  expect((await dados.fotosMeta()).map(f => f.estado)).toEqual(['pendente']);
+  expect((await dados.resumo()).recusadas).toHaveLength(0);
+  // o técnico continua trabalhando: a rodada automática nem vai ao servidor
+  await dados.registrar('responder', 'os-1', { item_id: 'c1', resposta: 'conforme', observacao: '' });
+  const chamadasAntes = srv.chamadas.length;
+  const r2 = await sync.sincronizar();
+  expect(r2).toEqual({ ok: false, pausado: true });
+  expect(srv.chamadas.length).toBe(chamadasAntes);
+  expect(await sync.retomar()).toEqual({ ok: false, pausado: true }); // mesmo token: segue pausado
+  // entrou de novo (nesta ou em outra aba): token novo, volta a enviar tudo
+  tokenAgora = 'novo';
+  const r3 = await sync.retomar();
+  expect(r3.ok).toBe(true);
+  expect(sync.estado().precisaLogin).toBe(false);
+  expect(await dados.fila()).toHaveLength(0);
+  expect((await dados.fotosMeta())[0].estado).toBe('enviada');
+  expect(srv.os.get('os-1').checklist[0].resposta).toBe('conforme');
+});
+
+test('401 numa foto também pausa (a foto não vira recusada)', async () => {
+  const srv = servidorFalso();
+  const { dados, sync } = montar(srv);
+  await sync.sincronizar();
+  srv.api.enviarFoto = async () => { throw new ErroAutenticacao(); };
+  await dados.guardarFoto({ os_uuid: 'os-1', tipo_mime: 'image/jpeg', bytes: new ArrayBuffer(3) });
+  await sync.sincronizar();
+  expect(sync.estado().precisaLogin).toBe(true);
+  expect((await dados.fotosMeta())[0].estado).toBe('pendente');
+});
+
+test('criar_os recusada: a OS fica na tela não aceita, o resto dela é retido; tentar de novo leva tudo junto', async () => {
+  const srv = servidorFalso();
+  const { dados, sync } = montar(srv);
+  await sync.sincronizar(); // modelos
+  srv.recusar.add('criar_os');
+  const u = await dados.criarOS({ obra_id: 9, titulo: 'Visita', tipo: 'visita', disciplina: null, modelo_checklist: 'generico' });
+  await dados.registrar('iniciar', u, {});
+  await dados.registrar('responder', u, { item_id: 'g1', resposta: 'nao_conforme', observacao: 'sujo' });
+  await dados.guardarFoto({ os_uuid: u, item_id: 'g1', legenda: '', tipo_mime: 'image/jpeg', bytes: new ArrayBuffer(3) });
+  await sync.sincronizar();
+  // só a criação foi recusada; as outras ficaram pendentes (retidas), a foto nem foi enviada
+  const fila = await dados.fila();
+  expect(fila.map(o => [o.tipo, o.estado])).toEqual([['criar_os', 'recusada'], ['iniciar', 'pendente'], ['responder', 'pendente']]);
+  expect(srv.chamadas.filter(c => c[0] === 'foto')).toHaveLength(0);
+  expect((await dados.fotosMeta())[0].estado).toBe('pendente');
+  // a OS continua na lista, marcada
+  const v = await dados.visao(u);
+  expect(v).not.toBeNull();
+  expect(v.status).toBe('em_execucao');
+  expect(v.checklist[0].resposta).toBe('nao_conforme');
+  expect(v.nao_aceita).toEqual({ erro: 'Não pode criar_os.', operacoes: 2, fotos: 1 });
+  expect((await dados.visoes()).map(x => x.uuid)).toContain(u);
+  // resumo: um item só (a OS), nada pendente de envio contado à toa
+  const r = await dados.resumo();
+  expect(r.operacoes).toBe(0);
+  expect(r.fotos).toBe(0);
+  expect(r.recusadas).toEqual([expect.objectContaining({ tipo: 'os', chave: u, titulo: 'Visita', operacoes: 2, fotos: 1 })]);
+  // rodada seguinte não manda nada dessa OS
+  const antes = srv.chamadas.filter(c => c[0] === 'sync').length;
+  await sync.sincronizar();
+  expect(srv.chamadas.filter(c => c[0] === 'sync').length).toBe(antes);
+  // escritório corrigiu: tentar de novo leva criação + operações + foto
+  srv.recusar.clear();
+  await dados.tentarDeNovo(r.recusadas[0]);
+  await sync.sincronizar();
+  expect(await dados.fila()).toHaveLength(0);
+  expect(srv.os.get(u).status).toBe('em_execucao');
+  expect(srv.os.get(u).checklist[0].resposta).toBe('nao_conforme');
+  expect(srv.fotos.size).toBe(1);
+  expect((await dados.visao(u)).nao_aceita).toBeUndefined();
+});
+
+test('criar_os recusada no mesmo lote das outras: as outras não viram recusadas uma a uma', async () => {
+  const srv = servidorFalso();
+  const { dados, sync } = montar(srv);
+  await sync.sincronizar();
+  // como o servidor real: sem a OS, as operações seguintes voltam ok:false
+  srv.recusar.add('criar_os');
+  const u = await dados.criarOS({ obra_id: 9, titulo: 'Visita', tipo: 'visita', modelo_checklist: 'generico' });
+  await dados.registrar('iniciar', u, {});
+  await dados.registrar('observacao', u, { texto: 'x' });
+  await sync.sincronizar();
+  const fila = await dados.fila();
+  expect(fila.filter(o => o.estado === 'recusada').map(o => o.tipo)).toEqual(['criar_os']);
+  expect((await dados.resumo()).recusadas).toHaveLength(1);
+});
+
+test('descartar a OS não aceita apaga criação, operações e fotos juntas', async () => {
+  const srv = servidorFalso();
+  const { dados, sync } = montar(srv);
+  await sync.sincronizar();
+  srv.recusar.add('criar_os');
+  const u = await dados.criarOS({ obra_id: 9, titulo: 'Visita', tipo: 'visita', modelo_checklist: 'generico' });
+  await dados.registrar('iniciar', u, {});
+  const f = await dados.guardarFoto({ os_uuid: u, tipo_mime: 'image/jpeg', bytes: new ArrayBuffer(3) });
+  await dados.registrar('iniciar', 'os-1', {}); // de outra OS: fica
+  await sync.sincronizar();
+  const [item] = (await dados.resumo()).recusadas;
+  await dados.descartarRecusada(item);
+  expect((await dados.fila()).filter(o => o.os_uuid === u)).toHaveLength(0);
+  expect(await dados.fotosMeta()).toHaveLength(0);
+  expect(await dados.lerArquivo(f)).toBeUndefined();
+  expect(await dados.visao(u)).toBeNull();
+  expect(srv.os.get('os-1').status).toBe('em_execucao');
+});
+
+test('foto ainda não enviada pode ser excluída do aparelho; a enviada não', async () => {
+  const srv = servidorFalso();
+  const { dados, sync } = montar(srv);
+  await sync.sincronizar();
+  const a = await dados.guardarFoto({ os_uuid: 'os-1', tipo_mime: 'image/jpeg', bytes: new ArrayBuffer(3) });
+  await sync.sincronizar();
+  const b = await dados.guardarFoto({ os_uuid: 'os-1', tipo_mime: 'image/jpeg', bytes: new ArrayBuffer(3) });
+  expect(await dados.excluirFotoLocal(a)).toBe(false);
+  expect(await dados.excluirFotoLocal(b)).toBe(true);
+  expect((await dados.fotosMeta()).map(x => x.uuid)).toEqual([a]);
+});
+
+test('lista cortada pelo servidor (incompleto): completa não poda; incremental pede o resto', async () => {
+  const srv = servidorFalso();
+  const { dados, sync } = montar(srv);
+  await sync.sincronizar(); // lista completa: guarda os-1 (e marca a última completa)
+  expect(await dados.visao('os-1')).toBeTruthy();
+  // próxima lista completa vem cortada SEM a os-1: não pode apagá-la do aparelho
+  await dados.salvarMeta('ultima_completa', null);
+  srv.api.listarOS = async () => ({ itens: [], agora: '2026-11-03T12:30:00Z', incompleto: true });
+  await sync.sincronizar();
+  expect(await dados.visao('os-1')).toBeTruthy();
+  // incremental cortado: chama de novo a partir do `agora` devolvido até completar
+  await dados.salvarMeta('ultima_completa', '2026-11-03T12:59:00Z');
+  await dados.salvarMeta('desde', '2026-11-03T12:00:00Z');
+  const pedidos = [];
+  srv.api.listarOS = async ({ desde }) => {
+    pedidos.push(desde);
+    return pedidos.length === 1
+      ? { itens: [], agora: '2026-11-03T12:10:00Z', incompleto: true }
+      : { itens: [], agora: '2026-11-03T12:58:00Z', incompleto: false };
+  };
+  await sync.sincronizar();
+  expect(pedidos).toEqual(['2026-11-03T12:00:00Z', '2026-11-03T12:10:00Z']);
+  expect(await dados.meta('desde')).toBe('2026-11-03T12:58:00Z');
+});

@@ -8,6 +8,7 @@ const { gerarFooterTemplate } = require('../utils/pdfTemplate');
 const { normalizarDisciplinas } = require('../utils/disciplinasProjeto');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
 const { comTransacao } = require('../utils/transacao');
+const { hojeBrasilia } = require('../utils/dataHoje');
 const { calcularTotais } = require('../utils/calculoProposta');
 const { validarProposta } = require('../utils/validacaoProposta');
 const { inserirSecoesEItens, proximoNumero, registrarEvento } = require('./propostasController');
@@ -192,9 +193,16 @@ async function analisar(req, res) {
   const leituraObra = lerObraId(req.body);
   const erroObra = await conferirObra(pool, leituraObra, { usuario: req.usuario }).catch(() => 'Obra não encontrada.');
   if (erroObra) return res.status(400).json({ erro: erroObra });
-  const obraDaAnalise = leituraObra.valor
-    ? (await pool.query('SELECT id, cliente_id, cliente_nome FROM obras WHERE id = $1', [leituraObra.valor])).rows[0]
-    : null;
+  // falha do banco aqui (fora do try abaixo) deixava o pedido pendurado
+  let obraDaAnalise = null;
+  try {
+    obraDaAnalise = leituraObra.valor
+      ? (await pool.query('SELECT id, cliente_id, cliente_nome FROM obras WHERE id = $1', [leituraObra.valor])).rows[0]
+      : null;
+  } catch (err) {
+    console.error('Erro ao ler a obra da análise:', err.message);
+    return res.status(500).json({ erro: 'Erro ao ler a obra da análise' });
+  }
 
   try {
     const resultado = await analisarProjetoCompleto(arquivos);
@@ -460,50 +468,55 @@ async function gerarOrcamento(req, res, next) {
       ...(materiaisParaOrcar.length > 0 ? [{ id: 2, nome: NOME_SECAO_MATERIAIS }] : []),
     ];
 
-    const escopo = `Gerado automaticamente a partir da Análise de Projeto #${analise.id}` +
-      (analise.propostaId ? ' (atualizado — itens substituídos pela versão mais recente da análise).' : '.') +
+    const montarEscopo = (temVinculo) => `Gerado automaticamente a partir da Análise de Projeto #${analise.id}` +
+      (temVinculo ? ' (atualizado — itens substituídos pela versão mais recente da análise).' : '.') +
       ' Revise quantidades, preços e os itens marcados "A cotar" antes de enviar ao cliente.';
-    const dataHoje = new Date().toISOString().slice(0, 10);
+    const dataHoje = hojeBrasilia(); // toISOString daria amanhã depois das 21h
 
     const erroValidacao = validarProposta({ data: dataHoje, cliente_nome: analise.cliente.trim(), secoes, itens });
     if (erroValidacao) return res.status(400).json({ erro: erroValidacao });
 
-    // Proposta vinculada: só é atualizada enquanto estiver "Ativa" — aprovada ou
-    // recusada fica intacta e uma proposta NOVA é criada (antes a aprovada era
-    // sobrescrita). Ao atualizar, mantém BDI e impostos que já estavam nela
-    // (antes o total era recalculado com BDI/impostos zerados).
-    const vinculadaInfo = analise.propostaId
-      ? (await pool.query('SELECT numero, status, bdi, bdi_materiais, imposto_venda, imposto_servico FROM propostas WHERE id = $1', [analise.propostaId])).rows[0]
-      : null;
-    const atualizarVinculada = !!vinculadaInfo && vinculadaInfo.status === 'Ativa';
-    const totais = calcularTotais({ secoes, itens,
-      bdi: atualizarVinculada ? Number(vinculadaInfo.bdi) || 0 : 0,
-      bdi_materiais: atualizarVinculada ? vinculadaInfo.bdi_materiais : null, // BDI diferenciado (2.0, Fase 3F) também é mantido
-      imposto_venda: atualizarVinculada ? Number(vinculadaInfo.imposto_venda) || 0 : 0,
-      imposto_servico: atualizarVinculada ? Number(vinculadaInfo.imposto_servico) || 0 : 0 });
+    const resultadoTx = await comTransacao(async (client) => {
+      // Trava a análise e relê o vínculo DENTRO da transação: com o vínculo
+      // lido antes (fora dela), dois cliques em "Gerar orçamento" criavam duas
+      // propostas. Agora o segundo espera o primeiro terminar e atualiza a
+      // proposta que ele criou (revisão de 27/10/2026).
+      const trava = await client.query('SELECT proposta_id FROM analises_projeto WHERE id = $1 FOR UPDATE', [analise.id]);
+      if (!trava.rows.length) return null;
+      const vinculadaId = trava.rows[0].proposta_id || null;
+      const escopo = montarEscopo(!!vinculadaId);
+      // Proposta vinculada: só é atualizada enquanto estiver "Ativa" — aprovada ou
+      // recusada fica intacta e uma proposta NOVA é criada (antes a aprovada era
+      // sobrescrita). Ao atualizar, mantém BDI e impostos que já estavam nela
+      // (antes o total era recalculado com BDI/impostos zerados).
+      const vinculadaInfo = vinculadaId
+        ? (await client.query('SELECT numero, status, bdi, bdi_materiais, imposto_venda, imposto_servico FROM propostas WHERE id = $1 FOR UPDATE', [vinculadaId])).rows[0]
+        : null;
+      const atualizarVinculada = !!vinculadaInfo && vinculadaInfo.status === 'Ativa';
+      const totais = calcularTotais({ secoes, itens,
+        bdi: atualizarVinculada ? Number(vinculadaInfo.bdi) || 0 : 0,
+        bdi_materiais: atualizarVinculada ? vinculadaInfo.bdi_materiais : null, // BDI diferenciado (2.0, Fase 3F) também é mantido
+        imposto_venda: atualizarVinculada ? Number(vinculadaInfo.imposto_venda) || 0 : 0,
+        imposto_servico: atualizarVinculada ? Number(vinculadaInfo.imposto_servico) || 0 : 0 });
 
-    const { propostaId, numero, criada } = await comTransacao(async (client) => {
       if (atualizarVinculada) {
-        const propostaAtual = await client.query("SELECT numero FROM propostas WHERE id = $1 AND status = 'Ativa' FOR UPDATE", [analise.propostaId]);
-        if (propostaAtual.rows.length > 0) {
-          await client.query(
-            `UPDATE propostas SET
-              data=$1, cliente_id=$2, cliente_nome=$3, responsavel=$4, escopo=$5,
-              subtotal_materiais=$6, subtotal_mao_obra=$7, valor_bdi=$8,
-              valor_imposto_venda=$9, valor_imposto_servico=$10, total=$11, atualizado_em=NOW(), versao=versao+1,
-              obra_id=COALESCE(obra_id, $13)
-             WHERE id=$12`,
-            [dataHoje, clienteId, analise.cliente.trim(), req.usuario.nome, escopo,
-             totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi,
-             totais.valor_imposto_venda, totais.valor_imposto_servico, totais.total, analise.propostaId, analise.obraId]
-          );
-          await client.query('DELETE FROM proposta_secoes WHERE proposta_id = $1', [analise.propostaId]);
-          await inserirSecoesEItens(client, analise.propostaId, secoes, itens);
-          await registrarEvento(client, analise.propostaId, req.usuario.id, 'editada', `Atualizada a partir da Análise de Projeto #${analise.id}`);
-          return { propostaId: analise.propostaId, numero: propostaAtual.rows[0].numero, criada: false };
-        }
-        // a proposta vinculada foi excluída — cai no fluxo de criar uma nova abaixo
+        await client.query(
+          `UPDATE propostas SET
+            data=$1, cliente_id=$2, cliente_nome=$3, responsavel=$4, escopo=$5,
+            subtotal_materiais=$6, subtotal_mao_obra=$7, valor_bdi=$8,
+            valor_imposto_venda=$9, valor_imposto_servico=$10, total=$11, atualizado_em=NOW(), versao=versao+1,
+            obra_id=COALESCE(obra_id, $13)
+           WHERE id=$12`,
+          [dataHoje, clienteId, analise.cliente.trim(), req.usuario.nome, escopo,
+           totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi,
+           totais.valor_imposto_venda, totais.valor_imposto_servico, totais.total, vinculadaId, analise.obraId]
+        );
+        await client.query('DELETE FROM proposta_secoes WHERE proposta_id = $1', [vinculadaId]);
+        await inserirSecoesEItens(client, vinculadaId, secoes, itens);
+        await registrarEvento(client, vinculadaId, req.usuario.id, 'editada', `Atualizada a partir da Análise de Projeto #${analise.id}`);
+        return { propostaId: vinculadaId, numero: vinculadaInfo.numero, criada: false };
       }
+      // sem vínculo, ou a proposta vinculada foi excluída/aprovada/recusada: cria uma nova
 
       const seq = await proximoNumero(client);
       const numeroGerado = 'P' + String(seq).padStart(3, '0');
@@ -525,6 +538,8 @@ async function gerarOrcamento(req, res, next) {
       await client.query('UPDATE analises_projeto SET proposta_id = $1 WHERE id = $2', [novaPropostaId, analise.id]);
       return { propostaId: novaPropostaId, numero: numeroGerado, criada: true };
     });
+    if (!resultadoTx) return res.status(404).json({ erro: 'Análise não encontrada' });
+    const { propostaId, numero, criada } = resultadoTx;
 
     const aviso = semQuantidade ? ` (${semQuantidade} item(ns) com quantidade 0 ficaram de fora — preencha na análise se fizerem parte)` : '';
     res.json({

@@ -21,6 +21,16 @@ perto('bateria pelo Anexo B', b.bateriaAh, 1.2 * (24 * b.iRepouso + (5 / 60) * b
 perto('fonte = 1,2 × alarme', b.fonteA, 1.2 * b.iAlarme / 1000, 1e-9);
 igual('iluminância 4 lx na escada (< 5 lx) → NC', res.med.iluminancia.find(m => m.escada).resultado, 'NC');
 igual('autonomia 2,5 h → C', res.med.autonomia[0].resultado, 'C');
+// Achado A2.11 (revisão 27/10/2026): conferido — a NBR 10898:2023 (4.9) pede 2 h (a de 2013 pedia 1 h),
+// então 1,5 h continua NC; a IT/NT local pode exigir mais (campo sistema.autonomia_iluminacao_h).
+{
+  const cl = (f) => { const d = JSON.parse(JSON.stringify(motor.exemplo())); f(d); return motor.processar(d); };
+  igual('1,5 h < 2 h (NBR 10898:2023) → NC', cl(d => { d.inspecao.autonomia = [{ local: 'Bloco', horas: 1.5 }]; }).med.autonomia[0].resultado, 'NC');
+  const r3 = cl(d => { d.sistema.autonomia_iluminacao_h = 3; d.inspecao.autonomia = [{ local: 'Bloco', horas: 2.5 }]; });
+  igual('IT local exige 3 h: 2,5 h → NC', [r3.calc.autonomiaEmergH, r3.med.autonomia[0].resultado], [3, 'NC']);
+  const r1 = cl(d => { d.sistema.autonomia_iluminacao_h = 1; });
+  igual('autonomia informada < 2 h é recusada (fica 2 h, com aviso)', [r1.calc.autonomiaEmergH, r1.calc.avisos.some(a => a.startsWith('Autonomia da iluminação de emergência informada (1 h)'))], [2, true]);
+}
 (async () => {
   for (const t of motor.tiposDisponiveis(res)) igual(`documento ${t}`, (await motor.gerarDocumento(res, t)).buffer.slice(0, 2).toString(), 'PK');
   igual('orçamento de instalação tem materiais e serviços', motor.montarOrcamento(res, 'execucao').itens.length > 8, true);

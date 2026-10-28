@@ -28,6 +28,19 @@ function arredondar(valor) {
   return Math.round((numeroSeguro(valor) + Number.EPSILON) * 100) / 100;
 }
 
+// Quantidade com 3 casas, como a coluna proposta_itens.quantidade DECIMAL(10,3)
+// grava. Antes a conta usava a quantidade cheia (1,0004 × 1.000 = 1.000,40) e o
+// banco gravava 1,000: o PDF saía "1 × 1.000,00 = 1.000,40" e Excel, curva ABC,
+// cronograma e a tela depois de recarregar davam outro número. O arredondamento
+// é o do PostgreSQL (metade para longe do zero sobre o número como escrito:
+// "1.0005" → 1,001), feito na notação decimal para não errar no binário.
+function arredondarQuantidade(valor, padrao = 0) {
+  const n = numeroSeguro(valor, padrao);
+  const abs = String(Math.abs(n));
+  const r = /e/i.test(abs) ? Math.round(Math.abs(n) * 1000) / 1000 : Number(`${Math.round(Number(`${abs}e3`))}e-3`);
+  return n < 0 ? -r : r;
+}
+
 // Uma seção é de mão de obra pelo nome — mesma regra do frontend, mantida para
 // que os dois lados cheguem ao mesmo número.
 const RE_MAO_DE_OBRA = /m[ãa]o.?de.?obra|serviç|servic/i;
@@ -39,7 +52,7 @@ function ehMaoDeObra(nome) {
 // Normaliza um item vindo do corpo da requisição (o frontend manda abreviado:
 // desc/qtd/un/vu; o duplicar manda o nome completo da coluna).
 function normalizarItem(it, ordem) {
-  const quantidade = numeroSeguro(it.qtd ?? it.quantidade, 1);
+  const quantidade = arredondarQuantidade(it.qtd ?? it.quantidade, 1);
   // arredonda o unitário para 2 casas ANTES de multiplicar: é o valor gravado
   // (DECIMAL 10,2) e impresso, então qtd × unitário da linha sempre fecha
   const valorUnitario = arredondar(numeroSeguro(it.vu ?? it.valor_unitario, 0));
@@ -81,6 +94,16 @@ function bdiMateriaisDefinido(bdiMateriais) {
   return bdiMateriais !== undefined && bdiMateriais !== null && bdiMateriais !== '' && Number.isFinite(Number(bdiMateriais));
 }
 
+// Item → seção: pelo id (`sid`) ou pelo nome (`secao_nome`), mas só quando os
+// DOIS lados têm valor. Antes `it.sid === sec.id` com os dois undefined dava true
+// e o item entrava em TODAS as seções (100 → 200 no total; revisão de 27/10/2026).
+// Mesma regra de propostasController.inserirSecoesEItens.
+function itemPertenceASecao(it, sec) {
+  if (!it || !sec) return false;
+  return (sec.id != null && it.sid != null && it.sid === sec.id)
+    || (sec.nome != null && it.secao_nome != null && it.secao_nome === sec.nome);
+}
+
 function calcularTotais({ secoes, itens, bdi, bdi_materiais, imposto_venda, imposto_servico }) {
   const listaSecoes = Array.isArray(secoes) ? secoes : [];
   const listaItens = Array.isArray(itens) ? itens : [];
@@ -89,7 +112,7 @@ function calcularTotais({ secoes, itens, bdi, bdi_materiais, imposto_venda, impo
   let subtotalMaoObra = 0;
 
   for (const sec of listaSecoes) {
-    const itensDaSecao = listaItens.filter(it => it.sid === sec.id || it.secao_nome === sec.nome);
+    const itensDaSecao = listaItens.filter(it => itemPertenceASecao(it, sec));
     const subtotal = itensDaSecao.reduce((soma, it) => {
       const item = normalizarItem(it, 0);
       return soma + item.valor_total;
@@ -139,4 +162,4 @@ function detalharBdi({ subtotalMateriais, subtotalMaoObra, bdi, bdi_materiais })
   return { diferenciado: true, valor_bdi: arredondar(valorMateriais + valorMaoObra), valor_bdi_materiais: valorMateriais, valor_bdi_mao_obra: valorMaoObra };
 }
 
-module.exports = { calcularTotais, detalharBdi, bdiMateriaisDefinido, normalizarItem, numeroSeguro, arredondar, ehMaoDeObra };
+module.exports = { calcularTotais, detalharBdi, bdiMateriaisDefinido, normalizarItem, numeroSeguro, arredondar, arredondarQuantidade, itemPertenceASecao, ehMaoDeObra };

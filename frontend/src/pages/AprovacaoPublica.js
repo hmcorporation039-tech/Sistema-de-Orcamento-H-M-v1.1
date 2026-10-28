@@ -113,6 +113,11 @@ export default function AprovacaoPublica() {
 
   const p = dados?.proposta;
   const aberta = dados?.situacao === 'aberta';
+  // O servidor não entrega o PDF de proposta recusada ou cancelada (404): sem
+  // o botão nesses casos (antes ele aparecia e dava "não encontrado")
+  const decisaoAtual = comprovante?.decisao || dados?.comprovante?.decisao || null;
+  const pdfDisponivel = decisaoAtual !== 'recusada'
+    && !(dados?.situacao === 'indisponivel' && dados?.codigo === 'PROPOSTA_INDISPONIVEL' && /recusada|cancelada/i.test(dados?.mensagem || ''));
 
   function escolher(d) {
     setDecisao(d);
@@ -180,7 +185,7 @@ export default function AprovacaoPublica() {
 
   return (
     <Moldura>
-      {etapa === 'comprovante' && comprovante && <Comprovante c={comprovante} token={token} />}
+      {etapa === 'comprovante' && comprovante && <Comprovante c={comprovante} token={token} pdfDisponivel={pdfDisponivel} />}
 
       {/* ── Cabeçalho da proposta ── */}
       <section style={cartao}>
@@ -204,9 +209,11 @@ export default function AprovacaoPublica() {
           <span style={{ color: '#d9d2bf', fontSize: 13, textTransform: 'uppercase', letterSpacing: '.6px' }}>Total da proposta</span>
           <span style={{ color: OURO, fontSize: 24, fontWeight: 800 }}>{moeda(p.totais.total)}</span>
         </div>
-        <a href={urlPdfAprovacaoPublica(token)} target="_blank" rel="noopener noreferrer" style={{ ...btnClaro, marginTop: 12 }}>
-          <FileDown size={17} /> Baixar a proposta em PDF
-        </a>
+        {pdfDisponivel && (
+          <a href={urlPdfAprovacaoPublica(token)} target="_blank" rel="noopener noreferrer" style={{ ...btnClaro, marginTop: 12 }} data-testid="baixar-pdf">
+            <FileDown size={17} /> Baixar a proposta em PDF
+          </a>
+        )}
       </section>
 
       {dados.situacao === 'indisponivel' && etapa !== 'comprovante' && (
@@ -374,7 +381,7 @@ export default function AprovacaoPublica() {
   );
 }
 
-function Comprovante({ c, token }) {
+function Comprovante({ c, token, pdfDisponivel }) {
   const aprovada = c.decisao === 'aprovada';
   return (
     <section style={{ ...cartao, border: `2px solid ${aprovada ? OURO : '#b9b2a2'}` }} className="comprovante">
@@ -405,7 +412,7 @@ function Comprovante({ c, token }) {
       </div>
       <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }} className="sem-impressao">
         <button style={{ ...btnEscuro, flex: '1 1 180px' }} onClick={() => window.print()}><Printer size={17} /> Imprimir / salvar comprovante</button>
-        <a href={urlPdfAprovacaoPublica(token)} target="_blank" rel="noopener noreferrer" style={{ ...btnClaro, marginTop: 0, flex: '1 1 180px' }}><FileDown size={17} /> PDF da proposta</a>
+        {pdfDisponivel && <a href={urlPdfAprovacaoPublica(token)} target="_blank" rel="noopener noreferrer" style={{ ...btnClaro, marginTop: 0, flex: '1 1 180px' }}><FileDown size={17} /> PDF da proposta</a>}
       </div>
     </section>
   );

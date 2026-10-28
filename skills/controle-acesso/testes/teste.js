@@ -70,6 +70,24 @@ let erro = '';
 try { motor.processar(motor.modeloVazio()); } catch (e) { erro = e.message; }
 igual('modelo vazio pede portas', /ao menos uma porta/.test(erro), true);
 
+// Achado A2.6 (revisão 27/10/2026): queda de tensão do LEITOR pelo par 24 AWG da manga
+// (0,205 mm²) não era verificada. ΔV = 2·L·I·ρ ÷ 0,205, limite 10 % de 12 V (1,2 V).
+// P3 biometria 0,25 A, 35 m × 1,15 = 40,25 m → 2·40,25·0,25·0,0178/0,205 = 1,75 V (14,6 %)
+perto('P3 queda do leitor biométrico na manga', porta('P3').quedaLeitor, 2 * 40.25 * 0.25 * RHO / 0.205);
+igual('P3 leitor ganha par próprio PP 2 × 0,5 mm²', porta('P3').secaoLeitor, 0.5);
+// P6 MIFARE 0,12 A a 126,5 m → 2,64 V (22 %); P1 MIFARE a 17,25 m → 0,36 V (3 %) fica na manga
+igual('P6 acima de 10 % e P1 dentro', [porta('P6').quedaLeitorPct > 10, porta('P1').secaoLeitor], [true, null]);
+igual('aviso da queda do leitor P6', calc.avisos.some(a => a.startsWith('P6: queda de 2,64 V (22 %')), true);
+// PP dos leitores = (P3 2 leitores × 40,25 + P6 126,5) = 207 m
+igual('cabo PP dos leitores nos materiais', calc.materiais.find(m => /alimentação dos leitores/.test(m.descricao)).quantidade, 207);
+igual('leitor facial IP (PoE) fora da verificação', porta('CT1').quedaLeitor, 0);
+// Cancela com leitor UHF 0,8 A a 30 m (34,5 m de cabo): 2·34,5·0,8·0,0178/0,205 = 4,79 V (40 %) → PP 1 mm²
+const d5 = clonar(motor.exemplo());
+d5.portas.push({ id: 'CN1', local: 'Garagem', tipo: 'cancela', quantidade: 1, sentido: 'entrada', distancia_m: 30 });
+d5.sistema.veiculos = 50;
+const cn1 = motor.processar(d5).calc.pontos.find(p => p.id === 'CN1');
+igual('leitor UHF da cancela: 40 % de queda → PP 2 × 1 mm²', [Math.round(cn1.quedaLeitorPct), cn1.secaoLeitor], [40, 1]);
+
 (async () => {
   for (const t of motor.tiposDisponiveis(res)) igual(`documento ${t}`, (await motor.gerarDocumento(res, t)).buffer.slice(0, 2).toString(), 'PK');
   const orc = motor.montarOrcamento(res, 'execucao');

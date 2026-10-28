@@ -36,8 +36,13 @@ const API_URL = process.env.MCP_API_URL || 'http://localhost:3001';
 const LOGIN_EMAIL = process.env.MCP_LOGIN_EMAIL;
 const LOGIN_SENHA = process.env.MCP_LOGIN_SENHA;
 
+const requerer = createRequire(import.meta.url);
 // mesma lista do backend (utils/disciplinasProjeto.js, fonte única)
-const DISCIPLINAS_VALIDAS = createRequire(import.meta.url)('../utils/disciplinasProjeto.js').DISCIPLINAS.map(d => d.chave);
+const DISCIPLINAS_VALIDAS = requerer('../utils/disciplinasProjeto.js').DISCIPLINAS.map(d => d.chave);
+// regras de segurança (pastas permitidas para o PDF) e a data de hoje em Brasília
+const { pastasPermitidasPdf, conferirPdfPermitido } = requerer('../utils/mcpRegras.js');
+const { hojeBrasilia } = requerer('../utils/dataHoje.js');
+const PASTAS_PDF = pastasPermitidasPdf(process.env);
 
 // ── Autenticação ──────────────────────────────────────────────────────────
 // Faz login uma vez e reaproveita o token por até ~7h30 (o token real dura
@@ -161,7 +166,7 @@ server.registerTool(
   'pesquisar_preco_mercado',
   {
     title: 'Pesquisar preço de mercado',
-    description: 'Pesquisa o preço de mercado atual (busca real na web, Gemini com fallback pago no Claude) para um material/equipamento. Resultados de até 48h são reaproveitados de um cache — não gasta cota/dinheiro pesquisando a mesma coisa duas vezes.',
+    description: 'Pesquisa o preço de mercado atual (busca real na web) para um material/equipamento pelo motor do sistema, na ordem Claude Max (assinatura, sem custo por chamada) → Claude pela API → Gemini. Pesquisas automáticas de até 48h são reaproveitadas de um cache — não gasta cota/dinheiro pesquisando a mesma coisa duas vezes. Pesquisas gravadas por salvar_pesquisa_mercado NÃO entram nesse cache.',
     inputSchema: {
       descricao: z.string().describe('Material/equipamento a pesquisar (ex.: "câmera IP dome 4MP")'),
     },
@@ -182,7 +187,7 @@ server.registerTool(
   'historico_preco',
   {
     title: 'Histórico de preço pesquisado',
-    description: 'Mostra o preço atual no catálogo de um material (se existir) e o histórico de pesquisas de mercado já feitas para descrições parecidas — não é histórico de preço de compra/venda por nota fiscal (o sistema ainda não guarda isso), é o que já foi pesquisado na web ao longo do tempo.',
+    description: 'Mostra o preço atual no catálogo de um material (se existir) e as pesquisas de mercado já feitas para descrições parecidas (o que foi pesquisado na web ao longo do tempo; as gravadas pelo salvar_pesquisa_mercado aparecem como "não verificada"). O sistema também guarda o histórico das mudanças de preço do catálogo (notas fiscais, cotações de fornecedor e edições — tabela materiais_precos_historico), mas esta ferramenta ainda não o consulta.',
     inputSchema: {
       descricao: z.string().describe('Descrição do material (ex.: "câmera dome 4MP")'),
     },
@@ -215,15 +220,15 @@ server.registerTool(
 );
 
 // ── salvar_pesquisa_mercado ───────────────────────────────────────────────
-// Caminho recomendado de pesquisa de preço: o próprio Claude Desktop busca na
-// web (pela assinatura, sem chave/cota) e grava o resultado aqui. Vira
-// histórico no sistema e alimenta o cache de 48h — o botão da tela também
-// passa a mostrar o que foi pesquisado por aqui.
+// O próprio Claude Desktop busca na web (pela assinatura, sem chave/cota) e
+// grava o resultado aqui. É texto livre vindo de fora do sistema: fica no
+// histórico marcado "não verificada" e NÃO alimenta o cache de 48h da pesquisa
+// automática (revisão de 27/10/2026 — utils/pesquisaMercadoService.js).
 server.registerTool(
   'salvar_pesquisa_mercado',
   {
     title: 'Salvar pesquisa de preço no sistema',
-    description: 'Grava no sistema uma pesquisa de preço de mercado que VOCÊ (Claude) acabou de fazer com a SUA PRÓPRIA busca na web — sem usar a cota do Gemini nem crédito de API. Esta é a forma recomendada de pesquisar preço: busque na web aqui na conversa e salve o resultado com esta ferramenta. Fica no histórico do sistema e no cache (a mesma pesquisa não precisa ser refeita por 48h). No campo "resultado", inclua de 3 a 6 achados reais com nome do produto, preço e link, e observe variações relevantes.',
+    description: 'Grava no sistema uma pesquisa de preço de mercado que VOCÊ (Claude) acabou de fazer com a SUA PRÓPRIA busca na web — sem usar a cota do Gemini nem crédito de API. Fica no histórico do sistema marcada como "não verificada" (texto vindo de fora, para conferência humana) e não entra no cache da pesquisa automática. No campo "resultado", inclua de 3 a 6 achados reais com nome do produto, preço e link, e observe variações relevantes.',
     inputSchema: {
       descricao: z.string().describe('O material/equipamento pesquisado (ex.: "câmera IP dome 4MP")'),
       resultado: z.string().describe('O texto da pesquisa: achados reais com produto, preço e link, organizados e curtos.'),
@@ -235,7 +240,7 @@ server.registerTool(
         method: 'POST',
         body: JSON.stringify({ descricao, resultado, fonte: 'claude_desktop' }),
       });
-      return textoOk(`Pesquisa de "${r.descricao}" salva no sistema (fonte: ${r.fonte}). Aparece no histórico e no cache de 48h — o botão da tela também mostra ela agora.`);
+      return textoOk(`Pesquisa de "${r.descricao}" salva no sistema (fonte: ${r.fonte}), marcada como não verificada. Aparece no histórico de pesquisas (historico_preco); não substitui a pesquisa automática da tela.`);
     } catch (err) {
       return textoErro(err.message);
     }
@@ -247,9 +252,9 @@ server.registerTool(
   'analisar_projeto',
   {
     title: 'Analisar projeto (PDF)',
-    description: `Envia um PDF de projeto de engenharia (planta de CFTV, cabeamento, elétrica etc.) já salvo no PC pro mesmo analisador da tela "Análise de Projeto" — ambientes, câmeras, pontos de rede/antena, achados de compatibilização e rascunho de serviços/materiais. IMPORTANTE: isso cria uma análise SALVA no sistema (aparece em "Análises salvas", do jeito que aconteceria enviando o PDF pela tela) — não é uma leitura descartável. Disciplinas válidas: ${DISCIPLINAS_VALIDAS.join(', ')}.`,
+    description: `Envia um PDF de projeto de engenharia (planta de CFTV, cabeamento, elétrica etc.) já salvo no PC pro mesmo analisador da tela "Análise de Projeto" — ambientes, câmeras, pontos de rede/antena, achados de compatibilização e rascunho de serviços/materiais. IMPORTANTE: isso cria uma análise SALVA no sistema (aparece em "Análises salvas", do jeito que aconteceria enviando o PDF pela tela) — não é uma leitura descartável. Por segurança, só lê PDFs destas pastas: ${PASTAS_PDF.join(' ; ')}. Disciplinas válidas: ${DISCIPLINAS_VALIDAS.join(', ')}.`,
     inputSchema: {
-      caminho_pdf: z.string().describe('Caminho completo do arquivo PDF no PC'),
+      caminho_pdf: z.string().describe(`Caminho completo do arquivo PDF no PC, dentro de uma das pastas permitidas (${PASTAS_PDF.join(' ; ')})`),
       disciplinas: z.array(z.string()).describe(`Disciplinas desse arquivo (uma ou mais entre: ${DISCIPLINAS_VALIDAS.join(', ')})`),
       // versão 2.1: a análise não gera laudo; a finalidade diz se é para orçar ou para a H&M elaborar o projeto
       finalidade: z.enum(['orcamento', 'elaboracao']).optional()
@@ -258,16 +263,17 @@ server.registerTool(
   },
   async ({ caminho_pdf, disciplinas, finalidade }) => {
     try {
-      // só PDF: a ferramenta lê um caminho qualquer do PC e envia ao backend
-      if (!/\.pdf$/i.test(caminho_pdf)) return textoErro('Informe o caminho de um arquivo .pdf');
-      if (!fs.existsSync(caminho_pdf)) return textoErro(`Arquivo não encontrado: ${caminho_pdf}`);
-      if (fs.statSync(caminho_pdf).size > 15 * 1024 * 1024) return textoErro('PDF acima de 15 MB — o sistema não aceita');
+      // só PDF e só dentro das pastas permitidas (utils/mcpRegras.js): antes
+      // qualquer PDF do PC podia ser enviado ao sistema a pedido de um texto
+      // malicioso lido pelo Claude
+      const conferido = conferirPdfPermitido(caminho_pdf, PASTAS_PDF);
+      if (conferido.erro) return textoErro(conferido.erro);
       const validas = disciplinas.filter(d => DISCIPLINAS_VALIDAS.includes(d));
       if (validas.length === 0) return textoErro(`Nenhuma disciplina válida informada. Use uma ou mais entre: ${DISCIPLINAS_VALIDAS.join(', ')}`);
 
-      const buffer = fs.readFileSync(caminho_pdf);
+      const buffer = fs.readFileSync(conferido.caminho);
       const form = new FormData();
-      form.append('arquivos', new Blob([buffer], { type: 'application/pdf' }), path.basename(caminho_pdf));
+      form.append('arquivos', new Blob([buffer], { type: 'application/pdf' }), path.basename(conferido.caminho));
       form.append('disciplinasPorArquivo', JSON.stringify([validas]));
       if (finalidade) form.append('finalidade', finalidade);
 
@@ -313,7 +319,7 @@ server.registerTool(
   'enriquecer_analise_projeto',
   {
     title: 'Enriquecer análise de projeto',
-    description: `Adiciona a uma análise já criada (pelo analisar_projeto) o FUNCIONAMENTO do projeto e os PONTOS POR DISCIPLINA (com tipo, modelo e quantidade) que você leu VISUALMENTE do PDF anexado na conversa. Use depois do analisar_projeto, com o id que ele retornou. REGRA IMPORTANTE: descreva e marque APENAS as disciplinas SELECIONADAS naquela análise (o campo "disciplinas" que o analisar_projeto retornou) — não saia procurando disciplinas que não foram escolhidas. Isso é proposital: economiza tempo, porque é comum vir projeto só de uma disciplina (só elétrica, só CFTV, etc.). Não substitui nada do que a análise já tem; só acrescenta. Disciplinas válidas: ${DISCIPLINAS_VALIDAS.join(', ')}.`,
+    description: `Adiciona a uma análise já criada (pelo analisar_projeto — com o usuário dedicado não-administrador, só as análises que ele mesmo criou podem ser alteradas) o FUNCIONAMENTO do projeto e os PONTOS POR DISCIPLINA (com tipo, modelo e quantidade) que você leu VISUALMENTE do PDF anexado na conversa. Use depois do analisar_projeto, com o id que ele retornou. REGRA IMPORTANTE: descreva e marque APENAS as disciplinas SELECIONADAS naquela análise (o campo "disciplinas" que o analisar_projeto retornou) — não saia procurando disciplinas que não foram escolhidas. Isso é proposital: economiza tempo, porque é comum vir projeto só de uma disciplina (só elétrica, só CFTV, etc.). Não substitui nada do que a análise já tem; só acrescenta. Disciplinas válidas: ${DISCIPLINAS_VALIDAS.join(', ')}.`,
     inputSchema: {
       id: z.number().int().positive().describe('Id da análise (retornado por analisar_projeto)'),
       funcionamento: z.string().optional().describe('Como o projeto funciona/opera — só das disciplinas selecionadas'),
@@ -448,7 +454,8 @@ server.registerTool(
         status: it.status || (it.valor_unitario ? 'confirmado' : 'a_cotar'),
       }));
 
-      const dataProposta = data || new Date().toISOString().slice(0, 10);
+      // hoje em Brasília (em UTC, depois das 21h a proposta nascia com a data de amanhã)
+      const dataProposta = data || hojeBrasilia();
       const resultado = await chamarApi('/api/propostas', {
         method: 'POST',
         body: JSON.stringify({

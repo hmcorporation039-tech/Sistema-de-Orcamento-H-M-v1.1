@@ -41,7 +41,7 @@ export default function Usuarios() {
 
   function abrirEdicao(u) {
     setEditandoId(u.id);
-    setForm({ nome: u.nome, email: u.email, senha: '', role: u.role });
+    setForm({ nome: u.nome, email: u.email, senha: '', role: u.role, roleOriginal: u.role });
     setModalAberto(true);
   }
 
@@ -54,7 +54,11 @@ export default function Usuarios() {
     setSalvando(true);
     try {
       if (editandoId) {
-        await atualizarUsuario(editandoId, { nome: form.nome, email: form.email, role: form.role, ativo: true });
+        // sem `ativo` (editar não reativa um usuário desativado) e `role` só se mudou —
+        // o servidor mantém o que não vem no corpo
+        await atualizarUsuario(editandoId, {
+          nome: form.nome, email: form.email, ...(form.role !== form.roleOriginal ? { role: form.role } : {}),
+        });
         toast.success('Usuário atualizado');
       } else {
         if (!form.senha || form.senha.length < 6) {
@@ -80,7 +84,7 @@ export default function Usuarios() {
       return;
     }
     try {
-      await atualizarUsuario(u.id, { nome: u.nome, email: u.email, role: u.role, ativo: !u.ativo });
+      await atualizarUsuario(u.id, { nome: u.nome, email: u.email, ativo: !u.ativo });
       toast.success(u.ativo ? 'Usuário desativado' : 'Usuário reativado');
       carregar();
     } catch (err) {

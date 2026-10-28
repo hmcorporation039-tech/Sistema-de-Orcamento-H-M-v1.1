@@ -82,6 +82,9 @@ const rd = motor.processar(duplas).calc;
 igual('PCF duplas ≥ PCF abertas → só duplas abertas (5.1.6.4 g)', rd.v.abertas.map(i => rd.v.portas[i].tipo), ['dupla', 'dupla']);
 const reuniao = motor.exemplo();
 Object.assign(reuniao.edificacao, { altura_m: 18, pavimentos: 6, local_reuniao_publico: true });
+// 6 pavimentos: 5 PCF de acesso + 1 de saída (o exemplo tem 17 de acesso, que em 6 pavimentos
+// dariam ≥ 3 acessos num pavimento e a Nota 5 do Anexo B multiplicaria a Tabela B1)
+reuniao.escada.portas = [{ tipo: 'simples', sentido: 'acesso', quantidade: 5 }, { tipo: 'simples', sentido: 'saida', quantidade: 1 }];
 igual('escritório 18 m com auditório: 1 + 1 PCF abertas', motor.processar(reuniao).calc.v.npa, 2);
 const ante = motor.exemplo();
 ante.escada.antecamara = true;
@@ -94,11 +97,69 @@ soft.sistema.partida = 'soft_starter';
 const rs = motor.processar(soft).calc;
 igual('soft-starter com alívio pelo inversor → damper motorizado, sem SA', [rs.c.alivio, rs.aut.totais.SA, rs.materiais.some(m => m.codigo === 'SOFT')], ['damper_motorizado', 0, true]);
 
+// 4b) achado A2.4 (revisão 27/10/2026) — Nota 5 do Anexo B: 2 PCF de acesso por pavimento.
+//    Exemplo do Anexo F com 34 PCF de acesso (2 por pavimento-tipo) + 1 de saída:
+//    NPA = 2 (Tabela B1, escritório > 21 m) × 2 = 4 (antes: 2).
+//    Abertas: a de saída (vão 1,64) + 3 de acesso (3 × 1,64) = 6,56 m²; frestas das 31
+//    de acesso fechadas = 31 × 0,03 = 0,93 m² → APA = 7,49 m²; QAT = 7,49 m³/s;
+//    QTS = 7,49 × 1,4 = 10,486 m³/s. Antes (NPA 2): APA = 2 × 1,64 + 33 × 0,03 = 4,27 m²,
+//    QAT 4,27 < QFT = 0,827 × 1,06 × √50 = 6,20 → QT = QFT → QTS 8,68 m³/s (−17 %).
+const nota5 = motor.exemplo();
+nota5.escada.portas = [{ tipo: 'simples', sentido: 'acesso', quantidade: 34 }, { tipo: 'simples', sentido: 'saida', quantidade: 1 }];
+const r5 = motor.processar(nota5).calc;
+igual('Nota 5: 34 acessos em 18 pavimentos → 2 por pavimento → NPA 2 × 2 = 4', [r5.v.acessosPorPavimento, r5.v.npa], [2, 4]);
+perto('Nota 5: APA = 4 × 1,64 + 31 × 0,03 = 7,49 m²', r5.v.apa, 7.49, 1e-6);
+perto('Nota 5: QTS = 7,49 × 1,4 = 10,486 m³/s', r5.v.qts, 10.486, 1e-6);
+igual('Nota 5: aviso pede o dado informado (deduzido)', r5.avisos.some(a => /Nota 5/.test(a) && /CONFERIR/.test(a)), true);
+const nota5i = motor.exemplo();
+nota5i.escada.acessos_por_pavimento = 3;
+igual('Nota 5 informada: 3 acessos no pior pavimento → NPA 6', motor.processar(nota5i).calc.v.npa, 6);
+igual('exemplo do Anexo F continua com 1 acesso por pavimento (17 em 18) → NPA 2', [k.v.acessosPorPavimento, k.v.npa, k.bloqueios], [1, 2, []]);
+
+// 4c) achado A2.3 — valores editados fora da norma bloqueiam o memorial
+const fora = motor.exemplo();
+Object.assign(fora.sistema, { pressao_projeto_pa: 40, pressao_max_pa: 80, velocidade_porta_ms: 0.8 });
+const rf = motor.processar(fora);
+igual('ΔP 40 Pa, máx. 80 Pa e 0,8 m/s → 3 bloqueios', rf.calc.bloqueios.length, 3);
+igual('… avisos BLOQUEANTE no topo', rf.calc.avisos.slice(0, 3).every(a => a.startsWith('BLOQUEANTE')), true);
+igual('… memorial fora dos documentos disponíveis', motor.tiposDisponiveis(rf).includes('memorial'), false);
+igual('… laudo continua disponível', motor.tiposDisponiveis(rf).includes('laudo'), true);
+const forcadas = motor.exemplo();
+forcadas.escada.portas_abertas = 0;
+igual('PCF abertas forçadas 0 < 2 da Tabela B1 → bloqueio', motor.processar(forcadas).calc.bloqueios.some(b => /PCF abertas/.test(b)), true);
+
+// 4d) achado A2.4 (MÉDIO) — altura vazia vira bloqueio; força padrão com aviso
+const semAltura = motor.exemplo();
+delete semAltura.edificacao.altura_m;
+semAltura.edificacao.pavimentos = 7;
+const rsa = motor.processar(semAltura).calc;
+igual('altura vazia: estimada 7 × 3 = 21 m, mas bloqueia o memorial', [rsa.c.altura, rsa.c.alturaEstimada, rsa.bloqueios.some(b => /Altura da edificação não informada/.test(b))], [21, true, true]);
+const semLimite = motor.exemplo();
+semLimite.sistema.limite_forca_n = null;
+const rsl = motor.processar(semLimite).calc;
+igual('limite de força vazio: 133 N com aviso de escolha explícita', [rsl.c.limiteForca, rsl.c.limiteForcaPadrao, rsl.avisos.some(a => /força de abertura não informado/.test(a))], [133, true, true]);
+igual('modelo vazio não traz limite de força pré-escolhido', motor.modeloVazio().sistema.limite_forca_n, null);
+const ante90 = motor.exemplo();
+Object.assign(ante90.edificacao, { altura_m: 90, pavimentos: 30 });
+igual('90 m exatos: aviso de antecâmara (Nota 2 do Anexo B: igual ou superior)', motor.processar(ante90).calc.avisos.some(a => /antecâmara de segurança/.test(a)), true);
+
 // 5) inspeção
 igual('ΔP 61 Pa no térreo → NC; 47 Pa → C', [res.med.pressoes[0].resultado, res.med.pressoes[3].resultado], ['NC', 'C']);
 igual('velocidade 0,92 m/s → NC', res.med.velocidades[1].resultado, 'NC');
 igual('checklist P1 e P2 viram NC pelas medições', ['P1', 'P2'].map(cd => res.checklist.find(x => x.cod === cd).situacao), ['NC', 'NC']);
 igual('parecer não conforme preliminar', res.parecer.situacao, 'NAO_CONFORME_PRELIMINAR');
+// achado A2.3: projeto editado para 40/80 Pa e 0,8 m/s, medições 75 e 37 Pa e 0,9 m/s.
+// Antes: critério 36–80 Pa e ≥ 0,8 m/s → tudo C. Agora o laudo usa a norma:
+// 0,9 × máx(40, 50) = 45 Pa a 60 Pa e ≥ 1 m/s → 75 Pa NC, 37 Pa NC, 0,9 m/s NC.
+const ed = motor.exemplo();
+Object.assign(ed.sistema, { pressao_projeto_pa: 40, pressao_max_pa: 80, velocidade_porta_ms: 0.8, limite_forca_n: 200 });
+ed.inspecao.pressoes = [{ pavimento: 'Térreo', dp_pa: 75 }, { pavimento: '18', dp_pa: 37 }];
+ed.inspecao.velocidades = [{ porta: 'PCF 1', media_ms: 0.9, pontos: 12 }];
+ed.inspecao.forcas = [{ porta: 'PCF 1', forca_n: 150 }];
+const red = motor.processar(ed);
+igual('laudo com projeto editado: ΔP 75 e 37 Pa → NC (critério 45–60 Pa)', red.med.pressoes.map(m => [m.criterio, m.resultado]), [['45 a 60 Pa', 'NC'], ['45 a 60 Pa', 'NC']]);
+igual('laudo com projeto editado: 0,9 m/s → NC (≥ 1 m/s)', red.med.velocidades[0].resultado, 'NC');
+igual('laudo: limite de força 200 N informado não passa de 133 N → 150 N NC', red.med.forcas[0].resultado, 'NC');
 const ex = motor.exemplo();
 ex.existente = { vazao_m3h: 15000, pressao_pa: 250, potencia_cv: 4, quantidade: 1 };
 const rex = motor.processar(ex).calc.existente;

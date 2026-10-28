@@ -1,5 +1,5 @@
 import {
-  aplicarOperacao, montarVisao, conferirConclusao, temAvisosConclusao, classificarOS, agruparChecklist, isoLocal, diaLocal,
+  aplicarOperacao, montarVisao, proximoSemResposta, conferirConclusao, temAvisosConclusao, classificarOS, agruparChecklist, isoLocal, diaLocal,
 } from './operacoes';
 
 const base = () => ({
@@ -123,4 +123,32 @@ test('agrupa checklist na ordem e formata datas locais', () => {
   expect(diaLocal(d)).toBe('2026-11-03');
   expect(isoLocal(d)).toMatch(/^2026-11-03T22:30:05[+-]\d{2}:\d{2}$/);
   expect(Date.parse(isoLocal(d))).toBe(d.getTime());
+});
+
+test('próximo sem resposta: depois do último visitado, dando a volta', () => {
+  const lista = [
+    { id: 'a', resposta: 'conforme' }, { id: 'b', resposta: null }, { id: 'c', resposta: 'na' }, { id: 'd', resposta: null },
+  ];
+  expect(proximoSemResposta(lista).id).toBe('b');
+  expect(proximoSemResposta(lista, 'b').id).toBe('d');
+  expect(proximoSemResposta(lista, 'd').id).toBe('b');
+  expect(proximoSemResposta([{ id: 'a', resposta: 'na' }])).toBeNull();
+});
+
+test('OS do aparelho com criação recusada continua na visão, marcada não aceita', () => {
+  const v = montarVisao({
+    servidor: null,
+    ops: [
+      { op_uuid: 'a', seq: 1, tipo: 'criar_os', os_uuid: 'n', feita_em: '2026-11-03T09:00:00-03:00', estado: 'recusada', erro: 'Sem permissão nesta obra.',
+        dados: { obra_id: 9, titulo: 'Visita', tipo: 'visita' } },
+      { op_uuid: 'b', seq: 2, tipo: 'iniciar', os_uuid: 'n', feita_em: '2026-11-03T09:01:00-03:00', estado: 'pendente', dados: {} },
+      // dado antigo (antes da correção): a operação também tinha sido recusada
+      { op_uuid: 'c', seq: 3, tipo: 'observacao', os_uuid: 'n', feita_em: '2026-11-03T09:02:00-03:00', estado: 'recusada', erro: 'OS não encontrada.', dados: { texto: 'ok' } },
+    ],
+    fotos: [{ uuid: 'f', os_uuid: 'n', estado: 'pendente', tirada_em: 't' }],
+  });
+  expect(v.status).toBe('em_execucao');
+  expect(v.observacao_final).toBe('ok');
+  expect(v.nao_aceita).toEqual({ erro: 'Sem permissão nesta obra.', operacoes: 2, fotos: 1 });
+  expect(v.pendencias).toEqual({ operacoes: 0, fotos: 0, recusadas: 1, total: 0 });
 });

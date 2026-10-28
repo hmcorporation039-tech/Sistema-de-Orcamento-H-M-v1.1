@@ -142,6 +142,17 @@ function analisarZona(zona, ctx) {
   const LB = rp * rf * hz * oc.LF * fator * rs;    // (C.3) — LB = LV
   const LC = oc.LO * fator * rs;                   // (C.4) — LC = LM = LW = LZ
 
+  // RA também nas zonas internas: choque por toque/passo DENTRO da estrutura
+  // (definição de RA na NBR 5419-2 / IEC 62305-2; a Tabela C.3 traz rt de pisos
+  // internos — linóleo, madeira, carpete). Antes só a zona externa tinha RA, e
+  // uma estrutura sem SPDA com piso de concreto subestimava R1 (RA ≈ 1,3e-5 > RT).
+  // [CONFERIR na NBR 5419-2:2026 se a edição nova mantém RA nas zonas internas]
+  const medidasA = [...(zona.medidas_pta || [])];
+  if (spda.descida_natural && npSpda !== 'nenhum' && !medidasA.includes('descida_natural')) medidasA.push('descida_natural');
+  const PTAi = (npSpda === 'nenhum') ? 1 : produto(T.PTA, medidasA, `zonas[${zona.nome}].medidas_pta`);
+  reg('PTA', PTAi, 'Tabela B.1', `${medidasA.join(', ') || 'nenhuma'} (RA na zona interna)`);
+  comp.RA = ev.ND * PTAi * PB * LU; // (4); LA = rt·LT·(nz/nt)·(tz/8760)·rs, igual a LU (C.1)
+
   // Sistemas internos da zona: PC e PM combinados pelas Eq. 12 e 13
   const sistemas = (zona.sistemas || []).map(sOriginal => {
     // "Sem qualquer proteção": tira também as MPS de roteamento e a malha equipotencial
@@ -227,8 +238,15 @@ function analisarZona(zona, ctx) {
   const incluiD3 = oc.LO > 0;
   const R1 = comp.RA + comp.RB + comp.RU + comp.RV + (incluiD3 ? comp.RC + comp.RM + comp.RW + comp.RZ : 0);
   const F = Object.values(freq).reduce((a, b) => a + b, 0); // (14)
-  const FT = zona.ft ?? (est.sistemas_criticos ? T.FT.critico : T.FT.nao_critico);
-  return { zona, fator, fatores, comp, freq, r3, sistemas, PC, PM, R1, F, FT, incluiD3 };
+  // FT (Seção 7): 0,1/ano para sistemas críticos — não pode ser alterado — e
+  // 1/ano para os demais (referencia/metodo.md). zona.ft só vale se for MAIS
+  // restritivo que o da norma; valor maior é ignorado e registrado em ftIgnorado.
+  const ftNorma = est.sistemas_criticos ? T.FT.critico : T.FT.nao_critico;
+  const ftInformado = (zona.ft == null || zona.ft === '') ? null : Number(zona.ft);
+  const ftAceito = ftInformado != null && Number.isFinite(ftInformado) && ftInformado > 0 && ftInformado <= ftNorma;
+  const FT = ftAceito ? ftInformado : ftNorma;
+  const ftIgnorado = (ftInformado != null && !ftAceito) ? zona.ft : null;
+  return { zona, fator, fatores, comp, freq, r3, sistemas, PC, PM, R1, F, FT, ftNorma, ftIgnorado, incluiD3 };
 }
 
 function num(v) {

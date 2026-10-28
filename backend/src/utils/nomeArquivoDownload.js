@@ -12,10 +12,27 @@
 
 const TAMANHO_MAX = 180;
 
+// Corta em `max` unidades de texto sem partir um caractere de 2 unidades
+// (emoji, alguns símbolos): o corte no meio deixava meio caractere solto e o
+// encodeURIComponent do filename* estourava (URIError → erro 500 no download).
+// Corta no mesmo ponto de antes; só recua 1 quando cairia no meio do par.
+function cortarTexto(texto, max) {
+  const s = String(texto ?? '');
+  if (s.length <= max) return s;
+  let fim = Math.max(0, max);
+  const c = s.charCodeAt(fim - 1);
+  if (c >= 0xd800 && c <= 0xdbff) fim--; // 1ª metade de um par: fica de fora
+  return s.slice(0, fim);
+}
+
+// Meio caractere solto já vindo no nome (texto colado/corrompido) também
+// quebraria o encodeURIComponent: vira o caractere de substituição
+const bemFormado = (s) => (typeof s.toWellFormed === 'function' ? s.toWellFormed() : s.replace(/[�-�](?![�-�])|(?<![�-�])[�-�]/g, '�'));
+
 // limpa o nome sem perder acentos: sem caracteres de controle, sem barras
 // (não é caminho) e com tamanho limitado (mantendo a extensão)
 function limparNome(nome, padrao = 'arquivo') {
-  let s = String(nome ?? '')
+  let s = bemFormado(String(nome ?? ''))
     .normalize('NFC')
     .replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
     .replace(/[\\/]/g, '_')
@@ -24,7 +41,7 @@ function limparNome(nome, padrao = 'arquivo') {
   if (!s || /^\.+$/.test(s)) s = padrao;
   if (s.length > TAMANHO_MAX) {
     const ext = (s.match(/\.[A-Za-z0-9]{1,6}$/) || [''])[0];
-    s = s.slice(0, TAMANHO_MAX - ext.length).trimEnd() + ext;
+    s = cortarTexto(s, TAMANHO_MAX - ext.length).trimEnd() + ext;
   }
   return s;
 }
@@ -54,4 +71,4 @@ function contentDisposition(nome, tipo = 'attachment', padrao = 'arquivo') {
   return `${disp}; filename="${nomeAscii(limpo, padrao)}"; filename*=UTF-8''${codificarRfc5987(limpo)}`;
 }
 
-module.exports = { contentDisposition, nomeAscii, limparNome, codificarRfc5987 };
+module.exports = { contentDisposition, nomeAscii, limparNome, codificarRfc5987, cortarTexto };

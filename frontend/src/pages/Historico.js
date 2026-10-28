@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Search, Trash2, X, FileDown, FileSpreadsheet, Copy, Send, Pencil, Plus, Link2, CheckCircle2, XCircle } from 'lucide-react';
@@ -252,17 +252,23 @@ export default function Historico() {
     navigate(`/propostas/editar/${id}`);
   }
 
+  // cliques rápidos em propostas diferentes: só a resposta do ÚLTIMO pedido
+  // vale (antes a mais lenta chegava depois e mostrava a proposta errada)
+  const pedidoDetalheRef = useRef(0);
   async function abrirDetalhe(id) {
+    const pedido = ++pedidoDetalheRef.current;
     setCarregandoDetalhe(true);
     setDetalhe({});
     try {
       const res = await getProposta(id);
+      if (pedido !== pedidoDetalheRef.current) return;
       setDetalhe(res.data);
     } catch {
+      if (pedido !== pedidoDetalheRef.current) return;
       toast.error('Erro ao carregar proposta');
       setDetalhe(null);
     } finally {
-      setCarregandoDetalhe(false);
+      if (pedido === pedidoDetalheRef.current) setCarregandoDetalhe(false);
     }
   }
 
@@ -272,8 +278,11 @@ export default function Historico() {
       toast.success(`Status atualizado para ${status}`);
       recarregar();
       if (detalhe?.id === id) abrirDetalhe(id);
-    } catch {
-      toast.error('Erro ao atualizar status');
+    } catch (err) {
+      // 409 APROVADA_PELO_CLIENTE (o cliente aceitou pelo link; só admin tira de
+      // "Aprovada"), 403 de posse etc.: a mensagem do servidor diz o porquê
+      toast.error(err.response?.data?.erro || 'Erro ao atualizar status', { duration: err.response?.status === 409 ? 10000 : 4000 });
+      if (err.response?.status === 409) recarregar();
     }
   }
 

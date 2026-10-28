@@ -41,22 +41,32 @@ function consolidarNcs(checklist, explicitas) {
 }
 
 // medicoes: [{ resultado: 'C' | 'NC' | 'NV' }] — qualquer tabela de medição da disciplina
-function parecer(checklist, ncs, medicoes = []) {
+// opcoes.exigeMedicao (padrão true): laudo sem NENHUM ensaio/medição registrado não
+// sai CONFORME — a inspeção visual sozinha não sustenta a conformidade; a lista
+// vazia conta como pendência (INCONCLUSIVO, ou NC preliminar se houver NC).
+function parecer(checklist, ncs, medicoes = [], opcoes = {}) {
+  const exigeMedicao = opcoes.exigeMedicao !== false;
+  medicoes = medicoes || [];
   const cont = { C: 0, NC: 0, NA: 0, NV: 0 };
   checklist.forEach(c => { cont[c.situacao] = (cont[c.situacao] || 0) + 1; });
   const porP = { P1: 0, P2: 0, P3: 0, P4: 0 };
   ncs.forEach(n => { porP[n.prioridade] = (porP[n.prioridade] || 0) + 1; });
   const medidos = medicoes.filter(m => m.resultado && m.resultado !== 'NV');
   const medicoesNc = medicoes.filter(m => m.resultado === 'NC').length;
-  const pendentes = cont.NV + medicoes.filter(m => !m.resultado || m.resultado === 'NV').length;
+  const semEnsaios = exigeMedicao && medicoes.length === 0;
+  const pendentes = cont.NV + medicoes.filter(m => !m.resultado || m.resultado === 'NV').length + (semEnsaios ? 1 : 0);
   let situacao;
   let texto;
   if ((ncs.length || medicoesNc) && pendentes) {
     situacao = 'NAO_CONFORME_PRELIMINAR';
-    texto = 'NÃO CONFORME (preliminar) — há não conformidades constatadas e itens ainda não verificados; o parecer final depende da conclusão da inspeção';
+    texto = 'NÃO CONFORME (preliminar) — há não conformidades constatadas e itens ainda não verificados; o parecer final depende da conclusão da inspeção'
+      + (semEnsaios ? ' e dos ensaios/medições, que não foram registrados' : '');
   } else if (ncs.length || medicoesNc) {
     situacao = 'NAO_CONFORME';
     texto = 'NÃO CONFORME — corrigir as não conformidades nos prazos indicados e reinspecionar os itens corrigidos';
+  } else if (semEnsaios) {
+    situacao = 'INCONCLUSIVO';
+    texto = 'INCONCLUSIVO — nenhum ensaio/medição foi registrado; a inspeção visual sozinha não sustenta a conformidade da instalação';
   } else if (pendentes) {
     situacao = 'INCONCLUSIVO';
     texto = 'INCONCLUSIVO — há itens ou medições não verificados';
@@ -64,7 +74,7 @@ function parecer(checklist, ncs, medicoes = []) {
     situacao = 'CONFORME';
     texto = 'CONFORME — a instalação atende aos requisitos verificados';
   }
-  return { cont, porP, medidos: medidos.length, dentro: medidos.filter(m => m.resultado === 'C').length, medicoesNc, pendentes, situacao, texto };
+  return { cont, porP, medidos: medidos.length, dentro: medidos.filter(m => m.resultado === 'C').length, medicoesNc, pendentes, semEnsaios, situacao, texto };
 }
 
 module.exports = { PRAZOS, mesclarChecklist, consolidarNcs, parecer };

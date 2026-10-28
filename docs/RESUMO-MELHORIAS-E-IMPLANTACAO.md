@@ -389,6 +389,7 @@ Uso de cada skill: `skills/<disciplina>/SKILL.md`. Formulário da obra (JSON): `
 - [x] Sincronizar o GitHub com o PC (feito em 10/10/2026: v1.6.0 e v1.6.1).
 - [x] Atualizar as dependências apontadas pelo `npm audit` (feito em 25/10/2026; ver "Auditoria de segurança" na seção 2).
 - [ ] Rodar `configurar-seguranca.bat` como administrador e trocar a senha de app do Gmail (auditoria de 25/10/2026).
+- [ ] **Antes de publicar o link de aprovação da proposta por túnel ou proxy reverso** (`URL_PUBLICA`), definir `TRUST_PROXY` no `.env` (ver `backend/.env.example`): sem ele o comprovante de aceite grava o IP do túnel e o limite de taxa das páginas públicas trata todos os clientes como um só. O backend avisa no log quando `URL_PUBLICA` está com `https://` e `TRUST_PROXY` vazio.
 - [ ] Trazer o material do Teams e da pasta Elétrica Predial (seção 4).
 - [ ] O uso por ambiente (`pontosPorAmbiente.js`) é aproximado: mostrar sempre com aviso, como já é feito hoje.
 - [x] ~~Novos fornecedores de cotação exigem um parser novo~~ — desde a v1.7.0 o leitor universal + OCR + IA lê qualquer layout (ver seção 2, v1.7.0).

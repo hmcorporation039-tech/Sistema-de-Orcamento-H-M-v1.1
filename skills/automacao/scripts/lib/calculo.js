@@ -56,7 +56,7 @@ function listaDePontos(dados, s, avisos) {
 }
 
 // ── Climatização: ar externo (NBR 16401-3) e controle por CO₂ ───────────────
-function zonasClimatizacao(dados, s) {
+function zonasClimatizacao(dados, s, avisos = []) {
   const ocup = n(s.ocupacao_media_pct, 60) / 100;
   const co2Max = n(s.co2_max_ppm, 1100); // teto prático do setpoint de CO₂
   return (dados.zonas || []).filter(z => z.nome && n(z.area_m2, 0) > 0).map(z => {
@@ -72,9 +72,18 @@ function zonasClimatizacao(dados, s) {
     const setpointCo2 = Math.min(co2Regime, co2Max);
     const dcv = z.controle === 'co2';
     const vMin = fa * area;
-    const vMedia = fa * area + fp * pessoas * ocup;
-    const reducao = dcv ? 1 - vMedia / vbz : 0;
-    return { ...z, uso: z.uso || 'outro', rotuloUso: ref.rotulo, fp, fa, area, pessoas, vbz, m3h: vbz * 3.6, co2Regime, setpointCo2, dcv, vMin, reducao, setpoint: n(z.setpoint, 24) };
+    // Ventilação por demanda (DCV): na ocupação média o ar externo cai para Fa·Az + Fp·Pz·ocupação
+    // — vale quando o setpoint de CO₂ é o CO₂ de regime da vazão de projeto. Com o setpoint
+    // ABAIXO do regime (teto de 1 100 ppm numa zona densa), manter o setpoint pede
+    // Pz·ocupação·G/(setpoint − Cext) de ar externo, que pode passar da vazão de projeto: a
+    // DCV fica no máximo e a redução declarada não acontece (achado A2.5 da revisão de 27/10/2026).
+    const vProporcional = fa * area + fp * pessoas * ocup;
+    const setpointAbaixo = dcv && setpointCo2 < co2Regime;
+    const vSetpoint = setpointAbaixo ? (pessoas * ocup * T.CO2_PESSOA_LS) / ((setpointCo2 - T.CO2_EXTERNO_PPM) * 1e-6) : 0;
+    const vMedia = Math.min(vbz, Math.max(vProporcional, vSetpoint));
+    const reducao = dcv ? Math.max(0, 1 - vMedia / vbz) : 0;
+    if (setpointAbaixo) avisos.push(`Zona ${z.nome}: com o ar externo de projeto o CO₂ em regime é ~${co2Regime} ppm, acima do setpoint de ${setpointCo2} ppm. Para segurar ${setpointCo2} ppm na ocupação média (${Math.round(ocup * 100)} %) seriam ${br(vSetpoint, 0)} L/s de ar externo (projeto: ${br(vbz, 0)} L/s) — a ventilação por CO₂ ${reducao > 0 ? `reduz só ${Math.round(reducao * 100)} %` : 'fica no máximo e não reduz a vazão'}. Para economizar, ajustar o setpoint ao regime ou rever o ar externo de projeto. [CONFERIR]`);
+    return { ...z, uso: z.uso || 'outro', rotuloUso: ref.rotulo, fp, fa, area, pessoas, vbz, m3h: vbz * 3.6, co2Regime, setpointCo2, setpointAbaixo, dcv, vMin, vMedia, reducao, setpoint: n(z.setpoint, 24) };
   });
 }
 
@@ -91,11 +100,22 @@ function classeDe(funcoes = {}) {
   return detalhes.length ? { classe: pior, detalhes } : null;
 }
 
-function eficiencia(dados, s) {
+// Função em branco na proposta = continua como está hoje: a proposta é avaliada sobre
+// {...atual, ...proposta}. Antes as funções em branco sumiam da proposta e a classe saía
+// pela melhor das informadas (atual D + só "ventilação por CO₂" → A, 53 % de economia).
+const preenchidas = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v != null && v !== ''));
+function eficiencia(dados, s, avisos = []) {
   const f = dados.funcoes || {};
-  const atual = classeDe(f.atual);
-  const proposta = classeDe(f.proposta);
-  if (!atual || !proposta) return null;
+  const fAtual = preenchidas(f.atual);
+  const fInformadas = preenchidas(f.proposta);
+  const atual = classeDe(fAtual);
+  const proposta = classeDe({ ...fAtual, ...fInformadas });
+  if (!atual || !proposta || !Object.keys(fInformadas).length) return null;
+  const rotulo = (cod) => T.FUNCOES_BAC.find(x => x.cod === cod).rotulo.toLowerCase();
+  const mantidas = Object.keys(fAtual).filter(cod => !(cod in fInformadas) && T.FUNCOES_BAC.some(x => x.cod === cod));
+  const semAtual = Object.keys(fInformadas).filter(cod => !(cod in fAtual) && T.FUNCOES_BAC.some(x => x.cod === cod));
+  if (mantidas.length) avisos.push(`Funções sem nível proposto ficam como estão hoje na classe proposta: ${mantidas.map(rotulo).join('; ')}.`);
+  if (semAtual.length) avisos.push(`Funções propostas sem o nível atual informado (a classe atual foi avaliada sem elas): ${semAtual.map(rotulo).join('; ')}. [CONFERIR]`);
   const uso = T.FATORES_BAC[s.uso] ? s.uso : 'escritorio';
   const fat = T.FATORES_BAC[uso];
   const econTh = 1 - fat.th[proposta.classe] / fat.th[atual.classe];
@@ -199,9 +219,9 @@ function materiaisBms(b, zonas, s) {
 function calcular(dados) {
   const s = dados.sistema || {};
   const avisos = [];
-  const zonas = zonasClimatizacao(dados, s);
+  const zonas = zonasClimatizacao(dados, s, avisos);
   const bms = listaDePontos(dados, s, avisos);
-  const efic = eficiencia(dados, s);
+  const efic = eficiencia(dados, s, avisos);
   const resid = residencial(dados, avisos);
   if (!bms && !resid && !zonas.length) throw new Error('Cadastre equipamentos (BMS), zonas de climatização ou ambientes residenciais.');
   if (zonas.length) avisos.push('Ar externo pela NBR 16401-3, Tabela 1, nível 1 (Fp e Fa) — conferir o uso de cada zona na norma. [CONFERIR]');
@@ -212,4 +232,4 @@ function calcular(dados) {
   return { bms, zonas, efic, resid, materiais, avisos };
 }
 
-module.exports = { calcular, classeDe, zonasClimatizacao, br };
+module.exports = { calcular, classeDe, zonasClimatizacao, eficiencia, br };

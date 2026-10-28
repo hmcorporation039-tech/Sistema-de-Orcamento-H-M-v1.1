@@ -569,6 +569,14 @@ function montarMateriaisDoDesenho(analises, vetoriais, catalogo) {
 function achadosDoDesenho(analises, vetoriais) {
   const achados = [];
   analises.forEach((a, i) => {
+    // página pulada (traços demais) ou leitura que falhou: avisa em vez de sumir calada
+    const avisos = (vetoriais[i] || []).filter(p => p.aviso);
+    if (avisos.length) {
+      achados.push({
+        tema: 'Contagem pelo desenho (PDF vetorial) incompleta',
+        observacao: `"${a.arquivo}": ${avisos.map(p => (p.pagina ? `pág. ${p.pagina}: ` : '') + p.aviso).join('; ')}.`,
+      });
+    }
     const itens = (vetoriais[i] || []).flatMap(p => p.itens);
     if (!itens.length) return;
     const fmt = (it) => `${semMarcador(it.descricao).slice(0, 70)}: ${it.tipo === 'simbolo' ? it.quantidade : it.metros != null ? metrosBR(it.metros) : `${it.comprimento_pt} pt (sem escala no carimbo)`}`;
@@ -606,7 +614,10 @@ async function analisarProjetoCompleto(arquivos) {
   );
   // geometria do desenho (símbolos/linhas pela legenda): mesma regra, falha não derruba
   const vetoriais = await Promise.all(
-    analises.map((a, i) => (a.semTexto ? Promise.resolve([]) : lerPdfVetorial(arquivos[i].buffer, { maxPaginas: 6 }).catch(() => [])))
+    analises.map((a, i) => (a.semTexto ? Promise.resolve([]) : lerPdfVetorial(arquivos[i].buffer, { maxPaginas: 6 }).catch((e) => {
+      console.warn(`[analise] leitura vetorial de "${a.arquivo}" falhou:`, e.message);
+      return [{ pagina: null, itens: [], legenda: null, escala: null, aviso: `leitura do desenho falhou (${e.message}) — conferir na planta` }];
+    })))
   );
 
   // Disciplina "efetiva" da análise inteira = união das tags de todos os
@@ -692,7 +703,7 @@ async function analisarProjetoCompleto(arquivos) {
     totaisQuadro: a.totaisQuadro,
     listaMateriais: a.listaMateriais,
     esquadrias: a.esquadrias,
-    desenho: (vetoriais[i] || []).map(p => ({ pagina: p.pagina, escala: p.escala, itens: p.itens.map(({ posicoes, ...it }) => it) })),
+    desenho: (vetoriais[i] || []).map(p => ({ pagina: p.pagina, escala: p.escala, itens: p.itens.map(({ posicoes, ...it }) => it), ...(p.aviso ? { aviso: p.aviso } : {}) })),
   }));
 
   return {

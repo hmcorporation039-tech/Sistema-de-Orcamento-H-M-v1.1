@@ -2,10 +2,22 @@ const pool = require('../config/database');
 const bcrypt = require('bcryptjs');
 const { ITENS_REFERENCIA } = require('../utils/precosMaoDeObraReferencia');
 
+// Trava do PostgreSQL só das migrações: duas cópias do backend subindo juntas
+// (já aconteceu: EADDRINUSE no log) migravam ao mesmo tempo. Com a trava, a
+// segunda espera a primeira terminar e só então confere (tudo idempotente).
+const TRAVA_MIGRACAO = 'hm-migracoes-schema';
+// Cada ALTER TABLE pede trava exclusiva da tabela, mesmo quando a coluna já
+// existe. Se algo segura a tabela (consulta longa da cópia anterior), a
+// migração desiste em poucos segundos em vez de enfileirar o sistema inteiro
+// atrás dela; o supervisor sobe o backend de novo em seguida.
+const LOCK_TIMEOUT_MIGRACAO = /^\d+(ms|s)?$/.test(String(process.env.MIGRACAO_LOCK_TIMEOUT || '')) ? process.env.MIGRACAO_LOCK_TIMEOUT : '10s';
+
 async function criarTabelas() {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [TRAVA_MIGRACAO]);
+    await client.query(`SET LOCAL lock_timeout = '${LOCK_TIMEOUT_MIGRACAO}'`);
 
     // Tabela de usuários
     await client.query(`
@@ -432,7 +444,18 @@ async function criarTabelas() {
         END IF;
       END $$;
     `);
-    await client.query(`ALTER TABLE prestadores ALTER COLUMN documento TYPE VARCHAR(20)`);
+    // Só quando ainda não é VARCHAR(20): o ALTER TYPE incondicional reescrevia a
+    // tabela (trava exclusiva) em TODA partida do backend.
+    await client.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = current_schema() AND table_name = 'prestadores' AND column_name = 'documento'
+                      AND (data_type <> 'character varying' OR character_maximum_length IS DISTINCT FROM 20)) THEN
+          ALTER TABLE prestadores ALTER COLUMN documento TYPE VARCHAR(20);
+        END IF;
+      END $$;
+    `);
 
     // Contratos de prestação de serviço gerados automaticamente para os prestadores
     await client.query(`
@@ -659,7 +682,9 @@ async function criarTabelas() {
     // arquivo; cada uma exporta async (client) => {} e precisa ser idempotente).
     for (const m of listarMigracoes()) await require(m)(client);
 
-    await client.query('COMMIT');
+    // COMMIT de transação abortada (erro engolido numa migração) volta como ROLLBACK
+    const fim = await client.query('COMMIT');
+    if (fim && fim.command === 'ROLLBACK') throw new Error('As migrações foram desfeitas pelo banco: um comando falhou no meio e nada foi gravado.');
     console.log('Tabelas criadas/verificadas com sucesso');
 
     // Alerta de senha de fábrica ainda ativa. Instalações antigas foram criadas
@@ -680,12 +705,21 @@ async function criarTabelas() {
     }
 
   } catch (err) {
-    await client.query('ROLLBACK');
+    // ROLLBACK protegido: se a conexão caiu, o ROLLBACK também falha — e antes
+    // essa segunda falha substituía o erro real da migração no log
+    let conexaoComprometida = false;
+    try {
+      await client.query('ROLLBACK');
+    } catch (erroRollback) {
+      conexaoComprometida = true;
+      console.error('Falha ao desfazer a migração (conexão descartada):', erroRollback.message);
+    }
     console.error('Erro ao criar tabelas:', err.message);
+    if (err.code === '55P03') console.error(`Uma tabela estava travada por outra conexão por mais de ${LOCK_TIMEOUT_MIGRACAO} (lock_timeout). Feche a outra cópia do backend e tente de novo.`);
+    client.release(conexaoComprometida ? err : undefined);
     throw err;
-  } finally {
-    client.release();
   }
+  client.release();
 }
 
 function listarMigracoes() {

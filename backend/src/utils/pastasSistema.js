@@ -2,6 +2,8 @@ const crypto = require('crypto');
 const fsp = require('fs/promises');
 const path = require('path');
 const { execFile } = require('child_process');
+const { cortarTexto } = require('./nomeArquivoDownload');
+const { hojeBrasilia } = require('./dataHoje');
 
 // Pasta exclusiva do sistema, com uma subpasta por projeto analisado e por
 // laudo (pedido do usuário, 11/10/2026):
@@ -25,10 +27,11 @@ const PADRAO = { projeto: 'Projeto', laudo: 'Laudo', obra: 'Obra', projeto_disci
 const EXCLUIDOS = path.join(BASE, '_Excluídos');
 const RESERVADOS = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
 
-// Nome válido de pasta/arquivo no Windows.
+// Nome válido de pasta/arquivo no Windows. O corte em 90 não parte emoji ao
+// meio (antes ficava meio caractere, gravado como "\uFFFD" no nome da pasta).
 function nomeSeguro(nome, padrao = 'Sem nome') {
-  let s = String(nome || '').replace(/[<>:"/\\|?*\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim()
-    .replace(/[. ]+$/, '').slice(0, 90).trim();
+  let s = cortarTexto(String(nome || '').replace(/[<>:"/\\|?*\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim()
+    .replace(/[. ]+$/, ''), 90).replace(/[. ]+$/, ''); // de novo: o corte pode terminar em ponto (o Windows o descartaria)
   if (!s || RESERVADOS.test(s)) s = padrao;
   return s;
 }
@@ -59,7 +62,7 @@ async function sincronizarPasta(client, { tipo, tabela, id, nome, pastaAtual, ra
   }
   const ocupada = await client.query(`SELECT 1 FROM ${tabela} WHERE LOWER(pasta) = LOWER($1) AND id <> $2${filtro} LIMIT 1`, params);
   if (ocupada.rows.length || (desejada !== pastaAtual && await existe(caminho(desejada)) && !(pastaAtual && desejada.toLowerCase() === pastaAtual.toLowerCase()))) {
-    desejada = nomeSeguro(base.slice(0, 80) + sufixo);
+    desejada = nomeSeguro(cortarTexto(base, 80) + sufixo);
   }
   await fsp.mkdir(raiz, { recursive: true });
   if (pastaAtual && pastaAtual !== desejada && await existe(caminho(pastaAtual))) {
@@ -108,7 +111,7 @@ async function moverParaExcluidos(tipo, pasta, { raiz = RAIZES[tipo], rotulo = n
   const origem = pasta ? path.join(raiz, pasta) : null;
   if (!origem || !(await existe(origem))) return null;
   await fsp.mkdir(EXCLUIDOS, { recursive: true });
-  const data = new Date().toISOString().slice(0, 10);
+  const data = hojeBrasilia(); // data de Brasília (em UTC, depois das 21h já era amanhã)
   const destino = path.join(EXCLUIDOS, nomeSeguro(`${PADRAO[tipo]} - ${rotulo ? `${rotulo} - ` : ''}${pasta} - ${data}`));
   await fsp.rename(origem, (await existe(destino)) ? `${destino} ${Date.now()}` : destino);
   return destino;

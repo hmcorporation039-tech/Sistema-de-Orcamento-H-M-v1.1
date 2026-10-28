@@ -1,7 +1,12 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
+import {
+  createBrowserRouter, createRoutesFromElements, RouterProvider, Outlet, Route, Navigate,
+  useLocation, useParams, useRouteError,
+} from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './hooks/useAuth';
+import ErrorBoundary from './components/ErrorBoundary';
+import ModalSessao from './components/ModalSessao';
 
 import Login from './pages/Login';
 import DefinirSenha from './pages/DefinirSenha';
@@ -73,24 +78,73 @@ function destinoAnaliseProjeto(params, busca) {
   return '/obras';
 }
 
+// Erro que escapou de todos os ErrorBoundary das telas (o roteador de dados
+// mostraria a página de erro dele, em inglês)
+function ErroDeRota() {
+  const erro = useRouteError();
+  return <ErroNaTela erro={erro} fora />;
+}
+
+class ErroNaTela extends ErrorBoundary {
+  constructor(props) {
+    super(props);
+    this.state = { erro: props.erro || new Error('Erro desconhecido') };
+  }
+}
+
+// Toaster, faixa do ambiente de teste e o "Entre de novo" (sessão vencida)
+// ficam acima das rotas, em todas as telas.
+function Raiz() {
+  return (
+    <>
+      <Toaster position="top-right" />
+      <FaixaAmbiente />
+      <ModalSessao />
+      <Outlet />
+    </>
+  );
+}
+
+// Roteador "de dados" (createBrowserRouter): é o que permite bloquear a troca
+// de tela com alteração não salva (useBlocker em hooks/useAlteracoesNaoSalvas).
+let roteador = null;
+function obterRoteador() {
+  if (!roteador) {
+    roteador = createBrowserRouter(createRoutesFromElements(
+      <Route element={<Raiz />} errorElement={<ErroDeRota />}>
+        {rotas()}
+      </Route>
+    ));
+  }
+  return roteador;
+}
+
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Toaster position="top-right" />
-        <FaixaAmbiente />
-        <Routes>
+      <RouterProvider router={obterRoteador()} />
+    </AuthProvider>
+  );
+}
+
+function rotas() {
+  return (
+        <>
           <Route path="/login" element={<Login />} />
           {/* PÚBLICA (2.0, Fase 3I): o cliente abre pelo link enviado pela H&M — sem
               login e fora do Layout; fala só com /api/publico/aprovacao */}
-          <Route path="/aprovacao/:token" element={<AprovacaoPublica />} />
-          {/* App de campo (celular, funciona sem rede): fora do Layout do escritório */}
+          <Route path="/aprovacao/:token" element={<ErrorBoundary fora><AprovacaoPublica /></ErrorBoundary>} />
+          {/* App de campo (celular, funciona sem rede): fora do Layout do escritório.
+              O ErrorBoundary pega também a falha ao baixar o pedaço do app depois
+              de uma atualização do sistema ("Atualizar agora"). */}
           <Route path="/campo/*" element={
-            <RotaCampo>
-              <Suspense fallback={<div className="loading">Abrindo o app de campo…</div>}>
-                <CampoApp />
-              </Suspense>
-            </RotaCampo>
+            <ErrorBoundary fora>
+              <RotaCampo>
+                <Suspense fallback={<div className="loading">Abrindo o app de campo…</div>}>
+                  <CampoApp />
+                </Suspense>
+              </RotaCampo>
+            </ErrorBoundary>
           } />
           <Route path="/" element={
             <RotaProtegida>
@@ -131,8 +185,6 @@ export default function App() {
 
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Route>
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+        </>
   );
 }

@@ -17,6 +17,20 @@ const pool = require('../config/database');
 //    para o pool (a próxima requisição herdava uma transação abortada).
 //    Agora o ROLLBACK falho é engolido e a conexão é descartada do pool
 //    passando o erro para `release`, que é o jeito correto no `pg`.
+//
+// 3. COMMIT numa transação já abortada não dá erro no PostgreSQL: ele responde
+//    "ROLLBACK" e desfaz tudo em silêncio. Se um comando do meio falhou e o
+//    erro foi engolido, a rota respondia sucesso sem nada gravado (revisão de
+//    27/10/2026: aprovação pública → 201 "Proposta aprovada" e nada no banco).
+//    Agora o retorno do COMMIT é conferido e vira erro.
+class TransacaoDesfeita extends Error {
+  constructor() {
+    super('A transação foi desfeita pelo banco de dados: um comando anterior falhou e nada foi gravado.');
+    this.name = 'TransacaoDesfeita';
+    this.code = 'TRANSACAO_DESFEITA';
+  }
+}
+
 async function comTransacao(fn) {
   let client;
   try {
@@ -29,7 +43,8 @@ async function comTransacao(fn) {
   try {
     await client.query('BEGIN');
     const resultado = await fn(client);
-    await client.query('COMMIT');
+    const fim = await client.query('COMMIT');
+    if (fim && fim.command === 'ROLLBACK') throw new TransacaoDesfeita();
     return resultado;
   } catch (err) {
     try {
@@ -45,4 +60,4 @@ async function comTransacao(fn) {
   }
 }
 
-module.exports = { comTransacao };
+module.exports = { comTransacao, TransacaoDesfeita };

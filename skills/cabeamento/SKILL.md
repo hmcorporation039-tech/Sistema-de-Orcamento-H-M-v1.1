@@ -5,7 +5,7 @@ description: Projeto (memorial, pontos, racks e materiais), relatório de certif
 
 # Cabeamento estruturado (NBR 14565) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 13 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
+Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 18 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
 
 | Documento | Tipo | Formato |
 |---|---|---|
@@ -46,7 +46,7 @@ Regra de posicionamento: pontos de telecomunicações por área de trabalho em c
 
 - Duas tomadas por área de trabalho (6.7.7.1) e duas por ponto de acesso sem fio (Seção 15).
 - Comprimento máximo do cabo horizontal pela Tabela 3 (H = 107 − 3 − F·X para Cat 6 em interconexão), reduzido por temperatura (0,4 %/°C; 0,2 % blindado), limitado a 90 m.
-- Um distribuidor de piso por pavimento e por 1 000 m² (6.7.3); backbone OM3 quando há mais de um distribuidor.
+- Um distribuidor de piso por pavimento e por 1 000 m² (6.7.3); cada FD com os próprios patch panels e switches; rack por FD = (patch panels + switches) × 2U (com organizador) + 2U, com reserva; backbone OM3 quando há mais de um distribuidor, um lance por FD.
 
 O checklist de inspeção (18 itens) está em `dados/checklist_base.json`; itens não conformes viram não conformidades com prioridade (P1 48 h, P2 30 dias, P3 90 dias, P4 manutenção) e entram no orçamento do modo de inspeção.
 

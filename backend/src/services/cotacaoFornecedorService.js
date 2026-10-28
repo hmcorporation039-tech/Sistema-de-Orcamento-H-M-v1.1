@@ -108,6 +108,53 @@ function verificarPastaFornecedores() {
   return varreduraEmAndamento;
 }
 
+// Um arquivo da pasta: lê (fora da transação), grava itens e o registro do
+// arquivo numa transação. Separado da varredura para os testes (leitor e
+// arquivo falsos, sem abrir as pastas reais).
+async function processarArquivo(client, { pasta, nome }, { resumo, margem, indice, ler = lerDocumentoCotacao, lerArquivo = fsp.readFile }) {
+  let buffer;
+  try {
+    buffer = await lerArquivo(path.join(pasta, nome));
+  } catch (err) {
+    resumo.avisos.push(`Não foi possível ler "${nome}": ${err.message}`);
+    return;
+  }
+  const hash = hashArquivo(buffer);
+  if (await jaProcessado(client, hash)) return;
+
+  let leitura;
+  try {
+    leitura = await ler(buffer, nome, { permitirIA: resumo.leiturasPorIA < MAX_IA_POR_VARREDURA });
+  } catch (err) {
+    leitura = { itens: [], metodo: null, avisos: [`erro na leitura: ${err.message}`] };
+  }
+  if (leitura.usouIA) resumo.leiturasPorIA++;
+
+  await client.query('BEGIN');
+  try {
+    const r = leitura.itens.length ? await importarItens(client, indice, leitura, 'fornecedor_whatsapp', margem) : { criados: 0, atualizados: 0, existentes: 0 };
+    await registrarArquivo(client, nome, hash, { ...r, lidos: leitura.itens.length, metodo: leitura.metodo || (leitura.pendente ? 'aguardando IA' : null), confere: leitura.conferencia?.confere, pendente: leitura.pendente });
+    await client.query('COMMIT');
+    resumo.arquivosProcessados++;
+    resumo.materiaisCriados += r.criados;
+    resumo.materiaisAtualizados += r.atualizados;
+    resumo.materiaisJaCadastrados += r.existentes;
+    resumo.arquivos.push({ arquivo: nome, metodo: leitura.metodo, itensLidos: leitura.itens.length, novos: r.criados, atualizados: r.atualizados, jaCadastrados: r.existentes, confereTotal: leitura.conferencia?.confere ?? null });
+    if (leitura.pendente) resumo.pendentes = (resumo.pendentes || 0) + 1;
+    if (!leitura.itens.length && !leitura.daHM) resumo.avisos.push(`Nenhum item reconhecido em "${nome}"${leitura.avisos?.length ? ` (${leitura.avisos.join('; ')})` : ''}`);
+    else for (const a of leitura.avisos || []) resumo.avisos.push(`"${nome}": ${a}`);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    resumo.avisos.push(`Erro ao gravar "${nome}" no banco: ${err.message} — tenta de novo na próxima verificação`);
+    console.error(`Erro ao processar cotação "${nome}":`, err);
+    // NÃO marca como processado: aqui o arquivo foi LIDO e o que falhou foi
+    // a gravação (banco fora, trava, conexão). Antes ele ficava registrado
+    // com 0 itens e nunca mais era lido (revisão de 27/10/2026). Erro de
+    // LEITURA continua registrado (acima: leitura com 0 itens), para não
+    // reler à toa um arquivo que o leitor não entende.
+  }
+}
+
 async function executarVarredura() {
   const resumo = {
     arquivosEncontrados: 0, arquivosProcessados: 0,
@@ -126,47 +173,7 @@ async function executarVarredura() {
     const margem = await obterMargemPadrao(client);
     const indice = await carregarIndice(client);
 
-    for (const { pasta, nome } of arquivos) {
-      let buffer;
-      try {
-        buffer = await fsp.readFile(path.join(pasta, nome));
-      } catch (err) {
-        resumo.avisos.push(`Não foi possível ler "${nome}": ${err.message}`);
-        continue;
-      }
-      const hash = hashArquivo(buffer);
-      if (await jaProcessado(client, hash)) continue;
-
-      let leitura;
-      try {
-        leitura = await lerDocumentoCotacao(buffer, nome, { permitirIA: resumo.leiturasPorIA < MAX_IA_POR_VARREDURA });
-      } catch (err) {
-        leitura = { itens: [], metodo: null, avisos: [`erro na leitura: ${err.message}`] };
-      }
-      if (leitura.usouIA) resumo.leiturasPorIA++;
-
-      await client.query('BEGIN');
-      try {
-        const r = leitura.itens.length ? await importarItens(client, indice, leitura, 'fornecedor_whatsapp', margem) : { criados: 0, atualizados: 0, existentes: 0 };
-        await registrarArquivo(client, nome, hash, { ...r, lidos: leitura.itens.length, metodo: leitura.metodo || (leitura.pendente ? 'aguardando IA' : null), confere: leitura.conferencia?.confere, pendente: leitura.pendente });
-        await client.query('COMMIT');
-        resumo.arquivosProcessados++;
-        resumo.materiaisCriados += r.criados;
-        resumo.materiaisAtualizados += r.atualizados;
-        resumo.materiaisJaCadastrados += r.existentes;
-        resumo.arquivos.push({ arquivo: nome, metodo: leitura.metodo, itensLidos: leitura.itens.length, novos: r.criados, atualizados: r.atualizados, jaCadastrados: r.existentes, confereTotal: leitura.conferencia?.confere ?? null });
-        if (leitura.pendente) resumo.pendentes = (resumo.pendentes || 0) + 1;
-        if (!leitura.itens.length && !leitura.daHM) resumo.avisos.push(`Nenhum item reconhecido em "${nome}"${leitura.avisos?.length ? ` (${leitura.avisos.join('; ')})` : ''}`);
-        else for (const a of leitura.avisos || []) resumo.avisos.push(`"${nome}": ${a}`);
-      } catch (err) {
-        await client.query('ROLLBACK').catch(() => {});
-        resumo.avisos.push(`Erro ao processar "${nome}": ${err.message}`);
-        console.error(`Erro ao processar cotação "${nome}":`, err);
-        // Marca como visto (versão atual, 0 itens) para não refalhar a cada
-        // varredura; se o arquivo for corrigido, o hash muda e ele é relido.
-        await registrarArquivo(client, nome, hash, { metodo: 'erro' }).catch(e => console.error('Falha ao registrar arquivo com erro:', e.message));
-      }
-    }
+    for (const arquivo of arquivos) await processarArquivo(client, arquivo, { resumo, margem, indice });
   } finally {
     client.release();
     await encerrarOcr();
@@ -177,4 +184,4 @@ async function executarVarredura() {
   return resumo;
 }
 
-module.exports = { verificarPastaFornecedores, importarItens, PASTAS_FORNECEDORES };
+module.exports = { verificarPastaFornecedores, importarItens, PASTAS_FORNECEDORES, _interno: { processarArquivo } };

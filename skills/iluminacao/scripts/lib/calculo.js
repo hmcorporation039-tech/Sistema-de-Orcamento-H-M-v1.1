@@ -227,6 +227,9 @@ function calcularAmbiente(a, idx, luminarias, p, avisos) {
   if (okRa === false) avisos.push(`${nome}: Ra ${lum.ra} da luminária ${lum.codigo} abaixo do mínimo ${at.ra} da atividade.`);
   const okUgr = lum.ugr != null && at.ugr != null ? lum.ugr <= at.ugr : null;
   if (okUgr === false) avisos.push(`${nome}: UGR ${lum.ugr} da luminária ${lum.codigo} acima do limite ${at.ugr}.`);
+  // Requisito existe e a luminária não informa o dado: não verificado (nunca "atendido")
+  if (okRa === null && at.ra != null) avisos.push(`${nome}: Ra da luminária ${lum.codigo} não informado — a atividade exige Ra ≥ ${at.ra}; requisito NÃO verificado até informar o dado da ficha técnica. [CONFERIR]`);
+  if (okUgr === null && at.ugr != null) avisos.push(`${nome}: UGR da luminária ${lum.codigo} não informado — a atividade limita UGR_L ≤ ${at.ugr}; requisito NÃO verificado até informar o dado do fabricante. [CONFERIR]`);
   const okDpi = at.dpi_ref ? dpi <= at.dpi_ref : null;
   if (okDpi === false) avisos.push(`${nome}: densidade de potência ${arred(dpi, 1)} W/m² acima da referência ${at.dpi_ref} W/m² [CONFERIR com a INI-C].`);
 

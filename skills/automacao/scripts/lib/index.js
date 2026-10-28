@@ -92,8 +92,9 @@ const linhasPontos = (b) => [
 ];
 const linhasZonas = (zonas) => zonas.map(z => [z.nome, z.rotuloUso, num(z.area, 0), z.pessoas, num(z.m3h, 0), ROTULO_CONTROLE[z.controle] || '—', z.dcv ? `${num(z.setpointCo2, 0)} ppm` : '—', z.dcv ? pct(z.reducao) : '—']);
 function linhasFuncoes(efic) {
-  const prop = Object.fromEntries(efic.proposta.detalhes.map(d => [d.cod, d]));
-  return efic.atual.detalhes.map(d => [d.rotulo, d.nivel, d.classe, prop[d.cod]?.nivel || '—', prop[d.cod]?.classe || '—'])
+  // união das funções: a proposta já traz as mantidas como hoje e as novas sem nível atual
+  const atual = Object.fromEntries(efic.atual.detalhes.map(d => [d.cod, d]));
+  return efic.proposta.detalhes.map(d => [d.rotulo, atual[d.cod]?.nivel || '— (não informado)', atual[d.cod]?.classe || '—', d.nivel, d.classe])
     .concat([['Classe do conjunto (a menor das funções)', '', efic.atual.classe, '', efic.proposta.classe]]);
 }
 const linhasResid = (r) => r.ambientes.map(a => [a.nome, a.ilum_onoff || 0, a.ilum_dimer || 0, a.cortinas || 0, a.ar_condicionado || 0, a.tomadas || 0, a.sensores || 0, a.cenas || 0]);

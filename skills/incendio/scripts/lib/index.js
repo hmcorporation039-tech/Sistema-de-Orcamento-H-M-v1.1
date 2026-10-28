@@ -30,7 +30,7 @@ function processar(dados) {
     IE4: 'Sem iluminação de emergência no escopo', IE5: 'Sem iluminação de emergência no escopo', IE6: 'Sem iluminação de emergência no escopo', IE7: 'Sem iluminação de emergência no escopo',
   });
   const ncs = I.consolidarNcs(checklist, insp.ncs);
-  const autonomia = (insp.autonomia || []).map(m => ({ ...m, resultado: m.horas == null || m.horas === '' ? 'NV' : Number(m.horas) >= 2 ? 'C' : 'NC' }));
+  const autonomia = (insp.autonomia || []).map(m => ({ ...m, resultado: m.horas == null || m.horas === '' ? 'NV' : Number(String(m.horas).replace(',', '.')) >= calc.autonomiaEmergH ? 'C' : 'NC' }));
   const iluminancia = (insp.iluminancia || []).map(m => {
     const min = m.escada ? 5 : 3;
     return { ...m, minimo: min, resultado: m.lux == null || m.lux === '' ? 'NV' : Number(m.lux) >= min ? 'C' : 'NC' };
@@ -50,7 +50,7 @@ function resumir(res) {
       { rotulo: 'Central', valor: calc.tipoSistema === 'enderecavel' ? `${calc.lacos} laço(s)` : `${calc.zonas} zona(s)`, detalhe: `${calc.dispositivos} dispositivos` },
       { rotulo: 'Bateria (Anexo B)', valor: `${num(b.bateriaAh, 1)} Ah → ${b.bateriaEscolhida} Ah`, detalhe: `repouso ${num(b.iRepouso, 0)} mA · alarme ${num(b.iAlarme, 0)} mA` },
       { rotulo: 'Fonte principal', valor: `${num(b.fonteA, 2)} A`, detalhe: '1,2 × corrente de alarme' },
-      ...(calc.iluminacao.length ? [{ rotulo: 'Iluminação de emergência', valor: `${calc.nAclar} luminárias`, detalhe: `${calc.nBaliz} sinais de balizamento · autonomia ≥ 2 h` }] : []),
+      ...(calc.iluminacao.length ? [{ rotulo: 'Iluminação de emergência', valor: `${calc.nAclar} luminárias`, detalhe: `${calc.nBaliz} sinais de balizamento · autonomia ≥ ${num(calc.autonomiaEmergH, 1)} h` }] : []),
     ],
     textos: calc.avisos,
     tabelas: [
@@ -85,7 +85,7 @@ function secoesMemorial(res) {
     ],
     tabela: { colunas: ['Equipamento', 'Qtd.', 'Repouso (mA)', 'Total repouso', 'Alarme (mA)', 'Total alarme'], linhas: b.linhas.map(l => [l.equipamento, l.qtd, num(l.repouso, 2), num(l.totalRepouso, 1), num(l.alarme, 2), num(l.totalAlarme, 1)]), proporcoes: [2, 0.6, 1, 1, 1, 1] } },
     ...(calc.iluminacao.length ? [{ titulo: '5. Iluminação de emergência (NBR 10898)', paragrafos: [
-      'Autonomia mínima de 2 h (4.9), aclaramento ≥ 3 lx em locais planos e ≥ 5 lx em escadas (5.1 e A.2.1), luminárias com fluxo ≥ 300 lm (6.1.2.4) junto a portas de saída, escadas, mudanças de direção e interseções (5.1.2), distância máxima entre luminárias de 4 vezes a altura de instalação (Anexo A) e balizamento a no máximo 15 m (14.18). O nível de iluminância deve ser confirmado por cálculo ponto a ponto ou software (14.14).',
+      `Autonomia mínima de ${num(calc.autonomiaEmergH, 1)} h (NBR 10898:2023, 4.9 — a edição de 2013 pedia 1 h; vale a maior exigência entre a norma e a IT/NT do Corpo de Bombeiros local [CONFERIR CBMDF]), aclaramento ≥ 3 lx em locais planos e ≥ 5 lx em escadas (5.1 e A.2.1), luminárias com fluxo ≥ 300 lm (6.1.2.4) junto a portas de saída, escadas, mudanças de direção e interseções (5.1.2), distância máxima entre luminárias de 4 vezes a altura de instalação (Anexo A) e balizamento a no máximo 15 m (14.18). O nível de iluminância deve ser confirmado por cálculo ponto a ponto ou software (14.14).`,
     ], tabela: { colunas: ['Ambiente', 'Altura (m)', 'Aclaramento', 'Balizamento', 'Nível mínimo'], linhas: calc.iluminacao.map(x => [x.nome, num(x.h), x.aclaramento, x.balizamento, `${x.nivelLux} lx`]), proporcoes: [2.2, 0.8, 1, 1, 1] } }] : []),
     { titulo: `${calc.iluminacao.length ? 6 : 5}. Lista de materiais (preliminar)`, tabela: { colunas: ['Cód.', 'Descrição', 'Un.', 'Qtd.', 'Referência'], linhas: calc.materiais.map(m => [m.codigo, m.descricao, m.unidade, num(m.quantidade, 0), m.referencia]), proporcoes: [0.6, 4, 0.5, 0.6, 1.6] },
       notas: ['Cabos e eletrodutos estimados pelos perímetros dos ambientes e caminhamentos — conferir no projeto executivo.'] },
@@ -114,7 +114,7 @@ const DOCUMENTOS = [
       medicoes: [
         { titulo: '6.1 Ensaio funcional de dispositivos', colunas: ['Dispositivo / local', 'Tipo', 'Indicação na central', 'Resultado'], proporcoes: [2, 1, 1.4, 0.8], linhas: res.med.dispositivos.map(m => [m.local, m.tipo || '', m.observacao || '', m.resultado]) },
         { titulo: '6.2 Iluminância de emergência no piso', colunas: ['Local', 'Medido (lx)', 'Mínimo (lx)', 'Resultado'], proporcoes: [2.2, 1, 1, 0.8], linhas: res.med.iluminancia.map(m => [m.local, m.lux ?? '', m.minimo, m.resultado]) },
-        { titulo: '6.3 Autonomia', colunas: ['Sistema / circuito', 'Medido (h)', 'Mínimo', 'Resultado'], proporcoes: [2.2, 1, 1, 0.8], linhas: res.med.autonomia.map(m => [m.local, m.horas ?? '', '2 h', m.resultado]) },
+        { titulo: '6.3 Autonomia', colunas: ['Sistema / circuito', 'Medido (h)', 'Mínimo', 'Resultado'], proporcoes: [2.2, 1, 1, 0.8], linhas: res.med.autonomia.map(m => [m.local, m.horas ?? '', `${num(res.calc.autonomiaEmergH, 1)} h`, m.resultado]) },
       ],
       proximaInspecao: [['Manutenção preventiva', 'Conforme NBR 17240, Seção 10 e plano do fabricante'], ['Iluminação de emergência', 'Teste mensal de funcionamento e semestral de autonomia (NBR 10898, 16.2)']],
     }, { checklist: res.checklist, ncs: res.ncs, parecer: res.parecer, baseDir: res.baseDir, pastaFotos: res.pastaFotos })) },
@@ -122,7 +122,7 @@ const DOCUMENTOS = [
     gerar: (res) => D.docxParaBuffer(D.gerarChecklistCampo(res.dados, res.insp, {
       titulo: 'CHECKLIST DE CAMPO — DETECÇÃO, ALARME E ILUMINAÇÃO DE EMERGÊNCIA', subtitulo: 'ABNT NBR 17240:2010 e ABNT NBR 10898:2023', tituloCurto: 'Checklist — incêndio', secoesChecklist: SECOES_CHECKLIST,
       preparacao: ['Avisar a brigada/portaria antes dos testes para evitar acionamento indevido.', 'Levar: fumaça de teste, testador de calor, chave de acionador, luxímetro, cronômetro, trena.'],
-      referencias: [['Detectores previstos', String(res.calc.nDet)], ['Acionadores previstos', String(res.calc.nAc)], ['Bateria mínima', `${res.calc.bateria.bateriaEscolhida} Ah`], ['Autonomia mínima iluminação', '2 h']],
+      referencias: [['Detectores previstos', String(res.calc.nDet)], ['Acionadores previstos', String(res.calc.nAc)], ['Bateria mínima', `${res.calc.bateria.bateriaEscolhida} Ah`], ['Autonomia mínima iluminação', `${num(res.calc.autonomiaEmergH, 1)} h`]],
       medicoes: [{ titulo: 'Iluminância (lx) e autonomia', colunas: ['Local', 'lx medido', 'Mínimo', 'Obs.'], proporcoes: [2.2, 1, 1, 2], linhas: res.calc.iluminacao.map(x => [x.nome, '', `${x.nivelLux} lx`, '']) }],
     }, res.checklist)) },
 ];
@@ -170,6 +170,7 @@ const FORMULARIO = [
       { caminho: 'sistema.area_por_avisador_m2', rotulo: 'Área por avisador (m²) — estimativa', tipo: 'numero' },
       { caminho: 'sistema.tempo_repouso_h', rotulo: 'Tempo em repouso (h)', tipo: 'numero', dica: 'Anexo B: 24 h' },
       { caminho: 'sistema.tempo_alarme_min', rotulo: 'Tempo em alarme (min)', tipo: 'numero', dica: 'Anexo B: 5 min' },
+      { caminho: 'sistema.autonomia_iluminacao_h', rotulo: 'Autonomia da iluminação de emergência (h)', tipo: 'numero', dica: 'Vazio = 2 h (NBR 10898:2023, 4.9); maior só se a IT/NT local exigir' },
     ] },
     { tipo: 'nota', texto: 'Consumos dos equipamentos (mA) para o cálculo da bateria — deixe vazio para usar valores típicos; preencha com a ficha técnica do fabricante.' },
     { tipo: 'grade', colunas: 5, campos: [

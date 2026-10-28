@@ -10,11 +10,17 @@ const HORAS_POR_DIA = 8;
 const CUSTO_HH_PADRAO = 65; // R$ — [CONFERIR] mesmo padrão da aba Parâmetros da planilha
 const EQUIPE_PADRAO = 2; // pessoas em campo
 
+// Teto da duração de UMA etapa (≈ 8 anos de dias úteis). Custo do homem-hora
+// digitado errado (0,01 em vez de 65) dava milhões de dias, término no ano
+// 30.000+ e um laço de milhões de passos no servidor; acima disto o cronograma
+// usa o teto e avisa (revisão de 27/10/2026).
+const MAX_DIAS_ETAPA = 2000;
+
 const ETAPA_MOBILIZACAO = { nome: 'Mobilização e conferência do projeto em campo', dias: 1 };
 const ETAPA_ENTREGA = { nome: 'Testes, comissionamento e entrega', dias: 2 };
 
-/** Dias úteis de uma etapa (equivale a MAX(1,ROUNDUP(mo/(hh*equipe*8),0)) do Excel). */
-function duracaoDiasUteis(maoDeObra, custoHH = CUSTO_HH_PADRAO, equipe = EQUIPE_PADRAO) {
+/** Duração calculada SEM o teto (para o aviso dizer quanto deu). */
+function duracaoCalculada(maoDeObra, custoHH = CUSTO_HH_PADRAO, equipe = EQUIPE_PADRAO) {
   const mo = Number(maoDeObra) || 0;
   const div = (Number(custoHH) || 0) * (Number(equipe) || 0) * HORAS_POR_DIA;
   if (!(div > 0) || !(mo > 0)) return 1;
@@ -22,7 +28,13 @@ function duracaoDiasUteis(maoDeObra, custoHH = CUSTO_HH_PADRAO, equipe = EQUIPE_
   return Math.max(1, Math.ceil(mo / div - 1e-9));
 }
 
-/** A mesma regra como fórmula Excel (refs de célula já montadas pelo chamador). */
+/** Dias úteis de uma etapa (equivale a MAX(1,ROUNDUP(mo/(hh*equipe*8),0)) do Excel, com o teto). */
+function duracaoDiasUteis(maoDeObra, custoHH = CUSTO_HH_PADRAO, equipe = EQUIPE_PADRAO) {
+  return Math.min(MAX_DIAS_ETAPA, duracaoCalculada(maoDeObra, custoHH, equipe));
+}
+
+/** A mesma regra como fórmula Excel (refs de célula já montadas pelo chamador).
+ * Sem o teto: no Excel o valor absurdo não trava nada e fica à vista do usuário. */
 function formulaDuracaoExcel(refMaoDeObra, refCustoHH, refEquipe) {
   return `MAX(1,ROUNDUP(${refMaoDeObra}/(${refCustoHH}*${refEquipe}*${HORAS_POR_DIA}),0))`;
 }
@@ -61,7 +73,7 @@ const primeiroDiaUtil = (data) => workday(new Date(paraData(data).getTime() - 86
 function sequenciarDiasUteis(etapas, dataInicio) {
   let fimAnterior = null;
   return etapas.map((e) => {
-    const dias = Math.max(1, Math.round(Number(e.dias) || 1));
+    const dias = Math.min(MAX_DIAS_ETAPA, Math.max(1, Math.round(Number(e.dias) || 1)));
     const inicio = fimAnterior ? workday(fimAnterior, 1) : primeiroDiaUtil(dataInicio);
     const fim = workday(inicio, dias - 1);
     fimAnterior = fim;
@@ -70,6 +82,6 @@ function sequenciarDiasUteis(etapas, dataInicio) {
 }
 
 module.exports = {
-  HORAS_POR_DIA, CUSTO_HH_PADRAO, EQUIPE_PADRAO, ETAPA_MOBILIZACAO, ETAPA_ENTREGA,
-  duracaoDiasUteis, formulaDuracaoExcel, workday, primeiroDiaUtil, sequenciarDiasUteis, paraData, isoData, ehDiaUtil,
+  HORAS_POR_DIA, CUSTO_HH_PADRAO, EQUIPE_PADRAO, ETAPA_MOBILIZACAO, ETAPA_ENTREGA, MAX_DIAS_ETAPA,
+  duracaoDiasUteis, duracaoCalculada, formulaDuracaoExcel, workday, primeiroDiaUtil, sequenciarDiasUteis, paraData, isoData, ehDiaUtil,
 };

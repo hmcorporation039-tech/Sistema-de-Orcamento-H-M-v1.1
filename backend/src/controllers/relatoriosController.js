@@ -1,18 +1,13 @@
 const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
 const pool = require('../config/database');
+const { periodoMesAtualBrasilia } = require('../utils/dataHoje');
 const { gerarHtmlRelatorio, gerarFooterTemplateRelatorio } = require('../utils/relatorioTemplate');
 const { sqlDecisaoCliente } = require('../utils/aprovacaoLink');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');
 
-// Primeiro dia do mês atual até hoje, se as datas não forem informadas
-function periodoPadrao() {
-  const hoje = new Date();
-  const inicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-  return {
-    dataInicio: inicio.toISOString().slice(0, 10),
-    dataFim: hoje.toISOString().slice(0, 10),
-  };
-}
+// Primeiro dia do mês atual até hoje (horário de Brasília), se as datas não
+// forem informadas — utils/dataHoje.js (toISOString dava o dia em UTC)
+const periodoPadrao = () => periodoMesAtualBrasilia();
 
 function montarFiltro(query) {
   const padrao = periodoPadrao();

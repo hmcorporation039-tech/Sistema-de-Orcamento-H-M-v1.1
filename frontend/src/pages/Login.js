@@ -87,7 +87,8 @@ export default function Login() {
               style={{
                 width: '100%', padding: '10px 12px', background: '#0b0b0b',
                 border: '1px solid #2a2a2a', borderRadius: 6, color: '#e8e0cc',
-                fontSize: 13, outline: 'none', boxSizing: 'border-box'
+                // 16 px: abaixo disso o iPhone dá zoom ao tocar no campo
+                fontSize: 16, outline: 'none', boxSizing: 'border-box'
               }}
             />
           </div>
@@ -105,7 +106,8 @@ export default function Login() {
               style={{
                 width: '100%', padding: '10px 12px', background: '#0b0b0b',
                 border: '1px solid #2a2a2a', borderRadius: 6, color: '#e8e0cc',
-                fontSize: 13, outline: 'none', boxSizing: 'border-box'
+                // 16 px: abaixo disso o iPhone dá zoom ao tocar no campo
+                fontSize: 16, outline: 'none', boxSizing: 'border-box'
               }}
             />
           </div>

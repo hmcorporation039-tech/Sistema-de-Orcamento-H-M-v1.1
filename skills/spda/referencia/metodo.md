@@ -5,12 +5,12 @@ Texto de apoio para explicar resultados ao engenheiro. Os valores numéricos das
 ## NBR 5419-2:2026 — análise de risco
 
 - **Risco tolerável (Tabela 4):** R1 (vida humana) = 10⁻⁵/ano; R3 (patrimônio cultural) = 10⁻⁴/ano.
-- **R1 = RA + RB + RC + RM + RU + RV + RW + RZ** (Eq. 1). RC, RM, RW e RZ só entram em estruturas com risco de explosão ou onde a falha de sistemas internos põe vida em risco: na skill, zonas com LO > 0 (Tabela C.2 — explosão e hospital).
+- **R1 = RA + RB + RC + RM + RU + RV + RW + RZ** (Eq. 1). RC, RM, RW e RZ só entram em estruturas com risco de explosão ou onde a falha de sistemas internos põe vida em risco: na skill, zonas com LO > 0 (Tabela C.2 — explosão e hospital). RA entra em TODAS as zonas (externa e internas, com o rt do piso de cada uma) — até 27/10/2026 só a externa tinha RA. [CONFERIR na edição 2026]
 - **Eventos (Anexo A):** AD = L·W + 6H(L+W) + π(3H)² (A.1); ND = NG·AD·CD·10⁻⁶; AM = 1000(L+W) + π·500²; NM = NG·AM·10⁻⁶; AL = 40·LL, AI = 4000·LL; NL = NG·AL·CI·CE·CT·10⁻⁶; NI = NG·AI·CI·CE·CT·10⁻⁶.
 - **NG:** exclusivamente da Tabela F.1 (F.1.1). Fernando de Noronha tem NG = 0 na tabela.
 - **Probabilidades (Anexo B):** PA = PTA·PB; PC = PSPD·CLD (CLD = 1 para sistema interno não blindado, B.4.4); PM = PSPD·PMS com PMS = (KS1·KS2·KS3·KS4)², KS1 = 0,12·wm, KS4 = 1/UW; PU = PTU·PEB·PLD·CLD; PV = PEB·PLD·CLD; PW = PSPD·PLD·CLD; PZ = PSPD·PLI·CLI. Vários sistemas na zona: PC e PM combinados por 1 − Π(1 − Pi) (Eq. 12 e 13).
 - **Perdas (Anexo C):** LA = LU = rt·LT·(nz/nt)·(tz/8760)·rs; LB = LV = rp·rf·hz·LF·(nz/nt)·(tz/8760)·rs; LC = LM = LW = LZ = LO·(nz/nt)·(tz/8760)·rs.
-- **Frequência de danos (Seção 7, nova em 2026):** F = FB + FC + FM + FV + FW + FZ, com FC = ND·PC, FM = NM·PM, FV = (NL+NDJ)·PEB, FW = (NL+NDJ)·PW, FZ = NI·PZ. FT = 0,1/ano para sistemas críticos (não pode ser alterado) e 1/ano para os demais.
+- **Frequência de danos (Seção 7, nova em 2026):** F = FB + FC + FM + FV + FW + FZ, com FC = ND·PC, FM = NM·PM, FV = (NL+NDJ)·PEB, FW = (NL+NDJ)·PW, FZ = NI·PZ. FT = 0,1/ano para sistemas críticos (não pode ser alterado) e 1/ano para os demais; `zona.ft` só é aceito se for menor que esse valor.
 - **Se R > RT:** adotar medidas até R ≤ RT (5.4.4); se impossível, informar o proprietário e adotar o NP mais alto (5.4.6). A varredura testa NP do SPDA × NP dos DPS (PSPD e PEB juntos) × fibra óptica nas linhas de sinal, da menor para a maior exigência.
 
 ## NBR 5419-3:2026 — SPDA

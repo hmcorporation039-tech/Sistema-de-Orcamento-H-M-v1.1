@@ -22,9 +22,21 @@ function configurado() {
   return !!process.env.GEMINI_API_KEY;
 }
 
-async function chamarUmModelo({ modelo, body, tentativas }) {
+// Cancelamento pedido por quem chamou (tempo-limite da cadeia de IA): para na
+// hora — sem nova tentativa e sem passar ao próximo modelo (cada tentativa gasta cota).
+const erroCancelado = (signal) => Object.assign(new Error('Gemini: pedido cancelado'), { cancelado: true, semRetry: true, causa: signal?.reason });
+
+// espera que termina antes se o pedido for cancelado
+const esperar = (ms, signal) => new Promise((resolve) => {
+  if (signal?.aborted) return resolve();
+  const t = setTimeout(resolve, ms);
+  signal?.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
+});
+
+async function chamarUmModelo({ modelo, body, tentativas, signal }) {
   let ultimoErro;
   for (let tentativa = 1; tentativa <= tentativas; tentativa++) {
+    if (signal?.aborted) throw erroCancelado(signal);
     // chave no cabeçalho, não na URL (URL vai parar em logs e mensagens de erro);
     // timeout: sem ele, uma conexão pendurada travava a análise/leitura para sempre
     let data;
@@ -35,11 +47,12 @@ async function chamarUmModelo({ modelo, body, tentativas }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
           body: JSON.stringify(body),
-          signal: AbortSignal.timeout(TIMEOUT_MS),
+          signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)]) : AbortSignal.timeout(TIMEOUT_MS),
         }
       );
       data = await resp.json().catch(() => ({ error: { message: `resposta HTTP ${resp.status} sem JSON`, status: resp.status >= 500 ? 'UNAVAILABLE' : '' } }));
     } catch (err) {
+      if (signal?.aborted) throw erroCancelado(signal);
       if (err.name !== 'TimeoutError' && err.name !== 'AbortError') throw err;
       data = { error: { message: `sem resposta em ${TIMEOUT_MS / 1000} s`, status: 'UNAVAILABLE' } };
     }
@@ -58,7 +71,7 @@ async function chamarUmModelo({ modelo, body, tentativas }) {
     }
     // 503 = modelo sobrecarregado, é transitório — vale tentar de novo com espera
     if (ultimoErro.status !== 'UNAVAILABLE' || tentativa === tentativas) break;
-    await new Promise(r => setTimeout(r, 3000 * tentativa));
+    await esperar(3000 * tentativa, signal);
   }
 
   throw new Error(`Gemini (${modelo}): ${ultimoErro?.message || 'erro desconhecido'}`);
@@ -66,7 +79,8 @@ async function chamarUmModelo({ modelo, body, tentativas }) {
 
 // `anexos`: [{ mime, base64 }] — PDF ou imagem enviados junto (leitura de
 // orçamento de fornecedor, sempre conferida por quem chama: ver leitorCotacaoIA.js).
-async function chamarGemini({ prompt, json = false, busca = false, tentativas = 3, modelo, anexos = [] }) {
+// `signal` (AbortSignal, opcional): cancela a chamada em andamento e as seguintes
+async function chamarGemini({ prompt, json = false, busca = false, tentativas = 3, modelo, anexos = [], signal }) {
   if (!configurado()) {
     throw new Error('GEMINI_API_KEY não configurada no .env');
   }
@@ -83,7 +97,7 @@ async function chamarGemini({ prompt, json = false, busca = false, tentativas = 
   let ultimoErro;
   for (const m of modelos) {
     try {
-      return await chamarUmModelo({ modelo: m, body, tentativas });
+      return await chamarUmModelo({ modelo: m, body, tentativas, signal });
     } catch (err) {
       ultimoErro = err;
       if (!err.cotaEstourada) throw err; // erro que não é de cota não tenta outro modelo

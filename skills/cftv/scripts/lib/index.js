@@ -25,7 +25,8 @@ function processar(dados) {
   const insp = dados.inspecao || {};
   const checklist = I.mesclarChecklist(CHECKLIST, insp.checklist, calc.cameras.some(c => c.externa) ? {} : { C2: 'Sem câmeras externas', I4: 'Sem câmeras externas' });
   const ncs = I.consolidarNcs(checklist, insp.ncs);
-  const testes = (insp.teste_cameras || []).map(m => ({ ...m, resultado: m.imagem_ok == null && m.gravacao_ok == null ? 'NV' : (m.imagem_ok !== false && m.gravacao_ok !== false) ? 'C' : 'NC' }));
+  // C só com imagem E gravação testadas e ok; qualquer falha → NC; teste incompleto → NV
+  const testes = (insp.teste_cameras || []).map(m => ({ ...m, resultado: m.imagem_ok === false || m.gravacao_ok === false ? 'NC' : m.imagem_ok === true && m.gravacao_ok === true ? 'C' : 'NV' }));
   return { dados, calc, insp, checklist, ncs, testes, parecer: I.parecer(checklist, ncs, testes) };
 }
 
@@ -57,12 +58,15 @@ function secoesMemorial(res) {
       linhas: calc.cameras.map(c => [c.id, c.local, c.tipo, c.qtd, c.resolucao_mp || 2, `${c.hfov}°`, ROTULO_DORI[c.objetivo], c.ppm ? num(c.ppm, 0) : '—', `${num(c.dMax, 1)} m`, c.atende == null ? '—' : c.atende ? 'atende' : 'NÃO atende']),
       proporcoes: [0.7, 1.6, 0.7, 0.4, 0.4, 0.6, 1, 0.8, 0.7, 0.8], tamanho: 15 } },
     { titulo: '3. Gravação e armazenamento', paragrafos: [
-      `Banda total ${num(calc.banda, 1)} Mbps (${res.dados.sistema?.codec || 'H.265'}, ${res.dados.sistema?.fps || 15} qps). Armazenamento = banda × 3 600 s × ${calc.horas} h × ${calc.dias} dias${calc.atividade < 1 ? ` × ${num(calc.atividade * 100, 0)} % de atividade` : ''} ÷ 8 = ${num(calc.armazenamentoTb, 2)} TB → ${calc.hds} disco(s) de ${calc.hdTb} TB${calc.raid ? ' em RAID 5' : ''}. Gravador de ${calc.canais} canais.`,
+      `Banda total ${num(calc.banda, 1)} Mbps (${res.dados.sistema?.codec || 'H.265'}, ${res.dados.sistema?.fps || 15} qps). Armazenamento = banda × 3 600 s × ${calc.horas} h × ${calc.dias} dias${calc.atividade < 1 ? ` × ${num(calc.atividade * 100, 0)} % de atividade` : ''} ÷ 8 = ${num(calc.armazenamentoTb, 2)} TB → ${calc.hds} disco(s) de ${calc.hdTb} TB${calc.raid ? ` em RAID 5 (${calc.hdsDados} de capacidade útil + 1 de paridade; mínimo de 3 discos)` : ''}. Gravador de ${calc.canais} canais.`,
       'Retenção definida em política escrita, com acesso restrito e registrado (LGPD, art. 6º e 46).',
     ] },
     { titulo: '4. Alimentação e rede', paragrafos: [
       `Consumo PoE ${num(calc.poeTotal, 0)} W (com 20 % de margem: ${num(calc.poeComMargem, 0)} W) em ${calc.switches} switch(es). Carga total ≈ ${num(calc.cargaW, 0)} W → nobreak de ${calc.nobreakVa} VA; autonomia desejada de ${calc.autonomiaMin} min exige ≈ ${num(calc.energiaWh, 0)} Wh de bateria (conferir com o fabricante).`,
-      `Cabos U/UTP Cat 6 até 90 m por câmera (${num(calc.caboM, 0)} m no total). Câmeras externas com DPS de rede e aterramento (NBR 5419-4).`,
+      calc.caboAcima90.length
+        ? `Cabos U/UTP Cat 6 por câmera (${num(calc.caboM, 0)} m no total), limitados a 90 m pela NBR 14565 — EXCEDEM o limite: ${calc.caboAcima90.map(c => `${c.id} (${num(c.cabo, 0)} m)`).join(', ')}; nesses pontos usar extensor PoE, switch intermediário ou fibra. Câmeras externas com DPS de rede e aterramento (NBR 5419-4).`
+        : `Cabos U/UTP Cat 6 até 90 m por câmera (${num(calc.caboM, 0)} m no total). Câmeras externas com DPS de rede e aterramento (NBR 5419-4).`,
+      ...(calc.portasBt ? [`Câmeras acima de 25,5 W (limite do PoE+ 802.3at): ${calc.cameras.filter(c => c.poe > 25.5 && c.poe <= 71.3).map(c => `${c.id} ${num(c.poe, 1)} W → ${c.poePadrao}`).join('; ')} — portas IEEE 802.3bt no switch.`] : []),
     ] },
     { titulo: '5. Lista de materiais (preliminar)', tabela: { colunas: ['Cód.', 'Descrição', 'Un.', 'Qtd.', 'Referência'], linhas: calc.materiais.map(m => [m.codigo, m.descricao, m.unidade, num(m.quantidade, 0), m.referencia]), proporcoes: [0.6, 4, 0.5, 0.6, 1.5] } },
     ...(calc.avisos.length ? [{ titulo: 'Avisos', marcadores: calc.avisos }] : []),

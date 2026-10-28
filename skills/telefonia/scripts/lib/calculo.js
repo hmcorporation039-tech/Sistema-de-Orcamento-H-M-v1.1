@@ -142,7 +142,11 @@ function calcular(dados) {
     const r = Math.max(1, Math.round(numOu(b.ramais_por_unidade, rPadrao)));
     const p0 = Math.round(numOu(b.primeiro_pavimento, 1));
     const rotaExterna = sim(b.rota_externa);
-    const alturaMax = Math.max(0, p0 + nPav - 1) * h;
+    // DG no térreo (pavimento 0): altura até o pavimento = |pav| × pé-direito (subsolo desce,
+    // pavimento sobe). Antes o subsolo ficava com altura 0 (cabo CI sem a descida).
+    const pTopo = p0 + nPav - 1;
+    const alturaMax = Math.max(Math.abs(p0), Math.abs(pTopo)) * h;
+    const alturaPrumada = (Math.max(0, pTopo) + Math.max(0, -p0)) * h; // trecho que sobe + trecho que desce
     // IP: switch no próprio bloco se o ponto mais distante passa de 90 m ou se o
     // bloco é outra edificação (interligação por fibra, sem cobre entre prédios)
     const maxCentral = (dDg + alturaMax + dUn) * f + h;
@@ -152,7 +156,7 @@ function calcular(dados) {
     const pavimentos = [];
     for (let k = 0; k < nPav; k++) {
       const pav = p0 + k;
-      const altura = Math.max(0, pav) * h;
+      const altura = Math.abs(pav) * h;
       // comprimento de cada cabo de ramal (um por ramal)
       let compRamal;
       if (ip) compRamal = ((switchLocal ? 0 : dDg) + altura + dUn) * f + h;
@@ -172,8 +176,10 @@ function calcular(dados) {
       }
       const unidades = [];
       for (let j = 1; j <= upp; j++) {
-        const rotulo = pav <= 0 ? `T${pad2(j)}` : `${pav}${pad2(j)}`;
-        const base = `${multiBloco ? ib + 1 : ''}${Math.max(0, pav)}${pad2(j)}`;
+        // subsolo n: unidade S{n}{jj} e ramal 9{n}{jj} (antes todos os subsolos e o térreo
+        // repetiam T{jj} e o ramal 0{jj} — ramais duplicados na central)
+        const rotulo = pav < 0 ? `S${-pav}${pad2(j)}` : pav === 0 ? `T${pad2(j)}` : `${pav}${pad2(j)}`;
+        const base = `${multiBloco ? ib + 1 : ''}${pav < 0 ? `9${-pav}` : pav}${pad2(j)}`;
         const numeros = r > 1 ? Array.from({ length: r }, (_, x) => `${base}${x + 1}`) : [base];
         const nomeAmb = multiBloco ? `${nome} — ${rotulo}` : `Unidade ${rotulo}`;
         numeros.forEach(n => ramaisLista.push({ ramal: n, bloco: nome, pavimento: pav, local: `Unidade ${rotulo}`, tipo: 'Unidade', terminal: ip ? 'Telefone IP' : 'Terminal dedicado', cabo, comprimento_m: compRamal }));
@@ -193,10 +199,10 @@ function calcular(dados) {
     const modulosDps = !ip && rotaExterna
       ? 2 * (topologia === 'prumada' ? pavimentos.reduce((a, p) => a + Math.ceil(p.ciPares * p.ciCabos / PARES_BLOCO), 0) : Math.ceil(paresDg / PARES_BLOCO))
       : 0;
-    const prumadaInfraM = (dDg + alturaMax) * f;
+    const prumadaInfraM = (dDg + alturaPrumada) * f;
     const ramalInfraM = unidades * (dUn * f + h);
     return {
-      nome, nPav, upp, h, dDg, dUn, r, p0, rotaExterna, alturaMax, switchLocal, pavimentos, unidades, ramais, ciPorPares, ramalM, paresDg, modulosDps,
+      nome, nPav, upp, h, dDg, dUn, r, p0, rotaExterna, alturaMax, alturaPrumada, switchLocal, pavimentos, unidades, ramais, ciPorPares, ramalM, paresDg, modulosDps,
       blocosIdc: pavimentos.reduce((a, p) => a + p.blocosIdc, 0), pontosIp: ip ? ramais : 0, poeW: ip ? ramais * W_TERMINAL_IP : 0, prumadaInfraM, ramalInfraM,
       maxRamal: Math.max(...pavimentos.map(p => p.compRamal)),
     };
@@ -239,6 +245,11 @@ function calcular(dados) {
     return amb;
   });
   const nPorteiros = portoes.length;
+  // Plano de numeração: nenhum número de ramal pode repetir na central
+  const vistos = new Map();
+  for (const x of ramaisLista) vistos.set(x.ramal, [...(vistos.get(x.ramal) || []), x.local]);
+  const duplicados = [...vistos].filter(([, locais]) => locais.length > 1);
+  if (duplicados.length) avisos.push(`Plano de numeração com ${duplicados.length} ramal(is) repetido(s) — ${duplicados.slice(0, 5).map(([n, l]) => `${n}: ${l.join(' / ')}`).join('; ')}${duplicados.length > 5 ? '; …' : ''}. Renumerar na programação da central. [CONFERIR]`);
 
   // ── Ramais ──
   const unidades = blocos.reduce((a, b) => a + b.unidades, 0);
@@ -478,7 +489,7 @@ function calcular(dados) {
 
   return {
     tipo, rotuloTipo: TIPOS_SISTEMA[tipo], topologia, rotuloTopologia: TOPOLOGIAS[topologia], ip, hibrido, analogica, f, reserva, reservaPares, capPlaca, paresCci, autonomiaH, comNobreak, comDps, infraExistente,
-    blocos, areas, portoes, ambientes, ramaisLista, localDg, localPortaria,
+    blocos, areas, portoes, ambientes, ramaisLista, ramaisDuplicados: duplicados.map(([n]) => n), localDg, localPortaria,
     unidades, ramaisUnidades, ramaisAreas, terminaisPortaria, nPorteiros, ramaisUsados, ramaisNec, ramaisAnalogicos,
     central, nCentrais, placas, capacidadeInstalada, pabx, licencas, fxsNec, gwFxs, troncos, tipoTronco, troncosAnalogicos, placasTronco, ataSip, gwFxo, licencasTronco,
     paresCabosDg, paresCentral, blocosDg, blocosAndares, suportes, jumperM,

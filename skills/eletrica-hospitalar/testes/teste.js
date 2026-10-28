@@ -114,6 +114,29 @@ erro = '';
 try { motor.processar({ ...ex(), equipamentos: [{ ambiente: 'Inexistente', descricao: 'Monitor', potencia_w: 100 }] }); } catch (e) { erro = e.message; }
 igual('equipamento em ambiente inexistente → erro', /sem ambiente correspondente/.test(erro), true);
 
+// ── Achados da revisão 27/10/2026 ──
+// Equipamento de 11 kW (FP 0,9 → 12,2 kVA) forçado no IT: nenhum transformador de 0,5 a 10 kVA o
+// alimenta (NBR 13534, 6.1.3.1.101 b) — antes virava "2 × 6,3 kVA" sem não conformidade
+{
+  const c = rodar(d => d.equipamentos.push({ ambiente: 'Sala cirúrgica 1', descricao: 'Equipamento 11 kW', quantidade: 1, potencia_w: 11000, fp: 0.9, sistema: 'IT', circuito_exclusivo: true })).calc;
+  igual('equipamento > 10 kVA no IT → NC IT2', c.ncs.some(n => n.cod === 'IT2' && /Equipamento 11 kW \(12.2 kVA/.test(n.texto)), true);
+}
+// Divisão em 2 transformadores: cada um precisa comportar o maior equipamento.
+// Equipamentos 8,1 kW e 4,5 kW (FP 0,9 → 9,0 e 5,0 kVA) somam demanda de 11,46 kVA → 2 unidades;
+// 11,46/2 = 5,73 kVA daria 6,3 kVA (antes), mas o de 9,0 kVA exige 10 kVA por transformador
+{
+  const c = rodar(d => d.equipamentos.push(
+    { ambiente: 'Sala cirúrgica 1', descricao: 'Equip 8,1 kW', quantidade: 1, potencia_w: 8100, fp: 0.9, sistema: 'IT', circuito_exclusivo: true },
+    { ambiente: 'Sala cirúrgica 1', descricao: 'Equip 4,5 kW', quantidade: 1, potencia_w: 4500, fp: 0.9, sistema: 'IT', circuito_exclusivo: true })).calc;
+  const s = c.sistemas.find(x => x.ambientes.some(a => a.nome === 'Sala cirúrgica 1'));
+  igual('2 transformadores de 10 kVA (o maior equipamento cabe em cada um)', [s.unidades, s.kvaPorUnidade], [2, 10]);
+  igual('sem NC IT2 (todos ≤ 10 kVA)', c.ncs.some(n => n.cod === 'IT2'), false);
+}
+// DPS dos quadros setoriais pela função comum (Tabela 49): 220/380 V TN-S → 1,1·220 = 242 V → 275 V
+igual('DPS do quadro setorial Uc 275 V', calc.quadros[0].dpsUc, 275);
+// NBR 13534, 5.1.2.2.4.2: DR obrigatório nos circuitos de TOMADAS do grupo 1 (conferido no texto)
+igual('enfermaria (grupo 1): tomadas TN com DR obrigatório', calc.circuitosTn.filter(x => x.tipo === 'tug' && (x.ambientes || []).includes('Enfermaria 101')).every(x => x.dr && x.drObrigatorio), true);
+
 // ── Documentos e orçamento ──
 (async () => {
   igual('4 documentos disponíveis', motor.tiposDisponiveis(res), ['memorial', 'planilha', 'laudo', 'checklist']);

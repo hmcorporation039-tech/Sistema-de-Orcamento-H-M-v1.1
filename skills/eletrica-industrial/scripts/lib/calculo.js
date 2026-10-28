@@ -16,6 +16,7 @@
 const E = require('../../../eletrica/scripts/lib/calculo');
 const T = require('../../../eletrica/scripts/lib/tabelas');
 const X = require('./tabelas');
+const { ucDps } = require('../../../_comum/dps');
 
 const FOLGA = 1.1; // +10 % de cabo (sobras, emendas, chegada no quadro) — igual à skill de elétrica
 const SQ3 = Math.sqrt(3);
@@ -97,7 +98,9 @@ function config(dados) {
     quedaPartida: num(i.queda_max_partida_pct, 10),
     fpMedido: fracao(i.fp_medido, null), fpAlvo: fracao(i.fp_alvo, 0.92), demandaMedidaKw: num(i.demanda_medida_kw, null),
     tipoBanco: i.tipo_banco || 'auto', estagios: Math.max(1, num(i.estagios_controlador, 6)), bancoDistancia: num(i.banco_distancia_m, 5),
-    tensaoCapacitor: vCap, fatorC: num(i.fator_tensao_c, 1.0), contribuicaoMotores: i.contribuicao_motores !== false,
+    // fator de tensão para o Icc máximo: c_max = 1,05 (IEC 60909-0, Tabela 1 — BT com tolerância de +6 %;
+    // no Brasil a faixa adequada do PRODIST vai a +5 %); use 1,10 se a tolerância for de +10 %
+    tensaoCapacitor: vCap, fatorC: num(i.fator_tensao_c, 1.05), contribuicaoMotores: i.contribuicao_motores !== false,
     fatorSimultaneidade: num(i.fator_simultaneidade, 1), carregamentoMax: num(i.carregamento_max_trafo_pct, 100),
     comprimentoPadrao: num(i.comprimento_padrao_m, 20), eletrodutoFinalM: num(i.eletroduto_final_m, 3),
   };
@@ -276,20 +279,31 @@ function dispositivosPartida(u) {
 // Y-Δ: 6 condutores entre o CCM e o motor, cada um com a corrente de fase
 // (In/√3); queda de tensão no enrolamento em Δ = 2·ρ·L·If/(S·V) — 2/√3 vezes
 // a fórmula trifásica do motor da elétrica, por isso o limite é corrigido.
+// Motores grandes: condutores em paralelo quando a seção passa do limite prático
+// (secaoMaxParalelo, padrão 240 mm²) — cada conjunto conta como um circuito no FCA.
 function circuitoMotor(u, c, ec, secaoMinima = 0) {
   const yd = u.partida === 'estrela_triangulo';
   const fatorIb = Math.max(1.25, u.fs);
   const ibLinha = fatorIb * u.in;
   const ibCond = yd ? ibLinha / SQ3 : ibLinha;
   const kQueda = yd ? 2 / SQ3 : 1;
-  const d = E.dimensionarCircuito({
-    id: u.tag, descricao: `${u.tag} — ${u.descricao}`, tipo: 'tue', ligacao: 'FFF', potencia_va: SQ3 * c.vff * ibCond,
-    comprimento_m: u.distancia, agrupamento: u.agrupamento + (yd ? 1 : 0), metodo: u.metodo, secao_minima: Math.max(secaoMinima, u.secaoMinima),
-  }, ec, { minimo: T.SECAO_MINIMA.tue, limiteQueda: c.quedaTerminal / kQueda });
-  return {
-    secao: d.secao, secaoPE: d.secaoPE, iz: d.iz, izRef: d.izRef, fct: d.fct, fca: d.fca, metodo: d.metodo, agrupamento: u.agrupamento + (yd ? 1 : 0),
-    ibLinha, ibCond, fatorIb, condutores: yd ? 6 : 3, comprimento: d.comprimento, queda: d.queda * kQueda, criterio: d.criterio,
-  };
+  let ultimoErro = null;
+  for (let np = 1; np <= 8; np++) {
+    let d;
+    try {
+      d = E.dimensionarCircuito({
+        id: u.tag, descricao: `${u.tag} — ${u.descricao}`, tipo: 'tue', ligacao: 'FFF', potencia_va: SQ3 * c.vff * ibCond / np,
+        comprimento_m: u.distancia, agrupamento: u.agrupamento + (yd ? 1 : 0) + np - 1, metodo: u.metodo, secao_minima: Math.max(secaoMinima, u.secaoMinima),
+      }, ec, { minimo: T.SECAO_MINIMA.tue, limiteQueda: c.quedaTerminal / kQueda });
+    } catch (e) { ultimoErro = e; continue; }
+    if (d.secao > c.secaoMaxParalelo && np < 8) continue;
+    return {
+      secao: d.secao, secaoPE: d.secaoPE, iz: d.iz, izTotal: d.iz * np, izRef: d.izRef, fct: d.fct, fca: d.fca, metodo: d.metodo, agrupamento: u.agrupamento + (yd ? 1 : 0) + np - 1,
+      paralelos: np, ibLinha, ibCond, fatorIb, condutores: yd ? 6 : 3, comprimento: d.comprimento, queda: d.queda * kQueda,
+      criterio: np > 1 ? `${d.criterio} · ${np} cabos em paralelo por fase (seção ≤ ${c.secaoMaxParalelo} mm²)` : d.criterio,
+    };
+  }
+  throw new Error(`${u.tag}: nenhuma combinação de até 8 cabos em paralelo atende (${Math.round(ibLinha)} A, ${u.distancia} m)${ultimoErro ? ` — ${ultimoErro.message}` : ''}.`);
 }
 
 function circuitoOutra(o, c, ec) {
@@ -401,7 +415,18 @@ function bancoCapacitores(dem, c, ec) {
 
 // ── Curto-circuito (IEC 60909 simplificado) ─────────────────────────────────
 
-function impedanciaFonte(c) {
+// Fator de correção da impedância do transformador para o Icc máximo (IEC 60909-0, 6.3.3):
+// K_T = 0,95 · c_max / (1 + 0,6 · x_T), x_T = reatância relativa do transformador
+function fatorKT(c) {
+  if (c.entrada !== 'trafo' || !c.trafoKva) return 1;
+  const r = Math.min(c.trafoR, c.trafoZ * 0.95) / 100;
+  const xT = Math.sqrt((c.trafoZ / 100) ** 2 - r * r);
+  return (0.95 * c.fatorC) / (1 + 0.6 * xT);
+}
+
+// Impedância da fonte até os terminais de BT. kt = 1: impedância real (queda na partida,
+// Icc mínimo); kt = K_T: impedância corrigida do transformador para o Icc máximo (IEC 60909)
+function impedanciaFonte(c, kt = 1) {
   const V = c.vff;
   if (c.entrada === 'trafo') {
     let z = { r: 0, x: 0 };
@@ -413,7 +438,7 @@ function impedanciaFonte(c) {
     const zb = (V * V) / (c.trafoKva * 1000);
     const zt = (c.trafoZ / 100) * zb;
     const rt = Math.min(c.trafoR, c.trafoZ * 0.95) / 100 * zb;
-    return somaZ(z, { r: rt, x: Math.sqrt(zt * zt - rt * rt) });
+    return somaZ(z, { r: kt * rt, x: kt * Math.sqrt(zt * zt - rt * rt) });
   }
   const icc = (c.iccEntradaKa || 10) * 1000;
   const zq = (c.fatorC * V) / (SQ3 * icc);
@@ -442,7 +467,7 @@ function quedaPartida(u, zAteQuadro, quedaRegimeQuadro, secao, c) {
   const cos = u.fpPartida;
   const sen = Math.sqrt(1 - cos * cos);
   const dvFonte = (100 * SQ3 * Ip * (zAteQuadro.r * cos + zAteQuadro.x * sen)) / c.vff;
-  const zc = zCabo(secao, 1, u.circuito.comprimento, X.RHO_QUENTE);
+  const zc = zCabo(secao, u.circuito.paralelos || 1, u.circuito.comprimento, X.RHO_QUENTE);
   const kCirc = u.partida === 'estrela_triangulo' ? 2 : 1;
   const dvCirc = (100 * kCirc * SQ3 * Ip * (zc.r * cos + zc.x * sen)) / c.vff;
   const dispositivo = quedaRegimeQuadro + dvFonte;
@@ -489,7 +514,9 @@ function calcular(dados) {
 
   // 4. Quadros/CCMs e alimentadores (6.5.1: Ib = 1,25·In do maior + ΣIn dos demais + outras cargas)
   const proj651 = (motores, cargas) => {
-    const op = motores.filter(m => m.emOperacao);
+    let op = motores.filter(m => m.emOperacao);
+    // quadro só com motores reserva: o alimentador ainda tem de partir e manter o maior deles
+    if (!op.length && motores.length) op = [motores.reduce((a, b) => (b.in > a.in ? b : a))];
     const maior = op.reduce((a, b) => (!a || b.in > a.in ? b : a), null);
     const somaDemais = op.filter(m => m !== maior).reduce((s, m) => s + m.in, 0);
     const iOutras = cargas.reduce((s, o) => s + o.iDemanda, 0);
@@ -507,15 +534,19 @@ function calcular(dados) {
   };
   quadros.forEach(q => dimensionarQuadro(q));
   quadros.filter(q => !q.alim).forEach(q => avisos.push(`${q.id}: quadro sem cargas.`));
+  quadros.filter(q => q.motores.length && !q.motores.some(m => m.emOperacao)).forEach(q => avisos.push(`${q.id}: só motores fora da operação simultânea (reserva) — alimentador dimensionado para o maior deles (${q.projeto.maior}). [CONFERIR a operação]`));
   qgbt.projeto = proj651(unidades, outras);
 
-  // 5. Curto-circuito
+  // 5. Curto-circuito: máximo com c_max e K_T (IEC 60909-0); queda na partida e Icc mínimo
+  // com a impedância real do transformador
+  const kT = fatorKT(c);
   const zFonte = impedanciaFonte(c);
+  const zFonteMax = impedanciaFonte(c, kT);
   const zEnt = zCabo(cabo.secao, cabo.paralelos, cabo.comprimento, X.RHO_20);
   const zEntQ = zCabo(cabo.secao, cabo.paralelos, cabo.comprimento, X.RHO_QUENTE);
-  const zQgbt = somaZ(zFonte, zEnt);
+  const zQgbt = somaZ(zFonteMax, zEnt);
   const zQgbtQ = somaZ(zFonte, zEntQ);
-  const iccTerminaisTrafo = c.entrada === 'trafo' ? iccTrifasico(c.vff, zFonte, c.fatorC) : null;
+  const iccTerminaisTrafo = c.entrada === 'trafo' ? iccTrifasico(c.vff, zFonteMax, c.fatorC) : null;
   const calcCurtoQuadros = () => {
     qgbt.curto = curtoNoPonto(zQgbt, zQgbtQ, c, contribuicaoMotores(unidades, c));
     quadros.filter(q => q.alim).forEach(q => {
@@ -565,8 +596,8 @@ function calcular(dados) {
   for (const u of unidades) {
     const q = quadroDoMotor(u);
     const zq = q === qgbt ? zQgbt : somaZ(zQgbt, zCabo(q.alim.secao, q.alim.paralelos, q.alim.comprimento, X.RHO_20));
-    const zM = somaZ(zq, zCabo(u.circuito.secao, 1, u.circuito.comprimento, X.RHO_20));
-    const zMQ = somaZ(q.zQuente, zCabo(u.circuito.secao, 1, u.circuito.comprimento, X.RHO_QUENTE));
+    const zM = somaZ(zq, zCabo(u.circuito.secao, u.circuito.paralelos || 1, u.circuito.comprimento, X.RHO_20));
+    const zMQ = somaZ(q.zQuente, zCabo(u.circuito.secao, u.circuito.paralelos || 1, u.circuito.comprimento, X.RHO_QUENTE));
     u.curto = { iccMax: iccTrifasico(c.vff, zM, c.fatorC), iccMin2f: (0.95 * c.vff) / (2 * modZ(zMQ)), icuMin: q.curto.icuMin, iccQuadro: q.curto.icc };
     const q1 = u.partidaInfo.dispositivos.find(d => d.ref === 'Q1' && d.magnetico_a);
     if (q1 && u.curto.iccMin2f < 1.2 * q1.magnetico_a) avisos.push(`${u.tag}: Icc mínimo no motor (${(u.curto.iccMin2f / 1000).toFixed(2)} kA) abaixo de 1,2 × disparo magnético do disjuntor-motor (${Math.round(q1.magnetico_a)} A) — circuito longo: aumentar a seção ou verificar a proteção (5.3.5). [CONFERIR]`);
@@ -584,7 +615,7 @@ function calcular(dados) {
     const limite = c.trafoKva * c.carregamentoMax / 100;
     trafo = {
       kva: c.trafoKva, z: c.trafoZ, r: c.trafoR, rInformado: c.trafoRInformado, inSec: inTrafo, iccTerminais: iccTerminaisTrafo,
-      sAntes, sDepois, carregamentoAntes: sAntes / c.trafoKva, carregamentoDepois: sDepois / c.trafoKva, atende: sDepois <= limite + 1e-9,
+      kT, sAntes, sDepois, carregamentoAntes: sAntes / c.trafoKva, carregamentoDepois: sDepois / c.trafoKva, atende: sDepois <= limite + 1e-9,
       sugerido: sDepois > limite ? X.proximo(X.TRAFOS_KVA, sDepois / (c.carregamentoMax / 100)) : null,
     };
     if (!trafo.atende) avisos.push(`Transformador de ${c.trafoKva} kVA com carregamento de ${Math.round(trafo.carregamentoDepois * 100)} % após a correção do FP — trocar por ${trafo.sugerido || 'unidade maior'} kVA ou rever a demanda.`);
@@ -618,7 +649,8 @@ function calcular(dados) {
     'Fatores de demanda das outras cargas típicos (iluminação 1,0; tomadas 0,3; resistivas 1,0). [CONFERIR]',
   );
 
-  const resultado = { config: c, unidades, outras, quadros, qgbt, demanda: dem, banco, entrada, trafo, avisos, premissas };
+  const resultado = { config: c, unidades, outras, quadros, qgbt, demanda: dem, banco, entrada, trafo, kT, avisos, premissas };
+  resultado.dps = ucDps({ vfn: c.vfn, vff: c.vff, esquema: c.esquema, neutro: c.esquema === 'IT' ? false : undefined });
   resultado.materiais = materiais(resultado);
   return resultado;
 }
@@ -648,11 +680,12 @@ function materiais(calc) {
 
   for (const u of unidades) {
     const L = u.circuito.comprimento * FOLGA;
-    soma(u.circuito.secao, L * u.circuito.condutores);
-    soma(u.circuito.secaoPE, L);
+    const np = u.circuito.paralelos || 1;
+    soma(u.circuito.secao, L * u.circuito.condutores * np);
+    soma(u.circuito.secaoPE, L * np);
     const q = quadroObj(u.quadro);
-    ocupa(q.areasRamais, u.circuito.secao, u.circuito.condutores);
-    ocupa(q.areasRamais, u.circuito.secaoPE, 1);
+    ocupa(q.areasRamais, u.circuito.secao, u.circuito.condutores * np);
+    ocupa(q.areasRamais, u.circuito.secaoPE, np);
   }
   for (const o of outras) {
     const L = o.circuito.comprimento * FOLGA;
@@ -697,13 +730,14 @@ function materiais(calc) {
 
   // Quadros
   const nDps = c.esquema === 'TN-S' || c.esquema === 'TT' ? 4 : 3;
-  const uc = [175, 275, 320, 385, 440].find(v => v >= 1.1 * c.vfn) || 440;
+  // NBR 5410, Tabela 49 (função comum): IT aqui é sem neutro distribuído (cabo de entrada sem N) → Uc ≥ U
+  const uc = ucDps({ vfn: c.vfn, vff: c.vff, esquema: c.esquema, neutro: c.esquema === 'IT' ? false : undefined }).uc;
   add('QGBT', `QGBT em conjunto NBR IEC 61439-2: barramento ${qgbt.conjunto.barramento} A, Icw ≥ ${qgbt.conjunto.icw} kA/1 s, Ipk ≥ ${(qgbt.curto.ip / 1000).toFixed(1).replace('.', ',')} kA, IP54 [CONFERIR forma de separação]`, 'un', 1, 'NBR IEC 61439-1/-2');
   add('DG', `Disjuntor geral tripolar ${entrada.disjuntorGeral} A (caixa moldada/aberto) com unidade de proteção ajustável, Icu ≥ ${qgbt.curto.icuMin} kA em ${c.vff} V`, 'un', 1, 'NBR IEC 60947-2; NBR 5410, 5.3.5');
-  add('DPS', `DPS classe II, Uc ≥ ${uc} V, In ≥ 20 kA (8/20 µs) no QGBT`, 'un', nDps, 'NBR 5410, 6.3.5.2 e Tabela 49');
+  add('DPS', `DPS classe II, Uc ≥ ${uc} V, In ≥ 20 kA (8/20 µs) no QGBT`, 'un', nDps, 'NBR 5410, 6.3.5.2.4 e Tabela 49');
   for (const q of quadros.filter(x => x.alim)) {
     add('DAL', `Disjuntor tripolar ${q.alim.disjuntor} A (caixa moldada) para o alimentador do ${q.id}, Icu ≥ ${qgbt.curto.icuMin} kA em ${c.vff} V`, 'un', 1, 'NBR IEC 60947-2; NBR 5410, 6.5.1');
-    add('CCM', `${q.tipo === 'CCM' ? 'Centro de controle de motores' : 'Quadro de distribuição'} ${q.id} em conjunto NBR IEC 61439-2: barramento ${q.conjunto.barramento} A, Icw ≥ ${q.conjunto.icw} kA/1 s, ${X.FORMAS[q.forma] || 'forma ' + q.forma}, ${q.ip}, chave geral com bloqueio`, 'un', 1, 'NBR IEC 61439-1/-2');
+    add('CCM', `${q.tipo === 'CCM' ? 'Centro de controle de motores' : 'Quadro de distribuição'} ${q.id} em conjunto NBR IEC 61439-2: barramento ${q.conjunto.barramento} A, Icw ≥ ${q.conjunto.icw} kA/1 s, Ipk ≥ ${(q.curto.ip / 1000).toFixed(1).replace('.', ',')} kA, ${X.FORMAS[q.forma] || 'forma ' + q.forma}, ${q.ip}, chave geral com bloqueio`, 'un', 1, 'NBR IEC 61439-1/-2');
     if (q.motores.length) add('EMG', `Botão de emergência tipo cogumelo com trava na porta do ${q.id} (NR-12) [CONFERIR também nas máquinas]`, 'un', 1, 'NR-12; ABNT NBR ISO 13850');
   }
   if (qgbt.motores.length) add('EMG', 'Botão de emergência tipo cogumelo com trava no QGBT (motores ligados direto) [CONFERIR também nas máquinas]', 'un', 1, 'NR-12; ABNT NBR ISO 13850');
@@ -752,5 +786,5 @@ function materiais(calc) {
 
 module.exports = {
   calcular, config, potenciaKw, correnteNominalMotor, kvarCorrecao, iccTransformador, iccTrifasico, kappa, dispositivosPartida,
-  tensoesPlaca, impedanciaFonte,
+  tensoesPlaca, impedanciaFonte, fatorKT, circuitoMotor,
 };

@@ -72,6 +72,8 @@ function resumir(res) {
       { rotulo: 'Alimentador', valor: `${sec(a.secao)} · ${a.disjuntor} A`, detalhe: `Ib ${num(a.ib, 1)} A · ΔV ${num(a.queda)} %` },
       { rotulo: 'Queda de tensão total', valor: `${num(calc.quedaTotal)} %`, ok: calc.quedaTotal <= (calc.config.pontoEntrega === 'trafo' ? 7 : 5), detalhe: `maior circuito terminal ${num(calc.maiorQueda)} %` },
       { rotulo: 'Quadro', valor: `${calc.quadro.modulos} módulos`, detalhe: `${calc.quadro.circuitos} circuitos + ${calc.quadro.reserva} reserva (Tab. 59)` },
+      { rotulo: 'Curto-circuito no quadro', valor: `${num(calc.falta.iccQuadro / 1000, 1)} kA`, detalhe: `disjuntores com capacidade de interrupção ≥ ${num(calc.quadro.icnKa, 1)} kA${calc.falta.iccInformada ? '' : ' · Icc da entrada adotada [CONFERIR]'}` },
+      { rotulo: 'Seccionamento automático', valor: calc.config.esquema === 'TT' ? 'DR em todos (TT)' : `${calc.circuitos.filter(x => !x.falta.disjuntorSecciona).length} circuito(s) dependem do DR`, detalhe: `Zs·Ia ≤ Uo (5.1.2.2.4), Ia = 10·In curva C` },
       { rotulo: 'Balanceamento', valor: `${num(calc.fases.desequilibrio * 100, 0)} %`, ok: calc.fases.desequilibrio <= 0.2, detalhe: Object.entries(calc.fases.carga).map(([f, v]) => `${f} ${num(v / 1000)} kVA`).join(' · ') },
       ...(temInspecao ? [{ rotulo: 'Parecer da inspeção', valor: res.parecer.situacao.replace(/_/g, ' '), ok: res.parecer.situacao === 'CONFORME' ? true : res.parecer.situacao === 'INCONCLUSIVO' ? undefined : false, detalhe: `NC ${res.parecer.cont.NC} · NV ${res.parecer.cont.NV}` }] : []),
     ],
@@ -96,8 +98,10 @@ function resumir(res) {
           ['Iluminação + TUG instalada', `${num(calc.demanda.ilumTugVa, 0)} VA × FD ${num(calc.demanda.fdIlumTug)}${calc.config.fdIlumTugFixo != null ? ' (fixo)' : ''}`],
           ['TUE instalada', `${num(calc.demanda.tueVa, 0)} VA (${calc.demanda.nTue}) × FD ${num(calc.demanda.fdTue)}${calc.config.fdTueFixo != null ? ' (fixo)' : ''}`],
           ['Demanda', `${num(calc.demanda.demandaVa, 0)} VA = ${num(calc.demanda.demandaKw)} kW`],
-          ['Alimentador', `${sec(calc.alimentador.secao)} · disjuntor ${calc.alimentador.polos}P ${calc.alimentador.disjuntor} A · Ib ${num(calc.alimentador.ib, 1)} A · ΔV ${num(calc.alimentador.queda)} %`],
-          ['Cargas por fase', Object.entries(calc.fases.carga).map(([f, v]) => `${f} ${num(v, 0)} VA`).join(' · ')],
+          ['Alimentador', `${sec(calc.alimentador.secao)} · disjuntor ${calc.alimentador.polos}P ${calc.alimentador.disjuntor} A · Ib ${num(calc.alimentador.ib, 1)} A (fase mais carregada ${num(calc.alimentador.iFaseMax, 1)} A × FD ${num(calc.alimentador.fd, 3)}) · ΔV ${num(calc.alimentador.queda)} %`],
+          ['Cargas por fase', Object.entries(calc.fases.carga).map(([f, v]) => `${f} ${num(v, 0)} VA / ${num(calc.fases.corrente[f], 1)} A`).join(' · ')],
+          ['Curto-circuito no quadro', `${num(calc.falta.iccQuadro / 1000, 1)} kA (entrada ${num(calc.falta.iccEntradaKa, 1)} kA${calc.falta.iccInformada ? '' : ' adotada'}) → capacidade de interrupção ≥ ${num(calc.quadro.icnKa, 1)} kA`],
+          ['DPS', calc.quadro.dps.texto],
         ] },
       { titulo: 'Previsão de cargas por ambiente (9.5.2)', colunas: ['Ambiente', 'Tipo', 'Área (m²)', 'Iluminação (VA)', 'Tomadas', 'TUG (VA)', 'TUEs'],
         linhas: calc.previsao.map(p => [p.nome, p.tipo, num(p.area_m2), num(p.iluminacao, 0), p.nTug, num(p.tugVa, 0), p.tues.map(t => `${t.descricao} ${num(t.potencia_w, 0)} W`).join('; ') || '—']) },
@@ -106,6 +110,25 @@ function resumir(res) {
 }
 
 // ── Documentos ──────────────────────────────────────────────────────────────
+
+// Memorial, seção 4: o texto só afirma o que o cálculo sustenta
+function secao4(calc) {
+  const c = calc.config;
+  const f = calc.falta;
+  const porDr = calc.circuitos.filter(x => !x.falta.disjuntorSecciona).map(x => x.id);
+  const locais = calc.circuitos.filter(x => (x.drMotivos || []).includes('local de 5.1.3.2.2')).map(x => x.id);
+  const outrosDr = calc.circuitos.filter(x => x.dr && !(x.drMotivos || []).length).map(x => x.id);
+  const p = [];
+  if (c.esquema === 'TT') {
+    p.push(`Esquema TT: o seccionamento automático é feito por dispositivo DR em todos os circuitos (5.1.2.2.4.3), com a condição RA·IΔn ≤ 50 V — para IΔn = 30 mA, RA ≤ 1 667 Ω, a confirmar com a medição da resistência de aterramento.`);
+  } else {
+    p.push(`Seccionamento automático (5.1.2.2.4.2, esquema ${c.esquema}): Zs·Ia ≤ Uo, com Ia = 10·In (limite superior do disparo instantâneo da curva C, NBR NM 60898 — atuação em menos de 0,1 s, abaixo da Tabela 25). Zs = laço fase–PE do alimentador e do circuito com ρ = ${String(T.RHO_COBRE).replace('.', ',')} Ω·mm²/m${f.iccInformada ? ` mais a fonte (2·Uo/Icc = ${num(f.zFonteLaco, 4)} Ω)` : ' — sem a impedância a montante, não informada [CONFERIR com a Icc da distribuidora]'}. ${porDr.length ? `Os circuitos ${porDr.join(', ')} não atendem só com o disjuntor e têm o seccionamento garantido pelo DR 30 mA (ver tabela; alternativa: aumentar a seção ou reduzir o comprimento até o L máx.).` : 'Todos os circuitos atendem com o próprio disjuntor.'}`);
+  }
+  p.push(`DR de alta sensibilidade (IΔn ≤ 30 mA) obrigatório nos circuitos que servem banheiros, cozinhas, áreas de serviço, garagens e áreas externas (5.1.3.2.2): ${locais.join(', ') || 'nenhum'}${outrosDr.length ? `; DR adotado no projeto também em ${outrosDr.join(', ')}` : ''}.`);
+  p.push(`Curto-circuito (5.3.5.5): corrente presumida no quadro ≈ ${num(f.iccQuadro / 1000, 1)} kA, a partir de ${num(f.iccEntradaKa, 1)} kA no ponto de entrega ${f.iccInformada ? '(informada)' : '(adotada — [CONFERIR] com a distribuidora)'} e da resistência do alimentador; disjuntores com capacidade de interrupção ≥ ${num(calc.quadro.icnKa, 1)} kA (5.3.5.5.1). A integral de Joule que cada disjuntor deixa passar nessa corrente deve ser ≤ k²S² do condutor (5.3.5.5.2, k da Tabela 30, valores na tabela) — confirmar com a curva I²t do fabricante. [CONFERIR]`);
+  p.push(`DPS classe II no quadro de distribuição (6.3.5.2.2): ${calc.quadro.dpsQtd} unidade(s), ${calc.quadro.dps.texto}, In ≥ 20 kA (8/20 µs). Se a edificação tiver SPDA, coordenar com a NBR 5419-4 (DPS classe I na entrada).`);
+  return p;
+}
 
 function secoesMemorial(res) {
   const { calc } = res;
@@ -129,14 +152,15 @@ function secoesMemorial(res) {
     tabela: { colunas: ['Circ.', 'Descrição', 'VA', 'Lig.', 'Ib (A)', 'L (m)', 'Seção fase/N/PE', 'Iz (A)', 'Disj.', 'ΔV %', 'DR'],
       linhas: calc.circuitos.map(x => [x.id, x.descricao, num(x.potencia_va, 0), x.ligacao, num(x.ib, 1), num(x.comprimento, 0), `${sec(x.secao)} / ${x.secaoNeutro ? sec(x.secaoNeutro) : '—'} / ${sec(x.secaoPE)}`, num(x.iz, 1), `${x.polos}P ${x.disjuntor} A`, num(x.queda), x.dr ? 'sim' : '—']),
       proporcoes: [0.4, 2.2, 0.6, 0.4, 0.55, 0.45, 1.4, 0.55, 0.8, 0.5, 0.4], tamanho: 14 } },
-    { titulo: '4. Proteção diferencial e contra surtos', paragrafos: [
-      `DR de alta sensibilidade (IΔn ≤ 30 mA) nos circuitos que servem banheiros, cozinhas, áreas de serviço, garagens e áreas externas (5.1.3.2.2): ${calc.circuitos.filter(x => x.dr).map(x => x.id).join(', ') || 'nenhum'}.`,
-      `DPS classe II no quadro de distribuição (6.3.5.2.2): ${calc.quadro.dpsQtd} unidade(s), Uc ≥ ${calc.quadro.dpsUc} V (Tabela 49: Uc ≥ 1,1·Uo), In ≥ 20 kA (8/20 µs). Se a edificação tiver SPDA, coordenar com a NBR 5419-4 (DPS classe I na entrada).`,
-    ] },
+    { titulo: '4. Seccionamento automático, curto-circuito, DR e DPS', paragrafos: secao4(calc),
+      tabela: { colunas: ['Circ.', 'L (m)', 'Fase/PE', 'Disj.', 'Zs (Ω)', 'Uo/Ia (Ω)', 'L máx. sem DR (m)', 'Seccionamento', 'k²S² (A²s)'],
+        linhas: calc.circuitos.map(x => [x.id, num(x.comprimento, 0), `${sec(x.secao)} / ${sec(x.secaoPE)}`, `${x.disjuntor} A`, num(x.falta.zs, 3), num(x.falta.zsMax, 3), num(x.falta.lMax, 0),
+          c.esquema === 'TT' || !x.falta.disjuntorSecciona ? 'DR 30 mA' : 'disjuntor', num(x.falta.k2s2, 0)]),
+        proporcoes: [0.4, 0.5, 1.2, 0.6, 0.6, 0.7, 0.8, 0.9, 0.9], tamanho: 14 } },
     { titulo: '5. Balanceamento, demanda e alimentador', paragrafos: [
       `Distribuição de cargas por fase: ${Object.entries(calc.fases.carga).map(([f, v]) => `fase ${f} ${num(v / 1000)} kVA`).join('; ')} (desequilíbrio ${num(calc.fases.desequilibrio * 100, 0)} %).`,
       `Potência instalada ${num(calc.demanda.instaladaVa / 1000)} kVA. Demanda = iluminação e tomadas ${num(calc.demanda.ilumTugVa / 1000)} kVA × ${num(calc.demanda.fdIlumTug)} + ${calc.demanda.nTue} TUE ${num(calc.demanda.tueVa / 1000)} kVA × ${num(calc.demanda.fdTue)} = ${num(calc.demanda.demandaVa / 1000)} kVA. [CONFERIR os fatores de demanda com a norma da distribuidora — a NBR 5410 não os define (4.2.3).]`,
-      `Alimentador: Ib = ${num(a.ib, 1)} A, cabo ${sec(a.secao)} (Iz = ${num(a.iz, 1)} A), disjuntor geral ${a.polos}P ${a.disjuntor} A, ${num(a.comprimento, 0)} m, queda ${num(a.queda)} %. Queda total até o circuito mais desfavorável: ${num(calc.quedaTotal)} %.`,
+      `Alimentador: corrente da fase mais carregada ${num(a.iFaseMax, 1)} A (soma das correntes dos circuitos da fase) × fator de demanda global ${num(a.fd, 3)} (demanda ÷ instalada) = Ib ${num(a.ib, 1)} A; cabo ${sec(a.secao)} (Iz = ${num(a.iz, 1)} A), disjuntor geral ${a.polos}P ${a.disjuntor} A, ${num(a.comprimento, 0)} m, queda ${num(a.queda)} %. Queda total até o circuito mais desfavorável: ${num(calc.quedaTotal)} % ${calc.quedaTotal <= calc.limiteQuedaTotal + 1e-9 ? `(≤ ${calc.limiteQuedaTotal} %, 6.2.7.1)` : `— ACIMA do limite de ${calc.limiteQuedaTotal} % (6.2.7.1): ver avisos`}.`,
       `Quadro de distribuição com ${calc.quadro.circuitos} circuitos e reserva mínima de ${calc.quadro.reserva} (Tabela 59), ${calc.quadro.modulos} módulos DIN.`,
     ] },
     { titulo: '6. Lista de materiais (preliminar)', tabela: { colunas: ['Cód.', 'Descrição', 'Un.', 'Qtd.', 'Referência'], linhas: calc.materiais.map(m => [m.codigo, m.descricao, m.unidade, num(m.quantidade, 1), m.referencia]), proporcoes: [0.8, 4, 0.5, 0.6, 1.6] },
@@ -293,6 +317,7 @@ const FORMULARIO = [
       { caminho: 'instalacao.agrupamento', rotulo: 'Circuitos agrupados (pior trecho)', tipo: 'numero' },
       { caminho: 'instalacao.comprimento_medio_circuito_m', rotulo: 'Comprimento médio dos circuitos (m)', tipo: 'numero' },
       { caminho: 'instalacao.comprimento_alimentador_m', rotulo: 'Comprimento do alimentador (m)', tipo: 'numero' },
+      { caminho: 'instalacao.icc_entrada_ka', rotulo: 'Icc presumida na entrada (kA)', tipo: 'numero', dica: 'informada pela distribuidora; vazio = 10 kA adotados para a capacidade de interrupção [CONFERIR]' },
       { caminho: 'instalacao.fp', rotulo: 'Fator de potência médio', tipo: 'numero' },
       { caminho: 'instalacao.queda_max_terminal_pct', rotulo: 'Queda máx. circuito terminal (%)', tipo: 'numero', dica: 'NBR 5410 6.2.7.2: 4 %' },
       { caminho: 'instalacao.queda_max_alimentador_pct', rotulo: 'Queda máx. alimentador (%)', tipo: 'numero' },

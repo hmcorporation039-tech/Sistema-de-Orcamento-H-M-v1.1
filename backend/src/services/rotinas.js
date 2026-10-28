@@ -16,6 +16,12 @@ const HORARIOS = ['06:00', '18:00'];
 const MAX_AVISOS = 20;
 const DIAS_HISTORICO = 365;
 const HORAS_INTERROMPIDA = 6;
+// Rodada agendada que terminou em ERRO (ex.: sem rede para o e-mail): nova
+// tentativa em 15 min, até 4 vezes, sem passar do próximo horário normal.
+// Antes a próxima chance era só no horário seguinte (12 h depois) — e, como a
+// falha de conexão era aviso, nem isso aparecia (revisão de 27/10/2026).
+const REPESCAGEM_MS = 15 * 60 * 1000;
+const MAX_REPESCAGENS = 4;
 
 // Instância de teste/homologação (ROTINAS_AUTOMATICAS=desligadas): não lê a
 // caixa de e-mail nem as pastas de fornecedores da produção pelo horário.
@@ -37,7 +43,7 @@ function definicoesPadrao() {
       motivoNaoConfigurada: 'e-mail não configurado (EMAIL_IMAP_* no .env)',
       logNaoConfigurada: 'Importação automática de notas por e-mail não configurada (veja EMAIL_IMAP_* no .env)',
       logAgendada: () => `Importação automática de notas por e-mail ativa (${quando})`,
-      executar: () => require('./notaFiscalEmailService').verificarCaixaDeEntrada(),
+      executar: (ctx) => require('./notaFiscalEmailService').verificarCaixaDeEntrada(ctx),
       itens: (r) => r.emailsProcessados,
       texto: (r) => `${r.emailsProcessados || 0} de ${r.emailsEncontrados || 0} e-mail(s) processado(s) — ${r.notasImportadas || 0} nota(s), ${r.orcamentosImportados || 0} orçamento(s); ${r.materiaisCriados || 0} material(is) criado(s), ${r.materiaisAtualizados || 0} atualizado(s)`,
       logResultado: (r) => r.emailsProcessados > 0 && `E-mails verificados: ${r.emailsProcessados}/${r.emailsEncontrados} — ${r.materiaisCriados} materiais criados, ${r.materiaisAtualizados} atualizados`,
@@ -53,7 +59,7 @@ function definicoesPadrao() {
       configurada: emailConfigurado,
       motivoNaoConfigurada: 'e-mail não configurado (EMAIL_IMAP_* no .env)',
       logAgendada: () => `Controle financeiro de Pix por e-mail ativo (${quando})`,
-      executar: () => require('./financeiroEmailService').verificarPixNaCaixaDeEntrada(),
+      executar: (ctx) => require('./financeiroEmailService').verificarPixNaCaixaDeEntrada(ctx),
       itens: (r) => r.movimentosImportados,
       texto: (r) => `${r.movimentosImportados || 0} movimento(s) importado(s) de ${r.emailsEncontrados || 0} e-mail(s)`,
       logResultado: (r) => r.movimentosImportados > 0 && `Pix verificados: ${r.movimentosImportados}/${r.emailsEncontrados} movimentos importados`,
@@ -155,7 +161,7 @@ function criarRotinas({ definicoes = definicoesPadrao, db = null, agendar = setT
         log.warn(`Registro de rotinas (${chave}): não gravou o início — ${e.message}`);
       }
       let resumo, erro;
-      try { resumo = await def.executar(); } catch (e) { erro = e; }
+      try { resumo = await def.executar({ origem }); } catch (e) { erro = e; }
       if (id != null) {
         try {
           await banco().query(
@@ -179,19 +185,26 @@ function criarRotinas({ definicoes = definicoesPadrao, db = null, agendar = setT
   // horário a cada execução, sem acumular desvio).
   function agendarRotina(chave) {
     const def = definicao(chave);
-    const proxima = () => {
-      const ms = msAteProximoHorario(new Date(), def.atrasoSegundos || 0);
+    let repescagens = 0;
+    const proxima = (falhou = false) => {
+      const msNormal = msAteProximoHorario(new Date(), def.atrasoSegundos || 0);
+      const repescar = falhou && def.repescagem !== false && repescagens < MAX_REPESCAGENS && REPESCAGEM_MS < msNormal;
+      repescagens = repescar ? repescagens + 1 : 0;
+      const ms = repescar ? REPESCAGEM_MS : msNormal;
       agendadas.set(chave, new Date(Date.now() + ms));
+      if (repescar) log.warn(`Rotina "${def.nome || chave}" falhou — nova tentativa em ${Math.round(ms / 60000)} min (${repescagens}/${MAX_REPESCAGENS})`);
       agendar(async () => {
+        let falha = false;
         try {
           const resumo = await executarRotina(chave, { origem: 'agendada' });
           const msg = def.logResultado?.(resumo);
           if (msg) log.log(msg);
           (resumo?.avisos || []).forEach(a => log.warn(def.prefixoAviso || 'Aviso:', a));
         } catch (err) {
+          falha = true;
           log.error(def.logErro || `Erro na rotina ${chave}:`, err.message);
         }
-        proxima();
+        proxima(falha);
       }, ms);
     };
     proxima();
@@ -282,4 +295,4 @@ function criarRotinas({ definicoes = definicoesPadrao, db = null, agendar = setT
 
 const padrao = criarRotinas();
 
-module.exports = { ...padrao, criarRotinas, rotinasAutomaticasLigadas, proximosHorarios, msAteProximoHorario, compactar, HORARIOS };
+module.exports = { ...padrao, criarRotinas, rotinasAutomaticasLigadas, proximosHorarios, msAteProximoHorario, compactar, HORARIOS, REPESCAGEM_MS, MAX_REPESCAGENS };

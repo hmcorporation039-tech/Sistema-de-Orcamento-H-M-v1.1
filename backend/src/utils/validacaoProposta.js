@@ -1,4 +1,12 @@
-const { numeroSeguro } = require('./calculoProposta');
+const { numeroSeguro, arredondar, arredondarQuantidade, calcularTotais } = require('./calculoProposta');
+
+// Tetos das colunas (revisão de 27/10/2026): acima deles o PostgreSQL recusava o
+// INSERT ("numeric field overflow") e a API respondia 500 em vez de 400.
+//   proposta_itens.quantidade DECIMAL(10,3), valor_unitario DECIMAL(10,2),
+//   valor_total e os totais da proposta DECIMAL(12,2).
+const MAX_QUANTIDADE = 9999999.999;
+const MAX_VALOR_UNITARIO = 99999999.99;
+const MAX_VALOR_TOTAL = 9999999999.99;
 
 // Validação de entrada de proposta.
 //
@@ -84,10 +92,28 @@ function validarProposta(body) {
     if (!Number.isFinite(quantidade) || quantidade < 0) {
       return `Quantidade inválida no item ${i + 1}.`;
     }
+    // compara já arredondado (3 casas / 2 casas), que é o que vai para o banco
+    if (arredondarQuantidade(quantidade) > MAX_QUANTIDADE) {
+      return `Quantidade grande demais no item ${i + 1} (máximo 9.999.999,999).`;
+    }
     const valorUnitario = Number(it.vu ?? it.valor_unitario ?? 0);
     if (!Number.isFinite(valorUnitario) || valorUnitario < 0) {
       return `Valor unitário inválido no item ${i + 1}.`;
     }
+    if (arredondar(valorUnitario) > MAX_VALOR_UNITARIO) {
+      return `Valor unitário grande demais no item ${i + 1} (máximo R$ 99.999.999,99).`;
+    }
+    if (arredondar(arredondarQuantidade(quantidade) * arredondar(valorUnitario)) > MAX_VALOR_TOTAL) {
+      return `O total do item ${i + 1} passa do máximo de R$ 9.999.999.999,99.`;
+    }
+  }
+
+  // totais da proposta (subtotais, BDI, impostos e total) cabem nas colunas
+  if (listaItens.length) {
+    const totais = calcularTotais({ secoes, itens: listaItens, bdi, bdi_materiais, imposto_venda, imposto_servico });
+    const estourou = ['subtotal_materiais', 'subtotal_mao_obra', 'valor_bdi', 'valor_imposto_venda', 'valor_imposto_servico', 'total']
+      .some(k => Math.abs(Number(totais[k]) || 0) > MAX_VALOR_TOTAL);
+    if (estourou) return 'O total da proposta passa do máximo de R$ 9.999.999.999,99.';
   }
 
   return null;
@@ -100,4 +126,4 @@ function validadeOuPadrao(valor) {
   return numeroSeguro(valor, 5);
 }
 
-module.exports = { validarProposta, validadeOuPadrao, dataValida };
+module.exports = { validarProposta, validadeOuPadrao, dataValida, MAX_QUANTIDADE, MAX_VALOR_UNITARIO, MAX_VALOR_TOTAL };

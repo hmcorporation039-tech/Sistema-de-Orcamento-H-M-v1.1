@@ -59,6 +59,7 @@ const FONTES_A = [3, 5, 10];
 const BATERIAS_AH = [7, 9, 12, 18, 26, 40];
 const SECOES_MM2 = [0.5, 0.75, 1, 1.5, 2.5];
 const RHO = 0.0178; // Ω·mm²/m — cobre
+const SECAO_24AWG = 0.205; // mm² — condutor da manga blindada 24 AWG (0,2047 mm²)
 const TENSAO = 12;
 const QUEDA_MAX = 0.10; // 10 % de 12 V na fechadura [CONFERIR com o fabricante]
 const LICENCAS = [4, 8, 16, 32, 64, 128, 256, 512];
@@ -164,6 +165,17 @@ function calcular(dados) {
     if (cabosLeitor === 'wiegand' && comprimento > LIMITE.wiegand) avisos.push(`${id}: cabo de leitor Wiegand de ${br(comprimento, 0)} m acima de ${LIMITE.wiegand} m — limite prático do Wiegand (~150 m com 22 AWG blindado); preferir RS-485/OSDP ou controladora mais próxima. [CONFERIR]`);
     if (cabosLeitor === 'rs485' && comprimento > LIMITE.rs485) avisos.push(`${id}: barramento RS-485 de ${br(comprimento, 0)} m próximo do limite de 1 200 m — conferir topologia e terminação.`);
 
+    // Alimentação do leitor pelo par da manga 24 AWG (12 V da controladora):
+    // ΔV = 2·L·I·ρ ÷ 0,205 mm², mesmo limite da fechadura. Acima dele o leitor
+    // recebe par de alimentação próprio (cabo PP dimensionado) ou fonte local.
+    const iLeitor = cabosLeitor !== 'utp' ? Tec.a : 0;
+    const quedaLeitor = iLeitor ? 2 * comprimento * iLeitor * RHO / SECAO_24AWG : 0;
+    let alimLeitor = null;
+    if (iLeitor && quedaLeitor > QUEDA_MAX * TENSAO) {
+      alimLeitor = secaoAlimentacao(comprimento, iLeitor);
+      avisos.push(`${id}: queda de ${br(quedaLeitor, 2)} V (${br(quedaLeitor / TENSAO * 100, 0)} % de 12 V) na alimentação do leitor (${br(iLeitor, 2)} A) pelo par 24 AWG da manga em ${br(comprimento, 0)} m — acima de ${br(QUEDA_MAX * 100, 0)} %: alimentar o leitor por cabo PP 2 × ${br(alimLeitor.secao, 2)} mm² à parte${alimLeitor.excede ? ' (ainda acima do limite — instalar fonte com bateria junto ao leitor)' : ' ou por fonte local'}. [CONFERIR faixa de tensão do leitor]`);
+    }
+
     // Requisitos de rota de fuga (NBR 9077 / IT de saídas de emergência)
     if (rota && comFechaduraEletrica && falha === 'fail_secure' && sentido !== 'entrada_livre') {
       ncsProjeto.push({ cod: 'R1', porta: id, descricao: `${id} (${p.local || ''}): porta em rota de fuga com ${F.rotulo.toLowerCase()} fail-secure e sem saída mecânica livre`, recomendacao: 'Trocar por fechadura fail-safe (eletroímã) liberada pelo alarme de incêndio, por falta de energia e por botoeira de emergência — ou garantir saída mecânica livre (maçaneta/barra antipânico) pelo lado de dentro.', prioridade: 'P1' });
@@ -177,7 +189,7 @@ function calcular(dados) {
       ...p, id, local: p.local || '', tipo, rotuloTipo: T.rotulo, qtd, sentido, rotuloSentido: SENTIDOS[sentido], rota, fechadura, rotuloFechadura: F.rotulo,
       falha, rotuloFalha: ROTULO_FALHA[falha], forca, eletroima: modeloEletroima ? modeloEletroima.kgf : null, nFechaduras, correnteCont, correntePico,
       tecnologia, rotuloTecnologia: Tec.rotulo, leitorIp, leitores, leitoresCtrl, botoeiraSaida, botoeiraEmergencia, sensores, lacos,
-      distancia, comprimento, secao: alim.secao, queda: alim.queda, cabosLeitor, autonomo: !!T.autonomo, externo: !!T.externo, sensivel: !!Tec.sensivel,
+      distancia, comprimento, secao: alim.secao, queda: alim.queda, cabosLeitor, iLeitor, quedaLeitor, quedaLeitorPct: quedaLeitor / TENSAO * 100, secaoLeitor: alimLeitor ? alimLeitor.secao : null, quedaLeitorPP: alimLeitor ? alimLeitor.queda : null, autonomo: !!T.autonomo, externo: !!T.externo, sensivel: !!Tec.sensivel,
     };
   });
   if (!pontos.length) throw new Error('Cadastre ao menos uma porta ou ponto de acesso.');
@@ -259,6 +271,8 @@ function calcular(dados) {
   const utpM = ceil(soma(pontos.filter(p => p.cabosLeitor === 'utp'), p => (p.autonomo ? 1 : p.leitores) * p.comprimento));
   const alimPorSecao = {};
   for (const p of portas.filter(x => x.secao)) alimPorSecao[p.secao] = (alimPorSecao[p.secao] || 0) + p.comprimento * p.qtd;
+  const alimLeitorPorSecao = {};
+  for (const p of pontos.filter(x => x.secaoLeitor)) alimLeitorPorSecao[p.secaoLeitor] = (alimLeitorPorSecao[p.secaoLeitor] || 0) + p.comprimento * p.leitores * p.qtd;
   const distIncendio = Number(s.distancia_central_incendio_m) || 20;
   const caboIncendio = incendio ? ceil(distIncendio * FATOR_CABO) : 0;
   const infraM = ceil(soma(pontos, p => p.comprimento));
@@ -309,6 +323,7 @@ function calcular(dados) {
   add('MG4', 'Cabo manga blindada 4 vias 24 AWG (leitor RS-485/OSDP)', 'm', mangaLeitor4, 'Distância × 1,15');
   add('MG4', 'Cabo manga blindada 4 vias 24 AWG (sensor de porta, botoeira, comandos)', 'm', mangaIo, 'Distância × 1,15');
   Object.entries(alimPorSecao).sort((a, b) => a[0] - b[0]).forEach(([sec, m]) => add('PP', `Cabo PP/paralelo 2 × ${String(sec).replace('.', ',')} mm² (alimentação das fechaduras)`, 'm', ceil(m), `Queda ≤ ${QUEDA_MAX * 100} % de 12 V`));
+  Object.entries(alimLeitorPorSecao).sort((a, b) => a[0] - b[0]).forEach(([sec, m]) => add('PP', `Cabo PP/paralelo 2 × ${String(sec).replace('.', ',')} mm² (alimentação dos leitores — queda na manga 24 AWG acima de ${QUEDA_MAX * 100} %)`, 'm', ceil(m), `Queda ≤ ${QUEDA_MAX * 100} % de 12 V`));
   add('UTP', 'Cabo U/UTP Cat 6 (leitores IP e catracas)', 'm', utpM, 'NBR 14565');
   add('RJ', 'Conector RJ-45 Cat 6 — 2 por ponto de rede', 'un', (leitoresIp + soma(catracas, () => 1)) * 2, '—');
   add('PCD', 'Patch cord Cat 6 2,5 m (controladoras no rack)', 'un', nCtrl, 'NBR 14565');
@@ -328,9 +343,9 @@ function calcular(dados) {
     pontos, portas, catracas, cancelas, rotas, nPontos, nPortas, controladoras, nCtrl, ppc, lpc, reserva, autonomiaH, grau, tecSistema, comunicacao, incendio, cftv,
     leitoresTotal, leitoresEntrada, leitoresIp, botoeirasSaida, botoeirasEmergencia, sensores, fechaduras, usuarios, visitantes, cartoes, cartoesVisitante, tags, veiculos,
     licenca, sensivel, perfis, portasRede, poeW, switches, nFontes, pontosEnergia,
-    cabos: { mangaLeitor6, mangaLeitor4, mangaIo, utpM, alimPorSecao, caboIncendio, infraM },
+    cabos: { mangaLeitor6, mangaLeitor4, mangaIo, utpM, alimPorSecao, alimLeitorPorSecao, caboIncendio, infraM },
     materiais: M, avisos, ncsProjeto,
   };
 }
 
-module.exports = { calcular, TIPOS, SENTIDOS, FECHADURAS, TECNOLOGIAS, ELETROIMAS, FORCA_MATERIAL, ROTULO_MATERIAL, ROTULO_FALHA, FONTES_A, BATERIAS_AH, SECOES_MM2, CORRENTE_CONTROLADORA, MARGEM_FONTE, FATOR_BATERIA, QUEDA_MAX, RHO, FATOR_CABO, forcaRecomendada, secaoAlimentacao };
+module.exports = { calcular, TIPOS, SENTIDOS, FECHADURAS, TECNOLOGIAS, ELETROIMAS, FORCA_MATERIAL, ROTULO_MATERIAL, ROTULO_FALHA, FONTES_A, BATERIAS_AH, SECOES_MM2, CORRENTE_CONTROLADORA, MARGEM_FONTE, FATOR_BATERIA, QUEDA_MAX, RHO, SECAO_24AWG, FATOR_CABO, forcaRecomendada, secaoAlimentacao };

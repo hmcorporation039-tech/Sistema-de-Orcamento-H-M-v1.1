@@ -5,7 +5,7 @@ description: Dimensionamento, memorial descritivo para a distribuidora, relatór
 
 # Usina solar fotovoltaica (NBR 16690 / REN 1000) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 24 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
+Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 41 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
 
 | Documento | Tipo | Formato |
 |---|---|---|
@@ -36,8 +36,10 @@ O mesmo motor roda no Sistema de Orçamentos: **Análise de Projeto → Laudos e
 ## Critérios adotados
 
 - Potência: P = (consumo − disponibilidade 30/50/100 kWh) ÷ 30 ÷ (HSP × TD) — CRESESB Eq. 6.28. HSP no plano dos módulos vem do CRESESB SunData (sai com [CONFERIR]).
-- Strings: Voc na temperatura mínima ≤ tensão máxima do inversor; Vmp na temperatura máxima do módulo (Tamb + (NOCT − 20)/800 × 1000) ≥ MPPT mínimo — CRESESB Eq. 6.30 a 6.32. FDI usual 0,75 a 1,05.
-- Cabo CC pela Tabela C.2 da NBR 16612 corrigida pela temperatura; fusível gPV com 3 ou mais strings em paralelo (1,5–2,4 × Isc); DPS CC Ucpv ≥ 1,2 × Voc; lado CA pelo motor da elétrica com corrente de projeto 1,25 × nominal.
+- Strings: Voc na temperatura mínima ≤ tensão máxima do inversor (string fixa acima disso é erro, não aviso); Vmp na temperatura máxima do módulo (Tamb + (NOCT − 20)/800 × 1000) ≥ MPPT mínimo — CRESESB Eq. 6.30 a 6.32. Coeficientes de temperatura sempre negativos (−|β|, com aviso se vier positivo). Tmín não informada = 0 °C com [CONFERIR] (DF: mínima histórica 1,4 °C, INMET); no DF, Tmín acima disso gera aviso. FDI usual 0,75 a 1,05.
+- Enquadramento micro/mini pela potência instalada = menor entre módulos (kWp) e inversores (kW) — critério da Neoenergia para a REN 1000 [CONFERIR artigo vigente]. Geração mês a mês com os dias de cada mês; ano = soma dos meses.
+- Ensaio por string (NBR 16274): "C" só com Voc e isolamento + / − medidos e dentro do critério; faltando um, "NV".
+- Cabo CC pela Tabela C.2 da NBR 16612 corrigida pela temperatura; fusível gPV com 3 ou mais strings em paralelo quando (n − 1) × 1,25 × Isc passa da corrente reversa do módulo (1,5–2,4 × Isc); DPS CC Ucpv ≥ 1,2 × Voc; DPS CA pela Tabela 49 da NBR 5410 (função comum); lado CA pelo motor da elétrica com corrente de projeto 1,25 × nominal.
 
 O checklist de inspeção (28 itens) está em `dados/checklist_base.json`; itens não conformes viram não conformidades com prioridade (P1 48 h, P2 30 dias, P3 90 dias, P4 manutenção) e entram no orçamento do modo de inspeção.
 

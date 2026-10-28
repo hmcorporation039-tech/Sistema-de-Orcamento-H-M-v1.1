@@ -6,6 +6,7 @@
 // Lei 14.300/2022. O lado CA usa o mesmo motor da skill de elétrica (NBR 5410).
 
 const E = require('../../../eletrica/scripts/lib/calculo');
+const { ucDps } = require('../../../_comum/dps');
 
 const FOLGA = 1.1;
 const RHO_CC = 0.0225; // Ω·mm²/m — cobre estanhado próximo da temperatura de operação
@@ -21,6 +22,12 @@ const SECOES_CC = [4, 6, 10, 16]; // 4 mm² como mínimo de prática para cabo F
 const FUSIVEIS_GPV = [10, 12, 15, 16, 20, 25, 30, 32];
 const DPS_CC_UCPV = [600, 1000, 1100, 1500];
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const DIAS_MES = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]; // ano de 365 dias
+// Temperatura ambiente mínima adotada quando não informada. Mínimas históricas do DF (INMET):
+// 1,4 °C no Gama em 19/05/2022 e 1,6 °C em Brasília em 18/07/1975; o módulo, ao amanhecer,
+// pode ficar abaixo do ar (irradiação para o céu). Fora do DF, informar a mínima do local.
+const TMIN_PADRAO = 0;
+const TMIN_DF = 1.4;
 
 const n = (v, padrao) => (v == null || v === '' || Number.isNaN(Number(v)) ? padrao : Number(v));
 
@@ -80,11 +87,21 @@ function calcular(dados) {
 
   // ── Temperaturas e tensões (CRESESB Eq. 4.7) ───────────────────────────
   const noct = n(mod.noct, 45);
-  const tMin = n(loc.tamb_min, 10);
+  const tMinInformada = n(loc.tamb_min, null);
+  const tMin = tMinInformada ?? TMIN_PADRAO;
+  const noDf = String(dados.cliente?.uf || loc.uf || '').trim().toUpperCase() === 'DF';
+  if (tMinInformada == null) avisos.push(`Temperatura mínima do local não informada: adotado ${TMIN_PADRAO} °C para o Voc máximo (no DF a mínima histórica é ${br(TMIN_DF, 1)} °C, INMET) — informe a mínima histórica do local. [CONFERIR]`);
+  else if (noDf && tMin > TMIN_DF) avisos.push(`Temperatura mínima adotada de ${br(tMin, 1)} °C acima da mínima histórica do DF (${br(TMIN_DF, 1)} °C, INMET, Gama, 19/05/2022): o Voc máximo da string fica subestimado. [CONFERIR]`);
   const tMaxAmb = n(loc.tamb_max, 35);
   const tModMax = tMaxAmb + (noct - 20) / 800 * 1000;
-  const bVoc = n(mod.coef_voc_pct, -0.28) / 100;
-  const bVmp = n(mod.coef_vmp_pct, n(mod.coef_pmax_pct, -0.35)) / 100;
+  // coeficientes de temperatura de tensão do silício são negativos: valor positivo é erro de
+  // digitação (sinal) — com β > 0 o Voc a frio cairia em vez de subir e a string passaria do limite
+  const bVocInf = n(mod.coef_voc_pct, -0.28);
+  const bVmpInf = n(mod.coef_vmp_pct, n(mod.coef_pmax_pct, -0.35));
+  if (bVocInf > 0) avisos.push(`Coeficiente de temperatura do Voc informado positivo (+${br(bVocInf, 2)} %/°C): adotado −${br(bVocInf, 2)} %/°C (a tensão do módulo sobe no frio). Confira a folha de dados. [CONFERIR]`);
+  if (bVmpInf > 0) avisos.push(`Coeficiente de temperatura do Vmp/Pmax informado positivo (+${br(bVmpInf, 2)} %/°C): adotado −${br(bVmpInf, 2)} %/°C. Confira a folha de dados. [CONFERIR]`);
+  const bVoc = -Math.abs(bVocInf) / 100;
+  const bVmp = -Math.abs(bVmpInf) / 100;
   const vocTmin = mod.voc * (1 + bVoc * (tMin - 25));
   const vmpTmin = mod.vmp * (1 + bVmp * (tMin - 25));
   const vmpTmax = mod.vmp * (1 + bVmp * (tModMax - 25));
@@ -114,7 +131,9 @@ function calcular(dados) {
   const strings = distribuirStrings(nModulos, faixa, entradas, n(s.modulos_por_string, 0));
   const ns = Math.max(...strings);
   const nsMin = Math.min(...strings);
-  if (nsMin < faixa.min || ns > faixa.max) avisos.push(`String com ${nsMin === ns ? ns : `${nsMin} a ${ns}`} módulos fora da faixa admissível (${faixa.min} a ${faixa.max}).`);
+  // Voc a frio acima da tensão máxima do inversor/módulo danifica o equipamento: bloqueia
+  if (ns > faixa.maxVoc) throw new Error(`String de ${ns} módulos: Voc a ${tMin} °C = ${br(ns * vocTmin, 0)} V acima da tensão máxima de ${br(vMaxSistema, 0)} V (inversor/módulo) — máximo de ${faixa.maxVoc} módulos em série (CRESESB Eq. 6.30). Reduza os módulos por string.`);
+  if (nsMin < faixa.min || ns > faixa.max) avisos.push(`String com ${nsMin === ns ? ns : `${nsMin} a ${ns}`} módulos fora da faixa de MPPT (${faixa.min} a ${faixa.max}): o inversor perde rastreamento/limita a potência.`);
   const nStrings = strings.length;
   const nTotal = strings.reduce((a, b) => a + b, 0);
   if (nTotal !== nModulos) avisos.push(`Quantidade ajustada de ${nModulos} para ${nTotal} módulos para fechar ${nStrings} string(s) de ${ns}.`);
@@ -135,7 +154,12 @@ function calcular(dados) {
   // Fusíveis de string: necessários quando a corrente reversa das demais strings
   // em paralelo supera o suportável pelo módulo (na prática, 3 ou mais strings)
   const iReversa = n(mod.corrente_reversa_max_a, 0) || n(mod.fusivel_serie_max_a, 0) || 20;
-  const precisaFusivel = stringsPorMppt >= 3 && (stringsPorMppt - 1) * iscMax > iReversa;
+  const iReversaCalc = Math.max(0, stringsPorMppt - 1) * iscMax;
+  const precisaFusivel = stringsPorMppt >= 3 && iReversaCalc > iReversa;
+  // texto do critério conforme o caso real (com 3+ strings o fusível pode ser dispensado pela corrente reversa)
+  const motivoSemFusivel = precisaFusivel ? null : stringsPorMppt <= 2
+    ? 'até 2 strings em paralelo por MPPT'
+    : `${stringsPorMppt} strings em paralelo por MPPT, mas a corrente reversa (${stringsPorMppt} − 1) × 1,25 × Isc = ${br(iReversaCalc, 1)} A ≤ ${br(iReversa, 1)} A suportável pelo módulo`;
   const fusivel = precisaFusivel ? FUSIVEIS_GPV.find(f => f >= 1.5 * mod.isc && f <= 2.4 * mod.isc && f <= iReversa) || null : null;
   if (precisaFusivel && !fusivel) avisos.push('Nenhum fusível gPV padronizado entre 1,5 × Isc e 2,4 × Isc e abaixo da corrente reversa do módulo — conferir com o fabricante.');
 
@@ -173,13 +197,18 @@ function calcular(dados) {
   const pcaTotal = nInv * pca;
   if (pDisp != null && pcaTotal > pDisp) avisos.push(`Potência dos inversores (${br(pcaTotal, 1)} kW) acima da potência disponibilizada no padrão (${br(pDisp, 1)} kW): solicitar aumento de carga à distribuidora ou reduzir a potência (REN 1000).`);
   if (pDisp == null) avisos.push('Informe o disjuntor do padrão de entrada para verificar a potência disponibilizada (REN 1000). [CONFERIR]');
-  const enquadramento = pcaTotal <= 75 ? 'Microgeração distribuída (≤ 75 kW)' : 'Minigeração distribuída (> 75 kW)';
+  // potência instalada da central FV = menor entre a soma dos módulos (kWp) e a dos inversores (kW)
+  // — critério da distribuidora (Neoenergia, cartilha MMGD Brasília) para a REN 1000 [CONFERIR artigo vigente]
+  const potenciaInstalada = Math.min(nTotal * wp / 1000, pcaTotal);
+  const enquadramento = potenciaInstalada <= 75 ? 'Microgeração distribuída (≤ 75 kW)' : 'Minigeração distribuída (> 75 kW)';
 
   // ── Geração ────────────────────────────────────────────────────────────
   const hspMensal = MESES.map(m => n((loc.hsp_mensal || {})[m], null));
-  const geracaoMensal = MESES.map((m, i) => ({ mes: m, hsp: hspMensal[i] ?? hsp, kwh: pfv * (hspMensal[i] ?? hsp) * 30 * pr }));
-  const geracaoMes = pfv * hsp * 30 * pr;
-  const geracaoAno = pfv * hsp * 365 * pr;
+  // cada mês com os seus dias; o ano é a soma dos meses e a média mensal é o ano ÷ 12 (antes o mês
+  // usava 30 dias e o ano 365, e a soma dos meses não batia com o total anual)
+  const geracaoMensal = MESES.map((m, i) => ({ mes: m, dias: DIAS_MES[i], hsp: hspMensal[i] ?? hsp, kwh: pfv * (hspMensal[i] ?? hsp) * DIAS_MES[i] * pr }));
+  const geracaoAno = geracaoMensal.reduce((s, g) => s + g.kwh, 0);
+  const geracaoMes = geracaoAno / 12;
   const cobertura = energiaCompensar ? geracaoMes / (Math.max(0, media - disponibilidade)) : null;
   const tarifa = n(s.tarifa_kwh, 0);
   const economiaMes = tarifa ? Math.min(geracaoMes, Math.max(0, media - disponibilidade)) * tarifa : null;
@@ -198,15 +227,15 @@ function calcular(dados) {
   const dpsCcQtd = entradasUsadas * (lCc > 10 ? 2 : 1);
   const stringBox = s.string_box !== false;
 
-  const materiais = listaMateriais({ mod, inv, nTotal, nInv, nStrings, ns, caboCc, lCc, fusivel, precisaFusivel, ucpv, dpsCcQtd, stringBox, circuitosCa, c, loc, s, entradas: entradasUsadas });
+  const materiais = listaMateriais({ mod, inv, nTotal, nInv, nStrings, ns, caboCc, lCc, fusivel, precisaFusivel, ucpv, dpsCcQtd, stringBox, circuitosCa, c, loc, s, entradas: entradasUsadas, ucCa: ucDps({ vfn: c.vfn, vff: c.vff, esquema: c.esquema }).uc });
 
   return {
     disponibilidade, media, meses, energiaCompensar, hsp, pr, pfvNecessaria, nModulos, nTotal, pfv, wp,
     temperaturas: { tMin, tMaxAmb, tModMax, vocTmin, vmpTmin, vmpTmax, vMaxSistema },
     faixa, strings, ns, nsMin, nStrings, nInv, pca, fdi, nMppt, entradas, entradasUsadas, stringsPorMppt, iscMax, iMpptOp, iscMppt,
-    precisaFusivel, fusivel, iReversa,
+    precisaFusivel, fusivel, iReversa, iReversaCalc, motivoSemFusivel, tMinInformada: tMinInformada != null, bVoc, bVmp,
     caboCc: { ...caboCc, exposicao, taCabo, kt, lCc, iProjeto: iProjetoCc, vString },
-    circuitosCa, config: c, pDisp, pcaTotal, enquadramento,
+    circuitosCa, config: c, pDisp, pcaTotal, potenciaInstalada, enquadramento, dpsCa: ucDps({ vfn: c.vfn, vff: c.vff, esquema: c.esquema }),
     geracaoMensal, geracaoMes, geracaoAno, cobertura, tarifa, economiaMes,
     area, ucpv, dpsCcQtd, stringBox, materiais, avisos,
   };
@@ -224,7 +253,8 @@ function listaMateriais(x) {
   add('CC-', `Cabo solar ${x.caboCc.secao} mm² 1,8 kV CC, preto (NBR 16612)`, 'm', metrosPolo, 'NBR 16612');
   add('MC4', 'Par de conectores MC4 (macho + fêmea) do mesmo fabricante', 'par', x.nStrings * 2 + 2, 'NBR 16690');
   if (x.stringBox) {
-    add('SB', `String box CC ${x.entradas} entrada(s) com chave seccionadora CC sob carga${x.precisaFusivel ? ' e porta-fusíveis' : ''}`, 'un', x.nInv, 'NBR 16690');
+    // uma string box por inversor: entradas = strings que chegam a ela (antes saía o total de MPPTs de todos os inversores)
+    add('SB', `String box CC ${Math.ceil(x.nStrings / x.nInv)} entrada(s) de string com chave seccionadora CC sob carga${x.precisaFusivel ? ' e porta-fusíveis' : ''}`, 'un', x.nInv, 'NBR 16690');
   }
   if (x.precisaFusivel) add('FUS', `Fusível gPV ${x.fusivel || '[definir]'} A 1000/1500 V CC (polo + e −)`, 'un', x.nStrings * 2, 'IEC 60269-6');
   add('DPS-CC', `DPS CC classe II Ucpv ${x.ucpv} V`, 'un', x.dpsCcQtd, 'IEC 61643-31');
@@ -239,7 +269,7 @@ function listaMateriais(x) {
   for (const [sec, m] of Object.entries(cabosCa)) add('CA', `Cabo de cobre ${String(sec).replace('.', ',')} mm² 750 V (lado CA)`, 'm', m, 'NBR 5410');
   const ca0 = x.circuitosCa[0];
   add('DJ-CA', `Disjuntor termomagnético ${ca0.polos}P ${ca0.disjuntor} A curva C (saída do inversor)`, 'un', x.nInv, 'NBR 5410');
-  add('DPS-CA', `DPS CA classe II ${x.c.vfn >= 200 ? 275 : 175} V 20 kA`, 'un', (ca0.ligacao === 'FFF' ? 3 : ca0.ligacao === 'FF' ? 2 : 1) + 1, 'NBR 5410, 6.3.5.2');
+  add('DPS-CA', `DPS CA classe II Uc ≥ ${x.ucCa} V 20 kA`, 'un', (ca0.ligacao === 'FFF' ? 3 : ca0.ligacao === 'FF' ? 2 : 1) + 1, 'NBR 5410, 6.3.5.2.4 e Tabela 49');
   add('QCA', 'Quadro de proteção CA (sobrepor) com barramentos de neutro e terra', 'un', 1, 'NBR 5410');
   add('ELE', 'Eletroduto/eletrocalha para cabos CC e CA (estimativa)', 'm', (x.lCc + (ca0.comprimento || 10)) * FOLGA, 'NBR 16690 / NBR 5410');
   add('EQP', 'Cabo de cobre 6 mm² verde-amarelo para equipotencialização das molduras e estruturas [CONFERIR seção]', 'm', Math.max(10, x.nTotal * 1.5), 'NBR 16690');
@@ -248,4 +278,4 @@ function listaMateriais(x) {
   return itens;
 }
 
-module.exports = { calcular, consumoMedio, fatorTemperaturaFv, CABO_FV, DISPONIBILIDADE, MESES };
+module.exports = { calcular, consumoMedio, fatorTemperaturaFv, CABO_FV, DISPONIBILIDADE, MESES, DIAS_MES, TMIN_PADRAO };

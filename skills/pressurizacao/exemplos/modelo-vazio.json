@@ -40,6 +40,7 @@
   "nome": "Escada 1",
   "antecamara": false,
   "portas_abertas": null,
+  "acessos_por_pavimento": null,
   "portas": [],
   "elevadores": [],
   "janelas": []
@@ -65,7 +66,7 @@
   "tomada_ar": "terreo",
   "acionadores_remotos": 2,
   "deteccao_existente": true,
-  "limite_forca_n": 133,
+  "limite_forca_n": null,
   "forca_fechador_n": 40,
   "tempo_partida_max_s": 60,
   "tempo_reversao_s": 15

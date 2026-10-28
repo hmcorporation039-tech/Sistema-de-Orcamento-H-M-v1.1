@@ -22,11 +22,13 @@ caso('CLI do Claude roda isolada (documento de fornecedor não executa nada)', (
     // --allowedTools SOMA às permissões do usuário; --bare quebra o login do Max
     assert.ok(!a.some(x => /allowedTools|dangerously|--bare/.test(x)), 'flag perigosa');
   }
-  // pesquisa de preço: só ferramentas de leitura da web, e só elas liberadas
+  // pesquisa de preço: só a busca na web, e só ela liberada — sem WebFetch, que
+  // abre a página a partir deste PC e poderia ser levado à rede local (revisão de 27/10/2026)
   const w = argsClaudeMax('prompt', false, { web: true });
   assert.ok(w.includes('--restricted') && w.includes('--strict-mcp-config'));
-  assert.strictEqual(w[w.indexOf('--tools') + 1], 'WebSearch,WebFetch');
-  assert.deepStrictEqual(w.slice(w.indexOf('--allowedTools') + 1), ['WebSearch', 'WebFetch']);
+  assert.strictEqual(w[w.indexOf('--tools') + 1], 'WebSearch');
+  assert.deepStrictEqual(w.slice(w.indexOf('--allowedTools') + 1), ['WebSearch']);
+  assert.ok(!w.some(x => /WebFetch/.test(x)), 'WebFetch ligado sem IA_CLI_WEBFETCH=ligado');
   assert.ok(!w.some(x => /Bash|Read|Write|Edit|dangerously/.test(x)), 'ferramenta além da web');
 });
 

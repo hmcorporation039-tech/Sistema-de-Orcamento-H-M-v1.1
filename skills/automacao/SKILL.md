@@ -5,7 +5,7 @@ description: Projeto (lista de pontos, arquitetura, descritivo de funcionamento 
 
 # Automação — BMS, climatização e residencial (ISO 16484 / ISO 52120-1) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 30 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
+Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 37 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
 
 | Documento | Tipo | Formato |
 |---|---|---|
@@ -37,8 +37,8 @@ O mesmo motor roda no Sistema de Orçamentos: **Análise de Projeto → Laudos e
 ## Critérios adotados
 
 - Lista de pontos com pontos típicos por equipamento (editáveis), 20 % de reserva, controladores de 32 pontos, segmentos RS-485 com até 32 dispositivos e 1 200 m, licença do supervisório pelo total de pontos. Pontos típicos saem com [CONFERIR].
-- Ar externo pela NBR 16401-3 (Vbz = Fp·Pz + Fa·Az, nível 1, Ez = 1); setpoint de CO₂ = 420 ppm + 0,0052/(vazão por pessoa), limitado a 1 100 ppm; redução média do DCV pela ocupação média.
-- Classe da automação (D a A) pela menor classe entre as funções avaliadas (simplificação da ISO 52120-1); economia pelos fatores BAC da EN 15232 sobre os consumos informados — estimativa marcada [CONFERIR].
+- Ar externo pela NBR 16401-3 (Vbz = Fp·Pz + Fa·Az, nível 1, Ez = 1); setpoint de CO₂ = 420 ppm + 0,0052/(vazão por pessoa), limitado a 1 100 ppm; redução média do DCV pela ocupação média — com o setpoint abaixo do CO₂ de regime (zona densa), a vazão para segurar o setpoint (Pz·ocupação·0,0052/(setpoint − 420)) entra na conta e, se passar da vazão de projeto, a redução é 0 com aviso.
+- Classe da automação (D a A) pela menor classe entre as funções avaliadas (simplificação da ISO 52120-1); função deixada em branco na proposta continua no nível atual (a proposta é avaliada sobre atual + proposta); economia pelos fatores BAC da EN 15232 sobre os consumos informados — estimativa marcada [CONFERIR].
 - Residencial: Zigbee/Wi-Fi com módulos atrás dos interruptores (exigem neutro), hub a cada 50 dispositivos, AP a cada 30 dispositivos Wi-Fi; KNX com atuadores de 8/4 canais, até 64 dispositivos e 1 000 m por linha, fonte de 640 mA.
 
 O checklist de inspeção (29 itens) está em `dados/checklist_base.json`; itens não conformes viram não conformidades com prioridade (P1 48 h, P2 30 dias, P3 90 dias, P4 manutenção) e entram no orçamento do modo de inspeção.

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import useUltimoPedido from '../hooks/useUltimoPedido';
 import toast from 'react-hot-toast';
 import { Plus, Search, Pencil, Trash2, X, Upload, FileScan, Mail, RefreshCw, History } from 'lucide-react';
 import {
@@ -79,7 +80,9 @@ export default function Materiais() {
     carregarCategorias();
   }, [carregarCategorias]);
 
+  const novoPedido = useUltimoPedido();
   const carregar = useCallback(async () => {
+    const vale = novoPedido(); // resposta de busca antiga não sobrescreve a atual
     setCarregando(true);
     try {
       const res = await getMateriais({
@@ -87,15 +90,16 @@ export default function Materiais() {
         ...(categoriaFiltro ? { categoria: categoriaFiltro } : {}),
         pagina,
       });
+      if (!vale()) return;
       setMateriais(res.data.itens);
       setPaginacao({ total: res.data.total, totalPaginas: res.data.totalPaginas });
       carregarCategorias();
     } catch {
-      toast.error('Erro ao carregar materiais');
+      if (vale()) toast.error('Erro ao carregar materiais');
     } finally {
-      setCarregando(false);
+      if (vale()) setCarregando(false);
     }
-  }, [busca, categoriaFiltro, pagina, carregarCategorias]);
+  }, [busca, categoriaFiltro, pagina, carregarCategorias, novoPedido]);
 
   useEffect(() => {
     const t = setTimeout(carregar, 300);

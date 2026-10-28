@@ -5,7 +5,7 @@ description: Projeto (memorial, zonas, partições, central, bateria e materiais
 
 # Alarme de intrusão monitorado (EN 50131 / EN 50136) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 54 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
+Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 55 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
 
 | Documento | Tipo | Formato |
 |---|---|---|
@@ -34,7 +34,7 @@ O mesmo motor roda no Sistema de Orçamentos: **Análise de Projeto → Laudos e
    ```bash
    node _comum/cli.js alarme documentos <obra>.json --saida <pasta da obra> [--fotos <pasta>] [--so memorial,planilha]
    ```
-5. **Orçamento:** `node _comum/cli.js alarme orcamento <obra>.json --modo execucao` gera o rascunho (modos: `execucao` (Instalação do alarme) ou `inspecao` (Vistoria e teste)). Com `orcamento.incluir_mensalidade`, entra a mensalidade do monitoramento como item **informativo** (contrato à parte, não soma no total). Para criar no sistema, use a ferramenta MCP `criar_rascunho_proposta` (servidor `hm-orcamentos`) com os itens gerados, ou o botão na aba Análise de Projeto.
+5. **Orçamento:** `node _comum/cli.js alarme orcamento <obra>.json --modo execucao` gera o rascunho (modos: `execucao` (Instalação do alarme) ou `inspecao` (Vistoria e teste)). Com `orcamento.incluir_mensalidade`, a mensalidade do monitoramento entra só nas **observações** da proposta (contrato à parte; não é item, para não somar no total). Para criar no sistema, use a ferramenta MCP `criar_rascunho_proposta` (servidor `hm-orcamentos`) com os itens gerados, ou o botão na aba Análise de Projeto.
 
 ## Critérios adotados
 
@@ -44,7 +44,7 @@ O mesmo motor roda no Sistema de Orçamentos: **Análise de Projeto → Laudos e
 - **Perímetro:** pares de barreira IVA = maior entre nº de trechos retos e ⌈comprimento ÷ alcance útil⌉ (alcance útil = metade do nominal).
 - **Zonas e central:** zonas × (1 + 20 % de reserva) → central típica de 16/64/128/256 zonas que também comporte as partições; expansores de 8 zonas para as zonas com fio além da placa; receptor sem fio por 64 dispositivos; repetidores = ⌈área com sem fio ÷ 300 m²⌉ − 1.
 - **Comando e aviso:** teclados = maior entre partições e acessos principais; sirenes internas = 1 por partição, externa 1 (autoalimentada nos graus 3 e 4 — EN 50131-4).
-- **Bateria** (EN 50131-6): autonomia pelo grau — 12 h (graus 1–2 com falta de rede notificada), 24 h (grau 2 sem notificação), 30 h / 60 h (graus 3–4 com/sem notificação); C = 1,25 × (I_repouso × T + I_alarme × t_alarme) / 1000. Fonte = repouso + recarga de 80 % em 72 h (graus 1–2) ou 24 h (graus 3–4).
+- **Bateria** (EN 50131-6): autonomia pelo grau — 12 h (graus 1–2), 30 h / 60 h (graus 3–4 com/sem notificação da falta de rede) [CONFERIR edição vigente]; C = 1,25 × (I_repouso × T + I_alarme × t_alarme) / 1000. Fonte = repouso + recarga de 80 % em 72 h (graus 1–2) ou 24 h (graus 3–4).
 - **Comunicação** (EN 50136-1): categoria mínima do ATS por grau (SP2/DP1 no grau 2, SP4/DP2 no grau 3, SP5/DP3 no grau 4), Contact ID / SIA DC-09; grau 3+ com uma via só gera aviso de dupla via. Verificação por vídeo → LGPD.
 - **Cabeamento:** cabo de alarme 4 vias por detector/grupo/teclado com fio = distância média × 1,3 + 2 m; sirenes em 2 × 0,75 mm²; infraestrutura ≈ 50 % do cabo.
 - Autonomias, categorias, dígitos de senha, tempo de entrada (≤ 45 s), consumos, alcances e capacidades de central saem com **[CONFERIR]** — conferir na edição vigente da norma e na ficha técnica do equipamento escolhido.

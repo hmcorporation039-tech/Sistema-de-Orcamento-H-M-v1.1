@@ -1,7 +1,8 @@
 // Do resultado do cálculo de cada skill → pontos da planta (quantidades
 // normativas por ambiente). Uma função por disciplina; cada uma devolve
 // { pontos, notas } para gerarPlanta (./planta.js).
-const { normalizar } = require('./planta');
+const { normalizar, casaNome } = require('./planta');
+const palavrasDe = (s) => normalizar(s).split(' ').filter(Boolean);
 
 // ── Elétrica (NBR 5410 9.5.2) ──
 function eletrica(res) {
@@ -180,8 +181,9 @@ function ambientesDoLocal(arquitetura, local, qtd) {
   const chave = normalizar(String(local).split(/\s[—–\-/]\s|\s\/\s/)[0]);
   const raiz = chave.replace(/(OES|AES|ES|S)\b/g, '');
   const nomes = arquitetura.ambientes.map(a => a.nome);
-  const exato = nomes.filter(n => normalizar(n) === chave || normalizar(local).includes(normalizar(n)));
-  const parecidos = nomes.filter(n => normalizar(n).includes(chave) || (raiz.length >= 4 && normalizar(n).replace(/(OES|AES|ES|S)\b/g, '').includes(raiz)));
+  // por palavras inteiras ("WC FEM" não casa com "WC"; "SALA" não casa com "SALAO")
+  const exato = nomes.filter(n => normalizar(n) === chave || (palavrasDe(n).every(p => palavrasDe(local).includes(p)) && casaNome(local, n)));
+  const parecidos = nomes.filter(n => (chave && palavrasDe(chave).every(p => palavrasDe(n).includes(p))) || (raiz.length >= 4 && normalizar(n).replace(/(OES|AES|ES|S)\b/g, '').includes(raiz)));
   const lista = [...new Set([...exato.sort((a, b) => b.length - a.length), ...parecidos])];
   return lista.length ? lista.slice(0, Math.max(1, qtd)) : [String(local).split(/\s[—–\-]\s/)[0]];
 }

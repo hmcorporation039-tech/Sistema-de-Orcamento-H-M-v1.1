@@ -26,7 +26,7 @@ async function verificarAgora(req, res) {
     res.json(resumo);
   } catch (err) {
     console.error('Erro ao verificar caixa de entrada:', err);
-    res.status(500).json({ erro: err.message || 'Erro ao verificar caixa de entrada' });
+    res.status(err.code === 'EMAIL_CONEXAO' ? 503 : 500).json({ erro: err.message || 'Erro ao verificar caixa de entrada' });
   }
 }
 

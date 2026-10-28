@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Plus, X } from 'lucide-react';
 import Select, { comparador } from './Select';
-import { getObras, criarObra, getClientes } from '../services/api';
+import { getObras, criarObra, buscarTodasPaginas, getTodosClientes } from '../services/api';
 
 // Seleção de OBRA (versão 2.0, Fase 2D) — usada em Contratos, Financeiro e,
 // pela Fase 2E, na Análise de Projeto, nos Laudos e no editor de Propostas.
@@ -37,7 +37,8 @@ export function invalidarCacheObras() { cache = null; }
 
 async function carregarObras(forcar = false) {
   if (!forcar && cache && Date.now() - cache.quando < VALIDADE_CACHE) return cache.itens;
-  const res = await getObras({ campos: 'basico', porPagina: 1000 });
+  // todas as páginas (o servidor devolve até 1000 por vez; acima disso a lista vinha cortada — `incompleto`)
+  const res = await buscarTodasPaginas(getObras, { campos: 'basico' });
   const itens = res.data.itens || [];
   cache = { quando: Date.now(), itens };
   return itens;
@@ -79,7 +80,7 @@ export default function ObraSelect({
   function abrirNova() {
     setNovo({ nome: filtro.trim(), cliente_id: clienteId ? String(clienteId) : '', cliente_nome: clienteNome || '' });
     setCriando(true);
-    if (!clientes) getClientes({ porPagina: 1000 }).then(r => setClientes(r.data.itens || r.data || [])).catch(() => setClientes([]));
+    if (!clientes) getTodosClientes().then(r => setClientes(r.data.itens || [])).catch(() => setClientes([]));
   }
 
   async function salvarNova() {

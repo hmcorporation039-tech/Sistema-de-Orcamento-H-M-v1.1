@@ -14,10 +14,13 @@ function emitirToken(usuario) {
 }
 
 async function login(req, res) {
-  const { email, senha } = req.body;
+  const { email, senha } = req.body || {};
 
   if (!email || !senha) {
     return res.status(400).json({ erro: 'E-mail e senha são obrigatórios' });
+  }
+  if (typeof email !== 'string' || typeof senha !== 'string') {
+    return res.status(400).json({ erro: 'E-mail e senha devem ser texto' });
   }
 
   try {
@@ -64,11 +67,16 @@ async function login(req, res) {
 }
 
 async function alterarSenha(req, res) {
-  const { senhaAtual, novaSenha } = req.body;
+  const { senhaAtual, novaSenha } = req.body || {};
   const userId = req.usuario.id;
 
   if (!senhaAtual || !novaSenha) {
     return res.status(400).json({ erro: 'Preencha todos os campos' });
+  }
+  // número/objeto no corpo: antes `novaSenha.toLowerCase()` lançava fora do
+  // try e o pedido ficava pendurado (revisão de 27/10/2026)
+  if (typeof senhaAtual !== 'string' || typeof novaSenha !== 'string') {
+    return res.status(400).json({ erro: 'As senhas devem ser texto' });
   }
   if (novaSenha.length < 8) {
     return res.status(400).json({ erro: 'A nova senha deve ter ao menos 8 caracteres' });

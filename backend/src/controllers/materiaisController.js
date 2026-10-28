@@ -13,8 +13,9 @@ const { registrarHistoricoPreco } = require('../services/catalogoMateriais');
 // correspondência se o índice de Jaccard for >= 45%; senão não arrisca sugerir
 // preço de coisa diferente.
 async function comparar(req, res) {
-  const { descricao } = req.body;
-  if (!descricao || !descricao.trim()) {
+  const { descricao } = req.body || {};
+  // número/objeto: `.trim()` lançava fora do try (pedido pendurado)
+  if (typeof descricao !== 'string' || !descricao.trim()) {
     return res.status(400).json({ erro: 'Informe a descrição a comparar' });
   }
   try {

@@ -175,6 +175,12 @@ function gerarCronograma({
 }) {
   const { etapas, totais } = etapasDaProposta({ proposta, secoes, itens });
   const base = etapas.map(e => ({ ...e, dias: D.duracaoDiasUteis(e.mao_obra, custoHH, equipe) }));
+  // etapa que passou do teto de duração: quase sempre custo do homem-hora ou
+  // equipe digitados errado — o cronograma sai com o teto e o aviso diz o porquê
+  const avisos = etapas
+    .map(e => ({ nome: e.nome, calculado: D.duracaoCalculada(e.mao_obra, custoHH, equipe) }))
+    .filter(e => e.calculado > D.MAX_DIAS_ETAPA)
+    .map(e => `Etapa "${e.nome}": a duração calculada (${e.calculado.toLocaleString('pt-BR')} dias úteis) passou do limite de ${D.MAX_DIAS_ETAPA.toLocaleString('pt-BR')} e foi limitada — confira o custo do homem-hora (R$ ${Number(custoHH).toLocaleString('pt-BR')}) e a equipe (${equipe}).`);
   const todas = incluirEtapasFixas
     ? [{ nome: D.ETAPA_MOBILIZACAO.nome, origem: null, material: 0, mao_obra: 0, valor: 0, dias: D.ETAPA_MOBILIZACAO.dias },
       ...base,
@@ -183,6 +189,7 @@ function gerarCronograma({
   const seq = D.sequenciarDiasUteis(todas, dataInicio);
   return {
     totais,
+    avisos,
     etapas: seq.map((e, i) => ({
       ordem: i + 1,
       nome: e.nome,

@@ -1,9 +1,16 @@
 const pool = require('../config/database');
 const ia = require('./ia');
+const { paraNumeroBR } = require('./numeroBR');
 
 // Nome do provedor gravado em pesquisas_mercado.fonte (o mesmo da 1.x, para o
 // histórico e o cache continuarem iguais): a API da Anthropic era "claude".
 const FONTE_CACHE = { claude_max: 'claude_max', claude_api: 'claude', gemini: 'gemini' };
+// Só a pesquisa AUTOMÁTICA (feita pelo próprio sistema) serve de cache. A gravada
+// de fora (salvarPesquisaManual — ferramenta MCP salvar_pesquisa_mercado) é texto
+// livre não verificado: fica só no histórico (revisão de 27/10/2026).
+const FONTES_AUTOMATICAS = [...new Set(Object.values(FONTE_CACHE))];
+const MARCA_NAO_VERIFICADA = '[NÃO VERIFICADA — pesquisa enviada de fora do sistema (Claude Desktop/MCP); confira preços e links antes de usar]';
+const TAMANHO_MAX_RESULTADO_MANUAL = 20000;
 
 // Lógica de pesquisa de mercado, isolada do Express — reaproveitada tanto
 // pelo endpoint HTTP (pesquisaMercadoController.js) quanto pelas ferramentas
@@ -69,11 +76,18 @@ ${segmento === 'publico' ? 'Composição de "fornecimento e instalação" (com m
 Responda SOMENTE com JSON neste formato: ${FORMATO}`;
 }
 
+// Preço que a IA devolve como texto. O prompt pede ponto decimal, mas vem de
+// tudo: "1.299" e "R$ 2.450" (milhar brasileiro — antes viravam 1,30 e 2,45),
+// "1.299,90", "12.50", "1,299.90" e "1,299" (formato americano). Regra única de
+// utils/numeroBR.js, com o formato americano tratado antes.
 const numero = (v) => {
   if (typeof v === 'number') return v;
-  const s = String(v ?? '').replace(/[^\d.,]/g, '');
+  let s = String(v ?? '').replace(/[^\d.,]/g, '');
   if (!s) return NaN;
-  return /,\d{1,2}$/.test(s) ? Number(s.replace(/\./g, '').replace(',', '.')) : Number(s.replace(/,/g, ''));
+  if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) s = s.replace(/,/g, ''); // vírgula de milhar (americano)
+  else if (/^0\.\d+$/.test(s)) return Number(s); // "0.299" é decimal, não milhar
+  const n = paraNumeroBR(s);
+  return n == null ? NaN : n;
 };
 
 // Ofertas vindas da IA são DADO não confiável: valida número, link http(s) e tamanho
@@ -109,9 +123,9 @@ function textoDasOfertas(ofertas, est, obs) {
 async function buscarCache(descricaoNormalizada) {
   const r = await pool.query(
     `SELECT resultado, fonte, criado_em, ofertas, preco_sugerido FROM pesquisas_mercado
-     WHERE descricao_normalizada = $1 AND criado_em > NOW() - INTERVAL '${HORAS_CACHE} hours'
+     WHERE descricao_normalizada = $1 AND fonte = ANY($2::text[]) AND criado_em > NOW() - INTERVAL '${HORAS_CACHE} hours'
      ORDER BY criado_em DESC LIMIT 1`,
-    [descricaoNormalizada]
+    [descricaoNormalizada, FONTES_AUTOMATICAS]
   );
   return r.rows[0] || null;
 }
@@ -172,22 +186,25 @@ async function pesquisarPrecoMercado(descricao, { tipo = 'material', prompt: pro
 
 // Grava no sistema uma pesquisa de preço feita FORA da API paga — tipicamente
 // uma busca que o Claude Desktop fez com a própria ferramenta de web (sem
-// gastar cota do Gemini nem crédito do Claude via API). Fica no mesmo lugar
-// das pesquisas automáticas: alimenta o cache de 48h e o histórico, então o
-// botão da tela também passa a mostrar o que foi pesquisado por aqui.
+// gastar cota do Gemini nem crédito do Claude via API). Vai para o histórico
+// MARCADA como não verificada e fora do cache de 48h: antes qualquer texto
+// gravado aqui virava, por 48 h, a "pesquisa de mercado" do botão da tela.
 async function salvarPesquisaManual(descricao, resultado, fonte = 'claude_desktop') {
-  const desc = (descricao || '').trim();
-  const texto = (resultado || '').trim();
+  const desc = String(descricao ?? '').trim();
+  const texto = String(resultado ?? '').trim();
   if (!desc) throw new ErroPesquisaMercado('Informe a descrição do material pesquisado', 400);
   if (!texto) throw new ErroPesquisaMercado('Informe o resultado da pesquisa a salvar', 400);
+  if (texto.length > TAMANHO_MAX_RESULTADO_MANUAL) throw new ErroPesquisaMercado(`Resultado longo demais (máximo ${TAMANHO_MAX_RESULTADO_MANUAL} caracteres)`, 400);
 
   // Coluna fonte é VARCHAR(20); descricao/descricao_normalizada são VARCHAR(500).
-  const fonteLimpa = (String(fonte || 'claude_desktop').trim() || 'claude_desktop').slice(0, 20);
+  // Fonte de pesquisa automática não pode ser usada aqui (entraria no cache).
+  let fonteLimpa = (String(fonte || 'claude_desktop').trim() || 'claude_desktop').slice(0, 20);
+  if (FONTES_AUTOMATICAS.includes(fonteLimpa.toLowerCase())) fonteLimpa = 'claude_desktop';
   const descCurta = desc.slice(0, 500);
   const normalizada = normalizarDescricao(descCurta).slice(0, 500);
 
-  await salvarCache(descCurta, normalizada, texto, fonteLimpa);
-  return { descricao: descCurta, fonte: fonteLimpa, salvo: true };
+  await salvarCache(descCurta, normalizada, `${MARCA_NAO_VERIFICADA}\n${texto}`, fonteLimpa);
+  return { descricao: descCurta, fonte: fonteLimpa, salvo: true, verificada: false };
 }
 
 // Referência de mão de obra de um segmento ('publico' | 'privado'): média das
@@ -210,4 +227,4 @@ async function pesquisarReferenciaMaoDeObra(descricao, unidade, segmento) {
   };
 }
 
-module.exports = { pesquisarPrecoMercado, pesquisarReferenciaMaoDeObra, salvarPesquisaManual, ErroPesquisaMercado, normalizarOfertas, estatistica, promptServicoSegmento, SEGMENTOS_MO };
+module.exports = { pesquisarPrecoMercado, pesquisarReferenciaMaoDeObra, salvarPesquisaManual, ErroPesquisaMercado, normalizarOfertas, estatistica, promptServicoSegmento, SEGMENTOS_MO, FONTES_AUTOMATICAS, MARCA_NAO_VERIFICADA };

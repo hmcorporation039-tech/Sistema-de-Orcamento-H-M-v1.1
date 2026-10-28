@@ -54,6 +54,9 @@ function gerarRelatorioRisco(res) {
     f.push(B.tabela(comps.map(([k]) => k), [comps.map(([, v]) => B.fmtExp(v))], comps.map(() => 1)));
     const linhaR = `R1 da zona = ${B.fmtExp(z.R1)}${z.FT != null ? `   |   F = ${B.fmtExp(z.F)} (FT = ${B.fmtNum(z.FT)})` : ''}${z.FT != null && !z.incluiD3 ? '   |   RC, RM, RW e RZ fora de R1 (LO = 0)' : ''}`;
     f.push(B.p(linhaR, { bold: true, before: 60 }));
+    if (z.ftIgnorado != null) {
+      f.push(B.nota(`FT informado para a zona (${z.ftIgnorado}) ignorado: é menos restritivo que o da norma (FT = ${B.fmtNum(z.ftNorma)}/ano${est.sistemas_criticos ? ', sistemas críticos — não pode ser alterado' : ''}). Só se aceita FT menor que o da norma.`));
+    }
     f.push(B.tabela(['Fator', 'Valor', 'Fonte', 'Nota'],
       z.fatores.map(x => [x.fator, typeof x.valor === 'number' ? (x.valor !== 0 && Math.abs(x.valor) < 0.001 ? B.fmtExp(x.valor) : B.fmtNum(x.valor, 6)) : x.valor, x.fonte, x.nota]),
       [1.6, 0.9, 2, 3.2], { tamanho: 15 }));

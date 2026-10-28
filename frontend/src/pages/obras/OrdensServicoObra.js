@@ -63,10 +63,11 @@ export default function OrdensServicoObra({ obra, podeEditar }) {
   const [filtro, setFiltro] = useState('ativas');
   const [form, setForm] = useState(null); // { os? } — null = fechado
   const [versaoLista, setVersaoLista] = useState(0);
+  const [parcial, setParcial] = useState(false); // servidor cortou a lista (`incompleto`)
 
   const recarregar = useCallback(() => setVersaoLista(v => v + 1), []);
   useEffect(() => {
-    getOrdensServicoObra(obra.id).then(r => setLista(r.data.itens || [])).catch(e => { setLista([]); toast.error(e.response?.data?.erro || 'Erro ao carregar as OS'); });
+    getOrdensServicoObra(obra.id).then(r => { setLista(r.data.itens || []); setParcial(!!r.data.incompleto); }).catch(e => { setLista([]); toast.error(e.response?.data?.erro || 'Erro ao carregar as OS'); });
   }, [obra.id, versaoLista]);
   useEffect(() => { getModelosChecklist().then(r => setModelos(r.data.itens || [])).catch(() => {}); }, []);
 
@@ -102,6 +103,7 @@ export default function OrdensServicoObra({ obra, podeEditar }) {
           onSalvo={(os) => { setForm(null); recarregar(); abrir(os.id); }} />
       )}
 
+      {parcial && <p data-testid="lista-parcial" style={{ color: '#c9a227', fontSize: 11.5, margin: '0 0 8px' }}>Lista parcial: a obra tem mais OS do que o servidor devolve de uma vez.</p>}
       <div style={E.caixaTabela}>
         <table style={E.tabela}>
           <thead>
@@ -162,6 +164,9 @@ function BotaoPdf({ os, icone = false }) {
 }
 
 // ── criar / editar ────────────────────────────────────────────────────
+const CAMPOS_FORM_OS = ['titulo', 'descricao', 'tipo', 'disciplina', 'responsavel_id', 'agendada_para', 'modelo_checklist'];
+const ROTULO_CAMPO_OS = { titulo: 'título', descricao: 'descrição', tipo: 'tipo', disciplina: 'disciplina', responsavel_id: 'responsável', agendada_para: 'data agendada', modelo_checklist: 'modelo de checklist' };
+
 function FormOS({ obra, os, modelos, ehAdmin, usuario, onCancelar, onSalvo }) {
   const editando = !!os;
   const [dados, setDados] = useState(() => ({
@@ -171,7 +176,9 @@ function FormOS({ obra, os, modelos, ehAdmin, usuario, onCancelar, onSalvo }) {
   }));
   const [usuarios, setUsuarios] = useState([]);
   const [salvando, setSalvando] = useState(false);
-  const checklistEmUso = editando && (os.status !== 'aberta' || os.checklist.some(i => i.respondido_em || i.extra || i.observacao));
+  // a OS como estava ao abrir o formulário (ou recarregada depois de um 409 de versão)
+  const [osBase, setOsBase] = useState(os || {});
+  const checklistEmUso = editando && (osBase.status !== 'aberta' || (osBase.checklist || []).some(i => i.respondido_em || i.extra || i.observacao));
 
   useEffect(() => {
     // a lista de usuários é só de admin; para os demais, "eu" e o responsável atual
@@ -200,13 +207,43 @@ function FormOS({ obra, os, modelos, ehAdmin, usuario, onCancelar, onSalvo }) {
     e.preventDefault();
     if (!dados.titulo.trim()) { toast.error('Informe o título da OS'); return; }
     setSalvando(true);
-    const corpo = {
-      titulo: dados.titulo, descricao: dados.descricao, tipo: dados.tipo, disciplina: dados.disciplina || null,
-      responsavel_id: dados.responsavel_id ? Number(dados.responsavel_id) : null, agendada_para: dados.agendada_para || null,
+    const montarCorpo = (base) => {
+      const corpo = {
+        titulo: dados.titulo, descricao: dados.descricao, tipo: dados.tipo, disciplina: dados.disciplina || null,
+        responsavel_id: dados.responsavel_id ? Number(dados.responsavel_id) : null, agendada_para: dados.agendada_para || null,
+      };
+      if (!editando || (dados.modelo_checklist || null) !== (base.modelo_checklist ?? null)) corpo.modelo_checklist = dados.modelo_checklist;
+      return corpo;
     };
-    if (!editando || (dados.modelo_checklist || null) !== (os.modelo_checklist ?? null)) corpo.modelo_checklist = dados.modelo_checklist;
     try {
-      const r = editando ? await atualizarOrdemServico(os.id, { ...corpo, versao: os.versao }) : await criarOrdemServico(obra.id, corpo);
+      let r;
+      if (!editando) r = await criarOrdemServico(obra.id, montarCorpo({}));
+      else {
+        try {
+          r = await atualizarOrdemServico(os.id, { ...montarCorpo(osBase), versao: osBase.versao });
+        } catch (err) {
+          if (err.response?.status !== 409 || err.response?.data?.codigo !== 'CONFLITO_VERSAO') throw err;
+          // 409 de versão: quase sempre é o técnico trabalhando no campo (toda
+          // resposta/foto sobe a versão). Recarrega a OS e reaplica os campos
+          // deste formulário; se outra pessoa mudou um desses campos, mostra
+          // e deixa a decisão com quem está editando.
+          const fresca = (await getOrdemServico(os.id)).data;
+          const mudaram = CAMPOS_FORM_OS.filter(c => String(fresca[c] ?? '') !== String(osBase[c] ?? ''));
+          const emUsoAgora = fresca.status !== 'aberta' || (fresca.checklist || []).some(i => i.respondido_em || i.extra || i.observacao);
+          setOsBase(fresca);
+          if (mudaram.length) {
+            toast.error(`Outra pessoa alterou esta OS (${mudaram.map(c => ROTULO_CAMPO_OS[c]).join(', ')}) depois que você abriu o formulário. O que você digitou continua aqui — confira e salve de novo.`, { duration: 12000 });
+            return;
+          }
+          const corpo = montarCorpo(fresca);
+          if (emUsoAgora && corpo.modelo_checklist !== undefined) {
+            delete corpo.modelo_checklist;
+            setDados(d => ({ ...d, modelo_checklist: fresca.modelo_checklist ?? '' }));
+            toast('O técnico já começou o checklist no campo: o modelo de checklist ficou como estava.', { icon: 'ℹ️', duration: 8000 });
+          }
+          r = await atualizarOrdemServico(os.id, { ...corpo, versao: fresca.versao });
+        }
+      }
       toast.success(editando ? `OS ${r.data.numero} salva` : `OS ${r.data.numero} criada`);
       onSalvo(r.data);
     } catch (err) {

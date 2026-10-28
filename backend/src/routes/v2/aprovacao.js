@@ -9,6 +9,7 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const ctrl = require('../../controllers/aprovacaoController');
+const { protegerRotasAsync } = require('../../middleware/erros');
 
 const limite = (windowMs, limit, erro, extra = {}) => rateLimit({
   windowMs, limit, standardHeaders: 'draft-7', legacyHeaders: false, message: { erro }, ...extra,
@@ -37,7 +38,7 @@ module.exports = (router, { autenticar, validarId, exigirPosse }) => {
   router.post('/propostas/:id/links-aprovacao/:linkId/revogar', autenticar, validarId, posseProposta, ctrl.revogarLink);
   router.get('/propostas/:id/decisoes-aprovacao', autenticar, validarId, ctrl.listarDecisoes);
 
-  const publico = express.Router();
+  const publico = protegerRotasAsync(express.Router());
   publico.use((req, res, next) => {
     // conteúdo comercial do cliente: sem cache em proxy/navegador e fora de buscadores
     res.set({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' });

@@ -199,7 +199,12 @@ async function listar(req, res, next) {
         if (!ehAdmin(req)) { r.qtd_contratos = null; r.qtd_movimentos = null; }
       }
     }
-    res.json({ ...montarResposta(rows, parseInt(total.rows[0].count, 10), pagina, porPagina), restrito_financeiro: !ehAdmin(req) });
+    const totalObras = parseInt(total.rows[0].count, 10);
+    // ?campos=basico (listas de escolha) vem numa página só de até 1000: acima
+    // disso a lista era cortada sem aviso — `incompleto` avisa quem chamou
+    const incompleto = offset + rows.length < totalObras;
+    if (incompleto) res.set('X-Lista-Truncada', '1');
+    res.json({ ...montarResposta(rows, totalObras, pagina, porPagina), incompleto, restrito_financeiro: !ehAdmin(req) });
   } catch (err) {
     next(err);
   }

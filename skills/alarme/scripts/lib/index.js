@@ -217,18 +217,17 @@ function montarOrcamento(res, modo) {
   const S = 'Serviços (Mão de Obra)';
   const srv = (codigo, descricao, quantidade, unidade) => ({ secao: S, subgrupo: 'Alarme', codigo, descricao, quantidade, unidade });
   const orc = dados.orcamento || {};
-  const mensalidade = calc.monitorado && orc.incluir_mensalidade ? [{
-    secao: S, subgrupo: 'Monitoramento (informativo)', codigo: 'alarme_monitoramento_mensal',
-    descricao: `INFORMATIVO — mensalidade do monitoramento 24 h (${meiosTexto(calc)})${Number(orc.mensalidade_valor) > 0 ? `, referência R$ ${num(orc.mensalidade_valor, 2)}/mês` : ''}; contrato à parte com a empresa de monitoramento, não compõe o total`,
-    quantidade: 1, unidade: 'mês',
-  }] : [];
+  // Mensalidade do monitoramento: contrato à parte, recorrente — NÃO entra como item
+  // (na seção de mão de obra ela era somada ao total da instalação); vai nas observações.
+  const mensalidade = calc.monitorado && orc.incluir_mensalidade
+    ? ` Mensalidade do monitoramento 24 h (${meiosTexto(calc)})${Number(orc.mensalidade_valor) > 0 ? `: referência R$ ${num(orc.mensalidade_valor, 2)}/mês` : ''} — contrato à parte com a empresa de monitoramento, não compõe o total desta proposta.`
+    : '';
   let itens;
   if (modo === 'inspecao') {
     itens = [
       srv('alarme_vistoria', 'Vistoria e teste do alarme por zona (disparo, tamper e evento na central de monitoramento)', calc.nZonas, 'un'),
       srv('alarme_laudo', 'Relatório de vistoria e teste do alarme com ART', 1, 'vb'),
       ...res.ncs.map(n => ({ secao: S, subgrupo: 'Correção de não conformidades', descricao: `${n.id} (${n.item}) — ${n.recomendacao}`, quantidade: 1, unidade: 'vb' })),
-      ...mensalidade,
     ];
   } else {
     const nIvp = calc.nIvp + calc.nIvpExt;
@@ -245,7 +244,6 @@ function montarOrcamento(res, modo) {
       ...(calc.cabo4 + calc.cabo2 ? [srv('alarme_infra', 'Infraestrutura e lançamento de cabos do alarme', calc.cabo4 + calc.cabo2, 'm')] : []),
       srv('alarme_comissionamento', 'Comissionamento: teste zona a zona, teste de comunicação e treinamento do usuário', 1, 'vb'),
       srv('alarme_projeto', 'Projeto do sistema de alarme (zonas, partições, bateria) com ART', 1, 'vb'),
-      ...mensalidade,
     ];
   }
   const obra = dados.obra?.nome || 'a edificação';
@@ -254,7 +252,7 @@ function montarOrcamento(res, modo) {
     escopo: modo === 'inspecao'
       ? `Vistoria e teste do sistema de alarme de intrusão de ${obra} (${calc.nZonas} zonas), com teste zona a zona, tamper, bateria, tempos de entrada/saída${calc.monitorado ? ', comunicação com a central de monitoramento' : ''} e relatório com ART.`
       : `Fornecimento e instalação de sistema de alarme de intrusão${calc.monitorado ? ' monitorado' : ''} grau ${calc.grau} em ${obra}: ${calc.nSensores} sensores (${calc.nMag} magnéticos, ${calc.nIvp} IVP${calc.nBarreiras ? `, ${calc.nBarreiras} par(es) de barreira` : ''}${calc.nIvpExt ? `, ${calc.nIvpExt} IVP externo(s)` : ''}), central de ${calc.central.zonasMax} zonas com ${calc.particoes} partição(ões), ${calc.teclados} teclado(s), ${calc.sirenesInternas + calc.sirenesExternas} sirene(s), bateria de ${calc.bateria.nBaterias > 1 ? `${calc.bateria.nBaterias} × ` : ''}${calc.bateria.bateriaEscolhida} Ah (${calc.bateria.autonomiaH} h)${calc.monitorado && calc.meios.length ? ` e comunicação ${meiosTexto(calc)}` : ''}, com cabeamento, programação, testes e treinamento.`,
-    observacoes: `Rascunho gerado pela skill de alarme — conferir modelos, quantidades e preços antes de enviar ao cliente.${mensalidade.length ? ' A mensalidade de monitoramento é informativa (contrato à parte) e não deve ser somada ao total da instalação.' : ''}`,
+    observacoes: `Rascunho gerado pela skill de alarme — conferir modelos, quantidades e preços antes de enviar ao cliente.${mensalidade}`,
     itens,
   };
 }
@@ -282,7 +280,7 @@ const FORMULARIO = [
       { caminho: 'sistema.com_gprs', rotulo: 'Comunicação GPRS/4G', tipo: 'check' },
       { caminho: 'sistema.com_linha', rotulo: 'Linha telefônica', tipo: 'check' },
       { caminho: 'sistema.protocolo', rotulo: 'Protocolo', tipo: 'selecao', opcoes: OP.protocolo },
-      { caminho: 'sistema.autonomia_h', rotulo: 'Autonomia exigida (h)', tipo: 'numero', dica: 'Vazio = pelo grau: 12 h (graus 1–2 notificados), 24 h (grau 2 sem notificação), 30/60 h (graus 3–4)' },
+      { caminho: 'sistema.autonomia_h', rotulo: 'Autonomia exigida (h)', tipo: 'numero', dica: 'Vazio = pelo grau: 12 h (graus 1–2), 30 h (graus 3–4 com falta de rede notificada) ou 60 h (sem notificação)' },
       { caminho: 'sistema.tempo_alarme_min', rotulo: 'Tempo de sirene/alarme (min)', tipo: 'numero' },
       { caminho: 'sistema.reserva_zonas_pct', rotulo: 'Reserva de zonas (%)', tipo: 'numero' },
       { caminho: 'sistema.verificacao_video', rotulo: 'Verificação por vídeo (LGPD)', tipo: 'check' },

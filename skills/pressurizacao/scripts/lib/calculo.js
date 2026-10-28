@@ -90,11 +90,15 @@ function config(dados) {
   const al = dados.alimentacao || {};
   const grupo = T.OCUPACOES[ed.ocupacao] ? ed.ocupacao : 'A';
   const pavimentos = Math.max(1, Math.round(numero(ed.pavimentos) || 1));
-  const altura = numero(ed.altura_m) || pavimentos * 3;
+  // altura vazia: estimada por pavimentos × 3 m só para o cálculo andar — ela decide a
+  // Tabela B1, o ventilador único e a isenção de gerador, então vira bloqueio do memorial
+  const alturaInformada = numero(ed.altura_m) > 0 ? numero(ed.altura_m) : null;
+  const altura = alturaInformada || pavimentos * 3;
+  const limiteForcaInformado = numero(s.limite_forca_n) > 0 ? numero(s.limite_forca_n) : null;
   const tipoDuto = T.FATOR_DUTO[s.tipo_duto] != null ? s.tipo_duto : 'metalico';
   const partida = T.PARTIDAS[s.partida] ? s.partida : 'inversor';
   return {
-    grupo, pavimentos, altura,
+    grupo, pavimentos, altura, alturaEstimada: !alturaInformada,
     localReuniao: sim(ed.local_reuniao_publico),
     doisEstagios: ed.sistema === '2_estagios' || s.estagios === '2_estagios',
     jurisdicao: ed.jurisdicao === 'outra' ? 'outra' : 'DF',
@@ -122,7 +126,8 @@ function config(dados) {
     deteccaoExistente: s.deteccao_existente !== false,
     acionadoresRemotos: numero(s.acionadores_remotos) ?? 2,
     portasAbertasForcado: numero((dados.escada || {}).portas_abertas),
-    limiteForca: numero(s.limite_forca_n) || T.FORCA.limite_n,
+    limiteForca: limiteForcaInformado || T.FORCA.limite_n,
+    limiteForcaPadrao: !limiteForcaInformado,
     fechador: numero(s.forca_fechador_n) ?? T.FORCA.fechador_n,
     tempoPartidaMax: numero(s.tempo_partida_max_s) || T.TEMPO_PARTIDA_MAX_S,
     tempoReversao: numero(s.tempo_reversao_s) || T.TEMPO_REVERSAO_S,
@@ -182,10 +187,19 @@ function calcularVazoes(dados, c, avisos) {
     permanente: sim(j.permanente), areaAberta: numero(j.area_aberta_m2) || 0,
   }));
 
-  // nº de PCF abertas (Tabela B1) + 1 por local de reunião em escritório até 21 m (5.1.6.4 f)
-  const npaTabela = T.portasAbertasTabelaB1(c.grupo, c.altura);
+  // nº de PCF abertas (Tabela B1) + 1 por local de reunião em escritório até 21 m (5.1.6.4 f).
+  // Nota 5 do Anexo B: a Tabela B1 supõe 1 PCF de acesso por pavimento; com 2 ou mais
+  // (pavimento mais desfavorável), o cálculo usa o nº de PCF de acesso desse pavimento
+  // multiplicado pelo nº de pavimentos da tabela. Sem o dado informado, o mínimo que as
+  // portas garantem é ⌈PCF de acesso ÷ pavimentos⌉ (algum pavimento tem pelo menos isso).
+  const nAcesso = portas.filter(p => p.sentido === 'acesso').length;
+  const acessosInformado = numero(esc.acessos_por_pavimento) > 0 ? Math.round(numero(esc.acessos_por_pavimento)) : null;
+  const acessosPorPavimento = acessosInformado || Math.max(1, Math.ceil(nAcesso / c.pavimentos));
+  const npaB1 = T.portasAbertasTabelaB1(c.grupo, c.altura);
+  const npaTabela = npaB1 * acessosPorPavimento;
   const reuniao = c.localReuniao && c.grupo === 'D' && c.altura <= 21 ? 1 : 0;
-  const npa = c.portasAbertasForcado != null ? c.portasAbertasForcado : npaTabela + reuniao;
+  const npaNorma = npaTabela + reuniao;
+  const npa = c.portasAbertasForcado != null ? c.portasAbertasForcado : npaNorma;
 
   // áreas com tudo fechado
   const aPortas = portas.reduce((s, p) => s + p.frestaEfetiva, 0);
@@ -224,19 +238,47 @@ function calcularVazoes(dados, c, avisos) {
   });
 
   if (npa > portas.length) avisos.push(`A Tabela B1 pede ${npa} PCF abertas e a escada só tem ${portas.length} portas informadas. [CONFERIR]`);
+  if (acessosPorPavimento > 1) avisos.push(`Nota 5 do Anexo B (NT 13 GO): ${acessosPorPavimento} PCF de acesso no pavimento mais desfavorável × ${npaB1} da Tabela B1 = ${npaTabela} PCF abertas no cálculo${acessosInformado ? '' : ` (deduzido de ${nAcesso} PCF de acesso em ${c.pavimentos} pavimentos — informe as PCF de acesso do pavimento mais desfavorável) [CONFERIR]`}.`);
   if (reuniao) avisos.push('Escritório até 21 m com local de reunião de público (≥ 50 pessoas) fora do piso de descarga: +1 PCF aberta no cálculo (NT 13 GO 5.1.6.4 f).');
   if (antecamara) avisos.push('Antecâmara não pressurizada: fresta da PCF da escada em série com a da antecâmara (Equação 3). Com antecâmara pressurizada por sistema independente, calcular cada espaço à parte (escada 50 Pa, antecâmara 45 Pa — NT 13 GO 5.1.6.7). [CONFERIR arranjo]');
-  if (c.altura > T.ANTECAMARA_OBRIGATORIA_M && !antecamara) avisos.push(`Altura ${fmt(c.altura, 1)} m > ${T.ANTECAMARA_OBRIGATORIA_M} m: a NT 13 GO (5.1.6.7) exige antecâmara de segurança, além da escada pressurizada. [CONFERIR exigência do CBMDF]`);
+  if (c.altura >= T.ANTECAMARA_OBRIGATORIA_M && !antecamara) avisos.push(`Altura ${fmt(c.altura, 1)} m ≥ ${T.ANTECAMARA_OBRIGATORIA_M} m: a NT 13 GO exige antecâmara de segurança, além da escada pressurizada (5.1.6.7 a diz "superior a 90 m"; a Nota 2 do Anexo B, "igual ou superior"). [CONFERIR exigência do CBMDF]`);
   if (aPerm > 0) avisos.push(`Abertura permanente na caixa da escada (${fmt(aPerm)} m²): +${fmt(qPerm)} m³/s para 4 m/s médios na abertura (NT 13 GO 5.1.6.4 b).`);
   if (janelas.some(j => !j.permanente && !j.fresta)) avisos.push('Janela na escada sem área de fresta informada: não entrou no cálculo. Informe a fresta (m²) pelo fabricante. [CONFERIR]');
   forcas.filter(f => !f.atende).forEach(f => avisos.push(`Força de abertura da ${f.descricao} a ${fmt(c.dpMax, 0)} Pa: ${fmt(f.f60, 0)} N > ${fmt(f.limite, 0)} N. Reduzir a força do fechador, rever a pressão máxima do alívio ou a largura da folha. [CONFERIR limite na NBR 14880]`));
 
   return {
-    portas, elevadores, janelas, antecamara, npa, npaTabela, reuniao, abertas: [...abertas],
+    portas, elevadores, janelas, antecamara, npa, npaB1, npaTabela, npaNorma, acessosPorPavimento, acessosInformado: !!acessosInformado, reuniao, abertas: [...abertas],
     areas: { portas: aPortas, elevadores: aElev, janelas: aJan, permanentes: aPerm, n2: aN2, total: aPortas + aElev + aJan },
     qft, apa, aVao, aFrestasFechadas, vpa, qat, qt, qPerm, fatorDuto, fatorTotal, qts, qftd, qd, areaDamper, q1Estagio,
     criterio: qat > qft ? 'portas abertas (velocidade mínima de 1 m/s)' : 'portas fechadas (ΔP de projeto)',
     forcas,
+  };
+}
+
+// ── Valores de projeto × norma (bloqueiam o memorial) e critérios do laudo ──
+// O formulário deixa editar ΔP, ΔP máxima, velocidade e PCF abertas; valor fora da norma
+// não pode sair num memorial que afirma atender a NT. O laudo usa sempre o critério
+// normativo, nunca o valor editado: ΔP medido ≥ 90 % do projeto (no mínimo 90 % de 50 Pa)
+// e ≤ 60 Pa (NT 13 GO 5.1.5.1 e 5.5.3 d; CBMDF NT 10 4.3.1.10.2 r); V ≥ 1 m/s (5.1.6.4 c).
+function verificarNorma(c, v) {
+  const b = [];
+  const P = T.PRESSAO;
+  if (c.dp < P.projeto_pa) b.push(`ΔP de projeto ${fmt(c.dp, 0)} Pa abaixo do mínimo de ${P.projeto_pa} Pa da Tabela A1 (NT 13 GO 5.1.5.1).`);
+  if (c.dpMax > P.maxima_pa) b.push(`ΔP máxima ${fmt(c.dpMax, 0)} Pa acima do limite de ${P.maxima_pa} Pa com as PCF fechadas (NT 13 GO 5.1.5.1; CBMDF NT 10, 4.3.1.10.2 r).`);
+  if (c.dp > c.dpMax) b.push(`ΔP de projeto ${fmt(c.dp, 0)} Pa maior que a ΔP máxima ${fmt(c.dpMax, 0)} Pa.`);
+  if (c.vPorta < T.VELOCIDADE.porta_aberta_ms) b.push(`Velocidade nas PCF abertas ${fmt(c.vPorta)} m/s abaixo do mínimo de ${fmt(T.VELOCIDADE.porta_aberta_ms)} m/s (NT 13 GO 5.1.6.4 c).`);
+  if (v.npa < v.npaNorma) b.push(`PCF abertas no cálculo (${v.npa}) abaixo das ${v.npaNorma} exigidas pela Tabela B1${v.acessosPorPavimento > 1 ? ' com a Nota 5' : ''}${v.reuniao ? ' + local de reunião (5.1.6.4 f)' : ''}.`);
+  if (c.alturaEstimada) b.push(`Altura da edificação não informada: o cálculo adotou ${c.pavimentos} pavimentos × 3 m = ${fmt(c.altura, 1)} m, mas a altura decide as PCF abertas (Tabela B1), o ventilador único e a isenção de gerador (CBMDF NT 10, 4.3.1.10.2 p e 4.3.1.10.3 c). Informe a altura.`);
+  return b;
+}
+
+function criteriosLaudo(c) {
+  const P = T.PRESSAO;
+  return {
+    dpMin: P.minimo_medido_fracao * Math.max(c.dp, P.projeto_pa),
+    dpMax: P.maxima_pa,
+    vMin: Math.max(c.vPorta, T.VELOCIDADE.porta_aberta_ms),
+    forcaMax: Math.min(c.limiteForca, T.FORCA.limite_n),
   };
 }
 
@@ -499,6 +541,10 @@ function calcular(dados) {
   const c = config(dados);
   const avisos = [];
   const v = calcularVazoes(dados, c, avisos);
+  const bloqueios = verificarNorma(c, v);
+  const criterios = criteriosLaudo(c);
+  if (c.limiteForcaPadrao) avisos.push(`Limite da força de abertura não informado: adotado ${fmt(T.FORCA.limite_n, 0)} N (NFPA 101, 7.2.1.4.5). A NT 13 GO não fixa valor (5.1.5.2 só pede atenção a crianças, idosos e pessoas com deficiência) e a EN 12101-6 usa 100 N${['E', 'H'].includes(c.grupo) ? ' — mais prudente nesta ocupação' : ''}: escolha o limite no formulário. [CONFERIR na NBR 14880]`);
+  if (c.limiteForca > T.FORCA.limite_n) avisos.push(`Limite de força informado (${fmt(c.limiteForca, 0)} N) acima de ${fmt(T.FORCA.limite_n, 0)} N (NFPA 101): o laudo mede contra ${fmt(T.FORCA.limite_n, 0)} N. [CONFERIR]`);
   const d = distribuicao(v, c, avisos);
   const arr = arranjoVentiladores(c, avisos);
   const vent = ventilador(v, d, c, arr, avisos);
@@ -521,7 +567,8 @@ function calcular(dados) {
   avisos.push(`Cálculo em ar padrão (1,204 kg/m³), como pede a NT. No local (${fmt(c.altitude, 0)} m, ${fmt(c.temperatura, 0)} °C) ρ ≈ ${fmt(rho, 3)} kg/m³: perdas e pressão do ventilador caem na mesma proporção; a vazão pelas frestas a 50 Pa sobe ~${fmt((Math.sqrt(T.DENSIDADE_PADRAO / rho) - 1) * 100, 0)} %. Ajustar no balanceamento.`);
   if (c.tomadaAr === 'cobertura') avisos.push('Tomada de ar na cobertura: no DF só para adequação de edificação existente, com aprovação do CBMDF, parede 1 m acima da tomada e afastada 5 m (ou 3 m com parede 2 m acima) — CBMDF NT 10, 4.3.1.10.2 f/g.');
   avisos.push('A NBR 14880:2014 não foi lida na íntegra (norma paga): os valores seguem a CBMGO NT 13/2025 (texto da IT 13 do CBPMESP) e a CBMDF NT 10/2015. [CONFERIR na NBR 14880]');
-  const x = { c, v, d, arr, vent, al, aut, rho, existente };
+  bloqueios.slice().reverse().forEach(t => avisos.unshift(`BLOQUEANTE — ${t} O memorial não é gerado até corrigir.`));
+  const x = { c, v, d, arr, vent, al, aut, rho, existente, bloqueios, criterios };
   x.diagrama = diagramaComando(c, arr, al, aut);
   x.materiais = listaMateriais(x);
   x.avisos = avisos;
@@ -530,5 +577,5 @@ function calcular(dados) {
 
 module.exports = {
   calcular, config, vazaoFresta, areaSerie, densidadeLocal, forcaPorta, fatorAtrito, perdaAtrito, motorComercial, numeroGrelhas,
-  lerPortas, escolherAbertas, calcularVazoes,
+  lerPortas, escolherAbertas, calcularVazoes, verificarNorma, criteriosLaudo,
 };

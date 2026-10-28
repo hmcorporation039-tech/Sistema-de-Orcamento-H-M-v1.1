@@ -214,6 +214,19 @@ function responderErro(res, next, err) {
   return next(err);
 }
 
+const LIMITE_LISTA_OS = 500;
+
+// `agora` devolvido ao aparelho (o próximo `desde`). Normal: hora do servidor
+// menos a folga. Incremental cortado no limite: a alteração da última OS
+// devolvida (o milissegundo dela volta de novo — repetir é inofensivo, perder
+// não), sem passar da hora com folga.
+function marcoDaSincronizacao({ agora, incremental, incompleto, ultimaAlteracao }) {
+  const comFolga = agora.getTime() - FOLGA_AGORA_MS;
+  if (!incremental || !incompleto || !ultimaAlteracao) return new Date(comFolga).toISOString();
+  const ultima = new Date(ultimaAlteracao).getTime();
+  return new Date(Number.isNaN(ultima) ? comFolga : Math.min(ultima, comFolga)).toISOString();
+}
+
 // ── GET /campo/os?status=abertas|todas&desde=<iso>&obra_id= ─────────────
 async function listar(req, res, next) {
   try {
@@ -238,13 +251,26 @@ async function listar(req, res, next) {
       params.push(n);
       cond.push(`os.obra_id = $${params.length}`);
     }
+    // Incremental (?desde=): em ordem de alteração. Antes era a mesma ordem da
+    // lista (por status) com LIMIT 500 e o `agora` avançava mesmo assim — o que
+    // passasse de 500 nunca mais chegava ao aparelho (revisão de 27/10/2026).
+    const incremental = !!req.query.desde;
     const { rows } = await pool.query(
       `${SQL_OS} WHERE ${cond.join(' AND ')}
-        ORDER BY CASE os.status WHEN 'em_execucao' THEN 0 WHEN 'aberta' THEN 1 WHEN 'concluida' THEN 2 ELSE 3 END,
-                 os.agendada_para NULLS LAST, os.id DESC
-        LIMIT 500`, params);
+        ORDER BY ${incremental
+          ? 'os.atualizado_em, os.id'
+          : `CASE os.status WHEN 'em_execucao' THEN 0 WHEN 'aberta' THEN 1 WHEN 'concluida' THEN 2 ELSE 3 END,
+                 os.agendada_para NULLS LAST, os.id DESC`}
+        LIMIT ${LIMITE_LISTA_OS + 1}`, params);
+    const incompleto = rows.length > LIMITE_LISTA_OS;
+    if (incompleto) rows.length = LIMITE_LISTA_OS;
     const fotos = await fotosDe(rows.map(r => r.id));
-    res.json({ itens: rows.map(r => paraApi(r, fotos.get(r.id), req.usuario)), agora: new Date(agora.getTime() - FOLGA_AGORA_MS).toISOString() });
+    res.json({
+      itens: rows.map(r => paraApi(r, fotos.get(r.id), req.usuario)),
+      agora: marcoDaSincronizacao({ agora, incremental, incompleto, ultimaAlteracao: rows.length ? rows[rows.length - 1].atualizado_em : null }),
+      // true = há mais OS do que as devolvidas; no incremental, chamar de novo com desde=agora
+      incompleto,
+    });
   } catch (err) {
     responderErro(res, next, err);
   }
@@ -593,5 +619,5 @@ async function pdf(req, res, next) {
 module.exports = {
   listar, buscarUma, modelos, criarDaObra, atualizar, remover, sincronizar, enviarFoto, verFoto, verAssinatura, pdf,
   // para testes
-  _interno: { lerChave, caminhoArquivoCampo, modelosChecklist },
+  _interno: { lerChave, caminhoArquivoCampo, modelosChecklist, marcoDaSincronizacao },
 };

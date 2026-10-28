@@ -25,12 +25,20 @@ const MAIOR_NUMERO_PLAUSIVEL = 500;
 // tipo de ponto -> prefixo do código no desenho (mesmos usados em projetoParser.js)
 const TIPOS = [['cftv', 'CAM'], ['rede', 'R'], ['antena', 'A']];
 
-async function calcularPontosPorAmbiente(buffer) {
+// Páginas lidas por arquivo: a análise roda no processo do servidor e um PDF de
+// centenas de páginas (caderno inteiro) segurava memória e CPU à toa. As
+// pranchas de pontos ficam nas primeiras; a distribuição já é aproximada.
+const MAX_PAGINAS = 30;
+
+const carregarPdfjsPadrao = () => import('pdfjs-dist/legacy/build/pdf.mjs');
+
+// `opcoes.carregarPdfjs` existe só para o teste trocar o pdfjs por um falso.
+async function calcularPontosPorAmbiente(buffer, { maxPaginas = MAX_PAGINAS, carregarPdfjs = carregarPdfjsPadrao } = {}) {
   let pdfjsLib;
   try {
     // pdfjs-dist só existe como ESM nesta versão — import() dinâmico dentro
     // de um módulo CommonJS funciona normalmente no Node.
-    pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    pdfjsLib = await carregarPdfjs();
   } catch {
     return []; // se não conseguir carregar por algum motivo, só fica sem essa distribuição — não trava a análise
   }
@@ -42,16 +50,31 @@ async function calcularPontosPorAmbiente(buffer) {
     return [];
   }
 
-  const porAmbiente = new Map(); // nome -> { cftv, rede, antena }
+  // o documento é SEMPRE destruído no fim (antes ficava aberto: memória do
+  // pdfjs presa a cada análise até o coletor de lixo, e nada liberava as páginas)
+  try {
+    return await contarPorAmbiente(doc, maxPaginas);
+  } finally {
+    await Promise.resolve(doc.destroy?.()).catch(() => {});
+  }
+}
 
-  for (let n = 1; n <= doc.numPages; n++) {
+async function contarPorAmbiente(doc, maxPaginas) {
+  const porAmbiente = new Map(); // nome -> { cftv, rede, antena }
+  const ultima = Math.min(doc.numPages, maxPaginas);
+  if (doc.numPages > ultima) console.warn(`[pontosPorAmbiente] PDF com ${doc.numPages} páginas: lidas só as ${ultima} primeiras`);
+
+  for (let n = 1; n <= ultima; n++) {
     let items;
+    let page = null;
     try {
-      const page = await doc.getPage(n);
+      page = await doc.getPage(n);
       const content = await page.getTextContent();
       items = content.items.map(it => ({ str: it.str, x: it.transform[4], y: it.transform[5] }));
     } catch {
       continue; // página que falhar não impede as demais
+    } finally {
+      try { page?.cleanup?.(); } catch { /* sem importância */ }
     }
 
     // Ambientes da página: mesmo padrão "nome (até 3 partes) + A=NN,NNm²" já
@@ -115,4 +138,4 @@ async function calcularPontosPorAmbiente(buffer) {
   return [...porAmbiente.entries()].map(([ambiente, contagem]) => ({ ambiente, ...contagem }));
 }
 
-module.exports = { calcularPontosPorAmbiente };
+module.exports = { calcularPontosPorAmbiente, MAX_PAGINAS };

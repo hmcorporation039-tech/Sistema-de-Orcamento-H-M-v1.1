@@ -52,6 +52,29 @@ igual('itens de rede IP não aplicáveis', ['N1', 'N2'].map(c => res.checklist.f
 igual('teste ramal a ramal', res.testes.map(t => t.resultado), ['C', 'NC']);
 igual('parecer não conforme (preliminar)', res.parecer.situacao, 'NAO_CONFORME_PRELIMINAR');
 
+// Achado A2.10 (revisão 27/10/2026): subsolos com unidades repetiam T01… e o ramal 001 em todos
+// os subsolos e no térreo, e o cabo CI do subsolo saía com altura 0 (sem a descida).
+{
+  const ds = clonar(motor.exemplo());
+  ds.blocos = [{ nome: 'T', pavimentos: 4, unidades_por_pavimento: 2, primeiro_pavimento: -2, pe_direito_m: 3, distancia_dg_m: 10 }];
+  const cs = motor.processar(ds).calc;
+  const pv = (n) => cs.blocos[0].pavimentos.find(p => p.pavimento === n);
+  igual('subsolos: unidades S201/S101, térreo T01, 1º pav. 101', [-2, -1, 0, 1].map(n => pv(n).listaUnidades[0].unidade), ['S201', 'S101', 'T01', '101']);
+  igual('subsolos: ramais 9201/9101 distintos do térreo 001', [-2, -1, 0].map(n => pv(n).listaUnidades[0].ramal_numeros[0]), ['9201', '9101', '001']);
+  igual('nenhum ramal repetido', cs.ramaisDuplicados, []);
+  // CI do 2º subsolo: (10 m + 2 × 3 m) × 1,15 + folga (antes: (10 + 0) × 1,15 + folga)
+  igual('subsolo -2: altura de 6 m (antes 0)', pv(-2).altura, 6);
+  perto('subsolo -2: cabo CI com a descida', pv(-2).compCi - pv(0).compCi, 6 * 1.15);
+  // prumada: sobe 1 × 3 m e desce 2 × 3 m → (10 + 9) × 1,15
+  perto('infraestrutura da prumada sobe e desce', cs.blocos[0].prumadaInfraM, (10 + 9) * 1.15);
+}
+// Ramal repetido no plano de numeração vira aviso (ex.: 8º pavimento 801 × área comum 801)
+{
+  const dd = clonar(motor.exemplo());
+  dd.blocos = [{ nome: 'T', pavimentos: 8, unidades_por_pavimento: 1 }];
+  const cd = motor.processar(dd).calc;
+  igual('ramal 801 repetido é avisado', [cd.ramaisDuplicados.includes('801'), cd.avisos.some(a => a.includes('ramal(is) repetido'))], [true, true]);
+}
 // Borda: reserva 0 e 12 unidades por andar (12 × 1,2 = 14,4 → 15 pares → CI 20; blocos = 2)
 const d1 = clonar(motor.exemplo());
 d1.blocos[0].unidades_por_pavimento = 12;

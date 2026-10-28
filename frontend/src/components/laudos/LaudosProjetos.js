@@ -16,6 +16,8 @@ import FormularioGenerico from './FormularioGenerico';
 import ResultadoGenerico from './ResultadoGenerico';
 import EntregasProjeto from './EntregasProjeto';
 import Select from '../Select';
+import { useAuth } from '../../hooks/useAuth';
+import useAlteracoesNaoSalvas from '../../hooks/useAlteracoesNaoSalvas';
 
 // Projetos e laudos por disciplina — abas "Projetos por disciplina" e
 // "Laudos" do hub Obras (versão 2.1: separados). O mesmo componente atende os
@@ -98,6 +100,22 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
   const salvandoRef = useRef(null);
   const versaoRef = useRef(null); // versão no servidor (bloqueio otimista)
   const conflitoRef = useRef(false); // outro gravou: para o salvamento automático até reabrir
+  // Salvamento automático sem perder digitação: cada alteração soma 1 na
+  // revisão; a gravação leva os dados MAIS NOVOS (dadosRef) e só marca "salvo"
+  // se nada mudou enquanto ela ia e voltava — antes o setSujo(false) da
+  // resposta descartava o que fora digitado durante a gravação.
+  const revisaoRef = useRef(0);
+  const dadosRef = useRef(null);
+  dadosRef.current = dados;
+  const laudoAbertoRef = useRef(null); // id do registro aberto (resposta de outro registro é ignorada)
+  laudoAbertoRef.current = laudo?.id ?? null;
+  const sujoRef = useRef(false);
+  sujoRef.current = sujo;
+  const { usuario } = useAuth();
+  // registro de outro usuário: abre só para leitura (o servidor recusa com 403)
+  const [somenteLeitura, setSomenteLeitura] = useState(null);
+  const somenteLeituraRef = useRef(null);
+  somenteLeituraRef.current = somenteLeitura;
 
   // A barra de ações fica presa logo abaixo do menu do sistema (que também é
   // fixo e muda de altura quando os botões quebram linha em telas estreitas)
@@ -117,10 +135,13 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
     planta: DISCIPLINAS_COM_PLANTA.includes(disciplina), unifilar: DISCIPLINAS_COM_UNIFILAR.includes(disciplina),
   };
 
+  // GET /laudos corta a lista (cabeçalho X-Lista-Truncada): avisa "lista parcial"
+  const [listaParcial, setListaParcial] = useState(0);
   const carregarLista = useCallback(async () => {
     try {
       const r = await getLaudos({ disciplina, tipo });
       setLista(r.data);
+      setListaParcial(r.headers?.['x-lista-truncada'] === "1" ? Number(r.headers['x-limite-lista']) || r.data.length : 0);
     } catch { /* lista vazia já informa */ }
   }, [disciplina, tipo]);
 
@@ -155,24 +176,55 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
     setUrlsFotos(urls);
   }
 
-  async function abrir(id) {
+  // Antes de trocar de registro (abrir outro, trocar de disciplina, sair da
+  // tela): grava o que ainda está pendente. Se não der, pergunta.
+  async function gravarPendente() {
+    if (!sujoRef.current || somenteLeituraRef.current || !laudoAbertoRef.current) return true;
+    try {
+      await salvarAgora();
+      return true;
+    } catch {
+      return window.confirm(`As últimas alterações deste ${T.item} não puderam ser salvas. Continuar mesmo assim e perdê-las?`);
+    }
+  }
+
+  async function abrir(id, { semGravar = false } = {}) {
+    if (!semGravar && !(await gravarPendente())) return;
     try {
       const r = await getLaudo(id);
       setLaudo({
         id: r.data.id, tipo: r.data.tipo || 'laudo', disciplina: r.data.disciplina, propostas: r.data.propostas || {},
         gerar_orcamento: r.data.gerar_orcamento !== false, obra: r.data.obra || null, analise_id: r.data.analise_id || null, entregas: r.data.entregas || null,
       });
+      laudoAbertoRef.current = r.data.id;
       versaoRef.current = r.data.versao ?? null;
       conflitoRef.current = false;
+      revisaoRef.current += 1; // gravação em curso do registro anterior não marca este como salvo
       setDados(r.data.dados);
+      dadosRef.current = r.data.dados;
       setFotos(r.data.fotos);
       setResumo(null);
       setSujo(false);
       setSalvoEm(new Date(r.data.atualizado_em));
+      const deOutro = usuario && usuario.role !== 'admin' && r.data.usuario_id != null && Number(r.data.usuario_id) !== Number(usuario.id);
+      setSomenteLeitura(deOutro ? { mensagem: `Este ${T.item} é de outro usuário: só quem o criou (ou um administrador) altera.` } : null);
       carregarFotos(r.data.id, r.data.fotos);
     } catch (err) {
       toast.error(err.response?.data?.erro || `Erro ao abrir o ${T.item}`);
     }
+  }
+
+  // fecha o registro aberto (trocar de disciplina) depois de gravar o pendente
+  async function fechar() {
+    if (!(await gravarPendente())) return false;
+    revisaoRef.current += 1;
+    setLaudo(null); setDados(null); setResumo(null); setSujo(false); setSomenteLeitura(null);
+    return true;
+  }
+
+  // "Duplicar para mim" (registro de outro usuário): cria um registro meu com os mesmos dados
+  async function duplicarParaMim() {
+    await novo(dadosRef.current);
   }
 
   // ?aba=projetos|laudos&laudo=ID — vindo da Análise de Projeto ("Elaborar
@@ -203,11 +255,12 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
   }, [laudoDaUrl]); // só quando o id da URL muda
 
   async function novo(base) {
+    if (!(await gravarPendente())) return;
     try {
       const r = await criarLaudoNaObra(disciplina, base, obraNovo, tipo);
       toast.success(T.criado);
       await carregarLista();
-      await abrir(r.data.id);
+      await abrir(r.data.id, { semGravar: true });
     } catch (err) {
       toast.error(err.response?.data?.erro || `Erro ao criar o ${T.item}`);
     }
@@ -238,34 +291,57 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
   const abrirPasta = useCallback(() => abrirPastaLaudo(laudo.id), [laudo?.id]);
 
   const salvarAgora = useCallback(async () => {
-    if (!laudo || !dados) return;
+    const id = laudoAbertoRef.current;
+    if (!id || !dadosRef.current) return;
+    if (somenteLeituraRef.current) return; // de outro usuário: nada a gravar
     if (conflitoRef.current) {
       throw Object.assign(new Error('conflito de versão'), {
         response: { data: { erro: `Este ${T.item} foi alterado em outro lugar depois que você o abriu. Reabra-o para continuar.` } },
       });
     }
     if (salvandoRef.current) await salvandoRef.current.catch(() => {});
-    const promessa = atualizarLaudo(laudo.id, dados, null, versaoRef.current)
-      .then((r) => { versaoRef.current = r.data?.versao ?? null; setSujo(false); setSalvoEm(new Date()); })
+    if (laudoAbertoRef.current !== id) return; // trocou de registro enquanto esperava
+    const revisao = revisaoRef.current;
+    const promessa = atualizarLaudo(id, dadosRef.current, null, versaoRef.current)
+      .then((r) => {
+        if (laudoAbertoRef.current !== id) return; // resposta de um registro que já foi fechado
+        versaoRef.current = r.data?.versao ?? null;
+        setSalvoEm(new Date());
+        // só "salvo" se nada mudou enquanto gravava; senão o automático grava de novo
+        if (revisaoRef.current === revisao) setSujo(false);
+      })
       .catch(err => {
-        const conflito = err.response?.status === 409;
-        if (conflito) conflitoRef.current = true;
-        toast.error(err.response?.data?.erro || 'Erro ao salvar', conflito ? { duration: 15000 } : undefined);
+        const status = err.response?.status;
+        if (status === 409) conflitoRef.current = true;
+        if (status === 403 && err.response?.data?.codigo !== 'SENHA_PROVISORIA') {
+          setSomenteLeitura({ mensagem: err.response?.data?.erro || `Você não pode alterar este ${T.item}.` });
+        }
+        if (!err.sessaoEncerrada) toast.error(err.response?.data?.erro || 'Erro ao salvar', status === 409 ? { duration: 15000 } : undefined);
         throw err;
       })
       .finally(() => { salvandoRef.current = null; });
     salvandoRef.current = promessa;
     return promessa;
-  }, [laudo, dados, T.item]);
+  }, [T.item]);
 
   // Salvamento automático 2 s depois da última alteração
   useEffect(() => {
-    if (!sujo) return undefined;
+    if (!sujo || somenteLeitura) return undefined;
     const t = setTimeout(() => { salvarAgora().then(carregarLista).catch(() => {}); }, 2000);
     return () => clearTimeout(t);
-  }, [sujo, dados, salvarAgora, carregarLista]);
+  }, [sujo, somenteLeitura, dados, salvarAgora, carregarLista]);
+
+  // Saindo da tela com alteração ainda não gravada: grava na hora (sem
+  // esperar os 2 s) e, até lá, o navegador avisa ao fechar/recarregar a aba
+  useAlteracoesNaoSalvas(sujo && !somenteLeitura,
+    `Há alterações deste ${T.item} que ainda não foram salvas. Sair mesmo assim?`);
+  useEffect(() => () => {
+    if (sujoRef.current && !somenteLeituraRef.current && laudoAbertoRef.current) salvarAgora().catch(() => {});
+  }, [salvarAgora]);
 
   const alterarDados = (atualizador) => {
+    if (somenteLeituraRef.current) return;
+    revisaoRef.current += 1;
     setDados(atual => (typeof atualizador === 'function' ? atualizador(atual) : atualizador));
     setSujo(true);
   };
@@ -463,7 +539,7 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
       <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
           <h3 style={{ ...tituloSecao, marginBottom: 0, flex: 1 }}>{T.titulo}</h3>
-          <Select value={disciplina} onChange={e => { setDisciplina(e.target.value); setLaudo(null); setDados(null); setResumo(null); }}
+          <Select value={disciplina} onChange={e => { const v = e.target.value; fechar().then(ok => { if (ok) setDisciplina(v); }); }}
             style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, color: '#ddd', padding: '8px 10px', fontSize: 13 }}>
             {disciplinas.map(d => <option key={d.chave} value={d.chave}>{d.nome}{d.disponivel ? '' : ' — em preparação'}</option>)}
           </Select>
@@ -493,6 +569,9 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
               </div>
             </div>
 
+            {listaParcial > 0 && (
+              <p data-testid="lista-parcial" style={{ fontSize: 11.5, color: '#c9a227', margin: '0 0 8px' }}>Lista parcial: mostrando os {listaParcial} mais recentes — os mais antigos não aparecem aqui.</p>
+            )}
             {lista.length === 0 ? (
               <p style={{ fontSize: 12, color: '#666', fontStyle: 'italic' }}>{T.vazio}</p>
             ) : (
@@ -526,6 +605,15 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
 
       {laudo && dados && tela && (
         <>
+          {somenteLeitura && (
+            <div data-testid="faixa-somente-leitura" style={{ ...card, padding: '12px 16px', borderColor: '#2f4f6f', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 240, fontSize: 12.5, color: '#ddd', lineHeight: 1.5 }}>
+                <b style={{ color: '#8ab4f8' }}>Somente leitura</b> — {somenteLeitura.mensagem}
+                <span style={{ color: '#888' }}> Você pode calcular e baixar os documentos; para alterar, faça uma cópia sua.</span>
+              </div>
+              <button style={btnPrimario} onClick={duplicarParaMim}><FilePlus2 size={14} /> Duplicar para mim</button>
+            </div>
+          )}
           <div style={{ ...card, position: 'sticky', top: alturaMenu, zIndex: 40, boxShadow: '0 6px 14px rgba(0,0,0,.45)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <div style={{ flex: 1, minWidth: 220 }}>
@@ -555,7 +643,7 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, alignItems: 'center' }}>
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#bbb', marginRight: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}
                 title={ehProjeto ? 'Desmarque quando o projeto for entregue sem orçamento de execução' : 'Desmarque quando for emitido só o laudo, sem orçamento'}>
-                <input type="checkbox" style={{ width: 'auto', margin: 0 }} checked={laudo.gerar_orcamento !== false} onChange={e => alternarOrcamento(e.target.checked)} />
+                <input type="checkbox" style={{ width: 'auto', margin: 0 }} checked={laudo.gerar_orcamento !== false} disabled={!!somenteLeitura} onChange={e => alternarOrcamento(e.target.checked)} />
                 {ehProjeto ? 'Gerar orçamento de execução' : 'Gerar orçamento (inspeção/correção)'}
               </label>
               {laudo.gerar_orcamento === false && <span style={{ fontSize: 12, color: '#777' }}>{ehProjeto ? 'Projeto sem orçamento — só os documentos e as entregas.' : 'Só laudo — os documentos são emitidos sem orçamento.'}</span>}
@@ -625,14 +713,15 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
             </div>
           )}
 
-          <div style={card}>
+          {/* somente leitura: o fieldset desabilita todos os campos do formulário */}
+          <fieldset disabled={!!somenteLeitura} style={{ ...card, minWidth: 0, margin: '0 0 16px' }}>
             <tela.Formulario
               esquema={modelo?.formulario}
               dados={dados} onChange={alterarDados} checklistBase={modelo?.checklistBase || []} resumo={resumo}
               fotos={fotos} urlsFotos={urlsFotos} onEnviarFotos={enviarFotos} onRemoverFoto={removerFoto}
               tipo={laudo.tipo}
             />
-          </div>
+          </fieldset>
         </>
       )}
     </div>

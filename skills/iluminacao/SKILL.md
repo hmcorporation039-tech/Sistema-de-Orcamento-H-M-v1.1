@@ -5,7 +5,7 @@ description: Projeto luminotécnico (método dos lúmens, grade de luminárias, 
 
 # Iluminação — luminotécnico e automação (NBR ISO/CIE 8995-1) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 61 verificações desta disciplina, incluindo o caso do escritório 10 × 8 m calculado à mão). **Não refaça contas de cabeça: rode os scripts.**
+Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 65 verificações desta disciplina, incluindo o caso do escritório 10 × 8 m calculado à mão). **Não refaça contas de cabeça: rode os scripts.**
 
 | Documento | Tipo | Formato |
 |---|---|---|

@@ -6,7 +6,8 @@
 // revisar no formulário antes de gerar documentos e orçamento.
 
 const sqrt = (a) => Math.round(Math.sqrt(a) * 10) / 10;
-const hoje = () => new Date().toISOString().slice(0, 10);
+// data de Brasília (UTC depois das 21h já é o dia seguinte) — utils/dataHoje.js
+const { hojeBrasilia: hoje } = require('./dataHoje');
 
 function base(motor, analise, extraido) {
   const vazio = typeof motor.modeloVazio === 'function' ? motor.modeloVazio() : motor.modeloVazio;

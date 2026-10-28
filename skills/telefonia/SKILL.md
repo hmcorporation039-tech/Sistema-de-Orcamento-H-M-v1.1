@@ -5,7 +5,7 @@ description: Projeto (memorial, ramais, central e placas, prumada CI/CCI, DG e b
 
 # Telefonia e interfonia (práticas Telebrás / NBR 14565 / NBR 14306) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 53 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
+Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 60 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
 
 | Documento | Tipo | Formato |
 |---|---|---|
@@ -43,10 +43,10 @@ O mesmo motor roda no Sistema de Orçamentos (chave `telefonia`, pasta `skills/t
 
 ## Critérios adotados
 
-- **Ramais** = unidades × ramais/unidade + áreas comuns + terminais de portaria + porteiros; com reserva = ⌈em uso × (1 + reserva)⌉ (padrão 20 %).
+- **Ramais** = unidades × ramais/unidade + áreas comuns + terminais de portaria + porteiros; com reserva = ⌈em uso × (1 + reserva)⌉ (padrão 20 %). Numeração: bloco + pavimento + unidade (térreo T01 → 001; subsolo n → unidade S{n}01, ramal 9{n}01); número repetido no plano gera aviso.
 - **Central analógica:** a menor de linha com capacidade ≥ ramais com reserva (16 compacta, 48, 112 tipo CP 112, 192 tipo CP 192); acima de 192 → centrais interligadas + aviso para avaliar IP. Placas = ⌈ramais ÷ ramais por placa (16)⌉; placa de tronco a cada 4 linhas [CONFERIR modelo].
 - **PABX IP:** licenças SIP = ramais com reserva; gateway FXO para troncos analógicos; **híbrido**: gateway FXS com portas = ⌈ramais analógicos × (1 + reserva)⌉ (8/16/24/32 portas), portaria em telefone IP.
-- **Cabos** (fator 1,15): CI por pavimento com pares = ⌈unidades do andar × ramais × (1 + reserva de pares)⌉ → cabo comercial 10/20/30/50/75/100/200 pares, comprimento = (DG → base + pavimento × pé-direito) × 1,15 + 2 m; CCI por ramal = distância média × 1,15 + descida (pé-direito); áreas comuns, portaria e portões: distância × 1,15 + 3 m; porteiro em CCI 4 pares. Alcance prático do ramal analógico 500 m [CONFERIR].
+- **Cabos** (fator 1,15): CI por pavimento com pares = ⌈unidades do andar × ramais × (1 + reserva de pares)⌉ → cabo comercial 10/20/30/50/75/100/200 pares, comprimento = (DG → base + |pavimento| × pé-direito) × 1,15 + 2 m (DG no térreo; subsolo desce); CCI por ramal = distância média × 1,15 + descida (pé-direito); áreas comuns, portaria e portões: distância × 1,15 + 3 m; porteiro em CCI 4 pares. Alcance prático do ramal analógico 500 m [CONFERIR].
 - **DG e blocos IDC-110/BLI de 10 pares:** DG = ⌈pares dos cabos ÷ 10⌉ + ⌈ramais instalados na central ÷ 10⌉ + ⌈troncos ÷ 10⌉; caixa de andar = maior entre ⌈pares do CI ÷ 10⌉ e ⌈pares dos ramais ÷ 10⌉; suporte para até 10 blocos; fio jumper 1,5 m por ramal/tronco.
 - **IP (NBR 14565):** UTP Cat 6 ≤ 90 m; bloco com ponto acima de 90 m ou em outra edificação recebe switch na base da prumada com fibra OM3 até o DG; switches PoE com VLAN de voz; PoE típico 4 W (telefone), 6 W (portaria), 8 W (porteiro) [CONFERIR].
 - **DPS de linha** (NBR 5410 6.3.5, NBR 5419-4, NBR 14306 [CONFERIR vigência]): em cada tronco analógico, porteiro, ramal de área externa e, nas interligações entre edificações, módulo de 10 pares nas duas pontas; DPS classe II na CA; TAP ligado ao BEP com cobre 16 mm². DPS desativado com pares externos → **NC T1 (P2)**.

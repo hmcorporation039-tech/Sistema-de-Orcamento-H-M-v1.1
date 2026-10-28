@@ -14,6 +14,7 @@
 // falham (SUMPRODUCT) — funciona em qualquer Excel, sem fórmula matricial.
 const ExcelJS = require('exceljs');
 const T = require('./tabelas');
+const { ligacaoTue } = require('./calculo');
 const CAP = require('../../dados/capacidade_conducao_cobre.json');
 
 const ABA = {
@@ -176,7 +177,7 @@ function abaTabelas(wb, res) {
   });
   [3, 4].forEach(l => ws.getRow(l).eachCell(x => { x.font = { bold: true, size: 8, color: { argb: COR.ouro } }; x.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR.cabecalho } }; }));
   const colAD = { A1: [0, 1], A2: [2, 3], B1: [4, 5], B2: [6, 7], C: [8, 9], D: [10, 11] };
-  const colEF = { E: [0, 1], F: [2, 4] };
+  const colEF = { E: [0, 1], F: [2, 3] }; // F 3 condutores: trifólio (mesma coluna do motor, tabelas.js)
   SECOES.forEach((s, i) => {
     const r = LIN_SEC0 + i;
     ws.getCell(r, 1).value = s;
@@ -298,7 +299,7 @@ function abaTues(wb, res) {
     entrada(ws.getCell(r, 3), t ? Number(t.potencia_w) : null, '#,##0');
     entrada(ws.getCell(r, 4), t ? Number(t.fp) || 1 : null, '0.00');
     formula(ws.getCell(r, 5), fx(`IF(ISNUMBER(C${r}),C${r}/IF(AND(ISNUMBER(D${r}),D${r}<>0),D${r},1),0)`, t ? Number(t.potencia_w) / (Number(t.fp) || 1) : 0), '#,##0;-#,##0;;@');
-    entrada(ws.getCell(r, 6), t ? t.ligacao || (Number(t.potencia_w) > 4000 ? 'FF' : 'FN') : null); lista(ws.getCell(r, 6), ['FN', 'FF', 'FFF']);
+    entrada(ws.getCell(r, 6), t ? t.ligacao || ligacaoTue(t.potencia_w, res.calc.config) : null); lista(ws.getCell(r, 6), ['FN', 'FF', 'FFF']);
   }
   ws.views = [{ state: 'frozen', ySplit: 4 }];
   return { ws, linhaDe: (k) => 5 + k };
@@ -376,6 +377,13 @@ function abaQuadro(wb, res, prev, tue) {
     ws.getCell(r0 + 1 + i, 2).value = `Fase ${f}`;
     formula(ws.getCell(r0 + 1 + i, 7), fx(fase(f), r2(calc.fases.carga[f] ?? 0, 1)), '#,##0');
   });
+  // corrente por fase = soma das correntes (Ib) dos circuitos ligados à fase — o alimentador sai da maior
+  const K = `$K$5:$K$${ult}`;
+  ws.getCell(r0, 11).value = 'Corrente (A)';
+  ws.getCell(r0, 11).font = { bold: true };
+  ['A', 'B', 'C'].forEach((f, i) => {
+    formula(ws.getCell(r0 + 1 + i, 11), fx(`SUMIF(${F},"*${f}*",${K})`, r2(calc.fases.corrente[f] ?? 0)), '0.00');
+  });
   ws.getCell(r0 + 4, 2).value = 'Desequilíbrio entre fases (≤ 20 % recomendado)';
   const a = `G${r0 + 1}`, b = `G${r0 + 2}`, c3 = `G${r0 + 3}`;
   formula(ws.getCell(r0 + 4, 7), fx(`IF(${P('sistema')}="monofasico",0,IF(${P('sistema')}="bifasico",IF(MAX(${a},${b})=0,0,(MAX(${a},${b})-MIN(${a},${b}))/MAX(${a},${b})),IF(MAX(${a},${b},${c3})=0,0,(MAX(${a},${b},${c3})-MIN(${a},${b},${c3}))/MAX(${a},${b},${c3}))))`, r2(calc.fases.desequilibrio)), '0.0%');
@@ -385,6 +393,7 @@ function abaQuadro(wb, res, prev, tue) {
   return {
     ws, ult,
     col: (L) => ref(ABA.quadro, `$${L}$5:$${L}$${ult}`),
+    correntes: ['A', 'B', 'C'].map((_, i) => ref(ABA.quadro, `$K$${r0 + 1 + i}`)),
   };
 }
 
@@ -422,7 +431,9 @@ function abaDemanda(wb, res, q, tab) {
   secao('ALIMENTADOR DO QUADRO');
   const tri = `${P('sistema')}="trifasico"`, mono = `${P('sistema')}="monofasico"`;
   linha('lig', 'Ligação', fx(`IF(${tri},"FFF",IF(${P('sistema')}="bifasico","FF+N","FN"))`, c.sistema === 'trifasico' ? 'FFF' : c.sistema === 'bifasico' ? 'FF+N' : 'FN'), '');
-  linha('ib', 'Corrente de projeto Ib (A)', fx(`IF(${tri},${B('demVa')}/(SQRT(3)*${P('vff')}),IF(${P('sistema')}="bifasico",${B('demVa')}/(2*${P('vfn')}),${B('demVa')}/${P('vfn')}))`, r2(al.ib)), 'Trifásico D/(√3·Vff); bifásico com neutro D/(2·Vfn); monofásico D/Vfn', { fmt: '0.00' });
+  linha('fdg', 'Fator de demanda global (demanda ÷ instalada)', fx(`IFERROR(${B('demVa')}/(${B('ilumVa')}+${B('tueVa')}),0)`, r2(al.fd, 6)), 'Aplicado à corrente da fase mais carregada', { fmt: '0.0000' });
+  linha('ifase', 'Maior corrente de fase instalada (A)', fx(`MAX(${q.correntes.join(',')})`, r2(al.iFaseMax)), 'Aba Quadro de cargas: soma das Ib dos circuitos de cada fase', { fmt: '0.00' });
+  linha('ib', 'Corrente de projeto Ib (A)', fx(`${B('ifase')}*${B('fdg')}`, r2(al.ib)), 'Maior corrente de fase × FD global (carga desequilibrada: não dividir a demanda pelas fases)', { fmt: '0.00' });
   linha('L', 'Comprimento (m)', fx(P('compAlim'), al.comprimento), 'Aba Parâmetros', { fmt: '0.0' });
   linha('met', 'Método de instalação', fx(P('metodo'), al.metodo), 'Editável', { editavel: true });
   ws.getCell(L.met, 2).dataValidation = { type: 'list', allowBlank: false, formulae: [`"${METODOS.join(',')}"`] };
@@ -431,7 +442,7 @@ function abaDemanda(wb, res, q, tab) {
   linha('fca', 'FCA (Tabela 42)', 1, 'Alimentador sozinho no trecho = 1 (editável)', { editavel: true, fmt: '0.00' });
   linha('smin', 'Seção mínima (mm²)', T.SECAO_MINIMA.alimentador, 'Editável', { editavel: true });
   linha('in', 'Disjuntor geral In (A)', fx(disjuntorPara(B('ib')), al.disjuntor), 'Menor disjuntor ≥ Ib (editável — seletividade, padrão de entrada)', { editavel: true });
-  linha('lim', 'Limite de queda no alimentador (%)', fx(`MAX(0.1,MIN(${P('qAlim')},${P('qTotal')}-MAX(${quedas})))`, r2(al.limiteQueda)), 'Menor entre o critério do alimentador e (total − maior queda terminal)', { fmt: '0.00' });
+  linha('lim', 'Limite de queda no alimentador (%)', fx(`IF(${P('qTotal')}-MAX(${quedas})<0.5,${P('qAlim')},MIN(${P('qAlim')},${P('qTotal')}-MAX(${quedas})))`, r2(al.limiteQueda)), 'Menor entre o critério do alimentador e (total − maior queda terminal); com folga < 0,5 % o circuito terminal é que deve ser aumentado', { fmt: '0.00' });
   const k = `IF(${tri},SQRT(3),2)`, v = `IF(${mono},${P('vfn')},${P('vff')})`;
   linha('scalc', 'Seção calculada (mm²)', fx(secaoQueAtende({ smin: B('smin'), metodo: B('met'), carregados: B('carr'), fct: B('fct'), fca: B('fca'), inDisj: B('in'), k, L: B('L'), ib: B('ib'), v, limite: B('lim') }), al.secao), 'Menor seção que atende mínima, Iz ≥ In e queda');
   linha('sad', 'Seção adotada (mm²)', fx(B('scalc'), al.secao), 'Editável', { editavel: true });

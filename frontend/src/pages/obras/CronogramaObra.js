@@ -125,7 +125,8 @@ export default function CronogramaObra({ obra }) {
         </div>
       )}
 
-      {editando && <EditorCronograma dados={dados} onSalvo={(r) => { aplicar(r); setEditando(false); }} onCancelar={() => setEditando(false)} />}
+      {editando && <EditorCronograma dados={dados} onSalvo={(r) => { aplicar(r); setEditando(false); }} onCancelar={() => setEditando(false)}
+        onRecarregar={() => { setEditando(false); carregar(); }} />}
 
       {temCronograma && !editando && (
         <>
@@ -316,7 +317,7 @@ function PainelGerar({ dados, obra, onGerado, onFechar }) {
 const inp = { padding: '5px 7px', fontSize: 12, background: '#0d0d0d', border: '1px solid #2a2a2a', borderRadius: 4, color: '#ddd' };
 let seqNova = 0;
 
-function EditorCronograma({ dados, onSalvo, onCancelar }) {
+function EditorCronograma({ dados, onSalvo, onCancelar, onRecarregar }) {
   const calc = dados.calculo;
   const cfg = dados.cronograma;
   const [periodicidade, setPeriodicidade] = useState(cfg?.periodicidade || 'mensal');
@@ -328,6 +329,8 @@ function EditorCronograma({ dados, onSalvo, onCancelar }) {
     distAlterada: false, datasOriginais: `${e.inicio}|${e.fim}`,
   })));
   const [salvando, setSalvando] = useState(false);
+  // 409 CONFLITO_VERSAO: outra pessoa salvou o cronograma depois que este editor abriu
+  const [conflito, setConflito] = useState(null);
   const mudouPeriodicidade = periodicidade !== (cfg?.periodicidade || 'mensal');
   const periodos = calc.periodos;
 
@@ -359,7 +362,9 @@ function EditorCronograma({ dados, onSalvo, onCancelar }) {
       toast.success('Cronograma salvo');
       onSalvo(r);
     } catch (e) {
-      toast.error(e.response?.data?.erro || 'Erro ao salvar o cronograma', { duration: 8000 });
+      if (e.response?.status === 409 && e.response?.data?.codigo === 'CONFLITO_VERSAO') {
+        setConflito(e.response.data.erro || 'Outra pessoa salvou este cronograma depois que você começou a editar.');
+      } else toast.error(e.response?.data?.erro || 'Erro ao salvar o cronograma', { duration: 8000 });
     } finally { setSalvando(false); }
   }
 
@@ -367,6 +372,12 @@ function EditorCronograma({ dados, onSalvo, onCancelar }) {
   const td = { ...E.td, padding: '5px 6px' };
   return (
     <div style={{ ...E.card, padding: 14 }}>
+      {conflito && (
+        <div data-testid="aviso-conflito" style={{ border: '1px solid #6a2a2a', background: '#1a0d0d', borderRadius: 8, padding: '10px 12px', marginBottom: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ flex: 1, minWidth: 240, color: '#ddd', fontSize: 12.5 }}><b style={{ color: '#e08080' }}>Não foi salvo:</b> {conflito} Nada foi sobrescrito.</span>
+          <button type="button" style={E.btnPrimario} onClick={() => { if (window.confirm('Descartar as edições deste editor e carregar o cronograma salvo agora?')) onRecarregar(); }}>Recarregar do servidor</button>
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 12, alignItems: 'end', flexWrap: 'wrap', marginBottom: 12 }}>
         <Campo label="Períodos">
           <Select value={periodicidade} onChange={e => setPeriodicidade(e.target.value)} style={{ minWidth: 140 }}>

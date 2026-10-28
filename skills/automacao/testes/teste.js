@@ -1,6 +1,6 @@
 // Teste da automação — lista de pontos, NBR 16401-3, ISO 52120-1/EN 15232 e residencial
 const motor = require('../scripts/lib/index');
-const { classeDe } = require('../scripts/lib/calculo');
+const { classeDe, eficiencia, zonasClimatizacao } = require('../scripts/lib/calculo');
 const { perto, igual, fim } = require('../../_comum/teste').verificador('automação');
 
 const res = motor.processar(motor.exemplo());
@@ -26,6 +26,31 @@ perto('economia climatização', efic.econTh, 1 - 0.80 / 1.51);
 perto('economia demais usos', efic.econEl, 1 - 0.93 / 1.10);
 perto('economia kWh/mês', efic.economiaKwh, 42000 * (1 - 0.80 / 1.51) + 18000 * (1 - 0.93 / 1.10));
 igual('classe A com todas as funções no topo', classeDe({ emissao: 'demanda', ventilacao: 'co2', iluminacao: 'ausencia', gestao: 'otimizacao' }).classe, 'A');
+// Achado A2.5 (revisão 27/10/2026): função em branco na proposta continua como hoje.
+// Atual: emissão central (D), ventilação sem controle (D), gestão sem (D); proposta só
+// "ventilação por CO₂". Antes: proposta avaliada só com ventilação → A; economia
+// térmica 1 − 0,70/1,51 = 53,6 %. Agora: {…atual, ventilação: co2} → menor classe = D → 0 %.
+const soCo2 = eficiencia({ funcoes: { atual: { emissao: 'central', ventilacao: 'sem', gestao: 'sem' }, proposta: { emissao: '', ventilacao: 'co2' } } }, { uso: 'escritorio' }, []);
+igual('proposta parcial: classe D → D (antes D → A)', [soCo2.atual.classe, soCo2.proposta.classe], ['D', 'D']);
+perto('proposta parcial: economia térmica 0 (antes 53,6 %)', soCo2.econTh, 0);
+const avE = [];
+eficiencia({ funcoes: { atual: { emissao: 'central' }, proposta: { emissao: 'demanda', gestao: 'otimizacao' } } }, {}, avE);
+igual('função proposta sem nível atual gera aviso [CONFERIR]', avE.some(a => /sem o nível atual/.test(a)), true);
+igual('proposta toda em branco não gera avaliação', eficiencia({ funcoes: { atual: { emissao: 'central' }, proposta: { emissao: '' } } }, {}, []), null);
+
+// Achado A2.5 (MÉDIO): setpoint de CO₂ abaixo do regime. Auditório 200 m², 150 p/100 m²
+// → 300 pessoas; Vbz = 2,5 × 300 + 0,3 × 200 = 810 L/s; regime = 420 + 0,0052/2,7 × 10⁶
+// ≈ 2 346 → 2 350 ppm; setpoint 1 100. Na ocupação de 60 % (180 p) segurar 1 100 ppm pede
+// 180 × 0,0052 / 680 × 10⁶ = 1 376 L/s > 810 → DCV no máximo, redução 0 (antes: 37 %).
+const avZ = [];
+const zz = zonasClimatizacao({ zonas: [
+  { nome: 'Auditório', area_m2: 200, uso: 'auditorio', controle: 'co2' },
+  { nome: 'Escritório', area_m2: 100, uso: 'escritorio', controle: 'co2' }] }, {}, avZ);
+igual('auditório: regime 2 350 ppm, setpoint 1 100, redução 0 (antes 37 %)', [zz[0].co2Regime, zz[0].setpointCo2, zz[0].reducao], [2350, 1100, 0]);
+igual('… com aviso de que a DCV fica no máximo', avZ.some(a => /Auditório/.test(a) && /não reduz/.test(a)), true);
+// escritório: setpoint = regime (1 030 ppm) → redução de 12 %: 1 − (0,3·100 + 2,5·5·0,6)/42,5
+perto('escritório com setpoint = regime mantém a redução proporcional', zz[1].reducao, 1 - (30 + 2.5 * 5 * 0.6) / 42.5);
+
 // Ensaio de sensor: 23,8 × 23,5 com tolerância 0,5 → conforme; CO₂ 820 × 790 (±75) → conforme
 igual('sensores conformes', res.med.sensores.every(s => s.resultado === 'C'), true);
 

@@ -5,7 +5,7 @@ description: Projeto (memorial, dimensionamento de leitores, fechaduras, control
 
 # Controle de acesso (IEC 60839-11 / NBR 9077 / LGPD) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 35 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
+Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 42 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
 
 | Documento | Tipo | Formato |
 |---|---|---|
@@ -46,7 +46,7 @@ O mesmo motor roda no Sistema de Orçamentos (chave `controle_acesso`, pasta `sk
 - **Fechaduras:** força do eletroímã pelo material (madeira leve 150 kgf; madeira, vidro e alumínio 300 kgf; metálica/portão 500 kgf) ou pelo peso (≤ 40 kg 150, ≤ 80 kg 300, acima 500) [CONFERIR]; porta dupla = uma por folha; eletroímã é sempre fail-safe.
 - **Controladoras** = max(⌈portas × (1 + reserva) ÷ portas/controladora⌉, ⌈leitores ligados × (1 + reserva) ÷ leitores/controladora⌉); catracas têm controladora própria (rede).
 - **Fonte e bateria por controladora:** repouso = controladora + leitores + fechaduras fail-safe; pico = repouso + acionamento das fail-secure; fonte ≥ pico × 1,25; bateria ≥ repouso × autonomia × 1,25 [CONFERIR].
-- **Cabos** = distância × 1,15: manga blindada 6 vias (Wiegand) ou 4 vias (RS-485) por leitor; manga 4 vias para sensor/botoeira; cabo PP 2 × S para a fechadura com queda ≤ 10 % de 12 V (ΔV = 2·L·I·ρ/S); UTP Cat 6 ≤ 90 m (NBR 14565) para leitores IP e catracas. Avisos: Wiegand > 100 m, UTP > 90 m, queda acima de 2,5 mm².
+- **Cabos** = distância × 1,15: manga blindada 6 vias (Wiegand) ou 4 vias (RS-485) por leitor; manga 4 vias para sensor/botoeira; cabo PP 2 × S para a fechadura com queda ≤ 10 % de 12 V (ΔV = 2·L·I·ρ/S); alimentação do leitor pelo par 24 AWG da manga (0,205 mm²) verificada com o mesmo limite — acima dele o leitor ganha par PP próprio (ou fonte local) e entra nos materiais; UTP Cat 6 ≤ 90 m (NBR 14565) para leitores IP e catracas. Avisos: Wiegand > 100 m, UTP > 90 m, queda acima de 2,5 mm².
 - **Credenciais:** cartões = usuários × 1,1; visitantes × 1,1; TAGs = veículos × 1,1; licença por portas (pontos + reserva).
 - **LGPD:** biometria/face = dado sensível (art. 5º II e 11): aviso junto ao leitor, base legal registrada, alternativa sem biometria, templates criptografados, retenção e exclusão.
 - Correntes, potências PoE e forças são típicas de mercado e saem com [CONFERIR] — usar a ficha técnica do equipamento escolhido. Alturas de leitores/botoeiras 0,80–1,20 m (NBR 9050) [CONFERIR edição].

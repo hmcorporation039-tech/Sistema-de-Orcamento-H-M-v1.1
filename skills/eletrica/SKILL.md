@@ -5,7 +5,7 @@ description: Projeto (memorial, quadro de cargas, dimensionamento de circuitos e
 
 # Elétrica predial (NBR 5410) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 37 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
+Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 94 verificações desta disciplina, mais 15 da função comum de DPS em `testes/teste-dps.js`). **Não refaça contas de cabeça: rode os scripts.**
 
 | Documento | Tipo | Formato |
 |---|---|---|
@@ -54,7 +54,12 @@ O projetista ajusta o quadro de cargas durante o projeto sem perder as contas da
 
 - Previsão de cargas pela NBR 5410, 9.5.2 (iluminação por área e TUG por perímetro/ambiente); TUEs por ambiente em `tues`.
 - Seção pelo maior entre capacidade de condução (Tabelas 36–39, fatores das Tabelas 40 e 42), proteção (In ≤ Iz) e queda de tensão (6.2.7); seções mínimas da Tabela 47 e PE da Tabela 58.
-- Alimentador bifásico com 3 condutores carregados (Tabela 46). Fatores de demanda típicos marcados [CONFERIR com a Neoenergia DIS-NOR-030/053].
+- Alimentador pela fase mais carregada: Ib = (soma das correntes dos circuitos da fase — F-N P/Vfn, F-F P/Vff nas duas fases, 3F P/(√3·Vff)) × FD global (demanda ÷ instalada). Dividir a demanda pelas fases subdimensiona a fase carregada. Bifásico com 3 condutores carregados (Tabela 46). Fatores de demanda típicos marcados [CONFERIR com a Neoenergia DIS-NOR-030/053].
+- TUE > 4 kW sugerida em F-F só em 127/220 V com 2ª fase; em 220/380 V (DF) e no monofásico fica F-N.
+- Seccionamento automático (5.1.2.2.4.2, TN): Zs·Ia ≤ Uo com Ia = 10·In (curva C); Zs = laço fase–PE do alimentador e do circuito (ρ = 0,0225) + fonte (2·Uo/Icc, só com a Icc da entrada informada). Circuito que não atende recebe DR 30 mA (aviso com o comprimento máximo sem DR). Esquema TT: DR em todos os circuitos (5.1.2.2.4.3).
+- Curto-circuito (5.3.5.5): Icc presumida no quadro a partir da Icc da entrada (`instalacao.icc_entrada_ka`; vazio = 10 kA adotados [CONFERIR]) e do alimentador → capacidade de interrupção dos disjuntores; k²S² (Tabela 30) no memorial para conferir com o I²t do fabricante [CONFERIR].
+- DPS: Uc pela Tabela 49 (função comum `skills/_comum/dps.js`, usada também por hospitalar, industrial, solar e carregador).
+- Tabela 40 fora da faixa (ex.: PVC acima de 60 °C) é erro; método F com 3 condutores usa a coluna "trifólio" (Tabela 38/39). Com a queda total já estourada no circuito terminal (folga < 0,5 %), o alimentador fica no seu limite e o aviso aponta o circuito terminal.
 
 O checklist de inspeção (37 itens) está em `dados/checklist_base.json`; itens não conformes viram não conformidades com prioridade (P1 48 h, P2 30 dias, P3 90 dias, P4 manutenção) e entram no orçamento do modo de inspeção.
 

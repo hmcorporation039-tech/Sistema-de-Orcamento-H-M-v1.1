@@ -3,11 +3,14 @@ import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import toast from 'react-hot-toast';
 import { Plus, Trash2, FolderPlus, FileDown, Send, FilePlus2, Search, ArrowLeft, Calculator, BarChart3 } from 'lucide-react';
 import {
-  getClientes, getMateriais, getServicos, getSegmentoCliente, getProximoNumero, criarProposta, atualizarProposta, getProposta,
-  pesquisarPrecoMercado, getAnaliseProjeto, getLaudo, getObra,
+  getTodosClientes, getTodosMateriais, getServicos, getSegmentoCliente, getProximoNumero, criarProposta, atualizarProposta, getProposta,
+  pesquisarPrecoMercado, getAnaliseProjeto, getLaudo, getObra, duplicarProposta,
 } from '../services/api';
 import api from '../services/api';
 import { formatarMoeda } from '../utils/format';
+import { arred2, arredQtd, totalDaLinha } from '../utils/dinheiro';
+import { useAuth } from '../hooks/useAuth';
+import useAlteracoesNaoSalvas from '../hooks/useAlteracoesNaoSalvas';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
 import CampoMoeda from '../components/CampoMoeda';
 import BlocoPesquisaMercado, { resultadoDaPesquisa } from '../components/PesquisaMercado';
@@ -25,14 +28,51 @@ import BotaoLinkAprovacao from '../components/BotaoLinkAprovacao';
 // BDI diferenciado de materiais preenchido? (vazio/null = mesmo BDI para tudo — calculoProposta.bdiMateriaisDefinido)
 const temBdiMateriais = (v) => v !== undefined && v !== null && v !== '' && Number.isFinite(Number(v));
 
-// arredondamento a 2 casas igual ao do servidor (calculoProposta.arredondar)
-const arred2 = (v) => Math.round(((Number(v) || 0) + Number.EPSILON) * 100) / 100;
+// Item pertence à seção só quando os DOIS lados têm id (calculoProposta.itemPertenceASecao:
+// sid e id ambos vazios contavam o item em todas as seções)
+const pertenceASecao = (it, sid) => sid != null && it.sid != null && String(it.sid) === String(sid);
+
+// Arredondamentos iguais aos do servidor (utils/dinheiro.js ↔ calculoProposta):
+// quantidade 3 casas, unitário 2, linha 2 (totalDaLinha), parcelas 2 (arred2).
+
+// Rascunho da proposta neste navegador (localStorage), por usuário e por
+// proposta ("nova" = ainda não gravada): sessão vencida, aba fechada ou queda
+// de energia não levam o trabalho junto — ao reabrir, a tela oferece restaurar.
+const chaveRascunho = (usuarioId, propostaId) => `hm_rascunho_proposta:${usuarioId || 0}:${propostaId || 'nova'}`;
+function lerRascunho(chave) {
+  try {
+    const r = JSON.parse(localStorage.getItem(chave) || 'null');
+    return r && r.form && Array.isArray(r.secoes) && Array.isArray(r.itens) ? r : null;
+  } catch { return null; }
+}
+function gravarRascunho(chave, dados) {
+  try { localStorage.setItem(chave, JSON.stringify(dados)); } catch { /* armazenamento cheio: segue sem rascunho */ }
+}
+function apagarRascunho(chave) {
+  try { localStorage.removeItem(chave); } catch { /* nada */ }
+}
+// retrato do que está na tela, para saber se há alteração não salva — sem os
+// ids temporários (mudam a cada carga): seção pela posição, item sem id
+function retrato(form, secoes, itens) {
+  const posicao = new Map(secoes.map((s, i) => [String(s.id), i]));
+  return JSON.stringify({
+    form,
+    secoes: secoes.map(s => s.nome),
+    itens: itens.map(({ id, sid, ...resto }) => ({ ...resto, sid: posicao.has(String(sid)) ? posicao.get(String(sid)) : String(sid) })),
+  });
+}
+
+// Proposta nova gravada: a URL vira /propostas/editar/:id e o React Router pode
+// montar a tela de novo — o que estava nela (inclusive as pesquisas de mercado
+// abertas) passa por aqui em vez de ser relido do servidor.
+let transporte = null;
 
 let contador = 0;
 const gerarId = () => `tmp_${Date.now()}_${contador++}`;
 
-const FORM_VAZIO = {
-  data: new Date().toISOString().slice(0, 10),
+const formVazio = () => ({
+  // data local (toISOString é UTC: depois das 21 h saía o dia seguinte)
+  data: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10),
   validade: 5,
   tipo: '',
   porte: '',
@@ -57,7 +97,7 @@ const FORM_VAZIO = {
   // obra (2.0, Fase 2D/2E): a proposta pertence a uma obra (ou a nenhuma);
   // proposta nova aberta a partir da obra (?obra=ID) já vem com ela
   obra_id: null,
-};
+});
 
 const SECOES_PADRAO = () => [
   { id: gerarId(), nome: 'Materiais' },
@@ -155,7 +195,7 @@ export default function Orcamento() {
   // nome de órgão) usa a referência oficial; os demais, a particular
   const [segmento, setSegmento] = useState('privado');
 
-  const [form, setForm] = useState(FORM_VAZIO);
+  const [form, setForm] = useState(formVazio);
   const [secoes, setSecoes] = useState(SECOES_PADRAO);
   const [itens, setItens] = useState([]);
   // Campos transientes do reajuste/desconto — só existem enquanto o usuário
@@ -168,11 +208,18 @@ export default function Orcamento() {
   // versão da proposta no servidor (bloqueio otimista): quem gravou depois
   // que esta tela abriu faz o salvar daqui ser recusado, em vez de sobrescrito
   const versaoRef = useRef(null);
-  // Vira true quando o usuário edita algo DEPOIS de já ter salvo — nesse caso o
-  // botão de salvar reaparece. Antes ele sumia para sempre após o primeiro
-  // salvamento, mas os campos continuavam editáveis: a pessoa corrigia um
-  // preço, via o total mudar na tela e não tinha como gravar a correção.
-  const [alteracoesPendentes, setAlteracoesPendentes] = useState(false);
+  // Alteração não salva = o que está na tela difere do retrato tirado ao
+  // carregar/gravar (`base`). Antes só se sabia isso depois do primeiro
+  // salvamento — e nada avisava ao sair da tela, fechar a aba ou clicar em
+  // "Novo Orçamento".
+  const [base, setBase] = useState(null);
+  const { usuario } = useAuth();
+  // { mensagem } — proposta de outro usuário (abre só para leitura) ou 403 ao salvar
+  const [somenteLeitura, setSomenteLeitura] = useState(null);
+  // { mensagem } — 409: outra pessoa gravou a proposta depois que esta tela abriu
+  const [conflito, setConflito] = useState(null);
+  // rascunho guardado neste navegador esperando a pessoa decidir (restaurar/descartar)
+  const [rascunhoPendente, setRascunhoPendente] = useState(null);
   const [gerandoPdf, setGerandoPdf] = useState(false);
   const [modalEmail, setModalEmail] = useState(false);
   const [carregandoEdicao, setCarregandoEdicao] = useState(!!editandoId);
@@ -198,10 +245,53 @@ export default function Orcamento() {
   const calculadoraJaSugerida = useRef(null); // id da proposta em que o calculador já abriu sozinho
 
   useEffect(() => {
-    getClientes({ porPagina: 1000 }).then(res => setClientes(res.data.itens)).catch(() => {});
-    getMateriais({ porPagina: 1000 }).then(res => setMateriais(res.data.itens)).catch(() => {});
+    // catálogo e clientes inteiros (o servidor pagina em até 1000 por vez)
+    getTodosClientes().then(res => setClientes(res.data.itens)).catch(() => {});
+    getTodosMateriais().then(res => setMateriais(res.data.itens)).catch(() => {});
     getServicos().then(res => setServicos(res.data.itens || [])).catch(() => {});
   }, []);
+
+  // ── alteração não salva, rascunho e aviso ao sair ──
+  const estadoAtual = useMemo(() => retrato(form, secoes, itens), [form, secoes, itens]);
+  const sujo = base !== null && estadoAtual !== base;
+  const chaveDoRascunho = chaveRascunho(usuario?.id, editandoId);
+  const { liberar } = useAlteracoesNaoSalvas(sujo && !carregandoEdicao,
+    'Há alterações não salvas nesta proposta. Sair mesmo assim?\n\n(Elas ficam guardadas como rascunho neste navegador e podem ser restauradas ao abrir a proposta de novo.)');
+
+  // grava o rascunho ~1 s depois da última alteração (não enquanto a tela
+  // oferece restaurar um rascunho anterior — senão ele seria sobrescrito)
+  useEffect(() => {
+    if (!sujo || rascunhoPendente || carregandoEdicao) return undefined;
+    const t = setTimeout(() => gravarRascunho(chaveDoRascunho, {
+      salvoEm: new Date().toISOString(), versao: versaoRef.current, numero: numeroEditando || null, form, secoes, itens,
+    }), 800);
+    return () => clearTimeout(t);
+  }, [sujo, rascunhoPendente, carregandoEdicao, chaveDoRascunho, form, secoes, itens, numeroEditando]);
+
+  // depois de carregar (ou abrir em branco): há rascunho diferente do que veio?
+  function oferecerRascunho(chave, retratoCarregado) {
+    const r = lerRascunho(chave);
+    if (r && retrato(r.form, r.secoes, r.itens) !== retratoCarregado) setRascunhoPendente({ ...r, chave });
+    else if (r) apagarRascunho(chave);
+  }
+
+  function restaurarRascunho() {
+    const r = rascunhoPendente;
+    if (!r) return;
+    setForm({ ...formVazio(), ...r.form });
+    setSecoes(r.secoes);
+    setItens(r.itens);
+    // a versão do rascunho: se a proposta mudou no servidor depois dele, o
+    // salvar dá conflito (409) em vez de sobrescrever o trabalho do outro
+    if (editandoId && r.versao != null) versaoRef.current = r.versao;
+    setRascunhoPendente(null);
+    toast.success('Rascunho restaurado — confira e salve');
+  }
+
+  function descartarRascunho() {
+    if (rascunhoPendente) apagarRascunho(rascunhoPendente.chave);
+    setRascunhoPendente(null);
+  }
 
   // Segmento pelo backend (mesma regra dos laudos e da Análise de Projeto),
   // só depois que o nome do cliente para de mudar
@@ -252,21 +342,16 @@ export default function Orcamento() {
   const servicoDoItem = (it) => servicosPorCodigo[it.codigo] || servicosPorDescricao[normalizarNome(it.descricao)];
   const materiaisPorId = useMemo(() => Object.fromEntries(materiais.map(m => [String(m.id), m])), [materiais]);
 
-  useEffect(() => {
-    setPesquisas({});
-    setOrigem(null);
-    if (!editandoId) {
-      getProximoNumero().then(res => setProximoNumero(res.data.proximo)).catch(() => {});
-      if (obraDaUrl) setForm(f => ({ ...f, obra_id: obraDaUrl }));
-      return;
-    }
+  // Carrega a proposta do servidor e tira o retrato "salvo" (base). Usado ao
+  // abrir e no "Recarregar do servidor" do conflito de versão.
+  function carregarDoServidor(id, { oferecer = true } = {}) {
     setCarregandoEdicao(true);
-    getProposta(editandoId).then(res => {
+    return getProposta(id).then(res => {
       const p = res.data;
       versaoRef.current = p.versao ?? null;
       setNumeroEditando(p.numero);
       setClienteEmailCadastro(p.cliente_email || '');
-      setForm({
+      const formCarregado = {
         data: (p.data || '').slice(0, 10),
         validade: p.validade,
         tipo: p.tipo || '',
@@ -285,8 +370,8 @@ export default function Orcamento() {
         desconto_materiais_pct: p.desconto_materiais_pct != null ? Number(p.desconto_materiais_pct) : null,
         desconto_mao_obra_pct: p.desconto_mao_obra_pct != null ? Number(p.desconto_mao_obra_pct) : null,
         obra_id: p.obra_id ?? null,
-      });
-      setSecoes((p.secoes || []).map(s => ({ id: s.id, nome: s.nome })));
+      };
+      const secoesCarregadas = (p.secoes || []).map(s => ({ id: s.id, nome: s.nome }));
       // Reagrupa por subgrupo já ao carregar — sem isso, uma proposta salva
       // antes dessa correção (ou com itens lançados fora de ordem) só ficava
       // reorganizada depois que alguém mexesse manualmente num subgrupo.
@@ -299,14 +384,63 @@ export default function Orcamento() {
       for (const sid of new Set(itensCarregados.map(it => it.sid))) {
         itensCarregados = reordenarPorSubgrupo(itensCarregados, sid);
       }
+      setForm(formCarregado);
+      setSecoes(secoesCarregadas);
       setItens(itensCarregados);
+      const retratoCarregado = retrato(formCarregado, secoesCarregadas, itensCarregados);
+      setBase(retratoCarregado);
       setPropostaSalva(null);
+      setConflito(null);
+      // Proposta de outro usuário: abre só para leitura (o servidor recusaria
+      // o salvar com 403). Registro antigo sem dono é livre, como na posse.
+      const deOutro = usuario && usuario.role !== 'admin' && p.usuario_id != null && Number(p.usuario_id) !== Number(usuario.id);
+      const criador = [...(p.eventos || [])].reverse().find(e => e.usuario_nome)?.usuario_nome || '';
+      setSomenteLeitura(deOutro ? { mensagem: `Esta proposta é de ${criador || 'outro usuário'}: só quem a criou (ou um administrador) altera.` } : null);
+      if (oferecer && !deOutro) oferecerRascunho(chaveRascunho(usuario?.id, id), retratoCarregado);
       carregarOrigem(p, itensCarregados);
-    }).catch(() => {
-      toast.error('Erro ao carregar proposta para edição');
-      navigate('/orcamento');
+    }).catch((err) => {
+      if (err?.response?.status === 401) return; // sessão: o "Entre de novo" cuida
+      toast.error(err?.response?.data?.erro || 'Erro ao carregar proposta para edição');
+      navigate('/propostas?aba=lista');
     }).finally(() => setCarregandoEdicao(false));
-  }, [editandoId, navigate, obraDaUrl]);
+  }
+
+  useEffect(() => {
+    // acabou de criar esta proposta aqui (a URL passou a ter o id): a tela já
+    // tem tudo — recarregar perderia as pesquisas de mercado abertas
+    // (a troca de rota pode montar a tela de novo: o estado vem pelo `transporte`)
+    if (editandoId && transporte && transporte.id === String(editandoId)) {
+      const t = transporte;
+      transporte = null;
+      setForm(t.form); setSecoes(t.secoes); setItens(t.itens);
+      setPesquisas(t.pesquisas); setOrigem(t.origem);
+      setPropostaSalva(t.propostaSalva); setNumeroEditando(t.numero || '');
+      versaoRef.current = t.versao;
+      setBase(t.base);
+      setConflito(null); setSomenteLeitura(null); setRascunhoPendente(null);
+      setCarregandoEdicao(false);
+      return;
+    }
+    setPesquisas({});
+    setOrigem(null);
+    setRascunhoPendente(null);
+    setConflito(null);
+    setSomenteLeitura(null);
+    if (!editandoId) {
+      getProximoNumero().then(res => setProximoNumero(res.data.proximo)).catch(() => {});
+      const inicial = { ...formVazio(), obra_id: obraDaUrl || null };
+      const secoesIniciais = SECOES_PADRAO();
+      setForm(inicial);
+      setSecoes(secoesIniciais);
+      setItens([]);
+      setPropostaSalva(null);
+      const r = retrato(inicial, secoesIniciais, []);
+      setBase(r);
+      oferecerRascunho(chaveRascunho(usuario?.id, null), r);
+      return;
+    }
+    carregarDoServidor(editandoId);
+  }, [editandoId, obraDaUrl]); // eslint-disable-line
 
   // Origem do rascunho (análise ou laudo): mostra no topo com o link de volta.
   // Da análise, traz também (1) as pesquisas de mercado que ficaram salvas
@@ -399,19 +533,16 @@ export default function Orcamento() {
     [clientes, form.cliente_nome]
   );
 
-  // Marca que há edição não salva depois de a proposta já ter sido gravada.
-  useEffect(() => {
-    if (propostaSalva) setAlteracoesPendentes(true);
-    // eslint-disable-next-line
-  }, [form, secoes, itens]);
+  // Botão de salvar, PDF/planilha/e-mail: "alterações não salvas" = sujo
+  const alteracoesPendentes = sujo;
 
-  // Mesma conta do servidor (backend/src/utils/calculoProposta.js): unitário
-  // arredondado a 2 casas, total de cada linha arredondado, e cada componente
-  // (subtotais, BDI, impostos, total) arredondado — tela e PDF batem no centavo.
+  // Mesma conta do servidor (backend/src/utils/calculoProposta.js): quantidade
+  // com 3 casas, unitário com 2, total de cada linha arredondado, e cada
+  // componente (subtotais, BDI, impostos, total) arredondado — tela e PDF batem no centavo.
   function subtotalSecao(sid) {
     return itens
-      .filter(it => it.sid === sid)
-      .reduce((s, it) => s + arred2((Number(it.quantidade) || 0) * arred2(Number(it.valor_unitario) || 0)), 0);
+      .filter(it => pertenceASecao(it, sid))
+      .reduce((s, it) => s + totalDaLinha(it.quantidade, it.valor_unitario), 0);
   }
 
   const { subtotalMateriais, subtotalMaoObra, valorBdi, valorBdiMateriais, valorBdiMaoObra, valorImpostoVenda, valorImpostoServico, total } = useMemo(() => {
@@ -446,8 +577,9 @@ export default function Orcamento() {
   const itensCurvaAbc = useMemo(() => {
     const tipoDaSecao = new Map(secoes.map(s => [s.id, ehMaoDeObra(s.nome) ? 'servico' : 'material']));
     return itens.map(it => ({
-      descricao: it.descricao, quantidade: Number(it.quantidade) || 0, unidade: it.unidade,
-      valor_unitario: Number(it.valor_unitario) || 0, codigo: it.codigo, tipo: tipoDaSecao.get(it.sid) || 'material',
+      // como o servidor grava (quantidade 3 casas, unitário 2): mesma curva do PDF
+      descricao: it.descricao, quantidade: arredQtd(it.quantidade), unidade: it.unidade,
+      valor_unitario: arred2(it.valor_unitario), codigo: it.codigo, tipo: tipoDaSecao.get(it.sid) || 'material',
     }));
   }, [itens, secoes]);
 
@@ -519,7 +651,7 @@ export default function Orcamento() {
   // itens dele) sempre que o subgrupo muda ou a lista acaba — sem subtotal
   // pros itens sem subgrupo (não formam um "bloco" de verdade).
   function itensAgrupados(sid) {
-    const lista = itens.filter(it => it.sid === sid);
+    const lista = itens.filter(it => pertenceASecao(it, sid));
     const linhas = [];
     let ultimoSubgrupo = null;
     let somaGrupo = 0;
@@ -534,7 +666,7 @@ export default function Orcamento() {
         ultimoSubgrupo = sg;
         somaGrupo = 0;
       }
-      somaGrupo += (Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0);
+      somaGrupo += totalDaLinha(it.quantidade, it.valor_unitario);
       linhas.push({ tipo: 'item', item: it });
     }
     fecharGrupo();
@@ -558,7 +690,6 @@ export default function Orcamento() {
       for (const sid of new Set(comSid.map(i => i.sid))) l = reordenarPorSubgrupo(l, sid);
       return l;
     });
-    if (propostaSalva) setAlteracoesPendentes(true);
   }
 
   // o cliente aprovou/recusou pelo link: o status (e a versão) mudam no servidor;
@@ -675,33 +806,40 @@ export default function Orcamento() {
     setItens(it => it.filter(i => i.id !== id));
   }
 
-  function limparFormulario() {
-    setForm(FORM_VAZIO);
-    setSecoes(SECOES_PADRAO());
-    setItens([]);
-  }
-
   function novoOrcamento() {
-    limparFormulario();
+    if (sujo && !window.confirm('Há alterações não salvas nesta proposta. Começar um orçamento novo mesmo assim?\n\n(Elas ficam guardadas como rascunho neste navegador.)')) return;
+    liberar();
     setPropostaSalva(null);
-    setAlteracoesPendentes(false);
     if (editandoId) {
-      navigate('/orcamento');
+      navigate('/propostas?aba=editar');
     } else {
+      // já está em "nova": o efeito de carga não roda de novo — limpa aqui
+      const inicial = formVazio();
+      const secoesIniciais = SECOES_PADRAO();
+      setForm(inicial);
+      setSecoes(secoesIniciais);
+      setItens([]);
+      setPesquisas({});
+      setOrigem(null);
+      setBase(retrato(inicial, secoesIniciais, []));
       getProximoNumero().then(r => setProximoNumero(r.data.proximo)).catch(() => {});
     }
   }
 
+  // id e número da proposta aberta (salva agora ou carregada para edição)
+  const idAtual = propostaSalva?.id || editandoId || null;
+  const numeroAtual = propostaSalva?.numero || numeroEditando || '';
+
   const [gerandoPlanilha, setGerandoPlanilha] = useState(false);
   async function baixarPlanilha() {
-    if (!propostaSalva) return;
+    if (!idAtual) return;
     setGerandoPlanilha(true);
     try {
-      const res = await api.get(`/propostas/${propostaSalva.id}/planilha`, { responseType: 'blob' });
+      const res = await api.get(`/propostas/${idAtual}/planilha`, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${form.cliente_nome.trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_')}_${propostaSalva.numero}.xlsx`;
+      link.download = `${form.cliente_nome.trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_')}_${numeroAtual}.xlsx`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -714,19 +852,19 @@ export default function Orcamento() {
   }
 
   async function baixarPdf() {
-    if (!propostaSalva) return;
+    if (!idAtual) return;
     setGerandoPdf(true);
     try {
       // anexos opcionais (Fase 3F): curva ABC e composição do BDI — desligados por padrão
       const params = {};
       if (anexosPdf.curva_abc) params.curva_abc = 1;
       if (anexosPdf.composicao_bdi) params.composicao_bdi = 1;
-      const res = await api.get(`/propostas/${propostaSalva.id}/pdf`, { responseType: 'blob', params });
+      const res = await api.get(`/propostas/${idAtual}/pdf`, { responseType: 'blob', params });
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
       const link = document.createElement('a');
       link.href = url;
       const nomeCliente = form.cliente_nome.trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_');
-      link.download = `${nomeCliente}_${propostaSalva.numero}.pdf`;
+      link.download = `${nomeCliente}_${numeroAtual}.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -738,70 +876,97 @@ export default function Orcamento() {
     }
   }
 
-  async function salvar() {
+  // Confere o que o servidor também recusaria, apontando o item com problema
+  function validarParaSalvar() {
     if (!form.cliente_nome.trim()) {
       toast.error('Informe o cliente da proposta');
-      return;
+      return false;
     }
     if (itens.length === 0) {
       toast.error('Adicione ao menos um item à proposta');
-      return;
+      return false;
     }
-    // Validação por item: o backend recusa (400), mas é melhor apontar o
-    // problema aqui, dizendo qual item está errado, do que só repassar o erro.
     for (const [i, it] of itens.entries()) {
       if (!String(it.descricao || '').trim()) {
         toast.error(`O item ${i + 1} está sem descrição`);
-        return;
+        return false;
       }
       const qtd = Number(it.quantidade);
       if (!Number.isFinite(qtd) || qtd < 0) {
         toast.error(`Quantidade inválida no item ${i + 1}`);
-        return;
+        return false;
       }
       const vu = Number(it.valor_unitario);
       if (!Number.isFinite(vu) || vu < 0) {
         toast.error(`Valor unitário inválido no item ${i + 1}`);
-        return;
+        return false;
       }
     }
+    return true;
+  }
 
+  function montarPayload() {
+    return {
+      data: form.data,
+      validade: Number(form.validade) || 5,
+      tipo: form.tipo,
+      porte: form.porte,
+      cliente_id: clienteResolvido?.id || null,
+      cliente_nome: form.cliente_nome.trim(),
+      responsavel: form.responsavel,
+      local_obra: form.local_obra,
+      escopo: form.escopo,
+      pagamento: form.pagamento,
+      observacoes: form.observacoes,
+      bdi: Number(form.bdi) || 0,
+      // Fase 3F: sempre enviados — null limpa (BDI único / sem composição)
+      bdi_materiais: temBdiMateriais(form.bdi_materiais) ? Number(form.bdi_materiais) : null,
+      bdi_memoria: form.bdi_memoria || null,
+      imposto_venda: Number(form.imposto_venda) || 0,
+      imposto_servico: Number(form.imposto_servico) || 0,
+      desconto_materiais_pct: form.desconto_materiais_pct,
+      desconto_mao_obra_pct: form.desconto_mao_obra_pct,
+      // obra (2.0): sempre enviada — no PUT, null desliga a proposta da obra
+      obra_id: form.obra_id || null,
+      // Subtotais/BDI/impostos/total não são mais enviados: o backend
+      // recalcula tudo a partir dos itens (antes ele gravava o que o
+      // navegador mandasse, e uma quantidade zerada fazia o PDF sair com a
+      // linha valendo o preço cheio e o total geral sem ela).
+      secoes: secoes.map(s => ({ id: s.id, nome: s.nome })),
+      itens: itens.map(it => ({
+        // quantidade com 3 casas e unitário com 2, como o servidor grava
+        sid: it.sid, desc: it.descricao, qtd: arredQtd(it.quantidade),
+        un: it.unidade, vu: arred2(it.valor_unitario), ncm: it.ncm || null,
+        codigo: it.codigo || null, material_id: it.material_id || null,
+        subgrupo: it.subgrupo?.trim() || null, status: it.status || 'confirmado'
+      })),
+    };
+  }
+
+  // Gravou: o que está na tela passa a ser o "salvo" e o rascunho sai
+  function marcarSalvo(chaveRascunhoAntiga) {
+    setBase(estadoAtual);
+    apagarRascunho(chaveRascunhoAntiga || chaveDoRascunho);
+    setConflito(null);
+  }
+
+  // Proposta nova gravada: a URL passa a ser a da proposta (F5, voltar e
+  // favoritos abrem ela), sem recarregar a tela
+  function irParaProposta(id, salva) {
+    transporte = {
+      id: String(id), form, secoes, itens, pesquisas, origem, propostaSalva: salva,
+      numero: salva?.numero || '', versao: versaoRef.current, base: estadoAtual,
+    };
+    liberar();
+    navigate(`/propostas/editar/${id}`, { replace: true });
+  }
+
+  async function salvar() {
+    if (somenteLeitura) return;
+    if (!validarParaSalvar()) return;
     setSalvando(true);
     try {
-      const payload = {
-        data: form.data,
-        validade: Number(form.validade) || 5,
-        tipo: form.tipo,
-        porte: form.porte,
-        cliente_id: clienteResolvido?.id || null,
-        cliente_nome: form.cliente_nome.trim(),
-        responsavel: form.responsavel,
-        local_obra: form.local_obra,
-        escopo: form.escopo,
-        pagamento: form.pagamento,
-        observacoes: form.observacoes,
-        bdi: Number(form.bdi) || 0,
-        // Fase 3F: sempre enviados — null limpa (BDI único / sem composição)
-        bdi_materiais: temBdiMateriais(form.bdi_materiais) ? Number(form.bdi_materiais) : null,
-        bdi_memoria: form.bdi_memoria || null,
-        imposto_venda: Number(form.imposto_venda) || 0,
-        imposto_servico: Number(form.imposto_servico) || 0,
-        desconto_materiais_pct: form.desconto_materiais_pct,
-        desconto_mao_obra_pct: form.desconto_mao_obra_pct,
-        // obra (2.0): sempre enviada — no PUT, null desliga a proposta da obra
-        obra_id: form.obra_id || null,
-        // Subtotais/BDI/impostos/total não são mais enviados: o backend
-        // recalcula tudo a partir dos itens (antes ele gravava o que o
-        // navegador mandasse, e uma quantidade zerada fazia o PDF sair com a
-        // linha valendo o preço cheio e o total geral sem ela).
-        secoes: secoes.map(s => ({ id: s.id, nome: s.nome })),
-        itens: itens.map(it => ({
-          sid: it.sid, desc: it.descricao, qtd: Number(it.quantidade) || 0,
-          un: it.unidade, vu: Number(it.valor_unitario) || 0, ncm: it.ncm || null,
-          codigo: it.codigo || null, material_id: it.material_id || null,
-          subgrupo: it.subgrupo?.trim() || null, status: it.status || 'confirmado'
-        })),
-      };
+      const payload = montarPayload();
       // Depois de salvar uma proposta nova, novas gravações precisam ATUALIZAR
       // aquela proposta — antes o botão sumia e as correções feitas em seguida
       // não tinham como ser salvas (o PDF saía com os valores antigos).
@@ -810,13 +975,72 @@ export default function Orcamento() {
       versaoRef.current = res.data.versao ?? null;
       toast.success(res.data.mensagem || 'Proposta salva com sucesso!');
       setPropostaSalva(res.data);
-      setAlteracoesPendentes(false);
+      if (res.data.numero) setNumeroEditando(res.data.numero);
+      marcarSalvo();
+      if (!idAlvo && res.data.id) irParaProposta(res.data.id, res.data);
     } catch (err) {
-      const conflito = err.response?.status === 409;
-      toast.error(err.response?.data?.erro || 'Erro ao salvar proposta', conflito ? { duration: 15000 } : undefined);
+      const status = err.response?.status;
+      const mensagem = err.response?.data?.erro;
+      if (status === 409) {
+        // outra pessoa gravou depois que esta tela abriu: nada é sobrescrito;
+        // a pessoa escolhe recarregar (perde o daqui) ou salvar como cópia
+        setConflito({ mensagem: mensagem || 'Esta proposta foi alterada por outra pessoa depois que você a abriu.' });
+      } else if (status === 403 && err.response?.data?.codigo !== 'SENHA_PROVISORIA') {
+        // não é dono: a tela fica só para leitura, com as alterações à vista
+        // (rascunho guardado) e a opção de salvar como cópia própria
+        setSomenteLeitura({ mensagem: mensagem || 'Você não pode alterar esta proposta.' });
+        toast.error(mensagem || 'Você não pode alterar esta proposta', { duration: 8000 });
+      } else if (!err.sessaoEncerrada) {
+        toast.error(mensagem || (err.response ? 'Erro ao salvar proposta' : 'Sem resposta do servidor — a proposta continua na tela e guardada como rascunho; tente de novo'));
+      }
     } finally {
       setSalvando(false);
     }
+  }
+
+  // "Salvar como cópia" (conflito de versão ou proposta de outro usuário): grava
+  // o que está na tela como uma proposta NOVA, deste usuário, com outro número.
+  // Sem alteração na tela, usa o duplicar do servidor (copia tudo, inclusive a origem).
+  async function salvarComoCopia() {
+    if (!idAtual) return;
+    if (!sujo) {
+      setSalvando(true);
+      try {
+        const r = await duplicarProposta(idAtual);
+        toast.success(r.data.mensagem || 'Proposta duplicada');
+        liberar();
+        navigate(`/propostas/editar/${r.data.id}`);
+      } catch (err) {
+        if (!err.sessaoEncerrada) toast.error(err.response?.data?.erro || 'Erro ao duplicar a proposta');
+      } finally {
+        setSalvando(false);
+      }
+      return;
+    }
+    if (!validarParaSalvar()) return;
+    setSalvando(true);
+    try {
+      const chaveAntiga = chaveDoRascunho;
+      const res = await criarProposta(montarPayload());
+      toast.success(`Salva como cópia: proposta ${res.data.numero || ''}`.trim());
+      versaoRef.current = res.data.versao ?? null;
+      setPropostaSalva(res.data);
+      setNumeroEditando(res.data.numero || '');
+      setSomenteLeitura(null);
+      marcarSalvo(chaveAntiga);
+      irParaProposta(res.data.id, res.data);
+    } catch (err) {
+      if (!err.sessaoEncerrada) toast.error(err.response?.data?.erro || 'Erro ao salvar a cópia');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  function recarregarDoServidor() {
+    if (sujo && !window.confirm('Descartar as suas alterações e carregar a versão que está no servidor?')) return;
+    apagarRascunho(chaveDoRascunho);
+    setPesquisas({});
+    carregarDoServidor(idAtual, { oferecer: false });
   }
 
   if (carregandoEdicao) {
@@ -827,7 +1051,7 @@ export default function Orcamento() {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18 }}>
         <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>
-          {editandoId ? `Editando Proposta ${numeroEditando}` : 'Novo Orçamento'}
+          {editandoId ? `${somenteLeitura ? 'Proposta' : 'Editando Proposta'} ${numeroEditando}` : 'Novo Orçamento'}
         </h2>
         {!editandoId && proximoNumero != null && (
           <span style={{ fontSize: 12, color: '#666' }}>
@@ -835,6 +1059,49 @@ export default function Orcamento() {
           </span>
         )}
       </div>
+
+      {rascunhoPendente && (
+        <div data-testid="aviso-rascunho" style={{ ...card, padding: '12px 16px', borderColor: '#5a4a12', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 260, fontSize: 12.5, color: '#ddd', lineHeight: 1.5 }}>
+            Há um <b style={{ color: '#c9a227' }}>rascunho não salvo</b> desta {editandoId ? 'proposta' : 'proposta nova'} neste navegador
+            {rascunhoPendente.salvoEm ? `, de ${new Date(rascunhoPendente.salvoEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}` : ''}
+            {rascunhoPendente.form?.cliente_nome ? ` (cliente: ${rascunhoPendente.form.cliente_nome})` : ''}
+            {` — ${rascunhoPendente.itens.length} item(ns)`}.
+            {editandoId && rascunhoPendente.versao != null && versaoRef.current != null && rascunhoPendente.versao !== versaoRef.current && (
+              <span style={{ color: '#e0a050' }}> A proposta foi alterada no servidor depois desse rascunho: ao salvar, o sistema vai avisar do conflito.</span>
+            )}
+          </div>
+          <button type="button" onClick={restaurarRascunho} style={{ ...btnPrimario, padding: '8px 14px' }}>Restaurar rascunho</button>
+          <button type="button" onClick={() => { if (window.confirm('Descartar o rascunho? Ele não poderá ser recuperado.')) descartarRascunho(); }} style={btnSecundario}>Descartar</button>
+        </div>
+      )}
+
+      {somenteLeitura && (
+        <div data-testid="faixa-somente-leitura" style={{ ...card, padding: '12px 16px', borderColor: '#2f4f6f', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 260, fontSize: 12.5, color: '#ddd', lineHeight: 1.5 }}>
+            <b style={{ color: '#8ab4f8' }}>Somente leitura</b> — {somenteLeitura.mensagem}
+            <span style={{ color: '#888' }}>{sujo ? ' As alterações feitas aqui continuam na tela: salve-as numa cópia sua.' : ' Para trabalhar nela, faça uma cópia sua.'}</span>
+          </div>
+          <button type="button" onClick={salvarComoCopia} disabled={salvando} style={{ ...btnPrimario, padding: '8px 14px' }}>
+            {salvando ? 'Salvando…' : sujo ? 'Salvar como cópia minha' : 'Duplicar para mim'}
+          </button>
+        </div>
+      )}
+
+      {conflito && (
+        <div data-testid="aviso-conflito" style={{ ...card, padding: '12px 16px', borderColor: '#6a2a2a', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 260, fontSize: 12.5, color: '#ddd', lineHeight: 1.5 }}>
+            <b style={{ color: '#e08080' }}>Não foi salvo:</b> {conflito.mensagem}
+            <span style={{ color: '#888' }}> Nada foi sobrescrito. As suas alterações continuam na tela (e no rascunho deste navegador).</span>
+          </div>
+          <button type="button" onClick={recarregarDoServidor} disabled={salvando} style={btnSecundario}
+            title="Descarta as alterações desta tela e abre a versão que está gravada agora">Recarregar do servidor</button>
+          <button type="button" onClick={salvarComoCopia} disabled={salvando} style={{ ...btnPrimario, padding: '8px 14px' }}
+            title="Grava o que está na tela como uma proposta nova (outro número); a original fica como a outra pessoa deixou">
+            {salvando ? 'Salvando…' : 'Salvar como cópia'}
+          </button>
+        </div>
+      )}
 
       {origem && (
         <div style={{ ...card, padding: '12px 16px', borderColor: '#3a3216' }}>
@@ -906,6 +1173,9 @@ export default function Orcamento() {
         </div>
       )}
 
+      {/* Somente leitura (proposta de outro usuário): o fieldset desabilita
+          todos os campos e botões de edição de uma vez */}
+      <fieldset disabled={!!somenteLeitura} style={fieldsetLimpo}>
       {/* Dados gerais */}
       <div style={card}>
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
@@ -1110,7 +1380,7 @@ export default function Orcamento() {
                   {!maoDeObra && (
                     <input value={it.ncm} onChange={e => atualizarItem(it.id, 'ncm', e.target.value.replace(/[^\d.]/g, ''))} placeholder="NCM/SH" />
                   )}
-                  <input type="number" step="1" min="0" value={it.quantidade} onChange={e => atualizarItem(it.id, 'quantidade', e.target.value)} />
+                  <input type="number" step="any" min="0" value={it.quantidade} onChange={e => atualizarItem(it.id, 'quantidade', e.target.value)} />
                   <input value={it.unidade} onChange={e => atualizarItem(it.id, 'unidade', e.target.value)} />
                   {maoDeObra ? (
                     <div>
@@ -1126,7 +1396,7 @@ export default function Orcamento() {
                     </div>
                   )}
                   <span style={{ fontSize: 12, color: '#ccc', textAlign: 'right', paddingRight: 4 }}>
-                    {formatarMoeda((Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0))}
+                    {formatarMoeda(totalDaLinha(it.quantidade, it.valor_unitario))}
                   </span>
                   <Select value={it.status || 'confirmado'} onChange={e => atualizarItem(it.id, 'status', e.target.value)}>
                     <option value="confirmado">Confirmado</option>
@@ -1150,12 +1420,15 @@ export default function Orcamento() {
           </div>
         );
       })}
+      </fieldset>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
-        <button onClick={adicionarSecao} style={btnSecundario}>
-          <FolderPlus size={13} style={{ marginRight: 4 }} /> Adicionar seção
-        </button>
-        <InserirComposicao segmento={ehPublico ? 'publico' : 'privado'} onInserir={inserirItensDoKit} />
+        {!somenteLeitura && (<>
+          <button onClick={adicionarSecao} style={btnSecundario}>
+            <FolderPlus size={13} style={{ marginRight: 4 }} /> Adicionar seção
+          </button>
+          <InserirComposicao segmento={ehPublico ? 'publico' : 'privado'} onInserir={inserirItensDoKit} />
+        </>)}
         <button type="button" onClick={() => setMostrarCurvaAbc(v => !v)} disabled={itens.length === 0}
           style={{ ...btnSecundario, ...(mostrarCurvaAbc ? { borderStyle: 'solid', borderColor: '#5a4a12', color: '#c9a227' } : {}) }}
           title="Itens do maior para o menor valor, com % do total, % acumulado e classe A/B/C">
@@ -1173,7 +1446,7 @@ export default function Orcamento() {
       {/* Totais */}
       <div style={{ ...card, position: 'sticky', bottom: 16 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'center' }}>
+          <fieldset disabled={!!somenteLeitura} style={{ ...fieldsetLimpo, display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'center' }}>
             <Totalzinho label="Materiais" valor={subtotalMateriais} />
             <Totalzinho label="Mão de obra" valor={subtotalMaoObra} />
             <div>
@@ -1248,8 +1521,23 @@ export default function Orcamento() {
               <div style={rotulo}>Total geral</div>
               <div style={{ fontSize: 22, fontWeight: 700, color: '#c9a227' }}>{formatarMoeda(total)}</div>
             </div>
-          </div>
-          {propostaSalva ? (
+          </fieldset>
+          {somenteLeitura ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: '#8ab4f8', marginRight: 4, whiteSpace: 'nowrap' }}>Somente leitura</span>
+              {idAtual && !sujo && (<>
+                <button onClick={baixarPdf} disabled={gerandoPdf} style={btnSecundario}>
+                  <FileDown size={13} style={{ marginRight: 4 }} /> {gerandoPdf ? 'Gerando...' : 'Baixar PDF'}
+                </button>
+                <button onClick={baixarPlanilha} disabled={gerandoPlanilha} style={btnSecundario}>
+                  <FileDown size={13} style={{ marginRight: 4 }} /> {gerandoPlanilha ? 'Gerando...' : 'Planilha Excel'}
+                </button>
+              </>)}
+              <button onClick={salvarComoCopia} disabled={salvando} style={{ ...btnPrimario, padding: '13px 20px', fontSize: 13 }}>
+                {salvando ? 'Salvando...' : sujo ? 'Salvar como cópia minha' : 'Duplicar para mim'}
+              </button>
+            </div>
+          ) : propostaSalva ? (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
               <span style={{ fontSize: 11, color: alteracoesPendentes ? '#c9a227' : '#3fb95f', marginRight: 4, whiteSpace: 'nowrap' }}>
                 {alteracoesPendentes
@@ -1371,6 +1659,7 @@ function Campo({ label, children }) {
   );
 }
 
+const fieldsetLimpo = { border: 0, padding: 0, margin: 0, minWidth: 0 };
 const btnUsar = { background: 'none', border: 'none', color: '#c9a227', textDecoration: 'underline', cursor: 'pointer', fontSize: 10.5, padding: 0 };
 const btnPesquisar = {
   display: 'inline-flex', alignItems: 'center', padding: '2px 7px', background: 'transparent', border: '1px dashed #333',

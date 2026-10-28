@@ -5,6 +5,7 @@
 // projeto): sai pelo Word, em Arquivo › Salvar como › PDF.
 // Tudo que vem do banco/formulário passa por escapeHtml.
 const { cabecalhoDataUri, EMPRESA } = require('./pdfTemplate');
+const { hojeBrasilia } = require('./dataHoje');
 
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({
@@ -28,7 +29,7 @@ function gerarHtmlFolhaEntrega({ disciplina, titulo, dados = {}, arquivos = [], 
   const resp = dados.responsavel || {};
   const meta = dados.meta || {};
   const revisao = asBuilt ? (asBuilt.revisao || meta.revisao || '') : (meta.revisao || 'R00');
-  const data = asBuilt ? asBuilt.data : (meta.data || new Date().toISOString().slice(0, 10));
+  const data = asBuilt ? asBuilt.data : (meta.data || hojeBrasilia());
   const kv = [
     ['Cliente', cli.nome], ['Obra / instalação', dados.obra?.nome || titulo], ['Disciplina', disciplina],
     ['Endereço', [cli.endereco, [cli.cidade, cli.uf].filter(Boolean).join('/')].filter(Boolean).join(' — ')],

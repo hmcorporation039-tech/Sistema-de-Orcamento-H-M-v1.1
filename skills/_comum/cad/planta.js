@@ -10,11 +10,35 @@ const P = require('./posicionamento');
 
 const normalizar = (s) => String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]+/g, ' ').trim();
 
-// Casa o nome do ambiente da skill com o ambiente da planta (igual → contém)
+// Palavras que distinguem ambientes do mesmo nome-base: gênero, acessível,
+// número ou letra ("WC FEM" × "WC", "SALA 2" × "SALA", "BLOCO B"). Letra isolada
+// A, E ou O não conta: em português é artigo/conjunção ("sala de estar e jantar").
+const DISTINTIVO = /^(FEM|FEMININO|MASC|MASCULINO|PNE|PCD|ACESSIVEL|\d+|[B-DF-NP-Z])$/;
+const palavras = (s) => normalizar(s).split(' ').filter(Boolean);
+const contemTodas = (maior, menor) => menor.length > 0 && menor.every(p => maior.includes(p));
+
+// O nome `nome` (da skill) casa com o nome `daPlanta`? Por PALAVRAS inteiras, não
+// por trecho ("SALA" não casa com "SALAO"). A planta pode ser mais específica
+// ("SALA" → "SALA DE ESTAR"); a skill mais específica só casa se a palavra a mais
+// não for distintiva — "WC FEM" NÃO casa com "WC" (antes casava, e os pontos do
+// banheiro feminino iam para outro banheiro).
+function casaNome(nome, daPlanta) {
+  const pa = palavras(nome);
+  const pn = palavras(daPlanta);
+  if (contemTodas(pn, pa)) return true;
+  return contemTodas(pa, pn) && !pa.some(p => !pn.includes(p) && DISTINTIVO.test(p));
+}
+
+// Casa o nome do ambiente da skill com o ambiente da planta (igual → por palavras,
+// o de menos palavras a mais primeiro)
 function acharAmbiente(arquitetura, nome) {
   const alvo = normalizar(nome);
-  return arquitetura.ambientes.find(a => normalizar(a.nome) === alvo)
-    || arquitetura.ambientes.find(a => normalizar(a.nome).includes(alvo) || alvo.includes(normalizar(a.nome)));
+  const exato = arquitetura.ambientes.find(a => normalizar(a.nome) === alvo);
+  if (exato) return exato;
+  const n = palavras(nome).length;
+  return arquitetura.ambientes
+    .filter(a => casaNome(nome, a.nome))
+    .sort((a, b) => Math.abs(palavras(a.nome).length - n) - Math.abs(palavras(b.nome).length - n))[0];
 }
 
 // Portas da arquitetura que dão para o ambiente; a principal primeiro: a que
@@ -178,4 +202,4 @@ function gerarPlanta({ arquitetura, pontos, carimbo: dadosCarimbo = {}, notas = 
   return { dxf: d.toString(), quantitativo, posicoes, naoEncontrados };
 }
 
-module.exports = { gerarPlanta, acharAmbiente, normalizar, portasDoAmbiente };
+module.exports = { gerarPlanta, acharAmbiente, casaNome, normalizar, portasDoAmbiente };

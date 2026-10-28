@@ -15,6 +15,12 @@ const { LAYERS, TIPOS_LINHA } = require('./padrao');
 
 const rad = (g) => (g * Math.PI) / 180;
 
+// TEXT e ATTRIB do DXF são de UMA linha: o valor vai num único par código/valor,
+// então uma quebra de linha no conteúdo vira um "código de grupo" falso e
+// corrompe o arquivo (o AutoCAD recusa abrir). Quebras viram " / " e os demais
+// caracteres de controle saem.
+const linhaUnica = (s) => String(s ?? '').replace(/\s*(\r\n|\r|\n)\s*/g, ' / ').replace(/[\u0000-\u001F\u007F]/g, ' ');
+
 // `unidade`: 'mm' (padrão H&M das pranchas) ou 'm'. As coordenadas passadas
 // aos métodos são SEMPRE em metros; com 'mm' tudo é multiplicado por 1000 e
 // os blocos (desenhados em metros) entram com escala 1000.
@@ -48,7 +54,7 @@ class DesenhoDxf {
     desenhar(b);
     const mapa = {};
     for (const a of atributos) {
-      b.addAttdef(point3d(a.x, a.y), a.altura, a.tag, a.padrao ?? '', { layerName: '0' });
+      b.addAttdef(point3d(a.x, a.y), a.altura, a.tag, linhaUnica(a.padrao), { layerName: '0' });
       mapa[a.tag] = a;
     }
     this.blocos.set(nome, { atributos: mapa });
@@ -73,7 +79,7 @@ class DesenhoDxf {
       const dx = a.x * escala, dy = a.y * escala;
       const px = x + dx * Math.cos(r) - dy * Math.sin(r);
       const py = y + dx * Math.sin(r) + dy * Math.cos(r);
-      const at = this.dxf.modelSpace.addEntity(new Attrib(point3d(px, py), a.altura * escala, tag, String(valor ?? ''), { layerName: layer, rotation: rotacao }));
+      const at = this.dxf.modelSpace.addEntity(new Attrib(point3d(px, py), a.altura * escala, tag, linhaUnica(valor), { layerName: layer, rotation: rotacao }));
       at.ownerBlockRecord = ins.handle;
     }
     const s = this.dxf.modelSpace.addEntity(new SeqEnd());
@@ -102,7 +108,7 @@ class DesenhoDxf {
     const h = { esquerda: TextHorizontalAlignment.Left, centro: TextHorizontalAlignment.Center, direita: TextHorizontalAlignment.Right }[alinhar];
     const opts = { layerName: layer, rotation: rotacao };
     if (alinhar !== 'esquerda') Object.assign(opts, { horizontalAlignment: h, verticalAlignment: TextVerticalAlignment.Middle, secondAlignmentPoint: point3d(x, y) });
-    return this.dxf.addText(point3d(x, y), altura * this.k, String(conteudo), opts);
+    return this.dxf.addText(point3d(x, y), altura * this.k, linhaUnica(conteudo), opts);
   }
 
   hachuraSolida(pontos, layer = '0') {
@@ -138,4 +144,4 @@ class DesenhoDxf {
   }
 }
 
-module.exports = { DesenhoDxf };
+module.exports = { DesenhoDxf, linhaUnica };

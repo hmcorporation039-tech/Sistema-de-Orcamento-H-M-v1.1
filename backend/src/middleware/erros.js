@@ -12,6 +12,27 @@ function asyncHandler(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 }
 
+// Aplica o asyncHandler em TODAS as rotas de um router, inclusive as que forem
+// registradas depois (routes/v2/*.js recebem o mesmo router). Antes nenhuma
+// rota usava o wrapper: um erro antes do try (ex.: `.toLowerCase()` num número
+// vindo do corpo) deixava o pedido pendurado sem resposta (revisão de
+// 27/10/2026). Middleware de erro (4 parâmetros) fica como está.
+const METODOS_ROTA = ['get', 'post', 'put', 'patch', 'delete', 'all', 'use'];
+function protegerRotasAsync(router) {
+  const envolver = (h) => {
+    if (Array.isArray(h)) return h.map(envolver);
+    if (typeof h !== 'function' || h.length >= 4 || h.__protegidoAsync) return h;
+    const protegido = asyncHandler(h);
+    protegido.__protegidoAsync = true;
+    return protegido;
+  };
+  for (const metodo of METODOS_ROTA) {
+    const original = router[metodo].bind(router);
+    router[metodo] = (...args) => original(...args.map(envolver));
+  }
+  return router;
+}
+
 // Traduz erros do multer (upload) para JSON com status adequado.
 // Antes esses erros caíam no handler padrão do Express, que responde uma
 // página HTML com o stack trace — vazando o caminho de instalação do servidor
@@ -72,4 +93,4 @@ function tratarErros(err, req, res, next) {
   res.status(500).json({ erro: 'Erro interno do servidor.' });
 }
 
-module.exports = { asyncHandler, tratarErros };
+module.exports = { asyncHandler, protegerRotasAsync, tratarErros };

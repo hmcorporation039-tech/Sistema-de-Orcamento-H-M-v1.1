@@ -46,7 +46,7 @@
   "orientacao": "Norte",
   "inclinacao_graus": null,
   "hsp": null,
-  "tamb_min": 10,
+  "tamb_min": null,
   "tamb_max": 35,
   "area_disponivel_m2": null,
   "dist_arranjo_inversor_m": null,

@@ -42,9 +42,35 @@ async function criar(req, res) {
   }
 }
 
+// Corpo da edição: cada campo é opcional; presente, precisa ter o tipo certo.
+// Devolve null nos ausentes (o UPDATE mantém o valor gravado).
+function lerCamposUsuario(body) {
+  const tem = (k) => Object.prototype.hasOwnProperty.call(body, k) && body[k] !== undefined && body[k] !== null;
+  const out = { nome: null, email: null, role: null, ativo: null };
+  if (tem('nome')) {
+    if (typeof body.nome !== 'string' || !body.nome.trim()) return { erro: 'Nome inválido.' };
+    out.nome = body.nome.trim();
+  }
+  if (tem('email')) {
+    if (typeof body.email !== 'string' || !body.email.trim()) return { erro: 'E-mail inválido.' };
+    out.email = body.email.trim();
+  }
+  if (tem('role')) {
+    if (!['admin', 'user'].includes(body.role)) return { erro: 'Papel inválido (admin ou user).' };
+    out.role = body.role;
+  }
+  if (tem('ativo')) {
+    if (typeof body.ativo !== 'boolean') return { erro: 'O campo "ativo" deve ser verdadeiro ou falso.' };
+    out.ativo = body.ativo;
+  }
+  return out;
+}
+
 async function atualizar(req, res) {
   const { id } = req.params;
-  const { nome, email, role, ativo } = req.body;
+  const campos = lerCamposUsuario(req.body || {});
+  if (campos.erro) return res.status(400).json({ erro: campos.erro });
+  const { nome, email, role, ativo } = campos;
 
   if (Number(id) === req.usuario.id && ativo === false) {
     return res.status(400).json({ erro: 'Você não pode desativar seu próprio usuário' });
@@ -54,10 +80,14 @@ async function atualizar(req, res) {
   }
 
   try {
+    // Campo ausente no corpo mantém o valor gravado (COALESCE). Antes `ativo`
+    // ausente virava true (editar o nome de um usuário desativado o reativava)
+    // e `role` ausente virava 'user' (revisão de 27/10/2026).
     const result = await pool.query(
-      `UPDATE usuarios SET nome=$1, email=$2, role=$3, ativo=$4
+      `UPDATE usuarios SET nome = COALESCE($1, nome), email = COALESCE($2, email),
+              role = COALESCE($3, role), ativo = COALESCE($4::boolean, ativo)
        WHERE id=$5 RETURNING id, nome, email, role, ativo, criado_em`,
-      [nome, email, role === 'admin' ? 'admin' : 'user', ativo !== false, id]
+      [nome, email, role, ativo, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Usuário não encontrado' });
     // Desativar ou rebaixar precisa valer imediatamente, não só quando o cache
@@ -121,4 +151,4 @@ async function redefinirSenha(req, res) {
   }
 }
 
-module.exports = { listar, criar, atualizar, remover, redefinirSenha };
+module.exports = { listar, criar, atualizar, remover, redefinirSenha, lerCamposUsuario };

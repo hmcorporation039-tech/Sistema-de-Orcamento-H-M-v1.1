@@ -158,6 +158,25 @@ function eloFusivel(kva) {
   return (T.ELO_FUSIVEL_13_8.find(l => kva <= l.ate_kva) || T.ELO_FUSIVEL_13_8[T.ELO_FUSIVEL_13_8.length - 1]).elo;
 }
 
+// Chave fusível de distribuição (derivação ou proteção geral em poste): corrente nominal
+// ≥ In primária do transformador, capacidade de interrupção ≥ curto no ponto de entrega,
+// e o elo da tabela precisa conduzir a In primária.
+function chaveFusivel(kva, inPrim, iccKa) {
+  const maior = T.CHAVE_FUSIVEL_IN[T.CHAVE_FUSIVEL_IN.length - 1];
+  const inChave = primeiroMaiorIgual(T.CHAVE_FUSIVEL_IN, inPrim) || maior;
+  const elo = eloFusivel(kva);
+  const m = /^(\d+(?:\.\d+)?)K$/.exec(elo);
+  const eloContinuo = m ? Number(m[1]) * T.ELO_K_FATOR_CONTINUO : null;
+  const ultimaFaixa = kva > T.ELO_FUSIVEL_13_8[T.ELO_FUSIVEL_13_8.length - 2].ate_kva;
+  return {
+    in: inChave, icnSimKa: T.CHAVE_FUSIVEL_ICN_SIM_KA, elo, eloContinuo,
+    atendeCorrente: inChave >= inPrim - 1e-9,
+    atendeCurto: iccKa <= T.CHAVE_FUSIVEL_ICN_SIM_KA,
+    eloAtende: eloContinuo == null || eloContinuo >= inPrim - 1e-9,
+    eloDaDistribuidora: ultimaFaixa,
+  };
+}
+
 function protecaoMt({ kva, z, inPrim, iccSecRefPrim, curto, tipoSe, c, avisos }) {
   const D = T.DISTRIBUIDORA;
   const classe = T.classeMt(c.kv);
@@ -169,10 +188,16 @@ function protecaoMt({ kva, z, inPrim, iccSecRefPrim, curto, tipoSe, c, avisos })
   const iAnsi = inPrim * 100 / z;
   const ansi = { i: iAnsi, t: T.tempoAnsi(z), iFt: 0.58 * iAnsi };
   const inrush = { multiplo: T.multiploInrush(kva), i: T.multiploInrush(kva) * inPrim, t: 0.1 };
-  const base = { modo, ansi, inrush, classe, eloDerivacao: eloFusivel(kva) };
+  const chave = chaveFusivel(kva, inPrim, curto.icc3fKa);
+  const base = { modo, ansi, inrush, classe, eloDerivacao: chave.elo, chave };
+  // avisos da chave fusível (de derivação ou de proteção geral em poste)
+  if (!chave.atendeCorrente) avisos.push(`Corrente primária do transformador (${fmt(inPrim, 1)} A) acima da maior chave fusível de distribuição usual (${chave.in} A): a derivação deve ser definida com a distribuidora (chave/seccionadora de maior corrente). [CONFERIR]`);
+  if (!chave.atendeCurto) avisos.push(`Curto no ponto de entrega (${fmt(curto.icc3fKa)} kA) acima da capacidade de interrupção usual de chave fusível tipo expulsão (${fmt(chave.icnSimKa)} kA simétricos): confirmar com a distribuidora o equipamento da derivação (chave de maior capacidade, fusível limitador ou religador). [CONFERIR]`);
+  if (!chave.eloAtende) avisos.push(`Elo ${chave.elo} (≈ ${fmt(chave.eloContinuo, 0)} A contínuos) abaixo da corrente primária de ${fmt(inPrim, 1)} A: o elo/fusível da derivação não pode ser o da tabela — definir com a distribuidora. [CONFERIR]`);
+  else if (chave.eloDaDistribuidora) avisos.push(`Transformador acima de ${fmt(T.ELO_FUSIVEL_13_8[T.ELO_FUSIVEL_13_8.length - 2].ate_kva)} kVA: o elo de derivação (${chave.elo}) está fora da tabela usual e deve ser definido pela distribuidora na coordenação com o relé. [CONFERIR]`);
   if (modo === 'fusivel') {
     if (tipoSe === 'poste') {
-      return { ...base, dispositivo: `Chave fusível de distribuição ${classe.equipamento} kV, 100 A, capacidade de interrupção ≥ ${fmt(curto.icc3fKa)} kA, elo ${base.eloDerivacao}`, elo: base.eloDerivacao };
+      return { ...base, dispositivo: `Chave fusível de distribuição ${classe.equipamento} kV, ${chave.in} A, capacidade de interrupção ≥ ${fmt(curto.icc3fKa)} kA${chave.atendeCurto ? '' : ' [CONFERIR: acima da capacidade usual de chave tipo expulsão]'}, elo ${base.eloDerivacao}`, elo: base.eloDerivacao };
     }
     const hh = primeiroMaiorIgual(T.FUSIVEL_HH, T.FATOR_HH * inPrim) || T.FUSIVEL_HH[T.FUSIVEL_HH.length - 1];
     return { ...base, hh, dispositivo: `Chave seccionadora tripolar ${classe.equipamento} kV com fusíveis limitadores HH ${fmt(hh)} A (base ${classe.equipamento} kV)` };
@@ -186,19 +211,28 @@ function protecaoMt({ kva, z, inPrim, iccSecRefPrim, curto, tipoSe, c, avisos })
   const t51Ansi = iAnsi >= i50 ? 0.05 : T.tempoCurva(c.rele.curva, c.rele.dial, iAnsi / i51);
   const t51Inrush = inrush.i >= i50 ? 0.05 : T.tempoCurva(c.rele.curva, c.rele.dial, inrush.i / i51);
   const icn = primeiroMaiorIgual(T.DISJ_MT_ICN, curto.icc3fKa) || T.DISJ_MT_ICN[T.DISJ_MT_ICN.length - 1];
+  // partidas referidas ao secundário do TC (5 A), em % da nominal do TC
+  const pct51 = i51 / tc * 100;
+  const pct51n = i51n / tc * 100;
   const checagens = {
     protegeTrafo: t51Ansi < ansi.t,
     naoAtuaInrush: inrush.i < i50 && t51Inrush > inrush.t,
     instantaneoAbaixoIcc: i50 < 0.8 * curto.icc3fKa * 1000,
     disjuntorAtende: curto.icc3fKa <= icn,
+    faseNaFaixaTc: pct51 >= T.RELE_PARTIDA_MIN_PCT_TC,
+    neutroNaFaixaTc: pct51n >= T.RELE_PARTIDA_MIN_PCT_TC,
   };
+  if (!checagens.faseNaFaixaTc || !checagens.neutroNaFaixaTc) {
+    const ruins = [!checagens.faseNaFaixaTc && `51 = ${fmt(i51, 1)} A → ${fmt(i51 * 5 / tc, 3)} A no secundário (${fmt(pct51, 1)} % do TC)`, !checagens.neutroNaFaixaTc && `51N = ${fmt(i51n, 1)} A → ${fmt(i51n * 5 / tc, 3)} A no secundário (${fmt(pct51n, 1)} % do TC)`].filter(Boolean);
+    avisos.push(`TC ${tc}-5 A escolhido pelo curto (primário ≥ Icc/${T.FATOR_SOBRECORRENTE_TC}) deixa a partida abaixo de ~${T.RELE_PARTIDA_MIN_PCT_TC} % da nominal do TC — ${ruins.join('; ')}: confirmar que o relé admite esse ajuste; senão usar TC de menor relação com fator de sobrecorrente/saturação verificado para ${fmt(curto.icc3fKa)} kA, ou entrada de neutro sensível/TC toroidal. [CONFERIR no catálogo do relé e no estudo de proteção]`);
+  }
   if (!checagens.instantaneoAbaixoIcc) avisos.push(`Ajuste do instantâneo de fase (${fmt(i50, 0)} A) próximo do curto da concessionária (${fmt(curto.icc3fKa)} kA): revisar o estudo de proteção. [CONFERIR]`);
   if (!checagens.protegeTrafo) avisos.push(`Curva 51 não passa abaixo do ponto ANSI do transformador (${fmt(iAnsi, 0)} A; ${ansi.t} s): reduzir o dial ou a corrente de partida. [CONFERIR]`);
   if (!checagens.naoAtuaInrush) avisos.push('O relé pode atuar na energização (corrente de magnetização): rever o instantâneo ou o dial. [CONFERIR]');
   if (!checagens.disjuntorAtende) avisos.push(`Curto da concessionária (${fmt(curto.icc3fKa)} kA) acima da capacidade de interrupção usual de disjuntor de MT: consultar fabricante.`);
   return {
     ...base,
-    tc, tcRelacao: `${tc}-5 A`, i51, i50, i51n, i50n, t51Ansi, t51Inrush, checagens,
+    tc, tcRelacao: `${tc}-5 A`, i51, i50, i51n, i50n, t51Ansi, t51Inrush, checagens, pct51, pct51n,
     curva: c.rele.curva, curvaRotulo: T.CURVAS_IEC[c.rele.curva].rotulo, dial: c.rele.dial,
     disjuntor: { un: classe.equipamento, in: T.DISJ_MT_IN[0], icn, nbi: classe.nbi },
     dispositivo: `Disjuntor tripolar ${classe.equipamento} kV, ${T.DISJ_MT_IN[0]} A, ${fmt(icn)} kA, acionado por relé secundário 50/51 e 50N/51N (TC ${tc}-5 A)`,
@@ -251,34 +285,60 @@ function cabosTrafoQgbt(inDisj, ib, c) {
       const iz = izRef * fct * fca * n;
       const queda = RAIZ3 * ET.RHO_COBRE * c.bt.L * ib / (n * s * c.vSec) * 100;
       if (iz >= inDisj && queda <= c.bt.quedaMax) {
-        return { n, secao: s, izRef, iz, fct, fca, queda, secaoNeutro: s, secaoPE: ET.secaoPE(s), metodo: c.bt.metodo, L: c.bt.L, descricao: `${n > 1 ? `${n} × ` : ''}(3 × 1 × ${String(s).replace('.', ',')} + 1 × ${String(s).replace('.', ',')} N + 1 × ${String(ET.secaoPE(s)).replace('.', ',')} PE) mm²` };
+        return { tipo: 'cabos', n, secao: s, izRef, iz, fct, fca, queda, secaoNeutro: s, secaoPE: ET.secaoPE(s), metodo: c.bt.metodo, L: c.bt.L, descricao: `${n > 1 ? `${n} × ` : ''}(3 × 1 × ${String(s).replace('.', ',')} + 1 × ${String(s).replace('.', ',')} N + 1 × ${String(ET.secaoPE(s)).replace('.', ',')} PE) mm²` };
       }
     }
   }
-  throw new Error('Cabos trafo→QGBT: nenhuma combinação até 10 condutores em paralelo atende — revise o método ou use barramento blindado.');
+  return null; // nenhuma combinação de cabos atende: ladoBt passa para barramento blindado
+}
+
+// Barramento blindado (bus way) trafo → QGBT quando os cabos em paralelo não atendem
+// (transformadores grandes, sobretudo em 220 V): corrente nominal ≥ disjuntor geral;
+// queda de tensão e curto (Icw) pela folha de dados do fabricante [CONFERIR].
+function barramentoBlindado(inDisj, c) {
+  return {
+    tipo: 'barramento_blindado', n: 0, secao: null, secaoPE: null, iz: inDisj, fca: null, queda: null, metodo: 'barramento blindado', L: c.bt.L,
+    descricao: `barramento blindado (bus way) trifásico com neutro e PE, corrente nominal ≥ ${inDisj} A [CONFERIR com o fabricante: queda de tensão e Icw]`,
+  };
 }
 
 function ladoBt(trafo, corr, c, avisos) {
-  const inDisj = primeiroMaiorIgual(T.DISJ_BT, corr.inSec) || T.DISJ_BT[T.DISJ_BT.length - 1];
+  const maiorDisj = T.DISJ_BT[T.DISJ_BT.length - 1];
+  const inDisj = primeiroMaiorIgual(T.DISJ_BT, corr.inSec) || maiorDisj;
+  const disjAtende = inDisj >= corr.inSec - 1e-9;
+  if (!disjAtende) avisos.push(`Corrente nominal do secundário (${fmt(corr.inSec, 0)} A) acima do maior disjuntor geral de BT da tabela (${maiorDisj} A): o transformador de ${fmt(trafo.kva)} kVA em ${c.vSec} V não tem proteção geral única viável — dividir em dois transformadores/QGBTs ou elevar a tensão secundária. O disjuntor e o barramento listados NÃO atendem. [CONFERIR]`);
   const icu = primeiroMaiorIgual(T.ICU_BT, corr.iccSecInfKa) || T.ICU_BT[T.ICU_BT.length - 1];
+  const icuAtende = icu >= corr.iccSecInfKa - 1e-9;
+  if (!icuAtende) avisos.push(`Curto no secundário (${fmt(corr.iccSecInfKa)} kA) acima da maior capacidade de interrupção da tabela (${icu} kA): rever o arranjo (dividir o transformador) ou usar limitação de corrente. [CONFERIR]`);
   const kappa = 1.02 + 0.98 * Math.exp(-3 / c.bt.xr); // IEC 60909
   const ipk = kappa * Math.SQRT2 * corr.iccSecInfKa;
   const barramento = T.BARRAMENTOS.find(b => b.a >= inDisj) || T.BARRAMENTOS[T.BARRAMENTOS.length - 1];
   if (barramento.a < inDisj) avisos.push('Corrente do barramento acima da tabela: dimensionar com o fabricante do painel.');
-  const cabos = cabosTrafoQgbt(inDisj, corr.inSec, c);
+  let cabos = cabosTrafoQgbt(inDisj, corr.inSec, c);
+  if (!cabos) {
+    cabos = barramentoBlindado(inDisj, c);
+    avisos.push(`Cabos trafo → QGBT: nenhuma combinação até 10 condutores de até 300 mm² por fase atende ${inDisj} A no método ${c.bt.metodo} (com os fatores de agrupamento da NBR 5410): adotado barramento blindado (bus way) ≥ ${inDisj} A. Conferir queda de tensão e Icw na folha de dados do fabricante. [CONFERIR]`);
+  }
   return {
-    inDisj, icu, tipoDisj: inDisj <= 1600 ? 'caixa moldada' : 'aberto (extraível)', kappa, ipk, barramento, icw: corr.iccSecInfKa, cabos,
+    inDisj, disjAtende, icu, icuAtende, tipoDisj: inDisj <= 1600 ? 'caixa moldada' : 'aberto (extraível)', kappa, ipk, barramento, icw: corr.iccSecInfKa, cabos,
     tcMedicaoBt: primeiroMaiorIgual([200, 300, 400, 600, 800, 1000, 1200, 1500, 2000, 2500, 3000, 4000], corr.inSec),
   };
 }
 
 // ── Para-raios ─────────────────────────────────────────────────────────────
 
+// MCOV necessária: neutro efetivamente aterrado → tensão máxima fase-neutro;
+// não efetivamente aterrado → tensão máxima entre fases (as fases sãs sobem à tensão
+// de linha durante a falta à terra). Ur = menor valor usual com Ur × 0,85 ≥ MCOV
+// necessária, nunca abaixo do valor da tabela da classe.
 function paraRaios(c, tipoSe, temCabo) {
   const classe = T.classeMt(c.kv);
-  const ur = c.neutroAterrado ? classe.paraRaiosAterrado : classe.paraRaiosIsolado;
+  const urTabela = c.neutroAterrado ? classe.paraRaiosAterrado : classe.paraRaiosIsolado;
+  const vMax = T.FATOR_TENSAO_MAX * c.kv;
+  const mcovNecessaria = c.neutroAterrado ? vMax / RAIZ3 : vMax;
+  const ur = T.PARA_RAIOS_UR.find(u => u >= urTabela && u * T.PARA_RAIOS_MCOV_UR >= mcovNecessaria - 1e-9) || T.PARA_RAIOS_UR[T.PARA_RAIOS_UR.length - 1];
   const pontos = temCabo ? ['transição aérea-subterrânea (poste de derivação)'] : [tipoSe === 'poste' ? 'junto ao transformador (no poste)' : 'entrada da subestação'];
-  return { ur, mcov: arred(ur * 0.85, 1), in: 10, quantidade: 3 * pontos.length, pontos, descricao: `Para-raios de óxido metálico (ZnO) sem centelhador, ${ur} kV, 10 kA, invólucro polimérico (NBR 16050)` };
+  return { ur, mcov: arred(ur * T.PARA_RAIOS_MCOV_UR, 1), mcovNecessaria: arred(mcovNecessaria, 2), in: 10, quantidade: 3 * pontos.length, pontos, descricao: `Para-raios de óxido metálico (ZnO) sem centelhador, ${ur} kV, 10 kA, invólucro polimérico (NBR 16050)` };
 }
 
 // ── Malha de aterramento (NBR 15751 / IEEE Std 80) ─────────────────────────
@@ -384,8 +444,17 @@ function malhaAterramento(dados, c, curto, tipoSe, avisos) {
   // toque e passo
   const sf = numero(a.fator_divisao) || 1;
   const ig = sf * curto.iccFtKa * 1000;
-  const rhoBrita = numero(a.rho_brita_ohm_m) ?? 3000;
-  const hs = numero(a.espessura_brita_m) ?? 0.1;
+  // Camada superficial (brita): só entra no cálculo se for informada (ρs e espessura).
+  // Sem ela, Cs = 1 e ρs = ρ do solo (IEEE 80 eq. 27/32) — admissíveis bem menores.
+  // Antes a skill assumia 3 000 Ω·m / 10 cm em qualquer SE, mesmo sem brita na obra.
+  const rhoBritaInf = numero(a.rho_brita_ohm_m);
+  const hsInf = numero(a.espessura_brita_m);
+  const comBrita = rhoBritaInf > 0 && hsInf > 0;
+  const rhoBrita = comBrita ? rhoBritaInf : null;
+  const hs = comBrita ? hsInf : 0;
+  if (!comBrita) {
+    avisos.push(`Camada de brita não informada (resistividade e espessura): toque e passo admissíveis calculados SEM camada superficial (Cs = 1, ρs = ρ do solo = ${fmt(rho1, 0)} Ω·m). Se a SE terá brita, informe ρs (medida ou de catálogo) e a espessura — a brita passa a ser orçada. [CONFERIR]`);
+  }
   const pesoKg = numero(a.peso_kg) || 50;
   const adm = tensoesAdmissiveis({ rhoSolo: rho1, rhoBrita, hs, ts, pesoKg });
   const gpr = ig * rg;
@@ -404,7 +473,7 @@ function malhaAterramento(dados, c, curto, tipoSe, avisos) {
   if (!verif.validade) avisos.push('Geometria fora da faixa de validade do método simplificado da IEEE 80 (D ≥ 2,5 m; 0,25 ≤ h ≤ 2,5 m; n ≤ 25): verificar com software de malha. [CONFERIR]');
   return {
     rho1, h1, rho2, rhoA, profInfluencia, rEq, lx, ly, area, espac, nx, ny, dx, dy, D, h, lc, lp, nHastes, lHaste, lr, lt,
-    rg, rgLaurent, rMax, ts, conexao, kO, sCondMin, sCond, d, sf, ig, rhoBrita, hs, pesoKg, adm, gpr, tm, verif,
+    rg, rgLaurent, rMax, ts, conexao, kO, sCondMin, sCond, d, sf, ig, comBrita, rhoBrita, hs, pesoKg, adm, gpr, tm, verif,
     cruzamentos: nx * ny,
   };
 }
@@ -448,13 +517,16 @@ function listaMateriais(x) {
   } else {
     add('ESTR', `Estruturas metálicas/concreto para a subestação ao tempo ${cl.equipamento} kV (suportes de equipamentos e barramento)`, 'vb', 1, 'NBR 14039');
     add('CERCA', 'Cerca/alambrado com portão e placas de advertência, aterrados à malha', 'm', Math.ceil(malha.lp), 'NBR 14039; NR-10');
-    add('BRITA', `Brita nº 2 (camada de ${fmt(malha.hs * 100, 0)} cm) sobre a área da subestação`, 'm³', Math.ceil(malha.area * malha.hs), 'NBR 15751');
   }
-  // entrada / derivação
-  if (cabo || se.tipo !== 'poste') {
-    add('CHF', `Chave fusível de distribuição ${cl.equipamento} kV, 100 A, ≥ ${fmt(x.curto.icc3fKa)} kA, com elo ${prot.eloDerivacao} — derivação [CONFERIR com a distribuidora]`, 'un', 3, 'Norma da distribuidora');
+  // brita: orçada sempre que a camada entrou no cálculo de toque e passo
+  if (malha.comBrita) add('BRITA', `Brita nº 2 (camada de ${fmt(malha.hs * 100, 0)} cm, ρs ${fmt(malha.rhoBrita, 0)} Ω·m) sobre a área da malha — premissa do cálculo de toque e passo`, 'm³', Math.ceil(malha.area * malha.hs), 'NBR 15751');
+  // entrada / derivação (em SE em poste com disjuntor, as chaves fusíveis fazem o seccionamento visível a montante)
+  const ch = prot.chave;
+  const icTxt = `≥ ${fmt(x.curto.icc3fKa)} kA${ch.atendeCurto ? '' : ' [CONFERIR: acima da capacidade usual de chave tipo expulsão]'}`;
+  if (cabo || se.tipo !== 'poste' || prot.modo === 'disjuntor') {
+    add('CHF', `Chave fusível de distribuição ${cl.equipamento} kV, ${ch.in} A, ${icTxt}, com elo ${prot.eloDerivacao} — derivação${se.tipo === 'poste' && prot.modo === 'disjuntor' ? ' e seccionamento visível a montante do disjuntor' : ''} [CONFERIR com a distribuidora]`, 'un', 3, 'Norma da distribuidora');
   } else if (prot.modo === 'fusivel') {
-    add('CHF', `Chave fusível de distribuição ${cl.equipamento} kV, 100 A, com elo ${prot.elo}`, 'un', 3, 'NBR 14039; norma da distribuidora');
+    add('CHF', `Chave fusível de distribuição ${cl.equipamento} kV, ${ch.in} A, ${icTxt}, com elo ${prot.elo}`, 'un', 3, 'NBR 14039; norma da distribuidora');
   }
   add('PR', pr.descricao, 'un', pr.quantidade, 'NBR 14039; NBR 16050');
   if (cabo) {
@@ -480,8 +552,12 @@ function listaMateriais(x) {
   // baixa tensão
   const cb = bt.cabos;
   const Lbt = cb.L * 1.1;
-  add(`CAB-BT-${cb.secao}`, `Cabo de cobre flexível ${String(cb.secao).replace('.', ',')} mm² 0,6/1 kV EPR/XLPE 90 °C (fases e neutro, trafo → QGBT)`, 'm', Math.ceil(4 * cb.n * Lbt), 'NBR 5410, 6.2');
-  add(`CAB-BT-${cb.secaoPE}`, `Cabo de cobre flexível ${String(cb.secaoPE).replace('.', ',')} mm² 0,6/1 kV verde-amarelo (PE, trafo → QGBT)`, 'm', Math.ceil(cb.n * Lbt), 'NBR 5410, Tabela 58');
+  if (cb.tipo === 'barramento_blindado') {
+    add('BUSWAY', `Barramento blindado (bus way) trifásico com neutro e PE, ${bt.inDisj} A, ${c.vSec} V, Icw ≥ ${fmt(bt.icw)} kA, com flanges de conexão ao transformador e ao QGBT [CONFERIR com o fabricante]`, 'm', Math.ceil(Lbt), 'NBR IEC 61439-6; NBR 5410');
+  } else {
+    add(`CAB-BT-${cb.secao}`, `Cabo de cobre flexível ${String(cb.secao).replace('.', ',')} mm² 0,6/1 kV EPR/XLPE 90 °C (fases e neutro, trafo → QGBT)`, 'm', Math.ceil(4 * cb.n * Lbt), 'NBR 5410, 6.2');
+    add(`CAB-BT-${cb.secaoPE}`, `Cabo de cobre flexível ${String(cb.secaoPE).replace('.', ',')} mm² 0,6/1 kV verde-amarelo (PE, trafo → QGBT)`, 'm', Math.ceil(cb.n * Lbt), 'NBR 5410, Tabela 58');
+  }
   add('DJ-BT', `Disjuntor geral de BT tripolar ${bt.inDisj} A, Icu ≥ ${bt.icu} kA, ${bt.tipoDisj}`, 'un', 1, 'NBR 5410, 5.3.4; NBR IEC 60947-2');
   add('QGBT', `Quadro geral de BT (QGBT) com barramento de cobre ${bt.barramento.barra} por fase, Icw ≥ ${fmt(bt.icw)} kA, DPS classe I/II e barra de terra`, 'un', 1, 'NBR IEC 61439; NBR 5410');
   // aterramento
@@ -514,7 +590,7 @@ function unifilar(x) {
     el.push({ ordem: el.length + 1, id, tipo, rotulo, ligacao, ...(no ? { no } : {}), dados });
   };
   add('PE', 'ponto_entrega', `Ponto de entrega — ${c.distribuidora} ${String(c.kv).replace('.', ',')} kV`, { tensao_kv: c.kv, icc_3f_ka: arred(curto.icc3fKa), icc_ft_ka: arred(curto.iccFtKa), scc_mva: arred(curto.sccMva, 1) });
-  if (cabo || se.tipo !== 'poste') add('CF1', 'chave_fusivel', `Chave fusível de derivação 3 × ${prot.classe.equipamento} kV 100 A — elo ${prot.eloDerivacao}`, { quantidade: 3, elo: prot.eloDerivacao });
+  if (cabo || se.tipo !== 'poste' || prot.modo === 'disjuntor') add('CF1', 'chave_fusivel', `Chave fusível de derivação 3 × ${prot.classe.equipamento} kV ${prot.chave.in} A — elo ${prot.eloDerivacao}`, { quantidade: 3, elo: prot.eloDerivacao, in_a: prot.chave.in });
   add('PR1', 'para_raios', `Para-raios ${pr.ur} kV ${pr.in} kA (3×)`, { ur_kv: pr.ur, mcov_kv: pr.mcov, in_ka: pr.in, quantidade: 3, local: pr.pontos[0], para: 'malha' }, 'derivacao');
   if (cabo) add('CMT', 'cabo_mt', `Cabo 3 × 1 × ${cabo.secao} mm² ${prot.classe.cabo} ${cabo.isolacao} — ${fmt(cabo.L, 0)} m`, { secao_mm2: cabo.secao, comprimento_m: cabo.L, classe: prot.classe.cabo, metodo: cabo.metodo, terminacoes: 6 });
   if (med.local === 'MT') add('MED', 'medicao_mt', 'Medição indireta em MT (TPs e TCs da distribuidora)', { local: 'MT' });
@@ -526,11 +602,12 @@ function unifilar(x) {
   } else if (prot.hh) {
     add('SC1', 'seccionadora_fusivel', `Seccionadora com fusíveis HH ${fmt(prot.hh)} A`, { fusivel_a: prot.hh });
   } else {
-    add('CF2', 'chave_fusivel', `Chave fusível ${prot.classe.equipamento} kV 100 A — elo ${prot.elo}`, { elo: prot.elo, quantidade: 3 });
+    add('CF2', 'chave_fusivel', `Chave fusível ${prot.classe.equipamento} kV ${prot.chave.in} A — elo ${prot.elo}`, { elo: prot.elo, quantidade: 3, in_a: prot.chave.in });
   }
   add('TR1', 'transformador', `Transformador ${fmt(trafo.kva)} kVA ${String(c.kv).replace('.', ',')} kV/${c.vSec}-${c.vSecFn} V ${trafo.ligacao} Z ${fmt(trafo.z)} %`, { kva: trafo.kva, primario_kv: c.kv, secundario_v: c.vSec, ligacao: trafo.ligacao, z_pct: trafo.z, isolamento: trafo.isolamento, neutro_aterrado: true });
   if (med.local === 'BT') add('MED', 'medicao_bt', `Medição indireta em BT (TCs ${bt.tcMedicaoBt}-5 A)`, { local: 'BT', tc: `${bt.tcMedicaoBt}-5 A` });
-  add('CBT', 'cabo_bt', `${bt.cabos.descricao} — ${fmt(bt.cabos.L, 0)} m`, { condutores_por_fase: bt.cabos.n, secao_mm2: bt.cabos.secao, pe_mm2: bt.cabos.secaoPE, comprimento_m: bt.cabos.L });
+  if (bt.cabos.tipo === 'barramento_blindado') add('CBT', 'barramento_blindado', `Barramento blindado ≥ ${bt.inDisj} A — ${fmt(bt.cabos.L, 0)} m`, { in_a: bt.inDisj, comprimento_m: bt.cabos.L });
+  else add('CBT', 'cabo_bt', `${bt.cabos.descricao} — ${fmt(bt.cabos.L, 0)} m`, { condutores_por_fase: bt.cabos.n, secao_mm2: bt.cabos.secao, pe_mm2: bt.cabos.secaoPE, comprimento_m: bt.cabos.L });
   add('DJG', 'disjuntor_bt', `Disjuntor geral BT ${bt.inDisj} A ${bt.icu} kA`, { in_a: bt.inDisj, icu_ka: bt.icu, tipo: bt.tipoDisj });
   add('QGBT', 'barramento_bt', `QGBT — barramento ${bt.barramento.barra} (${c.vSec}/${c.vSecFn} V)`, { barra: bt.barramento.barra, icw_ka: arred(bt.icw), ipk_ka: arred(bt.ipk) });
   const serie = el.filter(e => e.ligacao === 'serie');

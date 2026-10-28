@@ -242,8 +242,13 @@ export default function Compatibilizacao() {
         if (err.response?.status === 409) {
           conflitoRef.current = true;
           toast.error(err.response.data?.erro || 'A análise foi alterada em outro lugar. Recarregue a página.', { duration: 15000 });
-        } else {
-          toast.error('Erro ao salvar automaticamente — tente novamente em instantes');
+        } else if (err.response?.status === 403 && err.response?.data?.codigo !== 'SENHA_PROVISORIA') {
+          // análise de outro usuário (posse): não desloga mais; para o
+          // salvamento automático e diz por quê
+          conflitoRef.current = true;
+          toast.error(`${err.response.data?.erro || 'Você não pode alterar esta análise.'} As alterações feitas aqui não são gravadas.`, { duration: 15000 });
+        } else if (!err.sessaoEncerrada) {
+          toast.error(err.response?.data?.erro || 'Erro ao salvar automaticamente — tente novamente em instantes');
         }
       } finally {
         setSalvando(false);
