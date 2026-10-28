@@ -117,11 +117,12 @@ const laudoCtrl = require('../controllers/laudosController');
 
 // Fotos de inspeção: JPG/PNG, até 20 por envio, 15 MB cada (o conteúdo é conferido no controller pelos bytes iniciais)
 const uploadFotos = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 20 } });
-// Arquitetura do projeto: DXF (texto) até 40 MB; o conteúdo é conferido no controller
+// Arquitetura do projeto/análise (planta e 3D): DWG, DXF ou PDF vetorial até 40 MB;
+// o conteúdo é conferido na leitura (services/tarefasCad). Uma só para todas as rotas (v2 inclusive).
 const uploadArquitetura = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 40 * 1024 * 1024, files: 1 },
-  fileFilter: (req, file, cb) => cb(null, /\.(dxf|dwg)$/i.test(file.originalname || '')),
+  fileFilter: (req, file, cb) => cb(null, /\.(dxf|dwg|pdf)$/i.test(file.originalname || '')),
 });
 
 // ── AUTH ──────────────────────────────────────────────────────────────
@@ -276,9 +277,9 @@ router.get('/pesquisa-mercado/historico', autenticar, pesqCtrl.historico);
 router.post('/pesquisa-mercado/salvar', autenticar, pesqCtrl.salvar);
 
 // Versão 2.0: rotas por tema em routes/v2/*.js — cada arquivo exporta
-// (router, { autenticar, admin, validarId, exigirPosse, limitePesquisaMercado }) => void
+// (router, { autenticar, admin, validarId, exigirPosse, limitePesquisaMercado, limiteAnaliseProjeto, uploadArquitetura }) => void
 for (const f of require('fs').readdirSync(require('path').join(__dirname, 'v2')).filter(n => /\.js$/.test(n)).sort()) {
-  require(`./v2/${f}`)(router, { autenticar, admin, validarId, exigirPosse, limitePesquisaMercado, limiteAnaliseProjeto });
+  require(`./v2/${f}`)(router, { autenticar, admin, validarId, exigirPosse, limitePesquisaMercado, limiteAnaliseProjeto, uploadArquitetura });
 }
 
 module.exports = router;

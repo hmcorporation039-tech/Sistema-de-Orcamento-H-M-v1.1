@@ -321,6 +321,18 @@ Pedido do usuário: transformar o DWG dos projetos em 3D "só para o cliente ter
   - **Retrato inicial:** `clientes.pasta_retrato_em` NULL faz a 1ª varredura registrar o que já estava na pasta como conhecido, sem aviso. Pasta criada vazia pelo sistema já nasce com o retrato.
   - **Varredura em segundo plano só dos clientes em tratamento:** obra não concluída/cancelada, movimento nos últimos 90 dias ou retrato por tirar. Os outros são varridos quando alguém abre o cliente ou a obra, porque as pastas do servidor têm milhares de arquivos.
   - Testes em `testes/pastasClientes.test.js` (12 casos).
+- **Arquitetura em PDF para o 3D e a planta** (pedido do usuário em 28/10/2026: "para o 3D, também carregar PDF, transformar em DXF e elaborar o 3D"). Onde se envia DWG/DXF (cartão do 3D da análise, projeto por disciplina) agora também vai PDF.
+  - **Conversão** (`utils/pdfParaDxf.js`): o PDF **vetorial** vira DXF em metros.
+    - A escala vem da informada, do carimbo ("ESC. 1:50") ou do raio das portas (≈ 0,80 m). Sem nenhuma delas, a tela pergunta e reenvia (`faltaEscala`).
+    - Camadas criadas pela aparência do traço: parede = traço bem mais grosso que a mediana ou polígono reto cinza/preto com espessura de parede; tracejado nunca é parede.
+    - Os arcos de porta (o PDF parte 90° em até 16 curvas) são juntados num ARC. Os pedaços de texto de uma linha se juntam. Moldura e carimbo saem.
+  - **Isolamento:** roda num **processo à parte**, como a conversão do DWG. Em teste, um erro nativo do leitor de PDF ("Segmentation fault") derrubava o processo inteiro quando vários PDFs pesados eram convertidos seguidos numa worker thread.
+  - **Limites e avisos:** PDF escaneado é recusado com orientação; acima de 150 mil traços também. O sistema avisa quando a escala foi deduzida pelas portas, quando todas as linhas têm a mesma espessura (móvel pode virar parede) e quando os nomes das salas não estão como texto.
+  - **3D:** a região do modelo cresce pelas paredes ligadas às salas com nome (`crescerPelasParedes`). Assim o prédio aparece inteiro mesmo com poucas salas nomeadas.
+  - **Código:**
+    - envio único na tela (`components/Modelo3d.enviarArquitetura`) e um só filtro de upload da arquitetura (`routes/index.js`);
+    - resumo e DXF guardado em `services/tarefasCad` (`resumoDaArquitetura`, `dxfParaGuardar`).
+  - **Testes:** `testes/pdfParaDxf.test.js` (8 casos, PDFs sintéticos impressos pelo Chromium). Também testado com plantas reais dos clientes, só localmente.
 - **3D melhorado e com o projeto real**: componentes com forma e tamanho reconhecíveis (tomada com furos, quadro com porta, luminária, detector, câmera…) e escala pela distância; paredes com espessura mínima, topo escuro e "Corte" das paredes da frente; duplo clique entra no ambiente na altura dos olhos (olhar em volta, zoom de lente, andar, "Voltar à vista geral"), seletor "Ir para ambiente"; infraestrutura (eletrocalha, eletroduto, leito, perfilado) desenhada perto do forro (`montarCena(..., { trechos })`). Análise feita com DWG/DXF guarda as posições alinhadas (`analises_projeto.espacial`) e o 3D da análise mostra os componentes e traçados como desenhados, sem estimar (`services/modelo3d dispositivosDoEspacial`).
 - **Limites:** precisa de DWG/DXF com o nome dos ambientes escrito dentro deles; pavimentos desenhados lado a lado aparecem lado a lado; porta de correr e pele de vidro viram janela; quantidades estimadas podem passar do real (marcadas [CONFERIR]). Só elétrica, iluminação, incêndio, cabeamento/rede, CFTV, alarme e controle de acesso têm pontos no 3D (controle de acesso só pelo formulário do projeto: não há estimativa pela arquitetura); as demais mostram só a arquitetura.
 

@@ -163,11 +163,15 @@ export const getEntregasProjeto = () => api.get('/laudos/entregas');
 export const gerarEntregaProjeto = (id, corpo, destino = 'zip') => api.post(`/laudos/${id}/entrega`, corpo, {
   params: { destino }, responseType: destino === 'zip' ? 'blob' : 'json', timeout: 300000,
 });
-export const enviarArquiteturaLaudo = (id, arquivo) => {
+// Arquitetura (DWG, DXF ou PDF vetorial). PDF: `opcoes.escala` (50 = 1:50) quando
+// o carimbo não tem a escala. O envio com a pergunta da escala fica em components/Modelo3d.js.
+const formArquitetura = (arquivo, { escala } = {}) => {
   const fd = new FormData();
+  if (escala) fd.append('escala', String(escala)); // antes do arquivo: o multer só vê campos anteriores
   fd.append('arquivo', arquivo);
-  return api.post(`/laudos/${id}/arquitetura`, fd, { timeout: 180000 });
+  return fd;
 };
+export const enviarArquiteturaLaudo = (id, arquivo, opcoes) => api.post(`/laudos/${id}/arquitetura`, formArquitetura(arquivo, opcoes), { timeout: 240000 });
 export const getArquiteturaLaudo = (id) => api.get(`/laudos/${id}/arquitetura`);
 // Modelo 3D ilustrativo (2.3) — origem: 'laudo' | 'analise' | 'proposta'
 export const getModelo3d = (origem, id) => api.get(`/modelo-3d/${origem}/${id}`);
@@ -175,11 +179,7 @@ export const getModelo3d = (origem, id) => api.get(`/modelo-3d/${origem}/${id}`)
 export const abrirModelo3d = (origem, id) => api.post(`/modelo-3d/${origem}/${id}/abrir`, null, { timeout: 180000 });
 export const urlModelo3d = (caminho) => `${process.env.REACT_APP_API_URL || ''}${caminho}`;
 export const baixarModelo3d = (origem, id) => api.get(`/modelo-3d/${origem}/${id}/arquivo`, { responseType: 'blob', timeout: 180000 });
-export const enviarArquiteturaAnalise = (id, arquivo) => {
-  const fd = new FormData();
-  fd.append('arquivo', arquivo);
-  return api.post(`/projetos/analises/${id}/arquitetura`, fd, { timeout: 180000 });
-};
+export const enviarArquiteturaAnalise = (id, arquivo, opcoes) => api.post(`/projetos/analises/${id}/arquitetura`, formArquitetura(arquivo, opcoes), { timeout: 240000 });
 export const getArquiteturaAnalise = (id) => api.get(`/projetos/analises/${id}/arquitetura`);
 export const mostrarModelo3dAoCliente = (id, mostrar) => api.patch(`/propostas/${id}/modelo-3d-cliente`, { mostrar });
 export const baixarUnifilarLaudo = (id) => api.get(`/laudos/${id}/unifilar`, { responseType: 'blob', timeout: 120000 });

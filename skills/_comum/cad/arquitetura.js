@@ -216,8 +216,8 @@ function associarPortas(portas, ambientes) {
 }
 
 // ── Ambientes pelas paredes (sem polilinha de área) ───────────────────────
-// Layers que não são parede (mobiliário, piso, cotas, textos…)
-const RE_NAO_PAREDE = /MOB|LOU[CÇ]A|PISO|HACH|COTA|TEXT|DIM|EIXO|VEGET|LAYOUT|EQUIP|PAGIN|FORRO|ILUM|EL[EÉ]T|HIDR|SANIT|TUBUL|DEFPOINTS|VIEWPORT|CARIMBO|SELO|NOTA/i;
+// Layers que não são parede (mobiliário, piso, cotas, textos, tracejados de projeção…)
+const RE_NAO_PAREDE = /MOB|LOU[CÇ]A|PISO|HACH|COTA|TEXT|DIM|EIXO|TRACEJ|VEGET|LAYOUT|EQUIP|PAGIN|FORRO|ILUM|EL[EÉ]T|HIDR|SANIT|TUBUL|DEFPOINTS|VIEWPORT|CARIMBO|SELO|NOTA/i;
 const RE_PAREDE = /PAREDE|ALVEN|WALL|DRYWALL|DIVIS|ESTRUT|PILAR|COLUN|JANEL|ESQUAD|CAIXILH|VIDRO|WINDOW|FECHAMENTO|PERIM/i;
 
 function ambientesPorParedes(segmentos, portas, textos, { areaMinima = 1, areaMaxima = 5000 } = {}) {

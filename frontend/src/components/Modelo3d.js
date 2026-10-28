@@ -1,7 +1,8 @@
 // Modelo 3D ilustrativo (versão 2.3): botões "Ver em 3D" / "Baixar 3D", o
-// cartão da análise (enviar a arquitetura DWG/DXF) e a opção da proposta
+// cartão da análise (enviar a arquitetura DWG/DXF/PDF) e a opção da proposta
 // "mostrar ao cliente". O 3D abre numa aba nova por um link curto do servidor
 // (a página roda isolada do sistema — ver backend/src/services/modelo3d).
+// enviarArquitetura(): o envio da arquitetura é o mesmo na análise e no projeto.
 import { useState, useRef, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { Box, FileDown, Upload } from 'lucide-react';
@@ -10,6 +11,36 @@ import {
   getModelo3d, mostrarModelo3dAoCliente,
 } from '../services/api';
 import { baixarArquivo, mensagemDeErro } from '../utils/download';
+
+export const ACEITA_ARQUITETURA = '.dxf,.dwg,.pdf';
+export const DICA_ARQUITETURA = 'Planta de arquitetura em DWG ou DXF (AutoCAD 2004 ou mais novo) ou em PDF exportado do AutoCAD/Revit (não escaneado), com o nome dos ambientes escrito dentro deles; portas pelo arco de abertura.';
+
+// Envia a arquitetura (análise ou projeto) e mostra o resultado. PDF sem escala
+// no carimbo nem portas para medir: pergunta a escala e reenvia. Devolve os
+// dados da resposta, ou null (erro já mostrado / usuário desistiu).
+export async function enviarArquitetura(enviar, arquivo, { extra = () => '' } = {}) {
+  let escala = null;
+  for (;;) {
+    try {
+      const { data } = await enviar(arquivo, { escala });
+      const n = Array.isArray(data.ambientes) ? data.ambientes.length : data.ambientes;
+      const pdf = data.pdf ? ` — PDF na escala 1:${data.pdf.escala}${data.pdf.origemEscala === 'portas' ? ' (pelo tamanho das portas)' : data.pdf.origemEscala === 'carimbo' ? ' (do carimbo)' : ''}` : data.origem === 'dwg' ? ' (DWG)' : '';
+      toast.success(`${n} ambientes e ${data.portas ?? 0} portas lidos da arquitetura${pdf}${extra(data)}`, { duration: 8000 });
+      for (const aviso of data.pdf?.avisos || []) toast(aviso, { icon: '⚠️', duration: 12000 });
+      return data;
+    } catch (err) {
+      if (err.response?.data?.faltaEscala && !escala) {
+        const r = window.prompt('O PDF não informa a escala da planta (nem dá para medir pelas portas).\nDigite a escala — por exemplo 50 para 1:50, 100 para 1:100:', '50');
+        const v = Number(String(r || '').replace(/^1\s*[:/]\s*/, ''));
+        if (!(v > 0)) return null;
+        escala = v;
+        continue;
+      }
+      toast.error(await mensagemDeErro(err, 'Erro ao ler a arquitetura'), { duration: 9000 });
+      return null;
+    }
+  }
+}
 
 // antes: chamado antes de gerar (ex.: salvar o formulário pendente)
 export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null, estilo = {} }) {
@@ -63,7 +94,7 @@ export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null,
   );
 }
 
-// Cartão da análise: arquitetura (DWG/DXF) → 3D com os pontos estimados das disciplinas
+// Cartão da análise: arquitetura (DWG/DXF/PDF) → 3D com os pontos das disciplinas
 export function CartaoModelo3dAnalise({ analiseId, estiloCartao, estiloTitulo }) {
   const entrada = useRef(null);
   const [arquitetura, setArquitetura] = useState(null);
@@ -77,11 +108,7 @@ export function CartaoModelo3dAnalise({ analiseId, estiloCartao, estiloTitulo })
   async function enviar(arquivo) {
     setEnviando(true);
     try {
-      const r = await enviarArquiteturaAnalise(analiseId, arquivo);
-      toast.success(`${r.data.ambientes} ambientes e ${r.data.portas ?? 0} portas lidos da arquitetura${r.data.origem === 'dwg' ? ' (DWG)' : ''}`, { duration: 7000 });
-      setArquitetura((await getArquiteturaAnalise(analiseId)).data);
-    } catch (err) {
-      toast.error(await mensagemDeErro(err, 'Erro ao ler a arquitetura'), { duration: 9000 });
+      if (await enviarArquitetura((a, op) => enviarArquiteturaAnalise(analiseId, a, op), arquivo)) setArquitetura((await getArquiteturaAnalise(analiseId)).data);
     } finally {
       setEnviando(false);
     }
@@ -91,16 +118,16 @@ export function CartaoModelo3dAnalise({ analiseId, estiloCartao, estiloTitulo })
     <div style={estiloCartao} data-testid="cartao-modelo-3d">
       <h3 style={{ ...estiloTitulo, display: 'flex', alignItems: 'center', gap: 8 }}><Box size={16} /> Modelo 3D ilustrativo (para o cliente)</h3>
       <p style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.6 }}>
-        Envie a <b>arquitetura em DWG ou DXF</b> e o sistema monta o 3D dos ambientes com os pontos das disciplinas desta análise
-        (estimados pela norma — marcados para conferir). Serve para o cliente ter uma ideia de como vai ficar; não substitui o projeto executivo.
+        Envie a <b>arquitetura em DWG, DXF ou PDF</b> e o sistema monta o 3D dos ambientes com os pontos das disciplinas desta análise
+        (os do desenho, quando o projeto veio em DWG/DXF; senão, estimados pela norma — marcados para conferir). Serve para o cliente ter uma
+        ideia de como vai ficar; não substitui o projeto executivo. O PDF precisa ser o exportado do AutoCAD/Revit (não escaneado).
         O projeto criado a partir desta análise já recebe a mesma arquitetura.
       </p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input ref={entrada} type="file" accept=".dxf,.dwg" style={{ display: 'none' }}
+        <input ref={entrada} type="file" accept={ACEITA_ARQUITETURA} style={{ display: 'none' }}
           onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) enviar(f); }} />
-        <button type="button" style={btn3d} disabled={enviando} onClick={() => entrada.current?.click()}
-          title="Planta de arquitetura em DWG ou DXF (AutoCAD 2004 ou mais novo), com o nome dos ambientes escrito dentro deles">
-          <Upload size={13} style={{ marginRight: 5 }} /> {enviando ? 'Lendo…' : arquitetura ? 'Trocar arquitetura (DWG/DXF)' : 'Enviar arquitetura (DWG/DXF)'}
+        <button type="button" style={btn3d} disabled={enviando} onClick={() => entrada.current?.click()} title={DICA_ARQUITETURA}>
+          <Upload size={13} style={{ marginRight: 5 }} /> {enviando ? 'Lendo…' : arquitetura ? 'Trocar arquitetura' : 'Enviar arquitetura (DWG/DXF/PDF)'}
         </button>
         {arquitetura && (
           <>

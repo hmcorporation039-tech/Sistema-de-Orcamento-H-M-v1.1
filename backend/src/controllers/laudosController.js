@@ -23,7 +23,7 @@ const { dadosDaAnalise, tipoAmbiente } = require('../utils/ponteAnaliseSkill');
 const { buscarPrecosReferencia, segmentoDoCliente } = require('../utils/precosMaoDeObraReferencia');
 const { sincronizarLaudo, pastaDoLaudo, resumoPasta, pedidoLocal, seguro, caminhoRegistrado, excluirPastaDoItem } = require('../services/pastasRegistros');
 const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
-const { lerArquiteturaNoWorker, mensagemDaLeitura, gerarPlantaNoWorker } = require('../services/tarefasCad');
+const { lerArquiteturaNoWorker, mensagemDaLeitura, resumoDaArquitetura, dxfParaGuardar, faltouEscala, gerarPlantaNoWorker } = require('../services/tarefasCad');
 
 // Projetos e laudos por disciplina (hub Obras → "Projetos por disciplina" e
 // "Laudos"). O cálculo e os documentos vêm da skill da disciplina
@@ -494,22 +494,19 @@ async function enviarArquitetura(req, res) {
     const laudo = await carregarLaudo(req.params.id);
     if (!laudo) return res.status(404).json({ erro: 'Registro não encontrado.' });
     const arq = req.file;
-    if (!arq) return res.status(400).json({ erro: 'Envie o arquivo da arquitetura (.dwg ou .dxf).' });
-    // DWG: convertido para DXF num processo à parte (com tempo limite); guarda-se o
-    // DXF convertido para a planta não converter de novo — o original vai para a pasta.
+    if (!arq) return res.status(400).json({ erro: 'Envie o arquivo da arquitetura (.dwg, .dxf ou PDF).' });
+    // DWG/PDF: convertido para DXF (PDF: `escala` e `pagina` opcionais no formulário);
+    // guarda-se o DXF convertido para a planta não converter de novo — o original vai para a pasta.
     // Conversão e leitura numa thread à parte (services/tarefasCad): na thread
     // principal, um desenho grande travava o sistema para todos por segundos.
-    let texto, origem, leitura;
-    try { ({ texto, origem, leitura } = await lerArquiteturaNoWorker(arq.buffer, arq.originalname)); } catch (e) { return res.status(400).json({ erro: mensagemDaLeitura(e) }); }
-    const resumo = {
-      ambientes: leitura.ambientes.map(a => ({ nome: a.nome, area_m2: a.area_m2, perimetro_m: a.perimetro_m, origem: a.origem })),
-      portas: leitura.portas.length,
-      layers: leitura.layers.length, fatorUnidade: leitura.fatorUnidade, origem,
-    };
+    let lida;
+    try { lida = await lerArquiteturaNoWorker(arq.buffer, arq.originalname, req.body); } catch (e) { return res.status(400).json({ erro: mensagemDaLeitura(e), faltaEscala: faltouEscala(e) }); }
+    const { leitura } = lida;
+    const resumo = resumoDaArquitetura(lida);
     await pool.query(
       `INSERT INTO laudos_projetos_arquitetura (laudo_id, nome_arquivo, conteudo, resumo, usuario_id) VALUES ($1,$2,$3,$4,$5)
        ON CONFLICT (laudo_id) DO UPDATE SET nome_arquivo = EXCLUDED.nome_arquivo, conteudo = EXCLUDED.conteudo, resumo = EXCLUDED.resumo, usuario_id = EXCLUDED.usuario_id, criado_em = NOW()`,
-      [laudo.id, String(arq.originalname).slice(0, 200), origem === 'dwg' ? Buffer.from(texto, 'utf8') : arq.buffer, resumo, req.usuario.id]
+      [laudo.id, String(arq.originalname).slice(0, 200), dxfParaGuardar(lida, arq.buffer), resumo, req.usuario.id]
     );
     // formulário sem ambientes: preenche com os da arquitetura (área e perímetro reais)
     let preenchidos = 0;
@@ -543,7 +540,7 @@ async function montarPlanta(laudo, { asBuilt = null } = {}) {
   const gerador = C.PLANTAS[laudo.disciplina];
   if (!gerador) throw erro400('A planta automática ainda não existe para esta disciplina (disponível: elétrica predial e hospitalar, iluminação, incêndio, alarme, controle de acesso, CFTV, cabeamento, telefonia e antena).');
   const { rows: [arq] } = await pool.query('SELECT nome_arquivo, conteudo FROM laudos_projetos_arquitetura WHERE laudo_id = $1', [laudo.id]);
-  if (!arq) throw erro400('Envie primeiro a arquitetura (.dwg ou .dxf) deste projeto.');
+  if (!arq) throw erro400('Envie primeiro a arquitetura (.dwg, .dxf ou PDF) deste projeto.');
   const motor = motorDaDisciplina(laudo.disciplina);
   const d = laudo.dados || {};
   // leitura da arquitetura, cálculo da disciplina e desenho numa thread à parte

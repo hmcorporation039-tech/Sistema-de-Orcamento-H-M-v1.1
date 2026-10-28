@@ -15,12 +15,28 @@ async function rodar(tarefa, dados, descricao) {
     if (e.codigo === 'TEMPO_ESGOTADO') throw Object.assign(new Error(`${descricao} passou de ${TEMPO_LIMITE_MS / 1000} s`), { etapa: 'tempo' });
     throw Object.assign(e, { etapa: e.etapa || 'interno' });
   }
-  if (!m.ok) throw Object.assign(new Error(m.erro), { etapa: m.etapa });
+  if (!m.ok) throw Object.assign(new Error(m.erro), { etapa: m.etapa, codigo: m.codigo || null });
   return m;
 }
 
-// DWG/DXF da arquitetura → { texto (DXF), origem, leitura: { ambientes, portas, layers, fatorUnidade, extensao } }
-const lerArquiteturaNoWorker = (buffer, nome) => rodar('lerArquitetura', { buffer, nome }, `a leitura de "${nome}"`);
+// DWG/DXF/PDF da arquitetura → { texto (DXF), origem, pdf, leitura: { ambientes, portas, layers, fatorUnidade, extensao } }
+// `opcoes` (só PDF): { escala (50 = 1:50), pagina }
+const lerArquiteturaNoWorker = (buffer, nome, { escala = null, pagina = null } = {}) =>
+  rodar('lerArquitetura', { buffer, nome, escala: Number(escala) || null, pagina: Number(pagina) || null }, `a leitura de "${nome}"`);
+
+// Resumo gravado com a arquitetura (análise e projeto usam o mesmo formato: o
+// projeto criado da análise copia a linha)
+const resumoDaArquitetura = ({ origem, leitura, pdf }) => ({
+  ambientes: leitura.ambientes.map(a => ({ nome: a.nome, area_m2: a.area_m2, perimetro_m: a.perimetro_m, origem: a.origem })),
+  portas: leitura.portas.length, layers: leitura.layers.length, fatorUnidade: leitura.fatorUnidade, origem,
+  ...(pdf ? { pdf } : {}),
+});
+
+// DXF a guardar: o do usuário quando ele mandou DXF; o convertido (DWG/PDF) nos outros casos
+const dxfParaGuardar = ({ origem, texto }, buffer) => (origem === 'dxf' ? buffer : Buffer.from(texto, 'utf8'));
+
+// Escala que faltou num PDF: a tela pergunta e reenvia
+const faltouEscala = (e) => e.codigo === 'ESCALA';
 
 // Mensagem de sempre para a tela: erro da conversão do DWG vai como veio; o resto,
 // "Não consegui ler a arquitetura: ..."
@@ -35,4 +51,4 @@ async function dxfCompatibilizacaoNoWorker({ dxfReferencia, conflitos, titulo })
   return m.dxf;
 }
 
-module.exports = { lerArquiteturaNoWorker, mensagemDaLeitura, gerarPlantaNoWorker, dxfCompatibilizacaoNoWorker };
+module.exports = { lerArquiteturaNoWorker, mensagemDaLeitura, resumoDaArquitetura, dxfParaGuardar, faltouEscala, gerarPlantaNoWorker, dxfCompatibilizacaoNoWorker };

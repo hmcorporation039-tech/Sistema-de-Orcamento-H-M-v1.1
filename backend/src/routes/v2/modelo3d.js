@@ -5,16 +5,10 @@
 // cliente: dono da proposta ou administrador.
 // /modelo-3d/ver/:token é a única sem login: o token curto (10 min, em memória)
 // é emitido por /abrir para quem está logado.
-const multer = require('multer');
 const ctrl = require('../../controllers/modelo3dController');
 
-const uploadArquitetura = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 40 * 1024 * 1024, files: 1 },
-  fileFilter: (req, file, cb) => cb(null, /\.(dxf|dwg)$/i.test(file.originalname || '')),
-});
-
-module.exports = (router, { autenticar, validarId, exigirPosse }) => {
+// uploadArquitetura (DWG/DXF/PDF): o mesmo da arquitetura do projeto, em routes/index.js
+module.exports = (router, { autenticar, validarId, exigirPosse, uploadArquitetura }) => {
   const posseAnalise = exigirPosse('analises_projeto', {
     naoEncontrado: 'Análise não encontrada.',
     semPermissao: 'Esta análise foi criada por outro usuário. Peça a ele ou a um administrador para alterar.',

@@ -205,7 +205,7 @@ async function situacao(origemTipo, origemId) {
   const extra = origemTipo === 'proposta'
     ? { modelo_3d_cliente: (await pool.query('SELECT modelo_3d_cliente FROM propostas WHERE id = $1', [origemId])).rows[0]?.modelo_3d_cliente === true }
     : {};
-  if (!fonte) return { disponivel: false, motivo: 'Envie a arquitetura (.dwg ou .dxf) para gerar o modelo 3D.', ...extra };
+  if (!fonte) return { disponivel: false, motivo: 'Envie a arquitetura (.dwg, .dxf ou PDF) para gerar o modelo 3D.', ...extra };
   return { disponivel: true, arquivo: fonte.nomeArquivo, disciplinas: fonte.disciplinas, aviso: fonte.semPontos, ...extra };
 }
 

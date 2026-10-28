@@ -1,5 +1,5 @@
 // Tarefas de CAD numa thread à parte (worker_threads) — services/tarefasCad/index.js.
-// Ler a arquitetura de um DWG/DXF (skills/_comum/cad/arquitetura.js) e gerar
+// Ler a arquitetura de um DWG/DXF/PDF (skills/_comum/cad/arquitetura.js) e gerar
 // a planta ou o DXF da compatibilização levam segundos de CPU num desenho
 // grande; na thread principal isso travava o sistema para todos os usuários.
 // Entrada (workerData): { tarefa, ...dados da tarefa }
@@ -15,12 +15,29 @@ const falhou = (etapa, e) => ({ ok: false, etapa, erro: String(e?.message || e) 
 const resumoDaLeitura = (l) => ({ ambientes: l.ambientes, portas: l.portas, layers: l.layers, fatorUnidade: l.fatorUnidade, extensao: l.extensao });
 
 const TAREFAS = {
-  // { buffer, nome } → { texto (DXF), origem ('dwg'|'dxf'), leitura }
-  async lerArquitetura({ buffer, nome }) {
+  // { buffer, nome, escala?, pagina? } → { texto (DXF), origem ('dwg'|'dxf'|'pdf'), leitura, pdf? }
+  // PDF vetorial vira DXF em metros (utils/pdfParaDxf.js); escala/página só valem para PDF.
+  async lerArquitetura({ buffer, nome, escala, pagina }) {
     const C = cad();
-    let texto, origem;
-    try { ({ texto, origem } = await C.textoDxfDoArquivo(Buffer.from(buffer), nome)); } catch (e) { return falhou('conversao', e); }
-    try { return { ok: true, texto, origem, leitura: resumoDaLeitura(C.lerArquitetura(texto)) }; } catch (e) { return falhou('leitura', e); }
+    let texto, origem, pdf = null;
+    try {
+      if (/\.pdf$/i.test(nome || '')) {
+        // processo à parte: um erro nativo do leitor de PDF não derruba o sistema
+        const r = await require('../../utils/pdfParaDxf').pdfParaDxfIsolado(Buffer.from(buffer), { escala, pagina });
+        ({ texto } = r);
+        origem = 'pdf';
+        pdf = { escala: r.escala, origemEscala: r.origemEscala, pagina: r.pagina, paginas: r.paginas, avisos: r.avisos };
+      } else ({ texto, origem } = await C.textoDxfDoArquivo(Buffer.from(buffer), nome));
+    } catch (e) {
+      return { ...falhou('conversao', /\.pdf$/i.test(nome || '') ? `Não consegui converter o PDF "${nome}": ${e.message}` : e), codigo: e.codigo || null };
+    }
+    try {
+      const leitura = resumoDaLeitura(C.lerArquitetura(texto));
+      if (pdf && leitura.ambientes.length < 2) {
+        pdf.avisos.push('Quase nenhum ambiente com nome: os nomes das salas neste PDF não estão como texto (ou estão fora das salas). O 3D mostra as paredes; tomadas e pontos por ambiente ficam de fora.');
+      }
+      return { ok: true, texto, origem, pdf, leitura };
+    } catch (e) { return falhou('leitura', e); }
   },
 
   // { dxf, disciplina, dados, carimbo } → { dxf, naoEncontrados }

@@ -24,9 +24,13 @@ let pdfjsCarregado = null;
 const pdfjs = () => (pdfjsCarregado ||= import('pdfjs-dist/legacy/build/pdf.mjs'));
 
 // ── 1) Geometria e textos de uma página ────────────────────────────────────
-async function lerPagina(pagina, OPS) {
+// `geometria`: cada caminho leva também os trechos (subs: [{ segs, fechado }],
+// seg = ['l', a, b] ou ['c', p0, c1, c2, p3] em pontos da página) e a espessura
+// na página (lwPg) — usado pela conversão PDF → DXF (utils/pdfParaDxf.js).
+// `ops`: lista de operadores já lida (quem chamou já contou os traços).
+async function lerPagina(pagina, OPS, { geometria = false, ops: opsLidos = null } = {}) {
   const vp = pagina.getViewport({ scale: 1 });
-  const ops = await pagina.getOperatorList();
+  const ops = opsLidos || await pagina.getOperatorList();
   const FILL = new Set([OPS.fill, OPS.eoFill, OPS.fillStroke, OPS.eoFillStroke, OPS.closeFillStroke, OPS.closeEOFillStroke]);
   const STROKE = new Set([OPS.stroke, OPS.closeStroke, OPS.fillStroke, OPS.eoFillStroke, OPS.closeFillStroke, OPS.closeEOFillStroke]);
   let st = { ctm: vp.transform.slice(), fill: '#000000', stroke: '#000000', lw: 1, dash: '' };
@@ -51,22 +55,32 @@ async function lerPagina(pagina, OPS) {
         let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, comp = 0, segs = 0;
         let cx = 0, cy = 0, sx = 0, sy = 0, ini = null, fim = null;
         const ponto = (x, y) => { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; };
+        const subs = geometria ? [] : null;
+        let sub = null;
         for (let k = 0; k < d.length;) {
           const o = d[k++];
-          if (o === 0) { [cx, cy] = ap(st.ctm, d[k++], d[k++]); sx = cx; sy = cy; ini ||= [cx, cy]; ponto(cx, cy); }
-          else if (o === 1 || o === 2) {
-            if (o === 2) k += 4;
+          if (o === 0) {
+            [cx, cy] = ap(st.ctm, d[k++], d[k++]); sx = cx; sy = cy; ini ||= [cx, cy]; ponto(cx, cy);
+            if (subs) { sub = { segs: [], fechado: false }; subs.push(sub); }
+          } else if (o === 1 || o === 2) {
+            const c1 = o === 2 ? ap(st.ctm, d[k++], d[k++]) : null;
+            const c2 = o === 2 ? ap(st.ctm, d[k++], d[k++]) : null;
             const [x, y] = ap(st.ctm, d[k++], d[k++]);
+            if (sub) sub.segs.push(o === 2 ? ['c', [cx, cy], c1, c2, [x, y]] : ['l', [cx, cy], [x, y]]);
             comp += Math.hypot(x - cx, y - cy); cx = x; cy = y; segs++; ponto(x, y); fim = [x, y];
-          } else if (o === 3) { comp += Math.hypot(sx - cx, sy - cy); cx = sx; cy = sy; segs++; }
-          else break;
+          } else if (o === 3) {
+            if (sub) { if (Math.hypot(sx - cx, sy - cy) > 1e-6) sub.segs.push(['l', [cx, cy], [sx, sy]]); sub.fechado = true; }
+            comp += Math.hypot(sx - cx, sy - cy); cx = sx; cy = sy; segs++;
+          } else break;
         }
         if (!Number.isFinite(x0)) break;
         const cheio = FILL.has(pintura), traco = STROKE.has(pintura);
         if (!cheio && !traco) break;
         // reta: um segmento só (ou caminho cujo comprimento ≈ distância das pontas)
         const reto = !!(ini && fim) && Math.abs(Math.hypot(fim[0] - ini[0], fim[1] - ini[1]) - comp) < 0.5;
-        caminhos.push({ cheio, traco, fill: st.fill, stroke: st.stroke, lw: +(+st.lw).toFixed(2), dash: st.dash, caixa: [x0, y0, x1, y1], comp, segs, reto });
+        const c = { cheio, traco, fill: st.fill, stroke: st.stroke, lw: +(+st.lw).toFixed(2), dash: st.dash, caixa: [x0, y0, x1, y1], comp, segs, reto };
+        if (subs) Object.assign(c, { subs: subs.filter(s => s.segs.length), lwPg: (+st.lw || 0) * Math.sqrt(Math.abs(st.ctm[0] * st.ctm[3] - st.ctm[1] * st.ctm[2])) });
+        caminhos.push(c);
         break;
       }
       default: break;

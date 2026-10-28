@@ -102,6 +102,12 @@ class DesenhoDxf {
     return this.dxf.addCircle(point3d(x * k, y * k), raio * k, { layerName: layer });
   }
 
+  // Arco no sentido anti-horário, de `inicio` a `fim` (graus)
+  arco(x, y, raio, inicio, fim, layer = '0') {
+    const k = this.k;
+    return this.dxf.addArc(point3d(x * k, y * k), raio * k, inicio, fim, { layerName: layer });
+  }
+
   // Texto de uma linha; `alinhar`: 'esquerda' | 'centro' | 'direita'
   texto(x0, y0, altura, conteudo, { layer = '0', rotacao = 0, alinhar = 'esquerda' } = {}) {
     const x = x0 * this.k, y = y0 * this.k;

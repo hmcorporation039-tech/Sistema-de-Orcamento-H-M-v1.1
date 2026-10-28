@@ -80,7 +80,25 @@ function regiaoDoModelo(arquitetura) {
   const perto = expandir(caixa, 6);
   const externos = validos.filter(a => a.tipo === 'externo' && a.area_m2 <= 1500 && naCaixa(perto, centroide(a.poligono)));
   for (const e of externos) caixa = uniao(caixa, e.caixa);
-  return { caixa: expandir(caixa, 1.5), ambientes: [...escolhidos, ...(internos.length ? externos : [])] };
+  return { caixa: expandir(crescerPelasParedes(arquitetura, caixa), 1.5), ambientes: [...escolhidos, ...(internos.length ? externos : [])] };
+}
+
+// O prédio vai além das salas com nome (planta de PDF com o nome desenhado como
+// traço, sala sem etiqueta): a região cresce pelas paredes (layers de parede)
+// ligadas a ela — folga de 1,5 m entre uma e outra —, sem pular para outro
+// desenho da folha (implantação, segundo pavimento ao lado).
+function crescerPelasParedes(arquitetura, caixa) {
+  const paredes = arquitetura.referencia
+    .filter(r => r.pts.length >= 2 && RE_PAREDE.test(r.layer || '') && !RE_JANELA.test(r.layer || ''))
+    .map(r => caixaDe(r.pts))
+    .filter(c => Math.hypot(c[2] - c[0], c[3] - c[1]) <= 300);
+  const usadas = new Uint8Array(paredes.length);
+  let c = caixa;
+  for (let volta = 0, cresceu = true; cresceu && volta < 200; volta++) {
+    cresceu = false;
+    paredes.forEach((p, i) => { if (!usadas[i] && distCaixas(p, c) <= 1.5) { usadas[i] = 1; c = uniao(c, p); cresceu = true; } });
+  }
+  return c;
 }
 
 // ── Classes de layer ─────────────────────────────────────────────────────────

@@ -9,7 +9,7 @@ import {
   enviarArquiteturaLaudo, getArquiteturaLaudo, baixarPlantaLaudo, baixarUnifilarLaudo,
 } from '../../services/api';
 import PainelPasta from '../PainelPasta';
-import { BotoesModelo3d } from '../Modelo3d';
+import { BotoesModelo3d, enviarArquitetura, ACEITA_ARQUITETURA, DICA_ARQUITETURA } from '../Modelo3d';
 import ObraSelect from '../ObraSelect';
 import FormularioSpda from './FormularioSpda';
 import ResultadoSpda from './ResultadoSpda';
@@ -417,13 +417,12 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
     setOcupado('arquitetura');
     try {
       await salvarAgora();
-      const r = await enviarArquiteturaLaudo(laudo.id, arquivo);
-      toast.success(`${r.data.ambientes.length} ambientes e ${r.data.portas ?? 0} portas lidos da arquitetura${r.data.origem === 'dwg' ? ' (DWG)' : ''}${r.data.preenchidos ? ` — ${r.data.preenchidos} preenchidos no formulário (área e perímetro reais)` : ''}`, { duration: 8000 });
-      if (r.data.preenchidos) await abrir(laudo.id); // recarrega o formulário com os ambientes
+      const dados = await enviarArquitetura((a, op) => enviarArquiteturaLaudo(laudo.id, a, op), arquivo,
+        { extra: (d) => (d.preenchidos ? ` — ${d.preenchidos} preenchidos no formulário (área e perímetro reais)` : '') });
+      if (!dados) return;
+      if (dados.preenchidos) await abrir(laudo.id); // recarrega o formulário com os ambientes
       else setArquitetura((await getArquiteturaLaudo(laudo.id)).data);
       setPastaMudou(Date.now());
-    } catch (err) {
-      toast.error(err.response?.data?.erro || 'Erro ao ler a arquitetura', { duration: 9000 });
     } finally {
       setOcupado('');
     }
@@ -664,11 +663,10 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, alignItems: 'center' }}>
                 <span style={{ fontSize: 12, color: '#bbb', marginRight: 4 }}>Desenhos (AutoCAD / QElectroTech):</span>
                 {desenhos.planta && (<>
-                <input ref={entradaArquitetura} type="file" accept=".dxf,.dwg" style={{ display: 'none' }}
+                <input ref={entradaArquitetura} type="file" accept={ACEITA_ARQUITETURA} style={{ display: 'none' }}
                   onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) enviarArquiteturaDoLaudo(f); }} />
-                <button style={btnSecundario} disabled={!!ocupado} onClick={() => entradaArquitetura.current?.click()}
-                  title="Planta de arquitetura do cliente em DWG ou DXF (AutoCAD 2004 ou mais novo). Ambientes pela polilinha de área ou pelas paredes, com o nome dentro; portas pelo arco de abertura.">
-                  <Upload size={13} style={{ marginRight: 5 }} /> {ocupado === 'arquitetura' ? 'Lendo…' : arquitetura ? 'Trocar arquitetura (DWG/DXF)' : 'Enviar arquitetura (DWG/DXF)'}
+                <button style={btnSecundario} disabled={!!ocupado} onClick={() => entradaArquitetura.current?.click()} title={DICA_ARQUITETURA}>
+                  <Upload size={13} style={{ marginRight: 5 }} /> {ocupado === 'arquitetura' ? 'Lendo…' : arquitetura ? 'Trocar arquitetura' : 'Enviar arquitetura (DWG/DXF/PDF)'}
                 </button>
                 {arquitetura && (
                   <>
