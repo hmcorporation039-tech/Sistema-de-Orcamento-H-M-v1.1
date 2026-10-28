@@ -280,10 +280,11 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
   }
 
   async function excluir(item) {
-    if (!window.confirm(`Excluir o ${T.item} "${item.titulo}"? As fotos dele também serão apagadas.`)) return;
+    if (!window.confirm(`Excluir o ${T.item} "${item.titulo}"? As fotos dele também serão apagadas; a pasta vai para Arquivos do Sistema\\_Excluídos.`)) return;
     try {
       await removerLaudo(item.id);
-      if (laudo?.id === item.id) { setLaudo(null); setDados(null); setResumo(null); }
+      if (laudo?.id === item.id) { revisaoRef.current += 1; laudoAbertoRef.current = null; setSujo(false); setLaudo(null); setDados(null); setResumo(null); }
+      toast.success(`${T.item.charAt(0).toUpperCase()}${T.item.slice(1)} excluído`);
       carregarLista();
     } catch (err) {
       toast.error(err.response?.data?.erro || 'Erro ao excluir');
@@ -634,6 +635,13 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
               </div>
               <button style={btnPrimario} onClick={calcular} disabled={!!ocupado}><Calculator size={14} /> {ocupado === 'calcular' ? 'Calculando…' : 'Calcular'}</button>
               <button style={btnSecundario} onClick={exportarJson}><Download size={13} style={{ marginRight: 5 }} /> Exportar JSON</button>
+              {!somenteLeitura && (
+                <button style={{ ...btnSecundario, borderStyle: 'solid', borderColor: '#5a2a2a', color: '#e07070' }} disabled={!!ocupado} data-testid="excluir-registro"
+                  onClick={() => excluir({ id: laudo.id, titulo: dados?.obra?.nome || dados?.meta?.titulo || T.semTitulo })}
+                  title={`Exclui este ${T.item}. A pasta dele vai para Arquivos do Sistema\\_Excluídos (dá para recuperar os arquivos).`}>
+                  <Trash2 size={13} style={{ marginRight: 5 }} /> Excluir {T.item}
+                </button>
+              )}
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
               <button style={{ ...btnSecundario, borderColor: '#2f5a2f', color: '#8fd18f' }} disabled={!!ocupado} onClick={salvarDocumentosNaPasta} title={`Gera os documentos ${ehProjeto ? 'de projeto' : 'do laudo'} (Word e Excel) e grava na pasta do ${T.item}, substituindo as versões anteriores`}>
