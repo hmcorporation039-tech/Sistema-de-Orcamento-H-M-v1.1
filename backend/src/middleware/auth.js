@@ -1,6 +1,8 @@
 const jwt = require('jsonwebtoken');
 const pool = require('../config/database');
 const { JWT_SECRET } = require('../config/segredos');
+const { ESCOPO: ESCOPO_ASSISTENTE, execucaoDoToken } = require('../services/assistente/sessoes');
+const { aplicarEscopoAssistente } = require('./escopoAssistente');
 
 // Cache curto do estado da conta (ativo/role). Sem ele seria uma consulta ao
 // banco por requisição; com 30 segundos, desativar um usuário tira o acesso
@@ -62,6 +64,16 @@ async function autenticar(req, res, next) {
     // troca de senha — antes isso era exigido apenas pela tela.
     if (req.usuario.senhaProvisoria && !(req.method === 'POST' && req.originalUrl.split('?')[0].endsWith('/auth/senha'))) {
       return res.status(403).json({ erro: 'Defina sua nova senha antes de continuar.', codigo: 'SENHA_PROVISORIA' });
+    }
+    // Token do assistente virtual (escopo 'assistente', emitido para UMA
+    // execução): vale só enquanto a execução está no ar e só nas rotas que o
+    // MCP do assistente usa (middleware/escopoAssistente.js). Escopo
+    // desconhecido é recusado.
+    if (decoded.escopo !== undefined) {
+      if (decoded.escopo !== ESCOPO_ASSISTENTE) return res.status(401).json({ erro: 'Token inválido ou expirado' });
+      const execucao = execucaoDoToken(decoded);
+      if (!execucao) return res.status(401).json({ erro: 'A sessão do assistente terminou.', codigo: 'ASSISTENTE_SESSAO_ENCERRADA' });
+      return aplicarEscopoAssistente(req, res, next, execucao);
     }
     next();
   } catch (err) {

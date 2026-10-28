@@ -296,6 +296,15 @@ Pedido do usuário: "nem sempre uma análise de projetos vai ter que gerar um la
 - **Testes:** `backend/testes/projetoLaudo.test.js`, `skills/_comum/teste-tipos-documento.js` e `teste-entrega.js` (no `npm test` da pasta skills), Cypress `11_laudos.cy.js` (Laudos e Projetos, entregas, link antigo) e `13_versao_2.cy.js` (abas novas, seções da obra, finalidade).
 - **Implantar:** `npm install` na pasta `skills` (o `jszip` passou a ser dependência declarada), `reiniciar-backend.bat` (roda a migração 2.0-13), `npm run build` no frontend, Ctrl+F5.
 
+### 28/10/2026: assistente virtual, primeira versão (ramo `versao-2.0`)
+Pedido do usuário: "um assistente virtual para nos orientar quando estivermos elaborando projetos e propostas de orçamento, com o qual possamos conversar, que receba arquivos e comece por si a manusear o sistema".
+- **Como roda:** botão "Assistente" fixo em todas as telas (`components/assistente/PainelAssistente.js`). Cada mensagem vira um `claude -p` (assinatura Claude Max do PC) em modo restrito (`--restricted --tools "" --strict-mcp-config --permission-mode dontAsk`, ambiente sem os segredos do `.env`), com `--resume` da sessão da conversa e um MCP só do assistente (`backend/src/mcp/assistenteMcp.mjs`, 23 ferramentas) que chama a API do sistema com um **token curto do usuário logado** (escopo `assistente`, 2 h, válido só enquanto a execução está no ar). Resposta em streaming (NDJSON pelo fetch). Fila de 2 execuções, tempo-limite, limite diário e botão parar (`services/assistente/`).
+- **Autonomia garantida pelo servidor** (`middleware/escopoAssistente.js`): o token do assistente só passa nas rotas de leitura e de rascunho; altera só o que ele criou NESTA conversa (`assistente_conversa_id` em propostas, análises e projetos); aprovar/mudar status, e-mail, link de aprovação, excluir, alterar o que não é dele e mudar preço do catálogo/base viram **ação pendente** (`propor_acao`) que só o clique do usuário aplica, pela mesma rota da tela e com o login dele (`services/assistente/acoes.js`).
+- **Arquivos:** PDF, DWG, DXF, imagens, XLSX, CSV e DOCX (tipo pelo conteúdo, até 25 MB) em `Arquivos do Sistema\Assistente\Conversa <id>`; as ferramentas recebem o ID, nunca caminho. Leitura pelos leitores do sistema (texto/tabelas do PDF, arquitetura do DWG/DXF, OCR, planilha, Word).
+- **Banco:** migração `2.0-15-assistente.js` (conversas, mensagens com os passos, arquivos, ações). Guarda de 12 meses opcional (`ASSISTENTE_LIMPEZA=ligada`). Configuração no `.env.example` (`ASSISTENTE_*`).
+- **Testes:** `testes/assistente.test.js` (sem banco, Claude Code falso) e `testes/assistenteIntegracao.test.js` (banco de teste, MCP pelo protocolo contra a API real). Nenhum gasta cota.
+- **API preparada e desligada:** `ASSISTENTE_PROVEDOR=api` usa a API da Anthropic com as mesmas ferramentas (`services/assistente/provedorApi.js`).
+
 ---
 
 ## 3. Skills e ferramentas do Claude (servidor MCP `hm-orcamentos`)

@@ -3,6 +3,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
 import ErrorBoundary from './ErrorBoundary';
+import PainelAssistente from './assistente/PainelAssistente';
 
 // Menu da versão 2.0: seis grupos. Cada um abre uma página-"hub" com abas
 // internas (pages/hubs) que juntam as telas que antes eram itens soltos —
@@ -134,6 +135,13 @@ export default function Layout() {
           <Outlet />
         </ErrorBoundary>
       </main>
+
+      {/* Assistente virtual: botão fixo em todas as telas e painel lateral
+          (tela cheia no celular). Fora do ErrorBoundary da tela: trocar de
+          rota não fecha a conversa. */}
+      <ErrorBoundary>
+        <PainelAssistente usuario={usuario} />
+      </ErrorBoundary>
     </div>
   );
 }

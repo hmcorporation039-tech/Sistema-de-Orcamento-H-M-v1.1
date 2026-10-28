@@ -1,0 +1,22 @@
+{"type":"system","subtype":"init","cwd":"C:\tmp","tools":["mcp__hm__buscar_obras","mcp__hm__propor_acao"],"mcp_servers":[{"name":"hm","status":"connected"}],"model":"claude-sonnet-5","permissionMode":"dontAsk","apiKeySource":"none","session_id":"__SESSAO__"}
+{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","unifiedWindows":{"five_hour":{"utilization":0.2},"seven_day":{"utilization":0.5}}},"session_id":"__SESSAO__"}
+{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_1","role":"assistant","content":[]}},"parent_tool_use_id":null,"session_id":"__SESSAO__"}
+{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}},"parent_tool_use_id":null,"session_id":"__SESSAO__"}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Vou consultar "}},"parent_tool_use_id":null,"session_id":"__SESSAO__"}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"as obras."}},"parent_tool_use_id":null,"session_id":"__SESSAO__"}
+{"type":"stream_event","event":{"type":"content_block_stop","index":0},"parent_tool_use_id":null,"session_id":"__SESSAO__"}
+{"type":"assistant","message":{"id":"msg_1","role":"assistant","content":[{"type":"text","text":"Vou consultar as obras."}]},"parent_tool_use_id":null,"session_id":"__SESSAO__"}
+{"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_1","name":"mcp__hm__buscar_obras","input":{}}},"parent_tool_use_id":null,"session_id":"__SESSAO__"}
+{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"limite\": 20}"}},"parent_tool_use_id":null,"session_id":"__SESSAO__"}
+{"type":"stream_event","event":{"type":"content_block_stop","index":1},"parent_tool_use_id":null,"session_id":"__SESSAO__"}
+{"type":"assistant","message":{"id":"msg_1","role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"mcp__hm__buscar_obras","input":{"limite":20}}]},"parent_tool_use_id":null,"session_id":"__SESSAO__"}
+{"type":"stream_event","event":{"type":"message_stop"},"parent_tool_use_id":null,"session_id":"__SESSAO__"}
+{"type":"user","message":{"role":"user","content":[{"tool_use_id":"toolu_1","type":"tool_result","content":[{"type":"text","text":"2 obra(s):\n#1 OB-2026-001 — Obra Exemplo A — cliente Cliente A — orcamento\n#2 OB-2026-002 — Obra Exemplo B — cliente Cliente B — execucao"}]}]},"parent_tool_use_id":null,"session_id":"__SESSAO__"}
+{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_2","role":"assistant","content":[]}},"parent_tool_use_id":null,"session_id":"__SESSAO__"}
+{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}},"parent_tool_use_id":null,"session_id":"__SESSAO__"}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Temos **2 obras**:\n\n- OB-2026-001 — Obra Exemplo A (orçamento)\n"}},"parent_tool_use_id":null,"session_id":"__SESSAO__"}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"- OB-2026-002 — Obra Exemplo B (execução)\n\n[Abrir a obra A](/obras/1)"}},"parent_tool_use_id":null,"session_id":"__SESSAO__"}
+{"type":"stream_event","event":{"type":"content_block_stop","index":0},"parent_tool_use_id":null,"session_id":"__SESSAO__"}
+{"type":"assistant","message":{"id":"msg_2","role":"assistant","content":[{"type":"text","text":"Temos **2 obras**:\n\n- OB-2026-001 — Obra Exemplo A (orçamento)\n- OB-2026-002 — Obra Exemplo B (execução)\n\n[Abrir a obra A](/obras/1)"}]},"parent_tool_use_id":null,"session_id":"__SESSAO__"}
+{"type":"stream_event","event":{"type":"message_stop"},"parent_tool_use_id":null,"session_id":"__SESSAO__"}
+{"type":"result","subtype":"success","is_error":false,"num_turns":2,"duration_ms":1234,"result":"Temos **2 obras**:\n\n- OB-2026-001 — Obra Exemplo A (orçamento)\n- OB-2026-002 — Obra Exemplo B (execução)\n\n[Abrir a obra A](/obras/1)","session_id":"__SESSAO__"}

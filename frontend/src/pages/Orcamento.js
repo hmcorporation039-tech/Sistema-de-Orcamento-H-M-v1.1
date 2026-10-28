@@ -224,6 +224,8 @@ export default function Orcamento() {
   const [modalEmail, setModalEmail] = useState(false);
   const [carregandoEdicao, setCarregandoEdicao] = useState(!!editandoId);
   const [numeroEditando, setNumeroEditando] = useState('');
+  // rascunho montado pelo assistente virtual (propostas.assistente_conversa_id)
+  const [criadaPeloAssistente, setCriadaPeloAssistente] = useState(false);
   // E-mail do cliente já resolvido pelo backend via cliente_id (JOIN com a
   // tabela clientes) ao carregar uma proposta salva — mais confiável do que
   // bater o texto de cliente_nome contra a lista de clientes, que falha se o
@@ -350,6 +352,7 @@ export default function Orcamento() {
       const p = res.data;
       versaoRef.current = p.versao ?? null;
       setNumeroEditando(p.numero);
+      setCriadaPeloAssistente(p.assistente_conversa_id != null);
       setClienteEmailCadastro(p.cliente_email || '');
       const formCarregado = {
         data: (p.data || '').slice(0, 10),
@@ -1052,6 +1055,12 @@ export default function Orcamento() {
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18 }}>
         <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>
           {editandoId ? `${somenteLeitura ? 'Proposta' : 'Editando Proposta'} ${numeroEditando}` : 'Novo Orçamento'}
+          {editandoId && criadaPeloAssistente && (
+            <span title="Rascunho montado pelo assistente virtual — revise antes de enviar ao cliente"
+              style={{ marginLeft: 10, fontSize: 10, fontWeight: 700, color: '#c9a227', border: '1px solid #4a3d10', background: '#17140a', borderRadius: 10, padding: '2px 8px', verticalAlign: 'middle' }}>
+              criada pelo assistente
+            </span>
+          )}
         </h2>
         {!editandoId && proximoNumero != null && (
           <span style={{ fontSize: 12, color: '#666' }}>

@@ -226,6 +226,8 @@ async function iniciar() {
       // instância de teste/homologação (ROTINAS_AUTOMATICAS=desligadas): não lê a
       // caixa de e-mail nem as pastas de fornecedores da produção
       agendarRotinas();
+      // assistente virtual: guarda de 12 meses (só com ASSISTENTE_LIMPEZA=ligada)
+      require('./services/assistente/limpeza').agendarLimpeza();
     });
     servidor.on('error', (err) => {
       console.error(`Erro ao abrir a porta ${PORT}: ${err.message}`);

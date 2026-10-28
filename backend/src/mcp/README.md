@@ -125,3 +125,13 @@ registre no Claude Desktop e converse.
   `claude_desktop`), então dá pra distinguir o que foi feito via Claude Desktop.
 - As chamadas passam pelos mesmos limites de uso da API (`routes/index.js`)
   — ex.: rate limit de pesquisa de mercado e de análise de projeto.
+
+## MCP do assistente virtual (`assistenteMcp.mjs`)
+
+Outro servidor, separado deste: NÃO é registrado no Claude Desktop. O backend o
+inicia a cada mensagem do painel "Assistente" (via `--mcp-config` temporário do
+`claude -p`), com o token curto do usuário logado (escopo `assistente`) — sem
+usuário dedicado e sem senha no `.env`. As ferramentas ficam em
+`assistenteFerramentas.mjs`; o que elas podem fazer é decidido pelo servidor em
+`middleware/escopoAssistente.js` (ver `docs/RESUMO-MELHORIAS-E-IMPLANTACAO.md`,
+entrada de 28/10/2026).
