@@ -39,21 +39,95 @@ async function trocarPrefixo(client, antigo, novo) {
   await client.query("UPDATE pasta_arquivos SET caminho = $2 || substr(caminho, length($1) + 1) WHERE left(caminho, length($1) + 1) = $1 || '/'", [antigo, novo]);
 }
 
+// Pastas que já estão na raiz dos clientes (no servidor), com o cliente que usa
+// cada uma. As que começam com "_" são do sistema (_Excluídos, _Sem cliente).
+async function pastasDoServidor(client = pool) {
+  if (!(await P.servidorDisponivel())) return null;
+  let entradas = [];
+  try { entradas = await fsp.readdir(P.RAIZ_CLIENTES_SERVIDOR, { withFileTypes: true }); } catch { return null; }
+  const { rows } = await client.query('SELECT id, nome, pasta FROM clientes WHERE pasta IS NOT NULL');
+  const dono = new Map(rows.map(r => [r.pasta.toLowerCase(), r]));
+  return entradas.filter(e => e.isDirectory() && !e.name.startsWith('_'))
+    .map(e => ({ nome: e.name, cliente: dono.get(e.name.toLowerCase()) || null }))
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+}
+
+// Pasta que já existe no servidor com o nome do cliente (sem acento, maiúscula
+// ou pontuação: "cni" = "CNI") e que nenhum outro cliente usa — adotada como está.
+async function pastaExistenteDoCliente(c, client) {
+  const alvo = normalizarNome(c.nome);
+  const livres = ((await pastasDoServidor(client)) || []).filter(p => !p.cliente && normalizarNome(p.nome) === alvo);
+  return livres.length === 1 ? livres[0].nome : null;
+}
+
 // Pasta do cliente (nome relativo à raiz dos clientes), criada/renomeada, com "Recebidos do cliente"
 async function pastaRelDoCliente(clienteId, client = pool) {
   const raiz = await P.raizClientes();
-  const c = clienteId ? (await client.query('SELECT id, nome, pasta FROM clientes WHERE id = $1', [clienteId])).rows[0] : null;
+  const c = clienteId ? (await client.query('SELECT id, nome, pasta, pasta_fixa FROM clientes WHERE id = $1', [clienteId])).rows[0] : null;
   let rel = P.SEM_CLIENTE;
   if (c) {
-    // servidor fora: não renomeia (a reserva local não tem a pasta antiga para renomear)
-    if (c.pasta && !(await P.servidorDisponivel())) rel = c.pasta;
+    // servidor fora: não renomeia (a reserva local não tem a pasta antiga para renomear);
+    // pasta adotada/ligada à mão: fica com o nome que tem no servidor
+    if (c.pasta && (c.pasta_fixa || !(await P.servidorDisponivel()))) rel = c.pasta;
     else {
-      rel = path.basename(await P.sincronizarPasta(client, { tipo: 'cliente', tabela: 'clientes', id: c.id, nome: c.nome, pastaAtual: c.pasta, raiz }));
-      if (c.pasta && rel !== c.pasta) await trocarPrefixo(client, c.pasta, rel);
+      const adotada = !c.pasta && raiz === P.RAIZ_CLIENTES_SERVIDOR ? await pastaExistenteDoCliente(c, client) : null;
+      if (adotada) {
+        // retrato NULL: o que já estava na pasta não vira novidade (monitorPastas)
+        await client.query('UPDATE clientes SET pasta = $1, pasta_fixa = TRUE, pasta_retrato_em = NULL WHERE id = $2', [adotada, c.id]);
+        rel = adotada;
+      } else {
+        rel = path.basename(await P.sincronizarPasta(client, { tipo: 'cliente', tabela: 'clientes', id: c.id, nome: c.nome, pastaAtual: c.pasta, raiz }));
+        if (c.pasta && rel !== c.pasta) await trocarPrefixo(client, c.pasta, rel);
+        // pasta nova, criada vazia pelo sistema: tudo que aparecer nela é novidade
+        if (!c.pasta) await client.query('UPDATE clientes SET pasta_retrato_em = NOW() WHERE id = $1 AND pasta_retrato_em IS NULL', [c.id]);
+      }
     }
   }
   await fsp.mkdir(path.join(raiz, rel, RECEBIDOS), { recursive: true });
   return rel;
+}
+
+// Junta o conteúdo de `de` em `para` (mesmo nome em pastas: entra nelas; arquivo
+// com nome repetido: o que vem ganha " (do sistema)"). `de` some no fim.
+async function juntarPastas(de, para) {
+  await fsp.mkdir(para, { recursive: true });
+  for (const e of await fsp.readdir(de, { withFileTypes: true })) {
+    const origem = path.join(de, e.name);
+    let destino = path.join(para, e.name);
+    if (await P.existe(destino)) {
+      if (e.isDirectory() && (await fsp.stat(destino)).isDirectory()) { await juntarPastas(origem, destino); continue; }
+      const ext = path.extname(e.name);
+      destino = path.join(para, `${path.basename(e.name, ext)} (do sistema)${ext}`);
+      if (await P.existe(destino)) destino = path.join(para, `${path.basename(e.name, ext)} (do sistema ${Date.now()})${ext}`);
+    }
+    await P.moverPasta(origem, destino);
+  }
+  await fsp.rmdir(de).catch(() => {});
+}
+
+// Liga o cliente a uma pasta que já existe no servidor (nome diferente do
+// cadastro: "Hosp Beta" → Hospital Beta S/A). O que o sistema já tinha
+// gravado na pasta antiga do cliente vai para dentro dela. A pasta fica com o
+// nome que tem (pasta_fixa) e o retrato é tirado de novo, sem avisos.
+async function ligarPastaDoCliente(clienteId, nomePasta, client = pool) {
+  const erro = (msg, status = 400) => Object.assign(new Error(msg), { status });
+  const nome = String(nomePasta || '').trim();
+  if (!nome || nome !== path.basename(nome) || /[\\/]/.test(nome) || nome === '.' || nome === '..' || nome.startsWith('_')) throw erro('Pasta inválida.');
+  const lista = await pastasDoServidor(client);
+  if (!lista) throw erro('O servidor das pastas dos clientes está fora do ar. Tente de novo em instantes.', 503);
+  const alvo = lista.find(p => p.nome === nome);
+  if (!alvo) throw erro('Essa pasta não existe na pasta dos clientes do servidor.', 404);
+  const { rows: [c] } = await client.query('SELECT id, nome, pasta FROM clientes WHERE id = $1', [clienteId]);
+  if (!c) throw erro('Cliente não encontrado.', 404);
+  if (alvo.cliente && alvo.cliente.id !== c.id) throw erro(`Essa pasta já é do cliente "${alvo.cliente.nome}".`, 409);
+  if (c.pasta && c.pasta.toLowerCase() !== nome.toLowerCase()) {
+    const antiga = path.join(P.RAIZ_CLIENTES_SERVIDOR, c.pasta);
+    if (await P.existe(antiga)) await juntarPastas(antiga, path.join(P.RAIZ_CLIENTES_SERVIDOR, nome));
+    await trocarPrefixo(client, c.pasta, nome);
+  }
+  await client.query('UPDATE clientes SET pasta = $1, pasta_fixa = TRUE, pasta_retrato_em = NULL WHERE id = $2', [nome, c.id]);
+  await fsp.mkdir(path.join(P.RAIZ_CLIENTES_SERVIDOR, nome, RECEBIDOS), { recursive: true });
+  return { pasta: nome, anterior: c.pasta };
 }
 
 async function pastaDoCliente(clienteId, client = pool) {
@@ -340,4 +414,5 @@ module.exports = {
   sincronizarProjeto, sincronizarLaudo, sincronizarObra, salvarPdfPropostaNasPastas, salvarPdfContratoNaObra,
   resumoPasta, pedidoLocal, seguro,
   pastaDoCliente, pastaRelDoCliente, clienteIdDoItem, caminhoDaObra, RECEBIDOS,
+  pastasDoServidor, ligarPastaDoCliente, normalizarNome,
 };

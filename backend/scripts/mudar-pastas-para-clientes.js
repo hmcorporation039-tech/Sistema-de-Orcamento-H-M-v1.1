@@ -7,6 +7,8 @@
 //   sem cliente         → Clientes\_Sem cliente\...
 // Cada mudança fica em pastas_movidas (dá para desfazer). Depois tira o retrato
 // das pastas como "conhecido", para o monitor não avisar o que já existia.
+// Cliente que já tem pasta no servidor com o mesmo nome (sem acento/maiúscula)
+// usa essa pasta (pastasRegistros.pastaRelDoCliente) — sem criar "Nome (C12)".
 //
 // Uso (na pasta backend, com o servidor já iniciado uma vez — as colunas vêm da migração 2.0-19):
 //   node scripts/mudar-pastas-para-clientes.js            → só mostra o que faria
@@ -42,6 +44,7 @@ async function aplicar(plano) {
   const raiz = P.RAIZ_CLIENTES_SERVIDOR;
   const inicio = new Date();
   let movidas = 0;
+  const clientes = new Set();
   for (const p of plano) {
     const cli = await R.pastaRelDoCliente(p.clienteId);
     const base = `${cli}/${p.sub}`;
@@ -54,10 +57,13 @@ async function aplicar(plano) {
     await pool.query('INSERT INTO pastas_movidas (tabela, registro_id, origem, destino, pasta_antes) VALUES ($1,$2,$3,$4,$5)',
       [p.tabela, p.row.id, p.origem, temPasta ? destino : '(sem pasta no disco)', p.row.pasta]);
     if (temPasta) movidas++;
+    if (p.clienteId) clientes.add(p.clienteId);
     console.log(`${temPasta ? 'movida ' : 'apontada'} ${p.tabela} #${p.row.id}: ${p.origem} → ${destino}`);
   }
-  // retrato inicial: o que já estava nas pastas não é "novidade"
-  await M.escanearTodos();
+  // retrato inicial: o que já estava nas pastas não é "novidade" (inclusive na
+  // pasta do servidor adotada pelo nome do cliente, com arquivos de antes)
+  if (clientes.size) await pool.query('UPDATE clientes SET pasta_retrato_em = NULL WHERE id = ANY($1)', [[...clientes]]);
+  await M.escanearTodos({ todos: true });
   const r = await pool.query("UPDATE pasta_arquivos SET situacao = 'conhecido' WHERE situacao IN ('novo', 'alterado') AND detectado_em >= $1", [inicio]);
   console.log(`\n${movidas} pasta(s) movida(s), ${plano.length - movidas} registro(s) só apontado(s); retrato: ${r.rowCount} arquivo(s) marcados como conhecidos.`);
 }

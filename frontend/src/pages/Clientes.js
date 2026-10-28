@@ -4,7 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import useUltimoPedido from '../hooks/useUltimoPedido';
 import toast from 'react-hot-toast';
 import { Plus, Search, Pencil, Trash2, X, FolderOpen } from 'lucide-react';
-import { getClientes, criarCliente, atualizarCliente, removerCliente, getPastaCliente, abrirPastaCliente } from '../services/api';
+import { getClientes, criarCliente, atualizarCliente, removerCliente, getPastaCliente, abrirPastaCliente, getOpcoesPastaCliente, ligarPastaCliente } from '../services/api';
 import PainelPasta from '../components/PainelPasta';
 import { AvisoNovidades } from '../components/NovidadesPastas';
 import Paginacao from '../components/Paginacao';
@@ -196,7 +196,7 @@ export default function Clientes() {
               Tudo deste cliente fica aqui (no servidor): obras, projetos, laudos, propostas e contratos gerados pelo sistema. O que o cliente mandar,
               salve em <code>Recebidos do cliente</code> (ou na pasta da obra) — o sistema procura arquivos novos e alterados e avisa.
             </p>
-            <PastaDoCliente id={pastaDe.id} />
+            <PastaDoCliente id={pastaDe.id} ehAdmin={ehAdmin} />
             <AvisoNovidades clienteId={pastaDe.id} sempre />
           </div>
         </div>
@@ -276,10 +276,76 @@ export default function Clientes() {
 }
 
 // funções estáveis: o PainelPasta recarrega quando `carregar` muda
-function PastaDoCliente({ id }) {
+function PastaDoCliente({ id, ehAdmin }) {
+  const [versao, setVersao] = useState(0);
   const carregar = useCallback(() => getPastaCliente(id), [id]);
   const abrir = useCallback(() => abrirPastaCliente(id), [id]);
-  return <PainelPasta carregar={carregar} abrir={abrir} />;
+  return (
+    <>
+      <PainelPasta carregar={carregar} abrir={abrir} atualizarQuando={versao} />
+      {ehAdmin && <LigarPasta id={id} onLigada={() => setVersao(v => v + 1)} />}
+    </>
+  );
+}
+
+// Cliente com pasta de nome diferente no servidor ("Hosp Beta" para
+// "Hospital Beta S/A"): liga o cadastro àquela pasta. O que o sistema já
+// tinha gravado vai para dentro dela; o que já estava lá não vira novidade.
+function LigarPasta({ id, onLigada }) {
+  const [opcoes, setOpcoes] = useState(null);
+  const [escolhida, setEscolhida] = useState('');
+  const [ligando, setLigando] = useState(false);
+
+  const carregar = () => getOpcoesPastaCliente(id).then(r => {
+    setOpcoes(r.data);
+    setEscolhida(r.data.pastas.find(p => p.sugerida)?.nome || '');
+  }).catch(e => toast.error(e.response?.data?.erro || 'Não foi possível listar as pastas do servidor'));
+
+  const ligar = async () => {
+    if (!escolhida) return;
+    if (!window.confirm(`Ligar este cliente à pasta "${escolhida}" do servidor?\n\nO que o sistema já gravou para ele vai para dentro dela. Os arquivos que já estão lá ficam como estão.`)) return;
+    setLigando(true);
+    try {
+      await ligarPastaCliente(id, escolhida);
+      toast.success(`Cliente ligado à pasta "${escolhida}"`);
+      setOpcoes(null);
+      onLigada();
+    } catch (e) {
+      toast.error(e.response?.data?.erro || 'Não foi possível ligar a pasta');
+    } finally {
+      setLigando(false);
+    }
+  };
+
+  if (!opcoes) {
+    return (
+      <button type="button" onClick={carregar} style={{ ...btnSecundario, fontSize: 12, padding: '5px 10px', margin: '0 0 8px' }} data-testid="ligar-pasta">
+        <FolderOpen size={12} /> Usar uma pasta que já existe no servidor
+      </button>
+    );
+  }
+  if (!opcoes.disponivel) return <p style={{ color: '#e67e22', fontSize: 12 }}>O servidor das pastas está fora do ar agora. Tente de novo em instantes.</p>;
+  const atual = opcoes.pastas.find(p => p.atual)?.nome;
+  const livres = opcoes.pastas.filter(p => !p.atual);
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', margin: '0 0 8px', fontSize: 12 }}>
+      <span style={{ color: '#aaa' }}>Pasta do servidor:</span>
+      <Select value={escolhida} onChange={e => setEscolhida(e.target.value)} style={{ width: 'auto', minWidth: 260 }} data-testid="opcoes-pasta">
+        <option value="">Escolha a pasta…</option>
+        <optgroup label="Nome parecido com o do cliente">
+          {livres.filter(p => p.sugerida).map(p => <option key={p.nome} value={p.nome}>{p.nome}</option>)}
+        </optgroup>
+        <optgroup label="Outras pastas sem cliente">
+          {livres.filter(p => !p.sugerida).map(p => <option key={p.nome} value={p.nome}>{p.nome}</option>)}
+        </optgroup>
+      </Select>
+      <button type="button" onClick={ligar} disabled={!escolhida || ligando} style={{ ...btnPrimario, fontSize: 12, padding: '5px 12px' }}>
+        {ligando ? 'Ligando…' : 'Ligar'}
+      </button>
+      <button type="button" onClick={() => setOpcoes(null)} style={{ ...btnSecundario, fontSize: 12, padding: '5px 10px' }}>Cancelar</button>
+      {atual && <span style={{ color: '#777', width: '100%' }}>Hoje: <code>{atual}</code></span>}
+    </div>
+  );
 }
 
 function Campo({ label, children }) {

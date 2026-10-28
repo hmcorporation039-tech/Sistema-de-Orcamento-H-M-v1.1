@@ -290,6 +290,9 @@ export const pacoteDaPastaObra = (id) => api.post(`/obras/${id}/pasta/pacote`, n
 // 2.3: pasta por cliente (no servidor) e novidades das pastas (arquivo novo/alterado/removido)
 export const getPastaCliente = (id) => api.get(`/clientes/${id}/pasta`, { timeout: 60000 });
 export const abrirPastaCliente = (id) => api.post(`/clientes/${id}/pasta/abrir`);
+// pastas que já existem no servidor e ligação do cliente a uma delas (admin)
+export const getOpcoesPastaCliente = (id) => api.get(`/clientes/${id}/pasta/opcoes`, { timeout: 60000 });
+export const ligarPastaCliente = (id, pasta) => api.put(`/clientes/${id}/pasta`, { pasta }, { timeout: 300000 });
 export const getResumoNovidades = () => api.get('/novidades-pastas/resumo');
 // params: { cliente_id, obra_id, atualizar: '1' (varre a pasta agora) }
 export const getNovidadesPastas = (params) => api.get('/novidades-pastas', { params, timeout: 120000 });

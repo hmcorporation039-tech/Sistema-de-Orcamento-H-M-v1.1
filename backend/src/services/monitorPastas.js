@@ -5,8 +5,10 @@
 //     "conhecido" (origem 'sistema'): não vira aviso;
 //   - a varredura compara a pasta com o retrato (pasta_arquivos) — a cada 10 min
 //     em segundo plano e na hora, quando alguém abre o cliente/obra;
-//   - o que já existia antes (pastas levadas pelo script de mudança) entra no
-//     retrato como conhecido pelo próprio script, sem virar aviso;
+//   - o que já existia antes (pastas levadas pelo script de mudança, pasta do
+//     servidor adotada pelo nome ou ligada à mão) entra no retrato inicial como
+//     conhecido, sem virar aviso (clientes.pasta_retrato_em);
+//   - em segundo plano, só os clientes em tratamento (SQL_EM_TRATAMENTO);
 //   - arquivo de projeto novo (PDF/DWG/DXF/ZIP) aparece pronto para "Analisar".
 // Desliga com MONITOR_PASTAS=desligado no .env.
 const fsp = require('fs/promises');
@@ -66,10 +68,11 @@ async function escanearPasta(pastaRel, clienteId) {
     const prefixo = `${pastaRel}/`.toLowerCase();
     const { rows } = await pool.query('SELECT id, caminho, tamanho, modificado_em, origem, situacao FROM pasta_arquivos WHERE left(LOWER(caminho), length($1)) = $1', [prefixo]);
     const retrato = new Map(rows.map(r => [r.caminho.toLowerCase(), r]));
-    // o retrato do que JÁ existia é tirado pelo script de mudança de pastas
-    // (scripts/mudar-pastas-para-clientes.js); pasta criada pelo sistema nasce
-    // vazia — então tudo que aparece aqui é novidade
-    const primeira = false;
+    // retrato inicial (clientes.pasta_retrato_em NULL): pasta que já existia no
+    // servidor e foi adotada — o que está nela entra como conhecido, sem aviso.
+    // Pasta criada pelo sistema nasce vazia e com o retrato feito: tudo que
+    // aparecer nela é novidade.
+    const primeira = !!clienteId && !(await pool.query('SELECT pasta_retrato_em FROM clientes WHERE id = $1', [clienteId])).rows[0]?.pasta_retrato_em;
     let novos = 0, alterados = 0, removidos = 0;
     const donos = new Map();
     const dono = async (rel) => {
@@ -90,7 +93,9 @@ async function escanearPasta(pastaRel, clienteId) {
         continue;
       }
       const mudou = Number(atual.tamanho) !== a.tamanho || Math.abs(new Date(atual.modificado_em).getTime() - new Date(a.alterado_em).getTime()) > 2000;
-      if (mudou) {
+      if (mudou && primeira) {
+        await pool.query("UPDATE pasta_arquivos SET tamanho = $2, modificado_em = $3, situacao = 'conhecido' WHERE id = $1", [atual.id, a.tamanho, a.alterado_em]);
+      } else if (mudou) {
         // novo continua novo (ainda não visto); o resto vira alterado
         await pool.query(`UPDATE pasta_arquivos SET tamanho = $2, modificado_em = $3, situacao = CASE WHEN situacao = 'novo' THEN 'novo' ELSE 'alterado' END,
           detectado_em = NOW(), visto_em = NULL, visto_por = NULL WHERE id = $1`, [atual.id, a.tamanho, a.alterado_em]);
@@ -101,9 +106,10 @@ async function escanearPasta(pastaRel, clienteId) {
     }
     // o que sumiu: do sistema sai do retrato calado; o de fora vira aviso
     for (const r of retrato.values()) {
-      if (r.origem === 'sistema' || r.situacao === 'novo') await pool.query('DELETE FROM pasta_arquivos WHERE id = $1', [r.id]);
+      if (primeira || r.origem === 'sistema' || r.situacao === 'novo') await pool.query('DELETE FROM pasta_arquivos WHERE id = $1', [r.id]);
       else if (r.situacao !== 'removido') { await pool.query("UPDATE pasta_arquivos SET situacao = 'removido', detectado_em = NOW(), visto_em = NULL WHERE id = $1", [r.id]); removidos++; }
     }
+    if (primeira) await pool.query('UPDATE clientes SET pasta_retrato_em = NOW() WHERE id = $1', [clienteId]);
     return { disponivel: true, novos, alterados, removidos, primeira };
   })().finally(() => emAndamento.delete(chave));
   emAndamento.set(chave, tarefa);
@@ -116,8 +122,21 @@ async function escanearCliente(clienteId) {
   return escanearPasta(c.pasta, c.id);
 }
 
-async function escanearTodos() {
-  const { rows } = await pool.query('SELECT id, pasta FROM clientes WHERE pasta IS NOT NULL');
+// Em segundo plano, só os clientes EM TRATAMENTO (as pastas do servidor podem
+// ter milhares de arquivos): obra em andamento, movimento nos últimos 90 dias
+// ou retrato inicial por tirar. Os outros são varridos quando alguém abre o
+// cliente/obra (escanearCliente). `todos`: o script de mudança varre tudo.
+const SQL_EM_TRATAMENTO = `
+  SELECT c.id, c.pasta FROM clientes c
+   WHERE c.pasta IS NOT NULL AND (c.pasta_retrato_em IS NULL
+      OR c.atualizado_em > NOW() - INTERVAL '90 days'
+      OR EXISTS (SELECT 1 FROM obras o WHERE o.cliente_id = c.id AND (o.status NOT IN ('concluida', 'cancelada') OR o.atualizado_em > NOW() - INTERVAL '90 days'))
+      OR EXISTS (SELECT 1 FROM propostas p WHERE p.cliente_id = c.id AND p.atualizado_em > NOW() - INTERVAL '90 days')
+      OR EXISTS (SELECT 1 FROM analises_projeto a WHERE a.cliente_id = c.id AND a.atualizado_em > NOW() - INTERVAL '90 days')
+      OR EXISTS (SELECT 1 FROM laudos_projetos l WHERE l.cliente_id = c.id AND l.atualizado_em > NOW() - INTERVAL '90 days'))`;
+
+async function escanearTodos({ todos = false } = {}) {
+  const { rows } = await pool.query(todos ? 'SELECT id, pasta FROM clientes WHERE pasta IS NOT NULL' : SQL_EM_TRATAMENTO);
   const total = { novos: 0, alterados: 0, removidos: 0 };
   for (const c of rows) {
     const r = await escanearPasta(c.pasta, c.id).catch(e => { console.warn(`Monitor de pastas (${c.pasta}): ${e.message}`); return {}; });

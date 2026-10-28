@@ -117,6 +117,53 @@ const SUF = `T${Date.now().toString(36)}`;
       assert.strictEqual(await R.pastaDaObra(o), path.join(process.env.PASTA_CLIENTES, '_Sem cliente', 'Obras', `Obra Sem Cliente ${SUF}`));
     });
 
+    const RAIZ = process.env.PASTA_CLIENTES;
+    await caso('pasta que já existe no servidor com o nome do cliente é adotada (sem "(C12)") e o que já tinha não é novidade', async () => {
+      const antiga = path.join(RAIZ, `clinica adotada ${SUF.toLowerCase()}`);
+      fs.mkdirSync(path.join(antiga, 'Projetos 2024'), { recursive: true });
+      fs.writeFileSync(path.join(antiga, 'Projetos 2024', 'Planta antiga.dwg'), 'AC1027');
+      fs.writeFileSync(path.join(antiga, 'Contrato.pdf'), '%PDF');
+      const c = (await pool.query('INSERT INTO clientes (nome) VALUES ($1) RETURNING id', [`Clínica Adotada ${SUF}`])).rows[0].id;
+      ids.clientes.push(c);
+      assert.strictEqual(await R.pastaRelDoCliente(c), path.basename(antiga));
+      const { rows: [row] } = await pool.query('SELECT pasta_fixa, pasta_retrato_em FROM clientes WHERE id = $1', [c]);
+      assert.deepStrictEqual(row, { pasta_fixa: true, pasta_retrato_em: null });
+      const r = await M.escanearCliente(c);
+      assert.strictEqual(r.primeira, true);
+      assert.strictEqual(r.novos, 0);
+      assert.strictEqual((await M.novidades({ clienteId: c })).length, 0);
+      // depois do retrato, arquivo novo é novidade
+      fs.writeFileSync(path.join(antiga, 'Recebidos do cliente', 'Revisão R01.pdf'), '%PDF r01');
+      assert.strictEqual((await M.escanearCliente(c)).novos, 1);
+      // pasta adotada não muda de nome quando o cliente muda
+      await pool.query('UPDATE clientes SET nome = $1 WHERE id = $2', [`Clínica Nova ${SUF}`, c]);
+      assert.strictEqual(await R.pastaRelDoCliente(c), path.basename(antiga));
+    });
+
+    await caso('ligar o cliente a uma pasta do servidor de outro nome junta o que o sistema já tinha gravado', async () => {
+      const c = (await pool.query('INSERT INTO clientes (nome) VALUES ($1) RETURNING id', [`Hospital Ligado ${SUF}`])).rows[0].id;
+      ids.clientes.push(c);
+      const doSistema = await R.pastaDoCliente(c);
+      await P.gravarArquivo(path.join(doSistema, 'Propostas'), 'Orçamento P7.pdf', Buffer.from('%PDF sistema'));
+      const servidor = path.join(RAIZ, `HL antigo ${SUF}`);
+      fs.mkdirSync(path.join(servidor, 'Propostas'), { recursive: true });
+      fs.writeFileSync(path.join(servidor, 'Propostas', 'Orçamento P7.pdf'), '%PDF de antes');
+      fs.writeFileSync(path.join(servidor, 'Memorial.docx'), 'docx');
+      await assert.rejects(R.ligarPastaDoCliente(c, '..'), /inválida/);
+      await assert.rejects(R.ligarPastaDoCliente(c, `Cliente Renomeado ${SUF}`), (e) => e.status === 409 || e.status === 404);
+      const r = await R.ligarPastaDoCliente(c, `HL antigo ${SUF}`);
+      assert.strictEqual(r.pasta, `HL antigo ${SUF}`);
+      assert.ok(!fs.existsSync(doSistema));
+      assert.strictEqual(fs.readFileSync(path.join(servidor, 'Propostas', 'Orçamento P7.pdf'), 'utf8'), '%PDF de antes');
+      assert.strictEqual(fs.readFileSync(path.join(servidor, 'Propostas', 'Orçamento P7 (do sistema).pdf'), 'utf8'), '%PDF sistema');
+      assert.strictEqual(await R.pastaRelDoCliente(c), `HL antigo ${SUF}`);
+      await M.escanearCliente(c);
+      assert.strictEqual((await M.novidades({ clienteId: c })).length, 0);
+      // a pasta ligada não aparece mais livre para outro cliente
+      const livres = (await R.pastasDoServidor()).filter(p => !p.cliente).map(p => p.nome);
+      assert.ok(!livres.includes(`HL antigo ${SUF}`));
+    });
+
     await caso('servidor fora do ar: grava na reserva local e envia quando ele volta', async () => {
       // processo à parte: a raiz dos clientes é lida quando o módulo carrega
       const { spawnSync } = require('child_process');
