@@ -299,6 +299,20 @@ export const analisarProjetoNaObra = (arquivosComDisciplinas, nomeProjeto, obraI
   // DWG é convertido e percorrido no servidor: arquivo grande leva minutos
   return api.post('/projetos/analisar', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 360000 });
 };
+// Pacote de arquivos (2.3): arquivos soltos, uma pasta inteira (o nome vai com a
+// pasta relativa) ou ZIP → { token, arquivos: [{ id, nome, caminho, tipo, tamanho, sugestao }], ignorados }
+export const enviarPacoteProjeto = (arquivos, onProgresso) => {
+  const fd = new FormData();
+  for (const f of arquivos) fd.append('arquivos', f, f.webkitRelativePath || f.name);
+  return api.post('/projetos/pacotes', fd, {
+    timeout: 900000,
+    onUploadProgress: (e) => onProgresso?.(e.total ? Math.round((e.loaded * 100) / e.total) : null),
+  });
+};
+// corpo: { arquivos: [{ id, disciplinas, referencia, tipoReferencia }], nome_projeto, obra_id, finalidade }
+export const analisarPacoteProjeto = (token, corpo) => api.post(`/projetos/pacotes/${token}/analisar`, corpo, { timeout: 900000 });
+export const descartarPacoteProjeto = (token) => api.delete(`/projetos/pacotes/${token}`);
+export const baixarCompatibilizacaoDxf = (id) => api.get(`/projetos/analises/${id}/compatibilizacao-dxf`, { responseType: 'blob', timeout: 120000 });
 // tipo (2.1): 'projeto' | 'laudo' (padrão laudo)
 export const criarLaudoNaObra = (disciplina, dados, obraId, tipo = 'laudo') =>
   api.post('/laudos', { disciplina, dados, obra_id: obraId || null, tipo });

@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import PainelPasta from '../components/PainelPasta';
 import { FileDown, Plus, Trash2, FolderSearch, FilePlus2, Receipt, ExternalLink, DraftingCompass } from 'lucide-react';
 import {
-  analisarProjetoNaObra, gerarRelatorioCompatibilizacao,
+  analisarPacoteProjeto, gerarRelatorioCompatibilizacao,
   getAnalisesProjeto, getAnaliseProjeto, atualizarAnaliseProjeto, removerAnaliseProjeto,
   gerarOrcamentoDaAnalise, getPastaAnalise, abrirPastaAnalise, getDisciplinasProjeto, criarProjetoDeAnalise,
 } from '../services/api';
@@ -13,6 +13,8 @@ import BlocoPesquisaMercado from '../components/PesquisaMercado';
 import ObraSelect from '../components/ObraSelect';
 import Select from '../components/Select';
 import { CartaoModelo3dAnalise } from '../components/Modelo3d';
+import { BotoesPacote, ListaPacote, itensDoPacote } from '../components/analise/PacoteProjeto';
+import ConflitosCompatibilizacao from '../components/analise/ConflitosCompatibilizacao';
 
 let contador = 0;
 const gerarId = () => `tmp_${Date.now()}_${contador++}`;
@@ -73,12 +75,11 @@ export default function Compatibilizacao() {
   }, {});
   Object.values(gruposDisciplinas).forEach(lista => lista.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base', numeric: true })));
 
-  // Cada arquivo escolhido carrega sua PRÓPRIA lista de disciplinas — não uma
-  // lista única pro lote inteiro. Isso evita que, por exemplo, um arquivo de
-  // iluminação enviado junto com arquivos de CFTV/rede contamine a contagem
-  // de câmeras/pontos de rede (só arquivos marcados com aquela disciplina
-  // entram na soma). [{ id, arquivo: File, disciplinas: string[] }]
-  const [arquivosComDisciplinas, setArquivosComDisciplinas] = useState([]);
+  // Pacote enviado (2.3): os arquivos ficam no servidor e cada um carrega a SUA
+  // lista de disciplinas (sugerida pelo nome/conteúdo, ajustável) ou é
+  // referência. Um arquivo de uma disciplina nunca entra na contagem de outra.
+  // { token, itens: [{ id, nome, caminho, tipo, disciplinas, referencia, tipoReferencia, incluir }] }
+  const [pacote, setPacote] = useState(null);
   const [nomeProjetoNovo, setNomeProjetoNovo] = useState(''); // nome da pasta do projeto em Arquivos do Sistema
   const [finalidadeNova, setFinalidadeNova] = useState(''); // 'orcamento' | 'elaboracao' — escolha obrigatória ao enviar
   // obra da análise nova (2.0): vem pré-selecionada de /obras?aba=analise&obra=ID
@@ -96,7 +97,6 @@ export default function Compatibilizacao() {
   const [salvoEm, setSalvoEm] = useState(null);
   const [analisesSalvas, setAnalisesSalvas] = useState([]);
   const [carregandoLista, setCarregandoLista] = useState(false);
-  const inputRef = useRef(null);
   const idAutosaveRef = useRef(null);
   const pendenteRef = useRef(false); // há edição aguardando o autosave disparar
   // Versão gravada no servidor (bloqueio otimista). Em ref, não em estado:
@@ -151,25 +151,18 @@ export default function Compatibilizacao() {
       .finally(() => setCarregandoAnalise(false));
   }, [idParam, navigate, popularAnalise]);
 
-  function selecionarArquivos(e) {
-    const lista = Array.from(e.target.files || []);
-    setArquivosComDisciplinas(lista.map(arquivo => ({ id: gerarId(), arquivo, disciplinas: [] })));
-  }
-
-  function alternarDisciplinaDoArquivo(itemId, chave) {
-    setArquivosComDisciplinas(lista => lista.map(it => it.id !== itemId ? it : {
-      ...it,
-      disciplinas: it.disciplinas.includes(chave) ? it.disciplinas.filter(c => c !== chave) : [...it.disciplinas, chave],
-    }));
-  }
-
   async function analisar() {
-    if (arquivosComDisciplinas.length === 0) {
-      toast.error('Selecione ao menos um arquivo do projeto (PDF, DWG ou DXF)');
+    const incluidos = (pacote?.itens || []).filter(i => i.incluir);
+    if (!incluidos.length) {
+      toast.error('Envie os arquivos do projeto (PDF, DWG, DXF, pasta ou ZIP)');
       return;
     }
-    if (arquivosComDisciplinas.some(it => it.disciplinas.length === 0)) {
-      toast.error('Marque ao menos uma disciplina pra cada arquivo enviado');
+    if (incluidos.some(it => !it.referencia && it.disciplinas.length === 0)) {
+      toast.error('Marque ao menos uma disciplina em cada arquivo (ou marque como referência, ou tire da análise)');
+      return;
+    }
+    if (!incluidos.some(it => !it.referencia)) {
+      toast.error('Marque a disciplina de ao menos um arquivo: só arquivos de referência não geram análise');
       return;
     }
     if (!finalidadeNova) {
@@ -178,12 +171,17 @@ export default function Compatibilizacao() {
     }
     setAnalisando(true);
     try {
-      const res = await analisarProjetoNaObra(arquivosComDisciplinas, nomeProjetoNovo.trim(), obraNova, finalidadeNova);
+      const res = await analisarPacoteProjeto(pacote.token, {
+        arquivos: incluidos.map(i => ({ id: i.id, disciplinas: i.disciplinas, referencia: i.referencia, tipoReferencia: i.tipoReferencia })),
+        nome_projeto: nomeProjetoNovo.trim(), obra_id: obraNova || null, finalidade: finalidadeNova,
+      });
       setNomeProjetoNovo('');
       setFinalidadeNova('');
+      setPacote(null);
       popularAnalise(res.data);
       navigate(`/obras/analise/${res.data.id}`);
-      toast.success(`Projeto analisado: ${res.data.ambientes.length} ambientes, ${res.data.cameras.total} câmeras`);
+      const conflitos = (res.data.conflitos || []).length;
+      toast.success(`Projeto analisado: ${incluidos.length} arquivo(s), ${res.data.ambientes.length} ambientes${conflitos ? ` — ${conflitos} conflito(s) de posição entre disciplinas` : ''}`, { duration: 7000 });
       carregarListaSalvas();
     } catch (err) {
       toast.error(err.response?.data?.erro || 'Erro ao analisar o projeto');
@@ -194,7 +192,7 @@ export default function Compatibilizacao() {
 
   function novaAnalise() {
     navigate('/obras');
-    setArquivosComDisciplinas([]);
+    setPacote(null);
     setSalvoEm(null);
   }
 
@@ -584,39 +582,21 @@ export default function Compatibilizacao() {
             Análise de projeto não gera laudo. Laudo (inspeção, vistoria, medição) é pedido quando necessário, em Obras › Laudos.
           </p>
 
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: arquivosComDisciplinas.length > 0 ? 18 : 0, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: pacote ? 18 : 0, flexWrap: 'wrap' }}>
             <input value={nomeProjetoNovo} onChange={e => setNomeProjetoNovo(e.target.value)} placeholder="Nome do projeto (nome da pasta; vazio = nome do cliente)" style={{ flex: '1 1 280px', maxWidth: 420 }} />
             <div style={{ flex: '1 1 320px', maxWidth: 480 }} title="Obra a que este projeto pertence (opcional) — a análise, a pasta e o orçamento gerado ficam ligados a ela">
               <ObraSelect value={obraNova} onChange={(id) => setObraNova(id)} rotuloVazio="Sem obra (opcional)" />
             </div>
-            <input ref={inputRef} type="file" accept=".pdf,.dwg,.dxf" multiple onChange={selecionarArquivos} title="PDF, DWG ou DXF do projeto" />
-            <button onClick={analisar} disabled={analisando || arquivosComDisciplinas.length === 0} style={btnPrimario}>
-              <FolderSearch size={13} style={{ marginRight: 6 }} /> {analisando ? 'Analisando...' : 'Analisar projeto'}
+            {/* 2.3: arquivos soltos, pasta inteira ou ZIP — o servidor sugere a disciplina de cada um */}
+            <BotoesPacote desabilitado={analisando} onRecebido={(p) => setPacote({ token: p.token, itens: itensDoPacote(p.arquivos) })} />
+            <button onClick={analisar} disabled={analisando || !pacote} style={btnPrimario}>
+              <FolderSearch size={13} style={{ marginRight: 6 }} /> {analisando ? `Analisando ${pacote?.itens.filter(i => i.incluir).length || ''} arquivo(s)...` : 'Analisar projeto'}
             </button>
           </div>
 
-          {arquivosComDisciplinas.length > 0 && (
-            <div>
-              <div style={{ fontSize: 11, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 10 }}>
-                Disciplina de cada arquivo (marque pelo menos uma)
-              </div>
-              {arquivosComDisciplinas.map(it => (
-                <div key={it.id} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: '1px solid #1e1e1e' }}>
-                  <div style={{ fontSize: 13, color: '#c9a227', fontWeight: 700, marginBottom: 6 }}>{it.arquivo.name}</div>
-                  {Object.entries(gruposDisciplinas).map(([grupo, lista]) => (
-                    <div key={grupo} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 16px', marginBottom: 4 }}>
-                      <span style={{ fontSize: 11, color: '#666', width: 76, textTransform: 'uppercase' }}>{grupo}</span>
-                      {lista.map(d => (
-                        <label key={d.chave} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: it.disciplinas.includes(d.chave) ? '#c9a227' : '#999', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={it.disciplinas.includes(d.chave)} onChange={() => alternarDisciplinaDoArquivo(it.id, d.chave)} />
-                          {d.nome}
-                        </label>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
+          {pacote && (
+            <ListaPacote itens={pacote.itens} token={pacote.token} disciplinas={DISCIPLINAS}
+              onMudar={(itens) => setPacote(p => ({ ...p, itens }))} onDescartar={() => setPacote(null)} />
           )}
         </div>
       )}
@@ -826,6 +806,9 @@ export default function Compatibilizacao() {
           {!elaboracao && disciplinasComSkill.length > 0 && cartaoProjetos(false)}
 
           {/* 2.3: 3D ilustrativo a partir da arquitetura (DWG/DXF) — nas duas finalidades */}
+          {/* 2.3: conflitos de posição entre os DWG/DXF do pacote */}
+          <ConflitosCompatibilizacao analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
+
           <CartaoModelo3dAnalise analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />
 
           <div style={{ ...card, display: 'flex', justifyContent: 'flex-end', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>

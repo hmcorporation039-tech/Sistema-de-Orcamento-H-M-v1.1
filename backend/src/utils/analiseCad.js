@@ -20,7 +20,7 @@ const RE_CAD = /\.(dwg|dxf)$/i;
 const ehArquivoCad = (nome) => RE_CAD.test(String(nome || ''));
 
 // layers medidas como infraestrutura (em metros)
-const RE_LAYER_LINHA = 'ELETRODUT|ELETROCALHA|PERFILADO|LEITO|CONDU[IÍ]TE|CONDUIT|INFRA|CABEAMENTO|FIA[ÇC][ÃA]O|FIACAO|TUBELE|INST.*TUBULA|EL[ÉE]T.*TUBULA|TUBULA.*EL[ÉE]T';
+const RE_LAYER_LINHA = 'ELETRODUT|ELETROCALHA|PERFILADO|LEITO|CONDU[IÍ]TE|CONDUIT|INFRA|CABEAMENTO|FIA[ÇC][ÃA]O|FIACAO|TUBELE|INST.*TUBULA|EL[ÉE]T.*TUBULA|TUBULA.*EL[ÉE]T|TUB.*(L[ÓO]GIC|TELEF|DADOS|CFTV)|(L[ÓO]GIC|TELEF|DADOS|CFTV).*(TUB|INFRA|ELETROD)';
 const TEMPO_LIMITE_MS = 180 * 1000;
 
 function lerNoWorker(buffer, nome) {
@@ -190,7 +190,38 @@ async function lerArquivoCad(buffer, nome) {
       portas: r.arquitetura.portas, layers: r.arquitetura.layers, fatorUnidade: r.arquitetura.fatorUnidade, origem: r.origem,
     },
   } : null;
-  return { analise, pagina, pontosPorAmbiente, arquitetura };
+
+  // posições para a compatibilização entre arquivos (utils/compatibilidadeEspacial.js):
+  // os componentes identificados e também os de climatização/hidráulica
+  // (difusor e sprinkler não são da H&M, mas um detector não pode ficar colado neles)
+  const pontos = [];
+  for (const it of itens.filter(i => i.tipo === 'simbolo')) {
+    for (const [x, y] of it.posicoes) pontos.push({ x, y, descricao: it.descricao, disciplina: it.disciplina, classe: classeDoComponente(it.descricao) });
+  }
+  for (const g of outraArea) {
+    const classe = classeDoComponente(`${g.nomeLimpo} ${g.layers.join(' ')}`);
+    if (classe === 'outro') continue;
+    for (const [x, y] of g.posicoes) pontos.push({ x, y, descricao: g.nomeLimpo, disciplina: null, classe });
+  }
+  const espacial = {
+    ambientes: ambientesArq.map(a => ({ nome: a.nome, area_m2: a.area_m2, poligono: a.poligono, origem: a.origem })),
+    pontos,
+    trechos: p.linhas.map(l => ({ layer: l.layer, disciplina: descreverLinha(l).disciplina, segmentos: l.segmentos || [] })).filter(t => t.segmentos.length),
+  };
+  return { analise, pagina, pontosPorAmbiente, arquitetura, espacial };
 }
 
-module.exports = { ehArquivoCad, lerArquivoCad, descreverSimbolo, descreverLinha, SIGLAS, RE_LAYER_LINHA };
+// Classe do componente para as regras de afastamento da compatibilização
+function classeDoComponente(texto) {
+  const s = String(texto || '');
+  if (/^Detector|DETECTOR|FUMA[ÇC]/i.test(s)) return 'detector';
+  if (/^Lumin[áa]ria|LUMIN|PLAFON|SPOT|PENDENTE|DOWNLIGHT|\d+\s?W.*\d+\s?lm/i.test(s)) return 'luminaria';
+  if (/^C[âa]mera|C[ÂA]MERA|\bDOME\b|BULLET/i.test(s)) return 'camera';
+  if (/^Sensor de alarme|IVP|INFRAVERMELHO/i.test(s)) return 'sensor_alarme';
+  if (/DIFUSOR|GRELHA|INSUFL|VENEZIANA|TERMINAIS DE AR|\bVAV\b/i.test(s)) return 'difusor';
+  if (/SPRINKLER|CHUVEIRO AUTOM/i.test(s)) return 'sprinkler';
+  if (/ACCESS ?POINT|WI-?FI|^Ponto de rede.*\bAP\b/i.test(s)) return 'access_point';
+  return 'outro';
+}
+
+module.exports = { ehArquivoCad, lerArquivoCad, descreverSimbolo, descreverLinha, classeDoComponente, SIGLAS, RE_LAYER_LINHA };

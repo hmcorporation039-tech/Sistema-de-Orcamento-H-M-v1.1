@@ -89,6 +89,16 @@ function lerProjetoDxf(textoDxf, { fator = 1, reLayerLinha = null } = {}) {
     partes.forEach((s, i) => textos.push({ s, x: m(tx), y: m(ty) - i * m(h || 0) * 1.6, h: m(h), layer }));
   }
 
+  // traçado (segmentos em metros) de cada layer medida — para a compatibilização
+  // entre disciplinas (energia × dados no mesmo caminho); limitado por layer
+  const tracadoPorLayer = new Map();
+  const MAX_SEGMENTOS = 20000;
+  function tracar(layer, pts) {
+    const lista = tracadoPorLayer.get(layer) || tracadoPorLayer.set(layer, []).get(layer);
+    for (let i = 1; i < pts.length && lista.length < MAX_SEGMENTOS; i++) {
+      lista.push([m(pts[i - 1][0]), m(pts[i - 1][1]), m(pts[i][0]), m(pts[i][1])].map(v => Math.round(v * 1000) / 1000));
+    }
+  }
   function medir(e, transforms, layer) {
     if (!reLayerLinha || !reLayerLinha.test(layer || '')) return;
     let pts = null;
@@ -99,10 +109,15 @@ function lerProjetoDxf(textoDxf, { fator = 1, reLayerLinha = null } = {}) {
     } else if (e.type === 'ARC') {
       const ang = (((e.endAngle - e.startAngle) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) || 2 * Math.PI;
       linhasPorLayer.set(layer, (linhasPorLayer.get(layer) || 0) + m(e.r * ang * escalaDe(transforms)));
+      // traçado do arco em 4 cordas
+      const corda = Array.from({ length: 5 }, (_, i) => { const a = e.startAngle + (ang * i) / 4; return [e.x + e.r * Math.cos(a), e.y + e.r * Math.sin(a)]; });
+      tracar(layer, transformar(corda, transforms));
       return;
     }
     if (!pts) return;
-    linhasPorLayer.set(layer, (linhasPorLayer.get(layer) || 0) + m(comprimento(transformar(pts, transforms))));
+    const tp = transformar(pts, transforms);
+    linhasPorLayer.set(layer, (linhasPorLayer.get(layer) || 0) + m(comprimento(tp)));
+    tracar(layer, tp);
   }
 
   function visitar(ents, transforms, layerPai, prof, deReferencia) {
@@ -141,7 +156,7 @@ function lerProjetoDxf(textoDxf, { fator = 1, reLayerLinha = null } = {}) {
 
   const legenda = lerLegenda(insercoes, textos);
   const simbolos = agruparSimbolos(insercoes, legenda);
-  const linhas = [...linhasPorLayer].map(([layer, metros]) => ({ layer, metros: Math.round(metros * 10) / 10 })).filter(l => l.metros >= 0.5)
+  const linhas = [...linhasPorLayer].map(([layer, metros]) => ({ layer, metros: Math.round(metros * 10) / 10, segmentos: tracadoPorLayer.get(layer) || [] })).filter(l => l.metros >= 0.5)
     .sort((a, b) => b.metros - a.metros);
   return { texto: remontarTexto(textos), textos, simbolos, linhas, legenda: legenda.titulo };
 }

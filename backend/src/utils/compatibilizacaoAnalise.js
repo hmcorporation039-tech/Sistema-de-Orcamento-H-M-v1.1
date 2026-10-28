@@ -7,6 +7,18 @@ const { buscarReferencias, valorSugerido, segmentoPorNomeDoCliente } = require('
 const { detectarDisciplinas } = require('./leitoresTabelaProjeto');
 const { lerPdfVetorial } = require('./pdfVetorial');
 const { ehArquivoCad, lerArquivoCad } = require('./analiseCad');
+const { compatibilizar } = require('./compatibilidadeEspacial');
+
+// Roda `fn` sobre a lista com no máximo `n` ao mesmo tempo, na ordem: um pacote
+// de 30 arquivos não abre 30 conversões de DWG nem 30 chamadas de IA de uma vez
+async function emLotes(lista, n, fn) {
+  const out = new Array(lista.length);
+  let prox = 0;
+  await Promise.all(Array.from({ length: Math.min(n, lista.length) }, async () => {
+    while (prox < lista.length) { const i = prox++; out[i] = await fn(lista[i], i); }
+  }));
+  return out;
+}
 
 function normalizarPalavras(s) {
   return String(s || '')
@@ -436,9 +448,7 @@ function montarMateriaisInstalacaoPadrao(analises, disciplinasEfetivas) {
 // Um arquivo não espera o outro — as chamadas ao Gemini rodam em paralelo
 // (senão, com 3 arquivos, o tempo total vira a soma de cada chamada).
 async function extrairEquipamentosDosArquivos(analises, achados) {
-  const resultados = await Promise.all(
-    analises.map(a => extrairEquipamentosComIA(a.textoBruto).then(r => ({ arquivo: a.arquivo, ...r })))
-  );
+  const resultados = await emLotes(analises, 2, a => extrairEquipamentosComIA(a.textoBruto).then(r => ({ arquivo: a.arquivo, ...r })));
 
   const vistos = new Set();
   const equipamentos = [];
@@ -685,34 +695,35 @@ function achadosDoDesenho(analises, vetoriais) {
 // que um arquivo de uma disciplina contamine a contagem de outra (ex.: um
 // arquivo de iluminação, mesmo enviado junto, nunca soma na contagem de
 // antena/rede — só arquivos marcados como 'antena'/'rede' entram nessa conta).
-async function analisarProjetoCompleto(arquivos) {
+// arquivos com `referencia: true` (arquitetura, estrutura, hidráulica,
+// climatização do pacote — 2.3): não são orçados; o DWG/DXF deles entra só na
+// compatibilização por posição e como base do 3D. PDF de referência não é lido.
+async function analisarProjetoCompleto(todosArquivos) {
+  const arquivosRef = todosArquivos.filter(a => a.referencia);
+  const arquivos = todosArquivos.filter(a => !a.referencia);
+  if (!arquivos.length) throw new Error('Marque a disciplina de ao menos um arquivo: só arquivos de referência não geram análise.');
+  const lerCad = ({ buffer, nomeArquivo }) => lerArquivoCad(buffer, nomeArquivo)
+    .catch((e) => { throw Object.assign(new Error(`Não consegui ler "${nomeArquivo}": ${e.message}`), { leituraCad: true }); });
+  const cadsRef = await emLotes(arquivosRef, 2, (a) => (ehArquivoCad(a.nomeArquivo) ? lerCad(a).catch((e) => ({ erro: e.message })) : null));
   // Cada arquivo é lido/analisado em paralelo (pdf-parse + regex é I/O-bound e
   // independente por arquivo) — antes rodava um de cada vez (sequencial), o
   // que somava o tempo de N arquivos à toa.
   // DWG/DXF (2.3): lido numa thread à parte (utils/analiseCad.js) e devolvido no
   // mesmo formato; o resto do fluxo não distingue a origem
-  const cads = await Promise.all(arquivos.map(({ buffer, nomeArquivo }) => (ehArquivoCad(nomeArquivo)
-    ? lerArquivoCad(buffer, nomeArquivo).catch((e) => { throw Object.assign(new Error(`Não consegui ler "${nomeArquivo}": ${e.message}`), { leituraCad: true }); })
-    : null)));
-  const analisesBrutas = await Promise.all(
-    arquivos.map(({ buffer, nomeArquivo }, i) => (cads[i] ? cads[i].analise : analisarProjeto(buffer, nomeArquivo)))
-  );
+  const cads = await emLotes(arquivos, 2, (a) => (ehArquivoCad(a.nomeArquivo) ? lerCad(a) : null));
+  const analisesBrutas = await emLotes(arquivos, 3, ({ buffer, nomeArquivo }, i) => (cads[i] ? cads[i].analise : analisarProjeto(buffer, nomeArquivo)));
   const analises = analisesBrutas.map((a, i) => ({ ...a, disciplinas: arquivos[i].disciplinas }));
 
   // Distribuição de pontos por ambiente: aproximada (ver pontosPorAmbiente.js)
   // e por isso isolada num Promise.all com catch por arquivo — uma falha aqui
   // nunca deve derrubar a análise inteira, já que o resto dela (totais,
   // serviços, materiais) não depende disso.
-  const pontosPorAmbienteBrutos = await Promise.all(
-    arquivos.map(({ buffer }, i) => (cads[i] ? cads[i].pontosPorAmbiente : calcularPontosPorAmbiente(buffer).catch(() => [])))
-  );
+  const pontosPorAmbienteBrutos = await emLotes(arquivos, 3, ({ buffer }, i) => (cads[i] ? cads[i].pontosPorAmbiente : calcularPontosPorAmbiente(buffer).catch(() => [])));
   // geometria do desenho (símbolos/linhas pela legenda): mesma regra, falha não derruba
-  const vetoriais = await Promise.all(
-    analises.map((a, i) => (cads[i] ? Promise.resolve([cads[i].pagina]) : a.semTexto ? Promise.resolve([]) : lerPdfVetorial(arquivos[i].buffer, { maxPaginas: 6 }).catch((e) => {
-      console.warn(`[analise] leitura vetorial de "${a.arquivo}" falhou:`, e.message);
-      return [{ pagina: null, itens: [], legenda: null, escala: null, aviso: `leitura do desenho falhou (${e.message}) — conferir na planta` }];
-    })))
-  );
+  const vetoriais = await emLotes(analises, 3, (a, i) => (cads[i] ? [cads[i].pagina] : a.semTexto ? [] : lerPdfVetorial(arquivos[i].buffer, { maxPaginas: 6 }).catch((e) => {
+    console.warn(`[analise] leitura vetorial de "${a.arquivo}" falhou:`, e.message);
+    return [{ pagina: null, itens: [], legenda: null, escala: null, aviso: `leitura do desenho falhou (${e.message}) — conferir na planta` }];
+  })));
 
   // Disciplina "efetiva" da análise inteira = união das tags de todos os
   // arquivos — decide quais itens-modelo de serviço/material aparecem.
@@ -740,6 +751,18 @@ async function analisarProjetoCompleto(arquivos) {
 
   const achados = gerarAchados(analises);
   achados.push(...achadosDoDesenho(analises, vetoriais));
+
+  // compatibilização por posição entre os DWG/DXF (de projeto e de referência)
+  const paraCompat = [
+    ...arquivos.map((a, i) => cads[i] && { arquivo: a.nomeArquivo, disciplinas: a.disciplinas, referencia: false, espacial: cads[i].espacial }),
+    ...arquivosRef.map((a, i) => cadsRef[i]?.espacial && { arquivo: a.nomeArquivo, disciplinas: [], referencia: true, tipoReferencia: a.tipoReferencia || null, espacial: cadsRef[i].espacial }),
+  ].filter(Boolean);
+  const compat = compatibilizar(paraCompat, { temPdf: cads.some(c => !c) && paraCompat.length > 0 });
+  achados.push(...compat.achados);
+  for (const [i, a] of arquivosRef.entries()) {
+    if (cadsRef[i]?.erro) achados.push({ tema: 'Arquivo de referência não lido', observacao: `"${a.nomeArquivo}": ${cadsRef[i].erro}` });
+    else if (!ehArquivoCad(a.nomeArquivo)) achados.push({ tema: 'Arquivo de referência', observacao: `"${a.nomeArquivo}" (PDF) ficou só como referência — não entra na contagem nem na verificação de posição.` });
+  }
 
   // Cada disciplina selecionada que não tem extração automática de
   // quantidade entra num único aviso — os símbolos de elétrica/iluminação/
@@ -826,7 +849,11 @@ async function analisarProjetoCompleto(arquivos) {
     materiais,
     dadosExtraidos,
     // arquitetura do primeiro DWG/DXF com ambientes: guardada na análise (base do 3D)
-    arquiteturaCad: cads.find(c => c?.arquitetura)?.arquitetura || null,
+    // de preferência o desenho de referência da compatibilização (as marcações caem nele)
+    arquiteturaCad: [...cadsRef, ...cads].find(c => c?.arquitetura && c.arquitetura.nome_arquivo === compat.referencia)?.arquitetura
+      || [...cadsRef, ...cads].find(c => c?.arquitetura)?.arquitetura || null,
+    conflitos: compat.conflitos,
+    compatibilizacao: { referencia: compat.referencia, grupos: compat.grupos },
   };
 }
 

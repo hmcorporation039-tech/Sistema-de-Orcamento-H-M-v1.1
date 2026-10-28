@@ -275,7 +275,7 @@ router.post('/pesquisa-mercado/salvar', autenticar, pesqCtrl.salvar);
 // Versão 2.0: rotas por tema em routes/v2/*.js — cada arquivo exporta
 // (router, { autenticar, admin, validarId, exigirPosse, limitePesquisaMercado }) => void
 for (const f of require('fs').readdirSync(require('path').join(__dirname, 'v2')).filter(n => /\.js$/.test(n)).sort()) {
-  require(`./v2/${f}`)(router, { autenticar, admin, validarId, exigirPosse, limitePesquisaMercado });
+  require(`./v2/${f}`)(router, { autenticar, admin, validarId, exigirPosse, limitePesquisaMercado, limiteAnaliseProjeto });
 }
 
 module.exports = router;

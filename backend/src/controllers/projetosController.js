@@ -19,6 +19,7 @@ const { sincronizarProjeto, pastaDoProjeto, resumoPasta, pedidoLocal, seguro, ex
 const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
 const { lerFinalidade } = require('../utils/projetoLaudo');
 const { ehArquivoCad } = require('../utils/analiseCad');
+const Pacotes = require('../services/pacotesProjeto');
 
 // DWG começa pela versão (AC10xx); DXF de texto, por "0 SECTION"
 const ehConteudoCad = (buf) => /^AC10\d\d$/.test(buf.subarray(0, 6).toString('latin1')) || /^\s*0\s*\r?\n\s*SECTION/.test(buf.subarray(0, 200).toString('latin1'));
@@ -80,6 +81,9 @@ function linhaParaAnalise(row) {
     materiais: row.materiais,
     // Por arquivo: carimbo, quadros de carga, listas de materiais, disciplinas detectadas
     dadosExtraidos: row.dados_extraidos,
+    // 2.3: compatibilização por posição entre os DWG/DXF (utils/compatibilidadeEspacial.js)
+    conflitos: row.conflitos || [],
+    compatibilizacao: row.compatibilizacao || null,
     // Proposta gerada a partir desta análise (botão "Gerar Orçamento"), se
     // já existir — o número só vem quando a consulta faz o LEFT JOIN com
     // propostas (buscarUma); nas demais fica undefined, sem problema.
@@ -193,15 +197,27 @@ async function analisar(req, res) {
   if (arquivos.some(a => a.disciplinas.length === 0)) {
     return res.status(400).json({ erro: 'Selecione ao menos uma disciplina para cada arquivo enviado' });
   }
+  return executarAnalise(req, res, arquivos, req.body);
+}
 
+// Conteúdo de cada arquivo confere com a extensão (PDF de verdade; DWG/DXF de verdade)
+function arquivoInvalido(arquivos) {
+  const ruim = arquivos.find(a => (ehArquivoCad(a.nomeArquivo) ? !ehConteudoCad(a.buffer) : tipoPorConteudo(a.buffer) !== 'application/pdf'));
+  if (!ruim) return null;
+  return ehArquivoCad(ruim.nomeArquivo) ? `"${ruim.nomeArquivo}" não é um DWG nem um DXF válido` : `"${ruim.nomeArquivo}" não é um arquivo PDF válido (aceitos: PDF, DWG e DXF)`;
+}
+
+// Parte comum do envio direto (multipart) e do pacote (2.3): obra, finalidade,
+// análise, gravação. `corpo`: { finalidade, obra_id, nome_projeto }.
+async function executarAnalise(req, res, arquivos, corpo) {
   // finalidade (2.1): campo multipart; ausente = 'orcamento' (o uso de sempre,
   // e o que o MCP manda quando não informa)
-  const finalidade = lerFinalidade(req.body.finalidade);
+  const finalidade = lerFinalidade(corpo.finalidade);
   if (!finalidade) return res.status(400).json({ erro: 'Finalidade inválida: escolha "Orçamento" ou "Elaboração de projeto".' });
 
   // obra (2.0): campo multipart obra_id — a análise nasce ligada à obra e a
   // pasta dela fica em Obras\<obra>\Projeto
-  const leituraObra = lerObraId(req.body);
+  const leituraObra = lerObraId(corpo);
   const erroObra = await conferirObra(pool, leituraObra, { usuario: req.usuario }).catch(() => 'Obra não encontrada.');
   if (erroObra) return res.status(400).json({ erro: erroObra });
   // falha do banco aqui (fora do try abaixo) deixava o pedido pendurado
@@ -222,8 +238,8 @@ async function analisar(req, res) {
       `INSERT INTO analises_projeto
         (cliente_nome, disciplinas, arquivos_analisados, ambientes, pontos_por_ambiente, cameras,
          pontos_rede_antena, tabela_cabos, achados, servicos, materiais, usuario_id, nome_projeto, dados_extraidos,
-         obra_id, cliente_id, finalidade)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+         obra_id, cliente_id, finalidade, conflitos, compatibilizacao)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
        RETURNING *`,
       [
         // sem cliente no carimbo do PDF, vale o cliente da obra
@@ -239,11 +255,13 @@ async function analisar(req, res) {
         JSON.stringify(resultado.servicos),
         JSON.stringify(resultado.materiais),
         req.usuario.id,
-        String(req.body.nome_projeto || '').trim().slice(0, 200) || null,
+        String(corpo.nome_projeto || '').trim().slice(0, 200) || null,
         JSON.stringify(resultado.dadosExtraidos || []),
         obraDaAnalise?.id || null,
         !resultado.cliente && obraDaAnalise ? obraDaAnalise.cliente_id : null,
         finalidade,
+        JSON.stringify(resultado.conflitos || []),
+        JSON.stringify(resultado.compatibilizacao || null),
       ]
     );
 
@@ -260,10 +278,86 @@ async function analisar(req, res) {
     await sincronizarProjeto(insert.rows[0], arquivos);
     const salvo = await pool.query(SQL_ANALISE_COMPLETA, [insert.rows[0].id]);
     res.json(linhaParaAnalise(salvo.rows[0]));
+    return true;
   } catch (err) {
     console.error('Erro ao analisar projeto:', err);
     // erros do banco/sistema (têm `code`) não vão para a tela — só os da leitura do projeto
     res.status(422).json({ erro: (!err.code && err.message) || 'Erro ao analisar os arquivos do projeto' });
+    return false;
+  }
+}
+
+// ── Pacote de arquivos (2.3) — services/pacotesProjeto.js ──────────────────
+// POST /projetos/pacotes: arquivos soltos, de uma pasta (o nome vem com a pasta
+// relativa) ou ZIP → { token, arquivos com a disciplina sugerida, ignorados }
+async function receberPacote(req, res) {
+  if (!req.files?.length) return res.status(400).json({ erro: 'Envie os arquivos, a pasta ou o ZIP do projeto (PDF, DWG, DXF ou ZIP).' });
+  const recebidos = req.files.map((f) => {
+    const caminho = nomeUtf8(f.originalname).replace(/\\/g, '/').replace(/^\/+|(^|\/)\.\.(\/|$)/g, '').slice(-400);
+    return { originalname: caminho.split('/').pop(), buffer: f.buffer, path: f.path, caminho: caminho.includes('/') ? caminho : null };
+  });
+  try {
+    res.status(201).json(await Pacotes.receberPacote(recebidos, req.usuario));
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ erro: err.message });
+    console.error('Erro ao receber pacote de projeto:', err);
+    res.status(500).json({ erro: 'Erro ao receber os arquivos do projeto.' });
+  }
+}
+
+// POST /projetos/pacotes/:token/analisar { arquivos: [{ id, disciplinas, referencia, tipoReferencia }], finalidade, obra_id, nome_projeto }
+async function analisarPacote(req, res) {
+  const escolhas = Array.isArray(req.body?.arquivos) ? req.body.arquivos : [];
+  if (!escolhas.length) return res.status(400).json({ erro: 'Escolha os arquivos do pacote a analisar.' });
+  const normalizadas = escolhas.map(e => ({ ...e, referencia: e.referencia === true, disciplinas: e.referencia === true ? [] : normalizarDisciplinas(e.disciplinas) }));
+  if (normalizadas.some(e => !e.referencia && !e.disciplinas.length)) {
+    return res.status(400).json({ erro: 'Cada arquivo precisa de ao menos uma disciplina, ou ser marcado como referência (arquitetura, estrutura, hidráulica, climatização).' });
+  }
+  if (!normalizadas.some(e => !e.referencia)) return res.status(400).json({ erro: 'Marque a disciplina de ao menos um arquivo: só arquivos de referência não geram análise.' });
+  let arquivos;
+  try {
+    arquivos = Pacotes.arquivosDoPacote(req.params.token, req.usuario, normalizadas);
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ erro: err.message });
+    throw err;
+  }
+  const invalido = arquivoInvalido(arquivos);
+  if (invalido) return res.status(400).json({ erro: invalido });
+  // nomes repetidos em pastas diferentes do pacote: o nome leva a pasta (a pasta do projeto guarda todos)
+  const vistos = new Map();
+  for (const a of arquivos) vistos.set(a.nomeArquivo, (vistos.get(a.nomeArquivo) || 0) + 1);
+  for (const a of arquivos) if (vistos.get(a.nomeArquivo) > 1 && a.caminho) a.nomeArquivo = a.caminho.replace(/[\\/]+/g, ' - ').replace(/[:*?"<>|]+/g, '_').slice(-180);
+  // sem nome de projeto: vale o nome da pasta/ZIP enviado (todos os arquivos vieram dele)
+  const corpo = { ...(req.body || {}) };
+  const emPasta = arquivos.every(a => String(a.caminho || '').includes('/'));
+  const raizes = [...new Set(arquivos.map(a => String(a.caminho || '').split('/')[0]))];
+  if (!String(corpo.nome_projeto || '').trim() && emPasta && raizes.length === 1) corpo.nome_projeto = raizes[0].replace(/\.zip$/i, '').trim().slice(0, 200);
+  const ok = await executarAnalise(req, res, arquivos, corpo);
+  if (ok) Pacotes.descartarPacote(req.params.token, req.usuario);
+}
+
+// DELETE /projetos/pacotes/:token
+async function descartarPacote(req, res) {
+  Pacotes.descartarPacote(req.params.token, req.usuario);
+  res.status(204).end();
+}
+
+// GET /projetos/analises/:id/compatibilizacao-dxf — arquitetura de referência + conflitos marcados
+async function compatibilizacaoDxf(req, res) {
+  try {
+    const { rows: [an] } = await pool.query('SELECT id, nome_projeto, cliente_nome, conflitos FROM analises_projeto WHERE id = $1', [req.params.id]);
+    if (!an) return res.status(404).json({ erro: 'Análise não encontrada.' });
+    const { rows: [arq] } = await pool.query('SELECT conteudo FROM analises_projeto_arquitetura WHERE analise_id = $1', [an.id]);
+    if (!arq) return res.status(400).json({ erro: 'Esta análise não tem desenho DWG/DXF de referência: a compatibilização por posição precisa dos DWG/DXF do projeto.' });
+    const { gerarDxfCompatibilizacao } = require('../utils/dxfCompatibilizacao');
+    const nomeProj = String(an.nome_projeto || an.cliente_nome || 'Projeto').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80);
+    const dxf = gerarDxfCompatibilizacao({ dxfReferencia: arq.conteudo.toString('utf8'), conflitos: an.conflitos || [], titulo: `COMPATIBILIZAÇÃO — ${nomeProj.toUpperCase()}` });
+    const nome = `Compatibilização - ${nomeProj}.dxf`;
+    res.set({ 'Content-Type': 'application/dxf', 'Content-Disposition': contentDisposition(nome), 'X-Nome-Arquivo': encodeURIComponent(nome) });
+    res.send(Buffer.from(dxf, 'utf8'));
+  } catch (err) {
+    console.error('Erro ao gerar o DXF da compatibilização:', err);
+    res.status(500).json({ erro: 'Erro ao gerar o DXF da compatibilização.' });
   }
 }
 
@@ -572,4 +666,7 @@ async function gerarOrcamento(req, res, next) {
   }
 }
 
-module.exports = { listar, buscarUma, analisar, atualizar, remover, gerarRelatorio, gerarOrcamento, pasta, abrirPasta };
+module.exports = {
+  listar, buscarUma, analisar, atualizar, remover, gerarRelatorio, gerarOrcamento, pasta, abrirPasta,
+  receberPacote, analisarPacote, descartarPacote, compatibilizacaoDxf, linhaParaAnalise,
+};
