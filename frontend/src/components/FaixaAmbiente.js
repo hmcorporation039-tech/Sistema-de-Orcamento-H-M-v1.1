@@ -22,7 +22,7 @@ export default function FaixaAmbiente() {
         background: '#b3261e', color: '#fff', fontSize: 13, fontWeight: 700, textAlign: 'center',
         padding: '6px 12px', lineHeight: 1.35,
       }}>
-        AMBIENTE DE TESTE — versão 2.0. Nada do que for feito aqui vale para a produção
+        AMBIENTE DE TESTE. Nada do que for feito aqui vale para a produção
         (e-mails não são enviados; propostas e números são só de teste).
       </div>
       <div aria-hidden="true" style={{

@@ -33,7 +33,7 @@ export function BotoesPacote({ desabilitado, onRecebido }) {
     try {
       const r = await enviarPacoteProjeto(aceitos, (p) => setProgresso(p));
       const ign = r.data.ignorados.length + fora;
-      toast.success(`${r.data.arquivos.length} arquivo(s) recebido(s)${ign ? `; ${ign} ignorado(s) (não são PDF/DWG/DXF)` : ''}. Confira as disciplinas sugeridas.`, { duration: 7000 });
+      toast.success(`${r.data.arquivos.length} arquivo(s) recebido(s)${ign ? `; ${ign} ignorado(s) (não são PDF, DWG, DXF nem ZIP)` : ''}. Confira as disciplinas sugeridas.`, { duration: 7000 });
       onRecebido(r.data);
     } catch (err) {
       toast.error(err.response?.data?.erro || 'Erro ao enviar os arquivos', { duration: 9000 });
@@ -54,7 +54,7 @@ export function BotoesPacote({ desabilitado, onRecebido }) {
         <FilePlus2 size={13} style={{ marginRight: 6 }} /> Arquivos ou ZIP
       </button>
       <button type="button" style={btn} disabled={ocupado} onClick={() => pastaRef.current?.click()}
-        title="Uma pasta inteira (com subpastas): só os PDF, DWG e DXF são enviados">
+        title="Uma pasta inteira (com subpastas): só os PDF, DWG, DXF e ZIP são enviados">
         <FolderOpen size={13} style={{ marginRight: 6 }} /> Pasta inteira
       </button>
       {progresso !== null && (

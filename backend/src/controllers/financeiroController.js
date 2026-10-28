@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const { periodoMesAtualBrasilia } = require('../utils/dataHoje');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');
+const { escaparCsv } = require('../utils/csv');
 const { registrarAuditoria } = require('../utils/auditoria');
 const rotinas = require('../services/rotinas');
 const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
@@ -97,12 +98,6 @@ async function listar(req, res) {
     console.error('Erro ao listar movimentos financeiros:', err);
     res.status(500).json({ erro: 'Erro ao listar movimentos financeiros' });
   }
-}
-
-function escaparCsv(valor) {
-  const texto = String(valor ?? '');
-  if (/[",;\n]/.test(texto)) return `"${texto.replace(/"/g, '""')}"`;
-  return texto;
 }
 
 async function exportarCsv(req, res) {

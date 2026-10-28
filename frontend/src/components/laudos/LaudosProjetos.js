@@ -274,7 +274,7 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
   }
 
   async function excluir(item) {
-    if (!window.confirm(`Excluir o ${T.item} "${item.titulo}"? As fotos dele também serão apagadas; a pasta vai para Arquivos do Sistema\\_Excluídos.`)) return;
+    if (!window.confirm(`Excluir o ${T.item} "${item.titulo}"? As fotos dele também serão apagadas; a pasta vai para _Excluídos, na pasta do cliente — os arquivos podem ser recuperados de lá.`)) return;
     try {
       await removerLaudo(item.id);
       if (laudo?.id === item.id) { revisaoRef.current += 1; laudoAbertoRef.current = null; setSujo(false); setLaudo(null); setDados(null); setResumo(null); }
@@ -619,7 +619,7 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
               {!somenteLeitura && (
                 <button style={{ ...btnSecundario, borderStyle: 'solid', borderColor: '#5a2a2a', color: '#e07070' }} disabled={!!ocupado} data-testid="excluir-registro"
                   onClick={() => excluir({ id: laudo.id, titulo: dados?.obra?.nome || dados?.meta?.titulo || T.semTitulo })}
-                  title={`Exclui este ${T.item}. A pasta dele vai para Arquivos do Sistema\\_Excluídos (dá para recuperar os arquivos).`}>
+                  title={`Exclui este ${T.item}. A pasta dele vai para _Excluídos, na pasta do cliente (os arquivos podem ser recuperados de lá).`}>
                   <Trash2 size={13} style={{ marginRight: 5 }} /> Excluir {T.item}
                 </button>
               )}

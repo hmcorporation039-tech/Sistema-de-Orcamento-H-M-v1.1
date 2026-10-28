@@ -89,10 +89,6 @@ export const extrairNotaFiscal = (arquivo) => {
 };
 export const verificarFornecedoresAgora = () => api.post('/materiais/fornecedores/verificar-agora');
 
-// ── MÃO DE OBRA (catálogo de itens já lançados em propostas, sugestão em
-// dropdown na aba Orçamento) ─────────────────────────────────────────────
-export const getMaoDeObraItens = (params) => api.get('/mao-de-obra-itens', { params });
-
 // ── CLIENTES ──────────────────────────────────────────────────────────
 export const getClientes = (params) => api.get('/clientes', { params });
 export const getTodosClientes = (params) => buscarTodasPaginas(getClientes, params);
@@ -120,22 +116,7 @@ export const enviarPropostaPorEmail = (id, destinatario, mensagem) =>
   api.post(`/propostas/${id}/enviar-email`, { destinatario, mensagem });
 
 // ── ANÁLISE DE PROJETO (compatibilização) ────────────────────────────────
-// `arquivosComDisciplinas`: [{ arquivo: File, disciplinas: string[] }] — cada
-// arquivo carrega sua própria lista de disciplinas (não uma lista única pro
-// lote), por isso vai como um array posicional (mesma ordem dos arquivos
-// anexados) em vez de um campo só.
-export const analisarProjeto = (arquivosComDisciplinas, nomeProjeto) => {
-  const formData = new FormData();
-  if (nomeProjeto) formData.append('nome_projeto', nomeProjeto);
-  arquivosComDisciplinas.forEach(({ arquivo }) => formData.append('arquivos', arquivo));
-  formData.append('disciplinasPorArquivo', JSON.stringify(arquivosComDisciplinas.map(a => a.disciplinas)));
-  // Extrai equipamentos via IA (uma chamada por arquivo) — pode passar bem
-  // do timeout padrão de 15s, por isso o prazo maior só nessa chamada.
-  return api.post('/projetos/analisar', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 180000,
-  });
-};
+// O envio dos arquivos é pelo pacote (enviarPacoteProjeto/analisarPacoteProjeto, abaixo).
 export const getDisciplinasProjeto = () => api.get('/projetos/disciplinas');
 export const getAnalisesProjeto = (params) => api.get('/projetos/analises', { params });
 export const getAnaliseProjeto = (id) => api.get(`/projetos/analises/${id}`);
@@ -144,7 +125,7 @@ export const removerAnaliseProjeto = (id) => api.delete(`/projetos/analises/${id
 export const gerarRelatorioCompatibilizacao = (id) =>
   api.get(`/projetos/analises/${id}/relatorio`, { responseType: 'blob' });
 export const gerarOrcamentoDaAnalise = (id) => api.post(`/projetos/analises/${id}/gerar-orcamento`);
-// Pasta do projeto em Arquivos do Sistema/Projetos
+// Pasta do projeto (2.3: na pasta do cliente ou da obra, no servidor)
 export const getPastaAnalise = (id) => api.get(`/projetos/analises/${id}/pasta`);
 export const abrirPastaAnalise = (id) => api.post(`/projetos/analises/${id}/pasta/abrir`);
 
@@ -154,7 +135,6 @@ export const getDisciplinasLaudo = () => api.get('/laudos/disciplinas');
 export const getModeloLaudo = (disciplina) => api.get(`/laudos/modelo/${disciplina}`);
 export const getLaudos = (params) => api.get('/laudos', { params });
 export const getLaudo = (id) => api.get(`/laudos/${id}`);
-export const criarLaudo = (disciplina, dados, tipo = 'laudo') => api.post('/laudos', { disciplina, dados, tipo });
 // cria o PROJETO da disciplina a partir da análise (análise nunca gera laudo);
 // se a análise já tem o projeto desta disciplina, o servidor devolve o existente
 export const criarProjetoDeAnalise = (analiseId, disciplina) => api.post('/laudos/de-analise', { analise_id: analiseId, disciplina });
@@ -298,20 +278,6 @@ export const getResumoNovidades = () => api.get('/novidades-pastas/resumo');
 export const getNovidadesPastas = (params) => api.get('/novidades-pastas', { params, timeout: 120000 });
 export const marcarNovidadesVistas = (ids) => api.post('/novidades-pastas/visto', { ids });
 export const pacoteDasNovidades = (ids) => api.post('/novidades-pastas/pacote', { ids }, { timeout: 600000 });
-// Criação já ligada a uma obra (obraId null/undefined = sem obra; o backend
-// também aceita obra_id direto no corpo de POST/PUT /propostas, /contratos,
-// /financeiro/movimentos e PATCH categorizar)
-// finalidade (2.1): 'orcamento' | 'elaboracao'
-export const analisarProjetoNaObra = (arquivosComDisciplinas, nomeProjeto, obraId, finalidade = 'orcamento') => {
-  const formData = new FormData();
-  if (nomeProjeto) formData.append('nome_projeto', nomeProjeto);
-  if (obraId) formData.append('obra_id', String(obraId));
-  formData.append('finalidade', finalidade);
-  arquivosComDisciplinas.forEach(({ arquivo }) => formData.append('arquivos', arquivo));
-  formData.append('disciplinasPorArquivo', JSON.stringify(arquivosComDisciplinas.map(a => a.disciplinas)));
-  // DWG é convertido e percorrido no servidor: arquivo grande leva minutos
-  return api.post('/projetos/analisar', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 360000 });
-};
 // Pacote de arquivos (2.3): arquivos soltos, uma pasta inteira (o nome vai com a
 // pasta relativa) ou ZIP → { token, arquivos: [{ id, nome, caminho, tipo, tamanho, sugestao }], ignorados }
 export const enviarPacoteProjeto = (arquivos, onProgresso) => {
@@ -326,12 +292,11 @@ export const enviarPacoteProjeto = (arquivos, onProgresso) => {
 export const analisarPacoteProjeto = (token, corpo) => api.post(`/projetos/pacotes/${token}/analisar`, corpo, { timeout: 900000 });
 export const descartarPacoteProjeto = (token) => api.delete(`/projetos/pacotes/${token}`);
 export const baixarCompatibilizacaoDxf = (id) => api.get(`/projetos/analises/${id}/compatibilizacao-dxf`, { responseType: 'blob', timeout: 120000 });
-// tipo (2.1): 'projeto' | 'laudo' (padrão laudo)
+// Criação já ligada a uma obra (obraId null/undefined = sem obra; o backend
+// também aceita obra_id direto no corpo de POST/PUT /propostas, /contratos,
+// /financeiro/movimentos e PATCH categorizar). tipo (2.1): 'projeto' | 'laudo' (padrão laudo)
 export const criarLaudoNaObra = (disciplina, dados, obraId, tipo = 'laudo') =>
   api.post('/laudos', { disciplina, dados, obra_id: obraId || null, tipo });
-// sem obraId, o projeto herda a obra da análise de origem
-export const criarProjetoDeAnaliseNaObra = (analiseId, disciplina, obraId) =>
-  api.post('/laudos/de-analise', { analise_id: analiseId, disciplina, ...(obraId ? { obra_id: obraId } : {}) });
 // ── APROVAÇÃO DA PROPOSTA POR LINK (2.0, Fase 3I) ─────────────────────────
 // Internas (login). Gerar devolve o token EM CLARO uma única vez:
 //   { id, token, caminho: '/aprovacao/<token>', url_publica_base, expira_em, numero, cliente_nome, total }
@@ -385,7 +350,6 @@ export const getCronogramaObra = (obraId, params) => api.get(`/obras/${obraId}/c
 export const gerarCronogramaObra = (obraId, data) => api.post(`/obras/${obraId}/cronograma/gerar`, data, { timeout: 60000 });
 // data: { versao, periodicidade, criterio_peso, data_inicio, etapas: [{ id?, nome, valor, peso, inicio, fim, distribuicao? }] }
 export const salvarCronogramaObra = (obraId, data) => api.put(`/obras/${obraId}/cronograma`, data);
-export const getMedicoesObra = (obraId) => api.get(`/obras/${obraId}/medicoes`);
 // data: { data_medicao, periodo?, observacao?, itens: [{ etapa_id, percentual_acumulado?, valor_medido?, observacao? }] }
 export const registrarMedicaoObra = (obraId, data) => api.post(`/obras/${obraId}/medicoes`, data);
 export const baixarPlanilhaCronogramaObra = (obraId) =>

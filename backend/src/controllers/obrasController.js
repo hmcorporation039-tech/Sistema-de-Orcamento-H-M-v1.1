@@ -16,6 +16,7 @@ const { versaoDoPedido, responderConflitoOuAusente } = require('../utils/versao'
 const { registrarAuditoria } = require('../utils/auditoria');
 const { segmentoDoCliente } = require('../utils/precosMaoDeObraReferencia');
 const { condicaoPodeAbrirOS } = require('../utils/campo');
+const { ehDataIso } = require('../utils/dataHoje');
 const { pastaDaObra, sincronizarObra, caminhoRegistrado, resumoPasta, pedidoLocal, seguro } = require('../services/pastasRegistros');
 
 const ehAdmin = (req) => req.usuario?.role === 'admin';
@@ -31,11 +32,10 @@ const VINCULOS = {
 };
 
 // ── validação ───────────────────────────────────────────────────────────
-const DATA_RE = /^\d{4}-\d{2}-\d{2}$/;
 function dataOuNull(v) {
   if (v == null || v === '') return { valor: null };
   const s = String(v).slice(0, 10);
-  if (!DATA_RE.test(s) || Number.isNaN(new Date(`${s}T12:00:00`).getTime())) return { erro: true };
+  if (!ehDataIso(s)) return { erro: true }; // 2026-02-31 não existe (antes passava e virava 500)
   return { valor: s };
 }
 const inteiroOuNull = (v) => {
@@ -423,8 +423,13 @@ async function abrirPasta(req, res, next) {
 // POST /obras/:id/pasta/pacote (2.3) — pacote de análise com os PDF/DWG/DXF/ZIP que
 // JÁ estão na pasta da obra (o projeto que o cliente mandou por e-mail e alguém
 // salvou lá). O que o próprio sistema gerou (propostas, contratos, laudos,
-// documentos dos projetos) vem desmarcado: o usuário marca se quiser.
-const RE_GERADO_PELO_SISTEMA = /^(Propostas|Contratos|Laudos|Projetos)\//i;
+// documentos dos projetos) vem desmarcado: o usuário marca se quiser. São as
+// pastas que o sistema cria na obra — "Projeto" e "Projeto (A86)" das análises
+// (com a cópia dos arquivos já analisados e o orçamento) inclusive — e qualquer
+// arquivo que o monitor registrou como gravado pelo sistema (pasta_arquivos).
+// Antes só "Projetos/" contava: o orçamento e o relatório da análise vinham
+// marcados e seriam lidos como projeto (tudo contado em dobro).
+const RE_GERADO_PELO_SISTEMA = /^(Propostas|Contratos|Laudos|Projetos|Projeto(?: \(A\d+\))?)\//i;
 async function pacoteDaPasta(req, res, next) {
   try {
     const obra = await carregarObra(req.params.id);
@@ -435,11 +440,17 @@ async function pacoteDaPasta(req, res, next) {
       .map(a => ({ ...a, rel: a.arquivo.replace(/\\/g, '/') }))
       .filter(a => /\.(pdf|dwg|dxf|zip)$/i.test(a.rel));
     if (!todos.length) return res.status(400).json({ erro: `Não há PDF, DWG, DXF nem ZIP na pasta da obra (${dir}). Salve lá os arquivos recebidos do cliente, ou envie pela tela.` });
+    const { rows: [atual] } = await pool.query('SELECT pasta, pasta_base FROM obras WHERE id = $1', [obra.id]);
+    const prefixo = atual?.pasta_base ? `${atual.pasta_base}/${atual.pasta}/`.toLowerCase() : null;
+    const doSistema = new Set(prefixo
+      ? (await pool.query("SELECT LOWER(caminho) AS c FROM pasta_arquivos WHERE origem = 'sistema' AND left(LOWER(caminho), length($1)) = $1", [prefixo])).rows.map(r => r.c.slice(prefixo.length))
+      : []);
+    const gerado = (rel) => RE_GERADO_PELO_SISTEMA.test(rel) || doSistema.has(rel.toLowerCase());
     // os recebidos primeiro (o pacote aceita até 60 arquivos)
-    const ordenados = [...todos.filter(a => !RE_GERADO_PELO_SISTEMA.test(a.rel)), ...todos.filter(a => RE_GERADO_PELO_SISTEMA.test(a.rel))];
+    const ordenados = [...todos.filter(a => !gerado(a.rel)), ...todos.filter(a => gerado(a.rel))];
     const recebidos = ordenados.map(a => ({ originalname: a.rel.split('/').pop(), path: require('path').join(dir, a.arquivo), caminho: a.rel }));
     const pacote = await require('../services/pacotesProjeto').receberPacote(recebidos, req.usuario, { nomeSugerido: obra.nome });
-    for (const it of pacote.arquivos) it.incluirSugerido = !RE_GERADO_PELO_SISTEMA.test(it.caminho);
+    for (const it of pacote.arquivos) it.incluirSugerido = !gerado(it.caminho);
     res.status(201).json({ ...pacote, pasta: dir });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ erro: err.message });

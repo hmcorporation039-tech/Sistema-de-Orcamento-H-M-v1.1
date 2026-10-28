@@ -4,6 +4,7 @@ const { periodoMesAtualBrasilia } = require('../utils/dataHoje');
 const { gerarHtmlRelatorio, gerarFooterTemplateRelatorio } = require('../utils/relatorioTemplate');
 const { sqlDecisaoCliente } = require('../utils/aprovacaoLink');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');
+const { escaparCsv } = require('../utils/csv');
 
 // Primeiro dia do mês atual até hoje (horário de Brasília), se as datas não
 // forem informadas — utils/dataHoje.js (toISOString dava o dia em UTC)
@@ -77,12 +78,6 @@ async function listar(req, res) {
     console.error('Erro ao gerar relatório de propostas:', err);
     res.status(500).json({ erro: 'Erro ao gerar relatório de propostas' });
   }
-}
-
-function escaparCsv(valor) {
-  const texto = String(valor ?? '');
-  if (/[",;\n]/.test(texto)) return `"${texto.replace(/"/g, '""')}"`;
-  return texto;
 }
 
 async function exportarCsv(req, res) {

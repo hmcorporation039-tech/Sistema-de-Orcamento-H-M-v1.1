@@ -302,9 +302,12 @@ async function modelo3dPublico(req, res) {
     const link = await buscarLinkValido(pool, req.params.token);
     if (!link) return linkInvalido(res);
     const { rows: [p] } = await pool.query('SELECT id, status, modelo_3d_cliente FROM propostas WHERE id = $1', [link.proposta_id]);
-    if (!p || !p.modelo_3d_cliente || p.status === 'Cancelada' || p.status === 'Recusada') return linkInvalido(res);
+    if (!p || p.status === 'Cancelada' || p.status === 'Recusada') return linkInvalido(res);
+    // o link vale, só não há 3D: dizer isso (antes respondia "link inválido ou expirado")
+    const sem3d = () => res.status(404).type('text/plain; charset=utf-8').send('Esta proposta não tem modelo 3D para visualizar.');
+    if (!p.modelo_3d_cliente) return sem3d();
     const m = await require('../services/modelo3d').obterModelo('proposta', p.id);
-    if (!m) return linkInvalido(res);
+    if (!m) return sem3d();
     require('./modelo3dController').enviarPagina(res, m.html);
   } catch (err) {
     falhaPublica(res, 'modelo 3D', err);

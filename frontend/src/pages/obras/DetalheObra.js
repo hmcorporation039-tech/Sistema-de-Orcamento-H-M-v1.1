@@ -314,7 +314,7 @@ function BotaoDesligar({ onClick }) {
 // exclui — o servidor confere e a mensagem dele aparece se não puder.
 function BotaoExcluir({ rotulo, excluir, recarregar }) {
   async function clicar() {
-    if (!window.confirm(`Excluir ${rotulo}? Esta ação não pode ser desfeita (a pasta vai para Arquivos do Sistema\\_Excluídos).`)) return;
+    if (!window.confirm(`Excluir ${rotulo}? O registro sai do sistema; a pasta vai para _Excluídos, na pasta do cliente — os arquivos podem ser recuperados de lá.`)) return;
     try {
       await excluir();
       toast.success('Excluído');

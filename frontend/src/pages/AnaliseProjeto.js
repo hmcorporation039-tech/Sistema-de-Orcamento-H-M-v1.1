@@ -123,13 +123,15 @@ export default function Compatibilizacao() {
       .then(res => popularAnalise(res.data))
       .catch(() => {
         toast.error('Análise não encontrada');
-        navigate('/obras');
+        navigate('/obras?aba=analise');
       })
       .finally(() => setCarregandoAnalise(false));
   }, [idParam, navigate, popularAnalise]);
 
+  // volta para a aba de análise (envio novo). Antes ia para /obras, que abre a
+  // aba "Obras" — e a aba "Análise de projeto", já marcada, não reage ao clique.
   function novaAnalise() {
-    navigate('/obras');
+    navigate('/obras?aba=analise');
     setSalvoEm(null);
   }
 
@@ -138,7 +140,7 @@ export default function Compatibilizacao() {
   }
 
   async function excluirAnaliseSalva(item) {
-    if (!window.confirm(`Excluir a análise de "${item.cliente_nome || 'projeto sem cliente'}"? Esta ação não pode ser desfeita.`)) return;
+    if (!window.confirm(`Excluir a análise de "${item.cliente_nome || 'projeto sem cliente'}"? O registro sai do sistema; a pasta vai para _Excluídos, na pasta do cliente — os arquivos podem ser recuperados de lá.`)) return;
     try {
       await removerAnaliseProjeto(item.id);
       toast.success('Análise excluída');
@@ -396,8 +398,8 @@ export default function Compatibilizacao() {
       </h3>
       <p style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.6 }}>
         {principal
-          ? <>Cada disciplina vira um <b>projeto</b> (aba "Projetos por disciplina") já preenchido com o que foi lido deste PDF: calcule pela norma, gere o memorial e os desenhos e escolha as <b>entregas</b> — definições técnicas, as-built, DXF (abre no AutoCAD), QElectroTech e PDF. <b>Não gera laudo</b>: laudo é pedido quando necessário, em Obras › Laudos.</>
-          : <>Cria o <b>projeto</b> da disciplina (não é laudo) já preenchido com o que foi lido deste PDF, para quantificar melhor pela norma e gerar o orçamento de execução lá. O que for estimado vem marcado para conferir.</>}
+          ? <>Cada disciplina vira um <b>projeto</b> (aba "Projetos por disciplina") já preenchido com o que foi lido dos arquivos (PDF, DWG ou DXF): calcule pela norma, gere o memorial e os desenhos e escolha as <b>entregas</b> — definições técnicas, as-built, DXF (abre no AutoCAD), QElectroTech e PDF. <b>Não gera laudo</b>: laudo é pedido quando necessário, em Obras › Laudos.</>
+          : <>Cria o <b>projeto</b> da disciplina (não é laudo) já preenchido com o que foi lido dos arquivos, para quantificar melhor pela norma e gerar o orçamento de execução lá. O que for estimado vem marcado para conferir.</>}
       </p>
       {disciplinasComSkill.length === 0 ? (
         <p style={{ fontSize: 12, color: '#666', fontStyle: 'italic', margin: 0 }}>Nenhuma disciplina desta análise tem cálculo pela norma ainda.</p>
@@ -659,7 +661,7 @@ export default function Compatibilizacao() {
                 <div style={card}>
                   <h3 style={tituloSecao}>Serviços (Mão de Obra) — extraídos do projeto</h3>
                   <p style={{ fontSize: 12, color: '#666', marginBottom: 10, lineHeight: 1.6 }}>
-                    Leitura do que a análise montou a partir do PDF. Quantidade, preço, pesquisa de mercado e referências são
+                    Leitura do que a análise montou a partir dos arquivos do projeto. Quantidade, preço, pesquisa de mercado e referências são
                     revisados no editor do orçamento ("Gerar orçamento e abrir no editor", abaixo). Marque "Já pronto" para o que
                     não faz parte do seu escopo (ex.: cabeamento já passado) — sai do orçamento e do relatório como pendência.
                   </p>
@@ -682,7 +684,7 @@ export default function Compatibilizacao() {
             return elaboracao ? (
               <details style={{ ...card, padding: '14px 22px' }}>
                 <summary style={{ cursor: 'pointer', fontSize: 13, color: '#999', fontWeight: 700 }}>
-                  Itens extraídos do PDF (referência) — {analise.servicos.length} serviço(s), {analise.materiais.length} material(is)
+                  Itens extraídos do projeto (referência) — {analise.servicos.length} serviço(s), {analise.materiais.length} material(is)
                 </summary>
                 <div style={{ marginTop: 14 }}>{tabelas}</div>
               </details>

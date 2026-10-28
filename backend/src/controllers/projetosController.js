@@ -398,6 +398,16 @@ async function atualizar(req, res) {
   )) {
     return res.status(400).json({ erro: 'pontos_por_disciplina deve ser uma lista de { disciplina, itens: [] }' });
   }
+  // serviços/materiais substituem a lista inteira: item sem descrição nem código
+  // ou com quantidade negativa/não numérica era gravado e aparecia como
+  // "(sem descrição) −5" (teste de 28/10/2026)
+  for (const [nome, lista] of [['servicos', servicos], ['materiais', materiais]]) {
+    if (lista == null) continue;
+    if (!Array.isArray(lista) || lista.length > 2000) return res.status(400).json({ erro: `${nome} deve ser uma lista (até 2000 itens)` });
+    const ruim = lista.find(x => !x || typeof x !== 'object' || !(String(x.descricao || '').trim() || String(x.codigo || '').trim())
+      || (x.quantidade != null && x.quantidade !== '' && !(Number(x.quantidade) >= 0)));
+    if (ruim) return res.status(400).json({ erro: `Item inválido em ${nome}: precisa de descrição (ou código) e quantidade zero ou positiva.` });
+  }
   // finalidade (2.1): presente troca; ausente mantém
   const finalidade = req.body.finalidade == null ? null : lerFinalidade(req.body.finalidade, null);
   if (req.body.finalidade != null && !finalidade) {
@@ -510,8 +520,9 @@ async function pasta(req, res) {
     if (!r.rows.length) return res.status(404).json({ erro: 'Análise não encontrada' });
     res.json({ ...(await resumoPasta(await pastaDoProjeto(r.rows[0]))), podeAbrir: pedidoLocal(req) });
   } catch (err) {
+    // o detalhe (caminho do servidor) fica no log, não na resposta
     console.error('Erro ao consultar pasta do projeto:', err);
-    res.status(500).json({ erro: `Erro ao acessar a pasta do projeto: ${err.message}` });
+    res.status(500).json({ erro: 'Erro ao acessar a pasta do projeto. Veja se o servidor das pastas está no ar.' });
   }
 }
 

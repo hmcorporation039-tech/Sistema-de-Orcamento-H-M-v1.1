@@ -109,7 +109,7 @@ export default function EnviarParaAnalise({ obraFixa = null, obraInicial = null,
           <BotoesPacote desabilitado={analisando || lendoPasta} onRecebido={(p) => receber(p)} />
           {obraId && (
             <button type="button" style={btnPasta} disabled={analisando || lendoPasta} onClick={usarPastaDaObra} data-testid="usar-pasta-obra"
-              title="Usa os PDF/DWG/DXF/ZIP que já estão na pasta desta obra (Arquivos do Sistema\Obras\…). O que o sistema gerou (propostas, laudos…) vem desmarcado.">
+              title="Usa os PDF/DWG/DXF/ZIP que já estão na pasta desta obra (Clientes\<cliente>\Obras\<obra>, no servidor). O que o sistema gerou (propostas, laudos…) vem desmarcado.">
               <HardDrive size={13} style={{ marginRight: 6 }} /> {lendoPasta ? 'Lendo a pasta da obra…' : 'Usar os arquivos da pasta da obra'}
             </button>
           )}

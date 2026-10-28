@@ -61,7 +61,7 @@ async function fonteDoModelo(origemTipo, origemId, executor = pool) {
     };
   }
   if (origemTipo === 'analise') {
-    const { rows: [an] } = await executor.query('SELECT id, nome_projeto, cliente_nome, disciplinas, espacial FROM analises_projeto WHERE id = $1', [origemId]);
+    const { rows: [an] } = await executor.query('SELECT id, nome_projeto, cliente_nome, disciplinas, espacial, arquivos_analisados FROM analises_projeto WHERE id = $1', [origemId]);
     if (!an) throw erro(404, 'Análise não encontrada.');
     const { rows: [a] } = await executor.query('SELECT nome_arquivo, conteudo FROM analises_projeto_arquitetura WHERE analise_id = $1', [an.id]);
     if (!a) return null;
@@ -79,10 +79,15 @@ async function fonteDoModelo(origemTipo, origemId, executor = pool) {
     }
     const chaves = (an.disciplinas || []).map(x => (typeof x === 'string' ? x : x?.chave)).filter(Boolean);
     const disciplinas = [...new Set(chaves.map(k => DISCIPLINAS_3D[k]).filter(Boolean))];
+    // projeto recebido em DWG/DXF, mas sem posições alinhadas: avisa que os pontos são
+    // ESTIMADOS (antes o 3D mostrava 11 tomadas estimadas com 6 desenhadas, sem aviso)
+    const veioDeCad = (an.arquivos_analisados || []).some(x => /\.(dwg|dxf)$/i.test(x?.nomeArquivo || x?.arquivo || ''));
     return {
       origemTipo: 'analise', origemId: an.id, nomeArquivo: a.nome_arquivo, dxf: a.conteudo.toString('utf8'),
       disciplinas, dadosPorDisciplina: {},
-      semPontos: disciplinas.length ? null : 'As disciplinas desta análise ainda não têm pontos no 3D: o modelo mostra só a arquitetura.',
+      semPontos: !disciplinas.length ? 'As disciplinas desta análise ainda não têm pontos no 3D: o modelo mostra só a arquitetura.'
+        : veioDeCad ? 'Pontos ESTIMADOS pela norma (para conferir): os componentes do DWG/DXF não puderam ser posicionados na arquitetura — ela precisa de pelo menos 3 ambientes com o mesmo nome nos dois desenhos.'
+          : null,
       peDireito: null,
       titulo: `Modelo 3D — ${an.nome_projeto || 'Projeto'}`, cliente: an.cliente_nome || '', obra: '',
     };

@@ -22,4 +22,15 @@ function periodoMesAtualBrasilia(agora = new Date()) {
   return { dataInicio: `${ano}-${String(mes).padStart(2, '0')}-01`, dataFim: hojeBrasilia(agora) };
 }
 
-module.exports = { FUSO, hojeBrasilia, anoMesBrasilia, periodoMesAtualBrasilia };
+// "AAAA-MM-DD" que existe no calendário. `new Date('2026-02-31')` não falha: o
+// JavaScript "rola" para 03/03 — a data passava na validação e o Postgres
+// recusava depois (erro 500 no lugar de "data inválida").
+function ehDataIso(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || ''));
+  if (!m) return false;
+  const [a, me, d] = m.slice(1).map(Number);
+  const dt = new Date(Date.UTC(a, me - 1, d));
+  return dt.getUTCFullYear() === a && dt.getUTCMonth() === me - 1 && dt.getUTCDate() === d;
+}
+
+module.exports = { FUSO, hojeBrasilia, anoMesBrasilia, periodoMesAtualBrasilia, ehDataIso };

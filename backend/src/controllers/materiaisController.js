@@ -59,43 +59,60 @@ async function listar(req, res) {
   }
 }
 
-async function criar(req, res) {
-  const { codigo, descricao, categoria, unidade, preco, preco_compra, marca, ncm } = req.body;
-
-  if (!descricao || !categoria || !unidade) {
-    return res.status(400).json({ erro: 'Descrição, categoria e unidade são obrigatórios' });
+// Validação do material (teste de 28/10/2026: preço "abc" e texto acima do
+// limite da coluna viravam 500; o PUT parcial apagava os campos omitidos)
+const CAMPOS_MATERIAL = ['codigo', 'descricao', 'categoria', 'unidade', 'preco', 'preco_compra', 'marca', 'ncm'];
+const LIMITE_MATERIAL = { codigo: 20, descricao: 300, categoria: 50, unidade: 10, marca: 100, ncm: 10 };
+function dadosDoMaterial(body, atual = null) {
+  const d = {};
+  for (const c of CAMPOS_MATERIAL) {
+    const v = Object.prototype.hasOwnProperty.call(body || {}, c) ? body[c] : atual?.[c];
+    d[c] = v == null ? null : (typeof v === 'string' ? v.trim() || null : v);
   }
-  if (Number(preco) < 0 || Number(preco_compra) < 0) return res.status(400).json({ erro: 'Preço não pode ser negativo' });
+  if (!d.descricao || !d.categoria || !d.unidade) return { erro: 'Descrição, categoria e unidade são obrigatórios' };
+  for (const c of ['preco', 'preco_compra']) {
+    if (d[c] == null) continue;
+    const n = typeof d[c] === 'number' ? d[c] : Number(String(d[c]).replace(',', '.'));
+    if (!Number.isFinite(n)) return { erro: `Preço inválido: "${d[c]}".` };
+    if (n < 0) return { erro: 'Preço não pode ser negativo' };
+    d[c] = n;
+  }
+  for (const [c, max] of Object.entries(LIMITE_MATERIAL)) if (d[c] && String(d[c]).length > max) return { erro: `O campo ${c} passa de ${max} caracteres.` };
+  return { d };
+}
+
+async function criar(req, res) {
+  const { d, erro } = dadosDoMaterial(req.body);
+  if (erro) return res.status(400).json({ erro });
 
   try {
     // o banco não aceita dois materiais ativos com a mesma descrição (índice único)
-    const existente = await pool.query('SELECT id FROM materiais WHERE ativo = true AND LOWER(TRIM(descricao)) = LOWER(TRIM($1))', [descricao]);
+    const existente = await pool.query('SELECT id FROM materiais WHERE ativo = true AND LOWER(TRIM(descricao)) = LOWER(TRIM($1))', [d.descricao]);
     if (existente.rows.length) return res.status(409).json({ erro: 'Já existe um material com essa descrição no catálogo' });
     const result = await pool.query(
       `INSERT INTO materiais (codigo, descricao, categoria, unidade, preco, preco_compra, marca, ncm, origem, preco_manual)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'manual',true) RETURNING *`,
-      [codigo, descricao, categoria, unidade, preco || 0, preco_compra || null, marca, ncm]
+      [d.codigo, d.descricao, d.categoria, d.unidade, d.preco || 0, d.preco_compra || null, d.marca, d.ncm]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ erro: 'Já existe um material com essa descrição no catálogo' });
-    console.error('Erro ao criar material:', err);
-    res.status(500).json({ erro: 'Erro ao criar material' });
+    throw err; // erro de entrada do banco vira 400 no tratador central (middleware/erros.js)
   }
 }
 
 async function atualizar(req, res) {
   const { id } = req.params;
-  const { codigo, descricao, categoria, unidade, preco, preco_compra, marca, ncm } = req.body;
-
-  if (Number(preco) < 0 || Number(preco_compra) < 0) return res.status(400).json({ erro: 'Preço não pode ser negativo' });
   try {
     const antes = (await pool.query('SELECT * FROM materiais WHERE id = $1 AND ativo = true', [id])).rows[0];
+    if (!antes) return res.status(404).json({ erro: 'Material não encontrado' });
+    const { d, erro } = dadosDoMaterial(req.body, antes);
+    if (erro) return res.status(400).json({ erro });
     const result = await pool.query(
       `UPDATE materiais SET codigo=$1, descricao=$2, categoria=$3,
        unidade=$4, preco=$5, preco_compra=$6, marca=$7, ncm=$8, origem='manual', preco_manual=true, atualizado_em=NOW()
        WHERE id=$9 AND ativo=true RETURNING *`,
-      [codigo, descricao, categoria, unidade, preco || 0, preco_compra || null, marca, ncm, id]
+      [d.codigo, d.descricao, d.categoria, d.unidade, d.preco || 0, d.preco_compra || null, d.marca, d.ncm, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Material não encontrado' });
     // histórico de preço: edição manual também fica registrada
@@ -107,8 +124,7 @@ async function atualizar(req, res) {
     res.json(depois);
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ erro: 'Já existe outro material com essa descrição no catálogo' });
-    console.error('Erro ao atualizar material:', err);
-    res.status(500).json({ erro: 'Erro ao atualizar material' });
+    throw err; // erro de entrada do banco vira 400 no tratador central (middleware/erros.js)
   }
 }
 

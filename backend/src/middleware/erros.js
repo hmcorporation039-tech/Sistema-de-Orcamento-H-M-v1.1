@@ -87,6 +87,13 @@ function tratarErros(err, req, res, next) {
   // fila de PDF cheia (utils/pdfPuppeteer.js): passageiro, a mensagem diz o que fazer
   if (err && err.codigo === 'FILA_PDF_CHEIA') return res.status(503).json({ erro: err.message });
 
+  // erro de quem pediu, lançado de propósito com status (ex.: Object.assign(new
+  // Error('…'), { status: 400 })): a mensagem é para o usuário. Antes todo erro
+  // que chegava aqui virava 500 — por isso cada controller tinha o seu try/catch.
+  if (err && Number.isInteger(err.status) && err.status >= 400 && err.status < 500) {
+    return res.status(err.status).json({ erro: err.message, ...(err.extra || {}) });
+  }
+
   if (err && ERROS_DE_ENTRADA[err.code]) {
     console.error(`Erro de entrada (${err.code}) em ${req.method} ${req.originalUrl}:`, err.message);
     return res.status(400).json({ erro: ERROS_DE_ENTRADA[err.code] });

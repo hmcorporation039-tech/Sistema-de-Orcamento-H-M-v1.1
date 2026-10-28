@@ -45,8 +45,50 @@ function totaisQuadro(texto) {
 // Linhas que encerram um bloco de lista (começo de outra área da prancha)
 const RE_FIM_BLOCO = /^(--\s*\d+\s+of\s+\d+\s*--|LEIAUTE|VISTA|ESCALA|DIAGRAMA|DETALHE|NOTAS?\b|LEGENDA|OBSERVA|QUADRO DE CARGAS|PLANTA|CORTE)/i;
 
+// Linha de tabela em colunas (o pdf-parse separa as células com tabulação)
+const celulas = (l) => String(l).split('\t').map(c => c.trim());
+const emColunas = (l) => celulas(l).filter(Boolean).length >= 3;
+
+// D) Tabela em COLUNAS com cabeçalho ("Item | Descrição | Unid. | Qtd.", em
+// qualquer ordem): cada valor vem da coluna certa. Antes, "1 \tCabo… \tm \t120"
+// caía no leitor "QTD + descrição" e o nº do item (1) virava a quantidade.
+const COLUNAS = {
+  descricao: /^DESCRI|^ESPECIFICA|^MATERIA/i,
+  qtd: /^QT|^QUANT/i,
+  unidade: /^UN(ID)?\.?$|^UNIDADE|^UND/i,
+  item: /^ITEM|^N[º°O]\.?$|^C[ÓO]D/i,
+};
+function listaPorColunas(linhas) {
+  const itens = [];
+  for (let i = 0; i < linhas.length; i++) {
+    if (!emColunas(linhas[i])) continue;
+    const cab = celulas(linhas[i]);
+    const col = {};
+    cab.forEach((c, k) => { for (const [nome, re] of Object.entries(COLUNAS)) if (col[nome] == null && re.test(c)) col[nome] = k; });
+    if (col.descricao == null || col.qtd == null) continue;
+    let j = i + 1;
+    for (; j < linhas.length && j < i + 300; j++) {
+      const l = linhas[j];
+      if (!l || RE_FIM_BLOCO.test(l)) break;
+      const c = celulas(l);
+      if (c.length < cab.length - 1) break; // fim da tabela (texto corrido)
+      const qtd = num(c[col.qtd] || '');
+      const descricao = c[col.descricao] || '';
+      if (!Number.isFinite(qtd) || !/[A-Za-zÀ-ú]{3,}/.test(descricao)) continue;
+      itens.push({
+        ...(col.item != null && c[col.item] ? { item: c[col.item] } : {}),
+        descricao, qtd, unidade: (col.unidade != null && c[col.unidade] ? c[col.unidade] : 'un').toLowerCase().replace(/\.$/, ''),
+        layout: 'COLUNAS',
+      });
+    }
+    i = j - 1;
+  }
+  return itens;
+}
+
 // A) "QUANT. (UN) DESCRIÇÃO" — "24 Minidisjuntor monopolar, ..." com descrição que
 // pode quebrar em várias linhas, e quantidade às vezes sozinha numa linha.
+// Tabela em colunas (com tabulação) é do leitor D — aqui ela encerra o bloco.
 function listaQtdDescricao(linhas) {
   const itens = [];
   for (let i = 0; i < linhas.length; i++) {
@@ -57,7 +99,7 @@ function listaQtdDescricao(linhas) {
       const l = linhas[j];
       if (!l) { if (atual) break; continue; }
       if (/^QUANT|^QTD|^DESCRI/i.test(l)) continue; // cabeçalho
-      if (RE_FIM_BLOCO.test(l)) break;
+      if (RE_FIM_BLOCO.test(l) || emColunas(l)) break;
       let m = l.match(/^(\d{1,4})\s+(\S.{3,})$/);
       if (m && /[A-Za-zÀ-ú]{3,}/.test(m[2])) {
         atual = { qtd: Number(m[1]), descricao: m[2].trim(), unidade: 'un', layout: 'QTD+DESC' };
@@ -151,8 +193,12 @@ function listaItemDescQtdUn(linhas) {
 
 function listaMateriais(texto) {
   const linhas = String(texto || '').split('\n').map(l => l.trim());
-  return [...listaQtdDescricao(linhas), ...listaTagFabricante(linhas), ...listaItemDescQtdUn(linhas)]
-    .filter(it => Number.isFinite(it.qtd) && it.qtd > 0);
+  // a tabela em colunas (cabeçalho reconhecido) vale mais que os leitores por padrão de linha
+  const colunas = listaPorColunas(linhas);
+  const linhasDeColuna = new Set(colunas.map(c => c.descricao));
+  const porLinha = [...listaQtdDescricao(linhas), ...listaTagFabricante(linhas), ...listaItemDescQtdUn(linhas)]
+    .filter(it => !linhasDeColuna.has(it.descricao) && ![...linhasDeColuna].some(d => it.descricao.startsWith(d)));
+  return [...colunas, ...porLinha].filter(it => Number.isFinite(it.qtd) && it.qtd > 0);
 }
 
 // ── Carimbo (bloco de título) ────────────────────────────────────────────

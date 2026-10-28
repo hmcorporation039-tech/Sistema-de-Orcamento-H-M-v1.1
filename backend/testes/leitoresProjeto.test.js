@@ -125,4 +125,28 @@ caso('ponte PDF → skill elétrica: circuitos e fator de demanda do quadro do p
   assert.ok(orc.itens.some(i => i.secao === 'Materiais e Equipamentos' && /Cabo/.test(i.descricao)), 'orçamento com cabos dimensionados');
 });
 
+caso('lista em colunas "Item | Descrição | Unid. | Qtd." (tabulação do PDF): quantidade da coluna Qtd., não o nº do item', () => {
+  // como o pdf-parse entrega a tabela (achado do teste de 28/10/2026: "Cabo… \tm \t120" saía com qtd 1)
+  const t = [
+    'LISTA DE MATERIAIS',
+    'Item \tDescrição \tUnid. \tQtd.',
+    '1 \tCabo flexível 2,5 mm² 750 V \tm \t120',
+    '2 \tTomada 2P+T 10 A \tun \t6',
+    '3 \tEletroduto PVC flexível 3/4" \tm \t35,5',
+    '4 \tDisjuntor monopolar 16 A curva C \tun \t4',
+    '5 Ambientes: SALA A=30,00 m²',
+    'Observações gerais do projeto.',
+  ].join('\n');
+  const l = L.listaMateriais(t);
+  assert.deepStrictEqual(l.map(i => [i.descricao, i.unidade, i.qtd]), [
+    ['Cabo flexível 2,5 mm² 750 V', 'm', 120],
+    ['Tomada 2P+T 10 A', 'un', 6],
+    ['Eletroduto PVC flexível 3/4"', 'm', 35.5],
+    ['Disjuntor monopolar 16 A curva C', 'un', 4],
+  ]);
+  // ordem Qtd. antes da Unid. e cabeçalho em maiúsculas também
+  const t2 = 'ITEM\tQUANT.\tUN\tDESCRIÇÃO\n01\t12\tpç\tLuminária de sobrepor LED 18 W\n02\t3\tun\tQuadro de distribuição 12 disjuntores';
+  assert.deepStrictEqual(L.listaMateriais(t2).map(i => [i.descricao, i.qtd, i.unidade]), [['Luminária de sobrepor LED 18 W', 12, 'pç'], ['Quadro de distribuição 12 disjuntores', 3, 'un']]);
+});
+
 console.log(`leitores de projeto: ${ok} casos ok`);
