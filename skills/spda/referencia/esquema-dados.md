@@ -1,6 +1,6 @@
 # Formulário de dados da obra (JSON) — campos e opções
 
-Um arquivo por obra, no formato do laudo HM do Santa Lúcia (out/2026). Modelo em branco: `exemplos/modelo-vazio.json`; exemplo completo: `exemplos/exemplo-hospital.json`. Campos marcados com * são obrigatórios para o cálculo.
+Um arquivo por obra, no formato do laudo HM do São Bento (out/2026). Modelo em branco: `exemplos/modelo-vazio.json`; exemplo completo: `exemplos/exemplo-hospital.json`. Campos marcados com * são obrigatórios para o cálculo.
 
 Em qualquer texto, `[CONFERIR …]` sai em vermelho e negrito no documento — use para todo valor estimado ou não confirmado.
 
@@ -9,7 +9,7 @@ Em qualquer texto, `[CONFERIR …]` sai em vermelho e negrito no documento — u
 | Campo | Descrição |
 |---|---|
 | `titulo` | Título interno da obra |
-| `prefixo` | Prefixo dos nomes de arquivo (ex.: `ST_Lucia`); se vazio, usa o nome da obra |
+| `prefixo` | Prefixo dos nomes de arquivo (ex.: `HX_Exemplo`); se vazio, usa o nome da obra |
 | `data` | Data de emissão `AAAA-MM-DD` |
 | `revisao` | `R00`, `R01`… seguido de descrição curta (ex.: `R02 (após visita de campo)`) |
 | `observacao` | Nota interna |

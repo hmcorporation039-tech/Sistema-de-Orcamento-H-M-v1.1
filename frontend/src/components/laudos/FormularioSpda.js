@@ -75,7 +75,7 @@ export default function FormularioSpda({ dados, onChange, checklistBase, fotos, 
           <Campo rotulo="Área construída (m²)" tipo="numero" valor={v('obra.area_construida_m2')} onChange={set('obra.area_construida_m2')} />
           <Campo rotulo="Data de emissão" tipo="data" valor={v('meta.data')} onChange={set('meta.data')} />
           <Campo rotulo="Revisão" valor={v('meta.revisao')} onChange={set('meta.revisao')} placeholder="R00" dica="R00, R01… seguido de descrição curta" />
-          <Campo rotulo="Prefixo dos arquivos" valor={v('meta.prefixo')} onChange={set('meta.prefixo')} placeholder="ex.: ST_Lucia" />
+          <Campo rotulo="Prefixo dos arquivos" valor={v('meta.prefixo')} onChange={set('meta.prefixo')} placeholder="ex.: HX_Exemplo" />
         </Grade>
         <Nota>Responsável técnico (preenchido pelo engenheiro que assina):</Nota>
         <Grade colunas={4}>

@@ -1,5 +1,5 @@
 // Laudo técnico de inspeção do SPDA — NBR 5419-3:2026, Seção 7.
-// Mesma estrutura do laudo HM do Santa Lúcia (R06), com as correções:
+// Mesma estrutura do laudo HM do São Bento (R06), com as correções:
 // NCs sem duplicidade, recomendação própria por NC, ensaios com rótulos e
 // critérios do Anexo F de 2026 e parecer coerente com o checklist.
 
@@ -10,6 +10,7 @@ const {
 } = require('docx');
 const B = require('../../../_comum/docx-base');
 const C = require('./doc-comum');
+const PR = require('./parecer-risco');
 
 const TIPO_INSPECAO = {
   durante_instalacao: 'Durante a instalação do SPDA (7.3.2 a)',
@@ -65,6 +66,18 @@ function gradeFotos(fotos, res) {
   });
 }
 
+function capitalizar(t) {
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+}
+
+// Junta a observação com as fotos sem repetir referência que já está no texto.
+function obsComFoto(obs, foto) {
+  const texto = String(obs || '').trim();
+  const refs = String(foto || '').split(',').map(x => x.trim()).filter(Boolean);
+  const faltam = refs.filter(r => !texto.includes(r));
+  return [texto, faltam.length ? `(${faltam.length > 1 ? 'fotos' : 'foto'} ${faltam.join(', ')})` : ''].filter(Boolean).join(' ');
+}
+
 function gerarLaudo(res) {
   const { dados, dim, checklist, ncs, ensaios, parecer } = res;
   const { cliente = {}, obra = {}, responsavel = {}, meta = {} } = dados;
@@ -86,6 +99,11 @@ function gerarLaudo(res) {
     ['Data(s) da inspeção em campo', B.fmtData(insp.data_inspecao) || '(preencher)'],
     ['ART nº', responsavel.art || '(preencher)'],
   ]));
+  // Emissão anterior à vistoria é erro de revisão (a R06 do São Bento saiu
+  // datada de 07/10 citando fotos de 09/10).
+  if (meta.data && insp.data_inspecao && String(meta.data) < String(insp.data_inspecao)) {
+    f.push(B.nota('[CONFERIR] A data de emissão é anterior à data da inspeção em campo — ajustar antes de assinar.'));
+  }
 
   // 1. Identificação
   f.push(B.titulo('1. Identificação'));
@@ -97,13 +115,13 @@ function gerarLaudo(res) {
   f.push(B.titulo('1.2 Empresa executora e responsável técnico', 2));
   f.push(B.tabelaKV([
     ['Empresa', responsavel.empresa || 'H&M Engenharia e Tecnologia LTDA'], ['CNPJ', responsavel.cnpj],
-    ['Responsável técnico', responsavel.nome], ['Título / CREA', `Engenheiro Eletricista — CREA ${responsavel.crea || ''}`],
+    ['Responsável técnico', responsavel.nome], ['Título / CREA', `${responsavel.titulo || 'Engenheiro Eletricista'} — CREA ${responsavel.crea || '(preencher)'}`],
     ['ART', responsavel.art], ['Equipe de campo', insp.equipe],
   ]));
 
   // 2. Objetivo e escopo
   f.push(B.titulo('2. Objetivo e escopo'));
-  f.push(B.p('Este laudo registra a inspeção do Sistema de Proteção contra Descargas Atmosféricas (SPDA) da estrutura identificada no item 1, conforme a Seção 7 da ABNT NBR 5419-3:2026. A inspeção verificou a conformidade da documentação existente com a norma de origem do projeto, o estado físico e a continuidade elétrica dos subsistemas de captação, descida, aterramento e equipotencialização e a condição dos dispositivos de ligação equipotencial indireta (DPS classe I e centelhadores). O laudo também apresenta as não conformidades encontradas, com recomendação e prazo de correção.'));
+  f.push(B.p(PR.textoObjetivo(res)));
   f.push(B.tabelaKV([
     ['Abrangência', insp.abrangencia || '(informar)'],
     ['Fora do escopo / não inspecionado', insp.fora_escopo || '—'],
@@ -129,16 +147,17 @@ function gerarLaudo(res) {
 
   // 4. Descrição
   f.push(B.titulo('4. Descrição da estrutura e do SPDA'));
+  f.push(B.titulo('4.1 Dados gerais', 2));
   const perimetro = dim ? dim.perimetro : 2 * (est.L + est.W);
   f.push(B.tabelaKV([
     ['Uso / ocupação', obra.uso],
-    ['Dimensões (C × L × H)', `${B.fmtNum(est.L)} × ${B.fmtNum(est.W)} × ${B.fmtNum(est.H)} m; perímetro ${B.fmtNum(perimetro, 0)} m`],
-    ['Tipo construtivo', String(est.tipo_construcao || '').replace(/_/g, ' ')],
-    ['Ambiente', String(est.ambiente || '').replace(/_/g, ' ')],
+    ['Dimensões (C × L × H)', `${B.fmtNum(est.L)} × ${B.fmtNum(est.W)} × ${B.fmtNum(est.H)} m; perímetro ${B.fmtNum(perimetro, 0)} m${est.dimensoes_estimadas ? ' [CONFERIR]' : ''}`],
+    ['Tipo construtivo', capitalizar(String(est.tipo_construcao || '').replace(/_/g, ' '))],
+    ['Ambiente', capitalizar(String(est.ambiente || '').replace(/_/g, ' '))],
     ['Serviço essencial', insp.servico_essencial ? 'Sim' : 'Não'],
     ['NP de projeto', spda.np || '—'],
     ['Descidas', spda.descida_natural ? 'naturais (armaduras)' : 'não naturais'],
-    ['Contador de descargas', `${insp.contador_anterior || '—'} → ${insp.contador_atual || '—'}`],
+    ['Contador de descargas', (insp.contador_anterior || insp.contador_atual) ? `${insp.contador_anterior || '—'} → ${insp.contador_atual || '—'}` : 'Não informado — verificar em campo (DP7)'],
   ]));
   if ((insp.dados_projeto || []).length) {
     f.push(B.titulo('4.2 Dados obtidos dos documentos recebidos', 2));
@@ -196,7 +215,7 @@ function gerarLaudo(res) {
     if (!itens.length) continue;
     f.push(B.titulo(`7.${++nSecao} ${secao}`, 2));
     f.push(B.tabela(['#', 'Item verificado', 'Ref.', 'Sit.', 'Observação / foto'],
-      itens.map(c => [c.cod, c.item, c.requisito.replace(/^NBR 5419-3:2026, /, ''), c.situacao, [c.obs, c.foto ? `(${c.foto})` : ''].filter(Boolean).join(' ')]),
+      itens.map(c => [c.cod, c.item, c.requisito.replace(/^NBR 5419-3:2026, /, ''), c.situacao, obsComFoto(c.obs, c.foto)]),
       [0.5, 2.2, 1.1, 0.45, 3.2], { tamanho: 15, destacarColuna: (l, i) => i === 3 ? corSituacao(l[3]) : undefined }));
   }
 
@@ -246,7 +265,9 @@ function gerarLaudo(res) {
 
   // Pendências
   const nv = checklist.filter(c => c.situacao === 'NV');
-  if (nv.length || ensaios.some(e => e.resultado === 'NV')) {
+  const faltaInst = !(insp.instrumentos || []).length;
+  const faltaProv = !!(prov && !prov.as_built);
+  if (nv.length || ensaios.some(e => e.resultado === 'NV') || faltaInst || faltaProv) {
     f.push(B.titulo('Pendências para concluir o laudo', 2));
     f.push(B.p('Os itens abaixo ainda não foram verificados. Enquanto houver pendência, o laudo não pode ser concluído como CONFORME (as não conformidades já constatadas continuam valendo). Use o Checklist de Campo e a planilha de medições.'));
     const escritorio = nv.filter(c => /escrit/i.test(c.onde || '') || c.secao === 'Documentação');
@@ -255,9 +276,18 @@ function gerarLaudo(res) {
       f.push(B.p('A verificar em campo', { bold: true, after: 40 }));
       f.push(B.tabela(['#', 'Onde', 'Verificar', 'Como / o que registrar'], campo.map(c => [c.cod, c.onde, c.item, c.como]), [0.5, 1.2, 2.4, 2.9], { tamanho: 15 }));
     }
-    if (escritorio.length) {
+    const linhasEscr = escritorio.map(c => [c.cod, c.item, c.obs || c.como]);
+    // Pendências que não são item de checklist, mas impedem a emissão
+    // (o gerador antigo perdia as duas — o laudo R06 do São Bento as trazia).
+    if (!(insp.instrumentos || []).length) {
+      linhasEscr.push(['INST', 'Relacionar instrumentos (marca, modelo, série, certificado e validade da calibração)', 'Antes de ir a campo — preencher a Seção 6 e anexar os certificados (Anexo B)']);
+    }
+    if (prov && !prov.as_built) {
+      linhasEscr.push(['PROV', 'As built do SPDA provisório: croqui em escala da cobertura atual com malha, captores/torres (posição e altura), descidas usadas e pontos de ligação ao aterramento definitivo, com ART', 'Montar com o levantamento de campo (croqui A3) e anexar ao laudo — é o documento que o órgão licenciador vai conferir']);
+    }
+    if (linhasEscr.length) {
       f.push(B.p('Escritório / cliente', { bold: true, before: 80, after: 40 }));
-      f.push(B.tabela(['#', 'Pendência', 'Como'], escritorio.map(c => [c.cod, c.item, c.obs || c.como]), [0.5, 2.6, 3.9], { tamanho: 15 }));
+      f.push(B.tabela(['#', 'Pendência', 'Como'], linhasEscr, [0.5, 2.6, 3.9], { tamanho: 15 }));
     }
   }
 
@@ -270,12 +300,15 @@ function gerarLaudo(res) {
     ['Ensaios de continuidade', `${pc.dentro} de ${pc.medidos} medidos dentro do critério (${ensaios.length} previstos)`],
     ['PARECER', pc.texto],
   ], [1, 3]));
+  if (pc.situacao === 'NAO_CONFORME_PRELIMINAR' || pc.situacao === 'INCONCLUSIVO') {
+    f.push(B.p(`O parecer final (CONFORME ou NÃO CONFORME) só será emitido após a verificação, ou justificativa N.A., de todos os itens${ensaios.length ? `, a realização dos ${ensaios.length} ensaios de continuidade` : ''}${ncs.length ? ` e a correção das não conformidades NC-01 a ${ncs[ncs.length - 1].id}` : ''}.`, { before: 80 }));
+  }
   if (prov) {
     f.push(B.p(`Este laudo refere-se ao SPDA PROVISÓRIO da etapa "${prov.etapa}". A condição avaliada é a da geometria atual da edificação. A implantação do projeto definitivo constitui alteração da estrutura e do SPDA e exige nova inspeção completa e novo laudo antes da ocupação das novas áreas (ABNT NBR 5419-3:2026, 7.3.2 c).`, { before: 100 }));
   }
   [
     'Este laudo reflete as condições do SPDA observadas nas datas da inspeção. Alterações posteriores na estrutura, no SPDA ou nas instalações, além de danos causados por descargas atmosféricas, intempéries, furto ou intervenções de terceiros, podem mudar essas condições.',
-    'A inspeção cobriu as partes acessíveis com segurança. Componentes embutidos, enterrados ou inacessíveis foram avaliados pelos ensaios de continuidade e pela documentação disponível, nos limites indicados na Seção 2.',
+    PR.textoLimitacaoEmbutidos(res),
     'Um SPDA reduz o risco de danos, mas não elimina totalmente a possibilidade de danos por descargas atmosféricas (ABNT NBR 5419-1:2026).',
     'O SPDA protege a estrutura e as pessoas contra os efeitos diretos da descarga; não protege equipamentos elétricos e eletrônicos contra surtos. Essa proteção depende das medidas de proteção contra surtos (MPS) — DPS coordenados, blindagem e roteamento — da ABNT NBR 5419-4 e da ABNT NBR 5410.',
     'Recomenda-se manter arquivados com este laudo a ART do SPDA, as notas fiscais e certificados dos componentes instalados e o registro das inspeções, pois são exigidos na vistoria do órgão licenciador.',

@@ -8,7 +8,7 @@ let ok = 0;
 const caso = (nome, fn) => { fn(); ok++; };
 
 caso('normalizarTexto tira acento, caixa e pontuação', () => {
-  assert.strictEqual(O.normalizarTexto('  Hospital Santa Lúcia - Sobradinho/DF '), 'hospital santa lucia sobradinho df');
+  assert.strictEqual(O.normalizarTexto('  Hospital São Bento - Vilanova/DF '), 'hospital sao bento vilanova df');
   assert.strictEqual(O.normalizarTexto('CRH - CLÍNICA DO RIM'), O.normalizarTexto('crh – clinica do rim'));
   assert.strictEqual(O.normalizarTexto(null), '');
 });
@@ -30,9 +30,9 @@ caso('nome da obra criada a partir da análise', () => {
 
 caso('propostas soltas: mesmo local + mesmo cliente = mesma obra; sem local = uma por proposta', () => {
   const props = [
-    { id: 79, numero: 'P209', cliente_id: 24, cliente_nome: 'Hospital Santa Lucia S/A', local_obra: 'Hospital Santa Lúcia Sul' },
-    { id: 78, numero: 'P208', cliente_id: 24, cliente_nome: 'Hospital Santa Lucia S/A', local_obra: 'hospital santa lucia sul ' },
-    { id: 90, numero: 'P220', cliente_id: 99, cliente_nome: 'Outro', local_obra: 'Hospital Santa Lúcia Sul' }, // outro cliente
+    { id: 79, numero: 'P209', cliente_id: 24, cliente_nome: 'Hospital Sao Bento S/A', local_obra: 'Hospital São Bento Sul' },
+    { id: 78, numero: 'P208', cliente_id: 24, cliente_nome: 'Hospital Sao Bento S/A', local_obra: 'hospital sao bento sul ' },
+    { id: 90, numero: 'P220', cliente_id: 99, cliente_nome: 'Outro', local_obra: 'Hospital São Bento Sul' }, // outro cliente
     { id: 112, numero: 'P240', cliente_id: 71, cliente_nome: 'Principal', local_obra: '' },
     { id: 113, numero: 'P241', cliente_id: 71, cliente_nome: 'Principal', local_obra: null },
     { id: 120, numero: 'P250', cliente_id: null, cliente_nome: 'Avulso ', local_obra: 'Asa Sul' },
@@ -41,7 +41,7 @@ caso('propostas soltas: mesmo local + mesmo cliente = mesma obra; sem local = um
   const grupos = O.agruparPropostasSoltas(props);
   assert.deepStrictEqual(grupos.map(g => g.propostas.map(p => p.id)), [[78, 79], [90], [112], [113], [120, 121]]);
   assert.strictEqual(O.chavePropostaSolta({ local_obra: '  ' }), null);
-  assert.strictEqual(O.nomeObraDasPropostas(grupos[0]), 'Hospital Santa Lucia S/A — hospital santa lucia sul');
+  assert.strictEqual(O.nomeObraDasPropostas(grupos[0]), 'Hospital Sao Bento S/A — hospital sao bento sul');
   assert.strictEqual(O.nomeObraDasPropostas(grupos[2]), 'Principal — P240');
   // local que já cita o cliente fica só com o local
   assert.strictEqual(O.nomeObraDasPropostas({ propostas: [{ id: 1, cliente_nome: 'Ingrid', local_obra: 'Casa da Ingrid - Águas Claras' }] }), 'Casa da Ingrid - Águas Claras');
@@ -55,17 +55,17 @@ caso('status inicial: aprovada → contratada, senão orçamento', () => {
 
 caso('contrato → obra pelo local (igual, contido, empate decide pela contratada, ambíguo fica sem)', () => {
   const obras = [
-    { id: 1, nome: 'Hospital Santa Lucia Sobradinho — Sobradinho - DF', local: 'Sobradinho - DF', status: 'contratada' },
-    { id: 2, nome: 'Hospital Santa Lucia S/A — Hospital Santa Lúcia Sobradinho - DF', local: 'Hospital Santa Lúcia Sobradinho - DF', status: 'orcamento' },
+    { id: 1, nome: 'Hospital Sao Bento Vilanova — Vilanova - DF', local: 'Vilanova - DF', status: 'contratada' },
+    { id: 2, nome: 'Hospital Sao Bento S/A — Hospital São Bento Vilanova - DF', local: 'Hospital São Bento Vilanova - DF', status: 'orcamento' },
     { id: 3, nome: 'Rebeca — Lago Sul QI 29', local: 'Lago Sul QI 29 conjunto 06 casa 20', status: 'contratada' },
     { id: 4, nome: 'Galpão Norte', local: 'Galpão Norte', status: 'orcamento' },
     { id: 5, nome: 'Galpão Norte Anexo', local: null, status: 'orcamento' },
   ];
-  assert.strictEqual(O.escolherObraParaContrato('Santa Lúcia Sobradinho', obras), 1); // as duas contêm; vale a contratada
-  assert.strictEqual(O.escolherObraParaContrato('Hospital Santa Lucia Sobradinho', obras), 1);
+  assert.strictEqual(O.escolherObraParaContrato('São Bento Vilanova', obras), 1); // as duas contêm; vale a contratada
+  assert.strictEqual(O.escolherObraParaContrato('Hospital Sao Bento Vilanova', obras), 1);
   assert.strictEqual(O.escolherObraParaContrato('lago sul qi 29 conjunto 06 casa 20', obras), 3); // igual ao local
   assert.strictEqual(O.escolherObraParaContrato('Galpão Norte', obras), 4); // igual vence contido
-  assert.strictEqual(O.escolherObraParaContrato('Hospital Santa Lucia Sobrdinho', obras), null); // erro de digitação: sem obra
+  assert.strictEqual(O.escolherObraParaContrato('Hospital Sao Bento Vilnova', obras), null); // erro de digitação: sem obra
   assert.strictEqual(O.escolherObraParaContrato('DF', obras), null); // curto demais para "contido"
   assert.strictEqual(O.escolherObraParaContrato('', obras), null);
   // empate sem nenhuma contratada → ambíguo, fica sem obra

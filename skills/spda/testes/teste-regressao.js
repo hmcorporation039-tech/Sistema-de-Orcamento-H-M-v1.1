@@ -73,6 +73,12 @@ perto('critério F.7 por resistência esperada', criterioEnsaio({ tipo_ensaio: '
 igual('NCs consolidadas (sem repetir as do checklist)', res.ncs.length, 5);
 igual('CP8 não aplicável (H ≤ 60 m)', res.checklist.find(c => c.cod === 'CP8').situacao, 'NA');
 igual('parecer', res.parecer.situacao, 'NAO_CONFORME_PRELIMINAR');
+// Correções da comparação R06 × R00 (12/10/2026)
+igual('DS11 não aplicável (H ≤ 20 m)', res.checklist.find(c => c.cod === 'DS11').situacao, 'NA');
+igual('contagem do checklist igual à R06', [res.parecer.cont.C, res.parecer.cont.NC, res.parecer.cont.NA, res.parecer.cont.NV], [2, 5, 2, 51]);
+igual('NC por prioridade (P3 4 | P4 1)', [res.parecer.porP.P3, res.parecer.porP.P4], [4, 1]);
+igual('sem "NBR NBR" nas referências', res.checklist.filter(c => /NBR\s+NBR/.test(c.requisito)).length, 0);
+igual('F.7 com dados estimados marcado [CONFERIR]', /\[CONFERIR/.test(res.ensaios.find(e => e.tipo_ensaio === 'F.7').criterio), true);
 
 // Geração dos documentos (só confere que saem e abrem como zip válido)
 (async () => {

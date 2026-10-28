@@ -41,7 +41,8 @@
   "ng": 16,
   "ng_fonte": "NBR 5419-2:2026, Tabela F.1 (Brasília/DF)",
   "saliencias": [],
-  "sistemas_criticos": true
+  "sistemas_criticos": true,
+  "dimensoes_estimadas": true
  },
  "spda": {
   "np": "III",
@@ -254,7 +255,7 @@
    {
     "dado": "SPDA provisório (croqui da obra)",
     "valor": "Cordoalha de cobre nu 35 mm² com presilhas na cobertura provisória, contorno + condutores transversais (módulo aparente ≈ 17 × 25 m), torres/captores [levantar posições e alturas em campo]",
-    "fonte": "Croqui da obra (F-03) e fotos F-01/F-02"
+    "fonte": "Croqui da obra (F-17) e fotos F-01/F-02"
    },
    {
     "dado": "Cobertura",
@@ -424,7 +425,8 @@
     "valor_ohm": null,
     "material": "cobre",
     "secao_mm2": 16,
-    "comprimento_m": 10
+    "comprimento_m": 10,
+    "dados_estimados": true
    },
    {
     "ponto": "T12",
@@ -434,7 +436,8 @@
     "valor_ohm": null,
     "material": "cobre",
     "secao_mm2": 16,
-    "comprimento_m": 10
+    "comprimento_m": 10,
+    "dados_estimados": true
    },
    {
     "ponto": "T13",
@@ -444,7 +447,8 @@
     "valor_ohm": null,
     "material": "cobre",
     "secao_mm2": 16,
-    "comprimento_m": 10
+    "comprimento_m": 10,
+    "dados_estimados": true
    },
    {
     "ponto": "T14",
@@ -454,7 +458,8 @@
     "valor_ohm": null,
     "material": "cobre",
     "secao_mm2": 16,
-    "comprimento_m": 10
+    "comprimento_m": 10,
+    "dados_estimados": true
    },
    {
     "ponto": "T15",
@@ -464,7 +469,8 @@
     "valor_ohm": null,
     "material": "cobre",
     "secao_mm2": 16,
-    "comprimento_m": 10
+    "comprimento_m": 10,
+    "dados_estimados": true
    },
    {
     "ponto": "T16",
@@ -474,7 +480,8 @@
     "valor_ohm": null,
     "material": "cobre",
     "secao_mm2": 16,
-    "comprimento_m": 10
+    "comprimento_m": 10,
+    "dados_estimados": true
    }
   ],
   "aterramento": [],
@@ -691,11 +698,11 @@
    {
     "item": "D11",
     "local": "Documentação — projeto definitivo",
-    "descricao": "Inconsistências internas no projeto: nota 1 cita perímetro de 147,35 m e 15 descidas não naturais aparentes, mas a planta indica ≈ 28 descidas interligadas ao rebar e a edificação tem perímetro ≈ 270 m; nota 6 adota 10 Ω como critério, que não é critério de aceitação da NBR 5419",
+    "descricao": "Inconsistências internas no projeto: nota 1 cita perímetro de 147,35 m e 15 descidas não naturais aparentes, mas a planta indica ≈ 28 descidas interligadas ao rebar e a edificação tem perímetro ≈ 280 m; nota 6 adota 10 Ω como critério, que não é critério de aceitação da NBR 5419",
     "requisito": "NBR 5419-3, 7.5.3 e; 7.1.4 (2026)",
     "recomendacao": "Corrigir as notas no as built e definir claramente o tipo de descida (natural pelo rebar × não natural aparente)",
     "prioridade": "P4",
-    "foto": "F-04"
+    "foto": "F-18"
    }
   ],
   "checklist": [
@@ -1293,7 +1300,7 @@
     "cod": "DP8",
     "secao": "DPS",
     "item": "DPS coordenados nos quadros (MPS), se no escopo",
-    "requisito": "NBR NBR 5419-4:2026 Seção 9",
+    "requisito": "NBR 5419-4:2026 Seção 9",
     "situacao": "NV",
     "prioridade": "P3",
     "obs": "Quadros a inspecionar: QFE-1P-CC, QFE-1P-CC-IT, QFE-1P-CC-SALA-01 a 05, QFE-1P-HM-01/02, QFE-2P-UTI, QFE-2P-UTI-IT, QG-TE-RM, QG-ARC-TE-RM, QG-TE-TM, QG-TE-RAD, QG-TE-RAV-PSA/PSI, QFE-1P-CME, QFE-2P-AGT. Projeto especifica DPS 12,5 kA com Up ≤ 4 kV — anotar o Up real: para equipamentos de 1,5–2,5 kV é preciso Up efetivo menor (NBR 5419-4)",

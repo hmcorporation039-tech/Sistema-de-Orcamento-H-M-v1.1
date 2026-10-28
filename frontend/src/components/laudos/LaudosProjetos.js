@@ -559,7 +559,7 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
               <button style={btnSecundario} disabled={!modelo} onClick={() => novo(modelo?.exemplo)} title={`Cria um ${T.item} preenchido com o exemplo, para conhecer o formulário`}>
                 <BookOpen size={13} style={{ marginRight: 5 }} /> Novo a partir do exemplo
               </button>
-              <button style={btnSecundario} onClick={() => entradaJson.current?.click()} title={`Importa um arquivo JSON de dados da disciplina (ex.: ST_Lucia_dados_SPDA.json) como ${T.item}`}>
+              <button style={btnSecundario} onClick={() => entradaJson.current?.click()} title={`Importa um arquivo JSON de dados da disciplina (ex.: HX_Exemplo_dados_SPDA.json) como ${T.item}`}>
                 <Upload size={13} style={{ marginRight: 5 }} /> Importar JSON
               </button>
               <input ref={entradaJson} type="file" accept=".json,application/json" style={{ display: 'none' }}

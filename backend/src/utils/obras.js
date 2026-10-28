@@ -10,7 +10,7 @@ const ROTULO_STATUS = {
 const SEGMENTOS = ['publico', 'privado'];
 
 // Texto para comparação: sem acento, minúsculo, só letras/números separados
-// por um espaço ("Hospital Santa Lúcia - DF" → "hospital santa lucia df").
+// por um espaço ("Hospital São Bento - DF" → "hospital sao bento df").
 function normalizarTexto(s) {
   return String(s ?? '')
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -75,8 +75,8 @@ function agruparPropostasSoltas(propostas) {
   return [...grupos.values()];
 }
 
-// "palavra inteira contida": "santa lucia sobradinho" está em
-// "hospital santa lucia sobradinho df", mas "df" sozinho não conta (curto).
+// "palavra inteira contida": "sao bento vilanova" está em
+// "hospital sao bento vilanova df", mas "df" sozinho não conta (curto).
 function contemPalavras(maior, menor) {
   if (!maior || !menor || menor.length < 8) return false;
   return ` ${maior} `.includes(` ${menor} `);

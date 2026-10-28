@@ -45,7 +45,7 @@ function blocoAssinatura(dados) {
     B.espaco(480),
     B.p('______________________________________________', { align: B.AlignmentType.CENTER, after: 0 }),
     B.p(r.nome || 'Responsável técnico', { align: B.AlignmentType.CENTER, after: 0, bold: true }),
-    B.p(`Engenheiro Eletricista — CREA ${r.crea || '(preencher)'} — ART nº ${r.art || '(preencher)'}`, { align: B.AlignmentType.CENTER, after: 0 }),
+    B.p(`${r.titulo || 'Engenheiro Eletricista'} — CREA ${r.crea || '(preencher)'} — ART nº ${r.art || '(preencher)'}`, { align: B.AlignmentType.CENTER, after: 0 }),
     B.p(r.empresa || 'H&M Engenharia e Tecnologia LTDA', { align: B.AlignmentType.CENTER }),
   ];
 }

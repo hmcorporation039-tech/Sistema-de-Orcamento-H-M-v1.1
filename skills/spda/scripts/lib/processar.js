@@ -5,6 +5,7 @@
 const { analisarRisco } = require('./risco');
 const { dimensionar } = require('./dimensionamento');
 const T = require('./tabelas');
+const { aplicarParecerRisco } = require('./parecer-risco');
 
 const CHECKLIST_BASE = require('../../dados/checklist_base.json');
 
@@ -35,7 +36,8 @@ function criterioEnsaio(e) {
   if (tipo.limite != null) return { criterio: tipo.criterio, limite: tipo.limite };
   if (e.material && e.secao_mm2 && e.comprimento_m && RESISTIVIDADE[e.material]) {
     const esperado = RESISTIVIDADE[e.material] * e.comprimento_m / e.secao_mm2;
-    return { criterio: `≤ ${(2 * esperado).toFixed(3).replace('.', ',')} Ω (2 × R esperada de ${esperado.toFixed(3).replace('.', ',')} Ω — critério adotado)`, limite: 2 * esperado };
+    const conferir = e.dados_estimados ? ' [CONFERIR material, seção e comprimento reais]' : '';
+    return { criterio: `≤ ${(2 * esperado).toFixed(3).replace('.', ',')} Ω (2 × R esperada de ${esperado.toFixed(3).replace('.', ',')} Ω — critério adotado)${conferir}`, limite: 2 * esperado };
   }
   return { criterio: '≤ 1 Ω (adotado; informar material, seção e comprimento para o critério por resistência esperada)', limite: 1 };
 }
@@ -57,12 +59,21 @@ function naoAplicaveis(dados) {
   const na = {};
   const est = dados.estrutura || {};
   const spda = dados.spda || {};
-  if (est.H != null && est.H <= 60) na.CP8 = 'Estrutura com altura até 60 m — proteção lateral não exigida (5.3.2.14.1)';
+  const h = est.H != null ? String(est.H).replace('.', ',') : null;
+  if (est.H != null && est.H <= 60) na.CP8 = `N.A. — altura da estrutura ${h} m ≤ 60 m: captação lateral não exigida (NBR 5419-3, 5.3.2.14)`;
+  // Mesma regra do laudo HM do São Bento (R06): até 20 m não há anel
+  // intermediário de descida a verificar.
+  if (est.H != null && est.H <= 20) na.DS11 = `N.A. — altura da estrutura ${h} m ≤ 20 m: anéis intermediários de descida dispensados (NBR 5419-3, 5.4.1.2)`;
   if (spda.np && !spda.descida_natural && !spda.cobertura_metalica_natural) {
     na.D4 = 'Sem componentes naturais no SPDA';
     na.DS12 = 'Descidas não naturais';
   }
   return na;
+}
+
+// Corrige referência digitada em dobro ("NBR NBR 5419-4") e espaços extras.
+function normalizarRequisito(r) {
+  return String(r || '').replace(/\b(NBR)\s+NBR\b/g, 'NBR').replace(/\s{2,}/g, ' ').trim();
 }
 
 function mesclarChecklist(daObra, dados) {
@@ -72,7 +83,8 @@ function mesclarChecklist(daObra, dados) {
     const daObraItem = porCod.get(b.cod);
     const auto = (!daObraItem || !daObraItem.situacao || daObraItem.situacao === 'NV') && na[b.cod]
       ? { situacao: 'NA', obs: na[b.cod] } : {};
-    return { situacao: 'NV', prioridade: b.prioridade_padrao, obs: '', foto: '', ...b, ...(daObraItem || {}), ...auto };
+    const item = { situacao: 'NV', prioridade: b.prioridade_padrao, obs: '', foto: '', ...b, ...(daObraItem || {}), ...auto };
+    return { ...item, requisito: normalizarRequisito(item.requisito) };
   });
   for (const c of daObra || []) if (!CHECKLIST_BASE.some(b => b.cod === c.cod)) itens.push({ situacao: 'NV', ...c });
   return itens;
@@ -130,13 +142,13 @@ function processar(dados) {
   const checklist = mesclarChecklist(insp.checklist, dados);
   const ncs = consolidarNcs(checklist, insp.ncs);
   const ensaios = processarEnsaios(insp.continuidade);
-  return {
+  return aplicarParecerRisco({
     dados, risco, dim, checklist, ncs, ensaios,
     parecer: parecer(checklist, ncs, ensaios),
     intervalo: T.intervaloInspecao(insp),
     prazos: PRAZOS,
     tiposEnsaio: ENSAIOS,
-  };
+  });
 }
 
-module.exports = { processar, PRAZOS, ENSAIOS, criterioEnsaio };
+module.exports = { processar, PRAZOS, ENSAIOS, criterioEnsaio, normalizarRequisito };

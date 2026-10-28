@@ -38,6 +38,7 @@ function secaoIdentificacao(numero = 1) {
       { tipo: 'nota', texto: 'Responsável técnico (preenchido pelo engenheiro que assina):' },
       { tipo: 'grade', colunas: 4, campos: [
         { caminho: 'responsavel.nome', rotulo: 'Engenheiro responsável' },
+        { caminho: 'responsavel.titulo', rotulo: 'Título profissional', dica: 'Ex.: Engenheiro Eletricista — sai igual no item 1.2 e na assinatura' },
         { caminho: 'responsavel.crea', rotulo: 'CREA' },
         { caminho: 'responsavel.art', rotulo: 'ART nº' },
         { caminho: 'responsavel.cnpj', rotulo: 'CNPJ da empresa' },
