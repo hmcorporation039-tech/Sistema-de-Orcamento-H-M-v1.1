@@ -305,6 +305,14 @@ Pedido do usuário: "um assistente virtual para nos orientar quando estivermos e
 - **Testes:** `testes/assistente.test.js` (sem banco, Claude Code falso) e `testes/assistenteIntegracao.test.js` (banco de teste, MCP pelo protocolo contra a API real). Nenhum gasta cota.
 - **API preparada e desligada:** `ASSISTENTE_PROVEDOR=api` usa a API da Anthropic com as mesmas ferramentas (`services/assistente/provedorApi.js`).
 
+### 28/10/2026: modelo 3D ilustrativo no sistema (ramo `versao-2.0`)
+Pedido do usuário: transformar o DWG dos projetos em 3D "só para o cliente ter uma ideia de como vai ficar na prática", junto do orçamento. Base de CAD em `skills/_comum/cad` (`modelo3d.js`, `visualizador3d` com three.js embutido — `npm run build:3d` na pasta skills).
+- **Onde aparece:** análise de projeto (cartão "Modelo 3D ilustrativo": envia a arquitetura DWG/DXF; pontos ESTIMADOS das disciplinas da análise), projeto por disciplina (botões ao lado da planta DXF; pontos do formulário real, com volta à estimativa se ele ainda não fecha) e editor da proposta ("Mostrar o modelo 3D ao cliente", só quando a origem da proposta tem arquitetura). Ligado na proposta: botão "Ver como vai ficar (modelo 3D)" na página do link de aprovação e anexo com a imagem no PDF.
+- **Como roda:** `services/modelo3d` gera numa thread à parte (worker_threads, tempo-limite de 90 s) e guarda o HTML e a imagem do PDF em `modelos_3d`, com uma chave do que entrou no modelo (não recalcula enquanto nada muda). A imagem é capturada pelo Chromium com WebGL por software (SwiftShader), na mesma fila do PDF. O projeto criado da análise herda a arquitetura dela. Cópia "Modelo 3D - <nome>.html" na pasta do projeto/análise.
+- **Segurança:** a página do 3D tem script embutido, que a política do sistema bloqueia; ela é servida com política própria em sandbox sem `allow-same-origin` (não lê o login do navegador, sem rede). A aba interna abre por link curto (10 min, em memória, `/api/modelo-3d/ver/<token>`); a pública só com o "mostrar ao cliente" ligado e proposta não cancelada/recusada.
+- **Banco:** migração `2.0-16-modelo-3d.js` (`analises_projeto_arquitetura`, `modelos_3d`, `propostas.modelo_3d_cliente`). Rotas em `routes/v2/modelo3d.js`. Teste: `testes/modelo3d.test.js` (arquitetura sintética, sem banco).
+- **Limites:** precisa de DWG/DXF com o nome dos ambientes escrito dentro deles; pavimentos desenhados lado a lado aparecem lado a lado; porta de correr e pele de vidro viram janela; quantidades estimadas podem passar do real (marcadas [CONFERIR]). Só elétrica, iluminação, incêndio, cabeamento/rede, CFTV, alarme e controle de acesso têm pontos no 3D (controle de acesso só pelo formulário do projeto: não há estimativa pela arquitetura); as demais mostram só a arquitetura.
+
 ---
 
 ## 3. Skills e ferramentas do Claude (servidor MCP `hm-orcamentos`)

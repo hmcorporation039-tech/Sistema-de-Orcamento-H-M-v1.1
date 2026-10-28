@@ -267,6 +267,8 @@ async function verPublico(req, res) {
       texto_declaracao_recusar: A.textoDeclaracao('recusada', pub),
       aviso: A.AVISO_JURIDICO,
       comprovante: decisao ? comprovante(decisao, { publico: true }) : null,
+      // modelo 3D ilustrativo (2.3), quando quem orçou ligou para o cliente
+      modelo_3d: proposta.modelo_3d_cliente === true && sit.situacao !== 'indisponivel',
     });
   } catch (err) {
     falhaPublica(res, 'ver proposta', err);
@@ -289,6 +291,23 @@ async function pdfPublico(req, res) {
     res.send(Buffer.from(r.pdf));
   } catch (err) {
     falhaPublica(res, 'PDF', err);
+  }
+}
+
+// Modelo 3D ilustrativo da proposta (2.3): só com o "mostrar ao cliente"
+// ligado e proposta não cancelada/recusada. A página roda em sandbox
+// (modelo3dController.enviarPagina): o script do 3D não lê nada do sistema.
+async function modelo3dPublico(req, res) {
+  try {
+    const link = await buscarLinkValido(pool, req.params.token);
+    if (!link) return linkInvalido(res);
+    const { rows: [p] } = await pool.query('SELECT id, status, modelo_3d_cliente FROM propostas WHERE id = $1', [link.proposta_id]);
+    if (!p || !p.modelo_3d_cliente || p.status === 'Cancelada' || p.status === 'Recusada') return linkInvalido(res);
+    const m = await require('../services/modelo3d').obterModelo('proposta', p.id);
+    if (!m) return linkInvalido(res);
+    require('./modelo3dController').enviarPagina(res, m.html);
+  } catch (err) {
+    falhaPublica(res, 'modelo 3D', err);
   }
 }
 
@@ -352,4 +371,4 @@ async function decidirPublico(req, res) {
   }
 }
 
-module.exports = { gerarLink, listarLinks, revogarLink, listarDecisoes, verPublico, pdfPublico, decidirPublico };
+module.exports = { gerarLink, listarLinks, revogarLink, listarDecisoes, verPublico, pdfPublico, decidirPublico, modelo3dPublico };

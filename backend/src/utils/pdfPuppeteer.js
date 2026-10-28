@@ -74,4 +74,35 @@ async function gerarPdfDeHtml(html, opcoesPdf = {}) {
   });
 }
 
-module.exports = { gerarPdfDeHtml };
+// Imagem (PNG) de uma página gerada pelo próprio sistema que PRECISA de
+// JavaScript — o modelo 3D (three.js). Mesma fila do PDF; rede bloqueada (só
+// data:/about:blank), então o script não alcança nada fora da página. WebGL
+// pelo SwiftShader (render por software): funciona sem placa de vídeo.
+// opcoes: { largura, altura, esperarSeletor, css, antes (função rodada na página antes da foto) }
+async function capturarImagemDeHtml(html, { largura = 1600, altura = 1000, esperarSeletor = null, css = '', antes = null } = {}) {
+  return comVaga(async () => {
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+    });
+    try {
+      const page = await browser.newPage();
+      await page.setRequestInterception(true);
+      page.on('request', (req) => {
+        if (/^(data:|about:blank)/.test(req.url())) req.continue().catch(() => {});
+        else req.abort('blockedbyclient').catch(() => {});
+      });
+      await page.setViewport({ width: largura, height: altura });
+      await page.setContent(html, { waitUntil: 'load', timeout: 60000 });
+      if (esperarSeletor) await page.waitForSelector(esperarSeletor, { timeout: 60000 });
+      if (css) await page.addStyleTag({ content: css });
+      if (antes) await page.evaluate(antes);
+      await new Promise(r => setTimeout(r, 400));
+      return Buffer.from(await page.screenshot({ type: 'png' }));
+    } finally {
+      await browser.close().catch(err => console.error('Falha ao fechar o navegador da captura:', err.message));
+    }
+  });
+}
+
+module.exports = { gerarPdfDeHtml, capturarImagemDeHtml };

@@ -240,6 +240,11 @@ async function criarDeAnalise(req, res) {
        VALUES ($1,$2,$3,$4,$5,true,$6,$7,$8,'projeto') RETURNING *`,
       [disciplina, tituloDe(dados), dados.cliente?.nome || null, dados, req.usuario.id, obraId, linha.id, linha.cliente_id || null]
     );
+    // arquitetura enviada na análise (2.3, para o 3D) vale para o projeto: planta e 3D já saem
+    await pool.query(
+      `INSERT INTO laudos_projetos_arquitetura (laudo_id, nome_arquivo, conteudo, resumo, usuario_id)
+       SELECT $1, nome_arquivo, conteudo, resumo, $2 FROM analises_projeto_arquitetura WHERE analise_id = $3
+       ON CONFLICT (laudo_id) DO NOTHING`, [rows[0].id, req.usuario.id, linha.id]);
     await sincronizarLaudo(rows[0]);
     res.status(201).json({ id: rows[0].id, tipo: 'projeto', avisos });
   } catch (err) {

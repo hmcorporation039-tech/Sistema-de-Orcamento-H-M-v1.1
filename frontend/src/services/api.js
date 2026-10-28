@@ -169,6 +169,19 @@ export const enviarArquiteturaLaudo = (id, arquivo) => {
   return api.post(`/laudos/${id}/arquitetura`, fd, { timeout: 180000 });
 };
 export const getArquiteturaLaudo = (id) => api.get(`/laudos/${id}/arquitetura`);
+// Modelo 3D ilustrativo (2.3) — origem: 'laudo' | 'analise' | 'proposta'
+export const getModelo3d = (origem, id) => api.get(`/modelo-3d/${origem}/${id}`);
+// { url: '/api/modelo-3d/ver/<token>' (vale 10 min), numeros, avisos }
+export const abrirModelo3d = (origem, id) => api.post(`/modelo-3d/${origem}/${id}/abrir`, null, { timeout: 180000 });
+export const urlModelo3d = (caminho) => `${process.env.REACT_APP_API_URL || ''}${caminho}`;
+export const baixarModelo3d = (origem, id) => api.get(`/modelo-3d/${origem}/${id}/arquivo`, { responseType: 'blob', timeout: 180000 });
+export const enviarArquiteturaAnalise = (id, arquivo) => {
+  const fd = new FormData();
+  fd.append('arquivo', arquivo);
+  return api.post(`/projetos/analises/${id}/arquitetura`, fd, { timeout: 180000 });
+};
+export const getArquiteturaAnalise = (id) => api.get(`/projetos/analises/${id}/arquitetura`);
+export const mostrarModelo3dAoCliente = (id, mostrar) => api.patch(`/propostas/${id}/modelo-3d-cliente`, { mostrar });
 export const baixarUnifilarLaudo = (id) => api.get(`/laudos/${id}/unifilar`, { responseType: 'blob', timeout: 120000 });
 export const baixarPlantaLaudo = (id) => api.get(`/laudos/${id}/planta`, { responseType: 'blob', timeout: 180000 });
 // gerarOrcamento: true/false ("só laudo"); omitido mantém o que está salvo
@@ -314,6 +327,8 @@ export const getAprovacaoPublica = (token) => apiPublica.get(`/aprovacao/${encod
 export const enviarDecisaoAprovacao = (token, dados) => apiPublica.post(`/aprovacao/${encodeURIComponent(token)}/decisao`, dados);
 export const urlPdfAprovacaoPublica = (token) =>
   `${process.env.REACT_APP_API_URL || ''}/api/publico/aprovacao/${encodeURIComponent(token)}/pdf`;
+export const urlModelo3dAprovacaoPublica = (token) =>
+  `${process.env.REACT_APP_API_URL || ''}/api/publico/aprovacao/${encodeURIComponent(token)}/modelo-3d`;
 
 // ── COMPOSIÇÕES E KITS (2.0, Fase 3H) ────────────────────────────────────
 // Lista: params { busca, disciplina, inativos: '1' } → { itens: [{ id, codigo, descricao,

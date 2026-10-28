@@ -9,6 +9,7 @@ import {
   enviarArquiteturaLaudo, getArquiteturaLaudo, baixarPlantaLaudo, baixarUnifilarLaudo,
 } from '../../services/api';
 import PainelPasta from '../PainelPasta';
+import { BotoesModelo3d } from '../Modelo3d';
 import ObraSelect from '../ObraSelect';
 import FormularioSpda from './FormularioSpda';
 import ResultadoSpda from './ResultadoSpda';
@@ -682,6 +683,7 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
                       title="Gera a planta (DXF) com os pontos da disciplina posicionados pela norma, legenda, quantitativo e carimbo — para revisar no AutoCAD">
                       <FileDown size={13} style={{ marginRight: 5 }} /> {ocupado === 'planta' ? 'Gerando…' : 'Baixar planta (DXF)'}
                     </button>
+                    <BotoesModelo3d origem="laudo" id={laudo.id} desabilitado={!!ocupado} antes={salvarAgora} />
                   </>
                 )}
                 </>)}

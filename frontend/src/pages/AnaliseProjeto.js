@@ -12,6 +12,7 @@ import { formatarMoeda } from '../utils/format';
 import BlocoPesquisaMercado from '../components/PesquisaMercado';
 import ObraSelect from '../components/ObraSelect';
 import Select from '../components/Select';
+import { CartaoModelo3dAnalise } from '../components/Modelo3d';
 
 let contador = 0;
 const gerarId = () => `tmp_${Date.now()}_${contador++}`;
@@ -821,6 +822,9 @@ export default function Compatibilizacao() {
 
           {/* Orçamento: dimensionar pela norma é opção secundária — cria um PROJETO, não laudo */}
           {!elaboracao && disciplinasComSkill.length > 0 && cartaoProjetos(false)}
+
+          {/* 2.3: 3D ilustrativo a partir da arquitetura (DWG/DXF) — nas duas finalidades */}
+          <CartaoModelo3dAnalise analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />
 
           <div style={{ ...card, display: 'flex', justifyContent: 'flex-end', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, color: '#666', marginRight: 'auto', lineHeight: 1.5 }}>

@@ -47,6 +47,8 @@ module.exports = (router, { autenticar, validarId, exigirPosse }) => {
   publico.use(limiteTokenInvalido);
   publico.get('/:token', limiteLeitura, ctrl.verPublico);
   publico.get('/:token/pdf', limitePdf, ctrl.pdfPublico);
+  // modelo 3D: gerar/capturar pesa como o PDF — mesmo limite
+  publico.get('/:token/modelo-3d', limitePdf, ctrl.modelo3dPublico);
   publico.post('/:token/decisao', limiteDecisao, ctrl.decidirPublico);
   // qualquer outro caminho do prefixo: mesma resposta de link inválido
   publico.use((req, res) => res.status(404).json({ erro: 'Este link de aprovação não é válido ou já expirou. Peça um novo link à H&M Engenharia.', codigo: 'LINK_INVALIDO' }));

@@ -24,6 +24,7 @@ import { normalizarMemoriaBdi, tributosBdi } from '../utils/bdiTcu';
 // Fase 3 (2.0): kits da base de preços e aprovação da proposta por link
 import InserirComposicao, { distribuirNasSecoes } from '../components/InserirComposicao';
 import BotaoLinkAprovacao from '../components/BotaoLinkAprovacao';
+import { OpcaoModelo3dProposta } from '../components/Modelo3d';
 
 // BDI diferenciado de materiais preenchido? (vazio/null = mesmo BDI para tudo — calculoProposta.bdiMateriaisDefinido)
 const temBdiMateriais = (v) => v !== undefined && v !== null && v !== '' && Number.isFinite(Number(v));
@@ -1451,6 +1452,9 @@ export default function Orcamento() {
           <CurvaAbcPainel itens={itensCurvaAbc} />
         </div>
       )}
+
+      {/* 2.3: modelo 3D ilustrativo — só aparece quando a origem (análise/projeto) tem arquitetura */}
+      {idAtual && <OpcaoModelo3dProposta propostaId={idAtual} somenteLeitura={!!somenteLeitura} />}
 
       {/* Totais */}
       <div style={{ ...card, position: 'sticky', bottom: 16 }}>

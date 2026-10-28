@@ -9,8 +9,8 @@
 // É aceite eletrônico simples (não ICP-Brasil) — dito na tela e no comprovante.
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { CheckCircle2, XCircle, FileDown, Printer, AlertTriangle, ShieldCheck, ArrowLeft } from 'lucide-react';
-import { getAprovacaoPublica, enviarDecisaoAprovacao, urlPdfAprovacaoPublica } from '../services/api';
+import { CheckCircle2, XCircle, FileDown, Printer, AlertTriangle, ShieldCheck, ArrowLeft, Box } from 'lucide-react';
+import { getAprovacaoPublica, enviarDecisaoAprovacao, urlPdfAprovacaoPublica, urlModelo3dAprovacaoPublica } from '../services/api';
 
 const OURO = '#c9a227';
 const OURO_ESCURO = '#8a6d12';
@@ -118,6 +118,8 @@ export default function AprovacaoPublica() {
   const decisaoAtual = comprovante?.decisao || dados?.comprovante?.decisao || null;
   const pdfDisponivel = decisaoAtual !== 'recusada'
     && !(dados?.situacao === 'indisponivel' && dados?.codigo === 'PROPOSTA_INDISPONIVEL' && /recusada|cancelada/i.test(dados?.mensagem || ''));
+  // modelo 3D ilustrativo (2.3): o servidor diz se quem orçou ligou para o cliente
+  const modelo3d = dados?.modelo_3d === true && pdfDisponivel;
 
   function escolher(d) {
     setDecisao(d);
@@ -213,6 +215,16 @@ export default function AprovacaoPublica() {
           <a href={urlPdfAprovacaoPublica(token)} target="_blank" rel="noopener noreferrer" style={{ ...btnClaro, marginTop: 12 }} data-testid="baixar-pdf">
             <FileDown size={17} /> Baixar a proposta em PDF
           </a>
+        )}
+        {modelo3d && (
+          <a href={urlModelo3dAprovacaoPublica(token)} target="_blank" rel="noopener noreferrer" style={{ ...btnEscuro, marginTop: 10, textDecoration: 'none' }} data-testid="ver-3d-publico">
+            <Box size={17} /> Ver como vai ficar (modelo 3D)
+          </a>
+        )}
+        {modelo3d && (
+          <div style={{ fontSize: 12, color: SUAVE, marginTop: 6, lineHeight: 1.5 }}>
+            Ilustração gerada a partir da arquitetura: gire, aproxime e ligue/desligue as camadas. Não substitui o projeto executivo — valem as quantidades desta proposta.
+          </div>
         )}
       </section>
 

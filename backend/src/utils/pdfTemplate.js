@@ -93,6 +93,19 @@ function formatarPct2(v) {
   return (Number.isFinite(n) ? n : 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// Modelo 3D ilustrativo (versão 2.3): imagem da vista em perspectiva, capturada
+// do modelo da proposta (services/modelo3d). PNG embutido em data: (o navegador
+// do PDF não busca nada fora).
+function htmlAnexoModelo3d(m) {
+  return `
+  <div class="anexo">
+    <div class="anexo-titulo">Anexo — Como vai ficar (modelo 3D ilustrativo)</div>
+    <div class="anexo-sub">Vista em perspectiva gerada a partir da arquitetura do projeto, com os pontos previstos em cada ambiente.${m.comLink ? ' O modelo interativo (girar, aproximar, ligar e desligar camadas) está na página de aprovação desta proposta.' : ''}</div>
+    <img class="modelo3d" src="data:image/png;base64,${m.imagem.toString('base64')}" alt="Modelo 3D ilustrativo">
+    <div class="anexo-aviso">Ilustração — não substitui o projeto executivo. Posições, alturas e acabamentos são indicativos; quantidades e especificações válidas são as desta proposta.</div>
+  </div>`;
+}
+
 // Curva ABC dos itens (custo direto, sem BDI/impostos). Código interno de
 // serviço não aparece (codigoParaCliente), como no corpo da proposta.
 function htmlAnexoCurvaAbc(proposta) {
@@ -277,6 +290,7 @@ function gerarHtmlProposta(proposta, anexos = {}) {
   .assinatura .linha { width: 220px; border-top: 1px solid #999; margin: 4px auto 4px; }
   .assinatura .cargo { font-size: 9px; color: #666; }
   .anexo { page-break-before: always; }
+  img.modelo3d { display: block; width: 100%; border: 1px solid #ddd; border-radius: 4px; background: #111317; }
   .anexo-titulo { font-size: 13px; font-weight: 700; color: #c9a227; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
   .anexo-sub { font-size: 9.5px; color: #555; line-height: 1.45; margin-bottom: 10px; }
   .anexo-aviso { font-size: 9.5px; color: #8a5a00; background: #fff6df; border-left: 3px solid #c9a227; padding: 5px 8px; margin-top: 6px; }
@@ -392,6 +406,7 @@ function gerarHtmlProposta(proposta, anexos = {}) {
   </div>
   ${anexos.composicaoBdi ? htmlAnexoComposicaoBdi(proposta) : ''}
   ${anexos.curvaAbc ? htmlAnexoCurvaAbc(proposta) : ''}
+  ${anexos.modelo3d?.imagem ? htmlAnexoModelo3d(anexos.modelo3d) : ''}
 </body>
 </html>
   `;

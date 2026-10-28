@@ -581,7 +581,18 @@ async function montarPdfBuffer(id, anexos = {}) {
     [id]
   );
 
-  const html = gerarHtmlProposta({ ...proposta.rows[0], secoes: secoes.rows, itens: itens.rows }, anexos);
+  // modelo 3D ligado para o cliente (2.3): imagem como anexo. Falha na captura
+  // (sem arquitetura, WebGL indisponível) não impede o PDF — sai sem o anexo.
+  let modelo3d = null;
+  if (proposta.rows[0].modelo_3d_cliente) {
+    try {
+      const imagem = await require('../services/modelo3d').imagemDoModelo('proposta', proposta.rows[0].id);
+      if (imagem) modelo3d = { imagem, comLink: true };
+    } catch (e) {
+      console.warn(`PDF da proposta ${id} sem o modelo 3D: ${e.message}`);
+    }
+  }
+  const html = gerarHtmlProposta({ ...proposta.rows[0], secoes: secoes.rows, itens: itens.rows }, { ...anexos, modelo3d });
 
   // puppeteer 25 devolve Uint8Array: sem Buffer.from, o res.send do Express 4
   // respondia JSON ({"0":37,"1":80,...}) no lugar do PDF (download e anexo)
