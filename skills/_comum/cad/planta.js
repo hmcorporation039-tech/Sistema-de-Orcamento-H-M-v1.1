@@ -149,14 +149,10 @@ function carimbo(d, x, y, c, escalaPlotagem) {
   });
 }
 
+// Posição de cada ponto pelas regras (perímetro, grade, cantos, porta…), sem
+// desenhar — usado pela planta DXF (abaixo) e pelo modelo 3D (./modelo3d.js).
 // pontos: [{ ambiente, itens: [{ simbolo, n, regra, prefixo, atributos(i) }] }]
-function gerarPlanta({ arquitetura, pontos, carimbo: dadosCarimbo = {}, notas = [], escalaPlotagem = 50 }) {
-  // milímetros, como as pranchas da empresa (a arquitetura lida é convertida)
-  const d = new DesenhoDxf({ unidade: 'mm', escalaPlotagem });
-  const usados = [...new Set(pontos.flatMap(p => p.itens.map(i => i.simbolo)))];
-  definirSimbolos(d, usados);
-  desenharReferencia(d, arquitetura);
-
+function posicionarPontos(arquitetura, pontos) {
   const contagem = {};
   const contadorId = {};
   const naoEncontrados = [];
@@ -177,12 +173,28 @@ function gerarPlanta({ arquitetura, pontos, carimbo: dadosCarimbo = {}, notas = 
         contadorId[prefixo] = (contadorId[prefixo] || 0) + 1;
         const id = `${prefixo}${contadorId[prefixo]}`;
         const atributos = { ID: id, ...(typeof it.atributos === 'function' ? it.atributos(k) : it.atributos || {}) };
-        d.inserir(it.simbolo, pos.x, pos.y, { layer: SIMBOLOS[it.simbolo].layer, rotacao: ['perimetro', 'porta'].includes(it.regra || 'perimetro') ? pos.rotacao : 0, atributos });
-        posicoes.push({ simbolo: it.simbolo, id, ambiente: amb.nome, x: pos.x, y: pos.y, ...(pos.porta ? { porta: pos.porta } : {}) });
+        const regra = it.regra || 'perimetro';
+        posicoes.push({
+          simbolo: it.simbolo, id, ambiente: amb.nome, x: pos.x, y: pos.y, regra, atributos, poligono: amb.poligono,
+          rotacao: ['perimetro', 'porta'].includes(regra) ? pos.rotacao : 0, ...(pos.porta ? { porta: pos.porta } : {}),
+        });
         contagem[it.simbolo] = (contagem[it.simbolo] || 0) + 1;
       });
     }
   }
+  return { posicoes, contagem, naoEncontrados };
+}
+
+function gerarPlanta({ arquitetura, pontos, carimbo: dadosCarimbo = {}, notas = [], escalaPlotagem = 50 }) {
+  // milímetros, como as pranchas da empresa (a arquitetura lida é convertida)
+  const d = new DesenhoDxf({ unidade: 'mm', escalaPlotagem });
+  const usados = [...new Set(pontos.flatMap(p => p.itens.map(i => i.simbolo)))];
+  definirSimbolos(d, usados);
+  desenharReferencia(d, arquitetura);
+
+  const { posicoes: pos, contagem, naoEncontrados } = posicionarPontos(arquitetura, pontos);
+  for (const p of pos) d.inserir(p.simbolo, p.x, p.y, { layer: SIMBOLOS[p.simbolo].layer, rotacao: p.rotacao, atributos: p.atributos });
+  const posicoes = pos.map(p => ({ simbolo: p.simbolo, id: p.id, ambiente: p.ambiente, x: p.x, y: p.y, ...(p.porta ? { porta: p.porta } : {}) }));
 
   // legenda, quantitativo, notas e carimbo à direita da planta
   const [, ] = arquitetura.extensao.min;
@@ -202,4 +214,4 @@ function gerarPlanta({ arquitetura, pontos, carimbo: dadosCarimbo = {}, notas = 
   return { dxf: d.toString(), quantitativo, posicoes, naoEncontrados };
 }
 
-module.exports = { gerarPlanta, acharAmbiente, casaNome, normalizar, portasDoAmbiente };
+module.exports = { gerarPlanta, posicionarPontos, acharAmbiente, casaNome, normalizar, portasDoAmbiente };

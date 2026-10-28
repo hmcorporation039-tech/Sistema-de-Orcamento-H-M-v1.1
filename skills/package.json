@@ -4,7 +4,8 @@
   "private": true,
   "description": "Skills de disciplina da H&M Engenharia (laudos e projetos) — dependências compartilhadas",
   "scripts": {
-    "test": "node testar-todas.js"
+    "test": "node testar-todas.js",
+    "build:3d": "node _comum/cad/visualizador3d/construir.js"
   },
   "dependencies": {
     "@mlightcad/libredwg-web": "0.8.2",
@@ -12,9 +13,11 @@
     "docx": "^9.5.1",
     "dxf": "5.3.1",
     "exceljs": "^4.4.0",
-    "jszip": "3.10.2"
+    "jszip": "3.10.2",
+    "three": "0.186.1"
   },
   "devDependencies": {
+    "esbuild": "0.28.2",
     "hyperformula": "3.0.1"
   }
 }
