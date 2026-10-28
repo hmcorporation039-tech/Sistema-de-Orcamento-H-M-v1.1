@@ -420,4 +420,31 @@ async function abrirPasta(req, res, next) {
   }
 }
 
-module.exports = { listar, buscarUma, criar, atualizar, remover, vincular, pasta, abrirPasta };
+// POST /obras/:id/pasta/pacote (2.3) — pacote de análise com os PDF/DWG/DXF/ZIP que
+// JÁ estão na pasta da obra (o projeto que o cliente mandou por e-mail e alguém
+// salvou lá). O que o próprio sistema gerou (propostas, contratos, laudos,
+// documentos dos projetos) vem desmarcado: o usuário marca se quiser.
+const RE_GERADO_PELO_SISTEMA = /^(Propostas|Contratos|Laudos|Projetos)\//i;
+async function pacoteDaPasta(req, res, next) {
+  try {
+    const obra = await carregarObra(req.params.id);
+    if (!obra) return res.status(404).json({ erro: 'Obra não encontrada.' });
+    const dir = await seguro(`pasta obra ${obra.id}`, () => pastaDaObra(obra));
+    if (!dir) return res.status(400).json({ erro: 'A pasta da obra não está disponível neste servidor.' });
+    const todos = (await P.listarArquivos(dir))
+      .map(a => ({ ...a, rel: a.arquivo.replace(/\\/g, '/') }))
+      .filter(a => /\.(pdf|dwg|dxf|zip)$/i.test(a.rel));
+    if (!todos.length) return res.status(400).json({ erro: `Não há PDF, DWG, DXF nem ZIP na pasta da obra (${dir}). Salve lá os arquivos recebidos do cliente, ou envie pela tela.` });
+    // os recebidos primeiro (o pacote aceita até 60 arquivos)
+    const ordenados = [...todos.filter(a => !RE_GERADO_PELO_SISTEMA.test(a.rel)), ...todos.filter(a => RE_GERADO_PELO_SISTEMA.test(a.rel))];
+    const recebidos = ordenados.map(a => ({ originalname: a.rel.split('/').pop(), path: require('path').join(dir, a.arquivo), caminho: a.rel }));
+    const pacote = await require('../services/pacotesProjeto').receberPacote(recebidos, req.usuario);
+    for (const it of pacote.arquivos) it.incluirSugerido = !RE_GERADO_PELO_SISTEMA.test(it.caminho);
+    res.status(201).json({ ...pacote, pasta: dir });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ erro: err.message });
+    next(err);
+  }
+}
+
+module.exports = { listar, buscarUma, criar, atualizar, remover, vincular, pasta, abrirPasta, pacoteDaPasta };

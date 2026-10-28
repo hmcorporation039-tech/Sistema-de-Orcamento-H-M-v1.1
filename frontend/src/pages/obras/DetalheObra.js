@@ -5,13 +5,14 @@ import { ArrowLeft, Plus, Save, Trash2, Unlink, Link2, FileText, ClipboardList, 
 import {
   getObra, atualizarObra, removerObra, vincularItemObra, getPastaObra, abrirPastaObra,
   getClientes, getUsuarios, getAnalisesProjeto, getLaudos, getPropostas, getContratos, getFinanceiroMovimentos,
-  getPastaAnalise, abrirPastaAnalise, getPastaLaudo, abrirPastaLaudo, getCronogramaObra, getOrdensServicoObra,
+  getPastaAnalise, abrirPastaAnalise, getPastaLaudo, abrirPastaLaudo, getCronogramaObra, getOrdensServicoObra, getDisciplinasProjeto,
 } from '../../services/api';
 import CronogramaObra from './CronogramaObra';
 import OrdensServicoObra from './OrdensServicoObra';
 import { useAuth } from '../../hooks/useAuth';
 import Select from '../../components/Select';
 import PainelPasta from '../../components/PainelPasta';
+import EnviarParaAnalise from '../../components/analise/EnviarParaAnalise';
 import { invalidarCacheObras } from '../../components/ObraSelect';
 import { formatarData } from '../../utils/format';
 import { STATUS_OBRA, SEGMENTO, STATUS_PROPOSTA, BASE_ORCADO, Etiqueta, moeda, pct, corMargem, estilos as E, Campo } from './comum';
@@ -322,17 +323,35 @@ const tr = { borderTop: '1px solid #1e1e1e' };
 
 const textoAjuda = { color: '#777', fontSize: 12, margin: '0 0 10px', lineHeight: 1.6 };
 
-// ── Análises de projeto (PDF recebido), com a finalidade ─────────────
+// ── Análises de projeto (arquivos recebidos), com a finalidade ────────
+// 2.3: o envio dos arquivos fica AQUI, na obra (arquivos, pasta, ZIP ou os que
+// já estão na pasta da obra) — o mesmo bloco da aba Análise de projeto
 function Analises({ obra, ligar, desligar, podeEditar }) {
+  const navigate = useNavigate();
+  const [parametros] = useSearchParams();
+  const daPasta = parametros.get('usarPasta') === '1';
+  const [enviando, setEnviando] = useState(daPasta || obra.analises.length === 0);
+  const [disciplinas, setDisciplinas] = useState([]);
+  useEffect(() => { getDisciplinasProjeto().then(r => setDisciplinas(r.data)).catch(() => {}); }, []);
   const carregar = useCallback(() => getAnalisesProjeto({ obra_id: 'sem', porPagina: 200 })
     .then(r => (r.data.itens || []).map(a => ({ id: a.id, rotulo: `#${a.id} — ${a.nome_projeto || a.cliente_nome || 'Sem nome'} — ${FINALIDADE[a.finalidade] || 'Orçamento'} (${formatarData(a.atualizado_em)})` }))), []);
   return (
     <div>
-      <Cabecalho titulo="Análises de projeto (PDF recebido)">
+      <Cabecalho titulo="Análises de projeto (arquivos recebidos)">
         {podeEditar && <LigarExistente rotulo="Ligar análise existente" carregar={carregar} onLigar={(id) => ligar('analise', id)} />}
-        <Link to={`/obras?aba=analise&obra=${obra.id}`} style={E.btnPrimario}><Plus size={13} /> Nova análise nesta obra</Link>
+        {!enviando && <button type="button" onClick={() => setEnviando(true)} style={E.btnPrimario} data-testid="nova-analise-obra"><Plus size={13} /> Enviar projeto para análise</button>}
       </Cabecalho>
-      <p style={textoAjuda}>Leitura do projeto recebido, para <b>orçar</b> ou para a H&amp;M <b>elaborar o projeto</b>. Análise não gera laudo.</p>
+      <p style={textoAjuda}>Leitura do projeto recebido do cliente ou do arquiteto (PDF, DWG, DXF, pasta ou ZIP), para <b>orçar</b> ou para a H&amp;M <b>elaborar o projeto</b>. Análise não gera laudo nem define disciplina sozinha.</p>
+      {enviando && (
+        <div style={{ border: '1px solid #2a2a2a', borderRadius: 8, padding: 16, marginBottom: 16, background: '#121212' }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+            <b style={{ color: '#c9a227', fontSize: 14, flex: 1 }}>Enviar o projeto para análise — {obra.nome}</b>
+            {obra.analises.length > 0 && <button type="button" onClick={() => setEnviando(false)} style={{ background: 'none', border: 0, color: '#888', cursor: 'pointer', fontSize: 12 }}>Fechar</button>}
+          </div>
+          <EnviarParaAnalise obraFixa={obra.id} disciplinas={disciplinas} iniciarComPasta={daPasta}
+            onCriada={(a) => navigate(`/obras/analise/${a.id}`)} />
+        </div>
+      )}
       <Tabela colunas={[{ rotulo: 'Análise' }, { rotulo: 'Finalidade' }, { rotulo: 'Cliente' }, { rotulo: 'Disciplinas' }, { rotulo: 'Proposta' }, { rotulo: 'Atualizada' }, { rotulo: '' }]} vazio="Nenhuma análise ligada a esta obra.">
         {obra.analises.map(a => (
           <tr key={a.id} style={tr}>
@@ -509,6 +528,12 @@ function Arquivos({ obra }) {
       <p style={{ color: '#777', fontSize: 12, margin: '0 0 6px' }}>
         Itens novos desta obra gravam aqui: <code>Projeto</code> (análise), <code>Projetos\&lt;disciplina&gt;</code> (com a <code>Entrega</code>), <code>Laudos\&lt;disciplina&gt;</code>, <code>Propostas</code> e <code>Contratos</code>.
       </p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '4px 0 10px', padding: '10px 12px', border: '1px solid #3a3215', borderRadius: 8, background: '#16140c' }}>
+        <span style={{ color: '#bbb', fontSize: 12, flex: '1 1 320px', lineHeight: 1.5 }}>
+          Recebeu o projeto do cliente por e-mail? Salve os arquivos (PDF, DWG, DXF ou ZIP) nesta pasta — ou envie direto pela aba <b>Análises</b> — e analise:
+        </span>
+        <Link to={`/obras/${obra.id}?secao=analises&usarPasta=1`} style={E.btnPrimario} data-testid="analisar-pasta-obra"><FileSearch size={13} /> Analisar os arquivos desta pasta</Link>
+      </div>
       <PainelPasta carregar={carregar} abrir={abrir} />
       {outras.length > 0 && (
         <>

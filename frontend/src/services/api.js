@@ -285,6 +285,8 @@ export const vincularItemObra = (obraId, tipo, itemId, ligar = true) =>
   api.put(`/obras/${obraId}/vinculos`, { tipo, id: itemId, ligar });
 export const getPastaObra = (id) => api.get(`/obras/${id}/pasta`);
 export const abrirPastaObra = (id) => api.post(`/obras/${id}/pasta/abrir`);
+// 2.3: pacote de análise com os PDF/DWG/DXF/ZIP que já estão na pasta da obra
+export const pacoteDaPastaObra = (id) => api.post(`/obras/${id}/pasta/pacote`, null, { timeout: 600000 });
 // Criação já ligada a uma obra (obraId null/undefined = sem obra; o backend
 // também aceita obra_id direto no corpo de POST/PUT /propostas, /contratos,
 // /financeiro/movimentos e PATCH categorizar)

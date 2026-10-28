@@ -85,7 +85,9 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
   const ehProjeto = tipo === 'projeto';
   const navigate = useNavigate();
   const [disciplinas, setDisciplinas] = useState([]);
-  const [disciplina, setDisciplina] = useState('spda');
+  // sem disciplina pré-escolhida (pedido do usuário, 28/10/2026): a lista mostra
+  // todas e só se cria projeto/laudo depois de escolher a disciplina
+  const [disciplina, setDisciplina] = useState('');
   const [modelo, setModelo] = useState(null); // { modelo, exemplo, checklistBase }
   const [lista, setLista] = useState([]);
   const [laudo, setLaudo] = useState(null); // { id, tipo, disciplina, propostas, gerar_orcamento, obra, analise_id, entregas }
@@ -140,7 +142,7 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
   const [listaParcial, setListaParcial] = useState(0);
   const carregarLista = useCallback(async () => {
     try {
-      const r = await getLaudos({ disciplina, tipo });
+      const r = await getLaudos({ ...(disciplina ? { disciplina } : {}), tipo });
       setLista(r.data);
       setListaParcial(r.headers?.['x-lista-truncada'] === "1" ? Number(r.headers['x-limite-lista']) || r.data.length : 0);
     } catch { /* lista vazia já informa */ }
@@ -542,6 +544,7 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
           <h3 style={{ ...tituloSecao, marginBottom: 0, flex: 1 }}>{T.titulo}</h3>
           <Select value={disciplina} onChange={e => { const v = e.target.value; fechar().then(ok => { if (ok) setDisciplina(v); }); }}
             style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, color: '#ddd', padding: '8px 10px', fontSize: 13 }}>
+            <option value="">Todas as disciplinas — escolha uma para criar</option>
             {disciplinas.map(d => <option key={d.chave} value={d.chave}>{d.nome}{d.disponivel ? '' : ' — em preparação'}</option>)}
           </Select>
         </div>
@@ -556,11 +559,11 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
         ) : (
           <>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-              <button style={btnPrimario} disabled={!modelo} onClick={() => novo(modelo?.modelo)}><FilePlus2 size={14} /> {T.novo}</button>
+              <button style={btnPrimario} disabled={!modelo} onClick={() => novo(modelo?.modelo)} title={disciplina ? '' : 'Escolha a disciplina acima para criar'}><FilePlus2 size={14} /> {T.novo}</button>
               <button style={btnSecundario} disabled={!modelo} onClick={() => novo(modelo?.exemplo)} title={`Cria um ${T.item} preenchido com o exemplo, para conhecer o formulário`}>
                 <BookOpen size={13} style={{ marginRight: 5 }} /> Novo a partir do exemplo
               </button>
-              <button style={btnSecundario} onClick={() => entradaJson.current?.click()} title={`Importa um arquivo JSON de dados da disciplina (ex.: HX_Exemplo_dados_SPDA.json) como ${T.item}`}>
+              <button style={btnSecundario} disabled={!disciplina} onClick={() => entradaJson.current?.click()} title={`Importa um arquivo JSON de dados da disciplina (ex.: HX_Exemplo_dados_SPDA.json) como ${T.item}`}>
                 <Upload size={13} style={{ marginRight: 5 }} /> Importar JSON
               </button>
               <input ref={entradaJson} type="file" accept=".json,application/json" style={{ display: 'none' }}
@@ -579,7 +582,7 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ fontSize: 11, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', textAlign: 'left' }}>
-                    <th style={{ padding: '4px 8px 8px 0' }}>Obra</th><th style={{ padding: '4px 8px 8px 0' }}>Cliente</th>
+                    <th style={{ padding: '4px 8px 8px 0' }}>Obra</th>{!disciplina && <th style={{ padding: '4px 8px 8px 0' }}>Disciplina</th>}<th style={{ padding: '4px 8px 8px 0' }}>Cliente</th>
                     <th style={{ padding: '4px 8px 8px 0' }}>Revisão</th><th style={{ padding: '4px 8px 8px 0' }}>Fotos</th>
                     <th style={{ padding: '4px 8px 8px 0' }}>Atualizado em</th><th />
                   </tr>
@@ -588,6 +591,7 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
                   {lista.map(item => (
                     <tr key={item.id} onClick={() => abrir(item.id)} style={{ cursor: 'pointer', borderTop: '1px solid #1e1e1e', background: laudo?.id === item.id ? '#1a1a1a' : 'transparent' }}>
                       <td style={{ padding: '8px 8px 8px 0' }}>{item.titulo}</td>
+                      {!disciplina && <td style={{ padding: '8px 8px 8px 0', color: '#c9a227' }}>{disciplinas.find(d => d.chave === item.disciplina)?.nome?.replace(/\s*\(.*\)$/, '') || item.disciplina}</td>}
                       <td style={{ padding: '8px 8px 8px 0', color: '#999' }}>{item.cliente_nome || '—'}</td>
                       <td style={{ padding: '8px 8px 8px 0', color: '#999' }}>{(item.revisao || '').split(' ')[0] || '—'}</td>
                       <td style={{ padding: '8px 8px 8px 0', color: '#999' }}>{item.total_fotos}</td>

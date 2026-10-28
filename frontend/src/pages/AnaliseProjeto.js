@@ -2,18 +2,17 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import PainelPasta from '../components/PainelPasta';
-import { FileDown, Plus, Trash2, FolderSearch, FilePlus2, Receipt, ExternalLink, DraftingCompass } from 'lucide-react';
+import { FileDown, Plus, Trash2, FilePlus2, Receipt, ExternalLink, DraftingCompass } from 'lucide-react';
 import {
-  analisarPacoteProjeto, gerarRelatorioCompatibilizacao,
+  gerarRelatorioCompatibilizacao,
   getAnalisesProjeto, getAnaliseProjeto, atualizarAnaliseProjeto, removerAnaliseProjeto,
   gerarOrcamentoDaAnalise, getPastaAnalise, abrirPastaAnalise, getDisciplinasProjeto, criarProjetoDeAnalise,
 } from '../services/api';
 import { formatarMoeda } from '../utils/format';
 import BlocoPesquisaMercado from '../components/PesquisaMercado';
-import ObraSelect from '../components/ObraSelect';
 import Select from '../components/Select';
 import { CartaoModelo3dAnalise } from '../components/Modelo3d';
-import { BotoesPacote, ListaPacote, itensDoPacote } from '../components/analise/PacoteProjeto';
+import EnviarParaAnalise, { FINALIDADES } from '../components/analise/EnviarParaAnalise';
 import ConflitosCompatibilizacao from '../components/analise/ConflitosCompatibilizacao';
 
 let contador = 0;
@@ -22,10 +21,6 @@ const gerarId = () => `tmp_${Date.now()}_${contador++}`;
 // Finalidade da análise (versão 2.1 — análise ≠ laudo). Escolhida ao enviar e
 // editável depois; nenhuma das duas cria laudo (laudo é pedido quando
 // necessário, em Obras › Laudos). Ordem A–Z nas listas.
-const FINALIDADES = [
-  { valor: 'elaboracao', rotulo: 'Elaboração de projeto', descricao: 'A H&M vai DEFINIR e ENTREGAR o projeto a partir do arquitetônico recebido: projeto por disciplina com definições técnicas, as-built, DXF, QElectroTech e PDF.' },
-  { valor: 'orcamento', rotulo: 'Orçamento', descricao: 'Orçar a partir do projeto recebido: itens extraídos do PDF e "Gerar orçamento e abrir no editor".' },
-];
 const rotuloFinalidade = (v) => FINALIDADES.find(f => f.valor === v)?.rotulo || 'Orçamento';
 
 // As disciplinas vêm do servidor (GET /projetos/disciplinas — fonte única em
@@ -67,28 +62,9 @@ export default function Compatibilizacao() {
       .then(r => setDisciplinasLista(r.data))
       .catch(() => toast.error('Não foi possível carregar a lista de disciplinas'));
   }, []);
-  // agrupadas para a tela (Elétrica, Energia, Proteção, Telecom, Segurança, Automação)
-  // grupos na ordem da fonte única; dentro de cada grupo, A–Z (regra do usuário: listas sempre em ordem alfabética)
-  const gruposDisciplinas = DISCIPLINAS.reduce((acc, d) => {
-    (acc[d.grupo] = acc[d.grupo] || []).push(d);
-    return acc;
-  }, {});
-  Object.values(gruposDisciplinas).forEach(lista => lista.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base', numeric: true })));
-
-  // Pacote enviado (2.3): os arquivos ficam no servidor e cada um carrega a SUA
-  // lista de disciplinas (sugerida pelo nome/conteúdo, ajustável) ou é
-  // referência. Um arquivo de uma disciplina nunca entra na contagem de outra.
-  // { token, itens: [{ id, nome, caminho, tipo, disciplinas, referencia, tipoReferencia, incluir }] }
-  const [pacote, setPacote] = useState(null);
-  const [nomeProjetoNovo, setNomeProjetoNovo] = useState(''); // nome da pasta do projeto em Arquivos do Sistema
-  const [finalidadeNova, setFinalidadeNova] = useState(''); // 'orcamento' | 'elaboracao' — escolha obrigatória ao enviar
   // obra da análise nova (2.0): vem pré-selecionada de /obras?aba=analise&obra=ID
-  // e vai no multipart (obra_id) — a pasta passa a morar dentro da obra
   const [busca] = useSearchParams();
   const obraDaUrl = Number(busca.get('obra')) || null;
-  const [obraNova, setObraNova] = useState(obraDaUrl);
-  useEffect(() => { if (obraDaUrl) setObraNova(obraDaUrl); }, [obraDaUrl]);
-  const [analisando, setAnalisando] = useState(false);
   const [carregandoAnalise, setCarregandoAnalise] = useState(false);
   const [analise, setAnalise] = useState(null);
   const [gerando, setGerando] = useState(false);
@@ -151,48 +127,8 @@ export default function Compatibilizacao() {
       .finally(() => setCarregandoAnalise(false));
   }, [idParam, navigate, popularAnalise]);
 
-  async function analisar() {
-    const incluidos = (pacote?.itens || []).filter(i => i.incluir);
-    if (!incluidos.length) {
-      toast.error('Envie os arquivos do projeto (PDF, DWG, DXF, pasta ou ZIP)');
-      return;
-    }
-    if (incluidos.some(it => !it.referencia && it.disciplinas.length === 0)) {
-      toast.error('Marque ao menos uma disciplina em cada arquivo (ou marque como referência, ou tire da análise)');
-      return;
-    }
-    if (!incluidos.some(it => !it.referencia)) {
-      toast.error('Marque a disciplina de ao menos um arquivo: só arquivos de referência não geram análise');
-      return;
-    }
-    if (!finalidadeNova) {
-      toast.error('Escolha a finalidade da análise: Orçamento ou Elaboração de projeto');
-      return;
-    }
-    setAnalisando(true);
-    try {
-      const res = await analisarPacoteProjeto(pacote.token, {
-        arquivos: incluidos.map(i => ({ id: i.id, disciplinas: i.disciplinas, referencia: i.referencia, tipoReferencia: i.tipoReferencia })),
-        nome_projeto: nomeProjetoNovo.trim(), obra_id: obraNova || null, finalidade: finalidadeNova,
-      });
-      setNomeProjetoNovo('');
-      setFinalidadeNova('');
-      setPacote(null);
-      popularAnalise(res.data);
-      navigate(`/obras/analise/${res.data.id}`);
-      const conflitos = (res.data.conflitos || []).length;
-      toast.success(`Projeto analisado: ${incluidos.length} arquivo(s), ${res.data.ambientes.length} ambientes${conflitos ? ` — ${conflitos} conflito(s) de posição entre disciplinas` : ''}`, { duration: 7000 });
-      carregarListaSalvas();
-    } catch (err) {
-      toast.error(err.response?.data?.erro || 'Erro ao analisar o projeto');
-    } finally {
-      setAnalisando(false);
-    }
-  }
-
   function novaAnalise() {
     navigate('/obras');
-    setPacote(null);
     setSalvoEm(null);
   }
 
@@ -550,54 +486,11 @@ export default function Compatibilizacao() {
       </div>
 
       {!analise && (
-        <div style={card}>
-          <p style={{ fontSize: 13, color: '#777', marginBottom: 14, lineHeight: 1.6 }}>
-            Envie os arquivos do projeto do cliente — <b>PDF, DWG ou DXF</b> (plantas de CFTV, cabeamento estruturado, elétrica, iluminação
-            etc.) — e marque a disciplina de CADA arquivo — um projeto real costuma vir em várias plantas separadas
-            (ex.: CFTV 1 + CFTV 2 do mesmo cliente), e cada uma pode ser de uma disciplina diferente. Arquivos da
-            mesma disciplina continuam somando entre si (câmeras de CFTV 1 + CFTV 2, por exemplo); um arquivo de
-            outra disciplina nunca entra na contagem que não é dele.
-            {' '}No <b>DWG/DXF</b> o sistema conta os blocos (tomadas, luminárias, câmeras…) com o ambiente de cada um, mede
-            eletroduto e eletrocalha pelas layers e lê carimbo e listas; a arquitetura do desenho já vira a base do modelo 3D.
-          </p>
-
-          {/* Finalidade (2.1): obrigatória — define a tela da análise. Nenhuma gera laudo. */}
-          <div style={{ fontSize: 11, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 }}>Para que é esta análise?</div>
-          <div role="radiogroup" aria-label="Finalidade da análise" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10, marginBottom: 8 }}>
-            {[...FINALIDADES].reverse().map(f => {
-              const marcada = finalidadeNova === f.valor;
-              return (
-                <label key={f.valor} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 8, cursor: 'pointer',
-                  border: `1px solid ${marcada ? (f.valor === 'elaboracao' ? '#2f4f6f' : '#5a4a12') : '#2a2a2a'}`, background: marcada ? '#161616' : 'transparent' }}>
-                  <input type="radio" name="finalidade" value={f.valor} checked={marcada} onChange={() => setFinalidadeNova(f.valor)} style={{ width: 'auto', marginTop: 3 }} />
-                  <span>
-                    <b style={{ fontSize: 13, color: marcada ? (f.valor === 'elaboracao' ? '#8ab4f8' : '#c9a227') : '#ccc' }}>{f.rotulo}</b>
-                    <span style={{ display: 'block', fontSize: 12, color: '#888', lineHeight: 1.5, marginTop: 2 }}>{f.descricao}</span>
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-          <p style={{ fontSize: 11, color: '#666', margin: '0 0 14px' }}>
-            Análise de projeto não gera laudo. Laudo (inspeção, vistoria, medição) é pedido quando necessário, em Obras › Laudos.
-          </p>
-
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: pacote ? 18 : 0, flexWrap: 'wrap' }}>
-            <input value={nomeProjetoNovo} onChange={e => setNomeProjetoNovo(e.target.value)} placeholder="Nome do projeto (nome da pasta; vazio = nome do cliente)" style={{ flex: '1 1 280px', maxWidth: 420 }} />
-            <div style={{ flex: '1 1 320px', maxWidth: 480 }} title="Obra a que este projeto pertence (opcional) — a análise, a pasta e o orçamento gerado ficam ligados a ela">
-              <ObraSelect value={obraNova} onChange={(id) => setObraNova(id)} rotuloVazio="Sem obra (opcional)" />
-            </div>
-            {/* 2.3: arquivos soltos, pasta inteira ou ZIP — o servidor sugere a disciplina de cada um */}
-            <BotoesPacote desabilitado={analisando} onRecebido={(p) => setPacote({ token: p.token, itens: itensDoPacote(p.arquivos) })} />
-            <button onClick={analisar} disabled={analisando || !pacote} style={btnPrimario}>
-              <FolderSearch size={13} style={{ marginRight: 6 }} /> {analisando ? `Analisando ${pacote?.itens.filter(i => i.incluir).length || ''} arquivo(s)...` : 'Analisar projeto'}
-            </button>
-          </div>
-
-          {pacote && (
-            <ListaPacote itens={pacote.itens} token={pacote.token} disciplinas={DISCIPLINAS}
-              onMudar={(itens) => setPacote(p => ({ ...p, itens }))} onDescartar={() => setPacote(null)} />
-          )}
+        <div style={card} data-testid="nova-analise">
+          <h3 style={{ ...tituloSecao, marginBottom: 12 }}>Enviar o projeto para análise</h3>
+          {/* 2.3: o mesmo bloco da página da obra (aba Análises) — components/analise/EnviarParaAnalise.js */}
+          <EnviarParaAnalise obraInicial={obraDaUrl} disciplinas={DISCIPLINAS}
+            onCriada={(a) => { popularAnalise(a); navigate(`/obras/analise/${a.id}`); carregarListaSalvas(); }} />
         </div>
       )}
 
