@@ -296,7 +296,8 @@ export const analisarProjetoNaObra = (arquivosComDisciplinas, nomeProjeto, obraI
   formData.append('finalidade', finalidade);
   arquivosComDisciplinas.forEach(({ arquivo }) => formData.append('arquivos', arquivo));
   formData.append('disciplinasPorArquivo', JSON.stringify(arquivosComDisciplinas.map(a => a.disciplinas)));
-  return api.post('/projetos/analisar', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 });
+  // DWG é convertido e percorrido no servidor: arquivo grande leva minutos
+  return api.post('/projetos/analisar', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 360000 });
 };
 // tipo (2.1): 'projeto' | 'laudo' (padrão laudo)
 export const criarLaudoNaObra = (disciplina, dados, obraId, tipo = 'laudo') =>

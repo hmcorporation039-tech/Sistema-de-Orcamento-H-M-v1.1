@@ -50,7 +50,7 @@ function formatarHora(data) {
   return data ? data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
 }
 
-// Análise de projeto (PDF): compatibilização de projetos em PDF. Na versão
+// Análise de projeto (PDF, e na 2.3 também DWG/DXF): compatibilização de projetos. Na versão
 // 2.0 vira a aba "Análise de projeto" do hub Obras (pages/hubs/ObrasHub.js).
 // Versão 2.1: a análise tem FINALIDADE — "Orçamento" (itens + gerar orçamento)
 // ou "Elaboração de projeto" (elaborar o projeto de cada disciplina e
@@ -165,7 +165,7 @@ export default function Compatibilizacao() {
 
   async function analisar() {
     if (arquivosComDisciplinas.length === 0) {
-      toast.error('Selecione ao menos um PDF do projeto');
+      toast.error('Selecione ao menos um arquivo do projeto (PDF, DWG ou DXF)');
       return;
     }
     if (arquivosComDisciplinas.some(it => it.disciplinas.length === 0)) {
@@ -554,11 +554,13 @@ export default function Compatibilizacao() {
       {!analise && (
         <div style={card}>
           <p style={{ fontSize: 13, color: '#777', marginBottom: 14, lineHeight: 1.6 }}>
-            Envie os PDFs do projeto do cliente (plantas de CFTV, cabeamento estruturado, elétrica, iluminação
-            etc.) e marque a disciplina de CADA arquivo — um projeto real costuma vir em várias plantas separadas
+            Envie os arquivos do projeto do cliente — <b>PDF, DWG ou DXF</b> (plantas de CFTV, cabeamento estruturado, elétrica, iluminação
+            etc.) — e marque a disciplina de CADA arquivo — um projeto real costuma vir em várias plantas separadas
             (ex.: CFTV 1 + CFTV 2 do mesmo cliente), e cada uma pode ser de uma disciplina diferente. Arquivos da
             mesma disciplina continuam somando entre si (câmeras de CFTV 1 + CFTV 2, por exemplo); um arquivo de
             outra disciplina nunca entra na contagem que não é dele.
+            {' '}No <b>DWG/DXF</b> o sistema conta os blocos (tomadas, luminárias, câmeras…) com o ambiente de cada um, mede
+            eletroduto e eletrocalha pelas layers e lê carimbo e listas; a arquitetura do desenho já vira a base do modelo 3D.
           </p>
 
           {/* Finalidade (2.1): obrigatória — define a tela da análise. Nenhuma gera laudo. */}
@@ -587,7 +589,7 @@ export default function Compatibilizacao() {
             <div style={{ flex: '1 1 320px', maxWidth: 480 }} title="Obra a que este projeto pertence (opcional) — a análise, a pasta e o orçamento gerado ficam ligados a ela">
               <ObraSelect value={obraNova} onChange={(id) => setObraNova(id)} rotuloVazio="Sem obra (opcional)" />
             </div>
-            <input ref={inputRef} type="file" accept=".pdf" multiple onChange={selecionarArquivos} />
+            <input ref={inputRef} type="file" accept=".pdf,.dwg,.dxf" multiple onChange={selecionarArquivos} title="PDF, DWG ou DXF do projeto" />
             <button onClick={analisar} disabled={analisando || arquivosComDisciplinas.length === 0} style={btnPrimario}>
               <FolderSearch size={13} style={{ marginRight: 6 }} /> {analisando ? 'Analisando...' : 'Analisar projeto'}
             </button>

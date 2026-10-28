@@ -127,7 +127,7 @@ async function lerCad(buffer, nome) {
     portas: leitura.portas.length,
     layers: leitura.layers.length,
     fatorUnidade: leitura.fatorUnidade,
-    observacao: 'Arquitetura lida pela base de CAD do sistema. Para usar num projeto: criar_projeto_disciplina e depois enviar_arquitetura com este arquivo.',
+    observacao: 'Desenho lido pela base de CAD do sistema. Projeto de instalações (tomadas, luminárias, câmeras…): analisar_arquivo conta os blocos e mede a infraestrutura. Só arquitetura, para um projeto por disciplina: criar_projeto_disciplina e depois enviar_arquitetura com este arquivo.',
   };
 }
 

@@ -181,7 +181,12 @@ function extrairTabelaQuantitativa(texto) {
 // reformatação de texto já dado a ele, não leitura livre do PDF.
 
 async function analisarProjeto(buffer, nomeArquivo) {
-  const texto = await extrairTexto(buffer);
+  return analisarTexto(await extrairTexto(buffer), nomeArquivo);
+}
+
+// Os leitores de texto, sobre o texto já extraído — do PDF ou remontado do
+// DWG/DXF (utils/analiseCad.js)
+function analisarTexto(texto, nomeArquivo) {
   const quantitativa = extrairTabelaQuantitativa(texto);
   return {
     arquivo: nomeArquivo,
@@ -204,6 +209,6 @@ async function analisarProjeto(buffer, nomeArquivo) {
 }
 
 module.exports = {
-  analisarProjeto, extrairTexto, extrairAmbientes, extrairCameras, extrairPontosRedeAntena, extrairPontosPorCodigo,
+  analisarProjeto, analisarTexto, extrairTexto, extrairAmbientes, extrairCameras, extrairPontosRedeAntena, extrairPontosPorCodigo,
   extrairTabelaCabos, extrairTabelaQuantitativa,
 };

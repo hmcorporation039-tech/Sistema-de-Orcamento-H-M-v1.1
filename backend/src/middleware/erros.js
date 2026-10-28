@@ -40,7 +40,7 @@ function protegerRotasAsync(router) {
 function mensagemDeUpload(err) {
   switch (err.code) {
     case 'LIMIT_FILE_SIZE':
-      return { status: 413, erro: 'Arquivo acima do limite de 15 MB.' };
+      return { status: 413, erro: 'Arquivo acima do limite de tamanho deste envio (15 MB; projeto DWG/DXF na análise, 40 MB).' };
     case 'LIMIT_FILE_COUNT':
       return { status: 413, erro: 'Número de arquivos acima do limite permitido.' };
     case 'LIMIT_UNEXPECTED_FILE':

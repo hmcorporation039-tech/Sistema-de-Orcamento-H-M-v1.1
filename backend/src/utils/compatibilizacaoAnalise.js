@@ -6,6 +6,7 @@ const { calcularPontosPorAmbiente } = require('./pontosPorAmbiente');
 const { buscarReferencias, valorSugerido, segmentoPorNomeDoCliente } = require('./precosMaoDeObraReferencia');
 const { detectarDisciplinas } = require('./leitoresTabelaProjeto');
 const { lerPdfVetorial } = require('./pdfVetorial');
+const { ehArquivoCad, lerArquivoCad } = require('./analiseCad');
 
 function normalizarPalavras(s) {
   return String(s || '')
@@ -129,7 +130,9 @@ function gerarAchados(analises) {
     if (a.semTexto) {
       achados.push({
         tema: 'Arquivo sem texto legível',
-        observacao: `"${a.arquivo}" não tem camada de texto (PDF escaneado, ou textos do CAD exportados como linhas). Nada pôde ser lido automaticamente — confira as quantidades na planta ou peça ao projetista o PDF exportado com texto (ou o DWG).`,
+        observacao: a.origemCad
+          ? `"${a.arquivo}" não tem texto nem blocos — só traços (costuma ser um PDF convertido em DWG). Nada pôde ser contado; envie o PDF original do projeto ou o DWG do projetista.`
+          : `"${a.arquivo}" não tem camada de texto (PDF escaneado, ou textos do CAD exportados como linhas). Nada pôde ser lido automaticamente — confira as quantidades na planta ou peça ao projetista o PDF exportado com texto (ou o DWG).`,
       });
       continue;
     }
@@ -151,7 +154,8 @@ function gerarAchados(analises) {
       });
     }
     const cb = a.carimbo || {};
-    if (cb.escala === 'INDICADA' || (cb.escalasNaFolha || []).length > 1) {
+    // DWG/DXF: o desenho está em tamanho real, a medição não depende da escala da folha
+    if (!a.origemCad && (cb.escala === 'INDICADA' || (cb.escalasNaFolha || []).length > 1)) {
       achados.push({
         tema: 'Escala da prancha',
         observacao: `"${a.arquivo}" tem escala ${cb.escala === 'INDICADA' ? '"indicada" (varia por vista)' : `variada (${cb.escalasNaFolha.join(', ')})`} — medições de comprimento na planta precisam da escala de cada vista.`,
@@ -220,8 +224,62 @@ const circuitosDosQuadros = (analises) => analises
   .filter(a => a.disciplinas.some(d => d.startsWith('eletrica')))
   .reduce((s, a) => s + (a.quadroCargas?.length || 0), 0);
 
-function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = {}, referencias = {}) {
-  const { cameras: totalCameras, rede: totalRede, antena: totalAntena } = totaisCodificados(analises);
+// DWG/DXF (2.3): blocos contados no desenho → código do serviço de instalação.
+// Só conta bloco de arquivo marcado com a disciplina do bloco.
+const SERVICO_DO_BLOCO = [
+  [/circuito de emerg/i, 'ele_tomada_emergencia', /^Tomada/i],
+  [/^Tomada baixa|^Tomada 2P\+T/i, 'ele_tomada_baixa'],
+  [/^Tomada média/i, 'ele_tomada_media'],
+  [/^Tomada alta/i, 'ele_tomada_alta'],
+  [/^Tomada de piso|^Ponto de luz/i, 'ele_ponto_energia'],
+  [/^Interruptor/i, 'ele_interruptor'],
+  [/^Quadro de distribuição/i, 'ele_qd_setorial'],
+  [/^Luminária(?! de emerg)/i, 'ilum_luminaria_embutir'],
+  [/^Câmera/i, 'cftv_ponto'],
+  [/^Ponto de rede/i, 'rede_ponto'],
+  [/^Ponto de TV/i, 'antena_ponto'],
+  [/^Ponto de telefone/i, 'tel_ponto'],
+  [/^Sirene/i, 'alarme_sirene'],
+  [/^Teclado/i, 'alarme_teclado'],
+];
+// Item-modelo de material (quantidade 0, "confirme na planta") que a contagem
+// do DWG/DXF já cobre na mesma disciplina sai da lista — senão a tela mostra
+// "Tomada 2P+T: 0" ao lado de "Tomada baixa 2P+T — bloco TB-T: 64".
+const MODELO_COBERTO = [
+  [/^Tomada 2P\+T/, /^Tomada/i], [/^Interruptor/, /^Interruptor/i], [/^Eletroduto PVC/, /^Eletroduto|^Trecho de fiação/i],
+  [/^Quadro de distribuição \(/, /^Quadro de distribuição/i], [/^Luminária LED/, /^Luminária/i], [/^Perfil LED/, /Perfil/i],
+];
+function semModeloCoberto(modelos, doDesenho) {
+  return modelos.filter(m => {
+    if (m.quantidade) return true;
+    const regra = MODELO_COBERTO.find(([re]) => re.test(m.descricao));
+    return !(regra && doDesenho.some(d => d.disciplina === m.disciplina && d.quantidade > 0 && regra[1].test(d.descricao) && /no (DWG|DXF)/.test(d.observacao || '')));
+  });
+}
+
+function contagemDoCad(analises, vetoriais = []) {
+  const cont = {};
+  analises.forEach((a, i) => {
+    for (const p of (vetoriais[i] || []).filter(x => x.origem === 'cad')) {
+      for (const it of p.itens) {
+        if (it.tipo !== 'simbolo' || !doMesmoGrupo(a.disciplinas, it.disciplina)) continue;
+        const regra = SERVICO_DO_BLOCO.find(([re, , tambem]) => re.test(it.descricao) && (!tambem || tambem.test(it.descricao)));
+        if (!regra) continue;
+        const c = (cont[regra[1]] = cont[regra[1]] || { quantidade: 0, blocos: [] });
+        c.quantidade += it.quantidade;
+        c.blocos.push(`${it.bloco} × ${it.quantidade}`);
+      }
+    }
+  });
+  return cont;
+}
+
+function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = {}, referencias = {}, cad = {}) {
+  const codificados = totaisCodificados(analises);
+  // sem código de texto (CAMx/Rx/Ax), vale a contagem dos blocos do DWG/DXF
+  const totalCameras = codificados.cameras || cad.cftv_ponto?.quantidade || 0;
+  const totalRede = codificados.rede || cad.rede_ponto?.quantidade || 0;
+  const totalAntena = codificados.antena || cad.antena_ponto?.quantidade || 0;
   const circuitos = circuitosDosQuadros(analises);
   const quadros = analises.filter(a => a.disciplinas.some(d => d.startsWith('eletrica')) && a.quadroCargas?.length).length;
   const SEM_CODIGO = 'Símbolo gráfico no desenho, sem código de texto individual — confirme a quantidade direto na planta antes de fechar.';
@@ -236,7 +294,14 @@ function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = 
   // por ninguém.
   // `codigo` vai junto até a proposta (proposta_itens.codigo): sem ele o item
   // perdia o vínculo com a tabela de preços de referência de mão de obra
-  const item = (codigo, descricao, quantidade, unidade, disciplina, observacao) => ({
+  const item = (codigo, descricao, quantidade0, unidade, disciplina, observacao0) => {
+    // item sem quantidade pelo texto: a contagem dos blocos do DWG/DXF preenche
+    const doCad = !quantidade0 && cad[codigo];
+    const quantidade = doCad ? doCad.quantidade : quantidade0;
+    const observacao = doCad ? `Quantidade = blocos contados no DWG/DXF (${doCad.blocos.join('; ')}) — conferir na planta.` : observacao0;
+    return itemServico(codigo, descricao, quantidade, unidade, disciplina, observacao);
+  };
+  const itemServico = (codigo, descricao, quantidade, unidade, disciplina, observacao) => ({
     codigo, descricao, quantidade, unidade, valor_unitario: 0,
     valor_referencia_mercado: precosReferencia[codigo] ?? null,
     // referências de mercado dos dois segmentos (oficial/governo e particular) para a tela
@@ -247,21 +312,21 @@ function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = 
 
   const todos = [
     // Redes de Computadores (dados)
-    item('rede_ponto', 'Conectorização de ponto de rede/dados (RJ-45 + patch panel + teste)', totalRede, 'pt', 'rede',
-      totalRede > 0 ? 'Quantidade = total de códigos de ponto de rede (Rx) encontrados no desenho.' : SEM_CODIGO),
+    item('rede_ponto', 'Conectorização de ponto de rede/dados (RJ-45 + patch panel + teste)', codificados.rede, 'pt', 'rede',
+      codificados.rede > 0 ? 'Quantidade = total de códigos de ponto de rede (Rx) encontrados no desenho.' : SEM_CODIGO),
     item('rede_switch', 'Instalação e config. de switches', 0, 'un', 'rede', SEM_CODIGO),
     item('rede_ap', 'Instalação e config. de access points (Wi-Fi)', 0, 'un', 'rede', SEM_CODIGO),
 
     // CFTV
-    item('cftv_ponto', 'Conectorização de ponto de câmera (RJ-45 + patch panel + teste)', totalCameras, 'pt', 'cftv',
-      totalCameras > 0 ? 'Quantidade = total de códigos de câmera (CAMx) encontrados no desenho. Confira duplicatas/numeração antes de fechar (veja Compatibilização).' : SEM_CODIGO),
+    item('cftv_ponto', 'Conectorização de ponto de câmera (RJ-45 + patch panel + teste)', codificados.cameras, 'pt', 'cftv',
+      codificados.cameras > 0 ? 'Quantidade = total de códigos de câmera (CAMx) encontrados no desenho. Confira duplicatas/numeração antes de fechar (veja Compatibilização).' : SEM_CODIGO),
     item('cftv_camera_interna', 'Instalação/config. de câmera interna (dome)', 0, 'un', 'cftv',
       totalCameras > 0 ? `Total de câmeras no desenho: ${totalCameras} — divida entre interna/externa aqui.` : SEM_CODIGO),
     item('cftv_camera_externa', 'Instalação/config. de câmera externa (bullet)', 0, 'un', 'cftv', SEM_CODIGO),
 
     // Antena/TV
-    item('antena_ponto', 'Conectorização de ponto de TV/antena (conector coaxial RG-6)', totalAntena, 'pt', 'antena',
-      totalAntena > 0 ? 'Quantidade = total de códigos de ponto de antena/TV (Ax) encontrados no desenho.' : SEM_CODIGO),
+    item('antena_ponto', 'Conectorização de ponto de TV/antena (conector coaxial RG-6)', codificados.antena, 'pt', 'antena',
+      codificados.antena > 0 ? 'Quantidade = total de códigos de ponto de antena/TV (Ax) encontrados no desenho.' : SEM_CODIGO),
 
     // Infraestrutura de Cabeamento Estruturado (compartilhada por rede/CFTV/telefonia)
     item('cab_racks', 'Montagem e organização dos racks (patch panels, guias, PDU)', 0, 'un', 'cabeamento', 'Confirme quantos racks o projeto prevê.'),
@@ -531,6 +596,14 @@ function montarMateriaisDaLista(analises, catalogo, achados) {
 const semMarcador = (s) => String(s).replace(/^[-–•\s]+/, '');
 const metrosBR = (m) => `${String(m).replace('.', ',')} m`;
 
+const ORIGEM_DESCRICAO = { legenda: 'descrição da legenda da prancha', atributo: 'descrição do atributo do bloco', sigla: 'sigla do bloco — confirmar o tipo', nome: 'nome do bloco' };
+// "rede" e "cabeamento" são a mesma skill: bloco de rede vale para arquivo marcado com qualquer das duas
+function doMesmoGrupo(marcadas, sugerida) {
+  if (marcadas.includes(sugerida)) return sugerida;
+  const par = { rede: 'cabeamento', cabeamento: 'rede' }[sugerida];
+  return par && marcadas.includes(par) ? par : null;
+}
+
 function montarMateriaisDoDesenho(analises, vetoriais, catalogo) {
   const materiais = [];
   analises.forEach((a, i) => {
@@ -538,8 +611,9 @@ function montarMateriaisDoDesenho(analises, vetoriais, catalogo) {
     for (const pag of vetoriais[i] || []) {
       for (const it of pag.itens) {
         if (it.ambiguo || (it.tipo === 'linha' && it.metros == null)) continue;
-        const sugerida = detectarDisciplinas(it.descricao)[0]?.chave;
-        const disciplina = sugerida ? (a.disciplinas.includes(sugerida) ? sugerida : null) : a.disciplinas[0];
+        // CAD: a disciplina vem do bloco/layer (utils/analiseCad.js); PDF: da descrição da legenda
+        const sugerida = pag.origem === 'cad' ? it.disciplina : detectarDisciplinas(it.descricao)[0]?.chave;
+        const disciplina = sugerida ? (doMesmoGrupo(a.disciplinas, sugerida)) : a.disciplinas[0];
         if (!disciplina) continue;
         const descricao = semMarcador(it.descricao).slice(0, 240);
         const corr = compararComCatalogo(descricao, catalogo);
@@ -556,9 +630,13 @@ function montarMateriaisDoDesenho(analises, vetoriais, catalogo) {
           material_id: corr?.material_id ?? null,
           confianca_catalogo: corr?.confianca ?? null,
           descricao_catalogo: corr?.descricao_catalogo ?? null,
-          observacao: it.tipo === 'simbolo'
-            ? `Contado no desenho de "${a.arquivo}" (pág. ${pag.pagina}): símbolo da legenda × ${it.quantidade} — conferir na planta.`
-            : `Medido no desenho de "${a.arquivo}" (pág. ${pag.pagina}): ${metrosBR(it.metros)} na escala 1:${pag.escala} + 10 % de sobra — conferir.`,
+          observacao: pag.origem === 'cad'
+            ? (it.tipo === 'simbolo'
+              ? `Contado no ${pag.pagina} "${a.arquivo}": bloco "${it.bloco}" × ${it.quantidade} (${ORIGEM_DESCRICAO[it.origemDescricao] || 'descrição a conferir'}) — conferir.`
+              : `Medido no ${pag.pagina} "${a.arquivo}": ${metrosBR(it.metros)} na layer "${it.layer}" + 10 % de sobra — conferir.`)
+            : it.tipo === 'simbolo'
+              ? `Contado no desenho de "${a.arquivo}" (pág. ${pag.pagina}): símbolo da legenda × ${it.quantidade} — conferir na planta.`
+              : `Medido no desenho de "${a.arquivo}" (pág. ${pag.pagina}): ${metrosBR(it.metros)} na escala 1:${pag.escala} + 10 % de sobra — conferir.`,
         });
       }
     }
@@ -570,19 +648,30 @@ function achadosDoDesenho(analises, vetoriais) {
   const achados = [];
   analises.forEach((a, i) => {
     // página pulada (traços demais) ou leitura que falhou: avisa em vez de sumir calada
-    const avisos = (vetoriais[i] || []).filter(p => p.aviso);
+    // DWG vazio já tem o achado "Arquivo sem texto legível"
+    const avisos = (vetoriais[i] || []).filter(p => p.aviso && p.origem !== 'cad');
     if (avisos.length) {
       achados.push({
         tema: 'Contagem pelo desenho (PDF vetorial) incompleta',
         observacao: `"${a.arquivo}": ${avisos.map(p => (p.pagina ? `pág. ${p.pagina}: ` : '') + p.aviso).join('; ')}.`,
       });
     }
+    for (const p of (vetoriais[i] || []).filter(p => p.origem === 'cad')) {
+      if (p.naoIdentificados?.length) {
+        achados.push({
+          tema: 'Blocos do desenho não identificados',
+          observacao: `"${a.arquivo}": ${p.naoIdentificados.slice(0, 15).map(b => `${b.bloco} × ${b.quantidade} (layer ${b.layer})`).join('; ')}${p.naoIdentificados.length > 15 ? ` (+${p.naoIdentificados.length - 15})` : ''}. Não viraram material: o nome do bloco não diz o que é. Se forem do orçamento, lance pela legenda da prancha.`,
+        });
+      }
+      if (p.outraArea) achados.push({ tema: 'Itens de outras áreas no desenho', observacao: `"${a.arquivo}": ${p.outraArea} bloco(s) de climatização/hidráulica (dutos, difusores, conexões) ficaram de fora — não são das disciplinas da H&M.` });
+    }
     const itens = (vetoriais[i] || []).flatMap(p => p.itens);
     if (!itens.length) return;
     const fmt = (it) => `${semMarcador(it.descricao).slice(0, 70)}: ${it.tipo === 'simbolo' ? it.quantidade : it.metros != null ? metrosBR(it.metros) : `${it.comprimento_pt} pt (sem escala no carimbo)`}`;
+    const ehCad = (vetoriais[i] || []).some(p => p.origem === 'cad');
     const claros = itens.filter(it => !it.ambiguo), ambiguos = itens.filter(it => it.ambiguo);
     achados.push({
-      tema: 'Contagem pelo desenho (PDF vetorial)',
+      tema: ehCad ? 'Contagem pelo desenho (DWG/DXF)' : 'Contagem pelo desenho (PDF vetorial)',
       observacao: `"${a.arquivo}": ${claros.length ? claros.slice(0, 15).map(fmt).join('; ') : 'nenhum item da legenda com símbolo próprio'}${claros.length > 15 ? ` (+${claros.length - 15})` : ''}.`
         + (ambiguos.length ? ` ${ambiguos.length} item(ns) da legenda com o mesmo símbolo/estilo de outro — não separados.` : '')
         + (a.listaMateriais?.length ? ' O arquivo tem lista de materiais: ela é que vale; a contagem serve para conferir.' : ' Conferir na planta antes de emitir.'),
@@ -600,8 +689,13 @@ async function analisarProjetoCompleto(arquivos) {
   // Cada arquivo é lido/analisado em paralelo (pdf-parse + regex é I/O-bound e
   // independente por arquivo) — antes rodava um de cada vez (sequencial), o
   // que somava o tempo de N arquivos à toa.
+  // DWG/DXF (2.3): lido numa thread à parte (utils/analiseCad.js) e devolvido no
+  // mesmo formato; o resto do fluxo não distingue a origem
+  const cads = await Promise.all(arquivos.map(({ buffer, nomeArquivo }) => (ehArquivoCad(nomeArquivo)
+    ? lerArquivoCad(buffer, nomeArquivo).catch((e) => { throw Object.assign(new Error(`Não consegui ler "${nomeArquivo}": ${e.message}`), { leituraCad: true }); })
+    : null)));
   const analisesBrutas = await Promise.all(
-    arquivos.map(({ buffer, nomeArquivo }) => analisarProjeto(buffer, nomeArquivo))
+    arquivos.map(({ buffer, nomeArquivo }, i) => (cads[i] ? cads[i].analise : analisarProjeto(buffer, nomeArquivo)))
   );
   const analises = analisesBrutas.map((a, i) => ({ ...a, disciplinas: arquivos[i].disciplinas }));
 
@@ -610,11 +704,11 @@ async function analisarProjetoCompleto(arquivos) {
   // nunca deve derrubar a análise inteira, já que o resto dela (totais,
   // serviços, materiais) não depende disso.
   const pontosPorAmbienteBrutos = await Promise.all(
-    arquivos.map(({ buffer }) => calcularPontosPorAmbiente(buffer).catch(() => []))
+    arquivos.map(({ buffer }, i) => (cads[i] ? cads[i].pontosPorAmbiente : calcularPontosPorAmbiente(buffer).catch(() => [])))
   );
   // geometria do desenho (símbolos/linhas pela legenda): mesma regra, falha não derruba
   const vetoriais = await Promise.all(
-    analises.map((a, i) => (a.semTexto ? Promise.resolve([]) : lerPdfVetorial(arquivos[i].buffer, { maxPaginas: 6 }).catch((e) => {
+    analises.map((a, i) => (cads[i] ? Promise.resolve([cads[i].pagina]) : a.semTexto ? Promise.resolve([]) : lerPdfVetorial(arquivos[i].buffer, { maxPaginas: 6 }).catch((e) => {
       console.warn(`[analise] leitura vetorial de "${a.arquivo}" falhou:`, e.message);
       return [{ pagina: null, itens: [], legenda: null, escala: null, aviso: `leitura do desenho falhou (${e.message}) — conferir na planta` }];
     })))
@@ -654,14 +748,16 @@ async function analisarProjetoCompleto(arquivos) {
   // foram encontrados em nenhum arquivo marcado com essa disciplina (quando
   // encontrados, já vêm preenchidos automaticamente).
   const temLista = (d) => analises.some(a => a.disciplinas.includes(d) && a.listaMateriais?.length);
+  // DWG/DXF: bloco da disciplina contado no desenho também resolve a quantidade
+  const contouNoCad = (d) => vetoriais.some((v, i) => analises[i].disciplinas.includes(d) && v.some(p => p.origem === 'cad' && p.itens.some(it => it.tipo === 'simbolo' && it.disciplina === d)));
   const faltando = [];
   if (disciplinasEfetivas.includes('rede') && totalRede === 0) faltando.push('pontos de rede');
   if (disciplinasEfetivas.includes('antena') && totalAntena === 0) faltando.push('pontos de TV/antena');
-  if (disciplinasEfetivas.includes('alarme') && !temLista('alarme')) faltando.push('quantidades de alarme (sensores, sirene, teclado)');
-  if (disciplinasEfetivas.includes('eletrica') && !temLista('eletrica')) faltando.push('quantidades de elétrica (tomadas, interruptores, cabos)');
-  if (disciplinasEfetivas.includes('telefonia') && !temLista('telefonia')) faltando.push('quantidades de telefonia');
-  if (disciplinasEfetivas.includes('iluminacao') && !temLista('iluminacao')) faltando.push('quantidades de iluminação (luminárias, pontos)');
-  if (disciplinasEfetivas.includes('automacao') && !temLista('automacao')) faltando.push('quantidades de automação');
+  if (disciplinasEfetivas.includes('alarme') && !temLista('alarme') && !contouNoCad('alarme')) faltando.push('quantidades de alarme (sensores, sirene, teclado)');
+  if (disciplinasEfetivas.includes('eletrica') && !temLista('eletrica') && !contouNoCad('eletrica')) faltando.push('quantidades de elétrica (tomadas, interruptores, cabos)');
+  if (disciplinasEfetivas.includes('telefonia') && !temLista('telefonia') && !contouNoCad('telefonia')) faltando.push('quantidades de telefonia');
+  if (disciplinasEfetivas.includes('iluminacao') && !temLista('iluminacao') && !contouNoCad('iluminacao')) faltando.push('quantidades de iluminação (luminárias, pontos)');
+  if (disciplinasEfetivas.includes('automacao') && !temLista('automacao') && !contouNoCad('automacao')) faltando.push('quantidades de automação');
   if (faltando.length > 0) {
     const contouNoDesenho = vetoriais.some(v => v.some(p => p.itens.some(it => !it.ambiguo)));
     achados.push({
@@ -686,13 +782,15 @@ async function analisarProjetoCompleto(arquivos) {
   const catalogo = await carregarCatalogo();
   const materiaisEquipamentos = montarMateriais(equipamentos, catalogo);
   const materiaisQuantitativos = montarMateriaisQuantitativos(analises);
+  const materiaisDoDesenho = montarMateriaisDoDesenho(analises, vetoriais, catalogo);
   const materiais = [
-    ...montarMateriaisInstalacaoPadrao(analises, disciplinasEfetivas),
+    ...semModeloCoberto(montarMateriaisInstalacaoPadrao(analises, disciplinasEfetivas), materiaisDoDesenho),
     ...montarMateriaisDaLista(analises, catalogo, achados),
     ...materiaisQuantitativos,
     ...materiaisEquipamentos,
-    ...montarMateriaisDoDesenho(analises, vetoriais, catalogo),
+    ...materiaisDoDesenho,
   ];
+  const contagemCad = contagemDoCad(analises, vetoriais);
   const dadosExtraidos = analises.map((a, i) => ({
     arquivo: a.arquivo,
     disciplinas: a.disciplinas,
@@ -703,7 +801,8 @@ async function analisarProjetoCompleto(arquivos) {
     totaisQuadro: a.totaisQuadro,
     listaMateriais: a.listaMateriais,
     esquadrias: a.esquadrias,
-    desenho: (vetoriais[i] || []).map(p => ({ pagina: p.pagina, escala: p.escala, itens: p.itens.map(({ posicoes, ...it }) => it), ...(p.aviso ? { aviso: p.aviso } : {}) })),
+    desenho: (vetoriais[i] || []).map(p => ({ pagina: p.pagina, escala: p.escala, ...(p.origem ? { origem: p.origem, nao_identificados: p.naoIdentificados } : {}), itens: p.itens.map(({ posicoes, ...it }) => it), ...(p.aviso ? { aviso: p.aviso } : {}) })),
+    ...(analises[i].origemCad ? { cad: analises[i].origemCad } : {}),
   }));
 
   return {
@@ -723,9 +822,11 @@ async function analisarProjetoCompleto(arquivos) {
     },
     tabelaCabos,
     achados,
-    servicos: montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia, referencias),
+    servicos: montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia, referencias, contagemCad),
     materiais,
     dadosExtraidos,
+    // arquitetura do primeiro DWG/DXF com ambientes: guardada na análise (base do 3D)
+    arquiteturaCad: cads.find(c => c?.arquitetura)?.arquitetura || null,
   };
 }
 

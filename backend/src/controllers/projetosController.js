@@ -18,6 +18,12 @@ const { versaoDoPedido, responderConflitoOuAusente } = require('../utils/versao'
 const { sincronizarProjeto, pastaDoProjeto, resumoPasta, pedidoLocal, seguro, excluirPastaDoItem } = require('../services/pastasRegistros');
 const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
 const { lerFinalidade } = require('../utils/projetoLaudo');
+const { ehArquivoCad } = require('../utils/analiseCad');
+
+// DWG começa pela versão (AC10xx); DXF de texto, por "0 SECTION"
+const ehConteudoCad = (buf) => /^AC10\d\d$/.test(buf.subarray(0, 6).toString('latin1')) || /^\s*0\s*\r?\n\s*SECTION/.test(buf.subarray(0, 200).toString('latin1'));
+// o leitor do multipart entrega o nome em latin1 ("ElÃ©trica"); só converte se virar UTF-8 válido
+const nomeUtf8 = (n) => { const u = Buffer.from(String(n), 'latin1').toString('utf8'); return u.includes('\uFFFD') ? n : u; };
 const path = require('path');
 
 // Versão 2.1 — finalidade da análise (escolhida ao enviar, editável depois):
@@ -157,12 +163,17 @@ async function buscarUma(req, res) {
 // tudo só em memória no navegador (que sumia ao trocar de tela).
 async function analisar(req, res) {
   if (!req.files || req.files.length === 0) {
-    return res.status(400).json({ erro: 'Envie ao menos um arquivo PDF de projeto' });
+    return res.status(400).json({ erro: 'Envie ao menos um arquivo de projeto (PDF, DWG ou DXF)' });
   }
-  const naoPdf = req.files.find(f => tipoPorConteudo(f.buffer) !== 'application/pdf');
-  if (naoPdf) {
-    return res.status(400).json({ erro: `"${naoPdf.originalname}" não é um arquivo PDF válido` });
+  // 2.3: além do PDF, o DWG/DXF do projeto (lido como desenho — utils/analiseCad.js)
+  const invalido = req.files.find(f => (ehArquivoCad(f.originalname) ? !ehConteudoCad(f.buffer) : tipoPorConteudo(f.buffer) !== 'application/pdf'));
+  if (invalido) {
+    return res.status(400).json({ erro: ehArquivoCad(invalido.originalname)
+      ? `"${invalido.originalname}" não é um DWG nem um DXF válido`
+      : `"${invalido.originalname}" não é um arquivo PDF válido (aceitos: PDF, DWG e DXF)` });
   }
+  // o multer lê o nome em latin1: acentos do nome do arquivo voltam a UTF-8
+  for (const f of req.files) f.originalname = nomeUtf8(f.originalname);
 
   let disciplinasPorArquivo;
   try {
@@ -236,7 +247,16 @@ async function analisar(req, res) {
       ]
     );
 
-    // Pasta do projeto: guarda os PDFs recebidos (antes eram lidos e descartados)
+    // DWG/DXF com arquitetura: vira a base do modelo 3D desta análise (2.3)
+    if (resultado.arquiteturaCad) {
+      const a = resultado.arquiteturaCad;
+      await pool.query(
+        `INSERT INTO analises_projeto_arquitetura (analise_id, nome_arquivo, conteudo, resumo, usuario_id) VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (analise_id) DO NOTHING`,
+        [insert.rows[0].id, String(a.nome_arquivo).slice(0, 200), Buffer.from(a.dxf, 'utf8'), a.resumo, req.usuario.id]);
+    }
+
+    // Pasta do projeto: guarda os arquivos recebidos (antes eram lidos e descartados)
     await sincronizarProjeto(insert.rows[0], arquivos);
     const salvo = await pool.query(SQL_ANALISE_COMPLETA, [insert.rows[0].id]);
     res.json(linhaParaAnalise(salvo.rows[0]));

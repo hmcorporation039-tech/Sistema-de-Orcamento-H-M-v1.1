@@ -48,7 +48,8 @@ const limiteLogin = rateLimit({
 
 // Projetos: só PDF — conferido no controller pelos bytes iniciais "%PDF", com
 // mensagem clara (um filtro aqui descartaria o arquivo calado)
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 10 } });
+// 2.3: a análise também recebe DWG/DXF de projeto — DXF de prancha passa fácil de 15 MB
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 40 * 1024 * 1024, files: 10 } });
 // Nota fiscal: PDF (DANFE) ou XML (NF-e)
 const uploadNota = multer({
   storage: multer.memoryStorage(),

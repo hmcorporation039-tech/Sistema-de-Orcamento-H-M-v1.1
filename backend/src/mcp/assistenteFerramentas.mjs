@@ -266,8 +266,8 @@ export function definirFerramentas({ api, contexto = {}, token = '' }) {
       },
     },
     {
-      nome: 'analisar_arquivo', titulo: 'Analisar projeto (PDF)',
-      descricao: `Cria uma ANÁLISE DE PROJETO salva no sistema a partir de um PDF anexado (pelo id), pelo mesmo analisador da tela: ambientes, pontos por código (câmeras, rede, antena), quadro de cargas, listas de materiais, achados de compatibilização e lista inicial de serviços e materiais. finalidade "orcamento" (orçar o projeto recebido) ou "elaboracao" (a H&M vai elaborar o projeto). Fica ligada à obra do contexto (ou obra_id). Disciplinas válidas: ${CHAVES_ANALISE.join(', ')}. Para DWG/DXF use criar_projeto_disciplina + enviar_arquitetura.`,
+      nome: 'analisar_arquivo', titulo: 'Analisar projeto (PDF, DWG ou DXF)',
+      descricao: `Cria uma ANÁLISE DE PROJETO salva no sistema a partir de um PDF, DWG ou DXF anexado (pelo id), pelo mesmo analisador da tela: ambientes, pontos por código (câmeras, rede, antena), quadro de cargas, listas de materiais, achados de compatibilização e lista inicial de serviços e materiais. finalidade "orcamento" (orçar o projeto recebido) ou "elaboracao" (a H&M vai elaborar o projeto). Fica ligada à obra do contexto (ou obra_id). Disciplinas válidas: ${CHAVES_ANALISE.join(', ')}. DWG/DXF de projeto: conta os blocos (tomadas, luminárias, câmeras…) com a posição por ambiente, mede eletroduto/eletrocalha pelas layers e lê carimbo e listas do texto do desenho; a arquitetura dele já vira a base do modelo 3D da análise.`,
       entrada: {
         arquivo_id: z.number().int().positive(),
         disciplinas: z.array(z.string()).min(1),
@@ -279,10 +279,12 @@ export function definirFerramentas({ api, contexto = {}, token = '' }) {
         const validas = disciplinas.filter(d => CHAVES_ANALISE.includes(d));
         if (!validas.length) return falha(`Nenhuma disciplina válida. Use: ${CHAVES_ANALISE.join(', ')}`);
         const info = await api('GET', `/api/assistente/ferramentas/arquivos/${arquivo_id}?resumo=0`);
-        if (info.arquivo.tipo !== 'pdf') return falha(`O arquivo #${arquivo_id} é ${info.arquivo.tipo.toUpperCase()}: a análise de projeto lê PDF. Para arquitetura DWG/DXF use criar_projeto_disciplina e enviar_arquitetura.`);
+        if (!['pdf', 'dwg', 'dxf'].includes(info.arquivo.tipo)) return falha(`O arquivo #${arquivo_id} é ${info.arquivo.tipo.toUpperCase()}: a análise de projeto lê PDF, DWG ou DXF.`);
         const bytes = await api('GET', `/api/assistente/ferramentas/arquivos/${arquivo_id}/conteudo`, undefined, { binario: true });
         const form = new FormData();
-        form.append('arquivos', new Blob([bytes], { type: 'application/pdf' }), info.arquivo.nome.replace(/[^\w.\- ]+/g, '_'));
+        // o servidor separa PDF de DWG/DXF pela extensão do nome: garante a do tipo real
+        const nomeEnvio = `${info.arquivo.nome.replace(/[^\w.\- ]+/g, '_').replace(/\.(pdf|dwg|dxf)$/i, '')}.${info.arquivo.tipo}`;
+        form.append('arquivos', new Blob([bytes], { type: info.arquivo.tipo === 'pdf' ? 'application/pdf' : 'application/octet-stream' }), nomeEnvio);
         form.append('disciplinasPorArquivo', JSON.stringify([validas]));
         form.append('finalidade', finalidade);
         if (nome_projeto) form.append('nome_projeto', nome_projeto);
