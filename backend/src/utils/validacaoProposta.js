@@ -135,4 +135,4 @@ function validadeOuPadrao(valor) {
   return numeroSeguro(valor, 5);
 }
 
-module.exports = { validarProposta, validadeOuPadrao, dataValida, MAX_QUANTIDADE, MAX_VALOR_UNITARIO, MAX_VALOR_TOTAL };
+module.exports = { validarProposta, validadeOuPadrao };

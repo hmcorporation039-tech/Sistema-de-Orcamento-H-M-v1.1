@@ -207,4 +207,4 @@ function iniciarMonitor() {
   relogio.unref?.();
 }
 
-module.exports = { iniciarMonitor, registrarGravacaoSistema, escanearPasta, escanearCliente, escanearTodos, novidades, resumo, marcarVisto, caminhoAbsoluto, ANALISAVEL };
+module.exports = { iniciarMonitor, registrarGravacaoSistema, escanearCliente, escanearTodos, novidades, resumo, marcarVisto, caminhoAbsoluto, ANALISAVEL };

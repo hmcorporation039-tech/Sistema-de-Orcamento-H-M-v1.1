@@ -240,6 +240,6 @@ function descartarPacote(token, usuario) {
 }
 
 module.exports = {
-  receberPacote, arquivosDoPacote, descartarPacote, manifesto, MAX_ARQUIVOS,
-  PASTA_UPLOAD, limparPastaPorIdade, limparTemporarios, agendarLimpezaTemporarios,
+  receberPacote, arquivosDoPacote, descartarPacote, manifesto,
+  PASTA_UPLOAD, limparPastaPorIdade, agendarLimpezaTemporarios,
 };

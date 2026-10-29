@@ -177,4 +177,4 @@ function conferirTotal(itens, texto) {
   return { soma, totalDocumento, confere: totalDocumento != null && Math.abs(totalDocumento - soma) <= Math.max(0.1, soma * 0.002) };
 }
 
-module.exports = { extrairUniversal, conferirTotal, numerosDaLinha, separarColados, MAX_CARACTERES_LINHA, MAX_NUMEROS_LINHA };
+module.exports = { extrairUniversal, conferirTotal, MAX_NUMEROS_LINHA };

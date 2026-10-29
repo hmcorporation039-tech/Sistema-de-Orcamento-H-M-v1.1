@@ -437,4 +437,4 @@ async function lerPdfVetorial(buffer, { paginas, escala, maxPaginas = 10, maxCam
   }
 }
 
-module.exports = { lerPdfVetorial, analisarGeometria, simbolos, escalaDoCarimbo, MAX_CAMINHOS_PAGINA, paraTestes: { textoAoLado, regioesLegenda, lerPagina, pdfjs, uniaoBusca } };
+module.exports = { lerPdfVetorial, analisarGeometria, simbolos, escalaDoCarimbo, paraTestes: { textoAoLado, regioesLegenda, lerPagina, pdfjs, uniaoBusca } };

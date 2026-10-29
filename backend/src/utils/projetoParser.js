@@ -200,6 +200,6 @@ function analisarTexto(texto, nomeArquivo) {
 }
 
 module.exports = {
-  analisarProjeto, analisarTexto, extrairTexto, extrairAmbientes, extrairCameras, extrairPontosRedeAntena, extrairPontosPorCodigo,
-  extrairTabelaCabos, extrairTabelaQuantitativa,
+  analisarProjeto, analisarTexto, extrairTexto, extrairAmbientes,
+  extrairTabelaCabos,
 };

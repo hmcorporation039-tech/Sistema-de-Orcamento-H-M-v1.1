@@ -78,4 +78,4 @@ async function historicoPreco(pool, descricao) {
   return { catalogo, mudancas, emPropostas };
 }
 
-module.exports = { consultarNorma, historicoPreco, arquivosDaSkill };
+module.exports = { consultarNorma, historicoPreco };

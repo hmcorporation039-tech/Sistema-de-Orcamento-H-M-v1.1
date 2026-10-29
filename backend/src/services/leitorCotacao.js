@@ -200,6 +200,6 @@ async function lerDocumentoCotacao(buffer, nome, opcoes = {}) {
   return { ...resultado, viaOcr, usouIA, pendente: (pendente || falhaOcr) && !resultado.itens.length, avisos };
 }
 
-module.exports = { lerDocumentoCotacao, encerrarOcr, ehDocumentoDaHM, mencionaHM, tipoDoArquivo, VERSAO_LEITOR, EXTENSOES,
+module.exports = { lerDocumentoCotacao, encerrarOcr, ehDocumentoDaHM, VERSAO_LEITOR, EXTENSOES,
   ocr, // OCR local de imagem (também usado pelo leitor de arquivos do assistente)
 };

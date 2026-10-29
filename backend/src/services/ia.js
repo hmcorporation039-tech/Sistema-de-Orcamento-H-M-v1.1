@@ -375,5 +375,5 @@ const padrao = criarIA();
 module.exports = {
   ...padrao,
   criarIA, ordemConfigurada, ORDEM_PADRAO, PROVEDORES,
-  argsClaudeMax, executarClaudeMax, cliDisponivel, jsonTolerante,
+  argsClaudeMax, executarClaudeMax,
 };

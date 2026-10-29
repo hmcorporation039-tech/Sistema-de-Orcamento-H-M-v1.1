@@ -869,4 +869,4 @@ async function analisarProjetoCompleto(todosArquivos) {
   };
 }
 
-module.exports = { analisarProjetoCompleto, extrairCliente, gerarAchados, montarServicosPadrao, paraTestes: { semDuplicarFontes, tipoDoItem, contagemDoCad } };
+module.exports = { analisarProjetoCompleto, paraTestes: { semDuplicarFontes, tipoDoItem, contagemDoCad } };

@@ -11,7 +11,6 @@
 // As fotos NÃO ficam no checklist: moram em os_fotos (item_id) e entram no
 // objeto da OS na hora de devolver (osParaApi).
 
-const STATUS_OS = ['aberta', 'em_execucao', 'concluida', 'cancelada'];
 const ROTULO_STATUS_OS = { aberta: 'Aberta', em_execucao: 'Em execução', concluida: 'Concluída', cancelada: 'Cancelada' };
 const TIPOS_OS = ['instalacao', 'manutencao', 'vistoria', 'visita', 'outro'];
 const ROTULO_TIPO_OS = { instalacao: 'Instalação', manutencao: 'Manutenção', vistoria: 'Vistoria (laudo)', visita: 'Visita técnica', outro: 'Outro' };
@@ -461,10 +460,10 @@ function filtroAbertas(agora = new Date()) {
 }
 
 module.exports = {
-  STATUS_OS, ROTULO_STATUS_OS, TIPOS_OS, ROTULO_TIPO_OS, RESPOSTAS, ROTULO_RESPOSTA, TIPOS_OPERACAO, LIMITES,
-  DIAS_TOLERANCIA_CONCLUIDA, MODELO_GENERICO, EXTENSAO,
+  ROTULO_STATUS_OS, ROTULO_TIPO_OS, ROTULO_RESPOSTA, TIPOS_OPERACAO, LIMITES,
+  MODELO_GENERICO, EXTENSAO,
   uuidValido, normalizarUuid, formatarNumeroOS, proximoNumeroOS, tipoImagem, ehPng, decodificarPngBase64,
-  instanteDoAparelho, latitude, longitude, dataOuNull, normalizarChecklistBase, checklistDoModelo,
+  instanteDoAparelho, dataOuNull, normalizarChecklistBase, checklistDoModelo,
   validarDadosOS, chaveModelo, podeVerOS, podeEditarOS, podeAbrirOS, condicaoPodeAbrirOS, aplicarOperacao, conferirFoto, dadosDaFoto,
-  osParaApi, fotoParaApi, resumoChecklist, filtroAbertas,
+  osParaApi, fotoParaApi, filtroAbertas,
 };

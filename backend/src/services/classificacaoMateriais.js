@@ -140,4 +140,4 @@ function classificarPendentesEmSegundoPlano() {
   setImmediate(() => classificarPendentes().catch(e => console.error('Classificação de materiais:', e.message)));
 }
 
-module.exports = { categoriaLocal, carregarReferencia, termos, classificarPendentes, classificarPendentesEmSegundoPlano, PENDENTES, paraTestes: { similaridade, maisParecido } };
+module.exports = { categoriaLocal, carregarReferencia, termos, classificarPendentes, classificarPendentesEmSegundoPlano, paraTestes: { similaridade, maisParecido } };

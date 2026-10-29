@@ -90,4 +90,4 @@ async function extrairComIA(buffer, tipo) {
 
 // argsClaudeMax: reexportado para o teste de segurança (testes/seguranca.test.js);
 // a implementação mora em services/ia.js.
-module.exports = { extrairComIA, iaDisponivel, normalizarResposta, argsClaudeMax: ia.argsClaudeMax };
+module.exports = { extrairComIA, iaDisponivel, argsClaudeMax: ia.argsClaudeMax };

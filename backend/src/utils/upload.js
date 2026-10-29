@@ -22,4 +22,4 @@ function criarUpload(opcoes) {
 
 const mb = (bytes) => `${Math.round((bytes / 1048576) * 10) / 10}`.replace('.', ',');
 
-module.exports = { criarUpload, guardarLimite, multer, mb };
+module.exports = { criarUpload, multer, mb };

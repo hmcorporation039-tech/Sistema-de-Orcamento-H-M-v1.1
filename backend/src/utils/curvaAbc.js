@@ -66,4 +66,4 @@ function calcularCurvaAbc(itens, limites) {
 }
 // ==== FIM DO NÚCLEO COMPARTILHADO (curvaAbc) ====
 
-module.exports = { LIMITES_CURVA_ABC, calcularCurvaAbc, classeAbc };
+module.exports = { LIMITES_CURVA_ABC, calcularCurvaAbc };

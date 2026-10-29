@@ -55,4 +55,4 @@ const posse = {
   obra: (acao = 'alterar') => regra('obras', 'obra', true, 'Obra não encontrada.', acao),
 };
 
-module.exports = { exigirPosse, posse, msgDono };
+module.exports = { exigirPosse, posse };

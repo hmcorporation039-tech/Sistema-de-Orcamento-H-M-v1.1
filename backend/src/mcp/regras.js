@@ -60,4 +60,4 @@ function conferirPdfPermitido(caminho, pastas) {
   return { caminho: real };
 }
 
-module.exports = { pastasPermitidasPdf, conferirPdfPermitido, estaDentro, TAMANHO_MAX_PDF };
+module.exports = { pastasPermitidasPdf, conferirPdfPermitido };

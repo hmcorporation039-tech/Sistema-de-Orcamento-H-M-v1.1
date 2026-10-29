@@ -5,10 +5,6 @@
 const { arredondar } = require('./calculoProposta');
 
 const STATUS_OBRA = ['prospeccao', 'orcamento', 'contratada', 'execucao', 'concluida', 'cancelada'];
-const ROTULO_STATUS = {
-  prospeccao: 'Prospecção', orcamento: 'Orçamento', contratada: 'Contratada',
-  execucao: 'Em execução', concluida: 'Concluída', cancelada: 'Cancelada',
-};
 const SEGMENTOS = ['publico', 'privado'];
 
 // Texto para comparação: sem acento, minúsculo, só letras/números separados
@@ -240,10 +236,10 @@ const ehAdmin = (usuario) => usuario?.role === 'admin';
 const podeEditarObra = (usuario, obra) => !!usuario && (ehAdmin(usuario) || (!!obra && (obra.usuario_id == null || obra.usuario_id === usuario.id)));
 
 module.exports = {
-  STATUS_OBRA, ROTULO_STATUS, SEGMENTOS,
+  STATUS_OBRA, SEGMENTOS,
   normalizarTexto, formatarCodigo, proximoSequencial, nomeObraDaAnalise,
   chavePropostaSolta, agruparPropostasSoltas, nomeObraDasPropostas, deduzirStatus,
-  escolherObraParaContrato, analiseDeOrigemDoLaudo, contemPalavras,
+  escolherObraParaContrato, analiseDeOrigemDoLaudo,
   calcularOrcado, resumoFinanceiro, lerObraId, conferirObra, sqlObraJson,
   ehAdmin, podeEditarObra,
 };

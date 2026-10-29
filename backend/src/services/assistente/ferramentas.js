@@ -48,4 +48,4 @@ const ferramentasPermitidas = () => FERRAMENTAS.map(f => nomeCompleto(f.nome));
 const nomeCurto = (nomeOuCompleto) => String(nomeOuCompleto || '').replace(`mcp__${NOME_SERVIDOR_MCP}__`, '');
 const rotuloDa = (nomeOuCompleto) => FERRAMENTAS.find(f => f.nome === nomeCurto(nomeOuCompleto))?.rotulo || nomeCurto(nomeOuCompleto);
 
-module.exports = { FERRAMENTAS, PROIBIDAS, TIPOS_ACAO, NOME_SERVIDOR_MCP, ferramentasPermitidas, rotuloDa, nomeCurto, nomeCompleto };
+module.exports = { FERRAMENTAS, PROIBIDAS, TIPOS_ACAO, ferramentasPermitidas, rotuloDa, nomeCurto };

@@ -198,4 +198,4 @@ async function lerPixNaCaixaDeEntrada({ esperas, db = pool, conectarEmail = cone
   return resumo;
 }
 
-module.exports = { verificarPixNaCaixaDeEntrada, lerPixNaCaixaDeEntrada, parsePixRecebido, parsePixRealizado, limparNomeFavorecido };
+module.exports = { verificarPixNaCaixaDeEntrada, lerPixNaCaixaDeEntrada };

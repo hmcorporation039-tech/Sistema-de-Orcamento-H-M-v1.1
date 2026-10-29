@@ -358,9 +358,9 @@ function sqlDecisaoCliente(alias = 'p') {
 module.exports = {
   sqlDecisaoCliente,
   gerarToken, hashToken, formatoTokenValido, hashesIguais,
-  limparDocumento, cpfValido, cnpjValido, analisarDocumento, formatarDocumento,
-  hojeBrasilia, vencimentoProposta, propostaVencida, calcularExpiracao, DIAS_MAX_LINK,
-  estadoLink, avaliarDecisao, avaliarProposta, MSG_LINK_INVALIDO, MSG_STATUS,
-  validarDecisao, montarPropostaPublica, textoCanonico, hashConteudo,
+  cpfValido, cnpjValido, analisarDocumento, formatarDocumento,
+  hojeBrasilia, vencimentoProposta, propostaVencida, calcularExpiracao,
+  estadoLink, avaliarDecisao, avaliarProposta, MSG_LINK_INVALIDO,
+  validarDecisao, montarPropostaPublica, hashConteudo,
   AVISO_JURIDICO, textoDeclaracao, codigoComprovante, ipDoPedido, dataBR, dataHoraBR,
 };

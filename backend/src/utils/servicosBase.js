@@ -153,7 +153,7 @@ async function garantirServicoCadastrado(client, { descricao, unidade, valor_uni
 }
 
 module.exports = {
-  TAMANHO_MAX_DESCRICAO, PREFIXO_LIVRE, DISCIPLINA_OUTROS,
-  codigoLivre, normalizarTexto, disciplinaDoSubgrupo, deduzirDisciplina,
+  DISCIPLINA_OUTROS,
+  codigoLivre, disciplinaDoSubgrupo, deduzirDisciplina,
   resolverCodigo, planejarFusao, garantirServicoCadastrado,
 };

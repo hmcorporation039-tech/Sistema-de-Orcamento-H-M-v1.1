@@ -95,7 +95,7 @@ function lerPedidoEntrega(corpo, { temPlanta = false, temUnifilar = false } = {}
 }
 
 module.exports = {
-  FINALIDADES, TIPOS_REGISTRO, ENTREGAS, CHAVES_ENTREGA,
+  ENTREGAS,
   lerFinalidade, lerTipoRegistro, temDadosDeInspecao, classificarExistente, lerPedidoEntrega,
   tiposDocumento: T,
 };

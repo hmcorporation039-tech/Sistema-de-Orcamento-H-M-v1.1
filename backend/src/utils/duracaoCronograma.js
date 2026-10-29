@@ -82,6 +82,6 @@ function sequenciarDiasUteis(etapas, dataInicio) {
 }
 
 module.exports = {
-  HORAS_POR_DIA, CUSTO_HH_PADRAO, EQUIPE_PADRAO, ETAPA_MOBILIZACAO, ETAPA_ENTREGA, MAX_DIAS_ETAPA,
+  CUSTO_HH_PADRAO, EQUIPE_PADRAO, ETAPA_MOBILIZACAO, ETAPA_ENTREGA, MAX_DIAS_ETAPA,
   duracaoDiasUteis, duracaoCalculada, formulaDuracaoExcel, workday, primeiroDiaUtil, sequenciarDiasUteis, paraData, isoData, ehDiaUtil,
 };

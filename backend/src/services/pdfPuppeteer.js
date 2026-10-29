@@ -157,4 +157,4 @@ async function capturarImagemDeHtml(html, { largura = 1600, altura = 1000, esper
   });
 }
 
-module.exports = { gerarPdfDeHtml, capturarImagemDeHtml, comVaga, fecharNavegador };
+module.exports = { gerarPdfDeHtml, capturarImagemDeHtml, comVaga };

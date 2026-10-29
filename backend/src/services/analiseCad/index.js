@@ -226,4 +226,4 @@ function classeDoComponente(texto) {
   return 'outro';
 }
 
-module.exports = { ehArquivoCad, lerArquivoCad, descreverSimbolo, descreverLinha, classeDoComponente, SIGLAS, RE_LAYER_LINHA };
+module.exports = { ehArquivoCad, lerArquivoCad, descreverSimbolo, descreverLinha };

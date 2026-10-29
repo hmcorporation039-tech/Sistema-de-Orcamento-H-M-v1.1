@@ -533,8 +533,8 @@ const KITS_MODELO = [
 ];
 
 module.exports = {
-  SECAO_MATERIAIS, SECAO_SERVICOS, SEGMENTOS, DISCIPLINAS, MAX_ITENS, KITS_MODELO,
-  arred2, arred3, normalizarUnidade, unidadesCompativeis, subgrupoDoItem, proximoCodigo, normalizarCodigo,
+  SECAO_MATERIAIS, SECAO_SERVICOS, DISCIPLINAS, KITS_MODELO,
+  arred2, unidadesCompativeis, subgrupoDoItem, proximoCodigo,
   validarComposicao, calcularCusto, calcularCustoNosSegmentos, explodirComposicao, medidas, casarComCatalogo,
   metragemDaDescricao, conversaoEmbalagem, semMetragem,
 };

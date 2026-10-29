@@ -2,6 +2,7 @@ const pool = require('../config/database');
 const { credenciaisConfiguradas } = require('../services/email/imap');
 const rotinas = require('../services/rotinas');
 const { registrarAuditoria } = require('../services/auditoria');
+const { obterMargemPadrao } = require('../services/catalogoMateriais');
 
 async function statusEmail(req, res) {
   const ultima = await pool.query(
@@ -37,9 +38,9 @@ async function historico(req, res) {
   });
 }
 
+// mesma leitura da margem que a cotação e a nota fiscal usam
 async function obterMargem(req, res) {
-  const r = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'margem_padrao'");
-  res.json({ margem: parseFloat(r.rows[0]?.valor) || 0 });
+  res.json({ margem: await obterMargemPadrao(pool) });
 }
 
 async function atualizarMargem(req, res) {

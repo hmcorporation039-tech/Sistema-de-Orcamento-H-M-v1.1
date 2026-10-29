@@ -269,6 +269,6 @@ function lerLink(token) {
 }
 
 module.exports = {
-  DISCIPLINAS_3D, CSP_MODELO_3D, fonteDoModelo, obterModelo, situacao, imagemDoModelo, nomeArquivo, criarLink, lerLink,
-  chaveDa, gerarNoWorker, dispositivosDoEspacial,
+  CSP_MODELO_3D, obterModelo, situacao, imagemDoModelo, nomeArquivo, criarLink, lerLink,
+  chaveDa, gerarNoWorker,
 };

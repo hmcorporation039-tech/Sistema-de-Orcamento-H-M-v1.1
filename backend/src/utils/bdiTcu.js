@@ -218,6 +218,6 @@ function normalizarMemoriaBdi(m) {
 // ==== FIM DO NÚCLEO COMPARTILHADO (bdiTcu) ====
 
 module.exports = {
-  FONTE_BDI_TCU, TIPOS_OBRA_TCU, FORNECIMENTO_TCU, TRIBUTOS_PADRAO, CPRB_CONSTRUCAO, REGIMES_BDI, PARCELAS_BDI, TRIBUTOS_BDI,
+  FONTE_BDI_TCU, TIPOS_OBRA_TCU, FORNECIMENTO_TCU, REGIMES_BDI, PARCELAS_BDI,
   aliquotaCprb, referenciaTcu, tributosBdi, calcularBdiTcu, sugestaoBdi, avaliarBdi, normalizarMemoriaBdi,
 };

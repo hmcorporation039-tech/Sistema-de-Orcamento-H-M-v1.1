@@ -34,4 +34,4 @@ function dominioPermitido(dominio, permitidos) {
 
 const listaDoEnv = (nome, padrao) => String(process.env[nome] || padrao).split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 
-module.exports = { verificarAutenticidade, dominioPermitido, listaDoEnv, dominioDe };
+module.exports = { verificarAutenticidade, dominioPermitido, listaDoEnv };

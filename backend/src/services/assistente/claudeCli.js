@@ -273,5 +273,5 @@ function statusLogin(caminhoCli, { cacheMs = 5 * 60 * 1000 } = {}) {
 
 module.exports = {
   montarArgs, executarProcesso, InterpretadorStream, explicarFalha, sessaoNaoEncontrada, ambienteFiltrado,
-  pastaDeTrabalho, matarArvore, statusLogin,
+  pastaDeTrabalho, statusLogin,
 };

@@ -111,4 +111,4 @@ function tratarErros(err, req, res, next) {
   res.status(500).json({ erro: 'Erro interno do servidor.' });
 }
 
-module.exports = { asyncHandler, protegerRotasAsync, tratarErros };
+module.exports = { protegerRotasAsync, tratarErros };

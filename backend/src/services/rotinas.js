@@ -295,4 +295,4 @@ function criarRotinas({ definicoes = definicoesPadrao, db = null, agendar = setT
 
 const padrao = criarRotinas();
 
-module.exports = { ...padrao, criarRotinas, rotinasAutomaticasLigadas, proximosHorarios, msAteProximoHorario, compactar, HORARIOS, REPESCAGEM_MS, MAX_REPESCAGENS };
+module.exports = { ...padrao, criarRotinas, rotinasAutomaticasLigadas, proximosHorarios, msAteProximoHorario, compactar };

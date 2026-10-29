@@ -439,9 +439,9 @@ function rotasDePasta({ carregar, pastaDe, naoEncontrado, extra = null }) {
 }
 
 module.exports = {
-  pastaDoProjeto, pastaDoLaudo, pastaDaObra, pastaDaObraPorId, caminhoRegistrado, excluirPastaDoItem, nomeCurtoDisciplina,
+  pastaDoProjeto, pastaDoLaudo, pastaDaObra, pastaDaObraPorId, caminhoRegistrado, excluirPastaDoItem,
   sincronizarProjeto, sincronizarLaudo, sincronizarObra, salvarPdfPropostaNasPastas, salvarPdfContratoNaObra,
   resumoPasta, pedidoLocal, seguro, rotasDePasta,
-  pastaDoCliente, pastaRelDoCliente, clienteIdDoItem, caminhoDaObra, RECEBIDOS,
+  pastaDoCliente, pastaRelDoCliente, clienteIdDoItem,
   pastasDoServidor, ligarPastaDoCliente, normalizarNome,
 };

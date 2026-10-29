@@ -26,4 +26,4 @@ function agendarLimpeza() {
   return setInterval(rodar, 24 * 60 * 60 * 1000).unref();
 }
 
-module.exports = { limparConversasAntigas, agendarLimpeza };
+module.exports = { agendarLimpeza };

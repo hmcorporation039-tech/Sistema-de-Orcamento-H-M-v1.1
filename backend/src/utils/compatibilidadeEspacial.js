@@ -370,4 +370,4 @@ function compatibilizar(arquivos, { temPdf = false } = {}) {
   return { conflitos, achados, espacial: espacialReferencia, referencia: grupos[0]?.ref.arquivo || null, grupos: grupos.map(g => ({ referencia: g.ref.arquivo, membros: g.membros.map(m => ({ arquivo: m.f.arquivo, dx: m.dx, dy: m.dy, por: m.por })) })) };
 }
 
-module.exports = { compatibilizar, alinhar, conflitosDePontos, conflitosDeTracado, celulasDoSegmento, REGRAS, MAX_SEGMENTO_M };
+module.exports = { compatibilizar, alinhar, conflitosDeTracado };

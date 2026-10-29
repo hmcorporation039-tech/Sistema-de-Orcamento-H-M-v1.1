@@ -61,4 +61,4 @@ function sugerirDisciplinas(nome, texto = null) {
   return { disciplinas: [], referencia: false, tipoReferencia: null, motivo: 'não identificada — marque a disciplina' };
 }
 
-module.exports = { sugerirDisciplinas, PELO_NOME };
+module.exports = { sugerirDisciplinas };

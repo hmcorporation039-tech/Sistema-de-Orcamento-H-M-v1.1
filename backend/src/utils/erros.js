@@ -15,6 +15,4 @@ class ErroHttp extends Error {
   }
 }
 
-const erroHttp = (status, mensagem, extra, opcoes) => new ErroHttp(status, mensagem, extra, opcoes);
-
-module.exports = { ErroHttp, erroHttp };
+module.exports = { ErroHttp };

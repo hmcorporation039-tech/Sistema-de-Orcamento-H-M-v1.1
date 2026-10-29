@@ -452,8 +452,8 @@ function boletimMedicao(calc, periodo) {
 }
 
 module.exports = {
-  PERIODICIDADES, CRITERIOS_PESO, TOLERANCIA_DESVIO,
-  inicioPeriodo, proximoPeriodo, fimPeriodo, periodosEntre, rotuloPeriodo, diasUteisEntre, fecharSoma,
+  PERIODICIDADES, CRITERIOS_PESO,
+  inicioPeriodo, fimPeriodo, periodosEntre, rotuloPeriodo, diasUteisEntre,
   distribuirLinear, etapasDaProposta, gerarCronograma, pesosEfetivos, medicoesVigentes, marcarHistorico,
   calcularCronograma, boletimMedicao,
 };

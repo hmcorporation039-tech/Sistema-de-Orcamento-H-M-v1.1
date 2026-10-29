@@ -98,7 +98,6 @@ async function registroProcessado(db, ident, colunas = 'id') {
 }
 
 module.exports = {
-  conectarComRetry, FalhaConexaoEmail, motivoDaFalha, esperasDaOrigem,
-  chaveDaMensagem, identificarMensagens, registroProcessado, limparMessageId,
-  ESPERAS_AGENDADA_MS, ESPERAS_MANUAL_MS,
+  conectarComRetry, FalhaConexaoEmail, esperasDaOrigem,
+  chaveDaMensagem, identificarMensagens, registroProcessado,
 };

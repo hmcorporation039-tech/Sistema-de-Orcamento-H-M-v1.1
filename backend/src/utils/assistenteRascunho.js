@@ -208,5 +208,4 @@ function mesclarDados(base, parcial, profundidade = 0) {
 module.exports = {
   cortarTexto, citar,
   propostaParaPayload, aplicarOperacoes, payloadParaEnvio, mesclarDados, ErroRascunho,
-  SECAO_SERVICOS, SECAO_MATERIAIS, STATUS_ITEM,
 };

@@ -119,4 +119,4 @@ async function extrairNotaFiscal(buffer, nomeArquivo) {
   throw new Error('Formato de arquivo não suportado. Envie um PDF (DANFE) ou XML da NF-e.');
 }
 
-module.exports = { extrairNotaFiscal, extrairDoXml, extrairDoPdf, extrairDoPdfTexto, parseNFeXml };
+module.exports = { extrairNotaFiscal, extrairDoPdf, parseNFeXml };

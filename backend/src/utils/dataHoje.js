@@ -33,4 +33,4 @@ function ehDataIso(s) {
   return dt.getUTCFullYear() === a && dt.getUTCMonth() === me - 1 && dt.getUTCDate() === d;
 }
 
-module.exports = { FUSO, hojeBrasilia, anoMesBrasilia, periodoMesAtualBrasilia, ehDataIso };
+module.exports = { FUSO, hojeBrasilia, periodoMesAtualBrasilia, ehDataIso };

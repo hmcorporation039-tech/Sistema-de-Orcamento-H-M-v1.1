@@ -176,4 +176,4 @@ async function obterMargemPadrao(client) {
   return parseFloat(r.rows[0]?.valor) || 0;
 }
 
-module.exports = { carregarIndice, encontrarExistente, registrarItemCotacao, registrarItemNotaFiscal, registrarHistoricoPreco, obterMargemPadrao, chaveDescricao, codigosFabricante, unidadeBase };
+module.exports = { carregarIndice, registrarItemCotacao, registrarItemNotaFiscal, registrarHistoricoPreco, obterMargemPadrao, chaveDescricao, codigosFabricante, unidadeBase };

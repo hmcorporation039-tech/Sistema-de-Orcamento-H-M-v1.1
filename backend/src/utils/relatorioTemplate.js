@@ -1,4 +1,4 @@
-const { EMPRESA, cabecalhoDataUri } = require('./pdfTemplate');
+const { cabecalhoDataUri } = require('./pdfTemplate');
 const { escapeHtml, formatarMoeda, formatarData } = require('./htmlPdf');
 
 function gerarHtmlRelatorio({ dataInicio, dataFim, status, busca, propostas, totais }) {
@@ -83,4 +83,4 @@ function gerarHtmlRelatorio({ dataInicio, dataFim, status, busca, propostas, tot
   `;
 }
 
-module.exports = { gerarHtmlRelatorio, EMPRESA };
+module.exports = { gerarHtmlRelatorio };

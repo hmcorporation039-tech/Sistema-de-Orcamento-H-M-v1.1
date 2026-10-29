@@ -170,4 +170,4 @@ async function aplicarEscopoAssistente(req, res, next, execucao) {
   }
 }
 
-module.exports = { aplicarEscopoAssistente, rotasPermitidas, linkDo, TABELAS };
+module.exports = { aplicarEscopoAssistente, rotasPermitidas };

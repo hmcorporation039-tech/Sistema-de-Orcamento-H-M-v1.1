@@ -647,5 +647,5 @@ async function gerarOrcamento(req, res, next) {
 
 module.exports = {
   listar, buscarUma, analisar, atualizar, remover, gerarRelatorio, gerarOrcamento, pasta, abrirPasta,
-  receberPacote, analisarPacote, descartarPacote, compatibilizacaoDxf, linhaParaAnalise,
+  receberPacote, analisarPacote, descartarPacote, compatibilizacaoDxf,
 };

@@ -138,4 +138,4 @@ async function contarPorAmbiente(doc, maxPaginas) {
   return [...porAmbiente.entries()].map(([ambiente, contagem]) => ({ ambiente, ...contagem }));
 }
 
-module.exports = { calcularPontosPorAmbiente, MAX_PAGINAS };
+module.exports = { calcularPontosPorAmbiente };

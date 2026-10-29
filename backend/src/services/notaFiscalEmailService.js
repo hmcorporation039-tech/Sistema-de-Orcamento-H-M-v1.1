@@ -21,14 +21,6 @@ const DESDE_DATA = '2026/07/21';
 const MAX_IA_POR_VARREDURA = Number(process.env.COTACAO_IA_MAX_POR_VARREDURA) || 15;
 const TAMANHO_MAX_ANEXO = 15 * 1024 * 1024;
 
-// Material novo é cadastrado; existente (mesma descrição, descrição sem
-// acentos/pontuação ou mesmo código de fabricante) recebe o último preço pago.
-// Preço zero/ausente nunca entra (o parser de DANFE em PDF tem fallback que
-// pode devolver itens sem preço) — ver catalogoMateriais.registrarItemNotaFiscal.
-async function upsertMaterial(client, item, origem, margem, indice) {
-  return registrarItemNotaFiscal(client, indice || await carregarIndice(client), item, origem, margem);
-}
-
 function encontrarAnexos(parsedEmail) {
   const xml = parsedEmail.attachments.find(a => /\.xml$/i.test(a.filename || '') || /xml/i.test(a.contentType || ''));
   const pdf = parsedEmail.attachments.find(a => /\.pdf$/i.test(a.filename || '') || /pdf/i.test(a.contentType || ''));
@@ -107,7 +99,12 @@ async function processarMensagem(client, parsedEmail, margem, resumo, indice) {
 
   let criados = 0, atualizados = 0, emRevisao = 0;
   for (const item of itens) {
-    const r = await upsertMaterial(client, item, origem, margem, indice);
+    // Material novo é cadastrado; existente (mesma descrição, descrição sem
+    // acentos/pontuação ou mesmo código de fabricante) recebe o último preço
+    // pago. Preço zero/ausente nunca entra (o parser de DANFE em PDF tem
+    // fallback que pode devolver itens sem preço) — ver
+    // catalogoMateriais.registrarItemNotaFiscal.
+    const r = await registrarItemNotaFiscal(client, indice || await carregarIndice(client), item, origem, margem);
     if (!r) continue;
     if (r.criado) criados++;
     else if (r.aplicado === false) { emRevisao++; resumo.avisos.push(`Preço de "${item.descricao}" NÃO alterado (${r.motivo}) — veja o histórico de preços`); }
@@ -311,4 +308,4 @@ async function lerCaixaDeEntrada({
   return resumo;
 }
 
-module.exports = { verificarCaixaDeEntrada, lerCaixaDeEntrada, processarOrcamentosPorEmail, upsertMaterial, obterMargemPadrao };
+module.exports = { verificarCaixaDeEntrada, lerCaixaDeEntrada, processarOrcamentosPorEmail };

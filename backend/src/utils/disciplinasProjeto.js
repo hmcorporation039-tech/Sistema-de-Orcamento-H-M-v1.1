@@ -31,4 +31,4 @@ function nomeDaDisciplina(chave) {
   return DISCIPLINAS.find(d => d.chave === chave)?.nome || chave;
 }
 
-module.exports = { DISCIPLINAS, CHAVES_VALIDAS, normalizarDisciplinas, nomeDaDisciplina };
+module.exports = { DISCIPLINAS, normalizarDisciplinas, nomeDaDisciplina };
