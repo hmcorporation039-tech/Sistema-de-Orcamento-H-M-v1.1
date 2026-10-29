@@ -7,7 +7,7 @@ const path = require('path');
 const { DISCIPLINAS_LAUDO } = require('../../utils/disciplinasLaudo');
 
 const { RAIZ_SKILLS } = require('../../config/caminhos');
-const semAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const semAcento = (s) => require('../../utils/texto').semAcento(s).toLowerCase();
 
 // Arquivos de documentação de uma skill: SKILL.md e referencia/*.md. Os nomes
 // vêm da listagem da pasta (nunca do pedido), então não há caminho livre.

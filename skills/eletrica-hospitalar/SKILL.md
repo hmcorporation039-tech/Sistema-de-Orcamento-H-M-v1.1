@@ -5,7 +5,7 @@ description: Projeto (classificação dos locais em grupo 0/1/2 e classe de segu
 
 # Elétrica hospitalar (NBR 13534) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 82 verificações desta disciplina). O dimensionamento de cada circuito (seção, disjuntor, queda) é o **mesmo motor da skill `eletrica`** (`require` de `skills/eletrica/scripts/lib/calculo.js`). **Não refaça contas de cabeça: rode os scripts.**
+Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 82 verificações desta disciplina). O dimensionamento de cada circuito (seção, disjuntor, queda) é o **mesmo motor da skill `eletrica`** (`require` de `skills/_comum/eletrico/calculo.js`, o motor comum da NBR 5410). **Não refaça contas de cabeça: rode os scripts.**
 
 | Documento | Tipo | Formato |
 |---|---|---|

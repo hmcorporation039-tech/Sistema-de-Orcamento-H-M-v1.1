@@ -7,7 +7,8 @@
 // É sugestão: a tela mostra e o usuário confirma antes de analisar.
 const { detectarDisciplinas } = require('./leitoresTabelaProjeto');
 
-const normalizar = (s) => ` ${String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]+/g, ' ').trim()} `;
+// com espaços nas pontas: as regras casam palavras inteiras (" E 01 ")
+const normalizar = (s) => ` ${require('./texto').chaveNome(s)} `;
 
 // [regex sobre o nome normalizado (com espaços nas pontas), disciplina | null, tipo de referência]
 const PELO_NOME = [

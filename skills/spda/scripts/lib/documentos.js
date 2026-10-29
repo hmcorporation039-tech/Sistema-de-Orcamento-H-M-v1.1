@@ -8,8 +8,7 @@ const { gerarRelatorioRisco } = require('./doc-risco');
 const { gerarChecklistCampo } = require('./doc-checklist');
 const { gerarPlanilhaMedicoes, gerarPlanilhaMateriaisRisco } = require('./planilhas');
 
-const MIME_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-const MIME_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const { MIME_DOCX, MIME_XLSX, nomeArquivo: nomeDoArquivo } = require('../../../_comum/documentos');
 
 const TIPOS = {
   laudo: { nome: 'Laudo_SPDA', ext: 'docx', gerar: gerarLaudo },
@@ -20,15 +19,10 @@ const TIPOS = {
   materiais: { nome: 'Materiais_e_Risco', ext: 'xlsx', planilha: gerarPlanilhaMateriaisRisco, semRevisao: true },
 };
 
-function prefixoArquivo(dados) {
-  const base = dados.meta?.prefixo || dados.obra?.nome || dados.cliente?.nome || 'Obra';
-  return base.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').slice(0, 40).replace(/^_+|_+$/g, '') || 'Obra';
-}
-
+// nome do arquivo: a regra comum das skills (prefixo da obra/cliente + documento + revisão)
 function nomeArquivo(dados, tipo) {
   const t = TIPOS[tipo];
-  const rev = String(dados.meta?.revisao || 'R00').split(' ')[0].replace(/[^A-Za-z0-9]/g, '') || 'R00';
-  return `${prefixoArquivo(dados)}_${t.nome}${t.semRevisao ? '' : `_${rev}`}.${t.ext}`;
+  return nomeDoArquivo(dados, t.nome, t.ext, !t.semRevisao);
 }
 
 // Documentos que fazem sentido para estes dados (o memorial exige o NP do
@@ -53,4 +47,4 @@ async function gerarDocumento(res, tipo) {
   return { buffer, nomeArquivo: nomeArquivo(res.dados, tipo), mime: t.ext === 'docx' ? MIME_DOCX : MIME_XLSX };
 }
 
-module.exports = { gerarDocumento, tiposDisponiveis, nomeArquivo, prefixoArquivo, TIPOS };
+module.exports = { gerarDocumento, tiposDisponiveis, nomeArquivo, TIPOS };

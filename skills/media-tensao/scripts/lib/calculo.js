@@ -12,8 +12,8 @@
 const fs = require('fs');
 const path = require('path');
 const T = require('./tabelas');
-const ET = require('../../../eletrica/scripts/lib/tabelas');
-const E = require('../../../eletrica/scripts/lib/calculo');
+const ET = require('../../../_comum/eletrico/tabelas');
+const E = require('../../../_comum/eletrico/calculo');
 
 const RAIZ3 = Math.sqrt(3);
 const arred = (v, c = 2) => (v == null || !Number.isFinite(v) ? v : Math.round(v * 10 ** c) / 10 ** c);

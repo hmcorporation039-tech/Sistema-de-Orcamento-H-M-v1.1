@@ -1,27 +1,12 @@
 // Trechos comuns aos documentos: identificação, normas e assinatura.
+// Identificação, normas e assinatura são os da base comum das skills
+// (_comum/documentos.js) — aqui eram cópia literal. Fica o que é do SPDA: a
+// lista de normas e o código do documento ("HM-SPDA").
 
-const B = require('../../../_comum/docx-base');
+const D = require('../../../_comum/documentos');
 
-function enderecoCompleto(cli) {
-  return [cli.endereco, [cli.cidade, cli.uf].filter(Boolean).join('/')].filter(Boolean).join(' — ');
-}
-
-function responsavelTexto(r) {
-  const partes = [r.nome || '(preencher)', `CREA ${r.crea || '(preencher)'}`, `ART ${r.art || '(preencher)'}`];
-  return partes.join('   ');
-}
-
-function blocoIdentificacao(dados, extras = []) {
-  const { cliente = {}, obra = {}, responsavel = {}, meta = {} } = dados;
-  return B.tabelaKV([
-    ['Cliente', cliente.nome],
-    ['Obra', obra.nome],
-    ['Endereço', enderecoCompleto(cliente)],
-    ['Responsável técnico', responsavelTexto(responsavel)],
-    ['Data / revisão', `${B.fmtData(meta.data)} / ${meta.revisao || 'R00'}`],
-    ...extras,
-  ]);
-}
+const enderecoCompleto = (cli) => D.endereco(cli);
+const blocoIdentificacao = (dados, extras = []) => D.identificacao(dados, extras);
 
 const NORMAS = [
   ['ABNT NBR 5419-1:2026', 'Princípios gerais'],
@@ -32,23 +17,8 @@ const NORMAS = [
   ['ABNT NBR 5410:2004 (versão corrigida 2008)', 'Instalações elétricas de baixa tensão'],
 ];
 
-function blocoNormas(lista = NORMAS) {
-  return [B.titulo('Normas e documentos de referência'), ...lista.map(([n, d]) => B.marcador(`${n} — ${d}`))];
-}
-
-function blocoAssinatura(dados) {
-  const r = dados.responsavel || {};
-  const cidade = (dados.cliente || {}).cidade || '';
-  return [
-    B.espaco(240),
-    B.p(`${cidade}${cidade ? ', ' : ''}${B.fmtData((dados.meta || {}).data)}.`, { align: B.AlignmentType.LEFT }),
-    B.espaco(480),
-    B.p('______________________________________________', { align: B.AlignmentType.CENTER, after: 0 }),
-    B.p(r.nome || 'Responsável técnico', { align: B.AlignmentType.CENTER, after: 0, bold: true }),
-    B.p(`${r.titulo || 'Engenheiro Eletricista'} — CREA ${r.crea || '(preencher)'} — ART nº ${r.art || '(preencher)'}`, { align: B.AlignmentType.CENTER, after: 0 }),
-    B.p(r.empresa || 'H&M Engenharia e Tecnologia LTDA', { align: B.AlignmentType.CENTER }),
-  ];
-}
+const blocoNormas = (lista = NORMAS) => D.normas(lista);
+const blocoAssinatura = (dados) => D.assinatura(dados);
 
 function identificacaoDocumento(dados, sigla) {
   const meta = dados.meta || {};

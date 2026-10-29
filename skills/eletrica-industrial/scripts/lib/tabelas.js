@@ -1,6 +1,6 @@
 // Tabelas da elétrica industrial. As tabelas da NBR 5410 (capacidade de
 // condução, fatores, seções mínimas, PE) vêm da skill de elétrica
-// (skills/eletrica/scripts/lib/tabelas.js); aqui ficam só os dados de motores,
+// (skills/_comum/eletrico/tabelas.js); aqui ficam só os dados de motores,
 // dispositivos de partida, capacitores e curto-circuito.
 //
 // Faixas e correntes comerciais são as usuais de catálogo (WEG, Siemens,

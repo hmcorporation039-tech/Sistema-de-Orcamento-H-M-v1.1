@@ -5,8 +5,8 @@
 // sensor, DALI, 0-10 V, cenas); circuitos de iluminação dimensionados pelo
 // MESMO motor da skill de elétrica (NBR 5410) — como fazem carregador e solar.
 
-const E = require('../../../eletrica/scripts/lib/calculo');
-const T = require('../../../eletrica/scripts/lib/tabelas');
+const E = require('../../../_comum/eletrico/calculo');
+const T = require('../../../_comum/eletrico/tabelas');
 const ATIV = require('../../dados/atividades_iso8995.json');
 const FUT = require('../../dados/fator_utilizacao.json');
 

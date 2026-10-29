@@ -12,8 +12,8 @@
 // equipotencialização suplementar (BEL); fonte de segurança por classe
 // (UPS e grupo gerador); não conformidades de projeto.
 
-const E = require('../../../eletrica/scripts/lib/calculo');
-const T = require('../../../eletrica/scripts/lib/tabelas');
+const E = require('../../../_comum/eletrico/calculo');
+const T = require('../../../_comum/eletrico/tabelas');
 const { ucDps } = require('../../../_comum/dps');
 const TIPOS = require('../../dados/tipos_ambiente_rdc50.json').tipos;
 

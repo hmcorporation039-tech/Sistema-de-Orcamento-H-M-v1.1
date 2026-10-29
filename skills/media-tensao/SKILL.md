@@ -14,7 +14,7 @@ Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de or
 | Laudo de inspeção/manutenção da SE (28 itens + ensaios) | `laudo` | Word |
 | Checklist de campo | `checklist` | Word |
 
-O lado de baixa tensão (cabos do transformador ao QGBT) usa as tabelas da NBR 5410 da skill de **elétrica** (`skills/eletrica/scripts/lib/tabelas.js`), e a demanda pode ser importada de um projeto da skill de elétrica.
+O lado de baixa tensão (cabos do transformador ao QGBT) usa as tabelas da NBR 5410 da skill de **elétrica** (`skills/_comum/eletrico/tabelas.js`), e a demanda pode ser importada de um projeto da skill de elétrica.
 
 ## Também no sistema (aba Análise de Projeto)
 

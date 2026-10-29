@@ -19,8 +19,8 @@
 //  9. materiais.
 
 const T = require('./tabelas');
-const E = require('../../../eletrica/scripts/lib/calculo');
-const ET = require('../../../eletrica/scripts/lib/tabelas');
+const E = require('../../../_comum/eletrico/calculo');
+const ET = require('../../../_comum/eletrico/tabelas');
 const EI = require('../../../eletrica-industrial/scripts/lib/calculo');
 
 const RAIZ3 = Math.sqrt(3);

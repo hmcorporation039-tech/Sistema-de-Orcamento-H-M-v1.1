@@ -7,7 +7,7 @@ const { criarDisciplina } = require('../../../_comum/disciplina');
 const D = require('../../../_comum/documentos');
 const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
-const T = require('../../../eletrica/scripts/lib/tabelas');
+const T = require('../../../_comum/eletrico/tabelas');
 const C = require('./calculo');
 
 const CHECKLIST = require('../../dados/checklist_base.json');

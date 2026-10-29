@@ -15,7 +15,7 @@
 const ExcelJS = require('exceljs');
 const T = require('./tabelas');
 const { ligacaoTue } = require('./calculo');
-const CAP = require('../../dados/capacidade_conducao_cobre.json');
+const CAP = require('../../../_comum/eletrico/dados/capacidade_conducao_cobre.json');
 
 const ABA = {
   quadro: 'Quadro de cargas', prev: 'Previsão de cargas', tue: 'Equipamentos (TUE)', dem: 'Demanda e alimentador',

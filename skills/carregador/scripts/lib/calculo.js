@@ -8,8 +8,8 @@
 // distribuição, o alimentador e o padrão de entrada são verificados pela
 // corrente da fase mais carregada (NBR 5410, 5.3.4: Ib ≤ In ≤ Iz por condutor).
 
-const E = require('../../../eletrica/scripts/lib/calculo');
-const T = require('../../../eletrica/scripts/lib/tabelas');
+const E = require('../../../_comum/eletrico/calculo');
+const T = require('../../../_comum/eletrico/tabelas');
 const { ucDps } = require('../../../_comum/dps');
 
 const FOLGA = 1.1;

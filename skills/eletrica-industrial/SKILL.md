@@ -5,7 +5,7 @@ description: Projeto (memorial, motores, partidas, CCM, alimentadores, correçã
 
 # Elétrica industrial (motores, CCM, correção de FP) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 61 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.** Cada cabo é dimensionado pelo mesmo motor da skill de elétrica predial (`skills/eletrica/scripts/lib/calculo.js → dimensionarCircuito`), então tabelas e critérios da NBR 5410 são os mesmos.
+Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 61 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.** Cada cabo é dimensionado pelo mesmo motor da skill de elétrica predial (`skills/_comum/eletrico/calculo.js → dimensionarCircuito`, o motor comum), então tabelas e critérios da NBR 5410 são os mesmos.
 
 | Documento | Tipo | Formato |
 |---|---|---|

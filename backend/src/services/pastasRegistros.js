@@ -17,7 +17,7 @@ const { DISCIPLINAS_LAUDO } = require('../utils/disciplinasLaudo');
 // cliente: a pasta vai junto (e as pastas de dentro acompanham).
 const RECEBIDOS = 'Recebidos do cliente';
 const juntar = (raiz, rel) => path.join(raiz, ...String(rel).split('/').filter(Boolean));
-const normalizarNome = (s) => String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]+/g, ' ').trim();
+const { chaveNome: normalizarNome } = require('../utils/texto'); // "cni" = "CNI", "galpao" = "Galpão"
 
 // cliente do item: cliente_id ou, sem ele, o único cliente ativo de mesmo nome
 async function clienteIdDoItem(row, client = pool) {

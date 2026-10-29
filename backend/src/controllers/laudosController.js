@@ -655,7 +655,8 @@ async function gerarEntrega(req, res) {
   res.send(zip);
 }
 
-const nomeSeguroArquivo = (s) => String(s || 'Projeto').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+// nome de arquivo válido no Windows (nomes reservados, ponto no fim, controle): a regra das pastas
+const nomeSeguroArquivo = (s) => P.nomeSeguro(s, 'Projeto');
 
 async function salvarDocumentos(req, res) {
   const laudo = await carregarLaudo(req.params.id);

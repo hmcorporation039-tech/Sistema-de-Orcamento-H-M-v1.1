@@ -32,7 +32,7 @@ const MAX_CONFLITOS = 300;
 // verdade (linha de construção, erro de escala/unidade): fica de fora, com aviso
 const MAX_SEGMENTO_M = 1000;
 
-const normalizar = (s) => String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]+/g, ' ').trim();
+const { chaveNome: normalizar } = require('./texto');
 const br = (v, c = 2) => Number(v).toFixed(c).replace('.', ',');
 const mediana = (v) => { const s = [...v].sort((a, b) => a - b); const k = Math.floor(s.length / 2); return s.length % 2 ? s[k] : (s[k - 1] + s[k]) / 2; };
 

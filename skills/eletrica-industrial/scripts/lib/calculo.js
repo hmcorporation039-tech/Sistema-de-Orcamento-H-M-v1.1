@@ -10,11 +10,11 @@
 //
 // O dimensionamento de cada cabo (capacidade de condução, FCT, FCA, seção
 // mínima, PE e queda de tensão em regime) usa o MESMO motor da skill de
-// elétrica predial (skills/eletrica/scripts/lib/calculo.js → dimensionarCircuito),
+// elétrica predial (skills/_comum/eletrico/calculo.js → dimensionarCircuito),
 // como fazem as skills de carregador e solar.
 
-const E = require('../../../eletrica/scripts/lib/calculo');
-const T = require('../../../eletrica/scripts/lib/tabelas');
+const E = require('../../../_comum/eletrico/calculo');
+const T = require('../../../_comum/eletrico/tabelas');
 const X = require('./tabelas');
 const { ucDps } = require('../../../_comum/dps');
 

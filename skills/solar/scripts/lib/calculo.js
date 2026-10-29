@@ -5,7 +5,7 @@
 // (arranjos FV); ABNT NBR 16274 (comissionamento); REN Aneel 1000/2021 e
 // Lei 14.300/2022. O lado CA usa o mesmo motor da skill de elétrica (NBR 5410).
 
-const E = require('../../../eletrica/scripts/lib/calculo');
+const E = require('../../../_comum/eletrico/calculo');
 const { ucDps } = require('../../../_comum/dps');
 
 const FOLGA = 1.1;
