@@ -20,6 +20,14 @@ import {
   InstancedMesh, Object3D, Vector3, Vector2, Raycaster, Group, DoubleSide, SRGBColorSpace, MathUtils,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { iniciarQuadro } from './quadro.js';
+
+// Cena de QUADRO elétrico (skills/quadros): visualizador próprio em ./quadro.js.
+// A cena de prédio abaixo segue igual, só dentro de iniciarPredio().
+if (window.CENA && window.CENA.tipo === 'quadro') iniciarQuadro(window.CENA);
+else iniciarPredio();
+
+function iniciarPredio() {
 
 const CENA = window.CENA;
 const $ = (s) => document.querySelector(s);
@@ -1119,3 +1127,4 @@ function quadro(agora) {
 }
 requestAnimationFrame(quadro);
 document.body.classList.add('pronto');
+}

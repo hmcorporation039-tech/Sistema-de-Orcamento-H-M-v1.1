@@ -146,4 +146,5 @@ function hmLayout(){var h=document.querySelector('header'),n=document.querySelec
 `;
 }
 
-module.exports = { gerarHtml, escapeHtml };
+// CSS, bundle e JSON seguro também servem a outras páginas 3D (skills/quadros: modelo do quadro elétrico)
+module.exports = { gerarHtml, escapeHtml, CSS, lerBundle, jsonSeguro };

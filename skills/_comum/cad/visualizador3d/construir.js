@@ -13,7 +13,8 @@ const SAIDA = path.join(__dirname, 'app.bundle.js');
 
 function assinatura() {
   const versaoThree = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'node_modules', 'three', 'package.json'), 'utf8')).version;
-  const hash = crypto.createHash('sha256').update(fs.readFileSync(ENTRADA)).update(versaoThree).digest('hex').slice(0, 16);
+  // app.js + quadro.js (cena de quadro elétrico): mudar qualquer um pede bundle novo
+  const hash = crypto.createHash('sha256').update(fs.readFileSync(ENTRADA)).update(fs.readFileSync(path.join(__dirname, 'quadro.js'))).update(versaoThree).digest('hex').slice(0, 16);
   return { versaoThree, hash };
 }
 
