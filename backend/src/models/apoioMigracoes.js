@@ -23,7 +23,7 @@ async function umaVez(client, chave, fazer) {
 // Devolve { kits, materiais_no_catalogo, materiais_sem_catalogo }.
 async function inserirKits(client, kits, { prefixoServico = null } = {}) {
   const { casarComCatalogo } = require('../utils/composicoes');
-  const { compararComCatalogo } = require('../services/compatibilizacaoAnalise');
+  const { compararComCatalogo } = require('../utils/semelhancaMateriais');
   const catalogo = (await client.query('SELECT id, descricao, preco, unidade, categoria FROM materiais WHERE ativo = true ORDER BY id')).rows;
   const { rows: refs } = prefixoServico
     ? await client.query('SELECT codigo, descricao, unidade FROM precos_mao_de_obra_referencia WHERE codigo LIKE $1', [prefixoServico])

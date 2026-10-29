@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const { classificarPorDescricao } = require('../utils/classificadorMaterial');
 const ia = require('./ia');
+const { termosDaDescricao, indiceJaccard } = require('../utils/semelhancaMateriais');
 
 // Todo material do catálogo tem categoria (regra do usuário, 10/10/2026).
 // A categoria de um material novo sai, nesta ordem, de:
@@ -20,16 +21,11 @@ const PENDENTES = ['Não classificado', 'Geral', ''];
 const PALAVRAS_VAZIAS = new Set(['DE', 'DA', 'DO', 'DAS', 'DOS', 'P', 'PARA', 'COM', 'C', 'S', 'SEM', 'E', 'EM', 'X', 'A', 'O', 'UN', 'PC', 'PCT']);
 const SIMILARIDADE_MINIMA = 0.5;
 
-function termos(descricao) {
-  return new Set(String(descricao || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase()
-    .replace(/[^A-Z0-9,]+/g, ' ').split(' ').filter(t => t.length >= 2 && !PALAVRAS_VAZIAS.has(t)));
-}
-
-function similaridade(a, b) {
-  let comum = 0;
-  for (const t of a) if (b.has(t)) comum++;
-  return comum / (a.size + b.size - comum || 1);
-}
+// Termos com 2 letras ou mais, a vírgula fica ("2,5" é um termo) e sem as
+// palavras vazias; índice de Jaccard (utils/semelhancaMateriais.js, o mesmo da
+// sugestão de preço do catálogo, com a tokenização e o corte próprios daqui).
+const termos = (descricao) => termosDaDescricao(descricao, { minimo: 2, manterVirgula: true, palavrasVazias: PALAVRAS_VAZIAS });
+const similaridade = indiceJaccard;
 
 // Referência = materiais já classificados (carregada uma vez por rotina).
 async function carregarReferencia(client) {
@@ -144,4 +140,4 @@ function classificarPendentesEmSegundoPlano() {
   setImmediate(() => classificarPendentes().catch(e => console.error('Classificação de materiais:', e.message)));
 }
 
-module.exports = { categoriaLocal, carregarReferencia, termos, classificarPendentes, classificarPendentesEmSegundoPlano, PENDENTES };
+module.exports = { categoriaLocal, carregarReferencia, termos, classificarPendentes, classificarPendentesEmSegundoPlano, PENDENTES, paraTestes: { similaridade, maisParecido } };

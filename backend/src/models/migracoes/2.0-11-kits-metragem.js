@@ -16,7 +16,7 @@
 // o seed 2.0-08 já casa com a regra nova e aqui não sobra nada para ligar.
 // Calcular/explodir um kit NUNCA liga item sozinho (o preço vem só do vínculo).
 const { KITS_MODELO, casarComCatalogo } = require('../../utils/composicoes');
-const { compararComCatalogo } = require('../../services/compatibilizacaoAnalise');
+const { compararComCatalogo } = require('../../utils/semelhancaMateriais');
 
 const MARCA = 'composicoes_kits_metragem';
 

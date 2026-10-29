@@ -8,6 +8,8 @@ const { detectarDisciplinas } = require('../utils/leitoresTabelaProjeto');
 const { lerPdfVetorial } = require('../utils/pdfVetorial');
 const { ehArquivoCad, lerArquivoCad } = require('./analiseCad');
 const { compatibilizar } = require('../utils/compatibilidadeEspacial');
+// preço sugerido do catálogo pela semelhança da descrição (Jaccard >= 0,45)
+const { compararComCatalogo } = require('../utils/semelhancaMateriais');
 
 // Roda `fn` sobre a lista com no máximo `n` ao mesmo tempo, na ordem: um pacote
 // de 30 arquivos não abre 30 conversões de DWG nem 30 chamadas de IA de uma vez
@@ -18,63 +20,6 @@ async function emLotes(lista, n, fn) {
     while (prox < lista.length) { const i = prox++; out[i] = await fn(lista[i], i); }
   }));
   return out;
-}
-
-function normalizarPalavras(s) {
-  return String(s || '')
-    .toUpperCase()
-    .normalize('NFD').replace(/[̀-ͯ]/g, '') // tira acento
-    .replace(/[^A-Z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter(p => p.length > 2); // ignora palavras curtas (DE, OU, UN...)
-}
-
-// Casa a descrição de um equipamento extraído do projeto com o catálogo de
-// materiais já cadastrado, por sobreposição de palavras (sem exigir texto
-// idêntico — a redação do projeto quase nunca bate exatamente com a do
-// catálogo). Só assume uma correspondência quando a sobreposição é forte o
-// suficiente (>= 45% das palavras do lado menor) — senão, fica sem preço
-// sugerido, pra não arriscar comparar coisas diferentes.
-// `catalogo` é passado pronto (não busca no banco a cada chamada) — pra
-// comparar vários equipamentos sem repetir a mesma consulta N vezes.
-function compararComCatalogo(descricao, catalogo) {
-  const palavrasAlvo = normalizarPalavras(descricao);
-  if (palavrasAlvo.length === 0) return null;
-
-  let melhor = null;
-  for (const mat of catalogo) {
-    const palavrasMat = normalizarPalavras(mat.descricao);
-    if (palavrasMat.length === 0) continue;
-
-    const setAlvo = new Set(palavrasAlvo);
-    const setMat = new Set(palavrasMat);
-    const comuns = [...setAlvo].filter(p => setMat.has(p)).length;
-
-    // Índice de Jaccard (comuns / união) em vez de "comuns / lado menor".
-    //
-    // Com o denominador sendo o lado menor, qualquer material de descrição
-    // curta virava subconjunto trivial e cravava 100%: "CABO COAXIAL" ganhava
-    // de "CABO COAXIAL RG-6 BLINDADO 75 OHMS BRANCO" ao comparar com um alvo
-    // detalhado, e "PARAFUSO" casava 100% com "PARAFUSO AUTOBROCANTE 4.2X32
-    // CAIXA 100UN (R$ 99)" — sugerindo R$ 99 como preço de UM parafuso, com o
-    // rótulo "100% match" no relatório. Jaccard penaliza a diferença de
-    // tamanho: quanto mais termos sobram de um lado, menor a confiança.
-    const uniao = new Set([...setAlvo, ...setMat]).size;
-    const score = comuns / uniao;
-
-    if (score >= 0.45 && (!melhor || score > melhor.score)) {
-      melhor = { score, material: mat };
-    }
-  }
-
-  if (!melhor) return null;
-  return {
-    material_id: melhor.material.id,
-    descricao_catalogo: melhor.material.descricao,
-    preco_catalogo: Number(melhor.material.preco),
-    unidade_catalogo: melhor.material.unidade,
-    confianca: Math.round(melhor.score * 100),
-  };
 }
 
 // Tenta achar o nome do cliente no bloco de título do desenho (padrão
@@ -924,4 +869,4 @@ async function analisarProjetoCompleto(todosArquivos) {
   };
 }
 
-module.exports = { analisarProjetoCompleto, extrairCliente, gerarAchados, montarServicosPadrao, compararComCatalogo, paraTestes: { semDuplicarFontes, tipoDoItem, contagemDoCad } };
+module.exports = { analisarProjetoCompleto, extrairCliente, gerarAchados, montarServicosPadrao, paraTestes: { semDuplicarFontes, tipoDoItem, contagemDoCad } };
