@@ -7,6 +7,7 @@ const { point3d } = require('@tarikjabiri/dxf');
 const { DesenhoDxf } = require('./dxf');
 const { SIMBOLOS, definirSimbolos, legenda } = require('./simbolos');
 const P = require('./posicionamento');
+const { EMPRESA } = require('../empresa');
 
 const normalizar = (s) => String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]+/g, ' ').trim();
 
@@ -126,7 +127,7 @@ function definirCarimbo(d) {
     ln(120, 0, 120, 16); ln(60, 0, 60, 6.5);
     [96, 102, 108, 114].forEach(y => ln(0, y, 180, y));
     ln(26, 90, 26, 120); ln(146, 90, 146, 120);
-    tx(4, 83, 4.5, 'H&M ENGENHARIA E TECNOLOGIA');
+    tx(4, 83, 4.5, EMPRESA.nomeFantasia.toUpperCase());
     tx(4, 116, 1.6, 'REV. / DATA'); tx(30, 116, 1.6, 'DESCRIÇÃO DA REVISÃO'); tx(150, 116, 1.6, 'POR');
     for (const [, x, y, , rotulo] of campos) if (rotulo) tx(x, y + 4.2, 1.4, rotulo);
   }, [...campos, ...revisoes].map(([tag, x, y, h]) => ({ tag, x: mm(x), y: mm(y), altura: mm(h), padrao: '' })));

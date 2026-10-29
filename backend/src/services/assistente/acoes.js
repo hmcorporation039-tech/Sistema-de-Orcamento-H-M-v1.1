@@ -14,6 +14,7 @@
 // validação, limites e auditoria são os de sempre. O assistente não tem rota
 // para aplicar (o token dele é recusado em /assistente/acoes/*).
 const pool = require('../../config/database');
+const { EMPRESA } = require('../../utils/pdfTemplate');
 const { propostaParaPayload, aplicarOperacoes, payloadParaEnvio, mesclarDados, ErroRascunho, cortarTexto, citar } = require('../../utils/assistenteRascunho');
 
 class ErroAcao extends Error {
@@ -77,7 +78,7 @@ const TIPOS = {
         payload: { destinatario: dados.destinatario, ...(dados.mensagem ? { mensagem: dados.mensagem } : {}) },
         resumo: `Enviar a proposta ${rotuloProposta(p)} por e-mail.\n`
           + `Para: ${dados.destinatario}\n`
-          + `Assunto: Proposta ${p.numero} — H&M Engenharia e Tecnologia\n`
+          + `Assunto: Proposta ${p.numero} — ${EMPRESA.nomeFantasia}\n`
           + `Texto: ${citar(corpo)} (+ assinatura padrão da empresa)\n`
           + `Anexo: PDF da proposta ${p.numero}`,
       };

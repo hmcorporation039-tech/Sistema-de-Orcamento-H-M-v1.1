@@ -12,6 +12,9 @@
 // Sem banco: recebe tudo pronto do controller (dados + calcularCronograma).
 const path = require('path');
 const ExcelJS = require('exceljs');
+const { COMUM } = require('../config/caminhos');
+// papel timbrado (empresa e página no cabeçalho/rodapé de impressão): skills/_comum/empresa.js
+const { EMPRESA, timbrarPastaDeTrabalho } = require(path.join(COMUM, 'empresa.js'));
 // jszip é dependência do próprio exceljs (sem pacote novo no projeto)
 const JSZip = require(require.resolve('jszip', { paths: [path.dirname(require.resolve('exceljs'))] }));
 
@@ -41,7 +44,7 @@ const ROTULO_SITUACAO = { adiantado: 'Adiantado', atrasado: 'Atrasado', em_dia: 
  */
 async function gerarPlanilhaCronograma({ obra, config, proposta, etapas, historico = [], calc }) {
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'H&M Engenharia e Tecnologia';
+  wb.creator = EMPRESA.razaoSocial;
   wb.created = new Date();
   const ws = wb.addWorksheet('Cronograma', { views: [{ state: 'frozen', xSplit: 2, ySplit: 6 }] });
   const wsM = wb.addWorksheet('Medições');
@@ -55,7 +58,7 @@ async function gerarPlanilhaCronograma({ obra, config, proposta, etapas, histori
 
   // ── Cronograma ──
   ws.columns = [6, 44, 16, 9, 11, 11, 9, 10, 10, ...Array.from({ length: nP }, () => 13)].map(w => ({ width: w }));
-  ws.getCell('A1').value = 'H&M ENGENHARIA – CRONOGRAMA FÍSICO-FINANCEIRO';
+  ws.getCell('A1').value = `${EMPRESA.razaoSocial.toUpperCase()} – CRONOGRAMA FÍSICO-FINANCEIRO`;
   ws.getCell('A1').font = { bold: true, size: 13 };
   ws.getCell('A2').value = `Obra: ${obra.codigo || ''} — ${obra.nome || ''}${obra.cliente_nome ? `   |   Cliente: ${obra.cliente_nome}` : ''}`;
   ws.getCell('A2').font = { bold: true };
@@ -221,6 +224,7 @@ async function gerarPlanilhaCronograma({ obra, config, proposta, etapas, histori
     }
   });
 
+  timbrarPastaDeTrabalho(wb, 'Cronograma físico-financeiro');
   const buffer = await wb.xlsx.writeBuffer();
   return nP ? acrescentarGraficoCurvaS(buffer, { nome: 'Curva S', periodos: calc.rotulos, previsto: calc.curva.map(c => c.previsto_fisico_acum), realizado: calc.curva.map((c, k) => (k <= kUltMed ? c.realizado_fisico_acum : null)) }) : Buffer.from(buffer);
 }

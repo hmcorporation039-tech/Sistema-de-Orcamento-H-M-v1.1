@@ -3,7 +3,7 @@
 // escapeHtml. As fotos chegam como data: URI (o navegador do PDF não acessa
 // nada além de data:) e são mostradas reduzidas pelo CSS; quem chama só
 // embute as de até 1,5 MB (as maiores aparecem listadas, sem a imagem).
-const { cabecalhoDataUri, EMPRESA } = require('./pdfTemplate');
+const { htmlBanner, EMPRESA } = require('./pdfTemplate');
 const C = require('./campo');
 
 const { escapeHtml, formatarData: dataCurta } = require('./htmlPdf');
@@ -75,7 +75,7 @@ function gerarHtmlOS({ os, imagens = new Map(), assinaturaUri = null, emitidoPor
 <style>
   * { box-sizing: border-box; }
   body { font-family: Arial, Helvetica, sans-serif; font-size: 10px; color: #222; margin: 0; }
-  .banner { width: 100%; max-height: 70px; object-fit: contain; object-position: left; margin-bottom: 6px; }
+  .banner { width: 100%; display: block; margin-bottom: 8px; } /* papel timbrado: banner inteiro, como na proposta */
   h1 { font-size: 16px; margin: 4px 0 2px; color: #1f1f1f; }
   .sub { color: #666; margin-bottom: 4px; }
   .faixa { height: 3px; background: #c9a227; margin: 6px 0 10px; }
@@ -117,7 +117,7 @@ function gerarHtmlOS({ os, imagens = new Map(), assinaturaUri = null, emitidoPor
   .nota { color: #888; font-size: 8px; margin-top: 12px; }
 </style></head>
 <body>
-  ${cabecalhoDataUri ? `<img src="${cabecalhoDataUri}" class="banner" alt="H&amp;M Engenharia e Tecnologia LTDA" />` : ''}
+  ${htmlBanner()}
   <h1>Ordem de Serviço ${escapeHtml(os.numero)}</h1>
   <div class="sub">${escapeHtml(os.titulo)}</div>
   <div class="faixa"></div>

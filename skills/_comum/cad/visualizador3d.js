@@ -4,6 +4,7 @@
 // Identidade H&M: dourado #c9a227 sobre fundo escuro.
 const fs = require('fs');
 const path = require('path');
+const { EMPRESA } = require('../empresa');
 const { construir, bundleAtualizado, SAIDA } = require('./visualizador3d/construir');
 
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -103,7 +104,7 @@ function gerarHtml(cena) {
 <div id="etiquetas-pontos"></div>
 <header>
   <img src="${logo}" alt="H&amp;M">
-  <div><div class="marca">H&amp;M Engenharia e Tecnologia</div><h1>${escapeHtml(cena.titulo)}</h1></div>
+  <div><div class="marca">${escapeHtml(EMPRESA.nomeFantasia)}</div><h1>${escapeHtml(cena.titulo)}</h1></div>
   <div class="meta">${meta}</div>
 </header>
 <nav id="barra">

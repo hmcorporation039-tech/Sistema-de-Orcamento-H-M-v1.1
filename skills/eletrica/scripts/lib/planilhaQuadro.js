@@ -16,6 +16,7 @@ const ExcelJS = require('exceljs');
 const T = require('./tabelas');
 const { ligacaoTue } = require('./calculo');
 const CAP = require('../../../_comum/eletrico/dados/capacidade_conducao_cobre.json');
+const { EMPRESA, timbrarPlanilha } = require('../../../_comum/empresa');
 
 const ABA = {
   quadro: 'Quadro de cargas', prev: 'Previsão de cargas', tue: 'Equipamentos (TUE)', dem: 'Demanda e alimentador',
@@ -95,8 +96,9 @@ function cabecalho(ws, linha, titulos, larguras) {
   });
   ws.getRow(linha).height = 42;
 }
+// título de cada aba com a razão social (papel timbrado também na tela)
 function titulo(ws, texto, sub) {
-  ws.getCell('A1').value = texto;
+  ws.getCell('A1').value = `${EMPRESA.razaoSocial.toUpperCase()} – ${texto}`;
   ws.getCell('A1').font = { bold: true, size: 13 };
   ws.getCell('A2').value = sub || 'Células AMARELAS: editáveis pelo projetista. Células brancas: fórmula da NBR 5410 (recalcula sozinha). Planilha protegida sem senha (Revisão → Desproteger) para quem precisar mudar a estrutura.';
   ws.getCell('A2').font = { italic: true, size: 9, color: { argb: 'FF595959' } };
@@ -483,7 +485,7 @@ function abaMateriais(wb, res) {
 // res = processar(dados) da skill de elétrica → buffer .xlsx
 async function gerarPlanilhaQuadro(res) {
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'H&M Engenharia e Tecnologia LTDA';
+  wb.creator = EMPRESA.razaoSocial;
   wb.calcProperties = { fullCalcOnLoad: true };
   // ordem das abas: o quadro primeiro (as referências entre abas não dependem da ordem)
   const nomes = [ABA.quadro, ABA.prev, ABA.tue, ABA.dem, ABA.par, ABA.tab, ABA.mat];
@@ -501,6 +503,7 @@ async function gerarPlanilhaQuadro(res) {
   wb.addWorksheet = original;
   for (const ws of wb.worksheets) {
     ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
+    timbrarPlanilha(ws, `Planilha NBR 5410 — ${ws.name}`); // papel timbrado na impressão
     await ws.protect('', { selectLockedCells: true, selectUnlockedCells: true, formatColumns: true, formatRows: true, formatCells: true });
   }
   return Buffer.from(await wb.xlsx.writeBuffer());

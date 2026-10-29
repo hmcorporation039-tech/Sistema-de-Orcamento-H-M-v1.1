@@ -11,6 +11,10 @@
 // ROUND(…; 2). Sem os ROUND a planilha somava os centavos "inteiros" e o preço
 // final saía alguns centavos diferente do PDF (ex.: 1.143,49 × 1.143,47).
 const ExcelJS = require('exceljs');
+const path = require('path');
+const { COMUM } = require('../config/caminhos');
+// papel timbrado (empresa e página no cabeçalho/rodapé de impressão): skills/_comum/empresa.js
+const { EMPRESA, timbrarPastaDeTrabalho } = require(path.join(COMUM, 'empresa.js'));
 const pool = require('../config/database');
 const { ehMaoDeObra, bdiMateriaisDefinido } = require('../utils/calculoProposta');
 const { calcularCurvaAbc, LIMITES_CURVA_ABC } = require('../utils/curvaAbc'); // aba Curva ABC (2.0, Fase 3F)
@@ -133,7 +137,7 @@ async function gerarPlanilhaCliente(propostaId) {
 // conferir o total da planilha com o do servidor sem banco).
 async function montarPlanilhaCliente({ p, secoes, itens, pesquisaPor = new Map() }) {
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'H&M Engenharia e Tecnologia';
+  wb.creator = EMPRESA.razaoSocial;
   wb.created = new Date();
 
   // abas criadas já na ordem da planilha de referência
@@ -237,7 +241,7 @@ async function montarPlanilhaCliente({ p, secoes, itens, pesquisaPor = new Map()
 
   // ── Orçamento ──
   wsO.columns = [7, 30, 60, 28, 8, 9, 10, 15, 15, 16, 16, 17, 28, 40].map(w => ({ width: w }));
-  wsO.getCell('A1').value = 'H&M ENGENHARIA – PLANILHA ORÇAMENTÁRIA';
+  wsO.getCell('A1').value = `${EMPRESA.razaoSocial.toUpperCase()} – PLANILHA ORÇAMENTÁRIA`;
   wsO.getCell('A1').font = { bold: true, size: 13 };
   wsO.getCell('A2').value = { formula: `"Cliente: "&${P_.cliente}&"   |   Obra: "&${P_.obra}&"   |   Proposta "&${P_.proposta}` };
   cabecalho(wsO, 4, ['Item', 'Sistema', 'Descrição', 'Fabricante / modelo', 'Un.', 'Qtd.', 'ID pesquisa', 'P. unit. material', 'P. unit. mão de obra', 'Total material', 'Total mão de obra', 'Total do item', 'Origem do preço', 'Observações']);
@@ -409,6 +413,7 @@ async function montarPlanilhaCliente({ p, secoes, itens, pesquisaPor = new Map()
   wsAbc.orderNo = wsR.orderNo + 0.5;
   montarAbaCurvaAbc(wsAbc, { itens, secoes, linhaNoOrcamento });
 
+  timbrarPastaDeTrabalho(wb, `Orçamento ${p.numero || ''}`.trim());
   return { buffer: await wb.xlsx.writeBuffer(), proposta: p };
 }
 

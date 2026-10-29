@@ -1,6 +1,7 @@
 // Blocos de montagem dos documentos Word no padrão visual da H&M (preto e
 // dourado, mesmo do PDF de proposta do sistema): cabeçalho com o banner na
-// primeira página e logo nas demais, rodapé com nº do documento e página,
+// primeira página e logo nas demais, rodapé com os dados da empresa (o mesmo
+// papel timbrado da proposta, de skills/_comum/empresa.js) e nº do documento e página,
 // tabelas com cabeçalho escuro e realce dos trechos [CONFERIR].
 
 const fs = require('fs');
@@ -10,6 +11,7 @@ const {
   Header, Footer, PageNumber, AlignmentType, WidthType, ShadingType, BorderStyle,
   HeadingLevel, TableLayoutType, VerticalAlign, PageBreak,
 } = require('docx');
+const { EMPRESA, linhasRodape } = require('./empresa');
 
 const COR = { preto: '1A1A1A', dourado: 'C9A227', cinza: 'F2F2F2', borda: 'D9D9D9', vermelho: 'C00000', texto: '1A1A1A', suave: '595959' };
 const LARGURA_UTIL = 9638; // A4 (11 906 twips) menos margens de 2 cm
@@ -185,12 +187,12 @@ function imagem(arquivo, larguraCm, { alturaMaxCm = 20 } = {}) {
 function cabecalhos(tituloCurto) {
   const banner = imagem(path.join(ASSETS, 'cabecalho.png'), 17, { alturaMaxCm: 4.5 });
   const logo = imagem(path.join(ASSETS, 'logo.png'), 1.3);
-  const primeira = new Header({ children: [new Paragraph({ children: banner ? [banner] : runs('H&M Engenharia e Tecnologia LTDA'), alignment: AlignmentType.CENTER })] });
+  const primeira = new Header({ children: [new Paragraph({ children: banner ? [banner] : runs(EMPRESA.razaoSocial), alignment: AlignmentType.CENTER })] });
   const demais = new Header({
     children: [new Paragraph({
       children: [
         ...(logo ? [logo, new TextRun({ text: '   ' })] : []),
-        new TextRun({ text: 'H&M Engenharia e Tecnologia LTDA', bold: true, color: COR.dourado, size: 18 }),
+        new TextRun({ text: EMPRESA.razaoSocial, bold: true, color: COR.dourado, size: 18 }),
         new TextRun({ text: `   |   ${tituloCurto}`, color: COR.suave, size: 16 }),
       ],
       border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: COR.dourado, space: 4 } },
@@ -199,18 +201,23 @@ function cabecalhos(tituloCurto) {
   return { first: primeira, default: demais };
 }
 
+// Rodapé = papel timbrado da proposta: linha fina e, centralizados, os dados
+// da empresa (razão social e CNPJ / endereço / telefone e e-mail); por último a
+// identificação do documento e "Página X de Y".
 function rodape(identificacao) {
-  const conteudo = new Paragraph({
-    alignment: AlignmentType.CENTER,
-    border: { top: { style: BorderStyle.SINGLE, size: 4, color: COR.borda, space: 4 } },
-    children: [
-      new TextRun({ text: `${identificacao}   —   Página `, size: 15, color: COR.suave }),
-      new TextRun({ children: [PageNumber.CURRENT], size: 15, color: COR.suave }),
-      new TextRun({ text: ' de ', size: 15, color: COR.suave }),
-      new TextRun({ children: [PageNumber.TOTAL_PAGES], size: 15, color: COR.suave }),
-    ],
-  });
-  return { first: new Footer({ children: [conteudo] }), default: new Footer({ children: [conteudo] }) };
+  const cinza = '888888';
+  const linha = (children, extra = {}) => new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 0, after: 0, line: 228 }, children, ...extra });
+  const conteudo = () => [
+    ...linhasRodape({ cnpj: true }).map((t, i) => linha([new TextRun({ text: t, size: 14, color: cinza })],
+      i === 0 ? { border: { top: { style: BorderStyle.SINGLE, size: 4, color: COR.borda, space: 4 } } } : {})),
+    linha([
+      new TextRun({ text: `${identificacao}   —   Página `, size: 14, color: COR.suave }),
+      new TextRun({ children: [PageNumber.CURRENT], size: 14, color: COR.suave }),
+      new TextRun({ text: ' de ', size: 14, color: COR.suave }),
+      new TextRun({ children: [PageNumber.TOTAL_PAGES], size: 14, color: COR.suave }),
+    ], { spacing: { before: 40, after: 0, line: 228 } }),
+  ];
+  return { first: new Footer({ children: conteudo() }), default: new Footer({ children: conteudo() }) };
 }
 
 function capa(tituloDoc, subtitulo) {
@@ -222,7 +229,7 @@ function capa(tituloDoc, subtitulo) {
 
 function criarDocumento({ tituloCurto, identificacao, filhos }) {
   return new Document({
-    creator: 'H&M Engenharia e Tecnologia LTDA',
+    creator: EMPRESA.razaoSocial,
     title: tituloCurto,
     styles: {
       default: { document: { run: { font: 'Calibri', size: 20, color: COR.texto } } },

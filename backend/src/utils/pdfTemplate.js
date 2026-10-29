@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { COMUM } = require('../config/caminhos');
 const { ehMaoDeObra, detalharBdi } = require('./calculoProposta');
 const { calcularCurvaAbc } = require('./curvaAbc');
 const {
@@ -16,6 +17,14 @@ function carregarImagem(nome) {
 }
 
 const cabecalhoDataUri = carregarImagem('cabecalho.png');
+
+// Papel timbrado dos PDFs: banner no topo da 1ª página (este <img>, com a
+// classe .banner de cada template) + gerarFooterTemplate em todas as páginas.
+// Todos os documentos do sistema usam os dois (proposta, contrato, relatórios,
+// OS, boletim de medição, folha de entrega).
+function htmlBanner(classe = 'banner') {
+  return cabecalhoDataUri ? `<img src="${cabecalhoDataUri}" class="${escapeHtml(classe)}" alt="${escapeHtml(EMPRESA.razaoSocial)}" />` : '';
+}
 
 // escapeHtml e formatadores: base comum dos PDFs (utils/htmlPdf.js). Data de
 // coluna DATE sem fuso; data de HOJE (contrato, emissão) no fuso de Brasília.
@@ -46,21 +55,9 @@ function formatarPercentual(v) {
   return n.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 }
 
-const EMPRESA = {
-  razaoSocial: 'H&M Engenharia e Tecnologia LTDA',
-  nomeFantasia: 'H&M Engenharia e Tecnologia',
-  endereco: 'Quadra CNF 03 Lote 16 Loja 04 – Taguatinga Norte, Brasília-DF',
-  cep: '72.125-535',
-  cnpj: '04.003.376/0001-00',
-  inscricaoEstadual: '07.864.408/002-36',
-  telefone: '(61) 99185-8745',
-  email: 'hmengetecnologia@gmail.com',
-  representanteLegal: 'Márcio Henrique',
-  banco: '007 - Inter',
-  agencia: '0001',
-  conta: '46963106-6',
-  chavePix: '04003376000100',
-};
+// Dados da empresa: fonte única em skills/_comum/empresa.js (o mesmo papel
+// timbrado do Word e do Excel das skills). Reexportado daqui para os templates.
+const { EMPRESA, linhasRodape } = require(path.join(COMUM, 'empresa.js'));
 
 // ── Anexos opcionais da proposta (versão 2.0, Fase 3F) ──
 // Desligados por padrão; ligados ao gerar o PDF (?curva_abc=1&composicao_bdi=1).
@@ -289,7 +286,7 @@ function gerarHtmlProposta(proposta, anexos = {}) {
 </style>
 </head>
 <body>
-  ${cabecalhoDataUri ? `<img src="${cabecalhoDataUri}" class="banner" alt="H&amp;M Engenharia e Tecnologia LTDA" />` : ''}
+  ${htmlBanner()}
   <div class="numero-linha">
     <div class="num">${escapeHtml(proposta.numero)}</div>
     <div class="data">${formatarData(proposta.data)}</div>
@@ -440,7 +437,7 @@ function gerarHtmlContrato(contrato) {
 </style>
 </head>
 <body>
-  ${cabecalhoDataUri ? `<img src="${cabecalhoDataUri}" class="banner" alt="H&amp;M Engenharia e Tecnologia LTDA" />` : ''}
+  ${htmlBanner()}
 
   <div class="titulo">Contrato de Prestação de Serviços</div>
   <div class="subtitulo">Contrato Nº ${String(contrato.id).padStart(4, '0')} · Código de Registro ${escapeHtml(contrato.codigo_registro) || '—'}</div>
@@ -528,12 +525,10 @@ function gerarFooterTemplate() {
     <div style="width:100%; font-family: Arial, Helvetica, sans-serif; font-size: 8px; color: #888;
       text-align: center; line-height: 1.6; padding: 0 14mm; box-sizing: border-box;">
       <div style="border-top: 1px solid #ccc; padding-top: 5px;">
-        ${escapeHtml(EMPRESA.razaoSocial)}<br/>
-        ${escapeHtml(EMPRESA.endereco)}, CEP ${escapeHtml(EMPRESA.cep)}<br/>
-        ${escapeHtml(EMPRESA.telefone)} · ${escapeHtml(EMPRESA.email)}
+        ${linhasRodape().map(escapeHtml).join('<br/>\n        ')}
       </div>
     </div>
   `;
 }
 
-module.exports = { gerarHtmlProposta, gerarHtmlContrato, gerarFooterTemplate, EMPRESA, cabecalhoDataUri, codigoParaCliente };
+module.exports = { gerarHtmlProposta, gerarHtmlContrato, gerarFooterTemplate, htmlBanner, EMPRESA, cabecalhoDataUri, codigoParaCliente };

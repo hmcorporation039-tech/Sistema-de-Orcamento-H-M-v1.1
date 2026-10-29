@@ -1,4 +1,6 @@
 const { nomeDaDisciplina } = require('./disciplinasProjeto');
+// papel timbrado: banner no topo (o rodapé da empresa vem do gerarFooterTemplate, em projetos/analises.js)
+const { htmlBanner } = require('./pdfTemplate');
 
 // "hoje" do relatório: horário de Brasília (antes, em UTC, depois das 21h saía o dia seguinte)
 const { escapeHtml, formatarMoeda: formatarMoedaLocal, formatarDataDeHoje } = require('./htmlPdf');
@@ -177,6 +179,7 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; font-size: 11px; }
+  .banner { width: 100%; display: block; margin-bottom: 12px; }
   h1 { font-size: 18px; color: #1a1a1a; margin-bottom: 2px; }
   .subtitulo { font-size: 11px; color: #888; margin-bottom: 16px; }
   h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: #c9a227;
@@ -207,6 +210,7 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
 </style>
 </head>
 <body>
+  ${htmlBanner()}
   <h1>Relatório de Compatibilização de Projeto</h1>
   <div class="subtitulo">Documento interno — não substitui o orçamento comercial enviado ao cliente</div>
 

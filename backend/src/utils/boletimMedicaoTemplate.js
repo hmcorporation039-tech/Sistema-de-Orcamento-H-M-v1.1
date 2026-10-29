@@ -1,7 +1,7 @@
 // HTML do BOLETIM DE MEDIÇÃO da obra (versão 2.0, Fase 3G) — vira PDF em
 // pdfPuppeteer.js (A4 paisagem). Tudo que vem do banco passa por escapeHtml.
 // Os números vêm prontos de utils/cronograma.js (boletimMedicao).
-const { cabecalhoDataUri, EMPRESA } = require('./pdfTemplate');
+const { htmlBanner, EMPRESA } = require('./pdfTemplate');
 // dataBR: base comum — a cópia daqui fatiava o texto e, com a data vinda do banco como Date, imprimia "Wed Oct 28"
 const { escapeHtml, formatarMoeda: moeda, formatarData: dataBR } = require('./htmlPdf');
 
@@ -60,7 +60,7 @@ function gerarHtmlBoletim({ obra, proposta, boletim, medicoes = [], periodicidad
   .nota { color: #888; font-size: 8px; margin-top: 10px; }
 </style></head>
 <body>
-  ${cabecalhoDataUri ? `<img src="${cabecalhoDataUri}" class="banner" alt="H&amp;M Engenharia e Tecnologia LTDA" />` : ''}
+  ${htmlBanner()}
   <h1>Boletim de Medição nº ${escapeHtml(String(b.numero).padStart(2, '0'))}</h1>
   <div class="sub">Período ${escapeHtml(b.rotulo)} (${dataBR(b.periodo)} a ${dataBR(b.fim_periodo)}) · medição ${periodicidade === 'semanal' ? 'semanal' : 'mensal'}</div>
   <div class="faixa"></div>

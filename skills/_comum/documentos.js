@@ -8,6 +8,7 @@ const ExcelJS = require('exceljs');
 const { Packer, Table, TableRow, TableCell, Paragraph, WidthType, TableLayoutType, AlignmentType, BorderStyle } = require('docx');
 const B = require('./docx-base');
 const { PRAZOS } = require('./inspecao');
+const { EMPRESA, timbrarPastaDeTrabalho } = require('./empresa');
 
 const MIME_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const MIME_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -44,7 +45,7 @@ function assinatura(dados) {
     B.p('______________________________________________', { align: AlignmentType.CENTER, after: 0 }),
     B.p(r.nome || 'Responsável técnico', { align: AlignmentType.CENTER, after: 0, bold: true }),
     B.p(`${r.titulo || 'Engenheiro Eletricista'} — CREA ${r.crea || '(preencher)'} — ART nº ${r.art || '(preencher)'}`, { align: AlignmentType.CENTER, after: 0 }),
-    B.p(r.empresa || 'H&M Engenharia e Tecnologia LTDA', { align: AlignmentType.CENTER }),
+    B.p(r.empresa || EMPRESA.razaoSocial, { align: AlignmentType.CENTER }),
   ];
 }
 
@@ -142,7 +143,7 @@ function gerarLaudoInspecao(dados, insp, cfg, { checklist, ncs, parecer, baseDir
   f.push(B.titulo('1. Identificação'));
   f.push(B.tabelaKV([
     ['Contratante', cliente.nome], ['CNPJ', cliente.cnpj], ['Contato no local', cliente.contato], ['Uso / atividade', obra.uso],
-    ['Empresa executora', responsavel.empresa || 'H&M Engenharia e Tecnologia LTDA'], ['Responsável técnico', `${responsavel.nome || ''} — CREA ${responsavel.crea || ''}`],
+    ['Empresa executora', responsavel.empresa || EMPRESA.razaoSocial], ['Responsável técnico', `${responsavel.nome || ''} — CREA ${responsavel.crea || ''}`],
     ['Equipe de campo', insp.equipe],
   ]));
 
@@ -264,9 +265,10 @@ function gerarChecklistCampo(dados, insp, cfg, checklist) {
 // ── Planilhas ───────────────────────────────────────────────────────────────
 
 // abas: [{ nome, colunas: [{ header, key, width, numFmt }], linhas: [obj], total: { coluna, rotuloEm } }]
-async function gerarPlanilha(abas) {
+// Cada aba sai com o papel timbrado na impressão (empresa e página: empresa.js).
+async function gerarPlanilha(abas, { titulo = '' } = {}) {
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'H&M Engenharia e Tecnologia LTDA';
+  wb.creator = EMPRESA.razaoSocial;
   for (const aba of abas) {
     const ws = wb.addWorksheet(aba.nome.slice(0, 31));
     ws.columns = aba.colunas.map(c => ({ header: c.header, key: c.key, width: c.width || 14 }));
@@ -282,6 +284,7 @@ async function gerarPlanilha(abas) {
     cab.height = 22;
     ws.views = [{ state: 'frozen', ySplit: 1 }];
   }
+  timbrarPastaDeTrabalho(wb, titulo);
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 

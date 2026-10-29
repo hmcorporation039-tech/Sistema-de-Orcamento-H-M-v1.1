@@ -4,7 +4,7 @@
 // gerado pelo sistema (não há conversor de Word para PDF instalado no
 // projeto): sai pelo Word, em Arquivo › Salvar como › PDF.
 // Tudo que vem do banco/formulário passa por escapeHtml.
-const { cabecalhoDataUri, EMPRESA } = require('./pdfTemplate');
+const { htmlBanner, EMPRESA } = require('./pdfTemplate');
 const { hojeBrasilia } = require('./dataHoje');
 
 const { escapeHtml, formatarData: dataBr } = require('./htmlPdf');
@@ -53,7 +53,7 @@ function gerarHtmlFolhaEntrega({ disciplina, titulo, dados = {}, arquivos = [], 
   .nota { color: #555; font-size: 9.5px; margin-top: 10px; line-height: 1.5; }
   .conferir { color: #a35b00; }
 </style></head><body>
-  ${cabecalhoDataUri ? `<div class="cab"><img src="${cabecalhoDataUri}" alt=""></div>` : ''}
+  <div class="cab">${htmlBanner('')}</div>
   <h1>Folha de entrega — Projeto de ${escapeHtml(disciplina)}</h1>
   <div class="sub">${escapeHtml(EMPRESA.razaoSocial)} · emitida em ${escapeHtml(new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }))}${emitidoPor ? ` por ${escapeHtml(emitidoPor)}` : ''}</div>
   ${asBuilt ? `<div class="asbuilt">AS BUILT<small>Documentação conforme executado — Rev. ${escapeHtml(asBuilt.revisao || '—')} — ${escapeHtml(dataBr(asBuilt.data))}</small></div>` : ''}

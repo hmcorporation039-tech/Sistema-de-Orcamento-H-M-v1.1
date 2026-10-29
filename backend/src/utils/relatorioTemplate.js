@@ -1,4 +1,4 @@
-const { cabecalhoDataUri } = require('./pdfTemplate');
+const { htmlBanner } = require('./pdfTemplate');
 const { escapeHtml, formatarMoeda, formatarData } = require('./htmlPdf');
 
 function gerarHtmlRelatorio({ dataInicio, dataFim, status, busca, propostas, totais }) {
@@ -50,7 +50,7 @@ function gerarHtmlRelatorio({ dataInicio, dataFim, status, busca, propostas, tot
 </style>
 </head>
 <body>
-  ${cabecalhoDataUri ? `<img src="${cabecalhoDataUri}" class="banner" alt="H&amp;M Engenharia e Tecnologia LTDA" />` : ''}
+  ${htmlBanner()}
 
   <div class="titulo">Relatório de Propostas</div>
   <div class="filtros">${filtros}</div>

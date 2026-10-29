@@ -6,7 +6,7 @@
 // montarPdfBuffer também serve à aprovação por link (aprovacaoController).
 const pool = require('../config/database');
 const { gerarPdfDeHtml } = require('../services/pdfPuppeteer');
-const { gerarHtmlProposta, gerarFooterTemplate } = require('../utils/pdfTemplate');
+const { gerarHtmlProposta, gerarFooterTemplate, EMPRESA } = require('../utils/pdfTemplate');
 const { criarTransportador } = require('../services/email/smtp');
 const { comTransacao } = require('../services/transacao');
 const { salvarPdfPropostaNasPastas } = require('../services/pastasRegistros');
@@ -149,7 +149,7 @@ async function enviarEmail(req, res) {
   await transportador.sendMail({
     from: `"H&M Engenharia" <${process.env.EMAIL_IMAP_USER}>`,
     to: destinatario,
-    subject: `Proposta ${proposta.numero} — H&M Engenharia e Tecnologia`,
+    subject: `Proposta ${proposta.numero} — ${EMPRESA.nomeFantasia}`,
     text: textoCompleto,
     attachments: [
       { filename: nomeArquivoProposta(proposta), content: pdf, contentType: 'application/pdf' },

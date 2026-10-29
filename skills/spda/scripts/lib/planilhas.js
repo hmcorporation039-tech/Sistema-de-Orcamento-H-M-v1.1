@@ -3,6 +3,7 @@
 
 const ExcelJS = require('exceljs');
 const { rotuloNp } = require('./dimensionamento');
+const { EMPRESA, timbrarPastaDeTrabalho } = require('../../../_comum/empresa');
 
 const PRETO = 'FF1A1A1A';
 const DOURADO = 'FFC9A227';
@@ -20,7 +21,7 @@ function estilizarCabecalho(ws) {
 
 async function gerarPlanilhaMedicoes(res, caminho) {
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'H&M Engenharia e Tecnologia LTDA';
+  wb.creator = EMPRESA.razaoSocial;
 
   const ws = wb.addWorksheet('Continuidade');
   ws.columns = [
@@ -65,6 +66,7 @@ async function gerarPlanilhaMedicoes(res, caminho) {
   wi.columns = ['Instrumento', 'Fabricante', 'Modelo', 'Nº série', 'Certificado', 'Validade', 'Uso'].map(h => ({ header: h, width: 18 }));
   ((res.dados.inspecao || {}).instrumentos || []).forEach(i => wi.addRow([i.instrumento, i.fabricante, i.modelo, i.serie, i.certificado, i.validade, i.uso]));
   estilizarCabecalho(wi);
+  timbrarPastaDeTrabalho(wb, 'Medições de campo do SPDA'); // papel timbrado na impressão
 
   if (!caminho) return Buffer.from(await wb.xlsx.writeBuffer()); // sem caminho: devolve o arquivo em memória
   await wb.xlsx.writeFile(caminho);
@@ -73,7 +75,7 @@ async function gerarPlanilhaMedicoes(res, caminho) {
 
 async function gerarPlanilhaMateriaisRisco(res, caminho) {
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'H&M Engenharia e Tecnologia LTDA';
+  wb.creator = EMPRESA.razaoSocial;
 
   if (res.dim) {
     const wm = wb.addWorksheet('Materiais');
@@ -119,6 +121,7 @@ async function gerarPlanilhaMateriaisRisco(res, caminho) {
     wc.getColumn(5).numFmt = '0.00E+00';
     estilizarCabecalho(wc);
   }
+  timbrarPastaDeTrabalho(wb, 'Materiais e análise de risco do SPDA'); // papel timbrado na impressão
 
   if (!caminho) return Buffer.from(await wb.xlsx.writeBuffer()); // sem caminho: devolve o arquivo em memória
   await wb.xlsx.writeFile(caminho);

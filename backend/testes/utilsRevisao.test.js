@@ -155,7 +155,9 @@ caso('relatório de compatibilização escapa os números e códigos vindos do J
     cameras: { total: 1, detalhePorArquivo: [{ arquivo: 'a.pdf', ocorrencias: x, total: x, unicas: [x], repetidas: [x], faltando: [x] }] },
     pontosRedeAntena: { rede: { total: 0, detalhePorArquivo: [] }, antena: { total: 0 } },
   });
-  assert.ok(!html.includes('<img'), 'HTML injetado no relatório');
+  // o único <img> legítimo é o banner do papel timbrado
+  const { htmlBanner } = require('../src/utils/pdfTemplate');
+  assert.ok(!html.replace(htmlBanner(), '').includes('<img'), 'HTML injetado no relatório');
   assert.ok(html.includes('&lt;img'));
 });
 

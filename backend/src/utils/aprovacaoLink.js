@@ -5,7 +5,7 @@
 // quem, quando, de onde e o que foi aprovado) — NÃO é assinatura digital
 // ICP-Brasil. Usado por controllers/aprovacaoController.js e testes/aprovacao.test.js.
 const crypto = require('crypto');
-const { codigoParaCliente } = require('./pdfTemplate');
+const { codigoParaCliente, EMPRESA } = require('./pdfTemplate');
 
 // ── Token ────────────────────────────────────────────────────────────────
 // 32 bytes aleatórios em base64url = 43 caracteres. Só o HASH (sha-256) vai
@@ -322,8 +322,8 @@ const AVISO_JURIDICO = 'Aceite eletrônico simples: ficam registrados nome, CPF/
 function textoDeclaracao(decisao, pub) {
   const total = (Number(pub.totais?.total) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   return decisao === 'aprovada'
-    ? `Declaro que li e concordo com os termos da proposta ${pub.numero} da H&M Engenharia e Tecnologia LTDA, no valor total de ${total}, e que tenho poderes para aprová-la em nome do contratante. ${AVISO_JURIDICO}`
-    : `Declaro que recuso a proposta ${pub.numero} da H&M Engenharia e Tecnologia LTDA, no valor total de ${total}. ${AVISO_JURIDICO}`;
+    ? `Declaro que li e concordo com os termos da proposta ${pub.numero} da ${EMPRESA.razaoSocial}, no valor total de ${total}, e que tenho poderes para aprová-la em nome do contratante. ${AVISO_JURIDICO}`
+    : `Declaro que recuso a proposta ${pub.numero} da ${EMPRESA.razaoSocial}, no valor total de ${total}. ${AVISO_JURIDICO}`;
 }
 
 // Código do comprovante mostrado ao cliente e na tela interna
