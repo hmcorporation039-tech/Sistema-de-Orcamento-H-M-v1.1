@@ -4,6 +4,8 @@ import { Save, Search, ExternalLink, ChevronDown, ChevronRight, Square, GitMerge
 import { getPrecosMaoDeObra, atualizarPrecosMaoDeObra, pesquisarReferenciaMaoDeObra, fundirServico, definirServicoAtivo } from '../services/api';
 import Select, { comparador } from '../components/Select';
 import useDisciplinas from '../hooks/useDisciplinas';
+import { formatarMoeda } from '../utils/format';
+import { estilos } from '../components/ui/estilos';
 
 // Dois segmentos de referência de MERCADO (além do valor adotado pela H&M)
 const SEGMENTOS = [
@@ -11,7 +13,7 @@ const SEGMENTOS = [
   { chave: 'privado', rotulo: 'Privado / particular', dica: 'Preço praticado para residências, condomínios e empresas (prestadores, sindicatos, tabelas de honorários)' },
 ];
 
-const moeda = (v) => (v == null || v === '' ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+const moeda = (v) => (v == null || v === '' ? '—' : formatarMoeda(v));
 const data = (v) => (v ? new Date(v).toLocaleDateString('pt-BR') : '');
 const semAcento = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
@@ -374,28 +376,20 @@ export default function PrecosMaoDeObra() {
 
 const grade = { display: 'grid', gridTemplateColumns: '24px 2.6fr 0.45fr 1.25fr 1.25fr 0.9fr', gap: 10 };
 
-const card = {
-  background: '#131313', border: '1px solid #1e1e1e', borderRadius: 10,
-  padding: 22, marginBottom: 16
-};
+// Estilos do kit de tela (components/ui/estilos.js), com o que esta tela tem
+// de diferente por cima — o visual ficou como era.
+const card = { ...estilos.card, padding: 22 };
 
 const tituloSecao = { fontSize: 15, color: '#c9a227', fontWeight: 700, marginBottom: 14 };
 
-const btnPrimario = {
-  display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px',
-  background: '#c9a227', border: 'none', borderRadius: 6, color: '#000',
-  fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap'
-};
+const btnPrimario = { ...estilos.btnPrimario, display: 'flex', fontSize: 13 };
 
 const btnSecundario = {
   display: 'flex', alignItems: 'center', padding: '6px 10px', background: 'transparent', border: '1px solid #2f4f6f',
   borderRadius: 6, color: '#8ab4f8', fontWeight: 700, fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap',
 };
 
-const btnIcone = {
-  display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 30, background: '#1a1a1a',
-  border: '1px solid #2a2a2a', borderRadius: 6, color: '#c9a227', cursor: 'pointer', padding: 0, flexShrink: 0,
-};
+const btnIcone = { ...estilos.btnIcone, display: 'flex', height: 30, borderRadius: 6, color: '#c9a227', padding: 0, flexShrink: 0 };
 
 const th = { padding: '4px 8px 4px 0', fontWeight: 600, fontSize: 11 };
 const td = { padding: '4px 8px 4px 0', verticalAlign: 'top' };

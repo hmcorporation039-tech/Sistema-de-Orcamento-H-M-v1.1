@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { ArrowLeft, Plus, Save, Trash2, Unlink, Link2, FileText, ClipboardList, Briefcase, Wallet, FolderOpen, LayoutDashboard, ClipboardCheck, DraftingCompass, FileSearch } from 'lucide-react';
 import {
   getObra, atualizarObra, removerObra, vincularItemObra, getPastaObra, abrirPastaObra,
-  getClientes, getUsuarios, getAnalisesProjeto, getLaudos, getPropostas, getContratos, getFinanceiroMovimentos,
+  getUsuarios, getAnalisesProjeto, getLaudos, getPropostas, getContratos, getFinanceiroMovimentos,
   getPastaAnalise, abrirPastaAnalise, getPastaLaudo, abrirPastaLaudo, getCronogramaObra, getOrdensServicoObra, getDisciplinasProjeto,
   removerLaudo,
 } from '../../services/api';
@@ -12,6 +12,7 @@ import CronogramaObra from './CronogramaObra';
 import OrdensServicoObra from './OrdensServicoObra';
 import { useAuth } from '../../hooks/useAuth';
 import Select from '../../components/Select';
+import ClienteSelect, { useClientes } from '../../components/ClienteSelect';
 import PainelPasta from '../../components/PainelPasta';
 import EnviarParaAnalise from '../../components/analise/EnviarParaAnalise';
 import { TabelaAnalises } from '../../components/analise/ListaAnalises';
@@ -135,11 +136,10 @@ function Resumo({ obra, recarregar, podeEditar }) {
     responsavel_id: obra.responsavel_id ? String(obra.responsavel_id) : '', observacoes: obra.observacoes || '',
   }), [obra]);
   const [form, setForm] = useState(inicial);
-  const [clientes, setClientes] = useState([]);
+  const clientes = useClientes(); // todas as páginas, só ativos (antes: cortava em 1000)
   const [usuarios, setUsuarios] = useState([]);
   const [salvando, setSalvando] = useState(false);
   useEffect(() => setForm(inicial), [inicial]);
-  useEffect(() => { getClientes({ porPagina: 1000 }).then(r => setClientes(r.data.itens || [])).catch(() => {}); }, []);
   // % físico executado (cronograma da aba Execução, Fase 3G)
   const [fisico, setFisico] = useState(null);
   useEffect(() => { getCronogramaObra(obra.id).then(r => setFisico(r.data.etapas.length ? r.data.calculo.resumo : false)).catch(() => setFisico(false)); }, [obra.id]);
@@ -221,10 +221,8 @@ function Resumo({ obra, recarregar, podeEditar }) {
             <input value={form.nome} onChange={set('nome')} disabled={!podeEditar} />
           </Campo>
           <Campo label="Cliente">
-            <Select value={form.cliente_id} onChange={set('cliente_id')} disabled={!podeEditar}>
-              <option value="">{form.cliente_nome && !form.cliente_id ? `${form.cliente_nome} (sem cadastro)` : 'Sem cliente cadastrado'}</option>
-              {clientes.map(c => <option key={c.id} value={String(c.id)}>{c.nome}</option>)}
-            </Select>
+            <ClienteSelect value={form.cliente_id} onChange={set('cliente_id')} disabled={!podeEditar}
+              rotuloVazio={form.cliente_nome && !form.cliente_id ? `${form.cliente_nome} (sem cadastro)` : 'Sem cliente cadastrado'} />
           </Campo>
           <Campo label="Local" style={{ gridColumn: 'span 2' }}>
             <input value={form.local} onChange={set('local')} disabled={!podeEditar} />

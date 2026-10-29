@@ -11,6 +11,8 @@ import {
 import { formatarMoeda, formatarNcm, formatarData } from '../utils/format';
 import Paginacao from '../components/Paginacao';
 import Select, { Sugestoes } from '../components/Select';
+import Modal from '../components/ui/Modal';
+import { estilos, Campo } from '../components/ui/estilos';
 import { useAuth } from '../hooks/useAuth';
 
 const VAZIO = { codigo: '', descricao: '', categoria: '', unidade: 'un', preco: '', preco_compra: '', marca: '', ncm: '' };
@@ -498,17 +500,7 @@ export default function Materiais() {
       <Paginacao pagina={pagina} totalPaginas={paginacao.totalPaginas} total={paginacao.total} onMudarPagina={setPagina} />
 
       {modalAberto && (
-        <div style={overlay} onClick={() => setModalAberto(false)}>
-          <div style={modal} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20 }}>
-              <h3 style={{ color: '#c9a227', fontSize: 15, fontWeight: 700, flex: 1 }}>
-                {editandoId ? 'Editar Material' : 'Novo Material'}
-              </h3>
-              <button onClick={() => setModalAberto(false)} style={{ ...btnIcone, background: 'transparent' }}>
-                <X size={16} />
-              </button>
-            </div>
-
+        <Modal titulo={editandoId ? 'Editar Material' : 'Novo Material'} onFechar={() => setModalAberto(false)}>
             <form onSubmit={salvar}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 3fr', gap: 12, marginBottom: 12 }}>
                 <Campo label="Código">
@@ -621,19 +613,11 @@ export default function Materiais() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {modalImport && (
-        <div style={overlay} onClick={() => setModalImport(false)}>
-          <div style={{ ...modal, width: 620 }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
-              <h3 style={{ color: '#c9a227', fontSize: 15, fontWeight: 700, flex: 1 }}>Importar Materiais (CSV)</h3>
-              <button onClick={() => setModalImport(false)} style={{ ...btnIcone, background: 'transparent' }}>
-                <X size={16} />
-              </button>
-            </div>
+        <Modal titulo="Importar Materiais (CSV)" onFechar={() => setModalImport(false)} largura={620} espacoTitulo={14}>
             <p style={{ fontSize: 11, color: '#777', marginBottom: 10, lineHeight: 1.5 }}>
               Cole uma linha por material, campos separados por <b>;</b> ou tabulação, na ordem:<br />
               <code style={{ color: '#c9a227' }}>código;descrição;categoria;unidade;preço;marca;ncm</code> (ncm é opcional)
@@ -651,20 +635,11 @@ export default function Materiais() {
                 {importando ? 'Importando...' : 'Importar'}
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {modalNota && (
-        <div style={overlay} onClick={() => setModalNota(false)}>
-          <div style={{ ...modal, width: itensNota ? 980 : 520 }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
-              <h3 style={{ color: '#c9a227', fontSize: 15, fontWeight: 700, flex: 1 }}>Importar Nota Fiscal</h3>
-              <button onClick={() => setModalNota(false)} style={{ ...btnIcone, background: 'transparent' }}>
-                <X size={16} />
-              </button>
-            </div>
-
+        <Modal titulo="Importar Nota Fiscal" onFechar={() => setModalNota(false)} largura={itensNota ? 980 : 520} espacoTitulo={14}>
             {!itensNota && (
               <>
                 <p style={{ fontSize: 11, color: '#777', marginBottom: 16, lineHeight: 1.6 }}>
@@ -740,7 +715,7 @@ export default function Materiais() {
                             <input type="number" step="0.01" min="0" value={it.preco} onChange={e => atualizarItemNota(idx, 'preco', e.target.value)} />
                           </td>
                           <td style={{ padding: 6 }}>
-                            <button onClick={() => removerItemNota(idx)} style={{ ...btnIcone, color: '#b04040', width: 22, height: 22 }} title="Remover">
+                            <button onClick={() => removerItemNota(idx)} style={{ ...btnIcone, display: 'flex', color: '#b04040', width: 22, height: 22 }} title="Remover">
                               <X size={12} />
                             </button>
                           </td>
@@ -758,20 +733,11 @@ export default function Materiais() {
                 </div>
               </>
             )}
-          </div>
-        </div>
+        </Modal>
       )}
 
       {modalHistorico && (
-        <div style={overlay} onClick={() => setModalHistorico(false)}>
-          <div style={{ ...modal, width: 620 }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
-              <h3 style={{ color: '#c9a227', fontSize: 15, fontWeight: 700, flex: 1 }}>Histórico de Importação Automática</h3>
-              <button onClick={() => setModalHistorico(false)} style={{ ...btnIcone, background: 'transparent' }}>
-                <X size={16} />
-              </button>
-            </div>
-
+        <Modal titulo="Histórico de Importação Automática" onFechar={() => setModalHistorico(false)} largura={620} espacoTitulo={14}>
             {!historicoEmail && <p style={{ color: '#666', fontSize: 12 }}>Carregando...</p>}
 
             {historicoEmail && (
@@ -807,53 +773,18 @@ export default function Materiais() {
                 </div>
               </>
             )}
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
 }
 
-function Campo({ label, children }) {
-  return (
-    <div>
-      <label style={{ display: 'block', fontSize: 10, color: '#666', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>
-        {label}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-const th = { padding: '10px 14px', fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', fontWeight: 700 };
-const td = { padding: '10px 14px', color: '#ccc', verticalAlign: 'middle' };
-const tdVazio = { padding: '30px 14px', textAlign: 'center', color: '#555' };
-
-const btnPrimario = {
-  display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px',
-  background: '#c9a227', border: 'none', borderRadius: 6, color: '#000',
-  fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
-};
+// Estilos do kit de tela (components/ui/estilos.js). O botão secundário desta
+// tela é um pouco maior e mais apagado que o do kit — mantido como era.
+const { th, td, tdVazio, btnPrimario, btnIcone } = estilos;
 
 const btnSecundario = {
   display: 'flex', alignItems: 'center', padding: '9px 16px', background: 'transparent',
   border: '1px solid #2a2a2a', borderRadius: 6, color: '#999', fontWeight: 700,
   fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
-};
-
-const btnIcone = {
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  width: 26, height: 26, background: '#1a1a1a', border: '1px solid #2a2a2a',
-  borderRadius: 5, color: '#999', cursor: 'pointer'
-};
-
-const overlay = {
-  position: 'fixed', inset: 0, background: '#000000cc', display: 'flex',
-  alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20
-};
-
-const modal = {
-  background: '#131313', border: '1px solid #2a2a2a', borderRadius: 12,
-  padding: 28, width: 520, maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto',
-  boxShadow: '0 20px 60px #000000aa'
 };

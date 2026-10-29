@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Plus, Search, X } from 'lucide-react';
-import { getObras, criarObra, getClientes } from '../../services/api';
+import { Plus, Search } from 'lucide-react';
+import { getObras, criarObra } from '../../services/api';
 import Select from '../../components/Select';
+import ClienteSelect from '../../components/ClienteSelect';
+import Modal from '../../components/ui/Modal';
 import Paginacao from '../../components/Paginacao';
 import { invalidarCacheObras } from '../../components/ObraSelect';
 import { STATUS_OBRA, SEGMENTO, SEGMENTO_CURTO, BASE_ORCADO, Etiqueta, moeda, pct, corMargem, estilos as E, Campo } from './comum';
@@ -16,7 +18,6 @@ export default function ListaObras() {
   const [status, setStatus] = useState('');
   const [segmento, setSegmento] = useState('');
   const [clienteId, setClienteId] = useState('');
-  const [clientes, setClientes] = useState([]);
   const [pagina, setPagina] = useState(1);
   const [dados, setDados] = useState({ itens: [], total: 0, totalPaginas: 1, restrito_financeiro: false });
   const [carregando, setCarregando] = useState(true);
@@ -41,7 +42,6 @@ export default function ListaObras() {
 
   useEffect(() => { const t = setTimeout(carregar, 300); return () => clearTimeout(t); }, [carregar]);
   useEffect(() => { setPagina(1); }, [busca, status, segmento, clienteId]);
-  useEffect(() => { getClientes({ porPagina: 1000 }).then(r => setClientes(r.data.itens || [])).catch(() => {}); }, []);
 
   const restrito = dados.restrito_financeiro;
 
@@ -73,10 +73,7 @@ export default function ListaObras() {
           </Select>
         </Campo>
         <Campo label="Cliente">
-          <Select value={clienteId} onChange={e => setClienteId(e.target.value)}>
-            <option value="">Todos</option>
-            {clientes.map(c => <option key={c.id} value={String(c.id)}>{c.nome}</option>)}
-          </Select>
+          <ClienteSelect value={clienteId} onChange={e => setClienteId(e.target.value)} rotuloVazio="Todos" />
         </Campo>
       </div>
 
@@ -135,7 +132,6 @@ export default function ListaObras() {
 
       {novaAberta && (
         <NovaObra
-          clientes={clientes}
           onFechar={() => setNovaAberta(false)}
           onCriada={(obra) => { invalidarCacheObras(); setNovaAberta(false); navigate(`/obras/${obra.id}`); }}
         />
@@ -144,7 +140,7 @@ export default function ListaObras() {
   );
 }
 
-function NovaObra({ clientes, onFechar, onCriada }) {
+function NovaObra({ onFechar, onCriada }) {
   const [form, setForm] = useState({ nome: '', cliente_id: '', local: '', segmento: '', status: 'orcamento' });
   const [salvando, setSalvando] = useState(false);
   async function salvar(e) {
@@ -165,20 +161,13 @@ function NovaObra({ clientes, onFechar, onCriada }) {
     }
   }
   return (
-    <div style={overlay} onClick={onFechar}>
-      <form style={modal} onClick={e => e.stopPropagation()} onSubmit={salvar}>
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-          <h3 style={{ color: '#c9a227', fontSize: 15, fontWeight: 700, flex: 1 }}>Nova obra</h3>
-          <button type="button" onClick={onFechar} style={{ ...E.btnIcone, background: 'transparent' }}><X size={16} /></button>
-        </div>
+    <Modal titulo="Nova obra" onFechar={onFechar} espacoTitulo={16} style={{ padding: 24 }}>
+      <form onSubmit={salvar}>
         <Campo label="Nome da obra *" style={{ marginBottom: 12 }}>
           <input value={form.nome} onChange={e => setForm({ ...form, nome: e.target.value })} autoFocus />
         </Campo>
         <Campo label="Cliente" style={{ marginBottom: 12 }}>
-          <Select value={form.cliente_id} onChange={e => setForm({ ...form, cliente_id: e.target.value })}>
-            <option value="">Sem cliente cadastrado</option>
-            {clientes.map(c => <option key={c.id} value={String(c.id)}>{c.nome}</option>)}
-          </Select>
+          <ClienteSelect value={form.cliente_id} onChange={e => setForm({ ...form, cliente_id: e.target.value })} />
         </Campo>
         <Campo label="Local" style={{ marginBottom: 12 }}>
           <input value={form.local} onChange={e => setForm({ ...form, local: e.target.value })} placeholder="Endereço / local da obra" />
@@ -201,9 +190,6 @@ function NovaObra({ clientes, onFechar, onCriada }) {
           <button type="submit" disabled={salvando} style={E.btnPrimario}>{salvando ? 'Criando...' : 'Criar obra'}</button>
         </div>
       </form>
-    </div>
+    </Modal>
   );
 }
-
-const overlay = { position: 'fixed', inset: 0, background: '#000000cc', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 };
-const modal = { background: '#131313', border: '1px solid #2a2a2a', borderRadius: 12, padding: 24, width: 520, maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px #000000aa' };

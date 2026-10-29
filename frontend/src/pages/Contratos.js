@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import useUltimoPedido from '../hooks/useUltimoPedido';
 import toast from 'react-hot-toast';
-import { Plus, Search, FileDown, Pencil, Trash2, X } from 'lucide-react';
-import { getContratos, criarContrato, atualizarContrato, removerContrato, getPrestadores } from '../services/api';
-import api from '../services/api';
+import { Plus, Search, FileDown, Pencil, Trash2 } from 'lucide-react';
+import { getContratos, criarContrato, atualizarContrato, removerContrato, getPrestadores, baixarPdfContrato } from '../services/api';
 import Paginacao from '../components/Paginacao';
 import { formatarMoeda, formatarData } from '../utils/format';
 import { baixarArquivo, mensagemDeErro } from '../utils/download';
 import Select from '../components/Select';
+import Modal from '../components/ui/Modal';
+import { estilos, Campo } from '../components/ui/estilos';
 import ObraSelect from '../components/ObraSelect';
 import { Link, useSearchParams } from 'react-router-dom';
 
@@ -92,7 +93,7 @@ export default function Contratos() {
       // nome do servidor (com acento); o montado aqui é só a reserva
       const nomeArquivo = (prestador_nome || 'Contrato').trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_');
       const padrao = codigo_registro ? `Contrato_${nomeArquivo}_${codigo_registro}.pdf` : `Contrato_${nomeArquivo}.pdf`;
-      await baixarArquivo(api.get(`/contratos/${id}/pdf`, { responseType: 'blob' }), padrao);
+      await baixarArquivo(baixarPdfContrato(id), padrao);
     } catch (err) {
       toast.error(await mensagemDeErro(err, 'Erro ao gerar PDF do contrato'));
     } finally {
@@ -227,17 +228,7 @@ export default function Contratos() {
       <Paginacao pagina={pagina} totalPaginas={paginacao.totalPaginas} total={paginacao.total} onMudarPagina={setPagina} />
 
       {modalAberto && (
-        <div style={overlay} onClick={() => setModalAberto(false)}>
-          <div style={modal} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20 }}>
-              <h3 style={{ color: '#c9a227', fontSize: 15, fontWeight: 700, flex: 1 }}>
-                {editandoId ? 'Editar Contrato' : 'Novo Contrato'}
-              </h3>
-              <button onClick={() => setModalAberto(false)} style={{ ...btnIcone, background: 'transparent' }}>
-                <X size={16} />
-              </button>
-            </div>
-
+        <Modal titulo={editandoId ? 'Editar Contrato' : 'Novo Contrato'} onFechar={() => setModalAberto(false)} largura={500}>
             <form onSubmit={salvar}>
               <div style={{ marginBottom: 12 }}>
                 <Campo label="Prestador *">
@@ -303,52 +294,17 @@ export default function Contratos() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
 }
 
-function Campo({ label, children }) {
-  return (
-    <div>
-      <label style={{ display: 'block', fontSize: 10, color: '#666', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>
-        {label}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-const th = { padding: '10px 14px', fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', fontWeight: 700 };
-const td = { padding: '10px 14px', color: '#ccc', verticalAlign: 'middle' };
-const tdVazio = { padding: '30px 14px', textAlign: 'center', color: '#555' };
-
-const btnPrimario = {
-  display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px',
-  background: '#c9a227', border: 'none', borderRadius: 6, color: '#000',
-  fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
-};
+// Estilos do kit de tela (components/ui/estilos.js). O botão secundário desta
+// tela é um pouco maior e mais apagado que o do kit — mantido como era.
+const { th, td, tdVazio, btnPrimario, btnIcone } = estilos;
 
 const btnSecundario = {
   padding: '9px 16px', background: 'transparent', border: '1px solid #2a2a2a',
   borderRadius: 6, color: '#999', fontWeight: 700, fontSize: 12, cursor: 'pointer'
-};
-
-const btnIcone = {
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  width: 26, height: 26, background: '#1a1a1a', border: '1px solid #2a2a2a',
-  borderRadius: 5, color: '#999', cursor: 'pointer'
-};
-
-const overlay = {
-  position: 'fixed', inset: 0, background: '#000000cc', display: 'flex',
-  alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20
-};
-
-const modal = {
-  background: '#131313', border: '1px solid #2a2a2a', borderRadius: 12,
-  padding: 28, width: 500, maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto',
-  boxShadow: '0 20px 60px #000000aa'
 };

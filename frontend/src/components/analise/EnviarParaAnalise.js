@@ -14,6 +14,7 @@ import ObraSelect from '../ObraSelect';
 import { BotoesPacote, ListaPacote, itensDoPacote } from './PacoteProjeto';
 import { analisarPacoteProjeto, pacoteDaPastaObra } from '../../services/api';
 import { FINALIDADES, corFinalidade } from '../../utils/finalidades';
+import { estilos } from '../ui/estilos';
 
 // obraFixa: id da obra (dentro da página da obra) — sem ela, a obra é escolhida aqui (opcional)
 // iniciarComPasta: já lê a pasta da obra ao abrir (vindo de Obra › Arquivos › "Analisar os arquivos desta pasta")
@@ -150,5 +151,7 @@ function Passo({ n, titulo, children, ultimo = false }) {
   );
 }
 
-const btnPrimario = { display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', background: '#c9a227', border: 'none', borderRadius: 6, color: '#000', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' };
+// Estilos do kit de tela (components/ui/estilos.js), com o que esta tela tem
+// de diferente por cima — o visual ficou como era.
+const btnPrimario = { ...estilos.btnPrimario, display: 'flex', fontSize: 13 };
 const btnPasta = { display: 'flex', alignItems: 'center', padding: '8px 12px', background: 'transparent', border: '1px solid #5a4a12', borderRadius: 6, color: '#e2c35a', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };

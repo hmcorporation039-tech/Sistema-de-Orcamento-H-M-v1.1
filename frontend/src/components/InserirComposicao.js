@@ -3,6 +3,8 @@ import toast from 'react-hot-toast';
 import { Layers, X } from 'lucide-react';
 import { getComposicoes, explodirComposicao } from '../services/api';
 import Select, { comparador } from './Select';
+import Modal from './ui/Modal';
+import { formatarMoeda as moeda } from '../utils/format';
 import { ROTULO_SEGMENTO } from '../utils/disciplinasServico';
 import useDisciplinas from '../hooks/useDisciplinas';
 
@@ -59,7 +61,6 @@ const SECAO_SERVICOS = 'Serviços (Mão de Obra)';
 const ehSecaoDeServico = (nome) => /m[ãa]o.?de.?obra|serviç|servic/i.test(nome || '');
 let contador = 0;
 const gerarIdPadrao = () => `tmp_kit_${Date.now()}_${contador++}`;
-const moeda = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const qtdBR = (v) => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 3 });
 
 // Converte a resposta de /composicoes/explodir nos itens do editor
@@ -158,8 +159,9 @@ export default function InserirComposicao({ segmento = 'privado', onInserir, dis
         <Layers size={13} style={{ marginRight: 5 }} /> + Kit/composição
       </button>
       {aberto && (
-        <div style={overlay} onMouseDown={e => { if (e.target === e.currentTarget) fechar(); }}>
-          <div style={modal} role="dialog" aria-label="Inserir kit ou composição" data-teste="modal-inserir-composicao">
+        // cabeçalho próprio (X sem borda) — mantido como era
+        <Modal rotulo="Inserir kit ou composição" data-teste="modal-inserir-composicao" onFechar={fechar}
+          largura={820} style={{ padding: 24, maxHeight: '88vh' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <div style={{ fontSize: 15, color: '#c9a227', fontWeight: 700 }}>Inserir kit / composição</div>
               <button type="button" style={btnFechar} onClick={fechar} aria-label="Fechar"><X size={16} /></button>
@@ -226,8 +228,7 @@ export default function InserirComposicao({ segmento = 'privado', onInserir, dis
                 {previa?.itens?.length ? `Inserir ${previa.itens.length} itens` : 'Inserir'}
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </>
   );
@@ -240,8 +241,6 @@ const btnAbrir = {
 const btnPrimario = { padding: '9px 16px', background: '#c9a227', border: 'none', borderRadius: 6, color: '#000', fontWeight: 700, fontSize: 12, cursor: 'pointer' };
 const btnSecundario = { padding: '8px 14px', background: 'transparent', border: '1px dashed #333', borderRadius: 6, color: '#999', fontWeight: 700, fontSize: 11, cursor: 'pointer' };
 const btnFechar = { background: 'none', border: 'none', color: '#888', cursor: 'pointer', display: 'flex' };
-const overlay = { position: 'fixed', inset: 0, background: '#000000cc', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 };
-const modal = { background: '#131313', border: '1px solid #2a2a2a', borderRadius: 12, padding: 24, width: 820, maxWidth: '100%', maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 20px 60px #000000aa' };
 const rotulo = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, color: '#888' };
 const th = { padding: '5px 8px 5px 0', fontWeight: 600, fontSize: 11 };
 const td = { padding: '5px 8px 5px 0', verticalAlign: 'top' };

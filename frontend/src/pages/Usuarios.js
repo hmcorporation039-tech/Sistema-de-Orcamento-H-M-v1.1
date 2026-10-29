@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, KeyRound, X, Trash2 } from 'lucide-react';
+import { Plus, Pencil, KeyRound, Trash2 } from 'lucide-react';
 import { getUsuarios, criarUsuario, atualizarUsuario, removerUsuario, redefinirSenhaUsuario } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { formatarData } from '../utils/format';
 import Select from '../components/Select';
+import Modal from '../components/ui/Modal';
+import { estilos, Campo } from '../components/ui/estilos';
 
 const VAZIO = { nome: '', email: '', senha: '', role: 'user' };
 
@@ -193,17 +195,7 @@ export default function Usuarios() {
       </div>
 
       {modalAberto && (
-        <div style={overlay} onClick={() => setModalAberto(false)}>
-          <div style={modal} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20 }}>
-              <h3 style={{ color: '#c9a227', fontSize: 15, fontWeight: 700, flex: 1 }}>
-                {editandoId ? 'Editar Usuário' : 'Novo Usuário'}
-              </h3>
-              <button onClick={() => setModalAberto(false)} style={{ ...btnIcone, background: 'transparent' }}>
-                <X size={16} />
-              </button>
-            </div>
-
+        <Modal titulo={editandoId ? 'Editar Usuário' : 'Novo Usuário'} onFechar={() => setModalAberto(false)} largura={460}>
             <form onSubmit={salvar}>
               <div style={{ marginBottom: 12 }}>
                 <Campo label="Nome *">
@@ -238,21 +230,11 @@ export default function Usuarios() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {modalSenha && (
-        <div style={overlay} onClick={() => setModalSenha(null)}>
-          <div style={{ ...modal, width: 380 }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20 }}>
-              <h3 style={{ color: '#c9a227', fontSize: 15, fontWeight: 700, flex: 1 }}>
-                Redefinir senha de {modalSenha.nome}
-              </h3>
-              <button onClick={() => setModalSenha(null)} style={{ ...btnIcone, background: 'transparent' }}>
-                <X size={16} />
-              </button>
-            </div>
+        <Modal titulo={`Redefinir senha de ${modalSenha.nome}`} onFechar={() => setModalSenha(null)} largura={380}>
             <form onSubmit={confirmarRedefinirSenha}>
               <Campo label="Nova senha *">
                 <input type="text" value={novaSenha} onChange={e => setNovaSenha(e.target.value)} placeholder="Mínimo 6 caracteres" autoFocus />
@@ -262,52 +244,17 @@ export default function Usuarios() {
                 <button type="submit" style={btnPrimario}>Redefinir</button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
 }
 
-function Campo({ label, children }) {
-  return (
-    <div>
-      <label style={{ display: 'block', fontSize: 10, color: '#666', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>
-        {label}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-const th = { padding: '10px 14px', fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', fontWeight: 700 };
-const td = { padding: '10px 14px', color: '#ccc', verticalAlign: 'middle' };
-const tdVazio = { padding: '30px 14px', textAlign: 'center', color: '#555' };
-
-const btnPrimario = {
-  display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px',
-  background: '#c9a227', border: 'none', borderRadius: 6, color: '#000',
-  fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
-};
+// Estilos do kit de tela (components/ui/estilos.js). O botão secundário desta
+// tela é um pouco maior e mais apagado que o do kit — mantido como era.
+const { th, td, tdVazio, btnPrimario, btnIcone } = estilos;
 
 const btnSecundario = {
   padding: '9px 16px', background: 'transparent', border: '1px solid #2a2a2a',
   borderRadius: 6, color: '#999', fontWeight: 700, fontSize: 12, cursor: 'pointer'
-};
-
-const btnIcone = {
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  width: 26, height: 26, background: '#1a1a1a', border: '1px solid #2a2a2a',
-  borderRadius: 5, color: '#999', cursor: 'pointer'
-};
-
-const overlay = {
-  position: 'fixed', inset: 0, background: '#000000cc', display: 'flex',
-  alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20
-};
-
-const modal = {
-  background: '#131313', border: '1px solid #2a2a2a', borderRadius: 12,
-  padding: 28, width: 460, maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto',
-  boxShadow: '0 20px 60px #000000aa'
 };

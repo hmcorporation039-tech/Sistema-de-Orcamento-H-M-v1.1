@@ -2,21 +2,20 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Search, Trash2, X, FileDown, FileSpreadsheet, Copy, Send, Pencil, Plus, Link2, CheckCircle2, XCircle } from 'lucide-react';
-import { getPropostas, getProposta, getClientes, atualizarStatus, removerProposta, duplicarProposta, getRelatorioPropostas } from '../services/api';
-import api from '../services/api';
+import {
+  getPropostas, getProposta, atualizarStatus, removerProposta, duplicarProposta, getRelatorioPropostas,
+  exportarRelatorioPropostas, baixarPdfProposta,
+} from '../services/api';
 import { formatarMoeda, formatarData, formatarNcm } from '../utils/format';
 import { baixarArquivo, salvarBlob, mensagemDeErro } from '../utils/download';
 import Paginacao from '../components/Paginacao';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
 import Select from '../components/Select';
 import BotaoLinkAprovacao from '../components/BotaoLinkAprovacao';
-
-const STATUS_CORES = {
-  Ativa: { bg: '#1a1a0a', cor: '#c9a227', borda: '#4a3d10' },
-  Aprovada: { bg: '#0a1a0f', cor: '#3fb95f', borda: '#1a4a26' },
-  Recusada: { bg: '#1a0a0a', cor: '#b04040', borda: '#4a1a1a' },
-  Cancelada: { bg: '#141414', cor: '#666', borda: '#2a2a2a' },
-};
+import { useClientes } from '../components/ClienteSelect';
+import Modal from '../components/ui/Modal';
+import { estilos } from '../components/ui/estilos';
+import { STATUS_PROPOSTA as STATUS_CORES } from '../utils/statusProposta';
 
 const ACAO_LABEL = {
   criada: 'Criada',
@@ -119,7 +118,7 @@ function filtrosDoRelatorio(dataInicio, dataFim, status, busca) {
 export default function Historico() {
   const navigate = useNavigate();
   const [propostas, setPropostas] = useState([]);
-  const [clientes, setClientes] = useState([]);
+  const clientes = useClientes(); // todas as páginas, só ativos (antes: cortava em 1000)
   const [busca, setBusca] = useState('');
   const [statusFiltro, setStatusFiltro] = useState('');
   const [dataInicio, setDataInicio] = useState('');
@@ -154,10 +153,6 @@ export default function Historico() {
   );
 
   const recarregar = useCallback(() => setVersao(v => v + 1), []);
-
-  useEffect(() => {
-    getClientes({ porPagina: 1000 }).then(res => setClientes(res.data.itens)).catch(() => {});
-  }, []);
 
   useEffect(() => { setPagina(1); }, [busca, statusFiltro, dataInicio, dataFim]);
 
@@ -230,7 +225,7 @@ export default function Historico() {
     setExportando(tipo);
     try {
       const params = filtrosDoRelatorio(inicioEfetivo, fimEfetivo, statusFiltro, busca);
-      const res = await api.get(`/relatorios/propostas/${tipo}`, { params, responseType: 'blob' });
+      const res = await exportarRelatorioPropostas(tipo, params);
       // o nome daqui (com o período) diz mais que o genérico do servidor
       // ("relatório-propostas.csv"), então ele continua valendo
       salvarBlob(res.data, temPeriodo
@@ -312,7 +307,7 @@ export default function Historico() {
     try {
       // nome do servidor (o mesmo da cópia nas pastas); o montado aqui é só a reserva
       const nomeCliente = (clienteNome || '').trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_');
-      await baixarArquivo(api.get(`/propostas/${id}/pdf`, { responseType: 'blob' }), `${nomeCliente}_${numero}.pdf`);
+      await baixarArquivo(baixarPdfProposta(id), `${nomeCliente}_${numero}.pdf`);
     } catch (err) {
       toast.error(await mensagemDeErro(err, 'Erro ao gerar PDF'));
     } finally {
@@ -483,21 +478,13 @@ export default function Historico() {
       )}
 
       {detalhe && (
-        <div style={overlay} onClick={() => setDetalhe(null)}>
-          <div style={modal} onClick={e => e.stopPropagation()}>
+        // enquanto carrega, só o "Carregando..." (sem cabeçalho), como sempre foi
+        <Modal titulo={carregandoDetalhe || !detalhe.id ? null : `Proposta ${detalhe.numero}`} rotulo="Detalhe da proposta"
+          onFechar={() => setDetalhe(null)} largura={680} espacoTitulo={18} tamanhoTitulo={17} style={{ maxHeight: '88vh' }}>
             {carregandoDetalhe || !detalhe.id ? (
               <p style={{ color: '#666', textAlign: 'center', padding: 30 }}>Carregando...</p>
             ) : (
               <>
-                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18 }}>
-                  <h3 style={{ color: '#c9a227', fontSize: 17, fontWeight: 700, flex: 1 }}>
-                    Proposta {detalhe.numero}
-                  </h3>
-                  <button onClick={() => setDetalhe(null)} style={{ ...btnIcone, background: 'transparent' }}>
-                    <X size={16} />
-                  </button>
-                </div>
-
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 18, fontSize: 12 }}>
                   <InfoLinha label="Cliente" valor={detalhe.cliente_nome} />
                   <InfoLinha label="Data" valor={formatarData(detalhe.data)} />
@@ -601,8 +588,7 @@ export default function Historico() {
                 )}
               </>
             )}
-          </div>
-        </div>
+        </Modal>
       )}
 
       <BotaoLinkAprovacao
@@ -644,6 +630,7 @@ function CardResumo({ label, valor, destaque }) {
 }
 
 // largura: coluna de tamanho fixo; flexivel: ocupa o que sobrar da linha
+// Campo com largura fixa ou flexível (a barra de filtros quebra em linhas)
 function Campo({ label, children, largura, flexivel }) {
   return (
     <div style={flexivel ? { flex: '1 1 220px', minWidth: 0 } : { width: largura, flex: '0 1 auto' }}>
@@ -653,42 +640,7 @@ function Campo({ label, children, largura, flexivel }) {
   );
 }
 
-const rotulo = { display: 'block', fontSize: 10, color: '#666', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' };
-
-const card = {
-  background: '#131313', border: '1px solid #1e1e1e', borderRadius: 10,
-  padding: 18, marginBottom: 16
-};
-
-const th = { padding: '10px 14px', fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', fontWeight: 700 };
-const td = { padding: '10px 14px', color: '#ccc', verticalAlign: 'middle' };
-const tdVazio = { padding: '30px 14px', textAlign: 'center', color: '#555' };
-
-const btnPrimario = {
-  display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px',
-  background: '#c9a227', border: 'none', borderRadius: 6, color: '#000',
-  fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
-};
-
-const btnSecundario = {
-  display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px',
-  background: 'transparent', border: '1px solid #2a2a2a', borderRadius: 6,
-  color: '#999', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
-};
-
-const btnIcone = {
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  width: 26, height: 26, background: '#1a1a1a', border: '1px solid #2a2a2a',
-  borderRadius: 5, color: '#999', cursor: 'pointer'
-};
-
-const overlay = {
-  position: 'fixed', inset: 0, background: '#000000cc', display: 'flex',
-  alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20
-};
-
-const modal = {
-  background: '#131313', border: '1px solid #2a2a2a', borderRadius: 12,
-  padding: 28, width: 680, maxWidth: '100%', maxHeight: '88vh', overflowY: 'auto',
-  boxShadow: '0 20px 60px #000000aa'
-};
+// Estilos do kit de tela (components/ui/estilos.js). O botão secundário desta
+// tela é um pouco maior e mais apagado que o do kit — mantido como era.
+const { rotulo, card, th, td, tdVazio, btnPrimario, btnIcone } = estilos;
+const btnSecundario = { ...estilos.btnSecundario, padding: '9px 16px', color: '#999' };

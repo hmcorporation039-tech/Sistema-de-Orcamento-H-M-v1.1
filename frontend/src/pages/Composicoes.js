@@ -7,8 +7,10 @@ import {
 } from '../services/api';
 import Select, { comparador } from '../components/Select';
 import { ROTULO_SEGMENTO } from '../utils/disciplinasServico';
+import { formatarMoeda } from '../utils/format';
 import useDisciplinas from '../hooks/useDisciplinas';
 import { useAuth } from '../hooks/useAuth';
+import { estilos } from '../components/ui/estilos';
 
 // Composições e kits (versão 2.0, Fase 3H): um kit junta materiais do catálogo
 // e serviços da base única com coeficientes (ex.: ponto de tomada = caixa +
@@ -19,7 +21,7 @@ import { useAuth } from '../hooks/useAuth';
 // Ver: qualquer usuário. Criar/editar/duplicar/desativar/excluir: admin.
 
 const SEGMENTOS = ['privado', 'publico'];
-const moeda = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+const moeda = (v) => (v == null ? '—' : formatarMoeda(v));
 const numero = (v) => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
 // rolo/caixa contado em metro: "convertido de RL 100 m (R$ 283,04 a embalagem)"
 const precoEmbalagem = (l) => (l.conversao?.preco_embalagem != null
@@ -502,24 +504,20 @@ function EditorComposicao({ form, setForm, onFechar }) {
   );
 }
 
-const card = { background: '#131313', border: '1px solid #1e1e1e', borderRadius: 10, padding: 22, marginBottom: 16 };
+// Estilos do kit de tela (components/ui/estilos.js), com o que esta tela tem
+// de diferente por cima — o visual ficou como era.
+const card = { ...estilos.card, padding: 22 };
 const tituloSecao = { fontSize: 15, color: '#c9a227', fontWeight: 700, marginBottom: 6 };
 const th = { padding: '6px 8px 6px 0', fontWeight: 600, fontSize: 11 };
 const td = { padding: '6px 8px 6px 0', verticalAlign: 'top' };
 const cabecalhoGrupo = { padding: '14px 0 6px', color: '#c9a227', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px' };
 const rotulo = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, color: '#888' };
-const btnPrimario = {
-  display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', background: '#c9a227', border: 'none',
-  borderRadius: 6, color: '#000', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap',
-};
+const btnPrimario = { ...estilos.btnPrimario, display: 'flex', fontSize: 13 };
 const btnSecundario = {
   display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent', border: '1px dashed #333',
   borderRadius: 6, color: '#999', fontWeight: 700, fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap',
 };
-const btnIcone = {
-  display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, background: '#1a1a1a',
-  border: '1px solid #2a2a2a', borderRadius: 5, color: '#c9a227', cursor: 'pointer', padding: 0,
-};
+const btnIcone = { ...estilos.btnIcone, display: 'flex', color: '#c9a227', padding: 0 };
 const btnSeta = { background: 'none', border: 'none', color: '#888', cursor: 'pointer', padding: 0, display: 'flex' };
 const btnLink = { background: 'none', border: 'none', color: '#8ab4f8', cursor: 'pointer', fontSize: 10.5, marginLeft: 6, textDecoration: 'underline', padding: 0 };
 const etiqueta = { fontSize: 9.5, border: '1px solid', borderRadius: 4, padding: '0 5px', marginLeft: 6, textTransform: 'uppercase', letterSpacing: '.4px', whiteSpace: 'nowrap' };

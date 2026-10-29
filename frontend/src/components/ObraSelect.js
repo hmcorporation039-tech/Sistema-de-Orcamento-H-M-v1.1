@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Plus, X } from 'lucide-react';
 import Select, { comparador } from './Select';
-import { getObras, criarObra, buscarTodasPaginas, getTodosClientes } from '../services/api';
+import { getObras, criarObra, buscarTodasPaginas } from '../services/api';
+import { carregarClientes } from './ClienteSelect';
 
 // Seleção de OBRA (versão 2.0, Fase 2D) — usada em Contratos, Financeiro e,
 // pela Fase 2E, na Análise de Projeto, nos Laudos e no editor de Propostas.
@@ -80,7 +81,7 @@ export default function ObraSelect({
   function abrirNova() {
     setNovo({ nome: filtro.trim(), cliente_id: clienteId ? String(clienteId) : '', cliente_nome: clienteNome || '' });
     setCriando(true);
-    if (!clientes) getTodosClientes().then(r => setClientes(r.data.itens || [])).catch(() => setClientes([]));
+    if (!clientes) carregarClientes().then(setClientes).catch(() => setClientes([])); // lista com cache (ClienteSelect)
   }
 
   async function salvarNova() {

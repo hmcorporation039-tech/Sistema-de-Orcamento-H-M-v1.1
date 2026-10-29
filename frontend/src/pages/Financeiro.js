@@ -1,15 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import useUltimoPedido from '../hooks/useUltimoPedido';
 import toast from 'react-hot-toast';
-import { FileSpreadsheet, RefreshCw, Search, ArrowDownCircle, ArrowUpCircle, Plus, Pencil, Trash2, X, Tag } from 'lucide-react';
+import { FileSpreadsheet, RefreshCw, Search, ArrowDownCircle, ArrowUpCircle, Plus, Pencil, Trash2, Tag } from 'lucide-react';
 import {
   getFinanceiroMovimentos, verificarPixAgora, getPrestadores,
   criarFinanceiroMovimento, atualizarFinanceiroMovimento, categorizarFinanceiroMovimento, removerFinanceiroMovimento,
+  exportarFinanceiroCsv,
 } from '../services/api';
-import api from '../services/api';
 import { formatarMoeda } from '../utils/format';
 import { salvarBlob, mensagemDeErro } from '../utils/download';
 import Select from '../components/Select';
+import Modal from '../components/ui/Modal';
+import { estilos, Campo } from '../components/ui/estilos';
 import ObraSelect from '../components/ObraSelect';
 import { Link } from 'react-router-dom';
 
@@ -201,7 +203,7 @@ export default function Financeiro() {
       if (prestadorId) params.prestadorId = prestadorId;
       if (obraFiltro) params.obraId = obraFiltro;
 
-      const res = await api.get('/financeiro/movimentos/csv', { params, responseType: 'blob' });
+      const res = await exportarFinanceiroCsv(params);
       // o nome daqui (com o período) diz mais que o genérico do servidor
       // ("financeiro-pix.csv"), então ele continua valendo
       salvarBlob(res.data, `Financeiro_Pix_${dataInicio}_a_${dataFim}.csv`);
@@ -349,17 +351,7 @@ export default function Financeiro() {
       </div>
 
       {modalAberto && (
-        <div style={overlay} onClick={() => setModalAberto(false)}>
-          <div style={modal} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20 }}>
-              <h3 style={{ color: '#c9a227', fontSize: 15, fontWeight: 700, flex: 1 }}>
-                {editandoId ? 'Editar Lançamento' : 'Novo Lançamento'}
-              </h3>
-              <button onClick={() => setModalAberto(false)} style={{ ...btnIcone, background: 'transparent' }}>
-                <X size={16} />
-              </button>
-            </div>
-
+        <Modal titulo={editandoId ? 'Editar Lançamento' : 'Novo Lançamento'} onFechar={() => setModalAberto(false)} largura={460} estiloFechar={{ width: 24, height: 24 }}>
             <form onSubmit={salvar}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                 <Campo label="Tipo">
@@ -409,20 +401,11 @@ export default function Financeiro() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {vinculoAberto && (
-        <div style={overlay} onClick={() => setVinculoAberto(false)}>
-          <div style={modal} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20 }}>
-              <h3 style={{ color: '#c9a227', fontSize: 15, fontWeight: 700, flex: 1 }}>Vincular Prestador</h3>
-              <button onClick={() => setVinculoAberto(false)} style={{ ...btnIcone, background: 'transparent' }}>
-                <X size={16} />
-              </button>
-            </div>
-
+        <Modal titulo="Vincular Prestador" onFechar={() => setVinculoAberto(false)} largura={460} estiloFechar={{ width: 24, height: 24 }}>
             <form onSubmit={salvarVinculo}>
               <div style={{ marginBottom: 12 }}>
                 <Campo label="Prestador">
@@ -462,8 +445,7 @@ export default function Financeiro() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
@@ -480,25 +462,10 @@ function CardResumo({ label, valor, cor, destaque, icone }) {
   );
 }
 
-function Campo({ label, children }) {
-  return (
-    <div>
-      <label style={rotulo}>{label}</label>
-      {children}
-    </div>
-  );
-}
-
-const rotulo = { display: 'block', fontSize: 10, color: '#666', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' };
-
-const card = {
-  background: '#131313', border: '1px solid #1e1e1e', borderRadius: 10,
-  padding: 18, marginBottom: 16
-};
-
-const th = { padding: '10px 14px', fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', fontWeight: 700 };
-const td = { padding: '10px 14px', color: '#ccc', verticalAlign: 'middle' };
-const tdVazio = { padding: '30px 14px', textAlign: 'center', color: '#555' };
+// Estilos do kit de tela (components/ui/estilos.js). Os botões desta tela são
+// um pouco diferentes dos do kit (primário sem espaço entre ícone e texto,
+// secundário mais apagado, ícone de 24 px) — mantidos como eram.
+const { card, th, td, tdVazio } = estilos;
 
 const btnPrimario = {
   display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '9px 16px',
@@ -512,19 +479,4 @@ const btnSecundario = {
   fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
 };
 
-const btnIcone = {
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  width: 24, height: 24, background: '#1a1a1a', border: '1px solid #2a2a2a',
-  borderRadius: 5, color: '#999', cursor: 'pointer'
-};
-
-const overlay = {
-  position: 'fixed', inset: 0, background: '#000000cc', display: 'flex',
-  alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20
-};
-
-const modal = {
-  background: '#131313', border: '1px solid #2a2a2a', borderRadius: 12,
-  padding: 28, width: 460, maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto',
-  boxShadow: '0 20px 60px #000000aa'
-};
+const btnIcone = { ...estilos.btnIcone, width: 24, height: 24 };

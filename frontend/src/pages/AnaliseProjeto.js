@@ -19,6 +19,7 @@ import ConflitosCompatibilizacao from '../components/analise/ConflitosCompatibil
 // Finalidade da análise (versão 2.1 — análise ≠ laudo): escolhida ao enviar e
 // editável depois; nenhuma das duas cria laudo. Lista e rótulos em utils/finalidades.
 import { FINALIDADES } from '../utils/finalidades';
+import { estilos } from '../components/ui/estilos';
 
 let contador = 0;
 const gerarId = () => `tmp_${Date.now()}_${contador++}`;
@@ -858,19 +859,14 @@ function Info({ label, valor }) {
   );
 }
 
-const card = {
-  background: '#131313', border: '1px solid #1e1e1e', borderRadius: 10,
-  padding: 22, marginBottom: 16
-};
+// Estilos do kit de tela (components/ui/estilos.js), com o que esta tela tem
+// de diferente por cima — o visual ficou como era.
+const card = { ...estilos.card, padding: 22 };
 
 const tituloSecao = { fontSize: 15, color: '#c9a227', fontWeight: 700, marginBottom: 10 };
 const inputPonto = { width: '100%', background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 5, color: '#ddd', fontSize: 12, padding: '5px 7px', boxSizing: 'border-box', fontFamily: 'inherit' };
 
-const btnPrimario = {
-  display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px',
-  background: '#c9a227', border: 'none', borderRadius: 6, color: '#000',
-  fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap'
-};
+const btnPrimario = { ...estilos.btnPrimario, display: 'flex', fontSize: 13 };
 
 const btnSecundario = {
   display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent',

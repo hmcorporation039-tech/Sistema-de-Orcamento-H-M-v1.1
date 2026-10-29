@@ -24,10 +24,11 @@
 // Aceite eletrônico simples — não é assinatura ICP-Brasil.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { X, Link2, Copy, MessageCircle, RefreshCw, Ban, CheckCircle2, XCircle, ShieldCheck } from 'lucide-react';
+import { Link2, Copy, MessageCircle, RefreshCw, Ban, CheckCircle2, XCircle, ShieldCheck } from 'lucide-react';
 import { gerarLinkAprovacao, getLinksAprovacao, revogarLinkAprovacao, getDecisoesAprovacao } from '../services/api';
-
-const moeda = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+import { formatarMoeda as moeda } from '../utils/format';
+import Modal from './ui/Modal';
+import { estilos } from './ui/estilos';
 const dataHora = (v) => (v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
 const data = (v) => (v ? new Date(v).toLocaleDateString('pt-BR') : '—');
 
@@ -165,13 +166,9 @@ export default function BotaoLinkAprovacao({ propostaId, numero, status, onAlter
       </button>}
 
       {aberto && (
-        <div style={overlay} onClick={fechar}>
-          <div style={modal} onClick={e => e.stopPropagation()} role="dialog" aria-label="Link de aprovação">
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
-              <h3 style={{ color: '#c9a227', fontSize: 15, fontWeight: 700, flex: 1 }}>Link de aprovação {numero ? `— ${numero}` : ''}</h3>
-              <button onClick={carregar} title="Atualizar" style={{ ...btnIcone, marginRight: 6 }}><RefreshCw size={14} /></button>
-              <button onClick={fechar} title="Fechar" style={{ ...btnIcone, background: 'transparent' }}><X size={16} /></button>
-            </div>
+        <Modal titulo={`Link de aprovação ${numero ? `— ${numero}` : ''}`} rotulo="Link de aprovação" onFechar={fechar}
+          largura={640} espacoTitulo={12} style={{ padding: 24, color: '#e8e0cc' }}
+          acoes={<button type="button" onClick={carregar} title="Atualizar" style={{ ...estilos.btnIcone, marginRight: 6 }}><RefreshCw size={14} /></button>}>
 
             <div style={{ display: 'flex', gap: 8, fontSize: 11, color: '#999', lineHeight: 1.5, background: '#0e0e0e', border: '1px solid #222', borderRadius: 6, padding: '9px 11px', marginBottom: 14 }}>
               <ShieldCheck size={16} color="#c9a227" style={{ flexShrink: 0, marginTop: 1 }} />
@@ -277,38 +274,17 @@ export default function BotaoLinkAprovacao({ propostaId, numero, status, onAlter
                 );
               })}
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </>
   );
 }
 
-const rotulo = { display: 'block', fontSize: 10, color: '#666', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' };
+const { rotulo } = estilos;
 const tituloSecao = { fontSize: 11, color: '#c9a227', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 };
 const secao = { borderBottom: '1px solid #222', paddingBottom: 14, marginBottom: 14 };
 
-const btnPrimario = {
-  display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px',
-  background: '#c9a227', border: 'none', borderRadius: 6, color: '#000',
-  fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
-};
-const btnSecundario = {
-  display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px',
-  background: 'transparent', border: '1px solid #2a2a2a', borderRadius: 6,
-  color: '#bbb', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
-};
-const btnIcone = {
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  width: 26, height: 26, background: '#1a1a1a', border: '1px solid #2a2a2a',
-  borderRadius: 5, color: '#999', cursor: 'pointer',
-};
-const overlay = {
-  position: 'fixed', inset: 0, background: '#000000cc', display: 'flex',
-  alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20,
-};
-const modal = {
-  background: '#131313', border: '1px solid #2a2a2a', borderRadius: 12,
-  padding: 24, width: 640, maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto',
-  boxShadow: '0 20px 60px #000000aa', color: '#e8e0cc',
-};
+// botões do kit de tela (components/ui/estilos.js); o primário daqui é um pouco
+// mais baixo — mantido como era
+const { btnSecundario } = estilos;
+const btnPrimario = { ...estilos.btnPrimario, padding: '8px 14px' };

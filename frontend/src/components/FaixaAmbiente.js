@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { getSaude } from '../services/api';
 
 // Instância de teste (AMBIENTE=teste no .env do backend): faixa no topo, selo
 // fixo no canto e "[TESTE]" no título da aba, para ninguém lançar trabalho de
@@ -7,7 +8,7 @@ export default function FaixaAmbiente() {
   const [ambiente, setAmbiente] = useState(null);
 
   useEffect(() => {
-    fetch('/health').then(r => r.json()).then(j => setAmbiente(j.ambiente || null)).catch(() => {});
+    getSaude().then(r => setAmbiente(r.data?.ambiente || null)).catch(() => {});
   }, []);
 
   useEffect(() => {

@@ -4,9 +4,8 @@ import toast from 'react-hot-toast';
 import { Plus, Trash2, FolderPlus, FileDown, Send, FilePlus2, Search, ArrowLeft, Calculator, BarChart3 } from 'lucide-react';
 import {
   getTodosClientes, getTodosMateriais, getServicos, getSegmentoCliente, getProximoNumero, criarProposta, atualizarProposta, getProposta,
-  pesquisarPrecoMercado, getAnaliseProjeto, getLaudo, getObra, duplicarProposta,
+  pesquisarPrecoMercado, getAnaliseProjeto, getLaudo, getObra, duplicarProposta, baixarPdfProposta, baixarPlanilhaProposta,
 } from '../services/api';
-import api from '../services/api';
 import { formatarMoeda } from '../utils/format';
 import { arred2, arredQtd, totalDaLinha } from '../utils/dinheiro';
 import { baixarArquivo, mensagemDeErro } from '../utils/download';
@@ -27,6 +26,7 @@ import { normalizarMemoriaBdi, tributosBdi } from '../utils/bdiTcu';
 import InserirComposicao, { distribuirNasSecoes } from '../components/InserirComposicao';
 import BotaoLinkAprovacao from '../components/BotaoLinkAprovacao';
 import { OpcaoModelo3dProposta } from '../components/Modelo3d';
+import { estilos, Campo } from '../components/ui/estilos';
 
 // BDI diferenciado de materiais preenchido? (vazio/null = mesmo BDI para tudo — calculoProposta.bdiMateriaisDefinido)
 const temBdiMateriais = (v) => v !== undefined && v !== null && v !== '' && Number.isFinite(Number(v));
@@ -844,7 +844,7 @@ export default function Orcamento() {
     try {
       // nome do servidor; o montado aqui é só a reserva
       await baixarArquivo(
-        api.get(`/propostas/${idAtual}/planilha`, { responseType: 'blob' }),
+        baixarPlanilhaProposta(idAtual),
         `${form.cliente_nome.trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_')}_${numeroAtual}.xlsx`,
       );
     } catch (err) {
@@ -864,7 +864,7 @@ export default function Orcamento() {
       if (anexosPdf.composicao_bdi) params.composicao_bdi = 1;
       // nome do servidor (o mesmo da cópia nas pastas); o montado aqui é só a reserva
       const nomeCliente = form.cliente_nome.trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_');
-      await baixarArquivo(api.get(`/propostas/${idAtual}/pdf`, { responseType: 'blob', params }), `${nomeCliente}_${numeroAtual}.pdf`);
+      await baixarArquivo(baixarPdfProposta(idAtual, params), `${nomeCliente}_${numeroAtual}.pdf`);
     } catch (err) {
       toast.error(await mensagemDeErro(err, 'Erro ao gerar PDF'));
     } finally {
@@ -1655,15 +1655,6 @@ function Totalzinho({ label, valor }) {
   );
 }
 
-function Campo({ label, children }) {
-  return (
-    <div>
-      <label style={rotulo}>{label}</label>
-      {children}
-    </div>
-  );
-}
-
 const fieldsetLimpo = { border: 0, padding: 0, margin: 0, minWidth: 0 };
 const btnUsar = { background: 'none', border: 'none', color: '#c9a227', textDecoration: 'underline', cursor: 'pointer', fontSize: 10.5, padding: 0 };
 const btnPesquisar = {
@@ -1672,18 +1663,11 @@ const btnPesquisar = {
 };
 const etiqueta = { fontSize: 10, border: '1px solid', borderRadius: 4, padding: '0 5px', textTransform: 'uppercase', letterSpacing: '.4px' };
 
-const rotulo = { display: 'block', fontSize: 10, color: '#666', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' };
-
-const card = {
-  background: '#131313', border: '1px solid #1e1e1e', borderRadius: 10,
-  padding: 20, marginBottom: 16
-};
-
-const btnPrimario = {
-  display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px',
-  background: '#c9a227', border: 'none', borderRadius: 6, color: '#000',
-  fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
-};
+// Estilos do kit de tela (components/ui/estilos.js), com o que esta tela tem
+// de diferente por cima — o visual ficou como era.
+const rotulo = estilos.rotulo;
+const card = { ...estilos.card, padding: 20 };
+const btnPrimario = { ...estilos.btnPrimario, display: 'flex' };
 
 const btnSecundario = {
   display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent',
@@ -1691,8 +1675,4 @@ const btnSecundario = {
   fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap'
 };
 
-const btnIcone = {
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  width: 26, height: 26, background: '#1a1a1a', border: '1px solid #2a2a2a',
-  borderRadius: 5, color: '#999', cursor: 'pointer'
-};
+const btnIcone = { ...estilos.btnIcone, display: 'flex' };

@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { CheckCircle2, XCircle, FileDown, Printer, AlertTriangle, ShieldCheck, ArrowLeft, Box } from 'lucide-react';
 import { getAprovacaoPublica, enviarDecisaoAprovacao, urlPdfAprovacaoPublica, urlModelo3dAprovacaoPublica } from '../services/api';
+import { formatarMoeda } from '../utils/format';
 
 const OURO = '#c9a227';
 const OURO_ESCURO = '#8a6d12';
@@ -19,7 +20,7 @@ const SUAVE = '#6b665a';
 const FUNDO = '#f4f1ea';
 const BORDA = '#e2dccd';
 
-const moeda = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const moeda = formatarMoeda;
 const qtd = (v) => (Number(v) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 });
 const pct = (v) => (Number(v) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 function dataBR(iso) {

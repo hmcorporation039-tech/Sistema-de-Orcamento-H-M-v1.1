@@ -52,6 +52,12 @@ api.interceptors.response.use(
   }
 );
 
+// ── SAÚDE / AMBIENTE ──────────────────────────────────────────────────
+// GET /health fica fora de /api: { ambiente: 'teste' | ... } (FaixaAmbiente).
+// Antes era fetch('/health') direto, que ignorava REACT_APP_API_URL.
+export const getSaude = () =>
+  api.get('/health', { baseURL: process.env.REACT_APP_API_URL || '', semSessao: true });
+
 // ── AUTH ──────────────────────────────────────────────────────────────
 export const login = (email, senha) =>
   api.post('/auth/login', { email, senha }, { semSessao: true });
@@ -114,6 +120,10 @@ export const atualizarStatus = (id, status) => api.patch(`/propostas/${id}/statu
 export const removerProposta = (id) => api.delete(`/propostas/${id}`);
 export const enviarPropostaPorEmail = (id, destinatario, mensagem) =>
   api.post(`/propostas/${id}/enviar-email`, { destinatario, mensagem });
+// PDF e planilha (blob) — lista de propostas e editor baixavam cada um com a sua
+// chamada. params do PDF (anexos, opcionais): { curva_abc: 1, composicao_bdi: 1 }
+export const baixarPdfProposta = (id, params) => api.get(`/propostas/${id}/pdf`, { params, responseType: 'blob' });
+export const baixarPlanilhaProposta = (id) => api.get(`/propostas/${id}/planilha`, { responseType: 'blob' });
 
 // ── ANÁLISE DE PROJETO (compatibilização) ────────────────────────────────
 // O envio dos arquivos é pelo pacote (enviarPacoteProjeto/analisarPacoteProjeto, abaixo).
@@ -222,6 +232,9 @@ export const getDashboardUltimas = (params) => api.get('/dashboard/ultimas-propo
 
 // ── RELATÓRIOS ────────────────────────────────────────────────────────
 export const getRelatorioPropostas = (params) => api.get('/relatorios/propostas', { params });
+// exportação do relatório (blob): tipo 'csv' | 'pdf'; params = os mesmos filtros do resumo
+export const exportarRelatorioPropostas = (tipo, params) =>
+  api.get(`/relatorios/propostas/${tipo}`, { params, responseType: 'blob' });
 
 // ── FINANCEIRO ────────────────────────────────────────────────────────
 export const getFinanceiroMovimentos = (params) => api.get('/financeiro/movimentos', { params });
@@ -230,6 +243,8 @@ export const atualizarFinanceiroMovimento = (id, data) => api.put(`/financeiro/m
 export const categorizarFinanceiroMovimento = (id, data) => api.patch(`/financeiro/movimentos/${id}/categorizar`, data);
 export const removerFinanceiroMovimento = (id) => api.delete(`/financeiro/movimentos/${id}`);
 export const verificarPixAgora = () => api.post('/financeiro/verificar-agora');
+// CSV dos movimentos (blob): params { dataInicio, dataFim, tipo, busca, categoria, prestadorId, obraId }
+export const exportarFinanceiroCsv = (params) => api.get('/financeiro/movimentos/csv', { params, responseType: 'blob' });
 
 // ── PRESTADORES DE SERVIÇOS ──────────────────────────────────────────────
 export const getPrestadores = (params) => api.get('/prestadores', { params });
@@ -242,6 +257,7 @@ export const getContratos = (params) => api.get('/contratos', { params });
 export const criarContrato = (data) => api.post('/contratos', data);
 export const atualizarContrato = (id, data) => api.put(`/contratos/${id}`, data);
 export const removerContrato = (id) => api.delete(`/contratos/${id}`);
+export const baixarPdfContrato = (id) => api.get(`/contratos/${id}/pdf`, { responseType: 'blob' });
 
 export default api;
 

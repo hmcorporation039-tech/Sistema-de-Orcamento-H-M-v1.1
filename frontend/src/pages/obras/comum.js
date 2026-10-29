@@ -12,12 +12,8 @@ export const STATUS_OBRA = {
 export const SEGMENTO = { publico: 'Público (referência oficial)', privado: 'Privado (mercado particular)' };
 export const SEGMENTO_CURTO = { publico: 'Público', privado: 'Privado' };
 
-export const STATUS_PROPOSTA = {
-  Ativa: { bg: '#1a1a0a', cor: '#c9a227', borda: '#4a3d10' },
-  Aprovada: { bg: '#0a1a0f', cor: '#3fb95f', borda: '#1a4a26' },
-  Recusada: { bg: '#1a0a0a', cor: '#b04040', borda: '#4a1a1a' },
-  Cancelada: { bg: '#141414', cor: '#666', borda: '#2a2a2a' },
-};
+// cores do status da proposta: tabela única em utils/statusProposta.js
+export { STATUS_PROPOSTA } from '../../utils/statusProposta';
 
 // Como o orçado foi calculado (regra em backend/src/utils/obras.js calcularOrcado)
 export const BASE_ORCADO = {

@@ -21,6 +21,7 @@ import Select from '../Select';
 import { baixarArquivo, salvarBlob, mensagemDeErro } from '../../utils/download';
 import { useAuth } from '../../hooks/useAuth';
 import useAlteracoesNaoSalvas from '../../hooks/useAlteracoesNaoSalvas';
+import { estilos } from '../ui/estilos';
 
 // Projetos e laudos por disciplina — abas "Projetos por disciplina" e
 // "Laudos" do hub Obras (versão 2.1: separados). O mesmo componente atende os
@@ -718,20 +719,16 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
   );
 }
 
-const card = { background: '#131313', border: '1px solid #1e1e1e', borderRadius: 10, padding: 18, marginBottom: 16 };
+// Estilos do kit de tela (components/ui/estilos.js), com o que esta tela tem
+// de diferente por cima — o visual ficou como era.
+const card = estilos.card;
 const selo = { display: 'inline-block', fontSize: 10, fontWeight: 800, letterSpacing: '.6px', padding: '2px 7px', borderRadius: 4, marginRight: 8, verticalAlign: 'middle' };
 const seloProjeto = { background: '#12304a', color: '#8ab4f8', border: '1px solid #2f4f6f' };
 const seloLaudo = { background: '#3a2a10', color: '#e0b050', border: '1px solid #5a4a12' };
 const tituloSecao = { fontSize: 15, color: '#c9a227', fontWeight: 700, marginBottom: 10 };
-const btnPrimario = {
-  display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', background: '#c9a227', border: 'none',
-  borderRadius: 6, color: '#000', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap',
-};
+const btnPrimario = { ...estilos.btnPrimario, display: 'flex', fontSize: 13 };
 const btnSecundario = {
   display: 'flex', alignItems: 'center', padding: '8px 12px', background: 'transparent', border: '1px dashed #333',
   borderRadius: 6, color: '#999', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
 };
-const btnIcone = {
-  display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, background: '#1a1a1a',
-  border: '1px solid #2a2a2a', borderRadius: 5, color: '#999', cursor: 'pointer',
-};
+const btnIcone = { ...estilos.btnIcone, display: 'flex' };

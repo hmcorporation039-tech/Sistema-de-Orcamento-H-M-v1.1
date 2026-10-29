@@ -10,6 +10,9 @@ import { AvisoNovidades } from '../components/NovidadesPastas';
 import Paginacao from '../components/Paginacao';
 import { formatarTelefone, formatarCpfCnpj, validarCpf, validarCnpj } from '../utils/format';
 import Select from '../components/Select';
+import Modal from '../components/ui/Modal';
+import { invalidarCacheClientes } from '../components/ClienteSelect';
+import { estilos, Campo } from '../components/ui/estilos';
 
 const VAZIO = { nome: '', documento: '', tipo: 'Empresa', responsavel: '', telefone: '', email: '', endereco: '' };
 
@@ -97,6 +100,7 @@ export default function Clientes() {
         toast.success('Cliente cadastrado');
       }
       setModalAberto(false);
+      invalidarCacheClientes(); // as listas de cliente das outras telas recarregam
       carregar();
     } catch (err) {
       toast.error(err.response?.data?.erro || 'Erro ao salvar cliente');
@@ -110,6 +114,7 @@ export default function Clientes() {
     try {
       await removerCliente(cliente.id);
       toast.success('Cliente removido');
+      invalidarCacheClientes();
       carregar();
     } catch {
       toast.error('Erro ao remover cliente');
@@ -186,8 +191,8 @@ export default function Clientes() {
       <Paginacao pagina={pagina} totalPaginas={paginacao.totalPaginas} total={paginacao.total} onMudarPagina={setPagina} />
 
       {pastaDe && (
-        <div style={overlay} onClick={() => setPastaDe(null)}>
-          <div style={{ ...modal, maxWidth: 900, width: '95%' }} onClick={e => e.stopPropagation()} data-testid="modal-pasta-cliente">
+        // cabeçalho próprio (X menor, com fundo) — mantido como era
+        <Modal onFechar={() => setPastaDe(null)} largura="95%" maxWidth={900} testid="modal-pasta-cliente" rotulo="Pasta do cliente">
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
               <h3 style={{ color: '#c9a227', fontSize: 15, margin: 0, flex: 1 }}>Pasta do cliente{pastaDe.nome ? ` — ${pastaDe.nome}` : ''}</h3>
               <button onClick={() => setPastaDe(null)} style={btnIcone} title="Fechar"><X size={14} /></button>
@@ -198,22 +203,11 @@ export default function Clientes() {
             </p>
             <PastaDoCliente id={pastaDe.id} ehAdmin={ehAdmin} />
             <AvisoNovidades clienteId={pastaDe.id} sempre />
-          </div>
-        </div>
+        </Modal>
       )}
 
       {modalAberto && (
-        <div style={overlay} onClick={() => setModalAberto(false)}>
-          <div style={modal} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20 }}>
-              <h3 style={{ color: '#c9a227', fontSize: 15, fontWeight: 700, flex: 1 }}>
-                {editandoId ? 'Editar Cliente' : 'Novo Cliente'}
-              </h3>
-              <button onClick={() => setModalAberto(false)} style={{ ...btnIcone, background: 'transparent' }}>
-                <X size={16} />
-              </button>
-            </div>
-
+        <Modal titulo={editandoId ? 'Editar Cliente' : 'Novo Cliente'} onFechar={() => setModalAberto(false)}>
             <form onSubmit={salvar}>
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12, marginBottom: 12 }}>
                 <Campo label="Nome / Razão Social *">
@@ -268,8 +262,7 @@ export default function Clientes() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
@@ -348,45 +341,11 @@ function LigarPasta({ id, onLigada }) {
   );
 }
 
-function Campo({ label, children }) {
-  return (
-    <div>
-      <label style={{ display: 'block', fontSize: 10, color: '#666', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' }}>
-        {label}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-const th = { padding: '10px 14px', fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', fontWeight: 700 };
-const td = { padding: '10px 14px', color: '#ccc', verticalAlign: 'middle' };
-const tdVazio = { padding: '30px 14px', textAlign: 'center', color: '#555' };
-
-const btnPrimario = {
-  display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px',
-  background: '#c9a227', border: 'none', borderRadius: 6, color: '#000',
-  fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
-};
+// Estilos do kit de tela (components/ui/estilos.js). O botão secundário desta
+// tela é um pouco maior e mais apagado que o do kit — mantido como era.
+const { th, td, tdVazio, btnPrimario, btnIcone } = estilos;
 
 const btnSecundario = {
   padding: '9px 16px', background: 'transparent', border: '1px solid #2a2a2a',
   borderRadius: 6, color: '#999', fontWeight: 700, fontSize: 12, cursor: 'pointer'
-};
-
-const btnIcone = {
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  width: 26, height: 26, background: '#1a1a1a', border: '1px solid #2a2a2a',
-  borderRadius: 5, color: '#999', cursor: 'pointer'
-};
-
-const overlay = {
-  position: 'fixed', inset: 0, background: '#000000cc', display: 'flex',
-  alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20
-};
-
-const modal = {
-  background: '#131313', border: '1px solid #2a2a2a', borderRadius: 12,
-  padding: 28, width: 520, maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto',
-  boxShadow: '0 20px 60px #000000aa'
 };

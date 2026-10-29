@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { getRotinasIntegracoes, executarRotinaIntegracao, testarIAIntegracoes } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
+import { estilos } from '../components/ui/estilos';
 
 // Painel de Integrações (2.0): as rotinas automáticas (notas e Pix por e-mail,
 // orçamentos de fornecedores nas pastas) e a cadeia de IA, numa visão só.
@@ -328,11 +329,9 @@ const separador = { borderTop: '1px solid #1e1e1e', margin: '10px 0' };
 
 const tdMini = { padding: '5px 4px', color: '#aaa', verticalAlign: 'middle' };
 
-const btnPrimario = {
-  display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px',
-  background: '#c9a227', border: 'none', borderRadius: 6, color: '#000',
-  fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
-};
+// Estilos do kit de tela (components/ui/estilos.js), com o que esta tela tem
+// de diferente por cima — o visual ficou como era.
+const btnPrimario = { ...estilos.btnPrimario, display: 'flex' };
 
 const btnSecundario = {
   padding: '9px 16px', background: 'transparent', border: '1px solid #2a2a2a',

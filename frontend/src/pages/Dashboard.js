@@ -7,13 +7,9 @@ import {
   getDashboardTopMateriais, getDashboardUltimas
 } from '../services/api';
 import { formatarMoeda, formatarData } from '../utils/format';
-
-const STATUS_CORES = {
-  Ativa: { cor: '#c9a227', bg: '#c9a22733' },
-  Aprovada: { cor: '#3fb95f', bg: '#3fb95f33' },
-  Recusada: { cor: '#b04040', bg: '#b0404033' },
-  Cancelada: { cor: '#666', bg: '#66666633' },
-};
+// tabela única das cores de status (o Painel usa `cor` e o fundo translúcido `realce`)
+import { STATUS_PROPOSTA as STATUS_CORES } from '../utils/statusProposta';
+import { estilos } from '../components/ui/estilos';
 
 const MESES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -254,7 +250,7 @@ export default function Dashboard() {
                   <span style={{ color: '#c9a227', fontWeight: 700, width: 46 }}>{p.numero}</span>
                   <span style={{ flex: 1, color: '#ccc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.cliente_nome}</span>
                   <span style={{ color: '#888', fontSize: 11 }}>{formatarData(p.data)}</span>
-                  <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, color: cor.cor, background: cor.bg }}>
+                  <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, color: cor.cor, background: cor.realce }}>
                     {p.status}
                   </span>
                   <span style={{ color: '#ccc', fontWeight: 700, width: 90, textAlign: 'right' }}>{formatarMoeda(p.total)}</span>
@@ -278,10 +274,9 @@ function CardResumo({ label, valor, sub, destaque }) {
   );
 }
 
-const card = {
-  background: '#131313', border: '1px solid #1e1e1e', borderRadius: 10,
-  padding: 18, marginBottom: 0
-};
+// Estilos do kit de tela (components/ui/estilos.js), com o que esta tela tem
+// de diferente por cima — o visual ficou como era.
+const card = { ...estilos.card, marginBottom: 0 };
 
 const tituloCard = { fontSize: 13, color: '#c9a227', fontWeight: 700, marginBottom: 14 };
 const vazio = { fontSize: 12, color: '#555', textAlign: 'center', padding: '20px 0' };

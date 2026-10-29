@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
-import { X, Calculator, RotateCcw } from 'lucide-react';
+import { Calculator, RotateCcw } from 'lucide-react';
 import Select from './Select';
+import Modal from './ui/Modal';
+import { estilos } from './ui/estilos';
 import {
   TIPOS_OBRA_TCU, FORNECIMENTO_TCU, REGIMES_BDI, PARCELAS_BDI, FONTE_BDI_TCU,
   aliquotaCprb, referenciaTcu, tributosBdi, calcularBdiTcu, sugestaoBdi, avaliarBdi, normalizarMemoriaBdi,
@@ -102,14 +104,10 @@ export default function CalculadoraBdi({ aberto, onFechar, memoria, publico, imp
   const ref = referenciaTcu(tipo);
 
   return (
-    <div style={overlay} onClick={onFechar}>
-      <div style={modal} onClick={e => e.stopPropagation()} role="dialog" aria-label="Calculador de BDI">
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
-          <h3 style={{ color: '#c9a227', fontSize: 15, fontWeight: 700, flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Calculator size={16} /> BDI pela fórmula do TCU
-          </h3>
-          <button onClick={onFechar} style={{ ...btnIcone, background: 'transparent' }} title="Fechar"><X size={16} /></button>
-        </div>
+    // abre por cima do editor de proposta (zIndex 1000) e rola o fundo, não a janela
+    <Modal titulo={<><Calculator size={16} /> BDI pela fórmula do TCU</>} rotulo="Calculador de BDI" onFechar={onFechar}
+      zIndex={1000} largura="min(760px, 100%)" espacoTitulo={10} estiloTitulo={{ display: 'flex', alignItems: 'center', gap: 6 }}
+      estiloFundo={fundoBdi} style={janelaBdi}>
         <div style={{ fontSize: 11, color: '#888', marginBottom: 12, lineHeight: 1.5 }}>
           BDI = [ (1 + AC + S + R + G) × (1 + DF) × (1 + L) / (1 − I) ] − 1 — {FONTE_BDI_TCU}. Parcelas pré-preenchidas com o valor
           médio da tabela; o aviso aparece fora do 1º–3º quartil.
@@ -166,8 +164,7 @@ export default function CalculadoraBdi({ aberto, onFechar, memoria, publico, imp
             Aplicar BDI {bdi != null ? `${fmt(arred2(bdi))} %` : ''}{usarMateriais && bdiMat != null ? ` / materiais ${fmt(arred2(bdiMat))} %` : ''}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -223,9 +220,9 @@ function Linha({ nome, input, faixa, fora }) {
 
 const cab = { fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px' };
 const num = { textAlign: 'right', color: '#777', fontSize: 11.5 };
-const rotulo = { display: 'block', fontSize: 10, color: '#666', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.5px' };
-const overlay = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 1000, overflowY: 'auto', padding: '30px 12px' };
-const modal = { background: '#131313', border: '1px solid #2a2a2a', borderRadius: 10, padding: 20, width: 'min(760px, 100%)' };
-const btnIcone = { display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, border: '1px solid #2a2a2a', borderRadius: 5, color: '#999', cursor: 'pointer' };
+// janela própria do BDI (mais larga, sem sombra nem altura máxima — quem rola é o fundo)
+const fundoBdi = { background: 'rgba(0,0,0,.7)', alignItems: 'flex-start', overflowY: 'auto', padding: '30px 12px' };
+const janelaBdi = { borderRadius: 10, padding: 20, maxHeight: 'none', overflowY: 'visible', boxShadow: 'none' };
+// kit de tela (components/ui/estilos.js); o secundário tracejado é desta janela
+const { rotulo, btnPrimario } = estilos;
 const btnSecundario = { display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent', border: '1px dashed #333', borderRadius: 6, color: '#999', fontWeight: 700, fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap' };
-const btnPrimario = { display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', background: '#c9a227', border: 'none', borderRadius: 6, color: '#000', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
