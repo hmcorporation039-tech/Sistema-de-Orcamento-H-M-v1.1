@@ -190,6 +190,115 @@ async function caso(nome, fn) {
     assert.deepStrictEqual(porAmbiente, [{ ambiente: 'SALA DE HEMODIALISE 1', cftv: 1, rede: 0, antena: 0 }]);
   });
 
+  // (29/10/2026) legenda em TABELA "Símbolo | Fornecedor | Descrição | QTDE": o
+  // texto logo à direita do símbolo é a marca. Antes a descrição virava a marca e
+  // luminárias diferentes da mesma marca viravam um item só.
+  const circuloCheio = (cx, cy, r, cor) => `${cor} rg ${cx - r} ${cy - r} ${2 * r} ${2 * r} re f`;
+  const tabelaLegenda = ({ reguas = true } = {}) => {
+    const c = [texto(700, 700, 'SIMBOLO'), texto(760, 700, 'FORNECEDOR'), texto(860, 700, 'DESCRICAO'), texto(1080, 700, 'QTDE')];
+    if (reguas) {
+      for (const x of [690, 750, 850, 1070, 1110]) c.push(reta(x, 583, x, 715, '0.6 0.6 0.6', 0.5));
+      for (const y of [715, 693, 671, 649, 627, 605, 583]) c.push(reta(690, y, 1110, y, '0.6 0.6 0.6', 0.5));
+    }
+    // linha 1: círculo vazado sozinho, duas linhas de descrição
+    c.push(circulo(720, 682, 3, '1 0 0'), texto(760, 679, 'MARCA X'), texto(860, 684, 'LUMINARIA EMBUTIR AR70'), texto(860, 675, 'LAMPADA 5W 2700K'), texto(1085, 679, '4'));
+    // linha 2: o MESMO círculo com miolo cheio — outra luminária, mesma marca
+    c.push(circulo(720, 660, 3, '1 0 0'), circuloCheio(720, 660, 1, '1 0 0'), texto(760, 657, 'MARCA X'), texto(860, 657, 'LUMINARIA EMBUTIR AR111'), texto(1085, 657, '2'));
+    // linha 3: símbolo que não aparece na planta
+    c.push(quadrado(717, 635, 6, '0 0 1'), texto(760, 635, 'MARCA Y'), texto(860, 635, 'SPOT SOBREPOR 5W'), texto(1085, 635, '7'));
+    // linha 4: perfil (traço) — medido em metros
+    c.push(reta(705, 616, 735, 616, '1 0 1', 1.5), texto(760, 613, 'MARCA Z'), texto(860, 613, 'PERFIL LED SOBREPOR'), texto(1085, 613, '3'));
+    // linha 5: o mesmo círculo da linha 1 e a mesma descrição (legenda repetida): uma entrada só, QTDE somada
+    c.push(circulo(720, 594, 3, '1 0 0'), texto(760, 591, 'MARCA X'), texto(860, 594, 'LUMINARIA EMBUTIR AR70'), texto(860, 586, 'LAMPADA 5W 2700K'), texto(1085, 591, '1'));
+    // planta: 3 círculos sozinhos, 2 com miolo, 100 pt de perfil
+    [[100, 100], [200, 100], [300, 100]].forEach(([x, y]) => c.push(circulo(x, y, 3, '1 0 0')));
+    [[100, 300], [200, 300]].forEach(([x, y]) => c.push(circulo(x, y, 3, '1 0 0'), circuloCheio(x, y, 1, '1 0 0')));
+    c.push(reta(100, 400, 160, 400, '1 0 1', 1.5), reta(160, 400, 200, 400, '1 0 1', 1.5));
+    // paredes da planta (sem elas a folha seria só a tabela, e folha sem planta não é contada)
+    c.push(...[[60, 60, 560, 60], [560, 60, 560, 500], [560, 500, 60, 500], [60, 500, 60, 60]].map(([a, b, d, e]) => reta(a, b, d, e, '0 0 0', 1.5)));
+    c.push(texto(1000, 60, 'ESC. 1:50'));
+    return montarPdf(c.join('\n'));
+  };
+  for (const reguas of [true, false]) {
+    await caso(`legenda em tabela ${reguas ? 'com' : 'sem'} réguas: descrição e QTDE pelas colunas, marca à parte`, async () => {
+      const [p] = await lerPdfVetorial(tabelaLegenda({ reguas }));
+      assert.deepStrictEqual(p.tabelasLegenda?.[0]?.colunas, ['SIMBOLO', 'FORNECEDOR', 'DESCRICAO', 'QTDE'], JSON.stringify(p.tabelasLegenda));
+      const ar70 = p.itens.find(i => /AR70/.test(i.descricao)), ar111 = p.itens.find(i => /AR111/.test(i.descricao));
+      assert.ok(!p.itens.some(i => /^MARCA/.test(i.descricao)), 'a marca virou descrição');
+      assert.strictEqual(ar70?.descricao, 'LUMINARIA EMBUTIR AR70 LAMPADA 5W 2700K');
+      assert.strictEqual(ar70.fornecedor, 'MARCA X');
+      // mesmo círculo: o miolo separa as duas (antes, as duas ficavam com 5 e ambíguas)
+      assert.strictEqual(ar70.quantidade, 3, JSON.stringify(ar70));
+      assert.strictEqual(ar111?.quantidade, 2, JSON.stringify(ar111));
+      assert.ok(!ar70.ambiguo && !ar111.ambiguo);
+      // a quantidade do projetista fica no item (linhas 1 e 5: mesma assinatura e texto → uma entrada, 4 + 1)
+      assert.strictEqual(ar70.qtde_projeto, 5);
+      assert.strictEqual(ar111.qtde_projeto, 2);
+      const perfil = p.itens.find(i => i.tipo === 'linha' && /PERFIL/.test(i.descricao));
+      assert.strictEqual(perfil?.comprimento_pt, 100, JSON.stringify(perfil));
+      assert.strictEqual(perfil.qtde_projeto, 3);
+      // o que a tabela quantifica e a planta não tem fica à vista
+      assert.deepStrictEqual(p.naoContados, [{ descricao: 'SPOT SOBREPOR 5W', qtde_projeto: 7, motivo: 'símbolo não encontrado na planta' }]);
+    });
+  }
+
+  await caso('título SIMBOLOGIA / CONVENÇÕES / TABELA DE … também abre a legenda', async () => {
+    for (const titulo of ['SIMBOLOGIA', 'CONVEN\\307\\325ES', 'TABELA DE TOMADAS']) {
+      const pdf = pranchaSintetica().toString('latin1').replace('(LEGENDA)', `(${titulo})`);
+      const [p] = await lerPdfVetorial(Buffer.from(pdf, 'latin1'));
+      assert.ok(p.legenda, `${titulo}: sem legenda`);
+      assert.strictEqual(p.itens.find(i => /TOMADA BAIXA/.test(i.descricao))?.quantidade, 8, titulo);
+    }
+    // tabela que não é legenda não abre legenda
+    const pdf = pranchaSintetica().toString('latin1').replace('(LEGENDA)', '(TABELA DE CARGAS)');
+    const [q] = await lerPdfVetorial(Buffer.from(pdf, 'latin1'));
+    assert.strictEqual(q.legenda, null);
+  });
+
+  // (29/10/2026) folha com vistas em escalas diferentes: cada trecho na escala da sua vista
+  await caso('escala por vista: planta 1:50 + ampliação 1:25; vista sem escala identificada bloqueia os metros', () => {
+    const { analisarGeometria } = require('../src/utils/pdfVetorial');
+    const t = (s, x, y, h = 8) => ({ s, x, y, h, w: s.length * h * 0.5, horizontal: true });
+    const linha = (x0, y0, x1, y1) => ({ cheio: false, traco: true, fill: '#000000', stroke: '#0000ff', lw: 1, dash: '', caixa: [x0, y0, x1, y1], comp: Math.hypot(x1 - x0, y1 - y0), segs: 1, reto: true });
+    const base = {
+      largura: 1191, altura: 842,
+      textos: [t('LEGENDA', 950, 100), t('ELETRODUTO PVC 25 MM', 975, 125), t('PLANTA BAIXA ESC. 1:50', 100, 420, 10), t('AMPLIACAO ESC. 1:25', 650, 320, 10), t('ESCALA: 1:50', 1000, 800)],
+      caminhos: [linha(950, 122, 970, 122), linha(50, 50, 150, 50), linha(50, 80, 150, 80), linha(650, 100, 750, 100)],
+    };
+    const regioesFolha = [{ tipo: 'planta', caixa: [0, 0, 500, 400] }, { tipo: 'detalhe', caixa: [600, 0, 900, 300] }, { tipo: 'carimbo', caixa: [950, 700, 1190, 840] }];
+    const r = analisarGeometria(base, { regioesFolha });
+    const el = r.itens.find(i => i.tipo === 'linha');
+    // 200 pt a 1:50 + 100 pt a 1:25 = 3,53 + 0,88 m (antes: 300 pt todos a 1:50 = 5,3 m)
+    assert.strictEqual(el.metros, 4.4, JSON.stringify(el));
+    assert.deepStrictEqual(el.escalas_pt, { '1:25': 100, '1:50': 200 });
+    assert.deepStrictEqual(r.escalas.distintas, [25, 50]);
+    assert.ok(!r.avisoEscala);
+    // trecho fora das vistas, com duas escalas na folha: não chuta — metros null e aviso
+    const r2 = analisarGeometria({ ...base, caminhos: [...base.caminhos, linha(520, 600, 600, 600)] }, { regioesFolha });
+    const el2 = r2.itens.find(i => i.tipo === 'linha');
+    assert.strictEqual(el2.metros, null);
+    assert.strictEqual(el2.escala_indefinida_pt, 80);
+    assert.match(r2.avisoEscala, /mais de uma escala \(1:25, 1:50\)/);
+    // folha de escala única: como antes, tudo na escala do carimbo
+    const r3 = analisarGeometria({ ...base, textos: base.textos.filter(x => !/AMPLIACAO/.test(x.s)) }, { regioesFolha });
+    assert.strictEqual(r3.itens.find(i => i.tipo === 'linha').metros, 5.3);
+    assert.strictEqual(r3.escalas, undefined);
+    // vista com "SEM ESCALA": o trecho dela não vira metro
+    const r4 = analisarGeometria({ ...base, textos: base.textos.map(x => (/AMPLIACAO/.test(x.s) ? t('DETALHE 1 - SEM ESCALA', 650, 320, 10) : x)) }, { regioesFolha });
+    const el4 = r4.itens.find(i => i.tipo === 'linha');
+    assert.strictEqual(el4.metros, 3.5);
+    assert.strictEqual(el4.sem_escala_pt, 100);
+  });
+
+  await caso('detalhe fica fora da contagem só quando a folha tem planta', () => {
+    const { resumoDaFolha } = require('../src/utils/pdfVetorial').paraTestes;
+    const det = { tipo: 'detalhe', caixa: [600, 0, 900, 300] };
+    const comPlanta = resumoDaFolha({ tipo: 'planta', resumo: 'planta', regioes: [{ tipo: 'planta', caixa: [0, 0, 500, 400] }, det] });
+    assert.deepStrictEqual(comPlanta.regioesFora, [det.caixa]);
+    const soDetalhe = resumoDaFolha({ tipo: 'detalhe', resumo: 'detalhe', regioes: [det] });
+    assert.deepStrictEqual(soDetalhe.regioesFora, []);
+  });
+
   await caso('PDF sem desenho (só texto) não quebra e não inventa itens', async () => {
     const [q] = await lerPdfVetorial(montarPdf(texto(100, 700, 'MEMORIAL DESCRITIVO')));
     assert.strictEqual(q.itens.length, 0);

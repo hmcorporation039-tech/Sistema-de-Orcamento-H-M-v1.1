@@ -17,7 +17,7 @@ const rnd = () => { semente = (semente * 1103515245 + 12345) & 0x7fffffff; retur
 const traco = (caixa, extra = {}) => ({ cheio: false, traco: true, fill: '#000000', stroke: '#000000', lw: 0.25, dash: '', caixa, comp: caixa[2] - caixa[0], segs: 1, reto: true, ...extra });
 
 // Busca LINEAR de referência (a implementação antes do índice), para comparar
-const ehDescricao = (s) => s.length >= 5 && (s.match(/[A-Za-zÀ-ú]/g) || []).length >= 4 && !/^(LEGENDA|NOTAS?|OBS|SOBE|DESCE)/i.test(s);
+const ehDescricao = (s) => s.length >= 5 && (s.match(/[A-Za-zÀ-ú]/g) || []).length >= 4 && !/^(LEGENDA|NOTAS?|OBS|SOBE|DESCE|SIMBOLOGIA|CONVEN[ÇC][ÕO]ES|TABELA DE)\b/i.test(s);
 function textoAoLadoLinear(caixa, textos, distMax = 70) {
   const cy = (caixa[1] + caixa[3]) / 2, h = Math.max(caixa[3] - caixa[1], 3);
   let melhor = null;
@@ -109,6 +109,87 @@ function textoAoLadoLinear(caixa, textos, distMax = 70) {
     assert.match(p.aviso, /limite 3/);
     const [q] = await lerPdfVetorial(Buffer.from(pdf, 'latin1'));
     assert.strictEqual(q.aviso, undefined);
+    assert.strictEqual(p.pulada?.motivo, 'tracos');
+  });
+
+  // (29/10/2026) a grade de 41 pt ficava quadrática com hachura/texto explodido em
+  // traços: 4,5 mil traços numa célula, 47 s numa prancha real. Grade fina: o mesmo
+  // resultado de uma comparação par a par, em pouco tempo.
+  await caso('símbolos: grade fina dá os mesmos grupos da comparação par a par', () => {
+    const cam = [];
+    for (let i = 0; i < 1500; i++) { const x = rnd() * 400, y = rnd() * 300, w = rnd() * 12, h = rnd() * 12; cam.push(traco([x, y, x + w, y + h], { stroke: ['#ff0000', '#00ff00'][i % 2] })); }
+    for (let i = 0; i < 1500; i++) { const x = 500 + rnd() * 30, y = rnd() * 30, w = rnd() * 2, h = rnd() * 2; cam.push(traco([x, y, x + w, y + h], { stroke: '#0000ff' })); }
+    // referência: todos os pares, mesmo teste de "tocar"
+    const ref = (lista) => {
+      const grupos = new Map();
+      lista.forEach(c => { const [x0, y0, x1, y1] = c.caixa; if (x1 - x0 > 40 || y1 - y0 > 40) return; const k = `S${c.stroke}|${c.lw}`; (grupos.get(k) || grupos.set(k, []).get(k)).push(c); });
+      const saida = [];
+      for (const [chave, l] of grupos) {
+        const { raiz, unir } = uniaoBusca(l.length);
+        for (let i = 0; i < l.length; i++) for (let j = i + 1; j < l.length; j++) {
+          const [A, B] = l[j].caixa[0] < l[i].caixa[0] ? [l[j].caixa, l[i].caixa] : [l[i].caixa, l[j].caixa];
+          if (B[0] <= A[2] + 0.6 && B[1] <= A[3] + 0.6 && B[3] >= A[1] - 0.6) unir(i, j);
+        }
+        const por = new Map();
+        l.forEach((c, i) => { const r = raiz(i); const b = por.get(r) || { chave, caixa: [Infinity, Infinity, -Infinity, -Infinity], n: 0 }; b.caixa = [Math.min(b.caixa[0], c.caixa[0]), Math.min(b.caixa[1], c.caixa[1]), Math.max(b.caixa[2], c.caixa[2]), Math.max(b.caixa[3], c.caixa[3])]; b.n++; por.set(r, b); });
+        for (const b of por.values()) { const w = b.caixa[2] - b.caixa[0], h = b.caixa[3] - b.caixa[1]; if (w > 60 || h > 60 || Math.max(w, h) < 1.5 || Math.min(w, h) < 1) continue; saida.push(b); }
+      }
+      return saida;
+    };
+    const chave = (l) => l.map(b => `${b.chave}|${b.caixa.map(v => v.toFixed(6)).join(',')}|${b.n}`).sort();
+    assert.deepStrictEqual(chave(simbolos(cam)), chave(ref(cam)));
+  });
+
+  await caso('hachura densa (30 mil traços num quadrado de 40 pt): segundo, não minuto', () => {
+    const cam = [];
+    for (let i = 0; i < 30000; i++) { const x = rnd() * 38, y = rnd() * 38; cam.push(traco([x, y, x + 0.4, y + 0.4], { stroke: '#808080' })); }
+    const t0 = Date.now();
+    simbolos(cam);
+    const ms = Date.now() - t0;
+    assert.ok(ms < 3000, `${ms} ms`); // antes: ~450 milhões de pares
+  });
+
+  // PDF de várias páginas, cada uma com `n` traços curtos
+  const pdfPaginas = (paginas, n) => {
+    const objs = ['<< /Type /Catalog /Pages 2 0 R >>', `<< /Type /Pages /Kids [${paginas.map((_, i) => `${3 + 2 * i} 0 R`).join(' ')}] /Count ${paginas.length} >>`];
+    paginas.forEach((_, i) => {
+      const conteudo = Array.from({ length: n }, (__, k) => `0 0 1 RG 1 w ${10 + (k % 500)} ${10 + Math.floor(k / 500) * 3} m ${11 + (k % 500)} ${10 + Math.floor(k / 500) * 3} l S`).join('\n');
+      objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 600 400] /Contents ${4 + 2 * i} 0 R >>`, `<< /Length ${conteudo.length} >>\nstream\n${conteudo}\nendstream`);
+    });
+    let pdf = '%PDF-1.4\n';
+    const pos = [];
+    objs.forEach((o, i) => { pos.push(pdf.length); pdf += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+    const xref = pdf.length;
+    pdf += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${pos.map(p => `${String(p).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+    return Buffer.from(pdf, 'latin1');
+  };
+
+  // (29/10/2026) o limite agora é de TEMPO (por página e do arquivo), não de traços
+  await caso('página que passa do tempo-limite volta com aviso e motivo, sem contagem pela metade', async () => {
+    const pdf = pdfPaginas([1], 8000);
+    const [p] = await lerPdfVetorial(pdf, { tempoPaginaMs: 1 });
+    assert.strictEqual(p.pulada?.motivo, 'tempo', JSON.stringify(p));
+    assert.deepStrictEqual(p.itens, []);
+    assert.match(p.aviso, /tempo-limite/);
+    const [q] = await lerPdfVetorial(pdf, { tempoLimiteMs: -1 });
+    assert.strictEqual(q.pulada?.motivo, 'tempo_total');
+    const [r] = await lerPdfVetorial(pdf);
+    assert.strictEqual(r.pulada, undefined);
+    assert.strictEqual(r.caminhos, 8000);
+  });
+
+  await caso('páginas além de maxPaginas não somem caladas', async () => {
+    const v = await lerPdfVetorial(pdfPaginas([1, 2, 3, 4], 5), { maxPaginas: 2 });
+    assert.deepStrictEqual(v.map(p => p.pagina), [1, 2, null]);
+    assert.strictEqual(v[2].pulada.motivo, 'limite_paginas');
+    assert.deepStrictEqual(v[2].pulada.paginas, [3, 4]);
+    assert.match(v[2].aviso, /páginas 3 a 4 não lidas \(limite de 2 páginas/);
+  });
+
+  await caso('na thread à parte, o mesmo resultado que no processo', async () => {
+    const pdf = pdfPaginas([1, 2], 300);
+    const semMs = (l) => l.map(({ ms, ...p }) => p);
+    assert.deepStrictEqual(semMs(await lerPdfVetorial(pdf)), semMs(await lerPdfVetorial(pdf, { emThread: false })));
   });
 
   console.log(`pdf vetorial (desempenho): ${ok} casos ok`);
