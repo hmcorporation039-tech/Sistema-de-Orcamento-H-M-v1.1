@@ -409,10 +409,39 @@ function pedidoLocal(req) {
   return /^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(ip);
 }
 
+// As duas rotas de pasta de um registro (análise, projeto/laudo, obra, cliente):
+//   GET  …/:id/pasta        → { caminho, arquivos, podeAbrir, ...extra }
+//   POST …/:id/pasta/abrir  → abre no Explorer (só no PC do sistema)
+// Antes eram 4 cópias, uma devolvendo o caminho do servidor na mensagem de erro.
+// carregar(id) → registro ou null; pastaDe(registro) → caminho absoluto (cria se faltar);
+// extra(registro, req, dir) → campos a mais na resposta da pasta.
+function rotasDePasta({ carregar, pastaDe, naoEncontrado, extra = null }) {
+  const pastaDoRegistro = async (req, res) => {
+    const reg = await carregar(req.params.id);
+    if (!reg) { res.status(404).json({ erro: naoEncontrado }); return null; }
+    return { reg, dir: await pastaDe(reg) };
+  };
+  return {
+    async pasta(req, res) {
+      const r = await pastaDoRegistro(req, res);
+      if (!r) return;
+      res.json({ ...(await resumoPasta(r.dir)), podeAbrir: pedidoLocal(req), ...(extra ? await extra(r.reg, req, r.dir) : {}) });
+    },
+    async abrirPasta(req, res) {
+      if (!pedidoLocal(req)) return res.status(400).json({ erro: 'A pasta só pode ser aberta no PC onde o sistema roda.' });
+      const r = await pastaDoRegistro(req, res);
+      if (!r) return;
+      if (!r.dir) return res.status(503).json({ erro: 'A pasta não está disponível agora (o servidor das pastas pode estar fora do ar).' });
+      P.abrirNoExplorer(r.dir);
+      res.json({ ok: true });
+    },
+  };
+}
+
 module.exports = {
   pastaDoProjeto, pastaDoLaudo, pastaDaObra, pastaDaObraPorId, caminhoRegistrado, excluirPastaDoItem, nomeCurtoDisciplina,
   sincronizarProjeto, sincronizarLaudo, sincronizarObra, salvarPdfPropostaNasPastas, salvarPdfContratoNaObra,
-  resumoPasta, pedidoLocal, seguro,
+  resumoPasta, pedidoLocal, seguro, rotasDePasta,
   pastaDoCliente, pastaRelDoCliente, clienteIdDoItem, caminhoDaObra, RECEBIDOS,
   pastasDoServidor, ligarPastaDoCliente, normalizarNome,
 };

@@ -15,7 +15,7 @@ const { inserirSecoesEItens, proximoNumero, registrarEvento } = require('./propo
 const P = require('../utils/pastasSistema');
 const { tipoPorConteudo } = require('../utils/tipoArquivo');
 const { versaoDoPedido, responderConflitoOuAusente } = require('../utils/versao');
-const { sincronizarProjeto, pastaDoProjeto, resumoPasta, pedidoLocal, seguro, excluirPastaDoItem } = require('../services/pastasRegistros');
+const { sincronizarProjeto, pastaDoProjeto, seguro, excluirPastaDoItem, rotasDePasta } = require('../services/pastasRegistros');
 const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
 const { lerFinalidade } = require('../utils/projetoLaudo');
 const { ehArquivoCad } = require('../utils/analiseCad');
@@ -480,23 +480,12 @@ async function gerarRelatorio(req, res, next) {
 }
 
 // Pasta do projeto: caminho e arquivos (cria/renomeia se preciso).
-async function pasta(req, res) {
-  const r = await pool.query('SELECT * FROM analises_projeto WHERE id = $1', [req.params.id]);
-  if (!r.rows.length) return res.status(404).json({ erro: 'Análise não encontrada' });
-  res.json({ ...(await resumoPasta(await pastaDoProjeto(r.rows[0]))), podeAbrir: pedidoLocal(req) });
-}
-
-async function abrirPasta(req, res) {
-  if (!pedidoLocal(req)) return res.status(400).json({ erro: 'A pasta só pode ser aberta no PC onde o sistema roda' });
-  try {
-    const r = await pool.query('SELECT * FROM analises_projeto WHERE id = $1', [req.params.id]);
-    if (!r.rows.length) return res.status(404).json({ erro: 'Análise não encontrada' });
-    P.abrirNoExplorer(await pastaDoProjeto(r.rows[0]));
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ erro: `Erro ao abrir a pasta: ${err.message}` });
-  }
-}
+// pasta da análise e "abrir no Explorer": as mesmas rotas de pasta de todo registro (pastasRegistros.rotasDePasta)
+const { pasta, abrirPasta } = rotasDePasta({
+  carregar: async (id) => (await pool.query('SELECT * FROM analises_projeto WHERE id = $1', [id])).rows[0] || null,
+  pastaDe: pastaDoProjeto,
+  naoEncontrado: 'Análise não encontrada',
+});
 
 // Gera (ou atualiza, se já existir) uma proposta rascunho na aba Orçamentos a
 // partir do que está salvo na análise — é daqui que o orçamento é concluído

@@ -17,7 +17,7 @@ const { registrarAuditoria } = require('../utils/auditoria');
 const { segmentoDoCliente } = require('../utils/precosMaoDeObraReferencia');
 const { condicaoPodeAbrirOS } = require('../utils/campo');
 const { ehDataIso } = require('../utils/dataHoje');
-const { pastaDaObra, sincronizarObra, caminhoRegistrado, resumoPasta, pedidoLocal, seguro } = require('../services/pastasRegistros');
+const { pastaDaObra, sincronizarObra, caminhoRegistrado, seguro, rotasDePasta } = require('../services/pastasRegistros');
 
 // regra de quem edita a obra: utils/obras.js (a mesma do cronograma e do campo)
 const ehAdmin = (req) => O.ehAdmin(req.usuario);
@@ -372,25 +372,23 @@ async function vincular(req, res, next) {
 }
 
 // GET /obras/:id/pasta — Arquivos do Sistema\Obras\<obra> + pastas antigas dos itens ligados
-async function pasta(req, res, next) {
-  const obra = await carregarObra(req.params.id);
-  if (!obra) return res.status(404).json({ erro: 'Obra não encontrada.' });
-  const dir = await seguro(`pasta obra ${obra.id}`, () => pastaDaObra(obra));
+// pasta da obra e "abrir no Explorer" (pastasRegistros.rotasDePasta); a resposta
+// da pasta traz também as pastas antigas de análises/laudos da obra (`outras`)
+const { pasta, abrirPasta } = rotasDePasta({
+  carregar: carregarObra,
+  pastaDe: (obra) => seguro(`pasta obra ${obra.id}`, () => pastaDaObra(obra)),
+  naoEncontrado: 'Obra não encontrada.',
+  extra: async (obra) => ({ outras: await outrasPastasDaObra(obra) }),
+});
+
+async function outrasPastasDaObra(obra) {
   const outras = [];
   const analises = (await pool.query('SELECT a.*, o.pasta AS pasta_obra_dir FROM analises_projeto a LEFT JOIN obras o ON o.id = a.pasta_obra_id WHERE a.obra_id = $1 AND a.pasta IS NOT NULL AND a.pasta_obra_id IS DISTINCT FROM $1', [obra.id])).rows;
   for (const a of analises) outras.push({ tipo: 'analise', id: a.id, rotulo: a.nome_projeto || a.cliente_nome || `Análise ${a.id}`, caminho: await caminhoRegistrado('projeto', a) });
   const laudos = (await pool.query('SELECT l.*, o.pasta AS pasta_obra_dir FROM laudos_projetos l LEFT JOIN obras o ON o.id = l.pasta_obra_id WHERE l.obra_id = $1 AND l.pasta IS NOT NULL AND l.pasta_obra_id IS DISTINCT FROM $1', [obra.id])).rows;
   // tipo_registro (2.1): 'projeto' | 'laudo' — a tela mostra "Projeto #…" ou "Laudo #…"
   for (const l of laudos) outras.push({ tipo: 'laudo', tipo_registro: l.tipo, id: l.id, rotulo: l.titulo || `${l.tipo === 'projeto' ? 'Projeto' : 'Laudo'} ${l.id}`, caminho: await caminhoRegistrado('laudo', l) });
-  res.json({ ...(await resumoPasta(dir)), podeAbrir: pedidoLocal(req), outras });
-}
-
-async function abrirPasta(req, res, next) {
-  if (!pedidoLocal(req)) return res.status(400).json({ erro: 'A pasta só pode ser aberta no PC onde o sistema roda.' });
-  const obra = await carregarObra(req.params.id);
-  if (!obra) return res.status(404).json({ erro: 'Obra não encontrada.' });
-  P.abrirNoExplorer(await pastaDaObra(obra));
-  res.json({ ok: true });
+  return outras;
 }
 
 // POST /obras/:id/pasta/pacote (2.3) — pacote de análise com os PDF/DWG/DXF/ZIP que

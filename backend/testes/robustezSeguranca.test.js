@@ -25,6 +25,7 @@ require.cache[require.resolve('../src/services/pastasRegistros')] = { id: 'pr', 
   seguro: async (rotulo, fn) => { try { return await fn(); } catch { return null; } },
   sincronizarLaudo: async () => null, sincronizarProjeto: async () => null, pastaDoProjeto: async () => null, resumoPasta: async () => null,
   pedidoLocal: () => false, caminhoRegistrado: async () => null, salvarPdfPropostaNasPastas: async () => null,
+  rotasDePasta: () => ({ pasta: async () => null, abrirPasta: async () => null }),
 } };
 
 const { executarNoWorker, estadoDoSemaforo, MAX_SIMULTANEOS } = require('../src/utils/executarNoWorker');

@@ -21,7 +21,7 @@ const { tipoPorConteudo } = require('../utils/tipoArquivo');
 const { versaoDoPedido, responderConflitoOuAusente } = require('../utils/versao');
 const { dadosDaAnalise, tipoAmbiente } = require('../utils/ponteAnaliseSkill');
 const { buscarPrecosReferencia, segmentoDoCliente } = require('../utils/precosMaoDeObraReferencia');
-const { sincronizarLaudo, pastaDoLaudo, resumoPasta, pedidoLocal, seguro, caminhoRegistrado, excluirPastaDoItem } = require('../services/pastasRegistros');
+const { sincronizarLaudo, pastaDoLaudo, seguro, caminhoRegistrado, excluirPastaDoItem, rotasDePasta } = require('../services/pastasRegistros');
 const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
 const { lerArquiteturaNoWorker, mensagemDaLeitura, resumoDaArquitetura, dxfParaGuardar, faltouEscala, gerarPlantaNoWorker } = require('../services/tarefasCad');
 
@@ -671,19 +671,8 @@ async function salvarDocumentos(req, res) {
   res.json({ caminhoPasta: pasta, documentos: gerados.map(g => ({ tipo: g.tipo, arquivo: g.nomeNaPasta, gravado: g.gravadoNaPasta })) });
 }
 
-async function pasta(req, res) {
-  const laudo = await carregarLaudo(req.params.id);
-  if (!laudo) return res.status(404).json({ erro: 'Registro não encontrado.' });
-  res.json({ ...(await resumoPasta(await pastaDoLaudo(laudo))), podeAbrir: pedidoLocal(req) });
-}
-
-async function abrirPasta(req, res) {
-  if (!pedidoLocal(req)) return res.status(400).json({ erro: 'A pasta só pode ser aberta no PC onde o sistema roda.' });
-  const laudo = await carregarLaudo(req.params.id);
-  if (!laudo) return res.status(404).json({ erro: 'Registro não encontrado.' });
-  P.abrirNoExplorer(await pastaDoLaudo(laudo));
-  res.json({ ok: true });
-}
+// pasta do projeto/laudo e "abrir no Explorer" (pastasRegistros.rotasDePasta)
+const { pasta, abrirPasta } = rotasDePasta({ carregar: carregarLaudo, pastaDe: pastaDoLaudo, naoEncontrado: 'Registro não encontrado.' });
 
 // ── Fotos ───────────────────────────────────────────────────────────────────
 
