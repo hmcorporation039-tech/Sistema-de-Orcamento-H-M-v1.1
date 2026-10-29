@@ -124,7 +124,9 @@ async function montarEntrega(laudo, pedido, usuarioNome) {
       try { gerado = await motor.gerarDocumento(resultado, tipo); } catch (e) { throw erro400(`${doc?.rotulo || tipo}: ${e.message}`); }
       const ext = path.extname(gerado.nomeArquivo) || (doc?.formato === 'Excel' ? '.xlsx' : '.docx');
       let buffer = gerado.buffer;
-      if (asBuilt) buffer = ext === '.xlsx' ? await E.marcarAsBuiltXlsx(buffer, asBuilt) : await E.marcarAsBuiltDocx(buffer, asBuilt);
+      // DXF (desenho do quadro) não é Word nem Excel: leva o "AS BUILT" no nome e a revisão/data no carimbo
+      if (asBuilt && ext === '.xlsx') buffer = await E.marcarAsBuiltXlsx(buffer, asBuilt);
+      else if (asBuilt && ext === '.docx') buffer = await E.marcarAsBuiltDocx(buffer, asBuilt);
       arquivos.push({ nome: `${prefixo}${P.nomeSeguro(doc?.rotulo || tipo)}${ext}`, buffer, descricao: `${doc?.rotulo || tipo} (${doc?.formato || ext.slice(1)})` });
     }
     notas.push('O memorial em PDF é gerado pelo Word (Arquivo › Salvar como › PDF) — o sistema não converte Word em PDF.');
@@ -193,4 +195,5 @@ const { pasta, abrirPasta } = rotasDePasta({ carregar: carregarLaudo, pastaDe: p
 
 module.exports = {
   calcular, documento, salvarDocumentos, catalogoEntregas, gerarEntrega, pasta, abrirPasta,
+  montarEntrega, // testes
 };

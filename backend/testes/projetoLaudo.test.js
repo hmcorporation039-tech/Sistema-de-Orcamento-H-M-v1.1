@@ -88,4 +88,17 @@ caso('lista de disciplinas: todo documento e modo de orçamento com uso', () => 
   }
 });
 
-console.log(`projetoLaudo.test.js: ${ok} casos OK`);
+(async () => {
+  // as-built de uma disciplina que entrega DXF entre as definições (quadros):
+  // o DXF não passa pela marcação do Word, só o nome leva "AS BUILT"
+  const { montarEntrega } = require('../src/controllers/laudos/entregas');
+  const dados = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '../../skills/quadros/exemplos/exemplo-qd-predial.json'), 'utf8'));
+  const arquivos = await montarEntrega({ disciplina: 'quadros', titulo: 'QD-01', dados },
+    { itens: ['definicoes'], asBuilt: { data: '2026-10-29', revisao: 'R01' } }, 'teste');
+  const dxf = arquivos.find(a => a.nome.endsWith('.dxf'));
+  assert.ok(dxf && dxf.nome.startsWith('AS BUILT - '), arquivos.map(a => a.nome).join(', '));
+  assert.ok(dxf.buffer.toString('utf8').includes('R01'), 'revisão do as-built no carimbo');
+  assert.ok(arquivos.some(a => a.nome.endsWith('.docx')) && arquivos.some(a => a.nome.endsWith('.xlsx')));
+  ok++;
+  console.log(`projetoLaudo.test.js: ${ok} casos OK`);
+})().catch((e) => { console.error(e); process.exit(1); });
