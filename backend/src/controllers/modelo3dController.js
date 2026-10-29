@@ -11,12 +11,6 @@ const { pastaDoLaudo, pastaDoProjeto, seguro } = require('../services/pastasRegi
 
 const ORIGENS = new Set(['laudo', 'analise', 'proposta']);
 
-function responderErro(res, err, contexto) {
-  if (err.status && err.status < 500) return res.status(err.status).json({ erro: err.message });
-  console.error(`Erro no modelo 3D (${contexto}):`, err);
-  return res.status(500).json({ erro: err.status ? err.message : 'Erro interno ao gerar o modelo 3D.' });
-}
-
 function lerOrigem(req, res) {
   const { origem } = req.params;
   if (!ORIGENS.has(origem)) { res.status(400).json({ erro: 'Origem do modelo 3D inválida.' }); return null; }
@@ -41,9 +35,7 @@ const resumoPublico = (m) => ({ numeros: m.numeros, avisos: m.avisos, gerado_em:
 async function situacao(req, res) {
   const o = lerOrigem(req, res);
   if (!o) return;
-  try {
-    res.json(await M.situacao(o.origem, o.id));
-  } catch (err) { responderErro(res, err, 'situação'); }
+  res.json(await M.situacao(o.origem, o.id));
 }
 
 // POST /modelo-3d/:origem/:id/abrir — gera (ou pega do cache) e devolve um link
@@ -51,25 +43,21 @@ async function situacao(req, res) {
 async function abrir(req, res) {
   const o = lerOrigem(req, res);
   if (!o) return;
-  try {
-    const m = await M.obterModelo(o.origem, o.id);
-    if (!m) return res.status(400).json({ erro: 'Envie primeiro a arquitetura (.dwg, .dxf ou PDF) para gerar o modelo 3D.' });
-    if (o.origem !== 'proposta') await gravarNaPasta(m);
-    res.json({ url: `/api/modelo-3d/ver/${M.criarLink(o.origem, o.id)}`, ...resumoPublico(m) });
-  } catch (err) { responderErro(res, err, 'abrir'); }
+  const m = await M.obterModelo(o.origem, o.id);
+  if (!m) return res.status(400).json({ erro: 'Envie primeiro a arquitetura (.dwg, .dxf ou PDF) para gerar o modelo 3D.' });
+  if (o.origem !== 'proposta') await gravarNaPasta(m);
+  res.json({ url: `/api/modelo-3d/ver/${M.criarLink(o.origem, o.id)}`, ...resumoPublico(m) });
 }
 
 // GET /modelo-3d/:origem/:id/arquivo — o HTML para baixar (abre sem internet)
 async function arquivo(req, res) {
   const o = lerOrigem(req, res);
   if (!o) return;
-  try {
-    const m = await M.obterModelo(o.origem, o.id);
-    if (!m) return res.status(400).json({ erro: 'Envie primeiro a arquitetura (.dwg, .dxf ou PDF) para gerar o modelo 3D.' });
-    const nome = M.nomeArquivo(m.fonte);
-    res.set({ 'Content-Type': 'text/html; charset=utf-8', 'Content-Disposition': contentDisposition(nome), 'X-Nome-Arquivo': encodeURIComponent(nome) });
-    res.send(Buffer.from(m.html, 'utf8'));
-  } catch (err) { responderErro(res, err, 'baixar'); }
+  const m = await M.obterModelo(o.origem, o.id);
+  if (!m) return res.status(400).json({ erro: 'Envie primeiro a arquitetura (.dwg, .dxf ou PDF) para gerar o modelo 3D.' });
+  const nome = M.nomeArquivo(m.fonte);
+  res.set({ 'Content-Type': 'text/html; charset=utf-8', 'Content-Disposition': contentDisposition(nome), 'X-Nome-Arquivo': encodeURIComponent(nome) });
+  res.send(Buffer.from(m.html, 'utf8'));
 }
 
 // Página do 3D com a política própria (script embutido em sandbox)
@@ -100,51 +88,45 @@ async function ver(req, res) {
 // POST /projetos/analises/:id/arquitetura — DWG/DXF/PDF da arquitetura na análise
 // (PDF: campos opcionais `escala` — 50 para 1:50 — e `pagina`)
 async function enviarArquiteturaAnalise(req, res) {
-  try {
-    const arq = req.file;
-    if (!arq) return res.status(400).json({ erro: 'Envie o arquivo da arquitetura (.dwg, .dxf ou .pdf).' });
-    const { rows: [analise] } = await pool.query('SELECT * FROM analises_projeto WHERE id = $1', [req.params.id]);
-    if (!analise) return res.status(404).json({ erro: 'Análise não encontrada.' });
-    // conversão (DWG/PDF) e leitura numa thread à parte (services/tarefasCad): na
-    // thread principal, um desenho grande travava o sistema para todos
-    let lida;
-    try { lida = await lerArquiteturaNoWorker(arq.buffer, arq.originalname, req.body); } catch (e) { return res.status(400).json({ erro: mensagemDaLeitura(e), faltaEscala: faltouEscala(e) }); }
-    // mesmo formato de laudos_projetos_arquitetura: o projeto criado da análise copia esta linha
-    const resumo = resumoDaArquitetura(lida);
-    await pool.query(
-      `INSERT INTO analises_projeto_arquitetura (analise_id, nome_arquivo, conteudo, resumo, usuario_id) VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (analise_id) DO UPDATE SET nome_arquivo = EXCLUDED.nome_arquivo, conteudo = EXCLUDED.conteudo, resumo = EXCLUDED.resumo, usuario_id = EXCLUDED.usuario_id, criado_em = NOW()`,
-      [analise.id, String(arq.originalname).slice(0, 200), dxfParaGuardar(lida, arq.buffer), resumo, req.usuario.id]);
-    await registrarAuditoria(pool, { entidade: 'analises_projeto', entidadeId: analise.id, acao: 'arquitetura_3d', detalhes: { arquivo: arq.originalname }, usuarioId: req.usuario.id });
-    await seguro(`arquitetura análise ${analise.id}`, async () => {
-      await P.gravarArquivo(path.join(await pastaDoProjeto(analise), 'Arquitetura'), arq.originalname, arq.buffer);
-    });
-    res.status(201).json({ nome_arquivo: arq.originalname, ...resumo, ambientes: resumo.ambientes.length });
-  } catch (err) { responderErro(res, err, 'arquitetura da análise'); }
+  const arq = req.file;
+  if (!arq) return res.status(400).json({ erro: 'Envie o arquivo da arquitetura (.dwg, .dxf ou .pdf).' });
+  const { rows: [analise] } = await pool.query('SELECT * FROM analises_projeto WHERE id = $1', [req.params.id]);
+  if (!analise) return res.status(404).json({ erro: 'Análise não encontrada.' });
+  // conversão (DWG/PDF) e leitura numa thread à parte (services/tarefasCad): na
+  // thread principal, um desenho grande travava o sistema para todos
+  let lida;
+  try { lida = await lerArquiteturaNoWorker(arq.buffer, arq.originalname, req.body); } catch (e) { return res.status(400).json({ erro: mensagemDaLeitura(e), faltaEscala: faltouEscala(e) }); }
+  // mesmo formato de laudos_projetos_arquitetura: o projeto criado da análise copia esta linha
+  const resumo = resumoDaArquitetura(lida);
+  await pool.query(
+    `INSERT INTO analises_projeto_arquitetura (analise_id, nome_arquivo, conteudo, resumo, usuario_id) VALUES ($1,$2,$3,$4,$5)
+     ON CONFLICT (analise_id) DO UPDATE SET nome_arquivo = EXCLUDED.nome_arquivo, conteudo = EXCLUDED.conteudo, resumo = EXCLUDED.resumo, usuario_id = EXCLUDED.usuario_id, criado_em = NOW()`,
+    [analise.id, String(arq.originalname).slice(0, 200), dxfParaGuardar(lida, arq.buffer), resumo, req.usuario.id]);
+  await registrarAuditoria(pool, { entidade: 'analises_projeto', entidadeId: analise.id, acao: 'arquitetura_3d', detalhes: { arquivo: arq.originalname }, usuarioId: req.usuario.id });
+  await seguro(`arquitetura análise ${analise.id}`, async () => {
+    await P.gravarArquivo(path.join(await pastaDoProjeto(analise), 'Arquitetura'), arq.originalname, arq.buffer);
+  });
+  res.status(201).json({ nome_arquivo: arq.originalname, ...resumo, ambientes: resumo.ambientes.length });
 }
 
 // GET /projetos/analises/:id/arquitetura
 async function verArquiteturaAnalise(req, res) {
-  try {
-    const { rows: [a] } = await pool.query('SELECT nome_arquivo, resumo, criado_em FROM analises_projeto_arquitetura WHERE analise_id = $1', [req.params.id]);
-    res.json(a || null);
-  } catch (err) { responderErro(res, err, 'ver arquitetura da análise'); }
+  const { rows: [a] } = await pool.query('SELECT nome_arquivo, resumo, criado_em FROM analises_projeto_arquitetura WHERE analise_id = $1', [req.params.id]);
+  res.json(a || null);
 }
 
 // PATCH /propostas/:id/modelo-3d-cliente { mostrar } — o cliente vê o 3D no
 // link de aprovação e a imagem no PDF
 async function mostrarAoCliente(req, res) {
-  try {
-    const mostrar = req.body?.mostrar === true;
-    if (mostrar) {
-      const s = await M.situacao('proposta', Number(req.params.id));
-      if (!s.disponivel) return res.status(400).json({ erro: 'Esta proposta não tem modelo 3D: ela precisa vir de uma análise ou de um projeto com a arquitetura (.dwg, .dxf ou PDF) enviada.' });
-    }
-    const { rowCount } = await pool.query('UPDATE propostas SET modelo_3d_cliente = $1 WHERE id = $2', [mostrar, req.params.id]);
-    if (!rowCount) return res.status(404).json({ erro: 'Proposta não encontrada.' });
-    await registrarAuditoria(pool, { entidade: 'propostas', entidadeId: Number(req.params.id), acao: 'modelo_3d_cliente', detalhes: { mostrar }, usuarioId: req.usuario.id });
-    res.json({ modelo_3d_cliente: mostrar });
-  } catch (err) { responderErro(res, err, 'mostrar ao cliente'); }
+  const mostrar = req.body?.mostrar === true;
+  if (mostrar) {
+    const s = await M.situacao('proposta', Number(req.params.id));
+    if (!s.disponivel) return res.status(400).json({ erro: 'Esta proposta não tem modelo 3D: ela precisa vir de uma análise ou de um projeto com a arquitetura (.dwg, .dxf ou PDF) enviada.' });
+  }
+  const { rowCount } = await pool.query('UPDATE propostas SET modelo_3d_cliente = $1 WHERE id = $2', [mostrar, req.params.id]);
+  if (!rowCount) return res.status(404).json({ erro: 'Proposta não encontrada.' });
+  await registrarAuditoria(pool, { entidade: 'propostas', entidadeId: Number(req.params.id), acao: 'modelo_3d_cliente', detalhes: { mostrar }, usuarioId: req.usuario.id });
+  res.json({ modelo_3d_cliente: mostrar });
 }
 
 module.exports = { situacao, abrir, arquivo, ver, enviarPagina, enviarArquiteturaAnalise, verArquiteturaAnalise, mostrarAoCliente };

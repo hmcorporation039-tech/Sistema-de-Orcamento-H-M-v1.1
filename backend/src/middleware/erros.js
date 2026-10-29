@@ -93,6 +93,11 @@ function tratarErros(err, req, res, next) {
   if (err && Number.isInteger(err.status) && err.status >= 400 && err.status < 500) {
     return res.status(err.status).json({ erro: err.message, ...(err.extra || {}) });
   }
+  // 5xx com mensagem escrita para o usuário (utils/erros.js, publico: true)
+  if (err && err.publico && Number.isInteger(err.status) && err.status >= 500) {
+    console.error(`Erro ${err.status} em ${req.method} ${req.originalUrl}:`, err.message);
+    return res.status(err.status).json({ erro: err.message, ...(err.extra || {}) });
+  }
 
   if (err && ERROS_DE_ENTRADA[err.code]) {
     console.error(`Erro de entrada (${err.code}) em ${req.method} ${req.originalUrl}:`, err.message);

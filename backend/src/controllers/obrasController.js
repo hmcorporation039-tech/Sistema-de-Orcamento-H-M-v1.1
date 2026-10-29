@@ -148,66 +148,62 @@ const SQL_CONTAGENS = `
 
 // GET /obras?busca=&status=&cliente_id=&segmento=&pagina=&porPagina=&campos=basico
 async function listar(req, res, next) {
-  try {
-    const { busca, status, segmento } = req.query;
-    const basico = req.query.campos === 'basico';
-    const { pagina, porPagina, offset } = parsePaginacao(req.query, basico ? 1000 : 30);
-    const cond = [];
-    const params = [];
-    if (busca) {
-      params.push(`%${String(busca).trim()}%`);
-      cond.push(`(o.codigo ILIKE $${params.length} OR o.nome ILIKE $${params.length} OR o.cliente_nome ILIKE $${params.length} OR o.local ILIKE $${params.length})`);
-    }
-    if (status) {
-      const lista = String(status).split(',').filter(s => O.STATUS_OBRA.includes(s));
-      if (!lista.length) return res.status(400).json({ erro: 'Status inválido.' });
-      params.push(lista);
-      cond.push(`o.status = ANY($${params.length}::text[])`);
-    }
-    if (segmento) {
-      if (!O.SEGMENTOS.includes(segmento)) return res.status(400).json({ erro: 'Segmento inválido.' });
-      params.push(segmento);
-      cond.push(`o.segmento = $${params.length}`);
-    }
-    if (req.query.cliente_id) {
-      const r = inteiroOuNull(req.query.cliente_id);
-      if (r.erro) return res.status(400).json({ erro: 'Cliente inválido.' });
-      params.push(r.valor);
-      cond.push(`o.cliente_id = $${params.length}`);
-    }
-    // ?pode_abrir_os=1 — só as obras em que o usuário pode abrir OS pelo app de
-    // campo (a mesma regra da operação criar_os, em utils/campo.js)
-    if (['1', 'true', 'sim'].includes(String(req.query.pode_abrir_os || '').toLowerCase())) {
-      cond.push(condicaoPodeAbrirOS(req.usuario, params, 'o'));
-    }
-    const where = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
-    const total = await pool.query(`SELECT count(*) FROM obras o ${where}`, params);
-    const colunas = basico
-      ? 'o.id, o.codigo, o.nome, o.cliente_id, o.cliente_nome, o.local, o.status, o.segmento'
-      : `o.*, u.nome AS responsavel_nome, ${SQL_CONTAGENS}`;
-    const { rows } = await pool.query(
-      `SELECT ${colunas} FROM obras o LEFT JOIN usuarios u ON u.id = o.responsavel_id ${where}
-        ORDER BY ${basico ? 'o.nome' : 'o.atualizado_em DESC, o.id DESC'}
-        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-      [...params, porPagina, offset]
-    );
-    if (!basico) {
-      const resumos = await resumosDasObras(rows.map(r => r.id), ehAdmin(req));
-      for (const r of rows) {
-        r.resumo = resumos.get(r.id);
-        r.pode_editar = podeEditar(req, r);
-        if (!ehAdmin(req)) { r.qtd_contratos = null; r.qtd_movimentos = null; }
-      }
-    }
-    const totalObras = parseInt(total.rows[0].count, 10);
-    // ?campos=basico (listas de escolha) vem numa página só de até 1000: acima
-    // disso a lista era cortada sem aviso — `incompleto` avisa quem chamou
-    const incompleto = offset + rows.length < totalObras;
-    if (incompleto) res.set('X-Lista-Truncada', '1');
-    res.json({ ...montarResposta(rows, totalObras, pagina, porPagina), incompleto, restrito_financeiro: !ehAdmin(req) });
-  } catch (err) {
-    next(err);
+  const { busca, status, segmento } = req.query;
+  const basico = req.query.campos === 'basico';
+  const { pagina, porPagina, offset } = parsePaginacao(req.query, basico ? 1000 : 30);
+  const cond = [];
+  const params = [];
+  if (busca) {
+    params.push(`%${String(busca).trim()}%`);
+    cond.push(`(o.codigo ILIKE $${params.length} OR o.nome ILIKE $${params.length} OR o.cliente_nome ILIKE $${params.length} OR o.local ILIKE $${params.length})`);
   }
+  if (status) {
+    const lista = String(status).split(',').filter(s => O.STATUS_OBRA.includes(s));
+    if (!lista.length) return res.status(400).json({ erro: 'Status inválido.' });
+    params.push(lista);
+    cond.push(`o.status = ANY($${params.length}::text[])`);
+  }
+  if (segmento) {
+    if (!O.SEGMENTOS.includes(segmento)) return res.status(400).json({ erro: 'Segmento inválido.' });
+    params.push(segmento);
+    cond.push(`o.segmento = $${params.length}`);
+  }
+  if (req.query.cliente_id) {
+    const r = inteiroOuNull(req.query.cliente_id);
+    if (r.erro) return res.status(400).json({ erro: 'Cliente inválido.' });
+    params.push(r.valor);
+    cond.push(`o.cliente_id = $${params.length}`);
+  }
+  // ?pode_abrir_os=1 — só as obras em que o usuário pode abrir OS pelo app de
+  // campo (a mesma regra da operação criar_os, em utils/campo.js)
+  if (['1', 'true', 'sim'].includes(String(req.query.pode_abrir_os || '').toLowerCase())) {
+    cond.push(condicaoPodeAbrirOS(req.usuario, params, 'o'));
+  }
+  const where = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
+  const total = await pool.query(`SELECT count(*) FROM obras o ${where}`, params);
+  const colunas = basico
+    ? 'o.id, o.codigo, o.nome, o.cliente_id, o.cliente_nome, o.local, o.status, o.segmento'
+    : `o.*, u.nome AS responsavel_nome, ${SQL_CONTAGENS}`;
+  const { rows } = await pool.query(
+    `SELECT ${colunas} FROM obras o LEFT JOIN usuarios u ON u.id = o.responsavel_id ${where}
+      ORDER BY ${basico ? 'o.nome' : 'o.atualizado_em DESC, o.id DESC'}
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, porPagina, offset]
+  );
+  if (!basico) {
+    const resumos = await resumosDasObras(rows.map(r => r.id), ehAdmin(req));
+    for (const r of rows) {
+      r.resumo = resumos.get(r.id);
+      r.pode_editar = podeEditar(req, r);
+      if (!ehAdmin(req)) { r.qtd_contratos = null; r.qtd_movimentos = null; }
+    }
+  }
+  const totalObras = parseInt(total.rows[0].count, 10);
+  // ?campos=basico (listas de escolha) vem numa página só de até 1000: acima
+  // disso a lista era cortada sem aviso — `incompleto` avisa quem chamou
+  const incompleto = offset + rows.length < totalObras;
+  if (incompleto) res.set('X-Lista-Truncada', '1');
+  res.json({ ...montarResposta(rows, totalObras, pagina, porPagina), incompleto, restrito_financeiro: !ehAdmin(req) });
 }
 
 async function carregarObra(id, executor = pool) {
@@ -223,136 +219,120 @@ async function carregarObra(id, executor = pool) {
 
 // GET /obras/:id — obra + itens ligados + resumo orçado × realizado × recebido
 async function buscarUma(req, res, next) {
-  try {
-    const obra = await carregarObra(req.params.id);
-    if (!obra) return res.status(404).json({ erro: 'Obra não encontrada.' });
-    const id = obra.id;
-    const admin = ehAdmin(req);
-    const [analises, laudos, propostas] = await Promise.all([
-      pool.query(`SELECT a.id, a.nome_projeto, a.cliente_nome, a.finalidade, a.disciplinas, a.proposta_id, p.numero AS proposta_numero,
-                         a.usuario_id, u.nome AS usuario_nome, a.criado_em, a.atualizado_em, (a.pasta_obra_id = a.obra_id) AS pasta_na_obra
-                    FROM analises_projeto a LEFT JOIN propostas p ON p.id = a.proposta_id LEFT JOIN usuarios u ON u.id = a.usuario_id
-                   WHERE a.obra_id = $1 ORDER BY a.atualizado_em DESC`, [id]),
-      pool.query(`SELECT l.id, l.tipo, l.disciplina, l.titulo, l.cliente_nome, l.propostas, l.gerar_orcamento, l.analise_id,
-                         l.dados->'meta'->>'revisao' AS revisao, l.usuario_id, u.nome AS usuario_nome, l.criado_em, l.atualizado_em,
-                         (l.pasta_obra_id = l.obra_id) AS pasta_na_obra
-                    FROM laudos_projetos l LEFT JOIN usuarios u ON u.id = l.usuario_id
-                   WHERE l.obra_id = $1 ORDER BY l.atualizado_em DESC`, [id]),
-      pool.query(`SELECT p.id, p.numero, p.data, p.cliente_nome, p.local_obra, p.status, p.total, p.usuario_id, u.nome AS usuario_nome, p.atualizado_em
-                    FROM propostas p LEFT JOIN usuarios u ON u.id = p.usuario_id
-                   WHERE p.obra_id = $1 ORDER BY p.sequencial DESC`, [id]),
+  const obra = await carregarObra(req.params.id);
+  if (!obra) return res.status(404).json({ erro: 'Obra não encontrada.' });
+  const id = obra.id;
+  const admin = ehAdmin(req);
+  const [analises, laudos, propostas] = await Promise.all([
+    pool.query(`SELECT a.id, a.nome_projeto, a.cliente_nome, a.finalidade, a.disciplinas, a.proposta_id, p.numero AS proposta_numero,
+                       a.usuario_id, u.nome AS usuario_nome, a.criado_em, a.atualizado_em, (a.pasta_obra_id = a.obra_id) AS pasta_na_obra
+                  FROM analises_projeto a LEFT JOIN propostas p ON p.id = a.proposta_id LEFT JOIN usuarios u ON u.id = a.usuario_id
+                 WHERE a.obra_id = $1 ORDER BY a.atualizado_em DESC`, [id]),
+    pool.query(`SELECT l.id, l.tipo, l.disciplina, l.titulo, l.cliente_nome, l.propostas, l.gerar_orcamento, l.analise_id,
+                       l.dados->'meta'->>'revisao' AS revisao, l.usuario_id, u.nome AS usuario_nome, l.criado_em, l.atualizado_em,
+                       (l.pasta_obra_id = l.obra_id) AS pasta_na_obra
+                  FROM laudos_projetos l LEFT JOIN usuarios u ON u.id = l.usuario_id
+                 WHERE l.obra_id = $1 ORDER BY l.atualizado_em DESC`, [id]),
+    pool.query(`SELECT p.id, p.numero, p.data, p.cliente_nome, p.local_obra, p.status, p.total, p.usuario_id, u.nome AS usuario_nome, p.atualizado_em
+                  FROM propostas p LEFT JOIN usuarios u ON u.id = p.usuario_id
+                 WHERE p.obra_id = $1 ORDER BY p.sequencial DESC`, [id]),
+  ]);
+  let contratos = { rows: [] };
+  let movimentos = { rows: [] };
+  if (admin) {
+    [contratos, movimentos] = await Promise.all([
+      pool.query(`SELECT c.id, c.codigo_registro, c.objeto, c.local_obra, c.periodo_inicio, c.periodo_fim, c.valor, pr.nome AS prestador_nome
+                    FROM contratos c JOIN prestadores pr ON pr.id = c.prestador_id
+                   WHERE c.obra_id = $1 ORDER BY c.periodo_inicio DESC, c.id DESC`, [id]),
+      pool.query(`SELECT fm.id, fm.tipo, fm.nome, fm.valor, fm.data_hora, fm.categoria, fm.origem, pr.nome AS prestador_nome
+                    FROM financeiro_movimentos fm LEFT JOIN prestadores pr ON pr.id = fm.prestador_id
+                   WHERE fm.obra_id = $1 ORDER BY fm.data_hora DESC`, [id]),
     ]);
-    let contratos = { rows: [] };
-    let movimentos = { rows: [] };
-    if (admin) {
-      [contratos, movimentos] = await Promise.all([
-        pool.query(`SELECT c.id, c.codigo_registro, c.objeto, c.local_obra, c.periodo_inicio, c.periodo_fim, c.valor, pr.nome AS prestador_nome
-                      FROM contratos c JOIN prestadores pr ON pr.id = c.prestador_id
-                     WHERE c.obra_id = $1 ORDER BY c.periodo_inicio DESC, c.id DESC`, [id]),
-        pool.query(`SELECT fm.id, fm.tipo, fm.nome, fm.valor, fm.data_hora, fm.categoria, fm.origem, pr.nome AS prestador_nome
-                      FROM financeiro_movimentos fm LEFT JOIN prestadores pr ON pr.id = fm.prestador_id
-                     WHERE fm.obra_id = $1 ORDER BY fm.data_hora DESC`, [id]),
-      ]);
-    }
-    const resumo = esconderFinanceiro(O.resumoFinanceiro({
-      propostas: propostas.rows, movimentos: movimentos.rows, contratos: contratos.rows,
-    }), admin);
-    res.json({
-      ...obra,
-      analises: analises.rows, laudos: laudos.rows, propostas: propostas.rows,
-      contratos: contratos.rows, movimentos: movimentos.rows,
-      resumo, restrito_financeiro: !admin, pode_editar: podeEditar(req, obra), pode_excluir: admin,
-    });
-  } catch (err) {
-    next(err);
   }
+  const resumo = esconderFinanceiro(O.resumoFinanceiro({
+    propostas: propostas.rows, movimentos: movimentos.rows, contratos: contratos.rows,
+  }), admin);
+  res.json({
+    ...obra,
+    analises: analises.rows, laudos: laudos.rows, propostas: propostas.rows,
+    contratos: contratos.rows, movimentos: movimentos.rows,
+    resumo, restrito_financeiro: !admin, pode_editar: podeEditar(req, obra), pode_excluir: admin,
+  });
 }
 
 // POST /obras
 async function criar(req, res, next) {
-  try {
-    const r = await montarDados(req.body);
-    if (r.erro) return res.status(400).json({ erro: r.erro });
-    const d = r.dados;
-    if (!Object.prototype.hasOwnProperty.call(req.body || {}, 'responsavel_id')) d.responsavel_id = req.usuario.id;
-    const obra = await comTransacao(async (client) => {
-      const codigo = await gerarCodigo(client);
-      const { rows } = await client.query(
-        `INSERT INTO obras (codigo, nome, cliente_id, cliente_nome, local, segmento, status, inicio_previsto, fim_previsto,
-                            responsavel_id, observacoes, usuario_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-        [codigo, d.nome, d.cliente_id, d.cliente_nome, d.local, d.segmento, d.status, d.inicio_previsto, d.fim_previsto,
-         d.responsavel_id, d.observacoes, req.usuario.id]
-      );
-      return rows[0];
-    });
-    await sincronizarObra(obra); // cria Arquivos do Sistema\Obras\<nome>
-    res.status(201).json(await carregarObra(obra.id));
-  } catch (err) {
-    next(err);
-  }
+  const r = await montarDados(req.body);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  const d = r.dados;
+  if (!Object.prototype.hasOwnProperty.call(req.body || {}, 'responsavel_id')) d.responsavel_id = req.usuario.id;
+  const obra = await comTransacao(async (client) => {
+    const codigo = await gerarCodigo(client);
+    const { rows } = await client.query(
+      `INSERT INTO obras (codigo, nome, cliente_id, cliente_nome, local, segmento, status, inicio_previsto, fim_previsto,
+                          responsavel_id, observacoes, usuario_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+      [codigo, d.nome, d.cliente_id, d.cliente_nome, d.local, d.segmento, d.status, d.inicio_previsto, d.fim_previsto,
+       d.responsavel_id, d.observacoes, req.usuario.id]
+    );
+    return rows[0];
+  });
+  await sincronizarObra(obra); // cria Arquivos do Sistema\Obras\<nome>
+  res.status(201).json(await carregarObra(obra.id));
 }
 
 // PUT /obras/:id (posse) — edição parcial com bloqueio otimista por `versao`
 async function atualizar(req, res, next) {
-  try {
-    const atual = await carregarObra(req.params.id);
-    if (!atual) return res.status(404).json({ erro: 'Obra não encontrada.' });
-    const r = await montarDados(req.body, atual);
-    if (r.erro) return res.status(400).json({ erro: r.erro });
-    const d = r.dados;
-    const { rows } = await pool.query(
-      `UPDATE obras SET nome=$1, cliente_id=$2, cliente_nome=$3, local=$4, segmento=$5, status=$6, inicio_previsto=$7,
-              fim_previsto=$8, responsavel_id=$9, observacoes=$10, atualizado_em=NOW(), versao=versao+1
-        WHERE id=$11 AND ($12::int IS NULL OR versao = $12) RETURNING *`,
-      [d.nome, d.cliente_id, d.cliente_nome, d.local, d.segmento, d.status, d.inicio_previsto, d.fim_previsto,
-       d.responsavel_id, d.observacoes, atual.id, versaoDoPedido(req.body)]
-    );
-    if (!rows[0]) return responderConflitoOuAusente(pool, res, 'obras', atual.id);
-    if (rows[0].nome !== atual.nome || !rows[0].pasta) await sincronizarObra(rows[0]); // pasta acompanha o nome
-    res.json(await carregarObra(atual.id));
-  } catch (err) {
-    next(err);
-  }
+  const atual = await carregarObra(req.params.id);
+  if (!atual) return res.status(404).json({ erro: 'Obra não encontrada.' });
+  const r = await montarDados(req.body, atual);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  const d = r.dados;
+  const { rows } = await pool.query(
+    `UPDATE obras SET nome=$1, cliente_id=$2, cliente_nome=$3, local=$4, segmento=$5, status=$6, inicio_previsto=$7,
+            fim_previsto=$8, responsavel_id=$9, observacoes=$10, atualizado_em=NOW(), versao=versao+1
+      WHERE id=$11 AND ($12::int IS NULL OR versao = $12) RETURNING *`,
+    [d.nome, d.cliente_id, d.cliente_nome, d.local, d.segmento, d.status, d.inicio_previsto, d.fim_previsto,
+     d.responsavel_id, d.observacoes, atual.id, versaoDoPedido(req.body)]
+  );
+  if (!rows[0]) return responderConflitoOuAusente(pool, res, 'obras', atual.id);
+  if (rows[0].nome !== atual.nome || !rows[0].pasta) await sincronizarObra(rows[0]); // pasta acompanha o nome
+  res.json(await carregarObra(atual.id));
 }
 
 // DELETE /obras/:id (admin) — só obra vazia; com itens ligados → 409
 async function remover(req, res, next) {
-  try {
-    const id = Number(req.params.id);
-    const resultado = await comTransacao(async (client) => {
-      const { rows: [obra] } = await client.query('SELECT * FROM obras WHERE id = $1 FOR UPDATE', [id]);
-      if (!obra) return { status: 404 };
-      const { rows: [n] } = await client.query(
-        `SELECT (SELECT count(*) FROM analises_projeto WHERE obra_id = $1 OR pasta_obra_id = $1)::int AS analises,
-                (SELECT count(*) FROM laudos_projetos WHERE obra_id = $1 OR pasta_obra_id = $1)::int AS laudos,
-                (SELECT count(*) FROM propostas WHERE obra_id = $1)::int AS propostas,
-                (SELECT count(*) FROM contratos WHERE obra_id = $1)::int AS contratos,
-                (SELECT count(*) FROM financeiro_movimentos WHERE obra_id = $1)::int AS movimentos,
-                (SELECT count(*) FROM ordens_servico WHERE obra_id = $1)::int AS ordens_servico,
-                (SELECT count(*) FROM obra_medicoes WHERE obra_id = $1)::int AS medicoes`, [id]);
-      const total = Object.values(n).reduce((s, v) => s + v, 0);
-      if (total > 0) return { status: 409, vinculos: n };
-      await client.query('DELETE FROM obras WHERE id = $1', [id]);
-      await registrarAuditoria(client, { entidade: 'obras', entidadeId: id, acao: 'excluir', usuarioId: req.usuario.id, detalhes: { obra } });
-      return { status: 200, obra };
+  const id = Number(req.params.id);
+  const resultado = await comTransacao(async (client) => {
+    const { rows: [obra] } = await client.query('SELECT * FROM obras WHERE id = $1 FOR UPDATE', [id]);
+    if (!obra) return { status: 404 };
+    const { rows: [n] } = await client.query(
+      `SELECT (SELECT count(*) FROM analises_projeto WHERE obra_id = $1 OR pasta_obra_id = $1)::int AS analises,
+              (SELECT count(*) FROM laudos_projetos WHERE obra_id = $1 OR pasta_obra_id = $1)::int AS laudos,
+              (SELECT count(*) FROM propostas WHERE obra_id = $1)::int AS propostas,
+              (SELECT count(*) FROM contratos WHERE obra_id = $1)::int AS contratos,
+              (SELECT count(*) FROM financeiro_movimentos WHERE obra_id = $1)::int AS movimentos,
+              (SELECT count(*) FROM ordens_servico WHERE obra_id = $1)::int AS ordens_servico,
+              (SELECT count(*) FROM obra_medicoes WHERE obra_id = $1)::int AS medicoes`, [id]);
+    const total = Object.values(n).reduce((s, v) => s + v, 0);
+    if (total > 0) return { status: 409, vinculos: n };
+    await client.query('DELETE FROM obras WHERE id = $1', [id]);
+    await registrarAuditoria(client, { entidade: 'obras', entidadeId: id, acao: 'excluir', usuarioId: req.usuario.id, detalhes: { obra } });
+    return { status: 200, obra };
+  });
+  if (resultado.status === 404) return res.status(404).json({ erro: 'Obra não encontrada.' });
+  if (resultado.status === 409) {
+    const v = resultado.vinculos;
+    const partes = [['analises', 'análise(s)'], ['laudos', 'projeto(s)/laudo(s) por disciplina'], ['propostas', 'proposta(s)'], ['contratos', 'contrato(s)'], ['movimentos', 'movimento(s)'], ['ordens_servico', 'ordem(ns) de serviço'], ['medicoes', 'medição(ões) do cronograma']]
+      .filter(([k]) => v[k] > 0).map(([k, r]) => `${v[k]} ${r}`);
+    return res.status(409).json({
+      codigo: 'OBRA_COM_VINCULOS', vinculos: v,
+      erro: `Esta obra tem itens ligados (${partes.join(', ')}). Para tirá-la da lista, mude o status para "Cancelada" ou "Concluída"; para excluir, desligue os itens antes.`,
     });
-    if (resultado.status === 404) return res.status(404).json({ erro: 'Obra não encontrada.' });
-    if (resultado.status === 409) {
-      const v = resultado.vinculos;
-      const partes = [['analises', 'análise(s)'], ['laudos', 'projeto(s)/laudo(s) por disciplina'], ['propostas', 'proposta(s)'], ['contratos', 'contrato(s)'], ['movimentos', 'movimento(s)'], ['ordens_servico', 'ordem(ns) de serviço'], ['medicoes', 'medição(ões) do cronograma']]
-        .filter(([k]) => v[k] > 0).map(([k, r]) => `${v[k]} ${r}`);
-      return res.status(409).json({
-        codigo: 'OBRA_COM_VINCULOS', vinculos: v,
-        erro: `Esta obra tem itens ligados (${partes.join(', ')}). Para tirá-la da lista, mude o status para "Cancelada" ou "Concluída"; para excluir, desligue os itens antes.`,
-      });
-    }
-    // pasta (vazia ou com arquivos postos à mão) vai para _Excluídos
-    await seguro(`excluir obra ${id}`, () => P.moverParaExcluidos('obra', resultado.obra.pasta));
-    res.json({ mensagem: `Obra ${resultado.obra.codigo} excluída.` });
-  } catch (err) {
-    next(err);
   }
+  // pasta (vazia ou com arquivos postos à mão) vai para _Excluídos
+  await seguro(`excluir obra ${id}`, () => P.moverParaExcluidos('obra', resultado.obra.pasta));
+  res.json({ mensagem: `Obra ${resultado.obra.codigo} excluída.` });
 }
 
 // PUT /obras/:id/vinculos { tipo, id, ligar } (posse da obra) — liga um item
@@ -360,64 +340,52 @@ async function remover(req, res, next) {
 // O item também precisa poder ser alterado por quem pede (dono ou admin);
 // contrato e movimento são só de admin, como as telas deles.
 async function vincular(req, res, next) {
-  try {
-    const obraId = Number(req.params.id);
-    const { tipo } = req.body || {};
-    const cfg = VINCULOS[tipo];
-    if (!cfg) return res.status(400).json({ erro: 'Tipo inválido (use proposta, analise, laudo, contrato ou movimento).' });
-    const item = inteiroOuNull(req.body.id);
-    if (item.erro || !item.valor) return res.status(400).json({ erro: 'Item inválido.' });
-    const ligar = req.body.ligar !== false;
-    if (cfg.admin && !ehAdmin(req)) return res.status(403).json({ erro: 'Somente administradores ligam contratos e movimentos do financeiro.' });
-    const { rows: [row] } = await pool.query(`SELECT id, obra_id, usuario_id FROM ${cfg.tabela} WHERE id = $1`, [item.valor]);
-    if (!row) return res.status(404).json({ erro: `${cfg.rotulo} não encontrado(a).` });
-    if (!cfg.admin && !ehAdmin(req) && row.usuario_id != null && row.usuario_id !== req.usuario.id) {
-      return res.status(403).json({ erro: `${cfg.rotulo} criado(a) por outro usuário. Peça a ele ou a um administrador para ligar à obra.` });
-    }
-    let novo = row.obra_id;
-    if (ligar) {
-      await pool.query(`UPDATE ${cfg.tabela} SET obra_id = $1 WHERE id = $2`, [obraId, row.id]);
-      novo = obraId;
-    } else if (row.obra_id === obraId) {
-      await pool.query(`UPDATE ${cfg.tabela} SET obra_id = NULL WHERE id = $1 AND obra_id = $2`, [row.id, obraId]);
-      novo = null;
-    }
-    const afetadas = [...new Set([obraId, row.obra_id].filter(Boolean))];
-    await pool.query('UPDATE obras SET atualizado_em = NOW() WHERE id = ANY($1::int[])', [afetadas]);
-    res.json({ ok: true, tipo, id: row.id, obra_id: novo, obra_anterior: row.obra_id });
-  } catch (err) {
-    next(err);
+  const obraId = Number(req.params.id);
+  const { tipo } = req.body || {};
+  const cfg = VINCULOS[tipo];
+  if (!cfg) return res.status(400).json({ erro: 'Tipo inválido (use proposta, analise, laudo, contrato ou movimento).' });
+  const item = inteiroOuNull(req.body.id);
+  if (item.erro || !item.valor) return res.status(400).json({ erro: 'Item inválido.' });
+  const ligar = req.body.ligar !== false;
+  if (cfg.admin && !ehAdmin(req)) return res.status(403).json({ erro: 'Somente administradores ligam contratos e movimentos do financeiro.' });
+  const { rows: [row] } = await pool.query(`SELECT id, obra_id, usuario_id FROM ${cfg.tabela} WHERE id = $1`, [item.valor]);
+  if (!row) return res.status(404).json({ erro: `${cfg.rotulo} não encontrado(a).` });
+  if (!cfg.admin && !ehAdmin(req) && row.usuario_id != null && row.usuario_id !== req.usuario.id) {
+    return res.status(403).json({ erro: `${cfg.rotulo} criado(a) por outro usuário. Peça a ele ou a um administrador para ligar à obra.` });
   }
+  let novo = row.obra_id;
+  if (ligar) {
+    await pool.query(`UPDATE ${cfg.tabela} SET obra_id = $1 WHERE id = $2`, [obraId, row.id]);
+    novo = obraId;
+  } else if (row.obra_id === obraId) {
+    await pool.query(`UPDATE ${cfg.tabela} SET obra_id = NULL WHERE id = $1 AND obra_id = $2`, [row.id, obraId]);
+    novo = null;
+  }
+  const afetadas = [...new Set([obraId, row.obra_id].filter(Boolean))];
+  await pool.query('UPDATE obras SET atualizado_em = NOW() WHERE id = ANY($1::int[])', [afetadas]);
+  res.json({ ok: true, tipo, id: row.id, obra_id: novo, obra_anterior: row.obra_id });
 }
 
 // GET /obras/:id/pasta — Arquivos do Sistema\Obras\<obra> + pastas antigas dos itens ligados
 async function pasta(req, res, next) {
-  try {
-    const obra = await carregarObra(req.params.id);
-    if (!obra) return res.status(404).json({ erro: 'Obra não encontrada.' });
-    const dir = await seguro(`pasta obra ${obra.id}`, () => pastaDaObra(obra));
-    const outras = [];
-    const analises = (await pool.query('SELECT a.*, o.pasta AS pasta_obra_dir FROM analises_projeto a LEFT JOIN obras o ON o.id = a.pasta_obra_id WHERE a.obra_id = $1 AND a.pasta IS NOT NULL AND a.pasta_obra_id IS DISTINCT FROM $1', [obra.id])).rows;
-    for (const a of analises) outras.push({ tipo: 'analise', id: a.id, rotulo: a.nome_projeto || a.cliente_nome || `Análise ${a.id}`, caminho: await caminhoRegistrado('projeto', a) });
-    const laudos = (await pool.query('SELECT l.*, o.pasta AS pasta_obra_dir FROM laudos_projetos l LEFT JOIN obras o ON o.id = l.pasta_obra_id WHERE l.obra_id = $1 AND l.pasta IS NOT NULL AND l.pasta_obra_id IS DISTINCT FROM $1', [obra.id])).rows;
-    // tipo_registro (2.1): 'projeto' | 'laudo' — a tela mostra "Projeto #…" ou "Laudo #…"
-    for (const l of laudos) outras.push({ tipo: 'laudo', tipo_registro: l.tipo, id: l.id, rotulo: l.titulo || `${l.tipo === 'projeto' ? 'Projeto' : 'Laudo'} ${l.id}`, caminho: await caminhoRegistrado('laudo', l) });
-    res.json({ ...(await resumoPasta(dir)), podeAbrir: pedidoLocal(req), outras });
-  } catch (err) {
-    next(err);
-  }
+  const obra = await carregarObra(req.params.id);
+  if (!obra) return res.status(404).json({ erro: 'Obra não encontrada.' });
+  const dir = await seguro(`pasta obra ${obra.id}`, () => pastaDaObra(obra));
+  const outras = [];
+  const analises = (await pool.query('SELECT a.*, o.pasta AS pasta_obra_dir FROM analises_projeto a LEFT JOIN obras o ON o.id = a.pasta_obra_id WHERE a.obra_id = $1 AND a.pasta IS NOT NULL AND a.pasta_obra_id IS DISTINCT FROM $1', [obra.id])).rows;
+  for (const a of analises) outras.push({ tipo: 'analise', id: a.id, rotulo: a.nome_projeto || a.cliente_nome || `Análise ${a.id}`, caminho: await caminhoRegistrado('projeto', a) });
+  const laudos = (await pool.query('SELECT l.*, o.pasta AS pasta_obra_dir FROM laudos_projetos l LEFT JOIN obras o ON o.id = l.pasta_obra_id WHERE l.obra_id = $1 AND l.pasta IS NOT NULL AND l.pasta_obra_id IS DISTINCT FROM $1', [obra.id])).rows;
+  // tipo_registro (2.1): 'projeto' | 'laudo' — a tela mostra "Projeto #…" ou "Laudo #…"
+  for (const l of laudos) outras.push({ tipo: 'laudo', tipo_registro: l.tipo, id: l.id, rotulo: l.titulo || `${l.tipo === 'projeto' ? 'Projeto' : 'Laudo'} ${l.id}`, caminho: await caminhoRegistrado('laudo', l) });
+  res.json({ ...(await resumoPasta(dir)), podeAbrir: pedidoLocal(req), outras });
 }
 
 async function abrirPasta(req, res, next) {
   if (!pedidoLocal(req)) return res.status(400).json({ erro: 'A pasta só pode ser aberta no PC onde o sistema roda.' });
-  try {
-    const obra = await carregarObra(req.params.id);
-    if (!obra) return res.status(404).json({ erro: 'Obra não encontrada.' });
-    P.abrirNoExplorer(await pastaDaObra(obra));
-    res.json({ ok: true });
-  } catch (err) {
-    next(err);
-  }
+  const obra = await carregarObra(req.params.id);
+  if (!obra) return res.status(404).json({ erro: 'Obra não encontrada.' });
+  P.abrirNoExplorer(await pastaDaObra(obra));
+  res.json({ ok: true });
 }
 
 // POST /obras/:id/pasta/pacote (2.3) — pacote de análise com os PDF/DWG/DXF/ZIP que
@@ -431,31 +399,26 @@ async function abrirPasta(req, res, next) {
 // marcados e seriam lidos como projeto (tudo contado em dobro).
 const RE_GERADO_PELO_SISTEMA = /^(Propostas|Contratos|Laudos|Projetos|Projeto(?: \(A\d+\))?)\//i;
 async function pacoteDaPasta(req, res, next) {
-  try {
-    const obra = await carregarObra(req.params.id);
-    if (!obra) return res.status(404).json({ erro: 'Obra não encontrada.' });
-    const dir = await seguro(`pasta obra ${obra.id}`, () => pastaDaObra(obra));
-    if (!dir) return res.status(400).json({ erro: 'A pasta da obra não está disponível neste servidor.' });
-    const todos = (await P.listarArquivos(dir))
-      .map(a => ({ ...a, rel: a.arquivo.replace(/\\/g, '/') }))
-      .filter(a => /\.(pdf|dwg|dxf|zip)$/i.test(a.rel));
-    if (!todos.length) return res.status(400).json({ erro: `Não há PDF, DWG, DXF nem ZIP na pasta da obra (${dir}). Salve lá os arquivos recebidos do cliente, ou envie pela tela.` });
-    const { rows: [atual] } = await pool.query('SELECT pasta, pasta_base FROM obras WHERE id = $1', [obra.id]);
-    const prefixo = atual?.pasta_base ? `${atual.pasta_base}/${atual.pasta}/`.toLowerCase() : null;
-    const doSistema = new Set(prefixo
-      ? (await pool.query("SELECT LOWER(caminho) AS c FROM pasta_arquivos WHERE origem = 'sistema' AND left(LOWER(caminho), length($1)) = $1", [prefixo])).rows.map(r => r.c.slice(prefixo.length))
-      : []);
-    const gerado = (rel) => RE_GERADO_PELO_SISTEMA.test(rel) || doSistema.has(rel.toLowerCase());
-    // os recebidos primeiro (o pacote aceita até 60 arquivos)
-    const ordenados = [...todos.filter(a => !gerado(a.rel)), ...todos.filter(a => gerado(a.rel))];
-    const recebidos = ordenados.map(a => ({ originalname: a.rel.split('/').pop(), path: require('path').join(dir, a.arquivo), caminho: a.rel }));
-    const pacote = await require('../services/pacotesProjeto').receberPacote(recebidos, req.usuario, { nomeSugerido: obra.nome });
-    for (const it of pacote.arquivos) it.incluirSugerido = !gerado(it.caminho);
-    res.status(201).json({ ...pacote, pasta: dir });
-  } catch (err) {
-    if (err.status) return res.status(err.status).json({ erro: err.message });
-    next(err);
-  }
+  const obra = await carregarObra(req.params.id);
+  if (!obra) return res.status(404).json({ erro: 'Obra não encontrada.' });
+  const dir = await seguro(`pasta obra ${obra.id}`, () => pastaDaObra(obra));
+  if (!dir) return res.status(400).json({ erro: 'A pasta da obra não está disponível neste servidor.' });
+  const todos = (await P.listarArquivos(dir))
+    .map(a => ({ ...a, rel: a.arquivo.replace(/\\/g, '/') }))
+    .filter(a => /\.(pdf|dwg|dxf|zip)$/i.test(a.rel));
+  if (!todos.length) return res.status(400).json({ erro: `Não há PDF, DWG, DXF nem ZIP na pasta da obra (${dir}). Salve lá os arquivos recebidos do cliente, ou envie pela tela.` });
+  const { rows: [atual] } = await pool.query('SELECT pasta, pasta_base FROM obras WHERE id = $1', [obra.id]);
+  const prefixo = atual?.pasta_base ? `${atual.pasta_base}/${atual.pasta}/`.toLowerCase() : null;
+  const doSistema = new Set(prefixo
+    ? (await pool.query("SELECT LOWER(caminho) AS c FROM pasta_arquivos WHERE origem = 'sistema' AND left(LOWER(caminho), length($1)) = $1", [prefixo])).rows.map(r => r.c.slice(prefixo.length))
+    : []);
+  const gerado = (rel) => RE_GERADO_PELO_SISTEMA.test(rel) || doSistema.has(rel.toLowerCase());
+  // os recebidos primeiro (o pacote aceita até 60 arquivos)
+  const ordenados = [...todos.filter(a => !gerado(a.rel)), ...todos.filter(a => gerado(a.rel))];
+  const recebidos = ordenados.map(a => ({ originalname: a.rel.split('/').pop(), path: require('path').join(dir, a.arquivo), caminho: a.rel }));
+  const pacote = await require('../services/pacotesProjeto').receberPacote(recebidos, req.usuario, { nomeSugerido: obra.nome });
+  for (const it of pacote.arquivos) it.incluirSugerido = !gerado(it.caminho);
+  res.status(201).json({ ...pacote, pasta: dir });
 }
 
 module.exports = { listar, buscarUma, criar, atualizar, remover, vincular, pasta, abrirPasta, pacoteDaPasta };

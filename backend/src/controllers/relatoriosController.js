@@ -72,48 +72,38 @@ async function buscarPropostasEtotais(query) {
 }
 
 async function listar(req, res) {
-  try {
-    const resultado = await buscarPropostasEtotais(req.query);
-    res.json(resultado);
-  } catch (err) {
-    console.error('Erro ao gerar relatório de propostas:', err);
-    res.status(500).json({ erro: 'Erro ao gerar relatório de propostas' });
-  }
+  const resultado = await buscarPropostasEtotais(req.query);
+  res.json(resultado);
 }
 
 async function exportarCsv(req, res) {
-  try {
-    const { propostas } = await buscarPropostasEtotais(req.query);
+  const { propostas } = await buscarPropostasEtotais(req.query);
 
-    const cabecalho = [
-      'Numero', 'Data', 'Cliente', 'Local da Obra', 'Status',
-      'Subtotal Materiais', 'Imposto Vendas', 'Subtotal Mao de Obra', 'Imposto Servicos',
-      'BDI', 'Total'
-    ];
-    const linhas = propostas.map(p => [
-      p.numero,
-      new Date(p.data).toLocaleDateString('pt-BR', { timeZone: 'UTC' }),
-      p.cliente_nome,
-      p.local_obra || '',
-      p.status,
-      Number(p.subtotal_materiais).toFixed(2),
-      Number(p.valor_imposto_venda).toFixed(2),
-      Number(p.subtotal_mao_obra).toFixed(2),
-      Number(p.valor_imposto_servico).toFixed(2),
-      Number(p.valor_bdi).toFixed(2),
-      Number(p.total).toFixed(2),
-    ].map(escaparCsv).join(';'));
+  const cabecalho = [
+    'Numero', 'Data', 'Cliente', 'Local da Obra', 'Status',
+    'Subtotal Materiais', 'Imposto Vendas', 'Subtotal Mao de Obra', 'Imposto Servicos',
+    'BDI', 'Total'
+  ];
+  const linhas = propostas.map(p => [
+    p.numero,
+    new Date(p.data).toLocaleDateString('pt-BR', { timeZone: 'UTC' }),
+    p.cliente_nome,
+    p.local_obra || '',
+    p.status,
+    Number(p.subtotal_materiais).toFixed(2),
+    Number(p.valor_imposto_venda).toFixed(2),
+    Number(p.subtotal_mao_obra).toFixed(2),
+    Number(p.valor_imposto_servico).toFixed(2),
+    Number(p.valor_bdi).toFixed(2),
+    Number(p.total).toFixed(2),
+  ].map(escaparCsv).join(';'));
 
-    const csv = [cabecalho.join(';'), ...linhas].join('\r\n');
-    const bom = '﻿';
+  const csv = [cabecalho.join(';'), ...linhas].join('\r\n');
+  const bom = '﻿';
 
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', contentDisposition('relatório-propostas.csv'));
-    res.send(bom + csv);
-  } catch (err) {
-    console.error('Erro ao exportar CSV do relatório:', err);
-    res.status(500).json({ erro: 'Erro ao exportar CSV do relatório' });
-  }
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', contentDisposition('relatório-propostas.csv'));
+  res.send(bom + csv);
 }
 
 async function exportarPdf(req, res, next) {

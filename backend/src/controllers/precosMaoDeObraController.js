@@ -22,13 +22,8 @@ const COLUNAS = [
 // Orçamento). Cada item traz o valor adotado pela H&M e as referências de
 // mercado oficial/governo e privado/particular, com fonte e link.
 async function listar(req, res) {
-  try {
-    const result = await pool.query(`SELECT ${COLUNAS.join(', ')} FROM precos_mao_de_obra_referencia ORDER BY origem DESC, disciplina, codigo`);
-    res.json(result.rows);
-  } catch (err) {
-    console.error('Erro ao listar preços de referência de mão de obra:', err);
-    res.status(500).json({ erro: 'Erro ao listar preços de referência' });
-  }
+  const result = await pool.query(`SELECT ${COLUNAS.join(', ')} FROM precos_mao_de_obra_referencia ORDER BY origem DESC, disciplina, codigo`);
+  res.json(result.rows);
 }
 
 const valorValido = (v) => v === null || v === '' || v === undefined || (Number.isFinite(Number(v)) && Number(v) >= 0);
@@ -57,38 +52,33 @@ async function atualizar(req, res) {
     if ('unidade' in it && !textoOuNulo(it.unidade, 10)) return res.status(400).json({ erro: `Unidade inválida em "${it.codigo}"` });
   }
 
-  try {
-    await comTransacao(async (client) => {
-      for (const it of itens) {
-        const sets = [];
-        const vals = [];
-        const por = (col, v) => { vals.push(v); sets.push(`${col} = $${vals.length}`); };
-        if ('valor_referencia' in it) por('valor_referencia', valorOuNulo(it.valor_referencia));
-        for (const s of SEGMENTOS) {
-          if (`valor_${s}` in it) {
-            por(`valor_${s}`, valorOuNulo(it[`valor_${s}`]));
-            // valor digitado à mão: a data passa a ser a da edição
-            sets.push(`data_${s} = NOW()`);
-          }
-          if (`fonte_${s}` in it) por(`fonte_${s}`, textoOuNulo(it[`fonte_${s}`], 300));
+  await comTransacao(async (client) => {
+    for (const it of itens) {
+      const sets = [];
+      const vals = [];
+      const por = (col, v) => { vals.push(v); sets.push(`${col} = $${vals.length}`); };
+      if ('valor_referencia' in it) por('valor_referencia', valorOuNulo(it.valor_referencia));
+      for (const s of SEGMENTOS) {
+        if (`valor_${s}` in it) {
+          por(`valor_${s}`, valorOuNulo(it[`valor_${s}`]));
+          // valor digitado à mão: a data passa a ser a da edição
+          sets.push(`data_${s} = NOW()`);
         }
-        if ('disciplina' in it || 'unidade' in it) {
-          await client.query(
-            `UPDATE precos_mao_de_obra_referencia SET disciplina = COALESCE($1, disciplina), unidade = COALESCE($2, unidade), atualizado_em = NOW()
-              WHERE codigo = $3 AND origem = 'proposta'`,
-            ['disciplina' in it ? it.disciplina : null, 'unidade' in it ? textoOuNulo(it.unidade, 10) : null, it.codigo]
-          );
-        }
-        if (!sets.length) continue;
-        vals.push(it.codigo);
-        await client.query(`UPDATE precos_mao_de_obra_referencia SET ${sets.join(', ')}, atualizado_em = NOW() WHERE codigo = $${vals.length}`, vals);
+        if (`fonte_${s}` in it) por(`fonte_${s}`, textoOuNulo(it[`fonte_${s}`], 300));
       }
-    });
-    res.json({ mensagem: 'Preços de referência atualizados' });
-  } catch (err) {
-    console.error('Erro ao atualizar preços de referência de mão de obra:', err);
-    res.status(500).json({ erro: 'Erro ao atualizar preços de referência' });
-  }
+      if ('disciplina' in it || 'unidade' in it) {
+        await client.query(
+          `UPDATE precos_mao_de_obra_referencia SET disciplina = COALESCE($1, disciplina), unidade = COALESCE($2, unidade), atualizado_em = NOW()
+            WHERE codigo = $3 AND origem = 'proposta'`,
+          ['disciplina' in it ? it.disciplina : null, 'unidade' in it ? textoOuNulo(it.unidade, 10) : null, it.codigo]
+        );
+      }
+      if (!sets.length) continue;
+      vals.push(it.codigo);
+      await client.query(`UPDATE precos_mao_de_obra_referencia SET ${sets.join(', ')}, atualizado_em = NOW() WHERE codigo = $${vals.length}`, vals);
+    }
+  });
+  res.json({ mensagem: 'Preços de referência atualizados' });
 }
 
 // Pesquisa na web a referência de mercado de UM serviço num segmento

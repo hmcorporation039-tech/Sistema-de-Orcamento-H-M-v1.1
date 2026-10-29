@@ -27,27 +27,22 @@ async function listar(req, res) {
     condicoes += ` AND c.obra_id = $${params.length}`;
   }
 
-  try {
-    const total = await pool.query(
-      `SELECT count(*) FROM contratos c JOIN prestadores p ON p.id = c.prestador_id LEFT JOIN obras ob ON ob.id = c.obra_id ${condicoes}`,
-      params
-    );
-    const result = await pool.query(
-      `SELECT c.*, p.nome AS prestador_nome, p.documento AS prestador_documento, p.tipo AS prestador_tipo,
-              ${sqlObraJson('ob')} AS obra
-       FROM contratos c
-       JOIN prestadores p ON p.id = c.prestador_id
-       LEFT JOIN obras ob ON ob.id = c.obra_id
-       ${condicoes}
-       ORDER BY c.id DESC
-       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-      [...params, porPagina, offset]
-    );
-    res.json(montarResposta(result.rows, parseInt(total.rows[0].count, 10), pagina, porPagina));
-  } catch (err) {
-    console.error('Erro ao listar contratos:', err);
-    res.status(500).json({ erro: 'Erro ao listar contratos' });
-  }
+  const total = await pool.query(
+    `SELECT count(*) FROM contratos c JOIN prestadores p ON p.id = c.prestador_id LEFT JOIN obras ob ON ob.id = c.obra_id ${condicoes}`,
+    params
+  );
+  const result = await pool.query(
+    `SELECT c.*, p.nome AS prestador_nome, p.documento AS prestador_documento, p.tipo AS prestador_tipo,
+            ${sqlObraJson('ob')} AS obra
+     FROM contratos c
+     JOIN prestadores p ON p.id = c.prestador_id
+     LEFT JOIN obras ob ON ob.id = c.obra_id
+     ${condicoes}
+     ORDER BY c.id DESC
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, porPagina, offset]
+  );
+  res.json(montarResposta(result.rows, parseInt(total.rows[0].count, 10), pagina, porPagina));
 }
 
 function validar(body) {
@@ -85,28 +80,23 @@ async function criar(req, res) {
   if (erro) return res.status(400).json({ erro });
 
   const { prestadorId, objeto, localObra, periodoInicio, periodoFim, valor } = req.body;
-  try {
-    const prestador = await pool.query('SELECT id FROM prestadores WHERE id = $1 AND ativo = true', [prestadorId]);
-    if (prestador.rows.length === 0) return res.status(404).json({ erro: 'Prestador não encontrado' });
-    // obra (2.0): obraId/obra_id opcional
-    const obra = lerObraId(req.body);
-    const erroObra = await conferirObra(pool, obra);
-    if (erroObra) return res.status(400).json({ erro: erroObra });
+  const prestador = await pool.query('SELECT id FROM prestadores WHERE id = $1 AND ativo = true', [prestadorId]);
+  if (prestador.rows.length === 0) return res.status(404).json({ erro: 'Prestador não encontrado' });
+  // obra (2.0): obraId/obra_id opcional
+  const obra = lerObraId(req.body);
+  const erroObra = await conferirObra(pool, obra);
+  if (erroObra) return res.status(400).json({ erro: erroObra });
 
-    const result = await pool.query(
-      `INSERT INTO contratos (prestador_id, objeto, local_obra, periodo_inicio, periodo_fim, valor, usuario_id, obra_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, criado_em`,
-      [prestadorId, objeto || null, localObra || null, periodoInicio, periodoFim, valor, req.usuario.id, obra.valor]
-    );
-    const { id, criado_em } = result.rows[0];
-    const codigoRegistro = `CT-${new Date(criado_em).getFullYear()}-${String(id).padStart(4, '0')}`;
-    await pool.query('UPDATE contratos SET codigo_registro = $1 WHERE id = $2', [codigoRegistro, id]);
+  const result = await pool.query(
+    `INSERT INTO contratos (prestador_id, objeto, local_obra, periodo_inicio, periodo_fim, valor, usuario_id, obra_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, criado_em`,
+    [prestadorId, objeto || null, localObra || null, periodoInicio, periodoFim, valor, req.usuario.id, obra.valor]
+  );
+  const { id, criado_em } = result.rows[0];
+  const codigoRegistro = `CT-${new Date(criado_em).getFullYear()}-${String(id).padStart(4, '0')}`;
+  await pool.query('UPDATE contratos SET codigo_registro = $1 WHERE id = $2', [codigoRegistro, id]);
 
-    res.status(201).json({ id, codigoRegistro });
-  } catch (err) {
-    console.error('Erro ao criar contrato:', err);
-    res.status(500).json({ erro: 'Erro ao criar contrato' });
-  }
+  res.status(201).json({ id, codigoRegistro });
 }
 
 async function atualizar(req, res) {
@@ -115,60 +105,45 @@ async function atualizar(req, res) {
 
   const { id } = req.params;
   const { prestadorId, objeto, localObra, periodoInicio, periodoFim, valor } = req.body;
-  try {
-    const prestador = await pool.query('SELECT id FROM prestadores WHERE id = $1 AND ativo = true', [prestadorId]);
-    if (prestador.rows.length === 0) return res.status(404).json({ erro: 'Prestador não encontrado' });
-    // obra (2.0): presente liga/desliga (null); ausente mantém
-    const obra = lerObraId(req.body);
-    const erroObra = await conferirObra(pool, obra);
-    if (erroObra) return res.status(400).json({ erro: erroObra });
+  const prestador = await pool.query('SELECT id FROM prestadores WHERE id = $1 AND ativo = true', [prestadorId]);
+  if (prestador.rows.length === 0) return res.status(404).json({ erro: 'Prestador não encontrado' });
+  // obra (2.0): presente liga/desliga (null); ausente mantém
+  const obra = lerObraId(req.body);
+  const erroObra = await conferirObra(pool, obra);
+  if (erroObra) return res.status(400).json({ erro: erroObra });
 
-    const result = await pool.query(
-      `UPDATE contratos SET prestador_id=$1, objeto=$2, local_obra=$3, periodo_inicio=$4, periodo_fim=$5, valor=$6,
-              obra_id = CASE WHEN $8::boolean THEN $9::int ELSE obra_id END
-       WHERE id=$7 RETURNING id`,
-      [prestadorId, objeto || null, localObra || null, periodoInicio, periodoFim, valor, id, obra.presente, obra.valor]
-    );
-    if (result.rows.length === 0) return res.status(404).json({ erro: 'Contrato não encontrado' });
-    res.json({ id: result.rows[0].id });
-  } catch (err) {
-    console.error('Erro ao atualizar contrato:', err);
-    res.status(500).json({ erro: 'Erro ao atualizar contrato' });
-  }
+  const result = await pool.query(
+    `UPDATE contratos SET prestador_id=$1, objeto=$2, local_obra=$3, periodo_inicio=$4, periodo_fim=$5, valor=$6,
+            obra_id = CASE WHEN $8::boolean THEN $9::int ELSE obra_id END
+     WHERE id=$7 RETURNING id`,
+    [prestadorId, objeto || null, localObra || null, periodoInicio, periodoFim, valor, id, obra.presente, obra.valor]
+  );
+  if (result.rows.length === 0) return res.status(404).json({ erro: 'Contrato não encontrado' });
+  res.json({ id: result.rows[0].id });
 }
 
 async function gerarPdf(req, res) {
-  try {
-    const contrato = await buscarContratoCompleto(req.params.id);
-    if (!contrato) return res.status(404).json({ erro: 'Contrato não encontrado' });
+  const contrato = await buscarContratoCompleto(req.params.id);
+  if (!contrato) return res.status(404).json({ erro: 'Contrato não encontrado' });
 
-    const pdf = await montarPdfBuffer(contrato);
-    await salvarPdfContratoNaObra(contrato, pdf); // cópia em Obras\<obra>\Contratos (contrato ligado a obra)
-    // acentos ficam (o cabeçalho leva o nome em UTF-8 — utils/nomeArquivoDownload)
-    const nomeArquivo = String(contrato.prestador_nome || '').replace(/[^\p{L}\p{N}]+/gu, '_');
-    const sufixo = contrato.codigo_registro || contrato.id;
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': contentDisposition(`Contrato_${nomeArquivo}_${sufixo}.pdf`),
-    });
-    res.send(pdf);
-  } catch (err) {
-    console.error('Erro ao gerar PDF do contrato:', err);
-    res.status(500).json({ erro: 'Erro ao gerar PDF do contrato' });
-  }
+  const pdf = await montarPdfBuffer(contrato);
+  await salvarPdfContratoNaObra(contrato, pdf); // cópia em Obras\<obra>\Contratos (contrato ligado a obra)
+  // acentos ficam (o cabeçalho leva o nome em UTF-8 — utils/nomeArquivoDownload)
+  const nomeArquivo = String(contrato.prestador_nome || '').replace(/[^\p{L}\p{N}]+/gu, '_');
+  const sufixo = contrato.codigo_registro || contrato.id;
+  res.set({
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': contentDisposition(`Contrato_${nomeArquivo}_${sufixo}.pdf`),
+  });
+  res.send(pdf);
 }
 
 async function remover(req, res) {
-  try {
-    const { rows } = await pool.query('DELETE FROM contratos WHERE id = $1 RETURNING *', [req.params.id]);
-    if (!rows[0]) return res.status(404).json({ erro: 'Contrato não encontrado' });
-    // cópia completa na auditoria: a exclusão é definitiva
-    await registrarAuditoria(pool, { entidade: 'contratos', entidadeId: rows[0].id, acao: 'excluir', usuarioId: req.usuario.id, detalhes: { contrato: rows[0] } });
-    res.json({ mensagem: 'Contrato removido' });
-  } catch (err) {
-    console.error('Erro ao remover contrato:', err);
-    res.status(500).json({ erro: 'Erro ao remover contrato' });
-  }
+  const { rows } = await pool.query('DELETE FROM contratos WHERE id = $1 RETURNING *', [req.params.id]);
+  if (!rows[0]) return res.status(404).json({ erro: 'Contrato não encontrado' });
+  // cópia completa na auditoria: a exclusão é definitiva
+  await registrarAuditoria(pool, { entidade: 'contratos', entidadeId: rows[0].id, acao: 'excluir', usuarioId: req.usuario.id, detalhes: { contrato: rows[0] } });
+  res.json({ mensagem: 'Contrato removido' });
 }
 
 module.exports = { listar, criar, atualizar, gerarPdf, remover };

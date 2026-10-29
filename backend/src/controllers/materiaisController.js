@@ -18,16 +18,11 @@ async function comparar(req, res) {
   if (typeof descricao !== 'string' || !descricao.trim()) {
     return res.status(400).json({ erro: 'Informe a descrição a comparar' });
   }
-  try {
-    const catalogo = (await pool.query(
-      'SELECT id, descricao, preco, unidade, categoria FROM materiais WHERE ativo = true ORDER BY categoria, descricao'
-    )).rows;
-    const correspondencia = compararComCatalogo(descricao, catalogo);
-    res.json({ descricao, correspondencia });
-  } catch (err) {
-    console.error('Erro ao comparar material com o catálogo:', err);
-    res.status(500).json({ erro: 'Erro ao comparar com o catálogo' });
-  }
+  const catalogo = (await pool.query(
+    'SELECT id, descricao, preco, unidade, categoria FROM materiais WHERE ativo = true ORDER BY categoria, descricao'
+  )).rows;
+  const correspondencia = compararComCatalogo(descricao, catalogo);
+  res.json({ descricao, correspondencia });
 }
 
 async function listar(req, res) {
@@ -46,17 +41,12 @@ async function listar(req, res) {
     condicoes += ` AND (descricao ILIKE $${params.length} OR codigo ILIKE $${params.length} OR marca ILIKE $${params.length})`;
   }
 
-  try {
-    const total = await pool.query(`SELECT count(*) FROM materiais ${condicoes}`, params);
-    const result = await pool.query(
-      `SELECT * FROM materiais ${condicoes} ORDER BY categoria, descricao LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-      [...params, porPagina, offset]
-    );
-    res.json(montarResposta(result.rows, parseInt(total.rows[0].count, 10), pagina, porPagina));
-  } catch (err) {
-    console.error('Erro ao listar materiais:', err);
-    res.status(500).json({ erro: 'Erro ao listar materiais' });
-  }
+  const total = await pool.query(`SELECT count(*) FROM materiais ${condicoes}`, params);
+  const result = await pool.query(
+    `SELECT * FROM materiais ${condicoes} ORDER BY categoria, descricao LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, porPagina, offset]
+  );
+  res.json(montarResposta(result.rows, parseInt(total.rows[0].count, 10), pagina, porPagina));
 }
 
 // Validação do material (teste de 28/10/2026: preço "abc" e texto acima do
@@ -130,14 +120,9 @@ async function atualizar(req, res) {
 
 async function remover(req, res) {
   const { id } = req.params;
-  try {
-    const r = await pool.query('UPDATE materiais SET ativo=false WHERE id=$1 AND ativo=true RETURNING id, descricao, preco', [id]);
-    if (r.rows[0]) await registrarAuditoria(pool, { entidade: 'material', entidadeId: Number(id), acao: 'excluido', detalhes: r.rows[0], usuarioId: req.usuario.id });
-    res.json({ mensagem: 'Material removido' });
-  } catch (err) {
-    console.error('Erro ao remover material:', err);
-    res.status(500).json({ erro: 'Erro ao remover material' });
-  }
+  const r = await pool.query('UPDATE materiais SET ativo=false WHERE id=$1 AND ativo=true RETURNING id, descricao, preco', [id]);
+  if (r.rows[0]) await registrarAuditoria(pool, { entidade: 'material', entidadeId: Number(id), acao: 'excluido', detalhes: r.rows[0], usuarioId: req.usuario.id });
+  res.json({ mensagem: 'Material removido' });
 }
 
 async function importar(req, res, next) {
@@ -194,15 +179,10 @@ async function extrairNota(req, res) {
 }
 
 async function categorias(req, res) {
-  try {
-    const result = await pool.query(
-      "SELECT DISTINCT categoria FROM materiais WHERE ativo = true ORDER BY categoria"
-    );
-    res.json(result.rows.map(r => r.categoria));
-  } catch (err) {
-    console.error('Erro ao listar categorias:', err);
-    res.status(500).json({ erro: 'Erro ao listar categorias' });
-  }
+  const result = await pool.query(
+    "SELECT DISTINCT categoria FROM materiais WHERE ativo = true ORDER BY categoria"
+  );
+  res.json(result.rows.map(r => r.categoria));
 }
 
 // Dispara na hora a mesma varredura que já roda sozinha às 06:00 e às 18:00 (ver

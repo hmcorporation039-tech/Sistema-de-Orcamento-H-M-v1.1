@@ -161,15 +161,16 @@ caso('usuários: ativo/role ausentes não reativam nem rebaixam (null → COALES
 caso('status: aprovada pelo cliente no link não volta para Ativa/Cancelada (salvo admin); aprovação do link segue', async () => {
   const P = require('../src/controllers/propostasController');
   const cli = (status, aceite) => clientePg({ responder: (s) => (/FROM propostas p WHERE p.id = \$1 FOR UPDATE/.test(s) ? { rows: [{ status, aceite_link: aceite }] } : /^UPDATE propostas/.test(s) ? { rows: [{ id: 1, status: 'x', obra_id: null }] } : { rows: [] }) });
-  await assert.rejects(P.aplicarStatusProposta(cli('Aprovada', true), 1, 'Ativa', 2), (e) => e instanceof P.ErroStatusProposta && e.status === 409 && e.codigo === 'APROVADA_PELO_CLIENTE');
+  await assert.rejects(P.aplicarStatusProposta(cli('Aprovada', true), 1, 'Ativa', 2), (e) => e instanceof require('../src/utils/erros').ErroHttp && e.status === 409 && e.extra.codigo === 'APROVADA_PELO_CLIENTE');
   await assert.rejects(P.aplicarStatusProposta(cli('Aprovada', true), 1, 'Cancelada', 2));
   assert.ok(await P.aplicarStatusProposta(cli('Aprovada', true), 1, 'Ativa', 2, null, { admin: true }), 'admin pode');
   assert.ok(await P.aplicarStatusProposta(cli('Aprovada', false), 1, 'Ativa', 2), 'aprovada na tela (sem aceite do link) continua livre');
   assert.ok(await P.aplicarStatusProposta(cli('Ativa', false), 1, 'Aprovada', null, 'pelo cliente'), 'decisão do link');
-  // resposta HTTP do atualizarStatus
+  // resposta HTTP do atualizarStatus (o erro passa pelo tratador central, como no servidor)
   banco.cliente = cli('Aprovada', true);
   const res = { status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; } };
-  await P.atualizarStatus({ params: { id: '1' }, body: { status: 'Recusada' }, usuario: { id: 2, role: 'user' } }, res, (e) => { throw e; });
+  const req = { params: { id: '1' }, body: { status: 'Recusada' }, usuario: { id: 2, role: 'user' }, method: 'PATCH', originalUrl: '/api/propostas/1/status' };
+  await P.atualizarStatus(req, res).catch(e => require('../src/middleware/erros').tratarErros(e, req, res, () => {}));
   assert.strictEqual(res.code, 409);
   assert.strictEqual(res.body.codigo, 'APROVADA_PELO_CLIENTE');
 });
@@ -327,8 +328,9 @@ caso('campo: incremental cortado no limite devolve `agora` = última alteração
 
 // ════════ item 8 — cronograma ════════
 caso('cronograma: medição validada com os dados lidos na transação; versão conferida depois da trava', () => {
-  const { montarMedicao, ErroPedido } = require('../src/controllers/cronogramaController')._interno;
-  assert.throws(() => montarMedicao({ config: null, etapas: [], medicoes: [] }, {}), (e) => e instanceof ErroPedido && /Monte o cronograma/.test(e.message));
+  const { montarMedicao } = require('../src/controllers/cronogramaController')._interno;
+  const { ErroHttp } = require('../src/utils/erros');
+  assert.throws(() => montarMedicao({ config: null, etapas: [], medicoes: [] }, {}), (e) => e instanceof ErroHttp && e.status === 400 && /Monte o cronograma/.test(e.message));
   const atual = { config: { periodicidade: 'mensal', criterio_peso: 'valor' }, etapas: [{ id: 1, nome: 'Etapa', valor: 100, inicio: '2026-10-01', fim: '2026-10-30', distribuicao: [{ periodo: '2026-10-01', percentual: 100 }] }], medicoes: [] };
   assert.throws(() => montarMedicao(atual, { data_medicao: '2026-10-15', itens: [{ etapa_id: 1, valor_medido: 150 }] }), /passaria o valor da etapa/);
   const ok1 = montarMedicao(atual, { data_medicao: '2026-10-15', itens: [{ etapa_id: 1, valor_medido: 60 }] });

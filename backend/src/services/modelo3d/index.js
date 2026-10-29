@@ -14,6 +14,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { ErroHttp } = require('../../utils/erros');
 const { executarNoWorker } = require('../../utils/executarNoWorker');
 const pool = require('../../config/database');
 const { capturarImagemDeHtml } = require('../../utils/pdfPuppeteer');
@@ -34,7 +35,8 @@ function versaoDoGerador() {
   } catch { return 'sem-gerador'; }
 }
 
-const erro = (status, mensagem) => Object.assign(new Error(mensagem), { status });
+// as mensagens daqui são escritas para o usuário (inclusive as 5xx: "demorou demais")
+const erro = (status, mensagem) => new ErroHttp(status, mensagem, {}, { publico: true });
 
 // Tudo que o modelo precisa, a partir da origem. null = sem arquitetura.
 async function fonteDoModelo(origemTipo, origemId, executor = pool) {

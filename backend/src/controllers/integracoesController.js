@@ -4,19 +4,14 @@ const rotinas = require('../services/rotinas');
 const { registrarAuditoria } = require('../utils/auditoria');
 
 async function statusEmail(req, res) {
-  try {
-    const ultima = await pool.query(
-      'SELECT processado_em FROM emails_processados ORDER BY processado_em DESC LIMIT 1'
-    );
-    res.json({
-      configurado: credenciaisConfiguradas(),
-      conta: credenciaisConfiguradas() ? process.env.EMAIL_IMAP_USER : null,
-      ultimaVerificacao: ultima.rows[0]?.processado_em || null,
-    });
-  } catch (err) {
-    console.error('Erro ao consultar status da integração:', err);
-    res.status(500).json({ erro: 'Erro ao consultar status da integração' });
-  }
+  const ultima = await pool.query(
+    'SELECT processado_em FROM emails_processados ORDER BY processado_em DESC LIMIT 1'
+  );
+  res.json({
+    configurado: credenciaisConfiguradas(),
+    conta: credenciaisConfiguradas() ? process.env.EMAIL_IMAP_USER : null,
+    ultimaVerificacao: ultima.rows[0]?.processado_em || null,
+  });
 }
 
 async function verificarAgora(req, res) {
@@ -31,30 +26,20 @@ async function verificarAgora(req, res) {
 }
 
 async function historico(req, res) {
-  try {
-    const notas = await pool.query(
-      `SELECT chave_acesso, numero, itens_novos, itens_atualizados, processado_em
-       FROM notas_processadas ORDER BY processado_em DESC LIMIT 50`
-    );
-    const totalEmails = await pool.query('SELECT count(*) FROM emails_processados');
-    res.json({
-      notas: notas.rows,
-      totalEmailsProcessados: parseInt(totalEmails.rows[0].count, 10),
-    });
-  } catch (err) {
-    console.error('Erro ao buscar histórico de importação:', err);
-    res.status(500).json({ erro: 'Erro ao buscar histórico de importação' });
-  }
+  const notas = await pool.query(
+    `SELECT chave_acesso, numero, itens_novos, itens_atualizados, processado_em
+     FROM notas_processadas ORDER BY processado_em DESC LIMIT 50`
+  );
+  const totalEmails = await pool.query('SELECT count(*) FROM emails_processados');
+  res.json({
+    notas: notas.rows,
+    totalEmailsProcessados: parseInt(totalEmails.rows[0].count, 10),
+  });
 }
 
 async function obterMargem(req, res) {
-  try {
-    const r = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'margem_padrao'");
-    res.json({ margem: parseFloat(r.rows[0]?.valor) || 0 });
-  } catch (err) {
-    console.error('Erro ao buscar margem padrão:', err);
-    res.status(500).json({ erro: 'Erro ao buscar margem padrão' });
-  }
+  const r = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'margem_padrao'");
+  res.json({ margem: parseFloat(r.rows[0]?.valor) || 0 });
 }
 
 async function atualizarMargem(req, res) {
@@ -64,22 +49,17 @@ async function atualizarMargem(req, res) {
   if (!Number.isFinite(valor) || valor < 0 || valor > 300) {
     return res.status(400).json({ erro: 'Margem inválida (de 0 a 300%)' });
   }
-  try {
-    const anterior = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'margem_padrao'");
-    await pool.query(
-      `INSERT INTO configuracoes (chave, valor) VALUES ('margem_padrao', $1)
-       ON CONFLICT (chave) DO UPDATE SET valor = $1, atualizado_em = NOW()`,
-      [String(valor)]
-    );
-    await registrarAuditoria(pool, {
-      entidade: 'configuracoes', acao: 'margem_padrao', usuarioId: req.usuario.id,
-      detalhes: { anterior: anterior.rows[0]?.valor ?? null, nova: valor },
-    });
-    res.json({ margem: valor });
-  } catch (err) {
-    console.error('Erro ao atualizar margem padrão:', err);
-    res.status(500).json({ erro: 'Erro ao atualizar margem padrão' });
-  }
+  const anterior = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'margem_padrao'");
+  await pool.query(
+    `INSERT INTO configuracoes (chave, valor) VALUES ('margem_padrao', $1)
+     ON CONFLICT (chave) DO UPDATE SET valor = $1, atualizado_em = NOW()`,
+    [String(valor)]
+  );
+  await registrarAuditoria(pool, {
+    entidade: 'configuracoes', acao: 'margem_padrao', usuarioId: req.usuario.id,
+    detalhes: { anterior: anterior.rows[0]?.valor ?? null, nova: valor },
+  });
+  res.json({ margem: valor });
 }
 
 module.exports = { statusEmail, verificarAgora, historico, obterMargem, atualizarMargem };

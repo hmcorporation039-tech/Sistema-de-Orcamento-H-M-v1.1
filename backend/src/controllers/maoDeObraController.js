@@ -19,20 +19,15 @@ async function listar(req, res) {
     condicoes += ` AND descricao ILIKE $${params.length}`;
   }
 
-  try {
-    const total = await pool.query(`SELECT count(*) FROM precos_mao_de_obra_referencia ${condicoes}`, params);
-    const result = await pool.query(
-      `SELECT codigo AS id, codigo, descricao, unidade, disciplina, origem,
-              COALESCE(valor_referencia, valor_privado, 0) AS valor_unitario
-         FROM precos_mao_de_obra_referencia ${condicoes}
-        ORDER BY descricao LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-      [...params, porPagina, offset]
-    );
-    res.json(montarResposta(result.rows, parseInt(total.rows[0].count, 10), pagina, porPagina));
-  } catch (err) {
-    console.error('Erro ao listar itens de mão de obra:', err);
-    res.status(500).json({ erro: 'Erro ao listar itens de mão de obra' });
-  }
+  const total = await pool.query(`SELECT count(*) FROM precos_mao_de_obra_referencia ${condicoes}`, params);
+  const result = await pool.query(
+    `SELECT codigo AS id, codigo, descricao, unidade, disciplina, origem,
+            COALESCE(valor_referencia, valor_privado, 0) AS valor_unitario
+       FROM precos_mao_de_obra_referencia ${condicoes}
+      ORDER BY descricao LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, porPagina, offset]
+  );
+  res.json(montarResposta(result.rows, parseInt(total.rows[0].count, 10), pagina, porPagina));
 }
 
 module.exports = { listar };

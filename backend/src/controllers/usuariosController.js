@@ -4,16 +4,11 @@ const { invalidarCacheUsuario } = require('../middleware/auth');
 const { registrarAuditoria } = require('../utils/auditoria');
 
 async function listar(req, res) {
-  try {
-    const result = await pool.query(
-      `SELECT id, nome, email, role, ativo, criado_em, ultimo_acesso
-       FROM usuarios ORDER BY nome`
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error('Erro ao listar usuários:', err);
-    res.status(500).json({ erro: 'Erro ao listar usuários' });
-  }
+  const result = await pool.query(
+    `SELECT id, nome, email, role, ativo, criado_em, ultimo_acesso
+     FROM usuarios ORDER BY nome`
+  );
+  res.json(result.rows);
 }
 
 async function criar(req, res) {
@@ -135,20 +130,15 @@ async function redefinirSenha(req, res) {
     return res.status(400).json({ erro: 'A nova senha deve ter ao menos 8 caracteres' });
   }
 
-  try {
-    const senhaHash = await bcrypt.hash(novaSenha, 12);
-    const result = await pool.query(
-      'UPDATE usuarios SET senha=$1, senha_provisoria=true, senha_alterada_em=NOW() WHERE id=$2 RETURNING id',
-      [senhaHash, id]
-    );
-    if (result.rows.length === 0) return res.status(404).json({ erro: 'Usuário não encontrado' });
-    invalidarCacheUsuario(id); // sessões abertas com a senha antiga caem na hora
-    await registrarAuditoria(pool, { entidade: 'usuario', entidadeId: Number(id), acao: 'senha_redefinida', usuarioId: req.usuario.id });
-    res.json({ mensagem: 'Senha redefinida com sucesso' });
-  } catch (err) {
-    console.error('Erro ao redefinir senha:', err);
-    res.status(500).json({ erro: 'Erro ao redefinir senha' });
-  }
+  const senhaHash = await bcrypt.hash(novaSenha, 12);
+  const result = await pool.query(
+    'UPDATE usuarios SET senha=$1, senha_provisoria=true, senha_alterada_em=NOW() WHERE id=$2 RETURNING id',
+    [senhaHash, id]
+  );
+  if (result.rows.length === 0) return res.status(404).json({ erro: 'Usuário não encontrado' });
+  invalidarCacheUsuario(id); // sessões abertas com a senha antiga caem na hora
+  await registrarAuditoria(pool, { entidade: 'usuario', entidadeId: Number(id), acao: 'senha_redefinida', usuarioId: req.usuario.id });
+  res.json({ mensagem: 'Senha redefinida com sucesso' });
 }
 
 module.exports = { listar, criar, atualizar, remover, redefinirSenha, lerCamposUsuario };

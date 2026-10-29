@@ -23,47 +23,42 @@ async function login(req, res) {
     return res.status(400).json({ erro: 'E-mail e senha devem ser texto' });
   }
 
-  try {
-    const result = await pool.query(
-      'SELECT * FROM usuarios WHERE email = $1 AND ativo = true',
-      [email]
-    );
+  const result = await pool.query(
+    'SELECT * FROM usuarios WHERE email = $1 AND ativo = true',
+    [email]
+  );
 
-    const usuario = result.rows[0];
-    const senhaOk = await bcrypt.compare(String(senha), usuario ? usuario.senha : HASH_FICTICIO);
-    if (!usuario) {
-      return res.status(401).json({ erro: 'E-mail ou senha incorretos' });
-    }
-
-    if (!senhaOk) {
-      return res.status(401).json({ erro: 'E-mail ou senha incorretos' });
-    }
-
-    // Atualizar último acesso
-    await pool.query(
-      'UPDATE usuarios SET ultimo_acesso = NOW() WHERE id = $1',
-      [usuario.id]
-    );
-
-    const token = emitirToken(usuario);
-
-    res.json({
-      token,
-      usuario: {
-        id: usuario.id,
-        nome: usuario.nome,
-        email: usuario.email,
-        role: usuario.role,
-        // Quando true, o frontend abre a tela de troca de senha logo após o
-        // login e só libera o sistema depois que a pessoa definir a sua.
-        senhaProvisoria: usuario.senha_provisoria === true,
-      }
-    });
-
-  } catch (err) {
-    console.error('Erro no login:', err);
-    res.status(500).json({ erro: 'Erro interno do servidor' });
+  const usuario = result.rows[0];
+  const senhaOk = await bcrypt.compare(String(senha), usuario ? usuario.senha : HASH_FICTICIO);
+  if (!usuario) {
+    return res.status(401).json({ erro: 'E-mail ou senha incorretos' });
   }
+
+  if (!senhaOk) {
+    return res.status(401).json({ erro: 'E-mail ou senha incorretos' });
+  }
+
+  // Atualizar último acesso
+  await pool.query(
+    'UPDATE usuarios SET ultimo_acesso = NOW() WHERE id = $1',
+    [usuario.id]
+  );
+
+  const token = emitirToken(usuario);
+
+  res.json({
+    token,
+    usuario: {
+      id: usuario.id,
+      nome: usuario.nome,
+      email: usuario.email,
+      role: usuario.role,
+      // Quando true, o frontend abre a tela de troca de senha logo após o
+      // login e só libera o sistema depois que a pessoa definir a sua.
+      senhaProvisoria: usuario.senha_provisoria === true,
+    }
+  });
+
 }
 
 async function alterarSenha(req, res) {
@@ -91,37 +86,32 @@ async function alterarSenha(req, res) {
     return res.status(400).json({ erro: 'Essa senha é muito comum. Escolha outra.' });
   }
 
-  try {
-    const result = await pool.query('SELECT id, nome, email, role, senha FROM usuarios WHERE id = $1', [userId]);
-    const usuario = result.rows[0];
-    // Sem esta checagem, um token de usuário já excluído causava
-    // "Cannot read properties of undefined" → 500 sem nenhum log, impossível
-    // de diagnosticar pelo suporte.
-    if (!usuario) {
-      return res.status(401).json({ erro: 'Conta não encontrada. Faça login novamente.' });
-    }
-
-    const ok = await bcrypt.compare(senhaAtual, usuario.senha);
-    if (!ok) {
-      return res.status(401).json({ erro: 'Senha atual incorreta' });
-    }
-
-    const hash = await bcrypt.hash(novaSenha, CUSTO_BCRYPT);
-    // Ao definir a própria senha, ela deixa de ser provisória e o aviso de
-    // troca obrigatória some. senha_alterada_em derruba as outras sessões; esta
-    // continua com o token novo devolvido abaixo.
-    await pool.query(
-      'UPDATE usuarios SET senha = $1, senha_provisoria = false, senha_alterada_em = NOW() WHERE id = $2',
-      [hash, userId]
-    );
-    invalidarCacheUsuario(userId);
-    await new Promise(r => setTimeout(r, 1100)); // token novo com emissão posterior à troca
-
-    res.json({ mensagem: 'Senha alterada com sucesso', token: emitirToken(usuario) });
-  } catch (err) {
-    console.error('Erro ao alterar senha:', err);
-    res.status(500).json({ erro: 'Erro ao alterar senha' });
+  const result = await pool.query('SELECT id, nome, email, role, senha FROM usuarios WHERE id = $1', [userId]);
+  const usuario = result.rows[0];
+  // Sem esta checagem, um token de usuário já excluído causava
+  // "Cannot read properties of undefined" → 500 sem nenhum log, impossível
+  // de diagnosticar pelo suporte.
+  if (!usuario) {
+    return res.status(401).json({ erro: 'Conta não encontrada. Faça login novamente.' });
   }
+
+  const ok = await bcrypt.compare(senhaAtual, usuario.senha);
+  if (!ok) {
+    return res.status(401).json({ erro: 'Senha atual incorreta' });
+  }
+
+  const hash = await bcrypt.hash(novaSenha, CUSTO_BCRYPT);
+  // Ao definir a própria senha, ela deixa de ser provisória e o aviso de
+  // troca obrigatória some. senha_alterada_em derruba as outras sessões; esta
+  // continua com o token novo devolvido abaixo.
+  await pool.query(
+    'UPDATE usuarios SET senha = $1, senha_provisoria = false, senha_alterada_em = NOW() WHERE id = $2',
+    [hash, userId]
+  );
+  invalidarCacheUsuario(userId);
+  await new Promise(r => setTimeout(r, 1100)); // token novo com emissão posterior à troca
+
+  res.json({ mensagem: 'Senha alterada com sucesso', token: emitirToken(usuario) });
 }
 
 module.exports = { login, alterarSenha };

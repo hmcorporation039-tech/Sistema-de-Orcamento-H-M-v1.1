@@ -54,24 +54,19 @@ async function listar(req, res) {
     params.push(`%${String(req.query.busca).trim()}%`);
     cond.push(`(c.descricao ILIKE $${params.length} OR c.codigo ILIKE $${params.length})`);
   }
-  try {
-    const { rows } = await pool.query(
-      `SELECT c.id, c.codigo, c.descricao, c.unidade, c.disciplina, c.observacao, c.ativo, c.origem, c.versao,
-              c.criado_em, c.atualizado_em, u.nome AS usuario_nome
-         FROM composicoes c LEFT JOIN usuarios u ON u.id = c.usuario_id
-        ${cond.length ? 'WHERE ' + cond.join(' AND ') : ''}
-        ORDER BY c.disciplina, c.descricao`, params);
-    const itensPor = await itensDe(pool, rows.map(r => r.id));
-    const bases = await carregarBases(pool, [...itensPor.values()].flat());
-    const itens = rows.map(r => {
-      const its = itensPor.get(r.id) || [];
-      return { ...r, n_itens: its.length, custo: resumoCusto(C.calcularCustoNosSegmentos(its, bases)) };
-    });
-    res.json({ itens });
-  } catch (err) {
-    console.error('Erro ao listar composições:', err);
-    res.status(500).json({ erro: 'Erro ao listar as composições' });
-  }
+  const { rows } = await pool.query(
+    `SELECT c.id, c.codigo, c.descricao, c.unidade, c.disciplina, c.observacao, c.ativo, c.origem, c.versao,
+            c.criado_em, c.atualizado_em, u.nome AS usuario_nome
+       FROM composicoes c LEFT JOIN usuarios u ON u.id = c.usuario_id
+      ${cond.length ? 'WHERE ' + cond.join(' AND ') : ''}
+      ORDER BY c.disciplina, c.descricao`, params);
+  const itensPor = await itensDe(pool, rows.map(r => r.id));
+  const bases = await carregarBases(pool, [...itensPor.values()].flat());
+  const itens = rows.map(r => {
+    const its = itensPor.get(r.id) || [];
+    return { ...r, n_itens: its.length, custo: resumoCusto(C.calcularCustoNosSegmentos(its, bases)) };
+  });
+  res.json({ itens });
 }
 
 async function buscarCompleta(executor, filtro) {
@@ -87,15 +82,10 @@ async function buscarCompleta(executor, filtro) {
 
 // GET /composicoes/:id — com os itens e o custo item a item nos dois segmentos
 async function buscarUma(req, res) {
-  try {
-    const achada = await buscarCompleta(pool, { id: Number(req.params.id) });
-    if (!achada) return res.status(404).json({ erro: 'Composição não encontrada' });
-    const { composicao, bases } = achada;
-    res.json({ ...composicao, custo: C.calcularCustoNosSegmentos(composicao.itens, bases) });
-  } catch (err) {
-    console.error('Erro ao buscar composição:', err);
-    res.status(500).json({ erro: 'Erro ao buscar a composição' });
-  }
+  const achada = await buscarCompleta(pool, { id: Number(req.params.id) });
+  if (!achada) return res.status(404).json({ erro: 'Composição não encontrada' });
+  const { composicao, bases } = achada;
+  res.json({ ...composicao, custo: C.calcularCustoNosSegmentos(composicao.itens, bases) });
 }
 
 // Confere os vínculos e troca a cópia (descrição/unidade) pela do catálogo/da
@@ -282,13 +272,8 @@ async function remover(req, res) {
 async function calcular(req, res) {
   const { erro, dados } = C.validarComposicao({ descricao: '-', itens: req.body?.itens });
   if (erro) return res.status(400).json({ erro });
-  try {
-    const bases = await carregarBases(pool, dados.itens);
-    res.json({ custo: C.calcularCustoNosSegmentos(dados.itens, bases) });
-  } catch (err) {
-    console.error('Erro ao calcular composição:', err);
-    res.status(500).json({ erro: 'Erro ao calcular a composição' });
-  }
+  const bases = await carregarBases(pool, dados.itens);
+  res.json({ custo: C.calcularCustoNosSegmentos(dados.itens, bases) });
 }
 
 // POST /composicoes/explodir { codigo | id, quantidade, segmento | cliente }
@@ -296,21 +281,16 @@ async function calcular(req, res) {
 async function explodir(req, res) {
   const { codigo, id, quantidade, cliente } = req.body || {};
   if (!codigo && !id) return res.status(400).json({ erro: 'Informe o código da composição' });
-  try {
-    const achada = await buscarCompleta(pool, codigo ? { codigo } : { id: Number(id) });
-    if (!achada) return res.status(404).json({ erro: 'Composição não encontrada' });
-    const { composicao, bases } = achada;
-    if (!composicao.ativo) return res.status(400).json({ erro: 'Esta composição está desativada' });
-    let segmento = req.body?.segmento;
-    if (segmento !== 'publico' && segmento !== 'privado') segmento = cliente ? await segmentoPorNomeDoCliente(String(cliente)) : 'privado';
-    const custo = C.calcularCusto(composicao.itens, bases, segmento);
-    const resultado = C.explodirComposicao(composicao, custo, quantidade);
-    if (resultado.erro) return res.status(400).json({ erro: resultado.erro });
-    res.json(resultado);
-  } catch (err) {
-    console.error('Erro ao explodir composição:', err);
-    res.status(500).json({ erro: 'Erro ao montar os itens da composição' });
-  }
+  const achada = await buscarCompleta(pool, codigo ? { codigo } : { id: Number(id) });
+  if (!achada) return res.status(404).json({ erro: 'Composição não encontrada' });
+  const { composicao, bases } = achada;
+  if (!composicao.ativo) return res.status(400).json({ erro: 'Esta composição está desativada' });
+  let segmento = req.body?.segmento;
+  if (segmento !== 'publico' && segmento !== 'privado') segmento = cliente ? await segmentoPorNomeDoCliente(String(cliente)) : 'privado';
+  const custo = C.calcularCusto(composicao.itens, bases, segmento);
+  const resultado = C.explodirComposicao(composicao, custo, quantidade);
+  if (resultado.erro) return res.status(400).json({ erro: resultado.erro });
+  res.json(resultado);
 }
 
 module.exports = { listar, buscarUma, criar, atualizar, duplicar, definirAtivo, remover, calcular, explodir };

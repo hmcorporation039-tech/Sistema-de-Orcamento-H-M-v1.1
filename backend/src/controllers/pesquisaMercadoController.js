@@ -43,18 +43,13 @@ async function historico(req, res) {
   if (!descricao || !descricao.trim()) {
     return res.status(400).json({ erro: 'Informe a descrição a consultar' });
   }
-  try {
-    const normalizada = descricao.trim().toLowerCase().replace(/\s+/g, ' ');
-    const result = await pool.query(
-      `SELECT descricao, resultado, fonte, criado_em FROM pesquisas_mercado
-       WHERE descricao_normalizada ILIKE $1 ORDER BY criado_em DESC LIMIT $2`,
-      [`%${normalizada}%`, Math.min(Number(limite) || 5, 20)]
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error('Erro ao buscar histórico de pesquisa de mercado:', err);
-    res.status(500).json({ erro: 'Erro ao buscar histórico de pesquisa de mercado' });
-  }
+  const normalizada = descricao.trim().toLowerCase().replace(/\s+/g, ' ');
+  const result = await pool.query(
+    `SELECT descricao, resultado, fonte, criado_em FROM pesquisas_mercado
+     WHERE descricao_normalizada ILIKE $1 ORDER BY criado_em DESC LIMIT $2`,
+    [`%${normalizada}%`, Math.min(Number(limite) || 5, 20)]
+  );
+  res.json(result.rows);
 }
 
 module.exports = { pesquisar, salvar, historico };

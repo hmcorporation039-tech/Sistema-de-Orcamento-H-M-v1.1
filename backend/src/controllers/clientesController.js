@@ -14,17 +14,12 @@ async function listar(req, res) {
     condicoes += ` AND (nome ILIKE $1 OR documento ILIKE $1 OR email ILIKE $1)`;
   }
 
-  try {
-    const total = await pool.query(`SELECT count(*) FROM clientes ${condicoes}`, params);
-    const result = await pool.query(
-      `SELECT * FROM clientes ${condicoes} ORDER BY nome LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-      [...params, porPagina, offset]
-    );
-    res.json(montarResposta(result.rows, parseInt(total.rows[0].count, 10), pagina, porPagina));
-  } catch (err) {
-    console.error('Erro ao listar clientes:', err);
-    res.status(500).json({ erro: 'Erro ao listar clientes' });
-  }
+  const total = await pool.query(`SELECT count(*) FROM clientes ${condicoes}`, params);
+  const result = await pool.query(
+    `SELECT * FROM clientes ${condicoes} ORDER BY nome LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, porPagina, offset]
+  );
+  res.json(montarResposta(result.rows, parseInt(total.rows[0].count, 10), pagina, porPagina));
 }
 
 // Validação do cadastro (teste de 28/10/2026: nome só com espaços, tipo
@@ -79,14 +74,9 @@ async function atualizar(req, res) {
 
 async function remover(req, res) {
   const { id } = req.params;
-  try {
-    const { rows } = await pool.query('UPDATE clientes SET ativo=false WHERE id=$1 AND ativo=true RETURNING id, nome', [id]);
-    if (rows[0]) await registrarAuditoria(pool, { entidade: 'clientes', entidadeId: rows[0].id, acao: 'desativar', usuarioId: req.usuario.id, detalhes: { nome: rows[0].nome } });
-    res.json({ mensagem: 'Cliente removido' });
-  } catch (err) {
-    console.error('Erro ao remover cliente:', err);
-    res.status(500).json({ erro: 'Erro ao remover cliente' });
-  }
+  const { rows } = await pool.query('UPDATE clientes SET ativo=false WHERE id=$1 AND ativo=true RETURNING id, nome', [id]);
+  if (rows[0]) await registrarAuditoria(pool, { entidade: 'clientes', entidadeId: rows[0].id, acao: 'desativar', usuarioId: req.usuario.id, detalhes: { nome: rows[0].nome } });
+  res.json({ mensagem: 'Cliente removido' });
 }
 
 module.exports = { listar, criar, atualizar, remover };

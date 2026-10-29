@@ -17,6 +17,7 @@ const crypto = require('crypto');
 const fsp = require('fs/promises');
 const path = require('path');
 const pool = require('../config/database');
+const { ErroHttp } = require('../utils/erros');
 const C = require('../utils/campo');
 const P = require('../utils/pastasSistema');
 const { comTransacao } = require('../utils/transacao');
@@ -38,9 +39,6 @@ const FOTOS_PDF_TOTAL = 60 * 1024 * 1024;
 // transação começou antes e terminou depois da leitura não fica para trás
 const FOLGA_AGORA_MS = 2 * 60 * 1000;
 
-class ErroPedido extends Error {
-  constructor(status, mensagem, extra = {}) { super(mensagem); this.status = status; this.extra = extra; }
-}
 // erro de regra numa operação de campo: vira { ok: false, erro } (o app não reenvia)
 class ErroRegra extends Error {}
 
@@ -75,9 +73,9 @@ function lerChave(valor) {
 // OS visível ao usuário (404 quando não existe ou ele não vê)
 async function carregarOS(chaveBruta, usuario, executor = pool, { travar = false } = {}) {
   const chave = lerChave(chaveBruta);
-  if (!chave) throw new ErroPedido(400, 'Identificador de OS inválido.');
+  if (!chave) throw new ErroHttp(400, 'Identificador de OS inválido.');
   const { rows: [row] } = await executor.query(`${SQL_OS} WHERE ${chave.coluna} = $1${travar ? ' FOR UPDATE OF os' : ''}`, [chave.valor]);
-  if (!row || !podeVer(usuario, row)) throw new ErroPedido(404, 'Ordem de serviço não encontrada.');
+  if (!row || !podeVer(usuario, row)) throw new ErroHttp(404, 'Ordem de serviço não encontrada.');
   return row;
 }
 
@@ -213,11 +211,6 @@ async function inserirOS(client, { uuid, obraId, dados, modelo, checklist, criad
   return os;
 }
 
-function responderErro(res, next, err) {
-  if (err instanceof ErroPedido) return res.status(err.status).json({ erro: err.message, ...err.extra });
-  return next(err);
-}
-
 const LIMITE_LISTA_OS = 500;
 
 // `agora` devolvido ao aparelho (o próximo `desde`). Normal: hora do servidor
@@ -233,193 +226,169 @@ function marcoDaSincronizacao({ agora, incremental, incompleto, ultimaAlteracao 
 
 // ── GET /campo/os?status=abertas|todas&desde=<iso>&obra_id= ─────────────
 async function listar(req, res, next) {
-  try {
-    const agora = new Date();
-    const params = [];
-    const cond = [condicaoVisivel(req.usuario, params)];
-    const status = req.query.status || 'abertas';
-    if (!['abertas', 'todas'].includes(status)) throw new ErroPedido(400, 'Status inválido (use abertas ou todas).');
-    if (status === 'abertas') {
-      params.push(C.filtroAbertas(agora).concluidasDesde);
-      cond.push(`(os.status IN ('aberta', 'em_execucao') OR (os.status = 'concluida' AND os.concluida_em >= $${params.length}))`);
-    }
-    if (req.query.desde) {
-      const d = new Date(String(req.query.desde));
-      if (Number.isNaN(d.getTime())) throw new ErroPedido(400, 'Data "desde" inválida (use ISO 8601).');
-      params.push(d.toISOString());
-      cond.push(`os.atualizado_em > $${params.length}`);
-    }
-    if (req.query.obra_id) {
-      const n = Number(req.query.obra_id);
-      if (!Number.isInteger(n) || n < 1 || n > 2147483647) throw new ErroPedido(400, 'Obra inválida.');
-      params.push(n);
-      cond.push(`os.obra_id = $${params.length}`);
-    }
-    // Incremental (?desde=): em ordem de alteração. Antes era a mesma ordem da
-    // lista (por status) com LIMIT 500 e o `agora` avançava mesmo assim — o que
-    // passasse de 500 nunca mais chegava ao aparelho (revisão de 27/10/2026).
-    const incremental = !!req.query.desde;
-    const { rows } = await pool.query(
-      `${SQL_OS} WHERE ${cond.join(' AND ')}
-        ORDER BY ${incremental
-          ? 'os.atualizado_em, os.id'
-          : `CASE os.status WHEN 'em_execucao' THEN 0 WHEN 'aberta' THEN 1 WHEN 'concluida' THEN 2 ELSE 3 END,
-                 os.agendada_para NULLS LAST, os.id DESC`}
-        LIMIT ${LIMITE_LISTA_OS + 1}`, params);
-    const incompleto = rows.length > LIMITE_LISTA_OS;
-    if (incompleto) rows.length = LIMITE_LISTA_OS;
-    const fotos = await fotosDe(rows.map(r => r.id));
-    res.json({
-      itens: rows.map(r => paraApi(r, fotos.get(r.id), req.usuario)),
-      agora: marcoDaSincronizacao({ agora, incremental, incompleto, ultimaAlteracao: rows.length ? rows[rows.length - 1].atualizado_em : null }),
-      // true = há mais OS do que as devolvidas; no incremental, chamar de novo com desde=agora
-      incompleto,
-    });
-  } catch (err) {
-    responderErro(res, next, err);
+  const agora = new Date();
+  const params = [];
+  const cond = [condicaoVisivel(req.usuario, params)];
+  const status = req.query.status || 'abertas';
+  if (!['abertas', 'todas'].includes(status)) throw new ErroHttp(400, 'Status inválido (use abertas ou todas).');
+  if (status === 'abertas') {
+    params.push(C.filtroAbertas(agora).concluidasDesde);
+    cond.push(`(os.status IN ('aberta', 'em_execucao') OR (os.status = 'concluida' AND os.concluida_em >= $${params.length}))`);
   }
+  if (req.query.desde) {
+    const d = new Date(String(req.query.desde));
+    if (Number.isNaN(d.getTime())) throw new ErroHttp(400, 'Data "desde" inválida (use ISO 8601).');
+    params.push(d.toISOString());
+    cond.push(`os.atualizado_em > $${params.length}`);
+  }
+  if (req.query.obra_id) {
+    const n = Number(req.query.obra_id);
+    if (!Number.isInteger(n) || n < 1 || n > 2147483647) throw new ErroHttp(400, 'Obra inválida.');
+    params.push(n);
+    cond.push(`os.obra_id = $${params.length}`);
+  }
+  // Incremental (?desde=): em ordem de alteração. Antes era a mesma ordem da
+  // lista (por status) com LIMIT 500 e o `agora` avançava mesmo assim — o que
+  // passasse de 500 nunca mais chegava ao aparelho (revisão de 27/10/2026).
+  const incremental = !!req.query.desde;
+  const { rows } = await pool.query(
+    `${SQL_OS} WHERE ${cond.join(' AND ')}
+      ORDER BY ${incremental
+        ? 'os.atualizado_em, os.id'
+        : `CASE os.status WHEN 'em_execucao' THEN 0 WHEN 'aberta' THEN 1 WHEN 'concluida' THEN 2 ELSE 3 END,
+               os.agendada_para NULLS LAST, os.id DESC`}
+      LIMIT ${LIMITE_LISTA_OS + 1}`, params);
+  const incompleto = rows.length > LIMITE_LISTA_OS;
+  if (incompleto) rows.length = LIMITE_LISTA_OS;
+  const fotos = await fotosDe(rows.map(r => r.id));
+  res.json({
+    itens: rows.map(r => paraApi(r, fotos.get(r.id), req.usuario)),
+    agora: marcoDaSincronizacao({ agora, incremental, incompleto, ultimaAlteracao: rows.length ? rows[rows.length - 1].atualizado_em : null }),
+    // true = há mais OS do que as devolvidas; no incremental, chamar de novo com desde=agora
+    incompleto,
+  });
 }
 
 // ── GET /campo/os/:id ───────────────────────────────────────────────────
 async function buscarUma(req, res, next) {
-  try {
-    const row = await carregarOS(req.params.id, req.usuario);
-    const fotos = await fotosDe([row.id]);
-    res.json(paraApi(row, fotos.get(row.id), req.usuario, { historico: true }));
-  } catch (err) {
-    responderErro(res, next, err);
-  }
+  const row = await carregarOS(req.params.id, req.usuario);
+  const fotos = await fotosDe([row.id]);
+  res.json(paraApi(row, fotos.get(row.id), req.usuario, { historico: true }));
 }
 
 // ── GET /campo/modelos-checklist?disciplina= ────────────────────────────
 async function modelos(req, res, next) {
-  try {
-    const disc = req.query.disciplina ? String(req.query.disciplina) : null;
-    if (disc && !CHAVES_DISCIPLINA.includes(disc)) throw new ErroPedido(400, 'Disciplina inválida.');
-    const itens = modelosChecklist().filter(m => !disc || m.chave === 'generico' || m.disciplina === disc);
-    res.json({ itens });
-  } catch (err) {
-    responderErro(res, next, err);
-  }
+  const disc = req.query.disciplina ? String(req.query.disciplina) : null;
+  if (disc && !CHAVES_DISCIPLINA.includes(disc)) throw new ErroHttp(400, 'Disciplina inválida.');
+  const itens = modelosChecklist().filter(m => !disc || m.chave === 'generico' || m.disciplina === disc);
+  res.json({ itens });
 }
 
 // ── POST /obras/:id/os (posse da obra) ──────────────────────────────────
 async function criarDaObra(req, res, next) {
-  try {
-    const obraId = Number(req.params.id);
-    const { rows: [obra] } = await pool.query('SELECT id, status FROM obras WHERE id = $1', [obraId]);
-    if (!obra) throw new ErroPedido(404, 'Obra não encontrada.');
-    if (obra.status === 'cancelada') throw new ErroPedido(409, 'Esta obra está cancelada; não recebe novas OS.');
-    const v = C.validarDadosOS(req.body, {}, { disciplinas: CHAVES_DISCIPLINA });
-    if (v.erro) throw new ErroPedido(400, v.erro);
-    const erroResp = await conferirResponsavel(v.dados.responsavel_id);
-    if (erroResp) throw new ErroPedido(400, erroResp);
-    const m = itensDoModelo(C.chaveModelo(req.body?.modelo_checklist, v.dados.disciplina));
-    if (m.erro) throw new ErroPedido(400, m.erro);
-    let uuid = req.body?.uuid;
-    if (uuid != null && uuid !== '' && !C.uuidValido(uuid)) throw new ErroPedido(400, 'uuid inválido.');
-    uuid = uuid ? C.normalizarUuid(uuid) : crypto.randomUUID();
-    const os = await comTransacao(async (client) => {
-      const { rows: ja } = await client.query('SELECT 1 FROM ordens_servico WHERE uuid = $1', [uuid]);
-      if (ja.length) throw new ErroPedido(409, 'Já existe uma OS com este uuid.');
-      const nova = await inserirOS(client, { uuid, obraId, dados: v.dados, modelo: m.chave, checklist: m.checklist, criadoPor: req.usuario.id });
-      await registrarAuditoria(client, { entidade: 'ordens_servico', entidadeId: nova.id, acao: 'criar', usuarioId: req.usuario.id, detalhes: { numero: nova.numero, obra_id: obraId } });
-      return nova;
-    });
-    const [saida] = await serializarIds([os.id], req.usuario, { historico: true });
-    res.status(201).json(saida);
-  } catch (err) {
-    responderErro(res, next, err);
-  }
+  const obraId = Number(req.params.id);
+  const { rows: [obra] } = await pool.query('SELECT id, status FROM obras WHERE id = $1', [obraId]);
+  if (!obra) throw new ErroHttp(404, 'Obra não encontrada.');
+  if (obra.status === 'cancelada') throw new ErroHttp(409, 'Esta obra está cancelada; não recebe novas OS.');
+  const v = C.validarDadosOS(req.body, {}, { disciplinas: CHAVES_DISCIPLINA });
+  if (v.erro) throw new ErroHttp(400, v.erro);
+  const erroResp = await conferirResponsavel(v.dados.responsavel_id);
+  if (erroResp) throw new ErroHttp(400, erroResp);
+  const m = itensDoModelo(C.chaveModelo(req.body?.modelo_checklist, v.dados.disciplina));
+  if (m.erro) throw new ErroHttp(400, m.erro);
+  let uuid = req.body?.uuid;
+  if (uuid != null && uuid !== '' && !C.uuidValido(uuid)) throw new ErroHttp(400, 'uuid inválido.');
+  uuid = uuid ? C.normalizarUuid(uuid) : crypto.randomUUID();
+  const os = await comTransacao(async (client) => {
+    const { rows: ja } = await client.query('SELECT 1 FROM ordens_servico WHERE uuid = $1', [uuid]);
+    if (ja.length) throw new ErroHttp(409, 'Já existe uma OS com este uuid.');
+    const nova = await inserirOS(client, { uuid, obraId, dados: v.dados, modelo: m.chave, checklist: m.checklist, criadoPor: req.usuario.id });
+    await registrarAuditoria(client, { entidade: 'ordens_servico', entidadeId: nova.id, acao: 'criar', usuarioId: req.usuario.id, detalhes: { numero: nova.numero, obra_id: obraId } });
+    return nova;
+  });
+  const [saida] = await serializarIds([os.id], req.usuario, { historico: true });
+  res.status(201).json(saida);
 }
 
 // ── PUT /campo/os/:id (escritório; versao → 409 se mudou) ───────────────
 async function atualizar(req, res, next) {
-  try {
-    const atual = await carregarOS(req.params.id, req.usuario);
-    if (!C.podeEditarOS(req.usuario, obraDaLinha(atual))) {
-      throw new ErroPedido(403, 'Só o dono da obra ou um administrador edita a OS pelo escritório.');
-    }
-    if (['concluida', 'cancelada'].includes(atual.status)) {
-      throw new ErroPedido(409, `Esta OS está ${atual.status === 'concluida' ? 'concluída' : 'cancelada'}; não pode mais ser editada.`);
-    }
-    const body = req.body || {};
-    const v = C.validarDadosOS(body, atual, { disciplinas: CHAVES_DISCIPLINA });
-    if (v.erro) throw new ErroPedido(400, v.erro);
-    const d = v.dados;
-    if (d.responsavel_id !== atual.responsavel_id) {
-      const erroResp = await conferirResponsavel(d.responsavel_id);
-      if (erroResp) throw new ErroPedido(400, erroResp);
-    }
-    let cancelar = false;
-    if (Object.prototype.hasOwnProperty.call(body, 'status') && body.status !== atual.status) {
-      if (body.status !== 'cancelada') throw new ErroPedido(400, 'O status muda pelo app de campo (iniciar/concluir); pelo escritório só é possível cancelar.');
-      if (!ehAdmin(req.usuario)) throw new ErroPedido(403, 'Somente administradores cancelam uma OS.');
-      cancelar = true;
-    }
-    // troca de modelo: só enquanto nada foi respondido
-    let checklist = null;
-    let modelo = atual.modelo_checklist;
-    if (Object.prototype.hasOwnProperty.call(body, 'modelo_checklist')) {
-      const chave = C.chaveModelo(body.modelo_checklist, d.disciplina);
-      if (chave !== atual.modelo_checklist) {
-        const usado = (atual.checklist || []).some(i => i.respondido_em || i.extra || i.observacao);
-        if (usado || atual.status !== 'aberta') throw new ErroPedido(409, 'O checklist já tem respostas; não é possível trocar o modelo.');
-        const m = itensDoModelo(chave);
-        if (m.erro) throw new ErroPedido(400, m.erro);
-        checklist = m.checklist;
-        modelo = m.chave;
-      }
-    }
-    const { rows } = await pool.query(
-      `UPDATE ordens_servico SET titulo=$1, descricao=$2, tipo=$3, disciplina=$4, responsavel_id=$5, agendada_para=$6,
-              modelo_checklist=$7, checklist=COALESCE($8::jsonb, checklist),
-              status=CASE WHEN $9::boolean THEN 'cancelada' ELSE status END,
-              cancelada_em=CASE WHEN $9::boolean THEN NOW() ELSE cancelada_em END,
-              versao=versao+1, atualizado_em=NOW()
-        WHERE id=$10 AND status NOT IN ('concluida', 'cancelada') AND ($11::int IS NULL OR versao = $11) RETURNING id`,
-      [d.titulo, d.descricao, d.tipo, d.disciplina, d.responsavel_id, d.agendada_para, modelo,
-       checklist ? JSON.stringify(checklist) : null, cancelar, atual.id, versaoDoPedido(body)]
-    );
-    if (!rows[0]) return responderConflitoOuAusente(pool, res, 'ordens_servico', atual.id);
-    if (cancelar) await registrarAuditoria(pool, { entidade: 'ordens_servico', entidadeId: atual.id, acao: 'cancelar', usuarioId: req.usuario.id, detalhes: { numero: atual.numero } });
-    const [saida] = await serializarIds([atual.id], req.usuario, { historico: true });
-    res.json(saida);
-  } catch (err) {
-    responderErro(res, next, err);
+  const atual = await carregarOS(req.params.id, req.usuario);
+  if (!C.podeEditarOS(req.usuario, obraDaLinha(atual))) {
+    throw new ErroHttp(403, 'Só o dono da obra ou um administrador edita a OS pelo escritório.');
   }
+  if (['concluida', 'cancelada'].includes(atual.status)) {
+    throw new ErroHttp(409, `Esta OS está ${atual.status === 'concluida' ? 'concluída' : 'cancelada'}; não pode mais ser editada.`);
+  }
+  const body = req.body || {};
+  const v = C.validarDadosOS(body, atual, { disciplinas: CHAVES_DISCIPLINA });
+  if (v.erro) throw new ErroHttp(400, v.erro);
+  const d = v.dados;
+  if (d.responsavel_id !== atual.responsavel_id) {
+    const erroResp = await conferirResponsavel(d.responsavel_id);
+    if (erroResp) throw new ErroHttp(400, erroResp);
+  }
+  let cancelar = false;
+  if (Object.prototype.hasOwnProperty.call(body, 'status') && body.status !== atual.status) {
+    if (body.status !== 'cancelada') throw new ErroHttp(400, 'O status muda pelo app de campo (iniciar/concluir); pelo escritório só é possível cancelar.');
+    if (!ehAdmin(req.usuario)) throw new ErroHttp(403, 'Somente administradores cancelam uma OS.');
+    cancelar = true;
+  }
+  // troca de modelo: só enquanto nada foi respondido
+  let checklist = null;
+  let modelo = atual.modelo_checklist;
+  if (Object.prototype.hasOwnProperty.call(body, 'modelo_checklist')) {
+    const chave = C.chaveModelo(body.modelo_checklist, d.disciplina);
+    if (chave !== atual.modelo_checklist) {
+      const usado = (atual.checklist || []).some(i => i.respondido_em || i.extra || i.observacao);
+      if (usado || atual.status !== 'aberta') throw new ErroHttp(409, 'O checklist já tem respostas; não é possível trocar o modelo.');
+      const m = itensDoModelo(chave);
+      if (m.erro) throw new ErroHttp(400, m.erro);
+      checklist = m.checklist;
+      modelo = m.chave;
+    }
+  }
+  const { rows } = await pool.query(
+    `UPDATE ordens_servico SET titulo=$1, descricao=$2, tipo=$3, disciplina=$4, responsavel_id=$5, agendada_para=$6,
+            modelo_checklist=$7, checklist=COALESCE($8::jsonb, checklist),
+            status=CASE WHEN $9::boolean THEN 'cancelada' ELSE status END,
+            cancelada_em=CASE WHEN $9::boolean THEN NOW() ELSE cancelada_em END,
+            versao=versao+1, atualizado_em=NOW()
+      WHERE id=$10 AND status NOT IN ('concluida', 'cancelada') AND ($11::int IS NULL OR versao = $11) RETURNING id`,
+    [d.titulo, d.descricao, d.tipo, d.disciplina, d.responsavel_id, d.agendada_para, modelo,
+     checklist ? JSON.stringify(checklist) : null, cancelar, atual.id, versaoDoPedido(body)]
+  );
+  if (!rows[0]) return responderConflitoOuAusente(pool, res, 'ordens_servico', atual.id);
+  if (cancelar) await registrarAuditoria(pool, { entidade: 'ordens_servico', entidadeId: atual.id, acao: 'cancelar', usuarioId: req.usuario.id, detalhes: { numero: atual.numero } });
+  const [saida] = await serializarIds([atual.id], req.usuario, { historico: true });
+  res.json(saida);
 }
 
 // ── DELETE /campo/os/:id (admin) — com fotos ou assinatura, cancela ─────
 async function remover(req, res, next) {
-  try {
-    const chave = lerChave(req.params.id);
-    if (!chave) throw new ErroPedido(400, 'Identificador de OS inválido.');
-    const r = await comTransacao(async (client) => {
-      const row = await carregarOS(req.params.id, req.usuario, client, { travar: true });
-      const { rows: [n] } = await client.query('SELECT count(*)::int AS fotos FROM os_fotos WHERE os_id = $1', [row.id]);
-      if (n.fotos > 0 || row.assinatura_nome) {
-        if (row.status !== 'cancelada') {
-          await client.query("UPDATE ordens_servico SET status='cancelada', cancelada_em=NOW(), versao=versao+1, atualizado_em=NOW() WHERE id=$1", [row.id]);
-          await registrarAuditoria(client, { entidade: 'ordens_servico', entidadeId: row.id, acao: 'cancelar', usuarioId: req.usuario.id, detalhes: { numero: row.numero, motivo: 'exclusão pedida com fotos/assinatura' } });
-        }
-        return { cancelada: true, row };
+  const chave = lerChave(req.params.id);
+  if (!chave) throw new ErroHttp(400, 'Identificador de OS inválido.');
+  const r = await comTransacao(async (client) => {
+    const row = await carregarOS(req.params.id, req.usuario, client, { travar: true });
+    const { rows: [n] } = await client.query('SELECT count(*)::int AS fotos FROM os_fotos WHERE os_id = $1', [row.id]);
+    if (n.fotos > 0 || row.assinatura_nome) {
+      if (row.status !== 'cancelada') {
+        await client.query("UPDATE ordens_servico SET status='cancelada', cancelada_em=NOW(), versao=versao+1, atualizado_em=NOW() WHERE id=$1", [row.id]);
+        await registrarAuditoria(client, { entidade: 'ordens_servico', entidadeId: row.id, acao: 'cancelar', usuarioId: req.usuario.id, detalhes: { numero: row.numero, motivo: 'exclusão pedida com fotos/assinatura' } });
       }
-      await client.query('DELETE FROM ordens_servico WHERE id = $1', [row.id]);
-      const { obra_pasta: _p, ...copia } = row;
-      await registrarAuditoria(client, { entidade: 'ordens_servico', entidadeId: row.id, acao: 'excluir', usuarioId: req.usuario.id, detalhes: { os: copia } });
-      return { cancelada: false, row };
-    });
-    if (r.cancelada) {
-      return res.json({ cancelada: true, mensagem: `A OS ${r.row.numero} tem fotos ou assinatura: foi cancelada em vez de excluída (nada se perde).` });
+      return { cancelada: true, row };
     }
-    // pasta Campo\<numero> vazia (sem fotos) sai junto; com algo dentro, fica
-    const dir = caminhoArquivoCampo(r.row.obra_pasta, pastaCampoRel(r.row), r.row.obra_pasta_base);
-    if (dir) await fsp.rmdir(dir).catch(() => {});
-    res.json({ cancelada: false, mensagem: `OS ${r.row.numero} excluída.` });
-  } catch (err) {
-    responderErro(res, next, err);
+    await client.query('DELETE FROM ordens_servico WHERE id = $1', [row.id]);
+    const { obra_pasta: _p, ...copia } = row;
+    await registrarAuditoria(client, { entidade: 'ordens_servico', entidadeId: row.id, acao: 'excluir', usuarioId: req.usuario.id, detalhes: { os: copia } });
+    return { cancelada: false, row };
+  });
+  if (r.cancelada) {
+    return res.json({ cancelada: true, mensagem: `A OS ${r.row.numero} tem fotos ou assinatura: foi cancelada em vez de excluída (nada se perde).` });
   }
+  // pasta Campo\<numero> vazia (sem fotos) sai junto; com algo dentro, fica
+  const dir = caminhoArquivoCampo(r.row.obra_pasta, pastaCampoRel(r.row), r.row.obra_pasta_base);
+  if (dir) await fsp.rmdir(dir).catch(() => {});
+  res.json({ cancelada: false, mensagem: `OS ${r.row.numero} excluída.` });
 }
 
 // ── POST /campo/sincronizar ─────────────────────────────────────────────
@@ -428,21 +397,17 @@ async function remover(req, res, next) {
 // requisição inteira responde 500; as operações anteriores já ficaram
 // gravadas e o reenvio da fila as reconhece pelo op_uuid.
 async function sincronizar(req, res, next) {
-  try {
-    const ops = req.body?.operacoes;
-    if (!Array.isArray(ops)) throw new ErroPedido(400, 'Envie { operacoes: [...] }.');
-    if (ops.length > C.LIMITES.operacoes_por_envio) throw new ErroPedido(413, `Envie no máximo ${C.LIMITES.operacoes_por_envio} operações por vez.`);
-    const resultados = [];
-    const afetadas = new Set();
-    for (const op of ops) {
-      const r = await aplicarUma(op, req.usuario);
-      resultados.push(r);
-      if (r.os_id) afetadas.add(r.os_id);
-    }
-    res.json({ resultados, os: await serializarIds([...afetadas], req.usuario) });
-  } catch (err) {
-    responderErro(res, next, err);
+  const ops = req.body?.operacoes;
+  if (!Array.isArray(ops)) throw new ErroHttp(400, 'Envie { operacoes: [...] }.');
+  if (ops.length > C.LIMITES.operacoes_por_envio) throw new ErroHttp(413, `Envie no máximo ${C.LIMITES.operacoes_por_envio} operações por vez.`);
+  const resultados = [];
+  const afetadas = new Set();
+  for (const op of ops) {
+    const r = await aplicarUma(op, req.usuario);
+    resultados.push(r);
+    if (r.os_id) afetadas.add(r.os_id);
   }
+  res.json({ resultados, os: await serializarIds([...afetadas], req.usuario) });
 }
 
 async function aplicarUma(op, usuario) {
@@ -520,104 +485,88 @@ async function opSobreOS(client, op, usuario, opUuid) {
 
 // ── POST /campo/os/:id/fotos (multipart; idempotente pelo uuid da foto) ─
 async function enviarFoto(req, res, next) {
-  try {
-    if (!req.file) throw new ErroPedido(400, 'Envie a foto no campo "foto".');
-    const lida = C.dadosDaFoto(req.body);
-    if (lida.erro) throw new ErroPedido(400, lida.erro);
-    const d = lida.dados;
-    const row = await carregarOS(req.params.id, req.usuario);
-    const existente = async () => (await pool.query('SELECT * FROM os_fotos WHERE uuid = $1', [d.uuid])).rows[0];
-    const repetida = (f) => {
-      if (f.os_id !== row.id) throw new ErroPedido(409, 'Este identificador de foto já foi usado em outra OS.');
-      return res.status(200).json({ ...C.fotoParaApi(f), os_id: row.id, repetida: true });
-    };
-    const ja = await existente();
-    if (ja) return repetida(ja);
-    const erroStatus = C.conferirFoto(estadoDaLinha(row));
-    if (erroStatus) throw new ErroPedido(409, erroStatus);
-    const tipo = C.tipoImagem(req.file.buffer);
-    if (!tipo) throw new ErroPedido(415, 'A foto precisa ser JPEG, PNG ou WebP.');
-    const { rows: [n] } = await pool.query('SELECT count(*)::int AS qtd FROM os_fotos WHERE os_id = $1', [row.id]);
-    if (n.qtd >= C.LIMITES.fotos_por_os) throw new ErroPedido(409, `Esta OS já tem ${C.LIMITES.fotos_por_os} fotos (limite).`);
-    const arquivo = await gravarArquivoCampo(row, `${d.uuid}.${C.EXTENSAO[tipo]}`, req.file.buffer);
-    const { rows: [nova] } = await pool.query(
-      `INSERT INTO os_fotos (uuid, os_id, item_id, legenda, arquivo, tipo_mime, tirada_em, lat, lon, tamanho, criado_por)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (uuid) DO NOTHING RETURNING *`,
-      [d.uuid, row.id, d.item_id, d.legenda, arquivo, tipo, d.tirada_em, d.lat, d.lon, req.file.buffer.length, req.usuario.id]);
-    if (!nova) return repetida(await existente()); // mesmo uuid chegando ao mesmo tempo
-    await pool.query('UPDATE ordens_servico SET versao = versao + 1, atualizado_em = NOW() WHERE id = $1', [row.id]);
-    res.status(201).json({ ...C.fotoParaApi(nova), os_id: row.id });
-  } catch (err) {
-    responderErro(res, next, err);
-  }
+  if (!req.file) throw new ErroHttp(400, 'Envie a foto no campo "foto".');
+  const lida = C.dadosDaFoto(req.body);
+  if (lida.erro) throw new ErroHttp(400, lida.erro);
+  const d = lida.dados;
+  const row = await carregarOS(req.params.id, req.usuario);
+  const existente = async () => (await pool.query('SELECT * FROM os_fotos WHERE uuid = $1', [d.uuid])).rows[0];
+  const repetida = (f) => {
+    if (f.os_id !== row.id) throw new ErroHttp(409, 'Este identificador de foto já foi usado em outra OS.');
+    return res.status(200).json({ ...C.fotoParaApi(f), os_id: row.id, repetida: true });
+  };
+  const ja = await existente();
+  if (ja) return repetida(ja);
+  const erroStatus = C.conferirFoto(estadoDaLinha(row));
+  if (erroStatus) throw new ErroHttp(409, erroStatus);
+  const tipo = C.tipoImagem(req.file.buffer);
+  if (!tipo) throw new ErroHttp(415, 'A foto precisa ser JPEG, PNG ou WebP.');
+  const { rows: [n] } = await pool.query('SELECT count(*)::int AS qtd FROM os_fotos WHERE os_id = $1', [row.id]);
+  if (n.qtd >= C.LIMITES.fotos_por_os) throw new ErroHttp(409, `Esta OS já tem ${C.LIMITES.fotos_por_os} fotos (limite).`);
+  const arquivo = await gravarArquivoCampo(row, `${d.uuid}.${C.EXTENSAO[tipo]}`, req.file.buffer);
+  const { rows: [nova] } = await pool.query(
+    `INSERT INTO os_fotos (uuid, os_id, item_id, legenda, arquivo, tipo_mime, tirada_em, lat, lon, tamanho, criado_por)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (uuid) DO NOTHING RETURNING *`,
+    [d.uuid, row.id, d.item_id, d.legenda, arquivo, tipo, d.tirada_em, d.lat, d.lon, req.file.buffer.length, req.usuario.id]);
+  if (!nova) return repetida(await existente()); // mesmo uuid chegando ao mesmo tempo
+  await pool.query('UPDATE ordens_servico SET versao = versao + 1, atualizado_em = NOW() WHERE id = $1', [row.id]);
+  res.status(201).json({ ...C.fotoParaApi(nova), os_id: row.id });
 }
 
 // ── GET /campo/fotos/:uuid ──────────────────────────────────────────────
 async function verFoto(req, res, next) {
-  try {
-    if (!C.uuidValido(req.params.uuid)) throw new ErroPedido(400, 'Identificador de foto inválido.');
-    const { rows: [f] } = await pool.query(
-      `SELECT f.arquivo, f.tipo_mime, os.responsavel_id, o.usuario_id AS obra_usuario_id, o.pasta AS obra_pasta, o.pasta_base AS obra_pasta_base
-         FROM os_fotos f JOIN ordens_servico os ON os.id = f.os_id JOIN obras o ON o.id = os.obra_id
-        WHERE f.uuid = $1`, [C.normalizarUuid(req.params.uuid)]);
-    if (!f || !podeVer(req.usuario, f)) throw new ErroPedido(404, 'Foto não encontrada.');
-    const buf = await lerArquivo(caminhoArquivoCampo(f.obra_pasta, f.arquivo, f.obra_pasta_base));
-    if (!buf) throw new ErroPedido(404, 'O arquivo da foto não está na pasta da obra.');
-    res.set({ 'Content-Type': f.tipo_mime, 'Cache-Control': 'private, max-age=86400' });
-    res.send(buf);
-  } catch (err) {
-    responderErro(res, next, err);
-  }
+  if (!C.uuidValido(req.params.uuid)) throw new ErroHttp(400, 'Identificador de foto inválido.');
+  const { rows: [f] } = await pool.query(
+    `SELECT f.arquivo, f.tipo_mime, os.responsavel_id, o.usuario_id AS obra_usuario_id, o.pasta AS obra_pasta, o.pasta_base AS obra_pasta_base
+       FROM os_fotos f JOIN ordens_servico os ON os.id = f.os_id JOIN obras o ON o.id = os.obra_id
+      WHERE f.uuid = $1`, [C.normalizarUuid(req.params.uuid)]);
+  if (!f || !podeVer(req.usuario, f)) throw new ErroHttp(404, 'Foto não encontrada.');
+  const buf = await lerArquivo(caminhoArquivoCampo(f.obra_pasta, f.arquivo, f.obra_pasta_base));
+  if (!buf) throw new ErroHttp(404, 'O arquivo da foto não está na pasta da obra.');
+  res.set({ 'Content-Type': f.tipo_mime, 'Cache-Control': 'private, max-age=86400' });
+  res.send(buf);
 }
 
 // ── GET /campo/os/:id/assinatura ────────────────────────────────────────
 async function verAssinatura(req, res, next) {
-  try {
-    const row = await carregarOS(req.params.id, req.usuario);
-    if (!row.assinatura_arquivo) throw new ErroPedido(404, 'Esta OS ainda não tem assinatura.');
-    const buf = await lerArquivo(caminhoArquivoCampo(row.obra_pasta, row.assinatura_arquivo, row.obra_pasta_base));
-    if (!buf || !C.ehPng(buf)) throw new ErroPedido(404, 'O arquivo da assinatura não está na pasta da obra.');
-    res.set({ 'Content-Type': 'image/png', 'Cache-Control': 'private, no-cache' });
-    res.send(buf);
-  } catch (err) {
-    responderErro(res, next, err);
-  }
+  const row = await carregarOS(req.params.id, req.usuario);
+  if (!row.assinatura_arquivo) throw new ErroHttp(404, 'Esta OS ainda não tem assinatura.');
+  const buf = await lerArquivo(caminhoArquivoCampo(row.obra_pasta, row.assinatura_arquivo, row.obra_pasta_base));
+  if (!buf || !C.ehPng(buf)) throw new ErroHttp(404, 'O arquivo da assinatura não está na pasta da obra.');
+  res.set({ 'Content-Type': 'image/png', 'Cache-Control': 'private, no-cache' });
+  res.send(buf);
 }
 
 // ── GET /campo/os/:id/pdf ───────────────────────────────────────────────
 async function pdf(req, res, next) {
-  try {
-    const row = await carregarOS(req.params.id, req.usuario);
-    const fotos = (await fotosDe([row.id])).get(row.id);
-    const os = C.osParaApi(row, fotos, { historico: true });
-    const imagens = new Map();
-    let total = 0;
-    for (const f of fotos) {
-      if (f.tamanho > FOTO_PDF_MAX || total + f.tamanho > FOTOS_PDF_TOTAL) { imagens.set(f.uuid, null); continue; }
-      const buf = await lerArquivo(caminhoArquivoCampo(row.obra_pasta, f.arquivo, row.obra_pasta_base));
-      const tipo = buf && C.tipoImagem(buf);
-      imagens.set(f.uuid, tipo ? `data:${tipo};base64,${buf.toString('base64')}` : null);
-      if (tipo) total += buf.length;
-    }
-    let assinaturaUri = null;
-    if (row.assinatura_arquivo) {
-      const buf = await lerArquivo(caminhoArquivoCampo(row.obra_pasta, row.assinatura_arquivo, row.obra_pasta_base));
-      if (buf && C.ehPng(buf)) assinaturaUri = `data:image/png;base64,${buf.toString('base64')}`;
-    }
-    const html = gerarHtmlOS({ os, imagens, assinaturaUri, emitidoPor: req.usuario?.nome });
-    const arquivoPdf = await gerarPdfDeHtml(html, {
-      margin: { top: '10mm', bottom: '22mm', left: '10mm', right: '10mm' },
-      displayHeaderFooter: true,
-      headerTemplate: '<div></div>',
-      footerTemplate: gerarFooterTemplate(),
-    });
-    // cópia na pasta da obra (Campo\<numero>\Relatório <numero>.pdf), sobrescrita a cada geração
-    await seguro(`pdf ${row.numero}`, () => gravarArquivoCampo(row, `Relatório ${row.numero}.pdf`, arquivoPdf));
-    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': contentDisposition(`Relatório ${row.numero}.pdf`) });
-    res.send(arquivoPdf);
-  } catch (err) {
-    responderErro(res, next, err);
+  const row = await carregarOS(req.params.id, req.usuario);
+  const fotos = (await fotosDe([row.id])).get(row.id);
+  const os = C.osParaApi(row, fotos, { historico: true });
+  const imagens = new Map();
+  let total = 0;
+  for (const f of fotos) {
+    if (f.tamanho > FOTO_PDF_MAX || total + f.tamanho > FOTOS_PDF_TOTAL) { imagens.set(f.uuid, null); continue; }
+    const buf = await lerArquivo(caminhoArquivoCampo(row.obra_pasta, f.arquivo, row.obra_pasta_base));
+    const tipo = buf && C.tipoImagem(buf);
+    imagens.set(f.uuid, tipo ? `data:${tipo};base64,${buf.toString('base64')}` : null);
+    if (tipo) total += buf.length;
   }
+  let assinaturaUri = null;
+  if (row.assinatura_arquivo) {
+    const buf = await lerArquivo(caminhoArquivoCampo(row.obra_pasta, row.assinatura_arquivo, row.obra_pasta_base));
+    if (buf && C.ehPng(buf)) assinaturaUri = `data:image/png;base64,${buf.toString('base64')}`;
+  }
+  const html = gerarHtmlOS({ os, imagens, assinaturaUri, emitidoPor: req.usuario?.nome });
+  const arquivoPdf = await gerarPdfDeHtml(html, {
+    margin: { top: '10mm', bottom: '22mm', left: '10mm', right: '10mm' },
+    displayHeaderFooter: true,
+    headerTemplate: '<div></div>',
+    footerTemplate: gerarFooterTemplate(),
+  });
+  // cópia na pasta da obra (Campo\<numero>\Relatório <numero>.pdf), sobrescrita a cada geração
+  await seguro(`pdf ${row.numero}`, () => gravarArquivoCampo(row, `Relatório ${row.numero}.pdf`, arquivoPdf));
+  res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': contentDisposition(`Relatório ${row.numero}.pdf`) });
+  res.send(arquivoPdf);
 }
 
 module.exports = {

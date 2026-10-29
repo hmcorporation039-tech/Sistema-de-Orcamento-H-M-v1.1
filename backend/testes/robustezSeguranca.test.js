@@ -333,11 +333,14 @@ caso('exclusão do laudo: fotos e arquitetura copiadas para a pasta ANTES; DELET
     assert.strictEqual(cl.log.length, 0);
     assert.deepStrictEqual(pastas.excluidos, []);
 
-    // foto nova chegou no meio: 409 e ROLLBACK
+    // foto nova chegou no meio: 409 e ROLLBACK (o erro segue para o tratador central, como no servidor)
     cl = cenarioExclusao({ fotosNovas: 1 });
     res = resposta();
-    await laudos.remover({ params: { id: '31' }, usuario: { id: 1 } }, res);
+    const { tratarErros } = require('../src/middleware/erros');
+    const req31 = { params: { id: '31' }, usuario: { id: 1 }, method: 'DELETE', originalUrl: '/api/laudos/31' };
+    await laudos.remover(req31, res).catch(e => tratarErros(e, req31, res, () => {}));
     assert.strictEqual(res.statusCode, 409);
+    assert.match(res.corpo.erro, /Chegaram fotos novas/);
     assert.ok(cl.log.includes('ROLLBACK') && !cl.log.some(s => /^DELETE/.test(s)));
   } finally {
     P.gravarArquivo = gravarOriginal;

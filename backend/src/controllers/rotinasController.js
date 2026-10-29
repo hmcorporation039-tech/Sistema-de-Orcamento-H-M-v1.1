@@ -4,13 +4,8 @@ const rotinas = require('../services/rotinas');
 const ia = require('../utils/ia');
 
 async function listar(req, res) {
-  try {
-    const dados = await rotinas.statusRotinas();
-    res.json({ ...dados, ia: ia.status(), agora: new Date().toISOString() });
-  } catch (err) {
-    console.error('Erro ao consultar as rotinas:', err);
-    res.status(500).json({ erro: 'Erro ao consultar as rotinas automáticas' });
-  }
+  const dados = await rotinas.statusRotinas();
+  res.json({ ...dados, ia: ia.status(), agora: new Date().toISOString() });
 }
 
 // Roda a rotina na hora (mesma execução do horário automático, com registro).
