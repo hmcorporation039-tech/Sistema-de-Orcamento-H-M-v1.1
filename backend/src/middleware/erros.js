@@ -37,10 +37,13 @@ function protegerRotasAsync(router) {
 // Antes esses erros caíam no handler padrão do Express, que responde uma
 // página HTML com o stack trace — vazando o caminho de instalação do servidor
 // (C:\HM-Engenharia\...) e quebrando o frontend, que espera JSON.
-function mensagemDeUpload(err) {
+function mensagemDeUpload(err, req) {
   switch (err.code) {
     case 'LIMIT_FILE_SIZE':
-      return { status: 413, erro: 'Arquivo acima do limite de tamanho deste envio (15 MB; projeto PDF/DWG/DXF na análise, 40 MB; pacote ou ZIP do projeto, 150 MB).' };
+      // o limite da rota vem do utils/upload.js (criarUpload); sem ele, o texto geral
+      return { status: 413, erro: req?.limiteUploadBytes
+        ? `Arquivo acima do limite deste envio (${require('../utils/upload').mb(req.limiteUploadBytes)} MB).`
+        : 'Arquivo acima do limite de tamanho deste envio.' };
     case 'LIMIT_FILE_COUNT':
       return { status: 413, erro: 'Número de arquivos acima do limite permitido.' };
     case 'LIMIT_UNEXPECTED_FILE':
@@ -75,7 +78,7 @@ function tratarErros(err, req, res, next) {
   }
 
   if (err instanceof multer.MulterError) {
-    const { status, erro } = mensagemDeUpload(err);
+    const { status, erro } = mensagemDeUpload(err, req);
     return res.status(status).json({ erro });
   }
 

@@ -1,5 +1,6 @@
 const express = require('express');
-const multer = require('multer');
+// uploads com o limite da rota na mensagem de erro (utils/upload.js)
+const { criarUpload, multer } = require('../utils/upload');
 const rateLimit = require('express-rate-limit');
 const { protegerRotasAsync } = require('../middleware/erros');
 // toda rota (inclusive as de routes/v2) com asyncHandler: erro fora do try de
@@ -35,9 +36,9 @@ const limiteLogin = rateLimit({
 // Projetos: só PDF — conferido no controller pelos bytes iniciais "%PDF", com
 // mensagem clara (um filtro aqui descartaria o arquivo calado)
 // 2.3: a análise também recebe DWG/DXF de projeto — DXF de prancha passa fácil de 15 MB
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 40 * 1024 * 1024, files: 10 } });
+const upload = criarUpload({ storage: multer.memoryStorage(), limits: { fileSize: 40 * 1024 * 1024, files: 10 } });
 // Nota fiscal: PDF (DANFE) ou XML (NF-e)
-const uploadNota = multer({
+const uploadNota = criarUpload({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024, files: 1 },
   fileFilter: (req, file, cb) => cb(null, /\.(pdf|xml)$/i.test(file.originalname || '')),
@@ -102,10 +103,10 @@ const maoObraCtrl = require('../controllers/maoDeObraController');
 const laudoCtrl = require('../controllers/laudosController');
 
 // Fotos de inspeção: JPG/PNG, até 20 por envio, 15 MB cada (o conteúdo é conferido no controller pelos bytes iniciais)
-const uploadFotos = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 20 } });
+const uploadFotos = criarUpload({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 20 } });
 // Arquitetura do projeto/análise (planta e 3D): DWG, DXF ou PDF vetorial até 40 MB;
 // o conteúdo é conferido na leitura (services/tarefasCad). Uma só para todas as rotas (v2 inclusive).
-const uploadArquitetura = multer({
+const uploadArquitetura = criarUpload({
   storage: multer.memoryStorage(),
   limits: { fileSize: 40 * 1024 * 1024, files: 1 },
   fileFilter: (req, file, cb) => cb(null, /\.(dxf|dwg|pdf)$/i.test(file.originalname || '')),

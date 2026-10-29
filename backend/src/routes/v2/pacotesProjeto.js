@@ -4,7 +4,7 @@
 // com o mesmo limite de análises; o pacote só serve a quem enviou (ou admin).
 // O DXF da compatibilização: qualquer usuário logado (como ver a análise).
 const fs = require('fs');
-const multer = require('multer');
+const { criarUpload, multer } = require('../../utils/upload');
 const rateLimit = require('express-rate-limit');
 const ctrl = require('../../controllers/projetosController');
 const { PASTA_UPLOAD } = require('../../services/pacotesProjeto');
@@ -12,7 +12,7 @@ const { PASTA_UPLOAD } = require('../../services/pacotesProjeto');
 // em disco, não em memória: um pacote de dezenas de DWG não pode ocupar a RAM do servidor.
 // 150 MB por arquivo (um ZIP com o projeto inteiro) e 80 arquivos por envio: o
 // pacote aceita 60 PDF/DWG/DXF, e mais que isso só enchia o disco temporário.
-const uploadPacote = multer({
+const uploadPacote = criarUpload({
   storage: multer.diskStorage({
     destination: (req, file, cb) => { fs.mkdirSync(PASTA_UPLOAD, { recursive: true }); cb(null, PASTA_UPLOAD); },
   }),
