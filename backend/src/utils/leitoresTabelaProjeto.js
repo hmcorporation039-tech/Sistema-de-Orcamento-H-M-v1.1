@@ -6,24 +6,169 @@
 //   - listaMateriais: "QTD + descrição" 8/8, "TAG QTD FABRICANTE MODELO" 18/18,
 //     "ITEM DESCRIÇÃO QTD UN" 80/80 linhas.
 // Antes disso, esses PDFs saíam da Análise de Projeto com 0 itens.
-const num = (s) => {
-  const t = String(s).trim();
-  // "1.234,56" (BR) ou "28,02" ou "1.5"
-  if (/,/.test(t)) return parseFloat(t.replace(/\./g, '').replace(',', '.'));
-  return parseFloat(t);
-};
+// 29/10/2026, formato do AltoQi (Lumine/QiBuilder) em projeto real de 3 folhas:
+//   - quadrosDeCargas: 57/57 circuitos em 4 quadros (antes 0);
+//   - listaMateriais "grupo / especificação ⇥ qtd unidade": 177/177 itens
+//     (antes 76, com a bitola "16 mm²" lida como 16 un).
+// Número de tabela: "1.234,56" (BR), "28,02", "1.5" ou "40.26" (AltoQi usa ponto
+// decimal). Sem vírgula, ponto seguido de EXATAMENTE 3 dígitos ("1.200") é
+// ambíguo: milhar brasileiro (1200) ou decimal com 3 casas (1,2). A leitura
+// continua a de antes (ponto decimal), mas `ambiguo` sai marcado com a outra
+// leitura em `alternativa`, para virar achado em vez de passar calado.
+function lerNumero(s) {
+  const t = String(s ?? '').trim();
+  if (/,/.test(t)) return { valor: parseFloat(t.replace(/\./g, '').replace(',', '.')), ambiguo: false };
+  if (/^\d{1,3}(\.\d{3})+$/.test(t)) return { valor: parseFloat(t), ambiguo: true, alternativa: Number(t.replace(/\./g, '')) };
+  return { valor: parseFloat(t), ambiguo: false };
+}
+const num = (s) => lerNumero(s).valor;
+// campos de quantidade ambígua para juntar ao item da lista
+const marcaAmbigua = (n) => (n.ambiguo ? { qtdAmbigua: true, qtdAlternativa: n.alternativa } : {});
 
 // ── Quadro de cargas ─────────────────────────────────────────────────────
 // "IL.1.1 - ILUMINAÇÃO CIRCULAÇÃO 600,00 W 0,92 0,75 489,13 VA 220 V 2,22 A A 16 A 2,5 mm²"
 //  circuito - descrição  potência  FP  FD  demanda  tensão  corrente  fase(s)  disjuntor  seção
 const RE_CIRCUITO = /^([A-Z]{1,4}\.?\d+(?:\.\d+)*)\s*-\s*(.+?)\s+([\d.,]+)\s*W\s+([\d,.]+)\s+([\d,.]+)\s+([\d.,]+)\s*VA\s+(\d+)\s*V\s+([\d,.]+)\s*A\s+([ABCRST]{1,3})\s+(\d+)\s*A\s+([\d,.]+)\s*mm[²2]/gm;
 
-function quadroDeCargas(texto) {
+function quadroDeCargasEmLinha(texto) {
   return [...String(texto || '').matchAll(RE_CIRCUITO)].map(m => ({
     circuito: m[1], descricao: m[2].trim(), potencia_W: num(m[3]), fp: num(m[4]), fd: num(m[5]),
     demanda_VA: num(m[6]), tensao_V: Number(m[7]), corrente_A: num(m[8]), fases: m[9],
     disjuntor_A: Number(m[10]), cabo_mm2: num(m[11]),
   }));
+}
+
+// Quadro de cargas em COLUNAS, lido pelo cabeçalho (formato do AltoQi/QiBuilder):
+//   "Quadro de Cargas (QD-1) - TERREO"
+//   "Circuito ⇥ Descrição ⇥ Esquema ⇥ Método ⇥ Tensão ⇥ [Iluminação (W) ⇥ Tomadas (W) ⇥]
+//    Pot. total. ⇥ Pot. total. ⇥ Fases ⇥ Pot. - R ⇥ Pot. - S ⇥ Pot. - T ⇥ FCT ⇥ FCA ⇥ In' ⇥
+//    Ip ⇥ Seção ⇥ Ic ⇥ Icc ⇥ Disj ⇥ dV parc ⇥ dV total ⇥ Status"
+// A linha do circuito NÃO tem uma célula por coluna: o pdf-parse omite as vazias
+// (descrição em branco, potência das fases sem carga, contagem de lâmpadas por
+// potência). Por isso: o começo é achado pelo conteúdo (esquema "F+N+T", tensão
+// "220 V", fases "R+S+T") e o fim — FCT … Status, sempre preenchido — é alinhado
+// pela direita com as colunas do cabeçalho. O formato antigo (tudo numa linha
+// com W/VA/V/A/mm²) dava 0 circuitos nesse quadro (revisão de 29/10/2026).
+const RE_ESQUEMA = /^\d?F(\s*\+\s*(\d?F|N|T|PE))*$/i;
+const RE_FASES = /^[RST](\s*\+\s*[RST]){0,2}$/;
+const CAUDA = [ // colunas do fim da linha, alinhadas pela direita
+  ['fct', /^FCT$/i], ['fca', /^FCA$/i], ['in_corrigida_A', /^In'?$/i], ['ip_A', /^Ip$|^Ib$/i],
+  ['secao_mm2', /^Se[çc][ãa]o/i], ['ic_A', /^Ic$|^Iz$/i], ['icc_kA', /^Icc/i], ['disjuntor_A', /^Disj/i],
+  ['dv_parcial_pct', /^dV\s*parc/i], ['dv_total_pct', /^dV\s*tot/i], ['status', /^Status/i],
+];
+const ehCabecalhoQuadro = (cel) => cel.some(c => /^Circuito$/i.test(c))
+  && cel.filter(c => /^(Esquema|M[ée]todo|Tens[ãa]o|Disj|Se[çc][ãa]o|Ip|In'?|Ic|dV|Fases|Pot)/i.test(c)).length >= 4;
+// Quadro alimentado por um circuito deste ("QD-1PAV" no QGBT): é alimentador, não carga
+// ("CD-01" é condensadora: fica de fora)
+const RE_NOME_QUADRO = /^(Q[A-Z]{0,4}\d*|CCM|PAINEL)\s*[- ]/i;
+
+function quadrosPorColunas(linhas) {
+  const quadros = [];
+  for (let i = 0; i < linhas.length; i++) {
+    const cab = celulas(linhas[i]);
+    if (!ehCabecalhoQuadro(cab)) continue;
+    // título "Quadro de Cargas (QGBT) - SUB-SOLO" logo acima
+    let quadro = null, pavimento = null;
+    for (let k = 1; k <= 3 && i - k >= 0; k++) {
+      const t = linhas[i - k].match(/^QUADRO DE CARGAS?\s*(?:\(([^)]+)\)|[-–:]\s*([^\t-]+))?\s*(?:[-–]\s*(.+))?$/i);
+      if (t) { quadro = (t[1] || t[2] || '').trim() || null; pavimento = t[3]?.trim() || null; break; }
+    }
+    // colunas do fim: as do cabeçalho depois da última "Pot. - T" (ou de "Fases")
+    let fimCabeca = -1;
+    cab.forEach((c, k) => { if (/^Pot\.?\s*-\s*[RST]$|^Fases$/i.test(c)) fimCabeca = k; });
+    const cauda = [];
+    for (const c of cab.slice(fimCabeca + 1)) {
+      const col = CAUDA.find(([, re]) => re.test(c));
+      cauda.push(col ? col[0] : null);
+    }
+    const circuitos = [];
+    let totais = null;
+    let j = i + 1;
+    for (; j < linhas.length && j < i + 400; j++) {
+      const l = linhas[j];
+      if (!l) continue;
+      const c = celulas(l).filter(Boolean);
+      if (/^de inst\.|^\((V|VA|W|A)\)/i.test(c[0] || '')) continue; // 2ª linha do cabeçalho (unidades)
+      if (/^TOTAL$/i.test(c[0] || '')) {
+        const f = c.findIndex(x => RE_FASES.test(x));
+        if (f >= 2) totais = { potencia_VA: num(c[f - 2]), potencia_W: num(c[f - 1]) };
+        j++;
+        break;
+      }
+      if (c.length < 8 || RE_FIM_BLOCO.test(l) || ehCabecalhoQuadro(c)) break;
+      const e = c.slice(0, 4).findIndex((x, k) => k >= 1 && RE_ESQUEMA.test(x));
+      if (e < 1) continue;
+      const tensao = c.slice(e + 1, e + 4).find(x => /^\d+(\/\d+)?\s*V$/i.test(x));
+      const kT = c.indexOf(tensao, e + 1);
+      const kF = c.findIndex((x, k) => k > kT && RE_FASES.test(x));
+      if (!tensao || kF < 0) continue;
+      // fim da linha pela direita; "Status" (texto) pode faltar
+      let nomes = cauda;
+      if (nomes[nomes.length - 1] === 'status' && !/[A-Za-z]/.test(c[c.length - 1])) nomes = nomes.slice(0, -1);
+      if (c.length - nomes.length <= kF) continue;
+      const fim = {};
+      nomes.forEach((n, k) => { if (n) fim[n] = c[c.length - nomes.length + k]; });
+      if (!/^\d/.test(fim.disjuntor_A || '') || !/^\d/.test(fim.secao_mm2 || '')) continue;
+      // entre a tensão e as fases: [lâmpadas/tomadas por potência…] Pot (VA), Pot (W)
+      const pots = c.slice(kT + 1, kF).map(num);
+      const va = pots.length >= 2 ? pots[pots.length - 2] : null;
+      const w = pots.length >= 1 ? pots[pots.length - 1] : null;
+      const nomeCircuito = c[0];
+      const opcional = (k) => (fim[k] != null ? num(fim[k]) : null);
+      circuitos.push({
+        circuito: nomeCircuito, descricao: c.slice(1, e).join(' ') || null,
+        // campos do formato antigo (mesmos nomes: ponte para a skill, achados, orçamento)
+        potencia_W: w, fp: va > 0 && w != null ? Math.round((w / va) * 100) / 100 : null, fd: null, demanda_VA: null,
+        tensao_V: Number(tensao.match(/\d+/)[0]), corrente_A: opcional('ip_A'), fases: c[kF].replace(/[\s+]/g, ''),
+        disjuntor_A: num(fim.disjuntor_A), cabo_mm2: num(fim.secao_mm2),
+        // o que só o quadro em colunas traz (conferências da NBR 5410: Ib ≤ In ≤ Iz, queda de tensão)
+        potencia_VA: va, esquema: c[e].replace(/\s/g, ''), metodo: c[e + 1] !== tensao ? c[e + 1] : null,
+        in_corrigida_A: opcional('in_corrigida_A'), ip_A: opcional('ip_A'), secao_mm2: num(fim.secao_mm2),
+        ic_A: opcional('ic_A'), icc_kA: opcional('icc_kA'), dv_parcial_pct: opcional('dv_parcial_pct'), dv_total_pct: opcional('dv_total_pct'),
+        status: fim.status || null, fct: opcional('fct'), fca: opcional('fca'),
+        quadro, pavimento, alimentador: RE_NOME_QUADRO.test(`${nomeCircuito} `),
+      });
+    }
+    // "Quadro de Demanda (QGBT)" logo depois: "TOTAL ⇥ 154.22" (kVA demandados)
+    let demanda_kVA = null;
+    let naDemanda = false;
+    for (let k = j; k < Math.min(linhas.length, j + 15); k++) {
+      if (/^QUADRO DE CARGAS?/i.test(linhas[k])) break;
+      if (/^QUADRO DE DEMANDA/i.test(linhas[k])) { naDemanda = true; continue; }
+      const m = naDemanda && linhas[k].match(/^TOTAL\s+([\d.,]+)$/i);
+      if (m) { demanda_kVA = num(m[1]); break; }
+    }
+    quadros.push({ quadro, pavimento, circuitos, totais: totais || demanda_kVA != null ? { ...(totais || {}), demanda_kVA } : null, layout: 'COLUNAS' });
+    i = j - 1;
+  }
+  // circuito com o nome de outro quadro do mesmo arquivo também é alimentador
+  const nomes = new Set(quadros.map(q => q.quadro && q.quadro.replace(/\s/g, '').toUpperCase()).filter(Boolean));
+  for (const q of quadros) for (const c of q.circuitos) if (nomes.has(c.circuito.replace(/\s/g, '').toUpperCase())) c.alimentador = true;
+  return quadros;
+}
+
+// Quadros do arquivo, cada um com seus circuitos: "Quadro de cargas (X)" separa
+// um quadro do outro (os IDs C1, IL 1… se repetem entre quadros). O formato em
+// linha não tem título por quadro: vira um quadro só, sem nome.
+function quadrosDeCargas(texto) {
+  const linhas = String(texto || '').split('\n').map(l => l.trim());
+  const emLinha = quadroDeCargasEmLinha(texto);
+  const colunas = quadrosPorColunas(linhas);
+  return [...(emLinha.length ? [{ quadro: null, pavimento: null, circuitos: emLinha, totais: null, layout: 'LINHA' }] : []), ...colunas];
+}
+
+// Lista plana de circuitos (todos os quadros), como antes — cada circuito do
+// quadro em colunas leva `quadro` (título) e `alimentador` para quem precisar separar.
+function quadroDeCargas(texto) {
+  return quadrosDeCargas(texto).flatMap(q => q.circuitos);
+}
+
+// Há quadro de cargas no texto (título no começo da linha ou cabeçalho com
+// "Circuito" e colunas elétricas)? Junto com quadroDeCargas() = [] vira o
+// achado "quadro de cargas presente e não lido" — antes o silêncio fazia a
+// análise dizer que o quadro "continua sendo lido pelo texto".
+function quadroDeCargasPresente(texto) {
+  return String(texto || '').split('\n').some(l => /^\s*QUADRO DE CARGAS?\b/i.test(l) || ehCabecalhoQuadro(celulas(l.trim())));
 }
 
 function totaisQuadro(texto) {
@@ -47,17 +192,24 @@ const RE_FIM_BLOCO = /^(--\s*\d+\s+of\s+\d+\s*--|LEIAUTE|VISTA|ESCALA|DIAGRAMA|D
 
 // Linha de tabela em colunas (o pdf-parse separa as células com tabulação)
 const celulas = (l) => String(l).split('\t').map(c => c.trim());
+// texto que começa com unidade de medida: o número antes dele é bitola, corrente
+// ou dimensão ("16 mm²", "50 A - 10 kA", "4 x 2"") — nunca quantidade nem nº de item
+const RE_MEDIDA_INICIO = /^(mm[²2]?|cm|m[²2³3]?|kA|A|V|kV|W|kW|VA|kVA|Hz|x\s*\d|["'”]|%)(\s|$|[-–,.)])/i;
 const emColunas = (l) => celulas(l).filter(Boolean).length >= 3;
 
 // D) Tabela em COLUNAS com cabeçalho ("Item | Descrição | Unid. | Qtd.", em
 // qualquer ordem): cada valor vem da coluna certa. Antes, "1 \tCabo… \tm \t120"
 // caía no leitor "QTD + descrição" e o nº do item (1) virava a quantidade.
+// "QNT" e "QTDE" também são quantidade; sem coluna "Descrição", a descrição sai
+// de "Tipo"/"Modelo"/"Produto"/"Equipamento" (tabela "TIPO | MODELO | QNT" de
+// tomadas/luminárias — antes não era lida)
 const COLUNAS = {
   descricao: /^DESCRI|^ESPECIFICA|^MATERIA/i,
-  qtd: /^QT|^QUANT/i,
+  qtd: /^QT|^QNT|^QUANT/i,
   unidade: /^UN(ID)?\.?$|^UNIDADE|^UND/i,
   item: /^ITEM|^N[º°O]\.?$|^C[ÓO]D/i,
 };
+const COLUNAS_DESCRICAO_ALTERNATIVA = /^(TIPO|MODELO|PRODUTO|EQUIPAMENTO|PE[ÇC]A)S?\.?$/i;
 function listaPorColunas(linhas) {
   const itens = [];
   for (let i = 0; i < linhas.length; i++) {
@@ -65,25 +217,80 @@ function listaPorColunas(linhas) {
     const cab = celulas(linhas[i]);
     const col = {};
     cab.forEach((c, k) => { for (const [nome, re] of Object.entries(COLUNAS)) if (col[nome] == null && re.test(c)) col[nome] = k; });
-    if (col.descricao == null || col.qtd == null) continue;
+    // sem "Descrição": as colunas Tipo/Modelo juntas fazem a descrição
+    const colsDescricao = col.descricao != null ? [col.descricao]
+      : cab.map((c, k) => (COLUNAS_DESCRICAO_ALTERNATIVA.test(c) ? k : -1)).filter(k => k >= 0);
+    if (!colsDescricao.length || col.qtd == null) continue;
     let j = i + 1;
     for (; j < linhas.length && j < i + 300; j++) {
       const l = linhas[j];
       if (!l || RE_FIM_BLOCO.test(l)) break;
       const c = celulas(l);
       if (c.length < cab.length - 1) break; // fim da tabela (texto corrido)
-      const qtd = num(c[col.qtd] || '');
-      const descricao = c[col.descricao] || '';
+      const n = lerNumero(c[col.qtd] || '');
+      const qtd = n.valor;
+      const descricao = colsDescricao.map(k => c[k]).filter(Boolean).join(' — ');
       if (!Number.isFinite(qtd) || !/[A-Za-zÀ-ú]{3,}/.test(descricao)) continue;
       itens.push({
         ...(col.item != null && c[col.item] ? { item: c[col.item] } : {}),
         descricao, qtd, unidade: (col.unidade != null && c[col.unidade] ? c[col.unidade] : 'un').toLowerCase().replace(/\.$/, ''),
+        ...marcaAmbigua(n),
         layout: 'COLUNAS',
       });
     }
     i = j - 1;
   }
   return itens;
+}
+
+// E) Lista de materiais do AltoQi (Lumine/QiBuilder): grupos em linhas sem
+// tabulação e o item "especificação ⇥ qtd unidade":
+//   "Lista de materiais - TERREO" / "Elétrica" / "Cabo Unipolar (cobre)" /
+//   "Isol. EPR - 0,6/1kV" / "16 mm² - Azul claro ⇥ 40.26 m" / "Isol.PVC - 450/750V" / …
+// A especificação sozinha não diz o que é ("16 mm² - Azul claro", "4x2"", "50 A -
+// 10 kA"): a descrição leva os dois últimos níveis de grupo. Um bloco de k linhas de
+// grupo depois de itens troca os k níveis de baixo (o de cima continua valendo).
+// Antes, "16 mm² - Azul claro" caía no leitor "QTD + descrição" (bitola virava
+// quantidade: 16 un) e os itens em "pç" sem nº de item eram descartados.
+const RE_ITEM_ALTOQI = /^(.*\S)\s*\t\s*(\d[\d.,]*)\s*(p[çc]s?|un|und|m|m[²2]|m[³3]|kg|cj|jg|rl|cx|br|l)\.?$/i;
+function listaAltoQi(linhas) {
+  const itens = [];
+  const usadas = new Set();
+  for (let i = 0; i < linhas.length; i++) {
+    const titulo = linhas[i].match(/^LISTA DE MATERIA(?:L|IS)\b\s*(?:[-–]\s*(.+))?$/i);
+    if (!titulo) continue;
+    // só é deste formato se algum item "⇥ qtd unidade" aparecer logo no começo
+    if (!linhas.slice(i + 1, i + 8).some(l => RE_ITEM_ALTOQI.test(l))) continue;
+    let grupo = [];
+    let novos = [];
+    let j = i + 1;
+    for (; j < linhas.length && j < i + 1500; j++) {
+      const l = linhas[j];
+      if (!l) continue;
+      if (RE_FIM_BLOCO.test(l) || /^LISTA DE MATERIA/i.test(l)) break;
+      const m = l.match(RE_ITEM_ALTOQI);
+      if (m) {
+        if (novos.length) { grupo = grupo.slice(0, Math.max(0, grupo.length - novos.length)).concat(novos); novos = []; }
+        const n = lerNumero(m[2]);
+        const unidade = m[3].toLowerCase().replace(/^pc/, 'pç').replace(/^pçs$/, 'pç');
+        itens.push({
+          descricao: [...grupo.slice(-2), m[1].trim()].join(' — '),
+          grupo: grupo.join(' > ') || null, especificacao: m[1].trim(),
+          qtd: n.valor, unidade, ...marcaAmbigua(n),
+          ...(titulo[1] ? { pavimento: titulo[1].trim() } : {}),
+          layout: 'ALTOQI',
+        });
+        continue;
+      }
+      // linha com tabulação que não é item: outra tabela (legenda, quadro)
+      if (/\t/.test(l)) break;
+      novos.push(l);
+      if (novos.length > 4) { j -= novos.length - 1; break; } // texto corrido: a lista acabou
+    }
+    for (let k = i; k < j; k++) usadas.add(k);
+    i = j - 1;
+  }
+  return { itens, usadas };
 }
 
 // A) "QUANT. (UN) DESCRIÇÃO" — "24 Minidisjuntor monopolar, ..." com descrição que
@@ -101,7 +308,10 @@ function listaQtdDescricao(linhas) {
       if (/^QUANT|^QTD|^DESCRI/i.test(l)) continue; // cabeçalho
       if (RE_FIM_BLOCO.test(l) || emColunas(l)) break;
       let m = l.match(/^(\d{1,4})\s+(\S.{3,})$/);
-      if (m && /[A-Za-zÀ-ú]{3,}/.test(m[2])) {
+      // "16 mm² - Azul claro", "50 A - 10 kA", "4 x 2"": o número é bitola/corrente/
+      // medida, não quantidade; e linha que TERMINA em "⇥ qtd unidade" é de outro formato
+      const ehMedida = m && (RE_MEDIDA_INICIO.test(m[2]) || /\t\s*[\d.,]+\s*\S{1,4}$/.test(l));
+      if (m && !ehMedida && /[A-Za-zÀ-ú]{3,}/.test(m[2])) {
         atual = { qtd: Number(m[1]), descricao: m[2].trim(), unidade: 'un', layout: 'QTD+DESC' };
         itens.push(atual);
         continue;
@@ -186,36 +396,62 @@ function listaItemDescQtdUn(linhas) {
       }
     }
     if (!codigo || !/[A-Za-zÀ-ú]{3,}/.test(desc)) continue;
-    itens.push({ item: codigo, descricao: desc.trim(), qtd: num(m[3]), unidade: m[4].toLowerCase().replace(/\.$/, ''), disciplinaSecao, layout: 'ITEM+DESC+QTD+UN' });
+    // "2.5 mm² - Preto 131.78 m": "2.5" é bitola, não nº de item
+    if (m[1] && RE_MEDIDA_INICIO.test(desc)) continue;
+    const n = lerNumero(m[3]);
+    itens.push({ item: codigo, descricao: desc.trim(), qtd: n.valor, unidade: m[4].toLowerCase().replace(/\.$/, ''), ...marcaAmbigua(n), disciplinaSecao, layout: 'ITEM+DESC+QTD+UN' });
   }
   return itens;
 }
 
 function listaMateriais(texto) {
   const linhas = String(texto || '').split('\n').map(l => l.trim());
+  // lista do AltoQi primeiro: as linhas dela saem do texto dos outros leitores
+  // (senão "16 mm² - Azul claro ⇥ 40.26 m" vira 16 un no leitor "QTD + descrição")
+  const altoqi = listaAltoQi(linhas);
+  const resto = altoqi.usadas.size ? linhas.map((l, k) => (altoqi.usadas.has(k) ? '' : l)) : linhas;
   // a tabela em colunas (cabeçalho reconhecido) vale mais que os leitores por padrão de linha
-  const colunas = listaPorColunas(linhas);
+  const colunas = listaPorColunas(resto);
   const linhasDeColuna = new Set(colunas.map(c => c.descricao));
-  const porLinha = [...listaQtdDescricao(linhas), ...listaTagFabricante(linhas), ...listaItemDescQtdUn(linhas)]
+  const porLinha = [...listaQtdDescricao(resto), ...listaTagFabricante(resto), ...listaItemDescQtdUn(resto)]
     .filter(it => !linhasDeColuna.has(it.descricao) && ![...linhasDeColuna].some(d => it.descricao.startsWith(d)));
-  return [...colunas, ...porLinha].filter(it => Number.isFinite(it.qtd) && it.qtd > 0);
+  return [...altoqi.itens, ...colunas, ...porLinha].filter(it => Number.isFinite(it.qtd) && it.qtd > 0);
 }
 
 // ── Carimbo (bloco de título) ────────────────────────────────────────────
+// Rótulo e valor na MESMA linha ([ \t]*, não \s*): "…DO CLIENTE:" no fim de uma
+// linha pegava o "00" da tabela de revisões da linha de baixo; "PROPRIETÁRIO:"
+// vazio pegava "ENDEREÇO:". Valor só número ou outro rótulo ("ENDEREÇO:") não vale
+// — passa para a próxima ocorrência.
+const valorDeCampo = (v) => !!v && !/^[\d\s./-]+$/.test(v) && !/:\s*$/.test(v) && /[A-Za-zÀ-ú]{2,}/.test(v);
+// Escala: com rótulo ("ESC. 1:50", "ESCALA 1:75"), a mais repetida na folha; no
+// empate, a de maior denominador (planta, não detalhe — "ESCALA 1:5" do detalhe
+// de uma folha de plantas em 1:75 saía como a escala da folha)
+function escalaDaFolha(t) {
+  const rotuladas = [...t.matchAll(/\bESC(?:ALA)?\.?[ \t]*:?[ \t]*(1[ \t]*:[ \t]*\d{1,4})\b/gi)].map(m => m[1].replace(/\s/g, ''));
+  if (!rotuladas.length) return null;
+  const vezes = {};
+  for (const e of rotuladas) vezes[e] = (vezes[e] || 0) + 1;
+  return Object.keys(vezes).sort((a, b) => vezes[b] - vezes[a] || Number(b.split(':')[1]) - Number(a.split(':')[1]))[0];
+}
 function carimbo(texto) {
   const t = String(texto || '');
-  const pega = (re) => { const m = t.match(re); return m ? m[1].replace(/\s+/g, ' ').trim().slice(0, 120) : null; };
-  const escalas = [...new Set((t.match(/\b1\s*:\s*\d{2,4}\b/g) || []).map(s => s.replace(/\s/g, '')))];
+  const limpa = (s) => s.replace(/\s+/g, ' ').trim().slice(0, 120);
+  const pega = (re) => { const m = t.match(re); return m ? limpa(m[1]) : null; };
+  // primeira ocorrência com valor de verdade (re com /g)
+  const pegaValido = (re) => { for (const m of t.matchAll(re)) { const v = limpa(m[1]); if (valorDeCampo(v)) return v; } return null; };
+  const escalas = [...new Set((t.match(/\b1[ \t]*:[ \t]*\d{2,4}\b/g) || []).map(s => s.replace(/\s/g, '')))];
   return {
-    escala: pega(/ESC(?:ALA)?\.?\s*:?\s*(1\s*:\s*\d{1,4})/i) || (escalas.length === 1 ? escalas[0] : null)
+    escala: escalaDaFolha(t) || (escalas.length === 1 ? escalas[0] : null)
       || (/\bINDICADA\b/i.test(t) ? 'INDICADA' : null),
     escalasNaFolha: escalas,
     revisao: pega(/\bREV(?:IS[ÃA]O)?\.?\s*:?\s*(R?\d{2}|P\d)\b/i),
     data: pega(/\b(\d{2}\/\d{2}\/\d{4})\b/),
-    responsavel: pega(/RESPONS[ÁA]VEL T[ÉE]CNICO\s*:?\s*([^\n\t]+)/i) || pega(/Resp\.\s*t[ée]cnico\s*:\s*([^|\n]+)/i),
-    crea: pega(/\b(CREA[\s\-:]*[\dA-Z./-]{4,})/i),
-    cliente: pega(/CLIENTE\s*:\s*([^\t\n]+)/i) || pega(/PROPRIET[ÁA]RIO\s*:\s*([^\t\n]+)/i) || pega(/Cliente:\s*([^|\n—]+)/),
-    obra: pega(/\bOBRA\s*:\s*([^\t\n]+)/i),
+    responsavel: pegaValido(/RESPONS[ÁA]VEL T[ÉE]CNICO[ \t]*:?[ \t]*([^\n\t]+)/gi) || pegaValido(/Resp\.[ \t]*t[ée]cnico[ \t]*:[ \t]*([^|\n]+)/gi),
+    // com ao menos um dígito ("CREA/CAU" é rótulo do carimbo, não registro)
+    crea: pega(/\b(CREA[ \t\-:]*(?=[\dA-Z./-]*\d)[\dA-Z./-]{4,})/i),
+    cliente: pegaValido(/\bCLIENTE[ \t]*:[ \t]*([^\t\n]+)/gi) || pegaValido(/\bPROPRIET[ÁA]RIO[ \t]*:[ \t]*([^\t\n]+)/gi) || pegaValido(/\bCliente:[ \t]*([^|\n—]+)/g),
+    obra: pegaValido(/\bOBRA[ \t]*:[ \t]*([^\t\n]+)/gi),
   };
 }
 
@@ -224,7 +460,8 @@ function carimbo(texto) {
 // uma disciplina e o conteúdo é de outra (caso real: prancha "CFTV 2" que era
 // de alarme). Não decide nada sozinho.
 const ASSINATURAS = {
-  eletrica: /QUADRO DE CARGAS|DIAGRAMA UNIFILAR|DISJUNTOR|CIRCUITO\b|TOMADA|ALIMENTADOR/gi,
+  // "CIRCUITO FECHADO (de TV)" é CFTV, não elétrica
+  eletrica: /QUADRO DE CARGAS|DIAGRAMA UNIFILAR|DISJUNTOR|CIRCUITO\b(?!\s+FECHADO)|TOMADA|ALIMENTADOR/gi,
   eletrica_hospitalar: /IT[\s-]M[ÉE]DICO|NBR\s?13534|SISTEMA IT\b|SALA CIR[ÚU]RGICA|\bUTI\b|DSI\b|SUPERVISOR DE ISOLAMENTO/gi,
   eletrica_industrial: /\bCCM\b|PARTIDA (DIRETA|ESTRELA)|INVERSOR DE FREQ|SOFT-?STARTER|BANCO DE CAPACITORES|\bMOTOR(ES)?\b/gi,
   media_tensao: /SUBESTA[ÇC][ÃA]O|M[ÉE]DIA TENS[ÃA]O|13[,.]8\s?kV|NBR\s?14039|CUB[ÍI]CULO|TRANSFORMADOR DE (POT|FOR)/gi,
@@ -255,4 +492,6 @@ function detectarDisciplinas(texto) {
   return Object.entries(pontos).sort((a, b) => b[1] - a[1]).map(([chave, ocorrencias]) => ({ chave, ocorrencias }));
 }
 
-module.exports = { quadroDeCargas, totaisQuadro, listaMateriais, carimbo, detectarDisciplinas };
+module.exports = {
+  quadroDeCargas, quadrosDeCargas, quadroDeCargasPresente, totaisQuadro, listaMateriais, carimbo, detectarDisciplinas, lerNumero,
+};

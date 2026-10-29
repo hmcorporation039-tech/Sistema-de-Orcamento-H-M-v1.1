@@ -1,4 +1,4 @@
-const { quadroDeCargas, totaisQuadro, listaMateriais, carimbo, detectarDisciplinas } = require('./leitoresTabelaProjeto');
+const { quadrosDeCargas, quadroDeCargasPresente, totaisQuadro, listaMateriais, carimbo, detectarDisciplinas } = require('./leitoresTabelaProjeto');
 // texto do PDF: leitura única em utils/leitorPdf.js
 const { textoDoPdf: extrairTexto, textoEPaginasDoPdf } = require('./leitorPdf');
 
@@ -9,15 +9,42 @@ const { textoDoPdf: extrairTexto, textoEPaginasDoPdf } = require('./leitorPdf');
 // Linhas que não são nome de ambiente: carimbo, cotas, alturas, lotação
 // ("40 ALUNOS"), textos de nota — viravam pedaço do nome ("SALA 01 PROPRIETÁRIO:…").
 const RE_NAO_NOME = /:|\d{2}\/\d{2}\/\d{2,4}|^\d+([.,]\d+)?\s*(m|cm|mm)?$|^(H|PD|PE|NA|NPA)\s*=|^(ESCALA|PRANCHA|FOLHA|REVIS|DESENHO|RESPONS|PROPRIET|CREA|CLIENTE|ENDERE)|^(DATA|PROJETO|OBRA)$|^\d+\s+(ALUNOS|PESSOAS|LUGARES)$/i;
+// Também não é nome de sala (29/10/2026, planta com "A: 11,84 m²"): letra solta
+// de circuito/comando ("M", "G G", "I J") e texto de legenda ou de equipamento
+// ("Tomada para exaustor", "Interruptor e tomada") que o export põe logo acima
+// do nome — viravam "M J Quarto 1", "Tomada para exaustor … Quarto 1".
+const RE_NAO_NOME_INSTALACAO = /^([A-Z](\s+|$))+$|^(TOMADAS?|INTERRUPTOR(ES)?|ESPELHO|PONTO( DE)? (LUZ|FOR[ÇC]A|REDE)|LUMIN[ÁA]RIAS?|ELETRODUTO|ELETROCALHA|CAIXA DE PASSAGEM|QUADRO DE|CIRCUITO|DISJUNTOR|DETECTOR|ACIONADOR|SENSOR|C[ÂA]MERA|PLAFON|PERFIL DE LED|SPOT|PENDENTE)\b/i;
+const naoEhNome = (linha) => RE_NAO_NOME.test(linha) || RE_NAO_NOME_INSTALACAO.test(linha);
+
+// Linha de área do ambiente: "A= 12,50m²", "A = 12,50 m²", "A: 11,84 m2" (o "2"
+// sobrescrito vem como texto à parte no pdfjs: "A: 11,84 m" + "2"), "ÁREA = 18,54 m²",
+// "ÁREA: 6,20 m²" — e a área sozinha, "6,63 m²" (aí o m² é obrigatório). Antes só
+// "A=" valia: "Quarto 2 / A: 11,84 m²" dava 0 ambientes (revisão de 29/10/2026).
+const RE_LINHA_AREA = /^(?:(?:A|[ÁA]REA)\s*[=:]\s*([\d.,]+)\s*m(?:[²2])?|([\d.,]+)\s*m[²2])\s*$/i;
+// começo de outra linha de área (encerra o nome que vem acima)
+const RE_INICIO_AREA = /^(A|[ÁA]REA)\s*[=:]/i;
+// "12,50" → 12,5; "1.250,00" → 1250; "12.5" → 12,5 (ponto decimal); "1.250" → 1250 (milhar)
+function numeroDaArea(s) {
+  const t = String(s);
+  if (/,/.test(t)) return parseFloat(t.replace(/\./g, '').replace(',', '.'));
+  if (/^\d+\.\d{1,2}$/.test(t)) return parseFloat(t);
+  return parseFloat(t.replace(/\./g, ''));
+}
+// área de uma linha (ou null)
+function areaDaLinha(linha) {
+  const m = String(linha || '').trim().match(RE_LINHA_AREA);
+  if (!m) return null;
+  const area = numeroDaArea(m[1] || m[2]);
+  return Number.isFinite(area) && area > 0 ? area : null;
+}
 
 function extrairAmbientes(texto) {
   const linhas = String(texto || '').split('\n');
   const ambientes = [];
 
   for (let i = 0; i < linhas.length; i++) {
-    // "A= 12,50m²" ou "A = 12,50 m²" (com espaço, padrão de outro escritório)
-    const m = linhas[i].trim().match(/^A\s*=\s*([\d.,]+)\s*m[²2]\s*$/i);
-    if (!m) continue;
+    const area = areaDaLinha(linhas[i]);
+    if (area == null) continue;
 
     const partesNome = [];
     for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
@@ -25,16 +52,13 @@ function extrairAmbientes(texto) {
       if (/\d{2}\/\d{2}\/\d{2,4}/.test(linhas[j])) break;
       // "40 ALUNOS \tSALA 102": rótulos vizinhos na mesma linha — vale o último
       const linha = linhas[j].split('\t').pop().trim();
-      if (!linha || /^A\s*=/i.test(linha) || RE_NAO_NOME.test(linha) || linha.length > 60) break;
+      if (!linha || RE_INICIO_AREA.test(linha) || areaDaLinha(linha) != null || naoEhNome(linha) || linha.length > 60) break;
       partesNome.unshift(linha);
     }
     const nome = partesNome.join(' ').trim();
     if (!nome) continue;
 
-    ambientes.push({
-      nome,
-      area_m2: parseFloat(m[1].replace(/\./g, '').replace(',', '.')),
-    });
+    ambientes.push({ nome, area_m2: area });
   }
 
   return ambientes;
@@ -84,7 +108,7 @@ function extrairPontosPorCodigo(texto, prefixo) {
   }
 
   if (numeros.length === 0) {
-    return { ocorrencias: 0, total: 0, unicas: [], repetidas: [], faltando: [], descartados };
+    return { ocorrencias: 0, total: 0, totalUnicos: 0, unicas: [], repetidas: [], faltando: [], descartados };
   }
 
   const unicas = [...new Set(numeros)].sort((a, b) => a - b);
@@ -96,12 +120,34 @@ function extrairPontosPorCodigo(texto, prefixo) {
 
   return {
     ocorrencias: numeros.length,
+    // só pelo texto não dá para saber se um código repetido é o mesmo ponto
+    // escrito duas vezes ou dois pontos com o mesmo número: o total é o de
+    // códigos únicos até a posição de cada um corrigir (comRepeticoesPorPosicao)
     total: unicas.length,
+    totalUnicos: unicas.length,
     unicas,
     repetidas,
     faltando,
     descartados, // o que o filtro ignorou — útil para conferência
   };
+}
+
+// Corrige o total pelos códigos repetidos LONGE um do outro (posição no PDF —
+// utils/pontosPorAmbiente.js, `codigos`): "CAM18" em dois pontos da planta a 4 m
+// de distância são duas câmeras, e "R1…R10" no térreo e "R1…R8" no superior são
+// 18 pontos, não 10. Repetição colada (mesmo ponto, rótulo duplicado) segue
+// contando uma vez. `resumo` = extrairPontosPorCodigo; `posicional` =
+// codigos.<tipo> de lerPontosDoPdf. Sem posições (DWG, PDF sem texto), nada muda.
+// O total antigo fica em `totalUnicos` para o achado mostrar os dois números.
+function comRepeticoesPorPosicao(resumo, posicional) {
+  if (!resumo) return resumo;
+  const base = { ...resumo, totalUnicos: resumo.totalUnicos ?? resumo.total };
+  if (!posicional?.repetidasDistantes?.length) return base;
+  // só números que o texto também aceitou (o filtro de contexto do texto vale)
+  const aceitos = new Set(resumo.unicas || []);
+  const distantes = posicional.repetidasDistantes.filter(r => aceitos.has(r.numero));
+  const extras = distantes.reduce((s, r) => s + (r.pontos - 1), 0);
+  return { ...base, total: base.totalUnicos + extras, repetidasDistantes: distantes };
 }
 
 // Códigos de câmera (ex.: CAM1, CAM76) — aparecem como texto direto no desenho
@@ -182,6 +228,9 @@ async function analisarProjeto(buffer, nomeArquivo) {
 // DWG/DXF (services/analiseCad/index.js)
 function analisarTexto(texto, nomeArquivo) {
   const quantitativa = extrairTabelaQuantitativa(texto);
+  const quadros = quadrosDeCargas(texto);
+  const quadroCargas = quadros.flatMap(q => q.circuitos);
+  const listaMateriaisLida = listaMateriais(texto);
   return {
     arquivo: nomeArquivo,
     // PDF escaneado ou com todo o texto convertido em linhas (fonte SHX): sem
@@ -193,9 +242,17 @@ function analisarTexto(texto, nomeArquivo) {
     tabelaCabos: extrairTabelaCabos(texto),
     tabelaQuantitativa: quantitativa.filter(it => !RE_ESQUADRIA.test(it.descricao)),
     esquadrias: quantitativa.filter(it => RE_ESQUADRIA.test(it.descricao)),
-    quadroCargas: quadroDeCargas(texto),
+    // todos os circuitos (lista plana, como antes); no quadro em colunas cada um
+    // traz `quadro` (título "Quadro de cargas (X)") e `alimentador`
+    quadroCargas,
+    // os mesmos circuitos agrupados por quadro, com os totais de cada um
+    quadrosDeCargas: quadros,
+    // há quadro de cargas no arquivo e nenhum circuito foi lido: vira achado
+    quadroCargasNaoLido: quadroCargas.length === 0 && quadroDeCargasPresente(texto),
     totaisQuadro: totaisQuadro(texto),
-    listaMateriais: listaMateriais(texto),
+    listaMateriais: listaMateriaisLida,
+    // quantidade "1.200" sem vírgula: milhar ou 1,2? (lida como 1,2 — conferir)
+    quantidadesAmbiguas: listaMateriaisLida.filter(it => it.qtdAmbigua),
     carimbo: carimbo(texto),
     disciplinasDetectadas: detectarDisciplinas(texto),
     textoBruto: texto,
@@ -204,5 +261,5 @@ function analisarTexto(texto, nomeArquivo) {
 
 module.exports = {
   analisarProjeto, analisarTexto, extrairTexto, extrairAmbientes,
-  extrairTabelaCabos,
+  extrairTabelaCabos, comRepeticoesPorPosicao, areaDaLinha, RE_NAO_NOME_INSTALACAO,
 };

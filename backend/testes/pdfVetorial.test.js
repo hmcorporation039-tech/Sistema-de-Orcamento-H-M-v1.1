@@ -126,6 +126,70 @@ async function caso(nome, fn) {
     assert.deepStrictEqual(soPlanta, [{ ambiente: 'SALA', cftv: 1, rede: 1, antena: 0 }]);
   });
 
+  // (revisão de 29/10/2026) código repetido: só é o mesmo ponto se estiver a menos
+  // de ~1 m (pela escala da folha); longe, ou em outra folha, conta de novo
+  const montarPdfPaginas = (conteudos, { caixa = '0 0 1191 842', rotacao = 0 } = {}) => {
+    const n = conteudos.length;
+    const fonte = 3 + 2 * n;
+    const objs = ['<< /Type /Catalog /Pages 2 0 R >>', `<< /Type /Pages /Kids [${conteudos.map((_, i) => `${3 + 2 * i} 0 R`).join(' ')}] /Count ${n} >>`];
+    conteudos.forEach((c, i) => objs.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [${caixa}] /Rotate ${rotacao} /Contents ${4 + 2 * i} 0 R /Resources << /Font << /F1 ${fonte} 0 R >> >> >>`,
+      `<< /Length ${Buffer.byteLength(c, 'latin1')} >>\nstream\n${c}\nendstream`,
+    ));
+    objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+    let pdf = '%PDF-1.4\n';
+    const pos = [];
+    objs.forEach((o, i) => { pos.push(Buffer.byteLength(pdf, 'latin1')); pdf += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+    const xref = Buffer.byteLength(pdf, 'latin1');
+    pdf += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${pos.map(p => `${String(p).padStart(10, '0')} 00000 n \n`).join('')}`;
+    pdf += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+    return Buffer.from(pdf, 'latin1');
+  };
+  await caso('pontos por código: repetição a menos de 1 m conta uma vez; distante ou em outra folha conta de novo', async () => {
+    const { calcularPontosPorAmbiente, lerPontosDoPdf } = require('../src/utils/pontosPorAmbiente');
+    // folha 1 em 1:50 (1 m = 56,7 pt): CAM1 duplicado colado (8 pt), CAM2 em dois
+    // pontos a 300 pt (5,3 m); sala com área "A: 20,00 m" + "2" sobrescrito à parte
+    const f1 = [
+      texto(200, 400, 'SALA'), texto(200, 388, 'A: 20,00 m'), texto(240, 391, '2', 5),
+      texto(150, 300, 'CAM1'), texto(156, 305, 'CAM1'), texto(150, 250, 'CAM2'), texto(450, 250, 'CAM2'),
+      texto(1000, 60, 'ESC. 1:50'),
+    ].join('\n');
+    // folha 2 (outro pavimento, sem escala): R1 e R2 de novo, mais o R1 duplicado a 20 pt (< 28 pt)
+    const f2 = [texto(200, 400, 'QUARTO'), texto(200, 388, 'ÁREA = 12,00 m²'), texto(150, 300, 'R1'), texto(170, 300, 'R1'), texto(300, 300, 'R2')].join('\n');
+    const f1b = f1 + '\n' + [texto(150, 200, 'R1'), texto(300, 200, 'R2')].join('\n');
+    const pdf = montarPdfPaginas([f1b, f2]);
+    const { porAmbiente, codigos } = await lerPontosDoPdf(pdf);
+    assert.deepStrictEqual(porAmbiente, [{ ambiente: 'SALA', cftv: 3, rede: 2, antena: 0 }, { ambiente: 'QUARTO', cftv: 0, rede: 2, antena: 0 }]);
+    assert.deepStrictEqual(codigos.cftv, { ocorrencias: 4, total: 3, totalUnicos: 2, juntadas: 1, repetidasDistantes: [{ numero: 2, pontos: 2, paginas: [1] }] });
+    assert.deepStrictEqual(codigos.rede, {
+      ocorrencias: 5, total: 4, totalUnicos: 2, juntadas: 1,
+      repetidasDistantes: [{ numero: 1, pontos: 2, paginas: [1, 2] }, { numero: 2, pontos: 2, paginas: [1, 2] }],
+    });
+    assert.deepStrictEqual(codigos.limiares, [{ pagina: 1, escala: 50, limiar_pt: 56.7 }, { pagina: 2, escala: null, limiar_pt: 28 }]);
+    // escala informada pelo leitor vetorial vale mais que o texto: em 1:200, 1 m = 14 pt e o R1 a 20 pt da folha 2 já é outro ponto
+    const r200 = await lerPontosDoPdf(pdf, { escalaPorPagina: new Map([[2, 200]]) });
+    assert.strictEqual(r200.codigos.rede.total, 5);
+    // formato de sempre (lista); a contagem por posição vai junto, sem aparecer na lista nem no JSON
+    const lista = await calcularPontosPorAmbiente(pdf);
+    assert.deepStrictEqual(lista, porAmbiente);
+    assert.strictEqual(lista.codigos.cftv.total, 3);
+    assert.ok(!JSON.stringify(lista).includes('codigos'));
+    // de volta ao total do texto (projetoParser)
+    const { comRepeticoesPorPosicao } = require('../src/utils/projetoParser');
+    const cam = comRepeticoesPorPosicao({ ocorrencias: 4, total: 2, totalUnicos: 2, unicas: [1, 2], repetidas: [1, 2] }, lista.codigos.cftv);
+    assert.deepStrictEqual([cam.total, cam.totalUnicos], [3, 2]);
+  });
+
+  await caso('pontos por ambiente em folha girada (/Rotate 270): nome da sala inteiro, "acima" como se vê', async () => {
+    const { lerPontosDoPdf } = require('../src/utils/pontosPorAmbiente');
+    // texto girado como o CAD exporta numa folha de pé girada; linhas centradas:
+    // a mais comprida começa mais "à esquerda" na folha (y do PDF maior)
+    const girado = (x, y, s) => `BT /F1 8 Tf 0 -1 1 0 ${x} ${y} Tm (${s}) Tj ET`;
+    const f = [girado(500, 600, 'SALA DE'), girado(490, 620, 'HEMODIALISE 1'), girado(480, 605, 'A= 40,00m2'), girado(470, 600, 'CAM1')].join('\n');
+    const { porAmbiente } = await lerPontosDoPdf(montarPdfPaginas([f], { caixa: '0 0 842 1191', rotacao: 270 }));
+    assert.deepStrictEqual(porAmbiente, [{ ambiente: 'SALA DE HEMODIALISE 1', cftv: 1, rede: 0, antena: 0 }]);
+  });
+
   await caso('PDF sem desenho (só texto) não quebra e não inventa itens', async () => {
     const [q] = await lerPdfVetorial(montarPdf(texto(100, 700, 'MEMORIAL DESCRITIVO')));
     assert.strictEqual(q.itens.length, 0);
