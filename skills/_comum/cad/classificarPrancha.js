@@ -59,8 +59,11 @@ const TITULOS = [
   ['corte_fachada', /^(CORTES?|FACHADAS?|ELEVA[ÇC](ÃO|ÕES)|VISTAS?)\b|^SE[ÇC][ÃA]O\s+[A-Z0-9]{1,2}\s*[-–]?\s*[A-Z0-9]{1,2}\b/i],
   ['planta', /^PLANTAS?\b|\bPLANTA\s+(BAIXA|GERAL|D[EOA]\s)|^LAYOUT\b|^IMPLANTA[ÇC][ÃA]O|^(PAVIMENTO|T[ÉE]RREO|SUBSOLO|MEZANINO|\d+\s*[ºª°o]?\s*(PAVIMENTO|ANDAR|PAV\.?))\b/i],
 ];
+// Frase de nota não é título: "É INDICADA NA LISTA DE MATERIAIS DO PROJETO" contava
+// como título de tabela e tirava a planta da Arena (desenho real, 29/10/2026)
+const RE_FRASE = /^(É|SER[ÁA]|SER[ÃA]O|DEVE[MR]?|DEVER[ÁA]O?|CONFORME|TODOS|TODAS|PARA|QUANDO|CASO|N[ÃA]O|OS|AS|NA|NO|NAS|NOS)\s/i;
 function tipoDoTitulo(s) {
-  if (s.length > 70) return null;
+  if (s.length > 70 || RE_FRASE.test(s) || s.trim().split(/\s+/).length > 8) return null;
   return (TITULOS.find(([, re]) => re.test(s)) || [null])[0];
 }
 const RE_CARIMBO = /\b(PROJETO ARQUITET|PRANCHA|FOLHA|ESCALA|ESC\.|DATA|CREA|CAU|RESPONS[AÁ]VEL|PROPRIET[AÁ]RI|AUTOR|DESENHO|DESENHISTA|REVIS[AÃ]O|CONTE[UÚ]DO|ENDERE[CÇ]O|CLIENTE|ASSINATURA|ART|RRT|CARIMBO|ETAPA|ESPECIALIDADE|DISCIPLINA|FORMATO)\b/i;
@@ -70,20 +73,29 @@ const RE_SEM_ESCALA = /\bSEM\s+ESCALA\b|\bS\/\s*ESC/i;
 const RE_VOCAB_ELETRICO = /\bDISJ|\b\d+(?:[.,]\d+)?\s*kA\b|\bI?DR\b|\bDPS\b|\bBARRAMENTO|\bCONTATOR|\bBORNE|\bFUS[ÍI]VEL|\bSECCIONADOR|\bmm[²2]|\b\d{1,4}\s*A\b(?!\s*=)|\b[123]\s*P\b|\bCURVA\s*[BCD]\b|\bk(?:VA|W)\b|\bQ(?:GBT|DC|DL|DF|DG|DFL|D|M|L|F)\b|\bTU[GE]\b|\bNEUTRO|\bFASES?\b/i;
 // cabeçalho de tabela/quadro de cargas
 const RE_VOCAB_TABELA = /^(DESCRI[ÇC][ÃA]O|POT[ÊE]NCIA|POT\.|TOTAL|CIRCUITOS?|CIRC\.?|FASES?|QTD\.?|QUANT\.?|UNID\.?|ITEM|DEMANDA|CORRENTE|TENS[ÃA]O|SE[ÇC][ÃA]O|BITOLA|ESQUEMA|M[ÉE]TODO|F\.?P\.?|F\.?D\.?|PROTE[ÇC][ÃA]O|CARGAS?)\b/i;
-// nome de sala (planta) — sem o que é texto de circuito ("Tomadas Cozinha")
-const RE_NOME_SALA = /\b(SALAS?|QUARTO|DORM|SU[ÍI]TE|COZINHA|COZ\.|COPA|BANH|LAVABO|W\.?\s?C\b|BWC|SANIT|VESTI[ÁA]RIO|CIRCULA|CORREDOR|HALL|RECEP|ESPERA|ESCRIT|REUNI|DEP[ÓO]S|ALMOX|GARAGEM|VARANDA|SACADA|TERRA[ÇC]O|LAVANDERIA|SERVI[ÇC]O|DML|AUDIT|REFEIT|LOJA|OFFICE|ACADEMIA|LANCHONETE|CONSULT|LABORAT|AULA|BIBLIOT|DIRETORIA|GER[ÊE]NCIA|ATENDIMENTO|ESTAR|JANTAR|LIVING|CLOSET|ESCADA|ELEVADOR|ANTEC[ÂA]MARA|P[ÁA]TIO|JARDIM|ARQUIVO|TRIAGEM|ENFERMARIA|EXPURGO|SAL[ÃA]O|SACRISTIA|CAPELA|SECRETARIA|TESOURARIA|COMANDO|LAUDOS|EXAMES?|RAIO|TOMOGRAFIA|RESSON[ÂA]NCIA|MAMOGRAFIA|ULTRASS|PREPARO|ROUPARIA|GUARITA|PORTARIA|PLAT[ÉE]IA|PALCO|QUADRAS?)\b/i;
-const RE_NAO_SALA = /:\s*$|TOMADA|ILUM|POSTE|REFLETOR|PROJETOR|L[ÂA]MPADA|LUMIN|CIRCUITO|INTERRUP|\bTU[GE]\b|\bAR\b|CONDICIONAD|CHUVEIRO|BOMBA|MOTOR|RESERVA|DISJ|QUADRO|\bQ[DG]|\bkW|\bVA\b|\d+\s*W\b|mm|FIA[ÇC]|ELETRODUTO|ALTURA|PONTO|SENSOR|C[ÂA]MERA|\d+\s*A\b/i;
+// nome de sala (planta) — sem o que é texto de circuito ("Tomadas Cozinha").
+// A lista é de COMEÇOS de palavra (DORM, BANH, DEPÓS…): sem \b no fim, senão
+// "BANHEIRO", "DORMITÓRIO", "DEPÓSITO" e "ALMOXARIFADO" não contavam como sala.
+const RE_NOME_SALA = /\b(SALAS?|QUARTO|DORM|SU[ÍI]TE|COZINHA|COZ\.|COPA|BANH|LAVABO|W\.?\s?C\b|BWC|SANIT|VESTI[ÁA]RIO|CIRCULA|CORREDOR|HALL|RECEP|ESPERA|ESCRIT|REUNI|DEP[ÓO]S|ALMOX|GARAGEM|VARANDA|SACADA|TERRA[ÇC]O|LAVANDERIA|SERVI[ÇC]O|DML|AUDIT|REFEIT|LOJA|OFFICE|ACADEMIA|LANCHONETE|CONSULT|LABORAT|AULA|BIBLIOT|DIRETORIA|GER[ÊE]NCIA|ATENDIMENTO|ESTAR|JANTAR|LIVING|CLOSET|ESCADA|ELEVADOR|ANTEC[ÂA]MARA|P[ÁA]TIO|JARDIM|ARQUIVO|TRIAGEM|ENFERMARIA|EXPURGO|SAL[ÃA]O|SACRISTIA|CAPELA|SECRETARIA|TESOURARIA|COMANDO|LAUDOS|EXAMES?|RAIO|TOMOGRAFIA|RESSON[ÂA]NCIA|MAMOGRAFIA|ULTRASS|PREPARO|ROUPARIA|GUARITA|PORTARIA|PLAT[ÉE]IA|PALCO|QUADRAS?)/i;
+// ("COMANDO DE ROTAÇÃO DA BAGS-03" é texto do painel de automação; "SALA DE COMANDO" é sala)
+const RE_NAO_SALA = /\bCOMANDO\s+D[EOA]S?\b|BORNE|R[ÉE]GUA|\bCLP\b|\bPLC\b|\bFONTE\b|\bREL[ÉE]\b|\bIHM\b|:\s*$|TOMADA|ILUM|POSTE|REFLETOR|PROJETOR|L[ÂA]MPADA|LUMIN|CIRCUITO|INTERRUP|\bTU[GE]\b|\bAR\b|CONDICIONAD|CHUVEIRO|BOMBA|MOTOR|RESERVA|DISJ|QUADRO|\bQ[DG]|\bkW|\bVA\b|\d+\s*W\b|mm|FIA[ÇC]|ELETRODUTO|ALTURA|PONTO|SENSOR|C[ÂA]MERA|\d+\s*A\b/i;
 const RE_AREA = /^A\s*=\s*[\d.,]+\s*m[²2]?$|^[\d.,]+\s*m[²2]$/i;
-// layers do DXF (sinal forte: o desenhista já separou)
+// layers do DXF (sinal forte: o desenhista já separou). A 1ª regra que casa vale,
+// e a de planta vem por ÚLTIMO: "ELE-UNIFILAR" é diagrama, não instalação na planta.
+// Planta = arquitetura OU instalações desenhadas sobre ela (tomada, lâmpada,
+// eletroduto, fio, caixa, CFTV, incêndio, dados…): projeto elétrico em DWG quase
+// nunca tem layer "ARQ" (desenho real da Arena, 29/10/2026).
 const LAYERS = [
-  ['planta', /ARQ|PAREDE|ALVEN|WALL|PISO|ESQUAD|PORTA|JANELA|PDF-PAREDE/i],
   ['diagrama', /UNIFILAR|TRIFILAR|DIAGRAM|ESQUEMA|COMANDO|MULTIFILAR/i],
   ['vista_quadro', /VISTA|PAINEL|MONTAGEM/i],
   ['quadro_cargas', /QUADRO.?DE.?CARGA|TABELA|PLANILHA/i],
   ['legenda', /LEGENDA|NOTAS?\b|SIMBOLOG/i],
   ['detalhe', /DETALHE/i],
   ['carimbo', /CARIMBO|SELO|MOLDURA|MARGEM|FOLHA|PRANCHA/i],
+  ['planta', /ARQ|PAREDE|ALVEN|WALL|PISO|ESQUAD|PORTA|JANELA|PDF-PAREDE|^(EL|ELE|E|IL|ILU)[-_ ]|EL[ÉE]TRIC|TOMAD|L[ÂA]MPAD|LUMIN|ILUMINA|CONDUT|ELETRODUT|ELETROCAL|\bFIOS?\b|CAIXA|IFC[-_ ]|CFTV|C[ÂA]MERA|INC[ÊE]ND|DETEC|SPDA|DADOS|L[ÓO]GIC|TELEF|INTERRUP|MOBILI/i],
 ];
+
+const RE_LAYER_ARQUITETURA = /ARQ|PAREDE|ALVEN|WALL|PISO|ESQUAD|PORTA|JANELA/i;
 
 // ── utilitários ─────────────────────────────────────────────────────────
 const lim = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -158,12 +170,21 @@ function segmentar(folha) {
   const raiz = (i) => { while (pai[i] !== i) i = pai[i] = pai[pai[i]]; return i; };
   const caixas = manchas.map(m => m.caixa.slice());
   const cels = manchas.map(m => m.celulas);
+  // traços por mancha: vista miúda diante da folha (poucas células) mas cheia de
+  // traço é desenho, não sujeira — some antes (plantas da Arena, 29/10/2026)
+  const tracos = manchas.map(() => 0);
+  folha.segmentos.forEach((s, i) => {
+    if (!usaveis[i] || !dentroDaFolha(s.a)) return;
+    const v = grade[cj(s.a[1]) * nx + ci(s.a[0])];
+    if (v >= 2) tracos[v - 2]++;
+  });
   const unir = (filho, p) => {
     filho = raiz(filho); p = raiz(p);
     if (filho === p) return;
     pai[filho] = p;
     caixas[p] = [Math.min(caixas[p][0], caixas[filho][0]), Math.min(caixas[p][1], caixas[filho][1]), Math.max(caixas[p][2], caixas[filho][2]), Math.max(caixas[p][3], caixas[filho][3])];
     cels[p] += cels[filho];
+    tracos[p] += tracos[filho];
   };
   for (let volta = 0, mudou = true; mudou && volta < 6; volta++) {
     mudou = false;
@@ -184,8 +205,9 @@ function segmentar(folha) {
       if (melhor >= 0) { unir(c, melhor); mudou = true; }
     }
   }
-  const grandes = () => manchas.map((_, i) => i).filter(i => raiz(i) === i && (cels[i] >= 6 || area(caixas[i]) >= areaFolha * 0.002));
-  for (const i of manchas.map((_, k) => k).filter(k => raiz(k) === k && cels[k] < 6 && area(caixas[k]) < areaFolha * 0.002)) {
+  const ehGrande = (i) => cels[i] >= 6 || area(caixas[i]) >= areaFolha * 0.002 || tracos[i] >= 200;
+  const grandes = () => manchas.map((_, i) => i).filter(i => raiz(i) === i && ehGrande(i));
+  for (const i of manchas.map((_, k) => k).filter(k => raiz(k) === k && !ehGrande(k))) {
     const centro = [(caixas[i][0] + caixas[i][2]) / 2, (caixas[i][1] + caixas[i][3]) / 2];
     let melhor = -1, dm = 3 * cel;
     for (const g of grandes()) { if (g === i) continue; const d = distCaixa(caixas[g], centro); if (d <= dm) { dm = d; melhor = g; } }
@@ -419,12 +441,16 @@ function pontuar(reg, folha, ctx) {
   const naBorda = c[2] >= X1 - (X1 - X0) * 0.12 || (folha.yParaBaixo ? c[3] >= Y1 - (Y1 - Y0) * 0.12 : c[1] <= Y0 + (Y1 - Y0) * 0.12);
   if (chaves.size >= 3 && naBorda && area(c) <= area(folha.caixa) * 0.3) somar('carimbo', 4 + 0.3 * chaves.size, `${chaves.size} campos de carimbo (${[...chaves].slice(0, 4).join(', ')})`);
 
-  // layers
+  // layers (a pontuação de planta sai depois de ver sala, porta e parede)
+  const porLayer = {};
+  let totalLayer = 0, arquitetura = 0;
   if (ctx.temLayers) {
-    const conta = {};
-    let total = 0;
-    for (const s of segs) { if (!s.layer) continue; total++; for (const [tipo, re] of LAYERS) if (re.test(s.layer)) { conta[tipo] = (conta[tipo] || 0) + 1; break; } }
-    for (const [tipo, n] of Object.entries(conta)) if (n / total >= 0.1) somar(tipo, Math.round(4 * (n / total) * 10) / 10, `${Math.round((100 * n) / total)}% dos traços em layer de ${ROTULO[tipo]}`);
+    for (const s of segs) {
+      if (!s.layer) continue;
+      totalLayer++;
+      for (const [tipo, re] of LAYERS) if (re.test(s.layer)) { porLayer[tipo] = (porLayer[tipo] || 0) + 1; if (tipo === 'planta' && RE_LAYER_ARQUITETURA.test(s.layer)) arquitetura++; break; }
+    }
+    for (const [tipo, n] of Object.entries(porLayer)) if (tipo !== 'planta' && n / totalLayer >= 0.1) somar(tipo, Math.round(4 * (n / totalLayer) * 10) / 10, `${Math.round((100 * n) / totalLayer)}% dos traços em layer de ${ROTULO[tipo]}`);
   }
 
   // geometria
@@ -461,6 +487,16 @@ function pontuar(reg, folha, ctx) {
   // barramento) e caixas da legenda também fazem pares; sem porta nem nome de sala, vale a metade
   const apoio = portas || salas.size || areas >= 2 ? 1 : 0.5;
   if (paredeM >= 8) somar('planta', (paredeM >= 30 ? 2.5 : 1.5) * apoio, `${Math.round(paredeM)} m de parede em linha dupla`);
+  // layer de planta pesa muito (título de nota/detalhe DENTRO do bloco da planta não
+  // pode valer mais que milhares de traços de arquitetura/instalação), mas só com
+  // apoio: sozinho, o pedaço de painel em layer "E-…"/"CAIXA" virava planta (QA-BAGT)
+  const nPlanta = porLayer.planta || 0;
+  if (nPlanta && nPlanta / totalLayer >= 0.1) {
+    const share = nPlanta / totalLayer;
+    // layer de arquitetura (parede, alvenaria) já é o apoio; o de instalação, não
+    const comApoio = portas || salas.size || areas >= 2 || paredeM >= 8 || arquitetura / totalLayer >= 0.1;
+    somar('planta', Math.round((comApoio ? Math.min(7, 9 * share) : Math.min(2, 3 * share)) * 10) / 10, `${Math.round(100 * share)}% dos traços em layer de ${ROTULO.planta}${comApoio ? '' : ' (sem sala, porta nem parede)'}`);
+  }
   // tamanho real
   if (folha.metrosPorUnidade) {
     const tam = Math.max(c[2] - c[0], c[3] - c[1]) * folha.metrosPorUnidade;
@@ -508,7 +544,25 @@ function classificarFolha(folha) {
   for (const g of agruparTextos(soltos, cel * 3)) if (g.length >= 4) regs.push({ caixa: caixaDosPontos(g.flatMap(t => [[t.x, t.y], [t.x + (t.w || t.s.length * t.h * 0.5), t.y]])), celulas: 0, segs: [], textos: g, rotulos: [], arcos: [], soTexto: true });
 
   const areaFolha = area(f.caixa) || 1;
-  const regioes = regs.map(r => {
+  // bloco denso e pequeno diante da folha: a grade (1/250 da folha) ficou grossa
+  // demais e juntou vistas vizinhas — o DWG da Arena tem diagramas a 2 km das
+  // plantas, a célula deu 8 m e a implantação, as plantas e os cortes viraram um
+  // bloco só, "detalhe" pelos títulos (29/10/2026). Reclassifica com grade própria.
+  const nivel = folha.nivel || 0;
+  const subdividir = (r) => {
+    if (nivel >= 2 || r.soTexto || r.segs.length < 300) return null;
+    if (Math.max(r.caixa[2] - r.caixa[0], r.caixa[3] - r.caixa[1]) > 60 * cel) return null;
+    const sub = classificarFolha({
+      ...f, caixa: r.caixa, nivel: nivel + 1, molduraNaBorda: false,
+      segmentos: r.segs, arcos: r.arcos, textos: [...r.textos, ...r.rotulos],
+    });
+    if (sub.regioes.length < 2) return null;
+    const fr = area(r.caixa) / areaFolha;
+    return sub.regioes.map(x => ({ ...x, area: x.area * fr }));
+  };
+  const regioes = regs.flatMap(r => {
+    const sub = subdividir(r);
+    if (sub) return sub;
     const { P, motivos, sinais } = pontuar(r, f, ctx);
     const ordem = Object.entries(P).sort((a, b) => b[1] - a[1]);
     const [tipo0, v0] = ordem[0];
@@ -517,12 +571,12 @@ function classificarFolha(folha) {
     if (tipo === 'planta' && area(r.caixa) < areaFolha * 0.005 && !sinais.salas && !sinais.portas && sinais.paredeM < 8) tipo = 'desconhecido';
     const margem = v0 - (ordem[1]?.[1] || 0);
     const titulo = [...r.rotulos, ...r.textos].filter(t => tipoDoTitulo(t.s)).sort((a, b) => b.h - a.h)[0]?.s || null;
-    return {
+    return [{
       caixa: r.caixa, tipo, rotulo: ROTULO[tipo], titulo,
       pontuacao: Object.fromEntries(ordem.filter(([, v]) => v).map(([k, v]) => [k, Math.round(v * 10) / 10])),
       confianca: tipo === 'desconhecido' ? 'baixa' : v0 >= 5 && margem >= 2 ? 'alta' : margem >= 1 ? 'media' : 'baixa',
       motivos, sinais, area: area(r.caixa) / areaFolha, segmentos: r.segs.length, textos: r.textos.length, soTexto: !!r.soTexto,
-    };
+    }];
   }).filter(r => r.tipo !== 'desconhecido' || r.area >= 0.005 || r.segmentos >= 50)
     .sort((a, b) => b.area - a.area);
   return resumir(regioes);
@@ -596,4 +650,4 @@ function descreverFolha(n, c, { usada = false } = {}) {
   return `folha ${n}: ${c.resumo}${tit ? ` ("${tit}")` : ''}${usada ? ' — usada no 3D' : c.temPlanta ? '' : c.semPlanta ? ' — ignorada no 3D' : ''}`;
 }
 
-module.exports = { classificarFolha, regioesParaManter, descreverFolha, tipoDoTitulo, ROTULO, NAO_PLANTA, TIPOS, paraTestes: { segmentar, comprimentoDeParede, pente, tabelas, retas, juntarColineares, ehMolduraDaFolha, agruparTextos } };
+module.exports = { classificarFolha, regioesParaManter, descreverFolha, tipoDoTitulo, ROTULO, NAO_PLANTA, TIPOS, RE_NOME_SALA, paraTestes: { segmentar, comprimentoDeParede, pente, tabelas, retas, juntarColineares, ehMolduraDaFolha, agruparTextos } };

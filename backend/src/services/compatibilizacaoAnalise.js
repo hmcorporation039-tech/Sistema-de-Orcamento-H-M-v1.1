@@ -117,7 +117,12 @@ async function analisarProjetoCompleto(todosArquivos) {
   // e por isso isolada num Promise.all com catch por arquivo — uma falha aqui
   // nunca deve derrubar a análise inteira, já que o resto dela (totais,
   // serviços, materiais) não depende disso.
-  const pontosPorAmbienteBrutos = await emLotes(arquivos, 3, ({ buffer }, i) => (cads[i] ? cads[i].pontosPorAmbiente : calcularPontosPorAmbiente(buffer, { paginasIgnoradas: naoPlanta[i] }).catch(() => [])));
+  // folha MISTA (planta + quadro de cargas ou unifilar na mesma página): as regiões
+  // da folha vão junto, e o que cai fora da planta não conta (antes valia a página toda)
+  const regioesMistas = vetoriais.map(v => new Map((v || [])
+    .filter(p => p.pagina && p.folha && !p.folha.semPlanta && (p.folha.regioes || []).some(r => !['planta', 'desconhecido'].includes(r.tipo)))
+    .map(p => [p.pagina, p.folha.regioes])));
+  const pontosPorAmbienteBrutos = await emLotes(arquivos, 3, ({ buffer }, i) => (cads[i] ? cads[i].pontosPorAmbiente : calcularPontosPorAmbiente(buffer, { paginasIgnoradas: naoPlanta[i], regioesPorPagina: regioesMistas[i] }).catch(() => [])));
 
   // Disciplina "efetiva" da análise inteira = união das tags de todos os
   // arquivos — decide quais itens-modelo de serviço/material aparecem.

@@ -286,5 +286,71 @@ caso('casamento de nomes por palavra: "WC FEM" não cai no "WC"; "SALA" não cas
   assert.strictEqual(casaNome('Consultório', 'CONSULTÓRIO 1'), true);
 });
 
+// (29/10/2026) limites do 069e6f3: etiqueta de equipamento não é nome de sala;
+// layer DETALHE com parte da planta não some
+function plantaQuatroSalas(rotulos, extra) {
+  const g = new DesenhoDxf({ layers: [{ nome: 'PAREDE', cor: 8 }, { nome: 'TEXTO', cor: 7 }, { nome: 'CFTV', cor: 3 }, { nome: 'ARQ-DETALHE', cor: 2 }] });
+  const L = (a, b, c, d) => g.linha(a, b, c, d, 'PAREDE');
+  L(0, 0, 20, 0); L(20, 0, 20, 4); L(20, 4, 0, 4); L(0, 4, 0, 0); L(5, 0, 5, 4); L(10, 0, 10, 4); L(15, 0, 15, 4);
+  rotulos.forEach(([x, s, layer]) => g.texto(x, 2, 0.2, s, { layer: layer || 'TEXTO' }));
+  if (extra) extra(g);
+  return g.toString();
+}
+
+caso('etiqueta de equipamento (CAM-04, FOG5, QD-01) acha a sala mas não vira o nome dela', () => {
+  const nomes = (r) => lerArquitetura(plantaQuatroSalas(r)).ambientes.map(a => a.nome);
+  assert.deepStrictEqual(nomes([[2.5, 'CAM-04', 'CFTV'], [7.5, 'FOG5'], [12.5, 'DET 3'], [17.5, 'AM-01']]), ['Ambiente 1', 'Ambiente 2', 'Ambiente 3', 'Ambiente 4']);
+  assert.deepStrictEqual(nomes([[2.5, 'SALA 01'], [7.5, 'BWC 2'], [12.5, 'APTO 101'], [17.5, 'DORM. 3']]), ['APTO 101', 'BWC 2', 'DORM. 3', 'SALA 01']);
+  assert.deepStrictEqual(nomes([[2.5, 'CAM-04', 'CFTV'], [7.5, 'COZINHA'], [12.5, 'QD-01'], [17.5, 'BANHEIRO']]), ['Ambiente 1', 'Ambiente 2', 'BANHEIRO', 'COZINHA']);
+});
+
+caso('layer DETALHE com parte da planta (bancada) não some; ambiente continua', () => {
+  const a = lerArquitetura(plantaQuatroSalas([[2.5, 'COZINHA'], [7.5, 'SALA']], (g) => {
+    g.polilinha([[0.2, 0.2], [3, 0.2], [3, 0.8], [0.2, 0.8]], { layer: 'ARQ-DETALHE', fechada: true }); // bancada
+  }));
+  assert.deepStrictEqual(a.ambientes.map(x => x.nome), ['COZINHA', 'SALA']);
+  assert.ok(a.referencia.some(r => r.layer === 'ARQ-DETALHE'), 'a bancada da layer DETALHE saiu da referência');
+});
+
+caso('vocabulário de cômodo reconhece palavras longas (BANHEIRO, DORMITÓRIO, DEPÓSITO)', () => {
+  const { RE_NOME_SALA } = require('./classificarPrancha');
+  for (const t of ['BANHEIRO', 'DORMITÓRIO 1', 'DEPÓSITO', 'ALMOXARIFADO', 'CIRCULAÇÃO', 'SALA 2']) assert.ok(RE_NOME_SALA.test(t), t);
+  assert.ok(!RE_NOME_SALA.test('CAM-04'));
+});
+
+// unifilar: barramento vertical com saídas identificadas, título e "sem escala"
+function unifilar(g, x0, y0, k = 1) {
+  g.texto(x0, y0 + 12 * k, 0.5 * k, 'DIAGRAMA UNIFILAR QD-01', { layer: 'TEXTO' });
+  g.texto(x0, y0 + 11 * k, 0.3 * k, 'SEM ESCALA', { layer: 'TEXTO' });
+  g.linha(x0, y0, x0, y0 + 10 * k, 'PAREDE');
+  for (let i = 0; i < 10; i++) {
+    g.linha(x0, y0 + i * k, x0 + 4 * k, y0 + i * k, 'PAREDE');
+    g.polilinha([[x0 + 1 * k, y0 + i * k - 0.2 * k], [x0 + 1.6 * k, y0 + i * k - 0.2 * k], [x0 + 1.6 * k, y0 + i * k + 0.2 * k], [x0 + 1 * k, y0 + i * k + 0.2 * k]], { layer: 'PAREDE', fechada: true });
+    g.texto(x0 + 4.2 * k, y0 + i * k, 0.2 * k, `C${i + 1} DISJ 20A 2,5mm²`, { layer: 'TEXTO' });
+  }
+}
+
+caso('desenho só de unifilar/quadro: nenhum ambiente (não vira prédio no 3D)', () => {
+  const g = new DesenhoDxf({ layers: [{ nome: 'PAREDE', cor: 8 }, { nome: 'TEXTO', cor: 7 }] });
+  unifilar(g, 0, 0);
+  const a = lerArquitetura(g.toString());
+  assert.ok(a.classificacao.semPlanta, a.classificacao.resumo);
+  assert.deepStrictEqual(a.ambientes, []);
+});
+
+caso('planta pequena longe do diagrama não some (grade da folha grossa demais)', () => {
+  // diagrama a 2 km da planta (vistas em escalas diferentes no mesmo modelo — Arena)
+  const a = lerArquitetura(plantaQuatroSalas([[2.5, 'COZINHA'], [7.5, 'SALA'], [12.5, 'QUARTO'], [17.5, 'BANHEIRO']], (g) => unifilar(g, 2000, 300, 10)));
+  assert.ok(a.classificacao.temPlanta, a.classificacao.resumo);
+  assert.deepStrictEqual(a.ambientes.map(x => x.nome), ['BANHEIRO', 'COZINHA', 'QUARTO', 'SALA']);
+});
+
+caso('valor com unidade, bitola e sigla solta não viram nome de sala', () => {
+  // (texto que não é nome nem etiqueta não cria sala: só os nomes reais aparecem)
+  const nomes = (r) => lerArquitetura(plantaQuatroSalas(r)).ambientes.map(a => a.nome).filter(n => !/^Ambiente \d+$/.test(n));
+  assert.deepStrictEqual(nomes([[2.5, '70mm²'], [7.5, '24 Vdc'], [12.5, 'AAG 3"'], [17.5, 'ST']]), []);
+  assert.deepStrictEqual(nomes([[2.5, 'WC'], [7.5, 'DML'], [12.5, '150Ah, 1990kg'], [17.5, 'Tomada altura: 30 cm']]), ['DML', 'WC']);
+});
+
 // casos assíncronos (DWG) terminam depois dos síncronos
 process.on('beforeExit', () => { if (!process.__fimCad) { process.__fimCad = true; console.log(`cad: ${ok} casos ok`); } });

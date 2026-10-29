@@ -110,6 +110,22 @@ async function caso(nome, fn) {
     assert.deepStrictEqual(achadosDasFolhas([{ arquivo: 'p.pdf' }], [[{ pagina: 1, folha: { tipo: 'planta', resumo: 'planta baixa', temPlanta: true, semPlanta: false, misto: false } }]]), []);
   });
 
+  // (29/10/2026, limite anotado no 069e6f3) folha mista: o "CAM2"/"R3" escrito no
+  // unifilar ao lado não pode cair na sala mais próxima da planta
+  await caso('pontos por ambiente na folha mista: só os códigos da planta', async () => {
+    const { calcularPontosPorAmbiente } = require('../src/utils/pontosPorAmbiente');
+    const paredes = [[80, 80, 580, 80], [580, 80, 580, 640], [580, 640, 80, 640], [80, 640, 80, 80]].map(([a, b, c, d]) => reta(a, b, c, d, '0 0 0', 1.5)).join('\n');
+    const planta = [texto(200, 400, 'SALA'), texto(200, 388, 'A=25,00m2'), texto(250, 350, 'CAM1'), texto(260, 330, 'R1')].join('\n');
+    const noUnifilar = [texto(810, 333, 'CAM2'), texto(810, 373, 'R3')].join('\n');
+    const pdf = montarPdf([pranchaSintetica().toString('latin1').match(/stream\n([\s\S]*?)\nendstream/)[1], paredes, planta, unifilar(700, 300), noUnifilar].join('\n'));
+    const [m] = await lerPdfVetorial(pdf);
+    assert.ok(m.folha?.regioes?.some(r => r.tipo === 'diagrama'), JSON.stringify(m.folha));
+    const tudo = await calcularPontosPorAmbiente(pdf);
+    assert.deepStrictEqual(tudo, [{ ambiente: 'SALA', cftv: 2, rede: 2, antena: 0 }], 'sem as regiões, a página inteira conta (comportamento antigo)');
+    const soPlanta = await calcularPontosPorAmbiente(pdf, { regioesPorPagina: new Map([[1, m.folha.regioes]]) });
+    assert.deepStrictEqual(soPlanta, [{ ambiente: 'SALA', cftv: 1, rede: 1, antena: 0 }]);
+  });
+
   await caso('PDF sem desenho (só texto) não quebra e não inventa itens', async () => {
     const [q] = await lerPdfVetorial(montarPdf(texto(100, 700, 'MEMORIAL DESCRITIVO')));
     assert.strictEqual(q.itens.length, 0);

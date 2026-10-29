@@ -447,7 +447,7 @@ async function lerPdfVetorial(buffer, { paginas, escala, maxPaginas = 10, maxCam
       } else if (geo.caminhos.length) {
         try { r = analisarGeometria(geo, { escala, regioesFora: folha?.regioesFora || [] }); } catch (e) { r.aviso = `falha ao ler o desenho (${e.message}) — conferir na planta`; }
       }
-      saida.push({ pagina: n, caminhos: geo.caminhos.length, ...r, ...(folha ? { folha: { tipo: folha.tipo, resumo: folha.resumo, temPlanta: folha.temPlanta, semPlanta: folha.semPlanta, misto: folha.misto } } : {}) });
+      saida.push({ pagina: n, caminhos: geo.caminhos.length, ...r, ...(folha ? { folha: { tipo: folha.tipo, resumo: folha.resumo, temPlanta: folha.temPlanta, semPlanta: folha.semPlanta, misto: folha.misto, regioes: folha.regioes } } : {}) });
       pag.cleanup();
     }
     return saida;
@@ -462,6 +462,9 @@ function resumoDaFolha(c) {
   return {
     tipo: c.tipo, resumo: c.resumo, temPlanta: c.temPlanta, semPlanta: c.semPlanta, misto: c.misto,
     regioesFora: c.regioes.filter(r => CONTAGEM_FORA.has(r.tipo)).map(r => r.caixa),
+    // tipo e caixa de cada região: os pontos por ambiente da folha mista usam
+    // (utils/pontosPorAmbiente.js — o que cai fora da planta não conta)
+    regioes: c.regioes.map(r => ({ tipo: r.tipo, caixa: r.caixa })),
   };
 }
 // carregada na hora (utils/classificarPranchaPdf.js usa escalaDoCarimbo daqui)

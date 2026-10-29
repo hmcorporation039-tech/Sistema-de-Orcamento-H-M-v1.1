@@ -12,7 +12,7 @@
 // Layers de arquitetura variam por escritório: nenhuma é obrigatória
 // (`opcoes.layersAmbiente`, regex, restringe a etapa 1).
 const { Helper } = require('dxf');
-const { classificarFolha, NAO_PLANTA } = require('./classificarPrancha');
+const { classificarFolha, NAO_PLANTA, RE_NOME_SALA } = require('./classificarPrancha');
 
 // $INSUNITS → fator para metros (0 = sem unidade: decide pelas portas/tamanho)
 const FATOR = { 1: 0.0254, 2: 0.3048, 4: 0.001, 5: 0.01, 6: 1 };
@@ -60,18 +60,45 @@ const RE_NAO_NOME = new RegExp([
   // vocabulário de quadro/diagrama elétrico: a etiqueta "QD-Térreo" ou o "DISJUNTOR 40A"
   // dentro de uma célula de tabela virava "ambiente" (29/10/2026)
   /^(QGBT|QDC|QDL|QDF|QDG|QDFL|QD|QL|QF|QM|CCM)\b[\s\-_.]*[\wÀ-ú\-.]*$/, /^(DISJ|DR\b|IDR\b|DPS\b|FASES?\b|NEUTRO\b|BARRAMENTO|CIRCUITO|CIRC\.|C\d{1,3}$|TUG\b|TUE\b)/,
-  /\b\d+(?:[.,]\d+)?\s*(kA|kVA|kW|mm²|mm2)\b/, /^\d+\s*A$/, /^\d+\s*[xX#]\s*\d+(?:[.,]\d+)?\s*mm/,
+  // (?!\w) e não \b: depois de "²" não há fronteira de palavra ("70mm²" passava)
+  /\b\d+(?:[.,]\d+)?\s*(kA|kVA|kW|mm²|mm2)(?!\w)/, /^\d+\s*A$/, /^\d+\s*[xX#]\s*\d+(?:[.,]\d+)?\s*mm/,
   // etiqueta de ponto na planta elétrica ("IL 1", "TM", "TUG 3"), bitola de eletroduto
   // ("2xø3/4\"") e cabeçalho de tabela ("Tipo de carga") também não são sala
   /^(IL|TM|TH|TE|TUG|TUE)\b/, /[øØ]|%%c/, /^(TIPO DE CARGA|DESCRI[ÇC][ÃA]O|POT[ÊE]NCIA|QUANT|QTD)\b/,
+  // valor com unidade de equipamento ("150Ah, 1990kg", "24 Vdc", "24ac/26dc"), bitola em
+  // polegada ('AAG 3"') e texto de modelo ("LABEL AREA") — desenhos reais da CCN
+  /\d\s*(Ah|kg|V\s?[ad]c|Vc[ac]|ac|dc|Hz|rpm|cv|hp)\b/, /\d\s*("|''|pol\b)/, /^LABEL\b/,
+  // nota de instalação ("Tomada de espelho altura: 97,5 cm" — Arena)
+  /\baltura\s*[:=]|\d\s*cm\b/,
 ].map(r => r.source).join('|'), 'i');
+// sigla curta que é sala; fora delas, 1–3 letras sozinhas ("ST", "DI", "ALC") são código
+const RE_SIGLA_SALA = /^(WC|BWC|DML|CPD|ADM|LAV|COZ|QTO|SL|DEP|ALM|GAR|CME|UTI|RX|PS|HALL|LOJA|BAR|SPA)$/i;
 const limparTexto = (s) => String(s || '').replace(/\\P/g, ' ').replace(/\{\\[^;]*;|\}|\\[A-Za-z][^;]*;|[{}]/g, '').replace(/\s+/g, ' ').trim();
 // "AUDITÓRIO ÁREA = 108m²" → "AUDITÓRIO"
 const nomeLimpo = (s) => s.replace(/\s*[ÁA]REA\s*[:=].*$/i, '').replace(/\s*[\d.,]+\s*m[²2]\s*$/i, '').replace(/[\s:;,.\-–]+$/, '').replace(/\s+/g, ' ').trim();
+// Etiqueta de equipamento ("CAM-04", "FOG5", "DET 3", "AM-01"): em planta sem nome de
+// ambiente ela virava sala (limite anotado em 29/10/2026). Código curto (letras +
+// número) só é nome se as letras forem de cômodo ("SALA 01", "BWC 2", "APTO 101");
+// texto em layer de instalação (CFTV, incêndio, elétrica…) idem.
+const RE_CODIGO = /^([A-Za-zÀ-ú]{1,5})\.?\s*[-–.]?\s*\d{1,4}[A-Za-z]?$/;
+const RE_SIGLA_COMODO = /^(APTO?|AP|SL|QTO|QT|WC|BWC|UNID|CASA|LEITO|ENF|CONS|ESC|LAB|BOX)$/i;
+const RE_LAYER_INSTALACAO = /CFTV|C[ÂA]MERA|INC[ÊE]ND|ALARM|DETEC|SPDA|EL[ÉE]TR|ELE[-_ ]|^E[-_]|ILUM|LUMIN|TOMAD|DADOS|REDE|L[ÓO]GIC|TELEF|INTERF|SONORIZ|AUTOMA|HIDR|SANIT|ESGOT|PLUV|G[ÁA]S|CLIMA|HVAC|AR[-_ .]?COND|MOBILI|EQUIP/i;
+const ehCodigoDeEquipamento = (t) => {
+  const m = RE_CODIGO.exec(t.s);
+  if (m) return !(RE_NOME_SALA.test(m[1]) || RE_SIGLA_COMODO.test(m[1]));
+  return RE_LAYER_INSTALACAO.test(t.layer || '') && !RE_NOME_SALA.test(t.s);
+};
 // CamelCase de parâmetro exportado ("ApplicableOccurrence") — teste sensível a maiúsculas
-const ehNome = (t) => t.s.length >= 2 && t.s.length <= 60 && !RE_NAO_NOME.test(t.s) && !/^[A-Z][a-z]+([A-Z][a-z]+){1,}$/.test(t.s) && /[A-Za-zÀ-ú]{2}/.test(t.s);
-// entre vários textos dentro do ambiente: o de letra maior; empate → o mais longo
-const escolherNome = (ts) => nomeLimpo([...ts].sort((a, b) => (b.h - a.h) || (b.s.length - a.s.length))[0].s);
+const ehTextoDeSala = (t) => t.s.length >= 2 && t.s.length <= 60 && !RE_NAO_NOME.test(t.s) && !/^[A-Z][a-z]+([A-Z][a-z]+){1,}$/.test(t.s) && /[A-Za-zÀ-ú]{2}/.test(t.s);
+const ehSiglaSolta = (s) => /^[A-ZÀ-Ú]{1,3}$/.test(s) && !RE_SIGLA_SALA.test(s) && !RE_SIGLA_COMODO.test(s);
+const ehNome = (t) => ehTextoDeSala(t) && !ehSiglaSolta(t.s) && !ehCodigoDeEquipamento(t);
+// entre vários textos dentro do ambiente: o de letra maior; empate → o mais longo.
+// A etiqueta de equipamento ajuda a achar a sala (está dentro dela), mas não dá
+// o nome: sala só com etiquetas sai sem nome (vira "Ambiente N" no fim).
+const escolherNome = (ts) => {
+  const reais = ts.filter(t => !t.etiqueta);
+  return reais.length ? nomeLimpo([...reais].sort((a, b) => (b.h - a.h) || (b.s.length - a.s.length))[0].s) : null;
+};
 
 // ── Blocos ───────────────────────────────────────────────────────────────
 // Explosão própria dos blocos (a da lib `dxf` troca a layer de tudo pela do
@@ -81,7 +108,10 @@ const escolherNome = (ts) => nomeLimpo([...ts].sort((a, b) => (b.h - a.h) || (b.
 // Fora da planta (29/10/2026): o espaço do papel (layouts, com a folha, o
 // carimbo e as viewports) e as layers/blocos de diagrama, quadro, legenda,
 // carimbo e detalhe — o 3D "construía uma edificação" com o unifilar.
-const RE_LAYER_FORA_PLANTA = /UNIFILAR|TRIFILAR|MULTIFILAR|DIAGRAMA|ESQUEMA|QUADRO.?DE.?CARGA|TABELA|PLANILHA|LEGENDA|CARIMBO|\bSELO|MOLDURA|MARGEM|DETALHE|VIEWPORT|\bVPORT/i;
+// Layer "DETALHE" NÃO sai inteira: muito escritório põe nela partes da própria
+// planta (bancadas, esquadrias); o desenho de detalhe AO LADO da planta sai pela
+// classificação da região (título "DETALHE"), em lerArquitetura.
+const RE_LAYER_FORA_PLANTA = /UNIFILAR|TRIFILAR|MULTIFILAR|DIAGRAMA|ESQUEMA|QUADRO.?DE.?CARGA|TABELA|PLANILHA|LEGENDA|CARIMBO|\bSELO|MOLDURA|MARGEM|VIEWPORT|\bVPORT/i;
 const RE_BLOCO_FORA_PLANTA = /UNIFILAR|TRIFILAR|DIAGRAMA|ESQUEMA|QUADRO.?DE.?CARGA|LEGENDA|CARIMBO|\bSELO|MOLDURA|FOLHA.?A[0-4]\b|^A[0-4]$|DETALHE/i;
 function explodir(parsed) {
   const blocos = new Map((parsed.blocks || []).map(b => [b.name, b]));
@@ -144,9 +174,14 @@ function pontosArco(e) {
 // vice-versa). O raio da folha de porta (0,55–1,25 m) é a régua mais confiável.
 // Só vale unidade em que o desenho tem tamanho de edificação (3 m a 3 km); o
 // cabeçalho que já mostra portas é mantido (símbolos repetidos não enganam).
-function decidirFator(insUnits, arcos, tamanho, extensao) {
+// `miolo`: extensão do grosso do desenho (2× o intervalo interquartil). Desenho com
+// vistas em escalas diferentes no mesmo espaço do modelo (Arena: plantas em metros
+// na origem, diagramas a 80 mil unidades, cabeçalho em polegadas) tem extensão
+// total implausível em metros, e a planta saía 40× menor (29/10/2026).
+function decidirFator(insUnits, arcos, tamanho, extensao, miolo = extensao) {
   const doCabecalho = FATOR[insUnits] || null;
-  const plausivel = (f) => extensao * f >= 3 && extensao * f <= 3000;
+  const dentro = (e, f) => e * f >= 3 && e * f <= 3000;
+  const plausivel = (f) => dentro(extensao, f) || dentro(miolo, f);
   const portasCom = (f) => arcos.filter(a => Math.abs(a.varredura - 90) <= 12 && a.r * f >= 0.55 && a.r * f <= 1.25).length;
   if (doCabecalho && plausivel(doCabecalho) && portasCom(doCabecalho) >= 3) return doCabecalho;
   const melhor = [1, 0.01, 0.001, 0.0254].filter(plausivel).map(f => ({ f, n: portasCom(f) })).sort((a, b) => b.n - a.n)[0];
@@ -398,7 +433,8 @@ function lerArquitetura(textoDxf, opcoes = {}) {
   const xs = referencia.flatMap(r => [r.pts[0][0]]).sort((a, b) => a - b), ys = referencia.flatMap(r => [r.pts[0][1]]).sort((a, b) => a - b);
   const pct = (v, q) => v[Math.min(v.length - 1, Math.floor(q * v.length))] ?? 0;
   const ext = Math.max(pct(xs, 0.98) - pct(xs, 0.02), pct(ys, 0.98) - pct(ys, 0.02));
-  const fator = decidirFator(parsed.header?.insUnits, arcos, tamanho, ext);
+  const miolo = 2 * Math.max(pct(xs, 0.75) - pct(xs, 0.25), pct(ys, 0.75) - pct(ys, 0.25));
+  const fator = decidirFator(parsed.header?.insUnits, arcos, tamanho, ext, miolo);
   const m = (pts) => pts.map(([x, y]) => [x * fator, y * fator]);
   let textosTodos = textos.map(t => ({ ...t, x: t.x * fator, y: t.y * fator, h: t.h * fator }));
   let refM = referencia.map(r => ({ ...r, pts: m(r.pts) }));
@@ -442,7 +478,15 @@ function lerArquitetura(textoDxf, opcoes = {}) {
     .filter(p => p.area >= (opcoes.areaMinima ?? 1) && p.area <= (opcoes.areaMaxima ?? 5000) && portasNoMeio(p.pts) < 3);
   const nomes = new Map(); // índice do polígono → textos
   const soltos = [];
-  for (const t of textosM) {
+  // sementes sem nome: qualquer etiqueta com cara de código (CAM-04, QD-01, TUG 3…) ou
+  // texto curto de layer de instalação. Fora do prédio a sala "vaza" e é descartada.
+  const etiquetas = textosTodos
+    .filter(t => !ehNome(t) && t.s.length <= 20 && (RE_CODIGO.test(t.s) || (RE_LAYER_INSTALACAO.test(t.layer || '') && /[A-Za-z]/.test(t.s))))
+    .map(t => ({ ...t, etiqueta: true }));
+  // desenho que não é planta (quadro, unifilar, detalhe): nenhuma sala — o painel
+  // QA-CAG (CCN) tinha 105 "ambientes" nos retângulos dos componentes
+  const semPlanta = !!classificacao?.semPlanta;
+  for (const t of semPlanta ? [] : [...textosM, ...etiquetas]) {
     let melhor = -1;
     candidatos.forEach((p, i) => { if (dentro([t.x, t.y], p.pts) && (melhor < 0 || p.area < candidatos[melhor].area)) melhor = i; });
     if (melhor >= 0) (nomes.get(melhor) || nomes.set(melhor, []).get(melhor)).push(t);
@@ -454,7 +498,7 @@ function lerArquitetura(textoDxf, opcoes = {}) {
   });
 
   // 2) nomes fora de polilinha: sala pelas paredes
-  if (soltos.length && opcoes.paredes !== false) {
+  if (!semPlanta && soltos.length && opcoes.paredes !== false) {
     const layers = [...new Set(retos.map(r => r.layer))];
     const deParede = layers.filter(l => RE_PAREDE.test(l || ''));
     const usar = deParede.length ? new Set(deParede) : new Set(layers.filter(l => !RE_NAO_PAREDE.test(l || '')));
@@ -466,6 +510,11 @@ function lerArquitetura(textoDxf, opcoes = {}) {
     const folha = (s) => portas.some(p => (dist(s[0], p.dobradica) < 0.08 || dist(s[1], p.dobradica) < 0.08) && Math.min(dist(s[0], p.dobradica), dist(s[1], p.dobradica)) < 0.08 && Math.abs(dist(s[0], s[1]) - p.largura_m / (p.dupla ? 2 : 1)) < 0.1);
     ambientes.push(...ambientesPorParedes(segParede.filter(s => !folha(s)), portas, soltos, opcoes));
   }
+  // sala achada só por etiqueta de equipamento: existe (o 3D e a contagem por ambiente
+  // precisam dela), mas não leva o código do equipamento como nome
+  let semNome = 0;
+  ambientes.sort((a, b) => (a.centro[1] - b.centro[1]) || (a.centro[0] - b.centro[0]));
+  for (const a of ambientes) if (!a.nome) { a.nome = `Ambiente ${++semNome}`; a.semNome = true; }
   ambientes.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }));
   associarPortas(portas, ambientes);
 
@@ -489,7 +538,9 @@ function classificarDesenho(refM, arcosM, textosM) {
   if (segmentos.length < 4) return null;
   const xs = segmentos.flatMap(s => [s.a[0], s.b[0]]).sort((a, b) => a - b), ys = segmentos.flatMap(s => [s.a[1], s.b[1]]).sort((a, b) => a - b);
   const q = (v, f) => v[Math.min(v.length - 1, Math.floor(f * v.length))];
-  const caixa = [q(xs, 0.01), q(ys, 0.01), q(xs, 0.99), q(ys, 0.99)];
+  // corte só da sujeira perdida longe (0,2 %): com 1 %, o unifilar da Arena (2 % dos
+  // traços, numa ponta do desenho) ficava fora da folha e não era classificado
+  const caixa = [q(xs, 0.002), q(ys, 0.002), q(xs, 0.998), q(ys, 0.998)];
   if (!(caixa[2] > caixa[0]) || !(caixa[3] > caixa[1])) return null;
   return classificarFolha({
     caixa, yParaBaixo: false, metrosPorUnidade: 1, raioPorta: [0.55, 1.25], espessuraParede: [0.07, 0.4], segmentos,
