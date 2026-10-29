@@ -352,7 +352,8 @@ function compatibilizar(arquivos, { temPdf = false } = {}) {
       let nSeg = 0;
       espacialReferencia = {
         referencia: g.ref.arquivo,
-        pontos: pontos.slice(0, 20000).map(({ x, y, descricao, disciplina, classe }) => ({ x, y, descricao, disciplina, classe })),
+        // a altura de instalação vai junto quando se sabe (o 3D pode pôr o ponto na cota certa)
+        pontos: pontos.slice(0, 20000).map(({ x, y, descricao, disciplina, classe, altura_m, montagem }) => ({ x, y, descricao, disciplina, classe, ...(montagem ? { altura_m: altura_m ?? null, montagem } : {}) })),
         trechos: trechos.map(t => ({ disciplina: t.disciplina, layer: t.layer, segmentos: t.segmentos.slice(0, Math.max(0, 20000 - nSeg)).map(s => { nSeg++; return s.map(v => Math.round(v * 1000) / 1000); }) }))
           .filter(t => t.segmentos.length),
       };
