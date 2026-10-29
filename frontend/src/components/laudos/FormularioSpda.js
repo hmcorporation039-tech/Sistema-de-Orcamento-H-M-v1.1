@@ -34,6 +34,9 @@ const OPCOES = {
   ensaio: op([['F.1', 'F.1 armaduras (cruzado)'], ['F.2', 'F.2 pilar (topo × base)'], ['F.3', 'F.3 fundação'], ['F.4', 'F.4 captação × BEP'], ['F.5', 'F.5 descida não natural'], ['F.6', 'F.6 eletrodo não natural'], ['F.7', 'F.7 ligação equipotencial']]),
   materialCondutor: op([['', '—'], ['cobre', 'Cobre'], ['aluminio', 'Alumínio'], ['aco_galvanizado', 'Aço galvanizado'], ['aco_cobreado', 'Aço cobreado']]),
   uw: op([['1', '1 kV'], ['1.5', '1,5 kV'], ['2.5', '2,5 kV'], ['4', '4 kV'], ['6', '6 kV']]),
+  tipoLaudo: op([['spda_aterramento', 'SPDA e aterramento (com análise de risco)'], ['aterramento', 'Somente aterramento']]),
+  // onde a foto entra no laudo (skills/spda/scripts/lib/doc-laudo.js, CATEGORIAS_FOTO)
+  categoriaFoto: op([['', 'Automática (ensaio se tiver ensaio)'], ['ensaio', 'Ensaio — Anexo 01'], ['geral', 'Inspeção — Anexo 01'], ['localizacao', 'Localização — seção 1'], ['prancha', 'Prancha / as built — seção 10'], ['metodo', 'Metodologia — seção 8'], ['calibracao', 'Certificado de calibração — Anexo 02'], ['art', 'ART — Anexo 03']]),
 };
 const UFS = op(['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'].map(u => [u, u]));
 
@@ -63,27 +66,45 @@ export default function FormularioSpda({ dados, onChange, checklistBase, fotos, 
     <div>
       <Secao titulo="1. Identificação" abertaInicial resumo={d.cliente?.nome || ''}>
         <Grade colunas={4}>
+          {tipo !== 'projeto' && (
+            <Selecao rotulo="Tipo de laudo" valor={v('meta.tipo_laudo') || 'spda_aterramento'} onChange={set('meta.tipo_laudo')} opcoes={OPCOES.tipoLaudo} largura="inteira" />
+          )}
           <Campo rotulo="Cliente (razão social)" valor={v('cliente.nome')} onChange={set('cliente.nome')} />
           <Campo rotulo="CNPJ" valor={v('cliente.cnpj')} onChange={set('cliente.cnpj')} />
+          <Campo rotulo="Unidade" valor={v('cliente.unidade')} onChange={set('cliente.unidade')} placeholder="ex.: Unidade Norte" />
           <Campo rotulo="Contato" valor={v('cliente.contato')} onChange={set('cliente.contato')} />
           <Campo rotulo="Endereço" valor={v('cliente.endereco')} onChange={set('cliente.endereco')} />
+          <Campo rotulo="CEP" valor={v('cliente.cep')} onChange={set('cliente.cep')} />
           <Campo rotulo="Cidade" valor={v('cliente.cidade')} onChange={set('cliente.cidade')} />
           <Selecao rotulo="UF" valor={v('cliente.uf')} onChange={set('cliente.uf')} opcoes={[{ valor: '', rotulo: '—' }, ...UFS]} />
           <Campo rotulo="Obra / edificação" valor={v('obra.nome')} onChange={set('obra.nome')} largura="inteira" />
           <Campo rotulo="Uso / ocupação (texto do laudo)" valor={v('obra.uso')} onChange={set('obra.uso')} largura="inteira" />
+          <Campo rotulo="Coordenadas (latitude, longitude)" valor={v('obra.coordenadas')} onChange={set('obra.coordenadas')} placeholder="-15.652004, -47.783291" dica="Sai na seção 1 e serve para conferir o GPS das fotos (alerta acima de 500 m)" />
           <Campo rotulo="Pavimentos" tipo="numero" valor={v('obra.pavimentos')} onChange={set('obra.pavimentos')} />
           <Campo rotulo="Área construída (m²)" tipo="numero" valor={v('obra.area_construida_m2')} onChange={set('obra.area_construida_m2')} />
           <Campo rotulo="Data de emissão" tipo="data" valor={v('meta.data')} onChange={set('meta.data')} />
           <Campo rotulo="Revisão" valor={v('meta.revisao')} onChange={set('meta.revisao')} placeholder="R00" dica="R00, R01… seguido de descrição curta" />
+          <Campo rotulo="Código do documento" valor={v('meta.codigo')} onChange={set('meta.codigo')} placeholder="HM-SPDA-2026-XXX" />
+          <Campo rotulo="Contrato nº" valor={v('meta.contrato')} onChange={set('meta.contrato')} />
           <Campo rotulo="Prefixo dos arquivos" valor={v('meta.prefixo')} onChange={set('meta.prefixo')} placeholder="ex.: HX_Exemplo" />
+          <Campo rotulo="Observações da capa" valor={v('meta.observacoes_capa')} onChange={set('meta.observacoes_capa')} largura="inteira" placeholder="Vazio: “Todas as informações foram aferidas in loco, com miliohmímetro e terrômetro.”" />
         </Grade>
-        <Nota>Responsável técnico (preenchido pelo engenheiro que assina):</Nota>
+        <Nota>Responsável técnico (preenchido pelo engenheiro que assina). O emitente é sempre a H&M (papel timbrado); se quem assina é de outra empresa, informe a empresa e o CNPJ dela.</Nota>
         <Grade colunas={4}>
           <Campo rotulo="Engenheiro responsável" valor={v('responsavel.nome')} onChange={set('responsavel.nome')} />
+          <Campo rotulo="Título profissional" valor={v('responsavel.titulo')} onChange={set('responsavel.titulo')} placeholder="Engenheiro Eletricista" />
           <Campo rotulo="CREA" valor={v('responsavel.crea')} onChange={set('responsavel.crea')} />
+          <Campo rotulo="RNP" valor={v('responsavel.rnp')} onChange={set('responsavel.rnp')} />
           <Campo rotulo="ART nº" valor={v('responsavel.art')} onChange={set('responsavel.art')} />
-          <Campo rotulo="CNPJ da empresa" valor={v('responsavel.cnpj')} onChange={set('responsavel.cnpj')} />
+          <Campo rotulo="Empresa do responsável (se não for a H&M)" valor={v('responsavel.empresa')} onChange={set('responsavel.empresa')} />
+          <Campo rotulo="CNPJ da empresa do responsável" valor={v('responsavel.cnpj')} onChange={set('responsavel.cnpj')} />
         </Grade>
+        <Nota>Revisões do documento (tabela da capa). Vazia: sai uma linha com a revisão e a data de emissão acima.</Nota>
+        <TabelaEditavel
+          linhas={v('meta.revisoes')} onChange={set('meta.revisoes')} rotuloAdicionar="Adicionar revisão"
+          novaLinha={(l) => ({ revisao: `R${String(l.length).padStart(2, '0')}`, data: '', descricao: l.length ? '' : 'Emissão inicial', responsavel: v('responsavel.nome') || '' })}
+          colunas={[{ campo: 'revisao', rotulo: 'Revisão', largura: 80 }, { campo: 'data', rotulo: 'Data (AAAA-MM-DD)', largura: 140 }, { campo: 'descricao', rotulo: 'Descrição' }, { campo: 'responsavel', rotulo: 'Responsável', largura: 200 }]}
+        />
       </Secao>
 
       <Secao titulo="2. Estrutura" resumo={d.estrutura?.L ? `${d.estrutura.L} × ${d.estrutura.W} × ${d.estrutura.H} m` : ''}>
@@ -211,6 +232,7 @@ export default function FormularioSpda({ dados, onChange, checklistBase, fotos, 
         <Grade colunas={4}>
           <Selecao rotulo="Tipo de inspeção" valor={insp.tipo || 'periodica'} onChange={set('inspecao.tipo')} opcoes={OPCOES.tipoInspecao} />
           <Campo rotulo="Data da inspeção" tipo="data" valor={insp.data_inspecao} onChange={set('inspecao.data_inspecao')} />
+          <Campo rotulo="Último dia (se durou mais de um)" tipo="data" valor={insp.data_inspecao_fim} onChange={set('inspecao.data_inspecao_fim')} />
           <Campo rotulo="Documento nº" valor={insp.documento_n} onChange={set('inspecao.documento_n')} placeholder="HM-SPDA-2026-XXX-01" />
           <Campo rotulo="Equipe de campo" valor={insp.equipe} onChange={set('inspecao.equipe')} />
           <Marcador rotulo="Serviço essencial (saúde, energia, água, sinais)" valor={insp.servico_essencial} onChange={set('inspecao.servico_essencial')} />
@@ -224,6 +246,15 @@ export default function FormularioSpda({ dados, onChange, checklistBase, fotos, 
           <Campo rotulo="Abrangência" tipo="area" valor={insp.abrangencia} onChange={set('inspecao.abrangencia')} largura="inteira" />
           <Campo rotulo="Fora do escopo" valor={insp.fora_escopo} onChange={set('inspecao.fora_escopo')} largura="inteira" />
           <Campo rotulo="Itens adicionais" valor={insp.itens_adicionais} onChange={set('inspecao.itens_adicionais')} largura="inteira" />
+        </Grade>
+        <Nota>Descrição dos subsistemas (seção 6 do laudo — "Características do SPDA da edificação"):</Nota>
+        <Grade colunas={2}>
+          <Campo rotulo="Subsistema de captação" tipo="area" valor={v('spda.descricao_captacao')} onChange={set('spda.descricao_captacao')} placeholder="ex.: captores Franklin, minicaptores e condutores de captação nas torres, coroa e cobertura" />
+          <Campo rotulo="Subsistema de descida" tipo="area" valor={v('spda.descricao_descidas')} onChange={set('spda.descricao_descidas')} />
+          <Campo rotulo="Subsistema de aterramento" tipo="area" valor={v('spda.descricao_aterramento')} onChange={set('spda.descricao_aterramento')} />
+          <Campo rotulo="Equipotencialização" tipo="area" valor={v('spda.descricao_equipotencializacao')} onChange={set('spda.descricao_equipotencializacao')} />
+          <Campo rotulo="Caixas de inspeção (quantidade)" tipo="numero" valor={v('spda.caixas_inspecao')} onChange={set('spda.caixas_inspecao')} dica="Vazio: conta os ensaios com “caixa” na identificação" />
+          <Campo rotulo="Barramento de equipotencialização" valor={v('spda.bep')} onChange={set('spda.bep')} placeholder="BEP" />
         </Grade>
         <Nota>Use [CONFERIR] em qualquer texto estimado ou não confirmado — sai em vermelho no documento.</Nota>
       </Secao>
@@ -241,8 +272,10 @@ export default function FormularioSpda({ dados, onChange, checklistBase, fotos, 
         />
         <TabelaEditavel
           linhas={insp.instrumentos} onChange={set('inspecao.instrumentos')} rotuloAdicionar="Adicionar instrumento"
-          novaLinha={{ instrumento: '', fabricante: '', modelo: '', serie: '', certificado: '', validade: '', uso: '' }}
-          colunas={['instrumento', 'fabricante', 'modelo', 'serie', 'certificado', 'validade', 'uso'].map(c => ({ campo: c, rotulo: c === 'serie' ? 'Nº série' : c.charAt(0).toUpperCase() + c.slice(1) }))}
+          novaLinha={{ instrumento: '', fabricante: '', modelo: '', serie: '', certificado: '', data_calibracao: '', validade: '', uso: '' }}
+          colunas={['instrumento', 'fabricante', 'modelo', 'serie', 'certificado', 'data_calibracao', 'validade', 'uso'].map(c => ({
+            campo: c, rotulo: { serie: 'Nº série', data_calibracao: 'Calibração (AAAA-MM-DD)', validade: 'Validade (AAAA-MM-DD)' }[c] || c.charAt(0).toUpperCase() + c.slice(1),
+          }))}
         />
       </Secao>
 
@@ -281,9 +314,19 @@ export default function FormularioSpda({ dados, onChange, checklistBase, fotos, 
       </Secao>
 
       <Secao titulo="11. Registro fotográfico" resumo={`${(insp.fotos || []).length} foto(s)`}>
+        <Nota>Escolha onde cada foto entra no laudo e, nas fotos de leitura do instrumento, o ensaio que ela comprova. Data/hora e GPS vazios são lidos da própria foto (câmera do celular); foto a mais de 500 m da obra ou fora da data da inspeção sai marcada em vermelho para conferir.</Nota>
         <FotosInspecao
           lista={insp.fotos || []} fotos={fotos} urlsFotos={urlsFotos}
           onChange={set('inspecao.fotos')} onEnviarFotos={onEnviarFotos} onRemoverFoto={onRemoverFoto}
+          camposExtras={(f, alterar) => (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
+              <Selecao valor={f.categoria || ''} onChange={(x) => alterar('categoria', x)} opcoes={OPCOES.categoriaFoto} largura="inteira" />
+              <Selecao valor={f.ensaio || ''} onChange={(x) => alterar('ensaio', x)} largura="inteira"
+                opcoes={[{ valor: '', rotulo: 'Sem ensaio' }, ...(insp.continuidade || []).filter(e => e.ponto).map(e => ({ valor: String(e.ponto), rotulo: `Ensaio ${e.ponto}${e.destino ? ` — ${e.destino}` : ''}` }))]} />
+              <Campo valor={f.data_hora} onChange={(x) => alterar('data_hora', x)} placeholder="Data/hora (da foto)" />
+              <Campo valor={f.gps} onChange={(x) => alterar('gps', x)} placeholder="GPS (da foto)" />
+            </div>
+          )}
         />
       </Secao>
 

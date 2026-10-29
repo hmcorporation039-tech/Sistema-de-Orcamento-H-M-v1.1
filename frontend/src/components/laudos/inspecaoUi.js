@@ -65,7 +65,9 @@ export function ChecklistEditor({ base, lista, onChange }) {
   );
 }
 
-export function FotosInspecao({ lista, fotos, urlsFotos, onChange, onEnviarFotos, onRemoverFoto }) {
+// camposExtras(foto, alterar): campos a mais de uma disciplina, embaixo da
+// descrição (o SPDA usa para categoria, ensaio, data/hora e GPS da foto)
+export function FotosInspecao({ lista, fotos, urlsFotos, onChange, onEnviarFotos, onRemoverFoto, camposExtras }) {
   const entrada = useRef(null);
   const alterar = (i, campo, valor) => onChange(lista.map((f, j) => (j === i ? { ...f, [campo]: valor } : f)));
   const idDaFoto = (f) => /^foto:(\d+)$/.exec(f.arquivo || '')?.[1];
@@ -92,6 +94,7 @@ export function FotosInspecao({ lista, fotos, urlsFotos, onChange, onEnviarFotos
               </div>
               <input style={{ ...estiloInput, marginBottom: 6 }} placeholder="Subsistema" value={f.subsistema || ''} onChange={e => alterar(i, 'subsistema', e.target.value)} />
               <textarea rows={2} style={{ ...estiloInput, marginBottom: 6, resize: 'vertical' }} placeholder="Descrição" value={f.descricao || ''} onChange={e => alterar(i, 'descricao', e.target.value)} />
+              {camposExtras && camposExtras(f, (campo, valor) => alterar(i, campo, valor))}
               <div style={{ display: 'flex', gap: 6 }}>
                 <input style={estiloInput} placeholder="Itens/NC relacionados" value={f.ref || ''} onChange={e => alterar(i, 'ref', e.target.value)} />
                 <button title="Remover foto" style={{ ...btnAdicionar, color: '#b04040' }}
