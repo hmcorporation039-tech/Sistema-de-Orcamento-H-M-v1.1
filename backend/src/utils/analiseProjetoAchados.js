@@ -142,6 +142,16 @@ function gerarAchados(analises) {
   return achados;
 }
 
+// por que o leitor do PDF vetorial pulou a página (utils/pdfVetorial.js, pulada.motivo)
+const MOTIVO_PULADA = {
+  tempo: 'passou do tempo-limite da página', tempo_total: 'acabou o tempo de leitura do arquivo', tracos: 'traços demais',
+  memoria: 'estourou a memória reservada', limite_paginas: 'além do limite de páginas lidas',
+};
+const qtdeDaLegenda = (it) => {
+  const v = it.qtde_projeto ?? it.quantidadeLegenda;
+  return v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v);
+};
+
 // opcoes.maxPaginas: até quantas folhas o PDF vetorial é lido (services/compatibilizacaoAnalise.js)
 function achadosDoDesenho(analises, vetoriais, opcoes = {}) {
   const achados = [];
@@ -149,7 +159,9 @@ function achadosDoDesenho(analises, vetoriais, opcoes = {}) {
     // folhas além do limite não eram lidas e sumiam sem aviso (revisão de 29/10/2026)
     const totalPaginas = a.textoPorPagina?.length || 0;
     const lidas = new Set((vetoriais[i] || []).filter(p => p.origem !== 'cad' && p.pagina).map(p => p.pagina));
-    if (!a.origemCad && !a.semTexto && opcoes.maxPaginas && totalPaginas > opcoes.maxPaginas && lidas.size) {
+    // o leitor (utils/pdfVetorial.js) já avisa as páginas além do limite (pulada.motivo 'limite_paginas'): sem achado em dobro
+    const leitorAvisou = (vetoriais[i] || []).some(p => p.pulada?.motivo === 'limite_paginas');
+    if (!leitorAvisou && !a.origemCad && !a.semTexto && opcoes.maxPaginas && totalPaginas > opcoes.maxPaginas && lidas.size) {
       const fora = [];
       for (let n = 1; n <= totalPaginas; n++) if (!lidas.has(n)) fora.push(n);
       if (fora.length) {
@@ -162,11 +174,29 @@ function achadosDoDesenho(analises, vetoriais, opcoes = {}) {
     }
     // página pulada (traços demais) ou leitura que falhou: avisa em vez de sumir calada
     // DWG vazio já tem o achado "Arquivo sem texto legível"
+    // O leitor lê com tempo-limite e diz por que pulou (pulada.motivo)
     const avisos = (vetoriais[i] || []).filter(p => p.aviso && p.origem !== 'cad');
     if (avisos.length) {
+      const motivo = (p) => (p.pulada?.motivo ? ` [${MOTIVO_PULADA[p.pulada.motivo] || p.pulada.motivo}]` : '');
       achados.push({
         tema: 'Contagem pelo desenho (PDF vetorial) incompleta',
-        observacao: `"${a.arquivo}": ${avisos.map(p => (p.pagina ? `pág. ${p.pagina}: ` : '') + p.aviso).join('; ')}.`,
+        observacao: `"${a.arquivo}": ${avisos.map(p => (p.pagina ? `pág. ${p.pagina}${motivo(p)}: ` : (motivo(p) ? `${motivo(p).trim()} ` : '')) + p.aviso).join('; ')}.`,
+      });
+    }
+    // escala por vista: folha com mais de uma escala ou vista sem escala (pdfVetorial, avisoEscala)
+    const escalas = (vetoriais[i] || []).filter(p => p.avisoEscala && p.origem !== 'cad');
+    if (escalas.length) {
+      achados.push({
+        tema: 'Escala das vistas da folha',
+        observacao: `"${a.arquivo}": ${escalas.map(p => `${p.pagina ? `pág. ${p.pagina}: ` : ''}${p.avisoEscala}`).join('; ')}. Metragens de trecho em vista sem escala definida não foram calculadas — confira na planta.`,
+      });
+    }
+    // itens da legenda com QTDE prevista que o desenho não achou nesta folha
+    const naoContados = (vetoriais[i] || []).flatMap(p => (p.naoContados || []).map(n => ({ ...n, pagina: p.pagina })));
+    if (naoContados.length) {
+      achados.push({
+        tema: 'Itens da legenda sem contagem no desenho',
+        observacao: `"${a.arquivo}": ${naoContados.slice(0, 15).map(n => `${semMarcador(n.descricao).slice(0, 60)}${n.codigo ? ` (${n.codigo})` : ''}: ${n.qtde_projeto != null ? `${n.qtde_projeto} previstos na legenda, ` : ''}nenhum nesta folha${n.pagina ? ` (pág. ${n.pagina})` : ''}${n.motivo ? ` — ${n.motivo}` : ''}`).join('; ')}${naoContados.length > 15 ? ` (+${naoContados.length - 15})` : ''}. Lance pela QTDE da legenda ou confira na planta.`,
       });
     }
     for (const p of (vetoriais[i] || []).filter(p => p.origem === 'cad')) {
@@ -188,18 +218,21 @@ function achadosDoDesenho(analises, vetoriais, opcoes = {}) {
     // QTD/QTDE da legenda × contagem do desenho (DWG/DXF e PDF): a diferença vira achado
     const divergentes = (vetoriais[i] || []).flatMap(p => [
       ...(p.conferenciaLegenda || []).map(c => ({ descricao: c.descricao || c.bloco, desenho: c.desenho, legenda: c.legenda })),
-      ...(p.conferenciaLegenda ? [] : (p.itens || []).filter(it => it.tipo === 'simbolo' && it.quantidadeLegenda != null && Number(it.quantidadeLegenda) !== Number(it.quantidade))
-        .map(it => ({ descricao: it.descricao, desenho: it.quantidade, legenda: it.quantidadeLegenda }))),
+      // PDF: QTDE da tabela da legenda no item (qtde_projeto); CAD antigo: quantidadeLegenda
+      ...(p.conferenciaLegenda ? [] : (p.itens || []).filter(it => it.tipo === 'simbolo' && qtdeDaLegenda(it) != null && qtdeDaLegenda(it) !== Number(it.quantidade))
+        .map(it => ({ descricao: it.descricao, desenho: it.quantidade, legenda: qtdeDaLegenda(it) }))),
     ]);
     if (divergentes.length) {
       achados.push({
         tema: 'Quantidade da legenda diferente da contagem do desenho',
-        observacao: `"${a.arquivo}": ${divergentes.slice(0, 15).map(d => `${semMarcador(d.descricao).replace(/ — bloco .*/, '').slice(0, 60)}: desenho ${d.desenho}, legenda ${d.legenda}`).join('; ')}${divergentes.length > 15 ? ` (+${divergentes.length - 15})` : ''}. Confira na planta qual está certo antes de fechar (vale a contagem do desenho).`,
+        observacao: `"${a.arquivo}": ${divergentes.slice(0, 15).map(d => `${semMarcador(d.descricao).replace(/ — bloco .*/, '').slice(0, 60)}: legenda diz ${d.legenda}, desenho contou ${d.desenho}`).join('; ')}${divergentes.length > 15 ? ` (+${divergentes.length - 15})` : ''}. Confira na planta qual está certo antes de fechar (vale a contagem do desenho).`,
       });
     }
-    const itens = (vetoriais[i] || []).flatMap(p => p.itens);
+    const itens = (vetoriais[i] || []).flatMap(p => p.itens || []);
     if (!itens.length) return;
-    const fmt = (it) => `${semMarcador(it.descricao).slice(0, 70)}: ${it.tipo === 'simbolo' ? it.quantidade : it.metros != null ? metrosBR(it.metros) : `${it.comprimento_pt} pt (sem escala no carimbo)`}`;
+    // trecho sem metros: vista sem escala resolvida (folha com várias escalas) ou carimbo sem escala
+    const semMetros = (it) => `${it.comprimento_pt} pt (${it.escala_indefinida_pt ? 'folha com mais de uma escala — vista sem escala definida' : 'sem escala no carimbo'})`;
+    const fmt = (it) => `${semMarcador(it.descricao).slice(0, 70)}: ${it.tipo === 'simbolo' ? it.quantidade : it.metros != null ? metrosBR(it.metros) : semMetros(it)}`;
     const ehCad = (vetoriais[i] || []).some(p => p.origem === 'cad');
     const claros = itens.filter(it => !it.ambiguo), ambiguos = itens.filter(it => it.ambiguo);
     achados.push({

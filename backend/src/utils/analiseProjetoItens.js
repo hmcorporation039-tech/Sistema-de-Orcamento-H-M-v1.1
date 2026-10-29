@@ -99,7 +99,9 @@ const RE_QUADRO_GERAL = /\bQGBT\b|\bQDG\b|\bQGD\b|\bGERAL\b/i;
 const MODELO_COBERTO = [
   [/^Tomada 2P\+T/, /^Tomada/i], [/^Interruptor/, /^Interruptor/i], [/^Eletroduto PVC/, /^Eletroduto/i],
   [/^Cabo elétrico flexível/, /^Cabo flexível 750 V — /i],
-  [/^Quadro de distribuição \(/, /^Quadro de distribuição/i], [/^Luminária LED/, /^Luminária/i], [/^Perfil LED/, /Perfil/i],
+  [/^Quadro de distribuição \(/, /^Quadro de distribuição/i], [/^Perfil LED/, /Perfil/i],
+  // a tabela do luminotécnico descreve o produto ("PRO EMBUTIDO … GU10", "BALIZADOR LED 1W"), sem a palavra "luminária"
+  [/^Luminária LED/, /^(?!.*(emerg|perfil|caixa|eletroduto))(.*lumin[áa]ria|.*plafon|.*arandela|.*\bspot\b|.*downlight|.*pendente|.*embutid|.*balizador|.*espeto|.*projetor|.*refletor|.*\bgu10\b|.*dicr[óo]ica|.*\bled\b.*\d+\s?w\b)/i],
 ];
 const DO_DESENHO = /no (DWG|DXF)|no desenho de "/;
 function semModeloCoberto(modelos, doDesenho) {
@@ -125,7 +127,7 @@ const SOBRA_ROTA = 1.1;
 // não vira serviço de incêndio.
 // [regex da descrição, código (ou função da descrição), disciplina, regex do nome do bloco]
 // Código começando com "_" não é serviço: vira nota no item (NOTA_DO_DESENHO).
-const SEM_EMERG = '^(?!.*emerg)';
+const SEM_EMERG = '^(?!.*(emerg|caixa|eletroduto|quadro|tomada|interruptor))';
 const alturaDaDescricao = (s) => {
   const t = String(s || '');
   const m = t.match(/\bh\s*=\s*(\d+(?:[.,]\d+)?)\s*m?\b/i) || t.match(/(\d+[.,]\d+)\s*m\s*(do|de|em rela[çc][ãa]o ao)\s*piso/i)
@@ -184,9 +186,11 @@ const SERVICO_DO_SIMBOLO = [
   [new RegExp(`${SEM_EMERG}.*pendente`, 'i'), 'ilum_luminaria_pendente', 'iluminacao'],
   // a legenda diz "de sobrepor": era lançado como de embutir (teste de 28/10/2026);
   // "de embutir" escrito vale mais que o tipo ("Plafon de LED … de embutir")
-  [new RegExp(`${SEM_EMERG}.*\\bembutir`, 'i'), 'ilum_luminaria_embutir', 'iluminacao'],
-  [new RegExp(`${SEM_EMERG}(.*(lumin[áa]ria|painel|spot).*sobrepor|.*plafon|.*arandela)`, 'i'), 'ilum_luminaria_sobrepor', 'iluminacao'],
-  [new RegExp(`${SEM_EMERG}.*(lumin[áa]ria|downlight|\\bspot\\b|painel led|projetor|refletor)`, 'i'), 'ilum_luminaria_embutir', 'iluminacao'],
+  // legenda em tabela do luminotécnico (pdfVetorial 29b1aa7) descreve o produto sem a
+  // palavra "luminária": "PRO EMBUTIDO REDONDO … GU10", "BALIZADOR … LED 1W", "ESPETO LED 6W"
+  [new RegExp(`${SEM_EMERG}.*\\b(embutir|embutid[oa]s?)\\b`, 'i'), 'ilum_luminaria_embutir', 'iluminacao'],
+  [new RegExp(`${SEM_EMERG}(.*(lumin[áa]ria|painel|spot).*sobrepor|.*plafon|.*arandela|.*balizador|.*espeto|.*\\bsobrepor\\b.*\\bled\\b)`, 'i'), 'ilum_luminaria_sobrepor', 'iluminacao'],
+  [new RegExp(`${SEM_EMERG}.*(lumin[áa]ria|downlight|\\bspot\\b|painel led|projetor|refletor|\\bdicr[óo]ica|\\bgu10\\b|\\bpar ?\\d{2}\\b|\\bled\\b.*\\d+(,\\d+)?\\s?w\\b)`, 'i'), 'ilum_luminaria_embutir', 'iluminacao'],
   // automação
   [/termostato|sensor de (temperatura|umidade|co2|co₂|press)/i, 'auto_sensor', 'automacao'],
   [/atuador|m[óo]dulo de automa/i, 'auto_atuadores', 'automacao'],
@@ -256,6 +260,25 @@ function disciplinaDoItemCad(it, marcadas) {
     || (it.disciplina ? null : disciplinaUnica(marcadas));
 }
 
+// Símbolo que é um CONJUNTO de aparelhos na mesma placa ("Espelho com 1 interruptor
+// e 1 tomada", "Espelho com 6 interruptores"): cada aparelho é um serviço. Antes
+// o espelho com 6 interruptores contava 1 (projeto real de 29/10/2026).
+function aparelhosDoConjunto(desc, marcadas) {
+  if (!/\b(espelho|placa|conjunto|caixa) com\b/i.test(desc)) return [];
+  const conta = { tomada: 0, interruptor: 0 };
+  for (const m of desc.matchAll(/(\d+)\s+(tomadas?|interruptor(?:es)?)/gi)) conta[/^tomada/i.test(m[2]) ? 'tomada' : 'interruptor'] += Number(m[1]);
+  const out = [];
+  if (conta.tomada && temDisciplina(marcadas, 'eletrica')) {
+    const cod = tomadaPorAltura(desc);
+    out.push({ codigo: cod, disciplina: 'eletrica', n: conta.tomada });
+  }
+  if (conta.interruptor) {
+    if (temDisciplina(marcadas, 'eletrica')) out.push({ codigo: 'ele_interruptor', disciplina: 'eletrica', n: conta.interruptor });
+    else if (temDisciplina(marcadas, 'iluminacao')) out.push({ codigo: 'ilum_interruptor_dimmer', disciplina: 'iluminacao', n: conta.interruptor });
+  }
+  return conta.tomada + conta.interruptor > 1 ? out : [];
+}
+
 function regraDoSimbolo(it, marcadas, discItem) {
   const desc = semMarcador(it.descricao).replace(/^\d+\s+(?=[A-Za-zÀ-ú])/, '');
   const candidatas = SERVICO_DO_SIMBOLO.filter(([re, , d, reBloco]) => temDisciplina(marcadas, d)
@@ -290,8 +313,14 @@ function contagemDoDesenho(analises, vetoriais = [], opcoes = {}) {
           const achou = regraDoSimbolo({ ...it, _cad: cad }, marcadas, discItem);
           if (!achou) continue;
           const [desc, [, cod, discRegra]] = achou;
-          const codigo = typeof cod === 'function' ? cod(desc) : cod;
           const rotulo = cad ? `${onde}: bloco ${it.bloco} × ${it.quantidade}` : `${onde}: "${desc.slice(0, 50)}" × ${it.quantidade}`;
+          // "Espelho com 2 tomadas e 1 tomada 20A": o símbolo é um conjunto — conta cada aparelho
+          const conjunto = aparelhosDoConjunto(desc, marcadas);
+          if (conjunto.length) {
+            for (const c of conjunto) entradas.push({ ...c, quantidade: c.n * (Number(it.quantidade) || 0), fonte: cad ? 'cad' : 'pdf', arquivo: a.arquivo, rotulo: `${rotulo} (${c.n} por conjunto)` });
+            continue;
+          }
+          const codigo = typeof cod === 'function' ? cod(desc) : cod;
           entradas.push({ codigo, disciplina: discRegra, quantidade: Number(it.quantidade) || 0, fonte: cad ? 'cad' : 'pdf', arquivo: a.arquivo, rotulo });
         }
       }
@@ -850,9 +879,13 @@ function montarMateriaisDoDesenho(analises, vetoriais, catalogo) {
         (pontosPorDisc.get(disciplina) || pontosPorDisc.set(disciplina, []).get(disciplina)).push(it);
         const descricao = semMarcador(it.descricao).slice(0, 240);
         const corr = compararComCatalogo(descricao, catalogo);
-        materiais.push(base(descricao, it.quantidade, corr?.unidade_catalogo || 'un', disciplina, pag.origem === 'cad'
+        const qtdeLegenda = it.qtde_projeto ?? it.quantidadeLegenda;
+        const m = base(descricao, it.quantidade, corr?.unidade_catalogo || 'un', disciplina, pag.origem === 'cad'
           ? `Contado ${onde(pag)}: bloco "${it.bloco}" × ${it.quantidade} (${ORIGEM_DESCRICAO[it.origemDescricao] || 'descrição a conferir'}) — conferir.`
-          : `Contado ${onde(pag)}: símbolo da legenda × ${it.quantidade} — conferir na planta.`, fontePag(pag), corr));
+          : `Contado ${onde(pag)}: símbolo da legenda × ${it.quantidade}${qtdeLegenda != null && Number(qtdeLegenda) !== Number(it.quantidade) ? ` (a legenda diz ${qtdeLegenda})` : ''} — conferir na planta.`, fontePag(pag), corr);
+        // tabela da legenda com coluna de fornecedor (pdfVetorial): vai como referência do fabricante
+        if (it.fornecedor) m.referencia_fabricante = String(it.fornecedor).slice(0, 120);
+        materiais.push(m);
       }
     }
     // trechos: eletrocalha/perfilado/leito como antes (rota × 1,10); eletroduto e

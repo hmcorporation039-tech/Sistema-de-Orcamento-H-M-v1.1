@@ -284,10 +284,49 @@ caso('achados: quadro não lido, código repetido longe, quantidade ambígua e f
   // QTD da legenda × desenho (CAD: conferenciaLegenda; PDF: quantidadeLegenda no item) e xref de outra disciplina
   const dxf = A.achadosDoDesenho([{ arquivo: 'x.dxf' }], [[{ origem: 'cad', pagina: 'DXF', itens: [], conferenciaLegenda: [{ bloco: 'CFTV CAMERA', descricao: 'Câmera dome — bloco CFTV CAMERA', desenho: 15, legenda: 17 }],
     xrefsDeOutraDisciplina: [{ xref: 'E-COND', disciplina: 'eletrica', componentes: 432, metros: 713 }] }]]);
-  assert.match(dxf.find(a => /legenda diferente/.test(a.tema)).observacao, /Câmera dome: desenho 15, legenda 17/);
+  assert.match(dxf.find(a => /legenda diferente/.test(a.tema)).observacao, /Câmera dome: legenda diz 17, desenho contou 15/);
   assert.match(dxf.find(a => /xref/.test(a.tema)).observacao, /"E-COND".*432 componente/);
-  const pdf = A.achadosDoDesenho([{ arquivo: 'l.pdf' }], [[{ pagina: 1, itens: [sim('Luminária X', 10, { quantidadeLegenda: 12 }), sim('Luminária Y', 4, { quantidadeLegenda: 4 })] }]]);
-  assert.match(pdf.find(a => /legenda diferente/.test(a.tema)).observacao, /Luminária X: desenho 10, legenda 12$|Luminária X: desenho 10, legenda 12\./);
+  // CAD antigo: quantidadeLegenda; PDF (pdfVetorial 29b1aa7): qtde_projeto
+  const pdf = A.achadosDoDesenho([{ arquivo: 'l.pdf' }], [[{ pagina: 1, itens: [sim('Luminária X', 10, { quantidadeLegenda: 12 }), sim('Luminária Y', 4, { qtde_projeto: 6 }), sim('Luminária Z', 3, { qtde_projeto: 3 })] }]]);
+  const obs = pdf.find(a => /legenda diferente/.test(a.tema)).observacao;
+  assert.match(obs, /Luminária X: legenda diz 12, desenho contou 10/);
+  assert.match(obs, /Luminária Y: legenda diz 6, desenho contou 4/);
+  assert.ok(!/Luminária Z/.test(obs), 'igual à legenda: sem achado');
+});
+
+caso('pdfVetorial novo: página pulada com motivo, itens da legenda não contados, escala indefinida e fornecedor', () => {
+  const A = require('../src/utils/analiseProjetoAchados');
+  const paginas = [
+    { pagina: 1, ms: 900, escala: 50, avisoEscala: 'folha com 2 escalas (1:50, 1:25): trecho em vista sem escala não medido',
+      naoContados: [{ descricao: 'Arandela de parede', qtde_projeto: 4, codigo: 'L7', motivo: 'símbolo não encontrado na planta' }],
+      itens: [sim('LUMINÁRIA DE EMBUTIR 18 W', 12, { qtde_projeto: 12, fornecedor: 'FABRICANTE EXEMPLO', origem_legenda: 'tabela' }),
+        lin('Eletroduto embutido', null, { comprimento_pt: 4200, escala_indefinida_pt: 4200 })] },
+    { pagina: 2, itens: [], aviso: 'passou de 60 s — contagem pelo desenho não feita', pulada: { motivo: 'tempo', limite_s: 60 } },
+    { pagina: null, itens: [], aviso: 'páginas 16 a 18 não lidas (limite de 15 páginas por arquivo)', pulada: { motivo: 'limite_paginas', paginas: [16, 17, 18], limite: 15 } },
+  ];
+  const ach = A.achadosDoDesenho([{ arquivo: 'lum.pdf', textoPorPagina: Array(18).fill('x') }], [paginas], { maxPaginas: 15 });
+  const tema = (t) => ach.find(a => a.tema === t)?.observacao || '';
+  assert.match(tema('Contagem pelo desenho (PDF vetorial) incompleta'), /pág\. 2 \[passou do tempo-limite da página\]/);
+  assert.match(tema('Contagem pelo desenho (PDF vetorial) incompleta'), /\[além do limite de páginas lidas\] páginas 16 a 18/);
+  assert.ok(!ach.some(a => a.tema === 'Folhas do PDF não lidas pelo desenho'), 'o leitor já avisou: sem achado em dobro');
+  assert.match(tema('Itens da legenda sem contagem no desenho'), /Arandela de parede \(L7\): 4 previstos na legenda, nenhum nesta folha \(pág\. 1\)/);
+  assert.match(tema('Escala das vistas da folha'), /2 escalas/);
+  assert.match(tema('Contagem pelo desenho (PDF vetorial)'), /4200 pt \(folha com mais de uma escala/);
+  // fornecedor da tabela da legenda → referência do fabricante; luminária conta na mão de obra
+  const an = [analise('lum.pdf', ['iluminacao'])];
+  const m = I.montarMateriaisDoDesenho(an, [paginas], []);
+  assert.strictEqual(m.find(x => /EMBUTIR/.test(x.descricao)).referencia_fabricante, 'FABRICANTE EXEMPLO');
+  assert.strictEqual(I.contagemDoDesenho(an, [paginas]).ilum_luminaria_embutir.quantidade, 12);
+  // descrições de produto da tabela do luminotécnico (sem a palavra "luminária")
+  const lum = [[{ pagina: 1, itens: [sim('PRO EMBUTIDO REDONDO MICROBORDA RECUADO GU10 1X AR70 LED', 56), sim('PRO BALIZADOR WAY RING LED 1W 3000K', 6),
+    sim('PRO ESPETO LED 6W BIVOLT 3000K', 7), sim('PRO SPOT LED DE SOBREPOR 5W BIVOLT', 6), sim('PRO ARANDELA 2xMINI DIC GU10', 6), sim('CAIXA EMBUTIDA 4x2', 3)] }]];
+  const cl = I.contagemDoDesenho(an, lum);
+  assert.deepStrictEqual([cl.ilum_luminaria_embutir.quantidade, cl.ilum_luminaria_sobrepor.quantidade], [56, 25]);
+  // espelho com vários aparelhos: cada aparelho é um serviço
+  const ele = [analise('tom.pdf', ['eletrica'])];
+  const ce = I.contagemDoDesenho(ele, [[{ pagina: 1, itens: [sim('Interruptores — Espelho com 6 interruptores', 2), sim('Tomadas médias e tomada 20A — Espelho com 2 tomadas e 1 tomada 20A', 4),
+    sim('Interruptor e tomada média — Espelho com 1 interruptor e 1 tomada', 1), sim('Tomada baixa — Espelho com 1 tomada', 5)] }]]);
+  assert.deepStrictEqual([ce.ele_interruptor.quantidade, ce.ele_tomada_media.quantidade, ce.ele_tomada_baixa.quantidade], [13, 13, 5]);
 });
 
 caso('M8: ponte para as skills usa perímetro/polígono, dimensões do recinto e os quadros separados', () => {

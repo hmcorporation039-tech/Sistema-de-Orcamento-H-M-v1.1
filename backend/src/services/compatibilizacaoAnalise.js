@@ -90,8 +90,10 @@ async function carregarCatalogo() {
 // arquivos com `referencia: true` (arquitetura, estrutura, hidráulica,
 // climatização do pacote — 2.3): não são orçados; o DWG/DXF deles entra só na
 // compatibilização por posição e como base do 3D. PDF de referência não é lido.
-// folhas do PDF lidas pelo desenho (símbolos e metragens); as demais viram achado
-const MAX_PAGINAS_DESENHO = 6;
+// folhas do PDF lidas pelo desenho (símbolos e metragens); as demais viram achado.
+// A leitura tem tempo-limite por página e por arquivo, numa thread à parte
+// (utils/pdfVetorial.js) — o teto de folhas pode ser maior que os 6 de antes.
+const MAX_PAGINAS_DESENHO = 15;
 
 async function analisarProjetoCompleto(todosArquivos) {
   const arquivosRef = todosArquivos.filter(a => a.referencia);
@@ -256,7 +258,7 @@ async function analisarProjetoCompleto(todosArquivos) {
     totaisQuadro: a.totaisQuadro,
     listaMateriais: a.listaMateriais,
     esquadrias: a.esquadrias,
-    desenho: (vetoriais[i] || []).map(p => ({ pagina: p.pagina, escala: p.escala, ...(p.origem ? { origem: p.origem, nao_identificados: p.naoIdentificados } : {}), itens: p.itens.map(({ posicoes, ...it }) => it), ...(p.aviso ? { aviso: p.aviso } : {}), ...(p.folha ? { folha: p.folha.resumo, tipo_folha: p.folha.tipo } : {}), ...(p.ignorada ? { ignorada: p.ignorada } : {}) })),
+    desenho: (vetoriais[i] || []).map(p => ({ pagina: p.pagina, escala: p.escala, ...(p.origem ? { origem: p.origem, nao_identificados: p.naoIdentificados } : {}), itens: (p.itens || []).map(({ posicoes, ...it }) => it), ...(p.aviso ? { aviso: p.aviso } : {}), ...(p.folha ? { folha: p.folha.resumo, tipo_folha: p.folha.tipo } : {}), ...(p.ignorada ? { ignorada: p.ignorada } : {}), ...(p.pulada ? { pulada: p.pulada } : {}), ...(p.naoContados?.length ? { nao_contados: p.naoContados } : {}), ...(p.avisoEscala ? { aviso_escala: p.avisoEscala } : {}) })),
     ...(analises[i].origemCad ? { cad: analises[i].origemCad } : {}),
   }));
 
