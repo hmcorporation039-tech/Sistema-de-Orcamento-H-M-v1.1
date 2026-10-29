@@ -552,7 +552,8 @@ const OP = {
   porta: F.op(Object.entries(C.PORTA).map(([k, v]) => [k, v.rotulo])),
   tipoInsp: F.op([['fabricacao', 'Ensaios de rotina na fabricação'], ['recebimento', 'Recebimento na obra'], ['periodica', 'Inspeção periódica de quadro existente']]),
   resultado: F.op([['', '—'], ['aprovado', 'Aprovado'], ['reprovado', 'Reprovado']]),
-  fabricante: F.op([['', '— (padrão / típico)'], ...[...CAT.FABRICANTES].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(f => [f, f])]),
+  // texto livre com sugestões (tipo 'sugestao'): fabricante fora da lista cai na medida típica e vai para componentes_sem_medida
+  fabricante: F.op([...CAT.FABRICANTES].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(f => [f, f])),
   funcional: F.op([['', '—'], ['ok', 'OK'], ['falha', 'Falha']]),
 };
 
@@ -588,10 +589,10 @@ const FORMULARIO = [
   { titulo: '2.1 Fabricantes dos componentes', itens: [
     { tipo: 'nota', texto: 'Informe os fabricantes: o sistema escolhe o menor modelo de cada um que atende à especificação e usa as medidas OFICIAIS do catálogo (arranjo, invólucro, 3D). Sem registro do modelo, usa a medida típica e lista o item em "componentes sem medida" para buscar o datasheet. Fabricante ou referência por circuito/motor (colunas da tabela) têm prioridade.' },
     { tipo: 'grade', colunas: 4, campos: [
-      { caminho: 'fabricantes.padrao', rotulo: 'Fabricante padrão', tipo: 'selecao', opcoes: OP.fabricante },
+      { caminho: 'fabricantes.padrao', rotulo: 'Fabricante padrão', tipo: 'sugestao', opcoes: OP.fabricante },
       ...[['disjuntor_din', 'Disjuntores DIN'], ['dr', 'Interruptores DR'], ['ddr', 'Disjuntores DR'], ['dps', 'DPS'], ['disjuntor_caixa_moldada', 'Caixa moldada'], ['contator', 'Contatores'],
         ['disjuntor_motor', 'Disjuntores-motor'], ['soft_starter', 'Soft-starters'], ['inversor', 'Inversores'], ['fonte_24v', 'Fonte 24 Vcc'], ['clp_cpu', 'CLP (CPU)'], ['clp_modulo', 'Módulos de E/S'],
-        ['rele_interface', 'Relés de interface'], ['multimedidor', 'Multimedidor'], ['borne', 'Bornes']].map(([t, r]) => ({ caminho: `fabricantes.por_tipo.${t}`, rotulo: r, tipo: 'selecao', opcoes: OP.fabricante })),
+        ['rele_interface', 'Relés de interface'], ['multimedidor', 'Multimedidor'], ['borne', 'Bornes']].map(([t, r]) => ({ caminho: `fabricantes.por_tipo.${t}`, rotulo: r, tipo: 'sugestao', opcoes: OP.fabricante })),
     ] },
   ] },
   { titulo: '3. Circuitos (unifilar / quadro de cargas)', aberta: true, itens: [
@@ -605,7 +606,7 @@ const FORMULARIO = [
         { campo: 'disjuntor_a', rotulo: 'Disj. (A)', tipo: 'numero', largura: 70 }, { campo: 'curva', rotulo: 'Curva', tipo: 'selecao', opcoes: OP.curva, largura: 60 }, { campo: 'icu_ka', rotulo: 'Icu (kA)', tipo: 'numero', largura: 70 },
         { campo: 'dr', rotulo: 'DR', tipo: 'selecao', opcoes: OP.dr, largura: 150 }, { campo: 'dr_grupo', rotulo: 'Grupo DR', largura: 70 }, { campo: 'dr_ma', rotulo: 'IΔn (mA)', tipo: 'numero', largura: 70 },
         { campo: 'secao_mm2', rotulo: 'Cabo (mm²)', tipo: 'numero', largura: 70 }, { campo: 'local_dr', rotulo: 'Local 5.1.3.2.2', tipo: 'check', largura: 80 },
-        { campo: 'fabricante', rotulo: 'Fabricante', tipo: 'selecao', opcoes: OP.fabricante, largura: 150 }, { campo: 'referencia', rotulo: 'Referência', largura: 120 },
+        { campo: 'fabricante', rotulo: 'Fabricante', tipo: 'sugestao', opcoes: OP.fabricante, largura: 150 }, { campo: 'referencia', rotulo: 'Referência', largura: 120 },
       ] },
     { tipo: 'tabela', caminho: 'drs', rotuloAdicionar: 'Definir interruptor DR de grupo (opcional)',
       novaLinha: { id: 'DR{n}', in_a: null, idn_ma: 30, polos: null, tipo: 'AC' },
@@ -619,7 +620,7 @@ const FORMULARIO = [
         { campo: 'tag', rotulo: 'TAG', largura: 80 }, { campo: 'descricao', rotulo: 'Descrição' }, { campo: 'potencia', rotulo: 'Potência', tipo: 'numero', largura: 80 }, { campo: 'unidade', rotulo: 'Un.', tipo: 'selecao', opcoes: OP.unidade, largura: 70 },
         { campo: 'rendimento', rotulo: 'η', tipo: 'numero', largura: 60 }, { campo: 'fp', rotulo: 'FP', tipo: 'numero', largura: 60 }, { campo: 'in_placa_a', rotulo: 'In placa (A)', tipo: 'numero', largura: 80 }, { campo: 'ip_in', rotulo: 'Ip/In', tipo: 'numero', largura: 60 },
         { campo: 'tensao_placa', rotulo: 'Tensões de placa', largura: 90 }, { campo: 'partida', rotulo: 'Partida', tipo: 'selecao', opcoes: OP.partida, largura: 160 }, { campo: 'quantidade', rotulo: 'Qtd.', tipo: 'numero', largura: 60 }, { campo: 'secao_mm2', rotulo: 'Cabo (mm²)', tipo: 'numero', largura: 80 },
-        { campo: 'fabricante', rotulo: 'Fabricante', tipo: 'selecao', opcoes: OP.fabricante, largura: 150 }, { campo: 'referencia', rotulo: 'Referência (soft/inversor ou contator)', largura: 140 },
+        { campo: 'fabricante', rotulo: 'Fabricante', tipo: 'sugestao', opcoes: OP.fabricante, largura: 150 }, { campo: 'referencia', rotulo: 'Referência (soft/inversor ou contator)', largura: 140 },
       ] },
   ] },
   { titulo: '5. Automação (CLP, fonte, IHM, porta)', itens: [

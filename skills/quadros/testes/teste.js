@@ -128,6 +128,7 @@ igual('Automação: ocupação das canaletas ≤ 50 %', [...c2.layout.horizontai
         const cena = JSON.parse(html.match(/<script>window\.CENA=(.*?);document\.querySelectorAll/s)[1]);
         igual(`${nome}: cena tipo quadro com o invólucro do arranjo`, [cena.tipo, cena.involucro.A, cena.involucro.L, cena.involucro.P], ['quadro', res.calc.layout.involucro.altura, res.calc.layout.involucro.largura, res.calc.layout.involucro.profundidade]);
         igual(`${nome}: Q0 no 3D com as medidas do layout`, (() => { const q = cena.caixas.find(b => b.rotulo === 'Q0'); const k = res.calc.comps.lista.find(x => x.ref === 'Q0'); return !!q && q.l === k.largura && q.a === k.altura && q.p === k.prof; })(), true);
+        igual(`${nome}: 3D redesenha quando o navegador restaura o contexto WebGL`, html.includes("webglcontextrestored"), true);
         igual(`${nome}: camadas e peças clicáveis`, cena.camadas.length >= 8 && cena.caixas.filter(b => b.info).length > 10, true);
       } else {
         igual(`${nome}: ${tipo} é Office (zip)`, g.buffer.slice(0, 2).toString(), 'PK');
@@ -192,6 +193,13 @@ igual('Automação: ocupação das canaletas ≤ 50 %', [...c2.layout.horizontai
   igual('Automação com catálogo: o que ficou sem registro sai com medida típica', a3.comps.lista.find(k => k.ref === 'A90').medida.origem, 'tipica');
   igual('Automação com catálogo: bornes pela largura do fabricante', a3.born.find(g => g.id === 'X2').medidas.every(m => m.origem === 'catalogo'), true);
   igual('Automação com catálogo: memorial com a seção de medidas e aproveitamento', (() => { const ss = motor.secoesMemorial(comCat(automacao)); const s1 = ss.find(x => /^10\.1 /.test(x.titulo)); return !!s1 && s1.tabela.linhas.length > 30 && s1.paragrafos.some(p => /Comparação com as medidas típicas/.test(p)); })(), true);
+  // fabricante em texto livre (campo 'sugestao' do formulário)
+  igual('formulário: fabricantes em texto livre com sugestões (tipo sugestao)', [JSON.stringify(motor.formulario[2]).includes('"tipo":"sugestao"'), !JSON.stringify(motor.formulario).includes('"opcoes":[{"valor":"","rotulo":"— (padrão / típico)"}')], [true, true]);
+  igual('nome do fabricante sem diferenciar maiúsculas e acentos', CAT.selecionar(fixture, 'contator', 'weg', { ac3: 18 }).referencia, 'FX-CWM18');
+  const livre = comCat(predial, d => { d.circuitos[0].fabricante = 'Fabricante Regional Ltda'; }).calc;
+  const q1Livre = livre.comps.lista.find(k => k.ref === 'Q1');
+  igual('fabricante fora da lista: medida típica e item em componentes_sem_medida', [q1Livre.medida.origem, livre.componentes_sem_medida.map(x => [x.tag, x.fabricante])], ['tipica', [['Q1', 'Fabricante Regional Ltda']]]);
+  igual('fabricante fora da lista: especificação de busca com o nome digitado', /^Fabricante Regional Ltda disjuntor DIN 1P 10 A curva C 6 kA$/.test(livre.componentes_sem_medida[0].especificacao), true);
   igual('sem fabricantes: nada entra como "sem medida" e não há comparação', [r1.calc.componentes_sem_medida.length, r1.calc.comparacao], [0, undefined]);
   fim();
 })().catch(e => { console.log(`  FALHOU com erro: ${e.stack}`); process.exitCode = 1; });
