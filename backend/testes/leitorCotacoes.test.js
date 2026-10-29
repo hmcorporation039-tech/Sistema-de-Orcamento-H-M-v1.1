@@ -85,6 +85,9 @@ caso('componentes elétricos não caem em Ferragens/CFTV', () => {
   assert.strictEqual(classificarPorDescricao('CONTATOR DE ALARME TIPO HP'), 'Elétrica');
   assert.strictEqual(classificarPorDescricao('CAMERA IP DOME 2MP'), 'CFTV');
   assert.strictEqual(classificarPorDescricao('PARAFUSO SEXTAVADO 1/4'), 'Ferragens');
+  // a regex tinha um backspace no lugar de \b: cabo PP/solar ficava sem categoria
+  assert.strictEqual(classificarPorDescricao('CABO PP 3X2,5MM'), 'Elétrica');
+  assert.strictEqual(classificarPorDescricao('CABO SOLAR 6MM PRETO'), 'Elétrica');
 });
 
 caso('categorias da H&M: alarme, acesso, automação, interfonia e infraestrutura', () => {

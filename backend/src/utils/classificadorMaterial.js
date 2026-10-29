@@ -69,7 +69,7 @@ const CATEGORIAS = [
   },
   {
     nome: 'Elétrica',
-    regex: /disjuntor|contator|interruptor|tomada|cabo flex[ií]vel|cabo de alimenta[cç][aã]o|cabo de inc[eê]ndio|terminal pr[ée] ?isol|\bfio\b|\bdimmer\b|programador hor[aá]rio|quadro|\bdps\b|\brel[ée]\b|lumin[aá]ria|\blampada\b|\breator\b|^cb\b|\banilha\b|protetor (de )?surto|\bbarramento\b|\bbot[aã]o\b|bloco de contato|\bqdo\b|sinal led|fita isolante|painel led|\blux\b.*\bmod\b|trilho perf|prensa ?cabo|conector gen[eé]rico|cabo de cobre|cabo (solar|fotovoltaico|pp)|m[oó]dulo fotovoltaico|inversor (on-?grid|solar|fotovoltaico)|conectores? mc4|string ?box|placa de advert[eê]ncia/i,
+    regex: /disjuntor|contator|interruptor|tomada|cabo flex[ií]vel|cabo de alimenta[cç][aã]o|cabo de inc[eê]ndio|terminal pr[ée] ?isol|\bfio\b|\bdimmer\b|programador hor[aá]rio|quadro|\bdps\b|\brel[ée]\b|lumin[aá]ria|\blampada\b|\breator\b|^cb\b|\banilha\b|protetor (de )?surto|\bbarramento\b|\bbot[aã]o\b|bloco de contato|\bqdo\b|sinal led|fita isolante|painel led|\blux\b.*\bmod\b|trilho perf|prensa ?cabo|conector gen[eé]rico|cabo de cobre|cabo (solar|fotovoltaico|pp)\b|m[oó]dulo fotovoltaico|inversor (on-?grid|solar|fotovoltaico)|conectores? mc4|string ?box|placa de advert[eê]ncia/i,
   },
 ];
 
