@@ -12,6 +12,7 @@
 // Layers de arquitetura variam por escritório: nenhuma é obrigatória
 // (`opcoes.layersAmbiente`, regex, restringe a etapa 1).
 const { Helper } = require('dxf');
+const { classificarFolha, NAO_PLANTA } = require('./classificarPrancha');
 
 // $INSUNITS → fator para metros (0 = sem unidade: decide pelas portas/tamanho)
 const FATOR = { 1: 0.0254, 2: 0.3048, 4: 0.001, 5: 0.01, 6: 1 };
@@ -56,6 +57,13 @@ const RE_NAO_NOME = new RegExp([
   /^(SOBE|DESCE|S|D)$/, /^(ESC|ESCALA)\b/, /^(PLANTA|CORTE|FACHADA|DETALHE|PRANCHA|FOLHA|LEGENDA|NOTAS?|OBS)\b/, /^[\W_]+$/,
   // metadados de exportação Revit/IFC e nomes de família de mobiliário
   /^(?=\S*\d)[A-Za-z0-9$_]{16,}$/, /\b(chair|table|desk|sofa|bed|cabinet|shelf|lamp|plant|mod\. ref)\b/,
+  // vocabulário de quadro/diagrama elétrico: a etiqueta "QD-Térreo" ou o "DISJUNTOR 40A"
+  // dentro de uma célula de tabela virava "ambiente" (29/10/2026)
+  /^(QGBT|QDC|QDL|QDF|QDG|QDFL|QD|QL|QF|QM|CCM)\b[\s\-_.]*[\wÀ-ú\-.]*$/, /^(DISJ|DR\b|IDR\b|DPS\b|FASES?\b|NEUTRO\b|BARRAMENTO|CIRCUITO|CIRC\.|C\d{1,3}$|TUG\b|TUE\b)/,
+  /\b\d+(?:[.,]\d+)?\s*(kA|kVA|kW|mm²|mm2)\b/, /^\d+\s*A$/, /^\d+\s*[xX#]\s*\d+(?:[.,]\d+)?\s*mm/,
+  // etiqueta de ponto na planta elétrica ("IL 1", "TM", "TUG 3"), bitola de eletroduto
+  // ("2xø3/4\"") e cabeçalho de tabela ("Tipo de carga") também não são sala
+  /^(IL|TM|TH|TE|TUG|TUE)\b/, /[øØ]|%%c/, /^(TIPO DE CARGA|DESCRI[ÇC][ÃA]O|POT[ÊE]NCIA|QUANT|QTD)\b/,
 ].map(r => r.source).join('|'), 'i');
 const limparTexto = (s) => String(s || '').replace(/\\P/g, ' ').replace(/\{\\[^;]*;|\}|\\[A-Za-z][^;]*;|[{}]/g, '').replace(/\s+/g, ' ').trim();
 // "AUDITÓRIO ÁREA = 108m²" → "AUDITÓRIO"
@@ -70,15 +78,24 @@ const escolherNome = (ts) => nomeLimpo([...ts].sort((a, b) => (b.h - a.h) || (b.
 // INSERT e não desconta o ponto-base nos textos). Regra do AutoCAD: entidade
 // na layer "0" herda a layer do INSERT. Transformações em e.transforms, da mais
 // interna à externa.
+// Fora da planta (29/10/2026): o espaço do papel (layouts, com a folha, o
+// carimbo e as viewports) e as layers/blocos de diagrama, quadro, legenda,
+// carimbo e detalhe — o 3D "construía uma edificação" com o unifilar.
+const RE_LAYER_FORA_PLANTA = /UNIFILAR|TRIFILAR|MULTIFILAR|DIAGRAMA|ESQUEMA|QUADRO.?DE.?CARGA|TABELA|PLANILHA|LEGENDA|CARIMBO|\bSELO|MOLDURA|MARGEM|DETALHE|VIEWPORT|\bVPORT/i;
+const RE_BLOCO_FORA_PLANTA = /UNIFILAR|TRIFILAR|DIAGRAMA|ESQUEMA|QUADRO.?DE.?CARGA|LEGENDA|CARIMBO|\bSELO|MOLDURA|FOLHA.?A[0-4]\b|^A[0-4]$|DETALHE/i;
 function explodir(parsed) {
   const blocos = new Map((parsed.blocks || []).map(b => [b.name, b]));
   const out = [];
+  // DWG convertido de PDF às vezes traz tudo no espaço do papel: aí ele é o desenho
+  const temModelo = (parsed.entities || []).some(e => !e.paperSpace);
   const visitar = (ents, transforms, layerPai, prof) => {
     for (const e of ents) {
+      if (prof === 0 && e.paperSpace && temModelo) continue;
       const layer = layerPai && (!e.layer || e.layer === '0') ? layerPai : e.layer;
+      if (RE_LAYER_FORA_PLANTA.test(layer || '')) continue;
       if (e.type !== 'INSERT') { out.push({ ...e, layer, transforms }); continue; }
       const b = blocos.get(e.block);
-      if (!b || prof > 12) continue;
+      if (!b || prof > 12 || RE_BLOCO_FORA_PLANTA.test(e.block || '')) continue;
       const nl = Math.max(1, e.rowCount || 1), nc = Math.max(1, e.columnCount || 1);
       const rot = ((e.rotation || 0) * Math.PI) / 180;
       for (let r = 0; r < nl; r++) {
@@ -383,9 +400,30 @@ function lerArquitetura(textoDxf, opcoes = {}) {
   const ext = Math.max(pct(xs, 0.98) - pct(xs, 0.02), pct(ys, 0.98) - pct(ys, 0.02));
   const fator = decidirFator(parsed.header?.insUnits, arcos, tamanho, ext);
   const m = (pts) => pts.map(([x, y]) => [x * fator, y * fator]);
-  const textosM = textos.map(t => ({ ...t, x: t.x * fator, y: t.y * fator, h: t.h * fator })).filter(ehNome);
+  let textosTodos = textos.map(t => ({ ...t, x: t.x * fator, y: t.y * fator, h: t.h * fator }));
+  let refM = referencia.map(r => ({ ...r, pts: m(r.pts) }));
+  let arcosM = arcos.map(a => ({ ...a, pts: m(a.pts), centro: m([a.centro])[0], r: a.r * fator }));
+  let poligonosM = poligonos.map(p => ({ ...p, pts: m(p.pts) }));
 
-  const refM = referencia.map(r => ({ ...r, pts: m(r.pts) }));
+  // O que é planta e o que não é (./classificarPrancha.js): o que cai numa região de
+  // diagrama, quadro de cargas, legenda, detalhe ou carimbo — e não numa de planta — sai
+  // de tudo (ambientes, portas, paredes, referência). Desenho com várias vistas no
+  // espaço do modelo (planta + unifilar ao lado) era lido inteiro como planta.
+  const classificacao = opcoes.classificar === false ? null : classificarDesenho(refM, arcosM, textosTodos);
+  const regioesPlanta = (classificacao?.regioes || []).filter(r => r.tipo === 'planta').map(r => r.caixa);
+  if (classificacao) {
+    const fora = classificacao.regioes.filter(r => NAO_PLANTA.has(r.tipo)).map(r => r.caixa);
+    const dentroDe = (lista, [x, y]) => lista.some(c => x >= c[0] - 0.05 && x <= c[2] + 0.05 && y >= c[1] - 0.05 && y <= c[3] + 0.05);
+    const tira = (p) => dentroDe(fora, p) && !dentroDe(regioesPlanta, p);
+    const meio = (pts) => { const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]); return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2]; };
+    if (fora.length) {
+      refM = refM.filter(r => !tira(meio(r.pts)));
+      arcosM = arcosM.filter(a => !tira(a.centro));
+      poligonosM = poligonosM.filter(p => !tira(meio(p.pts)));
+      textosTodos = textosTodos.filter(t => !tira([t.x, t.y]));
+    }
+  }
+  const textosM = textosTodos.filter(ehNome);
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const r of refM) for (const [x, y] of r.pts) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
   const extensao = Number.isFinite(x0) ? { min: [x0, y0], max: [x1, y1] } : { min: [0, 0], max: [0, 0] };
@@ -393,13 +431,13 @@ function lerArquitetura(textoDxf, opcoes = {}) {
   // portas: segmentos retos (linhas e lados de polilinha) para achar a folha
   const retos = refM.filter(r => r.tipo !== 'arco');
   const segmentos = retos.flatMap(r => r.pts.slice(1).map((p, i) => [r.pts[i], p]));
-  const portas = detectarPortas(arcos.map(a => ({ ...a, pts: m(a.pts), centro: m([a.centro])[0], r: a.r * fator })), segmentos);
+  const portas = detectarPortas(arcosM, segmentos);
 
   // 1) cada texto de nome fica no MENOR polígono fechado que o contém (paredes
   // em linha dupla geram polígonos aninhados: o de dentro é o ambiente).
   // Polígono com 3+ portas bem no meio dele é moldura/contorno do prédio, não sala.
   const portasNoMeio = (pts) => portas.filter(p => dentro(p.meio, pts) && distanciaContorno(p.meio, pts) > 0.8).length;
-  const candidatos = poligonos.map(p => ({ ...p, pts: m(p.pts) }))
+  const candidatos = poligonosM
     .map(p => ({ ...p, area: areaPoligono(p.pts) }))
     .filter(p => p.area >= (opcoes.areaMinima ?? 1) && p.area <= (opcoes.areaMaxima ?? 5000) && portasNoMeio(p.pts) < 3);
   const nomes = new Map(); // índice do polígono → textos
@@ -420,7 +458,10 @@ function lerArquitetura(textoDxf, opcoes = {}) {
     const layers = [...new Set(retos.map(r => r.layer))];
     const deParede = layers.filter(l => RE_PAREDE.test(l || ''));
     const usar = deParede.length ? new Set(deParede) : new Set(layers.filter(l => !RE_NAO_PAREDE.test(l || '')));
-    const segParede = retos.filter(r => usar.has(r.layer)).flatMap(r => [...r.pts.slice(1).map((p, i) => [r.pts[i], p]), ...(r.fechada ? [[r.pts.at(-1), r.pts[0]]] : [])]);
+    // sem layer de parede (tudo que não é anotação vira parede): só o que está na região de
+    // planta, quando a folha tem uma — senão o unifilar ao lado virava "sala"
+    const naPlanta = (r) => deParede.length || !regioesPlanta.length || r.pts.some(([x, y]) => regioesPlanta.some(c => x >= c[0] && x <= c[2] && y >= c[1] && y <= c[3]));
+    const segParede = retos.filter(r => usar.has(r.layer) && naPlanta(r)).flatMap(r => [...r.pts.slice(1).map((p, i) => [r.pts[i], p]), ...(r.fechada ? [[r.pts.at(-1), r.pts[0]]] : [])]);
     // segmento da folha da porta não é parede (não divide a sala)
     const folha = (s) => portas.some(p => (dist(s[0], p.dobradica) < 0.08 || dist(s[1], p.dobradica) < 0.08) && Math.min(dist(s[0], p.dobradica), dist(s[1], p.dobradica)) < 0.08 && Math.abs(dist(s[0], s[1]) - p.largura_m / (p.dupla ? 2 : 1)) < 0.1);
     ambientes.push(...ambientesPorParedes(segParede.filter(s => !folha(s)), portas, soltos, opcoes));
@@ -428,7 +469,33 @@ function lerArquitetura(textoDxf, opcoes = {}) {
   ambientes.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }));
   associarPortas(portas, ambientes);
 
-  return { ambientes, portas, referencia: refM, extensao, fatorUnidade: fator, layers: [...new Set(ents.map(e => e.layer))] };
+  return {
+    ambientes, portas, referencia: refM, extensao, fatorUnidade: fator, layers: [...new Set(ents.map(e => e.layer))],
+    // classificação da folha (planta × diagrama × tabela…) e as caixas de planta, em metros
+    classificacao: classificacao && { tipo: classificacao.tipo, resumo: classificacao.resumo, temPlanta: classificacao.temPlanta, semPlanta: classificacao.semPlanta, misto: classificacao.misto, regioes: classificacao.regioes.map(({ caixa, tipo, rotulo, titulo, confianca, motivos }) => ({ caixa, tipo, rotulo, titulo, confianca, motivos })) },
+    regioesPlanta,
+  };
+}
+
+// Desenho (já em metros) → folha do classificador (./classificarPrancha.js).
+// Caixa pelos percentis 1–99 % (entidade perdida longe do desenho não estica a folha).
+function classificarDesenho(refM, arcosM, textosM) {
+  const segmentos = [];
+  for (const r of refM) {
+    if (r.tipo === 'arco') continue;
+    for (let i = 1; i < r.pts.length; i++) segmentos.push({ a: r.pts[i - 1], b: r.pts[i], layer: r.layer });
+    if (r.fechada && r.pts.length >= 3) segmentos.push({ a: r.pts.at(-1), b: r.pts[0], layer: r.layer });
+  }
+  if (segmentos.length < 4) return null;
+  const xs = segmentos.flatMap(s => [s.a[0], s.b[0]]).sort((a, b) => a - b), ys = segmentos.flatMap(s => [s.a[1], s.b[1]]).sort((a, b) => a - b);
+  const q = (v, f) => v[Math.min(v.length - 1, Math.floor(f * v.length))];
+  const caixa = [q(xs, 0.01), q(ys, 0.01), q(xs, 0.99), q(ys, 0.99)];
+  if (!(caixa[2] > caixa[0]) || !(caixa[3] > caixa[1])) return null;
+  return classificarFolha({
+    caixa, yParaBaixo: false, metrosPorUnidade: 1, raioPorta: [0.55, 1.25], espessuraParede: [0.07, 0.4], segmentos,
+    arcos: arcosM.map(a => ({ centro: a.centro, r: a.r, varredura: a.varredura, a: a.pts[0], b: a.pts.at(-1), layer: a.layer })),
+    textos: textosM.map(t => ({ s: t.s, x: t.x, y: t.y, h: t.h })),
+  });
 }
 
 module.exports = { lerArquitetura, areaPoligono, perimetro, dentro, centroide, distanciaContorno, transformar, RE_PAREDE, RE_NAO_PAREDE };

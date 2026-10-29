@@ -30,7 +30,8 @@ const TEMPO_LIMITE_MS = 90 * 1000;
 const { CAD } = require('../../config/caminhos');
 function versaoDoGerador() {
   try {
-    return ['modelo3d.js', 'estimativaArquitetura.js', 'visualizador3d.js', path.join('visualizador3d', 'app.bundle.js')]
+    // arquitetura.js e classificarPrancha.js decidem o que é planta (29/10/2026): mudou, refaz
+    return ['modelo3d.js', 'estimativaArquitetura.js', 'arquitetura.js', 'classificarPrancha.js', 'visualizador3d.js', path.join('visualizador3d', 'app.bundle.js')]
       .map(f => fs.statSync(path.join(CAD, f)).mtimeMs).join('|');
   } catch { return 'sem-gerador'; }
 }

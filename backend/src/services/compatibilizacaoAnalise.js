@@ -6,7 +6,7 @@
 // em utils/analiseProjetoItens.js (serviços e materiais) e
 // utils/analiseProjetoAchados.js (achados).
 const pool = require('../config/database');
-const { analisarProjeto } = require('../utils/projetoParser');
+const { analisarProjeto, extrairAmbientes } = require('../utils/projetoParser');
 const { extrairEquipamentosComIA } = require('./equipamentoExtratorIA');
 const { calcularPontosPorAmbiente } = require('../utils/pontosPorAmbiente');
 const { buscarReferencias, valorSugerido, segmentoPorNomeDoCliente } = require('./precosMaoDeObraReferencia');
@@ -18,7 +18,7 @@ const {
   montarMateriais, montarPontosPorAmbiente, montarMateriaisQuantitativos, montarMateriaisDaLista, montarMateriaisDoDesenho,
   semDuplicarFontes,
 } = require('../utils/analiseProjetoItens');
-const { detalhePorArquivo, gerarAchados, achadosDoDesenho } = require('../utils/analiseProjetoAchados');
+const { detalhePorArquivo, gerarAchados, achadosDoDesenho, achadosDasFolhas } = require('../utils/analiseProjetoAchados');
 
 // Roda `fn` sobre a lista com no máximo `n` ao mesmo tempo, na ordem: um pacote
 // de 30 arquivos não abre 30 conversões de DWG nem 30 chamadas de IA de uma vez
@@ -96,16 +96,28 @@ async function analisarProjetoCompleto(todosArquivos) {
   const analisesBrutas = await emLotes(arquivos, 3, ({ buffer, nomeArquivo }, i) => (cads[i] ? cads[i].analise : analisarProjeto(buffer, nomeArquivo)));
   const analises = analisesBrutas.map((a, i) => ({ ...a, disciplinas: arquivos[i].disciplinas }));
 
-  // Distribuição de pontos por ambiente: aproximada (ver pontosPorAmbiente.js)
-  // e por isso isolada num Promise.all com catch por arquivo — uma falha aqui
-  // nunca deve derrubar a análise inteira, já que o resto dela (totais,
-  // serviços, materiais) não depende disso.
-  const pontosPorAmbienteBrutos = await emLotes(arquivos, 3, ({ buffer }, i) => (cads[i] ? cads[i].pontosPorAmbiente : calcularPontosPorAmbiente(buffer).catch(() => [])));
-  // geometria do desenho (símbolos/linhas pela legenda): mesma regra, falha não derruba
+  // geometria do desenho (símbolos/linhas pela legenda), com a classificação de
+  // cada folha (planta × unifilar × quadro de cargas — utils/classificarPranchaPdf.js);
+  // falha não derruba a análise
   const vetoriais = await emLotes(analises, 3, (a, i) => (cads[i] ? [cads[i].pagina] : a.semTexto ? [] : lerPdfVetorial(arquivos[i].buffer, { maxPaginas: 6 }).catch((e) => {
     console.warn(`[analise] leitura vetorial de "${a.arquivo}" falhou:`, e.message);
     return [{ pagina: null, itens: [], legenda: null, escala: null, aviso: `leitura do desenho falhou (${e.message}) — conferir na planta` }];
   })));
+  // folhas que não são planta (só unifilar, quadro de cargas, tabela): fora dos
+  // ambientes e dos pontos por ambiente. Os ambientes saem só das outras folhas
+  // ("A= 12,5m²" de um quadro de áreas na folha do quadro não é sala desenhada).
+  const naoPlanta = vetoriais.map(v => new Set((v || []).filter(p => p.folha?.semPlanta && p.pagina).map(p => p.pagina)));
+  analises.forEach((a, i) => {
+    if (!naoPlanta[i].size || !a.textoPorPagina?.length) return;
+    const textoDaPlanta = a.textoPorPagina.filter((_, k) => !naoPlanta[i].has(k + 1)).join('\n');
+    a.ambientes = extrairAmbientes(textoDaPlanta);
+  });
+
+  // Distribuição de pontos por ambiente: aproximada (ver pontosPorAmbiente.js)
+  // e por isso isolada num Promise.all com catch por arquivo — uma falha aqui
+  // nunca deve derrubar a análise inteira, já que o resto dela (totais,
+  // serviços, materiais) não depende disso.
+  const pontosPorAmbienteBrutos = await emLotes(arquivos, 3, ({ buffer }, i) => (cads[i] ? cads[i].pontosPorAmbiente : calcularPontosPorAmbiente(buffer, { paginasIgnoradas: naoPlanta[i] }).catch(() => [])));
 
   // Disciplina "efetiva" da análise inteira = união das tags de todos os
   // arquivos — decide quais itens-modelo de serviço/material aparecem.
@@ -133,6 +145,7 @@ async function analisarProjetoCompleto(todosArquivos) {
 
   const achados = gerarAchados(analises);
   achados.push(...achadosDoDesenho(analises, vetoriais));
+  achados.push(...achadosDasFolhas(analises, vetoriais));
 
   // compatibilização por posição entre os DWG/DXF (de projeto e de referência)
   const paraCompat = [
@@ -207,7 +220,7 @@ async function analisarProjetoCompleto(todosArquivos) {
     totaisQuadro: a.totaisQuadro,
     listaMateriais: a.listaMateriais,
     esquadrias: a.esquadrias,
-    desenho: (vetoriais[i] || []).map(p => ({ pagina: p.pagina, escala: p.escala, ...(p.origem ? { origem: p.origem, nao_identificados: p.naoIdentificados } : {}), itens: p.itens.map(({ posicoes, ...it }) => it), ...(p.aviso ? { aviso: p.aviso } : {}) })),
+    desenho: (vetoriais[i] || []).map(p => ({ pagina: p.pagina, escala: p.escala, ...(p.origem ? { origem: p.origem, nao_identificados: p.naoIdentificados } : {}), itens: p.itens.map(({ posicoes, ...it }) => it), ...(p.aviso ? { aviso: p.aviso } : {}), ...(p.folha ? { folha: p.folha.resumo, tipo_folha: p.folha.tipo } : {}), ...(p.ignorada ? { ignorada: p.ignorada } : {}) })),
     ...(analises[i].origemCad ? { cad: analises[i].origemCad } : {}),
   }));
 
@@ -232,9 +245,10 @@ async function analisarProjetoCompleto(todosArquivos) {
     materiais,
     dadosExtraidos,
     // arquitetura do primeiro DWG/DXF com ambientes: guardada na análise (base do 3D)
-    // de preferência o desenho de referência da compatibilização (as marcações caem nele)
-    arquiteturaCad: [...cadsRef, ...cads].find(c => c?.arquitetura && c.arquitetura.nome_arquivo === compat.referencia)?.arquitetura
-      || [...cadsRef, ...cads].find(c => c?.arquitetura)?.arquitetura || null,
+    // de preferência o desenho de referência da compatibilização (as marcações caem nele).
+    // Só desenho com planta (o DWG do unifilar/quadro não é base do 3D — 29/10/2026)
+    arquiteturaCad: [...cadsRef, ...cads].find(c => c?.arquitetura?.planta && c.arquitetura.nome_arquivo === compat.referencia)?.arquitetura
+      || [...cadsRef, ...cads].find(c => c?.arquitetura?.planta)?.arquitetura || null,
     conflitos: compat.conflitos,
     espacial: compat.espacial || null,
     compatibilizacao: { referencia: compat.referencia, grupos: compat.grupos },

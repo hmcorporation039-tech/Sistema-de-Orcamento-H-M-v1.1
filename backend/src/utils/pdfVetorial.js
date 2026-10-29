@@ -318,7 +318,12 @@ function descricaoCompleta(entrada, textos, inicios) {
 }
 
 // ── 4) Página → itens da legenda com contagem e metragem ─────────────────
-function analisarGeometria({ caminhos, textos, largura, altura }, { escala } = {}) {
+// `regioesFora` ([[x0, y0, x1, y1]] em pontos): regiões da folha que não são planta
+// (diagrama unifilar, vista de quadro, quadro de cargas, carimbo — utils/classificarPranchaPdf.js):
+// o símbolo e a linha que caem nelas não são contados (o disjuntor do unifilar
+// parecia a tomada da legenda).
+function analisarGeometria({ caminhos, textos, largura, altura }, { escala, regioesFora = [] } = {}) {
+  const foraDaPlanta = (caixa) => regioesFora.some(r => dentroDe(r, caixa));
   const blobs = simbolos(caminhos);
   // candidatos a amostra de legenda: símbolo com descrição à direita
   const candSimb = [];
@@ -377,7 +382,7 @@ function analisarGeometria({ caminhos, textos, largura, altura }, { escala } = {
   for (const e of porDesc.values()) {
     e.desc = { ...e.desc, texto: e.texto };
     if (e.tipo === 'simbolo') {
-      const ocorr = blobs.filter(b => b !== e.blob && parecido(b, e.blob) && !naLegenda(b.caixa));
+      const ocorr = blobs.filter(b => b !== e.blob && parecido(b, e.blob) && !naLegenda(b.caixa) && !foraDaPlanta(b.caixa));
       itens.push({
         tipo: 'simbolo', descricao: e.desc.texto, quantidade: ocorr.length,
         assinatura: { cor: e.blob.chave.slice(1).split('|')[0], preenchido: e.blob.chave[0] === 'F', largura_pt: +e.blob.w.toFixed(1), altura_pt: +e.blob.h.toFixed(1) },
@@ -386,7 +391,7 @@ function analisarGeometria({ caminhos, textos, largura, altura }, { escala } = {
     } else {
       let comp = 0, n = 0;
       for (const c of caminhos) {
-        if (!c.traco || `${c.stroke}|${c.lw}|${c.dash}` !== e.estilo || naLegenda(c.caixa)) continue;
+        if (!c.traco || `${c.stroke}|${c.lw}|${c.dash}` !== e.estilo || naLegenda(c.caixa) || foraDaPlanta(c.caixa)) continue;
         comp += c.comp; n++;
       }
       itens.push({
@@ -413,6 +418,10 @@ const MAX_CAMINHOS_PAGINA = 50000;
 // metros (linhas). `paginas`: limita (padrão: até 10). PDF só com imagem → vazio.
 // Página com traços demais ou que falhe na análise volta com `aviso` (e sem
 // itens) em vez de derrubar as outras.
+// Cada página volta também com `folha` (utils/classificarPranchaPdf.js: planta,
+// diagrama unifilar, quadro de cargas…). Página sem planta (só unifilar, quadro,
+// tabela) não é contada (`ignorada`); na folha mista, a contagem é só fora do
+// unifilar, da vista do quadro, da tabela e do carimbo.
 async function lerPdfVetorial(buffer, { paginas, escala, maxPaginas = 10, maxCaminhos = MAX_CAMINHOS_PAGINA } = {}) {
   const { getDocument, OPS } = await pdfjs();
   const doc = await getDocument({ data: new Uint8Array(buffer), isEvalSupported: false, verbosity: 0, disableFontFace: true }).promise;
@@ -421,14 +430,24 @@ async function lerPdfVetorial(buffer, { paginas, escala, maxPaginas = 10, maxCam
     const saida = [];
     for (const n of lista) {
       const pag = await doc.getPage(n);
-      const geo = await lerPagina(pag, OPS);
+      // conta antes de ler: página pesada nem monta a geometria (que ocupa memória por traço)
+      const ops = await pag.getOperatorList();
+      const pesada = ops.fnArray.filter(f => f === OPS.constructPath).length > maxCaminhos;
+      const geo = await lerPagina(pag, OPS, { geometria: !pesada, ops });
       let r = { itens: [], legenda: null, escala: null };
+      let folha = null;
+      if (!pesada && geo.caminhos.length) {
+        try { folha = resumoDaFolha(classificarPaginaPdf(geo, { escala })); } catch (e) { console.warn(`[pdfVetorial] classificação da página ${n} falhou:`, e.message); }
+        for (const c of geo.caminhos) delete c.subs; // a contagem não usa os trechos: libera a memória
+      }
       if (geo.caminhos.length > maxCaminhos) {
         r.aviso = `página com ${geo.caminhos.length.toLocaleString('pt-BR')} traços (limite ${maxCaminhos.toLocaleString('pt-BR')}): contagem pelo desenho não feita — conferir na planta`;
+      } else if (folha?.semPlanta) {
+        r.ignorada = `${folha.resumo} — sem contagem de símbolos (não é planta)`;
       } else if (geo.caminhos.length) {
-        try { r = analisarGeometria(geo, { escala }); } catch (e) { r.aviso = `falha ao ler o desenho (${e.message}) — conferir na planta`; }
+        try { r = analisarGeometria(geo, { escala, regioesFora: folha?.regioesFora || [] }); } catch (e) { r.aviso = `falha ao ler o desenho (${e.message}) — conferir na planta`; }
       }
-      saida.push({ pagina: n, caminhos: geo.caminhos.length, ...r });
+      saida.push({ pagina: n, caminhos: geo.caminhos.length, ...r, ...(folha ? { folha: { tipo: folha.tipo, resumo: folha.resumo, temPlanta: folha.temPlanta, semPlanta: folha.semPlanta, misto: folha.misto } } : {}) });
       pag.cleanup();
     }
     return saida;
@@ -436,5 +455,16 @@ async function lerPdfVetorial(buffer, { paginas, escala, maxPaginas = 10, maxCam
     await doc.destroy();
   }
 }
+
+// classificação → o que a análise guarda: tipo, resumo e as regiões a não contar
+const CONTAGEM_FORA = new Set(['diagrama', 'vista_quadro', 'quadro_cargas', 'carimbo']);
+function resumoDaFolha(c) {
+  return {
+    tipo: c.tipo, resumo: c.resumo, temPlanta: c.temPlanta, semPlanta: c.semPlanta, misto: c.misto,
+    regioesFora: c.regioes.filter(r => CONTAGEM_FORA.has(r.tipo)).map(r => r.caixa),
+  };
+}
+// carregada na hora (utils/classificarPranchaPdf.js usa escalaDoCarimbo daqui)
+const classificarPaginaPdf = (...a) => require('./classificarPranchaPdf').classificarPaginaPdf(...a);
 
 module.exports = { lerPdfVetorial, analisarGeometria, simbolos, escalaDoCarimbo, paraTestes: { textoAoLado, regioesLegenda, lerPagina, pdfjs, uniaoBusca } };

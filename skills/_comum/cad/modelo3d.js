@@ -61,9 +61,16 @@ const distCaixas = (a, b) => Math.hypot(Math.max(0, a[0] - b[2], b[0] - a[2]), M
 function regiaoDoModelo(arquitetura) {
   const validos = arquitetura.ambientes.filter(ehAmbienteValido).map(a => ({ ...a, tipo: tipoDoAmbiente(a.nome), caixa: caixaDe(a.poligono) }));
   const internos = validos.filter(a => a.tipo !== 'externo');
-  const base = internos.length ? internos : validos;
+  let base = internos.length ? internos : validos;
+  // com região de planta identificada, o grupo de ambientes sai dela (não do maior
+  // grupo da folha, que pode ser uma tabela cheia de células com texto)
+  const naPlanta = base.filter(a => (arquitetura.regioesPlanta || []).some(c => naCaixa(expandir(c, 0.3), centroide(a.poligono))));
+  if (naPlanta.length) base = naPlanta;
   if (!base.length) {
-    // sem ambientes: miolo do desenho (percentis 5–95 % das entidades)
+    // sem ambientes: a região classificada como planta (./classificarPrancha.js) — ou,
+    // sem ela, o miolo do desenho (percentis 5–95 % das entidades)
+    const plantas = arquitetura.regioesPlanta || [];
+    if (plantas.length) return { caixa: expandir(plantas.reduce(uniao), 0.5), ambientes: [] };
     const xs = arquitetura.referencia.map(r => r.pts[0][0]).sort((a, b) => a - b), ys = arquitetura.referencia.map(r => r.pts[0][1]).sort((a, b) => a - b);
     const q = (v, f) => v[Math.min(v.length - 1, Math.floor(f * v.length))] ?? 0;
     return { caixa: [q(xs, 0.05), q(ys, 0.05), q(xs, 0.95), q(ys, 0.95)], ambientes: [] };
@@ -144,9 +151,14 @@ function subtrair(A, B) {
 const ALTURA_CLASSE = { mureta: PEITORIL, media: 1.6, guarda: 1.1 };
 
 function extrairElementos(arquitetura, caixa, peDireito) {
-  const refs = arquitetura.referencia.filter(r => r.pts.length >= 2 && r.pts.some(p => naCaixa(caixa, p)));
+  let refs = arquitetura.referencia.filter(r => r.pts.length >= 2 && r.pts.some(p => naCaixa(caixa, p)));
   const layers = [...new Set(refs.map(r => r.layer))];
   const haParede = layers.some(l => RE_PAREDE.test(l || '') && !RE_JANELA.test(l || ''));
+  // sem layer de parede, "tudo que não é anotação vira parede" — mas só dentro da
+  // região classificada como planta (./classificarPrancha.js): o unifilar, a tabela
+  // e a legenda da mesma folha não sobem como parede
+  const plantas = arquitetura.regioesPlanta || [];
+  if (!haParede && plantas.length) refs = refs.filter(r => r.pts.some(p => plantas.some(c => naCaixa(expandir(c, 0.3), p))));
   const classe = new Map(layers.map(l => [l, classeDaLayer(l, haParede)]));
   const portas = (arquitetura.portas || []).filter(p => naCaixa(caixa, p.meio));
 

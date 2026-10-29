@@ -1,6 +1,6 @@
 const { quadroDeCargas, totaisQuadro, listaMateriais, carimbo, detectarDisciplinas } = require('./leitoresTabelaProjeto');
 // texto do PDF: leitura única em utils/leitorPdf.js
-const { textoDoPdf: extrairTexto } = require('./leitorPdf');
+const { textoDoPdf: extrairTexto, textoEPaginasDoPdf } = require('./leitorPdf');
 
 // Ambientes/salas do projeto: o CAD exporta cada rótulo "NOME DA SALA" em uma
 // ou mais linhas, seguido de uma linha "A= NN,NNm²" com a área. Junta até 3
@@ -171,8 +171,11 @@ function extrairTabelaQuantitativa(texto) {
 // abaixo (services/equipamentoExtratorIA.js) — validado como confiável porque é
 // reformatação de texto já dado a ele, não leitura livre do PDF.
 
+// `textoPorPagina`: o texto de cada folha, para a análise refazer os ambientes só
+// com as folhas de planta (sem o quadro de cargas e o unifilar — 29/10/2026)
 async function analisarProjeto(buffer, nomeArquivo) {
-  return analisarTexto(await extrairTexto(buffer), nomeArquivo);
+  const { texto, paginas } = await textoEPaginasDoPdf(buffer);
+  return { ...analisarTexto(texto, nomeArquivo), textoPorPagina: paginas };
 }
 
 // Os leitores de texto, sobre o texto já extraído — do PDF ou remontado do

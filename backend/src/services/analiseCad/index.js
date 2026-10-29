@@ -144,7 +144,17 @@ async function lerArquivoCad(buffer, nome) {
   const itens = [];
   const naoIdentificados = [];
   const outraArea = [];
-  for (const g of p.simbolos.filter(s => !s.fora)) {
+  // bloco dentro do unifilar, da vista do quadro ou da tabela não é ponto da obra
+  // (o disjuntor desenhado no diagrama não é uma tomada a mais) — 29/10/2026
+  const folha = r.arquitetura?.folha || null;
+  const regioesFora = folha?.regioesFora || [];
+  const naPlanta = ([x, y]) => !regioesFora.some(c => x >= c[0] && x <= c[2] && y >= c[1] && y <= c[3]);
+  const simbolosDaPlanta = p.simbolos.map(g => {
+    if (!regioesFora.length || g.posicoes.length !== g.quantidade) return g;
+    const posicoes = g.posicoes.filter(naPlanta);
+    return posicoes.length === g.posicoes.length ? g : { ...g, posicoes, quantidade: posicoes.length };
+  }).filter(g => g.quantidade > 0);
+  for (const g of simbolosDaPlanta.filter(s => !s.fora)) {
     const d = descreverSimbolo(g);
     if (d.outraArea) { outraArea.push(g); continue; }
     if (!d.descricao || !d.disciplina) { naoIdentificados.push({ bloco: g.nomeLimpo, layer: g.layers.join(', '), quantidade: g.quantidade }); continue; }
@@ -182,11 +192,14 @@ async function lerArquivoCad(buffer, nome) {
   analise.origemCad = { formato: r.origem, versao: r.versao, legenda: p.legenda };
   const pagina = {
     pagina: r.origem === 'dwg' ? 'DWG' : 'DXF', origem: 'cad', escala: null, legenda: p.legenda,
+    ...(folha ? { folha: { tipo: folha.tipo, resumo: folha.resumo, temPlanta: folha.temPlanta, semPlanta: folha.semPlanta } } : {}),
     itens, naoIdentificados, outraArea: outraArea.reduce((s, g) => s + g.quantidade, 0),
     ...(vazio ? { aviso: 'o desenho não tem texto nem blocos (parece um PDF convertido em DWG, só com traços) — envie o PDF do projeto' } : {}),
   };
   const arquitetura = r.arquitetura?.ambientes?.length ? {
     nome_arquivo: nome, dxf: r.dxf,
+    // base do 3D só se o desenho tem planta (services/compatibilizacaoAnalise.js)
+    planta: !folha?.semPlanta,
     resumo: {
       ambientes: r.arquitetura.ambientes.map(a => ({ nome: a.nome, area_m2: a.area_m2, perimetro_m: a.perimetro_m, origem: a.origem })),
       portas: r.arquitetura.portas, layers: r.arquitetura.layers, fatorUnidade: r.arquitetura.fatorUnidade, origem: r.origem,

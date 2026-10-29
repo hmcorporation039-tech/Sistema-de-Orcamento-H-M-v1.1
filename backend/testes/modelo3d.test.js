@@ -25,6 +25,46 @@ function dxfSintetico() {
   return g.toString().replace(/(\$INSUNITS\r?\n\s*70\r?\n\s*)6/, '$14');
 }
 
+// (d) o mesmo desenho com um diagrama unifilar e um quadro de cargas ao lado (29/10/2026):
+// `layer` 'UNIFILAR' (o desenhista separou) ou tudo numa layer só, sem layer de parede
+// (o classificador da folha é que separa a planta do diagrama)
+function dxfComUnifilar(layerUnifilar, { tudoNumaLayer = false } = {}) {
+  const lp = tudoNumaLayer ? 'DESENHO' : 'A-PAREDE', lt = tudoNumaLayer ? 'DESENHO' : 'A-TEXTO';
+  const g = new DesenhoDxf({ layers: [{ nome: lp, cor: 8 }, { nome: lt, cor: 7 }, { nome: layerUnifilar, cor: 1 }] });
+  const L = (x1, y1, x2, y2, l = lp) => g.linha(x1, y1, x2, y2, l);
+  [[0, 0, 8000, 0], [8000, 0, 8000, 5000], [8000, 5000, 0, 5000], [0, 5000, 0, 0],
+    [-150, -150, 8150, -150], [8150, -150, 8150, 5150], [8150, 5150, -150, 5150], [-150, 5150, -150, -150],
+    [5000, 0, 5000, 1200], [5000, 2000, 5000, 5000], [5150, 0, 5150, 1200], [5150, 2000, 5150, 5000], [5000, 1200, 5150, 1200], [5000, 2000, 5150, 2000]].forEach(l => L(...l));
+  g.bloco('PORTA80', (b) => { b.addLine(point3d(0, 0), point3d(800, 0), { layerName: '0' }); b.addArc(point3d(0, 0), 800, 0, 90, { layerName: '0' }); });
+  g.dxf.addInsert('PORTA80', point3d(5000, 2000), { layerName: lp, rotationAngle: 180 });
+  g.texto(2500, 2500, 200, 'SALA DE ESTAR', { layer: lt });
+  g.texto(6500, 2500, 200, 'COZINHA', { layer: lt });
+  // unifilar a 4 m da planta: barramento, 12 saídas com disjuntor (arco) e texto do circuito
+  const U = (x1, y1, x2, y2) => L(x1, y1, x2, y2, layerUnifilar);
+  const ux = 12000, uy = 0;
+  U(ux, uy, ux, uy + 12 * 400);
+  for (let i = 0; i < 12; i++) {
+    const y = uy + 200 + i * 400;
+    U(ux, y, ux + 3000, y);
+    g.dxf.addArc(point3d(ux + 1000, y), 100, 0, 180, { layerName: layerUnifilar });
+    g.texto(ux + 3050, y + 30, 120, `C${i + 1} 2x2,5mm² DISJ 20A`, { layer: layerUnifilar });
+  }
+  // contorno do quadro em polilinha fechada (vira "ambiente" se ninguém separar)
+  g.polilinha([[ux - 300, uy - 300], [ux + 5000, uy - 300], [ux + 5000, uy + 5100], [ux - 300, uy + 5100]], { layer: layerUnifilar, fechada: true });
+  g.texto(ux, uy - 700, 250, 'DIAGRAMA UNIFILAR - QDC', { layer: layerUnifilar });
+  // quadro de cargas: células fechadas com o texto dentro (cada uma "seria" um ambiente)
+  const tx = 12000, ty = -6000;
+  ['CIRCUITO', 'DESCRIÇÃO', 'POTÊNCIA'].forEach((t, k) => g.texto(tx + 50 + k * 2000, ty + 10 * 500 + 150, 150, t, { layer: layerUnifilar }));
+  for (let i = 0; i < 10; i++) {
+    for (let k = 0; k < 3; k++) g.polilinha([[tx + k * 2000, ty + i * 500], [tx + (k + 1) * 2000, ty + i * 500], [tx + (k + 1) * 2000, ty + (i + 1) * 500], [tx + k * 2000, ty + (i + 1) * 500]], { layer: layerUnifilar, fechada: true });
+    g.texto(tx + 50, ty + i * 500 + 150, 150, `C${i + 1}`, { layer: layerUnifilar });
+    g.texto(tx + 2050, ty + i * 500 + 150, 150, i % 2 ? 'Sala de reuniao' : 'Copa', { layer: layerUnifilar });
+    g.texto(tx + 4050, ty + i * 500 + 150, 150, `${600 + i * 100} VA`, { layer: layerUnifilar });
+  }
+  g.texto(tx, ty + 11 * 500 + 200, 250, 'QUADRO DE CARGAS - QDC', { layer: layerUnifilar });
+  return g.toString().replace(/(\$INSUNITS\r?\n\s*70\r?\n\s*)6/, '$14');
+}
+
 let ok = 0;
 const caso = async (nome, fn) => { await fn(); ok++; };
 
@@ -61,6 +101,43 @@ const caso = async (nome, fn) => { await fn(); ok++; };
     const vazio = new DesenhoDxf({ layers: [{ nome: 'A-PAREDE', cor: 8 }] });
     vazio.linha(0, 0, 1000, 0, 'A-PAREDE');
     await assert.rejects(M.gerarNoWorker({ ...fonte, dxf: vazio.toString() }), (e) => e.status === 400 && /ambientes/.test(e.message));
+  });
+
+  await caso('(d) DXF com unifilar e quadro de cargas ao lado: só as paredes e os ambientes da planta', async () => {
+    const { lerArquitetura } = require(path.join(CAD, 'arquitetura.js'));
+    const { regiaoDoModelo, extrairElementos } = require(path.join(CAD, 'modelo3d.js'));
+    for (const [layer, opcoes, como] of [['UNIFILAR', {}, 'layer UNIFILAR'], ['QUADRO DE CARGAS', {}, 'layer QUADRO DE CARGAS'], ['DESENHO', { tudoNumaLayer: true }, 'tudo numa layer, sem layer de parede']]) {
+      const arq = lerArquitetura(dxfComUnifilar(layer, opcoes));
+      assert.deepStrictEqual(arq.ambientes.map(a => a.nome).sort(), ['COZINHA', 'SALA DE ESTAR'], `${como}: ${arq.ambientes.map(a => a.nome)}`);
+      const { caixa } = regiaoDoModelo(arq);
+      const el = extrairElementos(arq, caixa, 2.8);
+      const xs = el.paredes.flatMap(p => [p.a[0], p.b[0]]);
+      assert.ok(xs.length && Math.max(...xs) <= 8.3, `${como}: parede fora da planta (x até ${Math.max(...xs)})`);
+      if (opcoes.tudoNumaLayer) {
+        assert.ok(arq.classificacao.regioes.some(r => r.tipo === 'diagrama'), `${como}: ${arq.classificacao.resumo}`);
+        assert.ok(arq.regioesPlanta.length === 1 && arq.regioesPlanta[0][2] < 9, JSON.stringify(arq.regioesPlanta));
+      }
+    }
+    // o 3D inteiro, com o desenho misto numa layer só
+    const r = await M.gerarNoWorker({ ...fonte, dxf: dxfComUnifilar('DESENHO', { tudoNumaLayer: true }) });
+    assert.strictEqual(r.numeros.ambientes, 2);
+  });
+
+  await caso('(d) DXF só com unifilar e quadro de cargas: a leitura recusa com a mensagem, sem paredes', async () => {
+    const { lerArquiteturaNoWorker } = require('../src/services/tarefasCad');
+    const g = new DesenhoDxf({ layers: [{ nome: 'DESENHO', cor: 7 }] });
+    const ux = 0;
+    g.linha(ux, 0, ux, 4800, 'DESENHO');
+    for (let i = 0; i < 12; i++) {
+      const y = 200 + i * 400;
+      g.linha(ux, y, ux + 3000, y, 'DESENHO');
+      g.texto(ux + 3050, y + 30, 120, `C${i + 1} 2x2,5mm² DISJ 20A`, { layer: 'DESENHO' });
+    }
+    g.texto(ux, -700, 250, 'DIAGRAMA UNIFILAR - QDC', { layer: 'DESENHO' });
+    g.texto(ux, -1100, 150, 'SEM ESCALA', { layer: 'DESENHO' });
+    const e = await lerArquiteturaNoWorker(Buffer.from(g.toString().replace(/(\$INSUNITS\r?\n\s*70\r?\n\s*)6/, '$14')), 'unifilar.dxf').catch(x => x);
+    assert.ok(e instanceof Error && /"unifilar\.dxf": O desenho só tem diagrama unifilar.* não há planta baixa para montar o 3D/.test(e.message), e.message);
+    assert.strictEqual(e.codigo, 'SEM_PLANTA');
   });
 
   await caso('chave do cache muda com o formulário, a arquitetura e o título', async () => {

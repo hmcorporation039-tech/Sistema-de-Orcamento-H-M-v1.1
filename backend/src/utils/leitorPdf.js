@@ -14,6 +14,18 @@ async function textoDoPdf(buffer) {
   }
 }
 
+// Texto de todas as páginas e o de cada uma (a análise de projeto tira os
+// ambientes só das folhas de planta — utils/classificarPranchaPdf.js)
+async function textoEPaginasDoPdf(buffer) {
+  const parser = new PDFParse({ data: buffer });
+  try {
+    const r = await parser.getText();
+    return { texto: r.text || '', paginas: (r.pages || []).map(p => p.text || '') };
+  } finally {
+    await parser.destroy();
+  }
+}
+
 // Páginas como imagem (PNG), para o OCR de PDF escaneado
 async function paginasComoImagem(buffer, { escala = 2.5, maxPaginas } = {}) {
   const parser = new PDFParse({ data: buffer });
@@ -25,4 +37,4 @@ async function paginasComoImagem(buffer, { escala = 2.5, maxPaginas } = {}) {
   }
 }
 
-module.exports = { textoDoPdf, paginasComoImagem };
+module.exports = { textoDoPdf, textoEPaginasDoPdf, paginasComoImagem };

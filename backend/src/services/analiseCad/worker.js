@@ -24,6 +24,12 @@ const { CAD } = require('../../config/caminhos');
       arquitetura: arq && {
         fatorUnidade: fator, portas: arq.portas.length, layers: arq.layers.length,
         ambientes: arq.ambientes.map(a => ({ nome: a.nome, area_m2: a.area_m2, perimetro_m: a.perimetro_m, poligono: a.poligono, origem: a.origem })),
+        // o que o desenho é (planta × unifilar × quadro de cargas…) e as regiões que não
+        // são planta, em metros (skills/_comum/cad/classificarPrancha.js)
+        folha: arq.classificacao && {
+          tipo: arq.classificacao.tipo, resumo: arq.classificacao.resumo, temPlanta: arq.classificacao.temPlanta, semPlanta: arq.classificacao.semPlanta,
+          regioesFora: arq.classificacao.regioes.filter(r => ['diagrama', 'vista_quadro', 'quadro_cargas', 'carimbo'].includes(r.tipo)).map(r => r.caixa),
+        },
       },
       projeto: { texto: projeto.texto, simbolos: projeto.simbolos, linhas: projeto.linhas, legenda: projeto.legenda },
     });

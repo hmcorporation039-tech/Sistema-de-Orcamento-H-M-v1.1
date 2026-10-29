@@ -26,127 +26,13 @@ const { escalaDoCarimbo } = require('../utils/pdfVetorial');
 
 const { DesenhoDxf } = require(path.join(require('../config/caminhos').CAD, 'dxf.js'));
 
-const PT_EM_M = 25.4 / 72 / 1000; // 1 ponto do PDF no papel, em metros
-const ESCALAS = [20, 25, 50, 75, 100, 125, 200, 250, 500];
+const {
+  PT_EM_M, dist, bezier, arcoDaCurva, juntarArco, escalaPelasPortas, juntarTextos, espessuraDeParede,
+} = require('../utils/desenhoPdf'); // geometria comum com a classificação das pranchas
+const { classificarPaginaPdf, regioesParaManter } = require('../utils/classificarPranchaPdf');
+const { NAO_PLANTA } = require(path.join(require('../config/caminhos').CAD, 'classificarPrancha.js'));
 const MAX_CAMINHOS = 150000;
 const erro = (msg, codigo) => Object.assign(new Error(msg), { codigo });
-
-// ── geometria ───────────────────────────────────────────────────────────
-const sub2 = (a, b) => [a[0] - b[0], a[1] - b[1]];
-const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
-const grau = (v) => ((Math.atan2(v[1], v[0]) * 180 / Math.PI) + 360) % 360;
-const bezier = (p0, c1, c2, p3, t) => {
-  const u = 1 - t;
-  return [0, 1].map(i => u * u * u * p0[i] + 3 * u * u * t * c1[i] + 3 * u * t * t * c2[i] + t * t * t * p3[i]);
-};
-
-// Curva cúbica que é arco de círculo (o CAD exporta arco assim): centro no
-// cruzamento das normais das pontas, mesmo raio nas pontas e no meio.
-// Devolve { centro, r, inicio, fim } (graus, anti-horário) ou null.
-function arcoDaCurva(p0, c1, c2, p3) {
-  const t0 = sub2(c1, p0), t1 = sub2(p3, c2);
-  const n0 = [-t0[1], t0[0]], n1 = [-t1[1], t1[0]];
-  const det = n0[0] * -n1[1] + n1[0] * n0[1];
-  if (Math.abs(det) < 1e-9 || dist(p0, p3) < 1e-6) return null;
-  const d = sub2(p3, p0);
-  const s = (d[0] * -n1[1] + n1[0] * d[1]) / det;
-  const centro = [p0[0] + s * n0[0], p0[1] + s * n0[1]];
-  const r = dist(centro, p0);
-  const meio = bezier(p0, c1, c2, p3, 0.5);
-  if (!(r > 0) || Math.abs(dist(centro, p3) - r) > r * 0.03 || Math.abs(dist(centro, meio) - r) > r * 0.03) return null;
-  return { ...angulos(centro, p0, p3, meio), centro, r, p0, p3, meio };
-}
-// início/fim (graus, anti-horário) do arco de p0 a p3 passando por `meio`
-function angulos(centro, p0, p3, meio) {
-  const a0 = grau(sub2(p0, centro)), a1 = grau(sub2(p3, centro)), am = grau(sub2(meio, centro));
-  const volta = (a) => (a - a0 + 360) % 360;
-  return volta(am) < volta(a1) ? { inicio: a0, fim: a1 } : { inicio: a1, fim: a0 };
-}
-const varredura = (a) => (a.fim - a.inicio + 360) % 360 || 360;
-
-// círculo pelos 3 pontos (null se alinhados)
-function circulo3(a, b, c) {
-  const d = 2 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]));
-  if (Math.abs(d) < 1e-12) return null;
-  const q = (p) => p[0] * p[0] + p[1] * p[1];
-  const centro = [(q(a) * (b[1] - c[1]) + q(b) * (c[1] - a[1]) + q(c) * (a[1] - b[1])) / d, (q(a) * (c[0] - b[0]) + q(b) * (a[0] - c[0]) + q(c) * (b[0] - a[0])) / d];
-  return { centro, r: dist(centro, a) };
-}
-
-// Pedaços seguidos do mesmo círculo viram um arco só: o PDF pode partir um arco
-// de 90° em 2 curvas (AutoCAD) ou em 16 de 5,6° (Chromium). O centro de um pedaço
-// curto é impreciso: junta-se pela continuidade das pontas e o círculo é refeito
-// pelos 3 pontos (início, junção, fim), conferindo que o ponto do meio cai nele.
-function juntarArco(lista, a) {
-  const ult = lista.at(-1);
-  if (ult && Math.abs(ult.r - a.r) < ult.r * 0.03) {
-    const tol = ult.r * 0.02;
-    let ini = null, juncao = null, fim = null;
-    if (dist(ult.p3, a.p0) < tol) [ini, juncao, fim] = [ult.p0, a.p0, a.p3];
-    else if (dist(a.p3, ult.p0) < tol) [ini, juncao, fim] = [a.p0, ult.p0, ult.p3];
-    const c = ini && circulo3(ini, juncao, fim);
-    if (c && Math.abs(dist(c.centro, a.meio) - c.r) < c.r * 0.02 && Math.abs(dist(c.centro, ult.meio) - c.r) < c.r * 0.02) {
-      Object.assign(ult, { centro: c.centro, r: c.r, p0: ini, p3: fim, meio: juncao, ...angulos(c.centro, ini, fim, juncao) });
-      return;
-    }
-  }
-  lista.push({ ...a });
-}
-
-// ── escala ──────────────────────────────────────────────────────────────
-// Pelos arcos de porta (≈ 90°): a escala padrão em que o raio mediano fica mais
-// perto de 0,80 m, desde que caia entre 0,55 e 1,10 m.
-function escalaPelasPortas(arcosPt) {
-  const raios = arcosPt.filter(a => { const v = varredura(a); return v >= 75 && v <= 105; }).map(a => a.r).sort((x, y) => x - y);
-  if (raios.length < 2) return null;
-  const mediano = raios[Math.floor(raios.length / 2)];
-  let melhor = null;
-  for (const e of ESCALAS) {
-    const m = mediano * PT_EM_M * e;
-    if (m >= 0.55 && m <= 1.1 && (!melhor || Math.abs(m - 0.8) < Math.abs(melhor.m - 0.8))) melhor = { e, m };
-  }
-  return melhor?.e || null;
-}
-
-// ── textos: junta os pedaços de uma mesma linha ─────────────────────────
-function juntarTextos(textos) {
-  const horiz = textos.filter(t => t.horizontal).sort((a, b) => (Math.abs(a.y - b.y) < Math.min(a.h, b.h) * 0.3 ? a.x - b.x : a.y - b.y));
-  const saida = [];
-  for (const t of horiz) {
-    const ult = saida.at(-1);
-    if (ult && Math.abs(ult.y - t.y) < ult.h * 0.3 && Math.abs(ult.h - t.h) < ult.h * 0.25) {
-      const vao = t.x - (ult.x + ult.w);
-      if (vao > -ult.h * 0.3 && vao < ult.h * 0.6) {
-        ult.s += vao > ult.h * 0.12 ? ` ${t.s}` : t.s;
-        ult.w = t.x + t.w - ult.x;
-        continue;
-      }
-    }
-    saida.push({ ...t });
-  }
-  return [...saida, ...textos.filter(t => !t.horizontal)];
-}
-
-// ── espessura que é parede ──────────────────────────────────────────────
-// Espessuras (por comprimento de traço): parede é a faixa bem mais grossa que a
-// mediana, com pelo menos 3% do total desenhado. null = tudo da mesma espessura.
-function espessuraDeParede(caminhos) {
-  const porLw = new Map();
-  let total = 0;
-  for (const c of caminhos) {
-    if (!c.traco || c.dash) continue;
-    const lw = Math.round(c.lwPg * 20) / 20;
-    porLw.set(lw, (porLw.get(lw) || 0) + c.comp);
-    total += c.comp;
-  }
-  if (!total) return null;
-  const faixas = [...porLw.entries()].sort((a, b) => a[0] - b[0]);
-  let acum = 0, mediana = faixas[0][0];
-  for (const [lw, comp] of faixas) { acum += comp; if (acum >= total / 2) { mediana = lw; break; } }
-  const limite = Math.max(mediana * 1.6, mediana + 0.15);
-  const grossas = faixas.filter(([lw]) => lw >= limite).reduce((s, [, c]) => s + c, 0);
-  return grossas >= total * 0.03 ? limite : null;
-}
 
 // ── moldura e carimbo da folha ──────────────────────────────────────────
 // Moldura: segmento comprido (> 40% da folha) na faixa de 8% junto à borda.
@@ -189,26 +75,53 @@ function ehCinza(cor) {
   return Math.max(...v) - Math.min(...v) < 40 && Math.max(...v) < 235;
 }
 
-// Página da planta num PDF de várias: a com mais traços (até 10 páginas)
-async function escolherPagina(doc, OPS, pagina) {
-  if (pagina) {
-    if (pagina < 1 || pagina > doc.numPages) throw erro(`O PDF tem ${doc.numPages} página(s); a página ${pagina} não existe.`, 'PAGINA');
-    return pagina;
-  }
-  if (doc.numPages === 1) return 1;
-  let melhor = 1, mais = -1;
-  for (let n = 1; n <= Math.min(doc.numPages, 10); n++) {
-    const p = await doc.getPage(n);
-    const ops = await p.getOperatorList();
+// Página da planta num PDF de várias (até 10 páginas). Antes era a com mais
+// traços — quase sempre o diagrama unifilar, e o 3D "construía uma edificação
+// com os desenhos do quadro". Agora cada página é classificada
+// (utils/classificarPranchaPdf.js) e vale a de maior pontuação de planta; sem
+// planta identificada, a com mais traços entre as que não foram reconhecidas
+// como outra coisa; todas sendo diagrama/quadro/tabela → erro SEM_PLANTA.
+// Devolve { n, geo, classificacao, folhas: [{ pagina, tipo, resumo, ... }] }.
+const semDesenho = (geo) => geo.caminhos.filter(c => c.traco).reduce((s, c) => s + c.segs, 0) < 12;
+async function escolherPagina(doc, OPS, pagina, escala) {
+  if (pagina && (pagina < 1 || pagina > doc.numPages)) throw erro(`O PDF tem ${doc.numPages} página(s); a página ${pagina} não existe.`, 'PAGINA');
+  const lista = pagina ? [pagina] : Array.from({ length: Math.min(doc.numPages, 10) }, (_, i) => i + 1);
+  const folhas = [];
+  let melhor = null;
+  // planta (pela pontuação) > não identificada (pelos traços) > diagrama/quadro, escaneada
+  const nota = (f) => (f.temPlanta ? 2e9 + f.pontuacaoPlanta * 1e6 : f.semPlanta || f.raster ? -1 : f.qtd);
+  for (const n of lista) {
+    const pag = await doc.getPage(n);
+    // conta os traços ANTES de montar a geometria (que ocupa memória por traço)
+    const ops = await pag.getOperatorList();
     const qtd = ops.fnArray.filter(f => f === OPS.constructPath).length;
-    if (qtd > mais) { mais = qtd; melhor = n; }
-    p.cleanup();
+    if (qtd > MAX_CAMINHOS) {
+      pag.cleanup();
+      if (pagina) throw erro(`a página ${n} tem ${qtd.toLocaleString('pt-BR')} traços (limite ${MAX_CAMINHOS.toLocaleString('pt-BR')}). Envie o DWG/DXF ou um PDF só da planta baixa.`, 'GRANDE');
+      folhas.push({ pagina: n, qtd, grande: true, tipo: 'desconhecido', resumo: `${qtd.toLocaleString('pt-BR')} traços — não lida` });
+      continue;
+    }
+    const geo = await lerPagina(pag, OPS, { geometria: true, ops });
+    pag.cleanup();
+    const raster = semDesenho(geo);
+    const c = raster ? null : classificarPaginaPdf(geo, { escala });
+    const f = c ? { pagina: n, qtd, tipo: c.tipo, resumo: c.resumo, temPlanta: c.temPlanta, semPlanta: c.semPlanta, pontuacaoPlanta: c.pontuacaoPlanta }
+      : { pagina: n, qtd, raster: true, tipo: 'desconhecido', resumo: 'sem desenho vetorial' };
+    folhas.push(f);
+    if (!melhor || nota(f) > nota(melhor.f)) melhor = { f, n, geo, classificacao: c };
   }
-  return melhor;
+  if (!melhor) throw erro(`as páginas do PDF têm traços demais (limite ${MAX_CAMINHOS.toLocaleString('pt-BR')}). Envie o DWG/DXF ou um PDF só da planta baixa.`, 'GRANDE');
+  if (folhas.some(f => f.semPlanta) && folhas.every(f => f.semPlanta || f.raster || f.grande)) {
+    throw erro(pagina
+      ? `A página ${pagina} é ${folhas[0].resumo} — não há planta baixa nela para montar o 3D.`
+      : `As páginas deste arquivo são diagramas/quadros elétricos — não há planta baixa para montar o 3D (${folhas.map(f => `folha ${f.pagina}: ${f.resumo}`).join('; ')}).`, 'SEM_PLANTA');
+  }
+  return { ...melhor, folhas };
 }
 
 // buffer do PDF → { texto (DXF em metros), escala, origemEscala, pagina, paginas, avisos }
-// `escala`: denominador informado (50 para 1:50); `pagina`: 1, 2… (padrão: a com mais traços)
+// `escala`: denominador informado (50 para 1:50); `pagina`: 1, 2… (padrão: a de planta — ver escolherPagina)
+// folhas: [{ pagina, tipo, resumo, usada }] — a classificação de cada página lida
 async function pdfParaDxf(buffer, { escala: escalaInformada = null, pagina = null } = {}) {
   const { getDocument, OPS } = await pdfjs();
   let doc;
@@ -218,31 +131,37 @@ async function pdfParaDxf(buffer, { escala: escalaInformada = null, pagina = nul
     throw erro(`não é um PDF válido (${e.message}).`, 'PDF');
   }
   try {
-    const n = await escolherPagina(doc, OPS, Number(pagina) || null);
-    const pag = await doc.getPage(n);
-    // conta os traços ANTES de montar a geometria (que ocupa memória por traço)
-    const ops = await pag.getOperatorList();
-    const qtd = ops.fnArray.filter(f => f === OPS.constructPath).length;
-    if (qtd > MAX_CAMINHOS) throw erro(`a página ${n} tem ${qtd.toLocaleString('pt-BR')} traços (limite ${MAX_CAMINHOS.toLocaleString('pt-BR')}). Envie o DWG/DXF ou um PDF só da planta baixa.`, 'GRANDE');
-    const geo = await lerPagina(pag, OPS, { geometria: true, ops });
-    pag.cleanup();
+    const { n, geo, classificacao, folhas } = await escolherPagina(doc, OPS, Number(pagina) || null, Number(escalaInformada) || null);
     // escaneado: só imagem (e talvez a camada de texto do OCR) — quase nenhum segmento desenhado
-    if (geo.caminhos.filter(c => c.traco).reduce((s, c) => s + c.segs, 0) < 12) {
+    if (semDesenho(geo)) {
       throw erro('este PDF não tem desenho vetorial (parece escaneado ou imagem). Para o 3D, envie o PDF exportado do AutoCAD/Revit ou o DWG/DXF.', 'RASTER');
     }
 
-    // arcos e escala (em pontos do PDF, antes de converter)
-    const H = geo.altura;
-    const arcosPt = [];
+    // só a planta vai para o DXF: as regiões de diagrama, quadro de cargas, legenda,
+    // detalhe e carimbo da folha ficam de fora (folha MISTA: planta + unifilar)
+    const H = geo.altura, W = geo.largura;
+    const manter = regioesParaManter(classificacao);
+    const margem = Math.max(W, H) / 250;
+    const naPlanta = (p) => !manter.length || manter.some(r => naRegiao([r[0] - margem, r[1] - margem, r[2] + margem, r[3] + margem], p));
+
+    // arcos e escala (em pontos do PDF, antes de converter) — portas só da planta:
+    // o arco do disjuntor no unifilar puxava o raio mediano e a escala não saía
+    const arcosPt = [], retasPt = [];
     for (const c of geo.caminhos) {
       if (!c.traco) continue;
-      for (const s of c.subs) for (const seg of s.segs) if (seg[0] === 'c') { const a = arcoDaCurva(...seg.slice(1)); if (a) juntarArco(arcosPt, a); }
+      for (const s of c.subs) {
+        for (const seg of s.segs) {
+          if (seg[0] === 'l') { if (naPlanta(seg[1])) retasPt.push([seg[1], seg[2]]); continue; }
+          const a = arcoDaCurva(...seg.slice(1));
+          if (a && naPlanta(a.centro)) juntarArco(arcosPt, a);
+        }
+      }
     }
     const avisos = [];
     let escala = Number(escalaInformada) || null, origemEscala = escala ? 'informada' : null;
     if (!escala) { escala = escalaDoCarimbo(geo.textos); if (escala) origemEscala = 'carimbo'; }
     if (!escala) {
-      escala = escalaPelasPortas(arcosPt);
+      escala = escalaPelasPortas(arcosPt, retasPt);
       if (escala) { origemEscala = 'portas'; avisos.push(`Escala 1:${escala} deduzida pelo tamanho das portas (o carimbo não tem a escala) — confira as medidas.`); }
     }
     if (!escala || escala < 1 || escala > 5000) {
@@ -251,10 +170,11 @@ async function pdfParaDxf(buffer, { escala: escalaInformada = null, pagina = nul
 
     const k = PT_EM_M * escala;
     const P = ([x, y]) => [x * k, (H - y) * k]; // PDF (y para baixo) → metros (y para cima)
-    const W = geo.largura;
     const carimbo = regiaoDoCarimbo(geo.caminhos, geo.textos, W, H);
-    const foraDoCarimbo = (seg) => !carimbo || !seg.slice(1).every(p => naRegiao(carimbo, p));
-    const lwParede = espessuraDeParede(geo.caminhos);
+    const meio = (seg) => { const a = seg[1], b = seg.at(-1); return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; };
+    const foraDoCarimbo = (seg) => (!carimbo || !seg.slice(1).every(p => naRegiao(carimbo, p))) && naPlanta(meio(seg));
+    // a espessura de parede sai só da planta (o barramento grosso do unifilar puxava o limite)
+    const lwParede = espessuraDeParede(geo.caminhos.filter(c => naPlanta([(c.caixa[0] + c.caixa[2]) / 2, (c.caixa[1] + c.caixa[3]) / 2])));
     if (!lwParede) avisos.push('As linhas do PDF têm todas a mesma espessura: o sistema não separa parede de móvel — móveis desenhados podem aparecer como parede no 3D.');
 
     const d = new DesenhoDxf({ layers: [], unidade: 'm', escalaPlotagem: escala });
@@ -304,12 +224,24 @@ async function pdfParaDxf(buffer, { escala: escalaInformada = null, pagina = nul
       }
     }
     for (const t of juntarTextos(geo.textos)) {
-      if (naRegiao(carimbo, [t.x, t.y])) continue;
+      if (naRegiao(carimbo, [t.x, t.y]) || !naPlanta([t.x, t.y])) continue;
       const [x, y] = P([t.x, t.y]);
       d.texto(x, y, Math.max(t.h * k, 0.01), t.s, { layer: L.texto });
     }
     if (!entidades) throw erro('não achei linhas de desenho na página do PDF.', 'VAZIO');
-    return { texto: d.toString(), escala, origemEscala, pagina: n, paginas: doc.numPages, avisos };
+    // o que foi ignorado vai para a tela (avisos) e para o resumo gravado (folhas)
+    const outras = folhas.filter(f => f.pagina !== n && !f.raster);
+    if (outras.length) avisos.push(`Usada a folha ${n} (${classificacao?.resumo || 'desenho'}) para o 3D. ${outras.map(f => `Folha ${f.pagina}: ${f.resumo}${f.semPlanta ? ' — ignorada' : ''}`).join('; ')}.`);
+    const fora = (classificacao?.regioes || []).filter(r => NAO_PLANTA.has(r.tipo) && r.tipo !== 'carimbo');
+    if (manter.length && fora.length) {
+      const porTipo = {};
+      for (const r of fora) porTipo[r.rotulo] = (porTipo[r.rotulo] || 0) + 1;
+      avisos.push(`Na folha ${n}, ficaram fora do 3D: ${Object.entries(porTipo).map(([t, q]) => (q > 1 ? `${t} (${q})` : t)).join(', ')}.`);
+    }
+    return {
+      texto: d.toString(), escala, origemEscala, pagina: n, paginas: doc.numPages, avisos,
+      folhas: folhas.map(({ pagina: p, tipo, resumo }) => ({ pagina: p, tipo, resumo, usada: p === n })),
+    };
   } finally {
     await doc.destroy();
   }

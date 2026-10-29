@@ -17,7 +17,10 @@ const DISCIPLINAS = {
 
 // ambiente que não é sala (nota, vazio, projeção, cota de quadro…) — fora do modelo
 const RE_NAO_AMBIENTE = /^(VAZIO|PROJE[ÇC][ÃA]O|COBERTURA|FAZER|PREVER|MOVER|COMO SER|DIMENS|CONSTRUIR|DEMOLIR|LIMITE|PROJ\b|PROJ\.|ESQUADRIA|GUARDA|HDMI|CORRER|DESCRIPTION|REF\b|REF\.|PILAR|HIDRANTE|EXTINTOR|PORTA|JANELA|VIGA|LAJE|DEGRAU|TUBO|MEDIDA|COTA|NOTA|OBS)|\d+\s*X\s*\d+|\bVA\b|\bMM\b|\bH\s*=|\d+\s*A\s*-\s*\d+|^-|%%/i;
-const ehAmbienteValido = (a) => a.area_m2 >= 0.8 && a.area_m2 <= 2500 && !RE_NAO_AMBIENTE.test(a.nome);
+// nome que é vocabulário de quadro/diagrama elétrico (29/10/2026): "QD-TÉRREO", "DISJUNTOR 40A",
+// "C12", "DR 40A 30mA", "4mm²" numa célula de tabela não é sala
+const RE_VOCAB_ELETRICO = /^(QGBT|QDC|QDL|QDF|QDG|QDFL|QD|QL|QF|QM|CCM)\b[\s\-_.]*[\wÀ-ú\-.]*$|^(DISJ|DR\b|IDR\b|DPS\b|FASES?\b|NEUTRO\b|BARRAMENTO|CIRCUITO|CIRC\.|C\d{1,3}$|TU[GE]\b)|\b\d+(?:[.,]\d+)?\s*(kA|kVA|kW|mm²|mm2)\b|^\d+\s*A$/i;
+const ehAmbienteValido = (a) => a.area_m2 >= 0.8 && a.area_m2 <= 2500 && !RE_NAO_AMBIENTE.test(a.nome) && !RE_VOCAB_ELETRICO.test(a.nome);
 
 const TIPOS_AMBIENTE = [
   ['externo', /JARDIM|VARANDA|SACADA|TERRA[ÇC]O|QUINTAL|P[ÁA]TIO|BOSQUE|EMBARQUE|CAL[ÇC]ADA|PISCINA|DECK|P[ÉE]RGOLA|[ÁA]REA EXTERNA|ESTACIONAMENTO|HELIPONTO|BACIA/i],

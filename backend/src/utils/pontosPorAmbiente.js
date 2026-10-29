@@ -33,7 +33,10 @@ const MAX_PAGINAS = 30;
 const carregarPdfjsPadrao = () => import('pdfjs-dist/legacy/build/pdf.mjs');
 
 // `opcoes.carregarPdfjs` existe só para o teste trocar o pdfjs por um falso.
-async function calcularPontosPorAmbiente(buffer, { maxPaginas = MAX_PAGINAS, carregarPdfjs = carregarPdfjsPadrao } = {}) {
+// `opcoes.paginasIgnoradas` (Set de números de página): folhas que não são planta
+// (diagrama unifilar, quadro de cargas — utils/classificarPranchaPdf.js); um "R1"
+// ou "A2" do quadro não pode cair na sala mais próxima.
+async function calcularPontosPorAmbiente(buffer, { maxPaginas = MAX_PAGINAS, carregarPdfjs = carregarPdfjsPadrao, paginasIgnoradas = null } = {}) {
   let pdfjsLib;
   try {
     // pdfjs-dist só existe como ESM nesta versão — import() dinâmico dentro
@@ -53,18 +56,19 @@ async function calcularPontosPorAmbiente(buffer, { maxPaginas = MAX_PAGINAS, car
   // o documento é SEMPRE destruído no fim (antes ficava aberto: memória do
   // pdfjs presa a cada análise até o coletor de lixo, e nada liberava as páginas)
   try {
-    return await contarPorAmbiente(doc, maxPaginas);
+    return await contarPorAmbiente(doc, maxPaginas, paginasIgnoradas);
   } finally {
     await Promise.resolve(doc.destroy?.()).catch(() => {});
   }
 }
 
-async function contarPorAmbiente(doc, maxPaginas) {
+async function contarPorAmbiente(doc, maxPaginas, paginasIgnoradas) {
   const porAmbiente = new Map(); // nome -> { cftv, rede, antena }
   const ultima = Math.min(doc.numPages, maxPaginas);
   if (doc.numPages > ultima) console.warn(`[pontosPorAmbiente] PDF com ${doc.numPages} páginas: lidas só as ${ultima} primeiras`);
 
   for (let n = 1; n <= ultima; n++) {
+    if (paginasIgnoradas?.has(n)) continue;
     let items;
     let page = null;
     try {

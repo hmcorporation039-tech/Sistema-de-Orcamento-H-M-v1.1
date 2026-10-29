@@ -12,7 +12,7 @@ const { cad, motorDaDisciplina } = require('../../utils/disciplinasLaudo');
 const falhou = (etapa, e) => ({ ok: false, etapa, erro: String(e?.message || e) });
 
 // só o que os controllers usam (sem os traços de referência, que pesam)
-const resumoDaLeitura = (l) => ({ ambientes: l.ambientes, portas: l.portas, layers: l.layers, fatorUnidade: l.fatorUnidade, extensao: l.extensao });
+const resumoDaLeitura = (l) => ({ ambientes: l.ambientes, portas: l.portas, layers: l.layers, fatorUnidade: l.fatorUnidade, extensao: l.extensao, folha: l.classificacao?.resumo || null });
 
 const TAREFAS = {
   // { buffer, nome, escala?, pagina? } → { texto (DXF), origem ('dwg'|'dxf'|'pdf'), leitura, pdf? }
@@ -26,13 +26,21 @@ const TAREFAS = {
         const r = await require('../pdfParaDxf').pdfParaDxfIsolado(Buffer.from(buffer), { escala, pagina });
         ({ texto } = r);
         origem = 'pdf';
-        pdf = { escala: r.escala, origemEscala: r.origemEscala, pagina: r.pagina, paginas: r.paginas, avisos: r.avisos };
+        pdf = { escala: r.escala, origemEscala: r.origemEscala, pagina: r.pagina, paginas: r.paginas, avisos: r.avisos, folhas: r.folhas || [] };
       } else ({ texto, origem } = await C.textoDxfDoArquivo(Buffer.from(buffer), nome));
     } catch (e) {
-      return { ...falhou('conversao', /\.pdf$/i.test(nome || '') ? `Não consegui converter o PDF "${nome}": ${e.message}` : e), codigo: e.codigo || null };
+      // sem planta (só diagrama/quadro) não é falha de conversão: a mensagem vai como está
+      const msg = e.codigo === 'SEM_PLANTA' ? `"${nome}": ${e.message}` : `Não consegui converter o PDF "${nome}": ${e.message}`;
+      return { ...falhou('conversao', /\.pdf$/i.test(nome || '') ? msg : e), codigo: e.codigo || null };
     }
     try {
-      const leitura = resumoDaLeitura(C.lerArquitetura(texto));
+      const lida = C.lerArquitetura(texto);
+      // DWG/DXF só com diagrama/quadro/tabela (skills/_comum/cad/classificarPrancha.js):
+      // sem planta, nada de paredes — o 3D montaria a "edificação" com o desenho do quadro
+      if (lida.classificacao?.semPlanta && !lida.ambientes.length) {
+        return { ...falhou('conversao', `"${nome}": O desenho só tem ${lida.classificacao.resumo} — não há planta baixa para montar o 3D.`), codigo: 'SEM_PLANTA' };
+      }
+      const leitura = resumoDaLeitura(lida);
       if (pdf && leitura.ambientes.length < 2) {
         pdf.avisos.push('Quase nenhum ambiente com nome: os nomes das salas neste PDF não estão como texto (ou estão fora das salas). O 3D mostra as paredes; tomadas e pontos por ambiente ficam de fora.');
       }

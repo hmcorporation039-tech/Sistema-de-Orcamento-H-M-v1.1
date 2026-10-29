@@ -81,6 +81,35 @@ async function caso(nome, fn) {
     assert.ok(!p.itens.some(i => i.tipo === 'linha' && i.estilo.cor === '#000000'), 'parede contada como linha de legenda');
   });
 
+  // (29/10/2026) unifilar na mesma folha: o "disjuntor" vermelho igual ao símbolo da
+  // tomada não é tomada — só a planta é contada; folha só de unifilar não é contada
+  const unifilar = (x0, y0) => {
+    const c = [reta(x0, y0, x0, y0 + 240, '0 0 0', 2.5)];
+    for (let i = 0; i < 12; i++) {
+      const y = y0 + 10 + i * 20;
+      c.push(reta(x0, y, x0 + 100, y, '0 0 0', 0.5), quadrado(x0 + 40, y - 3, 6, '1 0 0'), texto(x0 + 105, y - 2, `C${i + 1} 2x2,5mm2 DISJ 20A`, 6));
+    }
+    c.push(texto(x0, y0 - 20, 'DIAGRAMA UNIFILAR - QDC', 10), texto(x0, y0 - 32, 'SEM ESCALA', 7));
+    return c.join('\n');
+  };
+  await caso('folha mista: símbolo no unifilar não conta; folha só de unifilar fica de fora', async () => {
+    // a planta ganha as paredes de fora (sem elas, a folha seria só símbolos soltos + o unifilar)
+    const paredes = [[80, 80, 580, 80], [580, 80, 580, 640], [580, 640, 80, 640], [80, 640, 80, 80]].map(([a, b, c, d]) => reta(a, b, c, d, '0 0 0', 1.5)).join('\n');
+    const mista = montarPdf([pranchaSintetica().toString('latin1').match(/stream\n([\s\S]*?)\nendstream/)[1], paredes, unifilar(700, 300)].join('\n'));
+    const [m] = await lerPdfVetorial(mista);
+    assert.ok(m.folha && /diagrama unifilar/.test(m.folha.resumo), JSON.stringify(m.folha));
+    assert.strictEqual(m.itens.find(i => /TOMADA BAIXA/.test(i.descricao))?.quantidade, 8, JSON.stringify(m.itens));
+    const [u] = await lerPdfVetorial(montarPdf(unifilar(100, 300)));
+    assert.ok(u.folha?.semPlanta && /sem contagem/.test(u.ignorada), JSON.stringify(u));
+    assert.strictEqual(u.itens.length, 0);
+    // achado legível por folha
+    const { achadosDasFolhas } = require('../src/utils/analiseProjetoAchados');
+    const [a] = achadosDasFolhas([{ arquivo: 'ele.pdf' }], [[{ ...u, pagina: 3 }, { ...m, pagina: 1 }]]);
+    assert.match(a.observacao, /folha 3: diagrama unifilar.* — ignorada no 3D/);
+    assert.match(a.observacao, /folha 1: .*diagrama unifilar/);
+    assert.deepStrictEqual(achadosDasFolhas([{ arquivo: 'p.pdf' }], [[{ pagina: 1, folha: { tipo: 'planta', resumo: 'planta baixa', temPlanta: true, semPlanta: false, misto: false } }]]), []);
+  });
+
   await caso('PDF sem desenho (só texto) não quebra e não inventa itens', async () => {
     const [q] = await lerPdfVetorial(montarPdf(texto(100, 700, 'MEMORIAL DESCRITIVO')));
     assert.strictEqual(q.itens.length, 0);

@@ -149,4 +149,27 @@ function achadosDoDesenho(analises, vetoriais) {
   return achados;
 }
 
-module.exports = { detalhePorArquivo, gerarAchados, achadosDoDesenho };
+// O que é cada folha (utils/classificarPranchaPdf.js e, no DWG/DXF,
+// skills/_comum/cad/classificarPrancha.js) — "folha 3: diagrama unifilar —
+// ignorada no 3D". Só quando há folha que não é planta (ou mista): projeto só de
+// plantas não ganha achado à toa.
+function achadosDasFolhas(analises, vetoriais) {
+  const achados = [];
+  analises.forEach((a, i) => {
+    const folhas = (vetoriais[i] || []).filter(p => p.folha);
+    if (!folhas.some(p => p.folha.semPlanta || p.folha.misto)) return;
+    const frase = (p) => {
+      const nome = p.origem === 'cad' ? 'desenho' : `folha ${p.pagina}`;
+      if (p.folha.semPlanta) return `${nome}: ${p.folha.resumo} — ignorada no 3D, nos ambientes e na contagem de símbolos`;
+      if (p.folha.temPlanta && p.folha.misto) return `${nome}: ${p.folha.resumo} — só a planta entra no 3D e na contagem`;
+      return `${nome}: ${p.folha.resumo}`;
+    };
+    achados.push({
+      tema: 'Folhas do projeto (planta × diagrama × quadro)',
+      observacao: `"${a.arquivo}": ${folhas.map(frase).join('; ')}. O quadro de cargas continua sendo lido pelo texto; confira se a classificação bate com as pranchas.`,
+    });
+  });
+  return achados;
+}
+
+module.exports = { detalhePorArquivo, gerarAchados, achadosDoDesenho, achadosDasFolhas };
