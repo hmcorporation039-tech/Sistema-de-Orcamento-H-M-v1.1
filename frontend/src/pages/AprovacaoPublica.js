@@ -463,7 +463,8 @@ function Contato() {
   return (
     <div style={{ textAlign: 'center', fontSize: 12.5, color: SUAVE, lineHeight: 1.6, marginTop: 18 }}>
       Dúvidas? Fale com a H&amp;M Engenharia e Tecnologia LTDA<br />
-      WhatsApp (61) 99185-9745 · hemengetecnologia@gmail.com
+      {/* mesmos dados do papel timbrado (skills/_comum/empresa.js) */}
+      WhatsApp (61) 99185-8745 · hmengetecnologia@gmail.com
     </div>
   );
 }

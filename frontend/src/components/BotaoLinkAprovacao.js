@@ -72,7 +72,7 @@ ${url}
 Pelo link você confere os itens, baixa o PDF e aprova ou recusa informando nome e CPF/CNPJ. O link vale até ${data(expira)}.
 
 Qualquer dúvida, estamos à disposição.
-H&M Engenharia e Tecnologia — WhatsApp (61) 99185-9745`;
+H&M Engenharia e Tecnologia — WhatsApp (61) 99185-8745`;
 }
 
 export default function BotaoLinkAprovacao({ propostaId, numero, status, onAlterado, estiloBotao, aberto: abertoPai, onFechar }) {

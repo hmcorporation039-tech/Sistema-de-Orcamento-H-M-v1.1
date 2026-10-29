@@ -16,15 +16,18 @@ const { registrarEvento } = require('./propostasController');
 
 // Assinatura padrão da empresa — entra sempre no final de todo e-mail
 // enviado ao cliente (mensagem padrão ou digitada à mão), sem exceção.
-const ASSINATURA_EMPRESA = `H&M Engenharia e Tecnologia LTDA
+// Telefone, e-mail e endereço vêm de skills/_comum/empresa.js: antes eram
+// escritos aqui à mão e divergiam do papel timbrado ((61) 99185-9745 e
+// hemengetecnologia@ — o correto, confirmado pelo usuário em 29/10/2026, é o
+// da proposta).
+const ASSINATURA_EMPRESA = `${EMPRESA.razaoSocial}
 Engenharia • Tecnologia • Segurança Eletrônica
 
-📞 WhatsApp: (61) 99185-9745
-✉ E-mail: hemengetecnologia@gmail.com
+📞 WhatsApp: ${EMPRESA.telefone}
+✉ E-mail: ${EMPRESA.email}
 🌐 Site: www.hemengetecnologia.com
 
-📍 Quadra CNF 03 Lote 16 Loja 04
-Taguatinga Norte – DF | CEP 72.125-535`;
+📍 ${EMPRESA.endereco} | CEP ${EMPRESA.cep}`;
 
 // Anexos opcionais do PDF (2.0, Fase 3F), todos desligados por padrão:
 // ?curva_abc=1 (curva ABC dos itens) e ?composicao_bdi=1 (memória do BDI pela
