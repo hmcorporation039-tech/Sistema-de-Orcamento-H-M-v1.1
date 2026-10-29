@@ -1,5 +1,5 @@
 import { RefreshCw } from 'lucide-react';
-import { Campo, Selecao, Marcador, Grade, Secao, TabelaEditavel, Nota } from './campos';
+import { Campo, Selecao, CampoSugestao, Marcador, Grade, Secao, TabelaEditavel, Nota } from './campos';
 import { ChecklistEditor, FotosInspecao, resumoChecklist } from './inspecaoUi';
 
 const btnPreencher = {
@@ -96,6 +96,7 @@ export default function FormularioGenerico({ esquema, dados, onChange, checklist
                   {item.campos.map(c => {
                     const valor = ler(d, c.caminho);
                     if (c.tipo === 'selecao') return <Selecao key={c.caminho} rotulo={c.rotulo} valor={valor == null ? '' : String(valor)} onChange={v => set(c.caminho)(/^-?\d+(\.\d+)?$/.test(v) && c.numerico ? Number(v) : v)} opcoes={c.opcoes} largura={c.largura} />;
+                    if (c.tipo === 'sugestao') return <CampoSugestao key={c.caminho} rotulo={c.rotulo} valor={valor} onChange={set(c.caminho)} opcoes={c.opcoes} placeholder={c.placeholder} dica={c.dica} largura={c.largura} />;
                     if (c.tipo === 'check') return <Marcador key={c.caminho} rotulo={c.rotulo} valor={valor} onChange={set(c.caminho)} dica={c.dica} />;
                     return <Campo key={c.caminho} rotulo={c.rotulo} tipo={c.tipo || 'texto'} valor={valor} onChange={set(c.caminho)} dica={c.dica} largura={c.largura} />;
                   })}

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
-import Select from '../Select';
+import Select, { Sugestoes } from '../Select';
 
 // Componentes de formulário compartilhados pelos formulários de laudo/projeto
 // de todas as disciplinas (aba Análise de Projeto → Laudos e projetos).
@@ -62,6 +62,26 @@ export function Selecao({ rotulo, valor, onChange, opcoes, largura }) {
       <Select style={estiloInput} value={valor ?? ''} onChange={e => onChange(e.target.value)}>
         {opcoes.map(o => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
       </Select>
+    </div>
+  );
+}
+
+// Texto livre com sugestões (tipo 'sugestao' do esquema — ex.: fabricante: a lista A–Z
+// dos conhecidos, mas aceita qualquer outro nome digitado)
+let seqLista = 0;
+export function CampoSugestao({ rotulo, valor, onChange, opcoes, placeholder, dica, largura, estilo }) {
+  const [id] = useState(() => `sugestoes-campo-${++seqLista}`);
+  const entrada = (
+    <>
+      <input list={id} style={estilo || estiloInput} value={valor ?? ''} placeholder={placeholder || 'Escolha ou digite'} title={dica} onChange={e => onChange(e.target.value)} />
+      <Sugestoes id={id}>{(opcoes || []).filter(o => o.valor !== '').map(o => <option key={o.valor} value={o.valor}>{o.rotulo !== o.valor ? o.rotulo : undefined}</option>)}</Sugestoes>
+    </>
+  );
+  if (!rotulo) return entrada;
+  return (
+    <div style={{ minWidth: 0, gridColumn: largura === 'inteira' ? '1 / -1' : undefined }}>
+      <label style={estiloRotulo}>{rotulo}</label>
+      {entrada}
     </div>
   );
 }
@@ -147,6 +167,7 @@ function CelulaEditavel({ coluna, valor, onChange }) {
       </Select>
     );
   }
+  if (coluna.tipo === 'sugestao') return <CampoSugestao valor={valor} onChange={onChange} opcoes={coluna.opcoes} placeholder={coluna.placeholder} />;
   if (coluna.tipo === 'check') return <input type="checkbox" checked={!!valor} onChange={e => onChange(e.target.checked)} style={{ marginTop: 7 }} />;
   if (coluna.tipo === 'numero') return <CampoNumero valor={valor} onChange={onChange} style={estiloInput} />;
   if (coluna.tipo === 'area') return <textarea rows={2} style={{ ...estiloInput, resize: 'vertical' }} value={valor ?? ''} onChange={e => onChange(e.target.value)} />;

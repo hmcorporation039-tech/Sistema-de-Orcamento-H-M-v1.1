@@ -189,6 +189,8 @@ export const removerLaudo = (id) => api.delete(`/laudos/${id}`);
 export const calcularLaudo = (id) => api.post(`/laudos/${id}/calcular`, null, { timeout: 60000 });
 export const baixarDocumentoLaudo = (id, tipo) =>
   api.get(`/laudos/${id}/documento/${tipo}`, { responseType: 'blob', timeout: 120000 });
+// documento em HTML (modelo 3D do quadro) numa aba nova: { url: '/api/documentos-html/ver/<token>' (10 min), arquivo }
+export const abrirDocumentoLaudo = (id, tipo) => api.post(`/laudos/${id}/documento/${tipo}/abrir`, null, { timeout: 120000 });
 export const enviarFotosLaudo = (id, arquivos) => {
   const formData = new FormData();
   arquivos.forEach(a => formData.append('fotos', a));
@@ -360,6 +362,21 @@ export const calcularComposicao = (itens) => api.post('/composicoes/calcular', {
 // itens prontos para a proposta: { codigo, quantidade, segmento: 'publico'|'privado' }
 export const explodirComposicao = (codigo, quantidade, segmento) =>
   api.post('/composicoes/explodir', { codigo, quantidade, segmento });
+
+// ── CATÁLOGO DE COMPONENTES DE QUADROS (2.4) ──────────────────────────────
+// Medidas oficiais por fabricante (JSON da skill + banco). Ler: todos; cadastrar,
+// editar, aprovar e excluir: admin. Buscar medida pela IA: todos (fica "a conferir").
+// GET: { itens, fabricantes, tipos: [{ valor, rotulo }], versao_catalogo, total_embutido, total_banco }
+export const getComponentesQuadro = (params) => api.get('/componentes-quadro', { params });
+export const criarComponenteQuadro = (data) => api.post('/componentes-quadro', data);
+export const atualizarComponenteQuadro = (id, data) => api.put(`/componentes-quadro/${id}`, data);
+export const aprovarComponenteQuadro = (id) => api.post(`/componentes-quadro/${id}/aprovar`);
+export const removerComponenteQuadro = (id) => api.delete(`/componentes-quadro/${id}`);
+// uma especificação: { fabricante, tipo, especificacao } → { situacao, registro?, motivo? }
+export const pesquisarMedidaComponente = (dados) => api.post('/componentes-quadro/pesquisar-medida', dados, { timeout: 330000 });
+// várias (componentes_sem_medida do cálculo): começa em segundo plano → tarefa { id, situacao, total, feitos, itens }
+export const pesquisarMedidasComponentes = (componentes) => api.post('/componentes-quadro/pesquisar-medidas', { componentes });
+export const getPesquisaMedidas = (tarefa) => api.get(`/componentes-quadro/pesquisas/${encodeURIComponent(tarefa)}`);
 
 // ── CRONOGRAMA FÍSICO-FINANCEIRO E MEDIÇÕES DA OBRA (2.0, Fase 3G) ─────────
 // GET: { cronograma, etapas, calculo (curva S, resumo), medicoes (histórico), propostas, pode_editar }

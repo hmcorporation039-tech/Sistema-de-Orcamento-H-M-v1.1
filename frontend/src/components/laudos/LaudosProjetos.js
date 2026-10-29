@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { FilePlus2, FileDown, Upload, Calculator, Receipt, Trash2, Download, BookOpen, FolderDown, ExternalLink } from 'lucide-react';
+import { FilePlus2, FileDown, Upload, Calculator, Receipt, Trash2, Download, BookOpen, FolderDown, ExternalLink, Box } from 'lucide-react';
 import {
   getDisciplinasLaudo, getModeloLaudo, getLaudos, getLaudo, criarLaudoNaObra, atualizarLaudo, removerLaudo,
-  calcularLaudo, baixarDocumentoLaudo, enviarFotosLaudo, getFotoLaudo, removerFotoLaudo, gerarOrcamentoDoLaudo,
+  calcularLaudo, baixarDocumentoLaudo, abrirDocumentoLaudo, urlModelo3d, enviarFotosLaudo, getFotoLaudo, removerFotoLaudo, gerarOrcamentoDoLaudo,
   salvarDocumentosLaudo, getPastaLaudo, abrirPastaLaudo,
   enviarArquiteturaLaudo, getArquiteturaLaudo, baixarPlantaLaudo, baixarUnifilarLaudo,
 } from '../../services/api';
@@ -17,6 +17,7 @@ import ResultadoSpda from './ResultadoSpda';
 import FormularioGenerico from './FormularioGenerico';
 import ResultadoGenerico from './ResultadoGenerico';
 import EntregasProjeto from './EntregasProjeto';
+import MedidasComponentesQuadro from './MedidasComponentesQuadro';
 import Select from '../Select';
 import { baixarArquivo, salvarBlob, mensagemDeErro } from '../../utils/download';
 import { useAuth } from '../../hooks/useAuth';
@@ -58,6 +59,10 @@ const TEXTOS = {
   },
 };
 const serve = (uso, tipo) => uso === 'ambos' || uso === tipo || uso == null;
+// extensão de reserva do download (o servidor manda o nome certo em X-Nome-Arquivo)
+const EXTENSAO = { Excel: 'xlsx', HTML: 'html', DXF: 'dxf' };
+// documento em HTML (2.4: modelo 3D do quadro) abre também numa aba nova
+const ehHtml = (doc) => doc.formato === 'HTML';
 
 // Projeto: o painel de resultado não mostra o parecer/checklist da inspeção
 // (é do laudo). O "Trazer do cálculo" do formulário continua com o resumo inteiro.
@@ -391,10 +396,32 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
     setOcupado(`doc_${doc.tipo}`);
     try {
       await salvarAgora();
-      await baixarArquivo(baixarDocumentoLaudo(laudo.id, doc.tipo), `${doc.tipo}.${doc.formato === 'Excel' ? 'xlsx' : 'docx'}`);
+      await baixarArquivo(baixarDocumentoLaudo(laudo.id, doc.tipo), `${doc.tipo}.${EXTENSAO[doc.formato] || 'docx'}`);
       setPastaMudou(Date.now()); // a cópia também foi gravada na pasta do laudo
     } catch (err) {
       toast.error(await mensagemDeErro(err, 'Erro ao gerar o documento'), { duration: 8000 });
+    } finally {
+      setOcupado('');
+    }
+  }
+
+  // Documento em HTML (modelo 3D do quadro): gera no servidor e abre numa aba
+  // nova por um link curto (a página roda em sandbox, sem o login do sistema).
+  // A aba é aberta já no clique — depois da espera o navegador a bloquearia.
+  async function abrirHtml(doc) {
+    const aba = window.open('', '_blank');
+    if (aba) aba.document.title = `Gerando ${doc.rotulo}…`;
+    setOcupado(`doc_${doc.tipo}`);
+    try {
+      await salvarAgora();
+      const r = await abrirDocumentoLaudo(laudo.id, doc.tipo);
+      const url = urlModelo3d(r.data.url);
+      if (aba && !aba.closed) aba.location.href = url;
+      else toast((t) => <span>O navegador bloqueou a aba. <a href={url} target="_blank" rel="noreferrer" onClick={() => toast.dismiss(t.id)}>Abrir {doc.rotulo}</a></span>, { duration: 15000 });
+      setPastaMudou(Date.now()); // a cópia também foi gravada na pasta do projeto
+    } catch (err) {
+      if (aba && !aba.closed) aba.close();
+      toast.error(err.response?.data?.erro || `Erro ao gerar ${doc.rotulo}`, { duration: 8000 });
     } finally {
       setOcupado('');
     }
@@ -625,11 +652,21 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
               <button style={{ ...btnSecundario, borderColor: '#2f5a2f', color: '#8fd18f' }} disabled={!!ocupado} onClick={salvarDocumentosNaPasta} title={`Gera os documentos ${ehProjeto ? 'de projeto' : 'do laudo'} (Word e Excel) e grava na pasta do ${T.item}, substituindo as versões anteriores`}>
                 <FolderDown size={13} style={{ marginRight: 5 }} /> {ocupado === 'pasta' ? 'Salvando…' : 'Salvar documentos na pasta'}
               </button>
-              {documentosDoTipo.map(doc => (
+              {documentosDoTipo.map(doc => (ehHtml(doc) ? (
+                <span key={doc.tipo} style={{ display: 'inline-flex', gap: 4 }}>
+                  <button style={{ ...btnSecundario, borderColor: '#2f4f6f', color: '#8ab4f8' }} disabled={!!ocupado} onClick={() => abrirHtml(doc)}
+                    title={`Abre ${doc.rotulo} numa aba nova (gira, aproxima e afasta com o mouse)`}>
+                    <Box size={13} style={{ marginRight: 5 }} /> {ocupado === `doc_${doc.tipo}` ? 'Gerando…' : `Ver ${doc.rotulo}`}
+                  </button>
+                  <button style={btnSecundario} disabled={!!ocupado} onClick={() => baixar(doc)} title={`Baixar ${doc.rotulo} — o arquivo .html abre em qualquer navegador, sem internet`}>
+                    <FileDown size={13} />
+                  </button>
+                </span>
+              ) : (
                 <button key={doc.tipo} style={btnSecundario} disabled={!!ocupado} onClick={() => baixar(doc)} title={`Gerar ${doc.rotulo} (${doc.formato})`}>
                   <FileDown size={13} style={{ marginRight: 5 }} /> {ocupado === `doc_${doc.tipo}` ? 'Gerando…' : doc.rotulo}
                 </button>
-              ))}
+              )))}
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, alignItems: 'center' }}>
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--texto-2)', marginRight: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}
@@ -700,6 +737,10 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
           {resumo && (
             <div style={card}>
               <h3 style={tituloSecao}>Resultado</h3>
+              {/* quadros (2.4): componentes sem a medida oficial do fabricante escolhido */}
+              {Array.isArray(resumo.componentes_sem_medida) && resumo.componentes_sem_medida.length > 0 && (
+                <MedidasComponentesQuadro key={laudo.id} itens={resumo.componentes_sem_medida} ehAdmin={usuario?.role === 'admin'} ocupado={ocupado} onRecalcular={calcular} />
+              )}
               <tela.Resultado resumo={resumoDoTipo(resumo, laudo.tipo)} />
             </div>
           )}
