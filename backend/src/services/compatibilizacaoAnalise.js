@@ -225,7 +225,7 @@ async function analisarProjetoCompleto(todosArquivos) {
     ...comoLista(materiaisQuantitativos),
     ...comoLista(materiaisEquipamentos),
     ...materiaisDoDesenho,
-  ], achados);
+  ], achados, { gruposCompat: compat.grupos });
   const contagemCad = contagemDoCad(analises, vetoriais);
   const dadosExtraidos = analises.map((a, i) => ({
     arquivo: a.arquivo,

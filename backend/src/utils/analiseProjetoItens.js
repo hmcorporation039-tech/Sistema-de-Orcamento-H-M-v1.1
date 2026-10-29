@@ -9,6 +9,7 @@ const { nomeDaDisciplina } = require('./disciplinasProjeto');
 const { detectarDisciplinas } = require('./leitoresTabelaProjeto');
 // preço sugerido do catálogo pela semelhança da descrição (Jaccard >= 0,45)
 const { compararComCatalogo } = require('./semelhancaMateriais');
+const { chaveNome } = require('./texto');
 
 // "rede" e "cabeamento" são a mesma skill (NBR 14565): o pacote sugere
 // "cabeamento" para LOG/REDE/CAB e a tela deixa marcar qualquer das duas. Antes
@@ -242,6 +243,10 @@ function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = 
 // antena/TV, quando o desenho tem código individual para eles, somados só
 // dos arquivos marcados com a disciplina certa). Cada item também carrega a
 // disciplina, pro mesmo filtro usado em montarServicosPadrao.
+const RESERVA_PLUG_RJ45 = 0.2;
+const RESERVA_PLUG_MIN = 2;
+const reservaPlugs = (n) => Math.max(RESERVA_PLUG_MIN, Math.ceil(n * RESERVA_PLUG_RJ45));
+
 function montarMateriaisInstalacaoPadrao(analises, disciplinasEfetivas) {
   const { cameras: totalCameras, rede: totalRede, antena: totalAntena } = totaisCodificados(analises);
 
@@ -257,8 +262,9 @@ function montarMateriaisInstalacaoPadrao(analises, disciplinasEfetivas) {
       totalRede > 0 ? `Quantidade = pontos de rede encontrados no desenho (${totalRede}).` : 'Quantidade = nº de pontos de rede.'),
     item('Tomada coaxial RG-6 + conector (TV/antena)', totalAntena, 'un', 'antena',
       totalAntena > 0 ? `Quantidade = pontos de antena/TV encontrados no desenho (${totalAntena}).` : 'Quantidade = nº de pontos de TV/antena.'),
-    item('Plug RJ-45 Cat.6 (terminação de câmeras) + reserva', totalCameras > 0 ? totalCameras + 24 : 0, 'un', 'cftv',
-      totalCameras > 0 ? `Quantidade = câmeras (${totalCameras}) + reserva estimada (24) — ajuste conforme necessário.` : 'Quantidade = nº de câmeras + reserva.'),
+    // reserva em percentual (perda na crimpagem/reteste): "+24" fixo dava 26 plugs para 2 câmeras
+    item('Plug RJ-45 Cat.6 (terminação de câmeras) + reserva', totalCameras > 0 ? totalCameras + reservaPlugs(totalCameras) : 0, 'un', 'cftv',
+      totalCameras > 0 ? `Quantidade = câmeras (${totalCameras}) + reserva de ${RESERVA_PLUG_RJ45 * 100} % (${reservaPlugs(totalCameras)}, mínimo ${RESERVA_PLUG_MIN}) — adotado, ajuste conforme necessário.` : 'Quantidade = nº de câmeras + reserva.'),
     item('Suporte/braço de fixação p/ câmera externa (bullet)', 0, 'un', 'cftv', 'Quantidade = nº de câmeras externas (bullet).'),
     item('Identificação (etiquetas/anilhas), abraçadeiras, parafusos e miudezas', 1, 'vb', 'cabeamento', 'Verba — ajuste conforme o porte do projeto.'),
 
@@ -354,6 +360,7 @@ function montarMateriaisQuantitativos(analises) {
         confianca_catalogo: null,
         descricao_catalogo: null,
         observacao: `Quantidade extraída automaticamente do texto de "${a.arquivo}" (tabela quantitativa do próprio desenho).`,
+        _arquivo: a.arquivo, // semDuplicarFontes
       });
     }
   }
@@ -391,7 +398,7 @@ function montarMateriaisDaLista(analises, catalogo, achados) {
         confianca_catalogo: corr?.confianca ?? null,
         descricao_catalogo: corr?.descricao_catalogo ?? null,
         observacao: `Lista de materiais do próprio projeto ("${a.arquivo}"${it.item ? `, item ${it.item}` : it.tag ? `, TAG ${it.tag}` : ''}).`,
-        _fonte: 'lista', // semDuplicarFontes
+        _fonte: 'lista', _arquivo: a.arquivo, // semDuplicarFontes
       });
     }
   }
@@ -450,7 +457,7 @@ function montarMateriaisDoDesenho(analises, vetoriais, catalogo) {
             : it.tipo === 'simbolo'
               ? `Contado no desenho de "${a.arquivo}" (pág. ${pag.pagina}): símbolo da legenda × ${it.quantidade} — conferir na planta.`
               : `Medido no desenho de "${a.arquivo}" (pág. ${pag.pagina}): ${metrosBR(it.metros)} na escala 1:${pag.escala} + 10 % de sobra — conferir.`,
-          _fonte: pag.origem === 'cad' ? 'cad' : 'pdf', // semDuplicarFontes
+          _fonte: pag.origem === 'cad' ? 'cad' : 'pdf', _arquivo: a.arquivo, // semDuplicarFontes
         });
       }
     }
@@ -478,7 +485,26 @@ const tipoDoItem = (descricao) => TIPOS_DE_ITEM.find(([, re]) => re.test(descric
 const PESO_FONTE = { cad: 3, lista: 2, pdf: 1 };
 const ROTULO_FONTE = { cad: 'DWG/DXF', lista: 'lista de materiais do PDF', pdf: 'contagem pelo desenho do PDF' };
 
-function semDuplicarFontes(materiais, achados) {
+// Só é "o mesmo item" quando as fontes são do MESMO desenho/pavimento: mesmo
+// nome-base de prancha (sem extensão, revisão "R04"/"REV 04" e cópia "(1)") ou
+// desenhos que a compatibilização alinhou pelos ambientes (mesmo grupo). Antes
+// a chave era só disciplina|tipo: térreo em DWG (40 tomadas) + superior em PDF
+// (35) ficava 40 (revisão de 29/10/2026). Fonte sem arquivo conhecido (lista
+// de equipamentos lida pela IA) vale como do mesmo desenho — regra antiga.
+function nomeBasePrancha(arquivo) {
+  const s = ` ${chaveNome(String(arquivo || '').replace(/\.[a-z0-9]{2,4}$/i, '').replace(/\s*\(\d+\)\s*$/, ''))} `;
+  return s.replace(/ (REVISAO|REV|R) ?\d{1,3}(?= )/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function mesmoDesenhoFn(gruposCompat = []) {
+  const grupoDe = new Map();
+  (gruposCompat || []).forEach((g, gi) => (g.membros || []).forEach(m => grupoDe.set(m.arquivo, gi)));
+  return (a, b) => !a || !b || a === b || nomeBasePrancha(a) === nomeBasePrancha(b)
+    || (grupoDe.has(a) && grupoDe.get(a) === grupoDe.get(b));
+}
+
+// opcoes.gruposCompat: compatibilizacao.grupos (services/compatibilizacaoAnalise.js)
+function semDuplicarFontes(materiais, achados, opcoes = {}) {
+  const mesmoDesenho = mesmoDesenhoFn(opcoes.gruposCompat);
   const grupos = new Map();
   materiais.forEach((m, i) => {
     const tipo = m._fonte && tipoDoItem(m.descricao);
@@ -488,7 +514,27 @@ function semDuplicarFontes(materiais, achados) {
   });
   const fora = new Set();
   const resumo = [];
+  const somados = [];
+  // separa cada grupo disciplina|tipo por desenho: dentro do desenho vale uma fonte; entre desenhos, soma
+  const porDesenho = new Map();
   for (const [k, idx] of grupos) {
+    const blocos = [];
+    for (const i of idx.filter(j => materiais[j]._arquivo)) {
+      const b = blocos.find(bl => bl.some(j => mesmoDesenho(materiais[j]._arquivo, materiais[i]._arquivo)));
+      if (b) b.push(i); else blocos.push([i]);
+    }
+    const semArquivo = idx.filter(j => !materiais[j]._arquivo);
+    if (semArquivo.length) (blocos[0] || (blocos[0] = [])).push(...semArquivo);
+    blocos.forEach((b, n) => porDesenho.set(`${k}#${n}`, b));
+    const fontesDoGrupo = new Set(idx.map(i => materiais[i]._fonte));
+    if (blocos.length > 1 && fontesDoGrupo.size > 1) {
+      const [disc, tipo] = k.split('|');
+      const arqs = [...new Set(idx.map(i => materiais[i]._arquivo).filter(Boolean))];
+      somados.push(`${nomeDaDisciplina(disc)} — ${tipo.replace('_', ' ')}: ${arqs.map(a => `"${a}"`).join(' + ')}`);
+    }
+  }
+  for (const [kd, idx] of porDesenho) {
+    const k = kd.replace(/#\d+$/, '');
     const fontes = [...new Set(idx.map(i => materiais[i]._fonte))];
     if (fontes.length < 2) continue;
     const vence = fontes.sort((a, b) => PESO_FONTE[b] - PESO_FONTE[a])[0];
@@ -513,10 +559,16 @@ function semDuplicarFontes(materiais, achados) {
   if (resumo.length) {
     achados.push({
       tema: 'Mesmo item em mais de um arquivo (não somado)',
-      observacao: `O projeto veio em mais de um formato e o mesmo tipo de item apareceu em fontes diferentes — contado uma vez só: ${resumo.join(' | ')}. Se a diferença de quantidade for grande, confira qual arquivo está atualizado.`,
+      observacao: `O projeto veio em mais de um formato e o mesmo tipo de item apareceu em fontes diferentes do mesmo desenho — contado uma vez só: ${resumo.join(' | ')}. Se a diferença de quantidade for grande, confira qual arquivo está atualizado.`,
     });
   }
-  return materiais.filter((_, i) => !fora.has(i)).map(({ _fonte, ...m }) => m);
+  if (somados.length) {
+    achados.push({
+      tema: 'Mesmo tipo de item em desenhos diferentes (somado)',
+      observacao: `O mesmo tipo de item veio de arquivos que não são o mesmo desenho/pavimento (nome de prancha diferente e sem ambientes casados na compatibilização) — as quantidades foram somadas: ${somados.join(' | ')}. Se forem o mesmo pavimento em formatos diferentes, apague a duplicata.`,
+    });
+  }
+  return materiais.filter((_, i) => !fora.has(i)).map(({ _fonte, _arquivo, ...m }) => m);
 }
 
 module.exports = {
