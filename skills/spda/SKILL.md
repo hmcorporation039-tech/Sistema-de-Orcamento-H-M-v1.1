@@ -20,6 +20,16 @@ e o **rascunho de orçamento** no Sistema de Orçamentos (ferramenta MCP `criar_
 
 **Modelo do laudo (pedido do usuário em 29/10/2026 — referência só para SPDA e aterramento; as outras disciplinas seguem as próprias normas):** papel timbrado da H&M (emitente sempre a H&M; o responsável técnico pode ser de outra empresa — `responsavel.empresa`); capa com código, emissão, revisão, contrato, ART, emitente, responsável técnico (CREA/RNP), contratante, unidade, local, objetivo e tabela de revisões; sumário; 1 Unidade (localização e coordenadas); 2 Objetivo; 3 Considerações; 4 Escopo; 5 Metodologia; 6 Características do SPDA; 7 Referências normativas; 8 Equipamentos (com calibração); 9 Análise de risco NBR 5419-2 completa; 10 Condição verificada (prancha as built, checklist, ensaios em mΩ com menor/média/maior, aterramento, NCs, conferência das fotos, pendências); 11 Conclusão (parecer calculado, próxima inspeção, assinatura); Anexo 01 relatório fotográfico (uma foto por página com data, hora, GPS e o ensaio que comprova); Anexo 02 certificados de calibração; Anexo 03 ART; aviso legal de confidencialidade. Exemplo: `exemplos/exemplo-laudo-spda-aterramento.json`; teste: `testes/teste-laudo-modelo.js`.
 
+**Correções do laudo de referência, já embutidas (o usuário pediu que os laudos seguintes saiam corrigidos):** o sistema aponta em vermelho, na seção 10, no parecer e no painel "Calcular":
+- foto fora do local da obra (> 500 m) ou da data da inspeção;
+- linha de sinal com CT de "AT com transformador" (o certo é CT = 1);
+- nível de pânico incompatível com as pessoas e os pavimentos;
+- NP do cálculo diferente do NP citado no as built ou nos documentos;
+- ensaio com número repetido ou o mesmo par de pontos medido duas vezes;
+- instrumento sem nº de série, com calibração vencida ou com calibração posterior à inspeção.
+
+A ART, o endereço e a legenda das fotos têm uma fonte só cada um: a ART vem de `responsavel.art`, o endereço de `cliente` e a legenda da foto da tabela de ensaios. Assim não divergem mais entre as seções. Regras em `scripts/lib/consistencia.js`.
+
 Os cálculos estão em `scripts/lib/` e reproduzem o laudo HM original (teste `npm test`: 38 verificações do laudo R06 + 42 de parecer, risco e materiais em `testes/teste-parecer.js`). **Não refaça contas de cabeça: rode os scripts.**
 
 ## Também no sistema (aba Análise de Projeto)

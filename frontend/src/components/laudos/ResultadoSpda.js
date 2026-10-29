@@ -69,6 +69,13 @@ export default function ResultadoSpda({ resumo }) {
         </div>
       )}
       {i && <div style={{ fontSize: 12, color: '#888' }}>{i.parecer.texto}. Próxima inspeção periódica: a cada {i.intervaloAnos} ano(s).</div>}
+      {/* erros de preenchimento (skills/spda/scripts/lib/consistencia.js): saem em vermelho no laudo até serem corrigidos */}
+      {resumo.avisos?.length > 0 && (
+        <div style={{ marginTop: 10, border: '1px solid #5a2a2a', background: '#1a0f0f', borderRadius: 7, padding: '8px 12px' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#e05050', marginBottom: 4 }}>Conferir antes de emitir ({resumo.avisos.length})</div>
+          {resumo.avisos.map((a, k) => <div key={k} style={{ fontSize: 12, color: '#d9b0b0', marginBottom: 3 }}>• {a.texto}</div>)}
+        </div>
+      )}
     </div>
   );
 }

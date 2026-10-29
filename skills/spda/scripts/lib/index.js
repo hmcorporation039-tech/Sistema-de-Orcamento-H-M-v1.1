@@ -68,6 +68,8 @@ function resumir(res) {
       distanciaSeguranca: d.distanciaSeguranca.s_ar_m,
       materiais: d.materiais,
     },
+    // inconsistências de preenchimento (consistencia.js) — mostradas no painel antes de gerar o laudo
+    avisos: (res.avisos || []).map(a => ({ onde: a.onde, texto: a.texto.replace(/^\[CONFERIR\]\s*/, '') })),
     inspecao: {
       parecer: res.parecer,
       ncs: res.ncs.map(n => ({ id: n.id, item: n.item, descricao: n.descricao, prioridade: n.prioridade, prazo: n.prazo })),

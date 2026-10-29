@@ -476,10 +476,18 @@ function gerarLaudo(res) {
   const fotosAlerta = fotos.filter(x => x.alertas.length);
   const nv = itensChecklist.filter(c => c.situacao === 'NV');
   const faltaProv = !!(prov && !prov.as_built);
-  let c10Fotos = null;
+  // inconsistências de preenchimento (consistencia.js — erros encontrados no laudo de referência)
+  const avisos = res.avisos || [];
+  let c10Conf = null;
+  if (avisos.length || fotosAlerta.length) {
+    sub10('Conferência dos dados e dos registros fotográficos');
+    c10Conf = c10;
+    if (avisos.length) {
+      f.push(B.p('Corrigir ou justificar antes de assinar:', { after: 40 }));
+      avisos.forEach(a => f.push(B.marcador(a.texto)));
+    }
+  }
   if (fotosAlerta.length) {
-    sub10('Conferência dos registros fotográficos');
-    c10Fotos = c10;
     f.push(B.p(`As fotos abaixo têm data ou coordenadas incompatíveis com a inspeção (${dataInsp || 'data não informada'}${coordenadas(obra.coordenadas) ? `, até ${DISTANCIA_MAX_FOTO_M} m do local da obra` : ''}). Substituir pelo registro feito no local ou justificar antes de assinar.`));
     f.push(B.tabela(['Foto', 'Registro da câmera', 'Ensaio / local', 'Conferir'],
       fotosAlerta.map(x => [x.id || `Foto ${x.n}`, [fmtDataHora(x.dataHora), x.gps ? `GPS ${fmtGps(x.gps)}` : ''].filter(Boolean).join(' — '), x.ensaioRef ? `Ensaio ${x.ensaioRef.ponto}: ${[x.ensaioRef.origem, x.ensaioRef.destino].filter(Boolean).join(' × ')}` : (x.local || ''), x.alertas.join(' ')]),
@@ -519,7 +527,10 @@ function gerarLaudo(res) {
     ['Ensaios de continuidade', `${pc.dentro} de ${pc.medidos} medidos dentro do critério (${ensaios.length} previstos)${stats ? `; de ${fmtOhm(stats.min)} a ${fmtOhm(stats.max)}` : ''}`],
     ...(ater.length ? [['Resistência de aterramento', ater.map(a => `${a.ponto}: ${B.fmtNum(a.valor_ohm, 2)} Ω`).join('; ')]] : []),
     ...(comRisco ? [['Análise de risco', `R1 = ${B.fmtExp(res.risco.atual.R1)} (${res.risco.atual.atendeR1 ? 'atende' : 'NÃO atende'} RT = 10⁻⁵)${res.risco.atual.piorF ? `; F = ${B.fmtExp(res.risco.atual.piorF.F)} (${res.risco.atual.atendeF ? 'atende' : 'NÃO atende'} FT = ${B.fmtNum(res.risco.atual.piorF.FT)})` : ''}`]] : []),
-    ['PARECER TÉCNICO', `${textoParecer}${fotosAlerta.length ? ` [CONFERIR — ${fotosAlerta.length} foto(s) com local ou data incompatível com a inspeção; ver ${s10.n}.${c10Fotos}]` : ''}`],
+    ['PARECER TÉCNICO', `${textoParecer}${c10Conf ? ` [CONFERIR — ${[
+      avisos.length ? `${avisos.length} inconsistência(s) nos dados` : '',
+      fotosAlerta.length ? `${fotosAlerta.length} foto(s) com local ou data incompatível com a inspeção` : '',
+    ].filter(Boolean).join(' e ')}; ver ${s10.n}.${c10Conf}]` : ''}`],
   ], [1, 3]));
   if (pc.situacao === 'NAO_CONFORME_PRELIMINAR' || pc.situacao === 'INCONCLUSIVO') {
     f.push(B.p(`O parecer final (CONFORME ou NÃO CONFORME) só será emitido após a verificação, ou justificativa N.A., de todos os itens${ensaios.length ? `, a realização dos ${ensaios.length} ensaios de continuidade` : ''}${ncs.length ? ` e a correção das não conformidades NC-01 a ${ncs[ncs.length - 1].id}` : ''}.`, { before: 80 }));

@@ -31,6 +31,8 @@ function corpoRisco(res, { secao } = {}) {
     'As componentes RC, RM, RW e RZ entram em R1 apenas nas zonas em que a falha dos sistemas internos põe a vida em risco (LO > 0 na Tabela C.2). ' +
     `A frequência de danos F de cada zona é comparada com a frequência tolerável FT (Seção 7): ${est.sistemas_criticos ? 'sistemas críticos, FT = 0,1/ano (7.3.4)' : 'sistemas não críticos, FT = 1/ano (7.3.4)'}.`));
   f.push(B.p(`Número total de pessoas considerado na estrutura: nt = ${atual.nt}. Os valores de pessoas por zona (nz) e de tempo de permanência (tz) são premissas a confirmar com o responsável pela estrutura.`));
+  // premissas incoerentes (linha de sinal com CT de AT, pânico × pessoas, NP × as built — consistencia.js)
+  (res.avisos || []).filter(a => a.onde === 'risco').forEach(a => f.push(B.p(a.texto)));
 
   // 2. Eventos perigosos
   f.push(tit(2, 'Áreas de exposição e número de eventos perigosos'));

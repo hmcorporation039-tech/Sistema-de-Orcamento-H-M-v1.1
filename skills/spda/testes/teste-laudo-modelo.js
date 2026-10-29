@@ -84,6 +84,31 @@ const ordem = (texto, lista) => lista.map(t => texto.indexOf(t)).every((pos, i, 
   v.igual('calibração vencida na data da inspeção marcada', r2.corpo.includes('[CONFERIR] Calibração vencida na data da inspeção'), true);
   v.igual('sem foto suspeita: sem conferência no parecer', [r2.corpo.includes('Conferência dos registros fotográficos'), /PARECER TÉCNICO[^\n]*\n[^\n]*\[CONFERIR/.test(r2.corpo)], [false, false]);
 
+  // os erros encontrados no laudo de referência (29/10/2026), reproduzidos em
+  // dados fictícios: cada um tem de ser apontado para conferir (consistencia.js)
+  v.igual('exemplo sem inconsistência', res.avisos, []);
+  const d4 = JSON.parse(fs.readFileSync(EXEMPLO, 'utf8'));
+  montarFotos(d4);
+  d4.obra.pavimentos = 4;
+  const sinal = d4.linhas.find(l => l.tipo === 'sinal');
+  sinal.ct = 'at_trafo';                                                   // linha de sinal com CT de AT
+  const zonaInterna = d4.zonas.find(z => z.tipo !== 'externa');
+  zonaInterna.perigo_especial = 'panico_baixo'; zonaInterna.nz = 600;     // "até 100 pessoas" com 600
+  d4.inspecao.dados_projeto = [{ dado: 'Captação provisória', valor: 'NP III', fonte: 'as built' }]; // cálculo com NP I
+  d4.inspecao.continuidade.push({ ...d4.inspecao.continuidade[7], ponto: '19' }); // mesmo par ensaiado duas vezes
+  d4.inspecao.continuidade.push({ ...d4.inspecao.continuidade[0], ponto: '1', origem: 'Franklin 1', destino: 'Mastro' }); // número repetido
+  d4.inspecao.instrumentos[0].serie = '';
+  const r4 = await textoDoLaudo(d4);
+  const avisos = r4.res.avisos.map(a => a.texto).join('\n');
+  v.igual('aponta linha de sinal com CT de AT', /Linha de sinal .* CT é 1/.test(avisos), true);
+  v.igual('aponta pânico baixo com 600 pessoas e 4 pavimentos', /600 pessoas na zona e 4 pavimentos/.test(avisos), true);
+  v.igual('aponta NP do cálculo × NP do as built', /usa SPDA NP I, mas .* indica NP III/.test(avisos), true);
+  v.igual('aponta par de pontos ensaiado duas vezes', /mesmo par de pontos foi ensaiado 2 vezes .* ensaios 8, 19/.test(avisos), true);
+  v.igual('aponta número de ensaio repetido', /Número de ensaio repetido: 1\b/.test(avisos), true);
+  v.igual('aponta instrumento sem série', /sem número de série/.test(avisos), true);
+  v.igual('avisos no laudo (seção 10) e no parecer', r4.corpo.includes('Conferência dos dados e dos registros fotográficos') && /PARECER TÉCNICO[\s\S]*\[CONFERIR — 6 inconsistência\(s\) nos dados e 1 foto/.test(r4.corpo), true);
+  v.igual('avisos do risco também na análise de risco (9.1)', /9\.1 Objeto e premissas[\s\S]*Linha de sinal[\s\S]*9\.2 Áreas/.test(r4.corpo), true);
+
   // laudo só de aterramento
   const d3 = JSON.parse(fs.readFileSync(EXEMPLO, 'utf8'));
   d3.meta.tipo_laudo = 'aterramento';

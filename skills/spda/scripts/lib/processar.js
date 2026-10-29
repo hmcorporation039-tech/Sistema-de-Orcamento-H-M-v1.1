@@ -6,6 +6,7 @@ const { analisarRisco } = require('./risco');
 const { dimensionar } = require('./dimensionamento');
 const T = require('./tabelas');
 const { aplicarParecerRisco } = require('./parecer-risco');
+const { conferirConsistencia } = require('./consistencia');
 
 const CHECKLIST_BASE = require('../../dados/checklist_base.json');
 
@@ -158,6 +159,9 @@ function processar(dados) {
     intervalo: T.intervaloInspecao(insp),
     prazos: PRAZOS,
     tiposEnsaio: ENSAIOS,
+    // erros de preenchimento que o cálculo não pega (consistencia.js); sem
+    // análise de risco, os avisos dela não se aplicam
+    avisos: conferirConsistencia(dados, ensaios).filter(a => risco || a.onde !== 'risco'),
   });
 }
 
