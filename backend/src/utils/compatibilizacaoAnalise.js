@@ -246,6 +246,8 @@ const SERVICO_DO_BLOCO = [
   [/^Tomada de piso|^Ponto de luz/i, 'ele_ponto_energia'],
   [/^Interruptor/i, 'ele_interruptor'],
   [/^Quadro de distribuição/i, 'ele_qd_setorial'],
+  // a legenda diz "de sobrepor": era lançado como de embutir (teste de 28/10/2026)
+  [/^(Luminária(?! de emerg).*\bsobrepor|Plafon)/i, 'ilum_luminaria_sobrepor'],
   [/^Luminária(?! de emerg)/i, 'ilum_luminaria_embutir'],
   [/^Câmera/i, 'cftv_ponto'],
   [/^Ponto de rede/i, 'rede_ponto'],
@@ -587,6 +589,7 @@ function montarMateriaisDaLista(analises, catalogo, achados) {
         confianca_catalogo: corr?.confianca ?? null,
         descricao_catalogo: corr?.descricao_catalogo ?? null,
         observacao: `Lista de materiais do próprio projeto ("${a.arquivo}"${it.item ? `, item ${it.item}` : it.tag ? `, TAG ${it.tag}` : ''}).`,
+        _fonte: 'lista', // semDuplicarFontes
       });
     }
   }
@@ -647,11 +650,73 @@ function montarMateriaisDoDesenho(analises, vetoriais, catalogo) {
             : it.tipo === 'simbolo'
               ? `Contado no desenho de "${a.arquivo}" (pág. ${pag.pagina}): símbolo da legenda × ${it.quantidade} — conferir na planta.`
               : `Medido no desenho de "${a.arquivo}" (pág. ${pag.pagina}): ${metrosBR(it.metros)} na escala 1:${pag.escala} + 10 % de sobra — conferir.`,
+          _fonte: pag.origem === 'cad' ? 'cad' : 'pdf', // semDuplicarFontes
         });
       }
     }
   });
   return materiais;
+}
+
+// ── O mesmo item vindo de arquivos diferentes ─────────────────────────────
+// O projeto chega em PDF (com lista de materiais) E em DWG/DXF: a tomada da
+// lista e a mesma tomada contada nos blocos do desenho entravam as duas (teste
+// de 28/10/2026: "Tomada 2P+T 10 A" da lista + "Tomada 2P+T — bloco TUG × 6").
+// Por disciplina e TIPO de item, vale uma fonte só, nesta ordem: DWG/DXF
+// (blocos contados) > lista/tabela do PDF > contagem pelo desenho do PDF.
+// Um item da lista e um do DWG do mesmo tipo: fica a descrição da lista (mais
+// completa, com "10 A") e a quantidade do DWG.
+const TIPOS_DE_ITEM = [
+  // ponto de rede/TV antes de tomada: "tomada de rede" é ponto de rede
+  ['ponto_rede', /ponto de rede|\brj-?45\b|tomada de rede|tomada l[óo]gica/i], ['ponto_tv', /ponto de tv|coaxial|tomada de tv/i],
+  ['tomada', /\btomada/i], ['interruptor', /interruptor|\bdimmer/i], ['luminaria', /lumin[áa]ria|plafon|arandela|\bspot\b|downlight|pendente/i],
+  ['eletroduto', /eletroduto/i], ['eletrocalha', /eletrocalha/i], ['perfilado', /perfilado/i], ['leito', /leito para cabo|leito\b/i],
+  ['quadro', /^quadro|quadro de distribui/i], ['camera', /c[âa]mera/i], ['detector', /detector/i], ['acionador', /acionador/i],
+  ['avisador', /avisador|sirene/i],
+];
+const tipoDoItem = (descricao) => TIPOS_DE_ITEM.find(([, re]) => re.test(descricao || ''))?.[0] || null;
+const PESO_FONTE = { cad: 3, lista: 2, pdf: 1 };
+const ROTULO_FONTE = { cad: 'DWG/DXF', lista: 'lista de materiais do PDF', pdf: 'contagem pelo desenho do PDF' };
+
+function semDuplicarFontes(materiais, achados) {
+  const grupos = new Map();
+  materiais.forEach((m, i) => {
+    const tipo = m._fonte && tipoDoItem(m.descricao);
+    if (!tipo) return;
+    const k = `${m.disciplina}|${tipo}`;
+    (grupos.get(k) || grupos.set(k, []).get(k)).push(i);
+  });
+  const fora = new Set();
+  const resumo = [];
+  for (const [k, idx] of grupos) {
+    const fontes = [...new Set(idx.map(i => materiais[i]._fonte))];
+    if (fontes.length < 2) continue;
+    const vence = fontes.sort((a, b) => PESO_FONTE[b] - PESO_FONTE[a])[0];
+    const ficam = idx.filter(i => materiais[i]._fonte === vence);
+    const saem = idx.filter(i => materiais[i]._fonte !== vence);
+    saem.forEach(i => fora.add(i));
+    const qtd = (lista) => lista.reduce((s, i) => s + (Number(materiais[i].quantidade) || 0), 0);
+    // descrição da lista no item do DWG (1 para 1, mesma unidade)
+    const daLista = saem.filter(i => materiais[i]._fonte === 'lista');
+    if (vence === 'cad' && ficam.length === 1 && daLista.length === 1 && materiais[ficam[0]].unidade === materiais[daLista[0]].unidade) {
+      const c = materiais[ficam[0]], l = materiais[daLista[0]];
+      Object.assign(c, {
+        descricao: l.descricao, referencia_fabricante: l.referencia_fabricante || c.referencia_fabricante,
+        material_id: l.material_id ?? c.material_id, preco_catalogo: l.preco_catalogo ?? c.preco_catalogo,
+        confianca_catalogo: l.confianca_catalogo ?? c.confianca_catalogo, descricao_catalogo: l.descricao_catalogo ?? c.descricao_catalogo,
+        observacao: `${c.observacao} Descrição da lista de materiais (que dizia ${l.quantidade} ${l.unidade}).`,
+      });
+    }
+    const [disc, tipo] = k.split('|');
+    resumo.push(`${nomeDaDisciplina(disc)} — ${tipo.replace('_', ' ')}: vale ${ROTULO_FONTE[vence]} (${qtd(ficam)}); ${[...new Set(saem.map(i => materiais[i]._fonte))].map(f => `${ROTULO_FONTE[f]} dizia ${qtd(saem.filter(i => materiais[i]._fonte === f))}`).join('; ')}`);
+  }
+  if (resumo.length) {
+    achados.push({
+      tema: 'Mesmo item em mais de um arquivo (não somado)',
+      observacao: `O projeto veio em mais de um formato e o mesmo tipo de item apareceu em fontes diferentes — contado uma vez só: ${resumo.join(' | ')}. Se a diferença de quantidade for grande, confira qual arquivo está atualizado.`,
+    });
+  }
+  return materiais.filter((_, i) => !fora.has(i)).map(({ _fonte, ...m }) => m);
 }
 
 function achadosDoDesenho(analises, vetoriais) {
@@ -806,13 +871,14 @@ async function analisarProjetoCompleto(todosArquivos) {
   const materiaisEquipamentos = montarMateriais(equipamentos, catalogo);
   const materiaisQuantitativos = montarMateriaisQuantitativos(analises);
   const materiaisDoDesenho = montarMateriaisDoDesenho(analises, vetoriais, catalogo);
-  const materiais = [
+  const comoLista = (lista) => lista.map(m => ({ ...m, _fonte: 'lista' })); // tabela do PDF / equipamentos lidos do texto
+  const materiais = semDuplicarFontes([
     ...semModeloCoberto(montarMateriaisInstalacaoPadrao(analises, disciplinasEfetivas), materiaisDoDesenho),
     ...montarMateriaisDaLista(analises, catalogo, achados),
-    ...materiaisQuantitativos,
-    ...materiaisEquipamentos,
+    ...comoLista(materiaisQuantitativos),
+    ...comoLista(materiaisEquipamentos),
     ...materiaisDoDesenho,
-  ];
+  ], achados);
   const contagemCad = contagemDoCad(analises, vetoriais);
   const dadosExtraidos = analises.map((a, i) => ({
     arquivo: a.arquivo,
@@ -858,4 +924,4 @@ async function analisarProjetoCompleto(todosArquivos) {
   };
 }
 
-module.exports = { analisarProjetoCompleto, extrairCliente, gerarAchados, montarServicosPadrao, compararComCatalogo };
+module.exports = { analisarProjetoCompleto, extrairCliente, gerarAchados, montarServicosPadrao, compararComCatalogo, paraTestes: { semDuplicarFontes, tipoDoItem, contagemDoCad } };

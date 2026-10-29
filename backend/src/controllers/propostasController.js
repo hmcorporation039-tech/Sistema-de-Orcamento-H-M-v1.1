@@ -4,7 +4,7 @@ const { gerarHtmlProposta, gerarFooterTemplate } = require('../utils/pdfTemplate
 const { criarTransportador } = require('../utils/smtpClient');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
 const { comTransacao } = require('../utils/transacao');
-const { calcularTotais, normalizarItem, ehMaoDeObra, bdiMateriaisDefinido, arredondar } = require('../utils/calculoProposta');
+const { calcularTotais, normalizarItem, ehMaoDeObra, bdiMateriaisDefinido, arredondar, itemPertenceASecao } = require('../utils/calculoProposta');
 const { normalizarMemoriaBdi } = require('../utils/bdiTcu');
 
 // BDI diferenciado de materiais (2.0, Fase 3F): vazio/null = mesmo BDI para tudo
@@ -32,16 +32,6 @@ Engenharia • Tecnologia • Segurança Eletrônica
 
 📍 Quadra CNF 03 Lote 16 Loja 04
 Taguatinga Norte – DF | CEP 72.125-535`;
-
-// Item → seção: pelo id da seção (`sid`) ou pelo nome (`secao_nome`), mas só
-// quando os DOIS lados têm valor. Antes `it.sid === sec.id` com os dois
-// undefined dava true e o item entrava em TODAS as seções (100 → 200 no total;
-// revisão de 27/10/2026). Mesma regra do calculoProposta.calcularTotais.
-function itemPertenceASecao(it, sec) {
-  if (!it || !sec) return false;
-  return (sec.id != null && it.sid != null && it.sid === sec.id)
-    || (sec.nome != null && it.secao_nome != null && it.secao_nome === sec.nome);
-}
 
 // Insere as seções e seus itens, com quantidade e valor_total recalculados no
 // backend. Compartilhado por criar/atualizar para que as duas rotas não possam

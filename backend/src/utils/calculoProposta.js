@@ -94,13 +94,16 @@ function bdiMateriaisDefinido(bdiMateriais) {
   return bdiMateriais !== undefined && bdiMateriais !== null && bdiMateriais !== '' && Number.isFinite(Number(bdiMateriais));
 }
 
-// Item → seção: pelo id (`sid`) ou pelo nome (`secao_nome`), mas só quando os
-// DOIS lados têm valor. Antes `it.sid === sec.id` com os dois undefined dava true
+// Item → seção: pelo id da tela (`sid`), pelo id do banco (`secao_id`, como o
+// GET /propostas/:id devolve) ou pelo nome (`secao_nome`), mas só quando os DOIS
+// lados têm valor. Antes `it.sid === sec.id` com os dois undefined dava true
 // e o item entrava em TODAS as seções (100 → 200 no total; revisão de 27/10/2026).
-// Mesma regra de propostasController.inserirSecoesEItens.
+// Sem `secao_id`, ler a proposta pela API e gravar de volta apagava todos os
+// itens (teste de 28/10/2026). Uma regra só: totais, validação e gravação.
 function itemPertenceASecao(it, sec) {
   if (!it || !sec) return false;
   return (sec.id != null && it.sid != null && it.sid === sec.id)
+    || (sec.id != null && it.sid == null && it.secao_id != null && String(it.secao_id) === String(sec.id))
     || (sec.nome != null && it.secao_nome != null && it.secao_nome === sec.nome);
 }
 

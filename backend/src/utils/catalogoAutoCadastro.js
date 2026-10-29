@@ -17,13 +17,25 @@ const TAMANHO_MAX_DESCRICAO_CATALOGO = 300;
 const { categoriaLocal } = require('../services/classificacaoMateriais');
 const { garantirServicoCadastrado } = require('./servicosBase');
 
+// Só vira item de catálogo o que tem PREÇO e cara de item reutilizável
+// (decisão do usuário em 28/10/2026). O orçamento gerado de uma análise ou de
+// um laudo cadastrava tudo a R$ 0,00 — "Interruptor — bloco INT", "Eletroduto
+// — medido no desenho", "NC-01 (P2) — Adequar…", e lixo de leitura com
+// tabulação ("Tomada 2P+T 10 A \tun \t6"). O item continua na proposta; entra
+// no catálogo quando alguém der um preço a ele e salvar.
+const RE_NAO_REUTILIZAVEL = /\t|—\s*bloco\b|medido no desenho|contado no\b|^NC-\d+/i;
+function ehItemDeCatalogo(descricao, valorUnitario) {
+  const desc = String(descricao || '').trim();
+  return !!desc && desc.length <= TAMANHO_MAX_DESCRICAO_CATALOGO && Number(valorUnitario) > 0 && !RE_NAO_REUTILIZAVEL.test(desc);
+}
+
 // Acha o material do catálogo com a mesma descrição (ignorando
 // caixa/espaços) ou cadastra um novo a partir dos dados do item. Só é
 // chamado quando o item NÃO veio do "+ catálogo" (material_id já nulo) —
 // itens escolhidos do catálogo já têm o vínculo certo e não passam por aqui.
 async function garantirMaterialCadastrado(client, { descricao, unidade, ncm, valor_unitario }) {
   const desc = (descricao || '').trim();
-  if (!desc || desc.length > TAMANHO_MAX_DESCRICAO_CATALOGO) return null;
+  if (!ehItemDeCatalogo(desc, valor_unitario)) return null;
 
   const existente = await client.query(
     `SELECT id FROM materiais WHERE ativo = true AND TRIM(LOWER(descricao)) = TRIM(LOWER($1)) LIMIT 1`,
@@ -53,7 +65,8 @@ async function garantirMaterialCadastrado(client, { descricao, unidade, ncm, val
 // A tabela antiga mao_de_obra_itens continua sendo escrita junto (dá o id
 // estável do código e mantém a 1.x funcionando). Ver utils/servicosBase.js.
 async function garantirMaoDeObraCadastrada(client, { descricao, unidade, valor_unitario, codigo, subgrupo }) {
+  if (!ehItemDeCatalogo(descricao, valor_unitario)) return null; // mesma regra dos materiais
   return garantirServicoCadastrado(client, { descricao, unidade, valor_unitario, codigo, subgrupo });
 }
 
-module.exports = { garantirMaterialCadastrado, garantirMaoDeObraCadastrada };
+module.exports = { garantirMaterialCadastrado, garantirMaoDeObraCadastrada, ehItemDeCatalogo };

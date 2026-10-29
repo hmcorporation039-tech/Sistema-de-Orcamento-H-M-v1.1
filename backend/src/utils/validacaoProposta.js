@@ -1,4 +1,4 @@
-const { numeroSeguro, arredondar, arredondarQuantidade, calcularTotais } = require('./calculoProposta');
+const { numeroSeguro, arredondar, arredondarQuantidade, calcularTotais, itemPertenceASecao } = require('./calculoProposta');
 
 // Tetos das colunas (revisão de 27/10/2026): acima deles o PostgreSQL recusava o
 // INSERT ("numeric field overflow") e a API respondia 500 em vez de 400.
@@ -34,6 +34,10 @@ function dataValida(valor) {
 }
 
 function validarProposta(body) {
+  // a própria API devolve a data como "2026-10-28T03:00:00.000Z" (o driver do
+  // Postgres lê DATE como meia-noite local) e recusava o mesmo valor de volta:
+  // fica a parte da data, que é a certa (teste de 28/10/2026)
+  if (typeof body.data === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(body.data)) body.data = body.data.slice(0, 10);
   const { data, cliente_nome, secoes, itens, bdi, bdi_materiais, imposto_venda, imposto_servico, desconto_materiais_pct, desconto_mao_obra_pct, validade } = body;
 
   if (!data) return 'Informe a data da proposta.';
@@ -48,6 +52,11 @@ function validarProposta(body) {
 
   if (secoes !== undefined && !Array.isArray(secoes)) return 'Formato inválido das seções.';
   if (itens !== undefined && !Array.isArray(itens)) return 'Formato inválido dos itens.';
+  // item que não cai em nenhuma seção era descartado calado (proposta salva com 0 itens e R$ 0,00)
+  if (Array.isArray(itens) && itens.length) {
+    const soltos = itens.filter(it => !(secoes || []).some(sec => itemPertenceASecao(it, sec))).length;
+    if (soltos) return `${soltos} item(ns) sem seção correspondente (sid, secao_id ou secao_nome que não existe nas seções enviadas).`;
+  }
 
   for (const [campo, valor] of [['bdi', bdi], ['bdi_materiais', bdi_materiais], ['imposto_venda', imposto_venda], ['imposto_servico', imposto_servico]]) {
     if (valor === undefined || valor === null || valor === '') continue;

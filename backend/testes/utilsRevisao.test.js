@@ -13,6 +13,36 @@ let ok = 0;
 const casos = [];
 const caso = (nome, fn) => casos.push([nome, fn]);
 
+// ── revisão de 28/10/2026 ──
+caso('catálogo: só entra item com preço e reutilizável (nada de "— bloco", "medido no desenho", NC-01 ou tabulação)', () => {
+  const { ehItemDeCatalogo } = require('../src/utils/catalogoAutoCadastro');
+  assert.strictEqual(ehItemDeCatalogo('Cabo flexível 2,5 mm²', 4.9), true);
+  for (const [d, v] of [['Cabo flexível 2,5 mm²', 0], ['Interruptor — bloco INT', 5], ['Eletroduto — medido no desenho (layer ELE)', 5],
+    ['NC-01 (P2) — Adequar ao requisito', 300], ['Tomada 2P+T 10 A \tun \t6', 5], ['', 5]]) assert.strictEqual(ehItemDeCatalogo(d, v), false, d);
+});
+
+caso('proposta: item ligado à seção pelo secao_id (como o GET devolve) não some; item solto é recusado; data com hora do GET é aceita', () => {
+  const { itemPertenceASecao } = require('../src/utils/calculoProposta');
+  const { validarProposta } = require('../src/utils/validacaoProposta');
+  assert.strictEqual(itemPertenceASecao({ secao_id: 714 }, { id: 714, nome: 'Materiais' }), true);
+  assert.strictEqual(itemPertenceASecao({ sid: 'a', secao_id: 714 }, { id: 714 }), false, 'sid da tela manda');
+  const base = { cliente_nome: 'Cliente QA', secoes: [{ id: 1, nome: 'Materiais' }] };
+  const corpo = { ...base, data: '2026-10-28T03:00:00.000Z', itens: [{ secao_id: 1, descricao: 'Cabo', quantidade: 1, valor_unitario: 2 }] };
+  assert.strictEqual(validarProposta(corpo), null);
+  assert.strictEqual(corpo.data, '2026-10-28');
+  assert.match(validarProposta({ ...base, data: '2026-10-28', itens: [{ secao_id: 99, descricao: 'X', quantidade: 1, valor_unitario: 1 }] }), /sem seção/);
+});
+
+caso('data: "2026-02-31" não existe (o JavaScript "rolava" para março)', () => {
+  const { ehDataIso } = require('../src/utils/dataHoje');
+  assert.deepStrictEqual(['2026-02-28', '2028-02-29', '2026-02-31', '2026-13-01', '2026-2-1', ''].map(ehDataIso), [true, true, false, false, false, false]);
+});
+
+caso('CSV: célula que começa com = + - @ vira texto; número negativo continua número', () => {
+  const { escaparCsv } = require('../src/utils/csv');
+  assert.deepStrictEqual(['=1+1', '@SOMA', '+55 61', '-150', 'a;b'].map(escaparCsv), ["'=1+1", "'@SOMA", "'+55 61", '-150', '"a;b"']);
+});
+
 caso('pesquisa de mercado: "1.299" e "R$ 2.450" são milhar (antes 1,30 e 2,45)', () => {
   const { normalizarOfertas } = require('../src/utils/pesquisaMercadoService');
   const precos = (lista) => normalizarOfertas({ ofertas: lista.map((preco, i) => ({ fonte: `F${i}`, preco })) }).map(o => o.preco);

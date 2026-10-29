@@ -103,5 +103,31 @@ function dxfSintetico() {
     await assert.rejects(lerArquivoCad(Buffer.from('não sou cad'), 'x.dxf'), /não é um DWG nem um DXF/);
   });
 
+  await caso('PDF com lista + DWG do mesmo projeto: o item não é somado duas vezes (vale o DWG, com a descrição da lista)', async () => {
+    const { paraTestes: { semDuplicarFontes, tipoDoItem } } = require('../src/utils/compatibilizacaoAnalise');
+    const m = (descricao, quantidade, unidade, _fonte, disciplina = 'eletrica', extra = {}) => ({ descricao, quantidade, unidade, _fonte, disciplina, observacao: `obs ${_fonte}.`, ...extra });
+    const achados = [];
+    const saida = semDuplicarFontes([
+      m('Tomada 2P+T 10 A', 6, 'un', 'lista', 'eletrica', { material_id: 77 }),
+      m('Tomada baixa 2P+T — bloco TUG', 6, 'un', 'cad'),
+      m('Eletroduto PVC flexível 3/4"', 35, 'm', 'lista'),
+      m('Eletroduto — medido no desenho', 23, 'm', 'cad'),
+      m('Disjuntor monopolar 16 A', 4, 'un', 'lista'), // só na lista: fica
+      m('Tomada de rede RJ-45', 8, 'un', 'lista', 'rede'), // outra disciplina e tipo "ponto de rede": fica
+      { descricao: 'Interruptor simples (modelo)', quantidade: 0, unidade: 'un', disciplina: 'eletrica' }, // item-modelo sem fonte: fica
+    ], achados);
+    assert.deepStrictEqual(saida.map(x => [x.descricao, x.quantidade]), [
+      ['Tomada 2P+T 10 A', 6], ['Eletroduto PVC flexível 3/4"', 23], ['Disjuntor monopolar 16 A', 4], ['Tomada de rede RJ-45', 8], ['Interruptor simples (modelo)', 0],
+    ]);
+    assert.strictEqual(saida[0].material_id, 77, 'item do DWG herda o material do catálogo da lista');
+    assert.ok(saida.every(x => !('_fonte' in x)), 'marca interna não vai para o banco');
+    assert.strictEqual(achados.length, 1);
+    assert.ok(/tomada: vale DWG\/DXF \(6\); lista de materiais do PDF dizia 6/.test(achados[0].observacao) && /eletroduto: vale DWG\/DXF \(23\); lista de materiais do PDF dizia 35/.test(achados[0].observacao), achados[0].observacao);
+    assert.deepStrictEqual(['Tomada de rede', 'Tomada 2P+T', 'Luminária de sobrepor'].map(tipoDoItem), ['ponto_rede', 'tomada', 'luminaria']);
+    // lista × contagem pelo desenho do PDF (sem DWG): vale a lista
+    const s2 = semDuplicarFontes([m('Luminária LED 18 W', 10, 'un', 'lista', 'iluminacao'), m('LUMINÁRIA DE SOBREPOR', 12, 'un', 'pdf', 'iluminacao')], []);
+    assert.deepStrictEqual(s2.map(x => x.quantidade), [10]);
+  });
+
   console.log(`analiseCad: ${ok} casos ok`);
 })().catch((e) => { console.error('FALHOU:', e); process.exit(1); });
