@@ -67,21 +67,29 @@ const totaisCodificados = (analises) => ({
   antena: somarPorDisciplina(analises, 'antena', a => a.pontosRedeAntena.antena.total),
 });
 
-// Circuitos lidos dos quadros de carga dos arquivos de elétrica
+// Circuitos lidos dos quadros de carga dos arquivos de elétrica. O alimentador
+// de um quadro (linha "QD-Térreo" no quadro do QGBT, `alimentador: true`) é o
+// disjuntor geral do quadro de baixo — já entra como 1 por quadro em
+// ele_disjuntores; contado como circuito, a folha 1 da NSA dava 37 (5 a mais).
 const circuitosDosQuadros = (analises) => analises
   .filter(a => a.disciplinas.some(d => d.startsWith('eletrica')))
-  .reduce((s, a) => s + (a.quadroCargas?.length || 0), 0);
+  .reduce((s, a) => s + (a.quadroCargas || []).filter(c => !c.alimentador).length, 0);
 // Quadros de um arquivo: um por TÍTULO de quadro de cargas ("Quadro de cargas
 // (QD-Térreo)"), não um por arquivo — PDF com QGBT + QD-Térreo + QD-1PAV dava
 // ele_qd_setorial = 1 (revisão de 29/10/2026). Aceita a lista de quadros
-// (`a.quadros`) ou o título em cada circuito; sem título, 1 por arquivo com circuitos.
+// (`a.quadrosDeCargas`, utils/projetoParser.js) ou o título em cada circuito;
+// sem título, 1 por arquivo com circuitos.
 const tituloDoQuadro = (c) => c?.quadro || c?.painel || c?.titulo || null;
+// Devolve os títulos (null = quadro sem título).
 function quadrosDoArquivo(a) {
-  if (Array.isArray(a.quadros) && a.quadros.length) return a.quadros.length;
+  if (Array.isArray(a.quadrosDeCargas) && a.quadrosDeCargas.length) return a.quadrosDeCargas.map(q => q.quadro || null);
   const c = a.quadroCargas || [];
-  if (!c.length) return 0;
-  return Math.max(1, new Set(c.map(tituloDoQuadro).filter(Boolean)).size);
+  if (!c.length) return [];
+  const titulos = [...new Set(c.map(tituloDoQuadro).filter(Boolean))];
+  return titulos.length ? titulos : [null];
 }
+// QGBT/QDG/quadro geral é o geral (ele_qdg); os demais, setoriais
+const RE_QUADRO_GERAL = /\bQGBT\b|\bQDG\b|\bQGD\b|\bGERAL\b/i;
 
 // Item-modelo de material (quantidade 0, "confirme na planta") que a contagem
 // do desenho (DWG/DXF ou PDF, item não ambíguo) já cobre na mesma disciplina
@@ -174,7 +182,9 @@ const SERVICO_DO_SIMBOLO = [
   [/dimmer|interruptor/i, 'ilum_interruptor_dimmer', 'iluminacao'],
   [new RegExp(`${SEM_EMERG}.*sensor (de )?presen`, 'i'), 'ilum_sensor_presenca', 'iluminacao'],
   [new RegExp(`${SEM_EMERG}.*pendente`, 'i'), 'ilum_luminaria_pendente', 'iluminacao'],
-  // a legenda diz "de sobrepor": era lançado como de embutir (teste de 28/10/2026)
+  // a legenda diz "de sobrepor": era lançado como de embutir (teste de 28/10/2026);
+  // "de embutir" escrito vale mais que o tipo ("Plafon de LED … de embutir")
+  [new RegExp(`${SEM_EMERG}.*\\bembutir`, 'i'), 'ilum_luminaria_embutir', 'iluminacao'],
   [new RegExp(`${SEM_EMERG}(.*(lumin[áa]ria|painel|spot).*sobrepor|.*plafon|.*arandela)`, 'i'), 'ilum_luminaria_sobrepor', 'iluminacao'],
   [new RegExp(`${SEM_EMERG}.*(lumin[áa]ria|downlight|\\bspot\\b|painel led|projetor|refletor)`, 'i'), 'ilum_luminaria_embutir', 'iluminacao'],
   // automação
@@ -279,17 +289,17 @@ function contagemDoDesenho(analises, vetoriais = [], opcoes = {}) {
           if (cad && !discItem) continue;
           const achou = regraDoSimbolo({ ...it, _cad: cad }, marcadas, discItem);
           if (!achou) continue;
-          const [desc, [, cod]] = achou;
+          const [desc, [, cod, discRegra]] = achou;
           const codigo = typeof cod === 'function' ? cod(desc) : cod;
           const rotulo = cad ? `${onde}: bloco ${it.bloco} × ${it.quantidade}` : `${onde}: "${desc.slice(0, 50)}" × ${it.quantidade}`;
-          entradas.push({ codigo, quantidade: Number(it.quantidade) || 0, fonte: cad ? 'cad' : 'pdf', arquivo: a.arquivo, rotulo });
+          entradas.push({ codigo, disciplina: discRegra, quantidade: Number(it.quantidade) || 0, fonte: cad ? 'cad' : 'pdf', arquivo: a.arquivo, rotulo });
         } else if (it.tipo === 'linha' && it.metros != null) {
           const disc = cad ? disciplinaDoItemCad(it, marcadas)
             : (() => { const s = detectarDisciplinas(it.descricao)[0]?.chave; return (s && doMesmoGrupo(marcadas, s)) || disciplinaUnica(marcadas); })();
           const codigo = disc && servicoDaLinha(disc, it);
           if (!codigo) continue;
           const rota = Number(it.rota_m ?? it.metros) || 0;
-          entradas.push({ codigo, quantidade: rota, metros: true, fonte: cad ? 'cad' : 'pdf', arquivo: a.arquivo, rotulo: `${onde}: ${metrosBR(rota)}${it.layer ? ` (layer ${it.layer})` : ''}` });
+          entradas.push({ codigo, disciplina: disc, quantidade: rota, metros: true, fonte: cad ? 'cad' : 'pdf', arquivo: a.arquivo, rotulo: `${onde}: ${metrosBR(rota)}${it.layer ? ` (layer ${it.layer})` : ''}` });
         }
       }
     }
@@ -311,6 +321,7 @@ function contagemDoDesenho(analises, vetoriais = [], opcoes = {}) {
     const soma = ficam.reduce((s, x) => s + x.quantidade, 0);
     const metros = ficam.some(x => x.metros);
     cont[codigo] = {
+      disciplina: lista[0].disciplina,
       quantidade: metros ? Math.ceil(soma * SOBRA_ROTA) : soma,
       blocos: ficam.map(x => x.rotulo),
       ...(metros ? { metros: Math.round(soma * 10) / 10 } : {}),
@@ -329,7 +340,11 @@ function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = 
   const totalRede = codificados.rede || cad.rede_ponto?.quantidade || 0;
   const totalAntena = codificados.antena || cad.antena_ponto?.quantidade || 0;
   const circuitos = circuitosDosQuadros(analises);
-  const quadros = analises.filter(a => a.disciplinas.some(d => d.startsWith('eletrica'))).reduce((s, a) => s + quadrosDoArquivo(a), 0);
+  const titulosQuadros = analises.filter(a => a.disciplinas.some(d => d.startsWith('eletrica'))).flatMap(quadrosDoArquivo);
+  const quadros = titulosQuadros.length;
+  const quadrosGerais = titulosQuadros.filter(t => t && RE_QUADRO_GERAL.test(t));
+  const quadrosSetoriais = titulosQuadros.filter(t => !(t && RE_QUADRO_GERAL.test(t)));
+  const listaQuadros = (l) => (l.some(Boolean) ? ` (${l.filter(Boolean).join(', ')})` : '');
   const SEM_CODIGO = 'Símbolo gráfico no desenho, sem código de texto individual — confirme a quantidade direto na planta antes de fechar.';
   const SEM_ROTA = 'Metros de rota: sem trecho medido no desenho desta disciplina — confirme na planta.';
 
@@ -404,11 +419,12 @@ function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = 
     // projeto (tomada baixa/média/alta/emergência por altura de instalação,
     // ponto de energia teto/piso) — lista pra cobrir um orçamento de elétrica
     // do zero, mesmo sem contagem automática (ver nota acima).
-    item('ele_qdg', 'Instalação de quadro de distribuição geral (QDG)', 0, 'un', 'eletrica', SEM_CODIGO),
-    item('ele_qd_setorial', 'Instalação de quadros de distribuição setoriais/por pavimento', quadros, 'un', 'eletrica',
-      quadros > 0 ? `Quantidade = quadros de carga encontrados nos arquivos de elétrica (${quadros}).` : SEM_CODIGO),
+    item('ele_qdg', 'Instalação de quadro de distribuição geral (QDG)', quadrosGerais.length, 'un', 'eletrica',
+      quadrosGerais.length ? `Quantidade = quadros de cargas gerais lidos nos arquivos de elétrica${listaQuadros(quadrosGerais)}.` : SEM_CODIGO),
+    item('ele_qd_setorial', 'Instalação de quadros de distribuição setoriais/por pavimento', quadrosSetoriais.length, 'un', 'eletrica',
+      quadrosSetoriais.length ? `Quantidade = um por quadro de cargas lido nos arquivos de elétrica${listaQuadros(quadrosSetoriais)}.` : SEM_CODIGO),
     item('ele_disjuntores', 'Instalação de disjuntores (termomagnéticos/DR)', circuitos > 0 ? circuitos + quadros : 0, 'un', 'eletrica',
-      circuitos > 0 ? `Quantidade = ${circuitos} circuitos dos quadros de carga + ${quadros} disjuntor(es) geral(is).` : SEM_CODIGO),
+      circuitos > 0 ? `Quantidade = ${circuitos} circuitos dos quadros de carga (sem os alimentadores de outros quadros) + ${quadros} disjuntor(es) geral(is), um por quadro.` : SEM_CODIGO),
     item('ele_eletrodutos', 'Passagem de eletrodutos e fiação (circuitos de tomada/força)', 1, 'vb', 'eletrica',
       'Marque como "já pronto" se a infraestrutura elétrica já estiver executada.'),
     item('ele_tomada_baixa', 'Instalação de tomada baixa (30/60cm)', 0, 'un', 'eletrica', SEM_CODIGO),

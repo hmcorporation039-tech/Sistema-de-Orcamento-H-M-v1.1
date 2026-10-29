@@ -195,11 +195,92 @@ caso('M7: quadros contados por título do quadro de cargas, não por arquivo', (
   const c = (circuito, quadro) => ({ circuito, quadro, fases: 'R', potencia_W: 1000 });
   const an = [analise('ele.pdf', ['eletrica'], { quadroCargas: [c('C1', 'QGBT'), c('C1', 'QD-Térreo'), c('C2', 'QD-Térreo'), c('C1', 'QD-1PAV')] })];
   const s = Object.fromEntries(I.montarServicosPadrao(an, ['eletrica']).map(x => [x.codigo, x]));
-  assert.strictEqual(s.ele_qd_setorial.quantidade, 3);
+  assert.strictEqual(s.ele_qdg.quantidade, 1, 'QGBT é o quadro geral');
+  assert.strictEqual(s.ele_qd_setorial.quantidade, 2);
   assert.strictEqual(s.ele_disjuntores.quantidade, 4 + 3);
+  // formato novo (projetoParser.quadrosDeCargas): alimentador não é circuito a mais
+  const al = { circuito: 'QD-Térreo', quadro: 'QGBT', alimentador: true };
+  const an3 = [analise('ele.pdf', ['eletrica'], {
+    quadroCargas: [al, c('IL 1', 'QD-Térreo'), c('T 1', 'QD-Térreo')],
+    quadrosDeCargas: [{ quadro: 'QGBT', circuitos: [al] }, { quadro: 'QD-Térreo', circuitos: [c('IL 1', 'QD-Térreo'), c('T 1', 'QD-Térreo')] }],
+  })];
+  const s3 = Object.fromEntries(I.montarServicosPadrao(an3, ['eletrica']).map(x => [x.codigo, x]));
+  assert.deepStrictEqual([s3.ele_qdg.quantidade, s3.ele_qd_setorial.quantidade, s3.ele_disjuntores.quantidade], [1, 1, 2 + 2]);
   // formato antigo (sem título): 1 por arquivo com circuitos
   const an2 = [analise('ele.pdf', ['eletrica'], { quadroCargas: [{ circuito: 'C1', fases: 'R' }] })];
   assert.strictEqual(I.montarServicosPadrao(an2, ['eletrica']).find(x => x.codigo === 'ele_qd_setorial').quantidade, 1);
+});
+
+caso('achados: quadro não lido, código repetido longe, quantidade ambígua e folhas além do limite', () => {
+  const A = require('../src/utils/analiseProjetoAchados');
+  const cam = { ocorrencias: 79, total: 77, totalUnicos: 75, unicas: [], repetidas: [2, 18, 30], faltando: [], repetidasDistantes: [{ numero: 2, pontos: 2, paginas: [1] }, { numero: 18, pontos: 2, paginas: [1, 2] }] };
+  const ach = A.gerarAchados([analise('cftv.pdf', ['cftv'], { cameras: cam }), analise('ele.pdf', ['eletrica'], {
+    quadroCargasNaoLido: true,
+    quantidadesAmbiguas: [{ descricao: 'Cabo flexível 2,5 mm²', qtd: 1.2, unidade: 'm', qtdAmbigua: true, qtdAlternativa: 1200 }],
+  })]);
+  const tema = (t) => ach.find(a => a.tema === t);
+  assert.match(tema('Câmeras: mesmo código em pontos distantes').observacao, /CAM18 aparece em 2 pontos distantes \(pág\. 1, 2\).*contados 77 pontos \(75 números únicos\)/);
+  assert.match(tema('Câmeras: numeração repetida').observacao, /CAM30/);
+  assert.ok(!/CAM18/.test(tema('Câmeras: numeração repetida').observacao), 'a distante não repete no achado de repetição colada');
+  assert.ok(tema('Quadro de cargas presente e não lido'));
+  assert.match(tema('Quantidade com ponto: milhar ou decimal?').observacao, /lido 1,2 m \(seria 1200 se o ponto for separador de milhar\)/);
+  // folhas: o quadro não lido não diz mais que "continua sendo lido"
+  const folha = { tipo: 'unifilar', resumo: 'diagrama unifilar', semPlanta: true, temPlanta: false, misto: false };
+  const [f] = A.achadosDasFolhas([{ arquivo: 'ele.pdf', quadroCargasNaoLido: true }], [[{ pagina: 2, folha }]]);
+  assert.match(f.observacao, /quadro de cargas presente e não lido/i);
+  assert.ok(!/continua sendo lido/.test(f.observacao));
+  const [f2] = A.achadosDasFolhas([{ arquivo: 'ele.pdf', quadroCargas: [{ circuito: 'IL 1' }, { circuito: 'QD-1', alimentador: true }], quadrosDeCargas: [{}, {}] }], [[{ pagina: 2, folha }]]);
+  assert.match(f2.observacao, /lido pelo texto: 1 circuito\(s\) em 2 quadros/);
+  // A10: 9 folhas, só 6 lidas pelo desenho
+  const paginas = [1, 2, 3, 4, 5, 6].map(pagina => ({ pagina, itens: [] }));
+  const d = A.achadosDoDesenho([{ arquivo: 'grande.pdf', textoPorPagina: Array(9).fill('x') }], [paginas], { maxPaginas: 6 });
+  assert.match(d.find(a => a.tema === 'Folhas do PDF não lidas pelo desenho').observacao, /folha\(s\) 7 a 9 ficaram de fora/);
+  assert.ok(!A.achadosDoDesenho([{ arquivo: 'p.pdf', textoPorPagina: ['x', 'y'] }], [[{ pagina: 1, itens: [] }, { pagina: 2, itens: [] }]], { maxPaginas: 6 }).length);
+});
+
+caso('M8: ponte para as skills usa perímetro/polígono, dimensões do recinto e os quadros separados', () => {
+  const { dadosDaAnalise, medidasDoAmbiente } = require('../src/utils/ponteAnaliseSkill');
+  const { motorDaDisciplina } = require('../src/utils/disciplinasLaudo');
+  // corredor 1,2 × 10 m: perímetro real 22,4 (o quadrado dava 13,9)
+  assert.deepStrictEqual([medidasDoAmbiente({ area_m2: 12, perimetro_m: 22.4 }).comprimento_m, medidasDoAmbiente({ area_m2: 12, perimetro_m: 22.4 }).largura_m], [10, 1.2]);
+  assert.strictEqual(medidasDoAmbiente({ area_m2: 12, poligono: [[0, 0], [10, 0], [10, 1.2], [0, 1.2]] }).perimetro_m, 22.4);
+  assert.strictEqual(medidasDoAmbiente({ area_m2: 16 }).perimetro_m, 16);
+  const c = (circuito, quadro, extra = {}) => ({ circuito, quadro, potencia_W: 1000, potencia_VA: 1100, fp: 0.9, tensao_V: 220, esquema: 'F+N+T', fases: 'R', disjuntor_A: 16, secao_mm2: 2.5, ...extra });
+  const quadrosDeCargas = [
+    { quadro: 'QGBT', circuitos: [c('QD-Térreo', 'QGBT', { alimentador: true, esquema: '3F+N+T', fases: 'RST', disjuntor_A: 63, tensao_V: 380 })], totais: { potencia_VA: 2200, demanda_kVA: 2 } },
+    { quadro: 'QD-Térreo', circuitos: [c('IL 1', 'QD-Térreo'), c('T 1', 'QD-Térreo')], totais: { potencia_VA: 2200, demanda_kVA: 1.76 } },
+    { quadro: 'QD-1PAV', circuitos: [c('IL 1', 'QD-1PAV'), c('T 1', 'QD-1PAV', { potencia_W: 0, potencia_VA: 0, descricao: 'Reserva' })], totais: { potencia_VA: 1100, demanda_kVA: 0.88 } },
+  ];
+  const analise = {
+    cliente: 'Cliente Exemplo', ambientes: [{ nome: 'CORREDOR', area_m2: 12, perimetro_m: 22.4 }, { nome: 'SALA DE REUNIÃO', area_m2: 20 }],
+    espacial: { ambientes: [{ nome: 'Sala de Reunião', poligono: [[0, 0], [5, 0], [5, 4], [0, 4]] }], pontos: [
+      { x: 0, y: 0, descricao: 'Rack 12U', disciplina: 'cabeamento' }, { x: 20, y: 10, descricao: 'Ponto de rede RJ45', disciplina: 'rede' }, { x: 5, y: 5, descricao: 'Ponto de rede RJ45', disciplina: 'rede' },
+    ] },
+    pontosRedeAntena: { rede: { total: 2 } },
+    dadosExtraidos: [{ arquivo: 'ele.pdf', quadroCargas: quadrosDeCargas.flatMap(q => q.circuitos), quadrosDeCargas }],
+  };
+  const ele = dadosDaAnalise('eletrica', motorDaDisciplina('eletrica'), analise);
+  assert.deepStrictEqual(ele.dados.circuitos.map(x => x.id), ['QD-Térreo IL 1', 'QD-Térreo T 1', 'QD-1PAV IL 1'], 'sem alimentador, sem reserva, ID com o quadro');
+  assert.deepStrictEqual(ele.dados.ambientes.map(a => a.perimetro_m), [22.4, 18]);
+  assert.strictEqual(ele.dados.instalacao.fd_ilum_tug[0].fator, 0.8, 'fd dos quadros terminais (2,64 kVA ÷ 3,3 kVA)');
+  motorDaDisciplina('eletrica').processar(ele.dados);
+
+  const inc = dadosDaAnalise('incendio', motorDaDisciplina('incendio'), analise);
+  assert.deepStrictEqual(inc.dados.ambientes.map(a => [a.comprimento_m, a.largura_m]), [[10, 1.2], [5, 4]]);
+
+  const ilu = dadosDaAnalise('iluminacao', motorDaDisciplina('iluminacao'), analise);
+  assert.deepStrictEqual(ilu.dados.ambientes.map(a => a.atividade), ['circulacao', 'reuniao']);
+  motorDaDisciplina('iluminacao').processar(ilu.dados);
+
+  const cab = dadosDaAnalise('cabeamento', motorDaDisciplina('cabeamento'), analise);
+  assert.deepStrictEqual([cab.dados.pavimentos[0].distancia_media_m, cab.dados.pavimentos[0].distancia_max_m], [Math.round((33 + 13) / 2), 33]);
+
+  const q = dadosDaAnalise('quadros', motorDaDisciplina('quadros'), analise, { quadro: 'QD-Térreo' });
+  assert.deepStrictEqual(q.candidatos.map(x => x.quadro), ['QGBT', 'QD-Térreo', 'QD-1PAV']);
+  assert.strictEqual(q.dados.quadro.tag, 'QD-Térreo');
+  assert.strictEqual(q.dados.quadro.disjuntor_geral_a, 63, 'geral = disjuntor do alimentador no QGBT');
+  assert.deepStrictEqual(q.dados.circuitos.map(x => [x.n, x.ligacao, x.fases]), [['IL 1', 'FN', 'A'], ['T 1', 'FN', 'A']]);
+  motorDaDisciplina('quadros').processar(q.dados);
 });
 
 console.log(`analiseProjetoItens: ${ok} casos ok`);

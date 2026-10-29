@@ -27,10 +27,22 @@ function detalhePorArquivo(analises, disciplina, obterDados) {
 // prefixo do código e o rótulo usado na mensagem.
 function achadosDeNumeracao(arquivo, dados, prefixo, rotulo) {
   const achados = [];
-  if (dados.repetidas.length > 0) {
+  // repetição LONGE (posição no PDF, projetoParser.comRepeticoesPorPosicao) já
+  // conta como pontos distintos; a colada (mesmo ponto, rótulo duplicado), uma vez
+  const distantes = dados.repetidasDistantes || [];
+  const unicos = dados.totalUnicos ?? dados.total;
+  if (distantes.length > 0) {
+    const pag = (r) => (r.paginas?.length ? ` (pág. ${r.paginas.join(', ')})` : '');
+    achados.push({
+      tema: `${rotulo}: mesmo código em pontos distantes`,
+      observacao: `Em "${arquivo}", ${distantes.map(r => `${prefixo}${r.numero} aparece em ${r.pontos} pontos distantes${pag(r)}`).join('; ')}: contados ${dados.total} pontos (${unicos} números únicos). Confirme na planta: se forem o mesmo ponto rotulado duas vezes, o certo é ${unicos}.`,
+    });
+  }
+  const coladas = (dados.repetidas || []).filter(n => !distantes.some(r => r.numero === n));
+  if (coladas.length > 0) {
     achados.push({
       tema: `${rotulo}: numeração repetida`,
-      observacao: `Em "${arquivo}", os códigos ${dados.repetidas.map(n => prefixo + n).join(', ')} aparecem mais de uma vez na planta. Confirme visualmente se são pontos físicos distintos com número repetido por engano (contagem real = ${dados.ocorrencias}) ou duplicidade de rótulo (contagem real = ${dados.total}).`,
+      observacao: `Em "${arquivo}", os códigos ${coladas.map(n => prefixo + n).join(', ')} aparecem mais de uma vez na planta${dados.repetidasDistantes ? ', perto um do outro (contados uma vez)' : ''}. Confirme visualmente se são pontos físicos distintos com número repetido por engano (contagem real = ${dados.ocorrencias}) ou duplicidade de rótulo (contagem real = ${dados.total}).`,
     });
   }
   if (dados.faltando.length > 0) {
@@ -78,6 +90,23 @@ function gerarAchados(analises) {
         observacao: `"${a.arquivo}" traz ${a.esquadrias.length} tipos de portas/janelas (${total} unidades). Não entram como material da disciplina${a.disciplinas.includes('alarme') ? ' — use como referência para os sensores de abertura do alarme' : ''}.`,
       });
     }
+    // quadro de cargas no arquivo e nenhum circuito lido: os disjuntores e a ponte
+    // para a skill ficam sem dados — antes o achado dizia que "continuava sendo lido"
+    if (a.quadroCargasNaoLido) {
+      achados.push({
+        tema: 'Quadro de cargas presente e não lido',
+        observacao: `"${a.arquivo}" tem quadro de cargas, mas nenhum circuito foi lido (formato de tabela não reconhecido). Disjuntores, quadros e o cálculo da NBR 5410 ficam sem esses dados — confira o quadro direto no PDF e lance os circuitos.`,
+      });
+    }
+    // quantidade "1.200" sem vírgula: milhar ou 1,2? (utils/leitoresTabelaProjeto.js)
+    const ambiguas = a.quantidadesAmbiguas?.length ? a.quantidadesAmbiguas : (a.listaMateriais || []).filter(it => it.qtdAmbigua);
+    if (ambiguas.length) {
+      const fmt = (n) => String(n).replace('.', ',');
+      achados.push({
+        tema: 'Quantidade com ponto: milhar ou decimal?',
+        observacao: `"${a.arquivo}": ${ambiguas.slice(0, 10).map(it => `${String(it.descricao || '').slice(0, 60)} — lido ${fmt(it.qtd)} ${it.unidade || ''}`.trim() + (it.qtdAlternativa != null ? ` (seria ${fmt(it.qtdAlternativa)} se o ponto for separador de milhar)` : '')).join('; ')}${ambiguas.length > 10 ? ` (+${ambiguas.length - 10})` : ''}. Confira na lista do projeto antes de fechar.`,
+      });
+    }
     const cb = a.carimbo || {};
     // DWG/DXF: o desenho está em tamanho real, a medição não depende da escala da folha
     if (!a.origemCad && (cb.escala === 'INDICADA' || (cb.escalasNaFolha || []).length > 1)) {
@@ -113,9 +142,24 @@ function gerarAchados(analises) {
   return achados;
 }
 
-function achadosDoDesenho(analises, vetoriais) {
+// opcoes.maxPaginas: até quantas folhas o PDF vetorial é lido (services/compatibilizacaoAnalise.js)
+function achadosDoDesenho(analises, vetoriais, opcoes = {}) {
   const achados = [];
   analises.forEach((a, i) => {
+    // folhas além do limite não eram lidas e sumiam sem aviso (revisão de 29/10/2026)
+    const totalPaginas = a.textoPorPagina?.length || 0;
+    const lidas = new Set((vetoriais[i] || []).filter(p => p.origem !== 'cad' && p.pagina).map(p => p.pagina));
+    if (!a.origemCad && !a.semTexto && opcoes.maxPaginas && totalPaginas > opcoes.maxPaginas && lidas.size) {
+      const fora = [];
+      for (let n = 1; n <= totalPaginas; n++) if (!lidas.has(n)) fora.push(n);
+      if (fora.length) {
+        const faixa = fora.length > 1 && fora[fora.length - 1] - fora[0] === fora.length - 1 ? `${fora[0]} a ${fora[fora.length - 1]}` : fora.join(', ');
+        achados.push({
+          tema: 'Folhas do PDF não lidas pelo desenho',
+          observacao: `"${a.arquivo}" tem ${totalPaginas} folhas e a contagem pelo desenho lê só as ${opcoes.maxPaginas} primeiras: folha(s) ${faixa} ficaram de fora (símbolos e metragens não contados). O texto delas (códigos, quadro de cargas, lista) foi lido. Confira essas folhas na planta ou envie-as em arquivo separado.`,
+        });
+      }
+    }
     // página pulada (traços demais) ou leitura que falhou: avisa em vez de sumir calada
     // DWG vazio já tem o achado "Arquivo sem texto legível"
     const avisos = (vetoriais[i] || []).filter(p => p.aviso && p.origem !== 'cad');
@@ -164,9 +208,15 @@ function achadosDasFolhas(analises, vetoriais) {
       if (p.folha.temPlanta && p.folha.misto) return `${nome}: ${p.folha.resumo} — só a planta entra no 3D e na contagem`;
       return `${nome}: ${p.folha.resumo}`;
     };
+    // o que aconteceu com o quadro de cargas: lido (quantos), presente e não lido, ou nenhum
+    const circuitos = (a.quadroCargas || []).filter(c => !c.alimentador).length;
+    const nQuadros = a.quadrosDeCargas?.length || 0;
+    const sobreQuadro = a.quadroCargasNaoLido
+      ? ' Quadro de cargas presente e não lido — confira os circuitos direto no PDF.'
+      : circuitos ? ` Quadro de cargas lido pelo texto: ${circuitos} circuito(s)${nQuadros > 1 ? ` em ${nQuadros} quadros` : ''}.` : '';
     achados.push({
       tema: 'Folhas do projeto (planta × diagrama × quadro)',
-      observacao: `"${a.arquivo}": ${folhas.map(frase).join('; ')}. O quadro de cargas continua sendo lido pelo texto; confira se a classificação bate com as pranchas.`,
+      observacao: `"${a.arquivo}": ${folhas.map(frase).join('; ')}.${sobreQuadro} Confira se a classificação bate com as pranchas.`,
     });
   });
   return achados;

@@ -6,7 +6,7 @@
 // em utils/analiseProjetoItens.js (serviços e materiais) e
 // utils/analiseProjetoAchados.js (achados).
 const pool = require('../config/database');
-const { analisarProjeto, extrairAmbientes } = require('../utils/projetoParser');
+const { analisarProjeto, extrairAmbientes, comRepeticoesPorPosicao } = require('../utils/projetoParser');
 const { extrairEquipamentosComIA } = require('./equipamentoExtratorIA');
 const { calcularPontosPorAmbiente } = require('../utils/pontosPorAmbiente');
 const { buscarReferencias, valorSugerido, segmentoPorNomeDoCliente } = require('./precosMaoDeObraReferencia');
@@ -90,6 +90,9 @@ async function carregarCatalogo() {
 // arquivos com `referencia: true` (arquitetura, estrutura, hidráulica,
 // climatização do pacote — 2.3): não são orçados; o DWG/DXF deles entra só na
 // compatibilização por posição e como base do 3D. PDF de referência não é lido.
+// folhas do PDF lidas pelo desenho (símbolos e metragens); as demais viram achado
+const MAX_PAGINAS_DESENHO = 6;
+
 async function analisarProjetoCompleto(todosArquivos) {
   const arquivosRef = todosArquivos.filter(a => a.referencia);
   const arquivos = todosArquivos.filter(a => !a.referencia);
@@ -109,7 +112,7 @@ async function analisarProjetoCompleto(todosArquivos) {
   // geometria do desenho (símbolos/linhas pela legenda), com a classificação de
   // cada folha (planta × unifilar × quadro de cargas — utils/classificarPranchaPdf.js);
   // falha não derruba a análise
-  const vetoriais = await emLotes(analises, 3, (a, i) => (cads[i] ? [cads[i].pagina] : a.semTexto ? [] : lerPdfVetorial(arquivos[i].buffer, { maxPaginas: 6 }).catch((e) => {
+  const vetoriais = await emLotes(analises, 3, (a, i) => (cads[i] ? [cads[i].pagina] : a.semTexto ? [] : lerPdfVetorial(arquivos[i].buffer, { maxPaginas: MAX_PAGINAS_DESENHO }).catch((e) => {
     console.warn(`[analise] leitura vetorial de "${a.arquivo}" falhou:`, e.message);
     return [{ pagina: null, itens: [], legenda: null, escala: null, aviso: `leitura do desenho falhou (${e.message}) — conferir na planta` }];
   })));
@@ -132,7 +135,16 @@ async function analisarProjetoCompleto(todosArquivos) {
   const regioesMistas = vetoriais.map(v => new Map((v || [])
     .filter(p => p.pagina && p.folha && !p.folha.semPlanta && (p.folha.regioes || []).some(r => !['planta', 'desconhecido'].includes(r.tipo)))
     .map(p => [p.pagina, p.folha.regioes])));
-  const pontosPorAmbienteBrutos = await emLotes(arquivos, 3, ({ buffer }, i) => (cads[i] ? cads[i].pontosPorAmbiente : calcularPontosPorAmbiente(buffer, { paginasIgnoradas: naoPlanta[i], regioesPorPagina: regioesMistas[i] }).catch(() => [])));
+  // escala de cada folha lida pelo desenho (pdfVetorial): o "longe" das repetições é em metros
+  const escalaPorPagina = vetoriais.map(v => new Map((v || []).filter(p => p.pagina && p.escala).map(p => [p.pagina, p.escala])));
+  const pontosPorAmbienteBrutos = await emLotes(arquivos, 3, ({ buffer }, i) => (cads[i] ? cads[i].pontosPorAmbiente : calcularPontosPorAmbiente(buffer, { paginasIgnoradas: naoPlanta[i], regioesPorPagina: regioesMistas[i], escalaPorPagina: escalaPorPagina[i] }).catch(() => [])));
+  // código repetido LONGE (posição no PDF) são dois pontos: CAM18 em dois cantos
+  // da planta, R1…R10 no térreo e R1…R8 no superior (utils/projetoParser.js)
+  analises.forEach((a, i) => {
+    const c = cads[i] ? null : pontosPorAmbienteBrutos[i]?.codigos;
+    a.cameras = comRepeticoesPorPosicao(a.cameras, c?.cftv);
+    a.pontosRedeAntena = { ...a.pontosRedeAntena, rede: comRepeticoesPorPosicao(a.pontosRedeAntena?.rede, c?.rede), antena: comRepeticoesPorPosicao(a.pontosRedeAntena?.antena, c?.antena) };
+  });
 
   // Disciplina "efetiva" da análise inteira = união das tags de todos os
   // arquivos — decide quais itens-modelo de serviço/material aparecem.
@@ -160,7 +172,7 @@ async function analisarProjetoCompleto(todosArquivos) {
   const { cameras: totalCameras, rede: totalRede, antena: totalAntena } = totaisCodificados(analises);
 
   const achados = gerarAchados(analises);
-  achados.push(...achadosDoDesenho(analises, vetoriais));
+  achados.push(...achadosDoDesenho(analises, vetoriais, { maxPaginas: MAX_PAGINAS_DESENHO }));
   achados.push(...achadosDasFolhas(analises, vetoriais));
 
   // compatibilização por posição entre os DWG/DXF (de projeto e de referência)
@@ -184,7 +196,11 @@ async function analisarProjetoCompleto(todosArquivos) {
   // rede e cabeamento são o mesmo grupo (utils/analiseProjetoItens.js)
   const temLista = (d) => analises.some(a => temDisciplina(a.disciplinas, d) && a.listaMateriais?.length);
   // DWG/DXF: bloco da disciplina contado no desenho também resolve a quantidade
-  const contouNoCad = (d) => vetoriais.some((v, i) => temDisciplina(analises[i].disciplinas, d) && v.some(p => p.origem === 'cad' && p.itens.some(it => it.tipo === 'simbolo' && doGrupo(d).includes(it.disciplina))));
+  // DWG/DXF e PDF vetorial (item não ambíguo) alimentam a mão de obra e os materiais de terminação
+  const contagemCad = contagemDoDesenho(analises, vetoriais, { gruposCompat: compat.grupos });
+  // o que o desenho (DWG/DXF ou PDF) contou para a disciplina também resolve a quantidade
+  const contouNoDesenhoDa = (d) => Object.values(contagemCad).some(c => c.quantidade > 0 && doGrupo(d).includes(c.disciplina));
+  const contouNoCad = (d) => contouNoDesenhoDa(d) || vetoriais.some((v, i) => temDisciplina(analises[i].disciplinas, d) && v.some(p => p.origem === 'cad' && p.itens.some(it => it.tipo === 'simbolo' && doGrupo(d).includes(it.disciplina))));
   const faltando = [];
   if (temDisciplina(disciplinasEfetivas, 'rede') && totalRede === 0 && !contouNoCad('rede')) faltando.push('pontos de rede');
   if (disciplinasEfetivas.includes('antena') && totalAntena === 0) faltando.push('pontos de TV/antena');
@@ -219,7 +235,6 @@ async function analisarProjetoCompleto(todosArquivos) {
   const materiaisQuantitativos = montarMateriaisQuantitativos(analises);
   const materiaisDoDesenho = montarMateriaisDoDesenho(analises, vetoriais, catalogo);
   // DWG/DXF e PDF vetorial (item não ambíguo) alimentam a mão de obra e os materiais de terminação
-  const contagemCad = contagemDoDesenho(analises, vetoriais, { gruposCompat: compat.grupos });
   const comoLista = (lista) => lista.map(m => ({ ...m, _fonte: 'lista' })); // tabela do PDF / equipamentos lidos do texto
   const materiais = semDuplicarFontes([
     ...semModeloCoberto(montarMateriaisInstalacaoPadrao(analises, disciplinasEfetivas, contagemCad), materiaisDoDesenho),
@@ -235,6 +250,9 @@ async function analisarProjetoCompleto(todosArquivos) {
     carimbo: a.carimbo,
     disciplinasDetectadas: a.disciplinasDetectadas,
     quadroCargas: a.quadroCargas,
+    quadrosDeCargas: a.quadrosDeCargas || [],
+    quadroCargasNaoLido: !!a.quadroCargasNaoLido,
+    quantidadesAmbiguas: a.quantidadesAmbiguas || [],
     totaisQuadro: a.totaisQuadro,
     listaMateriais: a.listaMateriais,
     esquadrias: a.esquadrias,
