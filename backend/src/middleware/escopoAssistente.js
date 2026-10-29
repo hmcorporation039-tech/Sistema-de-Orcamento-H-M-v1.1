@@ -52,6 +52,7 @@ const ROTAS = [
   ['GET', '/laudos'], ['GET', '/laudos/disciplinas'], ['GET', '/laudos/modelo/:disciplina'], ['GET', '/laudos/:id'],
   ['GET', '/laudos/:id/arquitetura'],
   ['GET', '/composicoes'], ['GET', '/composicoes/:id'],
+  ['GET', '/componentes-quadro'], ['GET', '/componentes-quadro/:id'],
   // cálculos que não gravam
   ['POST', '/laudos/:id/calcular'], ['POST', '/composicoes/explodir'], ['POST', '/composicoes/calcular'],
   // pesquisa de preço (gasta cota; tem o limite de uso da rota)

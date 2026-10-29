@@ -22,7 +22,15 @@ async function calcular(req, res) {
   const laudo = await carregarLaudo(req.params.id);
   if (!laudo) return res.status(404).json({ erro: 'Registro não encontrado.' });
   const motor = motorDaDisciplina(laudo.disciplina);
-  res.json(motor.resumir(processarComMotor(motor, laudo.dados)));
+  const resultado = processarComMotor(motor, laudo.dados);
+  const resumo = motor.resumir(resultado);
+  // quadros (2.4): o que ficou com medida típica por falta de registro do
+  // fabricante escolhido — a tela oferece "Buscar medidas oficiais"
+  const semMedida = resultado?.componentes_sem_medida ?? resultado?.calc?.componentes_sem_medida;
+  if (Array.isArray(semMedida) && resumo && typeof resumo === 'object' && !Array.isArray(resumo.componentes_sem_medida)) {
+    resumo.componentes_sem_medida = semMedida;
+  }
+  res.json(resumo);
 }
 
 // Gera os documentos pedidos do padrão da disciplina e grava cada um na pasta
@@ -56,20 +64,72 @@ async function gerarDocumentosDoLaudo(laudo, tipos) {
   }
 }
 
-async function documento(req, res) {
-  const laudo = await carregarLaudo(req.params.id);
-  if (!laudo) return res.status(404).json({ erro: 'Registro não encontrado.' });
+// tipo do arquivo pela extensão quando a skill não diz (ex.: o modelo 3D em HTML)
+const MIME_POR_EXTENSAO = { '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8', '.dxf': 'application/dxf', '.json': 'application/json' };
+const mimeDo = (gerado) => gerado.mime || MIME_POR_EXTENSAO[path.extname(gerado.nomeArquivo || '').toLowerCase()] || 'application/octet-stream';
+const ehHtml = (gerado) => /^text\/html/i.test(mimeDo(gerado));
+
+// Gera UM documento do registro (com as conferências de tipo e uso). Erro → { erro, status }.
+async function gerarUmDocumento(id, tipo) {
+  const laudo = await carregarLaudo(id);
+  if (!laudo) return { status: 404, erro: 'Registro não encontrado.' };
   const motor = motorDaDisciplina(laudo.disciplina);
-  const tipo = req.params.tipo;
   const doc = motor.documentos.find(d => d.tipo === tipo);
-  if (!doc) return res.status(400).json({ erro: 'Tipo de documento inválido.' });
+  if (!doc) return { status: 400, erro: 'Tipo de documento inválido.' };
   const erroUso = conferirUso(laudo, tiposDocumento().usoDoDocumento(laudo.disciplina, tipo), `"${doc.rotulo}"`);
-  if (erroUso) return res.status(400).json({ erro: erroUso });
+  if (erroUso) return { status: 400, erro: erroUso };
   const { gerados: [gerado] } = await gerarDocumentosDoLaudo(laudo, [tipo]);
-  res.setHeader('Content-Type', gerado.mime);
+  return { gerado, doc };
+}
+
+async function documento(req, res) {
+  const { gerado, status, erro } = await gerarUmDocumento(req.params.id, req.params.tipo);
+  if (erro) return res.status(status).json({ erro });
+  res.setHeader('Content-Type', mimeDo(gerado));
   res.setHeader('Content-Disposition', contentDisposition(gerado.nomeArquivo));
   res.setHeader('X-Nome-Arquivo', encodeURIComponent(gerado.nomeArquivo));
   res.send(gerado.buffer);
+}
+
+// Documento em HTML com script embutido (2.4: modelo 3D do quadro) aberto numa
+// aba nova. Mesmo esquema do modelo 3D da arquitetura (services/modelo3d): a
+// aba não leva o login, e um blob: criado pela tela herdaria a política dela
+// (script bloqueado) e a origem do sistema. Então: POST (logado) gera e guarda
+// em memória por 10 min sob um token; GET /documentos-html/ver/:token serve a
+// página em sandbox SEM allow-same-origin (não lê o login do navegador, sem rede).
+const PAGINAS_HTML = new Map(); // token → { html, nome, expira }
+const VALIDADE_PAGINA_MS = 10 * 60 * 1000;
+const MAX_PAGINAS = 20;
+
+function guardarPagina(buffer, nome) {
+  const agora = Date.now();
+  for (const [t, p] of PAGINAS_HTML) if (p.expira < agora) PAGINAS_HTML.delete(t);
+  while (PAGINAS_HTML.size >= MAX_PAGINAS) PAGINAS_HTML.delete(PAGINAS_HTML.keys().next().value);
+  const token = require('crypto').randomBytes(24).toString('hex');
+  PAGINAS_HTML.set(token, { html: buffer, nome, expira: agora + VALIDADE_PAGINA_MS });
+  return token;
+}
+
+// POST /laudos/:id/documento/:tipo/abrir → { url, arquivo }
+async function abrirDocumento(req, res) {
+  const { gerado, status, erro } = await gerarUmDocumento(req.params.id, req.params.tipo);
+  if (erro) return res.status(status).json({ erro });
+  if (!ehHtml(gerado)) return res.status(400).json({ erro: 'Este documento não abre no navegador — use o botão para baixar.' });
+  res.json({ url: `/api/documentos-html/ver/${guardarPagina(gerado.buffer, gerado.nomeArquivo)}`, arquivo: gerado.nomeArquivo });
+}
+
+// GET /documentos-html/ver/:token — sem login: o token curto (10 min) é a autorização
+async function verDocumentoHtml(req, res) {
+  const token = String(req.params.token || '');
+  const p = /^[0-9a-f]{48}$/.test(token) ? PAGINAS_HTML.get(token) : null;
+  if (!p || p.expira < Date.now()) return res.status(404).type('text/plain; charset=utf-8').send('Link expirado. Abra de novo pelo sistema.');
+  res.set({
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Security-Policy': require('../../services/modelo3d').CSP_MODELO_3D,
+    'Cache-Control': 'no-store',
+    'X-Robots-Tag': 'noindex, nofollow',
+  });
+  res.send(p.html);
 }
 
 // "Salvar documentos na pasta": gera TODOS os documentos do padrão da
@@ -194,6 +254,6 @@ async function gerarEntrega(req, res) {
 const { pasta, abrirPasta } = rotasDePasta({ carregar: carregarLaudo, pastaDe: pastaDoLaudo, naoEncontrado: 'Registro não encontrado.' });
 
 module.exports = {
-  calcular, documento, salvarDocumentos, catalogoEntregas, gerarEntrega, pasta, abrirPasta,
+  calcular, documento, abrirDocumento, verDocumentoHtml, salvarDocumentos, catalogoEntregas, gerarEntrega, pasta, abrirPasta,
   montarEntrega, // testes
 };

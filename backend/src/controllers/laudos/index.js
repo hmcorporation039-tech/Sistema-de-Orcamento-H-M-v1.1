@@ -21,12 +21,12 @@
 const { disciplinas, modelo, listar, buscarUm, criar, criarDeAnalise, atualizar, remover } = require('./crud');
 const { enviarFotos, verFoto, removerFoto, prepararFotos } = require('./fotos');
 const { enviarArquitetura, verArquitetura, gerarPlantaDxf, gerarUnifilarQet } = require('./desenhos');
-const { calcular, documento, salvarDocumentos, catalogoEntregas, gerarEntrega, pasta, abrirPasta } = require('./entregas');
+const { calcular, documento, abrirDocumento, verDocumentoHtml, salvarDocumentos, catalogoEntregas, gerarEntrega, pasta, abrirPasta } = require('./entregas');
 const { gerarOrcamento } = require('./orcamento');
 
 module.exports = {
   paraTestes: { prepararFotos }, // testes/seguranca.test.js
-  disciplinas, modelo, listar, buscarUm, criar, criarDeAnalise, atualizar, remover, calcular, documento,
+  disciplinas, modelo, listar, buscarUm, criar, criarDeAnalise, atualizar, remover, calcular, documento, abrirDocumento, verDocumentoHtml,
   enviarArquitetura, verArquitetura, gerarPlantaDxf, gerarUnifilarQet,
   enviarFotos, verFoto, removerFoto, gerarOrcamento, salvarDocumentos, pasta, abrirPasta,
   catalogoEntregas, gerarEntrega,

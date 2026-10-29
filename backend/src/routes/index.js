@@ -228,6 +228,10 @@ router.get('/laudos', autenticar, laudoCtrl.listar);
 router.post('/laudos', autenticar, laudoCtrl.criar);
 router.post('/laudos/de-analise', autenticar, laudoCtrl.criarDeAnalise);
 router.get('/laudos/:id/documento/:tipo', autenticar, validarId, laudoCtrl.documento);
+// documento em HTML (2.4: modelo 3D do quadro) numa aba nova: link curto de 10 min e
+// página em sandbox — o GET do link é o único sem login, como /modelo-3d/ver/:token
+router.post('/laudos/:id/documento/:tipo/abrir', autenticar, validarId, laudoCtrl.abrirDocumento);
+router.get('/documentos-html/ver/:token', laudoCtrl.verDocumentoHtml);
 // Pasta do laudo em "Arquivos do Sistema/Laudos": gravar todos os documentos, consultar e abrir
 router.post('/laudos/:id/salvar-documentos', autenticar, validarId, posseLaudo, laudoCtrl.salvarDocumentos);
 router.get('/laudos/:id/pasta', autenticar, validarId, laudoCtrl.pasta);
