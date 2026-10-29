@@ -43,6 +43,20 @@ caso('A4: pacote "…-CAB.ESTRU.pdf" é cabeamento, não automação pelo "AUT" 
   assert.deepStrictEqual(sugerirDisciplinas('LOG-CFTV-02.pdf').disciplinas.sort(), ['cabeamento', 'cftv']);
 });
 
+caso('quadros: desenho só de painel é "quadros"; planta elétrica com QD-01 e unifilar continua elétrica', () => {
+  const painel = ['LAYOUT DO PAINEL QGBT', 'VISTA FRONTAL', 'PLACA DE MONTAGEM 1200x800', 'BARRAMENTO DE COBRE', 'BORNES X1 1-24',
+    'DIAGRAMA DE COMANDO', 'DIAGRAMA DE FORÇA', 'CONTATOR K1', 'QGBT'].join('\n');
+  const planta = ['PLANTA BAIXA - TÉRREO', 'SALA 01', 'A= 24,50 m²', 'COZINHA', 'A= 12,00 m²', 'TOMADA BAIXA', 'QD-01',
+    'QUADRO DE CARGAS QD-01', 'DIAGRAMA UNIFILAR QD-01', 'QUADRO DE DISTRIBUIÇÃO'].join('\n');
+  assert.deepStrictEqual(sugerirDisciplinas('QD-01.pdf', painel).disciplinas, ['quadros'], 'nome dá elétrica, conteúdo é só painel');
+  assert.deepStrictEqual(sugerirDisciplinas('Memorial.pdf', painel).disciplinas, ['quadros']);
+  assert.deepStrictEqual(sugerirDisciplinas('ELE-01.pdf', planta).disciplinas, ['eletrica']);
+  assert.deepStrictEqual(sugerirDisciplinas('Projeto.pdf', planta).disciplinas, ['eletrica']);
+  assert.deepStrictEqual(sugerirDisciplinas('ELE-01.pdf', `${planta}\n${painel}`).disciplinas, ['eletrica', 'quadros'], 'planta + fabricação: quadros como segunda');
+  assert.deepStrictEqual(sugerirDisciplinas('LAYOUT DO PAINEL QGBT.dwg').disciplinas, ['quadros'], 'DWG só pelo nome');
+  assert.deepStrictEqual(sugerirDisciplinas('QD-01.dwg').disciplinas, ['eletrica'], 'sem conteúdo, QD continua elétrica');
+});
+
 caso('M3: cliente só na mesma linha; número ou outro rótulo não é cliente', () => {
   assert.strictEqual(extrairCliente('ASSINATURA / APROVAÇÃO DO AUTOR E DO CLIENTE:\n00\t18/09/2024'), null);
   assert.strictEqual(extrairCliente('CLIENTE:\nENDEREÇO:\tRua X'), null);

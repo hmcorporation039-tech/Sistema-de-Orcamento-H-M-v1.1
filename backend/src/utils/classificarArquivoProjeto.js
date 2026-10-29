@@ -6,6 +6,7 @@
 // não pode ficar colado num difusor de ar) e serve de base do 3D.
 // É sugestão: a tela mostra e o usuário confirma antes de analisar.
 const { detectarDisciplinas } = require('./leitoresTabelaProjeto');
+const { semAcento } = require('./texto');
 
 // com espaços nas pontas: as regras casam palavras inteiras (" E 01 ")
 const normalizar = (s) => ` ${require('./texto').chaveNome(s)} `;
@@ -37,14 +38,58 @@ const PELO_NOME = [
   [/ (CARREGADOR|RECARGA|VE|WALLBOX) /, 'carregador'],
   [/ (ILU|ILUM|ILUMINACAO|LUM|LUMINOTECNICO|LUMINOTECNICA) /, 'iluminacao'],
   [/ (HOSP|HOSPITALAR|IT MEDICO) /, 'eletrica_hospitalar'],
+  // fabricação de quadro/painel (skills/quadros) — antes de industrial e elétrica
+  [/ (LAYOUT DO (PAINEL|QUADRO)|PLACA DE MONTAGEM|MONTAGEM DO (PAINEL|QUADRO)|FABRICACAO DE (PAINEL|PAINEIS|QUADRO|QUADROS)|PAINEL DE AUTOMACAO|DIAGRAMA DE COMANDO|DIAGRAMA DE FORCA) /, 'quadros'],
   [/ (IND|INDUSTRIAL|CCM|MOTORES) /, 'eletrica_industrial'],
   [/ (ELE|ELET|ELETRICA|ELETRICO|IE|INST ELETRICA|FORCA|TOMADAS|QDC|QDF|QD|QDG|UNIFILAR) /, 'eletrica'],
   [/ E \d{1,3} /, 'eletrica'],
 ];
 const ROTULO_REF = { arquitetura: 'arquitetura', estrutura: 'estrutura', hidraulica: 'hidráulica', climatizacao: 'climatização' };
 
+// ── Quadros (fabricação de painel, skills/quadros) pelo conteúdo ──────────
+// Um PDF/DWG só de desenhos de painel (layout, placa de montagem, barramento,
+// bornes, CLP, diagrama de comando/força) nunca era sugerido como "quadros":
+// o nome dava elétrica (QD, QDF, UNIFILAR) ou o conteúdo caía em elétrica.
+// Termos de FABRICAÇÃO contam forte; os de quadro em geral (QGBT, QD-, quadro
+// de distribuição, unifilar) contam fraco — uma planta elétrica comum também
+// tem "QD-01", unifilar e quadro de cargas, e isso sozinho continua elétrica.
+// Sem sinal de planta (sala com área, "PLANTA BAIXA") e com termos de
+// fabricação dominando → quadros no lugar de elétrica; com planta e muitos
+// termos de fabricação → elétrica + quadros como segunda disciplina.
+const FABRICACAO_QUADRO = [
+  /LAYOUT D[OE] (PAINEL|QUADRO)/, /PLACA DE MONTAGEM/, /BARRAMENTO/, /\bBORNES?\b/, /\b(CLP|PLC)\b/,
+  /DIAGRAMA (DE )?(COMANDO|FORCA)/, /DIAGRAMA TRIFILAR/, /PAINEL DE AUTOMACAO/, /TRILHO DIN/, /CANALETA/,
+  /VISTA (FRONTAL|INTERNA|DA PORTA)/, /\bIHM\b/, /\bCONTATOR/, /\bCCM\b/, /INVOLUCRO/, /PRENSA[ -]?CABO/,
+];
+const QUADRO_GERAL = /QUADRO DE DISTRIBUICAO|\bQGBT\b|\bQD[FLC]?[ -]?\d|DIAGRAMA UNIFILAR/g;
+function sinaisDeQuadro(texto) {
+  const t = semAcento(String(texto || '').toUpperCase());
+  const fortes = FABRICACAO_QUADRO.filter(re => re.test(t)).length;
+  const ocorrFortes = FABRICACAO_QUADRO.reduce((s, re) => s + (t.match(new RegExp(re.source, 'g')) || []).length, 0);
+  const geral = (t.match(QUADRO_GERAL) || []).length;
+  const areas = (t.match(/\bA\s*[=:]\s*\d+[.,]?\d*\s*M[²2]/g) || []).length;
+  const planta = /PLANTA BAIXA|PLANTA DO (TERREO|PAVIMENTO)|PAVIMENTO TIPO/.test(t) || areas >= 2;
+  return { fortes, total: ocorrFortes + geral, planta };
+}
+function comQuadros(r, texto) {
+  if (!texto || r.referencia) return r;
+  const q = sinaisDeQuadro(texto);
+  // painel de automação (CLP, IHM) também é fabricação de quadro quando não há planta
+  const ele = (d) => ['eletrica', 'eletrica_industrial', 'automacao'].includes(d);
+  if (q.fortes >= 2 && q.total >= 5 && !q.planta && (!r.disciplinas.length || r.disciplinas.every(ele) || r.disciplinas.includes('quadros'))) {
+    return { ...r, disciplinas: ['quadros'], motivo: 'desenho de quadro/painel (layout, montagem, comando) sem planta — fabricação de quadros' };
+  }
+  if (q.fortes >= 3 && q.planta && r.disciplinas.some(ele) && !r.disciplinas.includes('quadros')) {
+    return { ...r, disciplinas: [...r.disciplinas, 'quadros'], motivo: `${r.motivo}; também tem desenho de fabricação de quadro` };
+  }
+  return r;
+}
+
 // texto: conteúdo já lido (PDF/DXF) ou null (DWG: só pelo nome)
 function sugerirDisciplinas(nome, texto = null) {
+  return comQuadros(sugerirPeloNomeOuTexto(nome, texto), texto);
+}
+function sugerirPeloNomeOuTexto(nome, texto) {
   const n = normalizar(String(nome).replace(/\.[a-z0-9]+$/i, ''));
   const disciplinas = [];
   const fracas = [];
