@@ -4,7 +4,7 @@
 // dos pontos codificados. Funções puras, chamadas por
 // services/compatibilizacaoAnalise.js.
 const { nomeDaDisciplina } = require('./disciplinasProjeto');
-const { semMarcador, metrosBR } = require('./analiseProjetoItens');
+const { semMarcador, metrosBR, temDisciplina } = require('./analiseProjetoItens');
 
 // Monta o detalhe por arquivo de um tipo de ponto codificado (câmera, rede ou
 // antena) — mesma tabela que já existia só para câmeras, agora reutilizada
@@ -15,7 +15,7 @@ const { semMarcador, metrosBR } = require('./analiseProjetoItens');
 // e a tela de Análise de Projeto).
 function detalhePorArquivo(analises, disciplina, obterDados) {
   return analises
-    .filter(a => a.disciplinas.includes(disciplina) && obterDados(a).ocorrencias > 0)
+    .filter(a => temDisciplina(a.disciplinas, disciplina) && obterDados(a).ocorrencias > 0)
     .map(a => ({ arquivo: a.arquivo, ...obterDados(a) }));
 }
 
@@ -92,7 +92,7 @@ function gerarAchados(analises) {
     if (a.disciplinas.includes('cftv') && a.cameras.ocorrencias > 0) {
       achados.push(...achadosDeNumeracao(a.arquivo, a.cameras, 'CAM', 'Câmeras'));
     }
-    if (a.disciplinas.includes('rede') && a.pontosRedeAntena.rede.ocorrencias > 0) {
+    if (temDisciplina(a.disciplinas, 'rede') && a.pontosRedeAntena.rede.ocorrencias > 0) {
       achados.push(...achadosDeNumeracao(a.arquivo, a.pontosRedeAntena.rede, 'R', 'Pontos de rede'));
     }
     if (a.disciplinas.includes('antena') && a.pontosRedeAntena.antena.ocorrencias > 0) {

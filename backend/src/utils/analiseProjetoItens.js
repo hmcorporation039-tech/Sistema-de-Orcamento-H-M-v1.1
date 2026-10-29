@@ -10,12 +10,28 @@ const { detectarDisciplinas } = require('./leitoresTabelaProjeto');
 // preço sugerido do catálogo pela semelhança da descrição (Jaccard >= 0,45)
 const { compararComCatalogo } = require('./semelhancaMateriais');
 
+// "rede" e "cabeamento" são a mesma skill (NBR 14565): o pacote sugere
+// "cabeamento" para LOG/REDE/CAB e a tela deixa marcar qualquer das duas. Antes
+// cada ponto do código olhava só uma delas, e o mesmo PDF marcado "cabeamento"
+// dava 0 pontos de rede (contra 69 marcado "rede"), sem aviso (revisão 29/10/2026).
+const GRUPO_DISCIPLINA = { rede: ['rede', 'cabeamento'], cabeamento: ['cabeamento', 'rede'] };
+const doGrupo = (d) => GRUPO_DISCIPLINA[d] || [d];
+const temDisciplina = (marcadas, d) => doGrupo(d).some(x => (marcadas || []).includes(x));
+// item-modelo de uma disciplina do grupo entra com a disciplina que foi marcada
+function naDisciplinaMarcada(itens, marcadas) {
+  return itens.filter(it => temDisciplina(marcadas, it.disciplina)).map((it) => {
+    if (marcadas.includes(it.disciplina)) return it;
+    const d = doGrupo(it.disciplina).find(x => marcadas.includes(x));
+    return { ...it, disciplina: d, subgrupo: nomeDaDisciplina(d) };
+  });
+}
+
 // Soma um campo (ex.: câmeras) só dos arquivos marcados com a disciplina dada —
 // é o que evita um arquivo de outra disciplina (ex.: iluminação) contaminar a
 // contagem de antena/rede só porque um texto qualquer bateu com o regex.
 function somarPorDisciplina(analises, disciplina, obterValor) {
   return analises
-    .filter(a => a.disciplinas.includes(disciplina))
+    .filter(a => temDisciplina(a.disciplinas, disciplina))
     .reduce((s, a) => s + obterValor(a), 0);
 }
 
@@ -168,7 +184,7 @@ function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = 
     // quando rede ou CFTV também foram escolhidos. Se nenhuma das duas está na
     // análise, ele não entra (evita trazer um item que depende de disciplina
     // não selecionada). Só disciplinas estritamente escolhidas.
-    ...((disciplinasEfetivas.includes('rede') || disciplinasEfetivas.includes('cftv'))
+    ...((temDisciplina(disciplinasEfetivas, 'rede') || disciplinasEfetivas.includes('cftv'))
       ? [item('cab_certificacao', 'Certificação e etiquetagem dos pontos (rede + câmeras)', totalRede + totalCameras, 'pt', 'cabeamento',
           (totalRede > 0 || totalCameras > 0) ? 'Quantidade = pontos de rede + câmeras encontrados no desenho.' : SEM_CODIGO)]
       : []),
@@ -217,7 +233,7 @@ function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = 
     item('alarme_central', 'Instalação e configuração da central de alarme', 0, 'un', 'alarme', 'Normalmente 1 unidade — confirme.'),
   ];
 
-  return todos.filter(it => disciplinasEfetivas.includes(it.disciplina));
+  return naDisciplinaMarcada(todos, disciplinasEfetivas);
 }
 
 // Lista padrão de material de instalação (Bloco 2 nos orçamentos de
@@ -260,7 +276,7 @@ function montarMateriaisInstalacaoPadrao(analises, disciplinasEfetivas) {
     item('Perfil LED linear (embutir/sobrepor/marcenaria)', 0, 'm', 'iluminacao', 'Quantidade em metros lineares — confirme direto na planta.'),
   ];
 
-  return todos.filter(it => disciplinasEfetivas.includes(it.disciplina));
+  return naDisciplinaMarcada(todos, disciplinasEfetivas);
 }
 
 // Monta a lista final de materiais pra revisão: um item por equipamento
@@ -300,7 +316,7 @@ function montarPontosPorAmbiente(arquivos, analises, brutosPorArquivo) {
     for (const linha of linhas) {
       const atual = porAmbiente.get(linha.ambiente) || { ambiente: linha.ambiente, cftv: 0, rede: 0, antena: 0 };
       if (disciplinas.includes('cftv')) atual.cftv += linha.cftv;
-      if (disciplinas.includes('rede')) atual.rede += linha.rede;
+      if (temDisciplina(disciplinas, 'rede')) atual.rede += linha.rede;
       if (disciplinas.includes('antena')) atual.antena += linha.antena;
       porAmbiente.set(linha.ambiente, atual);
     }
@@ -398,9 +414,7 @@ const metrosBR = (m) => `${String(m).replace('.', ',')} m`;
 const ORIGEM_DESCRICAO = { legenda: 'descrição da legenda da prancha', atributo: 'descrição do atributo do bloco', sigla: 'sigla do bloco — confirmar o tipo', nome: 'nome do bloco' };
 // "rede" e "cabeamento" são a mesma skill: bloco de rede vale para arquivo marcado com qualquer das duas
 function doMesmoGrupo(marcadas, sugerida) {
-  if (marcadas.includes(sugerida)) return sugerida;
-  const par = { rede: 'cabeamento', cabeamento: 'rede' }[sugerida];
-  return par && marcadas.includes(par) ? par : null;
+  return doGrupo(sugerida).find(x => marcadas.includes(x)) || null;
 }
 
 function montarMateriaisDoDesenho(analises, vetoriais, catalogo) {
@@ -508,7 +522,7 @@ function semDuplicarFontes(materiais, achados) {
 module.exports = {
   totaisCodificados, contagemDoCad, montarServicosPadrao, montarMateriaisInstalacaoPadrao, semModeloCoberto,
   montarMateriais, montarPontosPorAmbiente, montarMateriaisQuantitativos, montarMateriaisDaLista, montarMateriaisDoDesenho,
-  tipoDoItem, semDuplicarFontes,
+  tipoDoItem, semDuplicarFontes, doGrupo, temDisciplina,
   // formatação usada também pelos achados (utils/analiseProjetoAchados.js)
   semMarcador, metrosBR,
 };

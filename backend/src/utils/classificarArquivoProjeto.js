@@ -28,8 +28,12 @@ const PELO_NOME = [
   [/ (INC|INCENDIO|SDAI|DETECCAO|PCI|PPCI|ALARME DE INCENDIO) /, 'incendio'],
   [/ (TEL|TELEFONIA|INTERFONE|INTERFONIA|PABX) /, 'telefonia'],
   [/ (TV|ANT|ANTENA|CATV|SMATV|MATV) /, 'antena'],
-  [/ (LOG|LOGICA|REDE|REDES|DADOS|CAB|CABEAMENTO|TI|TELECOM|INFRA TI) /, 'cabeamento'],
-  [/ (AUT|AUTOMACAO|BMS|SUPERVISORIO) /, 'automacao'],
+  [/ (LOG|LOGICA|REDE|REDES|DADOS|CAB|CABEAMENTO|CAB ESTRU|TI|TELECOM|INFRA TI) /, 'cabeamento'],
+  [/ (AUTOMACAO|BMS|SUPERVISORIO) /, 'automacao'],
+  // "AUT" sozinho é fraco: também é código de contrato/autor no começo do nome
+  // ("SENG-AUT-CLINICA…-CAB.ESTRU.pdf" virava cabeamento + automação). Só vale
+  // quando nenhuma outra sigla de disciplina aparece no nome.
+  [/ AUT /, 'automacao', null, true],
   [/ (CARREGADOR|RECARGA|VE|WALLBOX) /, 'carregador'],
   [/ (ILU|ILUM|ILUMINACAO|LUM|LUMINOTECNICO|LUMINOTECNICA) /, 'iluminacao'],
   [/ (HOSP|HOSPITALAR|IT MEDICO) /, 'eletrica_hospitalar'],
@@ -43,12 +47,15 @@ const ROTULO_REF = { arquitetura: 'arquitetura', estrutura: 'estrutura', hidraul
 function sugerirDisciplinas(nome, texto = null) {
   const n = normalizar(String(nome).replace(/\.[a-z0-9]+$/i, ''));
   const disciplinas = [];
+  const fracas = [];
   let referencia = null;
-  for (const [re, disc, ref] of PELO_NOME) {
+  for (const [re, disc, ref, fraca] of PELO_NOME) {
     if (!re.test(n)) continue;
+    if (fraca) { if (!fracas.includes(disc)) fracas.push(disc); continue; }
     if (disc && !disciplinas.includes(disc)) disciplinas.push(disc);
     if (ref && !referencia) referencia = ref;
   }
+  if (!disciplinas.length && !referencia) disciplinas.push(...fracas);
   if (disciplinas.length) return { disciplinas, referencia: false, tipoReferencia: null, motivo: 'pela sigla no nome do arquivo' };
   if (referencia) return { disciplinas: [], referencia: true, tipoReferencia: referencia, motivo: `${ROTULO_REF[referencia]} — referência para a compatibilização (não é orçada)` };
   if (texto) {

@@ -16,7 +16,7 @@ const { compatibilizar } = require('../utils/compatibilidadeEspacial');
 const {
   totaisCodificados, contagemDoCad, montarServicosPadrao, montarMateriaisInstalacaoPadrao, semModeloCoberto,
   montarMateriais, montarPontosPorAmbiente, montarMateriaisQuantitativos, montarMateriaisDaLista, montarMateriaisDoDesenho,
-  semDuplicarFontes,
+  semDuplicarFontes, doGrupo, temDisciplina,
 } = require('../utils/analiseProjetoItens');
 const { detalhePorArquivo, gerarAchados, achadosDoDesenho, achadosDasFolhas } = require('../utils/analiseProjetoAchados');
 
@@ -33,9 +33,19 @@ async function emLotes(lista, n, fn) {
 
 // Tenta achar o nome do cliente no bloco de título do desenho (padrão
 // "CLIENTE: NOME DO CLIENTE" usado nesses projetos de engenharia).
+// Só na MESMA linha: com `\s*` o valor atravessava a quebra e pegava o que
+// vinha embaixo — "APROVAÇÃO DO AUTOR E DO CLIENTE:\n00" deu cliente "00", e
+// "CLIENTE:\nENDEREÇO:" deu "ENDEREÇO:" (revisão de 29/10/2026). Valor só
+// numérico ou que é outro rótulo ("…:") não é nome de cliente: tenta a próxima.
+const clienteValido = (v) => {
+  const s = String(v || '').trim();
+  return s && !/:$/.test(s) && !/^[\d\s.,/\-–]+$/.test(s) ? s : null;
+};
 function extrairCliente(texto) {
-  const m = String(texto || '').match(/CLIENTE:\s*([^\t\n]+)/i);
-  return m ? m[1].trim() : null;
+  for (const m of String(texto || '').matchAll(/CLIENTE:[ \t]*([^\t\n]+)/gi)) {
+    if (clienteValido(m[1])) return clienteValido(m[1]);
+  }
+  return null;
 }
 
 // Extrai os equipamentos de cada arquivo (via IA, reformatando o texto já
@@ -128,7 +138,8 @@ async function analisarProjetoCompleto(todosArquivos) {
   // arquivos — decide quais itens-modelo de serviço/material aparecem.
   const disciplinasEfetivas = [...new Set(analises.flatMap(a => a.disciplinas))];
 
-  const cliente = analises.map(a => extrairCliente(a.textoBruto) || a.carimbo?.cliente).find(Boolean) || null;
+  // o carimbo (utils/leitoresTabelaProjeto.js) passa pelo mesmo filtro: "ENDEREÇO:" não é cliente
+  const cliente = analises.map(a => extrairCliente(a.textoBruto) || clienteValido(a.carimbo?.cliente)).find(Boolean) || null;
 
   // Preços de referência de mão de obra (sugestão — ver
   // services/precosMaoDeObraReferencia.js): o adotado pela H&M ou a referência de
@@ -170,11 +181,12 @@ async function analisarProjetoCompleto(todosArquivos) {
   // (confirmado lendo um projeto real); rede/antena só entram aqui se não
   // foram encontrados em nenhum arquivo marcado com essa disciplina (quando
   // encontrados, já vêm preenchidos automaticamente).
-  const temLista = (d) => analises.some(a => a.disciplinas.includes(d) && a.listaMateriais?.length);
+  // rede e cabeamento são o mesmo grupo (utils/analiseProjetoItens.js)
+  const temLista = (d) => analises.some(a => temDisciplina(a.disciplinas, d) && a.listaMateriais?.length);
   // DWG/DXF: bloco da disciplina contado no desenho também resolve a quantidade
-  const contouNoCad = (d) => vetoriais.some((v, i) => analises[i].disciplinas.includes(d) && v.some(p => p.origem === 'cad' && p.itens.some(it => it.tipo === 'simbolo' && it.disciplina === d)));
+  const contouNoCad = (d) => vetoriais.some((v, i) => temDisciplina(analises[i].disciplinas, d) && v.some(p => p.origem === 'cad' && p.itens.some(it => it.tipo === 'simbolo' && doGrupo(d).includes(it.disciplina))));
   const faltando = [];
-  if (disciplinasEfetivas.includes('rede') && totalRede === 0) faltando.push('pontos de rede');
+  if (temDisciplina(disciplinasEfetivas, 'rede') && totalRede === 0 && !contouNoCad('rede')) faltando.push('pontos de rede');
   if (disciplinasEfetivas.includes('antena') && totalAntena === 0) faltando.push('pontos de TV/antena');
   if (disciplinasEfetivas.includes('alarme') && !temLista('alarme') && !contouNoCad('alarme')) faltando.push('quantidades de alarme (sensores, sirene, teclado)');
   if (disciplinasEfetivas.includes('eletrica') && !temLista('eletrica') && !contouNoCad('eletrica')) faltando.push('quantidades de elétrica (tomadas, interruptores, cabos)');
@@ -260,4 +272,4 @@ async function analisarProjetoCompleto(todosArquivos) {
   };
 }
 
-module.exports = { analisarProjetoCompleto };
+module.exports = { analisarProjetoCompleto, extrairCliente };
