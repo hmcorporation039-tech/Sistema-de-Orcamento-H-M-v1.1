@@ -73,6 +73,8 @@ caso('pontosPorAmbiente: documento sempre destruído e no máximo N páginas lid
       if (n === 2) throw new Error('página quebrada');
       return { items: [{ str: 'SALA', transform: [1, 0, 0, 1, 10, 10] }, { str: 'A= 12,5 m²', transform: [1, 0, 0, 1, 10, 5] }, { str: 'R1', transform: [1, 0, 0, 1, 12, 8] }] };
     },
+    // posição como se vê (origem no topo), igual ao pdfjs de verdade numa folha de 100 pt
+    getViewport: () => ({ convertToViewportPoint: (x, y) => [x, 100 - y] }),
     cleanup() { limpas++; },
   });
   const pdfjsFalso = { getDocument: () => ({ promise: Promise.resolve({ numPages: 500, getPage: async (n) => pagina(n), destroy: async () => { destruido++; } }) }) };
