@@ -15,7 +15,8 @@ const { versaoDoPedido } = require('../utils/versao');
 const { registrarAuditoria } = require('../utils/auditoria');
 const { hojeBrasilia } = require('../utils/dataHoje');
 const { gerarPlanilhaCronograma } = require('../utils/planilhaCronograma');
-const { gerarHtmlBoletim, gerarFooterTemplate } = require('../utils/boletimMedicaoTemplate');
+const { gerarHtmlBoletim } = require('../utils/boletimMedicaoTemplate');
+const { gerarFooterTemplate } = require('../utils/pdfTemplate');
 const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
 
 // data de hoje no horário de Brasília (toISOString daria o dia seguinte depois das 21h)

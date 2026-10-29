@@ -17,32 +17,9 @@ function carregarImagem(nome) {
 
 const cabecalhoDataUri = carregarImagem('cabecalho.png');
 
-function formatarMoeda(v) {
-  return (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-// Data vinda de coluna DATE do banco ("2026-01-15"): o driver devolve meia-noite
-// UTC, então formatar em UTC é o certo — em horário de Brasília viraria o dia
-// anterior.
-function formatarData(v) {
-  if (!v) return '—';
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return '—'; // evita imprimir "Invalid Date"
-  return d.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
-}
-
-// Data de HOJE (assinatura de contrato, emissão do documento): precisa do fuso
-// local, não de UTC. Com UTC, um contrato gerado às 21h30 de Brasília saía
-// datado do dia seguinte — num documento com valor jurídico.
-function formatarDataDeHoje() {
-  return new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-}
-
-function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[c]));
-}
+// escapeHtml e formatadores: base comum dos PDFs (utils/htmlPdf.js). Data de
+// coluna DATE sem fuso; data de HOJE (contrato, emissão) no fuso de Brasília.
+const { escapeHtml, formatarMoeda, formatarData, formatarDataDeHoje } = require('./htmlPdf');
 
 // Código de serviço da base de mão de obra (ele_qdg, rede_switch, livre_12…) é
 // uso interno: não vai para o PDF do cliente. Código de material (catálogo,

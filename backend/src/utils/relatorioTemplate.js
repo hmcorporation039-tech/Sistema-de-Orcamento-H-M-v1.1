@@ -1,20 +1,5 @@
-const { EMPRESA, cabecalhoDataUri, gerarFooterTemplate } = require('./pdfTemplate');
-
-function formatarMoeda(v) {
-  return (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function formatarData(v) {
-  if (!v) return '—';
-  const d = new Date(v);
-  return d.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
-}
-
-function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[c]));
-}
+const { EMPRESA, cabecalhoDataUri } = require('./pdfTemplate');
+const { escapeHtml, formatarMoeda, formatarData } = require('./htmlPdf');
 
 function gerarHtmlRelatorio({ dataInicio, dataFim, status, busca, propostas, totais }) {
   const linhas = propostas.map(p => `
@@ -98,4 +83,4 @@ function gerarHtmlRelatorio({ dataInicio, dataFim, status, busca, propostas, tot
   `;
 }
 
-module.exports = { gerarHtmlRelatorio, gerarFooterTemplateRelatorio: gerarFooterTemplate, EMPRESA };
+module.exports = { gerarHtmlRelatorio, EMPRESA };

@@ -6,17 +6,13 @@
 const { cabecalhoDataUri, EMPRESA } = require('./pdfTemplate');
 const C = require('./campo');
 
-function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c]));
-}
+const { escapeHtml, formatarData: dataCurta } = require('./htmlPdf');
+
 const TZ = 'America/Sao_Paulo';
 const dataHora = (v) => {
   const d = v ? new Date(v) : null;
   return d && !Number.isNaN(d.getTime()) ? d.toLocaleString('pt-BR', { timeZone: TZ, dateStyle: 'short', timeStyle: 'short' }) : '—';
 };
-const dataCurta = (s) => (s ? String(s).slice(0, 10).split('-').reverse().join('/') : '—');
 const coord = (p) => (p ? `${Number(p.lat).toFixed(6)}, ${Number(p.lon).toFixed(6)}` : '');
 const quebras = (s) => escapeHtml(s).replace(/\n/g, '<br/>');
 
@@ -166,4 +162,4 @@ function numeroFoto(os, uuid) {
   return i >= 0 ? `Foto ${i + 1}` : 'foto';
 }
 
-module.exports = { gerarHtmlOS, escapeHtml };
+module.exports = { gerarHtmlOS };

@@ -1,19 +1,7 @@
 const { nomeDaDisciplina } = require('./disciplinasProjeto');
 
-function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[c]));
-}
-
-function formatarData(v) {
-  const d = v ? new Date(v) : new Date();
-  return d.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
-}
-
-function formatarMoedaLocal(v) {
-  return (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
+// "hoje" do relatório: horário de Brasília (antes, em UTC, depois das 21h saía o dia seguinte)
+const { escapeHtml, formatarMoeda: formatarMoedaLocal, formatarDataDeHoje } = require('./htmlPdf');
 
 // Monta as linhas de uma tabela agrupando por subgrupo (na ordem em que os
 // itens aparecem, sem reordenar) — mesmo padrão usado no PDF comercial de
@@ -229,7 +217,7 @@ function gerarHtmlRelatorioCompatibilizacao(analise) {
     </div>
     <div class="info-item">
       <div class="label">Data do relatório</div>
-      <div class="valor">${formatarData()}</div>
+      <div class="valor">${formatarDataDeHoje()}</div>
     </div>
     ${disciplinas.includes('cftv') ? `
     <div class="info-item">

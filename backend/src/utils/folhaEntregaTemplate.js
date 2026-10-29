@@ -7,15 +7,7 @@
 const { cabecalhoDataUri, EMPRESA } = require('./pdfTemplate');
 const { hojeBrasilia } = require('./dataHoje');
 
-function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c]));
-}
-const dataBr = (s) => {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || ''));
-  return m ? `${m[3]}/${m[2]}/${m[1]}` : (s ? String(s) : '—');
-};
+const { escapeHtml, formatarData: dataBr } = require('./htmlPdf');
 
 // indicadores do resumo que são da inspeção (parecer, checklist): não entram na entrega do projeto
 const DA_INSPECAO = /inspe[cç][aã]o|parecer|checklist|n[aã]o conformidade/i;
@@ -85,4 +77,4 @@ function gerarHtmlFolhaEntrega({ disciplina, titulo, dados = {}, arquivos = [], 
 </body></html>`;
 }
 
-module.exports = { gerarHtmlFolhaEntrega, escapeHtml };
+module.exports = { gerarHtmlFolhaEntrega };

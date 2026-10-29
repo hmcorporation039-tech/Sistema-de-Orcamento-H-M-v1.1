@@ -1,7 +1,8 @@
 const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
 const pool = require('../config/database');
 const { periodoMesAtualBrasilia } = require('../utils/dataHoje');
-const { gerarHtmlRelatorio, gerarFooterTemplateRelatorio } = require('../utils/relatorioTemplate');
+const { gerarHtmlRelatorio } = require('../utils/relatorioTemplate');
+const { gerarFooterTemplate } = require('../utils/pdfTemplate');
 const { sqlDecisaoCliente } = require('../utils/aprovacaoLink');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');
 const { escaparCsv } = require('../utils/csv');
@@ -124,7 +125,7 @@ async function exportarPdf(req, res, next) {
       margin: { top: '12mm', bottom: '24mm', left: '14mm', right: '14mm' },
       displayHeaderFooter: true,
       headerTemplate: '<div></div>',
-      footerTemplate: gerarFooterTemplateRelatorio(),
+      footerTemplate: gerarFooterTemplate(),
     });
 
     res.setHeader('Content-Type', 'application/pdf');

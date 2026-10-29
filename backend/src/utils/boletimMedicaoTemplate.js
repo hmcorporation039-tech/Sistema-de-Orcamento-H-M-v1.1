@@ -1,16 +1,11 @@
 // HTML do BOLETIM DE MEDIÇÃO da obra (versão 2.0, Fase 3G) — vira PDF em
 // pdfPuppeteer.js (A4 paisagem). Tudo que vem do banco passa por escapeHtml.
 // Os números vêm prontos de utils/cronograma.js (boletimMedicao).
-const { cabecalhoDataUri, EMPRESA, gerarFooterTemplate } = require('./pdfTemplate');
+const { cabecalhoDataUri, EMPRESA } = require('./pdfTemplate');
+// dataBR: base comum — a cópia daqui fatiava o texto e, com a data vinda do banco como Date, imprimia "Wed Oct 28"
+const { escapeHtml, formatarMoeda: moeda, formatarData: dataBR } = require('./htmlPdf');
 
-function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c]));
-}
-const moeda = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const pct = (v) => `${(Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
-const dataBR = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '—');
 
 /**
  * { obra, proposta, boletim, resumo, medicoes (do período, vigentes, com observação), periodicidade, emitidoPor }
@@ -105,4 +100,4 @@ function gerarHtmlBoletim({ obra, proposta, boletim, medicoes = [], periodicidad
 </body></html>`;
 }
 
-module.exports = { gerarHtmlBoletim, gerarFooterTemplate, escapeHtml };
+module.exports = { gerarHtmlBoletim };
