@@ -130,7 +130,9 @@ caso('A5: incêndio, controle de acesso e SPDA ganham mão de obra pela contagem
   const s = servicos(an, v, ['incendio', 'cftv', 'cabeamento']);
   assert.strictEqual(s.inc_dispositivo.quantidade, 21);
   assert.strictEqual(s.inc_central.quantidade, 1);
-  assert.strictEqual(s.inc_infra.quantidade, Math.ceil(95.9 * 1.1));
+  // rota × 1,10 + descidas: acionador a 1,20 m adotado (3 × 1,6 m), sinalizador h=2,40 m da legenda (5 × 0,4 m), detector no teto (0)
+  assert.strictEqual(s.inc_infra.quantidade, Math.ceil(95.9 * 1.1 + 3 * 1.6 + 5 * 0.4));
+  assert.match(s.inc_infra.observacao, /descidas 6,8 m \(8 ponto\(s\): pé-direito 2,80 m adotado/);
   assert.strictEqual(s.cftv_ponto.quantidade, 15);
   assert.ok(!s.ace_leitor, 'controle de acesso não marcado: sem item');
   // a eletrocalha CAB- é de cabeamento (antes entrava na 1ª disciplina do arquivo)
@@ -209,6 +211,49 @@ caso('M7: quadros contados por título do quadro de cargas, não por arquivo', (
   // formato antigo (sem título): 1 por arquivo com circuitos
   const an2 = [analise('ele.pdf', ['eletrica'], { quadroCargas: [{ circuito: 'C1', fases: 'R' }] })];
   assert.strictEqual(I.montarServicosPadrao(an2, ['eletrica']).find(x => x.codigo === 'ele_qd_setorial').quantidade, 1);
+});
+
+caso('A8: eletroduto = rota × 1,10 + descidas; cabo = (rota + descidas) × condutores; fiação não casa cabo do catálogo', () => {
+  const catalogo = [{ id: 9, descricao: 'Cabo flexível 2,5 mm² 750 V preto', preco: 3, unidade: 'm' }, { id: 10, descricao: 'Trecho de fiação cabo flexível', preco: 3, unidade: 'm' }];
+  const pontos = [
+    sim('Interruptor — bloco INT1', 8, { bloco: 'INT1', layer: 'E-INTERRUPTOR', disciplina: 'eletrica' }),
+    sim('Tomada 2P+T — bloco TOMADA', 8, { bloco: 'TOMADA', layer: 'TOMADAS', disciplina: 'eletrica' }),
+    sim('Luminária — bloco LUM', 10, { bloco: 'LUM', layer: 'E-ILUM', disciplina: 'eletrica' }),
+  ];
+  const an = [analise('galpao.dwg', ['eletrica'])];
+  // formato antigo: "Trecho de fiação" vinha como item de linha
+  const velho = [[{ origem: 'cad', pagina: 'DWG', itens: [...pontos,
+    lin('Trecho de fiação (eletroduto com condutores) — medido no desenho (layer "FIACAO")', 81.3, { layer: 'FIACAO', disciplina: 'eletrica' }),
+    lin('Eletrocalha — medido no desenho (layer "ELETROCALHA")', 135.7, { layer: 'ELETROCALHA', disciplina: 'eletrica' })] }]];
+  // formato novo: a fiação só vem em `rotas`
+  const novo = [[{ origem: 'cad', pagina: 'DWG', rotas: [{ layer: 'FIACAO', tipo: 'fiacao', disciplina: 'eletrica', rota_m: 81.3 }, { layer: 'ELETROCALHA', tipo: 'eletrocalha', disciplina: 'eletrica', rota_m: 135.7 }],
+    itens: [...pontos, lin('Eletrocalha — medido no desenho (layer "ELETROCALHA")', 135.7, { layer: 'ELETROCALHA', disciplina: 'eletrica', rota_m: 135.7, tipoLinha: 'eletrocalha' })] }]];
+  const descidas = 8 * (2.8 - 1.1) + 8 * (2.8 - 0.3); // interruptor 1,10 e tomada 0,30 adotados; luminária no teto
+  for (const v of [velho, novo]) {
+    const m = I.montarMateriaisDoDesenho(an, v, catalogo);
+    const eletroduto = m.find(x => /^Eletroduto — rota da fiação/.test(x.descricao));
+    assert.strictEqual(eletroduto.quantidade, Math.ceil(81.3 * 1.1 + descidas));
+    const cabo = m.find(x => /^Cabo flexível 750 V/.test(x.descricao));
+    assert.strictEqual(cabo.quantidade, Math.ceil((81.3 * 1.1 + descidas) * 3));
+    assert.strictEqual(cabo.material_id, null, 'cabo calculado não casa com o catálogo');
+    assert.match(cabo.observacao, /F \+ N \+ PE adotado/);
+    assert.ok(!m.some(x => /Trecho de fiação/.test(x.descricao)), 'a fiação não vira material em metros de rota');
+    assert.strictEqual(m.find(x => /^Eletrocalha/.test(x.descricao)).quantidade, Math.ceil(135.7 * 1.1));
+    // o modelo "Eletroduto PVC = 0" sai porque há eletroduto calculado; o de cabo também
+    const modelos = I.semModeloCoberto(I.montarMateriaisInstalacaoPadrao(an, ['eletrica']), m);
+    assert.ok(!modelos.some(x => /^Eletroduto PVC|^Cabo elétrico flexível/.test(x.descricao)));
+  }
+  // só a fiação (sem eletroduto calculado): o modelo "Eletroduto PVC" fica
+  const soFiacao = [{ descricao: 'Trecho de fiação (eletroduto com condutores) — medido no desenho (layer "FIACAO")', quantidade: 90, disciplina: 'eletrica', observacao: 'Medido no DWG "g.dwg"' }];
+  assert.ok(I.semModeloCoberto(I.montarMateriaisInstalacaoPadrao(an, ['eletrica']), soFiacao).some(x => /^Eletroduto PVC/.test(x.descricao)));
+  // condutores do quadro de cargas lido: "3F+N+T" mais comum → 5
+  const an2 = [analise('galpao.dwg', ['eletrica'], { quadroCargas: [{ circuito: 'M1', esquema: '3F+N+T' }, { circuito: 'M2', esquema: '3F+N+T' }, { circuito: 'IL1', esquema: 'F+N+T' }, { circuito: 'QD', esquema: 'F+N+T', alimentador: true }, { circuito: 'QD2', esquema: 'F+N+T', alimentador: true }] })];
+  const cabo5 = I.montarMateriaisDoDesenho(an2, novo, []).find(x => /^Cabo/.test(x.descricao));
+  assert.match(cabo5.descricao, /5 condutores/);
+  assert.match(cabo5.observacao, /esquema mais comum no quadro de cargas/);
+  // a lista do projeto vence o cabo estimado
+  const r = I.semDuplicarFontes([{ ...cabo5, _fonte: 'estimativa', _arquivo: 'galpao.dwg' }, mat('Cabo flexível 2,5 mm² preto', 300, 'lista', 'galpao.pdf', 'eletrica', 'm')], []);
+  assert.deepStrictEqual(r.map(x => x.quantidade), [300]);
 });
 
 caso('achados: quadro não lido, código repetido longe, quantidade ambígua e folhas além do limite', () => {

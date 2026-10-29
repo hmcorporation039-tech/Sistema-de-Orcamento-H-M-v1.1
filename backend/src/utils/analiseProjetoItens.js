@@ -293,15 +293,26 @@ function contagemDoDesenho(analises, vetoriais = [], opcoes = {}) {
           const codigo = typeof cod === 'function' ? cod(desc) : cod;
           const rotulo = cad ? `${onde}: bloco ${it.bloco} × ${it.quantidade}` : `${onde}: "${desc.slice(0, 50)}" × ${it.quantidade}`;
           entradas.push({ codigo, disciplina: discRegra, quantidade: Number(it.quantidade) || 0, fonte: cad ? 'cad' : 'pdf', arquivo: a.arquivo, rotulo });
-        } else if (it.tipo === 'linha' && it.metros != null) {
-          const disc = cad ? disciplinaDoItemCad(it, marcadas)
-            : (() => { const s = detectarDisciplinas(it.descricao)[0]?.chave; return (s && doMesmoGrupo(marcadas, s)) || disciplinaUnica(marcadas); })();
-          const codigo = disc && servicoDaLinha(disc, it);
-          if (!codigo) continue;
-          const rota = Number(it.rota_m ?? it.metros) || 0;
-          entradas.push({ codigo, disciplina: disc, quantidade: rota, metros: true, fonte: cad ? 'cad' : 'pdf', arquivo: a.arquivo, rotulo: `${onde}: ${metrosBR(rota)}${it.layer ? ` (layer ${it.layer})` : ''}` });
         }
       }
+      // trechos (eletroduto, eletrocalha, fiação — no CAD novo a fiação só vem em `rotas`)
+      for (const l of linhasDaPagina(p)) {
+        if (l.ambiguo || l.rota_m == null) continue;
+        const disc = cad ? disciplinaDoItemCad(l.it, marcadas)
+          : (() => { const s = detectarDisciplinas(l.descricao)[0]?.chave; return (s && doMesmoGrupo(marcadas, s)) || disciplinaUnica(marcadas); })();
+        const codigo = disc && servicoDaLinha(disc, { layer: l.layer, descricao: l.descricao });
+        if (!codigo) continue;
+        const rota = Number(l.rota_m) || 0;
+        entradas.push({ codigo, disciplina: disc, quantidade: rota, metros: true, fonte: cad ? 'cad' : 'pdf', arquivo: a.arquivo, rotulo: `${onde}: ${metrosBR(rota)}${l.layer ? ` (layer ${l.layer})` : ''}` });
+      }
+    }
+    // infraestrutura por metro também leva as descidas até cada ponto da disciplina (A8)
+    const comInfra = new Map();
+    entradas.filter(e => e.arquivo === a.arquivo && e.metros && Object.values(INFRA_DA_DISCIPLINA).includes(e.codigo)).forEach(e => comInfra.set(e.codigo, e));
+    for (const [codigo, e] of comInfra) {
+      const pontos = (vetoriais[i] || []).flatMap(p => (p.itens || []).filter(it => it.tipo === 'simbolo' && !it.ambiguo && disciplinaDoItemDesenho(it, p, marcadas) === e.disciplina));
+      const d = descidasDosPontos(pontos);
+      if (d.metros > 0) entradas.push({ codigo, disciplina: e.disciplina, quantidade: 0, descidas: d.metros, metros: true, fonte: e.fonte, arquivo: a.arquivo, rotulo: textoDescidas(d) });
     }
   });
   const mesmoDesenho = mesmoDesenhoFn(opcoes.gruposCompat);
@@ -319,12 +330,14 @@ function contagemDoDesenho(analises, vetoriais = [], opcoes = {}) {
       return b.filter(x => PESO_FONTE[x.fonte] === melhor);
     });
     const soma = ficam.reduce((s, x) => s + x.quantidade, 0);
+    const descidas = Math.round(ficam.reduce((s, x) => s + (x.descidas || 0), 0) * 10) / 10;
     const metros = ficam.some(x => x.metros);
     cont[codigo] = {
       disciplina: lista[0].disciplina,
-      quantidade: metros ? Math.ceil(soma * SOBRA_ROTA) : soma,
-      blocos: ficam.map(x => x.rotulo),
+      quantidade: metros ? Math.ceil(soma * SOBRA_ROTA + descidas) : soma,
+      blocos: ficam.filter(x => !x.descidas).map(x => x.rotulo),
       ...(metros ? { metros: Math.round(soma * 10) / 10 } : {}),
+      ...(descidas ? { descidas_m: descidas, descidas_texto: ficam.filter(x => x.descidas).map(x => x.rotulo).join('; ') } : {}),
       fora: lista.length - ficam.length,
     };
   }
@@ -364,7 +377,7 @@ function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = 
     const quantidade = doCad ? doCad.quantidade : quantidade0;
     const observacao = doCad
       ? (doCad.metros != null
-        ? `Quantidade = rota medida no desenho (${doCad.blocos.join('; ')}) = ${metrosBR(doCad.metros)} × ${String(SOBRA_ROTA).replace('.', ',')}${doCad.descidas_m ? ` + descidas ${metrosBR(doCad.descidas_m)}` : ''} — conferir na planta.`
+        ? `Quantidade = rota medida no desenho (${doCad.blocos.join('; ')}) = ${metrosBR(doCad.metros)} × ${String(SOBRA_ROTA).replace('.', ',')}${doCad.descidas_m ? ` + ${doCad.descidas_texto || `descidas ${metrosBR(doCad.descidas_m)}`}` : ''} — conferir na planta.`
         : `Quantidade = contagem no desenho (${doCad.blocos.join('; ')}) — conferir na planta.`)
         + (doCad.fora ? ` O mesmo desenho veio em outro formato: ${doCad.fora} contagem(ns) não somada(s).` : '')
       : observacao0;
@@ -715,44 +728,182 @@ function doMesmoGrupo(marcadas, sugerida) {
   return doGrupo(sugerida).find(x => marcadas.includes(x)) || null;
 }
 
+// ── Eletroduto e cabo pelo desenho: rota + descidas × condutores ─────────
+// Antes: eletroduto = rota × 1,10 e "Trecho de fiação" virava material em
+// metros = rota, casado com um cabo do catálogo (galpão real: "FIACAO 81,3 m →
+// 90 m" de cabo, e o item ainda tirava o modelo "Eletroduto PVC"). Faltavam o
+// trecho vertical até cada ponto (pé-direito − altura de montagem: tomada baixa
+// com forro a 2,8 m ≈ 2,5 m por ponto) e o nº de condutores (F + N + PE ≥ 3).
+// Agora (revisão de 29/10/2026, A8):
+//   eletroduto = rota × 1,10 + Σ (pé-direito − altura de montagem) por ponto
+//   cabo       = (rota × 1,10 + descidas) × condutores
+// Pé-direito e altura que o desenho não traz são ADOTADOS e ditos na observação;
+// condutores vêm do quadro de cargas lido (esquema "F+N+T" = 3), senão 3 adotado.
+// O cabo calculado não casa com item do catálogo (a bitola é do quadro de cargas)
+// e perde para a lista de materiais do projeto (fonte "estimativa").
+const PE_DIREITO_ADOTADO = 2.8;
+const CONDUTORES_ADOTADOS = 3;
+const ALTURA_ADOTADA = [
+  [/arandela/i, 2.0],
+  // no teto (ou no piso): a rota já chega nele, sem descida
+  [/lumin[áa]ria|plafon|\bspot\b|downlight|pendente|detector|ponto (gen[ée]rico )?de (luz|ilumina)|tomada (de |no )?teto|projetor|refletor|tomada (de )?piso/i, null],
+  [/acionador/i, 1.2], [/avisador|sinalizador|sirene/i, 2.2],
+  [/interruptor|dimmer|botoeira|leitor|teclado|termostato/i, 1.1],
+  [/interfone|porteiro/i, 1.4], [/quadro|painel/i, 1.5], [/c[âa]mera|\bdome\b|bullet/i, 2.5],
+  [/tomada.*\balta\b/i, 2.0], [/tomada.*\bm[ée]dia/i, 1.1],
+  [/tomada|ponto de (rede|telecom|dados|tv)|\brj-?45\b|coaxial|telefon/i, 0.3],
+];
+function alturaDoPonto(it) {
+  if (it.montagem === 'teto' || it.montagem === 'piso') return { teto: true };
+  if (Number.isFinite(it.altura_m) && it.altura_m >= 0) return { h: it.altura_m, adotada: false };
+  const lida = alturaDaDescricao(it.descricao);
+  if (lida != null && lida > 0 && lida < 6) return { h: lida, adotada: false };
+  const r = ALTURA_ADOTADA.find(([re]) => re.test(semMarcador(it.descricao || '')));
+  if (!r) return null;
+  return r[1] == null ? { teto: true } : { h: r[1], adotada: true };
+}
+// descidas de um conjunto de símbolos (já da disciplina): { metros, pontos, adotadas, semAltura }
+function descidasDosPontos(itens, pe = PE_DIREITO_ADOTADO) {
+  const r = { metros: 0, pontos: 0, adotadas: 0, semAltura: 0 };
+  for (const it of itens) {
+    const q = Number(it.quantidade) || 0;
+    const alt = alturaDoPonto(it);
+    if (!alt) { r.semAltura += q; continue; }
+    if (alt.teto) continue;
+    r.metros += Math.max(0, pe - alt.h) * q;
+    r.pontos += q;
+    if (alt.adotada) r.adotadas += q;
+  }
+  r.metros = Math.round(r.metros * 10) / 10;
+  return r;
+}
+const textoDescidas = (d, pe = PE_DIREITO_ADOTADO) => `descidas ${metrosBR(d.metros)} (${d.pontos} ponto(s): pé-direito ${String(pe.toFixed(2)).replace('.', ',')} m adotado − altura de montagem${d.adotadas ? `, adotada em ${d.adotadas}` : ''})${d.semAltura ? `; ${d.semAltura} ponto(s) sem altura conhecida fora da conta` : ''}`;
+// nº de condutores por circuito: "3F+N+T" = 5, "F+N+T" = 3, "2F+T" = 3
+function condutoresDoCircuito(c) {
+  const esq = String(c.esquema || '').toUpperCase();
+  if (!esq) return null;
+  const m = esq.match(/(\d)\s*F/);
+  const fases = m ? Number(m[1]) : (esq.match(/F/g) || []).length;
+  if (!fases) return null;
+  return fases + (/\bN\b|\+N/.test(esq) ? 1 : 0) + (/\bT\b|\+T|PE/.test(esq) ? 1 : 0);
+}
+// o mais comum entre os circuitos terminais dos quadros lidos (elétrica)
+function condutoresDoProjeto(analises) {
+  const cont = new Map();
+  for (const a of analises.filter(x => (x.disciplinas || []).some(d => d.startsWith('eletrica') || d === 'iluminacao'))) {
+    for (const c of a.quadroCargas || []) {
+      if (c.alimentador) continue;
+      const n = condutoresDoCircuito(c);
+      if (n) cont.set(n, (cont.get(n) || 0) + 1);
+    }
+  }
+  const [n, vezes] = [...cont].sort((x, y) => y[1] - x[1])[0] || [];
+  return n ? { n, lido: true, circuitos: vezes } : { n: CONDUTORES_ADOTADOS, lido: false };
+}
+// tipo do trecho pela descrição/layer (formato antigo) ou o que o CAD já diz (tipoLinha)
+const tipoDaLinha = (s) => (/eletrocalha|\bcalha/i.test(s) ? 'eletrocalha' : /perfilado/i.test(s) ? 'perfilado' : /leito/i.test(s) ? 'leito'
+  : /fia[çc][ãa]o|fiacao/i.test(s) ? 'fiacao' : /^cabeamento|rota do cabeamento/i.test(s) ? 'cabeamento' : 'eletroduto');
+// Trechos medidos de uma página, nos dois formatos do CAD: item "linha" (com
+// rota_m) e, no formato novo, a rota de fiação/cabeamento só em `pag.rotas`
+// (não vira item). PDF vetorial: itens "linha" com metros pela escala.
+function linhasDaPagina(pag) {
+  const itens = (pag.itens || []).filter(it => it.tipo === 'linha');
+  const doItem = itens.map(it => ({
+    it, layer: it.layer || null, disciplina: it.disciplina ?? null, rota_m: it.rota_m ?? it.metros, ambiguo: !!it.ambiguo,
+    tipo: it.tipoLinha || tipoDaLinha(`${semMarcador(it.descricao || '')} ${it.layer || ''}`), descricao: it.descricao,
+  }));
+  const soRota = (pag.rotas || []).filter(r => ['fiacao', 'cabeamento'].includes(r.tipo) && !itens.some(it => it.layer && it.layer === r.layer)).map(r => ({
+    it: { tipo: 'linha', layer: r.layer, disciplina: r.disciplina ?? null, descricao: '' }, layer: r.layer, disciplina: r.disciplina ?? null, rota_m: r.rota_m, ambiguo: false, tipo: r.tipo,
+    descricao: `Rota ${r.tipo === 'fiacao' ? 'da fiação' : 'do cabeamento'} — medida no desenho (layer "${r.layer}")`,
+  }));
+  return [...doItem, ...soRota];
+}
+// disciplina de um item do desenho (mesma regra dos materiais)
+function disciplinaDoItemDesenho(it, pag, marcadas) {
+  const sugerida = pag.origem === 'cad' ? it.disciplina : detectarDisciplinas(it.descricao)[0]?.chave;
+  return pag.origem === 'cad'
+    ? (disciplinaDoItemCad(it, marcadas) || (sugerida ? null : marcadas[0]))
+    : (sugerida ? doMesmoGrupo(marcadas, sugerida) : marcadas[0]);
+}
+const DISCIPLINAS_DE_FORCA = new Set(['eletrica', 'iluminacao', 'eletrica_industrial', 'eletrica_hospitalar']);
+
 function montarMateriaisDoDesenho(analises, vetoriais, catalogo) {
   const materiais = [];
+  const condutores = condutoresDoProjeto(analises);
   analises.forEach((a, i) => {
     if (a.listaMateriais?.length || !a.disciplinas.length) return;
-    for (const pag of vetoriais[i] || []) {
-      for (const it of pag.itens) {
-        if (it.ambiguo || (it.tipo === 'linha' && it.metros == null)) continue;
-        // CAD: a disciplina vem do bloco/layer (services/analiseCad/index.js); PDF: da descrição da legenda
-        // CAD: prefixo da layer/bloco, depois a disciplina do bloco (disciplinaDoItemCad); PDF: a descrição da legenda
-        const sugerida = pag.origem === 'cad' ? it.disciplina : detectarDisciplinas(it.descricao)[0]?.chave;
-        const disciplina = pag.origem === 'cad'
-          ? (disciplinaDoItemCad(it, a.disciplinas) || (sugerida ? null : a.disciplinas[0]))
-          : (sugerida ? doMesmoGrupo(a.disciplinas, sugerida) : a.disciplinas[0]);
+    const pags = vetoriais[i] || [];
+    const onde = (pag) => (pag.origem === 'cad' ? `no ${pag.pagina} "${a.arquivo}"` : `no desenho de "${a.arquivo}" (pág. ${pag.pagina})`);
+    const base = (descricao, quantidade, unidade, disciplina, observacao, fonte, corr) => ({
+      descricao, referencia_fabricante: null, quantidade, unidade, subgrupo: nomeDaDisciplina(disciplina), disciplina, pronto: false,
+      preco_catalogo: corr?.preco_catalogo ?? null, material_id: corr?.material_id ?? null,
+      confianca_catalogo: corr?.confianca ?? null, descricao_catalogo: corr?.descricao_catalogo ?? null,
+      observacao, _fonte: fonte, _arquivo: a.arquivo, // semDuplicarFontes
+    });
+    // símbolos: um material por item da legenda/bloco; guardados por disciplina para as descidas
+    const pontosPorDisc = new Map();
+    const fontePag = (pag) => (pag.origem === 'cad' ? 'cad' : 'pdf');
+    for (const pag of pags) {
+      for (const it of (pag.itens || []).filter(x => x.tipo === 'simbolo' && !x.ambiguo)) {
+        const disciplina = disciplinaDoItemDesenho(it, pag, a.disciplinas);
         if (!disciplina) continue;
+        (pontosPorDisc.get(disciplina) || pontosPorDisc.set(disciplina, []).get(disciplina)).push(it);
         const descricao = semMarcador(it.descricao).slice(0, 240);
         const corr = compararComCatalogo(descricao, catalogo);
-        materiais.push({
-          descricao,
-          referencia_fabricante: null,
-          // linha: + 10 % de sobra (curvas, descidas e subidas que a planta não mostra)
-          quantidade: it.tipo === 'simbolo' ? it.quantidade : Math.ceil(it.metros * 1.1),
-          unidade: it.tipo === 'simbolo' ? (corr?.unidade_catalogo || 'un') : 'm',
-          subgrupo: nomeDaDisciplina(disciplina),
-          disciplina,
-          pronto: false,
-          preco_catalogo: corr?.preco_catalogo ?? null,
-          material_id: corr?.material_id ?? null,
-          confianca_catalogo: corr?.confianca ?? null,
-          descricao_catalogo: corr?.descricao_catalogo ?? null,
-          observacao: pag.origem === 'cad'
-            ? (it.tipo === 'simbolo'
-              ? `Contado no ${pag.pagina} "${a.arquivo}": bloco "${it.bloco}" × ${it.quantidade} (${ORIGEM_DESCRICAO[it.origemDescricao] || 'descrição a conferir'}) — conferir.`
-              : `Medido no ${pag.pagina} "${a.arquivo}": ${metrosBR(it.metros)} na layer "${it.layer}" + 10 % de sobra — conferir.`)
-            : it.tipo === 'simbolo'
-              ? `Contado no desenho de "${a.arquivo}" (pág. ${pag.pagina}): símbolo da legenda × ${it.quantidade} — conferir na planta.`
-              : `Medido no desenho de "${a.arquivo}" (pág. ${pag.pagina}): ${metrosBR(it.metros)} na escala 1:${pag.escala} + 10 % de sobra — conferir.`,
-          _fonte: pag.origem === 'cad' ? 'cad' : 'pdf', _arquivo: a.arquivo, // semDuplicarFontes
-        });
+        materiais.push(base(descricao, it.quantidade, corr?.unidade_catalogo || 'un', disciplina, pag.origem === 'cad'
+          ? `Contado ${onde(pag)}: bloco "${it.bloco}" × ${it.quantidade} (${ORIGEM_DESCRICAO[it.origemDescricao] || 'descrição a conferir'}) — conferir.`
+          : `Contado ${onde(pag)}: símbolo da legenda × ${it.quantidade} — conferir na planta.`, fontePag(pag), corr));
+      }
+    }
+    // trechos: eletrocalha/perfilado/leito como antes (rota × 1,10); eletroduto e
+    // fiação juntos por disciplina para somar as descidas e calcular o cabo
+    const porDisc = new Map();
+    for (const pag of pags) {
+      for (const l of linhasDaPagina(pag)) {
+        if (l.ambiguo || l.rota_m == null) continue;
+        const disciplina = disciplinaDoItemDesenho(l.it, pag, a.disciplinas);
+        if (!disciplina) continue;
+        const medida = `${metrosBR(l.rota_m)}${pag.origem === 'cad' ? ` na layer "${l.layer}"` : ` na escala 1:${pag.escala}`}`;
+        if (['eletroduto', 'fiacao'].includes(l.tipo) || (l.tipo === 'cabeamento' && !l.it.descricao)) {
+          const g = porDisc.get(disciplina) || porDisc.set(disciplina, { eletrodutos: [], fiacoes: [], cabeamento: [] }).get(disciplina);
+          ({ eletroduto: g.eletrodutos, fiacao: g.fiacoes, cabeamento: g.cabeamento })[l.tipo].push({ ...l, pag, medida });
+          continue;
+        }
+        const descricao = semMarcador(l.descricao).slice(0, 240);
+        const corr = compararComCatalogo(descricao, catalogo);
+        materiais.push(base(descricao, Math.ceil(l.rota_m * SOBRA_ROTA), 'm', disciplina,
+          `Medido ${onde(l.pag || pag)}: ${medida} + 10 % de sobra — conferir.`, fontePag(pag), corr));
+      }
+    }
+    for (const [disciplina, g] of porDisc) {
+      const desc = descidasDosPontos(pontosPorDisc.get(disciplina) || []);
+      const rotaEletroduto = g.eletrodutos.reduce((s, l) => s + l.rota_m, 0);
+      const rotaFiacao = g.fiacoes.reduce((s, l) => s + l.rota_m, 0);
+      if (g.eletrodutos.length) {
+        // cada layer de eletroduto vira um item; as descidas entram no maior
+        const maior = g.eletrodutos.reduce((m, l) => (l.rota_m > m.rota_m ? l : m));
+        for (const l of g.eletrodutos) {
+          const comDescidas = l === maior && desc.metros > 0;
+          const descricao = semMarcador(l.descricao).slice(0, 240);
+          const corr = compararComCatalogo(descricao, catalogo);
+          materiais.push(base(descricao, Math.ceil(l.rota_m * SOBRA_ROTA + (comDescidas ? desc.metros : 0)), 'm', disciplina,
+            `Medido ${onde(l.pag)}: ${l.medida} × 1,10${comDescidas ? ` + ${textoDescidas(desc)}` : ''} — conferir.`, fontePag(l.pag), corr));
+        }
+      } else if (g.fiacoes.length) {
+        // só a fiação desenhada: o eletroduto é a rota dela (não o cabo do catálogo)
+        const l0 = g.fiacoes[0];
+        materiais.push(base(`Eletroduto — rota da fiação medida no desenho (layer ${g.fiacoes.map(l => `"${l.layer}"`).join(', ')})`,
+          Math.ceil(rotaFiacao * SOBRA_ROTA + desc.metros), 'm', disciplina,
+          `Medido ${onde(l0.pag)}: rota da fiação ${metrosBR(Math.round(rotaFiacao * 10) / 10)} × 1,10${desc.metros > 0 ? ` + ${textoDescidas(desc)}` : ''} — tipo e diâmetro do eletroduto conforme projeto; conferir.`, fontePag(l0.pag), null));
+      }
+      // cabo dos circuitos de força/iluminação
+      const rotaCabo = rotaFiacao || rotaEletroduto;
+      if (DISCIPLINAS_DE_FORCA.has(disciplina) && rotaCabo > 0) {
+        const l0 = (g.fiacoes[0] || g.eletrodutos[0]);
+        const metros = Math.ceil((rotaCabo * SOBRA_ROTA + desc.metros) * condutores.n);
+        materiais.push(base(`Cabo flexível 750 V — ${condutores.n} condutores × (rota + descidas) (bitola conforme quadro de cargas)`, metros, 'm', disciplina,
+          `Calculado ${onde(l0.pag)}: (rota ${rotaFiacao ? 'da fiação' : 'dos eletrodutos'} ${metrosBR(Math.round(rotaCabo * 10) / 10)} × 1,10${desc.metros > 0 ? ` + ${textoDescidas(desc)}` : ''}) × ${condutores.n} condutores (${condutores.lido ? `esquema mais comum no quadro de cargas, ${condutores.circuitos} circuito(s)` : 'F + N + PE adotado — sem quadro de cargas lido'}). Um circuito por trecho: onde passam vários circuitos o cabo é maior — conferir no projeto.`,
+          'estimativa', null));
       }
     }
   });
@@ -774,10 +925,12 @@ const TIPOS_DE_ITEM = [
   ['eletroduto', /eletroduto/i], ['eletrocalha', /eletrocalha/i], ['perfilado', /perfilado/i], ['leito', /leito para cabo|leito\b/i],
   ['quadro', /^quadro|quadro de distribui/i], ['camera', /c[âa]mera/i], ['detector', /detector/i], ['acionador', /acionador/i],
   ['avisador', /avisador|sirene/i],
+  // cabo calculado pelo desenho (fonte "estimativa") perde para o cabo da lista do projeto
+  ['cabo', /^cabo\b|\bcondutor/i],
 ];
 const tipoDoItem = (descricao) => TIPOS_DE_ITEM.find(([, re]) => re.test(descricao || ''))?.[0] || null;
-const PESO_FONTE = { cad: 3, lista: 2, pdf: 1 };
-const ROTULO_FONTE = { cad: 'DWG/DXF', lista: 'lista de materiais do PDF', pdf: 'contagem pelo desenho do PDF' };
+const PESO_FONTE = { cad: 3, lista: 2, pdf: 1, estimativa: 0 };
+const ROTULO_FONTE = { cad: 'DWG/DXF', lista: 'lista de materiais do PDF', pdf: 'contagem pelo desenho do PDF', estimativa: 'cálculo pelo desenho (rota × condutores)' };
 
 // Só é "o mesmo item" quando as fontes são do MESMO desenho/pavimento: mesmo
 // nome-base de prancha (sem extensão, revisão "R04"/"REV 04" e cópia "(1)") ou
