@@ -3,10 +3,10 @@
 // orçamento insere kits). Criar, editar, duplicar, ativar/desativar e excluir:
 // administrador (mesmo padrão da tabela de preços de mão de obra).
 const pool = require('../config/database');
-const { comTransacao } = require('../utils/transacao');
-const { registrarAuditoria } = require('../utils/auditoria');
+const { comTransacao } = require('../services/transacao');
+const { registrarAuditoria } = require('../services/auditoria');
 const { versaoDoPedido } = require('../utils/versao');
-const { segmentoPorNomeDoCliente } = require('../utils/precosMaoDeObraReferencia');
+const { segmentoPorNomeDoCliente } = require('../services/precosMaoDeObraReferencia');
 const C = require('../utils/composicoes');
 
 const MSG_CONFLITO = 'Esta composição foi alterada por outra pessoa (ou em outra aba) depois que você a abriu. Recarregue para ver a versão atual — suas alterações não foram gravadas.';

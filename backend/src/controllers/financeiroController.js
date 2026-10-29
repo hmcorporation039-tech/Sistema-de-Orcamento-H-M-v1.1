@@ -2,7 +2,7 @@ const pool = require('../config/database');
 const { periodoMesAtualBrasilia } = require('../utils/dataHoje');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');
 const { escaparCsv } = require('../utils/csv');
-const { registrarAuditoria } = require('../utils/auditoria');
+const { registrarAuditoria } = require('../services/auditoria');
 const rotinas = require('../services/rotinas');
 const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
 

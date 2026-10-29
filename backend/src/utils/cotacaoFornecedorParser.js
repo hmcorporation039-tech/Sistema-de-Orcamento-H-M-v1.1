@@ -252,5 +252,5 @@ function extrairLayoutsConhecidos(texto) {
 }
 
 // (extrairCotacaoPdf e extrairDoTexto saíram em 28/10/2026: ninguém usava — a
-// leitura de cotação é a de utils/leitorCotacao.js, que chama extrairLayoutsConhecidos)
+// leitura de cotação é a de services/leitorCotacao.js, que chama extrairLayoutsConhecidos)
 module.exports = { extrairLayoutsConhecidos };

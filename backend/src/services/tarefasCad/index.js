@@ -1,8 +1,8 @@
 // Tarefas de CAD fora da thread principal (worker.js), com a fila global de
-// utils/executarNoWorker.js (no máximo 2 workers de CAD/3D ao mesmo tempo).
+// services/executarNoWorker.js (no máximo 2 workers de CAD/3D ao mesmo tempo).
 // Mantém as mensagens de erro de antes: quem chama decide pela `etapa`.
 const path = require('path');
-const { executarNoWorker } = require('../../utils/executarNoWorker');
+const { executarNoWorker } = require('../executarNoWorker');
 
 const SCRIPT = path.join(__dirname, 'worker.js');
 const TEMPO_LIMITE_MS = 180 * 1000;

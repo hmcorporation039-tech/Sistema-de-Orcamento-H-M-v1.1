@@ -14,8 +14,8 @@
 // item reutilizável de catálogo, e tentar cadastrá-la estourava o tamanho da
 // coluna e derrubava o salvamento da PROPOSTA inteira (a transação é única).
 const TAMANHO_MAX_DESCRICAO_CATALOGO = 300;
-const { categoriaLocal } = require('../services/classificacaoMateriais');
-const { garantirServicoCadastrado } = require('./servicosBase');
+const { categoriaLocal } = require('./classificacaoMateriais');
+const { garantirServicoCadastrado } = require('../utils/servicosBase');
 
 // Só vira item de catálogo o que tem PREÇO e cara de item reutilizável
 // (decisão do usuário em 28/10/2026). O orçamento gerado de uma análise ou de

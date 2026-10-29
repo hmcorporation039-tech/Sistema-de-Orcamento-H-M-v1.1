@@ -1,7 +1,7 @@
 const pool = require('../config/database');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');
-const { registrarAuditoria } = require('../utils/auditoria');
-const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
+const { registrarAuditoria } = require('../services/auditoria');
+const { gerarPdfDeHtml } = require('../services/pdfPuppeteer');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
 const { gerarHtmlContrato, gerarFooterTemplate } = require('../utils/pdfTemplate');
 const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');

@@ -17,7 +17,7 @@
 const crypto = require('crypto');
 const fsp = require('fs/promises');
 const path = require('path');
-const P = require('../../utils/pastasSistema');
+const P = require('../pastasSistema');
 
 const TIPOS_ACEITOS = 'PDF, DWG, DXF, imagens (PNG, JPG, WEBP), planilhas (XLSX, CSV) e Word (DOCX)';
 const MIME = {
@@ -135,7 +135,7 @@ async function lerCad(buffer, nome) {
 async function lerImagem(buffer, tipo) {
   let textoOcr = '';
   if (tipo !== 'webp') {
-    try { textoOcr = await require('../../utils/leitorCotacao').ocr([buffer]); } catch (e) { textoOcr = ''; }
+    try { textoOcr = await require('../leitorCotacao').ocr([buffer]); } catch (e) { textoOcr = ''; }
   }
   return {
     tipo, bytes: buffer.length,

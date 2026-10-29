@@ -16,14 +16,14 @@ const resumoDaLeitura = (l) => ({ ambientes: l.ambientes, portas: l.portas, laye
 
 const TAREFAS = {
   // { buffer, nome, escala?, pagina? } → { texto (DXF), origem ('dwg'|'dxf'|'pdf'), leitura, pdf? }
-  // PDF vetorial vira DXF em metros (utils/pdfParaDxf.js); escala/página só valem para PDF.
+  // PDF vetorial vira DXF em metros (services/pdfParaDxf.js); escala/página só valem para PDF.
   async lerArquitetura({ buffer, nome, escala, pagina }) {
     const C = cad();
     let texto, origem, pdf = null;
     try {
       if (/\.pdf$/i.test(nome || '')) {
         // processo à parte: um erro nativo do leitor de PDF não derruba o sistema
-        const r = await require('../../utils/pdfParaDxf').pdfParaDxfIsolado(Buffer.from(buffer), { escala, pagina });
+        const r = await require('../pdfParaDxf').pdfParaDxfIsolado(Buffer.from(buffer), { escala, pagina });
         ({ texto } = r);
         origem = 'pdf';
         pdf = { escala: r.escala, origemEscala: r.origemEscala, pagina: r.pagina, paginas: r.paginas, avisos: r.avisos };

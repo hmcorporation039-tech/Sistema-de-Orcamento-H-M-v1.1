@@ -7,7 +7,7 @@ const assert = require('assert');
 const poolFalso = { query: async () => ({ rows: [] }), connect: async () => { throw new Error('use o db injetado'); }, on() {} };
 require.cache[require.resolve('../src/config/database')] = { id: 'db', filename: 'db', loaded: true, exports: poolFalso };
 
-const E = require('../src/services/conexaoEmail');
+const E = require('../src/services/email/conexao');
 const { lerPixNaCaixaDeEntrada } = require('../src/services/financeiroEmailService');
 const { lerCaixaDeEntrada, processarOrcamentosPorEmail } = require('../src/services/notaFiscalEmailService');
 const { criarRotinas } = require('../src/services/rotinas');

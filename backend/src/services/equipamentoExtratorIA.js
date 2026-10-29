@@ -5,7 +5,7 @@ const ia = require('./ia');
 // o texto já extraído do PDF (pdf-parse) — não é a IA "lendo" o PDF sozinha,
 // é reformatação de texto já dado a ela, tarefa validada como confiável
 // (diferente de pedir pra ela listar ambientes de memória, onde ela alucina).
-// Provedor pela cadeia única de utils/ia.js (Claude Max → API → Gemini).
+// Provedor pela cadeia única de services/ia.js (Claude Max → API → Gemini).
 async function extrairEquipamentosComIA(textoCompleto) {
   if (!ia.disponivel()) {
     return { itens: [], aviso: 'Nenhuma IA configurada — extração de equipamentos por IA desativada' };

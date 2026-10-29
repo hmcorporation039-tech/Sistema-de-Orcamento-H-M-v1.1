@@ -1,10 +1,10 @@
 const { simpleParser } = require('mailparser');
 const pool = require('../config/database');
-const { credenciaisConfiguradas } = require('../utils/emailClient');
-const { conectarComRetry, esperasDaOrigem, identificarMensagens, registroProcessado } = require('./conexaoEmail');
-const { vincularPrestadores } = require('../utils/vincularPrestadores');
+const { credenciaisConfiguradas } = require('./email/imap');
+const { conectarComRetry, esperasDaOrigem, identificarMensagens, registroProcessado } = require('./email/conexao');
+const { vincularPrestadores } = require('./vincularPrestadores');
 const { verificarAutenticidade, dominioPermitido, listaDoEnv } = require('../utils/autenticidadeEmail');
-const { executarComTrava } = require('../utils/travaJob');
+const { executarComTrava } = require('./travaJob');
 
 // Converte o HTML do e-mail transacional do Inter em linhas de texto limpas,
 // já que esses e-mails não têm uma versão text/plain.

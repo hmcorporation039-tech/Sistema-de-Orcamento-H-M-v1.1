@@ -9,7 +9,7 @@ const path = require('path');
 const ExcelJS = require('exceljs');
 const { calcularTotais, normalizarItem, arredondarQuantidade, itemPertenceASecao, arredondar } = require('../src/utils/calculoProposta');
 const { validarProposta } = require('../src/utils/validacaoProposta');
-const { montarPlanilhaCliente } = require('../src/utils/planilhaOrcamentoCliente');
+const { montarPlanilhaCliente } = require('../src/services/planilhaOrcamentoCliente');
 
 let ok = 0;
 const casos = [];
@@ -66,7 +66,7 @@ caso('valores acima das colunas DECIMAL dão 400 (mensagem), não 500', () => {
 
 // ── Excel × servidor ─────────────────────────────────────────────────────
 function carregarHyperFormula() {
-  try { return require(path.join(__dirname, '..', '..', 'skills', 'node_modules', 'hyperformula')).HyperFormula; } catch { return null; }
+  try { return require(path.join(require('../src/config/caminhos').RAIZ_SKILLS, 'node_modules', 'hyperformula')).HyperFormula; } catch { return null; }
 }
 const HyperFormula = carregarHyperFormula();
 

@@ -220,7 +220,7 @@ caso('etapa sem distribuição usa a linear pelas datas; semanal', () => {
 // ── a planilha do cliente continua com a mesma regra ───────────────────
 (async () => {
   const ExcelJS = require('exceljs');
-  const { gerarPlanilhaCliente } = require(path.join('..', 'src', 'utils', 'planilhaOrcamentoCliente'));
+  const { gerarPlanilhaCliente } = require(path.join('..', 'src', 'services', 'planilhaOrcamentoCliente'));
   const r = await gerarPlanilhaCliente(1);
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(r.buffer);

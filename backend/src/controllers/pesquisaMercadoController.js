@@ -1,8 +1,8 @@
 const pool = require('../config/database');
-const { pesquisarPrecoMercado, salvarPesquisaManual, ErroPesquisaMercado } = require('../utils/pesquisaMercadoService');
+const { pesquisarPrecoMercado, salvarPesquisaManual, ErroPesquisaMercado } = require('../services/pesquisaMercado');
 
 // Endpoint HTTP — a lógica de verdade (prompt, fallback Gemini→Claude, cache)
-// mora em utils/pesquisaMercadoService.js, reaproveitada também pelas
+// mora em services/pesquisaMercado.js, reaproveitada também pelas
 // ferramentas do servidor MCP (mcp-server.js).
 async function pesquisar(req, res) {
   try {
@@ -35,7 +35,7 @@ async function salvar(req, res) {
   }
 }
 
-// Histórico de pesquisas de mercado já feitas (cache de utils/pesquisaMercadoService.js)
+// Histórico de pesquisas de mercado já feitas (cache de services/pesquisaMercado.js)
 // pra uma descrição parecida — usado pela ferramenta MCP historico_preco e,
 // no futuro, dá pra usar numa tela de consulta se fizer sentido.
 async function historico(req, res) {

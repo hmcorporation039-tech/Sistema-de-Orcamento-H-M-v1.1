@@ -1,6 +1,6 @@
 // Análise de Projeto a partir de DWG/DXF (versão 2.3). O desenho é lido numa
 // thread à parte (services/analiseCad/worker.js → skills/_comum/cad/projetoDxf.js)
-// e aqui vira o MESMO formato da análise do PDF (utils/compatibilizacaoAnalise.js):
+// e aqui vira o MESMO formato da análise do PDF (services/compatibilizacaoAnalise.js):
 //   - o texto remontado do desenho passa pelos leitores de texto do PDF
 //     (carimbo, lista de materiais, quadro de cargas, códigos de câmera/ponto);
 //   - os ambientes vêm da arquitetura (área real, não do rótulo "A=");
@@ -12,9 +12,9 @@
 // Tudo marcado para conferir: o desenho manda, mas sigla de bloco é convenção
 // de cada escritório.
 const path = require('path');
-const { executarNoWorker } = require('./executarNoWorker');
-const { analisarTexto } = require('./projetoParser');
-const { detectarDisciplinas } = require('./leitoresTabelaProjeto');
+const { executarNoWorker } = require('../executarNoWorker');
+const { analisarTexto } = require('../../utils/projetoParser');
+const { detectarDisciplinas } = require('../../utils/leitoresTabelaProjeto');
 
 const RE_CAD = /\.(dwg|dxf)$/i;
 const ehArquivoCad = (nome) => RE_CAD.test(String(nome || ''));
@@ -23,11 +23,11 @@ const ehArquivoCad = (nome) => RE_CAD.test(String(nome || ''));
 const RE_LAYER_LINHA = 'ELETRODUT|ELETROCALHA|PERFILADO|LEITO|CONDU[IÍ]TE|CONDUIT|INFRA|CABEAMENTO|FIA[ÇC][ÃA]O|FIACAO|TUBELE|INST.*TUBULA|EL[ÉE]T.*TUBULA|TUBULA.*EL[ÉE]T|TUB.*(L[ÓO]GIC|TELEF|DADOS|CFTV)|(L[ÓO]GIC|TELEF|DADOS|CFTV).*(TUB|INFRA|ELETROD)';
 const TEMPO_LIMITE_MS = 180 * 1000;
 
-// worker com fila global (utils/executarNoWorker.js): no máximo 2 leituras de CAD ao mesmo tempo
+// worker com fila global (services/executarNoWorker.js): no máximo 2 leituras de CAD ao mesmo tempo
 async function lerNoWorker(buffer, nome) {
   let m;
   try {
-    m = await executarNoWorker(path.join(__dirname, '..', 'services', 'analiseCad', 'worker.js'),
+    m = await executarNoWorker(path.join(__dirname, 'worker.js'),
       { buffer, nome, reLayerLinha: RE_LAYER_LINHA }, { tempoLimiteMs: TEMPO_LIMITE_MS, memoriaMb: 2048 });
   } catch (e) {
     if (e.codigo === 'TEMPO_ESGOTADO') throw new Error(`a leitura de "${nome}" passou de ${TEMPO_LIMITE_MS / 1000} s`);

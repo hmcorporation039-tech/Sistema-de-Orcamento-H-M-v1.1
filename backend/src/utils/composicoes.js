@@ -27,7 +27,7 @@
 // a proposta (seção, subgrupo = disciplina, descrição, quantidade = coef × qtd,
 // unidade, valor unitário, código do serviço, material_id). A proposta não
 // guarda a composição: os itens entram como itens comuns.
-const { valorSugerido, ITENS_REFERENCIA } = require('./precosMaoDeObraReferencia');
+const { valorSugerido, ITENS_REFERENCIA } = require('../services/precosMaoDeObraReferencia');
 const { resolverCodigo, DISCIPLINA_OUTROS } = require('./servicosBase');
 const DISC = require('../config/caminhos').registroDisciplinas();
 

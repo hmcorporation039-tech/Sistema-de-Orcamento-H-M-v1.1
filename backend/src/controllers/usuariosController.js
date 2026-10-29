@@ -1,7 +1,7 @@
 const bcrypt = require('bcryptjs');
 const pool = require('../config/database');
 const { invalidarCacheUsuario } = require('../middleware/auth');
-const { registrarAuditoria } = require('../utils/auditoria');
+const { registrarAuditoria } = require('../services/auditoria');
 
 async function listar(req, res) {
   const result = await pool.query(

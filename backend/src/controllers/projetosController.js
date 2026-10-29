@@ -1,24 +1,24 @@
-const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
+const { gerarPdfDeHtml } = require('../services/pdfPuppeteer');
 const pool = require('../config/database');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');
-const { registrarAuditoria } = require('../utils/auditoria');
-const { analisarProjetoCompleto } = require('../utils/compatibilizacaoAnalise');
+const { registrarAuditoria } = require('../services/auditoria');
+const { analisarProjetoCompleto } = require('../services/compatibilizacaoAnalise');
 const { gerarHtmlRelatorioCompatibilizacao } = require('../utils/relatorioCompatibilizacaoTemplate');
 const { gerarFooterTemplate } = require('../utils/pdfTemplate');
 const { normalizarDisciplinas } = require('../utils/disciplinasProjeto');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
-const { comTransacao } = require('../utils/transacao');
+const { comTransacao } = require('../services/transacao');
 const { hojeBrasilia } = require('../utils/dataHoje');
 const { calcularTotais } = require('../utils/calculoProposta');
 const { validarProposta } = require('../utils/validacaoProposta');
 const { inserirSecoesEItens, proximoNumero, registrarEvento } = require('./propostasController');
-const P = require('../utils/pastasSistema');
+const P = require('../services/pastasSistema');
 const { tipoPorConteudo } = require('../utils/tipoArquivo');
 const { versaoDoPedido, responderConflitoOuAusente } = require('../utils/versao');
 const { sincronizarProjeto, pastaDoProjeto, seguro, excluirPastaDoItem, rotasDePasta } = require('../services/pastasRegistros');
 const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
 const { lerFinalidade } = require('../utils/projetoLaudo');
-const { ehArquivoCad } = require('../utils/analiseCad');
+const { ehArquivoCad } = require('../services/analiseCad');
 const Pacotes = require('../services/pacotesProjeto');
 
 // DWG começa pela versão (AC10xx); DXF de texto, por "0 SECTION"
@@ -156,7 +156,7 @@ async function buscarUma(req, res) {
 
 // Recebe um ou mais PDFs de projeto (plantas de CFTV, cabeamento, etc.) e a
 // disciplina de CADA arquivo (não uma lista única pro lote inteiro — ver
-// utils/compatibilizacaoAnalise.js sobre por que isso evita um arquivo de uma
+// services/compatibilizacaoAnalise.js sobre por que isso evita um arquivo de uma
 // disciplina contaminar a contagem de outra), roda a análise (ambientes,
 // câmeras, cabos, achados de compatibilização e uma lista inicial de
 // serviços/materiais) e PERSISTE o resultado — a partir daqui o frontend
@@ -166,7 +166,7 @@ async function analisar(req, res) {
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({ erro: 'Envie ao menos um arquivo de projeto (PDF, DWG ou DXF)' });
   }
-  // 2.3: além do PDF, o DWG/DXF do projeto (lido como desenho — utils/analiseCad.js)
+  // 2.3: além do PDF, o DWG/DXF do projeto (lido como desenho — services/analiseCad/index.js)
   const invalido = req.files.find(f => (ehArquivoCad(f.originalname) ? !ehConteudoCad(f.buffer) : tipoPorConteudo(f.buffer) !== 'application/pdf'));
   if (invalido) {
     return res.status(400).json({ erro: ehArquivoCad(invalido.originalname)
@@ -353,9 +353,9 @@ async function compatibilizacaoDxf(req, res) {
   const { rows: [arq] } = await pool.query('SELECT conteudo FROM analises_projeto_arquitetura WHERE analise_id = $1', [an.id]);
   if (!arq) return res.status(400).json({ erro: 'Esta análise não tem desenho DWG/DXF de referência: a compatibilização por posição precisa dos DWG/DXF do projeto.' });
   // em thread à parte: ler a arquitetura de referência inteira levava segundos de CPU
-  const { gerarDxfCompatibilizacaoNoWorker } = require('../utils/dxfCompatibilizacao');
+  const { dxfCompatibilizacaoNoWorker } = require('../services/tarefasCad');
   const nomeProj = String(an.nome_projeto || an.cliente_nome || 'Projeto').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80);
-  const dxf = await gerarDxfCompatibilizacaoNoWorker({ dxfReferencia: arq.conteudo.toString('utf8'), conflitos: an.conflitos || [], titulo: `COMPATIBILIZAÇÃO — ${nomeProj.toUpperCase()}` });
+  const dxf = await dxfCompatibilizacaoNoWorker({ dxfReferencia: arq.conteudo.toString('utf8'), conflitos: an.conflitos || [], titulo: `COMPATIBILIZAÇÃO — ${nomeProj.toUpperCase()}` });
   const nome = `Compatibilização - ${nomeProj}.dxf`;
   res.set({ 'Content-Type': 'application/dxf', 'Content-Disposition': contentDisposition(nome), 'X-Nome-Arquivo': encodeURIComponent(nome) });
   res.send(Buffer.from(dxf, 'utf8'));

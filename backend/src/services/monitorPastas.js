@@ -14,7 +14,7 @@
 const fsp = require('fs/promises');
 const path = require('path');
 const pool = require('../config/database');
-const P = require('../utils/pastasSistema');
+const P = require('./pastasSistema');
 
 const IGNORAR = /(^|[\\/])(~\$[^\\/]*|Thumbs\.db|desktop\.ini|\.DS_Store)$|\.(tmp|bak|dwl2?|sv\$)$/i;
 const ANALISAVEL = /\.(pdf|dwg|dxf|zip)$/i;

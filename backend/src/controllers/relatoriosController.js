@@ -1,4 +1,4 @@
-const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
+const { gerarPdfDeHtml } = require('../services/pdfPuppeteer');
 const pool = require('../config/database');
 const { periodoMesAtualBrasilia } = require('../utils/dataHoje');
 const { gerarHtmlRelatorio } = require('../utils/relatorioTemplate');

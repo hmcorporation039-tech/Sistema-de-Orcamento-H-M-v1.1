@@ -2,7 +2,7 @@
 // trava uma proteção que, se for desfeita sem querer, reabre uma falha real.
 // Não usa o banco nem a rede. Rodar: npm test (na pasta backend).
 const assert = require('assert');
-const { argsClaudeMax } = require('../src/utils/leitorCotacaoIA');
+const { argsClaudeMax } = require('../src/services/leitorCotacaoIA');
 const { verificarAutenticidade, dominioPermitido } = require('../src/utils/autenticidadeEmail');
 const { tipoPorConteudo } = require('../src/utils/tipoArquivo');
 const { versaoDoPedido } = require('../src/utils/versao');
@@ -33,7 +33,7 @@ caso('CLI do Claude roda isolada (documento de fornecedor não executa nada)', (
 });
 
 caso('ofertas da pesquisa de mercado são validadas (dado não confiável)', () => {
-  const { normalizarOfertas, estatistica } = require('../src/utils/pesquisaMercadoService');
+  const { normalizarOfertas, estatistica } = require('../src/services/pesquisaMercado');
   const o = normalizarOfertas({ ofertas: [
     { fonte: 'Loja A', produto: 'X', preco: 'R$ 1.234,56', link: 'https://a.com/x' },
     { fonte: 'Loja B', produto: 'X', preco: 100, link: 'javascript:alert(1)' },

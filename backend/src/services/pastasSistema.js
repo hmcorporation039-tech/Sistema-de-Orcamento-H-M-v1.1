@@ -1,9 +1,10 @@
 const crypto = require('crypto');
 const fsp = require('fs/promises');
 const path = require('path');
+const { RAIZ_REPOSITORIO } = require('../config/caminhos');
 const { execFile } = require('child_process');
-const { cortarTexto } = require('./nomeArquivoDownload');
-const { hojeBrasilia } = require('./dataHoje');
+const { cortarTexto } = require('../utils/nomeArquivoDownload');
+const { hojeBrasilia } = require('../utils/dataHoje');
 
 // Pasta exclusiva do sistema, com uma subpasta por projeto analisado e por
 // laudo (pedido do usuário, 11/10/2026):
@@ -15,7 +16,7 @@ const { hojeBrasilia } = require('./dataHoje');
 // cada nova versão — nada de "_v2", "_R01" acumulando espaço. Quando o nome do
 // projeto/laudo muda, a pasta é renomeada; quando o registro é excluído no
 // sistema, a pasta vai para "_Excluídos" (não é apagada às cegas).
-const BASE = process.env.PASTA_ARQUIVOS_SISTEMA || path.join(__dirname, '..', '..', '..', '..', 'Arquivos do Sistema');
+const BASE = process.env.PASTA_ARQUIVOS_SISTEMA || path.join(RAIZ_REPOSITORIO, '..', 'Arquivos do Sistema');
 // Versão 2.0 (Fase 2D): cada obra tem a sua pasta em Obras\<nome da obra>;
 // análise/laudo NOVO ligado a uma obra grava dentro dela (Projeto,
 // Laudos\<disciplina>) — quem decide a raiz é services/pastasRegistros.js.

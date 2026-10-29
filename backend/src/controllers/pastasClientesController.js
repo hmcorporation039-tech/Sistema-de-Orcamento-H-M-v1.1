@@ -5,9 +5,9 @@
 const path = require('path');
 const pool = require('../config/database');
 const M = require('../services/monitorPastas');
-const P = require('../utils/pastasSistema');
+const P = require('../services/pastasSistema');
 const { pastaDoCliente, pastasDoServidor, ligarPastaDoCliente, normalizarNome, rotasDePasta } = require('../services/pastasRegistros');
-const { registrarAuditoria } = require('../utils/auditoria');
+const { registrarAuditoria } = require('../services/auditoria');
 
 // "ALFA" sugere "Alfa Construtora": todas as palavras de um nome aparecem no outro
 const palavras = (s) => normalizarNome(s).split(' ').filter(p => p.length > 1);

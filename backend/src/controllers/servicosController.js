@@ -1,6 +1,6 @@
 const pool = require('../config/database');
-const { comTransacao } = require('../utils/transacao');
-const { valorSugerido, segmentoPorNomeDoCliente } = require('../utils/precosMaoDeObraReferencia');
+const { comTransacao } = require('../services/transacao');
+const { valorSugerido, segmentoPorNomeDoCliente } = require('../services/precosMaoDeObraReferencia');
 const { planejarFusao } = require('../utils/servicosBase');
 
 const num = (v) => (v == null ? null : Number(v));
@@ -8,7 +8,7 @@ const num = (v) => (v == null ? null : Number(v));
 // Base única de serviços (versão 2.0) para a lista suspensa da tela Orçamento:
 // os serviços ATIVOS (padrão + lançados em propostas), com as duas
 // referências de mercado e a sugestão já calculada para cada segmento
-// (valor H&M adotado ?? referência do segmento — utils/precosMaoDeObraReferencia).
+// (valor H&M adotado ?? referência do segmento — services/precosMaoDeObraReferencia).
 // Com ?cliente=<nome>, devolve também o segmento desse cliente.
 async function listar(req, res) {
   const { rows } = await pool.query(

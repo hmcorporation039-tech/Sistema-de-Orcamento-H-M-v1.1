@@ -1,6 +1,6 @@
 const pool = require('../config/database');
 const { classificarPorDescricao } = require('../utils/classificadorMaterial');
-const ia = require('../utils/ia');
+const ia = require('./ia');
 
 // Todo material do catálogo tem categoria (regra do usuário, 10/10/2026).
 // A categoria de um material novo sai, nesta ordem, de:
@@ -9,7 +9,7 @@ const ia = require('../utils/ia');
 //      classificado à mão pela H&M, ensina (ex.: "SENSOR MAGNETICO XAS 8000"
 //      vai para Alarme porque "Sensor magnético XAS 8000 (abertura)" está lá);
 //   3. regras de palavras-chave (utils/classificadorMaterial.js);
-//   4. IA (cadeia única de utils/ia.js: Claude Max → API → Gemini), escolhendo SÓ entre as
+//   4. IA (cadeia única de services/ia.js: Claude Max → API → Gemini), escolhendo SÓ entre as
 //      categorias que já existem — numa rotina em lote (classificarPendentes),
 //      fora da gravação da proposta ou da varredura.
 // Enquanto a IA não responde, o material fica "Não classificado" e a rotina

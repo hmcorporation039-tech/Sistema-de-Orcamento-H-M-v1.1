@@ -11,7 +11,7 @@
 //   - desenhos feitos sobre revisões diferentes da arquitetura (áreas divergentes).
 // As distâncias são CRITÉRIOS ADOTADOS pela H&M (declarados em cada achado) —
 // conferir na norma e no manual do equipamento; o objetivo é apontar onde olhar.
-// Entrada por arquivo: { arquivo, disciplinas, referencia, espacial } (utils/analiseCad.js).
+// Entrada por arquivo: { arquivo, disciplinas, referencia, espacial } (services/analiseCad/index.js).
 
 const REGRAS = [
   { a: 'detector', b: 'luminaria', min: 0.5, tema: 'Detector de incêndio junto de luminária',

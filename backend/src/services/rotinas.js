@@ -10,7 +10,7 @@
 // botão "Verificar agora" sem registro comum; agora horário e botão passam pelo
 // mesmo executarRotina(), que grava quando rodou, com que resultado, quantos
 // itens e o erro. A lógica de cada rotina continua no próprio serviço (com a
-// trava de utils/travaJob.js contra duas execuções ao mesmo tempo).
+// trava de services/travaJob.js contra duas execuções ao mesmo tempo).
 // Nada aqui emite nota fiscal nem faz cobrança (fora da 2.0).
 const HORARIOS = ['06:00', '18:00'];
 const MAX_AVISOS = 20;
@@ -32,7 +32,7 @@ function rotinasAutomaticasLigadas() {
 // Definições reais. Os serviços são carregados só ao executar (os testes
 // criam rotinas falsas sem abrir IMAP nem pastas).
 function definicoesPadrao() {
-  const emailConfigurado = () => require('../utils/emailClient').credenciaisConfiguradas();
+  const emailConfigurado = () => require('./email/imap').credenciaisConfiguradas();
   const quando = `às ${HORARIOS.join(' e às ')}`;
   return {
     'notas-email': {

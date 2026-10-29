@@ -1,7 +1,7 @@
 const path = require('path');
-const { textoDoPdf, paginasComoImagem: paginasDoPdf } = require('./leitorPdf');
-const { extrairLayoutsConhecidos } = require('./cotacaoFornecedorParser');
-const { extrairUniversal, conferirTotal } = require('./leitorCotacaoUniversal');
+const { textoDoPdf, paginasComoImagem: paginasDoPdf } = require('../utils/leitorPdf');
+const { extrairLayoutsConhecidos } = require('../utils/cotacaoFornecedorParser');
+const { extrairUniversal, conferirTotal } = require('../utils/leitorCotacaoUniversal');
 const { extrairComIA, iaDisponivel } = require('./leitorCotacaoIA');
 
 // Leitura de orçamento/cotação de fornecedor em QUALQUER layout, vindo da pasta

@@ -1,5 +1,5 @@
 const pool = require('../config/database');
-const { registrarAuditoria } = require('../utils/auditoria');
+const { registrarAuditoria } = require('../services/auditoria');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
 
 async function listar(req, res) {

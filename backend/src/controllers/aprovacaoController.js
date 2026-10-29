@@ -17,8 +17,8 @@
 // É aceite eletrônico simples, NÃO assinatura ICP-Brasil — dito na tela, no
 // comprovante e no texto da declaração gravado com a decisão.
 const pool = require('../config/database');
-const { comTransacao } = require('../utils/transacao');
-const { registrarAuditoria } = require('../utils/auditoria');
+const { comTransacao } = require('../services/transacao');
+const { registrarAuditoria } = require('../services/auditoria');
 const { registrarEvento, aplicarStatusProposta, montarPdfBuffer } = require('./propostasController');
 const A = require('../utils/aprovacaoLink');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');

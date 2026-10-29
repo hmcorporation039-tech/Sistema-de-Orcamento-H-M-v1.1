@@ -4,7 +4,7 @@
 // consulta. Não é UNIQUE de propósito — lançamentos antigos repetidos, se
 // existirem, não podem impedir a migração; a regra fica no serviço.
 // A chave das mensagens mudou do UID do IMAP para X-GM-MSGID/Message-ID
-// (services/conexaoEmail.js) sem coluna nova: emails_processados.message_id e
+// (services/email/conexao.js) sem coluna nova: emails_processados.message_id e
 // financeiro_movimentos.email_message_id já são VARCHAR(998).
 module.exports = async (client) => {
   await client.query(`

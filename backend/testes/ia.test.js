@@ -1,9 +1,9 @@
-// Módulo único de IA (utils/ia.js): ordem da cadeia, troca de provedor, timeout,
+// Módulo único de IA (services/ia.js): ordem da cadeia, troca de provedor, timeout,
 // validação da resposta e uso pelos serviços — com provedores FALSOS (nenhuma
 // chamada de IA de verdade, nenhum acesso ao banco). Rodar: npm test (pasta backend).
 const assert = require('assert');
 const pool = require('../src/config/database');
-const ia = require('../src/utils/ia');
+const ia = require('../src/services/ia');
 const { criarIA, ordemConfigurada, ORDEM_PADRAO, PROVEDORES } = ia;
 
 let ok = 0;
@@ -140,7 +140,7 @@ caso('pesquisa de mercado: Claude Max sem oferta → API; grava fonte "claude", 
   ]);
   desfazer.push(trocar(ia, 'pesquisarWeb', c.pesquisarWeb), trocar(ia, 'disponivel', c.disponivel));
   try {
-    const { pesquisarPrecoMercado } = require('../src/utils/pesquisaMercadoService');
+    const { pesquisarPrecoMercado } = require('../src/services/pesquisaMercado');
     const r = await pesquisarPrecoMercado('Cabo flexível 2,5 mm² teste-ia');
     assert.strictEqual(r.fonte, 'claude');
     assert.strictEqual(r.deCache, false);
@@ -158,7 +158,7 @@ caso('pesquisa de mercado: nenhuma IA respondeu → erro 502 com o motivo de cad
   const c = cadeia([falso('claude_max', new Error('sem login')), falso('gemini', new Error('cota do dia'))]);
   desfazer.push(trocar(ia, 'pesquisarWeb', c.pesquisarWeb), trocar(ia, 'disponivel', c.disponivel));
   try {
-    const { pesquisarPrecoMercado } = require('../src/utils/pesquisaMercadoService');
+    const { pesquisarPrecoMercado } = require('../src/services/pesquisaMercado');
     await assert.rejects(pesquisarPrecoMercado('item qualquer teste-ia'), e => e.status === 502 && /claude_max: sem login \| gemini: cota do dia/.test(e.message));
   } finally { desfazer.reverse().forEach(f => f()); }
 });
@@ -170,7 +170,7 @@ caso('leitura de orçamento: mesmos textos da 1.x por provedor, esquema fixo e n
     return { provedor: 'claude_api', fonte: 'Claude', json: { eh_orcamento_de_fornecedor: true, total_documento: '30', itens: [{ descricao: ' Cabo   PP ', quantidade: 3, preco_unitario: 10, total_linha: 30, ncm: '8544.49.00' }] } };
   });
   try {
-    const { extrairComIA } = require('../src/utils/leitorCotacaoIA');
+    const { extrairComIA } = require('../src/services/leitorCotacaoIA');
     const r = await extrairComIA(Buffer.from('%PDF'), 'pdf');
     assert.strictEqual(r.fonte, 'Claude');
     assert.deepStrictEqual([r.ehOrcamento, r.totalDocumento, r.itens[0].descricao, r.itens[0].ncm, r.itens[0].unidade], [true, 30, 'Cabo PP', '85444900', 'un']);
@@ -189,7 +189,7 @@ caso('classificação e equipamentos usam a cadeia única', async () => {
     trocar(ia, 'disponivel', () => true),
   ];
   try {
-    const { extrairEquipamentosComIA } = require('../src/utils/equipamentoExtratorIA');
+    const { extrairEquipamentosComIA } = require('../src/services/equipamentoExtratorIA');
     const r = await extrairEquipamentosComIA('texto do projeto');
     assert.deepStrictEqual(r.itens, [{ descricao: 'Luminária LED 18 W', referencia_fabricante: 'ABC-1' }]);
     assert.strictEqual(pedidos[0].opcoes.documento, 'texto do projeto', 'texto longo vai como documento (arquivo na CLI)');
@@ -197,7 +197,7 @@ caso('classificação e equipamentos usam a cadeia única', async () => {
 });
 
 caso('argumentos da CLI isolada continuam em ia.js (mesma função do teste de segurança)', () => {
-  assert.strictEqual(require('../src/utils/leitorCotacaoIA').argsClaudeMax, ia.argsClaudeMax);
+  assert.strictEqual(require('../src/services/leitorCotacaoIA').argsClaudeMax, ia.argsClaudeMax);
 });
 
 (async () => {

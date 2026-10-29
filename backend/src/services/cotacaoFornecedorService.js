@@ -1,16 +1,17 @@
 const fsp = require('fs/promises');
 const path = require('path');
+const { RAIZ_REPOSITORIO } = require('../config/caminhos');
 const crypto = require('crypto');
 const pool = require('../config/database');
-const { lerDocumentoCotacao, encerrarOcr, VERSAO_LEITOR, EXTENSOES } = require('../utils/leitorCotacao');
+const { lerDocumentoCotacao, encerrarOcr, VERSAO_LEITOR, EXTENSOES } = require('./leitorCotacao');
 const { carregarIndice, registrarItemCotacao, obterMargemPadrao } = require('./catalogoMateriais');
 const { classificarPendentes } = require('./classificacaoMateriais');
-const { executarComTrava } = require('../utils/travaJob');
+const { executarComTrava } = require('./travaJob');
 
 // Pastas onde o usuário salva os orçamentos/cotações de fornecedor recebidos
 // (WhatsApp etc.): PDF com texto, PDF escaneado ou foto (PNG/JPG). A local
 // fica ao lado de backend/ e frontend/; a de rede é compartilhada no servidor.
-const PASTA_FORNECEDORES_LOCAL = path.join(__dirname, '..', '..', '..', 'Orçamentos recebidos fornecedores');
+const PASTA_FORNECEDORES_LOCAL = path.join(RAIZ_REPOSITORIO, 'Orçamentos recebidos fornecedores');
 const PASTA_FORNECEDORES_REDE = '\\\\MARCIO-SERVER\\Arquivos Gerais 2\\H&M\\Orçamentos Recebidos';
 const PASTAS_FORNECEDORES = [PASTA_FORNECEDORES_LOCAL, PASTA_FORNECEDORES_REDE];
 // Teto de leituras por IA numa varredura (só para arquivos que o leitor local

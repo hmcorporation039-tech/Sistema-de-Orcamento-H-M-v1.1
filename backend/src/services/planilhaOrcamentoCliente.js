@@ -12,9 +12,9 @@
 // final saía alguns centavos diferente do PDF (ex.: 1.143,49 × 1.143,47).
 const ExcelJS = require('exceljs');
 const pool = require('../config/database');
-const { ehMaoDeObra, bdiMateriaisDefinido } = require('./calculoProposta');
-const { calcularCurvaAbc, LIMITES_CURVA_ABC } = require('./curvaAbc'); // aba Curva ABC (2.0, Fase 3F)
-const { formulaDuracaoExcel, ETAPA_MOBILIZACAO, ETAPA_ENTREGA } = require('./duracaoCronograma'); // regra de duração compartilhada com o cronograma da obra (2.0)
+const { ehMaoDeObra, bdiMateriaisDefinido } = require('../utils/calculoProposta');
+const { calcularCurvaAbc, LIMITES_CURVA_ABC } = require('../utils/curvaAbc'); // aba Curva ABC (2.0, Fase 3F)
+const { formulaDuracaoExcel, ETAPA_MOBILIZACAO, ETAPA_ENTREGA } = require('../utils/duracaoCronograma'); // regra de duração compartilhada com o cronograma da obra (2.0)
 
 const AZUL = { color: { argb: 'FF1F4E9E' } }; // fonte azul = valor digitado (convenção da planilha H&M)
 const CAB = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F1F1F' } };

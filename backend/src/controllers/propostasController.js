@@ -1,9 +1,9 @@
-const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
+const { gerarPdfDeHtml } = require('../services/pdfPuppeteer');
 const pool = require('../config/database');
 const { gerarHtmlProposta, gerarFooterTemplate } = require('../utils/pdfTemplate');
-const { criarTransportador } = require('../utils/smtpClient');
+const { criarTransportador } = require('../services/email/smtp');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
-const { comTransacao } = require('../utils/transacao');
+const { comTransacao } = require('../services/transacao');
 const { ErroHttp } = require('../utils/erros');
 const { calcularTotais, normalizarItem, ehMaoDeObra, bdiMateriaisDefinido, arredondar, itemPertenceASecao } = require('../utils/calculoProposta');
 const { normalizarMemoriaBdi } = require('../utils/bdiTcu');
@@ -11,12 +11,12 @@ const { normalizarMemoriaBdi } = require('../utils/bdiTcu');
 // BDI diferenciado de materiais (2.0, Fase 3F): vazio/null = mesmo BDI para tudo
 const lerBdiMateriais = (v) => (bdiMateriaisDefinido(v) ? arredondar(Number(v)) : null);
 const { validarProposta, validadeOuPadrao } = require('../utils/validacaoProposta');
-const { garantirMaterialCadastrado, garantirMaoDeObraCadastrada } = require('../utils/catalogoAutoCadastro');
+const { garantirMaterialCadastrado, garantirMaoDeObraCadastrada } = require('../services/catalogoAutoCadastro');
 const { classificarPendentesEmSegundoPlano } = require('../services/classificacaoMateriais');
 const { salvarPdfPropostaNasPastas } = require('../services/pastasRegistros');
 const { versaoDoPedido, responderConflitoOuAusente } = require('../utils/versao');
-const { registrarAuditoria } = require('../utils/auditoria');
-const { gerarPlanilhaCliente } = require('../utils/planilhaOrcamentoCliente');
+const { registrarAuditoria } = require('../services/auditoria');
+const { gerarPlanilhaCliente } = require('../services/planilhaOrcamentoCliente');
 const { lerObraId, conferirObra, sqlObraJson } = require('../utils/obras');
 const { sqlDecisaoCliente } = require('../utils/aprovacaoLink');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');
@@ -581,7 +581,7 @@ async function gerarPdf(req, res) {
     });
     res.send(resultado.pdf);
   } catch (err) {
-    // fila de PDF cheia (utils/pdfPuppeteer.js): passageiro, a mensagem diz o que fazer
+    // fila de PDF cheia (services/pdfPuppeteer.js): passageiro, a mensagem diz o que fazer
     if (err.codigo === 'FILA_PDF_CHEIA') return res.status(503).json({ erro: err.message });
     console.error('Erro ao gerar PDF:', err);
     res.status(500).json({ erro: 'Erro ao gerar PDF da proposta' });
@@ -590,7 +590,7 @@ async function gerarPdf(req, res) {
 
 // Planilha Excel do orçamento para o cliente (modelo H&M: parâmetros,
 // orçamento, resumo, quantitativos, pesquisa de preços, fornecedores e
-// cronograma — ver utils/planilhaOrcamentoCliente.js)
+// cronograma — ver services/planilhaOrcamentoCliente.js)
 async function gerarPlanilha(req, res) {
   const r = await gerarPlanilhaCliente(req.params.id);
   if (!r) return res.status(404).json({ erro: 'Proposta não encontrada' });

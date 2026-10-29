@@ -1,5 +1,5 @@
 const nodemailer = require('nodemailer');
-const { credenciaisConfiguradas } = require('./emailClient');
+const { credenciaisConfiguradas } = require('./imap');
 
 function criarTransportador() {
   if (!credenciaisConfiguradas()) {

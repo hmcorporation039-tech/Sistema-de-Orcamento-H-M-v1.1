@@ -1,6 +1,6 @@
 const pool = require('../config/database');
 const ia = require('./ia');
-const { paraNumeroBR } = require('./numeroBR');
+const { paraNumeroBR } = require('../utils/numeroBR');
 
 // Nome do provedor gravado em pesquisas_mercado.fonte (o mesmo da 1.x, para o
 // histórico e o cache continuarem iguais): a API da Anthropic era "claude".
@@ -140,7 +140,7 @@ async function salvarCache(descricaoOriginal, descricaoNormalizada, resultado, f
 // Pesquisa o preço de mercado de um material/serviço com busca real na web.
 // Sempre um resultado consultivo — quem decide se atualiza o preço continua
 // sendo o usuário.
-// Provedores pela cadeia única de utils/ia.js (preferência do usuário: Claude
+// Provedores pela cadeia única de services/ia.js (preferência do usuário: Claude
 // Max pela assinatura → Claude pela API → Gemini com busca; IA_ORDEM troca).
 // Resposta sem nenhuma oferta válida passa para o próximo provedor (o último é
 // aceito mesmo vazio, como na 1.x). Cada provedor devolve o JSON de ofertas; o

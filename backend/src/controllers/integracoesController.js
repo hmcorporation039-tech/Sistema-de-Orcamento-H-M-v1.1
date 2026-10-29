@@ -1,7 +1,7 @@
 const pool = require('../config/database');
-const { credenciaisConfiguradas } = require('../utils/emailClient');
+const { credenciaisConfiguradas } = require('../services/email/imap');
 const rotinas = require('../services/rotinas');
-const { registrarAuditoria } = require('../utils/auditoria');
+const { registrarAuditoria } = require('../services/auditoria');
 
 async function statusEmail(req, res) {
   const ultima = await pool.query(

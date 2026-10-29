@@ -168,7 +168,7 @@ function extrairTabelaQuantitativa(texto) {
 // fabricante) não é extraída aqui por regex — testamos e o texto quebra de
 // linha demais pra separar itens com confiança (descrições saíam cortadas
 // ou coladas). Essa parte é feita pelo Gemini reformatando o texto já obtido
-// abaixo (utils/equipamentoExtratorIA.js) — validado como confiável porque é
+// abaixo (services/equipamentoExtratorIA.js) — validado como confiável porque é
 // reformatação de texto já dado a ele, não leitura livre do PDF.
 
 async function analisarProjeto(buffer, nomeArquivo) {
@@ -176,7 +176,7 @@ async function analisarProjeto(buffer, nomeArquivo) {
 }
 
 // Os leitores de texto, sobre o texto já extraído — do PDF ou remontado do
-// DWG/DXF (utils/analiseCad.js)
+// DWG/DXF (services/analiseCad/index.js)
 function analisarTexto(texto, nomeArquivo) {
   const quantitativa = extrairTabelaQuantitativa(texto);
   return {

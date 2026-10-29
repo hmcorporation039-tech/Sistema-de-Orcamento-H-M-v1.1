@@ -1,14 +1,14 @@
 const { simpleParser } = require('mailparser');
 const pool = require('../config/database');
-const { credenciaisConfiguradas } = require('../utils/emailClient');
-const { conectarComRetry, esperasDaOrigem, identificarMensagens, registroProcessado } = require('./conexaoEmail');
+const { credenciaisConfiguradas } = require('./email/imap');
+const { conectarComRetry, esperasDaOrigem, identificarMensagens, registroProcessado } = require('./email/conexao');
 const { extrairDoPdf, parseNFeXml } = require('../utils/notaFiscalParser');
-const { lerDocumentoCotacao, encerrarOcr, VERSAO_LEITOR } = require('../utils/leitorCotacao');
+const { lerDocumentoCotacao, encerrarOcr, VERSAO_LEITOR } = require('./leitorCotacao');
 const { carregarIndice, registrarItemNotaFiscal, obterMargemPadrao } = require('./catalogoMateriais');
 const { importarItens } = require('./cotacaoFornecedorService');
 const { classificarPendentes } = require('./classificacaoMateriais');
 const { verificarAutenticidade, listaDoEnv } = require('../utils/autenticidadeEmail');
-const { executarComTrava } = require('../utils/travaJob');
+const { executarComTrava } = require('./travaJob');
 
 // Piso fixo: nunca busca e-mails anteriores a essa data. Toda verificação
 // (manual ou agendada) parte sempre daqui, nunca "N dias atrás". O backfill

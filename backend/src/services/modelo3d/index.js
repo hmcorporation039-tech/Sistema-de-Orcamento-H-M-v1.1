@@ -15,9 +15,9 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { ErroHttp } = require('../../utils/erros');
-const { executarNoWorker } = require('../../utils/executarNoWorker');
+const { executarNoWorker } = require('../executarNoWorker');
 const pool = require('../../config/database');
-const { capturarImagemDeHtml } = require('../../utils/pdfPuppeteer');
+const { capturarImagemDeHtml } = require('../pdfPuppeteer');
 
 // disciplina do sistema → nome aceito pela estimativa (skills/_comum/cad/estimativaArquitetura.js)
 const DISCIPLINAS_3D = {
@@ -97,7 +97,7 @@ async function fonteDoModelo(origemTipo, origemId, executor = pool) {
   throw erro(400, 'Origem do modelo 3D inválida.');
 }
 
-// Componente lido do DWG (utils/analiseCad.js: descrição pela sigla, legenda ou
+// Componente lido do DWG (services/analiseCad/index.js: descrição pela sigla, legenda ou
 // nome do bloco) → símbolo do 3D (skills/_comum/cad/modelo3d.js ESPEC). Tomada
 // pela altura escrita na legenda ("H=0,30m") quando houver.
 const SIMBOLO_DO_COMPONENTE = [
@@ -154,7 +154,7 @@ function chaveDa(fonte) {
 }
 
 // Gerações em andamento por chave: dois cliques no mesmo modelo esperam a mesma
-// (worker com a fila global de utils/executarNoWorker.js: no máximo 2 ao mesmo tempo)
+// (worker com a fila global de services/executarNoWorker.js: no máximo 2 ao mesmo tempo)
 async function gerarNoWorker(fonte) {
   let m;
   try {

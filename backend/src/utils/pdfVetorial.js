@@ -26,7 +26,7 @@ const pdfjs = () => (pdfjsCarregado ||= import('pdfjs-dist/legacy/build/pdf.mjs'
 // ── 1) Geometria e textos de uma página ────────────────────────────────────
 // `geometria`: cada caminho leva também os trechos (subs: [{ segs, fechado }],
 // seg = ['l', a, b] ou ['c', p0, c1, c2, p3] em pontos da página) e a espessura
-// na página (lwPg) — usado pela conversão PDF → DXF (utils/pdfParaDxf.js).
+// na página (lwPg) — usado pela conversão PDF → DXF (services/pdfParaDxf.js).
 // `ops`: lista de operadores já lida (quem chamou já contou os traços).
 async function lerPagina(pagina, OPS, { geometria = false, ops: opsLidos = null } = {}) {
   const vp = pagina.getViewport({ scale: 1 });

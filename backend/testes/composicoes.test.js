@@ -3,8 +3,8 @@
 // kits-modelo. Sem banco. Rodar: npm test (pasta backend).
 const assert = require('assert');
 const C = require('../src/utils/composicoes');
-const { compararComCatalogo } = require('../src/utils/compatibilizacaoAnalise');
-const { ITENS_REFERENCIA } = require('../src/utils/precosMaoDeObraReferencia');
+const { compararComCatalogo } = require('../src/services/compatibilizacaoAnalise');
+const { ITENS_REFERENCIA } = require('../src/services/precosMaoDeObraReferencia');
 
 let ok = 0;
 const pendentes = [];

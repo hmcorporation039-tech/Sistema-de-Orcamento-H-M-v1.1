@@ -12,11 +12,12 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { RAIZ_REPOSITORIO } = require('../config/caminhos');
 
 const TAMANHO_MAX_PDF = 15 * 1024 * 1024; // o mesmo limite do upload da tela
 
 // raizProjeto: pasta do sistema (ex.: C:\HM-Engenharia\hm-eng)
-function pastasPermitidasPdf(env = process.env, raizProjeto = path.join(__dirname, '..', '..', '..')) {
+function pastasPermitidasPdf(env = process.env, raizProjeto = RAIZ_REPOSITORIO) {
   const configuradas = String(env.MCP_PASTAS_PDF || '').split(';').map(s => s.trim()).filter(Boolean);
   if (configuradas.length) return configuradas.map(p => path.resolve(p));
   return [

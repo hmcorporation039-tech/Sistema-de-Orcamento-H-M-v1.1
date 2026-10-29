@@ -1,7 +1,7 @@
 const fsp = require('fs/promises');
 const path = require('path');
 const pool = require('../config/database');
-const P = require('../utils/pastasSistema');
+const P = require('./pastasSistema');
 const { DISCIPLINAS_LAUDO } = require('../utils/disciplinasLaudo');
 
 // Versão 2.3 — PASTA POR CLIENTE (migração 2.0-19): obra e item sem obra moram
@@ -164,7 +164,7 @@ async function caminhoDaObra(obra) {
 }
 
 // Liga cada análise de projeto, cada laudo e cada obra à sua pasta no disco
-// (utils/pastasSistema.js). Conteúdo, sempre com nome fixo e sobrescrito a
+// (services/pastasSistema.js). Conteúdo, sempre com nome fixo e sobrescrito a
 // cada nova versão:
 //   Projetos/<nome do projeto>/
 //     Arquivos do projeto/<PDFs recebidos>

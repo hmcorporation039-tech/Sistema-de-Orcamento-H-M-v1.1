@@ -2,7 +2,7 @@
 // conhecidos, nem o leitor universal, nem o OCR local acham os itens, o PDF ou
 // a imagem vai para uma IA, que devolve os itens num formato fixo (JSON).
 // Desde a 2.0 a escolha do provedor (Claude Max → API → Gemini, IA_ORDEM) e a
-// execução isolada da CLI ficam no módulo único utils/ia.js; aqui ficam só as
+// execução isolada da CLI ficam no módulo único services/ia.js; aqui ficam só as
 // instruções, o esquema e a normalização próprios do orçamento de fornecedor.
 // Desliga tudo com COTACAO_IA=desligada; só a CLI, com COTACAO_IA_CLI=desligada.
 //
@@ -89,5 +89,5 @@ async function extrairComIA(buffer, tipo) {
 }
 
 // argsClaudeMax: reexportado para o teste de segurança (testes/seguranca.test.js);
-// a implementação mora em utils/ia.js.
+// a implementação mora em services/ia.js.
 module.exports = { extrairComIA, iaDisponivel, normalizarResposta, argsClaudeMax: ia.argsClaudeMax };

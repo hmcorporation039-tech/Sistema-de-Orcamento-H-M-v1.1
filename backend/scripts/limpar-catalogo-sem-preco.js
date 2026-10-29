@@ -1,6 +1,6 @@
 // Desativa no catálogo os materiais que o sistema cadastrou SOZINHO a partir de
 // propostas e que nunca tiveram preço — o que o orçamento gerado da
-// análise/laudo deixava antes da regra de utils/catalogoAutoCadastro.js
+// análise/laudo deixava antes da regra de services/catalogoAutoCadastro.js
 // (28/10/2026). Desativar não apaga: o material some das listas e buscas; as
 // propostas antigas continuam iguais. Fica de fora o que está numa composição
 // (kit) ou tem histórico de preço.
@@ -16,11 +16,11 @@
 //   node scripts/limpar-catalogo-sem-preco.js --desfazer           → reativa os desativados por este script
 require('../src/config/env');
 const pool = require('../src/config/database');
-const { registrarAuditoria } = require('../src/utils/auditoria');
+const { registrarAuditoria } = require('../src/services/auditoria');
 
 const ACAO = 'desativar_sem_preco';
 const TODOS = process.argv.includes('--todos');
-// mesma regra de utils/catalogoAutoCadastro.js (RE_NAO_REUTILIZAVEL), em SQL
+// mesma regra de services/catalogoAutoCadastro.js (RE_NAO_REUTILIZAVEL), em SQL
 const LIXO = String.raw`descricao ~* '(\t|—\s*bloco\y|medido no desenho|contado no\y|^NC-[0-9]+)'`;
 const SQL_CANDIDATOS = `
   SELECT m.id, m.descricao, m.unidade,

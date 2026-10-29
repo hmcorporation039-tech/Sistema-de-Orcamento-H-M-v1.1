@@ -7,9 +7,9 @@ const path = require('path');
 const M = require('../src/services/modelo3d');
 const { gerarHtmlProposta } = require('../src/utils/pdfTemplate');
 
-const CAD = path.join(__dirname, '..', '..', 'skills', '_comum', 'cad');
+const { CAD, RAIZ_SKILLS } = require('../src/config/caminhos');
 const { DesenhoDxf } = require(path.join(CAD, 'dxf.js'));
-const { point3d } = require(path.join(__dirname, '..', '..', 'skills', 'node_modules', '@tarikjabiri', 'dxf'));
+const { point3d } = require(path.join(RAIZ_SKILLS, 'node_modules', '@tarikjabiri', 'dxf'));
 
 // sala e cozinha (mm), parede interna com porta em bloco (como skills/_comum/cad/teste-3d.js)
 function dxfSintetico() {

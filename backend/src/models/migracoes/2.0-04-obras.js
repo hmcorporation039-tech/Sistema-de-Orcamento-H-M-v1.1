@@ -33,7 +33,7 @@
 // continuam onde estão; só itens novos ligados a uma obra nascem na pasta
 // dela (services/pastasRegistros.js, coluna pasta_obra_id).
 const O = require('../../utils/obras');
-const { segmentoDoCliente } = require('../../utils/precosMaoDeObraReferencia');
+const { segmentoDoCliente } = require('../../services/precosMaoDeObraReferencia');
 
 const MARCA = 'obras_migracao_dados';
 const LISTA_STATUS = O.STATUS_OBRA.map(s => `'${s}'`).join(',');

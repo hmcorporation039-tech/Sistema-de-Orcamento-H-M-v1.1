@@ -18,7 +18,7 @@
 require('../src/config/env');
 const path = require('path');
 const pool = require('../src/config/database');
-const P = require('../src/utils/pastasSistema');
+const P = require('../src/services/pastasSistema');
 const R = require('../src/services/pastasRegistros');
 const M = require('../src/services/monitorPastas');
 

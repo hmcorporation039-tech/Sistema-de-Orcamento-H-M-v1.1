@@ -1,4 +1,4 @@
-// Cancelamento de verdade na cadeia de IA (utils/ia.js e geminiClient.js —
+// Cancelamento de verdade na cadeia de IA (services/ia.js e geminiClient.js —
 // revisão de 27/10/2026): no tempo-limite o provedor que ficou para trás é
 // ABORTADO (antes a cadeia só parava de esperar e o Gemini seguia gastando cota),
 // e o `signal` de quem chamou cancela a cadeia inteira. Só provedores FALSOS e
@@ -7,8 +7,8 @@
 const assert = require('assert');
 
 process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'chave-falsa-do-teste';
-const ia = require('../src/utils/ia');
-const gemini = require('../src/utils/geminiClient');
+const ia = require('../src/services/ia');
+const gemini = require('../src/services/geminiClient');
 
 let ok = 0;
 const casos = [];
@@ -111,7 +111,7 @@ caso('provedores reais repassam o sinal (Gemini e API da Anthropic)', async () =
   // CLI do Claude Max: sinal já abortado não abre processo
   await assert.rejects(ia.executarClaudeMax('p', null, { signal: AbortSignal.abort() }), e => e.cancelado === true);
   // a API da Anthropic recebe o signal nas opções da requisição
-  const fonte = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'utils', 'ia.js'), 'utf8');
+  const fonte = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'services', 'ia.js'), 'utf8');
   assert.match(fonte, /signal \? \{ signal \} : \{\}/);
 });
 

@@ -1,13 +1,13 @@
 const pool = require('../config/database');
-const { analisarProjeto } = require('./projetoParser');
+const { analisarProjeto } = require('../utils/projetoParser');
 const { extrairEquipamentosComIA } = require('./equipamentoExtratorIA');
-const { nomeDaDisciplina } = require('./disciplinasProjeto');
-const { calcularPontosPorAmbiente } = require('./pontosPorAmbiente');
+const { nomeDaDisciplina } = require('../utils/disciplinasProjeto');
+const { calcularPontosPorAmbiente } = require('../utils/pontosPorAmbiente');
 const { buscarReferencias, valorSugerido, segmentoPorNomeDoCliente } = require('./precosMaoDeObraReferencia');
-const { detectarDisciplinas } = require('./leitoresTabelaProjeto');
-const { lerPdfVetorial } = require('./pdfVetorial');
+const { detectarDisciplinas } = require('../utils/leitoresTabelaProjeto');
+const { lerPdfVetorial } = require('../utils/pdfVetorial');
 const { ehArquivoCad, lerArquivoCad } = require('./analiseCad');
-const { compatibilizar } = require('./compatibilidadeEspacial');
+const { compatibilizar } = require('../utils/compatibilidadeEspacial');
 
 // Roda `fn` sobre a lista com no máximo `n` ao mesmo tempo, na ordem: um pacote
 // de 30 arquivos não abre 30 conversões de DWG nem 30 chamadas de IA de uma vez
@@ -301,7 +301,7 @@ function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = 
   // valor_unitario começa em 0 (editável na tela) — não é preenchido
   // automaticamente com a referência de mercado (valor_referencia_mercado,
   // abaixo), mesmo quando existe uma: é só uma SUGESTÃO exibida ao lado do
-  // campo na tela (ver utils/precosMaoDeObraReferencia.js), que o usuário
+  // campo na tela (ver services/precosMaoDeObraReferencia.js), que o usuário
   // aceita clicando ou ignora. Preencher sozinho marcaria o item como
   // "confirmado" no orçamento gerado (ver gerarOrcamento em
   // projetosController.js) — errado pra um preço que ainda não foi validado
@@ -624,7 +624,7 @@ function montarMateriaisDoDesenho(analises, vetoriais, catalogo) {
     for (const pag of vetoriais[i] || []) {
       for (const it of pag.itens) {
         if (it.ambiguo || (it.tipo === 'linha' && it.metros == null)) continue;
-        // CAD: a disciplina vem do bloco/layer (utils/analiseCad.js); PDF: da descrição da legenda
+        // CAD: a disciplina vem do bloco/layer (services/analiseCad/index.js); PDF: da descrição da legenda
         const sugerida = pag.origem === 'cad' ? it.disciplina : detectarDisciplinas(it.descricao)[0]?.chave;
         const disciplina = sugerida ? (doMesmoGrupo(a.disciplinas, sugerida)) : a.disciplinas[0];
         if (!disciplina) continue;
@@ -773,7 +773,7 @@ async function analisarProjetoCompleto(todosArquivos) {
   // Cada arquivo é lido/analisado em paralelo (pdf-parse + regex é I/O-bound e
   // independente por arquivo) — antes rodava um de cada vez (sequencial), o
   // que somava o tempo de N arquivos à toa.
-  // DWG/DXF (2.3): lido numa thread à parte (utils/analiseCad.js) e devolvido no
+  // DWG/DXF (2.3): lido numa thread à parte (services/analiseCad/index.js) e devolvido no
   // mesmo formato; o resto do fluxo não distingue a origem
   const cads = await emLotes(arquivos, 2, (a) => (ehArquivoCad(a.nomeArquivo) ? lerCad(a) : null));
   const analisesBrutas = await emLotes(arquivos, 3, ({ buffer, nomeArquivo }, i) => (cads[i] ? cads[i].analise : analisarProjeto(buffer, nomeArquivo)));
@@ -797,7 +797,7 @@ async function analisarProjetoCompleto(todosArquivos) {
   const cliente = analises.map(a => extrairCliente(a.textoBruto) || a.carimbo?.cliente).find(Boolean) || null;
 
   // Preços de referência de mão de obra (sugestão — ver
-  // utils/precosMaoDeObraReferencia.js): o adotado pela H&M ou a referência de
+  // services/precosMaoDeObraReferencia.js): o adotado pela H&M ou a referência de
   // mercado do segmento do cliente (órgão público → oficial; demais →
   // particular), mais as duas referências para a tela mostrar. Se a tabela
   // falhar, a análise continua, só sem a sugestão de preço.

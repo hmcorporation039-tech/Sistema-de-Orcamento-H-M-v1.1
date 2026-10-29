@@ -18,7 +18,7 @@ const poolFalso = {
 require.cache[require.resolve('../src/config/database')] = { id: 'db', filename: 'db', loaded: true, exports: poolFalso };
 // IA falsa (classificação de materiais nunca chama provedor de verdade)
 const iaFalsa = { resposta: {}, chamadas: 0, async perguntarJSON() { iaFalsa.chamadas++; return { fonte: 'falsa', json: iaFalsa.resposta }; }, status: () => ({}) };
-require.cache[require.resolve('../src/utils/ia')] = { id: 'ia', filename: 'ia', loaded: true, exports: iaFalsa };
+require.cache[require.resolve('../src/services/ia')] = { id: 'ia', filename: 'ia', loaded: true, exports: iaFalsa };
 
 const silencio = (fn) => async (...a) => {
   const { warn, error, log } = console;
@@ -67,8 +67,8 @@ function clientePg({ falhar = () => null, responder = () => ({ rows: [], rowCoun
 const jsonbRecusa = (s, p) => (/INSERT INTO auditoria/.test(s) && p[3] && /\\ud[89ab][0-9a-f]{2}(?!\\ud[c-f])/i.test(p[3])
   ? Object.assign(new Error('unsupported Unicode escape sequence'), { code: '22P05' }) : null);
 
-const { comTransacao, TransacaoDesfeita } = require('../src/utils/transacao');
-const { registrarAuditoria, jsonBemFormado } = require('../src/utils/auditoria');
+const { comTransacao, TransacaoDesfeita } = require('../src/services/transacao');
+const { registrarAuditoria, jsonBemFormado } = require('../src/services/auditoria');
 
 let ok = 0;
 const casos = [];

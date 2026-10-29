@@ -13,7 +13,7 @@
 //    é o X-GM-MSGID do Gmail (`emailId` no imapflow) ou o Message-ID; o UID
 //    antigo só vale para os registros feitos antes desta versão, e só se o
 //    assunto também confere.
-const { conectar } = require('../utils/emailClient');
+const { conectar } = require('./imap');
 
 const ESPERAS_AGENDADA_MS = [30 * 1000, 2 * 60 * 1000]; // 3 tentativas em ~2,5 min
 const ESPERAS_MANUAL_MS = [5 * 1000];                     // botão "Verificar agora": 2 tentativas

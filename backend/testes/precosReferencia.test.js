@@ -2,8 +2,8 @@
 // particular), prioridade da sugestão e roteiro de fontes de cada pesquisa.
 // Sem banco e sem IA. Rodar: npm test (pasta backend).
 const assert = require('assert');
-const { segmentoDoCliente, valorSugerido } = require('../src/utils/precosMaoDeObraReferencia');
-const { promptServicoSegmento, SEGMENTOS_MO } = require('../src/utils/pesquisaMercadoService');
+const { segmentoDoCliente, valorSugerido } = require('../src/services/precosMaoDeObraReferencia');
+const { promptServicoSegmento, SEGMENTOS_MO } = require('../src/services/pesquisaMercado');
 
 let ok = 0;
 function caso(nome, fn) {

@@ -1,7 +1,7 @@
 // Painel de Integrações (versão 2.0, só administrador): as rotinas automáticas
-// (services/rotinas.js) e o estado da IA (utils/ia.js), numa visão única.
+// (services/rotinas.js) e o estado da IA (services/ia.js), numa visão única.
 const rotinas = require('../services/rotinas');
-const ia = require('../utils/ia');
+const ia = require('../services/ia');
 
 async function listar(req, res) {
   const dados = await rotinas.statusRotinas();

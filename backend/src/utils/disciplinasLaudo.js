@@ -6,7 +6,7 @@ const path = require('path');
 // tela e skill nunca darem resultados diferentes). As que ainda não têm skill
 // aparecem na tela como "em preparação".
 // Lista derivada do registro único (skills/_comum/disciplinas.js).
-const { RAIZ_SKILLS, registroDisciplinas } = require('../config/caminhos');
+const { RAIZ_SKILLS, COMUM, CAD, registroDisciplinas } = require('../config/caminhos');
 const REGISTRO = registroDisciplinas();
 const DISCIPLINAS_LAUDO = REGISTRO.DISCIPLINAS.filter(d => d.laudo).map(d => ({ chave: d.chave, nome: d.nomes.laudo, pasta: d.pasta }));
 const cache = {};
@@ -61,7 +61,7 @@ function listarDisciplinas() {
 // geração de planta DXF; DWG convertido em processo à parte. Carregada só quando usada, como as skills.
 function cad() {
   if (!cache.__cad) {
-    const base = path.join(RAIZ_SKILLS, '_comum', 'cad');
+    const base = CAD;
     cache.__cad = {
       ...require(path.join(base, 'arquitetura.js')),
       ...require(path.join(base, 'planta.js')),
@@ -80,13 +80,13 @@ function cadSeguro() {
 
 // Classificação projeto × laudo (skills/_comum/tipos-documento.js — sem dependências)
 function tiposDocumento() {
-  if (!cache.__tipos) cache.__tipos = require(path.join(RAIZ_SKILLS, '_comum', 'tipos-documento.js'));
+  if (!cache.__tipos) cache.__tipos = require(path.join(COMUM, 'tipos-documento.js'));
   return cache.__tipos;
 }
 
 // Base das entregas do projeto: marca AS BUILT e ZIP (skills/_comum/entrega.js)
 function entrega() {
-  if (!cache.__entrega) cache.__entrega = require(path.join(RAIZ_SKILLS, '_comum', 'entrega.js'));
+  if (!cache.__entrega) cache.__entrega = require(path.join(COMUM, 'entrega.js'));
   return cache.__entrega;
 }
 

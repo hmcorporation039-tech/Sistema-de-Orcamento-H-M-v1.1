@@ -5,8 +5,8 @@ const pool = require('../config/database');
 const M = require('../services/modelo3d');
 const { lerArquiteturaNoWorker, mensagemDaLeitura, resumoDaArquitetura, dxfParaGuardar, faltouEscala } = require('../services/tarefasCad');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');
-const { registrarAuditoria } = require('../utils/auditoria');
-const P = require('../utils/pastasSistema');
+const { registrarAuditoria } = require('../services/auditoria');
+const P = require('../services/pastasSistema');
 const { pastaDoLaudo, pastaDoProjeto, seguro } = require('../services/pastasRegistros');
 
 const ORIGENS = new Set(['laudo', 'analise', 'proposta']);

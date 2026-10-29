@@ -1,7 +1,7 @@
 const pool = require('../config/database');
-const { comTransacao } = require('../utils/transacao');
-const { pesquisarReferenciaMaoDeObra, ErroPesquisaMercado } = require('../utils/pesquisaMercadoService');
-const { ITENS_REFERENCIA } = require('../utils/precosMaoDeObraReferencia');
+const { comTransacao } = require('../services/transacao');
+const { pesquisarReferenciaMaoDeObra, ErroPesquisaMercado } = require('../services/pesquisaMercado');
+const { ITENS_REFERENCIA } = require('../services/precosMaoDeObraReferencia');
 const { DISCIPLINA_OUTROS } = require('../utils/servicosBase');
 
 // disciplinas aceitas para um serviço lançado em proposta (as da lista padrão + 'outros')
@@ -31,7 +31,7 @@ const valorOuNulo = (v) => (v === '' || v === undefined || v === null ? null : N
 const textoOuNulo = (v, max) => (v == null || String(v).trim() === '' ? null : String(v).trim().slice(0, max));
 
 // Atualiza um ou mais códigos — nunca cria/exclui código (os padrão vêm de
-// utils/precosMaoDeObraReferencia.js; os livres nascem ao salvar proposta).
+// services/precosMaoDeObraReferencia.js; os livres nascem ao salvar proposta).
 // Num serviço lançado em proposta, também a disciplina e a unidade (nos
 // padrão elas vêm da lista canônica e o schema as ressincroniza).
 // `itens`: [{ codigo, valor_referencia?, valor_publico?, fonte_publico?,

@@ -1,13 +1,13 @@
-// Versão 2.3 — Análise de Projeto a partir de DWG/DXF (utils/analiseCad.js):
+// Versão 2.3 — Análise de Projeto a partir de DWG/DXF (services/analiseCad/index.js):
 // o que cada bloco é (sigla, legenda, nome do Revit, outra área), e a leitura
 // completa de um DXF SINTÉTICO (nenhum dado de cliente) na thread à parte:
 // texto pelos leitores do PDF, ambientes reais, contagem, metragem e pontos por ambiente.
 // Rodar: npm test (pasta backend).
 const assert = require('assert');
 const path = require('path');
-const { descreverSimbolo, descreverLinha, lerArquivoCad, ehArquivoCad } = require('../src/utils/analiseCad');
+const { descreverSimbolo, descreverLinha, lerArquivoCad, ehArquivoCad } = require('../src/services/analiseCad');
 
-const SK = path.join(__dirname, '..', '..', 'skills');
+const SK = require('../src/config/caminhos').RAIZ_SKILLS;
 const { DesenhoDxf } = require(path.join(SK, '_comum', 'cad', 'dxf.js'));
 
 let ok = 0;
@@ -104,7 +104,7 @@ function dxfSintetico() {
   });
 
   await caso('PDF com lista + DWG do mesmo projeto: o item não é somado duas vezes (vale o DWG, com a descrição da lista)', async () => {
-    const { paraTestes: { semDuplicarFontes, tipoDoItem } } = require('../src/utils/compatibilizacaoAnalise');
+    const { paraTestes: { semDuplicarFontes, tipoDoItem } } = require('../src/services/compatibilizacaoAnalise');
     const m = (descricao, quantidade, unidade, _fonte, disciplina = 'eletrica', extra = {}) => ({ descricao, quantidade, unidade, _fonte, disciplina, observacao: `obs ${_fonte}.`, ...extra });
     const achados = [];
     const saida = semDuplicarFontes([

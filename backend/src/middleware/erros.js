@@ -87,7 +87,7 @@ function tratarErros(err, req, res, next) {
   if (err && err.type === 'entity.parse.failed') return res.status(400).json({ erro: 'Dados enviados em formato inválido.' });
   if (err && err.type === 'entity.too.large') return res.status(413).json({ erro: 'Dados enviados grandes demais.' });
 
-  // fila de PDF cheia (utils/pdfPuppeteer.js): passageiro, a mensagem diz o que fazer
+  // fila de PDF cheia (services/pdfPuppeteer.js): passageiro, a mensagem diz o que fazer
   if (err && err.codigo === 'FILA_PDF_CHEIA') return res.status(503).json({ erro: err.message });
 
   // erro de quem pediu, lançado de propósito com status (ex.: Object.assign(new

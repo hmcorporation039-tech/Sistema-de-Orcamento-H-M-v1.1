@@ -9,12 +9,12 @@
 // contratos e movimentos (`restrito_financeiro: true`).
 const pool = require('../config/database');
 const O = require('../utils/obras');
-const P = require('../utils/pastasSistema');
-const { comTransacao } = require('../utils/transacao');
+const P = require('../services/pastasSistema');
+const { comTransacao } = require('../services/transacao');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
 const { versaoDoPedido, responderConflitoOuAusente } = require('../utils/versao');
-const { registrarAuditoria } = require('../utils/auditoria');
-const { segmentoDoCliente } = require('../utils/precosMaoDeObraReferencia');
+const { registrarAuditoria } = require('../services/auditoria');
+const { segmentoDoCliente } = require('../services/precosMaoDeObraReferencia');
 const { condicaoPodeAbrirOS } = require('../utils/campo');
 const { ehDataIso } = require('../utils/dataHoje');
 const { pastaDaObra, sincronizarObra, caminhoRegistrado, seguro, rotasDePasta } = require('../services/pastasRegistros');

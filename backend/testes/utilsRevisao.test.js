@@ -15,7 +15,7 @@ const caso = (nome, fn) => casos.push([nome, fn]);
 
 // ── revisão de 28/10/2026 ──
 caso('catálogo: só entra item com preço e reutilizável (nada de "— bloco", "medido no desenho", NC-01 ou tabulação)', () => {
-  const { ehItemDeCatalogo } = require('../src/utils/catalogoAutoCadastro');
+  const { ehItemDeCatalogo } = require('../src/services/catalogoAutoCadastro');
   assert.strictEqual(ehItemDeCatalogo('Cabo flexível 2,5 mm²', 4.9), true);
   for (const [d, v] of [['Cabo flexível 2,5 mm²', 0], ['Interruptor — bloco INT', 5], ['Eletroduto — medido no desenho (layer ELE)', 5],
     ['NC-01 (P2) — Adequar ao requisito', 300], ['Tomada 2P+T 10 A \tun \t6', 5], ['', 5]]) assert.strictEqual(ehItemDeCatalogo(d, v), false, d);
@@ -44,7 +44,7 @@ caso('CSV: célula que começa com = + - @ vira texto; número negativo continua
 });
 
 caso('pesquisa de mercado: "1.299" e "R$ 2.450" são milhar (antes 1,30 e 2,45)', () => {
-  const { normalizarOfertas } = require('../src/utils/pesquisaMercadoService');
+  const { normalizarOfertas } = require('../src/services/pesquisaMercado');
   const precos = (lista) => normalizarOfertas({ ofertas: lista.map((preco, i) => ({ fonte: `F${i}`, preco })) }).map(o => o.preco);
   assert.deepStrictEqual(precos(['1.299', 'R$ 2.450', '1.299,90', '12.50', '1,299.90', '1,299']), [1299, 2450, 1299.9, 12.5, 1299.9, 1299]);
   assert.deepStrictEqual(precos(['0.299', '12,5', 7.5, 'R$ 1.234.567,89', 'abc']), [0.3, 12.5, 7.5, 1234567.89]);
@@ -90,7 +90,7 @@ caso('pontosPorAmbiente: documento sempre destruído e no máximo N páginas lid
 
 caso('nome com emoji cortado no limite não quebra o download nem a pasta', () => {
   const { contentDisposition, limparNome, cortarTexto } = require('../src/utils/nomeArquivoDownload');
-  const { nomeSeguro } = require('../src/utils/pastasSistema');
+  const { nomeSeguro } = require('../src/services/pastasSistema');
   for (let n = 160; n < 175; n++) {
     const nome = `Proposta ${'x'.repeat(n)}${'😀'.repeat(9)}.pdf`;
     const cd = contentDisposition(nome); // antes: URIError (500) quando o corte partia o emoji
@@ -112,7 +112,7 @@ caso('nome com emoji cortado no limite não quebra o download nem a pasta', () =
 });
 
 caso('"hoje" é a data de Brasília em todos os utilitários e no MCP (não o UTC)', () => {
-  const pastas = [path.join(__dirname, '..', 'src', 'utils'), path.join(__dirname, '..', 'src', 'mcp')];
+  const pastas = ['utils', 'services', 'mcp'].map(p => path.join(__dirname, '..', 'src', p));
   const achados = [];
   for (const p of pastas) {
     for (const f of fs.readdirSync(p)) {
@@ -160,7 +160,7 @@ caso('relatório de compatibilização escapa os números e códigos vindos do J
 });
 
 caso('MCP: analisar_projeto só lê PDF das pastas permitidas (caminho real)', () => {
-  const { pastasPermitidasPdf, conferirPdfPermitido } = require('../src/utils/mcpRegras');
+  const { pastasPermitidasPdf, conferirPdfPermitido } = require('../src/mcp/regras');
   const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'hm-mcp-'));
   try {
     const permitida = path.join(raiz, 'permitida'), fora = path.join(raiz, 'fora');
@@ -194,7 +194,7 @@ caso('MCP: pesquisa gravada de fora fica "não verificada" e fora do cache autom
   const original = pool.query;
   pool.query = async (sql, params) => { chamadas.push({ sql, params }); return { rows: [] }; };
   try {
-    const svc = require('../src/utils/pesquisaMercadoService');
+    const svc = require('../src/services/pesquisaMercado');
     const r = await svc.salvarPesquisaManual('Câmera dome', 'Loja X: R$ 100', 'gemini'); // tentativa de se passar por pesquisa automática
     assert.strictEqual(r.fonte, 'claude_desktop');
     assert.strictEqual(r.verificada, false);
@@ -204,7 +204,7 @@ caso('MCP: pesquisa gravada de fora fica "não verificada" e fora do cache autom
     await assert.rejects(svc.salvarPesquisaManual('X', 'y'.repeat(20001)), /longo demais/);
     // o cache só aceita fonte de pesquisa automática
     assert.deepStrictEqual([...svc.FONTES_AUTOMATICAS].sort(), ['claude', 'claude_max', 'gemini']);
-    const fonte = fs.readFileSync(path.join(__dirname, '..', 'src', 'utils', 'pesquisaMercadoService.js'), 'utf8');
+    const fonte = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'pesquisaMercado.js'), 'utf8');
     assert.match(fonte, /fonte = ANY\(\$2::text\[\]\)/);
   } finally {
     pool.query = original;

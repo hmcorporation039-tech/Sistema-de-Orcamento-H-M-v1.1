@@ -21,8 +21,8 @@
 // Limites: PDF escaneado (imagem) não tem traço para ler; com todas as linhas da
 // mesma espessura, móveis desenhados podem virar parede no 3D (aviso).
 const path = require('path');
-const { lerPagina, pdfjs } = require('./pdfVetorial').paraTestes;
-const { escalaDoCarimbo } = require('./pdfVetorial');
+const { lerPagina, pdfjs } = require('../utils/pdfVetorial').paraTestes;
+const { escalaDoCarimbo } = require('../utils/pdfVetorial');
 
 const { DesenhoDxf } = require(path.join(require('../config/caminhos').CAD, 'dxf.js'));
 

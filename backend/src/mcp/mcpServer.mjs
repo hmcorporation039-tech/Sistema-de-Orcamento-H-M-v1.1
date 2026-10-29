@@ -40,7 +40,7 @@ const requerer = createRequire(import.meta.url);
 // mesma lista do backend (utils/disciplinasProjeto.js, fonte única)
 const DISCIPLINAS_VALIDAS = requerer('../utils/disciplinasProjeto.js').DISCIPLINAS.map(d => d.chave);
 // regras de segurança (pastas permitidas para o PDF) e a data de hoje em Brasília
-const { pastasPermitidasPdf, conferirPdfPermitido } = requerer('../utils/mcpRegras.js');
+const { pastasPermitidasPdf, conferirPdfPermitido } = requerer('./regras.js');
 const { hojeBrasilia } = requerer('../utils/dataHoje.js');
 const PASTAS_PDF = pastasPermitidasPdf(process.env);
 
@@ -223,7 +223,7 @@ server.registerTool(
 // O próprio Claude Desktop busca na web (pela assinatura, sem chave/cota) e
 // grava o resultado aqui. É texto livre vindo de fora do sistema: fica no
 // histórico marcado "não verificada" e NÃO alimenta o cache de 48h da pesquisa
-// automática (revisão de 27/10/2026 — utils/pesquisaMercadoService.js).
+// automática (revisão de 27/10/2026 — services/pesquisaMercado.js).
 server.registerTool(
   'salvar_pesquisa_mercado',
   {
@@ -263,7 +263,7 @@ server.registerTool(
   },
   async ({ caminho_pdf, disciplinas, finalidade }) => {
     try {
-      // só PDF e só dentro das pastas permitidas (utils/mcpRegras.js): antes
+      // só PDF e só dentro das pastas permitidas (mcp/regras.js): antes
       // qualquer PDF do PC podia ser enviado ao sistema a pedido de um texto
       // malicioso lido pelo Claude
       const conferido = conferirPdfPermitido(caminho_pdf, PASTAS_PDF);

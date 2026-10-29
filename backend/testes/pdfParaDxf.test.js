@@ -1,10 +1,10 @@
-// PDF vetorial da arquitetura → DXF em metros (utils/pdfParaDxf.js), para o 3D
+// PDF vetorial da arquitetura → DXF em metros (services/pdfParaDxf.js), para o 3D
 // e a planta por disciplina. Plantas SINTÉTICAS em 1:50 impressas em PDF pelo
 // Chromium (o mesmo tipo de PDF vetorial que o AutoCAD exporta), sem banco.
 // Rodar: npm test (pasta backend).
 const assert = require('assert');
 const puppeteer = require('puppeteer');
-const { pdfParaDxf, paraTestes: T } = require('../src/utils/pdfParaDxf');
+const { pdfParaDxf, paraTestes: T } = require('../src/services/pdfParaDxf');
 const { lerArquiteturaNoWorker, resumoDaArquitetura, faltouEscala } = require('../src/services/tarefasCad');
 
 let ok = 0;

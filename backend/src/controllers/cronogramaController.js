@@ -11,14 +11,14 @@ const { ErroHttp } = require('../utils/erros');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');
 const C = require('../utils/cronograma');
 const D = require('../utils/duracaoCronograma');
-const { comTransacao } = require('../utils/transacao');
+const { comTransacao } = require('../services/transacao');
 const { versaoDoPedido } = require('../utils/versao');
-const { registrarAuditoria } = require('../utils/auditoria');
+const { registrarAuditoria } = require('../services/auditoria');
 const { hojeBrasilia } = require('../utils/dataHoje');
 const { gerarPlanilhaCronograma } = require('../utils/planilhaCronograma');
 const { gerarHtmlBoletim } = require('../utils/boletimMedicaoTemplate');
 const { gerarFooterTemplate } = require('../utils/pdfTemplate');
-const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
+const { gerarPdfDeHtml } = require('../services/pdfPuppeteer');
 
 // data de hoje no horário de Brasília (toISOString daria o dia seguinte depois das 21h)
 const hojeLocal = () => hojeBrasilia(); // utils/dataHoje.js (fonte única)

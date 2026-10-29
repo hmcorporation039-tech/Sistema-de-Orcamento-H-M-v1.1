@@ -1,6 +1,6 @@
 const pool = require('../config/database');
 const bcrypt = require('bcryptjs');
-const { ITENS_REFERENCIA } = require('../utils/precosMaoDeObraReferencia');
+const { ITENS_REFERENCIA } = require('../services/precosMaoDeObraReferencia');
 
 // Trava do PostgreSQL só das migrações: duas cópias do backend subindo juntas
 // (já aconteceu: EADDRINUSE no log) migravam ao mesmo tempo. Com a trava, a
@@ -76,7 +76,7 @@ async function criarTabelas() {
 
     // Catálogo de itens de mão de obra — cresce sozinho conforme os itens são
     // lançados nos orçamentos (ver garantirMaoDeObraCadastrada em
-    // utils/catalogoAutoCadastro.js), pra virar sugestão em dropdown na
+    // services/catalogoAutoCadastro.js), pra virar sugestão em dropdown na
     // próxima vez que alguém for lançar um item de mão de obra — mesmo
     // objetivo do catálogo de materiais (padronizar a descrição do mesmo
     // serviço entre propostas de clientes diferentes), mas numa tabela
@@ -254,14 +254,14 @@ async function criarTabelas() {
     // até o primeiro clique; um segundo clique atualiza a mesma proposta em
     // vez de criar outra.
     await client.query(`ALTER TABLE analises_projeto ADD COLUMN IF NOT EXISTS proposta_id INTEGER REFERENCES propostas(id)`);
-    // Pasta do projeto no disco (utils/pastasSistema.js): nome do projeto editável e nome da pasta em uso
+    // Pasta do projeto no disco (services/pastasSistema.js): nome do projeto editável e nome da pasta em uso
     await client.query(`ALTER TABLE analises_projeto ADD COLUMN IF NOT EXISTS nome_projeto VARCHAR(200)`);
     await client.query(`ALTER TABLE analises_projeto ADD COLUMN IF NOT EXISTS pasta VARCHAR(255)`);
 
     // Preços de referência de mão de obra (valor médio de mercado, editado
     // por um admin) — usados só como SUGESTÃO ao lado do campo de valor
     // unitário na Análise de Projeto, nunca preenchidos automaticamente no
-    // item (ver utils/precosMaoDeObraReferencia.js e montarServicosPadrao em
+    // item (ver services/precosMaoDeObraReferencia.js e montarServicosPadrao em
     // compatibilizacaoAnalise.js).
     await client.query(`
       CREATE TABLE IF NOT EXISTS precos_mao_de_obra_referencia (
@@ -332,7 +332,7 @@ async function criarTabelas() {
     await client.query(`ALTER TABLE laudos_projetos ADD COLUMN IF NOT EXISTS pasta VARCHAR(255)`);
     await client.query(`ALTER TABLE laudos_projetos ADD COLUMN IF NOT EXISTS gerar_orcamento BOOLEAN NOT NULL DEFAULT true`);
 
-    // Cache de pesquisas de mercado (ver utils/pesquisaMercadoService.js) —
+    // Cache de pesquisas de mercado (ver services/pesquisaMercado.js) —
     // a mesma descrição pesquisada de novo dentro de 48h reaproveita o
     // resultado salvo aqui em vez de gastar cota do Gemini/dinheiro do
     // Claude de novo. Como bônus, vira um histórico de preços pesquisados.
@@ -406,7 +406,7 @@ async function criarTabelas() {
         processado_em TIMESTAMP DEFAULT NOW()
       )
     `);
-    // Leitor de orçamentos em qualquer layout (utils/leitorCotacao.js): guarda
+    // Leitor de orçamentos em qualquer layout (services/leitorCotacao.js): guarda
     // quantos itens foram lidos, por qual método e com qual versão do leitor —
     // arquivo/e-mail lido com 0 itens volta a ser lido quando a versão sobe.
     await client.query(`ALTER TABLE arquivos_fornecedores_processados ADD COLUMN IF NOT EXISTS itens_lidos INTEGER DEFAULT 0`);

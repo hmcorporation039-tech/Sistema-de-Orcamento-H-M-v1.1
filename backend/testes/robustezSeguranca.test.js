@@ -28,17 +28,17 @@ require.cache[require.resolve('../src/services/pastasRegistros')] = { id: 'pr', 
   rotasDePasta: () => ({ pasta: async () => null, abrirPasta: async () => null }),
 } };
 
-const { executarNoWorker, estadoDoSemaforo, MAX_SIMULTANEOS } = require('../src/utils/executarNoWorker');
+const { executarNoWorker, estadoDoSemaforo, MAX_SIMULTANEOS } = require('../src/services/executarNoWorker');
 const T = require('../src/services/tarefasCad');
-const { comVaga } = require('../src/utils/pdfPuppeteer');
-const { comTransacao } = require('../src/utils/transacao');
-const { registrarAuditoria } = require('../src/utils/auditoria');
+const { comVaga } = require('../src/services/pdfPuppeteer');
+const { comTransacao } = require('../src/services/transacao');
+const { registrarAuditoria } = require('../src/services/auditoria');
 const { conferirZipOffice } = require('../src/services/assistente/arquivos');
 const R = require('../src/utils/assistenteRascunho');
 const { prepararAcao } = require('../src/services/assistente/acoes');
 const E = require('../src/services/assistente/execucao');
 
-const SK = path.join(__dirname, '..', '..', 'skills');
+const SK = require('../src/config/caminhos').RAIZ_SKILLS;
 const { DesenhoDxf } = require(path.join(SK, '_comum', 'cad', 'dxf.js'));
 const WORKER_ESPERA = path.join(__dirname, 'fixtures', 'workerEspera.js');
 const esperar = (ms) => new Promise(r => setTimeout(r, ms));
@@ -301,7 +301,7 @@ function cenarioExclusao({ fotosNovas = 0 } = {}) {
 const resposta = () => ({ statusCode: 200, corpo: null, status(c) { this.statusCode = c; return this; }, json(b) { this.corpo = b; return this; } });
 
 caso('exclusão do laudo: fotos e arquitetura copiadas para a pasta ANTES; DELETE e auditoria na mesma transação', silencio(async () => {
-  const P = require('../src/utils/pastasSistema');
+  const P = require('../src/services/pastasSistema');
   const gravarOriginal = P.gravarArquivo;
   P.gravarArquivo = async (pasta, nome, conteudo) => { if (pastas.falharGravacao) throw new Error('pasta aberta em outro programa'); pastas.gravados.push([pasta.replace(/\\/g, '/'), nome, conteudo.length]); };
   try {

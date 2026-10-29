@@ -1,10 +1,10 @@
 const pool = require('../config/database');
 const { extrairNotaFiscal } = require('../utils/notaFiscalParser');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
-const { comTransacao } = require('../utils/transacao');
-const { compararComCatalogo } = require('../utils/compatibilizacaoAnalise');
+const { comTransacao } = require('../services/transacao');
+const { compararComCatalogo } = require('../services/compatibilizacaoAnalise');
 const rotinas = require('../services/rotinas');
-const { registrarAuditoria } = require('../utils/auditoria');
+const { registrarAuditoria } = require('../services/auditoria');
 const { registrarHistoricoPreco } = require('../services/catalogoMateriais');
 
 // Compara uma descrição livre (ex.: vinda de um projeto, de uma cotação, ou

@@ -32,7 +32,7 @@ const { JWT_SECRET } = require('../src/config/segredos');
 const S = require('../src/services/assistente/sessoes');
 const F = require('../src/services/assistente/ferramentas');
 const E = require('../src/services/assistente/execucao');
-const P = require('../src/utils/pastasSistema');
+const P = require('../src/services/pastasSistema');
 const { pastaDaConversa } = require('../src/services/assistente/arquivos');
 const { pdfCftvSintetico } = require('./fixtures/assistente/pdfProjetoSintetico');
 

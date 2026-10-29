@@ -3,7 +3,7 @@
 // leitor universal precisa reconhecer. Rodar: npm test (na pasta backend).
 const assert = require('assert');
 const { extrairUniversal } = require('../src/utils/leitorCotacaoUniversal');
-const { ehDocumentoDaHM } = require('../src/utils/leitorCotacao');
+const { ehDocumentoDaHM } = require('../src/services/leitorCotacao');
 const { codigosFabricante, chaveDescricao } = require('../src/services/catalogoMateriais');
 const { classificarPorDescricao } = require('../src/utils/classificadorMaterial');
 

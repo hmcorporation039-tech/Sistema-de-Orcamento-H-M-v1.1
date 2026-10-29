@@ -11,7 +11,7 @@ process.env.PASTA_CLIENTES = path.join(TMP, 'Servidor', 'Clientes');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const assert = require('assert');
 const pool = require('../src/config/database');
-const P = require('../src/utils/pastasSistema');
+const P = require('../src/services/pastasSistema');
 const R = require('../src/services/pastasRegistros');
 const M = require('../src/services/monitorPastas');
 
@@ -170,7 +170,7 @@ const SUF = `T${Date.now().toString(36)}`;
       const servidor = path.join(TMP, 'ServidorFora', 'Clientes');
       const script = `
         const fs = require('fs'), path = require('path');
-        const P = require(${JSON.stringify(path.join(__dirname, '..', 'src', 'utils', 'pastasSistema.js'))});
+        const P = require(${JSON.stringify(path.join(__dirname, '..', 'src', 'services', 'pastasSistema.js'))});
         (async () => {
           // servidor "fora": um ARQUIVO no lugar da pasta-mãe faz o mkdir falhar
           fs.mkdirSync(path.dirname(path.dirname(P.RAIZ_CLIENTES_SERVIDOR)), { recursive: true });

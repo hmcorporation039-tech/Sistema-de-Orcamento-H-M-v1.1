@@ -1,7 +1,7 @@
 const pool = require('../config/database');
-const { registrarAuditoria } = require('../utils/auditoria');
+const { registrarAuditoria } = require('../services/auditoria');
 const { parsePaginacao, montarResposta } = require('../utils/paginacao');
-const { vincularPrestadores } = require('../utils/vincularPrestadores');
+const { vincularPrestadores } = require('../services/vincularPrestadores');
 
 const CATEGORIAS_VALIDAS = ['mao_de_obra', 'material', 'despesa'];
 
