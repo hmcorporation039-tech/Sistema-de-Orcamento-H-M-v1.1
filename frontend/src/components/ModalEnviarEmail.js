@@ -51,7 +51,7 @@ export default function ModalEnviarEmail({ aberto, onFechar, proposta, emailInic
               autoFocus
             />
             {!emailInicial && (
-              <p style={{ fontSize: 10, color: '#666', marginTop: 5 }}>
+              <p style={{ fontSize: 11.5, color: 'var(--texto-3)', marginTop: 5 }}>
                 Esse cliente não tem e-mail cadastrado — dá pra editar isso na tela de Clientes pra preencher sozinho da próxima vez.
               </p>
             )}
@@ -64,7 +64,7 @@ export default function ModalEnviarEmail({ aberto, onFechar, proposta, emailInic
               onChange={e => setMensagemEmail(e.target.value)}
               placeholder="Deixe em branco para usar a mensagem padrão"
             />
-            <p style={{ fontSize: 10, color: '#666', marginTop: 5 }}>
+            <p style={{ fontSize: 11.5, color: 'var(--texto-3)', marginTop: 5 }}>
               A assinatura padrão da empresa (contatos, endereço) é adicionada automaticamente
               no final — não precisa (nem deve) digitar de novo aqui.
             </p>
@@ -83,4 +83,4 @@ export default function ModalEnviarEmail({ aberto, onFechar, proposta, emailInic
 // Estilos do kit de tela (components/ui/estilos.js). O botão secundário daqui
 // é um pouco maior e mais apagado que o do kit — mantido como era.
 const { rotulo, btnPrimario } = estilos;
-const btnSecundario = { ...estilos.btnSecundario, padding: '9px 16px', color: '#999' };
+const btnSecundario = { ...estilos.btnSecundario, padding: '9px 16px', color: 'var(--texto-2)' };

@@ -48,7 +48,7 @@ class ErrorBoundary extends Component {
         <h2 style={{ fontSize: 17, color: '#c9a227', fontWeight: 700, marginBottom: 10 }}>
           {carregamento ? 'O sistema foi atualizado' : 'Esta tela encontrou um erro'}
         </h2>
-        <p style={{ fontSize: 13, color: '#999', lineHeight: 1.6, marginBottom: 16 }}>
+        <p style={{ fontSize: 13, color: 'var(--texto-2)', lineHeight: 1.6, marginBottom: 16 }}>
           {carregamento
             ? 'Não foi possível abrir esta parte do sistema (versão nova no servidor ou rede instável). Toque em "Atualizar agora". O que estava guardado no aparelho não se perde.'
             : fora
@@ -58,7 +58,7 @@ class ErrorBoundary extends Component {
         {!carregamento && (
           <pre style={{
             background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6,
-            padding: 12, fontSize: 11, color: '#b04040', whiteSpace: 'pre-wrap',
+            padding: 12, fontSize: 12, color: '#b04040', whiteSpace: 'pre-wrap',
             marginBottom: 16, maxHeight: 160, overflow: 'auto',
           }}>
             {String(this.state.erro?.message || this.state.erro)}

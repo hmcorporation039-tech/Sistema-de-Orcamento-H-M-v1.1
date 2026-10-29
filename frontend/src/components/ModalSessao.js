@@ -45,12 +45,12 @@ export default function ModalSessao() {
           <KeyRound size={20} color="#c9a227" />
           <h2 id="titulo-sessao" style={{ fontSize: 17, color: '#c9a227', fontWeight: 700 }}>Sua sessão expirou</h2>
         </div>
-        <p style={{ fontSize: 13, color: '#aaa', lineHeight: 1.6, marginBottom: 16 }}>
+        <p style={{ fontSize: 13, color: 'var(--texto-2)', lineHeight: 1.6, marginBottom: 16 }}>
           Entre de novo para continuar. <b style={{ color: '#ddd' }}>Nada do que está na tela foi perdido</b> — o que
           estava sendo gravado é enviado assim que você entrar.
         </p>
         <label style={rotulo}>E-mail</label>
-        <input value={usuario.email || ''} readOnly style={{ ...entrada, color: '#888', marginBottom: 12 }} />
+        <input value={usuario.email || ''} readOnly style={{ ...entrada, color: 'var(--texto-3)', marginBottom: 12 }} />
         <label style={rotulo} htmlFor="senha-sessao">Senha</label>
         <input id="senha-sessao" ref={campo} type="password" autoComplete="current-password" value={senha}
           onChange={e => { setSenha(e.target.value); setErro(''); }} style={entrada} />
@@ -72,7 +72,7 @@ const caixa = {
   background: '#131313', border: '1px solid #3a3216', borderRadius: 12, padding: 26,
   width: '100%', maxWidth: 420, boxShadow: '0 20px 60px #000000aa',
 };
-const rotulo = { display: 'block', fontSize: 11, color: '#777', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.5px' };
+const rotulo = { display: 'block', fontSize: 12, color: 'var(--texto-3)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.5px' };
 // 16 px: menos que isso o iPhone dá zoom ao tocar no campo
 const entrada = { width: '100%', padding: '10px 12px', fontSize: 16, boxSizing: 'border-box' };
 const btnPrimario = {
@@ -81,5 +81,5 @@ const btnPrimario = {
 };
 const btnSecundario = {
   padding: '10px 14px', background: 'transparent', border: '1px dashed #333', borderRadius: 6,
-  color: '#999', fontWeight: 700, fontSize: 13, cursor: 'pointer',
+  color: 'var(--texto-2)', fontWeight: 700, fontSize: 13, cursor: 'pointer',
 };

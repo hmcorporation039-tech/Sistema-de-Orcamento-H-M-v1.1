@@ -244,7 +244,7 @@ export default function Financeiro() {
           </Campo>
           <Campo label="Buscar">
             <div style={{ position: 'relative' }}>
-              <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: '#555' }} />
+              <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--texto-3)' }} />
               <input
                 value={busca}
                 onChange={e => setBusca(e.target.value)}
@@ -313,7 +313,7 @@ export default function Financeiro() {
                 <tr key={m.id} style={{ borderTop: '1px solid #1e1e1e' }}>
                   <td style={td}>{new Date(m.data_hora).toLocaleString('pt-BR')}</td>
                   <td style={td}>
-                    <span style={{ padding: '3px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: info.bg, color: info.cor, border: `1px solid ${info.borda}` }}>
+                    <span style={{ padding: '3px 9px', borderRadius: 20, fontSize: 11.5, fontWeight: 700, background: info.bg, color: info.cor, border: `1px solid ${info.borda}` }}>
                       {info.label}
                     </span>
                   </td>
@@ -454,7 +454,7 @@ export default function Financeiro() {
 function CardResumo({ label, valor, cor, destaque, icone }) {
   return (
     <div style={card}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>
         {icone} {label}
       </div>
       <div style={{ fontSize: 20, fontWeight: 700, color: destaque ? '#c9a227' : cor }}>{valor}</div>
@@ -475,7 +475,7 @@ const btnPrimario = {
 
 const btnSecundario = {
   display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent',
-  border: '1px solid #2a2a2a', borderRadius: 6, color: '#999', fontWeight: 700,
+  border: '1px solid #2a2a2a', borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700,
   fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
 };
 

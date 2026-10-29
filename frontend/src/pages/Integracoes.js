@@ -40,7 +40,7 @@ function Selo({ cor, bg, borda, children, titulo }) {
   return (
     <span title={titulo} style={{
       display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 20,
-      fontSize: 10, fontWeight: 700, background: bg, color: cor, border: `1px solid ${borda}`, whiteSpace: 'nowrap',
+      fontSize: 11.5, fontWeight: 700, background: bg, color: cor, border: `1px solid ${borda}`, whiteSpace: 'nowrap',
     }}>{children}</span>
   );
 }
@@ -54,7 +54,7 @@ function SeloStatus({ status }) {
 function Linha({ rotulo, children }) {
   return (
     <div style={{ display: 'flex', gap: 10, fontSize: 12, padding: '3px 0' }}>
-      <span style={{ color: '#666', minWidth: 118 }}>{rotulo}</span>
+      <span style={{ color: 'var(--texto-3)', minWidth: 118 }}>{rotulo}</span>
       <span style={{ color: '#ccc', flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{children}</span>
     </div>
   );
@@ -73,7 +73,7 @@ function CartaoRotina({ rotina, executando, aoExecutar }) {
         <div style={iconeCaixa}><Icone size={17} /></div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ color: '#eee', fontWeight: 700, fontSize: 14 }}>{rotina.nome}</div>
-          <div style={{ color: '#777', fontSize: 11, marginTop: 2 }}>{rotina.descricao}</div>
+          <div style={{ color: 'var(--texto-3)', fontSize: 12, marginTop: 2 }}>{rotina.descricao}</div>
         </div>
         {rotina.ativa
           ? <Selo cor="#3fb95f" bg="#0a1a0f" borda="#1a4a26">Automática ligada</Selo>
@@ -81,7 +81,7 @@ function CartaoRotina({ rotina, executando, aoExecutar }) {
       </div>
 
       {!rotina.ativa && rotina.motivoInativa && (
-        <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>{rotina.motivoInativa}</div>
+        <div style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 8 }}>{rotina.motivoInativa}</div>
       )}
 
       <Linha rotulo="Horários">{(rotina.horarios || []).join(' e ')}</Linha>
@@ -91,7 +91,7 @@ function CartaoRotina({ rotina, executando, aoExecutar }) {
       <div style={separador} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-        <span style={{ color: '#c9a227', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, flex: 1 }}>Última execução</span>
+        <span style={{ color: '#c9a227', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, flex: 1 }}>Última execução</span>
         {rotina.emExecucao ? <SeloStatus status="em_andamento" /> : ultima && <SeloStatus status={ultima.status} />}
       </div>
       {rotina.emExecucao && (
@@ -112,16 +112,16 @@ function CartaoRotina({ rotina, executando, aoExecutar }) {
                 {verAvisos ? <ChevronUp size={12} /> : <ChevronDown size={12} />} {ultima.totalAvisos} aviso(s)
               </button>
               {verAvisos && (
-                <ul style={{ margin: '6px 0 0', paddingLeft: 18, color: '#d9a53a', fontSize: 11 }}>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18, color: '#d9a53a', fontSize: 12 }}>
                   {ultima.avisos.map((a, i) => <li key={i} style={{ marginBottom: 3 }}>{a}</li>)}
-                  {ultima.totalAvisos > ultima.avisos.length && <li style={{ color: '#777' }}>… e mais {ultima.totalAvisos - ultima.avisos.length}</li>}
+                  {ultima.totalAvisos > ultima.avisos.length && <li style={{ color: 'var(--texto-3)' }}>… e mais {ultima.totalAvisos - ultima.avisos.length}</li>}
                 </ul>
               )}
             </div>
           )}
         </>
       ) : !rotina.emExecucao && (
-        <div style={{ fontSize: 12, color: '#666', padding: '3px 0' }}>Nenhuma execução registrada no painel ainda.</div>
+        <div style={{ fontSize: 12, color: 'var(--texto-3)', padding: '3px 0' }}>Nenhuma execução registrada no painel ainda.</div>
       )}
       {rotina.ultimoRegistroEm && <Linha rotulo="Último item lido">{dataHora(rotina.ultimoRegistroEm)}</Linha>}
 
@@ -131,7 +131,7 @@ function CartaoRotina({ rotina, executando, aoExecutar }) {
             <History size={12} /> {verHistorico ? 'Ocultar histórico' : `Histórico (${rotina.historico.length} últimas)`}
           </button>
           {verHistorico && (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, marginTop: 6 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: 6 }}>
               <tbody>
                 {rotina.historico.map(h => (
                   <tr key={h.id} style={{ borderTop: '1px solid #1e1e1e' }}>
@@ -165,7 +165,7 @@ function CartaoIA({ ia, testando, aoTestar }) {
         <div style={iconeCaixa}><Bot size={17} /></div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ color: '#eee', fontWeight: 700, fontSize: 14 }}>Inteligência artificial</div>
-          <div style={{ color: '#777', fontSize: 11, marginTop: 2 }}>
+          <div style={{ color: 'var(--texto-3)', fontSize: 12, marginTop: 2 }}>
             Usada na pesquisa de preço de mercado, na leitura de orçamentos de fornecedor, na classificação de materiais e nos equipamentos do projeto.
             Tenta na ordem abaixo e passa para a próxima quando uma falha.
           </div>
@@ -179,7 +179,7 @@ function CartaoIA({ ia, testando, aoTestar }) {
         {ia.ordem.map(id => ia.provedores.find(p => p.id === id)?.rotulo || id).map((r, i, a) => (
           <span key={r}><b style={{ color: '#c9a227' }}>{i + 1}.</b> {r}{i < a.length - 1 ? '  →  ' : ''}</span>
         ))}
-        {ia.ordemPersonalizada && <span style={{ color: '#777' }}> (IA_ORDEM)</span>}
+        {ia.ordemPersonalizada && <span style={{ color: 'var(--texto-3)' }}> (IA_ORDEM)</span>}
       </Linha>
       {ia.desligada && <Linha rotulo="Atenção"><span style={{ color: '#d9a53a' }}>COTACAO_IA=desligada — só a pesquisa de preço na web usa IA</span></Linha>}
 
@@ -192,11 +192,11 @@ function CartaoIA({ ia, testando, aoTestar }) {
             <span style={{ color: '#ddd', fontWeight: 700, fontSize: 12, flex: 1 }}>
               {p.posicao ? `${p.posicao}. ` : ''}{p.rotulo}
             </span>
-            <span style={{ color: p.ativo ? '#3fb95f' : '#888', fontSize: 11 }}>{p.ativo ? 'ligado' : (p.motivo || 'desligado')}</span>
+            <span style={{ color: p.ativo ? '#3fb95f' : '#888', fontSize: 12 }}>{p.ativo ? 'ligado' : (p.motivo || 'desligado')}</span>
           </div>
-          <div style={{ color: '#666', fontSize: 11, marginLeft: 16, marginTop: 2 }}>{p.descricao}{p.modelo ? ` · ${p.modelo}` : ''}</div>
+          <div style={{ color: 'var(--texto-3)', fontSize: 12, marginLeft: 16, marginTop: 2 }}>{p.descricao}{p.modelo ? ` · ${p.modelo}` : ''}</div>
           {(p.ultimoSucesso || p.ultimoErro) && (
-            <div style={{ fontSize: 11, marginLeft: 16, marginTop: 3, color: '#888' }}>
+            <div style={{ fontSize: 12, marginLeft: 16, marginTop: 3, color: 'var(--texto-3)' }}>
               {p.sucessos} resposta(s), {p.falhas} falha(s) desde que o sistema subiu
               {p.ultimoSucesso && <div style={{ color: '#3fb95f' }}>Última resposta: {dataHora(p.ultimoSucesso.em)} ({p.ultimoSucesso.finalidade})</div>}
               {p.ultimoErro && <div style={{ color: '#e08080', overflowWrap: 'anywhere' }}>Última falha: {dataHora(p.ultimoErro.em)} — {p.ultimoErro.mensagem}</div>}
@@ -282,7 +282,7 @@ export default function Integracoes() {
   }
 
   if (!ehAdmin) {
-    return <div style={{ color: '#777', fontSize: 13, padding: 20 }}>Somente administradores veem o painel de integrações.</div>;
+    return <div style={{ color: 'var(--texto-3)', fontSize: 13, padding: 20 }}>Somente administradores veem o painel de integrações.</div>;
   }
 
   return (
@@ -301,7 +301,7 @@ export default function Integracoes() {
         </div>
       )}
 
-      {carregando && !dados && <div style={{ color: '#555', padding: 30, textAlign: 'center' }}>Carregando...</div>}
+      {carregando && !dados && <div style={{ color: 'var(--texto-3)', padding: 30, textAlign: 'center' }}>Carregando...</div>}
 
       {dados && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 14 }}>
@@ -327,7 +327,7 @@ const iconeCaixa = {
 
 const separador = { borderTop: '1px solid #1e1e1e', margin: '10px 0' };
 
-const tdMini = { padding: '5px 4px', color: '#aaa', verticalAlign: 'middle' };
+const tdMini = { padding: '5px 4px', color: 'var(--texto-2)', verticalAlign: 'middle' };
 
 // Estilos do kit de tela (components/ui/estilos.js), com o que esta tela tem
 // de diferente por cima — o visual ficou como era.
@@ -335,10 +335,10 @@ const btnPrimario = { ...estilos.btnPrimario, display: 'flex' };
 
 const btnSecundario = {
   padding: '9px 16px', background: 'transparent', border: '1px solid #2a2a2a',
-  borderRadius: 6, color: '#999', fontWeight: 700, fontSize: 12, cursor: 'pointer',
+  borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer',
 };
 
 const btnTexto = {
   display: 'inline-flex', alignItems: 'center', gap: 4, padding: 0, background: 'transparent',
-  border: 'none', color: '#999', fontSize: 11, cursor: 'pointer',
+  border: 'none', color: 'var(--texto-2)', fontSize: 12, cursor: 'pointer',
 };

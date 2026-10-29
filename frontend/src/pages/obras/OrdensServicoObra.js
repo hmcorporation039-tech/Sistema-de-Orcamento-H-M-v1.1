@@ -78,7 +78,7 @@ export default function OrdensServicoObra({ obra, podeEditar }) {
           <button type="button" onClick={() => setForm({})} style={E.btnPrimario}><Plus size={13} /> Nova OS</button>
         )}
       </div>
-      <p style={{ color: '#777', fontSize: 12, margin: '0 0 10px' }}>
+      <p style={{ color: 'var(--texto-3)', fontSize: 12, margin: '0 0 10px' }}>
         O técnico responsável vê a OS no app de campo (<code>/campo</code> no celular), responde o checklist, tira fotos e colhe a assinatura do cliente — mesmo sem rede.
         Fotos e assinatura ficam na pasta da obra, em <code>Campo\&lt;número da OS&gt;</code>.
       </p>
@@ -109,9 +109,9 @@ export default function OrdensServicoObra({ obra, podeEditar }) {
                 <td style={{ ...E.td, whiteSpace: 'nowrap' }}>
                   <button type="button" onClick={() => abrir(o.id)} style={botaoLink}>{o.numero}</button>
                 </td>
-                <td style={E.td}>{o.titulo}{o.disciplina && <span style={{ color: '#777', fontSize: 10 }}> · {nomeDisciplina(modelos, o.disciplina)}</span>}</td>
-                <td style={{ ...E.td, fontSize: 11, color: '#999' }}>{TIPOS_OS[o.tipo] || o.tipo}</td>
-                <td style={E.td}>{o.responsavel_nome || <span style={{ color: '#777' }}>sem responsável</span>}</td>
+                <td style={E.td}>{o.titulo}{o.disciplina && <span style={{ color: 'var(--texto-3)', fontSize: 11.5 }}> · {nomeDisciplina(modelos, o.disciplina)}</span>}</td>
+                <td style={{ ...E.td, fontSize: 12, color: 'var(--texto-2)' }}>{TIPOS_OS[o.tipo] || o.tipo}</td>
+                <td style={E.td}>{o.responsavel_nome || <span style={{ color: 'var(--texto-3)' }}>sem responsável</span>}</td>
                 <td style={{ ...E.td, whiteSpace: 'nowrap' }}>{dataCurta(o.agendada_para)}</td>
                 <td style={E.td}><Etiqueta info={STATUS_OS[o.status]}>{STATUS_OS[o.status]?.rotulo || o.status}</Etiqueta></td>
                 <td style={{ ...E.td, textAlign: 'center', whiteSpace: 'nowrap' }}>
@@ -282,7 +282,7 @@ function FormOS({ obra, os, modelos, ehAdmin, usuario, onCancelar, onSalvo }) {
         </Campo>
       </div>
       <div style={{ display: 'flex', gap: 10, marginTop: 14, justifyContent: 'flex-end', alignItems: 'center' }}>
-        {checklistEmUso && <span style={{ color: '#777', fontSize: 11, flex: 1 }}>O checklist já está em uso no campo: o modelo fica como está.</span>}
+        {checklistEmUso && <span style={{ color: 'var(--texto-3)', fontSize: 12, flex: 1 }}>O checklist já está em uso no campo: o modelo fica como está.</span>}
         <button type="button" onClick={onCancelar} style={E.btnSecundario}>Cancelar</button>
         <button type="submit" disabled={salvando} style={E.btnPrimario}><Save size={13} /> {salvando ? 'Salvando...' : (editando ? 'Salvar' : 'Criar OS')}</button>
       </div>
@@ -357,7 +357,7 @@ function VerOS({ id, modelos, ehAdmin, onFechar, onEditar, onMudou }) {
           {os.cancelada_em && <Info rotulo="Cancelada" valor={dataHora(os.cancelada_em)} />}
           <Info rotulo="Criada" valor={dataHora(os.criado_em)} nota={os.criado_por_nome ? `por ${os.criado_por_nome}` : ''} />
         </div>
-        {os.descricao && <p style={{ color: '#bbb', fontSize: 12, whiteSpace: 'pre-wrap', margin: '14px 0 0' }}>{os.descricao}</p>}
+        {os.descricao && <p style={{ color: 'var(--texto-2)', fontSize: 12, whiteSpace: 'pre-wrap', margin: '14px 0 0' }}>{os.descricao}</p>}
       </div>
 
       {os.checklist.length > 0 && (
@@ -377,10 +377,10 @@ function VerOS({ id, modelos, ehAdmin, onFechar, onEditar, onMudou }) {
                 <tr key={`g-${g.nome}`} style={{ background: '#0f0f0f' }}><td colSpan={3} style={{ ...E.th, color: '#c9a227' }}>{g.nome}</td></tr>,
                 ...g.itens.map(i => (
                   <tr key={i.id} style={{ borderTop: '1px solid #1e1e1e', background: i.resposta === 'nao_conforme' ? '#170c0c' : undefined }}>
-                    <td style={{ ...E.td, width: 70, color: '#777', fontSize: 11, whiteSpace: 'nowrap' }}>{i.id}</td>
+                    <td style={{ ...E.td, width: 70, color: 'var(--texto-3)', fontSize: 12, whiteSpace: 'nowrap' }}>{i.id}</td>
                     <td style={E.td}>
-                      {i.texto}{i.extra && <span style={{ color: '#777', fontSize: 10 }}> (item extra do campo)</span>}
-                      {i.observacao && <div style={{ color: '#999', fontSize: 11, fontStyle: 'italic', marginTop: 3, whiteSpace: 'pre-wrap' }}>{i.observacao}</div>}
+                      {i.texto}{i.extra && <span style={{ color: 'var(--texto-3)', fontSize: 11.5 }}> (item extra do campo)</span>}
+                      {i.observacao && <div style={{ color: 'var(--texto-2)', fontSize: 12, fontStyle: 'italic', marginTop: 3, whiteSpace: 'pre-wrap' }}>{i.observacao}</div>}
                       {i.fotos.length > 0 && (
                         <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
                           {i.fotos.map(u => fotoPorUuid.get(u) && <FotoCampo key={u} foto={fotoPorUuid.get(u)} tamanho={56} />)}
@@ -388,8 +388,8 @@ function VerOS({ id, modelos, ehAdmin, onFechar, onEditar, onMudou }) {
                       )}
                     </td>
                     <td style={{ ...E.td, width: 130, textAlign: 'right' }}>
-                      {i.resposta ? <Etiqueta info={RESPOSTA[i.resposta]}>{RESPOSTA[i.resposta].rotulo}</Etiqueta> : <span style={{ color: '#555', fontSize: 11 }}>sem resposta</span>}
-                      {i.respondido_em && <div style={{ color: '#666', fontSize: 10, marginTop: 4 }}>{dataHora(i.respondido_em)}</div>}
+                      {i.resposta ? <Etiqueta info={RESPOSTA[i.resposta]}>{RESPOSTA[i.resposta].rotulo}</Etiqueta> : <span style={{ color: 'var(--texto-3)', fontSize: 12 }}>sem resposta</span>}
+                      {i.respondido_em && <div style={{ color: 'var(--texto-3)', fontSize: 11.5, marginTop: 4 }}>{dataHora(i.respondido_em)}</div>}
                     </td>
                   </tr>
                 )),
@@ -397,7 +397,7 @@ function VerOS({ id, modelos, ehAdmin, onFechar, onEditar, onMudou }) {
             </tbody>
           </table>
         </div>
-      ) : <div style={E.card}><p style={{ color: '#777', margin: 0, fontSize: 12 }}>Esta OS não tem checklist.</p></div>}
+      ) : <div style={E.card}><p style={{ color: 'var(--texto-3)', margin: 0, fontSize: 12 }}>Esta OS não tem checklist.</p></div>}
 
       {os.observacao_final && (
         <div style={E.card}>
@@ -408,14 +408,14 @@ function VerOS({ id, modelos, ehAdmin, onFechar, onEditar, onMudou }) {
 
       <div style={E.card}>
         <div style={{ ...E.rotulo, display: 'flex', alignItems: 'center', gap: 6 }}><Camera size={12} /> Fotos ({os.fotos.length})</div>
-        {os.fotos.length === 0 ? <p style={{ color: '#666', fontSize: 12, margin: 0 }}>Nenhuma foto enviada ainda.</p> : (
+        {os.fotos.length === 0 ? <p style={{ color: 'var(--texto-3)', fontSize: 12, margin: 0 }}>Nenhuma foto enviada ainda.</p> : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12 }}>
             {os.fotos.map((f, idx) => (
               <div key={f.uuid} style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: 8, padding: 6 }}>
                 <FotoCampo foto={{ ...f, n: idx + 1 }} tamanho="100%" />
-                <div style={{ color: '#ccc', fontSize: 11, fontWeight: 700, marginTop: 5 }}>Foto {idx + 1}{f.item_id ? ` · item ${f.item_id}` : ''}</div>
-                {f.legenda && <div style={{ color: '#999', fontSize: 11 }}>{f.legenda}</div>}
-                <div style={{ color: '#666', fontSize: 10 }}>{dataHora(f.tirada_em)}{f.lat != null ? ` · ${coord(f)}` : ''}</div>
+                <div style={{ color: '#ccc', fontSize: 12, fontWeight: 700, marginTop: 5 }}>Foto {idx + 1}{f.item_id ? ` · item ${f.item_id}` : ''}</div>
+                {f.legenda && <div style={{ color: 'var(--texto-2)', fontSize: 12 }}>{f.legenda}</div>}
+                <div style={{ color: 'var(--texto-3)', fontSize: 11.5 }}>{dataHora(f.tirada_em)}{f.lat != null ? ` · ${coord(f)}` : ''}</div>
               </div>
             ))}
           </div>
@@ -429,16 +429,16 @@ function VerOS({ id, modelos, ehAdmin, onFechar, onEditar, onMudou }) {
             <ImagemCampo url={os.assinatura.url} alt={`Assinatura de ${os.assinatura.nome}`}
               style={{ background: '#fff', borderRadius: 6, maxWidth: 360, maxHeight: 140, display: 'block', padding: 4 }} />
             <div style={{ color: '#ddd', fontSize: 12, fontWeight: 700, marginTop: 6 }}>{os.assinatura.nome}{os.assinatura.documento ? ` — ${os.assinatura.documento}` : ''}</div>
-            <div style={{ color: '#666', fontSize: 10 }}>assinada no aparelho em {dataHora(os.assinatura.assinada_em)}</div>
+            <div style={{ color: 'var(--texto-3)', fontSize: 11.5 }}>assinada no aparelho em {dataHora(os.assinatura.assinada_em)}</div>
           </div>
-        ) : <p style={{ color: '#666', fontSize: 12, margin: 0 }}>Ainda sem assinatura.</p>}
+        ) : <p style={{ color: 'var(--texto-3)', fontSize: 12, margin: 0 }}>Ainda sem assinatura.</p>}
       </div>
 
       {(os.historico || []).length > 0 && (
         <div style={E.card}>
           <div style={{ ...E.rotulo, display: 'flex', alignItems: 'center', gap: 6 }}><History size={12} /> Histórico de respostas substituídas ({os.historico.length})</div>
-          <p style={{ color: '#666', fontSize: 11, margin: '0 0 8px' }}>Quando dois aparelhos (ou duas visitas) respondem o mesmo item, vale a resposta mais recente; a outra fica guardada aqui.</p>
-          <ul style={{ margin: 0, paddingLeft: 18, color: '#aaa', fontSize: 11, lineHeight: 1.7 }}>
+          <p style={{ color: 'var(--texto-3)', fontSize: 12, margin: '0 0 8px' }}>Quando dois aparelhos (ou duas visitas) respondem o mesmo item, vale a resposta mais recente; a outra fica guardada aqui.</p>
+          <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--texto-2)', fontSize: 12, lineHeight: 1.7 }}>
             {[...os.historico].reverse().map((h, i) => <li key={i}>{descreverHistorico(h)}</li>)}
           </ul>
         </div>
@@ -463,7 +463,7 @@ function Info({ rotulo, valor, nota }) {
     <div>
       <div style={E.rotulo}>{rotulo}</div>
       <div style={{ color: '#ddd', fontSize: 12, fontWeight: 700 }}>{valor}</div>
-      {nota && <div style={{ color: '#666', fontSize: 10 }}>{nota}</div>}
+      {nota && <div style={{ color: 'var(--texto-3)', fontSize: 11.5 }}>{nota}</div>}
     </div>
   );
 }
@@ -471,7 +471,7 @@ function Info({ rotulo, valor, nota }) {
 function Numero({ rotulo, valor, cor }) {
   return (
     <div style={{ ...E.card, marginBottom: 0, padding: 12 }}>
-      <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 4 }}>{rotulo}</div>
+      <div style={{ fontSize: 11.5, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 4 }}>{rotulo}</div>
       <div style={{ fontSize: 18, fontWeight: 700, color: cor }}>{valor}</div>
     </div>
   );
@@ -490,7 +490,7 @@ function ImagemCampo({ url, alt, style, onClick }) {
     }).catch(() => vivo && setFalhou(true));
     return () => { vivo = false; if (local) window.URL.revokeObjectURL(local); };
   }, [url]);
-  if (falhou) return <div style={{ ...style, color: '#777', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#151515' }}>sem imagem</div>;
+  if (falhou) return <div style={{ ...style, color: 'var(--texto-3)', fontSize: 11.5, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#151515' }}>sem imagem</div>;
   if (!src) return <div style={{ ...style, background: '#151515' }} />;
   return <img src={src} alt={alt} style={style} onClick={onClick ? () => onClick(src) : undefined} />;
 }

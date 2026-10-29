@@ -36,17 +36,20 @@ export default function Login() {
   }
 
   return (
+    // Revisão visual de 29/10/2026: brilho dourado discreto atrás do cartão,
+    // marca em vetor e textos legíveis (o subtítulo era #555 em 12 px).
     <div style={{
-      minHeight: '100vh', background: '#0a0a0a',
-      display: 'flex', alignItems: 'center', justifyContent: 'center'
+      minHeight: '100vh', background: 'radial-gradient(ellipse at 50% 30%, #1d1708 0%, var(--fundo) 60%)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 0'
     }}>
       <div style={{
-        background: '#131313', border: '1px solid #1e1e1e',
-        borderRadius: 12, padding: '40px 36px', width: 'calc(100% - 32px)', maxWidth: 420,
-        boxShadow: '0 20px 60px #000000aa'
+        background: 'var(--superficie)', border: '1px solid var(--borda)',
+        borderRadius: 16, padding: '40px 36px 34px', width: 'calc(100% - 32px)', maxWidth: 410,
+        boxShadow: '0 24px 70px rgba(0,0,0,.65)'
       }}>
         {/* Logo / Cabeçalho */}
-        <div style={{ textAlign: 'center', marginBottom: 28 }}>
+        <div style={{ textAlign: 'center', marginBottom: 30 }}>
+          {/* A logo oficial fica como está (pedido do usuário em 29/10/2026) */}
           <div style={{
             width: 160, height: 160, margin: '0 auto 18px',
             display: 'flex', alignItems: 'center', justifyContent: 'center'
@@ -54,13 +57,17 @@ export default function Login() {
             <img src="/logo.png" alt="H&M" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
           </div>
           <h1 style={{
-            fontFamily: "'Playfair Display', Georgia, serif",
-            color: '#c9a227', fontSize: 20, fontWeight: 700, marginBottom: 6,
+            fontFamily: 'var(--fonte-marca)', color: 'var(--ouro)', fontSize: 20, fontWeight: 700, marginBottom: 6,
             letterSpacing: '.4px', textTransform: 'uppercase', lineHeight: 1.25
           }}>
             H&amp;M Engenharia e Tecnologia LTDA
           </h1>
-          <p style={{ color: '#555', fontSize: 12 }}>Sistema de Orçamentos</p>
+          <p style={{
+            display: 'inline-block', marginTop: 10, padding: '4px 12px', borderRadius: 20,
+            background: 'var(--ouro-fundo)', color: 'var(--ouro-claro)', fontSize: 12, fontWeight: 500
+          }}>
+            Sistema de Orçamentos
+          </p>
         </div>
 
         <form onSubmit={handleSubmit}>
@@ -75,7 +82,7 @@ export default function Login() {
           )}
 
           <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 11, color: '#666', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+            <label style={{ display: 'block', fontSize: 12, color: 'var(--texto-3)', marginBottom: 6, fontWeight: 500 }}>
               E-mail
             </label>
             <input
@@ -85,8 +92,8 @@ export default function Login() {
               onChange={e => { setEmail(e.target.value); setErro(''); }}
               placeholder="seu@email.com"
               style={{
-                width: '100%', padding: '10px 12px', background: '#0b0b0b',
-                border: '1px solid #2a2a2a', borderRadius: 6, color: '#e8e0cc',
+                width: '100%', padding: '10px 12px', background: '#0e0e10',
+                border: '1px solid var(--borda)', borderRadius: 8, color: '#e8e0cc',
                 // 16 px: abaixo disso o iPhone dá zoom ao tocar no campo
                 fontSize: 16, outline: 'none', boxSizing: 'border-box'
               }}
@@ -94,7 +101,7 @@ export default function Login() {
           </div>
 
           <div style={{ marginBottom: 24 }}>
-            <label style={{ display: 'block', fontSize: 11, color: '#666', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+            <label style={{ display: 'block', fontSize: 12, color: 'var(--texto-3)', marginBottom: 6, fontWeight: 500 }}>
               Senha
             </label>
             <input
@@ -104,8 +111,8 @@ export default function Login() {
               onChange={e => { setSenha(e.target.value); setErro(''); }}
               placeholder="••••••••"
               style={{
-                width: '100%', padding: '10px 12px', background: '#0b0b0b',
-                border: '1px solid #2a2a2a', borderRadius: 6, color: '#e8e0cc',
+                width: '100%', padding: '10px 12px', background: '#0e0e10',
+                border: '1px solid var(--borda)', borderRadius: 8, color: '#e8e0cc',
                 // 16 px: abaixo disso o iPhone dá zoom ao tocar no campo
                 fontSize: 16, outline: 'none', boxSizing: 'border-box'
               }}
@@ -116,8 +123,8 @@ export default function Login() {
             type="submit"
             disabled={carregando}
             style={{
-              width: '100%', padding: '11px', background: carregando ? '#7a6010' : '#c9a227',
-              border: 'none', borderRadius: 6, color: '#000',
+              width: '100%', padding: '12px', background: carregando ? 'var(--ouro-escuro)' : 'var(--ouro)',
+              border: 'none', borderRadius: 8, color: '#111',
               fontWeight: 700, fontSize: 13, cursor: carregando ? 'not-allowed' : 'pointer'
             }}
           >

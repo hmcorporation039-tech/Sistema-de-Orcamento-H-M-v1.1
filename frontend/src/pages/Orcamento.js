@@ -1040,7 +1040,7 @@ export default function Orcamento() {
   }
 
   if (carregandoEdicao) {
-    return <p style={{ color: '#666', textAlign: 'center', padding: 40 }}>Carregando proposta...</p>;
+    return <p style={{ color: 'var(--texto-3)', textAlign: 'center', padding: 40 }}>Carregando proposta...</p>;
   }
 
   return (
@@ -1050,13 +1050,13 @@ export default function Orcamento() {
           {editandoId ? `${somenteLeitura ? 'Proposta' : 'Editando Proposta'} ${numeroEditando}` : 'Novo Orçamento'}
           {editandoId && criadaPeloAssistente && (
             <span title="Rascunho montado pelo assistente virtual — revise antes de enviar ao cliente"
-              style={{ marginLeft: 10, fontSize: 10, fontWeight: 700, color: '#c9a227', border: '1px solid #4a3d10', background: '#17140a', borderRadius: 10, padding: '2px 8px', verticalAlign: 'middle' }}>
+              style={{ marginLeft: 10, fontSize: 11.5, fontWeight: 700, color: '#c9a227', border: '1px solid #4a3d10', background: '#17140a', borderRadius: 10, padding: '2px 8px', verticalAlign: 'middle' }}>
               criada pelo assistente
             </span>
           )}
         </h2>
         {!editandoId && proximoNumero != null && (
-          <span style={{ fontSize: 12, color: '#666' }}>
+          <span style={{ fontSize: 12, color: 'var(--texto-3)' }}>
             Próxima proposta: <b style={{ color: '#c9a227' }}>P{String(proximoNumero).padStart(3, '0')}</b>
           </span>
         )}
@@ -1082,7 +1082,7 @@ export default function Orcamento() {
         <div data-testid="faixa-somente-leitura" style={{ ...card, padding: '12px 16px', borderColor: '#2f4f6f', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 260, fontSize: 12.5, color: '#ddd', lineHeight: 1.5 }}>
             <b style={{ color: '#8ab4f8' }}>Somente leitura</b> — {somenteLeitura.mensagem}
-            <span style={{ color: '#888' }}>{sujo ? ' As alterações feitas aqui continuam na tela: salve-as numa cópia sua.' : ' Para trabalhar nela, faça uma cópia sua.'}</span>
+            <span style={{ color: 'var(--texto-3)' }}>{sujo ? ' As alterações feitas aqui continuam na tela: salve-as numa cópia sua.' : ' Para trabalhar nela, faça uma cópia sua.'}</span>
           </div>
           <button type="button" onClick={salvarComoCopia} disabled={salvando} style={{ ...btnPrimario, padding: '8px 14px' }}>
             {salvando ? 'Salvando…' : sujo ? 'Salvar como cópia minha' : 'Duplicar para mim'}
@@ -1094,7 +1094,7 @@ export default function Orcamento() {
         <div data-testid="aviso-conflito" style={{ ...card, padding: '12px 16px', borderColor: '#6a2a2a', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 260, fontSize: 12.5, color: '#ddd', lineHeight: 1.5 }}>
             <b style={{ color: '#e08080' }}>Não foi salvo:</b> {conflito.mensagem}
-            <span style={{ color: '#888' }}> Nada foi sobrescrito. As suas alterações continuam na tela (e no rascunho deste navegador).</span>
+            <span style={{ color: 'var(--texto-3)' }}> Nada foi sobrescrito. As suas alterações continuam na tela (e no rascunho deste navegador).</span>
           </div>
           <button type="button" onClick={recarregarDoServidor} disabled={salvando} style={btnSecundario}
             title="Descarta as alterações desta tela e abre a versão que está gravada agora">Recarregar do servidor</button>
@@ -1108,12 +1108,12 @@ export default function Orcamento() {
       {origem && (
         <div style={{ ...card, padding: '12px 16px', borderColor: '#3a3216' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 260, fontSize: 12, color: '#bbb', lineHeight: 1.5 }}>
+            <div style={{ flex: 1, minWidth: 260, fontSize: 12, color: 'var(--texto-2)', lineHeight: 1.5 }}>
               Rascunho gerado a partir {origem.tipo === 'analise'
                 ? <>da <b style={{ color: '#c9a227' }}>Análise de Projeto #{origem.id}</b></>
                 : <>do <b style={{ color: '#c9a227' }}>{nomeDoRegistro(origem)} #{origem.id}</b>{origem.rotulo ? ` (${origem.rotulo})` : ''}</>}
               {origem.titulo ? ` — ${origem.titulo}` : ''}.{' '}
-              <span style={{ color: '#777' }}>
+              <span style={{ color: 'var(--texto-3)' }}>
                 {origem.existe === false
                   ? (origem.tipo === 'analise' ? 'A análise foi excluída.' : `O ${nomeDoRegistro(origem)} foi excluído.`)
                   : origem.vinculada === false
@@ -1128,14 +1128,14 @@ export default function Orcamento() {
             )}
           </div>
           {origem.faltando?.length > 0 && (
-            <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #222', fontSize: 12, color: '#999' }}>
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #222', fontSize: 12, color: 'var(--texto-2)' }}>
               <div style={{ marginBottom: 6 }}>
                 {origem.faltando.length} item(ns) da análise ficaram fora do rascunho por estarem com <b>quantidade 0</b> (modelo ainda não conferido na planta). Inclua os que fizerem parte e informe a quantidade:
               </div>
               {origem.faltando.map((x, i) => (
                 <div key={`${x.tipo}_${i}_${x.descricao}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}>
-                  <span style={{ flex: 1, color: '#bbb' }}>{x.descricao} <span style={{ color: '#666' }}>({x.tipo === 'servico' ? 'serviço' : 'material'}{x.subgrupo ? ` — ${x.subgrupo}` : ''})</span></span>
-                  <button type="button" onClick={() => incluirFaltante(x)} style={{ ...btnSecundario, padding: '3px 10px', fontSize: 11 }}>
+                  <span style={{ flex: 1, color: 'var(--texto-2)' }}>{x.descricao} <span style={{ color: 'var(--texto-3)' }}>({x.tipo === 'servico' ? 'serviço' : 'material'}{x.subgrupo ? ` — ${x.subgrupo}` : ''})</span></span>
+                  <button type="button" onClick={() => incluirFaltante(x)} style={{ ...btnSecundario, padding: '3px 10px', fontSize: 12 }}>
                     <Plus size={11} style={{ marginRight: 3 }} /> Incluir
                   </button>
                 </div>
@@ -1152,7 +1152,7 @@ export default function Orcamento() {
         return (
           <div style={{ ...card, padding: '10px 16px', borderColor: '#4a3a12', fontSize: 12, color: '#c9a227' }}>
             {[aCotar && `${aCotar} item(ns) "a cotar"`, semPreco && `${semPreco} item(ns) sem preço (R$ 0,00)`].filter(Boolean).join(' · ')}
-            <span style={{ color: '#777' }}> — revise antes de enviar ao cliente: use "Pesquisar mercado", as referências ("usar") ou o catálogo em cada linha.</span>
+            <span style={{ color: 'var(--texto-3)' }}> — revise antes de enviar ao cliente: use "Pesquisar mercado", as referências ("usar") ou o catálogo em cada linha.</span>
           </div>
         );
       })()}
@@ -1164,7 +1164,7 @@ export default function Orcamento() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <span style={{ flex: 1, minWidth: 260 }}>
                 Cliente órgão público{segmentoObra === 'publico' && segmento !== 'publico' ? ' (pela obra)' : ''}: a proposta não tem a <b>composição do BDI</b>
-                <span style={{ color: '#777' }}> (memória do cálculo pela fórmula do TCU, Acórdão 2.622/2013), que costuma ser exigida pelo órgão.</span>
+                <span style={{ color: 'var(--texto-3)' }}> (memória do cálculo pela fórmula do TCU, Acórdão 2.622/2013), que costuma ser exigida pelo órgão.</span>
               </span>
               <button type="button" onClick={() => setCalculadoraBdiAberta(true)} style={{ ...btnSecundario, borderStyle: 'solid', borderColor: '#5a4a12', color: '#c9a227' }}>
                 <Calculator size={13} style={{ marginRight: 4 }} /> Calcular BDI (TCU)
@@ -1276,18 +1276,18 @@ export default function Orcamento() {
                 onBlur={e => e.target.style.border = '1px solid transparent'}
               />
               {maoDeObra && (
-                <span style={{ fontSize: 11, color: '#6f7f8f' }} title={'Define qual referência de mercado a lista de serviços sugere (cadastro do cliente: tipo "Órgão Público" → oficial)'}>
+                <span style={{ fontSize: 12, color: '#6f7f8f' }} title={'Define qual referência de mercado a lista de serviços sugere (cadastro do cliente: tipo "Órgão Público" → oficial)'}>
                   Preços sugeridos: cliente {segmento === 'publico' ? 'órgão público (referência oficial)' : 'particular'}
                 </span>
               )}
-              <span style={{ fontSize: 12, color: '#666' }}>Subtotal: <b style={{ color: '#c9a227' }}>{formatarMoeda(subtotalSecao(sec.id))}</b></span>
+              <span style={{ fontSize: 12, color: 'var(--texto-3)' }}>Subtotal: <b style={{ color: '#c9a227' }}>{formatarMoeda(subtotalSecao(sec.id))}</b></span>
               <button onClick={() => removerSecao(sec.id)} style={{ ...btnIcone, color: '#b04040' }} title="Remover seção">
                 <Trash2 size={13} />
               </button>
             </div>
 
             {itens.filter(it => it.sid === sec.id).length > 0 && (
-              <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, marginBottom: 6, fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, marginBottom: 6, fontSize: 11.5, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px' }}>
                 <span>{maoDeObra ? 'Subgrupo' : 'Categoria'}</span>
                 <span>{maoDeObra ? 'Serviço' : 'Catálogo'}</span>
                 <span>Descrição</span>
@@ -1299,14 +1299,14 @@ export default function Orcamento() {
             {itensAgrupados(sec.id).map(linha => {
               if (linha.tipo === 'cabecalho') {
                 return (
-                  <div key={linha.key} style={{ fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '.5px', borderTop: '1px solid #222', paddingTop: 8, marginTop: 4, marginBottom: 6 }}>
+                  <div key={linha.key} style={{ fontSize: 12, fontWeight: 700, color: 'var(--texto-2)', textTransform: 'uppercase', letterSpacing: '.5px', borderTop: '1px solid #222', paddingTop: 8, marginTop: 4, marginBottom: 6 }}>
                     {linha.nome}
                   </div>
                 );
               }
               if (linha.tipo === 'subtotal') {
                 return (
-                  <div key={linha.key} style={{ textAlign: 'right', fontSize: 11, color: '#777', paddingRight: 4, marginBottom: 10 }}>
+                  <div key={linha.key} style={{ textAlign: 'right', fontSize: 12, color: 'var(--texto-3)', paddingRight: 4, marginBottom: 10 }}>
                     Subtotal {linha.nome}: <b style={{ color: '#c9a227' }}>{formatarMoeda(linha.soma)}</b>
                   </div>
                 );
@@ -1457,24 +1457,24 @@ export default function Orcamento() {
             <div>
               <label style={rotulo}>Imp. Vendas (%)</label>
               <input type="number" step="0.1" min="0" value={form.imposto_venda} onChange={e => setForm({ ...form, imposto_venda: e.target.value })} style={{ width: 80 }} />
-              <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>{formatarMoeda(valorImpostoVenda)}</div>
+              <div style={{ fontSize: 12, color: 'var(--texto-3)', marginTop: 4 }}>{formatarMoeda(valorImpostoVenda)}</div>
             </div>
             <div>
               <label style={rotulo}>Imp. Serviços (%)</label>
               <input type="number" step="0.1" min="0" value={form.imposto_servico} onChange={e => setForm({ ...form, imposto_servico: e.target.value })} style={{ width: 80 }} />
-              <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>{formatarMoeda(valorImpostoServico)}</div>
+              <div style={{ fontSize: 12, color: 'var(--texto-3)', marginTop: 4 }}>{formatarMoeda(valorImpostoServico)}</div>
             </div>
             <div>
               <label style={rotulo}>{temBdiMateriais(form.bdi_materiais) ? 'BDI mão de obra (%)' : 'BDI (%)'}</label>
               <div style={{ display: 'flex', gap: 4 }}>
                 <input type="number" step="0.01" min="0" value={form.bdi} onChange={e => setForm({ ...form, bdi: e.target.value })} style={{ width: 80 }} />
                 <button type="button" onClick={() => setCalculadoraBdiAberta(true)}
-                  style={{ ...btnSecundario, padding: '4px 8px', fontSize: 11, ...(ehPublico && !memoriaBdi ? { borderStyle: 'solid', borderColor: '#c9a227', color: '#c9a227' } : {}) }}
+                  style={{ ...btnSecundario, padding: '4px 8px', fontSize: 12, ...(ehPublico && !memoriaBdi ? { borderStyle: 'solid', borderColor: '#c9a227', color: '#c9a227' } : {}) }}
                   title="Calcular o BDI pela fórmula do TCU (Acórdão 2.622/2013) — tipo de obra, regime, parcelas e faixas de referência">
                   <Calculator size={12} style={{ marginRight: 3 }} /> TCU
                 </button>
               </div>
-              <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
+              <div style={{ fontSize: 12, color: 'var(--texto-3)', marginTop: 4 }}>
                 {formatarMoeda(temBdiMateriais(form.bdi_materiais) ? valorBdiMaoObra : valorBdi)}
                 {memoriaBdi && (
                   <span title={`Composição pelo TCU guardada na proposta (${memoriaBdi.regime === 'desonerado' ? 'desonerado' : 'não desonerado'})`} style={{ color: '#8a7333' }}>
@@ -1487,7 +1487,7 @@ export default function Orcamento() {
               <div>
                 <label style={rotulo} title="BDI diferenciado (reduzido) para o fornecimento de materiais — Acórdão 2.622/2013-TCU. Vazio = o mesmo BDI para tudo.">BDI materiais (%)</label>
                 <input type="number" step="0.01" min="0" value={form.bdi_materiais} onChange={e => setForm({ ...form, bdi_materiais: e.target.value })} style={{ width: 80 }} />
-                <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>{formatarMoeda(valorBdiMateriais)}</div>
+                <div style={{ fontSize: 12, color: 'var(--texto-3)', marginTop: 4 }}>{formatarMoeda(valorBdiMateriais)}</div>
               </div>
             )}
             <div>
@@ -1497,7 +1497,7 @@ export default function Orcamento() {
                 <button
                   type="button"
                   onClick={() => { aplicarAjustePercentual('materiais', ajusteMateriaisInput); setAjusteMateriaisInput(''); }}
-                  style={{ ...btnSecundario, padding: '4px 8px', fontSize: 11 }}
+                  style={{ ...btnSecundario, padding: '4px 8px', fontSize: 12 }}
                 >
                   Aplicar
                 </button>
@@ -1513,7 +1513,7 @@ export default function Orcamento() {
                 <button
                   type="button"
                   onClick={() => { aplicarAjustePercentual('maoDeObra', ajusteMaoDeObraInput); setAjusteMaoDeObraInput(''); }}
-                  style={{ ...btnSecundario, padding: '4px 8px', fontSize: 11 }}
+                  style={{ ...btnSecundario, padding: '4px 8px', fontSize: 12 }}
                 >
                   Aplicar
                 </button>
@@ -1529,7 +1529,7 @@ export default function Orcamento() {
           </fieldset>
           {somenteLeitura ? (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-              <span style={{ fontSize: 11, color: '#8ab4f8', marginRight: 4, whiteSpace: 'nowrap' }}>Somente leitura</span>
+              <span style={{ fontSize: 12, color: '#8ab4f8', marginRight: 4, whiteSpace: 'nowrap' }}>Somente leitura</span>
               {idAtual && !sujo && (<>
                 <button onClick={baixarPdf} disabled={gerandoPdf} style={btnSecundario}>
                   <FileDown size={13} style={{ marginRight: 4 }} /> {gerandoPdf ? 'Gerando...' : 'Baixar PDF'}
@@ -1544,7 +1544,7 @@ export default function Orcamento() {
             </div>
           ) : propostaSalva ? (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-              <span style={{ fontSize: 11, color: alteracoesPendentes ? '#c9a227' : '#3fb95f', marginRight: 4, whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: 12, color: alteracoesPendentes ? '#c9a227' : '#3fb95f', marginRight: 4, whiteSpace: 'nowrap' }}>
                 {alteracoesPendentes
                   ? `Proposta ${propostaSalva.numero} — alterações não salvas`
                   : `Proposta ${propostaSalva.numero} salva`}
@@ -1559,7 +1559,7 @@ export default function Orcamento() {
                 <FileDown size={13} style={{ marginRight: 4 }} /> {gerandoPdf ? 'Gerando...' : 'Baixar PDF'}
               </button>
               {/* anexos opcionais do PDF (Fase 3F) */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 10.5, color: '#888' }} title="Anexos no fim do PDF da proposta">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 10.5, color: 'var(--texto-3)' }} title="Anexos no fim do PDF da proposta">
                 <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                   <input type="checkbox" checked={anexosPdf.curva_abc} onChange={e => setAnexosPdf(a => ({ ...a, curva_abc: e.target.checked }))} style={{ width: 'auto' }} />
                   anexo curva ABC
@@ -1659,9 +1659,9 @@ const fieldsetLimpo = { border: 0, padding: 0, margin: 0, minWidth: 0 };
 const btnUsar = { background: 'none', border: 'none', color: '#c9a227', textDecoration: 'underline', cursor: 'pointer', fontSize: 10.5, padding: 0 };
 const btnPesquisar = {
   display: 'inline-flex', alignItems: 'center', padding: '2px 7px', background: 'transparent', border: '1px dashed #333',
-  borderRadius: 5, color: '#999', fontWeight: 700, fontSize: 10.5, cursor: 'pointer', whiteSpace: 'nowrap',
+  borderRadius: 5, color: 'var(--texto-2)', fontWeight: 700, fontSize: 10.5, cursor: 'pointer', whiteSpace: 'nowrap',
 };
-const etiqueta = { fontSize: 10, border: '1px solid', borderRadius: 4, padding: '0 5px', textTransform: 'uppercase', letterSpacing: '.4px' };
+const etiqueta = { fontSize: 11.5, border: '1px solid', borderRadius: 4, padding: '0 5px', textTransform: 'uppercase', letterSpacing: '.4px' };
 
 // Estilos do kit de tela (components/ui/estilos.js), com o que esta tela tem
 // de diferente por cima — o visual ficou como era.
@@ -1671,8 +1671,8 @@ const btnPrimario = { ...estilos.btnPrimario, display: 'flex' };
 
 const btnSecundario = {
   display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent',
-  border: '1px dashed #333', borderRadius: 6, color: '#999', fontWeight: 700,
-  fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap'
+  border: '1px dashed #333', borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700,
+  fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
 };
 
 const btnIcone = { ...estilos.btnIcone, display: 'flex' };

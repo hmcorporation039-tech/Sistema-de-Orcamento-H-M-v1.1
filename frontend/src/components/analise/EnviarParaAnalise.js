@@ -88,17 +88,17 @@ export default function EnviarParaAnalise({ obraFixa = null, obraInicial = null,
                 <input type="radio" name="finalidade" value={f.valor} checked={marcada} onChange={() => setFinalidade(f.valor)} style={{ width: 'auto', marginTop: 3 }} />
                 <span>
                   <b style={{ fontSize: 13, color: marcada ? corFinalidade(f.valor) : '#ccc' }}>{f.rotulo}</b>
-                  <span style={{ display: 'block', fontSize: 12, color: '#888', lineHeight: 1.5, marginTop: 2 }}>{f.descricao}</span>
+                  <span style={{ display: 'block', fontSize: 12, color: 'var(--texto-3)', lineHeight: 1.5, marginTop: 2 }}>{f.descricao}</span>
                 </span>
               </label>
             );
           })}
         </div>
-        <p style={{ fontSize: 11, color: '#666', margin: '6px 0 0' }}>Análise de projeto não gera laudo nem escolhe disciplina por conta própria. Laudo é pedido quando necessário, em Laudos.</p>
+        <p style={{ fontSize: 12, color: 'var(--texto-3)', margin: '6px 0 0' }}>Análise de projeto não gera laudo nem escolhe disciplina por conta própria. Laudo é pedido quando necessário, em Laudos.</p>
       </Passo>
 
       <Passo n={2} titulo="Arquivos do projeto">
-        <p style={{ fontSize: 12, color: '#888', margin: '0 0 10px', lineHeight: 1.6 }}>
+        <p style={{ fontSize: 12, color: 'var(--texto-3)', margin: '0 0 10px', lineHeight: 1.6 }}>
           PDF, DWG ou DXF — vários arquivos, uma <b>pasta inteira</b> (com subpastas) ou um <b>ZIP</b> do jeito que o cliente/arquiteto mandou.
           {obraId ? <> Se os arquivos já estão salvos na <b>pasta da obra</b> no servidor, use o último botão.</> : null}
         </p>
@@ -111,7 +111,7 @@ export default function EnviarParaAnalise({ obraFixa = null, obraInicial = null,
             </button>
           )}
         </div>
-        {pacote?.pasta && <p style={{ fontSize: 11, color: '#666', margin: '8px 0 0' }}>Pasta lida: <code>{pacote.pasta}</code></p>}
+        {pacote?.pasta && <p style={{ fontSize: 12, color: 'var(--texto-3)', margin: '8px 0 0' }}>Pasta lida: <code>{pacote.pasta}</code></p>}
       </Passo>
 
       {pacote && (
@@ -144,7 +144,7 @@ function Passo({ n, titulo, children, ultimo = false }) {
     <div style={{ display: 'flex', gap: 12, marginBottom: ultimo ? 0 : 18 }}>
       <div style={{ flex: 'none', width: 24, height: 24, borderRadius: '50%', background: '#2c2715', border: '1px solid #5a4a12', color: '#e2c35a', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{n}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12, color: '#bbb', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', margin: '3px 0 8px' }}>{titulo}</div>
+        <div style={{ fontSize: 12, color: 'var(--texto-2)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', margin: '3px 0 8px' }}>{titulo}</div>
         {children}
       </div>
     </div>

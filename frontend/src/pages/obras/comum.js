@@ -24,7 +24,7 @@ export const BASE_ORCADO = {
 
 export function Etiqueta({ info, children }) {
   return (
-    <span style={{ padding: '3px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
+    <span style={{ padding: '3px 9px', borderRadius: 20, fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap',
       background: info?.bg || '#151515', color: info?.cor || '#999', border: `1px solid ${info?.borda || '#2a2a2a'}` }}>
       {children}
     </span>

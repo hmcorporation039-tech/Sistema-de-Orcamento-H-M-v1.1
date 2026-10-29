@@ -76,10 +76,10 @@ export function AvisoNovidades({ clienteId = null, obraId = null, onAnalisar = n
             return (
               <label key={i.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 12, color: '#ccc', cursor: 'pointer', borderTop: '1px solid #221f12' }}>
                 <input type="checkbox" checked={marcados.includes(i.id)} onChange={() => alternar(i.id)} style={{ width: 'auto', flex: 'none', margin: 0 }} />
-                <span style={{ fontSize: 10, fontWeight: 700, color: s.cor, background: s.fundo, borderRadius: 4, padding: '1px 6px', minWidth: 58, textAlign: 'center' }}>{s.rotulo}</span>
-                <span style={{ flex: 1, minWidth: 0, wordBreak: 'break-word' }}>{i.nome}<span style={{ color: '#666' }}> — {i.caminho.split('/').slice(1, -1).join(' › ') || 'pasta do cliente'}</span></span>
-                {i.obra_codigo && !obraId && <span style={{ color: '#888' }}>{i.obra_codigo}</span>}
-                <span style={{ color: '#666', whiteSpace: 'nowrap' }}>{quando(i.detectado_em)}</span>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: s.cor, background: s.fundo, borderRadius: 4, padding: '1px 6px', minWidth: 58, textAlign: 'center' }}>{s.rotulo}</span>
+                <span style={{ flex: 1, minWidth: 0, wordBreak: 'break-word' }}>{i.nome}<span style={{ color: 'var(--texto-3)' }}> — {i.caminho.split('/').slice(1, -1).join(' › ') || 'pasta do cliente'}</span></span>
+                {i.obra_codigo && !obraId && <span style={{ color: 'var(--texto-3)' }}>{i.obra_codigo}</span>}
+                <span style={{ color: 'var(--texto-3)', whiteSpace: 'nowrap' }}>{quando(i.detectado_em)}</span>
               </label>
             );
           })}
@@ -122,25 +122,25 @@ export function IndicadorNovidades() {
     <div ref={caixa} style={{ position: 'relative' }}>
       <button type="button" onClick={() => setAberto(a => !a)} data-testid="indicador-novidades"
         title={resumo.disponivel ? 'Arquivos novos ou alterados nas pastas dos clientes' : 'Servidor das pastas dos clientes fora do ar'}
-        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'transparent',
+        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'transparent',
           border: `1px solid ${resumo.disponivel ? '#5a4a12' : '#5a2a2a'}`, color: resumo.disponivel ? '#e2c35a' : '#e05555' }}>
         {resumo.disponivel ? <Bell size={13} /> : <WifiOff size={13} />} {resumo.total || ''}
       </button>
       {aberto && (
         <div style={{ position: 'absolute', right: 0, top: 34, width: 360, maxHeight: 380, overflowY: 'auto', background: '#151515', border: '1px solid #2a2a2a', borderRadius: 8, padding: 10, zIndex: 50, boxShadow: '0 8px 24px rgba(0,0,0,.5)' }}>
-          <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>Novidades nas pastas dos clientes</div>
+          <div style={{ fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>Novidades nas pastas dos clientes</div>
           {!resumo.disponivel && <div style={{ color: '#e05555', fontSize: 12, marginBottom: 6 }}>O servidor das pastas está fora do ar: o sistema guarda os arquivos aqui e envia quando ele voltar.</div>}
           {Object.values(grupos).map(g => (
             <Link key={`${g.obra_id}-${g.cliente_id}`} to={g.obra_id ? `/obras/${g.obra_id}?secao=arquivos` : `/cadastros?aba=clientes&pasta=${g.cliente_id || ''}`} onClick={() => setAberto(false)}
               style={{ display: 'block', padding: '7px 8px', borderRadius: 6, color: '#ddd', textDecoration: 'none', fontSize: 12, borderTop: '1px solid #1f1f1f' }}>
-              <b style={{ color: '#e2c35a' }}>{g.total}</b> · {g.cliente_nome || 'Sem cliente'}{g.obra_codigo ? <span style={{ color: '#888' }}> — {g.obra_codigo} {g.obra_nome}</span> : null}
+              <b style={{ color: '#e2c35a' }}>{g.total}</b> · {g.cliente_nome || 'Sem cliente'}{g.obra_codigo ? <span style={{ color: 'var(--texto-3)' }}> — {g.obra_codigo} {g.obra_nome}</span> : null}
             </Link>
           ))}
-          {!itens.length && resumo.disponivel && <div style={{ color: '#777', fontSize: 12 }}>Nada pendente.</div>}
+          {!itens.length && resumo.disponivel && <div style={{ color: 'var(--texto-3)', fontSize: 12 }}>Nada pendente.</div>}
         </div>
       )}
     </div>
   );
 }
 
-const btn = { display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', background: 'transparent', border: '1px solid #333', borderRadius: 6, color: '#bbb', fontWeight: 700, fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap' };
+const btn = { display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', background: 'transparent', border: '1px solid #333', borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };

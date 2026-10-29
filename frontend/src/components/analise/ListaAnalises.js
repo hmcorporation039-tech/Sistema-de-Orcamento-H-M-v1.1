@@ -33,8 +33,8 @@ export function TabelaAnalises({ linhas, disciplinas, ativaId = null, mostrarObr
               <td style={E.td}><Link to={`/obras/analise/${a.id}`} style={E.link}>#{a.id} — {nomeDa(a)}</Link></td>
               <td style={{ ...E.td, color: corFinalidade(a.finalidade), whiteSpace: 'nowrap' }}>{rotuloFinalidade(a.finalidade)}</td>
               <td style={E.td}>{a.cliente_nome || '—'}</td>
-              {mostrarObra && <td style={E.td}>{a.obra ? <Link to={`/obras/${a.obra.id}`} style={{ color: '#bbb' }}>{a.obra.codigo ? `${a.obra.codigo} — ` : ''}{a.obra.nome}</Link> : <span style={{ color: '#666' }}>sem obra</span>}</td>}
-              <td style={{ ...E.td, fontSize: 11, color: '#999' }}>{nomesDisciplinas(a, disciplinas)}</td>
+              {mostrarObra && <td style={E.td}>{a.obra ? <Link to={`/obras/${a.obra.id}`} style={{ color: 'var(--texto-2)' }}>{a.obra.codigo ? `${a.obra.codigo} — ` : ''}{a.obra.nome}</Link> : <span style={{ color: 'var(--texto-3)' }}>sem obra</span>}</td>}
+              <td style={{ ...E.td, fontSize: 12, color: 'var(--texto-2)' }}>{nomesDisciplinas(a, disciplinas)}</td>
               <td style={E.td}>{a.proposta_id ? <Link to={`/propostas/editar/${a.proposta_id}`} style={E.link}>{a.proposta_numero || `#${a.proposta_id}`}</Link> : '—'}</td>
               <td style={{ ...E.td, whiteSpace: 'nowrap' }}>{formatarData(a.atualizado_em)}</td>
               <td style={{ ...E.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
@@ -79,7 +79,7 @@ export default function AnalisesSalvas({ disciplinas, ativaId, versao, onExcluid
     <div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
         <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
-          <Search size={13} style={{ position: 'absolute', left: 10, top: 10, color: '#666' }} />
+          <Search size={13} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--texto-3)' }} />
           <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por nome, cliente, obra ou nº da análise" style={{ paddingLeft: 30 }} data-testid="busca-analises" />
         </div>
         <Select value={filtroObra} onChange={e => setFiltroObra(e.target.value)} style={{ width: 'auto', minWidth: 170 }}>
@@ -88,7 +88,7 @@ export default function AnalisesSalvas({ disciplinas, ativaId, versao, onExcluid
         </Select>
       </div>
       {carregando && !dados.itens.length
-        ? <p style={{ fontSize: 12, color: '#666' }}>Carregando...</p>
+        ? <p style={{ fontSize: 12, color: 'var(--texto-3)' }}>Carregando...</p>
         : <TabelaAnalises linhas={dados.itens} disciplinas={disciplinas} ativaId={ativaId}
             vazio={busca || filtroObra ? 'Nenhuma análise encontrada.' : 'Nenhuma análise salva ainda.'}
             depoisDeExcluir={(a) => { setRecarga(x => x + 1); onExcluida?.(a); }} />}

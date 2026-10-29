@@ -33,7 +33,7 @@ export function ChecklistEditor({ base, lista, onChange }) {
     <div>
       {secoes.map(secao => (
         <div key={secao} style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#aaa', margin: '6px 0' }}>{secao}</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--texto-2)', margin: '6px 0' }}>{secao}</div>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <tbody>
               {(base || []).filter(b => b.secao === secao).map(b => {
@@ -86,7 +86,7 @@ export function FotosInspecao({ lista, fotos, urlsFotos, onChange, onEnviarFotos
               <div style={{ height: 150, background: '#0c0c0c', borderRadius: 5, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                 {existe && urlsFotos[idFoto]
                   ? <img src={urlsFotos[idFoto]} alt={f.descricao || f.id} style={{ maxWidth: '100%', maxHeight: '100%' }} />
-                  : <span style={{ fontSize: 11, color: '#666' }}>{f.arquivo ? 'imagem não carregada' : 'sem arquivo'}</span>}
+                  : <span style={{ fontSize: 12, color: 'var(--texto-3)' }}>{f.arquivo ? 'imagem não carregada' : 'sem arquivo'}</span>}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr', gap: 6, marginBottom: 6 }}>
                 <input style={estiloInput} value={f.id || ''} onChange={e => alterar(i, 'id', e.target.value)} />

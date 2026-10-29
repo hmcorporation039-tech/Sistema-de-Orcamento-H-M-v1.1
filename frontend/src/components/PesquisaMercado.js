@@ -21,20 +21,20 @@ export default function BlocoPesquisaMercado({ pesquisa, onUsarPreco, precoAtual
   const sugerido = Number(pesquisa.precoSugerido) || 0;
   const est = pesquisa.estatistica;
   return (
-    <div style={{ marginTop: 8, padding: 12, background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, fontSize: 12, color: '#bbb', lineHeight: 1.5 }}>
+    <div style={{ marginTop: 8, padding: 12, background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, fontSize: 12, color: 'var(--texto-2)', lineHeight: 1.5 }}>
       <div
         onClick={() => setRecolhida(r => !r)}
         title={recolhida ? 'Clique para expandir a pesquisa' : 'Clique para recolher a pesquisa'}
         style={{ display: 'flex', alignItems: 'baseline', gap: 6, cursor: 'pointer', userSelect: 'none' }}
       >
-        <span style={{ color: '#c9a227', fontSize: 11, width: 12, display: 'inline-block' }}>{recolhida ? '▸' : '▾'}</span>
+        <span style={{ color: '#c9a227', fontSize: 12, width: 12, display: 'inline-block' }}>{recolhida ? '▸' : '▾'}</span>
         <b style={{ color: '#c9a227' }}>Pesquisa de mercado ({fonteLabel} — confira antes de usar):</b>
         {pesquisa.pesquisadoEm && (
-          <span style={{ color: '#666', fontWeight: 400 }}>
+          <span style={{ color: 'var(--texto-3)', fontWeight: 400 }}>
             {' '}— {pesquisa.deCache ? 'reaproveitada do histórico, ' : pesquisa.daAnalise ? 'salva na análise, ' : ''}feita em {new Date(pesquisa.pesquisadoEm).toLocaleString('pt-BR')}
           </span>
         )}
-        <span style={{ marginLeft: 'auto', color: '#777', fontSize: 11, textDecoration: 'underline', whiteSpace: 'nowrap' }}>
+        <span style={{ marginLeft: 'auto', color: 'var(--texto-3)', fontSize: 12, textDecoration: 'underline', whiteSpace: 'nowrap' }}>
           {recolhida ? 'expandir' : 'recolher'}
         </span>
       </div>
@@ -45,7 +45,7 @@ export default function BlocoPesquisaMercado({ pesquisa, onUsarPreco, precoAtual
               Usar {formatarMoeda(sugerido)}
             </button>
           )}
-          <span style={{ color: '#777' }}>
+          <span style={{ color: 'var(--texto-3)' }}>
             {!onUsarPreco && <>média <b style={{ color: '#c9a227' }}>{formatarMoeda(sugerido)}</b> — </>}
             {est?.n || 0} oferta(s){est?.n ? ` — mín. ${formatarMoeda(est.minimo)}, máx. ${formatarMoeda(est.maximo)}` : ''}
             {precoAtual != null && Number(precoAtual) === sugerido ? ' · em uso' : ''}
@@ -62,7 +62,7 @@ export default function BlocoPesquisaMercado({ pesquisa, onUsarPreco, precoAtual
                 <td style={{ padding: '4px 6px' }}>
                   {o.link ? <a href={o.link} target="_blank" rel="noopener noreferrer" style={{ color: '#8ab4f8' }}>{o.produto || 'ver oferta'}</a> : o.produto}
                   {!o.mesmo_item && <span> (variação diferente — fora da média)</span>}
-                  {o.observacao && <div style={{ color: '#777', fontSize: 11 }}>{o.observacao}</div>}
+                  {o.observacao && <div style={{ color: 'var(--texto-3)', fontSize: 12 }}>{o.observacao}</div>}
                 </td>
               </tr>
             ))}
@@ -88,5 +88,5 @@ export function resultadoDaPesquisa(dados) {
 const btnUsarPreco = {
   display: 'flex', alignItems: 'center', padding: '4px 10px', background: 'transparent',
   border: '1px dashed #c9a227', borderRadius: 6, color: '#c9a227', fontWeight: 700,
-  fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap',
+  fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
 };

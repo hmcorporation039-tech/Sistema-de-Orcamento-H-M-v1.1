@@ -117,7 +117,7 @@ export function CartaoModelo3dAnalise({ analiseId, estiloCartao, estiloTitulo })
   return (
     <div style={estiloCartao} data-testid="cartao-modelo-3d">
       <h3 style={{ ...estiloTitulo, display: 'flex', alignItems: 'center', gap: 8 }}><Box size={16} /> Modelo 3D ilustrativo (para o cliente)</h3>
-      <p style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.6 }}>
+      <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 12, lineHeight: 1.6 }}>
         Envie a <b>arquitetura em DWG, DXF ou PDF</b> e o sistema monta o 3D dos ambientes com os pontos das disciplinas desta análise
         (os do desenho, quando o projeto veio em DWG/DXF; senão, estimados pela norma — marcados para conferir). Serve para o cliente ter uma
         ideia de como vai ficar; não substitui o projeto executivo. O PDF precisa ser o exportado do AutoCAD/Revit (não escaneado).
@@ -131,7 +131,7 @@ export function CartaoModelo3dAnalise({ analiseId, estiloCartao, estiloTitulo })
         </button>
         {arquitetura && (
           <>
-            <span style={{ fontSize: 12, color: '#777' }}>{arquitetura.nome_arquivo} — {arquitetura.resumo?.ambientes?.length || 0} ambientes lidos</span>
+            <span style={{ fontSize: 12, color: 'var(--texto-3)' }}>{arquitetura.nome_arquivo} — {arquitetura.resumo?.ambientes?.length || 0} ambientes lidos</span>
             <BotoesModelo3d origem="analise" id={analiseId} desabilitado={enviando} />
           </>
         )}
@@ -173,7 +173,7 @@ export function OpcaoModelo3dProposta({ propostaId, somenteLeitura = false }) {
         <input type="checkbox" checked={!!valor} disabled={somenteLeitura || salvando} onChange={e => alternar(e.target.checked)} />
         <Box size={14} style={{ color: '#8ab4f8' }} /> Mostrar o modelo 3D ao cliente (link de aprovação e anexo no PDF)
       </label>
-      <span style={{ fontSize: 11, color: '#777' }}>arquitetura: {situacao.arquivo}</span>
+      <span style={{ fontSize: 12, color: 'var(--texto-3)' }}>arquitetura: {situacao.arquivo}</span>
       <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
         <BotoesModelo3d origem="proposta" id={propostaId} />
       </div>

@@ -371,7 +371,7 @@ export default function Materiais() {
         </Sugestoes>
 
         <div style={{ position: 'relative', width: 240 }}>
-          <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: '#555' }} />
+          <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--texto-3)' }} />
           <input
             value={busca}
             onChange={e => setBusca(e.target.value)}
@@ -394,9 +394,9 @@ export default function Materiais() {
       <div style={{
         background: '#131313', border: '1px solid #1e1e1e', borderRadius: 10,
         padding: '10px 16px', marginBottom: 14, display: 'flex', alignItems: 'center',
-        gap: 18, flexWrap: 'wrap', fontSize: 11
+        gap: 18, flexWrap: 'wrap', fontSize: 12
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#999' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--texto-2)' }}>
           <Mail size={14} color={statusEmail?.configurado ? '#3fb95f' : '#666'} />
           {statusEmail?.configurado ? (
             <span>
@@ -422,7 +422,7 @@ export default function Materiais() {
         </button>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
-          <span style={{ color: '#666' }}>Margem padrão de venda:</span>
+          <span style={{ color: 'var(--texto-3)' }}>Margem padrão de venda:</span>
           {/* só o administrador altera a margem (vale para todo o catálogo) */}
           <input
             type="number" step="0.1" min="0" max="300" value={margemPadrao}
@@ -430,7 +430,7 @@ export default function Materiais() {
             disabled={!ehAdmin}
             style={{ width: 60, padding: '4px 6px' }}
           />
-          <span style={{ color: '#666' }}>%</span>
+          <span style={{ color: 'var(--texto-3)' }}>%</span>
           {ehAdmin && (
             <button onClick={salvarMargem} disabled={salvandoMargem} style={{ ...btnSecundario, padding: '5px 10px' }}>
               {salvandoMargem ? '...' : 'Salvar'}
@@ -468,7 +468,7 @@ export default function Materiais() {
                   {m.descricao}
                   {m.origem && m.origem !== 'manual' && (
                     <span style={{
-                      marginLeft: 8, padding: '1px 6px', borderRadius: 10, fontSize: 9,
+                      marginLeft: 8, padding: '1px 6px', borderRadius: 10, fontSize: 11,
                       background: '#1a1a0a', color: '#c9a227', border: '1px solid #4a3d10'
                     }}>
                       {ORIGEM_LABEL[m.origem] || m.origem}
@@ -478,7 +478,7 @@ export default function Materiais() {
                 <td style={td}>{formatarNcm(m.ncm) || '—'}</td>
                 <td style={td}>{m.categoria}</td>
                 <td style={td}>{m.unidade}</td>
-                <td style={{ ...td, textAlign: 'right', color: '#888' }}>{m.preco_compra ? formatarMoeda(m.preco_compra) : '—'}</td>
+                <td style={{ ...td, textAlign: 'right', color: 'var(--texto-3)' }}>{m.preco_compra ? formatarMoeda(m.preco_compra) : '—'}</td>
                 <td style={{ ...td, textAlign: 'right', color: '#c9a227', fontWeight: 700 }}>{formatarMoeda(m.preco)}</td>
                 <td style={td}>{m.marca || '—'}</td>
                 <td style={{ ...td, display: 'flex', gap: 6 }}>
@@ -522,7 +522,7 @@ export default function Materiais() {
                         autoFocus
                         style={{ flex: 1 }}
                       />
-                      <button type="button" onClick={() => setCategoriaCustom(false)} style={{ ...btnSecundario, padding: '9px 12px', fontSize: 10 }}>
+                      <button type="button" onClick={() => setCategoriaCustom(false)} style={{ ...btnSecundario, padding: '9px 12px', fontSize: 11.5 }}>
                         Lista
                       </button>
                     </div>
@@ -576,19 +576,19 @@ export default function Materiais() {
                   type="button"
                   onClick={pesquisarMercadoDoForm}
                   disabled={pesquisaMercado?.carregando}
-                  style={{ ...btnSecundario, fontSize: 11 }}
+                  style={{ ...btnSecundario, fontSize: 12 }}
                 >
                   <Search size={12} style={{ marginRight: 6 }} />
                   {pesquisaMercado?.carregando ? 'Pesquisando preço de mercado...' : 'Pesquisar preço de mercado'}
                 </button>
                 {pesquisaMercado?.resultado && (
-                  <div style={{ marginTop: 8, padding: 10, background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, fontSize: 11, color: '#bbb', whiteSpace: 'pre-wrap', maxHeight: 180, overflowY: 'auto' }}>
+                  <div style={{ marginTop: 8, padding: 10, background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, fontSize: 12, color: 'var(--texto-2)', whiteSpace: 'pre-wrap', maxHeight: 180, overflowY: 'auto' }}>
                     <b style={{ color: '#c9a227' }}>Pesquisa de mercado (IA, confira antes de usar):</b><br />
                     {pesquisaMercado.resultado}
                   </div>
                 )}
                 {pesquisaMercado?.erro && (
-                  <div style={{ marginTop: 8, fontSize: 11, color: '#b04040' }}>{pesquisaMercado.erro}</div>
+                  <div style={{ marginTop: 8, fontSize: 12, color: '#b04040' }}>{pesquisaMercado.erro}</div>
                 )}
               </div>
 
@@ -618,7 +618,7 @@ export default function Materiais() {
 
       {modalImport && (
         <Modal titulo="Importar Materiais (CSV)" onFechar={() => setModalImport(false)} largura={620} espacoTitulo={14}>
-            <p style={{ fontSize: 11, color: '#777', marginBottom: 10, lineHeight: 1.5 }}>
+            <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 10, lineHeight: 1.5 }}>
               Cole uma linha por material, campos separados por <b>;</b> ou tabulação, na ordem:<br />
               <code style={{ color: '#c9a227' }}>código;descrição;categoria;unidade;preço;marca;ncm</code> (ncm é opcional)
             </p>
@@ -627,7 +627,7 @@ export default function Materiais() {
               value={textoImport}
               onChange={e => setTextoImport(e.target.value)}
               placeholder={'001;Cabo flexível 2,5mm;Elétrica;m;2.50;Sil;8544.42.00\n002;Disjuntor bipolar 25A;Elétrica;un;18.90;Siemens'}
-              style={{ fontFamily: 'monospace', fontSize: 11 }}
+              style={{ fontFamily: 'monospace', fontSize: 12 }}
             />
             <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => setModalImport(false)} style={btnSecundario}>Cancelar</button>
@@ -642,7 +642,7 @@ export default function Materiais() {
         <Modal titulo="Importar Nota Fiscal" onFechar={() => setModalNota(false)} largura={itensNota ? 980 : 520} espacoTitulo={14}>
             {!itensNota && (
               <>
-                <p style={{ fontSize: 11, color: '#777', marginBottom: 16, lineHeight: 1.6 }}>
+                <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 16, lineHeight: 1.6 }}>
                   Envie o <b>XML da NF-e</b> (recomendado — leitura completa: descrição, NCM/SH, unidade e preço)
                   ou o <b>PDF do DANFE</b> (lê descrição e NCM/SH; categoria, unidade e preço ficam para você conferir).
                 </p>
@@ -675,13 +675,13 @@ export default function Materiais() {
                   </button>
                 </div>
 
-                <p style={{ fontSize: 10, color: '#666', marginBottom: 8 }}>
+                <p style={{ fontSize: 11.5, color: 'var(--texto-3)', marginBottom: 8 }}>
                   Fonte: {fonteNota === 'xml' ? 'XML da NF-e (dados completos)' : 'PDF do DANFE (confira os valores)'} ·
                   {' '}{itensNota.length} {itensNota.length === 1 ? 'item lido' : 'itens lidos'}
                 </p>
 
                 <div style={{ maxHeight: 360, overflowY: 'auto', border: '1px solid #1e1e1e', borderRadius: 8 }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                     <thead>
                       <tr style={{ background: '#0f0f0f', textAlign: 'left', position: 'sticky', top: 0 }}>
                         <th style={th}>Descrição</th>
@@ -738,16 +738,16 @@ export default function Materiais() {
 
       {modalHistorico && (
         <Modal titulo="Histórico de Importação Automática" onFechar={() => setModalHistorico(false)} largura={620} espacoTitulo={14}>
-            {!historicoEmail && <p style={{ color: '#666', fontSize: 12 }}>Carregando...</p>}
+            {!historicoEmail && <p style={{ color: 'var(--texto-3)', fontSize: 12 }}>Carregando...</p>}
 
             {historicoEmail && (
               <>
-                <p style={{ fontSize: 11, color: '#777', marginBottom: 12 }}>
+                <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 12 }}>
                   {historicoEmail.totalEmailsProcessados} e-mails já processados no total ·
                   {' '}{historicoEmail.notas.length} notas fiscais nos últimos registros
                 </p>
                 <div style={{ maxHeight: 400, overflowY: 'auto', border: '1px solid #1e1e1e', borderRadius: 8 }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                     <thead>
                       <tr style={{ background: '#0f0f0f', textAlign: 'left', position: 'sticky', top: 0 }}>
                         <th style={th}>Data</th>
@@ -763,7 +763,7 @@ export default function Materiais() {
                       {historicoEmail.notas.map(n => (
                         <tr key={n.chave_acesso} style={{ borderTop: '1px solid #1e1e1e' }}>
                           <td style={{ padding: '8px 10px', color: '#ccc' }}>{formatarData(n.processado_em)}</td>
-                          <td style={{ padding: '8px 10px', color: '#888', fontFamily: 'monospace', fontSize: 10 }}>{n.chave_acesso || '—'}</td>
+                          <td style={{ padding: '8px 10px', color: 'var(--texto-3)', fontFamily: 'monospace', fontSize: 11.5 }}>{n.chave_acesso || '—'}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: '#3fb95f' }}>{n.itens_novos}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: '#c9a227' }}>{n.itens_atualizados}</td>
                         </tr>
@@ -785,6 +785,6 @@ const { th, td, tdVazio, btnPrimario, btnIcone } = estilos;
 
 const btnSecundario = {
   display: 'flex', alignItems: 'center', padding: '9px 16px', background: 'transparent',
-  border: '1px solid #2a2a2a', borderRadius: 6, color: '#999', fontWeight: 700,
+  border: '1px solid #2a2a2a', borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700,
   fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
 };

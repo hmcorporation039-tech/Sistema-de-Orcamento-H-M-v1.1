@@ -27,7 +27,7 @@ export default function FaixaAmbiente() {
         (e-mails não são enviados; propostas e números são só de teste).
       </div>
       <div aria-hidden="true" style={{
-        position: 'fixed', left: 10, bottom: 10, zIndex: 9999, background: '#b3261e', color: '#fff',
+        position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: 10, zIndex: 9999, background: '#b3261e', color: '#fff',
         fontSize: 12, fontWeight: 800, letterSpacing: 1, padding: '4px 10px', borderRadius: 6,
         boxShadow: '0 2px 8px rgba(0,0,0,.5)', pointerEvents: 'none',
       }}>

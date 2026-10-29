@@ -9,7 +9,7 @@ export const estiloInput = {
   width: '100%', background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 5,
   color: '#ddd', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box', fontFamily: 'inherit',
 };
-const estiloRotulo = { display: 'block', fontSize: 11, color: '#888', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.4px' };
+const estiloRotulo = { display: 'block', fontSize: 12, color: 'var(--texto-3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.4px' };
 
 // Lê número aceitando vírgula; vazio vira null (campo "não informado")
 export function paraNumero(valor) {
@@ -68,7 +68,7 @@ export function Selecao({ rotulo, valor, onChange, opcoes, largura }) {
 
 export function Marcador({ rotulo, valor, onChange, dica }) {
   return (
-    <label title={dica} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: '#bbb', cursor: 'pointer', paddingTop: 18 }}>
+    <label title={dica} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: 'var(--texto-2)', cursor: 'pointer', paddingTop: 18 }}>
       <input type="checkbox" checked={!!valor} onChange={e => onChange(e.target.checked)} />
       {rotulo}
     </label>
@@ -89,7 +89,7 @@ export function Secao({ titulo, children, abertaInicial = false, resumo }) {
       >
         {aberta ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
         <span style={{ flex: 1 }}>{titulo}</span>
-        {resumo && <span style={{ color: '#777', fontWeight: 400, fontSize: 12 }}>{resumo}</span>}
+        {resumo && <span style={{ color: 'var(--texto-3)', fontWeight: 400, fontSize: 12 }}>{resumo}</span>}
       </button>
       {aberta && <div style={{ padding: '4px 14px 14px' }}>{children}</div>}
     </div>
@@ -103,14 +103,14 @@ export function TabelaEditavel({ colunas, linhas, onChange, novaLinha, rotuloAdi
   return (
     <div style={{ marginBottom: 12 }}>
       {lista.length === 0 ? (
-        <p style={{ fontSize: 12, color: '#666', fontStyle: 'italic', margin: '4px 0 8px' }}>{vazio}</p>
+        <p style={{ fontSize: 12, color: 'var(--texto-3)', fontStyle: 'italic', margin: '4px 0 8px' }}>{vazio}</p>
       ) : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr>
                 {colunas.map(c => (
-                  <th key={c.campo} style={{ textAlign: 'left', fontSize: 10, color: '#777', textTransform: 'uppercase', padding: '0 6px 6px 0', width: c.largura }}>{c.rotulo}</th>
+                  <th key={c.campo} style={{ textAlign: 'left', fontSize: 11.5, color: 'var(--texto-3)', textTransform: 'uppercase', padding: '0 6px 6px 0', width: c.largura }}>{c.rotulo}</th>
                 ))}
                 <th style={{ width: 30 }} />
               </tr>
@@ -155,11 +155,11 @@ function CelulaEditavel({ coluna, valor, onChange }) {
 
 export const btnAdicionar = {
   display: 'inline-flex', alignItems: 'center', padding: '5px 10px', background: 'transparent',
-  border: '1px dashed #333', borderRadius: 5, color: '#999', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+  border: '1px dashed #333', borderRadius: 5, color: 'var(--texto-2)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
 };
 const btnIconeRemover = {
   display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 28,
   background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 5, color: '#b04040', cursor: 'pointer',
 };
 
-export const Nota = ({ children }) => <p style={{ fontSize: 12, color: '#777', lineHeight: 1.6, margin: '0 0 12px' }}>{children}</p>;
+export const Nota = ({ children }) => <p style={{ fontSize: 12, color: 'var(--texto-3)', lineHeight: 1.6, margin: '0 0 12px' }}>{children}</p>;

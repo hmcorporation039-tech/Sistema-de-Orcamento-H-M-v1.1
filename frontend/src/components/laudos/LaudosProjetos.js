@@ -527,10 +527,10 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
             {disciplinas.map(d => <option key={d.chave} value={d.chave}>{d.nome}{d.disponivel ? '' : ' — em preparação'}</option>)}
           </Select>
         </div>
-        <p style={{ fontSize: 12, color: '#888', lineHeight: 1.6, margin: '-4px 0 14px' }}>{T.intro}</p>
+        <p style={{ fontSize: 12, color: 'var(--texto-3)', lineHeight: 1.6, margin: '-4px 0 14px' }}>{T.intro}</p>
 
         {infoDisciplina && !infoDisciplina.disponivel ? (
-          <p style={{ fontSize: 13, color: '#888', lineHeight: 1.6 }}>
+          <p style={{ fontSize: 13, color: 'var(--texto-3)', lineHeight: 1.6 }}>
             A disciplina <b>{infoDisciplina.nome}</b> ainda está em preparação. Ela vai usar este mesmo fluxo: formulário,
             cálculo pela norma, documentos em Word e orçamento integrado ao catálogo de materiais.
             {infoDisciplina.erro && <><br /><span style={{ color: '#e05050' }}>{infoDisciplina.erro}</span></>}
@@ -556,11 +556,11 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
               <p data-testid="lista-parcial" style={{ fontSize: 11.5, color: '#c9a227', margin: '0 0 8px' }}>Lista parcial: mostrando os {listaParcial} mais recentes — os mais antigos não aparecem aqui.</p>
             )}
             {lista.length === 0 ? (
-              <p style={{ fontSize: 12, color: '#666', fontStyle: 'italic' }}>{obraNovo ? `Nenhum ${T.item} nesta obra${disciplina ? ' nesta disciplina' : ''} — escolha a disciplina e clique em "${T.novo}".` : T.vazio}</p>
+              <p style={{ fontSize: 12, color: 'var(--texto-3)', fontStyle: 'italic' }}>{obraNovo ? `Nenhum ${T.item} nesta obra${disciplina ? ' nesta disciplina' : ''} — escolha a disciplina e clique em "${T.novo}".` : T.vazio}</p>
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
-                  <tr style={{ fontSize: 11, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', textAlign: 'left' }}>
+                  <tr style={{ fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', textAlign: 'left' }}>
                     <th style={{ padding: '4px 8px 8px 0' }}>Obra</th>{!disciplina && <th style={{ padding: '4px 8px 8px 0' }}>Disciplina</th>}<th style={{ padding: '4px 8px 8px 0' }}>Cliente</th>
                     <th style={{ padding: '4px 8px 8px 0' }}>Revisão</th><th style={{ padding: '4px 8px 8px 0' }}>Fotos</th>
                     <th style={{ padding: '4px 8px 8px 0' }}>Atualizado em</th><th />
@@ -571,10 +571,10 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
                     <tr key={item.id} onClick={() => abrir(item.id)} style={{ cursor: 'pointer', borderTop: '1px solid #1e1e1e', background: laudo?.id === item.id ? '#1a1a1a' : 'transparent' }}>
                       <td style={{ padding: '8px 8px 8px 0' }}>{item.titulo}</td>
                       {!disciplina && <td style={{ padding: '8px 8px 8px 0', color: '#c9a227' }}>{disciplinas.find(d => d.chave === item.disciplina)?.nome?.replace(/\s*\(.*\)$/, '') || item.disciplina}</td>}
-                      <td style={{ padding: '8px 8px 8px 0', color: '#999' }}>{item.cliente_nome || '—'}</td>
-                      <td style={{ padding: '8px 8px 8px 0', color: '#999' }}>{(item.revisao || '').split(' ')[0] || '—'}</td>
-                      <td style={{ padding: '8px 8px 8px 0', color: '#999' }}>{item.total_fotos}</td>
-                      <td style={{ padding: '8px 8px 8px 0', color: '#999' }}>{new Date(item.atualizado_em).toLocaleString('pt-BR')}</td>
+                      <td style={{ padding: '8px 8px 8px 0', color: 'var(--texto-2)' }}>{item.cliente_nome || '—'}</td>
+                      <td style={{ padding: '8px 8px 8px 0', color: 'var(--texto-2)' }}>{(item.revisao || '').split(' ')[0] || '—'}</td>
+                      <td style={{ padding: '8px 8px 8px 0', color: 'var(--texto-2)' }}>{item.total_fotos}</td>
+                      <td style={{ padding: '8px 8px 8px 0', color: 'var(--texto-2)' }}>{new Date(item.atualizado_em).toLocaleString('pt-BR')}</td>
                       <td style={{ padding: '8px 0', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
                         <button onClick={() => excluir(item)} style={{ ...btnIcone, color: '#b04040' }} title="Excluir"><Trash2 size={12} /></button>
                       </td>
@@ -593,7 +593,7 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
             <div data-testid="faixa-somente-leitura" style={{ ...card, padding: '12px 16px', borderColor: '#2f4f6f', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <div style={{ flex: 1, minWidth: 240, fontSize: 12.5, color: '#ddd', lineHeight: 1.5 }}>
                 <b style={{ color: '#8ab4f8' }}>Somente leitura</b> — {somenteLeitura.mensagem}
-                <span style={{ color: '#888' }}> Você pode calcular e baixar os documentos; para alterar, faça uma cópia sua.</span>
+                <span style={{ color: 'var(--texto-3)' }}> Você pode calcular e baixar os documentos; para alterar, faça uma cópia sua.</span>
               </div>
               <button style={btnPrimario} onClick={duplicarParaMim}><FilePlus2 size={14} /> Duplicar para mim</button>
             </div>
@@ -605,9 +605,9 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
                   <span style={{ ...selo, ...(ehProjeto ? seloProjeto : seloLaudo) }}>{ehProjeto ? 'PROJETO' : 'LAUDO'}</span>
                   {dados.obra?.nome || dados.cliente?.nome || T.semTitulo}
                 </div>
-                <div style={{ fontSize: 11, color: '#777' }}>
+                <div style={{ fontSize: 12, color: 'var(--texto-3)' }}>
                   {sujo ? 'Alterações não salvas…' : salvoEm ? `Salvo às ${salvoEm.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : ''}
-                  {laudo.obra && <> · Obra: <span style={{ color: '#bbb' }}>{laudo.obra.nome} ({laudo.obra.codigo})</span></>}
+                  {laudo.obra && <> · Obra: <span style={{ color: 'var(--texto-2)' }}>{laudo.obra.nome} ({laudo.obra.codigo})</span></>}
                   {laudo.analise_id && <> · elaborado a partir da <a href={`/obras/analise/${laudo.analise_id}`} onClick={e => { e.preventDefault(); navigate(`/obras/analise/${laudo.analise_id}`); }} style={{ color: '#8ab4f8' }}>análise #{laudo.analise_id}</a></>}
                 </div>
               </div>
@@ -632,12 +632,12 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
               ))}
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, alignItems: 'center' }}>
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#bbb', marginRight: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--texto-2)', marginRight: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}
                 title={ehProjeto ? 'Desmarque quando o projeto for entregue sem orçamento de execução' : 'Desmarque quando for emitido só o laudo, sem orçamento'}>
                 <input type="checkbox" style={{ width: 'auto', margin: 0 }} checked={laudo.gerar_orcamento !== false} disabled={!!somenteLeitura} onChange={e => alternarOrcamento(e.target.checked)} />
                 {ehProjeto ? 'Gerar orçamento de execução' : 'Gerar orçamento (inspeção/correção)'}
               </label>
-              {laudo.gerar_orcamento === false && <span style={{ fontSize: 12, color: '#777' }}>{ehProjeto ? 'Projeto sem orçamento — só os documentos e as entregas.' : 'Só laudo — os documentos são emitidos sem orçamento.'}</span>}
+              {laudo.gerar_orcamento === false && <span style={{ fontSize: 12, color: 'var(--texto-3)' }}>{ehProjeto ? 'Projeto sem orçamento — só os documentos e as entregas.' : 'Só laudo — os documentos são emitidos sem orçamento.'}</span>}
               {/* só os modos do tipo do registro; proposta já ligada em outro modo (antes da 2.1) continua acessível */}
               {laudo.gerar_orcamento !== false && (infoDisciplina?.modosOrcamento || []).filter(m => serve(m.uso, tipo) || laudo.propostas?.[m.modo]).map(m => (
                 <span key={m.modo} style={{ display: 'inline-flex', gap: 4 }}>
@@ -658,7 +658,7 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
             {/* desenhos são do PROJETO (planta DXF e unifilar) */}
             {ehProjeto && (desenhos.planta || desenhos.unifilar) && (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, alignItems: 'center' }}>
-                <span style={{ fontSize: 12, color: '#bbb', marginRight: 4 }}>Desenhos (AutoCAD / QElectroTech):</span>
+                <span style={{ fontSize: 12, color: 'var(--texto-2)', marginRight: 4 }}>Desenhos (AutoCAD / QElectroTech):</span>
                 {desenhos.planta && (<>
                 <input ref={entradaArquitetura} type="file" accept={ACEITA_ARQUITETURA} style={{ display: 'none' }}
                   onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) enviarArquiteturaDoLaudo(f); }} />
@@ -667,7 +667,7 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
                 </button>
                 {arquitetura && (
                   <>
-                    <span style={{ fontSize: 12, color: '#777' }}>{arquitetura.nome_arquivo} — {arquitetura.resumo?.ambientes?.length || 0} ambientes{arquitetura.resumo?.portas != null ? `, ${arquitetura.resumo.portas} portas` : ''} lidos</span>
+                    <span style={{ fontSize: 12, color: 'var(--texto-3)' }}>{arquitetura.nome_arquivo} — {arquitetura.resumo?.ambientes?.length || 0} ambientes{arquitetura.resumo?.portas != null ? `, ${arquitetura.resumo.portas} portas` : ''} lidos</span>
                     <button style={{ ...btnSecundario, borderColor: '#2f4f6f', color: '#8ab4f8' }} disabled={!!ocupado} onClick={baixarPlanta}
                       title="Gera a planta (DXF) com os pontos da disciplina posicionados pela norma, legenda, quantitativo e carimbo — para revisar no AutoCAD">
                       <FileDown size={13} style={{ marginRight: 5 }} /> {ocupado === 'planta' ? 'Gerando…' : 'Baixar planta (DXF)'}
@@ -722,13 +722,13 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
 // Estilos do kit de tela (components/ui/estilos.js), com o que esta tela tem
 // de diferente por cima — o visual ficou como era.
 const card = estilos.card;
-const selo = { display: 'inline-block', fontSize: 10, fontWeight: 800, letterSpacing: '.6px', padding: '2px 7px', borderRadius: 4, marginRight: 8, verticalAlign: 'middle' };
+const selo = { display: 'inline-block', fontSize: 11.5, fontWeight: 800, letterSpacing: '.6px', padding: '2px 7px', borderRadius: 4, marginRight: 8, verticalAlign: 'middle' };
 const seloProjeto = { background: '#12304a', color: '#8ab4f8', border: '1px solid #2f4f6f' };
 const seloLaudo = { background: '#3a2a10', color: '#e0b050', border: '1px solid #5a4a12' };
 const tituloSecao = { fontSize: 15, color: '#c9a227', fontWeight: 700, marginBottom: 10 };
 const btnPrimario = { ...estilos.btnPrimario, display: 'flex', fontSize: 13 };
 const btnSecundario = {
   display: 'flex', alignItems: 'center', padding: '8px 12px', background: 'transparent', border: '1px dashed #333',
-  borderRadius: 6, color: '#999', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
+  borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
 };
 const btnIcone = { ...estilos.btnIcone, display: 'flex' };

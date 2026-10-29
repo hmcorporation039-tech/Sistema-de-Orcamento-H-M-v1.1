@@ -166,7 +166,7 @@ export default function InserirComposicao({ segmento = 'privado', onInserir, dis
               <div style={{ fontSize: 15, color: '#c9a227', fontWeight: 700 }}>Inserir kit / composição</div>
               <button type="button" style={btnFechar} onClick={fechar} aria-label="Fechar"><X size={16} /></button>
             </div>
-            <div style={{ fontSize: 11.5, color: '#888', marginBottom: 12 }}>
+            <div style={{ fontSize: 11.5, color: 'var(--texto-3)', marginBottom: 12 }}>
               Os itens entram na proposta como itens comuns (materiais e mão de obra), com preços da referência {ROTULO_SEGMENTO[seg]}.
               Sem preço, o item entra a cotar.
             </div>
@@ -191,12 +191,12 @@ export default function InserirComposicao({ segmento = 'privado', onInserir, dis
 
             {erro && <div style={{ color: '#e57373', fontSize: 12, marginBottom: 10 }}>{erro}</div>}
             {codigo && !(qtd > 0) && <div style={{ color: '#e57373', fontSize: 12, marginBottom: 10 }}>Informe uma quantidade maior que zero.</div>}
-            {carregando && !previa && <div style={{ color: '#888', fontSize: 12 }}>Montando a prévia…</div>}
+            {carregando && !previa && <div style={{ color: 'var(--texto-3)', fontSize: 12 }}>Montando a prévia…</div>}
             {previa && (
               <div data-teste="previa-composicao" style={{ opacity: carregando ? 0.6 : 1 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
                   <thead>
-                    <tr style={{ color: '#666', textAlign: 'left' }}>
+                    <tr style={{ color: 'var(--texto-3)', textAlign: 'left' }}>
                       <th style={th}>Seção</th><th style={th}>Descrição</th><th style={{ ...th, textAlign: 'right' }}>Qtd</th>
                       <th style={th}>Un</th><th style={{ ...th, textAlign: 'right' }}>Unitário</th><th style={{ ...th, textAlign: 'right' }}>Total</th>
                     </tr>
@@ -204,7 +204,7 @@ export default function InserirComposicao({ segmento = 'privado', onInserir, dis
                   <tbody>
                     {previa.itens.map((it, i) => (
                       <tr key={i} style={{ borderTop: '1px solid #1c1c1c' }}>
-                        <td style={{ ...td, color: '#888', whiteSpace: 'nowrap' }}>{it.tipo === 'servico' ? 'Mão de obra' : 'Material'}</td>
+                        <td style={{ ...td, color: 'var(--texto-3)', whiteSpace: 'nowrap' }}>{it.tipo === 'servico' ? 'Mão de obra' : 'Material'}</td>
                         <td style={td}>{it.descricao}{it.a_cotar && <div style={{ color: '#d9a441', fontSize: 10.5 }}>{it.motivo}</div>}
                           {!it.a_cotar && it.observacao_preco && <div style={{ color: '#8fb3d9', fontSize: 10.5 }}>{it.observacao_preco}</div>}</td>
                         <td style={{ ...td, textAlign: 'right' }}>{qtdBR(it.quantidade)}</td>
@@ -236,11 +236,11 @@ export default function InserirComposicao({ segmento = 'privado', onInserir, dis
 
 const btnAbrir = {
   display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent', border: '1px dashed #5a4a1a',
-  borderRadius: 6, color: '#c9a227', fontWeight: 700, fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap',
+  borderRadius: 6, color: '#c9a227', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
 };
 const btnPrimario = { padding: '9px 16px', background: '#c9a227', border: 'none', borderRadius: 6, color: '#000', fontWeight: 700, fontSize: 12, cursor: 'pointer' };
-const btnSecundario = { padding: '8px 14px', background: 'transparent', border: '1px dashed #333', borderRadius: 6, color: '#999', fontWeight: 700, fontSize: 11, cursor: 'pointer' };
-const btnFechar = { background: 'none', border: 'none', color: '#888', cursor: 'pointer', display: 'flex' };
-const rotulo = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, color: '#888' };
-const th = { padding: '5px 8px 5px 0', fontWeight: 600, fontSize: 11 };
+const btnSecundario = { padding: '8px 14px', background: 'transparent', border: '1px dashed #333', borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer' };
+const btnFechar = { background: 'none', border: 'none', color: 'var(--texto-3)', cursor: 'pointer', display: 'flex' };
+const rotulo = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--texto-3)' };
+const th = { padding: '5px 8px 5px 0', fontWeight: 600, fontSize: 12 };
 const td = { padding: '5px 8px 5px 0', verticalAlign: 'top' };

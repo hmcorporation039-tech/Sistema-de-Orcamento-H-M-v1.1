@@ -108,7 +108,7 @@ export default function CalculadoraBdi({ aberto, onFechar, memoria, publico, imp
     <Modal titulo={<><Calculator size={16} /> BDI pela fórmula do TCU</>} rotulo="Calculador de BDI" onFechar={onFechar}
       zIndex={1000} largura="min(760px, 100%)" espacoTitulo={10} estiloTitulo={{ display: 'flex', alignItems: 'center', gap: 6 }}
       estiloFundo={fundoBdi} style={janelaBdi}>
-        <div style={{ fontSize: 11, color: '#888', marginBottom: 12, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 12, lineHeight: 1.5 }}>
           BDI = [ (1 + AC + S + R + G) × (1 + DF) × (1 + L) / (1 − I) ] − 1 — {FONTE_BDI_TCU}. Parcelas pré-preenchidas com o valor
           médio da tabela; o aviso aparece fora do 1º–3º quartil.
           {publico && <span style={{ color: '#c9a227' }}> Cliente órgão público: a composição do BDI vai no PDF (anexo).</span>}
@@ -136,7 +136,7 @@ export default function CalculadoraBdi({ aberto, onFechar, memoria, publico, imp
         <TabelaParcelas titulo={usarMateriais ? 'BDI dos serviços (mão de obra e execução)' : 'BDI da proposta'}
           parcelas={parcelas} setParcelas={setParcelas} regime={regime} ref_={ref} bdi={bdi} avisos={avisos} />
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#bbb', margin: '12px 0 8px', cursor: 'pointer' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--texto-2)', margin: '12px 0 8px', cursor: 'pointer' }}>
           <input type="checkbox" checked={usarMateriais} onChange={e => setUsarMateriais(e.target.checked)} style={{ width: 'auto' }} />
           BDI diferenciado para os materiais (mero fornecimento de materiais e equipamentos — Súmula TCU 253)
         </label>
@@ -176,7 +176,7 @@ function TabelaParcelas({ titulo, parcelas, setParcelas, regime, ref_, bdi, avis
   );
   return (
     <div style={{ border: '1px solid #222', borderRadius: 8, padding: 12 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: '#bbb', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 }}>{titulo}</div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--texto-2)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 }}>{titulo}</div>
       <div style={{ display: 'grid', gridTemplateColumns: '2.2fr 1fr 0.8fr 0.8fr 0.8fr', gap: '6px 10px', alignItems: 'center', fontSize: 12 }}>
         <span style={cab}>Parcela (%)</span><span style={cab}>Adotado</span><span style={cab}>1º quartil</span><span style={cab}>Médio</span><span style={cab}>3º quartil</span>
         {PARCELAS_BDI.map(([k, nome]) => (
@@ -185,17 +185,17 @@ function TabelaParcelas({ titulo, parcelas, setParcelas, regime, ref_, bdi, avis
         <span style={{ ...cab, gridColumn: '1 / -1', marginTop: 6 }}>Tributos sobre o preço — I (%)</span>
         <Linha nome="PIS" input={campo('pis')} />
         <Linha nome="COFINS" input={campo('cofins')} />
-        <Linha nome={<>ISS <span style={{ color: '#666' }}>(alíquota do município)</span></>} input={campo('iss')} />
-        <Linha nome={<>Base do ISS <span style={{ color: '#666' }}>(% do preço; 100 = sem dedução)</span></>} input={campo('iss_base')} />
+        <Linha nome={<>ISS <span style={{ color: 'var(--texto-3)' }}>(alíquota do município)</span></>} input={campo('iss')} />
+        <Linha nome={<>Base do ISS <span style={{ color: 'var(--texto-3)' }}>(% do preço; 100 = sem dedução)</span></>} input={campo('iss_base')} />
         <Linha nome="CPRB (só no desonerado)" input={campo('cprb', { disabled: regime !== 'desonerado' })} />
-        <span style={{ color: '#999' }}>Total de tributos (I)</span>
+        <span style={{ color: 'var(--texto-2)' }}>Total de tributos (I)</span>
         <span style={{ textAlign: 'right', paddingRight: 6, color: '#ccc' }}>{fmt(tributosBdi(parcelas, regime))}</span>
         <span /><span /><span />
       </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginTop: 10, paddingTop: 8, borderTop: '1px solid #222' }}>
-        <span style={{ fontSize: 12, color: '#999' }}>BDI resultante</span>
+        <span style={{ fontSize: 12, color: 'var(--texto-2)' }}>BDI resultante</span>
         <span style={{ fontSize: 20, fontWeight: 700, color: '#c9a227' }}>{bdi != null ? `${fmt(arred2(bdi))} %` : '—'}</span>
-        {ref_ && <span style={{ fontSize: 11, color: '#777' }}>faixa TCU: {fmt(ref_.bdi[0])} % a {fmt(ref_.bdi[2])} % (médio {fmt(ref_.bdi[1])} %){regime === 'desonerado' ? ' — comparada sem a CPRB' : ''}</span>}
+        {ref_ && <span style={{ fontSize: 12, color: 'var(--texto-3)' }}>faixa TCU: {fmt(ref_.bdi[0])} % a {fmt(ref_.bdi[2])} % (médio {fmt(ref_.bdi[1])} %){regime === 'desonerado' ? ' — comparada sem a CPRB' : ''}</span>}
       </div>
       {avisos.length > 0 && (
         <div style={{ marginTop: 8, fontSize: 11.5, color: '#e0b050', lineHeight: 1.5 }}>
@@ -218,11 +218,11 @@ function Linha({ nome, input, faixa, fora }) {
   );
 }
 
-const cab = { fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px' };
-const num = { textAlign: 'right', color: '#777', fontSize: 11.5 };
+const cab = { fontSize: 11.5, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px' };
+const num = { textAlign: 'right', color: 'var(--texto-3)', fontSize: 11.5 };
 // janela própria do BDI (mais larga, sem sombra nem altura máxima — quem rola é o fundo)
 const fundoBdi = { background: 'rgba(0,0,0,.7)', alignItems: 'flex-start', overflowY: 'auto', padding: '30px 12px' };
 const janelaBdi = { borderRadius: 10, padding: 20, maxHeight: 'none', overflowY: 'visible', boxShadow: 'none' };
 // kit de tela (components/ui/estilos.js); o secundário tracejado é desta janela
 const { rotulo, btnPrimario } = estilos;
-const btnSecundario = { display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent', border: '1px dashed #333', borderRadius: 6, color: '#999', fontWeight: 700, fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap' };
+const btnSecundario = { display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent', border: '1px dashed #333', borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };

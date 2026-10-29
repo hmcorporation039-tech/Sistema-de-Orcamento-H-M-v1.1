@@ -64,7 +64,7 @@ export default function CronogramaObra({ obra }) {
   const aplicar = (r) => setDados(d => ({ ...d, ...r.data }));
 
   if (erro) return <div style={E.card}><p style={{ color: '#e08080', margin: 0 }}>{erro}</p></div>;
-  if (!dados) return <div style={E.card}><p style={{ color: '#777', margin: 0 }}>Carregando cronograma...</p></div>;
+  if (!dados) return <div style={E.card}><p style={{ color: 'var(--texto-3)', margin: 0 }}>Carregando cronograma...</p></div>;
 
   const pode = dados.pode_editar;
   const temCronograma = dados.etapas.length > 0;
@@ -84,7 +84,7 @@ export default function CronogramaObra({ obra }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '22px 0 12px', flexWrap: 'wrap' }}>
         <h3 style={{ color: '#c9a227', fontSize: 14, fontWeight: 700, flex: 1, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
           <CalendarRange size={15} /> Cronograma físico-financeiro
-          {dados.cronograma?.proposta_numero && <span style={{ color: '#777', fontSize: 11, fontWeight: 400 }}>· base: proposta {dados.cronograma.proposta_numero} · períodos {dados.cronograma.periodicidade === 'semanal' ? 'semanais' : 'mensais'}</span>}
+          {dados.cronograma?.proposta_numero && <span style={{ color: 'var(--texto-3)', fontSize: 12, fontWeight: 400 }}>· base: proposta {dados.cronograma.proposta_numero} · períodos {dados.cronograma.periodicidade === 'semanal' ? 'semanais' : 'mensais'}</span>}
         </h3>
         {pode && !editando && (
           <button type="button" onClick={() => setGerarAberto(a => !a)} style={E.btnSecundario}>
@@ -100,7 +100,7 @@ export default function CronogramaObra({ obra }) {
 
       {!temCronograma && !editando && !gerarAberto && (
         <div style={{ ...E.card, borderStyle: 'dashed' }}>
-          <p style={{ color: '#999', fontSize: 12, margin: 0 }}>
+          <p style={{ color: 'var(--texto-2)', fontSize: 12, margin: 0 }}>
             Esta obra ainda não tem cronograma. {pode
               ? 'Gere a partir da proposta aprovada (uma etapa por sistema, valor com BDI e impostos, duração pela mão de obra) ou monte manualmente.'
               : 'Só o dono da obra ou um administrador monta o cronograma.'}
@@ -141,9 +141,9 @@ function Indicadores({ resumo: r }) {
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 14 }}>
       {itens.map(i => (
         <div key={i.rotulo} style={{ ...E.card, marginBottom: 0, padding: 14 }}>
-          <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>{i.rotulo}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>{i.rotulo}</div>
           <div style={{ fontSize: 18, fontWeight: 700, color: i.cor }}>{i.valor}</div>
-          <div style={{ fontSize: 10, color: '#666', marginTop: 4 }}>{i.nota}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--texto-3)', marginTop: 4 }}>{i.nota}</div>
         </div>
       ))}
     </div>
@@ -152,7 +152,7 @@ function Indicadores({ resumo: r }) {
 
 // ── tabela etapas × períodos com Gantt ───────────────────────────────
 function BarraGantt({ inicio, fim, min, span, realizado, hoje }) {
-  if (!inicio || !fim || !span) return <span style={{ color: '#555' }}>—</span>;
+  if (!inicio || !fim || !span) return <span style={{ color: 'var(--texto-3)' }}>—</span>;
   const esq = (diasEntre(min, inicio) / span) * 100;
   const larg = Math.max(1.5, ((diasEntre(inicio, fim) + 1) / span) * 100);
   const posHoje = hoje != null ? (diasEntre(min, hoje) / span) * 100 : null;
@@ -175,8 +175,8 @@ function TabelaCronograma({ calc, etapas }) {
   const td = { ...E.td, padding: '7px 10px' };
   const rodape = (rotulo, f, cor) => (
     <tr style={{ borderTop: '1px solid #262626', background: '#101010' }}>
-      <td colSpan={7} style={{ ...td, textAlign: 'right', color: '#999', fontWeight: 700, fontSize: 11 }}>{rotulo}</td>
-      {calc.curva.map((c, k) => <td key={c.periodo} style={{ ...td, textAlign: 'right', color: cor, fontWeight: 700, fontSize: 11, whiteSpace: 'nowrap' }}>{f(c, k)}</td>)}
+      <td colSpan={7} style={{ ...td, textAlign: 'right', color: 'var(--texto-2)', fontWeight: 700, fontSize: 12 }}>{rotulo}</td>
+      {calc.curva.map((c, k) => <td key={c.periodo} style={{ ...td, textAlign: 'right', color: cor, fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap' }}>{f(c, k)}</td>)}
     </tr>
   );
   return (
@@ -196,28 +196,28 @@ function TabelaCronograma({ calc, etapas }) {
             const real = e.serie.length ? e.serie[e.serie.length - 1].realizado_acum_pct : 0;
             return (
               <tr key={e.id} style={{ borderTop: '1px solid #1e1e1e' }}>
-                <td style={{ ...td, color: '#666' }}>{i + 1}</td>
+                <td style={{ ...td, color: 'var(--texto-3)' }}>{i + 1}</td>
                 <td style={{ ...td, minWidth: 200 }}>
                   <div style={{ color: '#ddd', fontWeight: 600 }}>{e.nome}</div>
-                  {e.origem && e.origem !== e.nome && <div style={{ color: '#666', fontSize: 10 }}>{e.origem}</div>}
+                  {e.origem && e.origem !== e.nome && <div style={{ color: 'var(--texto-3)', fontSize: 11.5 }}>{e.origem}</div>}
                 </td>
                 <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{moeda(e.valor)}</td>
-                <td style={{ ...td, textAlign: 'right', color: '#999' }}>{pc(e.peso)}</td>
-                <td style={{ ...td, whiteSpace: 'nowrap', fontSize: 11 }}>
+                <td style={{ ...td, textAlign: 'right', color: 'var(--texto-2)' }}>{pc(e.peso)}</td>
+                <td style={{ ...td, whiteSpace: 'nowrap', fontSize: 12 }}>
                   {e.inicio ? `${formatarData(e.inicio)} a ${formatarData(e.fim)}` : '—'}
-                  {db?.dias_uteis ? <div style={{ color: '#666', fontSize: 10 }}>{db.dias_uteis} dia(s) útil(eis)</div> : null}
+                  {db?.dias_uteis ? <div style={{ color: 'var(--texto-3)', fontSize: 11.5 }}>{db.dias_uteis} dia(s) útil(eis)</div> : null}
                 </td>
                 <td style={td}><BarraGantt inicio={e.inicio} fim={e.fim} min={min} span={span} realizado={real} hoje={hoje} /></td>
                 <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                   <div style={{ fontWeight: 700, color: s.cor }}>{pc(real)}</div>
-                  <div style={{ fontSize: 10, color: '#666' }}>{s.rotulo}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--texto-3)' }}>{s.rotulo}</div>
                 </td>
                 {e.serie.map((x) => (
                   <td key={x.periodo} style={{ ...td, textAlign: 'center', padding: '4px 6px' }}>
                     {x.previsto_pct > 0
-                      ? <div title={`previsto ${pc(x.previsto_pct, 2)} = ${moeda(x.previsto_valor)}`} style={{ background: `rgba(201,162,39,${0.25 + 0.6 * Math.min(1, x.previsto_pct / 100)})`, color: '#111', borderRadius: 3, fontWeight: 700, fontSize: 11, padding: '3px 4px' }}>{pc(x.previsto_pct, 0)}</div>
+                      ? <div title={`previsto ${pc(x.previsto_pct, 2)} = ${moeda(x.previsto_valor)}`} style={{ background: `rgba(201,162,39,${0.25 + 0.6 * Math.min(1, x.previsto_pct / 100)})`, color: '#111', borderRadius: 3, fontWeight: 700, fontSize: 12, padding: '3px 4px' }}>{pc(x.previsto_pct, 0)}</div>
                       : <div style={{ color: '#333' }}>·</div>}
-                    {x.medido && <div title="% físico acumulado medido no período" style={{ color: '#3fb95f', fontSize: 10, marginTop: 2 }}>✓ {pc(x.realizado_acum_pct, 0)}</div>}
+                    {x.medido && <div title="% físico acumulado medido no período" style={{ color: '#3fb95f', fontSize: 11.5, marginTop: 2 }}>✓ {pc(x.realizado_acum_pct, 0)}</div>}
                   </td>
                 ))}
               </tr>
@@ -284,11 +284,11 @@ function PainelGerar({ dados, obra, onGerado, onFechar }) {
         <Campo label="Equipe (pessoas)"><input value={form.equipe} onChange={set('equipe')} inputMode="numeric" /></Campo>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12, flexWrap: 'wrap' }}>
-        <label style={{ color: '#aaa', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <label style={{ color: 'var(--texto-2)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
           <input type="checkbox" checked={form.incluir_etapas_fixas} onChange={set('incluir_etapas_fixas')} style={{ width: 'auto' }} />
           Incluir mobilização (1 dia) e testes/entrega (2 dias)
         </label>
-        <span style={{ color: '#666', fontSize: 11, flex: 1 }}>Uma etapa por sistema da proposta; valor com BDI e impostos; duração = mão de obra ÷ (homem-hora × equipe × 8 h), em dias úteis, em sequência — a mesma regra da planilha do cliente.</span>
+        <span style={{ color: 'var(--texto-3)', fontSize: 12, flex: 1 }}>Uma etapa por sistema da proposta; valor com BDI e impostos; duração = mão de obra ÷ (homem-hora × equipe × 8 h), em dias úteis, em sequência — a mesma regra da planilha do cliente.</span>
         <button type="button" onClick={onFechar} style={E.btnSecundario}>Cancelar</button>
         <button type="button" onClick={gerar} disabled={gerando} style={E.btnPrimario}><RefreshCw size={13} /> {gerando ? 'Gerando...' : 'Gerar cronograma'}</button>
       </div>
@@ -374,7 +374,7 @@ function EditorCronograma({ dados, onSalvo, onCancelar, onRecarregar }) {
             <option value="manual">Informado (%)</option>
           </Select>
         </Campo>
-        <span style={{ color: '#777', fontSize: 11, flex: 1 }}>
+        <span style={{ color: 'var(--texto-3)', fontSize: 12, flex: 1 }}>
           % por período = parcela prevista da etapa (cada linha deve somar 100%). Mudou datas ou periodicidade? Ao salvar, a etapa é redistribuída de forma linear pelos dias úteis.
         </span>
         <button type="button" onClick={adicionar} style={E.btnSecundario}><Plus size={13} /> Etapa</button>
@@ -414,7 +414,7 @@ function EditorCronograma({ dados, onSalvo, onCancelar, onRecarregar }) {
                         title={datasMudaram || !l.id ? 'Datas novas: a distribuição é refeita ao salvar' : '% previsto da etapa neste período'} aria-label={`% previsto em ${p}`} />
                     </td>
                   ))}
-                  {!mudouPeriodicidade && <td style={{ ...td, color: Math.abs(soma - 100) > 0.05 && l.id && !datasMudaram ? '#e08080' : '#777', fontSize: 11, whiteSpace: 'nowrap' }}>{l.id && !datasMudaram ? pc(soma) : 'linear'}</td>}
+                  {!mudouPeriodicidade && <td style={{ ...td, color: Math.abs(soma - 100) > 0.05 && l.id && !datasMudaram ? '#e08080' : '#777', fontSize: 12, whiteSpace: 'nowrap' }}>{l.id && !datasMudaram ? pc(soma) : 'linear'}</td>}
                   <td style={td}><button type="button" onClick={() => remover(i)} style={{ ...E.btnIcone, color: '#b04040' }} title="Remover etapa (só sem medição)"><Trash2 size={12} /></button></td>
                 </tr>
               );
@@ -512,7 +512,7 @@ function Medicoes({ obra, dados, pode, onRegistrado }) {
               <tbody>
                 {linhas.map(l => (
                   <tr key={l.id} style={{ borderTop: '1px solid #1e1e1e' }}>
-                    <td style={td}>{l.nome}{l.vigenteNoPeriodo != null && <div style={{ color: '#c9a227', fontSize: 10 }}>já medida neste período ({pc(l.vigenteNoPeriodo)}) — a nova corrige, a anterior fica no histórico</div>}</td>
+                    <td style={td}>{l.nome}{l.vigenteNoPeriodo != null && <div style={{ color: '#c9a227', fontSize: 11.5 }}>já medida neste período ({pc(l.vigenteNoPeriodo)}) — a nova corrige, a anterior fica no histórico</div>}</td>
                     <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{moeda(l.valor)}</td>
                     <td style={{ ...td, textAlign: 'right', color: '#c9a227' }}>{pc(l.previsto)}</td>
                     <td style={{ ...td, textAlign: 'right', color: '#3fb95f' }}>{pc(l.anterior)}</td>
@@ -525,15 +525,15 @@ function Medicoes({ obra, dados, pode, onRegistrado }) {
             </table>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
-            <span style={{ color: '#666', fontSize: 11, flex: 1 }}>Só o % acumulado: o valor do período sai do avanço × valor da etapa. Só o valor: o % acumulado sai do valor ÷ valor da etapa. Etapas em branco não entram.</span>
+            <span style={{ color: 'var(--texto-3)', fontSize: 12, flex: 1 }}>Só o % acumulado: o valor do período sai do avanço × valor da etapa. Só o valor: o % acumulado sai do valor ÷ valor da etapa. Etapas em branco não entram.</span>
             <button type="submit" disabled={enviando} style={E.btnPrimario}><Save size={13} /> {enviando ? 'Registrando...' : 'Registrar medição'}</button>
           </div>
         </form>
-      ) : <p style={{ color: '#777', fontSize: 12 }}>Só o dono da obra ou um administrador registra medições.</p>}
+      ) : <p style={{ color: 'var(--texto-3)', fontSize: 12 }}>Só o dono da obra ou um administrador registra medições.</p>}
 
       {boletins.length > 0 && (
         <div style={{ ...E.card, padding: 14 }}>
-          <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 }}>Boletins de medição</div>
+          <div style={{ fontSize: 11.5, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 }}>Boletins de medição</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {boletins.map(b => (
               <button key={b.periodo} type="button" onClick={() => boletim(b.periodo, b.numero)} disabled={baixando === b.periodo} style={E.btnSecundario} title="Baixar o boletim em PDF">
@@ -560,8 +560,8 @@ function Medicoes({ obra, dados, pode, onRegistrado }) {
                 <td style={{ ...td, textAlign: 'right' }}>{m.percentual_acumulado != null ? pc(m.percentual_acumulado, 2) : '—'}</td>
                 <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{m.valor_medido != null ? moeda(m.valor_medido) : '—'}</td>
                 <td style={td}>{m.vigente ? <Etiqueta info={SITUACAO.adiantado}>Vigente</Etiqueta> : <Etiqueta info={SITUACAO.nao_iniciado}>Corrigida</Etiqueta>}</td>
-                <td style={{ ...td, fontSize: 11, color: '#999' }}>{m.observacao || '—'}</td>
-                <td style={{ ...td, fontSize: 11, color: '#999', whiteSpace: 'nowrap' }}>{m.usuario_nome || '—'}<div style={{ fontSize: 10, color: '#666' }}>{m.criado_em ? new Date(m.criado_em).toLocaleString('pt-BR') : ''}</div></td>
+                <td style={{ ...td, fontSize: 12, color: 'var(--texto-2)' }}>{m.observacao || '—'}</td>
+                <td style={{ ...td, fontSize: 12, color: 'var(--texto-2)', whiteSpace: 'nowrap' }}>{m.usuario_nome || '—'}<div style={{ fontSize: 11.5, color: 'var(--texto-3)' }}>{m.criado_em ? new Date(m.criado_em).toLocaleString('pt-BR') : ''}</div></td>
               </tr>
             ))}
           </tbody>

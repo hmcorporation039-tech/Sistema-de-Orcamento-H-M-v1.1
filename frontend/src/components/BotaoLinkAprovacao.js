@@ -170,7 +170,7 @@ export default function BotaoLinkAprovacao({ propostaId, numero, status, onAlter
           largura={640} espacoTitulo={12} style={{ padding: 24, color: '#e8e0cc' }}
           acoes={<button type="button" onClick={carregar} title="Atualizar" style={{ ...estilos.btnIcone, marginRight: 6 }}><RefreshCw size={14} /></button>}>
 
-            <div style={{ display: 'flex', gap: 8, fontSize: 11, color: '#999', lineHeight: 1.5, background: '#0e0e0e', border: '1px solid #222', borderRadius: 6, padding: '9px 11px', marginBottom: 14 }}>
+            <div style={{ display: 'flex', gap: 8, fontSize: 12, color: 'var(--texto-2)', lineHeight: 1.5, background: '#0e0e0e', border: '1px solid #222', borderRadius: 6, padding: '9px 11px', marginBottom: 14 }}>
               <ShieldCheck size={16} color="#c9a227" style={{ flexShrink: 0, marginTop: 1 }} />
               <span>
                 O cliente abre o link sem login, vê a proposta e aprova ou recusa informando nome e CPF/CNPJ. Ficam registrados
@@ -193,21 +193,21 @@ export default function BotaoLinkAprovacao({ propostaId, numero, status, onAlter
                   </button>
                 </div>
               ) : (
-                <p style={{ fontSize: 11, color: '#888' }}>Só proposta <b>Ativa</b> recebe link de aprovação (esta está {status || '—'}).</p>
+                <p style={{ fontSize: 12, color: 'var(--texto-3)' }}>Só proposta <b>Ativa</b> recebe link de aprovação (esta está {status || '—'}).</p>
               )}
 
               {novo && (
                 <div style={{ marginTop: 12, border: '1px solid #c9a22755', borderRadius: 8, padding: 12, background: '#16130a' }}>
                   <label style={rotulo}>Endereço para o cliente (válido até {dataHora(novo.expira_em)})</label>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <input readOnly value={novo.url} onFocus={e => e.target.select()} style={{ fontFamily: 'Consolas, monospace', fontSize: 11 }} />
+                    <input readOnly value={novo.url} onFocus={e => e.target.select()} style={{ fontFamily: 'Consolas, monospace', fontSize: 12 }} />
                     <button type="button" onClick={() => copiar(novo.url, 'Link')} style={btnPrimario}><Copy size={13} /> Copiar</button>
                   </div>
-                  <p style={{ fontSize: 10, color: '#c9a227', marginTop: 6 }}>
+                  <p style={{ fontSize: 11.5, color: '#c9a227', marginTop: 6 }}>
                     Copie agora: o endereço completo não aparece de novo (o sistema guarda só uma impressão digital dele). Perdeu? Gere outro e revogue este.
                   </p>
                   {ehEnderecoLocal(baseMostrada) && (
-                    <p style={{ fontSize: 10, color: '#e0a060', marginTop: 6 }}>
+                    <p style={{ fontSize: 11.5, color: '#e0a060', marginTop: 6 }}>
                       Atenção: {baseMostrada} só abre na rede da H&amp;M. Para o cliente abrir de fora, o sistema precisa estar publicado na
                       internet e o endereço configurado em URL_PUBLICA no .env do backend.
                     </p>
@@ -220,7 +220,7 @@ export default function BotaoLinkAprovacao({ propostaId, numero, status, onAlter
                       <MessageCircle size={13} /> WhatsApp
                     </a>
                   </div>
-                  <p style={{ fontSize: 10, color: '#666', marginTop: 6 }}>Por e-mail: cole o texto no campo Mensagem do "Enviar por e-mail" da proposta.</p>
+                  <p style={{ fontSize: 11.5, color: 'var(--texto-3)', marginTop: 6 }}>Por e-mail: cole o texto no campo Mensagem do "Enviar por e-mail" da proposta.</p>
                 </div>
               )}
             </div>
@@ -228,7 +228,7 @@ export default function BotaoLinkAprovacao({ propostaId, numero, status, onAlter
             {/* ── decisões ── */}
             <div style={secao}>
               <div style={tituloSecao}>Decisões do cliente {decisoes.length ? `(${decisoes.length})` : ''}</div>
-              {decisoes.length === 0 && <p style={{ fontSize: 11, color: '#666' }}>{carregando ? 'Carregando…' : 'Nenhuma decisão registrada ainda.'}</p>}
+              {decisoes.length === 0 && <p style={{ fontSize: 12, color: 'var(--texto-3)' }}>{carregando ? 'Carregando…' : 'Nenhuma decisão registrada ainda.'}</p>}
               {decisoes.map(d => (
                 <div key={d.id} style={{ border: '1px solid #2a2a2a', borderRadius: 8, padding: 10, marginBottom: 8, fontSize: 11.5, lineHeight: 1.6 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: d.decisao === 'aprovada' ? '#7fc77f' : '#e08080' }}>
@@ -239,9 +239,9 @@ export default function BotaoLinkAprovacao({ propostaId, numero, status, onAlter
                   <div style={{ color: '#ccc' }}>
                     {d.nome} · {d.tipo_documento} {d.documento}{d.cargo ? ` · ${d.cargo}` : ''}{d.email ? ` · ${d.email}` : ''}
                   </div>
-                  <div style={{ color: '#888' }}>Link #{d.link_id ?? '—'} · IP {d.ip || '—'} · valor {moeda(d.total)}</div>
-                  {d.observacao && <div style={{ color: '#bbb' }}>{d.decisao === 'aprovada' ? 'Observação' : 'Motivo'}: {d.observacao}</div>}
-                  <div style={{ color: '#666', fontSize: 10, wordBreak: 'break-all' }} title={d.user_agent || ''}>Hash do conteúdo: {d.hash_conteudo}</div>
+                  <div style={{ color: 'var(--texto-3)' }}>Link #{d.link_id ?? '—'} · IP {d.ip || '—'} · valor {moeda(d.total)}</div>
+                  {d.observacao && <div style={{ color: 'var(--texto-2)' }}>{d.decisao === 'aprovada' ? 'Observação' : 'Motivo'}: {d.observacao}</div>}
+                  <div style={{ color: 'var(--texto-3)', fontSize: 11.5, wordBreak: 'break-all' }} title={d.user_agent || ''}>Hash do conteúdo: {d.hash_conteudo}</div>
                 </div>
               ))}
             </div>
@@ -249,16 +249,16 @@ export default function BotaoLinkAprovacao({ propostaId, numero, status, onAlter
             {/* ── links ── */}
             <div style={{ ...secao, borderBottom: 'none', marginBottom: 0 }}>
               <div style={tituloSecao}>Links gerados {links.length ? `(${links.length})` : ''}</div>
-              {links.length === 0 && <p style={{ fontSize: 11, color: '#666' }}>{carregando ? 'Carregando…' : 'Nenhum link gerado para esta proposta.'}</p>}
+              {links.length === 0 && <p style={{ fontSize: 12, color: 'var(--texto-3)' }}>{carregando ? 'Carregando…' : 'Nenhum link gerado para esta proposta.'}</p>}
               {links.map(l => {
                 const e = ESTADOS[l.estado] || ESTADOS.expirado;
                 return (
-                  <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid #1e1e1e', padding: '7px 0', fontSize: 11 }}>
+                  <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid #1e1e1e', padding: '7px 0', fontSize: 12 }}>
                     <div style={{ flex: 1, minWidth: 0, lineHeight: 1.5 }}>
                       <div style={{ color: '#ccc' }}>
                         <b>#{l.id}</b> · gerado {dataHora(l.criado_em)}{l.criado_por_nome ? ` por ${l.criado_por_nome}` : ''}
                       </div>
-                      <div style={{ color: '#777' }}>
+                      <div style={{ color: 'var(--texto-3)' }}>
                         válido até {dataHora(l.expira_em)} · {l.acessos} acesso{l.acessos === 1 ? '' : 's'}
                         {l.ultimo_acesso_em ? ` (último ${dataHora(l.ultimo_acesso_em)})` : ''}
                         {l.revogado_em ? ` · revogado ${dataHora(l.revogado_em)}${l.revogado_por_nome ? ` por ${l.revogado_por_nome}` : ''}` : ''}
@@ -281,7 +281,7 @@ export default function BotaoLinkAprovacao({ propostaId, numero, status, onAlter
 }
 
 const { rotulo } = estilos;
-const tituloSecao = { fontSize: 11, color: '#c9a227', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 };
+const tituloSecao = { fontSize: 12, color: '#c9a227', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 };
 const secao = { borderBottom: '1px solid #222', paddingBottom: 14, marginBottom: 14 };
 
 // botões do kit de tela (components/ui/estilos.js); o primário daqui é um pouco

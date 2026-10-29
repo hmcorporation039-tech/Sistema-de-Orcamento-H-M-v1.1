@@ -6,7 +6,7 @@ export default function Paginacao({ pagina, totalPaginas, total, onMudarPagina }
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-      gap: 12, padding: '12px 4px', fontSize: 11, color: '#777'
+      gap: 12, padding: '12px 4px', fontSize: 12, color: 'var(--texto-3)'
     }}>
       <span>{total} {total === 1 ? 'registro' : 'registros'} · página {pagina} de {totalPaginas}</span>
       <div style={{ display: 'flex', gap: 6 }}>
@@ -32,5 +32,5 @@ export default function Paginacao({ pagina, totalPaginas, total, onMudarPagina }
 const btn = {
   display: 'flex', alignItems: 'center', justifyContent: 'center',
   width: 26, height: 26, background: '#1a1a1a', border: '1px solid #2a2a2a',
-  borderRadius: 5, color: '#999'
+  borderRadius: 5, color: 'var(--texto-2)'
 };

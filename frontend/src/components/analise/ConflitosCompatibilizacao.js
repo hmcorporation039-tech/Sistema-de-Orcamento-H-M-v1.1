@@ -45,7 +45,7 @@ export default function ConflitosCompatibilizacao({ analise, estiloCartao, estil
           </button>
         )}
       </div>
-      <p style={{ fontSize: 12, color: '#888', margin: '0 0 10px', lineHeight: 1.6 }}>
+      <p style={{ fontSize: 12, color: 'var(--texto-3)', margin: '0 0 10px', lineHeight: 1.6 }}>
         {comp?.referencia ? <>Referência: <b style={{ color: '#ccc' }}>{comp.referencia}</b> — {alinhados} desenho(s) alinhado(s) pelos ambientes de mesmo nome. </> : null}
         As distâncias são critérios adotados pela H&M (cada achado diz qual) — confira na norma e no manual do equipamento.
       </p>
@@ -59,7 +59,7 @@ export default function ConflitosCompatibilizacao({ analise, estiloCartao, estil
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
-                <tr style={{ color: '#666', textAlign: 'left', borderBottom: '1px solid #222' }}>
+                <tr style={{ color: 'var(--texto-3)', textAlign: 'left', borderBottom: '1px solid #222' }}>
                   <th style={th}>#</th><th style={th}>Conflito</th><th style={th}>Ambiente</th><th style={th}>Componente / traçado</th><th style={th}>Com</th><th style={{ ...th, textAlign: 'right' }}>Distância</th>
                 </tr>
               </thead>
@@ -69,8 +69,8 @@ export default function ConflitosCompatibilizacao({ analise, estiloCartao, estil
                     <td style={{ ...td, color: '#e05555', fontWeight: 700 }}>{i + 1}</td>
                     <td style={td}>{c.tema}</td>
                     <td style={td}>{c.ambiente || '—'}</td>
-                    <td style={td}>{lado(c.a)}<div style={{ color: '#666', fontSize: 11 }}>{c.a.arquivo}</div></td>
-                    <td style={td}>{lado(c.b)}<div style={{ color: '#666', fontSize: 11 }}>{c.b.arquivo}</div></td>
+                    <td style={td}>{lado(c.a)}<div style={{ color: 'var(--texto-3)', fontSize: 12 }}>{c.a.arquivo}</div></td>
+                    <td style={td}>{lado(c.b)}<div style={{ color: 'var(--texto-3)', fontSize: 12 }}>{c.b.arquivo}</div></td>
                     <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{c.distancia != null ? `${br(c.distancia)} m (mín. ${br(c.minimo)})` : c.metros != null ? `${br(c.metros, 1)} m juntos` : '—'}</td>
                   </tr>
                 ))}
@@ -87,6 +87,6 @@ export default function ConflitosCompatibilizacao({ analise, estiloCartao, estil
 }
 
 const btn = { display: 'flex', alignItems: 'center', padding: '7px 12px', background: 'transparent', border: '1px solid #5a2a2a', borderRadius: 6, color: '#f19999', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
-const th = { padding: '6px 8px', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '.4px' };
+const th = { padding: '6px 8px', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.4px' };
 const td = { padding: '6px 8px', verticalAlign: 'top', color: '#ccc' };
 const selo = { fontSize: 12, color: '#ddd', background: '#2a1717', border: '1px solid #5a2a2a', borderRadius: 12, padding: '3px 10px' };

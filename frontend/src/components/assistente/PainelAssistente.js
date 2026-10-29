@@ -100,7 +100,7 @@ function Passo({ parte }) {
         <span style={{ color: parte.ok === false ? '#d06060' : APAGADO }}>{parte.rotulo}{parte.ok == null ? '…' : ''}</span>
       </button>
       {aberto && (
-        <div style={{ padding: '0 8px 8px', fontSize: 11, color: APAGADO }}>
+        <div style={{ padding: '0 8px 8px', fontSize: 12, color: APAGADO }}>
           {parte.entrada && Object.keys(parte.entrada).length > 0 && (
             <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '4px 0', color: '#a99f86' }}>{JSON.stringify(parte.entrada, null, 1)}</pre>
           )}
@@ -132,7 +132,7 @@ function CartaoAcao({ acao, aoMudar }) {
   const cor = pendente ? OURO : acao.status === 'aplicada' ? '#5fae6b' : APAGADO;
   return (
     <div style={{ border: `1px solid ${cor}`, borderRadius: 8, padding: 10, margin: '8px 0', background: pendente ? '#17140a' : '#0e0e0e' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: cor, textTransform: 'uppercase', letterSpacing: '.4px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: cor, textTransform: 'uppercase', letterSpacing: '.4px' }}>
         {pendente ? <AlertTriangle size={13} /> : acao.status === 'aplicada' ? <CheckCircle2 size={13} /> : <XCircle size={13} />} {pendente ? 'Precisa da sua confirmação' : acao.status === 'aplicada' ? 'Aplicada' : acao.status === 'descartada' ? 'Descartada' : acao.status}
       </div>
       {/* várias linhas (texto completo do e-mail, antes → depois de cada campo): confira antes de aplicar */}
@@ -149,7 +149,7 @@ function CartaoAcao({ acao, aoMudar }) {
           </button>
         </div>
       ) : (
-        <div style={{ fontSize: 11, color: APAGADO }}>
+        <div style={{ fontSize: 12, color: APAGADO }}>
           {acao.decidido_por_nome ? `por ${acao.decidido_por_nome} · ` : ''}{acao.decidido_em ? new Date(acao.decidido_em).toLocaleString('pt-BR') : ''}
           {acao.resultado?.mensagem ? ` · ${acao.resultado.mensagem}` : ''}
         </div>
@@ -167,7 +167,7 @@ function Mensagem({ m, acoes, aoMudarAcao, aoNavegar, aoVivo }) {
           {m.texto}
           {(m.arquivos || []).length > 0 && (
             <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              {m.arquivos.map(a => <span key={a.id} style={{ fontSize: 11, color: APAGADO, display: 'inline-flex', alignItems: 'center', gap: 3 }}><FileText size={11} />{a.nome}</span>)}
+              {m.arquivos.map(a => <span key={a.id} style={{ fontSize: 12, color: APAGADO, display: 'inline-flex', alignItems: 'center', gap: 3 }}><FileText size={11} />{a.nome}</span>)}
             </div>
           )}
         </div>
@@ -181,7 +181,7 @@ function Mensagem({ m, acoes, aoMudarAcao, aoNavegar, aoVivo }) {
   const semNada = !partes.length;
   return (
     <div style={{ margin: '10px 0', maxWidth: '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: OURO, fontWeight: 700, marginBottom: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: OURO, fontWeight: 700, marginBottom: 4 }}>
         <Sparkles size={12} /> Assistente
         {m.tempo_ms != null && !vivo && <span style={{ color: APAGADO, fontWeight: 400 }}>· {Math.round(m.tempo_ms / 1000)} s</span>}
       </div>
@@ -202,7 +202,7 @@ function Mensagem({ m, acoes, aoMudarAcao, aoNavegar, aoVivo }) {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
           {criados.map(c => (
             <Link key={`${c.tipo}-${c.id}`} to={c.link} onClick={aoNavegar}
-              style={{ ...botao({ fontSize: 11, color: OURO, borderColor: '#4a3d10', textDecoration: 'none' }) }}>
+              style={{ ...botao({ fontSize: 12, color: OURO, borderColor: '#4a3d10', textDecoration: 'none' }) }}>
               <Link2 size={12} /> {c.rotulo}
             </Link>
           ))}
@@ -470,7 +470,7 @@ export default function PainelAssistente({ usuario }) {
               {verLista || !conversa ? 'Assistente H&M' : conversa.titulo}
             </div>
           )}
-          <div style={{ fontSize: 10, color: status?.disponivel ? '#5fae6b' : '#d08a40', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={{ fontSize: 11.5, color: status?.disponivel ? '#5fae6b' : '#d08a40', display: 'flex', alignItems: 'center', gap: 4 }}>
             <span style={{ width: 6, height: 6, borderRadius: 3, background: status?.disponivel ? '#5fae6b' : '#d08a40', display: 'inline-block' }} />
             {status == null ? 'verificando…' : status.disponivel
               ? `${status.provedor === 'api' ? 'API Anthropic' : 'Claude Max'} · ${status.modelo}${status.fila?.esperando ? ` · fila ${status.fila.esperando}` : ''} · hoje ${status.usadasHoje}${status.limiteDiario ? `/${status.limiteDiario}` : ''}`
@@ -491,7 +491,7 @@ export default function PainelAssistente({ usuario }) {
           <AlertTriangle size={13} style={{ verticalAlign: '-2px' }} /> {status.motivo || 'O assistente não está disponível agora.'}
         </div>
       )}
-      <div style={{ padding: '6px 12px', fontSize: 11, color: APAGADO, borderBottom: `1px solid ${BORDA}`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+      <div style={{ padding: '6px 12px', fontSize: 12, color: APAGADO, borderBottom: `1px solid ${BORDA}`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
         title={contextoTexto || ''}>
         Contexto: <span style={{ color: contextoTexto ? TEXTO : APAGADO }}>{contextoTexto || 'nenhuma obra, proposta ou projeto aberto'}</span>
         {status?.usoAssinatura && <span> · assinatura: 5 h {pct(status.usoAssinatura.cincoHoras)}, semana {pct(status.usoAssinatura.semana)}</span>}
@@ -511,7 +511,7 @@ export default function PainelAssistente({ usuario }) {
                 onClick={() => abrirConversa(c.id)}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.titulo}</div>
-                  <div style={{ fontSize: 10, color: APAGADO }}>
+                  <div style={{ fontSize: 11.5, color: APAGADO }}>
                     {new Date(c.atualizado_em).toLocaleString('pt-BR')}
                     {c.em_andamento && <span style={{ color: OURO }}> · respondendo…</span>}
                     {c.acoes_pendentes > 0 && <span style={{ color: OURO }}> · {c.acoes_pendentes} ação(ões) pendente(s)</span>}
@@ -550,7 +550,7 @@ export default function PainelAssistente({ usuario }) {
 
       {/* Ações pendentes (atalho) */}
       {pendentes > 0 && !verLista && (
-        <div style={{ padding: '4px 12px', fontSize: 11, color: OURO, borderTop: `1px solid ${BORDA}` }}>
+        <div style={{ padding: '4px 12px', fontSize: 12, color: OURO, borderTop: `1px solid ${BORDA}` }}>
           {pendentes} ação(ões) esperando sua confirmação nesta conversa.
         </div>
       )}
@@ -561,7 +561,7 @@ export default function PainelAssistente({ usuario }) {
           {anexos.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
               {anexos.map(a => (
-                <span key={a.id} style={{ ...botao({ fontSize: 11, fontWeight: 600, cursor: 'default', padding: '3px 8px' }) }}>
+                <span key={a.id} style={{ ...botao({ fontSize: 12, fontWeight: 600, cursor: 'default', padding: '3px 8px' }) }}>
                   <FileText size={12} style={{ color: OURO }} /> {a.nome} <span style={{ color: APAGADO }}>{tamanho(a.tamanho)}</span>
                   <button type="button" onClick={() => setAnexos(l => l.filter(x => x.id !== a.id))} aria-label={`Tirar ${a.nome}`}
                     style={{ background: 'none', border: 'none', color: APAGADO, cursor: 'pointer', padding: 0, display: 'inline-flex' }}><X size={12} /></button>
@@ -592,7 +592,7 @@ export default function PainelAssistente({ usuario }) {
               </button>
             )}
           </div>
-          <div style={{ fontSize: 10, color: '#5f5848', marginTop: 5 }}>
+          <div style={{ fontSize: 11.5, color: '#5f5848', marginTop: 5 }}>
             O assistente cria só rascunhos; aprovar, enviar, excluir e mudar preço pedem sua confirmação. Confira sempre os valores [CONFERIR].
           </div>
         </div>

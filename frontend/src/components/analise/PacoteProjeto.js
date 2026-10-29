@@ -80,7 +80,7 @@ export function ListaPacote({ itens, onMudar, disciplinas, token, onDescartar })
   return (
     <div data-testid="lista-pacote">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 11, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px' }}>
+        <span style={{ fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px' }}>
           {itens.length} arquivo(s) no pacote — {incluidos.filter(i => i.referencia).length} referência(s)
         </span>
         {semDisciplina > 0 && <span style={{ fontSize: 12, color: '#e0a030' }}>{semDisciplina} sem disciplina — marque ou tire da análise</span>}
@@ -89,7 +89,7 @@ export function ListaPacote({ itens, onMudar, disciplinas, token, onDescartar })
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
-            <tr style={{ color: '#666', textAlign: 'left', borderBottom: '1px solid #222' }}>
+            <tr style={{ color: 'var(--texto-3)', textAlign: 'left', borderBottom: '1px solid #222' }}>
               <th style={th} title="Entra na análise">Usar</th><th style={th}>Arquivo</th><th style={th}>Disciplinas</th><th style={th}>Referência</th>
             </tr>
           </thead>
@@ -99,13 +99,13 @@ export function ListaPacote({ itens, onMudar, disciplinas, token, onDescartar })
                 <td style={td}><input type="checkbox" checked={it.incluir} onChange={e => mudar(it.id, { incluir: e.target.checked })} /></td>
                 <td style={{ ...td, maxWidth: 360 }}>
                   <div style={{ color: '#ddd', fontWeight: 600, wordBreak: 'break-all' }}>
-                    <span style={{ display: 'inline-block', minWidth: 32, marginRight: 6, padding: '1px 5px', borderRadius: 3, background: it.tipo === 'pdf' ? '#3a1d1d' : '#1d2d3a', color: it.tipo === 'pdf' ? '#f19999' : '#8ab4f8', fontSize: 10, textAlign: 'center', textTransform: 'uppercase' }}>{it.tipo}</span>
+                    <span style={{ display: 'inline-block', minWidth: 32, marginRight: 6, padding: '1px 5px', borderRadius: 3, background: it.tipo === 'pdf' ? '#3a1d1d' : '#1d2d3a', color: it.tipo === 'pdf' ? '#f19999' : '#8ab4f8', fontSize: 11.5, textAlign: 'center', textTransform: 'uppercase' }}>{it.tipo}</span>
                     {it.nome}
                   </div>
-                  <div style={{ color: '#666', fontSize: 11, wordBreak: 'break-all' }}>{it.caminho && it.caminho !== it.nome ? `${it.caminho} · ` : ''}{tamanho(it.tamanho)} · {it.motivo}</div>
+                  <div style={{ color: 'var(--texto-3)', fontSize: 12, wordBreak: 'break-all' }}>{it.caminho && it.caminho !== it.nome ? `${it.caminho} · ` : ''}{tamanho(it.tamanho)} · {it.motivo}</div>
                 </td>
                 <td style={td}>
-                  {it.referencia ? <span style={{ color: '#777' }}>— (não é orçado)</span> : (
+                  {it.referencia ? <span style={{ color: 'var(--texto-3)' }}>— (não é orçado)</span> : (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
                       {it.disciplinas.map(k => (
                         <span key={k} style={chip}>
@@ -138,9 +138,9 @@ export function ListaPacote({ itens, onMudar, disciplinas, token, onDescartar })
   );
 }
 
-const btn = { display: 'flex', alignItems: 'center', padding: '8px 12px', background: 'transparent', border: '1px dashed #333', borderRadius: 6, color: '#bbb', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
-const th = { padding: '6px 8px', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '.4px' };
+const btn = { display: 'flex', alignItems: 'center', padding: '8px 12px', background: 'transparent', border: '1px dashed #333', borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
+const th = { padding: '6px 8px', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.4px' };
 const td = { padding: '7px 8px', verticalAlign: 'top' };
-const chip = { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 4px 2px 8px', borderRadius: 10, background: '#2c2715', border: '1px solid #5a4a12', color: '#e2c35a', fontSize: 11 };
+const chip = { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 4px 2px 8px', borderRadius: 10, background: '#2c2715', border: '1px solid #5a4a12', color: '#e2c35a', fontSize: 12 };
 const chipX = { display: 'flex', background: 'none', border: 0, color: '#c9a227', cursor: 'pointer', padding: 0 };
-const sel = { background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 5, color: '#aaa', fontSize: 11, padding: '3px 5px', maxWidth: 190 };
+const sel = { background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 5, color: 'var(--texto-2)', fontSize: 12, padding: '3px 5px', maxWidth: 190 };

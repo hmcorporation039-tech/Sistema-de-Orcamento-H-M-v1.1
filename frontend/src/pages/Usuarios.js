@@ -152,12 +152,12 @@ export default function Usuarios() {
             )}
             {!carregando && usuarios.map(u => (
               <tr key={u.id} style={{ borderTop: '1px solid #1e1e1e' }}>
-                <td style={td}>{u.nome}{u.id === usuarioLogado.id && <span style={{ color: '#666', fontSize: 10 }}> (você)</span>}</td>
+                <td style={td}>{u.nome}{u.id === usuarioLogado.id && <span style={{ color: 'var(--texto-3)', fontSize: 11.5 }}> (você)</span>}</td>
                 <td style={td}>{u.email}</td>
                 <td style={td}>{u.role === 'admin' ? 'Administrador' : 'Usuário'}</td>
                 <td style={td}>
                   <span style={{
-                    padding: '3px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700,
+                    padding: '3px 9px', borderRadius: 20, fontSize: 11.5, fontWeight: 700,
                     background: u.ativo ? '#0a1a0f' : '#1a0a0a', color: u.ativo ? '#3fb95f' : '#b04040',
                     border: `1px solid ${u.ativo ? '#1a4a26' : '#4a1a1a'}`
                   }}>
@@ -174,7 +174,7 @@ export default function Usuarios() {
                   </button>
                   <button
                     onClick={() => alternarAtivo(u)}
-                    style={{ ...btnSecundario, padding: '4px 8px', fontSize: 10 }}
+                    style={{ ...btnSecundario, padding: '4px 8px', fontSize: 11.5 }}
                     disabled={u.id === usuarioLogado.id}
                   >
                     {u.ativo ? 'Desativar' : 'Reativar'}
@@ -256,5 +256,5 @@ const { th, td, tdVazio, btnPrimario, btnIcone } = estilos;
 
 const btnSecundario = {
   padding: '9px 16px', background: 'transparent', border: '1px solid #2a2a2a',
-  borderRadius: 6, color: '#999', fontWeight: 700, fontSize: 12, cursor: 'pointer'
+  borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer'
 };

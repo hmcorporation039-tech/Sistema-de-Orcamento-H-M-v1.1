@@ -82,7 +82,7 @@ export default function EntregasProjeto({ laudo, desenhos, temArquitetura, revis
     <div style={caixa} data-testid="entregas-projeto">
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
         <span style={{ fontSize: 12, color: '#c9a227', fontWeight: 700 }}>Entregas do projeto</span>
-        <span style={{ fontSize: 11, color: '#777' }}>escolha o que entregar ao cliente — vai num ZIP e para a pasta do projeto (Entrega)</span>
+        <span style={{ fontSize: 12, color: 'var(--texto-3)' }}>escolha o que entregar ao cliente — vai num ZIP e para a pasta do projeto (Entrega)</span>
       </div>
       <div style={{ display: 'flex', gap: '6px 18px', flexWrap: 'wrap' }}>
         {catalogo.map(e => {
@@ -99,14 +99,14 @@ export default function EntregasProjeto({ laudo, desenhos, temArquitetura, revis
       </div>
       {itens.has('asbuilt') && (
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
-          <span style={{ fontSize: 11, color: '#e08080', fontWeight: 700 }}>AS BUILT</span>
+          <span style={{ fontSize: 12, color: '#e08080', fontWeight: 700 }}>AS BUILT</span>
           <label style={rotulo}>Data
             <input type="date" value={asBuilt.data} onChange={e => setAsBuilt(a => ({ ...a, data: e.target.value }))} style={campo} />
           </label>
           <label style={rotulo}>Revisão
             <input value={asBuilt.revisao} onChange={e => setAsBuilt(a => ({ ...a, revisao: e.target.value }))} style={{ ...campo, width: 180 }} />
           </label>
-          <span style={{ fontSize: 11, color: '#888', flex: '1 1 260px' }}>
+          <span style={{ fontSize: 12, color: 'var(--texto-3)', flex: '1 1 260px' }}>
             Os arquivos saem com título/carimbo "AS BUILT", esta data e esta revisão. Antes, atualize o formulário com o que foi executado na obra.
           </span>
         </div>
@@ -119,14 +119,14 @@ export default function EntregasProjeto({ laudo, desenhos, temArquitetura, revis
           title="Grava os arquivos escolhidos na pasta do projeto, em Entrega (nomes fixos, sobrescritos a cada versão)">
           <FolderDown size={13} style={{ marginRight: 5 }} /> {ocupado === 'entrega_pasta' ? 'Gravando…' : 'Salvar entrega na pasta'}
         </button>
-        {salvas.gerado_em && <span style={{ fontSize: 11, color: '#666', alignSelf: 'center' }}>Última entrega: {new Date(salvas.gerado_em).toLocaleString('pt-BR')}</span>}
+        {salvas.gerado_em && <span style={{ fontSize: 12, color: 'var(--texto-3)', alignSelf: 'center' }}>Última entrega: {new Date(salvas.gerado_em).toLocaleString('pt-BR')}</span>}
       </div>
     </div>
   );
 }
 
 const caixa = { marginTop: 10, padding: '10px 12px', border: '1px solid #2a2a2a', borderRadius: 8, background: '#101010' };
-const rotulo = { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#999' };
+const rotulo = { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--texto-2)' };
 const campo = { background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 5, color: '#ddd', fontSize: 12, padding: '4px 6px' };
 const btn = {
   display: 'flex', alignItems: 'center', padding: '8px 12px', background: 'transparent', border: '1px dashed #333',

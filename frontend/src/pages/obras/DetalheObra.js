@@ -250,7 +250,7 @@ function Resumo({ obra, recarregar, podeEditar }) {
           </Campo>
         </div>
         <div style={{ display: 'flex', gap: 10, marginTop: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ color: '#666', fontSize: 11, flex: 1 }}>
+          <span style={{ color: 'var(--texto-3)', fontSize: 12, flex: 1 }}>
             Criada em {formatarData(obra.criado_em)}{obra.usuario_nome ? ` por ${obra.usuario_nome}` : ''}
             {obra.origem_migracao ? ` · gerada a partir dos dados antigos (${obra.origem_migracao})` : ''}
             {!podeEditar && ' · só o dono da obra ou um administrador altera'}
@@ -266,9 +266,9 @@ function Resumo({ obra, recarregar, podeEditar }) {
 function Cartao({ rotulo, valor, cor, nota }) {
   return (
     <div style={{ ...E.card, marginBottom: 0 }}>
-      <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>{rotulo}</div>
+      <div style={{ fontSize: 11.5, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>{rotulo}</div>
       <div style={{ fontSize: 20, fontWeight: 700, color: cor }}>{valor}</div>
-      {nota && <div style={{ fontSize: 10, color: '#666', marginTop: 4 }}>{nota}</div>}
+      {nota && <div style={{ fontSize: 11.5, color: 'var(--texto-3)', marginTop: 4 }}>{nota}</div>}
     </div>
   );
 }
@@ -326,7 +326,7 @@ function Tabela({ colunas, vazio, children }) {
 
 const tr = { borderTop: '1px solid #1e1e1e' };
 
-const textoAjuda = { color: '#777', fontSize: 12, margin: '0 0 10px', lineHeight: 1.6 };
+const textoAjuda = { color: 'var(--texto-3)', fontSize: 12, margin: '0 0 10px', lineHeight: 1.6 };
 
 // ── Análises de projeto (arquivos recebidos), com a finalidade ────────
 // 2.3: o envio dos arquivos fica AQUI, na obra (arquivos, pasta, ZIP ou os que
@@ -352,7 +352,7 @@ function Analises({ obra, ligar, desligar, podeEditar, recarregar, pacoteNovidad
         <div style={{ border: '1px solid #2a2a2a', borderRadius: 8, padding: 16, marginBottom: 16, background: '#121212' }}>
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
             <b style={{ color: '#c9a227', fontSize: 14, flex: 1 }}>Enviar o projeto para análise — {obra.nome}</b>
-            {obra.analises.length > 0 && <button type="button" onClick={() => setEnviando(false)} style={{ background: 'none', border: 0, color: '#888', cursor: 'pointer', fontSize: 12 }}>Fechar</button>}
+            {obra.analises.length > 0 && <button type="button" onClick={() => setEnviando(false)} style={{ background: 'none', border: 0, color: 'var(--texto-3)', cursor: 'pointer', fontSize: 12 }}>Fechar</button>}
           </div>
           <EnviarParaAnalise obraFixa={obra.id} disciplinas={disciplinas} iniciarComPasta={daPasta} pacoteInicial={pacoteNovidades}
             onCriada={(a) => { setPacoteNovidades(null); navigate(`/obras/analise/${a.id}`); }} />
@@ -397,11 +397,11 @@ function RegistrosDisciplina({ obra, ligar, desligar, podeEditar, tipo, itens, r
             <td style={{ ...E.td, fontWeight: 700 }}>{String(l.disciplina).toUpperCase()}</td>
             <td style={E.td}>
               <Link to={`/obras?aba=${R.aba}&laudo=${l.id}`} style={E.link}>{l.titulo || `${tipo === 'projeto' ? 'Projeto' : 'Laudo'} #${l.id}`}</Link>
-              {l.gerar_orcamento === false && <span style={{ color: '#777', fontSize: 10 }}> · {R.semOrcamento}</span>}
-              {l.analise_id && <span style={{ color: '#777', fontSize: 10 }}> · da <Link to={`/obras/analise/${l.analise_id}`} style={E.link}>análise #{l.analise_id}</Link></span>}
+              {l.gerar_orcamento === false && <span style={{ color: 'var(--texto-3)', fontSize: 11.5 }}> · {R.semOrcamento}</span>}
+              {l.analise_id && <span style={{ color: 'var(--texto-3)', fontSize: 11.5 }}> · da <Link to={`/obras/analise/${l.analise_id}`} style={E.link}>análise #{l.analise_id}</Link></span>}
             </td>
             <td style={E.td}>{l.revisao || '—'}</td>
-            <td style={{ ...E.td, fontSize: 11 }}>
+            <td style={{ ...E.td, fontSize: 12 }}>
               {Object.entries(l.propostas || {}).map(([modo, pid]) => <Link key={modo} to={`/propostas/editar/${pid}`} style={{ ...E.link, marginRight: 8 }}>{modo}</Link>)}
               {!Object.keys(l.propostas || {}).length && '—'}
             </td>
@@ -434,14 +434,14 @@ function Propostas({ obra, ligar, desligar, podeEditar }) {
             <td style={E.td}><Link to={`/propostas/editar/${p.id}`} style={E.link}>{p.numero}</Link>{(r.orcado_propostas || []).includes(p.id) && <span title="entra no orçado da obra" style={{ color: '#c9a227', marginLeft: 6 }}>●</span>}</td>
             <td style={E.td}>{formatarData(p.data)}</td>
             <td style={E.td}>{p.cliente_nome || '—'}</td>
-            <td style={{ ...E.td, fontSize: 11, color: '#999' }}>{p.local_obra || '—'}</td>
+            <td style={{ ...E.td, fontSize: 12, color: 'var(--texto-2)' }}>{p.local_obra || '—'}</td>
             <td style={E.td}><Etiqueta info={STATUS_PROPOSTA[p.status]}>{p.status}</Etiqueta></td>
             <td style={{ ...E.td, textAlign: 'right', fontWeight: 700, color: '#c9a227' }}>{moeda(p.total)}</td>
             <td style={{ ...E.td, textAlign: 'right' }}>{podeEditar && <BotaoDesligar onClick={() => desligar('proposta', p.id, `a proposta ${p.numero}`)} />}</td>
           </tr>
         ))}
       </Tabela>
-      <p style={{ color: '#666', fontSize: 11, marginTop: 8 }}>● entra no orçado: {BASE_ORCADO[r.orcado_base]}.</p>
+      <p style={{ color: 'var(--texto-3)', fontSize: 12, marginTop: 8 }}>● entra no orçado: {BASE_ORCADO[r.orcado_base]}.</p>
     </div>
   );
 }
@@ -457,14 +457,14 @@ function Execucao({ obra, ligar, desligar }) {
         {!obra.restrito_financeiro && <Link to={`/financeiro?aba=contratos&obra=${obra.id}`} style={E.btnPrimario}><Plus size={13} /> Novo contrato nesta obra</Link>}
       </Cabecalho>
       {obra.restrito_financeiro
-        ? <div style={E.card}><p style={{ color: '#777', margin: 0 }}>Contratos de prestadores são vistos só por administradores.</p></div>
+        ? <div style={E.card}><p style={{ color: 'var(--texto-3)', margin: 0 }}>Contratos de prestadores são vistos só por administradores.</p></div>
         : (
           <Tabela colunas={[{ rotulo: 'Código' }, { rotulo: 'Prestador' }, { rotulo: 'Objeto' }, { rotulo: 'Período' }, { rotulo: 'Valor', direita: true }, { rotulo: '' }]} vazio="Nenhum contrato ligado a esta obra.">
             {obra.contratos.map(c => (
               <tr key={c.id} style={tr}>
                 <td style={{ ...E.td, fontWeight: 700, color: '#c9a227' }}>{c.codigo_registro}</td>
                 <td style={E.td}>{c.prestador_nome}</td>
-                <td style={{ ...E.td, fontSize: 11, color: '#999' }}>{c.objeto || c.local_obra || '—'}</td>
+                <td style={{ ...E.td, fontSize: 12, color: 'var(--texto-2)' }}>{c.objeto || c.local_obra || '—'}</td>
                 <td style={E.td}>{formatarData(c.periodo_inicio)} a {formatarData(c.periodo_fim)}</td>
                 <td style={{ ...E.td, textAlign: 'right', fontWeight: 700 }}>{moeda(c.valor)}</td>
                 <td style={{ ...E.td, textAlign: 'right' }}><BotaoDesligar onClick={() => desligar('contrato', c.id, `o contrato ${c.codigo_registro}`)} /></td>
@@ -488,12 +488,12 @@ function Financeiro({ obra, ligar, desligar }) {
         rotulo: `${new Date(m.data_hora).toLocaleDateString('pt-BR')} — ${m.tipo === 'realizado' ? 'saída' : 'entrada'} ${moeda(m.valor)} — ${m.nome || 'sem nome'}`,
       })));
   }, []);
-  if (obra.restrito_financeiro) return <div style={E.card}><p style={{ color: '#777', margin: 0 }}>O financeiro da obra é visto só por administradores.</p></div>;
+  if (obra.restrito_financeiro) return <div style={E.card}><p style={{ color: 'var(--texto-3)', margin: 0 }}>O financeiro da obra é visto só por administradores.</p></div>;
   const r = obra.resumo;
   return (
     <div>
       <Cabecalho titulo="Movimentos do financeiro ligados">
-        <span style={{ color: '#888', fontSize: 11 }}>últimos 6 meses sem obra:</span>
+        <span style={{ color: 'var(--texto-3)', fontSize: 12 }}>últimos 6 meses sem obra:</span>
         <LigarExistente rotulo="Ligar movimento existente" carregar={carregar} onLigar={(id) => ligar('movimento', id)} />
       </Cabecalho>
       <div style={{ display: 'flex', gap: 18, marginBottom: 10, fontSize: 12 }}>
@@ -525,11 +525,11 @@ function Arquivos({ obra }) {
   return (
     <div>
       <Cabecalho titulo="Pasta da obra" />
-      <p style={{ color: '#777', fontSize: 12, margin: '0 0 6px' }}>
+      <p style={{ color: 'var(--texto-3)', fontSize: 12, margin: '0 0 6px' }}>
         A pasta da obra fica dentro da <b>pasta do cliente</b> (servidor); o que o cliente mandar vai em <code>Recebidos do cliente</code> e o sistema avisa arquivo novo ou alterado (sininho no topo). Itens desta obra gravam aqui: <code>Projeto</code> (análise), <code>Projetos\&lt;disciplina&gt;</code> (com a <code>Entrega</code>), <code>Laudos\&lt;disciplina&gt;</code>, <code>Propostas</code> e <code>Contratos</code>.
       </p>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '4px 0 10px', padding: '10px 12px', border: '1px solid #3a3215', borderRadius: 8, background: '#16140c' }}>
-        <span style={{ color: '#bbb', fontSize: 12, flex: '1 1 320px', lineHeight: 1.5 }}>
+        <span style={{ color: 'var(--texto-2)', fontSize: 12, flex: '1 1 320px', lineHeight: 1.5 }}>
           Recebeu o projeto do cliente por e-mail? Salve os arquivos (PDF, DWG, DXF ou ZIP) nesta pasta — ou envie direto pela aba <b>Análises</b> — e analise:
         </span>
         <Link to={`/obras/${obra.id}?secao=analises&usarPasta=1`} style={E.btnPrimario} data-testid="analisar-pasta-obra"><FileSearch size={13} /> Analisar os arquivos desta pasta</Link>
@@ -538,7 +538,7 @@ function Arquivos({ obra }) {
       {outras.length > 0 && (
         <>
           <Cabecalho titulo="Pastas anteriores dos itens ligados" />
-          <p style={{ color: '#777', fontSize: 12, margin: '0 0 6px' }}>Análises e laudos de antes da obra continuam nas pastas de sempre (nada foi movido).</p>
+          <p style={{ color: 'var(--texto-3)', fontSize: 12, margin: '0 0 6px' }}>Análises e laudos de antes da obra continuam nas pastas de sempre (nada foi movido).</p>
           {outras.map(o => <PastaItem key={`${o.tipo}-${o.id}`} item={o} />)}
         </>
       )}
@@ -551,7 +551,7 @@ function PastaItem({ item }) {
   const abrir = useCallback(() => (item.tipo === 'analise' ? abrirPastaAnalise(item.id) : abrirPastaLaudo(item.id)), [item]);
   return (
     <div>
-      <div style={{ color: '#aaa', fontSize: 12, marginTop: 8 }}>{item.tipo === 'analise' ? 'Análise' : item.tipo_registro === 'projeto' ? 'Projeto' : 'Laudo'} #{item.id} — {item.rotulo}</div>
+      <div style={{ color: 'var(--texto-2)', fontSize: 12, marginTop: 8 }}>{item.tipo === 'analise' ? 'Análise' : item.tipo_registro === 'projeto' ? 'Projeto' : 'Laudo'} #{item.id} — {item.rotulo}</div>
       <PainelPasta carregar={carregar} abrir={abrir} />
     </div>
   );

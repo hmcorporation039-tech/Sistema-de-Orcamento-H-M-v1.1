@@ -127,7 +127,7 @@ export default function Clientes() {
         <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>Clientes</h2>
 
         <div style={{ position: 'relative', width: 260 }}>
-          <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: '#555' }} />
+          <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--texto-3)' }} />
           <input
             value={busca}
             onChange={e => setBusca(e.target.value)}
@@ -197,7 +197,7 @@ export default function Clientes() {
               <h3 style={{ color: '#c9a227', fontSize: 15, margin: 0, flex: 1 }}>Pasta do cliente{pastaDe.nome ? ` — ${pastaDe.nome}` : ''}</h3>
               <button onClick={() => setPastaDe(null)} style={btnIcone} title="Fechar"><X size={14} /></button>
             </div>
-            <p style={{ color: '#888', fontSize: 12, margin: '0 0 8px', lineHeight: 1.6 }}>
+            <p style={{ color: 'var(--texto-3)', fontSize: 12, margin: '0 0 8px', lineHeight: 1.6 }}>
               Tudo deste cliente fica aqui (no servidor): obras, projetos, laudos, propostas e contratos gerados pelo sistema. O que o cliente mandar,
               salve em <code>Recebidos do cliente</code> (ou na pasta da obra) — o sistema procura arquivos novos e alterados e avisa.
             </p>
@@ -322,7 +322,7 @@ function LigarPasta({ id, onLigada }) {
   const livres = opcoes.pastas.filter(p => !p.atual);
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', margin: '0 0 8px', fontSize: 12 }}>
-      <span style={{ color: '#aaa' }}>Pasta do servidor:</span>
+      <span style={{ color: 'var(--texto-2)' }}>Pasta do servidor:</span>
       <Select value={escolhida} onChange={e => setEscolhida(e.target.value)} style={{ width: 'auto', minWidth: 260 }} data-testid="opcoes-pasta">
         <option value="">Escolha a pasta…</option>
         <optgroup label="Nome parecido com o do cliente">
@@ -336,7 +336,7 @@ function LigarPasta({ id, onLigada }) {
         {ligando ? 'Ligando…' : 'Ligar'}
       </button>
       <button type="button" onClick={() => setOpcoes(null)} style={{ ...btnSecundario, fontSize: 12, padding: '5px 10px' }}>Cancelar</button>
-      {atual && <span style={{ color: '#777', width: '100%' }}>Hoje: <code>{atual}</code></span>}
+      {atual && <span style={{ color: 'var(--texto-3)', width: '100%' }}>Hoje: <code>{atual}</code></span>}
     </div>
   );
 }
@@ -347,5 +347,5 @@ const { th, td, tdVazio, btnPrimario, btnIcone } = estilos;
 
 const btnSecundario = {
   padding: '9px 16px', background: 'transparent', border: '1px solid #2a2a2a',
-  borderRadius: 6, color: '#999', fontWeight: 700, fontSize: 12, cursor: 'pointer'
+  borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer'
 };

@@ -366,13 +366,13 @@ export default function Compatibilizacao() {
       <h3 style={{ ...tituloSecao, color: principal ? '#8ab4f8' : '#c9a227', display: 'flex', alignItems: 'center', gap: 8 }}>
         <DraftingCompass size={16} /> {principal ? 'Elaborar projeto por disciplina' : 'Dimensionar pela norma (projeto) — opcional'}
       </h3>
-      <p style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.6 }}>
+      <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 12, lineHeight: 1.6 }}>
         {principal
           ? <>Cada disciplina vira um <b>projeto</b> (aba "Projetos por disciplina") já preenchido com o que foi lido dos arquivos (PDF, DWG ou DXF): calcule pela norma, gere o memorial e os desenhos e escolha as <b>entregas</b> — definições técnicas, as-built, DXF (abre no AutoCAD), QElectroTech e PDF. <b>Não gera laudo</b>: laudo é pedido quando necessário, em Obras › Laudos.</>
           : <>Cria o <b>projeto</b> da disciplina (não é laudo) já preenchido com o que foi lido dos arquivos, para quantificar melhor pela norma e gerar o orçamento de execução lá. O que for estimado vem marcado para conferir.</>}
       </p>
       {disciplinasComSkill.length === 0 ? (
-        <p style={{ fontSize: 12, color: '#666', fontStyle: 'italic', margin: 0 }}>Nenhuma disciplina desta análise tem cálculo pela norma ainda.</p>
+        <p style={{ fontSize: 12, color: 'var(--texto-3)', fontStyle: 'italic', margin: 0 }}>Nenhuma disciplina desta análise tem cálculo pela norma ainda.</p>
       ) : (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {disciplinasComSkill.map(d => {
@@ -419,7 +419,7 @@ export default function Compatibilizacao() {
       )}
 
       {carregandoAnalise && (
-        <div style={card}><p style={{ fontSize: 13, color: '#777' }}>Carregando análise...</p></div>
+        <div style={card}><p style={{ fontSize: 13, color: 'var(--texto-3)' }}>Carregando análise...</p></div>
       )}
 
       {analise && !carregandoAnalise && (
@@ -427,15 +427,15 @@ export default function Compatibilizacao() {
           <div style={card}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
               <div style={{ flex: '1 1 260px' }}>
-                <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Nome do projeto (pasta)</div>
+                <div style={{ fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Nome do projeto (pasta)</div>
                 <input value={analise.nomeProjeto || ''} onChange={e => atualizarNomeProjeto(e.target.value)} placeholder={analise.cliente || 'Nome do projeto'} style={{ fontSize: 15, fontWeight: 700, color: '#e8e8e8', background: 'transparent', border: 'none', padding: '2px 0' }} />
               </div>
               <div style={{ flex: '1 1 260px' }}>
-                <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Cliente</div>
+                <div style={{ fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Cliente</div>
                 <input value={analise.cliente || ''} onChange={e => atualizarCliente(e.target.value)} placeholder="Nome do cliente" style={{ fontSize: 15, fontWeight: 700, color: '#c9a227', background: 'transparent', border: 'none', padding: '2px 0' }} />
               </div>
               <div style={{ flex: '0 1 230px' }} title="Muda a tela desta análise: Orçamento (itens e gerar orçamento) ou Elaboração de projeto (projeto por disciplina e entregas). Nenhuma gera laudo.">
-                <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Finalidade</div>
+                <div style={{ fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Finalidade</div>
                 <Select aria-label="Finalidade da análise" value={analise.finalidade || 'orcamento'} onChange={e => alterarFinalidade(e.target.value)}
                   style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, color: elaboracao ? '#8ab4f8' : '#c9a227', padding: '6px 8px', fontSize: 13, fontWeight: 700 }}>
                   {FINALIDADES.map(f => <option key={f.valor} value={f.valor}>{f.rotulo}</option>)}
@@ -443,11 +443,11 @@ export default function Compatibilizacao() {
               </div>
               {analise.obra && (
                 <div style={{ flex: '0 1 260px' }}>
-                  <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Obra</div>
-                  <div style={{ fontSize: 13, color: '#ccc' }}>{analise.obra.nome} <span style={{ color: '#777' }}>({analise.obra.codigo})</span></div>
+                  <div style={{ fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Obra</div>
+                  <div style={{ fontSize: 13, color: '#ccc' }}>{analise.obra.nome} <span style={{ color: 'var(--texto-3)' }}>({analise.obra.codigo})</span></div>
                 </div>
               )}
-              <div style={{ fontSize: 11, color: '#666' }}>
+              <div style={{ fontSize: 12, color: 'var(--texto-3)' }}>
                 {salvando ? 'Salvando...' : salvoEm ? `Salvo às ${formatarHora(salvoEm)}` : ''}
               </div>
             </div>
@@ -474,7 +474,7 @@ export default function Compatibilizacao() {
               <ResumoBloco rotulo="Bloco 2 — Materiais e equipamentos" valor={resumoOrcamento.blocoMateriais} />
               <ResumoBloco rotulo="Total estimado" valor={resumoOrcamento.total} destaque />
             </div>
-            <p style={{ fontSize: 11, color: '#666', marginTop: 12, lineHeight: 1.5 }}>
+            <p style={{ fontSize: 12, color: 'var(--texto-3)', marginTop: 12, lineHeight: 1.5 }}>
               Só informação: soma dos itens não marcados "já pronto", com o valor sugerido pela análise (serviço sem
               referência ou material sem correspondência no catálogo entra como R$ 0,00). Quantidades, preços, pesquisa
               de mercado e referências são revisados no editor do orçamento — o valor que vale é o da proposta.
@@ -483,7 +483,7 @@ export default function Compatibilizacao() {
 
           <div style={card}>
             <h3 style={tituloSecao}>Funcionamento do Projeto</h3>
-            <p style={{ fontSize: 12, color: '#666', marginBottom: 10, lineHeight: 1.6 }}>
+            <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 10, lineHeight: 1.6 }}>
               Como o projeto opera — preenchido pela análise do Claude Desktop (visão do PDF) e editável aqui. Cobre só as disciplinas selecionadas.
             </p>
             <textarea
@@ -498,7 +498,7 @@ export default function Compatibilizacao() {
           {(analise.disciplinas?.includes('cftv') || analise.disciplinas?.includes('rede') || analise.disciplinas?.includes('antena')) && (
             <div style={card}>
               <h3 style={tituloSecao}>Pontos Identificados no Projeto</h3>
-              <p style={{ fontSize: 12, color: '#666', marginBottom: 14, lineHeight: 1.6 }}>
+              <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 14, lineHeight: 1.6 }}>
                 Cada ponto abaixo é identificado na planta por um código individual. "Ocorrências" é quantas vezes o
                 código aparece no texto do PDF; "Pontos únicos" é a quantidade real de pontos físicos distintos — é
                 esse o número usado no orçamento.
@@ -515,7 +515,7 @@ export default function Compatibilizacao() {
 
               <div style={{ marginTop: 22, paddingTop: 18, borderTop: '1px solid #1e1e1e' }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#c9a227', marginBottom: 6 }}>Pontos por Ambiente</div>
-                <p style={{ fontSize: 12, color: '#666', marginBottom: 12, lineHeight: 1.6 }}>
+                <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 12, lineHeight: 1.6 }}>
                   Distribuição <b>aproximada</b> — calculada pela posição de cada código no desenho, sem noção de
                   parede ou fronteira entre salas. Confira sempre contra a planta antes de usar. Só aparece ambiente
                   com pelo menos 1 ponto identificado.
@@ -527,11 +527,11 @@ export default function Compatibilizacao() {
 
           <div style={card}>
             <h3 style={tituloSecao}>Pontos por Disciplina</h3>
-            <p style={{ fontSize: 12, color: '#666', marginBottom: 14, lineHeight: 1.6 }}>
+            <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 14, lineHeight: 1.6 }}>
               Marcação por disciplina com tipo, modelo e quantidade — preenchida pela análise do Claude Desktop (inclusive elétrica, iluminação e outras que a contagem por código não alcança) e editável aqui. Só aparecem as disciplinas selecionadas na análise; sempre confira contra a planta.
             </p>
             {(analise.disciplinas || []).length === 0 && (
-              <p style={{ fontSize: 12, color: '#666', fontStyle: 'italic', margin: 0 }}>Nenhuma disciplina selecionada nesta análise.</p>
+              <p style={{ fontSize: 12, color: 'var(--texto-3)', fontStyle: 'italic', margin: 0 }}>Nenhuma disciplina selecionada nesta análise.</p>
             )}
             {(analise.disciplinas || []).map(disc => {
               const grupo = (analise.pontosPorDisciplina || []).find(g => g.disciplina === disc);
@@ -541,15 +541,15 @@ export default function Compatibilizacao() {
                 <div key={disc} style={{ marginBottom: 18, paddingBottom: 14, borderBottom: '1px solid #1e1e1e' }}>
                   <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
                     <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: '#c9a227' }}>{nomeDisc}</div>
-                    <button type="button" onClick={() => adicionarPontoDisciplina(disc)} style={{ ...btnSecundario, padding: '3px 8px', fontSize: 11 }}>
+                    <button type="button" onClick={() => adicionarPontoDisciplina(disc)} style={{ ...btnSecundario, padding: '3px 8px', fontSize: 12 }}>
                       <Plus size={11} style={{ marginRight: 3 }} /> Adicionar ponto
                     </button>
                   </div>
                   {itens.length === 0 ? (
-                    <p style={{ fontSize: 12, color: '#666', fontStyle: 'italic', margin: 0 }}>Nenhum ponto marcado ainda para esta disciplina.</p>
+                    <p style={{ fontSize: 12, color: 'var(--texto-3)', fontStyle: 'italic', margin: 0 }}>Nenhum ponto marcado ainda para esta disciplina.</p>
                   ) : (
                     <div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '2.2fr 1fr 1.4fr 0.7fr 1.6fr 28px', gap: 8, fontSize: 11, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '2.2fr 1fr 1.4fr 0.7fr 1.6fr 28px', gap: 8, fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>
                         <span>Descrição</span><span>Tipo</span><span>Modelo</span><span>Qtd</span><span>Observação</span><span />
                       </div>
                       {itens.map((it, idx) => (
@@ -577,7 +577,7 @@ export default function Compatibilizacao() {
               {analise.achados.map((a, i) => (
                 <div key={i} style={{ padding: '10px 0', borderTop: i > 0 ? '1px solid #1e1e1e' : 'none' }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: '#c9a227', marginBottom: 3 }}>{a.tema}</div>
-                  <div style={{ fontSize: 13, color: '#999' }}>{a.observacao}</div>
+                  <div style={{ fontSize: 13, color: 'var(--texto-2)' }}>{a.observacao}</div>
                 </div>
               ))}
             </div>
@@ -588,7 +588,7 @@ export default function Compatibilizacao() {
               <>
                 <div style={card}>
                   <h3 style={tituloSecao}>Serviços (Mão de Obra) — extraídos do projeto</h3>
-                  <p style={{ fontSize: 12, color: '#666', marginBottom: 10, lineHeight: 1.6 }}>
+                  <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 10, lineHeight: 1.6 }}>
                     Leitura do que a análise montou a partir dos arquivos do projeto. Quantidade, preço, pesquisa de mercado e referências são
                     revisados no editor do orçamento ("Gerar orçamento e abrir no editor", abaixo). Marque "Já pronto" para o que
                     não faz parte do seu escopo (ex.: cabeamento já passado) — sai do orçamento e do relatório como pendência.
@@ -600,7 +600,7 @@ export default function Compatibilizacao() {
                 <div style={card}>
                   <h3 style={tituloSecao}>Materiais / Equipamentos — extraídos do projeto</h3>
                   {analise.materiais.length === 0 ? (
-                    <p style={{ fontSize: 13, color: '#666', fontStyle: 'italic' }}>Nenhum material extraído do projeto — lance os materiais no editor do orçamento (catálogo ou digitados).</p>
+                    <p style={{ fontSize: 13, color: 'var(--texto-3)', fontStyle: 'italic' }}>Nenhum material extraído do projeto — lance os materiais no editor do orçamento (catálogo ou digitados).</p>
                   ) : (
                     <TabelaItensLeitura tipo="material" itens={analise.materiais} disciplinas={DISCIPLINAS}
                       onPronto={(id, v) => alternarPronto('materiais', id, v)} />
@@ -611,7 +611,7 @@ export default function Compatibilizacao() {
             // Elaboração de projeto: os itens do PDF ficam recolhidos, só como referência
             return elaboracao ? (
               <details style={{ ...card, padding: '14px 22px' }}>
-                <summary style={{ cursor: 'pointer', fontSize: 13, color: '#999', fontWeight: 700 }}>
+                <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--texto-2)', fontWeight: 700 }}>
                   Itens extraídos do projeto (referência) — {analise.servicos.length} serviço(s), {analise.materiais.length} material(is)
                 </summary>
                 <div style={{ marginTop: 14 }}>{tabelas}</div>
@@ -629,7 +629,7 @@ export default function Compatibilizacao() {
           <CartaoModelo3dAnalise analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />
 
           <div style={{ ...card, display: 'flex', justifyContent: 'flex-end', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12, color: '#666', marginRight: 'auto', lineHeight: 1.5 }}>
+            <span style={{ fontSize: 12, color: 'var(--texto-3)', marginRight: 'auto', lineHeight: 1.5 }}>
               {elaboracao
                 ? <>Elaboração de projeto: o orçamento de execução sai do projeto de cada disciplina.{analise.propostaNumero && <> Esta análise já tem o orçamento <b style={{ color: '#c9a227' }}>{analise.propostaNumero}</b>.</>}</>
                 : analise.propostaNumero
@@ -673,13 +673,13 @@ function TabelaItensLeitura({ tipo, itens, disciplinas, onPronto }) {
   const nomeDisc = (chave) => disciplinas.find(d => d.chave === chave)?.nome || chave;
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, marginBottom: 8, fontSize: 12, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, marginBottom: 8, fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px' }}>
         <span>Descrição</span><span>Disciplina</span><span>Qtd</span><span>Un.</span><span>Sugestão de preço</span><span>Observação / origem</span><span>Escopo</span>
       </div>
       {agruparPorSubgrupo(itens).map(linha => {
         if (linha.tipo === 'cabecalho') {
           return (
-            <div key={linha.key} style={{ fontSize: 13, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '.5px', borderTop: '1px solid #222', paddingTop: 10, marginTop: 6, marginBottom: 8 }}>
+            <div key={linha.key} style={{ fontSize: 13, fontWeight: 700, color: 'var(--texto-2)', textTransform: 'uppercase', letterSpacing: '.5px', borderTop: '1px solid #222', paddingTop: 10, marginTop: 6, marginBottom: 8 }}>
               {linha.nome}
             </div>
           );
@@ -690,19 +690,19 @@ function TabelaItensLeitura({ tipo, itens, disciplinas, onPronto }) {
           <div key={it.id} style={{ marginBottom: 10, borderBottom: '1px solid #1e1e1e', paddingBottom: 10, opacity: it.pronto ? 0.55 : 1 }}>
             <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, alignItems: 'start', fontSize: 13 }}>
               <div style={{ color: '#ddd' }}>
-                {it.descricao || <i style={{ color: '#666' }}>(sem descrição)</i>}
-                {it.referencia_fabricante && <div style={{ color: '#777', fontSize: 11 }}>Ref. fabricante: {it.referencia_fabricante}</div>}
+                {it.descricao || <i style={{ color: 'var(--texto-3)' }}>(sem descrição)</i>}
+                {it.referencia_fabricante && <div style={{ color: 'var(--texto-3)', fontSize: 12 }}>Ref. fabricante: {it.referencia_fabricante}</div>}
               </div>
-              <span style={{ color: '#999', fontSize: 12 }}>{it.disciplina ? nomeDisc(it.disciplina) : (it.subgrupo || '—')}</span>
+              <span style={{ color: 'var(--texto-2)', fontSize: 12 }}>{it.disciplina ? nomeDisc(it.disciplina) : (it.subgrupo || '—')}</span>
               <span style={{ color: semQtd ? '#c9a227' : '#ccc', fontWeight: semQtd ? 700 : 400 }}
                 title={semQtd ? 'Quantidade 0: confira na planta — este item fica fora do rascunho do orçamento' : undefined}>
                 {Number(it.quantidade) || 0}
               </span>
-              <span style={{ color: '#999' }}>{it.unidade || '—'}</span>
+              <span style={{ color: 'var(--texto-2)' }}>{it.unidade || '—'}</span>
               <div style={{ fontSize: 12 }}>
                 {servico ? <SugestaoServico it={it} /> : <SugestaoMaterial it={it} />}
               </div>
-              <span style={{ color: '#888', fontSize: 12, lineHeight: 1.45 }}>
+              <span style={{ color: 'var(--texto-3)', fontSize: 12, lineHeight: 1.45 }}>
                 {it.observacao || '—'}
                 {semQtd && <div style={{ color: '#a08a3a', marginTop: 3 }}>Quantidade 0 — fica fora do rascunho; inclua no editor se fizer parte.</div>}
               </span>
@@ -735,10 +735,10 @@ function SugestaoServico({ it }) {
   return (
     <>
       {valor > 0
-        ? <div style={{ color: '#c9a227' }}><b>{formatarMoeda(valor)}</b> <span style={{ color: '#777' }}>(vai para o rascunho)</span></div>
+        ? <div style={{ color: '#c9a227' }}><b>{formatarMoeda(valor)}</b> <span style={{ color: 'var(--texto-3)' }}>(vai para o rascunho)</span></div>
         : <div style={{ color: '#a08a3a' }}>Sem preço — entra "a cotar"</div>}
       {refs.map(([rot, v, titulo]) => (
-        <div key={rot} style={{ fontSize: 11, color: '#6f7f8f', marginTop: 2 }} title={titulo}>{rot}: {formatarMoeda(v)}</div>
+        <div key={rot} style={{ fontSize: 12, color: '#6f7f8f', marginTop: 2 }} title={titulo}>{rot}: {formatarMoeda(v)}</div>
       ))}
     </>
   );
@@ -751,12 +751,12 @@ function SugestaoMaterial({ it }) {
   return (
     <>
       {adotado && (
-        <div style={{ color: '#c9a227' }}><b>{formatarMoeda(it.preco_unitario)}</b> <span style={{ color: '#777' }}>(pesquisa de mercado adotada)</span></div>
+        <div style={{ color: '#c9a227' }}><b>{formatarMoeda(it.preco_unitario)}</b> <span style={{ color: 'var(--texto-3)' }}>(pesquisa de mercado adotada)</span></div>
       )}
       {it.preco_catalogo != null ? (
         <div style={{ color: adotado ? '#777' : it.confianca_catalogo >= 70 ? '#3fb95f' : '#c9a227' }}>
           {adotado ? 'catálogo: ' : ''}<b>{formatarMoeda(it.preco_catalogo)}</b> ({it.confianca_catalogo}% match)
-          <div style={{ color: '#777', fontSize: 11 }} title={it.descricao_catalogo}>{it.descricao_catalogo}</div>
+          <div style={{ color: 'var(--texto-3)', fontSize: 12 }} title={it.descricao_catalogo}>{it.descricao_catalogo}</div>
         </div>
       ) : !adotado && (
         <div style={{ color: '#a08a3a' }}>Sem correspondência no catálogo — entra "a cotar"</div>
@@ -778,14 +778,14 @@ function TabelaPontos({ titulo, prefixo, detalhe }) {
         {titulo} — código {prefixo}nº (ex.: {prefixo}1, {prefixo}2...)
       </div>
       {!detalhe || detalhe.length === 0 ? (
-        <p style={{ fontSize: 12, color: '#666', fontStyle: 'italic' }}>Nenhum código {prefixo}nº identificado nos arquivos analisados.</p>
+        <p style={{ fontSize: 12, color: 'var(--texto-3)', fontStyle: 'italic' }}>Nenhum código {prefixo}nº identificado nos arquivos analisados.</p>
       ) : (
         detalhe.map((d, i) => (
           <div key={i} style={{ padding: '10px 0', borderTop: i > 0 ? '1px solid #1e1e1e' : 'none', fontSize: 13 }}>
             <div style={{ color: '#ccc', marginBottom: 4 }}>
               <b>{d.arquivo}</b> — {d.ocorrencias} ocorrências, {d.total} pontos únicos
             </div>
-            <div style={{ color: '#777', fontSize: 12, marginBottom: 4 }}>
+            <div style={{ color: 'var(--texto-3)', fontSize: 12, marginBottom: 4 }}>
               Códigos: {d.unicas.map(n => prefixo + n).join(', ')}
             </div>
             {d.repetidas.length > 0 && (
@@ -807,7 +807,7 @@ function ResumoBloco({ rotulo, valor, destaque }) {
       border: '1px solid #1e1e1e', borderRadius: 8, padding: '12px 14px',
       background: destaque ? '#1a1a1a' : 'transparent',
     }}>
-      <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.5px', color: destaque ? '#c9a227' : '#777', marginBottom: 4 }}>{rotulo}</div>
+      <div style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '.5px', color: destaque ? '#c9a227' : '#777', marginBottom: 4 }}>{rotulo}</div>
       <div style={{ fontSize: 18, fontWeight: 700, color: destaque ? '#fff' : '#ccc' }}>{formatarMoeda(valor)}</div>
     </div>
   );
@@ -825,13 +825,13 @@ function TabelaPontosPorAmbiente({ linhas, disciplinas }) {
   ].filter(Boolean);
 
   if (!linhas || linhas.length === 0) {
-    return <p style={{ fontSize: 13, color: '#666', fontStyle: 'italic' }}>Não foi possível estimar a distribuição por ambiente nos arquivos analisados.</p>;
+    return <p style={{ fontSize: 13, color: 'var(--texto-3)', fontStyle: 'italic' }}>Não foi possível estimar a distribuição por ambiente nos arquivos analisados.</p>;
   }
 
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
       <thead>
-        <tr style={{ fontSize: 11, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', textAlign: 'left' }}>
+        <tr style={{ fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', textAlign: 'left' }}>
           <th style={{ padding: '4px 8px 8px 0' }}>Ambiente</th>
           {colunas.map(c => <th key={c.chave} style={{ padding: '4px 8px 8px 0', textAlign: 'right' }}>{c.titulo}</th>)}
           <th style={{ padding: '4px 0 8px 0', textAlign: 'right' }}>Total</th>
@@ -841,7 +841,7 @@ function TabelaPontosPorAmbiente({ linhas, disciplinas }) {
         {linhas.map(l => (
           <tr key={l.ambiente} style={{ borderTop: '1px solid #1e1e1e' }}>
             <td style={{ padding: '6px 8px 6px 0' }}>{l.ambiente}</td>
-            {colunas.map(c => <td key={c.chave} style={{ padding: '6px 8px 6px 0', textAlign: 'right', color: '#999' }}>{l[c.chave]}</td>)}
+            {colunas.map(c => <td key={c.chave} style={{ padding: '6px 8px 6px 0', textAlign: 'right', color: 'var(--texto-2)' }}>{l[c.chave]}</td>)}
             <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 700, color: '#c9a227' }}>{l.total}</td>
           </tr>
         ))}
@@ -853,7 +853,7 @@ function TabelaPontosPorAmbiente({ linhas, disciplinas }) {
 function Info({ label, valor }) {
   return (
     <div>
-      <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>{label}</div>
+      <div style={{ fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>{label}</div>
       <div style={{ fontSize: 19, color: '#c9a227', fontWeight: 700 }}>{valor}</div>
     </div>
   );
@@ -870,6 +870,6 @@ const btnPrimario = { ...estilos.btnPrimario, display: 'flex', fontSize: 13 };
 
 const btnSecundario = {
   display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent',
-  border: '1px dashed #333', borderRadius: 6, color: '#999', fontWeight: 700,
+  border: '1px dashed #333', borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700,
   fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
 };

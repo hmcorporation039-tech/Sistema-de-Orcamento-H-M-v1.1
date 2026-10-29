@@ -161,7 +161,7 @@ export default function ObraSelect({
 }
 
 const caixaNova = { border: '1px solid #2a2a2a', borderRadius: 8, padding: 10, background: '#151515' };
-const btnFechar = { background: 'transparent', border: 'none', color: '#888', cursor: 'pointer', display: 'flex' };
+const btnFechar = { background: 'transparent', border: 'none', color: 'var(--texto-3)', cursor: 'pointer', display: 'flex' };
 const btnCriar = {
   display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', background: '#c9a227', border: 'none',
   borderRadius: 6, color: '#000', fontWeight: 700, fontSize: 12, cursor: 'pointer',

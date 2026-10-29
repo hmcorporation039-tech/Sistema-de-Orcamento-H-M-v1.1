@@ -46,7 +46,7 @@ function SeloDecisaoCliente({ decisao }) {
     <span title={dica} aria-label={dica} data-testid="selo-decisao-cliente"
       style={{
         marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 20,
-        fontSize: 10, fontWeight: 700, verticalAlign: 'middle',
+        fontSize: 11.5, fontWeight: 700, verticalAlign: 'middle',
         background: aprovou ? '#0a1a0f' : '#1a0a0a', color: aprovou ? '#3fb95f' : '#d06060',
         border: `1px dashed ${aprovou ? '#1a4a26' : '#4a1a1a'}`,
       }}>
@@ -344,7 +344,7 @@ export default function Historico() {
           </Campo>
           <Campo label="Buscar" flexivel>
             <div style={{ position: 'relative' }}>
-              <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: '#555' }} />
+              <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--texto-3)' }} />
               <input
                 value={busca}
                 onChange={e => setBusca(e.target.value)}
@@ -379,7 +379,7 @@ export default function Historico() {
                 key={a.rotulo}
                 onClick={() => aplicarAtalho(a)}
                 style={{
-                  padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                  padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer',
                   border: ativo ? '1px solid #c9a227' : '1px solid #2a2a2a',
                   background: ativo ? '#c9a227' : 'transparent',
                   color: ativo ? '#000' : '#999',
@@ -430,16 +430,16 @@ export default function Historico() {
                   <td style={td}>{p.local_obra || '—'}</td>
                   <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{formatarMoeda(p.total)}</td>
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>
-                    <span style={{ padding: '3px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: cor.bg, color: cor.cor, border: `1px solid ${cor.borda}` }}>
+                    <span style={{ padding: '3px 9px', borderRadius: 20, fontSize: 11.5, fontWeight: 700, background: cor.bg, color: cor.cor, border: `1px solid ${cor.borda}` }}>
                       {p.status}
                     </span>
                     {dias !== null && dias < 0 && (
-                      <span style={{ marginLeft: 6, padding: '3px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: '#1a0a0a', color: '#b04040', border: '1px solid #4a1a1a' }}>
+                      <span style={{ marginLeft: 6, padding: '3px 9px', borderRadius: 20, fontSize: 11.5, fontWeight: 700, background: '#1a0a0a', color: '#b04040', border: '1px solid #4a1a1a' }}>
                         Vencida
                       </span>
                     )}
                     {dias !== null && dias >= 0 && dias <= 3 && (
-                      <span style={{ marginLeft: 6, padding: '3px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: '#1a1408', color: '#d69a2d', border: '1px solid #4a3a10' }}>
+                      <span style={{ marginLeft: 6, padding: '3px 9px', borderRadius: 20, fontSize: 11.5, fontWeight: 700, background: '#1a1408', color: '#d69a2d', border: '1px solid #4a3a10' }}>
                         {dias === 0 ? 'Vence hoje' : `Vence em ${dias}d`}
                       </span>
                     )}
@@ -482,7 +482,7 @@ export default function Historico() {
         <Modal titulo={carregandoDetalhe || !detalhe.id ? null : `Proposta ${detalhe.numero}`} rotulo="Detalhe da proposta"
           onFechar={() => setDetalhe(null)} largura={680} espacoTitulo={18} tamanhoTitulo={17} style={{ maxHeight: '88vh' }}>
             {carregandoDetalhe || !detalhe.id ? (
-              <p style={{ color: '#666', textAlign: 'center', padding: 30 }}>Carregando...</p>
+              <p style={{ color: 'var(--texto-3)', textAlign: 'center', padding: 30 }}>Carregando...</p>
             ) : (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 18, fontSize: 12 }}>
@@ -497,14 +497,14 @@ export default function Historico() {
                 {detalhe.secoes?.map(sec => (
                   <div key={sec.id} style={{ marginBottom: 14 }}>
                     <h4 style={{ fontSize: 12, color: '#c9a227', fontWeight: 700, marginBottom: 8 }}>{sec.nome}</h4>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                       <tbody>
                         {detalhe.itens?.filter(it => it.secao_id === sec.id).map(it => (
                           <tr key={it.id} style={{ borderTop: '1px solid #1e1e1e' }}>
                             <td style={{ padding: '6px 4px', color: '#ccc' }}>{it.descricao}</td>
-                            <td style={{ padding: '6px 4px', color: '#888', width: 80 }}>{formatarNcm(it.ncm) || '—'}</td>
-                            <td style={{ padding: '6px 4px', color: '#888', textAlign: 'right', width: 70 }}>{Number(it.quantidade)} {it.unidade}</td>
-                            <td style={{ padding: '6px 4px', color: '#888', textAlign: 'right', width: 90 }}>{formatarMoeda(it.valor_unitario)}</td>
+                            <td style={{ padding: '6px 4px', color: 'var(--texto-3)', width: 80 }}>{formatarNcm(it.ncm) || '—'}</td>
+                            <td style={{ padding: '6px 4px', color: 'var(--texto-3)', textAlign: 'right', width: 70 }}>{Number(it.quantidade)} {it.unidade}</td>
+                            <td style={{ padding: '6px 4px', color: 'var(--texto-3)', textAlign: 'right', width: 90 }}>{formatarMoeda(it.valor_unitario)}</td>
                             <td style={{ padding: '6px 4px', color: '#ccc', textAlign: 'right', width: 100, fontWeight: 700 }}>{formatarMoeda(it.valor_total)}</td>
                           </tr>
                         ))}
@@ -514,26 +514,26 @@ export default function Historico() {
                 ))}
 
                 <div style={{ borderTop: '1px solid #2a2a2a', paddingTop: 14, marginTop: 6, display: 'flex', justifyContent: 'flex-end', gap: 26, fontSize: 12, flexWrap: 'wrap' }}>
-                  <span style={{ color: '#888' }}>Materiais: <b style={{ color: '#ccc' }}>{formatarMoeda(detalhe.subtotal_materiais)}</b></span>
+                  <span style={{ color: 'var(--texto-3)' }}>Materiais: <b style={{ color: '#ccc' }}>{formatarMoeda(detalhe.subtotal_materiais)}</b></span>
                   {Number(detalhe.imposto_venda) > 0 && (
-                    <span style={{ color: '#888' }}>Imp. Vendas ({detalhe.imposto_venda}%): <b style={{ color: '#ccc' }}>{formatarMoeda(detalhe.valor_imposto_venda)}</b></span>
+                    <span style={{ color: 'var(--texto-3)' }}>Imp. Vendas ({detalhe.imposto_venda}%): <b style={{ color: '#ccc' }}>{formatarMoeda(detalhe.valor_imposto_venda)}</b></span>
                   )}
-                  <span style={{ color: '#888' }}>Mão de obra: <b style={{ color: '#ccc' }}>{formatarMoeda(detalhe.subtotal_mao_obra)}</b></span>
+                  <span style={{ color: 'var(--texto-3)' }}>Mão de obra: <b style={{ color: '#ccc' }}>{formatarMoeda(detalhe.subtotal_mao_obra)}</b></span>
                   {Number(detalhe.imposto_servico) > 0 && (
-                    <span style={{ color: '#888' }}>Imp. Serviços ({detalhe.imposto_servico}%): <b style={{ color: '#ccc' }}>{formatarMoeda(detalhe.valor_imposto_servico)}</b></span>
+                    <span style={{ color: 'var(--texto-3)' }}>Imp. Serviços ({detalhe.imposto_servico}%): <b style={{ color: '#ccc' }}>{formatarMoeda(detalhe.valor_imposto_servico)}</b></span>
                   )}
-                  <span style={{ color: '#888' }}>BDI ({detalhe.bdi}%): <b style={{ color: '#ccc' }}>{formatarMoeda(detalhe.valor_bdi)}</b></span>
+                  <span style={{ color: 'var(--texto-3)' }}>BDI ({detalhe.bdi}%): <b style={{ color: '#ccc' }}>{formatarMoeda(detalhe.valor_bdi)}</b></span>
                   <span style={{ color: '#c9a227', fontSize: 14 }}>Total: <b>{formatarMoeda(detalhe.total)}</b></span>
                 </div>
 
                 <div style={{ display: 'flex', gap: 8, marginTop: 22, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <span style={{ fontSize: 11, color: '#666', marginRight: 4 }}>Status:</span>
+                  <span style={{ fontSize: 12, color: 'var(--texto-3)', marginRight: 4 }}>Status:</span>
                   {['Ativa', 'Aprovada', 'Recusada', 'Cancelada'].map(s => (
                     <button
                       key={s}
                       onClick={() => mudarStatus(detalhe.id, s)}
                       style={{
-                        padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                        padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
                         border: detalhe.status === s ? '1px solid #c9a227' : '1px solid #2a2a2a',
                         background: detalhe.status === s ? '#c9a227' : 'transparent',
                         color: detalhe.status === s ? '#000' : '#999',
@@ -569,18 +569,18 @@ export default function Historico() {
 
                 {detalhe.eventos?.length > 0 && (
                   <div style={{ marginTop: 22, borderTop: '1px solid #2a2a2a', paddingTop: 14 }}>
-                    <h4 style={{ fontSize: 11, color: '#666', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 10 }}>
+                    <h4 style={{ fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 10 }}>
                       Histórico de alterações
                     </h4>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {detalhe.eventos.map((ev, i) => (
-                        <div key={i} style={{ display: 'flex', gap: 10, fontSize: 11, color: '#888', alignItems: 'baseline' }}>
-                          <span style={{ color: '#555', whiteSpace: 'nowrap' }}>
+                        <div key={i} style={{ display: 'flex', gap: 10, fontSize: 12, color: 'var(--texto-3)', alignItems: 'baseline' }}>
+                          <span style={{ color: 'var(--texto-3)', whiteSpace: 'nowrap' }}>
                             {new Date(ev.criado_em).toLocaleString('pt-BR')}
                           </span>
                           <span style={{ color: '#c9a227', fontWeight: 700 }}>{ACAO_LABEL[ev.acao] || ev.acao}</span>
                           <span>{ev.detalhes}</span>
-                          <span style={{ marginLeft: 'auto', color: '#666' }}>{ev.usuario_nome || '—'}</span>
+                          <span style={{ marginLeft: 'auto', color: 'var(--texto-3)' }}>{ev.usuario_nome || '—'}</span>
                         </div>
                       ))}
                     </div>
@@ -614,7 +614,7 @@ export default function Historico() {
 function InfoLinha({ label, valor }) {
   return (
     <div>
-      <div style={{ fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 11.5, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 3 }}>{label}</div>
       <div style={{ color: '#ddd' }}>{valor}</div>
     </div>
   );
@@ -623,7 +623,7 @@ function InfoLinha({ label, valor }) {
 function CardResumo({ label, valor, destaque }) {
   return (
     <div style={{ ...card, marginBottom: 0 }}>
-      <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 11.5, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>{label}</div>
       <div style={{ fontSize: 20, fontWeight: 700, color: destaque ? '#c9a227' : '#e8e0cc' }}>{valor}</div>
     </div>
   );
@@ -643,4 +643,4 @@ function Campo({ label, children, largura, flexivel }) {
 // Estilos do kit de tela (components/ui/estilos.js). O botão secundário desta
 // tela é um pouco maior e mais apagado que o do kit — mantido como era.
 const { rotulo, card, th, td, tdVazio, btnPrimario, btnIcone } = estilos;
-const btnSecundario = { ...estilos.btnSecundario, padding: '9px 16px', color: '#999' };
+const btnSecundario = { ...estilos.btnSecundario, padding: '9px 16px', color: 'var(--texto-2)' };

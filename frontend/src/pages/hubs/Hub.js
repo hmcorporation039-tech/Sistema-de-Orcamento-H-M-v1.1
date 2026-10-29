@@ -45,8 +45,9 @@ export default function Hub({ grupo, base, abas, abaFixa, larga = false }) {
                   onClick={e => { if (selecionada) e.preventDefault(); }}
                   style={{
                     ...aba,
-                    background: selecionada ? '#c9a227' : 'transparent',
-                    color: selecionada ? '#000' : '#999',
+                    background: selecionada ? 'var(--ouro)' : 'transparent',
+                    color: selecionada ? '#111' : 'var(--texto-2)',
+                    fontWeight: selecionada ? 600 : 500,
                     cursor: selecionada ? 'default' : 'pointer',
                   }}
                 >
@@ -68,28 +69,25 @@ export default function Hub({ grupo, base, abas, abaFixa, larga = false }) {
 }
 
 const barra = {
-  display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap',
+  display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap',
 };
 
+// Revisão visual de 29/10/2026: o nome do grupo vira o título da página
 const rotuloGrupo = {
-  fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '.8px', fontWeight: 700,
+  fontSize: 22, color: 'var(--texto)', fontWeight: 600, letterSpacing: '-.2px', marginRight: 8,
 };
 
 const trilho = {
-  display: 'flex', gap: 4, flexWrap: 'wrap', background: '#111',
-  border: '1px solid #1e1e1e', borderRadius: 8, padding: 3, maxWidth: '100%',
+  display: 'flex', gap: 4, flexWrap: 'wrap', background: 'var(--superficie)',
+  border: '1px solid var(--borda)', borderRadius: 10, padding: 4, maxWidth: '100%',
 };
 
 const aba = {
-  padding: '7px 14px', borderRadius: 6, fontSize: 13, fontWeight: 700,
+  padding: '7px 14px', borderRadius: 7, fontSize: 13.5,
   textDecoration: 'none', whiteSpace: 'nowrap', transition: 'all .15s',
 };
 
-// Quebra o limite de largura (max-width: 1280) do <main> do Layout — as telas
-// de Obras têm tabelas largas (Serviços/Materiais) que ficam melhor ocupando a
-// largura inteira da janela. (Veio da AnaliseProjeto, que fazia isso sozinha.)
-const paginaLargaTela = {
-  width: '100vw', maxWidth: '100vw',
-  marginLeft: 'calc(50% - 50vw)', marginRight: 'calc(50% - 50vw)',
-  padding: '0 clamp(12px, 3vw, 32px)', boxSizing: 'border-box',
-};
+// Telas largas (Obras: tabelas de Serviços/Materiais). Antes saíam do limite
+// de largura do <main> esticando até 100vw; com o menu lateral isso passaria
+// por baixo do menu, então agora só ocupam toda a área de conteúdo.
+const paginaLargaTela = { width: '100%' };

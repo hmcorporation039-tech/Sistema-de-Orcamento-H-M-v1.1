@@ -50,7 +50,7 @@ export default function CurvaS({ curva = [], periodoReferencia, altura = 240 }) 
           </g>
         ))}
       </svg>
-      <div style={{ display: 'flex', gap: 16, fontSize: 11, color: '#999', marginTop: 4 }}>
+      <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--texto-2)', marginTop: 4 }}>
         <span><span style={{ ...marca, background: COR_PREVISTO }} /> Previsto acumulado</span>
         <span><span style={{ ...marca, background: COR_REALIZADO }} /> Realizado acumulado (medições)</span>
       </div>

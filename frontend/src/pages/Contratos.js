@@ -154,7 +154,7 @@ export default function Contratos() {
         <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>Contratos de Prestação de Serviço</h2>
 
         <div style={{ position: 'relative', width: 260 }}>
-          <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: '#555' }} />
+          <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--texto-3)' }} />
           <input
             value={busca}
             onChange={e => setBusca(e.target.value)}
@@ -306,5 +306,5 @@ const { th, td, tdVazio, btnPrimario, btnIcone } = estilos;
 
 const btnSecundario = {
   padding: '9px 16px', background: 'transparent', border: '1px solid #2a2a2a',
-  borderRadius: 6, color: '#999', fontWeight: 700, fontSize: 12, cursor: 'pointer'
+  borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer'
 };

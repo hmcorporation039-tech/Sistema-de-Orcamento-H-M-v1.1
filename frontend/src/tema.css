@@ -1,0 +1,109 @@
+/* Tema do sistema (revisão visual de 29/10/2026).
+   Cores, tamanhos e espaçamentos num lugar só: página nova usa as variáveis
+   (var(--texto-2), var(--ouro)...) em vez de hexadecimais soltos. Texto
+   mínimo de 12 px e cinzas claros o bastante para ler sobre o fundo preto. */
+:root {
+  --fundo: #0b0b0c;
+  --superficie: #141416;
+  --superficie-2: #1b1b1f;
+  --superficie-3: #232328;
+  --borda: #2a2a30;
+  --borda-forte: #3a3a42;
+
+  --texto: #efe9da;
+  --texto-2: #bdb6a6;
+  --texto-3: #8f897c;
+
+  --ouro: #d4a82a;
+  --ouro-claro: #e8c25a;
+  --ouro-escuro: #8a6a12;
+  --ouro-fundo: rgba(212, 168, 42, 0.12);
+
+  --perigo: #e06464;
+  --sucesso: #4fbf7a;
+  --aviso: #e0a940;
+
+  --raio: 8px;
+  --raio-g: 12px;
+  --fonte: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --fonte-marca: 'Playfair Display', Georgia, serif;
+
+  --menu-largura: 236px;
+  --menu-recolhido: 68px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 14px; }
+body {
+  font-family: var(--fonte); background: var(--fundo); color: var(--texto);
+  -webkit-font-smoothing: antialiased; line-height: 1.45;
+}
+input, select, textarea {
+  background: #0e0e10; border: 1px solid var(--borda); border-radius: 6px;
+  color: var(--texto); font-size: 13px; outline: none; padding: 8px 10px;
+  width: 100%; transition: border-color .15s, box-shadow .15s; font-family: inherit;
+}
+input::placeholder, textarea::placeholder { color: #6d6860; }
+input:focus, select:focus, textarea:focus { border-color: var(--ouro); box-shadow: 0 0 0 3px var(--ouro-fundo); }
+select option { background: var(--superficie-2); }
+textarea { resize: vertical; }
+button { font-family: inherit; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--ouro); outline-offset: 2px; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #2c2c32; border-radius: 10px; border: 2px solid var(--fundo); }
+::-webkit-scrollbar-track { background: transparent; }
+
+.loading { display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; color: var(--ouro); font-size: 16px; background: var(--fundo); }
+
+/* ── Estrutura: menu lateral + conteúdo ───────────────────────────── */
+.app { display: flex; min-height: 100vh; }
+.app-conteudo { flex: 1; min-width: 0; }
+.app-main { padding: 22px 28px 40px; max-width: 1320px; margin: 0 auto; }
+
+.menu {
+  width: var(--menu-largura); flex-shrink: 0; background: #0f0f11;
+  border-right: 1px solid var(--borda); display: flex; flex-direction: column;
+  position: sticky; top: 0; height: 100vh; transition: width .18s ease; z-index: 40;
+}
+.menu.recolhido { width: var(--menu-recolhido); }
+
+.menu-marca { display: flex; align-items: center; justify-content: center; padding: 14px 12px 10px; text-decoration: none; }
+.menu-marca img { width: 128px; height: 128px; object-fit: contain; transition: width .18s, height .18s; }
+.menu.recolhido .menu-marca img { width: 48px; height: 48px; }
+
+.menu-itens { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; overflow-y: auto; }
+.menu-item {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--raio);
+  color: var(--texto-2); text-decoration: none; font-size: 14px; font-weight: 500;
+  white-space: nowrap; border: 1px solid transparent; transition: background .12s, color .12s;
+}
+.menu-item svg { flex-shrink: 0; opacity: .85; }
+.menu-item:hover { background: var(--superficie-2); color: var(--texto); }
+.menu-item.ativo { background: var(--ouro-fundo); color: var(--ouro-claro); border-color: rgba(212,168,42,.28); }
+.menu-item.ativo svg { opacity: 1; }
+.menu.recolhido .menu-item { justify-content: center; padding: 10px 0; }
+.menu.recolhido .menu-texto { display: none; }
+
+.menu-rodape { border-top: 1px solid var(--borda); padding: 12px 10px; display: flex; flex-direction: column; gap: 6px; }
+.menu-usuario { display: flex; align-items: center; gap: 10px; padding: 6px 8px; min-width: 0; }
+.menu-avatar {
+  width: 32px; height: 32px; border-radius: 50%; background: var(--ouro-fundo); color: var(--ouro-claro);
+  display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 700; flex-shrink: 0;
+}
+.menu-usuario-nome { font-size: 13px; color: var(--texto); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-usuario-papel { font-size: 11.5px; color: var(--texto-3); }
+.menu-botao {
+  display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: var(--raio);
+  background: transparent; border: none; color: var(--texto-3); font-size: 13px; cursor: pointer; width: 100%; text-align: left;
+}
+.menu-botao:hover { background: var(--superficie-2); color: var(--texto); }
+.menu-botao.sair:hover { color: var(--perigo); }
+.menu.recolhido .menu-botao { justify-content: center; padding: 9px 0; }
+.menu.recolhido .menu-usuario { justify-content: center; padding: 6px 0; }
+.menu.recolhido .menu-usuario-info { display: none; }
+
+/* Janela estreita: o menu continua fixo, só com os ícones (Layout.js) */
+@media (max-width: 700px) {
+  .app-main { padding: 14px 12px 32px; }
+}

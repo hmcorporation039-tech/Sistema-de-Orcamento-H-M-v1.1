@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
+import {
+  LayoutDashboard, HardHat, FileText, Calculator, Wallet, Settings,
+  LogOut, PanelLeftClose, PanelLeftOpen,
+} from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
 import ErrorBoundary from './ErrorBoundary';
@@ -14,20 +18,26 @@ import { IndicadorNovidades } from './NovidadesPastas';
 // Financeiro é inteiro de administradores (faturamento, pagamentos e dados de
 // terceiros — a API exige admin), então nem aparece para os demais. Nos outros
 // grupos, as abas só de admin (Mão de obra, Usuários) somem dentro do hub.
+//
+// Revisão visual de 29/10/2026: o menu saiu do topo (botões de 11 px em cinza
+// escuro) para uma barra lateral com ícones, sempre fixa (o usuário não quis
+// menu suspenso). Pode ser recolhida; em janela estreita fica só com os
+// ícones. Estilos em src/tema.css.
 function itensDoMenu(ehAdmin) {
   return [
-    { to: '/dashboard', label: 'Painel' },
-    { to: '/obras', label: 'Obras' },
-    { to: '/propostas', label: 'Propostas' },
-    { to: '/base-precos', label: 'Base de preços' },
-    ...(ehAdmin ? [{ to: '/financeiro', label: 'Financeiro' }] : []),
-    { to: '/cadastros', label: ehAdmin ? 'Cadastros e administração' : 'Cadastros' },
+    { to: '/dashboard', label: 'Painel', Icone: LayoutDashboard },
+    { to: '/obras', label: 'Obras', Icone: HardHat },
+    { to: '/propostas', label: 'Propostas', Icone: FileText },
+    { to: '/base-precos', label: 'Base de preços', Icone: Calculator },
+    ...(ehAdmin ? [{ to: '/financeiro', label: 'Financeiro', Icone: Wallet }] : []),
+    { to: '/cadastros', label: ehAdmin ? 'Cadastros e admin.' : 'Cadastros', Icone: Settings },
   ];
 }
 
-// Tela estreita (celular / janela pequena): o cabeçalho quebra em duas linhas
-// e o menu vai para a linha de baixo, rolando na horizontal se precisar.
-const CONSULTA_ESTREITA = '(max-width: 900px)';
+const CHAVE_RECOLHIDO = 'hm.menuRecolhido';
+
+// Abaixo desta largura o menu fica só com os ícones (continua fixo na lateral)
+const CONSULTA_ESTREITA = '(max-width: 1100px)';
 
 function useTelaEstreita() {
   const [estreita, setEstreita] = useState(() => window.matchMedia(CONSULTA_ESTREITA).matches);
@@ -40,12 +50,31 @@ function useTelaEstreita() {
   return estreita;
 }
 
+function lerRecolhido() {
+  try { return localStorage.getItem(CHAVE_RECOLHIDO) === '1'; } catch { return false; }
+}
+
+function iniciais(nome) {
+  const partes = (nome || '').trim().split(/\s+/).filter(Boolean);
+  return ((partes[0]?.[0] || '') + (partes.length > 1 ? partes[partes.length - 1][0] : '')).toUpperCase() || '?';
+}
+
 export default function Layout() {
   const { usuario, sair } = useAuth();
-  const navegacao = itensDoMenu(usuario?.role === 'admin');
-  const estreita = useTelaEstreita();
+  const ehAdmin = usuario?.role === 'admin';
+  const navegacao = itensDoMenu(ehAdmin);
   const navigate = useNavigate();
   const location = useLocation();
+  const estreita = useTelaEstreita();
+  const [recolhidoSalvo, setRecolhido] = useState(lerRecolhido);
+  const recolhido = recolhidoSalvo || estreita;
+
+  function alternarRecolhido() {
+    setRecolhido(r => {
+      try { localStorage.setItem(CHAVE_RECOLHIDO, r ? '0' : '1'); } catch { /* navegador sem armazenamento */ }
+      return !r;
+    });
+  }
 
   function handleSair() {
     sair();
@@ -54,90 +83,63 @@ export default function Layout() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0a0a0a', color: '#e8e0cc' }}>
-      {/* Header */}
-      <header style={{
-        background: '#0f0f0f', borderBottom: '2px solid #c9a227',
-        padding: estreita ? '8px 12px' : '8px 20px', display: 'flex', alignItems: 'center',
-        gap: estreita ? 10 : 16, position: 'sticky', top: 0, zIndex: 50,
-        flexWrap: estreita ? 'wrap' : 'nowrap'
-      }}>
-        <div style={{
-          width: estreita ? 48 : 76, height: estreita ? 48 : 76, flexShrink: 0,
-          display: 'flex', alignItems: 'center', justifyContent: 'center'
-        }}>
-          <img src="/logo.png" alt="H&M" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-        </div>
+    <div className="app">
+      <aside
+        className={`menu${recolhido ? ' recolhido' : ''}`}
+        aria-label="Menu principal"
+      >
+        {/* Logo oficial, sem alteração (o usuário pediu para preservá-la) */}
+        <NavLink to="/dashboard" className="menu-marca" title="H&M Engenharia e Tecnologia">
+          <img src="/logo.png" alt="H&M Engenharia e Tecnologia" />
+        </NavLink>
 
-        <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-          <h1 style={{
-            fontFamily: "'Playfair Display', Georgia, serif",
-            fontSize: 20, fontWeight: 700, color: '#c9a227',
-            letterSpacing: '.5px', lineHeight: 1, whiteSpace: 'nowrap'
-          }}>
-            H&amp;M
-          </h1>
-          <p style={{
-            fontFamily: "'Playfair Display', Georgia, serif",
-            fontSize: 11, color: '#c9a227', letterSpacing: '.3px',
-            marginTop: 3, whiteSpace: 'nowrap'
-          }}>
-            Engenharia e Tecnologia LTDA
-          </p>
-          {!estreita && (
-            <p style={{ fontSize: 10, color: '#555', marginTop: 3, letterSpacing: '.2px', whiteSpace: 'nowrap' }}>
-              CNPJ 04.003.376/0001-00 · Taguatinga Norte, Brasília-DF
-            </p>
-          )}
-        </div>
-
-        {/* Navegação */}
-        <nav style={estreita
-          ? { display: 'flex', gap: 6, order: 3, width: '100%', overflowX: 'auto', paddingBottom: 2 }
-          : { display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          {navegacao.map(({ to, label }) => (
-            <NavLink key={to} to={to} style={({ isActive }) => ({
-              padding: '6px 12px', borderRadius: 6, fontSize: 11,
-              fontWeight: 700, cursor: 'pointer', textDecoration: 'none',
-              whiteSpace: 'nowrap', flexShrink: 0,
-              border: isActive ? '1px solid #c9a227' : '1px solid #2a2a2a',
-              background: isActive ? '#c9a227' : 'transparent',
-              color: isActive ? '#000' : '#666',
-              transition: 'all .15s'
-            })}>
-              {label}
+        <nav className="menu-itens">
+          {navegacao.map(({ to, label, Icone }) => (
+            <NavLink
+              key={to}
+              to={to}
+              title={recolhido ? label : undefined}
+              className={({ isActive }) => `menu-item${isActive ? ' ativo' : ''}`}
+            >
+              <Icone size={19} strokeWidth={1.8} />
+              <span className="menu-texto">{label}</span>
             </NavLink>
           ))}
         </nav>
 
-        {/* Usuário */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 8, flexShrink: 0 }}>
+        <div className="menu-rodape">
           {/* 2.3: arquivo novo/alterado nas pastas dos clientes */}
-          <IndicadorNovidades />
-          <span style={{ fontSize: 11, color: '#666' }}>
-            {usuario?.nome}
-          </span>
-          <button
-            onClick={handleSair}
-            style={{
-              padding: '6px 12px', border: '1px solid #3a1212',
-              background: 'transparent', borderRadius: 6, color: '#b04040',
-              fontSize: 11, fontWeight: 700, cursor: 'pointer'
-            }}
-          >
-            Sair
+          <div style={{ display: 'flex', justifyContent: recolhido ? 'center' : 'flex-start', padding: '0 4px' }}>
+            <IndicadorNovidades />
+          </div>
+          <div className="menu-usuario" title={recolhido ? usuario?.nome : undefined}>
+            <div className="menu-avatar">{iniciais(usuario?.nome)}</div>
+            <div className="menu-usuario-info" style={{ minWidth: 0 }}>
+              <div className="menu-usuario-nome">{usuario?.nome}</div>
+              <div className="menu-usuario-papel">{ehAdmin ? 'Administrador' : 'Usuário'}</div>
+            </div>
+          </div>
+          {!estreita && <button className="menu-botao" onClick={alternarRecolhido}
+            title={recolhido ? 'Expandir menu' : 'Recolher menu'}>
+            {recolhido ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+            <span className="menu-texto">Recolher menu</span>
+          </button>}
+          <button className="menu-botao sair" onClick={handleSair} title={recolhido ? 'Sair' : undefined}>
+            <LogOut size={18} />
+            <span className="menu-texto">Sair</span>
           </button>
         </div>
-      </header>
-
-      {/* Conteúdo — dentro do ErrorBoundary para que um erro numa tela não
-          derrube a aplicação inteira (o menu e o botão Sair continuam aí).
-          A `key` faz o boundary se recuperar sozinho ao trocar de rota. */}
-      <main style={{ padding: estreita ? '12px' : '16px 20px', maxWidth: 1280, margin: '0 auto' }}>
-        <ErrorBoundary key={location.pathname}>
-          <Outlet />
-        </ErrorBoundary>
-      </main>
+      </aside>
+      <div className="app-conteudo">
+        {/* Conteúdo — dentro do ErrorBoundary para que um erro numa tela não
+            derrube a aplicação inteira (o menu e o botão Sair continuam aí).
+            A `key` faz o boundary se recuperar sozinho ao trocar de rota. */}
+        <main className="app-main">
+          <ErrorBoundary key={location.pathname}>
+            <Outlet />
+          </ErrorBoundary>
+        </main>
+      </div>
 
       {/* Assistente virtual: botão fixo em todas as telas e painel lateral
           (tela cheia no celular). Fora do ErrorBoundary da tela: trocar de

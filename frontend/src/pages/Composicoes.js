@@ -39,7 +39,7 @@ let seq = 0;
 const novaChave = () => `k${Date.now()}_${seq++}`;
 
 function CustoResumo({ c }) {
-  if (!c) return <span style={{ color: '#555' }}>—</span>;
+  if (!c) return <span style={{ color: 'var(--texto-3)' }}>—</span>;
   return (
     <span>
       <span style={{ color: c.completo ? '#e8e0cc' : '#bbb' }}>{moeda(c.custo_unitario)}</span>
@@ -148,7 +148,7 @@ export default function Composicoes() {
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
           <div>
             <div style={tituloSecao}>Composições e kits</div>
-            <div style={{ fontSize: 12, color: '#888', maxWidth: 760, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 12, color: 'var(--texto-3)', maxWidth: 760, lineHeight: 1.5 }}>
               Um kit junta materiais do catálogo e serviços da base com coeficientes e entra no orçamento de uma vez
               (botão <b>+ Kit/composição</b> no editor). O custo é recalculado com os preços atuais:
               material pelo catálogo; serviço pelo valor H&M adotado ou, sem ele, pela referência {ROTULO_SEGMENTO.privado} (clientes
@@ -166,18 +166,18 @@ export default function Composicoes() {
             <option value="">Todas as disciplinas</option>
             {disciplinasUsadas.map(d => <option key={d} value={d}>{nomeDisciplina(d)}</option>)}
           </Select>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#999', cursor: 'pointer' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--texto-2)', cursor: 'pointer' }}>
             <input type="checkbox" style={{ width: 'auto' }} checked={verInativos} onChange={e => setVerInativos(e.target.checked)} />
             Mostrar desativadas
           </label>
         </div>
 
-        {carregando ? <div style={{ color: '#888', fontSize: 13 }}>Carregando…</div> : grupos.length === 0 ? (
-          <div style={{ color: '#888', fontSize: 13 }}>Nenhuma composição {busca || disciplina ? 'com esse filtro' : 'cadastrada'}.</div>
+        {carregando ? <div style={{ color: 'var(--texto-3)', fontSize: 13 }}>Carregando…</div> : grupos.length === 0 ? (
+          <div style={{ color: 'var(--texto-3)', fontSize: 13 }}>Nenhuma composição {busca || disciplina ? 'com esse filtro' : 'cadastrada'}.</div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }} data-teste="lista-composicoes">
             <thead>
-              <tr style={{ color: '#777', textAlign: 'left' }}>
+              <tr style={{ color: 'var(--texto-3)', textAlign: 'left' }}>
                 <th style={{ ...th, width: 22 }} />
                 <th style={th}>Código</th>
                 <th style={th}>Descrição</th>
@@ -203,7 +203,7 @@ export default function Composicoes() {
                         <td style={{ ...td, color: '#c9a227', whiteSpace: 'nowrap', fontWeight: 700 }}>{c.codigo}</td>
                         <td style={td}>
                           <span style={{ cursor: 'pointer' }} onClick={() => alternar(c.id)}>{c.descricao}</span>
-                          {!c.ativo && <span style={{ ...etiquetaCotar, color: '#888', borderColor: '#444' }}>desativada</span>}
+                          {!c.ativo && <span style={{ ...etiquetaCotar, color: 'var(--texto-3)', borderColor: '#444' }}>desativada</span>}
                           {c.origem === 'modelo' && <span style={etiquetaModelo} title="Kit-modelo criado pelo sistema — ajuste os coeficientes ao projeto">modelo</span>}
                         </td>
                         <td style={td}>{c.unidade}</td>
@@ -225,7 +225,7 @@ export default function Composicoes() {
                       </tr>
                       {aberto === c.id && (
                         <tr><td colSpan={8} style={{ padding: '4px 0 14px 22px' }}>
-                          {detalhes[c.id] ? <DetalheItens comp={detalhes[c.id]} /> : <span style={{ color: '#888' }}>Carregando…</span>}
+                          {detalhes[c.id] ? <DetalheItens comp={detalhes[c.id]} /> : <span style={{ color: 'var(--texto-3)' }}>Carregando…</span>}
                         </td></tr>
                       )}
                     </Fragment>
@@ -246,10 +246,10 @@ function DetalheItens({ comp }) {
   const linhas = custo?.privado?.itens || [];
   return (
     <div>
-      {comp.observacao && <div style={{ fontSize: 11.5, color: '#999', marginBottom: 8, lineHeight: 1.5 }}>{comp.observacao}</div>}
+      {comp.observacao && <div style={{ fontSize: 11.5, color: 'var(--texto-2)', marginBottom: 8, lineHeight: 1.5 }}>{comp.observacao}</div>}
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
         <thead>
-          <tr style={{ color: '#666', textAlign: 'left' }}>
+          <tr style={{ color: 'var(--texto-3)', textAlign: 'left' }}>
             <th style={th}>Tipo</th><th style={th}>Item</th>
             <th style={{ ...th, textAlign: 'right' }}>Coef.</th><th style={th}>Un</th>
             <th style={{ ...th, textAlign: 'right' }}>Preço particular</th><th style={{ ...th, textAlign: 'right' }}>Custo particular</th>
@@ -414,13 +414,13 @@ function EditorComposicao({ form, setForm, onFechar }) {
 
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }} data-teste="itens-editor">
         <thead>
-          <tr style={{ color: '#777', textAlign: 'left' }}>
+          <tr style={{ color: 'var(--texto-3)', textAlign: 'left' }}>
             <th style={th}>Tipo</th><th style={th}>Item</th><th style={{ ...th, width: 90 }}>Coef.</th><th style={{ ...th, width: 70 }}>Un</th>
             <th style={{ ...th, textAlign: 'right' }}>Custo particular</th><th style={{ ...th, textAlign: 'right' }}>Custo oficial</th><th style={{ ...th, width: 92 }} />
           </tr>
         </thead>
         <tbody>
-          {form.itens.length === 0 && <tr><td colSpan={7} style={{ ...td, color: '#777' }}>Nenhum item — adicione abaixo materiais do catálogo, serviços da base ou um material sem catálogo.</td></tr>}
+          {form.itens.length === 0 && <tr><td colSpan={7} style={{ ...td, color: 'var(--texto-3)' }}>Nenhum item — adicione abaixo materiais do catálogo, serviços da base ou um material sem catálogo.</td></tr>}
           {form.itens.map((it, i) => {
             const vinculado = !!(it.material_id || it.servico_codigo);
             const lp = linhaCusto(i, 'privado');
@@ -430,7 +430,7 @@ function EditorComposicao({ form, setForm, onFechar }) {
                 <td style={td}><span style={it.tipo === 'servico' ? etiquetaServico : etiquetaMaterial}>{it.tipo === 'servico' ? 'serviço' : 'material'}</span></td>
                 <td style={td}>
                   {vinculado ? (
-                    <span>{it.descricao} <span style={{ color: '#666' }}>{it.servico_codigo ? `(${it.servico_codigo})` : `(catálogo #${it.material_id})`}</span>
+                    <span>{it.descricao} <span style={{ color: 'var(--texto-3)' }}>{it.servico_codigo ? `(${it.servico_codigo})` : `(catálogo #${it.material_id})`}</span>
                       <button style={btnLink} onClick={() => desvincular(it)} title="Tirar do catálogo/da base e editar a descrição à mão">desvincular</button></span>
                   ) : (
                     <input value={it.descricao} maxLength={300} placeholder={it.tipo === 'servico' ? 'Serviço fora da base' : 'Material sem catálogo (a cotar)'}
@@ -494,7 +494,7 @@ function EditorComposicao({ form, setForm, onFechar }) {
         </div>
         <div style={caixaAdicionar}>
           <div style={rotuloAdicionar}>+ Material sem catálogo</div>
-          <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>Entra com a descrição digitada e sem preço (a cotar) até ser ligado ao catálogo.</div>
+          <div style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 6 }}>Entra com a descrição digitada e sem preço (a cotar) até ser ligado ao catálogo.</div>
           <button style={btnSecundario} onClick={() => adicionar({ tipo: 'material', material_id: null, servico_codigo: null, descricao: '', unidade: 'un' })}>
             <Plus size={13} style={{ marginRight: 4 }} /> Adicionar linha
           </button>
@@ -508,17 +508,17 @@ function EditorComposicao({ form, setForm, onFechar }) {
 // de diferente por cima — o visual ficou como era.
 const card = { ...estilos.card, padding: 22 };
 const tituloSecao = { fontSize: 15, color: '#c9a227', fontWeight: 700, marginBottom: 6 };
-const th = { padding: '6px 8px 6px 0', fontWeight: 600, fontSize: 11 };
+const th = { padding: '6px 8px 6px 0', fontWeight: 600, fontSize: 12 };
 const td = { padding: '6px 8px 6px 0', verticalAlign: 'top' };
-const cabecalhoGrupo = { padding: '14px 0 6px', color: '#c9a227', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px' };
-const rotulo = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, color: '#888' };
+const cabecalhoGrupo = { padding: '14px 0 6px', color: '#c9a227', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px' };
+const rotulo = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--texto-3)' };
 const btnPrimario = { ...estilos.btnPrimario, display: 'flex', fontSize: 13 };
 const btnSecundario = {
   display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent', border: '1px dashed #333',
-  borderRadius: 6, color: '#999', fontWeight: 700, fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap',
+  borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
 };
 const btnIcone = { ...estilos.btnIcone, display: 'flex', color: '#c9a227', padding: 0 };
-const btnSeta = { background: 'none', border: 'none', color: '#888', cursor: 'pointer', padding: 0, display: 'flex' };
+const btnSeta = { background: 'none', border: 'none', color: 'var(--texto-3)', cursor: 'pointer', padding: 0, display: 'flex' };
 const btnLink = { background: 'none', border: 'none', color: '#8ab4f8', cursor: 'pointer', fontSize: 10.5, marginLeft: 6, textDecoration: 'underline', padding: 0 };
 const etiqueta = { fontSize: 9.5, border: '1px solid', borderRadius: 4, padding: '0 5px', marginLeft: 6, textTransform: 'uppercase', letterSpacing: '.4px', whiteSpace: 'nowrap' };
 const etiquetaCotar = { ...etiqueta, color: '#d9a441', borderColor: '#5a4520' };

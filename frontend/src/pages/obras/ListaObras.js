@@ -55,7 +55,7 @@ export default function ListaObras() {
       <div style={{ ...E.card, display: 'grid', gridTemplateColumns: 'minmax(220px, 2fr) 1fr 1fr minmax(180px, 1.5fr)', gap: 12, alignItems: 'end' }}>
         <Campo label="Buscar">
           <div style={{ position: 'relative' }}>
-            <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: '#555' }} />
+            <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--texto-3)' }} />
             <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Código, nome, cliente ou local..." style={{ paddingLeft: 30 }} />
           </div>
         </Campo>
@@ -99,27 +99,28 @@ export default function ListaObras() {
               return (
                 <tr key={o.id} style={{ borderTop: '1px solid #1e1e1e', cursor: 'pointer' }} onClick={() => navigate(`/obras/${o.id}`)}>
                   <td style={{ ...E.td, whiteSpace: 'nowrap' }}><Link to={`/obras/${o.id}`} style={E.link} onClick={e => e.stopPropagation()}>{o.codigo}</Link></td>
-                  <td style={E.td}>
-                    <div style={{ color: '#ddd', fontWeight: 600 }}>{o.nome}</div>
-                    {o.local && o.local !== o.nome && <div style={{ color: '#777', fontSize: 11 }}>{o.local}</div>}
+                  {/* largura mínima: com o menu lateral a coluna ficava estreita e o nome quebrava em 5–6 linhas */}
+                  <td style={{ ...E.td, minWidth: 220 }}>
+                    <div style={{ color: 'var(--texto)', fontWeight: 600 }}>{o.nome}</div>
+                    {o.local && o.local !== o.nome && <div style={{ color: 'var(--texto-3)', fontSize: 12 }}>{o.local}</div>}
                   </td>
                   <td style={E.td}>
                     {o.cliente_nome || '—'}
-                    <div style={{ color: '#666', fontSize: 10 }}>{SEGMENTO_CURTO[o.segmento]}</div>
+                    <div style={{ color: 'var(--texto-3)', fontSize: 11.5 }}>{SEGMENTO_CURTO[o.segmento]}</div>
                   </td>
                   <td style={E.td}><Etiqueta info={STATUS_OBRA[o.status]}>{STATUS_OBRA[o.status]?.rotulo || o.status}</Etiqueta></td>
-                  <td style={{ ...E.td, color: '#888', fontSize: 11, whiteSpace: 'nowrap' }}>
+                  <td style={{ ...E.td, color: 'var(--texto-3)', fontSize: 12, minWidth: 150, maxWidth: 200 }}>
                     {o.qtd_analises} análise · {o.qtd_projetos ?? 0} projeto · {o.qtd_laudos} laudo · {o.qtd_propostas} proposta
                     {!restrito && <div>{o.qtd_contratos} contrato · {o.qtd_movimentos} mov.</div>}
                   </td>
                   <td style={{ ...E.td, textAlign: 'right', whiteSpace: 'nowrap' }} title={BASE_ORCADO[r.orcado_base]}>
                     <span style={{ color: '#c9a227', fontWeight: 700 }}>{moeda(r.orcado)}</span>
-                    {r.orcado_base === 'ultima_ativa' && <div style={{ color: '#777', fontSize: 10 }}>estimado</div>}
+                    {r.orcado_base === 'ultima_ativa' && <div style={{ color: 'var(--texto-3)', fontSize: 11.5 }}>estimado</div>}
                   </td>
                   <td style={{ ...E.td, textAlign: 'right', color: '#e08080', whiteSpace: 'nowrap' }}>{restrito ? '—' : moeda(r.realizado)}</td>
                   <td style={{ ...E.td, textAlign: 'right', whiteSpace: 'nowrap', color: corMargem(r.margem), fontWeight: 700 }}>
                     {restrito ? '—' : moeda(r.margem)}
-                    {!restrito && r.margem_pct != null && <div style={{ fontSize: 10, fontWeight: 400 }}>{pct(r.margem_pct)}</div>}
+                    {!restrito && r.margem_pct != null && <div style={{ fontSize: 11.5, fontWeight: 400 }}>{pct(r.margem_pct)}</div>}
                   </td>
                 </tr>
               );
@@ -128,7 +129,7 @@ export default function ListaObras() {
         </table>
       </div>
       <Paginacao pagina={pagina} totalPaginas={dados.totalPaginas} total={dados.total} onMudarPagina={setPagina} />
-      {restrito && <p style={{ color: '#666', fontSize: 11, marginTop: 8 }}>Realizado e margem aparecem só para administradores (dependem do financeiro).</p>}
+      {restrito && <p style={{ color: 'var(--texto-3)', fontSize: 12, marginTop: 8 }}>Realizado e margem aparecem só para administradores (dependem do financeiro).</p>}
 
       {novaAberta && (
         <NovaObra

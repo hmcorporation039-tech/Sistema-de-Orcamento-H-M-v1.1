@@ -180,7 +180,7 @@ export default function PrecosMaoDeObra() {
             <input value={it.unidade ?? ''} maxLength={10} onChange={e => alterar(it.codigo, 'unidade', e.target.value)}
               style={{ fontSize: 13, minWidth: 0, borderColor: alterados[it.codigo] && 'unidade' in alterados[it.codigo] ? '#c9a227' : undefined }} />
           ) : (
-            <span style={{ color: '#777', paddingTop: 6 }}>{it.unidade}</span>
+            <span style={{ color: 'var(--texto-3)', paddingTop: 6 }}>{it.unidade}</span>
           )}
           {SEGMENTOS.map(s => {
             const k = `${it.codigo}|${s.chave}`;
@@ -195,7 +195,7 @@ export default function PrecosMaoDeObra() {
                     <Search size={12} />
                   </button>
                 </div>
-                <div style={{ fontSize: 10.5, color: '#777', marginTop: 3, lineHeight: 1.35 }}>
+                <div style={{ fontSize: 10.5, color: 'var(--texto-3)', marginTop: 3, lineHeight: 1.35 }}>
                   {pesquisando[k] ? 'Pesquisando na web…' : (
                     <>
                       {it[`fonte_${s.chave}`] && <span title={it[`fonte_${s.chave}`]}>{String(it[`fonte_${s.chave}`]).slice(0, 70)}{String(it[`fonte_${s.chave}`]).length > 70 ? '…' : ''} </span>}
@@ -217,7 +217,7 @@ export default function PrecosMaoDeObra() {
             {ofertas.length ? (
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr style={{ color: '#777', textAlign: 'left' }}>
+                  <tr style={{ color: 'var(--texto-3)', textAlign: 'left' }}>
                     <th style={th}>Segmento</th><th style={th}>Fonte</th><th style={th}>Item / composição</th><th style={th}>Preço</th><th style={th}>Obs.</th>
                   </tr>
                 </thead>
@@ -233,8 +233,8 @@ export default function PrecosMaoDeObra() {
                   ))}
                 </tbody>
               </table>
-            ) : <span style={{ color: '#777' }}>Nenhuma referência pesquisada ainda — use a lupa de cada segmento.</span>}
-            <p style={{ color: '#666', fontSize: 11, marginTop: 6 }}>Valor do segmento = média das referências equivalentes. Confira a unidade e o escopo (só mão de obra) antes de adotar.</p>
+            ) : <span style={{ color: 'var(--texto-3)' }}>Nenhuma referência pesquisada ainda — use a lupa de cada segmento.</span>}
+            <p style={{ color: 'var(--texto-3)', fontSize: 12, marginTop: 6 }}>Valor do segmento = média das referências equivalentes. Confira a unidade e o escopo (só mão de obra) antes de adotar.</p>
           </div>
         )}
       </Fragment>
@@ -246,7 +246,7 @@ export default function PrecosMaoDeObra() {
     const inativo = it.ativo === false;
     const destino = it.fundido_em ? porCodigo[it.fundido_em] : null;
     return (
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, margin: '0 0 12px 34px', fontSize: 11.5, color: '#777' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, margin: '0 0 12px 34px', fontSize: 11.5, color: 'var(--texto-3)' }}>
         <span>Disciplina:</span>
         <Select value={it.disciplina || 'outros'} onChange={e => alterar(it.codigo, 'disciplina', e.target.value)} disabled={inativo}
           style={{ width: 'auto', flex: '0 0 auto', fontSize: 11.5, padding: '3px 6px', borderColor: alterados[it.codigo] && 'disciplina' in alterados[it.codigo] ? '#c9a227' : undefined }}>
@@ -290,7 +290,7 @@ export default function PrecosMaoDeObra() {
   }
 
   const cabecalho = (
-    <div style={{ ...grade, fontSize: 11, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 }}>
+    <div style={{ ...grade, fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 }}>
       <span />
       <span>Descrição</span><span>Un.</span>
       {SEGMENTOS.map(s => <span key={s.chave} title={s.dica}>{s.rotulo} (R$)</span>)}
@@ -303,7 +303,7 @@ export default function PrecosMaoDeObra() {
       <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 18, gap: 16 }}>
         <div style={{ flex: 1 }}>
           <h2 style={{ fontSize: 20, color: '#c9a227', fontWeight: 700, marginBottom: 4 }}>Preços de Mão de Obra (Referência)</h2>
-          <p style={{ fontSize: 13, color: '#777', maxWidth: 860, lineHeight: 1.6 }}>
+          <p style={{ fontSize: 13, color: 'var(--texto-3)', maxWidth: 860, lineHeight: 1.6 }}>
             Base única de serviços: os <b>serviços padrão</b> (Análise de Projeto e laudos) e os <b>lançados em propostas</b>. Para cada
             serviço, duas referências de <b>preço de mercado</b> — <b>oficial / governo</b> (SINAPI, ORSE, SICRO, tabelas de
             órgãos e preços de licitações) e <b>privado / particular</b> — pesquisadas na web com fonte e link, ou digitadas. O
@@ -326,7 +326,7 @@ export default function PrecosMaoDeObra() {
       )}
 
       {carregando ? (
-        <div style={card}><p style={{ fontSize: 13, color: '#777' }}>Carregando...</p></div>
+        <div style={card}><p style={{ fontSize: 13, color: 'var(--texto-3)' }}>Carregando...</p></div>
       ) : (
         <>
           {Object.entries(porDisciplina).map(([disciplina, lista]) => (
@@ -348,13 +348,13 @@ export default function PrecosMaoDeObra() {
               <h3 style={{ ...tituloSecao, marginBottom: 0, flex: 1 }}>Serviços lançados em propostas ({livres.length - nInativos})</h3>
               <input value={buscaLivres} onChange={e => setBuscaLivres(e.target.value)} placeholder="Buscar serviço…" style={{ fontSize: 12.5, width: 240 }} />
               {nInativos > 0 && (
-                <label style={{ fontSize: 12, color: '#777', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <label style={{ fontSize: 12, color: 'var(--texto-3)', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                   <input type="checkbox" checked={verInativos} onChange={e => setVerInativos(e.target.checked)} />
                   Mostrar desativados e fundidos ({nInativos})
                 </label>
               )}
             </div>
-            <p style={{ fontSize: 12, color: '#666', marginBottom: 14, lineHeight: 1.5 }}>
+            <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 14, lineHeight: 1.5 }}>
               Serviços digitados à mão nas propostas entram aqui sozinhos ao salvar (o valor usado na primeira proposta vira o valor H&M
               adotado) e aparecem na lista de serviços do Orçamento. Se um deles for um serviço padrão com outro nome, use
               <b> É o mesmo que…</b>: ele sai da lista e as próximas propostas passam a usar o padrão — as já gravadas não mudam.
@@ -365,7 +365,7 @@ export default function PrecosMaoDeObra() {
                 {livresVisiveis.map(it => linhaServico(it, acoesLivre(it)))}
               </>
             ) : (
-              <p style={{ fontSize: 13, color: '#777' }}>{termo ? 'Nenhum serviço encontrado.' : 'Nenhum serviço lançado em proposta ainda.'}</p>
+              <p style={{ fontSize: 13, color: 'var(--texto-3)' }}>{termo ? 'Nenhum serviço encontrado.' : 'Nenhum serviço lançado em proposta ainda.'}</p>
             )}
           </div>
         </>
@@ -386,10 +386,10 @@ const btnPrimario = { ...estilos.btnPrimario, display: 'flex', fontSize: 13 };
 
 const btnSecundario = {
   display: 'flex', alignItems: 'center', padding: '6px 10px', background: 'transparent', border: '1px solid #2f4f6f',
-  borderRadius: 6, color: '#8ab4f8', fontWeight: 700, fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap',
+  borderRadius: 6, color: '#8ab4f8', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
 };
 
 const btnIcone = { ...estilos.btnIcone, display: 'flex', height: 30, borderRadius: 6, color: '#c9a227', padding: 0, flexShrink: 0 };
 
-const th = { padding: '4px 8px 4px 0', fontWeight: 600, fontSize: 11 };
+const th = { padding: '4px 8px 4px 0', fontWeight: 600, fontSize: 12 };
 const td = { padding: '4px 8px 4px 0', verticalAlign: 'top' };

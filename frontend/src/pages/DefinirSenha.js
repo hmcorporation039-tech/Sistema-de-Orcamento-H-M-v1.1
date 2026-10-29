@@ -63,7 +63,7 @@ export default function DefinirSenha() {
           <h1 style={{ fontSize: 19, color: '#c9a227', fontWeight: 700 }}>Defina sua senha</h1>
         </div>
 
-        <p style={{ fontSize: 13, color: '#999', lineHeight: 1.6, marginBottom: 22 }}>
+        <p style={{ fontSize: 13, color: 'var(--texto-2)', lineHeight: 1.6, marginBottom: 22 }}>
           Olá, {usuario?.nome?.split(' ')[0] || 'usuário'}. Você entrou com uma senha
           provisória. Escolha agora uma senha só sua para continuar — ela não ficará
           registrada em nenhum outro lugar.
@@ -94,7 +94,7 @@ export default function DefinirSenha() {
 
         <button type="button" onClick={sair} style={{
           width: '100%', padding: '10px 16px', background: 'transparent',
-          border: 'none', color: '#666', fontSize: 12, cursor: 'pointer', marginTop: 10,
+          border: 'none', color: 'var(--texto-3)', fontSize: 12, cursor: 'pointer', marginTop: 10,
         }}>
           Sair e entrar com outra conta
         </button>
@@ -107,7 +107,7 @@ function Campo({ label, children }) {
   return (
     <div style={{ marginBottom: 14 }}>
       <label style={{
-        display: 'block', fontSize: 11, color: '#777', textTransform: 'uppercase',
+        display: 'block', fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase',
         letterSpacing: '.5px', marginBottom: 5,
       }}>
         {label}

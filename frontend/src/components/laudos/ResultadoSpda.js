@@ -7,9 +7,9 @@ function Indicador({ rotulo, valor, ok, detalhe }) {
   const cor = ok === undefined ? '#c9a227' : ok ? '#3fb95f' : '#e05050';
   return (
     <div style={{ background: '#0f0f0f', border: `1px solid ${ok === undefined ? '#222' : cor}`, borderRadius: 8, padding: '10px 12px' }}>
-      <div style={{ fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 4 }}>{rotulo}</div>
+      <div style={{ fontSize: 11.5, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 4 }}>{rotulo}</div>
       <div style={{ fontSize: 18, fontWeight: 700, color: cor }}>{valor}</div>
-      {detalhe && <div style={{ fontSize: 11, color: '#888', marginTop: 3 }}>{detalhe}</div>}
+      {detalhe && <div style={{ fontSize: 12, color: 'var(--texto-3)', marginTop: 3 }}>{detalhe}</div>}
     </div>
   );
 }
@@ -30,20 +30,20 @@ export default function ResultadoSpda({ resumo }) {
       </div>
 
       {r && (
-        <div style={{ fontSize: 12, color: '#bbb', lineHeight: 1.7, marginBottom: 12 }}>
+        <div style={{ fontSize: 12, color: 'var(--texto-2)', lineHeight: 1.7, marginBottom: 12 }}>
           {r.atendeR1 && r.atendeF
             ? <span style={{ color: '#3fb95f' }}>Com as medidas consideradas, o risco e a frequência de danos atendem à NBR 5419-2:2026.</span>
             : r.menorQueAtende
               ? <span><b style={{ color: '#e0a030' }}>Menor solução que atende:</b> {r.menorQueAtende.rotulo} (R1 = {exp(r.menorQueAtende.R1)}). {r.cenariosQueAtendem} combinação(ões) da varredura atendem.</span>
               : <span style={{ color: '#e05050' }}>Nenhuma combinação atende: informar o proprietário e adotar o NP mais alto (NBR 5419-2, 5.4.6).</span>}
-          <span style={{ color: '#777' }}> · Sem qualquer proteção: R1 = {exp(r.semProtecao)}</span>
+          <span style={{ color: 'var(--texto-3)' }}> · Sem qualquer proteção: R1 = {exp(r.semProtecao)}</span>
         </div>
       )}
 
       {r && (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 12 }}>
           <thead>
-            <tr style={{ color: '#777', fontSize: 10, textTransform: 'uppercase', textAlign: 'left' }}>
+            <tr style={{ color: 'var(--texto-3)', fontSize: 11.5, textTransform: 'uppercase', textAlign: 'left' }}>
               <th style={{ padding: '4px 6px 6px 0' }}>Zona</th>
               {['RA', 'RB', 'RC', 'RM', 'RU', 'RV', 'RW', 'RZ'].map(k => <th key={k} style={{ padding: '4px 6px 6px 0' }}>{k}</th>)}
               <th style={{ padding: '4px 6px 6px 0' }}>R1 zona</th><th style={{ padding: '4px 0 6px' }}>F</th>
@@ -53,9 +53,9 @@ export default function ResultadoSpda({ resumo }) {
             {r.zonas.map(z => (
               <tr key={z.nome} style={{ borderTop: '1px solid #1e1e1e' }}>
                 <td style={{ padding: '5px 6px 5px 0', color: '#ccc' }}>{z.nome}</td>
-                {['RA', 'RB', 'RC', 'RM', 'RU', 'RV', 'RW', 'RZ'].map(k => <td key={k} style={{ padding: '5px 6px 5px 0', color: '#999' }}>{exp(z.comp[k])}</td>)}
+                {['RA', 'RB', 'RC', 'RM', 'RU', 'RV', 'RW', 'RZ'].map(k => <td key={k} style={{ padding: '5px 6px 5px 0', color: 'var(--texto-2)' }}>{exp(z.comp[k])}</td>)}
                 <td style={{ padding: '5px 6px 5px 0', color: '#c9a227', fontWeight: 700 }}>{exp(z.R1)}</td>
-                <td style={{ padding: '5px 0', color: '#999' }}>{z.F == null ? '—' : exp(z.F)}</td>
+                <td style={{ padding: '5px 0', color: 'var(--texto-2)' }}>{z.F == null ? '—' : exp(z.F)}</td>
               </tr>
             ))}
           </tbody>
@@ -63,12 +63,12 @@ export default function ResultadoSpda({ resumo }) {
       )}
 
       {i?.ncs?.length > 0 && (
-        <div style={{ fontSize: 12, color: '#bbb', marginBottom: 6 }}>
+        <div style={{ fontSize: 12, color: 'var(--texto-2)', marginBottom: 6 }}>
           <b style={{ color: '#c9a227' }}>Não conformidades consolidadas:</b>{' '}
           {i.ncs.map(n => `${n.id} (${n.item}, ${n.prioridade})`).join(' · ')}
         </div>
       )}
-      {i && <div style={{ fontSize: 12, color: '#888' }}>{i.parecer.texto}. Próxima inspeção periódica: a cada {i.intervaloAnos} ano(s).</div>}
+      {i && <div style={{ fontSize: 12, color: 'var(--texto-3)' }}>{i.parecer.texto}. Próxima inspeção periódica: a cada {i.intervaloAnos} ano(s).</div>}
       {/* erros de preenchimento (skills/spda/scripts/lib/consistencia.js): saem em vermelho no laudo até serem corrigidos */}
       {resumo.avisos?.length > 0 && (
         <div style={{ marginTop: 10, border: '1px solid #5a2a2a', background: '#1a0f0f', borderRadius: 7, padding: '8px 12px' }}>

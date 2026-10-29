@@ -31,17 +31,17 @@ export default function PainelPasta({ carregar, abrir, atualizarQuando }) {
           {aberto ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           <FolderOpen size={14} style={{ margin: '0 6px' }} /> Pasta dos arquivos
         </button>
-        <code style={{ color: '#bbb', wordBreak: 'break-all', flex: 1, minWidth: 200 }}>{info.caminho}</code>
-        <span style={{ color: '#777' }}>{info.arquivos.length} arquivo(s)</span>
+        <code style={{ color: 'var(--texto-2)', wordBreak: 'break-all', flex: 1, minWidth: 200 }}>{info.caminho}</code>
+        <span style={{ color: 'var(--texto-3)' }}>{info.arquivos.length} arquivo(s)</span>
         <button type="button" onClick={copiar} title="Copiar o caminho da pasta" style={botao}><Copy size={12} /> Copiar caminho</button>
         {info.podeAbrir && <button type="button" onClick={abrirPasta} title="Abrir no Explorer deste PC" style={botao}><FolderOpen size={12} /> Abrir pasta</button>}
         <button type="button" onClick={recarregar} title="Atualizar a lista" style={botao}><RefreshCw size={12} /></button>
       </div>
       {aberto && (
-        <ul style={{ margin: '8px 0 0', paddingLeft: 22, color: '#aaa', lineHeight: 1.7 }}>
-          {info.arquivos.length === 0 && <li style={{ color: '#666' }}>Nenhum arquivo ainda.</li>}
+        <ul style={{ margin: '8px 0 0', paddingLeft: 22, color: 'var(--texto-2)', lineHeight: 1.7 }}>
+          {info.arquivos.length === 0 && <li style={{ color: 'var(--texto-3)' }}>Nenhum arquivo ainda.</li>}
           {info.arquivos.map(a => (
-            <li key={a.arquivo}>{a.arquivo} <span style={{ color: '#666' }}>· {fmtTamanho(a.tamanho)} · {new Date(a.alterado_em).toLocaleString('pt-BR')}</span></li>
+            <li key={a.arquivo}>{a.arquivo} <span style={{ color: 'var(--texto-3)' }}>· {fmtTamanho(a.tamanho)} · {new Date(a.alterado_em).toLocaleString('pt-BR')}</span></li>
           ))}
         </ul>
       )}

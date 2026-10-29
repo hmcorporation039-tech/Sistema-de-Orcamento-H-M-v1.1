@@ -124,7 +124,7 @@ export default function Prestadores() {
         <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>Prestadores de Serviços</h2>
 
         <div style={{ position: 'relative', width: 260 }}>
-          <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: '#555' }} />
+          <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--texto-3)' }} />
           <input
             value={busca}
             onChange={e => setBusca(e.target.value)}
@@ -175,7 +175,7 @@ export default function Prestadores() {
                 <td style={td}>{p.tipo === 'Pessoa Jurídica' ? 'PJ' : 'PF'}</td>
                 <td style={td}>
                   {info ? (
-                    <span style={{ padding: '3px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: info.bg, color: info.cor, border: `1px solid ${info.borda}` }}>
+                    <span style={{ padding: '3px 9px', borderRadius: 20, fontSize: 11.5, fontWeight: 700, background: info.bg, color: info.cor, border: `1px solid ${info.borda}` }}>
                       {info.label}
                     </span>
                   ) : '—'}
@@ -187,22 +187,22 @@ export default function Prestadores() {
                 <td style={{ ...td, textAlign: 'right' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-end' }}>
                     {Number(p.total_mao_de_obra) > 0 && (
-                      <span style={{ fontSize: 10, color: CATEGORIA_INFO.mao_de_obra.cor }}>
+                      <span style={{ fontSize: 11.5, color: CATEGORIA_INFO.mao_de_obra.cor }}>
                         Mão de obra: {formatarMoeda(p.total_mao_de_obra)}
                       </span>
                     )}
                     {Number(p.total_material) > 0 && (
-                      <span style={{ fontSize: 10, color: CATEGORIA_INFO.material.cor }}>
+                      <span style={{ fontSize: 11.5, color: CATEGORIA_INFO.material.cor }}>
                         Material: {formatarMoeda(p.total_material)}
                       </span>
                     )}
                     {Number(p.total_despesa) > 0 && (
-                      <span style={{ fontSize: 10, color: CATEGORIA_INFO.despesa.cor }}>
+                      <span style={{ fontSize: 11.5, color: CATEGORIA_INFO.despesa.cor }}>
                         Despesa diária: {formatarMoeda(p.total_despesa)}
                       </span>
                     )}
                     {Number(p.total_sem_categoria) > 0 && (
-                      <span style={{ fontSize: 10, color: '#666' }}>
+                      <span style={{ fontSize: 11.5, color: 'var(--texto-3)' }}>
                         Sem categoria: {formatarMoeda(p.total_sem_categoria)}
                       </span>
                     )}
@@ -308,5 +308,5 @@ const { th, td, tdVazio, btnPrimario, btnIcone } = estilos;
 
 const btnSecundario = {
   padding: '9px 16px', background: 'transparent', border: '1px solid #2a2a2a',
-  borderRadius: 6, color: '#999', fontWeight: 700, fontSize: 12, cursor: 'pointer'
+  borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer'
 };

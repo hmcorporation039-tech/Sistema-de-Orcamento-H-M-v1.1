@@ -53,7 +53,7 @@ export default function Dashboard() {
   useEffect(() => { carregar(); }, [carregar]);
 
   if (carregando && !resumo) {
-    return <p style={{ color: '#666', textAlign: 'center', padding: 40 }}>Carregando dashboard...</p>;
+    return <p style={{ color: 'var(--texto-3)', textAlign: 'center', padding: 40 }}>Carregando dashboard...</p>;
   }
 
   const maxValorMes = Math.max(...serie.map(s => s.valor), 1);
@@ -142,13 +142,13 @@ export default function Dashboard() {
                       <div style={{ position: 'absolute', bottom: 0, left: 0, width: '100%', height: alturaAprovada, background: '#c9a227', borderRadius: '3px 3px 0 0' }} />
                     </div>
                   </div>
-                  <span style={{ fontSize: 9, color: '#777' }}>{formatarMesLabel(s.mes)}</span>
+                  <span style={{ fontSize: 11, color: 'var(--texto-3)' }}>{formatarMesLabel(s.mes)}</span>
                 </div>
               );
             })}
           </div>
         )}
-        <div style={{ display: 'flex', gap: 16, marginTop: 12, fontSize: 10, color: '#888' }}>
+        <div style={{ display: 'flex', gap: 16, marginTop: 12, fontSize: 11.5, color: 'var(--texto-3)' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ width: 10, height: 10, background: '#2a2a2a', borderRadius: 2, display: 'inline-block' }} /> Total emitido
           </span>
@@ -172,7 +172,7 @@ export default function Dashboard() {
                 <div key={status} style={{ marginBottom: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
                     <span style={{ color: '#ccc' }}>{status}</span>
-                    <span style={{ color: '#888' }}>{dados.qtd} · {formatarMoeda(dados.valor)}</span>
+                    <span style={{ color: 'var(--texto-3)' }}>{dados.qtd} · {formatarMoeda(dados.valor)}</span>
                   </div>
                   <div style={{ height: 6, background: '#1e1e1e', borderRadius: 3, overflow: 'hidden' }}>
                     <div style={{ width: `${pct}%`, height: '100%', background: cor.cor, borderRadius: 3 }} />
@@ -221,7 +221,7 @@ export default function Dashboard() {
               <div key={m.descricao} style={{ marginBottom: 10 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginBottom: 4 }}>
                   <span style={{ color: '#ccc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 8 }}>{m.descricao}</span>
-                  <span style={{ color: '#888', whiteSpace: 'nowrap' }}>{formatarMoeda(m.valor)}</span>
+                  <span style={{ color: 'var(--texto-3)', whiteSpace: 'nowrap' }}>{formatarMoeda(m.valor)}</span>
                 </div>
                 <div style={{ height: 6, background: '#1e1e1e', borderRadius: 3, overflow: 'hidden' }}>
                   <div style={{ width: `${(m.valor / maxValorMaterial) * 100}%`, height: '100%', background: '#c9a227', borderRadius: 3 }} />
@@ -249,8 +249,8 @@ export default function Dashboard() {
                 >
                   <span style={{ color: '#c9a227', fontWeight: 700, width: 46 }}>{p.numero}</span>
                   <span style={{ flex: 1, color: '#ccc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.cliente_nome}</span>
-                  <span style={{ color: '#888', fontSize: 11 }}>{formatarData(p.data)}</span>
-                  <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, color: cor.cor, background: cor.realce }}>
+                  <span style={{ color: 'var(--texto-3)', fontSize: 12 }}>{formatarData(p.data)}</span>
+                  <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 11.5, fontWeight: 700, color: cor.cor, background: cor.realce }}>
                     {p.status}
                   </span>
                   <span style={{ color: '#ccc', fontWeight: 700, width: 90, textAlign: 'right' }}>{formatarMoeda(p.total)}</span>
@@ -267,9 +267,9 @@ export default function Dashboard() {
 function CardResumo({ label, valor, sub, destaque }) {
   return (
     <div style={card}>
-      <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 11.5, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>{label}</div>
       <div style={{ fontSize: 20, fontWeight: 700, color: destaque ? '#c9a227' : '#e8e0cc' }}>{valor}</div>
-      {sub && <div style={{ fontSize: 11, color: '#666', marginTop: 3 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 12, color: 'var(--texto-3)', marginTop: 3 }}>{sub}</div>}
     </div>
   );
 }
@@ -279,6 +279,6 @@ function CardResumo({ label, valor, sub, destaque }) {
 const card = { ...estilos.card, marginBottom: 0 };
 
 const tituloCard = { fontSize: 13, color: '#c9a227', fontWeight: 700, marginBottom: 14 };
-const vazio = { fontSize: 12, color: '#555', textAlign: 'center', padding: '20px 0' };
-const thLeve = { padding: '6px 4px', fontSize: 10, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', fontWeight: 700 };
+const vazio = { fontSize: 12, color: 'var(--texto-3)', textAlign: 'center', padding: '20px 0' };
+const thLeve = { padding: '6px 4px', fontSize: 11.5, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', fontWeight: 700 };
 const tdLeve = { padding: '8px 4px', color: '#ccc' };
