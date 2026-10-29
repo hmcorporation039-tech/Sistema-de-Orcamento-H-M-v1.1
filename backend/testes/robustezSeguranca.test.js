@@ -305,7 +305,7 @@ caso('exclusão do laudo: fotos e arquitetura copiadas para a pasta ANTES; DELET
   const gravarOriginal = P.gravarArquivo;
   P.gravarArquivo = async (pasta, nome, conteudo) => { if (pastas.falharGravacao) throw new Error('pasta aberta em outro programa'); pastas.gravados.push([pasta.replace(/\\/g, '/'), nome, conteudo.length]); };
   try {
-    const laudos = require('../src/controllers/laudosController');
+    const laudos = require('../src/controllers/laudos');
     // tudo certo
     let cl = cenarioExclusao();
     let res = resposta();

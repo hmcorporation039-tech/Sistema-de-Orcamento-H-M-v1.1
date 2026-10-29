@@ -183,7 +183,7 @@ caso('data de hoje e período padrão em Brasília (31/10 às 23h30 ainda é out
   assert.deepStrictEqual(periodoMesAtualBrasilia(noite), { dataInicio: '2026-10-01', dataFim: '2026-10-31' });
   assert.deepStrictEqual(periodoMesAtualBrasilia(new Date('2026-03-01T03:00:00Z')), { dataInicio: '2026-03-01', dataFim: '2026-03-01' });
   // nenhum "hoje" em UTC sobrou nos controllers corrigidos
-  for (const f of ['propostasController', 'laudosController', 'projetosController', 'financeiroController', 'relatoriosController', 'cronogramaController']) {
+  for (const f of ['propostasController', 'propostaDocumentos', 'laudos/crud', 'laudos/fotos', 'laudos/desenhos', 'laudos/entregas', 'laudos/orcamento', 'projetos/comum', 'projetos/analises', 'projetos/pacotes', 'projetos/orcamento', 'financeiroController', 'relatoriosController', 'cronogramaController']) {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'controllers', `${f}.js`), 'utf8');
     const linhas = src.split('\n').filter(l => /new Date\(\)\.toISOString\(\)\.slice\(0, 10\)|inicio\.toISOString|hoje\.toISOString/.test(l));
     assert.deepStrictEqual(linhas, [], f);
@@ -192,7 +192,7 @@ caso('data de hoje e período padrão em Brasília (31/10 às 23h30 ainda é out
 
 // ════════ item 7 — dois cliques em "Gerar orçamento" ════════
 caso('gerar orçamento: vínculo relido com FOR UPDATE dentro da transação (análise e laudo)', () => {
-  for (const [f, sql] of [['projetosController', 'SELECT proposta_id FROM analises_projeto WHERE id = $1 FOR UPDATE'], ['laudosController', 'SELECT propostas FROM laudos_projetos WHERE id = $1 FOR UPDATE']]) {
+  for (const [f, sql] of [['projetos/orcamento', 'SELECT proposta_id FROM analises_projeto WHERE id = $1 FOR UPDATE'], ['laudos/orcamento', 'SELECT propostas FROM laudos_projetos WHERE id = $1 FOR UPDATE']]) {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'controllers', `${f}.js`), 'utf8');
     const ini = src.indexOf('async function gerarOrcamento');
     const corpo = src.slice(ini, src.indexOf('\nasync function', ini + 10) > 0 ? src.indexOf('\nasync function', ini + 10) : undefined);
@@ -204,7 +204,7 @@ caso('gerar orçamento: vínculo relido com FOR UPDATE dentro da transação (an
 });
 
 caso('gerar orçamento (análise): o 2º clique espera o 1º e ATUALIZA a proposta criada por ele', silencio(async () => {
-  const proj = require('../src/controllers/projetosController');
+  const proj = require('../src/controllers/projetos');
   // estado "do banco" compartilhado pelos dois cliques; a trava FOR UPDATE da
   // análise serializa as transações (imitada com uma fila)
   const estado = { proposta_id: null, criadas: 0, atualizadas: 0, seq: 100 };

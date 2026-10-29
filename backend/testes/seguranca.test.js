@@ -8,7 +8,7 @@ const { tipoPorConteudo } = require('../src/utils/tipoArquivo');
 const { versaoDoPedido } = require('../src/utils/versao');
 const { pedidoLocal } = require('../src/services/pastasRegistros');
 const { unidadeBase } = require('../src/services/catalogoMateriais');
-const { paraTestes: { prepararFotos } } = require('../src/controllers/laudosController');
+const { paraTestes: { prepararFotos } } = require('../src/controllers/laudos');
 
 let ok = 0;
 const casos = [];

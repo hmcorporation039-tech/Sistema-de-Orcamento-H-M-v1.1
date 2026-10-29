@@ -70,7 +70,7 @@ const TIPOS = {
       if (dados.mensagem != null && (typeof dados.mensagem !== 'string' || dados.mensagem.length > 10000)) throw new ErroAcao('Mensagem do e-mail inválida (até 10.000 caracteres).');
       const p = await proposta(id);
       // o cartão mostra o e-mail INTEIRO que vai sair (mesmo assunto e corpo de
-      // propostasController.enviarEmail): antes dizia só "com a mensagem
+      // propostaDocumentos.enviarEmail): antes dizia só "com a mensagem
       // proposta" e o usuário aprovava sem ler o texto que o assistente escreveu
       const corpo = (dados.mensagem && dados.mensagem.trim()) || `Olá,\nSegue em anexo a proposta ${p.numero}.`;
       return {

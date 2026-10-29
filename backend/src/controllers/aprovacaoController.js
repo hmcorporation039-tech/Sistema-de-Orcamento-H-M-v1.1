@@ -19,7 +19,8 @@
 const pool = require('../config/database');
 const { comTransacao } = require('../services/transacao');
 const { registrarAuditoria } = require('../services/auditoria');
-const { registrarEvento, aplicarStatusProposta, montarPdfBuffer } = require('./propostasController');
+const { registrarEvento, aplicarStatusProposta } = require('./propostasController');
+const { montarPdfBuffer } = require('./propostaDocumentos');
 const A = require('../utils/aprovacaoLink');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');
 const { normalizarTextos } = require('../middleware/textoBemFormado');

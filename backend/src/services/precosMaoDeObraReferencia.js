@@ -1,7 +1,7 @@
 const pool = require('../config/database');
 
 // Lista canônica dos itens de mão de obra padrão da Análise de Projeto (mesmo
-// código usado em montarServicosPadrao, services/compatibilizacaoAnalise.js).
+// código usado em montarServicosPadrao, utils/analiseProjetoItens.js).
 // Serve pra duas coisas: (1) popular a tabela precos_mao_de_obra_referencia
 // na primeira vez que o sistema sobe (schema.js), sem sobrescrever valores já
 // preenchidos por um admin; (2) alimentar a tela de administração desses

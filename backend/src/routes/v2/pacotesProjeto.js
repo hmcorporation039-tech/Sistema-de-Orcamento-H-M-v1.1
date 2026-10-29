@@ -1,12 +1,12 @@
 // Pacote de arquivos de projeto e compatibilização por posição (versão 2.3) —
-// controllers/projetosController.js + services/pacotesProjeto.js.
+// controllers/projetos/pacotes.js + services/pacotesProjeto.js.
 // Enviar/analisar o pacote: qualquer usuário logado (como a análise de sempre),
 // com o mesmo limite de análises; o pacote só serve a quem enviou (ou admin).
 // O DXF da compatibilização: qualquer usuário logado (como ver a análise).
 const fs = require('fs');
 const { criarUpload, multer } = require('../../utils/upload');
 const rateLimit = require('express-rate-limit');
-const ctrl = require('../../controllers/projetosController');
+const ctrl = require('../../controllers/projetos');
 const { PASTA_UPLOAD } = require('../../services/pacotesProjeto');
 
 // em disco, não em memória: um pacote de dezenas de DWG não pode ocupar a RAM do servidor.

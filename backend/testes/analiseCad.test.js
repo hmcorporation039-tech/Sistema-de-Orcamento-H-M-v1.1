@@ -104,7 +104,7 @@ function dxfSintetico() {
   });
 
   await caso('PDF com lista + DWG do mesmo projeto: o item não é somado duas vezes (vale o DWG, com a descrição da lista)', async () => {
-    const { paraTestes: { semDuplicarFontes, tipoDoItem } } = require('../src/services/compatibilizacaoAnalise');
+    const { semDuplicarFontes, tipoDoItem } = require('../src/utils/analiseProjetoItens');
     const m = (descricao, quantidade, unidade, _fonte, disciplina = 'eletrica', extra = {}) => ({ descricao, quantidade, unidade, _fonte, disciplina, observacao: `obs ${_fonte}.`, ...extra });
     const achados = [];
     const saida = semDuplicarFontes([

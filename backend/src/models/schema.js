@@ -262,7 +262,7 @@ async function criarTabelas() {
     // por um admin) — usados só como SUGESTÃO ao lado do campo de valor
     // unitário na Análise de Projeto, nunca preenchidos automaticamente no
     // item (ver services/precosMaoDeObraReferencia.js e montarServicosPadrao em
-    // compatibilizacaoAnalise.js).
+    // utils/analiseProjetoItens.js).
     await client.query(`
       CREATE TABLE IF NOT EXISTS precos_mao_de_obra_referencia (
         codigo VARCHAR(50) PRIMARY KEY,

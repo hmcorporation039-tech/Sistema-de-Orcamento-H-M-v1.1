@@ -89,6 +89,7 @@ const authCtrl = require('../controllers/authController');
 const matCtrl = require('../controllers/materiaisController');
 const cliCtrl = require('../controllers/clientesController');
 const propCtrl = require('../controllers/propostasController');
+const propDocCtrl = require('../controllers/propostaDocumentos');
 const integCtrl = require('../controllers/integracoesController');
 const usuCtrl = require('../controllers/usuariosController');
 const dashCtrl = require('../controllers/dashboardController');
@@ -96,11 +97,11 @@ const relCtrl = require('../controllers/relatoriosController');
 const finCtrl = require('../controllers/financeiroController');
 const prestCtrl = require('../controllers/prestadoresController');
 const contrCtrl = require('../controllers/contratosController');
-const projCtrl = require('../controllers/projetosController');
+const projCtrl = require('../controllers/projetos');
 const pesqCtrl = require('../controllers/pesquisaMercadoController');
 const precosMOCtrl = require('../controllers/precosMaoDeObraController');
 const maoObraCtrl = require('../controllers/maoDeObraController');
-const laudoCtrl = require('../controllers/laudosController');
+const laudoCtrl = require('../controllers/laudos');
 
 // Fotos de inspeção: JPG/PNG, até 20 por envio, 15 MB cada (o conteúdo é conferido no controller pelos bytes iniciais)
 const uploadFotos = criarUpload({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 20 } });
@@ -144,9 +145,9 @@ router.delete('/clientes/:id', autenticar, validarId, admin, cliCtrl.remover);
 // ── PROPOSTAS ─────────────────────────────────────────────────────────
 router.get('/propostas', autenticar, propCtrl.listar);
 router.get('/propostas/proximo-numero', autenticar, propCtrl.proximoNum);
-router.get('/propostas/:id/pdf', autenticar, validarId, propCtrl.gerarPdf);
-router.get('/propostas/:id/planilha', autenticar, validarId, propCtrl.gerarPlanilha);
-router.post('/propostas/:id/enviar-email', autenticar, validarId, posseProposta, limiteEnvioEmail, propCtrl.enviarEmail);
+router.get('/propostas/:id/pdf', autenticar, validarId, propDocCtrl.gerarPdf);
+router.get('/propostas/:id/planilha', autenticar, validarId, propDocCtrl.gerarPlanilha);
+router.post('/propostas/:id/enviar-email', autenticar, validarId, posseProposta, limiteEnvioEmail, propDocCtrl.enviarEmail);
 router.get('/propostas/:id', autenticar, validarId, propCtrl.buscarUma);
 router.post('/propostas', autenticar, propCtrl.criar);
 router.put('/propostas/:id', autenticar, validarId, posseProposta, propCtrl.atualizar);
