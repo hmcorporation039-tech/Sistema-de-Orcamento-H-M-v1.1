@@ -22,7 +22,7 @@ const EXEMPLO = require('../../exemplos/exemplo-hospital.json');
 const clonar = (o) => JSON.parse(JSON.stringify(o));
 
 const DOCUMENTOS = [
-  { tipo: 'laudo', rotulo: 'Laudo de inspeção', formato: 'Word' },
+  { tipo: 'laudo', rotulo: 'Laudo de SPDA e aterramento', formato: 'Word' },
   { tipo: 'memorial', rotulo: 'Memorial descritivo e de cálculo', formato: 'Word' },
   { tipo: 'risco', rotulo: 'Relatório de análise de risco', formato: 'Word' },
   { tipo: 'checklist', rotulo: 'Checklist de campo', formato: 'Word' },

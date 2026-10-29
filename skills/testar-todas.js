@@ -5,8 +5,9 @@ const path = require('path');
 
 let falhou = false;
 // base comum: CAD (DXF, leitura de arquitetura, posicionamento, plantas, modelo 3D ilustrativo),
-// classificação projeto × laudo dos documentos e as entregas do projeto (as-built, ZIP)
-for (const teste of ['cad/teste-cad.js', 'cad/teste-3d.js', 'cad/teste-projeto-dxf.js', 'teste-tipos-documento.js', 'teste-entrega.js', 'teste-inspecao.js']) {
+// classificação projeto × laudo dos documentos, as entregas do projeto (as-built, ZIP)
+// e a leitura de data/GPS das fotos (EXIF) dos relatórios fotográficos
+for (const teste of ['cad/teste-cad.js', 'cad/teste-3d.js', 'cad/teste-projeto-dxf.js', 'teste-tipos-documento.js', 'teste-entrega.js', 'teste-inspecao.js', 'teste-exif.js']) {
   try {
     process.stdout.write(execFileSync(process.execPath, [path.join(__dirname, '_comum', ...teste.split('/'))], { encoding: 'utf8' }));
   } catch (e) {

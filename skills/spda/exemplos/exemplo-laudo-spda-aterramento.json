@@ -1,0 +1,798 @@
+{
+  "meta": {
+    "schema": "1.0",
+    "titulo": "SPDA e aterramento — Hospital Exemplo (Unidade Norte)",
+    "prefixo": "Hospital_Exemplo_Norte",
+    "dados_ilustrativos": true,
+    "observacao": "Exemplo FICTÍCIO no formato do modelo de laudo de SPDA e aterramento da H&M (29/10/2026): capa com revisões, seções 1 a 11, análise de risco, relatório fotográfico com data/GPS, certificados, ART e aviso legal.",
+    "tipo_laudo": "spda_aterramento",
+    "codigo": "HM-SPDA-0000",
+    "contrato": "0000/00-00000",
+    "data": "2026-10-29",
+    "revisao": "R00",
+    "revisoes": [
+      {
+        "revisao": "R00",
+        "data": "2026-10-29",
+        "descricao": "Emissão inicial",
+        "responsavel": "Eng. Fulano de Tal"
+      }
+    ]
+  },
+  "responsavel": {
+    "nome": "Eng. Fulano de Tal",
+    "titulo": "Engenheiro Eletricista",
+    "crea": "00000/D-DF",
+    "rnp": "0000000000",
+    "art": "0000000000000",
+    "empresa": "Empresa Parceira de Engenharia LTDA",
+    "cnpj": "00.000.000/0001-00"
+  },
+  "cliente": {
+    "nome": "HOSPITAL EXEMPLO S/A",
+    "cnpj": "00.000.000/0002-00",
+    "unidade": "Unidade Norte",
+    "endereco": "Quadra 00, Área Especial 00",
+    "cep": "70000-000",
+    "cidade": "Brasília",
+    "uf": "DF",
+    "contato": "(61) 0000-0000"
+  },
+  "obra": {
+    "nome": "Hospital Exemplo — Unidade Norte",
+    "uso": "Hospitalar",
+    "coordenadas": "-15.7801, -47.9292",
+    "pavimentos": 4
+  },
+  "estrutura": {
+    "L": 60,
+    "W": 55,
+    "H": 18,
+    "localizacao": "cercada_mesma_altura",
+    "tipo_construcao": "concreto_armado",
+    "ambiente": "urbano",
+    "municipio": "Brasília",
+    "uf": "DF",
+    "ng": 16,
+    "ng_fonte": "NBR 5419-2:2026, Tabela F.1 (Brasília/DF)",
+    "saliencias": [],
+    "sistemas_criticos": true,
+    "dimensoes_estimadas": false
+  },
+  "spda": {
+    "np": "I",
+    "descida_natural": true,
+    "cobertura_metalica_natural": false,
+    "wm_m": 5,
+    "resistividade_solo_ohm_m": null,
+    "descricao_captacao": "Captores Franklin, minicaptores e condutores de captação nas torres 1 e 2, na coroa, na cobertura principal e na fachada frontal.",
+    "descricao_descidas": "Condutores de descida e interligações até as caixas de inspeção do aterramento.",
+    "descricao_aterramento": "Eletrodos, condutores de aterramento, conexões e 8 caixas de inspeção.",
+    "descricao_equipotencializacao": "Barramento de Equipotencialização Principal (BEP) interligado ao aterramento do gerador, aos condutores de proteção e às estruturas metálicas.",
+    "caixas_inspecao": 8
+  },
+  "linhas": [
+    {
+      "id": "ENERGIA",
+      "nome": "Entrada em MT 13,8 kV (cubículo de medição) com subestação própria TR-1 e TR-2 de 1000 kVA a óleo — cabos MT blindados [CONFERIR]",
+      "tipo": "energia",
+      "instalacao": "enterrada",
+      "ct": "at_trafo",
+      "LL_m": 1000,
+      "cld_cli": "blindada_ligada_bep",
+      "blindagem_rs": "nao_blindada",
+      "peb_np": "melhor_I",
+      "zonas": [
+        "todas"
+      ]
+    },
+    {
+      "id": "TELECOM",
+      "nome": "Telecom/dados por fibra óptica (sem condutor metálico) — [CONFERIR em campo]",
+      "tipo": "sinal",
+      "instalacao": "enterrada",
+      "ct": "bt_ou_sinal",
+      "LL_m": 1000,
+      "cld_cli": "fibra_optica",
+      "blindagem_rs": "nao_blindada",
+      "peb_np": "melhor_I",
+      "zonas": [
+        "todas"
+      ]
+    }
+  ],
+  "zonas": [
+    {
+      "nome": "Externa (acessos, estacionamento até 3 m das descidas)",
+      "tipo": "externa",
+      "nz": 15,
+      "tz": 4000,
+      "piso": "terra_concreto",
+      "medidas_pta": [
+        "avisos"
+      ]
+    },
+    {
+      "nome": "Áreas de suporte à vida: centro cirúrgico, hemodinâmica, UTI, reanimação e imagem (TC, RM, RX)",
+      "tipo": "interna",
+      "nz": 60,
+      "tz": 8760,
+      "ocupacao": "hospital_uti_cc",
+      "piso": "asfalto_linoleo_madeira",
+      "carga_incendio": "incendio_normal",
+      "protecao_incendio": "automatica",
+      "perigo_especial": "dificuldade_evacuacao",
+      "d3_em_R1": true,
+      "sistemas": [
+        {
+          "nome": "Energia (quadros, equipamentos de imagem e suporte à vida)",
+          "linha": "ENERGIA",
+          "uw_kv": 2.5,
+          "dps_np": "melhor_I",
+          "ks3": "evitando_lacos_medios",
+          "rede_equipotencial_malha": true
+        },
+        {
+          "nome": "Dados / monitorização / PACS",
+          "linha": "TELECOM",
+          "uw_kv": 1.5,
+          "dps_np": "melhor_I",
+          "ks3": "evitando_lacos_medios",
+          "rede_equipotencial_malha": true
+        }
+      ]
+    },
+    {
+      "nome": "Consultórios, recepção, apoio e administração",
+      "tipo": "interna",
+      "nz": 240,
+      "tz": 8760,
+      "ocupacao": "hospital_geral",
+      "piso": "marmore_ceramica",
+      "carga_incendio": "incendio_normal",
+      "protecao_incendio": "automatica",
+      "perigo_especial": "dificuldade_evacuacao",
+      "d3_em_R1": false,
+      "sistemas": [
+        {
+          "nome": "Energia",
+          "linha": "ENERGIA",
+          "uw_kv": 2.5,
+          "dps_np": "melhor_I",
+          "ks3": "evitando_lacos_medios"
+        },
+        {
+          "nome": "Dados / TI",
+          "linha": "TELECOM",
+          "uw_kv": 1.5,
+          "dps_np": "melhor_I",
+          "ks3": "evitando_lacos_medios"
+        }
+      ]
+    }
+  ],
+  "inspecao": {
+    "tipo": "periodica",
+    "data_inspecao": "2026-10-27",
+    "documento_n": "HM-SPDA-0000",
+    "equipe": "Equipe de campo H&M",
+    "norma_origem": "ABNT NBR 5419:2015",
+    "servico_essencial": true,
+    "area_classificada": false,
+    "corrosao_severa": false,
+    "explosivos": false,
+    "abrangencia": "Cobertura (torres, coroa, cobertura principal e fachada frontal), caixas de inspeção, aterramento do gerador e BEP",
+    "fora_escopo": "Componentes embutidos sem ponto de acesso",
+    "itens_adicionais": "—",
+    "documentos": [
+      {
+        "documento": "Projeto as built do SPDA",
+        "recebido": "Sim",
+        "data_rev": "10/2026",
+        "situacao": "Recebido (preliminar)"
+      }
+    ],
+    "dados_projeto": [],
+    "contador_anterior": "",
+    "contador_atual": "",
+    "instrumentos": [
+      {
+        "instrumento": "Miliohmímetro digital",
+        "fabricante": "Fabricante A",
+        "modelo": "MOD-01",
+        "serie": "SN-0001",
+        "certificado": "00000/2026",
+        "data_calibracao": "2026-02-20",
+        "validade": "2027-02-20",
+        "uso": "Continuidade (Anexo F)"
+      },
+      {
+        "instrumento": "Terrômetro digital",
+        "fabricante": "Fabricante B",
+        "modelo": "MOD-02",
+        "serie": "SN-0002",
+        "certificado": "00001/2026",
+        "data_calibracao": "2026-02-15",
+        "validade": "2027-02-15",
+        "uso": "Resistência de aterramento"
+      }
+    ],
+    "continuidade": [
+      {
+        "ponto": "1",
+        "tipo_ensaio": "F.4",
+        "origem": "Franklin 1",
+        "destino": "Franklin 2",
+        "valor_ohm": 0.00733
+      },
+      {
+        "ponto": "2",
+        "tipo_ensaio": "F.4",
+        "origem": "Franklin 1",
+        "destino": "Torre 1 — minicaptor 1",
+        "valor_ohm": 0.00782
+      },
+      {
+        "ponto": "3",
+        "tipo_ensaio": "F.4",
+        "origem": "Franklin 1",
+        "destino": "Torre 1 — minicaptor 2",
+        "valor_ohm": 0.00684
+      },
+      {
+        "ponto": "4",
+        "tipo_ensaio": "F.4",
+        "origem": "Franklin 1",
+        "destino": "Torre 1 — minicaptor 3",
+        "valor_ohm": 0.00586
+      },
+      {
+        "ponto": "5",
+        "tipo_ensaio": "F.4",
+        "origem": "Franklin 1",
+        "destino": "Torre 1 — minicaptor 4",
+        "valor_ohm": 0.11583
+      },
+      {
+        "ponto": "6",
+        "tipo_ensaio": "F.4",
+        "origem": "Franklin 1",
+        "destino": "Torre 2 — minicaptor 1",
+        "valor_ohm": 0.08406
+      },
+      {
+        "ponto": "7",
+        "tipo_ensaio": "F.4",
+        "origem": "Franklin 1",
+        "destino": "Torre 2 — minicaptor 2",
+        "valor_ohm": 0.14809
+      },
+      {
+        "ponto": "8",
+        "tipo_ensaio": "F.4",
+        "origem": "Franklin 1",
+        "destino": "Coroa — minicaptor 1",
+        "valor_ohm": 0.00342
+      },
+      {
+        "ponto": "9",
+        "tipo_ensaio": "F.4",
+        "origem": "Franklin 1",
+        "destino": "Coroa — minicaptor 2",
+        "valor_ohm": 0.01417
+      },
+      {
+        "ponto": "10",
+        "tipo_ensaio": "F.4",
+        "origem": "Franklin 1",
+        "destino": "Coroa — minicaptor 3",
+        "valor_ohm": 0.00293
+      },
+      {
+        "ponto": "11",
+        "tipo_ensaio": "F.4",
+        "origem": "Franklin 1",
+        "destino": "Fachada frontal — minicaptor 1",
+        "valor_ohm": 0.00439
+      },
+      {
+        "ponto": "12",
+        "tipo_ensaio": "F.4",
+        "origem": "Franklin 1",
+        "destino": "Fachada frontal — minicaptor 2",
+        "valor_ohm": 0.06402
+      },
+      {
+        "ponto": "13",
+        "tipo_ensaio": "F.4",
+        "origem": "Franklin 1",
+        "destino": "Caixa de inspeção 01",
+        "valor_ohm": 0.00635
+      },
+      {
+        "ponto": "14",
+        "tipo_ensaio": "F.4",
+        "origem": "Franklin 1",
+        "destino": "Caixa de inspeção 02",
+        "valor_ohm": 0.01026
+      },
+      {
+        "ponto": "15",
+        "tipo_ensaio": "F.4",
+        "origem": "Franklin 1",
+        "destino": "Caixa de inspeção 03",
+        "valor_ohm": 0.01221
+      },
+      {
+        "ponto": "16",
+        "tipo_ensaio": "F.4",
+        "origem": "Franklin 1",
+        "destino": "Caixa de inspeção 04",
+        "valor_ohm": 0.01075
+      },
+      {
+        "ponto": "17",
+        "tipo_ensaio": "F.4",
+        "origem": "Franklin 1",
+        "destino": "Aterramento do gerador",
+        "valor_ohm": 0.04301
+      },
+      {
+        "ponto": "18",
+        "tipo_ensaio": "F.4",
+        "origem": "Franklin 1",
+        "destino": "BEP",
+        "valor_ohm": 0.04203
+      }
+    ],
+    "aterramento": [
+      {
+        "ponto": "BEP",
+        "metodo": "queda de potencial",
+        "distancia_m": 20,
+        "valor_ohm": 6.1,
+        "condicao_solo": "seco"
+      }
+    ],
+    "fotos": [
+      {
+        "id": "F-01",
+        "categoria": "localizacao",
+        "descricao": "Localização da unidade (imagem de satélite)",
+        "arquivo": "localizacao.jpg"
+      },
+      {
+        "id": "F-02",
+        "categoria": "prancha",
+        "descricao": "Prancha as built — disposição de captores e descidas",
+        "arquivo": "prancha.jpg"
+      },
+      {
+        "id": "F-03",
+        "categoria": "ensaio",
+        "ensaio": "1",
+        "local": "Franklin 2",
+        "arquivo": "ensaio-1.jpg"
+      },
+      {
+        "id": "F-04",
+        "categoria": "ensaio",
+        "ensaio": "2",
+        "local": "Torre 1 — minicaptor 1",
+        "arquivo": "ensaio-2.jpg"
+      },
+      {
+        "id": "F-05",
+        "categoria": "ensaio",
+        "ensaio": "3",
+        "local": "Torre 1 — minicaptor 2",
+        "arquivo": "ensaio-3.jpg"
+      },
+      {
+        "id": "F-06",
+        "categoria": "ensaio",
+        "ensaio": "4",
+        "local": "Torre 1 — minicaptor 3",
+        "arquivo": "ensaio-4.jpg"
+      },
+      {
+        "id": "F-07",
+        "categoria": "ensaio",
+        "ensaio": "5",
+        "local": "Torre 1 — minicaptor 4",
+        "arquivo": "ensaio-5.jpg"
+      },
+      {
+        "id": "F-08",
+        "categoria": "ensaio",
+        "ensaio": "6",
+        "local": "Torre 2 — minicaptor 1",
+        "arquivo": "ensaio-6.jpg"
+      },
+      {
+        "id": "F-09",
+        "categoria": "geral",
+        "local": "Caixa de inspeção 02",
+        "subsistema": "Aterramento",
+        "descricao": "Caixa com tampa, conexão por conector de pressão sem oxidação",
+        "arquivo": "caixa-02.jpg"
+      },
+      {
+        "id": "F-10",
+        "categoria": "calibracao",
+        "descricao": "Certificado de calibração do miliohmímetro",
+        "arquivo": "cert-miliohm.jpg"
+      },
+      {
+        "id": "F-11",
+        "categoria": "art",
+        "descricao": "ART do laudo",
+        "arquivo": "art.jpg"
+      }
+    ],
+    "checklist": [
+      {
+        "cod": "D1",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "D2",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "D3",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "D4",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "D5",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "D6",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "D7",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "D8",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "D9",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "D10",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "D11",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "D12",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "D13",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "CP1",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "CP2",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "CP3",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "CP4",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "CP5",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "CP6",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "CP7",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "CP8",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "CP9",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "DS1",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "DS2",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "DS3",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "DS4",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "DS5",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "DS6",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "DS7",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "DS8",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "DS9",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "DS10",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "DS11",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "DS12",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "DS13",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "AT1",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "AT2",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "AT3",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "AT4",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "AT5",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "AT6",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "AT7",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "AT8",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "AT9",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "EQ1",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "EQ2",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "EQ3",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "EQ4",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "EQ5",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "EQ6",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "EQ7",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "EQ8",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "DP1",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "DP2",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "DP3",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "DP4",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "DP5",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "DP6",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "DP7",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      },
+      {
+        "cod": "DP8",
+        "situacao": "C",
+        "obs": "",
+        "foto": ""
+      }
+    ],
+    "ncs": [],
+    "fotos_obs": ""
+  }
+}

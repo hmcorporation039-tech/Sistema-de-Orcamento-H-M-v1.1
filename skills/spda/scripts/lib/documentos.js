@@ -22,7 +22,9 @@ const TIPOS = {
 // nome do arquivo: a regra comum das skills (prefixo da obra/cliente + documento + revisão)
 function nomeArquivo(dados, tipo) {
   const t = TIPOS[tipo];
-  return nomeDoArquivo(dados, t.nome, t.ext, !t.semRevisao);
+  // laudo só de aterramento (meta.tipo_laudo) não leva "SPDA" no nome
+  const nome = tipo === 'laudo' && (dados.meta || {}).tipo_laudo === 'aterramento' ? 'Laudo_Aterramento' : t.nome;
+  return nomeDoArquivo(dados, nome, t.ext, !t.semRevisao);
 }
 
 // Documentos que fazem sentido para estes dados (o memorial exige o NP do

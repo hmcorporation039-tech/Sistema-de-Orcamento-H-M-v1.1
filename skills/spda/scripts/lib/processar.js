@@ -68,6 +68,14 @@ function naoAplicaveis(dados) {
     na.D4 = 'Sem componentes naturais no SPDA';
     na.DS12 = 'Descidas não naturais';
   }
+  // Laudo só de aterramento (meta.tipo_laudo): documentação, captação e
+  // descidas do SPDA não fazem parte do escopo — sem isso ficariam NV e o
+  // parecer sairia INCONCLUSIVO.
+  if ((dados.meta || {}).tipo_laudo === 'aterramento') {
+    for (const item of CHECKLIST_BASE) {
+      if (['Documentação', 'Captação', 'Descidas'].includes(item.secao) && !na[item.cod]) na[item.cod] = 'N.A. — laudo somente do sistema de aterramento';
+    }
+  }
   return na;
 }
 
@@ -136,7 +144,9 @@ function parecer(checklist, ncs, ensaios) {
 }
 
 function processar(dados) {
-  const risco = (dados.zonas && dados.zonas.length) ? analisarRisco(dados) : null;
+  // laudo só de aterramento: sem análise de risco do SPDA (nem NC automática dela)
+  const soAterramento = (dados.meta || {}).tipo_laudo === 'aterramento';
+  const risco = (!soAterramento && dados.zonas && dados.zonas.length) ? analisarRisco(dados) : null;
   const dim = (dados.spda && T.NIVEL[dados.spda.np]) ? dimensionar(dados) : null;
   const insp = dados.inspecao || {};
   const checklist = mesclarChecklist(insp.checklist, dados);

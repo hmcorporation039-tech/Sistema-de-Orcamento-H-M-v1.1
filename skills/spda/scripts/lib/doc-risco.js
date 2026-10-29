@@ -9,18 +9,21 @@ const ROTULO_NP_SPDA = {
   I_descida_natural: 'NP I + descida natural (PB 0,01)', cobertura_metalica_natural: 'cobertura metálica natural (PB 0,001)',
 };
 
-function gerarRelatorioRisco(res) {
+// Corpo da análise (seções 1 a 6), usado pelo relatório avulso e, desde
+// 29/10/2026, também dentro do laudo de SPDA e aterramento (seção 9 do modelo
+// HM). Com `secao`, os títulos viram subseções numeradas (9.1, 9.2…) e o nome
+// de cada zona sai em negrito em vez de título.
+function corpoRisco(res, { secao } = {}) {
   const { dados, risco } = res;
   const { atual, semProtecao, cenarios, menorQueAtende } = risco;
   const est = dados.estrutura;
   const ev = atual.eventos;
   const f = [];
-
-  f.push(...B.capa('RELATÓRIO DE ANÁLISE DE RISCO', 'ABNT NBR 5419-2:2026 — Gerenciamento de risco'));
-  f.push(C.blocoIdentificacao(dados));
+  const tit = (n, texto) => B.titulo(secao ? `${secao}.${n} ${texto}` : `${n}. ${texto}`, secao ? 2 : 1);
+  const titZona = (texto) => (secao ? B.p(texto, { bold: true, before: 120, after: 60, keepNext: true }) : B.titulo(texto, 2));
 
   // 1. Objeto e premissas
-  f.push(B.titulo('1. Objeto e premissas'));
+  f.push(tit(1, 'Objeto e premissas'));
   f.push(B.p(`Estrutura de ${B.fmtNum(est.L)} × ${B.fmtNum(est.W)} m, altura ${B.fmtNum(est.H)} m, ${String(est.tipo_construcao).replace(/_/g, ' ')}, em ${est.municipio}/${est.uf}. ` +
     `Densidade de descargas atmosféricas para a terra NG = ${B.fmtNum(ev.ng)} descargas/km²/ano (${ev.ngFonte || 'NBR 5419-2:2026, Tabela F.1'}). ` +
     'Pelo Anexo F (F.1.1), o NG foi tomado exclusivamente da Tabela F.1 da norma.'));
@@ -30,7 +33,7 @@ function gerarRelatorioRisco(res) {
   f.push(B.p(`Número total de pessoas considerado na estrutura: nt = ${atual.nt}. Os valores de pessoas por zona (nz) e de tempo de permanência (tz) são premissas a confirmar com o responsável pela estrutura.`));
 
   // 2. Eventos perigosos
-  f.push(B.titulo('2. Áreas de exposição e número de eventos perigosos'));
+  f.push(tit(2, 'Áreas de exposição e número de eventos perigosos'));
   f.push(B.tabela(['Grandeza', 'Valor', 'Referência'], [
     ['AD — área de exposição da estrutura (m²)', B.fmtNum(ev.AD, 1), 'Eq. A.1/A.2'],
     ['CD — fator de localização', B.fmtNum(ev.CD), `Tabela A.1 (${est.localizacao})`],
@@ -47,9 +50,9 @@ function gerarRelatorioRisco(res) {
   }
 
   // 3. Zonas
-  f.push(B.titulo('3. Zonas de estudo e componentes de risco'));
+  f.push(tit(3, 'Zonas de estudo e componentes de risco'));
   for (const z of atual.zonas) {
-    f.push(B.titulo(z.zona.nome, 2));
+    f.push(titZona(z.zona.nome));
     const comps = Object.entries(z.comp).filter(([k, v]) => z.zona.tipo !== 'externa' || k === 'RA' || v);
     f.push(B.tabela(comps.map(([k]) => k), [comps.map(([, v]) => B.fmtExp(v))], comps.map(() => 1)));
     const linhaR = `R1 da zona = ${B.fmtExp(z.R1)}${z.FT != null ? `   |   F = ${B.fmtExp(z.F)} (FT = ${B.fmtNum(z.FT)})` : ''}${z.FT != null && !z.incluiD3 ? '   |   RC, RM, RW e RZ fora de R1 (LO = 0)' : ''}`;
@@ -63,7 +66,7 @@ function gerarRelatorioRisco(res) {
   }
 
   // 4. Resultado
-  f.push(B.titulo('4. Resultado'));
+  f.push(tit(4, 'Resultado'));
   const linhasRes = [
     [`R1 (RT = ${B.fmtExp(atual.RT.R1)})`, B.fmtExp(atual.R1), atual.atendeR1 ? 'ATENDE' : 'NÃO ATENDE'],
   ];
@@ -75,7 +78,7 @@ function gerarRelatorioRisco(res) {
     `Cenário avaliado: ${dados.spda && dados.spda.np ? `SPDA NP ${dados.spda.np}` : 'sem SPDA'}${resumoDps(dados)}.`, { before: 80 }));
 
   // 5. Cenários
-  f.push(B.titulo('5. Cenários de proteção (varredura)'));
+  f.push(tit(5, 'Cenários de proteção (varredura)'));
   f.push(B.p('Combinações de nível de proteção do SPDA, nível de proteção dos DPS (PSPD dos sistemas internos e PEB das entradas) e fibra óptica nas linhas de sinal metálicas, ordenadas da menor para a maior exigência (NBR 5419-2:2026, 5.6). Lista dos cenários que atendem a R1 ≤ RT e F ≤ FT:'));
   const atendem = cenarios.filter(c => c.atende).slice(0, 12);
   if (atendem.length) {
@@ -90,8 +93,17 @@ function gerarRelatorioRisco(res) {
   }
 
   // 6. Conclusão
-  f.push(B.titulo('6. Conclusão e recomendação'));
+  f.push(tit(6, 'Conclusão e recomendação'));
   f.push(B.p(conclusao(atual, menorQueAtende)));
+  return f;
+}
+
+function gerarRelatorioRisco(res) {
+  const { dados } = res;
+  const f = [];
+  f.push(...B.capa('RELATÓRIO DE ANÁLISE DE RISCO', 'ABNT NBR 5419-2:2026 — Gerenciamento de risco'));
+  f.push(C.blocoIdentificacao(dados));
+  f.push(...corpoRisco(res));
 
   f.push(...C.blocoNormas());
   f.push(B.nota('Este relatório é resultado de cálculo com as premissas declaradas e deve ser revisado e assinado pelo responsável técnico habilitado.'));
@@ -122,4 +134,4 @@ function conclusao(atual, menor) {
   return texto;
 }
 
-module.exports = { gerarRelatorioRisco, ROTULO_NP_SPDA };
+module.exports = { gerarRelatorioRisco, corpoRisco, resumoDps, ROTULO_NP_SPDA };

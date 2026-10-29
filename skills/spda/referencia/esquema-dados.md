@@ -1,6 +1,6 @@
 # Formulário de dados da obra (JSON) — campos e opções
 
-Um arquivo por obra, no formato do laudo HM do São Bento (out/2026). Modelo em branco: `exemplos/modelo-vazio.json`; exemplo completo: `exemplos/exemplo-hospital.json`. Campos marcados com * são obrigatórios para o cálculo.
+Um arquivo por obra. Modelo em branco: `exemplos/modelo-vazio.json`; exemplos completos: `exemplos/exemplo-hospital.json` (inspeção de SPDA provisório, base dos testes de cálculo) e `exemplos/exemplo-laudo-spda-aterramento.json` (laudo de SPDA e aterramento no formato do modelo HM de 29/10/2026 — dados fictícios). Campos marcados com * são obrigatórios para o cálculo.
 
 Em qualquer texto, `[CONFERIR …]` sai em vermelho e negrito no documento — use para todo valor estimado ou não confirmado.
 
@@ -10,18 +10,23 @@ Em qualquer texto, `[CONFERIR …]` sai em vermelho e negrito no documento — u
 |---|---|
 | `titulo` | Título interno da obra |
 | `prefixo` | Prefixo dos nomes de arquivo (ex.: `HX_Exemplo`); se vazio, usa o nome da obra |
+| `tipo_laudo` | `spda_aterramento` (padrão: laudo de SPDA e aterramento, com análise de risco) · `aterramento` (laudo só de aterramento: sem análise de risco, sem captação/descidas; checklist só de aterramento, equipotencialização e DPS) |
+| `codigo`, `contrato` | Código do documento e nº do contrato (capa) |
 | `data` | Data de emissão `AAAA-MM-DD` |
 | `revisao` | `R00`, `R01`… seguido de descrição curta (ex.: `R02 (após visita de campo)`) |
+| `revisoes` | Tabela de revisões da capa: `[{ "revisao", "data", "descricao", "responsavel" }]`; vazia, sai uma linha com `revisao`/`data` |
+| `observacoes_capa` | Observações da capa (padrão: "aferidas in loco com miliohmímetro e terrômetro", quando há medições) |
 | `observacao` | Nota interna |
 
 ## responsavel
 
-`empresa`, `cnpj`, `nome`, `crea`, `art` — **preenchidos pelo engenheiro**. Vazios saem como "(preencher)".
+`nome`, `titulo`, `crea`, `rnp`, `art` — **preenchidos pelo engenheiro**. Vazios saem como "(preencher)".
+O emitente do laudo é sempre a H&M (papel timbrado, `_comum/empresa.js`). Quando quem assina é de outra empresa, informe `empresa` e `cnpj` dela: saem na capa como "Empresa do responsável técnico" e na assinatura.
 
 ## cliente / obra
 
-`cliente`: `nome`, `cnpj`, `contato`, `endereco`, `cidade`, `uf`.
-`obra`: `nome`, `uso` (texto livre que aparece no laudo), `pavimentos`, `area_construida_m2`.
+`cliente`: `nome`, `cnpj`, `unidade` (ex.: "Unidade Norte"), `contato`, `endereco`, `cep`, `cidade`, `uf`.
+`obra`: `nome`, `uso` (texto livre que aparece no laudo — "Tipo do estabelecimento"), `coordenadas` (`"-15.65, -47.78"`, usadas na seção 1 e para conferir o GPS das fotos), `pavimentos`, `area_construida_m2`.
 
 ## estrutura *
 
@@ -102,19 +107,33 @@ Sistemas internos: `uw_kv` = suportabilidade de impulso (1; 1,5; 2,5; 4; 6 kV); 
 | Campo | Descrição |
 |---|---|
 | `tipo` | `durante_instalacao` · `apos_instalacao` · `alteracao` · `descarga` · `periodica` · `provisorio` |
-| `data_inspecao`, `documento_n`, `equipe` | identificação da visita |
+| `data_inspecao`, `data_inspecao_fim`, `datas_inspecao`, `documento_n`, `equipe` | identificação da visita (`data_inspecao_fim` ou a lista `datas_inspecao` quando a inspeção durou mais de um dia — as fotos fora dessas datas saem com [CONFERIR]) |
 | `norma_origem`, `justificativa_norma` | edição usada no projeto existente e justificativa (2015 × 2026) |
 | `servico_essencial`, `area_classificada`, `corrosao_severa`, `explosivos` | definem a periodicidade (1 ou 3 anos) |
 | `abrangencia`, `fora_escopo`, `itens_adicionais` | escopo do laudo |
 | `documentos` | `[{ "documento", "recebido", "data_rev", "situacao" }]` |
 | `dados_projeto` | `[{ "dado", "valor", "fonte" }]` |
 | `contador_anterior`, `contador_atual` | leitura do contador de descargas |
-| `instrumentos` | `[{ "instrumento", "fabricante", "modelo", "serie", "certificado", "validade", "uso" }]` |
+| `instrumentos` | `[{ "instrumento", "fabricante", "modelo", "serie", "certificado", "data_calibracao", "validade", "uso" }]` — validade anterior à inspeção ou certificado vazio saem com [CONFERIR] |
 | `continuidade` | `[{ "ponto", "tipo_ensaio" (F.1…F.7), "origem", "destino", "valor_ohm", "material", "secao_mm2", "comprimento_m" }]` |
 | `aterramento` | `[{ "ponto", "metodo", "distancia_m", "valor_ohm", "condicao_solo" }]` (informativo) |
-| `fotos`, `pasta_fotos`, `fotos_obs` | `[{ "id", "local", "subsistema", "descricao", "ref", "arquivo", "largura_cm" }]` |
+| `fotos`, `pasta_fotos`, `fotos_obs` | `[{ "id", "categoria", "ensaio", "data_hora", "gps", "local", "subsistema", "descricao", "ref", "arquivo" }]` — ver abaixo |
 | `checklist` | só os itens apurados: `[{ "cod", "situacao", "obs", "foto", "prioridade" }]` (códigos em `dados/checklist_base.json`) |
 | `ncs` | `[{ "item", "local", "descricao", "requisito", "recomendacao", "prioridade", "foto" }]` |
+
+### Fotos do laudo
+
+| Campo | Descrição |
+|---|---|
+| `categoria` | `localizacao` (seção 1 — imagem de satélite/mapa) · `prancha` (seção 10 — as built) · `ensaio` (Anexo 01, foto da leitura do instrumento) · `geral` (Anexo 01, inspeção visual) · `metodo` (seção 8) · `calibracao` (Anexo 02, certificado) · `art` (Anexo 03). Sem categoria: `ensaio` se tiver `ensaio`, senão `geral` |
+| `ensaio` | `ponto` do ensaio de continuidade que a foto comprova — a legenda traz a identificação, a leitura e a situação |
+| `data_hora`, `gps` | Data/hora (`AAAA-MM-DDTHH:MM:SS` ou `dd/mm/aaaa hh:mm:ss`) e coordenadas (`"-15.65, -47.78"`). Vazios, são lidos do EXIF da foto (JPEG da câmera do celular) |
+
+Conferência automática (seção 10 e parecer, em vermelho): foto a mais de 500 m de `obra.coordenadas`, foto fora das datas da inspeção e `ensaio` que não existe na tabela de continuidade. O parecer calculado não muda, mas o `[CONFERIR]` fica até a foto ser trocada ou justificada.
+
+## spda — textos do laudo (seção 6)
+
+`descricao_captacao`, `descricao_descidas`, `descricao_aterramento`, `descricao_equipotencializacao` (texto de cada subsistema), `caixas_inspecao` (quantidade; vazio = conta os ensaios com "caixa" na identificação), `bep` (nome do barramento, padrão "BEP").
 
 ## spda_provisorio (opcional — SPDA de etapa de obra)
 
