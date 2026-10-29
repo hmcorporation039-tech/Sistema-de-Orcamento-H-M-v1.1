@@ -24,7 +24,7 @@
 3. Para mudanças no frontend, rodar `cd frontend && npm run build`. O backend serve o build na porta 3001.
 4. Recarregar o navegador com Ctrl+F5.
 5. Fazer o commit em português, descrevendo o "porquê", no mesmo padrão dos commits existentes, e depois o push (ou rodar `enviar-para-github.bat`).
-6. Atualizar a versão em `backend/src/server.js` (`/health`) e nos dois `package.json`, criar a tag `vX.Y.Z` e copiar o código para o servidor de backup.
+6. Atualizar a versão nos dois `package.json` (o `/health` lê a versão do `backend/package.json`), criar a tag `vX.Y.Z` e copiar o código para o servidor de backup.
 
 ---
 

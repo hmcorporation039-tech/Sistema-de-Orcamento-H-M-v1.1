@@ -10,6 +10,12 @@ call npm install
 cd ..
 
 echo.
+echo Instalando dependencias das Skills (calculos das disciplinas, 3D, CAD)...
+cd skills
+call npm install
+cd ..
+
+echo.
 echo Instalando dependencias do Frontend...
 cd frontend
 call npm install
