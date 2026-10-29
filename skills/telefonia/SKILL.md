@@ -16,7 +16,7 @@ Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de or
 
 ## Também no sistema (aba Análise de Projeto)
 
-O mesmo motor roda no Sistema de Orçamentos (chave `telefonia`, pasta `skills/telefonia`), depois de registrado em `backend/src/utils/disciplinasLaudo.js`: **Análise de Projeto → Laudos e projetos por disciplina → Telefonia e interfonia**. O formulário da tela é o mesmo JSON (importa/exporta o arquivo); os documentos saem pelos botões e o orçamento é criado direto, com materiais casados com o catálogo e mão de obra pela tabela de preços de referência (`tel_ponto`, `tel_central` e os códigos `tel_*` desta skill). Mudanças em `scripts/lib/` valem para os dois — rode `npm test` antes e reinicie o backend depois.
+O mesmo motor roda no Sistema de Orçamentos (chave `telefonia`, pasta `skills/telefonia`), depois de registrado em `skills/_comum/disciplinas.js` (registro único das disciplinas): **Análise de Projeto → Laudos e projetos por disciplina → Telefonia e interfonia**. O formulário da tela é o mesmo JSON (importa/exporta o arquivo); os documentos saem pelos botões e o orçamento é criado direto, com materiais casados com o catálogo e mão de obra pela tabela de preços de referência (`tel_ponto`, `tel_central` e os códigos `tel_*` desta skill). Mudanças em `scripts/lib/` valem para os dois — rode `npm test` antes e reinicie o backend depois.
 
 ## Fluxo de trabalho
 

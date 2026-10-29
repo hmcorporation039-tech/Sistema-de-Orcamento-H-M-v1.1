@@ -8,7 +8,7 @@
 //     da prancha quando há uma;
 //   - comprimento das linhas por layer (eletroduto, eletrocalha, fiação…) em metros.
 // Interpretar o que cada bloco é (tomada, luminária, câmera) e a disciplina fica
-// com quem chama (backend/src/utils/analiseCad.js). Nenhum dado de cliente aqui.
+// com quem chama (backend/src/services/analiseCad/index.js). Nenhum dado de cliente aqui.
 const { Helper } = require('dxf');
 const { transformar } = require('./arquitetura');
 

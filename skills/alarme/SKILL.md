@@ -18,7 +18,7 @@ Não há NBR específica de sistemas de alarme de intrusão: o memorial diz isso
 
 ## Também no sistema (aba Análise de Projeto)
 
-O mesmo motor roda no Sistema de Orçamentos: **Análise de Projeto → Laudos e projetos por disciplina → Alarme de intrusão monitorado**, depois que a pasta `alarme` for registrada em `backend/src/utils/disciplinasLaudo.js`. O formulário da tela é o mesmo JSON (importa/exporta o arquivo); os documentos saem pelos botões e o orçamento é criado direto, com materiais casados com o catálogo e mão de obra pela tabela de preços de referência (códigos `alarme_*`). Mudanças em `scripts/lib/` valem para os dois — rode `npm test` antes e reinicie o backend depois.
+O mesmo motor roda no Sistema de Orçamentos: **Análise de Projeto → Laudos e projetos por disciplina → Alarme de intrusão monitorado**, depois que a pasta `alarme` for registrada em `skills/_comum/disciplinas.js` (registro único das disciplinas). O formulário da tela é o mesmo JSON (importa/exporta o arquivo); os documentos saem pelos botões e o orçamento é criado direto, com materiais casados com o catálogo e mão de obra pela tabela de preços de referência (códigos `alarme_*`). Mudanças em `scripts/lib/` valem para os dois — rode `npm test` antes e reinicie o backend depois.
 
 ## Fluxo de trabalho
 

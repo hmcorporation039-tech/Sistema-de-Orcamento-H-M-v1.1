@@ -16,7 +16,7 @@ Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de or
 
 ## Também no sistema (aba Análise de Projeto)
 
-Chave da disciplina `eletrica_hospitalar`, pasta `eletrica-hospitalar` (registrar em `backend/src/utils/disciplinasLaudo.js`). O formulário da tela é o mesmo JSON; documentos pelos botões e orçamento direto, com materiais casados com o catálogo e mão de obra pelos códigos `hosp_*` / `ele_*` da tabela de preços de referência. Mudanças em `scripts/lib/` valem para os dois — rode `npm test` antes e reinicie o backend depois.
+Chave da disciplina `eletrica_hospitalar`, pasta `eletrica-hospitalar` (registrar em `skills/_comum/disciplinas.js` (registro único das disciplinas)). O formulário da tela é o mesmo JSON; documentos pelos botões e orçamento direto, com materiais casados com o catálogo e mão de obra pelos códigos `hosp_*` / `ele_*` da tabela de preços de referência. Mudanças em `scripts/lib/` valem para os dois — rode `npm test` antes e reinicie o backend depois.
 
 ## Fluxo de trabalho
 

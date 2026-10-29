@@ -18,7 +18,7 @@ O lado de baixa tensão (cabos do transformador ao QGBT) usa as tabelas da NBR 5
 
 ## Também no sistema (aba Análise de Projeto)
 
-Depois de registrada em `backend/src/utils/disciplinasLaudo.js` (chave `media_tensao`, pasta `media-tensao`), o mesmo motor roda em **Análise de Projeto → Laudos e projetos por disciplina → Média tensão — subestação (NBR 14039)**. O formulário da tela é o mesmo JSON; documentos e orçamento saem pelos botões. Mudanças em `scripts/lib/` valem para os dois — rode `npm test` antes e reinicie o backend depois.
+Depois de registrada em `skills/_comum/disciplinas.js` (registro único das disciplinas) (chave `media_tensao`, pasta `media-tensao`), o mesmo motor roda em **Análise de Projeto → Laudos e projetos por disciplina → Média tensão — subestação (NBR 14039)**. O formulário da tela é o mesmo JSON; documentos e orçamento saem pelos botões. Mudanças em `scripts/lib/` valem para os dois — rode `npm test` antes e reinicie o backend depois.
 
 ## Fluxo de trabalho
 

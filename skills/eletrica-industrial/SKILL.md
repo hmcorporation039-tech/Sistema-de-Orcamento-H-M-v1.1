@@ -16,7 +16,7 @@ Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de or
 
 ## Também no sistema (aba Análise de Projeto)
 
-Para aparecer em **Análise de Projeto → Laudos e projetos por disciplina**, a disciplina precisa estar registrada em `backend/src/utils/disciplinasLaudo.js` (chave `eletrica_industrial`, pasta `eletrica-industrial`) e os códigos `ind_*` em `backend/src/utils/precosMaoDeObraReferencia.js`. O formulário da tela é o mesmo JSON; mudanças em `scripts/lib/` valem para os dois — rode `npm test` antes e reinicie o backend depois.
+Para aparecer em **Análise de Projeto → Laudos e projetos por disciplina**, a disciplina precisa estar registrada em `skills/_comum/disciplinas.js` (registro único das disciplinas) (chave `eletrica_industrial`, pasta `eletrica-industrial`) e os códigos `ind_*` em `backend/src/services/precosMaoDeObraReferencia.js`. O formulário da tela é o mesmo JSON; mudanças em `scripts/lib/` valem para os dois — rode `npm test` antes e reinicie o backend depois.
 
 ## Fluxo de trabalho
 

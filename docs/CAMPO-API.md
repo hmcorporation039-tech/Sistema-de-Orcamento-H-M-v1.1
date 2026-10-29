@@ -172,7 +172,7 @@ Detalhes da sincronização (Fase 4J, backend pronto):
 
 ## Arquivos no disco
 
-Fotos e assinatura ficam na pasta da obra no sistema (`utils/pastasSistema.js`),
+Fotos e assinatura ficam na pasta da obra no sistema (`services/pastasSistema.js`),
 em `Campo/<numero da OS>/`, nunca no repositório. O banco guarda o caminho.
 
 Nomes (nunca vêm do cliente): foto `<uuid da foto>.<jpg|png|webp>` (extensão

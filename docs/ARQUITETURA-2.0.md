@@ -24,7 +24,7 @@ para depois.
   `precos_mao_de_obra_referencia` (192 códigos padrão com referência oficial e
   particular) viram uma só lista; a tela Orçamento sugere o preço do segmento do
   cliente.
-- **Módulo único de IA** (`utils/ia.js`, ordem Claude Max → API → Gemini) e
+- **Módulo único de IA** (`services/ia.js`, ordem Claude Max → API → Gemini) e
   **painel de Integrações** com as três rotinas automáticas existentes.
 
 ## Fase 2 — a entidade Obra e o editor único de orçamento

@@ -16,7 +16,7 @@ Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de or
 
 ## Também no sistema
 
-Registrada em `backend/src/utils/disciplinasLaudo.js` (chave `pressurizacao`, pasta `pressurizacao`): **Obras → Laudos e projetos por disciplina → Pressurização de escadas**. O formulário da tela é o mesmo JSON (`formulario` de `scripts/lib/index.js`); documentos e orçamento saem pelos botões. Mão de obra pelos códigos `pres_*` de `backend/src/utils/precosMaoDeObraReferencia.js`. Kits-modelo `KIT-PRES-01` (ponto de medição de ΔP) e `KIT-PRES-02` (acionador remoto). Mudanças em `scripts/lib/` valem para os dois — rode `npm test` antes e reinicie o backend depois.
+Registrada em `skills/_comum/disciplinas.js` (registro único das disciplinas) (chave `pressurizacao`, pasta `pressurizacao`): **Obras → Laudos e projetos por disciplina → Pressurização de escadas**. O formulário da tela é o mesmo JSON (`formulario` de `scripts/lib/index.js`); documentos e orçamento saem pelos botões. Mão de obra pelos códigos `pres_*` de `backend/src/services/precosMaoDeObraReferencia.js`. Kits-modelo `KIT-PRES-01` (ponto de medição de ΔP) e `KIT-PRES-02` (acionador remoto). Mudanças em `scripts/lib/` valem para os dois — rode `npm test` antes e reinicie o backend depois.
 
 ## Fluxo de trabalho
 

@@ -166,7 +166,7 @@ const rex = motor.processar(ex).calc.existente;
 igual('ventilador existente abaixo da vazão e da pressão', [rex.atendeVazao, rex.atendePressao, rex.atendePotencia], [false, false, false]);
 
 // 6) códigos de mão de obra registrados na base padrão do sistema
-const ref = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'backend', 'src', 'utils', 'precosMaoDeObraReferencia.js'), 'utf8');
+const ref = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'backend', 'src', 'services', 'precosMaoDeObraReferencia.js'), 'utf8');
 const registrados = new Set([...ref.matchAll(/codigo: '(pres_[a-z_]+)'/g)].map(m => m[1]));
 
 (async () => {
