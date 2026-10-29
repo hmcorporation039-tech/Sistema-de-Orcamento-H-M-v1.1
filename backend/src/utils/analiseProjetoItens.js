@@ -71,58 +71,256 @@ const totaisCodificados = (analises) => ({
 const circuitosDosQuadros = (analises) => analises
   .filter(a => a.disciplinas.some(d => d.startsWith('eletrica')))
   .reduce((s, a) => s + (a.quadroCargas?.length || 0), 0);
+// Quadros de um arquivo: um por TÍTULO de quadro de cargas ("Quadro de cargas
+// (QD-Térreo)"), não um por arquivo — PDF com QGBT + QD-Térreo + QD-1PAV dava
+// ele_qd_setorial = 1 (revisão de 29/10/2026). Aceita a lista de quadros
+// (`a.quadros`) ou o título em cada circuito; sem título, 1 por arquivo com circuitos.
+const tituloDoQuadro = (c) => c?.quadro || c?.painel || c?.titulo || null;
+function quadrosDoArquivo(a) {
+  if (Array.isArray(a.quadros) && a.quadros.length) return a.quadros.length;
+  const c = a.quadroCargas || [];
+  if (!c.length) return 0;
+  return Math.max(1, new Set(c.map(tituloDoQuadro).filter(Boolean)).size);
+}
 
-// DWG/DXF (2.3): blocos contados no desenho → código do serviço de instalação.
-// Só conta bloco de arquivo marcado com a disciplina do bloco.
-const SERVICO_DO_BLOCO = [
-  [/circuito de emerg/i, 'ele_tomada_emergencia', /^Tomada/i],
-  [/^Tomada baixa|^Tomada 2P\+T/i, 'ele_tomada_baixa'],
-  [/^Tomada média/i, 'ele_tomada_media'],
-  [/^Tomada alta/i, 'ele_tomada_alta'],
-  [/^Tomada de piso|^Ponto de luz/i, 'ele_ponto_energia'],
-  [/^Interruptor/i, 'ele_interruptor'],
-  [/^Quadro de distribuição/i, 'ele_qd_setorial'],
-  // a legenda diz "de sobrepor": era lançado como de embutir (teste de 28/10/2026)
-  [/^(Luminária(?! de emerg).*\bsobrepor|Plafon)/i, 'ilum_luminaria_sobrepor'],
-  [/^Luminária(?! de emerg)/i, 'ilum_luminaria_embutir'],
-  [/^Câmera/i, 'cftv_ponto'],
-  [/^Ponto de rede/i, 'rede_ponto'],
-  [/^Ponto de TV/i, 'antena_ponto'],
-  [/^Ponto de telefone/i, 'tel_ponto'],
-  [/^Sirene/i, 'alarme_sirene'],
-  [/^Teclado/i, 'alarme_teclado'],
-];
 // Item-modelo de material (quantidade 0, "confirme na planta") que a contagem
-// do DWG/DXF já cobre na mesma disciplina sai da lista — senão a tela mostra
-// "Tomada 2P+T: 0" ao lado de "Tomada baixa 2P+T — bloco TB-T: 64".
+// do desenho (DWG/DXF ou PDF, item não ambíguo) já cobre na mesma disciplina
+// sai da lista — senão a tela mostra "Tomada 2P+T: 0" ao lado de "Tomada baixa
+// 2P+T — bloco TB-T: 64". "Trecho de fiação" não cobre o eletroduto: a fiação
+// vira eletroduto e cabo calculados (montarMateriaisDoDesenho) e são eles que cobrem.
 const MODELO_COBERTO = [
-  [/^Tomada 2P\+T/, /^Tomada/i], [/^Interruptor/, /^Interruptor/i], [/^Eletroduto PVC/, /^Eletroduto|^Trecho de fiação/i],
+  [/^Tomada 2P\+T/, /^Tomada/i], [/^Interruptor/, /^Interruptor/i], [/^Eletroduto PVC/, /^Eletroduto/i],
+  [/^Cabo elétrico flexível/, /^Cabo flexível 750 V — /i],
   [/^Quadro de distribuição \(/, /^Quadro de distribuição/i], [/^Luminária LED/, /^Luminária/i], [/^Perfil LED/, /Perfil/i],
 ];
+const DO_DESENHO = /no (DWG|DXF)|no desenho de "/;
 function semModeloCoberto(modelos, doDesenho) {
   return modelos.filter(m => {
     if (m.quantidade) return true;
     const regra = MODELO_COBERTO.find(([re]) => re.test(m.descricao));
-    return !(regra && doDesenho.some(d => d.disciplina === m.disciplina && d.quantidade > 0 && regra[1].test(d.descricao) && /no (DWG|DXF)/.test(d.observacao || '')));
+    return !(regra && doDesenho.some(d => d.disciplina === m.disciplina && d.quantidade > 0 && regra[1].test(semMarcador(d.descricao)) && DO_DESENHO.test(d.observacao || '')));
   });
 }
+// sobra sobre a rota medida na planta (curvas e emendas que o desenho não mostra)
+const SOBRA_ROTA = 1.1;
 
-function contagemDoCad(analises, vetoriais = []) {
-  const cont = {};
+// ── Contagem pelo desenho → mão de obra ──────────────────────────────────
+// Símbolos contados no DWG/DXF (blocos) e no PDF vetorial (legenda da prancha,
+// só item não ambíguo) viram a quantidade do serviço de instalação. Antes só o
+// DWG/DXF alimentava a mão de obra, e só de elétrica, iluminação, CFTV, rede,
+// antena, telefone e alarme (revisão de 29/10/2026: DXF de incêndio com 13
+// detectores, 3 acionadores, 5 avisadores e 1 central dava mão de obra de
+// incêndio = nada; 79 luminárias contadas no PDF = 0 de mão de obra).
+// Cada regra tem a disciplina do serviço: só conta em arquivo marcado com ela,
+// e no DWG/DXF o bloco precisa ser dessa disciplina (pela layer/nome do bloco
+// ou pela leitura do CAD) — câmera descrita por engano como "Acionador manual"
+// não vira serviço de incêndio.
+// [regex da descrição, código (ou função da descrição), disciplina, regex do nome do bloco]
+// Código começando com "_" não é serviço: vira nota no item (NOTA_DO_DESENHO).
+const SEM_EMERG = '^(?!.*emerg)';
+const alturaDaDescricao = (s) => {
+  const t = String(s || '');
+  const m = t.match(/\bh\s*=\s*(\d+(?:[.,]\d+)?)\s*m?\b/i) || t.match(/(\d+[.,]\d+)\s*m\s*(do|de|em rela[çc][ãa]o ao)\s*piso/i)
+    || t.match(/\ba\s+(\d+[.,]\d+)\s*m\b/i);
+  if (m) return Number(m[1].replace(',', '.'));
+  const cm = t.match(/\b(\d{2,3})\s*cm\b/i);
+  return cm ? Number(cm[1]) / 100 : null;
+};
+// "Tomada 2P+T" sem altura não é tomada baixa: vira nota para o usuário distribuir
+function tomadaPorAltura(descricao) {
+  if (/\bbaixa/i.test(descricao)) return 'ele_tomada_baixa';
+  if (/\bm[ée]dia/i.test(descricao)) return 'ele_tomada_media';
+  if (/\balta\b/i.test(descricao)) return 'ele_tomada_alta';
+  const h = alturaDaDescricao(descricao);
+  if (h == null || h <= 0 || h > 4) return '_tomada_sem_altura';
+  return h < 0.8 ? 'ele_tomada_baixa' : h <= 1.6 ? 'ele_tomada_media' : 'ele_tomada_alta';
+}
+const SERVICO_DO_SIMBOLO = [
+  // incêndio antes de alarme ("Central de alarme CIE", "Sinalizador audiovisual")
+  [/lumin[áa]ria de emerg|bloco aut[ôo]nomo|ilumina[çc][ãa]o de emerg|balizamento|sinaliza[çc][ãa]o de (emerg|rota|sa[íi]da)/i, 'inc_ilum_emergencia', 'incendio', /EMERG/i],
+  [/detector|acionador manual|avisador|sinalizador (audio|sonoro|visual)|audiovisual|sirene.*inc[êe]ndio|m[óo]dulo (isolador|de (entrada|sa[íi]da|comando|monitora))|\bisolador/i, 'inc_dispositivo', 'incendio', /^(INC|SDAI)\b.*(DET|ACION|SIRENE|AVIS|\bAV\b|MOD|ISOL)|^D[FT]\b|^AM\b/i],
+  [/central/i, 'inc_central', 'incendio', /^(INC|SDAI)\b.*CENTRAL|^CI\b/i],
+  // controle de acesso
+  [/catraca|cancela/i, 'ace_catraca', 'controle_acesso'],
+  [/leitora?\b|biometr|facial|cart[ãa]o de proximidade/i, 'ace_leitor', 'controle_acesso', /^(CA|ACE)\b.*LEIT/i],
+  [/fechadura|eletro[ií]m[ãa]|fecho el[ée]tr|solen[óo]ide/i, 'ace_fechadura', 'controle_acesso', /^(CA|ACE)\b.*(ELETROIMA|FECH)/i],
+  [/botoeira|acionador de emerg|sensor de porta/i, 'ace_botoeira', 'controle_acesso', /^(CA|ACE)\b.*(BOTO|EMERG)/i],
+  [/controladora/i, 'ace_controladora', 'controle_acesso', /^(CA|ACE)\b.*CONTR/i],
+  // alarme de intrusão
+  [/barreira/i, 'alarme_barreira', 'alarme'],
+  [/\bIVP\b|infravermelho passivo|sensor (de )?presen[çc]a|dupla tecnologia/i, 'alarme_ivp', 'alarme'],
+  [/magn[ée]tic|sensor de abertura/i, 'alarme_sensor_abertura', 'alarme'],
+  [/sirene/i, 'alarme_sirene', 'alarme'],
+  [/teclado/i, 'alarme_teclado', 'alarme'],
+  [/repetidor/i, 'alarme_repetidor', 'alarme'],
+  [/central/i, 'alarme_central', 'alarme'],
+  // rede, TV, telefone e câmera antes de tomada ("tomada de rede" é ponto de rede)
+  [/access ?point|\bwi-?fi\b/i, 'rede_ap', 'rede', /^AP\b/i],
+  [/ponto de (rede|telecom|dados)|\brj-?45\b|tomada (de rede|l[óo]gica)|ponto l[óo]gico/i, 'rede_ponto', 'rede', /^(PR|PD|REDE)\b|RJ-?45|LOGIC/i],
+  [/ponto de tv|coaxial|tomada de tv/i, 'antena_ponto', 'antena', /^TV\b/i],
+  [/interfone|porteiro/i, 'tel_terminal', 'telefonia'],
+  [/telefon/i, 'tel_ponto', 'telefonia', /^TEL\b/i],
+  [/c[âa]mera|\bdome\b|bullet|\bptz\b|speed ?dome/i, 'cftv_ponto', 'cftv', /C[AÂ]M(ERA)?\b|DOME|BULLET|PTZ/i],
+  // elétrica
+  [/^(?!.*(rede|l[óo]gica|rj-?45|\btv\b|coaxial|telefon|dados)).*(tomada.*emerg|emerg.*tomada)/i, 'ele_tomada_emergencia', 'eletrica'],
+  [/tomada (de )?piso|tomada (de |no )?teto/i, 'ele_ponto_energia', 'eletrica'],
+  [/^(?!.*(rede|l[óo]gica|rj-?45|\btv\b|coaxial|telefon|dados)).*tomada/i, tomadaPorAltura, 'eletrica'],
+  [/interruptor/i, 'ele_interruptor', 'eletrica', /^INT/i],
+  [/quadro de distribui/i, 'ele_qd_setorial', 'eletrica'],
+  // "Ponto de luz" não é ponto de energia (era ele_ponto_energia): vira nota
+  [/ponto (gen[ée]rico )?de (luz|ilumina)/i, '_ponto_luz', 'iluminacao'],
+  [/ponto (gen[ée]rico )?de (luz|ilumina)/i, '_ponto_luz', 'eletrica'],
+  // iluminação (a de emergência é de incêndio — NBR 10898)
+  [/dimmer|interruptor/i, 'ilum_interruptor_dimmer', 'iluminacao'],
+  [new RegExp(`${SEM_EMERG}.*sensor (de )?presen`, 'i'), 'ilum_sensor_presenca', 'iluminacao'],
+  [new RegExp(`${SEM_EMERG}.*pendente`, 'i'), 'ilum_luminaria_pendente', 'iluminacao'],
+  // a legenda diz "de sobrepor": era lançado como de embutir (teste de 28/10/2026)
+  [new RegExp(`${SEM_EMERG}(.*(lumin[áa]ria|painel|spot).*sobrepor|.*plafon|.*arandela)`, 'i'), 'ilum_luminaria_sobrepor', 'iluminacao'],
+  [new RegExp(`${SEM_EMERG}.*(lumin[áa]ria|downlight|\\bspot\\b|painel led|projetor|refletor)`, 'i'), 'ilum_luminaria_embutir', 'iluminacao'],
+  // automação
+  [/termostato|sensor de (temperatura|umidade|co2|co₂|press)/i, 'auto_sensor', 'automacao'],
+  [/atuador|m[óo]dulo de automa/i, 'auto_atuadores', 'automacao'],
+  [/quadro de automa|\bCLP\b/i, 'auto_quadro', 'automacao'],
+  // SPDA
+  [/haste|caixa de (inspe|medi)/i, 'spda_hastes_caixas', 'spda'],
+  [/\bDPS\b/i, 'spda_dps', 'spda'],
+  // recarga de VE, solar, pressurização, hospitalar, industrial, média tensão
+  [/carregador|wallbox|eletroposto|esta[çc][ãa]o de recarga/i, 've_instalacao_carregador', 'carregador'],
+  [/m[óo]dulo (fotovolt|solar)|placa solar|painel (fotovolt|solar)/i, 'sol_modulo', 'solar'],
+  [/inversor/i, 'sol_inversor', 'solar'],
+  [/ventilador/i, 'pres_ventilador', 'pressurizacao'],
+  [/damper|registro de (al[íi]vio|sobrepress)/i, 'pres_damper', 'pressurizacao'],
+  [/grelha|veneziana/i, 'pres_grelha', 'pressurizacao'],
+  [/pressostato|transmissor de press/i, 'pres_sensores', 'pressurizacao'],
+  [/painel (de )?comando/i, 'pres_painel', 'pressurizacao'],
+  [/painel (it|de isola)|transformador (de separa|isolador)|\bQDIT\b/i, 'hosp_painel_it', 'eletrica_hospitalar'],
+  [/\bDSI\b|supervisor de isolamento/i, 'hosp_dsi', 'eletrica_hospitalar'],
+  [/tomada.*\bIT\b|\bIT m[ée]dico.*tomada/i, 'hosp_tomada_it', 'eletrica_hospitalar'],
+  [/\bBEL\b|equipotencializa/i, 'hosp_equipotencializacao', 'eletrica_hospitalar'],
+  [/\bCCM\b|\bQGBT\b/i, 'ind_ccm_montagem', 'eletrica_industrial'],
+  [/capacitor/i, 'ind_banco_capacitores', 'eletrica_industrial'],
+  [/transformador/i, 'mt_transformador', 'media_tensao'],
+  [/mufla|termina[çc][ãa]o/i, 'mt_terminacao', 'media_tensao'],
+  [/haste/i, 'mt_hastes', 'media_tensao'],
+];
+// trecho medido (eletroduto, eletrocalha, fiação) → serviço de infraestrutura por metro
+const INFRA_DA_DISCIPLINA = {
+  incendio: 'inc_infra', controle_acesso: 'ace_infra', alarme: 'alarme_infra', iluminacao: 'ilum_infraestrutura',
+  telefonia: 'tel_infra', pressurizacao: 'pres_infra', carregador: 've_infraestrutura', media_tensao: 'mt_infra_subterranea',
+};
+function servicoDaLinha(disciplina, it) {
+  const texto = `${it.layer || ''} ${it.descricao || ''}`;
+  if (disciplina === 'spda') return /DESC/i.test(texto) ? 'spda_descida' : /ANEL|ENTERR|ATERR/i.test(texto) ? 'spda_anel' : 'spda_malha';
+  if (disciplina === 'eletrica_industrial') return /ELETROCALHA|LEITO|PERFILADO/i.test(texto) ? 'ind_eletrocalha' : null;
+  return INFRA_DA_DISCIPLINA[disciplina] || null;
+}
+// nota de símbolo que não é serviço → em qual item ela aparece (o primeiro presente)
+const NOTA_DO_DESENHO = {
+  _tomada_sem_altura: { itens: ['ele_tomada_baixa'], texto: (n, r) => `Mais ${n} tomada(s) sem altura na descrição (${r}) não entraram aqui — distribua entre baixa, média e alta.` },
+  _ponto_luz: { itens: ['ilum_luminaria_embutir', 'ele_ponto_energia'], texto: (n, r) => `${n} ponto(s) de luz no desenho (${r}) não são ponto de energia e não entraram na quantidade — a luminária de cada ponto é de iluminação; confira.` },
+};
+
+// Disciplina de um item do DWG/DXF: o prefixo da layer/bloco (padrão H&M e dos
+// escritórios: INC-, CA-, CAB-, CFTV-, ELE-, ILU-…) manda quando a disciplina
+// está marcada no arquivo; depois a que a leitura do CAD deu; arquivo de uma
+// disciplina só (ou do grupo rede/cabeamento) fica com ela. Caso real (DXF de
+// incêndio + CFTV + cabeamento): "Sinalizador audiovisual" na layer INC-SIRENE
+// vinha como alarme e sumia; a eletrocalha CAB- entrava em incêndio.
+const PREFIXO_DISCIPLINA = [
+  [/^(INC|SDAI|PCI|DETEC)\b/i, 'incendio'], [/^(CA|ACE|ACESSO)\b/i, 'controle_acesso'], [/^(CFTV|CAM)\b/i, 'cftv'],
+  [/^(CAB|LOG|REDE|DADOS|TELECOM)\b/i, 'cabeamento'], [/^(TEL|INTERF)\b/i, 'telefonia'], [/^(ANT|TV|CATV)\b/i, 'antena'],
+  [/^(ILU|ILUM|LUM)\b/i, 'iluminacao'], [/^(ALM|ALARME|INTRUS)\b/i, 'alarme'], [/^SPDA\b/i, 'spda'],
+  [/^(AUT|BMS)\b/i, 'automacao'], [/^(ELE|ELET|E|FORCA|TOM)\b/i, 'eletrica'],
+];
+function disciplinaPeloPrefixo(texto, marcadas) {
+  const t = String(texto || '').replace(/[-_.]/g, ' ').trim();
+  const r = PREFIXO_DISCIPLINA.find(([re]) => re.test(t));
+  return r ? doMesmoGrupo(marcadas, r[1]) : null;
+}
+const disciplinaUnica = (marcadas) => (marcadas.length && marcadas.every(d => doGrupo(marcadas[0]).includes(d)) ? marcadas[0] : null);
+function disciplinaDoItemCad(it, marcadas) {
+  const layers = String(it.layer || '').split(/,\s*/);
+  for (const l of layers) { const d = disciplinaPeloPrefixo(l, marcadas); if (d) return d; }
+  return disciplinaPeloPrefixo(it.bloco, marcadas)
+    || (it.disciplina ? doMesmoGrupo(marcadas, it.disciplina) : null)
+    || (it.disciplina ? null : disciplinaUnica(marcadas));
+}
+
+function regraDoSimbolo(it, marcadas, discItem) {
+  const desc = semMarcador(it.descricao).replace(/^\d+\s+(?=[A-Za-zÀ-ú])/, '');
+  const candidatas = SERVICO_DO_SIMBOLO.filter(([re, , d, reBloco]) => temDisciplina(marcadas, d)
+    && (re.test(desc) || (reBloco && it.bloco && reBloco.test(it.bloco))));
+  if (!candidatas.length) return null;
+  if (discItem) {
+    const daDisc = candidatas.find(([, , d]) => doGrupo(discItem).includes(d));
+    if (daDisc) return [desc, daDisc];
+    if (it._cad) return null; // bloco de outra disciplina: não cruza (câmera descrita como acionador)
+  }
+  return [desc, candidatas[0]];
+}
+
+// Contagem pelo desenho (DWG/DXF e PDF vetorial) por código de serviço:
+// { [codigo]: { quantidade, blocos: [rótulos], metros? } }. O mesmo desenho em
+// dois formatos conta uma vez (vale o DWG/DXF, como em semDuplicarFontes);
+// desenhos diferentes somam. opcoes.gruposCompat: compatibilizacao.grupos.
+function contagemDoDesenho(analises, vetoriais = [], opcoes = {}) {
+  const entradas = [];
   analises.forEach((a, i) => {
-    for (const p of (vetoriais[i] || []).filter(x => x.origem === 'cad')) {
-      for (const it of p.itens) {
-        if (it.tipo !== 'simbolo' || !doMesmoGrupo(a.disciplinas, it.disciplina)) continue;
-        const regra = SERVICO_DO_BLOCO.find(([re, , tambem]) => re.test(it.descricao) && (!tambem || tambem.test(it.descricao)));
-        if (!regra) continue;
-        const c = (cont[regra[1]] = cont[regra[1]] || { quantidade: 0, blocos: [] });
-        c.quantidade += it.quantidade;
-        c.blocos.push(`${it.bloco} × ${it.quantidade}`);
+    const marcadas = a.disciplinas || [];
+    if (!marcadas.length) return;
+    for (const p of vetoriais[i] || []) {
+      const cad = p.origem === 'cad';
+      const onde = cad ? `${p.pagina || 'DWG/DXF'} "${a.arquivo}"` : `PDF "${a.arquivo}" pág. ${p.pagina}`;
+      for (const it of p.itens || []) {
+        if (it.ambiguo) continue;
+        if (it.tipo === 'simbolo') {
+          const discItem = cad ? disciplinaDoItemCad(it, marcadas)
+            : (() => { const s = detectarDisciplinas(it.descricao)[0]?.chave; return s ? doMesmoGrupo(marcadas, s) : null; })();
+          if (cad && !discItem) continue;
+          const achou = regraDoSimbolo({ ...it, _cad: cad }, marcadas, discItem);
+          if (!achou) continue;
+          const [desc, [, cod]] = achou;
+          const codigo = typeof cod === 'function' ? cod(desc) : cod;
+          const rotulo = cad ? `${onde}: bloco ${it.bloco} × ${it.quantidade}` : `${onde}: "${desc.slice(0, 50)}" × ${it.quantidade}`;
+          entradas.push({ codigo, quantidade: Number(it.quantidade) || 0, fonte: cad ? 'cad' : 'pdf', arquivo: a.arquivo, rotulo });
+        } else if (it.tipo === 'linha' && it.metros != null) {
+          const disc = cad ? disciplinaDoItemCad(it, marcadas)
+            : (() => { const s = detectarDisciplinas(it.descricao)[0]?.chave; return (s && doMesmoGrupo(marcadas, s)) || disciplinaUnica(marcadas); })();
+          const codigo = disc && servicoDaLinha(disc, it);
+          if (!codigo) continue;
+          const rota = Number(it.rota_m ?? it.metros) || 0;
+          entradas.push({ codigo, quantidade: rota, metros: true, fonte: cad ? 'cad' : 'pdf', arquivo: a.arquivo, rotulo: `${onde}: ${metrosBR(rota)}${it.layer ? ` (layer ${it.layer})` : ''}` });
+        }
       }
     }
   });
+  const mesmoDesenho = mesmoDesenhoFn(opcoes.gruposCompat);
+  const cont = {};
+  const porCodigo = new Map();
+  entradas.forEach(e => (porCodigo.get(e.codigo) || porCodigo.set(e.codigo, []).get(e.codigo)).push(e));
+  for (const [codigo, lista] of porCodigo) {
+    const blocos = [];
+    for (const e of lista) {
+      const b = blocos.find(bl => bl.some(x => mesmoDesenho(x.arquivo, e.arquivo)));
+      if (b) b.push(e); else blocos.push([e]);
+    }
+    const ficam = blocos.flatMap((b) => {
+      const melhor = Math.max(...b.map(x => PESO_FONTE[x.fonte]));
+      return b.filter(x => PESO_FONTE[x.fonte] === melhor);
+    });
+    const soma = ficam.reduce((s, x) => s + x.quantidade, 0);
+    const metros = ficam.some(x => x.metros);
+    cont[codigo] = {
+      quantidade: metros ? Math.ceil(soma * SOBRA_ROTA) : soma,
+      blocos: ficam.map(x => x.rotulo),
+      ...(metros ? { metros: Math.round(soma * 10) / 10 } : {}),
+      fora: lista.length - ficam.length,
+    };
+  }
   return cont;
 }
+// nome antigo (só DWG/DXF): mantido para quem já importa
+const contagemDoCad = contagemDoDesenho;
 
 function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = {}, referencias = {}, cad = {}) {
   const codificados = totaisCodificados(analises);
@@ -131,8 +329,9 @@ function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = 
   const totalRede = codificados.rede || cad.rede_ponto?.quantidade || 0;
   const totalAntena = codificados.antena || cad.antena_ponto?.quantidade || 0;
   const circuitos = circuitosDosQuadros(analises);
-  const quadros = analises.filter(a => a.disciplinas.some(d => d.startsWith('eletrica')) && a.quadroCargas?.length).length;
+  const quadros = analises.filter(a => a.disciplinas.some(d => d.startsWith('eletrica'))).reduce((s, a) => s + quadrosDoArquivo(a), 0);
   const SEM_CODIGO = 'Símbolo gráfico no desenho, sem código de texto individual — confirme a quantidade direto na planta antes de fechar.';
+  const SEM_ROTA = 'Metros de rota: sem trecho medido no desenho desta disciplina — confirme na planta.';
 
   // valor_unitario começa em 0 (editável na tela) — não é preenchido
   // automaticamente com a referência de mercado (valor_referencia_mercado,
@@ -145,10 +344,15 @@ function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = 
   // `codigo` vai junto até a proposta (proposta_itens.codigo): sem ele o item
   // perdia o vínculo com a tabela de preços de referência de mão de obra
   const item = (codigo, descricao, quantidade0, unidade, disciplina, observacao0) => {
-    // item sem quantidade pelo texto: a contagem dos blocos do DWG/DXF preenche
-    const doCad = !quantidade0 && cad[codigo];
+    // item sem quantidade pelo texto: a contagem do desenho (DWG/DXF ou PDF) preenche
+    const doCad = !quantidade0 && cad[codigo]?.quantidade > 0 && cad[codigo];
     const quantidade = doCad ? doCad.quantidade : quantidade0;
-    const observacao = doCad ? `Quantidade = blocos contados no DWG/DXF (${doCad.blocos.join('; ')}) — conferir na planta.` : observacao0;
+    const observacao = doCad
+      ? (doCad.metros != null
+        ? `Quantidade = rota medida no desenho (${doCad.blocos.join('; ')}) = ${metrosBR(doCad.metros)} × ${String(SOBRA_ROTA).replace('.', ',')}${doCad.descidas_m ? ` + descidas ${metrosBR(doCad.descidas_m)}` : ''} — conferir na planta.`
+        : `Quantidade = contagem no desenho (${doCad.blocos.join('; ')}) — conferir na planta.`)
+        + (doCad.fora ? ` O mesmo desenho veio em outro formato: ${doCad.fora} contagem(ns) não somada(s).` : '')
+      : observacao0;
     return itemServico(codigo, descricao, quantidade, unidade, disciplina, observacao);
   };
   const itemServico = (codigo, descricao, quantidade, unidade, disciplina, observacao) => ({
@@ -220,21 +424,88 @@ function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = 
     item('ilum_luminaria_sobrepor', 'Instalação de luminária de sobrepor', 0, 'un', 'iluminacao', SEM_CODIGO),
     item('ilum_perfil_led', 'Instalação de perfil LED linear (embutir/sobrepor/marcenaria)', 0, 'm', 'iluminacao', SEM_CODIGO),
     item('ilum_interruptor_dimmer', 'Instalação de interruptor/dimmer de iluminação', 0, 'un', 'iluminacao', SEM_CODIGO),
+    item('ilum_luminaria_pendente', 'Instalação de luminária pendente (com suspensão)', 0, 'un', 'iluminacao', SEM_CODIGO),
+    item('ilum_sensor_presenca', 'Instalação e ajuste de sensor de presença', 0, 'un', 'iluminacao', SEM_CODIGO),
+    item('ilum_infraestrutura', 'Eletrodutos e fiação dos circuitos de iluminação', 0, 'm', 'iluminacao', SEM_ROTA),
 
     // Automação
     item('auto_central', 'Instalação e configuração de central de automação', 0, 'un', 'automacao', SEM_CODIGO),
     item('auto_atuadores', 'Instalação de atuadores/módulos de automação (tomadas, cortinas, cenas)', 0, 'un', 'automacao', SEM_CODIGO),
+    item('auto_sensor', 'Automação: instalação de sensor/termostato de ambiente', 0, 'un', 'automacao', SEM_CODIGO),
+    item('auto_quadro', 'Automação: montagem e instalação de quadro de automação', 0, 'un', 'automacao', SEM_CODIGO),
 
     // Alarme
     item('alarme_sensor_abertura', 'Instalação de sensor de abertura (magnético) porta/janela', 0, 'un', 'alarme', SEM_CODIGO),
     item('alarme_ivp', 'Instalação de sensor infravermelho passivo (IVP)', 0, 'un', 'alarme', SEM_CODIGO),
+    item('alarme_barreira', 'Instalação e alinhamento de barreira infravermelha ativa (par TX + RX)', 0, 'par', 'alarme', SEM_CODIGO),
     item('alarme_sirene', 'Instalação de sirene', 0, 'un', 'alarme', SEM_CODIGO),
     item('alarme_teclado', 'Instalação de teclado de comando', 0, 'un', 'alarme', SEM_CODIGO),
     item('alarme_repetidor', 'Instalação de repetidor de sinal', 0, 'un', 'alarme', SEM_CODIGO),
     item('alarme_central', 'Instalação e configuração da central de alarme', 0, 'un', 'alarme', 'Normalmente 1 unidade — confirme.'),
+    item('alarme_infra', 'Alarme: infraestrutura e lançamento de cabos', 0, 'm', 'alarme', SEM_ROTA),
+
+    // Incêndio — detecção e alarme (NBR 17240) e iluminação de emergência (NBR 10898)
+    item('inc_dispositivo', 'Incêndio: instalação de detector, acionador ou avisador', 0, 'un', 'incendio', SEM_CODIGO),
+    item('inc_central', 'Incêndio: instalação, programação e endereçamento da central', 0, 'un', 'incendio', 'Normalmente 1 unidade — confirme.'),
+    item('inc_ilum_emergencia', 'Incêndio: instalação de luminária/sinalização de emergência', 0, 'un', 'incendio', SEM_CODIGO),
+    item('inc_infra', 'Incêndio: infraestrutura e lançamento de cabos do alarme', 0, 'm', 'incendio', SEM_ROTA),
+    item('inc_comissionamento', 'Incêndio: comissionamento, testes e treinamento', 1, 'vb', 'incendio', 'Verba — marque como "já pronto" se não fizer parte do escopo.'),
+
+    // Controle de acesso
+    item('ace_leitor', 'Controle de acesso: instalação e configuração de leitor (cartão, biometria ou facial)', 0, 'un', 'controle_acesso', SEM_CODIGO),
+    item('ace_fechadura', 'Controle de acesso: instalação de fechadura eletromagnética/fecho elétrico/solenoide com suporte', 0, 'un', 'controle_acesso', SEM_CODIGO),
+    item('ace_botoeira', 'Controle de acesso: instalação de botoeira de saída, acionador de emergência ou sensor de porta', 0, 'un', 'controle_acesso', SEM_CODIGO),
+    item('ace_controladora', 'Controle de acesso: instalação de controladora com fonte, bateria e gabinete', 0, 'un', 'controle_acesso', SEM_CODIGO),
+    item('ace_catraca', 'Controle de acesso: instalação e configuração de catraca ou cancela', 0, 'un', 'controle_acesso', SEM_CODIGO),
+    item('ace_infra', 'Controle de acesso: infraestrutura e lançamento de cabos (por metro de rota)', 0, 'm', 'controle_acesso', SEM_ROTA),
+    item('ace_programacao', 'Controle de acesso: programação do software, cadastro de usuários, níveis de acesso e integrações', 1, 'vb', 'controle_acesso', 'Verba — ajuste ao porte do sistema.'),
+    item('ace_comissionamento', 'Controle de acesso: comissionamento por porta (incêndio, falta de energia, emergência), testes e treinamento', 1, 'vb', 'controle_acesso', 'Verba — ajuste ao número de portas.'),
+
+    // SPDA (NBR 5419)
+    item('spda_malha', 'SPDA: instalação da malha de captação (condutor, suportes e conexões)', 0, 'm', 'spda', SEM_ROTA),
+    item('spda_descida', 'SPDA: instalação de descida não natural com fixadores e terminal de ensaio', 0, 'm', 'spda', SEM_ROTA),
+    item('spda_anel', 'SPDA: anel de aterramento (vala, lançamento e conexões)', 0, 'm', 'spda', SEM_ROTA),
+    item('spda_hastes_caixas', 'SPDA: cravação de haste e instalação de caixa de inspeção', 0, 'un', 'spda', SEM_CODIGO),
+    item('spda_dps', 'SPDA: instalação de DPS', 0, 'un', 'spda', SEM_CODIGO),
+    item('spda_bep', 'SPDA: instalação do BEP e ligações equipotenciais', 1, 'vb', 'spda', 'Verba — confirme no projeto.'),
+
+    // Telefonia/interfonia
+    item('tel_terminal', 'Telefonia/interfonia: instalação de terminal (interfone/telefone) na unidade ou área comum, com teste', 0, 'un', 'telefonia', SEM_CODIGO),
+    item('tel_infra', 'Telefonia/interfonia: infraestrutura (prumada, eletrodutos e caixas)', 0, 'm', 'telefonia', SEM_ROTA),
+
+    // Recarga de VE, solar, pressurização, hospitalar, industrial e média tensão
+    item('ve_instalacao_carregador', 'Recarga VE: instalação, configuração e comissionamento da estação', 0, 'un', 'carregador', SEM_CODIGO),
+    item('ve_infraestrutura', 'Recarga VE: infraestrutura e lançamento de cabos até o ponto', 0, 'm', 'carregador', SEM_ROTA),
+    item('sol_modulo', 'Solar: montagem de módulo fotovoltaico na estrutura', 0, 'un', 'solar', SEM_CODIGO),
+    item('sol_inversor', 'Solar: instalação e configuração do inversor', 0, 'un', 'solar', SEM_CODIGO),
+    item('pres_ventilador', 'Pressurização: instalação do conjunto motoventilador (base, junta flexível, alinhamento e ligação)', 0, 'un', 'pressurizacao', SEM_CODIGO),
+    item('pres_damper', 'Pressurização: instalação de damper de alívio ou registro de retenção', 0, 'un', 'pressurizacao', SEM_CODIGO),
+    item('pres_grelha', 'Pressurização: instalação e balanceamento de grelha de insuflação / veneziana de tomada de ar', 0, 'un', 'pressurizacao', SEM_CODIGO),
+    item('pres_sensores', 'Pressurização: instalação de transmissor de pressão diferencial ou pressostato de fluxo', 0, 'un', 'pressurizacao', SEM_CODIGO),
+    item('pres_painel', 'Pressurização: montagem e instalação do painel de comando (inversor/soft-starter, controlador e sinalização)', 0, 'un', 'pressurizacao', SEM_CODIGO),
+    item('pres_infra', 'Pressurização: infraestrutura em eletroduto de aço galvanizado', 0, 'm', 'pressurizacao', SEM_ROTA),
+    item('hosp_painel_it', 'Elétrica hospitalar: montagem e instalação de painel IT médico (QDIT com transformador de separação)', 0, 'un', 'eletrica_hospitalar', SEM_CODIGO),
+    item('hosp_dsi', 'Elétrica hospitalar: instalação e parametrização de DSI e painel de alarme', 0, 'un', 'eletrica_hospitalar', SEM_CODIGO),
+    item('hosp_tomada_it', 'Elétrica hospitalar: instalação de tomada do IT médico com identificação permanente', 0, 'un', 'eletrica_hospitalar', SEM_CODIGO),
+    item('hosp_equipotencializacao', 'Elétrica hospitalar: equipotencialização suplementar por local (BEL e ligações)', 0, 'un', 'eletrica_hospitalar', SEM_CODIGO),
+    item('ind_ccm_montagem', 'Industrial: montagem e instalação de QGBT/CCM/quadro', 0, 'un', 'eletrica_industrial', SEM_CODIGO),
+    item('ind_banco_capacitores', 'Industrial: instalação e ajuste do banco de capacitores com controlador', 0, 'un', 'eletrica_industrial', SEM_CODIGO),
+    item('ind_eletrocalha', 'Industrial: instalação de eletrocalha/leito com suportes e acessórios', 0, 'm', 'eletrica_industrial', SEM_ROTA),
+    item('mt_transformador', 'MT: içamento, posicionamento e ligação do transformador', 0, 'un', 'media_tensao', SEM_CODIGO),
+    item('mt_terminacao', 'MT: terminação (mufla) de MT', 0, 'un', 'media_tensao', SEM_CODIGO),
+    item('mt_hastes', 'MT: haste e caixa de inspeção da malha', 0, 'un', 'media_tensao', SEM_CODIGO),
+    item('mt_infra_subterranea', 'MT: infraestrutura do ramal subterrâneo de MT', 0, 'm', 'media_tensao', SEM_ROTA),
   ];
 
-  return naDisciplinaMarcada(todos, disciplinasEfetivas);
+  // símbolo contado que não é serviço (tomada sem altura, ponto de luz): nota no item
+  const final = naDisciplinaMarcada(todos, disciplinasEfetivas);
+  for (const [chave, nota] of Object.entries(NOTA_DO_DESENHO)) {
+    const c = cad[chave];
+    if (!c?.quantidade) continue;
+    const alvo = nota.itens.map(cod => final.find(x => x.codigo === cod)).find(Boolean);
+    if (alvo) alvo.observacao = `${alvo.observacao} ${nota.texto(c.quantidade, c.blocos.join('; '))}`;
+  }
+  return final;
 }
 
 // Lista padrão de material de instalação (Bloco 2 nos orçamentos de
@@ -247,8 +518,12 @@ const RESERVA_PLUG_RJ45 = 0.2;
 const RESERVA_PLUG_MIN = 2;
 const reservaPlugs = (n) => Math.max(RESERVA_PLUG_MIN, Math.ceil(n * RESERVA_PLUG_RJ45));
 
-function montarMateriaisInstalacaoPadrao(analises, disciplinasEfetivas) {
-  const { cameras: totalCameras, rede: totalRede, antena: totalAntena } = totaisCodificados(analises);
+// cad: contagemDoDesenho — sem código de texto (CAMx/Rx/Ax), vale a contagem do desenho
+function montarMateriaisInstalacaoPadrao(analises, disciplinasEfetivas, cad = {}) {
+  const codificados = totaisCodificados(analises);
+  const totalCameras = codificados.cameras || cad.cftv_ponto?.quantidade || 0;
+  const totalRede = codificados.rede || cad.rede_ponto?.quantidade || 0;
+  const totalAntena = codificados.antena || cad.antena_ponto?.quantidade || 0;
 
   const item = (descricao, quantidade, unidade, disciplina, observacao) => ({
     descricao, quantidade, unidade, subgrupo: nomeDaDisciplina(disciplina), disciplina, pronto: false, observacao,
@@ -432,8 +707,11 @@ function montarMateriaisDoDesenho(analises, vetoriais, catalogo) {
       for (const it of pag.itens) {
         if (it.ambiguo || (it.tipo === 'linha' && it.metros == null)) continue;
         // CAD: a disciplina vem do bloco/layer (services/analiseCad/index.js); PDF: da descrição da legenda
+        // CAD: prefixo da layer/bloco, depois a disciplina do bloco (disciplinaDoItemCad); PDF: a descrição da legenda
         const sugerida = pag.origem === 'cad' ? it.disciplina : detectarDisciplinas(it.descricao)[0]?.chave;
-        const disciplina = sugerida ? (doMesmoGrupo(a.disciplinas, sugerida)) : a.disciplinas[0];
+        const disciplina = pag.origem === 'cad'
+          ? (disciplinaDoItemCad(it, a.disciplinas) || (sugerida ? null : a.disciplinas[0]))
+          : (sugerida ? doMesmoGrupo(a.disciplinas, sugerida) : a.disciplinas[0]);
         if (!disciplina) continue;
         const descricao = semMarcador(it.descricao).slice(0, 240);
         const corr = compararComCatalogo(descricao, catalogo);
@@ -572,7 +850,7 @@ function semDuplicarFontes(materiais, achados, opcoes = {}) {
 }
 
 module.exports = {
-  totaisCodificados, contagemDoCad, montarServicosPadrao, montarMateriaisInstalacaoPadrao, semModeloCoberto,
+  totaisCodificados, contagemDoCad, contagemDoDesenho, montarServicosPadrao, montarMateriaisInstalacaoPadrao, semModeloCoberto,
   montarMateriais, montarPontosPorAmbiente, montarMateriaisQuantitativos, montarMateriaisDaLista, montarMateriaisDoDesenho,
   tipoDoItem, semDuplicarFontes, doGrupo, temDisciplina,
   // formatação usada também pelos achados (utils/analiseProjetoAchados.js)

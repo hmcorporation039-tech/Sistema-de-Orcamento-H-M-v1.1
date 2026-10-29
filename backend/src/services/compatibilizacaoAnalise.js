@@ -14,7 +14,7 @@ const { lerPdfVetorial } = require('../utils/pdfVetorial');
 const { ehArquivoCad, lerArquivoCad } = require('./analiseCad');
 const { compatibilizar } = require('../utils/compatibilidadeEspacial');
 const {
-  totaisCodificados, contagemDoCad, montarServicosPadrao, montarMateriaisInstalacaoPadrao, semModeloCoberto,
+  totaisCodificados, contagemDoDesenho, montarServicosPadrao, montarMateriaisInstalacaoPadrao, semModeloCoberto,
   montarMateriais, montarPontosPorAmbiente, montarMateriaisQuantitativos, montarMateriaisDaLista, montarMateriaisDoDesenho,
   semDuplicarFontes, doGrupo, temDisciplina,
 } = require('../utils/analiseProjetoItens');
@@ -218,15 +218,16 @@ async function analisarProjetoCompleto(todosArquivos) {
   const materiaisEquipamentos = montarMateriais(equipamentos, catalogo);
   const materiaisQuantitativos = montarMateriaisQuantitativos(analises);
   const materiaisDoDesenho = montarMateriaisDoDesenho(analises, vetoriais, catalogo);
+  // DWG/DXF e PDF vetorial (item não ambíguo) alimentam a mão de obra e os materiais de terminação
+  const contagemCad = contagemDoDesenho(analises, vetoriais, { gruposCompat: compat.grupos });
   const comoLista = (lista) => lista.map(m => ({ ...m, _fonte: 'lista' })); // tabela do PDF / equipamentos lidos do texto
   const materiais = semDuplicarFontes([
-    ...semModeloCoberto(montarMateriaisInstalacaoPadrao(analises, disciplinasEfetivas), materiaisDoDesenho),
+    ...semModeloCoberto(montarMateriaisInstalacaoPadrao(analises, disciplinasEfetivas, contagemCad), materiaisDoDesenho),
     ...montarMateriaisDaLista(analises, catalogo, achados),
     ...comoLista(materiaisQuantitativos),
     ...comoLista(materiaisEquipamentos),
     ...materiaisDoDesenho,
   ], achados, { gruposCompat: compat.grupos });
-  const contagemCad = contagemDoCad(analises, vetoriais);
   const dadosExtraidos = analises.map((a, i) => ({
     arquivo: a.arquivo,
     disciplinas: a.disciplinas,
