@@ -177,6 +177,25 @@ function achadosDoDesenho(analises, vetoriais, opcoes = {}) {
         });
       }
       if (p.outraArea) achados.push({ tema: 'Itens de outras áreas no desenho', observacao: `"${a.arquivo}": ${p.outraArea} bloco(s) de climatização/hidráulica (dutos, difusores, conexões) ficaram de fora — não são das disciplinas da H&M.` });
+      // xref de outra disciplina embutida no desenho (services/analiseCad): fora da contagem
+      if (p.xrefsDeOutraDisciplina?.length) {
+        achados.push({
+          tema: 'Referência externa (xref) de outra disciplina',
+          observacao: `"${a.arquivo}": ${p.xrefsDeOutraDisciplina.map(x => `"${x.xref}"${x.disciplina ? ` (${nomeDaDisciplina(x.disciplina)})` : ''}: ${x.componentes || 0} componente(s)${x.metros ? `, ${metrosBR(x.metros)}` : ''}`).join('; ')} — ficaram fora da contagem; são de outro projeto anexado ao desenho.`,
+        });
+      }
+    }
+    // QTD/QTDE da legenda × contagem do desenho (DWG/DXF e PDF): a diferença vira achado
+    const divergentes = (vetoriais[i] || []).flatMap(p => [
+      ...(p.conferenciaLegenda || []).map(c => ({ descricao: c.descricao || c.bloco, desenho: c.desenho, legenda: c.legenda })),
+      ...(p.conferenciaLegenda ? [] : (p.itens || []).filter(it => it.tipo === 'simbolo' && it.quantidadeLegenda != null && Number(it.quantidadeLegenda) !== Number(it.quantidade))
+        .map(it => ({ descricao: it.descricao, desenho: it.quantidade, legenda: it.quantidadeLegenda }))),
+    ]);
+    if (divergentes.length) {
+      achados.push({
+        tema: 'Quantidade da legenda diferente da contagem do desenho',
+        observacao: `"${a.arquivo}": ${divergentes.slice(0, 15).map(d => `${semMarcador(d.descricao).replace(/ — bloco .*/, '').slice(0, 60)}: desenho ${d.desenho}, legenda ${d.legenda}`).join('; ')}${divergentes.length > 15 ? ` (+${divergentes.length - 15})` : ''}. Confira na planta qual está certo antes de fechar (vale a contagem do desenho).`,
+      });
     }
     const itens = (vetoriais[i] || []).flatMap(p => p.itens);
     if (!itens.length) return;

@@ -281,6 +281,13 @@ caso('achados: quadro não lido, código repetido longe, quantidade ambígua e f
   const d = A.achadosDoDesenho([{ arquivo: 'grande.pdf', textoPorPagina: Array(9).fill('x') }], [paginas], { maxPaginas: 6 });
   assert.match(d.find(a => a.tema === 'Folhas do PDF não lidas pelo desenho').observacao, /folha\(s\) 7 a 9 ficaram de fora/);
   assert.ok(!A.achadosDoDesenho([{ arquivo: 'p.pdf', textoPorPagina: ['x', 'y'] }], [[{ pagina: 1, itens: [] }, { pagina: 2, itens: [] }]], { maxPaginas: 6 }).length);
+  // QTD da legenda × desenho (CAD: conferenciaLegenda; PDF: quantidadeLegenda no item) e xref de outra disciplina
+  const dxf = A.achadosDoDesenho([{ arquivo: 'x.dxf' }], [[{ origem: 'cad', pagina: 'DXF', itens: [], conferenciaLegenda: [{ bloco: 'CFTV CAMERA', descricao: 'Câmera dome — bloco CFTV CAMERA', desenho: 15, legenda: 17 }],
+    xrefsDeOutraDisciplina: [{ xref: 'E-COND', disciplina: 'eletrica', componentes: 432, metros: 713 }] }]]);
+  assert.match(dxf.find(a => /legenda diferente/.test(a.tema)).observacao, /Câmera dome: desenho 15, legenda 17/);
+  assert.match(dxf.find(a => /xref/.test(a.tema)).observacao, /"E-COND".*432 componente/);
+  const pdf = A.achadosDoDesenho([{ arquivo: 'l.pdf' }], [[{ pagina: 1, itens: [sim('Luminária X', 10, { quantidadeLegenda: 12 }), sim('Luminária Y', 4, { quantidadeLegenda: 4 })] }]]);
+  assert.match(pdf.find(a => /legenda diferente/.test(a.tema)).observacao, /Luminária X: desenho 10, legenda 12$|Luminária X: desenho 10, legenda 12\./);
 });
 
 caso('M8: ponte para as skills usa perímetro/polígono, dimensões do recinto e os quadros separados', () => {
