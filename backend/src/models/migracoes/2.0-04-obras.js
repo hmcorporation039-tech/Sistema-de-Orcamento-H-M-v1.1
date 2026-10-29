@@ -87,14 +87,9 @@ module.exports = async (client) => {
     await client.query(`ALTER TABLE ${tabela} ADD COLUMN IF NOT EXISTS pasta_obra_id INTEGER REFERENCES obras(id) ON DELETE SET NULL`);
   }
 
-  const feita = await client.query('SELECT 1 FROM configuracoes WHERE chave = $1', [MARCA]);
-  if (feita.rows.length) return;
-
-  const resumo = await ligarDadosExistentes(client);
-  await client.query(
-    'INSERT INTO configuracoes (chave, valor) VALUES ($1, $2) ON CONFLICT (chave) DO NOTHING',
-    [MARCA, JSON.stringify({ em: new Date().toISOString(), ...resumo })]
-  );
+  // uma vez só (models/apoioMigracoes.js)
+  const resumo = await require('../apoioMigracoes').umaVez(client, MARCA, () => ligarDadosExistentes(client));
+  if (!resumo) return;
   console.log(`Obras (2.0): ${resumo.obrasCriadas} obra(s) criada(s) — de ${resumo.deAnalises} análise(s), ${resumo.deLaudos} laudo(s) e ${resumo.dePropostas} grupo(s) de propostas; ` +
     `${resumo.propostasLigadas} proposta(s), ${resumo.laudosNaObraDaAnalise} laudo(s) na obra da análise, ${resumo.contratosLigados} contrato(s) ligados; ` +
     `cliente_id preenchido em ${resumo.clientesPreenchidos} registro(s)`);

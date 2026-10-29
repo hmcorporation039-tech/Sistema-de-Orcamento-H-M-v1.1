@@ -20,10 +20,13 @@ const { compararComCatalogo } = require('../../utils/compatibilizacaoAnalise');
 
 const MARCA = 'composicoes_kits_metragem';
 
+// uma vez só (models/apoioMigracoes.js)
 module.exports = async (client) => {
-  const { rows: [marca] } = await client.query('SELECT 1 FROM configuracoes WHERE chave = $1', [MARCA]);
-  if (marca) return;
+  const r = await require('../apoioMigracoes').umaVez(client, MARCA, () => ligarRolosECaixas(client));
+  if (r?.ligados?.length) console.log(`Composições: ${r.ligados.length} item(ns) de kits-modelo ligados a rolo/caixa do catálogo (contados em metro)`);
+};
 
+async function ligarRolosECaixas(client) {
   const { rows: itens } = await client.query(
     `SELECT i.id, i.ordem, i.descricao, i.unidade, c.codigo
        FROM composicao_itens i JOIN composicoes c ON c.id = i.composicao_id
@@ -50,9 +53,5 @@ module.exports = async (client) => {
     }
   }
 
-  await client.query(
-    'INSERT INTO configuracoes (chave, valor) VALUES ($1, $2) ON CONFLICT (chave) DO NOTHING',
-    [MARCA, JSON.stringify({ em: new Date().toISOString(), avaliados: itens.length, ligados })]
-  );
-  if (ligados.length) console.log(`Composições: ${ligados.length} item(ns) de kits-modelo ligados a rolo/caixa do catálogo (contados em metro)`);
-};
+  return { avaliados: itens.length, ligados };
+}

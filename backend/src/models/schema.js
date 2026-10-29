@@ -726,7 +726,8 @@ function listarMigracoes() {
   const pasta = require('path').join(__dirname, 'migracoes');
   const fs = require('fs');
   if (!fs.existsSync(pasta)) return [];
-  return fs.readdirSync(pasta).filter(f => /\.js$/.test(f)).sort().map(f => require('path').join(pasta, f));
+  // só "2.0-01-….js" (arquivo de apoio não é migração: ver models/apoioMigracoes.js)
+  return fs.readdirSync(pasta).filter(f => /^\d.*\.js$/.test(f)).sort().map(f => require('path').join(pasta, f));
 }
 
 module.exports = { criarTabelas };
