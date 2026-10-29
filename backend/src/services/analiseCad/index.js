@@ -281,6 +281,12 @@ async function lerArquivoCad(buffer, nome) {
     itens.push({ tipo: 'linha', descricao: d.descricao, metros: l.metros, rota_m: l.metros, tipoLinha: d.tipo, disciplina: d.disciplina, layer: l.layer, ambiguo: false });
   }
 
+  // tipo da legenda com QTD e nenhum símbolo na planta: também é divergência
+  const comGrupo = new Set(p.simbolos.map(g => g.nomeLimpo));
+  for (const li of p.legendaItens || []) {
+    if (li.quantidade > 0 && !comGrupo.has(li.nomeLimpo)) conferenciaLegenda.push({ bloco: li.nomeLimpo, descricao: li.descricao, desenho: 0, legenda: li.quantidade });
+  }
+
   // pontos de CFTV/rede/antena por ambiente, pela posição do bloco
   const pontosPorAmbiente = [];
   if (ambientesArq.length) {

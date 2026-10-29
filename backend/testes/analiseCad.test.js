@@ -143,6 +143,11 @@ function dxfSintetico() {
     d.inserir('TUG', 20.3, 9.46, { layer: 'ELE-TOMADA' });
     d.texto(20.8, 9.4, 0.15, 'Tomada baixa 2P+T 10 A h=0,30m', { layer: 'G-LEGENDA' });
     d.texto(26, 9.4, 0.15, 'QTD: 4', { layer: 'G-LEGENDA' });
+    // tipo na legenda com QTD e nenhum na planta
+    d.bloco('TUE', (b) => { b.addCircle({ x: 0, y: 0, z: 0 }, 0.1, { layerName: '0' }); });
+    d.inserir('TUE', 20.3, 8.81, { layer: 'ELE-TOMADA' });
+    d.texto(20.8, 8.75, 0.15, 'Tomada de uso específico 20 A', { layer: 'G-LEGENDA' });
+    d.texto(26, 8.75, 0.15, 'QTD: 2', { layer: 'G-LEGENDA' });
     return d.toString();
   }
 
@@ -157,7 +162,7 @@ function dxfSintetico() {
     const tug = r.pagina.itens.find(i => i.bloco === 'TUG');
     assert.strictEqual(tug.quantidade, 3);
     assert.strictEqual(tug.quantidadeLegenda, 4);
-    assert.deepStrictEqual(r.pagina.conferenciaLegenda.map(c => [c.bloco, c.desenho, c.legenda]), [['TUG', 3, 4]]);
+    assert.deepStrictEqual(r.pagina.conferenciaLegenda.map(c => [c.bloco, c.desenho, c.legenda]), [['TUG', 3, 4], ['TUE', 0, 2]]);
     // M9: altura de instalação por ponto
     assert.strictEqual(tug.altura_m, 0.3);
     assert.ok(r.espacial.pontos.filter(p => p.disciplina === 'eletrica').every(p => p.altura_m === 0.3 && p.montagem === 'parede'));

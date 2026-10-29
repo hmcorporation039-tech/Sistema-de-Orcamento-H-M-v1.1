@@ -339,7 +339,7 @@ function lerLegenda(insercoes, textos) {
         if (descricao.has(ins.bloco)) continue;
         descricao.set(ins.bloco, texto);
         if (qtd != null) quantidade.set(ins.bloco, qtd);
-        itens.push({ bloco: ins.bloco, descricao: texto, quantidade: qtd });
+        itens.push({ bloco: ins.bloco, nomeLimpo: nomeLimpoDoBloco(ins.bloco), descricao: texto, quantidade: qtd });
       }
     }
   }
