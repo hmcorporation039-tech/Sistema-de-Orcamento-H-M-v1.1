@@ -3,7 +3,8 @@ import toast from 'react-hot-toast';
 import { Layers, X } from 'lucide-react';
 import { getComposicoes, explodirComposicao } from '../services/api';
 import Select, { comparador } from './Select';
-import { nomeDisciplina, ROTULO_SEGMENTO } from '../utils/disciplinasServico';
+import { ROTULO_SEGMENTO } from '../utils/disciplinasServico';
+import useDisciplinas from '../hooks/useDisciplinas';
 
 /*
  * Botão "+ Kit/composição" do editor de orçamento (versão 2.0, Fase 3H).
@@ -97,6 +98,7 @@ export function distribuirNasSecoes(itens, secoes, { gerarId = gerarIdPadrao, eh
 }
 
 export default function InserirComposicao({ segmento = 'privado', onInserir, disabled = false }) {
+  const { nomeServico: nomeDisciplina } = useDisciplinas();
   const seg = segmento === 'publico' ? 'publico' : 'privado';
   const [aberto, setAberto] = useState(false);
   const [lista, setLista] = useState(null);
@@ -116,7 +118,7 @@ export default function InserirComposicao({ segmento = 'privado', onInserir, dis
     const por = {};
     for (const c of lista || []) (por[c.disciplina] = por[c.disciplina] || []).push(c);
     return Object.entries(por).map(([d, l]) => ({ d, nome: nomeDisciplina(d), l })).sort((a, b) => comparador.compare(a.nome, b.nome));
-  }, [lista]);
+  }, [lista, nomeDisciplina]);
 
   const qtd = Number(String(quantidade).replace(',', '.'));
   // prévia: o servidor calcula (mesma regra da base de preços), 300 ms depois da última mudança

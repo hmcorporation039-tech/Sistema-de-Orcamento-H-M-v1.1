@@ -17,7 +17,8 @@ import CampoMoeda from '../components/CampoMoeda';
 import BlocoPesquisaMercado, { resultadoDaPesquisa } from '../components/PesquisaMercado';
 import ObraSelect from '../components/ObraSelect';
 import Select, { Sugestoes, comparador } from '../components/Select';
-import { nomeDisciplina, ROTULO_SEGMENTO } from '../utils/disciplinasServico';
+import { ROTULO_SEGMENTO } from '../utils/disciplinasServico';
+import useDisciplinas from '../hooks/useDisciplinas';
 // Fase 3F (2.0): BDI pela fórmula do TCU e curva ABC da proposta
 import CalculadoraBdi from '../components/CalculadoraBdi';
 import CurvaAbcPainel from '../components/CurvaAbcPainel';
@@ -179,6 +180,7 @@ const linkDaOrigem = (o) => (o.tipo === 'analise' ? `/obras/analise/${o.id}` : `
 const nomeDoRegistro = (o) => (o.registro === 'projeto' ? 'projeto' : o.registro === 'laudo' ? 'laudo' : 'laudo/projeto');
 
 export default function Orcamento() {
+  const { nomeServico: nomeDisciplina } = useDisciplinas();
   const { id: editandoId } = useParams();
   const navigate = useNavigate();
   const [busca] = useSearchParams();
@@ -338,7 +340,7 @@ export default function Orcamento() {
     return Object.entries(grupos)
       .map(([disc, lista]) => ({ disc, nome: nomeDisciplina(disc), lista }))
       .sort((a, b) => comparador.compare(a.nome, b.nome));
-  }, [servicos]);
+  }, [servicos, nomeDisciplina]);
   const sugestaoDoServico = (s) => (s?.sugerido ? s.sugerido[segmento] : null);
   // item sem código (veio digitado, ou de uma análise antiga) ainda acha o
   // serviço da base pela descrição, para mostrar as referências

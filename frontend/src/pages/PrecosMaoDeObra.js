@@ -3,7 +3,7 @@ import toast from 'react-hot-toast';
 import { Save, Search, ExternalLink, ChevronDown, ChevronRight, Square, GitMerge, EyeOff, RotateCcw } from 'lucide-react';
 import { getPrecosMaoDeObra, atualizarPrecosMaoDeObra, pesquisarReferenciaMaoDeObra, fundirServico, definirServicoAtivo } from '../services/api';
 import Select, { comparador } from '../components/Select';
-import { NOMES_DISCIPLINA, nomeDisciplina } from '../utils/disciplinasServico';
+import useDisciplinas from '../hooks/useDisciplinas';
 
 // Dois segmentos de referência de MERCADO (além do valor adotado pela H&M)
 const SEGMENTOS = [
@@ -16,6 +16,7 @@ const data = (v) => (v ? new Date(v).toLocaleDateString('pt-BR') : '');
 const semAcento = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 export default function PrecosMaoDeObra() {
+  const { nomeServico: nomeDisciplina, todas: todasDisciplinas } = useDisciplinas();
   const [itens, setItens] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
@@ -148,7 +149,7 @@ export default function PrecosMaoDeObra() {
   // destinos do "é o mesmo que…": os serviços padrão, por disciplina (grupos A–Z)
   const gruposPadrao = useMemo(() => Object.entries(
     padrao.reduce((g, it) => { (g[it.disciplina || 'outros'] = g[it.disciplina || 'outros'] || []).push(it); return g; }, {})
-  ).map(([disc, lista]) => ({ disc, nome: nomeDisciplina(disc), lista })).sort((a, b) => comparador.compare(a.nome, b.nome)), [padrao]);
+  ).map(([disc, lista]) => ({ disc, nome: nomeDisciplina(disc), lista })).sort((a, b) => comparador.compare(a.nome, b.nome)), [padrao, nomeDisciplina]);
 
   const termo = semAcento(buscaLivres.trim());
   const livresVisiveis = livres
@@ -247,7 +248,7 @@ export default function PrecosMaoDeObra() {
         <span>Disciplina:</span>
         <Select value={it.disciplina || 'outros'} onChange={e => alterar(it.codigo, 'disciplina', e.target.value)} disabled={inativo}
           style={{ width: 'auto', flex: '0 0 auto', fontSize: 11.5, padding: '3px 6px', borderColor: alterados[it.codigo] && 'disciplina' in alterados[it.codigo] ? '#c9a227' : undefined }}>
-          {Object.entries(NOMES_DISCIPLINA).map(([k, nome]) => <option key={k} value={k}>{nome}</option>)}
+          {todasDisciplinas.map(d => <option key={d.chave} value={d.chave}>{d.nomes.servico}</option>)}
         </Select>
         {it.criado_em && <span>· lançado em {data(it.criado_em)}</span>}
         <span style={{ flex: 1 }} />

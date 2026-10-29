@@ -118,6 +118,8 @@ export const enviarPropostaPorEmail = (id, destinatario, mensagem) =>
 // ── ANÁLISE DE PROJETO (compatibilização) ────────────────────────────────
 // O envio dos arquivos é pelo pacote (enviarPacoteProjeto/analisarPacoteProjeto, abaixo).
 export const getDisciplinasProjeto = () => api.get('/projetos/disciplinas');
+// registro único das disciplinas (nomes, siglas, subgrupos) — use hooks/useDisciplinas
+export const getRegistroDisciplinas = () => api.get('/disciplinas');
 export const getAnalisesProjeto = (params) => api.get('/projetos/analises', { params });
 export const getAnaliseProjeto = (id) => api.get(`/projetos/analises/${id}`);
 export const atualizarAnaliseProjeto = (id, data) => api.put(`/projetos/analises/${id}`, data);

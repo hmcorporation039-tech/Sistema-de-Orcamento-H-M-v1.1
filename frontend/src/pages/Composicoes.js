@@ -6,7 +6,8 @@ import {
   definirComposicaoAtiva, removerComposicao, calcularComposicao, getMateriais, getServicos,
 } from '../services/api';
 import Select, { comparador } from '../components/Select';
-import { NOMES_DISCIPLINA, nomeDisciplina, ROTULO_SEGMENTO } from '../utils/disciplinasServico';
+import { ROTULO_SEGMENTO } from '../utils/disciplinasServico';
+import useDisciplinas from '../hooks/useDisciplinas';
 import { useAuth } from '../hooks/useAuth';
 
 // Composições e kits (versão 2.0, Fase 3H): um kit junta materiais do catálogo
@@ -46,6 +47,7 @@ function CustoResumo({ c }) {
 }
 
 export default function Composicoes() {
+  const { nomeServico: nomeDisciplina } = useDisciplinas();
   const { usuario } = useAuth();
   const ehAdmin = usuario?.role === 'admin';
   const [lista, setLista] = useState([]);
@@ -81,7 +83,7 @@ export default function Composicoes() {
     return Object.entries(porDisc)
       .map(([disc, itens]) => ({ disc, nome: nomeDisciplina(disc), itens: itens.sort((a, b) => comparador.compare(a.descricao, b.descricao)) }))
       .sort((a, b) => comparador.compare(a.nome, b.nome));
-  }, [lista, busca, disciplina]);
+  }, [lista, busca, disciplina, nomeDisciplina]);
   const disciplinasUsadas = useMemo(() => [...new Set(lista.map(c => c.disciplina))], [lista]);
 
   async function alternar(id) {
@@ -286,6 +288,7 @@ function DetalheItens({ comp }) {
 
 // ── Editor (admin) ─────────────────────────────────────────────────────────
 function EditorComposicao({ form, setForm, onFechar }) {
+  const { nomeServico: nomeDisciplina, todas: todasDisciplinas } = useDisciplinas();
   const [materiais, setMateriais] = useState([]);
   const [servicos, setServicos] = useState([]);
   const [buscaMat, setBuscaMat] = useState('');
@@ -325,7 +328,7 @@ function EditorComposicao({ form, setForm, onFechar }) {
       (porDisc[s.disciplina || 'outros'] = porDisc[s.disciplina || 'outros'] || []).push(s);
     }
     return Object.entries(porDisc).map(([d, l]) => ({ d, nome: nomeDisciplina(d), l })).sort((a, b) => comparador.compare(a.nome, b.nome));
-  }, [servicos, buscaSrv]);
+  }, [servicos, buscaSrv, nomeDisciplina]);
 
   const campo = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const alterarItem = (chave, k, v) => setForm(f => ({ ...f, itens: f.itens.map(it => (it.chave === chave ? { ...it, [k]: v } : it)) }));
@@ -399,7 +402,7 @@ function EditorComposicao({ form, setForm, onFechar }) {
         </label>
         <label style={rotulo}>Disciplina
           <Select value={form.disciplina} onChange={e => campo('disciplina', e.target.value)}>
-            {Object.keys(NOMES_DISCIPLINA).map(d => <option key={d} value={d}>{nomeDisciplina(d)}</option>)}
+            {todasDisciplinas.map(d => <option key={d.chave} value={d.chave}>{d.nomes.servico}</option>)}
           </Select>
         </label>
       </div>

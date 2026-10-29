@@ -29,6 +29,7 @@
 // guarda a composição: os itens entram como itens comuns.
 const { valorSugerido, ITENS_REFERENCIA } = require('./precosMaoDeObraReferencia');
 const { resolverCodigo, DISCIPLINA_OUTROS } = require('./servicosBase');
+const DISC = require('../config/caminhos').registroDisciplinas();
 
 const SECAO_MATERIAIS = 'Materiais e Equipamentos';
 const SECAO_SERVICOS = 'Serviços (Mão de Obra)';
@@ -114,28 +115,13 @@ function conversaoEmbalagem(material, unidadeItem) {
 // como a mesma disciplina ao salvar a proposta (SUBGRUPO_PARA_DISCIPLINA).
 // Todos os itens de um kit ficam no mesmo subgrupo de cada seção — o editor
 // agrupa por subgrupo e o kit não se espalha pela proposta.
-const SUBGRUPO_MATERIAL = {
-  eletrica: 'Elétrica', iluminacao: 'Elétrica', eletrica_hospitalar: 'Elétrica', eletrica_industrial: 'Elétrica',
-  media_tensao: 'Elétrica', spda: 'Elétrica', carregador: 'Elétrica', solar: 'Elétrica',
-  rede: 'Redes / Cabeamento Estruturado', cabeamento: 'Redes / Cabeamento Estruturado',
-  telefonia: 'Interfonia', cftv: 'CFTV', alarme: 'Alarme', antena: 'Antena coletiva',
-  automacao: 'Automação', controle_acesso: 'Controle de acesso', incendio: 'Incêndio', pressurizacao: 'Pressurização', outros: 'Outros',
-};
-const SUBGRUPO_SERVICO = {
-  eletrica: 'Elétrica', rede: 'Redes', cabeamento: 'Cabeamento Estruturado', telefonia: 'Telefonia', cftv: 'CFTV',
-  iluminacao: 'Iluminação', automacao: 'Automação', alarme: 'Alarme', antena: 'Antena', spda: 'SPDA',
-  carregador: 'Recarga de veículo elétrico', incendio: 'Incêndio', solar: 'Solar', controle_acesso: 'Controle de Acesso',
-  eletrica_hospitalar: 'Elétrica hospitalar', eletrica_industrial: 'Elétrica industrial', media_tensao: 'Média tensão',
-  pressurizacao: 'Pressurização de escadas', outros: 'Outros',
-};
+// (subgrupos e siglas: registro único skills/_comum/disciplinas.js)
+const SUBGRUPO_MATERIAL = DISC.mapa(d => d.subgrupo.material, { comOutros: true });
+const SUBGRUPO_SERVICO = DISC.mapa(d => d.subgrupo.servico, { comOutros: true });
 const subgrupoDoItem = (tipo, disciplina) => (tipo === 'servico' ? SUBGRUPO_SERVICO : SUBGRUPO_MATERIAL)[disciplina || DISCIPLINA_OUTROS] || 'Outros';
 
 // ── Código da composição ────────────────────────────────────────────────
-const SIGLA_DISCIPLINA = {
-  eletrica: 'ELE', rede: 'REDE', cabeamento: 'CAB', telefonia: 'TEL', cftv: 'CFTV', iluminacao: 'ILUM',
-  automacao: 'AUT', alarme: 'ALM', antena: 'ANT', spda: 'SPDA', carregador: 'VE', incendio: 'INC', solar: 'SOL',
-  controle_acesso: 'ACE', eletrica_hospitalar: 'HOSP', eletrica_industrial: 'IND', media_tensao: 'MT', pressurizacao: 'PRES', outros: 'OUT',
-};
+const SIGLA_DISCIPLINA = DISC.mapa(d => d.sigla, { comOutros: true });
 const RE_CODIGO = /^[A-Z0-9][A-Z0-9._-]{1,29}$/;
 const normalizarCodigo = (c) => String(c || '').trim().toUpperCase().replace(/\s+/g, '-');
 // próximo código livre KIT-<SIGLA>-NN, dados os códigos já usados

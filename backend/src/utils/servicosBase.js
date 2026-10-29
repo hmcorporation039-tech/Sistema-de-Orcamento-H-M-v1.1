@@ -30,26 +30,9 @@ function normalizarTexto(txt) {
 // EXATO (sem acento/caixa): é a única dedução confiável — palavra-chave na
 // descrição erra fácil ("switch PoE" lançado em CFTV, "passagem de cabos" em
 // três subgrupos diferentes), então descrição sozinha não decide nada.
-const SUBGRUPO_PARA_DISCIPLINA = {
-  eletrica: ['Elétrica', 'Elétrica (infraestrutura)', 'Infraestrutura elétrica'],
-  rede: ['Redes', 'Rede', 'Redes de Computadores (dados)', 'Redes / Cabeamento Estruturado', 'Dados'],
-  cabeamento: ['Cabeamento Estruturado', 'Infra. de Cabeamento Estruturado', 'Infraestrutura de Cabeamento Estruturado'],
-  telefonia: ['Telefonia', 'Interfonia', 'Telefonia e interfonia', 'Telefonia / Interfonia'],
-  cftv: ['CFTV', 'Câmeras', 'Videomonitoramento'],
-  iluminacao: ['Iluminação'],
-  automacao: ['Automação', 'Automação predial', 'Automação residencial'],
-  alarme: ['Alarme', 'Alarme de intrusão'],
-  antena: ['Antena', 'Antena/TV', 'Antena coletiva', 'Antena coletiva / TV', 'TV'],
-  spda: ['SPDA', 'Para-raios', 'SPDA (para-raios)', 'SPDA (para-raios) — Laudos e projetos'],
-  carregador: ['Recarga de veículo elétrico', 'Carregador veicular', 'Recarga de veículo elétrico — Laudos e projetos'],
-  incendio: ['Incêndio', 'Alarme de incêndio', 'Incêndio (detecção, alarme e iluminação de emergência)'],
-  solar: ['Solar', 'Energia solar', 'Usina solar fotovoltaica', 'Fotovoltaico'],
-  controle_acesso: ['Controle de Acesso'],
-  eletrica_hospitalar: ['Elétrica hospitalar'],
-  eletrica_industrial: ['Elétrica industrial'],
-  media_tensao: ['Média tensão', 'Subestação', 'Média tensão / subestação'],
-  pressurizacao: ['Pressurização de escadas', 'Pressurização', 'Escada pressurizada'],
-};
+// Nomes aceitos: o subgrupo de serviço da disciplina e os `aliases` do
+// registro único (skills/_comum/disciplinas.js).
+const SUBGRUPO_PARA_DISCIPLINA = require('../config/caminhos').registroDisciplinas().mapa(d => [d.subgrupo.servico, ...d.aliases]);
 const MAPA_SUBGRUPO = new Map(
   Object.entries(SUBGRUPO_PARA_DISCIPLINA).flatMap(([disc, nomes]) => [disc, ...nomes].map(n => [normalizarTexto(n), disc]))
 );
