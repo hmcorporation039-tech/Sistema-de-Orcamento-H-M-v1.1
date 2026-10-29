@@ -354,6 +354,20 @@ Pedido do usuário: "teste o sistema e veja o que tem redundâncias desnecessár
 - **Código morto:** 108 nomes exportados sem uso saíram dos `module.exports`; margem padrão lida só do `catalogoMateriais`.
 - **Skills:** um formatador de número só (`_comum/docx-base.fmtNum`) nas 16 skills; valor que não é número sai "—", nunca "NaN" ou "∞". Os 60 documentos de exemplo saíram idênticos. Disciplina nova se registra em `skills/_comum/disciplinas.js` (os SKILL.md foram corrigidos).
 
+### 29/10/2026: versão 2.4.0 — papel timbrado e laudo de SPDA e aterramento no modelo da H&M
+Instalada em produção em 29/10/2026 com tudo o que está na entrada anterior. Pedidos do usuário:
+- **Papel timbrado:** "use sempre o papel timbrado da H&M com todos os dados da empresa, como sai nas propostas, como padrão para todos os documentos emitidos por esse sistema".
+  - Os dados da empresa ficam num lugar só, `skills/_comum/empresa.js`.
+  - Word: banner e rodapé com razão social, CNPJ, endereço, telefone e e-mail.
+  - PDF: banner e rodapé em todos os modelos.
+  - Excel: cabeçalho e rodapé de impressão.
+  - Contato correto, confirmado pelo usuário: **(61) 99185-8745** e **hmengetecnologia@gmail.com**. A assinatura dos e-mails e a página de aprovação usavam outro par.
+- **Laudo de SPDA e aterramento:** um laudo elaborado pela H&M (e só assinado por engenheiro de outra empresa) passa a ser o modelo dos laudos de SPDA e aterramento. As outras disciplinas seguem as próprias normas.
+  - Estrutura: capa com revisões, seções 1 a 11, análise de risco completa na seção 9, anexos de fotos (com data, GPS e ensaio), de calibração e de ART, e o aviso legal. Detalhes em `skills/spda/SKILL.md`.
+  - O emitente é sempre a H&M; o responsável técnico pode ser de outra empresa.
+  - Com `meta.tipo_laudo: "aterramento"`, sai como "Laudo de aterramento".
+  - Os erros achados no laudo de referência viram conferência automática (`skills/spda/scripts/lib/consistencia.js`): fotos fora do local ou da data, CT de linha de sinal, nível de pânico, NP × as built, ensaios repetidos e instrumentos.
+
 ---
 
 ## 3. Skills e ferramentas do Claude (servidor MCP `hm-orcamentos`)
