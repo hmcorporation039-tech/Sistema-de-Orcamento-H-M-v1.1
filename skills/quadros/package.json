@@ -1,0 +1,9 @@
+{
+  "name": "hm-skill-quadros",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Skill de quadros elétricos e de automação (projeto de fabricação, NBR IEC 61439) da H&M Engenharia — arranjo, invólucro, barramentos, coordenação, térmica, automação, memorial, lista de materiais, desenho DXF, ensaios de rotina e orçamento",
+  "scripts": {
+    "test": "node testes/teste.js"
+  }
+}

@@ -1,0 +1,318 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "QCA-01 — Estação Elevatória Exemplo",
+  "prefixo": "Estacao_Exemplo_QCA01",
+  "data": "2026-10-29",
+  "revisao": "R00",
+  "documento_n": "HM-QCA-2026-EXEMPLO",
+  "dados_ilustrativos": true
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "titulo": "Engenheiro Eletricista",
+  "cnpj": "",
+  "nome": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "CLIENTE EXEMPLO",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "Endereço de exemplo",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "Estação Elevatória Exemplo — QCA-01",
+  "uso": "Saneamento (estação elevatória de esgoto)"
+ },
+ "quadro": {
+  "tag": "QCA-01",
+  "descricao": "Painel de força e automação das bombas e do exaustor",
+  "tipo": "automacao",
+  "sistema": "trifasico",
+  "tensao_ff": 380,
+  "tensao_fn": 220,
+  "esquema": "TN-S",
+  "frequencia_hz": 60,
+  "icc_ka": 15,
+  "ipk_ka": null,
+  "tempo_icw_s": 1,
+  "disjuntor_geral_a": null,
+  "geral_tipo": "auto",
+  "geral_polos": null,
+  "geral_icu_ka": null,
+  "dr_geral": false,
+  "spda": true,
+  "dps_classe": "auto",
+  "ponto_entrada": true,
+  "multimedidor": true,
+  "local": "interno_poeira",
+  "montagem": "autoportante",
+  "posicao": "parede",
+  "material": "aco",
+  "temperatura_ambiente": 35,
+  "temperatura_max_interna": 50,
+  "altitude_m": 1100,
+  "forma_separacao": "auto",
+  "ip": "auto",
+  "ik": "auto",
+  "entrada_cabos": "inferior",
+  "barramento": "auto",
+  "bornes_saida": "auto",
+  "reserva_pct": 20,
+  "fator_diversidade": null,
+  "comprimento_fiacao_interna_m": 1,
+  "ventilacao": "auto",
+  "metodo_saida": "B1",
+  "isolacao_saida": "PVC",
+  "temperatura_cabos": 30,
+  "residencial": false,
+  "maquina": false
+ },
+ "circuitos": [
+  {
+   "n": "1",
+   "descricao": "Iluminação e tomada interna do painel",
+   "tipo": "tug",
+   "ligacao": "FN",
+   "fases": "A",
+   "potencia_w": 300,
+   "fp": 0.95,
+   "disjuntor_a": 10,
+   "curva": "C",
+   "dr": "ddr",
+   "dr_ma": 30,
+   "secao_mm2": 2.5,
+   "local_dr": false
+  },
+  {
+   "n": "2",
+   "descricao": "Iluminação da casa de bombas",
+   "tipo": "iluminacao",
+   "ligacao": "FN",
+   "fases": "B",
+   "potencia_w": 600,
+   "fp": 0.92,
+   "disjuntor_a": 10,
+   "curva": "C",
+   "dr": "",
+   "secao_mm2": 2.5,
+   "local_dr": false
+  },
+  {
+   "n": "3",
+   "descricao": "Tomadas de serviço (área molhada)",
+   "tipo": "tug",
+   "ligacao": "FN",
+   "fases": "C",
+   "potencia_w": 1500,
+   "fp": 0.92,
+   "disjuntor_a": 20,
+   "curva": "C",
+   "dr": "ddr",
+   "dr_ma": 30,
+   "secao_mm2": 2.5,
+   "local_dr": true
+  },
+  {
+   "n": "4",
+   "descricao": "Talha elétrica",
+   "tipo": "tue",
+   "ligacao": "FFF",
+   "fases": "ABC",
+   "potencia_w": 3000,
+   "fp": 0.8,
+   "disjuntor_a": 16,
+   "curva": "D",
+   "dr": "",
+   "secao_mm2": 4,
+   "local_dr": false
+  },
+  {
+   "n": "5",
+   "descricao": "Reserva equipada",
+   "tipo": "reserva",
+   "ligacao": "FFF",
+   "fases": "ABC",
+   "potencia_w": 0,
+   "disjuntor_a": 16,
+   "curva": "C",
+   "dr": "",
+   "secao_mm2": null,
+   "local_dr": false
+  }
+ ],
+ "drs": [],
+ "motores": [
+  {
+   "tag": "B-01",
+   "descricao": "Bomba submersível",
+   "potencia": 15,
+   "unidade": "cv",
+   "rendimento": 0.89,
+   "fp": 0.84,
+   "in_placa_a": null,
+   "ip_in": 7.5,
+   "partida": "soft_starter",
+   "quantidade": 2,
+   "secao_mm2": 10,
+   "tensao_placa": "380/660"
+  },
+  {
+   "tag": "M-01",
+   "descricao": "Misturador",
+   "potencia": 7.5,
+   "unidade": "kW",
+   "rendimento": 0.9,
+   "fp": 0.85,
+   "in_placa_a": null,
+   "ip_in": 7,
+   "partida": "inversor",
+   "quantidade": 1,
+   "secao_mm2": 6,
+   "tensao_placa": "380/660"
+  },
+  {
+   "tag": "E-01",
+   "descricao": "Exaustor",
+   "potencia": 3,
+   "unidade": "cv",
+   "rendimento": 0.85,
+   "fp": 0.82,
+   "in_placa_a": null,
+   "ip_in": 7,
+   "partida": "direta",
+   "quantidade": 1,
+   "secao_mm2": 2.5,
+   "tensao_placa": "220/380"
+  }
+ ],
+ "automacao": {
+  "ativo": true,
+  "clp": true,
+  "cpu_di": 14,
+  "cpu_do": 10,
+  "cpu_ai": 2,
+  "cpu_ao": 0,
+  "reserva_io_pct": 20,
+  "margem_fonte_pct": 25,
+  "sinais_motores": true,
+  "comunicacao": "ethernet, modbus_rtu",
+  "ihm_pol": 7,
+  "switch_portas": 5,
+  "reles_interface": null,
+  "sinais": [
+   {
+    "tag": "LT-01",
+    "descricao": "Nível do poço (transmissor 4–20 mA)",
+    "tipo": "AI",
+    "quantidade": 1
+   },
+   {
+    "tag": "PT-01",
+    "descricao": "Pressão no recalque 4–20 mA",
+    "tipo": "AI",
+    "quantidade": 1
+   },
+   {
+    "tag": "FT-01",
+    "descricao": "Vazão de recalque 4–20 mA",
+    "tipo": "AI",
+    "quantidade": 1
+   },
+   {
+    "tag": "LSH/LSL",
+    "descricao": "Boias de nível (muito alto, alto, baixo, muito baixo)",
+    "tipo": "DI",
+    "quantidade": 4
+   },
+   {
+    "tag": "GAS",
+    "descricao": "Detector de gás (alarme)",
+    "tipo": "DI",
+    "quantidade": 1
+   },
+   {
+    "tag": "PORTA",
+    "descricao": "Porta do painel aberta / falta de fase",
+    "tipo": "DI",
+    "quantidade": 2
+   },
+   {
+    "tag": "SIR",
+    "descricao": "Sirene/sinalizador de alarme",
+    "tipo": "DO",
+    "quantidade": 1
+   }
+  ],
+  "cargas_24v": [
+   {
+    "descricao": "Transmissores 4–20 mA (laço)",
+    "quantidade": 3,
+    "corrente_ma": 25
+   },
+   {
+    "descricao": "Detector de gás",
+    "quantidade": 1,
+    "corrente_ma": 80
+   },
+   {
+    "descricao": "Sirene 24 Vcc",
+    "quantidade": 1,
+    "corrente_ma": 150
+   }
+  ],
+  "porta": [
+   {
+    "tipo": "emergencia",
+    "funcao": "Emergência geral",
+    "quantidade": 1
+   },
+   {
+    "tipo": "seletor",
+    "funcao": "MAN-0-AUT",
+    "quantidade": 4
+   },
+   {
+    "tipo": "reset",
+    "funcao": "Rearme de falhas",
+    "quantidade": 1
+   },
+   {
+    "tipo": "sinaleiro_verde",
+    "funcao": "Motor ligado",
+    "quantidade": 4
+   },
+   {
+    "tipo": "sinaleiro_vermelho",
+    "funcao": "Motor em falha",
+    "quantidade": 4
+   },
+   {
+    "tipo": "sinaleiro_branco",
+    "funcao": "Painel energizado",
+    "quantidade": 1
+   }
+  ]
+ },
+ "inspecao": {
+  "tipo": "fabricacao",
+  "data_inspecao": "",
+  "documento_n": "HM-QCA-2026-EXEMPLO",
+  "equipe": "",
+  "abrangencia": "Painel QCA-01 montado na oficina (ensaios de rotina e teste funcional com CLP)",
+  "fora_escopo": "Instalação no local e cabos de campo",
+  "documentos": [],
+  "instrumentos": [],
+  "checklist": [],
+  "ncs": [],
+  "isolamento": [],
+  "dieletrico": [],
+  "continuidade_pe": [],
+  "funcional": [],
+  "fotos": []
+ }
+}

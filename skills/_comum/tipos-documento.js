@@ -21,6 +21,8 @@ const DOCUMENTOS = {
   checklist: 'laudo',    // checklist de campo da inspeção
   medicoes: 'laudo',     // SPDA: planilha de medições (continuidade, aterramento)
   risco: 'ambos',        // SPDA: análise de risco da NBR 5419-2 — exigida no projeto e no laudo
+  desenho: 'projeto',    // quadros: desenho de fabricação DXF (vista frontal e layout interno)
+  ensaios: 'ambos',      // quadros: checklist de fabricação e ensaios de rotina — vai à oficina (projeto) e à inspeção (laudo)
 };
 
 // Exceções por disciplina ({ [chave da skill]: { [tipo]: uso } }) — nenhuma hoje
@@ -37,6 +39,7 @@ const DESENHOS = {
 const MODOS = {
   execucao: 'projeto',
   automacao: 'projeto',  // pressurização: automação / adequação do painel
+  fabricacao: 'projeto', // quadros: fabricação do quadro (materiais + montagem qd_*)
   inspecao: 'laudo',
   vistoria: 'laudo',
   certificacao: 'laudo',
