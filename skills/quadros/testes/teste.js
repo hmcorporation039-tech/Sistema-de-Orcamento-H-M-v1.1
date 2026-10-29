@@ -78,7 +78,9 @@ igual('QD predial: verificação ao curto dispensada (Icc ≤ 10 kA)', c1.verifi
 // ── Exemplo 2: quadro de automação ──
 const r2 = motor.processar(automacao);
 const c2 = r2.calc;
-igual('Automação: invólucro autoportante 2200 × 800 × 400', [c2.layout.involucro.altura, c2.layout.involucro.largura, c2.layout.involucro.profundidade], [2200, 800, 400]);
+// barra PE na mesma fileira dos bornes: 1733 mm de 1750 na placa do 2000 × 800 (antes 2200 × 800)
+igual('Automação: invólucro autoportante 2000 × 800 × 400', [c2.layout.involucro.altura, c2.layout.involucro.largura, c2.layout.involucro.profundidade], [2000, 800, 400]);
+igual('Automação: barra PE divide a fileira com os bornes', c2.layout.fileiras.some(f => f.zonas.includes('barras_np') && f.zonas.includes('bornes')), true);
 igual('Automação: E/S em uso 25 DI / 13 DO / 3 AI / 1 AO', c2.aut.usados, { DI: 25, DO: 13, AI: 3, AO: 1 });
 igual('Automação: com 20 % de reserva 30 / 16 / 4 / 2', c2.aut.req, { DI: 30, DO: 16, AI: 4, AO: 2 });
 igual('Automação: 1 módulo de cada tipo', c2.aut.modulos, { DI: 1, DO: 1, AI: 1, AO: 1 });
@@ -94,7 +96,8 @@ perto('Automação: σ ≈ 205 N/mm²', c2.barr.dinamico.sigma, 204.9, 0.002);
 igual('Automação: barra PE ≥ Tabela 58 (S/2 = 62,5 mm²)', [c2.barr.secaoPeMin, c2.barr.pe.l * c2.barr.pe.e >= 62.5], [62.5, true]);
 igual('Automação: DPS classe I+II (edificação com SPDA)', c2.dpsInfo.classe, 'I+II');
 igual('Automação: IP54 / IK08 para indústria com poeira', [c2.inv.ip, c2.inv.ik], ['IP54', 'IK08']);
-perto('Automação: Ae do invólucro 4,496 m²', c2.term.ae, 4.496, 0.0001);
+// 2000×800×400: 1,4·0,8·0,4 + 0,9·0,8·2 + 0,5·0,8·2 + 2·0,9·0,4·2 = 0,448 + 1,44 + 0,8 + 1,44 = 4,128 m²
+perto('Automação: Ae do invólucro 4,128 m²', c2.term.ae, 4.128, 0.0001);
 igual('Automação: precisa de ventilação forçada (ar no topo > 50 °C)', [c2.term.ok, !!c2.term.ventilacao], [false, true]);
 igual('Automação: ventilador escolhido dá a vazão com filtro', c2.term.ventilacao.ventilador * T.EFICIENCIA_FILTRO >= c2.term.ventilacao.vazao, true);
 igual('Automação: relé de segurança e botão de emergência', [c2.aut.releSeguranca, c2.aut.porta.some(p => p.tipo === 'emergencia')], [true, true]);
@@ -107,7 +110,7 @@ igual('Automação: ocupação das canaletas ≤ 50 %', [...c2.layout.horizontai
   fs.mkdirSync(saida, { recursive: true });
   for (const [nome, res] of [['predial', r1], ['automacao', r2]]) {
     const tipos = motor.tiposDisponiveis(res);
-    igual(`${nome}: 5 documentos`, tipos, ['memorial', 'planilha', 'desenho', 'ensaios', 'laudo']);
+    igual(`${nome}: 6 documentos`, tipos, ['memorial', 'planilha', 'desenho', 'modelo3d', 'ensaios', 'laudo']);
     for (const tipo of tipos) {
       const g = await motor.gerarDocumento(res, tipo);
       fs.writeFileSync(path.join(saida, `${nome}-${g.nomeArquivo}`), g.buffer);
@@ -119,6 +122,13 @@ igual('Automação: ocupação das canaletas ≤ 50 %', [...c2.layout.horizontai
         igual(`${nome}: DXF com carimbo HM-CARIMBO e atributos`, [ents.some(e => e.type === 'INSERT' && e.block === 'HM-CARIMBO'), ents.filter(e => e.type === 'ATTRIB').length >= 20], [true, true]);
         igual(`${nome}: DXF com layers de painel`, ['QD-PAINEL', 'QD-TRILHO', 'QD-CANALETA', 'QD-COMPONENTE', 'QD-COTA', 'QD-BARRAMENTO'].every(l => ents.some(e => e.layer === l)), true);
         igual(`${nome}: DXF tem os TAGs dos dispositivos`, ['Q0', 'LEGENDA', 'LAYOUT INTERNO — PLACA DE MONTAGEM', 'VISTA FRONTAL EXTERNA'].every(t => ents.some(e => e.type === 'TEXT' && String(e.string).startsWith(t))), true);
+      } else if (tipo === 'modelo3d') {
+        const html = g.buffer.toString('utf8');
+        igual(`${nome}: 3D é .html autossuficiente com a cena do quadro`, [path.extname(g.nomeArquivo), /^<!doctype html>/.test(html), /<script[^>]+src=|<link[^>]+href=/i.test(html), /three\.js r186/.test(html)], ['.html', true, false, true]);
+        const cena = JSON.parse(html.match(/<script>window\.CENA=(.*?);document\.querySelectorAll/s)[1]);
+        igual(`${nome}: cena tipo quadro com o invólucro do arranjo`, [cena.tipo, cena.involucro.A, cena.involucro.L, cena.involucro.P], ['quadro', res.calc.layout.involucro.altura, res.calc.layout.involucro.largura, res.calc.layout.involucro.profundidade]);
+        igual(`${nome}: Q0 no 3D com as medidas do layout`, (() => { const q = cena.caixas.find(b => b.rotulo === 'Q0'); const k = res.calc.comps.lista.find(x => x.ref === 'Q0'); return !!q && q.l === k.largura && q.a === k.altura && q.p === k.prof; })(), true);
+        igual(`${nome}: camadas e peças clicáveis`, cena.camadas.length >= 8 && cena.caixas.filter(b => b.info).length > 10, true);
       } else {
         igual(`${nome}: ${tipo} é Office (zip)`, g.buffer.slice(0, 2).toString(), 'PK');
       }
@@ -147,6 +157,41 @@ igual('Automação: ocupação das canaletas ≤ 50 %', [...c2.layout.horizontai
   igual('importa os motores do CCM-01 da elétrica industrial', imp2.dados.motores.length, nInd);
   igual('CCM importado calcula com partidas', motor.processar(imp2.dados).calc.motores.length, nInd);
   // Formulário
-  igual('formulário tem identificação, quadro, circuitos e automação', motor.formulario.slice(0, 5).map(s => s.titulo.split('.')[0]), ['1', '2', '3', '4', '5']);
+  igual('formulário tem identificação, quadro, fabricantes, circuitos e automação', motor.formulario.slice(0, 6).map(x => x.titulo.split(' ')[0]), ['1.', '2.', '2.1', '3.', '4.', '5.']);
+  igual('formulário pede fabricante padrão e por tipo', JSON.stringify(motor.formulario[2]).includes('fabricantes.por_tipo.contator'), true);
+
+  // ── Catálogo de fabricantes (registros FICTÍCIOS de teste em testes/catalogo-fixture.json) ──
+  const CAT = require('../scripts/lib/catalogo');
+  const fixture = require('./catalogo-fixture.json').componentes;
+  const embutido = require('../dados/catalogo-componentes.json');
+  igual('catálogo embutido: só registros verificados, oficiais (catalogo_hm) e com medidas', embutido.componentes.every(r => r.verificado === true && r.origem === 'catalogo_hm' && /^https?:/.test(r.fonte_url) && r.largura_mm > 0), true);
+  igual('entrada vence o arquivo e duplicata é ignorada', CAT.carregarCatalogo({ catalogo_componentes: [...fixture, fixture[0]] }).length, fixture.length + embutido.componentes.length);
+  const S = 'Schneider Electric';
+  igual('menor modelo que atende: 1P 16 A C com Icu ≥ 6 → o de 6 kA', CAT.selecionar(fixture, 'disjuntor_din', S, { polos: 1, corrente: 16, curva: 'C', icu: 6 }).referencia, 'FX-DIN-1P16C-6');
+  igual('Icu ≥ 10 kA pula o de 6 kA → 1P 20 A de 15 kA', CAT.selecionar(fixture, 'disjuntor_din', S, { polos: 1, corrente: 20, curva: 'C', icu: 10 }).referencia, 'FX-DIN-1P20C-15');
+  igual('curva D não aceita o de curva C', CAT.selecionar(fixture, 'disjuntor_din', S, { polos: 3, corrente: 16, curva: 'D', icu: 6 }).referencia, 'FX-DIN-3P16D-6');
+  igual('referência informada manda', CAT.selecionar(fixture, 'disjuntor_din', S, { polos: 1, corrente: 16, curva: 'C', icu: 6 }, 'FX-DIN-1P20C-15').referencia, 'FX-DIN-1P20C-15');
+  igual('contator: menor AC-3 ≥ 18 A → 18 A', CAT.selecionar(fixture, 'contator', 'WEG', { ac3: 18 }).referencia, 'FX-CWM18');
+  igual('disjuntor-motor: faixa que contém 22,4 A → 17–23 A', CAT.selecionar(fixture, 'disjuntor_motor', 'WEG', { corrente: 22.4 }).referencia, 'FX-MPW-23');
+  igual('DPS classe I+II não usa o de classe II', CAT.selecionar(fixture, 'dps', S, { classe: 'I', uc: 275 }).referencia, 'FX-DPS-I-275');
+  igual('outro fabricante sem registro → nada', CAT.selecionar(fixture, 'contator', 'Siemens', { ac3: 18 }), null);
+  igual('especificação de busca no formato do contrato', CAT.especificacao('contator', 'WEG', { ac3: 25, bobina: '24 Vcc' }), 'WEG contator 25 A AC-3 bobina 24 Vcc');
+  const FAB = { padrao: S, por_tipo: { contator: 'WEG', disjuntor_motor: 'WEG', soft_starter: 'WEG', inversor: 'WEG', fonte_24v: 'Mean Well', clp_cpu: 'Siemens', clp_modulo: 'Siemens', rele_interface: 'Finder', borne: 'Conexel', switch: 'Siemens', rele_seguranca: 'WEG' } };
+  const comCat = (ex, ajuste) => { const d = JSON.parse(JSON.stringify(ex)); d.fabricantes = FAB; d.catalogo_componentes = fixture; if (ajuste) ajuste(d); return motor.processar(d); };
+  const p3 = comCat(predial).calc;
+  const q1 = p3.comps.lista.find(k => k.ref === 'Q1');
+  igual('QD com catálogo: Q1 com a medida do fabricante (18 × 85 × 78,5) e a origem', [q1.largura, q1.altura, q1.prof, q1.medida.origem, q1.medida.referencia], [18, 85, 78.5, 'catalogo', 'FX-DIN-1P10C-6']);
+  igual('QD com catálogo: todos os dispositivos do QD têm registro (nada sem medida)', p3.componentes_sem_medida, []);
+  igual('QD com catálogo: comparação típica × fabricante no resultado', [!!p3.comparacao, p3.comparacao.tipica.involucro.altura, p3.comparacao.catalogo.involucro.altura], [true, 800, 800]);
+  igual('QD com catálogo: a lista de materiais traz fabricante, referência, medidas e fonte', (() => { const m = p3.materiais.find(x => x.referencia_fabricante === 'FX-DIN-3P100C-10'); return !!m && m.fabricante === S && m.medidas === '81 × 85 × 78,5' && /exemplo\.invalid/.test(m.fonte); })(), true);
+  igual('QD com catálogo: DPS não verificado vira [CONFERIR] na fonte', (() => { const k = comCat(predial, d => { d.quadro.spda = true; d.quadro.ponto_entrada = true; }).calc.materiais.find(x => x.referencia_fabricante === 'FX-DPS-I-275'); return !!k && /CONFERIR/.test(k.fonte); })(), true);
+  const a3 = comCat(automacao).calc;
+  const t1 = a3.comps.lista.find(k => k.ref === 'M-01').filhos.find(f => f.ref === 'T1');
+  igual('Automação com catálogo: inversor com as medidas do fabricante', [t1.l, t1.h, t1.p, t1.medida.referencia], [115, 255, 170, 'FX-CFW-16']);
+  igual('Automação com catálogo: sem registro → lista com especificação de busca', a3.componentes_sem_medida.map(x => [x.tag, x.tipo, x.fabricante]), [['KS1', 'rele_seguranca', 'WEG'], ['A6', 'clp_modulo', 'Siemens'], ['A90', 'switch', 'Siemens']]);
+  igual('Automação com catálogo: o que ficou sem registro sai com medida típica', a3.comps.lista.find(k => k.ref === 'A90').medida.origem, 'tipica');
+  igual('Automação com catálogo: bornes pela largura do fabricante', a3.born.find(g => g.id === 'X2').medidas.every(m => m.origem === 'catalogo'), true);
+  igual('Automação com catálogo: memorial com a seção de medidas e aproveitamento', (() => { const ss = motor.secoesMemorial(comCat(automacao)); const s1 = ss.find(x => /^10\.1 /.test(x.titulo)); return !!s1 && s1.tabela.linhas.length > 30 && s1.paragrafos.some(p => /Comparação com as medidas típicas/.test(p)); })(), true);
+  igual('sem fabricantes: nada entra como "sem medida" e não há comparação', [r1.calc.componentes_sem_medida.length, r1.calc.comparacao], [0, undefined]);
   fim();
 })().catch(e => { console.log(`  FALHOU com erro: ${e.stack}`); process.exitCode = 1; });

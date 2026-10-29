@@ -17,6 +17,7 @@ const { point3d } = require('@tarikjabiri/dxf');
 const { DesenhoDxf } = require('../../../_comum/cad/dxf');
 const { EMPRESA } = require('../../../_comum/empresa');
 const T = require('./tabelas');
+const { posicoesPorta } = require('./porta');
 
 const FORMATOS = [['A3', 420, 297], ['A2', 594, 420], ['A1', 841, 594], ['A0', 1189, 841]];
 const ESCALAS = [5, 10, 15, 20, 25];
@@ -110,7 +111,7 @@ function rotuloItem(k) {
 function legendaLinhas(calc) {
   const grupos = new Map();
   for (const k of calc.comps.lista) {
-    const desc = k.descricao.replace(/ — circ\. .*$/, '').replace(/ — circuitos .*$/, '');
+    const desc = k.descricao.replace(/ — circ\. [^—]*/, '').replace(/ — circuitos [^—]*/, '').trim();
     const chave = `${k.tipo}|${desc}`;
     if (!grupos.has(chave)) grupos.set(chave, { refs: [], desc, qtd: 0 });
     const g = grupos.get(chave);
@@ -178,47 +179,35 @@ function gerarDesenho(calc, dados = {}) {
   p.ret(xF + 12, yBase + 12, W - 24, H - 24, 'QD-PORTA');
   // dobradiças (esquerda) e fecho (direita)
   [0.15, 0.5, 0.85].filter((f, i) => H > 700 || i !== 1).forEach(f => p.ret(xF - 6, yBase + H * f - 30, 8, 60, 'QD-PORTA'));
-  p.ret(xF + W - 50, yBase + H / 2 - 60, 22, 120, 'QD-PORTA');
+  const PT = posicoesPorta(calc);
+  p.ret(xF + PT.fecho.x, yBase + PT.fecho.y, PT.fecho.l, PT.fecho.a, 'QD-PORTA');
   p.circ(xF + W - 39, yBase + H / 2 + 40, 7, 'QD-PORTA');
   // placa de identificação e advertência
-  const wPlaca = Math.min(160, W * 0.5);
-  p.ret(xF + (W - wPlaca) / 2, yBase + H - 70, wPlaca, 40, 'QD-PORTA');
-  p.txt(xF + W / 2, yBase + H - 50, Math.min(18, P(2.2)), c.tag, { layer: 'QD-TEXTO', alinhar: 'centro' });
-  const tri = 40;
-  const xa = xF + 40, ya = yBase + H - 80;
+  p.ret(xF + PT.placa.x, yBase + PT.placa.y, PT.placa.l, PT.placa.a, 'QD-PORTA');
+  p.txt(xF + W / 2, yBase + PT.placa.y + 20, Math.min(18, P(2.2)), c.tag, { layer: 'QD-TEXTO', alinhar: 'centro' });
+  const tri = PT.aviso.l;
+  const xa = xF + PT.aviso.x, ya = yBase + PT.aviso.y;
   p.poli([[xa, ya], [xa + tri, ya], [xa + tri / 2, ya + tri * 0.87]], 'QD-PORTA', true);
   p.txt(xa + tri / 2, ya + tri * 0.3, tri * 0.4, '!', { layer: 'QD-TEXTO', alinhar: 'centro' });
-  // dispositivos de porta
-  const porta = [];
-  if (calc.aut.ihm) porta.push({ tipo: 'ihm', l: calc.aut.ihm >= 10 ? 270 : calc.aut.ihm >= 7 ? 190 : 130, h: calc.aut.ihm >= 10 ? 200 : calc.aut.ihm >= 7 ? 140 : 100, rot: `IHM ${calc.aut.ihm}"` });
-  for (const pd of calc.aut.porta) for (let i = 0; i < pd.quantidade; i++) porta.push({ tipo: pd.tipo, rot: (pd.funcao || pd.rotulo).slice(0, 18), d: pd.tipo === 'emergencia' ? 40 : 30 });
-  let yP = yBase + H - 120;
-  const ihm = porta.find(x => x.tipo === 'ihm');
-  if (ihm) {
-    p.ret(xF + (W - ihm.l) / 2, yP - ihm.h, ihm.l, ihm.h, 'QD-PORTA');
-    p.ret(xF + (W - ihm.l) / 2 + 10, yP - ihm.h + 10, ihm.l - 20, ihm.h - 25, 'QD-PORTA');
-    p.txt(xF + W / 2, yP - ihm.h / 2, Math.min(ihm.h * 0.15, P(2.5)), ihm.rot, { layer: 'QD-TEXTO', alinhar: 'centro' });
-    yP -= ihm.h + 40;
+  // dispositivos de porta (mesma posição do modelo 3D: ./porta.js)
+  if (PT.ihm) {
+    const ihm = PT.ihm;
+    p.ret(xF + ihm.x, yBase + ihm.y, ihm.l, ihm.a, 'QD-PORTA');
+    p.ret(xF + ihm.x + 10, yBase + ihm.y + 15, ihm.l - 20, ihm.a - 25, 'QD-PORTA');
+    p.txt(xF + W / 2, yBase + ihm.y + ihm.a / 2, Math.min(ihm.a * 0.15, P(2.5)), ihm.rotulo, { layer: 'QD-TEXTO', alinhar: 'centro' });
   }
-  const botoes = porta.filter(x => x.tipo !== 'ihm');
-  const passo = 70;
-  const porLinha = Math.max(1, Math.floor((W - 120 - (calc.term.ventilacao ? 170 : 0)) / passo));
-  botoes.forEach((b, i) => {
-    const col = i % porLinha, lin = Math.floor(i / porLinha);
-    const cx = xF + 60 + passo / 2 + col * passo, cy = yP - 30 - lin * 80;
+  for (const b of PT.botoes) {
+    const cx = xF + b.cx, cy = yBase + b.cy;
     p.circ(cx, cy, b.d / 2 + 5, 'QD-PORTA');
     p.circ(cx, cy, b.d / 2, 'QD-COMPONENTE');
     if (b.tipo === 'emergencia') p.ret(cx - 32, cy - 32, 64, 64, 'QD-PORTA');
-    p.txt(cx, cy - b.d / 2 - 14, Math.min(9, P(1.2)), b.rot, { layer: 'QD-TEXTO', alinhar: 'centro' });
-  });
+    p.txt(cx, cy - b.d / 2 - 14, Math.min(9, P(1.2)), b.rotulo, { layer: 'QD-TEXTO', alinhar: 'centro' });
+  }
   // ventilação
-  if (calc.term.ventilacao) {
-    const g = 120;
-    for (const [yy, rot] of [[yBase + 60, 'ENTRADA DE AR (FILTRO)'], [yBase + H - 200 - g, 'SAÍDA DE AR (VENTILADOR)']]) {
-      p.ret(xF + W - 40 - g, yy, g, g, 'QD-PORTA');
-      for (let i = 1; i < 6; i++) p.linha(xF + W - 40 - g + 8, yy + i * g / 6, xF + W - 48, yy + i * g / 6, 'QD-PORTA');
-      p.txt(xF + W - 40 - g / 2, yy - 14, Math.min(9, P(1.2)), rot, { layer: 'QD-TEXTO', alinhar: 'centro' });
-    }
+  for (const g of PT.grelhas) {
+    p.ret(xF + g.x, yBase + g.y, g.l, g.a, 'QD-PORTA');
+    for (let i = 1; i < 6; i++) p.linha(xF + g.x + 8, yBase + g.y + i * g.a / 6, xF + g.x + g.l - 8, yBase + g.y + i * g.a / 6, 'QD-PORTA');
+    p.txt(xF + g.x + g.l / 2, yBase + g.y - 14, Math.min(9, P(1.2)), g.rotulo, { layer: 'QD-TEXTO', alinhar: 'centro' });
   }
   // entrada de cabos
   const yEnt = c.entradaCabos === 'inferior' ? yBase - 30 : yBase + H + 5;

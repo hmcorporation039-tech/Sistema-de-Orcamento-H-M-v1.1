@@ -60,7 +60,7 @@ function itensPorZona(ctx) {
   z.barras_np.push({ ref: 'XPE', tipo: 'barra_pe', zona: 'barras_np', descricao: 'Barramento de terra (PE)', largura: largura(nPe), altura: 40, divisivel: 10, perda: 0 });
   // bornes (cada grupo vira um item divisível)
   for (const g of born) {
-    z.bornes.push({ ref: g.id, tipo: 'bornes', zona: 'bornes', descricao: `${g.id} — ${g.funcao} (${g.total} + ${g.reserva} reserva)`, largura: Math.ceil(g.comprimento), altura: T.BORNE_ALTURA, divisivel: 10, perda: 0, grupoBornes: g });
+    z.bornes.push({ ref: g.id, tipo: 'bornes', zona: 'bornes', descricao: `${g.id} — ${g.funcao} (${g.total} + ${g.reserva} reserva)`, largura: Math.ceil(g.comprimento), altura: g.altura || T.BORNE_ALTURA, prof: g.prof || 50, divisivel: 10, perda: 0, grupoBornes: g, medida: g.medida });
   }
   return z;
 }
@@ -132,10 +132,12 @@ function tentar(inv, fam, ctx) {
   // zonas compatíveis dividem a mesma fileira (potência DIN; comando 24 Vcc); com barramento
   // de barras a entrada fica acima das barras e os circuitos abaixo
   const grupos = zonas.barramento.length
-    ? [['geral'], ['entrada'], ['barramento'], ['distribuicao'], ['placa'], ['partidas'], ['comando', 'clp', 'reles'], ['barras_np'], ['bornes']]
-    : [['geral'], ['entrada', 'distribuicao'], ['placa'], ['partidas'], ['comando', 'clp', 'reles'], ['barras_np'], ['bornes']];
+    ? [['geral'], ['entrada'], ['barramento'], ['distribuicao'], ['placa'], ['partidas'], ['comando', 'clp', 'reles'], ['barras_np', 'bornes']]
+    : [['geral'], ['entrada', 'distribuicao'], ['placa'], ['partidas'], ['comando', 'clp', 'reles'], ['barras_np', 'bornes']];
   for (const grupo of grupos) {
-    const itens = grupo.flatMap(n => zonas[n]);
+    let itens = grupo.flatMap(n => zonas[n]);
+    // partidas e caixas moldadas: as mais altas juntas na mesma fileira (aproveita a altura; a ordem do unifilar fica na legenda)
+    if (grupo[0] === 'partidas' || grupo[0] === 'placa') itens = [...itens].sort((a, b) => (b.altura || 0) - (a.altura || 0));
     if (!itens.length) continue;
     if (grupo[0] === 'barramento') {
       fileiras.push({ zona: 'barramento', zonas: ['barramento'], itens: [{ ...itens[0], x: 0, largura: larguraUtil }], usado: larguraUtil, trilho: false });

@@ -13,6 +13,7 @@ const { ucDps } = require('../../../_comum/dps');
 const EI = require('../../../eletrica-industrial/scripts/lib/calculo');
 const XI = require('../../../eletrica-industrial/scripts/lib/tabelas');
 const { montarLayout } = require('./layout');
+const { criarSeletor } = require('./catalogo');
 
 const SQ3 = Math.sqrt(3);
 const num = (v, padrao = null) => (v == null || v === '' || !Number.isFinite(Number(v)) ? padrao : Number(v));
@@ -47,7 +48,7 @@ function config(dados) {
     sistema, nFases: { monofasico: 1, bifasico: 2, trifasico: 3 }[sistema], vff, vfn, esquema, frequencia: num(q.frequencia_hz, 60),
     icc, iccInformada, ipk: num(q.ipk_ka, arred(n.n * icc, 2)), ipkInformado: num(q.ipk_ka) != null, fatorN: n.n,
     tempoIcw: num(q.tempo_icw_s, 1),
-    geralInformado: num(q.disjuntor_geral_a), geralTipo: q.geral_tipo || 'auto', geralPolos: num(q.geral_polos), geralIcu: num(q.geral_icu_ka),
+    geralInformado: num(q.disjuntor_geral_a), geralFabricante: q.geral_fabricante || null, geralReferencia: q.geral_referencia || null, dpsFabricante: q.dps_fabricante || null, geralTipo: q.geral_tipo || 'auto', geralPolos: num(q.geral_polos), geralIcu: num(q.geral_icu_ka),
     drGeral: !!q.dr_geral, drGeralMa: num(q.dr_geral_ma, 300),
     spda: !!q.spda, dpsClasse: q.dps_classe || 'auto', pontoEntrada: q.ponto_entrada !== false,
     multimedidor: !!q.multimedidor,
@@ -129,6 +130,7 @@ function lerCircuitos(dados, c, avisos) {
       polos: lig.fases, icuInformado: num(x.icu_ka), dr, drGrupo: dr === 'idr' ? String(x.dr_grupo || '').trim() : '', drMa: num(x.dr_ma, 30),
       drTipo: x.dr_tipo || '', secao, localDr: !!x.local_dr, dps: !!x.dps, reserva: tipo === 'reserva',
       fio: Math.max(secao || 0, fioPorCorrente(disjuntor)),
+      fabricante: x.fabricante || null, referencia: x.referencia || null,
     };
   });
 }
@@ -159,6 +161,9 @@ function lerMotores(dados, c) {
         tag: qtd > 1 ? `${tagBase}.${k + 1}` : tagBase, descricao: m.descricao || 'Motor', pKw, cv: pKw / XI.CV_KW, eta, fp, in: In, inPlaca: inPlaca != null,
         partida, partidaRotulo: XI.PARTIDAS[partida].rotulo, partidaInfo: p, secao: num(m.secao_mm2),
         fio: Math.max(num(m.secao_mm2, 0), fioPorCorrente(1.25 * In)),
+        fabricante: m.fabricante || null,
+        // referência única vale para o soft-starter/inversor (T1) ou, na partida direta, para o contator K1
+        referencias: m.referencias && typeof m.referencias === 'object' ? m.referencias : (m.referencia ? { [partida === 'soft_starter' || partida === 'inversor' ? 'T1' : 'K1']: m.referencia } : {}),
         semPlaca: num(m.rendimento) == null || num(m.fp) == null,
       });
     }
@@ -309,7 +314,7 @@ function gruposDr(circuitos, dados, c) {
     const notas = [];
     if (In < maiorIn) notas.push(`In do IDR (${In} A) menor que o maior disjuntor do grupo (${maiorIn} A) — o IDR precisa estar protegido contra sobrecarga [CONFERIR coordenação do fabricante]`);
     if (lista.length > 1 && lista.every(x => x.drObrigatorio)) notas.push('Um DR para vários circuitos: um defeito desliga todos — avaliar DR por circuito nos locais de 5.1.3.2.2');
-    return { id, circuitos: lista.map(x => x.n), polos, In, idn, tipo: tipoDr, soma, maiorIn, notas, fases: [...conds].sort(), neutro: temN };
+    return { id, circuitos: lista.map(x => x.n), polos, In, idn, tipo: tipoDr, soma, maiorIn, notas, fases: [...conds].sort(), neutro: temN, fabricante: def.fabricante || null, referencia: def.referencia || null };
   });
 }
 
@@ -434,55 +439,79 @@ function automacao(dados, c, motores) {
     alimentacao24: 2 * ramos24,
   };
   return {
-    ativo: true, clp: temClp, usados, reserva, req, cpu, modulos, disponivel, origem, comunicacao, rs485, ihm, switchPortas, reles,
+    ativo: true, clp: temClp, cpuReferencia: a.cpu_referencia || null, usados, reserva, req, cpu, modulos, disponivel, origem, comunicacao, rs485, ihm, switchPortas, reles,
     consumo, totalMa, margem, iFonte, fonteA: fonteNominal, fontes, pSaida, iEntrada, disjFonte, ramos24, bornes, porta, releSeguranca,
     folgaIo: Object.fromEntries(['DI', 'DO', 'AI', 'AO'].map(t => [t, disponivel[t] - usados[t]])),
   };
 }
 
 // ── Componentes (com dimensões, zona do arranjo e perdas) ───────────────────
+// Dimensões: do modelo do fabricante escolhido (./catalogo.js) ou típicas (./tabelas.js).
 
-function perdaQuadratica(pNominal, ib, In) {
+function fatorCarga(ib, In) {
   const f = In > 0 ? Math.min(1.2, (ib || 0) / In) : 0;
-  return pNominal * f * f;
+  return f * f;
+}
+function perdaQuadratica(pNominal, ib, In) {
+  return pNominal * fatorCarga(ib, In);
 }
 
-function componentes(c, circuitos, drs, geral, dpsInfo, motores, aut, dem) {
+function componentes(c, circuitos, drs, geral, dpsInfo, motores, aut, dem, sel) {
   const lista = [];
   const add = (o) => { lista.push({ quantidade: 1, prof: T.DIN_PROF, altura: T.DIN_ALTURA, perda: 0, ...o }); return o; };
+  // dispositivo medido pelo catálogo (ou típico); ext = { fabricante, referencia, fc (fator de carga das perdas) }
+  const dev = (o, tipoCat, req, ext = {}) => {
+    const tip = { l: o.largura, h: o.altura ?? T.DIN_ALTURA, p: o.prof ?? T.DIN_PROF, modulos: o.modulos };
+    const m = sel.medir(o.ref, tipoCat, req, tip, ext);
+    o.largura = m.l; o.altura = m.h; o.prof = m.p;
+    if (o.modulos != null) o.modulos = m.modulos ?? Math.max(1, Math.round(m.l / T.MODULO_NOMINAL_MM));
+    if (m.perdaW != null && ext.fc != null) o.perda = m.perdaW * ext.fc;
+    o.medida = m.medida; o.tipoCatalogo = tipoCat;
+    if (m.medida.origem === 'catalogo') o.descricao = `${o.descricao} — ${m.medida.fabricante} ${m.medida.referencia}`.trim();
+    return add(o);
+  };
+  // típico sem consulta ao catálogo (proteções "conforme o fabricante" de outro dispositivo)
+  const tipico = (o) => add({ ...o, medida: { origem: 'tipica', fabricante: null, referencia: '', fonte_url: '', verificado: false } });
   const fdLoss = dem.fd;
   // geral
+  const extGeral = { fabricante: c.geralFabricante, referencia: c.geralReferencia, fc: fatorCarga(dem.iProjeto, geral.In) };
   if (geral.tipo === 'din') {
-    add({ ref: 'Q0', tipo: 'disjuntor_geral', zona: 'entrada', descricao: `Disjuntor geral ${geral.polos}P ${geral.In} A curva C, ${geral.norma} ${geral.icu} kA`, polos: geral.polos, In: geral.In,
+    dev({ ref: 'Q0', tipo: 'disjuntor_geral', zona: 'entrada', descricao: `Disjuntor geral ${geral.polos}P ${geral.In} A curva C, ${geral.norma} ${geral.icu} kA`, polos: geral.polos, In: geral.In,
       largura: T.modulosDisjuntor(geral.polos) * T.MODULO_MM, modulos: T.modulosDisjuntor(geral.polos),
-      perda: Math.min(geral.polos, c.nFases) * perdaQuadratica(T.porFaixa(T.PERDA_DISJUNTOR_DIN, geral.In), dem.iProjeto, geral.In) });
+      perda: Math.min(geral.polos, c.nFases) * perdaQuadratica(T.porFaixa(T.PERDA_DISJUNTOR_DIN, geral.In), dem.iProjeto, geral.In) },
+    'disjuntor_din', { polos: geral.polos, corrente: geral.In, curva: 'C', icu: geral.icu }, extGeral);
   } else {
     const d = T.dimPorCorrente(T.CAIXA_MOLDADA, geral.In);
-    add({ ref: 'Q0', tipo: 'disjuntor_geral', zona: 'geral', descricao: `Disjuntor geral caixa moldada ${geral.polos}P ${geral.In} A, Icu ${geral.icu} kA / Ics 100 % (NBR IEC 60947-2)`, polos: geral.polos, In: geral.In,
-      largura: geral.polos >= 4 ? d.l4 : d.l, altura: d.h, prof: d.p, perda: Math.min(geral.polos, c.nFases) * perdaQuadratica(T.porFaixa(T.PERDA_CAIXA_MOLDADA, geral.In), dem.iProjeto, geral.In) });
+    dev({ ref: 'Q0', tipo: 'disjuntor_geral', zona: 'geral', descricao: `Disjuntor geral caixa moldada ${geral.polos}P ${geral.In} A, Icu ${geral.icu} kA / Ics 100 % (NBR IEC 60947-2)`, polos: geral.polos, In: geral.In,
+      largura: geral.polos >= 4 ? d.l4 : d.l, altura: d.h, prof: d.p, perda: Math.min(geral.polos, c.nFases) * perdaQuadratica(T.porFaixa(T.PERDA_CAIXA_MOLDADA, geral.In), dem.iProjeto, geral.In) },
+    'disjuntor_caixa_moldada', { polos: geral.polos, corrente: geral.In, icu: geral.icu }, extGeral);
   }
   if (c.drGeral) {
     const polos = c.nFases === 1 ? 2 : 4;
-    add({ ref: 'DR0', tipo: 'idr', zona: 'entrada', descricao: `Interruptor DR geral ${polos}P ${T.proximo(T.IDR_IN, geral.In) || geral.In} A ${c.drGeralMa} mA tipo S (seletivo)`, polos, In: geral.In,
-      largura: T.modulosIdr(polos) * T.MODULO_MM, modulos: T.modulosIdr(polos), perda: Math.min(polos, c.nFases) * perdaQuadratica(T.porFaixa(T.PERDA_IDR, geral.In), dem.iProjeto, geral.In) });
+    const inDr = T.proximo(T.IDR_IN, geral.In) || geral.In;
+    dev({ ref: 'DR0', tipo: 'idr', zona: 'entrada', descricao: `Interruptor DR geral ${polos}P ${inDr} A ${c.drGeralMa} mA tipo S (seletivo)`, polos, In: geral.In,
+      largura: T.modulosIdr(polos) * T.MODULO_MM, modulos: T.modulosIdr(polos), perda: Math.min(polos, c.nFases) * perdaQuadratica(T.porFaixa(T.PERDA_IDR, geral.In), dem.iProjeto, geral.In) },
+    'dr', { polos, corrente: inDr, sensibilidade: c.drGeralMa }, { fc: fatorCarga(dem.iProjeto, inDr) });
   }
   if (dpsInfo) {
     const mod = T.modulosDps(dpsInfo.classe);
     for (let k = 0; k < dpsInfo.quantidade; k++) {
       const np = k >= dpsInfo.fases;
-      add({ ref: `FS${k + 1}`, tipo: 'dps', zona: 'entrada', descricao: `DPS classe ${dpsInfo.classe} ${np ? 'N-PE' : 'F-PE/F-N'} Uc ≥ ${np ? dpsInfo.uc.ucNeutroPe : dpsInfo.uc.uc} V, ${dpsInfo.iimp ? `Iimp ≥ ${String(np ? dpsInfo.iimpNeutroPe : dpsInfo.iimp).replace('.', ',')} kA` : `In ≥ ${np ? dpsInfo.inNeutroPe : dpsInfo.in} kA`}`,
-        polos: 1, largura: mod * T.MODULO_MM, modulos: mod, perda: 0.1 });
+      const uc = np ? dpsInfo.uc.ucNeutroPe : dpsInfo.uc.uc;
+      dev({ ref: `FS${k + 1}`, tipo: 'dps', zona: 'entrada', descricao: `DPS classe ${dpsInfo.classe} ${np ? 'N-PE' : 'F-PE/F-N'} Uc ≥ ${uc} V, ${dpsInfo.iimp ? `Iimp ≥ ${String(np ? dpsInfo.iimpNeutroPe : dpsInfo.iimp).replace('.', ',')} kA` : `In ≥ ${np ? dpsInfo.inNeutroPe : dpsInfo.in} kA`}`,
+        polos: 1, largura: mod * T.MODULO_MM, modulos: mod, perda: 0.1 },
+      'dps', { classe: dpsInfo.classe === 'II' ? 'II' : 'I', uc, in_ka: np ? dpsInfo.inNeutroPe : dpsInfo.in, iimp: np ? dpsInfo.iimpNeutroPe : dpsInfo.iimp }, { fabricante: c.dpsFabricante });
     }
-    add({ ref: 'FDPS', tipo: 'protecao_dps', zona: 'entrada', descricao: `Proteção do DPS (disjuntor/fusível ${c.nFases}P conforme o fabricante do DPS) [CONFERIR]`, polos: c.nFases, largura: c.nFases * T.MODULO_MM, modulos: c.nFases, perda: 0.5 });
+    tipico({ ref: 'FDPS', tipo: 'protecao_dps', zona: 'entrada', descricao: `Proteção do DPS (disjuntor/fusível ${c.nFases}P conforme o fabricante do DPS) [CONFERIR]`, polos: c.nFases, largura: c.nFases * T.MODULO_MM, modulos: c.nFases, perda: 0.5 });
   }
   let medicao = null;
   if (c.multimedidor) {
     const direta = geral.In <= T.MEDICAO_DIRETA_MAX_A;
     const tc = direta ? null : T.proximo(T.TCS, geral.In);
     medicao = { direta, tc, qtdTc: direta ? 0 : c.nFases };
-    add({ ref: 'P1', tipo: 'medidor', zona: 'entrada', descricao: `Multimedidor de grandezas elétricas DIN (V, I, kW, kvar, FP, kWh)${direta ? ' de ligação direta ≤ 63 A' : `, entrada 5 A com ${c.nFases} TC ${tc}/5 A classe 0,5`}`,
-      largura: 4 * T.MODULO_MM, modulos: 4, perda: T.PERDA_MEDIDOR_W });
-    add({ ref: 'FM', tipo: 'protecao_medicao', zona: 'entrada', descricao: `Fusíveis/disjuntor ${c.nFases}P 2 A para as tensões de medição`, largura: c.nFases * T.MODULO_MM, modulos: c.nFases, perda: 0.5 });
+    dev({ ref: 'P1', tipo: 'medidor', zona: 'entrada', descricao: `Multimedidor de grandezas elétricas DIN (V, I, kW, kvar, FP, kWh)${direta ? ' de ligação direta ≤ 63 A' : `, entrada 5 A com ${c.nFases} TC ${tc}/5 A classe 0,5`}`,
+      largura: 4 * T.MODULO_MM, modulos: 4, perda: T.PERDA_MEDIDOR_W }, 'multimedidor', {});
+    tipico({ ref: 'FM', tipo: 'protecao_medicao', zona: 'entrada', descricao: `Fusíveis/disjuntor ${c.nFases}P 2 A para as tensões de medição`, largura: c.nFases * T.MODULO_MM, modulos: c.nFases, perda: 0.5 });
   }
   // DR agrupados: entram na zona de distribuição antes do 1º circuito do grupo
   const drPorPrimeiro = new Map();
@@ -490,124 +519,160 @@ function componentes(c, circuitos, drs, geral, dpsInfo, motores, aut, dem) {
   for (const x of circuitos) {
     const g = drPorPrimeiro.get(x.n);
     if (g) {
-      add({ ref: g.id, tipo: 'idr', zona: 'distribuicao', grupo: g.id, descricao: `Interruptor DR ${g.polos}P ${g.In} A ${g.idn} mA tipo ${g.tipo} (NBR NM 61008) — circuitos ${g.circuitos.join(', ')}`,
+      dev({ ref: g.id, tipo: 'idr', zona: 'distribuicao', grupo: g.id, descricao: `Interruptor DR ${g.polos}P ${g.In} A ${g.idn} mA tipo ${g.tipo} (NBR NM 61008) — circuitos ${g.circuitos.join(', ')}`,
         polos: g.polos, In: g.In, largura: T.modulosIdr(g.polos) * T.MODULO_MM, modulos: T.modulosIdr(g.polos),
-        perda: Math.min(g.polos, c.nFases + 1) * perdaQuadratica(T.porFaixa(T.PERDA_IDR, g.In), g.soma * fdLoss, g.In) });
+        perda: Math.min(g.polos, c.nFases + 1) * perdaQuadratica(T.porFaixa(T.PERDA_IDR, g.In), g.soma * fdLoss, g.In) },
+      'dr', { polos: g.polos, corrente: g.In, sensibilidade: g.idn }, { fabricante: g.fabricante, referencia: g.referencia, fc: fatorCarga(g.soma * fdLoss, g.In) });
     }
     const ib = x.ib * fdLoss;
+    const ext = { fabricante: x.fabricante, referencia: x.referencia, fc: fatorCarga(ib, x.disjuntor) };
     if (x.caixaMoldada) {
       const d = T.dimPorCorrente(T.CAIXA_MOLDADA, x.disjuntor);
-      add({ ref: `Q${x.n}`, tipo: 'disjuntor_cm', zona: 'placa', circuito: x.n, descricao: `Disjuntor caixa moldada ${x.polos}P ${x.disjuntor} A, Icu ${x.icu} kA — circ. ${x.n} ${x.descricao}`,
-        polos: x.polos, In: x.disjuntor, largura: d.l, altura: d.h, prof: d.p, perda: x.polos * perdaQuadratica(T.porFaixa(T.PERDA_CAIXA_MOLDADA, x.disjuntor), ib, x.disjuntor) });
+      dev({ ref: `Q${x.n}`, tipo: 'disjuntor_cm', zona: 'placa', circuito: x.n, descricao: `Disjuntor caixa moldada ${x.polos}P ${x.disjuntor} A, Icu ${x.icu} kA — circ. ${x.n} ${x.descricao}`,
+        polos: x.polos, In: x.disjuntor, largura: d.l, altura: d.h, prof: d.p, perda: x.polos * perdaQuadratica(T.porFaixa(T.PERDA_CAIXA_MOLDADA, x.disjuntor), ib, x.disjuntor) },
+      'disjuntor_caixa_moldada', { polos: x.polos, corrente: x.disjuntor, icu: x.icu }, ext);
       continue;
     }
     const ddr = x.dr === 'ddr';
     const mod = ddr ? T.modulosDdr(x.polos) : T.modulosDisjuntor(x.polos);
-    add({ ref: `Q${x.n}`, tipo: ddr ? 'ddr' : 'disjuntor', zona: 'distribuicao', grupo: x.drId || null, circuito: x.n,
+    dev({ ref: `Q${x.n}`, tipo: ddr ? 'ddr' : 'disjuntor', zona: 'distribuicao', grupo: x.drId || null, circuito: x.n,
       descricao: ddr
         ? `Disjuntor diferencial (DDR) ${x.polos}P${x.neutro ? '+N' : ''} ${x.disjuntor} A curva ${x.curva} ${x.drMa} mA, ${x.icu} kA — circ. ${x.n}`
         : `Disjuntor ${x.polos}P ${x.disjuntor} A curva ${x.curva}, ${x.icuNorma} ${x.icu} kA — circ. ${x.n}${x.reserva ? ' (reserva equipada)' : ''}`,
       polos: x.polos, In: x.disjuntor, largura: mod * T.MODULO_MM, modulos: mod, reserva: x.reserva,
-      perda: x.polos * perdaQuadratica(T.porFaixa(T.PERDA_DISJUNTOR_DIN, x.disjuntor), ib, x.disjuntor) * (ddr ? 1.3 : 1) });
-    if (x.dr === 'idr' && !x.drGrupo && !drPorPrimeiro.has(x.n)) { /* exclusivo já entrou como grupo DR-n */ }
+      perda: x.polos * perdaQuadratica(T.porFaixa(T.PERDA_DISJUNTOR_DIN, x.disjuntor), ib, x.disjuntor) * (ddr ? 1.3 : 1) },
+    ddr ? 'ddr' : 'disjuntor_din', ddr ? { polos: x.polos, corrente: x.disjuntor, curva: x.curva, sensibilidade: x.drMa, icu: x.icu } : { polos: x.polos, corrente: x.disjuntor, curva: x.curva, icu: x.icu }, ext);
   }
-  // partidas de motores (blocos)
+  // partidas de motores (blocos com os dispositivos medidos um a um)
   for (const m of motores) {
     const d = m.partidaInfo.dispositivos;
+    const extM = (ref) => ({ fabricante: m.fabricante, referencia: (m.referencias || {})[ref] || null });
     const filhos = [];
+    const mf = (ref, tipoCat, req, tip, perda) => {
+      const r = sel.medir(`${m.tag}/${ref}`, tipoCat, req, tip, extM(ref));
+      const f = { ref, l: r.l, h: r.h, p: r.p, perda, medida: r.medida, tipoCatalogo: tipoCat };
+      if (r.perdaW != null && tip.perdaNominal) f.perda = r.perdaW * Math.min(1, perda / tip.perdaNominal);
+      return f;
+    };
     const q = d.find(x => x.ref === 'Q1');
-    let qDim;
-    if (q.tipo === 'disjuntor_motor') qDim = T.dimPorCorrente(T.DISJUNTOR_MOTOR_DIM, q.faixa[1]);
-    else if (q.tipo === 'caixa_moldada') qDim = { ...T.dimPorCorrente(T.CAIXA_MOLDADA, q.nominal_a) };
-    else qDim = { l: 3 * T.MODULO_MM * 1.5, h: 90, p: 90 };
-    filhos.push({ ref: 'Q1', l: qDim.l, h: qDim.h, p: qDim.p, perda: q.tipo === 'disjuntor_motor' ? perdaQuadratica(T.porFaixa(T.PERDA_DISJUNTOR_MOTOR, q.faixa[1]), m.in, q.faixa[1]) * 1 : 3 * perdaQuadratica(T.porFaixa(T.PERDA_CAIXA_MOLDADA, q.nominal_a || m.in), m.in, q.nominal_a || m.in) });
+    if (q.tipo === 'disjuntor_motor') {
+      const dim = T.dimPorCorrente(T.DISJUNTOR_MOTOR_DIM, q.faixa[1]);
+      const pn = T.porFaixa(T.PERDA_DISJUNTOR_MOTOR, q.faixa[1]);
+      filhos.push(mf('Q1', 'disjuntor_motor', { corrente: m.in, faixa: q.faixa }, { ...dim, perdaNominal: pn }, perdaQuadratica(pn, m.in, q.faixa[1])));
+    } else if (q.tipo === 'caixa_moldada') {
+      const dim = T.dimPorCorrente(T.CAIXA_MOLDADA, q.nominal_a);
+      const pn = 3 * T.porFaixa(T.PERDA_CAIXA_MOLDADA, q.nominal_a);
+      filhos.push(mf('Q1', 'disjuntor_caixa_moldada', { polos: 3, corrente: q.nominal_a, icu: c.icc }, { ...dim, perdaNominal: pn }, perdaQuadratica(pn, m.in, q.nominal_a)));
+    } else {
+      filhos.push({ ref: 'Q1', l: 3 * T.MODULO_MM * 1.5, h: 90, p: 90, perda: 3, medida: { origem: 'tipica', fabricante: null, referencia: '', fonte_url: '', verificado: false } });
+    }
+    const bobina = aut.ativo ? '24 Vcc' : `${c.vfn} Vca`;
     const kts = d.filter(x => x.tipo === 'contator').map(k => {
       const dim = T.dimPorCorrente(T.CONTATOR_DIM, k.nominal_a);
-      return { ref: k.ref, l: dim.l, h: dim.h, p: dim.p, perda: T.porFaixa(T.PERDA_CONTATOR, k.nominal_a) * Math.min(1, ((k.corrente_a || 0) / k.nominal_a) ** 2 * 0.6 + 0.4) };
+      const pn = T.porFaixa(T.PERDA_CONTATOR, k.nominal_a);
+      return mf(k.ref, 'contator', { ac3: k.nominal_a, bobina }, { ...dim, perdaNominal: pn }, pn * Math.min(1, ((k.corrente_a || 0) / k.nominal_a) ** 2 * 0.6 + 0.4));
     });
     const f4 = d.find(x => x.tipo === 'rele_sobrecarga');
     const temp = d.find(x => x.tipo === 'temporizador');
     const eletronico = d.find(x => x.tipo === 'soft_starter' || x.tipo === 'inversor');
-    let eDim = null;
-    if (eletronico) {
-      eDim = T.dimPorCorrente(eletronico.tipo === 'soft_starter' ? T.SOFT_DIM : T.INVERSOR_DIM, m.in);
-    }
     const gap = 8;
-    const larguraLinha2 = kts.reduce((s, k) => s + k.l + gap, 0) + (temp ? T.MODULO_MM + gap : 0) + (eDim ? eDim.l + gap : 0) - gap;
-    const largura = Math.max(qDim.l, larguraLinha2);
-    const alturaLinha2 = Math.max(...kts.map(k => k.h + (f4 ? T.RELE_SOBRECARGA_ALTURA : 0)), eDim ? eDim.h : 0, temp ? 90 : 0);
-    const altura = qDim.h + gap + alturaLinha2;
-    // posições relativas (para o desenho)
-    filhos[0].x = (largura - qDim.l) / 2; filhos[0].y = 0;
+    let f4f = null, ktf = null, ef = null;
+    if (f4) f4f = mf('F4', 'rele_sobrecarga', { corrente: f4.ajuste_a, faixa: f4.faixa }, { l: kts[0] ? kts[0].l : 45, h: T.RELE_SOBRECARGA_ALTURA - 4, p: 90 }, T.porFaixa(T.PERDA_RELE, f4.ajuste_a));
+    if (temp) ktf = mf('KT1', 'rele_tempo', {}, { l: T.MODULO_MM, h: 90, p: 70 }, 1);
+    if (eletronico) {
+      const soft = eletronico.tipo === 'soft_starter';
+      const dim = T.dimPorCorrente(soft ? T.SOFT_DIM : T.INVERSOR_DIM, m.in);
+      const pr = soft ? T.PERDA_SOFT(m.in) : T.PERDA_INVERSOR_PCT * m.pKw * 1000;
+      ef = mf('T1', eletronico.tipo, { corrente: arred(m.in, 1), kw: arred(m.pKw, 2) }, { ...dim, perdaNominal: pr }, pr);
+    }
+    const qf = filhos[0];
+    const larguraLinha2 = kts.reduce((s, k) => s + k.l + gap, 0) + (ktf ? ktf.l + gap : 0) + (ef ? ef.l + gap : 0) - gap;
+    const largura = Math.max(qf.l, larguraLinha2);
+    const alturaLinha2 = Math.max(...kts.map(k => k.h + (f4f ? f4f.h + 4 : 0)), ef ? ef.h : 0, ktf ? ktf.h : 0);
+    const altura = qf.h + gap + alturaLinha2;
+    // posições relativas (para o desenho e o 3D)
+    qf.x = (largura - qf.l) / 2; qf.y = 0;
     let xx = 0;
-    for (const k of kts) { filhos.push({ ...k, x: xx, y: qDim.h + gap }); if (f4 && k.ref === 'K1') filhos.push({ ref: 'F4', l: k.l, h: T.RELE_SOBRECARGA_ALTURA - 4, x: xx, y: qDim.h + gap + k.h + 2, perda: T.porFaixa(T.PERDA_RELE, f4.ajuste_a) }); xx += k.l + gap; }
-    if (temp) { filhos.push({ ref: 'KT1', l: T.MODULO_MM, h: 90, x: xx, y: qDim.h + gap, perda: 1 }); xx += T.MODULO_MM + gap; }
-    if (eletronico) filhos.push({ ref: 'T1', l: eDim.l, h: eDim.h, x: xx, y: qDim.h + gap, p: eDim.p, perda: eletronico.tipo === 'soft_starter' ? T.PERDA_SOFT(m.in) : T.PERDA_INVERSOR_PCT * m.pKw * 1000 });
+    for (const k of kts) { filhos.push({ ...k, x: xx, y: qf.h + gap }); if (f4f && k.ref === 'K1') filhos.push({ ...f4f, l: Math.min(f4f.l, k.l + 10), x: xx, y: qf.h + gap + k.h + 2 }); xx += k.l + gap; }
+    if (ktf) { filhos.push({ ...ktf, x: xx, y: qf.h + gap }); xx += ktf.l + gap; }
+    if (ef) filhos.push({ ...ef, x: xx, y: qf.h + gap });
     const perda = filhos.reduce((s, f) => s + (f.perda || 0), 0);
+    const nCat = filhos.filter(f => f.medida && f.medida.origem === 'catalogo').length;
     add({ ref: m.tag, tipo: 'partida', zona: 'partidas', motor: m.tag, descricao: `Partida ${m.partidaRotulo.toLowerCase()} — ${m.tag} ${m.descricao} (${arred(m.pKw, 2)} kW, In ${arred(m.in, 1)} A)`,
-      largura, altura, prof: Math.max(...filhos.map(f => f.p || T.DIN_PROF)), filhos, perda });
+      largura, altura, prof: Math.max(...filhos.map(f => f.p || T.DIN_PROF)), filhos, perda,
+      medida: { origem: nCat === filhos.length ? 'catalogo' : nCat ? 'parcial' : 'tipica', fabricante: m.fabricante || null, referencia: '', fonte_url: '', verificado: filhos.every(f => f.medida && f.medida.verificado) } });
   }
   // comando e automação
   if (aut.ativo || motores.length || aut.porta.length) {
     const fonteA = aut.ativo ? aut.fonteA : 2.5;
     const fontes = aut.ativo ? aut.fontes : 1;
     const fDim = T.FONTE_DIM[fonteA];
-    add({ ref: 'QC1', tipo: 'disjuntor_comando', zona: 'comando', descricao: `Disjuntor 2P ${aut.ativo ? aut.disjFonte : 6} A curva C — alimentação da fonte 24 Vcc / comando`, polos: 2, largura: 2 * T.MODULO_MM, modulos: 2, perda: 1 });
+    const disjC = aut.ativo ? aut.disjFonte : 6;
+    dev({ ref: 'QC1', tipo: 'disjuntor_comando', zona: 'comando', descricao: `Disjuntor 2P ${disjC} A curva C — alimentação da fonte 24 Vcc / comando`, polos: 2, largura: 2 * T.MODULO_MM, modulos: 2, perda: 1 },
+      'disjuntor_din', { polos: 2, corrente: disjC, curva: 'C', icu: c.icc }, {});
     for (let k = 0; k < fontes; k++) {
       const pOut = aut.ativo ? aut.pSaida / fontes : 10;
-      add({ ref: `G${k + 1}`, tipo: 'fonte', zona: 'comando', descricao: `Fonte chaveada 24 Vcc ${fonteA} A (${fonteA * 24} W) para trilho DIN`, largura: fDim.l, altura: fDim.h, prof: 115, perda: pOut * (1 / T.FONTE_RENDIMENTO - 1) });
+      dev({ ref: `G${k + 1}`, tipo: 'fonte', zona: 'comando', descricao: `Fonte chaveada 24 Vcc ${fonteA} A (${fonteA * 24} W) para trilho DIN`, largura: fDim.l, altura: fDim.h, prof: 115, perda: pOut * (1 / T.FONTE_RENDIMENTO - 1) },
+        'fonte_24v', { saida: fonteA }, {});
     }
     const ramos = aut.ativo ? aut.ramos24 : 2;
-    add({ ref: 'F24', tipo: 'protecao_24v', zona: 'comando', descricao: `Proteção dos ramos 24 Vcc: ${ramos} disjuntores 1P CC 2–6 A (ou módulo eletrônico de ${ramos} canais)`, largura: ramos * T.MODULO_MM, modulos: ramos, perda: ramos * 0.5 });
-    if (aut.releSeguranca) add({ ref: 'KS1', tipo: 'rele_seguranca', zona: 'comando', descricao: 'Relé de segurança para parada de emergência (monitorado, 2 canais, rearme manual) — categoria pela apreciação de risco (NBR ISO 13849-1 / NR-12) [CONFERIR]', largura: 22.5, altura: 100, prof: 115, perda: 2.5 });
+    tipico({ ref: 'F24', tipo: 'protecao_24v', zona: 'comando', descricao: `Proteção dos ramos 24 Vcc: ${ramos} disjuntores 1P CC 2–6 A (ou módulo eletrônico de ${ramos} canais)`, largura: ramos * T.MODULO_MM, modulos: ramos, perda: ramos * 0.5 });
+    if (aut.releSeguranca) dev({ ref: 'KS1', tipo: 'rele_seguranca', zona: 'comando', descricao: 'Relé de segurança para parada de emergência (monitorado, 2 canais, rearme manual) — categoria pela apreciação de risco (NBR ISO 13849-1 / NR-12) [CONFERIR]', largura: 22.5, altura: 100, prof: 115, perda: 2.5 }, 'rele_seguranca', {});
   }
   if (aut.ativo && aut.clp) {
-    add({ ref: 'A1', tipo: 'clp', zona: 'clp', descricao: `${T.CLP.cpu.rotulo} com ${aut.cpu.DI} DI / ${aut.cpu.DO} DO / ${aut.cpu.AI} AI${aut.cpu.AO ? ` / ${aut.cpu.AO} AO` : ''} integradas, porta Ethernet`, largura: T.CLP.cpu.l, altura: T.CLP.cpu.h, prof: T.CLP.cpu.p, perda: T.CLP.cpu.perda_w });
+    dev({ ref: 'A1', tipo: 'clp', zona: 'clp', descricao: `${T.CLP.cpu.rotulo} com ${aut.cpu.DI} DI / ${aut.cpu.DO} DO / ${aut.cpu.AI} AI${aut.cpu.AO ? ` / ${aut.cpu.AO} AO` : ''} integradas, porta Ethernet`, largura: T.CLP.cpu.l, altura: T.CLP.cpu.h, prof: T.CLP.cpu.p, perda: T.CLP.cpu.perda_w },
+      'clp_cpu', { io: `${aut.cpu.DI} DI ${aut.cpu.DO} DO ${aut.cpu.AI} AI` }, { referencia: aut.cpuReferencia });
     let k = 2;
     for (const t of ['DI', 'DO', 'AI', 'AO']) {
-      for (let j = 0; j < aut.modulos[t]; j++) add({ ref: `A${k++}`, tipo: `modulo_${t}`, zona: 'clp', descricao: T.CLP[t].rotulo, largura: T.CLP[t].l, altura: T.CLP[t].h, prof: T.CLP[t].p, perda: T.CLP[t].perda_w });
+      for (let j = 0; j < aut.modulos[t]; j++) dev({ ref: `A${k++}`, tipo: `modulo_${t}`, zona: 'clp', descricao: T.CLP[t].rotulo, largura: T.CLP[t].l, altura: T.CLP[t].h, prof: T.CLP[t].p, perda: T.CLP[t].perda_w }, 'clp_modulo', { ponto: t, canais: T.CLP[t].canais }, {});
     }
-    for (let j = 0; j < aut.rs485; j++) add({ ref: `A${k++}`, tipo: 'modulo_rs485', zona: 'clp', descricao: T.CLP.RS485.rotulo, largura: T.CLP.RS485.l, altura: T.CLP.RS485.h, prof: T.CLP.RS485.p, perda: T.CLP.RS485.perda_w });
-    if (aut.switchPortas) add({ ref: 'A90', tipo: 'switch', zona: 'clp', descricao: `Switch Ethernet industrial ${aut.switchPortas} portas, trilho DIN`, largura: T.SWITCH.l, altura: T.SWITCH.h, prof: T.SWITCH.p, perda: T.SWITCH.perda_w });
+    for (let j = 0; j < aut.rs485; j++) dev({ ref: `A${k++}`, tipo: 'modulo_rs485', zona: 'clp', descricao: T.CLP.RS485.rotulo, largura: T.CLP.RS485.l, altura: T.CLP.RS485.h, prof: T.CLP.RS485.p, perda: T.CLP.RS485.perda_w }, 'clp_modulo', { ponto: 'RS485', canais: 1 }, {});
+    if (aut.switchPortas) dev({ ref: 'A90', tipo: 'switch', zona: 'clp', descricao: `Switch Ethernet industrial ${aut.switchPortas} portas, trilho DIN`, largura: T.SWITCH.l, altura: T.SWITCH.h, prof: T.SWITCH.p, perda: T.SWITCH.perda_w }, 'switch', { portas: aut.switchPortas }, {});
   }
   if (aut.ativo && aut.reles) {
-    for (let j = 0; j < aut.reles; j++) add({ ref: `KA${j + 1}`, tipo: 'rele_interface', zona: 'reles', descricao: 'Relé de interface 24 Vcc 1 contato reversível 6 A, base "slim" com LED e diodo', largura: T.RELE_INTERFACE.l, altura: T.RELE_INTERFACE.h, prof: T.RELE_INTERFACE.p, perda: T.RELE_INTERFACE.perda_w });
+    for (let j = 0; j < aut.reles; j++) dev({ ref: `KA${j + 1}`, tipo: 'rele_interface', zona: 'reles', descricao: 'Relé de interface 24 Vcc 1 contato reversível 6 A, base "slim" com LED e diodo', largura: T.RELE_INTERFACE.l, altura: T.RELE_INTERFACE.h, prof: T.RELE_INTERFACE.p, perda: T.RELE_INTERFACE.perda_w }, 'rele_interface', {}, {});
   }
   return { lista, medicao };
 }
 
 // ── Bornes ──────────────────────────────────────────────────────────────────
 
-function bornes(c, circuitos, motores, aut) {
+function bornes(c, circuitos, motores, aut, sel) {
   const grupos = [];
-  const largura = (s) => T.BORNE_LARGURA[s] || T.BORNE_LARGURA[ET.SECOES.find(x => T.BORNE_LARGURA[x] && x >= s) || 95] || 25;
+  const medidas = new Map(); // seção → medida (catálogo ou típica)
+  const tipica = (s) => T.BORNE_LARGURA[s] || T.BORNE_LARGURA[ET.SECOES.find(x => T.BORNE_LARGURA[x] && x >= s) || 95] || 25;
+  const medir = (s, grupo) => {
+    if (!medidas.has(s)) medidas.set(s, sel.medir(`${grupo} ${String(s).replace('.', ',')} mm²`, 'borne', { secao: s }, { l: tipica(s), h: T.BORNE_ALTURA, p: 50 }, {}));
+    return medidas.get(s);
+  };
+  const largura = (s, grupo) => medir(s, grupo).l;
   const forca = [];
   if (c.bornesSaida) {
     for (const x of circuitos.filter(k => !k.caixaMoldada)) {
       const s = Math.max(2.5, x.fio);
       const n = x.nFases + (x.neutro ? 1 : 0);
-      forca.push({ circuito: x.n, secao: s, quantidade: n, pe: 1, largura: largura(s) });
+      forca.push({ circuito: x.n, secao: s, quantidade: n, pe: 1, largura: largura(s, 'X1') });
     }
   }
   for (const m of motores) {
     const s = Math.max(2.5, m.fio);
     const n = m.partida === 'estrela_triangulo' ? 6 : 3;
-    forca.push({ circuito: m.tag, secao: s, quantidade: n, pe: 1, largura: largura(s) });
+    forca.push({ circuito: m.tag, secao: s, quantidade: n, pe: 1, largura: largura(s, 'X1') });
   }
   if (forca.length) grupos.push({ id: 'X1', funcao: 'Força — saídas dos circuitos e motores (fase/neutro) + PE verde-amarelo', itens: forca });
   if (aut.ativo) {
     const b = aut.bornes;
     const sinais = [
-      { circuito: 'Alimentação 24 Vcc (+/0 V por ramo)', secao: 2.5, quantidade: b.alimentacao24, largura: largura(2.5) },
-      { circuito: 'Entradas digitais (sinal + comuns)', secao: 1.5, quantidade: b.DI, largura: largura(1.5) },
-      { circuito: 'Saídas digitais (sinal + comuns)', secao: 1.5, quantidade: b.DO, largura: largura(1.5) },
-      { circuito: 'Entradas analógicas (+, −, blindagem)', secao: 1.5, quantidade: b.AI, largura: largura(1.5) },
-      { circuito: 'Saídas analógicas (+, −, blindagem)', secao: 1.5, quantidade: b.AO, largura: largura(1.5) },
-      { circuito: 'Comunicação RS-485 (A, B, GND)', secao: 1.5, quantidade: b.comunicacao, largura: largura(1.5) },
-    ].filter(x => x.quantidade > 0);
+      { circuito: 'Alimentação 24 Vcc (+/0 V por ramo)', secao: 2.5, quantidade: b.alimentacao24 },
+      { circuito: 'Entradas digitais (sinal + comuns)', secao: 1.5, quantidade: b.DI },
+      { circuito: 'Saídas digitais (sinal + comuns)', secao: 1.5, quantidade: b.DO },
+      { circuito: 'Entradas analógicas (+, −, blindagem)', secao: 1.5, quantidade: b.AI },
+      { circuito: 'Saídas analógicas (+, −, blindagem)', secao: 1.5, quantidade: b.AO },
+      { circuito: 'Comunicação RS-485 (A, B, GND)', secao: 1.5, quantidade: b.comunicacao },
+    ].filter(x => x.quantidade > 0).map(x => ({ ...x, largura: largura(x.secao, 'X2') }));
     if (sinais.length) grupos.push({ id: 'X2', funcao: 'Comando e sinais 24 Vcc', itens: sinais });
   } else if (motores.length) {
-    grupos.push({ id: 'X2', funcao: 'Comando (botoeiras, sinalização remota)', itens: [{ circuito: 'Comando por motor (liga, desliga, sinalização)', secao: 1.5, quantidade: 4 * motores.length, largura: largura(1.5) }] });
+    grupos.push({ id: 'X2', funcao: 'Comando (botoeiras, sinalização remota)', itens: [{ circuito: 'Comando por motor (liga, desliga, sinalização)', secao: 1.5, quantidade: 4 * motores.length, largura: largura(1.5, 'X2') }] });
   }
   // reserva de bornes
   for (const g of grupos) {
@@ -616,6 +681,10 @@ function bornes(c, circuitos, motores, aut) {
     g.reserva = Math.ceil(n * c.reservaPct);
     const larguraMedia = g.itens.reduce((s, i) => s + i.largura * (i.quantidade + (i.pe || 0)), 0) / Math.max(1, n);
     g.comprimento = g.itens.reduce((s, i) => s + i.largura * (i.quantidade + (i.pe || 0)), 0) + g.reserva * larguraMedia + 2 * T.BORNE_POSTE_MM + 2;
+    g.altura = Math.max(...g.itens.map(i => medir(i.secao, g.id).h));
+    g.prof = Math.max(...g.itens.map(i => medir(i.secao, g.id).p || 50));
+    g.medidas = [...new Set(g.itens.map(i => i.secao))].map(s => ({ secao: s, largura_mm: medir(s, g.id).l, ...medir(s, g.id).medida }));
+    g.medida = g.medidas.every(x => x.origem === 'catalogo') ? g.medidas[0] : { ...g.medidas[0], origem: g.medidas.some(x => x.origem === 'catalogo') ? 'parcial' : 'tipica' };
   }
   return grupos;
 }
@@ -846,11 +915,22 @@ function materiais(calc) {
   const { c, comps, geral, barr, layout, born, fio, aut, dpsInfo, term, inv, motores } = calc;
   const itens = [];
   let n = 0;
-  const add = (grupo, descricao, unidade, quantidade, referencia = '') => {
+  // extra: { fabricante, referencia_fabricante, medidas, fonte, origem_medida, verificado } — de onde veio a medida
+  const add = (grupo, descricao, unidade, quantidade, referencia = '', extra = {}) => {
     if (!(quantidade > 0)) return;
     const ex = itens.find(i => i.descricao === descricao && i.unidade === unidade);
     if (ex) { ex.quantidade += quantidade; return; }
-    itens.push({ codigo: `QD-${String(++n).padStart(3, '0')}`, grupo, descricao, unidade, quantidade, referencia });
+    itens.push({ codigo: `QD-${String(++n).padStart(3, '0')}`, grupo, descricao, unidade, quantidade, referencia, ...extra });
+  };
+  const fmtMm = (v) => String(Math.round(v * 10) / 10).replace('.', ',');
+  const origem = (m, l, h, p) => {
+    if (!m) return {};
+    const cat = m.origem === 'catalogo';
+    return {
+      fabricante: m.fabricante || '', referencia_fabricante: m.referencia || '', medidas: l ? `${fmtMm(l)} × ${fmtMm(h)} × ${fmtMm(p)}` : '',
+      origem_medida: m.origem, verificado: !!m.verificado,
+      fonte: cat ? `${m.fonte_documento || ''}${m.fonte_url ? ` ${m.fonte_url}` : ''}${m.verificado ? '' : ' [CONFERIR — medida não verificada no documento oficial]'}`.trim() : 'medida típica de catálogo [CONFERIR]',
+    };
   };
   const env = layout.involucro;
   add('Invólucro', `Quadro ${({ sobrepor: 'de sobrepor', embutir: 'de embutir', autoportante: 'autoportante' })[c.montagem]} em ${({ aco: 'chapa de aço pintada', inox: 'aço inox', aluminio: 'alumínio', poliester: 'poliéster' })[c.material]}, ${env.altura} × ${env.largura} × ${env.profundidade} mm (A × L × P), ${inv.ip} / ${inv.ik}, porta com fecho e placa de montagem`, 'un', 1, 'NBR IEC 61439-1/-2; NBR IEC 60529; NBR IEC 62262');
@@ -860,12 +940,15 @@ function materiais(calc) {
   // dispositivos
   for (const k of comps.lista) {
     if (k.tipo === 'partida') continue;
-    add('Proteção e manobra', k.descricao.replace(/ — circ\. .*$/, ''), 'un', 1, k.tipo === 'dps' ? 'NBR 5410, 6.3.5.2' : k.tipo.startsWith('modulo') || k.tipo === 'clp' ? 'Automação' : 'NBR IEC 60947 / NBR NM 60898');
+    add('Proteção e manobra', k.descricao.replace(/ — circ\. [^—]*/, '').replace(/ — circuitos [^—]*/, '').trim(), 'un', 1, k.tipo === 'dps' ? 'NBR 5410, 6.3.5.2' : k.tipo.startsWith('modulo') || k.tipo === 'clp' ? 'Automação' : 'NBR IEC 60947 / NBR NM 60898', origem(k.medida, k.largura, k.altura, k.prof));
   }
   for (const m of motores) {
+    const bloco = comps.lista.find(k => k.tipo === 'partida' && k.motor === m.tag);
     for (const d of m.partidaInfo.dispositivos) {
+      const f = bloco && bloco.filhos.find(x => x.ref === (d.ref === 'F1-F3' ? 'Q1' : d.ref));
+      const fm = f && f.medida && f.medida.origem === 'catalogo' ? ` — ${f.medida.fabricante} ${f.medida.referencia}` : '';
       const desc = d.especificacao || (d.tipo === 'contator' ? `Contator tripolar ${d.nominal_a} A AC-3, bobina ${aut.ativo ? '24 Vcc' : `${c.vfn} Vca`}` : d.tipo === 'rele_sobrecarga' ? `Relé de sobrecarga faixa ${d.faixa ? `${d.faixa[0]}–${d.faixa[1]}` : ''} A` : d.tipo);
-      add('Partidas de motores', desc, 'un', d.quantidade || 1, d.tipo === 'contator' ? 'NBR IEC 60947-4-1' : 'NBR IEC 60947');
+      add('Partidas de motores', `${desc}${fm}`, 'un', d.quantidade || 1, d.tipo === 'contator' ? 'NBR IEC 60947-4-1' : 'NBR IEC 60947', f ? origem(f.medida, f.l, f.h, f.p) : {});
     }
   }
   if (comps.medicao && comps.medicao.qtdTc) add('Medição', `Transformador de corrente ${comps.medicao.tc}/5 A classe 0,5, 2,5 VA, janela para a barra/cabo do geral`, 'un', comps.medicao.qtdTc, 'Medição');
@@ -895,7 +978,11 @@ function materiais(calc) {
     const porSecao = {};
     g.itens.forEach(i => { porSecao[i.secao] = (porSecao[i.secao] || 0) + i.quantidade; });
     const totalItens = g.itens.reduce((s, i) => s + i.quantidade, 0);
-    Object.entries(porSecao).forEach(([s, q]) => add('Bornes', `Borne de passagem ${String(s).replace('.', ',')} mm² (${g.id})`, 'un', q + Math.ceil(q / Math.max(1, totalItens) * g.reserva), 'NBR IEC 60947-7-1'));
+    Object.entries(porSecao).forEach(([s, q]) => {
+      const md = (g.medidas || []).find(x => Number(x.secao) === Number(s));
+      const fm = md && md.origem === 'catalogo' ? ` — ${md.fabricante} ${md.referencia}` : '';
+      add('Bornes', `Borne de passagem ${String(s).replace('.', ',')} mm² (${g.id})${fm}`, 'un', q + Math.ceil(q / Math.max(1, totalItens) * g.reserva), 'NBR IEC 60947-7-1', md ? origem(md, md.largura_mm, g.altura, g.prof) : {});
+    });
     const pe = g.itens.reduce((s, i) => s + (i.pe || 0), 0);
     if (pe) add('Bornes', `Borne terra (PE) verde-amarelo (${g.id})`, 'un', pe, 'NBR IEC 60947-7-2');
     add('Bornes', `Poste/batente para trilho (${g.id})`, 'un', 2, '');
@@ -930,8 +1017,10 @@ function materiais(calc) {
 
 // ── Cálculo completo ────────────────────────────────────────────────────────
 
-function calcular(dados) {
+// opcoes: { semCatalogo } — só medidas típicas (para comparar o aproveitamento); { semComparacao }
+function calcular(dados, opcoes = {}) {
   const avisos = [];
+  const sel = criarSeletor(dados, { desligado: !!opcoes.semCatalogo });
   const premissas = [];
   const c = config(dados);
   if (!c.iccInformada) premissas.push(`Icc presumida no ponto não informada: adotados ${ICC_PADRAO_KA} kA para escolher a capacidade de interrupção e o barramento. [CONFERIR com o estudo de curto / a distribuidora]`);
@@ -954,8 +1043,8 @@ function calcular(dados) {
     if (aut.fontes > 1) avisos.push(`Consumo 24 Vcc exige ${aut.fontes} fontes de 40 A — dividir as cargas por ramo.`);
     if (aut.clp) Object.entries(aut.folgaIo).forEach(([t, f]) => { if (aut.usados[t] && f < Math.ceil(aut.usados[t] * aut.reserva)) avisos.push(`E/S ${t}: reserva abaixo de ${Math.round(aut.reserva * 100)} %.`); });
   }
-  const comps = componentes(c, circuitos, drs, geral, dpsInfo, motores, aut, dem);
-  const born = bornes(c, circuitos, motores, aut);
+  const comps = componentes(c, circuitos, drs, geral, dpsInfo, motores, aut, dem, sel);
+  const born = bornes(c, circuitos, motores, aut, sel);
   const fio = fiacao(c, circuitos, motores, aut, comps, geral);
   const barr = barramento(c, geral, circuitos, dem, motores);
   const inv = protecaoInvolucro(c, circuitos, motores, geral);
@@ -985,10 +1074,38 @@ function calcular(dados) {
   const calc = { c, circuitos, motores, dem, geral, drs, dpsInfo, aut, comps, born, fio, barr, inv, layout, perdas, term, reservaCircuitos, avisos, premissas };
   calc.verificacoes = verificacoesProjeto(calc);
   calc.materiais = materiais(calc);
+  // catálogo: o que veio do fabricante e o que ficou na medida típica (o backend busca as oficiais)
+  calc.catalogo = { registros: sel.catalogo.length, usados: sel.usados, fabricantes: dados.fabricantes || null };
+  calc.componentes_sem_medida = sel.semMedida;
+  calc.espaco = resumoEspaco(calc);
+  const doCatalogo = sel.usados.length;
+  if (doCatalogo) {
+    const semVerif = sel.usados.filter(u => !u.verificado).length;
+    premissas.push(`Medidas de ${doCatalogo} dispositivo(s) pelo catálogo do fabricante${semVerif ? ` (${semVerif} sem verificação no documento oficial [CONFERIR])` : ''}; os demais com dimensões típicas [CONFERIR].`);
+    if (!opcoes.semComparacao) {
+      const tip = calcular(dados, { semCatalogo: true, semComparacao: true });
+      calc.comparacao = { tipica: tip.espaco, catalogo: calc.espaco };
+    }
+  }
+  if (sel.semMedida.length) avisos.push(`${sel.semMedida.length} dispositivo(s) do fabricante escolhido sem medida oficial no catálogo — dimensões típicas usadas: ${sel.semMedida.slice(0, 6).map(x => x.especificacao).join('; ')}${sel.semMedida.length > 6 ? '…' : ''}. [CONFERIR]`);
   return calc;
+}
+
+// Aproveitamento do espaço interno: área da placa ocupada por dispositivos, trilho usado e reserva
+function resumoEspaco(calc) {
+  const { layout } = calc;
+  const areaPlaca = layout.placa.altura * layout.placa.largura;
+  let pecas = 0;
+  for (const f of layout.fileiras) for (const k of f.itens) if (k.tipo !== 'reserva') pecas += (k.largura || 0) * (k.altura || 0);
+  const canaletas = layout.horizontais.reduce((s, h) => s + h.largura * layout.larguraUtil, 0) + (layout.verticais.esquerda.largura + layout.verticais.direita.largura) * (layout.placa.altura - 2 * T.MARGEM_UTIL);
+  return {
+    involucro: { ...layout.involucro }, placa: { ...layout.placa }, areaPlacaM2: areaPlaca / 1e6,
+    ocupacaoPlaca: pecas / areaPlaca, ocupacaoCanaletas: canaletas / areaPlaca, ocupacaoTrilho: layout.ocupacaoTrilho,
+    reservaModulos: Math.round(layout.reservaMm / T.MODULO_MM), alturaNecessaria: layout.alturaNecessaria, sobraAltura: layout.sobraAltura, fileiras: layout.fileiras.length,
+  };
 }
 
 module.exports = {
   calcular, config, lerCircuitos, correnteDoCircuito, demanda, disjuntorGeral, kAdiabatico, k2Temperatura, escolherBarra,
-  superficieEfetiva, termica, dps, automacao, rdf, LIGACOES, TIPOS_CIRCUITO, TIPOS_QUADRO, PORTA, SINAIS_POR_PARTIDA,
+  superficieEfetiva, termica, dps, automacao, rdf, resumoEspaco, LIGACOES, TIPOS_CIRCUITO, TIPOS_QUADRO, PORTA, SINAIS_POR_PARTIDA,
 };

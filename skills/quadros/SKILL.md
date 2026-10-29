@@ -5,13 +5,14 @@ description: Projeto de fabricação de quadros elétricos e de automação a pa
 
 # Quadros elétricos e de automação — projeto de fabricação (NBR IEC 61439) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por quadro** (o unifilar/quadro de cargas), o projeto de fabricação do quadro. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills/quadros` ou `skills`: 86 verificações). **Não refaça contas de cabeça: rode os scripts.** As partidas de motores usam o motor da skill de elétrica industrial (`eletrica-industrial/scripts/lib/calculo.js → dispositivosPartida`) e o DPS a função comum `_comum/dps.js`.
+Gera, a partir de **um arquivo JSON por quadro** (o unifilar/quadro de cargas), o projeto de fabricação do quadro. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills/quadros` ou `skills`: 118 verificações). **Não refaça contas de cabeça: rode os scripts.** As partidas de motores usam o motor da skill de elétrica industrial (`eletrica-industrial/scripts/lib/calculo.js → dispositivosPartida`) e o DPS a função comum `_comum/dps.js`.
 
 | Documento | Tipo | Formato | Registro |
 |---|---|---|---|
 | Memorial de cálculo e especificação do quadro | `memorial` | Word | projeto |
 | Lista de materiais (BOM, com coluna de preço) e planilha de cálculo (circuitos, arranjo, barramentos/térmica, verificações 61439, E/S, fonte 24 Vcc, bornes) | `planilha` | Excel | projeto |
 | Desenho de fabricação: vista frontal externa, vista lateral, layout interno da placa (fileiras na ordem do unifilar, trilhos, canaletas, barramentos, bornes, reserva, cotas), legenda, notas e carimbo H&M | `desenho` | DXF (AutoCAD 2018+, mm) | projeto |
+| Modelo 3D do quadro: invólucro, porta articulada com os dispositivos de porta, placa, trilhos, canaletas translúcidas, cada dispositivo com L × A × P reais e cor por tipo, barramentos com isoladores ou pente, barras N/PE, bornes, reserva; camadas liga/desliga, abrir/fechar porta, só a placa, clique = TAG/fabricante/referência/medidas/fonte | `modelo3d` | HTML autossuficiente (three.js embutido) | projeto |
 | Checklist de fabricação e ensaios de rotina | `ensaios` | Word | projeto e laudo |
 | Relatório de ensaios de rotina / inspeção do quadro (com parecer) | `laudo` | Word | laudo |
 
@@ -19,7 +20,11 @@ Orçamento: modos `fabricacao` (materiais da lista + mão de obra `qd_*` de mont
 
 ## No sistema
 
-Registrada em `skills/_comum/disciplinas.js` (chave `quadros`, sigla `QD`); documentos e modos classificados em `skills/_comum/tipos-documento.js` (`desenho` → projeto, `ensaios` → ambos, `fabricacao` → projeto); códigos `qd_*` em `backend/src/services/precosMaoDeObraReferencia.js` (preencher os preços na tela Preços de Mão de Obra). A tela é montada pelo `formulario` de `scripts/lib/index.js`.
+Registrada em `skills/_comum/disciplinas.js` (chave `quadros`, sigla `QD`); documentos e modos classificados em `skills/_comum/tipos-documento.js` (`desenho` e `modelo3d` → projeto, `ensaios` → ambos, `fabricacao` → projeto); códigos `qd_*` em `backend/src/services/precosMaoDeObraReferencia.js` (preencher os preços na tela Preços de Mão de Obra). A tela é montada pelo `formulario` de `scripts/lib/index.js`.
+
+## Fabricantes e medidas oficiais (catálogo)
+
+Entrada `fabricantes: { padrao, por_tipo: { contator: "WEG", … } }` e, em qualquer circuito/motor, `fabricante`/`referencia` (motor: `referencias: { Q1, K1, T1 }`). A skill junta os registros na ordem `catalogo_componentes` (o backend injeta os do banco: usuário/pesquisa IA) > `dados/catalogo-componentes.json` (catálogo H&M: só `verificado:true`, origem `catalogo_hm` e `fonte_url` oficial — **nunca inventar medidas**) e escolhe, por dispositivo, a referência informada ou o **menor modelo do fabricante que atende** (polos, In, curva, Icu ≥ Icc, IΔn, classe/Uc/In do DPS, AC-3, faixa do disjuntor-motor, A/kW do soft/inversor, saída da fonte, pontos do módulo, seção do borne) — `scripts/lib/catalogo.js`. Sem registro: medida típica, `medida.origem: "tipica"` e o item vai para `componentes_sem_medida` com uma `especificacao` que serve de busca ("WEG contator 25 A AC-3 bobina 24 Vcc"). O arranjo, o invólucro, o DXF, a lista de materiais (fabricante, referência, L × A × P, fonte) e o 3D usam as medidas escolhidas; o memorial (10.1) mostra o aproveitamento do espaço (área da placa, trilho, reserva) e a comparação com as medidas típicas. Registro com `verificado:false` sai com [CONFERIR]. Formato do registro: ver `dados/catalogo-componentes.json` e o teste (`testes/catalogo-fixture.json` tem registros FICTÍCIOS, só para o teste).
 
 ## Fluxo de trabalho
 

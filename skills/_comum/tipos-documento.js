@@ -22,6 +22,7 @@ const DOCUMENTOS = {
   medicoes: 'laudo',     // SPDA: planilha de medições (continuidade, aterramento)
   risco: 'ambos',        // SPDA: análise de risco da NBR 5419-2 — exigida no projeto e no laudo
   desenho: 'projeto',    // quadros: desenho de fabricação DXF (vista frontal e layout interno)
+  modelo3d: 'projeto',   // quadros: modelo 3D do quadro (HTML autossuficiente)
   ensaios: 'ambos',      // quadros: checklist de fabricação e ensaios de rotina — vai à oficina (projeto) e à inspeção (laudo)
 };
 

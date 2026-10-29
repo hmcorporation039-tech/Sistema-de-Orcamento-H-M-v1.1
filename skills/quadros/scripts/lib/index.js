@@ -15,6 +15,8 @@ const ET = require('../../../_comum/eletrico/tabelas');
 const T = require('./tabelas');
 const C = require('./calculo');
 const { gerarDesenho } = require('./desenho');
+const M3D = require('./modelo3d');
+const CAT = require('./catalogo');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
 const MODELO = require('../../exemplos/modelo-vazio.json');
@@ -248,6 +250,18 @@ function secoesMemorial(res) {
     notas: ['Dimensões dos dispositivos típicas de catálogo (tabela no anexo da skill) — conferir com os modelos comprados antes de furar a placa. [CONFERIR]'] });
   // 11. térmica
   const porTipo = Object.entries(perdas.porTipo).filter(([, w]) => w > 0.05).sort((a, b2) => b2[1] - a[1]);
+  {
+    const e = calc.espaco;
+    const cmp = calc.comparacao;
+    const fmtE = (x) => `${x.involucro.altura} × ${x.involucro.largura} × ${x.involucro.profundidade} mm; placa ${pct(x.ocupacaoPlaca)} ocupada por dispositivos (${pct(x.ocupacaoCanaletas)} por canaletas); trilho ${pct(x.ocupacaoTrilho)}; reserva ≈ ${x.reservaModulos} módulos; altura usada ${num(x.alturaNecessaria, 0)} de ${x.placa.altura} mm`;
+    const fab = calc.catalogo.fabricantes;
+    s.push({ titulo: '10.1 Fabricantes, medidas dos componentes e aproveitamento do espaço', paragrafos: [
+      fab ? `Fabricantes adotados: padrão ${fab.padrao || '—'}${fab.por_tipo && Object.keys(fab.por_tipo).length ? `; por tipo: ${Object.entries(fab.por_tipo).map(([t, f]) => `${t.replace(/_/g, ' ')} ${f}`).join(', ')}` : ''}. Para cada dispositivo foi escolhido o menor modelo do fabricante que atende à especificação (polos, In, curva, Icu, IΔn, classe do DPS, AC-3, faixa, kW, saída), com as medidas do documento oficial do fabricante; sem registro, medida típica [CONFERIR].` : 'Fabricantes não informados: dimensões típicas de catálogo [CONFERIR]. Informe os fabricantes para o sistema buscar as medidas oficiais e refazer o arranjo.',
+      `Aproveitamento do espaço: ${fmtE(e)}.`,
+      cmp ? `Comparação com as medidas típicas: ${fmtE(cmp.tipica)} → com as medidas dos fabricantes: ${fmtE(cmp.catalogo)}.` : '',
+    ].filter(Boolean), tabela: { colunas: ['TAG', 'Dispositivo', 'Fabricante / referência', 'L × A × P (mm)', 'Origem da medida'], linhas: linhasMedidas(calc), proporcoes: [0.8, 2.4, 1.6, 1.1, 1.9], tamanho: 13 },
+      marcadores: (calc.componentes_sem_medida || []).length ? [`Sem medida oficial no catálogo (buscar o datasheet do fabricante): ${calc.componentes_sem_medida.map(x => `${x.tag} — ${x.especificacao}`).join('; ')}.`] : [] });
+  }
   s.push({ titulo: '11. Elevação de temperatura (NBR IEC 61439-1, 10.10; IEC TR 60890)', tabela: {
     colunas: ['Origem da perda', 'W'],
     linhas: [...porTipo.map(([k, w]) => [ROTULO_PERDA[k] || k.replace(/_/g, ' '), num(w, 1)]), ['barramento', num(perdas.barramento, 1)], ['fiação interna', num(perdas.fiacao, 1)], ['TOTAL', num(perdas.total, 1)]],
@@ -282,6 +296,40 @@ function secoesMemorial(res) {
   s.push({ titulo: 'Premissas [CONFERIR]', marcadores: calc.premissas });
   if (calc.avisos.length) s.push({ titulo: 'Avisos', marcadores: calc.avisos });
   return s;
+}
+
+// Lista de materiais com fabricante, referência, medidas e fonte da medida (preço editável, total por fórmula)
+function abaMateriais(materiais) {
+  return {
+    nome: 'Materiais',
+    colunas: [
+      { header: 'Cód.', key: 'codigo', width: 10 }, { header: 'Descrição', key: 'descricao', width: 64 },
+      { header: 'Fabricante', key: 'fabricante', width: 18 }, { header: 'Referência do fabricante', key: 'referencia_fabricante', width: 20 },
+      { header: 'L × A × P (mm)', key: 'medidas', width: 18 }, { header: 'Fonte da medida', key: 'fonte', width: 48 },
+      { header: 'Un.', key: 'unidade', width: 6 }, { header: 'Qtd.', key: 'quantidade', width: 9 },
+      { header: 'Preço unit. (R$)', key: 'preco', width: 14, numFmt: '#,##0.00' }, { header: 'Total (R$)', key: 'total', width: 14, numFmt: '#,##0.00' },
+      { header: 'Grupo / referência normativa', key: 'ref', width: 40 },
+    ],
+    linhas: materiais.map((m, i) => ({ ...m, ref: `${m.grupo} — ${m.referencia}`, preco: null, total: { formula: `IF(I${i + 2}="","",H${i + 2}*I${i + 2})` } })),
+    formulas: (ws) => { const r = ws.addRow({ descricao: 'TOTAL', total: { formula: `SUM(J2:J${materiais.length + 1})` } }); r.font = { bold: true }; },
+  };
+}
+
+// Dispositivos com a origem da medida (memorial, planilha e 3D)
+function linhasMedidas(calc) {
+  const fmt = (v) => num(v, 1);
+  const linha = (tag, desc, m, l, h, p) => [tag, desc.replace(m && m.origem === 'catalogo' ? ` — ${m.fabricante} ${m.referencia}` : '\u0000', '').replace(/ — circ\. [^—]*/, '').replace(/ — circuitos [^—]*/, '').trim().slice(0, 80),
+    m && m.origem === 'catalogo' ? `${m.fabricante} ${m.referencia}` : (m && m.fabricante ? `${m.fabricante} (sem registro)` : '—'),
+    `${fmt(l)} × ${fmt(h)} × ${fmt(p)}`,
+    m && m.origem === 'catalogo' ? `${m.verificado ? 'catálogo' : 'catálogo — não verificado [CONFERIR]'}${m.fonte_url ? ` (${m.fonte_url})` : ''}` : 'típica [CONFERIR]'];
+  const out = [];
+  for (const f of calc.layout.fileiras) for (const k of f.itens) {
+    if (['reserva', 'barramento', 'barra_neutro', 'barra_pe', 'bornes'].includes(k.tipo)) continue;
+    if (k.filhos) k.filhos.forEach(x => out.push(linha(`${k.ref}/${x.ref}`, x.medida && x.medida.descricao ? x.medida.descricao : x.ref, x.medida, x.l, x.h, x.p)));
+    else out.push(linha(k.ref, k.descricao, k.medida, k.largura, k.altura, k.prof));
+  }
+  for (const g of calc.born) for (const md of g.medidas || []) out.push(linha(`${g.id} ${num(md.secao)} mm²`, 'Borne de passagem', md, md.largura_mm, g.altura, g.prof));
+  return out;
 }
 
 // ── Checklist de fabricação, relatório de ensaios e planilha ──────────────
@@ -363,7 +411,7 @@ async function planilha(res) {
   const { calc } = res;
   const { c, aut, layout, barr, term, perdas } = calc;
   const abas = [
-    D.abaMateriais(calc.materiais.map(m => ({ ...m, referencia: `${m.grupo} — ${m.referencia}` }))),
+    abaMateriais(calc.materiais),
     { nome: 'Circuitos', colunas: [
       { header: 'Nº', key: 'n', width: 6 }, { header: 'Descrição', key: 'descricao', width: 36 }, { header: 'Tipo', key: 'tipo', width: 18 }, { header: 'Ligação', key: 'lig', width: 8 },
       { header: 'Fases', key: 'fases', width: 7 }, { header: 'P (W)', key: 'p', width: 9, numFmt: '0' }, { header: 'Ib (A)', key: 'ib', width: 8, numFmt: '0.0' },
@@ -409,6 +457,8 @@ const DOCUMENTOS = [
   { tipo: 'planilha', rotulo: 'Lista de materiais (BOM) e planilha de cálculo', formato: 'Excel', nome: 'Lista_Materiais_Quadro', gerar: planilha },
   { tipo: 'desenho', rotulo: 'Desenho de fabricação (vista frontal e layout interno)', formato: 'DXF', nome: 'Desenho_Quadro',
     gerar: async (res) => Buffer.from(gerarDesenho(res.calc, res.dados).dxf, 'utf8') },
+  { tipo: 'modelo3d', rotulo: 'Modelo 3D do quadro (HTML)', formato: 'HTML', nome: 'Modelo_3D_Quadro',
+    gerar: async (res) => Buffer.from(M3D.gerarHtml(res.calc, res.dados), 'utf8') },
   { tipo: 'ensaios', rotulo: 'Checklist de fabricação e ensaios de rotina', formato: 'Word', nome: 'Checklist_Fabricacao_Quadro',
     gerar: (res) => D.docxParaBuffer(D.gerarChecklistCampo(res.dados, res.insp, cfgChecklist(res), res.checklist)) },
   { tipo: 'laudo', rotulo: 'Relatório de ensaios de rotina / inspeção do quadro', formato: 'Word', nome: 'Relatorio_Ensaios_Quadro',
@@ -502,6 +552,7 @@ const OP = {
   porta: F.op(Object.entries(C.PORTA).map(([k, v]) => [k, v.rotulo])),
   tipoInsp: F.op([['fabricacao', 'Ensaios de rotina na fabricação'], ['recebimento', 'Recebimento na obra'], ['periodica', 'Inspeção periódica de quadro existente']]),
   resultado: F.op([['', '—'], ['aprovado', 'Aprovado'], ['reprovado', 'Reprovado']]),
+  fabricante: F.op([['', '— (padrão / típico)'], ...[...CAT.FABRICANTES].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(f => [f, f])]),
   funcional: F.op([['', '—'], ['ok', 'OK'], ['falha', 'Falha']]),
 };
 
@@ -534,6 +585,15 @@ const FORMULARIO = [
       { caminho: 'quadro.reserva_pct', rotulo: 'Reserva (%)', tipo: 'numero', dica: 'Mínimo da Tabela 59 da NBR 5410 sempre aplicado' }, { caminho: 'quadro.fator_diversidade', rotulo: 'Fator de diversidade', tipo: 'numero', dica: 'Vazio = NBR IEC 61439-2 pelo número de saídas' },
     ] },
   ] },
+  { titulo: '2.1 Fabricantes dos componentes', itens: [
+    { tipo: 'nota', texto: 'Informe os fabricantes: o sistema escolhe o menor modelo de cada um que atende à especificação e usa as medidas OFICIAIS do catálogo (arranjo, invólucro, 3D). Sem registro do modelo, usa a medida típica e lista o item em "componentes sem medida" para buscar o datasheet. Fabricante ou referência por circuito/motor (colunas da tabela) têm prioridade.' },
+    { tipo: 'grade', colunas: 4, campos: [
+      { caminho: 'fabricantes.padrao', rotulo: 'Fabricante padrão', tipo: 'selecao', opcoes: OP.fabricante },
+      ...[['disjuntor_din', 'Disjuntores DIN'], ['dr', 'Interruptores DR'], ['ddr', 'Disjuntores DR'], ['dps', 'DPS'], ['disjuntor_caixa_moldada', 'Caixa moldada'], ['contator', 'Contatores'],
+        ['disjuntor_motor', 'Disjuntores-motor'], ['soft_starter', 'Soft-starters'], ['inversor', 'Inversores'], ['fonte_24v', 'Fonte 24 Vcc'], ['clp_cpu', 'CLP (CPU)'], ['clp_modulo', 'Módulos de E/S'],
+        ['rele_interface', 'Relés de interface'], ['multimedidor', 'Multimedidor'], ['borne', 'Bornes']].map(([t, r]) => ({ caminho: `fabricantes.por_tipo.${t}`, rotulo: r, tipo: 'selecao', opcoes: OP.fabricante })),
+    ] },
+  ] },
   { titulo: '3. Circuitos (unifilar / quadro de cargas)', aberta: true, itens: [
     { tipo: 'nota', texto: 'Um circuito por linha, na ordem do unifilar. Ib vazio = calculada pela potência. DR "IDR" com o mesmo "Grupo DR" (ex.: DR1) compartilha o interruptor; sem grupo, IDR exclusivo. Marque "Local 5.1.3.2.2" para banheiro, cozinha, área de serviço, garagem, área externa ou molhada.' },
     { tipo: 'tabela', caminho: 'circuitos', rotuloAdicionar: 'Adicionar circuito',
@@ -545,6 +605,7 @@ const FORMULARIO = [
         { campo: 'disjuntor_a', rotulo: 'Disj. (A)', tipo: 'numero', largura: 70 }, { campo: 'curva', rotulo: 'Curva', tipo: 'selecao', opcoes: OP.curva, largura: 60 }, { campo: 'icu_ka', rotulo: 'Icu (kA)', tipo: 'numero', largura: 70 },
         { campo: 'dr', rotulo: 'DR', tipo: 'selecao', opcoes: OP.dr, largura: 150 }, { campo: 'dr_grupo', rotulo: 'Grupo DR', largura: 70 }, { campo: 'dr_ma', rotulo: 'IΔn (mA)', tipo: 'numero', largura: 70 },
         { campo: 'secao_mm2', rotulo: 'Cabo (mm²)', tipo: 'numero', largura: 70 }, { campo: 'local_dr', rotulo: 'Local 5.1.3.2.2', tipo: 'check', largura: 80 },
+        { campo: 'fabricante', rotulo: 'Fabricante', tipo: 'selecao', opcoes: OP.fabricante, largura: 150 }, { campo: 'referencia', rotulo: 'Referência', largura: 120 },
       ] },
     { tipo: 'tabela', caminho: 'drs', rotuloAdicionar: 'Definir interruptor DR de grupo (opcional)',
       novaLinha: { id: 'DR{n}', in_a: null, idn_ma: 30, polos: null, tipo: 'AC' },
@@ -558,6 +619,7 @@ const FORMULARIO = [
         { campo: 'tag', rotulo: 'TAG', largura: 80 }, { campo: 'descricao', rotulo: 'Descrição' }, { campo: 'potencia', rotulo: 'Potência', tipo: 'numero', largura: 80 }, { campo: 'unidade', rotulo: 'Un.', tipo: 'selecao', opcoes: OP.unidade, largura: 70 },
         { campo: 'rendimento', rotulo: 'η', tipo: 'numero', largura: 60 }, { campo: 'fp', rotulo: 'FP', tipo: 'numero', largura: 60 }, { campo: 'in_placa_a', rotulo: 'In placa (A)', tipo: 'numero', largura: 80 }, { campo: 'ip_in', rotulo: 'Ip/In', tipo: 'numero', largura: 60 },
         { campo: 'tensao_placa', rotulo: 'Tensões de placa', largura: 90 }, { campo: 'partida', rotulo: 'Partida', tipo: 'selecao', opcoes: OP.partida, largura: 160 }, { campo: 'quantidade', rotulo: 'Qtd.', tipo: 'numero', largura: 60 }, { campo: 'secao_mm2', rotulo: 'Cabo (mm²)', tipo: 'numero', largura: 80 },
+        { campo: 'fabricante', rotulo: 'Fabricante', tipo: 'selecao', opcoes: OP.fabricante, largura: 150 }, { campo: 'referencia', rotulo: 'Referência (soft/inversor ou contator)', largura: 140 },
       ] },
   ] },
   { titulo: '5. Automação (CLP, fonte, IHM, porta)', itens: [
@@ -613,10 +675,12 @@ const base = criarDisciplina({
 // O molde comum (_comum/disciplina.js) só conhece Word e Excel: o desenho DXF
 // sai por aqui, com o mesmo padrão de nome de arquivo
 const gerarDocumentoBase = base.gerarDocumento;
+const FORA_DO_OFFICE = { desenho: { ext: 'dxf', mime: 'application/dxf' }, modelo3d: { ext: 'html', mime: 'text/html; charset=utf-8' } };
 base.gerarDocumento = async (res, tipo) => {
-  if (tipo !== 'desenho') return gerarDocumentoBase(res, tipo);
-  const d = DOCUMENTOS.find(x => x.tipo === 'desenho');
-  return { buffer: await d.gerar(res), nomeArquivo: D.nomeArquivo(res.dados, d.nome, 'dxf', true), mime: 'application/dxf' };
+  const f = FORA_DO_OFFICE[tipo];
+  if (!f) return gerarDocumentoBase(res, tipo);
+  const d = DOCUMENTOS.find(x => x.tipo === tipo);
+  return { buffer: await d.gerar(res), nomeArquivo: D.nomeArquivo(res.dados, d.nome, f.ext, true), mime: f.mime };
 };
 
 module.exports = base;
