@@ -423,8 +423,9 @@ export function definirFerramentas({ api, contexto = {}, token = '' }) {
           if (!pid) return falha('Informe o id do projeto.');
           if (!modo) {
             const p = await api('GET', `/api/laudos/${pid}`);
-            const disc = (await api('GET', '/api/laudos/disciplinas')).find(d => d.chave === p.disciplina);
-            return falha(`Informe o modo do orçamento. Modos desta disciplina: ${(disc?.modosOrcamento || []).map(m => `${m.modo} (${m.rotulo}${m.uso ? `, ${m.uso}` : ''})`).join('; ')}`);
+            // só os modos que servem a este registro (projeto ou laudo)
+            const disc = (await api('GET', `/api/laudos/disciplinas?tipo=${p.tipo || 'projeto'}`)).find(d => d.chave === p.disciplina);
+            return falha(`Informe o modo do orçamento. Modos deste ${p.tipo === 'laudo' ? 'laudo' : 'projeto'}: ${(disc?.modosOrcamento || []).map(m => `${m.modo} (${m.rotulo})`).join('; ')}`);
           }
           r = await api('POST', `/api/laudos/${pid}/gerar-orcamento`, { modo });
         } else {

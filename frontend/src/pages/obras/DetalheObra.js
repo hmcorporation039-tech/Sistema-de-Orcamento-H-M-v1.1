@@ -383,7 +383,7 @@ const REGISTRO = {
 function RegistrosDisciplina({ obra, ligar, desligar, podeEditar, tipo, itens, recarregar }) {
   const R = REGISTRO[tipo];
   const carregar = useCallback(() => getLaudos({ obra_id: 'sem', tipo })
-    .then(r => (r.data || []).map(l => ({ id: l.id, rotulo: `#${l.id} — ${String(l.disciplina).toUpperCase()} — ${l.titulo || 'Sem título'}` }))), [tipo]);
+    .then(r => (r.data.itens || []).map(l => ({ id: l.id, rotulo: `#${l.id} — ${String(l.disciplina).toUpperCase()} — ${l.titulo || 'Sem título'}` }))), [tipo]);
   return (
     <div>
       <Cabecalho titulo={R.titulo}>

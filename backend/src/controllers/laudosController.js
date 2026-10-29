@@ -71,8 +71,22 @@ function processarComMotor(motor, dados) {
 
 // ── Disciplinas e modelos ───────────────────────────────────────────────────
 
+// ?tipo=projeto|laudo: só os documentos, desenhos e modos de orçamento que
+// servem a esse registro. Sem ele vem tudo com o `uso` anotado (a tela filtra)
+// — mas quem chamava a API direto via memorial/planilha num laudo, e o
+// download respondia 400.
 async function disciplinas(req, res) {
-  res.json(listarDisciplinas());
+  const lista = listarDisciplinas();
+  if (!req.query.tipo) return res.json(lista);
+  const tipo = lerTipoRegistro(req.query.tipo, null);
+  if (!tipo) return res.status(400).json({ erro: 'Tipo inválido (projeto ou laudo).' });
+  const { serve, DESENHOS } = tiposDocumento();
+  res.json(lista.map(d => (!d.disponivel ? d : {
+    ...d,
+    documentos: d.documentos.filter(x => serve(x.uso, tipo)),
+    modosOrcamento: d.modosOrcamento.filter(m => serve(m.uso, tipo)),
+    desenhos: Object.fromEntries(Object.entries(d.desenhos).map(([k, tem]) => [k, tem && serve(DESENHOS[k], tipo)])),
+  })));
 }
 
 async function modelo(req, res) {
@@ -124,13 +138,12 @@ async function listar(req, res) {
       ORDER BY l.atualizado_em DESC LIMIT ${LIMITE_LISTA_LAUDOS + 1}`,
     params
   );
-  // Lista cortada: antes sumia em silêncio o que passasse de 300. A resposta
-  // continua sendo a lista (a tela não muda), com o aviso nos cabeçalhos.
-  if (rows.length > LIMITE_LISTA_LAUDOS) {
-    rows.length = LIMITE_LISTA_LAUDOS;
-    res.set({ 'X-Lista-Truncada': '1', 'X-Limite-Lista': String(LIMITE_LISTA_LAUDOS) });
-  }
-  res.json(rows);
+  // Lista cortada: antes sumia em silêncio o que passasse de 300. Desde a
+  // revisão de 28/10/2026 a resposta é { itens } como nas outras listas (antes
+  // era a lista solta com o aviso escondido nos cabeçalhos X-Lista-Truncada).
+  const truncada = rows.length > LIMITE_LISTA_LAUDOS;
+  if (truncada) rows.length = LIMITE_LISTA_LAUDOS;
+  res.json({ itens: rows, truncada, limite: LIMITE_LISTA_LAUDOS });
 }
 
 async function buscarUm(req, res) {

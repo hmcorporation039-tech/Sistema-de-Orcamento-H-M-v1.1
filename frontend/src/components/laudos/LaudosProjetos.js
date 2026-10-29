@@ -130,7 +130,7 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
     planta: DISCIPLINAS_COM_PLANTA.includes(disciplina), unifilar: DISCIPLINAS_COM_UNIFILAR.includes(disciplina),
   };
 
-  // GET /laudos corta a lista (cabeçalho X-Lista-Truncada): avisa "lista parcial"
+  // GET /laudos corta a lista ({ truncada, limite }): avisa "lista parcial"
   const [listaParcial, setListaParcial] = useState(0);
   const [busca, setBusca] = useSearchParams();
   const laudoDaUrl = busca.get('laudo');
@@ -144,8 +144,8 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
   const carregarLista = useCallback(async () => {
     try {
       const r = await getLaudos({ ...(disciplina ? { disciplina } : {}), ...(obraNovo ? { obra_id: obraNovo } : {}), tipo });
-      setLista(r.data);
-      setListaParcial(r.headers?.['x-lista-truncada'] === "1" ? Number(r.headers['x-limite-lista']) || r.data.length : 0);
+      setLista(r.data.itens || []);
+      setListaParcial(r.data.truncada ? r.data.limite : 0);
     } catch { /* lista vazia já informa */ }
   }, [disciplina, tipo, obraNovo]);
 
