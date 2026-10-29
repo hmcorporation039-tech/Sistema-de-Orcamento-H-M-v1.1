@@ -13,11 +13,7 @@ import { FolderSearch, HardDrive } from 'lucide-react';
 import ObraSelect from '../ObraSelect';
 import { BotoesPacote, ListaPacote, itensDoPacote } from './PacoteProjeto';
 import { analisarPacoteProjeto, pacoteDaPastaObra } from '../../services/api';
-
-export const FINALIDADES = [
-  { valor: 'elaboracao', rotulo: 'Elaboração de projeto', descricao: 'A H&M vai DEFINIR e ENTREGAR o projeto a partir do arquitetônico recebido: projeto por disciplina com definições técnicas, as-built, DXF, QElectroTech e PDF.' },
-  { valor: 'orcamento', rotulo: 'Orçamento', descricao: 'Orçar a partir do projeto recebido: itens extraídos dos arquivos e "Gerar orçamento e abrir no editor".' },
-];
+import { FINALIDADES, corFinalidade } from '../../utils/finalidades';
 
 // obraFixa: id da obra (dentro da página da obra) — sem ela, a obra é escolhida aqui (opcional)
 // iniciarComPasta: já lê a pasta da obra ao abrir (vindo de Obra › Arquivos › "Analisar os arquivos desta pasta")
@@ -83,14 +79,14 @@ export default function EnviarParaAnalise({ obraFixa = null, obraInicial = null,
     <div data-testid="enviar-para-analise">
       <Passo n={1} titulo="Para que é esta análise?">
         <div role="radiogroup" aria-label="Finalidade da análise" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>
-          {[...FINALIDADES].reverse().map(f => {
+          {FINALIDADES.map(f => {
             const marcada = finalidade === f.valor;
             return (
               <label key={f.valor} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 8, cursor: 'pointer',
                 border: `1px solid ${marcada ? (f.valor === 'elaboracao' ? '#2f4f6f' : '#5a4a12') : '#2a2a2a'}`, background: marcada ? '#161616' : 'transparent' }}>
                 <input type="radio" name="finalidade" value={f.valor} checked={marcada} onChange={() => setFinalidade(f.valor)} style={{ width: 'auto', marginTop: 3 }} />
                 <span>
-                  <b style={{ fontSize: 13, color: marcada ? (f.valor === 'elaboracao' ? '#8ab4f8' : '#c9a227') : '#ccc' }}>{f.rotulo}</b>
+                  <b style={{ fontSize: 13, color: marcada ? corFinalidade(f.valor) : '#ccc' }}>{f.rotulo}</b>
                   <span style={{ display: 'block', fontSize: 12, color: '#888', lineHeight: 1.5, marginTop: 2 }}>{f.descricao}</span>
                 </span>
               </label>

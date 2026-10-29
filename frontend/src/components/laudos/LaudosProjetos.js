@@ -10,6 +10,7 @@ import {
 } from '../../services/api';
 import PainelPasta from '../PainelPasta';
 import { BotoesModelo3d, enviarArquitetura, ACEITA_ARQUITETURA, DICA_ARQUITETURA } from '../Modelo3d';
+import { confirmarExclusao } from '../ui/BotaoExcluir';
 import ObraSelect from '../ObraSelect';
 import FormularioSpda from './FormularioSpda';
 import ResultadoSpda from './ResultadoSpda';
@@ -273,16 +274,11 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
     }
   }
 
+  // mesma pergunta e mensagem de exclusão de todo o sistema (components/ui/BotaoExcluir)
   async function excluir(item) {
-    if (!window.confirm(`Excluir o ${T.item} "${item.titulo}"? As fotos dele também serão apagadas; a pasta vai para _Excluídos, na pasta do cliente — os arquivos podem ser recuperados de lá.`)) return;
-    try {
-      await removerLaudo(item.id);
-      if (laudo?.id === item.id) { revisaoRef.current += 1; laudoAbertoRef.current = null; setSujo(false); setLaudo(null); setDados(null); setResumo(null); }
-      toast.success(`${T.item.charAt(0).toUpperCase()}${T.item.slice(1)} excluído`);
-      carregarLista();
-    } catch (err) {
-      toast.error(err.response?.data?.erro || 'Erro ao excluir');
-    }
+    if (!(await confirmarExclusao(`o ${T.item} "${item.titulo}" (as fotos dele também)`, () => removerLaudo(item.id)))) return;
+    if (laudo?.id === item.id) { revisaoRef.current += 1; laudoAbertoRef.current = null; setSujo(false); setLaudo(null); setDados(null); setResumo(null); }
+    carregarLista();
   }
 
   const carregarPasta = useCallback(() => getPastaLaudo(laudo.id), [laudo?.id]);

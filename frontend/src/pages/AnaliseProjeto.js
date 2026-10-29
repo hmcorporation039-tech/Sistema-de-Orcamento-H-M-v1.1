@@ -5,7 +5,7 @@ import PainelPasta from '../components/PainelPasta';
 import { FileDown, Plus, Trash2, FilePlus2, Receipt, ExternalLink, DraftingCompass } from 'lucide-react';
 import {
   gerarRelatorioCompatibilizacao,
-  getAnalisesProjeto, getAnaliseProjeto, atualizarAnaliseProjeto, removerAnaliseProjeto,
+  getAnaliseProjeto, atualizarAnaliseProjeto,
   gerarOrcamentoDaAnalise, getPastaAnalise, abrirPastaAnalise, getDisciplinasProjeto, criarProjetoDeAnalise,
 } from '../services/api';
 import { formatarMoeda } from '../utils/format';
@@ -13,16 +13,15 @@ import { baixarArquivo, mensagemDeErro } from '../utils/download';
 import BlocoPesquisaMercado from '../components/PesquisaMercado';
 import Select from '../components/Select';
 import { CartaoModelo3dAnalise } from '../components/Modelo3d';
-import EnviarParaAnalise, { FINALIDADES } from '../components/analise/EnviarParaAnalise';
+import EnviarParaAnalise from '../components/analise/EnviarParaAnalise';
+import AnalisesSalvas from '../components/analise/ListaAnalises';
 import ConflitosCompatibilizacao from '../components/analise/ConflitosCompatibilizacao';
+// Finalidade da análise (versão 2.1 — análise ≠ laudo): escolhida ao enviar e
+// editável depois; nenhuma das duas cria laudo. Lista e rótulos em utils/finalidades.
+import { FINALIDADES } from '../utils/finalidades';
 
 let contador = 0;
 const gerarId = () => `tmp_${Date.now()}_${contador++}`;
-
-// Finalidade da análise (versão 2.1 — análise ≠ laudo). Escolhida ao enviar e
-// editável depois; nenhuma das duas cria laudo (laudo é pedido quando
-// necessário, em Obras › Laudos). Ordem A–Z nas listas.
-const rotuloFinalidade = (v) => FINALIDADES.find(f => f.valor === v)?.rotulo || 'Orçamento';
 
 // As disciplinas vêm do servidor (GET /projetos/disciplinas — fonte única em
 // backend/src/utils/disciplinasProjeto.js): cada área de atuação é uma
@@ -72,8 +71,7 @@ export default function Compatibilizacao() {
   const [gerandoOrcamento, setGerandoOrcamento] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [salvoEm, setSalvoEm] = useState(null);
-  const [analisesSalvas, setAnalisesSalvas] = useState([]);
-  const [carregandoLista, setCarregandoLista] = useState(false);
+  const [versaoLista, setVersaoLista] = useState(0); // muda para a lista de análises recarregar
   const idAutosaveRef = useRef(null);
   const pendenteRef = useRef(false); // há edição aguardando o autosave disparar
   // Versão gravada no servidor (bloqueio otimista). Em ref, não em estado:
@@ -81,20 +79,6 @@ export default function Compatibilizacao() {
   const versaoRef = useRef(null);
   const filaSalvarRef = useRef(Promise.resolve()); // gravações em sequência, cada uma com a versão da anterior
   const conflitoRef = useRef(false); // outra pessoa gravou: para o autosave até recarregar
-
-  const carregarListaSalvas = useCallback(async () => {
-    setCarregandoLista(true);
-    try {
-      const res = await getAnalisesProjeto({ porPagina: 20 });
-      setAnalisesSalvas(res.data.itens);
-    } catch {
-      // lista salva é conveniência — não bloqueia a tela principal se falhar
-    } finally {
-      setCarregandoLista(false);
-    }
-  }, []);
-
-  useEffect(() => { carregarListaSalvas(); }, [carregarListaSalvas]);
 
   const popularAnalise = useCallback((dados) => {
     const servicosComId = dados.servicos.map(s => ({ ...s, id: gerarId() }));
@@ -135,21 +119,6 @@ export default function Compatibilizacao() {
     setSalvoEm(null);
   }
 
-  function abrirAnaliseSalva(item) {
-    navigate(`/obras/analise/${item.id}`);
-  }
-
-  async function excluirAnaliseSalva(item) {
-    if (!window.confirm(`Excluir a análise de "${item.cliente_nome || 'projeto sem cliente'}"? O registro sai do sistema; a pasta vai para _Excluídos, na pasta do cliente — os arquivos podem ser recuperados de lá.`)) return;
-    try {
-      await removerAnaliseProjeto(item.id);
-      toast.success('Análise excluída');
-      carregarListaSalvas();
-      if (String(analise?.id) === String(item.id)) novaAnalise();
-    } catch {
-      toast.error('Erro ao excluir análise');
-    }
-  }
 
   // Salva automaticamente as edições (cliente, serviços, materiais) — é
   // exatamente o que resolve a análise sumir ao trocar de tela: a partir do
@@ -434,51 +403,9 @@ export default function Compatibilizacao() {
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
           <h3 style={{ ...tituloSecao, flex: 1, marginBottom: 0 }}>Análises salvas</h3>
         </div>
-        {carregandoLista ? (
-          <p style={{ fontSize: 12, color: '#666' }}>Carregando...</p>
-        ) : analisesSalvas.length === 0 ? (
-          <p style={{ fontSize: 12, color: '#666', fontStyle: 'italic' }}>Nenhuma análise salva ainda.</p>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ fontSize: 11, color: '#777', textTransform: 'uppercase', letterSpacing: '.5px', textAlign: 'left' }}>
-                <th style={{ padding: '4px 8px 8px 0' }}>Cliente</th>
-                <th style={{ padding: '4px 8px 8px 0' }}>Finalidade</th>
-                <th style={{ padding: '4px 8px 8px 0' }}>Disciplinas</th>
-                <th style={{ padding: '4px 8px 8px 0' }}>Atualizado em</th>
-                <th style={{ padding: '4px 8px 8px 0' }}>Pendências</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {analisesSalvas.map(item => (
-                <tr
-                  key={item.id}
-                  onClick={() => abrirAnaliseSalva(item)}
-                  style={{
-                    cursor: 'pointer', borderTop: '1px solid #1e1e1e',
-                    background: String(analise?.id) === String(item.id) ? '#1a1a1a' : 'transparent',
-                  }}
-                >
-                  <td style={{ padding: '8px 8px 8px 0' }}>{item.cliente_nome || '—'}</td>
-                  <td style={{ padding: '8px 8px 8px 0', color: item.finalidade === 'elaboracao' ? '#8ab4f8' : '#c9a227', whiteSpace: 'nowrap' }}>{rotuloFinalidade(item.finalidade)}</td>
-                  <td style={{ padding: '8px 8px 8px 0', color: '#999' }}>
-                    {(item.disciplinas || []).map(c => DISCIPLINAS.find(d => d.chave === c)?.nome || c).join(', ') || '—'}
-                  </td>
-                  <td style={{ padding: '8px 8px 8px 0', color: '#999' }}>
-                    {new Date(item.atualizado_em).toLocaleString('pt-BR')}
-                  </td>
-                  <td style={{ padding: '8px 8px 8px 0', color: '#999' }}>{item.total_achados ?? 0}</td>
-                  <td style={{ padding: '8px 0', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
-                    <button onClick={() => excluirAnaliseSalva(item)} style={{ ...btnIcone, color: '#b04040' }} title="Excluir">
-                      <Trash2 size={12} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        {/* 2.3: a mesma lista da obra (components/analise/ListaAnalises.js), com busca e páginas */}
+        <AnalisesSalvas disciplinas={DISCIPLINAS} ativaId={analise?.id} versao={versaoLista}
+          onExcluida={(a) => { if (String(analise?.id) === String(a.id)) novaAnalise(); }} />
       </div>
 
       {!analise && (
@@ -486,7 +413,7 @@ export default function Compatibilizacao() {
           <h3 style={{ ...tituloSecao, marginBottom: 12 }}>Enviar o projeto para análise</h3>
           {/* 2.3: o mesmo bloco da página da obra (aba Análises) — components/analise/EnviarParaAnalise.js */}
           <EnviarParaAnalise obraInicial={obraDaUrl} disciplinas={DISCIPLINAS}
-            onCriada={(a) => { popularAnalise(a); navigate(`/obras/analise/${a.id}`); carregarListaSalvas(); }} />
+            onCriada={(a) => { popularAnalise(a); navigate(`/obras/analise/${a.id}`); setVersaoLista(v => v + 1); }} />
         </div>
       )}
 
@@ -949,10 +876,4 @@ const btnSecundario = {
   display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent',
   border: '1px dashed #333', borderRadius: 6, color: '#999', fontWeight: 700,
   fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
-};
-
-const btnIcone = {
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  width: 26, height: 26, background: '#1a1a1a', border: '1px solid #2a2a2a',
-  borderRadius: 5, color: '#999', cursor: 'pointer'
 };

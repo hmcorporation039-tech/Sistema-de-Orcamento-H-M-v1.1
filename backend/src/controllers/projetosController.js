@@ -111,7 +111,8 @@ async function listar(req, res) {
   const params = [];
   if (busca) {
     params.push(`%${busca}%`);
-    condicoes += ` AND (ap.cliente_nome ILIKE $${params.length} OR ap.nome_projeto ILIKE $${params.length})`;
+    condicoes += ` AND (ap.cliente_nome ILIKE $${params.length} OR ap.nome_projeto ILIKE $${params.length} OR ob.nome ILIKE $${params.length} OR ap.id::text = $${params.length + 1})`;
+    params.push(String(busca).replace(/^#/, '').trim());
   }
   // ?finalidade=orcamento|elaboracao (2.1)
   if (req.query.finalidade) {
@@ -130,12 +131,13 @@ async function listar(req, res) {
   }
 
   try {
-    const total = await pool.query(`SELECT count(*) FROM analises_projeto ap ${condicoes}`, params);
+    const total = await pool.query(`SELECT count(*) FROM analises_projeto ap LEFT JOIN obras ob ON ob.id = ap.obra_id ${condicoes}`, params);
     const result = await pool.query(
       `SELECT ap.id, ap.cliente_id, ap.cliente_nome, ap.nome_projeto, ap.finalidade, ap.disciplinas, ap.arquivos_analisados,
               jsonb_array_length(ap.achados) AS total_achados,
-              ap.criado_em, ap.atualizado_em, ap.obra_id, ${sqlObraJson('ob')} AS obra
-       FROM analises_projeto ap LEFT JOIN obras ob ON ob.id = ap.obra_id ${condicoes}
+              ap.criado_em, ap.atualizado_em, ap.obra_id, ${sqlObraJson('ob')} AS obra,
+              ap.proposta_id, pr.numero AS proposta_numero
+       FROM analises_projeto ap LEFT JOIN obras ob ON ob.id = ap.obra_id LEFT JOIN propostas pr ON pr.id = ap.proposta_id ${condicoes}
        ORDER BY ap.atualizado_em DESC
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, porPagina, offset]

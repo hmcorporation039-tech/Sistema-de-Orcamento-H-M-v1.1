@@ -6,7 +6,7 @@ import {
   getObra, atualizarObra, removerObra, vincularItemObra, getPastaObra, abrirPastaObra,
   getClientes, getUsuarios, getAnalisesProjeto, getLaudos, getPropostas, getContratos, getFinanceiroMovimentos,
   getPastaAnalise, abrirPastaAnalise, getPastaLaudo, abrirPastaLaudo, getCronogramaObra, getOrdensServicoObra, getDisciplinasProjeto,
-  removerLaudo, removerAnaliseProjeto,
+  removerLaudo,
 } from '../../services/api';
 import CronogramaObra from './CronogramaObra';
 import OrdensServicoObra from './OrdensServicoObra';
@@ -14,6 +14,9 @@ import { useAuth } from '../../hooks/useAuth';
 import Select from '../../components/Select';
 import PainelPasta from '../../components/PainelPasta';
 import EnviarParaAnalise from '../../components/analise/EnviarParaAnalise';
+import { TabelaAnalises } from '../../components/analise/ListaAnalises';
+import BotaoExcluir from '../../components/ui/BotaoExcluir';
+import { rotuloFinalidade } from '../../utils/finalidades';
 import { AvisoNovidades } from '../../components/NovidadesPastas';
 import { invalidarCacheObras } from '../../components/ObraSelect';
 import { formatarData } from '../../utils/format';
@@ -37,7 +40,6 @@ const SECOES = [
   { chave: 'arquivos', rotulo: 'Arquivos', icone: FolderOpen },
 ];
 const SECOES_ANTIGAS = { projeto: 'analises', disciplinas: 'projetos' };
-const FINALIDADE = { orcamento: 'Orçamento', elaboracao: 'Elaboração de projeto' };
 
 export default function DetalheObra() {
   const { id } = useParams();
@@ -309,23 +311,6 @@ function BotaoDesligar({ onClick }) {
   return <button type="button" onClick={onClick} style={E.btnIcone} title="Desligar da obra (não apaga o item)"><Unlink size={12} /></button>;
 }
 
-// Excluir de vez (projeto, laudo ou análise): pergunta antes; a pasta do item
-// vai para Arquivos do Sistema\_Excluídos. Só o dono ou um administrador
-// exclui — o servidor confere e a mensagem dele aparece se não puder.
-function BotaoExcluir({ rotulo, excluir, recarregar }) {
-  async function clicar() {
-    if (!window.confirm(`Excluir ${rotulo}? O registro sai do sistema; a pasta vai para _Excluídos, na pasta do cliente — os arquivos podem ser recuperados de lá.`)) return;
-    try {
-      await excluir();
-      toast.success('Excluído');
-      recarregar();
-    } catch (err) {
-      toast.error(err.response?.data?.erro || 'Erro ao excluir', { duration: 8000 });
-    }
-  }
-  return <button type="button" onClick={clicar} style={{ ...E.btnIcone, color: '#c05050', marginLeft: 4 }} title="Excluir (não só desligar da obra)" data-testid="excluir-item-obra"><Trash2 size={12} /></button>;
-}
-
 function Tabela({ colunas, vazio, children }) {
   return (
     <div style={E.caixaTabela}>
@@ -357,7 +342,7 @@ function Analises({ obra, ligar, desligar, podeEditar, recarregar, pacoteNovidad
   const [disciplinas, setDisciplinas] = useState([]);
   useEffect(() => { getDisciplinasProjeto().then(r => setDisciplinas(r.data)).catch(() => {}); }, []);
   const carregar = useCallback(() => getAnalisesProjeto({ obra_id: 'sem', porPagina: 200 })
-    .then(r => (r.data.itens || []).map(a => ({ id: a.id, rotulo: `#${a.id} — ${a.nome_projeto || a.cliente_nome || 'Sem nome'} — ${FINALIDADE[a.finalidade] || 'Orçamento'} (${formatarData(a.atualizado_em)})` }))), []);
+    .then(r => (r.data.itens || []).map(a => ({ id: a.id, rotulo: `#${a.id} — ${a.nome_projeto || a.cliente_nome || 'Sem nome'} — ${rotuloFinalidade(a.finalidade)} (${formatarData(a.atualizado_em)})` }))), []);
   return (
     <div>
       <Cabecalho titulo="Análises de projeto (arquivos recebidos)">
@@ -375,22 +360,10 @@ function Analises({ obra, ligar, desligar, podeEditar, recarregar, pacoteNovidad
             onCriada={(a) => { setPacoteNovidades(null); navigate(`/obras/analise/${a.id}`); }} />
         </div>
       )}
-      <Tabela colunas={[{ rotulo: 'Análise' }, { rotulo: 'Finalidade' }, { rotulo: 'Cliente' }, { rotulo: 'Disciplinas' }, { rotulo: 'Proposta' }, { rotulo: 'Atualizada' }, { rotulo: '' }]} vazio="Nenhuma análise ligada a esta obra.">
-        {obra.analises.map(a => (
-          <tr key={a.id} style={tr}>
-            <td style={E.td}><Link to={`/obras/analise/${a.id}`} style={E.link}>#{a.id} — {a.nome_projeto || a.cliente_nome || 'Sem nome'}</Link></td>
-            <td style={{ ...E.td, color: a.finalidade === 'elaboracao' ? '#8ab4f8' : '#c9a227', whiteSpace: 'nowrap' }}>{FINALIDADE[a.finalidade] || 'Orçamento'}</td>
-            <td style={E.td}>{a.cliente_nome || '—'}</td>
-            <td style={{ ...E.td, fontSize: 11, color: '#999' }}>{(a.disciplinas || []).join(', ') || '—'}</td>
-            <td style={E.td}>{a.proposta_id ? <Link to={`/propostas/editar/${a.proposta_id}`} style={E.link}>{a.proposta_numero}</Link> : '—'}</td>
-            <td style={E.td}>{formatarData(a.atualizado_em)}</td>
-            <td style={{ ...E.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-              {podeEditar && <BotaoDesligar onClick={() => desligar('analise', a.id, `a análise #${a.id}`)} />}
-              <BotaoExcluir rotulo={`a análise #${a.id} (${a.nome_projeto || a.cliente_nome || 'sem nome'})`} excluir={() => removerAnaliseProjeto(a.id)} recarregar={recarregar} />
-            </td>
-          </tr>
-        ))}
-      </Tabela>
+      {/* a mesma tabela da aba Análise de projeto (components/analise/ListaAnalises.js) */}
+      <TabelaAnalises linhas={obra.analises} disciplinas={disciplinas} mostrarObra={false} vazio="Nenhuma análise ligada a esta obra."
+        acoes={(a) => podeEditar && <BotaoDesligar onClick={() => desligar('analise', a.id, `a análise #${a.id}`)} />}
+        depoisDeExcluir={recarregar} />
     </div>
   );
 }
@@ -437,7 +410,7 @@ function RegistrosDisciplina({ obra, ligar, desligar, podeEditar, tipo, itens, r
             <td style={E.td}>{formatarData(l.atualizado_em)}</td>
             <td style={{ ...E.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
               {podeEditar && <BotaoDesligar onClick={() => desligar('laudo', l.id, `o ${R.item} #${l.id}`)} />}
-              <BotaoExcluir rotulo={`o ${R.item} #${l.id} (${String(l.disciplina).toUpperCase()} — ${l.titulo || 'sem título'})`} excluir={() => removerLaudo(l.id)} recarregar={recarregar} />
+              <BotaoExcluir rotulo={`o ${R.item} #${l.id} (${String(l.disciplina).toUpperCase()} — ${l.titulo || 'sem título'})`} excluir={() => removerLaudo(l.id)} depois={recarregar} />
             </td>
           </tr>
         ))}
