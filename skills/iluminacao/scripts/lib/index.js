@@ -5,6 +5,7 @@ const { criarDisciplina } = require('../../../_comum/disciplina');
 const D = require('../../../_comum/documentos');
 const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
+const { fmtNum } = require('../../../_comum/docx-base');
 const C = require('./calculo');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
@@ -23,7 +24,7 @@ const NORMAS = [
 ];
 const SECOES_CHECKLIST = ['Documentação', 'Luminárias', 'Níveis de iluminação', 'Controle e automação', 'Instalação elétrica'];
 
-const num = (v, c = 2) => (v == null || Number.isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: c }));
+const num = fmtNum; // número pt-BR; '—' quando vazio ou inválido
 const sec = (s) => (s == null ? '—' : `${String(s).replace('.', ',')} mm²`);
 const sim = (ok, exigido) => (ok == null ? (exigido == null ? '—' : 'não verificado (dado da luminária ausente)') : ok ? 'atende' : 'NÃO atende');
 // requisito exigido pela atividade sem o dado da luminária para comparar

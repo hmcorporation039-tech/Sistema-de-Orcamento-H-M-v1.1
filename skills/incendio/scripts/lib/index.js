@@ -5,6 +5,7 @@ const { criarDisciplina } = require('../../../_comum/disciplina');
 const D = require('../../../_comum/documentos');
 const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
+const { fmtNum } = require('../../../_comum/docx-base');
 const { calcular, RAIO } = require('./calculo');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
@@ -19,7 +20,7 @@ const NORMAS = [
   ['Instruções técnicas do Corpo de Bombeiros local', 'Exigências por ocupação e área (no DF: CBMDF)'],
 ];
 const SECOES_CHECKLIST = ['Documentação', 'Central', 'Detectores', 'Acionadores', 'Avisadores', 'Circuitos', 'Iluminação de emergência'];
-const num = (v, c = 2) => (v == null || Number.isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: c }));
+const num = fmtNum; // número pt-BR; '—' quando vazio ou inválido
 const ROT_DET = { fumaca: 'Fumaça', temperatura: 'Temperatura', nenhum: '—' };
 
 function processar(dados) {

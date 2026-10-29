@@ -6,6 +6,7 @@ const { criarDisciplina } = require('../../../_comum/disciplina');
 const D = require('../../../_comum/documentos');
 const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
+const { fmtNum } = require('../../../_comum/docx-base');
 const T = require('./tabelas');
 const { calcular } = require('./calculo');
 
@@ -29,7 +30,7 @@ const NORMAS = [
 ];
 const SECOES_CHECKLIST = ['Documentação', 'Escada e portas corta-fogo', 'Ventiladores e casa de máquinas', 'Tomada de ar e distribuição', 'Controle de pressão e alívio', 'Automação e painel de comando', 'Detecção e acionamento', 'Energia e cabos'];
 
-const num = (v, c = 2) => (v == null || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: c }));
+const num = fmtNum; // número pt-BR; '—' quando vazio ou inválido
 const sim = (b) => (b ? 'atende' : 'NÃO ATENDE');
 const vazio = (v) => v == null || v === '';
 const m3h = (q) => `${num(q * 3600, 0)} m³/h`;

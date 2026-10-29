@@ -4,6 +4,7 @@ const { criarDisciplina } = require('../../../_comum/disciplina');
 const D = require('../../../_comum/documentos');
 const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
+const { fmtNum } = require('../../../_comum/docx-base');
 const C = require('./calculo');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
@@ -21,7 +22,7 @@ const NORMAS = [
   ['Regulamentação Anatel', 'Equipamentos de telecomunicações com certificação/homologação Anatel [CONFERIR resolução vigente]'],
 ];
 const SECOES_CHECKLIST = ['Documentação', 'Central e programação', 'Ramais e terminais', 'Porteiro e portaria', 'Cabeamento e DG', 'Proteção e aterramento', 'Alimentação', 'Rede IP'];
-const num = (v, c = 2) => (v == null || Number.isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: c }));
+const num = fmtNum; // número pt-BR; '—' quando vazio ou inválido
 
 function processar(dados) {
   const calc = C.calcular(dados);

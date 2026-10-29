@@ -4,6 +4,7 @@ const { criarDisciplina } = require('../../../_comum/disciplina');
 const D = require('../../../_comum/documentos');
 const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
+const { fmtNum } = require('../../../_comum/docx-base');
 const C = require('./calculo');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
@@ -23,7 +24,7 @@ const NORMAS = [
   ['Lei 13.709/2018 (LGPD)', 'Dados pessoais e dados sensíveis (biometria/face): transparência, base legal e segurança'],
 ];
 const SECOES_CHECKLIST = ['Documentação', 'Rotas de fuga e incêndio', 'Portas e dispositivos', 'Acessibilidade', 'Alimentação', 'Controladoras e rede', 'Software e LGPD'];
-const num = (v, c = 2) => (v == null || Number.isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: c }));
+const num = fmtNum; // número pt-BR; '—' quando vazio ou inválido
 const ROTULO_COM = { wiegand: 'Wiegand', rs485: 'RS-485 / OSDP', ip: 'IP (PoE)' };
 const ROTULO_GRAU = { 1: 'Grau 1 — risco baixo', 2: 'Grau 2 — risco baixo a médio', 3: 'Grau 3 — risco médio a alto', 4: 'Grau 4 — risco alto' };
 

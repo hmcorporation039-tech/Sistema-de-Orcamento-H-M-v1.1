@@ -7,6 +7,7 @@ const { criarDisciplina } = require('../../../_comum/disciplina');
 const D = require('../../../_comum/documentos');
 const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
+const { fmtNum } = require('../../../_comum/docx-base');
 const T = require('../../../_comum/eletrico/tabelas');
 const C = require('./calculo');
 
@@ -28,7 +29,7 @@ const NORMAS = [
 ];
 const SECOES_CHECKLIST = ['Documentação', 'Classificação dos locais', 'Sistema IT médico', 'Proteção e circuitos', 'Equipotencialização', 'Tomadas e identificação', 'Fonte de segurança', 'Iluminação de segurança'];
 
-const num = (v, c = 2) => (v == null || Number.isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: c }));
+const num = fmtNum; // número pt-BR; '—' quando vazio ou inválido
 const sec = (s) => (s == null ? '—' : `${String(s).replace('.', ',')} mm²`);
 const kva = (va) => `${num(va / 1000)} kVA`;
 const classeCurta = (k) => (C.CLASSES[k] || C.CLASSES['']).curto;

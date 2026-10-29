@@ -23,7 +23,7 @@ const NORMAS = [
 ];
 const SECOES_CHECKLIST = ['Documentação', 'Quadros', 'Proteção', 'Condutores', 'Tomadas e pontos', 'Aterramento', 'Segurança NR-10'];
 
-const num = (v, c = 2) => (v == null || Number.isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: c }));
+const num = B.fmtNum; // número pt-BR; '—' quando vazio ou inválido
 const sec = (s) => (s == null ? '—' : `${String(s).replace('.', ',')} mm²`);
 
 // ── Inspeção (laudo NBR 5410 seção 7 / NR-10) ───────────────────────────────

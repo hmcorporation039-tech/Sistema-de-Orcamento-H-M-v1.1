@@ -7,6 +7,7 @@ const { criarDisciplina } = require('../../../_comum/disciplina');
 const D = require('../../../_comum/documentos');
 const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
+const { fmtNum } = require('../../../_comum/docx-base');
 const C = require('./calculo');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
@@ -25,7 +26,7 @@ const NORMAS = [
   ['Anatel', 'Canalização da TV digital (UHF 14–51 após o remanejamento da faixa de 700 MHz) e migração da TV aberta via satélite para a banda Ku [CONFERIR]'],
 ];
 const SECOES_CHECKLIST = ['Documentação', 'Antenas e mastro', 'Headend', 'Distribuição', 'Tomadas e níveis', 'Proteção e aterramento'];
-const num = (v, c = 1) => (v == null || Number.isNaN(Number(v)) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: c }));
+const num = (v, c = 1) => fmtNum(v, c); // número pt-BR; '—' quando vazio ou inválido (1 casa: níveis em dB)
 const ROT_TIPO = { terrestre: 'TV digital terrestre (MATV)', satelite: 'Satélite banda Ku (SMATV)', ambos: 'TV digital terrestre + satélite banda Ku (SMATV)' };
 const ROT_SIT = { ok: 'OK', baixo: 'abaixo do alvo', insuficiente: 'INSUFICIENTE', alto: 'ACIMA do máximo' };
 const maiuscula = (t) => (t ? t.charAt(0).toUpperCase() + t.slice(1) : t);

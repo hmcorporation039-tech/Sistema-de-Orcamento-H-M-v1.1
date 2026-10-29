@@ -4,6 +4,7 @@ const { criarDisciplina } = require('../../../_comum/disciplina');
 const D = require('../../../_comum/documentos');
 const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
+const { fmtNum } = require('../../../_comum/docx-base');
 const { calcular, MESES } = require('./calculo');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
@@ -20,7 +21,7 @@ const NORMAS = [
   ['CRESESB/CEPEL — Manual de Engenharia para Sistemas Fotovoltaicos (2014)', 'Dimensionamento do gerador, do inversor e das strings'],
 ];
 const SECOES_CHECKLIST = ['Documentação', 'Arranjo fotovoltaico', 'Proteção CC', 'Inversor', 'Lado CA e conexão', 'Ensaios'];
-const num = (v, c = 2) => (v == null || Number.isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: c }));
+const num = fmtNum; // número pt-BR; '—' quando vazio ou inválido
 const sec = (s) => (s == null ? '—' : `${String(s).replace('.', ',')} mm²`);
 const ROTULO_MES = { jan: 'Jan', fev: 'Fev', mar: 'Mar', abr: 'Abr', mai: 'Mai', jun: 'Jun', jul: 'Jul', ago: 'Ago', set: 'Set', out: 'Out', nov: 'Nov', dez: 'Dez' };
 

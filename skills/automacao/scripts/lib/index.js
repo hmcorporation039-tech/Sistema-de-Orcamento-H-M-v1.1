@@ -4,6 +4,7 @@ const { criarDisciplina } = require('../../../_comum/disciplina');
 const D = require('../../../_comum/documentos');
 const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
+const { fmtNum } = require('../../../_comum/docx-base');
 const T = require('./tabelas');
 const { calcular } = require('./calculo');
 
@@ -20,7 +21,7 @@ const NORMAS = [
   ['ABNT NBR 5410 e NBR 14565', 'Instalações elétricas de baixa tensão e cabeamento estruturado'],
 ];
 const SECOES_CHECKLIST = ['Documentação', 'Quadros e campo', 'Rede', 'Supervisório', 'Funções de controle', 'Ensaios', 'Residencial'];
-const num = (v, c = 2) => (v == null || Number.isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: c }));
+const num = fmtNum; // número pt-BR; '—' quando vazio ou inválido
 const pct = (v) => `${num(v * 100, 0)} %`;
 const ROTULO_CONTROLE = { nenhum: 'Sem controle', termostato: 'Termostato comunicante', sensor_t: 'Sensor de temperatura', sensor_tur: 'Sensor T + UR', co2: 'Sensor CO₂ + T + UR (DCV)' };
 

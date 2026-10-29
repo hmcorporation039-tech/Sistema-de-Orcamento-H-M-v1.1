@@ -6,6 +6,7 @@ const { criarDisciplina } = require('../../../_comum/disciplina');
 const D = require('../../../_comum/documentos');
 const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
+const { fmtNum } = require('../../../_comum/docx-base');
 const { calcular, CLASSES_AMBIENTAIS, ROTULO_DETECTOR, ROTULO_TECNOLOGIA, TEMPO_ENTRADA_MAX_S, AUTONOMIA_H, ATS_POR_GRAU, DIGITOS_SENHA } = require('./calculo');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
@@ -26,7 +27,7 @@ const NORMAS = [
   ['Lei 13.709/2018 (LGPD)', 'Quando houver verificação por imagem/vídeo'],
 ];
 const SECOES_CHECKLIST = ['Documentação', 'Central e alimentação', 'Detecção', 'Dispositivos de aviso', 'Comando e operação', 'Comunicação e monitoramento', 'Infraestrutura'];
-const num = (v, c = 2) => (v == null || v === '' || Number.isNaN(Number(v)) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: c }));
+const num = fmtNum; // número pt-BR; '—' quando vazio ou inválido
 const ROT_MEIO = { ethernet: 'Ethernet (IP)', gprs: 'GPRS/4G', linha: 'Linha telefônica' };
 const ROT_PROTOCOLO = { contact_id: 'Contact ID (SIA DC-05)', sia_dc09: 'SIA DC-09 (IP)', sia: 'SIA DC-03' };
 const TENSAO_MIN_BATERIA = 12.0; // V com rede desligada, sob carga [CONFERIR]

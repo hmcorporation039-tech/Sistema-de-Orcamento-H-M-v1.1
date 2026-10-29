@@ -19,14 +19,19 @@ const ASSETS = [path.join(__dirname, 'assets')]
 
 // ── Formatação pt-BR ───────────────────────────────────────────────────────
 
+// Número em pt-BR com até `casas` decimais (sem zeros à direita). Vazio, nulo
+// ou valor que não vira número finito ('abc', NaN, Infinity) sai como '—',
+// nunca "NaN"/"∞" no documento. Usado também como `num` pelas skills.
 function fmtNum(v, casas = 2) {
-  if (v == null || v === '' || Number.isNaN(v)) return '—';
+  if (v == null || v === '' || !Number.isFinite(Number(v))) return '—';
   return Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: casas });
 }
+// mesmo guarda do fmtNum: um texto que chegasse aqui quebrava em v.toExponential
 function fmtExp(v) {
-  if (v == null || Number.isNaN(v)) return '—';
-  if (v === 0) return '0';
-  return v.toExponential(2).replace('.', ',').replace(/e([+-])(\d)$/, 'e$10$2');
+  const n = Number(v);
+  if (v == null || v === '' || !Number.isFinite(n)) return '—';
+  if (n === 0) return '0';
+  return n.toExponential(2).replace('.', ',').replace(/e([+-])(\d)$/, 'e$10$2');
 }
 function fmtData(iso) {
   if (!iso) return '';

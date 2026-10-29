@@ -4,6 +4,7 @@ const { criarDisciplina } = require('../../../_comum/disciplina');
 const D = require('../../../_comum/documentos');
 const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
+const { fmtNum } = require('../../../_comum/docx-base');
 const { calcular } = require('./calculo');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
@@ -17,7 +18,7 @@ const NORMAS = [
   ['ABNT NBR 5410 e ABNT NBR 5419', 'Aterramento, equipotencialização e proteção contra surtos'],
 ];
 const SECOES_CHECKLIST = ['Documentação', 'Topologia e distâncias', 'Área de trabalho', 'Racks e distribuidores', 'Instalação'];
-const num = (v, c = 2) => (v == null || Number.isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: c }));
+const num = fmtNum; // número pt-BR; '—' quando vazio ou inválido
 
 function processar(dados) {
   const calc = calcular(dados);

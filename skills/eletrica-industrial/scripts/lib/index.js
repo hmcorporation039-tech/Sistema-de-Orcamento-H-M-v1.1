@@ -6,6 +6,7 @@ const { criarDisciplina } = require('../../../_comum/disciplina');
 const D = require('../../../_comum/documentos');
 const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
+const { fmtNum } = require('../../../_comum/docx-base');
 const T = require('../../../_comum/eletrico/tabelas');
 const X = require('./tabelas');
 const { calcular } = require('./calculo');
@@ -29,7 +30,7 @@ const NORMAS = [
 ];
 const SECOES_CHECKLIST = ['Documentação', 'Quadros e CCM', 'Motores e partidas', 'Proteção', 'Aterramento', 'Banco de capacitores', 'Segurança NR-10 / NR-12', 'Ensaios e termografia'];
 
-const num = (v, c = 2) => (v == null || Number.isNaN(Number(v)) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: c }));
+const num = fmtNum; // número pt-BR; '—' quando vazio ou inválido
 const sec = (s) => (s == null ? '—' : `${String(s).replace('.', ',')} mm²`);
 const ka = (a) => `${num(a / 1000, 2)} kA`;
 const caboTxt = (a) => (a ? `${a.paralelos > 1 ? `${a.paralelos} × ` : ''}${a.condutores === 6 ? '6 × ' : '3 × '}${sec(a.secao)}${a.secaoNeutro ? ` + N ${sec(a.secaoNeutro)}` : ''} + PE ${sec(a.secaoPE)}` : '—');
