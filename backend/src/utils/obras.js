@@ -2,6 +2,8 @@
 // testes/obras.test.js. Usadas pela migração 2.0-04-obras.js (ligar os dados
 // antigos) e pelo controllers/obrasController.js (orçado × realizado).
 
+const { arredondar } = require('./calculoProposta');
+
 const STATUS_OBRA = ['prospeccao', 'orcamento', 'contratada', 'execucao', 'concluida', 'cancelada'];
 const ROTULO_STATUS = {
   prospeccao: 'Prospecção', orcamento: 'Orçamento', contratada: 'Contratada',
@@ -165,7 +167,9 @@ function calcularOrcado(propostas) {
   return { valor: 0, base: 'nenhuma', propostas: [] };
 }
 
-function arred(v) { return Math.round((Number(v) || 0) * 100) / 100; }
+// mesmo arredondamento da proposta (com Number.EPSILON): antes 1,005 virava
+// 1,00 aqui e 1,01 na proposta, e o orçado × realizado não batia no centavo
+const arred = arredondar;
 
 // REALIZADO = despesas ligadas à obra (financeiro_movimentos tipo 'realizado',
 // Pix/pagamento feito); RECEBIDO = entradas ligadas (tipo 'recebido').
