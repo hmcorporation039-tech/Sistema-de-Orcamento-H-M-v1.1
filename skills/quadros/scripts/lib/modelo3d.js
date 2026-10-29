@@ -183,6 +183,7 @@ function montarCena(calc, dados = {}) {
 const CSS_QUADRO = `
 #etiquetas{position:fixed;inset:0;pointer-events:none;z-index:2;overflow:hidden}
 .etq-q{position:absolute;left:0;top:0;padding:1px 5px;border-radius:4px;background:rgba(12,13,16,.78);border:1px solid rgba(201,162,39,.55);color:#fff;font-size:10.5px;white-space:nowrap}
+.etq-dica{position:fixed;z-index:7;pointer-events:none;border-color:var(--ouro);font-size:12px}
 #camadas .leg{padding:5px 2px}
 #info table{width:100%;border-collapse:collapse;font-size:12px}#info th{color:var(--suave);font-weight:500;text-align:left;vertical-align:top;padding:3px 6px 3px 0;width:38%}
 #info td{padding:3px 0;word-break:break-word}#info a{color:var(--ouro2)}#info .tag{display:block;font-size:16px;color:var(--ouro2);margin-bottom:6px}#info small{color:var(--suave)}
