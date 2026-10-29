@@ -296,5 +296,36 @@ const pt = (x, y, descricao, disciplina, classe) => ({ x, y, descricao, discipli
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
 
+  await caso('mesmo ponto em planta com alturas diferentes não é conflito (interruptor 1,10 m × rede 0,30 m; detector no teto × tomada)', async () => {
+    const amb = salas();
+    const p = (x, y, descricao, disciplina, altura_m, montagem) => ({ x, y, descricao, disciplina, classe: 'outro', altura_m, montagem });
+    const e = { arquivo: 'E.dxf', disciplinas: ['eletrica'], espacial: { ambientes: amb, trechos: [], pontos: [
+      p(1, 1, 'Interruptor', 'eletrica', 1.1, 'parede'), p(7, 1, 'Tomada baixa', 'eletrica', 0.3, 'parede'),
+      p(13, 1, 'Tomada média', 'eletrica', 1.1, 'parede'), p(19, 1, 'Tomada', 'eletrica', null, null)] } };
+    const c = { arquivo: 'C.dxf', disciplinas: ['cabeamento', 'incendio'], espacial: { ambientes: amb, trechos: [], pontos: [
+      p(1.1, 1, 'Ponto de rede', 'rede', 0.3, 'parede'), // 0,80 m mais baixo: não conflita
+      p(7.1, 1, 'Detector de incêndio', 'incendio', null, 'teto'), // teto × tomada baixa: não conflita
+      p(13.1, 1, 'Ponto de rede', 'rede', 1.2, 'parede'), // quase a mesma altura: conflita
+      p(19.1, 1, 'Ponto de rede', 'rede', 0.3, 'parede')] } }; // altura da tomada desconhecida: vale a planta
+    const r2 = compatibilizar([e, c]);
+    const mesmo = r2.conflitos.filter(x => x.tipo === 'mesmo_ponto');
+    assert.deepStrictEqual(mesmo.map(x => Math.round(x.x)).sort((a, b) => a - b), [13, 19], JSON.stringify(mesmo));
+    const ach = r2.achados.find(a => /mesmo ponto/.test(a.tema));
+    assert.ok(/h = 1,10 m/.test(ach.observacao) && /h = 1,20 m/.test(ach.observacao), ach.observacao);
+  });
+
+  await caso('traçado sem disciplina num arquivo de várias: a disciplina vem do prefixo da layer (CAB-, ELE-)', async () => {
+    const multi = { arquivo: 'MULTI.dxf', disciplinas: ['incendio', 'cabeamento', 'eletrica'], espacial: { ambientes: salas(), pontos: [], trechos: [
+      { layer: 'CAB-ELETROCALHA', disciplina: null, segmentos: [[0, 3.8, 12, 3.8]] },
+      { layer: 'ELE-ELETRODUTO', disciplina: null, segmentos: [[0, 3.9, 12, 3.9]] },
+      { layer: 'INC-ELETRODUTO', disciplina: null, segmentos: [[0, 2, 12, 2]] }] } };
+    const r3 = compatibilizar([multi]);
+    const tr = r3.conflitos.filter(x => x.tipo === 'tracado');
+    assert.ok(tr.length >= 1, 'energia × telecom no mesmo caminho');
+    assert.strictEqual(tr[0].a.disciplina, 'eletrica');
+    assert.strictEqual(tr[0].b.disciplina, 'rede');
+    assert.ok(tr.every(x => x.a.descricao === 'layer "ELE-ELETRODUTO"'), 'o eletroduto de incêndio não é energia');
+  });
+
   console.log(`compatibilidadeEspacial + pacote: ${ok} casos ok`);
 })().catch((e) => { console.error('FALHOU:', e); process.exit(1); });

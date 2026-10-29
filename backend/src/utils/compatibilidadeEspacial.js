@@ -32,8 +32,29 @@ const MAX_CONFLITOS = 300;
 // verdade (linha de construção, erro de escala/unidade): fica de fora, com aviso
 const MAX_SEGMENTO_M = 1000;
 
+const path = require('path');
 const { chaveNome: normalizar } = require('./texto');
+const { CAD } = require('../config/caminhos');
+// disciplina do traçado pelo prefixo/palavra da layer (tabela de skills/_comum/cad/disciplinasCad.js)
+const { disciplinaDaLayer } = require(path.join(CAD, 'disciplinasCad.js'));
 const br = (v, c = 2) => Number(v).toFixed(c).replace('.', ',');
+
+// "Mesmo ponto" em planta não é conflito se as alturas de instalação são outras
+// (M9 da revisão de 29/10/2026): interruptor a 1,10 m sobre a tomada de rede a
+// 0,30 m, detector no teto sobre a tomada. Só quando as duas alturas são
+// conhecidas (atributo ALTURA, legenda "h = …", "(teto)"); sem altura, vale a planta.
+const ALTURA_DIFERENTE_M = 0.5;
+const TETO_A_PARTIR_DE_M = 2.2;
+function alturasDiferentes(a, b) {
+  if (!a.montagem || !b.montagem) return false;
+  if (a.montagem === 'teto' && b.montagem === 'teto') return false;
+  if (a.montagem === 'teto' || b.montagem === 'teto') {
+    const outro = a.montagem === 'teto' ? b : a;
+    return outro.altura_m != null && outro.altura_m < TETO_A_PARTIR_DE_M;
+  }
+  return a.altura_m != null && b.altura_m != null && Math.abs(a.altura_m - b.altura_m) >= ALTURA_DIFERENTE_M;
+}
+const textoAltura = (p) => (p.montagem === 'teto' ? 'teto' : p.altura_m != null ? `h = ${br(p.altura_m)} m` : null);
 const mediana = (v) => { const s = [...v].sort((a, b) => a - b); const k = Math.floor(s.length / 2); return s.length % 2 ? s[k] : (s[k - 1] + s[k]) / 2; };
 
 function centroide(p) {
@@ -166,7 +187,7 @@ function ambienteEm(ambientes, x, y) {
 function conflitosDePontos(pontos, ambientesRef) {
   const out = [];
   const g = grade(pontos, 2, (p) => [p.x, p.y, p.x, p.y]);
-  const lado = (p) => ({ arquivo: p.arquivo, descricao: p.descricao, disciplina: p.disciplina, classe: p.classe });
+  const lado = (p) => ({ arquivo: p.arquivo, descricao: p.descricao, disciplina: p.disciplina, classe: p.classe, ...(textoAltura(p) ? { altura: textoAltura(p) } : {}) });
   for (const regra of REGRAS) {
     for (const a of pontos.filter(p => p.classe === regra.a)) {
       let melhor = null;
@@ -193,6 +214,7 @@ function conflitosDePontos(pontos, ambientesRef) {
       if (!a.disciplina && !b.disciplina) continue;
       const d = Math.hypot(a.x - b.x, a.y - b.y);
       if (d >= MESMO_PONTO_M || jaTem.has(`${a.arquivo}|${a.x}|${a.y}`) || jaTem.has(`${b.arquivo}|${b.x}|${b.y}`)) continue;
+      if (alturasDiferentes(a, b)) continue; // um no teto, outro na parede; ou alturas bem diferentes
       out.push({ tipo: 'mesmo_ponto', tema: 'Componentes de disciplinas diferentes no mesmo ponto',
         criterio: `menos de ${br(MESMO_PONTO_M)} m entre eles — um dos dois precisa mudar de lugar`, distancia: Math.round(d * 100) / 100, minimo: MESMO_PONTO_M,
         x: a.x, y: a.y, ambiente: ambienteEm(ambientesRef, a.x, a.y), a: lado(a), b: lado(b) });
@@ -260,7 +282,7 @@ function conflitosDeTracado(trechos, ambientesRef) {
 }
 
 const NOME_DISC = { eletrica: 'elétrica', iluminacao: 'iluminação', incendio: 'incêndio', cftv: 'CFTV', cabeamento: 'cabeamento', rede: 'rede', alarme: 'alarme', telefonia: 'telefonia', antena: 'antena', controle_acesso: 'controle de acesso', automacao: 'automação' };
-const rotuloLado = (l) => `${String(l.descricao).replace(/ — bloco .*/, '').slice(0, 50)} (${l.disciplina ? NOME_DISC[l.disciplina] || l.disciplina : 'climatização/hidráulica'}, "${l.arquivo}")`;
+const rotuloLado = (l) => `${String(l.descricao).replace(/ — bloco .*/, '').slice(0, 50)} (${l.disciplina ? NOME_DISC[l.disciplina] || l.disciplina : 'climatização/hidráulica'}${l.altura ? `, ${l.altura}` : ''}, "${l.arquivo}")`;
 
 // arquivos: [{ arquivo, disciplinas, referencia, tipoReferencia, espacial }]
 function compatibilizar(arquivos, { temPdf = false } = {}) {
@@ -294,7 +316,9 @@ function compatibilizar(arquivos, { temPdf = false } = {}) {
       const discArquivo = m.f.disciplinas.length === 1 ? m.f.disciplinas[0] : null;
       for (const p of m.f.espacial.pontos) pontos.push({ ...p, x: Math.round((p.x + m.dx) * 100) / 100, y: Math.round((p.y + m.dy) * 100) / 100, arquivo: m.f.arquivo });
       if (!m.f.referencia) {
-        for (const t of m.f.espacial.trechos) trechos.push({ ...t, disciplina: t.disciplina || discArquivo, arquivo: m.f.arquivo, segmentos: t.segmentos.map(s => [s[0] + m.dx, s[1] + m.dy, s[2] + m.dx, s[3] + m.dy]) });
+        // disciplina do traçado: a da leitura, senão o prefixo da layer (CAB-, INC-, D10_TEL…),
+        // e só por último a do arquivo — com várias disciplinas, o trecho ficava sem nenhuma
+        for (const t of m.f.espacial.trechos) trechos.push({ ...t, disciplina: t.disciplina || disciplinaDaLayer(t.layer) || discArquivo, arquivo: m.f.arquivo, segmentos: t.segmentos.map(s => [s[0] + m.dx, s[1] + m.dy, s[2] + m.dx, s[3] + m.dy]) });
       }
       // deslocado em relação à referência
       if (m.f !== g.ref && Math.hypot(m.dx, m.dy) >= 0.05) {

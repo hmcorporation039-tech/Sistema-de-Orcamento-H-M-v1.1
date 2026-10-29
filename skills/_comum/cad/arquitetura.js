@@ -13,6 +13,7 @@
 // (`opcoes.layersAmbiente`, regex, restringe a etapa 1).
 const { Helper } = require('dxf');
 const { classificarFolha, NAO_PLANTA, RE_NOME_SALA } = require('./classificarPrancha');
+const { ehLayerDeInstalacao } = require('./disciplinasCad');
 
 // $INSUNITS → fator para metros (0 = sem unidade: decide pelas portas/tamanho)
 const FATOR = { 1: 0.0254, 2: 0.3048, 4: 0.001, 5: 0.01, 6: 1 };
@@ -70,6 +71,11 @@ const RE_NAO_NOME = new RegExp([
   /\d\s*(Ah|kg|V\s?[ad]c|Vc[ac]|ac|dc|Hz|rpm|cv|hp)\b/, /\d\s*("|''|pol\b)/, /^LABEL\b/,
   // nota de instalação ("Tomada de espelho altura: 97,5 cm" — Arena)
   /\baltura\s*[:=]|\d\s*cm\b/,
+  // nota e contagem dentro da planta, não nome de sala (DWG real, 29/10/2026): "(Segue p/ …)",
+  // "*ÁREA DISPONÍVEL", "6 LEITOS", "21 DEGRAUS", "RESERVA LEGAL: 20%", "30A-30mA",
+  // "PD SOB VIGA= 1,85m", "TOTAL VAGAS…", etiqueta de quadro "213-QLTF-VEST"
+  /^[(*\-–]/, /%/, /^\d+\s+(LEITOS?|ESTA[ÇC][ÕO]ES|DEGRAUS|VAGAS?|MESAS|CADEIRAS|POSI[ÇC][ÕO]ES|ASSENTOS|POLTRONAS|LUGARES|UNIDADES)\b/, /\d\s*mA\b/,
+  /=\s*[\d.,]+\s*m\b/, /^TOTAL\b/, /(^|[-_ ])(QGBT|QD[A-Z]{0,4}|QL[A-Z]{0,4}|QF[A-Z]{0,4}|CCM)([-_ ]|$)/,
 ].map(r => r.source).join('|'), 'i');
 // sigla curta que é sala; fora delas, 1–3 letras sozinhas ("ST", "DI", "ALC") são código
 const RE_SIGLA_SALA = /^(WC|BWC|DML|CPD|ADM|LAV|COZ|QTO|SL|DEP|ALM|GAR|CME|UTI|RX|PS|HALL|LOJA|BAR|SPA)$/i;
@@ -86,12 +92,16 @@ const RE_LAYER_INSTALACAO = /CFTV|C[ÂA]MERA|INC[ÊE]ND|ALARM|DETEC|SPDA|EL[ÉE]
 const ehCodigoDeEquipamento = (t) => {
   const m = RE_CODIGO.exec(t.s);
   if (m) return !(RE_NOME_SALA.test(m[1]) || RE_SIGLA_COMODO.test(m[1]));
-  return RE_LAYER_INSTALACAO.test(t.layer || '') && !RE_NOME_SALA.test(t.s);
+  return (RE_LAYER_INSTALACAO.test(t.layer || '') || ehLayerDeInstalacao(t.layer)) && !RE_NOME_SALA.test(t.s);
 };
+// atributo de bloco de equipamento (TAG "AP-01", DESCR "Detector de fumaça… - nave",
+// ALTURA "teto") não é nome de sala — viravam ambientes no DXF real (29/10/2026)
+const RE_TAG_EQUIPAMENTO = /^(TAG|ID|IDENT|DESCR?|DESCRI|ALTURA|ALT|H|TIPO|MODELO|EQUIP|CIRC|POT|FAB|COD|REF|QTD|LACO|ENDERE|ZONA|CAM|PONTO|MONTAGEM|INSTALA|OBS)/i;
+const ehAtributoDeEquipamento = (t) => !!t.tag && RE_TAG_EQUIPAMENTO.test(t.tag);
 // CamelCase de parâmetro exportado ("ApplicableOccurrence") — teste sensível a maiúsculas
 const ehTextoDeSala = (t) => t.s.length >= 2 && t.s.length <= 60 && !RE_NAO_NOME.test(t.s) && !/^[A-Z][a-z]+([A-Z][a-z]+){1,}$/.test(t.s) && /[A-Za-zÀ-ú]{2}/.test(t.s);
 const ehSiglaSolta = (s) => /^[A-ZÀ-Ú]{1,3}$/.test(s) && !RE_SIGLA_SALA.test(s) && !RE_SIGLA_COMODO.test(s);
-const ehNome = (t) => ehTextoDeSala(t) && !ehSiglaSolta(t.s) && !ehCodigoDeEquipamento(t);
+const ehNome = (t) => ehTextoDeSala(t) && !ehSiglaSolta(t.s) && !ehCodigoDeEquipamento(t) && !ehAtributoDeEquipamento(t);
 // entre vários textos dentro do ambiente: o de letra maior; empate → o mais longo.
 // A etiqueta de equipamento ajuda a achar a sala (está dentro dela), mas não dá
 // o nome: sala só com etiquetas sai sem nome (vira "Ambiente N" no fim).
@@ -267,6 +277,41 @@ function associarPortas(portas, ambientes) {
   return portas;
 }
 
+// ── Polígonos que não são ambiente (M2 da revisão de 29/10/2026) ─────────
+// Polilinha fechada em layer de instalação ou de anotação não é sala: campo de
+// visão da câmera (CFTV-COBERTURA), cobertura do detector (STD-INC-BLOCK),
+// nuvem de revisão, contorno de eletrocalha, mobiliário, mapa de situação. No
+// DXF real, os "ambientes" vinham desses contornos, com nome de equipamento.
+// ("COBERTURA" sozinha não entra: na arquitetura é telhado ou apartamento;
+// CFTV-COBERTURA e INC-RAIO-COBERTURA saem pelo prefixo da disciplina.)
+const RE_LAYER_NAO_AMBIENTE = /REVIS[ÃA]O|NUVEM|CLOUD|CAMPO.?DE.?VIS|CALHA|ELETROD|FIA[ÇC][ÃA]O|FIACAO|INFRA|STD-INC|MOBILI|\bMAPA|SITUA[ÇC][ÃA]O|LOCALIZA[ÇC][ÃA]O|\bEQUIP|HACH/i;
+const layerNaoEhAmbiente = (l) => RE_LAYER_NAO_AMBIENTE.test(l || '') || ehLayerDeInstalacao(l);
+
+// Grade de módulos iguais (6+ polígonos de mesma área e mesmas dimensões, a
+// maioria encostada lado a lado, sem folga de parede): é malha de cobertura,
+// de vagas ou de estrutura, não sala — DWG real com 152 "ambientes" de 6,3 × 6,3 m.
+// Salas iguais de verdade (quartos de hotel) têm parede entre elas: não encostam.
+function semGradeRepetida(polis) {
+  const caixa = (pts) => { const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; };
+  const grupos = new Map();
+  for (const p of polis) {
+    const c = caixa(p.pts);
+    const k = `${Math.round(p.area * 10)}|${Math.round((c[2] - c[0]) * 20)}|${Math.round((c[3] - c[1]) * 20)}`;
+    (grupos.get(k) || grupos.set(k, []).get(k)).push({ p, c });
+  }
+  const fora = new Set();
+  const tol = 0.02;
+  const sobrepoe = (a0, a1, b0, b1) => Math.min(a1, b1) - Math.max(a0, b0) > tol;
+  const encostam = (c, d) => ((Math.abs(c[2] - d[0]) < tol || Math.abs(c[0] - d[2]) < tol) && sobrepoe(c[1], c[3], d[1], d[3]))
+    || ((Math.abs(c[3] - d[1]) < tol || Math.abs(c[1] - d[3]) < tol) && sobrepoe(c[0], c[2], d[0], d[2]));
+  for (const g of grupos.values()) {
+    if (g.length < 6 || g.length > 5000) continue;
+    const encostados = g.filter(({ c }, i) => g.some(({ c: d }, j) => j !== i && encostam(c, d))).length;
+    if (encostados / g.length >= 0.5) for (const { p } of g) fora.add(p);
+  }
+  return fora.size ? polis.filter(p => !fora.has(p)) : polis;
+}
+
 // ── Ambientes pelas paredes (sem polilinha de área) ───────────────────────
 // Layers que não são parede (mobiliário, piso, cotas, textos, tracejados de projeção…)
 const RE_NAO_PAREDE = /MOB|LOU[CÇ]A|PISO|HACH|COTA|TEXT|DIM|EIXO|TRACEJ|VEGET|LAYOUT|EQUIP|PAGIN|FORRO|ILUM|EL[EÉ]T|HIDR|SANIT|TUBUL|DEFPOINTS|VIEWPORT|CARIMBO|SELO|NOTA/i;
@@ -423,7 +468,7 @@ function lerArquitetura(textoDxf, opcoes = {}) {
       if (!s || !Number.isFinite(x)) continue;
       const [[tx, ty]] = transformar([[x, y]], e.transforms);
       const escala = e.transforms?.reduce((m, t) => m * Math.abs(t.scaleY || 1), 1) || 1;
-      textos.push({ s, x: tx, y: ty, h: (e.nominalTextHeight || e.textHeight || (e.type === 'ATTRIB' ? e.text.textHeight : 0) || 0) * escala, layer: e.layer });
+      textos.push({ s, x: tx, y: ty, h: (e.nominalTextHeight || e.textHeight || (e.type === 'ATTRIB' ? e.text.textHeight : 0) || 0) * escala, layer: e.layer, ...(e.type === 'ATTRIB' ? { tag: e.tag || '' } : {}) });
     }
   }
 
@@ -473,9 +518,10 @@ function lerArquitetura(textoDxf, opcoes = {}) {
   // em linha dupla geram polígonos aninhados: o de dentro é o ambiente).
   // Polígono com 3+ portas bem no meio dele é moldura/contorno do prédio, não sala.
   const portasNoMeio = (pts) => portas.filter(p => dentro(p.meio, pts) && distanciaContorno(p.meio, pts) > 0.8).length;
-  const candidatos = poligonosM
+  const candidatos = semGradeRepetida(poligonosM
+    .filter(p => !layerNaoEhAmbiente(p.layer))
     .map(p => ({ ...p, area: areaPoligono(p.pts) }))
-    .filter(p => p.area >= (opcoes.areaMinima ?? 1) && p.area <= (opcoes.areaMaxima ?? 5000) && portasNoMeio(p.pts) < 3);
+    .filter(p => p.area >= (opcoes.areaMinima ?? 1) && p.area <= (opcoes.areaMaxima ?? 5000) && portasNoMeio(p.pts) < 3));
   const nomes = new Map(); // índice do polígono → textos
   const soltos = [];
   // sementes sem nome: qualquer etiqueta com cara de código (CAM-04, QD-01, TUG 3…) ou

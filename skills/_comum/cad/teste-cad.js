@@ -352,5 +352,40 @@ caso('valor com unidade, bitola e sigla solta não viram nome de sala', () => {
   assert.deepStrictEqual(nomes([[2.5, 'WC'], [7.5, 'DML'], [12.5, '150Ah, 1990kg'], [17.5, 'Tomada altura: 30 cm']]), ['DML', 'WC']);
 });
 
+// ── Revisão de 29/10/2026 (M2): o que não é ambiente num desenho de instalação ──
+caso('campo de visão da câmera não é sala; atributo de equipamento (TAG, DESCR, ALTURA) não é nome', () => {
+  const a = lerArquitetura(plantaQuatroSalas([[2.5, 'COZINHA'], [7.5, 'SALA']], (g) => {
+    g.camada('CFTV-COBERTURA'); g.camada('INC-DETECTOR');
+    g.polilinha([[10.5, 0.5], [14.5, 0.5], [14.5, 3.5], [10.5, 3.5]], { layer: 'CFTV-COBERTURA', fechada: true });
+    g.bloco('INC_DET', (b) => { b.addCircle({ x: 0, y: 0, z: 0 }, 0.15, { layerName: '0' }); },
+      [{ tag: 'TAG', x: 0.2, y: 0.1, altura: 0.1 }, { tag: 'DESCR', x: 0.2, y: -0.1, altura: 0.1 }, { tag: 'ALTURA', x: 0.2, y: -0.3, altura: 0.1 }]);
+    for (const x of [12.5, 17.5]) g.inserir('INC_DET', x, 2, { layer: 'INC-DETECTOR', atributos: { TAG: 'AP-01', DESCR: 'Detector de fumaça endereçável - nave', ALTURA: 'teto' } });
+  }));
+  assert.deepStrictEqual(a.ambientes.filter(x => !x.semNome).map(x => x.nome), ['COZINHA', 'SALA']);
+  assert.ok(!a.ambientes.some(x => Math.abs(x.area_m2 - 12) < 0.5), 'o polígono da cobertura (12 m²) não é ambiente');
+});
+
+caso('grade de módulos iguais encostados (cobertura de detector) não vira 8 salas; salas iguais com parede entre elas ficam', () => {
+  const a = lerArquitetura(plantaQuatroSalas([[2.5, 'COZINHA'], [7.5, 'SALA']], (g) => {
+    g.camada('A-AREA');
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++) g.polilinha([[30 + i * 6.3, j * 6.3], [36.3 + i * 6.3, j * 6.3], [36.3 + i * 6.3, 6.3 + j * 6.3], [30 + i * 6.3, 6.3 + j * 6.3]], { fechada: true });
+    g.texto(33, 3, 0.2, 'AREA TECNICA', { layer: 'TEXTO' });
+    g.texto(39, 3, 0.2, '6 LEITOS', { layer: 'TEXTO' });
+    // 6 quartos iguais de 3 × 4 m com parede de 15 cm entre eles
+    for (let i = 0; i < 6; i++) {
+      g.polilinha([[i * 3.15, 10], [i * 3.15 + 3, 10], [i * 3.15 + 3, 14], [i * 3.15, 14]], { layer: 'A-AREA', fechada: true });
+      g.texto(i * 3.15 + 1, 12, 0.2, `QUARTO ${i + 1}`, { layer: 'TEXTO' });
+    }
+  }));
+  assert.ok(!a.ambientes.some(x => Math.abs(x.area_m2 - 39.69) < 0.1), a.ambientes.map(x => `${x.nome}=${x.area_m2}`).join('; '));
+  assert.strictEqual(a.ambientes.filter(x => /QUARTO/.test(x.nome)).length, 6);
+});
+
+caso('nota e contagem dentro da planta não são nome de sala', () => {
+  const nomes = (r) => lerArquitetura(plantaQuatroSalas(r)).ambientes.map(a => a.nome).filter(n => !/^Ambiente \d+$/.test(n));
+  assert.deepStrictEqual(nomes([[2.5, '6 LEITOS'], [7.5, '(Segue p/ Sala de Rack)'], [12.5, 'RESERVA LEGAL: 20%'], [17.5, '213-QLTF-VEST']]), []);
+  assert.deepStrictEqual(nomes([[2.5, '30A-30mA'], [7.5, 'PD SOB VIGA= 1,85m'], [12.5, 'TOTAL VAGAS: 7'], [17.5, 'RECEPÇÃO']]), ['RECEPÇÃO']);
+});
+
 // casos assíncronos (DWG) terminam depois dos síncronos
 process.on('beforeExit', () => { if (!process.__fimCad) { process.__fimCad = true; console.log(`cad: ${ok} casos ok`); } });

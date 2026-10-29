@@ -31,7 +31,7 @@ const { CAD } = require('../../config/caminhos');
           regioesFora: arq.classificacao.regioes.filter(r => ['diagrama', 'vista_quadro', 'quadro_cargas', 'carimbo'].includes(r.tipo)).map(r => r.caixa),
         },
       },
-      projeto: { texto: projeto.texto, simbolos: projeto.simbolos, linhas: projeto.linhas, legenda: projeto.legenda },
+      projeto: { texto: projeto.texto, simbolos: projeto.simbolos, linhas: projeto.linhas, legenda: projeto.legenda, legendaItens: projeto.legendaItens },
     });
   } catch (err) {
     parentPort.postMessage({ ok: false, erro: err.message });
