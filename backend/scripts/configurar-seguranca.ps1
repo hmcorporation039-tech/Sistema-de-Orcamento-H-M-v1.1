@@ -21,6 +21,11 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 
 $backendDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $raiz = Split-Path -Parent $backendDir
+# Registro da execucao: em 29/10/2026 o script parou no passo 5 e a janela
+# fechou sem deixar o erro. A senha do Get-Credential nao aparece aqui.
+$logDir = Join-Path $backendDir "logs"
+if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
+Start-Transcript -Path (Join-Path $logDir "configurar-seguranca.log") -Append | Out-Null
 $usuario = "$env:USERDOMAIN\$env:USERNAME"
 function Passo($n, $texto) { Write-Host ""; Write-Host "[$n] $texto" -ForegroundColor Cyan }
 
@@ -93,12 +98,18 @@ if (Test-Path $atalho) {
 Passo 5 "Tarefa 'HM-Engenharia Backup Diario': recuperar horario perdido e acordar o PC"
 $backup = Get-ScheduledTask -TaskName "HM-Engenharia Backup Diario" -ErrorAction SilentlyContinue
 if ($backup) {
-    $backup.Settings.StartWhenAvailable = $true
-    $backup.Settings.WakeToRun = $true
-    $backup.Settings.DisallowStartIfOnBatteries = $false
-    $backup.Settings.ExecutionTimeLimit = 'PT2H'
-    Set-ScheduledTask -InputObject $backup | Out-Null
-    Write-Host "  ok"
+    # Falha aqui nao pode impedir os passos 6 e 7 (segredos e usuario do banco),
+    # que sao os mais importantes - foi o que aconteceu em 29/10/2026.
+    try {
+        # Set-ScheduledTask -InputObject devolvia "Parametro incorreto" nesta
+        # tarefa; trocar so o bloco de configuracoes funciona.
+        $configBackup = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun -AllowStartIfOnBatteries `
+            -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 2)
+        Set-ScheduledTask -TaskName "HM-Engenharia Backup Diario" -Settings $configBackup | Out-Null
+        Write-Host "  ok"
+    } catch {
+        Write-Host "  AVISO: nao consegui ajustar a tarefa de backup ($($_.Exception.Message)) - sigo para os proximos passos" -ForegroundColor Yellow
+    }
 } else { Write-Host "  tarefa de backup nao encontrada - veja backend\scripts\instrucoes-agendador.txt" -ForegroundColor Yellow }
 
 # 6) Permissoes de arquivos com segredos: so este usuario, SYSTEM e Administradores.
@@ -135,3 +146,4 @@ Passo 8 "Reiniciando o backend"
 
 Write-Host ""
 Write-Host "Concluido. Recarregue o sistema no navegador com Ctrl+F5." -ForegroundColor Green
+Stop-Transcript | Out-Null

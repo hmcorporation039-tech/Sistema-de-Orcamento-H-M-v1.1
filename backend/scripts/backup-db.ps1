@@ -79,17 +79,51 @@ try {
     Log "AVISO: nao foi possivel copiar o backup do banco para a rede ($destinoRede): $($_.Exception.Message)"
 }
 
-$arquivosSistema = "C:\HM-Engenharia\Arquivos do Sistema"
-if (Test-Path $arquivosSistema) {
-    $destinoArquivos = Join-Path $destinoRede "Arquivos do Sistema"
-    # /E = subpastas; sem /MIR (nao apaga no destino); /R /W = poucas tentativas se a rede cair
-    robocopy $arquivosSistema $destinoArquivos /E /R:2 /W:5 /FFT /NP /NFL /NDL /NJH /XF *.tmp | Out-Null
-    # robocopy: 0-7 = sucesso (com ou sem arquivos copiados); 8+ = falha
-    if ($LASTEXITCODE -ge 8) {
-        Log "AVISO: copia de 'Arquivos do Sistema' para a rede falhou (robocopy codigo $LASTEXITCODE)"
-    } else {
-        Log "Copia de 'Arquivos do Sistema' para a rede concluida (robocopy codigo $LASTEXITCODE)"
+# Pastas de trabalho que ficam fora do banco e do git (orcamentos antigos,
+# cotacoes de fornecedores, projetos recebidos). Ate 29/10/2026 so a
+# "Arquivos do Sistema" era copiada; as demais nao tinham backup nenhum.
+$raizProjeto = Split-Path -Parent $backendDir
+$pastasArquivos = @("C:\HM-Engenharia\Arquivos do Sistema") + (
+    @('Orçamentos V13', 'Orçamentos V14', 'Orçamentos V15', 'Orçamentos recebidos fornecedores',
+      'Projetos recebidos clientes', 'projetos-recebidos') | ForEach-Object { Join-Path $raizProjeto $_ })
+
+function Copiar-Pastas($destinoBase, $rotulo) {
+    foreach ($pasta in $pastasArquivos) {
+        if (-not (Test-Path $pasta)) { continue }
+        $nome = Split-Path -Leaf $pasta
+        # /E = subpastas; sem /MIR (nao apaga no destino); /R /W = poucas tentativas se a rede cair
+        robocopy $pasta (Join-Path $destinoBase $nome) /E /R:2 /W:5 /FFT /NP /NFL /NDL /NJH /XF *.tmp | Out-Null
+        # robocopy: 0-7 = sucesso (com ou sem arquivos copiados); 8+ = falha
+        if ($LASTEXITCODE -ge 8) {
+            Log "AVISO: copia de '$nome' para $rotulo falhou (robocopy codigo $LASTEXITCODE)"
+        } else {
+            Log "Copia de '$nome' para $rotulo concluida (robocopy codigo $LASTEXITCODE)"
+        }
     }
     $global:LASTEXITCODE = 0
+}
+
+Copiar-Pastas $destinoRede "a rede"
+
+# Copia fora do predio: BACKUP_DESTINO_EXTERNO no .env aponta para uma pasta
+# sincronizada com a nuvem (OneDrive/Google Drive) ou um HD externo. O
+# servidor de rede fica no mesmo predio: incendio, roubo ou ransomware levariam
+# as duas copias. Sem a variavel, este passo so registra o aviso.
+$destinoExterno = $envVars["BACKUP_DESTINO_EXTERNO"]
+if (-not $destinoExterno) {
+    Log "AVISO: BACKUP_DESTINO_EXTERNO nao definido no .env - nenhuma copia fora do predio"
+} else {
+    try {
+        $destinoBanco = Join-Path $destinoExterno "Banco"
+        if (-not (Test-Path $destinoBanco)) { New-Item -ItemType Directory -Path $destinoBanco -Force | Out-Null }
+        Copy-Item -Path $arquivo -Destination $destinoBanco -Force
+        Get-ChildItem $destinoBanco -File |
+            Where-Object { $_.Name -match '\.(dump|sql\.zip)$' -and $_.LastWriteTime -lt (Get-Date).AddDays(-30) } |
+            Remove-Item -Force
+        Log "Copia do banco enviada para fora do predio: $destinoBanco"
+        Copiar-Pastas $destinoExterno "fora do predio"
+    } catch {
+        Log "AVISO: nao foi possivel copiar para fora do predio ($destinoExterno): $($_.Exception.Message)"
+    }
 }
 exit 0
