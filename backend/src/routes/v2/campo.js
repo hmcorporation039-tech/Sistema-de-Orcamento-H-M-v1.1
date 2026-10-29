@@ -25,11 +25,8 @@ function uploadFoto(req, res, next) {
   });
 }
 
-module.exports = (router, { autenticar, admin, validarId, exigirPosse }) => {
-  const posseObra = exigirPosse('obras', {
-    naoEncontrado: 'Obra não encontrada.',
-    semPermissao: 'Esta obra foi criada por outro usuário. Peça a ele ou a um administrador para abrir a OS.',
-  });
+module.exports = (router, { autenticar, admin, validarId, posse }) => {
+  const posseObra = posse.obra('abrir a OS');
   router.get('/campo/os', autenticar, ctrl.listar);
   router.get('/campo/modelos-checklist', autenticar, ctrl.modelos);
   router.post('/campo/sincronizar', autenticar, ctrl.sincronizar);

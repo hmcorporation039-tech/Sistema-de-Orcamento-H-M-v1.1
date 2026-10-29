@@ -13,9 +13,13 @@ function base(motor, analise, extraido) {
   const vazio = typeof motor.modeloVazio === 'function' ? motor.modeloVazio() : motor.modeloVazio;
   const dados = JSON.parse(JSON.stringify(vazio));
   const cb = extraido.find(e => e.carimbo)?.carimbo || {};
-  dados.meta = { ...dados.meta, titulo: analise.nomeProjeto || analise.cliente || 'Projeto', data: hoje(), revisao: cb.revisao ? `R${String(cb.revisao).replace(/^R/i, '')}` : dados.meta?.revisao };
-  dados.cliente = { ...dados.cliente, nome: analise.cliente || '' };
-  dados.obra = { ...dados.obra, nome: analise.nomeProjeto || analise.cliente || '' };
+  // obra do sistema (quando o projeto nasce ligado a uma) vale mais que o nome do
+  // cliente: antes o título e a "Obra/Instalação" saíam com o nome do cliente e
+  // dois projetos do mesmo cliente ficavam com o mesmo nome (teste de 28/10/2026)
+  const obra = analise.obra || null;
+  dados.meta = { ...dados.meta, titulo: analise.nomeProjeto || obra?.nome || analise.cliente || 'Projeto', data: hoje(), revisao: cb.revisao ? `R${String(cb.revisao).replace(/^R/i, '')}` : dados.meta?.revisao };
+  dados.cliente = { ...dados.cliente, nome: analise.cliente || obra?.cliente_nome || '' };
+  dados.obra = { ...dados.obra, nome: obra?.nome || analise.nomeProjeto || analise.cliente || '' };
   return dados;
 }
 

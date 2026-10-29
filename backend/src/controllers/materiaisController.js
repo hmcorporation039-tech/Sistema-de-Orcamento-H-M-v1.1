@@ -84,6 +84,7 @@ async function criar(req, res) {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'manual',true) RETURNING *`,
       [d.codigo, d.descricao, d.categoria, d.unidade, d.preco || 0, d.preco_compra || null, d.marca, d.ncm]
     );
+    await registrarAuditoria(pool, { entidade: 'material', entidadeId: result.rows[0].id, acao: 'criado', detalhes: { descricao: d.descricao }, usuarioId: req.usuario.id });
     res.status(201).json(result.rows[0]);
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ erro: 'Já existe um material com essa descrição no catálogo' });
@@ -111,6 +112,9 @@ async function atualizar(req, res) {
       await registrarHistoricoPreco(pool, antes, { origem: 'manual', precoCompra: depois.preco_compra, precoVenda: depois.preco, unidade: depois.unidade, aplicado: true, referencia: `editado por ${req.usuario.nome}` })
         .catch(e => console.warn('Histórico de preço:', e.message));
     }
+    // auditoria da edição (o preço já tem o histórico próprio): só os campos que mudaram
+    const mudou = CAMPOS_MATERIAL.filter(c => String(antes[c] ?? '') !== String(depois[c] ?? ''));
+    if (mudou.length) await registrarAuditoria(pool, { entidade: 'material', entidadeId: depois.id, acao: 'editado', detalhes: { campos: mudou }, usuarioId: req.usuario.id });
     res.json(depois);
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ erro: 'Já existe outro material com essa descrição no catálogo' });

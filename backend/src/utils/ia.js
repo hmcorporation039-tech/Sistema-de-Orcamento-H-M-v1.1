@@ -260,7 +260,8 @@ const provGemini = {
   id: 'gemini',
   rotulo: 'Gemini',
   descricao: 'Google Gemini (GEMINI_API_KEY, cota gratuita diária por modelo)',
-  modelo: () => (process.env.GEMINI_MODELOS || 'gemini-2.5-flash, gemini-flash-lite-latest, gemini-3.6-flash'),
+  // a mesma lista que o geminiClient usa (antes o painel mostrava uma cópia, que podia divergir)
+  modelo: () => gemini.MODELOS_EM_ORDEM.join(', '),
   configurado: () => gemini.configurado(),
   disponivel: ({ web } = {}) => gemini.configurado() && (web || !desligadaGeral()),
   motivo: () => (gemini.configurado() ? null : 'GEMINI_API_KEY não configurada'),

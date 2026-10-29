@@ -7,26 +7,12 @@ const { protegerRotasAsync } = require('../middleware/erros');
 const router = protegerRotasAsync(express.Router());
 const { autenticar, admin } = require('../middleware/auth');
 const { validarId } = require('../middleware/validarId');
-const { exigirPosse } = require('../middleware/posse');
+const { exigirPosse, posse } = require('../middleware/posse');
 
 // Quem pode ALTERAR/APAGAR cada tipo de registro: o dono ou um administrador.
-// Ver/listar continua livre para qualquer usuário autenticado.
-const posseProposta = exigirPosse('propostas', {
-  naoEncontrado: 'Proposta não encontrada.',
-  semPermissao: 'Esta proposta foi criada por outro usuário. Peça a ele ou a um administrador para alterar.',
-});
-const posseAnalise = exigirPosse('analises_projeto', {
-  naoEncontrado: 'Análise não encontrada.',
-  semPermissao: 'Esta análise foi criada por outro usuário. Peça a ele ou a um administrador para alterar.',
-});
-const posseLaudo = exigirPosse('laudos_projetos', {
-  naoEncontrado: 'Laudo não encontrado.',
-  semPermissao: 'Este laudo foi criado por outro usuário. Peça a ele ou a um administrador para alterar.',
-});
-const posseContrato = exigirPosse('contratos', {
-  naoEncontrado: 'Contrato não encontrado.',
-  semPermissao: 'Este contrato foi criado por outro usuário. Peça a ele ou a um administrador para alterar.',
-});
+// Ver/listar continua livre para qualquer usuário autenticado. Regras prontas
+// em middleware/posse.js (as mesmas nas rotas v2).
+const { proposta: posseProposta, analise: posseAnalise, laudo: posseLaudo, contrato: posseContrato } = posse;
 
 // Limite de tentativas de login: sem isso, um atacante na rede local pode
 // testar milhares de senhas por minuto contra /auth/login (o bcrypt sozinho
@@ -277,9 +263,9 @@ router.get('/pesquisa-mercado/historico', autenticar, pesqCtrl.historico);
 router.post('/pesquisa-mercado/salvar', autenticar, pesqCtrl.salvar);
 
 // Versão 2.0: rotas por tema em routes/v2/*.js — cada arquivo exporta
-// (router, { autenticar, admin, validarId, exigirPosse, limitePesquisaMercado, limiteAnaliseProjeto, uploadArquitetura }) => void
+// (router, { autenticar, admin, validarId, exigirPosse, posse, limitePesquisaMercado, limiteAnaliseProjeto, uploadArquitetura }) => void
 for (const f of require('fs').readdirSync(require('path').join(__dirname, 'v2')).filter(n => /\.js$/.test(n)).sort()) {
-  require(`./v2/${f}`)(router, { autenticar, admin, validarId, exigirPosse, limitePesquisaMercado, limiteAnaliseProjeto, uploadArquitetura });
+  require(`./v2/${f}`)(router, { autenticar, admin, validarId, exigirPosse, posse, limitePesquisaMercado, limiteAnaliseProjeto, uploadArquitetura });
 }
 
 module.exports = router;

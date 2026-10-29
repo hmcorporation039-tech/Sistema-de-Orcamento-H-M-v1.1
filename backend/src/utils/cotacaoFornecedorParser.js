@@ -1,4 +1,3 @@
-const { PDFParse } = require('pdf-parse');
 const { paraNumeroBR } = require('./numeroBR');
 
 
@@ -252,21 +251,6 @@ function extrairLayoutsConhecidos(texto) {
   return { modelo: null, itens: [] };
 }
 
-// Compatibilidade: layout conhecido ou, se nenhum bater, o leitor universal.
-function extrairDoTexto(texto) {
-  const conhecido = extrairLayoutsConhecidos(texto);
-  if (conhecido.itens.length > 0) return conhecido.itens;
-  return require('./leitorCotacaoUniversal').extrairUniversal(texto).itens;
-}
-
-async function extrairCotacaoPdf(buffer) {
-  const parser = new PDFParse({ data: buffer });
-  try {
-    const { text } = await parser.getText();
-    return extrairDoTexto(text);
-  } finally {
-    await parser.destroy();
-  }
-}
-
-module.exports = { extrairCotacaoPdf, extrairDoTexto, extrairLayoutsConhecidos };
+// (extrairCotacaoPdf e extrairDoTexto saíram em 28/10/2026: ninguém usava — a
+// leitura de cotação é a de utils/leitorCotacao.js, que chama extrairLayoutsConhecidos)
+module.exports = { extrairLayoutsConhecidos };

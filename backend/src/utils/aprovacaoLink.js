@@ -94,10 +94,8 @@ function formatarDocumento(numero, tipo) {
 const FUSO = 'America/Sao_Paulo';
 const DIA_MS = 24 * 60 * 60 * 1000;
 
-function hojeBrasilia(agora = new Date()) {
-  // en-CA formata como AAAA-MM-DD
-  return new Intl.DateTimeFormat('en-CA', { timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit' }).format(agora);
-}
+// "hoje" em Brasília: fonte única em utils/dataHoje.js (esta cópia era igual)
+const { hojeBrasilia } = require('./dataHoje');
 
 function somarDias(iso, dias) {
   const d = new Date(`${iso}T00:00:00Z`);

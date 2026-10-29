@@ -201,11 +201,8 @@ function podeVerOS(usuario, os, obra) {
   if (os && os.responsavel_id != null && os.responsavel_id === usuario.id) return true;
   return !!obra && (obra.usuario_id == null || obra.usuario_id === usuario.id);
 }
-// Editar pelo escritório (PUT) e criar pela obra: dono da obra ou admin.
-function podeEditarOS(usuario, obra) {
-  if (!usuario) return false;
-  return usuario.role === 'admin' || (!!obra && (obra.usuario_id == null || obra.usuario_id === usuario.id));
-}
+// Editar pelo escritório (PUT) e criar pela obra: quem edita a obra (utils/obras.js).
+const podeEditarOS = (usuario, obra) => require('./obras').podeEditarObra(usuario, obra);
 // Abrir OS pelo campo (operação criar_os): dono da obra ou admin
 // (podeEditarOS), o responsável da obra ou quem já é responsável por alguma
 // OS dessa obra. `temOSNaObra` vem do banco. A mesma regra em SQL está em

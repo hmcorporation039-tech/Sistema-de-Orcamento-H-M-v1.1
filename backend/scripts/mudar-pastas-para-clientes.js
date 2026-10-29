@@ -15,7 +15,7 @@
 //   node scripts/mudar-pastas-para-clientes.js --aplicar  → move
 //   node scripts/mudar-pastas-para-clientes.js --desfazer → devolve as pastas ao lugar antigo
 // Faça o backup antes (backup-db.ps1 + cópia de Arquivos do Sistema).
-require('dotenv').config();
+require('../src/config/env');
 const path = require('path');
 const pool = require('../src/config/database');
 const P = require('../src/utils/pastasSistema');

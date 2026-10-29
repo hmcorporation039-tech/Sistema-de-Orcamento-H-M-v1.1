@@ -14,7 +14,7 @@
 //   node scripts/limpar-catalogo-sem-preco.js [--todos]            → só lista
 //   node scripts/limpar-catalogo-sem-preco.js [--todos] --aplicar  → desativa
 //   node scripts/limpar-catalogo-sem-preco.js --desfazer           → reativa os desativados por este script
-require('dotenv').config();
+require('../src/config/env');
 const pool = require('../src/config/database');
 const { registrarAuditoria } = require('../src/utils/auditoria');
 

@@ -1,15 +1,6 @@
-const { PDFParse } = require('pdf-parse');
 const { quadroDeCargas, totaisQuadro, listaMateriais, carimbo, detectarDisciplinas } = require('./leitoresTabelaProjeto');
-
-async function extrairTexto(buffer) {
-  const parser = new PDFParse({ data: buffer });
-  try {
-    const { text } = await parser.getText();
-    return text;
-  } finally {
-    await parser.destroy();
-  }
-}
+// texto do PDF: leitura única em utils/leitorPdf.js
+const { textoDoPdf: extrairTexto } = require('./leitorPdf');
 
 // Ambientes/salas do projeto: o CAD exporta cada rótulo "NOME DA SALA" em uma
 // ou mais linhas, seguido de uma linha "A= NN,NNm²" com a área. Junta até 3

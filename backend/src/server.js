@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('./config/env'); // backend/.env pelo caminho do arquivo
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
@@ -234,6 +234,9 @@ async function iniciar() {
       // pasta por cliente (2.3): registra o que o sistema grava e varre as pastas
       // a cada 10 min atrás de arquivo novo/alterado (MONITOR_PASTAS=desligado desliga)
       require('./services/monitorPastas').iniciarMonitor();
+      // skills das disciplinas carregadas já agora, em segundo plano: o 1º acesso
+      // a Projetos/Laudos levava 9,5 s carregando as 17 (teste de 28/10/2026)
+      setTimeout(() => { try { require('./utils/disciplinasLaudo').listarDisciplinas(); } catch (e) { console.warn('Pré-carga das skills:', e.message); } }, 3000).unref?.();
     });
     servidor.on('error', (err) => {
       console.error(`Erro ao abrir a porta ${PORT}: ${err.message}`);

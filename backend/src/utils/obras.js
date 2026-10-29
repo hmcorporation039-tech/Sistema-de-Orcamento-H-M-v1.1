@@ -229,10 +229,17 @@ async function conferirObra(executor, leitura, { usuario = null, tabela = null, 
 // Trecho de SELECT que devolve { id, codigo, nome } da obra (ou null).
 const sqlObraJson = (alias) => `CASE WHEN ${alias}.id IS NULL THEN NULL ELSE json_build_object('id', ${alias}.id, 'codigo', ${alias}.codigo, 'nome', ${alias}.nome, 'status', ${alias}.status) END`;
 
+// Quem edita a obra (e o que é dela: cronograma, OS pelo escritório): o
+// administrador, o dono, ou qualquer um se a obra é antiga, sem dono. Uma regra
+// só — estava copiada em obras, cronograma e campo.
+const ehAdmin = (usuario) => usuario?.role === 'admin';
+const podeEditarObra = (usuario, obra) => !!usuario && (ehAdmin(usuario) || (!!obra && (obra.usuario_id == null || obra.usuario_id === usuario.id)));
+
 module.exports = {
   STATUS_OBRA, ROTULO_STATUS, SEGMENTOS,
   normalizarTexto, formatarCodigo, proximoSequencial, nomeObraDaAnalise,
   chavePropostaSolta, agruparPropostasSoltas, nomeObraDasPropostas, deduzirStatus,
   escolherObraParaContrato, analiseDeOrigemDoLaudo, contemPalavras,
   calcularOrcado, resumoFinanceiro, lerObraId, conferirObra, sqlObraJson,
+  ehAdmin, podeEditarObra,
 };

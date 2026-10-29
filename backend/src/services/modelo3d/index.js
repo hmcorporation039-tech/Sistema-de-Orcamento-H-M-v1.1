@@ -27,7 +27,7 @@ const DISCIPLINAS_3D = {
 const TEMPO_LIMITE_MS = 90 * 1000;
 
 // muda quando o gerador muda: invalida o cache dos modelos já gerados
-const CAD = path.join(__dirname, '..', '..', '..', '..', 'skills', '_comum', 'cad');
+const { CAD } = require('../../config/caminhos');
 function versaoDoGerador() {
   try {
     return ['modelo3d.js', 'estimativaArquitetura.js', 'visualizador3d.js', path.join('visualizador3d', 'app.bundle.js')]

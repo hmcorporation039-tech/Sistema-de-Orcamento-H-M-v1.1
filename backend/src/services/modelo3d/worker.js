@@ -6,7 +6,7 @@
 const path = require('path');
 const { parentPort, workerData } = require('worker_threads');
 
-const CAD = path.join(__dirname, '..', '..', '..', '..', 'skills', '_comum', 'cad');
+const { CAD } = require('../../config/caminhos');
 
 try {
   const { lerArquitetura } = require(path.join(CAD, 'arquitetura.js'));

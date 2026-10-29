@@ -22,8 +22,8 @@ const { gerarPdfDeHtml } = require('../utils/pdfPuppeteer');
 
 // data de hoje no horário de Brasília (toISOString daria o dia seguinte depois das 21h)
 const hojeLocal = () => hojeBrasilia(); // utils/dataHoje.js (fonte única)
-const ehAdmin = (req) => req.usuario?.role === 'admin';
-const podeEditar = (req, obra) => ehAdmin(req) || obra.usuario_id == null || obra.usuario_id === req.usuario.id;
+// quem edita a obra edita o cronograma (regra única em utils/obras.js)
+const podeEditar = (req, obra) => require('../utils/obras').podeEditarObra(req.usuario, obra);
 
 const MSG_CONFLITO = 'O cronograma foi alterado por outra pessoa (ou em outra aba) depois que você o abriu. Recarregue a página — suas alterações não foram gravadas.';
 

@@ -1,5 +1,5 @@
 const path = require('path');
-const { PDFParse } = require('pdf-parse');
+const { textoDoPdf, paginasComoImagem: paginasDoPdf } = require('./leitorPdf');
 const { extrairLayoutsConhecidos } = require('./cotacaoFornecedorParser');
 const { extrairUniversal, conferirTotal } = require('./leitorCotacaoUniversal');
 const { extrairComIA, iaDisponivel } = require('./leitorCotacaoIA');
@@ -83,24 +83,8 @@ function encerrarOcr() {
   return Promise.resolve();
 }
 
-async function textoDoPdf(buffer) {
-  const parser = new PDFParse({ data: buffer });
-  try {
-    return (await parser.getText()).text || '';
-  } finally {
-    await parser.destroy();
-  }
-}
-
-async function paginasComoImagem(buffer) {
-  const parser = new PDFParse({ data: buffer });
-  try {
-    const r = await parser.getScreenshot({ scale: 2.5, first: MAX_PAGINAS_OCR });
-    return r.pages.map(p => Buffer.from(p.data));
-  } finally {
-    await parser.destroy();
-  }
-}
+// leitura do PDF: utils/leitorPdf.js (a mesma da análise de projeto e da nota fiscal)
+const paginasComoImagem = (buffer) => paginasDoPdf(buffer, { escala: 2.5, maxPaginas: MAX_PAGINAS_OCR });
 
 function lerTexto(texto) {
   const conhecido = extrairLayoutsConhecidos(texto);

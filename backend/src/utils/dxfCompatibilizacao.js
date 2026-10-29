@@ -4,7 +4,7 @@
 // desenho de referência, em metros).
 const path = require('path');
 
-const CAD = path.join(__dirname, '..', '..', '..', 'skills', '_comum', 'cad');
+const { CAD } = require('../config/caminhos');
 const br = (v, c = 2) => Number(v).toFixed(c).replace('.', ',');
 
 function gerarDxfCompatibilizacao({ dxfReferencia, conflitos, titulo }) {

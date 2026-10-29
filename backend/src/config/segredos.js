@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('./env');
 
 // Segredos que o sistema NÃO pode substituir por um valor padrão em silêncio.
 //

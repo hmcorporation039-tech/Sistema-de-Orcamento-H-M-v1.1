@@ -192,16 +192,6 @@ async function criarDeAnalise(req, res) {
   const { rows: [jaExiste] } = await pool.query(
     "SELECT id FROM laudos_projetos WHERE analise_id = $1 AND disciplina = $2 AND tipo = 'projeto' ORDER BY id LIMIT 1", [analiseId, disciplina]);
   if (jaExiste && req.body.novo !== true) return res.json({ id: jaExiste.id, tipo: 'projeto', existente: true, avisos: [] });
-  const analise = {
-    cliente: linha.cliente_nome, nomeProjeto: linha.nome_projeto, ambientes: linha.ambientes,
-    pontosPorAmbiente: linha.pontos_por_ambiente, cameras: linha.cameras, pontosRedeAntena: linha.pontos_rede_antena,
-    dadosExtraidos: linha.dados_extraidos,
-  };
-  const { dados, avisos } = dadosDaAnalise(disciplina, motor, analise);
-  const erro = validarDados(dados);
-  if (erro) return res.status(400).json({ erro });
-  // confere já que o cálculo roda com os dados mapeados (erro vira aviso, o formulário corrige)
-  try { motor.processar(dados); } catch (e) { avisos.push(`O cálculo ainda não fecha com os dados lidos: ${e.message}`); }
   // obra (2.0): herda a obra da análise de origem (obra_id no corpo tem prioridade)
   // e guarda de qual análise veio (analise_id)
   const leituraObra = lerObraId(req.body);
@@ -211,6 +201,17 @@ async function criarDeAnalise(req, res) {
   // herdada da análise: só se este usuário puder ligar itens àquela obra
   if (!leituraObra.presente && obraId
     && await conferirObra(pool, { presente: true, valor: obraId }, { usuario: req.usuario })) obraId = null;
+  const obra = obraId ? (await pool.query('SELECT nome, local, cliente_nome FROM obras WHERE id = $1', [obraId])).rows[0] || null : null;
+  const analise = {
+    cliente: linha.cliente_nome, nomeProjeto: linha.nome_projeto, obra, ambientes: linha.ambientes,
+    pontosPorAmbiente: linha.pontos_por_ambiente, cameras: linha.cameras, pontosRedeAntena: linha.pontos_rede_antena,
+    dadosExtraidos: linha.dados_extraidos,
+  };
+  const { dados, avisos } = dadosDaAnalise(disciplina, motor, analise);
+  const erro = validarDados(dados);
+  if (erro) return res.status(400).json({ erro });
+  // confere já que o cálculo roda com os dados mapeados (erro vira aviso, o formulário corrige)
+  try { motor.processar(dados); } catch (e) { avisos.push(`O cálculo ainda não fecha com os dados lidos: ${e.message}`); }
   const { rows } = await pool.query(
     `INSERT INTO laudos_projetos (disciplina, titulo, cliente_nome, dados, usuario_id, gerar_orcamento, obra_id, analise_id, cliente_id, tipo)
      VALUES ($1,$2,$3,$4,$5,true,$6,$7,$8,'projeto') RETURNING *`,
@@ -796,12 +797,23 @@ async function gerarOrcamento(req, res) {
   } catch (e) {
     return res.status(400).json({ erro: e.message });
   }
-  const clienteNome = (orcamento.cliente_nome || '').trim();
+  // cliente do orçamento: o da OBRA ligada (cadastro do sistema) > o do registro >
+  // o digitado no formulário. Antes valia só o do formulário: o orçamento de um
+  // laudo da obra do cliente X saía para "CLIENTE EXEMPLO" (teste de 28/10/2026).
+  let cli = null;
+  if (laudo.obra_id) {
+    const { rows: [o] } = await pool.query(
+      'SELECT c.id, c.nome, c.tipo, o.cliente_nome FROM obras o LEFT JOIN clientes c ON c.id = o.cliente_id AND c.ativo WHERE o.id = $1', [laudo.obra_id]);
+    if (o?.id) cli = { id: o.id, nome: o.nome, tipo: o.tipo };
+    else if (o?.cliente_nome) cli = { id: null, nome: o.cliente_nome, tipo: null };
+  }
+  if (!cli && laudo.cliente_id) cli = (await pool.query('SELECT id, nome, tipo FROM clientes WHERE id = $1 AND ativo', [laudo.cliente_id])).rows[0] || null;
+  const clienteNome = (cli?.nome || orcamento.cliente_nome || '').trim();
   if (!clienteNome) return res.status(400).json({ erro: 'Preencha o nome do cliente no formulário antes de gerar o orçamento.' });
 
-  const clienteEncontrado = await pool.query('SELECT id, tipo FROM clientes WHERE LOWER(nome) = LOWER($1) AND ativo = true LIMIT 1', [clienteNome]);
-  const clienteId = clienteEncontrado.rows[0]?.id || null;
-  const { itens, estatistica } = await montarItensProposta(orcamento, segmentoDoCliente(clienteEncontrado.rows[0]?.tipo, clienteNome));
+  if (!cli?.id) cli = (await pool.query('SELECT id, tipo FROM clientes WHERE LOWER(nome) = LOWER($1) AND ativo = true LIMIT 1', [clienteNome])).rows[0] || cli;
+  const clienteId = cli?.id || null;
+  const { itens, estatistica } = await montarItensProposta(orcamento, segmentoDoCliente(cli?.tipo, clienteNome));
   const nomesSecoes = [...new Set(itens.map(i => i.secao_nome))];
   // `id` distinto por seção: inserirSecoesEItens casa item→seção por sid OU nome
   const secoes = nomesSecoes.map((nome, i) => ({ id: i + 1, nome }));

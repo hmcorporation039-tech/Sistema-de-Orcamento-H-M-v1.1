@@ -27,11 +27,8 @@ const limiteTokenInvalido = limite(15 * 60 * 1000, 20, 'Muitos links inválidos 
   skipSuccessfulRequests: true,
 });
 
-module.exports = (router, { autenticar, validarId, exigirPosse }) => {
-  const posseProposta = exigirPosse('propostas', {
-    naoEncontrado: 'Proposta não encontrada.',
-    semPermissao: 'Esta proposta foi criada por outro usuário. Peça a ele ou a um administrador para alterar.',
-  });
+module.exports = (router, { autenticar, validarId, posse }) => {
+  const posseProposta = posse.proposta;
 
   router.post('/propostas/:id/link-aprovacao', autenticar, validarId, posseProposta, ctrl.gerarLink);
   router.get('/propostas/:id/links-aprovacao', autenticar, validarId, ctrl.listarLinks);

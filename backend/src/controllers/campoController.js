@@ -30,7 +30,7 @@ const { gerarFooterTemplate } = require('../utils/pdfTemplate');
 const { gerarHtmlOS } = require('../utils/osPdfTemplate');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');
 
-const ehAdmin = (u) => u?.role === 'admin';
+const { ehAdmin } = require('../utils/obras');
 const CHAVES_DISCIPLINA = DISCIPLINAS_LAUDO.map(d => d.chave);
 // foto embutida no PDF como está até este tamanho; maior aparece só listada
 const FOTO_PDF_MAX = 1.5 * 1024 * 1024;

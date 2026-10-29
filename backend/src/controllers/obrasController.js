@@ -19,8 +19,9 @@ const { condicaoPodeAbrirOS } = require('../utils/campo');
 const { ehDataIso } = require('../utils/dataHoje');
 const { pastaDaObra, sincronizarObra, caminhoRegistrado, resumoPasta, pedidoLocal, seguro } = require('../services/pastasRegistros');
 
-const ehAdmin = (req) => req.usuario?.role === 'admin';
-const podeEditar = (req, obra) => ehAdmin(req) || obra.usuario_id == null || obra.usuario_id === req.usuario.id;
+// regra de quem edita a obra: utils/obras.js (a mesma do cronograma e do campo)
+const ehAdmin = (req) => O.ehAdmin(req.usuario);
+const podeEditar = (req, obra) => O.podeEditarObra(req.usuario, obra);
 
 // Itens que podem ser ligados a uma obra: tabela, rótulo e se é só de admin.
 const VINCULOS = {
@@ -275,9 +276,10 @@ async function criar(req, res, next) {
       [codigo, d.nome, d.cliente_id, d.cliente_nome, d.local, d.segmento, d.status, d.inicio_previsto, d.fim_previsto,
        d.responsavel_id, d.observacoes, req.usuario.id]
     );
+    await registrarAuditoria(client, { entidade: 'obras', entidadeId: rows[0].id, acao: 'criar', usuarioId: req.usuario.id, detalhes: { codigo, nome: d.nome } });
     return rows[0];
   });
-  await sincronizarObra(obra); // cria Arquivos do Sistema\Obras\<nome>
+  await sincronizarObra(obra); // cria a pasta da obra (na do cliente)
   res.status(201).json(await carregarObra(obra.id));
 }
 
@@ -296,6 +298,9 @@ async function atualizar(req, res, next) {
      d.responsavel_id, d.observacoes, atual.id, versaoDoPedido(req.body)]
   );
   if (!rows[0]) return responderConflitoOuAusente(pool, res, 'obras', atual.id);
+  // auditoria: só os campos que mudaram (antes a edição da obra não deixava rastro)
+  const mudou = Object.keys(d).filter(k => String(atual[k] ?? '') !== String(rows[0][k] ?? ''));
+  if (mudou.length) await registrarAuditoria(pool, { entidade: 'obras', entidadeId: atual.id, acao: 'editar', usuarioId: req.usuario.id, detalhes: { campos: mudou } });
   if (rows[0].nome !== atual.nome || !rows[0].pasta) await sincronizarObra(rows[0]); // pasta acompanha o nome
   res.json(await carregarObra(atual.id));
 }

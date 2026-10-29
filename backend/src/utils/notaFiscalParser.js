@@ -1,5 +1,5 @@
 const xml2js = require('xml2js');
-const { PDFParse } = require('pdf-parse');
+const { textoDoPdf } = require('./leitorPdf');
 const { paraNumeroBR } = require('./numeroBR');
 
 async function parseNFeXml(buffer) {
@@ -104,13 +104,7 @@ function extrairDoPdfTexto(texto) {
 }
 
 async function extrairDoPdf(buffer) {
-  const parser = new PDFParse({ data: buffer });
-  try {
-    const { text } = await parser.getText();
-    return extrairDoPdfTexto(text);
-  } finally {
-    await parser.destroy();
-  }
+  return extrairDoPdfTexto(await textoDoPdf(buffer));
 }
 
 async function extrairNotaFiscal(buffer, nomeArquivo) {

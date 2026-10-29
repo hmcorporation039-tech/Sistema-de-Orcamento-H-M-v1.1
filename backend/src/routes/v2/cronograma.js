@@ -3,11 +3,8 @@
 // editar e registrar medição: quem pode editar a obra (dono ou administrador).
 const ctrl = require('../../controllers/cronogramaController');
 
-module.exports = (router, { autenticar, validarId, exigirPosse }) => {
-  const posseObra = exigirPosse('obras', {
-    naoEncontrado: 'Obra não encontrada.',
-    semPermissao: 'Esta obra foi criada por outro usuário. Peça a ele ou a um administrador para alterar o cronograma ou registrar medição.',
-  });
+module.exports = (router, { autenticar, validarId, posse }) => {
+  const posseObra = posse.obra('alterar o cronograma ou registrar medição');
   router.get('/obras/:id/cronograma', autenticar, validarId, ctrl.obter);
   router.put('/obras/:id/cronograma', autenticar, validarId, posseObra, ctrl.salvar);
   router.post('/obras/:id/cronograma/gerar', autenticar, validarId, posseObra, ctrl.gerar);

@@ -39,4 +39,20 @@ function exigirPosse(tabela, { naoEncontrado, semPermissao }) {
   };
 }
 
-module.exports = { exigirPosse };
+// As regras de dono de cada tipo de registro, prontas — antes cada arquivo de
+// rotas criava a sua (a de proposta em 3 lugares, a de obra em 3, a de análise
+// em 2), com o mesmo texto copiado. Mensagem: "Esta proposta foi criada por
+// outro usuário. Peça a ele ou a um administrador para <ação>."
+const msgDono = (rotulo, feminino, acao = 'alterar') =>
+  `Est${feminino ? 'a' : 'e'} ${rotulo} foi criad${feminino ? 'a' : 'o'} por outro usuário. Peça a ele ou a um administrador para ${acao}.`;
+const regra = (tabela, rotulo, feminino, naoEncontrado, acao) => exigirPosse(tabela, { naoEncontrado, semPermissao: msgDono(rotulo, feminino, acao) });
+const posse = {
+  proposta: regra('propostas', 'proposta', true, 'Proposta não encontrada.'),
+  analise: regra('analises_projeto', 'análise', true, 'Análise não encontrada.'),
+  laudo: regra('laudos_projetos', 'laudo', false, 'Laudo não encontrado.'),
+  contrato: regra('contratos', 'contrato', false, 'Contrato não encontrado.'),
+  // obra: a ação muda a mensagem ("abrir a OS", "alterar o cronograma…")
+  obra: (acao = 'alterar') => regra('obras', 'obra', true, 'Obra não encontrada.', acao),
+};
+
+module.exports = { exigirPosse, posse, msgDono };

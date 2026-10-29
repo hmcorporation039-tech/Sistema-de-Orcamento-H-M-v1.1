@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { DISCIPLINAS_LAUDO } = require('../../utils/disciplinasLaudo');
 
-const RAIZ_SKILLS = path.join(__dirname, '..', '..', '..', '..', 'skills');
+const { RAIZ_SKILLS } = require('../../config/caminhos');
 const semAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 // Arquivos de documentação de uma skill: SKILL.md e referencia/*.md. Os nomes

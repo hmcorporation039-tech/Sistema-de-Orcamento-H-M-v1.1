@@ -13,7 +13,7 @@ const { hojeBrasilia } = require('./dataHoje');
 //     'laudo'   — documentos de laudo (inspeção, checklist, fotos, medições) e orçamento de inspeção/correção
 // A classificação de cada documento/modo de orçamento das skills fica num
 // lugar só: skills/_comum/tipos-documento.js (arquivo sem dependências).
-const T = require(path.join(__dirname, '..', '..', '..', 'skills', '_comum', 'tipos-documento.js'));
+const T = require(path.join(require('../config/caminhos').RAIZ_SKILLS, '_comum', 'tipos-documento.js'));
 
 const FINALIDADES = {
   orcamento: 'Orçamento',

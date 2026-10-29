@@ -24,7 +24,7 @@ const path = require('path');
 const { lerPagina, pdfjs } = require('./pdfVetorial').paraTestes;
 const { escalaDoCarimbo } = require('./pdfVetorial');
 
-const { DesenhoDxf } = require(path.join(__dirname, '..', '..', '..', 'skills', '_comum', 'cad', 'dxf.js'));
+const { DesenhoDxf } = require(path.join(require('../config/caminhos').CAD, 'dxf.js'));
 
 const PT_EM_M = 25.4 / 72 / 1000; // 1 ponto do PDF no papel, em metros
 const ESCALAS = [20, 25, 50, 75, 100, 125, 200, 250, 500];

@@ -8,15 +8,8 @@
 const ctrl = require('../../controllers/modelo3dController');
 
 // uploadArquitetura (DWG/DXF/PDF): o mesmo da arquitetura do projeto, em routes/index.js
-module.exports = (router, { autenticar, validarId, exigirPosse, uploadArquitetura }) => {
-  const posseAnalise = exigirPosse('analises_projeto', {
-    naoEncontrado: 'Análise não encontrada.',
-    semPermissao: 'Esta análise foi criada por outro usuário. Peça a ele ou a um administrador para alterar.',
-  });
-  const posseProposta = exigirPosse('propostas', {
-    naoEncontrado: 'Proposta não encontrada.',
-    semPermissao: 'Esta proposta foi criada por outro usuário. Peça a ele ou a um administrador para alterar.',
-  });
+module.exports = (router, { autenticar, validarId, posse, uploadArquitetura }) => {
+  const { analise: posseAnalise, proposta: posseProposta } = posse;
 
   router.get('/modelo-3d/ver/:token', ctrl.ver);
   router.get('/modelo-3d/:origem/:id', autenticar, validarId, ctrl.situacao);

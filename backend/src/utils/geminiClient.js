@@ -107,4 +107,4 @@ async function chamarGemini({ prompt, json = false, busca = false, tentativas = 
   throw ultimoErro;
 }
 
-module.exports = { chamarGemini, configurado };
+module.exports = { chamarGemini, configurado, MODELOS_EM_ORDEM };
