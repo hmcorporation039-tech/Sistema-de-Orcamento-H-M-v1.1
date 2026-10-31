@@ -429,6 +429,12 @@ Pedido do usuário: "todo modelo de projetos gerados em 3D devem ter sua infraes
   - multimedidor de painel na porta;
   - o teste `conferir3d` falha se alguma peça da lista do cálculo faltar no 3D.
 
+### 31/10/2026: versão 2.5.0 — análise revisada, conferência pelas normas, medidas oficiais e 3D com infraestrutura
+Instalada em produção em 31/10/2026 (pedido do usuário: "pode instalar"), com tudo o que está nas duas entradas anteriores. Inclui as correções dos dois erros de regex com backspace que existiam na 2.4.0: cabo PP/solar sem categoria e o leitor de PDF vetorial.
+- Backup antes da instalação em `C:\HM-Engenharia\Backups\*antes-v2.5*`, com cópia no servidor em `Backups\Instalacao-2.5.0`.
+- O banco recebe a migração 2.0-20 (componentes de quadro) ao reiniciar o backend.
+- Os cadernos de fabricação em PDF (quadros e racks), em construção no ramo `versao-2.0`, ficam para a versão seguinte.
+
 ---
 
 ## 3. Skills e ferramentas do Claude (servidor MCP `hm-orcamentos`)
