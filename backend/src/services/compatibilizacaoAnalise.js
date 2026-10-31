@@ -258,7 +258,7 @@ async function analisarProjetoCompleto(todosArquivos) {
     totaisQuadro: a.totaisQuadro,
     listaMateriais: a.listaMateriais,
     esquadrias: a.esquadrias,
-    desenho: (vetoriais[i] || []).map(p => ({ pagina: p.pagina, escala: p.escala, ...(p.origem ? { origem: p.origem, nao_identificados: p.naoIdentificados } : {}), itens: (p.itens || []).map(({ posicoes, ...it }) => it), ...(p.aviso ? { aviso: p.aviso } : {}), ...(p.folha ? { folha: p.folha.resumo, tipo_folha: p.folha.tipo } : {}), ...(p.ignorada ? { ignorada: p.ignorada } : {}), ...(p.pulada ? { pulada: p.pulada } : {}), ...(p.naoContados?.length ? { nao_contados: p.naoContados } : {}), ...(p.avisoEscala ? { aviso_escala: p.avisoEscala } : {}) })),
+    desenho: (vetoriais[i] || []).map(p => ({ pagina: p.pagina, escala: p.escala, ...(p.origem ? { origem: p.origem, nao_identificados: p.naoIdentificados } : {}), itens: (p.itens || []).map(({ posicoes, ...it }) => it), ...(p.aviso ? { aviso: p.aviso } : {}), ...(p.folha ? { folha: p.folha.resumo, tipo_folha: p.folha.tipo } : {}), ...(p.ignorada ? { ignorada: p.ignorada } : {}), ...(p.pulada ? { pulada: p.pulada } : {}), ...(p.naoContados?.length ? { nao_contados: p.naoContados } : {}), ...(p.avisoEscala ? { aviso_escala: p.avisoEscala } : {}), ...(p.conferenciaLegenda?.length ? { conferencia_legenda: p.conferenciaLegenda } : {}), ...(p.xrefsDeOutraDisciplina?.length ? { xrefs_outra_disciplina: p.xrefsDeOutraDisciplina } : {}), ...(p.rotas?.length ? { rotas: p.rotas.map(({ layer, tipo, disciplina, rota_m }) => ({ layer, tipo, disciplina, rota_m })) } : {}) })),
     ...(analises[i].origemCad ? { cad: analises[i].origemCad } : {}),
   }));
 

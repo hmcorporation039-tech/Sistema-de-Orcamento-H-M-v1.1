@@ -58,18 +58,22 @@ function medidasDoAmbiente(a, poligonosPorNome) {
   const area = Number(a.area_m2) || 0;
   const pol = poligonoValido(a.poligono) ? a.poligono : poligonosPorNome?.get(chaveAmb(a.nome)) || null;
   const per = Number(a.perimetro_m) > 0 ? Number(a.perimetro_m) : pol ? perimetroDoPoligono(pol) : null;
-  let dim = pol ? retanguloDoPoligono(pol) : null;
+  // retângulo mínimo já calculado pela leitura do CAD (services/analiseCad), quando vem
+  const r = a.retangulo;
+  const ret = r && Number(r.comprimento_m) > 0 && Number(r.largura_m) > 0
+    ? { comprimento: Math.max(r.comprimento_m, r.largura_m), largura: Math.min(r.comprimento_m, r.largura_m) } : null;
+  let dim = ret || (pol ? retanguloDoPoligono(pol) : null);
   if (!dim && per && area > 0) {
     // retângulo com a mesma área e perímetro: C + L = P/2, C·L = A
     const s = per / 2, disc = s * s - 4 * area;
     if (disc >= 0) dim = { comprimento: (s + Math.sqrt(disc)) / 2, largura: (s - Math.sqrt(disc)) / 2 };
   }
-  const lido = !!(pol || per);
+  const lido = !!(ret || pol || per);
   return {
     perimetro_m: um(per || 4 * Math.sqrt(area)),
     comprimento_m: um(dim ? dim.comprimento : Math.sqrt(area)),
     largura_m: um(dim ? dim.largura : Math.sqrt(area)),
-    fonte: pol ? 'polígono' : per ? 'perímetro' : 'quadrado',
+    fonte: ret ? 'retângulo do CAD' : pol ? 'polígono' : per ? 'perímetro' : 'quadrado',
     lido,
     pe_direito_m: Number(a.pe_direito_m) > 0 ? Number(a.pe_direito_m) : null,
   };

@@ -137,11 +137,12 @@ const alturaDaDescricao = (s) => {
   return cm ? Number(cm[1]) / 100 : null;
 };
 // "Tomada 2P+T" sem altura não é tomada baixa: vira nota para o usuário distribuir
-function tomadaPorAltura(descricao) {
+// it: o item do desenho — a altura de montagem lida pelo CAD (altura_m) vale quando a descrição não diz
+function tomadaPorAltura(descricao, it = null) {
   if (/\bbaixa/i.test(descricao)) return 'ele_tomada_baixa';
   if (/\bm[ée]dia/i.test(descricao)) return 'ele_tomada_media';
   if (/\balta\b/i.test(descricao)) return 'ele_tomada_alta';
-  const h = alturaDaDescricao(descricao);
+  const h = alturaDaDescricao(descricao) ?? (Number.isFinite(it?.altura_m) ? it.altura_m : null);
   if (h == null || h <= 0 || h > 4) return '_tomada_sem_altura';
   return h < 0.8 ? 'ele_tomada_baixa' : h <= 1.6 ? 'ele_tomada_media' : 'ele_tomada_alta';
 }
@@ -165,13 +166,15 @@ const SERVICO_DO_SIMBOLO = [
   [/repetidor/i, 'alarme_repetidor', 'alarme'],
   [/central/i, 'alarme_central', 'alarme'],
   // rede, TV, telefone e câmera antes de tomada ("tomada de rede" é ponto de rede)
-  [/access ?point|\bwi-?fi\b/i, 'rede_ap', 'rede', /^AP\b/i],
+  // "AP 3000 AX (3) + AP 3000 AX Outdoor (2)" no bloco "CAB AP" (DXF real de 29/10/2026)
+  [/access ?point|\bwi-?fi\b|^AP\s?\d/i, 'rede_ap', 'rede', /(^|\s)AP$|^AP\b/i],
   [/ponto de (rede|telecom|dados)|\brj-?45\b|tomada (de rede|l[óo]gica)|ponto l[óo]gico/i, 'rede_ponto', 'rede', /^(PR|PD|REDE)\b|RJ-?45|LOGIC/i],
   [/ponto de tv|coaxial|tomada de tv/i, 'antena_ponto', 'antena', /^TV\b/i],
   [/interfone|porteiro/i, 'tel_terminal', 'telefonia'],
   [/telefon/i, 'tel_ponto', 'telefonia', /^TEL\b/i],
   [/c[âa]mera|\bdome\b|bullet|\bptz\b|speed ?dome/i, 'cftv_ponto', 'cftv', /C[AÂ]M(ERA)?\b|DOME|BULLET|PTZ/i],
-  // elétrica
+  // elétrica — o quadro antes da tomada: "Quadro de tomadas da sala" é quadro, não tomada
+  [/^quadro\b|quadro de (distribui|tomadas|for[çc]a|luz|ilumina)/i, 'ele_qd_setorial', 'eletrica', /^(ELE )?Q[DL][A-Z]?\b/i],
   [/^(?!.*(rede|l[óo]gica|rj-?45|\btv\b|coaxial|telefon|dados)).*(tomada.*emerg|emerg.*tomada)/i, 'ele_tomada_emergencia', 'eletrica'],
   [/tomada (de )?piso|tomada (de |no )?teto/i, 'ele_ponto_energia', 'eletrica'],
   [/^(?!.*(rede|l[óo]gica|rj-?45|\btv\b|coaxial|telefon|dados)).*tomada/i, tomadaPorAltura, 'eletrica'],
@@ -252,11 +255,16 @@ function disciplinaPeloPrefixo(texto, marcadas) {
   return r ? doMesmoGrupo(marcadas, r[1]) : null;
 }
 const disciplinaUnica = (marcadas) => (marcadas.length && marcadas.every(d => doGrupo(marcadas[0]).includes(d)) ? marcadas[0] : null);
+// A leitura do CAD (113b9db) já decide a disciplina pela layer, pelo bloco da
+// biblioteca H&M e pelo ramo de segurança: quando ela é uma das marcadas, vale
+// ("Quadro de tomadas" na layer CAB-MONITORAMENTO é elétrica). O prefixo só
+// resolve quando a do CAD não foi marcada (CAD antigo: sinalizador INC- dado como alarme).
 function disciplinaDoItemCad(it, marcadas) {
+  const doCad = it.disciplina ? doMesmoGrupo(marcadas, it.disciplina) : null;
+  if (doCad) return doCad;
   const layers = String(it.layer || '').split(/,\s*/);
   for (const l of layers) { const d = disciplinaPeloPrefixo(l, marcadas); if (d) return d; }
   return disciplinaPeloPrefixo(it.bloco, marcadas)
-    || (it.disciplina ? doMesmoGrupo(marcadas, it.disciplina) : null)
     || (it.disciplina ? null : disciplinaUnica(marcadas));
 }
 
@@ -320,7 +328,7 @@ function contagemDoDesenho(analises, vetoriais = [], opcoes = {}) {
             for (const c of conjunto) entradas.push({ ...c, quantidade: c.n * (Number(it.quantidade) || 0), fonte: cad ? 'cad' : 'pdf', arquivo: a.arquivo, rotulo: `${rotulo} (${c.n} por conjunto)` });
             continue;
           }
-          const codigo = typeof cod === 'function' ? cod(desc) : cod;
+          const codigo = typeof cod === 'function' ? cod(desc, it) : cod;
           entradas.push({ codigo, disciplina: discRegra, quantidade: Number(it.quantidade) || 0, fonte: cad ? 'cad' : 'pdf', arquivo: a.arquivo, rotulo });
         }
       }
@@ -751,7 +759,7 @@ function montarMateriaisDaLista(analises, catalogo, achados) {
 const semMarcador = (s) => String(s).replace(/^[-–•\s]+/, '');
 const metrosBR = (m) => `${String(m).replace('.', ',')} m`;
 
-const ORIGEM_DESCRICAO = { legenda: 'descrição da legenda da prancha', atributo: 'descrição do atributo do bloco', sigla: 'sigla do bloco — confirmar o tipo', nome: 'nome do bloco' };
+const ORIGEM_DESCRICAO = { legenda: 'descrição da legenda da prancha', atributo: 'descrição do atributo do bloco', sigla: 'sigla do bloco — confirmar o tipo', nome: 'nome do bloco', biblioteca: 'biblioteca de símbolos H&M' };
 // "rede" e "cabeamento" são a mesma skill: bloco de rede vale para arquivo marcado com qualquer das duas
 function doMesmoGrupo(marcadas, sugerida) {
   return doGrupo(sugerida).find(x => marcadas.includes(x)) || null;

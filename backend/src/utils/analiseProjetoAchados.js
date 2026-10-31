@@ -207,6 +207,15 @@ function achadosDoDesenho(analises, vetoriais, opcoes = {}) {
         });
       }
       if (p.outraArea) achados.push({ tema: 'Itens de outras áreas no desenho', observacao: `"${a.arquivo}": ${p.outraArea} bloco(s) de climatização/hidráulica (dutos, difusores, conexões) ficaram de fora — não são das disciplinas da H&M.` });
+      // a mesma inserção repetida no mesmo ponto (xref inserida duas vezes) conta uma vez:
+      // a deduplicação fica visível para o engenheiro conferir (DF Star: 510 → 184 câmeras)
+      const sobrepostos = (p.itens || []).filter(it => it.tipo === 'simbolo' && Number(it.sobrepostas) > 0);
+      if (sobrepostos.length) {
+        achados.push({
+          tema: 'Símbolos repetidos no mesmo ponto (contados uma vez)',
+          observacao: `"${a.arquivo}": ${sobrepostos.slice(0, 15).map(it => `${semMarcador(it.descricao).replace(/ — bloco .*/, '').slice(0, 60)}${it.bloco ? ` (bloco ${it.bloco})` : ''}: ${it.sobrepostas} inserções repetidas no mesmo ponto contadas uma vez — ficaram ${it.quantidade}`).join('; ')}${sobrepostos.length > 15 ? ` (+${sobrepostos.length - 15})` : ''}. Costuma ser referência externa (xref) inserida duas vezes; confira se não são aparelhos distintos empilhados.`,
+        });
+      }
       // xref de outra disciplina embutida no desenho (services/analiseCad): fora da contagem
       if (p.xrefsDeOutraDisciplina?.length) {
         achados.push({

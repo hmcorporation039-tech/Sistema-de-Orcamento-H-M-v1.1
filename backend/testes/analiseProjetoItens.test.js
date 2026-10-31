@@ -191,6 +191,18 @@ caso('BAIXO: tomada sem altura não é tomada baixa; ponto de luz não é ponto 
   assert.strictEqual(s.ele_tomada_media.quantidade, 3);
   assert.strictEqual(s.ele_ponto_energia.quantidade, 2);
   assert.match(s.ele_ponto_energia.observacao, /6 ponto\(s\) de luz/);
+  // altura de montagem lida pelo CAD (altura_m) decide a tomada; "Quadro de tomadas" é quadro; AP do bloco "CAB AP"
+  const an2 = [analise('nsa.dxf', ['eletrica', 'cabeamento'])];
+  const v2 = [[{ origem: 'cad', pagina: 'DXF', itens: [
+    sim('Tomada 2P+T — bloco TUG', 6, { bloco: 'TUG', layer: 'ELE-TOMADA', disciplina: 'eletrica', altura_m: 1.2, montagem: 'parede' }),
+    sim('Quadro de tomadas da sala: circuito exclusivo do QGBT — bloco ELE QD', 1, { bloco: 'ELE QD', layer: 'CAB-MONITORAMENTO', disciplina: 'eletrica' }),
+    sim('AP 3000 AX (3) + AP 3000 AX Outdoor (2) — bloco CAB AP', 5, { bloco: 'CAB AP', layer: 'CAB-AP', disciplina: 'rede' }),
+  ] }]];
+  const s2 = servicos(an2, v2, ['eletrica', 'cabeamento']);
+  assert.strictEqual(s2.ele_tomada_media.quantidade, 6);
+  assert.strictEqual(s2.ele_qd_setorial.quantidade, 1);
+  assert.ok(!/sem altura/.test(s2.ele_tomada_baixa.observacao));
+  assert.strictEqual(s2.rede_ap.quantidade, 5);
 });
 
 caso('M7: quadros contados por título do quadro de cargas, não por arquivo', () => {
@@ -286,6 +298,12 @@ caso('achados: quadro não lido, código repetido longe, quantidade ambígua e f
     xrefsDeOutraDisciplina: [{ xref: 'E-COND', disciplina: 'eletrica', componentes: 432, metros: 713 }] }]]);
   assert.match(dxf.find(a => /legenda diferente/.test(a.tema)).observacao, /Câmera dome: legenda diz 17, desenho contou 15/);
   assert.match(dxf.find(a => /xref/.test(a.tema)).observacao, /"E-COND".*432 componente/);
+  // inserções repetidas no mesmo ponto (xref inserida duas vezes) e descrição da biblioteca H&M
+  const dup = A.achadosDoDesenho([{ arquivo: 'df.dwg' }], [[{ origem: 'cad', pagina: 'DWG', itens: [
+    sim('Câmera dome — bloco P-DOMEFIXA1', 184, { bloco: 'P-DOMEFIXA1', sobrepostas: 326 }), sim('Leitor de cartão — bloco HM-ACE-LEITOR', 25, { bloco: 'HM-ACE-LEITOR', sobrepostas: 47, origemDescricao: 'biblioteca', disciplina: 'controle_acesso' })] }]]);
+  assert.match(dup.find(a => /repetidos no mesmo ponto/.test(a.tema)).observacao, /Câmera dome \(bloco P-DOMEFIXA1\): 326 inserções repetidas no mesmo ponto contadas uma vez — ficaram 184/);
+  const mb = I.montarMateriaisDoDesenho([analise('df.dwg', ['controle_acesso'])], [[{ origem: 'cad', pagina: 'DWG', itens: [sim('Leitor de cartão — bloco HM-ACE-LEITOR', 25, { bloco: 'HM-ACE-LEITOR', origemDescricao: 'biblioteca', disciplina: 'controle_acesso' })] }]], []);
+  assert.match(mb[0].observacao, /biblioteca de símbolos H&M/);
   // CAD antigo: quantidadeLegenda; PDF (pdfVetorial 29b1aa7): qtde_projeto
   const pdf = A.achadosDoDesenho([{ arquivo: 'l.pdf' }], [[{ pagina: 1, itens: [sim('Luminária X', 10, { quantidadeLegenda: 12 }), sim('Luminária Y', 4, { qtde_projeto: 6 }), sim('Luminária Z', 3, { qtde_projeto: 3 })] }]]);
   const obs = pdf.find(a => /legenda diferente/.test(a.tema)).observacao;
@@ -336,6 +354,9 @@ caso('M8: ponte para as skills usa perímetro/polígono, dimensões do recinto e
   assert.deepStrictEqual([medidasDoAmbiente({ area_m2: 12, perimetro_m: 22.4 }).comprimento_m, medidasDoAmbiente({ area_m2: 12, perimetro_m: 22.4 }).largura_m], [10, 1.2]);
   assert.strictEqual(medidasDoAmbiente({ area_m2: 12, poligono: [[0, 0], [10, 0], [10, 1.2], [0, 1.2]] }).perimetro_m, 22.4);
   assert.strictEqual(medidasDoAmbiente({ area_m2: 16 }).perimetro_m, 16);
+  // retângulo mínimo do CAD (analiseCad) tem preferência; ambiente em L: 6 × 4 em vez do quadrado
+  const L = medidasDoAmbiente({ area_m2: 20, perimetro_m: 20, retangulo: { largura_m: 4, comprimento_m: 6, angulo_graus: 0 } });
+  assert.deepStrictEqual([L.comprimento_m, L.largura_m, L.fonte], [6, 4, 'retângulo do CAD']);
   const c = (circuito, quadro, extra = {}) => ({ circuito, quadro, potencia_W: 1000, potencia_VA: 1100, fp: 0.9, tensao_V: 220, esquema: 'F+N+T', fases: 'R', disjuntor_A: 16, secao_mm2: 2.5, ...extra });
   const quadrosDeCargas = [
     { quadro: 'QGBT', circuitos: [c('QD-Térreo', 'QGBT', { alimentador: true, esquema: '3F+N+T', fases: 'RST', disjuntor_A: 63, tensao_V: 380 })], totais: { potencia_VA: 2200, demanda_kVA: 2 } },
