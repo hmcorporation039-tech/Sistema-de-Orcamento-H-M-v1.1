@@ -85,7 +85,8 @@ const DOMINIOS_FABRICANTE = {
   'Phoenix Contact': ['phoenixcontact.com', 'phoenixcontact.com.br'],
   Rittal: ['rittal.com', 'rittal.com.br'],
   'Schneider Electric': ['se.com', 'schneider-electric.com', 'schneider-electric.com.br', 'schneider-electric.us'],
-  Siemens: ['siemens.com', 'siemens.com.br'],
+  // siemens-info.com: o Digital Content Center da Siemens, onde ficam os catálogos IC 10/IC 21
+  Siemens: ['siemens.com', 'siemens.com.br', 'siemens-info.com'],
   Steck: ['steck.com.br'],
   Taunus: ['taunus.com.br'],
   WEG: ['weg.net'],
