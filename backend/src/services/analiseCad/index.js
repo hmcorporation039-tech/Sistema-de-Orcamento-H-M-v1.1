@@ -335,7 +335,8 @@ async function lerArquivoCad(buffer, nome) {
   // não pode ficar colado neles)
   for (const g of outraArea) {
     const classe = classeDoComponente(`${g.nomeLimpo} ${g.layers.join(' ')}`);
-    if (classe === 'outro') continue;
+    // acionador/avisador sem disciplina não entram (a conferência de incêndio pede a disciplina)
+    if (classe === 'outro' || classe === 'acionador' || classe === 'avisador') continue;
     for (const [x, y] of g.posicoes) pontos.push({ x, y, descricao: g.nomeLimpo, disciplina: null, classe, altura_m: null, montagem: classe === 'difusor' || classe === 'sprinkler' ? 'teto' : null });
   }
   const espacial = {
@@ -357,6 +358,10 @@ function classeDoComponente(texto) {
   if (/DIFUSOR|GRELHA|INSUFL|VENEZIANA|TERMINAIS DE AR|\bVAV\b/i.test(s)) return 'difusor';
   if (/SPRINKLER|CHUVEIRO AUTOM/i.test(s)) return 'sprinkler';
   if (/ACCESS ?POINT|WI-?FI|^Ponto de rede.*\bAP\b|^AP\b/i.test(s)) return 'access_point';
+  // incêndio (alturas e caminhamento da NBR 17240 na compatibilização; a
+  // disciplina do ponto separa da botoeira de emergência do controle de acesso)
+  if (/ACIONADOR/i.test(s)) return 'acionador';
+  if (/SINALIZADOR|AVISADOR|SIRENE/i.test(s)) return 'avisador';
   return 'outro';
 }
 

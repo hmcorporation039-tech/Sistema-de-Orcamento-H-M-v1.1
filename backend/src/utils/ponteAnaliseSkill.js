@@ -403,4 +403,4 @@ function dadosDaAnalise(disciplinaSkill, motor, analise, opcoes = {}) {
   return { dados: r, avisos };
 }
 
-module.exports = { dadosDaAnalise, tipoAmbiente, medidasDoAmbiente, quadrosLidos };
+module.exports = { dadosDaAnalise, tipoAmbiente, medidasDoAmbiente, quadrosLidos, distanciasDeRede };

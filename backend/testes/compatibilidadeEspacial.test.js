@@ -66,6 +66,44 @@ const pt = (x, y, descricao, disciplina, classe) => ({ x, y, descricao, discipli
     assert.strictEqual(c[0].b.disciplina, null);
   });
 
+  await caso('NBR 17240 pelo desenho: alturas, acionador a mais de 30 m e detectores por área', async () => {
+    // projeto de 3 detectores sem acionador nem avisador (cenário acima)
+    assert.ok(r.achados.some(a => a.tema === 'NBR 17240: nenhum acionador manual no desenho'));
+    assert.ok(r.achados.some(a => a.tema === 'NBR 17240: nenhum avisador no desenho'));
+    // galpão 40 × 10 m (400 m²) com 4 detectores de fumaça (mínimo 5), acionador a 1,6 m
+    // num canto (centro a ~20 m: ok) e avisador a 1,8 m; e um depósito a 45 m dali
+    const amb = [
+      { nome: 'GALPAO', area_m2: 400, poligono: ret(0, 0, 40, 10), origem: 'polilinha' },
+      { nome: 'ESCRITORIO', area_m2: 20, poligono: ret(41, 0, 46, 4), origem: 'polilinha' },
+      { nome: 'DEPOSITO', area_m2: 16, poligono: ret(60, 0, 64, 4), origem: 'polilinha' },
+    ];
+    const comAltura = (p, altura_m) => ({ ...p, altura_m, montagem: 'parede' });
+    const g = compatibilizar([{ arquivo: 'INC2.dwg', disciplinas: ['incendio'], espacial: { ambientes: amb, trechos: [], pontos: [
+      ...[5, 15, 25, 35].map(x => pt(x, 5, 'Detector de fumaça', 'incendio', 'detector')),
+      pt(43, 2, 'Detector de temperatura', 'incendio', 'detector'), pt(62, 2, 'Detector de fumaça', 'incendio', 'detector'),
+      comAltura(pt(1, 1, 'Acionador manual', 'incendio', 'acionador'), 1.6), comAltura(pt(39, 1, 'Sinalizador audiovisual', 'incendio', 'avisador'), 1.8),
+      comAltura(pt(42, 1, 'Botoeira de emergência — acionador', 'controle_acesso', 'acionador'), 1.6),
+    ] } }]);
+    const t = (tema) => g.achados.find(a => a.tema === tema);
+    assert.match(t('NBR 17240: altura de acionador manual').observacao, /^1 fora da faixa de 0,90 a 1,35 m.*GALPAO \(h = 1,60 m/);
+    assert.match(t('NBR 17240: altura de avisador').observacao, /GALPAO \(h = 1,80 m/);
+    assert.match(t('NBR 17240: detectores abaixo do mínimo pela área').observacao, /^GALPAO: 400,0 m², 4 detector\(es\) de fumaça — mínimo 5\./);
+    assert.doesNotMatch(t('NBR 17240: detectores abaixo do mínimo pela área').observacao, /ESCRITORIO/); // 20 m² ≤ 36 m²
+    const longe = t('NBR 17240: acionador manual a mais de 30 m').observacao;
+    // a botoeira do controle de acesso ao lado do escritório não conta como acionador de incêndio
+    assert.match(longe, /^Do centro do ambiente até o acionador mais próximo: ESCRITORIO: 42,5 m em linha reta; DEPOSITO: 61,0 m/);
+    assert.doesNotMatch(longe, /GALPAO/);
+  });
+
+  await caso('NBR 14565 pelo desenho: ponto de rede a mais de 90 m do rack', async () => {
+    const amb = ['A', 'B', 'C'].map((nome, i) => ({ nome, area_m2: 40, poligono: ret(i * 50, 0, i * 50 + 10, 4), origem: 'polilinha' }));
+    const g = compatibilizar([{ arquivo: 'LOG2.dwg', disciplinas: ['cabeamento'], espacial: { ambientes: amb, trechos: [], pontos: [
+      pt(1, 1, 'Rack 19" 12U', 'cabeamento', 'outro'), pt(5, 2, 'Ponto de rede RJ45', 'cabeamento', 'outro'), pt(98, 1, 'Ponto de rede RJ45', 'cabeamento', 'outro'),
+    ] } }]);
+    const a = g.achados.find(x => x.tema === 'NBR 14565: ponto de rede a mais de 90 m do rack');
+    assert.match(a.observacao, /^1 de 2 ponto\(s\) de rede ficam a mais de 90 m do rack\/distribuidor mais próximo \(máxima 100 m/);
+  });
+
   await caso('tomada e ponto de rede no mesmo ponto (10 cm)', async () => {
     const c = temas('Componentes de disciplinas diferentes no mesmo ponto');
     assert.strictEqual(c.length, 1);

@@ -35,6 +35,8 @@ const MAX_SEGMENTO_M = 1000;
 const path = require('path');
 const { chaveNome: normalizar } = require('./texto');
 const { CAD } = require('../config/caminhos');
+// distância rack → ponto de rede (o mesmo cálculo que a ponte manda para a skill de cabeamento)
+const { distanciasDeRede } = require('./ponteAnaliseSkill');
 // disciplina do traçado pelo prefixo/palavra da layer (tabela de skills/_comum/cad/disciplinasCad.js)
 const { disciplinaDaLayer } = require(path.join(CAD, 'disciplinasCad.js'));
 const br = (v, c = 2) => Number(v).toFixed(c).replace('.', ',');
@@ -281,6 +283,61 @@ function conflitosDeTracado(trechos, ambientesRef) {
   return { conflitos, resumo, longos };
 }
 
+// ── NBR 17240 pelo desenho (mesmos valores da skill de incêndio) ──
+// Alturas de instalação (5.5 e 5.6), caminhamento até o acionador (5.5.3: a
+// distância em linha reta é o MENOR caminhamento possível, então passar dela é
+// certeza de não atender) e detectores por área de cobertura (5.4.1.1: 81 m² por
+// detector de fumaça, 36 m² por detector de temperatura — mínimo; a distribuição
+// pelo raio pode pedir mais).
+const ALTURA_ACIONADOR_M = [0.9, 1.35];
+const ALTURA_AVISADOR_M = [2.2, 3.5];
+const CAMINHAMENTO_ACIONADOR_M = 30;
+const AREA_POR_DETECTOR_M2 = { fumaca: 81, temperatura: 36 };
+function conferenciaIncendio(pontos, ambientes) {
+  const inc = pontos.filter(p => p.disciplina === 'incendio');
+  const detectores = inc.filter(p => p.classe === 'detector');
+  if (!detectores.length) return [];
+  const acionadores = inc.filter(p => p.classe === 'acionador');
+  const avisadores = inc.filter(p => p.classe === 'avisador');
+  const achados = [];
+  const alturas = (lista, [min, max], rotulo, item) => {
+    const f = lista.filter(p => p.montagem !== 'teto' && p.altura_m != null && (p.altura_m < min - 1e-9 || p.altura_m > max + 1e-9));
+    if (!f.length) return;
+    const ex = f.slice(0, 6).map(p => `${ambienteEm(ambientes, p.x, p.y) || 'fora dos ambientes'} (h = ${br(p.altura_m)} m, "${p.arquivo}")`);
+    achados.push({ tema: `NBR 17240: altura de ${rotulo}`, observacao: `${f.length} fora da faixa de ${br(min)} a ${br(max)} m do piso (${item}): ${ex.join('; ')}${f.length > 6 ? ` (+${f.length - 6})` : ''}. Confira a cota no projeto.` });
+  };
+  alturas(acionadores, ALTURA_ACIONADOR_M, 'acionador manual', '5.5');
+  alturas(avisadores, ALTURA_AVISADOR_M, 'avisador', '5.6');
+  if (!acionadores.length) {
+    achados.push({ tema: 'NBR 17240: nenhum acionador manual no desenho', observacao: `${detectores.length} detector(es) de incêndio e nenhum acionador manual identificado. A norma pede ao menos um por pavimento, com caminhamento máximo de ${CAMINHAMENTO_ACIONADOR_M} m (5.5) — confira se estão em outra prancha.` });
+  }
+  if (!avisadores.length) {
+    achados.push({ tema: 'NBR 17240: nenhum avisador no desenho', observacao: `${detectores.length} detector(es) de incêndio e nenhum avisador sonoro/visual identificado (5.6) — confira se estão em outra prancha.` });
+  }
+  // cada detector no menor ambiente que o contém
+  const menor = (p) => ambientes.filter(a => a.area_m2 > 0 && dentro([p.x, p.y], a.poligono)).sort((a, b) => a.area_m2 - b.area_m2)[0];
+  const porAmbiente = new Map();
+  for (const p of detectores) { const a = menor(p); if (a) porAmbiente.set(a, (porAmbiente.get(a) || []).concat([p])); }
+  const poucos = [], longe = [];
+  for (const [amb, dets] of porAmbiente) {
+    const tipo = dets.every(p => /TEMPERATURA|T[ÉE]RMICO|TERMOVELOC/i.test(p.descricao || '')) ? 'temperatura' : 'fumaca';
+    const minimo = Math.ceil(amb.area_m2 / AREA_POR_DETECTOR_M2[tipo] - 1e-9);
+    if (dets.length < minimo) poucos.push(`${amb.nome}: ${br(amb.area_m2, 1)} m², ${dets.length} detector(es) de ${tipo === 'fumaca' ? 'fumaça' : 'temperatura'} — mínimo ${minimo}`);
+    if (acionadores.length) {
+      const [cx, cy] = centroide(amb.poligono);
+      const d = Math.min(...acionadores.map(a => Math.hypot(a.x - cx, a.y - cy)));
+      if (d > CAMINHAMENTO_ACIONADOR_M) longe.push(`${amb.nome}: ${br(d, 1)} m em linha reta`);
+    }
+  }
+  if (poucos.length) {
+    achados.push({ tema: 'NBR 17240: detectores abaixo do mínimo pela área', observacao: `${poucos.slice(0, 10).join('; ')}${poucos.length > 10 ? ` (+${poucos.length - 10})` : ''}. Área máxima de cobertura de ${AREA_POR_DETECTOR_M2.fumaca} m² por detector de fumaça e ${AREA_POR_DETECTOR_M2.temperatura} m² por detector de temperatura (5.4.1.1); vigas e pé-direito podem pedir mais.` });
+  }
+  if (longe.length) {
+    achados.push({ tema: 'NBR 17240: acionador manual a mais de 30 m', observacao: `Do centro do ambiente até o acionador mais próximo: ${longe.slice(0, 10).join('; ')}${longe.length > 10 ? ` (+${longe.length - 10})` : ''}. A linha reta já passa do caminhamento máximo de ${CAMINHAMENTO_ACIONADOR_M} m (5.5.3) — falta acionador nessa região.` });
+  }
+  return achados;
+}
+
 const NOME_DISC = { eletrica: 'elétrica', iluminacao: 'iluminação', incendio: 'incêndio', cftv: 'CFTV', cabeamento: 'cabeamento', rede: 'rede', alarme: 'alarme', telefonia: 'telefonia', antena: 'antena', controle_acesso: 'controle de acesso', automacao: 'automação' };
 const rotuloLado = (l) => `${String(l.descricao).replace(/ — bloco .*/, '').slice(0, 50)} (${l.disciplina ? NOME_DISC[l.disciplina] || l.disciplina : 'climatização/hidráulica'}${l.altura ? `, ${l.altura}` : ''}, "${l.arquivo}")`;
 
@@ -357,6 +414,13 @@ function compatibilizar(arquivos, { temPdf = false } = {}) {
         trechos: trechos.map(t => ({ disciplina: t.disciplina, layer: t.layer, segmentos: t.segmentos.slice(0, Math.max(0, 20000 - nSeg)).map(s => { nSeg++; return s.map(v => Math.round(v * 1000) / 1000); }) }))
           .filter(t => t.segmentos.length),
       };
+    }
+    achados.push(...conferenciaIncendio(pontos, ambRef));
+    // NBR 14565: enlace permanente de até 90 m do distribuidor à tomada
+    const rede = distanciasDeRede({ pontos });
+    if (rede?.acima90) {
+      achados.push({ tema: 'NBR 14565: ponto de rede a mais de 90 m do rack',
+        observacao: `${rede.acima90} de ${rede.pontos} ponto(s) de rede ficam a mais de 90 m do rack/distribuidor mais próximo (máxima ${rede.maxima} m, caminho em "L" + subida/descida adotadas). O enlace permanente não pode passar de 90 m — prever outro distribuidor (rack de andar) ou rever o traçado.` });
     }
     const novos = [...conflitosDePontos(pontos, ambRef)];
     const tr = conflitosDeTracado(trechos, ambRef);
