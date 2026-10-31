@@ -91,6 +91,23 @@ const caso = async (nome, fn) => { await fn(); ok++; };
     assert.ok(r.avisos.some(a => /ESTIMADOS/.test(a)));
   });
 
+  await caso('DWG do projeto → 3D: todo componente (sem símbolo vira caixa com o nome) e trecho com tipo e medida', async () => {
+    const r = M.dispositivosDoEspacial({
+      pontos: [
+        { x: 1, y: 1, descricao: 'Acionador manual AME 521 h=1,20m — bloco INC AC', disciplina: 'incendio', altura_m: 1.2, montagem: 'parede' },
+        { x: 2, y: 1, descricao: 'Isolador de laço IDL 521 — bloco INC ISO', disciplina: 'incendio' },
+        { x: 3, y: 1, descricao: 'Difusor linear', disciplina: null },
+      ],
+      trechos: [{ layer: 'INC-ELETRODUTO', disciplina: 'incendio', segmentos: [[0, 0, 5, 0]], tipo: 'eletroduto', material: 'PVC rígido', medida: 'Ø 25 mm (3/4")', secao_mm: [25, 25], origem_medida: 'legenda' }],
+    });
+    assert.deepStrictEqual(r.dispositivos.map(d => [d.simbolo, d.rotulo, d.disciplina, d.altura_m]), [
+      ['HM-INC-ACIONADOR', 'Acionador manual AME 521 h=1,20m', 'incendio', 1.2],
+      ['HM-GEN-COMPONENTE', 'Isolador de laço IDL 521', 'incendio', undefined],
+    ]);
+    assert.strictEqual(r.genericos, 1);
+    assert.deepStrictEqual([r.trechos[0].tipo, r.trechos[0].material, r.trechos[0].medida, r.trechos[0].secao_mm, r.trechos[0].origem_medida], ['eletroduto', 'PVC rígido', 'Ø 25 mm (3/4")', [25, 25], 'legenda']);
+  });
+
   await caso('disciplina sem estimativa (controle de acesso sem formulário) não derruba o 3D', async () => {
     const r = await M.gerarNoWorker({ ...fonte, disciplinas: ['controle-acesso', 'cftv'] });
     assert.ok(r.numeros.dispositivos.some(d => d.disciplina === 'cftv'));
