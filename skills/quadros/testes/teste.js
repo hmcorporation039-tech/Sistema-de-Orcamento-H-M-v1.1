@@ -176,6 +176,16 @@ igual('Automação: ocupação das canaletas ≤ 50 %', [...c2.layout.horizontai
   igual('disjuntor-motor: faixa que contém 22,4 A → 17–23 A', CAT.selecionar(fixture, 'disjuntor_motor', 'WEG', { corrente: 22.4 }).referencia, 'FX-MPW-23');
   igual('DPS classe I+II não usa o de classe II', CAT.selecionar(fixture, 'dps', S, { classe: 'I', uc: 275 }).referencia, 'FX-DPS-I-275');
   igual('outro fabricante sem registro → nada', CAT.selecionar(fixture, 'contator', 'Siemens', { ac3: 18 }), null);
+  {
+    const reg = (tipo, referencia, extra) => ({ fabricante: 'X', tipo, referencia, largura_mm: 50, altura_mm: 100, profundidade_mm: 75, ...extra });
+    const cat = [reg('clp_cpu', 'CPU-6-4', { pontos: { DI: 6, DO: 4, AI: 2 }, largura_mm: 90 }), reg('clp_cpu', 'CPU-14-10', { pontos: { DI: 14, DO: 10, AI: 2 }, largura_mm: 110 }),
+      reg('switch', 'SW-5', { pontos: { RJ45: 5 } }), reg('switch', 'SW-8', { pontos: { RJ45: 8 } }),
+      reg('rele_interface', 'SSR', { descricao: 'Relé de estado sólido 6 A', largura_mm: 6.2 }), reg('rele_interface', 'R230', { descricao: 'Relé de interface entrada 230 V AC', largura_mm: 6.2 }),
+      reg('rele_interface', 'R24', { descricao: 'Relé de interface 1 CO 6 A bobina 24 V DC', largura_mm: 6.2 })];
+    igual('CPU com as E/S que o cálculo contou (14 DI / 10 DO), não a menor', CAT.selecionar(cat, 'clp_cpu', 'X', { DI: 14, DO: 10, AI: 2, AO: 0 }).referencia, 'CPU-14-10');
+    igual('switch com as portas pedidas (8)', CAT.selecionar(cat, 'switch', 'X', { portas: 8 }).referencia, 'SW-8');
+    igual('relé de interface 24 V com contato, não estado sólido nem 230 V', CAT.selecionar(cat, 'rele_interface', 'X', {}).referencia, 'R24');
+  }
   igual('especificação de busca no formato do contrato', CAT.especificacao('contator', 'WEG', { ac3: 25, bobina: '24 Vcc' }), 'WEG contator 25 A AC-3 bobina 24 Vcc');
   const FAB = { padrao: S, por_tipo: { contator: 'WEG', disjuntor_motor: 'WEG', soft_starter: 'WEG', inversor: 'WEG', fonte_24v: 'Mean Well', clp_cpu: 'Siemens', clp_modulo: 'Siemens', rele_interface: 'Finder', borne: 'Conexel', switch: 'Siemens', rele_seguranca: 'WEG' } };
   const comCat = (ex, ajuste) => { const d = JSON.parse(JSON.stringify(ex)); d.fabricantes = FAB; d.catalogo_componentes = fixture; if (ajuste) ajuste(d); return motor.processar(d); };

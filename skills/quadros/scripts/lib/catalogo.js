@@ -80,6 +80,16 @@ function atende(r, tipo, req) {
       return (n(pontosDe(r)[req.ponto]) ?? 0) >= req.canais;
     case 'borne':
       return (n(r.pontos) ?? n(pontosDe(r).secao) ?? 0) >= req.secao - 1e-9;
+    // a CPU precisa ter as E/S integradas que o cálculo contou (os módulos cobrem só o
+    // resto): sem isso o "menor modelo" era a CPU de 6 DI / 4 DO no lugar da de 14 / 10
+    // (registro sem as E/S/portas declaradas não é recusado, como a curva acima)
+    case 'clp_cpu':
+      return !tem(r.pontos) || ['DI', 'DO', 'AI', 'AO'].every(t => !req[t] || (n(pontosDe(r)[t]) ?? 0) >= req[t]);
+    case 'switch':
+      return !req.portas || !tem(r.pontos) || (n(pontosDe(r).RJ45) ?? 0) >= req.portas;
+    // bobina 24 V com contato (não o de estado sólido nem o de entrada 230 V)
+    case 'rele_interface':
+      return (!tem(r.tensao_bobina) || /24/.test(String(r.tensao_bobina))) && !/estado s[óo]lido|\bSSR\b|230\s*V/i.test(`${r.descricao || ''} ${r.referencia || ''}`);
     default:
       return true; // clp_cpu, rele_interface, rele_seguranca, rele_tempo, switch, ihm, multimedidor…
   }

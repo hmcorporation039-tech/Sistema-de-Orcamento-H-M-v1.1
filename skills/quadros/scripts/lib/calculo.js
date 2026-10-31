@@ -621,7 +621,7 @@ function componentes(c, circuitos, drs, geral, dpsInfo, motores, aut, dem, sel) 
   }
   if (aut.ativo && aut.clp) {
     dev({ ref: 'A1', tipo: 'clp', zona: 'clp', descricao: `${T.CLP.cpu.rotulo} com ${aut.cpu.DI} DI / ${aut.cpu.DO} DO / ${aut.cpu.AI} AI${aut.cpu.AO ? ` / ${aut.cpu.AO} AO` : ''} integradas, porta Ethernet`, largura: T.CLP.cpu.l, altura: T.CLP.cpu.h, prof: T.CLP.cpu.p, perda: T.CLP.cpu.perda_w },
-      'clp_cpu', { io: `${aut.cpu.DI} DI ${aut.cpu.DO} DO ${aut.cpu.AI} AI` }, { referencia: aut.cpuReferencia });
+      'clp_cpu', { io: `${aut.cpu.DI} DI ${aut.cpu.DO} DO ${aut.cpu.AI} AI`, ...aut.cpu }, { referencia: aut.cpuReferencia });
     let k = 2;
     for (const t of ['DI', 'DO', 'AI', 'AO']) {
       for (let j = 0; j < aut.modulos[t]; j++) dev({ ref: `A${k++}`, tipo: `modulo_${t}`, zona: 'clp', descricao: T.CLP[t].rotulo, largura: T.CLP[t].l, altura: T.CLP[t].h, prof: T.CLP[t].p, perda: T.CLP[t].perda_w }, 'clp_modulo', { ponto: t, canais: T.CLP[t].canais }, {});
