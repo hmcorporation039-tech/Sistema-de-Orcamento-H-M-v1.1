@@ -90,6 +90,9 @@ function atende(r, tipo, req) {
     // bobina 24 V com contato (não o de estado sólido nem o de entrada 230 V)
     case 'rele_interface':
       return (!tem(r.tensao_bobina) || /24/.test(String(r.tensao_bobina))) && !/estado s[óo]lido|\bSSR\b|230\s*V/i.test(`${r.descricao || ''} ${r.referencia || ''}`);
+    // termostato do ventilador: contato NA (ventilação), não o de aquecimento nem o higrostato
+    case 'termostato':
+      return /termostato/i.test(r.descricao || '') && !/higrostato|aquecimento|\bNF\b/i.test(r.descricao || '');
     default:
       return true; // clp_cpu, rele_interface, rele_seguranca, rele_tempo, switch, ihm, multimedidor…
   }
@@ -140,6 +143,7 @@ function especificacao(tipo, fab, req = {}) {
     case 'switch': return `${f}switch ethernet industrial ${req.portas || 5} portas trilho DIN`;
     case 'multimedidor': return `${f}multimedidor de energia trilho DIN`;
     case 'borne': return `${f}borne de passagem ${v(req.secao)} mm² trilho DIN`;
+    case 'termostato': return `${f}termostato de painel NA (ventilação) 0–60 °C trilho DIN`;
     case 'ihm': return `${f}IHM ${req.pol || 7} polegadas 24 Vcc`;
     default: return `${f}${tipo.replace(/_/g, ' ')}`;
   }
@@ -156,7 +160,7 @@ function criarSeletor(dados, opcoes = {}) {
     const fab = fabricanteDoTipo(dados, tipo, item);
     const r = desligado ? null : selecionar(catalogo, tipo, fab, req, item.referencia || null);
     if (r) {
-      const medida = { origem: 'catalogo', fabricante: r.fabricante, linha: r.linha || '', referencia: r.referencia || '', descricao: r.descricao || '', fonte_url: r.fonte_url || '', fonte_documento: r.fonte_documento || '', verificado: r.verificado === true, registro_origem: r.origem || '' };
+      const medida = { origem: 'catalogo', fabricante: r.fabricante, linha: r.linha || '', referencia: r.referencia || '', descricao: r.descricao || '', fonte_url: r.fonte_url || '', fonte_documento: r.fonte_documento || '', verificado: r.verificado === true, registro_origem: r.origem || '', montagem: r.montagem || '' };
       usados.push({ tag, tipo, ...medida });
       return { l: n(r.largura_mm), h: n(r.altura_mm), p: n(r.profundidade_mm) || tipica.p, modulos: n(r.modulos_din), perdaW: n(r.perda_w), medida };
     }

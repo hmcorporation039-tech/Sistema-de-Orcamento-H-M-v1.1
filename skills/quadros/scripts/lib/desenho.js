@@ -18,6 +18,7 @@ const { DesenhoDxf } = require('../../../_comum/cad/dxf');
 const { EMPRESA } = require('../../../_comum/empresa');
 const T = require('./tabelas');
 const { posicoesPorta } = require('./porta');
+const { tcNasBarras } = require('./layout');
 
 const FORMATOS = [['A3', 420, 297], ['A2', 594, 420], ['A1', 841, 594], ['A0', 1189, 841]];
 const ESCALAS = [5, 10, 15, 20, 25];
@@ -190,6 +191,11 @@ function gerarDesenho(calc, dados = {}) {
   p.poli([[xa, ya], [xa + tri, ya], [xa + tri / 2, ya + tri * 0.87]], 'QD-PORTA', true);
   p.txt(xa + tri / 2, ya + tri * 0.3, tri * 0.4, '!', { layer: 'QD-TEXTO', alinhar: 'centro' });
   // dispositivos de porta (mesma posição do modelo 3D: ./porta.js)
+  for (const m of PT.medidores) {
+    p.ret(xF + m.x, yBase + m.y, m.l, m.a, 'QD-PORTA');
+    p.ret(xF + m.x + 8, yBase + m.y + m.a * 0.45, m.l - 16, m.a * 0.45, 'QD-COMPONENTE'); // visor
+    p.txt(xF + m.x + m.l / 2, yBase + m.y + m.a * 0.2, Math.min(m.a * 0.15, P(1.6)), m.rotulo, { layer: 'QD-TEXTO', alinhar: 'centro' });
+  }
   if (PT.ihm) {
     const ihm = PT.ihm;
     p.ret(xF + ihm.x, yBase + ihm.y, ihm.l, ihm.a, 'QD-PORTA');
@@ -276,6 +282,12 @@ function gerarDesenho(calc, dados = {}) {
         for (let a = 0; a < nAp; a++) {
           const xa2 = x + (w - 30) * a / (nAp - 1);
           p.ret(xa2, Y(y0 + 10 + n * c.entreFases), 30, n * c.entreFases, 'QD-COMPONENTE');
+        }
+        // TCs de janela enfiados nas barras de fase (mesma posição do 3D: layout.tcNasBarras)
+        for (const t of tcNasBarras(calc)) {
+          const yb = y0 + 10 + t.fase * c.entreFases + c.entreFases / 2;
+          p.ret(x + t.dx, Y(yb + t.a / 2), t.l, t.a, 'QD-COMPONENTE');
+          p.txt(x + t.dx + t.l / 2, Y(yb + t.a / 2 + 4), hItem(30), t.ref, { layer: 'QD-TEXTO', alinhar: 'centro' });
         }
         p.txt(x + w / 2, Y(y0 + 4), hItem(60), `BARRAMENTO ${calc.barr.fase ? `${calc.barr.fase.l}×${calc.barr.fase.e}` : ''} Cu — ISOLADORES A CADA ${c.apoios} mm`, { layer: 'QD-TEXTO', alinhar: 'centro' });
         continue;

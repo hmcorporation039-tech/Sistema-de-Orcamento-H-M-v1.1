@@ -33,7 +33,9 @@ const modular = (k) => k.modulos != null;
 function itensPorZona(ctx) {
   const { c, comps, born, barr, reservaCircuitos } = ctx;
   const z = Object.fromEntries(ZONAS.map(n => [n, []]));
-  for (const k of comps) z[k.zona].push({ ...k });
+  // fora das fileiras: zona 'porta' (multimedidor de painel em recorte → ./porta.js) e
+  // 'sobre_barramento' (TCs enfiados nas barras → tcNasBarras)
+  for (const k of comps) if (z[k.zona]) z[k.zona].push({ ...k });
   // reserva da distribuição: espaços do dispositivo de circuito mais comum
   const circ = z.distribuicao.filter(k => k.tipo === 'disjuntor' || k.tipo === 'ddr');
   if (circ.length || reservaCircuitos) {
@@ -171,7 +173,8 @@ function tentar(inv, fam, ctx) {
   }
   const alturaNecessaria = y + (c.entradaCabos === 'inferior' ? ENTRADA_CABOS : 0) + T.MARGEM_UTIL;
   const profPecas = Math.max(...fileiras.flatMap(f => f.itens.map(k => k.prof || T.DIN_PROF)), T.DIN_PROF);
-  const profPorta = porta.length || ctx.aut.ihm ? 50 : 0;
+  // dispositivos de porta entram para dentro do quadro: botoeiras/IHM ~50 mm, multimedidor de painel pela medida dele
+  const profPorta = Math.max(porta.length || ctx.aut.ihm ? 50 : 0, ...ctx.comps.filter(k => k.zona === 'porta').map(k => k.prof || 0));
   const profNecessaria = Math.max(profPecas + T.FOLGA_PORTA + profPorta, Math.max(vE.altura, vD.altura) + 30);
   return { placa, larguraUtil, x0, fileiras, horizontais, alturaNecessaria, profNecessaria, cabeAltura: alturaNecessaria <= placa.altura };
 }
@@ -222,4 +225,11 @@ function montarLayout(ctx) {
   };
 }
 
-module.exports = { montarLayout, empacotar, canaletaPara, ZONAS, ROTULO_ZONA, ENTRADA_CABOS, FOLGA_FILEIRA };
+// TCs nas barras de fase: logo após o 1º isolador (chegada do geral, à esquerda), escalonados ao
+// longo da barra porque a altura do TC (≥ 80 mm) não cabe nos 60 mm entre fases. dx = a partir
+// do início da barra; l = espessura do TC ao longo da barra; a = altura; p = largura (frente).
+function tcNasBarras(calc) {
+  return calc.comps.lista.filter(k => k.zona === 'sobre_barramento').map((k, i) => ({ ref: k.ref, fase: i, dx: 45 + i * (k.prof + 15), l: k.prof, a: k.altura, p: k.largura, item: k }));
+}
+
+module.exports = { montarLayout, tcNasBarras, empacotar, canaletaPara, ZONAS, ROTULO_ZONA, ENTRADA_CABOS, FOLGA_FILEIRA };

@@ -1,5 +1,5 @@
 // Posição dos itens da PORTA (vista frontal): placa de identificação, advertência,
-// fecho, IHM, botões/sinaleiros Ø 22 mm e grelhas de ventilação. Mesma regra
+// fecho, multimedidor de painel, IHM, botões/sinaleiros Ø 22 mm e grelhas de ventilação. Mesma regra
 // para o desenho DXF e para o modelo 3D. Coordenadas em mm a partir do canto
 // inferior esquerdo da frente do invólucro (x para a direita, y para cima);
 // botões pelo centro (cx, cy) e diâmetro externo d.
@@ -10,9 +10,14 @@ function posicoesPorta(calc) {
     placa: { x: (W - wPlaca) / 2, y: H - 70, l: wPlaca, a: 40, rotulo: calc.c.tag },
     aviso: { x: 40, y: H - 80, l: 40, a: 35 },
     fecho: { x: W - 50, y: H / 2 - 60, l: 22, a: 120 },
-    ihm: null, botoes: [], grelhas: [],
+    ihm: null, medidores: [], botoes: [], grelhas: [],
   };
   let yP = H - 120;
+  // instrumentos de painel (multimedidor 96 × 96 do catálogo, zona 'porta'): no alto, centrados, em recorte
+  for (const k of calc.comps.lista.filter(x => x.zona === 'porta')) {
+    itens.medidores.push({ x: (W - k.largura) / 2, y: yP - k.altura, l: k.largura, a: k.altura, p: k.prof, ref: k.ref, rotulo: k.ref, descricao: k.descricao, medida: k.medida });
+    yP -= k.altura + 40;
+  }
   if (calc.aut.ihm) {
     const l = calc.aut.ihm >= 10 ? 270 : calc.aut.ihm >= 7 ? 190 : 130;
     const a = calc.aut.ihm >= 10 ? 200 : calc.aut.ihm >= 7 ? 140 : 100;

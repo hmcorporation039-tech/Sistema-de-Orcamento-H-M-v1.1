@@ -53,7 +53,11 @@ igual('DPS sem SPDA → classe II, In 5 kA, N-PE 20 kA (trifásico), Uc 275 V, 4
 // ── Exemplo 1: quadro de distribuição predial ──
 const r1 = motor.processar(predial);
 const c1 = r1.calc;
-igual('QD predial: invólucro 800 × 600 × 150 de sobrepor', [c1.layout.involucro.altura, c1.layout.involucro.largura, c1.layout.involucro.profundidade], [800, 600, 150]);
+// medição indireta (geral 100 A > 63 A) com pente: 3 TCs de janela (3 × 60 mm) e o bloco de aferição
+// (70 mm) entram na fileira da entrada → 5 fileiras, 875 mm de placa → 1000 × 600 (antes 800 × 600,
+// com os TCs só na lista de materiais e sem espaço reservado)
+igual('QD predial: invólucro 1000 × 600 × 150 de sobrepor (TCs e bloco de aferição no arranjo)', [c1.layout.involucro.altura, c1.layout.involucro.largura, c1.layout.involucro.profundidade], [1000, 600, 150]);
+igual('QD predial: TCs ao lado do geral, na fileira da entrada (pente, sem barras)', c1.layout.fileiras[0].itens.map(k => k.ref).slice(0, 4), ['Q0', 'TC1', 'TC2', 'TC3']);
 igual('QD predial: arranjo cabe', c1.layout.cabe, true);
 igual('QD predial: reserva = 4 circuitos (Tabela 59 e 20 %)', c1.reservaCircuitos, 4);
 igual('QD predial: barramento tipo pente 100 A', [c1.barr.tipo, c1.barr.pente.a], ['pente', 100]);
@@ -138,6 +142,16 @@ function conferir3d(nome, k, cena) {
   igual(`${nome}: 3D — barra PE com a seção do cálculo`, cena.caixas.some(b => b.tag === 'XPE' && ficha(b, 'Seção')[1].startsWith(`Cu ${k.barr.pe.l} × ${k.barr.pe.e} mm`)), true);
   igual(`${nome}: 3D — bornes um a um (total + reserva de cada régua)`, k.born.map(g => cena.caixas.filter(b => b.camada === 'bornes' && b.tag === g.id && /^X\d+:\d+$/.test(b.rotulo)).length),
     k.born.map(g => g.total + g.reserva));
+  // todo componente ocupa lugar: numa fileira (conta na placa e no invólucro), na porta ou nas barras
+  const naFileira = new Set(k.layout.fileiras.flatMap(f => f.itens.map(x => x.ref)));
+  igual(`${nome}: arranjo — todo componente numa fileira, na porta ou enfiado nas barras`, k.comps.lista.filter(x => !(naFileira.has(x.ref) || x.zona === 'porta' || (x.zona === 'sobre_barramento' && k.barr.tipo === 'barra'))).map(x => x.ref), []);
+  const tcs = k.comps.lista.filter(x => x.tipo === 'tc');
+  const qtdTc = k.comps.medicao ? k.comps.medicao.qtdTc : 0;
+  igual(`${nome}: medição indireta — ${qtdTc} TC(s) e bloco de aferição no arranjo e no 3D`,
+    [tcs.length, tcs.every(t => pecas.some(b => b.tag === t.ref && b.info)), !qtdTc || (naFileira.has('XTC') && pecas.some(b => b.tag === 'XTC'))], [qtdTc, true, true]);
+  igual(`${nome}: ventilação forçada ⇔ termostato BT1 no arranjo e no 3D`, !!k.term.ventilacao === (naFileira.has('BT1') && pecas.some(b => b.tag === 'BT1')), true);
+  const pP1 = k.comps.lista.find(x => x.ref === 'P1');
+  if (pP1) igual(`${nome}: multimedidor ${pP1.zona === 'porta' ? 'de painel na porta' : 'DIN no trilho'}, e o 3D no mesmo lugar`, pP1.zona === 'porta' ? cena.porta.itens.some(b => b.tag === 'P1') && !cena.caixas.some(b => b.tag === 'P1') : cena.caixas.some(b => b.tag === 'P1'), true);
   igual(`${nome}: 3D — invólucro, porta e placa com ficha`, [!!cena.involucro.info, !!cena.porta.info, cena.caixas.some(b => b.camada === 'placa' && b.info)], [true, true, true]);
 }
 
@@ -231,13 +245,13 @@ function conferir3d(nome, k, cena) {
   const q1 = p3.comps.lista.find(k => k.ref === 'Q1');
   igual('QD com catálogo: Q1 com a medida do fabricante (18 × 85 × 78,5) e a origem', [q1.largura, q1.altura, q1.prof, q1.medida.origem, q1.medida.referencia], [18, 85, 78.5, 'catalogo', 'FX-DIN-1P10C-6']);
   igual('QD com catálogo: todos os dispositivos do QD têm registro (nada sem medida)', p3.componentes_sem_medida, []);
-  igual('QD com catálogo: comparação típica × fabricante no resultado', [!!p3.comparacao, p3.comparacao.tipica.involucro.altura, p3.comparacao.catalogo.involucro.altura], [true, 800, 800]);
+  igual('QD com catálogo: comparação típica × fabricante no resultado', [!!p3.comparacao, p3.comparacao.tipica.involucro.altura, p3.comparacao.catalogo.involucro.altura], [true, 1000, 1000]);
   igual('QD com catálogo: a lista de materiais traz fabricante, referência, medidas e fonte', (() => { const m = p3.materiais.find(x => x.referencia_fabricante === 'FX-DIN-3P100C-10'); return !!m && m.fabricante === S && m.medidas === '81 × 85 × 78,5' && /exemplo\.invalid/.test(m.fonte); })(), true);
   igual('QD com catálogo: DPS não verificado vira [CONFERIR] na fonte', (() => { const k = comCat(predial, d => { d.quadro.spda = true; d.quadro.ponto_entrada = true; }).calc.materiais.find(x => x.referencia_fabricante === 'FX-DPS-I-275'); return !!k && /CONFERIR/.test(k.fonte); })(), true);
   const a3 = comCat(automacao).calc;
   const t1 = a3.comps.lista.find(k => k.ref === 'M-01').filhos.find(f => f.ref === 'T1');
   igual('Automação com catálogo: inversor com as medidas do fabricante', [t1.l, t1.h, t1.p, t1.medida.referencia], [115, 255, 170, 'FX-CFW-16']);
-  igual('Automação com catálogo: sem registro → lista com especificação de busca', a3.componentes_sem_medida.map(x => [x.tag, x.tipo, x.fabricante]), [['KS1', 'rele_seguranca', 'WEG'], ['A6', 'clp_modulo', 'Siemens'], ['A90', 'switch', 'Siemens']]);
+  igual('Automação com catálogo: sem registro → lista com especificação de busca', a3.componentes_sem_medida.map(x => [x.tag, x.tipo, x.fabricante]), [['KS1', 'rele_seguranca', 'WEG'], ['A6', 'clp_modulo', 'Siemens'], ['A90', 'switch', 'Siemens'], ['BT1', 'termostato', 'Schneider Electric']]);
   igual('Automação com catálogo: o que ficou sem registro sai com medida típica', a3.comps.lista.find(k => k.ref === 'A90').medida.origem, 'tipica');
   igual('Automação com catálogo: bornes pela largura do fabricante', a3.born.find(g => g.id === 'X2').medidas.every(m => m.origem === 'catalogo'), true);
   igual('Automação com catálogo: memorial com a seção de medidas e aproveitamento', (() => { const ss = motor.secoesMemorial(comCat(automacao)); const s1 = ss.find(x => /^10\.1 /.test(x.titulo)); return !!s1 && s1.tabela.linhas.length > 30 && s1.paragrafos.some(p => /Comparação com as medidas típicas/.test(p)); })(), true);
@@ -253,10 +267,15 @@ function conferir3d(nome, k, cena) {
   {
     const M3D = require('../scripts/lib/modelo3d');
     const d = JSON.parse(JSON.stringify(automacao));
-    d.fabricantes = { ...FAB, por_tipo: { ...FAB.por_tipo, canaleta: 'Phoenix Contact', trilho_din: 'Phoenix Contact', ventilador: 'Finder', botao: 'Siemens', sinaleiro: 'Siemens', comutador: 'Siemens', ihm: 'Siemens' } };
+    d.fabricantes = { ...FAB, por_tipo: { ...FAB.por_tipo, canaleta: 'Phoenix Contact', trilho_din: 'Phoenix Contact', ventilador: 'Finder', botao: 'Siemens', sinaleiro: 'Siemens', comutador: 'Siemens', ihm: 'Siemens', termostato: 'Finder', multimedidor: 'WEG' } };
     const res = motor.processar(d);
     const cena = M3D.montarCena(res.calc, res.dados);
     conferir3d('automação com catálogo', res.calc, cena);
+    const p1 = res.calc.comps.lista.find(k => k.ref === 'P1');
+    igual('multimedidor de painel (WEG 96 × 96, montagem porta) vai para a porta, fora do trilho', [p1.zona, p1.medida.referencia, res.calc.layout.fileiras.some(f => f.itens.some(k => k.ref === 'P1')), cena.porta.itens.some(b => b.tag === 'P1')], ['porta', 'MMW03-CH', false, true]);
+    igual('profundidade do invólucro conta o corpo do multimedidor na porta', res.calc.layout.profNecessaria >= Math.max(...res.calc.layout.fileiras.flatMap(f => f.itens.map(k => k.prof || 0))) + T.FOLGA_PORTA + p1.prof - 1e-9, true);
+    igual('termostato do ventilador pelo catálogo (Finder, NA de ventilação)', res.calc.comps.lista.find(k => k.ref === 'BT1').medida.referencia, '7T.81.0.000.230x');
+    igual('DXF: multimedidor desenhado na vista da porta', (() => { const PT = require('../scripts/lib/porta').posicoesPorta(res.calc); return PT.medidores.map(m => [m.ref, Math.round(m.l)]); })(), [['P1', 97]]);
     const ref = (b) => ((b && b.info) || []).find(([r]) => r === 'Referência')?.[1];
     const pecas = [...cena.caixas, ...cena.porta.itens];
     const v = res.calc.layout.verticais.esquerda;
@@ -266,5 +285,6 @@ function conferir3d(nome, k, cena) {
     igual('3D: ventilador ≥ 55 m³/h e filtro do mesmo tamanho (Finder)', [ref(pecas.find(b => b.tag === 'VENTILADOR')), ref(pecas.find(b => b.tag === 'FILTRO'))], ['7F.20.8.230.2055', '7F.02.0.000.2000']);
     igual('3D: emergência Ø 40, sinaleiro, seletor e IHM 7" Siemens', ['emergencia:1', 'sinaleiro_verde:7', 'seletor:2', 'IHM'].map(t => ref(pecas.find(b => b.tag === t))), ['3SU1000-1HB20-0AA0', '3SU1001-6AA20-0AA0', '3SU1032-2BF20-0AA0', 'KTP700 Basic']);
   }
+  igual('termostato Rittal: o de ventilação (SK 3110), não o higrostato', CAT.selecionar(CAT.carregarCatalogo({}), 'termostato', 'Rittal', { funcao: 'ventilacao' }).referencia, 'SK 3110.000');
   fim();
 })().catch(e => { console.log(`  FALHOU com erro: ${e.stack}`); process.exitCode = 1; });

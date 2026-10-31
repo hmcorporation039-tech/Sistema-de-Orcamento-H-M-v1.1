@@ -456,7 +456,8 @@ function perdaQuadratica(pNominal, ib, In) {
   return pNominal * fatorCarga(ib, In);
 }
 
-function componentes(c, circuitos, drs, geral, dpsInfo, motores, aut, dem, sel) {
+// opc.termostato: com ventilação forçada, o termostato de painel entra no arranjo (ver calcular)
+function componentes(c, circuitos, drs, geral, dpsInfo, motores, aut, dem, sel, opc = {}) {
   const lista = [];
   const add = (o) => { lista.push({ quantidade: 1, prof: T.DIN_PROF, altura: T.DIN_ALTURA, perda: 0, ...o }); return o; };
   // dispositivo medido pelo catálogo (ou típico); ext = { fabricante, referencia, fc (fator de carga das perdas) }
@@ -511,7 +512,32 @@ function componentes(c, circuitos, drs, geral, dpsInfo, motores, aut, dem, sel) 
     medicao = { direta, tc, qtdTc: direta ? 0 : c.nFases };
     dev({ ref: 'P1', tipo: 'medidor', zona: 'entrada', descricao: `Multimedidor de grandezas elétricas DIN (V, I, kW, kvar, FP, kWh)${direta ? ' de ligação direta ≤ 63 A' : `, entrada 5 A com ${c.nFases} TC ${tc}/5 A classe 0,5`}`,
       largura: 4 * T.MODULO_MM, modulos: 4, perda: T.PERDA_MEDIDOR_W }, 'multimedidor', {});
+    // multimedidor de painel (registro do fabricante com montagem na porta, ex. 96 × 96): vai para
+    // a PORTA, em recorte — no trilho ele ocuparia ~97 mm de fileira e não seria lido com a porta fechada
+    const p1 = lista[lista.length - 1];
+    if (p1.medida && p1.medida.montagem === 'porta') {
+      p1.zona = 'porta';
+      delete p1.modulos;
+      p1.descricao = p1.descricao.replace('elétricas DIN', 'elétricas de painel, na porta (recorte)');
+    }
     tipico({ ref: 'FM', tipo: 'protecao_medicao', zona: 'entrada', descricao: `Fusíveis/disjuntor ${c.nFases}P 2 A para as tensões de medição`, largura: c.nFases * T.MODULO_MM, modulos: c.nFases, perda: 0.5 });
+    if (!direta) {
+      // TCs de janela (prática usual: o condutor de fase atravessa a janela do TC):
+      //  - com barramento de barras: enfiados nas barras de fase, logo após a chegada do geral —
+      //    não ocupam placa nem trilho (zona 'sobre_barramento', posição em layout.tcNasBarras);
+      //  - com pente (sem barras): nos cabos de saída do Q0, ao lado dele na mesma fileira, com
+      //    adaptador para trilho — aí ocupam fileira e entram na conta da placa e do invólucro.
+      // O bloco de aferição fica na fileira da entrada, perto do multimedidor.
+      const d = T.dimPorCorrente(T.TC_JANELA_DIM, tc);
+      const iQ0 = lista.findIndex(k => k.ref === 'Q0');
+      const nasBarras = opc.barramento === 'barra';
+      const tipicaTc = { origem: 'tipica', fabricante: null, referencia: '', fonte_url: '', verificado: false };
+      const tcs = Array.from({ length: c.nFases }, (_, i) => ({ quantidade: 1, ref: `TC${i + 1}`, tipo: 'tc', zona: nasBarras ? 'sobre_barramento' : lista[iQ0].zona,
+        descricao: `Transformador de corrente ${tc}/5 A classe 0,5, 2,5 VA, de janela — ${nasBarras ? `na barra L${i + 1}, logo após a chegada do geral` : `fase L${i + 1} na saída do geral`}`,
+        largura: d.l, altura: d.h, prof: d.p, perda: 0.5, medida: { ...tipicaTc } }));
+      lista.splice(iQ0 + 1, 0, ...tcs);
+      tipico({ ref: 'XTC', tipo: 'bloco_afericao', zona: 'entrada', descricao: 'Bloco de aferição (curto-circuitador de TC) 10 polos', largura: T.BLOCO_AFERICAO.l, altura: T.BLOCO_AFERICAO.h, prof: T.BLOCO_AFERICAO.p, perda: 0 });
+    }
   }
   // DR agrupados: entram na zona de distribuição antes do 1º circuito do grupo
   const drPorPrimeiro = new Map();
@@ -631,6 +657,12 @@ function componentes(c, circuitos, drs, geral, dpsInfo, motores, aut, dem, sel) 
   }
   if (aut.ativo && aut.reles) {
     for (let j = 0; j < aut.reles; j++) dev({ ref: `KA${j + 1}`, tipo: 'rele_interface', zona: 'reles', descricao: 'Relé de interface 24 Vcc 1 contato reversível 6 A, base "slim" com LED e diodo', largura: T.RELE_INTERFACE.l, altura: T.RELE_INTERFACE.h, prof: T.RELE_INTERFACE.p, perda: T.RELE_INTERFACE.perda_w }, 'rele_interface', {}, {});
+  }
+  // termostato do ventilador no alto do quadro (fileira da entrada), onde o ar é mais quente e
+  // é a temperatura que o cálculo limita (ar no topo, IEC TR 60890)
+  if (opc.termostato) {
+    dev({ ref: 'BT1', tipo: 'termostato', zona: 'entrada', descricao: 'Termostato de painel (NA) 0–60 °C para trilho DIN — liga o ventilador', largura: T.TERMOSTATO.l, altura: T.TERMOSTATO.h, prof: T.TERMOSTATO.p, modulos: 1, perda: 0 },
+      'termostato', { funcao: 'ventilacao' }, {});
   }
   return { lista, medicao };
 }
@@ -939,7 +971,8 @@ function materiais(calc) {
   add('Invólucro', 'Cordoalha de aterramento da porta e da placa (16 mm²)', 'un', 2, 'NBR IEC 61439-1, 8.4.3.2 [CONFERIR]');
   // dispositivos
   for (const k of comps.lista) {
-    if (k.tipo === 'partida') continue;
+    // partidas, TCs, bloco de aferição e termostato têm linha própria (Medição / Climatização) abaixo
+    if (['partida', 'tc', 'bloco_afericao', 'termostato'].includes(k.tipo)) continue;
     add('Proteção e manobra', k.descricao.replace(/ — circ\. [^—]*/, '').replace(/ — circuitos [^—]*/, '').trim(), 'un', 1, k.tipo === 'dps' ? 'NBR 5410, 6.3.5.2' : k.tipo.startsWith('modulo') || k.tipo === 'clp' ? 'Automação' : 'NBR IEC 60947 / NBR NM 60898', origem(k.medida, k.largura, k.altura, k.prof));
   }
   for (const m of motores) {
@@ -951,8 +984,10 @@ function materiais(calc) {
       add('Partidas de motores', `${desc}${fm}`, 'un', d.quantidade || 1, d.tipo === 'contator' ? 'NBR IEC 60947-4-1' : 'NBR IEC 60947', f ? origem(f.medida, f.l, f.h, f.p) : {});
     }
   }
-  if (comps.medicao && comps.medicao.qtdTc) add('Medição', `Transformador de corrente ${comps.medicao.tc}/5 A classe 0,5, 2,5 VA, janela para a barra/cabo do geral`, 'un', comps.medicao.qtdTc, 'Medição');
-  if (comps.medicao && comps.medicao.qtdTc) add('Medição', 'Bloco de aferição (curto-circuitador de TC) 10 polos', 'un', 1, 'Medição');
+  const tc1 = comps.lista.find(k => k.tipo === 'tc');
+  const xtc = comps.lista.find(k => k.tipo === 'bloco_afericao');
+  if (comps.medicao && comps.medicao.qtdTc) add('Medição', `Transformador de corrente ${comps.medicao.tc}/5 A classe 0,5, 2,5 VA, janela para a barra/cabo do geral`, 'un', comps.medicao.qtdTc, 'Medição', tc1 ? origem(tc1.medida, tc1.largura, tc1.altura, tc1.prof) : {});
+  if (comps.medicao && comps.medicao.qtdTc) add('Medição', 'Bloco de aferição (curto-circuitador de TC) 10 polos', 'un', 1, 'Medição', xtc ? origem(xtc.medida, xtc.largura, xtc.altura, xtc.prof) : {});
   // barramentos
   if (barr.tipo === 'barra' && barr.fase) {
     add('Barramentos', `Barra de cobre eletrolítico ${barr.fase.l} × ${barr.fase.e} mm (${barr.secaoFase} mm²) — fases`, 'm', arred(c.nFases * barr.comprimentoFase, 2), 'DIN 43671');
@@ -1010,8 +1045,9 @@ function materiais(calc) {
   }
   if (term.ventilacao) {
     add('Climatização', `Ventilador com filtro ${term.ventilacao.ventilador} m³/h (vazão livre) ${c.vfn} Vca + grelha de saída com filtro, ${inv.ip}`, 'cj', term.ventilacao.quantidade, 'Cálculo térmico (IEC TR 60890)');
-    add('Climatização', 'Termostato de painel (NA) 0–60 °C para trilho DIN', 'un', 1, '');
   }
+  const bt = comps.lista.find(k => k.tipo === 'termostato');
+  if (bt) add('Climatização', bt.descricao, 'un', 1, '', origem(bt.medida, bt.largura, bt.altura, bt.prof));
   return itens;
 }
 
@@ -1021,7 +1057,6 @@ function materiais(calc) {
 // { semCatalogoEmbutido } — só o catálogo recebido em dados (testes com registros fictícios)
 function calcular(dados, opcoes = {}) {
   const avisos = [];
-  const sel = criarSeletor(dados, { desligado: !!opcoes.semCatalogo, semArquivo: !!opcoes.semCatalogoEmbutido });
   const premissas = [];
   const c = config(dados);
   if (!c.iccInformada) premissas.push(`Icc presumida no ponto não informada: adotados ${ICC_PADRAO_KA} kA para escolher a capacidade de interrupção e o barramento. [CONFERIR com o estudo de curto / a distribuidora]`);
@@ -1044,26 +1079,35 @@ function calcular(dados, opcoes = {}) {
     if (aut.fontes > 1) avisos.push(`Consumo 24 Vcc exige ${aut.fontes} fontes de 40 A — dividir as cargas por ramo.`);
     if (aut.clp) Object.entries(aut.folgaIo).forEach(([t, f]) => { if (aut.usados[t] && f < Math.ceil(aut.usados[t] * aut.reserva)) avisos.push(`E/S ${t}: reserva abaixo de ${Math.round(aut.reserva * 100)} %.`); });
   }
-  const comps = componentes(c, circuitos, drs, geral, dpsInfo, motores, aut, dem, sel);
-  const born = bornes(c, circuitos, motores, aut, sel);
-  const fio = fiacao(c, circuitos, motores, aut, comps, geral);
-  const barr = barramento(c, geral, circuitos, dem, motores);
-  const inv = protecaoInvolucro(c, circuitos, motores, geral);
   const reservaCircuitos = Math.max(ET.reservaQuadro(circuitos.filter(x => !x.reserva).length), Math.ceil(c.reservaPct * circuitos.filter(x => !x.reserva).length));
-  const layout = montarLayout({ c, comps: comps.lista, born, fio, barr, aut, reservaCircuitos, porta: aut.porta, geral, nNeutros: circuitos.filter(x => x.neutro).length });
+  // arranjo físico + térmica. A ventilação só se sabe depois do invólucro escolhido; quando ela é
+  // necessária, o termostato do ventilador entra na lista e o arranjo é refeito com ele (o espaço
+  // dele conta na placa e no invólucro). Seletor novo a cada passada: não duplica "usados"/"sem medida".
+  const arranjar = (termostato) => {
+    const sel = criarSeletor(dados, { desligado: !!opcoes.semCatalogo, semArquivo: !!opcoes.semCatalogoEmbutido });
+    const barr = barramento(c, geral, circuitos, dem, motores);
+    const comps = componentes(c, circuitos, drs, geral, dpsInfo, motores, aut, dem, sel, { termostato, barramento: barr.tipo });
+    const born = bornes(c, circuitos, motores, aut, sel);
+    const fio = fiacao(c, circuitos, motores, aut, comps, geral);
+    const inv = protecaoInvolucro(c, circuitos, motores, geral);
+    const layout = montarLayout({ c, comps: comps.lista, born, fio, barr, aut, reservaCircuitos, porta: aut.porta, geral, nNeutros: circuitos.filter(x => x.neutro).length });
+    completarBarramento(barr, c, dem, layout);
+    const perdasComp = comps.lista.reduce((s, k) => s + (k.perda || 0), 0);
+    const perdas = { componentes: perdasComp, barramento: barr.perda || 0, fiacao: fio.perda, total: perdasComp + (barr.perda || 0) + fio.perda };
+    perdas.porTipo = {};
+    comps.lista.forEach(k => { perdas.porTipo[k.tipo] = (perdas.porTipo[k.tipo] || 0) + (k.perda || 0); });
+    const term = termica(c, perdas, { ...layout.involucro, corrente: geral.In });
+    return { sel, comps, born, fio, barr, inv, layout, perdas, term };
+  };
+  let arr = arranjar(false);
+  if (!arr.term.ok && arr.term.ventilacao && c.ventilacao !== 'nao') arr = arranjar(true);
+  const { sel, comps, born, fio, barr, inv, layout, perdas, term } = arr;
   if (!layout.cabe) avisos.push(`Nenhum invólucro da série ${c.montagem} comporta o arranjo — usado o maior (${layout.involucro.altura} × ${layout.involucro.largura} mm); dividir em colunas/quadros ou trocar a montagem para autoportante.`);
-  completarBarramento(barr, c, dem, layout);
   if (barr.tipo === 'barra') {
     if (!barr.correnteOk) avisos.push(`Barramento: nenhuma barra simples atende ${geral.In} A com k2 = ${arred(barr.k2, 3)} — usar barras em paralelo por fase. [CONFERIR]`);
     if (!barr.curtoOk) avisos.push(`Barramento abaixo da seção mínima ao curto (${arred(barr.sCurtoMin, 0)} mm²).`);
     if (barr.dinamico && !barr.dinamico.ok) avisos.push(`Esforço eletrodinâmico: σ ≈ ${arred(barr.dinamico.sigma, 0)} N/mm² > ${barr.dinamico.adm} N/mm² — reduzir a distância entre apoios para ≤ ${Math.floor(barr.dinamico.lMax / 10) * 10} mm (estimativa). [CONFERIR]`);
   } else if (!barr.penteOk) avisos.push(`Geral de ${geral.In} A acima do maior pente (${barr.pente.a} A) — usar barramento de barras.`);
-  // perdas
-  const perdasComp = comps.lista.reduce((s, k) => s + (k.perda || 0), 0);
-  const perdas = { componentes: perdasComp, barramento: barr.perda || 0, fiacao: fio.perda, total: perdasComp + (barr.perda || 0) + fio.perda };
-  perdas.porTipo = {};
-  comps.lista.forEach(k => { perdas.porTipo[k.tipo] = (perdas.porTipo[k.tipo] || 0) + (k.perda || 0); });
-  const term = termica(c, perdas, { ...layout.involucro, corrente: geral.In });
   if (!term.ok) {
     if (c.ventilacao === 'nao' || !term.ventilacao) avisos.push(`Elevação de temperatura: ar no topo ≈ ${arred(term.tTopo, 1)} °C > ${c.temperaturaMax} °C — aumentar o invólucro (superfície efetiva ≥ ${arred(term.aeNecessaria, 2)} m²) ou ventilar.`);
     else avisos.push(`Elevação de temperatura: ar no topo ≈ ${arred(term.tTopo, 1)} °C > ${c.temperaturaMax} °C — previsto ventilador com filtro de ${term.ventilacao.ventilador} m³/h (necessário ${arred(term.ventilacao.vazao, 0)} m³/h).`);

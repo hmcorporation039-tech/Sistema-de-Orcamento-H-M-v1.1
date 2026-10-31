@@ -16,7 +16,7 @@ const path = require('path');
 const T = require('./tabelas');
 const CAT = require('./catalogo');
 const { posicoesPorta } = require('./porta');
-const { ENTRADA_CABOS } = require('./layout');
+const { ENTRADA_CABOS, tcNasBarras } = require('./layout');
 const V = require('../../../_comum/cad/visualizador3d');
 const { EMPRESA } = require('../../../_comum/empresa');
 
@@ -28,7 +28,7 @@ const ALTURA_ISOLADOR = 40;
 const CAMADAS = [
   { id: 'protecao', rotulo: 'Proteção (disjuntores, DR, DPS, medição)', cor: '#e9ecef' },
   { id: 'partidas', rotulo: 'Partidas (disjuntor-motor, contatores, soft/inversor)', cor: '#6c8fb3' },
-  { id: 'automacao', rotulo: 'Comando e automação (fonte, CLP, relés)', cor: '#4f9d69' },
+  { id: 'automacao', rotulo: 'Comando e automação (fonte, CLP, relés, termostato)', cor: '#4f9d69' },
   { id: 'barramentos', rotulo: 'Barramentos, isoladores e barras N/PE', cor: '#c87533' },
   { id: 'bornes', rotulo: 'Réguas de bornes', cor: '#9aa3ad' },
   { id: 'canaletas', rotulo: 'Canaletas', cor: '#8d949c' },
@@ -43,10 +43,10 @@ const COR = {
   disjuntor: '#f1f3f5', disjuntor_geral: '#f1f3f5', disjuntor_comando: '#f1f3f5', protecao_dps: '#eceff1', protecao_medicao: '#eceff1', protecao_24v: '#eceff1',
   idr: '#cfe3ff', ddr: '#d9ccff', dps: '#ffc56b', disjuntor_cm: '#56606b', medidor: '#efcf6b',
   fonte: '#8a7bd1', clp: '#3e8e5a', modulo_DI: '#5fae78', modulo_DO: '#5fae78', modulo_AI: '#78bf8c', modulo_AO: '#78bf8c', modulo_rs485: '#78bf8c',
-  switch: '#3a4250', rele_interface: '#c9bfe8', rele_seguranca: '#e6c229',
+  switch: '#3a4250', rele_interface: '#c9bfe8', rele_seguranca: '#e6c229', termostato: '#dfe3e8', tc: '#3b3f46', bloco_afericao: '#e0d6b8',
   Q1: '#5d7fa3', K1: '#7f9fbf', K2: '#7f9fbf', K3: '#7f9fbf', F4: '#a9bcd0', KT1: '#cfd8e3', T1: '#2f5f9a',
 };
-const CAMADA_TIPO = (t) => (['fonte', 'clp', 'switch', 'rele_interface', 'rele_seguranca', 'disjuntor_comando', 'protecao_24v'].includes(t) || t.startsWith('modulo') ? 'automacao' : t === 'partida' ? 'partidas' : 'protecao');
+const CAMADA_TIPO = (t) => (['fonte', 'clp', 'switch', 'rele_interface', 'rele_seguranca', 'disjuntor_comando', 'protecao_24v', 'termostato'].includes(t) || t.startsWith('modulo') ? 'automacao' : t === 'partida' ? 'partidas' : 'protecao');
 const COR_PORTA = { emergencia: '#d62828', liga: '#f5f5f5', desliga: '#202225', reset: '#2f6fd6', seletor: '#2a2c30', sinaleiro_verde: '#3fb950', sinaleiro_amarelo: '#f2c94c', sinaleiro_vermelho: '#e5484d', sinaleiro_branco: '#f5f5f5', potenciometro: '#3a3d42' };
 const n1 = (v) => String(Math.round(v * 10) / 10).replace('.', ',');
 const mm = (...v) => `${v.map(n1).join(' × ')} mm`;
@@ -222,6 +222,13 @@ function montarCena(calc, dados = {}) {
               info: [['Peça', 'Isolador suporte de barramento (epóxi/poliéster) M8'], ['Medidas Ø × h', mm(30, ALTURA_ISOLADOR)], ['Esforço por apoio', b.dinamico ? `≥ ${Math.round(b.dinamico.forcaApoio)} N (estimativa)` : '—']] });
           }
         }
+        // TCs de janela enfiados nas barras de fase, logo após a chegada do geral (layout.tcNasBarras)
+        for (const t of tcNasBarras(calc)) {
+          const ycb = yTop + 10 + t.fase * c.entreFases + c.entreFases / 2;
+          const zb = zFrente + ALTURA_ISOLADOR + (b.fase ? b.fase.e : 5) / 2;
+          add({ camada: 'protecao', tag: t.ref, x: x + t.dx, y: Yw(ycb + t.a / 2), z: zb - t.p / 2, l: t.l, a: t.a, p: t.p, cor: COR.tc, rotulo: t.ref, dica: dica(t.ref, t.item.descricao, t.l, t.a, t.p),
+            info: infoMedida(t.ref, t.item.descricao, t.item.medida, t.l, t.a, t.p, [['Montagem', `na barra L${t.fase + 1} (a barra atravessa a janela)`]]) });
+        }
         continue;
       }
       if (k.tipo === 'barra_neutro' || k.tipo === 'barra_pe') {
@@ -310,6 +317,14 @@ function montarCena(calc, dados = {}) {
   ];
   // corpo do dispositivo por dentro da porta (blocos de contato, IHM, ventilador)
   const porDentro = (cx, cy, l, a, p, cor = '#2b2e33') => porta.push({ x: cx - l / 2, y: cy - a / 2, z: -(ESP + p), l, a, p, cor, semBorda: true });
+  // multimedidor de painel (zona 'porta'): recorte na porta, corpo para dentro
+  for (const md of PT.medidores) {
+    const cx = md.x + md.l / 2, cy = md.y + md.a / 2, pM = md.p || 65;
+    porta.push({ tag: md.ref, x: md.x, y: md.y, l: md.l, a: md.a, p: 6, cor: '#efcf6b', rotulo: md.rotulo, dica: dica(md.ref, md.descricao, md.l, md.a, pM),
+      info: infoMedida(md.ref, md.descricao, md.medida, md.l, md.a, pM, [['Montagem', 'na porta, em recorte']]) },
+    { x: md.x + md.l * 0.1, y: md.y + md.a * 0.45, l: md.l * 0.8, a: md.a * 0.42, p: 7, cor: '#1d2a1f', semBorda: true });
+    porDentro(cx, cy, md.l * 0.9, md.a * 0.9, pM);
+  }
   if (PT.ihm) {
     const mI = IC.porta('ihm', aut.ihm);
     const cat = mI.origem === 'catalogo';
@@ -373,7 +388,7 @@ function montarCena(calc, dados = {}) {
     involucro: { L: W, A: H, P: D, espessura: ESP, cor: '#d4d2cc', rotulo: `Invólucro ${H} × ${W} × ${D} mm`,
       info: [['Invólucro', `${({ sobrepor: 'De sobrepor', embutir: 'De embutir', autoportante: 'Autoportante' })[c.montagem] || c.montagem} — ${({ aco: 'chapa de aço pintada', inox: 'aço inox', aluminio: 'alumínio', poliester: 'poliéster' })[c.material] || c.material}`],
         ['Medidas A × L × P', mm(H, W, D)], ['Grau de proteção', `${calc.inv.ip} / ${calc.inv.ik}`], ['Forma de separação', calc.inv.formaTexto || calc.inv.forma], ['Norma', 'NBR IEC 61439-1/-2; NBR IEC 60529; NBR IEC 62262']] },
-    porta: { itens: porta, rotulo: 'Porta frontal', info: [['Porta', 'Frontal, articulada à esquerda, com fecho'], ['Medidas A × L', mm(H, W)], ['Dispositivos na porta', String(PT.botoes.length + (PT.ihm ? 1 : 0) + PT.grelhas.length)]] },
+    porta: { itens: porta, rotulo: 'Porta frontal', info: [['Porta', 'Frontal, articulada à esquerda, com fecho'], ['Medidas A × L', mm(H, W)], ['Dispositivos na porta', String(PT.botoes.length + PT.medidores.length + (PT.ihm ? 1 : 0) + PT.grelhas.length)]] },
     portaAberta: true, caixas,
     camadas: CAMADAS.map(cm => ({ ...cm, rotulo: rotCamada[cm.id] || cm.rotulo, qtd: qtd[cm.id] != null ? qtd[cm.id] : null })),
     numeros: [
