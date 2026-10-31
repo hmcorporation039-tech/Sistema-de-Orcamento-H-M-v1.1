@@ -60,8 +60,8 @@ function medicoes(insp, calc) {
   return { isolamento, dieletrico, continuidade, funcional, iso, vEnsaio };
 }
 
-function processar(dados) {
-  const calc = C.calcular(dados);
+function processar(dados, opcoes = {}) {
+  const calc = C.calcular(dados, opcoes);
   const insp = dados.inspecao || {};
   const na = {
     ...(calc.aut.ativo ? {} : { O2: 'Quadro sem CLP', O5: 'Sem fonte 24 Vcc de automação' }),

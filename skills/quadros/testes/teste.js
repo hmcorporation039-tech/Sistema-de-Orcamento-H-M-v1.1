@@ -188,7 +188,7 @@ igual('Automação: ocupação das canaletas ≤ 50 %', [...c2.layout.horizontai
   }
   igual('especificação de busca no formato do contrato', CAT.especificacao('contator', 'WEG', { ac3: 25, bobina: '24 Vcc' }), 'WEG contator 25 A AC-3 bobina 24 Vcc');
   const FAB = { padrao: S, por_tipo: { contator: 'WEG', disjuntor_motor: 'WEG', soft_starter: 'WEG', inversor: 'WEG', fonte_24v: 'Mean Well', clp_cpu: 'Siemens', clp_modulo: 'Siemens', rele_interface: 'Finder', borne: 'Conexel', switch: 'Siemens', rele_seguranca: 'WEG' } };
-  const comCat = (ex, ajuste) => { const d = JSON.parse(JSON.stringify(ex)); d.fabricantes = FAB; d.catalogo_componentes = fixture; if (ajuste) ajuste(d); return motor.processar(d); };
+  const comCat = (ex, ajuste) => { const d = JSON.parse(JSON.stringify(ex)); d.fabricantes = FAB; d.catalogo_componentes = fixture; if (ajuste) ajuste(d); return motor.processar(d, { semCatalogoEmbutido: true }); };
   const p3 = comCat(predial).calc;
   const q1 = p3.comps.lista.find(k => k.ref === 'Q1');
   igual('QD com catálogo: Q1 com a medida do fabricante (18 × 85 × 78,5) e a origem', [q1.largura, q1.altura, q1.prof, q1.medida.origem, q1.medida.referencia], [18, 85, 78.5, 'catalogo', 'FX-DIN-1P10C-6']);

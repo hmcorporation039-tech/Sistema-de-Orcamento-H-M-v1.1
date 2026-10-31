@@ -1017,10 +1017,11 @@ function materiais(calc) {
 
 // ── Cálculo completo ────────────────────────────────────────────────────────
 
-// opcoes: { semCatalogo } — só medidas típicas (para comparar o aproveitamento); { semComparacao }
+// opcoes: { semCatalogo } — só medidas típicas (para comparar o aproveitamento); { semComparacao };
+// { semCatalogoEmbutido } — só o catálogo recebido em dados (testes com registros fictícios)
 function calcular(dados, opcoes = {}) {
   const avisos = [];
-  const sel = criarSeletor(dados, { desligado: !!opcoes.semCatalogo });
+  const sel = criarSeletor(dados, { desligado: !!opcoes.semCatalogo, semArquivo: !!opcoes.semCatalogoEmbutido });
   const premissas = [];
   const c = config(dados);
   if (!c.iccInformada) premissas.push(`Icc presumida no ponto não informada: adotados ${ICC_PADRAO_KA} kA para escolher a capacidade de interrupção e o barramento. [CONFERIR com o estudo de curto / a distribuidora]`);
