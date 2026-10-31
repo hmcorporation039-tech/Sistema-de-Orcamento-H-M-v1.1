@@ -474,12 +474,35 @@ for (const g of INFRA) {
     mesh.renderOrder = 1;
     item.add(mesh);
   }
-  const pos = new Float32Array(n * 6);
+  // descidas até as peças de parede: tubo vertical (da eletrocalha desce eletroduto de 25 mm)
+  const desc = g.descidas || [];
+  const nd = Math.floor(desc.length / 4);
+  const dd = g.forma === 'tubo' ? sw : 0.025;
+  if (nd && g.forma !== 'linha') {
+    const md = new InstancedMesh(new CylinderGeometry(0.5, 0.5, 1, 8), new MeshStandardMaterial({ color: g.cor, emissive: g.cor, emissiveIntensity: 0.18, roughness: 0.45, metalness: 0.35 }), nd);
+    for (let i = 0; i < nd; i++) {
+      const [x, y, z0, z1] = desc.slice(i * 4, i * 4 + 4);
+      o3.position.set(x, (z0 + z1) / 2, -y);
+      o3.quaternion.identity();
+      o3.rotation.set(0, 0, 0);
+      o3.scale.set(dd, Math.max(0.01, z1 - z0), dd);
+      o3.updateMatrix();
+      md.setMatrixAt(i, o3.matrix);
+    }
+    md.instanceMatrix.needsUpdate = true;
+    md.frustumCulled = false;
+    item.add(md);
+  }
+  const pos = new Float32Array((n + nd) * 6);
   for (let i = 0; i < n; i++) pos.set([seg[i * 4], g.z, -seg[i * 4 + 1], seg[i * 4 + 2], g.z, -seg[i * 4 + 3]], i * 6);
+  for (let i = 0; i < nd; i++) pos.set([desc[i * 4], desc[i * 4 + 2], -desc[i * 4 + 1], desc[i * 4], desc[i * 4 + 3], -desc[i * 4 + 1]], (n + i) * 6);
   const gl = new BufferGeometry();
   gl.setAttribute('position', new Float32BufferAttribute(pos, 3));
   item.add(new LineSegments(gl, new LineBasicMaterial({ color: g.cor, transparent: true, opacity: g.forma === 'linha' ? 0.95 : 0.8 })));
 }
+// "Eletroduto PVC rígido Ø 25 mm (3/4")" e de onde veio a medida
+const nomeInfra = (g) => [g.rotulo, g.material, g.medida].filter(Boolean).join(' ');
+const origemInfra = (g) => ({ texto: 'medida do desenho', desenho: 'medida do desenho', layer: 'medida da layer', legenda: 'medida da legenda', estimado: 'traçado e bitola estimados — conferir' })[g.origem_medida] || 'medida padrão ilustrativa';
 
 // ── Estado ──────────────────────────────────────────────────────────────────
 const estado = { paredes: 0, corte: true, ambientes: true, etiquetas: true, portas: true, planta: true, campo: false, giro: false, grandes: false, infra: true };
@@ -893,13 +916,13 @@ $('#numeros').innerHTML = [
   N.janelas ? cartao(N.janelas, 'un', 'janelas / esquadrias') : '',
   N.pilares ? cartao(N.pilares, 'un', 'pilares') : '',
   ...N.dispositivos.map(d => cartao(d.quantidade, 'un', esc(d.rotulo))),
-  ...INFRA.map(g => cartao(br(g.comprimento_m, 1), 'm', `${esc(g.rotulo)} · ${esc(CENA.disciplinas[g.disciplina]?.rotulo || g.disciplina)}`)),
+  ...INFRA.map(g => cartao(br(g.comprimento_m, 1), 'm', `${esc(nomeInfra(g))} · ${esc(CENA.disciplinas[g.disciplina]?.rotulo || g.disciplina)}${g.estimado ? ' (estimado)' : ''}`)),
 ].join('');
 $('#lista-ambientes').innerHTML = `<table><thead><tr><th>Ambiente</th><th>m²</th><th>perím. m</th></tr></thead><tbody>${[...N.por_ambiente].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true })).map(a => `<tr><td><i style="background:${(CENA.tiposAmbiente[a.tipo] || CENA.tiposAmbiente.outros).cor}"></i>${esc(a.nome)}</td><td>${br(a.area_m2)}</td><td>${br(a.perimetro_m, 1)}</td></tr>`).join('')}</tbody></table>`;
 
 const legenda = $('#legenda');
 legenda.innerHTML = CENA.dispositivos.map((t, i) => `<button class="leg ativo" data-i="${i}" title="Mostrar/ocultar"><i class="f-${esc(t.forma)}" style="--cor:${esc(t.cor)}"></i><span>${esc(t.rotulo)}<small>${esc(CENA.disciplinas[t.disciplina]?.rotulo || '')} · ${esc(t.altura)}</small></span><b>${t.itens.length}</b></button>`).join('')
-  + INFRA.map((g, i) => `<button class="leg ativo" data-infra="${i}" title="Mostrar/ocultar"><i class="f-infra f-${esc(g.forma)}" style="--cor:${esc(g.cor)}"></i><span>${esc(g.rotulo)}<small>${esc(CENA.disciplinas[g.disciplina]?.rotulo || g.disciplina)} · h = ${br(g.z)} m${g.layers?.length ? ` · ${esc(g.layers.slice(0, 2).join(', '))}` : ''}</small></span><b>${br(g.comprimento_m, 1)} m</b></button>`).join('')
+  + INFRA.map((g, i) => `<button class="leg ativo" data-infra="${i}" title="Mostrar/ocultar"><i class="f-infra f-${esc(g.forma)}" style="--cor:${esc(g.cor)}"></i><span>${esc(nomeInfra(g))}<small>${esc(CENA.disciplinas[g.disciplina]?.rotulo || g.disciplina)} · h = ${br(g.z)} m · ${esc(origemInfra(g))}${g.layers?.length ? ` · ${esc(g.layers.slice(0, 2).join(', '))}` : ''}</small></span><b>${br(g.comprimento_m, 1)} m</b></button>`).join('')
   + `<div class="tipos">${[...new Set(CENA.ambientes.map(a => a.tipo))].map(k => `<span><i style="background:${CENA.tiposAmbiente[k].cor}"></i>${esc(CENA.tiposAmbiente[k].rotulo)}</span>`).join('')}</div>`;
 legenda.querySelectorAll('.leg').forEach(b => b.addEventListener('click', () => {
   const o = b.dataset.infra != null ? INFRA[Number(b.dataset.infra)].objeto : CENA.dispositivos[Number(b.dataset.i)].malha;
@@ -931,14 +954,40 @@ function escolherDispositivo(cx, cy) {
   }
   return melhor;
 }
+// trecho de infraestrutura sob o cursor (até 8 px da linha na tela): segmentos e descidas
+const vTmp2 = new Vector3();
+function escolherInfra(cx, cy) {
+  const r = tela.getBoundingClientRect();
+  const mx = cx - r.left, my = cy - r.top, w = r.width, h = r.height;
+  const tela2d = (x, y, z) => { vTmp2.set(x, y, z).project(camera); return vTmp2.z > 1 || vTmp2.z < -1 ? null : [(vTmp2.x + 1) / 2 * w, (1 - vTmp2.y) / 2 * h]; };
+  const distSeg = (a, b) => {
+    const vx = b[0] - a[0], vy = b[1] - a[1], L2 = vx * vx + vy * vy;
+    const t = L2 ? Math.max(0, Math.min(1, ((mx - a[0]) * vx + (my - a[1]) * vy) / L2)) : 0;
+    return Math.hypot(mx - a[0] - vx * t, my - a[1] - vy * t);
+  };
+  let melhor = null;
+  for (const g of INFRA) {
+    if (!g.objeto || !g.objeto.visible || !g.objeto.parent.visible || !gInfra.visible) continue;
+    const s = g.segmentos || [], dsc = g.descidas || [];
+    const testar = (a, b) => { if (!a || !b) return; const d = distSeg(a, b); if (d <= 8 && (!melhor || d < melhor.d)) melhor = { g, d }; };
+    for (let i = 0; i + 3 < s.length; i += 4) testar(tela2d(s[i], g.z, -s[i + 1]), tela2d(s[i + 2], g.z, -s[i + 3]));
+    for (let i = 0; i + 3 < dsc.length; i += 4) testar(tela2d(dsc[i], dsc[i + 2], -dsc[i + 1]), tela2d(dsc[i], dsc[i + 3], -dsc[i + 1]));
+  }
+  return melhor && melhor.g;
+}
 const dica = $('#dica');
 function mostrarDica(cx, cy) {
   const p = escolherDispositivo(cx, cy);
   const r = tela.getBoundingClientRect();
-  if (!p) { dica.style.display = 'none'; tela.style.cursor = ''; return false; }
-  const { t, it } = p;
-  const amb = CENA.ambientes[it[5]];
-  dica.innerHTML = `<b>${esc(t.rotulo)}</b>${it[6] ? ` · ${esc(it[6])}` : ''}<br>${amb ? `${esc(amb.nome)} · ` : ''}${esc(alturaDoItem(t, it))}<br><small>${esc(CENA.disciplinas[t.disciplina]?.rotulo || '')}</small>`;
+  const gi = p ? null : escolherInfra(cx, cy);
+  if (!p && !gi) { dica.style.display = 'none'; tela.style.cursor = ''; return false; }
+  if (gi) {
+    dica.innerHTML = `<b>${esc(nomeInfra(gi))}</b><br>${esc(CENA.disciplinas[gi.disciplina]?.rotulo || gi.disciplina)} · h = ${br(gi.z)} m · ${br(gi.comprimento_m, 1)} m${gi.descidas_m ? ` (${br(gi.descidas_m, 1)} m de descidas)` : ''}<br><small>${esc(origemInfra(gi))}${gi.layers?.length ? ` · layer ${esc(gi.layers.slice(0, 2).join(', '))}` : ''}</small>`;
+  } else {
+    const { t, it } = p;
+    const amb = CENA.ambientes[it[5]];
+    dica.innerHTML = `<b>${esc(t.rotulo)}</b>${it[6] ? ` · ${esc(it[6])}` : ''}<br>${amb ? `${esc(amb.nome)} · ` : ''}${esc(alturaDoItem(t, it))}<br><small>${esc(CENA.disciplinas[t.disciplina]?.rotulo || '')}</small>`;
+  }
   dica.style.display = 'block';
   dica.style.left = `${Math.max(8, Math.min(cx - r.left + 14, r.width - 290))}px`;
   dica.style.top = `${cy - r.top + 14}px`;

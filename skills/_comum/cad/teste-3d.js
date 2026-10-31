@@ -282,7 +282,8 @@ caso('trechos: eletrocalha 10 × 5 cm a 30 cm do teto, eletroduto perto do teto,
   assert.ok(grupoInfra('alarme', 'eletroduto'), 'tipo desconhecido');
   assert.ok(cT.infra.every(g => /^#[0-9a-f]{6}$/i.test(g.cor)));
   // números e botões: comprimento por grupo e a disciplina aparece mesmo sem pontos
-  assert.deepStrictEqual(cT.numeros.infraestrutura.find(g => g.tipo === 'eletrocalha'), { disciplina: 'eletrica', tipo: 'eletrocalha', rotulo: 'Eletrocalha', comprimento_m: 10, segmentos: 2 });
+  // sem medida no desenho: a seção padrão, marcada como tal
+  assert.deepStrictEqual(cT.numeros.infraestrutura.find(g => g.tipo === 'eletrocalha'), { disciplina: 'eletrica', tipo: 'eletrocalha', rotulo: 'Eletrocalha', material: null, medida: '100 × 50 mm', origem_medida: 'padrao', comprimento_m: 10, descidas_m: 0, segmentos: 2 });
   assert.ok(cT.disciplinas.rede && cT.disciplinas.eletrica && cT.disciplinas.alarme);
   assert.deepStrictEqual(montarCena(arq).infra, []);
 });
@@ -300,6 +301,53 @@ caso(`trechos: acima de ${LIMITE_SEGMENTOS.toLocaleString('pt-BR')} segmentos de
   for (let k = 0; k < g.segmentos.length; k += 4) if (g.segmentos[k + 2] - g.segmentos[k] > 1) longos++;
   assert.strictEqual(longos, 50);
   assert.ok(c.avisos.some(a => /mais longos/.test(a)), c.avisos.join(' | '));
+});
+
+caso('trechos com tipo e medida do desenho: seção real, grupo por medida e descida até a tomada', () => {
+  const c = montarCena(arq, { peDireito: PD,
+    trechos: [
+      { disciplina: 'eletrica', tipo: 'eletroduto', layer: 'ELE-ELETRODUTO', material: 'PVC rígido', medida: 'Ø 25 mm (3/4")', secao_mm: [25, 25], origem_medida: 'texto', segmentos: [[0.5, 3, 7.5, 3]] },
+      { disciplina: 'eletrica', tipo: 'eletroduto', layer: 'ELE-ELETRODUTO', material: 'PVC rígido', medida: 'Ø 32 mm (1")', secao_mm: [32, 32], origem_medida: 'texto', segmentos: [[4, 3, 4, 1]] },
+    ],
+    // tomada baixa a 0,5 m do eletroduto de 3/4" em planta: ramal + descida
+    dispositivos: [{ simbolo: 'HM-ELE-TOMADA-BAIXA', x: 2, y: 3.5, ambiente: 'SALA DE ESTAR', poligono: sala.poligono }] });
+  const g34 = c.infra.find(g => g.medida === 'Ø 25 mm (3/4")');
+  assert.deepStrictEqual([g34.material, g34.origem_medida, g34.estimado, g34.secao], ['PVC rígido', 'texto', false, [0.025, 0.025]]);
+  assert.ok(c.infra.some(g => g.medida === 'Ø 32 mm (1")' && g.secao[0] === 0.032));
+  assert.strictEqual(g34.descidas.length, 4, JSON.stringify(g34.descidas));
+  const [, , z0, z1] = g34.descidas;
+  assert.ok(z0 < 0.5 && z1 === g34.z, `descida de ${z0} a ${z1}`);
+  assert.ok(g34.descidas_m > 2 && g34.comprimento_m > 7 + g34.descidas_m - 0.01, JSON.stringify([g34.comprimento_m, g34.descidas_m]));
+  // a disciplina que tem traçado não ganha o estimado
+  assert.ok(!c.infra.some(g => g.estimado));
+});
+
+caso('sem traçado no projeto: eletroduto estimado do quadro até cada ponto, em "L", sem trecho repetido', () => {
+  const pts = [[1, 1], [6, 1], [6, 3.5], [1, 3.5]].map(([x, y]) => ({ simbolo: 'HM-ELE-TOMADA-BAIXA', x, y, ambiente: 'SALA DE ESTAR', poligono: sala.poligono }));
+  const c = montarCena(arq, { peDireito: PD, dispositivos: [{ simbolo: 'HM-ELE-QUADRO', x: 3.5, y: 0.5, ambiente: 'SALA DE ESTAR', poligono: sala.poligono }, ...pts,
+    { simbolo: 'HM-INC-DETECTOR-FUMACA', x: 2, y: 2, ambiente: 'SALA DE ESTAR', poligono: sala.poligono }] });
+  const g = c.infra.find(x => x.disciplina === 'eletrica');
+  assert.deepStrictEqual([g.estimado, g.tipo, g.material, g.medida, g.origem_medida], [true, 'eletroduto', 'PVC corrugado', 'Ø 25 mm (3/4")', 'estimado']);
+  // todos os segmentos são paralelos aos eixos e nenhum se sobrepõe a outro na mesma linha
+  const s = [];
+  for (let i = 0; i < g.segmentos.length; i += 4) s.push(g.segmentos.slice(i, i + 4));
+  assert.ok(s.every(([x1, y1, x2, y2]) => Math.abs(x1 - x2) < 1e-6 || Math.abs(y1 - y2) < 1e-6));
+  // 5 peças de parede (quadro + 4 tomadas) descem do eletroduto
+  assert.strictEqual(g.descidas.length / 4, 5);
+  // disciplina com uma peça só (o detector) não ganha traçado
+  assert.ok(!c.infra.some(x => x.disciplina === 'incendio'));
+  assert.ok(c.avisos.some(a => /Infraestrutura ESTIMADA/.test(a) && /PVC corrugado Ø 25 mm \(3\/4"\)/.test(a)), c.avisos.join(' | '));
+});
+
+caso('componente do projeto: descrição própria, altura lida e símbolo genérico quando não há um no 3D', () => {
+  const c = montarCena(arq, { peDireito: PD, dispositivos: [
+    { simbolo: 'HM-INC-ACIONADOR', rotulo: 'Acionador manual AME 521', altura_m: 1.25, disciplina: 'incendio', x: 2, y: 3.9, ambiente: 'SALA DE ESTAR', poligono: sala.poligono },
+    { simbolo: 'HM-GEN-COMPONENTE', rotulo: 'Isolador de laço IDL 521', disciplina: 'incendio', x: 3, y: 3.9, ambiente: 'SALA DE ESTAR', poligono: sala.poligono },
+  ] });
+  const ac = c.dispositivos.find(t => t.rotulo === 'Acionador manual AME 521');
+  assert.ok(ac && ac.itens[0][2] === 1.25, JSON.stringify(ac));
+  const iso = c.dispositivos.find(t => t.rotulo === 'Isolador de laço IDL 521');
+  assert.deepStrictEqual([iso.disciplina, iso.forma, iso.montagem], ['incendio', 'caixa', 'parede']);
 });
 
 caso('página: corte, infraestrutura, "Ir para ambiente" e painel de dentro do ambiente; infra na cena; texto escapado', () => {

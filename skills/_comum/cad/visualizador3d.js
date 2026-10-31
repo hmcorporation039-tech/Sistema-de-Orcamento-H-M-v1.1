@@ -88,7 +88,7 @@ function gerarHtml(cena) {
   ].filter(Boolean).join('<br>');
   const premissas = [cena.aviso, `Pé-direito adotado: ${String(cena.peDireito).replace('.', ',')} m; portas com 2,10 m; janelas com peitoril de 1,10 m e topo a 2,10 m.`,
     'Componentes em tamanho típico, um pouco exagerado nos pequenos (tomada 10 × 16 cm); de longe são ampliados para continuarem visíveis. Altura indicada = centro da peça.',
-    ...((cena.infra || []).length ? ['Infraestrutura (eletrocalhas, eletrodutos, leitos, perfilados) a partir dos trechos do projeto, perto do teto; altura e seção ilustrativas.'] : []),
+    ...((cena.infra || []).length ? [`Infraestrutura (eletrocalhas, eletrodutos, leitos, perfilados) perto do teto, com descida até as peças de parede: tipo e medida do projeto quando o desenho diz (senão, seção padrão ilustrativa)${cena.infra.some(g => g.estimado) ? '; onde o projeto não traz o traçado, eletroduto ESTIMADO do quadro/rack/central até cada ponto — conferir' : ''}. Passe o mouse no traçado para ver tipo, medida e comprimento.`] : []),
     ...(cena.avisos || [])];
   return `<!doctype html>
 <html lang="pt-BR">

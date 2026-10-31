@@ -75,7 +75,7 @@ async function fonteDoModelo(origemTipo, origemId, executor = pool) {
       return {
         origemTipo: 'analise', origemId: an.id, nomeArquivo: a.nome_arquivo, dxf: a.conteudo.toString('utf8'),
         disciplinas: [], dadosPorDisciplina: {}, dispositivosReais: reais.dispositivos, trechos: reais.trechos,
-        semPontos: `Componentes e traçados nas posições do projeto recebido (DWG/DXF${an.espacial.referencia ? `, alinhados a "${an.espacial.referencia}"` : ''}).${reais.foraDoMapa ? ` ${reais.foraDoMapa} componente(s) sem símbolo no 3D ficaram de fora.` : ''}`,
+        semPontos: `Componentes e traçados nas posições do projeto recebido (DWG/DXF${an.espacial.referencia ? `, alinhados a "${an.espacial.referencia}"` : ''}).${reais.genericos ? ` ${reais.genericos} componente(s) sem símbolo próprio aparecem como caixa com o nome do projeto.` : ''}`,
         peDireito: null,
         titulo: `Modelo 3D — ${an.nome_projeto || 'Projeto'}`, cliente: an.cliente_nome || '', obra: '',
       };
@@ -129,20 +129,26 @@ const tipoDoTrecho = (layer) => (/ELETROCALHA/i.test(layer) ? 'eletrocalha' : /P
 const DISCIPLINA_3D_TRECHO = { cabeamento: 'rede', rede: 'rede', controle_acesso: 'controle-acesso' };
 
 // analises_projeto.espacial (utils/compatibilidadeEspacial.js) → dispositivos e trechos da cena
+// Todo componente do projeto entra no 3D com a descrição dele ("Acionador manual AME
+// 521"), a disciplina e a altura lida do DWG; o que não tem símbolo próprio vira uma
+// caixa com o nome (antes ficava de fora — isolador, módulo, central sem "INC" no nome).
+const SIMBOLO_GENERICO = 'HM-GEN-COMPONENTE';
+const rotuloDoComponente = (d) => String(d || '').replace(/\s*—\s*bloco .*$/i, '').replace(/\s*\((teto|parede)\)\s*$/i, '').trim().slice(0, 70);
 function dispositivosDoEspacial(espacial) {
   const dispositivos = [];
-  let foraDoMapa = 0;
+  let genericos = 0;
   for (const p of espacial?.pontos || []) {
     if (!p.disciplina) continue; // climatização/hidráulica: referência, não é da H&M
     const regra = SIMBOLO_DO_COMPONENTE.find(([re]) => re.test(p.descricao || ''));
-    if (!regra) { foraDoMapa++; continue; }
-    const simbolo = typeof regra[1] === 'function' ? regra[1](p.descricao) : regra[1];
-    dispositivos.push({ simbolo, x: p.x, y: p.y, rotacao: 0, id: '', ambiente: null });
+    if (!regra) genericos++;
+    const simbolo = !regra ? SIMBOLO_GENERICO : typeof regra[1] === 'function' ? regra[1](p.descricao) : regra[1];
+    dispositivos.push({ simbolo, rotulo: rotuloDoComponente(p.descricao) || null, disciplina: DISCIPLINA_3D_TRECHO[p.disciplina] || p.disciplina,
+      ...(p.montagem !== 'teto' && Number(p.altura_m) > 0 ? { altura_m: Number(p.altura_m) } : {}), x: p.x, y: p.y, rotacao: 0, id: '', ambiente: null });
   }
   const trechos = (espacial?.trechos || []).map(t => ({
     disciplina: DISCIPLINA_3D_TRECHO[t.disciplina] || t.disciplina || 'eletrica', tipo: tipoDoTrecho(t.layer), layer: t.layer, segmentos: t.segmentos,
   }));
-  return { dispositivos, trechos, foraDoMapa };
+  return { dispositivos, trechos, genericos };
 }
 
 function chaveDa(fonte) {

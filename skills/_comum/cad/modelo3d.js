@@ -410,13 +410,36 @@ const disciplinaDoSimbolo = (s) => ({ ELE: 'eletrica', ILU: 'iluminacao', CAB: '
 // ── Infraestrutura (eletrocalhas, eletrodutos, leitos, perfilados, fiação) ───
 // seção [largura, altura] em m e quanto fica abaixo do teto (centro da seção):
 // a eletrocalha passa a 30 cm do teto (espaço para lançar os cabos por cima)
+// `medida`: a seção padrão escrita — vale quando o projeto não diz a medida
+// (o visualizador mostra "medida padrão ilustrativa" nesse caso)
 const TRECHOS = {
-  eletrocalha: { rotulo: 'Eletrocalha', secao: [0.10, 0.05], desce: 0.30, forma: 'caixa' },
-  leito: { rotulo: 'Leito para cabos', secao: [0.30, 0.06], desce: 0.35, forma: 'caixa' },
-  perfilado: { rotulo: 'Perfilado', secao: [0.038, 0.038], desce: 0.22, forma: 'caixa' },
-  eletroduto: { rotulo: 'Eletroduto', secao: [0.032, 0.032], desce: 0.15, forma: 'tubo' },
-  fiacao: { rotulo: 'Fiação / cabos', secao: [0.012, 0.012], desce: 0.10, forma: 'linha' },
+  eletrocalha: { rotulo: 'Eletrocalha', secao: [0.10, 0.05], medida: '100 × 50 mm', desce: 0.30, forma: 'caixa' },
+  leito: { rotulo: 'Leito para cabos', secao: [0.30, 0.06], medida: '300 × 60 mm', desce: 0.35, forma: 'caixa' },
+  perfilado: { rotulo: 'Perfilado', secao: [0.038, 0.038], medida: '38 × 38 mm', desce: 0.22, forma: 'caixa' },
+  eletroduto: { rotulo: 'Eletroduto', secao: [0.032, 0.032], medida: 'Ø 32 mm (1")', desce: 0.15, forma: 'tubo' },
+  fiacao: { rotulo: 'Fiação / cabos', secao: [0.012, 0.012], medida: '', desce: 0.10, forma: 'linha' },
 };
+// Projeto sem infraestrutura desenhada (gerado pelo sistema, ou DWG só com os
+// pontos): eletroduto ESTIMADO por disciplina, do quadro/rack/central até cada
+// ponto, com o tipo e a bitola que o orçamento da skill usa para a disciplina
+// (3/4" nos circuitos terminais e nos sistemas de segurança; 1" no cabeamento,
+// pela quantidade de cabos UTP). Mostrado como estimativa, para conferir.
+const INFRA_ESTIMADA = {
+  eletrica: { material: 'PVC corrugado', mm: 25, pol: '3/4"' },
+  iluminacao: { material: 'PVC corrugado', mm: 25, pol: '3/4"' },
+  rede: { material: 'PVC rígido', mm: 32, pol: '1"' },
+  cftv: { material: 'PVC rígido', mm: 25, pol: '3/4"' },
+  incendio: { material: 'PVC rígido exclusivo', mm: 25, pol: '3/4"' },
+  alarme: { material: 'PVC rígido', mm: 25, pol: '3/4"' },
+  'controle-acesso': { material: 'PVC rígido', mm: 25, pol: '3/4"' },
+  telefonia: { material: 'PVC rígido', mm: 25, pol: '3/4"' },
+  antena: { material: 'PVC rígido', mm: 25, pol: '3/4"' },
+  automacao: { material: 'PVC rígido', mm: 25, pol: '3/4"' },
+};
+// o ponto de partida da disciplina (quadro, rack, central, DG, controladora, NVR)
+const RE_CENTRO_DISCIPLINA = /QUADRO|RACK|CENTRAL|-DG\b|CONTROLADOR|NVR|DVR|INVERSOR/;
+// descida até a peça de parede: o eletroduto mais próximo a até 1,5 m em planta
+const DESCIDA_RAIO_M = 1.5;
 // acima disso a página fica pesada no celular: ficam os segmentos mais longos
 const LIMITE_SEGMENTOS = 20000;
 
@@ -500,7 +523,9 @@ function campoNoPiso(p, dir, alcance, pol, abertura = 90) {
 }
 
 function posicionar3d(d, faces, peDireito) {
-  const e = espec(d.simbolo);
+  // altura lida do projeto (atributo/legenda "h = 1,20 m") vale sobre a típica da peça de parede
+  const e0 = espec(d.simbolo);
+  const e = typeof e0.h === 'number' && Number(d.altura_m) > 0 ? { ...e0, h: Number(d.altura_m), hMolhado: null } : e0;
   const pol = d.poligono;
   const c = pol ? centroide(pol) : [d.x, d.y];
   // no teto: o fundo da peça encosta no forro (o visualizador desenha para baixo)
@@ -533,7 +558,9 @@ function posicionar3d(d, faces, peDireito) {
 
 // Trechos de infraestrutura → cena. Entrada (opcoes.trechos): [{ disciplina,
 // tipo: 'eletrocalha'|'eletroduto'|'leito'|'perfilado'|'fiacao', layer,
-// segmentos: [[x1, y1, x2, y2], …], altura? }] em metros, no MESMO sistema da
+// segmentos: [[x1, y1, x2, y2], …], altura?, material?, medida?, secao_mm?,
+// origem_medida? }] (material/medida lidos do desenho: texto junto do traçado,
+// nome da layer ou legenda — services/analiseCad) em metros, no MESMO sistema da
 // arquitetura lida por lerArquitetura (antes da translação da cena: P() leva
 // para a origem do modelo). Saída: um grupo por disciplina + tipo, com os
 // segmentos achatados [x1, y1, x2, y2, …], a altura do centro da seção e o
@@ -548,11 +575,17 @@ function montarInfra(trechos, P, caixa, peDireito, avisos) {
     const tipo = TRECHOS[t.tipo] ? t.tipo : 'eletroduto';
     const e = TRECHOS[tipo];
     const disc = t.disciplina === 'cabeamento' ? 'rede' : (t.disciplina || 'eletrica');
-    const z = Number.isFinite(Number(t.altura)) && Number(t.altura) > 0 ? Math.min(Number(t.altura), peDireito - e.secao[1] / 2) : Math.max(0.1, peDireito - e.desce);
-    const chave = `${disc}|${tipo}|${r2(z)}`;
+    // seção do projeto (mm) quando o desenho diz; senão a padrão da tabela
+    const mm = Array.isArray(t.secao_mm) && t.secao_mm.length >= 2 && t.secao_mm.every(v => Number(v) > 0) ? t.secao_mm.map(Number) : null;
+    const secao = mm ? [mm[0] / 1000, mm[1] / 1000] : e.secao;
+    const medida = mm && t.medida ? String(t.medida) : null;
+    const material = t.material ? String(t.material) : null;
+    const z = Number.isFinite(Number(t.altura)) && Number(t.altura) > 0 ? Math.min(Number(t.altura), peDireito - secao[1] / 2) : Math.max(0.1, peDireito - e.desce);
+    const chave = `${disc}|${tipo}|${r2(z)}|${material || ''}|${medida || ''}`;
     let g = grupos.get(chave);
     if (!g) {
-      g = { disciplina: disc, tipo, rotulo: e.rotulo, forma: e.forma, secao: e.secao, z: r2(z), layers: [], comprimento: 0, n: 0, segs: [] };
+      g = { disciplina: disc, tipo, rotulo: e.rotulo, forma: e.forma, secao, z: r2(z), layers: [], comprimento: 0, n: 0, segs: [],
+        material, medida: medida || e.medida, origem_medida: medida ? (t.origem_medida || 'desenho') : 'padrao' };
       grupos.set(chave, g);
     }
     if (t.layer && !g.layers.includes(String(t.layer))) g.layers.push(String(t.layer));
@@ -575,10 +608,171 @@ function montarInfra(trechos, P, caixa, peDireito, avisos) {
   }
   return [...grupos.values()].filter(g => g.n).map(g => ({
     disciplina: g.disciplina, tipo: g.tipo, rotulo: g.rotulo, forma: g.forma, secao: g.secao, z: g.z, layers: g.layers,
+    material: g.material, medida: g.medida, origem_medida: g.origem_medida, estimado: false,
     cor: (DISCIPLINAS[g.disciplina] || { cor: '#dddddd' }).cor,
     comprimento_m: Math.round(g.comprimento * 10) / 10, segmentos_total: g.n,
-    segmentos: g.segs.flatMap(s => s.p),
+    segmentos: g.segs.flatMap(s => s.p), descidas: [], descidas_m: 0,
   }));
+}
+
+// Segmentos ortogonais sobrepostos (L de vários pontos pelo mesmo corredor) viram
+// um só: o comprimento estimado não conta o mesmo trecho duas vezes
+function juntarOrtogonais(segs) {
+  const linhas = new Map();
+  const outros = [];
+  for (const [x1, y1, x2, y2] of segs) {
+    if (Math.abs(y1 - y2) < 1e-6) { const k = `h|${r2(y1)}`; (linhas.get(k) || linhas.set(k, []).get(k)).push([Math.min(x1, x2), Math.max(x1, x2)]); }
+    else if (Math.abs(x1 - x2) < 1e-6) { const k = `v|${r2(x1)}`; (linhas.get(k) || linhas.set(k, []).get(k)).push([Math.min(y1, y2), Math.max(y1, y2)]); }
+    else outros.push([x1, y1, x2, y2]);
+  }
+  const out = [...outros];
+  for (const [k, iv] of linhas) {
+    const [eixo, c] = [k[0], Number(k.slice(2))];
+    iv.sort((a, b) => a[0] - b[0]);
+    let [a, b] = iv[0];
+    const fecha = () => { if (b - a >= 0.01) out.push(eixo === 'h' ? [a, c, b, c] : [c, a, c, b]); };
+    for (const [p, q] of iv.slice(1)) { if (p <= b + 0.01) b = Math.max(b, q); else { fecha(); [a, b] = [p, q]; } }
+    fecha();
+  }
+  return out;
+}
+
+// Eletroduto ESTIMADO de uma disciplina sem traçado no projeto: árvore pelo
+// caminho em "L" (como a tubulação corre, paralela às paredes) que liga o
+// quadro/rack/central a todos os pontos — cada ponto se liga ao já ligado mais
+// próximo (árvore geradora mínima em distância "L"). Pontos na cena (x, y, z).
+function arvoreEstimada(pontos, centro) {
+  const n = pontos.length;
+  const ligado = new Array(n).fill(false);
+  const melhor = pontos.map(() => ({ d: Infinity, de: -1 }));
+  const segs = [];
+  let atual = centro;
+  ligado[atual] = true;
+  for (let passo = 1; passo < n; passo++) {
+    let prox = -1;
+    for (let i = 0; i < n; i++) {
+      if (ligado[i]) continue;
+      const d = Math.abs(pontos[i][0] - pontos[atual][0]) + Math.abs(pontos[i][1] - pontos[atual][1]);
+      if (d < melhor[i].d) melhor[i] = { d, de: atual };
+      if (prox < 0 || melhor[i].d < melhor[prox].d) prox = i;
+    }
+    const [ax, ay] = pontos[melhor[prox].de], [bx, by] = pontos[prox];
+    if (Math.abs(ax - bx) > 1e-3) segs.push([ax, ay, bx, ay]);
+    if (Math.abs(ay - by) > 1e-3) segs.push([bx, ay, bx, by]);
+    ligado[prox] = true;
+    atual = prox;
+  }
+  return juntarOrtogonais(segs);
+}
+
+// Descidas: do eletroduto/eletrocalha (no alto) até a peça de parede abaixo dele —
+// tomada, interruptor, quadro… Com traçado do projeto, a peça se liga ao trecho
+// da MESMA disciplina mais próximo (até DESCIDA_RAIO_M em planta) por um ramal
+// horizontal e desce na vertical; no estimado o traçado já chega no ponto.
+// Grava em `destino` (o próprio g, ou o eletroduto de descida de uma eletrocalha).
+function ligarDescidas(g, pecas, destino = g) {
+  const seg = g.segmentos;
+  const ramais = [];
+  let total = 0;
+  for (const { x, y, topo } of pecas) {
+    if (topo >= g.z - 0.15) continue; // no teto ou acima do trecho: não desce
+    let m = null;
+    for (let i = 0; i + 3 < seg.length; i += 4) {
+      const [x1, y1, x2, y2] = [seg[i], seg[i + 1], seg[i + 2], seg[i + 3]];
+      const vx = x2 - x1, vy = y2 - y1, L2 = vx * vx + vy * vy;
+      const t = L2 ? Math.max(0, Math.min(1, ((x - x1) * vx + (y - y1) * vy) / L2)) : 0;
+      const q = [x1 + vx * t, y1 + vy * t];
+      const d = Math.hypot(x - q[0], y - q[1]);
+      if (!m || d < m.d) m = { d, q };
+    }
+    if (!m || m.d > DESCIDA_RAIO_M) continue;
+    if (m.d >= 0.05) { ramais.push(r2(m.q[0]), r2(m.q[1]), r2(x), r2(y)); total += m.d; }
+    destino.descidas.push(r2(x), r2(y), r2(topo), g.z);
+    total += g.z - topo;
+  }
+  destino.segmentos = destino.segmentos.concat(ramais);
+  destino.segmentos_total += ramais.length / 4;
+  destino.descidas_m = Math.round((destino.descidas_m + total) * 10) / 10;
+  destino.comprimento_m = Math.round((destino.comprimento_m + total) * 10) / 10;
+}
+
+// Eletroduto (de descida ou estimado) da disciplina, com a bitola de INFRA_ESTIMADA
+function grupoEletroduto(disc, z, estimado) {
+  const e = INFRA_ESTIMADA[disc] || INFRA_ESTIMADA.eletrica;
+  const tr = TRECHOS.eletroduto;
+  return {
+    disciplina: disc, tipo: 'eletroduto', rotulo: estimado === 'descida' ? 'Eletroduto de descida' : tr.rotulo, forma: tr.forma, secao: [e.mm / 1000, e.mm / 1000], z: r2(z), layers: [],
+    material: e.material, medida: `Ø ${e.mm} mm (${e.pol})`, origem_medida: 'estimado', estimado: true,
+    cor: (DISCIPLINAS[disc] || { cor: '#dddddd' }).cor, comprimento_m: 0, segmentos_total: 0, segmentos: [], descidas: [], descidas_m: 0,
+  };
+}
+
+// Para cada disciplina com pontos: o traçado do projeto ganha as descidas; a
+// disciplina sem traçado ganha o eletroduto estimado (INFRA_ESTIMADA). `tipos`:
+// os tipos de dispositivo da cena (itens já em coordenadas da cena).
+function completarInfra(infra, tipos, peDireito, avisos) {
+  const porDisc = new Map();
+  for (const t of tipos) {
+    if (!porDisc.has(t.disciplina)) porDisc.set(t.disciplina, []);
+    for (const it of t.itens) porDisc.get(t.disciplina).push({ x: it[0], y: it[1], topo: it[2] + (t.montagem === 'teto' ? 0 : t.tam[1] / 2), centro: RE_CENTRO_DISCIPLINA.test(t.simbolo) });
+  }
+  const estimadas = [];
+  for (const [disc, pecas] of porDisc) {
+    const doProjeto = infra.filter(g => g.disciplina === disc && g.forma !== 'linha');
+    if (doProjeto.length) {
+      // cada peça desce do trecho mais próximo dela (o de maior seção vence o empate)
+      for (const g of doProjeto) g._pecas = [];
+      for (const p of pecas) {
+        let m = null;
+        for (const g of doProjeto) {
+          for (let i = 0; i + 3 < g.segmentos.length; i += 4) {
+            const [x1, y1, x2, y2] = g.segmentos.slice(i, i + 4);
+            const vx = x2 - x1, vy = y2 - y1, L2 = vx * vx + vy * vy;
+            const t = L2 ? Math.max(0, Math.min(1, ((p.x - x1) * vx + (p.y - y1) * vy) / L2)) : 0;
+            const d = Math.hypot(p.x - (x1 + vx * t), p.y - (y1 + vy * t));
+            if (!m || d < m.d) m = { d, g };
+          }
+        }
+        if (m) m.g._pecas.push(p);
+      }
+      for (const g of doProjeto) {
+        // do eletroduto do projeto a descida é o mesmo eletroduto; da eletrocalha/leito/perfilado
+        // desce eletroduto (grupo à parte, estimado) — os metros não entram na eletrocalha
+        if (g.forma === 'tubo') ligarDescidas(g, g._pecas);
+        else if (g._pecas.length) {
+          const gd = grupoEletroduto(disc, g.z, 'descida');
+          ligarDescidas(g, g._pecas, gd);
+          if (gd.descidas.length) estimadas.push(gd);
+        }
+        delete g._pecas;
+      }
+      continue;
+    }
+    const e = INFRA_ESTIMADA[disc];
+    if (!e || pecas.length < 2) continue;
+    const pts = pecas.map(p => [p.x, p.y]);
+    let centro = pecas.findIndex(p => p.centro);
+    if (centro < 0) {
+      // sem quadro/central na cena: parte do ponto mais perto do meio dos pontos
+      const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length, cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+      centro = pts.reduce((k, p, i) => (Math.hypot(p[0] - cx, p[1] - cy) < Math.hypot(pts[k][0] - cx, pts[k][1] - cy) ? i : k), 0);
+    }
+    const segs = arvoreEstimada(pts, centro);
+    const g = grupoEletroduto(disc, Math.max(0.1, peDireito - TRECHOS.eletroduto.desce), true);
+    g.segmentos = segs.flatMap(q => q.map(r2));
+    g.segmentos_total = segs.length;
+    g.comprimento_m = Math.round(segs.reduce((s, q) => s + Math.hypot(q[2] - q[0], q[3] - q[1]), 0) * 10) / 10;
+    ligarDescidas(g, pecas);
+    estimadas.push(g);
+  }
+  const semTracado = estimadas.filter(g => g.rotulo !== 'Eletroduto de descida');
+  if (semTracado.length) {
+    avisos.push(`Infraestrutura ESTIMADA (o projeto não traz o traçado): ${semTracado.map(g => `${(DISCIPLINAS[g.disciplina] || { rotulo: g.disciplina }).rotulo} — eletroduto ${g.material} ${g.medida}, ${String(g.comprimento_m).replace('.', ',')} m`).join('; ')}. Caminho em "L" do quadro/rack/central até cada ponto, perto do teto, com descida até as peças de parede — conferir no projeto executivo.`);
+  }
+  if (estimadas.length > semTracado.length) {
+    avisos.push('Descidas da eletrocalha/leito/perfilado até as peças de parede: eletroduto ESTIMADO (bitola típica da disciplina) — conferir no projeto.');
+  }
+  return [...infra, ...estimadas];
 }
 
 // Quadro, rack e central de disciplinas diferentes costumam cair no MESMO ponto
@@ -623,13 +817,17 @@ function montarCena(arquitetura, opcoes = {}) {
   for (const d of opcoes.dispositivos || []) {
     if (!naCaixa(expandir(caixa, 1), [d.x, d.y])) continue;
     const disc = d.disciplina || disciplinaDoSimbolo(d.simbolo);
-    let t = tipos.get(d.simbolo);
+    // componente do projeto recebido vem com a descrição dele (d.rotulo): um tipo
+    // por descrição — "Detector de fumaça DFE 521", não só "Detector"
+    const chaveTipo = d.rotulo ? `${d.simbolo}|${d.rotulo}` : d.simbolo;
+    let t = tipos.get(chaveTipo);
     if (!t) {
-      const e = espec(d.simbolo);
+      const e0 = espec(d.simbolo);
+      const e = typeof e0.h === 'number' && Number(d.altura_m) > 0 ? { ...e0, h: Number(d.altura_m) } : e0;
       const k = (porDisc[disc] = (porDisc[disc] ?? -1) + 1);
       // tam e montagem: o visualizador desenha a peça no tamanho e na posição (parede/teto/canto) certos
-      t = { simbolo: d.simbolo, disciplina: disc, rotulo: (SIMBOLOS[d.simbolo]?.legenda || d.simbolo).replace(/\s*\(h = [^)]*\)/, ''), forma: e.forma, tam: e.tam, montagem: typeof e.h === 'number' ? 'parede' : e.h, altura: alturaTexto(e, peDireito), cor: tom((DISCIPLINAS[disc] || { cor: '#dddddd' }).cor, k), itens: [] };
-      tipos.set(d.simbolo, t);
+      t = { simbolo: d.simbolo, disciplina: disc, rotulo: String(d.rotulo || SIMBOLOS[d.simbolo]?.legenda || d.simbolo).replace(/\s*\(h = [^)]*\)/, ''), forma: e.forma, tam: e.tam, montagem: typeof e.h === 'number' ? 'parede' : e.h, altura: alturaTexto(e, peDireito), cor: tom((DISCIPLINAS[disc] || { cor: '#dddddd' }).cor, k), itens: [] };
+      tipos.set(chaveTipo, t);
     }
     const p = posicionar3d(d, faces, peDireito);
     if (FORMAS_DE_PAREDE.has(t.forma)) afastarDosVizinhos(p, t.tam, grandes);
@@ -643,7 +841,8 @@ function montarCena(arquitetura, opcoes = {}) {
   const compParedes = el.paredes.filter(w => w.classe === 'parede').reduce((s, w) => s + dist(w.a, w.b), 0);
   const listaTipos = [...tipos.values()];
   const avisos = [...(opcoes.avisos || [])];
-  const infra = montarInfra(opcoes.trechos, P, caixa, peDireito, avisos);
+  // traçado do projeto (com as descidas até as peças) + o estimado das disciplinas sem traçado
+  const infra = completarInfra(montarInfra(opcoes.trechos, P, caixa, peDireito, avisos), listaTipos, peDireito, avisos);
   const numeros = {
     area_interna_m2: r2(internos.reduce((s, a) => s + a.area_m2, 0)),
     area_externa_m2: r2(ambs.filter(a => a.tipo === 'externo').reduce((s, a) => s + a.area_m2, 0)),
@@ -657,7 +856,7 @@ function montarCena(arquitetura, opcoes = {}) {
     janelas: el.janelas.length,
     pilares: el.pilares.filter(p => p.ehPilar).length,
     dispositivos: listaTipos.map(t => ({ disciplina: t.disciplina, simbolo: t.simbolo, rotulo: t.rotulo, quantidade: t.itens.length, altura: t.altura })),
-    infraestrutura: infra.map(g => ({ disciplina: g.disciplina, tipo: g.tipo, rotulo: g.rotulo, comprimento_m: g.comprimento_m, segmentos: g.segmentos_total })),
+    infraestrutura: infra.map(g => ({ disciplina: g.disciplina, tipo: g.tipo, rotulo: g.rotulo, material: g.material, medida: g.medida, origem_medida: g.origem_medida, comprimento_m: g.comprimento_m, descidas_m: g.descidas_m, segmentos: g.segmentos_total })),
     por_ambiente: ambs.map(a => ({ nome: a.nome, tipo: a.tipo, area_m2: a.area_m2, perimetro_m: a.perimetro_m })),
   };
 
