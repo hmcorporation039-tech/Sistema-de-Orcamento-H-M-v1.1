@@ -411,7 +411,13 @@ function compatibilizar(arquivos, { temPdf = false } = {}) {
         referencia: g.ref.arquivo,
         // a altura de instalação vai junto quando se sabe (o 3D pode pôr o ponto na cota certa)
         pontos: pontos.slice(0, 20000).map(({ x, y, descricao, disciplina, classe, altura_m, montagem }) => ({ x, y, descricao, disciplina, classe, ...(montagem ? { altura_m: altura_m ?? null, montagem } : {}) })),
-        trechos: trechos.map(t => ({ disciplina: t.disciplina, layer: t.layer, segmentos: t.segmentos.slice(0, Math.max(0, 20000 - nSeg)).map(s => { nSeg++; return s.map(v => Math.round(v * 1000) / 1000); }) }))
+        // tipo, material e medida de cada trecho (services/analiseCad/medidasInfra.js) vão junto: o 3D desenha a seção real
+        trechos: trechos.map(t => ({
+          disciplina: t.disciplina, layer: t.layer,
+          ...(t.tipo ? { tipo: t.tipo, material: t.material ?? null, medida: t.medida ?? null, secao_mm: t.secao_mm ?? null, origem_medida: t.origem_medida ?? null } : {}),
+          ...(t.quantidade > 1 ? { quantidade: t.quantidade } : {}),
+          segmentos: t.segmentos.slice(0, Math.max(0, 20000 - nSeg)).map(s => { nSeg++; return s.map(v => Math.round(v * 1000) / 1000); }),
+        }))
           .filter(t => t.segmentos.length),
       };
     }

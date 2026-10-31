@@ -201,6 +201,85 @@ function dxfSintetico() {
     assert.strictEqual(r.arquitetura.resumo.ambientes.length, 2);
   });
 
+  await caso('medida da infraestrutura escrita no texto e na layer', async () => {
+    const { medidaDoTexto, medidaDaLayer } = require('../src/services/analiseCad/medidasInfra');
+    const m = (s) => { const r = medidaDoTexto(s); return r && [r.tipo, r.medida, r.material, r.secao_mm.join('x')]; };
+    assert.deepStrictEqual(m('Ø3/4"'), ['eletroduto', 'Ø 25 mm (3/4")', null, '25x25']);
+    assert.deepStrictEqual(m('ø25'), ['eletroduto', 'Ø 25 mm (3/4")', null, '25x25']);
+    assert.deepStrictEqual(m('ELETRODUTO PVC 1"'), ['eletroduto', 'Ø 32 mm (1")', 'PVC', '32x32']);
+    assert.deepStrictEqual(m('Ø 1,1/4"'), ['eletroduto', 'Ø 40 mm (1 1/4")', null, '40x40']);
+    assert.deepStrictEqual(m('%%c2"'), ['eletroduto', 'Ø 60 mm (2")', null, '60x60']);
+    assert.deepStrictEqual(m('3xØ1"'), ['eletroduto', '3 × Ø 32 mm (1")', null, '32x32']);
+    assert.deepStrictEqual(m('(5x)#4,00mm elet. rig.Ø32mm.'), ['eletroduto', 'Ø 32 mm (1")', 'rígido', '32x32'], '(5x) são fios, não eletrodutos');
+    assert.deepStrictEqual(m('eletroduto corrugado DN 25'), ['eletroduto', 'Ø 25 mm (3/4")', 'PVC corrugado', '25x25']);
+    assert.deepStrictEqual(m('4 - FG Ø50mm'), ['eletroduto', 'Ø 50 mm (1 1/2")', 'aço galvanizado', '50x50']);
+    assert.deepStrictEqual(m('EC 100x50'), ['eletrocalha', '100 × 50 mm', null, '100x50']);
+    assert.deepStrictEqual(m('ELETROCALHA MET. (100x500)mm'), ['eletrocalha', '500 × 100 mm', 'metálica', '500x100'], 'largura (o lado maior) primeiro');
+    assert.deepStrictEqual(m('Eletrocalha Lisa sem Tampa - 300x100mm'), ['eletrocalha', '300 × 100 mm', 'lisa', '300x100']);
+    assert.deepStrictEqual(m('PERF. 38x38'), ['perfilado', '38 × 38 mm', null, '38x38']);
+    assert.deepStrictEqual(m('LEITO 300x100'), ['leito', '300 × 100 mm', null, '300x100']);
+    // medida que não é de eletroduto/eletrocalha
+    for (const s of ['Cx. 4x4"', 'TV 43"-98x57x8cm', 'VAGA (2,40x5,00)', '500X500X200', 'DRENO Ø150', '3#4,0mm.', '1-2X18 LEDS', '800mm', 'cabo 2x1,5mm2', 'ELETROCALHA EXISTENTE']) {
+      assert.strictEqual(medidaDoTexto(s), null, s);
+    }
+    assert.strictEqual(medidaDaLayer('INC_ELETRODUTO_25MM').medida, 'Ø 25 mm (3/4")');
+    assert.strictEqual(medidaDaLayer('ELE-ELETRODUTO-3/4').medida, 'Ø 25 mm (3/4")');
+    assert.strictEqual(medidaDaLayer('ELETROCALHA 100X50').medida, '100 × 50 mm');
+    assert.strictEqual(medidaDaLayer('D10_TEL_ELETRODUTOS'), null, 'o número antes do tipo é do pavimento/disciplina');
+  });
+
+  await caso('DXF sintético: cada trecho com tipo, material e medida (texto, layer, legenda) e dividido por medida', async () => {
+    const d = new DesenhoDxf({ layers: ['ELE-ELETRODUTO', 'ELE-ELETROCALHA', 'INC_ELETRODUTO_25MM', 'CAB-ELETRODUTO', 'CA-INFRA', 'ELE-FIACAO', 'ELE-INFRA', 'ELE-TEXTO', 'LEGENDA'].map((nome, i) => ({ nome, cor: i + 1 })) });
+    // eletroduto de 20 m: 3/4" escrito no começo e 1" no fim; a caixa 4x4" no meio não é medida
+    d.polilinha([[0, 0], [5, 0], [10, 0], [15, 0], [20, 0]], { layer: 'ELE-ELETRODUTO' });
+    d.texto(1, 0.2, 0.15, '%%c3/4"', { layer: 'ELE-TEXTO' });
+    d.texto(17, 0.2, 0.15, '%%c1"', { layer: 'ELE-TEXTO' });
+    d.texto(10, 0.2, 0.15, 'Cx. 4x4"', { layer: 'ELE-TEXTO' });
+    // trecho solto do mesmo eletroduto, sem texto perto: não se inventa medida
+    d.linha(0, 40, 6, 40, 'ELE-ELETRODUTO');
+    d.linha(0, 5, 20, 5, 'ELE-ELETROCALHA');
+    d.texto(8, 5.2, 0.15, 'ELETROCALHA PERFURADA 200X100', { layer: 'ELE-TEXTO' });
+    d.linha(0, 10, 10, 10, 'INC_ELETRODUTO_25MM'); // medida na layer
+    // legenda com amostra de linha: vale para o eletroduto de cabeamento da planta
+    d.linha(0, 15, 15, 15, 'CAB-ELETRODUTO');
+    d.texto(40, 20, 0.25, 'LEGENDA', { layer: 'LEGENDA' });
+    d.linha(40.5, 19, 41.5, 19, 'CAB-ELETRODUTO');
+    d.texto(42, 19, 0.15, 'Eletroduto PVC RIGIDO 1"', { layer: 'LEGENDA' });
+    d.linha(0, 20, 8, 20, 'CA-INFRA'); // nada diz a medida
+    d.linha(0, 25, 6, 25, 'ELE-FIACAO');
+    d.linha(0, 35, 10, 35, 'ELE-INFRA'); // layer genérica: o tipo vem do texto
+    d.texto(3, 35.2, 0.15, 'LEITO 300x100', { layer: 'ELE-TEXTO' });
+    const r = await lerArquivoCad(Buffer.from(d.toString(), 'utf8'), 'Infra exemplo.dxf');
+    const metros = (t) => Math.round(t.segmentos.reduce((s, x) => s + Math.hypot(x[2] - x[0], x[3] - x[1]), 0) * 10) / 10;
+    const resumo = r.espacial.trechos.map(t => [t.layer, t.tipo, t.medida, t.material, t.origem_medida, metros(t)]);
+    const tem = (linha) => assert.ok(resumo.some(x => JSON.stringify(x) === JSON.stringify(linha)), `${JSON.stringify(linha)} em ${JSON.stringify(resumo)}`);
+    tem(['ELE-ELETRODUTO', 'eletroduto', 'Ø 25 mm (3/4")', null, 'texto', 10]);
+    tem(['ELE-ELETRODUTO', 'eletroduto', 'Ø 32 mm (1")', null, 'texto', 10]);
+    tem(['ELE-ELETRODUTO', 'eletroduto', null, null, null, 6]);
+    tem(['ELE-ELETROCALHA', 'eletrocalha', '200 × 100 mm', 'perfurada', 'texto', 20]);
+    tem(['INC_ELETRODUTO_25MM', 'eletroduto', 'Ø 25 mm (3/4")', null, 'layer', 10]);
+    tem(['CAB-ELETRODUTO', 'eletroduto', 'Ø 32 mm (1")', 'PVC rígido', 'legenda', 16]);
+    tem(['CA-INFRA', 'eletroduto', null, null, null, 8]);
+    tem(['ELE-FIACAO', 'fiacao', null, null, null, 6]);
+    tem(['ELE-INFRA', 'leito', '300 × 100 mm', null, 'texto', 10]);
+    const e34 = r.espacial.trechos.find(t => t.medida === 'Ø 25 mm (3/4")' && t.layer === 'ELE-ELETRODUTO');
+    assert.deepStrictEqual(e34.secao_mm, [25, 25]);
+    assert.strictEqual(e34.disciplina, 'eletrica');
+    // a metragem do orçamento não muda: a layer continua medida inteira
+    assert.strictEqual(r.pagina.itens.find(i => i.layer === 'ELE-ELETRODUTO').metros, 26);
+
+    // o 3D recebe os campos pela compatibilização (espacial alinhado à arquitetura)
+    const { compatibilizar } = require('../src/utils/compatibilidadeEspacial');
+    const sala = (nome, x) => ({ nome, area_m2: 20, poligono: [[x, 0], [x + 5, 0], [x + 5, 4], [x, 4]], origem: 'polilinha' });
+    const amb = ['RECEPCAO', 'SALA 1', 'SALA 2', 'COPA'].map((n, i) => sala(n, i * 6));
+    const c = compatibilizar([
+      { arquivo: 'ARQ.dxf', disciplinas: [], referencia: true, tipoReferencia: 'arquitetura', espacial: { ambientes: amb, pontos: [], trechos: [] } },
+      { arquivo: 'ELE.dxf', disciplinas: ['eletrica'], espacial: { ambientes: amb, pontos: [], trechos: r.espacial.trechos } },
+    ], { temPdf: false });
+    const t3d = c.espacial.trechos.find(t => t.medida === 'Ø 32 mm (1")' && t.origem_medida === 'legenda');
+    assert.ok(t3d && t3d.tipo === 'eletroduto' && t3d.material === 'PVC rígido' && t3d.secao_mm.join() === '32,32', JSON.stringify(c.espacial.trechos.map(t => [t.layer, t.medida])));
+  });
+
   await caso('arquivo que não é DWG/DXF: erro claro', async () => {
     await assert.rejects(lerArquivoCad(Buffer.from('não sou cad'), 'x.dxf'), /não é um DWG nem um DXF/);
   });

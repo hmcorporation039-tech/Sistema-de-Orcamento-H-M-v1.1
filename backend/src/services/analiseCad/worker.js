@@ -13,6 +13,7 @@ const { CAD } = require('../../config/caminhos');
     const { textoDxfDoArquivo } = require(path.join(CAD, 'dwg.js'));
     const { lerArquitetura } = require(path.join(CAD, 'arquitetura.js'));
     const { lerProjetoDxf } = require(path.join(CAD, 'projetoDxf.js'));
+    const { RE_TEXTO_CANDIDATO } = require('./medidasInfra');
     const w = workerData;
     const { texto, origem, versao } = await textoDxfDoArquivo(Buffer.from(w.buffer), w.nome);
     let arq = null;
@@ -31,7 +32,12 @@ const { CAD } = require('../../config/caminhos');
           regioesFora: arq.classificacao.regioes.filter(r => ['diagrama', 'vista_quadro', 'quadro_cargas', 'carimbo'].includes(r.tipo)).map(r => r.caixa),
         },
       },
-      projeto: { texto: projeto.texto, simbolos: projeto.simbolos, linhas: projeto.linhas, legenda: projeto.legenda, legendaItens: projeto.legendaItens },
+      projeto: {
+        texto: projeto.texto, simbolos: projeto.simbolos, linhas: projeto.linhas, legenda: projeto.legenda, legendaItens: projeto.legendaItens,
+        // textos com posição que podem dizer a medida da infraestrutura (medidasInfra.js);
+        // só os candidatos: um DWG grande tem dezenas de milhares de textos
+        textosMedida: projeto.textos.filter(t => RE_TEXTO_CANDIDATO.test(t.s)).map(({ s, x, y, h, layer }) => ({ s, x, y, h, layer })),
+      },
     });
   } catch (err) {
     parentPort.postMessage({ ok: false, erro: err.message });

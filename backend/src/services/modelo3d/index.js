@@ -145,8 +145,12 @@ function dispositivosDoEspacial(espacial) {
     dispositivos.push({ simbolo, rotulo: rotuloDoComponente(p.descricao) || null, disciplina: DISCIPLINA_3D_TRECHO[p.disciplina] || p.disciplina,
       ...(p.montagem !== 'teto' && Number(p.altura_m) > 0 ? { altura_m: Number(p.altura_m) } : {}), x: p.x, y: p.y, rotacao: 0, id: '', ambiente: null });
   }
+  // tipo, material e medida lidos do desenho (services/analiseCad/medidasInfra.js); análise
+  // antiga, sem eles: o tipo pela layer e a medida null (o 3D usa a seção ilustrativa)
   const trechos = (espacial?.trechos || []).map(t => ({
-    disciplina: DISCIPLINA_3D_TRECHO[t.disciplina] || t.disciplina || 'eletrica', tipo: tipoDoTrecho(t.layer), layer: t.layer, segmentos: t.segmentos,
+    disciplina: DISCIPLINA_3D_TRECHO[t.disciplina] || t.disciplina || 'eletrica', tipo: t.tipo || tipoDoTrecho(t.layer), layer: t.layer, segmentos: t.segmentos,
+    material: t.material ?? null, medida: t.medida ?? null, secao_mm: t.secao_mm ?? null, origem_medida: t.origem_medida ?? null,
+    ...(t.quantidade > 1 ? { quantidade: t.quantidade } : {}),
   }));
   return { dispositivos, trechos, genericos };
 }

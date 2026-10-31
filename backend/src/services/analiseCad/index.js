@@ -23,6 +23,7 @@ const { detectarDisciplinas } = require('../../utils/leitoresTabelaProjeto');
 const { CAD } = require('../../config/caminhos');
 const { BLOCOS_HM, disciplinaDaLayer, disciplinaDoBloco, disciplinaDoTexto, semPrefixoDeDisciplina, alturaDoTexto } = require(path.join(CAD, 'disciplinasCad.js'));
 const { retanguloMinimo } = require(path.join(CAD, 'geometriaCad.js'));
+const { medirTrechos } = require('./medidasInfra');
 
 const RE_CAD = /\.(dwg|dxf)$/i;
 const ehArquivoCad = (nome) => RE_CAD.test(String(nome || ''));
@@ -342,8 +343,12 @@ async function lerArquivoCad(buffer, nome) {
   const espacial = {
     ambientes: ambientesArq.map(a => ({ nome: a.nome, area_m2: a.area_m2, poligono: a.poligono, origem: a.origem })),
     pontos,
-    // disciplina do traçado pelo prefixo/palavra da layer (CAB-, INC-, D10_TEL…)
-    trechos: p.linhas.filter(l => !xrefOutra(l.xref)).map(l => ({ layer: l.layer, disciplina: descreverLinha(l).disciplina, segmentos: l.segmentos || [] })).filter(t => t.segmentos.length),
+    // disciplina do traçado pelo prefixo/palavra da layer (CAB-, INC-, D10_TEL…); tipo,
+    // material e medida pelo texto junto ao traçado, pela layer ou pela legenda — o
+    // trecho com medidas diferentes vira um trecho por medida (medidasInfra.js)
+    trechos: medirTrechos(
+      p.linhas.filter(l => !xrefOutra(l.xref)).map(l => ({ layer: l.layer, disciplina: descreverLinha(l).disciplina, segmentos: l.segmentos || [] })).filter(t => t.segmentos.length),
+      p.textosMedida || []),
   };
   return { analise, pagina, pontosPorAmbiente, arquitetura, espacial };
 }
