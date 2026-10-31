@@ -5,6 +5,7 @@
 // services/compatibilizacaoAnalise.js.
 const { nomeDaDisciplina } = require('./disciplinasProjeto');
 const { semMarcador, metrosBR, temDisciplina } = require('./analiseProjetoItens');
+const { achadosNBR5410 } = require('./conferenciaNBR5410');
 
 // Monta o detalhe por arquivo de um tipo de ponto codificado (câmera, rede ou
 // antena) — mesma tabela que já existia só para câmeras, agora reutilizada
@@ -97,6 +98,10 @@ function gerarAchados(analises) {
         tema: 'Quadro de cargas presente e não lido',
         observacao: `"${a.arquivo}" tem quadro de cargas, mas nenhum circuito foi lido (formato de tabela não reconhecido). Disjuntores, quadros e o cálculo da NBR 5410 ficam sem esses dados — confira o quadro direto no PDF e lance os circuitos.`,
       });
+    }
+    // quadro lido: Ib ≤ In ≤ Iz, seção mínima, queda de tensão e DR (utils/conferenciaNBR5410.js)
+    if (a.quadroCargas?.length) {
+      achados.push(...achadosNBR5410(a.arquivo, a.quadrosDeCargas?.length ? a.quadrosDeCargas : [{ quadro: null, circuitos: a.quadroCargas }]));
     }
     // quantidade "1.200" sem vírgula: milhar ou 1,2? (utils/leitoresTabelaProjeto.js)
     const ambiguas = a.quantidadesAmbiguas?.length ? a.quantidadesAmbiguas : (a.listaMateriais || []).filter(it => it.qtdAmbigua);
