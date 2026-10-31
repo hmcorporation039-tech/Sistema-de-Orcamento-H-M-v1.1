@@ -8,9 +8,13 @@
 // uma caixa (ou cilindro) com as medidas reais L × A × P do dispositivo.
 //   cena = { tipo: 'quadro', titulo, cliente, obra, data,
 //            involucro: { L, A, P, espessura, cor }, porta: { itens: [...] },
-//            caixas: [{ camada, x, y, z, l, a, p, cor, opacidade, forma, metal, rotulo, info: [[k, v]] }],
+//            caixas: [{ camada, x, y, z, l, a, p, cor, opacidade, forma, metal, rotulo, info: [[k, v]],
+//                       tag, dica, semEtiqueta }],
 //            camadas: [{ id, rotulo, cor }], numeros: [[rotulo, valor]], avisos }
-// Itens da porta usam x, y no plano da frente e z a partir da face externa.
+// Itens da porta usam x, y no plano da frente e z a partir da face externa (z
+// negativo = corpo do dispositivo por dentro da porta). `dica` é o texto do mouse
+// (TAG, tipo e medida); `semEtiqueta` deixa a peça só com a dica, sem etiqueta
+// fixa; invólucro e porta aceitam `rotulo` e `info` para a ficha do clique.
 //
 // Desempenho (correção de 29/10/2026): o quadro tem centenas de peças. Antes
 // cada uma criava geometria, arestas e material próprios e a cena era
@@ -106,7 +110,9 @@ export function iniciarQuadro(C) {
     if (!b.semBorda && forma === 'caixa') mesh.add(new LineSegments(ARESTAS.caixa, materialAresta(cor, op)));
     mesh.userData = b;
     if (b.info) clicaveis.push(mesh);
-    if (b.rotulo) etiquetas.push({ mesh, texto: b.rotulo, el: null, porta: pai === portaGrupo });
+    // semEtiqueta: só a dica do mouse (trilho, placa, canaleta vertical, bornes um a um),
+    // senão a etiqueta fixa delas tomaria o lugar das TAGs dos dispositivos
+    if (b.rotulo && !b.semEtiqueta) etiquetas.push({ mesh, texto: b.rotulo, el: null, porta: pai === portaGrupo });
     pai.add(mesh);
     return mesh;
   }
@@ -120,13 +126,13 @@ export function iniciarQuadro(C) {
     { x: L - esp, y: 0, z: 0, l: esp, a: A, p: P },
     { x: 0, y: A - esp, z: 0, l: L, a: esp, p: P },
     { x: 0, y: 0, z: 0, l: L, a: esp, p: P },
-  ].forEach(b => peca({ ...b, cor: corEnv }, involucro));
+  ].forEach(b => peca({ ...b, cor: corEnv, rotulo: C.involucro.rotulo, info: C.involucro.info, semEtiqueta: true }, involucro));
 
   // porta: articulada à esquerda (eixo vertical em x = 0, z = P)
   portaGrupo.position.set(0, 0, P * M);
   cena.add(portaGrupo);
   grupos.porta = portaGrupo;
-  peca({ x: 0, y: 0, z: 0, l: L, a: A, p: esp, cor: corEnv }, portaGrupo);
+  peca({ x: 0, y: 0, z: 0, l: L, a: A, p: esp, cor: corEnv, rotulo: C.porta && C.porta.rotulo, info: C.porta && C.porta.info, semEtiqueta: true }, portaGrupo);
   for (const it of (C.porta && C.porta.itens) || []) peca({ ...it, z: esp + (it.z || 0) }, portaGrupo);
 
   // conteúdo
@@ -240,7 +246,7 @@ export function iniciarQuadro(C) {
     if (agora - ultimoMov < 60) return;
     ultimoMov = agora;
     const hit = apontado(e);
-    const t = hit && hit.object.userData.rotulo;
+    const t = hit && (hit.object.userData.dica || hit.object.userData.rotulo); // dica: TAG, tipo e medida
     if (!t) { dica.style.display = 'none'; return; }
     dica.textContent = t;
     dica.style.display = 'block';

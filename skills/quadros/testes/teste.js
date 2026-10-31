@@ -104,6 +104,43 @@ igual('Automação: relé de segurança e botão de emergência', [c2.aut.releSe
 igual('Automação: canaleta da direita é de comando (separada da potência)', c2.layout.verticais.direita.areaCabos > 0 && c2.fio.areaCmd > 0, true);
 igual('Automação: ocupação das canaletas ≤ 50 %', [...c2.layout.horizontais.filter(h => h.zona !== 'topo'), c2.layout.verticais.esquerda, c2.layout.verticais.direita].every(h => (h.ocupacao || 0) <= 0.5 + 1e-9), true);
 
+// ── Modelo 3D: tudo o que o cálculo lista aparece, com TAG, tipo e medida ──
+// Compara as TAGs da lista (componentes + filhos das partidas + réguas de bornes + itens de
+// porta + ventilação + flange) com as da cena e confere a infraestrutura (canaletas, trilhos,
+// barramento, bornes um a um) pelas medidas do cálculo.
+function conferir3d(nome, k, cena) {
+  const pecas = [...cena.caixas, ...cena.porta.itens];
+  const tags = new Set(pecas.map(b => b.tag).filter(Boolean));
+  const esperadas = [
+    ...k.comps.lista.flatMap(x => [x.ref, ...(x.filhos || []).map(f => `${x.ref}/${f.ref}`)]),
+    ...k.born.map(g => g.id),
+    ...k.aut.porta.flatMap(p => Array(p.quantidade).fill(p.tipo)).map((t, i) => `${t}:${i + 1}`),
+    ...(k.aut.ihm ? ['IHM'] : []), ...(k.term.ventilacao ? ['VENTILADOR', 'FILTRO'] : []), 'FLANGE',
+  ];
+  igual(`${nome}: 3D tem toda peça da lista do cálculo (faltando)`, esperadas.filter(t => !tags.has(t)), []);
+  const ficha = (b, chave) => (b.info || []).find(([r]) => r === chave);
+  const dispositivos = k.comps.lista.flatMap(x => (x.filhos ? x.filhos.map(f => ({ tag: `${x.ref}/${f.ref}`, m: f.medida })) : [{ tag: x.ref, m: x.medida }]));
+  igual(`${nome}: 3D — cada dispositivo com TAG, descrição, L × A × P e fabricante/referência quando do catálogo`, dispositivos.filter(({ tag, m }) => {
+    const b = pecas.find(p => p.tag === tag && p.info);
+    return !b || !ficha(b, 'Dispositivo') || !ficha(b, 'Medidas L × A × P') || (m && m.origem === 'catalogo' && !(ficha(b, 'Fabricante') && ficha(b, 'Referência')));
+  }).map(d => d.tag), []);
+  const can = cena.caixas.filter(b => b.camada === 'canaletas').map(b => b.rotulo).sort();
+  const canCalc = [...k.layout.horizontais, k.layout.verticais.esquerda, k.layout.verticais.direita].map(d => `Canaleta ${d.largura} × ${d.altura} mm`).sort();
+  igual(`${nome}: 3D — canaletas com a seção do cálculo (L × A)`, can, canCalc);
+  igual(`${nome}: 3D — legenda das canaletas com as seções`, canCalc.every(r => cena.camadas.find(c => c.id === 'canaletas').rotulo.includes(r.replace('Canaleta ', '').replace(' mm', ''))), true);
+  igual(`${nome}: 3D — um trilho DIN 35 × 7,5 por fileira com trilho`, cena.caixas.filter(b => b.camada === 'trilhos' && /35 × 7,5/.test(b.rotulo) && b.info).length, k.layout.fileiras.filter(f => f.trilho).length);
+  if (k.barr.tipo === 'barra') {
+    const barras = cena.caixas.filter(b => b.tag === 'BARR');
+    igual(`${nome}: 3D — barramento com ${k.barr.nBarras} barras ${k.barr.fase.l} × ${k.barr.fase.e} mm Cu na ficha`, [barras.length, barras.every(b => ficha(b, 'Conjunto')[1].startsWith(`${k.c.nFases} × ${k.barr.fase.l} × ${k.barr.fase.e} mm Cu`))], [k.barr.nBarras, true]);
+  } else {
+    igual(`${nome}: 3D — pente com corrente e seção na ficha`, cena.caixas.some(b => b.tag === 'PENTE' && ficha(b, 'Peça')[1].includes(`${k.barr.pente.a} A (${k.barr.pente.s} mm²)`)), true);
+  }
+  igual(`${nome}: 3D — barra PE com a seção do cálculo`, cena.caixas.some(b => b.tag === 'XPE' && ficha(b, 'Seção')[1].startsWith(`Cu ${k.barr.pe.l} × ${k.barr.pe.e} mm`)), true);
+  igual(`${nome}: 3D — bornes um a um (total + reserva de cada régua)`, k.born.map(g => cena.caixas.filter(b => b.camada === 'bornes' && b.tag === g.id && /^X\d+:\d+$/.test(b.rotulo)).length),
+    k.born.map(g => g.total + g.reserva));
+  igual(`${nome}: 3D — invólucro, porta e placa com ficha`, [!!cena.involucro.info, !!cena.porta.info, cena.caixas.some(b => b.camada === 'placa' && b.info)], [true, true, true]);
+}
+
 // ── Documentos ──
 (async () => {
   const saida = path.join(require('os').tmpdir(), 'teste-quadros');
@@ -130,6 +167,7 @@ igual('Automação: ocupação das canaletas ≤ 50 %', [...c2.layout.horizontai
         igual(`${nome}: Q0 no 3D com as medidas do layout`, (() => { const q = cena.caixas.find(b => b.rotulo === 'Q0'); const k = res.calc.comps.lista.find(x => x.ref === 'Q0'); return !!q && q.l === k.largura && q.a === k.altura && q.p === k.prof; })(), true);
         igual(`${nome}: 3D redesenha quando o navegador restaura o contexto WebGL`, html.includes("webglcontextrestored"), true);
         igual(`${nome}: camadas e peças clicáveis`, cena.camadas.length >= 8 && cena.caixas.filter(b => b.info).length > 10, true);
+        conferir3d(nome, res.calc, cena);
       } else {
         igual(`${nome}: ${tipo} é Office (zip)`, g.buffer.slice(0, 2).toString(), 'PK');
       }
@@ -211,5 +249,22 @@ igual('Automação: ocupação das canaletas ≤ 50 %', [...c2.layout.horizontai
   igual('fabricante fora da lista: medida típica e item em componentes_sem_medida', [q1Livre.medida.origem, livre.componentes_sem_medida.map(x => [x.tag, x.fabricante])], ['tipica', [['Q1', 'Fabricante Regional Ltda']]]);
   igual('fabricante fora da lista: especificação de busca com o nome digitado', /^Fabricante Regional Ltda disjuntor DIN 1P 10 A curva C 6 kA$/.test(livre.componentes_sem_medida[0].especificacao), true);
   igual('sem fabricantes: nada entra como "sem medida" e não há comparação', [r1.calc.componentes_sem_medida.length, r1.calc.comparacao], [0, undefined]);
+  // 3D com o catálogo embutido real: infraestrutura e porta com fabricante e referência
+  {
+    const M3D = require('../scripts/lib/modelo3d');
+    const d = JSON.parse(JSON.stringify(automacao));
+    d.fabricantes = { ...FAB, por_tipo: { ...FAB.por_tipo, canaleta: 'Phoenix Contact', trilho_din: 'Phoenix Contact', ventilador: 'Finder', botao: 'Siemens', sinaleiro: 'Siemens', comutador: 'Siemens', ihm: 'Siemens' } };
+    const res = motor.processar(d);
+    const cena = M3D.montarCena(res.calc, res.dados);
+    conferir3d('automação com catálogo', res.calc, cena);
+    const ref = (b) => ((b && b.info) || []).find(([r]) => r === 'Referência')?.[1];
+    const pecas = [...cena.caixas, ...cena.porta.itens];
+    const v = res.calc.layout.verticais.esquerda;
+    igual(`3D: canaleta ${v.largura} × ${v.altura} com a referência Phoenix`, ref(cena.caixas.find(b => b.rotulo === `Canaleta ${v.largura} × ${v.altura} mm` && b.x < res.calc.layout.involucro.largura / 2)), `CD ${v.largura}X${v.altura}`);
+    igual('3D: canaleta 30 × 30 sem registro → típica com o equivalente comercial', (cena.caixas.find(b => b.rotulo === 'Canaleta 30 × 30 mm').info.find(([r]) => r === 'Equivalente no catálogo') || [])[1], 'Phoenix Contact CD 30X40 (30 × 40 mm) [CONFERIR]');
+    igual('3D: trilho DIN perfurado Phoenix', ref(cena.caixas.find(b => b.camada === 'trilhos')), 'NS 35/ 7,5 PERF 2000MM');
+    igual('3D: ventilador ≥ 55 m³/h e filtro do mesmo tamanho (Finder)', [ref(pecas.find(b => b.tag === 'VENTILADOR')), ref(pecas.find(b => b.tag === 'FILTRO'))], ['7F.20.8.230.2055', '7F.02.0.000.2000']);
+    igual('3D: emergência Ø 40, sinaleiro, seletor e IHM 7" Siemens', ['emergencia:1', 'sinaleiro_verde:7', 'seletor:2', 'IHM'].map(t => ref(pecas.find(b => b.tag === t))), ['3SU1000-1HB20-0AA0', '3SU1001-6AA20-0AA0', '3SU1032-2BF20-0AA0', 'KTP700 Basic']);
+  }
   fim();
 })().catch(e => { console.log(`  FALHOU com erro: ${e.stack}`); process.exitCode = 1; });
