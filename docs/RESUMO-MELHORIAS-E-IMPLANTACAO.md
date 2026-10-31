@@ -407,6 +407,28 @@ Pedidos do usuário: "o gerador de 3D não deve construir um prédio a partir de
   - CPU, switch e relé de interface atendem ao que o cálculo pediu (E/S, portas, bobina 24 V).
   - Modelo 3D do quadro no visualizador (`skills/_comum/cad/visualizador3d/quadro.js`).
 
+### 31/10/2026: 3D com a infraestrutura medida e todos os componentes (ramo `versao-2.0`)
+Pedido do usuário: "todo modelo de projetos gerados em 3D devem ter sua infraestrutura apresentada visualmente, como eletrocalhas e eletrodutos com seus tipos e medidas, bem como todo componente usado no projeto."
+
+- **Leitura do DWG/DXF** (`backend/src/services/analiseCad/medidasInfra.js`): cada trecho sai com tipo, material, medida e seção (mm). A medida vem, nesta ordem:
+  1. do texto junto ao traçado (até 1,5 m; o caminho ligado herda a medida);
+  2. do nome da layer;
+  3. da legenda ou de uma nota "caso não indicado, considerar…".
+  - Polegada → mm pela tabela do PVC rígido (NBR 15465).
+  - Sem medida no desenho, o campo fica vazio: o sistema não inventa.
+- **Na cena** (`skills/_comum/cad/modelo3d.js`):
+  - seção real;
+  - descida vertical até cada peça de parede. Da eletrocalha, a descida é eletroduto num grupo à parte, para os metros não entrarem na eletrocalha.
+  - Disciplina sem traçado (projeto gerado pelo sistema ou DWG só com pontos) ganha eletroduto **estimado**, em "L", do quadro/rack/central até cada ponto, com a bitola do orçamento da skill: 3/4" nos circuitos e sistemas de segurança, 1" no cabeamento. Vem marcado para conferir.
+- **No visualizador:**
+  - legenda, cartões e dica do mouse com tipo, material, medida, altura, metros de traçado e de descida, e de onde veio a medida (desenho, layer, legenda, padrão ou estimado);
+  - todo componente do DWG aparece com a descrição e a altura do projeto; sem símbolo próprio, como caixa com o nome.
+- **Quadro de fabricação** (`skills/quadros/scripts/lib/modelo3d.js` e `quadro.js`):
+  - canaletas, trilhos DIN, barramentos, isoladores, pente, barras N/PE, bornes um a um, flange de entrada e itens de porta, todos com TAG, tipo e medida;
+  - termostato e TCs no arranjo e no 3D;
+  - multimedidor de painel na porta;
+  - o teste `conferir3d` falha se alguma peça da lista do cálculo faltar no 3D.
+
 ---
 
 ## 3. Skills e ferramentas do Claude (servidor MCP `hm-orcamentos`)
@@ -521,3 +543,5 @@ Uso de cada skill: `skills/<disciplina>/SKILL.md`. Formulário da obra (JSON): `
   - seccionadora e base NH.
   - Esses itens saem em "sem medida oficial" e podem ser buscados pela IA, com aprovação do admin.
 - [ ] Busca de medida pela IA aberta a todos os usuários (só o admin aprova): restringir, se o usuário quiser.
+- [ ] Medida da infraestrutura no DWG da DF Star: as chamadas são empilhadas, com linha de chamada a 2–10 m do traçado ("Eletrocalha lisa 50x50 / 300x100 / 300x200…"). É preciso seguir a linha de chamada (`projetoDxf.js`). Hoje esses trechos saem com a seção padrão, marcada como tal.
+- [ ] Galpão: o desenho escreve eletrocalha "(100x500)mm". Conferir com o projetista se não é 100 × 50.
