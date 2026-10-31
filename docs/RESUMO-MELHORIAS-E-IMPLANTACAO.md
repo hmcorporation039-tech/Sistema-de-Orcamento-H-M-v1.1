@@ -368,6 +368,45 @@ Instalada em produção em 29/10/2026 com tudo o que está na entrada anterior. 
   - Com `meta.tipo_laudo: "aterramento"`, sai como "Laudo de aterramento".
   - Os erros achados no laudo de referência viram conferência automática (`skills/spda/scripts/lib/consistencia.js`): fotos fora do local ou da data, CT de linha de sinal, nível de pânico, NP × as built, ensaios repetidos e instrumentos.
 
+### 29 a 31/10/2026: revisão da análise de projeto, conferência pelas normas e quadros com medidas oficiais (ramo `versao-2.0`, depois da 2.4.0)
+Pedidos do usuário: "o gerador de 3D não deve construir um prédio a partir de desenhos de quadro elétrico"; reavaliar a análise para a máxima precisão e conferir os erros pelas normas; projetos de fabricação de quadros a partir dos unifilares, com 3D e "informar quais os fabricantes dos componentes, para que o sistema busque medidas oficiais"; "veja os erros do sistema a fundo e corrija".
+- **Planta × quadro × diagrama:** cada folha (PDF) e cada desenho (DWG/DXF) é classificado; diagrama e quadro de cargas ficam fora do 3D, dos ambientes e da contagem de símbolos (`classificarPrancha`). Achado "Folhas do projeto" diz o que aconteceu com cada uma.
+- **Leitura dos projetos reais da revisão de 29/10:**
+  - A lista de materiais da NSA passou de 76 para 177 itens.
+  - O quadro de cargas em colunas (AltoQi) passou de 0 para os circuitos todos, com Ib, In, Ic, FCT, FCA e queda de tensão (`leitoresTabelaProjeto.js`).
+  - A xref repetida da DF Star é contada uma vez (câmeras: 510 → 176), com o achado "Símbolos repetidos no mesmo ponto".
+  - Alimentadores não viram disjuntor de circuito.
+  - PDFs pesados são lidos em 1 a 21 s.
+  - Alturas, disciplina e biblioteca de símbolos da H&M vêm do DWG.
+- **Conferência pelas normas, como achados para o usuário:**
+  - NBR 5410 no quadro de cargas lido (`utils/conferenciaNBR5410.js`):
+    - Ib ≤ In ≤ Iz, com Iz = Ic × FCT × FCA;
+    - seção mínima;
+    - queda de 4 % no circuito terminal e de 5 %/7 % no total;
+    - DR em área molhada ou externa;
+    - status do software do projetista.
+  - Os limites são os mesmos da skill de elétrica (`skills/_comum/eletrico/tabelas.js`). Nos 96 circuitos da NSA, conferidos à mão, sai só o DR a confirmar do "Circuito Externo".
+  - NBR 17240 e NBR 14565 pelas posições do DWG/DXF, na compatibilização (`compatibilidadeEspacial.js`):
+    - alturas do acionador (0,90–1,35 m) e do avisador (2,20–3,50 m);
+    - projeto sem acionador ou sem avisador;
+    - detectores abaixo do mínimo pela área (81/36 m²);
+    - acionador a mais de 30 m em linha reta;
+    - ponto de rede a mais de 90 m do rack.
+- **Erros corrigidos a fundo:**
+  - backspace (0x08) dentro de regex no lugar de `\b` em `classificadorMaterial.js`: cabo PP/solar ficava sem categoria;
+  - o mesmo erro em `pdfVetorial.js`;
+  - os dois bugs também existem na produção 2.4.0.
+- **Quadros (skill `quadros`):**
+  - Fabricante padrão e por tipo, ou por dispositivo, em texto livre com sugestões.
+  - Catálogo embutido com **800 componentes** com medidas oficiais (`skills/quadros/dados/catalogo-componentes.json`):
+    - fabricantes: WEG, Siemens, Schneider, ABB, Phoenix Contact, Rittal, Hellermann, Finder e Mean Well;
+    - cada registro com link e página do documento do fabricante, validado pelo domínio oficial (`dominioDoFabricante`); os da Steck vinham de lojas e ficaram de fora.
+  - O banco (tela "Componentes de quadro") sobrepõe o catálogo embutido.
+  - A busca da medida pela IA grava "a conferir", e só o admin aprova.
+  - O arranjo agrupa as fileiras pela altura.
+  - CPU, switch e relé de interface atendem ao que o cálculo pediu (E/S, portas, bobina 24 V).
+  - Modelo 3D do quadro no visualizador (`skills/_comum/cad/visualizador3d/quadro.js`).
+
 ---
 
 ## 3. Skills e ferramentas do Claude (servidor MCP `hm-orcamentos`)
@@ -420,7 +459,7 @@ As skills ficam em `skills/<disciplina>/` no repositório e são ligadas em `%US
 | `telefonia-interfonia` (pasta `telefonia`) | **Pronta (25/10/2026)** — ramais com reserva, central analógica e placas (16/48/112/192), PABX IP/híbrido (licenças, gateways FXS/FXO), prumada CI por pavimento e CCI por ramal, blocos IDC-110 (DG e caixas de andar), switch PoE quando IP (≤ 90 m), nobreak por autonomia, DPS de linha e aterramento; memorial, planilha, relatório ramal a ramal e checklist (20 itens), orçamento (`tel_*`). Planta automática. Teste 53/53 | Práticas Telebrás, NBR 14565, NBR 14306, NBR 5410/5419-4 [CONFERIR vigências] |
 | `antena-coletiva` (pasta `antena`) | **Pronta (25/10/2026)** — nível por tomada (link budget) na pior e na melhor frequência, derivador por pavimento (8–24 dB), ganho do headend e amplificador de linha, C/N, satélite com multiswitch (cascata/estrela) a 950–2150 MHz, RG-6/RG-11, DPS coaxial e aterramento do mastro; memorial, planilha de níveis, relatório de medição (nível/MER/BER) e checklist (16 itens), orçamento (`antena_*`). Planta automática. Teste 44/44 | IEC/EN 60728, NBR 15601/15604, NBR 14565, NBR 5419 [CONFERIR faixas e norma ABNT] |
 | `pressurizacao-escadas-nbr14880` (pasta `pressurizacao`) | **Pronta (27/10/2026, v2)** — áreas de escape (Tabela A2, série com antecâmara, elevadores, janelas N = 1,6), QFT a 50 Pa, QAT com as PCF abertas da Tabela B1 a 1 m/s, QTS × 1,4/1,5, alívio QD = QTS − QFT(60 Pa) e área do damper, força de abertura, duto/grelhas/tomada de ar, pressão estática estimada (Altshul-Tsal), motor, circuitos pela elétrica e partida pela industrial, gerador/ventilador reserva pelas regras do CBMDF; **automação** (pontos de E/S, PID de ΔP no inversor ou damper, pressostatos com reversão, modos manual/automático/teste, integração com a central NBR 17240, parada só no painel); memorial, planilha, laudo de comissionamento e checklist (31 itens), orçamento (`pres_*`, modos instalação / automação / inspeção), kits `KIT-PRES-01/02` (migração 2.0-12). Teste 52/52 calibrado no Anexo F da NT 13 | NBR 14880:2014 (não lida — [CONFERIR]), CBMDF NT 10/2015 item 4.3.1.10, CBMGO NT 13/2025 (= IT 13 CBPMESP); força 133 N e partida 60 s [CONFERIR]; automação calibrada no serviço H&M de 2026 (painéis de pressurização de hospital) |
-| `quadros-nbr61439` (pasta `quadros`) | **Pronta (29/10/2026)** — projeto de fabricação de quadros a partir do unifilar: correntes por fase e geral, coordenação Icu × Icc/filiação/seletividade (aviso), DR (5.1.3.2.2), DPS (6.3.5.2.4 d; classe I com SPDA), partidas pelo motor da industrial, automação (E/S com reserva, módulos, fonte 24 Vcc, relés, bornes, NBR IEC 60204-1/NR-12), arranjo em fileiras com módulos DIN, reserva (Tabela 59), canaletas ≤ 50 %, invólucro pela série comercial, barramentos (DIN 43671 × k2, curto adiabático, esforço IEC 60865-1 estimado), N/PE (Tabela 58), térmica IEC TR 60890 com ventilação, IP/IK e forma, 13 verificações de projeto e ensaios de rotina da NBR IEC 61439; memorial, BOM com preço (Excel), **desenho DXF (vista frontal + layout interno, carimbo H&M)**, checklist de fabricação/ensaios, relatório de ensaios, orçamento (`qd_*`, modos fabricação / inspeção); importa o quadro de cargas da `eletrica`/`eletrica-industrial` (`scripts/importar.js`); **fabricantes por tipo com medidas oficiais do catálogo** (menor modelo que atende; sem registro → típica + `componentes_sem_medida` para buscar o datasheet) e **modelo 3D do quadro (HTML)** com porta, camadas e dados de cada dispositivo. Teste 118/118 | NBR 5410 (itens conferidos no texto), NBR 5419-4:2026, NBR IEC 61439-1/-2, IEC TR 60890, DIN 43671 e IEC 60865-1 não lidas — [CONFERIR]; dimensões, perdas e consumos típicos de catálogo [CONFERIR] |
+| `quadros-nbr61439` (pasta `quadros`) | **Pronta (29/10/2026)** — projeto de fabricação de quadros a partir do unifilar: correntes por fase e geral, coordenação Icu × Icc/filiação/seletividade (aviso), DR (5.1.3.2.2), DPS (6.3.5.2.4 d; classe I com SPDA), partidas pelo motor da industrial, automação (E/S com reserva, módulos, fonte 24 Vcc, relés, bornes, NBR IEC 60204-1/NR-12), arranjo em fileiras com módulos DIN, reserva (Tabela 59), canaletas ≤ 50 %, invólucro pela série comercial, barramentos (DIN 43671 × k2, curto adiabático, esforço IEC 60865-1 estimado), N/PE (Tabela 58), térmica IEC TR 60890 com ventilação, IP/IK e forma, 13 verificações de projeto e ensaios de rotina da NBR IEC 61439; memorial, BOM com preço (Excel), **desenho DXF (vista frontal + layout interno, carimbo H&M)**, checklist de fabricação/ensaios, relatório de ensaios, orçamento (`qd_*`, modos fabricação / inspeção); importa o quadro de cargas da `eletrica`/`eletrica-industrial` (`scripts/importar.js`); **fabricantes por tipo com medidas oficiais do catálogo** (menor modelo que atende; sem registro → típica + `componentes_sem_medida` para buscar o datasheet) e **modelo 3D do quadro (HTML)** com porta, camadas e dados de cada dispositivo; catálogo embutido com 800 componentes de 9 fabricantes (31/10/2026). Teste 127/127 | NBR 5410 (itens conferidos no texto), NBR 5419-4:2026, NBR IEC 61439-1/-2, IEC TR 60890, DIN 43671 e IEC 60865-1 não lidas — [CONFERIR]; dimensões, perdas e consumos típicos de catálogo [CONFERIR] |
 
 Todas as skills usam a base comum `skills/_comum` (documentos Word/Excel no padrão H&M, checklist/não conformidades/parecer, formulário, CLI `node skills/_comum/cli.js <disciplina> calcular|documentos|orcamento|modelo`). `npm test` na pasta `skills` roda os testes de todas as 18 skills e os 13 casos da base de CAD. "Projeto de instalações" está coberto pela elétrica predial; hidráulica/outras instalações ainda não têm skill.
 
@@ -466,3 +505,19 @@ Uso de cada skill: `skills/<disciplina>/SKILL.md`. Formulário da obra (JSON): `
 - [ ] Trazer o material do Teams e da pasta Elétrica Predial (seção 4).
 - [ ] O uso por ambiente (`pontosPorAmbiente.js`) é aproximado: mostrar sempre com aviso, como já é feito hoje.
 - [x] ~~Novos fornecedores de cotação exigem um parser novo~~ — desde a v1.7.0 o leitor universal + OCR + IA lê qualquer layout (ver seção 2, v1.7.0).
+- [ ] Análise de projeto (revisão de 29–31/10/2026):
+  - Tela para escolher o quadro entre os `candidatos` da ponte.
+  - Leitura do quadro do `ap616_tomadas.pdf`.
+  - Blocos E-COND da DF Star sem identificação.
+  - Layer D2_NE sem disciplina.
+  - No galpão, os blocos FNT, T3 e T2 não são identificados pelo CAD (o FNT daria o número de condutores).
+- [ ] Catálogo de quadros: lacunas sem documento oficial acessível:
+  - Steck (o site não publica as fichas);
+  - Schneider iC60H (15 kA), curva D, DPS classe I, DDR, multimedidor, M221/M241, XB5/XPS;
+  - WEG relé de segurança, CFW11, SSW05;
+  - Siemens 5SD7, 5SM3, G120C;
+  - bornes Weidmüller/Conexel;
+  - Cemar, Taunus, Delta, Altus, Eaton, Legrand;
+  - seccionadora e base NH.
+  - Esses itens saem em "sem medida oficial" e podem ser buscados pela IA, com aprovação do admin.
+- [ ] Busca de medida pela IA aberta a todos os usuários (só o admin aprova): restringir, se o usuário quiser.
