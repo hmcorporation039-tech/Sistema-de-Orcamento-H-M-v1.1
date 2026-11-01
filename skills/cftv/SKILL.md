@@ -5,13 +5,14 @@ description: Projeto (estudo de cobertura DORI, gravação, PoE e materiais), la
 
 # CFTV (IEC 62676-4 / LGPD) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 21 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
+Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 29 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
 
 | Documento | Tipo | Formato |
 |---|---|---|
 | Memorial do sistema de CFTV | `memorial` | Word |
 | Planilha de câmeras e materiais | `planilha` | Excel |
 | Laudo de vistoria do CFTV | `laudo` | Word |
+| Caderno de fabricação e montagem do rack do CFTV (NVR, switches PoE, patch panel, nobreak, PDU; materiais do rack aos parafusos e plaqueta H&M) | `caderno` | PDF |
 
 ## Também no sistema (aba Análise de Projeto)
 

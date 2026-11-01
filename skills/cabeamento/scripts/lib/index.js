@@ -6,6 +6,7 @@ const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
 const { fmtNum } = require('../../../_comum/docx-base');
 const { calcular } = require('./calculo');
+const { gerarCaderno } = require('./caderno');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
 const MODELO = require('../../exemplos/modelo-vazio.json');
@@ -92,6 +93,8 @@ const DOCUMENTOS = [
       metodologia: ['Inspeção visual de racks, encaminhamentos e tomadas.', 'Conferência dos relatórios de certificação (certificador de campo) por canal/enlace permanente.', 'Verificação de identificação e documentação (ISO/IEC 14763-1).'],
       medicoes: [{ titulo: '6.1 Certificação dos canais', colunas: ['Ponto', 'Comprimento (m)', 'Teste', 'Resultado'], proporcoes: [1.5, 1, 1.2, 0.8], linhas: res.certificacao.map(m => [m.ponto, m.comprimento_m ?? '', m.resultado_teste ?? '', m.resultado]), nota: 'Reprovado ou cabo horizontal acima de 90 m = NC.' }],
     }, { checklist: res.checklist, ncs: res.ncs, parecer: res.parecer, baseDir: res.baseDir, pastaFotos: res.pastaFotos })) },
+  // PDF: um rack por distribuidor de piso, um capítulo de desenhos/materiais por rack
+  { tipo: 'caderno', rotulo: 'Caderno de fabricação e montagem do rack', formato: 'PDF', nome: 'Caderno_Fabricacao_Rack', gerar: (res) => gerarCaderno(res) },
 ];
 
 function montarOrcamento(res, modo) {
@@ -141,6 +144,8 @@ const FORMULARIO = [
       { caminho: 'sistema.folga_por_ponto_m', rotulo: 'Folga de cabo por ponto (m)', tipo: 'numero' },
       { caminho: 'sistema.reserva_rack_pct', rotulo: 'Reserva no rack (%)', tipo: 'numero' },
       { caminho: 'sistema.pe_direito_m', rotulo: 'Altura entre pavimentos (m)', tipo: 'numero' },
+      { caminho: 'sistema.tensao_pdu_v', rotulo: 'Tensão da PDU do rack (V)', tipo: 'numero' },
+      { caminho: 'sistema.distancia_tgb_m', rotulo: 'Distância do rack ao TGB/BEP (m)', tipo: 'numero' },
     ] },
   ] },
   { titulo: '3. Pavimentos', aberta: true, itens: [
@@ -158,7 +163,7 @@ const FORMULARIO = [
   F.secaoFotos(8),
 ];
 
-module.exports = criarDisciplina({
+const base = criarDisciplina({
   chave: 'cabeamento',
   nome: 'Cabeamento estruturado (NBR 14565)',
   modelo: MODELO,
@@ -174,3 +179,14 @@ module.exports = criarDisciplina({
   ],
   montarOrcamento,
 });
+
+// O molde só gera Word/Excel: o caderno de fabricação sai em PDF (mesmo padrão
+// do FORA_DO_OFFICE da skill de quadros)
+const gerarDocumentoBase = base.gerarDocumento;
+base.gerarDocumento = async (res, tipo) => {
+  if (tipo !== 'caderno') return gerarDocumentoBase(res, tipo);
+  const d = DOCUMENTOS.find(x => x.tipo === tipo);
+  return { buffer: await d.gerar(res), nomeArquivo: D.nomeArquivo(res.dados, d.nome, 'pdf', true), mime: 'application/pdf' };
+};
+
+module.exports = base;
