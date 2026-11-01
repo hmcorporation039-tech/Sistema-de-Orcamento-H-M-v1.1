@@ -1,0 +1,17 @@
+{
+  "observacao": "Exemplo (dados fictícios). Potência e altura dos postes: da legenda/quadro de cargas do projeto ou do catálogo da luminária. quadro: { \"id\": \"QUADRO-1\" } (id do pontos.json) ou { \"nome\": \"QD-EXT\", \"x\": 0, \"y\": 0 }.",
+  "quadro": { "nome": "QD-EXT", "x": 0, "y": 0 },
+  "tensao_v": 220,
+  "ligacao": "FN",
+  "fator_potencia": 0.95,
+  "queda_max_pct": 4,
+  "corrente_max_circuito_a": 12.8,
+  "por_ambiente": true,
+  "caixa_a_cada_m": 30,
+  "profundidade_vala_m": 0.7,
+  "tipos": [
+    { "rotulo": "Poste de iluminação", "ambiente": "ESTACIONAMENTO", "potencia_w": 150, "altura_m": 6 },
+    { "rotulo": "Poste de iluminação", "potencia_w": 400, "altura_m": 8 },
+    { "rotulo": "Poste duplo para quadra", "potencia_w": 800, "altura_m": 10 }
+  ]
+}

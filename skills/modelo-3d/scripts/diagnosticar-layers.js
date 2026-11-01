@@ -5,16 +5,18 @@
 // "tudo vira parede" quando não há layer de parede reconhecível).
 //
 // Uso (pasta skills):
-//   node modelo-3d/scripts/diagnosticar-layers.js <arquitetura.dwg|.dxf> [--saida mapa-layers.json]
+//   node modelo-3d/scripts/diagnosticar-layers.js <arquitetura.dwg|.dxf> [--planta N] [--saida mapa-layers.json]
 // --saida grava o mapa de layers proposto, para o engenheiro conferir e corrigir.
+// Folha com várias plantas: lista as plantas (com os ambientes de cada uma) e
+// --planta N diagnostica só a escolhida (a mesma opção do gerar-3d.js).
 // Só lê o desenho: não muda nada no gerador nem no arquivo.
 const fs = require('fs');
 const path = require('path');
 const { textoDxfDoArquivo } = require('../../_comum/cad/dwg');
 const { lerArquitetura } = require('../../_comum/cad/arquitetura');
-const { classeDaLayer } = require('../../_comum/cad/modelo3d');
+const { classeDaLayer, haLayerDeParede, simboloRedondo, recortarArquitetura } = require('../../_comum/cad/modelo3d');
+const { centroide } = require('../../_comum/cad/arquitetura');
 
-const RE_JANELA = /JANEL|ESQUAD|CAIXILH|VIDRO|WINDOW/i;
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 const num = (v, c = 1) => v.toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
 
@@ -23,42 +25,61 @@ function candidatoAPilar(r, classe) {
   if (!r.fechada || r.tipo !== 'poli' || !['pilar', 'parede', 'media'].includes(classe)) return null;
   const xs = r.pts.map(p => p[0]), ys = r.pts.map(p => p[1]);
   const [L, W] = [Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)].sort((a, b) => b - a);
+  if (classe !== 'pilar' && L <= 1.5 && simboloRedondo(r.pts)) return 'simbolo';
   if (!(L <= 1.5 && W >= 0.1 && L * W >= 0.02)) return null;
   return classe === 'pilar' || (L <= 0.8 && L / W <= 2.5) ? 'pilar' : 'trecho';
 }
 
 async function main() {
   const args = process.argv.slice(2);
-  const arquivo = args.find(a => !a.startsWith('--'));
+  const arquivo = args.find((a, i) => !a.startsWith('--') && !['--planta', '--saida'].includes(args[i - 1]));
   const iSaida = args.indexOf('--saida');
   if (!arquivo) {
-    console.error('Uso: node modelo-3d/scripts/diagnosticar-layers.js <arquitetura.dwg|.dxf> [--saida mapa-layers.json]');
+    console.error('Uso: node modelo-3d/scripts/diagnosticar-layers.js <arquitetura.dwg|.dxf> [--planta N] [--saida mapa-layers.json]');
     process.exit(2);
   }
   const { texto, origem } = await textoDxfDoArquivo(fs.readFileSync(arquivo), path.basename(arquivo));
-  const arq = lerArquitetura(texto);
+  let arq = lerArquitetura(texto);
+  const plantas = arq.regioesPlanta || [];
+  if (plantas.length > 1) {
+    console.log(`A folha tem ${plantas.length} plantas (o 3D deve usar UMA: --planta N):`);
+    plantas.forEach((c, i) => {
+      const nomes = arq.ambientes.filter(a => { const [x, y] = centroide(a.poligono); return x >= c[0] && x <= c[2] && y >= c[1] && y <= c[3]; }).map(a => a.nome).filter(n => !/^Ambiente d+$/.test(n));
+      console.log(`  ${i + 1}: ${num(c[2] - c[0], 0)} × ${num(c[3] - c[1], 0)} m em x ${num(c[0], 0)}…${num(c[2], 0)}, y ${num(c[1], 0)}…${num(c[3], 0)} — ${[...new Set(nomes)].slice(0, 8).join(', ') || 'sem ambientes com nome'}`);
+    });
+    console.log('');
+  }
+  const iPlanta = args.indexOf('--planta');
+  if (iPlanta >= 0) {
+    const c = plantas[Number(args[iPlanta + 1]) - 1];
+    if (!c) throw new Error(`--planta ${args[iPlanta + 1]}: a folha tem ${plantas.length} plantas.`);
+    arq = recortarArquitetura(arq, c);
+    console.log(`Só a planta ${args[iPlanta + 1]}.`);
+  }
   const refs = arq.referencia.filter(r => r.pts.length >= 2);
   const layers = [...new Set(refs.map(r => r.layer))];
-  const haParede = layers.some(l => /PAREDE|ALVEN|WALL|DRYWALL|DIVIS|ESTRUT|PILAR|COLUN|PERIM|FECHAMENTO/i.test(l || '') && !RE_JANELA.test(l || ''));
+  const haParede = haLayerDeParede(layers);
 
   const porLayer = new Map();
   for (const r of refs) {
     const l = r.layer || '0';
-    if (!porLayer.has(l)) porLayer.set(l, { layer: l, classe: classeDaLayer(l, haParede), entidades: 0, fechadas: 0, pilares: 0, comprimento_m: 0 });
+    if (!porLayer.has(l)) porLayer.set(l, { layer: l, classe: classeDaLayer(l, haParede), entidades: 0, fechadas: 0, pilares: 0, simbolos: 0, comprimento_m: 0 });
     const s = porLayer.get(l);
     s.entidades++;
     if (r.fechada) s.fechadas++;
     for (let i = 1; i < r.pts.length; i++) s.comprimento_m += dist(r.pts[i - 1], r.pts[i]);
-    if (candidatoAPilar(r, s.classe) === 'pilar') s.pilares++;
+    const cand = candidatoAPilar(r, s.classe);
+    if (cand === 'pilar') s.pilares++;
+    else if (cand === 'simbolo') s.simbolos++;
   }
   const linhas = [...porLayer.values()].sort((a, b) => (b.classe ? 1 : 0) - (a.classe ? 1 : 0) || b.comprimento_m - a.comprimento_m);
 
   console.log(`${origem.toUpperCase()} lido: ${layers.length} layers com geometria, ${arq.ambientes.length} ambientes, ${arq.portas.length} portas (unidade × ${arq.fatorUnidade})`);
   if (arq.classificacao) console.log(`Folha: ${arq.classificacao.resumo || arq.classificacao.tipo}`);
   console.log('');
-  console.log('Classe no 3D  | Pilares | Fechadas | Entidades | Comprimento | Layer');
+  console.log('Classe no 3D  | Pilares | Símb. redondos | Fechadas | Entidades | Comprimento | Layer');
   for (const s of linhas) {
-    console.log(`${(s.classe || '—').padEnd(13)} | ${String(s.pilares).padStart(7)} | ${String(s.fechadas).padStart(8)} | ${String(s.entidades).padStart(9)} | ${(num(s.comprimento_m) + ' m').padStart(11)} | ${s.layer}`);
+    console.log(`${(s.classe || '—').padEnd(13)} | ${String(s.pilares).padStart(7)} | ${String(s.simbolos).padStart(14)} | ${String(s.fechadas).padStart(8)} | ${String(s.entidades).padStart(9)} | ${(num(s.comprimento_m) + ' m').padStart(11)} | ${s.layer}`);
   }
 
   const avisos = [];
@@ -66,6 +87,7 @@ async function main() {
   for (const s of linhas) {
     if (s.classe === 'parede' && s.pilares >= 5) avisos.push(`"${s.layer}" é de parede e tem ${s.pilares} polilinhas fechadas pequenas que viram PILAR: confira se não são símbolos, mobiliário ou shafts.`);
     if (s.classe === 'pilar' && s.pilares === 0) avisos.push(`"${s.layer}" parece de pilar, mas não tem polilinha fechada pequena: os pilares podem estar como linhas soltas ou hachura (não sobem).`);
+    if (s.simbolos) avisos.push(`"${s.layer}" tem ${s.simbolos} símbolos redondos (poste, caixa, tomada de piso…): o gerador NÃO os sobe — se forem pilares redondos de verdade, mapeie a layer como "pilar".`);
     if (s.classe && /MOB|LOU|EQUIP|LAYOUT|SIMB|BLOCO/i.test(s.layer)) avisos.push(`"${s.layer}" sobe como ${s.classe}, mas o nome sugere mobiliário/símbolo.`);
   }
   const totalPilares = linhas.reduce((t, s) => t + s.pilares, 0);

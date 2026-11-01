@@ -6,13 +6,16 @@
 //        [--cliente "…"] [--obra "…"] [--proposta "…"] [--titulo "…"] [--cena cena.json]
 //        [--trechos trechos.json] (infraestrutura: [{ disciplina, tipo: eletrocalha|eletroduto|leito|perfilado|fiacao,
 //                                  layer, segmentos: [[x1, y1, x2, y2], …] }] em metros, no sistema da arquitetura)
+//        [--pontos pontos.json] (pontos reais lidos do desenho: [{ simbolo, x, y, rotulo?, disciplina?, ambiente? }],
+//                                saída de skills/modelo-3d/scripts/extrair-pontos.js; --trechos e --pontos repetem)
+//        [--planta 2 | --regiao x0,y0,x1,y1] (folha com várias plantas: só uma no modelo)
 // A página abre em qualquer navegador sem internet. Dado de cliente real: gravar
 // fora do repositório (pasta do projeto no servidor).
 const fs = require('fs');
 const path = require('path');
 const { textoDxfDoArquivo } = require('./dwg');
 const { lerArquitetura } = require('./arquitetura');
-const { montarCena, PE_DIREITO_PADRAO } = require('./modelo3d');
+const { montarCena, recortarArquitetura, PE_DIREITO_PADRAO } = require('./modelo3d');
 const { pontosDasDisciplinas } = require('./estimativaArquitetura');
 const { gerarHtml } = require('./visualizador3d');
 
@@ -23,7 +26,7 @@ function argumentos(lista) {
     if (a.startsWith('--')) {
       const k = a.slice(2);
       const v = lista[i + 1] && !lista[i + 1].startsWith('--') ? lista[++i] : true;
-      op[k] = k === 'dados' ? [...(op.dados || []), v] : v;
+      op[k] = ['dados', 'trechos', 'pontos'].includes(k) ? [...(op[k] || []), v] : v;
     } else op._.push(a);
   }
   return op;
@@ -38,7 +41,12 @@ async function main() {
   }
   const t0 = Date.now();
   const { texto, origem } = await textoDxfDoArquivo(fs.readFileSync(arquivo), path.basename(arquivo));
-  const arquitetura = lerArquitetura(texto);
+  let arquitetura = lerArquitetura(texto);
+  const plantas = arquitetura.regioesPlanta || [];
+  const caixaPlanta = op.regiao ? String(op.regiao).split(',').map(Number) : op.planta ? plantas[Number(op.planta) - 1] : null;
+  if ((op.regiao || op.planta) && !(caixaPlanta && caixaPlanta.length === 4 && caixaPlanta.every(Number.isFinite))) throw new Error(`--planta/--regiao inválida (a folha tem ${plantas.length} plantas: rode o diagnóstico para ver a lista).`);
+  if (caixaPlanta) arquitetura = recortarArquitetura(arquitetura, caixaPlanta);
+  else if (plantas.length > 1) console.log(`! A folha tem ${plantas.length} plantas e o modelo junta todas: escolha uma com --planta N (lista no diagnóstico de layers).`);
   const peDireito = op['pe-direito'] ? Number(String(op['pe-direito']).replace(',', '.')) : PE_DIREITO_PADRAO;
   const disciplinas = typeof op.disciplina === 'string' ? op.disciplina.split(',').map(s => s.trim()).filter(Boolean) : [];
   const dadosPorDisciplina = {};
@@ -47,10 +55,12 @@ async function main() {
     dadosPorDisciplina[disc] = JSON.parse(fs.readFileSync(arq, 'utf8'));
   }
   const pts = disciplinas.length ? pontosDasDisciplinas(arquitetura, disciplinas, { dadosPorDisciplina, peDireito }) : { dispositivos: [], avisos: [] };
-  const trechos = typeof op.trechos === 'string' ? JSON.parse(fs.readFileSync(op.trechos, 'utf8')) : [];
+  const lerLista = (lista) => (lista || []).flatMap(a => JSON.parse(fs.readFileSync(a, 'utf8')));
+  const trechos = lerLista(op.trechos);
+  const pontos = lerLista(op.pontos);
   const nomeArq = path.basename(arquivo).replace(/\.(dwg|dxf)$/i, '');
   const cena = montarCena(arquitetura, {
-    peDireito, dispositivos: pts.dispositivos, avisos: pts.avisos, trechos,
+    peDireito, dispositivos: [...pts.dispositivos, ...pontos], avisos: pts.avisos, trechos,
     titulo: op.titulo || `Modelo 3D — ${nomeArq}`, cliente: op.cliente, obra: op.obra, proposta: op.proposta,
   });
   const html = gerarHtml(cena);
