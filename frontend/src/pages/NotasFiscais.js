@@ -439,7 +439,13 @@ function ModalNota({ abrir, onFechar, onSalvo, acoes }) {
           aliquota_iss: nn.aliquota_iss != null ? String(nn.aliquota_iss).replace('.', ',') : (padrao?.aliquota_iss != null && !n ? String(padrao.aliquota_iss).replace('.', ',') : ''),
           iss_retido: !!nn.iss_retido,
           ...Object.fromEntries(RETENCOES.map(([c]) => [c, Number(nn[c] || 0)])),
-          aliq_pis: '0,00', aliq_cofins: '0,00', aliq_inss: '0,00', aliq_ir: '0,00', aliq_csll: '0,00',
+          // Notas novas: pré-calcula PIS 0,65% e COFINS 3% (Simples Nacional).
+          ...(!n ? {
+            valor_pis: calcR(Number(nn.valor_servicos || 0), 0.65),
+            valor_cofins: calcR(Number(nn.valor_servicos || 0), 3),
+          } : {}),
+          aliq_pis: !n ? '0,65' : '0,00', aliq_cofins: !n ? '3,00' : '0,00',
+          aliq_inss: '0,00', aliq_ir: '0,00', aliq_csll: '0,00',
           observacoes: nn.observacoes || '',
         };
         setF(novoF);
@@ -633,7 +639,7 @@ function ModalNota({ abrir, onFechar, onSalvo, acoes }) {
               </label>
             </Campo>
           </div>
-          <details open={RETENCOES.some(([c]) => Number(f[c]) > 0)}>
+          <details open={RETENCOES.some(([c]) => Number(f[c]) > 0) || Number(String(f.aliq_pis || '').replace(',', '.')) > 0}>
             <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--texto-2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <span>▼ Retenções federais (órgão público, hospitais e grandes empresas)</span>
               {editavel && (
@@ -650,20 +656,18 @@ function ModalNota({ abrir, onFechar, onSalvo, acoes }) {
                 ['valor_inss','INSS','aliq_inss'],['valor_ir','IR','aliq_ir'],['valor_csll','CSLL','aliq_csll'],
               ].map(([c, r, ak]) => (
                 <Campo key={c} label={r}>
-                  {editavel && (
-                    <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 5 }}>
-                      <input value={f[ak] ?? ''} onChange={(e) => {
-                        const aliq = e.target.value;
-                        setF({ ...f, [ak]: aliq, [c]: calcR(f.valor_servicos, aliq) });
-                      }} inputMode="decimal" placeholder="0,00" style={{ width: 50, fontSize: 12, textAlign: 'right' }} />
-                      <span style={{ fontSize: 11, color: 'var(--texto-3)' }}>%</span>
-                    </div>
-                  )}
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 5 }}>
+                    <input value={f[ak] ?? ''} onChange={(e) => {
+                      const aliq = e.target.value;
+                      setF({ ...f, [ak]: aliq, [c]: calcR(f.valor_servicos, aliq) });
+                    }} inputMode="decimal" placeholder="0,00" style={{ width: 50, fontSize: 12, textAlign: 'right' }} />
+                    <span style={{ fontSize: 11, color: 'var(--texto-3)' }}>%</span>
+                  </div>
                   <CampoMoeda value={f[c]} onChange={(v) => setF({ ...f, [c]: v })} />
                 </Campo>
               ))}
               <Campo label="Outras">
-                {editavel && <div style={{ height: 29 }} />}
+                <div style={{ height: 29 }} />
                 <CampoMoeda value={f.outras_retencoes} onChange={(v) => setF({ ...f, outras_retencoes: v })} />
               </Campo>
             </div>
