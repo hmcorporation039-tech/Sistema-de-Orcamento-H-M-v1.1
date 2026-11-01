@@ -41,7 +41,8 @@ const AREA_DESENHO = {
   retrato: [210 - 2 * MARGEM.lado, 297 - MARGEM.topo - MARGEM.base - 16],
   paisagem: [297 - 2 * MARGEM.lado, 210 - MARGEM.topo - MARGEM.base - 16],
 };
-const ESCALAS = [1, 2, 2.5, 5, 10, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200];
+// escalas normalizadas (NBR 8196) + 1:15 e 1:25, usuais nos desenhos de quadro
+const ESCALAS = [1, 2, 5, 10, 15, 20, 25, 50, 75, 100, 200];
 
 function imagemDataUri(nome) {
   try {
@@ -53,23 +54,41 @@ function imagemDataUri(nome) {
 let imagens = null;
 const img = () => (imagens ||= { banner: imagemDataUri('cabecalho.png'), logo: imagemDataUri('logo-pequeno.png') });
 
-// altura aproximada (mm) que as notas ocupam abaixo do desenho
+// altura aproximada (mm) das notas (7,4 pt: ≈ 1,55 mm por caractere, 4,1 mm por linha) e da
+// legenda compacta (2 colunas quando há largura) numa coluna de largura larguraMm
 function alturaNotas(notas = [], larguraMm = 190) {
-  const porLinha = Math.max(40, Math.floor(larguraMm / 1.55));
-  return (notas || []).reduce((s, t) => s + Math.ceil(String(t).length / porLinha) * 3.6, 0) + (notas && notas.length ? 4 : 0);
+  const porLinha = Math.max(20, Math.floor(larguraMm / 1.55));
+  return (notas || []).reduce((s, t) => s + Math.ceil(String(t).length / porLinha) * 4.1, 0) + (notas && notas.length ? 4 : 0);
+}
+function alturaLegenda(n = 0, larguraMm = 190) {
+  if (!n) return 0;
+  return Math.ceil(n / (larguraMm >= 150 ? 2 : 1)) * 3.9 + 4;
+}
+const LADO_MM = 62; // coluna de notas/legenda ao lado do desenho (desenho estreito em página larga)
+
+// Arranjos possíveis da página do desenho: notas embaixo ou ao lado, retrato ou paisagem
+function arranjos(notas, legenda, orientacao) {
+  const out = [];
+  for (const o of (orientacao ? [orientacao] : ['retrato', 'paisagem'])) {
+    const [w, h0] = AREA_DESENHO[o];
+    out.push({ orientacao: o, lado: false, w, h: h0 - alturaNotas(notas, w) - alturaLegenda(legenda, w) });
+    if ((notas.length || legenda) && alturaNotas(notas, LADO_MM) + alturaLegenda(legenda, LADO_MM) <= h0) out.push({ orientacao: o, lado: true, w: w - LADO_MM - 4, h: h0 });
+  }
+  return out;
 }
 
-// Escala normalizada que faz o desenho (L × A em mm do mundo) caber na página;
-// devolve a orientação que dá a MAIOR escala (empate → retrato)
-function escolherEscala(L, A, { notas = [], legendaLinhas = 0, orientacao = null, preferida = null } = {}) {
-  const opcoes = (orientacao ? [orientacao] : ['retrato', 'paisagem']).map(o => {
-    const [w, h0] = AREA_DESENHO[o];
-    const h = h0 - alturaNotas(notas, w) - legendaLinhas * 4;
-    const cabe = (n) => L / n <= w + 1e-6 && A / n <= h + 1e-6;
-    const esc = preferida && cabe(preferida) ? preferida : (ESCALAS.find(cabe) || Math.max(L / w, A / Math.max(20, h)));
-    return { orientacao: o, esc, w, h };
-  });
-  opcoes.sort((a, b) => a.esc - b.esc);
+// Escala normalizada que faz o desenho (L × A em mm do mundo) caber na página. A escala
+// preferida (a que a skill usou para os textos) vale se couber em algum arranjo; senão fica a
+// MAIOR escala possível (empate: notas embaixo, retrato).
+function escolherEscala(L, A, { notas = [], legenda = 0, legendaLinhas = 0, orientacao = null, preferida = null } = {}) {
+  const arr = arranjos(notas || [], legenda || legendaLinhas || 0, orientacao);
+  const cabe = (a, n) => L / n <= a.w + 1e-6 && A / n <= a.h + 1e-6;
+  if (preferida) {
+    const a = arr.find(x => cabe(x, preferida));
+    if (a) return { ...a, esc: preferida };
+  }
+  const opcoes = arr.map(a => ({ ...a, esc: ESCALAS.find(n => cabe(a, n)) || Math.max(L / a.w, A / Math.max(20, a.h)) }));
+  opcoes.sort((a, b) => a.esc - b.esc || (a.lado - b.lado) || (a.orientacao === 'retrato' ? -1 : 1));
   return opcoes[0];
 }
 
@@ -110,7 +129,9 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 8.6pt; color: #1515
 .paisagem { page: paisagem; }
 h1 { font-size: 20pt; margin: 0 0 4mm; letter-spacing: .3px; }
 h2 { font-size: 12.5pt; margin: 0 0 3mm; padding-bottom: 1.2mm; border-bottom: 0.6mm solid #b8902a; color: #111; }
-h3 { font-size: 10pt; margin: 4mm 0 2mm; color: #4a3b10; }
+h3 { font-size: 10pt; margin: 4mm 0 2mm; color: #4a3b10; break-after: avoid; }
+h2 { break-after: avoid; }
+.segue { margin-top: 8mm; }
 p { margin: 0 0 2mm; }
 table { width: 100%; border-collapse: collapse; margin: 0 0 3mm; font-size: 7.4pt; }
 thead { display: table-header-group; }
@@ -133,6 +154,12 @@ table.kv th { width: 34%; background: #f4f1e8; color: #222; font-weight: bold; }
 .dz-area svg { display: block; }
 ol.notas { margin: 2mm 0 0; padding-left: 5mm; font-size: 7.4pt; color: #222; }
 ol.notas li { margin-bottom: 0.6mm; }
+.dz-lado { display: flex; gap: 4mm; align-items: flex-start; }
+.dz-lado .dz-area { flex: 1; }
+.dz-col { width: ${LADO_MM}mm; flex: none; }
+.legenda { font-size: 7pt; margin: 2mm 0 0; line-height: 1.3; }
+.legenda.duas { columns: 2; column-gap: 6mm; }
+.legenda div { break-inside: avoid; margin-bottom: 0.5mm; }
 ul.marcadores { margin: 0 0 3mm; padding-left: 5mm; }
 ul.marcadores li { margin-bottom: 0.8mm; }
 .pl-grade { display: flex; flex-wrap: wrap; gap: 5mm 6mm; align-items: flex-start; margin-bottom: 3mm; }
@@ -173,22 +200,18 @@ function secaoDesenho(d, n) {
   const m = String(d.svg || '').match(/viewBox="\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([-\d.]+)[\s,]+([-\d.]+)\s*"/);
   const L = m ? Number(m[1]) : 100, A = m ? Number(m[2]) : 100;
   const pedida = d.escala ? Number(String(d.escala).split(':')[1]) : null;
-  let esc, orientacao;
-  if (d.semEscala) {
-    // diagrama sem escala: cabe na área da orientação mais favorável
-    const ops = ['retrato', 'paisagem'].map(o => { const [w, h] = AREA_DESENHO[o]; return { o, k: Math.max(L / w, A / (h - alturaNotas(notas, w) - legenda.length * 4)) }; }).sort((a, b) => a.k - b.k);
-    orientacao = d.orientacao || ops[0].o;
-    esc = ops.find(x => x.o === orientacao).k;
-  } else {
-    const r = escolherEscala(L, A, { notas, legendaLinhas: legenda.length, orientacao: d.orientacao || null, preferida: Number.isFinite(pedida) && pedida > 0 ? pedida : null });
-    esc = r.esc; orientacao = r.orientacao;
-  }
-  const { svg } = svgNaEscala(d.svg, esc);
-  return `<section class="pagina ${orientacao === 'paisagem' ? 'paisagem' : ''}">
-  <div class="dz-cab"><h2>${e(n)} ${e(d.titulo)}</h2><span class="esc">${d.semEscala ? 'SEM ESCALA' : `ESCALA ${e(fmtEscala(esc))}`}</span></div>
-  <div class="dz-area">${svg}</div>
-  ${legenda.length ? tabelaHtml({ colunas: ['Tag', 'Descrição'], linhas: legenda, proporcoes: [1, 6] }) : ''}
-  ${notas.length ? `<ol class="notas">${notas.map(t => `<li>${e(t)}</li>`).join('')}</ol>` : ''}
+  // diagrama sem escala: cabe no arranjo mais favorável (fator qualquer)
+  const r = d.semEscala
+    ? arranjos(notas, legenda.length, d.orientacao || null).map(a => ({ ...a, esc: Math.max(L / a.w, A / Math.max(20, a.h)) })).sort((a, b) => a.esc - b.esc)[0]
+    : escolherEscala(L, A, { notas, legenda: legenda.length, orientacao: d.orientacao || null, preferida: Number.isFinite(pedida) && pedida > 0 ? pedida : null });
+  const { svg } = svgNaEscala(d.svg, r.esc);
+  const leg = legenda.length ? `<div class="legenda ${r.lado ? '' : 'duas'}">${legenda.map(([t, x]) => `<div><b>${e(t)}</b> — ${e(x)}</div>`).join('')}</div>` : '';
+  const nts = notas.length ? `<ol class="notas">${notas.map(t => `<li>${e(t)}</li>`).join('')}</ol>` : '';
+  // desenho estreito: notas e legenda numa coluna ao lado (o desenho fica maior)
+  const corpo = r.lado ? `<div class="dz-lado"><div class="dz-area">${svg}</div><div class="dz-col">${leg}${nts}</div></div>` : `<div class="dz-area">${svg}</div>${leg}${nts}`;
+  return `<section class="pagina ${r.orientacao === 'paisagem' ? 'paisagem' : ''}">
+  <div class="dz-cab"><h2>${e(n)} ${e(d.titulo)}</h2><span class="esc">${d.semEscala ? 'SEM ESCALA' : `ESCALA ${e(fmtEscala(r.esc))}`}</span></div>
+  ${corpo}
 </section>`;
 }
 
@@ -240,7 +263,8 @@ function gerarCadernoHtml(caderno) {
   // 5. barramentos
   if ((c.barramentos || []).length) {
     const n = capitulo('Barramentos');
-    corpo.push(`<section class="pagina paisagem"><h2>${e(n)} Barramentos</h2>
+    // segue na mesma página dos componentes (mesma orientação): tabela curta
+    corpo.push(`<section class="paisagem ${(c.componentes || []).length ? 'segue' : 'pagina'}"><h2>${e(n)} Barramentos</h2>
       ${tabelaHtml({ colunas: ['Barra', 'Material', 'Seção', 'Compr. (mm)', 'Qtd.', 'Capacidade (A)', 'Icw (kA)', 'Isoladores / suportes', 'Fixação e conexões'],
         linhas: c.barramentos.map(b => [b.barra, b.material, b.secao, numero(b.comprimento_mm), b.quantidade ?? 1, numero(b.capacidade_A), numero(b.icw_kA, 1), b.isoladores || '—', b.fixacao || '—']),
         proporcoes: [0.8, 1, 0.9, 0.6, 0.4, 0.7, 0.55, 2.2, 2.6] })}
@@ -258,14 +282,16 @@ function gerarCadernoHtml(caderno) {
     </section>`);
   }
   // 7. seções extras
-  for (const s of c.secoes || []) {
+  // seções extras em sequência (a primeira abre página; muda de página quando muda a orientação)
+  (c.secoes || []).forEach((s, i, todas) => {
     const n = capitulo(s.titulo);
-    corpo.push(`<section class="pagina ${s.paisagem ? 'paisagem' : ''}"><h2>${e(n)} ${e(s.titulo)}</h2>
+    const nova = i === 0 || !!s.paisagem !== !!todas[i - 1].paisagem;
+    corpo.push(`<section class="${nova ? 'pagina' : 'segue'} ${s.paisagem ? 'paisagem' : ''}"><h2>${e(n)} ${e(s.titulo)}</h2>
       ${(s.paragrafos || []).map(p => `<p>${e(p)}</p>`).join('')}
       ${s.tabela && (s.tabela.linhas || []).length ? tabelaHtml(s.tabela) : ''}
       ${(s.marcadores || []).length ? `<ul class="marcadores">${s.marcadores.map(t => `<li>${e(t)}</li>`).join('')}</ul>` : ''}
     </section>`);
-  }
+  });
   // 8. verificações
   if ((c.verificacoes || []).length) {
     const n = capitulo('Verificações e ensaios de rotina');

@@ -46,7 +46,14 @@ igual('plaquetas: etiqueta interna (desenhar:false) só na lista', [html.include
 igual('plaqueta 60 × 20 em tamanho real', /width="60mm" height="20mm"/.test(PL.svgPlaqueta(minimo.plaquetas[0])), true);
 const hm = PL.svgPlaquetaHm(minimo.plaqueta_hm);
 igual('plaqueta H&M com logo, nome, modelo e furos de rebite', [/<image href="data:image\/png/.test(hm), hm.includes('H&amp;M Engenharia e Tecnologia'), hm.includes('H&amp;M QD-61439 / QD-01'), (hm.match(/<circle/g) || []).length], [true, true, true, 4]);
-igual('ajuste de texto: cabe na largura', PL.ajustarTexto(['MOTOR LIGADO'], 60, 20).h <= (60 - 4) / (12 * 0.62) + 1e-9, true);
+igual('ajuste de texto: maiúsculas em negrito cabem na largura (0,92 × h por caractere)', PL.ajustarTexto(['EMERGÊNCIA GERAL'], 60, 18).h * 0.92 * 16 <= 60 - 4 + 1e-9, true);
+// desenho estreito e alto com notas longas: notas numa coluna ao lado, o desenho fica maior
+const notasLongas = Array.from({ length: 6 }, (_, i) => `Nota ${i + 1}: ${'texto de nota comprido '.repeat(6)}`);
+const lado = CAD.escolherEscala(500, 2300, { notas: notasLongas });
+igual('escala: desenho estreito com notas longas → notas ao lado, 1:10', [lado.lado, lado.esc], [true, 10]);
+igual('escala: a preferida vale se couber', CAD.escolherEscala(800, 2000, { preferida: 15 }).esc, 15);
+const comLegenda = CAD.gerarCadernoHtml({ ...minimo, desenhos: [{ titulo: 'Bornes', svg: des.svg, legenda: [['X1.1', 'circ. <1>']] }] });
+igual('legenda do desenho compacta e escapada', [comLegenda.includes('<b>X1.1</b> — circ. &lt;1&gt;'), comLegenda.includes('circ. <1>')], [true, false]);
 igual('carimbo: tag, sigla, revisão e folha n/N', ['QD-01', 'CAD-QD', 'R00', 'class="pageNumber"', 'class="totalPages"'].every(t => CAD.carimboRodape(minimo).includes(t)), true);
 
 (async () => {

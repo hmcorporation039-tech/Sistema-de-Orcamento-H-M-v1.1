@@ -56,7 +56,8 @@ function criarPincelSvg({ escala = 10 } = {}) {
     txt(x, y, h, t, { layer = 'QD-TEXTO', alinhar = 'esquerda', rotacao = 0, cor = null, negrito = false } = {}) {
       const s = String(t ?? '');
       if (!s) return;
-      const w = s.length * h * 0.62;
+      // largura aproximada: Arial ≈ 0,8 × altura de maiúscula por caractere (negrito ≈ 0,95)
+      const w = s.length * h * (negrito ? 0.95 : 0.8);
       const dx = alinhar === 'centro' ? w / 2 : alinhar === 'direita' ? w : 0;
       const rad = (rotacao * Math.PI) / 180;
       // caixa aproximada (rotação de 0 ou 90°, as usadas nos desenhos)

@@ -155,13 +155,48 @@ function conferir3d(nome, k, cena) {
   igual(`${nome}: 3D — invólucro, porta e placa com ficha`, [!!cena.involucro.info, !!cena.porta.info, cena.caixas.some(b => b.camada === 'placa' && b.info)], [true, true, true]);
 }
 
+// ── Caderno de fabricação e montagem (PDF) ──
+// Todo componente com tag na lista e num desenho; toda peça de porta com plaqueta; plaqueta H&M
+// com os dados de marcação da NBR IEC 61439-1 (6.1); materiais com as fixações; HTML escapado.
+const CADERNO = require('../scripts/lib/caderno');
+const CADC = require('../../_comum/fabricacao/caderno');
+function conferirCaderno(nome, res) {
+  const cad = CADERNO.montarCaderno(res);
+  const k = res.calc;
+  igual(`${nome}: caderno com todas as seções`, ['normas', 'caracteristicas', 'desenhos', 'componentes', 'barramentos', 'materiais_montagem', 'plaquetas', 'secoes', 'verificacoes', 'avisos'].filter(c => !(cad[c] || []).length).concat(cad.plaqueta_hm ? [] : ['plaqueta_hm']), []);
+  igual(`${nome}: desenhos — frontal/lateral, layout interno, barramento${k.born.length ? ' e bornes' : ''}`, cad.desenhos.length, 3 + (k.born.length ? 1 : 0));
+  const tagsTabela = new Set(cad.componentes.flatMap(c => String(c.tag).split(', ')).map(t => t.split('/')[0]));
+  igual(`${nome}: toda tag de calc.comps.lista está na tabela de componentes`, k.comps.lista.map(x => x.ref).filter(t => !tagsTabela.has(t)), []);
+  const textos = cad.desenhos.map(d => d.svg).join('').match(/<text[^>]*>[^<]*<\/text>/g).map(t => t.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&'));
+  const noDesenho = (t) => textos.some(x => x === t || x.startsWith(`${t} `));
+  igual(`${nome}: toda tag de calc.comps.lista aparece num desenho`, k.comps.lista.map(x => x.ref).filter(t => !noDesenho(t)), []);
+  const PT = require('../scripts/lib/porta').posicoesPorta(k);
+  const tagsPl = new Set(cad.plaquetas.map(p => p.tag));
+  const porta = [...PT.botoes.map(b => b.tag), ...PT.medidores.map(m => m.ref), ...(PT.ihm ? ['IHM1'] : []), ...PT.grelhas.map(g => (/VENTILADOR/.test(g.rotulo) ? 'EV1' : 'EV2'))];
+  igual(`${nome}: toda peça de porta tem plaqueta (${porta.length})`, porta.filter(t => !tagsPl.has(t)), []);
+  igual(`${nome}: plaquetas de identificação externa e advertência`, ['ID', 'AV1', 'AV2'].every(t => tagsPl.has(t)), true);
+  const hm = Object.fromEntries(cad.plaqueta_hm.dados);
+  igual(`${nome}: plaqueta H&M com a marcação da NBR IEC 61439-1 (6.1)`, ['Norma', 'Fabricação', 'Un / Ui', 'InA', 'Icw', 'Ipk', 'f', 'IP / IK', 'Forma', 'Massa'].filter(c => !hm[c]), []);
+  igual(`${nome}: plaqueta H&M com modelo e InA do geral`, [/^H&M (QD|QCA|CCM|QCM)-61439 \/ /.test(cad.plaqueta_hm.modelo), hm.InA], [true, `${k.geral.In} A`]);
+  const mats = cad.materiais_montagem;
+  igual(`${nome}: materiais com fixação do trilho, das canaletas e da placa`, ['Parafuso de fixação do trilho', 'Fixação das canaletas', 'Fixação da placa de montagem'].filter(d => !mats.some(m => m.descricao === d && m.quantidade > 0)), []);
+  igual(`${nome}: materiais do barramento com parafusos`, k.barr.tipo === 'barra' ? ['Parafuso de emenda/derivação das barras', 'Parafuso barra → isolador', 'Isolador suporte de barramento'].filter(d => !mats.some(m => m.descricao === d && m.quantidade > 0)) : ['Fixação das barras N e PE'].filter(d => !mats.some(m => m.descricao === d)), []);
+  igual(`${nome}: todo material com regra e grupo`, mats.filter(m => !m.regra || !m.grupo).map(m => m.descricao), []);
+  igual(`${nome}: fiação com N azul-claro e PE verde-amarelo (NBR 5410, 6.1.5.3)`, ['azul-claro', 'verde-amarelo'].every(cor => mats.some(m => m.grupo === 'Fiação' && m.descricao.endsWith(cor))), true);
+  igual(`${nome}: verificações de rotina 11.2 a 11.10`, ['11.2', '11.3', '11.4', '11.5', '11.6', '11.7', '11.8', '11.9', '11.10'].filter(n => !cad.verificacoes.some(v => v.item.includes(`(${n})`))), []);
+  // escape: nome do cliente e descrição do quadro com HTML
+  const sujo = CADERNO.montarCaderno({ ...res, dados: { ...res.dados, cliente: { nome: '<script>alert(1)</script>' }, obra: { nome: 'Obra <b>X</b> & Cia' } } });
+  const html = CADC.gerarCadernoHtml(sujo);
+  igual(`${nome}: HTML do caderno escapado`, [html.includes('<script>'), html.includes('<b>X</b>'), html.includes('&lt;script&gt;alert(1)&lt;/script&gt;')], [false, false, true]);
+}
+
 // ── Documentos ──
 (async () => {
   const saida = path.join(require('os').tmpdir(), 'teste-quadros');
   fs.mkdirSync(saida, { recursive: true });
   for (const [nome, res] of [['predial', r1], ['automacao', r2]]) {
     const tipos = motor.tiposDisponiveis(res);
-    igual(`${nome}: 6 documentos`, tipos, ['memorial', 'planilha', 'desenho', 'modelo3d', 'ensaios', 'laudo']);
+    igual(`${nome}: 7 documentos`, tipos, ['memorial', 'planilha', 'desenho', 'modelo3d', 'caderno', 'ensaios', 'laudo']);
     for (const tipo of tipos) {
       const g = await motor.gerarDocumento(res, tipo);
       fs.writeFileSync(path.join(saida, `${nome}-${g.nomeArquivo}`), g.buffer);
@@ -182,6 +217,9 @@ function conferir3d(nome, k, cena) {
         igual(`${nome}: 3D redesenha quando o navegador restaura o contexto WebGL`, html.includes("webglcontextrestored"), true);
         igual(`${nome}: camadas e peças clicáveis`, cena.camadas.length >= 8 && cena.caixas.filter(b => b.info).length > 10, true);
         conferir3d(nome, res.calc, cena);
+      } else if (tipo === 'caderno') {
+        igual(`${nome}: caderno é PDF (.pdf, application/pdf, %PDF)`, [path.extname(g.nomeArquivo), g.mime, g.buffer.slice(0, 4).toString()], ['.pdf', 'application/pdf', '%PDF']);
+        conferirCaderno(nome, res);
       } else {
         igual(`${nome}: ${tipo} é Office (zip)`, g.buffer.slice(0, 2).toString(), 'PK');
       }
@@ -197,7 +235,7 @@ function conferir3d(nome, k, cena) {
   const todos = [...new Set([...codigos, ...motor.montarOrcamento(r1, 'fabricacao').itens, ...o2.itens].map(i => (typeof i === 'string' ? i : i.codigo)).filter(Boolean))];
   igual('todos os códigos qd_* estão na base de mão de obra do sistema', todos.filter(c => !base.includes(`codigo: '${c}'`)), []);
   igual('documentos e modos classificados (tipos-documento.js)', TD.classificarSkill(motor).semClassificacao, []);
-  igual('desenho é de projeto; ensaios servem aos dois', [TD.usoDoDocumento('quadros', 'desenho'), TD.usoDoDocumento('quadros', 'ensaios'), TD.usoDoModo('quadros', 'fabricacao')], ['projeto', 'ambos', 'projeto']);
+  igual('desenho e caderno são de projeto; ensaios servem aos dois', [TD.usoDoDocumento('quadros', 'desenho'), TD.usoDoDocumento('quadros', 'caderno'), TD.usoDoDocumento('quadros', 'ensaios'), TD.usoDoModo('quadros', 'fabricacao')], ['projeto', 'projeto', 'ambos', 'projeto']);
   // Importação das skills de elétrica
   const ele = require('../../eletrica/scripts/lib/index').exemplo();
   const imp1 = deEletrica(ele, { tag: 'QD-01' });

@@ -29,12 +29,12 @@ function logoDataUri() {
 const temFuros = (p) => /parafus|rebite/i.test(String(p.fixacao || ''));
 
 // Maior altura de letra (maiúscula, mm) que faz as linhas caberem em l × a
-// (largura média de caractere ≈ 0,62 × altura; entrelinha 1,45 × altura)
+// (maiúsculas em negrito: largura média ≈ 0,92 × altura de maiúscula; entrelinha 1,45 × altura)
 function ajustarTexto(linhas, l, a, { margem = 2, max = 10 } = {}) {
   const ls = (Array.isArray(linhas) ? linhas : [linhas]).map(t => String(t ?? '')).filter(Boolean);
   if (!ls.length) return { h: 0, linhas: [] };
   const maior = Math.max(...ls.map(t => t.length));
-  const pelaLargura = (l - 2 * margem) / (maior * 0.62);
+  const pelaLargura = (l - 2 * margem) / (maior * 0.92);
   const pelaAltura = (a - 2 * margem) / (ls.length * 1.45);
   return { h: Math.max(0.8, Math.min(max, pelaLargura, pelaAltura)), linhas: ls };
 }
@@ -97,7 +97,7 @@ function svgPlaquetaHm(ph, { k = 1 } = {}) {
   const passo = Math.min(5.2 * s, (a - yDados - 3 * s) / Math.max(1, linhas));
   const hTxt = Math.min(1.9 * s, passo * 0.5);
   const larguraCol = (l - 8 * s) / colunas;
-  const maxCar = Math.floor(larguraCol / (hTxt * 0.6));
+  const maxCar = Math.floor(larguraCol / (hTxt * 0.8));
   const corta = (t) => (t.length > maxCar ? `${t.slice(0, maxCar - 1)}…` : t);
   const celulas = dados.map(([chave, valor], i) => {
     const c = Math.floor(i / linhas), r = i % linhas;
@@ -130,19 +130,21 @@ function htmlFolhaPlaquetas(plaquetas = [], plaquetaHm = null, { larguraUtilMm =
     if (!grupos.has(g)) grupos.set(g, []);
     grupos.get(g).push(p);
   }
-  const cartao = (svg, legenda) => `<figure class="pl-cartao">${svg}<figcaption>${legenda}</figcaption></figure>`;
+  // cartão com a largura da própria plaqueta (as legendas não empurram as vizinhas); material e
+  // fixação ficam na lista do caderno — aqui só tag, medida e local
+  const cartao = (svg, legenda, l) => `<figure class="pl-cartao" style="width:${num(Math.max(40, l / k))}mm">${svg}<figcaption>${legenda}</figcaption></figure>`;
   const legenda = (p) => [
     `<b>${escapeHtml(p.tag || '')}</b>${p.quantidade > 1 ? ` × ${escapeHtml(p.quantidade)}` : ''} — ${escapeHtml(`${p.largura_mm} × ${p.altura_mm} mm`)}`,
-    escapeHtml(p.material || ''), escapeHtml(p.fixacao || ''), escapeHtml(p.local || ''),
+    escapeHtml(p.local || ''),
   ].filter(Boolean).join('<br/>');
   const partes = [];
   if (plaquetaHm) {
     partes.push(`<h3>Plaqueta H&amp;M (identificação do fabricante do conjunto)</h3><div class="pl-grade">${cartao(svgPlaquetaHm(plaquetaHm, { k }), [
       `<b>${escapeHtml(plaquetaHm.modelo || '')}</b> — ${escapeHtml(`${plaquetaHm.largura_mm || 100} × ${plaquetaHm.altura_mm || 70} mm`)}`,
       escapeHtml(plaquetaHm.material || ''), escapeHtml(plaquetaHm.fixacao || ''), escapeHtml(plaquetaHm.local || ''),
-    ].filter(Boolean).join('<br/>'))}</div>`);
+    ].filter(Boolean).join('<br/>'), Number(plaquetaHm.largura_mm) || 100)}</div>`);
   }
-  for (const [g, lista] of grupos) partes.push(`<h3>${escapeHtml(g)}</h3><div class="pl-grade">${lista.map(p => cartao(svgPlaqueta(p, { k }), legenda(p))).join('')}</div>`);
+  for (const [g, lista] of grupos) partes.push(`<h3>${escapeHtml(g)}</h3><div class="pl-grade">${lista.map(p => cartao(svgPlaqueta(p, { k }), legenda(p), Number(p.largura_mm) || 60)).join('')}</div>`);
   return { html: partes.join(''), escala: `1:${k}` };
 }
 
