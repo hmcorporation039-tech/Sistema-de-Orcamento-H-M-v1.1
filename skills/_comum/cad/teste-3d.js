@@ -283,7 +283,7 @@ caso('trechos: eletrocalha 10 × 5 cm a 30 cm do teto, eletroduto perto do teto,
   assert.ok(cT.infra.every(g => /^#[0-9a-f]{6}$/i.test(g.cor)));
   // números e botões: comprimento por grupo e a disciplina aparece mesmo sem pontos
   // sem medida no desenho: a seção padrão, marcada como tal
-  assert.deepStrictEqual(cT.numeros.infraestrutura.find(g => g.tipo === 'eletrocalha'), { disciplina: 'eletrica', tipo: 'eletrocalha', rotulo: 'Eletrocalha', material: null, medida: '100 × 50 mm', origem_medida: 'padrao', comprimento_m: 10, descidas_m: 0, segmentos: 2 });
+  assert.deepStrictEqual(cT.numeros.infraestrutura.find(g => g.tipo === 'eletrocalha'), { disciplina: 'eletrica', tipo: 'eletrocalha', rotulo: 'Eletrocalha', material: null, medida: '100 × 50 mm', origem_medida: 'padrao', sugerido: false, comprimento_m: 10, descidas_m: 0, segmentos: 2 });
   assert.ok(cT.disciplinas.rede && cT.disciplinas.eletrica && cT.disciplinas.alarme);
   assert.deepStrictEqual(montarCena(arq).infra, []);
 });
@@ -337,6 +337,94 @@ caso('sem traçado no projeto: eletroduto estimado do quadro até cada ponto, em
   // disciplina com uma peça só (o detector) não ganha traçado
   assert.ok(!c.infra.some(x => x.disciplina === 'incendio'));
   assert.ok(c.avisos.some(a => /Infraestrutura ESTIMADA/.test(a) && /PVC corrugado Ø 25 mm \(3\/4"\)/.test(a)), c.avisos.join(' | '));
+});
+
+// ── Infraestrutura: eletrocalha em abas, caminhos sugeridos, PDF por cor ─────
+const { separarEletrocalhas, sugerirCaminhos } = require('./infraestrutura');
+const { propostaDeMapa, aplicarMapa } = require('./pontosDoDesenho');
+
+caso('eletrocalha desenhada como par de abas vira um eixo com a largura medida; eletrodutos lado a lado não', () => {
+  const r = separarEletrocalhas([[0, 0, 6, 0], [0, 0.2, 6, 0.2], [1, 3, 5, 3], [2.5, 3.15, 9, 3.15], [7, 0, 7, 0.5]]);
+  assert.strictEqual(r.eletrocalhas.length, 1);
+  assert.strictEqual(r.eletrocalhas[0].largura_mm, 200);
+  assert.deepStrictEqual(r.eletrocalhas[0].segmentos, [[0, 0.1, 6, 0.1]]);
+  // os dois eletrodutos que só correm juntos num pedaço e o curto ficam como estão
+  assert.strictEqual(r.resto.length, 3);
+  const c = montarCena(arq, { peDireito: PD, trechos: [{ disciplina: 'eletrica', tipo: 'eletroduto', layer: 'EL-Condutos (Teto)', segmentos: [[0.5, 3, 7, 3], [0.5, 3.3, 7, 3.3], [2, 1, 2, 3]] }] });
+  const ec = c.infra.find(g => g.tipo === 'eletrocalha');
+  assert.ok(ec && ec.secao[0] === 0.3 && ec.comprimento_m === 6.5 && ec.origem_medida === 'desenho', JSON.stringify(c.infra.map(g => [g.tipo, g.secao, g.comprimento_m])));
+  assert.ok(c.infra.some(g => g.tipo === 'eletroduto' && g.comprimento_m === 2));
+});
+
+caso('caminhos sugeridos: interruptor vai à luminária do ambiente, o resto à rede; "L" pelo lado com menos paredes', () => {
+  const pecas = [
+    { x: 0, y: 0, tipo: 'quadro', amb: 0 },
+    { x: 5, y: 4, tipo: 'luminaria', amb: 1 },
+    { x: 6, y: 1, tipo: 'interruptor', amb: 1 },
+    { x: 0.3, y: 6, tipo: 'outro', amb: 0 },
+  ];
+  // parede em x = 3 de y = -1 a 2: o "L" do quadro até (5, 4) sobe primeiro e passa acima dela
+  const r = sugerirCaminhos({ pecas, paredes: [[3, -1, 3, 2]] });
+  assert.deepStrictEqual([r.sugeridos, r.sem], [3, 0]);
+  const toca = (p) => r.segmentos.some(s => (perto(s[0], p[0]) && perto(s[1], p[1])) || (perto(s[2], p[0]) && perto(s[3], p[1])));
+  assert.ok(pecas.every(p => toca([p.x, p.y])), JSON.stringify(r.segmentos));
+  // o interruptor liga direto na luminária (retorno), não no quadro
+  assert.ok(r.segmentos.some(s => perto(s[0], 6) && perto(s[1], 1)) && r.segmentos.some(s => (perto(s[2], 5) && perto(s[3], 4)) || (perto(s[0], 5) && perto(s[1], 4))));
+  const cruzaParede = r.segmentos.some(([x1, y1, x2, y2]) => Math.min(x1, x2) < 3 && Math.max(x1, x2) > 3 && y1 > -1 && y1 < 2);
+  assert.ok(!cruzaParede, JSON.stringify(r.segmentos));
+  // ponto já encostado na rede do projeto não ganha caminho
+  const r2 = sugerirCaminhos({ pecas: [{ x: 1, y: 0.3, tipo: 'outro' }, { x: 4, y: 3, tipo: 'outro' }], rede: [0, 0, 5, 0] });
+  assert.deepStrictEqual([r2.ligados, r2.sugeridos], [1, 1]);
+  // tomada ligada pelo eletroduto do piso (redeParede) também não
+  const r3 = sugerirCaminhos({ pecas: [{ x: 1, y: 0.3, tipo: 'outro' }, { x: 4, y: 3, tipo: 'luminaria' }], rede: [4, 0, 4, 2], redeParede: [0, 0, 2, 0] });
+  assert.deepStrictEqual([r3.sugeridos, r3.segmentos.length], [1, 1]);
+});
+
+caso('3D com caminhos sugeridos: grupo à parte, translúcido no visualizador, tomada sobe do eletroduto do piso', () => {
+  const c = montarCena(arq, { peDireito: PD, sugerirInfra: true, estimarInfra: false,
+    trechos: [{ disciplina: 'eletrica', tipo: 'eletroduto', layer: 'EL-Condutos (Piso)', altura: 0.04, segmentos: [[0.5, 3.5, 6, 3.5]] }],
+    dispositivos: [
+      { simbolo: 'HM-ELE-QUADRO', x: 3.5, y: 0.5, ambiente: 'SALA DE ESTAR', poligono: sala.poligono },
+      { simbolo: 'HM-ILU-LUMINARIA', x: 2, y: 2, ambiente: 'SALA DE ESTAR', poligono: sala.poligono },
+      { simbolo: 'HM-ILU-LUMINARIA', x: 5, y: 2, ambiente: 'SALA DE ESTAR', poligono: sala.poligono },
+      { simbolo: 'HM-ELE-TOMADA-BAIXA', x: 2, y: 3.9, ambiente: 'SALA DE ESTAR', poligono: sala.poligono },
+    ] });
+  const sug = c.infra.filter(g => g.sugerido);
+  assert.ok(sug.length && sug.every(g => g.estimado && g.origem_medida === 'sugerido' && g.rotulo === 'Eletroduto sugerido'), JSON.stringify(c.infra.map(g => g.rotulo)));
+  assert.ok(sug[0].comprimento_m > 2);
+  // a tomada (a 0,4 m do eletroduto do piso) sobe dele; não ganha caminho pelo teto
+  const piso = c.infra.find(g => !g.sugerido && g.z < 0.5);
+  assert.strictEqual(piso.descidas.length, 4, JSON.stringify(piso.descidas));
+  assert.ok(piso.descidas[2] === piso.z && piso.descidas[3] > 0.1);
+  assert.ok(c.avisos.some(a => /Caminhos SUGERIDOS/.test(a)), c.avisos.join(' | '));
+  assert.ok(c.numeros.infraestrutura.some(g => g.sugerido));
+  const html = gerarHtml(c);
+  assert.ok(html.includes('id="b-sugerido"'));
+  for (const k of ['materialSugerido', "'#b-sugerido'"]) assert.ok(FONTE_APP.includes(k), `app.js sem ${k}`);
+  // sem a opção, nada sugerido
+  assert.ok(!montarCena(arq, { peDireito: PD, estimarInfra: false, dispositivos: [{ simbolo: 'HM-ILU-LUMINARIA', x: 2, y: 2 }, { simbolo: 'HM-ILU-LUMINARIA', x: 5, y: 2 }] }).infra.length);
+});
+
+caso('PDF convertido: cor que é traçado vira eletroduto (tracejado no piso); círculo vira luminária; marca miúda não', () => {
+  const circulo = (cx, cy, r) => Array.from({ length: 24 }, (_, k) => [cx + r * Math.cos(k * Math.PI / 12), cy + r * Math.sin(k * Math.PI / 12)]);
+  const referencia = [];
+  for (const x of [2, 5, 8]) referencia.push({ tipo: 'poli', fechada: true, layer: 'PDF-COR-A52900', pts: circulo(x, 2, 0.16) });
+  // eletroduto curvo entre as luminárias + duas setas miúdas na mesma cor
+  referencia.push({ tipo: 'poli', layer: 'PDF-COR-FF7F00', pts: [[2.16, 2], [3.5, 2.6], [4.84, 2]] }, { tipo: 'poli', layer: 'PDF-COR-FF7F00', pts: [[5.16, 2], [6.5, 2.6], [7.84, 2]] });
+  for (const x of [3, 6]) referencia.push({ tipo: 'poli', fechada: true, layer: 'PDF-COR-FF7F00', pts: [[x, 1], [x + 0.1, 1.05], [x, 1.1]] });
+  referencia.push({ tipo: 'linha', layer: 'PDF-COR-FF0101-TRACEJADO', pts: [[0, 0], [9, 0]] });
+  const arqPdf = { ambientes: [], referencia };
+  const mapa = propostaDeMapa(arqPdf);
+  const lum = mapa.simbolos.find(s => s.layer === 'PDF-COR-A52900');
+  assert.ok(lum && lum.simbolo === 'HM-ILU-LUMINARIA' && lum.quantidade === 3, JSON.stringify(mapa.simbolos));
+  assert.ok(!mapa.simbolos.some(s => s.layer === 'PDF-COR-FF7F00' && s.simbolo !== '?'), 'seta do eletroduto virou ponto');
+  const tr = Object.fromEntries(mapa.trechos.map(t => [t.layer, t]));
+  assert.ok(tr['PDF-COR-FF7F00'] && !tr['PDF-COR-FF7F00'].altura);
+  assert.strictEqual(tr['PDF-COR-FF0101-TRACEJADO'].altura, 0.04);
+  const { pontos, trechos } = aplicarMapa(arqPdf, mapa);
+  assert.strictEqual(pontos.filter(p => p.simbolo === 'HM-ILU-LUMINARIA').length, 3);
+  // o traçado laranja sem as setas: 2 curvas de 2 pedaços
+  assert.strictEqual(trechos.find(t => t.layer === 'PDF-COR-FF7F00').segmentos.length, 4);
 });
 
 caso('componente do projeto: descrição própria, altura lida e símbolo genérico quando não há um no 3D', () => {

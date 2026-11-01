@@ -84,7 +84,7 @@ footer details{position:relative}footer summary{cursor:pointer;color:var(--texto
 function premissasDa(cena) {
   return [cena.aviso, `Pé-direito adotado: ${String(cena.peDireito).replace('.', ',')} m; portas com 2,10 m; janelas com peitoril de 1,10 m e topo a 2,10 m.`,
     'Componentes em tamanho típico, um pouco exagerado nos pequenos (tomada 10 × 16 cm); de longe são ampliados para continuarem visíveis. Altura indicada = centro da peça.',
-    ...((cena.infra || []).length ? [`Infraestrutura (eletrocalhas, eletrodutos, leitos, perfilados) perto do teto, com descida até as peças de parede: tipo e medida do projeto quando o desenho diz (senão, seção padrão ilustrativa)${cena.infra.some(g => g.estimado) ? '; onde o projeto não traz o traçado, eletroduto ESTIMADO do quadro/rack/central até cada ponto — conferir' : ''}. Passe o mouse no traçado para ver tipo, medida e comprimento.`] : []),
+    ...((cena.infra || []).length ? [`Infraestrutura (eletrocalhas, eletrodutos, leitos, perfilados) perto do teto, com descida até as peças de parede: tipo e medida do projeto quando o desenho diz (senão, seção padrão ilustrativa)${cena.infra.some(g => g.estimado) ? '; onde o projeto não traz o traçado, eletroduto ESTIMADO do quadro/rack/central até cada ponto — conferir' : ''}${cena.infra.some(g => g.sugerido) ? '; em azul-claro translúcido, os caminhos SUGERIDOS pelo sistema para ligar ao quadro/à rede os pontos que o desenho deixou soltos (botão "Sugeridos")' : ''}. Passe o mouse no traçado para ver tipo, medida e comprimento.`] : []),
     ...(cena.avisos || [])];
 }
 
@@ -132,6 +132,7 @@ ${varias ? `  <select id="ir-planta" title="Cada planta da prancha é um modelo 
   <button id="b-planta" title="Linhas da planta no piso: mobiliário, louças, bancadas, escada">Mobiliário</button>
   <span id="disciplinas"></span>
   <button id="b-infra" title="Eletrocalhas, eletrodutos, leitos e perfilados">Infraestrutura</button>
+  <button id="b-sugerido" title="Caminhos de eletroduto sugeridos pelo sistema para ligar ao quadro/à rede os pontos que o projeto deixou soltos (translúcidos, em azul-claro)">Sugeridos</button>
   <button id="b-campo" title="Campo de visão das câmeras e cobertura dos sensores (estimados)">Campo de visão</button>
   <button id="b-grandes" title="Aumenta os símbolos dos pontos">Símbolos maiores</button>
   <button id="b-tela">Tela cheia</button>

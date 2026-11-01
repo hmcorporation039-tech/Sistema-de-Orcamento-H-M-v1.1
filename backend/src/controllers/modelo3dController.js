@@ -3,7 +3,7 @@
 const path = require('path');
 const pool = require('../config/database');
 const M = require('../services/modelo3d');
-const { lerArquiteturaNoWorker, mensagemDaLeitura, resumoDaArquitetura, dxfParaGuardar, faltouEscala } = require('../services/tarefasCad');
+const { lerArquiteturaNoWorker, mensagemDaLeitura, resumoDaArquitetura, dxfParaGuardar, dxfConvertido, faltouEscala } = require('../services/tarefasCad');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');
 const { registrarAuditoria } = require('../services/auditoria');
 const P = require('../services/pastasSistema');
@@ -104,7 +104,10 @@ async function enviarArquiteturaAnalise(req, res) {
     [analise.id, String(arq.originalname).slice(0, 200), dxfParaGuardar(lida, arq.buffer), resumo, req.usuario.id]);
   await registrarAuditoria(pool, { entidade: 'analises_projeto', entidadeId: analise.id, acao: 'arquitetura_3d', detalhes: { arquivo: arq.originalname }, usuarioId: req.usuario.id });
   await seguro(`arquitetura análise ${analise.id}`, async () => {
-    await P.gravarArquivo(path.join(await pastaDoProjeto(analise), 'Arquitetura'), arq.originalname, arq.buffer);
+    const pasta = path.join(await pastaDoProjeto(analise), 'Arquitetura');
+    await P.gravarArquivo(pasta, arq.originalname, arq.buffer);
+    const conv = dxfConvertido(lida, arq.originalname);
+    if (conv) await P.gravarArquivo(pasta, conv.nome, conv.conteudo);
   });
   res.status(201).json({ nome_arquivo: arq.originalname, ...resumo, ambientes: resumo.ambientes.length });
 }

@@ -365,6 +365,16 @@ caso('campo de visão da câmera não é sala; atributo de equipamento (TAG, DES
   assert.ok(!a.ambientes.some(x => Math.abs(x.area_m2 - 12) < 0.5), 'o polígono da cobertura (12 m²) não é ambiente');
 });
 
+caso('moldura "DI-Área do detalhe" (QiBuilder) não vira sala gigante com o nome de dentro', () => {
+  const a = lerArquitetura(plantaQuatroSalas([[2.5, 'COZINHA'], [7.5, 'SALA']], (g) => {
+    g.camada('DI-Área do detalhe');
+    g.polilinha([[-5, -5], [45, -5], [45, 30], [-5, 30]], { layer: 'DI-Área do detalhe', fechada: true });
+    g.texto(30, 20, 0.2, 'LANCHONETE', { layer: 'TEXTO' });
+  }));
+  assert.ok(!a.ambientes.some(x => x.area_m2 > 1000), a.ambientes.map(x => `${x.nome}=${x.area_m2}`).join('; '));
+  assert.ok(!a.ambientes.some(x => x.nome === 'LANCHONETE'));
+});
+
 caso('grade de módulos iguais encostados (cobertura de detector) não vira 8 salas; salas iguais com parede entre elas ficam', () => {
   const a = lerArquitetura(plantaQuatroSalas([[2.5, 'COZINHA'], [7.5, 'SALA']], (g) => {
     g.camada('A-AREA');

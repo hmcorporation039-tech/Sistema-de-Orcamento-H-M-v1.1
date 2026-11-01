@@ -34,6 +34,11 @@ const resumoDaArquitetura = ({ origem, leitura, pdf }) => ({
 
 // DXF a guardar: o do usuário quando ele mandou DXF; o convertido (DWG/PDF) nos outros casos
 const dxfParaGuardar = ({ origem, texto }, buffer) => (origem === 'dxf' ? buffer : Buffer.from(texto, 'utf8'));
+// Na pasta do cliente vai o original e, de PDF/DWG, também o DXF convertido (pedido
+// de 01/11/2026: "sempre converter os PDFs em DXF", que o CAD interpreta melhor —
+// do PDF, cada cor de traço numa layer PDF-COR-…). null quando o enviado já é DXF.
+const dxfConvertido = ({ origem, texto }, nome) => (origem === 'dxf' ? null
+  : { nome: `${String(nome).replace(/\.(pdf|dwg)$/i, '')} (convertido do ${origem.toUpperCase()}).dxf`, conteudo: Buffer.from(texto, 'utf8') });
 
 // Escala que faltou num PDF: a tela pergunta e reenvia
 const faltouEscala = (e) => e.codigo === 'ESCALA';
@@ -51,4 +56,4 @@ async function dxfCompatibilizacaoNoWorker({ dxfReferencia, conflitos, titulo })
   return m.dxf;
 }
 
-module.exports = { lerArquiteturaNoWorker, mensagemDaLeitura, resumoDaArquitetura, dxfParaGuardar, faltouEscala, gerarPlantaNoWorker, dxfCompatibilizacaoNoWorker };
+module.exports = { lerArquiteturaNoWorker, mensagemDaLeitura, resumoDaArquitetura, dxfParaGuardar, dxfConvertido, faltouEscala, gerarPlantaNoWorker, dxfCompatibilizacaoNoWorker };

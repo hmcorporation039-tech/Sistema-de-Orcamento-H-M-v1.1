@@ -16,7 +16,7 @@ const ret = (x0, y0, x1, y1, w) => `<rect x="${X(x0)}" y="${Y(y1)}" width="${(x1
 const porta = (cx, cy) => `<path d="M ${X(cx + 0.8)} ${Y(cy)} A 16 16 0 0 0 ${X(cx)} ${Y(cy + 0.8)}" fill="none" stroke="#000" stroke-width="0.13"/>
   <line x1="${X(cx)}" y1="${Y(cy)}" x2="${X(cx)}" y2="${Y(cy + 0.8)}" stroke="#000" stroke-width="0.13"/>`;
 const texto = (x, y, s) => `<text x="${X(x)}" y="${Y(y)}" font-family="Arial" font-size="3.5">${s}</text>`;
-function planta({ carimbo = true, mesmaEspessura = false, portas = true } = {}) {
+function planta({ carimbo = true, mesmaEspessura = false, portas = true, eletrica = false } = {}) {
   const g = mesmaEspessura ? 0.13 : 0.6;
   return `<!doctype html><html><head><style>@page{size:420mm 297mm;margin:0}body{margin:0}</style></head><body>
   <svg xmlns="http://www.w3.org/2000/svg" width="420mm" height="297mm" viewBox="0 0 420 297">
@@ -26,6 +26,8 @@ function planta({ carimbo = true, mesmaEspessura = false, portas = true } = {}) 
     ${portas ? `${porta(0.3, 0.3)} ${porta(5.45, 0.3)} ${porta(8.6, 0.3)}` : ''}
     <line x1="${X(0.15)}" y1="${Y(2)}" x2="${X(5.15)}" y2="${Y(2)}" stroke="#000" stroke-width="0.13" stroke-dasharray="2 1"/>
     ${texto(1.6, 2.2, 'SALA DE ESTAR')} ${texto(6.2, 2.2, 'COZINHA')} ${texto(9.6, 2.2, 'QUARTO')}
+    ${eletrica ? `<line x1="${X(1)}" y1="${Y(3.5)}" x2="${X(11)}" y2="${Y(3.5)}" stroke="#ff7f00" stroke-width="0.13"/>
+    <line x1="${X(1)}" y1="${Y(1)}" x2="${X(11)}" y2="${Y(1)}" stroke="#ff0000" stroke-width="0.13" stroke-dasharray="2 1"/>` : ''}
     ${carimbo ? `<text x="330" y="285" font-family="Arial" font-size="3">ESC. 1:50</text>` : ''}
   </svg></body></html>`;
 }
@@ -66,9 +68,10 @@ const plantaSoDesenho = () => planta().replace(/^[\s\S]*?<svg[^>]*>/, '').replac
 (async () => {
   const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
   const pdfDe = async (html) => { const p = await browser.newPage(); await p.setContent(html); const b = await p.pdf({ width: '420mm', height: '297mm', printBackground: true }); await p.close(); return Buffer.from(b); };
-  let comCarimbo, semCarimbo, semPortas, iguais, soTexto, soQuadros, duasPaginas, mista;
+  let comCarimbo, semCarimbo, semPortas, iguais, soTexto, soQuadros, duasPaginas, mista, comEletrica;
   try {
-    [comCarimbo, semCarimbo, semPortas, iguais, soTexto, soQuadros, duasPaginas, mista] = await Promise.all([
+    [comEletrica, comCarimbo, semCarimbo, semPortas, iguais, soTexto, soQuadros, duasPaginas, mista] = await Promise.all([
+      pdfDe(planta({ eletrica: true })),
       pdfDe(planta()), pdfDe(planta({ carimbo: false })), pdfDe(planta({ carimbo: false, portas: false })), pdfDe(planta({ mesmaEspessura: true })),
       pdfDe('<html><body><p>Memorial descritivo — só texto, sem desenho.</p></body></html>'),
       // (a) só unifilar e quadro de cargas
@@ -108,6 +111,17 @@ const plantaSoDesenho = () => planta().replace(/^[\s\S]*?<svg[^>]*>/, '').replac
     assert.strictEqual(r.escala, 50);
     assert.strictEqual(r.origemEscala, 'portas');
     assert.ok(r.avisos.some(a => /portas/.test(a)));
+  });
+
+  await caso('traço colorido vai para a layer da cor, nunca para parede nem PDF-LINHAS', async () => {
+    const r = await pdfParaDxf(comEletrica);
+    const layerDe = (tx) => tx.split(/\r?\n/).map(s => s.trim());
+    const linhas = layerDe(r.texto);
+    assert.ok(linhas.includes('PDF-COR-FF7F00'), 'sem a layer do eletroduto laranja');
+    // (o tracejado vermelho do fixture o Chrome grava como preenchimento: só não pode virar parede)
+    // as paredes continuam lidas: a cor não mexe na arquitetura
+    const lida = await lerArquiteturaNoWorker(comEletrica, 'planta.pdf');
+    assert.ok(resumoDaArquitetura(lida).ambientes.some(a => a.nome === 'COZINHA'));
   });
 
   await caso('escala informada pelo usuário vale mais que a do carimbo', async () => {

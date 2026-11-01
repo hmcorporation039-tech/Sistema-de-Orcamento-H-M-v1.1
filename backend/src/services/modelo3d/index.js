@@ -34,7 +34,8 @@ function versaoDoGerador() {
   try {
     // arquitetura.js e classificarPrancha.js decidem o que é planta (29/10/2026): mudou, refaz
     // pranchas, pontosDoDesenho e modelosPorPlanta: um modelo por planta, pontos lidos do desenho (01/11/2026)
-    return ['modelo3d.js', 'estimativaArquitetura.js', 'arquitetura.js', 'classificarPrancha.js', 'pranchas.js', 'pontosDoDesenho.js', 'modelosPorPlanta.js', 'visualizador3d.js', path.join('visualizador3d', 'app.bundle.js')]
+    // infraestrutura.js: eletrocalhas pelas abas e caminhos sugeridos (01/11/2026)
+    return ['modelo3d.js', 'infraestrutura.js', 'estimativaArquitetura.js', 'arquitetura.js', 'classificarPrancha.js', 'pranchas.js', 'pontosDoDesenho.js', 'modelosPorPlanta.js', 'visualizador3d.js', path.join('visualizador3d', 'app.bundle.js')]
       .map(f => fs.statSync(path.join(CAD, f)).mtimeMs).join('|');
   } catch { return 'sem-gerador'; }
 }
