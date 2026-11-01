@@ -64,8 +64,8 @@ async function gerarDocumentosDoLaudo(laudo, tipos) {
   }
 }
 
-// tipo do arquivo pela extensão quando a skill não diz (ex.: o modelo 3D em HTML)
-const MIME_POR_EXTENSAO = { '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8', '.dxf': 'application/dxf', '.json': 'application/json' };
+// tipo do arquivo pela extensão quando a skill não diz (ex.: o modelo 3D em HTML, o caderno de fabricação em PDF)
+const MIME_POR_EXTENSAO = { '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8', '.dxf': 'application/dxf', '.json': 'application/json', '.pdf': 'application/pdf' };
 const mimeDo = (gerado) => gerado.mime || MIME_POR_EXTENSAO[path.extname(gerado.nomeArquivo || '').toLowerCase()] || 'application/octet-stream';
 const ehHtml = (gerado) => /^text\/html/i.test(mimeDo(gerado));
 
@@ -184,7 +184,7 @@ async function montarEntrega(laudo, pedido, usuarioNome) {
       try { gerado = await motor.gerarDocumento(resultado, tipo); } catch (e) { throw erro400(`${doc?.rotulo || tipo}: ${e.message}`); }
       const ext = path.extname(gerado.nomeArquivo) || (doc?.formato === 'Excel' ? '.xlsx' : '.docx');
       let buffer = gerado.buffer;
-      // DXF (desenho do quadro) não é Word nem Excel: leva o "AS BUILT" no nome e a revisão/data no carimbo
+      // DXF (desenho do quadro) e PDF (caderno de fabricação) não são Word nem Excel: levam o "AS BUILT" no nome e a revisão/data no carimbo
       if (asBuilt && ext === '.xlsx') buffer = await E.marcarAsBuiltXlsx(buffer, asBuilt);
       else if (asBuilt && ext === '.docx') buffer = await E.marcarAsBuiltDocx(buffer, asBuilt);
       arquivos.push({ nome: `${prefixo}${P.nomeSeguro(doc?.rotulo || tipo)}${ext}`, buffer, descricao: `${doc?.rotulo || tipo} (${doc?.formato || ext.slice(1)})` });

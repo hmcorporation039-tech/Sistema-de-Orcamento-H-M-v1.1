@@ -99,6 +99,9 @@ caso('lista de disciplinas: todo documento e modo de orçamento com uso', () => 
   assert.ok(dxf && dxf.nome.startsWith('AS BUILT - '), arquivos.map(a => a.nome).join(', '));
   assert.ok(dxf.buffer.toString('utf8').includes('R01'), 'revisão do as-built no carimbo');
   assert.ok(arquivos.some(a => a.nome.endsWith('.docx')) && arquivos.some(a => a.nome.endsWith('.xlsx')));
+  // caderno de fabricação e montagem (PDF) entre as definições técnicas do quadro, com a revisão do as-built
+  const caderno = arquivos.find(a => a.nome.endsWith('.pdf'));
+  assert.ok(caderno && caderno.nome.startsWith('AS BUILT - ') && caderno.buffer.slice(0, 4).toString() === '%PDF', arquivos.map(a => a.nome).join(', '));
   ok++;
   console.log(`projetoLaudo.test.js: ${ok} casos OK`);
 })().catch((e) => { console.error(e); process.exit(1); });
