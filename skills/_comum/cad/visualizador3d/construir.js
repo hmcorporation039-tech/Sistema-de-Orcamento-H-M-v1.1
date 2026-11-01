@@ -13,8 +13,10 @@ const SAIDA = path.join(__dirname, 'app.bundle.js');
 
 function assinatura() {
   const versaoThree = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'node_modules', 'three', 'package.json'), 'utf8')).version;
-  // app.js + quadro.js (cena de quadro elétrico): mudar qualquer um pede bundle novo
-  const hash = crypto.createHash('sha256').update(fs.readFileSync(ENTRADA)).update(fs.readFileSync(path.join(__dirname, 'quadro.js'))).update(versaoThree).digest('hex').slice(0, 16);
+  // app.js + quadro.js (cena de quadro elétrico): mudar qualquer um pede bundle novo.
+  // Sem \r: o checkout da produção vem com CRLF e o hash tem de bater com o do teste.
+  const fonte = (f) => fs.readFileSync(f, 'utf8').replace(/\r\n/g, '\n');
+  const hash = crypto.createHash('sha256').update(fonte(ENTRADA)).update(fonte(path.join(__dirname, 'quadro.js'))).update(versaoThree).digest('hex').slice(0, 16);
   return { versaoThree, hash };
 }
 
