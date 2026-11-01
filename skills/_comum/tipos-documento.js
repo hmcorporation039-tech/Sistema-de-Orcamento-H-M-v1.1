@@ -24,6 +24,7 @@ const DOCUMENTOS = {
   desenho: 'projeto',    // quadros: desenho de fabricação DXF (vista frontal e layout interno)
   modelo3d: 'projeto',   // quadros: modelo 3D do quadro (HTML autossuficiente)
   ensaios: 'ambos',      // quadros: checklist de fabricação e ensaios de rotina — vai à oficina (projeto) e à inspeção (laudo)
+  caderno: 'projeto',    // quadros, racks: caderno de fabricação e montagem (PDF — layout, componentes, materiais, plaquetas)
 };
 
 // Exceções por disciplina ({ [chave da skill]: { [tipo]: uso } }) — nenhuma hoje

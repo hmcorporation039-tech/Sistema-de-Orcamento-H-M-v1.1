@@ -1,0 +1,59 @@
+// Teste do módulo comum do caderno de fabricação (skills/_comum/fabricacao):
+// HTML com todas as seções e escapado, plaquetas em escala, escala dos
+// desenhos e PDF (quando o puppeteer do backend está instalado).
+// Rodar: node _comum/fabricacao/teste-fabricacao.js (entra no npm test de skills/).
+// Casos do agente QUADROS aqui; os do RACK ficam no bloco próprio, abaixo.
+
+const { verificador } = require('../teste');
+const CAD = require('./caderno');
+const PL = require('./plaquetas');
+const { criarPincelSvg } = require('./svg');
+
+const { igual, fim } = verificador('_comum/fabricacao');
+
+// ── Caderno mínimo ──
+const p = criarPincelSvg({ escala: 10 });
+p.ret(0, 0, 600, 1000, 'QD-PAINEL');
+p.txt(300, 500, 20, 'Q0 <&>', { alinhar: 'centro' });
+const des = p.svg({ margem: 10 });
+const minimo = {
+  tipo: 'quadro', sigla: 'CAD-QD', titulo: 'CADERNO DE FABRICAÇÃO E MONTAGEM', subtitulo: 'QD-01 — teste', tag: 'QD-01', revisao: 'R00', data: '31/10/2026',
+  dados: { cliente: { nome: 'Cliente <script>alert(1)</script> & Cia' }, obra: { nome: 'Obra "teste"' }, responsavel: { nome: 'Fulano' } },
+  normas: [{ codigo: 'ABNT NBR IEC 61439-1', titulo: 'Regras gerais', aplicacao: 'tudo' }],
+  caracteristicas: [['Un', '380 V']],
+  desenhos: [{ titulo: 'Vista frontal', svg: des.svg, notas: ['nota <b>1</b>'] }, { titulo: 'Detalhe largo', svg: '<svg viewBox="0 0 2400 300"><rect x="0" y="0" width="2400" height="300"/></svg>' }],
+  componentes: [{ tag: 'Q0', descricao: 'Disjuntor', fabricante: 'WEG', referencia: 'X', medidas: '18 × 90 × 80', quantidade: 1, unidade: 'un', local: 'placa', fonte: 'típica [CONFERIR]' }],
+  barramentos: [{ barra: 'L1/L2/L3', material: 'Cu', secao: '20 × 5 mm', comprimento_mm: 600, quantidade: 3, capacidade_A: 200, icw_kA: 10, isoladores: '6', fixacao: 'M8' }],
+  materiais_montagem: [{ grupo: 'Fixação', descricao: 'Parafuso M5', especificacao: 'aço zincado', quantidade: 8, unidade: 'un', regra: 'a cada 250 mm' }],
+  plaquetas: [{ tag: 'S1', texto: ['LIGA', 'BOMBA 01'], largura_mm: 60, altura_mm: 20, material: 'acrílico', fundo: '#000', letra: '#fff', fixacao: 'adesivo', local: 'porta', quantidade: 1 },
+    { tag: 'ET', texto: ['Q1'], largura_mm: 15, altura_mm: 6, desenhar: false }],
+  plaqueta_hm: { modelo: 'H&M QD-61439 / QD-01', numero_serie: 'a preencher', dados: [['Norma', 'ABNT NBR IEC 61439-2'], ['Un', '380 V']], largura_mm: 100, altura_mm: 70, material: 'alumínio anodizado', fixacao: '4 rebites' },
+  secoes: [{ titulo: 'Torques', paragrafos: ['p'], tabela: { colunas: ['A', 'B'], linhas: [['1', '2']] }, marcadores: ['m'] }],
+  verificacoes: [{ item: 'IP', criterio: 'IP54', norma: '11.2' }],
+  avisos: ['[CONFERIR] x'],
+};
+const html = CAD.gerarCadernoHtml(minimo);
+// capa → dados/normas → desenhos → plaquetas → componentes → barramentos → materiais → seções → verificações → avisos
+const ordem = ['class="capa"', '<h2>1. Dados nominais', '<h2>2.1 Vista frontal', '<h2>2.2 Detalhe largo', '<h2>3. Plaquetas', '<h2>4. Componentes', '<h2>5. Barramentos', '<h2>6. Materiais de montagem', '<h2>7. Torques', '<h2>8. Verificações', '<h2>9. Avisos'].map(t => html.indexOf(t));
+igual('caderno: todas as seções, na ordem do contrato', ordem.every((v, i, a) => v >= 0 && (i === 0 || v > a[i - 1])), true);
+igual('caderno: texto do cliente escapado (sem <script> nem <b> crus)', [html.includes('<script>'), html.includes('<b>1</b>'), html.includes('Cliente &lt;script&gt;alert(1)&lt;/script&gt; &amp; Cia'), html.includes('Q0 &lt;&amp;&gt;')], [false, false, true, true]);
+igual('caderno: sem recurso externo (logo e timbrado em data URI)', [/(src|href)="(https?:|\/\/|file:)/i.test(html), /src="data:image\/png;base64,/.test(html)], [false, true]);
+igual('caderno: desenho largo em página paisagem; quadro 600 × 1000 em retrato 1:5', [/class="pagina paisagem">\s*<div class="dz-cab"><h2>2\.2 Detalhe largo/.test(html), /2\.1 Vista frontal<\/h2><span class="esc">ESCALA 1:5</.test(html)], [true, true]);
+igual('caderno: svg recebe largura física na escala (620 mm / 5 = 124 mm)', /width="124\.00mm"/.test(html), true);
+igual('escala: 2000 × 800 cabe em 1:10 no retrato', [CAD.escolherEscala(800, 2000).esc, CAD.escolherEscala(800, 2000).orientacao], [10, 'retrato']);
+igual('escala: faixa 2400 × 300 vai para paisagem', CAD.escolherEscala(2400, 300).orientacao, 'paisagem');
+igual('plaquetas: etiqueta interna (desenhar:false) só na lista', [html.includes('>ET<'), (PL.htmlFolhaPlaquetas(minimo.plaquetas).html.match(/<figure/g) || []).length], [true, 1]);
+igual('plaqueta 60 × 20 em tamanho real', /width="60mm" height="20mm"/.test(PL.svgPlaqueta(minimo.plaquetas[0])), true);
+const hm = PL.svgPlaquetaHm(minimo.plaqueta_hm);
+igual('plaqueta H&M com logo, nome, modelo e furos de rebite', [/<image href="data:image\/png/.test(hm), hm.includes('H&amp;M Engenharia e Tecnologia'), hm.includes('H&amp;M QD-61439 / QD-01'), (hm.match(/<circle/g) || []).length], [true, true, true, 4]);
+igual('ajuste de texto: cabe na largura', PL.ajustarTexto(['MOTOR LIGADO'], 60, 20).h <= (60 - 4) / (12 * 0.62) + 1e-9, true);
+igual('carimbo: tag, sigla, revisão e folha n/N', ['QD-01', 'CAD-QD', 'R00', 'class="pageNumber"', 'class="totalPages"'].every(t => CAD.carimboRodape(minimo).includes(t)), true);
+
+(async () => {
+  let pdf = null;
+  try { require('./pdf').carregarPuppeteer(); } catch { console.log('  (puppeteer do backend ausente — PDF não testado)'); }
+  try { pdf = await CAD.gerarCadernoPdf(minimo); } catch (err) { if (!/Puppeteer não encontrado/.test(err.message)) throw err; }
+  if (pdf) igual('PDF: buffer começa com %PDF', pdf.slice(0, 4).toString(), '%PDF');
+  if (process.env.SALVAR_PDF) require('fs').writeFileSync(process.env.SALVAR_PDF, pdf);
+  fim();
+})().catch(err => { console.log(`  FALHOU ${err.stack}`); process.exitCode = 1; });
