@@ -7,6 +7,7 @@ const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
 const { fmtNum } = require('../../../_comum/docx-base');
 const { calcular, RAIO } = require('./calculo');
+const { gerarCaderno } = require('./caderno');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
 const MODELO = require('../../exemplos/modelo-vazio.json');
@@ -126,6 +127,8 @@ const DOCUMENTOS = [
       referencias: [['Detectores previstos', String(res.calc.nDet)], ['Acionadores previstos', String(res.calc.nAc)], ['Bateria mínima', `${res.calc.bateria.bateriaEscolhida} Ah`], ['Autonomia mínima iluminação', `${num(res.calc.autonomiaEmergH, 1)} h`]],
       medicoes: [{ titulo: 'Iluminância (lx) e autonomia', colunas: ['Local', 'lx medido', 'Mínimo', 'Obs.'], proporcoes: [2.2, 1, 1, 2], linhas: res.calc.iluminacao.map(x => [x.nome, '', `${x.nivelLux} lx`, '']) }],
     }, res.checklist)) },
+  // PDF: central de detecção e alarme (CDI) "da caixa aos parafusos"
+  { tipo: 'caderno', rotulo: 'Caderno de fabricação e montagem da central de incêndio', formato: 'PDF', nome: 'Caderno_Fabricacao_Central_Incendio', gerar: (res) => gerarCaderno(res) },
 ];
 
 function montarOrcamento(res, modo) {
@@ -212,7 +215,7 @@ const FORMULARIO = [
   F.secaoFotos(9),
 ];
 
-module.exports = criarDisciplina({
+const base = criarDisciplina({
   chave: 'incendio',
   nome: 'Incêndio — detecção, alarme e iluminação de emergência (NBR 17240 / NBR 10898)',
   modelo: MODELO,
@@ -228,3 +231,13 @@ module.exports = criarDisciplina({
   ],
   montarOrcamento,
 });
+
+// O molde só gera Word/Excel: o caderno de fabricação sai em PDF (mesmo padrão do CFTV)
+const gerarDocumentoBase = base.gerarDocumento;
+base.gerarDocumento = async (res, tipo) => {
+  if (tipo !== 'caderno') return gerarDocumentoBase(res, tipo);
+  const d = DOCUMENTOS.find(x => x.tipo === tipo);
+  return { buffer: await d.gerar(res), nomeArquivo: D.nomeArquivo(res.dados, d.nome, 'pdf', true), mime: 'application/pdf' };
+};
+
+module.exports = base;

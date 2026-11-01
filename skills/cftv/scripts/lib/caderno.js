@@ -117,7 +117,7 @@ function montarCaderno(res) {
       tabela: { colunas: ['Câmera', 'Local', 'Qtd.', 'PoE (W)', 'Cabo (m)', 'Externa'], linhas: calc.cameras.map(c => [c.id, c.local, String(c.qtd), String(Math.round(c.poe * 10) / 10).replace('.', ','), String(c.cabo), c.externa ? 'sim (DPS)' : 'não']), proporcoes: [0.7, 2.4, 0.5, 0.7, 0.7, 0.8] },
     }],
     avisos: [
-      'Patch panel, patch cords e o próprio rack não constam da lista de materiais do memorial do CFTV — incluir no orçamento conforme este caderno. [CONFERIR]',
+      'Rack, patch panel, organizadores, PDU e patch cords constam da lista de materiais do memorial e do orçamento do CFTV (mesma quantidade deste caderno).'
     ],
   });
 }

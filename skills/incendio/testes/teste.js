@@ -31,8 +31,26 @@ igual('autonomia 2,5 h → C', res.med.autonomia[0].resultado, 'C');
   const r1 = cl(d => { d.sistema.autonomia_iluminacao_h = 1; });
   igual('autonomia informada < 2 h é recusada (fica 2 h, com aviso)', [r1.calc.autonomiaEmergH, r1.calc.avisos.some(a => a.startsWith('Autonomia da iluminação de emergência informada (1 h)'))], [2, true]);
 }
+// ── Caderno de fabricação e montagem da central de incêndio (31/10/2026) ──
+const { montarCaixa, montarCaderno } = require('../scripts/lib/caderno');
+{
+  const cx = montarCaixa(res);
+  const tags = cx.itens.map(i => i.tag);
+  igual('caderno: central com CPU, laço, fonte, 2 baterias e comunicação', ['CPU', 'FNT', 'BAT-1', 'BAT-2', 'COM'].every(t => tags.includes(t)) && tags.some(t => t.startsWith('LACO-')), true);
+  igual('caderno: baterias da skill (Anexo B); detectores, acionadores e avisadores só no campo', [cx.itens.find(i => i.tag === 'BAT-1').descricao.includes(`${c.bateria.bateriaEscolhida} Ah`), cx.itens.filter(i => i.na_placa === false).map(i => i.tag).slice(0, 3)], [true, ['DET', 'ACM', 'AV']]);
+  igual('caderno: frente com alimentação, alarme, falha, supervisão, silenciar, reset e teste', ['ALIMENT.', 'ALARME', 'FALHA', 'SUPERV.', 'SILENCIAR', 'RESET', 'TESTE'].every(x => cx.frente.some(f => f.texto[0] === x)), true);
+  const cad = montarCaderno(res);
+  igual('caderno: normas NBR 17240, 10898, 5410 e 5419-4 e plaqueta H&M', [['17240', '10898', '5410', '5419-4'].every(n => cad.normas.some(x => x.codigo.includes(n))), /H&M/.test(cad.plaqueta_hm.modelo)], [true, true]);
+  igual('caderno: verificações de autonomia, laço aberto e alarme sonoro', ['Autonomia da bateria', 'Falha de', 'Alarme sonoro'].every(k => cad.verificacoes.some(v => v.item.includes(k))), true);
+}
 (async () => {
-  for (const t of motor.tiposDisponiveis(res)) igual(`documento ${t}`, (await motor.gerarDocumento(res, t)).buffer.slice(0, 2).toString(), 'PK');
+  for (const t of motor.tiposDisponiveis(res).filter(x => x !== 'caderno')) igual(`documento ${t}`, (await motor.gerarDocumento(res, t)).buffer.slice(0, 2).toString(), 'PK');
+  try {
+    require('../../_comum/fabricacao/pdf').carregarPuppeteer();
+    const g = await motor.gerarDocumento(res, 'caderno');
+    igual('caderno da central de incêndio: PDF (%PDF, application/pdf, .pdf)', [g.buffer.slice(0, 4).toString(), g.mime, g.nomeArquivo.endsWith('.pdf')], ['%PDF', 'application/pdf', true]);
+    if (process.env.CAD_SAIDA) require('fs').writeFileSync(process.env.CAD_SAIDA, g.buffer);
+  } catch (e) { if (!/puppeteer/i.test(String(e.message))) throw e; console.log('  (puppeteer ausente — PDF do caderno não testado)'); }
   igual('orçamento de instalação tem materiais e serviços', motor.montarOrcamento(res, 'execucao').itens.length > 8, true);
   fim();
 })();

@@ -4,6 +4,7 @@
 // Exemplo: condomínio de 2 torres × 9 pavimentos × 3 unidades = 54 ramais.
 const motor = require('../scripts/lib/index');
 const C = require('../scripts/lib/calculo');
+const CAD = require('../scripts/lib/caderno');
 const { perto, igual, fim } = require('../../_comum/teste').verificador('telefonia');
 
 const clonar = (o) => JSON.parse(JSON.stringify(o));
@@ -137,8 +138,23 @@ try { motor.processar(motor.modeloVazio()); } catch (e) { erro = e.message; }
 igual('modelo vazio pede blocos', /ao menos um bloco/.test(erro), true);
 
 (async () => {
-  for (const t of motor.tiposDisponiveis(res)) igual(`documento ${t}`, (await motor.gerarDocumento(res, t)).buffer.slice(0, 2).toString(), 'PK');
-  for (const t of motor.tiposDisponiveis(motor.processar(d5))) igual(`documento IP ${t}`, (await motor.gerarDocumento(motor.processar(d5), t)).buffer.slice(0, 2).toString(), 'PK');
+  for (const t of motor.tiposDisponiveis(res).filter(x => x !== 'caderno')) igual(`documento ${t}`, (await motor.gerarDocumento(res, t)).buffer.slice(0, 2).toString(), 'PK');
+  for (const t of motor.tiposDisponiveis(motor.processar(d5)).filter(x => x !== 'caderno')) igual(`documento IP ${t}`, (await motor.gerarDocumento(motor.processar(d5), t)).buffer.slice(0, 2).toString(), 'PK');
+
+  // Caderno de fabricação (PDF) — caixas
+  const cad = CAD.montarCaderno(res);
+  const dg = CAD.montarCaixaDg(res);
+  igual('caderno: DG com central, ${calc.blocosDg} blocos em suportes, DPS e TAP; ramais de campo', [dg.itens.filter(i => /^BL-/.test(i.tag)).length, dg.itens.some(i => i.tag === 'CEN'), dg.itens.some(i => i.tag === 'DPS-L'), dg.itens.some(i => i.tag === 'TAP'), dg.itens.find(i => i.tag === 'RAM').na_placa], [3, true, true, true, false]);
+  igual('caderno: caixa de andar típica (18 pavimentos) e normas Telebrás/NBR 14306/NBR 5419-4', [!!CAD.montarCaixaAndar(res), cad.normas.map(n => n.codigo).join('|').includes('NBR 14306'), cad.normas.some(n => /5419-4/.test(n.codigo)), /H&M/.test(cad.plaqueta_hm.modelo)], [true, true, true, true]);
+  const dIp = clonar(motor.exemplo()); dIp.sistema.tipo = 'hibrido';
+  igual('caderno híbrido: PABX IP e gateway FXS no DG', (i => [i.some(x => x.tag === 'PABX'), i.some(x => x.tag === 'GW-FXS')])(CAD.montarCaixaDg(motor.processar(dIp)).itens), [true, true]);
+  let temPuppeteer = true;
+  try { require('../../_comum/fabricacao/pdf').carregarPuppeteer(); } catch { temPuppeteer = false; console.log('  (puppeteer do backend ausente — PDF do caderno não testado)'); }
+  if (temPuppeteer) {
+    const g = await motor.gerarDocumento(res, 'caderno');
+    igual('caderno: PDF (%PDF, application/pdf, .pdf)', [g.buffer.slice(0, 4).toString(), g.mime, g.nomeArquivo.endsWith('.pdf')], ['%PDF', 'application/pdf', true]);
+  }
+
   const orc = motor.montarOrcamento(res, 'execucao');
   const q = (cod) => (orc.itens.find(i => i.codigo === cod) || {}).quantidade;
   igual('orçamento: terminais, porteiros, prumada e blocos', [q('tel_terminal'), q('tel_porteiro'), q('tel_prumada'), q('tel_dg'), q('tel_central')], [59, 2, 875, 47, 1]);

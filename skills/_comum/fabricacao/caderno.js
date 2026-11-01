@@ -240,9 +240,9 @@ function gerarCadernoHtml(caderno) {
     c.desenhos.forEach((d, i) => corpo.push(secaoDesenho(d, `${n}${i + 1}`)));
   }
   // 3. plaquetas
-  if ((c.plaquetas || []).length || c.plaqueta_hm) {
+  if ((c.plaquetas || []).length || c.plaqueta_hm || (c.plaquetas_hm || []).length) {
     const n = capitulo('Plaquetas e identificação');
-    const folha = htmlFolhaPlaquetas(c.plaquetas || [], c.plaqueta_hm || null);
+    const folha = htmlFolhaPlaquetas(c.plaquetas || [], (c.plaquetas_hm && c.plaquetas_hm.length) ? c.plaquetas_hm : (c.plaqueta_hm || null));
     const todas = (c.plaquetas || []).map(p => [p.tag, (Array.isArray(p.texto) ? p.texto : [p.texto]).filter(Boolean).join(' / '), `${p.largura_mm} × ${p.altura_mm}`, p.material, p.fixacao, p.local, p.quantidade ?? 1]);
     corpo.push(`<section class="pagina"><h2>${e(n)} Plaquetas e identificação</h2>
       <div class="escala-aviso">Folha de plaquetas em escala ${e(folha.escala)} — imprimir em tamanho real (100 %, sem "ajustar à página") para conferir as medidas. Texto, cores e material conforme a lista abaixo.</div>

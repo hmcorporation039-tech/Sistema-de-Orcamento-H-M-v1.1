@@ -109,6 +109,17 @@ function calcular(dados) {
     ...(cameras.some(c => c.externa) ? [{ codigo: 'DPS', descricao: 'DPS de rede (RJ-45 PoE) para câmeras externas', unidade: 'un', quantidade: cameras.filter(c => c.externa).reduce((a, c) => a + c.qtd, 0), referencia: 'NBR 5419-4' }] : []),
     { codigo: 'PLACA', descricao: 'Placa "Ambiente monitorado por câmeras" (LGPD — transparência)', unidade: 'un', quantidade: placas, referencia: 'Lei 13.709/2018' },
   ];
+  // Rack, patch panels, organizadores, PDU e patch cords: antes só existiam no caderno de fabricação (PDF) e ficavam fora do orçamento
+  const parcial = { cameras, nCam, switches, poeTotal, poeComMargem, cargaW, nobreakVa, autonomiaMin, energiaWh, hds, hdTb, canais, raid, caboAcima90 };
+  const rack = require('./caderno').montarRack({ calc: parcial, dados });
+  const qtdTipo = (t) => rack.ocupacao.filter(i => i.tipo === t).length;
+  materiais.push(
+    { codigo: 'RACK', descricao: `Rack ${rack.tipo === 'parede' ? 'de parede' : 'de piso'} 19" ${rack.alturaU}U, profundidade ${rack.profundidade} mm, com portas e chave`, unidade: 'un', quantidade: 1, referencia: 'NBR 14565 / EIA-310-E' },
+    { codigo: 'PP', descricao: 'Patch panel 24 portas Cat 6 (cabos das câmeras)', unidade: 'un', quantidade: qtdTipo('patch_panel'), referencia: 'NBR 14565' },
+    { codigo: 'ORG', descricao: 'Organizador de cabos horizontal 1U com tampa', unidade: 'un', quantidade: qtdTipo('organizador'), referencia: 'NBR 14565' },
+    { codigo: 'PDU', descricao: `PDU de rack ${rack.tomadasPdu} tomadas, ${rack.correntePdu} A, ${rack.tensao} V~`, unidade: 'un', quantidade: rack.nPdu || 1, referencia: 'NBR 14136' },
+    { codigo: 'PC', descricao: 'Patch cord Cat 6 1,5 m LSZH (patch panel → switch, switch → NVR e NVR → rede)', unidade: 'un', quantidade: nCam + switches + 1, referencia: 'NBR 14565' },
+  );
   avisos.push('Bitrate e consumos típicos de mercado — conferir com a ficha técnica dos equipamentos escolhidos. [CONFERIR]');
   return { cameras, nCam, banda, dias, horas, atividade, armazenamentoTb, hdTb, hds, hdsDados, portasBt, caboAcima90, raid, canais, poeTotal, poeComMargem, switches, cargaW, nobreakVa, autonomiaMin, energiaWh, caboM, materiais, avisos };
 }

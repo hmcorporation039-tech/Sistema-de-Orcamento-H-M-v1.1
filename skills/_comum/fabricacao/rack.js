@@ -180,7 +180,7 @@ function dimensionarRack(entrada) {
   const massa = massaRack + ocupacao.reduce((a, it) => a + it.peso_kg, 0);
   if (massa - massaRack > g.capacidadeKg) avisos.push(`${entrada.id}: ${br(massa - massaRack)} kg de equipamentos acima da capacidade típica do rack (${g.capacidadeKg} kg). [CONFERIR]`);
 
-  const secaoTerra = Number(entrada.secao_terra_mm2) || 6;
+  const secaoTerra = Number(entrada.secao_terra_mm2) || 16; // TIA-607-D: mínimo 6 AWG (13,3 mm²) → 16 mm² comercial
   const distTgb = Number(entrada.distancia_tgb_m) || 10;
   const rack = {
     id: entrada.id || 'RACK-01', local: entrada.local || '', titulo: entrada.titulo || '', tipo, alturaU, larguraExt, profundidade, profUtil, profMax,
@@ -703,9 +703,6 @@ function cadernoDeRacks(racks, opts = {}) {
   for (const p of partes) {
     for (const pl of p.plaquetas) plaquetas.push({ ...pl, tag: varios ? `${pl.tag} ${p.rack.id}` : pl.tag, grupo: varios ? `Plaquetas — ${p.rack.id}` : undefined });
   }
-  for (const p of partes.slice(1)) {
-    plaquetas.push({ tag: `HM ${p.rack.id}`, texto: [p.plaqueta_hm.modelo, ...p.plaqueta_hm.dados.map(([k, v]) => `${k}: ${v}`)], largura_mm: p.plaqueta_hm.largura_mm, altura_mm: p.plaqueta_hm.altura_mm, material: p.plaqueta_hm.material, fixacao: p.plaqueta_hm.fixacao, local: `${p.rack.id}: ${p.plaqueta_hm.local} (mesmo leiaute da plaqueta H&M desenhada)`, quantidade: 1, desenhar: false });
-  }
   const secoes = [
     ...partes.map(p => ({
       titulo: `${p.rack.id} — características e ocupação por U`,
@@ -732,10 +729,11 @@ function cadernoDeRacks(racks, opts = {}) {
     materiais_montagem: partes.flatMap(p => p.materiais_montagem.map(m => ({ ...m, grupo: pref(p.rack, m.grupo) }))),
     plaquetas,
     plaqueta_hm: partes[0].plaqueta_hm,
+    plaquetas_hm: partes.map(p => p.plaqueta_hm),
     secoes,
     verificacoes: partes.flatMap(p => p.verificacoes.map(v => ({ ...v, item: pref(p.rack, v.item) }))),
     avisos: [...partes.flatMap(p => p.avisos), ...(opts.avisos || []),
-      ...(lista.some(r => r.secaoTerra < 16) ? ['Condutor do rack ao TGB/BEP adotado em 6 mm² (padrão H&M para racks pequenos); a ANSI/TIA-607-D pede no mínimo 6 AWG (≈ 16 mm²) — confirmar a seção com o projeto de aterramento/SPDA da edificação. [CONFERIR]'] : []),
+      ...(lista.some(r => r.secaoTerra < 16) ? ['Condutor do rack ao TGB/BEP informado abaixo do mínimo; a ANSI/TIA-607-D pede no mínimo 6 AWG (≈ 16 mm²) — confirmar a seção com o projeto de aterramento/SPDA da edificação. [CONFERIR]'] : []),
       'Medidas, massas e consumos dos ativos são típicos de mercado — conferir com a ficha técnica dos modelos comprados antes da montagem. [CONFERIR]'],
   };
 }
