@@ -433,7 +433,24 @@ Pedido do usuário: "todo modelo de projetos gerados em 3D devem ter sua infraes
 Instalada em produção em 31/10/2026 (pedido do usuário: "pode instalar"), com tudo o que está nas duas entradas anteriores. Inclui as correções dos dois erros de regex com backspace que existiam na 2.4.0: cabo PP/solar sem categoria e o leitor de PDF vetorial.
 - Backup antes da instalação em `C:\HM-Engenharia\Backups\*antes-v2.5*`, com cópia no servidor em `Backups\Instalacao-2.5.0`.
 - O banco recebe a migração 2.0-20 (componentes de quadro) ao reiniciar o backend.
-- Os cadernos de fabricação em PDF (quadros e racks), em construção no ramo `versao-2.0`, ficam para a versão seguinte.
+- Os cadernos de fabricação em PDF (quadros e racks) entraram na 2.6.0.
+
+### 31/10/2026: versão 2.6.0 — planilhas Excel apresentáveis e cadernos de fabricação em PDF
+Instalada em produção em 31/10/2026 (pedido do usuário: "instale"). Pedidos: planilhas Excel dos orçamentos com cabeçalhos e rodapés alinhados e padrão profissional; "todo quadro que o sistema projetar terá que ter um PDF com todo o layout, componentes, fabricantes, medidas de barramentos e todos os componentes, da caixa aos parafusos, botões, sinalizadores, plaquetas de identificação e plaqueta H&M — o mesmo para racks de rede, CFTV e qualquer sistema".
+- **Excel** (`skills/_comum/excel-estilo.js`, `empresa.js`, `planilhaOrcamentoCliente.js`):
+  - faixa de título com logo;
+  - tabelas com bordas;
+  - linhas de sistema, subtotal e total destacadas;
+  - impressão em A4 ajustada à largura, com o cabeçalho da tabela repetido;
+  - rodapé com a empresa à esquerda e a página à direita.
+  - Toda planilha que passa pelo papel timbrado ganha a impressão padrão.
+- **Caderno de fabricação e montagem** (`skills/_comum/fabricacao/`, documento `caderno`, formato PDF):
+  - quadros: vistas, layout interno, barramento, bornes, plaquetas 1:1 e a plaqueta H&M (dados da NBR IEC 61439-1 6.1), componentes com fabricante e medidas, e materiais até os parafusos com a regra de cada quantidade;
+  - racks de cabeamento e CFTV: elevações, materiais até os parafusos, aterramento, plaquetas e checklist;
+  - normas por sistema.
+  - A seção do condutor de aterramento do rack (6 mm²) fica para conferir: a TIA-607 pede no mínimo cerca de 16 mm².
+- Backup antes da instalação em `C:\HM-Engenharia\Backups\*antes-v2.6*`, com cópia no servidor em `Backups\Instalacao-2.6.0`.
+- Pendências: cadernos para os demais sistemas (alarme, incêndio, acesso, telefonia, antena) e rack/patch panel no orçamento do CFTV.
 
 ---
 
