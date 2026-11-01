@@ -3,12 +3,15 @@ import { useAuth } from '../../hooks/useAuth';
 import Clientes from '../Clientes';
 import Usuarios from '../Usuarios';
 import Integracoes from '../Integracoes';
+import DadosFiscais from '../DadosFiscais';
 
-// Grupo "Cadastros e administração": clientes (todos), usuários e integrações
-// (rotinas automáticas, e-mail, IA — só admin).
-//   /cadastros?aba=clientes | ?aba=usuarios | ?aba=integracoes
+// Grupo "Cadastros e administração": clientes (todos), dados fiscais da
+// empresa para a NFS-e, usuários e integrações (rotinas automáticas, e-mail,
+// IA) — esses três só admin.
+//   /cadastros?aba=clientes | ?aba=fiscal | ?aba=usuarios | ?aba=integracoes
 const ABAS = [
   { chave: 'clientes', rotulo: 'Clientes', render: () => <Clientes /> },
+  { chave: 'fiscal', rotulo: 'Dados fiscais', admin: true, render: () => <DadosFiscais /> },
   { chave: 'usuarios', rotulo: 'Usuários', admin: true, render: () => <Usuarios /> },
   { chave: 'integracoes', rotulo: 'Integrações', admin: true, render: () => <Integracoes /> },
 ];

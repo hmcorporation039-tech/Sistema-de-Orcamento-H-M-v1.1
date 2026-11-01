@@ -414,3 +414,32 @@ export const getArquivoCampo = (url) => {
   if (!/^\/campo\/(fotos\/[0-9a-f-]{36}|os\/\d+\/assinatura)$/i.test(rota)) return Promise.reject(new Error('Endereço de arquivo de campo inválido'));
   return api.get(rota, { responseType: 'blob', timeout: 60000 });
 };
+// ── FISCAL: cadastro para a NFS-e Padrão Nacional (2.4, etapa 1) ────────────
+// empresa: dados fiscais do prestador + serviços que a H&M fatura (admin edita)
+export const getEmpresaFiscal = () => api.get('/fiscal/empresa');
+export const salvarEmpresaFiscal = (data) => api.put('/fiscal/empresa', data);
+export const criarServicoEmpresa = (data) => api.post('/fiscal/empresa/servicos', data);
+export const atualizarServicoEmpresa = (id, data) => api.put(`/fiscal/empresa/servicos/${id}`, data);
+export const removerServicoEmpresa = (id) => api.delete(`/fiscal/empresa/servicos/${id}`);
+// tabelas oficiais: busca por código (com ou sem pontos) ou por palavras
+export const buscarServicosNacionais = (busca) => api.get('/fiscal/servicos', { params: { busca } });
+export const buscarNbs = (busca) => api.get('/fiscal/nbs', { params: { busca } });
+export const buscarMunicipios = (busca, uf) => api.get('/fiscal/municipios', { params: { busca, ...(uf ? { uf } : {}) } });
+export const consultarCep = (cep) => api.get(`/fiscal/cep/${encodeURIComponent(String(cep).replace(/\D/g, ''))}`);
+// ── NOTAS FISCAIS DE SERVIÇO (2.4): rascunho, duplicar, PDF, e-mail, importação ──
+export const getNotasFiscais = (params) => api.get('/notas-fiscais', { params });
+export const getNotaFiscal = (id) => api.get(`/notas-fiscais/${id}`);
+export const criarNotaFiscal = (data) => api.post('/notas-fiscais', data);
+export const atualizarNotaFiscal = (id, data) => api.put(`/notas-fiscais/${id}`, data);
+export const removerNotaFiscal = (id) => api.delete(`/notas-fiscais/${id}`);
+// cliente_ids opcional: uma cópia para cada cliente
+export const duplicarNotaFiscal = (id, clienteIds) => api.post(`/notas-fiscais/${id}/duplicar`, clienteIds ? { cliente_ids: clienteIds } : {});
+export const cancelarNotaFiscal = (id, motivo) => api.post(`/notas-fiscais/${id}/cancelar`, { motivo });
+export const enviarNotaFiscalPorEmail = (id, destinatario, mensagem) => api.post(`/notas-fiscais/${id}/email`, { destinatario, mensagem }, { timeout: 120000 });
+export const baixarPdfNotaFiscal = (id) => api.get(`/notas-fiscais/${id}/pdf`, { responseType: 'blob', timeout: 120000 });
+export const baixarXmlNotaFiscal = (id) => api.get(`/notas-fiscais/${id}/xml`, { responseType: 'blob' });
+export const importarXmlNotasFiscais = (arquivos) => {
+  const fd = new FormData();
+  for (const a of arquivos) fd.append('arquivos', a);
+  return api.post('/notas-fiscais/importar', fd, { timeout: 300000 });
+};

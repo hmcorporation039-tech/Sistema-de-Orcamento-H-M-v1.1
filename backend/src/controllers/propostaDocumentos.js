@@ -169,4 +169,6 @@ module.exports = {
   gerarPdf, gerarPlanilha, enviarEmail,
   // PDF da proposta sem resposta HTTP (aprovação por link, cópia na pasta do projeto/laudo)
   montarPdfBuffer,
+  // a mesma assinatura no e-mail da nota fiscal (notasFiscaisController)
+  ASSINATURA_EMPRESA,
 };
