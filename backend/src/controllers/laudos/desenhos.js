@@ -9,7 +9,7 @@ const { motorDaDisciplina, cad, tiposDocumento, entrega } = require('../../utils
 const P = require('../../services/pastasSistema');
 const { tipoAmbiente } = require('../../utils/ponteAnaliseSkill');
 const { pastaDoLaudo, seguro } = require('../../services/pastasRegistros');
-const { lerArquiteturaNoWorker, mensagemDaLeitura, resumoDaArquitetura, dxfParaGuardar, faltouEscala, gerarPlantaNoWorker } = require('../../services/tarefasCad');
+const { lerArquiteturaNoWorker, mensagemDaLeitura, resumoDaArquitetura, dxfParaGuardar, dxfConvertido, faltouEscala, gerarPlantaNoWorker } = require('../../services/tarefasCad');
 const { carregarLaudo, conferirUso, processarComMotor, erro400, nomeSeguroArquivo } = require('./comum');
 
 // ── Arquitetura (DWG/DXF) e planta gerada pela skill ─────────────────────
@@ -83,6 +83,8 @@ async function enviarArquitetura(req, res) {
   await seguro(`arquitetura laudo ${laudo.id}`, async () => {
     const pasta = path.join(await pastaDoLaudo(laudo), 'Arquitetura');
     await P.gravarArquivo(pasta, arq.originalname, arq.buffer);
+    const conv = dxfConvertido(lida, arq.originalname);
+    if (conv) await P.gravarArquivo(pasta, conv.nome, conv.conteudo);
   });
   res.status(201).json({ ...resumo, preenchidos });
 }

@@ -290,7 +290,9 @@ function associarPortas(portas, ambientes) {
 // DXF real, os "ambientes" vinham desses contornos, com nome de equipamento.
 // ("COBERTURA" sozinha não entra: na arquitetura é telhado ou apartamento;
 // CFTV-COBERTURA e INC-RAIO-COBERTURA saem pelo prefixo da disciplina.)
-const RE_LAYER_NAO_AMBIENTE = /REVIS[ÃA]O|NUVEM|CLOUD|CAMPO.?DE.?VIS|CALHA|ELETROD|FIA[ÇC][ÃA]O|FIACAO|INFRA|STD-INC|MOBILI|\bMAPA|SITUA[ÇC][ÃA]O|LOCALIZA[ÇC][ÃA]O|\bEQUIP|HACH/i;
+// "DI-Área do detalhe" (QiBuilder) é a moldura do recorte de detalhe: na Arena
+// (01/11/2026) virava uma "LANCHONETE" de 2.316 m² e ambientes de 1.600 m².
+const RE_LAYER_NAO_AMBIENTE = /REVIS[ÃA]O|NUVEM|CLOUD|CAMPO.?DE.?VIS|CALHA|ELETROD|FIA[ÇC][ÃA]O|FIACAO|INFRA|STD-INC|MOBILI|\bMAPA|SITUA[ÇC][ÃA]O|LOCALIZA[ÇC][ÃA]O|\bEQUIP|HACH|[ÁA]REA.?D[OE].?DETALHE/i;
 const layerNaoEhAmbiente = (l) => RE_LAYER_NAO_AMBIENTE.test(l || '') || ehLayerDeInstalacao(l);
 
 // Grade de módulos iguais (6+ polígonos de mesma área e mesmas dimensões, a

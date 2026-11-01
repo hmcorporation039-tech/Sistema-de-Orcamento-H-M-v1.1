@@ -35,6 +35,15 @@ Todos os comandos rodam na pasta `C:\HM-Engenharia\hm-eng\skills` (para testar m
   3. o formulário do projeto da H&M.
 
   Planta sem nenhum deles sai **só com a arquitetura**, e o eletroduto também não é inventado.
+- **Infraestrutura do desenho e caminhos sugeridos** (`_comum/cad/infraestrutura.js`, pedido de 01/11/2026):
+  - Eletrocalha desenhada como **par de abas paralelas** (QiBuilder, PDF) vira **uma** eletrocalha, com a largura medida entre as abas. As "Conexões – condutos retangulares" (curvas e tês) ficam de fora.
+  - Tomada e interruptor descem do eletroduto do teto ou **sobem do eletroduto do piso**; luminária só se liga pelo teto.
+  - O ponto que o desenho deixou **solto** (a mais de 60 cm da tubulação) ganha um **eletroduto SUGERIDO**:
+    - o interruptor vai à luminária do mesmo ambiente (retorno);
+    - tomada, luminária e quadro vão à tubulação mais próxima (ou ao quadro, se não houver tubulação desenhada);
+    - postes e caixas de piso vão pela rede enterrada.
+  - O caminho é em "L", paralelo às paredes, pelo lado que atravessa menos paredes. Ponto a mais de 40 m não é ligado.
+  - No 3D o sugerido fica **azul-claro translúcido**, com o botão **"Sugeridos"** para ligar e desligar. Nunca entra como "projeto": é para conferir no executivo.
 
 ## Fluxo de trabalho
 
@@ -43,7 +52,7 @@ Todos os comandos rodam na pasta `C:\HM-Engenharia\hm-eng\skills` (para testar m
    - **DWG/DXF do projeto ou da arquitetura:** caminho principal.
      - Exportação do QiBuilder/AltoQi vem com os blocos explodidos. Os passos 4 e 5 recuperam os pontos assim mesmo.
      - Peça a **estrutural** (forma) para conferir os pilares.
-   - **PDF:** funciona, mas sem nomes de layer: tudo vira `PDF-PAREDE`/`PDF-LINHAS`.
+   - **PDF:** é **sempre convertido em DXF** (e o DXF fica na pasta do cliente, junto do original). Sem nomes de layer, mas **cada cor de traço vira uma layer `PDF-COR-RRGGBB`** (tracejado: `-TRACEJADO`), como as layers do CAD que exportou o PDF. Pela forma: círculo de 15 a 80 cm é luminária; marca pequena repetida é ponto de parede ("tomada/interruptor — conferir na legenda"); cor que é traço comprido ou curva é eletroduto; tracejado (inclusive o "picado" em pedacinhos) é o eletroduto do piso (NBR 5444). A escala informada vale na folha principal; as outras folhas usam o carimbo delas.
      - O símbolo usado para três coisas diferentes (ex.: "caixa de passagem / poste do estacionamento / tomada de piso") só se separa com o DWG. **Peça o DWG.**
 2. **Diagnóstico das layers e escolha da planta:**
    ```bash

@@ -24,8 +24,8 @@ const { tipoDoAmbiente } = require('./estimativaArquitetura');
 const MAIOR_SIMBOLO_M = 3; // grupo maior que isso é traçado, não símbolo
 const COLA_M = 0.05;       // traços a até 5 cm um do outro são do mesmo símbolo
 // layers de instalação (o resto — arquitetura, prancha — não tem pontos)
-const RE_INSTALACAO = /^(EL|ELE|IFC|P|INC|CFTV|TEL|SPDA|PCI|HID)[-_ ]|SIMB|L[ÂA]MP|LUMIN|TOMAD|INTERRUP|CAIXA|QUADRO|POSTE|REFLET|PROJETOR|DETEC|C[ÂA]MERA|SENSOR|CONDUT|ELETROD|ELETROCALHA|LEITO|PERFILADO/i;
-const RE_FORA = /FIOS?\b|TEXTO|TXT|DIAGRAM|^DI[-_ ]|BARRAMENTO|UNIFILAR|TABELA|MARGEM|PRANCHA|CONTORNO\d|HATCH|HACH|COTA/i;
+const RE_INSTALACAO = /^PDF-COR-|^(EL|ELE|IFC|P|INC|CFTV|TEL|SPDA|PCI|HID)[-_ ]|SIMB|L[ÂA]MP|LUMIN|TOMAD|INTERRUP|CAIXA|QUADRO|POSTE|REFLET|PROJETOR|DETEC|C[ÂA]MERA|SENSOR|CONDUT|ELETROD|ELETROCALHA|LEITO|PERFILADO/i;
+const RE_FORA = /FIOS?\b|TEXTO|TXT|DIAGRAM|^DI[-_ ]|BARRAMENTO|UNIFILAR|TABELA|CONEX[ÕO]ES|MARGEM|PRANCHA|CONTORNO\d|HATCH|HACH|COTA/i;
 const RE_TRECHO = /CONDUT|ELETROD|ELETROCALHA|LEITO|PERFILADO/i;
 
 // sugestão pelo nome da layer (na skill o engenheiro confere: é proposta, não leitura)
@@ -44,7 +44,7 @@ function sugestao(layer, medida, externo) {
 }
 
 // grupos de traços colados (caixa envolvente com folga) por layer
-function agrupar(refs) {
+function agrupar(refs, maior = MAIOR_SIMBOLO_M) {
   const bb = refs.map(r => {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const [x, y] of r.pts) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
@@ -65,10 +65,41 @@ function agrupar(refs) {
   bb.forEach((b, i) => {
     const k = raiz(i);
     const o = g.get(k);
-    g.set(k, o ? [Math.min(o[0], b[0]), Math.min(o[1], b[1]), Math.max(o[2], b[2]), Math.max(o[3], b[3])] : b);
+    if (!o) { g.set(k, { b, membros: [i], arcos: refs[i].tipo === 'arco' ? 1 : 0 }); return; }
+    o.b = [Math.min(o.b[0], b[0]), Math.min(o.b[1], b[1]), Math.max(o.b[2], b[2]), Math.max(o.b[3], b[3])];
+    o.membros.push(i);
+    if (refs[i].tipo === 'arco') o.arcos++;
   });
-  return [...g.values()].map(b => ({ caixa: b, centro: [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2], medida: [b[2] - b[0], b[3] - b[1]].sort((x, y) => y - x) }))
-    .filter(s => s.medida[0] <= MAIOR_SIMBOLO_M && s.medida[0] > 0.01);
+  // membros: índices em refs; arcos: quantos são arco/círculo (luminária redonda)
+  return [...g.values()].map(({ b, membros, arcos }) => ({ caixa: b, centro: [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2], medida: [b[2] - b[0], b[3] - b[1]].sort((x, y) => y - x), membros, arcos }))
+    .filter(s => s.medida[0] <= maior && s.medida[0] > 0.01);
+}
+
+// ── PDF convertido (backend/src/services/pdfParaDxf.js) ─────────────────────
+// O PDF não tem layers: cada COR de traço vira uma layer PDF-COR-RRGGBB (no
+// projeto exportado, uma cor por layer do CAD). Sem nome para dizer o que é,
+// vale a FORMA: grupo compacto pequeno é símbolo; o resto (traço comprido,
+// curva entre pontos, tracejado) é eletroduto/eletrocalha.
+const RE_PDF_COR = /^PDF-COR-/i;
+const simboloPdf = (s) => s.medida[0] <= 0.8 && s.medida[1] >= 0.05;
+// (a planta lida do PDF costuma ter poucos ambientes fechados: "fora das salas"
+// não diz se o ponto é externo — vale a forma e o tamanho)
+function sugestaoPdf(medida, externo, circular) {
+  const [L, W] = medida;
+  // círculo de 15 a 80 cm na planta: a luminária (convenção da NBR 5444 e do QiBuilder)
+  if (circular && L >= 0.15 && W >= 0.8 * L) return { simbolo: 'HM-ILU-LUMINARIA', disciplina: 'eletrica', rotulo: 'Luminária (círculo do projeto em PDF)' };
+  // marca miúda (até 12 cm) fora das salas: poste ou caixa da área externa
+  if (externo && L <= 0.12) return { simbolo: 'HM-ELE-CAIXA-PISO', disciplina: 'iluminacao-externa', rotulo: 'Ponto externo do projeto (poste/caixa — conferir na legenda)' };
+  if (L <= 0.45) return { simbolo: 'HM-ELE-PONTO', disciplina: 'eletrica', rotulo: 'Ponto de parede do projeto (tomada/interruptor — conferir na legenda)' };
+  return null;
+}
+// círculo desenhado como arco ou como polilinha (a curva do PDF em pedaços):
+// os pontos dos traços ficam todos à mesma distância do centro (±12%)
+function redondo(s, refs) {
+  if (s.arcos >= 0.5 * s.membros.length) return true;
+  const d = s.membros.flatMap(i => refs[i].pts.map(p => Math.hypot(p[0] - s.centro[0], p[1] - s.centro[1])));
+  const m = d.reduce((a, b) => a + b, 0) / d.length;
+  return d.length >= 8 && m > 0 && d.every(v => Math.abs(v - m) <= 0.12 * m);
 }
 
 // símbolos da área externa sem legenda na biblioteca (./simbolos.js)
@@ -101,22 +132,43 @@ function propostaDeMapa(arq) {
       trechos.push({ layer, tipo: /ELETROCALHA/i.test(layer) ? 'eletrocalha' : /LEITO/i.test(layer) ? 'leito' : /PERFILADO/i.test(layer) ? 'perfilado' : 'eletroduto', disciplina: 'eletrica', ...(piso ? { altura: 0.04 } : {}), comprimento_m: r2(refs.reduce((s, r) => s + comprimento(r), 0)) });
       continue;
     }
+    const pdf = RE_PDF_COR.test(layer);
+    let ehTracado = false;
+    if (pdf) {
+      // a cor do PDF: o que não é símbolo é traçado (eletroduto; as abas paralelas
+      // viram eletrocalha no 3D); tracejado é o enterrado/embutido no piso (NBR 5444)
+      const noSimbolo = new Set(agrupar(refs, Infinity).filter(simboloPdf).flatMap(s => s.membros));
+      const resto = refs.filter((_, i) => !noSimbolo.has(i));
+      const L = resto.reduce((s, r) => s + comprimento(r), 0);
+      const total = refs.reduce((s, r) => s + comprimento(r), 0);
+      // tracejado que o PDF desenhou traço a traço (sem padrão de traço): muitos pedaços curtos
+      const pedacos = resto.map(comprimento).sort((a, b) => a - b);
+      const picado = pedacos.length > 50 && pedacos[pedacos.length >> 1] < 0.25;
+      // layer de símbolos com sobras (texto, contorno) não vira traçado
+      ehTracado = L >= 3 && L >= 0.5 * total;
+      if (ehTracado) trechos.push({ layer, tipo: 'eletroduto', disciplina: 'eletrica', foraDosSimbolos: true, ...(/TRACEJADO/.test(layer) || picado ? { altura: 0.04 } : {}), comprimento_m: r2(L) });
+    }
     // tipos de símbolo da layer: medidas parecidas (±3 cm) juntas
     const tipos = [];
     for (const s of agrupar(refs)) {
+      if (pdf && !simboloPdf(s)) continue;
       let t = tipos.find(x => mesmaMedida(x.medida, s.medida, 0.03));
       if (!t) tipos.push(t = { medida: s.medida, itens: [] });
       t.itens.push(s);
     }
     // símbolo isolado só entra se o nome da layer diz o que é (o quadro geral costuma ser um só)
-    const mais = (x) => x.itens.length >= 2 || !!sugestao(layer, x.medida, x.itens.every(q => ehExterno(q.centro)));
+    // (no PDF, sem nome de layer, só o que se repete)
+    const mais = (x) => x.itens.length >= 2 || (!pdf && !!sugestao(layer, x.medida, x.itens.every(q => ehExterno(q.centro))));
     for (const t of tipos.filter(mais).sort((a, b) => b.itens.length - a.itens.length).slice(0, 6)) {
       // área externa: fora das salas, ou em ambiente externo (estacionamento, quadra, pátio)
       const fora = t.itens.filter(s => ehExterno(s.centro)).length;
-      let sug = sugestao(layer, t.medida, fora > t.itens.length / 2);
+      const circular = t.itens.filter(q => redondo(q, refs)).length > t.itens.length / 2;
+      // na cor que é traçado, as marcas miúdas são setas e indicações do eletroduto: só o círculo (luminária) vira ponto
+      let sug = pdf ? sugestaoPdf(t.medida, fora > t.itens.length / 2, circular) : sugestao(layer, t.medida, fora > t.itens.length / 2);
+      if (pdf && ehTracado && sug?.simbolo !== 'HM-ILU-LUMINARIA') sug = null;
       // o mesmo aparelho desenhado em duas layers (símbolo + contorno IFC): conta uma vez só
       if (sug && simbolos.some(o => o.simbolo === sug.simbolo && o.quantidade === t.itens.length)) sug = null;
-      simbolos.push({ layer, medida: t.medida.map(r2), quantidade: t.itens.length, fora, simbolo: sug ? sug.simbolo : '?', rotulo: '', disciplina: sug ? sug.disciplina : '', ...(sug && sug.simbolo === 'HM-ELE-CAIXA-PISO' ? { area: 'externa' } : {}) });
+      simbolos.push({ layer, medida: t.medida.map(r2), quantidade: t.itens.length, fora, simbolo: sug ? sug.simbolo : '?', rotulo: sug?.rotulo || '', disciplina: sug ? sug.disciplina : '', ...(sug && sug.simbolo === 'HM-ELE-CAIXA-PISO' && !pdf ? { area: 'externa' } : {}) });
     }
   }
   return { simbolos, trechos };
@@ -132,8 +184,9 @@ function aplicarMapa(arq, mapa) {
     if (!ESPEC[m.simbolo]) throw new Error(`Símbolo "${m.simbolo}" (layer ${m.layer}) não existe no 3D (use: ${Object.keys(ESPEC).join(', ')}).`);
     const medida = [...m.medida].sort((a, b) => b - a);
     const tol = Number(m.tolerancia) > 0 ? Number(m.tolerancia) : 0.03;
+    const pdf = RE_PDF_COR.test(m.layer);
     for (const s of agrupar(porLayer.get(m.layer) || [])) {
-      if (!mesmaMedida(s.medida, medida, tol)) continue;
+      if (!mesmaMedida(s.medida, medida, tol) || (pdf && !simboloPdf(s))) continue;
       if (m.area === 'externa' && !ehExterno(s.centro)) continue;
       if (m.area === 'interna' && ehExterno(s.centro)) continue;
       // o mesmo aparelho em pedaços (quadro desenhado em partes) ou em duas layers
@@ -152,11 +205,15 @@ function aplicarMapa(arq, mapa) {
   const trechos = [];
   for (const t of mapa.trechos || []) {
     const segmentos = [];
-    for (const r of porLayer.get(t.layer) || []) {
+    const refs = porLayer.get(t.layer) || [];
+    // layer de cor do PDF: o traçado sem os símbolos da mesma cor
+    const noSimbolo = t.foraDosSimbolos ? new Set(agrupar(refs, Infinity).filter(simboloPdf).flatMap(s => s.membros)) : null;
+    for (const [i, r] of refs.entries()) {
+      if (noSimbolo?.has(i)) continue;
       for (let i = 1; i < r.pts.length; i++) segmentos.push([...r.pts[i - 1], ...r.pts[i]].map(r2));
       if (r.fechada && r.pts.length > 2) segmentos.push([...r.pts.at(-1), ...r.pts[0]].map(r2));
     }
-    const { comprimento_m, ...resto } = t;
+    const { comprimento_m, foraDosSimbolos, ...resto } = t;
     if (segmentos.length) trechos.push({ ...resto, segmentos });
   }
   return { pontos, trechos };
@@ -164,4 +221,4 @@ function aplicarMapa(arq, mapa) {
 
 const pontosDoDesenho = (arq) => aplicarMapa(arq, propostaDeMapa(arq));
 
-module.exports = { pontosDoDesenho, propostaDeMapa, aplicarMapa, agrupar, sugestao, RE_INSTALACAO, RE_FORA, RE_TRECHO };
+module.exports = { pontosDoDesenho, propostaDeMapa, aplicarMapa, agrupar, sugestao, sugestaoPdf, RE_INSTALACAO, RE_FORA, RE_TRECHO, RE_PDF_COR };

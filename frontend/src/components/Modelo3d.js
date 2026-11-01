@@ -62,6 +62,9 @@ export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null,
       if (plantas.length > 1) toast(`${plantas.length} plantas no desenho, cada uma um modelo à parte — troque no seletor "Planta" do 3D.`, { icon: 'ℹ️', duration: 8000 });
       const semPontos = plantas.filter(p => !p.pontos).length;
       if (semPontos) toast(`${semPontos} planta(s) sem ponto de instalação desenhado: aparecem só com a arquitetura (nada é estimado).`, { icon: '⚠️', duration: 9000 });
+      // pontos que o desenho deixou soltos: caminho SUGERIDO até o quadro/a rede (camada à parte no 3D)
+      const sugerido = (r.data.numeros?.infraestrutura || []).filter(g => g.sugerido).reduce((s, g) => s + (g.comprimento_m || 0), 0);
+      if (sugerido) toast(`${sugerido.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} m de eletroduto SUGERIDO (azul-claro) ligando ao quadro/à tubulação os pontos que o projeto deixou soltos — liga/desliga no botão "Sugeridos" do 3D.`, { icon: 'ℹ️', duration: 9000 });
     } catch (err) {
       if (aba && !aba.closed) aba.close();
       toast.error(await mensagemDeErro(err, 'Erro ao gerar o modelo 3D'), { duration: 9000 });
@@ -123,6 +126,8 @@ export function CartaoModelo3dAnalise({ analiseId, estiloCartao, estiloTitulo })
       <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 12, lineHeight: 1.6 }}>
         Envie a <b>arquitetura em DWG, DXF ou PDF</b> (pode ser o próprio DWG do projeto) e o sistema monta <b>um 3D por planta</b> de cada
         prancha/folha, com os pontos que estão <b>desenhados no projeto</b> — nada é estimado; planta sem ponto desenhado sai só com a arquitetura.
+        Eletrodutos e eletrocalhas vêm do desenho; o ponto que ficou solto ganha um <b>caminho sugerido</b> até o quadro ou a tubulação (camada à parte, para conferir).
+        PDF é sempre convertido em DXF (cada cor do traço numa layer) e o DXF fica na pasta do cliente, junto do original.
         Serve para o cliente ter uma ideia de como vai ficar; não substitui o projeto executivo. O PDF precisa ser o exportado do AutoCAD/Revit (não escaneado).
         O projeto criado a partir desta análise já recebe a mesma arquitetura.
       </p>

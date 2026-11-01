@@ -51,11 +51,17 @@ function molduras(arq) {
 
 // Nome da planta: o título dela quando é de planta ("PLANTA BAIXA - TÉRREO"); senão
 // os nomes dos maiores ambientes (o da Arena vem com o título "DETALHE-1" ao lado)
-function nomeDaPlanta(regiao, ambientes) {
+// Sem título nem sala com nome: o título da região encostada nela (a "Planta 4" da
+// Arena, 01/11/2026, são as quadras de padel ao lado do "Detalhe QUADRAS 10, 11 E 12")
+function nomeDaPlanta(regiao, ambientes, vizinhas = []) {
   const t = String(regiao?.titulo || '').trim();
   if (t && tipoDoTitulo(t) === 'planta') return t.slice(0, 60);
   const nomes = ambientes.filter(a => !a.semNome).sort((a, b) => b.area_m2 - a.area_m2).map(a => a.nome);
-  return nomes.length ? [...new Set(nomes)].slice(0, 3).join(', ') : '';
+  if (nomes.length) return [...new Set(nomes)].slice(0, 3).join(', ');
+  const c = regiao?.caixa;
+  const viz = c && vizinhas.find(o => o.titulo && o.caixa !== c && ['planta', 'detalhe'].includes(o.tipo)
+    && o.caixa[0] <= c[2] + 2 && o.caixa[2] >= c[0] - 2 && o.caixa[1] <= c[3] + 2 && o.caixa[3] >= c[1] - 2);
+  return viz ? `junto a ${String(viz.titulo).replace(/^detalhe\s*[-–:]?\s*/i, '').trim()}`.slice(0, 60) : '';
 }
 
 function plantasDoDesenho(arq) {
@@ -78,7 +84,7 @@ function plantasDoDesenho(arq) {
   plantas.sort((a, b) => (xDe(a) - xDe(b)) || (b.caixa[3] - a.caixa[3]) || (a.caixa[0] - b.caixa[0]));
   const maior = plantas.reduce((m, p) => (p.area_m2 > m.area_m2 || (p.area_m2 === m.area_m2 && area(p.caixa) > area(m.caixa)) ? p : m), plantas[0]);
   return plantas.map((p, i) => {
-    const nome = nomeDaPlanta({ titulo: p.titulo }, p._amb);
+    const nome = nomeDaPlanta({ titulo: p.titulo, caixa: p.caixa }, p._amb, arq.classificacao?.regioes || []);
     const { _amb, folha, ...resto } = p;
     const prancha = folha >= 0 ? usadas.indexOf(folha) + 1 : null;
     const doPdf = folha >= 0 ? folhas[folha].folha : null;

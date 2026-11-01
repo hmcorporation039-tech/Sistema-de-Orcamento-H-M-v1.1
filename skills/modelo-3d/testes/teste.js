@@ -173,7 +173,9 @@ caso('uma prancha = um modelo; sem ponto desenhado, nada é estimado', () => {
   assert.strictEqual(lum(loja), 2);
   assert.strictEqual(acad.dispositivos.length, 0, 'academia sem ponto desenhado não pode ganhar luminária estimada');
   assert.ok(acad.avisos.some(a => /nada é estimado/.test(a)));
-  assert.ok(!acad.infra.length && !loja.infra.some(g => g.estimado && g.rotulo !== 'Eletroduto de descida'));
+  assert.ok(!acad.infra.length && !loja.infra.some(g => g.estimado && !g.sugerido && g.rotulo !== 'Eletroduto de descida'));
+  // as duas luminárias soltas ganham o caminho SUGERIDO entre elas (camada à parte, nunca "projeto")
+  assert.ok(loja.infra.some(g => g.sugerido && g.rotulo === 'Eletroduto sugerido'), JSON.stringify(loja.infra.map(g => g.rotulo)));
   assert.strictEqual(cenas[principal], loja);
   assert.ok(/Prancha 1/.test(loja.plantaInfo.nome) && /Prancha 2/.test(acad.plantaInfo.nome), `${loja.plantaInfo.nome} | ${acad.plantaInfo.nome}`);
   const html = gerarHtml(cenas, { principal });

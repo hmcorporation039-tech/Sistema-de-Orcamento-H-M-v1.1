@@ -17,7 +17,8 @@ const naCaixa = (c, [x, y], m = 0) => x >= c[0] - m && x <= c[2] + m && y >= c[1
 const ROTULO_SIMBOLO = { 'HM-ILU-LUMINARIA': 'luminárias', 'HM-ILU-POSTE': 'postes', 'HM-ELE-TOMADA-BAIXA': 'tomadas', 'HM-ELE-INTERRUPTOR': 'interruptores', 'HM-ELE-QUADRO': 'quadros', 'HM-ELE-CAIXA-PISO': 'caixas de passagem' };
 
 // opcoes: { peDireito, titulo, cliente, obra, proposta, avisos (comuns a todas),
-//           dispositivosReais, trechos, disciplinas, dadosPorDisciplina, lerDoDesenho = true }
+//           dispositivosReais, trechos, disciplinas, dadosPorDisciplina, lerDoDesenho = true,
+//           sugerirInfra = true (liga os pontos soltos à rede/quadro: ./infraestrutura.js) }
 // → { cenas: [cena com .plantaInfo = { n, nome, caixa, pontos, origem, area_m2 }], principal (índice) }
 function montarCenasPorPlanta(arquitetura, opcoes = {}) {
   const plantas = plantasDoDesenho(arquitetura);
@@ -57,10 +58,11 @@ function montarCenasPorPlanta(arquitetura, opcoes = {}) {
       }
     }
     if (!dispositivos.length) avisos.push('Nenhum ponto de instalação desenhado nesta planta: o modelo mostra só a arquitetura (nada é estimado).');
-    // planta sem ambiente nem ponto (detalhe, vista solta): não vira modelo
-    if (varias && !dispositivos.length && !arq.ambientes.length) continue;
+    // planta sem ponto e sem ambiente com nome (detalhe, legenda, vista solta): não
+    // vira modelo — na Arena (01/11/2026) saía uma "Planta 4" que ninguém sabia o que era
+    if (varias && !dispositivos.length && !arq.ambientes.some(a => !a.semNome)) continue;
     const cena = montarCena(arq, {
-      peDireito: opcoes.peDireito, dispositivos, avisos, trechos, estimarInfra: false,
+      peDireito: opcoes.peDireito, dispositivos, avisos, trechos, estimarInfra: false, sugerirInfra: opcoes.sugerirInfra !== false,
       titulo: opcoes.titulo, cliente: opcoes.cliente, obra: opcoes.obra, proposta: opcoes.proposta,
     });
     cena.plantaInfo = { n: p.n, nome: p.nome, caixa: p.caixa.map(v => Math.round(v * 100) / 100), pontos: dispositivos.length, origem, area_m2: p.area_m2 };

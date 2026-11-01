@@ -433,8 +433,10 @@ for (const t of CENA.dispositivos) {
 // Um InstancedMesh por grupo (caixa unitária ou tubo de 8 lados esticado em
 // cada segmento) + uma linha fina no mesmo eixo, que continua visível de longe.
 // A seção também engrossa com a distância (mínimo de uMinInfra px na tela).
-function materialInfra(cor, secaoMax) {
-  const mat = new MeshStandardMaterial({ color: cor, emissive: cor, emissiveIntensity: 0.18, roughness: 0.45, metalness: 0.35 });
+// caminho SUGERIDO pelo sistema (não é do projeto): translúcido
+const materialSugerido = (sugerido) => (sugerido ? { transparent: true, opacity: 0.55, depthWrite: false } : {});
+function materialInfra(cor, secaoMax, sugerido = false) {
+  const mat = new MeshStandardMaterial({ color: cor, emissive: cor, emissiveIntensity: 0.18, roughness: 0.45, metalness: 0.35, ...materialSugerido(sugerido) });
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, { uPx: UD.uPx, uMinInfra: UD.uMinInfra, uSecao: { value: secaoMax } });
     sh.vertexShader = sh.vertexShader
@@ -462,7 +464,7 @@ for (const g of INFRA) {
   const [sw, sh] = g.secao || [0.05, 0.05];
   if (g.forma !== 'linha') {
     const geo = g.forma === 'tubo' ? new CylinderGeometry(0.5, 0.5, 1, 8).rotateZ(Math.PI / 2) : new BoxGeometry(1, 1, 1);
-    const mesh = new InstancedMesh(geo, materialInfra(g.cor, Math.max(sw, sh)), n);
+    const mesh = new InstancedMesh(geo, materialInfra(g.cor, Math.max(sw, sh), g.sugerido), n);
     for (let i = 0; i < n; i++) {
       const x1 = seg[i * 4], y1 = seg[i * 4 + 1], x2 = seg[i * 4 + 2], y2 = seg[i * 4 + 3];
       const L = Math.hypot(x2 - x1, y2 - y1);
@@ -484,7 +486,7 @@ for (const g of INFRA) {
   const nd = Math.floor(desc.length / 4);
   const dd = g.forma === 'tubo' ? sw : 0.025;
   if (nd && g.forma !== 'linha') {
-    const md = new InstancedMesh(new CylinderGeometry(0.5, 0.5, 1, 8), new MeshStandardMaterial({ color: g.cor, emissive: g.cor, emissiveIntensity: 0.18, roughness: 0.45, metalness: 0.35 }), nd);
+    const md = new InstancedMesh(new CylinderGeometry(0.5, 0.5, 1, 8), new MeshStandardMaterial({ color: g.cor, emissive: g.cor, emissiveIntensity: 0.18, roughness: 0.45, metalness: 0.35, ...materialSugerido(g.sugerido) }), nd);
     for (let i = 0; i < nd; i++) {
       const [x, y, z0, z1] = desc.slice(i * 4, i * 4 + 4);
       o3.position.set(x, (z0 + z1) / 2, -y);
@@ -507,10 +509,10 @@ for (const g of INFRA) {
 }
 // "Eletroduto PVC rígido Ø 25 mm (3/4")" e de onde veio a medida
 const nomeInfra = (g) => [g.rotulo, g.material, g.medida].filter(Boolean).join(' ');
-const origemInfra = (g) => ({ texto: 'medida do desenho', desenho: 'medida do desenho', layer: 'medida da layer', legenda: 'medida da legenda', estimado: 'traçado e bitola estimados — conferir' })[g.origem_medida] || 'medida padrão ilustrativa';
+const origemInfra = (g) => ({ texto: 'medida do desenho', desenho: 'medida do desenho', layer: 'medida da layer', legenda: 'medida da legenda', estimado: 'traçado e bitola estimados — conferir', sugerido: 'caminho SUGERIDO pelo sistema (não está no projeto) — conferir' })[g.origem_medida] || 'medida padrão ilustrativa';
 
 // ── Estado ──────────────────────────────────────────────────────────────────
-const estado = { paredes: 0, corte: true, ambientes: true, etiquetas: true, portas: true, planta: true, campo: false, giro: false, grandes: false, infra: true };
+const estado = { paredes: 0, corte: true, ambientes: true, etiquetas: true, portas: true, planta: true, campo: false, giro: false, grandes: false, infra: true, sugerido: true };
 let modo = 'geral'; // 'geral' | 'dentro' | 'saindo'
 let atual = -1;     // ambiente onde a câmera está (modo dentro)
 let salvo = null;   // vista geral antes de entrar
@@ -869,6 +871,8 @@ alternar('#b-giro', 'giro', () => { controles.autoRotate = estado.giro && modo =
 alternar('#b-grandes', 'grandes', aplicarGrandes);
 alternar('#b-infra', 'infra', () => { gInfra.visible = estado.infra; });
 if (!INFRA.length) $('#b-infra')?.remove();
+alternar('#b-sugerido', 'sugerido', () => { for (const g of INFRA) if (g.sugerido && g.objeto) g.objeto.visible = estado.sugerido; });
+if (!INFRA.some(g => g.sugerido)) $('#b-sugerido')?.remove();
 grupo('campo').visible = estado.campo;
 $('#b-cima').addEventListener('click', vistaDeCima);
 $('#b-3d').addEventListener('click', vista3d);
@@ -921,7 +925,7 @@ $('#numeros').innerHTML = [
   N.janelas ? cartao(N.janelas, 'un', 'janelas / esquadrias') : '',
   N.pilares ? cartao(N.pilares, 'un', 'pilares') : '',
   ...N.dispositivos.map(d => cartao(d.quantidade, 'un', esc(d.rotulo))),
-  ...INFRA.map(g => cartao(br(g.comprimento_m, 1), 'm', `${esc(nomeInfra(g))} · ${esc(CENA.disciplinas[g.disciplina]?.rotulo || g.disciplina)}${g.estimado ? ' (estimado)' : ''}`)),
+  ...INFRA.map(g => cartao(br(g.comprimento_m, 1), 'm', `${esc(nomeInfra(g))} · ${esc(CENA.disciplinas[g.disciplina]?.rotulo || g.disciplina)}${g.sugerido ? ' (sugerido)' : g.estimado ? ' (estimado)' : ''}`)),
 ].join('');
 $('#lista-ambientes').innerHTML = `<table><thead><tr><th>Ambiente</th><th>m²</th><th>perím. m</th></tr></thead><tbody>${[...N.por_ambiente].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true })).map(a => `<tr><td><i style="background:${(CENA.tiposAmbiente[a.tipo] || CENA.tiposAmbiente.outros).cor}"></i>${esc(a.nome)}</td><td>${br(a.area_m2)}</td><td>${br(a.perimetro_m, 1)}</td></tr>`).join('')}</tbody></table>`;
 

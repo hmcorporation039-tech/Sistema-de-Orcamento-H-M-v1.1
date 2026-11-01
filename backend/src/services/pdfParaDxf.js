@@ -74,6 +74,20 @@ function ehCinza(cor) {
   const v = m.slice(1).map(h => parseInt(h, 16));
   return Math.max(...v) - Math.min(...v) < 40 && Math.max(...v) < 235;
 }
+// Traço colorido → layer própria PDF-COR-RRGGBB, na cor ACI mais próxima (pedido
+// de 01/11/2026: "sempre converter os pdfs em dxf, que são melhor interpretados no
+// CAD"). No projeto exportado cada layer do CAD sai numa cor — eletroduto, fio,
+// luminária e tomada ficam separados como no DWG, em vez de tudo em PDF-LINHAS.
+const ACI = [[1, 255, 0, 0], [2, 255, 255, 0], [3, 0, 255, 0], [4, 0, 255, 255], [5, 0, 0, 255], [6, 255, 0, 255],
+  [30, 255, 127, 0], [14, 165, 41, 0], [12, 165, 0, 0], [140, 0, 127, 255], [94, 0, 127, 63], [8, 128, 128, 128], [9, 192, 192, 192]];
+function layerDaCor(d, cor, tracejado) {
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(cor || '');
+  if (!m || ehCinza(cor) || /^#f{6}$/i.test(cor)) return null;
+  const v = m.slice(1).map(h => parseInt(h, 16));
+  const aci = ACI.reduce((b, c) => ((c[1] - v[0]) ** 2 + (c[2] - v[1]) ** 2 + (c[3] - v[2]) ** 2 < (b[1] - v[0]) ** 2 + (b[2] - v[1]) ** 2 + (b[3] - v[2]) ** 2 ? c : b))[0];
+  // tracejado à parte: na NBR 5444 o eletroduto tracejado é o embutido no piso
+  return d.camada(`PDF-COR-${cor.slice(1).toUpperCase()}${tracejado ? '-TRACEJADO' : ''}`, aci);
+}
 
 // Página da planta num PDF de várias (até 10 páginas). Antes era a com mais
 // traços — quase sempre o diagrama unifilar, e o 3D "construía uma edificação
@@ -204,8 +218,14 @@ function escreverFolha(d, L, geo, classificacao, { n, escalaInformada, dx, aviso
       }
     }
   }
-  let escala = Number(escalaInformada) || null, origemEscala = escala ? 'informada' : null;
+  // a escala informada vale mais na folha principal; nas OUTRAS folhas o carimbo da
+  // própria folha vem antes e a informada só cobre a folha sem escala — na Arena, a
+  // planta sem escala ao lado de folhas 1:25: a informada em todas deixava as
+  // luminárias com 1,3 m
+  const informada = Number(escalaInformada) || null;
+  let escala = obrigatoria ? informada : null, origemEscala = escala ? 'informada' : null;
   if (!escala) { escala = escalaDoCarimbo(geo.textos); if (escala) origemEscala = 'carimbo'; }
+  if (!escala && informada) { escala = informada; origemEscala = 'informada'; }
   if (!escala) {
     escala = escalaPelasPortas(arcosPt, retasPt);
     if (escala) { origemEscala = 'portas'; avisos.push(`Escala 1:${escala} da folha ${n} deduzida pelo tamanho das portas (o carimbo não tem a escala) — confira as medidas.`); }
@@ -226,7 +246,8 @@ function escreverFolha(d, L, geo, classificacao, { n, escalaInformada, dx, aviso
   let entidades = 0;
   for (const c of geo.caminhos) {
     if (c.traco) {
-      const layer = c.dash ? L.tracejado : (lwParede && c.lwPg >= lwParede ? L.parede : L.linhas);
+      // colorido nunca é parede (parede é preta/cinza): vai para a layer da cor
+      const layer = layerDaCor(d, c.stroke, !!c.dash) || (c.dash ? L.tracejado : (lwParede && c.lwPg >= lwParede ? L.parede : L.linhas));
       for (const s of c.subs) {
         let pts = [];
         const arcos = []; // pedaços do mesmo círculo juntados (o PDF pode partir 90° em 16 curvas)
