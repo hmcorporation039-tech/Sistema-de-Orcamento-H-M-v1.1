@@ -3,8 +3,12 @@ import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import useUltimoPedido from '../hooks/useUltimoPedido';
 import toast from 'react-hot-toast';
-import { Plus, Search, Pencil, Trash2, X, FolderOpen } from 'lucide-react';
-import { getClientes, criarCliente, atualizarCliente, removerCliente, getPastaCliente, abrirPastaCliente, getOpcoesPastaCliente, ligarPastaCliente } from '../services/api';
+import { Plus, Search, Pencil, Trash2, X, FolderOpen, ChevronDown, ChevronUp } from 'lucide-react';
+import {
+  getClientes, criarCliente, atualizarCliente, removerCliente, getPastaCliente, abrirPastaCliente, getOpcoesPastaCliente, ligarPastaCliente,
+  consultarCep, buscarMunicipios,
+} from '../services/api';
+import BuscaCodigo, { formatarCep } from '../components/fiscal/BuscaCodigo';
 import PainelPasta from '../components/PainelPasta';
 import { AvisoNovidades } from '../components/NovidadesPastas';
 import Paginacao from '../components/Paginacao';
@@ -14,7 +18,25 @@ import Modal from '../components/ui/Modal';
 import { invalidarCacheClientes } from '../components/ClienteSelect';
 import { estilos, Campo } from '../components/ui/estilos';
 
-const VAZIO = { nome: '', documento: '', tipo: 'Empresa', responsavel: '', telefone: '', email: '', endereco: '' };
+// 2.4: dados para a NFS-e (tomador) — endereço em campos com o município do
+// IBGE, inscrições, e-mail para a nota e retenção do ISS
+const VAZIO_FISCAL = {
+  cep: '', logradouro: '', numero: '', complemento: '', bairro: '', municipio: null,
+  inscricao_municipal: '', inscricao_estadual: '', email_nota: '', retem_iss: false,
+};
+const VAZIO = { nome: '', documento: '', tipo: 'Empresa', responsavel: '', telefone: '', email: '', endereco: '', ...VAZIO_FISCAL };
+
+// O que falta no cliente para sair uma NFS-e para ele (mostrado na lista).
+function pendenciasNota(c) {
+  const p = [];
+  const doc = String(c.documento || '').replace(/\D/g, '');
+  if (!(doc.length === 11 ? validarCpf(doc) : doc.length === 14 && validarCnpj(doc))) p.push('CPF/CNPJ válido');
+  if (!c.cep) p.push('CEP');
+  if (!c.logradouro) p.push('logradouro');
+  if (!c.codigo_municipio) p.push('município');
+  if (!c.email_nota && !c.email) p.push('e-mail');
+  return p;
+}
 
 export default function Clientes() {
   const [clientes, setClientes] = useState([]);
@@ -67,7 +89,12 @@ export default function Clientes() {
     setForm({
       nome: cliente.nome || '', documento: cliente.documento || '', tipo: cliente.tipo || 'Empresa',
       responsavel: cliente.responsavel || '', telefone: cliente.telefone || '',
-      email: cliente.email || '', endereco: cliente.endereco || ''
+      email: cliente.email || '', endereco: cliente.endereco || '',
+      cep: formatarCep(cliente.cep), logradouro: cliente.logradouro || '', numero: cliente.numero || '',
+      complemento: cliente.complemento || '', bairro: cliente.bairro || '',
+      municipio: cliente.codigo_municipio ? { codigo: cliente.codigo_municipio, descricao: cliente.municipio_uf || cliente.codigo_municipio } : null,
+      inscricao_municipal: cliente.inscricao_municipal || '', inscricao_estadual: cliente.inscricao_estadual || '',
+      email_nota: cliente.email_nota || '', retem_iss: !!cliente.retem_iss,
     });
     setModalAberto(true);
   }
@@ -91,12 +118,14 @@ export default function Clientes() {
       }
     }
     setSalvando(true);
+    const { municipio, ...resto } = form;
+    const corpo = { ...resto, codigo_municipio: municipio?.codigo || null };
     try {
       if (editandoId) {
-        await atualizarCliente(editandoId, form);
+        await atualizarCliente(editandoId, corpo);
         toast.success('Cliente atualizado');
       } else {
-        await criarCliente(form);
+        await criarCliente(corpo);
         toast.success('Cliente cadastrado');
       }
       setModalAberto(false);
@@ -151,15 +180,16 @@ export default function Clientes() {
               <th style={th}>Responsável</th>
               <th style={th}>Telefone</th>
               <th style={th}>E-mail</th>
+              <th style={th} title="Cadastro pronto para emitir nota fiscal de serviço">NFS-e</th>
               <th style={{ ...th, width: 90 }}></th>
             </tr>
           </thead>
           <tbody>
             {carregando && (
-              <tr><td colSpan={7} style={tdVazio}>Carregando...</td></tr>
+              <tr><td colSpan={8} style={tdVazio}>Carregando...</td></tr>
             )}
             {!carregando && clientes.length === 0 && (
-              <tr><td colSpan={7} style={tdVazio}>Nenhum cliente encontrado</td></tr>
+              <tr><td colSpan={8} style={tdVazio}>Nenhum cliente encontrado</td></tr>
             )}
             {!carregando && clientes.map(c => (
               <tr key={c.id} style={{ borderTop: '1px solid #1e1e1e' }}>
@@ -169,6 +199,7 @@ export default function Clientes() {
                 <td style={td}>{c.responsavel || '—'}</td>
                 <td style={td}>{formatarTelefone(c.telefone) || '—'}</td>
                 <td style={td}>{c.email || '—'}</td>
+                <td style={td}><SeloNota pendencias={pendenciasNota(c)} /></td>
                 <td style={{ ...td, display: 'flex', gap: 6 }}>
                   <button onClick={() => setPastaDe({ id: c.id, nome: c.nome })} style={btnIcone} title="Pasta do cliente (tudo dele: obras, projetos, propostas e o que ele mandar)" data-testid="pasta-cliente">
                     <FolderOpen size={13} />
@@ -207,7 +238,7 @@ export default function Clientes() {
       )}
 
       {modalAberto && (
-        <Modal titulo={editandoId ? 'Editar Cliente' : 'Novo Cliente'} onFechar={() => setModalAberto(false)}>
+        <Modal titulo={editandoId ? 'Editar Cliente' : 'Novo Cliente'} onFechar={() => setModalAberto(false)} largura={640}>
             <form onSubmit={salvar}>
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12, marginBottom: 12 }}>
                 <Campo label="Nome / Razão Social *">
@@ -251,9 +282,12 @@ export default function Clientes() {
                 </Campo>
               </div>
 
-              <Campo label="Endereço">
-                <textarea rows={2} value={form.endereco} onChange={e => setForm({ ...form, endereco: e.target.value })} />
+              <Campo label="Endereço (como sai na proposta)">
+                <textarea rows={2} value={form.endereco} onChange={e => setForm({ ...form, endereco: e.target.value })}
+                  placeholder="Em branco: montado com os dados da nota fiscal abaixo" />
               </Campo>
+
+              <DadosNota form={form} setForm={setForm} />
 
               <div style={{ display: 'flex', gap: 10, marginTop: 22, justifyContent: 'flex-end' }}>
                 <button type="button" onClick={() => setModalAberto(false)} style={btnSecundario}>Cancelar</button>
@@ -267,6 +301,103 @@ export default function Clientes() {
     </div>
   );
 }
+
+function SeloNota({ pendencias }) {
+  const ok = pendencias.length === 0;
+  return (
+    <span
+      title={ok ? 'Cadastro pronto para a nota fiscal' : `Falta: ${pendencias.join(', ')}`}
+      style={{
+        display: 'inline-block', padding: '2px 8px', borderRadius: 20, fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
+        color: ok ? '#3fb95f' : '#d9a53a', background: ok ? '#0a1a0f' : '#1a150a', border: `1px solid ${ok ? '#1a4a26' : '#4a3a1a'}`,
+      }}
+    >
+      {ok ? 'Pronto' : `Falta ${pendencias.length}`}
+    </span>
+  );
+}
+
+const buscarMunicipio = (t) => buscarMunicipios(t);
+
+// Seção "Dados para a nota fiscal" do cadastro: o CEP preenche rua, bairro e
+// município (código IBGE); o resto é digitado. Abre sozinha se já tem algo.
+function DadosNota({ form, setForm }) {
+  const preenchido = Boolean(form.cep || form.logradouro || form.municipio || form.inscricao_municipal || form.email_nota);
+  const [aberta, setAberta] = useState(preenchido);
+  const [buscandoCep, setBuscandoCep] = useState(false);
+  const muda = (c) => (e) => setForm({ ...form, [c]: e.target.value });
+
+  async function buscarCep() {
+    const cep = form.cep.replace(/\D/g, '');
+    if (cep.length !== 8) { toast.error('CEP tem 8 dígitos'); return; }
+    setBuscandoCep(true);
+    try {
+      const { data: d } = await consultarCep(cep);
+      setForm(f => ({
+        ...f,
+        logradouro: d.logradouro || f.logradouro,
+        bairro: d.bairro || f.bairro,
+        complemento: f.complemento || d.complemento || '',
+        municipio: d.codigo_municipio ? { codigo: d.codigo_municipio, descricao: `${d.municipio}-${d.uf}` } : f.municipio,
+      }));
+      if (!d.logradouro) toast('CEP geral da cidade: preencha a rua à mão', { icon: 'ℹ️' });
+    } catch (err) {
+      toast.error(err.response?.data?.erro || 'Não foi possível consultar o CEP');
+    } finally {
+      setBuscandoCep(false);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 14, border: '1px solid var(--borda)', borderRadius: 10 }}>
+      <button type="button" onClick={() => setAberta(!aberta)} style={cabecalhoSecao} data-testid="secao-nota-fiscal">
+        {aberta ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Dados para a nota fiscal (NFS-e)
+      </button>
+      {aberta && (
+        <div style={{ padding: '4px 14px 14px', display: 'grid', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '150px auto 1fr', gap: 10, alignItems: 'end' }}>
+            <Campo label="CEP">
+              <input value={form.cep} onChange={e => setForm({ ...form, cep: formatarCep(e.target.value) })}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); buscarCep(); } }}
+                placeholder="00000-000" inputMode="numeric" maxLength={9} data-testid="cliente-cep" />
+            </Campo>
+            <button type="button" onClick={buscarCep} disabled={buscandoCep} style={{ ...btnSecundario, padding: '9px 12px' }}>
+              {buscandoCep ? 'Buscando…' : 'Buscar CEP'}
+            </button>
+            <Campo label="Município">
+              <BuscaCodigo buscar={buscarMunicipio} valor={form.municipio} onEscolher={m => setForm({ ...form, municipio: m })}
+                placeholder="Nome da cidade" testid="cliente-municipio" />
+            </Campo>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: 10 }}>
+            <Campo label="Logradouro"><input value={form.logradouro} onChange={muda('logradouro')} maxLength={200} /></Campo>
+            <Campo label="Número"><input value={form.numero} onChange={muda('numero')} maxLength={20} placeholder="S/N" /></Campo>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <Campo label="Complemento"><input value={form.complemento} onChange={muda('complemento')} maxLength={100} /></Campo>
+            <Campo label="Bairro"><input value={form.bairro} onChange={muda('bairro')} maxLength={100} /></Campo>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <Campo label="Inscrição Municipal"><input value={form.inscricao_municipal} onChange={muda('inscricao_municipal')} maxLength={20} inputMode="numeric" placeholder="se tiver" /></Campo>
+            <Campo label="Inscrição Estadual"><input value={form.inscricao_estadual} onChange={muda('inscricao_estadual')} maxLength={20} inputMode="numeric" placeholder="se tiver" /></Campo>
+          </div>
+          <Campo label="E-mail para receber a nota">
+            <input type="email" value={form.email_nota} onChange={muda('email_nota')} maxLength={100} placeholder="Em branco: usa o e-mail do cadastro" />
+          </Campo>
+          <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: 'var(--texto-2)' }}>
+            <input type="checkbox" checked={form.retem_iss} onChange={e => setForm({ ...form, retem_iss: e.target.checked })} style={{ width: 'auto' }} />
+            O cliente retém o ISS na fonte (comum em órgão público e grandes empresas)
+          </label>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const cabecalhoSecao = {
+  display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 14px', background: 'transparent',
+  border: 'none', color: 'var(--texto)', fontWeight: 600, fontSize: 13, cursor: 'pointer', textAlign: 'left',
+};
 
 // funções estáveis: o PainelPasta recarrega quando `carregar` muda
 function PastaDoCliente({ id, ehAdmin }) {
