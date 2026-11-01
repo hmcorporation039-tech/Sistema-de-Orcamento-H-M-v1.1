@@ -12,6 +12,8 @@
 //   - janelas (layers de esquadria): peitoril até 1,10 m, vidro até 2,10 m e
 //     verga até o pé-direito; portas: verga acima de 2,10 m e folha aberta 90°;
 //   - pilares: polilinha fechada pequena (≤ 1,5 m) em layer de parede/estrutura;
+//     fora da layer de pilar, forma redonda (círculo de símbolo — poste, caixa,
+//     tomada de piso — que o PDF ou o "explodir" vira polígono) não sobe;
 //   - piso por ambiente com cor pelo tipo (nome) e etiqueta com nome e área;
 //   - dispositivos na altura típica de instalação (tomada baixa 0,30 m, média
 //     1,10 m, alta 2,20 m, interruptor 1,10 m, luminária/detector no teto,
@@ -96,7 +98,7 @@ function regiaoDoModelo(arquitetura) {
 // desenho da folha (implantação, segundo pavimento ao lado).
 function crescerPelasParedes(arquitetura, caixa) {
   const paredes = arquitetura.referencia
-    .filter(r => r.pts.length >= 2 && RE_PAREDE.test(r.layer || '') && !RE_JANELA.test(r.layer || ''))
+    .filter(r => r.pts.length >= 2 && RE_PAREDE_3D.test(r.layer || '') && !RE_JANELA.test(r.layer || ''))
     .map(r => caixaDe(r.pts))
     .filter(c => Math.hypot(c[2] - c[0], c[3] - c[1]) <= 300);
   const usadas = new Uint8Array(paredes.length);
@@ -114,14 +116,39 @@ const RE_PILAR = /PILAR|COLUN|ESTRUT|(^|[^A-Z])EST([^A-Z]|$)/i;
 const RE_MURETA = /BAIX|MURET|PEITORIL/i;
 const RE_MEDIA = /M[EÉ]DIA/i;
 const RE_GUARDA = /GUARDA|GRADIL|CORRIM|PARAPEITO/i;
+// padrão brasileiro de layers (AsBEA): ARQ-ALV-CRT = alvenaria em corte
+const RE_PAREDE_3D = new RegExp(`${RE_PAREDE.source}|(^|[^A-Z])ALV([^A-Z]|$)`, 'i');
+// layers das outras disciplinas e da prancha (QiBuilder/AltoQi: EL-Fios, DI-Barramento,
+// IFC-Luminária, P-SIMBOL; AutoCAD MEP) — fio, unifilar e símbolo nunca são parede
+const RE_OUTRA_DISCIPLINA = /^(EL|ELE|DI|IFC|P|HID|INC|CFTV|TEL|SPDA|AR|AC|MEC|HVAC|PCI)[-_ ]|CONDUT|(^|[^A-Z])FIOS?([^A-Z]|$)|BARRAMENTO|DIAGRAM|UNIFILAR|DISJUNT|L[ÂA]MPADA|TOMADA|INTERRUPTOR|CAIXAS?\s+DE\s+PASSAGEM|QUADRO|PRANCHA|MARGEM|TABELA|AR\s?COND|DUTO/i;
+// AsBEA, o que é vista/equipamento da arquitetura: louça, mobiliário, equipamento,
+// sanitário, piso, cobertura, projeção, porta, vegetação, cota, texto, hachura
+const RE_ARQ_NAO_PAREDE = /(^|[^A-Z])(LOU|MOB|MOV|EQP|SAN|PIS|COB|PRJ|ANT|URB|VIA|TXT|HCH|POR|VEG|COT)([^A-Z]|$)/i;
 function classeDaLayer(layer, haParede) {
   const l = layer || '';
-  if (RE_NAO_PAREDE.test(l) && !RE_PAREDE.test(l) && !RE_GUARDA.test(l)) return null;
+  if (RE_OUTRA_DISCIPLINA.test(l)) return null;
+  if ((RE_NAO_PAREDE.test(l) || RE_ARQ_NAO_PAREDE.test(l)) && !RE_PAREDE_3D.test(l) && !RE_GUARDA.test(l)) return null;
   if (RE_JANELA.test(l)) return 'janela';
   if (RE_GUARDA.test(l)) return 'guarda';
   if (RE_PILAR.test(l)) return 'pilar';
-  if (RE_PAREDE.test(l)) return RE_MURETA.test(l) ? 'mureta' : RE_MEDIA.test(l) ? 'media' : 'parede';
+  if (RE_PAREDE_3D.test(l)) return RE_MURETA.test(l) ? 'mureta' : RE_MEDIA.test(l) ? 'media' : 'parede';
   return haParede ? null : 'parede'; // desenho sem layer de parede reconhecível: tudo que não é anotação
+}
+// o desenho tem layer de parede reconhecível? (senão tudo que não é anotação sobe)
+const haLayerDeParede = (layers) => layers.some(l => RE_PAREDE_3D.test(l || '') && !RE_JANELA.test(l || '') && !RE_OUTRA_DISCIPLINA.test(l || ''));
+
+// Uma planta da folha: a prancha de projeto costuma trazer várias lado a lado
+// (a da Arena, 7 — implantação, lojas, detalhes) e o modelo juntava todas.
+// Ficam os ambientes, as linhas e as portas dentro de `caixa` [x0, y0, x1, y1] (m).
+function recortarArquitetura(arq, caixa) {
+  const c = expandir(caixa, 0.5);
+  return {
+    ...arq,
+    ambientes: arq.ambientes.filter(a => naCaixa(c, centroide(a.poligono))),
+    portas: (arq.portas || []).filter(p => naCaixa(c, p.meio)),
+    referencia: arq.referencia.filter(r => r.pts.length && r.pts.every(p => naCaixa(c, p))),
+    regioesPlanta: [caixa],
+  };
 }
 
 // ── Intervalos (listas ordenadas de [a, b]) ─────────────────────────────────
@@ -148,12 +175,20 @@ function subtrair(A, B) {
 }
 
 // ── Paredes, janelas e pilares ──────────────────────────────────────────────
+// Forma fechada curva (círculo, elipse, oval: mais de 8 vértices distintos) —
+// o símbolo (poste, projetor, caixa, tomada de piso) que a conversão do PDF ou o
+// "explodir" do AutoCAD vira polígono. Pilar em layer de parede é retângulo ou L.
+function simboloRedondo(pts) {
+  const v = pts.filter((p, i) => i === 0 || dist(p, pts[i - 1]) > 1e-6);
+  if (v.length > 1 && dist(v[0], v.at(-1)) < 1e-6) v.pop();
+  return v.length > 8;
+}
 const ALTURA_CLASSE = { mureta: PEITORIL, media: 1.6, guarda: 1.1 };
 
 function extrairElementos(arquitetura, caixa, peDireito) {
   let refs = arquitetura.referencia.filter(r => r.pts.length >= 2 && r.pts.some(p => naCaixa(caixa, p)));
   const layers = [...new Set(refs.map(r => r.layer))];
-  const haParede = layers.some(l => RE_PAREDE.test(l || '') && !RE_JANELA.test(l || ''));
+  const haParede = haLayerDeParede(layers);
   // sem layer de parede, "tudo que não é anotação vira parede" — mas só dentro da
   // região classificada como planta (./classificarPrancha.js): o unifilar, a tabela
   // e a legenda da mesma folha não sobem como parede
@@ -165,11 +200,18 @@ function extrairElementos(arquitetura, caixa, peDireito) {
   // pilares: polilinha fechada pequena em layer de parede/estrutura
   const pilares = [];
   const usados = new Set();
+  let simbolosRedondos = 0;
   for (const r of refs) {
     const c = classe.get(r.layer);
     if (!r.fechada || r.tipo !== 'poli' || !['pilar', 'parede', 'media'].includes(c)) continue;
     const [x0, y0, x1, y1] = caixaDe(r.pts);
     const [L, W] = [x1 - x0, y1 - y0].sort((a, b) => b - a);
+    if (c !== 'pilar' && L <= 1.5 && simboloRedondo(r.pts)) {
+      // símbolo, não estrutura: nem pilar nem parede
+      usados.add(r);
+      simbolosRedondos++;
+      continue;
+    }
     if (L <= 1.5 && W >= 0.1 && L * W >= 0.02) {
       // na layer de pilar é pilar; na de parede, só o "quadrado" (≤ 0,8 m, proporção ≤ 2,5) conta como
       // pilar — retângulo comprido fechado é trecho de parede (sobe igual, mas não entra na contagem)
@@ -352,7 +394,7 @@ function extrairElementos(arquitetura, caixa, peDireito) {
     buf[i * 4 + 2] = Math.round((q[0] - cx) * 100); buf[i * 4 + 3] = Math.round((q[1] - cy) * 100);
   });
   const planta = Math.max(caixa[2] - caixa[0], caixa[3] - caixa[1]) < 650 ? Buffer.from(buf.buffer).toString('base64') : '';
-  return { paredes: [...paredes, ...vergas], janelas, pilares, folhas, portas, planta, linhasPlanta: escolhidos.length };
+  return { paredes: [...paredes, ...vergas], janelas, pilares, folhas, portas, planta, linhasPlanta: escolhidos.length, simbolosRedondos };
 }
 
 // ── Dispositivos ────────────────────────────────────────────────────────────
@@ -370,6 +412,8 @@ const TAM_FORMA = {
   wallbox: [0.26, 0.38, 0.13], luminaria: [0.62, 0.62, 0.06], 'ponto-luz': [0.26, 0.26, 0.10], detector: [0.16, 0.16, 0.07],
   sensor: [0.13, 0.13, 0.06], ap: [0.22, 0.22, 0.045], camera: [0.11, 0.11, 0.32], dome: [0.15, 0.15, 0.10],
   'sensor-canto': [0.08, 0.13, 0.07], catraca: [0.30, 1.00, 0.80],
+  // poste no piso: a profundidade (3º) é a altura; largura = braço com a luminária
+  poste: [1.2, 0.3, 8], 'caixa-piso': [0.30, 0.30, 0.04],
 };
 // formas de parede que vão ENCOSTADAS na parede mais próxima mesmo quando o
 // símbolo da planta está longe dela (quadro no meio da sala vira quadro na parede)
@@ -395,6 +439,8 @@ const ESPEC = {
   // SPDA: o modelo não tem cobertura — captor fica no forro e a descida na parede, só para localizar
   'HM-SPDA-CAIXA-INSPECAO': { h: 'piso', forma: 'caixa', tam: [0.30, 0.30, 0.05] }, 'HM-SPDA-CAPTOR': { h: 'teto', forma: 'barra', tam: [0.04, 0.04, 0.35] },
   'HM-SPDA-DESCIDA': { h: 1.5, forma: 'barra', tam: [0.03, 0.40, 0.03] },
+  // área externa (estacionamento, quadra): poste com luminária/projetor e caixa de passagem no piso
+  'HM-ILU-POSTE': { h: 'piso', forma: 'poste' }, 'HM-ELE-CAIXA-PISO': { h: 'piso', forma: 'caixa-piso' },
 };
 const ESPEC_PADRAO = { h: 1.1, forma: 'caixa' };
 // especificação completa (com o tamanho da forma quando o símbolo não traz o seu)
@@ -403,6 +449,7 @@ const DISCIPLINAS = {
   eletrica: { rotulo: 'Elétrica', cor: '#ff9f43' }, iluminacao: { rotulo: 'Iluminação', cor: '#ffe27a' }, rede: { rotulo: 'Rede (cabeamento)', cor: '#4fa3ff' },
   cftv: { rotulo: 'CFTV', cor: '#ff5c8a' }, incendio: { rotulo: 'Incêndio', cor: '#ff4b3e' }, alarme: { rotulo: 'Alarme', cor: '#b388ff' },
   'controle-acesso': { rotulo: 'Controle de acesso', cor: '#5ee38a' }, telefonia: { rotulo: 'Telefonia', cor: '#c49a6c' }, antena: { rotulo: 'Antena / TV', cor: '#3fd0c0' },
+  'iluminacao-externa': { rotulo: 'Iluminação externa', cor: '#ffb84d' },
   automacao: { rotulo: 'Automação', cor: '#7fe0ff' }, solar: { rotulo: 'Solar', cor: '#f6c90e' }, veicular: { rotulo: 'Recarga veicular', cor: '#a4e05a' }, spda: { rotulo: 'SPDA', cor: '#bfc5cc' },
 };
 const disciplinaDoSimbolo = (s) => ({ ELE: 'eletrica', ILU: 'iluminacao', CAB: 'rede', CFTV: 'cftv', INC: 'incendio', ALM: 'alarme', ACE: 'controle-acesso', TEL: 'telefonia', ANT: 'antena', HOSP: 'eletrica', AUT: 'automacao', SOL: 'solar', VE: 'veicular', SPDA: 'spda' })[s.split('-')[1]] || 'outros';
@@ -435,6 +482,8 @@ const INFRA_ESTIMADA = {
   telefonia: { material: 'PVC rígido', mm: 25, pol: '3/4"' },
   antena: { material: 'PVC rígido', mm: 25, pol: '3/4"' },
   automacao: { material: 'PVC rígido', mm: 25, pol: '3/4"' },
+  // área externa: duto corrugado enterrado (vala de 0,60 m), mostrado rente ao piso
+  'iluminacao-externa': { material: 'PEAD corrugado enterrado', mm: 40, pol: '1 1/4"', z: 0.04 },
 };
 // o ponto de partida da disciplina (quadro, rack, central, DG, controladora, NVR)
 const RE_CENTRO_DISCIPLINA = /QUADRO|RACK|CENTRAL|-DG\b|CONTROLADOR|NVR|DVR|INVERSOR/;
@@ -758,7 +807,7 @@ function completarInfra(infra, tipos, peDireito, avisos) {
       centro = pts.reduce((k, p, i) => (Math.hypot(p[0] - cx, p[1] - cy) < Math.hypot(pts[k][0] - cx, pts[k][1] - cy) ? i : k), 0);
     }
     const segs = arvoreEstimada(pts, centro);
-    const g = grupoEletroduto(disc, Math.max(0.1, peDireito - TRECHOS.eletroduto.desce), true);
+    const g = grupoEletroduto(disc, e.z ?? Math.max(0.1, peDireito - TRECHOS.eletroduto.desce), true);
     g.segmentos = segs.flatMap(q => q.map(r2));
     g.segmentos_total = segs.length;
     g.comprimento_m = Math.round(segs.reduce((s, q) => s + Math.hypot(q[2] - q[0], q[3] - q[1]), 0) * 10) / 10;
@@ -797,7 +846,11 @@ function afastarDosVizinhos(p, tam, postos) {
 // montarInfra), titulo, cliente, obra, proposta, avisos }
 function montarCena(arquitetura, opcoes = {}) {
   const peDireito = Number(opcoes.peDireito) > 1.5 ? Number(opcoes.peDireito) : PE_DIREITO_PADRAO;
-  const { caixa, ambientes } = regiaoDoModelo(arquitetura);
+  const { ambientes, caixa: caixaSalas } = regiaoDoModelo(arquitetura);
+  // postes e caixas da área externa (estacionamento, quadras) ficam fora das
+  // salas: a região cresce até eles, senão o 3D os descarta
+  const noPiso = (opcoes.dispositivos || []).filter(d => espec(d.simbolo).h === 'piso' && Number.isFinite(d.x) && Number.isFinite(d.y));
+  const caixa = noPiso.length ? expandir(uniao(caixaSalas, caixaDe(noPiso.map(d => [d.x, d.y]))), 2) : caixaSalas;
   const origem = [(caixa[0] + caixa[2]) / 2, (caixa[1] + caixa[3]) / 2];
   const P = ([x, y]) => [r2(x - origem[0]), r2(y - origem[1])];
   const el = extrairElementos(arquitetura, caixa, peDireito);
@@ -841,6 +894,7 @@ function montarCena(arquitetura, opcoes = {}) {
   const compParedes = el.paredes.filter(w => w.classe === 'parede').reduce((s, w) => s + dist(w.a, w.b), 0);
   const listaTipos = [...tipos.values()];
   const avisos = [...(opcoes.avisos || [])];
+  if (el.simbolosRedondos) avisos.push(`${el.simbolosRedondos} símbolos redondos (poste, caixa, tomada de piso…) na layer de parede não subiram como pilar nem parede.`);
   // traçado do projeto (com as descidas até as peças) + o estimado das disciplinas sem traçado
   const infra = completarInfra(montarInfra(opcoes.trechos, P, caixa, peDireito, avisos), listaTipos, peDireito, avisos);
   const numeros = {
@@ -855,6 +909,7 @@ function montarCena(arquitetura, opcoes = {}) {
     portas: el.portas.length,
     janelas: el.janelas.length,
     pilares: el.pilares.filter(p => p.ehPilar).length,
+    simbolos_redondos_ignorados: el.simbolosRedondos,
     dispositivos: listaTipos.map(t => ({ disciplina: t.disciplina, simbolo: t.simbolo, rotulo: t.rotulo, quantidade: t.itens.length, altura: t.altura })),
     infraestrutura: infra.map(g => ({ disciplina: g.disciplina, tipo: g.tipo, rotulo: g.rotulo, material: g.material, medida: g.medida, origem_medida: g.origem_medida, comprimento_m: g.comprimento_m, descidas_m: g.descidas_m, segmentos: g.segmentos_total })),
     por_ambiente: ambs.map(a => ({ nome: a.nome, tipo: a.tipo, area_m2: a.area_m2, perimetro_m: a.perimetro_m })),
@@ -887,4 +942,4 @@ function montarCena(arquitetura, opcoes = {}) {
   };
 }
 
-module.exports = { montarCena, montarInfra, regiaoDoModelo, extrairElementos, classeDaLayer, encostar, espec, ESPEC, TAM_FORMA, TRECHOS, LIMITE_SEGMENTOS, ESPESSURA_MIN_DESENHO, DISCIPLINAS, TIPOS, AVISO, PE_DIREITO_PADRAO };
+module.exports = { montarCena, montarInfra, regiaoDoModelo, recortarArquitetura, extrairElementos, classeDaLayer, haLayerDeParede, simboloRedondo, encostar, espec, ESPEC, TAM_FORMA, TRECHOS, LIMITE_SEGMENTOS, ESPESSURA_MIN_DESENHO, DISCIPLINAS, TIPOS, AVISO, PE_DIREITO_PADRAO };

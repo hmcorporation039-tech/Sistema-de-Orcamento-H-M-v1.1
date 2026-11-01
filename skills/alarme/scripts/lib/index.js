@@ -7,6 +7,7 @@ const D = require('../../../_comum/documentos');
 const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
 const { fmtNum } = require('../../../_comum/docx-base');
+const { gerarCaderno } = require('./caderno');
 const { calcular, CLASSES_AMBIENTAIS, ROTULO_DETECTOR, ROTULO_TECNOLOGIA, TEMPO_ENTRADA_MAX_S, AUTONOMIA_H, ATS_POR_GRAU, DIGITOS_SENHA } = require('./calculo');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
@@ -211,6 +212,8 @@ const DOCUMENTOS = [
       medicoes: [{ titulo: 'Teste zona a zona', colunas: ['Zona', 'Local / dispositivo', 'Disparo', 'Tamper', 'Evento recebido', 'Obs.'], proporcoes: [0.6, 2.4, 0.7, 0.7, 0.9, 1.5],
         linhas: res.calc.zonas.map(z => [z.id, `${z.ambiente} — ${z.dispositivo}`, '☐', '☐', res.calc.monitorado ? '☐' : 'NA', '']) }],
     }, res.checklist)) },
+  // PDF: central de alarme (fonte, bateria, expansores, comunicadores) "da caixa aos parafusos"
+  { tipo: 'caderno', rotulo: 'Caderno de fabricação e montagem da central', formato: 'PDF', nome: 'Caderno_Fabricacao_Central_Alarme', gerar: (res) => gerarCaderno(res) },
 ];
 
 function montarOrcamento(res, modo) {
@@ -360,7 +363,7 @@ const FORMULARIO = [
   F.secaoFotos(10),
 ];
 
-module.exports = criarDisciplina({
+const base = criarDisciplina({
   chave: 'alarme',
   nome: 'Alarme de intrusão monitorado (EN 50131 / EN 50136)',
   modelo: MODELO,
@@ -376,3 +379,13 @@ module.exports = criarDisciplina({
   ],
   montarOrcamento,
 });
+
+// O molde só gera Word/Excel: o caderno de fabricação sai em PDF (mesmo padrão do CFTV)
+const gerarDocumentoBase = base.gerarDocumento;
+base.gerarDocumento = async (res, tipo) => {
+  if (tipo !== 'caderno') return gerarDocumentoBase(res, tipo);
+  const d = DOCUMENTOS.find(x => x.tipo === tipo);
+  return { buffer: await d.gerar(res), nomeArquivo: D.nomeArquivo(res.dados, d.nome, 'pdf', true), mime: 'application/pdf' };
+};
+
+module.exports = base;

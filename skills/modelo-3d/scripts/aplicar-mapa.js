@@ -13,7 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 const { textoDxfDoArquivo } = require('../../_comum/cad/dwg');
-const { classeDaLayer } = require('../../_comum/cad/modelo3d');
+const { classeDaLayer, haLayerDeParede } = require('../../_comum/cad/modelo3d');
 
 const NOME = {
   parede: 'H3D-PAREDE', pilar: 'H3D-PILAR', janela: 'H3D-JANELA', mureta: 'H3D-PAREDE-BAIXA',
@@ -31,7 +31,7 @@ async function main() {
   const mapa = JSON.parse(fs.readFileSync(arqMapa, 'utf8')).layers || {};
   for (const [l, c] of Object.entries(mapa)) if (!NOME[c]) throw new Error(`Classe "${c}" da layer "${l}" não existe (use: ${Object.keys(NOME).join(', ')}).`);
   // "subiria no 3D" é decidido como o gerador decide, com o desenho original
-  const haParede = Object.keys(mapa).some(l => ['parede', 'media', 'mureta', 'pilar'].includes(classeDaLayer(l, true)));
+  const haParede = haLayerDeParede(Object.keys(mapa));
   const novoNome = (l) => {
     const c = mapa[l];
     if (!c) return null;

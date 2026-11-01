@@ -315,6 +315,11 @@ const FORMAS = {
   dome: (w, h, d) => juntar([[ci(w * 0.5, d * 0.3), 0.9], [semi(w * 0.42, 0, 0, d * 0.3), 0.3]]),
   'sensor-canto': (w, h, d) => juntar([[bx(w, h, d), 1], [bx(w * 0.78, h * 0.42, 0.008, 0, -h * 0.12, d), 0.35], [ci(w * 0.06, 0.003, 0, h * 0.32, d, 8), ESC]]),
   catraca: (w, h, d) => juntar([[new BoxGeometry(w, h, d).translate(0, h / 2, 0), 0.9], [new BoxGeometry(w * 1.05, 0.04, d * 1.02).translate(0, h, 0), 0.6]]),
+  // poste (no piso, d = altura): base, fuste, braço e projetor; w = alcance do braço
+  poste: (w, h, d) => juntar([[bx(0.3, 0.3, 0.03), 0.5], [ci(0.07, d - 0.03, 0, 0, 0.03, 10), 0.55], [ci(0.045, 0.1, 0, 0, d - 0.05, 10), 0.55],
+    [bx(w * 0.55, 0.05, 0.05, w * 0.27, 0, d - 0.3), 0.55], [bx(0.42, h, 0.12, w * 0.55, 0, d - 0.42), 1.0], [bx(0.36, h * 0.8, 0.004, w * 0.55, 0, d - 0.424), 1.8]]),
+  // caixa de passagem no piso: corpo e tampa
+  'caixa-piso': (w, h, d) => juntar([[bx(w, h, d), 0.6], [bx(w * 0.9, h * 0.9, 0.004, 0, 0, d), 1.1]]),
 };
 // cenas antigas (versão 1) não trazem tam/montagem
 const TAM_PADRAO = { tomada: [0.1, 0.16, 0.03], interruptor: [0.1, 0.16, 0.03], quadro: [0.6, 0.8, 0.15], rack: [0.6, 0.6, 0.45], luminaria: [0.62, 0.62, 0.06], 'ponto-luz': [0.26, 0.26, 0.1], detector: [0.16, 0.16, 0.07], sensor: [0.13, 0.13, 0.06], camera: [0.11, 0.11, 0.32], 'sensor-canto': [0.08, 0.13, 0.07], catraca: [0.3, 1, 0.8], barra: [0.3, 0.06, 0.05] };
@@ -581,7 +586,7 @@ function atualizarEtiquetasPontos() {
       // etiqueta acima da peça (quadro grande não fica coberto); no teto, abaixo
       const s = escalaDe(t.tamMax, d);
       const embaixo = t.montagem === 'teto';
-      vTmp.y += embaixo ? -t.tam[2] * s : t.montagem === 'piso' ? t.tam[1] * s : (t.tam[1] / 2) * s;
+      vTmp.y += embaixo ? -t.tam[2] * s : t.montagem === 'piso' ? (t.forma === 'poste' ? t.tam[2] : t.tam[1]) * s : (t.tam[1] / 2) * s;
       vTmp.project(camera);
       if (vTmp.z > 1 || vTmp.z < -1) continue;
       const x = (vTmp.x + 1) / 2 * w, y = (1 - vTmp.y) / 2 * h;

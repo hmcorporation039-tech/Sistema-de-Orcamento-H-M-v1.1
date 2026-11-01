@@ -2,6 +2,7 @@
 // queda de tensão, rotas de fuga (fail-safe) e credenciais
 const motor = require('../scripts/lib/index');
 const { RHO } = require('../scripts/lib/calculo');
+const { montarCaixas, montarCaderno } = require('../scripts/lib/caderno');
 const { perto, igual, fim } = require('../../_comum/teste').verificador('controle de acesso');
 
 const clonar = (o) => JSON.parse(JSON.stringify(o));
@@ -88,8 +89,29 @@ d5.sistema.veiculos = 50;
 const cn1 = motor.processar(d5).calc.pontos.find(p => p.id === 'CN1');
 igual('leitor UHF da cancela: 40 % de queda → PP 2 × 1 mm²', [Math.round(cn1.quedaLeitorPct), cn1.secaoLeitor], [40, 1]);
 
+{
+  // Caderno: uma caixa por controladora; relé de incêndio nas caixas com rota de fuga; campo fora da placa
+  const caixas = montarCaixas(res);
+  igual('caderno: uma caixa por controladora', caixas.map(c => c.id), calc.controladoras.map(c => c.id));
+  const c1 = caixas.find(c => c.id === 'CTRL1');
+  igual('caderno CTRL1: fonte 3 A e bateria 12 Ah do cálculo', [c1.itens.some(i => i.tipo === 'fonte' && /3 A/.test(i.descricao)), c1.itens.some(i => i.tipo === 'bateria' && /12 Ah/.test(i.descricao))], [true, true]);
+  igual('caderno: relé de incêndio só nas caixas com rota de fuga', caixas.map(c => c.itens.some(i => i.tag === 'RL-INC')), calc.controladoras.map(c => c.portas.some(u => calc.pontos.find(p => p.id === u.replace(/[.][0-9]+$/, '')).rota) && calc.incendio));
+  igual('caderno: leitores, fechaduras e sensores são de campo (fora da placa)', c1.itens.filter(i => ['LEI', 'FCH', 'SEN'].includes(i.tag)).every(i => i.na_placa === false), true);
+  const cad = montarCaderno(res);
+  igual('caderno: normas IEC 60839-11-1 e NBR 9077, verificações de rota de fuga e bateria', [cad.normas.some(n => n.codigo === 'IEC 60839-11-1'), cad.normas.some(n => /NBR 9077/.test(n.codigo)), cad.verificacoes.some(v => /Rota de fuga fail-safe/.test(v.item)), cad.verificacoes.some(v => /Autonomia da bateria/.test(v.item))], [true, true, true, true]);
+  igual('caderno: plaqueta H&M', /H&M/.test(cad.plaqueta_hm.modelo), true);
+  const d6 = clonar(motor.exemplo()); d6.sistema.integracao_incendio = false;
+  igual('caderno sem integração de incêndio: sem relé e com aviso', [montarCaixas(motor.processar(d6)).some(c => c.itens.some(i => i.tag === 'RL-INC')), montarCaderno(motor.processar(d6)).avisos.some(a => /sem integração com a central/.test(a))], [false, true]);
+}
 (async () => {
-  for (const t of motor.tiposDisponiveis(res)) igual(`documento ${t}`, (await motor.gerarDocumento(res, t)).buffer.slice(0, 2).toString(), 'PK');
+  for (const t of motor.tiposDisponiveis(res).filter(x => x !== 'caderno')) igual(`documento ${t}`, (await motor.gerarDocumento(res, t)).buffer.slice(0, 2).toString(), 'PK');
+  let temPuppeteer = true;
+  try { require('../../_comum/fabricacao/pdf').carregarPuppeteer(); } catch { temPuppeteer = false; console.log('  (puppeteer do backend ausente — PDF do caderno não testado)'); }
+  if (temPuppeteer) {
+    const g = await motor.gerarDocumento(res, 'caderno');
+    igual('caderno do controle de acesso: PDF (%PDF, application/pdf, .pdf)', [g.buffer.slice(0, 4).toString(), g.mime, /_Caderno_Fabricacao_Caixas_Controle_Acesso_R[0-9]+[.]pdf$/.test(g.nomeArquivo)], ['%PDF', 'application/pdf', true]);
+    if (process.env.SALVAR_PDF) require('fs').writeFileSync(process.env.SALVAR_PDF, g.buffer);
+  }
   const orc = motor.montarOrcamento(res, 'execucao');
   igual('orçamento com leitores de porta (7) e catracas (2)', [orc.itens.find(i => i.codigo === 'ace_leitor').quantidade, orc.itens.find(i => i.codigo === 'ace_catraca').quantidade], [7, 2]);
   igual('orçamento só com seções do sistema', orc.itens.every(i => ['Materiais e Equipamentos', 'Serviços (Mão de Obra)'].includes(i.secao)), true);

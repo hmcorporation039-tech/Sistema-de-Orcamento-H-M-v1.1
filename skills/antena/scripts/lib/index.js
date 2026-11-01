@@ -9,6 +9,7 @@ const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
 const { fmtNum } = require('../../../_comum/docx-base');
 const C = require('./calculo');
+const { gerarCaderno } = require('./caderno');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
 const MODELO = require('../../exemplos/modelo-vazio.json');
@@ -302,6 +303,8 @@ const DOCUMENTOS = [
           ...(res.calc.ms ? res.calc.ms.linhas.map(l => [`${l.torre} ${l.pavimento} — SAT`, `${num(l.satMin)}–${num(l.satMax)}`, '', '', '', '']) : []),
         ] }],
     }, res.checklist)) },
+  // PDF: caixas do sistema (Antena) da caixa aos parafusos
+  { tipo: 'caderno', rotulo: 'Caderno de fabricação e montagem do headend e multiswitch', formato: 'PDF', nome: 'Caderno_Fabricacao_Antena', gerar: (res) => gerarCaderno(res) },
 ];
 
 function montarOrcamento(res, modo) {
@@ -438,7 +441,7 @@ const FORMULARIO = [
   F.secaoFotos(11),
 ];
 
-module.exports = criarDisciplina({
+const base = criarDisciplina({
   chave: 'antena',
   nome: 'Antena coletiva / TV (ISDB-Tb e satélite)',
   modelo: MODELO,
@@ -454,3 +457,13 @@ module.exports = criarDisciplina({
   ],
   montarOrcamento,
 });
+
+// O molde so gera Word/Excel: o caderno de fabricacao sai em PDF
+const gerarDocumentoBase = base.gerarDocumento;
+base.gerarDocumento = async (res, tipo) => {
+  if (tipo !== 'caderno') return gerarDocumentoBase(res, tipo);
+  const d = DOCUMENTOS.find(x => x.tipo === tipo);
+  return { buffer: await d.gerar(res), nomeArquivo: D.nomeArquivo(res.dados, d.nome, 'pdf', true), mime: 'application/pdf' };
+};
+
+module.exports = base;

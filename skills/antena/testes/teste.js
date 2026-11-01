@@ -2,6 +2,7 @@
 // escolha dos derivadores, amplificador, atenuador, multiswitch, documentos e orçamento.
 const motor = require('../scripts/lib/index');
 const C = require('../scripts/lib/calculo');
+const CAD = require('../scripts/lib/caderno');
 const { perto, igual, fim } = require('../../_comum/teste').verificador('antena');
 
 // ── Tabelas e funções básicas
@@ -78,7 +79,22 @@ const res = motor.processar(motor.exemplo());
 igual('exemplo: medição com MER 23 dB e BER 5E-4 → NC', res.medicoes[1].resultado, 'NC');
 igual('exemplo: NC do mastro sem SPDA vira P1', res.ncs[0].prioridade, 'P1');
 (async () => {
-  for (const tp of motor.tiposDisponiveis(res)) igual(`documento ${tp}`, (await motor.gerarDocumento(res, tp)).buffer.slice(0, 2).toString(), 'PK');
+  for (const tp of motor.tiposDisponiveis(res).filter(x => x !== 'caderno')) igual(`documento ${tp}`, (await motor.gerarDocumento(res, tp)).buffer.slice(0, 2).toString(), 'PK');
+
+  // Caderno de fabricação (PDF) — caixas
+  const cad = CAD.montarCaderno(res);
+  const he = CAD.montarCaixaHeadend(res);
+  igual('caderno: headend com amplificador, fonte, DPS coaxial, BEL; antena e mastro de campo', [he.itens.some(i => /^AMP/.test(i.tag)), he.itens.some(i => i.tag === 'FNT'), he.itens.some(i => i.tag === 'DPS-C'), he.itens.some(i => i.tag === 'BEL'), he.itens.filter(i => i.na_placa === false).map(i => i.tag).includes('MAS')], [true, true, true, true, true]);
+  igual('caderno: normas IEC/EN 60728, NBR 5419 e plaqueta H&M; verificações de níveis, MER e PE', [cad.normas.some(n => /60728/.test(n.codigo)), cad.normas.some(n => /5419/.test(n.codigo)), /H&M/.test(cad.plaqueta_hm.modelo), he.verificacoes.map(v => v.item).join('|')], [true, true, true, /Níveis.*MER.*PE/s.test(he.verificacoes.map(v => v.item).join('|')) ? he.verificacoes.map(v => v.item).join('|') : 'FALTA']);
+  const dSat = JSON.parse(JSON.stringify(motor.exemplo())); dSat.sistema.tipo = 'satelite';
+  igual('caderno satélite: multiswitch no headend (estrela) ou campo (cascata) e LNBF', CAD.montarCaixaHeadend(motor.processar(dSat)).itens.some(i => i.tag === 'PAR'), true);
+  let temPuppeteer = true;
+  try { require('../../_comum/fabricacao/pdf').carregarPuppeteer(); } catch { temPuppeteer = false; console.log('  (puppeteer do backend ausente — PDF do caderno não testado)'); }
+  if (temPuppeteer) {
+    const g = await motor.gerarDocumento(res, 'caderno');
+    igual('caderno: PDF (%PDF, application/pdf, .pdf)', [g.buffer.slice(0, 4).toString(), g.mime, g.nomeArquivo.endsWith('.pdf')], ['%PDF', 'application/pdf', true]);
+  }
+
   const exec = motor.montarOrcamento(res, 'execucao');
   igual('orçamento usa antena_ponto existente', exec.itens.some(i => i.codigo === 'antena_ponto'), true);
   igual('orçamento usa os novos antena_*', ['antena_instalacao', 'antena_headend', 'antena_derivador', 'antena_prumada', 'antena_medicao', 'antena_projeto'].every(c => exec.itens.some(i => i.codigo === c)), true);

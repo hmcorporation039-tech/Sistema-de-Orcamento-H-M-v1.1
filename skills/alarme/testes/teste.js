@@ -81,8 +81,30 @@ igual('parecer não conforme preliminar', res.parecer.situacao, 'NAO_CONFORME_PR
 igual('sem fio presente → DT5 aplicável', res.checklist.find(x => x.cod === 'DT5').situacao, 'NV');
 igual('sem vídeo → TX4 NA', res.checklist.find(x => x.cod === 'TX4').situacao, 'NA');
 
+// ── Caderno de fabricação e montagem da central (31/10/2026)
+const { montarCaixa, montarCaderno } = require('../scripts/lib/caderno');
+{
+  const cx = montarCaixa(res);
+  const cad = montarCaderno(res);
+  const na = (tag) => cx.itens.find(i => i.tag === tag);
+  igual('caderno: central, fonte, bateria 12 Ah, expansor, receptor e comunicadores dentro da caixa', ['CT', 'FT', 'BAT', 'EXP-1', 'RX-1', 'COM-IP', 'COM-4G'].every(t => na(t) && na(t).na_placa !== false), true);
+  igual('caderno: teclados, sensores e sirenes são itens de campo', ['TEC-1', 'TEC-2', 'SENSORES', 'SIR-INT', 'SIR-EXT'].every(t => na(t) && na(t).na_placa === false), true);
+  igual('caderno: sinalizadores da frente e autonomia na plaqueta', [cx.frente.map(f => f.tag), cx.dados_placa.find(d => d[0] === 'Autonomia da bateria')[1].startsWith('12 h')], [['LD-REDE', 'LD-BAT', 'LD-ARM', 'LD-DISP', 'LD-ANUL', 'LD-COM'], true]);
+  igual('caderno: normas EN 50131 / EN 50136 / NBR 5410 / NBR 5419-4', ['EN 50131-1', 'EN 50136-1', 'NBR 5410', 'NBR 5419-4'].every(k => cad.normas.some(n => n.codigo.includes(k))), true);
+  igual('caderno: verificações de bateria, zonas, tamper e comunicação', ['Autonomia', 'Teste de cada zona', 'Tamper', 'monitoramento'].every(k => cad.verificacoes.some(v => v.item.includes(k))), true);
+  igual('caderno: invólucro dimensionado e plaqueta H&M', [/^\d+ × \d+ × \d+ mm/.test(cad.caracteristicas.find(c => c[0] === 'Invólucro')[1]), /H&M/.test(cad.plaqueta_hm.modelo)], [true, true]);
+  const semMon = clonar(motor.exemplo());
+  Object.assign(semMon.sistema, { monitorado: false });
+  igual('caderno sem monitoramento: sem sinalizador de comunicação', montarCaixa(motor.processar(semMon)).frente.some(f => f.tag === 'LD-COM'), false);
+}
 (async () => {
-  for (const t of motor.tiposDisponiveis(res)) igual(`documento ${t}`, (await motor.gerarDocumento(res, t)).buffer.slice(0, 2).toString(), 'PK');
+  for (const t of motor.tiposDisponiveis(res).filter(x => x !== 'caderno')) igual(`documento ${t}`, (await motor.gerarDocumento(res, t)).buffer.slice(0, 2).toString(), 'PK');
+  let temPuppeteer = true;
+  try { require('../../_comum/fabricacao/pdf').carregarPuppeteer(); } catch { temPuppeteer = false; console.log('  (puppeteer do backend ausente — PDF do caderno não testado)'); }
+  if (temPuppeteer) {
+    const g = await motor.gerarDocumento(res, 'caderno');
+    igual('caderno da central: PDF (%PDF, application/pdf, .pdf)', [g.buffer.slice(0, 4).toString(), g.mime, g.nomeArquivo.endsWith('_Caderno_Fabricacao_Central_Alarme_R00.pdf')], ['%PDF', 'application/pdf', true]);
+  }
   const exe = motor.montarOrcamento(res, 'execucao');
   igual('orçamento usa códigos alarme_* existentes', ['alarme_sensor_abertura', 'alarme_ivp', 'alarme_sirene', 'alarme_teclado', 'alarme_central'].every(k => exe.itens.some(i => i.codigo === k)), true);
   igual('seções do orçamento', [...new Set(exe.itens.map(i => i.secao))], ['Materiais e Equipamentos', 'Serviços (Mão de Obra)']);

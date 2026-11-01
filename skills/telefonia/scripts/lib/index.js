@@ -6,6 +6,7 @@ const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
 const { fmtNum } = require('../../../_comum/docx-base');
 const C = require('./calculo');
+const { gerarCaderno } = require('./caderno');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
 const MODELO = require('../../exemplos/modelo-vazio.json');
@@ -239,6 +240,8 @@ const DOCUMENTOS = [
       medicoes: [{ titulo: 'Teste ramal a ramal', colunas: ['Ramal', 'Local', 'Chamada', 'Áudio', 'Identificação', 'Par no DG', 'Obs.'], proporcoes: [0.6, 1.5, 0.6, 0.6, 0.8, 0.7, 1.5],
         linhas: res.calc.ramaisLista.map(r => [r.ramal, `${r.bloco !== '—' ? `${r.bloco} — ` : ''}${r.local}`, '', '', '', '', '']) }],
     }, res.checklist)) },
+  // PDF: caixas do sistema (Telefonia) da caixa aos parafusos
+  { tipo: 'caderno', rotulo: 'Caderno de fabricação e montagem do DG e caixas de telefonia', formato: 'PDF', nome: 'Caderno_Fabricacao_Telefonia', gerar: (res) => gerarCaderno(res) },
 ];
 
 function montarOrcamento(res, modo) {
@@ -353,7 +356,7 @@ const FORMULARIO = [
   F.secaoFotos(9),
 ];
 
-module.exports = criarDisciplina({
+const base = criarDisciplina({
   chave: 'telefonia',
   nome: 'Telefonia e interfonia (práticas Telebrás / NBR 14565 / NBR 14306)',
   modelo: MODELO,
@@ -369,3 +372,13 @@ module.exports = criarDisciplina({
   ],
   montarOrcamento,
 });
+
+// O molde so gera Word/Excel: o caderno de fabricacao sai em PDF
+const gerarDocumentoBase = base.gerarDocumento;
+base.gerarDocumento = async (res, tipo) => {
+  if (tipo !== 'caderno') return gerarDocumentoBase(res, tipo);
+  const d = DOCUMENTOS.find(x => x.tipo === tipo);
+  return { buffer: await d.gerar(res), nomeArquivo: D.nomeArquivo(res.dados, d.nome, 'pdf', true), mime: 'application/pdf' };
+};
+
+module.exports = base;

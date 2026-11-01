@@ -122,7 +122,8 @@ function svgPlaquetaHm(ph, { k = 1 } = {}) {
 // (1:2 se alguma passar da largura útil da página), agrupadas, + a plaqueta H&M
 function htmlFolhaPlaquetas(plaquetas = [], plaquetaHm = null, { larguraUtilMm = 185 } = {}) {
   const desenhaveis = plaquetas.filter(p => p && p.desenhar !== false);
-  const maior = Math.max(0, ...desenhaveis.map(p => Number(p.largura_mm) || 60), plaquetaHm ? Number(plaquetaHm.largura_mm) || 100 : 0);
+  const hms = (Array.isArray(plaquetaHm) ? plaquetaHm : [plaquetaHm]).filter(Boolean);
+  const maior = Math.max(0, ...desenhaveis.map(p => Number(p.largura_mm) || 60), ...hms.map(h => Number(h.largura_mm) || 100));
   const k = maior > larguraUtilMm ? 2 : 1;
   const grupos = new Map();
   for (const p of desenhaveis) {
@@ -138,11 +139,12 @@ function htmlFolhaPlaquetas(plaquetas = [], plaquetaHm = null, { larguraUtilMm =
     escapeHtml(p.local || ''),
   ].filter(Boolean).join('<br/>');
   const partes = [];
-  if (plaquetaHm) {
-    partes.push(`<h3>Plaqueta H&amp;M (identificação do fabricante do conjunto)</h3><div class="pl-grade">${cartao(svgPlaquetaHm(plaquetaHm, { k }), [
-      `<b>${escapeHtml(plaquetaHm.modelo || '')}</b> — ${escapeHtml(`${plaquetaHm.largura_mm || 100} × ${plaquetaHm.altura_mm || 70} mm`)}`,
-      escapeHtml(plaquetaHm.material || ''), escapeHtml(plaquetaHm.fixacao || ''), escapeHtml(plaquetaHm.local || ''),
-    ].filter(Boolean).join('<br/>'), Number(plaquetaHm.largura_mm) || 100)}</div>`);
+  if (hms.length) {
+    const um = (h) => cartao(svgPlaquetaHm(h, { k }), [
+      `<b>${escapeHtml(h.modelo || '')}</b> — ${escapeHtml(`${h.largura_mm || 100} × ${h.altura_mm || 70} mm`)}`,
+      escapeHtml(h.material || ''), escapeHtml(h.fixacao || ''), escapeHtml(h.local || ''),
+    ].filter(Boolean).join('<br/>'), Number(h.largura_mm) || 100);
+    partes.push(`<h3>Plaqueta H&amp;M (identificação do fabricante do conjunto)${hms.length > 1 ? ` — uma por conjunto (${hms.length})` : ''}</h3><div class="pl-grade">${hms.map(um).join('')}</div>`);
   }
   for (const [g, lista] of grupos) partes.push(`<h3>${escapeHtml(g)}</h3><div class="pl-grade">${lista.map(p => cartao(svgPlaqueta(p, { k }), legenda(p), Number(p.largura_mm) || 60)).join('')}</div>`);
   return { html: partes.join(''), escala: `1:${k}` };

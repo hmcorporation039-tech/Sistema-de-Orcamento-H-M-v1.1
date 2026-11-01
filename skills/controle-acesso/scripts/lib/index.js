@@ -6,6 +6,7 @@ const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
 const { fmtNum } = require('../../../_comum/docx-base');
 const C = require('./calculo');
+const { gerarCaderno } = require('./caderno');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
 const MODELO = require('../../exemplos/modelo-vazio.json');
@@ -207,6 +208,7 @@ const DOCUMENTOS = [
       medicoes: [{ titulo: 'Teste por porta', colunas: ['Porta', 'Acesso ok', 'Saída ok', 'Emergência/incêndio', 'Alarmes', 'Altura leitor (m)', 'Obs.'], proporcoes: [1.4, 0.6, 0.6, 0.9, 0.6, 0.7, 1.6],
         linhas: res.calc.pontos.map(p => [`${p.id} — ${p.local}${p.rota ? ' (ROTA DE FUGA)' : ''}`, '', '', '', '', '', '']) }],
     }, res.checklist)) },
+  { tipo: 'caderno', rotulo: 'Caderno de fabricação e montagem das caixas das controladoras', formato: 'PDF', nome: 'Caderno_Fabricacao_Caixas_Controle_Acesso', gerar: (res) => gerarCaderno(res) },
 ];
 
 function montarOrcamento(res, modo) {
@@ -318,7 +320,7 @@ const FORMULARIO = [
   F.secaoFotos(9),
 ];
 
-module.exports = criarDisciplina({
+const base = criarDisciplina({
   chave: 'controle_acesso',
   nome: 'Controle de acesso (IEC 60839-11 / NBR 9077 / LGPD)',
   modelo: MODELO,
@@ -334,3 +336,13 @@ module.exports = criarDisciplina({
   ],
   montarOrcamento,
 });
+
+// O molde só gera Word/Excel: o caderno de fabricação sai em PDF (mesmo padrão do CFTV)
+const gerarDocumentoBase = base.gerarDocumento;
+base.gerarDocumento = async (res, tipo) => {
+  if (tipo !== 'caderno') return gerarDocumentoBase(res, tipo);
+  const d = DOCUMENTOS.find(x => x.tipo === tipo);
+  return { buffer: await d.gerar(res), nomeArquivo: D.nomeArquivo(res.dados, d.nome, 'pdf', true), mime: 'application/pdf' };
+};
+
+module.exports = base;

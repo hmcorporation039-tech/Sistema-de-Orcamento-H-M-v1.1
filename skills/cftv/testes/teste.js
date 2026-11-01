@@ -63,6 +63,12 @@ const { montarRack, montarCaderno } = require('../scripts/lib/caderno');
   igual('galpão: a PoE das câmeras passa pela PDU mas não aquece o rack', r.potencia > r.dissipacao * 2, true);
 }
 {
+  // o rack do caderno entra no orçamento: mesmas quantidades de patch panel, organizador e patch cord
+  const rk = montarRack(res);
+  const q = (c) => res.calc.materiais.find(m => m.codigo === c)?.quantidade;
+  igual('materiais: rack, patch panels, organizadores e patch cords vêm do mesmo rack do caderno', [q('RACK'), q('PP'), q('ORG'), q('PC')], [1, rk.ocupacao.filter(i => i.tipo === 'patch_panel').length, rk.ocupacao.filter(i => i.tipo === 'organizador').length, res.calc.nCam + res.calc.switches + 1]);
+}
+{
   const cad = montarCaderno(res);
   igual('caderno do CFTV: IEC 62676-4 nas normas e plaqueta H&M', [cad.normas.some(n => n.codigo === 'IEC 62676-4'), /H&M/.test(cad.plaqueta_hm.modelo)], [true, true]);
 }
