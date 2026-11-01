@@ -452,6 +452,15 @@ Instalada em produção em 31/10/2026 (pedido do usuário: "instale"). Pedidos: 
 - Backup antes da instalação em `C:\HM-Engenharia\Backups\*antes-v2.6*`, com cópia no servidor em `Backups\Instalacao-2.6.0`.
 - Pendências: cadernos para os demais sistemas (alarme, incêndio, acesso, telefonia, antena) e rack/patch panel no orçamento do CFTV.
 
+### 01/11/2026: versão 2.7.0 — notas fiscais (NFS-e) no lugar do SYSB1
+Instalada em produção em 01/11/2026 (pedido do usuário: "coloque na produção"). Pedidos: trazer do SYSB1 o cadastro fiscal, "baixe e armazene todas as notas emitidas, o pdf do sistema tem que ser idêntico ao layout da nota do sysb1, importe também todos os clientes cadastrados".
+- **Cadastro fiscal** (migração 2.0-21, `fiscalController.js`, Cadastros → Dados fiscais): dados da empresa para a NFS-e, CNAE/NBS/serviço nacional com busca, e no cliente o endereço em campos, código IBGE, inscrições, e-mail da nota e retenção do ISS.
+- **Notas fiscais** (migração 2.0-22, `notasFiscaisController.js`, Financeiro → Notas fiscais): rascunho, duplicar, PDF, e-mail e importação de XML ABRASF 2.04 (ISSnet DF) e NFS-e Nacional, inclusive cancelamentos.
+- **PDF** (`utils/nfsePdfTemplate.js`): layout da nota do ISS DF (o que o SYSB1 imprime), com QR Code para a consulta da nota, cancelada com tarja e rascunho sem valor fiscal.
+- **Importação do SYSB1** (`scripts/importar-notas-sysb1.js "<pasta>"`, idempotente): clientes, XML das notas e a situação de cada uma no portal do ISS DF, que é a fonte da verdade (a grade do SYSB1 mostrava status e valores errados). A exportação fica fora do repositório, em `Arquivos do Sistema - teste v2\Notas fiscais\SYSB1`.
+- Backup antes da instalação em `C:\HM-Engenharia\Backups\*antes-v2.7*`, com cópia no servidor em `Backups\Instalacao-2.7.0`.
+- Pendências: emissão e cancelamento direto no ISS (etapa 2, certificado A1); conferir com o contador o item 7.05 e o NBS/CNAE do 07.02.02.
+
 ---
 
 ## 3. Skills e ferramentas do Claude (servidor MCP `hm-orcamentos`)
