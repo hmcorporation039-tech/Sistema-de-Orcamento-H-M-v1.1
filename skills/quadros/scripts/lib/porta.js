@@ -5,7 +5,8 @@
 // botões pelo centro (cx, cy) e diâmetro externo d.
 function posicoesPorta(calc) {
   const H = calc.layout.involucro.altura, W = calc.layout.involucro.largura;
-  const wPlaca = Math.min(160, W * 0.5);
+  // placa de identificação externa 120 × 40 mm (padrão H&M do caderno de fabricação)
+  const wPlaca = Math.min(120, W * 0.5);
   const itens = {
     placa: { x: (W - wPlaca) / 2, y: H - 70, l: wPlaca, a: 40, rotulo: calc.c.tag },
     aviso: { x: 40, y: H - 80, l: 40, a: 35 },
@@ -24,8 +25,16 @@ function posicoesPorta(calc) {
     itens.ihm = { x: (W - l) / 2, y: yP - a, l, a, rotulo: `IHM ${calc.aut.ihm}"` };
     yP -= a + 40;
   }
+  // tag de cada dispositivo de porta (plaqueta, lista de componentes): botões, seletores e
+  // emergência S, sinaleiros H, potenciômetro R — numeração na ordem da porta
   const lista = [];
-  for (const pd of calc.aut.porta) for (let i = 0; i < pd.quantidade; i++) lista.push({ tipo: pd.tipo, cor: pd.cor, rotulo: (pd.funcao || pd.rotulo).slice(0, 18), descricao: pd.rotulo, d: pd.tipo === 'emergencia' ? 40 : 30 });
+  const cont = {};
+  const letra = (t) => (/^sinaleiro/.test(t) ? 'H' : t === 'potenciometro' ? 'R' : 'S');
+  for (const pd of calc.aut.porta) for (let i = 0; i < pd.quantidade; i++) {
+    const L = letra(pd.tipo);
+    cont[L] = (cont[L] || 0) + 1;
+    lista.push({ tipo: pd.tipo, cor: pd.cor, rotulo: (pd.funcao || pd.rotulo).slice(0, 18), descricao: pd.rotulo, funcao: pd.funcao || '', indice: i, quantidade: pd.quantidade, tag: `${L}${cont[L]}`, d: pd.tipo === 'emergencia' ? 40 : 30 });
+  }
   const passo = 70;
   const porLinha = Math.max(1, Math.floor((W - 120 - (calc.term.ventilacao ? 170 : 0)) / passo));
   lista.forEach((b, i) => {

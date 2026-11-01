@@ -60,7 +60,7 @@ const TEXTOS = {
 };
 const serve = (uso, tipo) => uso === 'ambos' || uso === tipo || uso == null;
 // extensão de reserva do download (o servidor manda o nome certo em X-Nome-Arquivo)
-const EXTENSAO = { Excel: 'xlsx', HTML: 'html', DXF: 'dxf' };
+const EXTENSAO = { Excel: 'xlsx', HTML: 'html', DXF: 'dxf', PDF: 'pdf' };
 // documento em HTML (2.4: modelo 3D do quadro) abre também numa aba nova
 const ehHtml = (doc) => doc.formato === 'HTML';
 
@@ -649,7 +649,7 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
               )}
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
-              <button style={{ ...btnSecundario, borderColor: '#2f5a2f', color: '#8fd18f' }} disabled={!!ocupado} onClick={salvarDocumentosNaPasta} title={`Gera os documentos ${ehProjeto ? 'de projeto' : 'do laudo'} (Word e Excel) e grava na pasta do ${T.item}, substituindo as versões anteriores`}>
+              <button style={{ ...btnSecundario, borderColor: '#2f5a2f', color: '#8fd18f' }} disabled={!!ocupado} onClick={salvarDocumentosNaPasta} title={`Gera os documentos ${ehProjeto ? 'de projeto' : 'do laudo'} (Word, Excel e os demais formatos da disciplina) e grava na pasta do ${T.item}, substituindo as versões anteriores`}>
                 <FolderDown size={13} style={{ marginRight: 5 }} /> {ocupado === 'pasta' ? 'Salvando…' : 'Salvar documentos na pasta'}
               </button>
               {documentosDoTipo.map(doc => (ehHtml(doc) ? (

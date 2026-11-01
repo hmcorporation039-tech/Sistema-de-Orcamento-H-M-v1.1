@@ -37,8 +37,42 @@ igual('organizadores = patch panels + switches', res.calc.materiais.find(m => m.
   const g2 = motor.processar(d2).calc;
   igual('pavimento só com APs entra (4 APs × 2 tomadas = 8 pontos)', g2.pavimentos.find(x => x.nome === 'Área externa')?.pontos, 8);
 }
+// ── Caderno de fabricação e montagem dos racks (31/10/2026) ──
+const RK = require('../../_comum/fabricacao/rack');
+const { montarRacks, montarCaderno } = require('../scripts/lib/caderno');
+const racks = montarRacks(res);
+// exemplo: 2 pavimentos com 1 FD cada → 2 racks de 24U (mesma altura do cálculo), com DIO (há backbone)
+igual('um rack por distribuidor de piso, na altura do cálculo', racks.map(r => [r.id, r.tipo, r.alturaU]), [['RACK-01', 'piso', 24], ['RACK-02', 'piso', 24]]);
+igual('térreo: DIO + 4 patch panels + 2 switches + 6 organizadores + bandeja + PDU = 15U', [racks[0].ocupacao.filter(i => i.tipo === 'patch_panel').length, racks[0].ocupacao.filter(i => i.tipo === 'switch').length, racks[0].ocupacao.some(i => i.tipo === 'dio'), racks[0].uOcupados], [4, 2, true, 15]);
+for (const r of racks) {
+  const c = RK.conferirRack(r);
+  igual(`${r.id}: soma dos U ≤ altura do rack e cada U ocupado uma vez (tampas cegas nos livres)`, [c.somaU, c.cadaUUmaVez], [true, true]);
+  igual(`${r.id}: todo item na elevação e na tabela de componentes`, [c.itensNaElevacao, c.itensNosComponentes], [true, true]);
+  igual(`${r.id}: porca gaiola/parafuso/arruela = 4 por U fixado + 2 por tampa + 10 %`, c.regraPorcas, true);
+  igual(`${r.id}: aterramento (barra, jumpers, verde-amarelo ao TGB/BEP)`, c.aterramento, true);
+  igual(`${r.id}: plaquetas ID, advertências, legenda TIA-606 e plaqueta H&M`, [c.plaquetas, c.plaquetaHm], [true, true]);
+}
+// 15U de itens no térreo: 15 × 4 + 9 tampas × 2 = 78 → + 8 (10 %) = 86
+igual('regra das porcas gaiola no térreo: 15U × 4 + 9 × 2 + 10 % = 86', RK.materiaisMontagem(racks[0]).find(m => /^Porca gaiola/.test(m.descricao)).quantidade, 86);
+{
+  // escritório pequeno (60 m² → 12 pontos + AP): rack de parede, sem DIO
+  const d = JSON.parse(JSON.stringify(motor.exemplo()));
+  d.pavimentos = [{ nome: 'Sala', area_util_m2: 60, distancia_media_m: 15, distancia_max_m: 25, aps: 1, pontos_extra: 0 }];
+  const [r] = montarRacks(motor.processar(d));
+  igual('sistema pequeno: rack de parede, sem DIO, conferência ok', [r.tipo, r.ocupacao.some(i => i.tipo === 'dio'), Object.values(RK.conferirRack(r)).every(Boolean)], ['parede', false, true]);
+}
+const cad = montarCaderno(res);
+igual('caderno: 3 desenhos por rack, plaqueta H&M, normas NBR 14565/EIA-310/TIA-606/TIA-607/NBR 5410/NBR 14136', [cad.desenhos.length, /H&M/.test(cad.plaqueta_hm.modelo), ['ABNT NBR 14565:2019', 'EIA/ECA-310-E', 'ANSI/TIA-606-C', 'ANSI/TIA-607-D', 'ABNT NBR 5410:2004', 'ABNT NBR 14136:2012'].every(n => cad.normas.some(x => x.codigo === n))], [6, true, true]);
+igual('documento caderno em PDF na lista da disciplina', motor.documentos.find(d => d.tipo === 'caderno'), { tipo: 'caderno', rotulo: 'Caderno de fabricação e montagem do rack', formato: 'PDF' });
 (async () => {
-  for (const tp of motor.tiposDisponiveis(res)) igual(`documento ${tp}`, (await motor.gerarDocumento(res, tp)).buffer.slice(0, 2).toString(), 'PK');
+  for (const tp of motor.tiposDisponiveis(res).filter(t => t !== 'caderno')) igual(`documento ${tp}`, (await motor.gerarDocumento(res, tp)).buffer.slice(0, 2).toString(), 'PK');
+  // o PDF exige o puppeteer do backend (no PC de produção ele existe)
+  let temPuppeteer = true;
+  try { require('../../_comum/fabricacao/pdf').carregarPuppeteer(); } catch { temPuppeteer = false; console.log('  (puppeteer do backend ausente — PDF do caderno não testado)'); }
+  if (temPuppeteer) {
+    const g = await motor.gerarDocumento(res, 'caderno');
+    igual('caderno do rack: PDF (%PDF, application/pdf, .pdf)', [g.buffer.slice(0, 4).toString(), g.mime, g.nomeArquivo], ['%PDF', 'application/pdf', 'Cabeamento_Exemplo_Caderno_Fabricacao_Rack_R00.pdf']);
+  }
   igual('orçamento usa os códigos de mão de obra existentes', motor.montarOrcamento(res, 'execucao').itens.some(i => i.codigo === 'rede_ponto'), true);
   fim();
 })();

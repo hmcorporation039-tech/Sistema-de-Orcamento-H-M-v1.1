@@ -15,14 +15,14 @@ const path = require('path');
 const { COMUM } = require('../config/caminhos');
 // papel timbrado (empresa e página no cabeçalho/rodapé de impressão): skills/_comum/empresa.js
 const { EMPRESA, timbrarPastaDeTrabalho } = require(path.join(COMUM, 'empresa.js'));
+// padrão visual das planilhas (faixa de título com logo, tabela, impressão): skills/_comum/excel-estilo.js
+const E = require(path.join(COMUM, 'excel-estilo.js'));
 const pool = require('../config/database');
 const { ehMaoDeObra, bdiMateriaisDefinido } = require('../utils/calculoProposta');
 const { calcularCurvaAbc, LIMITES_CURVA_ABC } = require('../utils/curvaAbc'); // aba Curva ABC (2.0, Fase 3F)
 const { formulaDuracaoExcel, ETAPA_MOBILIZACAO, ETAPA_ENTREGA } = require('../utils/duracaoCronograma'); // regra de duração compartilhada com o cronograma da obra (2.0)
 
 const AZUL = { color: { argb: 'FF1F4E9E' } }; // fonte azul = valor digitado (convenção da planilha H&M)
-const CAB = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F1F1F' } };
-const DOURADO = { color: { argb: 'FFC9A227' }, bold: true };
 const MOEDA = '"R$" #,##0.00';
 const PCT = '0.00%';
 
@@ -47,9 +47,7 @@ async function carregarDados(propostaId) {
 }
 
 function cabecalho(ws, linha, titulos) {
-  const r = ws.getRow(linha);
-  titulos.forEach((t, i) => { const c = r.getCell(i + 1); c.value = t; c.font = { bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = CAB; c.alignment = { vertical: 'middle', wrapText: true }; });
-  r.height = 30;
+  E.cabecalhoTabela(ws, linha, titulos);
 }
 
 // ── Curva ABC ── (2.0, Fase 3F) Ordem e agrupamento pela mesma regra do PDF e
@@ -251,9 +249,11 @@ async function montarPlanilhaCliente({ p, secoes, itens, pesquisaPor = new Map()
   let r = 5;
   const subtotais = [];
   const linhaNoOrcamento = new Map(); // id do item → linha na aba Orçamento
+  const linhasSecao = []; // título de cada sistema (faixa de destaque no fim)
   sistemas.forEach((sis, n) => {
     const nomeSis = `${n + 1}. ${sis}`;
-    const t = wsO.getCell(r, 1); t.value = nomeSis.toUpperCase(); t.font = DOURADO;
+    wsO.getCell(r, 1).value = nomeSis.toUpperCase();
+    linhasSecao.push(r);
     r++;
     const ini = r;
     itens.filter(it => sistemaDe(it) === sis).forEach((it, k) => {
@@ -336,7 +336,6 @@ async function montarPlanilhaCliente({ p, secoes, itens, pesquisaPor = new Map()
   linhasR.forEach(([rot, f], i) => { wsR.getCell(lt + 3 + i, 1).value = rot; wsR.getCell(lt + 3 + i, 4).value = { formula: f }; });
   const lf = lt + 3 + linhasR.length;
   wsR.getCell(lf, 1).value = 'PREÇO FINAL DA PROPOSTA';
-  wsR.getCell(lf, 1).font = DOURADO;
   wsR.getCell(lf, 4).value = { formula: `ROUND(D${lt}+D${lt + 3}+D${lt + 4}+D${lt + 5},2)` };
   wsR.getCell(lf, 4).font = { bold: true };
   for (let l = 5; l <= lf; l++) { [2, 3, 4].forEach(c => { wsR.getCell(l, c).numFmt = MOEDA; }); wsR.getCell(l, 5).numFmt = PCT; }
@@ -412,6 +411,67 @@ async function montarPlanilhaCliente({ p, secoes, itens, pesquisaPor = new Map()
   const wsAbc = wb.addWorksheet('Curva ABC');
   wsAbc.orderNo = wsR.orderNo + 0.5;
   montarAbaCurvaAbc(wsAbc, { itens, secoes, linhaNoOrcamento });
+
+  // ── Apresentação (skills/_comum/excel-estilo.js): faixa de título com logo, tabelas com
+  // bordas, linhas de sistema/subtotal/total e impressão A4 ajustada à largura ──
+  wsI.getColumn(1).width = 110;
+  E.faixaTitulo(wb, wsI, { titulo: 'Como usar esta planilha', subtitulo: false, ultimaColuna: 1 });
+  // a faixa tomou a linha 1: o texto de instruções começa na 3 e o título antigo some
+  wsI.spliceRows(2, 1); // a linha 2 estava vazia
+  for (let l = 2; l <= wsI.rowCount; l++) {
+    const c = wsI.getCell(l, 1);
+    const titulo = c.font?.bold;
+    c.font = { name: 'Arial', size: 10, bold: !!titulo, color: { argb: titulo ? E.COR.douradoEscuro : 'FF222222' } };
+    c.alignment = { vertical: 'top', wrapText: true };
+  }
+  E.configurarImpressao(wsI, { ultimaColuna: 1, paisagem: false });
+
+  E.faixaTitulo(wb, wsP, { titulo: 'Parâmetros do orçamento', subtitulo: 'Fonte azul = valor digitado (pode alterar)', ultimaColuna: 3 });
+  E.corpoTabela(wsP, { de: 3, ate: 3 + parametros.length - 1, ultimaColuna: 3, quebrar: [2, 3] });
+  for (let l = 3; l < 3 + parametros.length; l++) { wsP.getCell(l, 1).font = { name: 'Arial', size: 9, bold: true }; wsP.getCell(l, 2).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true }; wsP.getCell(l, 3).font = { name: 'Arial', size: 9, italic: true, color: { argb: E.COR.cinzaTexto } }; }
+  E.configurarImpressao(wsP, { ultimaColuna: 3, paisagem: false });
+
+  E.faixaTitulo(wb, wsO, { titulo: `${EMPRESA.razaoSocial} – planilha orçamentária`, ultimaColuna: 14 });
+  E.corpoTabela(wsO, { de: 5, ate: linhaTotalO, ultimaColuna: 14, quebrar: [2, 3, 4, 14], centralizar: [1, 5, 6, 7] });
+  linhasSecao.forEach(l => E.destacarLinha(wsO, l, 14, 'secao'));
+  subtotais.forEach(s => E.destacarLinha(wsO, s.linha, 14, 'subtotal'));
+  E.destacarLinha(wsO, linhaTotalO, 14, 'total');
+  // o sistema repete em cada linha só para o Resumo/Cronograma somarem por ele: texto discreto
+  for (let l = 5; l <= linhaTotalO; l++) if (wsO.getCell(l, 2).value && !linhasSecao.includes(l)) wsO.getCell(l, 2).font = { name: 'Arial', size: 8, color: { argb: E.COR.cinzaTexto } };
+  E.configurarImpressao(wsO, { linhasTitulo: '4:4', ultimaColuna: 14 });
+
+  E.faixaTitulo(wb, wsR, { titulo: 'Resumo do orçamento', ultimaColuna: 5 });
+  E.corpoTabela(wsR, { de: 5, ate: lf, ultimaColuna: 5 });
+  E.destacarLinha(wsR, lt, 5, 'subtotal');
+  E.destacarLinha(wsR, lf, 5, 'total');
+  wsR.getCell(lt + 1, 1).font = { name: 'Arial', size: 8, italic: true, color: { argb: E.COR.cinzaTexto } };
+  E.configurarImpressao(wsR, { ultimaColuna: 5, paisagem: false });
+  wsR.getCell(lf + 2, 1).alignment = { wrapText: false };
+
+  E.faixaTitulo(wb, wsT, { titulo: 'Quantitativos', subtitulo: 'Itens medidos (metros, caixas, bobinas) com a origem da quantidade.', ultimaColuna: 4 });
+  E.corpoTabela(wsT, { de: 4, ate: Math.max(4, wsT.rowCount), ultimaColuna: 4, quebrar: [1, 4], centralizar: [3] });
+  E.configurarImpressao(wsT, { linhasTitulo: '3:3', ultimaColuna: 4, paisagem: false });
+
+  E.faixaTitulo(wb, wsQ, { titulo: 'Pesquisa de preços de mercado', subtitulo: 'Fonte azul = valor digitado. Critério MANUAL usa o preço digitado; MÉDIA/MÍNIMO usam as fontes.', ultimaColuna: 18 });
+  E.corpoTabela(wsQ, { de: 4, ate: Math.max(4, ultimaQ), ultimaColuna: 18, quebrar: [2, 3, 6, 9, 18], centralizar: [1, 15] });
+  E.configurarImpressao(wsQ, { linhasTitulo: '3:3', ultimaColuna: 18 });
+
+  E.faixaTitulo(wb, wsF, { titulo: 'Fornecedores pesquisados', subtitulo: 'Lojas e distribuidores das pesquisas de preço, com os itens cotados em cada um.', ultimaColuna: 4 });
+  E.corpoTabela(wsF, { de: 4, ate: Math.max(4, rf - 1), ultimaColuna: 4, quebrar: [1, 2] });
+  E.configurarImpressao(wsF, { linhasTitulo: '3:3', ultimaColuna: 4 });
+
+  E.faixaTitulo(wb, wsC, { titulo: 'Cronograma físico (estimado)', ultimaColuna: 5 + SEMANAS });
+  wsC.getRow(2).height = 28;
+  E.corpoTabela(wsC, { de: 5, ate: lu, ultimaColuna: 5 + SEMANAS, centralizar: [3, 4, 5] });
+  E.destacarLinha(wsC, lu + 1, 5 + SEMANAS, 'subtotal');
+  E.configurarImpressao(wsC, { linhasTitulo: '4:4', ultimaColuna: 5 + SEMANAS });
+
+  E.faixaTitulo(wb, wsAbc, { titulo: 'Curva ABC do orçamento', subtitulo: false, ultimaColuna: 10 });
+  for (let l = 6; l <= wsAbc.rowCount; l++) {
+    if (wsAbc.getCell(l, 2).value === 'Classe') continue; // cabeçalho do resumo por classe
+    E.corpoTabela(wsAbc, { de: l, ate: l, ultimaColuna: 10, quebrar: [2, 10], centralizar: [1, 3, 5, 9] });
+  }
+  E.configurarImpressao(wsAbc, { linhasTitulo: '5:5', ultimaColuna: 10 });
 
   timbrarPastaDeTrabalho(wb, `Orçamento ${p.numero || ''}`.trim());
   return { buffer: await wb.xlsx.writeBuffer(), proposta: p };

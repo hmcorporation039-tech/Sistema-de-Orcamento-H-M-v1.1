@@ -40,36 +40,43 @@ function linhasRodape({ cnpj = false } = {}) {
 // Cabeçalho/rodapé de impressão de uma aba (ExcelJS, sem precisar importá-lo):
 //   cabeçalho: razão social à esquerda, título do documento à direita (o centro
 //              fica livre — é onde a entrega as-built carimba "AS BUILT");
-//   rodapé:    as linhas da empresa no centro, "Página X de Y" à direita.
+//   rodapé:    as linhas da empresa à esquerda, "Página X de Y" à direita.
+//              (as 3 linhas ficavam no centro e, em retrato, encostavam/passavam
+//              por cima do "Página X de Y" — o rodapé saía desalinhado)
 // Códigos do Excel: &L/&C/&R seções, &P página, &N total, &"fonte,estilo",
 // &<n> tamanho, && = "&" literal. O Excel limita cada um a 255 caracteres.
 const LIMITE_EXCEL = 255;
 const textoExcel = (s) => String(s ?? '').replace(/&/g, '&&').replace(/[\r\n]+/g, ' ');
 
 function cabecalhoExcel(titulo) {
-  const esquerda = `&L&"Arial,Bold"&9 ${textoExcel(EMPRESA.razaoSocial)}`;
+  // sem espaço depois do tamanho da fonte (o "&9 " deixava o texto um espaço fora do alinhamento)
+  const esquerda = `&L&"Arial,Bold"&9${textoExcel(EMPRESA.razaoSocial)}`;
   let t = String(titulo ?? '').replace(/[\r\n]+/g, ' ').trim();
   if (!t) return esquerda;
-  const max = LIMITE_EXCEL - esquerda.length - '&R&"Arial"&8 '.length;
+  const max = LIMITE_EXCEL - esquerda.length - '&R&"Arial"&8'.length - 1;
   // corta o texto ANTES de escapar (não parte um "&&" ao meio)
   while (textoExcel(t).length > max) t = `${t.slice(0, -2)}…`;
-  return `${esquerda}&R&"Arial"&8 ${textoExcel(t)}`;
+  // título começando por algarismo grudaria no tamanho da fonte ("&8" + "2026…" = &82026): aí vai um espaço
+  return `${esquerda}&R&"Arial"&8${/^\d/.test(t) ? ' ' : ''}${textoExcel(t)}`;
 }
 
 function rodapeExcel() {
-  const pagina = '&R&"Arial"&7 Página &P de &N';
-  const completo = `&C&"Arial"&7 ${linhasRodape({ cnpj: true }).map(textoExcel).join('\n')}${pagina}`;
+  const pagina = '&R&"Arial,Bold"&8Página &P de &N';
+  const completo = `&L&"Arial"&7${linhasRodape({ cnpj: true }).map(textoExcel).join('\n')}${pagina}`;
   if (completo.length <= LIMITE_EXCEL) return completo;
-  return `&C&"Arial"&7 ${linhasRodape().map(textoExcel).join('\n')}${pagina}`;
+  return `&L&"Arial"&7${linhasRodape().map(textoExcel).join('\n')}${pagina}`;
 }
 
 // Timbra uma aba (chamar ao gerar a planilha, antes de qualquer carimbo como
 // o "AS BUILT", que depois entra no centro do cabeçalho preservando a empresa
 // e o título). Mantém os demais campos de headerFooter; não toca em células
-// nem fórmulas.
+// nem fórmulas. Aba sem configuração de impressão própria ganha o padrão
+// (A4 ajustado à largura, margens com espaço para o timbrado — excel-estilo.js):
+// sem isso as planilhas das skills imprimiam em retrato, cortadas em várias folhas.
 function timbrarPlanilha(ws, titulo = '') {
   const hf = ws.headerFooter || {};
   ws.headerFooter = { ...hf, oddHeader: cabecalhoExcel(titulo), oddFooter: rodapeExcel() };
+  if (!ws.pageSetup?.fitToPage) require('./excel-estilo').configurarImpressao(ws);
   return ws;
 }
 

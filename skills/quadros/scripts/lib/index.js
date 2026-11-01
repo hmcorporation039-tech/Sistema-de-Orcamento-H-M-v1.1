@@ -17,6 +17,7 @@ const C = require('./calculo');
 const { gerarDesenho } = require('./desenho');
 const M3D = require('./modelo3d');
 const CAT = require('./catalogo');
+const CADERNO = require('./caderno');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
 const MODELO = require('../../exemplos/modelo-vazio.json');
@@ -459,6 +460,10 @@ const DOCUMENTOS = [
     gerar: async (res) => Buffer.from(gerarDesenho(res.calc, res.dados).dxf, 'utf8') },
   { tipo: 'modelo3d', rotulo: 'Modelo 3D do quadro (HTML)', formato: 'HTML', nome: 'Modelo_3D_Quadro',
     gerar: async (res) => Buffer.from(M3D.gerarHtml(res.calc, res.dados), 'utf8') },
+  // pedido de 31/10/2026: todo quadro sai com o caderno de fabricação e montagem em PDF
+  // (layout, componentes, barramentos, materiais da caixa aos parafusos, plaquetas, ensaios)
+  { tipo: 'caderno', rotulo: 'Caderno de fabricação e montagem', formato: 'PDF', nome: 'Caderno_Fabricacao_Quadro',
+    gerar: (res) => CADERNO.gerarPdf(res) },
   { tipo: 'ensaios', rotulo: 'Checklist de fabricação e ensaios de rotina', formato: 'Word', nome: 'Checklist_Fabricacao_Quadro',
     gerar: (res) => D.docxParaBuffer(D.gerarChecklistCampo(res.dados, res.insp, cfgChecklist(res), res.checklist)) },
   { tipo: 'laudo', rotulo: 'Relatório de ensaios de rotina / inspeção do quadro', formato: 'Word', nome: 'Relatorio_Ensaios_Quadro',
@@ -673,10 +678,10 @@ const base = criarDisciplina({
   montarOrcamento,
 });
 
-// O molde comum (_comum/disciplina.js) só conhece Word e Excel: o desenho DXF
-// sai por aqui, com o mesmo padrão de nome de arquivo
+// O molde comum (_comum/disciplina.js) só conhece Word e Excel: o desenho DXF, o
+// 3D (HTML) e o caderno de fabricação (PDF) saem por aqui, com o mesmo padrão de nome de arquivo
 const gerarDocumentoBase = base.gerarDocumento;
-const FORA_DO_OFFICE = { desenho: { ext: 'dxf', mime: 'application/dxf' }, modelo3d: { ext: 'html', mime: 'text/html; charset=utf-8' } };
+const FORA_DO_OFFICE = { desenho: { ext: 'dxf', mime: 'application/dxf' }, modelo3d: { ext: 'html', mime: 'text/html; charset=utf-8' }, caderno: { ext: 'pdf', mime: 'application/pdf' } };
 base.gerarDocumento = async (res, tipo) => {
   const f = FORA_DO_OFFICE[tipo];
   if (!f) return gerarDocumentoBase(res, tipo);
@@ -686,3 +691,4 @@ base.gerarDocumento = async (res, tipo) => {
 
 module.exports = base;
 module.exports.secoesMemorial = secoesMemorial;
+module.exports.montarCaderno = CADERNO.montarCaderno;

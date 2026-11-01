@@ -40,8 +40,40 @@ const clone = (o) => JSON.parse(JSON.stringify(o));
 { const d = clone(motor.exemplo()); d.cameras = [{ id: 'C5', local: 'caixa', tipo: 'dome', quantidade: 1, resolucao_mp: '5', hfov_graus: 80, objetivo: 'identificacao', distancia_alvo_m: 6.6 }];
   const c = motor.processar(d).calc.cameras[0];
   igual('5 MP com 2592 px: identificação a 6,6 m não atende', [c.hres, Math.round(c.ppm), c.atende], [2592, 234, false]); }
+// ── Caderno de fabricação e montagem do rack do CFTV (31/10/2026) ──
+const RK = require('../../_comum/fabricacao/rack');
+const { montarRack, montarCaderno } = require('../scripts/lib/caderno');
+{
+  // exemplo: 8 câmeras, NVR 16 canais de mesa, 1 switch PoE, nobreak 600 VA → rack de parede 8U, nobreak fora
+  const r = montarRack(res);
+  igual('loja (8 câmeras): rack de parede 8U com patch panel, switch PoE, NVR na bandeja e PDU', [r.tipo, r.alturaU, r.ocupacao.filter(i => i.tipo !== 'tampa').map(i => i.tag)], ['parede', 8, ['PP-A', 'ORG-1', 'SW-1', 'ORG-2', 'NVR-1', 'PDU-1']]);
+  const m = RK.materiaisMontagem(r);
+  igual('loja: nobreak torre fora do rack e DPS de rede das 3 câmeras externas no rack', [m.some(x => /^Nobreak 600 VA torre/.test(x.descricao)), m.find(x => /^DPS de rede/.test(x.descricao))?.quantidade], [true, 3]);
+  igual('loja: U, elevação, componentes, porcas, aterramento e plaquetas conferem', Object.values(RK.conferirRack(r)).every(Boolean), true);
+}
+{
+  // 40 câmeras externas em RAID 5 → rack de piso com nobreak de rack na base e NVR de rack
+  const d = clone(motor.exemplo());
+  d.sistema.raid = 'raid5';
+  d.cameras = [{ id: 'C', local: 'galpão', tipo: 'bullet', quantidade: 40, resolucao_mp: '4', hfov_graus: 90, distancia_cabo_m: 60, externa: true }];
+  const r = montarRack(motor.processar(d));
+  const nb = r.ocupacao.find(i => i.tipo === 'nobreak');
+  igual('galpão (40 câmeras): rack de piso, 2 switches, NVR 19", nobreak na base (U1)', [r.tipo, r.ocupacao.filter(i => i.tipo === 'switch').length, r.ocupacao.some(i => i.tipo === 'nvr'), nb?.uBase], ['piso', 2, true, 1]);
+  igual('galpão: soma dos U ≤ altura e conferência completa', [r.uOcupados <= r.alturaU, Object.values(RK.conferirRack(r)).every(Boolean)], [true, true]);
+  igual('galpão: a PoE das câmeras passa pela PDU mas não aquece o rack', r.potencia > r.dissipacao * 2, true);
+}
+{
+  const cad = montarCaderno(res);
+  igual('caderno do CFTV: IEC 62676-4 nas normas e plaqueta H&M', [cad.normas.some(n => n.codigo === 'IEC 62676-4'), /H&M/.test(cad.plaqueta_hm.modelo)], [true, true]);
+}
 (async () => {
-  for (const t of motor.tiposDisponiveis(res)) igual(`documento ${t}`, (await motor.gerarDocumento(res, t)).buffer.slice(0, 2).toString(), 'PK');
+  for (const t of motor.tiposDisponiveis(res).filter(x => x !== 'caderno')) igual(`documento ${t}`, (await motor.gerarDocumento(res, t)).buffer.slice(0, 2).toString(), 'PK');
+  let temPuppeteer = true;
+  try { require('../../_comum/fabricacao/pdf').carregarPuppeteer(); } catch { temPuppeteer = false; console.log('  (puppeteer do backend ausente — PDF do caderno não testado)'); }
+  if (temPuppeteer) {
+    const g = await motor.gerarDocumento(res, 'caderno');
+    igual('caderno do rack do CFTV: PDF (%PDF, application/pdf, .pdf)', [g.buffer.slice(0, 4).toString(), g.mime, g.nomeArquivo], ['%PDF', 'application/pdf', 'CFTV_Exemplo_Caderno_Fabricacao_Rack_CFTV_R00.pdf']);
+  }
   // memorial afirmava "até 90 m por câmera" com a CAM3 a 95 m
   const JSZip = require('../../node_modules/jszip');
   const xml = await (await JSZip.loadAsync((await motor.gerarDocumento(res, 'memorial')).buffer)).file('word/document.xml').async('string');

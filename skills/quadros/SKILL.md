@@ -13,6 +13,7 @@ Gera, a partir de **um arquivo JSON por quadro** (o unifilar/quadro de cargas), 
 | Lista de materiais (BOM, com coluna de preço) e planilha de cálculo (circuitos, arranjo, barramentos/térmica, verificações 61439, E/S, fonte 24 Vcc, bornes) | `planilha` | Excel | projeto |
 | Desenho de fabricação: vista frontal externa, vista lateral, layout interno da placa (fileiras na ordem do unifilar, trilhos, canaletas, barramentos, bornes, reserva, cotas), legenda, notas e carimbo H&M | `desenho` | DXF (AutoCAD 2018+, mm) | projeto |
 | Modelo 3D do quadro: invólucro, porta articulada com os dispositivos de porta, placa, trilhos, canaletas translúcidas, cada dispositivo com L × A × P reais e cor por tipo, barramentos com isoladores ou pente, barras N/PE, bornes, reserva; camadas liga/desliga, abrir/fechar porta, só a placa, clique = TAG/fabricante/referência/medidas/fonte | `modelo3d` | HTML autossuficiente (three.js embutido) | projeto |
+| Caderno de fabricação e montagem: capa com timbrado, dados nominais e normas, vista frontal com as plaquetas no lugar e vista lateral, layout interno, detalhe do barramento (isoladores, vãos, corte, emendas com parafuso/furo/torque, barras N/PE) e das réguas de bornes, folha de plaquetas 1:1 (comandos da porta, identificação externa, advertências e a plaqueta H&M com a marcação da NBR IEC 61439-1 6.1), componentes com fabricante/referência/medidas/fonte, barramentos, materiais "da caixa aos parafusos" com a regra de cada quantidade, fiação por seção e cor, torques, furação, sequência de montagem e checklist das verificações de rotina (seção 11) — mesma geometria do DXF (`scripts/lib/vistas.js`), motor comum `skills/_comum/fabricacao` | `caderno` | PDF (A4, retrato/paisagem) | projeto |
 | Checklist de fabricação e ensaios de rotina | `ensaios` | Word | projeto e laudo |
 | Relatório de ensaios de rotina / inspeção do quadro (com parecer) | `laudo` | Word | laudo |
 
@@ -20,7 +21,7 @@ Orçamento: modos `fabricacao` (materiais da lista + mão de obra `qd_*` de mont
 
 ## No sistema
 
-Registrada em `skills/_comum/disciplinas.js` (chave `quadros`, sigla `QD`); documentos e modos classificados em `skills/_comum/tipos-documento.js` (`desenho` e `modelo3d` → projeto, `ensaios` → ambos, `fabricacao` → projeto); códigos `qd_*` em `backend/src/services/precosMaoDeObraReferencia.js` (preencher os preços na tela Preços de Mão de Obra). A tela é montada pelo `formulario` de `scripts/lib/index.js`.
+Registrada em `skills/_comum/disciplinas.js` (chave `quadros`, sigla `QD`); documentos e modos classificados em `skills/_comum/tipos-documento.js` (`desenho`, `modelo3d` e `caderno` → projeto, `ensaios` → ambos, `fabricacao` → projeto); códigos `qd_*` em `backend/src/services/precosMaoDeObraReferencia.js` (preencher os preços na tela Preços de Mão de Obra). A tela é montada pelo `formulario` de `scripts/lib/index.js`.
 
 ## Fabricantes e medidas oficiais (catálogo)
 

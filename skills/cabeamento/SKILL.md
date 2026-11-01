@@ -5,13 +5,14 @@ description: Projeto (memorial, pontos, racks e materiais), relatório de certif
 
 # Cabeamento estruturado (NBR 14565) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 18 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
+Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 35 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
 
 | Documento | Tipo | Formato |
 |---|---|---|
 | Memorial de cabeamento estruturado | `memorial` | Word |
 | Planilha de pontos e materiais | `planilha` | Excel |
 | Relatório de inspeção / certificação | `laudo` | Word |
+| Caderno de fabricação e montagem do rack (um rack por distribuidor de piso: elevações, materiais do rack aos parafusos, aterramento, plaquetas e plaqueta H&M) | `caderno` | PDF |
 
 ## Também no sistema (aba Análise de Projeto)
 

@@ -468,4 +468,4 @@ function hmLayout(){var h=document.querySelector('header'),n=document.querySelec
 `;
 }
 
-module.exports = { montarCena, gerarHtml, CAMADAS };
+module.exports = { montarCena, gerarHtml, CAMADAS, catalogoInfra };

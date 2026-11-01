@@ -6,6 +6,7 @@ const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
 const { fmtNum } = require('../../../_comum/docx-base');
 const { calcular, ROTULO_DORI, DORI } = require('./calculo');
+const { gerarCaderno } = require('./caderno');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
 const MODELO = require('../../exemplos/modelo-vazio.json');
@@ -91,6 +92,8 @@ const DOCUMENTOS = [
       metodologia: ['Inspeção visual das câmeras, gravador, rack e infraestrutura.', 'Teste de imagem (dia/noite) e de gravação de cada câmera; busca e exportação de trecho gravado.', 'Verificação de usuários, senhas, firmware, sincronismo de horário e acesso remoto.'],
       medicoes: [{ titulo: '6.1 Teste das câmeras', colunas: ['Câmera', 'Imagem', 'Gravação', 'Obs.', 'Resultado'], proporcoes: [1.2, 0.7, 0.8, 2.2, 0.8], linhas: res.testes.map(m => [m.camera, m.imagem_ok === false ? 'falha' : m.imagem_ok ? 'ok' : '', m.gravacao_ok === false ? 'falha' : m.gravacao_ok ? 'ok' : '', m.observacao || '', m.resultado]) }],
     }, { checklist: res.checklist, ncs: res.ncs, parecer: res.parecer, baseDir: res.baseDir, pastaFotos: res.pastaFotos })) },
+  // PDF: rack do CFTV (gravador, switches PoE, patch panel, nobreak, PDU) "do rack aos parafusos"
+  { tipo: 'caderno', rotulo: 'Caderno de fabricação e montagem do rack', formato: 'PDF', nome: 'Caderno_Fabricacao_Rack_CFTV', gerar: (res) => gerarCaderno(res) },
 ];
 
 function montarOrcamento(res, modo) {
@@ -145,6 +148,9 @@ const FORMULARIO = [
       { caminho: 'sistema.portas_switch', rotulo: 'Portas por switch', tipo: 'numero' },
       { caminho: 'sistema.autonomia_min', rotulo: 'Autonomia do nobreak (min)', tipo: 'numero' },
       { caminho: 'sistema.acessos', rotulo: 'Acessos (placas de monitoramento)', tipo: 'numero' },
+      { caminho: 'sistema.local_rack', rotulo: 'Local do rack do CFTV' },
+      { caminho: 'sistema.tensao_pdu_v', rotulo: 'Tensão da PDU do rack (V)', tipo: 'numero' },
+      { caminho: 'sistema.distancia_tgb_m', rotulo: 'Distância do rack ao TGB/BEP (m)', tipo: 'numero' },
     ] },
   ] },
   { titulo: '3. Câmeras', aberta: true, itens: [
@@ -168,7 +174,7 @@ const FORMULARIO = [
   F.secaoFotos(8),
 ];
 
-module.exports = criarDisciplina({
+const base = criarDisciplina({
   chave: 'cftv',
   nome: 'CFTV (IEC 62676-4 / LGPD)',
   modelo: MODELO,
@@ -184,3 +190,14 @@ module.exports = criarDisciplina({
   ],
   montarOrcamento,
 });
+
+// O molde só gera Word/Excel: o caderno de fabricação sai em PDF (mesmo padrão
+// do FORA_DO_OFFICE da skill de quadros)
+const gerarDocumentoBase = base.gerarDocumento;
+base.gerarDocumento = async (res, tipo) => {
+  if (tipo !== 'caderno') return gerarDocumentoBase(res, tipo);
+  const d = DOCUMENTOS.find(x => x.tipo === tipo);
+  return { buffer: await d.gerar(res), nomeArquivo: D.nomeArquivo(res.dados, d.nome, 'pdf', true), mime: 'application/pdf' };
+};
+
+module.exports = base;
