@@ -75,20 +75,20 @@ const caso = async (nome, fn) => { await fn(); ok++; };
     titulo: 'Modelo 3D — <script>alert(1)</script>', cliente: 'Cliente & Cia', obra: '',
   };
 
-  await caso('gera o HTML na thread à parte, com ambientes e pontos estimados', async () => {
+  // 01/11/2026: o 3D nunca estima pontos pela área (a Arena saía com 868 tomadas que
+  // não existem no projeto) — sem ponto desenhado nem formulário, só a arquitetura
+  await caso('gera o HTML na thread à parte, com os ambientes e SEM pontos estimados', async () => {
     const r = await M.gerarNoWorker(fonte);
     assert.ok(r.html.startsWith('<!doctype html>'));
     assert.strictEqual(r.numeros.ambientes, 2);
-    assert.ok(r.numeros.dispositivos.some(d => d.disciplina === 'eletrica' && d.quantidade > 0), 'tomadas/pontos da elétrica');
-    assert.ok(r.numeros.dispositivos.some(d => d.disciplina === 'cftv'), 'câmeras');
-    assert.ok(r.avisos.some(a => /CONFERIR/.test(a)), 'estimativa avisada');
+    assert.strictEqual(r.numeros.dispositivos.length, 0, JSON.stringify(r.numeros.dispositivos));
+    assert.ok(r.avisos.some(a => /nada é estimado/.test(a)), r.avisos.join(' | '));
     assert.ok(!r.html.includes('<script>alert(1)</script>'), 'título escapado');
   });
 
-  await caso('formulário do projeto que não fecha cai na estimativa, avisando', async () => {
+  await caso('formulário do projeto que não posiciona pontos não cai na estimativa', async () => {
     const r = await M.gerarNoWorker({ ...fonte, disciplinas: ['cftv'], dadosPorDisciplina: { cftv: { lixo: true } } });
-    assert.ok(r.numeros.dispositivos.some(d => d.disciplina === 'cftv'));
-    assert.ok(r.avisos.some(a => /ESTIMADOS/.test(a)));
+    assert.strictEqual(r.numeros.dispositivos.length, 0);
   });
 
   await caso('DWG do projeto → 3D: todo componente (sem símbolo vira caixa com o nome) e trecho com tipo e medida', async () => {
@@ -108,10 +108,9 @@ const caso = async (nome, fn) => { await fn(); ok++; };
     assert.deepStrictEqual([r.trechos[0].tipo, r.trechos[0].material, r.trechos[0].medida, r.trechos[0].secao_mm, r.trechos[0].origem_medida], ['eletroduto', 'PVC rígido', 'Ø 25 mm (3/4")', [25, 25], 'legenda']);
   });
 
-  await caso('disciplina sem estimativa (controle de acesso sem formulário) não derruba o 3D', async () => {
-    const r = await M.gerarNoWorker({ ...fonte, disciplinas: ['controle-acesso', 'cftv'] });
-    assert.ok(r.numeros.dispositivos.some(d => d.disciplina === 'cftv'));
-    assert.ok(r.avisos.some(a => /controle-acesso: sem pontos no 3D/.test(a)));
+  await caso('pontos do projeto (espacial) entram na planta deles', async () => {
+    const r = await M.gerarNoWorker({ ...fonte, dispositivosReais: [{ simbolo: 'HM-CFTV-CAMERA', rotulo: 'Câmera', disciplina: 'cftv', x: 2, y: 2, rotacao: 0, id: '', ambiente: null }] });
+    assert.ok(r.numeros.dispositivos.some(d => d.disciplina === 'cftv' && d.quantidade === 1), JSON.stringify(r.numeros.dispositivos));
   });
 
   await caso('arquitetura sem ambientes: erro claro', async () => {

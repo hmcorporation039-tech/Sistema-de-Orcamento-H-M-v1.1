@@ -71,7 +71,7 @@ function enviarPagina(res, html) {
   res.send(html);
 }
 
-// GET /modelo-3d/ver/:token — sem login: o token curto (10 min) é a autorização
+// GET /modelo-3d/ver/:token — sem login: o token curto (2 h) é a autorização
 async function ver(req, res) {
   const l = M.lerLink(req.params.token);
   if (!l) return res.status(404).type('text/plain; charset=utf-8').send('Link do modelo 3D expirado. Abra de novo pelo sistema.');

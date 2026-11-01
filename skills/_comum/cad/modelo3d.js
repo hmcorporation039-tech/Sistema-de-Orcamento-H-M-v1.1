@@ -757,9 +757,10 @@ function grupoEletroduto(disc, z, estimado) {
 }
 
 // Para cada disciplina com pontos: o traçado do projeto ganha as descidas; a
-// disciplina sem traçado ganha o eletroduto estimado (INFRA_ESTIMADA). `tipos`:
+// disciplina sem traçado ganha o eletroduto estimado (INFRA_ESTIMADA) — só com
+// estimar (o modelo por planta do desenho não inventa traçado). `tipos`:
 // os tipos de dispositivo da cena (itens já em coordenadas da cena).
-function completarInfra(infra, tipos, peDireito, avisos) {
+function completarInfra(infra, tipos, peDireito, avisos, estimar = true) {
   const porDisc = new Map();
   for (const t of tipos) {
     if (!porDisc.has(t.disciplina)) porDisc.set(t.disciplina, []);
@@ -798,7 +799,7 @@ function completarInfra(infra, tipos, peDireito, avisos) {
       continue;
     }
     const e = INFRA_ESTIMADA[disc];
-    if (!e || pecas.length < 2) continue;
+    if (!estimar || !e || pecas.length < 2) continue;
     const pts = pecas.map(p => [p.x, p.y]);
     let centro = pecas.findIndex(p => p.centro);
     if (centro < 0) {
@@ -843,7 +844,8 @@ function afastarDosVizinhos(p, tam, postos) {
 
 // ── Cena ────────────────────────────────────────────────────────────────────
 // opcoes: { peDireito, dispositivos (de pontosDasDisciplinas), trechos (ver
-// montarInfra), titulo, cliente, obra, proposta, avisos }
+// montarInfra), titulo, cliente, obra, proposta, avisos,
+// estimarInfra (false: disciplina sem traçado no projeto fica sem eletroduto) }
 function montarCena(arquitetura, opcoes = {}) {
   const peDireito = Number(opcoes.peDireito) > 1.5 ? Number(opcoes.peDireito) : PE_DIREITO_PADRAO;
   const { ambientes, caixa: caixaSalas } = regiaoDoModelo(arquitetura);
@@ -896,7 +898,7 @@ function montarCena(arquitetura, opcoes = {}) {
   const avisos = [...(opcoes.avisos || [])];
   if (el.simbolosRedondos) avisos.push(`${el.simbolosRedondos} símbolos redondos (poste, caixa, tomada de piso…) na layer de parede não subiram como pilar nem parede.`);
   // traçado do projeto (com as descidas até as peças) + o estimado das disciplinas sem traçado
-  const infra = completarInfra(montarInfra(opcoes.trechos, P, caixa, peDireito, avisos), listaTipos, peDireito, avisos);
+  const infra = completarInfra(montarInfra(opcoes.trechos, P, caixa, peDireito, avisos), listaTipos, peDireito, avisos, opcoes.estimarInfra !== false);
   const numeros = {
     area_interna_m2: r2(internos.reduce((s, a) => s + a.area_m2, 0)),
     area_externa_m2: r2(ambs.filter(a => a.tipo === 'externo').reduce((s, a) => s + a.area_m2, 0)),

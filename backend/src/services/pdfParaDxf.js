@@ -121,6 +121,8 @@ async function escolherPagina(doc, OPS, pagina, escala) {
 
 // buffer do PDF → { texto (DXF em metros), escala, origemEscala, pagina, paginas, avisos }
 // `escala`: denominador informado (50 para 1:50); `pagina`: 1, 2… (padrão: a de planta — ver escolherPagina)
+// Sem `pagina`, TODAS as folhas com planta entram, lado a lado, cada uma na sua
+// moldura (paginasUsadas); `pagina` = a principal.
 // folhas: [{ pagina, tipo, resumo, usada }] — a classificação de cada página lida
 async function pdfParaDxf(buffer, { escala: escalaInformada = null, pagina = null } = {}) {
   const { getDocument, OPS } = await pdfjs();
@@ -136,115 +138,147 @@ async function pdfParaDxf(buffer, { escala: escalaInformada = null, pagina = nul
     if (semDesenho(geo)) {
       throw erro('este PDF não tem desenho vetorial (parece escaneado ou imagem). Para o 3D, envie o PDF exportado do AutoCAD/Revit ou o DWG/DXF.', 'RASTER');
     }
-
-    // só a planta vai para o DXF: as regiões de diagrama, quadro de cargas, legenda,
-    // detalhe e carimbo da folha ficam de fora (folha MISTA: planta + unifilar)
-    const H = geo.altura, W = geo.largura;
-    const manter = regioesParaManter(classificacao);
-    const margem = Math.max(W, H) / 250;
-    const naPlanta = (p) => !manter.length || manter.some(r => naRegiao([r[0] - margem, r[1] - margem, r[2] + margem, r[3] + margem], p));
-
-    // arcos e escala (em pontos do PDF, antes de converter) — portas só da planta:
-    // o arco do disjuntor no unifilar puxava o raio mediano e a escala não saía
-    const arcosPt = [], retasPt = [];
-    for (const c of geo.caminhos) {
-      if (!c.traco) continue;
-      for (const s of c.subs) {
-        for (const seg of s.segs) {
-          if (seg[0] === 'l') { if (naPlanta(seg[1])) retasPt.push([seg[1], seg[2]]); continue; }
-          const a = arcoDaCurva(...seg.slice(1));
-          if (a && naPlanta(a.centro)) juntarArco(arcosPt, a);
-        }
-      }
-    }
-    const avisos = [];
-    let escala = Number(escalaInformada) || null, origemEscala = escala ? 'informada' : null;
-    if (!escala) { escala = escalaDoCarimbo(geo.textos); if (escala) origemEscala = 'carimbo'; }
-    if (!escala) {
-      escala = escalaPelasPortas(arcosPt, retasPt);
-      if (escala) { origemEscala = 'portas'; avisos.push(`Escala 1:${escala} deduzida pelo tamanho das portas (o carimbo não tem a escala) — confira as medidas.`); }
-    }
-    if (!escala || escala < 1 || escala > 5000) {
-      throw erro('não achei a escala da planta no PDF (nem "ESC. 1:50" no carimbo, nem portas para medir). Informe a escala (ex.: 50 para 1:50).', 'ESCALA');
-    }
-
-    const k = PT_EM_M * escala;
-    const P = ([x, y]) => [x * k, (H - y) * k]; // PDF (y para baixo) → metros (y para cima)
-    const carimbo = regiaoDoCarimbo(geo.caminhos, geo.textos, W, H);
-    const meio = (seg) => { const a = seg[1], b = seg.at(-1); return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; };
-    const foraDoCarimbo = (seg) => (!carimbo || !seg.slice(1).every(p => naRegiao(carimbo, p))) && naPlanta(meio(seg));
-    // a espessura de parede sai só da planta (o barramento grosso do unifilar puxava o limite)
-    const lwParede = espessuraDeParede(geo.caminhos.filter(c => naPlanta([(c.caixa[0] + c.caixa[2]) / 2, (c.caixa[1] + c.caixa[3]) / 2])));
-    if (!lwParede) avisos.push('As linhas do PDF têm todas a mesma espessura: o sistema não separa parede de móvel — móveis desenhados podem aparecer como parede no 3D.');
-
-    const d = new DesenhoDxf({ layers: [], unidade: 'm', escalaPlotagem: escala });
+    const d = new DesenhoDxf({ layers: [], unidade: 'm', escalaPlotagem: Number(escalaInformada) || 50 });
     const L = {
       parede: d.camada('PDF-PAREDE', 7), cheia: d.camada('PDF-PAREDE-CHEIA', 8), linhas: d.camada('PDF-LINHAS', 9),
       tracejado: d.camada('PDF-TRACEJADO', 9), texto: d.camada('PDF-TEXTO', 2),
     };
-    let entidades = 0;
-    for (const c of geo.caminhos) {
-      if (c.traco) {
-        const layer = c.dash ? L.tracejado : (lwParede && c.lwPg >= lwParede ? L.parede : L.linhas);
-        for (const s of c.subs) {
-          let pts = [];
-          const arcos = []; // pedaços do mesmo círculo juntados (o PDF pode partir 90° em 16 curvas)
-          const fechar = () => { if (pts.length >= 2) { d.polilinha(pts, { layer }); entidades++; } pts = []; };
-          for (const seg of s.segs) {
-            if (!foraDoCarimbo(seg) || (seg[0] === 'l' && ehMoldura([seg[1], seg[2]], W, H))) { fechar(); continue; }
-            if (seg[0] === 'l') {
-              const a = P(seg[1]), b = P(seg[2]);
-              if (!pts.length) pts.push(a);
-              pts.push(b);
-              continue;
-            }
-            const [p0, c1, c2, p3] = seg.slice(1).map(P);
-            const arco = arcoDaCurva(p0, c1, c2, p3);
-            if (arco) { fechar(); juntarArco(arcos, arco); continue; }
-            if (!pts.length) pts.push(p0);
-            for (let i = 1; i <= 8; i++) pts.push(bezier(p0, c1, c2, p3, i / 8));
-          }
-          if (s.fechado && pts.length >= 3 && dist(pts[0], pts.at(-1)) < 1e-6) { pts.pop(); d.polilinha(pts, { layer, fechada: true }); entidades++; pts = []; }
-          fechar();
-          for (const a of arcos) { d.arco(a.centro[0], a.centro[1], a.r, a.inicio, a.fim, layer); entidades++; }
-        }
-      } else if (c.cheio && ehCinza(c.fill)) {
-        // preenchimento cinza/preto com cara de parede/pilar: polígono reto (árvore, pedra
-        // de piso e outros desenhos com curva não são parede), espessura média (2·área/perímetro) de 4 a 60 cm
-        for (const s of c.subs) {
-          if (s.segs.some(seg => seg[0] !== 'l') || !s.segs.every(foraDoCarimbo)) continue;
-          const pts = s.segs.map(seg => P(seg[1]));
-          if (pts.length < 3) continue;
-          let area = 0, per = 0;
-          pts.forEach((p, i) => { const q = pts[(i + 1) % pts.length]; area += p[0] * q[1] - q[0] * p[1]; per += dist(p, q); });
-          area = Math.abs(area) / 2;
-          const esp = per ? (2 * area) / per : 0;
-          if (area >= 0.01 && esp >= 0.04 && esp <= 0.6) { d.polilinha(pts, { layer: L.cheia, fechada: true }); entidades++; }
-        }
-      }
+    const avisos = [];
+    // a folha escolhida primeiro; sem página pedida, também as OUTRAS folhas com planta,
+    // cada uma ao lado da anterior e dentro da sua moldura: o 3D faz um modelo por
+    // planta (skills/_comum/cad/modelosPorPlanta.js) — pedido de 01/11/2026, "cada
+    // folha em pdf individualmente"
+    const r0 = escreverFolha(d, L, geo, classificacao, { n, escalaInformada, dx: 0, avisos, obrigatoria: true });
+    const usadas = [n];
+    let dx = r0.largura * 1.1;
+    for (const f of pagina ? [] : folhas.filter(x => x.temPlanta && x.pagina !== n).sort((a, b) => a.pagina - b.pagina)) {
+      const pag = await doc.getPage(f.pagina);
+      const g = await lerPagina(pag, OPS, { geometria: true });
+      pag.cleanup();
+      const r = escreverFolha(d, L, g, classificarPaginaPdf(g, { escala: Number(escalaInformada) || null }), { n: f.pagina, escalaInformada, dx, avisos, obrigatoria: false });
+      if (!r) continue;
+      usadas.push(f.pagina);
+      dx += r.largura * 1.1;
     }
-    for (const t of juntarTextos(geo.textos)) {
-      if (naRegiao(carimbo, [t.x, t.y]) || !naPlanta([t.x, t.y])) continue;
-      const [x, y] = P([t.x, t.y]);
-      d.texto(x, y, Math.max(t.h * k, 0.01), t.s, { layer: L.texto });
-    }
-    if (!entidades) throw erro('não achei linhas de desenho na página do PDF.', 'VAZIO');
     // o que foi ignorado vai para a tela (avisos) e para o resumo gravado (folhas)
-    const outras = folhas.filter(f => f.pagina !== n && !f.raster);
-    if (outras.length) avisos.push(`Usada a folha ${n} (${classificacao?.resumo || 'desenho'}) para o 3D. ${outras.map(f => `Folha ${f.pagina}: ${f.resumo}${f.semPlanta ? ' — ignorada' : ''}`).join('; ')}.`);
-    const fora = (classificacao?.regioes || []).filter(r => NAO_PLANTA.has(r.tipo) && r.tipo !== 'carimbo');
-    if (manter.length && fora.length) {
-      const porTipo = {};
-      for (const r of fora) porTipo[r.rotulo] = (porTipo[r.rotulo] || 0) + 1;
-      avisos.push(`Na folha ${n}, ficaram fora do 3D: ${Object.entries(porTipo).map(([t, q]) => (q > 1 ? `${t} (${q})` : t)).join(', ')}.`);
-    }
+    const outras = folhas.filter(f => !usadas.includes(f.pagina) && !f.raster);
+    if (usadas.length > 1) avisos.push(`Folhas ${usadas.join(', ')} usadas para o 3D, cada uma um modelo à parte.`);
+    if (outras.length) avisos.push(`${usadas.length > 1 ? 'Fora do 3D' : `Usada a folha ${n} (${classificacao?.resumo || 'desenho'}) para o 3D`}. ${outras.map(f => `Folha ${f.pagina}: ${f.resumo}${f.semPlanta ? ' — ignorada' : ''}`).join('; ')}.`);
     return {
-      texto: d.toString(), escala, origemEscala, pagina: n, paginas: doc.numPages, avisos,
-      folhas: folhas.map(({ pagina: p, tipo, resumo }) => ({ pagina: p, tipo, resumo, usada: p === n })),
+      texto: d.toString(), escala: r0.escala, origemEscala: r0.origemEscala, pagina: n, paginasUsadas: usadas, paginas: doc.numPages, avisos,
+      folhas: folhas.map(({ pagina: p, tipo, resumo }) => ({ pagina: p, tipo, resumo, usada: usadas.includes(p) })),
     };
   } finally {
     await doc.destroy();
   }
+}
+
+// Uma folha do PDF no DXF, deslocada `dx` metros para a direita e com a moldura
+// da página na layer PDF-MARGEM-F<n> (a leitura da arquitetura a usa para separar as
+// pranchas e não a sobe como parede). Folha que não é obrigatória e não tem
+// escala nem linhas: null, com aviso (as outras seguem).
+// (folha sem escala NÃO usa a da principal: a folha 1 da Arena saía com 23 × 16 m, errada)
+function escreverFolha(d, L, geo, classificacao, { n, escalaInformada, dx, avisos, obrigatoria }) {
+  const falhar = (msg, codigo) => {
+    if (obrigatoria) throw erro(msg, codigo);
+    avisos.push(`Folha ${n} fora do 3D: ${msg}`);
+    return null;
+  };
+  // só a planta vai para o DXF: as regiões de diagrama, quadro de cargas, legenda,
+  // detalhe e carimbo da folha ficam de fora (folha MISTA: planta + unifilar)
+  const H = geo.altura, W = geo.largura;
+  const manter = regioesParaManter(classificacao);
+  const margem = Math.max(W, H) / 250;
+  const naPlanta = (p) => !manter.length || manter.some(r => naRegiao([r[0] - margem, r[1] - margem, r[2] + margem, r[3] + margem], p));
+
+  // arcos e escala (em pontos do PDF, antes de converter) — portas só da planta:
+  // o arco do disjuntor no unifilar puxava o raio mediano e a escala não saía
+  const arcosPt = [], retasPt = [];
+  for (const c of geo.caminhos) {
+    if (!c.traco) continue;
+    for (const s of c.subs) {
+      for (const seg of s.segs) {
+        if (seg[0] === 'l') { if (naPlanta(seg[1])) retasPt.push([seg[1], seg[2]]); continue; }
+        const a = arcoDaCurva(...seg.slice(1));
+        if (a && naPlanta(a.centro)) juntarArco(arcosPt, a);
+      }
+    }
+  }
+  let escala = Number(escalaInformada) || null, origemEscala = escala ? 'informada' : null;
+  if (!escala) { escala = escalaDoCarimbo(geo.textos); if (escala) origemEscala = 'carimbo'; }
+  if (!escala) {
+    escala = escalaPelasPortas(arcosPt, retasPt);
+    if (escala) { origemEscala = 'portas'; avisos.push(`Escala 1:${escala} da folha ${n} deduzida pelo tamanho das portas (o carimbo não tem a escala) — confira as medidas.`); }
+  }
+  if (!escala || escala < 1 || escala > 5000) {
+    return falhar('não achei a escala da planta no PDF (nem "ESC. 1:50" no carimbo, nem portas para medir). Informe a escala (ex.: 50 para 1:50).', 'ESCALA');
+  }
+
+  const k = PT_EM_M * escala;
+  const P = ([x, y]) => [dx + x * k, (H - y) * k]; // PDF (y para baixo) → metros (y para cima)
+  const carimbo = regiaoDoCarimbo(geo.caminhos, geo.textos, W, H);
+  const meio = (seg) => { const a = seg[1], b = seg.at(-1); return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; };
+  const foraDoCarimbo = (seg) => (!carimbo || !seg.slice(1).every(p => naRegiao(carimbo, p))) && naPlanta(meio(seg));
+  // a espessura de parede sai só da planta (o barramento grosso do unifilar puxava o limite)
+  const lwParede = espessuraDeParede(geo.caminhos.filter(c => naPlanta([(c.caixa[0] + c.caixa[2]) / 2, (c.caixa[1] + c.caixa[3]) / 2])));
+  if (!lwParede) avisos.push(`As linhas da folha ${n} têm todas a mesma espessura: o sistema não separa parede de móvel — móveis desenhados podem aparecer como parede no 3D.`);
+
+  let entidades = 0;
+  for (const c of geo.caminhos) {
+    if (c.traco) {
+      const layer = c.dash ? L.tracejado : (lwParede && c.lwPg >= lwParede ? L.parede : L.linhas);
+      for (const s of c.subs) {
+        let pts = [];
+        const arcos = []; // pedaços do mesmo círculo juntados (o PDF pode partir 90° em 16 curvas)
+        const fechar = () => { if (pts.length >= 2) { d.polilinha(pts, { layer }); entidades++; } pts = []; };
+        for (const seg of s.segs) {
+          if (!foraDoCarimbo(seg) || (seg[0] === 'l' && ehMoldura([seg[1], seg[2]], W, H))) { fechar(); continue; }
+          if (seg[0] === 'l') {
+            const a = P(seg[1]), b = P(seg[2]);
+            if (!pts.length) pts.push(a);
+            pts.push(b);
+            continue;
+          }
+          const [p0, c1, c2, p3] = seg.slice(1).map(P);
+          const arco = arcoDaCurva(p0, c1, c2, p3);
+          if (arco) { fechar(); juntarArco(arcos, arco); continue; }
+          if (!pts.length) pts.push(p0);
+          for (let i = 1; i <= 8; i++) pts.push(bezier(p0, c1, c2, p3, i / 8));
+        }
+        if (s.fechado && pts.length >= 3 && dist(pts[0], pts.at(-1)) < 1e-6) { pts.pop(); d.polilinha(pts, { layer, fechada: true }); entidades++; pts = []; }
+        fechar();
+        for (const a of arcos) { d.arco(a.centro[0], a.centro[1], a.r, a.inicio, a.fim, layer); entidades++; }
+      }
+    } else if (c.cheio && ehCinza(c.fill)) {
+      // preenchimento cinza/preto com cara de parede/pilar: polígono reto (árvore, pedra
+      // de piso e outros desenhos com curva não são parede), espessura média (2·área/perímetro) de 4 a 60 cm
+      for (const s of c.subs) {
+        if (s.segs.some(seg => seg[0] !== 'l') || !s.segs.every(foraDoCarimbo)) continue;
+        const pts = s.segs.map(seg => P(seg[1]));
+        if (pts.length < 3) continue;
+        let area = 0, per = 0;
+        pts.forEach((p, i) => { const q = pts[(i + 1) % pts.length]; area += p[0] * q[1] - q[0] * p[1]; per += dist(p, q); });
+        area = Math.abs(area) / 2;
+        const esp = per ? (2 * area) / per : 0;
+        if (area >= 0.01 && esp >= 0.04 && esp <= 0.6) { d.polilinha(pts, { layer: L.cheia, fechada: true }); entidades++; }
+      }
+    }
+  }
+  for (const t of juntarTextos(geo.textos)) {
+    if (naRegiao(carimbo, [t.x, t.y]) || !naPlanta([t.x, t.y])) continue;
+    const [x, y] = P([t.x, t.y]);
+    d.texto(x, y, Math.max(t.h * k, 0.01), t.s, { layer: L.texto });
+  }
+  if (!entidades) return falhar('não achei linhas de desenho na página do PDF.', 'VAZIO');
+  // moldura da página: separa esta folha das outras no 3D
+  d.polilinha([[dx, 0], [dx + W * k, 0], [dx + W * k, H * k], [dx, H * k]], { layer: d.camada(`PDF-MARGEM-F${n}`, 1), fechada: true });
+  const fora = (classificacao?.regioes || []).filter(r => NAO_PLANTA.has(r.tipo) && r.tipo !== 'carimbo');
+  if (manter.length && fora.length) {
+    const porTipo = {};
+    for (const r of fora) porTipo[r.rotulo] = (porTipo[r.rotulo] || 0) + 1;
+    avisos.push(`Na folha ${n}, ficaram fora do 3D: ${Object.entries(porTipo).map(([t, q]) => (q > 1 ? `${t} (${q})` : t)).join(', ')}.`);
+  }
+  return { escala, origemEscala, largura: W * k };
 }
 
 // ── Processo à parte ────────────────────────────────────────────────────
