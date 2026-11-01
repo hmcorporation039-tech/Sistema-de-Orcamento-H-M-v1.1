@@ -636,7 +636,10 @@ function montarMateriais(equipamentos, catalogo) {
     return {
       descricao: eq.descricao,
       referencia_fabricante: eq.referencia_fabricante || null,
-      quantidade: 1,
+      // a lista "REF." do projeto diz O QUE é, não quantos: sem a quantidade lida, 0 (a
+      // conferir) — antes entrava 1 e o orçamento saía com a quantidade "confirmada" errada
+      quantidade: Number(eq.quantidade) > 0 ? Number(eq.quantidade) : 0,
+      ...(Number(eq.quantidade) > 0 ? {} : { quantidade_a_confirmar: true }),
       unidade: correspondencia?.unidade_catalogo || 'un',
       subgrupo: 'Material e Equipamentos',
       pronto: false,

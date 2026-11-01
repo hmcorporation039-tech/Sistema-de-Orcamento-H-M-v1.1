@@ -129,6 +129,7 @@ function explodir(parsed) {
   const out = [];
   // a moldura da folha não entra no desenho, mas diz onde está cada prancha (./pranchas.js)
   out.molduras = [];
+  out.textosFora = [];
   // DWG convertido de PDF às vezes traz tudo no espaço do papel: aí ele é o desenho
   const temModelo = (parsed.entities || []).some(e => !e.paperSpace);
   const visitar = (ents, transforms, layerPai, prof) => {
@@ -137,6 +138,8 @@ function explodir(parsed) {
       const layer = layerPai && (!e.layer || e.layer === '0') ? layerPai : e.layer;
       if (RE_LAYER_FORA_PLANTA.test(layer || '')) {
         if (RE_LAYER_MOLDURA.test(layer || '') && (e.type === 'LWPOLYLINE' || e.type === 'POLYLINE') && e.vertices?.length >= 4 && e.vertices.length <= 5) out.molduras.push({ pts: transformar(e.vertices.map(v => [v.x, v.y]), transforms), layer });
+        // o texto da legenda (layer de tabela) diz a altura de cada símbolo: ./pontosDoDesenho.js
+        else if (e.type === 'TEXT' || e.type === 'MTEXT') out.textosFora.push({ ...e, layer, transforms });
         continue;
       }
       if (e.type !== 'INSERT') { out.push({ ...e, layer, transforms }); continue; }
@@ -449,6 +452,18 @@ function simplificar(pts, tol) {
 }
 
 // ── Leitura ──────────────────────────────────────────────────────────────
+// texto/atributo → { s, x, y, h, layer } (atributo: etiqueta de ambiente em bloco, NOME/AMBIENTE)
+function lerTexto(e) {
+  const s = limparTexto(e.type === 'ATTRIB' ? e.text.string : e.string);
+  const x = e.type === 'ATTRIB' ? e.text.x : e.x, y = e.type === 'ATTRIB' ? e.text.y : e.y;
+  if (!s || !Number.isFinite(x)) return null;
+  const [[tx, ty]] = transformar([[x, y]], e.transforms);
+  const escala = e.transforms?.reduce((m, t) => m * Math.abs(t.scaleY || 1), 1) || 1;
+  return { s, x: tx, y: ty, h: (e.nominalTextHeight || e.textHeight || (e.type === 'ATTRIB' ? e.text.textHeight : 0) || 0) * escala, layer: e.layer, ...(e.type === 'ATTRIB' ? { tag: e.tag || '' } : {}) };
+}
+// "Tomada alta a 2,20m do piso", "h= 20 cm abaixo do forro", "altura: 97,5 cm", "H=1,10"
+const RE_NOTA_ALTURA = /do\s+piso|abaixo\s+do\s+forro|\baltura\b|\bh\s*=\s*[0-9]/i;
+
 function lerArquitetura(textoDxf, opcoes = {}) {
   const { parsed } = new Helper(textoDxf);
   const ents = explodir(parsed);
@@ -457,6 +472,7 @@ function lerArquitetura(textoDxf, opcoes = {}) {
   const textos = [];
   const referencia = []; // em unidades do desenho até decidir o fator
   const arcos = [];
+  const preenchimentos = [];
   for (const e of ents) {
     if ((e.type === 'LWPOLYLINE' || e.type === 'POLYLINE') && e.vertices?.length >= 2) {
       const pts = transformar(e.vertices.map(v => [v.x, v.y]), e.transforms);
@@ -469,16 +485,22 @@ function lerArquitetura(textoDxf, opcoes = {}) {
       const a = pontosArco(e);
       referencia.push({ tipo: 'arco', pts: a.pts, fechada: e.type === 'CIRCLE', layer: e.layer });
       if (e.type === 'ARC') arcos.push(a);
+    } else if (e.type === 'HATCH' && (e.fillType === 'SOLID' || /^SOLID$/i.test(e.patternName || ''))) {
+      // preenchimento sólido (tomada alta cheia × média meio cheia): ./pontosDoDesenho.js
+      for (const l of e.boundary?.loops || []) {
+        const pl = l.entities?.find(x => x.type === 'POLYLINE');
+        const pts = pl ? pl.points.map(p => [p.x, p.y]) : (l.entities || []).filter(x => x.start).map(x => [x.start.x, x.start.y]);
+        if (pts.length >= 3) preenchimentos.push({ pts: transformar(pts, e.transforms), layer: e.layer });
+      }
     } else if (e.type === 'TEXT' || e.type === 'MTEXT' || (e.type === 'ATTRIB' && e.text)) {
-      // atributo: etiqueta de ambiente em bloco (NOME/AMBIENTE)
-      const s = limparTexto(e.type === 'ATTRIB' ? e.text.string : e.string);
-      const x = e.type === 'ATTRIB' ? e.text.x : e.x, y = e.type === 'ATTRIB' ? e.text.y : e.y;
-      if (!s || !Number.isFinite(x)) continue;
-      const [[tx, ty]] = transformar([[x, y]], e.transforms);
-      const escala = e.transforms?.reduce((m, t) => m * Math.abs(t.scaleY || 1), 1) || 1;
-      textos.push({ s, x: tx, y: ty, h: (e.nominalTextHeight || e.textHeight || (e.type === 'ATTRIB' ? e.text.textHeight : 0) || 0) * escala, layer: e.layer, ...(e.type === 'ATTRIB' ? { tag: e.tag || '' } : {}) });
+      const t = lerTexto(e);
+      if (t) textos.push(t);
     }
   }
+  // notas de altura: as da legenda (layer de tabela, fora da planta) e as escritas ao lado dos pontos
+  // (todas as linhas da legenda ficam: o texto diz o TIPO do símbolo ao lado — detector,
+  // câmera, ponto de rede… — em qualquer disciplina, mesmo com a layer de nome genérico)
+  const notas = [...ents.textosFora.map(lerTexto).filter(Boolean).map(t => ({ ...t, legenda: true })), ...textos.filter(t => RE_NOTA_ALTURA.test(t.s))];
 
   let tamanho = 0;
   for (const p of poligonos) for (const [x, y] of p.pts) tamanho = Math.max(tamanho, Math.abs(x), Math.abs(y));
@@ -493,6 +515,13 @@ function lerArquitetura(textoDxf, opcoes = {}) {
   let refM = referencia.map(r => ({ ...r, pts: m(r.pts) }));
   let arcosM = arcos.map(a => ({ ...a, pts: m(a.pts), centro: m([a.centro])[0], r: a.r * fator }));
   let poligonosM = poligonos.map(p => ({ ...p, pts: m(p.pts) }));
+  const notasM = notas.map(t => ({ ...t, x: t.x * fator, y: t.y * fator, h: t.h * fator }));
+  const preenchimentosM = preenchimentos.map(p => ({ ...p, pts: m(p.pts) }));
+  // os símbolos da legenda (à esquerda do texto, na mesma linha): a região da legenda sai
+  // da planta logo abaixo, mas é com eles que se reconhece cada tipo na planta
+  const naLinha = (n, [x, y]) => x >= n.x - 4 && x <= n.x + 0.1 && Math.abs(y - n.y) <= 1;
+  const legendas = notasM.filter(n => n.legenda);
+  const simbolosDaLegenda = legendas.length ? refM.filter(r => r.pts.length && legendas.some(n => naLinha(n, r.pts[0]))) : [];
 
   // O que é planta e o que não é (./classificarPrancha.js): o que cai numa região de
   // diagrama, quadro de cargas, legenda, detalhe ou carimbo — e não numa de planta — sai
@@ -575,6 +604,8 @@ function lerArquitetura(textoDxf, opcoes = {}) {
   return {
     ambientes, portas, referencia: refM, extensao, fatorUnidade: fator, layers: [...new Set(ents.map(e => e.layer))],
     molduras: ents.molduras.map(o => ({ pts: m(o.pts), layer: o.layer })),
+    // alturas do projeto (./pontosDoDesenho.js): notas, preenchimentos e os símbolos da legenda
+    notas: notasM, preenchimentos: preenchimentosM, simbolosDaLegenda,
     // classificação da folha (planta × diagrama × tabela…) e as caixas de planta, em metros
     classificacao: classificacao && { tipo: classificacao.tipo, resumo: classificacao.resumo, temPlanta: classificacao.temPlanta, semPlanta: classificacao.semPlanta, misto: classificacao.misto, regioes: classificacao.regioes.map(({ caixa, tipo, rotulo, titulo, confianca, motivos }) => ({ caixa, tipo, rotulo, titulo, confianca, motivos })) },
     regioesPlanta,

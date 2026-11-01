@@ -27,7 +27,7 @@ try {
       peDireito, avisos: w.semPontos ? [w.semPontos] : [],
       dispositivosReais: w.dispositivosReais, trechos: w.trechos || [],
       disciplinas: w.disciplinas, dadosPorDisciplina: w.dadosPorDisciplina,
-      titulo: w.titulo, cliente: w.cliente, obra: w.obra, proposta: w.proposta,
+      titulo: w.titulo, cliente: w.cliente, obra: w.obra, proposta: w.proposta, aprendidos: w.aprendidos || [],
     });
   } catch (e) {
     throw arquitetura.ambientes.length ? e : new Error(SEM_NADA);

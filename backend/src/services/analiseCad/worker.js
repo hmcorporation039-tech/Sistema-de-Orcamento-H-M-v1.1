@@ -2,7 +2,8 @@
 // o DWG e percorrer um desenho de alguns MB leva segundos de CPU, que no
 // processo principal travariam o sistema para os outros usuários.
 // Entrada (workerData): { buffer, nome, reLayerLinha (fonte da regex) }
-// Saída (postMessage): { ok, dxf, origem, versao, arquitetura, projeto } ou { ok: false, erro }
+//                         aprendidos (legenda de projetos anteriores: cad_simbolos_aprendidos)
+// Saída (postMessage): { ok, dxf, origem, versao, arquitetura, projeto, desenho, avisoUnidade } ou { ok: false, erro }
 const path = require('path');
 const { parentPort, workerData } = require('worker_threads');
 
@@ -18,10 +19,33 @@ const { CAD } = require('../../config/caminhos');
     const { texto, origem, versao } = await textoDxfDoArquivo(Buffer.from(w.buffer), w.nome);
     let arq = null;
     try { arq = lerArquitetura(texto); } catch { /* sem arquitetura legível: o projeto ainda pode ter texto e blocos */ }
-    const fator = arq?.fatorUnidade || 1;
+    // sem arquitetura, a unidade sai do cabeçalho ($INSUNITS) — antes ficava 1 calado e o
+    // desenho em mm dava os metros de eletroduto ×1000 no orçamento
+    let avisoUnidade = null;
+    let fator = arq?.fatorUnidade;
+    if (!fator) {
+      const ins = Number(/\$INSUNITS\s*\r?\n\s*70\s*\r?\n\s*(\d+)/.exec(texto)?.[1]);
+      const UNIDADE = { 1: ['polegadas', 0.0254], 2: ['pés', 0.3048], 4: ['milímetros', 0.001], 5: ['centímetros', 0.01], 6: ['metros', 1] }[ins];
+      fator = UNIDADE ? UNIDADE[1] : 1;
+      avisoUnidade = UNIDADE
+        ? `a unidade do desenho foi lida do cabeçalho do arquivo (${UNIDADE[0]}) — confira as metragens`
+        : 'a unidade do desenho não pôde ser confirmada (sem arquitetura legível nem unidade no cabeçalho): metragens consideradas em metros — [CONFERIR]';
+    }
     const projeto = lerProjetoDxf(texto, { fator, reLayerLinha: new RegExp(w.reLayerLinha, 'i') });
+    // símbolos EXPLODIDOS (QiBuilder/AltoQi, PDF convertido): o mesmo leitor do 3D
+    // (skills/_comum/cad/pontosDoDesenho.js) — pela layer, pela medida e pela LEGENDA da
+    // prancha (tipo e altura), com o que o sistema já aprendeu de projetos anteriores
+    let desenho = null;
+    if (arq) {
+      try {
+        const { propostaDeMapa, aplicarMapa, legendaDoProjeto } = require(path.join(CAD, 'pontosDoDesenho.js'));
+        const mapa = propostaDeMapa(arq, { aprendidos: w.aprendidos || [] });
+        const { pontos } = aplicarMapa(arq, mapa);
+        desenho = { pontos, legenda: legendaDoProjeto(arq) };
+      } catch (e) { desenho = { pontos: [], legenda: [], erro: e.message }; }
+    }
     parentPort.postMessage({
-      ok: true, dxf: texto, origem, versao: versao || null,
+      ok: true, dxf: texto, origem, versao: versao || null, desenho, avisoUnidade,
       arquitetura: arq && {
         fatorUnidade: fator, portas: arq.portas.length, layers: arq.layers.length,
         ambientes: arq.ambientes.map(a => ({ nome: a.nome, area_m2: a.area_m2, perimetro_m: a.perimetro_m, poligono: a.poligono, origem: a.origem })),

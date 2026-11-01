@@ -347,7 +347,7 @@ async function remover(req, res, next) {
 async function vincular(req, res, next) {
   const obraId = Number(req.params.id);
   const { tipo } = req.body || {};
-  const cfg = VINCULOS[tipo];
+  const cfg = Object.hasOwn(VINCULOS, tipo) ? VINCULOS[tipo] : undefined;
   if (!cfg) return res.status(400).json({ erro: 'Tipo inválido (use proposta, analise, laudo, contrato ou movimento).' });
   const item = inteiroOuNull(req.body.id);
   if (item.erro || !item.valor) return res.status(400).json({ erro: 'Item inválido.' });

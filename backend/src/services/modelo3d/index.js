@@ -18,6 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const { ErroHttp } = require('../../utils/erros');
 const { executarNoWorker } = require('../executarNoWorker');
+const simbolosAprendidos = require('../simbolosAprendidos');
 const pool = require('../../config/database');
 const { capturarImagemDeHtml } = require('../pdfPuppeteer');
 
@@ -35,7 +36,7 @@ function versaoDoGerador() {
     // arquitetura.js e classificarPrancha.js decidem o que é planta (29/10/2026): mudou, refaz
     // pranchas, pontosDoDesenho e modelosPorPlanta: um modelo por planta, pontos lidos do desenho (01/11/2026)
     // infraestrutura.js: eletrocalhas pelas abas e caminhos sugeridos (01/11/2026)
-    return ['modelo3d.js', 'infraestrutura.js', 'estimativaArquitetura.js', 'arquitetura.js', 'classificarPrancha.js', 'pranchas.js', 'pontosDoDesenho.js', 'modelosPorPlanta.js', 'visualizador3d.js', path.join('visualizador3d', 'app.bundle.js')]
+    return ['modelo3d.js', 'infraestrutura.js', 'estimativaArquitetura.js', 'arquitetura.js', 'classificarPrancha.js', 'pranchas.js', 'pontosDoDesenho.js', 'tiposDePonto.js', 'modelosPorPlanta.js', 'visualizador3d.js', path.join('visualizador3d', 'app.bundle.js')]
       .map(f => fs.statSync(path.join(CAD, f)).mtimeMs).join('|');
   } catch { return 'sem-gerador'; }
 }
@@ -99,32 +100,10 @@ async function fonteDoModelo(origemTipo, origemId, executor = pool) {
 }
 
 // Componente lido do DWG (services/analiseCad/index.js: descrição pela sigla, legenda ou
-// nome do bloco) → símbolo do 3D (skills/_comum/cad/modelo3d.js ESPEC). Tomada
-// pela altura escrita na legenda ("H=0,30m") quando houver.
-const SIMBOLO_DO_COMPONENTE = [
-  [/LUMIN[ÁA]RIA DE EMERG|ILUMINA[ÇC][ÃA]O DE EMERG|BLOCO AUT/i, 'HM-INC-EMERGENCIA'],
-  [/TOMADA M[ÉE]DIA/i, 'HM-ELE-TOMADA-MEDIA'],
-  [/TOMADA ALTA/i, 'HM-ELE-TOMADA-ALTA'],
-  [/TOMADA/i, (d) => { const h = Number(String(d).match(/H\s*=\s*([\d.,]+)/i)?.[1]?.replace(',', '.')); return h >= 1.6 ? 'HM-ELE-TOMADA-ALTA' : h >= 0.6 ? 'HM-ELE-TOMADA-MEDIA' : 'HM-ELE-TOMADA-BAIXA'; }],
-  [/INTERRUPTOR/i, 'HM-ELE-INTERRUPTOR'],
-  [/QUADRO|\bQDC?\b|\bQL\b/i, 'HM-ELE-QUADRO'],
-  [/PONTO DE LUZ/i, 'HM-ELE-PONTO-LUZ'],
-  [/LUMIN|ARANDELA|PLAFON|SPOT|PENDENTE|DOWNLIGHT/i, 'HM-ILU-LUMINARIA'],
-  [/C[ÂA]MERA|\bDOME\b|BULLET/i, 'HM-CFTV-CAMERA'],
-  [/ACCESS ?POINT|WI-?FI/i, 'HM-CAB-AP'],
-  [/PONTO DE REDE|L[ÓO]GIC|RJ-?45/i, 'HM-CAB-PONTO-REDE'],
-  [/INTERFONE|PORTEIRO/i, 'HM-TEL-PORTEIRO'],
-  [/TELEF/i, 'HM-TEL-PONTO'],
-  [/PONTO DE TV|ANTENA|COAXIAL/i, 'HM-ANT-PONTO'],
-  [/DETECTOR|FUMA[ÇC]/i, 'HM-INC-DETECTOR-FUMACA'],
-  [/ACIONADOR/i, 'HM-INC-ACIONADOR'],
-  [/AVISADOR|AUDIOVISUAL/i, 'HM-INC-AVISADOR'],
-  [/CENTRAL.*INC/i, 'HM-INC-CENTRAL'],
-  [/SENSOR DE ALARME|IVP|INFRAVERMELHO/i, 'HM-ALM-IVP'],
-  [/SIRENE/i, 'HM-ALM-SIRENE'],
-  [/TECLADO/i, 'HM-ALM-TECLADO'],
-  [/CONTROLE DE ACESSO|LEITOR|FECHADURA/i, 'HM-ACE-LEITOR'],
-];
+// nome do bloco) → símbolo do 3D pelo classificador único de todas as disciplinas
+// (skills/_comum/cad/tiposDePonto.js: o mesmo da leitura dos símbolos explodidos). Tomada
+// pela altura escrita ("H=0,30m", "2,20 m do piso") quando houver.
+const { simboloDaDescricao } = require(path.join(CAD, 'tiposDePonto.js'));
 const tipoDoTrecho = (layer) => (/ELETROCALHA/i.test(layer) ? 'eletrocalha' : /PERFILADO/i.test(layer) ? 'perfilado' : /LEITO/i.test(layer) ? 'leito' : /FIA[ÇC][ÃA]O|FIACAO/i.test(layer) ? 'fiacao' : 'eletroduto');
 const DISCIPLINA_3D_TRECHO = { cabeamento: 'rede', rede: 'rede', controle_acesso: 'controle-acesso' };
 
@@ -139,9 +118,9 @@ function dispositivosDoEspacial(espacial) {
   let genericos = 0;
   for (const p of espacial?.pontos || []) {
     if (!p.disciplina) continue; // climatização/hidráulica: referência, não é da H&M
-    const regra = SIMBOLO_DO_COMPONENTE.find(([re]) => re.test(p.descricao || ''));
-    if (!regra) genericos++;
-    const simbolo = !regra ? SIMBOLO_GENERICO : typeof regra[1] === 'function' ? regra[1](p.descricao) : regra[1];
+    const proprio = simboloDaDescricao(p.descricao);
+    if (!proprio) genericos++;
+    const simbolo = proprio || SIMBOLO_GENERICO;
     dispositivos.push({ simbolo, rotulo: rotuloDoComponente(p.descricao) || null, disciplina: DISCIPLINA_3D_TRECHO[p.disciplina] || p.disciplina,
       ...(p.montagem !== 'teto' && Number(p.altura_m) > 0 ? { altura_m: Number(p.altura_m) } : {}), x: p.x, y: p.y, rotacao: 0, id: '', ambiente: null });
   }
@@ -173,6 +152,8 @@ async function gerarNoWorker(fonte) {
       dxf: fonte.dxf, disciplinas: fonte.disciplinas, dadosPorDisciplina: fonte.dadosPorDisciplina, peDireito: fonte.peDireito,
       semPontos: fonte.semPontos, titulo: fonte.titulo, cliente: fonte.cliente, obra: fonte.obra, proposta: fonte.proposta || '',
       dispositivosReais: fonte.dispositivosReais || null, trechos: fonte.trechos || null,
+      // legenda das pranchas lida em projetos anteriores (services/simbolosAprendidos.js)
+      aprendidos: await simbolosAprendidos.carregar(),
     }, { tempoLimiteMs: TEMPO_LIMITE_MS, memoriaMb: 1024 });
   } catch (e) {
     if (e.codigo === 'TEMPO_ESGOTADO') throw erro(500, 'O modelo 3D demorou demais para ser gerado.');

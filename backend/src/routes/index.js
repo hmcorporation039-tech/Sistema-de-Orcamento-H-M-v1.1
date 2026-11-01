@@ -125,10 +125,10 @@ router.put('/materiais/:id', autenticar, validarId, matCtrl.atualizar);
 // apagar some com o material do catálogo de todos (e das sugestões de preço):
 // só administrador; criar e editar continuam livres para quem está logado
 router.delete('/materiais/:id', autenticar, validarId, admin, matCtrl.remover);
-router.post('/materiais/importar', autenticar, matCtrl.importar);
+router.post('/materiais/importar', autenticar, admin, matCtrl.importar);
 router.post('/materiais/extrair-nota', autenticar, uploadNota.single('arquivo'), matCtrl.extrairNota);
 router.post('/materiais/comparar', autenticar, matCtrl.comparar);
-router.post('/materiais/fornecedores/verificar-agora', autenticar, matCtrl.verificarFornecedoresAgora);
+router.post('/materiais/fornecedores/verificar-agora', autenticar, admin, matCtrl.verificarFornecedoresAgora);
 
 // ── MÃO DE OBRA (catálogo de itens já lançados em propostas, usado como
 // sugestão em dropdown — diferente de /precos-mao-de-obra, que é a tabela de
@@ -211,7 +211,7 @@ router.post('/projetos/analisar', autenticar, limiteAnaliseProjeto, upload.array
 router.get('/projetos/analises/:id/relatorio', autenticar, validarId, projCtrl.gerarRelatorio);
 // Pasta do projeto em "Arquivos do Sistema/Projetos" (consultar e abrir no Explorer deste PC)
 router.get('/projetos/analises/:id/pasta', autenticar, validarId, projCtrl.pasta);
-router.post('/projetos/analises/:id/pasta/abrir', autenticar, validarId, projCtrl.abrirPasta);
+router.post('/projetos/analises/:id/pasta/abrir', autenticar, validarId, posseAnalise, projCtrl.abrirPasta);
 router.get('/projetos/analises/:id', autenticar, validarId, projCtrl.buscarUma);
 router.put('/projetos/analises/:id', autenticar, validarId, posseAnalise, projCtrl.atualizar);
 router.delete('/projetos/analises/:id', autenticar, validarId, posseAnalise, projCtrl.remover);

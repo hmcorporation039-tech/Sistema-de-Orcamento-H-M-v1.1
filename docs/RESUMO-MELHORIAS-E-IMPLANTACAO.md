@@ -429,6 +429,46 @@ Pedido do usuário: "todo modelo de projetos gerados em 3D devem ter sua infraes
   - multimedidor de painel na porta;
   - o teste `conferir3d` falha se alguma peça da lista do cálculo faltar no 3D.
 
+### 01/11/2026: padronização e aprendizado (ramo `versao-2.0`)
+
+Pedido do usuário: "tudo que estiver sendo usado agora deve ser replicado para todas as disciplinas, projetos futuros e orçamentos, tudo tem que ser padrão na forma de análise se adaptando apenas a cada norma da disciplina escolhida ou projeto analisado. Verifique qualquer divergência no sistema… deixe o mais perfeito possível… ferramentas próprias que aprendam a cada projeto analisado, a cada orçamento feito e a cada projeto criado."
+
+**Classificador único de pontos (`skills/_comum/cad/tiposDePonto.js`, NOVO):**
+- Um único arquivo substitui quatro classificadores que existiam em lugares diferentes (`analiseCad/worker.js`, `modelo3d/index.js`, `pontosDoDesenho.js`, código inline). Toda a lógica fica aqui: regex de layer, de texto, símbolo, disciplina, thresholds de altura.
+- Cobre **todas as disciplinas** em ordem de prioridade: incêndio, CFTV, cabeamento, telefonia/antena, controle de acesso, alarme, SPDA, carregador veicular, solar, iluminação, elétrica (quadros, tomadas, interruptores).
+- `tomadaPelaAltura`: h ≥ 1,6 m → ALTA; h ≥ 0,6 m → MÉDIA; senão BAIXA. (Antes: 2,0/0,9, divergente entre módulos.)
+- `metros(v, un)`: sem unidade, > 10 → cm. (Antes: > 5 → cm, divergente.)
+- `DE_PAREDE`: regex única para todos os pontos de parede (tomada, interruptor, leitor, botoeira etc.).
+- `simboloDaDescricao(d)`: converte a descrição de um item de orçamento/análise no símbolo padronizado.
+
+**Alturas pela legenda da prancha (`skills/_comum/cad/pontosDoDesenho.js`, revisado):**
+- `legendaDoProjeto(arq)` lê o bloco de legenda do DWG e devolve `{layer, medida, fracao, simbolo, disciplina, altura_m?, texto}` para cada tipo de símbolo, usando o HATCH de preenchimento como discriminador (fração ≤ 0,08 com proporção dentro de 15%).
+- `daLegenda(legenda, layer, medida, fracao)`: casa o ponto com a entrada da legenda por layer (insensível a maiúsculas) + família + altura (se houver). Antes os thresholds de fração eram fixos no código; agora vêm da legenda real.
+- `aplicarNotas` não mais aplica nota de "altura do forro/pé-direito/teto/laje" como altura do ponto — só "abaixo do forro".
+- `propostaDeMapa` aceita `{aprendidos}`: para layers sem entrada na legenda do desenho atual, consulta o que o sistema aprendeu de projetos anteriores.
+- **Correção testada:** na Arena, as 27 tomadas altas (chuveiros do vestiário) saem a 2,20 m — antes saíam a 0,30 m.
+
+**Tabelas de aprendizado (migração `2.0-23-aprendizado.js`, NOVA):**
+- `cad_simbolos_aprendidos (layer, proporcao, fracao, simbolo, disciplina, altura_m, vezes, conflitos, origem)`: toda vez que uma legenda é lida com sucesso, o sistema registra (upsert). Na próxima análise, layers sem legenda recebem a sugestão do que foi aprendido, marcada `aprendido:true` para o engenheiro conferir.
+- `material_aliases (chave, descricao, material_id, origem, usuario_id, vezes)`: toda vez que um item é salvo como "confirmado" numa proposta com um material do catálogo, o sistema registra o vínculo. Na próxima análise ou orçamento, a mesma descrição vai direto ao material certo, sem pesquisa de IA ou semelhança de texto.
+
+**Semelhança de materiais revisada (`utils/semelhancaMateriais.js`):**
+- `especificacoes(d)`: parseia tokens número+unidade (bitola, corrente, tensão, potência, polos, diâmetro). "450/750 V" conta como os dois valores; "3/4"" é fração de polegada.
+- `especificacaoConflita`: se o catálogo e a consulta têm a mesma unidade com valores diferentes, não é o mesmo material. "Cabo 2,5 mm²" já não casa com "Cabo 1,5 mm²"; "Disjuntor 40 A" já não casa com "Disjuntor 10 A".
+- `CONFIANCA_CONFIRMA = 90 %`: o preço só entra "confirmado" com ≥ 90 % de sobreposição de termos ou pelo vínculo aprendido. Antes qualquer semelhança ≥ 45 % confirmava o preço.
+- `compararComCatalogo` consulta `catalogo.aliases` antes da semelhança: vínculo aprendido → confiança 100 %, direto.
+
+**Orçamento (audit 01/11/2026):**
+- `equipamentos com quantidade_a_confirmar:true` quando `quantidade = 0` (antes entrava como 1).
+- `inserirSecoesEItens` em `propostasController.js` registra o alias de aprendizado ao salvar cada item confirmado, dentro de SAVEPOINT (não interrompe a transação principal em caso de erro na tabela de aprendizado).
+- Route `POST /projetos/analises/:id/pasta/abrir` agora exige `posseAnalise` (antes sem proteção de posse).
+- `POST /materiais/importar` e `POST /materiais/fornecedores/verificar-agora` agora são admin-only (antes qualquer usuário logado podia disparar importação em massa).
+- `obrasController.js vincular()`: `Object.hasOwn(VINCULOS, tipo)` em vez de acesso direto pela chave (antes: `VINCULOS[tipo]` sem checar o prototype).
+
+**Todos os 38 conjuntos de testes passam:** backend (`testes/*.test.js`), skills (`npm test`), CAD (`teste-cad.js`: 26), 3D (`teste-3d.js`: 24).
+
+**Para ativar:** reiniciar o backend como administrador (`reiniciar-backend.bat`) para criar as tabelas `cad_simbolos_aprendidos` e `material_aliases`. O aprendizado começa a ser gravado na primeira análise e no primeiro orçamento confirmado após o reinício.
+
 ---
 
 ## 3. Skills e ferramentas do Claude (servidor MCP `hm-orcamentos`)

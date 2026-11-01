@@ -4,7 +4,8 @@
 // do cliente; gerar de novo atualiza a proposta ligada enquanto ela está Ativa.
 const pool = require('../../config/database');
 const { motorDaDisciplina, tiposDocumento } = require('../../utils/disciplinasLaudo');
-const { compararComCatalogo } = require('../../utils/semelhancaMateriais');
+const { compararComCatalogo, confirmaPreco } = require('../../utils/semelhancaMateriais');
+const aprendizadoMateriais = require('../../services/aprendizadoMateriais');
 const { comTransacao } = require('../../services/transacao');
 const { hojeBrasilia } = require('../../utils/dataHoje');
 const { calcularTotais } = require('../../utils/calculoProposta');
@@ -27,9 +28,8 @@ const nomeDoTipo = (laudo) => (laudo?.tipo === 'projeto' ? 'Projeto' : 'Laudo');
 //   segmento do cliente (órgão público → oficial; demais → particular) —,
 //   sempre "a_cotar": referência é sugestão, não preço fechado.
 async function montarItensProposta(orcamento, segmento = 'privado') {
-  const catalogo = (await pool.query(
-    'SELECT id, descricao, preco, unidade, categoria FROM materiais WHERE ativo = true ORDER BY id'
-  )).rows;
+  // com os vínculos aprendidos nos orçamentos confirmados (services/aprendizadoMateriais.js)
+  const catalogo = await aprendizadoMateriais.carregarCatalogo();
   const ref = await buscarPrecosReferencia(segmento);
 
   const estatistica = { materiaisNoCatalogo: 0, materiaisNovos: 0, servicosComReferencia: 0, servicosSemReferencia: 0, segmento };
@@ -40,7 +40,9 @@ async function montarItensProposta(orcamento, segmento = 'privado') {
       const achado = compararComCatalogo(it.descricao, catalogo);
       if (achado && achado.preco_catalogo > 0) {
         estatistica.materiaisNoCatalogo++;
-        return { ...base, material_id: achado.material_id, valor_unitario: achado.preco_catalogo, status: base.quantidade > 0 ? 'confirmado' : 'a_cotar' };
+        // preço do catálogo só entra confirmado com o material quase igual (confirmaPreco):
+        // o parecido entra com o preço sugerido, a cotar
+        return { ...base, material_id: achado.material_id, valor_unitario: achado.preco_catalogo, status: base.quantidade > 0 && confirmaPreco(achado) ? 'confirmado' : 'a_cotar' };
       }
       estatistica.materiaisNovos++;
       return { ...base, material_id: achado?.material_id || null, valor_unitario: 0, status: 'a_cotar' };

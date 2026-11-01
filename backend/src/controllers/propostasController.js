@@ -12,6 +12,7 @@ const { normalizarMemoriaBdi } = require('../utils/bdiTcu');
 const lerBdiMateriais = (v) => (bdiMateriaisDefinido(v) ? arredondar(Number(v)) : null);
 const { validarProposta, validadeOuPadrao } = require('../utils/validacaoProposta');
 const { garantirMaterialCadastrado, garantirMaoDeObraCadastrada } = require('../services/catalogoAutoCadastro');
+const aprendizadoMateriais = require('../services/aprendizadoMateriais');
 const { classificarPendentesEmSegundoPlano } = require('../services/classificacaoMateriais');
 const { versaoDoPedido, responderConflitoOuAusente } = require('../utils/versao');
 const { registrarAuditoria } = require('../services/auditoria');
@@ -65,6 +66,17 @@ async function inserirSecoesEItens(client, propostaId, secoes, itens) {
         [propostaId, secId, materialId, item.descricao, item.quantidade, item.unidade,
          item.valor_unitario, item.valor_total, item.ncm, item.codigo, item.subgrupo, item.status, item.ordem]
       );
+      // o item confirmado com material do catálogo ensina o vínculo descrição → material
+      // (services/aprendizadoMateriais.js); falha aqui não derruba a proposta (SAVEPOINT)
+      if (!maoDeObra && materialId && item.status === 'confirmado') {
+        await client.query('SAVEPOINT aprendizado');
+        try {
+          await aprendizadoMateriais.registrar([{ descricao: item.descricao, material_id: materialId, status: item.status }], client);
+          await client.query('RELEASE SAVEPOINT aprendizado');
+        } catch (e) {
+          await client.query('ROLLBACK TO SAVEPOINT aprendizado');
+        }
+      }
     }
   }
 }

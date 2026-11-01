@@ -90,6 +90,10 @@ Todos os comandos rodam na pasta `C:\HM-Engenharia\hm-eng\skills` (para testar m
      - `altura_m` do poste;
      - `area`: `"externa"` ou `"interna"` (a mesma caixa é de piso lá fora e de teto dentro).
    - **Mesma luminária em duas layers** (símbolo + contorno IFC): o script propõe só uma. Não marque as duas.
+   - **Altura das tomadas e interruptores:** vem da **legenda das pranchas** ("Tomada alta a 2,20m do piso"). No QiBuilder o triângulo é o mesmo nas três alturas; muda o **preenchimento** (vazio = baixa, meio cheio = média, cheio = alta). Por isso o script separa os tipos pelo campo `preenchimento` e já propõe `altura_m` e `rotulo` da legenda.
+     - A nota escrita ao lado do ponto vale sobre a legenda. Exemplos: "altura: 97,5 cm" e "h= 20 cm abaixo do forro" (esta conta do pé-direito).
+     - Tipo de tomada sem `altura_m` é ponto que a legenda não resolveu: confira no projeto. Nunca deixe a tomada do chuveiro a 0,30 m.
+     - Arquitetura enviada **antes de 01/11/2026**: o DXF guardado foi convertido sem as hachuras. Envie o DWG de novo para o sistema ler as alturas.
    - **Gravar os pontos:**
      ```bash
      node modelo-3d/scripts/extrair-pontos.js "<projeto.dwg>" --planta N --mapa "<pasta da obra>\mapa-pontos.json" --saida-pontos "<pasta da obra>\pontos.json" --saida-trechos "<pasta da obra>\trechos.json"
@@ -153,6 +157,8 @@ Todos os comandos rodam na pasta `C:\HM-Engenharia\hm-eng\skills` (para testar m
 - **Gerador:** fica em `_comum/cad/*` e é compartilhado com o botão "Modelo 3D" do sistema. Mudança nele exige:
   - teste em `_comum/cad/teste-3d.js` e em `modelo-3d/testes/teste.js`;
   - bundle novo do visualizador: `npm run build:3d`.
+- **Classificador único de pontos** (`_comum/cad/tiposDePonto.js`): todas as disciplinas (elétrica, CFTV, incêndio, alarme, cabeamento, acesso, SPDA, solar, veicular, iluminação) são classificadas por este arquivo. Mudança nos thresholds ou na ordem das regras afeta todos os módulos que o importam — rode `teste-3d.js`, `teste-cad.js` e `npm test` na pasta `skills` antes de qualquer alteração.
+- **Aprendizado de legendas** (`services/simbolosAprendidos.js`): quando o backend está rodando e a tabela `cad_simbolos_aprendidos` existe, o sistema registra automaticamente cada legenda lida com sucesso. Para layers sem legenda no desenho atual, consulta o que aprendeu de projetos anteriores (exibido com "pelo que o sistema aprendeu"). Para confirmar ou corrigir uma sugestão aprendida, use a tela de análise do projeto.
 - **Dados das obras:** arquivos de obras reais (DWG, mapas, pontos, memorial, HTML) ficam na pasta do cliente no servidor, **nunca** no repositório.
 - **Ambientes:** primeiro na versão de teste (`C:\HM-Engenharia\hm-eng-v2`, porta 3002); produção só com aprovação.
 - **Valor técnico:** o 3D é ilustrativo. Valem o memorial e as plantas assinadas pelo responsável técnico.
