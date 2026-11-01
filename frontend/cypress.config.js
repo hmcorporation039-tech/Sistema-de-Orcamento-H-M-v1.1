@@ -6,5 +6,12 @@ module.exports = defineConfig({
     supportFile: 'cypress/support/e2e.js',
     video: false,
     defaultCommandTimeout: 8000,
+    reporter: 'mochawesome',
+    reporterOptions: {
+      reportDir: 'cypress/reports',
+      overwrite: false,
+      html: false,
+      json: true,
+    },
   },
 });

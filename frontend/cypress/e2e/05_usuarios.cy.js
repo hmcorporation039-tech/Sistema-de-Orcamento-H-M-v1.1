@@ -5,7 +5,7 @@ describe('Usuários (admin)', () => {
   // 2.0: Usuários é uma aba (só de admin) do grupo "Cadastros e administração"
   it('acessa a tela de usuários pelo menu (só aparece para admin)', () => {
     cy.login();
-    cy.get('nav').contains('Cadastros e administração').should('be.visible').click();
+    cy.get('nav').contains('Cadastros').should('be.visible').click();
     cy.contains('[role=tab]', 'Usuários').should('be.visible').click();
     cy.url().should('include', '/cadastros?aba=usuarios');
     cy.contains('h2', 'Usuários').should('be.visible');
