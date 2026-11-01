@@ -13,7 +13,7 @@ O sistema gera o 3D (`skills/_comum/cad/gerar-3d.js` e o botão "Modelo 3D" no s
    - **IFC do arquiteto (Revit/ArchiCAD):** paredes, pilares, lajes e forro reais, sem palpite. Peça sempre. *O sistema ainda não lê IFC* (próximo passo: That Open Engine / web-ifc, gratuito) — até lá, peça também o DWG.
    - **DWG/DXF com layers de arquitetura:** caminho atual. Peça a planta **sem** mobiliário/layout quando der, e a **estrutural** (forma) para conferir os pilares.
    - **PDF:** não serve para 3D fiel. Peça o DWG.
-2. **Diagnóstico das layers** (pasta `C:\HM-Engenharia\hm-eng-v2\skills` enquanto a skill está na versão de teste; `hm-eng\skills` depois de ir para a produção):
+2. **Diagnóstico das layers** (pasta `C:\HM-Engenharia\hm-eng\skills`; para testar mudanças na skill, `hm-eng-v2\skills`):
    ```bash
    node modelo-3d/scripts/diagnosticar-layers.js "<arquitetura.dwg|.dxf>" --saida "<pasta da obra>\mapa-layers.json"
    ```
