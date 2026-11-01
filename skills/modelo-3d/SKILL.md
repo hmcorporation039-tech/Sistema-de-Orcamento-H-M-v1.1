@@ -1,11 +1,11 @@
 ---
 name: modelo-3d-arquitetura
-description: Modelo 3D profissional a partir da arquitetura ou do projeto (DWG/DXF, PDF convertido ou IFC) com os pontos REAIS das disciplinas — diagnóstico e mapa das layers antes de gerar (para não subir parede ou pilar onde não existe), escolha da planta quando a prancha tem várias, leitura dos símbolos explodidos (QiBuilder/AltoQi, PDF) por layer e medida, postes e caixas da área externa (estacionamento, quadras, pátio) com circuitos e eletroduto enterrado dimensionados pela NBR 5410, distribuição de luminárias pelo cálculo real e checklist de entrega, no padrão da H&M Engenharia. Use quando o pedido envolver modelo 3D, maquete 3D, visualização 3D para o cliente, 3D da proposta, paredes ou pilares errados no 3D, símbolos virando pilar, luminárias mal distribuídas no 3D, postes de iluminação, iluminação de estacionamento ou quadra, alimentação de postes, eletroduto enterrado, IFC/BIM do arquiteto, Revit, DIALux ou melhorar a qualidade do 3D.
+description: Modelo 3D profissional a partir da arquitetura ou do projeto (DWG/DXF, PDF convertido ou IFC) com os pontos REAIS das disciplinas — diagnóstico e mapa das layers antes de gerar (para não subir parede ou pilar onde não existe), um modelo por planta de cada prancha DWG ou folha PDF (nunca tudo junto), só os pontos desenhados no projeto (nada estimado pela área), leitura dos símbolos explodidos (QiBuilder/AltoQi, PDF) por layer e medida, postes e caixas da área externa (estacionamento, quadras, pátio) com circuitos e eletroduto enterrado dimensionados pela NBR 5410, distribuição de luminárias pelo cálculo real e checklist de entrega, no padrão da H&M Engenharia. Use quando o pedido envolver modelo 3D, maquete 3D, visualização 3D para o cliente, 3D da proposta, paredes ou pilares errados no 3D, símbolos virando pilar, luminárias mal distribuídas no 3D, postes de iluminação, iluminação de estacionamento ou quadra, alimentação de postes, eletroduto enterrado, IFC/BIM do arquiteto, Revit, DIALux ou melhorar a qualidade do 3D.
 ---
 
 # Modelo 3D da arquitetura — H&M Engenharia
 
-O sistema gera o 3D (`_comum/cad/gerar-3d.js` e o botão "Modelo 3D" no sistema) **adivinhando** pelo nome das layers o que é parede, pilar e janela, e **estimando** os pontos pela área das salas. Esta skill põe o **engenheiro no meio**:
+O sistema gera o 3D (`_comum/cad/gerar-3d.js` e o botão "Modelo 3D" no sistema) pelo nome das layers (o que é parede, pilar e janela), com **um modelo por planta** de cada prancha/folha e só os pontos **desenhados no projeto** — nunca estimados pela área das salas (desde 01/11/2026: a Arena saía com 868 tomadas e uma grade de luminárias que não existiam, e com as plantas da prancha juntas num modelo de 1.346 m). Esta skill põe o **engenheiro no meio**:
 
 - diagnostica as layers;
 - escolhe a planta;
@@ -24,7 +24,17 @@ Todos os comandos rodam na pasta `C:\HM-Engenharia\hm-eng\skills` (para testar m
     - layers de outra disciplina ou da prancha: `EL-*`, `DI-*`, `IFC-*`, `P-*`, fios, condutos, unifilar, quadro, tabela;
     - vistas da arquitetura: `LOU`, `MOB`, `EQP`, `SAN`, `PIS`, `COB`, `POR`…
 - **Símbolo curvo não é pilar:** forma fechada com mais de 8 vértices (círculo ou oval de poste, projetor, caixa, tomada de piso, que o PDF ou o "explodir" vira polígono) **não sobe**, nem como pilar nem como parede. Pilar redondo de verdade precisa estar numa layer de pilar.
-- **Áreas externas:** quadra, campo, estacionamento, pátio e jardim são "externo". Ficam com piso verde, não recebem luminária de teto na estimativa e não contam como área interna.
+- **Áreas externas:** quadra, campo, estacionamento, pátio e jardim são "externo". Ficam com piso verde e não contam como área interna.
+- **Uma prancha = um modelo** (`_comum/cad/pranchas.js`, `modelosPorPlanta.js`):
+  - DWG com as pranchas lado a lado no espaço do modelo (exportação do QiBuilder): cada prancha é a **moldura** (layer `Margem`/`Moldura` ou retângulo na proporção A) e, dentro dela, cada região classificada como planta vira um modelo.
+  - PDF: **cada folha com planta** vira uma prancha (`PDF-MARGEM-F<n>`), na ordem das páginas. Folha sem escala no carimbo fica de fora, com aviso: informe a escala em vez de deixar o sistema adivinhar.
+  - A página traz todas as plantas, com o seletor **"Planta"** no topo. Abre na planta com mais pontos (que também é a imagem do PDF da proposta).
+- **Pontos só do projeto**, nesta ordem:
+  1. os posicionados pela análise do DWG/DXF do projeto;
+  2. os **símbolos desenhados** na planta, lidos pela layer e pela medida (`_comum/cad/pontosDoDesenho.js`, a mesma leitura do `extrair-pontos.js`);
+  3. o formulário do projeto da H&M.
+
+  Planta sem nenhum deles sai **só com a arquitetura**, e o eletroduto também não é inventado.
 
 ## Fluxo de trabalho
 
@@ -39,7 +49,7 @@ Todos os comandos rodam na pasta `C:\HM-Engenharia\hm-eng\skills` (para testar m
    ```bash
    node modelo-3d/scripts/diagnosticar-layers.js "<projeto.dwg>" --saida "<pasta da obra>\mapa-layers.json"
    ```
-   - Prancha com várias plantas lado a lado (implantação, lojas, detalhes): o script lista as plantas com os ambientes de cada uma. **Escolha UMA** e rode de novo com `--planta N`. Sem isso, o modelo junta todas.
+   - Prancha com várias plantas lado a lado (implantação, lojas, detalhes): o script lista as plantas com os ambientes de cada uma. Para o mapa de layers e o dos pontos, trabalhe **uma planta por vez** com `--planta N`. O `gerar-3d.js` sem `--planta` já faz um modelo por planta (nunca junta).
    - A tabela mostra, por layer:
      - a classe no 3D;
      - pilares;
@@ -98,18 +108,20 @@ Todos os comandos rodam na pasta `C:\HM-Engenharia\hm-eng\skills` (para testar m
      - O traçado é proposta: o executivo segue vias, canteiros e interferências.
    - **Caixas no 3D:** se o desenho já tem as caixas de passagem dos postes, use as do desenho (passo 4) e **não** passe `caixas-externas.json`, para não duplicar.
 6. **Luminárias internas pelo cálculo, quando o projeto não as traz:**
-   - Sem pontos e sem formulário, o 3D usa a **estimativa**: painel LED de 4.000 lm na caixa envolvente de cada sala. Serve só para dar ideia.
+   - Sem pontos e sem formulário, a planta sai **sem luminária** (aviso "nada é estimado"). A estimativa pela área só com `--planta N --disciplina iluminacao --estimar`, para estudo interno: **nunca** para mostrar ao cliente.
    - Para o 3D profissional, faça o cálculo na skill `iluminacao-nbr8995` com a **luminária real** (W, lm, UGR, fotometria IES/LDT) e passe `--dados iluminacao=<obra>.json`.
    - Projeto luminotécnico **oficial** (lux, UGR, isolux): DIALux evo ou Relux com a base DWG/IFC.
 7. **Gerar o 3D** (`--pontos` e `--trechos` repetem):
    ```bash
-   node _comum/cad/gerar-3d.js "<projeto.dwg>" --planta N --pe-direito 3 --pontos "<pasta da obra>\pontos.json" --trechos "<pasta da obra>\trechos.json" --trechos "<pasta da obra>\trechos-externos.json" --saida "<pasta da obra>\modelo-3d.html" --cliente "…" --obra "…"
+   node _comum/cad/gerar-3d.js "<projeto.dwg>" --pe-direito 3 --pontos "<pasta da obra>\pontos.json" --trechos "<pasta da obra>\trechos.json" --trechos "<pasta da obra>\trechos-externos.json" --saida "<pasta da obra>\modelo-3d.html" --cliente "…" --obra "…"
    ```
-   - Com `--pontos`, não passe `--disciplina` da mesma disciplina: a estimativa somaria pontos que não existem.
+   - Sem `--planta`, sai um modelo por planta, cada um com os pontos que caem dentro dele. Com `--planta N`, sai só aquela planta.
+   - Sem `--pontos`, cada planta usa os símbolos desenhados nela (a proposta automática do passo 4, sem conferência). Serve para uma primeira olhada; o que vai ao cliente sai do mapa conferido.
    - Use o pé-direito real (corte da arquitetura), nunca o padrão sem avisar.
    - Os postes aparecem com braço e projetor, as caixas no piso e o eletroduto enterrado rente ao chão (camada "Iluminação externa").
 8. **Checklist antes de entregar ao cliente** (abrir o HTML e girar o modelo):
-   - [ ] Uma planta só (`--planta`); escala certa (conferir duas salas com a planta).
+   - [ ] Cada planta no seu modelo (seletor "Planta"), sem ambientes de outra planta; escala certa (conferir duas salas com a planta).
+   - [ ] Nenhum ponto que não está desenhado (plantas sem instalação com o aviso "nada é estimado").
    - [ ] Total de pilares bate com a estrutural; nenhum pilar onde há símbolo (poste, caixa).
    - [ ] Nenhuma parede atravessando sala, porta ou janela; fio, unifilar e mobiliário não subiram.
    - [ ] Pontos = legenda/quadro de cargas (luminárias, tomadas, postes, quadros); nenhum duplicado.
@@ -122,6 +134,7 @@ Todos os comandos rodam na pasta `C:\HM-Engenharia\hm-eng\skills` (para testar m
 | Ferramenta | Para quê | Custo |
 |---|---|---|
 | That Open Engine (web-ifc) | Ler IFC no sistema — 3D fiel sem adivinhar | Gratuito (código aberto) |
+| ezdxf (Python) / ODA File Converter | Ver os **layouts** (espaço do papel) e as **viewports** do DWG: com eles, cada prancha é exatamente a janela da viewport. O LibreDWG do sistema não traz os layouts; quando o desenho tiver, converta com o ODA e confira as pranchas | Gratuito |
 | DIALux evo / Relux | Cálculo luminotécnico oficial (interno e de quadras/estacionamento) com fotometria real | Gratuito |
 | Autodesk Platform Services | AutoCAD/Revit na nuvem: converter DWG→IFC/RVT, ler DWG com fidelidade | Pago por crédito |
 | Reconhecimento de planta por IA (Kreo, Togal.AI…) | Levantamento por PDF | Assinatura — testar antes |

@@ -144,5 +144,41 @@ caso('3D com --pontos/--trechos: postes, caixas e eletroduto enterrado na cena',
   assert.strictEqual(c.numeros.pilares, 0);
 });
 
+// duas pranchas lado a lado no espaço do modelo (como a exportação do QiBuilder),
+// cada uma na sua moldura (layer Margem, proporção A): luminárias só na 1ª
+caso('uma prancha = um modelo; sem ponto desenhado, nada é estimado', () => {
+  const { montarCenasPorPlanta } = require('../../_comum/cad/modelosPorPlanta');
+  const { gerarHtml } = require('../../_comum/cad/visualizador3d');
+  const p = new DesenhoDxf({ layers: [{ nome: 'ARQ-ALV-CRT', cor: 8 }, { nome: 'TEXTO', cor: 7 }, { nome: 'Margem', cor: 1 }, { nome: 'EL-Lâmpada', cor: 2 }, { nome: 'ARQ-POR-CRT', cor: 3 }] });
+  for (const [ox, nome] of [[0, 'LOJA'], [120, 'ACADEMIA']]) {
+    p.polilinha(retangulo(ox - 20, -15, ox + 64.1, 44.4), { layer: 'Margem', fechada: true });
+    for (const d of [0, 0.15]) p.polilinha(retangulo(ox - d, -d, ox + 12 + d, 9 + d), { layer: 'ARQ-ALV-CRT', fechada: true });
+    for (const d of [0, 0.15]) p.polilinha(retangulo(ox + 12 - d, -d, ox + 20 + d, 9 + d), { layer: 'ARQ-ALV-CRT', fechada: true });
+    p.texto(ox + 5, 4, 0.3, nome, { layer: 'TEXTO' });
+    p.texto(ox + 15, 4, 0.3, `DEPÓSITO ${nome}`, { layer: 'TEXTO' });
+    p.texto(ox + 2, -3, 0.5, `PLANTA BAIXA - ${nome}`, { layer: 'TEXTO' });
+    p.arco(ox + 12, 1, 0.8, 0, 90, 'ARQ-POR-CRT');
+  }
+  // 2 luminárias (símbolo explodido 0,6 × 0,6) só na loja
+  for (const x of [3, 8]) p.polilinha(retangulo(x, 6, x + 0.6, 6.6), { layer: 'EL-Lâmpada', fechada: true });
+  const arq = lerArquitetura(p.toString());
+  const { cenas, principal } = montarCenasPorPlanta(arq, { peDireito: 3 });
+  assert.strictEqual(cenas.length, 2, cenas.map(c => c.plantaInfo.nome).join(' | '));
+  const loja = cenas.find(c => c.ambientes.some(a => a.nome === 'LOJA'));
+  const acad = cenas.find(c => c.ambientes.some(a => a.nome === 'ACADEMIA'));
+  assert.ok(loja && acad && loja !== acad);
+  // cada modelo só com os seus ambientes
+  assert.ok(!loja.ambientes.some(a => /ACADEMIA/.test(a.nome)) && !acad.ambientes.some(a => a.nome === 'LOJA'));
+  const lum = (c) => c.dispositivos.filter(t => t.simbolo === 'HM-ILU-LUMINARIA').reduce((n, t) => n + t.itens.length, 0);
+  assert.strictEqual(lum(loja), 2);
+  assert.strictEqual(acad.dispositivos.length, 0, 'academia sem ponto desenhado não pode ganhar luminária estimada');
+  assert.ok(acad.avisos.some(a => /nada é estimado/.test(a)));
+  assert.ok(!acad.infra.length && !loja.infra.some(g => g.estimado && g.rotulo !== 'Eletroduto de descida'));
+  assert.strictEqual(cenas[principal], loja);
+  assert.ok(/Prancha 1/.test(loja.plantaInfo.nome) && /Prancha 2/.test(acad.plantaInfo.nome), `${loja.plantaInfo.nome} | ${acad.plantaInfo.nome}`);
+  const html = gerarHtml(cenas, { principal });
+  assert.ok(html.includes('id="ir-planta"') && html.includes('window.CENAS='));
+});
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`modelo-3d: ${ok} casos ok`);

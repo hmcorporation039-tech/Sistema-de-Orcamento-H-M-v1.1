@@ -122,17 +122,23 @@ const escolherNome = (ts) => {
 // planta (bancadas, esquadrias); o desenho de detalhe AO LADO da planta sai pela
 // classificação da região (título "DETALHE"), em lerArquitetura.
 const RE_LAYER_FORA_PLANTA = /UNIFILAR|TRIFILAR|MULTIFILAR|DIAGRAMA|ESQUEMA|QUADRO.?DE.?CARGA|TABELA|PLANILHA|LEGENDA|CARIMBO|\bSELO|MOLDURA|MARGEM|VIEWPORT|\bVPORT/i;
+const RE_LAYER_MOLDURA = /MOLDURA|MARGEM/i;
 const RE_BLOCO_FORA_PLANTA = /UNIFILAR|TRIFILAR|DIAGRAMA|ESQUEMA|QUADRO.?DE.?CARGA|LEGENDA|CARIMBO|\bSELO|MOLDURA|FOLHA.?A[0-4]\b|^A[0-4]$|DETALHE/i;
 function explodir(parsed) {
   const blocos = new Map((parsed.blocks || []).map(b => [b.name, b]));
   const out = [];
+  // a moldura da folha não entra no desenho, mas diz onde está cada prancha (./pranchas.js)
+  out.molduras = [];
   // DWG convertido de PDF às vezes traz tudo no espaço do papel: aí ele é o desenho
   const temModelo = (parsed.entities || []).some(e => !e.paperSpace);
   const visitar = (ents, transforms, layerPai, prof) => {
     for (const e of ents) {
       if (prof === 0 && e.paperSpace && temModelo) continue;
       const layer = layerPai && (!e.layer || e.layer === '0') ? layerPai : e.layer;
-      if (RE_LAYER_FORA_PLANTA.test(layer || '')) continue;
+      if (RE_LAYER_FORA_PLANTA.test(layer || '')) {
+        if (RE_LAYER_MOLDURA.test(layer || '') && (e.type === 'LWPOLYLINE' || e.type === 'POLYLINE') && e.vertices?.length >= 4 && e.vertices.length <= 5) out.molduras.push({ pts: transformar(e.vertices.map(v => [v.x, v.y]), transforms), layer });
+        continue;
+      }
       if (e.type !== 'INSERT') { out.push({ ...e, layer, transforms }); continue; }
       const b = blocos.get(e.block);
       if (!b || prof > 12 || RE_BLOCO_FORA_PLANTA.test(e.block || '')) continue;
@@ -566,6 +572,7 @@ function lerArquitetura(textoDxf, opcoes = {}) {
 
   return {
     ambientes, portas, referencia: refM, extensao, fatorUnidade: fator, layers: [...new Set(ents.map(e => e.layer))],
+    molduras: ents.molduras.map(o => ({ pts: m(o.pts), layer: o.layer })),
     // classificação da folha (planta × diagrama × tabela…) e as caixas de planta, em metros
     classificacao: classificacao && { tipo: classificacao.tipo, resumo: classificacao.resumo, temPlanta: classificacao.temPlanta, semPlanta: classificacao.semPlanta, misto: classificacao.misto, regioes: classificacao.regioes.map(({ caixa, tipo, rotulo, titulo, confianca, motivos }) => ({ caixa, tipo, rotulo, titulo, confianca, motivos })) },
     regioesPlanta,

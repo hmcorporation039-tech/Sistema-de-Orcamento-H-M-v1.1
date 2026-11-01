@@ -57,8 +57,11 @@ export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null,
       const url = urlModelo3d(r.data.url);
       if (aba && !aba.closed) aba.location.href = url;
       else toast((t) => <span>O navegador bloqueou a aba. <a href={url} target="_blank" rel="noreferrer" onClick={() => toast.dismiss(t.id)}>Abrir o 3D</a></span>, { duration: 15000 });
-      const estimados = (r.data.avisos || []).filter(a => /CONFERIR|ESTIMAD/i.test(a)).length;
-      if (estimados) toast(`Pontos estimados pela arquitetura em ${estimados} item(ns) — veja "Premissas do modelo" no rodapé do 3D.`, { icon: '⚠️', duration: 8000 });
+      // um modelo por planta do desenho (escolhida no seletor "Planta" do 3D); pontos só os do projeto
+      const plantas = r.data.numeros?.plantas || [];
+      if (plantas.length > 1) toast(`${plantas.length} plantas no desenho, cada uma um modelo à parte — troque no seletor "Planta" do 3D.`, { icon: 'ℹ️', duration: 8000 });
+      const semPontos = plantas.filter(p => !p.pontos).length;
+      if (semPontos) toast(`${semPontos} planta(s) sem ponto de instalação desenhado: aparecem só com a arquitetura (nada é estimado).`, { icon: '⚠️', duration: 9000 });
     } catch (err) {
       if (aba && !aba.closed) aba.close();
       toast.error(await mensagemDeErro(err, 'Erro ao gerar o modelo 3D'), { duration: 9000 });
@@ -118,9 +121,9 @@ export function CartaoModelo3dAnalise({ analiseId, estiloCartao, estiloTitulo })
     <div style={estiloCartao} data-testid="cartao-modelo-3d">
       <h3 style={{ ...estiloTitulo, display: 'flex', alignItems: 'center', gap: 8 }}><Box size={16} /> Modelo 3D ilustrativo (para o cliente)</h3>
       <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 12, lineHeight: 1.6 }}>
-        Envie a <b>arquitetura em DWG, DXF ou PDF</b> e o sistema monta o 3D dos ambientes com os pontos das disciplinas desta análise
-        (os do desenho, quando o projeto veio em DWG/DXF; senão, estimados pela norma — marcados para conferir). Serve para o cliente ter uma
-        ideia de como vai ficar; não substitui o projeto executivo. O PDF precisa ser o exportado do AutoCAD/Revit (não escaneado).
+        Envie a <b>arquitetura em DWG, DXF ou PDF</b> (pode ser o próprio DWG do projeto) e o sistema monta <b>um 3D por planta</b> de cada
+        prancha/folha, com os pontos que estão <b>desenhados no projeto</b> — nada é estimado; planta sem ponto desenhado sai só com a arquitetura.
+        Serve para o cliente ter uma ideia de como vai ficar; não substitui o projeto executivo. O PDF precisa ser o exportado do AutoCAD/Revit (não escaneado).
         O projeto criado a partir desta análise já recebe a mesma arquitetura.
       </p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>

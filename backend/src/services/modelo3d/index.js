@@ -5,7 +5,9 @@
 //   'laudo'    — projeto/laudo por disciplina com arquitetura enviada
 //                (laudos_projetos_arquitetura); pontos do formulário real
 //   'analise'  — análise de projeto com arquitetura enviada
-//                (analises_projeto_arquitetura); pontos ESTIMADOS das disciplinas
+//                (analises_projeto_arquitetura); pontos do projeto (espacial) ou
+//                os símbolos desenhados no arquivo — nunca estimados (01/11/2026)
+//   Um modelo por planta do desenho (skills/_comum/cad/modelosPorPlanta.js).
 //   'proposta' — a origem da proposta (origem_tipo/origem_id)
 //
 // O HTML gerado é guardado em modelos_3d com uma chave (hash de tudo que entra
@@ -31,7 +33,8 @@ const { CAD } = require('../../config/caminhos');
 function versaoDoGerador() {
   try {
     // arquitetura.js e classificarPrancha.js decidem o que é planta (29/10/2026): mudou, refaz
-    return ['modelo3d.js', 'estimativaArquitetura.js', 'arquitetura.js', 'classificarPrancha.js', 'visualizador3d.js', path.join('visualizador3d', 'app.bundle.js')]
+    // pranchas, pontosDoDesenho e modelosPorPlanta: um modelo por planta, pontos lidos do desenho (01/11/2026)
+    return ['modelo3d.js', 'estimativaArquitetura.js', 'arquitetura.js', 'classificarPrancha.js', 'pranchas.js', 'pontosDoDesenho.js', 'modelosPorPlanta.js', 'visualizador3d.js', path.join('visualizador3d', 'app.bundle.js')]
       .map(f => fs.statSync(path.join(CAD, f)).mtimeMs).join('|');
   } catch { return 'sem-gerador'; }
 }
@@ -80,17 +83,13 @@ async function fonteDoModelo(origemTipo, origemId, executor = pool) {
         titulo: `Modelo 3D — ${an.nome_projeto || 'Projeto'}`, cliente: an.cliente_nome || '', obra: '',
       };
     }
-    const chaves = (an.disciplinas || []).map(x => (typeof x === 'string' ? x : x?.chave)).filter(Boolean);
-    const disciplinas = [...new Set(chaves.map(k => DISCIPLINAS_3D[k]).filter(Boolean))];
-    // projeto recebido em DWG/DXF, mas sem posições alinhadas: avisa que os pontos são
-    // ESTIMADOS (antes o 3D mostrava 11 tomadas estimadas com 6 desenhadas, sem aviso)
-    const veioDeCad = (an.arquivos_analisados || []).some(x => /\.(dwg|dxf)$/i.test(x?.nomeArquivo || x?.arquivo || ''));
+    // sem posições do projeto: os pontos são os símbolos desenhados no próprio arquivo
+    // enviado (o DWG do projeto elétrico serve de arquitetura). Nada é estimado pela
+    // norma — a Arena (01/11/2026) saía com 868 tomadas que não existem no projeto.
     return {
       origemTipo: 'analise', origemId: an.id, nomeArquivo: a.nome_arquivo, dxf: a.conteudo.toString('utf8'),
-      disciplinas, dadosPorDisciplina: {},
-      semPontos: !disciplinas.length ? 'As disciplinas desta análise ainda não têm pontos no 3D: o modelo mostra só a arquitetura.'
-        : veioDeCad ? 'Pontos ESTIMADOS pela norma (para conferir): os componentes do DWG/DXF não puderam ser posicionados na arquitetura — ela precisa de pelo menos 3 ambientes com o mesmo nome nos dois desenhos.'
-          : null,
+      disciplinas: [], dadosPorDisciplina: {},
+      semPontos: null,
       peDireito: null,
       titulo: `Modelo 3D — ${an.nome_projeto || 'Projeto'}`, cliente: an.cliente_nome || '', obra: '',
     };
@@ -262,11 +261,12 @@ const CSP_MODELO_3D = "default-src 'none'; script-src 'unsafe-inline'; style-src
 
 const nomeArquivo = (fonte) => `Modelo 3D - ${String(fonte.titulo || '').replace(/^Modelo 3D — /, '').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Projeto'}.html`;
 
-// Link curto (10 min) para abrir o 3D numa aba nova: a aba não leva o
+// Link curto (2 h: a troca de planta no 3D recarrega a página pelo mesmo link)
+// para abrir o 3D numa aba nova: a aba não leva o
 // cabeçalho de login, e um blob: criado pela tela herdaria a política da tela
 // (script bloqueado). Guardado em memória — some ao reiniciar o servidor.
 const LINKS = new Map();
-const VALIDADE_LINK_MS = 10 * 60 * 1000;
+const VALIDADE_LINK_MS = 2 * 60 * 60 * 1000;
 function criarLink(origemTipo, origemId) {
   const agora = Date.now();
   for (const [t, l] of LINKS) if (l.expira < agora) LINKS.delete(t);

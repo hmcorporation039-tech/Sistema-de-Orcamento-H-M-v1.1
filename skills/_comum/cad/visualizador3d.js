@@ -27,7 +27,8 @@ const CSS = `
 header{position:fixed;top:0;left:0;right:0;display:flex;align-items:center;gap:14px;padding:10px 16px;background:linear-gradient(180deg,rgba(10,11,14,.95),rgba(10,11,14,.7));border-bottom:1px solid rgba(201,162,39,.35);z-index:5}
 header img{width:46px;height:46px;border-radius:50%;background:#fff;padding:2px;flex:none}
 header .marca{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ouro)}
-header h1{margin:1px 0 0;font-size:18px;font-weight:600;line-height:1.2}
+header h1{margin:1px 0 0;font-size:18px;font-weight:600;line-height:1.2}header h1 small{display:block;font-size:12.5px;font-weight:500;color:var(--ouro2)}
+footer details ul[hidden]{display:none}#barra #ir-planta{max-width:340px;border-color:var(--ouro);color:var(--ouro2)}
 header .meta{margin-left:auto;text-align:right;font-size:12px;color:var(--suave);line-height:1.5}
 header .meta b{color:var(--texto);font-weight:600}
 #barra{position:fixed;top:68px;left:16px;right:16px;display:flex;flex-wrap:wrap;gap:6px;z-index:4}
@@ -79,17 +80,27 @@ footer details{position:relative}footer summary{cursor:pointer;color:var(--texto
 @media (max-width:900px){#dentro{left:12px;right:12px;bottom:58px;transform:none;justify-content:space-between}#dentro small{display:none}#barra select{flex:none}#barra{flex-wrap:nowrap;overflow-x:auto;left:0;right:0;padding:0 12px 4px;scrollbar-width:none}#barra button{flex:none}aside{top:auto!important;left:12px;right:12px;width:auto;max-height:40vh;bottom:64px}header .meta{display:none}footer .comandos{display:none}header h1{font-size:15px}}
 `;
 
-// opcoes: { titulo }
-function gerarHtml(cena) {
+// Premissas de uma cena (rodapé "Premissas do modelo")
+function premissasDa(cena) {
+  return [cena.aviso, `Pé-direito adotado: ${String(cena.peDireito).replace('.', ',')} m; portas com 2,10 m; janelas com peitoril de 1,10 m e topo a 2,10 m.`,
+    'Componentes em tamanho típico, um pouco exagerado nos pequenos (tomada 10 × 16 cm); de longe são ampliados para continuarem visíveis. Altura indicada = centro da peça.',
+    ...((cena.infra || []).length ? [`Infraestrutura (eletrocalhas, eletrodutos, leitos, perfilados) perto do teto, com descida até as peças de parede: tipo e medida do projeto quando o desenho diz (senão, seção padrão ilustrativa)${cena.infra.some(g => g.estimado) ? '; onde o projeto não traz o traçado, eletroduto ESTIMADO do quadro/rack/central até cada ponto — conferir' : ''}. Passe o mouse no traçado para ver tipo, medida e comprimento.`] : []),
+    ...(cena.avisos || [])];
+}
+
+// cenas: uma cena, ou a lista delas — UMA POR PLANTA da prancha (./pranchas.js), cada
+// uma com cena.plantaInfo = { nome } (cena.planta é a imagem da planta no piso). Com várias, a página traz todas e um seletor
+// "Planta"; a escolhida vai no endereço (#planta=2) e a página recarrega com ela —
+// cada planta é um modelo à parte, nada se mistura. principal = a que abre (índice).
+function gerarHtml(cenas, { principal = 0 } = {}) {
+  const lista = Array.isArray(cenas) ? cenas : [cenas];
+  const varias = lista.length > 1;
+  const cena = lista[Math.min(Math.max(0, principal), lista.length - 1)];
   const logo = `data:image/png;base64,${fs.readFileSync(path.join(__dirname, '..', 'assets', 'logo-pequeno.png')).toString('base64')}`;
   const meta = [
     [cena.cliente && `Cliente: <b>${escapeHtml(cena.cliente)}</b>`, cena.obra && `Obra: <b>${escapeHtml(cena.obra)}</b>`].filter(Boolean).join(' · '),
     [cena.proposta && `Proposta: <b>${escapeHtml(cena.proposta)}</b>`, `gerado em ${escapeHtml(cena.data)}`].filter(Boolean).join(' · '),
   ].filter(Boolean).join('<br>');
-  const premissas = [cena.aviso, `Pé-direito adotado: ${String(cena.peDireito).replace('.', ',')} m; portas com 2,10 m; janelas com peitoril de 1,10 m e topo a 2,10 m.`,
-    'Componentes em tamanho típico, um pouco exagerado nos pequenos (tomada 10 × 16 cm); de longe são ampliados para continuarem visíveis. Altura indicada = centro da peça.',
-    ...((cena.infra || []).length ? [`Infraestrutura (eletrocalhas, eletrodutos, leitos, perfilados) perto do teto, com descida até as peças de parede: tipo e medida do projeto quando o desenho diz (senão, seção padrão ilustrativa)${cena.infra.some(g => g.estimado) ? '; onde o projeto não traz o traçado, eletroduto ESTIMADO do quadro/rack/central até cada ponto — conferir' : ''}. Passe o mouse no traçado para ver tipo, medida e comprimento.`] : []),
-    ...(cena.avisos || [])];
   return `<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -104,11 +115,12 @@ function gerarHtml(cena) {
 <div id="etiquetas-pontos"></div>
 <header>
   <img src="${logo}" alt="H&amp;M">
-  <div><div class="marca">${escapeHtml(EMPRESA.nomeFantasia)}</div><h1>${escapeHtml(cena.titulo)}</h1></div>
+  <div><div class="marca">${escapeHtml(EMPRESA.nomeFantasia)}</div><h1>${escapeHtml(cena.titulo)}${varias ? `<small id="nome-planta">${escapeHtml(cena.plantaInfo?.nome || '')}</small>` : ''}</h1></div>
   <div class="meta">${meta}</div>
 </header>
 <nav id="barra">
-  <button id="b-3d" title="Voltar à vista em perspectiva">Vista 3D</button>
+${varias ? `  <select id="ir-planta" title="Cada planta da prancha é um modelo à parte">${lista.map((c, i) => `<option value="${i}">${escapeHtml(c.plantaInfo?.nome || `Planta ${i + 1}`)}</option>`).join('')}</select>
+` : ''}  <button id="b-3d" title="Voltar à vista em perspectiva">Vista 3D</button>
   <button id="b-cima" title="Planta vista de cima">Vista de cima</button>
   <button id="b-giro">Giro automático</button>
   <select id="ir-ambiente" title="Entrar num ambiente (vista de dentro, na altura dos olhos)"><option value="">Ir para ambiente…</option></select>
@@ -133,11 +145,11 @@ function gerarHtml(cena) {
 <div id="dentro"><div class="onde">Dentro do ambiente<b id="dentro-nome"></b></div><small>arraste para olhar em volta · roda ou pinça = zoom · duplo clique no piso = andar · Esc = voltar</small><button id="b-voltar">Voltar à vista geral</button></div>
 <footer>
   <span class="aviso">Ilustração — não substitui o projeto executivo.</span>
-  <details><summary>Premissas do modelo</summary><ul>${premissas.map(p => `<li>${escapeHtml(p)}</li>`).join('')}</ul></details>
+  <details><summary>Premissas do modelo</summary>${lista.map((c, i) => `<ul data-planta="${i}"${c === cena ? '' : ' hidden'}>${premissasDa(c).map(p => `<li>${escapeHtml(p)}</li>`).join('')}</ul>`).join('')}</details>
   <span class="comandos">arraste para girar · roda para zoom · botão direito (ou dois dedos) para mover · duplo clique num ambiente para entrar</span>
 </footer>
 <div id="semwebgl"><div><h2>Seu navegador não abriu o 3D (WebGL desligado).</h2><p>Abra este arquivo no Chrome, Edge ou Firefox atualizados.</p></div></div>
-<script>window.CENA=${jsonSeguro(cena)};document.querySelectorAll('aside h2').forEach(function(h){h.onclick=function(){h.parentNode.classList.toggle('fechada')}});
+<script>${varias ? `window.CENAS=${jsonSeguro(lista)};(function(){var m=/planta=([0-9]+)/.exec(location.hash),i=m?Number(m[1])-1:${lista.indexOf(cena)};if(!(i>=0&&i<CENAS.length))i=${lista.indexOf(cena)};window.CENA=CENAS[i];document.querySelectorAll('footer ul[data-planta]').forEach(function(u){u.hidden=Number(u.dataset.planta)!==i});var s=document.getElementById('ir-planta');s.value=String(i);s.onchange=function(){location.hash='planta='+(Number(s.value)+1);location.reload()};document.getElementById('nome-planta').textContent=CENA.plantaInfo?CENA.plantaInfo.nome:''})();` : `window.CENA=${jsonSeguro(cena)};`}document.querySelectorAll('aside h2').forEach(function(h){h.onclick=function(){h.parentNode.classList.toggle('fechada')}});
 if(innerWidth<=900)document.querySelectorAll('aside section').forEach(function(s){s.classList.add('fechada')});
 function hmLayout(){var h=document.querySelector('header'),n=document.querySelector('#barra'),a=document.querySelector('aside');n.style.top=(h.offsetHeight+6)+'px';if(innerWidth>900)a.style.top=(n.offsetTop+n.offsetHeight+8)+'px'}addEventListener('resize',hmLayout);addEventListener('load',hmLayout);hmLayout();</script>
 <script>${lerBundle()}</script>
