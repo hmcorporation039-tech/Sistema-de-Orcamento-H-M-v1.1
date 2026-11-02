@@ -489,3 +489,8 @@ export const registrarEnvioProposta = (id, corpo) => api.post(`/propostas/${id}/
 // ── PIX SEM OBRA (margem real por obra): grupos por nome, com sugestão; ligar à obra ─
 export const getPixSemObra = () => api.get('/financeiro/atribuicao-obras');
 export const atribuirPixObra = (dados) => api.post('/financeiro/atribuicao-obras', dados);
+
+// ── COMPARATIVO DE FORNECEDORES (Materiais): quem cotou mais barato; corrigir o nome do fornecedor ─
+export const getCotacoesMaterial = (id) => api.get(`/materiais/${id}/cotacoes`);
+export const getOportunidadesCotacao = () => api.get('/cotacoes/oportunidades');
+export const renomearFornecedorCotacao = (cnpj, nome) => api.put(`/cotacoes/fornecedores/${cnpj}`, { nome });

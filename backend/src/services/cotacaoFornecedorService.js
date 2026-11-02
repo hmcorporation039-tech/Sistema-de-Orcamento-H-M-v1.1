@@ -4,10 +4,11 @@ const { RAIZ_REPOSITORIO } = require('../config/caminhos');
 const crypto = require('crypto');
 const pool = require('../config/database');
 const { lerDocumentoCotacao, encerrarOcr, VERSAO_LEITOR, EXTENSOES } = require('./leitorCotacao');
-const { carregarIndice, registrarItemCotacao, obterMargemPadrao } = require('./catalogoMateriais');
+const { carregarIndice, registrarItemCotacao, obterMargemPadrao, encontrarExistente } = require('./catalogoMateriais');
 const { classificarPendentes } = require('./classificacaoMateriais');
 const { executarComTrava } = require('./travaJob');
 const iaCache = require('./iaCache');
+const cotacoes = require('./cotacoesFornecedor');
 
 // Pastas onde o usuário salva os orçamentos/cotações de fornecedor recebidos
 // (WhatsApp etc.): PDF com texto, PDF escaneado ou foto (PNG/JPG). A local
@@ -84,16 +85,48 @@ async function registrarArquivo(client, nome, hash, dados) {
 
 // Grava no catálogo os itens de UM documento já lido (pasta ou e-mail):
 // material novo é cadastrado, existente mantém o menor custo.
-async function importarItens(client, indice, leitura, origemBase, margem) {
+// contexto = { documento, data }: com ele, o preço cotado também vai para o comparativo de fornecedores
+// (cotacoes_itens), se o documento trouxe o CNPJ do fornecedor.
+async function importarItens(client, indice, leitura, origemBase, margem, contexto = null) {
   const origem = leitura.metodo?.startsWith('IA') ? `${origemBase}_ia` : leitura.viaOcr ? `${origemBase}_ocr` : origemBase;
   let criados = 0, atualizados = 0, existentes = 0;
   for (const item of leitura.itens) {
     const r = await registrarItemCotacao(client, indice, item, origem, margem);
     if (!r) continue;
+    if (contexto?.documento && leitura.fornecedor && r.materialId) {
+      await cotacoes.registrarItem(client, { materialId: r.materialId, fornecedor: leitura.fornecedor, item, origem, documento: contexto.documento, data: contexto.data });
+    }
     if (r.criado) criados++;
     else { existentes++; if (r.mudou) atualizados++; }
   }
   return { criados, atualizados, existentes };
+}
+
+// Cotações lidas ANTES do comparativo existir (arquivo já marcado como processado) não têm o fornecedor
+// guardado. Esta releitura só acrescenta o preço cotado ao comparativo: não cadastra material, não muda
+// preço nem categoria e nunca chama a IA. A data da cotação é a do arquivo. Usado por scripts/reler-cotacoes.js.
+async function guardarCotacoesDoArquivo(client, { pasta, nome }, { indice, ler = lerDocumentoCotacao, lerArquivo = fsp.readFile, dataDoArquivo = async (p) => (await fsp.stat(p)).mtime }) {
+  const caminho = path.join(pasta, nome);
+  const buffer = await lerArquivo(caminho);
+  const leitura = await ler(buffer, nome, { permitirIA: false });
+  if (!leitura.fornecedor || !leitura.itens.length) return { itens: leitura.itens.length, guardados: 0, semFornecedor: !leitura.fornecedor && leitura.itens.length > 0 };
+  const d = await dataDoArquivo(caminho);
+  const data = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const origem = leitura.metodo?.startsWith('IA') ? 'fornecedor_whatsapp_ia' : leitura.viaOcr ? 'fornecedor_whatsapp_ocr' : 'fornecedor_whatsapp';
+  const documento = `arq:${hashArquivo(buffer)}`;
+  let guardados = 0;
+  await client.query('BEGIN');
+  try {
+    for (const item of leitura.itens) {
+      const achado = await encontrarExistente(client, indice, item.descricao);
+      if (achado && await cotacoes.registrarItem(client, { materialId: achado.material.id, fornecedor: leitura.fornecedor, item, origem, documento, data })) guardados++;
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  }
+  return { itens: leitura.itens.length, guardados, semFornecedor: false };
 }
 
 // A varredura roda sozinha às 06:00 e às 18:00 e também pelo botão "Verificar agora".
@@ -135,7 +168,7 @@ async function processarArquivo(client, { pasta, nome }, { resumo, margem, indic
 
   await client.query('BEGIN');
   try {
-    const r = leitura.itens.length ? await importarItens(client, indice, leitura, 'fornecedor_whatsapp', margem) : { criados: 0, atualizados: 0, existentes: 0 };
+    const r = leitura.itens.length ? await importarItens(client, indice, leitura, 'fornecedor_whatsapp', margem, { documento: `arq:${hash}` }) : { criados: 0, atualizados: 0, existentes: 0 };
     await registrarArquivo(client, nome, hash, { ...r, lidos: leitura.itens.length, metodo: leitura.metodo || (leitura.pendente ? 'aguardando IA' : null), confere: leitura.conferencia?.confere, pendente: leitura.pendente });
     await client.query('COMMIT');
     resumo.arquivosProcessados++;
@@ -187,4 +220,4 @@ async function executarVarredura() {
   return resumo;
 }
 
-module.exports = { verificarPastaFornecedores, importarItens, PASTAS_FORNECEDORES, _interno: { processarArquivo } };
+module.exports = { verificarPastaFornecedores, importarItens, guardarCotacoesDoArquivo, listarArquivos, PASTAS_FORNECEDORES, _interno: { processarArquivo } };
