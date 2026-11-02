@@ -14,7 +14,7 @@ function chaveDe(nome, entrada) {
   return crypto.createHash('sha256').update(`${nome}\u0000${normalizar(entrada)}`).digest('hex');
 }
 
-const vazio = (v) => v == null || v === '' ||(Array.isArray(v) && !v.length) || (Array.isArray(v?.itens) && !v.itens.length) || (typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length);
+const vazio = (v) => v == null || v === '' || (Array.isArray(v) && !v.length) || (Array.isArray(v?.itens) && !v.itens.length) || (typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length);
 
 async function registrarUso(nome, acerto) {
   await pool.query(
@@ -50,6 +50,7 @@ async function comCache(nome, entrada, { ttlDias, fresco = false } = {}, chamada
   const valor = await chamada(); // erro da IA sobe daqui: nada é guardado
   await registrarUso(nome, false);
   if (!vazio(valor)) {
+    limparExpiradosDeVezEmQuando();
     await pool.query(
       `INSERT INTO ia_cache (chave, nome, resultado, expira_em) VALUES ($1, $2, $3, NOW() + ($4 || ' days')::interval)
        ON CONFLICT (chave) DO UPDATE SET resultado = EXCLUDED.resultado, criado_em = NOW(), expira_em = EXCLUDED.expira_em, acertos = 0`,
@@ -78,6 +79,15 @@ async function situacao(dias = 30) {
 async function limparExpirados() {
   const r = await pool.query('DELETE FROM ia_cache WHERE expira_em < NOW()');
   return r.rowCount;
+}
+
+// Resposta vencida nunca mais é lida: sem isto a tabela só cresceria. Sem rotina própria — na
+// primeira gravação de cada processo e depois no máximo uma vez por dia, em segundo plano.
+let ultimaLimpeza = 0;
+function limparExpiradosDeVezEmQuando() {
+  if (Date.now() - ultimaLimpeza < 24 * 3600 * 1000) return;
+  ultimaLimpeza = Date.now();
+  limparExpirados().catch(() => {});
 }
 
 module.exports = { comCache, chaveDe, registrarUso, contarLeituraCotacao, situacao, limparExpirados };
