@@ -21,7 +21,8 @@ migração idempotente (CLAUDE.md), backup antes de ir para a produção e só v
 
 ## 1. Cache das chamadas à IA  (feito no v2 em 02/11/2026)
 **Feito:** migração `2.0-26-ia-cache.js` (`ia_cache`, `ia_cache_uso`), `services/iaCache.js` (`comCache`, contador, `situacao`), extração de equipamentos com cache de 90 dias (`equipamentoExtratorIA.js`), pesquisa de mercado com validade de 7 dias (era 48 h) e `fresco` (`?fresco=1` ou `fresco: true` no corpo; também na mão de obra), card de IA em Integrações mostrando as chamadas evitadas, `testes/iaCache.test.js`. A pesquisa de preço continua guardada em `pesquisas_mercado` (que também é o histórico) e só entra no contador; a tela já mostrava "reaproveitada do histórico, feita em…".
-**Falta:** botão "pesquisar de novo" na tela de preços (a rota já aceita `fresco`); levar à produção (migração + reinício do backend) com o OK do Márcio.
+Tela: o bloco de pesquisa do orçamento mostra "(há N dias)" e o botão "Pesquisar de novo" quando a pesquisa veio do histórico; em Materiais, o 2º clique sobre uma pesquisa reaproveitada consulta a web de novo.
+**Falta:** levar à produção (migração + reinício do backend) com o OK do Márcio. No v2 (3002), reiniciar com `C:\HM-Engenharia\hm-eng-v2\reiniciar-backend.bat` (administrador) para o backend carregar o código novo.
 
 (Plano original, mantido como registro:)
 **Problema:** `equipamentoExtratorIA.js` e `pesquisaMercado.js` refazem a mesma consulta

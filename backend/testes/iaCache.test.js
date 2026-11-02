@@ -22,7 +22,7 @@ const NOME_EXT = 'equipamentos_projeto v1';
   const inicio = new Date(Date.now() - 1000);
   const limpa = async () => {
     await pool.query("DELETE FROM ia_cache WHERE nome = $1 OR (nome = $2 AND criado_em >= $3)", [NOME, NOME_EXT, inicio]); // só o que o teste criou
-    await pool.query("DELETE FROM ia_cache_uso WHERE nome = $1", [NOME]);
+    await pool.query("DELETE FROM ia_cache_uso WHERE nome LIKE 'teste_cache%'");
   };
   await limpa();
   try {

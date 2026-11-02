@@ -514,7 +514,8 @@ export default function Orcamento() {
   // Projeto (busca real na web pela cadeia de IA; de 30 s a 1 min). Serviço
   // pesquisa como serviço; o "Usar R$ X" troca o valor unitário da linha
   // (para material, é o preço adotado). Nunca grava nada sozinha.
-  async function pesquisarMercado(item, maoDeObra) {
+  // fresco: refaz a consulta mesmo havendo pesquisa guardada (a da lista vale 7 dias)
+  async function pesquisarMercado(item, maoDeObra, fresco = false) {
     const descricao = String(item.descricao || '').trim();
     if (!descricao) {
       toast.error('Preencha a descrição antes de pesquisar');
@@ -522,7 +523,7 @@ export default function Orcamento() {
     }
     setPesquisas(p => ({ ...p, [item.id]: { ...(p[item.id] || {}), erro: null, carregando: true } }));
     try {
-      const res = await pesquisarPrecoMercado(descricao, maoDeObra ? 'servico' : 'material');
+      const res = await pesquisarPrecoMercado(descricao, maoDeObra ? 'servico' : 'material', fresco);
       setPesquisas(p => ({ ...p, [item.id]: resultadoDaPesquisa(res.data) }));
     } catch (err) {
       const erro = err.response?.data?.erro || (err.code === 'ECONNABORTED' ? 'A pesquisa demorou demais — tente de novo' : 'Erro ao pesquisar');
@@ -1410,7 +1411,8 @@ export default function Orcamento() {
                 </div>
                 {/* key com a data: a pesquisa que chega salva (da análise) já nasce recolhida */}
                 <BlocoPesquisaMercado key={`${it.id}_${pesquisa?.pesquisadoEm || ''}`} pesquisa={pesquisa} precoAtual={it.valor_unitario}
-                  onUsarPreco={v => atualizarItem(it.id, 'valor_unitario', v)} />
+                  onUsarPreco={v => atualizarItem(it.id, 'valor_unitario', v)}
+                  onPesquisarDeNovo={pesquisa?.carregando ? null : () => pesquisarMercado(it, maoDeObra, true)} />
                 {pesquisa?.erro && <div style={{ marginTop: 6, fontSize: 12, color: '#b04040' }}>{pesquisa.erro}</div>}
                 </div>
               );
