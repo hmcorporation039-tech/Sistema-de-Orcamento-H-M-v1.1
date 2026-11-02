@@ -11,6 +11,7 @@ import { formatarMoeda, formatarData } from '../utils/format';
 import { STATUS_PROPOSTA as STATUS_CORES } from '../utils/statusProposta';
 import { estilos } from '../components/ui/estilos';
 import VencimentosLaudos from '../components/VencimentosLaudos';
+import FollowUpPropostas from '../components/FollowUpPropostas';
 
 const MESES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -123,6 +124,7 @@ export default function Dashboard() {
         />
       </div>
 
+      <FollowUpPropostas />
       <VencimentosLaudos />
 
       {/* Gráfico mensal */}

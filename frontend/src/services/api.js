@@ -480,6 +480,12 @@ export const criarVencimento = (dados) => api.post('/vencimentos', dados);
 export const renovarVencimento = (id, dados) => api.put(`/vencimentos/${id}/renovar`, dados || {});
 export const encerrarVencimento = (id) => api.delete(`/vencimentos/${id}`);
 
+// ── PROPOSTAS SEM RESPOSTA (painel inicial): quem precisa de contato; registrar contato ou adiar ─
+export const getFollowUpPropostas = () => api.get('/follow-up-propostas');
+export const registrarFollowUp = (id, corpo) => api.post(`/propostas/${id}/follow-up`, corpo);
+// envio feito fora do sistema (WhatsApp, e-mail comum): { data: 'AAAA-MM-DD', nota }; a proposta passa a ser acompanhada
+export const registrarEnvioProposta = (id, corpo) => api.post(`/propostas/${id}/envio-registrado`, corpo);
+
 // ── PIX SEM OBRA (margem real por obra): grupos por nome, com sugestão; ligar à obra ─
 export const getPixSemObra = () => api.get('/financeiro/atribuicao-obras');
 export const atribuirPixObra = (dados) => api.post('/financeiro/atribuicao-obras', dados);
