@@ -760,3 +760,16 @@ Só código, sem migração. Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-b
 - Não há e-mail automático de lembrete: o aviso é o cartão.
 - Testes: `followUpPropostas` em `backend/testes`; `FollowUpPropostas.test.js` no frontend.
 - Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.22_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_18-26.dump`.
+
+### 02/11/2026: versão 2.23.0 — comparativo de fornecedores
+
+- **O que mudou:** o preço de uma cotação lida (das pastas ou do e-mail) agora é guardado junto com o fornecedor que cotou. Antes, a cotação só completava o catálogo e o preço se perdia.
+- **Fornecedor:** vem do CNPJ impresso no documento (o primeiro válido que não seja da H&M), sem IA. O nome é um palpite tirado do documento e pode ser corrigido na tela, onde o CNPJ aparece junto.
+- **Em Materiais:** botão "Comparar fornecedores" (menor preço de cada material, onde o catálogo está acima da melhor cotação e quem costuma cotar mais barato) e um ícone de balança em cada material com a tabela de fornecedores.
+- **Regras (ajustáveis no topo de `backend/src/services/cotacoesFornecedor.js`):** cotação vale 90 dias e de cada fornecedor vale a mais nova; só se compara preço na mesma unidade do material; o catálogo é "acima" quando passa de 5 % do menor preço; diferença de 5 vezes ou mais vira "confira a unidade" e não é tratada como economia.
+- **O preço do catálogo não muda por cotação** (decisão de 10/10/2026): o comparativo só aponta.
+- **Banco:** migração `2.0-35` cria `cotacao_fornecedores` e `cotacoes_itens` (idempotente). Rotas `GET /api/materiais/:id/cotacoes`, `GET /api/cotacoes/oportunidades` e `PUT /api/cotacoes/fornecedores/:cnpj`, todas com login.
+- **Cotações antigas:** depois de reiniciar, rodar uma vez `node scripts/reler-cotacoes.js` em `C:\HM-Engenharia\hm-eng\backend`. Só lê as pastas (sem IA), não cadastra material nem muda preço, e pode rodar de novo sem duplicar.
+- **Limites:** só compara quando o mesmo material foi cotado por mais de um fornecedor; e-mails já lidos não entram retroativamente; a data da cotação é a da leitura (ou a do arquivo), não a impressa no documento.
+- Testes: `cotacoesFornecedor` em `backend/testes`; `ComparativoFornecedores.test.js` no frontend.
+- Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.23_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_18-50.dump`.
