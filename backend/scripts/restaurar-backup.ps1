@@ -72,8 +72,14 @@ if ($Simular) {
 }
 
 $env:PGPASSWORD = $envVars["DB_PASS"]
+# O aviso "banco ... nao existe, ignorando" do dropdb --if-exists sai em stderr; no
+# PowerShell 5.1, com a saida de erro redirecionada (2>&1) e "Stop", ele virava
+# NativeCommandError e abortava a restauracao. Silencia o aviso no servidor e confere
+# so o codigo de saida ($LASTEXITCODE) dos programas externos, que ja e testado abaixo.
+$env:PGOPTIONS = "-c client_min_messages=warning"
 $temp = $null
 try {
+    $ErrorActionPreference = "Continue"
     if ($SubstituirProducao) {
         $seguranca = Join-Path $backendDir ("backups\antes-da-restauracao_" + (Get-Date -Format 'yyyy-MM-dd_HH-mm') + ".dump")
         & (Join-Path $pgBin "pg_dump.exe") @conexao -F c -f $seguranca $Banco
@@ -93,7 +99,7 @@ try {
         $sql = $Arquivo
         if ($Arquivo -match '\.zip$') {
             $temp = Join-Path $env:TEMP ("hm-restauracao-" + [guid]::NewGuid())
-            Expand-Archive -Path $Arquivo -DestinationPath $temp
+            Expand-Archive -Path $Arquivo -DestinationPath $temp -ErrorAction Stop
             $sql = (Get-ChildItem $temp -Filter *.sql | Select-Object -First 1).FullName
         }
         & (Join-Path $pgBin "psql.exe") @conexao -d $Banco -v ON_ERROR_STOP=1 -q -o NUL -f $sql
@@ -112,5 +118,6 @@ try {
     throw
 } finally {
     Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
+    Remove-Item Env:\PGOPTIONS -ErrorAction SilentlyContinue
     if ($temp) { Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue }
 }

@@ -2,9 +2,12 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
 import {
   Mail, Banknote, FolderOpen, Bot, RefreshCw, Play, Clock, CheckCircle2,
-  AlertTriangle, XCircle, Loader2, History, ChevronDown, ChevronUp, PlugZap,
+  AlertTriangle, XCircle, Loader2, History, ChevronDown, ChevronUp, PlugZap, DatabaseBackup,
 } from 'lucide-react';
-import { getRotinasIntegracoes, executarRotinaIntegracao, testarIAIntegracoes } from '../services/api';
+import {
+  getRotinasIntegracoes, executarRotinaIntegracao, testarIAIntegracoes,
+  getBackupIntegracoes, executarBackupIntegracoes,
+} from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { estilos } from '../components/ui/estilos';
 
@@ -215,6 +218,104 @@ function CartaoIA({ ia, testando, aoTestar }) {
   );
 }
 
+function tamanho(bytes) {
+  if (bytes == null) return '—';
+  return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+function haQuanto(horas) {
+  if (horas == null) return '';
+  if (horas < 1) return 'há menos de 1 hora';
+  if (horas < 48) return `há ${Math.round(horas)} h`;
+  return `há ${Math.floor(horas / 24)} dias`;
+}
+
+// null = não deu para conferir (rede fora do ar / destino não configurado)
+function SeloCopia({ ok, rotulo }) {
+  if (ok === true) return <Selo cor="#3fb95f" bg="#0a1a0f" borda="#1a4a26" titulo={`Cópia em ${rotulo} conferida`}>{rotulo}</Selo>;
+  if (ok === false) return <Selo cor="#e08080" bg="#1a0a0a" borda="#4a1a1a" titulo={`Sem cópia em ${rotulo}`}>sem {rotulo}</Selo>;
+  return <Selo cor="#999" bg="#151515" borda="#2a2a2a" titulo={`Não deu para conferir ${rotulo}`}>{rotulo}: ?</Selo>;
+}
+
+function CartaoBackup({ backup, rodando, aoExecutar }) {
+  const [verLista, setVerLista] = useState(false);
+  if (!backup) return null;
+  const ultimo = backup.ultimo;
+  const emAndamento = rodando || !!backup.emExecucao;
+
+  return (
+    <div style={cartao}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+        <div style={iconeCaixa}><DatabaseBackup size={17} /></div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ color: '#eee', fontWeight: 700, fontSize: 14 }}>Backup do banco</div>
+          <div style={{ color: 'var(--texto-3)', fontSize: 12, marginTop: 2 }}>
+            Automático {backup.agendado}, com cópia no servidor de arquivos e fora do prédio. "Fazer backup agora" gera um dump do banco na hora (sem as pastas de arquivos).
+          </div>
+        </div>
+        {backup.atrasado
+          ? <Selo cor="#e08080" bg="#1a0a0a" borda="#4a1a1a"><AlertTriangle size={11} />Atrasado</Selo>
+          : <Selo cor="#3fb95f" bg="#0a1a0f" borda="#1a4a26"><CheckCircle2 size={11} />Em dia</Selo>}
+      </div>
+
+      {backup.atrasado && (
+        <div style={{ fontSize: 12, color: '#e08080', marginBottom: 8 }}>
+          {ultimo
+            ? `O último backup foi ${haQuanto(backup.horasDesdeUltimo)} — a tarefa agendada das 02:00 pode não ter rodado. Faça um agora e confira o log em backend\\logs\\backup.log.`
+            : 'Nenhum backup deste banco encontrado na pasta backend\\backups. Faça um agora.'}
+        </div>
+      )}
+
+      {ultimo ? (
+        <>
+          <Linha rotulo="Último backup">{dataHora(ultimo.em)} · {tamanho(ultimo.tamanho)} {backup.horasDesdeUltimo != null && `(${haQuanto(backup.horasDesdeUltimo)})`}</Linha>
+          <Linha rotulo="Cópias">
+            <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap' }}>
+              <Selo cor="#3fb95f" bg="#0a1a0f" borda="#1a4a26">neste PC</Selo>
+              <SeloCopia ok={ultimo.copiaRede} rotulo="rede" />
+              {backup.destinos.externo ? <SeloCopia ok={ultimo.copiaExterna} rotulo="nuvem" /> : <Selo cor="#d9a53a" bg="#1a150a" borda="#4a3a1a" titulo="BACKUP_DESTINO_EXTERNO não definido no .env">nuvem: não configurada</Selo>}
+            </span>
+          </Linha>
+        </>
+      ) : <div style={{ fontSize: 12, color: 'var(--texto-3)', padding: '3px 0' }}>Nenhum backup encontrado.</div>}
+      <Linha rotulo="Guardados">{backup.totalLocal} neste PC (30 dias)</Linha>
+
+      {backup.backups?.length > 1 && (
+        <div style={{ marginTop: 6 }}>
+          <button onClick={() => setVerLista(v => !v)} style={btnTexto}>
+            <History size={12} /> {verLista ? 'Ocultar lista' : `Últimos ${backup.backups.length} backups`}
+          </button>
+          {verLista && (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: 6 }}>
+              <tbody>
+                {backup.backups.map(b => (
+                  <tr key={b.nome} style={{ borderTop: '1px solid #1e1e1e' }}>
+                    <td style={tdMini}>{dataHora(b.em)}</td>
+                    <td style={{ ...tdMini, textAlign: 'right' }}>{tamanho(b.tamanho)}</td>
+                    <td style={{ ...tdMini, textAlign: 'right' }}>
+                      <span style={{ display: 'inline-flex', gap: 4 }}>
+                        <SeloCopia ok={b.copiaRede} rotulo="rede" />
+                        {backup.destinos.externo && <SeloCopia ok={b.copiaExterna} rotulo="nuvem" />}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+        <button onClick={aoExecutar} disabled={emAndamento} style={{ ...btnPrimario, opacity: emAndamento ? 0.6 : 1, cursor: emAndamento ? 'wait' : 'pointer' }}>
+          {emAndamento ? <Loader2 size={14} style={{ animation: 'girar 1s linear infinite' }} /> : <Play size={14} />}
+          {emAndamento ? 'Fazendo backup…' : 'Fazer backup agora'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function Integracoes() {
   const { usuario } = useAuth();
   const ehAdmin = usuario?.role === 'admin';
@@ -222,6 +323,8 @@ export default function Integracoes() {
   const [carregando, setCarregando] = useState(true);
   const [executando, setExecutando] = useState({});
   const [testando, setTestando] = useState(false);
+  const [backup, setBackup] = useState(null);
+  const [fazendoBackup, setFazendoBackup] = useState(false);
   const timer = useRef(null);
 
   const carregar = useCallback(async (silencioso = false) => {
@@ -229,6 +332,8 @@ export default function Integracoes() {
     try {
       const res = await getRotinasIntegracoes();
       setDados(res.data);
+      // o backup é um cartão à parte: se falhar (rede fora do ar), o resto do painel segue
+      getBackupIntegracoes().then(r => setBackup(r.data)).catch(() => {});
     } catch (err) {
       if (!silencioso) toast.error(err.response?.data?.erro || 'Erro ao carregar as integrações');
     } finally {
@@ -267,6 +372,24 @@ export default function Integracoes() {
     }
   }
 
+  async function fazerBackup() {
+    if (!window.confirm('Fazer um backup do banco agora? Leva alguns segundos e não interrompe o sistema.')) return;
+    setFazendoBackup(true);
+    try {
+      const res = await executarBackupIntegracoes();
+      setBackup(res.data.situacao);
+      if (res.data.avisos?.length) toast(`Backup feito, com aviso: ${res.data.avisos[0].replace(/^\S+ \S+ /, '')}`, { icon: '⚠️', duration: 9000 });
+      else toast.success(`Backup concluído: ${res.data.arquivo}`);
+    } catch (err) {
+      if (err.response?.data?.situacao) setBackup(err.response.data.situacao);
+      if (err.code === 'ECONNABORTED') toast('O backup continua no servidor — atualize o painel em instantes.', { icon: '⏳' });
+      else toast.error(err.response?.data?.erro || 'Erro ao fazer o backup');
+    } finally {
+      setFazendoBackup(false);
+      getBackupIntegracoes().then(r => setBackup(r.data)).catch(() => {});
+    }
+  }
+
   async function testarIA() {
     setTestando(true);
     try {
@@ -301,6 +424,13 @@ export default function Integracoes() {
         </div>
       )}
 
+      {backup?.atrasado && (
+        <div style={{ ...cartao, padding: '10px 14px', marginBottom: 14, borderColor: '#4a1a1a', color: '#e08080', fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <AlertTriangle size={14} />
+          {backup.ultimo ? `O último backup do banco foi ${haQuanto(backup.horasDesdeUltimo)}. Veja o cartão "Backup do banco" abaixo.` : 'Nenhum backup do banco encontrado. Veja o cartão "Backup do banco" abaixo.'}
+        </div>
+      )}
+
       {carregando && !dados && <div style={{ color: 'var(--texto-3)', padding: 30, textAlign: 'center' }}>Carregando...</div>}
 
       {dados && (
@@ -308,6 +438,7 @@ export default function Integracoes() {
           {dados.rotinas.map(r => (
             <CartaoRotina key={r.chave} rotina={r} executando={!!executando[r.chave]} aoExecutar={executar} />
           ))}
+          <CartaoBackup backup={backup} rodando={fazendoBackup} aoExecutar={fazerBackup} />
           <CartaoIA ia={dados.ia} testando={testando} aoTestar={testarIA} />
         </div>
       )}
