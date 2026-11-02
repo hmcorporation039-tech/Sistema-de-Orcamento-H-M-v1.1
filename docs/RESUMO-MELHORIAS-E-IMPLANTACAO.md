@@ -726,3 +726,14 @@ Só código, sem migração. Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-b
 - Não cria proposta de renovação (ideia futura). Não usa IA.
 - Testes: `vencimentos` e `rotinas` em `backend/testes` (a parte do banco só roda no v2).
 - Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.18_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_17-11.dump`.
+
+### 02/11/2026: versão 2.19.0 — margem real por obra (Pix sem obra)
+**Migração de banco** (idempotente, roda sozinha ao reiniciar o backend): `2.0-32-regras-movimento-obra.js` (tabela `regras_movimento_obra`). Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-backend.bat` (administrador) e Ctrl+F5.
+- **O problema:** a conta da margem por obra já existia (orçado − realizado), mas só conta o que está ligado à obra, e nenhum dos 701 Pix estava. Toda obra aparecia com margem de quase 100%.
+- **Aviso na lista de Obras (só administrador):** mostra quanto foi recebido e pago sem obra e abre o painel "Pix sem obra", com os lançamentos agrupados pelo nome do pagador ou favorecido.
+- **Ligar:** escolha a obra e clique em Ligar; "só um período" limita por data (útil quando o mesmo cliente tem várias obras, como o Hospital Santa Lucia); "lembrar" faz os próximos Pix desse nome já entrarem ligados (vale só para lançamentos criados depois da regra); "Não é de obra" tira da lista despesas da empresa.
+- **Sugestão só com sinal seguro:** o prestador tem contrato em uma única obra, ou o pagador é cliente de uma única obra em andamento. Nada é ligado sem a confirmação do administrador, exceto por regra que ele mesmo criou.
+- **Cobertura esperada:** poucos grupos têm sugestão; o trabalho é o administrador ligar uma vez os ~20 nomes maiores. Confira o período antes de ligar uma sugestão por contrato curto (ex.: prestador com contrato de um mês e pagamentos de vários meses).
+- **Não feito:** custo previsto × realizado por material; desconto do imposto da nota na margem. Não usa IA.
+- Testes: `atribuicaoObras` em `backend/testes` (a parte do banco só roda no v2).
+- Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.19_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_17-24.dump`.
