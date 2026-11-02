@@ -194,7 +194,7 @@ async function revisarProposta(id, db = pool) {
     for (const r of rows) custosDescricao[r.nome] = r.custo;
   }
   const { rows: eventosEmail } = await db.query(
-    "SELECT criado_em, detalhes FROM proposta_eventos WHERE proposta_id = $1 AND acao = 'email' ORDER BY criado_em DESC", [id]);
+    "SELECT criado_em, detalhes FROM proposta_eventos WHERE proposta_id = $1 AND acao IN ('email', 'envio_manual') ORDER BY criado_em DESC", [id]);
   return revisar({ proposta, secoes, itens, faixas, custos, faixasDescricao, custosDescricao, eventosEmail });
 }
 
