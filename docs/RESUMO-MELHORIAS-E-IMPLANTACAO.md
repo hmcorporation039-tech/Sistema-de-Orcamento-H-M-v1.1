@@ -795,3 +795,13 @@ Só código, sem migração. Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-b
 - **Banco:** migração `2.0-37-vencimentos-empresa` (idempotente): colunas `tipo` e `origem` em `vencimentos_laudos`. Acontece sozinha ao reiniciar o backend.
 - Testes: `vencimentos` em `backend/testes` (12 verificações); `VencimentosLaudos.test.js` no frontend.
 - Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.25_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_19-31.dump`.
+
+### 02/11/2026: versão 2.26.0 — proposta de renovação do laudo
+
+- **O que muda:** no cartão "Vencimentos" do painel inicial, o laudo que entra na janela de 60 dias (ou que já venceu) ganha o botão "Proposta de renovação". Ele cria um rascunho de proposta Ativa com o cliente e a obra do laudo, o local da obra, o BDI e os impostos padrão e um item de mão de obra "Renovação do laudo de <disciplina>" (1 vb, a cotar), com o escopo citando as datas do laudo.
+- **Preço:** na primeira renovação o valor fica zerado (o sistema não inventa preço). Depois que uma renovação é aprovada com o item confirmado, a seguinte vem com esse valor sugerido, tirado do histórico de preços vendidos, sem IA; continua "a cotar" até o engenheiro confirmar.
+- **Comportamento:** o segundo clique abre a mesma proposta enquanto ela estiver Ativa; aprovada, recusada ou cancelada, o clique seguinte cria outra. Só vale para laudos. Laudo sem cliente pede o cliente antes. Não envia nada ao cliente.
+- **Limite:** não copia itens da proposta original do laudo (o laudo do sistema não guarda qual proposta o originou).
+- **Banco:** migração `2.0-38-proposta-renovacao` (idempotente): coluna `proposta_renovacao_id` em `vencimentos_laudos`. Acontece sozinha ao reiniciar o backend.
+- Testes: `propostaRenovacao` em `backend/testes` (5 verificações); 2 casos novos em `VencimentosLaudos.test.js` no frontend.
+- Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.26_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_19-49.dump`.
