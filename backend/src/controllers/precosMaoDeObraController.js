@@ -91,7 +91,7 @@ async function pesquisar(req, res) {
   try {
     const { rows: [item] } = await pool.query('SELECT codigo, descricao, unidade FROM precos_mao_de_obra_referencia WHERE codigo = $1', [req.params.codigo]);
     if (!item) return res.status(404).json({ erro: 'Serviço não encontrado' });
-    const r = await pesquisarReferenciaMaoDeObra(item.descricao, item.unidade, segmento);
+    const r = await pesquisarReferenciaMaoDeObra(item.descricao, item.unidade, segmento, { fresco: req.query.fresco === '1' });
     const { rows: [atual] } = await pool.query(
       `UPDATE precos_mao_de_obra_referencia
          SET valor_${segmento} = $1, fonte_${segmento} = $2, link_${segmento} = $3, ofertas_${segmento} = $4, data_${segmento} = NOW(), atualizado_em = NOW()

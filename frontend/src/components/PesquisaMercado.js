@@ -11,7 +11,9 @@ import { formatarMoeda } from '../utils/format';
 // Começa recolhida só quando a pesquisa veio salva (recolhidaInicial); uma
 // pesquisa feita agora nasce expandida. Sem `onUsarPreco` (modo leitura), o
 // botão "Usar R$ X" não aparece — só a média e as ofertas.
-export default function BlocoPesquisaMercado({ pesquisa, onUsarPreco, precoAtual }) {
+// `onPesquisarDeNovo`: só aparece quando a pesquisa foi reaproveitada do histórico (cache de
+// 7 dias) — pede uma consulta nova na web, ignorando a guardada.
+export default function BlocoPesquisaMercado({ pesquisa, onUsarPreco, precoAtual, onPesquisarDeNovo }) {
   const [recolhida, setRecolhida] = useState(!!pesquisa?.recolhidaInicial);
   if (!pesquisa?.resultado) return null;
   const fonteLabel = pesquisa.fonte === 'claude' ? 'Claude, API paga'
@@ -31,13 +33,20 @@ export default function BlocoPesquisaMercado({ pesquisa, onUsarPreco, precoAtual
         <b style={{ color: '#c9a227' }}>Pesquisa de mercado ({fonteLabel} — confira antes de usar):</b>
         {pesquisa.pesquisadoEm && (
           <span style={{ color: 'var(--texto-3)', fontWeight: 400 }}>
-            {' '}— {pesquisa.deCache ? 'reaproveitada do histórico, ' : pesquisa.daAnalise ? 'salva na análise, ' : ''}feita em {new Date(pesquisa.pesquisadoEm).toLocaleString('pt-BR')}
+            {' '}— {pesquisa.deCache ? 'reaproveitada do histórico, ' : pesquisa.daAnalise ? 'salva na análise, ' : ''}feita em {new Date(pesquisa.pesquisadoEm).toLocaleString('pt-BR')}{idadeEmDias(pesquisa.pesquisadoEm)}
           </span>
         )}
         <span style={{ marginLeft: 'auto', color: 'var(--texto-3)', fontSize: 12, textDecoration: 'underline', whiteSpace: 'nowrap' }}>
           {recolhida ? 'expandir' : 'recolher'}
         </span>
       </div>
+      {pesquisa.deCache && onPesquisarDeNovo && (
+        <div style={{ marginTop: 8 }}>
+          <button type="button" onClick={onPesquisarDeNovo} style={btnUsarPreco} title="Ignora a pesquisa guardada e consulta a web de novo (leva de 30 s a 1 min)">
+            Pesquisar de novo
+          </button>
+        </div>
+      )}
       {sugerido > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
           {onUsarPreco && (
@@ -73,6 +82,12 @@ export default function BlocoPesquisaMercado({ pesquisa, onUsarPreco, precoAtual
       ))}
     </div>
   );
+}
+
+// " (há 3 dias)" para preço que não é de hoje: preço velho não pode passar por novo
+function idadeEmDias(iso) {
+  const dias = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  return dias >= 1 ? ` (há ${dias} ${dias === 1 ? 'dia' : 'dias'})` : '';
 }
 
 // Monta, a partir da resposta de POST /pesquisa-mercado, o objeto que o bloco

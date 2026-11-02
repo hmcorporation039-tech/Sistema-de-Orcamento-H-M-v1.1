@@ -1,4 +1,8 @@
 const ia = require('./ia');
+const iaCache = require('./iaCache');
+
+// versão no nome: se o roteiro abaixo mudar, subir o número para não reaproveitar resposta antiga
+const NOME_CACHE = 'equipamentos_projeto v1';
 
 // Extrai a lista de equipamentos/materiais técnicos citados no projeto
 // (cada um com um código REF. de fabricante) usando a IA para reorganizar
@@ -18,13 +22,18 @@ Extraia APENAS os itens de equipamento/material que tenham um código REF. assoc
 Responda em JSON: {"itens":[{"descricao":"...","referencia":"..."}]}`;
 
   try {
-    const { json: resultado } = await ia.perguntarJSON(prompt, { documento: textoCompleto, finalidade: 'equipamentos do projeto' });
-    const itens = Array.isArray(resultado?.itens) ? resultado.itens : [];
-    return {
-      itens: itens
-        .filter(it => typeof it?.descricao === 'string' && it.descricao.trim().length > 3)
-        .map(it => ({ descricao: it.descricao.trim(), referencia_fabricante: it.referencia ? String(it.referencia) : null })),
-    };
+    // O mesmo texto de projeto (reenvio, reanálise) não gasta IA de novo: 90 dias.
+    // Lista vazia ou erro da IA não são guardados (ver services/iaCache.js).
+    const { valor, deCache } = await iaCache.comCache(NOME_CACHE, textoCompleto, { ttlDias: 90 }, async () => {
+      const { json: resultado } = await ia.perguntarJSON(prompt, { documento: textoCompleto, finalidade: 'equipamentos do projeto' });
+      const itens = Array.isArray(resultado?.itens) ? resultado.itens : [];
+      return {
+        itens: itens
+          .filter(it => typeof it?.descricao === 'string' && it.descricao.trim().length > 3)
+          .map(it => ({ descricao: it.descricao.trim(), referencia_fabricante: it.referencia ? String(it.referencia) : null })),
+      };
+    });
+    return deCache ? { ...valor, deCache: true } : valor;
   } catch (err) {
     return { itens: [], aviso: `Extração de equipamentos por IA falhou: ${err.message}` };
   }

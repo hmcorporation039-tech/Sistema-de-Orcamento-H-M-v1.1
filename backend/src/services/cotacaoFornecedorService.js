@@ -7,6 +7,7 @@ const { lerDocumentoCotacao, encerrarOcr, VERSAO_LEITOR, EXTENSOES } = require('
 const { carregarIndice, registrarItemCotacao, obterMargemPadrao } = require('./catalogoMateriais');
 const { classificarPendentes } = require('./classificacaoMateriais');
 const { executarComTrava } = require('./travaJob');
+const iaCache = require('./iaCache');
 
 // Pastas onde o usuário salva os orçamentos/cotações de fornecedor recebidos
 // (WhatsApp etc.): PDF com texto, PDF escaneado ou foto (PNG/JPG). A local
@@ -130,6 +131,7 @@ async function processarArquivo(client, { pasta, nome }, { resumo, margem, indic
     leitura = { itens: [], metodo: null, avisos: [`erro na leitura: ${err.message}`] };
   }
   if (leitura.usouIA) resumo.leiturasPorIA++;
+  await iaCache.contarLeituraCotacao(leitura);
 
   await client.query('BEGIN');
   try {

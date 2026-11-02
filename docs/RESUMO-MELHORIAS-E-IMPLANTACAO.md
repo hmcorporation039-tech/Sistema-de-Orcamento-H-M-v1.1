@@ -626,3 +626,12 @@ Instalada em produção em 02/11/2026 (pedido do usuário: "mande tudo para a pr
 - Validado na homologação real da Receita (XML e assinatura aceitos; chave inexistente devolve E1831). O caminho de sucesso (201) ainda não foi exercitado, porque o sistema não emite NFS-e e não havia nota de teste.
 - Para ligar na produção: pôr `NFSE_CANCELAMENTO_DIRETO=1` no `.env` e reiniciar o backend (deixar `NFSE_AMBIENTE=homologacao` até testar). Cancelar com `NFSE_AMBIENTE=producao` é irreversível.
 - Backup antes da instalação em `C:\HM-Engenharia\Backups\*antes-v2.8*`.
+
+### 02/11/2026: versão 2.9.0 — cache de IA, SINAPI local do DF e plano de melhorias
+Instalada em produção em 02/11/2026 (pedido do usuário: reavaliar o item 1 do plano, corrigir e subir tudo). Plano completo em `docs/PLANO-PROXIMAS-MELHORIAS.md`.
+- **Cache das chamadas à IA** (`services/iaCache.js`, migração 2.0-26): a mesma entrada não gasta IA de novo (lista de equipamentos do projeto: 90 dias; pesquisa de mercado: 7 dias, eram 48 h). A pesquisa mostra "há N dias" e o botão **Pesquisar de novo** força uma consulta nova. Resposta vazia ou com erro não é guardada; resposta vencida é apagada sozinha (uma vez por dia).
+- **Contador no painel** (Admin → Integrações → Inteligência artificial → Cache): chamadas à IA evitadas, taxa e respostas guardadas; inclui as leituras de cotação de fornecedor feitas só com leitores locais (`leitura_cotacao`).
+- **SINAPI local** (migração 2.0-25, `services/sinapi.js`, `scripts/importar-sinapi.js`): tabela de insumos e composições do **DF**, referência 09/2026 (Caixa), regime sem desoneração por padrão (ajustável em `configuracoes`: `sinapi_uf`, `sinapi_regime`). Importada na produção: 9.756 insumos e 21.198 composições. Reimportar: `node scripts/importar-sinapi.js "<SINAPI_Referência_AAAA_MM.xlsx>" DF`.
+- **Backup** em Integrações (botão "Fazer backup agora") unificado com a versão de teste.
+- Para carregar o código novo: `C:\HM-Engenharia\hm-eng\reiniciar-backend.bat` (administrador) e Ctrl+F5. O frontend novo já está em `frontend/build` (anterior em `build-2.8.0-anterior`).
+- Backup antes da instalação: `C:\HM-Engenharia\Backups\hm_orcamentos_PRODUCAO_antes-v2.9_2026-11-02.dump`.

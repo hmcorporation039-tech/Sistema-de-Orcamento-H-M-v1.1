@@ -202,7 +202,8 @@ export const gerarOrcamentoDoLaudo = (id, modo) => api.post(`/laudos/${id}/gerar
 
 // ── PESQUISA DE MERCADO ───────────────────────────────────────────────
 // a pesquisa pelo Claude Max (busca na web real) leva de 30 s a 1 min
-export const pesquisarPrecoMercado = (descricao, tipo = 'material') => api.post('/pesquisa-mercado', { descricao, tipo }, { timeout: 300000 });
+// fresco: ignora a pesquisa guardada (cache de 7 dias) e consulta a web de novo
+export const pesquisarPrecoMercado = (descricao, tipo = 'material', fresco = false) => api.post('/pesquisa-mercado', { descricao, tipo, ...(fresco ? { fresco: true } : {}) }, { timeout: 300000 });
 
 // ── PREÇOS DE REFERÊNCIA DE MÃO DE OBRA (admin) ─────────────────────────
 export const getPrecosMaoDeObra = () => api.get('/precos-mao-de-obra');

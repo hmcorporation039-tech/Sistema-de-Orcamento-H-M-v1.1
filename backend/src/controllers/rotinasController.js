@@ -2,10 +2,11 @@
 // (services/rotinas.js) e o estado da IA (services/ia.js), numa visão única.
 const rotinas = require('../services/rotinas');
 const ia = require('../services/ia');
+const iaCache = require('../services/iaCache');
 
 async function listar(req, res) {
   const dados = await rotinas.statusRotinas();
-  res.json({ ...dados, ia: ia.status(), agora: new Date().toISOString() });
+  res.json({ ...dados, ia: ia.status(), iaCache: await iaCache.situacao(), agora: new Date().toISOString() });
 }
 
 // Roda a rotina na hora (mesma execução do horário automático, com registro).

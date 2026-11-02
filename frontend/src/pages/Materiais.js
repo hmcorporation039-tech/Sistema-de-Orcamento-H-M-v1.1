@@ -136,10 +136,12 @@ export default function Materiais() {
       toast.error('Preencha a descrição antes de pesquisar');
       return;
     }
+    // 2º clique sobre uma pesquisa reaproveitada do histórico (válida por 7 dias) consulta a web de novo
+    const refazer = !!pesquisaMercado?.deCache;
     setPesquisaMercado({ carregando: true });
     try {
-      const res = await pesquisarPrecoMercado(form.descricao);
-      setPesquisaMercado({ resultado: res.data.resultado });
+      const res = await pesquisarPrecoMercado(form.descricao, 'material', refazer);
+      setPesquisaMercado({ resultado: res.data.resultado, deCache: !!res.data.deCache, pesquisadoEm: res.data.pesquisadoEm });
     } catch (err) {
       setPesquisaMercado({ erro: err.response?.data?.erro || 'Erro ao pesquisar preço de mercado' });
     }
@@ -584,6 +586,11 @@ export default function Materiais() {
                 {pesquisaMercado?.resultado && (
                   <div style={{ marginTop: 8, padding: 10, background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, fontSize: 12, color: 'var(--texto-2)', whiteSpace: 'pre-wrap', maxHeight: 180, overflowY: 'auto' }}>
                     <b style={{ color: '#c9a227' }}>Pesquisa de mercado (IA, confira antes de usar):</b><br />
+                    {pesquisaMercado.deCache && (
+                      <div style={{ color: 'var(--texto-3)', marginBottom: 4 }}>
+                        Reaproveitada do histórico, feita em {new Date(pesquisaMercado.pesquisadoEm).toLocaleString('pt-BR')}. Clique em "Pesquisar preço de mercado" de novo para consultar a web outra vez.
+                      </div>
+                    )}
                     {pesquisaMercado.resultado}
                   </div>
                 )}
