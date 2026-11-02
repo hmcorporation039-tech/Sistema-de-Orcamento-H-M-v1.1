@@ -45,7 +45,7 @@ const { CAD } = require('../../config/caminhos');
       try {
         const { propostaDeMapa, aplicarMapa, aplicarConfirmacoes, origemDaLinha, legendaDoProjeto, notasDeAltura } = require(path.join(CAD, 'pontosDoDesenho.js'));
         // o escritório (responsável técnico do carimbo) escolhe quais notas aprendidas valem para este desenho
-        escritorio = chaveEscritorio(carimbo(projeto.texto));
+        try { escritorio = chaveEscritorio(carimbo(projeto.texto)); } catch { escritorio = ''; } // sem carimbo legível o mapa sai igual, só sem o costume do escritório
         const mapa = aplicarConfirmacoes(propostaDeMapa(arq, { aprendidos: w.aprendidos || [], notasAprendidas: w.notasAprendidas || [], escritorio }), w.confirmados || []);
         const { pontos } = aplicarMapa(arq, mapa);
         // o mapa vai junto (tela de confirmação): cada linha com a origem do tipo; trechos só com o resumo

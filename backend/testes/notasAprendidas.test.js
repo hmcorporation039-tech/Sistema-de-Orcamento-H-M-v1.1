@@ -51,6 +51,12 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
     assert.deepStrictEqual(notasDeAltura(arq).map(n => [n.simbolo, n.altura_m]), [['HM-ELE-TOMADA-ALTA', 2.2], ['HM-ELE-INTERRUPTOR', 1.1]]);
   });
 
+  await caso('carimbo sem responsável não herda o costume de ninguém (nem do grupo "sem escritório")', async () => {
+    const aprendidas = [{ escritorio: '', simbolo: 'HM-ELE-TOMADA-BAIXA', altura_m: 0.3, texto: 'x' }];
+    const r = linhaTomada(await lerArquivoCad(desenho({ responsavel: '' }), 'sem.dxf', { notasAprendidas: aprendidas }));
+    assert.strictEqual(r.altura_m, undefined);
+  });
+
   const BANCO_DE_TESTE = 'hm_orcamentos_v2';
   if (process.env.DB_NAME !== BANCO_DE_TESTE) {
     console.log('notasAprendidas: parte do banco pulada (DB_NAME=' + (process.env.DB_NAME || '(vazio)') + ' — só roda em ' + BANCO_DE_TESTE + ')');
@@ -70,6 +76,16 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
         assert.deepStrictEqual((await dele()).map(x => [x.simbolo, x.altura_m]), [['HM-ELE-TOMADA-BAIXA', 0.3]]);
         await notas.registrar([{ ...n[0], altura_m: 0.4 }], ESC, 'p3.dxf'); // outro desenho disse outra altura
         assert.strictEqual((await dele()).length, 0, 'com conflito a sugestão sai do uso');
+      });
+
+      await caso('o mesmo arquivo analisado de novo não conta como outro desenho; escritório vazio não grava', async () => {
+        await limpar();
+        const n = [{ simbolo: 'HM-ELE-TOMADA-BAIXA', altura_m: 0.3, texto: 't' }];
+        await notas.registrar(n, ESC, 'igual.dxf'); await notas.registrar(n, ESC, 'igual.dxf');
+        assert.strictEqual((await dele()).length, 0, 'duas análises do mesmo arquivo ainda são um desenho só');
+        await notas.registrar(n, ESC, 'outro.dxf');
+        assert.strictEqual((await dele()).length, 1);
+        assert.strictEqual(await notas.registrar(n, '', 'z.dxf'), 0);
       });
 
       await caso('o aprendido do escritório pré-preenche a altura do próximo desenho dele, e só dele', async () => {

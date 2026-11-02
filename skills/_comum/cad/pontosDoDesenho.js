@@ -268,7 +268,8 @@ function propostaDeMapa(arq, opcoes = {}) {
     if (!simbolo || !DE_PAREDE.test(simbolo)) return null;
     const d = notasDaqui.find(n => n.simbolo === simbolo);
     if (d) return { altura_m: d.altura_m, de: 'nota', texto: d.texto };
-    const a = (opcoes.notasAprendidas || []).find(n => n.simbolo === simbolo && (n.escritorio || '') === (opcoes.escritorio || ''));
+    if (!opcoes.escritorio) return null; // carimbo sem responsável: não dá para saber de quem é o costume
+    const a = (opcoes.notasAprendidas || []).find(n => n.simbolo === simbolo && n.escritorio === opcoes.escritorio);
     return a ? { altura_m: a.altura_m, de: 'nota_aprendida', texto: a.texto } : null;
   };
   const simbolos = [];

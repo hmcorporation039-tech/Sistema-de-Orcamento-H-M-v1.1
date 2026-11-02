@@ -173,7 +173,14 @@ async function executarAnalise(req, res, arquivos, corpo, opcoes = {}) {
     // o que foi LIDO (antes de qualquer edição) fica guardado nas análises com mapa do CAD: é a base para copiar edições num reprocessamento
     const temMapa = (resultado.dadosExtraidos || []).some(d => d?.mapa_cad);
     const leituraOriginal = temMapa ? { servicos: resultado.servicos || [], materiais: resultado.materiais || [] } : null;
-    const heranca = opcoes.analiseAnterior ? herdarEdicoes(resultado, opcoes.analiseAnterior) : null;
+    let heranca = null;
+    if (opcoes.analiseAnterior) {
+      // copiar as edições é um extra: se falhar, a análise nova sai igual e a tela avisa que nada foi copiado
+      try { heranca = herdarEdicoes(resultado, opcoes.analiseAnterior); } catch (e) {
+        console.error('[reprocessar] edições não copiadas:', e.message);
+        heranca = { copiadas: false, motivo: 'Não consegui copiar as edições da análise anterior; revise quantidades e valores.' };
+      }
+    }
 
     // análise e arquitetura numa transação só: antes, uma falha no segundo
     // INSERT deixava a análise gravada sem a base do 3D/compatibilização
@@ -222,7 +229,6 @@ async function executarAnalise(req, res, arquivos, corpo, opcoes = {}) {
         [ant.funcionamento || null, Array.isArray(ant.pontos_por_disciplina) && ant.pontos_por_disciplina.length ? JSON.stringify(ant.pontos_por_disciplina) : null, ant.cliente_nome || '', ins.rows[0].id]);
       ins.rows[0] = atualizada.rows[0];
     }
-
 
     // DWG/DXF com arquitetura: vira a base do modelo 3D desta análise (2.3)
     if (resultado.arquiteturaCad) {

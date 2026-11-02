@@ -6,7 +6,6 @@
 //   aprenderConfirmadas / esquecer      → as alturas que o engenheiro confirmou (ou desfez) no mapa
 // É sempre sugestão: o tipo e a altura só contam no orçamento depois de confirmados.
 const pool = require('../config/database');
-const { chaveEscritorio } = require('../utils/escritorioDoProjeto');
 
 async function carregar(executor = pool) {
   try {
@@ -23,6 +22,7 @@ async function carregar(executor = pool) {
 // Mesma nota e mesma altura em outro arquivo reforça (vezes + 1); outra altura conta conflito (sai do uso até alguém conferir)
 async function registrar(notas, escritorio, arquivo, executor = pool) {
   let gravadas = 0;
+  if (!escritorio) return 0; // sem responsável no carimbo não há de quem aprender
   const vistos = new Set();
   for (const n of notas || []) {
     if (!n?.simbolo || !(Number(n.altura_m) > 0) || vistos.has(n.simbolo)) continue;
@@ -31,10 +31,11 @@ async function registrar(notas, escritorio, arquivo, executor = pool) {
       await executor.query(
         `INSERT INTO cad_notas_aprendidas (escritorio, simbolo, altura_m, texto, arquivo) VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (escritorio, simbolo) DO UPDATE SET
-           vezes = cad_notas_aprendidas.vezes + CASE WHEN cad_notas_aprendidas.altura_m = EXCLUDED.altura_m THEN 1 ELSE 0 END,
-           conflitos = cad_notas_aprendidas.conflitos + CASE WHEN cad_notas_aprendidas.origem <> 'usuario' AND cad_notas_aprendidas.altura_m <> EXCLUDED.altura_m THEN 1 ELSE 0 END,
+           vezes = cad_notas_aprendidas.vezes + CASE WHEN cad_notas_aprendidas.altura_m = EXCLUDED.altura_m AND cad_notas_aprendidas.arquivo IS DISTINCT FROM EXCLUDED.arquivo THEN 1 ELSE 0 END,
+           conflitos = cad_notas_aprendidas.conflitos + CASE WHEN cad_notas_aprendidas.origem <> 'usuario' AND cad_notas_aprendidas.altura_m <> EXCLUDED.altura_m AND cad_notas_aprendidas.arquivo IS DISTINCT FROM EXCLUDED.arquivo THEN 1 ELSE 0 END,
+           arquivo = EXCLUDED.arquivo,
            atualizado_em = NOW()`,
-        [escritorio || '', n.simbolo, Number(n.altura_m), String(n.texto || '').slice(0, 200), String(arquivo || '').slice(0, 200)]);
+        [escritorio, n.simbolo, Number(n.altura_m), String(n.texto || '').slice(0, 200), String(arquivo || '').slice(0, 200)]);
       gravadas++;
     } catch (e) { console.warn('[notasAprendidas] nota não gravada:', e.message); }
   }
@@ -77,4 +78,4 @@ async function esquecer(alteradas, escritorio, executor = pool) {
   return removidas;
 }
 
-module.exports = { chaveEscritorio, carregar, registrar, aprenderConfirmadas, esquecer };
+module.exports = { carregar, registrar, aprenderConfirmadas, esquecer };
