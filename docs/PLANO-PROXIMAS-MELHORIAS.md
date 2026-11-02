@@ -14,7 +14,7 @@ migração idempotente (CLAUDE.md), backup antes de ir para a produção e só v
 | 5 | Histórico de preços vendidos — **feito no v2 (02/11)** | 1 dia | Não | — |
 | 6 | Tabela SINAPI local (DF) | **feito no v2 (02/11)**, com tela em Integrações; falta ligar à mão de obra | Regime (com/sem desoneração) | importar a planilha todo mês |
 | 9 | Atestado de capacidade técnica (corpo do texto) — **feito no v2 (02/11)** | 1–2 dias | Não | nota fiscal emitida |
-| 7 | Classificador local de materiais | 2 dias | Não | ~500 itens confirmados (item 5 ajuda) |
+| 7 | Classificador local de materiais — **feito no v2 (02/11)** | 2 dias | Não | ~500 itens confirmados (item 5 ajuda) |
 | 8 | Aprendizado de notas do DWG | 2 dias | Não | tela do item 3 (para corrigir) |
 
 ---
@@ -89,11 +89,10 @@ em projetos parecidos: custo e tempo à toa.
 - Rotina mensal: a Caixa publica por volta do dia 10 (a de 09/2026 saiu em 09/10); baixar o zip `SINAPI-AAAA-MM-formato-xlsx.zip` em caixa.gov.br e rodar `node scripts/importar-sinapi.js "<SINAPI_Referência_AAAA_MM.xlsx>" DF`. Dá para agendar o download.
 - Levar para a produção (migração + importação lá) só com o OK do Márcio.
 
-## 7. Classificador local de materiais
-**Como:** treinar sobre os itens já confirmados (`aprendizadoMateriais.js`, `classificacaoMateriais.js`); primeiro kNN sobre termos, sem dependência nova; IA só quando a confiança for baixa.
-**Medir antes de ligar:** separar 20 % dos itens, medir acerto; só substitui a IA se passar de ~90 %.
-**Risco:** classificar errado em silêncio → abaixo do limite de confiança, volta para a IA.
-
+## 7. Classificador local de materiais  (feito no v2, 02/11/2026)
+**Achado ao medir (como no item 2):** o sistema já classificava sem IA (NCM → material parecido → palavras-chave) e só **1,6 %** dos itens chegavam à IA. O ganho não está em chamar menos a IA, e sim em **errar menos em silêncio**: com 20 sorteios de 80 % treino / 20 % teste sobre os 521 materiais já classificados, a ordem antiga acertava **91,7 %** do que respondia, e o NCM sozinho só **89,1 %** (um mesmo NCM serve a categorias diferentes, ex.: cabo de cobre é elétrica e é rede).
+**Feito:** `utils/classificadorKnn.js` (TF-IDF + trigramas + 5 vizinhos, com confiança; sem dependência nova), ligado em `categoriaLocal` como etapa 0 com corte de confiança 0,5 (`CORTE_KNN`), e o **NCM passou para a última etapa**. Nova ordem: kNN confiante → material parecido (≥ 0,5) → palavras-chave → NCM → IA. Resultado medido: o kNN responde ~64 % dos itens e acerta ~97 % do que responde; o conjunto passou de 91,7 % para **~96,4 %** de acerto, com a IA no mesmo ~1,6 %. `scripts/avaliar-classificador.js [sorteios]` repete a medição quando quiser (só lê o banco); `testes/classificadorMateriais.test.js` trava o acerto do kNN em ≥ 92 % e proíbe o conjunto de acertar menos que sem ele. O contador de Integrações recebeu `classificacao_material` (item classificado sem IA = chamada evitada; item enviado à IA = chamada).
+**Limites:** o catálogo ensina o classificador, então um erro antigo ensina o erro (o que o Márcio corrigir na tela passa a valer); abaixo de 20 materiais classificados o kNN não responde. Material que o classificador não resolve continua indo para a IA em lote, como antes.
 ## 8. Aprendizado de notas do DWG
 **Como:** extrair da legenda e das notas (texto do desenho) padrões como "a X cm do piso", guardar por projetista/escritório em `cad_notas_aprendidas`, aplicar como sugestão (não como verdade) no mapa do item 3.
 **Depende do item 3:** a correção do engenheiro é o que valida o padrão.
