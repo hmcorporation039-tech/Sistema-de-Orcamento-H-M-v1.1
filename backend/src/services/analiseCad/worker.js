@@ -4,6 +4,7 @@
 // Entrada (workerData): { buffer, nome, reLayerLinha (fonte da regex) }
 //                         aprendidos (legenda de projetos anteriores: cad_simbolos_aprendidos)
 //                         confirmados (tipos conferidos pelo engenheiro no mapa do CAD, desta análise)
+//                         notasAprendidas (alturas que o escritório costuma escrever nas notas: cad_notas_aprendidas)
 // Saída (postMessage): { ok, dxf, origem, versao, arquitetura, projeto, desenho, avisoUnidade } ou { ok: false, erro }
 const path = require('path');
 const { parentPort, workerData } = require('worker_threads');
@@ -16,6 +17,8 @@ const { CAD } = require('../../config/caminhos');
     const { lerArquitetura } = require(path.join(CAD, 'arquitetura.js'));
     const { lerProjetoDxf } = require(path.join(CAD, 'projetoDxf.js'));
     const { RE_TEXTO_CANDIDATO } = require('./medidasInfra');
+    const { carimbo } = require('../../utils/leitoresTabelaProjeto');
+    const { chaveEscritorio } = require('../../utils/escritorioDoProjeto');
     const w = workerData;
     const { texto, origem, versao } = await textoDxfDoArquivo(Buffer.from(w.buffer), w.nome);
     let arq = null;
@@ -37,14 +40,17 @@ const { CAD } = require('../../config/caminhos');
     // (skills/_comum/cad/pontosDoDesenho.js) — pela layer, pela medida e pela LEGENDA da
     // prancha (tipo e altura), com o que o sistema já aprendeu de projetos anteriores
     let desenho = null;
+    let escritorio = '';
     if (arq) {
       try {
-        const { propostaDeMapa, aplicarMapa, aplicarConfirmacoes, origemDaLinha, legendaDoProjeto } = require(path.join(CAD, 'pontosDoDesenho.js'));
-        const mapa = aplicarConfirmacoes(propostaDeMapa(arq, { aprendidos: w.aprendidos || [] }), w.confirmados || []);
+        const { propostaDeMapa, aplicarMapa, aplicarConfirmacoes, origemDaLinha, legendaDoProjeto, notasDeAltura } = require(path.join(CAD, 'pontosDoDesenho.js'));
+        // o escritório (responsável técnico do carimbo) escolhe quais notas aprendidas valem para este desenho
+        try { escritorio = chaveEscritorio(carimbo(projeto.texto)); } catch { escritorio = ''; } // sem carimbo legível o mapa sai igual, só sem o costume do escritório
+        const mapa = aplicarConfirmacoes(propostaDeMapa(arq, { aprendidos: w.aprendidos || [], notasAprendidas: w.notasAprendidas || [], escritorio }), w.confirmados || []);
         const { pontos } = aplicarMapa(arq, mapa);
         // o mapa vai junto (tela de confirmação): cada linha com a origem do tipo; trechos só com o resumo
         desenho = {
-          pontos, legenda: legendaDoProjeto(arq),
+          pontos, legenda: legendaDoProjeto(arq), notas: notasDeAltura(arq), escritorio,
           mapa: {
             simbolos: mapa.simbolos.map(s => ({ ...s, origem: origemDaLinha(s) })),
             trechos: mapa.trechos.map(({ layer, tipo, disciplina, comprimento_m }) => ({ layer, tipo, disciplina, comprimento_m })),

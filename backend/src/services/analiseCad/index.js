@@ -45,11 +45,11 @@ const RE_LAYER_LINHA = 'ELETRODUT|ELETROCALHA|PERFILADO|LEITO|CONDU[IÍ]TE|CONDU
 const TEMPO_LIMITE_MS = 180 * 1000;
 
 // worker com fila global (services/executarNoWorker.js): no máximo 2 leituras de CAD ao mesmo tempo
-async function lerNoWorker(buffer, nome, aprendidos = [], confirmados = []) {
+async function lerNoWorker(buffer, nome, aprendidos = [], confirmados = [], notasAprendidas = []) {
   let m;
   try {
     m = await executarNoWorker(path.join(__dirname, 'worker.js'),
-      { buffer, nome, reLayerLinha: RE_LAYER_LINHA, aprendidos, confirmados }, { tempoLimiteMs: TEMPO_LIMITE_MS, memoriaMb: 2048 });
+      { buffer, nome, reLayerLinha: RE_LAYER_LINHA, aprendidos, confirmados, notasAprendidas }, { tempoLimiteMs: TEMPO_LIMITE_MS, memoriaMb: 2048 });
   } catch (e) {
     if (e.codigo === 'TEMPO_ESGOTADO') throw new Error(`a leitura de "${nome}" passou de ${TEMPO_LIMITE_MS / 1000} s`);
     throw e;
@@ -215,7 +215,7 @@ function alturasDoGrupo(g, d) {
 // opcoes.aprendidos: legenda de projetos anteriores (services/simbolosAprendidos.js)
 // opcoes.confirmados: tipos que o engenheiro conferiu no mapa do CAD desta análise (services/mapaCad.js)
 async function lerArquivoCad(buffer, nome, opcoes = {}) {
-  const r = await lerNoWorker(buffer, nome, opcoes.aprendidos || [], opcoes.confirmados || []);
+  const r = await lerNoWorker(buffer, nome, opcoes.aprendidos || [], opcoes.confirmados || [], opcoes.notasAprendidas || []);
   const p = r.projeto;
   const analise = analisarTexto(p.texto, nome);
   // ambientes com área real da arquitetura (o rótulo "A=" do texto fica de reserva):
@@ -404,11 +404,41 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
   // o que a legenda das pranchas ensinou (services/simbolosAprendidos.js grava)
   // mapa do CAD (tela de confirmação): uma linha por layer × forma de símbolo, com o que o sistema entendeu e de onde veio
   const mapa = r.desenho?.mapa ? {
-    arquivo: nome, valeParaOrcamento: usaMapa,
-    simbolos: r.desenho.mapa.simbolos.map((m, idx) => ({ idx, ...m, contados: contadosPorLinha.get(idx) || 0 })),
+    arquivo: nome, valeParaOrcamento: usaMapa, escritorio: r.desenho.escritorio || '',
+    simbolos: r.desenho.mapa.simbolos.map(({ centros, ...m }, idx) => ({ idx, ...m, contados: contadosPorLinha.get(idx) || 0 })),
     trechos: r.desenho.mapa.trechos,
+    planta: plantaDoMapa(r.desenho.mapa.simbolos, ambientesArq, naPlanta),
   } : null;
-  return { analise, pagina, pontosPorAmbiente, arquitetura, espacial, mapa, aprendizado: { legenda: r.desenho?.legenda || [] } };
+  return { analise, pagina, pontosPorAmbiente, arquitetura, espacial, mapa, aprendizado: { legenda: r.desenho?.legenda || [], notas: r.desenho?.notas || [], escritorio: r.desenho?.escritorio || '' } };
+}
+
+// Planta da tela de confirmação do mapa: contorno dos ambientes + a posição de cada símbolo desenhado (inclusive os
+// que o sistema não reconheceu), com o número da linha do mapa (a tela destaca os da linha escolhida). Coordenadas
+// em 2 casas, no sistema do desenho; só o que a tela precisa (limites para não inflar a análise guardada).
+const MAX_PONTOS_PLANTA = 4000;
+const MAX_VERTICES_PLANTA = 400;
+function plantaDoMapa(linhasDoMapa, ambientes, naPlanta) {
+  const pontos = [];
+  for (const [linha, m] of (linhasDoMapa || []).entries()) {
+    for (const c of m.centros || []) {
+      if (pontos.length >= MAX_PONTOS_PLANTA) break;
+      if (!Array.isArray(c) || !Number.isFinite(c[0]) || !Number.isFinite(c[1]) || !naPlanta(c)) continue;
+      pontos.push([linha, r2(c[0]), r2(c[1])]);
+    }
+  }
+  if (!pontos.length) return null;
+  let vertices = 0;
+  const salas = [];
+  for (const a of ambientes || []) {
+    const poligono = (a.poligono || []).filter(p => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]));
+    if (poligono.length < 3 || vertices + poligono.length > MAX_VERTICES_PLANTA) continue;
+    vertices += poligono.length;
+    salas.push({ nome: a.nome || '', poligono: poligono.map(([x, y]) => [r2(x), r2(y)]) });
+  }
+  const xs = [...pontos.map(p => p[1]), ...salas.flatMap(s => s.poligono.map(p => p[0]))];
+  const ys = [...pontos.map(p => p[2]), ...salas.flatMap(s => s.poligono.map(p => p[1]))];
+  const min = (v) => v.reduce((m, x) => (x < m ? x : m), Infinity), max = (v) => v.reduce((m, x) => (x > m ? x : m), -Infinity);
+  return { caixa: [min(xs), min(ys), max(xs), max(ys)], salas, pontos };
 }
 
 // Classe do componente para as regras de afastamento da compatibilização

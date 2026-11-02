@@ -57,7 +57,7 @@ async function main() {
     for (const t of simbolos) console.log(`${t.layer.slice(0, 39).padEnd(39)} | ${`${num(t.medida[0])} × ${num(t.medida[1])}`.padEnd(13)} | ${String(t.quantidade).padStart(3)} | ${String(t.fora).padStart(14)} | ${t.simbolo}`);
     console.log('\nConfira a proposta: "?" não entra no 3D. Símbolos: ' + Object.keys(ESPEC).join(', '));
     if (val('--saida')) {
-      fs.writeFileSync(val('--saida'), JSON.stringify({ arquivo: path.basename(arquivo), planta: val('--planta') ? Number(val('--planta')) : null, observacao: 'Proposta pelo nome da layer e pela medida — conferir com o engenheiro. "?" = não entra. rotulo = descrição da legenda do projeto.', simbolos: simbolos.map(({ fora, ...x }) => x), trechos: trechos.map(({ comprimento_m, ...x }) => x) }, null, 2));
+      fs.writeFileSync(val('--saida'), JSON.stringify({ arquivo: path.basename(arquivo), planta: val('--planta') ? Number(val('--planta')) : null, observacao: 'Proposta pelo nome da layer e pela medida — conferir com o engenheiro. "?" = não entra. rotulo = descrição da legenda do projeto.', simbolos: simbolos.map(({ fora, centros, ...x }) => x), trechos: trechos.map(({ comprimento_m, ...x }) => x) }, null, 2));
       console.log(`Mapa proposto gravado em ${path.resolve(val('--saida'))}`);
     }
     return;

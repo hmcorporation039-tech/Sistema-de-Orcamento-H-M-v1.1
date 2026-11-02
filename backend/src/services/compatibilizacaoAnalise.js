@@ -13,6 +13,7 @@ const { buscarReferencias, valorSugerido, segmentoPorNomeDoCliente } = require('
 const { lerPdfVetorial } = require('../utils/pdfVetorial');
 const { ehArquivoCad, lerArquivoCad } = require('./analiseCad');
 const simbolosAprendidos = require('./simbolosAprendidos');
+const notasAprendidasDb = require('./notasAprendidas');
 const aprendizadoMateriais = require('./aprendizadoMateriais');
 const { compatibilizar } = require('../utils/compatibilidadeEspacial');
 const {
@@ -101,8 +102,14 @@ async function analisarProjetoCompleto(todosArquivos, opcoes = {}) {
   // deste arquivo vira aprendizado para os próximos (services/simbolosAprendidos.js)
   const temCad = todosArquivos.some(a => ehArquivoCad(a.nomeArquivo));
   const aprendidos = temCad ? await simbolosAprendidos.carregar() : [];
-  const lerCad = ({ buffer, nomeArquivo }) => lerArquivoCad(buffer, nomeArquivo, { aprendidos, confirmados: opcoes.mapasConfirmados?.[nomeArquivo] || [] })
-    .then((r) => { if (!opcoes.mapasConfirmados && r?.aprendizado?.legenda?.length) simbolosAprendidos.registrar(r.aprendizado.legenda, nomeArquivo).catch(() => {}); return r; })
+  const notasAprendidas = temCad ? await notasAprendidasDb.carregar() : [];
+  const lerCad = ({ buffer, nomeArquivo }) => lerArquivoCad(buffer, nomeArquivo, { aprendidos, notasAprendidas, confirmados: opcoes.mapasConfirmados?.[nomeArquivo] || [] })
+    .then((r) => {
+      if (!opcoes.mapasConfirmados && r?.aprendizado?.legenda?.length) simbolosAprendidos.registrar(r.aprendizado.legenda, nomeArquivo).catch(() => {});
+      // as notas gerais de altura deste desenho viram aprendizado do escritório (item 8)
+      if (!opcoes.mapasConfirmados && r?.aprendizado?.notas?.length) notasAprendidasDb.registrar(r.aprendizado.notas, r.aprendizado.escritorio, nomeArquivo).catch(() => {});
+      return r;
+    })
     .catch((e) => { throw Object.assign(new Error(`Não consegui ler "${nomeArquivo}": ${e.message}`), { leituraCad: true }); });
   const cadsRef = await emLotes(arquivosRef, 2, (a) => (ehArquivoCad(a.nomeArquivo) ? lerCad(a).catch((e) => ({ erro: e.message })) : null));
   // Cada arquivo é lido/analisado em paralelo (pdf-parse + regex é I/O-bound e

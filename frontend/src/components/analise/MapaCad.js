@@ -21,9 +21,36 @@ const NOME_DISC = {
   alarme: 'Alarme', telefonia: 'Telefonia', antena: 'Antena', 'controle-acesso': 'Controle de acesso', automacao: 'Automação', spda: 'SPDA',
   solar: 'Solar', veicular: 'Veicular', eletrica_hospitalar: 'Elétrica hospitalar',
 };
+// de onde veio a altura sugerida (quando não é da legenda do desenho nem conferida)
+const ALTURA_DE = { nota: 'sugerida pela nota do desenho', nota_aprendida: 'costume deste escritório (notas anteriores)' };
 const LIMITE_LINHAS = 60;
 const campo = { background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 5, color: '#ddd', fontSize: 12, padding: '5px 7px', boxSizing: 'border-box', fontFamily: 'inherit' };
 const botao = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 6, border: '1px solid #2f2f2f', background: '#1a1a1a', color: '#ddd', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
+
+// Planta do mapa: contorno dos ambientes e os pontos lidos; os da linha escolhida (passe o mouse na tabela) em destaque.
+// Coordenadas no sistema do desenho; o eixo Y é invertido para a planta ficar na posição de leitura.
+function PlantaDoMapa({ planta, simbolos, ativa }) {
+  const [x0, y0, x1, y1] = planta.caixa;
+  const larg = Math.max(x1 - x0, 1), alt = Math.max(y1 - y0, 1);
+  const folga = Math.max(larg, alt) * 0.03;
+  const raio = Math.max(larg, alt) / 260;
+  const confirmadas = new Set(simbolos.filter(q => q.confirmado).map(q => q.idx));
+  const ponto = (p, i, cor, r) => <circle key={i} cx={p[1]} cy={p[2]} r={r} fill={cor} />;
+  const outros = planta.pontos.filter(p => p[0] !== ativa);
+  const daLinha = planta.pontos.filter(p => p[0] === ativa);
+  return (
+    <svg viewBox={`${x0 - folga} ${-(y1 + folga)} ${larg + 2 * folga} ${alt + 2 * folga}`} role="img" aria-label="Planta com os pontos lidos do desenho"
+      style={{ width: '100%', maxHeight: 340, background: '#0d0d0d', border: '1px solid #222', borderRadius: 6, display: 'block' }} data-testid="planta-mapa-cad">
+      <g transform="scale(1,-1)">
+        {planta.salas.map((sala, i) => (
+          <polygon key={i} points={sala.poligono.map(p => p.join(',')).join(' ')} fill="none" stroke="#3a3a3a" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+        ))}
+        {outros.map((p, i) => ponto(p, i, confirmadas.has(p[0]) ? '#3f8f58' : '#6b6b6b', raio))}
+        {daLinha.map((p, i) => ponto(p, `a${i}`, '#f0c63c', raio * 1.9))}
+      </g>
+    </svg>
+  );
+}
 
 const br = (v) => (v == null || v === '' ? '' : String(v).replace('.', ','));
 const paraNumero = (t) => { const n = Number(String(t).replace(',', '.')); return Number.isFinite(n) && n > 0 ? n : null; };
@@ -35,6 +62,8 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
   const [edicao, setEdicao] = useState({}); // `${arquivo}|${idx}` → { simbolo, altura }
   const [ocupado, setOcupado] = useState(false);
   const [mostrarTodas, setMostrarTodas] = useState({});
+  const [ativa, setAtiva] = useState({}); // arquivo → linha do mapa em destaque na planta
+  const [incluirDisciplinas, setIncluirDisciplinas] = useState(true);
 
   useEffect(() => {
     let vivo = true;
@@ -54,6 +83,7 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
   if (!mapa?.disponivel) return null;
   const totalConferidas = mapa.arquivos.reduce((t, a) => t + a.resumo.conferidas, 0);
   const totalPontosPendentes = mapa.arquivos.reduce((t, a) => t + a.resumo.pontosPendentes, 0);
+  const disciplinasFaltando = mapa.arquivos.flatMap(a => (a.disciplinasAIncluir || []).map(d => ({ ...d, arquivo: a.arquivo })));
 
   const valorDe = (arquivo, s) => edicao[`${arquivo}|${s.idx}`] || { simbolo: s.simbolo, altura: br(s.altura_m) };
   const mudar = (arquivo, s, parte) => setEdicao(e => ({ ...e, [`${arquivo}|${s.idx}`]: { ...valorDe(arquivo, s), ...parte } }));
@@ -86,8 +116,12 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
   async function reprocessar() {
     setOcupado(true);
     try {
-      const r = await reprocessarMapaCad(analiseId);
-      toast.success('Nova análise gravada com o mapa conferido. A anterior continua salva.');
+      const r = await reprocessarMapaCad(analiseId, { incluirDisciplinas });
+      const h = r.data.edicoesHerdadas;
+      const copiadas = h?.copiadas ? h.alterados + h.removidos + h.acrescentados : 0;
+      toast.success(`Nova análise gravada com o mapa conferido. A anterior continua salva.${copiadas ? ` ${copiadas} edição(ões) sua(s) foram copiadas.` : ''}`);
+      if (h && !h.copiadas) toast(h.motivo, { duration: 10000, icon: 'ℹ️' });
+      if (h?.recalculados?.length) toast(`${h.recalculados.length} item(ns) que você tinha ajustado na quantidade foram recalculados pelo mapa conferido — vale a do mapa; revise: ${h.recalculados.slice(0, 4).join('; ')}${h.recalculados.length > 4 ? '…' : ''}`, { duration: 14000, icon: '⚠️' });
       navigate(`/obras/analise/${r.data.id}`);
     } catch (err) {
       toast.error(await mensagemDeErro(err, 'Não consegui reprocessar a análise'), { duration: 10000 });
@@ -114,6 +148,20 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
           Depois de conferir, use "Reprocessar com o mapa conferido": ele grava uma análise nova com esses pontos já no orçamento (a atual continua salva).
         </div>
       )}
+      {totalConferidas > 0 && (
+        <div style={{ fontSize: 12, color: 'var(--texto-2)', marginBottom: 10, lineHeight: 1.6 }}>
+          Ao reprocessar, o que você editou nesta análise (quantidades, valores, itens retirados ou acrescentados) é copiado para a nova.
+          {disciplinasFaltando.length > 0 && (
+            <label style={{ display: 'flex', gap: 6, alignItems: 'flex-start', marginTop: 6, color: '#c9a227', cursor: 'pointer' }}>
+              <input type="checkbox" checked={incluirDisciplinas} onChange={(e) => setIncluirDisciplinas(e.target.checked)} style={{ marginTop: 3 }} data-testid="incluir-disciplinas" />
+              <span>
+                Incluir na análise nova as disciplinas dos pontos conferidos que não foram marcadas no envio:{' '}
+                {disciplinasFaltando.map(d => `${d.nome} (${d.pontos} ponto(s))`).join('; ')}. Sem elas, esses pontos ficariam fora do orçamento.
+              </span>
+            </label>
+          )}
+        </div>
+      )}
       {mapa.arquivos.map(a => {
         const aberta = mostrarTodas[a.arquivo];
         const linhas = aberta ? a.simbolos : a.simbolos.slice(0, LIMITE_LINHAS);
@@ -134,6 +182,7 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
                 Este desenho tem blocos nomeados: o orçamento conta pelos blocos. O mapa abaixo vale para o 3D e para o aprendizado.
               </div>
             )}
+            {a.planta && <div style={{ marginBottom: 8 }}><PlantaDoMapa planta={a.planta} simbolos={a.simbolos} ativa={ativa[a.arquivo]} /></div>}
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
@@ -147,7 +196,8 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
                     const [rotuloOrigem, corOrigem] = ORIGEM[s.origem] || ORIGEM.regra;
                     const mudou = v.simbolo !== s.simbolo || v.altura !== br(s.altura_m);
                     return (
-                      <tr key={s.idx} style={{ borderTop: '1px solid #1e1e1e' }} data-testid={`linha-mapa-${s.idx}`}>
+                      <tr key={s.idx} style={{ borderTop: '1px solid #1e1e1e', ...(ativa[a.arquivo] === s.idx ? { background: '#1b1a12' } : {}) }} data-testid={`linha-mapa-${s.idx}`}
+                        onMouseEnter={() => a.planta && setAtiva(m => (m[a.arquivo] === s.idx ? m : { ...m, [a.arquivo]: s.idx }))}>
                         <td style={{ padding: '6px 8px', color: '#ddd', whiteSpace: 'nowrap' }}>{s.layer}</td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap', color: 'var(--texto-2)' }}>{cm(s.medida)}</td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap', color: 'var(--texto-2)' }} title="pontos que entram na contagem / símbolos desta forma no desenho">
@@ -165,6 +215,7 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
                         </td>
                         <td style={{ padding: '6px 8px', width: 80 }}>
                           <input value={v.altura} onChange={(e) => mudar(a.arquivo, s, { altura: e.target.value })} placeholder="padrão" inputMode="decimal" style={{ ...campo, width: 70 }} disabled={ocupado || s.confirmado} />
+                          {!s.confirmado && ALTURA_DE[s.alturaDe] && <div style={{ fontSize: 10, color: '#8ab4f8', marginTop: 2, maxWidth: 130, lineHeight: 1.3 }} title={s.alturaTexto || ''}>{ALTURA_DE[s.alturaDe]}</div>}
                         </td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
                           <span style={{ color: corOrigem }}>{rotuloOrigem}</span>
