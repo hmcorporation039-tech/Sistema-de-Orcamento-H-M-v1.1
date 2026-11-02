@@ -672,3 +672,13 @@ Só código, sem migração. Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-b
 - **Limites:** o catálogo ensina o classificador, então um erro antigo ensina o erro — o que for corrigido na tela passa a valer. A medição foi no catálogo do v2; se o da produção for bem diferente, rodar `node scripts/avaliar-classificador.js` em `backend` por lá. Material já classificado não muda (só os novos e os "Não classificado").
 - Teste: `backend/testes/classificadorMateriais.test.js` (trava o acerto do kNN em ≥ 92 %; a medição só roda no banco do v2).
 - Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.13_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_14-21.dump`.
+
+### 02/11/2026: versão 2.14.0 — mapa do CAD confirmado pelo engenheiro (item 3 do plano)
+Só código, sem migração. Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-backend.bat` (administrador) e Ctrl+F5.
+- **Problema:** os símbolos "explodidos" do DWG/DXF (QiBuilder/AltoQi, PDF convertido) saíam marcados como ambíguos e ficavam FORA do orçamento, sem o engenheiro ver o que o sistema entendeu.
+- **Cartão "Mapa do CAD"** (Análise de Projeto): uma linha por layer × forma de símbolo, com tipo, altura, quantidade e a origem do tipo (legenda do desenho, aprendido de outro projeto, regra da layer, não reconhecido, conferido). Escolher o tipo, informar a altura, "Não é ponto", Confirmar, Desfazer e "Confirmar as reconhecidas". Rotas `GET/PUT /api/projetos/analises/:id/mapa` e `POST /api/projetos/analises/:id/mapa/reprocessar` (PUT e reprocessar só dono ou administrador). O mapa fica em `dados_extraidos[i].mapa_cad`; análise antiga, sem mapa, continua funcionando (o cartão não aparece).
+- **Só o conferido entra no orçamento.** "Reprocessar com o mapa conferido" lê de novo os arquivos guardados na pasta do projeto e grava uma análise NOVA ("… (mapa confirmado)"); a antiga e as edições dela não são tocadas. "Gerar orçamento" avisa quantos pontos do CAD ficaram sem conferir.
+- **Aprendizado:** cada confirmação grava em `cad_simbolos_aprendidos` com origem `usuario` (vale mais que a legenda); Desfazer esquece. Vale também para o 3D. No desenho seguinte o aprendido só pré-preenche; quem conta no orçamento é a confirmação.
+- **Não feito:** planta com os pontos destacados; o reprocessamento não copia as edições da análise antiga; serviço de disciplina que não foi marcada no envio continua fora do orçamento.
+- Teste: `backend/testes/mapaCad.test.js` (só o trecho do banco roda no v2).
+- Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.14_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_14-52.dump`.
