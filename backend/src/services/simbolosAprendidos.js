@@ -4,7 +4,7 @@
 // a prancha sem legenda (outro pavimento, outro arquivo do mesmo escritório) é lida pelo
 // que já foi aprendido — sem IA nem serviço de fora.
 //
-//   carregar()            → [{ layer, medida, fracao, simbolo, disciplina, altura_m, texto }]
+//   carregar()            → [{ layer, medida, fracao, simbolo, disciplina, altura_m, texto, usuario? }] (usuario: conferido na tela do mapa do CAD)
 //                           só as chaves sem conflito (ou conferidas pelo usuário)
 //   registrar(legenda, arquivo) → grava/reforça as linhas lidas (ver pontosDoDesenho.legendaDoProjeto)
 const pool = require('../config/database');
@@ -16,11 +16,12 @@ const chaveDe = (l) => `${String(l.layer).toUpperCase().slice(0, 120)}|${(l.medi
 async function carregar(executor = pool) {
   try {
     const { rows } = await executor.query(
-      `SELECT layer, medida, fracao, simbolo, disciplina, altura_m, texto FROM cad_simbolos_aprendidos
+      `SELECT layer, medida, fracao, simbolo, disciplina, altura_m, texto, origem FROM cad_simbolos_aprendidos
         WHERE origem = 'usuario' OR conflitos = 0 ORDER BY vezes DESC LIMIT 2000`);
     return rows.map(r => ({
       layer: r.layer, medida: r.medida.map(Number), fracao: Number(r.fracao), simbolo: r.simbolo, disciplina: r.disciplina,
       ...(r.altura_m != null ? { altura_m: Number(r.altura_m) } : {}), texto: r.texto || '',
+      ...(r.origem === 'usuario' ? { usuario: true } : {}),
     }));
   } catch (e) {
     // banco antigo (sem a tabela) ou fora do ar: a leitura segue só com a legenda do desenho

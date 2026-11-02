@@ -237,7 +237,8 @@ function propostaDeMapa(arq, opcoes = {}) {
     if (RE_PDF_COR.test(layer)) return null;
     const l = daLegenda(legenda, layer, t.medida, t.fracao);
     if (!l) return null;
-    if (sug ? familia(l.simbolo) !== familia(sug.simbolo) : RE_SO_CONTORNO.test(layer)) return null;
+    // tipo conferido pelo engenheiro em outro projeto (l.usuario) vale mesmo quando a regra da layer dizia outra família
+    if (!l.usuario && (sug ? familia(l.simbolo) !== familia(sug.simbolo) : RE_SO_CONTORNO.test(layer))) return null;
     return l;
   };
   const simbolos = [];
@@ -301,12 +302,39 @@ function propostaDeMapa(arq, opcoes = {}) {
   return { simbolos, trechos };
 }
 
+// Confirmações do engenheiro (tela do mapa do CAD) sobre o mapa proposto: [{ layer, medida, preenchimento?,
+// simbolo, disciplina?, altura_m?, rotulo? }]. Casa pela layer, pela medida (±3 cm) e pelo preenchimento; a linha
+// confirmada vale mais que a legenda, o aprendido e a regra. simbolo '?' = "não é ponto" (fica fora da contagem).
+function aplicarConfirmacoes(mapa, confirmados) {
+  if (!confirmados?.length) return mapa;
+  const simbolos = (mapa.simbolos || []).map((s) => {
+    const c = confirmados.find(x => String(x.layer).toUpperCase() === String(s.layer).toUpperCase()
+      && Array.isArray(x.medida) && mesmaMedida([...x.medida].sort((a, b) => b - a), [...s.medida].sort((a, b) => b - a), 0.03)
+      && (!Number.isFinite(x.preenchimento) || !Number.isFinite(s.preenchimento) || Math.abs(x.preenchimento - s.preenchimento) <= 0.08));
+    if (!c) return s;
+    const { altura_m, alturaDe, ...resto } = s;
+    return {
+      ...resto, simbolo: c.simbolo, disciplina: c.disciplina || (c.simbolo === s.simbolo ? s.disciplina : ''), rotulo: c.rotulo ?? s.rotulo,
+      ...(Number(c.altura_m) > 0 ? { altura_m: Number(c.altura_m), alturaDe: 'confirmado' } : {}), tipoDe: 'confirmado', confirmado: true,
+    };
+  });
+  return { ...mapa, simbolos };
+}
+
+// De onde veio o tipo de uma linha do mapa (tela de confirmação): confirmado × legenda do desenho × aprendido de
+// outro projeto × regra (nome da layer, medida) × não reconhecido
+function origemDaLinha(s) {
+  if (s.confirmado) return 'confirmado';
+  if (s.tipoDe === 'legenda' || s.tipoDe === 'aprendido') return s.tipoDe;
+  return s.simbolo && s.simbolo !== '?' ? 'regra' : 'nao_reconhecido';
+}
+
 // Mapa (proposto ou conferido) → pontos e trechos
 function aplicarMapa(arq, mapa) {
   const { ambienteDe, ehExterno, porLayer } = contexto(arq);
   const pontos = [];
   const contagem = new Map();
-  for (const m of mapa.simbolos || []) {
+  for (const [linha, m] of (mapa.simbolos || []).entries()) {
     if (!m.simbolo || m.simbolo === '?') continue;
     if (!ESPEC[m.simbolo]) throw new Error(`Símbolo "${m.simbolo}" (layer ${m.layer}) não existe no 3D (use: ${Object.keys(ESPEC).join(', ')}).`);
     const medida = [...m.medida].sort((a, b) => b - a);
@@ -327,6 +355,8 @@ function aplicarMapa(arq, mapa) {
         id: `${m.simbolo.replace(/^HM-[A-Z]+-/, '')}-${n}`, simbolo: m.simbolo, x: r2(s.centro[0]), y: r2(s.centro[1]),
         ...(m.rotulo || ROTULO_PADRAO[m.simbolo] ? { rotulo: m.rotulo || ROTULO_PADRAO[m.simbolo] } : {}), ...(m.disciplina ? { disciplina: m.disciplina } : {}),
         ...(Number(m.altura_m) > 0 ? { altura_m: Number(m.altura_m), alturaDe: m.alturaDe || 'mapa' } : {}), ambiente: amb ? amb.nome : '',
+        // linha do mapa de onde o ponto veio (a tela do mapa conta os pontos por linha) e se o engenheiro confirmou o tipo
+        linha, ...(m.confirmado ? { confirmado: true } : {}),
       });
     }
   }
@@ -350,4 +380,4 @@ function aplicarMapa(arq, mapa) {
 
 const pontosDoDesenho = (arq, opcoes = {}) => aplicarMapa(arq, propostaDeMapa(arq, opcoes));
 
-module.exports = { pontosDoDesenho, propostaDeMapa, aplicarMapa, agrupar, sugestao, sugestaoPdf, legendaDoProjeto, legendaDeAlturas, fracaoPreenchida, tomadaPelaAltura, metros, DE_PAREDE, TIPOS, RE_INSTALACAO, RE_FORA, RE_TRECHO, RE_PDF_COR };
+module.exports = { pontosDoDesenho, propostaDeMapa, aplicarMapa, aplicarConfirmacoes, origemDaLinha, agrupar, sugestao, sugestaoPdf, legendaDoProjeto, legendaDeAlturas, fracaoPreenchida, tomadaPelaAltura, metros, DE_PAREDE, TIPOS, RE_INSTALACAO, RE_FORA, RE_TRECHO, RE_PDF_COR };

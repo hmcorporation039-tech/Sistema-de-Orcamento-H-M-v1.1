@@ -219,6 +219,10 @@ router.get('/projetos/analises/:id', autenticar, validarId, projCtrl.buscarUma);
 router.put('/projetos/analises/:id', autenticar, validarId, posseAnalise, projCtrl.atualizar);
 router.delete('/projetos/analises/:id', autenticar, validarId, posseAnalise, projCtrl.remover);
 router.post('/projetos/analises/:id/gerar-orcamento', autenticar, validarId, posseAnalise, projCtrl.gerarOrcamento);
+// mapa do CAD: o que o sistema entendeu de cada layer do DWG/DXF; o engenheiro corrige e a correção vira aprendizado
+router.get('/projetos/analises/:id/mapa', autenticar, validarId, projCtrl.lerMapaCad);
+router.put('/projetos/analises/:id/mapa', autenticar, validarId, posseAnalise, projCtrl.salvarMapaCad);
+router.post('/projetos/analises/:id/mapa/reprocessar', autenticar, validarId, posseAnalise, projCtrl.reprocessarMapaCad);
 
 // ── PROJETOS E LAUDOS POR DISCIPLINA (hub Obras) ──────────────────────────
 // Versão 2.1: /laudos guarda os dois tipos de registro (?tipo=projeto|laudo);

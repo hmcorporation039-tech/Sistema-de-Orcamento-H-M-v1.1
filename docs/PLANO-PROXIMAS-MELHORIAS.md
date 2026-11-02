@@ -49,7 +49,7 @@ em projetos parecidos: custo e tempo à toa.
 **Teste:** layout conhecido não chama IA; layout novo chama e grava; coluna renomeada cai na IA.
 **Risco:** mapa errado ficar "gravado" → só grava após confirmação, e tem botão "esquecer layout".
 
-## 3. Tela de confirmação do mapa do CAD
+## 3. Tela de confirmação do mapa do CAD  (feito no v2 em 02/11/2026, fatias a e b; a planta visual ficou para depois)
 **Problema:** o mapa de layers e pontos lidos do DWG vai direto para o 3D e para o orçamento, sem o engenheiro ver.
 **Como:**
 - Rota `GET/PUT /projetos/analises/:id/mapa` (com `posseAnalise`), devolve as layers, a disciplina e o tipo de ponto de cada uma, a quantidade e a altura lida.
@@ -58,6 +58,14 @@ em projetos parecidos: custo e tempo à toa.
 - Gerar 3D / orçamento passa a usar o mapa confirmado, com aviso se houver layers não revisadas.
 **Teste:** correção muda a quantidade no orçamento; correção vira aprendizado; análise antiga sem mapa continua funcionando.
 **Risco:** é a maior entrega; fatiar em (a) só leitura, (b) edição, (c) planta visual.
+**Feito:**
+- A leitura do DWG/DXF devolve o mapa (`desenho.mapa`, de `propostaDeMapa`): uma linha por layer × forma de símbolo, com tipo, disciplina, altura, quantidade, os pontos que de fato contam (fora de unifilar/quadro) e a ORIGEM do tipo (legenda do desenho / aprendido de outro projeto / regra da layer / não reconhecido / conferido). Fica na análise em `dados_extraidos[i].mapa_cad`. Análise antiga, sem mapa, continua funcionando (a tela só não mostra o cartão).
+- Rotas `GET/PUT /projetos/analises/:id/mapa` e `POST /projetos/analises/:id/mapa/reprocessar` (`controllers/projetos/mapaCad.js`, `services/mapaCad.js`; PUT e reprocessar com `posseAnalise`). Cartão "Mapa do CAD" em `AnaliseProjeto.js` (`components/analise/MapaCad.js`): escolher o tipo (lista dos tipos que o 3D e o orçamento entendem), altura, "Não é ponto", "Confirmar", "Desfazer", "Confirmar as reconhecidas".
+- **Só o conferido entra no orçamento:** os símbolos explodidos já saíam marcados `ambiguo` e ficavam FORA do orçamento (nunca contavam); agora a linha conferida vira item firme. Como o orçamento (serviços e materiais) é montado na leitura, "Reprocessar com o mapa conferido" lê de novo os arquivos guardados na pasta do projeto e grava uma análise NOVA ("… (mapa confirmado)"); a antiga e as edições dela não são tocadas. Arquivos que não estavam na lista da análise voltam como referência (arquitetura).
+- **Aprendizado:** cada confirmação grava em `cad_simbolos_aprendidos` com origem `usuario` (vale mais que a legenda, ignora a trava de "mesma família", não conta conflito); "Desfazer" esquece. Vale para a análise de outros desenhos e para o 3D (mesmo `simbolosAprendidos.carregar`). O aprendido só PRÉ-PREENCHE no desenho seguinte: quem conta no orçamento continua sendo a confirmação.
+- "Gerar orçamento" avisa quantos pontos do CAD ficaram sem conferir (`pontosCadSemConferir`).
+- Teste: `testes/mapaCad.test.js` (regras, releitura com confirmação, aprendizado, e as rotas de ponta a ponta com reprocessamento no banco do v2, numa pasta temporária). Tela conferida no navegador com uma análise de teste.
+- **Não feito:** (c) planta com os pontos destacados; o reprocessamento não copia as edições que o usuário fez na análise antiga; serviços de uma disciplina que não foi marcada no envio (ex.: sirene numa análise só de elétrica) continuam fora, como antes.
 
 ## 4. BDI e impostos ajustáveis  (feito no v2 em 02/11/2026)
 **Problema:** o frontend sugere BDI 20 % e imposto 6 %; análise, skills e MCP sugerem 0 %.

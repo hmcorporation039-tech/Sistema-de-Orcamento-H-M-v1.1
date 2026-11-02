@@ -142,8 +142,9 @@ function arquivoInvalido(arquivos) {
 }
 
 // Parte comum do envio direto (multipart) e do pacote (2.3): obra, finalidade,
-// análise, gravação. `corpo`: { finalidade, obra_id, nome_projeto }.
-async function executarAnalise(req, res, arquivos, corpo) {
+// análise, gravação. `corpo`: { finalidade, obra_id, nome_projeto }. `opcoes.mapasConfirmados`: tipos conferidos no
+// mapa do CAD (controllers/projetos/mapaCad.js) quando a análise é um reprocessamento.
+async function executarAnalise(req, res, arquivos, corpo, opcoes = {}) {
   // finalidade (2.1): campo multipart; ausente = 'orcamento' (o uso de sempre,
   // e o que o MCP manda quando não informa)
   const finalidade = lerFinalidade(corpo.finalidade);
@@ -166,7 +167,7 @@ async function executarAnalise(req, res, arquivos, corpo) {
   }
 
   try {
-    const resultado = await analisarProjetoCompleto(arquivos);
+    const resultado = await analisarProjetoCompleto(arquivos, opcoes);
 
     // análise e arquitetura numa transação só: antes, uma falha no segundo
     // INSERT deixava a análise gravada sem a base do 3D/compatibilização
