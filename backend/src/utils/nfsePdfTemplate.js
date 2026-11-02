@@ -182,7 +182,7 @@ function gerarHtmlNfse(nota, { empresa = {}, municipios = {}, qrcode = null } = 
       <div><span class="r">Cód. de Autenticidade</span><span class="v">${e(nota.codigo_verificacao || (rascunho ? '—' : ''))}</span></div>
       <div><span class="r">Responsável pela Retenção</span><span class="v">${e(responsavel) || '&nbsp;'}</span></div>
     </td>
-    <td class="qr">${qrcode ? `<img src="${qrcode}" alt="QR Code de consulta">` : `<div>${rascunho ? 'RASCUNHO<br>SEM VALOR FISCAL' : ''}</div>`}</td>
+    <td class="qr">${qrcode ? `<img src="${qrcode}" alt="QR Code de consulta">` : ''}</td>
   </tr></table>
 </div>
 ${cancelada ? `<div class="quadro"><div class="aviso" style="border:0">NFS-e CANCELADA${nota.motivo_cancelamento ? ` — ${e(nota.motivo_cancelamento)}` : ''}${nota.cancelada_em ? ` — Data de cancelamento: ${e(dataBR(nota.cancelada_em))}` : ''}</div></div>` : ''}
