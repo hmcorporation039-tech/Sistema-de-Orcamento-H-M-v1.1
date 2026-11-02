@@ -94,10 +94,14 @@ caso('PDF: texto do tomador e da discriminação escapado; rascunho e cancelada 
   const html = gerarHtmlNfse(nota, { empresa: { op_simp_nac: 3, inscricao_municipal: '0786440800236' } });
   assert.ok(!html.includes('<script>x') && html.includes('&lt;script&gt;x'));
   assert.ok(html.includes('a &lt;b&gt;b&lt;/b&gt; &amp; c'));
-  assert.match(html, /class="marca">RASCUNHO</);
+  // sem máscara por cima da nota (removida a pedido: a nota fica legível); o rascunho
+  // segue identificado no campo do número e na tarja de texto
+  assert.ok(!/class="marca"|position:\s*fixed/.test(html));
+  assert.ok(html.includes('RASCUNHO'));
   assert.match(html, /11\.222\.333\/0001-81/);
   const canc = gerarHtmlNfse({ ...nota, situacao: 'cancelada', motivo_cancelamento: 'erro <x>', numero: 5 }, { empresa: {} });
-  assert.match(canc, /class="marca">CANCELADA</);
+  assert.ok(!/class="marca"|position:\s*fixed/.test(canc));
+  assert.match(canc, /NFS-e CANCELADA — erro &lt;x&gt;/);
   assert.ok(canc.includes('erro &lt;x&gt;'));
   // layout do ISS DF: ISS retido sai no "Vl. ISSQN Retido" (o "Total do ISSQN" fica zero), chave nacional em vermelho
   const emit = gerarHtmlNfse({ ...nota, situacao: 'emitida', padrao: 'abrasf', numero: 28, valor_servicos: 1000, valor_iss: 20, iss_retido: true,

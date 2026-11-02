@@ -10,6 +10,7 @@ module.exports = (router, { autenticar, admin, validarId }) => {
   router.get('/notas-fiscais', autenticar, admin, ctrl.listar);
   router.post('/notas-fiscais', autenticar, admin, ctrl.criar);
   router.post('/notas-fiscais/importar', autenticar, admin, uploadXml.array('arquivos', 300), ctrl.importar);
+  router.get('/notas-fiscais/cancelamento-config', autenticar, admin, ctrl.configCancelamento);
   router.get('/notas-fiscais/:id', autenticar, validarId, admin, ctrl.obter);
   router.put('/notas-fiscais/:id', autenticar, validarId, admin, ctrl.atualizar);
   router.delete('/notas-fiscais/:id', autenticar, validarId, admin, ctrl.remover);

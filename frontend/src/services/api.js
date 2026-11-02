@@ -434,10 +434,11 @@ export const atualizarNotaFiscal = (id, data) => api.put(`/notas-fiscais/${id}`,
 export const removerNotaFiscal = (id) => api.delete(`/notas-fiscais/${id}`);
 // cliente_ids opcional: uma cópia para cada cliente
 export const duplicarNotaFiscal = (id, clienteIds) => api.post(`/notas-fiscais/${id}/duplicar`, clienteIds ? { cliente_ids: clienteIds } : {});
-export const cancelarNotaFiscal = (id, motivo) => api.post(`/notas-fiscais/${id}/cancelar`, { motivo });
+export const cancelarNotaFiscal = (id, dados) => api.post(`/notas-fiscais/${id}/cancelar`, dados);
+export const getConfigCancelamentoNotaFiscal = () => api.get('/notas-fiscais/cancelamento-config');
 export const enviarNotaFiscalPorEmail = (id, destinatario, mensagem) => api.post(`/notas-fiscais/${id}/email`, { destinatario, mensagem }, { timeout: 120000 });
 export const baixarPdfNotaFiscal = (id) => api.get(`/notas-fiscais/${id}/pdf`, { responseType: 'blob', timeout: 120000 });
-export const previewHtmlNotaFiscal = (id) => api.get(`/notas-fiscais/${id}/preview-html`, { responseType: 'text' });
+export const previewHtmlNotaFiscal = (id) => api.get(`/notas-fiscais/${id}/preview-html?t=${Date.now()}`, { responseType: 'text' });
 export const baixarXmlNotaFiscal = (id) => api.get(`/notas-fiscais/${id}/xml`, { responseType: 'blob' });
 export const importarXmlNotasFiscais = (arquivos) => {
   const fd = new FormData();
