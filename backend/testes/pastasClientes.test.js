@@ -20,7 +20,11 @@ const caso = async (nome, fn) => { await fn(); ok++; };
 const SUF = `T${Date.now().toString(36)}`;
 
 (async () => {
-  if (process.env.DB_NAME === 'hm_orcamentos') throw new Error('teste não roda no banco de produção');
+  if (process.env.DB_NAME === 'hm_orcamentos') {
+    console.log('pastasClientes: parte do banco pulada (DB_NAME=hm_orcamentos — o teste cria e apaga dados, nunca roda no banco de produção)');
+    await pool.end();
+    return;
+  }
   const col = await pool.query("SELECT 1 FROM information_schema.columns WHERE table_name = 'obras' AND column_name = 'pasta_base'");
   if (!col.rows.length) { console.log('pastasClientes: migração 2.0-19 ainda não aplicada neste banco (inicie o servidor uma vez) — pulado'); await pool.end(); return; }
   P.registrarAoGravar((abs) => M.registrarGravacaoSistema(abs));
