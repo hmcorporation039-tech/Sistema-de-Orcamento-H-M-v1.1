@@ -494,3 +494,9 @@ export const atribuirPixObra = (dados) => api.post('/financeiro/atribuicao-obras
 export const getCotacoesMaterial = (id) => api.get(`/materiais/${id}/cotacoes`);
 export const getOportunidadesCotacao = () => api.get('/cotacoes/oportunidades');
 export const renomearFornecedorCotacao = (cnpj, nome) => api.put(`/cotacoes/fornecedores/${cnpj}`, { nome });
+
+// ── NOTAS A RECEBER (painel inicial, só administrador): notas emitidas sem pagamento, sugestão de Pix, baixa manual ─
+export const getNotasAReceber = () => api.get('/notas-a-receber');
+export const ligarSugeridasNotas = () => api.post('/notas-a-receber/ligar-sugeridas');
+export const ligarPixNaNota = (notaId, movimentoId) => api.post(`/notas-a-receber/${notaId}/ligar`, { movimento_id: movimentoId });
+export const darBaixaNota = (notaId, obs) => api.post(`/notas-a-receber/${notaId}/baixa`, { obs });
