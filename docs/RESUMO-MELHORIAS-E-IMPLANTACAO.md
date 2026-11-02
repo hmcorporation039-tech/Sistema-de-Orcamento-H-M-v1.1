@@ -660,3 +660,6 @@ Instalada em produção em 02/11/2026. **Migração de banco:** `2.0-27-nota-pro
 - **SINAPI em Integrações:** cartão "SINAPI local (Caixa)" com mês importado, estado, regime (o administrador troca) e busca. Importação mensal pelo script `backend/scripts/importar-sinapi.js`.
 - Testes: `backend/testes/atestadoCapacidade.test.js`. Não feito: botão no e-mail da nota; atestado juntando várias notas; gerar o rascunho da nota a partir da proposta; ligar a nota ao financeiro.
 - Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.12_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_13-49.dump`.
+
+### 02/11/2026: versão 2.12.1 — correções do atestado de capacidade técnica
+Só código, sem migração. A revisão do atestado achou e corrigiu: quantidade da proposta com 3 casas era arredondada para 2 na planilha; "|" na descrição quebrava a planilha editada; a limpeza do texto da nota podia demorar em texto muito longo sem espaços. Teste de ponta a ponta das rotas (login, permissão de admin, prévia, Word, vínculo e auditoria) feito no banco do v2.
