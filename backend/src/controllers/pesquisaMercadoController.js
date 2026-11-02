@@ -7,7 +7,9 @@ const { pesquisarPrecoMercado, salvarPesquisaManual, ErroPesquisaMercado } = req
 async function pesquisar(req, res) {
   try {
     const tipo = req.body.tipo === 'servico' ? 'servico' : 'material';
-    const resultado = await pesquisarPrecoMercado(typeof req.body.descricao === 'string' ? req.body.descricao.slice(0, 500) : '', { tipo });
+    // fresco (corpo ou ?fresco=1): ignora a pesquisa guardada e consulta de novo
+    const fresco = req.body.fresco === true || req.query.fresco === '1';
+    const resultado = await pesquisarPrecoMercado(typeof req.body.descricao === 'string' ? req.body.descricao.slice(0, 500) : '', { tipo, fresco });
     res.json(resultado);
   } catch (err) {
     if (err instanceof ErroPesquisaMercado) {

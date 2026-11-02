@@ -7,7 +7,7 @@ migração idempotente (CLAUDE.md), backup antes de ir para a produção e só v
 
 | # | Melhoria | Esforço | Precisa de decisão? | Depende de |
 |---|----------|---------|---------------------|------------|
-| 1 | Cache das chamadas à IA | 0,5 dia | Não | — |
+| 1 | Cache das chamadas à IA | **feito no v2 (02/11)**; falta levar à produção | Não | — |
 | 2 | Layout de fornecedor aprendido | 1 dia | Não | — |
 | 3 | Tela de confirmação do mapa do CAD | 2–3 dias | Não (só o visual) | — |
 | 4 | BDI e impostos ajustáveis (decidido 02/11) | 0,5 dia | Não: sem valor fixo (reforma tributária) | — |
@@ -19,7 +19,11 @@ migração idempotente (CLAUDE.md), backup antes de ir para a produção e só v
 
 ---
 
-## 1. Cache das chamadas à IA  (começar por aqui)
+## 1. Cache das chamadas à IA  (feito no v2 em 02/11/2026)
+**Feito:** migração `2.0-26-ia-cache.js` (`ia_cache`, `ia_cache_uso`), `services/iaCache.js` (`comCache`, contador, `situacao`), extração de equipamentos com cache de 90 dias (`equipamentoExtratorIA.js`), pesquisa de mercado com validade de 7 dias (era 48 h) e `fresco` (`?fresco=1` ou `fresco: true` no corpo; também na mão de obra), card de IA em Integrações mostrando as chamadas evitadas, `testes/iaCache.test.js`. A pesquisa de preço continua guardada em `pesquisas_mercado` (que também é o histórico) e só entra no contador; a tela já mostrava "reaproveitada do histórico, feita em…".
+**Falta:** botão "pesquisar de novo" na tela de preços (a rota já aceita `fresco`); levar à produção (migração + reinício do backend) com o OK do Márcio.
+
+(Plano original, mantido como registro:)
 **Problema:** `equipamentoExtratorIA.js` e `pesquisaMercado.js` refazem a mesma consulta
 em projetos parecidos: custo e tempo à toa.
 **Como:**

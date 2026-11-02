@@ -190,9 +190,11 @@ caso('classificação e equipamentos usam a cadeia única', async () => {
   ];
   try {
     const { extrairEquipamentosComIA } = require('../src/services/equipamentoExtratorIA');
-    const r = await extrairEquipamentosComIA('texto do projeto');
+    const texto = `texto do projeto ${Date.now()}`; // texto novo a cada rodada: o cache (iaCache) não pode servir a resposta
+    const r = await extrairEquipamentosComIA(texto);
     assert.deepStrictEqual(r.itens, [{ descricao: 'Luminária LED 18 W', referencia_fabricante: 'ABC-1' }]);
-    assert.strictEqual(pedidos[0].opcoes.documento, 'texto do projeto', 'texto longo vai como documento (arquivo na CLI)');
+    assert.strictEqual(pedidos[0].opcoes.documento, texto, 'texto longo vai como documento (arquivo na CLI)');
+    await pool.query("DELETE FROM ia_cache WHERE chave = $1", [require('../src/services/iaCache').chaveDe('equipamentos_projeto v1', texto)]).catch(() => {});
   } finally { desfazer.reverse().forEach(f => f()); }
 });
 

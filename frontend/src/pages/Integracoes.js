@@ -160,7 +160,7 @@ function CartaoRotina({ rotina, executando, aoExecutar }) {
   );
 }
 
-function CartaoIA({ ia, testando, aoTestar }) {
+function CartaoIA({ ia, cache, testando, aoTestar }) {
   if (!ia) return null;
   return (
     <div style={cartao}>
@@ -185,6 +185,15 @@ function CartaoIA({ ia, testando, aoTestar }) {
         {ia.ordemPersonalizada && <span style={{ color: 'var(--texto-3)' }}> (IA_ORDEM)</span>}
       </Linha>
       {ia.desligada && <Linha rotulo="Atenção"><span style={{ color: '#d9a53a' }}>COTACAO_IA=desligada — só a pesquisa de preço na web usa IA</span></Linha>}
+
+      {cache && (
+        <Linha rotulo="Cache">
+          <span>
+            <b style={{ color: '#3fb95f' }}>{cache.evitadas}</b> chamada(s) à IA evitada(s) em {cache.dias} dias
+            {' '}({cache.taxa}% das consultas) · {cache.guardadas} resposta(s) guardada(s)
+          </span>
+        </Linha>
+      )}
 
       <div style={separador} />
 
@@ -439,7 +448,7 @@ export default function Integracoes() {
             <CartaoRotina key={r.chave} rotina={r} executando={!!executando[r.chave]} aoExecutar={executar} />
           ))}
           <CartaoBackup backup={backup} rodando={fazendoBackup} aoExecutar={fazerBackup} />
-          <CartaoIA ia={dados.ia} testando={testando} aoTestar={testarIA} />
+          <CartaoIA ia={dados.ia} cache={dados.iaCache} testando={testando} aoTestar={testarIA} />
         </div>
       )}
     </div>

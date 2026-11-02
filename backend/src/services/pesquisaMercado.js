@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const ia = require('./ia');
+const iaCache = require('./iaCache');
 const { paraNumeroBR } = require('../utils/numeroBR');
 
 // Nome do provedor gravado em pesquisas_mercado.fonte (o mesmo da 1.x, para o
@@ -18,10 +19,13 @@ const TAMANHO_MAX_RESULTADO_MANUAL = 20000;
 // req/res. Antes o prompt vivia duplicado aqui e em claudeClient.js (com
 // pequenas diferenças de texto) — agora tem um só lugar.
 
-// Cache de 48h: a mesma descrição pesquisada de novo nesse intervalo reusa o
-// resultado salvo em vez de gastar cota do Gemini ou dinheiro do Claude de
-// novo — e a tabela vai virando um histórico de preços pesquisados.
-const HORAS_CACHE = 48;
+// Cache de 7 dias (plano de 02/11/2026; eram 48 h): a mesma descrição pesquisada de
+// novo nesse intervalo reusa o resultado salvo em vez de gastar cota do Gemini ou
+// dinheiro do Claude de novo — e a tabela vai virando um histórico de preços
+// pesquisados. A tela mostra "pesquisado em" (pesquisadoEm) e `fresco: true` força
+// uma pesquisa nova. Os acertos entram no contador de Integrações (services/iaCache.js).
+const HORAS_CACHE = 24 * 7;
+const NOME_USO = 'pesquisa_mercado';
 
 class ErroPesquisaMercado extends Error {
   constructor(mensagem, status) {
@@ -147,7 +151,7 @@ async function salvarCache(descricaoOriginal, descricaoNormalizada, resultado, f
 // texto continua sendo gravado para a tela e o histórico.
 // `prompt` e `chaveCache` permitem pesquisas com roteiro próprio (referência
 // de mão de obra por segmento) no mesmo cache, histórico e ordem de provedores.
-async function pesquisarPrecoMercado(descricao, { tipo = 'material', prompt: promptProprio, chaveCache } = {}) {
+async function pesquisarPrecoMercado(descricao, { tipo = 'material', prompt: promptProprio, chaveCache, fresco = false } = {}) {
   const desc = (descricao || '').trim();
   if (!desc) throw new ErroPesquisaMercado('Informe a descrição do material a pesquisar', 400);
 
@@ -158,13 +162,15 @@ async function pesquisarPrecoMercado(descricao, { tipo = 'material', prompt: pro
   const normalizada = normalizarDescricao(chaveCache || `${tipo === 'servico' ? '[servico] ' : ''}${desc}`).slice(0, 500);
   // Cache é só otimização de custo — se a tabela falhar por qualquer motivo,
   // a pesquisa segue normalmente (não trava por causa disso).
-  const emCache = await buscarCache(normalizada).catch(() => null);
+  const emCache = fresco ? null : await buscarCache(normalizada).catch(() => null);
   if (emCache) {
+    await iaCache.registrarUso(NOME_USO, true);
     const ofertas = emCache.ofertas || [];
     return { descricao: desc, resultado: emCache.resultado, fonte: emCache.fonte, deCache: true, pesquisadoEm: emCache.criado_em, ofertas, estatistica: estatistica(ofertas), precoSugerido: emCache.preco_sugerido != null ? Number(emCache.preco_sugerido) : null };
   }
 
   const prompt = promptProprio || montarPrompt(desc, tipo);
+  await iaCache.registrarUso(NOME_USO, false);
   let r;
   try {
     r = await ia.pesquisarWeb(prompt, {
@@ -209,9 +215,10 @@ async function salvarPesquisaManual(descricao, resultado, fonte = 'claude_deskto
 
 // Referência de mão de obra de um segmento ('publico' | 'privado'): média das
 // referências equivalentes (mesmo_item), com as fontes e o 1º link
-async function pesquisarReferenciaMaoDeObra(descricao, unidade, segmento) {
+async function pesquisarReferenciaMaoDeObra(descricao, unidade, segmento, { fresco = false } = {}) {
   if (!SEGMENTOS_MO[segmento]) throw new ErroPesquisaMercado('Segmento inválido (use publico ou privado)', 400);
   const r = await pesquisarPrecoMercado(descricao, {
+    fresco,
     tipo: 'servico',
     prompt: promptServicoSegmento(descricao, unidade, segmento),
     // versão do roteiro na chave: roteiro novo não reaproveita pesquisa antiga do cache
