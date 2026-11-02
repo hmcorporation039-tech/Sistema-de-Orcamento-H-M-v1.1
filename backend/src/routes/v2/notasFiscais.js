@@ -17,5 +17,6 @@ module.exports = (router, { autenticar, admin, validarId }) => {
   router.post('/notas-fiscais/:id/cancelar', autenticar, validarId, admin, ctrl.cancelar);
   router.post('/notas-fiscais/:id/email', autenticar, validarId, admin, ctrl.enviarEmail);
   router.get('/notas-fiscais/:id/pdf', autenticar, validarId, admin, ctrl.pdf);
+  router.get('/notas-fiscais/:id/preview-html', autenticar, validarId, admin, ctrl.previewHtml);
   router.get('/notas-fiscais/:id/xml', autenticar, validarId, admin, ctrl.xml);
 };

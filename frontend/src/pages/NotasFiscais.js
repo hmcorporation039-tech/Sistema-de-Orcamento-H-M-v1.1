@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
-  Plus, Upload, FileDown, Printer, Mail, Copy, Ban, Trash2, Pencil, Eye, Send, Search, FileCode, ExternalLink, Users, ChevronDown,
+  Plus, Upload, FileDown, Printer, Mail, Copy, Ban, Trash2, Pencil, Eye, Send, Search, FileCode, ExternalLink, Users, ChevronDown, ScanEye,
 } from 'lucide-react';
 import {
   getNotasFiscais, getNotaFiscal, criarNotaFiscal, atualizarNotaFiscal, removerNotaFiscal, duplicarNotaFiscal,
   cancelarNotaFiscal, enviarNotaFiscalPorEmail, baixarPdfNotaFiscal, baixarXmlNotaFiscal, importarXmlNotasFiscais,
-  getEmpresaFiscal, buscarMunicipios,
+  getEmpresaFiscal, buscarMunicipios, previewHtmlNotaFiscal,
 } from '../services/api';
 import useUltimoPedido from '../hooks/useUltimoPedido';
 import Paginacao from '../components/Paginacao';
@@ -69,6 +69,7 @@ export default function NotasFiscais() {
   const [cancelando, setCancelando] = useState(null);
   const [duplicando, setDuplicando] = useState(null);
   const [emitindo, setEmitindo] = useState(null);
+  const [previsualizando, setPrevisualizando] = useState(null);
   const [importando, setImportando] = useState(false);
   const [ocupado, setOcupado] = useState(null);
   const novoPedido = useUltimoPedido();
@@ -256,6 +257,10 @@ export default function NotasFiscais() {
                         {rascunho ? 'Editar' : 'Ver'}
                       </BtnTexto>
 
+                      <BtnTexto onClick={() => setPrevisualizando(n)} icone={<ScanEye size={12} />}>
+                        Prévia
+                      </BtnTexto>
+
                       {rascunho && (
                         <BtnTexto onClick={() => setEmitindo(n)} icone={<Send size={12} />} destaque>
                           Emitir
@@ -295,11 +300,12 @@ export default function NotasFiscais() {
       {/* modais */}
       {editando && (
         <ModalNota abrir={editando} onFechar={() => setEditando(null)} onSalvo={carregar}
-          acoes={{ pdf, imprimir, xml, email: setEmailPara, duplicar: setDuplicando, cancelar: setCancelando, emitir: setEmitindo }} />
+          acoes={{ pdf, imprimir, xml, email: setEmailPara, duplicar: setDuplicando, cancelar: setCancelando, emitir: setEmitindo, previa: setPrevisualizando }} />
       )}
       {emailPara && <ModalEmail nota={emailPara} onFechar={() => setEmailPara(null)} onEnviado={carregar} />}
       {cancelando && <ModalCancelar nota={cancelando} onFechar={() => setCancelando(null)} onFeito={() => { setCancelando(null); setEditando(null); carregar(); }} />}
       {emitindo && <ModalEmitir nota={emitindo} onFechar={() => setEmitindo(null)} onImportar={() => { setEmitindo(null); setImportando(true); }} />}
+      {previsualizando && <ModalPrevia nota={previsualizando} onFechar={() => setPrevisualizando(null)} />}
       {duplicando && (
         <ModalDuplicar nota={duplicando} onFechar={() => setDuplicando(null)}
           onFeito={(ids) => { setDuplicando(null); carregar(); if (ids.length === 1) setEditando({ id: ids[0] }); }} />
@@ -583,6 +589,7 @@ function ModalNota({ abrir, onFechar, onSalvo, acoes }) {
       {!editavel && nota.id && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16, padding: '10px 14px', background: 'var(--superficie-2)', border: '1px solid var(--borda)', borderRadius: 8 }}>
           <span style={{ fontSize: 12, color: 'var(--texto-3)', alignSelf: 'center', marginRight: 4 }}>Ações:</span>
+          <button type="button" onClick={() => acoes.previa(nota)} style={estilos.btnSecundario}><ScanEye size={13} /> Prévia</button>
           <button type="button" onClick={() => acoes.imprimir(nota)} style={estilos.btnSecundario}><Printer size={13} /> Imprimir</button>
           <button type="button" onClick={() => acoes.email(nota)} style={estilos.btnSecundario}><Mail size={13} /> Enviar por e-mail</button>
           <button type="button" onClick={() => acoes.pdf(nota)} style={estilos.btnSecundario}><FileDown size={13} /> Baixar PDF</button>
@@ -710,6 +717,9 @@ function ModalNota({ abrir, onFechar, onSalvo, acoes }) {
 
           {/* botões de ação */}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {nota.id && (
+              <button type="button" onClick={() => acoes.previa(nota)} style={estilos.btnSecundario}><ScanEye size={13} /> Prévia</button>
+            )}
             {editavel && nota.id && (
               <button type="button" onClick={() => acoes.emitir(nota)} style={estilos.btnSecundario}><Send size={13} /> Emitir</button>
             )}
@@ -780,6 +790,38 @@ function ModalDuplicar({ nota, onFechar, onFeito }) {
         <button type="button" onClick={confirmar} disabled={enviando} style={estilos.btnPrimario} data-testid="confirmar-duplicar">
           <Copy size={13} /> {enviando ? 'Duplicando…' : 'Duplicar'}
         </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ── Pré-visualização HTML (sem Puppeteer) ─────────────────────────────────────
+
+function ModalPrevia({ nota, onFechar }) {
+  const [htmlUrl, setHtmlUrl] = useState(null);
+  const [erro, setErro] = useState(null);
+  useEffect(() => {
+    let url;
+    previewHtmlNotaFiscal(nota.id)
+      .then(r => { url = URL.createObjectURL(new Blob([r.data], { type: 'text/html' })); setHtmlUrl(url); })
+      .catch(() => setErro('Erro ao carregar a prévia da nota.'));
+    return () => { if (url) URL.revokeObjectURL(url); };
+  }, [nota.id]);
+
+  return (
+    <Modal titulo={`Pré-visualização · ${nota.numero ? `NFS-e nº ${nota.numero}` : 'Rascunho'}`} onFechar={onFechar} largura={900}>
+      {erro && <p style={{ ...estilos.ajuda, color: 'var(--perigo)' }}>{erro}</p>}
+      {!erro && !htmlUrl && <p style={{ ...estilos.ajuda, textAlign: 'center', padding: '24px 0' }}>Carregando prévia…</p>}
+      {htmlUrl && (
+        <iframe
+          src={htmlUrl}
+          title="Pré-visualização da nota"
+          style={{ width: '100%', height: '75vh', border: '1px solid var(--borda)', borderRadius: 6 }}
+          sandbox="allow-same-origin"
+        />
+      )}
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 12 }}>
+        <button type="button" onClick={onFechar} style={estilos.btnPrimario}>Fechar</button>
       </div>
     </Modal>
   );
