@@ -111,6 +111,9 @@ export const atualizarMargemPadrao = (margem) => api.put('/configuracoes/margem'
 // BDI e impostos padrão das propostas novas (sem valor de fábrica: o administrador define)
 export const getPadroesOrcamento = () => api.get('/configuracoes/padroes-orcamento');
 export const atualizarPadroesOrcamento = (padroes) => api.put('/configuracoes/padroes-orcamento', padroes);
+export const getSinapiSituacao = () => api.get('/sinapi/situacao');
+export const buscarSinapi = (q, tipo) => api.get('/sinapi/buscar', { params: { q, tipo } });
+export const configurarSinapi = (config) => api.put('/sinapi/config', config);
 
 // Faixa praticada dos materiais nas propostas aprovadas ({ [material_id]: { minimo, mediana, maximo, ultimo, ... } })
 export const getPrecosVendidos = (ids, excluirPropostaId) =>
