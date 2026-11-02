@@ -1,11 +1,11 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import VencimentosLaudos from './VencimentosLaudos';
-import { getVencimentos, criarVencimento, renovarVencimento } from '../services/api';
+import { getVencimentos, criarVencimento, renovarVencimento, criarPropostaRenovacao } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 
 // Cartão "Vencimentos": laudos para todos; documentos da empresa (certidões, certificado A1) só para o administrador.
-jest.mock('../services/api', () => ({ getVencimentos: jest.fn(), criarVencimento: jest.fn(), renovarVencimento: jest.fn(), encerrarVencimento: jest.fn() }));
+jest.mock('../services/api', () => ({ getVencimentos: jest.fn(), criarVencimento: jest.fn(), renovarVencimento: jest.fn(), encerrarVencimento: jest.fn(), criarPropostaRenovacao: jest.fn() }));
 jest.mock('../hooks/useAuth', () => ({ useAuth: jest.fn() }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -15,7 +15,7 @@ beforeEach(() => {
   caixa = document.createElement('div');
   document.body.appendChild(caixa);
   raiz = createRoot(caixa);
-  [getVencimentos, criarVencimento, renovarVencimento].forEach(f => f.mockReset());
+  [getVencimentos, criarVencimento, renovarVencimento, criarPropostaRenovacao].forEach(f => f.mockReset());
   useAuth.mockReturnValue({ usuario: { role: 'admin' } });
 });
 afterEach(() => {
@@ -81,4 +81,22 @@ test('certificado digital mostra que a data vem do arquivo e não oferece renova
   await abrir();
   expect(caixa.textContent).toContain('lida do certificado');
   expect(botao('Renovei')).toBeUndefined();
+});
+
+test('laudo a vencer cria a proposta de renovação e passa a oferecer abrir a mesma proposta', async () => {
+  getVencimentos.mockResolvedValue(resposta([laudo]));
+  criarPropostaRenovacao.mockResolvedValue({ data: { propostaId: 77, numero: 'P250', criada: true, sugestaoDePreco: 'Sem valor sugerido.', ...resposta([{ ...laudo, proposta_renovacao_id: 77, proposta_renovacao_numero: 'P250' }]).data } });
+  await abrir();
+  await act(async () => { botao('Proposta de renovação').click(); });
+  expect(criarPropostaRenovacao).toHaveBeenCalledWith(1);
+  const link = caixa.querySelector('a[href="/propostas/editar/77"]');
+  expect(link).not.toBeNull();
+  expect(link.textContent).toContain('P250');
+  expect(botao('Proposta de renovação')).toBeUndefined();
+});
+
+test('laudo em dia e documento da empresa não oferecem proposta de renovação', async () => {
+  getVencimentos.mockResolvedValue(resposta([{ ...laudo, nivel: 'ok' }, certidao]));
+  await abrir();
+  expect(botao('Proposta de renovação')).toBeUndefined();
 });

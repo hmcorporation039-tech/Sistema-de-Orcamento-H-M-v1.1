@@ -479,6 +479,7 @@ export const getVencimentos = () => api.get('/vencimentos');
 export const criarVencimento = (dados) => api.post('/vencimentos', dados);
 export const renovarVencimento = (id, dados) => api.put(`/vencimentos/${id}/renovar`, dados || {});
 export const encerrarVencimento = (id) => api.delete(`/vencimentos/${id}`);
+export const criarPropostaRenovacao = (id) => api.post(`/vencimentos/${id}/proposta-renovacao`);
 
 // ── PROPOSTAS SEM RESPOSTA (painel inicial): quem precisa de contato; registrar contato ou adiar ─
 export const getFollowUpPropostas = () => api.get('/follow-up-propostas');

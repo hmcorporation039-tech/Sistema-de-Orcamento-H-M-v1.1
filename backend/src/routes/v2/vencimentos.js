@@ -5,5 +5,6 @@ module.exports = (router, { autenticar, admin, validarId }) => {
   router.get('/vencimentos', autenticar, ctrl.listar);
   router.post('/vencimentos', autenticar, ctrl.criar);
   router.put('/vencimentos/:id/renovar', autenticar, validarId, ctrl.renovar);
+  router.post('/vencimentos/:id/proposta-renovacao', autenticar, validarId, ctrl.propostaRenovacao);
   router.delete('/vencimentos/:id', autenticar, validarId, admin, ctrl.encerrar);
 };
