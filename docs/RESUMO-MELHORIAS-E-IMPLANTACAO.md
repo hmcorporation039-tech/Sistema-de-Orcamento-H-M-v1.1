@@ -716,3 +716,13 @@ Só código, sem migração. Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-b
 - **Teste na hora, sem e-mail:** `"C:\Program Files\nodejs\node.exe" "C:\HM-Engenharia\hm-eng\backend\scripts\testar-restauracao.js" --sem-email`. O usuário do banco precisa poder criar banco (CREATE DATABASE); se não puder, o teste falha dizendo o motivo.
 - Teste: `backend/testes/testeRestauracao.test.js` (sem tocar em banco).
 - Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.17_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_17-04.dump`.
+
+### 02/11/2026: versão 2.18.0 — laudos a vencer
+**Migração de banco** (idempotente, roda sozinha ao reiniciar o backend): `2.0-31-vencimentos-laudos.js` (tabela `vencimentos_laudos`). Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-backend.bat` (administrador) e Ctrl+F5.
+- **Cartão "Laudos a vencer"** no painel inicial: lista por data de vencimento, com cor (vencido, até 30 dias, até 60 dias). "Cadastrar laudo" registra os já entregues fora do sistema; "Renovei" conta nova validade a partir de hoje; "Encerrar" (só administrador) tira da lista.
+- **Laudos do sistema entram sozinhos** (tipo laudo, com data no cabeçalho; os marcados como exemplo não). Um laudo mais novo da mesma obra e disciplina encerra o antigo.
+- **Aviso por e-mail** pela rotina `vencimentos` (06:00 e 18:00, aparece em Integrações): a 60 dias, a 30 dias e ao vencer, uma vez por etapa, para `ALERTA_EMAIL` (ou `EMAIL_IMAP_USER`). E-mail que falha não marca como avisado.
+- **Validade padrão de 12 meses é só sugestão**, editável por laudo; confira a exigência do local (bombeiros, distribuidora, seguradora, NR-10).
+- Não cria proposta de renovação (ideia futura). Não usa IA.
+- Testes: `vencimentos` e `rotinas` em `backend/testes` (a parte do banco só roda no v2).
+- Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.18_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_17-11.dump`.
