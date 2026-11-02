@@ -3,6 +3,7 @@ const { credenciaisConfiguradas } = require('../services/email/imap');
 const rotinas = require('../services/rotinas');
 const { registrarAuditoria } = require('../services/auditoria');
 const { obterMargemPadrao } = require('../services/catalogoMateriais');
+const padroes = require('../services/padroesOrcamento');
 
 async function statusEmail(req, res) {
   const ultima = await pool.query(
@@ -63,4 +64,15 @@ async function atualizarMargem(req, res) {
   res.json({ margem: valor });
 }
 
-module.exports = { statusEmail, verificarAgora, historico, obterMargem, atualizarMargem };
+// BDI e impostos padrão das propostas novas (services/padroesOrcamento.js)
+async function obterPadroesOrcamento(req, res) {
+  res.json(await padroes.obterPadroes(pool));
+}
+
+async function atualizarPadroesOrcamento(req, res) {
+  const r = await padroes.salvarPadroes(req.body, req.usuario.id, pool);
+  if (r.erro) return res.status(400).json({ erro: r.erro });
+  res.json(r.padroes);
+}
+
+module.exports = { statusEmail, verificarAgora, historico, obterMargem, atualizarMargem, obterPadroesOrcamento, atualizarPadroesOrcamento };

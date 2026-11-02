@@ -108,6 +108,9 @@ export const verificarEmailAgora = () => api.post('/integracoes/email/verificar-
 export const getHistoricoEmail = () => api.get('/integracoes/email/historico');
 export const getMargemPadrao = () => api.get('/configuracoes/margem');
 export const atualizarMargemPadrao = (margem) => api.put('/configuracoes/margem', { margem });
+// BDI e impostos padrão das propostas novas (sem valor de fábrica: o administrador define)
+export const getPadroesOrcamento = () => api.get('/configuracoes/padroes-orcamento');
+export const atualizarPadroesOrcamento = (padroes) => api.put('/configuracoes/padroes-orcamento', padroes);
 
 // ── PROPOSTAS ─────────────────────────────────────────────────────────
 export const getPropostas = (params) => api.get('/propostas', { params });

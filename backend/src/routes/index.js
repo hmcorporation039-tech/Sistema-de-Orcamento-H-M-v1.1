@@ -161,6 +161,8 @@ router.post('/integracoes/email/verificar-agora', autenticar, integCtrl.verifica
 router.get('/integracoes/email/historico', autenticar, integCtrl.historico);
 router.get('/configuracoes/margem', autenticar, integCtrl.obterMargem);
 router.put('/configuracoes/margem', autenticar, admin, integCtrl.atualizarMargem);
+router.get('/configuracoes/padroes-orcamento', autenticar, integCtrl.obterPadroesOrcamento);
+router.put('/configuracoes/padroes-orcamento', autenticar, admin, integCtrl.atualizarPadroesOrcamento);
 
 // ── USUÁRIOS (admin) ─────────────────────────────────────────────────
 router.get('/usuarios', autenticar, admin, usuCtrl.listar);

@@ -4,6 +4,7 @@ const pool = require('../../config/database');
 const { comTransacao } = require('../../services/transacao');
 const { hojeBrasilia } = require('../../utils/dataHoje');
 const { calcularTotais } = require('../../utils/calculoProposta');
+const { padroesParaPropostaNova } = require('../../services/padroesOrcamento');
 const { validarProposta } = require('../../utils/validacaoProposta');
 const { inserirSecoesEItens, proximoNumero, registrarEvento } = require('../propostasController');
 const { linhaParaAnalise } = require('./comum');
@@ -114,11 +115,14 @@ async function gerarOrcamento(req, res, next) {
       ? (await client.query('SELECT numero, status, bdi, bdi_materiais, imposto_venda, imposto_servico FROM propostas WHERE id = $1 FOR UPDATE', [vinculadaId])).rows[0]
       : null;
     const atualizarVinculada = !!vinculadaInfo && vinculadaInfo.status === 'Ativa';
-    const totais = calcularTotais({ secoes, itens,
-      bdi: atualizarVinculada ? Number(vinculadaInfo.bdi) || 0 : 0,
+    // proposta nova nasce com o BDI e os impostos padrão configurados (0 onde não foram definidos)
+    const padrao = atualizarVinculada ? null : await padroesParaPropostaNova(client);
+    const bdi = atualizarVinculada ? Number(vinculadaInfo.bdi) || 0 : padrao.bdi;
+    const impostoVenda = atualizarVinculada ? Number(vinculadaInfo.imposto_venda) || 0 : padrao.imposto_venda;
+    const impostoServico = atualizarVinculada ? Number(vinculadaInfo.imposto_servico) || 0 : padrao.imposto_servico;
+    const totais = calcularTotais({ secoes, itens, bdi,
       bdi_materiais: atualizarVinculada ? vinculadaInfo.bdi_materiais : null, // BDI diferenciado (2.0, Fase 3F) também é mantido
-      imposto_venda: atualizarVinculada ? Number(vinculadaInfo.imposto_venda) || 0 : 0,
-      imposto_servico: atualizarVinculada ? Number(vinculadaInfo.imposto_servico) || 0 : 0 });
+      imposto_venda: impostoVenda, imposto_servico: impostoServico });
 
     if (atualizarVinculada) {
       await client.query(
@@ -149,7 +153,7 @@ async function gerarOrcamento(req, res, next) {
       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'analise',$20)
       RETURNING id`,
       [numeroGerado, seq, dataHoje, 5, clienteId, analise.cliente.trim(), req.usuario.nome, escopo,
-       0, 0, 0, totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi,
+       bdi, impostoVenda, impostoServico, totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi,
        totais.valor_imposto_venda, totais.valor_imposto_servico, totais.total, req.usuario.id,
        analise.obraId, analise.id] // a proposta herda a obra da análise e guarda a origem
     );
@@ -157,15 +161,15 @@ async function gerarOrcamento(req, res, next) {
     await inserirSecoesEItens(client, novaPropostaId, secoes, itens);
     await registrarEvento(client, novaPropostaId, req.usuario.id, 'criada', `Proposta ${numeroGerado} criada a partir da Análise de Projeto #${analise.id}`);
     await client.query('UPDATE analises_projeto SET proposta_id = $1 WHERE id = $2', [novaPropostaId, analise.id]);
-    return { propostaId: novaPropostaId, numero: numeroGerado, criada: true };
+    return { propostaId: novaPropostaId, numero: numeroGerado, criada: true, aviso: padrao.aviso };
   });
   if (!resultadoTx) return res.status(404).json({ erro: 'Análise não encontrada' });
-  const { propostaId, numero, criada } = resultadoTx;
+  const { propostaId, numero, criada, aviso: avisoPadroes } = resultadoTx;
 
   const aviso = semQuantidade ? ` (${semQuantidade} item(ns) com quantidade 0 ficaram de fora — preencha na análise se fizerem parte)` : '';
   res.json({
     propostaId, numero, criada, semQuantidade,
-    mensagem: (criada ? `Orçamento ${numero} criado a partir desta análise` : `Orçamento ${numero} atualizado com os itens desta análise`) + aviso,
+    mensagem: (criada ? `Orçamento ${numero} criado a partir desta análise` : `Orçamento ${numero} atualizado com os itens desta análise`) + aviso + (avisoPadroes ? ` ${avisoPadroes}` : ''),
   });
 }
 
