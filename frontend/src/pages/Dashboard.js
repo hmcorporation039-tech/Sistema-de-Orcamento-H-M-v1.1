@@ -12,6 +12,8 @@ import { STATUS_PROPOSTA as STATUS_CORES } from '../utils/statusProposta';
 import { estilos } from '../components/ui/estilos';
 import VencimentosLaudos from '../components/VencimentosLaudos';
 import FollowUpPropostas from '../components/FollowUpPropostas';
+import NotasAReceber from '../components/NotasAReceber';
+import { useAuth } from '../hooks/useAuth';
 
 const MESES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -22,6 +24,7 @@ function formatarMesLabel(mes) {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { usuario } = useAuth();
   const [janela, setJanela] = useState(12);
   const [carregando, setCarregando] = useState(true);
   const [resumo, setResumo] = useState(null);
@@ -124,6 +127,7 @@ export default function Dashboard() {
         />
       </div>
 
+      {usuario?.role === 'admin' && <NotasAReceber />}
       <FollowUpPropostas />
       <VencimentosLaudos />
 
