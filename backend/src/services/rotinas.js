@@ -111,6 +111,20 @@ function definicoesPadrao() {
       logErro: 'Erro no aviso de laudos a vencer:',
       ultimoRegistroSql: 'SELECT MAX(avisado_em) AS em FROM vencimentos_laudos',
     },
+    'erros-sistema': {
+      nome: 'Resumo de erros do sistema',
+      descricao: 'Avisa por e-mail os erros inesperados (500) que o sistema registrou desde o último resumo, agrupados por rota. Sem erro, não envia nada.',
+      atrasoSegundos: 120,
+      configurada: () => true,
+      logAgendada: () => `Resumo de erros do sistema ativo (${quando})`,
+      executar: () => require('./errosSistema').executarRotina(),
+      itens: (r) => r.tipos,
+      texto: (r) => r.tipos ? `${r.tipos} tipo(s) de erro, ${r.ocorrencias} ocorrência(s)${r.avisados ? ' — resumo enviado por e-mail' : ''}` : 'nenhum erro novo desde o último resumo',
+      logResultado: (r) => r.avisados > 0 && `Resumo de erros: ${r.tipos} tipo(s), ${r.ocorrencias} ocorrência(s) enviado(s) por e-mail`,
+      prefixoAviso: 'Aviso (resumo de erros):',
+      logErro: 'Erro no resumo de erros do sistema:',
+      ultimoRegistroSql: 'SELECT MAX(avisado_em) AS em FROM erros_sistema',
+    },
   };
 }
 
