@@ -2,6 +2,10 @@
 // migração 2.0-31). A decisão (somar meses, em que etapa de aviso está, texto do e-mail) é função pura;
 // o banco e o e-mail entram por parâmetro, para o teste rodar sem nenhum dos dois.
 //
+// Além dos laudos (tipo 'laudo'), há os documentos da própria empresa (tipo 'empresa': certidões, alvará, CREA,
+// seguro, certificado digital). Esses têm data de vencimento escrita no documento, então se informa o "vence em"
+// direto. O certificado A1 da NFS-e tem origem 'certificado_a1': a data vem do arquivo .pfx, não de digitação.
+//
 // A validade padrão (12 meses) é uma sugestão, não a norma: cada registro guarda a sua, e quem
 // cadastra confere com a exigência do local (distribuidora, bombeiros, seguradora, NR-10).
 const pool = require('../config/database');
@@ -44,7 +48,12 @@ function situacao(venceIso, hoje = hojeIso()) {
   return { dias, etapa, rotulo, nivel: etapa === ETAPAS.vencido ? 'vencido' : etapa === ETAPAS.trinta ? 'urgente' : etapa === ETAPAS.sessenta ? 'atencao' : 'ok' };
 }
 
-function validarEntrada({ disciplina, descricao, emitido_em, validade_meses }) {
+function validarEntrada({ tipo, disciplina, descricao, emitido_em, vence_em, validade_meses }) {
+  if (tipo === 'empresa') {
+    if (!String(descricao || '').trim()) return 'Diga qual documento é (ex.: "Certidão negativa federal").';
+    if (!ehDataIso(vence_em)) return 'Informe a data de vencimento do documento.';
+    return null;
+  }
   if (!String(disciplina || '').trim()) return 'Informe a disciplina (SPDA, incêndio, elétrica…).';
   if (!String(descricao || '').trim()) return 'Descreva o laudo (ex.: "SPDA — Edifício Aurora").';
   if (!ehDataIso(emitido_em)) return 'Informe a data de emissão do laudo.';
@@ -55,10 +64,11 @@ function validarEntrada({ disciplina, descricao, emitido_em, validade_meses }) {
 
 const COLUNAS = `v.id, v.disciplina, v.descricao, v.cliente_id, v.cliente_nome, v.obra_id, v.laudo_id, v.validade_meses,
   to_char(v.emitido_em, 'YYYY-MM-DD') AS emitido_em, to_char(v.vence_em, 'YYYY-MM-DD') AS vence_em,
-  v.etapa_avisada, v.observacao`;
+  v.etapa_avisada, v.observacao, v.tipo, v.origem`;
 
-async function listar(db = pool, hoje = hojeIso()) {
-  const { rows } = await db.query(`SELECT ${COLUNAS} FROM vencimentos_laudos v WHERE v.ativo ORDER BY v.vence_em, v.id`);
+// Documentos da empresa só aparecem para o administrador (incluirEmpresa), como o resto do que é fiscal/financeiro.
+async function listar(db = pool, hoje = hojeIso(), { incluirEmpresa = true } = {}) {
+  const { rows } = await db.query(`SELECT ${COLUNAS} FROM vencimentos_laudos v WHERE v.ativo${incluirEmpresa ? '' : " AND v.tipo = 'laudo'"} ORDER BY v.vence_em, v.id`);
   const itens = rows.map(r => ({ ...r, ...situacao(r.vence_em, hoje) }));
   const resumo = { total: itens.length, vencidos: 0, urgentes: 0, atencao: 0 };
   for (const i of itens) {
@@ -69,7 +79,28 @@ async function listar(db = pool, hoje = hojeIso()) {
   return { itens, resumo, validadePadraoMeses: VALIDADE_PADRAO_MESES };
 }
 
-async function criar(db, dados, usuarioId = null) {
+function mesesEntre(deIso, ateIso) {
+  const [a1, m1] = deIso.split('-').map(Number);
+  const [a2, m2] = ateIso.split('-').map(Number);
+  return Math.min(120, Math.max(1, (a2 - a1) * 12 + (m2 - m1)));
+}
+
+async function criarEmpresa(db, dados, usuarioId, hoje) {
+  const emissao = ehDataIso(dados.emitido_em) ? dados.emitido_em : hoje;
+  const { rows } = await db.query(
+    `INSERT INTO vencimentos_laudos (tipo, disciplina, descricao, emitido_em, validade_meses, vence_em, observacao, criado_por)
+     VALUES ('empresa', 'empresa', $1, $2, $3, $4, $5, $6) RETURNING id`,
+    [String(dados.descricao).trim().slice(0, 200), emissao, mesesEntre(emissao, dados.vence_em), dados.vence_em, String(dados.observacao || '').trim() || null, usuarioId]
+  );
+  return rows[0].id;
+}
+
+async function criar(db, dados, usuarioId = null, hoje = hojeIso()) {
+  if (dados.tipo === 'empresa') {
+    const e = validarEntrada(dados);
+    if (e) throw Object.assign(new Error(e), { status: 400 });
+    return criarEmpresa(db, dados, usuarioId, hoje);
+  }
   const erro = validarEntrada({ ...dados, validade_meses: dados.validade_meses ?? VALIDADE_PADRAO_MESES });
   if (erro) throw Object.assign(new Error(erro), { status: 400 });
   const meses = Number(dados.validade_meses ?? VALIDADE_PADRAO_MESES);
@@ -86,9 +117,20 @@ async function criar(db, dados, usuarioId = null) {
 }
 
 // "Renovei": nova emissão (hoje, se não vier data), mesma validade, avisos recomeçam.
-async function renovar(db, id, { emitido_em, validade_meses } = {}, hoje = hojeIso()) {
-  const atual = (await db.query('SELECT validade_meses FROM vencimentos_laudos WHERE id = $1 AND ativo', [id])).rows[0];
+async function renovar(db, id, { emitido_em, validade_meses, vence_em } = {}, hoje = hojeIso()) {
+  const atual = (await db.query('SELECT validade_meses, tipo, origem FROM vencimentos_laudos WHERE id = $1 AND ativo', [id])).rows[0];
   if (!atual) throw Object.assign(new Error('Vencimento não encontrado.'), { status: 404 });
+  if (atual.origem) throw Object.assign(new Error('Esta data é lida do arquivo do certificado: troque o arquivo e ela se atualiza sozinha.'), { status: 400 });
+  if (atual.tipo === 'empresa') {
+    // Cada renovação de documento traz a data nova escrita nele (a certidão de hoje vale até outra data).
+    if (!ehDataIso(vence_em)) throw Object.assign(new Error('Informe a nova data de vencimento do documento.'), { status: 400 });
+    if (vence_em <= hoje) throw Object.assign(new Error('A nova data de vencimento precisa ser futura.'), { status: 400 });
+    await db.query(
+      `UPDATE vencimentos_laudos SET emitido_em = $2, validade_meses = $3, vence_em = $4, etapa_avisada = 0, avisado_em = NULL WHERE id = $1`,
+      [id, hoje, mesesEntre(hoje, vence_em), vence_em]
+    );
+    return;
+  }
   const emissao = emitido_em || hoje;
   if (!ehDataIso(emissao)) throw Object.assign(new Error('Data de emissão inválida.'), { status: 400 });
   const meses = Number(validade_meses || atual.validade_meses);
@@ -137,6 +179,35 @@ async function sincronizarLaudos(db = pool) {
   return novos;
 }
 
+// Certificado digital A1 (o mesmo arquivo que assina a NFS-e): a validade vem do próprio .pfx.
+// `carregar` entra por parâmetro (nfseNacional.carregarCertificado) para o teste não abrir certificado de verdade.
+// Sem certificado ou sem senha configurados não é erro: só não há o que acompanhar.
+async function sincronizarCertificado(db = pool, { carregar } = {}) {
+  let cert;
+  try {
+    cert = (carregar || require('./nfseNacional').carregarCertificado)();
+  } catch (e) {
+    return { atualizado: false, aviso: `Certificado digital não lido: ${e.message}` };
+  }
+  if (!cert?.validoAte) return { atualizado: false, aviso: 'Certificado digital sem data de validade.' };
+  const vence = dataIso(new Date(cert.validoAte));
+  const emissao = cert.validoDe ? dataIso(new Date(cert.validoDe)) : vence;
+  const descricao = `Certificado digital A1 (NFS-e)${cert.nome ? ` — ${String(cert.nome).split(':')[0].slice(0, 120)}` : ''}`;
+  // Data nova e maior = certificado trocado: os avisos recomeçam. Data igual: nada muda.
+  await db.query(
+    `INSERT INTO vencimentos_laudos (tipo, origem, disciplina, descricao, emitido_em, validade_meses, vence_em)
+     VALUES ('empresa', 'certificado_a1', 'empresa', $1, $2, $3, $4)
+     ON CONFLICT (origem) WHERE origem IS NOT NULL DO UPDATE
+       SET descricao = EXCLUDED.descricao, emitido_em = EXCLUDED.emitido_em, validade_meses = EXCLUDED.validade_meses,
+           etapa_avisada = CASE WHEN EXCLUDED.vence_em > vencimentos_laudos.vence_em THEN 0 ELSE vencimentos_laudos.etapa_avisada END,
+           avisado_em = CASE WHEN EXCLUDED.vence_em > vencimentos_laudos.vence_em THEN NULL ELSE vencimentos_laudos.avisado_em END,
+           ativo = CASE WHEN EXCLUDED.vence_em > vencimentos_laudos.vence_em THEN TRUE ELSE vencimentos_laudos.ativo END,
+           vence_em = EXCLUDED.vence_em`,
+    [descricao, emissao, mesesEntre(emissao, vence), vence]
+  );
+  return { atualizado: true, vence_em: vence };
+}
+
 function mensagem(itens, hoje = hojeIso()) {
   const linhas = itens.map(i => {
     const s = situacao(i.vence_em, hoje);
@@ -145,8 +216,8 @@ function mensagem(itens, hoje = hojeIso()) {
   });
   const vencidos = itens.filter(i => etapaDevida(diasAte(i.vence_em, hoje)) === ETAPAS.vencido).length;
   return {
-    assunto: `Laudos a renovar: ${itens.length}${vencidos ? ` (${vencidos} vencido${vencidos > 1 ? 's' : ''})` : ''}`,
-    texto: `Laudos que entraram numa etapa de aviso (60 dias, 30 dias ou vencido):\n\n${linhas.join('\n')}\n\nAbra o painel inicial do sistema para renovar ou encerrar cada um. Boa hora também para oferecer ao cliente a proposta de renovação.`,
+    assunto: `Vencimentos a renovar: ${itens.length}${vencidos ? ` (${vencidos} vencido${vencidos > 1 ? 's' : ''})` : ''}`,
+    texto: `Laudos e documentos da empresa que entraram numa etapa de aviso (60 dias, 30 dias ou vencido):\n\n${linhas.join('\n')}\n\nAbra o painel inicial do sistema para renovar ou encerrar cada um. Nos laudos, boa hora também para oferecer ao cliente a proposta de renovação.`,
   };
 }
 
@@ -155,12 +226,12 @@ async function avisarVencimentos({ db = pool, enviar, destino, hoje = hojeIso() 
   const { rows } = await db.query(`SELECT ${COLUNAS} FROM vencimentos_laudos v WHERE v.ativo ORDER BY v.vence_em, v.id`);
   const devidos = rows.filter(r => etapaDevida(diasAte(r.vence_em, hoje)) > r.etapa_avisada);
   if (!devidos.length) return { avisados: 0, avisos: [] };
-  if (!destino) return { avisados: 0, avisos: ['Há laudos a renovar, mas não há e-mail para avisar (defina ALERTA_EMAIL ou EMAIL_IMAP_USER no .env).'] };
+  if (!destino) return { avisados: 0, avisos: ['Há vencimentos a renovar, mas não há e-mail para avisar (defina ALERTA_EMAIL ou EMAIL_IMAP_USER no .env).'] };
   try {
     const m = mensagem(devidos, hoje);
     await enviar({ to: destino, subject: m.assunto, text: m.texto });
   } catch (e) {
-    return { avisados: 0, avisos: [`Não consegui enviar o aviso de laudos a renovar: ${e.message}`] };
+    return { avisados: 0, avisos: [`Não consegui enviar o aviso de vencimentos a renovar: ${e.message}`] };
   }
   for (const r of devidos) {
     await db.query('UPDATE vencimentos_laudos SET etapa_avisada = $2, avisado_em = NOW() WHERE id = $1', [r.id, etapaDevida(diasAte(r.vence_em, hoje))]);
@@ -169,8 +240,9 @@ async function avisarVencimentos({ db = pool, enviar, destino, hoje = hojeIso() 
 }
 
 // Rotina agendada (rotinas.js, 06:00 e 18:00).
-async function executarRotina({ db = pool, enviar, hoje = hojeIso() } = {}) {
+async function executarRotina({ db = pool, enviar, hoje = hojeIso(), carregarCertificado } = {}) {
   const novos = await sincronizarLaudos(db);
+  await sincronizarCertificado(db, { carregar: carregarCertificado });   // sem certificado configurado, só segue
   const envio = enviar || ((m) => require('./email/smtp').criarTransportador().sendMail({ from: process.env.EMAIL_IMAP_USER, ...m }));
   const destino = process.env.ALERTA_EMAIL || process.env.EMAIL_IMAP_USER;
   const r = await avisarVencimentos({ db, enviar: envio, destino, hoje });
@@ -179,6 +251,6 @@ async function executarRotina({ db = pool, enviar, hoje = hojeIso() } = {}) {
 }
 
 module.exports = {
-  VALIDADE_PADRAO_MESES, ETAPAS, somarMeses, diasAte, etapaDevida, situacao, ehDataIso, hojeIso, validarEntrada,
-  listar, criar, renovar, encerrar, sincronizarLaudos, mensagem, avisarVencimentos, executarRotina,
+  VALIDADE_PADRAO_MESES, ETAPAS, somarMeses, diasAte, etapaDevida, situacao, ehDataIso, hojeIso, validarEntrada, mesesEntre,
+  listar, criar, renovar, encerrar, sincronizarLaudos, sincronizarCertificado, mensagem, avisarVencimentos, executarRotina,
 };
