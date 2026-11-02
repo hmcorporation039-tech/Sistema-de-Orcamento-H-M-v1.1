@@ -193,6 +193,7 @@ async function lerPixNaCaixaDeEntrada({ esperas, db = pool, conectarEmail = cone
 
   if (resumo.movimentosImportados > 0) {
     await vincular().catch(err => resumo.avisos.push(`Erro ao vincular prestadores: ${err.message}`));
+    await require('./atribuicaoObras').aplicarRegras().catch(err => resumo.avisos.push(`Erro ao ligar Pix às obras pelas regras: ${err.message}`));
   }
 
   return resumo;
