@@ -150,10 +150,7 @@ function gerarHtmlNfse(nota, { empresa = {}, municipios = {}, qrcode = null } = 
   .aviso { color: #e00000; font-weight: bold; font-size: 8.5pt; padding: 3px 5px; border-bottom: 1px solid #000; }
   .rodape { text-align: center; font-size: 7pt; margin-top: 3px; }
   .rodape b { text-decoration: underline; }
-  .marca { position: fixed; top: 40%; left: 0; right: 0; text-align: center; transform: rotate(-28deg); font-size: 70pt; white-space: nowrap;
-    font-weight: 800; color: rgba(200, 0, 0, .14); letter-spacing: 6px; z-index: 9; pointer-events: none; }
 </style></head><body>
-${marca ? `<div class="marca">${e(marca)}</div>` : ''}
 
 <div class="quadro"><table class="cab"><tr>
   <td style="width:15mm;padding:3px 4px 3px 8px">${BRASAO ? `<img src="${BRASAO}" style="width:11mm;display:block" alt="">` : ''}</td>
