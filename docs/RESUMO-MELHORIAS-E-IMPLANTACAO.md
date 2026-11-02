@@ -644,3 +644,11 @@ Instalada em produção em 02/11/2026. Não há migração de banco (usa a tabel
 - **Ao instalar:** preencher os três campos em Integrações, senão as propostas novas nascem com 0 %.
 - Não feito: padrão separado por tipo de cliente (privado × licitação). Teste: `backend/testes/padroesOrcamento.test.js` (só roda no banco do v2).
 - Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.10_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_12-38.dump`.
+
+### 02/11/2026: versão 2.11.0 — faixa de preço vendido por material (item 5 do plano)
+Instalada em produção em 02/11/2026. Não há migração de banco.
+- **O que aparece:** na proposta, abaixo do valor de cada material ligado ao catálogo, a linha "vendido: menor – maior · mediana · N×" (passar o mouse mostra o último valor, a proposta e a data). Dois avisos em vermelho: valor da linha abaixo do menor já aprovado; custo de compra do catálogo acima do último valor aprovado.
+- **De onde vem:** calculado na hora de propostas × itens (`services/precosVendidos.js`, rota `GET /api/materiais/precos-vendidos?ids=..&excluir=..`), só proposta **Aprovada**, item **confirmado** e com valor > 0. Cancelada, recusada, ativa e "a cotar" nunca contam; aprovação desfeita sai do histórico na hora; a proposta aberta não conta contra si mesma.
+- **Atenção:** é o valor unitário do item **antes do BDI** (o BDI é somado depois). Só aparece para item ligado ao catálogo (`material_id`) e com venda aprovada anterior — enche conforme o uso.
+- Não feito: separar por tipo de cliente (privado × licitação). Teste: `backend/testes/precosVendidos.test.js` (só roda no banco do v2).
+- Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.11_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_13-03.dump`.
