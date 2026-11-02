@@ -27,8 +27,8 @@ const PENDENTES = ['Não classificado', 'Geral', ''];
 const PALAVRAS_VAZIAS = new Set(['DE', 'DA', 'DO', 'DAS', 'DOS', 'P', 'PARA', 'COM', 'C', 'S', 'SEM', 'E', 'EM', 'X', 'A', 'O', 'UN', 'PC', 'PCT']);
 const SIMILARIDADE_MINIMA = 0.5;
 // Medido em 02/11/2026 (20 sorteios de 80 % treino / 20 % teste, 521 materiais): com corte 0,5 o kNN responde
-// ~64 % dos itens e acerta ~97 % do que responde; no conjunto (kNN → NCM → parecido → palavras-chave) o
-// acerto sobe de 91,7 % para ~94 %. O NCM sozinho acerta só ~89 %, por isso vem depois do kNN.
+// ~64 % dos itens e acerta ~97 % do que responde; no conjunto (kNN → parecido → palavras-chave → NCM) o
+// acerto sobe de 91,7 % para ~96,4 %. O NCM sozinho acerta só ~89 %, por isso vem por último.
 const CORTE_KNN = 0.5;
 
 // Um modelo por lista de referência (a rotina carrega a referência uma vez e classifica vários itens).
