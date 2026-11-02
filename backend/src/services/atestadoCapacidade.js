@@ -1,14 +1,29 @@
 const JSZip = require('jszip');
 const { EMPRESA } = require('../utils/pdfTemplate');
+const T = require('../utils/textoAtestado');
 
-// Atestado de capacidade técnica (item 9 do plano): o corpo do texto que o CLIENTE cola no papel
-// timbrado dele e assina. Por isso não tem logo, cabeçalho nem assinatura da H&M. O sistema só
-// propõe o texto a partir da nota fiscal emitida; quem atesta é o cliente. Nada é inventado:
-// quantitativos, local, período, responsável técnico e signatário só entram se o engenheiro
-// informar; sem o dado, a linha some (ou fica um espaço em branco para o cliente preencher).
-const LIMITE_QUANTITATIVOS = 20;
+// Atestado de capacidade técnica (item 9 do plano), no modelo formal do Márcio
+// ("Modelo_Atestado_Capacidade_Tecnica_HM_formal"): 5 partes (responsável técnico, dados do
+// contrato, descrição das atividades, planilha de serviços, comprovação documental), fecho e
+// assinaturas. O papel timbrado e o rodapé são do CLIENTE, por isso não saem no arquivo: ele cola
+// o corpo no papel dele, confere e assina. O sistema só propõe o texto.
+//
+// De onde vem cada dado (nada é inventado; sem dado, a linha some):
+//  - nota fiscal emitida: número, data, competência, tomador (nome, CNPJ, endereço), texto do serviço
+//  - texto da nota: as atividades (uma por linha, por disciplina) e o objeto
+//  - proposta ligada à nota: itens e quantidades reais (planilha), local da obra, número da proposta
+//  - informado na tela: contrato, período, vigência, área, responsáveis técnicos (CREA/ART), signatários
 const LIMITE_LINHA = 200;
 const LIMITE_OBJETO = 700;
+const LIMITE_RESPONSAVEIS = 5;
+const LIMITE_SIGNATARIOS = 4;
+
+// Dados da H&M como constam no modelo aprovado (o endereço do modelo segue o cadastro do CNPJ)
+const HM = Object.freeze({
+  razaoSocial: String(EMPRESA.razaoSocial).toUpperCase(),
+  cnpj: EMPRESA.cnpj,
+  sede: 'Q CNF 3, SN, Lote 16, Loja 04, Parte A, Taguatinga Norte (Taguatinga), Brasília/DF, CEP 72.125-535',
+});
 
 const limpar = (v, max = LIMITE_LINHA) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 const digitos = (v) => String(v ?? '').replace(/\D/g, '');
@@ -20,6 +35,11 @@ function dataBR(v) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
   return m ? `${m[3]}/${m[2]}/${m[1]}` : null;
 }
+const diasEntre = (a, b) => {
+  const x = Date.parse(`${String(a).slice(0, 10)}T00:00:00Z`);
+  const y = Date.parse(`${String(b).slice(0, 10)}T00:00:00Z`);
+  return Number.isFinite(x) && Number.isFinite(y) && y >= x ? Math.round((y - x) / 86400000) + 1 : null;
+};
 
 function documentoFormatado(doc) {
   const d = digitos(doc);
@@ -45,107 +65,281 @@ function validarNota(nota) {
   return null;
 }
 
-// `opcoes`: { local, inicio, fim, quantitativos[], responsavel_tecnico, crea, art, signatario, cargo,
-//             mostrar_valor }
-// Devolve { titulo, paragrafos: [{ texto, negrito?, centro?, apos? }], texto, avisos[] }.
-function montarAtestado(nota, opcoes = {}) {
+const lista = (v) => (Array.isArray(v) ? v : []);
+
+// Itens da proposta ligada → grupos da planilha (cada seção da proposta vira um grupo)
+function planilhaDaProposta(itens) {
+  const grupos = [];
+  for (const i of lista(itens)) {
+    const quantidade = Number(i.quantidade);
+    const descricao = limpar(i.descricao, 300);
+    if (!descricao || !(quantidade > 0)) continue;
+    const nome = limpar(i.secao, 120) || T.GRUPO_PADRAO;
+    let g = grupos.find(x => x.grupo === nome);
+    if (!g) { g = { grupo: nome, itens: [] }; grupos.push(g); }
+    g.itens.push({ descricao, unidade: limpar(i.unidade, 6).toLowerCase() || 'un', quantidade });
+  }
+  return grupos;
+}
+
+// Sugestões que a tela mostra para o engenheiro conferir/ajustar (atividades e planilha em texto)
+function sugerir(nota, contexto = {}) {
+  const { atividades, pedido } = T.atividadesDaNota(nota.discriminacao);
+  const grupos = T.agrupar(atividades);
+  const daProposta = planilhaDaProposta(contexto.itens);
+  const planilha = daProposta.length ? daProposta : T.planilhaDasAtividades(grupos);
+  return {
+    atividades: T.atividadesParaTexto(grupos),
+    planilha: T.planilhaParaTexto(planilha),
+    planilhaOrigem: daProposta.length ? 'proposta' : (planilha.length ? 'nota' : null),
+    local: limpar(contexto.proposta?.local_obra || contexto.obra?.local) || '',
+    pedido,
+    atividadesLista: atividades,
+  };
+}
+
+const parte = (texto, negrito = false) => ({ texto, negrito });
+
+// `opcoes`: { contrato, local, inicio, fim, vigencia_inicio, vigencia_fim, area, responsaveis[],
+//   atividades (texto), planilha (texto), setor, signatarios[], cidade, mostrar_valor }
+// `contexto`: { proposta: { numero, total, local_obra }, obra: { nome, local }, itens[] }
+// Devolve { titulo, blocos, texto, avisos, sugestao }.
+function montarAtestado(nota, opcoes = {}, contexto = {}) {
   const erro = validarNota(nota);
   if (erro) throw Object.assign(new Error(erro), { status: 400 });
 
   const tomador = (typeof nota.tomador === 'string' ? JSON.parse(nota.tomador || '{}') : nota.tomador) || {};
-  const nomeCliente = limpar(tomador.nome) || '[nome do cliente]';
+  const nomeCliente = limpar(tomador.nome) || '[razão social do emitente]';
   const doc = documentoFormatado(tomador.documento);
   const endereco = enderecoDoTomador(tomador);
-  const objeto = limpar(nota.discriminacao || nota.servico_descricao, LIMITE_OBJETO) || '[descrição do serviço]';
+  const sug = sugerir(nota, contexto);
+
+  // atividades e planilha: o que o engenheiro editou vale; sem edição, o sugerido pela nota/proposta
+  const gruposAtiv = typeof opcoes.atividades === 'string' ? T.atividadesDoTexto(opcoes.atividades) : T.agrupar(sug.atividadesLista);
+  const gruposPlan = typeof opcoes.planilha === 'string' ? T.planilhaDoTexto(opcoes.planilha) : T.planilhaDoTexto(sug.planilha);
+  const todas = gruposAtiv.flatMap(g => g.itens);
+
+  // 1ª atividade como natureza do serviço (a descrição da LC 116 do cadastro é longa demais e não entra)
+  const natureza = todas[0] ? todas[0].replace(/^(\p{Lu})(?=\p{Ll})/u, c => c.toLowerCase()) : '[natureza resumida dos serviços]';
+  const objeto = limpar(todas.join('; '), LIMITE_OBJETO) || '[descrição do objeto]';
   const emissao = dataBR(nota.data_emissao);
   const competencia = dataBR(nota.competencia);
-  const inicio = dataBR(opcoes.inicio);
-  const fim = dataBR(opcoes.fim);
+  const inicio = dataBR(opcoes.inicio); const fim = dataBR(opcoes.fim);
+  const vigIni = dataBR(opcoes.vigencia_inicio); const vigFim = dataBR(opcoes.vigencia_fim);
+  const dias = opcoes.inicio && opcoes.fim ? diasEntre(opcoes.inicio, opcoes.fim) : null;
   const local = limpar(opcoes.local);
-  const quantitativos = (Array.isArray(opcoes.quantitativos) ? opcoes.quantitativos : String(opcoes.quantitativos || '').split('\n'))
-    .map(q => limpar(q)).filter(Boolean).slice(0, LIMITE_QUANTITATIVOS);
-  const responsavel = limpar(opcoes.responsavel_tecnico);
-  const crea = limpar(opcoes.crea, 40);
-  const art = limpar(opcoes.art, 40);
-  const signatario = limpar(opcoes.signatario);
-  const cargo = limpar(opcoes.cargo);
+  const contrato = limpar(opcoes.contrato) || (sug.pedido ? `Pedido ${limpar(sug.pedido, 80)}` : '');
+  const area = limpar(opcoes.area);
+  const responsaveis = lista(opcoes.responsaveis).slice(0, LIMITE_RESPONSAVEIS)
+    .map(r => ({ nome: limpar(r?.nome), titulo: limpar(r?.titulo, 60), crea: limpar(r?.crea, 40), art: limpar(r?.art, 40) }))
+    .filter(r => r.nome);
+  const signatarios = lista(opcoes.signatarios).slice(0, LIMITE_SIGNATARIOS)
+    .map(s => ({ nome: limpar(s?.nome), cargo: limpar(s?.cargo) })).filter(s => s.nome || s.cargo);
+  const proposta = contexto.proposta || null;
 
-  const qualificacao = [
-    nomeCliente,
-    doc ? `inscrito(a) no ${doc.rotulo} nº ${doc.valor}` : null,
-    endereco ? `com endereço em ${endereco}` : null,
-  ].filter(Boolean).join(', ');
-
-  const nota_ref = [
-    nota.numero ? `Nota Fiscal de Serviço Eletrônica (NFS-e) nº ${nota.numero}` : 'Nota Fiscal de Serviço Eletrônica (NFS-e)',
-    emissao ? `emitida em ${emissao}` : null,
-    competencia ? `competência ${competencia.slice(3)}` : null,
-  ].filter(Boolean).join(', ');
-
-  const valor = opcoes.mostrar_valor ? `, no valor de ${dinheiro(nota.valor_servicos)}` : '';
-
-  const paragrafos = [
-    { texto: 'ATESTADO DE CAPACIDADE TÉCNICA', negrito: true, centro: true, apos: 360 },
-    {
-      texto: `${qualificacao}, ATESTA, para os devidos fins, que a empresa ${EMPRESA.razaoSocial}, inscrita no CNPJ nº ${EMPRESA.cnpj}, `
-        + `com sede em ${EMPRESA.endereco}, executou para esta empresa o serviço de: ${objeto}, objeto da ${nota_ref}${valor}.`,
-      apos: 200,
-    },
-  ];
-  if (local) paragrafos.push({ texto: `Local de execução: ${local}.`, apos: 120 });
-  if (inicio && fim) paragrafos.push({ texto: `Período de execução: de ${inicio} a ${fim}.`, apos: 120 });
-  else if (inicio) paragrafos.push({ texto: `Início da execução: ${inicio}.`, apos: 120 });
-  else if (fim) paragrafos.push({ texto: `Conclusão da execução: ${fim}.`, apos: 120 });
-  if (quantitativos.length) {
-    paragrafos.push({ texto: 'Principais quantitativos executados:', apos: 60 });
-    for (const q of quantitativos) paragrafos.push({ texto: `– ${q}`, apos: 40 });
-  }
-  if (responsavel) {
-    const registro = [crea ? `CREA/CAU nº ${crea}` : null, art ? `ART/RRT nº ${art}` : null].filter(Boolean).join(', ');
-    paragrafos.push({ texto: `Responsável técnico pela execução: ${responsavel}${registro ? `, ${registro}` : ''}.`, apos: 120 });
-  }
-  paragrafos.push({
-    texto: 'Os serviços foram executados dentro dos padrões técnicos aplicáveis e dos prazos acordados, nada constando que desabone a empresa contratada.',
-    apos: 360,
+  const blocos = [];
+  blocos.push({ t: 'titulo', texto: 'ATESTADO DE CAPACIDADE TÉCNICA' });
+  blocos.push({
+    t: 'paragrafo',
+    partes: [
+      parte('Atestamos, para fins de comprovação da realização de atividade técnica, que a empresa '),
+      parte(HM.razaoSocial, true),
+      parte(`, inscrita no CNPJ sob o nº ${HM.cnpj} e com sede na ${HM.sede}, prestou a `),
+      parte(nomeCliente, true),
+      parte(`${doc ? `, inscrito(a) no ${doc.rotulo} sob o nº ${doc.valor}` : ''}${endereco ? ` e com sede em ${endereco}` : ''}, os serviços de ${natureza} conforme estabelecido abaixo:`),
+    ],
   });
-  paragrafos.push({ texto: '______________, ____ de ______________ de ______.', apos: 600 });
-  paragrafos.push({ texto: '____________________________________________', centro: true, apos: 0 });
-  paragrafos.push({ texto: signatario || '[nome do signatário]', centro: true, negrito: true, apos: 0 });
-  paragrafos.push({ texto: cargo || '[cargo]', centro: true, apos: 0 });
-  paragrafos.push({ texto: nomeCliente, centro: true, apos: 0 });
+
+  let n = 0;
+  const secao = (titulo) => { n += 1; blocos.push({ t: 'secao', texto: `${n}) ${titulo}` }); };
+
+  if (responsaveis.length) {
+    secao('RESPONSÁVEL TÉCNICO');
+    for (const r of responsaveis) {
+      blocos.push({ t: 'item', texto: `Nome: ${[r.nome, r.titulo].filter(Boolean).join(' – ')}${r.crea ? ` – CREA/CAU: ${r.crea}` : ''}` });
+      if (r.art) blocos.push({ t: 'item', texto: `ART/RRT: ${r.art}` });
+    }
+  }
+
+  secao('DADOS DO CONTRATO');
+  const dados = [
+    ['Nota fiscal', `NFS-e nº ${nota.numero}${emissao ? `, emitida em ${emissao}` : ''}${competencia ? `, competência ${competencia.slice(3)}` : ''}`],
+    proposta?.numero ? ['Proposta comercial', `nº ${limpar(proposta.numero, 20)}`] : null,
+    contrato ? ['Contrato', contrato] : null,
+    ['Objeto', objeto],
+    ['Contratante', nomeCliente],
+    dias ? ['Prazo de execução dos serviços', `${dias} dia${dias > 1 ? 's' : ''}`] : null,
+    inicio && fim ? ['Período de execução', `${inicio} a ${fim}`] : (inicio ? ['Início da execução', inicio] : (fim ? ['Conclusão da execução', fim] : null)),
+    vigIni && vigFim ? ['Vigência do contrato', `${vigIni} a ${vigFim}`] : null,
+    area ? ['Área / quantitativo executado', area] : null,
+    local ? ['Endereço', local] : null,
+    opcoes.mostrar_valor ? ['Valor dos serviços', dinheiro(nota.valor_servicos)] : null,
+  ].filter(Boolean);
+  for (const [rotulo, valor] of dados) blocos.push({ t: 'item', texto: `${rotulo}: ${valor}` });
+
+  secao('DESCRIÇÃO DAS ATIVIDADES');
+  blocos.push({ t: 'paragrafo', partes: [parte('O contrato contemplou as seguintes atividades:')], jc: 'left' });
+  gruposAtiv.forEach((g, gi) => {
+    blocos.push({ t: 'grupo', texto: `${g.grupo}:` });
+    g.itens.forEach((a, i) => blocos.push({ t: 'atividade', texto: `${i + 1}. ${a}${gi === gruposAtiv.length - 1 && i === g.itens.length - 1 ? '.' : ';'}` }));
+  });
+  if (!gruposAtiv.length) blocos.push({ t: 'atividade', texto: '[descrever as atividades executadas]' });
+
+  const planilhaComQuantidade = gruposPlan.map(g => ({ ...g, itens: g.itens.filter(i => i.quantidade != null) })).filter(g => g.itens.length);
+  if (planilhaComQuantidade.length) {
+    secao('PLANILHA DE SERVIÇOS');
+    blocos.push({ t: 'paragrafo', partes: [parte('O contrato contemplou os seguintes itens e serviços:')], jc: 'left' });
+    const linhas = [];
+    for (const g of planilhaComQuantidade) {
+      linhas.push({ grupo: g.grupo.toUpperCase() });
+      for (const i of g.itens) linhas.push({ celulas: [i.descricao, `${i.unidade} ${T.numeroBR(i.quantidade)}`] });
+    }
+    blocos.push({ t: 'tabela', larguras: [7106, 2400], cabecalho: ['DESCRIÇÃO DO SERVIÇO', 'QUANTIDADE'], alinhamentos: ['left', 'center'], linhas });
+  }
+
+  secao('COMPROVAÇÃO DOCUMENTAL');
+  blocos.push({ t: 'paragrafo', partes: [parte('Em reforço à veracidade do presente atestado, relacionamos a documentação comprobatória correspondente à execução do objeto contratado:')] });
+  const observacao = [competencia ? `Competência ${competencia.slice(3)}` : null, proposta?.numero ? `Proposta ${limpar(proposta.numero, 20)}` : null,
+    opcoes.mostrar_valor ? dinheiro(nota.valor_servicos) : null].filter(Boolean).join(' · ');
+  blocos.push({
+    t: 'tabela', larguras: [1700, 2300, 3200, 2306], cabecalho: ['Nº DA NOTA FISCAL', 'DATA DE EMISSÃO', 'TOMADOR / CNPJ', 'OBSERVAÇÃO'], alinhamentos: ['center', 'center', 'left', 'left'],
+    linhas: [{ celulas: [`NFS-e ${nota.numero}`, emissao || '—', `${nomeCliente}${doc ? ` / ${doc.valor}` : ''}`, observacao || '—'] }],
+  });
+  const temArt = responsaveis.some(r => r.art);
+  blocos.push({ t: 'paragrafo', partes: [parte('Documentos disponíveis para conferência (assinalar):')], jc: 'left', antes: 160 });
+  blocos.push({
+    t: 'checks',
+    linhas: [
+      [['Cópia do contrato e aditivos', false], ['ART/RRT dos responsáveis técnicos', temArt]],
+      [['Termo de recebimento provisório/definitivo', false], ['Notas fiscais relacionadas acima', true]],
+      [['Medições / boletins de medição', false], ['Outro: ______________________________', false]],
+    ],
+  });
+
+  blocos.push({
+    t: 'fecho',
+    texto: `Por fim, atestamos ainda que os serviços desenvolvidos pela ${HM.razaoSocial} atenderam aos prazos e condições contratuais, não constando em nossos registros fatos que desabonem a conduta da empresa.`,
+  });
+  blocos.push({ t: 'data', texto: `${limpar(opcoes.cidade) || limpar(tomador.municipio) || '______________'}, ____ de ______________ de ______` });
+  blocos.push({
+    t: 'assinaturas',
+    emitente: nomeCliente,
+    setor: limpar(opcoes.setor) || '[Setor / gerência responsável]',
+    signatarios: signatarios.length ? signatarios : [{ nome: '[Nome do signatário]', cargo: '[Cargo / função]' }, { nome: '[Nome do signatário]', cargo: '[Cargo / função]' }],
+  });
 
   const avisos = ['Texto proposto pela H&M: quem atesta é o cliente, que confere, ajusta e assina no papel timbrado dele.'];
-  if (!quantitativos.length) avisos.push('Sem quantitativos: o atestado de capacidade técnica costuma citar o que foi executado (pontos, metros, potência). Informe os números reais, se houver.');
-  if (!responsavel) avisos.push('Sem responsável técnico/ART: informe se o cliente exigir.');
-  if (!signatario) avisos.push('Signatário em branco: o cliente preenche o nome e o cargo de quem assina.');
-  if (objeto.length >= LIMITE_OBJETO) avisos.push('A descrição da nota foi cortada; confira o texto.');
+  if (!responsaveis.length) avisos.push('Sem responsável técnico/CREA/ART: a parte 1 do modelo foi omitida. Informe se o cliente exigir.');
+  if (!planilhaComQuantidade.length) avisos.push('Sem planilha de serviços: a nota não traz quantidades escritas e não há proposta com itens ligada. Ligue a proposta ou digite os itens.');
+  if (!contrato) avisos.push('Contrato/instrumento não informado.');
+  if (!inicio && !fim) avisos.push('Período de execução não informado.');
+  if (opcoes.inicio && opcoes.fim && dias === null) avisos.push('A conclusão está antes do início: confira as datas do período.');
+  if (!local) avisos.push('Endereço da obra/serviço não informado.');
+  if (!gruposAtiv.length) avisos.push('A nota não tem texto de serviço utilizável: descreva as atividades.');
+  if (proposta?.total != null && Number(proposta.total) > 0 && Number(nota.valor_servicos) > 0
+    && Math.abs(Number(nota.valor_servicos) - Number(proposta.total)) / Number(proposta.total) > 0.01 && sug.planilhaOrigem === 'proposta') {
+    avisos.push(`A nota (${dinheiro(nota.valor_servicos)}) difere da proposta (${dinheiro(proposta.total)}): confira se todos os itens da planilha foram faturados nesta nota e apague os que não foram.`);
+  }
+  if (todas.join('; ').length >= LIMITE_OBJETO) avisos.push('O objeto foi cortado no limite de tamanho; confira o texto.');
 
-  return {
-    titulo: 'Atestado de capacidade técnica',
-    paragrafos,
-    texto: paragrafos.map(p => p.texto).join('\n\n'),
-    avisos,
-  };
+  return { titulo: 'Atestado de capacidade técnica', blocos, texto: blocosParaTexto(blocos), avisos, sugestao: { atividades: sug.atividades, planilha: sug.planilha, planilhaOrigem: sug.planilhaOrigem, local: sug.local } };
 }
 
-const xml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+// ── Texto simples (prévia e "copiar texto") ──────────────────────────────────
+function blocosParaTexto(blocos) {
+  const out = [];
+  for (const b of blocos) {
+    switch (b.t) {
+      case 'titulo': out.push(b.texto, ''); break;
+      case 'paragrafo': out.push(b.partes.map(p => p.texto).join(''), ''); break;
+      case 'secao': out.push('', b.texto); break;
+      case 'item': out.push(`- ${b.texto}`); break;
+      case 'grupo': out.push('', b.texto); break;
+      case 'atividade': out.push(`    ${b.texto}`); break;
+      case 'tabela':
+        out.push('', b.cabecalho.join(' | '));
+        for (const l of b.linhas) out.push(l.grupo ? `[${l.grupo}]` : l.celulas.join(' | '));
+        break;
+      case 'checks':
+        for (const l of b.linhas) out.push(l.map(([t, marcado]) => `${marcado ? '☒' : '☐'} ${t}`).join('     '));
+        break;
+      case 'fecho': out.push('', b.texto, ''); break;
+      case 'data': out.push(b.texto, ''); break;
+      case 'assinaturas':
+        out.push(b.emitente, b.setor, '');
+        for (const s of b.signatarios) out.push('______________________________', s.nome, s.cargo, '');
+        break;
+      default: break;
+    }
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
 
-// .docx mínimo (zip com 3 arquivos): abre no Word, no LibreOffice e no Google Docs, e o cliente
-// copia o texto para o papel timbrado dele. Sem imagem, sem cabeçalho, sem rodapé.
-async function gerarDocx(paragrafos) {
-  const corpo = paragrafos.map(p => {
-    const pPr = `<w:pPr><w:spacing w:after="${Number(p.apos) || 0}" w:line="300" w:lineRule="auto"/><w:jc w:val="${p.centro ? 'center' : 'both'}"/></w:pPr>`;
-    const rPr = p.negrito ? '<w:rPr><w:b/></w:rPr>' : '';
-    return `<w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${xml(p.texto)}</w:t></w:r></w:p>`;
-  }).join('');
+// ── .docx no padrão do modelo: Arial 10, A4, tabelas com borda cinza ───────────
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const FONTE = '<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial" w:eastAsia="Arial"/>';
+const run = (texto, { b = false, u = false } = {}) =>
+  `<w:r><w:rPr>${FONTE}${b ? '<w:b/><w:bCs/>' : ''}<w:sz w:val="20"/><w:szCs w:val="20"/>${u ? '<w:u w:val="single"/>' : ''}</w:rPr><w:t xml:space="preserve">${esc(texto)}</w:t></w:r>`;
+const par = (runs, { jc, antes = 0, depois = 0, esq, suspenso, manter = false } = {}) =>
+  `<w:p><w:pPr>${manter ? '<w:keepNext/>' : ''}<w:spacing w:before="${antes}" w:after="${depois}"/>${esq != null ? `<w:ind w:left="${esq}"${suspenso ? ` w:hanging="${suspenso}"` : ''}/>` : ''}${jc ? `<w:jc w:val="${jc}"/>` : ''}</w:pPr>${runs}</w:p>`;
+
+const BORDA_CEL = ['top', 'left', 'bottom', 'right'].map(l => `<w:${l} w:val="single" w:color="808080" w:sz="4"/>`).join('');
+const celula = (largura, conteudo, { fundo, span, vAlign = 'center' } = {}) =>
+  `<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="${largura}"/>${span ? `<w:gridSpan w:val="${span}"/>` : ''}<w:tcBorders>${BORDA_CEL}</w:tcBorders>${fundo ? `<w:shd w:val="clear" w:color="auto" w:fill="${fundo}"/>` : ''}<w:tcMar><w:top w:type="dxa" w:w="50"/><w:left w:type="dxa" w:w="100"/><w:bottom w:type="dxa" w:w="50"/><w:right w:type="dxa" w:w="100"/></w:tcMar><w:vAlign w:val="${vAlign}"/></w:tcPr>${conteudo}</w:tc>`;
+const tabela = (larguras, linhasXml) =>
+  `<w:tbl><w:tblPr><w:tblW w:type="dxa" w:w="${larguras.reduce((a, b) => a + b, 0)}"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid>${larguras.map(w => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>${linhasXml}</w:tbl>`;
+
+function blocoParaXml(b) {
+  switch (b.t) {
+    case 'titulo': return par(run(b.texto, { b: true }), { jc: 'center', depois: 360 });
+    case 'paragrafo': return par(b.partes.map(p => run(p.texto, { b: p.negrito })).join(''), { jc: b.jc || 'both', antes: b.antes || 0, depois: 120 });
+    case 'secao': return par(run(b.texto, { b: true, u: true }), { antes: 280, depois: 160, manter: true });
+    case 'item': return par(run(`- ${b.texto}`), { depois: 60, esq: 170, suspenso: 170 });
+    case 'grupo': return par(run(b.texto, { u: true }), { antes: 120, depois: 20, manter: true });
+    case 'atividade': return par(run(b.texto), { depois: 20, esq: 1060 });
+    case 'tabela': {
+      const cab = `<w:tr><w:trPr><w:tblHeader/></w:trPr>${b.cabecalho.map((t, i) => celula(b.larguras[i], par(run(t, { b: true }), { jc: 'center' }), { fundo: 'D9D9D9' })).join('')}</w:tr>`;
+      const total = b.larguras.reduce((a, c) => a + c, 0);
+      const corpo = b.linhas.map(l => (l.grupo
+        ? `<w:tr><w:trPr><w:cantSplit/></w:trPr>${celula(total, par(run(l.grupo, { b: true }), { jc: 'left' }), { fundo: 'EDEDED', span: b.larguras.length })}</w:tr>`
+        : `<w:tr><w:trPr><w:cantSplit/></w:trPr>${l.celulas.map((t, i) => celula(b.larguras[i], par(run(t), { jc: b.alinhamentos[i] || 'left' }))).join('')}</w:tr>`)).join('');
+      return tabela(b.larguras, cab + corpo) + par('', { depois: 60 });
+    }
+    case 'checks': return b.linhas.map(l => par(l.map(([t, marcado]) => run(`${marcado ? '☒' : '☐'} ${t}`)).join(run('          ')), { depois: 60 })).join('');
+    case 'fecho': return par(run(b.texto, { b: true }), { jc: 'both', antes: 280, depois: 280 });
+    case 'data': return par(run(b.texto), { jc: 'right', depois: 480 });
+    case 'assinaturas': {
+      const topo = par(run(b.emitente, { b: true }), { jc: 'center' }) + par(run(b.setor, { b: true }), { jc: 'center', depois: 360 });
+      const colunas = 2;
+      const larg = [4753, 4753];
+      const linhas = [];
+      for (let i = 0; i < b.signatarios.length; i += colunas) {
+        const cels = [];
+        for (let c = 0; c < colunas; c++) {
+          const s = b.signatarios[i + c];
+          const conteudo = s
+            ? par(run('______________________________'), { jc: 'center', antes: 360 }) + par(run(s.nome, { b: true }), { jc: 'center' }) + par(run(s.cargo), { jc: 'center', depois: 120 })
+            : par('');
+          cels.push(`<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="${larg[c]}"/></w:tcPr>${conteudo}</w:tc>`);
+        }
+        linhas.push(`<w:tr><w:trPr><w:cantSplit/></w:trPr>${cels.join('')}</w:tr>`);
+      }
+      return topo + tabela(larg, linhas) + par('');
+    }
+    default: return '';
+  }
+}
+
+// .docx de 5 arquivos (zip): abre no Word, LibreOffice e Google Docs. Sem imagem, cabeçalho nem rodapé.
+async function gerarDocx(blocos) {
   const documento = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
     + '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
-    + corpo
-    + '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1701" w:right="1134" w:bottom="1134" w:left="1701" w:header="709" w:footer="709" w:gutter="0"/></w:sectPr>'
+    + blocos.map(blocoParaXml).join('')
+    + '<w:sectPr><w:pgSz w:w="11906" w:h="16838" w:orient="portrait"/><w:pgMar w:top="1300" w:right="1200" w:bottom="1300" w:left="1200" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>'
     + '</w:body></w:document>';
   const estilos = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
     + '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr>'
-    + '<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="24"/><w:szCs w:val="24"/><w:lang w:val="pt-BR"/></w:rPr></w:rPrDefault></w:docDefaults></w:styles>';
+    + `${FONTE}<w:sz w:val="20"/><w:szCs w:val="20"/><w:lang w:val="pt-BR"/></w:rPr></w:rPrDefault></w:docDefaults></w:styles>`;
   const zip = new JSZip();
   zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
     + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
@@ -167,4 +361,4 @@ async function gerarDocx(paragrafos) {
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
 
-module.exports = { montarAtestado, gerarDocx, validarNota, LIMITE_QUANTITATIVOS };
+module.exports = { montarAtestado, gerarDocx, validarNota, sugerir, planilhaDaProposta, LIMITE_RESPONSAVEIS, LIMITE_SIGNATARIOS };

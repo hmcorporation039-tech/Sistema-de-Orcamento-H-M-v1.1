@@ -456,6 +456,8 @@ export const previewHtmlNotaFiscal = (id) => api.get(`/notas-fiscais/${id}/previ
 export const baixarXmlNotaFiscal = (id) => api.get(`/notas-fiscais/${id}/xml`, { responseType: 'blob' });
 export const previaAtestadoNotaFiscal = (id, opcoes) => api.post(`/notas-fiscais/${id}/atestado`, opcoes);
 export const baixarAtestadoNotaFiscal = (id, opcoes) => api.post(`/notas-fiscais/${id}/atestado.docx`, opcoes, { responseType: 'blob', timeout: 60000 });
+export const getPropostasCandidatasNotaFiscal = (id) => api.get(`/notas-fiscais/${id}/propostas-candidatas`);
+export const vincularPropostaNotaFiscal = (id, propostaId) => api.put(`/notas-fiscais/${id}/proposta`, { proposta_id: propostaId });
 export const importarXmlNotasFiscais = (arquivos) => {
   const fd = new FormData();
   for (const a of arquivos) fd.append('arquivos', a);

@@ -149,7 +149,8 @@ async function listar(req, res) {
       `SELECT n.id, n.situacao, n.origem, n.padrao, n.numero, n.chave_acesso, n.codigo_verificacao, n.data_emissao,
               n.competencia, n.cliente_id, n.tomador->>'nome' AS tomador_nome, n.tomador->>'documento' AS tomador_documento,
               n.tomador->>'email' AS tomador_email, n.ctrib_nac, n.item_lista, n.discriminacao, n.valor_servicos, n.valor_liquido,
-              n.iss_retido, n.ultimo_envio_em, n.ultimo_envio_para, (n.xml IS NOT NULL) AS tem_xml
+              n.iss_retido, n.ultimo_envio_em, n.ultimo_envio_para, (n.xml IS NOT NULL) AS tem_xml,
+              n.proposta_id, (SELECT pr.numero FROM propostas pr WHERE pr.id = n.proposta_id) AS proposta_numero
          FROM notas_fiscais n ${where} ORDER BY ${ORDEM}
         LIMIT $${params.length + 1} OFFSET $${params.length + 2}`, [...params, porPagina, offset]),
   ]);
@@ -159,11 +160,12 @@ async function listar(req, res) {
 async function lerNota(id) {
   const { rows: [n] } = await pool.query(
     `SELECT n.*, (n.xml IS NOT NULL) AS tem_xml, s.nome AS servico_nome, o.numero AS origem_numero,
-            mp.nome || '-' || mp.uf AS local_prestacao
+            mp.nome || '-' || mp.uf AS local_prestacao, pr.numero AS proposta_numero
        FROM notas_fiscais n
        LEFT JOIN municipios_ibge mp ON mp.codigo = n.codigo_municipio_prestacao
        LEFT JOIN empresa_servicos_nfse s ON s.id = n.servico_id
        LEFT JOIN notas_fiscais o ON o.id = n.nota_origem_id
+       LEFT JOIN propostas pr ON pr.id = n.proposta_id
       WHERE n.id = $1`, [id]);
   return n;
 }
@@ -559,6 +561,24 @@ async function importar(req, res) {
 }
 
 
+// Proposta ligada à nota: de lá vêm o local, os itens e quantidades reais e o número da proposta
+// que o atestado usa. O vínculo é opcional e feito pelo administrador (nada é adivinhado).
+async function contextoAtestado(nota) {
+  if (!nota.proposta_id) return {};
+  const { rows: [proposta] } = await pool.query(
+    'SELECT id, numero, total, local_obra, status, cliente_id, obra_id FROM propostas WHERE id = $1', [nota.proposta_id]);
+  if (!proposta) return {};
+  const [{ rows: [obra] }, { rows: itens }] = await Promise.all([
+    proposta.obra_id ? pool.query('SELECT nome, local FROM obras WHERE id = $1', [proposta.obra_id]) : { rows: [] },
+    pool.query(
+      `SELECT i.descricao, i.quantidade, i.unidade, s.nome AS secao
+         FROM proposta_itens i LEFT JOIN proposta_secoes s ON s.id = i.secao_id
+        WHERE i.proposta_id = $1 AND COALESCE(i.status, 'confirmado') = 'confirmado'
+        ORDER BY s.ordem NULLS LAST, i.ordem, i.id`, [proposta.id]),
+  ]);
+  return { proposta, obra, itens };
+}
+
 // Atestado de capacidade técnica (item 9): só o corpo do texto, para o cliente colar no papel
 // timbrado dele. `previa` devolve o texto para conferir; `atestadoDocx` baixa o Word. Nunca marca
 // nada como emitido: quem atesta é o cliente.
@@ -566,8 +586,8 @@ async function previaAtestado(req, res) {
   const n = await lerNota(req.params.id);
   if (!n) return res.status(404).json({ erro: 'Nota não encontrada' });
   try {
-    const { titulo, texto, avisos } = atestado.montarAtestado(n, req.body || {});
-    res.json({ titulo, texto, avisos });
+    const { titulo, texto, avisos, sugestao } = atestado.montarAtestado(n, req.body || {}, await contextoAtestado(n));
+    res.json({ titulo, texto, avisos, sugestao, proposta_id: n.proposta_id, proposta_numero: n.proposta_numero });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ erro: err.message });
     throw err;
@@ -578,9 +598,9 @@ async function atestadoDocx(req, res) {
   const n = await lerNota(req.params.id);
   if (!n) return res.status(404).json({ erro: 'Nota não encontrada' });
   try {
-    const { paragrafos } = atestado.montarAtestado(n, req.body || {});
-    const arquivo = await atestado.gerarDocx(paragrafos);
-    await registrarAuditoria(pool, { entidade: 'notas_fiscais', entidadeId: n.id, acao: 'atestado_gerado', usuarioId: req.usuario.id, detalhes: { nota: n.numero } });
+    const { blocos } = atestado.montarAtestado(n, req.body || {}, await contextoAtestado(n));
+    const arquivo = await atestado.gerarDocx(blocos);
+    await registrarAuditoria(pool, { entidade: 'notas_fiscais', entidadeId: n.id, acao: 'atestado_gerado', usuarioId: req.usuario.id, detalhes: { nota: n.numero, proposta_id: n.proposta_id } });
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'Content-Disposition': contentDisposition(`Atestado_NFS-e_${n.numero || n.id}.docx`),
@@ -591,9 +611,42 @@ async function atestadoDocx(req, res) {
     throw err;
   }
 }
+
+// Propostas do mesmo cliente da nota que podem ser ligadas a ela (não canceladas nem recusadas)
+async function propostasCandidatas(req, res) {
+  const n = await lerNota(req.params.id);
+  if (!n) return res.status(404).json({ erro: 'Nota não encontrada' });
+  if (!n.cliente_id) return res.json([]);
+  const { rows } = await pool.query(
+    `SELECT id, numero, to_char(data, 'YYYY-MM-DD') AS data, total, status, local_obra
+       FROM propostas WHERE cliente_id = $1 AND status IN ('Aprovada', 'Ativa')
+      ORDER BY (status = 'Aprovada') DESC, data DESC, id DESC LIMIT 100`, [n.cliente_id]);
+  res.json(rows);
+}
+
+// Liga (ou desliga, com null) a nota a uma proposta. Não mexe em nada fiscal da nota, por isso vale
+// também para nota já emitida. A proposta precisa ser do mesmo cliente da nota.
+async function vincularProposta(req, res) {
+  const n = await lerNota(req.params.id);
+  if (!n) return res.status(404).json({ erro: 'Nota não encontrada' });
+  const bruto = req.body?.proposta_id;
+  const propostaId = bruto == null || bruto === '' ? null : Number(bruto);
+  if (propostaId !== null && (!Number.isInteger(propostaId) || propostaId <= 0)) return res.status(400).json({ erro: 'Proposta inválida.' });
+  if (propostaId !== null) {
+    const { rows: [p] } = await pool.query('SELECT id, cliente_id, status FROM propostas WHERE id = $1', [propostaId]);
+    if (!p) return res.status(404).json({ erro: 'Proposta não encontrada.' });
+    if (['Cancelada', 'Recusada'].includes(p.status)) return res.status(400).json({ erro: `A proposta está ${p.status.toLowerCase()}.` });
+    if (n.cliente_id && p.cliente_id && n.cliente_id !== p.cliente_id) return res.status(400).json({ erro: 'A proposta é de outro cliente.' });
+  }
+  await pool.query('UPDATE notas_fiscais SET proposta_id = $1 WHERE id = $2', [propostaId, n.id]);
+  await registrarAuditoria(pool, { entidade: 'notas_fiscais', entidadeId: n.id, acao: 'vincular_proposta', usuarioId: req.usuario.id, detalhes: { de: n.proposta_id, para: propostaId } });
+  const nova = await lerNota(n.id);
+  res.json({ proposta_id: nova.proposta_id, proposta_numero: nova.proposta_numero });
+}
+
 module.exports = {
   listar, obter, criar, atualizar, remover, duplicar, cancelar, configCancelamento, pdf, previewHtml, xml, enviarEmail, importar,
-  previaAtestado, atestadoDocx,
+  previaAtestado, atestadoDocx, propostasCandidatas, vincularProposta,
   // testes e scripts
   importarConteudos, calcularTotais,
 };

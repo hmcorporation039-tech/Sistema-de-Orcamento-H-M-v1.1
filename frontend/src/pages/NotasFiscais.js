@@ -6,7 +6,7 @@ import {
 import {
   getNotasFiscais, getNotaFiscal, criarNotaFiscal, atualizarNotaFiscal, removerNotaFiscal, duplicarNotaFiscal,
   cancelarNotaFiscal, getConfigCancelamentoNotaFiscal, enviarNotaFiscalPorEmail, baixarPdfNotaFiscal, baixarXmlNotaFiscal, importarXmlNotasFiscais,
-  getEmpresaFiscal, buscarMunicipios, previewHtmlNotaFiscal, previaAtestadoNotaFiscal, baixarAtestadoNotaFiscal,
+  getEmpresaFiscal, buscarMunicipios, previewHtmlNotaFiscal, previaAtestadoNotaFiscal, baixarAtestadoNotaFiscal, getPropostasCandidatasNotaFiscal, vincularPropostaNotaFiscal,
 } from '../services/api';
 import useUltimoPedido from '../hooks/useUltimoPedido';
 import Paginacao from '../components/Paginacao';
@@ -218,6 +218,7 @@ export default function NotasFiscais() {
                 <tr key={n.id} style={estilos.linhaTabela} data-testid={`nota-${n.id}`}>
                   <td style={{ ...estilos.td, fontWeight: 700, fontFamily: 'monospace' }}>
                     {n.numero || <span style={{ color: 'var(--texto-3)' }}>—</span>}
+                    {n.proposta_numero && <div style={{ ...sub, fontFamily: 'inherit', fontWeight: 400 }} title="Proposta ligada a esta nota">Proposta {n.proposta_numero}</div>}
                   </td>
                   <td style={estilos.td}>
                     <div>{competencia(n.competencia)}</div>
@@ -305,7 +306,7 @@ export default function NotasFiscais() {
           acoes={{ pdf, imprimir, xml, email: setEmailPara, duplicar: setDuplicando, cancelar: setCancelando, emitir: setEmitindo, previa: setPrevisualizando }} />
       )}
       {emailPara && <ModalEmail nota={emailPara} onFechar={() => setEmailPara(null)} onEnviado={carregar} />}
-      {atestando && <ModalAtestado nota={atestando} onFechar={() => setAtestando(null)} />}
+      {atestando && <ModalAtestado nota={atestando} onFechar={() => setAtestando(null)} onVinculado={carregar} />}
       {cancelando && <ModalCancelar nota={cancelando} onFechar={() => setCancelando(null)} onFeito={() => { setCancelando(null); setEditando(null); carregar(); }} />}
       {emitindo && <ModalEmitir nota={emitindo} onFechar={() => setEmitindo(null)} onImportar={() => { setEmitindo(null); setImportando(true); }} />}
       {previsualizando && <ModalPrevia nota={previsualizando} onFechar={() => setPrevisualizando(null)} />}
@@ -960,27 +961,61 @@ function ModalEmail({ nota, onFechar, onEnviado }) {
 }
 
 // ── Atestado de capacidade técnica ────────────────────────────────────────────
-// Só o corpo do texto, para o cliente colar no papel timbrado dele e assinar. O sistema propõe;
-// quem atesta é o cliente. Quantitativos, local, período e responsável só entram se preenchidos.
+// No modelo formal da H&M: só o corpo, sem timbre (o papel é do cliente). As atividades saem do texto
+// da nota e a planilha dos itens da proposta ligada (ou das quantidades escritas na nota); o
+// engenheiro confere e ajusta antes de copiar ou baixar. O sistema propõe; quem atesta é o cliente.
 
-function ModalAtestado({ nota, onFechar }) {
-  const [op, setOp] = useState({
-    mostrar_valor: false, local: '', inicio: '', fim: '', quantitativos: '',
-    responsavel_tecnico: '', crea: '', art: '', signatario: '', cargo: '',
-  });
+const OPCOES_VAZIAS = {
+  mostrar_valor: false, contrato: '', local: '', inicio: '', fim: '', vigencia_inicio: '', vigencia_fim: '', area: '', cidade: '', setor: '',
+  responsaveis: [], signatarios: [], atividades: null, planilha: null,
+};
+
+function ModalAtestado({ nota, onFechar, onVinculado }) {
+  const [op, setOp] = useState(OPCOES_VAZIAS);
   const [previa, setPrevia] = useState(null);
   const [baixando, setBaixando] = useState(false);
+  const [candidatas, setCandidatas] = useState([]);
+  const [propostaId, setPropostaId] = useState(nota.proposta_id || '');
+  const localPreenchido = useRef(false);
   const mudar = (campo) => (e) => setOp(o => ({ ...o, [campo]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
+  const mudarLinha = (lista, i, campo, valor) => setOp(o => ({ ...o, [lista]: o[lista].map((x, j) => (j === i ? { ...x, [campo]: valor } : x)) }));
+
+  useEffect(() => { getPropostasCandidatasNotaFiscal(nota.id).then(r => setCandidatas(r.data)).catch(() => {}); }, [nota.id]);
 
   useEffect(() => {
     let vivo = true;
     const t = setTimeout(() => {
       previaAtestadoNotaFiscal(nota.id, op)
-        .then(r => { if (vivo) setPrevia(r.data); })
+        .then(r => {
+          if (!vivo) return;
+          setPrevia(r.data);
+          const sug = r.data.sugestao || {};
+          // primeira vez (ou depois de trocar a proposta): preenche com o que a nota/proposta sugere
+          setOp(o => {
+            const prox = { ...o };
+            if (o.atividades === null) prox.atividades = sug.atividades || '';
+            if (o.planilha === null) prox.planilha = sug.planilha || '';
+            if (!localPreenchido.current) { localPreenchido.current = true; if (!o.local && sug.local) prox.local = sug.local; }
+            return (prox.atividades !== o.atividades || prox.planilha !== o.planilha || prox.local !== o.local) ? prox : o;
+          });
+        })
         .catch(err => { if (vivo) toast.error(err.response?.data?.erro || 'Erro ao montar o atestado'); });
     }, 350);
     return () => { vivo = false; clearTimeout(t); };
   }, [nota.id, op]);
+
+  async function trocarProposta(valor) {
+    try {
+      await vincularPropostaNotaFiscal(nota.id, valor || null);
+      setPropostaId(valor);
+      localPreenchido.current = false;
+      setOp(o => ({ ...o, atividades: null, planilha: null, local: '' })); // refaz a partir da nova proposta
+      onVinculado?.();
+      toast.success(valor ? 'Nota ligada à proposta' : 'Vínculo com a proposta removido');
+    } catch (err) {
+      toast.error(err.response?.data?.erro || 'Erro ao ligar a proposta');
+    }
+  }
 
   async function copiar() {
     try { await navigator.clipboard.writeText(previa.texto); toast.success('Texto copiado — cole no papel timbrado do cliente'); }
@@ -993,36 +1028,90 @@ function ModalAtestado({ nota, onFechar }) {
     finally { setBaixando(false); }
   }
 
+  const linha = { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' };
+  const mini = { flex: '1 1 140px', minWidth: 0 };
+  const refazer = (campo) => () => setOp(o => ({ ...o, [campo]: null }));
+
   return (
-    <Modal titulo={`Atestado de capacidade técnica — NFS-e nº ${nota.numero}`} onFechar={onFechar} largura={900}>
+    <Modal titulo={`Atestado de capacidade técnica — NFS-e nº ${nota.numero}`} onFechar={onFechar} largura={1000}>
       <p style={{ ...estilos.ajuda, marginTop: 0 }}>
-        Só o corpo do texto, sem timbre nem logo da H&amp;M: o cliente cola no papel dele, confere e assina. Preencha apenas o que for real; o que ficar em branco não entra no texto.
+        Segue o modelo da H&amp;M, só o corpo (sem timbre): o cliente cola no papel dele, confere e assina. O número da nota entra sozinho; as atividades vêm do texto da nota
+        e a planilha, dos itens da proposta ligada. Preencha só o que for real: o que ficar em branco não entra no texto.
       </p>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
         <div style={{ display: 'grid', gap: 10, alignContent: 'start', minWidth: 0 }}>
-          <Campo label="Local de execução"><input value={op.local} onChange={mudar('local')} placeholder="Ex.: sede do cliente, Asa Norte" /></Campo>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <Campo label="Início"><input type="date" value={op.inicio} onChange={mudar('inicio')} /></Campo>
+          <Campo label="Proposta desta nota">
+            <select value={propostaId} onChange={(e) => trocarProposta(e.target.value)} data-testid="atestado-proposta">
+              <option value="">{nota.cliente_id ? 'Sem proposta ligada' : 'Nota sem cliente cadastrado'}</option>
+              {candidatas.map(p => <option key={p.id} value={p.id}>{p.numero} · {formatarMoeda(p.total)}{p.local_obra ? ` · ${p.local_obra}` : ''}{p.status !== 'Aprovada' ? ` (${p.status})` : ''}</option>)}
+            </select>
+          </Campo>
+
+          <div style={linha}>
+            <Campo label="Contrato / instrumento"><input value={op.contrato} onChange={mudar('contrato')} /></Campo>
+            <Campo label="Área / quantitativo"><input value={op.area} onChange={mudar('area')} placeholder="Ex.: m² 320,00" /></Campo>
+          </div>
+          <Campo label="Endereço do serviço"><input value={op.local} onChange={mudar('local')} /></Campo>
+          <div style={linha}>
+            <Campo label="Início da execução"><input type="date" value={op.inicio} onChange={mudar('inicio')} /></Campo>
             <Campo label="Conclusão"><input type="date" value={op.fim} onChange={mudar('fim')} /></Campo>
           </div>
-          <Campo label="Quantitativos executados (um por linha)">
-            <textarea rows={4} value={op.quantitativos} onChange={mudar('quantitativos')} placeholder={'40 pontos de rede Cat 6\n1 rack de 12U'} />
-          </Campo>
-          <Campo label="Responsável técnico"><input value={op.responsavel_tecnico} onChange={mudar('responsavel_tecnico')} /></Campo>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <Campo label="CREA/CAU"><input value={op.crea} onChange={mudar('crea')} /></Campo>
-            <Campo label="ART/RRT"><input value={op.art} onChange={mudar('art')} /></Campo>
+          <div style={linha}>
+            <Campo label="Vigência: início"><input type="date" value={op.vigencia_inicio} onChange={mudar('vigencia_inicio')} /></Campo>
+            <Campo label="Vigência: fim"><input type="date" value={op.vigencia_fim} onChange={mudar('vigencia_fim')} /></Campo>
           </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <Campo label="Signatário do cliente"><input value={op.signatario} onChange={mudar('signatario')} /></Campo>
-            <Campo label="Cargo"><input value={op.cargo} onChange={mudar('cargo')} /></Campo>
+
+          <div style={{ display: 'grid', gap: 6 }}>
+            <strong style={{ fontSize: 12 }}>Responsável técnico (CREA/ART)</strong>
+            {op.responsaveis.map((r, i) => (
+              <div key={i} style={linha}>
+                <input style={mini} placeholder="Nome" value={r.nome} onChange={e => mudarLinha('responsaveis', i, 'nome', e.target.value)} />
+                <input style={mini} placeholder="Título (Engenheiro Eletricista)" value={r.titulo} onChange={e => mudarLinha('responsaveis', i, 'titulo', e.target.value)} />
+                <input style={{ ...mini, flexBasis: 90 }} placeholder="CREA/CAU" value={r.crea} onChange={e => mudarLinha('responsaveis', i, 'crea', e.target.value)} />
+                <input style={{ ...mini, flexBasis: 90 }} placeholder="ART/RRT" value={r.art} onChange={e => mudarLinha('responsaveis', i, 'art', e.target.value)} />
+                <button type="button" onClick={() => setOp(o => ({ ...o, responsaveis: o.responsaveis.filter((_, j) => j !== i) }))} style={estilos.btnSecundario} aria-label="Remover responsável">×</button>
+              </div>
+            ))}
+            {op.responsaveis.length < 5 && (
+              <button type="button" style={{ ...estilos.btnSecundario, justifySelf: 'start' }}
+                onClick={() => setOp(o => ({ ...o, responsaveis: [...o.responsaveis, { nome: '', titulo: '', crea: '', art: '' }] }))}><Plus size={12} /> Adicionar responsável</button>
+            )}
           </div>
+
+          <div style={{ display: 'grid', gap: 6 }}>
+            <strong style={{ fontSize: 12 }}>Assinatura do cliente</strong>
+            <div style={linha}>
+              <Campo label="Cidade"><input value={op.cidade} onChange={mudar('cidade')} placeholder="Da data: padrão é a do cliente" /></Campo>
+              <Campo label="Setor / gerência"><input value={op.setor} onChange={mudar('setor')} /></Campo>
+            </div>
+            {op.signatarios.map((s, i) => (
+              <div key={i} style={linha}>
+                <input style={mini} placeholder="Nome do signatário" value={s.nome} onChange={e => mudarLinha('signatarios', i, 'nome', e.target.value)} />
+                <input style={mini} placeholder="Cargo / função" value={s.cargo} onChange={e => mudarLinha('signatarios', i, 'cargo', e.target.value)} />
+                <button type="button" onClick={() => setOp(o => ({ ...o, signatarios: o.signatarios.filter((_, j) => j !== i) }))} style={estilos.btnSecundario} aria-label="Remover signatário">×</button>
+              </div>
+            ))}
+            {op.signatarios.length < 4 && (
+              <button type="button" style={{ ...estilos.btnSecundario, justifySelf: 'start' }}
+                onClick={() => setOp(o => ({ ...o, signatarios: [...o.signatarios, { nome: '', cargo: '' }] }))}><Plus size={12} /> Adicionar signatário</button>
+            )}
+          </div>
+
           <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
             <input type="checkbox" checked={op.mostrar_valor} onChange={mudar('mostrar_valor')} /> Citar o valor da nota ({formatarMoeda(nota.valor_servicos)})
           </label>
+
+          <Campo label={<>Atividades (um grupo por “Título:” e uma atividade por linha) <button type="button" onClick={refazer('atividades')} style={{ ...estilos.btnSecundario, padding: '1px 8px', fontSize: 11 }}>Refazer pela nota</button></>}>
+            <textarea rows={8} value={op.atividades ?? ''} onChange={mudar('atividades')} data-testid="atestado-atividades" />
+          </Campo>
+          <Campo label={<>Planilha de serviços (“descrição | un 4”; apague tudo para omitir) <button type="button" onClick={refazer('planilha')} style={{ ...estilos.btnSecundario, padding: '1px 8px', fontSize: 11 }}>Refazer</button></>}>
+            <textarea rows={8} value={op.planilha ?? ''} onChange={mudar('planilha')} data-testid="atestado-planilha" />
+          </Campo>
         </div>
+
         <div style={{ minWidth: 0 }}>
-          <textarea readOnly value={previa?.texto || 'Montando…'} rows={18} style={{ width: '100%', fontFamily: 'inherit', lineHeight: 1.45 }} data-testid="atestado-texto" />
+          <strong style={{ fontSize: 12 }}>Prévia do texto</strong>
+          <textarea readOnly value={previa?.texto || 'Montando…'} rows={30} style={{ width: '100%', fontFamily: 'inherit', lineHeight: 1.45, marginTop: 4 }} data-testid="atestado-texto" />
           {previa?.avisos?.map(a => <p key={a} style={{ ...estilos.ajuda, margin: '6px 0 0' }}>• {a}</p>)}
         </div>
       </div>
