@@ -8,6 +8,12 @@
 #     para o servidor de arquivos. A copia da pasta nunca apaga nada no destino
 #     (sem /MIR): um arquivo apagado ou corrompido aqui nao some de la.
 # Mantem 30 dias. Registro em backend\logs\backup.log.
+#
+# -SomenteBanco: usado pelo botao "Fazer backup agora" (Integracoes). Faz so o
+# dump do banco e a copia dele (rede e fora do predio), sem sincronizar as
+# pastas de arquivos (minutos de robocopy) - essas ficam com a tarefa das 02:00.
+
+param([switch]$SomenteBanco)
 
 $ErrorActionPreference = "Stop"
 
@@ -39,7 +45,9 @@ $backupDir = Join-Path $backendDir "backups"
 if (-not (Test-Path $backupDir)) { New-Item -ItemType Directory -Path $backupDir | Out-Null }
 
 $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm"
-$arquivo = Join-Path $backupDir "hm_orcamentos_$timestamp.dump"
+# prefixo = nome do banco (hm_orcamentos na producao): o v2 de teste (hm_orcamentos_v2)
+# nao se mistura com os dumps de producao nas pastas de rede e da nuvem
+$arquivo = Join-Path $backupDir "$($envVars['DB_NAME'])_$timestamp.dump"
 
 $env:PGPASSWORD = $envVars["DB_PASS"]
 try {
@@ -67,7 +75,8 @@ Get-ChildItem $backupDir -File |
 
 # Copia para o servidor de arquivos. Se a rede estiver fora, o backup local
 # (ja concluido) nao e afetado.
-$destinoRede = "\\MARCIO-SERVER\Arquivos Gerais 2\H&M\Projeto do sistema de orçamentos\Backups"
+# (BACKUP_DESTINO_REDE no .env troca o destino; o painel de Integracoes usa o mesmo padrao)
+$destinoRede = if ($env:BACKUP_DESTINO_REDE) { $env:BACKUP_DESTINO_REDE } elseif ($envVars["BACKUP_DESTINO_REDE"]) { $envVars["BACKUP_DESTINO_REDE"] } else { "\\MARCIO-SERVER\Arquivos Gerais 2\H&M\Projeto do sistema de orçamentos\Backups" }
 try {
     if (-not (Test-Path $destinoRede)) { New-Item -ItemType Directory -Path $destinoRede -Force | Out-Null }
     Copy-Item -Path $arquivo -Destination $destinoRede -Force
@@ -103,7 +112,7 @@ function Copiar-Pastas($destinoBase, $rotulo) {
     $global:LASTEXITCODE = 0
 }
 
-Copiar-Pastas $destinoRede "a rede"
+if (-not $SomenteBanco) { Copiar-Pastas $destinoRede "a rede" }
 
 # Copia fora do predio: BACKUP_DESTINO_EXTERNO no .env aponta para uma pasta
 # sincronizada com a nuvem (OneDrive/Google Drive) ou um HD externo. O
@@ -121,7 +130,7 @@ if (-not $destinoExterno) {
             Where-Object { $_.Name -match '\.(dump|sql\.zip)$' -and $_.LastWriteTime -lt (Get-Date).AddDays(-30) } |
             Remove-Item -Force
         Log "Copia do banco enviada para fora do predio: $destinoBanco"
-        Copiar-Pastas $destinoExterno "fora do predio"
+        if (-not $SomenteBanco) { Copiar-Pastas $destinoExterno "fora do predio" }
     } catch {
         Log "AVISO: nao foi possivel copiar para fora do predio ($destinoExterno): $($_.Exception.Message)"
     }

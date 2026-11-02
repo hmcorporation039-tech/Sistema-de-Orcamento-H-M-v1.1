@@ -269,6 +269,9 @@ export const getRotinasIntegracoes = () => api.get('/integracoes/rotinas');
 export const executarRotinaIntegracao = (chave) =>
   api.post(`/integracoes/rotinas/${encodeURIComponent(chave)}/executar`, null, { timeout: 600000 });
 export const testarIAIntegracoes = () => api.post('/integracoes/ia/testar', null, { timeout: 180000 });
+// backup do banco: situação/lista e "fazer agora" (dump + cópias levam de segundos a alguns minutos)
+export const getBackupIntegracoes = () => api.get('/integracoes/backup', { timeout: 30000 });
+export const executarBackupIntegracoes = () => api.post('/integracoes/backup/executar', null, { timeout: 660000 });
 // ── OBRAS (2.0, Fase 2D) ───────────────────────────────────────────────────
 // Lista: params { busca, status, cliente_id, segmento, pagina, porPagina, campos }
 //   campos: 'basico' → só { id, codigo, nome, cliente_id, cliente_nome, status, segmento }
