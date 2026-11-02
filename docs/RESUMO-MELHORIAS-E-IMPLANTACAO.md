@@ -682,3 +682,14 @@ Só código, sem migração. Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-b
 - **Não feito:** planta com os pontos destacados; o reprocessamento não copia as edições da análise antiga; serviço de disciplina que não foi marcada no envio continua fora do orçamento.
 - Teste: `backend/testes/mapaCad.test.js` (só o trecho do banco roda no v2).
 - Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.14_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_14-52.dump`.
+
+### 02/11/2026: versão 2.15.0 — mapa do CAD sem limites do primeiro corte e notas do desenho (itens 3 e 8 do plano)
+**Migrações de banco** (idempotentes, rodam sozinhas ao reiniciar o backend): `2.0-28-analise-leitura-original.js` (coluna `analises_projeto.leitura_original`) e `2.0-29-notas-aprendidas.js` (tabela `cad_notas_aprendidas`). Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-backend.bat` (administrador) e Ctrl+F5.
+- **Planta no mapa do CAD:** contorno dos ambientes e posição dos símbolos; passar o mouse numa linha destaca os pontos dela (mostra onde estão os não reconhecidos). Não é o desenho do projeto.
+- **Reprocessar copia as edições:** quantidades, valores, itens retirados/acrescentados, funcionamento e cliente da análise antiga vão para a nova (`services/edicoesDaAnalise.js`; base = `leitura_original`). Se o mapa recalculou a quantidade de um item editado, vale o mapa e a tela lista o que revisar. Análise anterior a esta versão não tem base: nada é copiado e a tela avisa. Se a cópia falhar, a análise nova sai normal e a tela avisa.
+- **Disciplina não marcada no envio:** a tela avisa e uma caixa (marcada) inclui a disciplina na análise nova.
+- **Notas gerais do DWG (item 8):** "tomadas baixas a 0,30 m do piso" vira altura SUGERIDA na linha do mapa (a linha segue "a conferir"). O sistema guarda o costume por escritório (responsável técnico do carimbo): vale a partir de 2 arquivos diferentes sem contradição, ou na hora em que o engenheiro confirma a altura. Sem responsável no carimbo nada é aprendido nem sugerido. Nota por palavras-chave (ex.: "TOM. 30CM" não é lida).
+- **Revisão geral (830da1c):** escritório vazio não vira grupo comum; reanalisar o mesmo arquivo não conta como outro desenho; falha ao copiar edições não derruba o reprocessamento.
+- **Item 2 (layout de fornecedor) não feito:** contador de IA nas cotações em zero; volta à fila se Integrações mostrar IA frequente.
+- Testes: `mapaCad`, `edicoesDaAnalise` e `notasAprendidas` em `backend/testes` (suíte completa verde no v2).
+- Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.15_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_15-34.dump`.
