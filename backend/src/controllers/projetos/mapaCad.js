@@ -12,6 +12,7 @@ const P = require('../../services/pastasSistema');
 const { pastaDoProjeto } = require('../../services/pastasRegistros');
 const { ehArquivoCad } = require('../../services/analiseCad');
 const mapaCad = require('../../services/mapaCad');
+const notasAprendidas = require('../../services/notasAprendidas');
 const { executarAnalise } = require('./analises');
 
 const SUBPASTA_ARQUIVOS = 'Arquivos do projeto';
@@ -20,7 +21,10 @@ const RE_ARQUIVO_DE_PROJETO = /\.(pdf|dwg|dxf)$/i;
 const arquivosComMapa = (dados) => (Array.isArray(dados) ? dados : []).filter(d => d?.mapa_cad?.simbolos);
 const respostaDoMapa = (dados) => ({
   disponivel: arquivosComMapa(dados).length > 0,
-  arquivos: arquivosComMapa(dados).map(d => ({ ...d.mapa_cad, arquivo: d.mapa_cad.arquivo || d.arquivo, resumo: mapaCad.resumoDoMapa(d.mapa_cad) })),
+  arquivos: arquivosComMapa(dados).map(d => ({
+    ...d.mapa_cad, arquivo: d.mapa_cad.arquivo || d.arquivo, resumo: mapaCad.resumoDoMapa(d.mapa_cad),
+    disciplinasMarcadas: d.disciplinas || [], disciplinasAIncluir: mapaCad.disciplinasAIncluir(d.mapa_cad, d.disciplinas),
+  })),
   tipos: mapaCad.tiposDisponiveis(),
 });
 
@@ -53,7 +57,7 @@ async function salvar(req, res) {
         entidade: 'analises_projeto', entidadeId: Number(id), acao: 'mapa_cad', usuarioId: req.usuario.id,
         detalhes: { arquivo, linhas: alteradas.map(x => ({ layer: x.depois.layer, de: x.antes.simbolo, para: x.depois.simbolo, altura_m: x.depois.altura_m ?? null, desfeita: x.desfeita })) },
       });
-      return { dados, alteradas };
+      return { dados, alteradas, escritorio: dados[i].mapa_cad.escritorio || '' };
     });
   } catch (e) {
     if (e.status) return res.status(e.status).json({ erro: e.message });
@@ -62,19 +66,27 @@ async function salvar(req, res) {
   // aprendizado fora da transação: se falhar, a correção da análise já está salva
   const aprendidas = await mapaCad.aprender(resultado.alteradas, arquivo);
   const esquecidas = await mapaCad.esquecer(resultado.alteradas);
-  res.json({ ...respostaDoMapa(resultado.dados), aprendidas, esquecidas });
+  // a altura confirmada para um TIPO de ponto vira sugestão para os próximos desenhos do mesmo escritório (item 8)
+  const alturasAprendidas = await notasAprendidas.aprenderConfirmadas(resultado.alteradas, resultado.escritorio, arquivo);
+  await notasAprendidas.esquecer(resultado.alteradas, resultado.escritorio);
+  res.json({ ...respostaDoMapa(resultado.dados), aprendidas, esquecidas, alturasAprendidas });
 }
 
-// POST /projetos/analises/:id/mapa/reprocessar — lê de novo os arquivos guardados na pasta do projeto, com os
-// tipos conferidos, e grava uma análise NOVA (a antiga e as edições dela ficam como estão)
+// POST /projetos/analises/:id/mapa/reprocessar { incluirDisciplinas } — lê de novo os arquivos guardados na pasta do
+// projeto, com os tipos conferidos, e grava uma análise NOVA (a antiga fica como está). As edições da antiga (quantidade,
+// valor, itens retirados ou acrescentados) vão junto (services/edicoesDaAnalise.js). Disciplina com ponto conferido que não
+// tinha sido marcada no envio entra na análise nova, salvo `incluirDisciplinas: false`.
 async function reprocessar(req, res) {
   const { rows: [a] } = await pool.query('SELECT * FROM analises_projeto WHERE id = $1', [req.params.id]);
   if (!a) return res.status(404).json({ erro: 'Análise não encontrada' });
   const mapas = arquivosComMapa(a.dados_extraidos);
   const mapasConfirmados = {};
+  const disciplinasExtras = {}; // arquivo → disciplinas conferidas que faltavam na marcação do envio
   for (const d of mapas) {
     const confirmadas = mapaCad.confirmadasDoMapa(d.mapa_cad);
-    if (confirmadas.length) mapasConfirmados[d.mapa_cad.arquivo || d.arquivo] = confirmadas;
+    const nome = d.mapa_cad.arquivo || d.arquivo;
+    if (confirmadas.length) mapasConfirmados[nome] = confirmadas;
+    if (req.body?.incluirDisciplinas !== false) disciplinasExtras[nome] = mapaCad.disciplinasAIncluir(d.mapa_cad, d.disciplinas).map(x => x.chave);
   }
   if (!Object.keys(mapasConfirmados).length) return res.status(400).json({ erro: 'Confirme o tipo de ao menos uma layer no mapa antes de reprocessar.' });
 
@@ -89,7 +101,7 @@ async function reprocessar(req, res) {
   for (const q of analisados) {
     const nome = P.nomeSeguro(q.arquivo, 'arquivo');
     if (!noDisco.includes(nome)) { faltando.push(q.arquivo); continue; }
-    arquivos.push({ buffer: await fsp.readFile(path.join(pasta, nome)), nomeArquivo: q.arquivo, disciplinas: q.disciplinas || [] });
+    arquivos.push({ buffer: await fsp.readFile(path.join(pasta, nome)), nomeArquivo: q.arquivo, disciplinas: [...new Set([...(q.disciplinas || []), ...(disciplinasExtras[q.arquivo] || [])])] });
   }
   if (faltando.length) return res.status(409).json({ erro: `Os arquivos originais não estão mais na pasta do projeto (${faltando.slice(0, 3).join(', ')}). Envie o projeto de novo para analisar.` });
   const nomesAnalisados = new Set(analisados.map(q => P.nomeSeguro(q.arquivo, 'arquivo')));
@@ -101,7 +113,7 @@ async function reprocessar(req, res) {
 
   const base = String(a.nome_projeto || a.cliente_nome || 'Projeto').replace(/\s*\(mapa confirmado\)$/, '');
   const corpo = { finalidade: a.finalidade || 'orcamento', obra_id: a.obra_id, nome_projeto: `${base} (mapa confirmado)`.slice(0, 200) };
-  await executarAnalise(req, res, arquivos, corpo, { mapasConfirmados });
+  await executarAnalise(req, res, arquivos, corpo, { mapasConfirmados, analiseAnterior: a });
 }
 
 module.exports = { ler, salvar, reprocessar };

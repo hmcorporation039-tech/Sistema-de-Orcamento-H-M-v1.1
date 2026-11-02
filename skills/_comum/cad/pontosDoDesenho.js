@@ -20,7 +20,7 @@
 const { dentro } = require('./arquitetura');
 const { ESPEC } = require('./modelo3d');
 const { tipoDoAmbiente } = require('./estimativaArquitetura');
-const { TIPOS, familia, tipoPelaLayer, tipoPeloTexto, metros, tomadaPelaAltura, DE_PAREDE } = require('./tiposDePonto');
+const { TIPOS, familia, tipoPelaLayer, tipoPeloTexto, metros, alturaEscrita, tomadaPelaAltura, DE_PAREDE } = require('./tiposDePonto');
 
 const MAIOR_SIMBOLO_M = 3; // grupo maior que isso é traçado, não símbolo
 const COLA_M = 0.05;       // traços a até 5 cm um do outro são do mesmo símbolo
@@ -224,6 +224,26 @@ function aplicarNotas(arq, pontos) {
   }
 }
 
+// Notas GERAIS de altura ("Tomadas baixas a 0,30 m do piso", "Interruptores h = 1,10 m"): dizem o tipo e a altura sem
+// estar ao lado de um ponto (aplicarNotas só vale a menos de 1,5 m). Devolve [{ simbolo, altura_m, texto }], uma por tipo
+// de ponto de parede. Fica de fora a nota que cita dois tipos ("tomadas a 0,30 e interruptores a 1,10"), a de forro/pé-direito
+// e o tipo que as notas contradizem (duas alturas). É SUGESTÃO para a linha do mapa sem altura (item 8 do plano).
+function notasDeAltura(arq) {
+  const por = new Map();
+  for (const n of arq.notas || []) {
+    if (n.legenda || /forro|p[ée].?direito|teto|laje/i.test(n.s)) continue;
+    const h = alturaEscrita(n.s);
+    const tipos = TIPOS.filter(([, rt]) => rt.test(n.s));
+    if (!(h > 0 && h <= 5) || !tipos.length || new Set(tipos.map(t => familia(t[2]))).size !== 1) continue;
+    const t = tipos[0];
+    if (!DE_PAREDE.test(t[2])) continue;
+    const simbolo = /TOMADA/.test(t[2]) ? tomadaPelaAltura(h) : t[2];
+    const g = por.get(simbolo) || por.set(simbolo, { alturas: new Set(), texto: n.s.slice(0, 120) }).get(simbolo);
+    g.alturas.add(h);
+  }
+  return [...por].filter(([, g]) => g.alturas.size === 1).map(([simbolo, g]) => ({ simbolo, altura_m: [...g.alturas][0], texto: g.texto }));
+}
+
 // Mapa proposto: cada layer de instalação → tipos de símbolo (medida × quantidade) e traçados.
 // opcoes.aprendidos: a legenda lida em projetos anteriores (backend: tabela cad_simbolos_aprendidos),
 // usada só na layer que não tem legenda neste desenho — o sistema aprende a cada projeto.
@@ -240,6 +260,16 @@ function propostaDeMapa(arq, opcoes = {}) {
     // tipo conferido pelo engenheiro em outro projeto (l.usuario) vale mesmo quando a regra da layer dizia outra família
     if (!l.usuario && (sug ? familia(l.simbolo) !== familia(sug.simbolo) : RE_SO_CONTORNO.test(layer))) return null;
     return l;
+  };
+  // altura sugerida pelas notas gerais deste desenho e, depois, pelo que o escritório (responsável técnico do carimbo)
+  // costuma escrever (opcoes.notasAprendidas, services/notasAprendidas.js; opcoes.escritorio)
+  const notasDaqui = notasDeAltura(arq);
+  const alturaSugerida = (simbolo) => {
+    if (!simbolo || !DE_PAREDE.test(simbolo)) return null;
+    const d = notasDaqui.find(n => n.simbolo === simbolo);
+    if (d) return { altura_m: d.altura_m, de: 'nota', texto: d.texto };
+    const a = (opcoes.notasAprendidas || []).find(n => n.simbolo === simbolo && (n.escritorio || '') === (opcoes.escritorio || ''));
+    return a ? { altura_m: a.altura_m, de: 'nota_aprendida', texto: a.texto } : null;
   };
   const simbolos = [];
   const trechos = [];
@@ -291,11 +321,14 @@ function propostaDeMapa(arq, opcoes = {}) {
       if (leg) sug = { simbolo: leg.simbolo, disciplina: sug?.disciplina || leg.disciplina, rotulo: leg.texto };
       // o mesmo aparelho desenhado em duas layers (símbolo + contorno IFC): conta uma vez só
       if (sug && simbolos.some(o => o.layer !== layer && o.simbolo === sug.simbolo && o.quantidade === t.itens.length)) sug = null;
+      const sugAltura = !leg?.altura_m ? alturaSugerida(sug?.simbolo) : null;
       simbolos.push({
         layer, medida: t.medida.map(r2), quantidade: t.itens.length, fora, simbolo: sug ? sug.simbolo : '?', rotulo: sug?.rotulo || '', disciplina: sug ? sug.disciplina : '',
         // layer com preenchimento: o tipo vale só para os símbolos com a mesma fração (aplicarMapa)
-        ...(cheios ? { preenchimento: r2(t.fracao) } : {}), ...(leg?.altura_m ? { altura_m: leg.altura_m, alturaDe: leg.aprendido ? 'aprendido' : 'legenda' } : {}), ...(leg ? { tipoDe: leg.aprendido ? 'aprendido' : 'legenda' } : {}),
+        ...(cheios ? { preenchimento: r2(t.fracao) } : {}), ...(leg?.altura_m ? { altura_m: leg.altura_m, alturaDe: leg.aprendido ? 'aprendido' : 'legenda' } : sugAltura ? { altura_m: sugAltura.altura_m, alturaDe: sugAltura.de, alturaTexto: sugAltura.texto } : {}), ...(leg ? { tipoDe: leg.aprendido ? 'aprendido' : 'legenda' } : {}),
         ...(sug && sug.simbolo === 'HM-ELE-CAIXA-PISO' && !pdf ? { area: 'externa' } : {}),
+        // onde cada símbolo desta forma está (a planta da tela do mapa mostra também o que não foi reconhecido)
+        centros: t.itens.slice(0, 400).map(q => [r2(q.centro[0]), r2(q.centro[1])]),
       });
     }
   }
@@ -380,4 +413,5 @@ function aplicarMapa(arq, mapa) {
 
 const pontosDoDesenho = (arq, opcoes = {}) => aplicarMapa(arq, propostaDeMapa(arq, opcoes));
 
-module.exports = { pontosDoDesenho, propostaDeMapa, aplicarMapa, aplicarConfirmacoes, origemDaLinha, agrupar, sugestao, sugestaoPdf, legendaDoProjeto, legendaDeAlturas, fracaoPreenchida, tomadaPelaAltura, metros, DE_PAREDE, TIPOS, RE_INSTALACAO, RE_FORA, RE_TRECHO, RE_PDF_COR };
+module.exports = {
+  notasDeAltura, pontosDoDesenho, propostaDeMapa, aplicarMapa, aplicarConfirmacoes, origemDaLinha, agrupar, sugestao, sugestaoPdf, legendaDoProjeto, legendaDeAlturas, fracaoPreenchida, tomadaPelaAltura, metros, DE_PAREDE, TIPOS, RE_INSTALACAO, RE_FORA, RE_TRECHO, RE_PDF_COR };

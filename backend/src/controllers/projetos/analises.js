@@ -9,6 +9,7 @@ const { analisarProjetoCompleto } = require('../../services/compatibilizacaoAnal
 const { gerarHtmlRelatorioCompatibilizacao } = require('../../utils/relatorioCompatibilizacaoTemplate');
 const { gerarFooterTemplate } = require('../../utils/pdfTemplate');
 const { normalizarDisciplinas } = require('../../utils/disciplinasProjeto');
+const { herdarEdicoes } = require('../../services/edicoesDaAnalise');
 const { parsePaginacao, montarResposta } = require('../../utils/paginacao');
 const { comTransacao } = require('../../services/transacao');
 const P = require('../../services/pastasSistema');
@@ -143,7 +144,8 @@ function arquivoInvalido(arquivos) {
 
 // Parte comum do envio direto (multipart) e do pacote (2.3): obra, finalidade,
 // análise, gravação. `corpo`: { finalidade, obra_id, nome_projeto }. `opcoes.mapasConfirmados`: tipos conferidos no
-// mapa do CAD (controllers/projetos/mapaCad.js) quando a análise é um reprocessamento.
+// mapa do CAD (controllers/projetos/mapaCad.js) quando a análise é um reprocessamento; `opcoes.analiseAnterior`: a análise
+// reprocessada (linha do banco), de onde vêm as edições do usuário (services/edicoesDaAnalise.js).
 async function executarAnalise(req, res, arquivos, corpo, opcoes = {}) {
   // finalidade (2.1): campo multipart; ausente = 'orcamento' (o uso de sempre,
   // e o que o MCP manda quando não informa)
@@ -168,6 +170,10 @@ async function executarAnalise(req, res, arquivos, corpo, opcoes = {}) {
 
   try {
     const resultado = await analisarProjetoCompleto(arquivos, opcoes);
+    // o que foi LIDO (antes de qualquer edição) fica guardado nas análises com mapa do CAD: é a base para copiar edições num reprocessamento
+    const temMapa = (resultado.dadosExtraidos || []).some(d => d?.mapa_cad);
+    const leituraOriginal = temMapa ? { servicos: resultado.servicos || [], materiais: resultado.materiais || [] } : null;
+    const heranca = opcoes.analiseAnterior ? herdarEdicoes(resultado, opcoes.analiseAnterior) : null;
 
     // análise e arquitetura numa transação só: antes, uma falha no segundo
     // INSERT deixava a análise gravada sem a base do 3D/compatibilização
@@ -177,8 +183,8 @@ async function executarAnalise(req, res, arquivos, corpo, opcoes = {}) {
       `INSERT INTO analises_projeto
         (cliente_nome, disciplinas, arquivos_analisados, ambientes, pontos_por_ambiente, cameras,
          pontos_rede_antena, tabela_cabos, achados, servicos, materiais, usuario_id, nome_projeto, dados_extraidos,
-         obra_id, cliente_id, finalidade, conflitos, compatibilizacao, espacial)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+         obra_id, cliente_id, finalidade, conflitos, compatibilizacao, espacial, leitura_original)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
        RETURNING *`,
       [
         // sem cliente no carimbo do PDF, vale o cliente da obra
@@ -203,8 +209,20 @@ async function executarAnalise(req, res, arquivos, corpo, opcoes = {}) {
         JSON.stringify(resultado.compatibilizacao || null),
         // 2.3: posições reais dos DWG/DXF (alinhadas à referência) para o 3D
         JSON.stringify(resultado.espacial || null),
+        leituraOriginal ? JSON.stringify(leituraOriginal) : null,
       ]
     );
+    // o texto do funcionamento e os pontos por disciplina (enriquecimento do Claude Desktop) e o cliente corrigido
+    // não dependem do mapa: seguem da análise anterior
+    if (opcoes.analiseAnterior) {
+      const ant = opcoes.analiseAnterior;
+      const atualizada = await client.query(
+        `UPDATE analises_projeto SET funcionamento = COALESCE($1, funcionamento), pontos_por_disciplina = COALESCE($2::jsonb, pontos_por_disciplina),
+           cliente_nome = COALESCE(NULLIF($3, ''), cliente_nome) WHERE id = $4 RETURNING *`,
+        [ant.funcionamento || null, Array.isArray(ant.pontos_por_disciplina) && ant.pontos_por_disciplina.length ? JSON.stringify(ant.pontos_por_disciplina) : null, ant.cliente_nome || '', ins.rows[0].id]);
+      ins.rows[0] = atualizada.rows[0];
+    }
+
 
     // DWG/DXF com arquitetura: vira a base do modelo 3D desta análise (2.3)
     if (resultado.arquiteturaCad) {
@@ -220,7 +238,7 @@ async function executarAnalise(req, res, arquivos, corpo, opcoes = {}) {
     // Pasta do projeto (fora da transação): guarda os arquivos recebidos (antes eram lidos e descartados)
     await sincronizarProjeto(insert.rows[0], arquivos);
     const salvo = await pool.query(SQL_ANALISE_COMPLETA, [insert.rows[0].id]);
-    res.json(linhaParaAnalise(salvo.rows[0]));
+    res.json({ ...linhaParaAnalise(salvo.rows[0]), ...(heranca ? { edicoesHerdadas: heranca } : {}) });
     return true;
   } catch (err) {
     console.error('Erro ao analisar projeto:', err);

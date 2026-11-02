@@ -150,7 +150,7 @@ export const gerarOrcamentoDaAnalise = (id) => api.post(`/projetos/analises/${id
 // Mapa do CAD: o que o sistema entendeu de cada layer do DWG/DXF; a correção vira aprendizado; reprocessar grava uma análise nova
 export const getMapaCad = (id) => api.get(`/projetos/analises/${id}/mapa`);
 export const salvarMapaCad = (id, arquivo, linhas) => api.put(`/projetos/analises/${id}/mapa`, { arquivo, linhas });
-export const reprocessarMapaCad = (id) => api.post(`/projetos/analises/${id}/mapa/reprocessar`, {}, { timeout: 300000 });
+export const reprocessarMapaCad = (id, corpo = {}) => api.post(`/projetos/analises/${id}/mapa/reprocessar`, corpo, { timeout: 300000 });
 // Pasta do projeto (2.3: na pasta do cliente ou da obra, no servidor)
 export const getPastaAnalise = (id) => api.get(`/projetos/analises/${id}/pasta`);
 export const abrirPastaAnalise = (id) => api.post(`/projetos/analises/${id}/pasta/abrir`);

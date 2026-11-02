@@ -58,6 +58,15 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
     const item = r.pagina.itens.find(it => it.tipo === 'simbolo');
     assert.ok(item.ambiguo && item.conferir && item.origemDescricao === 'desenho');
     proposto = r.mapa;
+    // planta da tela: a posição de cada ponto lido, com a linha do mapa, e a caixa que a envolve
+    const pl = r.mapa.planta;
+    assert.ok(pl && pl.pontos.length >= 5, 'sem planta do mapa');
+    assert.ok(pl.pontos.every(p => Number.isInteger(p[0]) && r.mapa.simbolos[p[0]] && Number.isFinite(p[1]) && Number.isFinite(p[2])));
+    assert.strictEqual(pl.pontos.filter(p => p[0] === tomadas.idx).length, 5);
+    assert.strictEqual(pl.pontos.filter(p => p[0] === desconhecido.idx).length, 3, 'o que não foi reconhecido também aparece na planta');
+    assert.ok(r.mapa.simbolos.every(q => !('centros' in q)), 'as posições ficam só na planta');
+    const [x0, y0, x1, y1] = pl.caixa;
+    assert.ok(x0 < x1 && y0 < y1 && pl.pontos.every(p => p[1] >= x0 && p[1] <= x1 && p[2] >= y0 && p[2] <= y1));
   });
 
   await caso('a confirmação na releitura conta no orçamento e some o "a conferir"', async () => {
@@ -124,6 +133,22 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
     assert.strictEqual(r.conferidas, 1); assert.ok(r.pendentes >= 1 && r.naoReconhecidas === 1);
   });
 
+  await caso('ponto conferido de disciplina que não foi marcada no envio é avisado', () => {
+    const mapa = { simbolos: [
+      { idx: 0, layer: 'A', simbolo: 'HM-ALM-SIRENE', disciplina: 'alarme', confirmado: true, contados: 2 },
+      { idx: 1, layer: 'B', simbolo: 'HM-ELE-TOMADA-BAIXA', disciplina: 'eletrica', confirmado: true, contados: 5 },
+      { idx: 2, layer: 'C', simbolo: 'HM-ALM-SENSOR-IVP', disciplina: 'alarme', confirmado: false, contados: 4 },
+      { idx: 3, layer: 'D', simbolo: '?', disciplina: '', confirmado: true, contados: 0 },
+      { idx: 4, layer: 'E', simbolo: 'HM-CAB-PONTO-RJ45', disciplina: 'rede', confirmado: true, contados: 3 },
+    ] };
+    const falta = mapaCad.disciplinasAIncluir(mapa, ['eletrica']);
+    assert.deepStrictEqual(falta.map(d => [d.chave, d.linhas, d.pontos]), [['alarme', 1, 2], ['cabeamento', 1, 3]]);
+    assert.deepStrictEqual(mapaCad.disciplinasAIncluir(mapa, ['eletrica', 'alarme', 'cabeamento']), [], 'tudo marcado: nada a incluir');
+    assert.deepStrictEqual(mapaCad.disciplinasAIncluir(mapa, ['eletrica', 'alarme', 'rede']), [], 'rede e cabeamento são o mesmo grupo');
+    assert.strictEqual(mapaCad.chaveDoProjeto('controle-acesso'), 'controle_acesso');
+    assert.strictEqual(mapaCad.chaveDoProjeto('nao-existe'), null);
+  });
+
   // ── rotas e arquivos ──
   await caso('rotas do mapa passam por autenticação e posse', async () => {
     const rotas = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'index.js'), 'utf8');
@@ -188,11 +213,16 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
         const arquivos = [{ buffer: dxf, nomeArquivo: NOME, disciplinas: ['eletrica'] }];
         const resultado = await analisarProjetoCompleto(arquivos);
         assert.ok(resultado.dadosExtraidos[0].mapa_cad, 'a análise guarda o mapa do CAD');
+        // o usuário revisou a análise: mudou o valor de um serviço, retirou outro e acrescentou um serviço e um material
+        assert.ok(resultado.servicos.length >= 3 && resultado.materiais.length >= 1, 'a análise de elétrica traz itens-modelo');
+        const servicosEditados = [{ ...resultado.servicos[0], valor_unitario: 123.45 }, ...resultado.servicos.slice(2), { codigo: null, descricao: 'ZZ serviço manual', disciplina: 'eletrica', unidade: 'un', quantidade: 3, valor_unitario: 10, pronto: false }];
+        const materiaisEditados = [...resultado.materiais, { descricao: 'ZZ material manual', disciplina: 'eletrica', unidade: 'un', quantidade: 2, pronto: false }];
         const ins = await pool.query(
           `INSERT INTO analises_projeto (cliente_nome, disciplinas, arquivos_analisados, ambientes, pontos_por_ambiente, cameras, pontos_rede_antena, tabela_cabos, achados, servicos, materiais, usuario_id, nome_projeto, dados_extraidos, finalidade)
-           VALUES ('ZZ Cliente', $1, $2, '[]', '[]', '{}', '{}', '[]', '[]', '[]', '[]', $3, 'ZZ Mapa CAD', $4, 'orcamento') RETURNING *`,
-          [JSON.stringify(resultado.disciplinas), JSON.stringify(resultado.arquivosAnalisados), u.id, JSON.stringify(resultado.dadosExtraidos)]);
+           VALUES ('ZZ Cliente', $1, $2, '[]', '[]', '{}', '{}', '[]', '[]', $5, $6, $3, 'ZZ Mapa CAD', $4, 'orcamento') RETURNING *`,
+          [JSON.stringify(resultado.disciplinas), JSON.stringify(resultado.arquivosAnalisados), u.id, JSON.stringify(resultado.dadosExtraidos), JSON.stringify(servicosEditados), JSON.stringify(materiaisEditados)]);
         const analise = ins.rows[0];
+        await pool.query('UPDATE analises_projeto SET leitura_original = $1 WHERE id = $2', [JSON.stringify({ servicos: resultado.servicos, materiais: resultado.materiais }), analise.id]);
         await sincronizarProjeto(analise, arquivos);
         const app = express();
         app.use(express.json());
@@ -250,6 +280,26 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
           assert.ok(tomadaNova && tomadaNova.ambiguo === false && tomadaNova.quantidade === 5, JSON.stringify(dadosNovos.desenho[0].itens));
           const linhaNova = dadosNovos.mapa_cad.simbolos.find(x => x.layer === 'EL-TOMADAS');
           assert.deepStrictEqual([linhaNova.origem, linhaNova.contados], ['confirmado', 5]);
+          // as edições do usuário na análise antiga foram copiadas para a nova
+          const h = r.corpo.edicoesHerdadas;
+          assert.strictEqual(h.copiadas, true, JSON.stringify(h));
+          assert.ok(h.alterados >= 1 && h.removidos >= 1 && h.acrescentados >= 2, JSON.stringify(h));
+          assert.strictEqual(r.corpo.servicos[0].valor_unitario, 123.45);
+          assert.ok(!r.corpo.servicos.some(x => x.descricao === resultado.servicos[1].descricao), 'o serviço retirado continua fora');
+          assert.ok(r.corpo.servicos.some(x => x.descricao === 'ZZ serviço manual') && r.corpo.materiais.some(x => x.descricao === 'ZZ material manual'));
+          // a análise nova também guarda o que LEU, para um próximo reprocessamento
+          const guardada = (await pool.query('SELECT leitura_original FROM analises_projeto WHERE id = $1', [r.corpo.id])).rows[0].leitura_original;
+          assert.ok(Array.isArray(guardada.servicos) && !guardada.servicos.some(x => x.descricao === 'ZZ serviço manual'), 'a leitura original não leva as edições');
+          // disciplina do ponto conferido que não foi marcada no envio (sirene = alarme): avisada e incluída
+          r = await chamar('PUT', URL, { arquivo: NOME, linhas: [{ idx: iS, simbolo: 'HM-ALM-SIRENE', altura_m: 2.4, confirmado: true }] });
+          assert.deepStrictEqual(r.corpo.arquivos[0].disciplinasAIncluir.map(d => d.chave), ['alarme']);
+          r = await chamar('POST', URL + '/reprocessar', { incluirDisciplinas: false });
+          novas.push(r.corpo.id);
+          assert.ok(!r.corpo.disciplinas.includes('alarme'), 'incluirDisciplinas:false respeita a marcação do envio');
+          r = await chamar('POST', URL + '/reprocessar', {});
+          novas.push(r.corpo.id);
+          assert.ok(r.corpo.disciplinas.includes('alarme') && r.corpo.disciplinas.includes('eletrica'), JSON.stringify(r.corpo.disciplinas));
+          assert.ok(r.corpo.dadosExtraidos[0].desenho[0].itens.some(it => it.bloco === 'HM-ALM-SIRENE' && it.ambiguo === false), 'a sirene conferida entra na contagem');
           // a análise de origem não mudou
           assert.strictEqual((await pool.query('SELECT nome_projeto FROM analises_projeto WHERE id = $1', [analise.id])).rows[0].nome_projeto, 'ZZ Mapa CAD');
         } finally {

@@ -17,6 +17,7 @@ const { SIMBOLOS } = require(path.join(CAD, 'simbolos.js'));
 const { ESPEC } = require(path.join(CAD, 'modelo3d.js'));
 const { TIPOS } = require(path.join(CAD, 'tiposDePonto.js'));
 const { chaveDe } = require('./simbolosAprendidos');
+const { DISCIPLINAS, nomeDaDisciplina } = require('../utils/disciplinasProjeto');
 
 const NOMES_EXTRA = {
   'HM-ILU-POSTE': 'Poste de iluminação', 'HM-ELE-CAIXA-PISO': 'Caixa de passagem no piso',
@@ -138,6 +139,31 @@ async function esquecer(alteradas, executor = pool) {
   return removidas;
 }
 
+// Disciplina do SÍMBOLO (a do desenho/3D) → chave da disciplina da ANÁLISE (a que se marca no envio do arquivo)
+const CHAVE_DO_PROJETO = { 'controle-acesso': 'controle_acesso', 'iluminacao-externa': 'iluminacao', veicular: 'carregador', rede: 'cabeamento' };
+const CHAVES_DE_PROJETO = new Set(DISCIPLINAS.map(d => d.chave));
+const MESMO_GRUPO = { rede: ['rede', 'cabeamento'], cabeamento: ['cabeamento', 'rede'] };
+function chaveDoProjeto(disciplinaDoSimbolo) {
+  const c = CHAVE_DO_PROJETO[disciplinaDoSimbolo] || disciplinaDoSimbolo;
+  return CHAVES_DE_PROJETO.has(c) ? c : null;
+}
+
+// Pontos conferidos de uma disciplina que NÃO foi marcada no envio do arquivo ficariam fora do orçamento (a análise
+// só conta o que é das disciplinas marcadas). Confirmar o tipo é a prova de que o engenheiro quer esses pontos:
+// o reprocessamento inclui a disciplina (ele pode desmarcar). Devolve [{ chave, nome, linhas, pontos }].
+function disciplinasAIncluir(mapa, marcadas) {
+  const marcadasEmGrupo = new Set((marcadas || []).flatMap(d => MESMO_GRUPO[d] || [d]));
+  const porChave = new Map();
+  for (const s of mapa?.simbolos || []) {
+    if (!s.confirmado || s.simbolo === '?') continue;
+    const chave = chaveDoProjeto(s.disciplina);
+    if (!chave || marcadasEmGrupo.has(chave)) continue;
+    const g = porChave.get(chave) || porChave.set(chave, { chave, nome: nomeDaDisciplina(chave), linhas: 0, pontos: 0 }).get(chave);
+    g.linhas++; g.pontos += s.contados > 0 ? s.contados : (s.quantidade || 0); // linha que era "não reconhecida" ainda não tem pontos contados: vale o que o desenho tem
+  }
+  return [...porChave.values()];
+}
+
 // resumo para a tela: quantas linhas, quantas conferidas, quantos pontos ainda não contam no orçamento
 function resumoDoMapa(mapa) {
   const simbolos = mapa?.simbolos || [];
@@ -152,4 +178,4 @@ function resumoDoMapa(mapa) {
   };
 }
 
-module.exports = { tiposDisponiveis, disciplinaDoSimbolo, nomeDoSimbolo, validarLinhas, aplicarNoMapa, confirmadasDoMapa, aprender, esquecer, resumoDoMapa, chaveAprendida };
+module.exports = { tiposDisponiveis, disciplinaDoSimbolo, nomeDoSimbolo, validarLinhas, aplicarNoMapa, confirmadasDoMapa, aprender, esquecer, resumoDoMapa, chaveAprendida, chaveDoProjeto, disciplinasAIncluir };
