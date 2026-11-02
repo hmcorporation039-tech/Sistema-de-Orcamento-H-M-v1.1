@@ -7,6 +7,7 @@ import Select from '../../components/Select';
 import ClienteSelect from '../../components/ClienteSelect';
 import Modal from '../../components/ui/Modal';
 import Paginacao from '../../components/Paginacao';
+import PixSemObra from './PixSemObra';
 import { invalidarCacheObras } from '../../components/ObraSelect';
 import { STATUS_OBRA, SEGMENTO, SEGMENTO_CURTO, BASE_ORCADO, Etiqueta, moeda, pct, corMargem, estilos as E, Campo } from './comum';
 
@@ -51,6 +52,8 @@ export default function ListaObras() {
         <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>Obras</h2>
         <button type="button" onClick={() => setNovaAberta(true)} style={E.btnPrimario}><Plus size={14} /> Nova obra</button>
       </div>
+
+      {!restrito && <PixSemObra aoMudar={carregar} />}
 
       <div style={{ ...E.card, display: 'grid', gridTemplateColumns: 'minmax(220px, 2fr) 1fr 1fr minmax(180px, 1.5fr)', gap: 12, alignItems: 'end' }}>
         <Campo label="Buscar">

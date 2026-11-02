@@ -477,3 +477,7 @@ export const getVencimentos = () => api.get('/vencimentos');
 export const criarVencimento = (dados) => api.post('/vencimentos', dados);
 export const renovarVencimento = (id, dados) => api.put(`/vencimentos/${id}/renovar`, dados || {});
 export const encerrarVencimento = (id) => api.delete(`/vencimentos/${id}`);
+
+// ── PIX SEM OBRA (margem real por obra): grupos por nome, com sugestão; ligar à obra ─
+export const getPixSemObra = () => api.get('/financeiro/atribuicao-obras');
+export const atribuirPixObra = (dados) => api.post('/financeiro/atribuicao-obras', dados);
