@@ -48,9 +48,29 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
       { descricao: 'SPDA — Aurora', cliente_nome: 'Condomínio Aurora', vence_em: '2026-12-01' },
       { descricao: 'Incêndio — Sede', cliente_nome: null, vence_em: '2026-10-30' },
     ], '2026-11-02');
-    assert.match(m.assunto, /2 \(1 vencido\)/);
+    assert.match(m.assunto, /Vencimentos a renovar: 2 \(1 vencido\)/);
     assert.match(m.texto, /SPDA — Aurora \(Condomínio Aurora\): vence em 29 dias — vence em 01\/12\/2026/);
     assert.match(m.texto, /Incêndio — Sede: venceu há 3 dias/);
+  });
+
+  await caso('documento da empresa: pede só o que está escrito nele e calcula os meses', () => {
+    assert.strictEqual(v.validarEntrada({ tipo: 'empresa', descricao: 'Certidão negativa federal', vence_em: '2027-03-10' }), null);
+    assert.match(v.validarEntrada({ tipo: 'empresa', descricao: ' ', vence_em: '2027-03-10' }), /qual documento/);
+    assert.match(v.validarEntrada({ tipo: 'empresa', descricao: 'CND', vence_em: '10/03/2027' }), /data de vencimento/);
+    assert.strictEqual(v.mesesEntre('2026-11-02', '2027-05-02'), 6);
+    assert.strictEqual(v.mesesEntre('2026-11-02', '2026-11-20'), 1, 'menos de um mês conta como 1 (o campo não aceita 0)');
+    assert.strictEqual(v.mesesEntre('2026-01-01', '2050-01-01'), 120, 'limitado ao máximo da tabela');
+  });
+
+  await caso('certificado: sem arquivo ou sem data não derruba a rotina e não escreve nada', async () => {
+    let escreveu = false;
+    const db = { query: async () => { escreveu = true; return { rows: [] }; } };
+    const sem = await v.sincronizarCertificado(db, { carregar: () => { throw new Error('NFSE_CERT_SENHA não está definida no .env.'); } });
+    assert.strictEqual(sem.atualizado, false);
+    assert.match(sem.aviso, /NFSE_CERT_SENHA/);
+    const semData = await v.sincronizarCertificado(db, { carregar: () => ({ nome: 'X' }) });
+    assert.strictEqual(semData.atualizado, false);
+    assert.strictEqual(escreveu, false);
   });
 
   await caso('avisar: manda uma vez por etapa e só marca se o e-mail saiu', async () => {
@@ -83,13 +103,68 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
   } else {
     const pool = require('../src/config/database');
     const limpar = async () => {
-      await pool.query("DELETE FROM vencimentos_laudos WHERE descricao LIKE 'ZZ Venc%' OR laudo_id IN (SELECT id FROM laudos_projetos WHERE titulo LIKE 'ZZ Venc%')").catch(() => {});
+      await pool.query("DELETE FROM vencimentos_laudos WHERE descricao LIKE 'ZZ Venc%' OR descricao LIKE '%ZZ EMPRESA%' OR laudo_id IN (SELECT id FROM laudos_projetos WHERE titulo LIKE 'ZZ Venc%')").catch(() => {});
       await pool.query("DELETE FROM laudos_projetos WHERE titulo LIKE 'ZZ Venc%'").catch(() => {});
     };
     try {
       await require('../src/models/migracoes/2.0-31-vencimentos-laudos')(pool);
       await require('../src/models/migracoes/2.0-31-vencimentos-laudos')(pool);  // idempotente
+      await require('../src/models/migracoes/2.0-37-vencimentos-empresa')(pool);
+      await require('../src/models/migracoes/2.0-37-vencimentos-empresa')(pool);  // idempotente
       await limpar();
+
+      await caso('banco: documento da empresa — cadastra, esconde de quem não é admin, renova com data nova e encerra', async () => {
+        const id = await v.criar(pool, { tipo: 'empresa', descricao: 'ZZ Venc certidão', vence_em: '2026-11-20' }, null, '2026-11-02');
+        const adm = (await v.listar(pool, '2026-11-02')).itens.find(i => i.id === id);
+        assert.strictEqual(adm.tipo, 'empresa');
+        assert.strictEqual(adm.nivel, 'urgente');
+        assert.ok(!(await v.listar(pool, '2026-11-02', { incluirEmpresa: false })).itens.some(i => i.id === id), 'quem não é admin não vê documento da empresa');
+        await assert.rejects(() => v.renovar(pool, id, {}, '2026-11-02'), /nova data/);
+        await assert.rejects(() => v.renovar(pool, id, { vence_em: '2026-10-01' }, '2026-11-02'), /futura/);
+        await pool.query('UPDATE vencimentos_laudos SET etapa_avisada = 2 WHERE id = $1', [id]);
+        await v.renovar(pool, id, { vence_em: '2027-05-20' }, '2026-11-02');
+        const novo = (await v.listar(pool, '2026-11-02')).itens.find(i => i.id === id);
+        assert.strictEqual(novo.vence_em, '2027-05-20');
+        assert.strictEqual(novo.etapa_avisada, 0);
+        assert.strictEqual(novo.nivel, 'ok');
+        await v.encerrar(pool, id);
+      });
+
+      await caso('banco: certificado A1 entra sozinho, não duplica, reinicia os avisos ao ser trocado e não é renovável à mão', async () => {
+        // cópia da linha real (se existir) para o teste não mexer na data verdadeira do certificado
+        const real = (await pool.query("SELECT * FROM vencimentos_laudos WHERE origem = 'certificado_a1'")).rows[0];
+        await pool.query("DELETE FROM vencimentos_laudos WHERE origem = 'certificado_a1'");
+        try {
+          const cert = (ate) => ({ nome: 'ZZ EMPRESA LTDA:12345678000199', validoDe: new Date(2025, 10, 1, 12), validoAte: new Date(...ate, 12) });
+          const a = await v.sincronizarCertificado(pool, { carregar: () => cert([2026, 11, 30]) });   // 30/12/2026
+          assert.strictEqual(a.vence_em, '2026-12-30');
+          await v.sincronizarCertificado(pool, { carregar: () => cert([2026, 11, 30]) });
+          const linhas = (await pool.query("SELECT id, etapa_avisada, descricao FROM vencimentos_laudos WHERE origem = 'certificado_a1'")).rows;
+          assert.strictEqual(linhas.length, 1, 'rodar de novo não duplica');
+          assert.match(linhas[0].descricao, /Certificado digital A1 \(NFS-e\) — ZZ EMPRESA LTDA$/);
+          await assert.rejects(() => v.renovar(pool, linhas[0].id, { vence_em: '2027-12-30' }), /lida do arquivo/);
+
+          await pool.query('UPDATE vencimentos_laudos SET etapa_avisada = 2 WHERE id = $1', [linhas[0].id]);
+          await v.sincronizarCertificado(pool, { carregar: () => cert([2026, 11, 30]) });
+          assert.strictEqual((await pool.query('SELECT etapa_avisada FROM vencimentos_laudos WHERE id = $1', [linhas[0].id])).rows[0].etapa_avisada, 2, 'mesma data: o aviso já dado continua valendo');
+
+          await v.sincronizarCertificado(pool, { carregar: () => cert([2027, 11, 30]) });          // certificado novo
+          const depois = (await pool.query("SELECT etapa_avisada, to_char(vence_em, 'YYYY-MM-DD') AS vence_em FROM vencimentos_laudos WHERE origem = 'certificado_a1'")).rows[0];
+          assert.strictEqual(depois.vence_em, '2027-12-30');
+          assert.strictEqual(depois.etapa_avisada, 0, 'certificado trocado: os avisos recomeçam');
+
+          await v.encerrar(pool, linhas[0].id);
+          await v.sincronizarCertificado(pool, { carregar: () => cert([2027, 11, 30]) });
+          assert.ok(!(await v.listar(pool)).itens.some(i => i.origem === 'certificado_a1'), 'quem encerrou o acompanhamento não o vê voltar sem certificado novo');
+        } finally {
+          await pool.query("DELETE FROM vencimentos_laudos WHERE origem = 'certificado_a1'");
+          if (real) {
+            const { id, ...r } = real;
+            const cols = Object.keys(r);
+            await pool.query(`INSERT INTO vencimentos_laudos (${cols.join(', ')}) VALUES (${cols.map((_, k) => `$${k + 1}`).join(', ')})`, cols.map(c => r[c]));
+          }
+        }
+      });
 
       await caso('banco: cadastro, lista com situação, renovar e encerrar', async () => {
         const id = await v.criar(pool, { disciplina: 'SPDA', descricao: 'ZZ Venc antigo', cliente_nome: 'ZZ Cliente', emitido_em: '2025-12-20', validade_meses: 12 });
