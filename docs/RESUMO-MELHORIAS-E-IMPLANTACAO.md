@@ -635,3 +635,12 @@ Instalada em produção em 02/11/2026 (pedido do usuário: reavaliar o item 1 do
 - **Backup** em Integrações (botão "Fazer backup agora") unificado com a versão de teste.
 - Para carregar o código novo: `C:\HM-Engenharia\hm-eng\reiniciar-backend.bat` (administrador) e Ctrl+F5. O frontend novo já está em `frontend/build` (anterior em `build-2.8.0-anterior`).
 - Backup antes da instalação: `C:\HM-Engenharia\Backups\hm_orcamentos_PRODUCAO_antes-v2.9_2026-11-02.dump`.
+
+### 02/11/2026: versão 2.10.0 — BDI e impostos padrão ajustáveis (item 4 do plano)
+Instalada em produção em 02/11/2026. Não há migração de banco (usa a tabela `configuracoes`).
+- **Sem valor de fábrica.** O 20 % de BDI e o 6 % de imposto sobre serviço que estavam fixos na tela saíram: as alíquotas da reforma tributária ainda não existem. O administrador define **BDI**, **imposto sobre venda** e **imposto sobre serviço** em Admin → Integrações → "BDI e impostos padrão" (`services/padroesOrcamento.js`, rotas `GET/PUT /api/configuracoes/padroes-orcamento`; PUT só admin; cada troca vai para a auditoria `padroes_orcamento`). Campo vazio = "não definido"; 0 é valor válido.
+- **Quem usa o padrão:** proposta nova pela tela, orçamento gerado de análise de projeto ou laudo, assistente virtual e MCP (`criar_rascunho_proposta`). Sem padrão definido, nasce 0 % e a tela, o assistente e o MCP avisam, em vez de inventar número.
+- **Proposta salva nunca muda** ao trocar a configuração (cada uma guarda o próprio BDI e impostos); proposta vinculada continua com os valores dela.
+- **Ao instalar:** preencher os três campos em Integrações, senão as propostas novas nascem com 0 %.
+- Não feito: padrão separado por tipo de cliente (privado × licitação). Teste: `backend/testes/padroesOrcamento.test.js` (só roda no banco do v2).
+- Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.10_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_12-38.dump`.
