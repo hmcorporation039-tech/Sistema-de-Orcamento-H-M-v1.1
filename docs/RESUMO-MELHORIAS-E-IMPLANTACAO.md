@@ -785,3 +785,13 @@ Só código, sem migração. Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-b
 - **Limites:** duas notas iguais do mesmo cliente saem como ambíguas; Pix com retenção de INSS/IR (valor menor que o líquido) não é sugerido, só ligar pelo menu da nota ou dar baixa. O cartão só avisa: não manda cobrança a ninguém.
 - Testes: `notasAReceber` em `backend/testes`; `NotasAReceber.test.js` no frontend.
 - Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.24_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_19-09.dump`.
+
+### 02/11/2026: versão 2.25.0 — vencimentos da empresa
+
+- **O que muda:** o cartão "Laudos a vencer" do painel inicial passa a se chamar "Vencimentos" para o administrador e também acompanha os documentos da própria empresa (certidões negativas, alvará, anuidade do CREA, seguro) e o certificado digital A1 da NFS-e. Avisos por e-mail a 60 e 30 dias e ao vencer, como nos laudos (assunto "Vencimentos a renovar").
+- **Documentos:** botão "Documento da empresa", cadastrado pela data escrita nele. "Renovei" pede a nova data (cada certidão vale por um prazo).
+- **Certificado A1:** entra sozinho, com a validade lida do arquivo `.pfx` (uma vez por hora na tela e na rotina das 06:00 e 18:00). Trocar o arquivo reinicia os avisos; a data não se altera à mão. Sem certificado ou senha configurados, nada quebra.
+- **Quem vê:** documentos da empresa são só do administrador (a rota responde 403 aos demais).
+- **Banco:** migração `2.0-37-vencimentos-empresa` (idempotente): colunas `tipo` e `origem` em `vencimentos_laudos`. Acontece sozinha ao reiniciar o backend.
+- Testes: `vencimentos` em `backend/testes` (12 verificações); `VencimentosLaudos.test.js` no frontend.
+- Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.25_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_19-31.dump`.
