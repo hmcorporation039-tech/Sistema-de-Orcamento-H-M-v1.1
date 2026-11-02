@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { Send } from 'lucide-react';
-import { enviarPropostaPorEmail } from '../services/api';
+import { Send, AlertTriangle, XOctagon, Info, CheckCircle2 } from 'lucide-react';
+import { enviarPropostaPorEmail, getRevisaoEnvio } from '../services/api';
 import Modal from './ui/Modal';
 import { estilos } from './ui/estilos';
 
@@ -9,13 +9,19 @@ export default function ModalEnviarEmail({ aberto, onFechar, proposta, emailInic
   const [destinatarioEmail, setDestinatarioEmail] = useState('');
   const [mensagemEmail, setMensagemEmail] = useState('');
   const [enviando, setEnviando] = useState(false);
+  // conferência da proposta antes de enviar (services/revisaoPreEnvio.js): null = carregando ou indisponível
+  const [revisao, setRevisao] = useState(null);
+  const [aceitouBloqueio, setAceitouBloqueio] = useState(false);
 
   useEffect(() => {
     if (aberto) {
       setDestinatarioEmail(emailInicial || '');
       setMensagemEmail('');
+      setAceitouBloqueio(false);
+      setRevisao(null);
+      if (proposta?.id) getRevisaoEnvio(proposta.id).then(r => setRevisao(r.data)).catch(() => setRevisao(null));
     }
-  }, [aberto, emailInicial]);
+  }, [aberto, emailInicial, proposta?.id]);
 
   if (!aberto) return null;
 
@@ -23,6 +29,10 @@ export default function ModalEnviarEmail({ aberto, onFechar, proposta, emailInic
     e.preventDefault();
     if (!destinatarioEmail.trim()) {
       toast.error('Informe o e-mail de destino');
+      return;
+    }
+    if (revisao?.nivel === 'bloqueio' && !aceitouBloqueio) {
+      toast.error('A proposta tem um erro grave na conferência: corrija ou marque que quer enviar mesmo assim');
       return;
     }
     setEnviando(true);
@@ -41,6 +51,7 @@ export default function ModalEnviarEmail({ aberto, onFechar, proposta, emailInic
   return (
     <Modal titulo={`Enviar Proposta ${proposta?.numero} por E-mail`} onFechar={onFechar} largura={420} espacoTitulo={18} style={{ maxHeight: '88vh' }}>
         <form onSubmit={enviar}>
+          <RevisaoEnvio revisao={revisao} aceitou={aceitouBloqueio} onAceitar={setAceitouBloqueio} />
           <div style={{ marginBottom: 12 }}>
             <label style={rotulo}>E-mail do cliente *</label>
             <input
@@ -77,6 +88,44 @@ export default function ModalEnviarEmail({ aberto, onFechar, proposta, emailInic
           </div>
         </form>
     </Modal>
+  );
+}
+
+// Conferência da proposta antes do envio. Só informa: nada aqui impede o envio, exceto marcar que quer enviar
+// mesmo assim quando a proposta está errada (total que não bate, sem itens).
+const VISUAL = {
+  bloqueio: { cor: '#e05252', Icone: XOctagon },
+  atencao: { cor: '#c9a227', Icone: AlertTriangle },
+  info: { cor: 'var(--texto-3)', Icone: Info },
+};
+
+function RevisaoEnvio({ revisao, aceitou, onAceitar }) {
+  if (!revisao) return null;
+  if (!revisao.achados.length) {
+    return (
+      <p style={{ fontSize: 12, color: '#3fb95f', margin: '0 0 12px', display: 'flex', gap: 6, alignItems: 'center' }} data-testid="revisao-envio">
+        <CheckCircle2 size={14} /> Conferida: {revisao.itens_conferidos} itens, nada a corrigir.
+      </p>
+    );
+  }
+  return (
+    <div style={{ margin: '0 0 14px', fontSize: 12, lineHeight: 1.45 }} data-testid="revisao-envio">
+      <div style={{ fontWeight: 600, marginBottom: 4 }}>Antes de enviar</div>
+      {revisao.achados.map((a, i) => {
+        const { cor, Icone } = VISUAL[a.nivel] || VISUAL.info;
+        return (
+          <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', padding: '3px 0', color: a.nivel === 'info' ? 'var(--texto-3)' : 'var(--texto-2)' }}>
+            <Icone size={14} color={cor} style={{ flexShrink: 0, marginTop: 2 }} />
+            <span>{a.mensagem}</span>
+          </div>
+        );
+      })}
+      {revisao.nivel === 'bloqueio' && (
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6, color: '#e05252' }}>
+          <input type="checkbox" checked={aceitou} onChange={e => onAceitar(e.target.checked)} /> Quero enviar mesmo assim
+        </label>
+      )}
+    </div>
   );
 }
 

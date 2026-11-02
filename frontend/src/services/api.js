@@ -128,6 +128,8 @@ export const atualizarProposta = (id, data) => api.put(`/propostas/${id}`, data)
 export const duplicarProposta = (id) => api.post(`/propostas/${id}/duplicar`);
 export const atualizarStatus = (id, status) => api.patch(`/propostas/${id}/status`, { status });
 export const removerProposta = (id) => api.delete(`/propostas/${id}`);
+// conferência antes do envio (só leitura): { nivel: 'ok'|'atencao'|'bloqueio', resumo, achados: [{ nivel, codigo, mensagem }] }
+export const getRevisaoEnvio = (id) => api.get(`/propostas/${id}/revisao-envio`);
 export const enviarPropostaPorEmail = (id, destinatario, mensagem) =>
   api.post(`/propostas/${id}/enviar-email`, { destinatario, mensagem });
 // PDF e planilha (blob) — lista de propostas e editor baixavam cada um com a sua
