@@ -92,7 +92,8 @@ const carregarCatalogo = () => aprendizadoMateriais.carregarCatalogo();
 // (utils/pdfVetorial.js) — o teto de folhas pode ser maior que os 6 de antes.
 const MAX_PAGINAS_DESENHO = 15;
 
-async function analisarProjetoCompleto(todosArquivos) {
+// opcoes.mapasConfirmados: { [nome do arquivo]: [tipos conferidos no mapa do CAD] } (services/mapaCad.js)
+async function analisarProjetoCompleto(todosArquivos, opcoes = {}) {
   const arquivosRef = todosArquivos.filter(a => a.referencia);
   const arquivos = todosArquivos.filter(a => !a.referencia);
   if (!arquivos.length) throw new Error('Marque a disciplina de ao menos um arquivo: só arquivos de referência não geram análise.');
@@ -100,8 +101,8 @@ async function analisarProjetoCompleto(todosArquivos) {
   // deste arquivo vira aprendizado para os próximos (services/simbolosAprendidos.js)
   const temCad = todosArquivos.some(a => ehArquivoCad(a.nomeArquivo));
   const aprendidos = temCad ? await simbolosAprendidos.carregar() : [];
-  const lerCad = ({ buffer, nomeArquivo }) => lerArquivoCad(buffer, nomeArquivo, { aprendidos })
-    .then((r) => { if (r?.aprendizado?.legenda?.length) simbolosAprendidos.registrar(r.aprendizado.legenda, nomeArquivo).catch(() => {}); return r; })
+  const lerCad = ({ buffer, nomeArquivo }) => lerArquivoCad(buffer, nomeArquivo, { aprendidos, confirmados: opcoes.mapasConfirmados?.[nomeArquivo] || [] })
+    .then((r) => { if (!opcoes.mapasConfirmados && r?.aprendizado?.legenda?.length) simbolosAprendidos.registrar(r.aprendizado.legenda, nomeArquivo).catch(() => {}); return r; })
     .catch((e) => { throw Object.assign(new Error(`Não consegui ler "${nomeArquivo}": ${e.message}`), { leituraCad: true }); });
   const cadsRef = await emLotes(arquivosRef, 2, (a) => (ehArquivoCad(a.nomeArquivo) ? lerCad(a).catch((e) => ({ erro: e.message })) : null));
   // Cada arquivo é lido/analisado em paralelo (pdf-parse + regex é I/O-bound e
@@ -262,6 +263,8 @@ async function analisarProjetoCompleto(todosArquivos) {
     esquadrias: a.esquadrias,
     desenho: (vetoriais[i] || []).map(p => ({ pagina: p.pagina, escala: p.escala, ...(p.origem ? { origem: p.origem, nao_identificados: p.naoIdentificados } : {}), itens: (p.itens || []).map(({ posicoes, ...it }) => it), ...(p.aviso ? { aviso: p.aviso } : {}), ...(p.folha ? { folha: p.folha.resumo, tipo_folha: p.folha.tipo } : {}), ...(p.ignorada ? { ignorada: p.ignorada } : {}), ...(p.pulada ? { pulada: p.pulada } : {}), ...(p.naoContados?.length ? { nao_contados: p.naoContados } : {}), ...(p.avisoEscala ? { aviso_escala: p.avisoEscala } : {}), ...(p.conferenciaLegenda?.length ? { conferencia_legenda: p.conferenciaLegenda } : {}), ...(p.xrefsDeOutraDisciplina?.length ? { xrefs_outra_disciplina: p.xrefsDeOutraDisciplina } : {}), ...(p.rotas?.length ? { rotas: p.rotas.map(({ layer, tipo, disciplina, rota_m }) => ({ layer, tipo, disciplina, rota_m })) } : {}) })),
     ...(analises[i].origemCad ? { cad: analises[i].origemCad } : {}),
+    // mapa do CAD (tela de confirmação do engenheiro): layers, tipos, quantidades e de onde veio cada tipo
+    ...(cads[i]?.mapa ? { mapa_cad: cads[i].mapa } : {}),
   }));
 
   return {

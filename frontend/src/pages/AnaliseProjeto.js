@@ -16,6 +16,7 @@ import { CartaoModelo3dAnalise } from '../components/Modelo3d';
 import EnviarParaAnalise from '../components/analise/EnviarParaAnalise';
 import AnalisesSalvas from '../components/analise/ListaAnalises';
 import ConflitosCompatibilizacao from '../components/analise/ConflitosCompatibilizacao';
+import MapaCad from '../components/analise/MapaCad';
 // Finalidade da análise (versão 2.1 — análise ≠ laudo): escolhida ao enviar e
 // editável depois; nenhuma das duas cria laudo. Lista e rótulos em utils/finalidades.
 import { FINALIDADES } from '../utils/finalidades';
@@ -283,7 +284,7 @@ export default function Compatibilizacao() {
     try {
       await salvarAgora(); // o orçamento tem que refletir a última edição, não uma versão atrasada
       const res = await gerarOrcamentoDaAnalise(analise.id);
-      const { propostaId, numero, criada, semQuantidade } = res.data;
+      const { propostaId, numero, criada, semQuantidade, pontosCadSemConferir } = res.data;
       setAnalise(a => ({ ...a, propostaId, propostaNumero: numero }));
       toast.success(criada ? `Orçamento ${numero} criado a partir desta análise` : `Orçamento ${numero} atualizado com os itens desta análise`, {
         duration: 6000,
@@ -292,6 +293,9 @@ export default function Compatibilizacao() {
       // a mensagem do servidor manda "preencher na análise", que não edita mais quantidade
       if (semQuantidade) {
         toast(`${semQuantidade} item(ns) com quantidade 0 ficaram fora do rascunho — o editor lista esses itens para incluir com a quantidade certa.`, { duration: 10000, icon: '⚠️' });
+      }
+      if (pontosCadSemConferir > 0) {
+        toast(`${pontosCadSemConferir} ponto(s) do desenho (CAD) ainda não foram conferidos no "Mapa do CAD" e ficaram fora do orçamento. Confira o mapa e reprocesse a análise para incluí-los.`, { duration: 12000, icon: '⚠️' });
       }
       navigate(`/propostas/editar/${propostaId}`);
     } catch (err) {
@@ -582,6 +586,8 @@ export default function Compatibilizacao() {
               ))}
             </div>
           )}
+
+          <MapaCad key={analise.id} analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />
 
           {(() => {
             const tabelas = (

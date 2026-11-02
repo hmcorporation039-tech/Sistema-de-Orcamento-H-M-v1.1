@@ -3,6 +3,7 @@
 // processo principal travariam o sistema para os outros usuários.
 // Entrada (workerData): { buffer, nome, reLayerLinha (fonte da regex) }
 //                         aprendidos (legenda de projetos anteriores: cad_simbolos_aprendidos)
+//                         confirmados (tipos conferidos pelo engenheiro no mapa do CAD, desta análise)
 // Saída (postMessage): { ok, dxf, origem, versao, arquitetura, projeto, desenho, avisoUnidade } ou { ok: false, erro }
 const path = require('path');
 const { parentPort, workerData } = require('worker_threads');
@@ -38,10 +39,17 @@ const { CAD } = require('../../config/caminhos');
     let desenho = null;
     if (arq) {
       try {
-        const { propostaDeMapa, aplicarMapa, legendaDoProjeto } = require(path.join(CAD, 'pontosDoDesenho.js'));
-        const mapa = propostaDeMapa(arq, { aprendidos: w.aprendidos || [] });
+        const { propostaDeMapa, aplicarMapa, aplicarConfirmacoes, origemDaLinha, legendaDoProjeto } = require(path.join(CAD, 'pontosDoDesenho.js'));
+        const mapa = aplicarConfirmacoes(propostaDeMapa(arq, { aprendidos: w.aprendidos || [] }), w.confirmados || []);
         const { pontos } = aplicarMapa(arq, mapa);
-        desenho = { pontos, legenda: legendaDoProjeto(arq) };
+        // o mapa vai junto (tela de confirmação): cada linha com a origem do tipo; trechos só com o resumo
+        desenho = {
+          pontos, legenda: legendaDoProjeto(arq),
+          mapa: {
+            simbolos: mapa.simbolos.map(s => ({ ...s, origem: origemDaLinha(s) })),
+            trechos: mapa.trechos.map(({ layer, tipo, disciplina, comprimento_m }) => ({ layer, tipo, disciplina, comprimento_m })),
+          },
+        };
       } catch (e) { desenho = { pontos: [], legenda: [], erro: e.message }; }
     }
     parentPort.postMessage({

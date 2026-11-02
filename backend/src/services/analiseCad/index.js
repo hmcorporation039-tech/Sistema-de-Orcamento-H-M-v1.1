@@ -45,11 +45,11 @@ const RE_LAYER_LINHA = 'ELETRODUT|ELETROCALHA|PERFILADO|LEITO|CONDU[IÍ]TE|CONDU
 const TEMPO_LIMITE_MS = 180 * 1000;
 
 // worker com fila global (services/executarNoWorker.js): no máximo 2 leituras de CAD ao mesmo tempo
-async function lerNoWorker(buffer, nome, aprendidos = []) {
+async function lerNoWorker(buffer, nome, aprendidos = [], confirmados = []) {
   let m;
   try {
     m = await executarNoWorker(path.join(__dirname, 'worker.js'),
-      { buffer, nome, reLayerLinha: RE_LAYER_LINHA, aprendidos }, { tempoLimiteMs: TEMPO_LIMITE_MS, memoriaMb: 2048 });
+      { buffer, nome, reLayerLinha: RE_LAYER_LINHA, aprendidos, confirmados }, { tempoLimiteMs: TEMPO_LIMITE_MS, memoriaMb: 2048 });
   } catch (e) {
     if (e.codigo === 'TEMPO_ESGOTADO') throw new Error(`a leitura de "${nome}" passou de ${TEMPO_LIMITE_MS / 1000} s`);
     throw e;
@@ -213,8 +213,9 @@ function alturasDoGrupo(g, d) {
 //   { analise, pagina (contagem pelo desenho), pontosPorAmbiente, arquitetura (para o 3D), espacial }
 // pagina: { itens, rotas, naoIdentificados, legendaItens, conferenciaLegenda, xrefsDeOutraDisciplina, outraArea, … }
 // opcoes.aprendidos: legenda de projetos anteriores (services/simbolosAprendidos.js)
+// opcoes.confirmados: tipos que o engenheiro conferiu no mapa do CAD desta análise (services/mapaCad.js)
 async function lerArquivoCad(buffer, nome, opcoes = {}) {
-  const r = await lerNoWorker(buffer, nome, opcoes.aprendidos || []);
+  const r = await lerNoWorker(buffer, nome, opcoes.aprendidos || [], opcoes.confirmados || []);
   const p = r.projeto;
   const analise = analisarTexto(p.texto, nome);
   // ambientes com área real da arquitetura (o rótulo "A=" do texto fica de reserva):
@@ -290,21 +291,26 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
   // leitor do 3D: skills/_comum/cad/pontosDoDesenho.js). Antes a análise saía com 0 itens e
   // o 3D com todos; agora entram no orçamento, marcados para conferir.
   const doDesenho = [];
-  if (!itens.some(it => it.tipo === 'simbolo') && r.desenho?.pontos?.length) {
+  // pontos por linha do mapa (a tela de confirmação mostra a quantidade que de fato entra: fora do unifilar/quadro)
+  const contadosPorLinha = new Map();
+  for (const pt of r.desenho?.pontos || []) if (naPlanta([pt.x, pt.y])) contadosPorLinha.set(pt.linha, (contadosPorLinha.get(pt.linha) || 0) + 1);
+  const usaMapa = !itens.some(it => it.tipo === 'simbolo') && !!r.desenho?.pontos?.length;
+  if (usaMapa) {
     const grupos = new Map();
     for (const pt of r.desenho.pontos) {
       if (!naPlanta([pt.x, pt.y])) continue;
       const descricao = descricaoDoPonto(pt);
       const disciplina = DISCIPLINA_DO_3D[pt.disciplina] || pt.disciplina || 'eletrica';
-      const k = `${descricao}|${disciplina}|${pt.altura_m ?? ''}`;
-      const g = grupos.get(k) || grupos.set(k, { descricao, disciplina, simbolo: pt.simbolo, altura_m: Number(pt.altura_m) > 0 ? Number(pt.altura_m) : null, alturaDe: pt.alturaDe || null, posicoes: [] }).get(k);
+      const k = `${descricao}|${disciplina}|${pt.altura_m ?? ''}|${pt.confirmado ? 1 : 0}`;
+      const g = grupos.get(k) || grupos.set(k, { descricao, disciplina, simbolo: pt.simbolo, altura_m: Number(pt.altura_m) > 0 ? Number(pt.altura_m) : null, alturaDe: pt.alturaDe || null, confirmado: !!pt.confirmado, posicoes: [] }).get(k);
       g.posicoes.push([pt.x, pt.y]);
     }
     for (const g of grupos.values()) {
       const montagem = /LUMINARIA|PONTO-LUZ|DETECTOR|SENSOR|CAB-AP|CAPTOR|CAMERA/.test(g.simbolo) ? 'teto' : g.altura_m ? 'parede' : null;
       itens.push({
-        tipo: 'simbolo', descricao: g.descricao, quantidade: g.posicoes.length, disciplina: g.disciplina, origemDescricao: 'desenho',
-        bloco: g.simbolo, layer: '', posicoes: g.posicoes, ambiguo: true, conferir: true,
+        tipo: 'simbolo', descricao: g.descricao, quantidade: g.posicoes.length, disciplina: g.disciplina, origemDescricao: g.confirmado ? 'confirmado' : 'desenho',
+        // tipo confirmado pelo engenheiro no mapa do CAD: conta no orçamento; o que ainda não foi conferido fica de fora
+        bloco: g.simbolo, layer: '', posicoes: g.posicoes, ambiguo: !g.confirmado, conferir: !g.confirmado,
         ...(g.altura_m ? { altura_m: g.altura_m, montagem: montagem || 'parede', alturaDe: g.alturaDe } : montagem ? { montagem } : {}),
       });
       doDesenho.push(g);
@@ -396,7 +402,13 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
       p.textosMedida || []),
   };
   // o que a legenda das pranchas ensinou (services/simbolosAprendidos.js grava)
-  return { analise, pagina, pontosPorAmbiente, arquitetura, espacial, aprendizado: { legenda: r.desenho?.legenda || [] } };
+  // mapa do CAD (tela de confirmação): uma linha por layer × forma de símbolo, com o que o sistema entendeu e de onde veio
+  const mapa = r.desenho?.mapa ? {
+    arquivo: nome, valeParaOrcamento: usaMapa,
+    simbolos: r.desenho.mapa.simbolos.map((m, idx) => ({ idx, ...m, contados: contadosPorLinha.get(idx) || 0 })),
+    trechos: r.desenho.mapa.trechos,
+  } : null;
+  return { analise, pagina, pontosPorAmbiente, arquitetura, espacial, mapa, aprendizado: { legenda: r.desenho?.legenda || [] } };
 }
 
 // Classe do componente para as regras de afastamento da compatibilização

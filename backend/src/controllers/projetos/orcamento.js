@@ -8,6 +8,7 @@ const { padroesParaPropostaNova } = require('../../services/padroesOrcamento');
 const { validarProposta } = require('../../utils/validacaoProposta');
 const { inserirSecoesEItens, proximoNumero, registrarEvento } = require('../propostasController');
 const { linhaParaAnalise } = require('./comum');
+const mapaCad = require('../../services/mapaCad');
 const { CONFIANCA_CONFIRMA } = require('../../utils/semelhancaMateriais');
 
 // Gera (ou atualiza, se já existir) uma proposta rascunho na aba Orçamentos a
@@ -167,8 +168,10 @@ async function gerarOrcamento(req, res, next) {
   const { propostaId, numero, criada, aviso: avisoPadroes } = resultadoTx;
 
   const aviso = semQuantidade ? ` (${semQuantidade} item(ns) com quantidade 0 ficaram de fora — preencha na análise se fizerem parte)` : '';
+  // pontos do desenho (CAD) que o engenheiro ainda não conferiu no mapa: ficaram fora do orçamento (services/mapaCad.js)
+  const pontosCadSemConferir = (analise.dadosExtraidos || []).filter(d => d?.mapa_cad?.valeParaOrcamento).reduce((t, d) => t + mapaCad.resumoDoMapa(d.mapa_cad).pontosPendentes, 0);
   res.json({
-    propostaId, numero, criada, semQuantidade,
+    propostaId, numero, criada, semQuantidade, pontosCadSemConferir,
     mensagem: (criada ? `Orçamento ${numero} criado a partir desta análise` : `Orçamento ${numero} atualizado com os itens desta análise`) + aviso + (avisoPadroes ? ` ${avisoPadroes}` : ''),
   });
 }
