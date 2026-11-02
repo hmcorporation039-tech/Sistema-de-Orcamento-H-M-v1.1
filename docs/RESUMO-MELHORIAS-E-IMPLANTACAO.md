@@ -737,3 +737,10 @@ Só código, sem migração. Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-b
 - **Não feito:** custo previsto × realizado por material; desconto do imposto da nota na margem. Não usa IA.
 - Testes: `atribuicaoObras` em `backend/testes` (a parte do banco só roda no v2).
 - Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.19_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_17-24.dump`.
+### 02/11/2026: versão 2.20.0 — resumo diário de erros
+
+- **O problema:** os erros 500 só iam para o log do servidor, que ninguém lê; um defeito numa tela podia ficar dias sem ser notado.
+- **O que faz:** cada erro inesperado é gravado em `erros_sistema` (migração 2.0-33), agrupado por método + rota sem números + começo da mensagem, com a contagem. A rotina `erros-sistema` (06:00 e 18:00) manda UM e-mail só com o que é novo desde o último resumo; sem erro novo, não manda nada. O e-mail vai para `ALERTA_EMAIL` (ou `EMAIL_IMAP_USER`).
+- **Segurança:** só marca como avisado se o e-mail saiu; registrar nunca derruba a requisição; erro já avisado e parado há mais de 90 dias é apagado. Não usa IA.
+- Testes: `errosSistema` em `backend/testes` (a parte do banco só roda no v2). Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.20_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_17-31.dump`.
+
