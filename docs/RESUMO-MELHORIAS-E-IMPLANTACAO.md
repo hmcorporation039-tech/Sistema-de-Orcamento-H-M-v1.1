@@ -749,3 +749,14 @@ Só código, sem migração. Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-b
 - **Pré-deploy:** `npm test` (pasta `backend`) agora roda `scripts/pre-deploy.js`: descobre sozinho todos os `testes/*.test.js` (o `npm test` antigo tinha esquecido 4), confere que as versões dos 4 arquivos são iguais e que as migrações `2.0-NN` estão em ordem. `npm run test:rapido` e `--so=texto` são rodadas parciais e se declaram assim. Na produção a parte de banco dos testes é pulada sozinha.
 - Testes: `revisaoPreEnvio` e `preDeploy` em `backend/testes`; `ModalEnviarEmail.test.js` no frontend.
 - Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.21_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_18-01.dump`.
+
+### 02/11/2026: versão 2.22.0 — acompanhamento de propostas sem resposta
+
+- **Cartão no painel inicial ("Propostas sem resposta"):** lista as propostas Ativas já enviadas, da mais urgente para a menos. Sugestão de prazo: primeiro contato 5 dias depois do envio e os seguintes a cada 10 dias (sugestão da casa, não regra do cliente). Mostra quantas estão atrasadas e quanto dinheiro está parado nelas.
+- **Ações:** "Fiz contato" (com anotação, recomeça a contagem), "Adiar" (até 180 dias) e "Encerrar" (sugerido depois de 3 contatos sem resposta; marca a proposta como Cancelada, com confirmação).
+- **Aprendizado:** quando há 3 propostas aprovadas ou mais com envio e aprovação no histórico, mostra em quantos dias as aprovadas costumam responder. Não usa IA.
+- **Propostas enviadas por fora:** o botão "ativas sem envio registrado" permite informar a data em que cada proposta foi enviada (WhatsApp, e-mail comum, em mãos). Sem isso o cartão nasce vazio, porque a produção não tem envio por e-mail no histórico.
+- **Banco:** migração `2.0-34` cria `proposta_followups` (idempotente). Rotas `GET /api/follow-up-propostas`, `POST /api/propostas/:id/follow-up` e `POST /api/propostas/:id/envio-registrado` (dono da proposta ou administrador).
+- Não há e-mail automático de lembrete: o aviso é o cartão.
+- Testes: `followUpPropostas` em `backend/testes`; `FollowUpPropostas.test.js` no frontend.
+- Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.22_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_18-26.dump`.
