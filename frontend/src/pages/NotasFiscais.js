@@ -6,7 +6,7 @@ import {
 import {
   getNotasFiscais, getNotaFiscal, criarNotaFiscal, atualizarNotaFiscal, removerNotaFiscal, duplicarNotaFiscal,
   cancelarNotaFiscal, getConfigCancelamentoNotaFiscal, enviarNotaFiscalPorEmail, baixarPdfNotaFiscal, baixarXmlNotaFiscal, importarXmlNotasFiscais,
-  getEmpresaFiscal, buscarMunicipios, previewHtmlNotaFiscal,
+  getEmpresaFiscal, buscarMunicipios, previewHtmlNotaFiscal, previaAtestadoNotaFiscal, baixarAtestadoNotaFiscal,
 } from '../services/api';
 import useUltimoPedido from '../hooks/useUltimoPedido';
 import Paginacao from '../components/Paginacao';
@@ -66,6 +66,7 @@ export default function NotasFiscais() {
   const [ate, setAte] = useState('');
   const [editando, setEditando] = useState(null);
   const [emailPara, setEmailPara] = useState(null);
+  const [atestando, setAtestando] = useState(null);
   const [cancelando, setCancelando] = useState(null);
   const [duplicando, setDuplicando] = useState(null);
   const [emitindo, setEmitindo] = useState(null);
@@ -284,6 +285,7 @@ export default function NotasFiscais() {
                         <ItemMenu onClick={() => pdf(n)} icone={<FileDown size={12} />} ocupado={ocupado === `pdf${n.id}`}>Baixar PDF</ItemMenu>
                         {n.tem_xml && <ItemMenu onClick={() => xml(n)} icone={<FileCode size={12} />} ocupado={ocupado === `xml${n.id}`}>Baixar XML</ItemMenu>}
                         <ItemMenu onClick={() => setDuplicando(n)} icone={<Copy size={12} />} testid={`duplicar-${n.id}`}>Duplicar</ItemMenu>
+                        {emitida && <ItemMenu onClick={() => setAtestando(n)} icone={<FileDown size={12} />}>Atestado de capacidade técnica</ItemMenu>}
                         {emitida && <ItemMenu onClick={() => setCancelando(n)} icone={<Ban size={12} />} perigo>Cancelar nota</ItemMenu>}
                         {rascunho && <ItemMenu onClick={() => apagar(n)} icone={<Trash2 size={12} />} perigo>Apagar rascunho</ItemMenu>}
                       </MenuAcoes>
@@ -303,6 +305,7 @@ export default function NotasFiscais() {
           acoes={{ pdf, imprimir, xml, email: setEmailPara, duplicar: setDuplicando, cancelar: setCancelando, emitir: setEmitindo, previa: setPrevisualizando }} />
       )}
       {emailPara && <ModalEmail nota={emailPara} onFechar={() => setEmailPara(null)} onEnviado={carregar} />}
+      {atestando && <ModalAtestado nota={atestando} onFechar={() => setAtestando(null)} />}
       {cancelando && <ModalCancelar nota={cancelando} onFechar={() => setCancelando(null)} onFeito={() => { setCancelando(null); setEditando(null); carregar(); }} />}
       {emitindo && <ModalEmitir nota={emitindo} onFechar={() => setEmitindo(null)} onImportar={() => { setEmitindo(null); setImportando(true); }} />}
       {previsualizando && <ModalPrevia nota={previsualizando} onFechar={() => setPrevisualizando(null)} />}
@@ -952,6 +955,82 @@ function ModalEmail({ nota, onFechar, onEnviado }) {
           </button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+// ── Atestado de capacidade técnica ────────────────────────────────────────────
+// Só o corpo do texto, para o cliente colar no papel timbrado dele e assinar. O sistema propõe;
+// quem atesta é o cliente. Quantitativos, local, período e responsável só entram se preenchidos.
+
+function ModalAtestado({ nota, onFechar }) {
+  const [op, setOp] = useState({
+    mostrar_valor: false, local: '', inicio: '', fim: '', quantitativos: '',
+    responsavel_tecnico: '', crea: '', art: '', signatario: '', cargo: '',
+  });
+  const [previa, setPrevia] = useState(null);
+  const [baixando, setBaixando] = useState(false);
+  const mudar = (campo) => (e) => setOp(o => ({ ...o, [campo]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
+
+  useEffect(() => {
+    let vivo = true;
+    const t = setTimeout(() => {
+      previaAtestadoNotaFiscal(nota.id, op)
+        .then(r => { if (vivo) setPrevia(r.data); })
+        .catch(err => { if (vivo) toast.error(err.response?.data?.erro || 'Erro ao montar o atestado'); });
+    }, 350);
+    return () => { vivo = false; clearTimeout(t); };
+  }, [nota.id, op]);
+
+  async function copiar() {
+    try { await navigator.clipboard.writeText(previa.texto); toast.success('Texto copiado — cole no papel timbrado do cliente'); }
+    catch { toast.error('Não deu para copiar; selecione o texto e use Ctrl+C'); }
+  }
+  async function baixar() {
+    setBaixando(true);
+    try { await baixarArquivo(baixarAtestadoNotaFiscal(nota.id, op), `Atestado_NFS-e_${nota.numero || nota.id}.docx`); }
+    catch (err) { toast.error(await mensagemDeErro(err, 'Erro ao gerar o Word')); }
+    finally { setBaixando(false); }
+  }
+
+  return (
+    <Modal titulo={`Atestado de capacidade técnica — NFS-e nº ${nota.numero}`} onFechar={onFechar} largura={900}>
+      <p style={{ ...estilos.ajuda, marginTop: 0 }}>
+        Só o corpo do texto, sem timbre nem logo da H&amp;M: o cliente cola no papel dele, confere e assina. Preencha apenas o que for real; o que ficar em branco não entra no texto.
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
+        <div style={{ display: 'grid', gap: 10, alignContent: 'start', minWidth: 0 }}>
+          <Campo label="Local de execução"><input value={op.local} onChange={mudar('local')} placeholder="Ex.: sede do cliente, Asa Norte" /></Campo>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Campo label="Início"><input type="date" value={op.inicio} onChange={mudar('inicio')} /></Campo>
+            <Campo label="Conclusão"><input type="date" value={op.fim} onChange={mudar('fim')} /></Campo>
+          </div>
+          <Campo label="Quantitativos executados (um por linha)">
+            <textarea rows={4} value={op.quantitativos} onChange={mudar('quantitativos')} placeholder={'40 pontos de rede Cat 6\n1 rack de 12U'} />
+          </Campo>
+          <Campo label="Responsável técnico"><input value={op.responsavel_tecnico} onChange={mudar('responsavel_tecnico')} /></Campo>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Campo label="CREA/CAU"><input value={op.crea} onChange={mudar('crea')} /></Campo>
+            <Campo label="ART/RRT"><input value={op.art} onChange={mudar('art')} /></Campo>
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Campo label="Signatário do cliente"><input value={op.signatario} onChange={mudar('signatario')} /></Campo>
+            <Campo label="Cargo"><input value={op.cargo} onChange={mudar('cargo')} /></Campo>
+          </div>
+          <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+            <input type="checkbox" checked={op.mostrar_valor} onChange={mudar('mostrar_valor')} /> Citar o valor da nota ({formatarMoeda(nota.valor_servicos)})
+          </label>
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <textarea readOnly value={previa?.texto || 'Montando…'} rows={18} style={{ width: '100%', fontFamily: 'inherit', lineHeight: 1.45 }} data-testid="atestado-texto" />
+          {previa?.avisos?.map(a => <p key={a} style={{ ...estilos.ajuda, margin: '6px 0 0' }}>• {a}</p>)}
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 14 }}>
+        <button type="button" onClick={onFechar} style={estilos.btnSecundario}>Fechar</button>
+        <button type="button" onClick={copiar} disabled={!previa} style={estilos.btnSecundario}><Copy size={13} /> Copiar texto</button>
+        <button type="button" onClick={baixar} disabled={!previa || baixando} style={estilos.btnPrimario}><FileDown size={13} /> {baixando ? 'Gerando…' : 'Baixar Word (.docx)'}</button>
+      </div>
     </Modal>
   );
 }

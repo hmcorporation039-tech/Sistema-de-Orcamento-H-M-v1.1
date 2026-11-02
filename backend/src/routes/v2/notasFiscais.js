@@ -20,4 +20,6 @@ module.exports = (router, { autenticar, admin, validarId }) => {
   router.get('/notas-fiscais/:id/pdf', autenticar, validarId, admin, ctrl.pdf);
   router.get('/notas-fiscais/:id/preview-html', autenticar, validarId, admin, ctrl.previewHtml);
   router.get('/notas-fiscais/:id/xml', autenticar, validarId, admin, ctrl.xml);
+  router.post('/notas-fiscais/:id/atestado', autenticar, validarId, admin, ctrl.previaAtestado);
+  router.post('/notas-fiscais/:id/atestado.docx', autenticar, validarId, admin, ctrl.atestadoDocx);
 };

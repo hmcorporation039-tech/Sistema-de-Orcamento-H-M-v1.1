@@ -13,7 +13,7 @@ migração idempotente (CLAUDE.md), backup antes de ir para a produção e só v
 | 4 | BDI e impostos ajustáveis (decidido 02/11) — **feito no v2 (02/11)** | 0,5 dia | Não: sem valor fixo (reforma tributária) | — |
 | 5 | Histórico de preços vendidos — **feito no v2 (02/11)** | 1 dia | Não | — |
 | 6 | Tabela SINAPI local (DF) | **feito no v2 (02/11)**, com tela em Integrações; falta ligar à mão de obra | Regime (com/sem desoneração) | importar a planilha todo mês |
-| 9 | Atestado de capacidade técnica (corpo do texto) | 1–2 dias | Não | nota fiscal emitida |
+| 9 | Atestado de capacidade técnica (corpo do texto) — **feito no v2 (02/11)** | 1–2 dias | Não | nota fiscal emitida |
 | 7 | Classificador local de materiais | 2 dias | Não | ~500 itens confirmados (item 5 ajuda) |
 | 8 | Aprendizado de notas do DWG | 2 dias | Não | tela do item 3 (para corrigir) |
 
@@ -108,6 +108,7 @@ em projetos parecidos: custo e tempo à toa.
 - Alimenta o aprendizado: os quantitativos vêm do que foi realmente executado, sem IA; redação por modelo por disciplina (as skills já têm os termos das normas).
 **Teste:** corpo sem timbre nem logo; valores e datas da nota; disciplina sem quantitativo não inventa número.
 **Risco:** o atestado é declaração do cliente: o sistema só propõe o texto, nunca marca como emitido.
+**Feito (02/11/2026):** `services/atestadoCapacidade.js` (texto + `.docx` mínimo gerado com JSZip, sem dependência nova; aberto no Word), rotas `POST /notas-fiscais/:id/atestado` (prévia) e `/atestado.docx` (admin; só nota **emitida**; auditoria `atestado_gerado`), janela "Atestado de capacidade técnica" no menu da nota (opções, prévia ao vivo, copiar texto, baixar Word). Não inventa nada: local, período, quantitativos, responsável/CREA/ART e signatário só entram se preenchidos; valor da nota só se marcado. Teste: `testes/atestadoCapacidade.test.js`. **Não feito:** botão no e-mail de envio da nota e registro de "enviado ao cliente"; quantitativos automáticos (a nota não tem vínculo com proposta/obra — precisaria de um vínculo novo).
 
 ---
 

@@ -18,6 +18,7 @@ const { EMPRESA } = require('../utils/pdfTemplate');
 const { gerarHtmlNfse } = require('../utils/nfsePdfTemplate');
 const { lerXmlNfse } = require('../utils/nfseXml');
 const nfseNacional = require('../services/nfseNacional');
+const atestado = require('../services/atestadoCapacidade');
 const { ASSINATURA_EMPRESA } = require('./propostaDocumentos');
 
 const CNPJ_HM = EMPRESA.cnpj.replace(/\D/g, '');
@@ -557,8 +558,42 @@ async function importar(req, res) {
   res.json(resumo);
 }
 
+
+// Atestado de capacidade técnica (item 9): só o corpo do texto, para o cliente colar no papel
+// timbrado dele. `previa` devolve o texto para conferir; `atestadoDocx` baixa o Word. Nunca marca
+// nada como emitido: quem atesta é o cliente.
+async function previaAtestado(req, res) {
+  const n = await lerNota(req.params.id);
+  if (!n) return res.status(404).json({ erro: 'Nota não encontrada' });
+  try {
+    const { titulo, texto, avisos } = atestado.montarAtestado(n, req.body || {});
+    res.json({ titulo, texto, avisos });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ erro: err.message });
+    throw err;
+  }
+}
+
+async function atestadoDocx(req, res) {
+  const n = await lerNota(req.params.id);
+  if (!n) return res.status(404).json({ erro: 'Nota não encontrada' });
+  try {
+    const { paragrafos } = atestado.montarAtestado(n, req.body || {});
+    const arquivo = await atestado.gerarDocx(paragrafos);
+    await registrarAuditoria(pool, { entidade: 'notas_fiscais', entidadeId: n.id, acao: 'atestado_gerado', usuarioId: req.usuario.id, detalhes: { nota: n.numero } });
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Disposition': contentDisposition(`Atestado_NFS-e_${n.numero || n.id}.docx`),
+    });
+    res.send(arquivo);
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ erro: err.message });
+    throw err;
+  }
+}
 module.exports = {
   listar, obter, criar, atualizar, remover, duplicar, cancelar, configCancelamento, pdf, previewHtml, xml, enviarEmail, importar,
+  previaAtestado, atestadoDocx,
   // testes e scripts
   importarConteudos, calcularTotais,
 };
