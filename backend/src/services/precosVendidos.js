@@ -1,7 +1,7 @@
 const pool = require('../config/database');
 
 // Histórico de preços VENDIDOS (item 5 do plano): o que cada material custou ao cliente nas
-// propostas aprovadas. O catálogo guarda só o último preço; aqui o engenheiro vê a faixa
+// propostas aprovadas (valor unitário do item, antes do BDI). O catálogo guarda só o último preço; aqui o engenheiro vê a faixa
 // praticada (menor, mediana, maior) e o último valor fechado.
 //
 // Calculado direto de propostas × itens em vez de uma tabela espelho: assim proposta cancelada,

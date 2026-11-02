@@ -1685,7 +1685,7 @@ function DicaCatalogo({ material, valor, onUsar }) {
   );
 }
 
-// Faixa que o material já foi vendida (propostas aprovadas): menor – maior, mediana e quantas
+// Faixa do valor unitário (antes do BDI, como lançado no item) em propostas aprovadas: menor – maior, mediana e quantas
 // propostas. Avisa quando o valor da linha está abaixo do menor preço já vendido, e quando o
 // custo de compra do catálogo passou do último preço vendido (venda no prejuízo).
 function DicaVendido({ faixa, valor, material }) {
@@ -1697,14 +1697,14 @@ function DicaVendido({ faixa, valor, material }) {
   const [ano, mes, dia] = String(faixa.ultima_data || '').split('-');
   const quando = ano ? ` em ${dia}/${mes}/${ano}` : '';
   const alertas = [
-    abaixo && `abaixo do menor preço já vendido (${formatarMoeda(faixa.minimo)})`,
-    custoAcima && `custo de compra ${formatarMoeda(custo)} acima do último preço vendido (${formatarMoeda(faixa.ultimo)})`,
+    abaixo && `abaixo do menor valor unitário já aprovado (${formatarMoeda(faixa.minimo)})`,
+    custoAcima && `custo de compra ${formatarMoeda(custo)} acima do último valor unitário aprovado (${formatarMoeda(faixa.ultimo)})`,
   ].filter(Boolean);
   const linha = { fontSize: 10.5, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
   return (
     <>
       <div style={{ ...linha, color: '#6f7f8f' }}
-        title={`Preço já vendido em propostas aprovadas (${faixa.propostas} proposta${faixa.propostas > 1 ? 's' : ''}). Último: ${formatarMoeda(faixa.ultimo)} na proposta ${faixa.ultima_proposta}${quando}.`}>
+        title={`Valor unitário (antes do BDI) já lançado em propostas aprovadas (${faixa.propostas} proposta${faixa.propostas > 1 ? 's' : ''}). Último: ${formatarMoeda(faixa.ultimo)} na proposta ${faixa.ultima_proposta}${quando}.`}>
         vendido: {faixa.minimo === faixa.maximo ? formatarMoeda(faixa.minimo) : `${formatarMoeda(faixa.minimo)} – ${formatarMoeda(faixa.maximo)}`}
         {faixa.propostas > 1 ? ` · mediana ${formatarMoeda(faixa.mediana)}` : ''} · {faixa.propostas}×
       </div>
