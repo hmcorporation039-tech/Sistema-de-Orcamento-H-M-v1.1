@@ -10,7 +10,7 @@
 // Nada aqui altera a proposta nem impede o envio no servidor: é uma conferência que a tela mostra.
 const pool = require('../config/database');
 const { calcularTotais, arredondar, numeroSeguro, itemPertenceASecao, bdiMateriaisDefinido } = require('../utils/calculoProposta');
-const { faixasPorMaterial } = require('./precosVendidos');
+const { faixasPorMaterial, faixasPorDescricao, chaveDescricao, normalizar, sqlNormalizar } = require('./precosVendidos');
 const { hojeBrasilia } = require('../utils/dataHoje');
 
 const TOLERANCIA_TOTAL = 0.05;     // R$: diferença de arredondamento aceitável entre o gravado e o recalculado
@@ -20,7 +20,6 @@ const MAX_ITENS_NA_MENSAGEM = 5;
 const UNIDADES_INTEIRAS = new Set(['un', 'und', 'unid', 'pç', 'pc', 'pç.', 'cj', 'vb']);
 
 const moeda = (v) => 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const semAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
 // A coluna DATE chega do driver como Date à meia-noite local (ver utils/validacaoProposta): usa a parte local.
 function diaIso(d) {
@@ -38,9 +37,13 @@ function somarDias(iso, dias) {
 
 const dataBr = (iso) => iso.split('-').reverse().join('/');
 
-function lista(descricoes) {
-  const mostrados = descricoes.slice(0, MAX_ITENS_NA_MENSAGEM).map(d => `"${String(d).slice(0, 60)}"`);
-  const resto = descricoes.length - mostrados.length;
+// Cada entrada é a descrição (texto) ou { nome, detalhe }: só o nome é cortado, o detalhe (valores) vai inteiro.
+function lista(entradas) {
+  const mostrados = entradas.slice(0, MAX_ITENS_NA_MENSAGEM).map(e => {
+    const { nome, detalhe } = typeof e === 'object' ? e : { nome: e, detalhe: '' };
+    return `"${String(nome).slice(0, 60)}"${detalhe ? ` (${detalhe})` : ''}`;
+  });
+  const resto = entradas.length - mostrados.length;
   return mostrados.join(', ') + (resto > 0 ? ` e mais ${resto}` : '');
 }
 
@@ -48,21 +51,23 @@ const PROVISORIA = /^\s*(teste|xxx+|a definir|a confirmar|tbd|\?+)\b|\bxxx+\b|\?
 
 // Função pura: recebe tudo carregado e devolve os achados. `faixas` = faixasPorMaterial; `custos` = { [material_id]: preco_compra };
 // `eventosEmail` = envios anteriores [{ criado_em, detalhes }].
-function revisar({ proposta, secoes = [], itens = [], faixas = {}, custos = {}, eventosEmail = [], hoje = hojeBrasilia() }) {
+// `faixas`/`custos` são por material_id; `faixasDescricao`/`custosDescricao` valem para o item digitado à mão (sem material),
+// achado pela descrição idêntica (chaveDescricao / normalizar).
+function revisar({ proposta, secoes = [], itens = [], faixas = {}, custos = {}, faixasDescricao = {}, custosDescricao = {}, eventosEmail = [], hoje = hojeBrasilia() }) {
   const achados = [];
   const add = (nivel, codigo, mensagem, extra = {}) => achados.push({ nivel, codigo, mensagem, ...extra });
   const ativos = itens.filter(i => numeroSeguro(i.quantidade) > 0);
   const descr = (i) => i.descricao || i.desc || '(sem descrição)';
 
+  const recalculo = calcularTotais({
+    secoes, itens: itens.map(i => ({ ...i })), bdi: proposta.bdi, bdi_materiais: proposta.bdi_materiais,
+    imposto_venda: proposta.imposto_venda, imposto_servico: proposta.imposto_servico,
+  });
   if (!ativos.length) {
     add('bloqueio', 'sem_itens', 'A proposta não tem nenhum item com quantidade.');
   } else if (numeroSeguro(proposta.total) <= 0) {
     add('bloqueio', 'total_zero', 'O total da proposta está zerado, embora tenha itens.');
   } else {
-    const recalculo = calcularTotais({
-      secoes, itens: itens.map(i => ({ ...i })), bdi: proposta.bdi, bdi_materiais: proposta.bdi_materiais,
-      imposto_venda: proposta.imposto_venda, imposto_servico: proposta.imposto_servico,
-    });
     const diferenca = arredondar(recalculo.total - numeroSeguro(proposta.total));
     if (Math.abs(diferenca) > TOLERANCIA_TOTAL) {
       add('bloqueio', 'total_defasado', `O total gravado (${moeda(proposta.total)}) não bate com os itens (${moeda(recalculo.total)}, diferença de ${moeda(Math.abs(diferenca))}). Abra a proposta e salve de novo antes de enviar.`);
@@ -82,7 +87,7 @@ function revisar({ proposta, secoes = [], itens = [], faixas = {}, custos = {}, 
   const vistos = new Map();
   const repetidos = new Set();
   for (const i of ativos) {
-    const chave = `${semAcento(descr(i))}|${semAcento(i.unidade)}`;
+    const chave = `${normalizar(descr(i))}|${normalizar(i.unidade)}`;
     if (vistos.has(chave)) repetidos.add(descr(i)); else vistos.set(chave, true);
   }
   if (repetidos.size) {
@@ -94,9 +99,9 @@ function revisar({ proposta, secoes = [], itens = [], faixas = {}, custos = {}, 
     add('atencao', 'descricao_provisoria', `Descrição com cara de rascunho: ${lista(provisorios.map(descr))}.`, { itens: provisorios.map(i => i.id) });
   }
 
-  const quebrados = ativos.filter(i => UNIDADES_INTEIRAS.has(semAcento(i.unidade)) && !Number.isInteger(numeroSeguro(i.quantidade)));
+  const quebrados = ativos.filter(i => UNIDADES_INTEIRAS.has(normalizar(i.unidade)) && !Number.isInteger(numeroSeguro(i.quantidade)));
   if (quebrados.length) {
-    add('atencao', 'quantidade_quebrada', `Quantidade fracionada em unidade inteira: ${lista(quebrados.map(i => `${descr(i)} (${numeroSeguro(i.quantidade)} ${i.unidade})`))}.`, { itens: quebrados.map(i => i.id) });
+    add('atencao', 'quantidade_quebrada', `Quantidade fracionada em unidade inteira: ${lista(quebrados.map(i => ({ nome: descr(i), detalhe: `${numeroSeguro(i.quantidade)} ${i.unidade}` })))}.`, { itens: quebrados.map(i => i.id) });
   }
 
   // preço × o que a H&M já vendeu (propostas aprovadas) e × o custo de compra do catálogo
@@ -105,12 +110,12 @@ function revisar({ proposta, secoes = [], itens = [], faixas = {}, custos = {}, 
   const abaixoCusto = [];
   for (const i of ativos) {
     const vu = numeroSeguro(i.valor_unitario);
-    if (!i.material_id || vu <= 0 || (i.status || 'confirmado') === 'a_cotar') continue;
-    const f = faixas[i.material_id];
-    if (f && vu < f.minimo * MARGEM_ABAIXO_VENDIDO) abaixoVendido.push(`${descr(i)} (${moeda(vu)}; já vendido a partir de ${moeda(f.minimo)})`);
-    if (f && vu > f.maximo * MARGEM_ACIMA_VENDIDO) acimaVendido.push(`${descr(i)} (${moeda(vu)}; já vendido até ${moeda(f.maximo)})`);
-    const custo = numeroSeguro(custos[i.material_id]);
-    if (custo > 0 && vu < custo) abaixoCusto.push(`${descr(i)} (${moeda(vu)} contra custo de compra ${moeda(custo)})`);
+    if (vu <= 0 || (i.status || 'confirmado') === 'a_cotar') continue;
+    const f = (i.material_id && faixas[i.material_id]) || faixasDescricao[chaveDescricao(descr(i), i.unidade)];
+    if (f && vu < f.minimo * MARGEM_ABAIXO_VENDIDO) abaixoVendido.push({ nome: descr(i), detalhe: `${moeda(vu)}; já vendido a partir de ${moeda(f.minimo)}` });
+    if (f && vu > f.maximo * MARGEM_ACIMA_VENDIDO) acimaVendido.push({ nome: descr(i), detalhe: `${moeda(vu)}; já vendido até ${moeda(f.maximo)}` });
+    const custo = numeroSeguro(i.material_id ? custos[i.material_id] : custosDescricao[normalizar(descr(i))]);
+    if (custo > 0 && vu < custo) abaixoCusto.push({ nome: descr(i), detalhe: `${moeda(vu)} contra custo de compra ${moeda(custo)}` });
   }
   if (abaixoCusto.length) add('atencao', 'abaixo_do_custo', `Vendendo abaixo do custo de compra do catálogo: ${lista(abaixoCusto)}.`);
   if (abaixoVendido.length) add('atencao', 'abaixo_do_vendido', `Preço abaixo do menor já praticado em proposta aprovada: ${lista(abaixoVendido)}.`);
@@ -124,11 +129,21 @@ function revisar({ proposta, secoes = [], itens = [], faixas = {}, custos = {}, 
     add('info', 'impostos_zerados', 'Impostos em 0% na proposta (normal se já estão dentro do BDI).');
   }
 
+  // prazo de resposta só importa enquanto a proposta está aberta; aprovada, recusada ou cancelada já tem aviso próprio (status)
   const data = diaIso(proposta.data);
   const validade = numeroSeguro(proposta.validade, 0);
-  if (data && validade > 0) {
+  if (data && validade > 0 && (!proposta.status || proposta.status === 'Ativa')) {
     const fim = somarDias(data, validade);
     if (fim < hoje) add('atencao', 'vencida', `A validade acabou em ${dataBr(fim)} (${validade} dia(s) a partir de ${dataBr(data)}). Atualize a data ou a validade.`);
+  }
+
+  // escopo básico: obra elétrica quase sempre tem material E mão de obra; fornecimento puro é legítimo, mas é para confirmar
+  if (ativos.length && secoes.length) {
+    if (recalculo.subtotal_materiais > 0 && recalculo.subtotal_mao_obra <= 0) {
+      add('atencao', 'sem_mao_de_obra', 'A proposta tem só materiais, sem mão de obra. Confirme que é apenas fornecimento.');
+    } else if (recalculo.subtotal_mao_obra > 0 && recalculo.subtotal_materiais <= 0) {
+      add('info', 'so_mao_de_obra', 'A proposta tem só mão de obra, sem materiais (o cliente fornece o material?).');
+    }
   }
 
   if (!String(proposta.local_obra || '').trim()) add('atencao', 'sem_local', 'A proposta não informa o local da obra.');
@@ -162,14 +177,25 @@ async function revisarProposta(id, db = pool) {
   const { rows: itens } = await db.query('SELECT * FROM proposta_itens WHERE proposta_id = $1 ORDER BY ordem', [id]);
   const ids = [...new Set(itens.map(i => i.material_id).filter(Boolean))];
   const faixas = await faixasPorMaterial(ids, { excluirPropostaId: Number(id) }, db);
+  const digitados = itens.filter(i => !i.material_id);
+  const faixasDescricao = await faixasPorDescricao(digitados, { excluirPropostaId: Number(id) }, db);
   const custos = {};
   if (ids.length) {
     const { rows } = await db.query('SELECT id, preco_compra FROM materiais WHERE id = ANY($1::int[])', [ids]);
     for (const r of rows) custos[r.id] = r.preco_compra;
   }
+  // item digitado à mão com a mesma descrição de um material do catálogo: o menor custo de compra desse nome
+  const custosDescricao = {};
+  const nomes = [...new Set(digitados.map(i => normalizar(i.descricao)).filter(Boolean))];
+  if (nomes.length) {
+    const { rows } = await db.query(
+      `SELECT ${sqlNormalizar('descricao')} AS nome, MIN(preco_compra) AS custo FROM materiais
+        WHERE COALESCE(ativo, true) AND preco_compra > 0 AND ${sqlNormalizar('descricao')} = ANY($1::text[]) GROUP BY 1`, [nomes]);
+    for (const r of rows) custosDescricao[r.nome] = r.custo;
+  }
   const { rows: eventosEmail } = await db.query(
     "SELECT criado_em, detalhes FROM proposta_eventos WHERE proposta_id = $1 AND acao = 'email' ORDER BY criado_em DESC", [id]);
-  return revisar({ proposta, secoes, itens, faixas, custos, eventosEmail });
+  return revisar({ proposta, secoes, itens, faixas, custos, faixasDescricao, custosDescricao, eventosEmail });
 }
 
 module.exports = { revisar, revisarProposta };
