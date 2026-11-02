@@ -617,3 +617,12 @@ Uso de cada skill: `skills/<disciplina>/SKILL.md`. Formulário da obra (JSON): `
 - [ ] Busca de medida pela IA aberta a todos os usuários (só o admin aprova): restringir, se o usuário quiser.
 - [ ] Medida da infraestrutura no DWG da DF Star: as chamadas são empilhadas, com linha de chamada a 2–10 m do traçado ("Eletrocalha lisa 50x50 / 300x100 / 300x200…"). É preciso seguir a linha de chamada (`projetoDxf.js`). Hoje esses trechos saem com a seção padrão, marcada como tal.
 - [ ] Galpão: o desenho escreve eletrocalha "(100x500)mm". Conferir com o projetista se não é 100 × 50.
+
+### 02/11/2026: versão 2.8.0 — cancelamento direto de NFS-e na Receita
+Instalada em produção em 02/11/2026 (pedido do usuário: "mande tudo para a produção"). Pedido: "ter a opção de cancelar a nota caso haja qualquer coisa errada".
+- **Serviço** (`services/nfseNacional.js`): lê o certificado A1 (`C:\HM-Engenharia\Certificados`, senha em `NFSE_CERT_SENHA` no `.env`), monta o evento de cancelamento 101101, assina o XML e envia à SEFIN Nacional por mTLS. A nota só vira `cancelada` no sistema depois que a Receita aceitar (HTTP 201); se recusar, continua emitida e a tela mostra o erro. Protocolo e XML do evento ficam gravados (migração 2.0-24).
+- **Travas**: o recurso vem **desligado** (`NFSE_CANCELAMENTO_DIRETO=1` liga) e o ambiente padrão é homologação (`NFSE_AMBIENTE=homologacao|producao`); em homologação a nota do banco nunca muda. Exige digitar o número da nota, só vale para notas do Emissor Nacional com chave de 50 dígitos; as notas ABRASF/ISSnet antigas continuam só com registro manual.
+- **Tela** (Financeiro → Notas fiscais → Cancelar): motivo (erro na emissão, serviço não prestado, outros) com no mínimo 15 caracteres e a escolha entre "Cancelar na Receita agora" e "Já cancelei no portal — só registrar aqui".
+- Validado na homologação real da Receita (XML e assinatura aceitos; chave inexistente devolve E1831). O caminho de sucesso (201) ainda não foi exercitado, porque o sistema não emite NFS-e e não havia nota de teste.
+- Para ligar na produção: pôr `NFSE_CANCELAMENTO_DIRETO=1` no `.env` e reiniciar o backend (deixar `NFSE_AMBIENTE=homologacao` até testar). Cancelar com `NFSE_AMBIENTE=producao` é irreversível.
+- Backup antes da instalação em `C:\HM-Engenharia\Backups\*antes-v2.8*`.
