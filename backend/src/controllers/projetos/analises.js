@@ -9,7 +9,7 @@ const { analisarProjetoCompleto } = require('../../services/compatibilizacaoAnal
 const { gerarHtmlRelatorioCompatibilizacao } = require('../../utils/relatorioCompatibilizacaoTemplate');
 const { gerarFooterTemplate } = require('../../utils/pdfTemplate');
 const { normalizarDisciplinas } = require('../../utils/disciplinasProjeto');
-const { herdarEdicoes } = require('../../services/edicoesDaAnalise');
+const { herdarEdicoes, enxugarLeitura } = require('../../services/edicoesDaAnalise');
 const { parsePaginacao, montarResposta } = require('../../utils/paginacao');
 const { comTransacao } = require('../../services/transacao');
 const P = require('../../services/pastasSistema');
@@ -172,7 +172,7 @@ async function executarAnalise(req, res, arquivos, corpo, opcoes = {}) {
     const resultado = await analisarProjetoCompleto(arquivos, opcoes);
     // o que foi LIDO (antes de qualquer edição) fica guardado nas análises com mapa do CAD: é a base para copiar edições num reprocessamento
     const temMapa = (resultado.dadosExtraidos || []).some(d => d?.mapa_cad);
-    const leituraOriginal = temMapa ? { servicos: resultado.servicos || [], materiais: resultado.materiais || [] } : null;
+    const leituraOriginal = temMapa ? { servicos: enxugarLeitura(resultado.servicos), materiais: enxugarLeitura(resultado.materiais) } : null;
     let heranca = null;
     if (opcoes.analiseAnterior) {
       // copiar as edições é um extra: se falhar, a análise nova sai igual e a tela avisa que nada foi copiado

@@ -7,6 +7,7 @@ import {
   getNotasFiscais, getNotaFiscal, criarNotaFiscal, atualizarNotaFiscal, removerNotaFiscal, duplicarNotaFiscal,
   cancelarNotaFiscal, getConfigCancelamentoNotaFiscal, enviarNotaFiscalPorEmail, baixarPdfNotaFiscal, baixarXmlNotaFiscal, importarXmlNotasFiscais,
   getEmpresaFiscal, buscarMunicipios, previewHtmlNotaFiscal, previaAtestadoNotaFiscal, baixarAtestadoNotaFiscal, getPropostasCandidatasNotaFiscal, vincularPropostaNotaFiscal,
+  enviarAtestadoNotaFiscal, getNotasCandidatasNotaFiscal, getRecebimentosNotaFiscal, ligarRecebimentoNotaFiscal, criarNotaFiscalDeProposta, getPropostas,
 } from '../services/api';
 import useUltimoPedido from '../hooks/useUltimoPedido';
 import Paginacao from '../components/Paginacao';
@@ -67,6 +68,8 @@ export default function NotasFiscais() {
   const [editando, setEditando] = useState(null);
   const [emailPara, setEmailPara] = useState(null);
   const [atestando, setAtestando] = useState(null);
+  const [conciliando, setConciliando] = useState(null);
+  const [daProposta, setDaProposta] = useState(false);
   const [cancelando, setCancelando] = useState(null);
   const [duplicando, setDuplicando] = useState(null);
   const [emitindo, setEmitindo] = useState(null);
@@ -123,6 +126,9 @@ export default function NotasFiscais() {
         <h2 style={{ fontSize: 18, color: 'var(--ouro)', fontWeight: 700, margin: 0, flex: 1 }}>Notas Fiscais de Serviço (NFS-e)</h2>
         <button type="button" onClick={() => setImportando(true)} style={estilos.btnSecundario} data-testid="importar-notas">
           <Upload size={14} /> Importar XML
+        </button>
+        <button type="button" onClick={() => setDaProposta(true)} style={estilos.btnSecundario} data-testid="nota-da-proposta" title="Cria um rascunho com o cliente e o valor de uma proposta">
+          <FileDown size={14} /> Nota da proposta
         </button>
         <button type="button" onClick={() => setEditando({})} style={estilos.btnPrimario} data-testid="nova-nota">
           <Plus size={14} /> Nova NFS-e
@@ -251,6 +257,16 @@ export default function NotasFiscais() {
                         ✉ enviado {formatarData(n.ultimo_envio_em)}
                       </div>
                     )}
+                    {n.atestado_enviado_em && (
+                      <div style={{ ...sub, marginTop: 3 }} title={`Atestado enviado para ${n.atestado_enviado_para}`}>
+                        📄 atestado enviado {formatarData(n.atestado_enviado_em)}
+                      </div>
+                    )}
+                    {Number(n.recebido_valor) > 0 && (
+                      <div style={{ ...sub, marginTop: 3, color: 'var(--sucesso)' }} title="Pix ligado a esta nota (Financeiro)">
+                        ✔ recebido {formatarMoeda(n.recebido_valor)}{n.recebido_em ? ` em ${formatarData(n.recebido_em)}` : ''}
+                      </div>
+                    )}
                   </td>
                   <td style={estilos.td}>
                     <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -287,6 +303,7 @@ export default function NotasFiscais() {
                         {n.tem_xml && <ItemMenu onClick={() => xml(n)} icone={<FileCode size={12} />} ocupado={ocupado === `xml${n.id}`}>Baixar XML</ItemMenu>}
                         <ItemMenu onClick={() => setDuplicando(n)} icone={<Copy size={12} />} testid={`duplicar-${n.id}`}>Duplicar</ItemMenu>
                         {emitida && <ItemMenu onClick={() => setAtestando(n)} icone={<FileDown size={12} />}>Atestado de capacidade técnica</ItemMenu>}
+                        {emitida && <ItemMenu onClick={() => setConciliando(n)} icone={<ExternalLink size={12} />} testid={`conciliar-${n.id}`}>Ligar recebimento (Pix)</ItemMenu>}
                         {emitida && <ItemMenu onClick={() => setCancelando(n)} icone={<Ban size={12} />} perigo>Cancelar nota</ItemMenu>}
                         {rascunho && <ItemMenu onClick={() => apagar(n)} icone={<Trash2 size={12} />} perigo>Apagar rascunho</ItemMenu>}
                       </MenuAcoes>
@@ -307,6 +324,8 @@ export default function NotasFiscais() {
       )}
       {emailPara && <ModalEmail nota={emailPara} onFechar={() => setEmailPara(null)} onEnviado={carregar} />}
       {atestando && <ModalAtestado nota={atestando} onFechar={() => setAtestando(null)} onVinculado={carregar} />}
+      {conciliando && <ModalRecebimento nota={conciliando} onFechar={() => setConciliando(null)} onMudou={carregar} />}
+      {daProposta && <ModalDaProposta onFechar={() => setDaProposta(false)} onFeito={(id) => { setDaProposta(false); carregar(); setEditando({ id }); }} />}
       {cancelando && <ModalCancelar nota={cancelando} onFechar={() => setCancelando(null)} onFeito={() => { setCancelando(null); setEditando(null); carregar(); }} />}
       {emitindo && <ModalEmitir nota={emitindo} onFechar={() => setEmitindo(null)} onImportar={() => { setEmitindo(null); setImportando(true); }} />}
       {previsualizando && <ModalPrevia nota={previsualizando} onFechar={() => setPrevisualizando(null)} />}
@@ -967,8 +986,100 @@ function ModalEmail({ nota, onFechar, onEnviado }) {
 
 const OPCOES_VAZIAS = {
   mostrar_valor: false, contrato: '', local: '', inicio: '', fim: '', vigencia_inicio: '', vigencia_fim: '', area: '', cidade: '', setor: '',
-  responsaveis: [], signatarios: [], atividades: null, planilha: null,
+  responsaveis: [], signatarios: [], atividades: null, planilha: null, notas_ids: [],
 };
+
+// Rascunho de nota a partir de uma proposta (cliente, valor e local vêm dela; o serviço fiscal é o da última nota do cliente)
+function ModalDaProposta({ onFechar, onFeito }) {
+  const [busca, setBusca] = useState('');
+  const [lista, setLista] = useState([]);
+  const [criando, setCriando] = useState(null);
+  const [confirmar, setConfirmar] = useState(null); // { id, aviso }
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      getPropostas({ busca, status: 'Aprovada', porPagina: 30 })
+        .then(r => setLista(r.data.itens || r.data.dados || (Array.isArray(r.data) ? r.data : [])))
+        .catch(() => setLista([]));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [busca]);
+
+  async function criar(p, comConfirmacao = false) {
+    setCriando(p.id);
+    try {
+      const r = await criarNotaFiscalDeProposta(p.id, comConfirmacao);
+      toast.success(r.data.mensagem);
+      onFeito(r.data.id);
+    } catch (err) {
+      if (err.response?.status === 409 && err.response.data?.ja_tem_nota) setConfirmar({ p, aviso: err.response.data.erro });
+      else toast.error(err.response?.data?.erro || 'Erro ao criar o rascunho');
+    } finally { setCriando(null); }
+  }
+
+  return (
+    <Modal titulo="Nota fiscal a partir de uma proposta" onFechar={onFechar} largura={640}>
+      <p style={estilos.ajuda}>Escolha uma proposta aprovada. O sistema cria um <b>rascunho</b> com o cliente, o valor total e o local; o serviço fiscal e a alíquota vêm da última nota do cliente. Nada é emitido: você confere e emite como sempre.</p>
+      <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Número, cliente ou local…" data-testid="proposta-busca" />
+      <div style={{ maxHeight: 320, overflowY: 'auto', marginTop: 8, border: '1px solid var(--borda)', borderRadius: 8 }}>
+        {lista.length === 0 && <div style={{ padding: 12, color: 'var(--texto-3)' }}>Nenhuma proposta aprovada encontrada.</div>}
+        {lista.map(p => (
+          <div key={p.id} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 10px', borderTop: '1px solid var(--borda)' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div><b>{p.numero}</b> · {p.cliente_nome_cadastro || p.cliente_nome}</div>
+              <div style={sub}>{formatarMoeda(p.total)}{p.local_obra ? ` · ${p.local_obra}` : ''}</div>
+            </div>
+            <button type="button" style={estilos.btnSecundario} disabled={criando === p.id} onClick={() => criar(p)} data-testid={`criar-de-${p.id}`}>
+              {criando === p.id ? 'Criando…' : 'Criar rascunho'}
+            </button>
+          </div>
+        ))}
+      </div>
+      {confirmar && (
+        <div style={{ marginTop: 12, padding: 10, border: '1px solid var(--aviso)', borderRadius: 8 }}>
+          <p style={{ margin: '0 0 8px' }}>{confirmar.aviso}</p>
+          <button type="button" style={estilos.btnPrimario} onClick={() => criar(confirmar.p, true)}>Criar mesmo assim</button>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// Liga um Pix recebido (Financeiro) à nota que ele quitou. Só sugere o que bate no valor; quem confirma é o administrador.
+function ModalRecebimento({ nota, onFechar, onMudou }) {
+  const [dados, setDados] = useState(null);
+  const [ocupado, setOcupado] = useState(null);
+  const carregar = useCallback(() => getRecebimentosNotaFiscal(nota.id).then(r => setDados(r.data)).catch(() => toast.error('Erro ao buscar os recebimentos')), [nota.id]);
+  useEffect(() => { carregar(); }, [carregar]);
+
+  async function mudar(m, ligar) {
+    setOcupado(m.id);
+    try { await ligarRecebimentoNotaFiscal(nota.id, m.id, ligar); await carregar(); onMudou?.(); }
+    catch (err) { toast.error(err.response?.data?.erro || 'Erro ao ligar o recebimento'); }
+    finally { setOcupado(null); }
+  }
+  const linhaMov = (m, ligado) => (
+    <div key={m.id} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '7px 10px', borderTop: '1px solid var(--borda)' }}>
+      <div style={{ flex: 1, minWidth: 0 }}><div>{m.nome || 'Pix'}</div><div style={sub}>{formatarData(m.data_hora)}</div></div>
+      <b>{formatarMoeda(m.valor)}</b>
+      <button type="button" style={estilos.btnSecundario} disabled={ocupado === m.id} onClick={() => mudar(m, !ligado)} data-testid={`${ligado ? 'desligar' : 'ligar'}-mov-${m.id}`}>
+        {ligado ? 'Desligar' : 'Ligar'}
+      </button>
+    </div>
+  );
+
+  return (
+    <Modal titulo={`Recebimento da NFS-e nº ${nota.numero}`} onFechar={onFechar} largura={560}>
+      <p style={estilos.ajuda}>Pix recebidos com o mesmo valor da nota ({dados ? `${formatarMoeda(dados.valor_liquido)} líquido ou ${formatarMoeda(dados.valor_servicos)} bruto` : '…'}), a partir da emissão. Ligar não altera nada fiscal.</p>
+      {dados?.ligados.length > 0 && <><strong style={{ fontSize: 12 }}>Já ligados</strong><div style={{ border: '1px solid var(--borda)', borderRadius: 8, marginBottom: 10 }}>{dados.ligados.map(m => linhaMov(m, true))}</div></>}
+      <strong style={{ fontSize: 12 }}>Possíveis</strong>
+      <div style={{ border: '1px solid var(--borda)', borderRadius: 8 }}>
+        {dados && dados.candidatos.length === 0 && <div style={{ padding: 12, color: 'var(--texto-3)' }}>Nenhum Pix livre com esse valor.</div>}
+        {dados?.candidatos.map(m => linhaMov(m, false))}
+      </div>
+    </Modal>
+  );
+}
 
 function ModalAtestado({ nota, onFechar, onVinculado }) {
   const [op, setOp] = useState(OPCOES_VAZIAS);
@@ -976,11 +1087,36 @@ function ModalAtestado({ nota, onFechar, onVinculado }) {
   const [baixando, setBaixando] = useState(false);
   const [candidatas, setCandidatas] = useState([]);
   const [propostaId, setPropostaId] = useState(nota.proposta_id || '');
+  const [outrasNotas, setOutrasNotas] = useState([]);
+  const [para, setPara] = useState(nota.tomador_email || nota.tomador?.email || '');
+  const [enviando, setEnviando] = useState(false);
+  const [enviadoEm, setEnviadoEm] = useState(nota.atestado_enviado_em ? { em: nota.atestado_enviado_em, para: nota.atestado_enviado_para } : null);
   const localPreenchido = useRef(false);
   const mudar = (campo) => (e) => setOp(o => ({ ...o, [campo]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
   const mudarLinha = (lista, i, campo, valor) => setOp(o => ({ ...o, [lista]: o[lista].map((x, j) => (j === i ? { ...x, [campo]: valor } : x)) }));
 
   useEffect(() => { getPropostasCandidatasNotaFiscal(nota.id).then(r => setCandidatas(r.data)).catch(() => {}); }, [nota.id]);
+  useEffect(() => { getNotasCandidatasNotaFiscal(nota.id).then(r => setOutrasNotas(r.data)).catch(() => {}); }, [nota.id]);
+
+  // juntar (ou tirar) outra nota do mesmo contrato: as atividades e a planilha são refeitas com o texto de todas
+  function alternarNota(id, marcada) {
+    setOp(o => ({
+      ...o, atividades: null, planilha: null,
+      notas_ids: marcada ? [...o.notas_ids, id].slice(0, 10) : o.notas_ids.filter(x => x !== id),
+    }));
+  }
+
+  async function enviarPorEmail() {
+    setEnviando(true);
+    try {
+      const r = await enviarAtestadoNotaFiscal(nota.id, op, para, '');
+      toast.success(r.data.mensagem);
+      setEnviadoEm({ em: r.data.atestado_enviado_em, para: r.data.atestado_enviado_para });
+      onVinculado?.();
+    } catch (err) {
+      toast.error(err.response?.data?.erro || 'Erro ao enviar o atestado');
+    } finally { setEnviando(false); }
+  }
 
   useEffect(() => {
     let vivo = true;
@@ -1046,6 +1182,20 @@ function ModalAtestado({ nota, onFechar, onVinculado }) {
               {candidatas.map(p => <option key={p.id} value={p.id}>{p.numero} · {formatarMoeda(p.total)}{p.local_obra ? ` · ${p.local_obra}` : ''}{p.status !== 'Aprovada' ? ` (${p.status})` : ''}</option>)}
             </select>
           </Campo>
+
+          {outrasNotas.length > 0 && (
+            <div style={{ display: 'grid', gap: 4 }}>
+              <strong style={{ fontSize: 12 }}>Juntar outras notas do mesmo contrato (um atestado só)</strong>
+              <div style={{ maxHeight: 110, overflowY: 'auto', border: '1px solid var(--borda)', borderRadius: 8 }}>
+                {outrasNotas.map(o => (
+                  <label key={o.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '5px 10px', fontSize: 12.5 }}>
+                    <input type="checkbox" style={{ width: 'auto' }} checked={op.notas_ids.includes(o.id)} onChange={(e) => alternarNota(o.id, e.target.checked)} data-testid={`atestado-nota-${o.id}`} />
+                    <span>NFS-e {o.numero} · {formatarData(o.data_emissao)} · {formatarMoeda(o.valor_servicos)}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div style={linha}>
             <Campo label="Contrato / instrumento"><input value={op.contrato} onChange={mudar('contrato')} /></Campo>
@@ -1114,6 +1264,17 @@ function ModalAtestado({ nota, onFechar, onVinculado }) {
           <textarea readOnly value={previa?.texto || 'Montando…'} rows={30} style={{ width: '100%', fontFamily: 'inherit', lineHeight: 1.45, marginTop: 4 }} data-testid="atestado-texto" />
           {previa?.avisos?.map(a => <p key={a} style={{ ...estilos.ajuda, margin: '6px 0 0' }}>• {a}</p>)}
         </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--borda)' }}>
+        <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+          <Campo label="Enviar o Word ao cliente por e-mail (até 5, separados por vírgula)">
+            <input value={para} onChange={(e) => setPara(e.target.value)} placeholder="juridico@cliente.com.br" data-testid="atestado-email-para" />
+          </Campo>
+        </div>
+        <button type="button" onClick={enviarPorEmail} disabled={!previa || enviando || !para.trim()} style={estilos.btnSecundario} data-testid="atestado-enviar">
+          <Mail size={13} /> {enviando ? 'Enviando…' : 'Enviar por e-mail'}
+        </button>
+        {enviadoEm && <span style={{ ...sub, flexBasis: '100%' }}>Já enviado em {formatarData(enviadoEm.em)} para {enviadoEm.para}.</span>}
       </div>
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 14 }}>
         <button type="button" onClick={onFechar} style={estilos.btnSecundario}>Fechar</button>

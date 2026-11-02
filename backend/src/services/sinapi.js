@@ -2,8 +2,12 @@
 // do zip SINAPI-AAAA-MM-formato-xlsx.zip de caixa.gov.br) para as tabelas sinapi_*, só do
 // estado pedido (DF por padrão), nos dois regimes (sem e com desoneração). Consulta por
 // texto e por código, com queda para o mês anterior quando o item não tem preço no mês.
+const path = require('path');
+const fsp = require('fs/promises');
 const ExcelJS = require('exceljs');
+const JSZip = require('jszip');
 const pool = require('../config/database');
+const { hojeBrasilia } = require('../utils/dataHoje');
 
 const UF_PADRAO = 'DF';
 const REGIMES = { ISD: ['insumos', 'sem'], ICD: ['insumos', 'com'], CSD: ['composicoes', 'sem'], CCD: ['composicoes', 'com'] };
@@ -146,11 +150,21 @@ async function gravar(client, { mes, uf, blocos }, arquivo) {
 
 // Importa uma planilha já lida; tudo ou nada (transação).
 async function importar(caminho, { uf = UF_PADRAO, db = pool } = {}) {
-  const lido = await lerArquivo(caminho, uf);
+  return importarLido(await lerArquivo(caminho, uf), String(caminho).split(/[\\/]/).pop(), db);
+}
+
+// Planilha que vem em memória (a de dentro do zip da Caixa)
+async function importarBuffer(buffer, nome, { uf = UF_PADRAO, db = pool } = {}) {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buffer);
+  return importarLido(lerPlanilha(wb, uf), nome, db);
+}
+
+async function importarLido(lido, arquivo, db = pool) {
   const client = await db.connect();
   try {
     await client.query('BEGIN');
-    const r = await gravar(client, lido, String(caminho).split(/[\\/]/).pop());
+    const r = await gravar(client, lido, arquivo);
     await client.query('COMMIT');
     return r;
   } catch (e) {
@@ -200,10 +214,66 @@ async function precoPorCodigo(codigo, { tipo = 'insumos', db = pool } = {}) {
     aviso: x.mes !== x.mes_atual ? `Sem preço em ${x.mes_atual}; usado o de ${x.mes}.` : null };
 }
 
+// A Caixa publica a referência do mês anterior por volta do dia 10 (a de 09/2026 saiu em 09/10): até o dia 11 o esperado é
+// o de dois meses atrás, depois dele o do mês passado. Devolve "AAAA-MM".
+function mesEsperado(hoje = new Date()) {
+  const d = new Date(hoje.getFullYear(), hoje.getMonth() - (hoje.getDate() >= 12 ? 1 : 2), 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+// Pasta onde o administrador solta o zip (ou o xlsx) baixado da Caixa; a rotina "sinapi-pasta" importa sozinha.
+function pastaDeEntrada() {
+  return path.join(require('./pastasSistema').BASE, 'SINAPI');
+}
+
+const RE_PLANILHA_DO_ZIP = /SINAPI.{0,3}Refer.{1,3}ncia.*\.xlsx$/i;
+
+// Importa o que estiver na pasta de entrada (SINAPI-AAAA-MM-formato-xlsx.zip ou a planilha "SINAPI_Referência" solta), do estado
+// configurado, e move cada arquivo para "processados" (ou "com-erro", sem apagar nada). Um arquivo que falha não impede os outros.
+async function importarPastaDeEntrada({ pasta = pastaDeEntrada(), db = pool } = {}) {
+  const resumo = { arquivosEncontrados: 0, arquivosProcessados: 0, insumos: 0, composicoes: 0, avisos: [], meses: [] };
+  await fsp.mkdir(pasta, { recursive: true });
+  const nomes = (await fsp.readdir(pasta, { withFileTypes: true }))
+    .filter(e => e.isFile() && /\.(zip|xlsx)$/i.test(e.name) && !/^[~.]/.test(e.name) && /sinapi/i.test(e.name))
+    .map(e => e.name).sort();
+  resumo.arquivosEncontrados = nomes.length;
+  const { uf } = await configuracao(db);
+  const mover = async (nome, subpasta) => {
+    await fsp.mkdir(path.join(pasta, subpasta), { recursive: true });
+    const destino = path.join(pasta, subpasta, `${hojeBrasilia()}_${nome}`);
+    await fsp.rename(path.join(pasta, nome), destino);
+  };
+  for (const nome of nomes) {
+    try {
+      const buffer = await fsp.readFile(path.join(pasta, nome));
+      let planilha = buffer; let nomePlanilha = nome;
+      if (/\.zip$/i.test(nome)) {
+        const zip = await JSZip.loadAsync(buffer);
+        const entrada = Object.keys(zip.files).find(n => !zip.files[n].dir && RE_PLANILHA_DO_ZIP.test(n));
+        if (!entrada) throw new Error('o zip não tem a planilha "SINAPI_Referência_AAAA_MM.xlsx"');
+        planilha = await zip.files[entrada].async('nodebuffer');
+        nomePlanilha = entrada.split(/[\\/]/).pop();
+      }
+      const r = await importarBuffer(planilha, nomePlanilha, { uf, db });
+      resumo.arquivosProcessados++;
+      resumo.insumos += r.insumos; resumo.composicoes += r.composicoes; resumo.meses.push(r.mes);
+      await mover(nome, 'processados');
+    } catch (e) {
+      resumo.avisos.push(`${nome}: ${e.message}`);
+      await mover(nome, 'com-erro').catch(() => {});
+    }
+  }
+  return resumo;
+}
+
 async function situacao(db = pool) {
   const cfg = await configuracao(db);
   const r = await db.query('SELECT mes, uf, arquivo, insumos, composicoes, importado_em FROM sinapi_importacoes ORDER BY mes DESC, uf');
-  return { ...cfg, importacoes: r.rows };
+  const ultimo = r.rows.find(x => x.uf === cfg.uf)?.mes?.trim() || null;
+  const esperado = mesEsperado();
+  return { ...cfg, importacoes: r.rows, mes_esperado: esperado, atrasado: !ultimo || ultimo < esperado, pasta_entrada: pastaDeEntrada() };
 }
 
-module.exports = { lerPlanilha, lerArquivo, importar, gravar, buscar, precoPorCodigo, configuracao, situacao, UF_PADRAO };
+module.exports = {
+  lerPlanilha, lerArquivo, importar, importarBuffer, gravar, buscar, precoPorCodigo, configuracao, situacao, mesEsperado, pastaDeEntrada, importarPastaDeEntrada, UF_PADRAO,
+};

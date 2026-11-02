@@ -16,7 +16,7 @@ import { formatarMoeda } from '../utils/format';
 // orçamentos de fornecedores nas pastas) e a cadeia de IA, numa visão só.
 // Pendurado na aba "Integrações" do hub de administração.
 
-const ICONES = { 'notas-email': Mail, 'pix-email': Banknote, 'fornecedores-pastas': FolderOpen };
+const ICONES = { 'notas-email': Mail, 'pix-email': Banknote, 'fornecedores-pastas': FolderOpen, 'sinapi-pasta': Database };
 
 const STATUS = {
   ok: { label: 'Concluída', cor: '#3fb95f', bg: '#0a1a0f', borda: '#1a4a26', Icone: CheckCircle2 },
@@ -449,9 +449,14 @@ function CartaoSinapi({ ehAdmin }) {
           <div style={{ color: '#eee', fontWeight: 700, fontSize: 14 }}>SINAPI local (Caixa)</div>
           <div style={{ color: 'var(--texto-3)', fontSize: 12, marginTop: 2 }}>
             {vazio
-              ? 'Nenhuma planilha importada ainda. A Caixa publica a de cada mês por volta do dia 10; a importação é feita com o script importar-sinapi.js.'
+              ? 'Nenhuma planilha importada ainda. A Caixa publica a de cada mês por volta do dia 10; baixe o zip e deixe na pasta abaixo, que o sistema importa sozinho.'
               : <>Referência mais recente do {sit.uf}: <b>{mesBR(ultimo?.mes)}</b> — {ultimo?.insumos?.toLocaleString('pt-BR')} insumos e {ultimo?.composicoes?.toLocaleString('pt-BR')} composições (os dois regimes).</>}
           </div>
+          {sit.atrasado && (
+            <div style={{ marginTop: 6, fontSize: 12, color: 'var(--aviso)' }} data-testid="sinapi-atrasado">
+              Já deve existir a referência de <b>{mesBR(sit.mes_esperado)}</b>. Baixe o zip <i>SINAPI-{sit.mes_esperado}-formato-xlsx.zip</i> em caixa.gov.br (Downloads → SINAPI) e deixe na pasta <code>{sit.pasta_entrada}</code>: a importação roda às 06:00 e às 18:00, ou use “Ler agora” em Rotinas automáticas.
+            </div>
+          )}
         </div>
       </div>
       {!vazio && (
@@ -537,7 +542,9 @@ export default function Integracoes() {
   async function executar(rotina) {
     const aviso = rotina.chave === 'fornecedores-pastas'
       ? 'Ler agora as pastas de orçamentos de fornecedores e cadastrar os materiais novos?'
-      : `Ler agora a caixa de e-mail (${rotina.nome})?`;
+      : rotina.chave === 'sinapi-pasta'
+        ? 'Importar agora o SINAPI que está na pasta de entrada?'
+        : `Ler agora a caixa de e-mail (${rotina.nome})?`;
     if (!window.confirm(aviso)) return;
     setExecutando(e => ({ ...e, [rotina.chave]: true }));
     setTimeout(() => carregar(true), 800); // mostra "em execução" logo

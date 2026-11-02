@@ -1,7 +1,7 @@
 // Edições do usuário copiadas no "Reprocessar com o mapa conferido" (services/edicoesDaAnalise.js).
 // Funções puras, sem banco. Rodar: node testes/edicoesDaAnalise.test.js
 const assert = require('assert');
-const { mesclarLista, herdarEdicoes } = require('../src/services/edicoesDaAnalise');
+const { mesclarLista, herdarEdicoes, enxugarLeitura } = require('../src/services/edicoesDaAnalise');
 
 const it = (descricao, extra = {}) => ({ disciplina: 'eletrica', codigo: null, descricao, unidade: 'un', quantidade: 0, valor_unitario: 0, pronto: false, ...extra });
 let ok = 0;
@@ -73,6 +73,18 @@ caso('herdarEdicoes aplica em serviços e materiais e soma o resumo', () => {
   assert.deepStrictEqual([h.alterados, h.removidos, h.acrescentados], [2, 1, 1]);
   assert.deepStrictEqual(resultado.servicos.map(x => x.descricao), ['S1']);
   assert.deepStrictEqual(resultado.materiais.map(x => x.descricao), ['M1', 'M2']);
+});
+
+caso('a leitura original guardada é enxuta (chave + campos editáveis) e ainda serve de base', () => {
+  const grande = { ...it('S1', { quantidade: 3 }), texto_longo: 'x'.repeat(500), detalhes: { a: 1 } };
+  const [m] = enxugarLeitura([grande]);
+  assert.ok(!('texto_longo' in m) && !('detalhes' in m));
+  assert.strictEqual(m.descricao, 'S1');
+  assert.strictEqual(m.quantidade, 3);
+  const resultado = { servicos: [it('S1', { quantidade: 5 })], materiais: [] };
+  herdarEdicoes(resultado, { leitura_original: { servicos: [m], materiais: [] }, servicos: [it('S1', { quantidade: 9 })], materiais: [] });
+  assert.strictEqual(resultado.servicos[0].quantidade, 5, 'o mapa recalculou: vale o mapa');
+  assert.deepStrictEqual(enxugarLeitura(null), []);
 });
 
 console.log(`edicoesDaAnalise: ok (${ok} verificações)`);

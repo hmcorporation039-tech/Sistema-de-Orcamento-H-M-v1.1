@@ -27,6 +27,17 @@ function indexar(lista) {
   return mapa;
 }
 
+// O que é guardado como "leitura original": só a chave do item e os campos que o usuário pode editar (o resto do item,
+// como textos longos e dados de catálogo, é o mesmo da análise e dobraria o tamanho da linha no banco)
+const CAMPOS_GUARDADOS = ['disciplina', 'codigo', 'descricao', ...CAMPOS_EDITAVEIS];
+function enxugarLeitura(lista) {
+  return (Array.isArray(lista) ? lista : []).map((it) => {
+    const m = {};
+    for (const c of CAMPOS_GUARDADOS) if (it?.[c] !== undefined) m[c] = it[c];
+    return m;
+  });
+}
+
 const rotulo = (it) => String(it?.descricao || it?.codigo || '').slice(0, 120);
 
 // base: o que foi lido na análise antiga; atual: o que está salvo nela (editado); novo: o que a releitura produziu.
@@ -83,4 +94,4 @@ function herdarEdicoes(resultado, anterior) {
   };
 }
 
-module.exports = { mesclarLista, herdarEdicoes, CAMPOS_EDITAVEIS };
+module.exports = { mesclarLista, herdarEdicoes, enxugarLeitura, CAMPOS_EDITAVEIS };
