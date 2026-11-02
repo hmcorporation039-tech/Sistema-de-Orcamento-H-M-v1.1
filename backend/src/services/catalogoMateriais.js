@@ -102,8 +102,8 @@ async function registrarItemCotacao(client, indice, item, origem, margem) {
   if (!Number.isFinite(preco) || preco <= 0) return null; // preço não identificado com confiança — não grava lixo
   const achado = await encontrarExistente(client, indice, item.descricao);
   if (!achado) {
-    await inserirMaterial(client, indice, item, origem, margem);
-    return { criado: true, mudou: true };
+    const novo = await inserirMaterial(client, indice, item, origem, margem);
+    return { criado: true, mudou: true, materialId: novo?.id };
   }
   const mat = achado.material;
   const semCusto = mat.preco_compra == null || Number(mat.preco_compra) <= 0;
@@ -114,7 +114,7 @@ async function registrarItemCotacao(client, indice, item, origem, margem) {
     await client.query(`UPDATE materiais SET preco_compra=COALESCE(preco_compra, $1), codigo=COALESCE(NULLIF(codigo,''), $2), marca=COALESCE(NULLIF(marca,''), $3), ncm=COALESCE(NULLIF(ncm,''), $4) WHERE id=$5`,
       [preco, item.codigo || null, item.marca || null, item.ncm || null, mat.id]);
   }
-  return { criado: false, mudou: semCusto, criterio: achado.criterio };
+  return { criado: false, mudou: semCusto, criterio: achado.criterio, materialId: mat.id };
 }
 
 // Unidade comparável: "UN", "und", "PÇ" → un; "MT", "metro" → m; etc.
@@ -176,4 +176,4 @@ async function obterMargemPadrao(client) {
   return parseFloat(r.rows[0]?.valor) || 0;
 }
 
-module.exports = { carregarIndice, registrarItemCotacao, registrarItemNotaFiscal, registrarHistoricoPreco, obterMargemPadrao, chaveDescricao, codigosFabricante, unidadeBase };
+module.exports = { carregarIndice, encontrarExistente, registrarItemCotacao, registrarItemNotaFiscal, registrarHistoricoPreco, obterMargemPadrao, chaveDescricao, codigosFabricante, unidadeBase };

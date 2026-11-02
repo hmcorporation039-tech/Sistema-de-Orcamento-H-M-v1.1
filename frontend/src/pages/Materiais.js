@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import useUltimoPedido from '../hooks/useUltimoPedido';
 import toast from 'react-hot-toast';
-import { Plus, Search, Pencil, Trash2, X, Upload, FileScan, Mail, RefreshCw, History } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, X, Upload, FileScan, Mail, RefreshCw, History, Scale } from 'lucide-react';
 import {
   getMateriais, criarMaterial, atualizarMaterial, removerMaterial,
   importarMateriais, extrairNotaFiscal, getCategoriasMateriais,
@@ -10,6 +10,7 @@ import {
 } from '../services/api';
 import { formatarMoeda, formatarNcm, formatarData } from '../utils/format';
 import Paginacao from '../components/Paginacao';
+import ModalOportunidades, { ModalCompararMaterial } from '../components/ComparativoFornecedores';
 import Select, { Sugestoes } from '../components/Select';
 import Modal from '../components/ui/Modal';
 import { estilos, Campo } from '../components/ui/estilos';
@@ -67,6 +68,8 @@ export default function Materiais() {
   const [margemPadrao, setMargemPadrao] = useState('');
   const [salvandoMargem, setSalvandoMargem] = useState(false);
   const [modalHistorico, setModalHistorico] = useState(false);
+  const [modalOportunidades, setModalOportunidades] = useState(false);
+  const [materialComparar, setMaterialComparar] = useState(null);
   const [historicoEmail, setHistoricoEmail] = useState(null);
 
   const carregarCategorias = useCallback(() => {
@@ -419,6 +422,10 @@ export default function Materiais() {
           <RefreshCw size={12} style={{ marginRight: 5 }} /> {verificandoFornecedores ? 'Verificando...' : 'Verificar orçamentos de fornecedores'}
         </button>
 
+        <button onClick={() => setModalOportunidades(true)} style={{ ...btnSecundario, padding: '5px 10px' }} title="Mostra quem cotou mais barato cada material e onde o custo do catálogo está acima da melhor cotação">
+          <Scale size={12} style={{ marginRight: 5 }} /> Comparar fornecedores
+        </button>
+
         <button onClick={abrirHistorico} style={{ ...btnSecundario, padding: '5px 10px' }}>
           <History size={12} style={{ marginRight: 5 }} /> Ver histórico
         </button>
@@ -453,7 +460,7 @@ export default function Materiais() {
               <th style={{ ...th, textAlign: 'right' }}>Compra</th>
               <th style={{ ...th, textAlign: 'right' }}>Venda</th>
               <th style={th}>Marca</th>
-              <th style={{ ...th, width: 90 }}></th>
+              <th style={{ ...th, width: 125 }}></th>
             </tr>
           </thead>
           <tbody>
@@ -484,6 +491,9 @@ export default function Materiais() {
                 <td style={{ ...td, textAlign: 'right', color: '#c9a227', fontWeight: 700 }}>{formatarMoeda(m.preco)}</td>
                 <td style={td}>{m.marca || '—'}</td>
                 <td style={{ ...td, display: 'flex', gap: 6 }}>
+                  <button onClick={() => setMaterialComparar(m)} style={btnIcone} title="Comparar fornecedores" aria-label={`Comparar fornecedores de ${m.descricao}`}>
+                    <Scale size={13} />
+                  </button>
                   <button onClick={() => abrirEdicao(m)} style={btnIcone} title="Editar">
                     <Pencil size={13} />
                   </button>
@@ -742,6 +752,9 @@ export default function Materiais() {
             )}
         </Modal>
       )}
+
+      {modalOportunidades && <ModalOportunidades onFechar={() => setModalOportunidades(false)} onAbrirMaterial={setMaterialComparar} />}
+      {materialComparar && <ModalCompararMaterial material={materialComparar} onFechar={() => setMaterialComparar(null)} />}
 
       {modalHistorico && (
         <Modal titulo="Histórico de Importação Automática" onFechar={() => setModalHistorico(false)} largura={620} espacoTitulo={14}>

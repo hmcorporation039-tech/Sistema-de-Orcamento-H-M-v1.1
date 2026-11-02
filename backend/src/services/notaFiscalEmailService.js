@@ -195,7 +195,7 @@ async function processarOrcamentosPorEmail(imapClient, dbClient, margem, indice,
     await dbClient.query('BEGIN');
     try {
       for (const { anexo, leitura } of leituras) {
-        const r = await importar(dbClient, indice, leitura, 'fornecedor_email', margem);
+        const r = await importar(dbClient, indice, leitura, 'fornecedor_email', margem, { documento: `${ident.chave}#${anexo.filename || 'anexo'}` });
         lidosNoEmail += leitura.itens.length;
         resumo.materiaisCriados += r.criados;
         resumo.materiaisAtualizados += r.atualizados;

@@ -1,6 +1,7 @@
 const path = require('path');
 const { textoDoPdf, paginasComoImagem: paginasDoPdf } = require('../utils/leitorPdf');
 const { extrairLayoutsConhecidos } = require('../utils/cotacaoFornecedorParser');
+const { extrairFornecedor } = require('../utils/cnpj');
 const { extrairUniversal, conferirTotal } = require('../utils/leitorCotacaoUniversal');
 const { extrairComIA, iaDisponivel } = require('./leitorCotacaoIA');
 
@@ -197,7 +198,7 @@ async function lerDocumentoCotacao(buffer, nome, opcoes = {}) {
   if (resultado.itens.length && resultado.conferencia && !resultado.conferencia.confere) {
     avisos.push(`soma dos itens (R$ ${resultado.conferencia.soma.toFixed(2)}) não bate com nenhum total do documento — pode faltar item ou o total incluir impostos/frete`);
   }
-  return { ...resultado, viaOcr, usouIA, pendente: (pendente || falhaOcr) && !resultado.itens.length, avisos };
+  return { ...resultado, viaOcr, usouIA, pendente: (pendente || falhaOcr) && !resultado.itens.length, avisos, fornecedor: extrairFornecedor(texto) };
 }
 
 module.exports = { lerDocumentoCotacao, encerrarOcr, ehDocumentoDaHM, VERSAO_LEITOR, EXTENSOES,
