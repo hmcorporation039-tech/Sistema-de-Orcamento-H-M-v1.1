@@ -773,3 +773,15 @@ Só código, sem migração. Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-b
 - **Limites:** só compara quando o mesmo material foi cotado por mais de um fornecedor; e-mails já lidos não entram retroativamente; a data da cotação é a da leitura (ou a do arquivo), não a impressa no documento.
 - Testes: `cotacoesFornecedor` em `backend/testes`; `ComparativoFornecedores.test.js` no frontend.
 - Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.23_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_18-50.dump`.
+
+### 02/11/2026: versão 2.24.0 — notas a receber
+
+- **O que mudou:** não existe tabela de contas a receber: a nota emitida é o valor a receber e o Pix ligado a ela é o que a quitou. Como nenhum Pix estava ligado a nota, o sistema não sabia o que estava em aberto. Agora o painel inicial (só administrador) tem o cartão "Notas a receber".
+- **O cartão:** lista as notas emitidas sem pagamento e há quantos dias esperam (passou de 30 dias conta como atrasada; o prazo é sugestão da casa) e sugere o Pix que a quitou, pelo valor (líquido, bruto ou saldo) e pela semelhança do nome do pagador com o tomador. Não usa IA.
+- **Confiança da sugestão:** alta (um só Pix serve à nota, a nota é a única que serve ao Pix e o nome confere) entra no botão "Ligar N sugeridos", que liga tudo ou nada; média (valor bate, nome não) liga um a um com "confira o nome"; ambígua não sugere nada (ligar pelo menu da nota, em Financeiro).
+- **Já recebi:** baixa manual para nota paga por TED, boleto ou antes do extrato. Exige dizer como foi paga e fica na auditoria.
+- **Notas antigas:** a nota emitida mais de 30 dias antes do primeiro Pix que o sistema leu fica separada como "sem como conferir" e não conta como atraso.
+- **Banco:** migração `2.0-36` acrescenta `baixa_manual_em`, `baixa_manual_obs` e `baixa_manual_por` em `notas_fiscais` (idempotente). Rotas `/api/notas-a-receber` (listar, ligar-sugeridas, `:id/ligar`, `:id/baixa` com POST e DELETE), todas só para administrador.
+- **Limites:** duas notas iguais do mesmo cliente saem como ambíguas; Pix com retenção de INSS/IR (valor menor que o líquido) não é sugerido, só ligar pelo menu da nota ou dar baixa. O cartão só avisa: não manda cobrança a ninguém.
+- Testes: `notasAReceber` em `backend/testes`; `NotasAReceber.test.js` no frontend.
+- Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.24_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_19-09.dump`.
