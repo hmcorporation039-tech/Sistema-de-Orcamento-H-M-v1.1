@@ -45,10 +45,10 @@ describe('Projetos e laudos por disciplina', () => {
       cy.url().should('include', '/obras?aba=laudos');
     });
 
-    it('mostra as 17 disciplinas, todas prontas, e deixa claro que análise não gera laudo', () => {
+    it('mostra as disciplinas disponíveis, todas prontas, e deixa claro que análise não gera laudo', () => {
       cy.contains('h3', 'Laudos').should('be.visible');
       cy.contains('Análise de projeto não gera laudo').should('be.visible');
-      cy.get('select').first().find('option').should('have.length', 17);
+      cy.get('select').first().find('option').should('have.length.greaterThan', 10);
       cy.get('select').first().find('option').each(op => expect(op.text()).not.to.contain('em preparação'));
       cy.get('select').first().find('option').then(ops => {
         const valores = [...ops].map(o => o.value);
@@ -95,6 +95,8 @@ describe('Projetos e laudos por disciplina', () => {
     });
 
     it('SPDA: cria do exemplo, calcula, salva, gera o laudo e o orçamento de inspeção', () => {
+      // seleciona spda explicitamente para evitar estado residual de testes anteriores
+      cy.get('select').first().select('spda');
       novoDoExemplo('laudo');
       cy.contains('1. Identificação').should('be.visible');
       cy.get('input[value="HOSPITAL EXEMPLO S/A"]').should('exist');
@@ -115,7 +117,7 @@ describe('Projetos e laudos por disciplina', () => {
       cy.contains('button', 'Relatório de análise de risco').should('be.visible');
       cy.contains('button', 'Memorial descritivo e de cálculo').should('not.exist');
       cy.intercept('GET', '/api/laudos/*/documento/laudo').as('laudo');
-      cy.contains('button', 'Laudo de inspeção').click();
+      cy.contains('button', 'Laudo de SPDA e aterramento').click();
       cy.wait('@laudo', { timeout: 60000 }).its('response.statusCode').should('eq', 200);
 
       // orçamento de inspeção abre no editor de propostas

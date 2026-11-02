@@ -30,18 +30,22 @@ const GRUPOS = [
       { chave: 'materiais', rotulo: 'Materiais', mostra: () => cy.contains('h2', 'Materiais') },
       { chave: 'mao-de-obra', rotulo: 'Mão de obra', mostra: () => cy.contains('h2', 'Preços de Mão de Obra') },
       { chave: 'composicoes', rotulo: 'Composições e kits', mostra: () => cy.contains('button', 'Nova composição') },
+      { chave: 'componentes-quadro', rotulo: 'Componentes de quadros', mostra: () => cy.contains(/componentes de quadros/i) },
     ],
   },
   {
     menu: 'Financeiro', caminho: '/financeiro', abas: [
       { chave: 'movimentos', rotulo: 'Movimentos', mostra: () => cy.contains('h2', 'Financeiro') },
+      { chave: 'notas', rotulo: 'Notas fiscais', mostra: () => cy.contains(/nota|NFS-e/i) },
       { chave: 'prestadores', rotulo: 'Prestadores', mostra: () => cy.contains('h2', 'Prestadores de Serviços') },
       { chave: 'contratos', rotulo: 'Contratos', mostra: () => cy.contains('h2', 'Contratos de Prestação de Serviço') },
     ],
   },
   {
-    menu: 'Cadastros e administração', caminho: '/cadastros', abas: [
+    // menu usa forma curta; Hub renderiza aria-label com o nome completo do grupo
+    menu: 'Cadastros e admin.', ariaLabel: 'Cadastros e administração', caminho: '/cadastros', abas: [
       { chave: 'clientes', rotulo: 'Clientes', mostra: () => cy.contains('h2', 'Clientes') },
+      { chave: 'fiscal', rotulo: 'Dados fiscais', mostra: () => cy.contains(/dados fiscais|CNPJ|razão social/i) },
       { chave: 'usuarios', rotulo: 'Usuários', mostra: () => cy.contains('h2', 'Usuários') },
       { chave: 'integracoes', rotulo: 'Integrações', mostra: () => cy.contains('h2', 'Integrações') },
     ],
@@ -77,8 +81,8 @@ describe('Versão 2.0 — menu, abas e telas novas', () => {
         cy.contains('h2', g.titulo).should('be.visible');
         return;
       }
-      // as abas do hub, na ordem
-      cy.get(`[role=tablist][aria-label="${g.menu}"] [role=tab]`)
+      // as abas do hub, na ordem (ariaLabel pode diferir do texto do nav)
+      cy.get(`[role=tablist][aria-label="${g.ariaLabel || g.menu}"] [role=tab]`)
         .should('have.length', g.abas.length)
         .then(abas => expect([...abas].map(a => a.textContent.trim())).to.deep.equal(g.abas.map(a => a.rotulo)));
       // a primeira aba abre por padrão; clicar em cada uma muda o ?aba= e a
@@ -120,9 +124,9 @@ describe('Versão 2.0 — menu, abas e telas novas', () => {
       cy.visit(`/analise-projeto/${lista[0].id}`);
       cy.location('pathname').should('eq', `/obras/analise/${lista[0].id}`);
     });
-    // rota desconhecida volta para o painel
+    // rota desconhecida volta para o painel (aguarda o React carregar e redirecionar)
     cy.visit('/rota-que-nao-existe');
-    cy.location('pathname').should('eq', '/dashboard');
+    cy.location('pathname', { timeout: 12000 }).should('eq', '/dashboard');
   });
 
   it('abre uma obra e as seções Resumo, Análises, Projetos, Laudos, Propostas, Execução, Campo e Financeiro (?secao=)', () => {
@@ -141,7 +145,7 @@ describe('Versão 2.0 — menu, abas e telas novas', () => {
 
       const secoes = [
         // 2.1: análises (com a finalidade), projetos e laudos separados
-        ['analises', 'Análises', 'Análises de projeto (PDF recebido)'],
+        ['analises', 'Análises', 'Análises de projeto (arquivos recebidos)'],
         ['projetos', 'Projetos', 'Novo projeto nesta obra'],
         ['laudos', 'Laudos', 'Novo laudo nesta obra'],
         ['propostas', 'Propostas', 'Propostas da obra'],
@@ -157,7 +161,7 @@ describe('Versão 2.0 — menu, abas e telas novas', () => {
         cy.contains(texto).should('be.visible');
       });
       // abrindo direto pela URL (e as chaves antigas: projeto → Análises, disciplinas → Projetos)
-      [...secoes, ['projeto', 'Análises', 'Análises de projeto (PDF recebido)'], ['disciplinas', 'Projetos', 'Novo projeto nesta obra']].forEach(([chave, rotulo, texto]) => {
+      [...secoes, ['projeto', 'Análises', 'Análises de projeto (arquivos recebidos)'], ['disciplinas', 'Projetos', 'Novo projeto nesta obra']].forEach(([chave, rotulo, texto]) => {
         cy.visit(`/obras/${obra.id}?secao=${chave}`);
         cy.get('[role=tablist][aria-label="Seções da obra"]').contains('[role=tab]', rotulo)
           .should('have.attr', 'aria-selected', 'true');

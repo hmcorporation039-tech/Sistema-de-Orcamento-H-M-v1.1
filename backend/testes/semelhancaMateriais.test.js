@@ -80,7 +80,7 @@ const ESPERADO_CATALOGO = [
   null, // 2
   [4,50], // 3
   [5,50], // 4
-  [6,60], // 5
+  null, // 5 — 40 A não é o disjuntor de 10 A do catálogo (especificação diferente: auditoria 01/11/2026)
   [6,75], // 6
   [7,50], // 7
   [7,100], // 8
@@ -201,6 +201,20 @@ caso('classificação: mesmo material mais parecido de antes (corte 0,5)', () =>
     const m = CM.paraTestes.maisParecido(ref, c);
     assert.deepStrictEqual(m && [m.categoria, r6(m.s)], ESPERADO_PARECIDO[i], `consulta ${i}: "${c}"`);
   });
+});
+
+caso('compararComCatalogo: bitola, corrente e polos diferentes não casam (e o preço só confirma com 90%)', () => {
+  const { confirmaPreco } = require('../src/utils/semelhancaMateriais');
+  const cat = [{ id: 1, descricao: 'Cabo flexível 1,5mm² 750V preto', preco: 2 }, { id: 2, descricao: 'Cabo flexível 2,5mm² 750V preto', preco: 3 },
+    { id: 3, descricao: 'Disjuntor DIN monopolar 16A curva C', preco: 20 }, { id: 4, descricao: 'Eletroduto PVC rígido 3/4\" barra 3 m', preco: 9 }];
+  assert.strictEqual(compararComCatalogo('Cabo flexível 2,5mm² preto 750V', cat).material_id, 2);
+  assert.strictEqual(compararComCatalogo('Cabo flexível 6mm² 750V preto', cat), null);
+  assert.strictEqual(compararComCatalogo('Disjuntor DIN monopolar 10A curva C', cat), null);
+  assert.strictEqual(compararComCatalogo('Disjuntor DIN tripolar 16A curva C', cat), null);
+  assert.strictEqual(compararComCatalogo('Eletroduto PVC rígido 1\" barra 3 m', cat), null);
+  assert.strictEqual(confirmaPreco({ confianca: 60 }), false);
+  assert.strictEqual(confirmaPreco({ confianca: 92 }), true);
+  assert.strictEqual(confirmaPreco({ confianca: 50, origem: 'alias' }), true);
 });
 
 console.log(`semelhancaMateriais: ${ok} casos ok`);

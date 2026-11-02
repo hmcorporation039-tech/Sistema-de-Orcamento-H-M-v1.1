@@ -283,8 +283,9 @@ caso('casar com o catálogo: medida e unidade precisam bater; prefere o que tem 
     { id: 13, descricao: 'Caixa de embutir 4×2"', unidade: 'un', preco: '0' },
     { id: 14, descricao: 'CAIXA 4X2 AMARELA 689034', unidade: 'UND', preco: '1.08' },
   ];
-  // compararComCatalogo sozinho daria 100% para o disjuntor de 10 A
-  assert.ok(compararComCatalogo('Disjuntor termomagnético 2P 40 A curva C (NBR NM 60898)', catalogo));
+  // compararComCatalogo dava 100% para o disjuntor de 10 A; desde 01/11/2026 a corrente
+  // e os polos diferentes já o descartam (utils/semelhancaMateriais.js: especificacoes)
+  assert.strictEqual(compararComCatalogo('Disjuntor termomagnético 2P 40 A curva C (NBR NM 60898)', catalogo), null);
   assert.strictEqual(C.casarComCatalogo({ descricao: 'Disjuntor termomagnético 2P 40 A curva C (NBR NM 60898)', unidade: 'un' }, catalogo, compararComCatalogo), null);
   // o rolo (id 11) só entra pela conversão; aqui as palavras não batem o bastante → o de metro
   const cabo = C.casarComCatalogo({ descricao: 'Cabo flexível 2,5 mm 750 V', unidade: 'm' }, catalogo, compararComCatalogo);
