@@ -108,6 +108,7 @@ function tratarErros(err, req, res, next) {
   }
 
   console.error(`Erro não tratado em ${req.method} ${req.originalUrl}:`, err);
+  require('../services/errosSistema').registrar(req, err);   // resumo diário por e-mail (rotina erros-sistema)
   res.status(500).json({ erro: 'Erro interno do servidor.' });
 }
 
