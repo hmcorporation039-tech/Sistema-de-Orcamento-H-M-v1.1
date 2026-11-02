@@ -707,3 +707,12 @@ Só código, sem migração. Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-b
 - **Não feito:** item 2 (layout de fornecedor), por falta de dado que o justifique.
 - Testes: `notasExtras`, `monitorSaude`, `edicoesDaAnalise`, `sinapi`, `rotinas` em `backend/testes` (suíte completa verde no v2).
 - Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.16_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_16-28.dump`.
+
+### 02/11/2026: versão 2.17.0 — teste mensal de restauração do backup
+**Sem migração de banco.** Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-backend.bat` (administrador) e Ctrl+F5. Para agendar o teste: `C:\HM-Engenharia\hm-eng\registrar-teste-restauracao.bat` (administrador, uma vez).
+- **O que faz:** todo dia 1, às 03:30 (depois do backup das 02:00), pega o dump mais novo (de preferência a cópia fora do prédio, no Google Drive), restaura num banco temporário `hm_teste_restauracao`, compara a contagem de linhas com o banco em uso e apaga o temporário. O banco em uso só é lido.
+- **Quando reprova:** tabela essencial (usuarios, clientes, materiais, propostas, proposta_itens, notas_fiscais) que volta com menos de 80% das linhas do banco em uso (régua só para tabelas com 10 linhas ou mais). Tabela criada depois do backup vira observação, não falha.
+- **Aviso:** o resultado fica em `backend\logs\restauracao-teste.json`, aparece no cartão de backup em Integrações ("Teste de restauração": restaurou / falhou / está atrasado, limite de 40 dias) e vai por e-mail para `ALERTA_EMAIL` (ou `EMAIL_IMAP_USER`).
+- **Teste na hora, sem e-mail:** `"C:\Program Files\nodejs\node.exe" "C:\HM-Engenharia\hm-eng\backend\scripts\testar-restauracao.js" --sem-email`. O usuário do banco precisa poder criar banco (CREATE DATABASE); se não puder, o teste falha dizendo o motivo.
+- Teste: `backend/testes/testeRestauracao.test.js` (sem tocar em banco).
+- Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.17_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_17-04.dump`.
