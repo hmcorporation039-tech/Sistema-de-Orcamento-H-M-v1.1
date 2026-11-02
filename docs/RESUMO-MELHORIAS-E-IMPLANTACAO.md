@@ -663,3 +663,12 @@ Instalada em produção em 02/11/2026. **Migração de banco:** `2.0-27-nota-pro
 
 ### 02/11/2026: versão 2.12.1 — correções do atestado de capacidade técnica
 Só código, sem migração. A revisão do atestado achou e corrigiu: quantidade da proposta com 3 casas era arredondada para 2 na planilha; "|" na descrição quebrava a planilha editada; a limpeza do texto da nota podia demorar em texto muito longo sem espaços. Teste de ponta a ponta das rotas (login, permissão de admin, prévia, Word, vínculo e auditoria) feito no banco do v2.
+
+### 02/11/2026: versão 2.13.0 — classificador local de materiais que aprende com o catálogo (item 7 do plano)
+Só código, sem migração. Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-backend.bat` (administrador) e Ctrl+F5.
+- **Medido antes de ligar** (`backend/scripts/avaliar-classificador.js`, só lê o banco; 20 sorteios de 80 % treino / 20 % teste, 521 materiais classificados): o catálogo já classificava sem IA (só ~1,6 % dos itens iam para a IA), mas a ordem antiga acertava 91,7 % e o NCM sozinho 89,1 % (o mesmo NCM serve a categorias diferentes, como cabo de cobre em elétrica e em rede).
+- **O que mudou** (`utils/classificadorKnn.js`, `services/classificacaoMateriais.js`): ordem nova para material novo — aprendido do catálogo (vizinhos mais próximos das descrições já classificadas, só responde com confiança ≥ 0,5) → material parecido → palavras-chave → NCM → IA. O kNN responde ~64 % dos itens e acerta ~97 % do que responde; o conjunto passa de 91,7 % para ~96,4 %, com a mesma fração indo para a IA. Abaixo de 20 materiais classificados o kNN fica calado.
+- **Contador:** Integrações passa a mostrar `classificacao_material` (classificado sem IA = chamada evitada).
+- **Limites:** o catálogo ensina o classificador, então um erro antigo ensina o erro — o que for corrigido na tela passa a valer. A medição foi no catálogo do v2; se o da produção for bem diferente, rodar `node scripts/avaliar-classificador.js` em `backend` por lá. Material já classificado não muda (só os novos e os "Não classificado").
+- Teste: `backend/testes/classificadorMateriais.test.js` (trava o acerto do kNN em ≥ 92 %; a medição só roda no banco do v2).
+- Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.13_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_14-21.dump`.
