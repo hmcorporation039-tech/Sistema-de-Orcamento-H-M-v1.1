@@ -2,14 +2,20 @@ const pool = require('../config/database');
 const { classificarPorDescricao } = require('../utils/classificadorMaterial');
 const ia = require('./ia');
 const { termosDaDescricao, indiceJaccard } = require('../utils/semelhancaMateriais');
+const knn = require('../utils/classificadorKnn');
+const { registrarUso } = require('./iaCache');
 
 // Todo material do catálogo tem categoria (regra do usuário, 10/10/2026).
 // A categoria de um material novo sai, nesta ordem, de:
-//   1. NCM igual ao de materiais já classificados (categoria mais comum);
-//   2. material mais parecido já classificado no catálogo — o próprio catálogo,
+//   0. aprendido do catálogo (utils/classificadorKnn.js, item 7 do plano): vizinhos mais próximos das
+//      descrições já classificadas, só quando a confiança passa de CORTE_KNN (medido: ~97 % de acerto
+//      no que responde, scripts/avaliar-classificador.js); abaixo do corte, segue para as etapas abaixo;
+//   1. material mais parecido já classificado no catálogo — o próprio catálogo,
 //      classificado à mão pela H&M, ensina (ex.: "SENSOR MAGNETICO XAS 8000"
 //      vai para Alarme porque "Sensor magnético XAS 8000 (abertura)" está lá);
-//   3. regras de palavras-chave (utils/classificadorMaterial.js);
+//   2. regras de palavras-chave (utils/classificadorMaterial.js);
+//   3. NCM igual ao de materiais já classificados (categoria mais comum) — por último, medido: o NCM
+//      sozinho acerta ~89 % e, na frente das outras etapas, derrubava o acerto do conjunto;
 //   4. IA (cadeia única de services/ia.js: Claude Max → API → Gemini), escolhendo SÓ entre as
 //      categorias que já existem — numa rotina em lote (classificarPendentes),
 //      fora da gravação da proposta ou da varredura.
@@ -20,6 +26,22 @@ const { termosDaDescricao, indiceJaccard } = require('../utils/semelhancaMateria
 const PENDENTES = ['Não classificado', 'Geral', ''];
 const PALAVRAS_VAZIAS = new Set(['DE', 'DA', 'DO', 'DAS', 'DOS', 'P', 'PARA', 'COM', 'C', 'S', 'SEM', 'E', 'EM', 'X', 'A', 'O', 'UN', 'PC', 'PCT']);
 const SIMILARIDADE_MINIMA = 0.5;
+// Medido em 02/11/2026 (20 sorteios de 80 % treino / 20 % teste, 521 materiais): com corte 0,5 o kNN responde
+// ~64 % dos itens e acerta ~97 % do que responde; no conjunto (kNN → NCM → parecido → palavras-chave) o
+// acerto sobe de 91,7 % para ~94 %. O NCM sozinho acerta só ~89 %, por isso vem depois do kNN.
+const CORTE_KNN = 0.5;
+
+// Um modelo por lista de referência (a rotina carrega a referência uma vez e classifica vários itens).
+// A lista pode crescer durante a rotina (catalogoMateriais acrescenta o que acabou de classificar);
+// mudou o tamanho, o modelo é refeito.
+const modelos = new WeakMap();
+function modeloDe(referencia) {
+  const guardado = modelos.get(referencia);
+  if (guardado && guardado.tamanho === referencia.length) return guardado.modelo;
+  const modelo = knn.treinar(referencia);
+  modelos.set(referencia, { tamanho: referencia.length, modelo });
+  return modelo;
+}
 
 // Termos com 2 letras ou mais, a vírgula fica ("2,5" é um termo) e sem as
 // palavras vazias; índice de Jaccard (utils/semelhancaMateriais.js, o mesmo da
@@ -43,20 +65,26 @@ function maisParecido(referencia, descricao) {
   return melhor;
 }
 
-// Categoria sem IA (etapas 1 a 3). Devolve { categoria, criterio } ou null.
+// Categoria sem IA (etapas 0 a 3). Devolve { categoria, criterio } ou null.
 async function categoriaLocal(client, item, referencia) {
-  if (item.ncm) {
+  const ref = referencia || await carregarReferencia(client);
+  const aprendido = knn.classificar(modeloDe(ref), item.descricao);
+  if (aprendido && aprendido.confianca >= CORTE_KNN) {
+    return { categoria: aprendido.categoria, criterio: `aprendido do catálogo (${Math.round(aprendido.confianca * 100)} %), parecido com "${aprendido.vizinhos[0].descricao}"` };
+  }
+  const parecido = maisParecido(ref, item.descricao);
+  if (parecido) return { categoria: parecido.categoria, criterio: `parecido com "${parecido.descricao}"` };
+  const porRegra = classificarPorDescricao(item.descricao);
+  if (porRegra) return { categoria: porRegra, criterio: 'palavras-chave' };
+  // NCM por último: um mesmo NCM serve a categorias diferentes (cabo de cobre é elétrica e é rede) e, no teste,
+  // acertava só ~89 % — passando à frente das outras etapas derrubava o acerto do conjunto de 96 % para 92 %
+  if (item.ncm && client) {
     const r = await client.query(
       `SELECT categoria FROM materiais WHERE ncm = $1 AND ativo = true AND COALESCE(categoria, '') <> ALL($2) GROUP BY categoria ORDER BY count(*) DESC LIMIT 1`,
       [item.ncm, PENDENTES]
     );
     if (r.rows.length) return { categoria: r.rows[0].categoria, criterio: `NCM ${item.ncm}` };
   }
-  const ref = referencia || await carregarReferencia(client);
-  const parecido = maisParecido(ref, item.descricao);
-  if (parecido) return { categoria: parecido.categoria, criterio: `parecido com "${parecido.descricao}"` };
-  const porRegra = classificarPorDescricao(item.descricao);
-  if (porRegra) return { categoria: porRegra, criterio: 'palavras-chave' };
   return null;
 }
 
@@ -104,7 +132,7 @@ async function executar() {
       const c = await categoriaLocal(client, m, referencia);
       if (c) {
         const r = await client.query(SQL_GRAVAR_CATEGORIA, [c.categoria, m.id, PENDENTES]);
-        if (r.rowCount) resumo.classificadosLocal++;
+        if (r.rowCount) { resumo.classificadosLocal++; await registrarUso('classificacao_material', true); }
       } else semLocal.push(m);
     }
     if (semLocal.length) {
@@ -117,7 +145,7 @@ async function executar() {
           for (const m of lote) {
             if (!resultado[m.id]) continue;
             const r = await client.query(SQL_GRAVAR_CATEGORIA, [resultado[m.id], m.id, PENDENTES]);
-            if (r.rowCount) resumo.classificadosIA++;
+            if (r.rowCount) { resumo.classificadosIA++; await registrarUso('classificacao_material', false); }
           }
         } catch (e) {
           resumo.avisos.push(`Classificação por IA indisponível agora (${e.message.slice(0, 160)}) — tenta de novo na próxima rotina`);
@@ -140,4 +168,4 @@ function classificarPendentesEmSegundoPlano() {
   setImmediate(() => classificarPendentes().catch(e => console.error('Classificação de materiais:', e.message)));
 }
 
-module.exports = { categoriaLocal, carregarReferencia, termos, classificarPendentes, classificarPendentesEmSegundoPlano, paraTestes: { similaridade, maisParecido } };
+module.exports = { categoriaLocal, carregarReferencia, termos, classificarPendentes, classificarPendentesEmSegundoPlano, paraTestes: { similaridade, maisParecido, CORTE_KNN } };
