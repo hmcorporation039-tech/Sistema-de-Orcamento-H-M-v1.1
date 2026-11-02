@@ -693,3 +693,17 @@ Só código, sem migração. Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-b
 - **Item 2 (layout de fornecedor) não feito:** contador de IA nas cotações em zero; volta à fila se Integrações mostrar IA frequente.
 - Testes: `mapaCad`, `edicoesDaAnalise` e `notasAprendidas` em `backend/testes` (suíte completa verde no v2).
 - Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.15_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_15-34.dump`.
+
+### 02/11/2026: versão 2.16.0 — atestado por e-mail e de várias notas, nota da proposta, Pix ligado à nota, SINAPI pela pasta e alerta de queda
+**Migração de banco** (idempotente, roda sozinha ao reiniciar o backend): `2.0-30-nota-envio-atestado-recebimento.js` (colunas `notas_fiscais.atestado_enviado_em` e `atestado_enviado_para`, e `financeiro_movimentos.nota_id`). Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-backend.bat` (administrador) e Ctrl+F5.
+- **Atestado por e-mail:** botão "Enviar por e-mail" no modal do atestado manda o Word ao cliente (só o corpo do texto) e registra quando e para quem; a lista de notas mostra "atestado enviado".
+- **Atestado de várias notas:** no mesmo modal, marcar outras notas emitidas do mesmo cliente (até 10) gera um atestado único, com uma linha por nota na comprovação e o valor somado.
+- **Nota da proposta:** botão "Nota da proposta" cria só um RASCUNHO (cliente, valor e local da proposta; serviço fiscal e alíquota da última nota do cliente). Proposta que já tem nota pede confirmação. Emitir continua sendo ato do administrador.
+- **Pix ligado à nota:** menu "Ligar recebimento (Pix)" lista os Pix recebidos de mesmo valor; quem liga é o administrador. A lista mostra "recebido R$ … em …". Não existe contas a receber no sistema: o vínculo é só com o Pix.
+- **SINAPI pela pasta:** rotina `sinapi-pasta` (06:00 e 18:00, ou "Ler agora" em Integrações) importa o zip ou a planilha que o administrador baixa da Caixa e deixa em `<PASTA_ARQUIVOS_SISTEMA>\SINAPI` (`C:\HM-Engenharia\Arquivos do Sistema\SINAPI`); move para `processados` ou `com-erro`. O cartão do SINAPI em Integrações avisa em laranja quando o mês esperado ainda não foi importado (a partir do dia 12 espera-se o mês anterior). O download automático NÃO foi feito: o site da Caixa tem verificação anti-robô.
+- **Preços de mão de obra:** ao abrir um serviço, busca nas composições do SINAPI; "Usar" só preenche a referência "Oficial / governo", e o administrador confere e salva.
+- **Alerta de queda:** `registrar-monitor-saude.bat` (administrador, uma vez) cria no Agendador a tarefa "HM Monitor de Saude" (a cada 5 min, `backend\scripts\monitorar-saude.js`); após 3 falhas seguidas do `/health` manda um e-mail, e outro quando volta. Destino: `ALERTA_EMAIL` ou, sem ele, `EMAIL_IMAP_USER` do `backend\.env`. Roda no mesmo PC: se o PC inteiro cair, ele não avisa.
+- **Armazenamento:** a "leitura original" das análises com mapa do CAD guarda só a chave e os campos editáveis.
+- **Não feito:** item 2 (layout de fornecedor), por falta de dado que o justifique.
+- Testes: `notasExtras`, `monitorSaude`, `edicoesDaAnalise`, `sinapi`, `rotinas` em `backend/testes` (suíte completa verde no v2).
+- Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.16_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_16-28.dump`.
