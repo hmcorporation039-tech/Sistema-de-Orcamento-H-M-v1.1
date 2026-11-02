@@ -9,6 +9,7 @@ const { importarItens } = require('./cotacaoFornecedorService');
 const { classificarPendentes } = require('./classificacaoMateriais');
 const { verificarAutenticidade, listaDoEnv } = require('../utils/autenticidadeEmail');
 const { executarComTrava } = require('./travaJob');
+const iaCache = require('./iaCache');
 
 // Piso fixo: nunca busca e-mails anteriores a essa data. Toda verificação
 // (manual ou agendada) parte sempre daqui, nunca "N dias atrás". O backfill
@@ -182,6 +183,7 @@ async function processarOrcamentosPorEmail(imapClient, dbClient, margem, indice,
       try {
         const leitura = await lerDocumento(anexo.content, anexo.filename || 'anexo', { permitirIA: resumo.leiturasPorIA < MAX_IA_POR_VARREDURA, exigirClienteHM: true });
         if (leitura.usouIA) resumo.leiturasPorIA++;
+        await iaCache.contarLeituraCotacao(leitura);
         if (leitura.pendente) pendente = true;
         if (leitura.itens.length) leituras.push({ anexo, leitura });
       } catch (err) {

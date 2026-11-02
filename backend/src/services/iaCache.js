@@ -24,6 +24,15 @@ async function registrarUso(nome, acerto) {
   ).catch(() => {});
 }
 
+// Leitura de cotação de fornecedor (pasta e e-mail): documento lido só com os leitores locais
+// (layouts conhecidos, universal, OCR) conta como chamada evitada; o que foi para a IA conta
+// como chamada. Documento sem itens e sem IA não entra na conta. Nunca derruba a leitura.
+function contarLeituraCotacao(leitura) {
+  if (leitura?.usouIA) return registrarUso('leitura_cotacao', false);
+  if (leitura?.itens?.length) return registrarUso('leitura_cotacao', true);
+  return Promise.resolve();
+}
+
 // comCache(nome, entrada, { ttlDias, fresco }, () => chamadaÀIA())
 //   → { valor, deCache, criadoEm }. `fresco` ignora o que está guardado (e regrava).
 async function comCache(nome, entrada, { ttlDias, fresco = false } = {}, chamada) {
@@ -71,4 +80,4 @@ async function limparExpirados() {
   return r.rowCount;
 }
 
-module.exports = { comCache, chaveDe, registrarUso, situacao, limparExpirados };
+module.exports = { comCache, chaveDe, registrarUso, contarLeituraCotacao, situacao, limparExpirados };

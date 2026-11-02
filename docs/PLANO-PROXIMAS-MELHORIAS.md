@@ -8,7 +8,7 @@ migração idempotente (CLAUDE.md), backup antes de ir para a produção e só v
 | # | Melhoria | Esforço | Precisa de decisão? | Depende de |
 |---|----------|---------|---------------------|------------|
 | 1 | Cache das chamadas à IA | **feito no v2 (02/11)**; falta levar à produção | Não | — |
-| 2 | Layout de fornecedor aprendido | 1 dia | Não | — |
+| 2 | Layout de fornecedor aprendido (adiado: a IA quase não é usada aqui; contador instalado em 02/11) | 1 dia | Não | uso real de IA nas cotações |
 | 3 | Tela de confirmação do mapa do CAD | 2–3 dias | Não (só o visual) | — |
 | 4 | BDI e impostos ajustáveis (decidido 02/11) | 0,5 dia | Não: sem valor fixo (reforma tributária) | — |
 | 5 | Histórico de preços vendidos | 1 dia | Não | — |
@@ -37,8 +37,11 @@ em projetos parecidos: custo e tempo à toa.
 **Risco:** preço velho aparecer como novo → mostrar "pesquisado há N dias" na tela.
 **Pronto quando:** painel Integrações mostra "acertos de cache" e a economia de chamadas.
 
-## 2. Layout de fornecedor aprendido
-**Problema:** `leitorCotacaoIA.js` lê qualquer layout, mas chama a IA a cada cotação, mesmo do mesmo fornecedor.
+## 2. Layout de fornecedor aprendido  (revisado em 02/11/2026 — ver "Achado")
+**Achado ao começar:** a premissa abaixo não se confirma no código nem nos dados. A leitura já é local primeiro (layouts conhecidos → leitor universal → OCR) e a IA é o último recurso, só quando nada fecha (quantidade × unitário = total e soma batendo com o total do documento). Nos 30 arquivos de fornecedor já registrados no banco do v2, **nenhum usou IA**: 12 saíram por layout conhecido (ADM, ECO, Pedido de venda) e 18 ficaram com 0 itens, lidos pela versão 1 do leitor (a versão atual os relê na próxima varredura; os arquivos não estão mais nas pastas, então não deu para medir). O leitor universal já lê layout novo sem precisar de "aprendizado".
+**Feito no lugar:** a leitura de cotação passou a entrar no contador de Integrações (`leitura_cotacao`: lida só com leitores locais = chamada evitada; foi para a IA = chamada). Com alguns meses de uso, o contador mostra se existe IA a economizar aqui.
+**Decisão:** só construir o aprendizado de layout se o contador mostrar IA frequente nas cotações. Até lá, o esforço rende mais nos itens 4, 3 e 5.
+**Problema (texto original):** `leitorCotacaoIA.js` lê qualquer layout, mas chama a IA a cada cotação, mesmo do mesmo fornecedor.
 **Como:**
 - Tabela `fornecedor_layouts` (`fornecedor_id`, `assinatura` do cabeçalho, `mapa_colunas` jsonb, `usos`, `ultima_vez`).
 - Depois de uma leitura bem-sucedida (confirmada pelo usuário), grava o mapeamento de colunas.

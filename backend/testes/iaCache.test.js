@@ -70,6 +70,16 @@ const NOME_EXT = 'equipamentos_projeto v1';
     assert.strictEqual(s.evitadas, s.acertos);
     assert.ok(s.taxa >= 0 && s.taxa <= 100);
 
+    // leitura de cotação: lida só com leitores locais = evitada; foi para a IA = chamada; vazia = fora da conta
+    const lido = async () => (await iaCache.situacao(1)).funcoes.find(f => f.nome === 'leitura_cotacao') || { acertos: 0, chamadas: 0 };
+    const u0 = await lido();
+    await iaCache.contarLeituraCotacao({ itens: [{}], usouIA: false });
+    await iaCache.contarLeituraCotacao({ itens: [{}], usouIA: true });
+    await iaCache.contarLeituraCotacao({ itens: [], usouIA: false });
+    const u1 = await lido();
+    assert.deepStrictEqual([u1.acertos - u0.acertos, u1.chamadas - u0.chamadas], [1, 1]);
+    await pool.query("UPDATE ia_cache_uso SET acertos = acertos - 1, chamadas = chamadas - 1 WHERE nome = 'leitura_cotacao' AND dia = CURRENT_DATE"); // devolve a contagem real
+
     // extrator de equipamentos: mesmo texto de projeto não chama a IA duas vezes; erro cai no aviso
     const { extrairEquipamentosComIA } = require('../src/services/equipamentoExtratorIA');
     const orig = { perguntarJSON: ia.perguntarJSON, disponivel: ia.disponivel };
