@@ -24,6 +24,18 @@ const { CAD } = require('../../config/caminhos');
 const { BLOCOS_HM, disciplinaDaLayer, disciplinaDoBloco, disciplinaDoTexto, semPrefixoDeDisciplina, alturaDoTexto } = require(path.join(CAD, 'disciplinasCad.js'));
 const { retanguloMinimo } = require(path.join(CAD, 'geometriaCad.js'));
 const { medirTrechos } = require('./medidasInfra');
+// Ponto lido do desenho (símbolo explodido) → descrição do item: a linha da legenda do
+// projeto quando houver ("Tomada alta a 2,20m do piso"), senão o nome do símbolo na
+// biblioteca da H&M (skills/_comum/cad/simbolos.js), sem a altura típica
+const { SIMBOLOS } = require(path.join(CAD, 'simbolos.js'));
+const NOME_EXTRA = { 'HM-ILU-POSTE': 'Poste de iluminação', 'HM-ELE-CAIXA-PISO': 'Caixa de passagem no piso', 'HM-ELE-PONTO': 'Ponto de parede (tomada/interruptor — conferir na legenda)' };
+function descricaoDoPonto(pt) {
+  const proprio = String(pt.rotulo || '').replace(/\s*\(nota do projeto:.*$/, '').trim();
+  if (proprio && !/^(Tomada|Interruptor|Ponto)$/.test(proprio)) return proprio.slice(0, 120);
+  return (SIMBOLOS[pt.simbolo]?.legenda || NOME_EXTRA[pt.simbolo] || proprio || pt.simbolo).replace(/\s*\(h = [^)]*\)/, '');
+}
+// disciplina do 3D (cor da peça) → disciplina do sistema
+const DISCIPLINA_DO_3D = { 'controle-acesso': 'controle_acesso', 'iluminacao-externa': 'iluminacao', veicular: 'carregador' };
 
 const RE_CAD = /\.(dwg|dxf)$/i;
 const ehArquivoCad = (nome) => RE_CAD.test(String(nome || ''));
@@ -33,11 +45,11 @@ const RE_LAYER_LINHA = 'ELETRODUT|ELETROCALHA|PERFILADO|LEITO|CONDU[IÍ]TE|CONDU
 const TEMPO_LIMITE_MS = 180 * 1000;
 
 // worker com fila global (services/executarNoWorker.js): no máximo 2 leituras de CAD ao mesmo tempo
-async function lerNoWorker(buffer, nome) {
+async function lerNoWorker(buffer, nome, aprendidos = []) {
   let m;
   try {
     m = await executarNoWorker(path.join(__dirname, 'worker.js'),
-      { buffer, nome, reLayerLinha: RE_LAYER_LINHA }, { tempoLimiteMs: TEMPO_LIMITE_MS, memoriaMb: 2048 });
+      { buffer, nome, reLayerLinha: RE_LAYER_LINHA, aprendidos }, { tempoLimiteMs: TEMPO_LIMITE_MS, memoriaMb: 2048 });
   } catch (e) {
     if (e.codigo === 'TEMPO_ESGOTADO') throw new Error(`a leitura de "${nome}" passou de ${TEMPO_LIMITE_MS / 1000} s`);
     throw e;
@@ -200,8 +212,9 @@ function alturasDoGrupo(g, d) {
 // Lê o arquivo e devolve, no formato da análise do PDF:
 //   { analise, pagina (contagem pelo desenho), pontosPorAmbiente, arquitetura (para o 3D), espacial }
 // pagina: { itens, rotas, naoIdentificados, legendaItens, conferenciaLegenda, xrefsDeOutraDisciplina, outraArea, … }
-async function lerArquivoCad(buffer, nome) {
-  const r = await lerNoWorker(buffer, nome);
+// opcoes.aprendidos: legenda de projetos anteriores (services/simbolosAprendidos.js)
+async function lerArquivoCad(buffer, nome, opcoes = {}) {
+  const r = await lerNoWorker(buffer, nome, opcoes.aprendidos || []);
   const p = r.projeto;
   const analise = analisarTexto(p.texto, nome);
   // ambientes com área real da arquitetura (o rótulo "A=" do texto fica de reserva):
@@ -272,6 +285,32 @@ async function lerArquivoCad(buffer, nome) {
     }
     g.posicoes.forEach(([x, y], i) => pontos.push({ x, y, descricao: d.descricao, disciplina: d.disciplina, classe: classeDoComponente(d.descricao), altura_m: alts[i].altura_m, montagem: alts[i].montagem }));
   }
+  // Símbolos EXPLODIDOS (QiBuilder/AltoQi, PDF convertido em DWG): sem bloco, o desenho
+  // ainda tem os pontos — lidos pela layer, pela medida e pela legenda da prancha (o mesmo
+  // leitor do 3D: skills/_comum/cad/pontosDoDesenho.js). Antes a análise saía com 0 itens e
+  // o 3D com todos; agora entram no orçamento, marcados para conferir.
+  const doDesenho = [];
+  if (!itens.some(it => it.tipo === 'simbolo') && r.desenho?.pontos?.length) {
+    const grupos = new Map();
+    for (const pt of r.desenho.pontos) {
+      if (!naPlanta([pt.x, pt.y])) continue;
+      const descricao = descricaoDoPonto(pt);
+      const disciplina = DISCIPLINA_DO_3D[pt.disciplina] || pt.disciplina || 'eletrica';
+      const k = `${descricao}|${disciplina}|${pt.altura_m ?? ''}`;
+      const g = grupos.get(k) || grupos.set(k, { descricao, disciplina, simbolo: pt.simbolo, altura_m: Number(pt.altura_m) > 0 ? Number(pt.altura_m) : null, alturaDe: pt.alturaDe || null, posicoes: [] }).get(k);
+      g.posicoes.push([pt.x, pt.y]);
+    }
+    for (const g of grupos.values()) {
+      const montagem = /LUMINARIA|PONTO-LUZ|DETECTOR|SENSOR|CAB-AP|CAPTOR|CAMERA/.test(g.simbolo) ? 'teto' : g.altura_m ? 'parede' : null;
+      itens.push({
+        tipo: 'simbolo', descricao: g.descricao, quantidade: g.posicoes.length, disciplina: g.disciplina, origemDescricao: 'desenho',
+        bloco: g.simbolo, layer: '', posicoes: g.posicoes, ambiguo: true, conferir: true,
+        ...(g.altura_m ? { altura_m: g.altura_m, montagem: montagem || 'parede', alturaDe: g.alturaDe } : montagem ? { montagem } : {}),
+      });
+      doDesenho.push(g);
+      g.posicoes.forEach(([x, y]) => pontos.push({ x, y, descricao: g.descricao, disciplina: g.disciplina, classe: classeDoComponente(g.descricao), altura_m: g.altura_m, montagem }));
+    }
+  }
   for (const l of p.linhas) {
     const d = descreverLinha(l);
     if (xrefOutra(l.xref)) { anotarXref(l.xref, 'metros', l.metros); continue; }
@@ -307,7 +346,7 @@ async function lerArquivoCad(buffer, nome) {
   }
 
   // DWG que é PDF convertido (só traços, sem texto nem bloco) ou vazio
-  const vazio = !p.texto.replace(/\s/g, '').length && !p.simbolos.length;
+  const vazio = !p.texto.replace(/\s/g, '').length && !p.simbolos.length && !doDesenho.length;
   analise.semTexto = vazio;
   analise.origemCad = { formato: r.origem, versao: r.versao, legenda: p.legenda };
   const pagina = {
@@ -320,6 +359,12 @@ async function lerArquivoCad(buffer, nome) {
     ...(deOutraDisciplina.size ? { xrefsDeOutraDisciplina: [...deOutraDisciplina.values()].map(x => ({ ...x, metros: Math.round(x.metros * 10) / 10 })) } : {}),
     ...(vazio ? { aviso: 'o desenho não tem texto nem blocos (parece um PDF convertido em DWG, só com traços) — envie o PDF do projeto' } : {}),
   };
+  const avisos = [
+    r.avisoUnidade,
+    doDesenho.length ? `${doDesenho.reduce((s, g) => s + g.posicoes.length, 0)} pontos lidos dos símbolos desenhados (blocos explodidos), pela layer, pela medida e pela legenda da prancha — [CONFERIR] as quantidades` : null,
+    r.desenho?.erro ? `leitura dos símbolos desenhados falhou: ${r.desenho.erro}` : null,
+  ].filter(Boolean);
+  if (avisos.length) pagina.aviso = [pagina.aviso, ...avisos].filter(Boolean).join('; ');
   const arquitetura = r.arquitetura?.ambientes?.length ? {
     nome_arquivo: nome, dxf: r.dxf,
     // base do 3D só se o desenho tem planta (services/compatibilizacaoAnalise.js)
@@ -350,7 +395,8 @@ async function lerArquivoCad(buffer, nome) {
       p.linhas.filter(l => !xrefOutra(l.xref)).map(l => ({ layer: l.layer, disciplina: descreverLinha(l).disciplina, segmentos: l.segmentos || [] })).filter(t => t.segmentos.length),
       p.textosMedida || []),
   };
-  return { analise, pagina, pontosPorAmbiente, arquitetura, espacial };
+  // o que a legenda das pranchas ensinou (services/simbolosAprendidos.js grava)
+  return { analise, pagina, pontosPorAmbiente, arquitetura, espacial, aprendizado: { legenda: r.desenho?.legenda || [] } };
 }
 
 // Classe do componente para as regras de afastamento da compatibilização

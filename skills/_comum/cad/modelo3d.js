@@ -945,8 +945,10 @@ function montarCena(arquitetura, opcoes = {}) {
   const grandes = []; // quadros, racks e centrais já postos (para não sobrepor)
   const indiceAmb = new Map();
   ambs.forEach((a, i) => { if (!indiceAmb.has(a.nome)) indiceAmb.set(a.nome, i); });
-  for (const d of opcoes.dispositivos || []) {
-    if (!naCaixa(expandir(caixa, 1), [d.x, d.y])) continue;
+  for (const d0 of opcoes.dispositivos || []) {
+    if (!naCaixa(expandir(caixa, 1), [d0.x, d0.y])) continue;
+    // nota do projeto "h = 20 cm abaixo do forro" (./pontosDoDesenho.js): conta do pé-direito
+    const d = Number(d0.abaixoDoForro_m) > 0 ? { ...d0, altura_m: r2(Math.max(0.1, peDireito - Number(d0.abaixoDoForro_m))) } : d0;
     const disc = d.disciplina || disciplinaDoSimbolo(d.simbolo);
     // componente do projeto recebido vem com a descrição dele (d.rotulo): um tipo
     // por descrição — "Detector de fumaça DFE 521", não só "Detector"

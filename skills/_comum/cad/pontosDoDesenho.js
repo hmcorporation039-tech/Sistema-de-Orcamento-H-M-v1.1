@@ -20,23 +20,27 @@
 const { dentro } = require('./arquitetura');
 const { ESPEC } = require('./modelo3d');
 const { tipoDoAmbiente } = require('./estimativaArquitetura');
+const { TIPOS, familia, tipoPelaLayer, tipoPeloTexto, metros, tomadaPelaAltura, DE_PAREDE } = require('./tiposDePonto');
 
 const MAIOR_SIMBOLO_M = 3; // grupo maior que isso é traçado, não símbolo
 const COLA_M = 0.05;       // traços a até 5 cm um do outro são do mesmo símbolo
 // layers de instalação (o resto — arquitetura, prancha — não tem pontos)
-const RE_INSTALACAO = /^PDF-COR-|^(EL|ELE|IFC|P|INC|CFTV|TEL|SPDA|PCI|HID)[-_ ]|SIMB|L[ÂA]MP|LUMIN|TOMAD|INTERRUP|CAIXA|QUADRO|POSTE|REFLET|PROJETOR|DETEC|C[ÂA]MERA|SENSOR|CONDUT|ELETROD|ELETROCALHA|LEITO|PERFILADO/i;
+const RE_INSTALACAO = /^PDF-COR-|^(EL|ELE|IFC|P|INC|CFTV|TEL|SPDA|PCI|HID|CAB|ACE|ALM|ANT|AUT|FV|VE|ILU)[-_ ]|SIMB|L[ÂA]MP|LUMIN|TOMAD|INTERRUP|CAIXA|QUADRO|POSTE|REFLET|PROJETOR|DETEC|C[ÂA]MERA|SENSOR|CONDUT|ELETROD|ELETROCALHA|LEITO|PERFILADO|EMERG|BALIZ|ACION|AVISAD|SIREN|CENTRAL|RACK|PORTEIRO|TELEF|INTERF|ANTENA|LEITOR|FECHAD|BOTOEIRA|CATRACA|\bIVP\b|INFRAV|MAGN[EÉ]T|TECLADO|CAPTOR|DESCIDA|INSPE[ÇC]|CARREG|WALLBOX|INVERSOR|FUMA[ÇC]|(^|[-_ ])(REDE|L[ÓO]GICA|DADOS|RJ.?45|WI.?FI|TV)([-_ ]|$)/i;
 const RE_FORA = /FIOS?\b|TEXTO|TXT|DIAGRAM|^DI[-_ ]|BARRAMENTO|UNIFILAR|TABELA|CONEX[ÕO]ES|MARGEM|PRANCHA|CONTORNO\d|HATCH|HACH|COTA/i;
 const RE_TRECHO = /CONDUT|ELETROD|ELETROCALHA|LEITO|PERFILADO/i;
+
+// tipos de ponto de todas as disciplinas, a altura escrita e a tomada pela altura: ./tiposDePonto.js
+const RE_SO_CONTORNO = /IFC|CONTORNO|CAIXA/i;
 
 // sugestão pelo nome da layer (na skill o engenheiro confere: é proposta, não leitura)
 function sugestao(layer, medida, externo) {
   const [L, W] = medida;
-  // no projeto elétrico (layer EL-…) a luminária usa os eletrodutos da elétrica desenhados junto
-  if (/L[ÂA]MP|LUMIN|REFLET|PROJETOR/i.test(layer)) return { simbolo: 'HM-ILU-LUMINARIA', disciplina: /^(EL|ELE|IFC)[-_ ]/i.test(layer) ? 'eletrica' : 'iluminacao' };
-  if (/POSTE/i.test(layer)) return { simbolo: 'HM-ILU-POSTE', disciplina: 'iluminacao-externa' };
-  if (/TOMAD/i.test(layer)) return { simbolo: 'HM-ELE-TOMADA-BAIXA', disciplina: 'eletrica' };
-  if (/INTERRUP/i.test(layer)) return { simbolo: 'HM-ELE-INTERRUPTOR', disciplina: 'eletrica' };
-  if (/QUADRO/i.test(layer)) return { simbolo: 'HM-ELE-QUADRO', disciplina: 'eletrica' };
+  const t = tipoPelaLayer(layer);
+  if (t) {
+    // no projeto elétrico (layer EL-…) a luminária usa os eletrodutos da elétrica desenhados junto
+    if (t[2] === 'HM-ILU-LUMINARIA') return { simbolo: t[2], disciplina: /^(EL|ELE|IFC)[-_ ]/i.test(layer) ? 'eletrica' : 'iluminacao' };
+    return { simbolo: t[2], disciplina: t[3] };
+  }
   if (/CAIXA/i.test(layer) && externo && L >= 0.1) return { simbolo: 'HM-ELE-CAIXA-PISO', disciplina: 'iluminacao-externa' };
   // traço comprido e fino FORA das salas (estacionamento, quadra): poste com braço
   if (externo && L >= 0.8 && L <= 3 && W <= 0.25) return { simbolo: 'HM-ILU-POSTE', disciplina: 'iluminacao-externa' };
@@ -121,9 +125,121 @@ function contexto(arq) {
   return { ambienteDe, ehExterno, porLayer };
 }
 
-// Mapa proposto: cada layer de instalação → tipos de símbolo (medida × quantidade) e traçados
-function propostaDeMapa(arq) {
+// ── Alturas do projeto ──────────────────────────────────────────────────────
+// Pedido do usuário (01/11/2026): as tomadas dos chuveiros do vestiário da Arena
+// saíam a 0,30 m — a legenda diz "Tomada alta a 2,20m do piso". No QiBuilder o
+// triângulo da tomada é o mesmo traço nas três alturas; o que muda é o
+// PREENCHIMENTO (vazio = baixa, meio cheio = média, cheio = alta). Então cada
+// símbolo da planta é comparado com os da legenda pela fração preenchida e pela
+// proporção, e a nota escrita ao lado do ponto ("altura: 97,5 cm", "h= 20 cm
+// abaixo do forro") vale sobre a legenda.
+const RE_ALTURA_LEGENDA = /([0-9]+(?:[.,][0-9]+)?)\s*(cm|m)\s*do\s+piso/i;
+const RE_ALTURA_NOTA = /(?:\bh\s*=|\baltura\b\s*:?)\s*([0-9]+(?:[.,][0-9]+)?)\s*(cm|m)?/i;
+const areaPol = (pts) => Math.abs(pts.reduce((s, p, i) => { const q = pts[(i + 1) % pts.length]; return s + p[0] * q[1] - q[0] * p[1]; }, 0)) / 2;
+
+// fração da caixa do símbolo coberta por preenchimento sólido da mesma layer
+function fracaoPreenchida(s, layer, preenchimentos) {
+  const area = (s.caixa[2] - s.caixa[0]) * (s.caixa[3] - s.caixa[1]);
+  if (!(area > 0) || !preenchimentos?.length) return 0;
+  let cheio = 0;
+  for (const p of preenchimentos) {
+    if (p.layer !== layer) continue;
+    const c = p.pts.reduce((a, q) => [a[0] + q[0] / p.pts.length, a[1] + q[1] / p.pts.length], [0, 0]);
+    if (c[0] >= s.caixa[0] - COLA_M && c[0] <= s.caixa[2] + COLA_M && c[1] >= s.caixa[1] - COLA_M && c[1] <= s.caixa[3] + COLA_M) cheio += areaPol(p.pts);
+  }
+  return Math.min(1, cheio / area);
+}
+
+// legenda → [{ layer, medida, fracao, simbolo, disciplina, altura_m?, texto }]: cada símbolo
+// da legenda fica com o texto mais perto à sua direita, na mesma linha. O TEXTO diz o tipo
+// (qualquer disciplina) e a altura ("… a 2,20m do piso"). Layer de nome claro só aceita
+// texto do mesmo tipo (a luminária da linha de cima não pega a altura do interruptor).
+function legendaDoProjeto(arq) {
+  const textos = (arq.notas || []).filter(n => n.legenda && tipoPeloTexto(n.s));
+  if (!textos.length || !arq.simbolosDaLegenda?.length) return [];
+  const porLayer = new Map();
+  for (const r of arq.simbolosDaLegenda) {
+    if (!RE_INSTALACAO.test(r.layer || '') || RE_FORA.test(r.layer || '') || RE_TRECHO.test(r.layer || '')) continue;
+    if (!porLayer.has(r.layer)) porLayer.set(r.layer, []);
+    porLayer.get(r.layer).push(r);
+  }
+  const out = [];
+  for (const [layer, refs] of porLayer) {
+    const daLayer = tipoPelaLayer(layer);
+    if (!daLayer && RE_SO_CONTORNO.test(layer)) continue;
+    for (const s of agrupar(refs)) {
+      const t = textos.filter(n => s.centro[0] >= n.x - 4 && s.centro[0] <= n.x + 0.1 && Math.abs(s.centro[1] - n.y) <= 1)
+        .filter(n => !daLayer || familia(tipoPeloTexto(n.s)[2]) === familia(daLayer[2]))
+        .sort((a, b) => Math.abs(a.y - s.centro[1]) - Math.abs(b.y - s.centro[1]))[0];
+      if (!t) continue;
+      const [, , simbolo, disciplina] = tipoPeloTexto(t.s);
+      const m = RE_ALTURA_LEGENDA.exec(t.s);
+      const altura_m = m ? r2(metros(m[1], m[2])) : undefined;
+      out.push({
+        layer, medida: s.medida.map(r2), fracao: r2(fracaoPreenchida(s, layer, arq.preenchimentos)),
+        simbolo: /TOMADA/.test(simbolo) && altura_m ? tomadaPelaAltura(altura_m) : simbolo, disciplina,
+        ...(altura_m ? { altura_m } : {}), texto: t.s.slice(0, 120),
+      });
+    }
+  }
+  return out;
+}
+const legendaDeAlturas = (arq) => legendaDoProjeto(arq).filter(l => l.altura_m);
+
+// o tipo da planta na legenda: mesma layer, mesma fração preenchida e mesma proporção
+// (a planta pode estar noutra escala). Dois tipos ou duas alturas possíveis: nenhum (fica [CONFERIR]).
+function daLegenda(legenda, layer, medida, fracao) {
+  const prop = (m) => m[1] / m[0];
+  const cand = legenda.filter(l => l.layer.toUpperCase() === layer.toUpperCase() && Math.abs(l.fracao - fracao) <= 0.08 && Math.abs(prop(l.medida) - prop(medida)) <= 0.15 * prop(l.medida));
+  const chaves = new Set(cand.map(l => `${familia(l.simbolo)}|${l.altura_m || ''}`));
+  return chaves.size === 1 ? cand.sort((a, b) => Math.abs(a.medida[0] - medida[0]) - Math.abs(b.medida[0] - medida[0]))[0] : null;
+}
+
+
+// nota escrita ao lado do ponto ("Tomada de espelho altura: 97,5 cm", "h= 20 cm abaixo
+// do forro"): vale para o ponto de parede mais perto (até 1,5 m)
+function aplicarNotas(arq, pontos) {
+  for (const n of arq.notas || []) {
+    if (n.legenda) continue;
+    const m = RE_ALTURA_NOTA.exec(n.s);
+    // "altura do forro: 3,00 m", "pé-direito h=2,80": é do ambiente, não do ponto
+    if (!m || (/forro|p[ée].?direito|\bteto\b|\blaje\b/i.test(n.s) && !/abaixo\s+do\s+forro/i.test(n.s))) continue;
+    const alvo = pontos.filter(p => DE_PAREDE.test(p.simbolo)).map(p => [p, Math.hypot(p.x - n.x, p.y - n.y)]).filter(([, d]) => d <= 1.5).sort((a, b) => a[1] - b[1])[0]?.[0];
+    if (!alvo) continue;
+    const h = r2(metros(m[1], m[2]));
+    if (!(h > 0 && h < 10)) continue;
+    delete alvo.altura_m; delete alvo.abaixoDoForro_m;
+    if (/abaixo\s+do\s+forro/i.test(n.s)) alvo.abaixoDoForro_m = h;
+    else alvo.altura_m = h;
+    if (/TOMADA/.test(alvo.simbolo)) alvo.simbolo = alvo.altura_m ? tomadaPelaAltura(alvo.altura_m) : 'HM-ELE-TOMADA-ALTA';
+    alvo.rotulo = `${/TOMADA/.test(alvo.simbolo) ? 'Tomada' : /INTERRUPTOR/.test(alvo.simbolo) ? 'Interruptor' : (alvo.rotulo || 'Ponto').replace(/\s*\(nota do projeto:.*$/, '')} (nota do projeto: ${n.s})`.slice(0, 100);
+    alvo.alturaDe = 'nota';
+  }
+  // a nota pode ter trocado o tipo (baixa → média): numeração de novo, por tipo
+  const cont = new Map();
+  for (const p of pontos) {
+    const n = (cont.get(p.simbolo) || 0) + 1;
+    cont.set(p.simbolo, n);
+    p.id = `${p.simbolo.replace(/^HM-[A-Z]+-/, '')}-${n}`;
+  }
+}
+
+// Mapa proposto: cada layer de instalação → tipos de símbolo (medida × quantidade) e traçados.
+// opcoes.aprendidos: a legenda lida em projetos anteriores (backend: tabela cad_simbolos_aprendidos),
+// usada só na layer que não tem legenda neste desenho — o sistema aprende a cada projeto.
+function propostaDeMapa(arq, opcoes = {}) {
   const { ehExterno, porLayer } = contexto(arq);
+  const legendaDaqui = legendaDoProjeto(arq);
+  const comLegenda = new Set(legendaDaqui.map(l => l.layer.toUpperCase()));
+  const legenda = [...legendaDaqui, ...(opcoes.aprendidos || []).filter(l => l?.layer && Array.isArray(l.medida) && !comLegenda.has(l.layer.toUpperCase())).map(l => ({ ...l, aprendido: true }))];
+  // símbolo da layer → tipo da legenda (do mesmo aparelho: tomada continua tomada)
+  const pelaLegenda = (layer, sug, t) => {
+    if (RE_PDF_COR.test(layer)) return null;
+    const l = daLegenda(legenda, layer, t.medida, t.fracao);
+    if (!l) return null;
+    if (sug ? familia(l.simbolo) !== familia(sug.simbolo) : RE_SO_CONTORNO.test(layer)) return null;
+    return l;
+  };
   const simbolos = [];
   const trechos = [];
   for (const [layer, refs] of [...porLayer].sort((a, b) => a[0].localeCompare(b[0]))) {
@@ -148,27 +264,38 @@ function propostaDeMapa(arq) {
       ehTracado = L >= 3 && L >= 0.5 * total;
       if (ehTracado) trechos.push({ layer, tipo: 'eletroduto', disciplina: 'eletrica', foraDosSimbolos: true, ...(/TRACEJADO/.test(layer) || picado ? { altura: 0.04 } : {}), comprimento_m: r2(L) });
     }
-    // tipos de símbolo da layer: medidas parecidas (±3 cm) juntas
+    // tipos de símbolo da layer: medidas parecidas (±3 cm) e o mesmo preenchimento juntos
+    const cheios = !pdf && (arq.preenchimentos || []).some(p => p.layer === layer);
     const tipos = [];
     for (const s of agrupar(refs)) {
       if (pdf && !simboloPdf(s)) continue;
-      let t = tipos.find(x => mesmaMedida(x.medida, s.medida, 0.03));
-      if (!t) tipos.push(t = { medida: s.medida, itens: [] });
+      const fracao = fracaoPreenchida(s, layer, arq.preenchimentos);
+      let t = tipos.find(x => mesmaMedida(x.medida, s.medida, 0.03) && Math.abs(x.fracao - fracao) <= 0.08);
+      if (!t) tipos.push(t = { medida: s.medida, fracao, itens: [] });
       t.itens.push(s);
     }
     // símbolo isolado só entra se o nome da layer diz o que é (o quadro geral costuma ser um só)
     // (no PDF, sem nome de layer, só o que se repete)
-    const mais = (x) => x.itens.length >= 2 || (!pdf && !!sugestao(layer, x.medida, x.itens.every(q => ehExterno(q.centro))));
-    for (const t of tipos.filter(mais).sort((a, b) => b.itens.length - a.itens.length).slice(0, 6)) {
+    const mais = (x) => x.itens.length >= 2 || (!pdf && (!!sugestao(layer, x.medida, x.itens.every(q => ehExterno(q.centro))) || !!pelaLegenda(layer, null, x)));
+    for (const t of tipos.filter(mais).sort((a, b) => b.itens.length - a.itens.length).slice(0, 8)) {
       // área externa: fora das salas, ou em ambiente externo (estacionamento, quadra, pátio)
       const fora = t.itens.filter(s => ehExterno(s.centro)).length;
       const circular = t.itens.filter(q => redondo(q, refs)).length > t.itens.length / 2;
       // na cor que é traçado, as marcas miúdas são setas e indicações do eletroduto: só o círculo (luminária) vira ponto
       let sug = pdf ? sugestaoPdf(t.medida, fora > t.itens.length / 2, circular) : sugestao(layer, t.medida, fora > t.itens.length / 2);
       if (pdf && ehTracado && sug?.simbolo !== 'HM-ILU-LUMINARIA') sug = null;
+      // tipo e altura pela legenda do projeto (tomada alta/média/baixa, interruptor a 1,20 m;
+      // layer genérica "SIMBOLOS" com "Detector de fumaça" ao lado na legenda)
+      const leg = pelaLegenda(layer, sug, t);
+      if (leg) sug = { simbolo: leg.simbolo, disciplina: sug?.disciplina || leg.disciplina, rotulo: leg.texto };
       // o mesmo aparelho desenhado em duas layers (símbolo + contorno IFC): conta uma vez só
-      if (sug && simbolos.some(o => o.simbolo === sug.simbolo && o.quantidade === t.itens.length)) sug = null;
-      simbolos.push({ layer, medida: t.medida.map(r2), quantidade: t.itens.length, fora, simbolo: sug ? sug.simbolo : '?', rotulo: sug?.rotulo || '', disciplina: sug ? sug.disciplina : '', ...(sug && sug.simbolo === 'HM-ELE-CAIXA-PISO' && !pdf ? { area: 'externa' } : {}) });
+      if (sug && simbolos.some(o => o.layer !== layer && o.simbolo === sug.simbolo && o.quantidade === t.itens.length)) sug = null;
+      simbolos.push({
+        layer, medida: t.medida.map(r2), quantidade: t.itens.length, fora, simbolo: sug ? sug.simbolo : '?', rotulo: sug?.rotulo || '', disciplina: sug ? sug.disciplina : '',
+        // layer com preenchimento: o tipo vale só para os símbolos com a mesma fração (aplicarMapa)
+        ...(cheios ? { preenchimento: r2(t.fracao) } : {}), ...(leg?.altura_m ? { altura_m: leg.altura_m, alturaDe: leg.aprendido ? 'aprendido' : 'legenda' } : {}), ...(leg ? { tipoDe: leg.aprendido ? 'aprendido' : 'legenda' } : {}),
+        ...(sug && sug.simbolo === 'HM-ELE-CAIXA-PISO' && !pdf ? { area: 'externa' } : {}),
+      });
     }
   }
   return { simbolos, trechos };
@@ -187,6 +314,7 @@ function aplicarMapa(arq, mapa) {
     const pdf = RE_PDF_COR.test(m.layer);
     for (const s of agrupar(porLayer.get(m.layer) || [])) {
       if (!mesmaMedida(s.medida, medida, tol) || (pdf && !simboloPdf(s))) continue;
+      if (Number.isFinite(m.preenchimento) && Math.abs(fracaoPreenchida(s, m.layer, arq.preenchimentos) - m.preenchimento) > 0.08) continue;
       if (m.area === 'externa' && !ehExterno(s.centro)) continue;
       if (m.area === 'interna' && ehExterno(s.centro)) continue;
       // o mesmo aparelho em pedaços (quadro desenhado em partes) ou em duas layers
@@ -198,10 +326,11 @@ function aplicarMapa(arq, mapa) {
       pontos.push({
         id: `${m.simbolo.replace(/^HM-[A-Z]+-/, '')}-${n}`, simbolo: m.simbolo, x: r2(s.centro[0]), y: r2(s.centro[1]),
         ...(m.rotulo || ROTULO_PADRAO[m.simbolo] ? { rotulo: m.rotulo || ROTULO_PADRAO[m.simbolo] } : {}), ...(m.disciplina ? { disciplina: m.disciplina } : {}),
-        ...(Number(m.altura_m) > 0 ? { altura_m: Number(m.altura_m) } : {}), ambiente: amb ? amb.nome : '',
+        ...(Number(m.altura_m) > 0 ? { altura_m: Number(m.altura_m), alturaDe: m.alturaDe || 'mapa' } : {}), ambiente: amb ? amb.nome : '',
       });
     }
   }
+  aplicarNotas(arq, pontos);
   const trechos = [];
   for (const t of mapa.trechos || []) {
     const segmentos = [];
@@ -219,6 +348,6 @@ function aplicarMapa(arq, mapa) {
   return { pontos, trechos };
 }
 
-const pontosDoDesenho = (arq) => aplicarMapa(arq, propostaDeMapa(arq));
+const pontosDoDesenho = (arq, opcoes = {}) => aplicarMapa(arq, propostaDeMapa(arq, opcoes));
 
-module.exports = { pontosDoDesenho, propostaDeMapa, aplicarMapa, agrupar, sugestao, sugestaoPdf, RE_INSTALACAO, RE_FORA, RE_TRECHO, RE_PDF_COR };
+module.exports = { pontosDoDesenho, propostaDeMapa, aplicarMapa, agrupar, sugestao, sugestaoPdf, legendaDoProjeto, legendaDeAlturas, fracaoPreenchida, tomadaPelaAltura, metros, DE_PAREDE, TIPOS, RE_INSTALACAO, RE_FORA, RE_TRECHO, RE_PDF_COR };

@@ -427,6 +427,38 @@ caso('PDF convertido: cor que é traçado vira eletroduto (tracejado no piso); c
   assert.strictEqual(trechos.find(t => t.layer === 'PDF-COR-FF7F00').segmentos.length, 4);
 });
 
+caso('altura da tomada pela legenda (preenchimento do triângulo) e pela nota ao lado do ponto', () => {
+  // triângulo do QiBuilder (0,5 × 0,4) explodido em 3 traços; alta = cheio, média = meio, baixa = vazio
+  const tri = (x, y) => [[[x, y], [x + 0.5, y + 0.2]], [[x + 0.5, y + 0.2], [x, y + 0.4]], [[x, y + 0.4], [x, y]]].map(pts => ({ tipo: 'linha', layer: 'EL-Tomadas', pts }));
+  const cheio = (x, y, f) => ({ layer: 'EL-Tomadas', pts: [[x, y], [x + 0.5 * f, y], [x + 0.5 * f, y + 0.4], [x, y + 0.4]] });
+  const referencia = [], preenchimentos = [], simbolosDaLegenda = [];
+  // legenda (fora da planta): símbolo à esquerda do texto
+  simbolosDaLegenda.push(...tri(100, 0), ...tri(100, -1), ...tri(100, -2));
+  preenchimentos.push(cheio(100, 0, 0.8), cheio(100, -2, 0.4));
+  const notas = [
+    { s: 'Tomada alta a 2,20m do piso', x: 101, y: 0.2, legenda: true },
+    { s: 'Tomada baixa a 0,30m do piso', x: 101, y: -0.8, legenda: true },
+    { s: 'Tomada média a 1,20m do piso', x: 101, y: -1.8, legenda: true },
+  ];
+  // planta: 2 altas (chuveiros), 2 baixas, 1 média; uma baixa com nota "altura: 97,5 cm" e uma alta "20 cm abaixo do forro"
+  for (const [x, f] of [[1, 0.8], [3, 0.8], [5, 0], [7, 0], [9, 0.4]]) { referencia.push(...tri(x, 1)); if (f) preenchimentos.push(cheio(x, 1, f)); }
+  notas.push({ s: 'Tomada de espelho altura: 97,5 cm', x: 7.2, y: 1.8 }, { s: 'h= 20 cm abaixo do forro', x: 3.2, y: 1.8 });
+  const arqT = { ambientes: [], referencia, preenchimentos, simbolosDaLegenda, notas };
+  const mapa = propostaDeMapa(arqT);
+  const por = (h) => mapa.simbolos.find(s => s.altura_m === h);
+  assert.ok(por(2.2)?.simbolo === 'HM-ELE-TOMADA-ALTA' && por(2.2).quantidade === 2 && por(2.2).rotulo === 'Tomada alta a 2,20m do piso', JSON.stringify(mapa.simbolos));
+  assert.ok(por(0.3)?.quantidade === 2 && por(1.2)?.simbolo === 'HM-ELE-TOMADA-MEDIA', JSON.stringify(mapa.simbolos));
+  const { pontos } = aplicarMapa(arqT, mapa);
+  const em = (x) => pontos.find(p => Math.abs(p.x - x - 0.25) < 0.01);
+  assert.deepStrictEqual([em(1).altura_m, em(5).altura_m, em(9).altura_m, em(7).altura_m], [2.2, 0.3, 1.2, 0.98]);
+  assert.ok(em(7).simbolo === 'HM-ELE-TOMADA-MEDIA' && /nota do projeto/.test(em(7).rotulo) && em(7).alturaDe === 'nota');
+  assert.ok(em(3).abaixoDoForro_m === 0.2 && !em(3).altura_m);
+  // no 3D: a alta a 2,20 m e a "abaixo do forro" pelo pé-direito
+  const c = montarCena(arq, { peDireito: 3, dispositivos: pontos.map(p => ({ ...p, x: 1 + p.x / 3, y: 3.9 })) });
+  const zs = c.dispositivos.flatMap(t => t.itens.map(i => i[2])).sort();
+  assert.deepStrictEqual(zs, [0.3, 0.98, 1.2, 2.2, 2.8],JSON.stringify(c.dispositivos.map(t => [t.rotulo, t.itens.map(i => i[2])])));
+});
+
 caso('componente do projeto: descrição própria, altura lida e símbolo genérico quando não há um no 3D', () => {
   const c = montarCena(arq, { peDireito: PD, dispositivos: [
     { simbolo: 'HM-INC-ACIONADOR', rotulo: 'Acionador manual AME 521', altura_m: 1.25, disciplina: 'incendio', x: 2, y: 3.9, ambiente: 'SALA DE ESTAR', poligono: sala.poligono },

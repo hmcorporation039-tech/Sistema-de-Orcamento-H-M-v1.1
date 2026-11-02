@@ -437,6 +437,7 @@ export const duplicarNotaFiscal = (id, clienteIds) => api.post(`/notas-fiscais/$
 export const cancelarNotaFiscal = (id, motivo) => api.post(`/notas-fiscais/${id}/cancelar`, { motivo });
 export const enviarNotaFiscalPorEmail = (id, destinatario, mensagem) => api.post(`/notas-fiscais/${id}/email`, { destinatario, mensagem }, { timeout: 120000 });
 export const baixarPdfNotaFiscal = (id) => api.get(`/notas-fiscais/${id}/pdf`, { responseType: 'blob', timeout: 120000 });
+export const previewHtmlNotaFiscal = (id) => api.get(`/notas-fiscais/${id}/preview-html`, { responseType: 'text' });
 export const baixarXmlNotaFiscal = (id) => api.get(`/notas-fiscais/${id}/xml`, { responseType: 'blob' });
 export const importarXmlNotasFiscais = (arquivos) => {
   const fd = new FormData();

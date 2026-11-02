@@ -106,6 +106,9 @@ function gerarHtmlNfse(nota, { empresa = {}, municipios = {}, qrcode = null } = 
   .cab .gdf b { font-size: 11pt; display: block; }
   .cab .gdf span { display: block; font-size: 8.5pt; color: #1d3f8f; margin-top: 1px; }
   .cab .gdf small { display: block; font-size: 7.5pt; margin-top: 1px; }
+  .cab .nac b { font-size: 10pt; display: block; color: #1a4a8a; font-weight: 900; letter-spacing: .2px; }
+  .cab .nac span { display: block; font-size: 8pt; color: #444; margin-top: 2px; }
+  .cab .nac small { display: block; font-size: 7pt; color: #666; margin-top: 1px; }
   .serie { border-left: 1px solid #000; width: 40mm; text-align: center; vertical-align: top !important; }
   .serie .r { display: block; text-align: left; font-size: 6pt; padding: 1px 3px; }
   .serie .v { display: block; font-weight: bold; font-size: 8.5pt; padding: 0 3px 3px; }
@@ -154,7 +157,10 @@ ${marca ? `<div class="marca">${e(marca)}</div>` : ''}
 
 <div class="quadro"><table class="cab"><tr>
   <td style="width:15mm;padding:3px 4px 3px 8px">${BRASAO ? `<img src="${BRASAO}" style="width:11mm;display:block" alt="">` : ''}</td>
-  <td class="gdf"><b>Governo do Distrito Federal</b><span>Secretaria de Estado de Economia do Distrito Federal</span><small>Fone: () - 156 - Opção 3 - www.sefaz.df.gov.br</small></td>
+  ${nacional
+    ? `<td class="nac" style="padding:4px 6px"><b>NOTA FISCAL DE SERVIÇOS ELETRÔNICA — NFS-e</b><span>Padrão Nacional — Emissor Nacional (nfse.gov.br)</span><small>Consulta pública: www.nfse.gov.br/consultapublica</small></td>`
+    : `<td class="gdf"><b>Governo do Distrito Federal</b><span>Secretaria de Estado de Economia do Distrito Federal</span><small>Fone: () - 156 - Opção 3 - www.sefaz.df.gov.br</small></td>`
+  }
   <td style="width:28mm;text-align:center">${SELO ? `<img src="${SELO}" style="width:24mm;display:block;margin:auto" alt="">` : ''}</td>
   <td class="serie">
     <span class="r">Série do Documento</span><span class="v">Nota Fiscal de Serviço Eletrônica - NFS-e</span>

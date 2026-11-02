@@ -103,6 +103,9 @@ async function gerarPdfDeHtml(html, opcoesPdf = {}) {
     try {
       const page = await browser.newPage();
       page.setDefaultTimeout(TEMPO_PAGINA_MS);
+      // deviceScaleFactor: 2 faz o Chromium rasterizar imagens no dobro da
+      // resolução antes de embutir no PDF, evitando logo e selos borrados.
+      await page.setViewport({ width: 1240, height: 1754, deviceScaleFactor: 2 });
       await page.setJavaScriptEnabled(false);
       await page.setRequestInterception(true);
       page.on('request', (req) => {

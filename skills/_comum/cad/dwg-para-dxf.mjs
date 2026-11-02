@@ -35,6 +35,22 @@ const txt = (s) => String(s ?? '').replace(/\r?\n/g, '\\P').replace(/[\u0000-\u0
 const extrusao = (e) => { if ((e.extrusionDirection?.z ?? 1) < 0) { g(210, 0); g(220, 0); g(230, -1); } };
 const comum = (tipo, e) => { g(0, tipo); g(8, txt(e.layer || '0')); };
 
+// laço do contorno da hachura → pontos (polilinha, ou arestas reta/arco)
+function contornoHachura(p) {
+  if (p.vertices?.length) return p.vertices.map(v => [v.x, v.y]);
+  const pts = [];
+  for (const a of p.edges || []) {
+    if (a.type === 2 && a.center && a.radius) {
+      let a0 = a.startAngle || 0, a1 = a.endAngle || 0;
+      if (a.isCCW === 0 || a.counterClockWise === false) [a0, a1] = [-a0, -a1];
+      if (a1 <= a0) a1 += 2 * Math.PI;
+      for (let i = 0; i < 8; i++) { const t = a0 + ((a1 - a0) * i) / 8; pts.push([a.center.x + a.radius * Math.cos(t), a.center.y + a.radius * Math.sin(t)]); }
+    } else if (a.start) pts.push([a.start.x, a.start.y]);
+    else if (a.center) pts.push([a.center.x, a.center.y]);
+  }
+  return pts;
+}
+
 function entidade(e) {
   switch (e.type) {
     case 'LINE':
@@ -91,8 +107,26 @@ function entidade(e) {
       extrusao(e);
       for (const a of e.attribs || []) entidade(a);
       break;
+    case 'HATCH': {
+      // só o preenchimento sólido, com o contorno como polilinha: é ele que separa
+      // os símbolos iguais no traço (tomada baixa vazia × alta cheia × média meio
+      // cheia, legenda do QiBuilder) — sem ele a tomada do chuveiro saía a 0,30 m
+      if (!e.solidFill && !/^SOLID$/i.test(e.patternName || '')) break;
+      const lacos = (e.boundaryPaths || []).map(contornoHachura).filter(l => l.length >= 3);
+      if (!lacos.length) break;
+      comum('HATCH', e);
+      g(10, 0); g(20, 0); g(30, 0); g(210, 0); g(220, 0); g(230, (e.extrusionDirection?.z ?? 1) < 0 ? -1 : 1);
+      g(2, 'SOLID'); g(70, 1); g(71, 0); g(91, lacos.length);
+      for (const l of lacos) {
+        g(92, 2); g(72, 0); g(73, 1); g(93, l.length);
+        for (const [x, y] of l) { g(10, num(x)); g(20, num(y)); }
+        g(97, 0);
+      }
+      g(75, 0); g(76, 1); g(98, 0);
+      break;
+    }
     default:
-      break; // hachura, cota, 3D, imagem, ponto: não usados na leitura
+      break; // cota, 3D, imagem, ponto: não usados na leitura
   }
 }
 

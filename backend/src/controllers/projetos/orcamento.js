@@ -7,6 +7,7 @@ const { calcularTotais } = require('../../utils/calculoProposta');
 const { validarProposta } = require('../../utils/validacaoProposta');
 const { inserirSecoesEItens, proximoNumero, registrarEvento } = require('../propostasController');
 const { linhaParaAnalise } = require('./comum');
+const { CONFIANCA_CONFIRMA } = require('../../utils/semelhancaMateriais');
 
 // Gera (ou atualiza, se já existir) uma proposta rascunho na aba Orçamentos a
 // partir do que está salvo na análise — é daqui que o orçamento é concluído
@@ -72,7 +73,9 @@ async function gerarOrcamento(req, res, next) {
       valor_unitario: Number(m.preco_unitario) > 0 ? Number(m.preco_unitario) : (m.preco_catalogo || 0),
       subgrupo: m.subgrupo || null,
       // preço 0 no catálogo (padrão da coluna) não é preço: antes saía "confirmado" a R$ 0
-      status: (Number(m.quantidade) > 0 && (Number(m.preco_unitario) > 0 || Number(m.preco_catalogo) > 0)) ? 'confirmado' : 'a_cotar',
+      // o preço do catálogo só confirma com o material quase igual (≥ 90%: utils/semelhancaMateriais.js);
+      // o adotado na pesquisa de mercado ("Usar") é escolha do usuário e confirma
+      status: (Number(m.quantidade) > 0 && (Number(m.preco_unitario) > 0 || (Number(m.preco_catalogo) > 0 && Number(m.confianca_catalogo) >= CONFIANCA_CONFIRMA))) ? 'confirmado' : 'a_cotar',
     })),
   ];
   // `id` aqui não é opcional: inserirSecoesEItens casa item->seção por

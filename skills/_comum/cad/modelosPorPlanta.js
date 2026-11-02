@@ -11,14 +11,16 @@
 const { montarCena, recortarArquitetura } = require('./modelo3d');
 const { plantasDoDesenho } = require('./pranchas');
 const { pontosDoDesenho } = require('./pontosDoDesenho');
+const { DE_PAREDE } = require('./tiposDePonto');
 const { pontosDasDisciplinas } = require('./estimativaArquitetura');
 
 const naCaixa = (c, [x, y], m = 0) => x >= c[0] - m && x <= c[2] + m && y >= c[1] - m && y <= c[3] + m;
-const ROTULO_SIMBOLO = { 'HM-ILU-LUMINARIA': 'luminárias', 'HM-ILU-POSTE': 'postes', 'HM-ELE-TOMADA-BAIXA': 'tomadas', 'HM-ELE-INTERRUPTOR': 'interruptores', 'HM-ELE-QUADRO': 'quadros', 'HM-ELE-CAIXA-PISO': 'caixas de passagem' };
+const ROTULO_SIMBOLO = { 'HM-ILU-LUMINARIA': 'luminárias', 'HM-ILU-POSTE': 'postes', 'HM-ELE-TOMADA-BAIXA': 'tomadas baixas', 'HM-ELE-TOMADA-MEDIA': 'tomadas médias', 'HM-ELE-TOMADA-ALTA': 'tomadas altas','HM-ELE-INTERRUPTOR': 'interruptores', 'HM-ELE-QUADRO': 'quadros', 'HM-ELE-CAIXA-PISO': 'caixas de passagem' };
 
 // opcoes: { peDireito, titulo, cliente, obra, proposta, avisos (comuns a todas),
 //           dispositivosReais, trechos, disciplinas, dadosPorDisciplina, lerDoDesenho = true,
-//           sugerirInfra = true (liga os pontos soltos à rede/quadro: ./infraestrutura.js) }
+//           sugerirInfra = true (liga os pontos soltos à rede/quadro: ./infraestrutura.js),
+//           aprendidos (legenda lida em projetos anteriores: backend services/simbolosAprendidos.js) }
 // → { cenas: [cena com .plantaInfo = { n, nome, caixa, pontos, origem, area_m2 }], principal (índice) }
 function montarCenasPorPlanta(arquitetura, opcoes = {}) {
   const plantas = plantasDoDesenho(arquitetura);
@@ -36,14 +38,21 @@ function montarCenasPorPlanta(arquitetura, opcoes = {}) {
       if (dispositivos.length) origem = 'projeto';
     }
     if (!dispositivos.length && opcoes.lerDoDesenho !== false) {
-      const lidos = pontosDoDesenho(arq);
+      // leitura que falha (mapa com símbolo desconhecido, desenho estranho) não derruba o modelo
+      let lidos = { pontos: [], trechos: [] };
+      try { lidos = pontosDoDesenho(arq, { aprendidos: opcoes.aprendidos || [] }); } catch (e) { avisos.push(`Símbolos desenhados não lidos nesta planta: ${e.message}`); }
       if (lidos.pontos.length) {
         dispositivos = lidos.pontos;
         if (!trechos.length) trechos = lidos.trechos;
         origem = 'desenho';
         const cont = {};
         for (const d of lidos.pontos) cont[d.simbolo] = (cont[d.simbolo] || 0) + 1;
-        avisos.push(`Pontos lidos dos símbolos desenhados nesta planta (pela layer e pela medida): ${Object.entries(cont).map(([k, n]) => `${n} ${ROTULO_SIMBOLO[k] || k}`).join(', ')}. Tomada desenhada sem altura aparece como baixa — [CONFERIR] com a legenda do projeto.`);
+        // alturas: da legenda (tomada alta/média/baixa pelo preenchimento) e das notas ao lado do ponto
+        const deParede = lidos.pontos.filter(d => DE_PAREDE.test(d.simbolo));
+        const pela = (o) => deParede.filter(d => d.alturaDe === o).length;
+        const sem = deParede.filter(d => !d.alturaDe).length;
+        avisos.push(`Pontos lidos dos símbolos desenhados nesta planta (pela layer e pela medida): ${Object.entries(cont).map(([k, n]) => `${n} ${ROTULO_SIMBOLO[k] || k}`).join(', ')}.`
+          + (deParede.length ? ` Alturas: ${pela('legenda')} pela legenda das pranchas, ${pela('nota')} pela nota escrita ao lado do ponto${pela('aprendido') ? `, ${pela('aprendido')} pelo que o sistema aprendeu de projetos anteriores` : ''}${pela('mapa') ? `, ${pela('mapa')} pelo mapa conferido` : ''}${sem ? `; ${sem} sem altura no projeto aparecem na altura típica — [CONFERIR]` : ''}.` : ''));
       }
     }
     if (!dispositivos.length) {

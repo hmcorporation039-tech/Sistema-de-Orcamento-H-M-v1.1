@@ -12,6 +12,8 @@ const { calcularPontosPorAmbiente } = require('../utils/pontosPorAmbiente');
 const { buscarReferencias, valorSugerido, segmentoPorNomeDoCliente } = require('./precosMaoDeObraReferencia');
 const { lerPdfVetorial } = require('../utils/pdfVetorial');
 const { ehArquivoCad, lerArquivoCad } = require('./analiseCad');
+const simbolosAprendidos = require('./simbolosAprendidos');
+const aprendizadoMateriais = require('./aprendizadoMateriais');
 const { compatibilizar } = require('../utils/compatibilidadeEspacial');
 const {
   totaisCodificados, contagemDoDesenho, montarServicosPadrao, montarMateriaisInstalacaoPadrao, semModeloCoberto,
@@ -73,14 +75,9 @@ async function extrairEquipamentosDosArquivos(analises, achados) {
   return equipamentos;
 }
 
-async function carregarCatalogo() {
-  return (await pool.query(
-    // ORDER BY fixo: sem ele o PostgreSQL não garante ordem estável, e como o
-    // desempate é "o primeiro com o maior score", a mesma análise rodada duas
-    // vezes podia sugerir preços diferentes para o mesmo item.
-    'SELECT id, descricao, preco, unidade, categoria FROM materiais WHERE ativo = true ORDER BY id'
-  )).rows;
-}
+// catálogo com os vínculos aprendidos nos orçamentos confirmados (services/aprendizadoMateriais.js;
+// ORDER BY fixo lá: o desempate da semelhança é "o primeiro com o maior score")
+const carregarCatalogo = () => aprendizadoMateriais.carregarCatalogo();
 
 // `arquivos`: [{ buffer, nomeArquivo, disciplinas }] — cada arquivo carrega
 // SUAS PRÓPRIAS disciplinas (não uma lista única pro lote inteiro). Isso evita
@@ -99,7 +96,12 @@ async function analisarProjetoCompleto(todosArquivos) {
   const arquivosRef = todosArquivos.filter(a => a.referencia);
   const arquivos = todosArquivos.filter(a => !a.referencia);
   if (!arquivos.length) throw new Error('Marque a disciplina de ao menos um arquivo: só arquivos de referência não geram análise.');
-  const lerCad = ({ buffer, nomeArquivo }) => lerArquivoCad(buffer, nomeArquivo)
+  // o que o sistema já aprendeu das legendas de outros projetos entra na leitura, e a legenda
+  // deste arquivo vira aprendizado para os próximos (services/simbolosAprendidos.js)
+  const temCad = todosArquivos.some(a => ehArquivoCad(a.nomeArquivo));
+  const aprendidos = temCad ? await simbolosAprendidos.carregar() : [];
+  const lerCad = ({ buffer, nomeArquivo }) => lerArquivoCad(buffer, nomeArquivo, { aprendidos })
+    .then((r) => { if (r?.aprendizado?.legenda?.length) simbolosAprendidos.registrar(r.aprendizado.legenda, nomeArquivo).catch(() => {}); return r; })
     .catch((e) => { throw Object.assign(new Error(`Não consegui ler "${nomeArquivo}": ${e.message}`), { leituraCad: true }); });
   const cadsRef = await emLotes(arquivosRef, 2, (a) => (ehArquivoCad(a.nomeArquivo) ? lerCad(a).catch((e) => ({ erro: e.message })) : null));
   // Cada arquivo é lido/analisado em paralelo (pdf-parse + regex é I/O-bound e

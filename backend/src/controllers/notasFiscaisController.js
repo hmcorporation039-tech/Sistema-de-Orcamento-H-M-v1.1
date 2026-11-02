@@ -294,6 +294,24 @@ async function pdf(req, res) {
   }
 }
 
+// Retorna o HTML da nota sem passar pelo Puppeteer — para pré-visualização no browser.
+async function previewHtml(req, res) {
+  const n = await lerNota(req.params.id);
+  if (!n) return res.status(404).json({ erro: 'Nota não encontrada' });
+  const { rows: emp } = await pool.query('SELECT * FROM empresa_fiscal LIMIT 1');
+  const empresa = emp[0] || {};
+  const codigos = [n.tomador?.codigo_municipio, n.codigo_municipio_prestacao, n.municipio_incidencia].filter(Boolean);
+  const { rows: mun } = codigos.length
+    ? await pool.query('SELECT codigo, nome, uf FROM municipios_ibge WHERE codigo = ANY($1)', [codigos])
+    : { rows: [] };
+  const destinoQr = n.situacao === 'rascunho' ? null
+    : n.link_consulta || (n.chave_acesso ? `https://www.nfse.gov.br/ConsultaPublica/?tpc=1&chave=${n.chave_acesso}` : null);
+  const qrcode = destinoQr ? await QRCode.toDataURL(destinoQr, { margin: 0, width: 300, errorCorrectionLevel: 'M' }) : null;
+  const html = gerarHtmlNfse(n, { empresa, municipios: Object.fromEntries(mun.map(m => [m.codigo, m])), qrcode });
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  res.send(html);
+}
+
 async function xml(req, res) {
   const n = await lerNota(req.params.id);
   if (!n) return res.status(404).json({ erro: 'Nota não encontrada' });
@@ -486,7 +504,7 @@ async function importar(req, res) {
 }
 
 module.exports = {
-  listar, obter, criar, atualizar, remover, duplicar, cancelar, pdf, xml, enviarEmail, importar,
+  listar, obter, criar, atualizar, remover, duplicar, cancelar, pdf, previewHtml, xml, enviarEmail, importar,
   // testes e scripts
   importarConteudos, calcularTotais,
 };
