@@ -289,6 +289,18 @@ function CartaoBackup({ backup, rodando, aoExecutar }) {
         </>
       ) : <div style={{ fontSize: 12, color: 'var(--texto-3)', padding: '3px 0' }}>Nenhum backup encontrado.</div>}
       <Linha rotulo="Guardados">{backup.totalLocal} neste PC (30 dias)</Linha>
+      {backup.restauracao && (
+        <Linha rotulo="Teste de restauração">
+          {backup.restauracao.ultimo
+            ? <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                {backup.restauracao.ultimo.ok
+                  ? <Selo cor="#3fb95f" bg="#0a1a0f" borda="#1a4a26"><CheckCircle2 size={11} />restaurou</Selo>
+                  : <Selo cor="#e08080" bg="#1a0a0a" borda="#4a1a1a" titulo={backup.restauracao.ultimo.problemas.join(' | ')}><AlertTriangle size={11} />falhou</Selo>}
+                <span>{dataHora(backup.restauracao.ultimo.em)} · {backup.restauracao.ultimo.origem}{backup.restauracao.atrasado ? ' · está atrasado' : ''}</span>
+              </span>
+            : <Selo cor="#d9a53a" bg="#1a150a" borda="#4a3a1a" titulo="Rode registrar-teste-restauracao.bat como administrador">ainda não testado</Selo>}
+        </Linha>
+      )}
 
       {backup.backups?.length > 1 && (
         <div style={{ marginTop: 6 }}>
