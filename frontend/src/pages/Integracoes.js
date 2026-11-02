@@ -2,14 +2,15 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
 import {
   Mail, Banknote, FolderOpen, Bot, RefreshCw, Play, Clock, CheckCircle2,
-  AlertTriangle, XCircle, Loader2, History, ChevronDown, ChevronUp, PlugZap, DatabaseBackup, Percent,
+  AlertTriangle, XCircle, Loader2, History, ChevronDown, ChevronUp, PlugZap, DatabaseBackup, Percent, Database,
 } from 'lucide-react';
 import {
   getRotinasIntegracoes, executarRotinaIntegracao, testarIAIntegracoes,
-  getBackupIntegracoes, executarBackupIntegracoes, getPadroesOrcamento, atualizarPadroesOrcamento,
+  getBackupIntegracoes, executarBackupIntegracoes, getPadroesOrcamento, atualizarPadroesOrcamento, getSinapiSituacao, buscarSinapi, configurarSinapi,
 } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { estilos } from '../components/ui/estilos';
+import { formatarMoeda } from '../utils/format';
 
 // Painel de Integrações (2.0): as rotinas automáticas (notas e Pix por e-mail,
 // orçamentos de fornecedores nas pastas) e a cadeia de IA, numa visão só.
@@ -392,6 +393,112 @@ function CartaoPadroes() {
   );
 }
 
+// SINAPI local (Caixa): meses importados, estado e regime de referência (só o administrador troca)
+// e uma busca rápida por insumo/composição. A importação mensal é pelo script
+// backend/scripts/importar-sinapi.js (ver docs/PLANO-PROXIMAS-MELHORIAS.md, item 6).
+const mesBR = (m) => { const [a, mm] = String(m || '').trim().split('-'); return a && mm ? `${mm}/${a}` : '—'; };
+
+function CartaoSinapi({ ehAdmin }) {
+  const [sit, setSit] = useState(null);
+  const [termo, setTermo] = useState('');
+  const [tipo, setTipo] = useState('insumos');
+  const [achados, setAchados] = useState(null);
+  const [buscando, setBuscando] = useState(false);
+  const [trocando, setTrocando] = useState(false);
+
+  useEffect(() => { getSinapiSituacao().then(r => setSit(r.data)).catch(() => {}); }, []);
+  if (!sit) return null;
+
+  const ufs = [...new Set(sit.importacoes.map(i => i.uf))];
+  const ultimo = sit.importacoes.find(i => i.uf === sit.uf);
+  const vazio = !sit.importacoes.length;
+
+  async function trocar(mudanca) {
+    setTrocando(true);
+    try {
+      const res = await configurarSinapi(mudanca);
+      setSit(res.data);
+      setAchados(null);
+      toast.success('Referência do SINAPI atualizada');
+    } catch (err) {
+      toast.error(err.response?.data?.erro || 'Erro ao salvar');
+    } finally {
+      setTrocando(false);
+    }
+  }
+
+  async function buscar(e) {
+    e.preventDefault();
+    if (termo.trim().length < 2) return;
+    setBuscando(true);
+    try {
+      const res = await buscarSinapi(termo.trim(), tipo);
+      setAchados(res.data.itens);
+    } catch (err) {
+      toast.error(err.response?.data?.erro || 'Erro na busca');
+    } finally {
+      setBuscando(false);
+    }
+  }
+
+  return (
+    <div style={cartao}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+        <div style={iconeCaixa}><Database size={17} /></div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ color: '#eee', fontWeight: 700, fontSize: 14 }}>SINAPI local (Caixa)</div>
+          <div style={{ color: 'var(--texto-3)', fontSize: 12, marginTop: 2 }}>
+            {vazio
+              ? 'Nenhuma planilha importada ainda. A Caixa publica a de cada mês por volta do dia 10; a importação é feita com o script importar-sinapi.js.'
+              : <>Referência mais recente do {sit.uf}: <b>{mesBR(ultimo?.mes)}</b> — {ultimo?.insumos?.toLocaleString('pt-BR')} insumos e {ultimo?.composicoes?.toLocaleString('pt-BR')} composições (os dois regimes).</>}
+          </div>
+        </div>
+      </div>
+      {!vazio && (
+        <>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: 'var(--texto-2)', alignItems: 'center' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>Estado
+              <select value={sit.uf} disabled={!ehAdmin || trocando || ufs.length < 2} onChange={e => trocar({ uf: e.target.value })}>
+                {ufs.map(u => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>Regime
+              <select value={sit.regime} disabled={!ehAdmin || trocando} onChange={e => trocar({ regime: e.target.value })}>
+                <option value="sem">sem desoneração</option>
+                <option value="com">com desoneração</option>
+              </select>
+            </label>
+            {!ehAdmin && <span style={{ color: 'var(--texto-3)' }}>(só o administrador troca)</span>}
+          </div>
+          <form onSubmit={buscar} style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+            <input type="text" value={termo} onChange={e => setTermo(e.target.value)} placeholder="Buscar (ex.: cabo flexivel 2,5)" style={{ flex: 1, minWidth: 160 }} />
+            <select value={tipo} onChange={e => { setTipo(e.target.value); setAchados(null); }}>
+              <option value="insumos">Insumos (material, mão de obra)</option>
+              <option value="composicoes">Composições (serviço)</option>
+            </select>
+            <button type="submit" disabled={buscando || termo.trim().length < 2} style={{ ...btnSecundario, opacity: buscando ? 0.6 : 1 }}>{buscando ? 'Buscando…' : 'Buscar'}</button>
+          </form>
+          {achados && (
+            achados.length === 0
+              ? <div style={{ color: 'var(--texto-3)', fontSize: 12, marginTop: 10 }}>Nada encontrado para esse texto.</div>
+              : (
+                <div style={{ marginTop: 10, maxHeight: 260, overflowY: 'auto', fontSize: 12 }}>
+                  {achados.map(i => (
+                    <div key={i.codigo} style={{ display: 'flex', gap: 8, padding: '5px 0', borderTop: '1px solid #1e1e1e', color: 'var(--texto-2)' }}>
+                      <span style={{ color: 'var(--texto-3)', minWidth: 54 }}>{i.codigo}</span>
+                      <span style={{ flex: 1, minWidth: 0 }}>{i.descricao}</span>
+                      <span style={{ whiteSpace: 'nowrap' }}>{formatarMoeda(i.valor)}/{i.unidade}</span>
+                    </div>
+                  ))}
+                </div>
+              )
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function Integracoes() {
   const { usuario } = useAuth();
   const ehAdmin = usuario?.role === 'admin';
@@ -517,6 +624,7 @@ export default function Integracoes() {
           <CartaoBackup backup={backup} rodando={fazendoBackup} aoExecutar={fazerBackup} />
           <CartaoIA ia={dados.ia} cache={dados.iaCache} testando={testando} aoTestar={testarIA} />
           <CartaoPadroes />
+          <CartaoSinapi ehAdmin={ehAdmin} />
         </div>
       )}
     </div>

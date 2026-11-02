@@ -12,8 +12,8 @@ migração idempotente (CLAUDE.md), backup antes de ir para a produção e só v
 | 3 | Tela de confirmação do mapa do CAD | 2–3 dias | Não (só o visual) | — |
 | 4 | BDI e impostos ajustáveis (decidido 02/11) — **feito no v2 (02/11)** | 0,5 dia | Não: sem valor fixo (reforma tributária) | — |
 | 5 | Histórico de preços vendidos — **feito no v2 (02/11)** | 1 dia | Não | — |
-| 6 | Tabela SINAPI local (DF) | **feito no v2 (02/11)**; falta tela | Regime (com/sem desoneração) | importar a planilha todo mês |
-| 9 | Atestado de capacidade técnica (corpo do texto) | 1–2 dias | Não | nota fiscal emitida |
+| 6 | Tabela SINAPI local (DF) | **feito no v2 (02/11)**, com tela em Integrações; falta ligar à mão de obra | Regime (com/sem desoneração) | importar a planilha todo mês |
+| 9 | Atestado de capacidade técnica (corpo do texto) — **feito no v2 (02/11)** | 1–2 dias | Não | nota fiscal emitida |
 | 7 | Classificador local de materiais | 2 dias | Não | ~500 itens confirmados (item 5 ajuda) |
 | 8 | Aprendizado de notas do DWG | 2 dias | Não | tela do item 3 (para corrigir) |
 
@@ -85,7 +85,7 @@ em projetos parecidos: custo e tempo à toa.
 **Falta:**
 - Escolher o regime de referência (hoje "sem desoneração"; é uma chave, troca na hora).
 - Ligar à `precosMaoDeObraReferencia.js` como segunda referência e à tela de orçamento (sugestão de preço/composição).
-- Tela simples em Integrações: mês importado, regime, busca.
+- ~~Tela simples em Integrações~~ **feita (02/11):** cartão "SINAPI local (Caixa)" com mês importado, estado e regime (admin troca) e busca de insumos/composições.
 - Rotina mensal: a Caixa publica por volta do dia 10 (a de 09/2026 saiu em 09/10); baixar o zip `SINAPI-AAAA-MM-formato-xlsx.zip` em caixa.gov.br e rodar `node scripts/importar-sinapi.js "<SINAPI_Referência_AAAA_MM.xlsx>" DF`. Dá para agendar o download.
 - Levar para a produção (migração + importação lá) só com o OK do Márcio.
 
@@ -108,6 +108,7 @@ em projetos parecidos: custo e tempo à toa.
 - Alimenta o aprendizado: os quantitativos vêm do que foi realmente executado, sem IA; redação por modelo por disciplina (as skills já têm os termos das normas).
 **Teste:** corpo sem timbre nem logo; valores e datas da nota; disciplina sem quantitativo não inventa número.
 **Risco:** o atestado é declaração do cliente: o sistema só propõe o texto, nunca marca como emitido.
+**Feito (02/11/2026), no modelo formal do Márcio** (`Modelo_Atestado_Capacidade_Tecnica_HM_formal.docx`): 1) responsável técnico, 2) dados do contrato, 3) descrição das atividades, 4) planilha de serviços, 5) comprovação documental, fecho e assinaturas; sem o papel timbrado e o rodapé do cliente. `services/atestadoCapacidade.js` + `utils/textoAtestado.js` (limpa a CAIXA ALTA sem acento das notas importadas, separa as atividades e agrupa por disciplina; `.docx` gerado com JSZip, aberto no Word). **Nota ligada à proposta** (migração `2.0-27-nota-proposta.js`, coluna `notas_fiscais.proposta_id`, opcional; a obra vem de `propostas.obra_id`): rotas `GET /notas-fiscais/:id/propostas-candidatas` e `PUT /notas-fiscais/:id/proposta` (mesmo cliente, aprovada/ativa; vale também para nota já emitida; auditoria `vincular_proposta`). Com a proposta ligada, a planilha de serviços vem dos itens reais (por seção) e o endereço da obra é sugerido; sem ela, só entram itens com quantidade escrita na nota. O número da nota entra nos dados do contrato e na tabela de comprovação. Rotas `POST /notas-fiscais/:id/atestado` (prévia) e `/atestado.docx` (admin; só nota **emitida**; auditoria `atestado_gerado`); janela "Atestado de capacidade técnica" no menu da nota (proposta, responsáveis, signatários, atividades e planilha editáveis, prévia, copiar, baixar Word). Não inventa nada: contrato, período, vigência, área, responsável/CREA/ART e signatário só entram se preenchidos; o valor da nota só se marcado. Teste: `testes/atestadoCapacidade.test.js`. **Não feito:** botão no e-mail de envio da nota e registro de "enviado"; um atestado juntando várias notas do mesmo contrato; gerar o rascunho da nota a partir da proposta; ligar a nota ao lançamento do financeiro.
 
 ---
 
