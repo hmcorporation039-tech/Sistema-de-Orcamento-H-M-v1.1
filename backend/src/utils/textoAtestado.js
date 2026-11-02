@@ -57,7 +57,8 @@ function normalizarTexto(bruto) {
     return caixaAlta ? baixa : w;
   });
   // nome de cidade depois de "em": capitaliza e deixa a sigla do estado em maiúscula
-  t = t.replace(/\b(em) ((?:\p{L}+ ?){1,4}?)(?=[,;.\n]|$)/giu, (todo, em, lugar) => {
+  // (palavras separadas por um espaço, no máximo 4: sem backtracking em texto longo)
+  t = t.replace(/\b(em) (\p{L}+(?: \p{L}+){0,3})(?=[,;.\n]|$)/giu, (todo, em, lugar) => {
     const palavras = lugar.trim().split(/\s+/);
     const ultima = palavras[palavras.length - 1].toLowerCase();
     const comUf = palavras.length > 1 && UFS.has(ultima);
@@ -147,7 +148,7 @@ function itemDePlanilha(texto) {
   return { descricao: texto, unidade, quantidade };
 }
 
-const numeroBR = (n) => Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const numeroBR = (n) => Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 
 // Texto editável de atividades:  "Grupo:" numa linha e uma atividade por linha abaixo.
 function atividadesParaTexto(grupos) {
@@ -168,7 +169,7 @@ function atividadesDoTexto(texto) {
 
 // Texto editável da planilha: "Grupo:" e linhas "descrição | un 4" (unidade antes do número).
 function planilhaParaTexto(grupos) {
-  return grupos.map(g => `${g.grupo}:\n${g.itens.map(i => `${i.descricao} | ${i.unidade} ${numeroBR(i.quantidade)}`).join('\n')}`).join('\n\n');
+  return grupos.map(g => `${g.grupo}:\n${g.itens.map(i => `${String(i.descricao).replace(/\|/g, '/')} | ${i.unidade} ${numeroBR(i.quantidade)}`).join('\n')}`).join('\n\n');
 }
 function planilhaDoTexto(texto) {
   const grupos = [];

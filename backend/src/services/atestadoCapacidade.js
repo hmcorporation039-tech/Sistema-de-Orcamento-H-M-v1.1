@@ -91,6 +91,7 @@ function sugerir(nota, contexto = {}) {
   return {
     atividades: T.atividadesParaTexto(grupos),
     planilha: T.planilhaParaTexto(planilha),
+    planilhaGrupos: planilha,
     planilhaOrigem: daProposta.length ? 'proposta' : (planilha.length ? 'nota' : null),
     local: limpar(contexto.proposta?.local_obra || contexto.obra?.local) || '',
     pedido,
@@ -116,7 +117,7 @@ function montarAtestado(nota, opcoes = {}, contexto = {}) {
 
   // atividades e planilha: o que o engenheiro editou vale; sem edição, o sugerido pela nota/proposta
   const gruposAtiv = typeof opcoes.atividades === 'string' ? T.atividadesDoTexto(opcoes.atividades) : T.agrupar(sug.atividadesLista);
-  const gruposPlan = typeof opcoes.planilha === 'string' ? T.planilhaDoTexto(opcoes.planilha) : T.planilhaDoTexto(sug.planilha);
+  const gruposPlan = typeof opcoes.planilha === 'string' ? T.planilhaDoTexto(opcoes.planilha) : sug.planilhaGrupos;
   const todas = gruposAtiv.flatMap(g => g.itens);
 
   // 1ª atividade como natureza do serviço (a descrição da LC 116 do cadastro é longa demais e não entra)

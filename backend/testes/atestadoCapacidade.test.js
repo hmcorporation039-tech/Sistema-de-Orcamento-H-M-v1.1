@@ -95,6 +95,14 @@ const T = require('../src/utils/textoAtestado');
   assert.strictEqual(b.sugestao.planilhaOrigem, 'proposta');
   assert.strictEqual(b.sugestao.local, 'Hospital Santa Lúcia Sul');
 
+  // quantidade com 3 casas não é arredondada, "|" na descrição não quebra a planilha, texto longo não trava
+  const fino = montarAtestado(nota, {}, { proposta: { numero: 'P1', total: 1 }, itens: [{ secao: 'Cabos', descricao: 'Cabo 2,5 mm² | flexível', quantidade: '2.375', unidade: 'm' }] });
+  assert.ok(fino.texto.includes('Cabo 2,5 mm² | flexível | m 2,375'), fino.texto);
+  assert.ok(fino.sugestao.planilha.includes('Cabo 2,5 mm² / flexível | m 2,375'), 'no texto editável o | vira /');
+  const t0 = Date.now();
+  T.atividadesDaNota(`${'a'.repeat(20000)} em ${'b'.repeat(20000)} em ${'c '.repeat(3000)}`);
+  assert.ok(Date.now() - t0 < 1500, 'texto longo não pode travar a limpeza');
+
   // nota sem texto de serviço: nunca usa a descrição longa da LC 116; sigla no início não vira minúscula
   const semTexto = montarAtestado({ ...nota, discriminacao: '' });
   assert.ok(semTexto.texto.includes('os serviços de [natureza resumida dos serviços] conforme') && !semTexto.texto.includes('7.02'));
