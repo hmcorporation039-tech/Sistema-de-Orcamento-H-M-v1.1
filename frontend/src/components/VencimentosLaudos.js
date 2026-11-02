@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
-import { CalendarClock, Plus, RefreshCw, X } from 'lucide-react';
-import { getVencimentos, criarVencimento, renovarVencimento, encerrarVencimento } from '../services/api';
+import { CalendarClock, Plus, RefreshCw, X, FilePlus2 } from 'lucide-react';
+import { getVencimentos, criarVencimento, renovarVencimento, encerrarVencimento, criarPropostaRenovacao } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { estilos } from './ui/estilos';
 
@@ -40,6 +40,16 @@ export default function VencimentosLaudos() {
   const agir = async (fn, ok) => {
     try { setDados((await fn()).data); toast.success(ok); }
     catch (e) { toast.error(e.response?.data?.erro || 'Não foi possível concluir.'); }
+  };
+
+  // Rascunho de proposta para renovar o laudo; o segundo clique abre a mesma proposta enquanto ela está Ativa.
+  const proporRenovacao = async (id) => {
+    try {
+      const { data: r } = await criarPropostaRenovacao(id);
+      setDados(r);
+      toast.success(r.criada ? `Proposta ${r.numero} criada. ${r.sugestaoDePreco || ''}` : `A proposta ${r.numero} já existe.`, { duration: 7000 });
+      if (r.aviso) toast(r.aviso, { duration: 9000 });
+    } catch (e) { toast.error(e.response?.data?.erro || 'Não foi possível criar a proposta.'); }
   };
 
   const salvar = async (e) => {
@@ -142,6 +152,12 @@ export default function VencimentosLaudos() {
             <button type="button" style={estilos.btnSecundario} title="Emiti o laudo de novo: conta mais uma validade a partir de hoje"
               onClick={() => agir(() => renovarVencimento(i.id, {}), 'Renovado a partir de hoje.')}><RefreshCw size={13} /> Renovei</button>
           )}
+          {i.tipo === 'laudo' && i.nivel !== 'ok' && (i.proposta_renovacao_id ? (
+            <a href={`/propostas/editar/${i.proposta_renovacao_id}`} style={{ ...estilos.btnSecundario, textDecoration: 'none' }} title="Abrir a proposta de renovação já criada"><FilePlus2 size={13} /> Abrir {i.proposta_renovacao_numero}</a>
+          ) : (
+            <button type="button" style={estilos.btnSecundario} title="Cria um rascunho de proposta para renovar este laudo (você define escopo e valor)"
+              onClick={() => proporRenovacao(i.id)}><FilePlus2 size={13} /> Proposta de renovação</button>
+          ))}
           {ehAdmin && (
             <button type="button" style={estilos.btnIcone} title="Parar de acompanhar este vencimento"
               onClick={() => { if (window.confirm('Parar de acompanhar este vencimento?')) agir(() => encerrarVencimento(i.id), 'Retirado da lista.'); }}><X size={14} /></button>

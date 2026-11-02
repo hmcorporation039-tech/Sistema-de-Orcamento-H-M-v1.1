@@ -64,7 +64,9 @@ function validarEntrada({ tipo, disciplina, descricao, emitido_em, vence_em, val
 
 const COLUNAS = `v.id, v.disciplina, v.descricao, v.cliente_id, v.cliente_nome, v.obra_id, v.laudo_id, v.validade_meses,
   to_char(v.emitido_em, 'YYYY-MM-DD') AS emitido_em, to_char(v.vence_em, 'YYYY-MM-DD') AS vence_em,
-  v.etapa_avisada, v.observacao, v.tipo, v.origem`;
+  v.etapa_avisada, v.observacao, v.tipo, v.origem,
+  (SELECT p.id FROM propostas p WHERE p.id = v.proposta_renovacao_id AND p.status = 'Ativa') AS proposta_renovacao_id,
+  (SELECT p.numero FROM propostas p WHERE p.id = v.proposta_renovacao_id AND p.status = 'Ativa') AS proposta_renovacao_numero`;
 
 // Documentos da empresa só aparecem para o administrador (incluirEmpresa), como o resto do que é fiscal/financeiro.
 async function listar(db = pool, hoje = hojeIso(), { incluirEmpresa = true } = {}) {

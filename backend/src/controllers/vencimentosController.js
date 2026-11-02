@@ -2,6 +2,7 @@
 // Os documentos da empresa (tipo 'empresa', inclusive o certificado digital) são só do administrador.
 // Regras e e-mail em services/vencimentos.js. Rotas em routes/v2/vencimentos.js.
 const venc = require('../services/vencimentos');
+const { criarPropostaRenovacao } = require('../services/propostaRenovacao');
 const { registrarAuditoria } = require('../services/auditoria');
 const pool = require('../config/database');
 
@@ -58,4 +59,13 @@ async function encerrar(req, res) {
   } catch (err) { responder(res, err); }
 }
 
-module.exports = { listar, criar, renovar, encerrar };
+// Rascunho de proposta para renovar o laudo que está vencendo (services/propostaRenovacao.js). Só laudos.
+async function propostaRenovacao(req, res) {
+  try {
+    const r = await criarPropostaRenovacao(Number(req.params.id), req.usuario);
+    if (r.criada) await registrarAuditoria(pool, { entidade: 'vencimento_laudo', entidadeId: Number(req.params.id), acao: 'proposta_renovacao', usuarioId: req.usuario.id, detalhes: { proposta: r.numero } });
+    res.status(r.criada ? 201 : 200).json({ ...r, ...(await lista(req)) });
+  } catch (err) { responder(res, err); }
+}
+
+module.exports = { listar, criar, renovar, encerrar, propostaRenovacao };
