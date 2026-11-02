@@ -10,6 +10,7 @@ module.exports = (router, { autenticar, admin, validarId }) => {
   router.get('/notas-fiscais', autenticar, admin, ctrl.listar);
   router.post('/notas-fiscais', autenticar, admin, ctrl.criar);
   router.post('/notas-fiscais/importar', autenticar, admin, uploadXml.array('arquivos', 300), ctrl.importar);
+  router.post('/notas-fiscais/de-proposta', autenticar, admin, ctrl.criarDeProposta);
   router.get('/notas-fiscais/cancelamento-config', autenticar, admin, ctrl.configCancelamento);
   router.get('/notas-fiscais/:id', autenticar, validarId, admin, ctrl.obter);
   router.put('/notas-fiscais/:id', autenticar, validarId, admin, ctrl.atualizar);
@@ -22,6 +23,10 @@ module.exports = (router, { autenticar, admin, validarId }) => {
   router.get('/notas-fiscais/:id/xml', autenticar, validarId, admin, ctrl.xml);
   router.post('/notas-fiscais/:id/atestado', autenticar, validarId, admin, ctrl.previaAtestado);
   router.post('/notas-fiscais/:id/atestado.docx', autenticar, validarId, admin, ctrl.atestadoDocx);
+  router.post('/notas-fiscais/:id/atestado/email', autenticar, validarId, admin, ctrl.enviarAtestado);
+  router.get('/notas-fiscais/:id/notas-candidatas', autenticar, validarId, admin, ctrl.notasCandidatas);
+  router.get('/notas-fiscais/:id/recebimentos', autenticar, validarId, admin, ctrl.recebimentosCandidatos);
+  router.put('/notas-fiscais/:id/recebimento', autenticar, validarId, admin, ctrl.ligarRecebimento);
   router.get('/notas-fiscais/:id/propostas-candidatas', autenticar, validarId, admin, ctrl.propostasCandidatas);
   router.put('/notas-fiscais/:id/proposta', autenticar, validarId, admin, ctrl.vincularProposta);
 };

@@ -66,6 +66,7 @@ function validarNota(nota) {
 }
 
 const lista = (v) => (Array.isArray(v) ? v : []);
+const tomadorDe = (nota) => (typeof nota.tomador === 'string' ? JSON.parse(nota.tomador || '{}') : nota.tomador) || {};
 
 // Itens da proposta ligada → grupos da planilha (cada seção da proposta vira um grupo)
 function planilhaDaProposta(itens) {
@@ -103,17 +104,27 @@ const parte = (texto, negrito = false) => ({ texto, negrito });
 
 // `opcoes`: { contrato, local, inicio, fim, vigencia_inicio, vigencia_fim, area, responsaveis[],
 //   atividades (texto), planilha (texto), setor, signatarios[], cidade, mostrar_valor }
-// `contexto`: { proposta: { numero, total, local_obra }, obra: { nome, local }, itens[] }
+// `contexto`: { proposta: { numero, total, local_obra }, obra: { nome, local }, itens[], outrasNotas[] }
+// outrasNotas: outras notas EMITIDAS do mesmo tomador que fazem parte do mesmo contrato (um atestado só para todas)
 // Devolve { titulo, blocos, texto, avisos, sugestao }.
 function montarAtestado(nota, opcoes = {}, contexto = {}) {
   const erro = validarNota(nota);
   if (erro) throw Object.assign(new Error(erro), { status: 400 });
 
-  const tomador = (typeof nota.tomador === 'string' ? JSON.parse(nota.tomador || '{}') : nota.tomador) || {};
+  const tomador = tomadorDe(nota);
+  const outras = lista(contexto.outrasNotas).filter(o => o && o.id !== nota.id);
+  for (const o of outras) {
+    const erroOutra = validarNota(o);
+    if (erroOutra) throw Object.assign(new Error(`NFS-e nº ${o.numero}: ${erroOutra}`), { status: 400 });
+    if (digitos(tomadorDe(o).documento) !== digitos(tomador.documento)) throw Object.assign(new Error(`A NFS-e nº ${o.numero} é de outro tomador: o atestado junta só notas do mesmo cliente.`), { status: 400 });
+  }
+  // todas as notas do atestado, da mais antiga para a mais nova
+  const notas = [nota, ...outras].sort((a, b) => String(a.data_emissao || '').localeCompare(String(b.data_emissao || '')) || Number(a.numero) - Number(b.numero));
+  const valorTotal = notas.reduce((t, n) => t + Number(n.valor_servicos || 0), 0);
   const nomeCliente = limpar(tomador.nome) || '[razão social do emitente]';
   const doc = documentoFormatado(tomador.documento);
   const endereco = enderecoDoTomador(tomador);
-  const sug = sugerir(nota, contexto);
+  const sug = sugerir(outras.length ? { ...nota, discriminacao: notas.map(n => n.discriminacao).filter(Boolean).join('\n') } : nota, contexto);
 
   // atividades e planilha: o que o engenheiro editou vale; sem edição, o sugerido pela nota/proposta
   const gruposAtiv = typeof opcoes.atividades === 'string' ? T.atividadesDoTexto(opcoes.atividades) : T.agrupar(sug.atividadesLista);
@@ -164,7 +175,9 @@ function montarAtestado(nota, opcoes = {}, contexto = {}) {
 
   secao('DADOS DO CONTRATO');
   const dados = [
-    ['Nota fiscal', `NFS-e nº ${nota.numero}${emissao ? `, emitida em ${emissao}` : ''}${competencia ? `, competência ${competencia.slice(3)}` : ''}`],
+    outras.length
+      ? ['Notas fiscais', notas.map(n => `NFS-e nº ${n.numero}${dataBR(n.data_emissao) ? ` (emitida em ${dataBR(n.data_emissao)})` : ''}`).join('; ')]
+      : ['Nota fiscal', `NFS-e nº ${nota.numero}${emissao ? `, emitida em ${emissao}` : ''}${competencia ? `, competência ${competencia.slice(3)}` : ''}`],
     proposta?.numero ? ['Proposta comercial', `nº ${limpar(proposta.numero, 20)}`] : null,
     contrato ? ['Contrato', contrato] : null,
     ['Objeto', objeto],
@@ -174,7 +187,7 @@ function montarAtestado(nota, opcoes = {}, contexto = {}) {
     vigIni && vigFim ? ['Vigência do contrato', `${vigIni} a ${vigFim}`] : null,
     area ? ['Área / quantitativo executado', area] : null,
     local ? ['Endereço', local] : null,
-    opcoes.mostrar_valor ? ['Valor dos serviços', dinheiro(nota.valor_servicos)] : null,
+    opcoes.mostrar_valor ? [outras.length ? 'Valor total dos serviços' : 'Valor dos serviços', dinheiro(valorTotal)] : null,
   ].filter(Boolean);
   for (const [rotulo, valor] of dados) blocos.push({ t: 'item', texto: `${rotulo}: ${valor}` });
 
@@ -200,11 +213,11 @@ function montarAtestado(nota, opcoes = {}, contexto = {}) {
 
   secao('COMPROVAÇÃO DOCUMENTAL');
   blocos.push({ t: 'paragrafo', partes: [parte('Em reforço à veracidade do presente atestado, relacionamos a documentação comprobatória correspondente à execução do objeto contratado:')] });
-  const observacao = [competencia ? `Competência ${competencia.slice(3)}` : null, proposta?.numero ? `Proposta ${limpar(proposta.numero, 20)}` : null,
-    opcoes.mostrar_valor ? dinheiro(nota.valor_servicos) : null].filter(Boolean).join(' · ');
+  const observacaoDe = (n) => [dataBR(n.competencia) ? `Competência ${dataBR(n.competencia).slice(3)}` : null, proposta?.numero ? `Proposta ${limpar(proposta.numero, 20)}` : null,
+    opcoes.mostrar_valor ? dinheiro(n.valor_servicos) : null].filter(Boolean).join(' · ');
   blocos.push({
     t: 'tabela', larguras: [1700, 2300, 3200, 2306], cabecalho: ['Nº DA NOTA FISCAL', 'DATA DE EMISSÃO', 'TOMADOR / CNPJ', 'OBSERVAÇÃO'], alinhamentos: ['center', 'center', 'left', 'left'],
-    linhas: [{ celulas: [`NFS-e ${nota.numero}`, emissao || '—', `${nomeCliente}${doc ? ` / ${doc.valor}` : ''}`, observacao || '—'] }],
+    linhas: notas.map(n => ({ celulas: [`NFS-e ${n.numero}`, dataBR(n.data_emissao) || '—', `${nomeCliente}${doc ? ` / ${doc.valor}` : ''}`, observacaoDe(n) || '—'] })),
   });
   const temArt = responsaveis.some(r => r.art);
   blocos.push({ t: 'paragrafo', partes: [parte('Documentos disponíveis para conferência (assinalar):')], jc: 'left', antes: 160 });
@@ -237,10 +250,11 @@ function montarAtestado(nota, opcoes = {}, contexto = {}) {
   if (opcoes.inicio && opcoes.fim && dias === null) avisos.push('A conclusão está antes do início: confira as datas do período.');
   if (!local) avisos.push('Endereço da obra/serviço não informado.');
   if (!gruposAtiv.length) avisos.push('A nota não tem texto de serviço utilizável: descreva as atividades.');
-  if (proposta?.total != null && Number(proposta.total) > 0 && Number(nota.valor_servicos) > 0
-    && Math.abs(Number(nota.valor_servicos) - Number(proposta.total)) / Number(proposta.total) > 0.01 && sug.planilhaOrigem === 'proposta') {
-    avisos.push(`A nota (${dinheiro(nota.valor_servicos)}) difere da proposta (${dinheiro(proposta.total)}): confira se todos os itens da planilha foram faturados nesta nota e apague os que não foram.`);
+  if (proposta?.total != null && Number(proposta.total) > 0 && valorTotal > 0
+    && Math.abs(valorTotal - Number(proposta.total)) / Number(proposta.total) > 0.01 && sug.planilhaOrigem === 'proposta') {
+    avisos.push(`${outras.length ? 'As notas somam' : 'A nota'} (${dinheiro(valorTotal)}) ${outras.length ? 'diferem' : 'difere'} da proposta (${dinheiro(proposta.total)}): confira se todos os itens da planilha foram faturados ${outras.length ? 'nestas notas' : 'nesta nota'} e apague os que não foram.`);
   }
+  if (outras.length) avisos.push(`Atestado único das NFS-e ${notas.map(n => n.numero).join(', ')}: as atividades de todas as notas foram reunidas; confira se não há repetição.`);
   if (todas.join('; ').length >= LIMITE_OBJETO) avisos.push('O objeto foi cortado no limite de tamanho; confira o texto.');
 
   return { titulo: 'Atestado de capacidade técnica', blocos, texto: blocosParaTexto(blocos), avisos, sugestao: { atividades: sug.atividades, planilha: sug.planilha, planilhaOrigem: sug.planilhaOrigem, local: sug.local } };

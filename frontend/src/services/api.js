@@ -460,7 +460,12 @@ export const previewHtmlNotaFiscal = (id) => api.get(`/notas-fiscais/${id}/previ
 export const baixarXmlNotaFiscal = (id) => api.get(`/notas-fiscais/${id}/xml`, { responseType: 'blob' });
 export const previaAtestadoNotaFiscal = (id, opcoes) => api.post(`/notas-fiscais/${id}/atestado`, opcoes);
 export const baixarAtestadoNotaFiscal = (id, opcoes) => api.post(`/notas-fiscais/${id}/atestado.docx`, opcoes, { responseType: 'blob', timeout: 60000 });
-export const getPropostasCandidatasNotaFiscal = (id) => api.get(`/notas-fiscais/${id}/propostas-candidatas`);
+export const enviarAtestadoNotaFiscal = (id, opcoes, destinatario, mensagem) => api.post(`/notas-fiscais/${id}/atestado/email`, { ...opcoes, destinatario, mensagem }, { timeout: 120000 });
+export const getNotasCandidatasNotaFiscal = (id) => api.get(`/notas-fiscais/${id}/notas-candidatas`);
+export const getRecebimentosNotaFiscal = (id) => api.get(`/notas-fiscais/${id}/recebimentos`);
+export const ligarRecebimentoNotaFiscal = (id, movimentoId, ligar = true) => api.put(`/notas-fiscais/${id}/recebimento`, { movimento_id: movimentoId, ligar });
+export const criarNotaFiscalDeProposta = (propostaId, confirmar = false) => api.post('/notas-fiscais/de-proposta', { proposta_id: propostaId, confirmar });
+export const getPropostasCandidatasNotaFiscal =(id) => api.get(`/notas-fiscais/${id}/propostas-candidatas`);
 export const vincularPropostaNotaFiscal = (id, propostaId) => api.put(`/notas-fiscais/${id}/proposta`, { proposta_id: propostaId });
 export const importarXmlNotasFiscais = (arquivos) => {
   const fd = new FormData();

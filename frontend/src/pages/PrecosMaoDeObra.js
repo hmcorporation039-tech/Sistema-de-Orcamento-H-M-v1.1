@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react';
 import toast from 'react-hot-toast';
 import { Save, Search, ExternalLink, ChevronDown, ChevronRight, Square, GitMerge, EyeOff, RotateCcw } from 'lucide-react';
-import { getPrecosMaoDeObra, atualizarPrecosMaoDeObra, pesquisarReferenciaMaoDeObra, fundirServico, definirServicoAtivo } from '../services/api';
+import { getPrecosMaoDeObra, atualizarPrecosMaoDeObra, pesquisarReferenciaMaoDeObra, fundirServico, definirServicoAtivo, buscarSinapi } from '../services/api';
 import Select, { comparador } from '../components/Select';
 import useDisciplinas from '../hooks/useDisciplinas';
 import { formatarMoeda } from '../utils/format';
@@ -16,6 +16,42 @@ const SEGMENTOS = [
 const moeda = (v) => (v == null || v === '' ? '—' : formatarMoeda(v));
 const data = (v) => (v ? new Date(v).toLocaleDateString('pt-BR') : '');
 const semAcento = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+// Segunda referência de mão de obra: a tabela SINAPI local (Caixa, estado e regime de Integrações). Só mostra o que o SINAPI
+// tem para o serviço e deixa o administrador adotar o valor como referência "Oficial / governo" — nada muda sem ele confirmar
+// e salvar. A composição do SINAPI traz mão de obra + material: confira o escopo (o texto de cada item diz o que inclui).
+function ReferenciaSinapi({ item, onUsar }) {
+  const [termo, setTermo] = useState(() => semAcento(item.descricao).replace(/\([^)]*\)/g, ' ').split(/[^a-z0-9]+/).filter(t => t.length > 2).slice(0, 4).join(' '));
+  const [achados, setAchados] = useState(null);
+  const [buscando, setBuscando] = useState(false);
+
+  async function buscar(e) {
+    e.preventDefault();
+    if (termo.trim().length < 2) return;
+    setBuscando(true);
+    try { setAchados((await buscarSinapi(termo.trim(), 'composicoes')).data.itens); }
+    catch (err) { toast.error(err.response?.data?.erro || 'Erro na busca do SINAPI'); }
+    finally { setBuscando(false); }
+  }
+
+  return (
+    <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid #1e1e1e' }} data-testid={`sinapi-${item.codigo}`}>
+      <div style={{ color: 'var(--texto-3)', marginBottom: 4 }}>Referência SINAPI (Caixa)</div>
+      <form onSubmit={buscar} style={{ display: 'flex', gap: 6 }}>
+        <input value={termo} onChange={e => setTermo(e.target.value)} style={{ flex: 1, minWidth: 0, fontSize: 12 }} />
+        <button type="submit" disabled={buscando || termo.trim().length < 2} style={btnIcone}>{buscando ? '…' : <Search size={12} />}</button>
+      </form>
+      {achados && !achados.length && <div style={{ color: 'var(--texto-3)', marginTop: 6 }}>Nada no SINAPI com esses termos (ou o SINAPI ainda não foi importado em Integrações).</div>}
+      {achados?.slice(0, 8).map(x => (
+        <div key={x.codigo} style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, color: '#ccc' }}>
+          <span style={{ flex: 1, minWidth: 0 }}>{x.descricao} <span style={{ color: 'var(--texto-3)' }}>· {x.unidade} · cód. {x.codigo} · {String(x.mes).trim()}</span></span>
+          <b style={{ whiteSpace: 'nowrap' }}>{moeda(x.valor)}</b>
+          <button type="button" onClick={() => onUsar(x)} style={{ ...btnIcone, padding: '2px 8px' }} title="Preenche a referência Oficial / governo com este valor (você ainda confere e salva)">Usar</button>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function PrecosMaoDeObra() {
   const { nomeServico: nomeDisciplina, todas: todasDisciplinas } = useDisciplinas();
@@ -235,6 +271,10 @@ export default function PrecosMaoDeObra() {
               </table>
             ) : <span style={{ color: 'var(--texto-3)' }}>Nenhuma referência pesquisada ainda — use a lupa de cada segmento.</span>}
             <p style={{ color: 'var(--texto-3)', fontSize: 12, marginTop: 6 }}>Valor do segmento = média das referências equivalentes. Confira a unidade e o escopo (só mão de obra) antes de adotar.</p>
+            <ReferenciaSinapi item={it} onUsar={(x) => {
+              alterar(it.codigo, 'valor_publico', String(x.valor));
+              alterar(it.codigo, 'fonte_publico', `SINAPI ${x.uf} ${String(x.mes).trim()} — cód. ${x.codigo} (${x.regime === 'com' ? 'com' : 'sem'} desoneração)`);
+            }} />
           </div>
         )}
       </Fragment>

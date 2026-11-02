@@ -150,7 +150,10 @@ async function listar(req, res) {
               n.competencia, n.cliente_id, n.tomador->>'nome' AS tomador_nome, n.tomador->>'documento' AS tomador_documento,
               n.tomador->>'email' AS tomador_email, n.ctrib_nac, n.item_lista, n.discriminacao, n.valor_servicos, n.valor_liquido,
               n.iss_retido, n.ultimo_envio_em, n.ultimo_envio_para, (n.xml IS NOT NULL) AS tem_xml,
-              n.proposta_id, (SELECT pr.numero FROM propostas pr WHERE pr.id = n.proposta_id) AS proposta_numero
+              n.proposta_id, (SELECT pr.numero FROM propostas pr WHERE pr.id = n.proposta_id) AS proposta_numero,
+              n.atestado_enviado_em, n.atestado_enviado_para,
+              (SELECT COALESCE(sum(f.valor), 0) FROM financeiro_movimentos f WHERE f.nota_id = n.id) AS recebido_valor,
+              (SELECT max(f.data_hora) FROM financeiro_movimentos f WHERE f.nota_id = n.id) AS recebido_em
          FROM notas_fiscais n ${where} ORDER BY ${ORDEM}
         LIMIT $${params.length + 1} OFFSET $${params.length + 2}`, [...params, porPagina, offset]),
   ]);
@@ -160,7 +163,9 @@ async function listar(req, res) {
 async function lerNota(id) {
   const { rows: [n] } = await pool.query(
     `SELECT n.*, (n.xml IS NOT NULL) AS tem_xml, s.nome AS servico_nome, o.numero AS origem_numero,
-            mp.nome || '-' || mp.uf AS local_prestacao, pr.numero AS proposta_numero
+            mp.nome || '-' || mp.uf AS local_prestacao, pr.numero AS proposta_numero,
+            (SELECT COALESCE(sum(f.valor), 0) FROM financeiro_movimentos f WHERE f.nota_id = n.id) AS recebido_valor,
+            (SELECT max(f.data_hora) FROM financeiro_movimentos f WHERE f.nota_id = n.id) AS recebido_em
        FROM notas_fiscais n
        LEFT JOIN municipios_ibge mp ON mp.codigo = n.codigo_municipio_prestacao
        LEFT JOIN empresa_servicos_nfse s ON s.id = n.servico_id
@@ -563,11 +568,20 @@ async function importar(req, res) {
 
 // Proposta ligada à nota: de lá vêm o local, os itens e quantidades reais e o número da proposta
 // que o atestado usa. O vínculo é opcional e feito pelo administrador (nada é adivinhado).
-async function contextoAtestado(nota) {
-  if (!nota.proposta_id) return {};
+// `idsOutras`: outras notas emitidas do mesmo cliente que entram no mesmo atestado (até 10)
+async function contextoAtestado(nota, idsOutras = []) {
+  const outrasNotas = [];
+  const ids = Array.isArray(idsOutras) ? idsOutras : [];
+  for (const id of [...new Set(ids.map(Number).filter(i => Number.isInteger(i) && i > 0 && i !== nota.id))].slice(0, 10)) {
+    const o = await lerNota(id);
+    if (!o) throw Object.assign(new Error(`Nota ${id} não encontrada.`), { status: 404 });
+    delete o.xml;
+    outrasNotas.push(o);
+  }
+  if (!nota.proposta_id) return { outrasNotas };
   const { rows: [proposta] } = await pool.query(
     'SELECT id, numero, total, local_obra, status, cliente_id, obra_id FROM propostas WHERE id = $1', [nota.proposta_id]);
-  if (!proposta) return {};
+  if (!proposta) return { outrasNotas };
   const [{ rows: [obra] }, { rows: itens }] = await Promise.all([
     proposta.obra_id ? pool.query('SELECT nome, local FROM obras WHERE id = $1', [proposta.obra_id]) : { rows: [] },
     pool.query(
@@ -576,7 +590,7 @@ async function contextoAtestado(nota) {
         WHERE i.proposta_id = $1 AND COALESCE(i.status, 'confirmado') = 'confirmado'
         ORDER BY s.ordem NULLS LAST, i.ordem, i.id`, [proposta.id]),
   ]);
-  return { proposta, obra, itens };
+  return { proposta, obra, itens, outrasNotas };
 }
 
 // Atestado de capacidade técnica (item 9): só o corpo do texto, para o cliente colar no papel
@@ -586,7 +600,7 @@ async function previaAtestado(req, res) {
   const n = await lerNota(req.params.id);
   if (!n) return res.status(404).json({ erro: 'Nota não encontrada' });
   try {
-    const { titulo, texto, avisos, sugestao } = atestado.montarAtestado(n, req.body || {}, await contextoAtestado(n));
+    const { titulo, texto, avisos, sugestao } = atestado.montarAtestado(n, req.body || {}, await contextoAtestado(n, req.body?.notas_ids));
     res.json({ titulo, texto, avisos, sugestao, proposta_id: n.proposta_id, proposta_numero: n.proposta_numero });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ erro: err.message });
@@ -598,9 +612,9 @@ async function atestadoDocx(req, res) {
   const n = await lerNota(req.params.id);
   if (!n) return res.status(404).json({ erro: 'Nota não encontrada' });
   try {
-    const { blocos } = atestado.montarAtestado(n, req.body || {}, await contextoAtestado(n));
+    const { blocos } = atestado.montarAtestado(n, req.body || {}, await contextoAtestado(n, req.body?.notas_ids));
     const arquivo = await atestado.gerarDocx(blocos);
-    await registrarAuditoria(pool, { entidade: 'notas_fiscais', entidadeId: n.id, acao: 'atestado_gerado', usuarioId: req.usuario.id, detalhes: { nota: n.numero, proposta_id: n.proposta_id } });
+    await registrarAuditoria(pool, { entidade: 'notas_fiscais', entidadeId: n.id, acao: 'atestado_gerado', usuarioId: req.usuario.id, detalhes: { nota: n.numero, proposta_id: n.proposta_id, notas_ids: req.body?.notas_ids || [] } });
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'Content-Disposition': contentDisposition(`Atestado_NFS-e_${n.numero || n.id}.docx`),
@@ -644,7 +658,130 @@ async function vincularProposta(req, res) {
   res.json({ proposta_id: nova.proposta_id, proposta_numero: nova.proposta_numero });
 }
 
+// Outras notas EMITIDAS do mesmo cliente que podem entrar no mesmo atestado (contrato com várias notas)
+async function notasCandidatas(req, res) {
+  const n = await lerNota(req.params.id);
+  if (!n) return res.status(404).json({ erro: 'Nota não encontrada' });
+  const doc = digitos(n.tomador?.documento);
+  const { rows } = await pool.query(
+    `SELECT id, numero, to_char(data_emissao, 'YYYY-MM-DD') AS data_emissao, valor_servicos, left(discriminacao, 120) AS resumo
+       FROM notas_fiscais
+      WHERE situacao = 'emitida' AND id <> $1
+        AND (($2::int IS NOT NULL AND cliente_id = $2) OR ($3 <> '' AND regexp_replace(tomador->>'documento', '\\D', '', 'g') = $3))
+      ORDER BY data_emissao DESC NULLS LAST, id DESC LIMIT 100`, [n.id, n.cliente_id, doc]);
+  res.json(rows);
+}
+
+// Manda o atestado (Word) ao cliente por e-mail e registra o envio. Corpo: { destinatario, mensagem, notas_ids, ...opcoes do atestado }.
+// O e-mail diz que o texto é uma proposta para o cliente conferir e colar no papel timbrado dele.
+async function enviarAtestado(req, res) {
+  const n = await lerNota(req.params.id);
+  if (!n) return res.status(404).json({ erro: 'Nota não encontrada' });
+  const { destinatario, mensagem, ...opcoes } = req.body || {};
+  const destinatarios = String(destinatario ?? '').split(/[;,\s]+/).map(x => x.trim()).filter(Boolean);
+  if (!destinatarios.length || destinatarios.length > 5 || destinatarios.some(d => d.length > 254 || !EMAIL.test(d))) {
+    return res.status(400).json({ erro: 'Informe de 1 a 5 e-mails válidos (separados por vírgula).' });
+  }
+  if (mensagem != null && (typeof mensagem !== 'string' || mensagem.length > 10000)) return res.status(400).json({ erro: 'Mensagem de até 10.000 caracteres.' });
+  try {
+    const contexto = await contextoAtestado(n, opcoes.notas_ids);
+    const { blocos } = atestado.montarAtestado(n, opcoes, contexto);
+    const arquivo = await atestado.gerarDocx(blocos);
+    const numeros = [n, ...contexto.outrasNotas].map(x => x.numero).join(', ');
+    const corpo = (mensagem && mensagem.trim())
+      || `Olá,\n\nSegue em anexo a proposta de texto do atestado de capacidade técnica referente à NFS-e nº ${numeros}. O arquivo traz só o corpo do texto, sem papel timbrado: cole-o no papel timbrado de vocês, confira os dados, ajuste o que for preciso e assine.`;
+    await criarTransportador().sendMail({
+      from: `"H&M Engenharia" <${process.env.EMAIL_IMAP_USER}>`,
+      to: destinatarios.join(', '),
+      subject: `Atestado de capacidade técnica — NFS-e nº ${numeros} — ${EMPRESA.nomeFantasia}`,
+      text: `${corpo}\n\n${ASSINATURA_EMPRESA}`,
+      attachments: [{ filename: `Atestado_NFS-e_${n.numero || n.id}.docx`, content: arquivo, contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }],
+    });
+    const para = destinatarios.join(', ').slice(0, 254);
+    await pool.query('UPDATE notas_fiscais SET atestado_enviado_em = NOW(), atestado_enviado_para = $2 WHERE id = $1', [n.id, para]);
+    await registrarAuditoria(pool, { entidade: 'notas_fiscais', entidadeId: n.id, acao: 'atestado_enviado', usuarioId: req.usuario.id, detalhes: { para, notas: numeros } });
+    res.json({ mensagem: `Atestado enviado para ${para}`, atestado_enviado_em: new Date(), atestado_enviado_para: para });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ erro: err.message });
+    throw err;
+  }
+}
+
+// Rascunho de nota a partir de uma proposta (cliente, valor total e local vêm dela). O serviço fiscal (código de tributação,
+// alíquota, município) é o da última nota do cliente — ou da última nota registrada, se o cliente é novo. Só cria RASCUNHO: o
+// administrador confere e emite como sempre. Uma proposta que já tem nota ativa pede confirmação (`confirmar: true`).
+async function criarDeProposta(req, res) {
+  const propostaId = Number(req.body?.proposta_id);
+  if (!Number.isInteger(propostaId) || propostaId <= 0) return res.status(400).json({ erro: 'Escolha a proposta.' });
+  const { rows: [p] } = await pool.query('SELECT id, numero, total, cliente_id, local_obra, status FROM propostas WHERE id = $1', [propostaId]);
+  if (!p) return res.status(404).json({ erro: 'Proposta não encontrada.' });
+  if (['Cancelada', 'Recusada'].includes(p.status)) return res.status(400).json({ erro: `A proposta está ${p.status.toLowerCase()}.` });
+  if (!p.cliente_id) return res.status(400).json({ erro: 'A proposta não tem cliente cadastrado: cadastre o cliente antes de gerar a nota.' });
+  if (!(Number(p.total) > 0)) return res.status(400).json({ erro: 'A proposta não tem valor total.' });
+  const { rows: ativas } = await pool.query(
+    "SELECT id, numero, situacao FROM notas_fiscais WHERE proposta_id = $1 AND situacao IN ('rascunho', 'emitida') ORDER BY id", [p.id]);
+  if (ativas.length && req.body?.confirmar !== true) {
+    return res.status(409).json({ erro: `Esta proposta já tem ${ativas.length > 1 ? 'notas' : 'nota'} (${ativas.map(a => (a.numero ? `nº ${a.numero}` : 'rascunho')).join(', ')}). Confirme para criar mais um rascunho (nota parcial, por exemplo).`, ja_tem_nota: true });
+  }
+  const { rows: [base] } = await pool.query(
+    `SELECT servico_id, aliquota_iss, codigo_municipio_prestacao FROM notas_fiscais
+      WHERE servico_id IS NOT NULL AND situacao IN ('emitida', 'rascunho')
+      ORDER BY (cliente_id = $1) DESC, (situacao = 'emitida') DESC, id DESC LIMIT 1`, [p.cliente_id]);
+  if (!base) return res.status(409).json({ erro: 'Ainda não há nota anterior para copiar o serviço fiscal. Crie o primeiro rascunho à mão (Nova nota).' });
+  const tomador = await tomadorDoCliente(p.cliente_id);
+  if (!tomador) return res.status(400).json({ erro: 'O cliente da proposta está inativo ou foi removido.' });
+  const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const { d, erro } = await dadosDoRascunho({
+    cliente_id: p.cliente_id, servico_id: base.servico_id, valor_servicos: Number(p.total), competencia: hoje,
+    discriminacao: `Prestação de serviços conforme proposta comercial nº ${p.numero}${p.local_obra ? ` — ${String(p.local_obra).trim()}` : ''}.`.slice(0, 2000),
+    aliquota_iss: base.aliquota_iss, iss_retido: !!tomador.retem_iss, codigo_municipio_prestacao: base.codigo_municipio_prestacao,
+  });
+  if (erro) return res.status(400).json({ erro });
+  const { rows: [n] } = await pool.query(
+    `INSERT INTO notas_fiscais (${CAMPOS_RASCUNHO.join(', ')}, criado_por, proposta_id)
+     VALUES (${CAMPOS_RASCUNHO.map((_, i) => `$${i + 1}`).join(', ')}, $${CAMPOS_RASCUNHO.length + 1}, $${CAMPOS_RASCUNHO.length + 2}) RETURNING id`,
+    [...CAMPOS_RASCUNHO.map(c => d[c]), req.usuario.id, p.id]);
+  await registrarAuditoria(pool, { entidade: 'notas_fiscais', entidadeId: n.id, acao: 'criar_de_proposta', usuarioId: req.usuario.id, detalhes: { proposta_id: p.id, valor: d.valor_servicos } });
+  res.status(201).json({ id: n.id, mensagem: `Rascunho criado a partir da proposta ${p.numero}: confira o texto, o valor e o serviço antes de emitir.` });
+}
+
+// Pix recebidos que podem ter quitado a nota (mesmo valor líquido ou bruto, a partir da emissão) e os já ligados a ela
+async function recebimentosCandidatos(req, res) {
+  const n = await lerNota(req.params.id);
+  if (!n) return res.status(404).json({ erro: 'Nota não encontrada' });
+  const [{ rows: ligados }, { rows: candidatos }] = await Promise.all([
+    pool.query('SELECT id, nome, valor, data_hora FROM financeiro_movimentos WHERE nota_id = $1 ORDER BY data_hora', [n.id]),
+    n.situacao !== 'emitida' ? { rows: [] } : pool.query(
+      `SELECT id, nome, valor, data_hora FROM financeiro_movimentos
+        WHERE tipo = 'recebido' AND nota_id IS NULL
+          AND (abs(valor - $1) < 0.01 OR abs(valor - $2) < 0.01)
+          AND data_hora >= COALESCE($3::timestamp, '2000-01-01') - interval '1 day'
+        ORDER BY data_hora DESC LIMIT 30`, [Number(n.valor_liquido), Number(n.valor_servicos), n.data_emissao]),
+  ]);
+  res.json({ ligados, candidatos, valor_liquido: Number(n.valor_liquido), valor_servicos: Number(n.valor_servicos) });
+}
+
+// Liga (ou desliga, com `ligar: false`) um Pix recebido à nota. Uma nota pode ter mais de um (pagamento parcelado).
+async function ligarRecebimento(req, res) {
+  const n = await lerNota(req.params.id);
+  if (!n) return res.status(404).json({ erro: 'Nota não encontrada' });
+  const movimentoId = Number(req.body?.movimento_id);
+  if (!Number.isInteger(movimentoId) || movimentoId <= 0) return res.status(400).json({ erro: 'Movimento inválido.' });
+  const ligar = req.body?.ligar !== false;
+  if (ligar) {
+    if (n.situacao !== 'emitida') return res.status(409).json({ erro: 'Só nota emitida recebe pagamento.' });
+    const { rows } = await pool.query("UPDATE financeiro_movimentos SET nota_id = $1 WHERE id = $2 AND tipo = 'recebido' AND (nota_id IS NULL OR nota_id = $1) RETURNING id", [n.id, movimentoId]);
+    if (!rows.length) return res.status(409).json({ erro: 'Esse movimento não é um recebimento livre (já está ligado a outra nota?).' });
+  } else {
+    await pool.query('UPDATE financeiro_movimentos SET nota_id = NULL WHERE id = $1 AND nota_id = $2', [movimentoId, n.id]);
+  }
+  await registrarAuditoria(pool, { entidade: 'notas_fiscais', entidadeId: n.id, acao: ligar ? 'ligar_recebimento' : 'desligar_recebimento', usuarioId: req.usuario.id, detalhes: { movimento_id: movimentoId } });
+  const nova = await lerNota(n.id);
+  res.json({ recebido_valor: nova.recebido_valor, recebido_em: nova.recebido_em });
+}
+
 module.exports = {
+  notasCandidatas, enviarAtestado, criarDeProposta, recebimentosCandidatos, ligarRecebimento,
   listar, obter, criar, atualizar, remover, duplicar, cancelar, configCancelamento, pdf, previewHtml, xml, enviarEmail, importar,
   previaAtestado, atestadoDocx, propostasCandidatas, vincularProposta,
   // testes e scripts

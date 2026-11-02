@@ -146,9 +146,9 @@ caso('resumo compacto: contagens, até 20 avisos, sem listas', () => {
   assert.deepStrictEqual(c.classificacao, { classificadosIA: 1 });
 });
 
-caso('rotinas reais: as três de sempre, sem emissão de nota nem cobrança', () => {
+caso('rotinas reais: as três de sempre e a do SINAPI pela pasta, sem emissão de nota nem cobrança', () => {
   const r = require('../src/services/rotinas');
-  assert.deepStrictEqual(r.chaves(), ['notas-email', 'pix-email', 'fornecedores-pastas']);
+  assert.deepStrictEqual(r.chaves(), ['notas-email', 'pix-email', 'fornecedores-pastas', 'sinapi-pasta']);
 });
 
 (async () => {

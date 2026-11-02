@@ -103,6 +103,34 @@ function planilha(mes, { precoCabo = 12.5, semPrecoDisj = false } = {}) {
     await pool.query("UPDATE configuracoes SET valor = 'com' WHERE chave = 'sinapi_regime'");
     assert.strictEqual((await sinapi.buscar('cabo flexivel'))[0].valor, 11.25);
     assert.strictEqual((await sinapi.situacao()).regime, 'com');
+
+    // mês esperado: a Caixa publica o mês anterior por volta do dia 10
+    assert.strictEqual(sinapi.mesEsperado(new Date(2026, 10, 2)), '2026-09'); // 02/11: ainda não saiu a de outubro
+    assert.strictEqual(sinapi.mesEsperado(new Date(2026, 10, 12)), '2026-10');
+    assert.strictEqual(sinapi.mesEsperado(new Date(2027, 0, 5)), '2026-11'); // virada de ano
+    const sit = await sinapi.situacao();
+    assert.strictEqual(typeof sit.atrasado, 'boolean');
+    assert.ok(/^\d{4}-\d{2}$/.test(sit.mes_esperado) && sit.pasta_entrada.endsWith('SINAPI'));
+
+    // pasta de entrada: zip da Caixa (com a planilha dentro), zip sem planilha e arquivo que não é SINAPI
+    const fsp = require('fs/promises'); const os = require('os'); const path = require('path'); const JSZip = require('jszip');
+    const pasta = await fsp.mkdtemp(path.join(os.tmpdir(), 'sinapi-teste-'));
+    try {
+      const bom = new JSZip();
+      bom.file('SINAPI_Referência_2099_01.xlsx', await planilha(MES, { precoCabo: 20 }).xlsx.writeBuffer());
+      await fsp.writeFile(path.join(pasta, 'SINAPI-2099-01-formato-xlsx.zip'), await bom.generateAsync({ type: 'nodebuffer' }));
+      const vazio = new JSZip(); vazio.file('leia-me.txt', 'nada');
+      await fsp.writeFile(path.join(pasta, 'SINAPI-2099-02-formato-xlsx.zip'), await vazio.generateAsync({ type: 'nodebuffer' }));
+      await fsp.writeFile(path.join(pasta, 'outro-arquivo.zip'), 'não é do SINAPI');
+      const r = await sinapi.importarPastaDeEntrada({ pasta });
+      assert.deepStrictEqual([r.arquivosEncontrados, r.arquivosProcessados, r.meses], [2, 1, [MES]]);
+      assert.ok(r.avisos.some(a => /SINAPI-2099-02.*não tem a planilha/.test(a)));
+      assert.strictEqual((await sinapi.buscar('cabo flexivel'))[0].valor, 18, 'a planilha da pasta substituiu o mês (20 × 0,9 com desoneração)');
+      assert.deepStrictEqual((await fsp.readdir(path.join(pasta, 'processados'))).length, 1);
+      assert.deepStrictEqual((await fsp.readdir(path.join(pasta, 'com-erro'))).length, 1);
+      assert.ok((await fsp.readdir(pasta)).includes('outro-arquivo.zip'), 'o que não é SINAPI fica onde está');
+      assert.strictEqual((await sinapi.importarPastaDeEntrada({ pasta })).arquivosProcessados, 0, 'pasta sem novidade: nada a fazer');
+    } finally { await fsp.rm(pasta, { recursive: true, force: true }); }
   } finally {
     await limpa();
     await pool.query("DELETE FROM configuracoes WHERE chave IN ('sinapi_uf', 'sinapi_regime')");

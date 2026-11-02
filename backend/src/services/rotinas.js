@@ -82,6 +82,21 @@ function definicoesPadrao() {
       logErro: 'Erro na verificação da pasta de orçamentos de fornecedores:',
       ultimoRegistroSql: 'SELECT MAX(processado_em) AS em FROM arquivos_fornecedores_processados',
     },
+    'sinapi-pasta': {
+      nome: 'SINAPI: planilha mensal na pasta',
+      descricao: 'Importa sozinho o zip (ou a planilha) do SINAPI que o administrador baixa da Caixa e deixa na pasta SINAPI, e avisa em Integrações quando o mês novo ainda não chegou.',
+      atrasoSegundos: 45,
+      configurada: () => true,
+      pastas: () => [require('./sinapi').pastaDeEntrada()],
+      logAgendada: () => `Importação do SINAPI pela pasta ativa (${quando}) — pasta: ${require('./sinapi').pastaDeEntrada()}`,
+      executar: () => require('./sinapi').importarPastaDeEntrada(),
+      itens: (r) => r.arquivosProcessados,
+      texto: (r) => (r.arquivosEncontrados ? `${r.arquivosProcessados || 0} de ${r.arquivosEncontrados} arquivo(s) importado(s)${r.meses?.length ? ` (${r.meses.join(', ')})` : ''}` : 'nenhum arquivo novo na pasta'),
+      logResultado: (r) => r.arquivosProcessados > 0 && `SINAPI importado da pasta: ${r.meses.join(', ')} — ${r.insumos} insumos e ${r.composicoes} composições`,
+      prefixoAviso: 'Aviso (SINAPI):',
+      logErro: 'Erro na importação do SINAPI pela pasta:',
+      ultimoRegistroSql: 'SELECT MAX(importado_em) AS em FROM sinapi_importacoes',
+    },
   };
 }
 
