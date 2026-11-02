@@ -112,6 +112,10 @@ export const atualizarMargemPadrao = (margem) => api.put('/configuracoes/margem'
 export const getPadroesOrcamento = () => api.get('/configuracoes/padroes-orcamento');
 export const atualizarPadroesOrcamento = (padroes) => api.put('/configuracoes/padroes-orcamento', padroes);
 
+// Faixa praticada dos materiais nas propostas aprovadas ({ [material_id]: { minimo, mediana, maximo, ultimo, ... } })
+export const getPrecosVendidos = (ids, excluirPropostaId) =>
+  api.get('/materiais/precos-vendidos', { params: { ids: ids.join(','), ...(excluirPropostaId ? { excluir: excluirPropostaId } : {}) } });
+
 // ── PROPOSTAS ─────────────────────────────────────────────────────────
 export const getPropostas = (params) => api.get('/propostas', { params });
 export const getProposta = (id) => api.get(`/propostas/${id}`);

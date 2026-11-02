@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { Plus, Trash2, FolderPlus, FileDown, Send, FilePlus2, Search, ArrowLeft, Calculator, BarChart3 } from 'lucide-react';
 import {
   getTodosClientes, getTodosMateriais, getServicos, getSegmentoCliente, getProximoNumero, criarProposta, atualizarProposta, getProposta,
-  getPadroesOrcamento, pesquisarPrecoMercado, getAnaliseProjeto, getLaudo, getObra, duplicarProposta, baixarPdfProposta, baixarPlanilhaProposta,
+  getPadroesOrcamento, getPrecosVendidos, pesquisarPrecoMercado, getAnaliseProjeto, getLaudo, getObra, duplicarProposta, baixarPdfProposta, baixarPlanilhaProposta,
 } from '../services/api';
 import { formatarMoeda } from '../utils/format';
 import { arred2, arredQtd, totalDaLinha } from '../utils/dinheiro';
@@ -352,6 +352,20 @@ export default function Orcamento() {
   const servicosPorDescricao = useMemo(() => Object.fromEntries(servicos.map(s => [normalizarNome(s.descricao), s])), [servicos]);
   const servicoDoItem = (it) => servicosPorCodigo[it.codigo] || servicosPorDescricao[normalizarNome(it.descricao)];
   const materiaisPorId = useMemo(() => Object.fromEntries(materiais.map(m => [String(m.id), m])), [materiais]);
+
+  // Faixa praticada (propostas aprovadas) dos materiais que estão nesta proposta. A tela da
+  // própria proposta não conta contra si; falha de rede só some com a dica.
+  const [vendidos, setVendidos] = useState({});
+  const idsMateriais = [...new Set(itens.map(i => Number(i.material_id)).filter(n => Number.isInteger(n) && n > 0))].sort((a, b) => a - b);
+  const chaveIdsMateriais = idsMateriais.join(',');
+  useEffect(() => {
+    if (!chaveIdsMateriais) { setVendidos({}); return undefined; }
+    let vivo = true;
+    getPrecosVendidos(chaveIdsMateriais.split(',').map(Number), editandoId)
+      .then(r => { if (vivo) setVendidos(r.data || {}); })
+      .catch(() => {});
+    return () => { vivo = false; };
+  }, [chaveIdsMateriais, editandoId]);
 
   // Carrega a proposta do servidor e tira o retrato "salvo" (base). Usado ao
   // abrir e no "Recarregar do servidor" do conflito de versão.
@@ -1417,6 +1431,8 @@ export default function Orcamento() {
                       <CampoMoeda value={it.valor_unitario} onChange={v => atualizarItem(it.id, 'valor_unitario', v)} />
                       <DicaCatalogo material={it.material_id ? materiaisPorId[String(it.material_id)] : null} valor={it.valor_unitario}
                         onUsar={v => atualizarItem(it.id, 'valor_unitario', v)} />
+                      <DicaVendido faixa={it.material_id ? vendidos[it.material_id] : null} valor={it.valor_unitario}
+                        material={it.material_id ? materiaisPorId[String(it.material_id)] : null} />
                     </div>
                   )}
                   <span style={{ fontSize: 12, color: '#ccc', textAlign: 'right', paddingRight: 4 }}>
@@ -1666,6 +1682,34 @@ function DicaCatalogo({ material, valor, onUsar }) {
       catálogo: {formatarMoeda(material.preco)}{' '}
       <button type="button" onClick={() => onUsar(Number(material.preco))} style={btnUsar}>usar</button>
     </div>
+  );
+}
+
+// Faixa que o material já foi vendida (propostas aprovadas): menor – maior, mediana e quantas
+// propostas. Avisa quando o valor da linha está abaixo do menor preço já vendido, e quando o
+// custo de compra do catálogo passou do último preço vendido (venda no prejuízo).
+function DicaVendido({ faixa, valor, material }) {
+  if (!faixa) return null;
+  const v = Number(valor) || 0;
+  const custo = Number(material?.preco_compra) || 0;
+  const abaixo = v > 0 && v < faixa.minimo;
+  const custoAcima = custo > faixa.ultimo;
+  const [ano, mes, dia] = String(faixa.ultima_data || '').split('-');
+  const quando = ano ? ` em ${dia}/${mes}/${ano}` : '';
+  const alertas = [
+    abaixo && `abaixo do menor preço já vendido (${formatarMoeda(faixa.minimo)})`,
+    custoAcima && `custo de compra ${formatarMoeda(custo)} acima do último preço vendido (${formatarMoeda(faixa.ultimo)})`,
+  ].filter(Boolean);
+  const linha = { fontSize: 10.5, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+  return (
+    <>
+      <div style={{ ...linha, color: '#6f7f8f' }}
+        title={`Preço já vendido em propostas aprovadas (${faixa.propostas} proposta${faixa.propostas > 1 ? 's' : ''}). Último: ${formatarMoeda(faixa.ultimo)} na proposta ${faixa.ultima_proposta}${quando}.`}>
+        vendido: {faixa.minimo === faixa.maximo ? formatarMoeda(faixa.minimo) : `${formatarMoeda(faixa.minimo)} – ${formatarMoeda(faixa.maximo)}`}
+        {faixa.propostas > 1 ? ` · mediana ${formatarMoeda(faixa.mediana)}` : ''} · {faixa.propostas}×
+      </div>
+      {alertas.map(a => <div key={a} style={{ ...linha, color: '#e08080' }} title={a}>⚠ {a}</div>)}
+    </>
   );
 }
 

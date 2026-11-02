@@ -120,6 +120,7 @@ router.post('/auth/senha', autenticar, authCtrl.alterarSenha);
 // ── MATERIAIS ─────────────────────────────────────────────────────────
 router.get('/materiais', autenticar, matCtrl.listar);
 router.get('/materiais/categorias', autenticar, matCtrl.categorias);
+router.get('/materiais/precos-vendidos', autenticar, matCtrl.precosVendidos);
 router.post('/materiais', autenticar, matCtrl.criar);
 router.put('/materiais/:id', autenticar, validarId, matCtrl.atualizar);
 // apagar some com o material do catálogo de todos (e das sugestões de preço):

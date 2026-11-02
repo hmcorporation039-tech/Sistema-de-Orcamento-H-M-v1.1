@@ -6,6 +6,7 @@ const { compararComCatalogo } = require('../utils/semelhancaMateriais');
 const rotinas = require('../services/rotinas');
 const { registrarAuditoria } = require('../services/auditoria');
 const { registrarHistoricoPreco } = require('../services/catalogoMateriais');
+const precosVendidosServico = require('../services/precosVendidos');
 
 // Compara uma descrição livre (ex.: vinda de um projeto, de uma cotação, ou
 // perguntada na conversa via MCP) com o catálogo — mesma lógica de
@@ -203,4 +204,13 @@ async function verificarFornecedoresAgora(req, res) {
   }
 }
 
-module.exports = { listar, criar, atualizar, remover, importar, extrairNota, categorias, comparar, verificarFornecedoresAgora };
+// Faixa praticada (menor, mediana, maior e último preço) dos materiais nas propostas aprovadas.
+// ?ids=1,2,3 (até 500) e, na edição, ?excluir=<id da proposta> para ela não contar contra si.
+async function precosVendidos(req, res) {
+  const ids = precosVendidosServico.lerIds(req.query.ids);
+  const excluir = Number(req.query.excluir);
+  const faixas = await precosVendidosServico.faixasPorMaterial(ids, { excluirPropostaId: Number.isInteger(excluir) && excluir > 0 ? excluir : null });
+  res.json(faixas);
+}
+
+module.exports = { listar, criar, atualizar, remover, importar, extrairNota, categorias, comparar, verificarFornecedoresAgora, precosVendidos };

@@ -11,7 +11,7 @@ migração idempotente (CLAUDE.md), backup antes de ir para a produção e só v
 | 2 | Layout de fornecedor aprendido (adiado: a IA quase não é usada aqui; contador instalado em 02/11) | 1 dia | Não | uso real de IA nas cotações |
 | 3 | Tela de confirmação do mapa do CAD | 2–3 dias | Não (só o visual) | — |
 | 4 | BDI e impostos ajustáveis (decidido 02/11) — **feito no v2 (02/11)** | 0,5 dia | Não: sem valor fixo (reforma tributária) | — |
-| 5 | Histórico de preços vendidos | 1 dia | Não | — |
+| 5 | Histórico de preços vendidos — **feito no v2 (02/11)** | 1 dia | Não | — |
 | 6 | Tabela SINAPI local (DF) | **feito no v2 (02/11)**; falta tela | Regime (com/sem desoneração) | importar a planilha todo mês |
 | 9 | Atestado de capacidade técnica (corpo do texto) | 1–2 dias | Não | nota fiscal emitida |
 | 7 | Classificador local de materiais | 2 dias | Não | ~500 itens confirmados (item 5 ajuda) |
@@ -68,12 +68,16 @@ em projetos parecidos: custo e tempo à toa.
 
 (A parte de impostos por regime e a reforma tributária voltam aqui quando as alíquotas saírem: basta o admin atualizar.)
 
-## 5. Histórico de preços vendidos
+## 5. Histórico de preços vendidos  (feito no v2 em 02/11/2026)
+**Feito:** em vez da tabela espelho `material_precos_vendidos`, a faixa é calculada na hora de `propostas` × `proposta_itens` (`services/precosVendidos.js`): só proposta **Aprovada**, item **confirmado** e com preço. Assim cancelada, recusada, ativa ou apagada nunca entra, aprovação desfeita sai na hora e não há carga única nem rotina de sincronização que possa ficar para trás (sem migração). Rota `GET /api/materiais/precos-vendidos?ids=1,2,3&excluir=<proposta>` (até 500 ids; a proposta aberta não conta contra si). Tela do orçamento: abaixo do preço de cada material aparece "vendido: menor – maior · mediana · N×" (dica com o último preço, proposta e data) e dois avisos: valor da linha abaixo do menor preço já vendido, e custo de compra do catálogo acima do último preço vendido. Teste: `testes/precosVendidos.test.js`. Só aparece para item ligado ao catálogo (`material_id`); no banco do v2 ainda não há venda aprovada com material ligado (3 aprovadas, nenhuma com material), então a faixa só enche com o uso. **Não feito:** separar por tipo de cliente (privado × licitação).
+
+(Plano original, mantido como registro:)
 **Problema:** o catálogo guarda só o último preço.
 **Como:**
 - Tabela `material_precos_vendidos` (`material_id`, `proposta_id`, `preco_unit`, `quantidade`, `data`, `cliente_tipo`), preenchida quando a proposta é aprovada/fechada, mais carga única das propostas já existentes.
 - Na tela do orçamento, ao lado do item: faixa praticada (mín – mediana – máx) e alerta quando o custo atual passou do último preço vendido.
 **Teste:** carga única idempotente; mediana certa; proposta cancelada não entra.
+**Feito (02/11/2026):** em vez da tabela espelho `material_precos_vendidos`, a faixa é calculada na hora de `propostas` × `proposta_itens` (`services/precosVendidos.js`): só proposta **Aprovada**, item **confirmado** e com preço. Assim cancelada, recusada, ativa ou apagada nunca entra, aprovação desfeita sai na hora e não há carga única nem rotina de sincronização que possa ficar para trás (sem migração). Rota `GET /api/materiais/precos-vendidos?ids=1,2,3&excluir=<proposta>` (até 500 ids; a proposta aberta não conta contra si). Tela do orçamento: abaixo do preço de cada material aparece "vendido: menor – maior · mediana · N×" (dica com o último preço, proposta e data) e dois avisos: valor da linha abaixo do menor preço já vendido, e custo de compra do catálogo acima do último preço vendido. Teste: `testes/precosVendidos.test.js`. Só aparece para item ligado ao catálogo (`material_id`); no banco do v2 ainda não há venda aprovada com material ligado (3 aprovadas, nenhuma com material), então a faixa só enche com o uso. **Não feito:** separar por tipo de cliente (privado × licitação).
 
 ## 6. Tabela SINAPI local (DF)  (importador e dados prontos no v2, 02/11/2026)
 **Decisão do Márcio:** estado de referência = **DF**.
