@@ -9,6 +9,7 @@ const aprendizadoMateriais = require('../../services/aprendizadoMateriais');
 const { comTransacao } = require('../../services/transacao');
 const { hojeBrasilia } = require('../../utils/dataHoje');
 const { calcularTotais } = require('../../utils/calculoProposta');
+const { padroesParaPropostaNova } = require('../../services/padroesOrcamento');
 const { validarProposta } = require('../../utils/validacaoProposta');
 const { inserirSecoesEItens, proximoNumero, registrarEvento } = require('../propostasController');
 const { classificarPendentesEmSegundoPlano } = require('../../services/classificacaoMateriais');
@@ -117,11 +118,14 @@ async function gerarOrcamento(req, res) {
       ? (await client.query('SELECT numero, status, bdi, bdi_materiais, imposto_venda, imposto_servico FROM propostas WHERE id = $1 FOR UPDATE', [vinculadaId])).rows[0]
       : null;
     const vinculada = vinculadaInfo && vinculadaInfo.status === 'Ativa' ? vinculadaId : null;
-    const totais = calcularTotais({ secoes, itens,
-      bdi: vinculada ? Number(vinculadaInfo.bdi) || 0 : 0,
+    // proposta nova nasce com o BDI e os impostos padrão configurados (0 onde não foram definidos)
+    const padrao = vinculada ? null : await padroesParaPropostaNova(client);
+    const bdi = vinculada ? Number(vinculadaInfo.bdi) || 0 : padrao.bdi;
+    const impostoVenda = vinculada ? Number(vinculadaInfo.imposto_venda) || 0 : padrao.imposto_venda;
+    const impostoServico = vinculada ? Number(vinculadaInfo.imposto_servico) || 0 : padrao.imposto_servico;
+    const totais = calcularTotais({ secoes, itens, bdi,
       bdi_materiais: vinculada ? vinculadaInfo.bdi_materiais : null, // BDI diferenciado (2.0, Fase 3F) também é mantido
-      imposto_venda: vinculada ? Number(vinculadaInfo.imposto_venda) || 0 : 0,
-      imposto_servico: vinculada ? Number(vinculadaInfo.imposto_servico) || 0 : 0 });
+      imposto_venda: impostoVenda, imposto_servico: impostoServico });
 
     if (vinculada) { // linha já travada acima
       await client.query(
@@ -145,7 +149,7 @@ async function gerarOrcamento(req, res) {
         valor_imposto_venda, valor_imposto_servico, total, usuario_id, obra_id, origem_tipo, origem_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'laudo',$21) RETURNING id`,
       [numeroGerado, seq, dataHoje, 5, clienteId, clienteNome, req.usuario.nome, orcamento.escopo, orcamento.observacoes,
-       0, 0, 0, totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi,
+       bdi, impostoVenda, impostoServico, totais.subtotal_materiais, totais.subtotal_mao_obra, totais.valor_bdi,
        totais.valor_imposto_venda, totais.valor_imposto_servico, totais.total, req.usuario.id,
        laudo.obra_id || null, laudo.id] // a proposta herda a obra do laudo e guarda a origem
     );
@@ -156,16 +160,16 @@ async function gerarOrcamento(req, res) {
       `UPDATE laudos_projetos SET propostas = propostas || jsonb_build_object($1::text, $2::int) WHERE id = $3`,
       [modo, novaId, laudo.id]
     );
-    return { propostaId: novaId, numero: numeroGerado, criada: true };
+    return { propostaId: novaId, numero: numeroGerado, criada: true, aviso: padrao.aviso };
   });
   if (!resultadoTx) return res.status(404).json({ erro: 'Registro não encontrado.' });
-  const { propostaId, numero, criada } = resultadoTx;
+  const { propostaId, numero, criada, aviso: avisoPadroes } = resultadoTx;
 
   classificarPendentesEmSegundoPlano(); // materiais novos do orçamento sem categoria → IA
   res.json({
     propostaId, numero, criada, estatistica,
     mensagem: `Orçamento ${numero} ${criada ? 'criado' : 'atualizado'} (${rotuloModo}): ${estatistica.materiaisNoCatalogo} materiais com preço do catálogo, ` +
-      `${estatistica.materiaisNovos} a cotar, ${estatistica.servicosComReferencia} serviços com preço de referência (${estatistica.segmento === 'publico' ? 'referência oficial — cliente órgão público' : 'mercado particular'}).`,
+      `${estatistica.materiaisNovos} a cotar, ${estatistica.servicosComReferencia} serviços com preço de referência (${estatistica.segmento === 'publico' ? 'referência oficial — cliente órgão público' : 'mercado particular'}).` + (avisoPadroes ? ` ${avisoPadroes}` : ''),
   });
 }
 

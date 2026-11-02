@@ -10,7 +10,7 @@ migração idempotente (CLAUDE.md), backup antes de ir para a produção e só v
 | 1 | Cache das chamadas à IA | **feito no v2 (02/11)**; falta levar à produção | Não | — |
 | 2 | Layout de fornecedor aprendido (adiado: a IA quase não é usada aqui; contador instalado em 02/11) | 1 dia | Não | uso real de IA nas cotações |
 | 3 | Tela de confirmação do mapa do CAD | 2–3 dias | Não (só o visual) | — |
-| 4 | BDI e impostos ajustáveis (decidido 02/11) | 0,5 dia | Não: sem valor fixo (reforma tributária) | — |
+| 4 | BDI e impostos ajustáveis (decidido 02/11) — **feito no v2 (02/11)** | 0,5 dia | Não: sem valor fixo (reforma tributária) | — |
 | 5 | Histórico de preços vendidos | 1 dia | Não | — |
 | 6 | Tabela SINAPI local (DF) | **feito no v2 (02/11)**; falta tela | Regime (com/sem desoneração) | importar a planilha todo mês |
 | 9 | Atestado de capacidade técnica (corpo do texto) | 1–2 dias | Não | nota fiscal emitida |
@@ -59,11 +59,12 @@ em projetos parecidos: custo e tempo à toa.
 **Teste:** correção muda a quantidade no orçamento; correção vira aprendizado; análise antiga sem mapa continua funcionando.
 **Risco:** é a maior entrega; fatiar em (a) só leitura, (b) edição, (c) planta visual.
 
-## 4. BDI e impostos ajustáveis  (decidido em 02/11/2026)
+## 4. BDI e impostos ajustáveis  (feito no v2 em 02/11/2026)
 **Problema:** o frontend sugere BDI 20 % e imposto 6 %; análise, skills e MCP sugerem 0 %.
 **Decisão do Márcio:** não fixar valor: as novas alíquotas da reforma tributária ainda não existem, então BDI e impostos ficam **ajustáveis** pelo administrador.
 **Como:** chaves em `configuracoes` (`bdi_padrao`, `imposto_servico_padrao`, `imposto_venda_padrao`), por tipo de cliente (privado × licitação) se ele quiser; tela de ajuste em Integrações/Admin; lidas pelo frontend (`Orcamento.js`), pela análise e pelo MCP, que hoje têm cada um o seu número. Sem valor configurado, a análise/MCP não inventam: pedem o valor. Proposta já salva nunca muda (o valor fica gravado nela).
 **Teste:** `regressaoTotais.test.js` nos três caminhos; trocar a configuração muda só as propostas novas.
+**Feito:** `services/padroesOrcamento.js` (chaves `bdi_padrao`, `imposto_venda_padrao`, `imposto_servico_padrao`, sem valor de fábrica; vazio = não definido), rotas `GET/PUT /api/configuracoes/padroes-orcamento` (PUT só admin, com auditoria), cartão "BDI e impostos padrão" em Integrações. Proposta nova pela tela, pelo orçamento da análise/laudo, pelo assistente e pelo MCP nasce com o padrão; sem valor definido o campo fica 0 e a tela/assistente/MCP avisam (nunca inventam). Proposta já salva não muda. Teste: `padroesOrcamento.test.js`. **Não feito:** padrão por tipo de cliente (privado × licitação) — só se o Márcio quiser.
 
 (A parte de impostos por regime e a reforma tributária voltam aqui quando as alíquotas saírem: basta o admin atualizar.)
 

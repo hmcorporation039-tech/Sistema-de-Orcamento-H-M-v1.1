@@ -2,11 +2,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
 import {
   Mail, Banknote, FolderOpen, Bot, RefreshCw, Play, Clock, CheckCircle2,
-  AlertTriangle, XCircle, Loader2, History, ChevronDown, ChevronUp, PlugZap, DatabaseBackup,
+  AlertTriangle, XCircle, Loader2, History, ChevronDown, ChevronUp, PlugZap, DatabaseBackup, Percent,
 } from 'lucide-react';
 import {
   getRotinasIntegracoes, executarRotinaIntegracao, testarIAIntegracoes,
-  getBackupIntegracoes, executarBackupIntegracoes,
+  getBackupIntegracoes, executarBackupIntegracoes, getPadroesOrcamento, atualizarPadroesOrcamento,
 } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { estilos } from '../components/ui/estilos';
@@ -325,6 +325,73 @@ function CartaoBackup({ backup, rodando, aoExecutar }) {
   );
 }
 
+// BDI e impostos padrão das propostas NOVAS. Sem valor de fábrica: as alíquotas da reforma
+// tributária ainda não existem, então o administrador define e atualiza aqui. Proposta já salva
+// guarda o próprio valor e não muda. Campo vazio = "não definido".
+const CAMPOS_PADRAO = [
+  { chave: 'bdi', rotulo: 'BDI', dica: 'sobre material + mão de obra' },
+  { chave: 'imposto_venda', rotulo: 'Imposto sobre a venda de material', dica: 'sobre o material' },
+  { chave: 'imposto_servico', rotulo: 'Imposto sobre serviço', dica: 'sobre a mão de obra' },
+];
+
+function CartaoPadroes() {
+  const [salvo, setSalvo] = useState(null);
+  const [valores, setValores] = useState({ bdi: '', imposto_venda: '', imposto_servico: '' });
+  const [salvando, setSalvando] = useState(false);
+
+  const aplicar = useCallback((p) => {
+    setSalvo(p);
+    setValores(Object.fromEntries(CAMPOS_PADRAO.map(c => [c.chave, p[c.chave] == null ? '' : String(p[c.chave]).replace('.', ',')])));
+  }, []);
+  useEffect(() => { getPadroesOrcamento().then(r => aplicar(r.data)).catch(() => {}); }, [aplicar]);
+  if (!salvo) return null;
+
+  const mudou = CAMPOS_PADRAO.some(c => (valores[c.chave].trim() === '' ? null : Number(valores[c.chave].replace(',', '.'))) !== salvo[c.chave]);
+
+  async function salvar() {
+    setSalvando(true);
+    try {
+      const res = await atualizarPadroesOrcamento(valores);
+      aplicar(res.data);
+      toast.success('BDI e impostos padrão salvos — valem para as propostas novas');
+    } catch (err) {
+      toast.error(err.response?.data?.erro || 'Erro ao salvar');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div style={cartao}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+        <div style={iconeCaixa}><Percent size={17} /></div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ color: '#eee', fontWeight: 700, fontSize: 14 }}>BDI e impostos padrão</div>
+          <div style={{ color: 'var(--texto-3)', fontSize: 12, marginTop: 2 }}>
+            Valem só para as propostas novas (orçamento, análise de projeto, laudos e assistente). A proposta já salva guarda o próprio valor. Deixe vazio o que ainda não estiver definido: o sistema não inventa número.
+          </div>
+        </div>
+        {salvo.definidos
+          ? <Selo cor="#3fb95f" bg="#0a1a0f" borda="#1a4a26"><CheckCircle2 size={11} />Definidos</Selo>
+          : <Selo cor="#d9a53a" bg="#1a150a" borda="#4a3a1a"><AlertTriangle size={11} />Faltam valores</Selo>}
+      </div>
+      {CAMPOS_PADRAO.map(c => (
+        <label key={c.chave} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--texto-2)', padding: '4px 0' }}>
+          <span style={{ flex: 1, minWidth: 0 }}>{c.rotulo} <span style={{ color: 'var(--texto-3)' }}>({c.dica})</span></span>
+          <input type="text" inputMode="decimal" placeholder="não definido" value={valores[c.chave]}
+            onChange={e => setValores(v => ({ ...v, [c.chave]: e.target.value }))} style={{ width: 96, textAlign: 'right' }} />
+          <span>%</span>
+        </label>
+      ))}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+        <button onClick={salvar} disabled={!mudou || salvando} style={{ ...btnPrimario, opacity: !mudou || salvando ? 0.6 : 1 }}>
+          {salvando ? 'Salvando…' : 'Salvar'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function Integracoes() {
   const { usuario } = useAuth();
   const ehAdmin = usuario?.role === 'admin';
@@ -449,6 +516,7 @@ export default function Integracoes() {
           ))}
           <CartaoBackup backup={backup} rodando={fazendoBackup} aoExecutar={fazerBackup} />
           <CartaoIA ia={dados.ia} cache={dados.iaCache} testando={testando} aoTestar={testarIA} />
+          <CartaoPadroes />
         </div>
       )}
     </div>

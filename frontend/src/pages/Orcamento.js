@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { Plus, Trash2, FolderPlus, FileDown, Send, FilePlus2, Search, ArrowLeft, Calculator, BarChart3 } from 'lucide-react';
 import {
   getTodosClientes, getTodosMateriais, getServicos, getSegmentoCliente, getProximoNumero, criarProposta, atualizarProposta, getProposta,
-  pesquisarPrecoMercado, getAnaliseProjeto, getLaudo, getObra, duplicarProposta, baixarPdfProposta, baixarPlanilhaProposta,
+  getPadroesOrcamento, pesquisarPrecoMercado, getAnaliseProjeto, getLaudo, getObra, duplicarProposta, baixarPdfProposta, baixarPlanilhaProposta,
 } from '../services/api';
 import { formatarMoeda } from '../utils/format';
 import { arred2, arredQtd, totalDaLinha } from '../utils/dinheiro';
@@ -73,7 +73,9 @@ let transporte = null;
 let contador = 0;
 const gerarId = () => `tmp_${Date.now()}_${contador++}`;
 
-const formVazio = () => ({
+// `padroes` = BDI e impostos padrão do administrador (Integrações); sem valor definido o campo
+// nasce 0 — não há número de fábrica (as alíquotas da reforma tributária ainda não existem)
+const formVazio = (padroes) => ({
   // data local (toISOString é UTC: depois das 21 h saía o dia seguinte)
   data: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10),
   validade: 5,
@@ -85,13 +87,13 @@ const formVazio = () => ({
   escopo: '',
   pagamento: '',
   observacoes: '',
-  bdi: 20,
+  bdi: padroes?.bdi ?? 0,
   // BDI diferenciado dos materiais (null = o mesmo BDI) e memória do cálculo
   // pelo TCU (null = BDI digitado à mão) — 2.0, Fase 3F
   bdi_materiais: null,
   bdi_memoria: null,
-  imposto_venda: 0,
-  imposto_servico: 6,
+  imposto_venda: padroes?.imposto_venda ?? 0,
+  imposto_servico: padroes?.imposto_servico ?? 0,
   // Só registram o percentual do ÚLTIMO reajuste/desconto aplicado direto
   // nos valores unitários (ver aplicarAjustePercentual) — não entram em
   // nenhuma conta de total, servem só pro PDF avisar quando foi desconto.
@@ -249,6 +251,9 @@ export default function Orcamento() {
   // segmento da obra (obras.segmento) — órgão público pela obra OU pelo cliente
   const [segmentoObra, setSegmentoObra] = useState(null);
   const calculadoraJaSugerida = useRef(null); // id da proposta em que o calculador já abriu sozinho
+  // BDI e impostos padrão do administrador (null = ainda não carregou ou não conseguiu)
+  const [padroesOrc, setPadroesOrc] = useState(null);
+  const buscarPadroes = () => getPadroesOrcamento().then(r => { setPadroesOrc(r.data); return r.data; }).catch(() => null);
 
   useEffect(() => {
     // catálogo e clientes inteiros (o servidor pagina em até 1000 por vez)
@@ -435,16 +440,22 @@ export default function Orcamento() {
     setSomenteLeitura(null);
     if (!editandoId) {
       getProximoNumero().then(res => setProximoNumero(res.data.proximo)).catch(() => {});
-      const inicial = { ...formVazio(), obra_id: obraDaUrl || null };
-      const secoesIniciais = SECOES_PADRAO();
-      setForm(inicial);
-      setSecoes(secoesIniciais);
-      setItens([]);
-      setPropostaSalva(null);
-      const r = retrato(inicial, secoesIniciais, []);
-      setBase(r);
-      oferecerRascunho(chaveRascunho(usuario?.id, null), r);
-      return;
+      // o padrão de BDI/impostos vem do servidor: a proposta nova só monta depois dele (uma
+      // chamada curta); se falhar, nasce com 0 e o aviso abaixo continua valendo
+      let vivo = true;
+      buscarPadroes().then(padroes => {
+        if (!vivo) return;
+        const inicial = { ...formVazio(padroes), obra_id: obraDaUrl || null };
+        const secoesIniciais = SECOES_PADRAO();
+        setForm(inicial);
+        setSecoes(secoesIniciais);
+        setItens([]);
+        setPropostaSalva(null);
+        const r = retrato(inicial, secoesIniciais, []);
+        setBase(r);
+        oferecerRascunho(chaveRascunho(usuario?.id, null), r);
+      });
+      return () => { vivo = false; };
     }
     carregarDoServidor(editandoId);
   }, [editandoId, obraDaUrl]); // eslint-disable-line
@@ -822,14 +833,16 @@ export default function Orcamento() {
       navigate('/propostas?aba=editar');
     } else {
       // já está em "nova": o efeito de carga não roda de novo — limpa aqui
-      const inicial = formVazio();
-      const secoesIniciais = SECOES_PADRAO();
-      setForm(inicial);
-      setSecoes(secoesIniciais);
-      setItens([]);
-      setPesquisas({});
-      setOrigem(null);
-      setBase(retrato(inicial, secoesIniciais, []));
+      buscarPadroes().then(padroes => {
+        const inicial = formVazio(padroes);
+        const secoesIniciais = SECOES_PADRAO();
+        setForm(inicial);
+        setSecoes(secoesIniciais);
+        setItens([]);
+        setPesquisas({});
+        setOrigem(null);
+        setBase(retrato(inicial, secoesIniciais, []));
+      });
       getProximoNumero().then(r => setProximoNumero(r.data.proximo)).catch(() => {});
     }
   }
@@ -1157,6 +1170,14 @@ export default function Orcamento() {
           </div>
         );
       })()}
+
+      {/* Proposta nova com BDI/impostos padrão ainda não definidos pelo administrador */}
+      {!editandoId && padroesOrc && !padroesOrc.definidos && (
+        <div style={{ ...card, padding: '10px 16px', borderColor: '#4a3a12', fontSize: 12, color: '#c9a227' }}>
+          ⚠ O BDI e os impostos padrão ainda não foram definidos{usuario?.role === 'admin' ? <> (<Link to="/cadastros?aba=integracoes" style={{ color: '#c9a227', textDecoration: 'underline' }}>Integrações → BDI e impostos padrão</Link>)</> : ' — peça ao administrador (Integrações)'}.
+          Os campos abaixo vieram com 0 %: confira BDI, imposto sobre venda e imposto sobre serviço antes de salvar.
+        </div>
+      )}
 
       {/* BDI (Fase 3F): órgão público sem composição do BDI e avisos da composição */}
       {((ehPublico && !memoriaBdi) || avisosBdi.length > 0) && (

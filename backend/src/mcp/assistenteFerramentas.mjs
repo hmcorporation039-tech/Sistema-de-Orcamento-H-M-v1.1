@@ -430,13 +430,18 @@ export function definirFerramentas({ api, contexto = {}, token = '' }) {
           r = await api('POST', `/api/laudos/${pid}/gerar-orcamento`, { modo });
         } else {
           if (!cliente_nome || !itens?.length) return falha('Para origem "itens", informe cliente_nome e ao menos um item.');
+          // BDI e impostos padrão definidos pelo administrador; o que não foi definido fica 0 e o
+          // assistente avisa (nunca inventa um número)
+          const padroes = await api('GET', '/api/configuracoes/padroes-orcamento');
           const base = {
             data: hojeBrasilia(), validade: 5, cliente_nome, escopo: escopo || '', observacoes: 'Rascunho montado pelo assistente virtual — revise antes de enviar ao cliente.',
-            bdi: 0, imposto_venda: 0, imposto_servico: 0, obra_id: obra_id || obraPadrao || null, secoes: [], itens: [],
+            bdi: padroes.bdi ?? 0, imposto_venda: padroes.imposto_venda ?? 0, imposto_servico: padroes.imposto_servico ?? 0,
+            obra_id: obra_id || obraPadrao || null, secoes: [], itens: [],
           };
           const { payload } = aplicarOperacoes(base, { adicionar: itens });
           const criada = await api('POST', '/api/propostas', payloadParaEnvio(payload));
-          r = { propostaId: criada.id, numero: criada.numero, criada: true, mensagem: `Proposta ${criada.numero} criada.` };
+          r = { propostaId: criada.id, numero: criada.numero, criada: true,
+            mensagem: `Proposta ${criada.numero} criada.${padroes.definidos ? '' : ' ATENÇÃO: BDI e impostos padrão ainda não foram definidos pelo administrador (Integrações) — a proposta ficou com o que faltava em 0 %; pergunte ao usuário o BDI e os impostos e ajuste com editar_rascunho.'}` };
         }
         const texto = await verPropostaTexto(r.propostaId);
         return ok(`${r.criada ? 'Rascunho criado' : 'Rascunho ATUALIZADO (já existia, criado por você)'}: Proposta ${r.numero} — link /propostas/editar/${r.propostaId}\n${r.mensagem || ''}\n\n${texto}`);

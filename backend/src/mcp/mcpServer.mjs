@@ -436,7 +436,7 @@ server.registerTool(
       responsavel: z.string().optional(),
       escopo: z.string().optional().describe('Escopo do serviço — sai no PDF logo após a saudação'),
       observacoes: z.string().optional().describe('Observações gerais — saem no PDF após as condições de pagamento'),
-      bdi: z.number().min(0).max(999.99).optional().describe('Percentual de BDI — padrão 0, ajustável depois na tela'),
+      bdi: z.number().min(0).max(999.99).optional().describe('Percentual de BDI — se omitido, vale o BDI padrão definido pelo administrador (Integrações); sem padrão definido, fica 0 e o resultado avisa. Nunca invente um valor: pergunte.'),
       itens: z.array(ItemPropostaSchema).min(1).describe('Itens da proposta, cada um já dizendo a que seção pertence'),
     },
   },
@@ -456,6 +456,7 @@ server.registerTool(
 
       // hoje em Brasília (em UTC, depois das 21h a proposta nascia com a data de amanhã)
       const dataProposta = data || hojeBrasilia();
+      const padroes = await chamarApi('/api/configuracoes/padroes-orcamento');
       const resultado = await chamarApi('/api/propostas', {
         method: 'POST',
         body: JSON.stringify({
@@ -464,13 +465,18 @@ server.registerTool(
           responsavel: responsavel || null,
           escopo: escopo || null,
           observacoes: observacoes || 'Criada via Claude Desktop (MCP) — revise antes de enviar ao cliente.',
-          bdi: bdi || 0,
+          bdi: bdi ?? padroes.bdi ?? 0,
+          imposto_venda: padroes.imposto_venda ?? 0,
+          imposto_servico: padroes.imposto_servico ?? 0,
           secoes,
           itens: itensPayload,
         }),
       });
 
-      return textoOk(`Proposta ${resultado.numero} criada como rascunho — total: R$ ${Number(resultado.total).toFixed(2)}. Está no Histórico do sistema pra revisão antes de enviar ao cliente.`);
+      const faltou = bdi == null && !padroes.definidos
+        ? ' ATENÇÃO: BDI e impostos padrão ainda não foram definidos pelo administrador (Integrações) — o que faltou ficou em 0 %. Pergunte ao usuário e ajuste na tela.'
+        : '';
+      return textoOk(`Proposta ${resultado.numero} criada como rascunho — total: R$ ${Number(resultado.total).toFixed(2)}. Está no Histórico do sistema pra revisão antes de enviar ao cliente.${faltou}`);
     } catch (err) {
       return textoErro(err.message);
     }
