@@ -10,6 +10,7 @@ import { formatarMoeda, formatarData } from '../utils/format';
 // tabela única das cores de status (o Painel usa `cor` e o fundo translúcido `realce`)
 import { STATUS_PROPOSTA as STATUS_CORES } from '../utils/statusProposta';
 import { estilos } from '../components/ui/estilos';
+import VencimentosLaudos from '../components/VencimentosLaudos';
 
 const MESES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -121,6 +122,8 @@ export default function Dashboard() {
           }
         />
       </div>
+
+      <VencimentosLaudos />
 
       {/* Gráfico mensal */}
       <div style={card}>

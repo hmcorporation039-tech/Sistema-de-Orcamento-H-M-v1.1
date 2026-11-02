@@ -472,3 +472,8 @@ export const importarXmlNotasFiscais = (arquivos) => {
   for (const a of arquivos) fd.append('arquivos', a);
   return api.post('/notas-fiscais/importar', fd, { timeout: 300000 });
 };
+// ── VENCIMENTOS DE LAUDOS (painel inicial) ─────────────────────────────────
+export const getVencimentos = () => api.get('/vencimentos');
+export const criarVencimento = (dados) => api.post('/vencimentos', dados);
+export const renovarVencimento = (id, dados) => api.put(`/vencimentos/${id}/renovar`, dados || {});
+export const encerrarVencimento = (id) => api.delete(`/vencimentos/${id}`);

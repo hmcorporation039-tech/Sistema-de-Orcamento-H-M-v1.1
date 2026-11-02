@@ -97,6 +97,20 @@ function definicoesPadrao() {
       logErro: 'Erro na importação do SINAPI pela pasta:',
       ultimoRegistroSql: 'SELECT MAX(importado_em) AS em FROM sinapi_importacoes',
     },
+    vencimentos: {
+      nome: 'Laudos a vencer',
+      descricao: 'Traz os laudos do sistema para a lista de vencimentos e avisa por e-mail quando faltam 60 e 30 dias e quando vence.',
+      atrasoSegundos: 60,
+      configurada: () => true,
+      logAgendada: () => `Aviso de laudos a vencer ativo (${quando})`,
+      executar: () => require('./vencimentos').executarRotina(),
+      itens: (r) => r.avisados,
+      texto: (r) => `${r.total || 0} laudo(s) acompanhado(s): ${r.vencidos || 0} vencido(s), ${r.urgentes || 0} a menos de 30 dias; ${r.avisados || 0} aviso(s) enviado(s)`,
+      logResultado: (r) => r.avisados > 0 && `Laudos a vencer: ${r.avisados} aviso(s) enviado(s) por e-mail`,
+      prefixoAviso: 'Aviso (laudos a vencer):',
+      logErro: 'Erro no aviso de laudos a vencer:',
+      ultimoRegistroSql: 'SELECT MAX(avisado_em) AS em FROM vencimentos_laudos',
+    },
   };
 }
 
