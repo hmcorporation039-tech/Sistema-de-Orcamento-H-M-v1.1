@@ -122,15 +122,9 @@ const PERDAS_PADRAO = {
 const RENDIMENTO_VENTILADOR = 0.6; // estático, típico de centrífugo/axial de pressurização [CONFERIR catálogo]
 const FOLGA_MOTOR = 1.15;
 
-// Potências comerciais de motor (cv) e η/FP típicos IR3 4 polos 380 V [CONFERIR placa]
-const MOTORES_CV = [0.5, 0.75, 1, 1.5, 2, 3, 4, 5, 6, 7.5, 10, 12.5, 15, 20, 25, 30, 40, 50, 60, 75, 100, 125, 150];
-function rendimentoFpMotor(cv) {
-  if (cv <= 1.5) return { eta: 0.8, fp: 0.78 };
-  if (cv <= 5) return { eta: 0.86, fp: 0.82 };
-  if (cv <= 15) return { eta: 0.89, fp: 0.84 };
-  if (cv <= 50) return { eta: 0.92, fp: 0.86 };
-  return { eta: 0.94, fp: 0.87 };
-}
+// Potências comerciais de motor (cv) e η/FP típicos IR3 4 polos 380 V [CONFERIR placa] —
+// do motor comum de motores (skills/_comum/eletrico/motores.js), mesmos valores de antes
+const { MOTORES_CV, rendimentoFpMotor } = require('../../../_comum/eletrico/motores');
 
 const PARTIDAS = {
   inversor: 'Inversor de frequência (controle de pressão por PID)',

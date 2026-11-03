@@ -1,0 +1,131 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "Edifício de escritórios exemplo — climatização",
+  "prefixo": "Climatizacao_Exemplo",
+  "data": "2026-11-02",
+  "revisao": "R00",
+  "dados_ilustrativos": true
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "titulo": "Engenheiro Mecânico",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "EMPRESA EXEMPLO LTDA",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "Edifício Exemplo — 2º pavimento",
+  "uso": "Escritórios (uso coletivo)"
+ },
+ "projeto": {
+  "cidade": "Brasília/DF",
+  "altitude_m": 1100,
+  "tbs_externa_c": 32,
+  "tbu_externa_c": 22,
+  "tbs_interna_c": 24,
+  "ur_interna_pct": 50,
+  "fator_seguranca_pct": 10,
+  "sistema": "chiller",
+  "distribuicao": "vav",
+  "distribuicao_ar": "teto_frio",
+  "delta_t_insuflamento_c": 10,
+  "simultaneidade": 0.9,
+  "minimo_27_m3h_pessoa": true,
+  "uso_publico_coletivo": true,
+  "distancia_condensadora_m": 7
+ },
+ "ambientes": [
+  { "id": "A1", "nome": "Escritório aberto Norte", "uso": "escritorio", "area_m2": 320, "pe_direito_m": 2.7, "pessoas": 32, "atividade": "escritorio", "iluminacao_w_m2": 8, "equipamentos_w_m2": 15, "unidade": "AHU-01", "comprimento_ramal_m": 12 },
+  { "id": "A2", "nome": "Escritório aberto Sul", "uso": "escritorio", "area_m2": 300, "pe_direito_m": 2.7, "pessoas": 30, "atividade": "escritorio", "iluminacao_w_m2": 8, "equipamentos_w_m2": 15, "unidade": "AHU-01", "comprimento_ramal_m": 10 },
+  { "id": "A3", "nome": "Sala de reunião 1", "uso": "reuniao", "area_m2": 40, "pe_direito_m": 2.7, "pessoas": 16, "atividade": "escritorio", "iluminacao_w_m2": 8, "equipamentos_w_m2": 5, "unidade": "AHU-01", "comprimento_ramal_m": 8 },
+  { "id": "A4", "nome": "Diretoria", "uso": "escritorio", "area_m2": 60, "pe_direito_m": 2.7, "pessoas": 4, "atividade": "escritorio", "iluminacao_w_m2": 8, "equipamentos_w_m2": 10, "unidade": "AHU-01", "comprimento_ramal_m": 15 },
+  { "id": "A5", "nome": "Auditório", "uso": "auditorio", "area_m2": 180, "pe_direito_m": 3.5, "pessoas": 120, "atividade": "sentado", "iluminacao_w_m2": 10, "equipamentos_w_m2": 3, "unidade": "AHU-02", "comprimento_ramal_m": 6 },
+  { "id": "A6", "nome": "Foyer do auditório", "uso": "outro", "area_m2": 80, "pe_direito_m": 3.5, "pessoas": 20, "atividade": "em_pe", "iluminacao_w_m2": 10, "equipamentos_w_m2": 2, "fp": 2.5, "fa": 0.3, "unidade": "AHU-02", "comprimento_ramal_m": 8 }
+ ],
+ "envoltoria": [
+  { "ambiente": "A1", "construcao": "alvenaria", "orientacao": "N", "area_m2": 45, "cor": "clara" },
+  { "ambiente": "A1", "construcao": "vidro_refletivo", "orientacao": "N", "area_m2": 30, "sombreamento_pct": 20 },
+  { "ambiente": "A1", "construcao": "vidro_refletivo", "orientacao": "L", "area_m2": 18, "sombreamento_pct": 0 },
+  { "ambiente": "A2", "construcao": "alvenaria", "orientacao": "S", "area_m2": 45, "cor": "clara" },
+  { "ambiente": "A2", "construcao": "vidro_refletivo", "orientacao": "S", "area_m2": 30 },
+  { "ambiente": "A2", "construcao": "vidro_refletivo", "orientacao": "O", "area_m2": 18 },
+  { "ambiente": "A4", "construcao": "vidro_refletivo", "orientacao": "O", "area_m2": 12 },
+  { "ambiente": "A4", "construcao": "alvenaria", "orientacao": "O", "area_m2": 10, "cor": "media" },
+  { "ambiente": "A5", "construcao": "laje_telhado", "orientacao": "H", "area_m2": 180, "cor": "media" },
+  { "ambiente": "A5", "construcao": "divisa", "area_m2": 40 },
+  { "ambiente": "A6", "construcao": "vidro_simples", "orientacao": "L", "area_m2": 15, "sombreamento_pct": 50 }
+ ],
+ "unidades": [
+  { "id": "AHU-01", "comprimento_principal_m": 40, "curvas_principal": 3 },
+  { "id": "AHU-02", "comprimento_principal_m": 20, "curvas_principal": 2 }
+ ],
+ "ar": {
+  "reaquecimento": "eletrico"
+ },
+ "central": {
+  "tipo_chiller": "agua_parafuso",
+  "chillers": 2,
+  "chiller_reserva": false,
+  "t_saida_agua_c": 7,
+  "delta_t_agua_c": 5.5,
+  "cop": 5.6,
+  "cop_100": 5.6,
+  "cop_75": 6.5,
+  "cop_50": 7.4,
+  "cop_25": 7.0,
+  "iplv": null,
+  "arranjo_bombas": "primario_secundario",
+  "bomba_reserva": true,
+  "comprimento_rede_m": 180
+ },
+ "eletrica": { "tensao_ff": 380 },
+ "equipamentos_existentes": [],
+ "pmoc": {
+  "responsavel_tecnico": "",
+  "registro_profissional": "",
+  "art_trt": "",
+  "uso_publico_coletivo": true,
+  "ocupantes_fixos": 70,
+  "ocupantes_flutuantes": 150,
+  "area_climatizada_m2": null,
+  "data_inicio": "2026-12-01"
+ },
+ "inspecao": {
+  "tipo": "comissionamento",
+  "data_inspecao": "2026-11-20",
+  "documento_n": "HM-CLIM-001",
+  "equipe": "",
+  "abrangencia": "Central de água gelada, AHU-01, AHU-02, caixas VAV e difusores do 2º pavimento",
+  "fora_escopo": "",
+  "criterio_qai": "nbr17037",
+  "documentos": [],
+  "instrumentos": [],
+  "checklist": [
+   { "cod": "D1", "situacao": "C", "obs": "Memorial e desenhos entregues" },
+   { "cod": "D2", "situacao": "NC", "obs": "PMOC ainda não implantado no imóvel" }
+  ],
+  "ncs": [],
+  "vazoes": [
+   { "local": "Escritório aberto Norte — difusor 1", "ambiente": "A1", "projeto_m3h": null, "medido_m3h": 560 },
+   { "local": "Auditório — difusor 3", "ambiente": "A5", "projeto_m3h": 540, "medido_m3h": 430 }
+  ],
+  "ambiente": [
+   { "ambiente": "Escritório aberto Norte", "tbs_c": 23.8, "ur_pct": 52, "co2_ppm": 780, "co2_externo_ppm": 420, "velocidade_ms": 0.15 },
+   { "ambiente": "Auditório", "tbs_c": 25.1, "ur_pct": 61, "co2_ppm": 1180, "co2_externo_ppm": 420, "velocidade_ms": 0.18 }
+  ],
+  "agua": [
+   { "equipamento": "CH-01", "entrada_c": 12.4, "saida_c": 7.1 }
+  ],
+  "fotos": []
+ }
+}

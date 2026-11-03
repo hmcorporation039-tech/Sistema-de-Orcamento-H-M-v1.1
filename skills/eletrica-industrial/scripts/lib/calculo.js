@@ -17,6 +17,10 @@ const E = require('../../../_comum/eletrico/calculo');
 const T = require('../../../_comum/eletrico/tabelas');
 const X = require('./tabelas');
 const { ucDps } = require('../../../_comum/dps');
+// Motores e partidas: motor comum (SK-08, 02/11/2026) — reexportados abaixo com os mesmos nomes
+const M = require('../../../_comum/eletrico/motores');
+
+const { potenciaKw, correnteNominalMotor, tensoesPlaca, zCabo, dispositivosPartida, circuitoMotor, quedaPartida } = M;
 
 const FOLGA = 1.1; // +10 % de cabo (sobras, emendas, chegada no quadro) — igual à skill de elétrica
 const SQ3 = Math.sqrt(3);
@@ -28,16 +32,6 @@ const somaZ = (...zs) => zs.filter(Boolean).reduce((a, z) => ({ r: a.r + z.r, x:
 const modZ = (z) => Math.hypot(z.r, z.x);
 
 // ── Fórmulas básicas (usadas no teste) ─────────────────────────────────────
-
-function potenciaKw(m) {
-  const p = num(m.potencia, 0);
-  return String(m.unidade || 'cv').toLowerCase() === 'kw' ? p : p * X.CV_KW;
-}
-
-// In = P / (√3 · V · η · FP)  (P = potência mecânica no eixo, NBR 17094-1)
-function correnteNominalMotor(pKw, v, eta, fp) {
-  return (pKw * 1000) / (SQ3 * v * eta * fp);
-}
 
 // Correção do FP: Qc = P · (tg φ1 − tg φ2)
 function kvarCorrecao(pKw, fp1, fp2) {
@@ -57,15 +51,6 @@ function iccTrifasico(v, z, c = 1) {
 // Fator de crista (IEC 60909-0, 4.3.1.1): κ = 1,02 + 0,98 · e^(−3R/X)
 function kappa(z) {
   return z.x > 0 ? 1.02 + 0.98 * Math.exp(-3 * z.r / z.x) : 1.02;
-}
-
-function zCabo(secao, paralelos, comprimento, rho) {
-  const np = Math.max(1, paralelos || 1);
-  return { r: (rho * comprimento) / (secao * np), x: (X.X_CABO * comprimento) / np };
-}
-
-function tensoesPlaca(texto) {
-  return String(texto || '').split(/[^0-9.,]+/).map(s => Number(s.replace(',', '.'))).filter(v => v > 50);
 }
 
 // ── Configuração ───────────────────────────────────────────────────────────
@@ -193,118 +178,10 @@ function lerOutras(dados, c, quadros) {
   });
 }
 
-// ── Dispositivos de partida (NBR IEC 60947-4-1 / -4-2) ──────────────────────
-
-function protecaoCurto(u, iLinha, semicondutor) {
-  let tipo = u.protecao;
-  if (!tipo || tipo === 'auto') tipo = X.faixa(X.DISJUNTOR_MOTOR, iLinha) ? 'disjuntor_motor' : 'caixa_moldada';
-  if (tipo === 'disjuntor_motor' && !X.faixa(X.DISJUNTOR_MOTOR, iLinha)) tipo = 'caixa_moldada';
-  if (tipo === 'disjuntor_motor') {
-    const f = X.faixa(X.DISJUNTOR_MOTOR, iLinha);
-    return { ref: 'Q1', tipo, funcao: 'curto-circuito e sobrecarga', faixa: f, ajuste_a: arred(iLinha, 1), magnetico_a: X.MAGNETICO_DM * f[1], termico: true,
-      especificacao: `Disjuntor-motor tripolar faixa ${f[0]}–${f[1]} A, ajuste ${arred(iLinha, 1)} A (IEC 60947-2/-4-1)` };
-  }
-  if (tipo === 'fusivel') {
-    const inF = X.proximo(X.FUSIVEIS, semicondutor ? 1.25 * iLinha : iLinha);
-    return { ref: 'F1-F3', tipo, funcao: 'curto-circuito', nominal_a: inF, termico: false, quantidade: 3,
-      especificacao: semicondutor ? `Fusível ultrarrápido aR ${inF} A (3 un) com base — coordenação tipo 2 pelo manual do equipamento [CONFERIR]` : `Fusível NH/Diazed aM ${inF} A (3 un) com base — coordenação tipo 2 [CONFERIR tabela do fabricante]` };
-  }
-  const inD = X.proximo(X.DISJUNTORES_GERAIS, iLinha);
-  return { ref: 'Q1', tipo: 'caixa_moldada', funcao: 'curto-circuito', nominal_a: inD, termico: false,
-    especificacao: `Disjuntor de caixa moldada tripolar ${inD} A para proteção de motor, magnético ajustável ≥ 2 × Ip [CONFERIR] (IEC 60947-2)` };
-}
-
-function dispositivosPartida(u) {
-  const In = u.in;
-  const ipDireta = u.ipIn * In;
-  const ac3 = (i) => X.proximo(X.CONTATORES_AC3, i);
-  const disp = [];
-  const obs = [];
-  let ipLinha;
-  let conjugado;
-  let sobrecarga;
-  if (u.partida === 'direta' || u.partida === 'estrela_triangulo') {
-    const yd = u.partida === 'estrela_triangulo';
-    const p = protecaoCurto(u, In, false);
-    disp.push(p);
-    if (yd) {
-      ipLinha = ipDireta / 3; conjugado = 100 / 3;
-      const iF = In / SQ3;
-      disp.push({ ref: 'K1', tipo: 'contator', funcao: 'rede (linha)', corrente_a: arred(iF, 1), nominal_a: ac3(iF), categoria: 'AC-3' });
-      disp.push({ ref: 'K2', tipo: 'contator', funcao: 'triângulo', corrente_a: arred(iF, 1), nominal_a: ac3(iF), categoria: 'AC-3' });
-      disp.push({ ref: 'K3', tipo: 'contator', funcao: 'estrela', corrente_a: arred(In / 3, 1), nominal_a: ac3(In / 3), categoria: 'AC-3' });
-      disp.push({ ref: 'KT1', tipo: 'temporizador', funcao: 'comutação Y-Δ', especificacao: 'Relé temporizador estrela-triângulo (pausa ≈ 50–100 ms)' });
-      if (p.termico) sobrecarga = { ajuste_a: arred(In, 1), local: 'disjuntor-motor Q1 (corrente de linha)' };
-      else {
-        const f = X.faixa(X.RELES, iF);
-        disp.push({ ref: 'F4', tipo: 'rele_sobrecarga', funcao: 'sobrecarga (corrente de fase, após K1)', ajuste_a: arred(iF, 1), faixa: f });
-        sobrecarga = { ajuste_a: arred(iF, 1), local: 'relé F4 no ramo de K1 (In/√3)' };
-      }
-      const placa = u.placa;
-      const possivel = !placa.length || placa.some(vd => Math.abs(vd - u.tensao) / u.tensao <= 0.05 && placa.some(vy => Math.abs(vy - vd * SQ3) / (vd * SQ3) <= 0.05));
-      if (!placa.length) obs.push('Y-Δ exige motor com 6 terminais e tensão em triângulo igual à da rede (ex.: 380/660 V em rede de 380 V). [CONFERIR placa]');
-      else if (!possivel) obs.push(`Placa ${u.tensaoPlaca} V não permite Y-Δ em ${u.tensao} V (o triângulo precisa ser a tensão da rede) — trocar o motor ou o tipo de partida.`);
-      obs.push('Conjugado de partida reduzido a 1/3: verificar se o conjugado resistente da carga permite a partida (partida em vazio ou com carga leve).');
-    } else {
-      ipLinha = ipDireta; conjugado = 100;
-      disp.push({ ref: 'K1', tipo: 'contator', funcao: 'linha', corrente_a: arred(In, 1), nominal_a: ac3(In), categoria: 'AC-3' });
-      if (p.termico) sobrecarga = { ajuste_a: arred(In, 1), local: 'disjuntor-motor Q1' };
-      else {
-        const f = X.faixa(X.RELES, In);
-        disp.push({ ref: 'F4', tipo: 'rele_sobrecarga', funcao: 'sobrecarga', ajuste_a: arred(In, 1), faixa: f });
-        sobrecarga = { ajuste_a: arred(In, 1), local: 'relé F4' };
-      }
-    }
-    if (X.REGIMES_AC4.includes(u.regime)) obs.push(`Regime ${u.regime}: manobras de impulso/frenagem — escolher o contator pela tabela AC-4 do fabricante. [CONFERIR]`);
-  } else {
-    const soft = u.partida === 'soft_starter';
-    const lim = u.limitePartida;
-    ipLinha = lim * In;
-    conjugado = soft ? Math.min(100, (lim / u.ipIn) ** 2 * 100) : null;
-    disp.push(protecaoCurto(u, In, true));
-    disp.push({ ref: 'K1', tipo: 'contator', funcao: 'isolamento / parada de emergência (NR-12)', corrente_a: arred(In, 1), nominal_a: ac3(In), categoria: 'AC-3' });
-    disp.push(soft
-      ? { ref: 'T1', tipo: 'soft_starter', funcao: 'partida suave', corrente_a: arred(In, 1), especificacao: `Soft-starter ≥ ${arred(In, 1)} A em ${u.tensao} V, by-pass incorporado e proteção eletrônica de sobrecarga classe 10, limitação ${String(lim).replace('.', ',')} × In (NBR IEC 60947-4-2) [CONFERIR partidas/hora]` }
-      : { ref: 'T1', tipo: 'inversor', funcao: 'acionamento com velocidade variável', corrente_a: arred(In, 1), especificacao: `Inversor de frequência ≥ ${arred(In, 1)} A (${arred(u.pKw, 1)} kW) em ${u.tensao} V, uso normal; para conjugado constante escolher pela corrente em uso pesado (IEC 61800) [CONFERIR]` });
-    sobrecarga = { ajuste_a: arred(In, 1), local: soft ? 'proteção eletrônica do soft-starter' : 'parâmetro de corrente do inversor' };
-    if (soft) obs.push(`Corrente de partida limitada a ${String(lim).replace('.', ',')} × In; conjugado ≈ (${String(lim).replace('.', ',')}/${String(u.ipIn).replace('.', ',')})² ≈ ${Math.round(conjugado)} % do conjugado de partida direta.`);
-    else obs.push('Cabo motor–inversor blindado (EMC, IEC 61800-3) e verificação de reatância de rede/filtro conforme o manual. Inversor não contribui para o curto-circuito e gera harmônicos (ver banco de capacitores).');
-  }
-  return { tipo: u.partida, rotulo: X.PARTIDAS[u.partida].rotulo, ipDireta, ipLinha, conjugado, dispositivos: disp, sobrecarga, observacoes: obs };
-}
+// Dispositivos de partida (NBR IEC 60947-4-1 / -4-2), circuito terminal de motor (NBR 5410
+// 6.5.1) e queda de tensão na partida: skills/_comum/eletrico/motores.js
 
 // ── Circuitos ───────────────────────────────────────────────────────────────
-
-// Circuito terminal de motor (NBR 5410, 6.5.1): Ib = max(1,25; FS) × In.
-// Y-Δ: 6 condutores entre o CCM e o motor, cada um com a corrente de fase
-// (In/√3); queda de tensão no enrolamento em Δ = 2·ρ·L·If/(S·V) — 2/√3 vezes
-// a fórmula trifásica do motor da elétrica, por isso o limite é corrigido.
-// Motores grandes: condutores em paralelo quando a seção passa do limite prático
-// (secaoMaxParalelo, padrão 240 mm²) — cada conjunto conta como um circuito no FCA.
-function circuitoMotor(u, c, ec, secaoMinima = 0) {
-  const yd = u.partida === 'estrela_triangulo';
-  const fatorIb = Math.max(1.25, u.fs);
-  const ibLinha = fatorIb * u.in;
-  const ibCond = yd ? ibLinha / SQ3 : ibLinha;
-  const kQueda = yd ? 2 / SQ3 : 1;
-  let ultimoErro = null;
-  for (let np = 1; np <= 8; np++) {
-    let d;
-    try {
-      d = E.dimensionarCircuito({
-        id: u.tag, descricao: `${u.tag} — ${u.descricao}`, tipo: 'tue', ligacao: 'FFF', potencia_va: SQ3 * c.vff * ibCond / np,
-        comprimento_m: u.distancia, agrupamento: u.agrupamento + (yd ? 1 : 0) + np - 1, metodo: u.metodo, secao_minima: Math.max(secaoMinima, u.secaoMinima),
-      }, ec, { minimo: T.SECAO_MINIMA.tue, limiteQueda: c.quedaTerminal / kQueda });
-    } catch (e) { ultimoErro = e; continue; }
-    if (d.secao > c.secaoMaxParalelo && np < 8) continue;
-    return {
-      secao: d.secao, secaoPE: d.secaoPE, iz: d.iz, izTotal: d.iz * np, izRef: d.izRef, fct: d.fct, fca: d.fca, metodo: d.metodo, agrupamento: u.agrupamento + (yd ? 1 : 0) + np - 1,
-      paralelos: np, ibLinha, ibCond, fatorIb, condutores: yd ? 6 : 3, comprimento: d.comprimento, queda: d.queda * kQueda,
-      criterio: np > 1 ? `${d.criterio} · ${np} cabos em paralelo por fase (seção ≤ ${c.secaoMaxParalelo} mm²)` : d.criterio,
-    };
-  }
-  throw new Error(`${u.tag}: nenhuma combinação de até 8 cabos em paralelo atende (${Math.round(ibLinha)} A, ${u.distancia} m)${ultimoErro ? ` — ${ultimoErro.message}` : ''}.`);
-}
 
 function circuitoOutra(o, c, ec) {
   const va = (o.kw * 1000) / o.fp;
@@ -457,21 +334,6 @@ function curtoNoPonto(z, zQuente, c, contribuicao) {
   const k = kappa(z);
   return { z, iccFonte, contribuicao, icc, kappa: k, ip: k * Math.SQRT2 * icc, icuMin: X.proximo(X.ICU_KA, icc / 1000) || null,
     iccMin2f: (0.95 * c.vff) / (2 * modZ(zQuente)) };
-}
-
-// ── Queda de tensão na partida (NBR 5410, 6.5.1 e 6.2.7) ─────────────────────
-// ΔV% = ΔV em regime até o quadro + 100·√3·Ip·(R·cosφp + X·senφp)/V em cada trecho.
-// Y-Δ (estágio estrela): cada enrolamento tem 2 condutores em série → fator 2 no circuito.
-function quedaPartida(u, zAteQuadro, quedaRegimeQuadro, secao, c) {
-  const Ip = u.partidaInfo.ipLinha;
-  const cos = u.fpPartida;
-  const sen = Math.sqrt(1 - cos * cos);
-  const dvFonte = (100 * SQ3 * Ip * (zAteQuadro.r * cos + zAteQuadro.x * sen)) / c.vff;
-  const zc = zCabo(secao, u.circuito.paralelos || 1, u.circuito.comprimento, X.RHO_QUENTE);
-  const kCirc = u.partida === 'estrela_triangulo' ? 2 : 1;
-  const dvCirc = (100 * kCirc * SQ3 * Ip * (zc.r * cos + zc.x * sen)) / c.vff;
-  const dispositivo = quedaRegimeQuadro + dvFonte;
-  return { ip: Ip, cos, dvFonte, regime: quedaRegimeQuadro, dispositivo, circuito: dvCirc, motor: dispositivo + dvCirc };
 }
 
 // ── Cálculo completo ───────────────────────────────────────────────────────

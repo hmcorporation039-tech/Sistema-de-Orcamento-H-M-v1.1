@@ -78,6 +78,9 @@ const DISCIPLINAS = [
   { chave: 'automacao', pasta: 'automacao', skill: 'automacao', laudo: true, grupo: 'Automação', sigla: 'AUT',
     nomes: { laudo: 'Automação — BMS, climatização e residencial (ISO 16484 / ISO 52120-1)', analise: 'Automação predial / BMS / climatização', servico: 'Automação' },
     subgrupo: { material: 'Automação', servico: 'Automação' }, aliases: ['Automação predial', 'Automação residencial'] },
+  { chave: 'climatizacao', pasta: 'climatizacao', skill: 'climatizacao', laudo: true, grupo: 'Climatização', sigla: 'CLIM',
+    nomes: { laudo: 'Climatização — carga térmica, VRF/self/chiller, VAV e PMOC (NBR 16401 / Lei 13.589)', analise: 'Climatização / ar-condicionado (NBR 16401)', servico: 'Climatização' },
+    subgrupo: { material: 'Climatização', servico: 'Climatização' }, aliases: ['Ar-condicionado', 'Ar condicionado', 'HVAC', 'PMOC'] },
 ];
 
 // "Outros": não é disciplina de projeto, mas existe nos kits e na base de serviços

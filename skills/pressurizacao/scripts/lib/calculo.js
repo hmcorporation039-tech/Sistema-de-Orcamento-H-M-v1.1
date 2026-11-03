@@ -21,7 +21,9 @@
 const T = require('./tabelas');
 const E = require('../../../_comum/eletrico/calculo');
 const ET = require('../../../_comum/eletrico/tabelas');
-const EI = require('../../../eletrica-industrial/scripts/lib/calculo');
+// motores e partidas (SK-08) e perda de carga em dutos (Altshul-Tsal): motores comuns em _comum
+const EI = require('../../../_comum/eletrico/motores');
+const { fatorAtrito, perdaAtrito } = require('../../../_comum/dutos');
 
 const RAIZ3 = Math.sqrt(3);
 const CV_KW = 0.7355;
@@ -52,24 +54,6 @@ function densidadeLocal(altitudeM = 0, temperaturaC = 20) {
 // Força para abrir a porta: F = Fdc + W·A·ΔP / (2·(W − d))
 function forcaPorta({ largura, altura, dp, fechador = T.FORCA.fechador_n, d = T.FORCA.distancia_macaneta_m }) {
   return fechador + (largura * largura * altura * dp) / (2 * (largura - d));
-}
-
-// Fator de atrito de Altshul-Tsal (ASHRAE Fundamentals, cap. 21)
-function fatorAtrito(dh, v, eps) {
-  const re = 66400 * dh * v;
-  const f1 = 0.11 * (eps / dh + 68 / re) ** 0.25;
-  return { re, f: f1 >= 0.018 ? f1 : 0.85 * f1 + 0.0028 };
-}
-
-// Perda por atrito (Pa) em duto retangular a × b, vazão Q, comprimento L
-function perdaAtrito({ vazao, largura, altura, comprimento, eps, rho = T.DENSIDADE_PADRAO }) {
-  const area = largura * altura;
-  const v = vazao / area;
-  const dh = (2 * largura * altura) / (largura + altura);
-  const { re, f } = fatorAtrito(dh, v, eps);
-  const pv = (rho * v * v) / 2;
-  const porMetro = (f / dh) * pv;
-  return { area, v, dh, re, f, pv, porMetro, total: porMetro * comprimento };
 }
 
 function motorComercial(kwMin) {
