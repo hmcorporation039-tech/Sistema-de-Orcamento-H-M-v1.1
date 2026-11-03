@@ -109,6 +109,24 @@ const SIGLAS = [
   [/TERMOSTATO|SENSOR DE (PRESS|TEMP|UMID|CO2)|BELIMO|ATUADOR|\bDDC\b|CONTROLADOR/i, 'Dispositivo de automação', 'automacao'],
   [/CARREGADOR|WALLBOX|ELETROPOSTO/i, 'Carregador veicular', 'carregador'],
 ];
+// Média tensão / subestação: valem antes das siglas acima, só no arquivo marcado como média tensão ou com a tensão
+// em kV no nome do bloco (transformador e seccionadora também existem na baixa tensão). Caso real de 03/11/2026:
+// "TRANSFORMADOR A SECO 225KVA" e "CHAVE SECCIONADOR SEM CARGA COM BASE FUSÍVEL 15KV" na layer 0 ficavam sem
+// disciplina, iam para "não identificados" e a análise da subestação saía sem nenhum material.
+const SIGLAS_MT = [
+  [/PUNHO DE MANOBRA/i, 'Punho de manobra da seccionadora', 'media_tensao'],
+  [/TAPETE (DE )?BORRACHA|TAPETE ISOLANTE/i, 'Tapete isolante de borracha (EPC da subestação)', 'media_tensao'],
+  [/SECCIONADOR/i, 'Chave seccionadora de MT', 'media_tensao'],
+  [/CHAVE FUS[ÍI]VEL/i, 'Chave fusível de MT', 'media_tensao'],
+  [/TRANSFORMADOR(?!.*(SEPARA|ISOLA|COMANDO))|\bTRAFO\b/i, 'Transformador de potência', 'media_tensao'],
+  [/MUFLA|TERMINA[ÇC][ÃA]O/i, 'Terminação (mufla) de MT', 'media_tensao'],
+  [/CUB[ÍI]CULO/i, 'Cubículo de MT', 'media_tensao'],
+  [/PARA-?RAIOS/i, 'Para-raios de MT', 'media_tensao'],
+  [/REL[ÉE] (DE )?PROTE|REL[ÉE]\b.*\b50\/51\b/i, 'Relé de proteção (50/51)', 'media_tensao'],
+];
+const RE_TENSAO_MT = /\b(13[,.]8|15|24|34[,.]5|36)\s?KV\b/i;
+// seta de cota do AutoCAD (bloco de sistema dentro da cota): não é equipamento nem "não identificado"
+const RE_SETA_DE_COTA = /^_?(ARCHTICK|OBLIQUE|CLOSED(BLANK)?|DOT(SMALL|BLANK)?|OPEN(30|90)?|INTEGRAL|ORIGIN2?|BOX(FILLED|BLANK)|DATUM(FILLED|BLANK)|SMALL|NONE)$/i;
 // climatização/hidráulica (não é disciplina da H&M): não vira material nem "não identificado"
 const RE_OUTRA_AREA = /DIFUSOR|GRELHA|COLARINHO|\bDUTO|DAMPER|VENEZIANA|ALÇAP|ALCAP|CURVA RET|TRANSI[ÇC][ÃA]O|UNI[ÃA]O RET|TAMPA RET|COTOVELO|ELBOW|\bTEES?\b|REDUCING|BUCHA|LUVA|V[ÁA]LVULA|REGISTRO|RALO|TORNEIRA|HIDRANTE|SPRINKLER|EXTINTOR|TERMINAIS DE AR|CONEX[ÕO]ES DE (DUTO|TUBO)|TUBULA[ÇC][ÕO]ES DE FABRICA|ACESS[ÓO]RIOS DO TUBO|FANCOIL|FAN ?COIL|FANCOLETE|EXAUSTOR|VENTILADOR|\bSPLIT\b|CONDENSADORA|EVAPORADORA|CHILLER|\bBOMBA|DANFOSS|\bDN\d+|HI-?WALL|\bBTU|CASSETE|PISO.?TETO/i;
 // layer de instalação elétrica: libera as siglas curtas
@@ -136,7 +154,8 @@ function descreverSimbolo(g, opcoes = {}) {
   const hm = BLOCOS_HM[g.bloco] || BLOCOS_HM[g.nomeLimpo] || null;
   // sigla também no nome sem o prefixo de disciplina ("ELE QD" → "QD", "INC DET FUMACA")
   const semPrefixo = semPrefixoDeDisciplina(g.nomeLimpo);
-  const sigla = SIGLAS.find(([re, , , curta]) => (!curta || nomeCurto || semPrefixo !== g.nomeLimpo) && (re.test(g.nomeLimpo) || re.test(g.bloco) || re.test(semPrefixo)));
+  const mt = (opcoes.disciplinas || []).includes('media_tensao') || RE_TENSAO_MT.test(`${g.nomeLimpo} ${g.bloco}`);
+  const sigla = (mt && SIGLAS_MT.find(([re]) => re.test(g.nomeLimpo) || re.test(g.bloco))) || SIGLAS.find(([re, , , curta]) => (!curta || nomeCurto || semPrefixo !== g.nomeLimpo) && (re.test(g.nomeLimpo) || re.test(g.bloco) || re.test(semPrefixo)));
   const daLegenda = textoDescritivo(g.descricaoLegenda) ? g.descricaoLegenda : null;
   // nome de bloco que já descreve (famílias do Revit: "Sensor de pressão Belimo 22ADP")
   const nomeDescritivo = /[A-Za-zÀ-ú]{3,}.*\s.*[A-Za-zÀ-ú0-9]{2,}/.test(g.nomeLimpo) && g.nomeLimpo.length >= 8;
@@ -268,7 +287,11 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
     if (g.quantidade < g0.quantidade) for (const x of g0.xrefs || []) if (xrefOutra(x)) anotarXref(x, 'componentes', 1);
     if (!g.quantidade) continue;
     if (d.outraArea) { outraArea.push(g); continue; }
-    if (!d.descricao || !d.disciplina) { naoIdentificados.push({ bloco: g.nomeLimpo, layer: g.layers.join(', '), quantidade: g.quantidade }); continue; }
+    if (!d.descricao || !d.disciplina) {
+      if (RE_SETA_DE_COTA.test(g.nomeLimpo) || RE_SETA_DE_COTA.test(g.bloco)) continue;
+      naoIdentificados.push({ bloco: g.nomeLimpo, layer: g.layers.join(', '), quantidade: g.quantidade });
+      continue;
+    }
     const alts = alturasDoGrupo(g, d);
     const uniforme = alts.every(a => a.altura_m === alts[0].altura_m && a.montagem === alts[0].montagem);
     itens.push({

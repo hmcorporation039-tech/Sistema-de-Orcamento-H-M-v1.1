@@ -334,6 +334,21 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
           assert.strictEqual((await chamar('PUT', URL, { arquivo: NOME, linhas: [{ idx: 99, simbolo: '?' }] })).status, 400);
           assert.strictEqual((await chamar('PUT', URL, { arquivo: NOME, linhas: [] })).status, 400);
           assert.strictEqual((await chamar('POST', URL + '/reprocessar', {})).status, 400, 'sem confirmar nada não reprocessa');
+          assert.strictEqual(r.corpo.semMapa, false);
+          // análise feita ANTES do mapa (DWG/DXF sem mapa_cad — caso real de 03/11/2026): dá para ler de novo sem confirmar
+          const dadosComMapa = (await pool.query('SELECT dados_extraidos FROM analises_projeto WHERE id = $1', [analise.id])).rows[0].dados_extraidos;
+          await pool.query('UPDATE analises_projeto SET dados_extraidos = $1 WHERE id = $2', [JSON.stringify(dadosComMapa.map(({ mapa_cad, ...d }) => d)), analise.id]);
+          try {
+            r = await chamar('GET', URL);
+            assert.deepStrictEqual([r.corpo.disponivel, r.corpo.semMapa], [false, true]);
+            r = await chamar('POST', URL + '/reprocessar', {});
+            assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+            novas.push(r.corpo.id);
+            assert.match(r.corpo.nomeProjeto, /\(lida de novo\)$/);
+            assert.ok(r.corpo.dadosExtraidos[0].mapa_cad?.simbolos?.length, 'a análise nova vem com o mapa para conferir');
+          } finally {
+            await pool.query('UPDATE analises_projeto SET dados_extraidos = $1 WHERE id = $2', [JSON.stringify(dadosComMapa), analise.id]);
+          }
           // corrige: as tomadas ficam médias a 1,10 m e os quadrados são sirenes
           r = await chamar('PUT', URL, { arquivo: NOME, linhas: [{ idx: iT, simbolo: 'HM-ELE-TOMADA-MEDIA', altura_m: 1.1, confirmado: true }, { idx: iS, simbolo: 'HM-ALM-SIRENE', altura_m: 2.4, confirmado: true }] });
           assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
