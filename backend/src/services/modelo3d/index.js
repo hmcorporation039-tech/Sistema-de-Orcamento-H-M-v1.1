@@ -25,19 +25,54 @@ const { capturarImagemDeHtml } = require('../pdfPuppeteer');
 // disciplina do sistema → nome aceito pela estimativa (skills/_comum/cad/estimativaArquitetura.js)
 const DISCIPLINAS_3D = {
   eletrica: 'eletrica', iluminacao: 'iluminacao', incendio: 'incendio', cabeamento: 'cabeamento', rede: 'cabeamento',
-  cftv: 'cftv', alarme: 'alarme', controle_acesso: 'controle-acesso',
+  cftv: 'cftv', alarme: 'alarme', controle_acesso: 'controle_acesso',
 };
 const TEMPO_LIMITE_MS = 90 * 1000;
 
-// muda quando o gerador muda: invalida o cache dos modelos já gerados
-const { CAD } = require('../../config/caminhos');
+// muda quando o gerador muda: invalida o cache dos modelos já gerados.
+// Revisão de 02/11/2026: antes era uma lista fixa de arquivos (pela data), e
+// faltavam simbolos.js, disciplinasCad.js, planta.js, plantasDisciplina.js,
+// posicionamento.js e o cabeçalho da empresa — mudar um deles não refazia o 3D.
+// Agora: hash do CONTEÚDO de todo .js/.json de skills/_comum/cad (subpastas
+// inclusive, sem node_modules e sem os testes) e de skills/_comum/empresa.js.
+// O hash só é refeito quando a data ou o tamanho de algum arquivo muda.
+const { CAD, COMUM, RAIZ_SKILLS } = require('../../config/caminhos');
+// Fase 1 do roteiro (02/11/2026): a cena (versão 3) leva circuito e comando por ponto e o
+// modelo único da instalação — o módulo comum e os geradores das skills de elétrica e
+// iluminação também mudam o 3D do formulário, então entram na chave do cache
+const EXTRA_GERADOR = [
+  path.join(COMUM, 'empresa.js'), path.join(COMUM, 'instalacao', 'index.js'),
+  path.join(RAIZ_SKILLS, 'eletrica', 'scripts', 'lib', 'instalacao.js'), path.join(RAIZ_SKILLS, 'eletrica', 'scripts', 'lib', 'luminotecnico.js'),
+  path.join(RAIZ_SKILLS, 'iluminacao', 'scripts', 'lib', 'instalacao.js'),
+  // fase 2 (3D interativo): o simulador lógico, e o quadro do prédio sai do caderno de
+  // fabricação da skill quadros (pasta inteira, abaixo)
+  path.join(COMUM, 'instalacao', 'simulador.js'),
+  // fase 5 (iluminação no 3D): fotometria, ponto a ponto (mapa de iluminância) e as cenas e a
+  // fotometria que o luminotécnico grava na instalação da cena
+  path.join(COMUM, 'fotometria', 'leitor.js'), path.join(COMUM, 'fotometria', 'pontoAPonto.js'),
+  path.join(RAIZ_SKILLS, 'iluminacao', 'scripts', 'lib', 'calculo.js'), path.join(RAIZ_SKILLS, 'iluminacao', 'scripts', 'lib', 'cenas.js'),
+];
+const PASTA_QUADROS = path.join(RAIZ_SKILLS, 'quadros', 'scripts', 'lib');
+function arquivosDoGerador(pasta = CAD, lista = []) {
+  for (const e of fs.readdirSync(pasta, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    const f = path.join(pasta, e.name);
+    if (e.isDirectory()) { if (e.name !== 'node_modules' && !e.name.startsWith('.')) arquivosDoGerador(f, lista); continue; }
+    if (/\.(js|json)$/i.test(e.name) && !/^teste[-.]/i.test(e.name)) lista.push(f);
+  }
+  return lista;
+}
+let geradorCache = { assinatura: null, hash: null };
 function versaoDoGerador() {
   try {
-    // arquitetura.js e classificarPrancha.js decidem o que é planta (29/10/2026): mudou, refaz
-    // pranchas, pontosDoDesenho e modelosPorPlanta: um modelo por planta, pontos lidos do desenho (01/11/2026)
-    // infraestrutura.js: eletrocalhas pelas abas e caminhos sugeridos (01/11/2026)
-    return ['modelo3d.js', 'infraestrutura.js', 'estimativaArquitetura.js', 'arquitetura.js', 'classificarPrancha.js', 'pranchas.js', 'pontosDoDesenho.js', 'tiposDePonto.js', 'modelosPorPlanta.js', 'visualizador3d.js', path.join('visualizador3d', 'app.bundle.js')]
-      .map(f => fs.statSync(path.join(CAD, f)).mtimeMs).join('|');
+    const arquivos = [...arquivosDoGerador(), ...EXTRA_GERADOR, ...(fs.existsSync(PASTA_QUADROS) ? arquivosDoGerador(PASTA_QUADROS) : [])];
+    const assinatura = arquivos.map(f => { const st = fs.statSync(f); return `${path.relative(COMUM, f)}:${st.mtimeMs}:${st.size}`; }).join('|');
+    if (geradorCache.assinatura !== assinatura) {
+      const h = crypto.createHash('sha256');
+      // sem \r: o checkout com CRLF e o com LF dão o mesmo hash
+      for (const f of arquivos) h.update(path.relative(COMUM, f).replace(/\\/g, '/')).update('\0').update(fs.readFileSync(f, 'utf8').replace(/\r\n/g, '\n')).update('\0');
+      geradorCache = { assinatura, hash: h.digest('hex') };
+    }
+    return geradorCache.hash;
   } catch { return 'sem-gerador'; }
 }
 
@@ -105,7 +140,9 @@ async function fonteDoModelo(origemTipo, origemId, executor = pool) {
 // pela altura escrita ("H=0,30m", "2,20 m do piso") quando houver.
 const { simboloDaDescricao } = require(path.join(CAD, 'tiposDePonto.js'));
 const tipoDoTrecho = (layer) => (/ELETROCALHA/i.test(layer) ? 'eletrocalha' : /PERFILADO/i.test(layer) ? 'perfilado' : /LEITO/i.test(layer) ? 'leito' : /FIA[ÇC][ÃA]O|FIACAO/i.test(layer) ? 'fiacao' : 'eletroduto');
-const DISCIPLINA_3D_TRECHO = { cabeamento: 'rede', rede: 'rede', controle_acesso: 'controle-acesso' };
+// disciplina: a chave do registro único (skills/_comum/disciplinas.js) vai como está —
+// o 3D usa as mesmas chaves e traduz os nomes antigos (modelo3d.chaveDisciplina);
+// a tabela de tradução que ficava aqui saiu na revisão de 02/11/2026
 
 // analises_projeto.espacial (utils/compatibilidadeEspacial.js) → dispositivos e trechos da cena
 // Todo componente do projeto entra no 3D com a descrição dele ("Acionador manual AME
@@ -121,22 +158,31 @@ function dispositivosDoEspacial(espacial) {
     const proprio = simboloDaDescricao(p.descricao);
     if (!proprio) genericos++;
     const simbolo = proprio || SIMBOLO_GENERICO;
-    dispositivos.push({ simbolo, rotulo: rotuloDoComponente(p.descricao) || null, disciplina: DISCIPLINA_3D_TRECHO[p.disciplina] || p.disciplina,
-      ...(p.montagem !== 'teto' && Number(p.altura_m) > 0 ? { altura_m: Number(p.altura_m) } : {}), x: p.x, y: p.y, rotacao: 0, id: '', ambiente: null });
+    dispositivos.push({ simbolo, rotulo: rotuloDoComponente(p.descricao) || null, disciplina: p.disciplina,
+      ...(p.montagem !== 'teto' && Number(p.altura_m) > 0 ? { altura_m: Number(p.altura_m) } : {}), x: p.x, y: p.y, rotacao: 0, id: '', ambiente: null,
+      // circuito e comando conferidos no Mapa do CAD (texto junto do símbolo): o 3D grava por ponto
+      ...(p.circuito ? { circuito: String(p.circuito), comando: p.comando || '' } : {}) });
   }
   // tipo, material e medida lidos do desenho (services/analiseCad/medidasInfra.js); análise
   // antiga, sem eles: o tipo pela layer e a medida null (o 3D usa a seção ilustrativa)
   const trechos = (espacial?.trechos || []).map(t => ({
-    disciplina: DISCIPLINA_3D_TRECHO[t.disciplina] || t.disciplina || 'eletrica', tipo: t.tipo || tipoDoTrecho(t.layer), layer: t.layer, segmentos: t.segmentos,
+    disciplina: t.disciplina || 'eletrica', tipo: t.tipo || tipoDoTrecho(t.layer), layer: t.layer, segmentos: t.segmentos,
     material: t.material ?? null, medida: t.medida ?? null, secao_mm: t.secao_mm ?? null, origem_medida: t.origem_medida ?? null,
     ...(t.quantidade > 1 ? { quantidade: t.quantidade } : {}),
   }));
   return { dispositivos, trechos, genericos };
 }
 
-function chaveDa(fonte) {
+// aprendidos: a legenda aprendida que vai ao worker (services/simbolosAprendidos.js) —
+// ela muda a leitura dos símbolos desenhados, então entra na chave (revisão de
+// 02/11/2026: confirmar um símbolo no Mapa do CAD não refazia o 3D já guardado).
+// Em ordem fixa: o "vezes" que reordena a lista não muda o resultado.
+const hashAprendidos = (aprendidos) => crypto.createHash('sha256')
+  .update(JSON.stringify((aprendidos || []).map(a => JSON.stringify(a)).sort())).digest('hex');
+function chaveDa(fonte, aprendidos = []) {
   const h = crypto.createHash('sha256');
   h.update(versaoDoGerador());
+  h.update(hashAprendidos(aprendidos));
   h.update(crypto.createHash('sha256').update(fonte.dxf).digest('hex'));
   if (fonte.dispositivosReais || fonte.trechos) h.update(crypto.createHash('sha256').update(JSON.stringify([fonte.dispositivosReais, fonte.trechos])).digest('hex'));
   h.update(JSON.stringify([fonte.disciplinas, fonte.dadosPorDisciplina, fonte.peDireito, fonte.titulo, fonte.cliente, fonte.obra, fonte.proposta || '', fonte.semPontos]));
@@ -145,7 +191,7 @@ function chaveDa(fonte) {
 
 // Gerações em andamento por chave: dois cliques no mesmo modelo esperam a mesma
 // (worker com a fila global de services/executarNoWorker.js: no máximo 2 ao mesmo tempo)
-async function gerarNoWorker(fonte) {
+async function gerarNoWorker(fonte, aprendidos) {
   let m;
   try {
     m = await executarNoWorker(path.join(__dirname, 'worker.js'), {
@@ -153,7 +199,7 @@ async function gerarNoWorker(fonte) {
       semPontos: fonte.semPontos, titulo: fonte.titulo, cliente: fonte.cliente, obra: fonte.obra, proposta: fonte.proposta || '',
       dispositivosReais: fonte.dispositivosReais || null, trechos: fonte.trechos || null,
       // legenda das pranchas lida em projetos anteriores (services/simbolosAprendidos.js)
-      aprendidos: await simbolosAprendidos.carregar(),
+      aprendidos: aprendidos || await simbolosAprendidos.carregar(),
     }, { tempoLimiteMs: TEMPO_LIMITE_MS, memoriaMb: 1024 });
   } catch (e) {
     if (e.codigo === 'TEMPO_ESGOTADO') throw erro(500, 'O modelo 3D demorou demais para ser gerado.');
@@ -173,7 +219,9 @@ const linhaDoCache = (origemTipo, origemId, fonte) => (origemTipo === 'proposta'
 async function obterModelo(origemTipo, origemId) {
   const fonte = await fonteDoModelo(origemTipo, origemId);
   if (!fonte) return null;
-  const chave = chaveDa(fonte);
+  // a MESMA lista vai para a chave e para o worker
+  const aprendidos = await simbolosAprendidos.carregar();
+  const chave = chaveDa(fonte, aprendidos);
   // proposta: o título leva o número dela, então o cache é da própria proposta
   const { tipoCache, idCache } = linhaDoCache(origemTipo, origemId, fonte);
   const { rows: [cache] } = await pool.query(
@@ -183,7 +231,7 @@ async function obterModelo(origemTipo, origemId) {
   const k = `${tipoCache}:${idCache}:${chave}`;
   if (!emAndamento.has(k)) {
     emAndamento.set(k, (async () => {
-      const r = await gerarNoWorker(fonte);
+      const r = await gerarNoWorker(fonte, aprendidos);
       const resumo = { numeros: r.numeros, avisos: r.avisos, nome_arquivo: fonte.nomeArquivo };
       const { rows: [g] } = await pool.query(
         `INSERT INTO modelos_3d (origem_tipo, origem_id, chave, html, resumo, imagem, gerado_em)
@@ -195,6 +243,18 @@ async function obterModelo(origemTipo, origemId) {
     })().finally(() => emAndamento.delete(k)));
   }
   return emAndamento.get(k);
+}
+
+// "Gerar de novo" (dono do registro ou administrador: routes/v2/modelo3d.js): apaga o
+// modelo guardado da origem e gera outra vez — para quando o 3D guardado ficou
+// velho por algo que a chave não enxerga. Gerações em andamento da mesma chave
+// continuam valendo (a nova espera a mesma).
+async function refazerModelo(origemTipo, origemId) {
+  const fonte = await fonteDoModelo(origemTipo, origemId);
+  if (!fonte) return null;
+  const { tipoCache, idCache } = linhaDoCache(origemTipo, origemId, fonte);
+  await pool.query('DELETE FROM modelos_3d WHERE origem_tipo = $1 AND origem_id = $2', [tipoCache, idCache]);
+  return obterModelo(origemTipo, origemId);
 }
 
 // Situação sem gerar: tem arquitetura? quais disciplinas terão pontos?
@@ -262,6 +322,6 @@ function lerLink(token) {
 }
 
 module.exports = {
-  CSP_MODELO_3D, obterModelo, situacao, imagemDoModelo, nomeArquivo, criarLink, lerLink,
-  chaveDa, gerarNoWorker, dispositivosDoEspacial,
+  CSP_MODELO_3D, obterModelo, refazerModelo, situacao, imagemDoModelo, nomeArquivo, criarLink, lerLink,
+  chaveDa, versaoDoGerador, arquivosDoGerador, gerarNoWorker, dispositivosDoEspacial,
 };

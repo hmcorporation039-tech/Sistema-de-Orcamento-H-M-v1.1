@@ -4,7 +4,7 @@ import { Save, Search, ExternalLink, ChevronDown, ChevronRight, Square, GitMerge
 import { getPrecosMaoDeObra, atualizarPrecosMaoDeObra, pesquisarReferenciaMaoDeObra, fundirServico, definirServicoAtivo, buscarSinapi } from '../services/api';
 import Select, { comparador } from '../components/Select';
 import useDisciplinas from '../hooks/useDisciplinas';
-import { formatarMoeda } from '../utils/format';
+import { formatarMoeda, dataHoraBr } from '../utils/format';
 import { estilos } from '../components/ui/estilos';
 
 // Dois segmentos de referência de MERCADO (além do valor adotado pela H&M)
@@ -13,8 +13,6 @@ const SEGMENTOS = [
   { chave: 'privado', rotulo: 'Privado / particular', dica: 'Preço praticado para residências, condomínios e empresas (prestadores, sindicatos, tabelas de honorários)' },
 ];
 
-const moeda = (v) => (v == null || v === '' ? '—' : formatarMoeda(v));
-const data = (v) => (v ? new Date(v).toLocaleDateString('pt-BR') : '');
 const semAcento = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 // Segunda referência de mão de obra: a tabela SINAPI local (Caixa, estado e regime de Integrações). Só mostra o que o SINAPI
@@ -45,7 +43,7 @@ function ReferenciaSinapi({ item, onUsar }) {
       {achados?.slice(0, 8).map(x => (
         <div key={x.codigo} style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, color: '#ccc' }}>
           <span style={{ flex: 1, minWidth: 0 }}>{x.descricao} <span style={{ color: 'var(--texto-3)' }}>· {x.unidade} · cód. {x.codigo} · {String(x.mes).trim()}</span></span>
-          <b style={{ whiteSpace: 'nowrap' }}>{moeda(x.valor)}</b>
+          <b style={{ whiteSpace: 'nowrap' }}>{formatarMoeda(x.valor, { vazio: '—' })}</b>
           <button type="button" onClick={() => onUsar(x)} style={{ ...btnIcone, padding: '2px 8px' }} title="Preenche a referência Oficial / governo com este valor (você ainda confere e salva)">Usar</button>
         </div>
       ))}
@@ -116,7 +114,7 @@ export default function PrecosMaoDeObra() {
         return { ...a, [it.codigo]: resto };
       });
       if (!silencioso) {
-        if (r.data.encontrado) toast.success(`${SEGMENTOS.find(s => s.chave === seg).rotulo}: ${moeda(r.data.item[`valor_${seg}`])}${r.data.deCache ? ' (pesquisa recente)' : ''}`);
+        if (r.data.encontrado) toast.success(`${SEGMENTOS.find(s => s.chave === seg).rotulo}: ${formatarMoeda(r.data.item[`valor_${seg}`], { vazio: '—' })}${r.data.deCache ? ' (pesquisa recente)' : ''}`);
         else toast('Nenhuma referência equivalente encontrada — veja as fontes consultadas ou digite o valor.', { icon: 'ℹ️', duration: 6000 });
       }
       return true;
@@ -236,7 +234,7 @@ export default function PrecosMaoDeObra() {
                     <>
                       {it[`fonte_${s.chave}`] && <span title={it[`fonte_${s.chave}`]}>{String(it[`fonte_${s.chave}`]).slice(0, 70)}{String(it[`fonte_${s.chave}`]).length > 70 ? '…' : ''} </span>}
                       {it[`link_${s.chave}`] && <a href={it[`link_${s.chave}`]} target="_blank" rel="noopener noreferrer" style={{ color: '#8ab4f8' }}><ExternalLink size={10} /></a>}
-                      {it[`data_${s.chave}`] && <span> · {data(it[`data_${s.chave}`])}</span>}
+                      {it[`data_${s.chave}`] && <span> · {dataHoraBr(it[`data_${s.chave}`], { hora: false, vazio: '' })}</span>}
                     </>
                   )}
                 </div>
@@ -263,7 +261,7 @@ export default function PrecosMaoDeObra() {
                       <td style={td}>{o.segmento}</td>
                       <td style={td}>{o.link ? <a href={o.link} target="_blank" rel="noopener noreferrer" style={{ color: '#8ab4f8' }}>{o.fonte}</a> : o.fonte}</td>
                       <td style={td}>{o.produto}</td>
-                      <td style={{ ...td, whiteSpace: 'nowrap' }}>{moeda(o.preco)}</td>
+                      <td style={{ ...td, whiteSpace: 'nowrap' }}>{formatarMoeda(o.preco, { vazio: '—' })}</td>
                       <td style={td}>{o.mesmo_item ? '' : 'não equivalente (fora da média). '}{o.observacao}</td>
                     </tr>
                   ))}
@@ -292,7 +290,7 @@ export default function PrecosMaoDeObra() {
           style={{ width: 'auto', flex: '0 0 auto', fontSize: 11.5, padding: '3px 6px', borderColor: alterados[it.codigo] && 'disciplina' in alterados[it.codigo] ? '#c9a227' : undefined }}>
           {todasDisciplinas.map(d => <option key={d.chave} value={d.chave}>{d.nomes.servico}</option>)}
         </Select>
-        {it.criado_em && <span>· lançado em {data(it.criado_em)}</span>}
+        {it.criado_em && <span>· lançado em {dataHoraBr(it.criado_em, { hora: false, vazio: '' })}</span>}
         <span style={{ flex: 1 }} />
         {inativo ? (
           <>

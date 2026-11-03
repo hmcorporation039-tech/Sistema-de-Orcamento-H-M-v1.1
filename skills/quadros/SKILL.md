@@ -5,7 +5,7 @@ description: Projeto de fabricação de quadros elétricos e de automação a pa
 
 # Quadros elétricos e de automação — projeto de fabricação (NBR IEC 61439) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por quadro** (o unifilar/quadro de cargas), o projeto de fabricação do quadro. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills/quadros` ou `skills`: 118 verificações). **Não refaça contas de cabeça: rode os scripts.** As partidas de motores usam o motor da skill de elétrica industrial (`eletrica-industrial/scripts/lib/calculo.js → dispositivosPartida`) e o DPS a função comum `_comum/dps.js`.
+Gera, a partir de **um arquivo JSON por quadro** (o unifilar/quadro de cargas), o projeto de fabricação do quadro. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills/quadros` ou `skills`: 207 verificações). **Não refaça contas de cabeça: rode os scripts.** As partidas de motores usam o motor da skill de elétrica industrial (`eletrica-industrial/scripts/lib/calculo.js → dispositivosPartida`) e o DPS a função comum `_comum/dps.js`.
 
 | Documento | Tipo | Formato | Registro |
 |---|---|---|---|
@@ -35,7 +35,7 @@ Entrada `fabricantes: { padrao, por_tipo: { contator: "WEG", … } }` e, em qual
    - `circuitos`: um por linha na ordem do unifilar (ligação FN/FF/FFN/FFF/FFFN, fases, P ou Ib, disjuntor, curva, Icu, DR `ddr`/`idr` + `dr_grupo`, cabo, `local_dr` para os locais de 5.1.3.2.2).
    - `motores`: dados de placa e partida (direta, estrela-triângulo, soft-starter, inversor).
    - `automacao`: CLP (E/S da CPU), sinais de campo, cargas 24 Vcc, IHM, comunicação, dispositivos de porta.
-   - **Importar** de um projeto já feito: `node skills/quadros/scripts/importar.js <projeto.json> --de eletrica [--tag QD-01]` ou `--de eletrica-industrial --quadro CCM-01` (só lê as outras skills; revise grupos de DR, local e montagem).
+   - **Importar** de um projeto já feito: `node skills/quadros/scripts/importar.js <projeto.json> --de eletrica [--tag QD-01]` ou `--de eletrica-industrial --quadro CCM-01` ou `--de iluminacao [--tag QL-01]` (circuitos IL* do luminotécnico) (só lê as outras skills; revise grupos de DR, local e montagem). Da elétrica e da iluminação vem também `instalacao_origem` (pontos e comandos de cada circuito): o resultado leva `instalacao` com as mesmas tags do caderno (Q0, Q<circuito>, DRn) — o 3D do quadro e o da planta falam do mesmo disjuntor.
 3. **Calcular e conferir com o engenheiro:** `node _comum/cli.js quadros calcular <quadro>.json` — mostre indicadores, avisos e premissas [CONFERIR].
 4. **Documentos:** `node _comum/cli.js quadros documentos <quadro>.json --saida <pasta do cliente>` (`--so memorial,desenho`).
 5. **Orçamento:** `node _comum/cli.js quadros orcamento <quadro>.json --modo fabricacao|inspecao`; no sistema, ferramenta MCP `criar_rascunho_proposta` ou o botão da aba de projetos.

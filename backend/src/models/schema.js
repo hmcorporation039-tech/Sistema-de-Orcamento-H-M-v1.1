@@ -678,8 +678,8 @@ async function criarTabelas() {
     await client.query('ALTER TABLE pesquisas_mercado ADD COLUMN IF NOT EXISTS ofertas JSONB');
     await client.query('ALTER TABLE pesquisas_mercado ADD COLUMN IF NOT EXISTS preco_sugerido NUMERIC(12,2)');
 
-    // Versão 2.0: migrações por tema em models/migracoes/*.js (ordem do nome do
-    // arquivo; cada uma exporta async (client) => {} e precisa ser idempotente).
+    // Versão 2.0: migrações por tema em models/migracoes/*.js (ordem do NÚMERO no
+    // nome do arquivo; cada uma exporta async (client) => {} e precisa ser idempotente).
     for (const m of listarMigracoes()) await require(m)(client);
 
     // COMMIT de transação abortada (erro engolido numa migração) volta como ROLLBACK
@@ -726,8 +726,10 @@ function listarMigracoes() {
   const pasta = require('path').join(__dirname, 'migracoes');
   const fs = require('fs');
   if (!fs.existsSync(pasta)) return [];
-  // só "2.0-01-….js" (arquivo de apoio não é migração: ver models/apoioMigracoes.js)
-  return fs.readdirSync(pasta).filter(f => /^\d.*\.js$/.test(f)).sort().map(f => require('path').join(pasta, f));
+  // só "2.0-01-….js" (arquivo de apoio não é migração: ver models/apoioMigracoes.js),
+  // em ordem NUMÉRICA (a 2.0-100 depois da 2.0-99, não entre a 2.0-10 e a 2.0-11)
+  const { ordenarMigracoes } = require('./apoioMigracoes');
+  return ordenarMigracoes(fs.readdirSync(pasta).filter(f => /^\d.*\.js$/.test(f))).map(f => require('path').join(pasta, f));
 }
 
 module.exports = { criarTabelas };

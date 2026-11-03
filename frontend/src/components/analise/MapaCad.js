@@ -5,8 +5,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { CheckCheck, RefreshCw, Undo2 } from 'lucide-react';
-import { getMapaCad, salvarMapaCad, reprocessarMapaCad } from '../../services/api';
+import { CheckCheck, Download, RefreshCw, Undo2, Upload } from 'lucide-react';
+import { getMapaCad, salvarMapaCad, reprocessarMapaCad, exportarBibliotecaBlocos, importarBibliotecaBlocos } from '../../services/api';
 import { mensagemDeErro } from '../../utils/download';
 
 const ORIGEM = {
@@ -24,6 +24,16 @@ const NOME_DISC = {
 // de onde veio a altura sugerida (quando não é da legenda do desenho nem conferida)
 const ALTURA_DE = { nota: 'sugerida pela nota do desenho', nota_aprendida: 'costume deste escritório (notas anteriores)' };
 const LIMITE_LINHAS = 60;
+// circuito e retorno escritos junto dos símbolos da linha ("3", "a" — fase 1 do roteiro): sugestão; ao conferir
+// a linha, o circuito de cada ponto vai para o 3D
+function textoCircuitos(c) {
+  const lista = (o) => Object.entries(o || {}).sort((x, y) => y[1] - x[1]);
+  const circ = lista(c.circuitos), ret = lista(c.retornos);
+  const partes = [];
+  if (circ.length) partes.push(`circ. ${circ.slice(0, 6).map(([k, n]) => `${k} (${n})`).join(', ')}${circ.length > 6 ? '…' : ''}`);
+  if (ret.length) partes.push(`retornos ${ret.slice(0, 6).map(([k]) => k).join(', ')}${ret.length > 6 ? '…' : ''}`);
+  return partes.join(' · ');
+}
 const campo = { background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 5, color: '#ddd', fontSize: 12, padding: '5px 7px', boxSizing: 'border-box', fontFamily: 'inherit' };
 const botao = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 6, border: '1px solid #2f2f2f', background: '#1a1a1a', color: '#ddd', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
 
@@ -55,6 +65,13 @@ function PlantaDoMapa({ planta, simbolos, ativa }) {
 const br = (v) => (v == null || v === '' ? '' : String(v).replace('.', ','));
 const paraNumero = (t) => { const n = Number(String(t).replace(',', '.')); return Number.isFinite(n) && n > 0 ? n : null; };
 const cm = (medida) => (medida || []).map(m => Math.round(m * 100)).join(' × ');
+
+// por que a linha do mapa não entra no orçamento (backend: services/analiseCad, CAD-12 — decidido por layer)
+const MOTIVO_FORA = {
+  layer_com_bloco: 'Não entra no orçamento: esta layer tem blocos nomeados, e o orçamento conta pelos blocos',
+  referencia: 'Não entra no orçamento: layer de referência de outra disciplina (REF-…)',
+  repete_bloco: 'Não entra no orçamento: repete um bloco da mesma família no mesmo lugar',
+};
 
 export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
   const navigate = useNavigate();
@@ -128,6 +145,35 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
     } finally { setOcupado(false); }
   }
 
+  async function exportarBiblioteca() {
+    try {
+      const r = await exportarBibliotecaBlocos();
+      const url = URL.createObjectURL(new Blob([JSON.stringify(r.data, null, 2)], { type: 'application/json' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `biblioteca-blocos-hm-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success(`${r.data.linhas.length} linha(s) da biblioteca exportada(s)`);
+    } catch (err) {
+      toast.error(await mensagemDeErro(err, 'Não consegui exportar a biblioteca de blocos'), { duration: 8000 });
+    }
+  }
+
+  async function importarBiblioteca(e) {
+    const arquivo = e.target.files?.[0];
+    e.target.value = '';
+    if (!arquivo) return;
+    setOcupado(true);
+    try {
+      const json = JSON.parse(await arquivo.text());
+      const r = await importarBibliotecaBlocos(json);
+      toast.success(`Biblioteca importada: ${r.data.gravadas} linha(s) gravada(s), ${r.data.mantidas} mantida(s) (já conferidas aqui)${r.data.recusadas ? `, ${r.data.recusadas} recusada(s)` : ''}.`, { duration: 9000 });
+    } catch (err) {
+      toast.error(err instanceof SyntaxError ? 'O arquivo não é um JSON válido.' : await mensagemDeErro(err, 'Não consegui importar a biblioteca (só administrador)'), { duration: 9000 });
+    } finally { setOcupado(false); }
+  }
+
   return (
     <div style={estiloCartao} data-testid="cartao-mapa-cad">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
@@ -182,6 +228,11 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
                 Este desenho tem blocos nomeados: o orçamento conta pelos blocos. O mapa abaixo vale para o 3D e para o aprendizado.
               </div>
             )}
+            {a.valeParaOrcamento && a.layersComBloco?.length > 0 && (
+              <div style={{ fontSize: 12, color: '#c9a227', marginBottom: 6 }}>
+                Desenho misto: nas layers com blocos nomeados ({a.layersComBloco.slice(0, 6).join(', ')}{a.layersComBloco.length > 6 ? '…' : ''}) o orçamento conta pelos blocos; nas outras, pelos símbolos conferidos aqui.
+              </div>
+            )}
             {a.planta && <div style={{ marginBottom: 8 }}><PlantaDoMapa planta={a.planta} simbolos={a.simbolos} ativa={ativa[a.arquivo]} /></div>}
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -200,7 +251,7 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
                         onMouseEnter={() => a.planta && setAtiva(m => (m[a.arquivo] === s.idx ? m : { ...m, [a.arquivo]: s.idx }))}>
                         <td style={{ padding: '6px 8px', color: '#ddd', whiteSpace: 'nowrap' }}>{s.layer}</td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap', color: 'var(--texto-2)' }}>{cm(s.medida)}</td>
-                        <td style={{ padding: '6px 8px', whiteSpace: 'nowrap', color: 'var(--texto-2)' }} title="pontos que entram na contagem / símbolos desta forma no desenho">
+                        <td style={{ padding: '6px 8px', whiteSpace: 'nowrap', color: 'var(--texto-2)' }} title={MOTIVO_FORA[s.foraDoOrcamento] || 'pontos que entram na contagem / símbolos desta forma no desenho'}>
                           {s.contados}{s.contados !== s.quantidade ? ` / ${s.quantidade}` : ''}
                         </td>
                         <td style={{ padding: '6px 8px', minWidth: 190 }}>
@@ -220,6 +271,12 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
                           <span style={{ color: corOrigem }}>{rotuloOrigem}</span>
                           {s.corrigido && <span style={{ color: 'var(--texto-3)' }} title={`o sistema tinha proposto: ${s.proposto?.simbolo}`}> · corrigido</span>}
+                          {s.circuitos_lidos && (
+                            <div style={{ fontSize: 10, color: '#8ab4f8', marginTop: 2, maxWidth: 220, whiteSpace: 'normal', lineHeight: 1.3 }}
+                              title={`Texto escrito junto do símbolo: ${s.circuitos_lidos.com_circuito} de ${s.circuitos_lidos.pontos} ponto(s) com circuito lido${s.circuitos_lidos.conflitos ? `, ${s.circuitos_lidos.conflitos} com dois circuitos (ficam sem)` : ''}. ${s.confirmado ? 'Linha conferida: o circuito vai para o 3D.' : 'Sugestão: entra no 3D quando a linha for conferida.'}`}>
+                              {textoCircuitos(s.circuitos_lidos)}{s.confirmado ? '' : ' — a conferir'}
+                            </div>
+                          )}
                         </td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
                           {s.confirmado
@@ -243,6 +300,17 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
           </div>
         );
       })}
+      {/* biblioteca de blocos (fase 3, CAD-08): as confirmações por medida real e escritório, para levar a outra instalação */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 12, fontSize: 12, color: 'var(--texto-3)' }}>
+        <span style={{ flex: 1, minWidth: 220 }}>Biblioteca de blocos: o que o sistema aprendeu das confirmações (pela medida real e pelo escritório do carimbo).</span>
+        <button type="button" style={botao} onClick={exportarBiblioteca} disabled={ocupado} data-testid="exportar-biblioteca">
+          <Download size={13} /> Exportar JSON
+        </button>
+        <label style={{ ...botao, cursor: ocupado ? 'default' : 'pointer' }} title="Só administrador. O que já foi conferido nesta instalação não é trocado">
+          <Upload size={13} /> Importar JSON
+          <input type="file" accept=".json,application/json" style={{ display: 'none' }} onChange={importarBiblioteca} disabled={ocupado} data-testid="importar-biblioteca" />
+        </label>
+      </div>
     </div>
   );
 }

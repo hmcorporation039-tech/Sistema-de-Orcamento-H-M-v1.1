@@ -54,6 +54,8 @@
  },
  "luminarias": [],
  "ambientes": [],
+ "grupos": [],
+ "cenas": [],
  "inspecao": {
   "tipo": "comissionamento",
   "documento_n": "",

@@ -179,6 +179,31 @@ caso('rotas do token do assistente: nada de status, e-mail, link, exclusão, cat
   for (const r of rotas) assert.ok(existentes.has(r), `rota liberada inexistente: ${r}`);
 });
 
+// Sentido contrário: toda chamada api('MÉTODO', '/api/...') das ferramentas do
+// MCP tem de cair numa rota liberada ao token do assistente — senão a ferramenta
+// leva 403 na hora de usar (foi assim que gerar_orcamento com origem "itens"
+// quebrou: lia /configuracoes/padroes-orcamento, que não estava na lista).
+caso('toda chamada das ferramentas do MCP do assistente cai numa rota liberada ao token', () => {
+  const fonte = fs.readFileSync(path.join(__dirname, '..', 'src', 'mcp', 'assistenteFerramentas.mjs'), 'utf8');
+  const chamadas = [...fonte.matchAll(/\bapi\(\s*'(GET|POST|PUT|PATCH|DELETE)'\s*,\s*(?:'(\/api\/[^']*)'|`(\/api\/[^`]*)`)/g)]
+    .map(([, metodo, simples, modelo]) => ({ metodo, caminho: simples || modelo }));
+  assert.ok(chamadas.length >= 30, `poucas chamadas achadas (${chamadas.length}) — a regex parou de casar?`);
+  // nenhuma chamada com caminho montado fora do literal (a regex não veria)
+  const todas = (fonte.match(/\bapi\(\s*'(GET|POST|PUT|PATCH|DELETE)'/g) || []).length;
+  assert.strictEqual(todas, chamadas.length, 'há chamada api() com caminho que não é texto literal — confira à mão');
+  const router = require('../src/routes');
+  const liberadas = new Set(rotasPermitidas());
+  for (const { metodo, caminho } of chamadas) {
+    // ${...} vira um valor qualquer de um segmento; a query string não conta
+    const concreto = caminho.replace(/\$\{[^}]*\}/g, '1').replace(/^\/api/, '').split('?')[0] || '/';
+    // a mesma resolução do Express: a PRIMEIRA rota do roteador que casa com método + caminho
+    const camada = router.stack.find(c => c.route && c.route.methods[metodo.toLowerCase()] && c.match(concreto));
+    assert.ok(camada, `${metodo} ${caminho}: nenhuma rota do roteador atende`);
+    const chave = `${metodo} ${camada.route.path}`;
+    assert.ok(liberadas.has(chave), `${metodo} ${caminho} → ${chave} não está liberada em escopoAssistente.js (o assistente levaria 403)`);
+  }
+});
+
 caso('rascunho: operações sobre a proposta lida (GET → PUT)', () => {
   const p = {
     data: '2026-10-27T03:00:00.000Z', validade: 5, cliente_nome: 'Cliente X', bdi: '10.00', imposto_venda: '0', imposto_servico: '6', versao: 3,

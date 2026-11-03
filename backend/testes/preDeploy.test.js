@@ -66,6 +66,40 @@ const grava = (arq, texto) => { fs.mkdirSync(path.dirname(arq), { recursive: tru
     assert.match(r.problemas.join(' '), /9-solto\.js: nome fora do padrão/);
   });
 
+  await caso('migrações rodam em ordem NUMÉRICA: a 2.0-100 depois da 2.0-99 (não entre a 2.0-10 e a 2.0-11)', () => {
+    const { ordenarMigracoes } = require('../src/models/apoioMigracoes');
+    assert.deepStrictEqual(ordenarMigracoes(['2.0-38-a.js', '2.0-100-b.js', '2.0-11-c.js', '2.0-99-d.js', '2.0-9-e.js']),
+      ['2.0-9-e.js', '2.0-11-c.js', '2.0-38-a.js', '2.0-99-d.js', '2.0-100-b.js']);
+    // fora do padrão vai para o fim (e o pre-deploy reprova pelo nome)
+    assert.deepStrictEqual(ordenarMigracoes(['9-solto.js', '2.0-02-b.js']), ['2.0-02-b.js', '9-solto.js']);
+    // numa pasta com 2.0-01 … 2.0-100, a ordem de execução segue o número
+    const d = pasta();
+    for (let n = 1; n <= 100; n++) grava(path.join(d, `2.0-${String(n).padStart(2, '0')}-m.js`), 'module.exports = async () => {};');
+    const r = p.verificarMigracoes(d);
+    assert.ok(r.ok, r.problemas.join('; '));
+    assert.strictEqual(r.ordem[9], '2.0-10-m.js');
+    assert.strictEqual(r.ordem[10], '2.0-11-m.js');
+    assert.strictEqual(r.ordem[99], '2.0-100-m.js');
+    // o carregador do schema usa a MESMA ordenação (sem .sort() de texto)
+    const schema = fs.readFileSync(path.join(__dirname, '..', 'src', 'models', 'schema.js'), 'utf8');
+    const corpo = schema.slice(schema.indexOf('function listarMigracoes'));
+    assert.match(corpo.slice(0, 800), /ordenarMigracoes\(/);
+    assert.doesNotMatch(corpo.slice(0, 800), /\.sort\(\)/);
+  });
+
+  await caso('Jest do frontend e skills fazem parte do pré-deploy (resumo e falta do react-scripts)', async () => {
+    assert.strictEqual(p.resumoSuite({ saida: 'Test Suites: 15 passed\nTests:       115 passed, 115 total\n' }), '115 passed, 115 total');
+    assert.strictEqual(p.resumoSuite({ saida: 'spda ok\neletrica/teste.js: FALHOU\n' }), '1 teste(s) de skill falharam');
+    const semFrontend = await p.rodarJestFrontend(pasta());
+    assert.ok(!semFrontend.ok);
+    assert.match(semFrontend.saida, /npm install/);
+    const skills = pasta();
+    grava(path.join(skills, 'testar-todas.js'), "console.log('x/teste.js: FALHOU'); process.exitCode = 1;");
+    const r = await p.rodarTestesSkills(skills);
+    assert.ok(!r.ok);
+    assert.strictEqual(p.resumoSuite(r), '1 teste(s) de skill falharam');
+  });
+
   await caso('as migrações reais do projeto estão em ordem', () => {
     const r = p.verificarMigracoes();
     assert.ok(r.ok, r.problemas.join('; '));

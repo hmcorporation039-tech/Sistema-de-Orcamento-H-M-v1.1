@@ -23,6 +23,7 @@
 const path = require('path');
 const { lerPagina, pdfjs } = require('../utils/pdfVetorial').paraTestes;
 const { escalaDoCarimbo } = require('../utils/pdfVetorial');
+const { escalaDoNome } = require('../utils/escalaDaPlanta');
 
 const { DesenhoDxf } = require(path.join(require('../config/caminhos').CAD, 'dxf.js'));
 
@@ -138,7 +139,9 @@ async function escolherPagina(doc, OPS, pagina, escala) {
 // Sem `pagina`, TODAS as folhas com planta entram, lado a lado, cada uma na sua
 // moldura (paginasUsadas); `pagina` = a principal.
 // folhas: [{ pagina, tipo, resumo, usada }] — a classificação de cada página lida
-async function pdfParaDxf(buffer, { escala: escalaInformada = null, pagina = null } = {}) {
+// `nomeArquivo`: a escala escrita no nome ("… A0 1_50.pdf") vale depois do carimbo e da informada (fase 3, CAD-09)
+async function pdfParaDxf(buffer, { escala: escalaInformada = null, pagina = null, nomeArquivo = '' } = {}) {
+  const escalaDoNomeArquivo = escalaDoNome(nomeArquivo);
   const { getDocument, OPS } = await pdfjs();
   let doc;
   try {
@@ -162,14 +165,14 @@ async function pdfParaDxf(buffer, { escala: escalaInformada = null, pagina = nul
     // cada uma ao lado da anterior e dentro da sua moldura: o 3D faz um modelo por
     // planta (skills/_comum/cad/modelosPorPlanta.js) — pedido de 01/11/2026, "cada
     // folha em pdf individualmente"
-    const r0 = escreverFolha(d, L, geo, classificacao, { n, escalaInformada, dx: 0, avisos, obrigatoria: true });
+    const r0 = escreverFolha(d, L, geo, classificacao, { n, escalaInformada, escalaDoNomeArquivo, dx: 0, avisos, obrigatoria: true });
     const usadas = [n];
     let dx = r0.largura * 1.1;
     for (const f of pagina ? [] : folhas.filter(x => x.temPlanta && x.pagina !== n).sort((a, b) => a.pagina - b.pagina)) {
       const pag = await doc.getPage(f.pagina);
       const g = await lerPagina(pag, OPS, { geometria: true });
       pag.cleanup();
-      const r = escreverFolha(d, L, g, classificarPaginaPdf(g, { escala: Number(escalaInformada) || null }), { n: f.pagina, escalaInformada, dx, avisos, obrigatoria: false });
+      const r = escreverFolha(d, L, g, classificarPaginaPdf(g, { escala: Number(escalaInformada) || null }), { n: f.pagina, escalaInformada, escalaDoNomeArquivo, dx, avisos, obrigatoria: false });
       if (!r) continue;
       usadas.push(f.pagina);
       dx += r.largura * 1.1;
@@ -192,7 +195,7 @@ async function pdfParaDxf(buffer, { escala: escalaInformada = null, pagina = nul
 // pranchas e não a sobe como parede). Folha que não é obrigatória e não tem
 // escala nem linhas: null, com aviso (as outras seguem).
 // (folha sem escala NÃO usa a da principal: a folha 1 da Arena saía com 23 × 16 m, errada)
-function escreverFolha(d, L, geo, classificacao, { n, escalaInformada, dx, avisos, obrigatoria }) {
+function escreverFolha(d, L, geo, classificacao, { n, escalaInformada, escalaDoNomeArquivo = null, dx, avisos, obrigatoria }) {
   const falhar = (msg, codigo) => {
     if (obrigatoria) throw erro(msg, codigo);
     avisos.push(`Folha ${n} fora do 3D: ${msg}`);
@@ -226,6 +229,10 @@ function escreverFolha(d, L, geo, classificacao, { n, escalaInformada, dx, aviso
   let escala = obrigatoria ? informada : null, origemEscala = escala ? 'informada' : null;
   if (!escala) { escala = escalaDoCarimbo(geo.textos); if (escala) origemEscala = 'carimbo'; }
   if (!escala && informada) { escala = informada; origemEscala = 'informada'; }
+  if (!escala && escalaDoNomeArquivo) {
+    escala = escalaDoNomeArquivo; origemEscala = 'nome_arquivo';
+    avisos.push(`Escala 1:${escala} da folha ${n} tirada do nome do arquivo (o carimbo não tem a escala) — confira as medidas.`);
+  }
   if (!escala) {
     escala = escalaPelasPortas(arcosPt, retasPt);
     if (escala) { origemEscala = 'portas'; avisos.push(`Escala 1:${escala} da folha ${n} deduzida pelo tamanho das portas (o carimbo não tem a escala) — confira as medidas.`); }
@@ -311,9 +318,9 @@ function escreverFolha(d, L, geo, classificacao, { n, escalaInformada, dx, aviso
 // linha é o JSON do resultado e o resto é o DXF. Falha: código 2 e JSON do erro.
 const { spawn } = require('child_process');
 
-function pdfParaDxfIsolado(buffer, { escala = null, pagina = null, timeoutMs = 150000 } = {}) {
+function pdfParaDxfIsolado(buffer, { escala = null, pagina = null, nomeArquivo = '', timeoutMs = 150000 } = {}) {
   return new Promise((resolve, reject) => {
-    const filho = spawn(process.execPath, ['--max-old-space-size=2048', __filename, String(Number(escala) || ''), String(Number(pagina) || '')],
+    const filho = spawn(process.execPath, ['--max-old-space-size=2048', __filename, String(Number(escala) || ''), String(Number(pagina) || ''), String(nomeArquivo || '').slice(0, 260)],
       { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     const partes = [];
     let saidaErro = '';
@@ -342,7 +349,7 @@ if (require.main === module) {
   process.stdin.on('data', (c) => partes.push(c));
   process.stdin.on('end', async () => {
     try {
-      const { texto, ...resultado } = await pdfParaDxf(Buffer.concat(partes), { escala: Number(process.argv[2]) || null, pagina: Number(process.argv[3]) || null });
+      const { texto, ...resultado } = await pdfParaDxf(Buffer.concat(partes), { escala: Number(process.argv[2]) || null, pagina: Number(process.argv[3]) || null, nomeArquivo: process.argv[4] || '' });
       process.stdout.write(`${JSON.stringify({ ok: true, resultado })}\n`);
       process.stdout.write(texto, () => process.exit(0));
     } catch (e) {

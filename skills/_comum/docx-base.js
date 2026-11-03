@@ -15,19 +15,17 @@ const { EMPRESA, linhasRodape } = require('./empresa');
 
 const COR = { preto: '1A1A1A', dourado: 'C9A227', cinza: 'F2F2F2', borda: 'D9D9D9', vermelho: 'C00000', texto: '1A1A1A', suave: '595959' };
 const LARGURA_UTIL = 9638; // A4 (11 906 twips) menos margens de 2 cm
-// Banner e logo da H&M (skills/_comum/assets)
-const ASSETS = [path.join(__dirname, 'assets')]
-  .find(p => fs.existsSync(path.join(p, 'logo.png'))) || path.join(__dirname, 'assets');
+// Banner e logo da H&M (skills/_comum/assets — o timbrado único, base/timbrado.js)
+const { PASTA_ASSETS: ASSETS } = require('./base/timbrado');
+// número e data em pt-BR: pacote comum (base/formato.js), o mesmo do backend
+const { numeroBr, dataIsoBr } = require('./base/formato');
 
 // ── Formatação pt-BR ───────────────────────────────────────────────────────
 
 // Número em pt-BR com até `casas` decimais (sem zeros à direita). Vazio, nulo
 // ou valor que não vira número finito ('abc', NaN, Infinity) sai como '—',
 // nunca "NaN"/"∞" no documento. Usado também como `num` pelas skills.
-function fmtNum(v, casas = 2) {
-  if (v == null || v === '' || !Number.isFinite(Number(v))) return '—';
-  return Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: casas });
-}
+const fmtNum = numeroBr;
 // mesmo guarda do fmtNum: um texto que chegasse aqui quebrava em v.toExponential
 function fmtExp(v) {
   const n = Number(v);
@@ -35,11 +33,8 @@ function fmtExp(v) {
   if (n === 0) return '0';
   return n.toExponential(2).replace('.', ',').replace(/e([+-])(\d)$/, 'e$10$2');
 }
-function fmtData(iso) {
-  if (!iso) return '';
-  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
-  return m ? `${m[3]}/${m[2]}/${m[1]}` : String(iso);
-}
+// 'AAAA-MM-DD' → 'DD/MM/AAAA'; vazio → ''; o que não é data volta como veio (base/formato.js)
+const fmtData = dataIsoBr;
 function somarAnos(iso, anos) {
   const d = new Date(`${iso}T12:00:00`);
   if (Number.isNaN(d.getTime())) return '';

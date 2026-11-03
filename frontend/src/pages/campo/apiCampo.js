@@ -11,6 +11,8 @@
 //   ErroRegra        — 4xx: o servidor recusou (não adianta reenviar)
 //   ErroRede         — sem resposta, tempo esgotado, 5xx, 408 ou 429: tentar depois
 
+import { renovarSessao, temRenovacao } from '../../services/renovacaoSessao';
+
 const BASE = process.env.REACT_APP_API_URL ? `${process.env.REACT_APP_API_URL}/api` : '/api';
 
 export class ErroRede extends Error {
@@ -42,7 +44,9 @@ async function lerErro(resp) {
 }
 
 // fetch com tempo limite e classificação do erro.
-export async function requisitar(caminho, { metodo = 'GET', corpo, formulario, tempoLimite = 20000, comoBlob = false } = {}) {
+// 401: primeiro renova o token curto com a chave da sessão (Fase 6) e repete uma vez; só se a
+// renovação for recusada é que a faixa "Sessão expirou" acende.
+export async function requisitar(caminho, { metodo = 'GET', corpo, formulario, tempoLimite = 20000, comoBlob = false, _renovada = false } = {}) {
   const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timer = ctrl ? setTimeout(() => ctrl.abort(), tempoLimite) : null;
   const headers = {};
@@ -60,6 +64,11 @@ export async function requisitar(caminho, { metodo = 'GET', corpo, formulario, t
     throw new ErroRede(err?.name === 'AbortError' ? 'Tempo esgotado (rede lenta).' : 'Sem conexão com o servidor.');
   } finally {
     if (timer) clearTimeout(timer);
+  }
+  if (resp.status === 401 && !_renovada && temRenovacao()) {
+    let renovou = false;
+    try { await renovarSessao(); renovou = true; } catch { /* recusada ou sem rede: vale a faixa */ }
+    if (renovou) return requisitar(caminho, { metodo, corpo, formulario, tempoLimite, comoBlob, _renovada: true });
   }
   if (resp.status === 401) {
     try { aoNaoAutenticado(t); } catch { /* segue */ }

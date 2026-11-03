@@ -10,6 +10,7 @@ import ModalSessao from './components/ModalSessao';
 
 import Login from './pages/Login';
 import DefinirSenha from './pages/DefinirSenha';
+import AtivarDuasEtapas from './pages/conta/AtivarDuasEtapas';
 import AprovacaoPublica from './pages/AprovacaoPublica';
 import Layout from './components/Layout';
 import FaixaAmbiente from './components/FaixaAmbiente';
@@ -31,6 +32,7 @@ function RotaCampo({ children }) {
   if (carregando) return <div className="loading">Carregando...</div>;
   if (!usuario) return <Navigate to={`/login?volta=${encodeURIComponent(pathname + search)}`} replace />;
   if (usuario.senhaProvisoria) return <DefinirSenha />;
+  if (usuario.totpPendente) return <AtivarDuasEtapas />;
   return children;
 }
 
@@ -42,6 +44,9 @@ function RotaProtegida({ children }) {
   // o sistema só abre depois que a pessoa definir a própria senha. É o que
   // impede uma senha entregue por terceiro de continuar valendo.
   if (usuario.senhaProvisoria) return <DefinirSenha />;
+  // Fase 6: TOTP_OBRIGATORIO_ADMIN ligado no servidor e o administrador ainda
+  // sem a verificação em duas etapas — só segue depois de ativar
+  if (usuario.totpPendente) return <AtivarDuasEtapas />;
   return children;
 }
 
@@ -50,6 +55,7 @@ function RotaAdmin({ children }) {
   if (carregando) return <div className="loading">Carregando...</div>;
   if (!usuario) return <Navigate to="/login" replace />;
   if (usuario.senhaProvisoria) return <DefinirSenha />;
+  if (usuario.totpPendente) return <AtivarDuasEtapas />;
   if (usuario.role !== 'admin') return <Navigate to="/dashboard" replace />;
   return children;
 }

@@ -171,7 +171,43 @@ function CelulaEditavel({ coluna, valor, onChange }) {
   if (coluna.tipo === 'check') return <input type="checkbox" checked={!!valor} onChange={e => onChange(e.target.checked)} style={{ marginTop: 7 }} />;
   if (coluna.tipo === 'numero') return <CampoNumero valor={valor} onChange={onChange} style={estiloInput} />;
   if (coluna.tipo === 'area') return <textarea rows={2} style={{ ...estiloInput, resize: 'vertical' }} value={valor ?? ''} onChange={e => onChange(e.target.value)} />;
+  if (coluna.tipo === 'arquivo') return <CampoArquivoTexto valor={valor} onChange={onChange} aceita={coluna.aceita} />;
   return <input style={estiloInput} value={valor ?? ''} onChange={e => onChange(e.target.value)} />;
+}
+
+// Arquivo de TEXTO pequeno guardado no próprio formulário ({ nome, conteudo }) — ex.: a
+// fotometria IES/LDT da luminária (skill de iluminação, fase 5). Lido no navegador; nada vai
+// para a pasta do servidor. Limite de 512 KB (o IES/LDT típico tem poucos KB).
+const LIMITE_ARQUIVO_TEXTO = 512 * 1024;
+function CampoArquivoTexto({ valor, onChange, aceita }) {
+  const [erro, setErro] = useState('');
+  const nome = valor && typeof valor === 'object' ? valor.nome || 'arquivo' : valor ? 'arquivo colado' : '';
+  const tamanho = valor && typeof valor === 'object' ? String(valor.conteudo || '').length : String(valor || '').length;
+  const escolher = (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    if (f.size > LIMITE_ARQUIVO_TEXTO) { setErro(`Arquivo de ${Math.round(f.size / 1024)} KB — o limite é ${LIMITE_ARQUIVO_TEXTO / 1024} KB.`); return; }
+    const leitor = new FileReader();
+    leitor.onload = () => { setErro(''); onChange({ nome: f.name, conteudo: String(leitor.result || '') }); };
+    leitor.onerror = () => setErro('Não foi possível ler o arquivo.');
+    // IES e LDT são texto; nomes de fabricante europeus costumam vir em Latin-1
+    leitor.readAsText(f, 'windows-1252');
+  };
+  if (nome) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 28 }} title={`${nome} (${Math.max(1, Math.round(tamanho / 1024))} KB)`}>
+        <span style={{ fontSize: 12, color: 'var(--texto-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 110 }}>{nome}</span>
+        <button onClick={() => onChange(null)} title="Remover o arquivo" style={btnIconeRemover}><Trash2 size={12} /></button>
+      </div>
+    );
+  }
+  return (
+    <label style={{ ...btnAdicionar, padding: '5px 8px', whiteSpace: 'nowrap' }} title={erro || 'Carregar o arquivo do fabricante'}>
+      <Plus size={12} style={{ marginRight: 4 }} /> {erro ? 'Erro — tentar de novo' : 'Carregar'}
+      <input type="file" accept={aceita} onChange={escolher} style={{ display: 'none' }} />
+    </label>
+  );
 }
 
 export const btnAdicionar = {

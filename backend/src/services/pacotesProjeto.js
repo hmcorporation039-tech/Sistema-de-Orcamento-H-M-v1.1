@@ -230,6 +230,8 @@ function arquivosDoPacote(token, usuario, escolhas) {
       disciplinas: Array.isArray(e.disciplinas) ? e.disciplinas : [],
       referencia: e.referencia === true,
       tipoReferencia: e.referencia === true ? (e.tipoReferencia || it.sugestao?.tipoReferencia || null) : null,
+      // escala informada na tela (PDF sem escala no carimbo): 50 = 1:50 (services/compatibilizacaoAnalise.js)
+      ...(Number(e.escala) >= 1 && Number(e.escala) <= 5000 ? { escala: Math.round(Number(e.escala)) } : {}),
     });
   }
   return out;

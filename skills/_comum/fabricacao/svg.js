@@ -9,7 +9,8 @@
 // linha em mm de PAPEL × escala (a escala 1:N do desenho), para a pena sair
 // igual em qualquer escala.
 
-const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+// escape de HTML/SVG: pacote comum (base/html.js), o mesmo do PDF do backend
+const { escapeHtml } = require('../base/html');
 
 // estilo por camada: pena (mm de papel), cor do traço, preenchimento, tracejado
 const ESTILOS = {

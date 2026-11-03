@@ -62,7 +62,7 @@ export default function EnviarParaAnalise({ obraFixa = null, obraInicial = null,
     setAnalisando(true);
     try {
       const r = await analisarPacoteProjeto(pacote.token, {
-        arquivos: incluidos.map(i => ({ id: i.id, disciplinas: i.disciplinas, referencia: i.referencia, tipoReferencia: i.tipoReferencia })),
+        arquivos: incluidos.map(i => ({ id: i.id, disciplinas: i.disciplinas, referencia: i.referencia, tipoReferencia: i.tipoReferencia, ...(Number(i.escala) > 0 ? { escala: Number(i.escala) } : {}) })),
         nome_projeto: nomeProjeto.trim(), obra_id: obraId || null, finalidade,
       });
       const conflitos = (r.data.conflitos || []).length;

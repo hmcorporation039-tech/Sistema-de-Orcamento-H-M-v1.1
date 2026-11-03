@@ -10,7 +10,8 @@ import {
 } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { estilos } from '../components/ui/estilos';
-import { formatarMoeda } from '../utils/format';
+import Select from '../components/Select';
+import { formatarMoeda, dataHoraBr } from '../utils/format';
 
 // Painel de Integrações (2.0): as rotinas automáticas (notas e Pix por e-mail,
 // orçamentos de fornecedores nas pastas) e a cadeia de IA, numa visão só.
@@ -26,13 +27,6 @@ const STATUS = {
   em_andamento: { label: 'Em execução', cor: '#6fa8dc', bg: '#0a121a', borda: '#1a2f4a', Icone: Loader2 },
   interrompida: { label: 'Interrompida', cor: '#e08080', bg: '#1a0a0a', borda: '#4a1a1a', Icone: XCircle },
 };
-
-function dataHora(v) {
-  if (!v) return '—';
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
 
 function duracao(s) {
   if (s == null) return '';
@@ -99,12 +93,12 @@ function CartaoRotina({ rotina, executando, aoExecutar }) {
         {rotina.emExecucao ? <SeloStatus status="em_andamento" /> : ultima && <SeloStatus status={ultima.status} />}
       </div>
       {rotina.emExecucao && (
-        <Linha rotulo="Em execução desde">{dataHora(rotina.emExecucao.desde)} ({rotina.emExecucao.origem === 'agendada' ? 'horário automático' : 'manual'})</Linha>
+        <Linha rotulo="Em execução desde">{dataHoraBr(rotina.emExecucao.desde)} ({rotina.emExecucao.origem === 'agendada' ? 'horário automático' : 'manual'})</Linha>
       )}
       {ultima ? (
         <>
           <Linha rotulo="Quando">
-            {dataHora(ultima.iniciadoEm)}{ultima.duracaoSegundos != null && ` · ${duracao(ultima.duracaoSegundos)}`}
+            {dataHoraBr(ultima.iniciadoEm)}{ultima.duracaoSegundos != null && ` · ${duracao(ultima.duracaoSegundos)}`}
             {' · '}{ultima.origem === 'agendada' ? 'horário automático' : `manual${ultima.usuario ? ` (${ultima.usuario})` : ''}`}
           </Linha>
           <Linha rotulo="Itens">{ultima.itens ?? '—'}</Linha>
@@ -127,7 +121,7 @@ function CartaoRotina({ rotina, executando, aoExecutar }) {
       ) : !rotina.emExecucao && (
         <div style={{ fontSize: 12, color: 'var(--texto-3)', padding: '3px 0' }}>Nenhuma execução registrada no painel ainda.</div>
       )}
-      {rotina.ultimoRegistroEm && <Linha rotulo="Último item lido">{dataHora(rotina.ultimoRegistroEm)}</Linha>}
+      {rotina.ultimoRegistroEm && <Linha rotulo="Último item lido">{dataHoraBr(rotina.ultimoRegistroEm)}</Linha>}
 
       {rotina.historico?.length > 1 && (
         <div style={{ marginTop: 6 }}>
@@ -139,7 +133,7 @@ function CartaoRotina({ rotina, executando, aoExecutar }) {
               <tbody>
                 {rotina.historico.map(h => (
                   <tr key={h.id} style={{ borderTop: '1px solid #1e1e1e' }}>
-                    <td style={tdMini}>{dataHora(h.iniciadoEm)}</td>
+                    <td style={tdMini}>{dataHoraBr(h.iniciadoEm)}</td>
                     <td style={tdMini}>{h.origem === 'agendada' ? 'automática' : 'manual'}</td>
                     <td style={tdMini}><SeloStatus status={h.status} /></td>
                     <td style={{ ...tdMini, textAlign: 'right' }}>{h.itens ?? '—'}</td>
@@ -211,8 +205,8 @@ function CartaoIA({ ia, cache, testando, aoTestar }) {
           {(p.ultimoSucesso || p.ultimoErro) && (
             <div style={{ fontSize: 12, marginLeft: 16, marginTop: 3, color: 'var(--texto-3)' }}>
               {p.sucessos} resposta(s), {p.falhas} falha(s) desde que o sistema subiu
-              {p.ultimoSucesso && <div style={{ color: '#3fb95f' }}>Última resposta: {dataHora(p.ultimoSucesso.em)} ({p.ultimoSucesso.finalidade})</div>}
-              {p.ultimoErro && <div style={{ color: '#e08080', overflowWrap: 'anywhere' }}>Última falha: {dataHora(p.ultimoErro.em)} — {p.ultimoErro.mensagem}</div>}
+              {p.ultimoSucesso && <div style={{ color: '#3fb95f' }}>Última resposta: {dataHoraBr(p.ultimoSucesso.em)} ({p.ultimoSucesso.finalidade})</div>}
+              {p.ultimoErro && <div style={{ color: '#e08080', overflowWrap: 'anywhere' }}>Última falha: {dataHoraBr(p.ultimoErro.em)} — {p.ultimoErro.mensagem}</div>}
             </div>
           )}
         </div>
@@ -278,7 +272,7 @@ function CartaoBackup({ backup, rodando, aoExecutar }) {
 
       {ultimo ? (
         <>
-          <Linha rotulo="Último backup">{dataHora(ultimo.em)} · {tamanho(ultimo.tamanho)} {backup.horasDesdeUltimo != null && `(${haQuanto(backup.horasDesdeUltimo)})`}</Linha>
+          <Linha rotulo="Último backup">{dataHoraBr(ultimo.em)} · {tamanho(ultimo.tamanho)} {backup.horasDesdeUltimo != null && `(${haQuanto(backup.horasDesdeUltimo)})`}</Linha>
           <Linha rotulo="Cópias">
             <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap' }}>
               <Selo cor="#3fb95f" bg="#0a1a0f" borda="#1a4a26">neste PC</Selo>
@@ -296,7 +290,7 @@ function CartaoBackup({ backup, rodando, aoExecutar }) {
                 {backup.restauracao.ultimo.ok
                   ? <Selo cor="#3fb95f" bg="#0a1a0f" borda="#1a4a26"><CheckCircle2 size={11} />restaurou</Selo>
                   : <Selo cor="#e08080" bg="#1a0a0a" borda="#4a1a1a" titulo={backup.restauracao.ultimo.problemas.join(' | ')}><AlertTriangle size={11} />falhou</Selo>}
-                <span>{dataHora(backup.restauracao.ultimo.em)} · {backup.restauracao.ultimo.origem}{backup.restauracao.atrasado ? ' · está atrasado' : ''}</span>
+                <span>{dataHoraBr(backup.restauracao.ultimo.em)} · {backup.restauracao.ultimo.origem}{backup.restauracao.atrasado ? ' · está atrasado' : ''}</span>
               </span>
             : <Selo cor="#d9a53a" bg="#1a150a" borda="#4a3a1a" titulo="Rode registrar-teste-restauracao.bat como administrador">ainda não testado</Selo>}
         </Linha>
@@ -312,7 +306,7 @@ function CartaoBackup({ backup, rodando, aoExecutar }) {
               <tbody>
                 {backup.backups.map(b => (
                   <tr key={b.nome} style={{ borderTop: '1px solid #1e1e1e' }}>
-                    <td style={tdMini}>{dataHora(b.em)}</td>
+                    <td style={tdMini}>{dataHoraBr(b.em)}</td>
                     <td style={{ ...tdMini, textAlign: 'right' }}>{tamanho(b.tamanho)}</td>
                     <td style={{ ...tdMini, textAlign: 'right' }}>
                       <span style={{ display: 'inline-flex', gap: 4 }}>
@@ -475,24 +469,24 @@ function CartaoSinapi({ ehAdmin }) {
         <>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: 'var(--texto-2)', alignItems: 'center' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>Estado
-              <select value={sit.uf} disabled={!ehAdmin || trocando || ufs.length < 2} onChange={e => trocar({ uf: e.target.value })}>
+              <Select value={sit.uf} disabled={!ehAdmin || trocando || ufs.length < 2} onChange={e => trocar({ uf: e.target.value })}>
                 {ufs.map(u => <option key={u} value={u}>{u}</option>)}
-              </select>
+              </Select>
             </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>Regime
-              <select value={sit.regime} disabled={!ehAdmin || trocando} onChange={e => trocar({ regime: e.target.value })}>
+              <Select value={sit.regime} disabled={!ehAdmin || trocando} onChange={e => trocar({ regime: e.target.value })}>
                 <option value="sem">sem desoneração</option>
                 <option value="com">com desoneração</option>
-              </select>
+              </Select>
             </label>
             {!ehAdmin && <span style={{ color: 'var(--texto-3)' }}>(só o administrador troca)</span>}
           </div>
           <form onSubmit={buscar} style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
             <input type="text" value={termo} onChange={e => setTermo(e.target.value)} placeholder="Buscar (ex.: cabo flexivel 2,5)" style={{ flex: 1, minWidth: 160 }} />
-            <select value={tipo} onChange={e => { setTipo(e.target.value); setAchados(null); }}>
+            <Select value={tipo} onChange={e => { setTipo(e.target.value); setAchados(null); }}>
               <option value="insumos">Insumos (material, mão de obra)</option>
               <option value="composicoes">Composições (serviço)</option>
-            </select>
+            </Select>
             <button type="submit" disabled={buscando || termo.trim().length < 2} style={{ ...btnSecundario, opacity: buscando ? 0.6 : 1 }}>{buscando ? 'Buscando…' : 'Buscar'}</button>
           </form>
           {achados && (

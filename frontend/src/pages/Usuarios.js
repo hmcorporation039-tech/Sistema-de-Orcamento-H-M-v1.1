@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, KeyRound, Trash2 } from 'lucide-react';
-import { getUsuarios, criarUsuario, atualizarUsuario, removerUsuario, redefinirSenhaUsuario } from '../services/api';
+import { Plus, Pencil, KeyRound, Trash2, LogOut, ShieldOff } from 'lucide-react';
+import {
+  getUsuarios, criarUsuario, atualizarUsuario, removerUsuario, redefinirSenhaUsuario,
+  encerrarSessoesDoUsuario, desativarTotpDoUsuario,
+} from '../services/api';
+import { PAPEIS, rotuloPapel } from '../utils/papeis';
 import { useAuth } from '../hooks/useAuth';
 import { formatarData } from '../utils/format';
 import Select from '../components/Select';
@@ -109,6 +113,29 @@ export default function Usuarios() {
     }
   }
 
+  // Fase 6: derrubar todas as sessões de alguém (aparelho perdido, saída da empresa) e desligar a
+  // verificação em duas etapas de quem perdeu o celular sem os códigos de recuperação
+  async function encerrarSessoes(u) {
+    if (!window.confirm(`Encerrar todas as sessões de "${u.nome}"? Os aparelhos dele vão pedir login de novo.`)) return;
+    try {
+      const { data } = await encerrarSessoesDoUsuario(u.id);
+      toast.success(data.encerradas ? `${data.encerradas} sessão(ões) encerrada(s)` : 'Não havia sessões abertas');
+    } catch (err) {
+      toast.error(err.response?.data?.erro || 'Erro ao encerrar as sessões');
+    }
+  }
+
+  async function desligarDuasEtapas(u) {
+    if (!window.confirm(`Desligar a verificação em duas etapas de "${u.nome}"? Use só se a pessoa perdeu o celular e os códigos de recuperação. Ela poderá ativar de novo em Minha conta.`)) return;
+    try {
+      await desativarTotpDoUsuario(u.id);
+      toast.success('Verificação em duas etapas desligada');
+      carregar();
+    } catch (err) {
+      toast.error(err.response?.data?.erro || 'Erro ao desligar a verificação');
+    }
+  }
+
   async function confirmarRedefinirSenha(e) {
     e.preventDefault();
     if (!novaSenha || novaSenha.length < 6) {
@@ -141,20 +168,22 @@ export default function Usuarios() {
               <th style={th}>Nome</th>
               <th style={th}>E-mail</th>
               <th style={th}>Perfil</th>
+              <th style={th}>Duas etapas</th>
               <th style={th}>Status</th>
               <th style={th}>Último acesso</th>
-              <th style={{ ...th, width: 150 }}></th>
+              <th style={{ ...th, width: 220 }}></th>
             </tr>
           </thead>
           <tbody>
             {carregando && (
-              <tr><td colSpan={6} style={tdVazio}>Carregando...</td></tr>
+              <tr><td colSpan={7} style={tdVazio}>Carregando...</td></tr>
             )}
             {!carregando && usuarios.map(u => (
               <tr key={u.id} style={{ borderTop: '1px solid #1e1e1e' }}>
                 <td style={td}>{u.nome}{u.id === usuarioLogado.id && <span style={{ color: 'var(--texto-3)', fontSize: 11.5 }}> (você)</span>}</td>
                 <td style={td}>{u.email}</td>
-                <td style={td}>{u.role === 'admin' ? 'Administrador' : 'Usuário'}</td>
+                <td style={td}>{rotuloPapel(u.role)}</td>
+                <td style={{ ...td, color: u.totp_ativo ? '#3fb95f' : 'var(--texto-3)' }}>{u.totp_ativo ? 'Ativa' : '—'}</td>
                 <td style={td}>
                   <span style={{
                     padding: '3px 9px', borderRadius: 20, fontSize: 11.5, fontWeight: 700,
@@ -172,6 +201,14 @@ export default function Usuarios() {
                   <button onClick={() => setModalSenha(u)} style={btnIcone} title="Redefinir senha">
                     <KeyRound size={13} />
                   </button>
+                  <button onClick={() => encerrarSessoes(u)} style={btnIcone} title="Encerrar todas as sessões" aria-label="Encerrar todas as sessões">
+                    <LogOut size={13} />
+                  </button>
+                  {u.totp_ativo && (
+                    <button onClick={() => desligarDuasEtapas(u)} style={btnIcone} title="Desligar a verificação em duas etapas" aria-label="Desligar a verificação em duas etapas">
+                      <ShieldOff size={13} />
+                    </button>
+                  )}
                   <button
                     onClick={() => alternarAtivo(u)}
                     style={{ ...btnSecundario, padding: '4px 8px', fontSize: 11.5 }}
@@ -218,9 +255,12 @@ export default function Usuarios() {
 
               <Campo label="Perfil">
                 <Select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
-                  <option value="user">Usuário</option>
-                  <option value="admin">Administrador</option>
+                  {PAPEIS.map(p => <option key={p.valor} value={p.valor}>{p.rotulo}</option>)}
                 </Select>
+                <p style={{ fontSize: 11.5, color: 'var(--texto-3)', marginTop: 6, lineHeight: 1.5 }}>
+                  Financeiro e Técnico de campo, por enquanto, enxergam o mesmo que Usuário; servem para as
+                  áreas novas que forem limitadas por perfil. Só o Administrador vê o Financeiro e a administração.
+                </p>
               </Campo>
 
               <div style={{ display: 'flex', gap: 10, marginTop: 22, justifyContent: 'flex-end' }}>

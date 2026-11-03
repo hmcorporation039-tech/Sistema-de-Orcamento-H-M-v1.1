@@ -6,7 +6,7 @@ const { protegerRotasAsync } = require('../middleware/erros');
 // toda rota (inclusive as de routes/v2) com asyncHandler: erro fora do try de
 // um controller vira resposta de erro, não pedido pendurado
 const router = protegerRotasAsync(express.Router());
-const { autenticar, admin } = require('../middleware/auth');
+const { autenticar, admin, exigePapel } = require('../middleware/auth');
 const { validarId } = require('../middleware/validarId');
 const { exigirPosse, posse } = require('../middleware/posse');
 
@@ -68,6 +68,42 @@ const limiteLoginConta = rateLimit({
   legacyHeaders: false,
   message: { erro: 'Muitas tentativas de login nesta conta. Aguarde 15 minutos e tente novamente.' },
 });
+// Segunda etapa do login: além do limite por IP (limiteLogin), por CONTA — o id vem do desafio,
+// lido sem conferir a assinatura só para escolher o contador (o controller confere de verdade).
+// 6 dígitos com 10 erros a cada 15 min não dão para adivinhar.
+const limiteSegundaEtapa = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => {
+    let id = null;
+    try { id = require('jsonwebtoken').decode(String(req.body?.desafio || ''))?.id ?? null; } catch { /* desafio ilegível */ }
+    return `totp:${Number.isInteger(id) ? id : 'desconhecido'}`;
+  },
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { erro: 'Muitos códigos errados nesta conta. Aguarde 15 minutos e tente novamente.' },
+});
+// Renovação do token: cada aba renova a cada ~15 min; o limite só segura abuso
+const limiteRenovacao = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 300,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { erro: 'Muitas renovações de sessão em pouco tempo. Aguarde um pouco e tente novamente.' },
+});
+// Troca de senha: limite por USUÁRIO (vem depois do autenticar). Sem ele, quem
+// tivesse um token de sessão vazado (vale 8 h) podia testar a senha atual sem
+// limite e, ao acertar, trocar a senha e ficar com a conta. Acerto não conta.
+const limiteTrocaSenha = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => `usuario:${req.usuario?.id}`,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { erro: 'Muitas tentativas de troca de senha sem sucesso. Aguarde 15 minutos e tente novamente.' },
+});
 // Envio de proposta por e-mail sai da caixa da empresa: limite por usuário.
 const limiteEnvioEmail = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -115,7 +151,13 @@ const uploadArquitetura = criarUpload({
 
 // ── AUTH ──────────────────────────────────────────────────────────────
 router.post('/auth/login', limiteLogin, limiteLoginConta, authCtrl.login);
-router.post('/auth/senha', autenticar, authCtrl.alterarSenha);
+// Fase 6 (02/11/2026): segunda etapa do login (TOTP) e renovação do token curto pela chave da sessão.
+// Como o login, não passam pelo `autenticar` (ainda não há token válido); quem autentica é o desafio
+// assinado (login/totp) ou a chave de renovação da sessão (renovar). Os dois têm limite próprio.
+router.post('/auth/login/totp', limiteLogin, limiteSegundaEtapa, authCtrl.loginTotp);
+router.post('/auth/renovar', limiteRenovacao, authCtrl.renovar);
+router.post('/auth/sair', autenticar, authCtrl.sair);
+router.post('/auth/senha', autenticar, limiteTrocaSenha, authCtrl.alterarSenha);
 
 // ── MATERIAIS ─────────────────────────────────────────────────────────
 router.get('/materiais', autenticar, matCtrl.listar);
@@ -158,7 +200,7 @@ router.delete('/propostas/:id', autenticar, validarId, posseProposta, propCtrl.r
 
 // ── INTEGRAÇÕES ───────────────────────────────────────────────────────
 router.get('/integracoes/email/status', autenticar, integCtrl.statusEmail);
-router.post('/integracoes/email/verificar-agora', autenticar, integCtrl.verificarAgora);
+router.post('/integracoes/email/verificar-agora', autenticar, admin, integCtrl.verificarAgora);
 router.get('/integracoes/email/historico', autenticar, integCtrl.historico);
 router.get('/configuracoes/margem', autenticar, integCtrl.obterMargem);
 router.put('/configuracoes/margem', autenticar, admin, integCtrl.atualizarMargem);
@@ -223,6 +265,9 @@ router.post('/projetos/analises/:id/gerar-orcamento', autenticar, validarId, pos
 router.get('/projetos/analises/:id/mapa', autenticar, validarId, projCtrl.lerMapaCad);
 router.put('/projetos/analises/:id/mapa', autenticar, validarId, posseAnalise, projCtrl.salvarMapaCad);
 router.post('/projetos/analises/:id/mapa/reprocessar', autenticar, validarId, posseAnalise, projCtrl.reprocessarMapaCad);
+// biblioteca de blocos (o que o mapa do CAD ensinou), em JSON: levar de uma instalação para outra; importar só administrador
+router.get('/projetos/biblioteca-blocos', autenticar, projCtrl.exportarBibliotecaBlocos);
+router.post('/projetos/biblioteca-blocos', autenticar, admin, projCtrl.importarBibliotecaBlocos);
 
 // ── PROJETOS E LAUDOS POR DISCIPLINA (hub Obras) ──────────────────────────
 // Versão 2.1: /laudos guarda os dois tipos de registro (?tipo=projeto|laudo);
@@ -278,7 +323,12 @@ router.post('/pesquisa-mercado/salvar', autenticar, pesqCtrl.salvar);
 // Versão 2.0: rotas por tema em routes/v2/*.js — cada arquivo exporta
 // (router, { autenticar, admin, validarId, exigirPosse, posse, limitePesquisaMercado, limiteAnaliseProjeto, uploadArquitetura }) => void
 for (const f of require('fs').readdirSync(require('path').join(__dirname, 'v2')).filter(n => /\.js$/.test(n)).sort()) {
-  require(`./v2/${f}`)(router, { autenticar, admin, validarId, exigirPosse, posse, limitePesquisaMercado, limiteAnaliseProjeto, uploadArquitetura });
+  require(`./v2/${f}`)(router, { autenticar, admin, exigePapel, validarId, exigirPosse, posse, limitePesquisaMercado, limiteAnaliseProjeto, uploadArquitetura });
 }
+
+// Rota /api que não existe: 404 em JSON com `erro` (o frontend, o assistente e
+// os futuros clientes esperam sempre JSON). Antes caía na página HTML padrão
+// do Express ("Cannot GET ..."). Tem de ser a ÚLTIMA coisa deste roteador.
+router.use((req, res) => res.status(404).json({ erro: 'Rota não encontrada.' }));
 
 module.exports = router;

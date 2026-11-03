@@ -30,7 +30,7 @@ e o **rascunho de orçamento** no Sistema de Orçamentos (ferramenta MCP `criar_
 
 A ART, o endereço e a legenda das fotos têm uma fonte só cada um: a ART vem de `responsavel.art`, o endereço de `cliente` e a legenda da foto da tabela de ensaios. Assim não divergem mais entre as seções. Regras em `scripts/lib/consistencia.js`.
 
-Os cálculos estão em `scripts/lib/` e reproduzem o laudo HM original (teste `npm test`: 38 verificações do laudo R06 + 42 de parecer, risco e materiais em `testes/teste-parecer.js`). **Não refaça contas de cabeça: rode os scripts.**
+Os cálculos estão em `scripts/lib/` e reproduzem o laudo HM original (teste `npm test` nesta pasta: 45 verificações do laudo R06 em `testes/teste-regressao.js` + 42 de parecer, risco e materiais em `testes/teste-parecer.js` + 40 do laudo no modelo HM 29/10 em `testes/teste-laudo-modelo.js`). **Não refaça contas de cabeça: rode os scripts.**
 
 ## Também no sistema (aba Análise de Projeto)
 
@@ -45,7 +45,7 @@ As dependências ficam em `skills/node_modules`, compartilhadas por todas as dis
 ```bash
 cd C:\HM-Engenharia\hm-eng\skills
 npm install              # instala docx e exceljs
-npm test                 # todas as disciplinas; o SPDA deve dar "38/38 verificações OK" e "42/42" no teste de parecer
+npm test                 # todas as disciplinas; o SPDA deve dar "45/45 verificações OK", "42/42" no teste de parecer e "40/40" no laudo do modelo
 ```
 
 ## Fluxo de trabalho

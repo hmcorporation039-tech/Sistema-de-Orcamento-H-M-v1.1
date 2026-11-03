@@ -73,6 +73,14 @@ function dxfSintetico() {
     assert.strictEqual(descreverSimbolo(g('T3', 'TUBELE', { descricaoLegenda: '220 V' })).origem, null);
   });
 
+  await caso('CAD-02: altura da legenda "a 2,20m do piso" é 2,20 m na parede (antes saía no piso)', async () => {
+    const alt = (desc) => descreverSimbolo(g('TA', 'ELE-TOMADA', { descricaoLegenda: desc })).altura;
+    assert.deepStrictEqual(alt('Tomada alta a 2,20m do piso'), { altura_m: 2.2, montagem: 'parede' });
+    assert.deepStrictEqual(alt('Tomada baixa a 0,30m do piso'), { altura_m: 0.3, montagem: 'parede' });
+    assert.deepStrictEqual(alt('Interruptor simples h: 1,10 m'), { altura_m: 1.1, montagem: 'parede' });
+    assert.deepStrictEqual(alt('Tomada de piso 2P+T'), { altura_m: 0, montagem: 'piso' });
+  });
+
   await caso('linha pela layer: eletrocalha, eletroduto; fiação é rota (cabo = (rota + descidas) × condutores), não material', async () => {
     assert.match(descreverLinha({ layer: 'INST - ELETROCALHA' }).descricao, /^Eletrocalha/);
     const f = descreverLinha({ layer: 'FIACAO' });

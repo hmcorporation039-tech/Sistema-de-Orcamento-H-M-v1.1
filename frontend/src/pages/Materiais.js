@@ -15,18 +15,10 @@ import Select, { Sugestoes } from '../components/Select';
 import Modal from '../components/ui/Modal';
 import { estilos, Campo } from '../components/ui/estilos';
 import { useAuth } from '../hooks/useAuth';
+import { categoriasComUsadas } from '../utils/categoriasMateriais';
 
 const VAZIO = { codigo: '', descricao: '', categoria: '', unidade: 'un', preco: '', preco_compra: '', marca: '', ncm: '' };
 const UNIDADES = ['un', 'm', 'm²', 'm³', 'kg', 'cx', 'pct', 'rl', 'sc', 'pç', 'kit', 'h'];
-// Categorias padrão sugeridas (mesmas que o classificador automático usa, veja
-// backend/src/utils/classificadorMaterial.js) — além destas, qualquer categoria
-// já usada em algum material também vira sugestão, e dá pra digitar uma nova.
-const CATEGORIAS_PADRAO = [
-  // categorias usadas no catálogo (a tela mostra em ordem alfabética); 'Não classificado'
-  // só aparece se algum material ainda estiver aguardando a classificação automática
-  'Alarme', 'Antena coletiva', 'Automação', 'CFTV', 'Controle de acesso', 'Elétrica', 'EPI', 'Ferragens', 'Ferramentas',
-  'Informatica', 'Infraestrutura', 'Interfonia', 'Nobreaks', 'Redes / Cabeamento Estruturado', 'Sonorização',
-];
 const ORIGEM_LABEL = {
   manual: 'Manual', importacao: 'Importação', nota_xml: 'NF-e (XML)', nota_pdf: 'NF-e (PDF)',
   email_xml: 'E-mail (XML)', email_pdf: 'E-mail (PDF)', fornecedor_whatsapp: 'Orçamento fornecedor (pasta)',
@@ -77,7 +69,7 @@ export default function Materiais() {
   }, []);
 
   // Sugestões de categoria: as padrão da empresa + as que já estão em uso no banco
-  const categoriasSugeridas = Array.from(new Set([...CATEGORIAS_PADRAO, ...categorias])).sort((x, y) => x.localeCompare(y, 'pt-BR'));
+  const categoriasSugeridas = categoriasComUsadas(categorias);
 
   useEffect(() => {
     getStatusEmail().then(res => setStatusEmail(res.data)).catch(() => {});
@@ -412,15 +404,17 @@ export default function Materiais() {
           )}
         </div>
 
-        {statusEmail?.configurado && (
+        {ehAdmin && statusEmail?.configurado && (
           <button onClick={verificarEmail} disabled={verificandoEmail} style={{ ...btnSecundario, padding: '5px 10px' }}>
             <RefreshCw size={12} style={{ marginRight: 5 }} /> {verificandoEmail ? 'Verificando...' : 'Verificar agora'}
           </button>
         )}
 
+        {ehAdmin && (
         <button onClick={verificarFornecedores} disabled={verificandoFornecedores} style={{ ...btnSecundario, padding: '5px 10px' }} title="Lê agora os orçamentos (PDF, PDF escaneado ou foto, de qualquer fornecedor) salvos em 'Orçamentos recebidos fornecedores', sem esperar a leitura automática das 06:00 e das 18:00">
           <RefreshCw size={12} style={{ marginRight: 5 }} /> {verificandoFornecedores ? 'Verificando...' : 'Verificar orçamentos de fornecedores'}
         </button>
+        )}
 
         <button onClick={() => setModalOportunidades(true)} style={{ ...btnSecundario, padding: '5px 10px' }} title="Mostra quem cotou mais barato cada material e onde o custo do catálogo está acima da melhor cotação">
           <Scale size={12} style={{ marginRight: 5 }} /> Comparar fornecedores

@@ -1,13 +1,24 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import VencimentosLaudos from './VencimentosLaudos';
-import { getVencimentos, criarVencimento, renovarVencimento, criarPropostaRenovacao } from '../services/api';
+import { getVencimentos, criarVencimento, renovarVencimento, criarPropostaRenovacao, getRegistroDisciplinas } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 
 // Cartão "Vencimentos": laudos para todos; documentos da empresa (certidões, certificado A1) só para o administrador.
-jest.mock('../services/api', () => ({ getVencimentos: jest.fn(), criarVencimento: jest.fn(), renovarVencimento: jest.fn(), encerrarVencimento: jest.fn(), criarPropostaRenovacao: jest.fn() }));
+jest.mock('../services/api', () => ({ getVencimentos: jest.fn(), criarVencimento: jest.fn(), renovarVencimento: jest.fn(), encerrarVencimento: jest.fn(), criarPropostaRenovacao: jest.fn(), getRegistroDisciplinas: jest.fn() }));
 jest.mock('../hooks/useAuth', () => ({ useAuth: jest.fn() }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+// registro único (GET /disciplinas) resumido: só as que têm laudo entram na lista, mais 'outros'
+const REGISTRO = {
+  disciplinas: [
+    { chave: 'spda', laudo: true, nomes: { laudo: 'SPDA — para-raios (NBR 5419:2026)' } },
+    { chave: 'pressurizacao', laudo: true, nomes: { laudo: 'Pressurização de escadas (NBR 14880)' } },
+    { chave: 'rede', laudo: false, nomes: { laudo: 'Redes de computadores (dados/Wi-Fi)' } },
+    { chave: 'incendio', laudo: true, nomes: { laudo: 'Incêndio — detecção e alarme (NBR 17240)' } },
+  ],
+  outros: { chave: 'outros', nomes: { servico: 'Outros serviços' } },
+};
 
 let raiz;
 let caixa;
@@ -17,6 +28,7 @@ beforeEach(() => {
   raiz = createRoot(caixa);
   [getVencimentos, criarVencimento, renovarVencimento, criarPropostaRenovacao].forEach(f => f.mockReset());
   useAuth.mockReturnValue({ usuario: { role: 'admin' } });
+  getRegistroDisciplinas.mockResolvedValue({ data: REGISTRO });
 });
 afterEach(() => {
   act(() => raiz.unmount());
@@ -99,4 +111,27 @@ test('laudo em dia e documento da empresa não oferecem proposta de renovação'
   getVencimentos.mockResolvedValue(resposta([{ ...laudo, nivel: 'ok' }, certidao]));
   await abrir();
   expect(botao('Proposta de renovação')).toBeUndefined();
+});
+
+test('cadastrar laudo lista as disciplinas do registro em ordem alfabética e envia a chave do registro', async () => {
+  getVencimentos.mockResolvedValue(resposta([]));
+  criarVencimento.mockResolvedValue(resposta([laudo]));
+  await abrir();
+  act(() => { botao('Cadastrar laudo').click(); });
+  const campo = caixa.querySelector('select[aria-label="Disciplina"]');
+  expect([...campo.options].map(o => o.textContent)).toEqual(['Incêndio — detecção e alarme', 'Outros', 'Pressurização de escadas', 'SPDA — para-raios']);
+  expect([...campo.options].map(o => o.value)).not.toContain('rede');   // sem laudo próprio
+  act(() => { campo.value = 'pressurizacao'; campo.dispatchEvent(new Event('change', { bubbles: true })); });
+  digitar(caixa.querySelector('input[placeholder^="Ex.: SPDA"]'), 'ZZ Pressurização — Torre A');
+  await act(async () => { caixa.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
+  expect(criarVencimento).toHaveBeenCalledWith(expect.objectContaining({ tipo: 'laudo', disciplina: 'pressurizacao', descricao: 'ZZ Pressurização — Torre A' }));
+});
+
+test('sugestões de documento da empresa em ordem alfabética', async () => {
+  getVencimentos.mockResolvedValue(resposta([]));
+  await abrir();
+  act(() => { botao('Documento da empresa').click(); });
+  const sugestoes = [...caixa.querySelectorAll('#documentos-empresa option')].map(o => o.value);
+  expect(sugestoes[0]).toBe('Alvará de funcionamento');
+  expect(sugestoes).toEqual([...sugestoes].sort((a, b) => a.localeCompare(b, 'pt-BR')));
 });

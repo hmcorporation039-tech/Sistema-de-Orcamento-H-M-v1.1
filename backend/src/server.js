@@ -56,8 +56,11 @@ app.use(helmet({
 // existe pra não precisar mexer em código quando o sistema sair do PC local
 // pra uma VPS (ver README, seção 8.2).
 const origensPadrao = ['http://localhost:3000', /^http:\/\/192\.168\.\d+\.\d+:3000$/];
-const origensConfiguradas = process.env.CORS_ORIGINS
-  ? process.env.CORS_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
+// Fase 6 (02/11/2026): CORS_ORIGENS é o nome em português (vale mais); CORS_ORIGINS continua aceito.
+// Com o túnel, ponha só o domínio público. Desligado por padrão (sem definir = como sempre foi).
+const listaOrigens = process.env.CORS_ORIGENS || process.env.CORS_ORIGINS;
+const origensConfiguradas = listaOrigens
+  ? listaOrigens.split(',').map(s => s.trim()).filter(Boolean)
   : null;
 // Sem `credentials`: o login vai no cabeçalho Authorization (token no
 // navegador), não em cookie — então nenhuma outra origem precisa enviar cookies.
@@ -77,6 +80,10 @@ if (process.env.TRUST_PROXY) {
   // de taxa da página pública contaria todos os clientes como um só.
   console.warn('ATENÇÃO: URL_PUBLICA está definida, mas TRUST_PROXY não. Se o sistema está publicado por túnel/proxy reverso, defina TRUST_PROXY no .env (ver .env.example).');
 }
+
+// Fase 6: os webhooks do canal (Telegram/WhatsApp) recebem o corpo BRUTO e limitado — a assinatura
+// do WhatsApp é do byte exato que chegou. Tem de vir antes do express.json.
+app.use('/api/canal/webhook', require('./controllers/canalController').corpoBrutoDosWebhooks());
 
 // 5 MB: o maior corpo JSON real é o formulário do laudo (limitado a 2 MB no
 // controller) ou uma análise grande; arquivos vêm por upload (multer), não aqui.
@@ -234,6 +241,9 @@ async function iniciar() {
       // pasta por cliente (2.3): registra o que o sistema grava e varre as pastas
       // a cada 10 min atrás de arquivo novo/alterado (MONITOR_PASTAS=desligado desliga)
       require('./services/monitorPastas').iniciarMonitor();
+      // canal remoto (Fase 6): devolve à fila o que ficou pela metade e, com algum canal ligado,
+      // processa as mensagens (os dois canais ficam desligados por padrão)
+      require('./services/canal/trabalhador').iniciarCanal();
       // skills das disciplinas carregadas já agora, em segundo plano: o 1º acesso
       // a Projetos/Laudos levava 9,5 s carregando as 17 (teste de 28/10/2026)
       setTimeout(() => { try { require('./utils/disciplinasLaudo').listarDisciplinas(); } catch (e) { console.warn('Pré-carga das skills:', e.message); } }, 3000).unref?.();

@@ -14,7 +14,10 @@ const path = require('path');
 const os = require('os');
 const { RAIZ_REPOSITORIO } = require('../config/caminhos');
 
-const TAMANHO_MAX_PDF = 15 * 1024 * 1024; // o mesmo limite do upload da tela
+// INT-05 (Fase 6): o mesmo limite e os mesmos tipos da análise pela tela e pelo assistente — PDF, DWG
+// ou DXF de até 40 MB (routes/index.js, upload da análise). Antes: só PDF de até 15 MB.
+const TAMANHO_MAX_PDF = 40 * 1024 * 1024;
+const EXTENSOES = /\.(pdf|dwg|dxf)$/i;
 
 // raizProjeto: pasta do sistema (ex.: C:\HM-Engenharia\hm-eng)
 function pastasPermitidasPdf(env = process.env, raizProjeto = RAIZ_REPOSITORIO) {
@@ -25,6 +28,8 @@ function pastasPermitidasPdf(env = process.env, raizProjeto = RAIZ_REPOSITORIO) 
     path.join(raizProjeto, 'Projetos recebidos clientes'),
     path.resolve(env.PASTA_ARQUIVOS_SISTEMA || path.join(raizProjeto, '..', 'Arquivos do Sistema')),
     path.join(os.homedir(), 'Downloads'),
+    // pasta dos clientes no servidor de rede: é onde o monitor de pastas avisa que chegou projeto novo
+    ...(String(env.PASTA_CLIENTES || '').trim() ? [path.resolve(String(env.PASTA_CLIENTES).trim())] : []),
   ];
 }
 
@@ -45,19 +50,19 @@ function conferirPdfPermitido(caminho, pastas) {
   const pedido = String(caminho || '').trim();
   if (!pedido) return { erro: 'Informe o caminho do PDF.' };
   if (!path.isAbsolute(pedido)) return { erro: 'Informe o caminho COMPLETO do PDF (ex.: C:\\...\\projeto.pdf).' };
-  if (!/\.pdf$/i.test(pedido)) return { erro: 'Informe o caminho de um arquivo .pdf' };
+  if (!EXTENSOES.test(pedido)) return { erro: 'Informe o caminho de um arquivo .pdf, .dwg ou .dxf' };
   const real = caminhoReal(pedido);
   if (!real) return { erro: `Arquivo não encontrado: ${pedido}` };
-  // o destino real também tem de ser .pdf (atalho com nome .pdf apontando para outro arquivo)
-  if (!/\.pdf$/i.test(real)) return { erro: 'Informe o caminho de um arquivo .pdf' };
+  // o destino real também tem de ser .pdf/.dwg/.dxf (atalho com nome .pdf apontando para outro arquivo)
+  if (!EXTENSOES.test(real)) return { erro: 'Informe o caminho de um arquivo .pdf, .dwg ou .dxf' };
   const reais = pastas.map(caminhoReal).filter(Boolean);
   if (!reais.some(p => estaDentro(real, p))) {
     return { erro: `Por segurança, o servidor MCP só lê PDFs destas pastas: ${pastas.join(' ; ')}. Copie o arquivo para uma delas (ou ajuste MCP_PASTAS_PDF no backend/.env).` };
   }
   const st = fs.statSync(real);
   if (!st.isFile()) return { erro: `Não é um arquivo: ${pedido}` };
-  if (st.size > TAMANHO_MAX_PDF) return { erro: 'PDF acima de 15 MB — o sistema não aceita' };
+  if (st.size > TAMANHO_MAX_PDF) return { erro: 'Arquivo acima de 40 MB — o sistema não aceita' };
   return { caminho: real };
 }
 
-module.exports = { pastasPermitidasPdf, conferirPdfPermitido };
+module.exports = { pastasPermitidasPdf, conferirPdfPermitido, TAMANHO_MAX_PDF };

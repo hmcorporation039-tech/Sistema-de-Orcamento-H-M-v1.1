@@ -7,26 +7,35 @@ import { useAuth } from '../hooks/useAuth';
 // trocada em outro lugar. A tela de baixo continua montada, com tudo o que
 // estava digitado; o que estava sendo gravado espera o login e segue sozinho.
 export default function ModalSessao() {
-  const { usuario, sessaoExpirada, reentrar, sair } = useAuth();
+  const { usuario, sessaoExpirada, reentrar, reentrarComCodigo, sair } = useAuth();
   const [senha, setSenha] = useState('');
+  // verificação em duas etapas ativa: depois da senha, o código do aplicativo
+  const [desafio, setDesafio] = useState(null);
+  const [codigo, setCodigo] = useState('');
   const [erro, setErro] = useState('');
   const [entrando, setEntrando] = useState(false);
   const campo = useRef(null);
 
   useEffect(() => {
-    if (sessaoExpirada) { setSenha(''); setErro(''); setTimeout(() => campo.current?.focus(), 0); }
+    if (sessaoExpirada) { setSenha(''); setErro(''); setDesafio(null); setCodigo(''); setTimeout(() => campo.current?.focus(), 0); }
   }, [sessaoExpirada]);
 
   if (!sessaoExpirada || !usuario) return null;
 
   async function enviar(e) {
     e.preventDefault();
-    if (!senha) { setErro('Digite a sua senha'); return; }
+    if (desafio ? !codigo.trim() : !senha) { setErro(desafio ? 'Digite o código do aplicativo' : 'Digite a sua senha'); return; }
     setEntrando(true);
     setErro('');
     try {
-      await reentrar(senha);
+      if (desafio) {
+        await reentrarComCodigo(desafio, codigo.trim());
+      } else {
+        const r = await reentrar(senha);
+        if (r?.precisaTotp) { setDesafio(r.desafio); setCodigo(''); }
+      }
     } catch (err) {
+      if (err.response?.data?.codigo === 'DESAFIO_VENCIDO') { setDesafio(null); setSenha(''); }
       setErro(err.response?.data?.erro || 'Não foi possível entrar — confira a rede e tente de novo');
     } finally {
       setEntrando(false);
@@ -51,9 +60,19 @@ export default function ModalSessao() {
         </p>
         <label style={rotulo}>E-mail</label>
         <input value={usuario.email || ''} readOnly style={{ ...entrada, color: 'var(--texto-3)', marginBottom: 12 }} />
-        <label style={rotulo} htmlFor="senha-sessao">Senha</label>
-        <input id="senha-sessao" ref={campo} type="password" autoComplete="current-password" value={senha}
-          onChange={e => { setSenha(e.target.value); setErro(''); }} style={entrada} />
+        {desafio ? (
+          <>
+            <label style={rotulo} htmlFor="codigo-sessao">Código do aplicativo (ou de recuperação)</label>
+            <input id="codigo-sessao" autoFocus inputMode="numeric" autoComplete="one-time-code" value={codigo}
+              onChange={e => { setCodigo(e.target.value); setErro(''); }} style={entrada} />
+          </>
+        ) : (
+          <>
+            <label style={rotulo} htmlFor="senha-sessao">Senha</label>
+            <input id="senha-sessao" ref={campo} type="password" autoComplete="current-password" value={senha}
+              onChange={e => { setSenha(e.target.value); setErro(''); }} style={entrada} />
+          </>
+        )}
         {erro && <div style={{ color: '#e08080', fontSize: 12, marginTop: 8 }}>{erro}</div>}
         <div style={{ display: 'flex', gap: 8, marginTop: 18, flexWrap: 'wrap' }}>
           <button type="submit" disabled={entrando} style={btnPrimario}>{entrando ? 'Entrando…' : 'Entrar e continuar'}</button>

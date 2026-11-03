@@ -3,26 +3,33 @@ import toast from 'react-hot-toast';
 import { CalendarClock, Plus, RefreshCw, X, FilePlus2 } from 'lucide-react';
 import { getVencimentos, criarVencimento, renovarVencimento, encerrarVencimento, criarPropostaRenovacao } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
+import useDisciplinas from '../hooks/useDisciplinas';
+import { dataBr, hojeIso } from '../utils/format';
+import Select, { Sugestoes } from './Select';
 import { estilos } from './ui/estilos';
 
 // Laudos entregues e documentos da empresa, e quando precisam ser renovados (services/vencimentos.js). Os laudos
 // feitos no sistema entram sozinhos; os antigos são cadastrados aqui, com validade editável. Os documentos da
 // empresa (certidões, alvará, CREA, seguro) são só do administrador e se cadastram pela data escrita neles; o
 // certificado digital A1 entra sozinho, com a data lida do arquivo.
-const DISCIPLINAS = [
-  ['spda', 'SPDA'], ['incendio', 'Incêndio'], ['eletrica', 'Elétrica'], ['cftv', 'CFTV'],
-  ['cabeamento', 'Cabeamento'], ['outro', 'Outro'],
-];
 const DOCUMENTOS = ['Certidão negativa federal', 'Certidão negativa estadual', 'Certidão negativa municipal', 'Certidão FGTS (CRF)',
   'Certidão trabalhista (CNDT)', 'Alvará de funcionamento', 'Anuidade do CREA', 'Seguro de responsabilidade civil'];
 const COR = { vencido: '#e5534b', urgente: '#d69a2d', atencao: '#c9a227', ok: 'var(--texto-3)' };
-const hojeIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
-const dataBr = (iso) => iso.split('-').reverse().join('/');
 const FORM_VAZIO = () => ({ tipo: 'laudo', disciplina: 'spda', descricao: '', cliente_nome: '', emitido_em: hojeIso(), validade_meses: 12 });
 const FORM_DOCUMENTO = () => ({ tipo: 'empresa', descricao: '', vence_em: '' });
 
+// Disciplinas do laudo: as do registro único que têm laudo (skills/_comum/disciplinas.js, pelo useDisciplinas) e
+// 'outros' para o que não tem disciplina própria. O nome sai sem a norma entre parênteses, para caber no campo.
+const nomeCurto = (nome) => String(nome || '').replace(/\s*\(.*\)$/, '');
+function opcoesDisciplina(disciplinas, atual) {
+  const ops = disciplinas.filter(d => d.laudo).map(d => [d.chave, nomeCurto(d.nomes?.laudo) || d.chave]).concat([['outros', 'Outros']]);
+  // enquanto o registro não chega, a opção escolhida continua no campo (pela chave)
+  return ops.some(([v]) => v === atual) ? ops : [[atual, atual], ...ops];
+}
+
 export default function VencimentosLaudos() {
   const { usuario } = useAuth();
+  const { disciplinas } = useDisciplinas();
   const ehAdmin = usuario?.role === 'admin';
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState('');
@@ -94,7 +101,7 @@ export default function VencimentosLaudos() {
           <label style={{ gridColumn: 'span 2' }}><span style={estilos.rotulo}>Documento</span>
             <input required maxLength={200} list="documentos-empresa" placeholder="Ex.: Certidão negativa federal" value={form.descricao}
               onChange={e => setForm({ ...form, descricao: e.target.value })} style={{ width: '100%' }} />
-            <datalist id="documentos-empresa">{DOCUMENTOS.map(d => <option key={d} value={d} />)}</datalist></label>
+            <Sugestoes id="documentos-empresa">{DOCUMENTOS.map(d => <option key={d} value={d} />)}</Sugestoes></label>
           <label><span style={estilos.rotulo}>Vence em</span>
             <input required type="date" aria-label="Vence em" value={form.vence_em} onChange={e => setForm({ ...form, vence_em: e.target.value })} style={{ width: '100%' }}
               title="A data de validade que está escrita no documento." /></label>
@@ -108,9 +115,9 @@ export default function VencimentosLaudos() {
       {form?.tipo === 'laudo' && (
         <form onSubmit={salvar} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 14, padding: 12, border: '1px solid var(--borda)', borderRadius: 8 }}>
           <label><span style={estilos.rotulo}>Disciplina</span>
-            <select value={form.disciplina} onChange={e => setForm({ ...form, disciplina: e.target.value })} style={{ width: '100%' }}>
-              {DISCIPLINAS.map(([v, n]) => <option key={v} value={v}>{n}</option>)}
-            </select></label>
+            <Select aria-label="Disciplina" value={form.disciplina} onChange={e => setForm({ ...form, disciplina: e.target.value })} style={{ width: '100%' }}>
+              {opcoesDisciplina(disciplinas, form.disciplina).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
+            </Select></label>
           <label style={{ gridColumn: 'span 2' }}><span style={estilos.rotulo}>Laudo</span>
             <input required maxLength={200} placeholder="Ex.: SPDA — Edifício Aurora" value={form.descricao} onChange={e => setForm({ ...form, descricao: e.target.value })} style={{ width: '100%' }} /></label>
           <label><span style={estilos.rotulo}>Cliente</span>

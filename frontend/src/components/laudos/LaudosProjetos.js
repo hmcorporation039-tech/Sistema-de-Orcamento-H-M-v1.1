@@ -596,7 +596,10 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
                 <tbody>
                   {lista.map(item => (
                     <tr key={item.id} onClick={() => abrir(item.id)} style={{ cursor: 'pointer', borderTop: '1px solid #1e1e1e', background: laudo?.id === item.id ? '#1a1a1a' : 'transparent' }}>
-                      <td style={{ padding: '8px 8px 8px 0' }}>{item.titulo}</td>
+                      <td style={{ padding: '8px 8px 8px 0' }}>
+                        {/* botão para abrir pelo teclado também (Tab + Enter); o clique na linha continua valendo */}
+                        <button type="button" style={estilos.botaoTexto} onClick={(e) => { e.stopPropagation(); abrir(item.id); }}>{item.titulo}</button>
+                      </td>
                       {!disciplina && <td style={{ padding: '8px 8px 8px 0', color: '#c9a227' }}>{disciplinas.find(d => d.chave === item.disciplina)?.nome?.replace(/\s*\(.*\)$/, '') || item.disciplina}</td>}
                       <td style={{ padding: '8px 8px 8px 0', color: 'var(--texto-2)' }}>{item.cliente_nome || '—'}</td>
                       <td style={{ padding: '8px 8px 8px 0', color: 'var(--texto-2)' }}>{(item.revisao || '').split(' ')[0] || '—'}</td>

@@ -1,0 +1,191 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "Residência Exemplo com luminotécnico",
+  "prefixo": "Residencia_Exemplo_Luminotecnico",
+  "data": "2026-10-10",
+  "revisao": "R00",
+  "dados_ilustrativos": true
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "CLIENTE EXEMPLO",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "Endereço de exemplo",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "Residência Exemplo com luminotécnico",
+  "uso": "Residencial unifamiliar"
+ },
+ "instalacao": {
+  "tensao_fn": 127,
+  "tensao_ff": 220,
+  "sistema": "bifasico",
+  "esquema": "TN-S",
+  "ponto_entrega": "bt",
+  "isolacao": "PVC",
+  "metodo": "B1",
+  "temperatura": 30,
+  "agrupamento": 3,
+  "comprimento_medio_circuito_m": 15,
+  "comprimento_alimentador_m": 12,
+  "fp": 0.92,
+  "queda_max_terminal_pct": 4,
+  "queda_max_alimentador_pct": 1,
+  "limite_circuito_tug_a": 15,
+  "limite_circuito_iluminacao_a": 10,
+  "fd_ilum_tug": [],
+  "fd_tue": []
+ },
+ "ambientes": [
+  {
+   "nome": "Sala",
+   "tipo": "sala",
+   "area_m2": 20,
+   "perimetro_m": 18
+  },
+  {
+   "nome": "Dormitório 1",
+   "tipo": "dormitorio",
+   "area_m2": 12,
+   "perimetro_m": 14
+  },
+  {
+   "nome": "Dormitório 2",
+   "tipo": "dormitorio",
+   "area_m2": 10,
+   "perimetro_m": 13
+  },
+  {
+   "nome": "Cozinha",
+   "tipo": "cozinha",
+   "area_m2": 10,
+   "perimetro_m": 13
+  },
+  {
+   "nome": "Área de serviço",
+   "tipo": "area_servico",
+   "area_m2": 5,
+   "perimetro_m": 9
+  },
+  {
+   "nome": "Banheiro",
+   "tipo": "banheiro",
+   "area_m2": 4,
+   "perimetro_m": 8
+  },
+  {
+   "nome": "Varanda",
+   "tipo": "varanda",
+   "area_m2": 4,
+   "perimetro_m": 8
+  }
+ ],
+ "tues": [
+  {
+   "ambiente": "Dormitório 1",
+   "descricao": "Ar-condicionado 12000 BTU",
+   "potencia_w": 1400,
+   "ligacao": "FF",
+   "fp": 0.9
+  },
+  {
+   "ambiente": "Cozinha",
+   "descricao": "Micro-ondas",
+   "potencia_w": 1200,
+   "ligacao": "FN",
+   "fp": 1
+  },
+  {
+   "ambiente": "Banheiro",
+   "descricao": "Chuveiro",
+   "potencia_w": 5500,
+   "ligacao": "FF",
+   "fp": 1
+  }
+ ],
+ "circuitos": [],
+ "inspecao": {
+  "tipo": "periodica",
+  "checklist": []
+ },
+ "luminotecnico": {
+  "projeto": {
+   "conservacao_padrao": "normal",
+   "fp_driver": 0.92
+  },
+  "instalacao": {
+   "ligacao_iluminacao": "FN",
+   "limite_circuito_iluminacao_a": 10
+  },
+  "luminarias": [
+   {
+    "codigo": "DL1",
+    "descricao": "Downlight LED Ø 15 cm (exemplo)",
+    "tipo": "embutir",
+    "potencia_w": 12,
+    "fluxo_lm": 1100,
+    "ra": 80,
+    "tcc_k": 3000,
+    "ugr": null,
+    "fu": null
+   },
+   {
+    "codigo": "PL1",
+    "descricao": "Plafon LED de sobrepor 30 × 30 cm (exemplo)",
+    "tipo": "sobrepor",
+    "potencia_w": 18,
+    "fluxo_lm": 1800,
+    "ra": 80,
+    "tcc_k": 4000,
+    "ugr": null,
+    "fu": null
+   }
+  ],
+  "ambientes": [
+   {
+    "nome": "Sala",
+    "atividade": "res_sala",
+    "comprimento_m": 5,
+    "largura_m": 4,
+    "pe_direito_m": 2.7,
+    "luminaria": "DL1",
+    "controle": "interruptor",
+    "portas": 2,
+    "distancia_quadro_m": 8
+   },
+   {
+    "nome": "Cozinha",
+    "atividade": "res_cozinha",
+    "comprimento_m": 4,
+    "largura_m": 2.5,
+    "pe_direito_m": 2.7,
+    "luminaria": "PL1",
+    "controle": "interruptor",
+    "comando_tipo": "pulsador",
+    "portas": 3,
+    "distancia_quadro_m": 6
+   },
+   {
+    "nome": "Banheiro",
+    "atividade": "res_banheiro",
+    "comprimento_m": 2,
+    "largura_m": 2,
+    "pe_direito_m": 2.6,
+    "luminaria": "PL1",
+    "controle": "sensor",
+    "portas": 1,
+    "distancia_quadro_m": 10
+   }
+  ]
+ }
+}

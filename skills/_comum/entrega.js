@@ -10,12 +10,9 @@
 const JSZip = require('jszip');
 const ExcelJS = require('exceljs');
 
-const xml = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
-function dataBr(iso) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
-  return m ? `${m[3]}/${m[2]}/${m[1]}` : String(iso || '');
-}
+// escape de XML e data 'DD/MM/AAAA': pacote comum (base/xml.js e base/formato.js)
+const { escXml: xml } = require('./base/xml');
+const { dataIsoBr: dataBr } = require('./base/formato');
 
 // "AS BUILT — conforme executado — Rev. R02 — 27/10/2026"
 function textoAsBuilt({ revisao, data } = {}) {

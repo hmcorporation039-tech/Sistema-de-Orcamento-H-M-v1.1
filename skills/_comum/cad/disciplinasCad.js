@@ -9,13 +9,14 @@
 // services/analiseCad e utils/compatibilidadeEspacial.js. Nenhum dado de cliente.
 const { SIMBOLOS } = require('./simbolos');
 const { padrao } = require('./padrao');
+const { lerAltura } = require('./textoCad');
 
 // prefixo de disciplina do padrão H&M (<DISC>-<ELEMENTO>) → chave da análise de projeto
 const PREFIXO_HM = {
   ELE: 'eletrica', ILU: 'iluminacao', CAB: 'rede', TEL: 'telefonia', ANT: 'antena', CFTV: 'cftv',
   ACE: 'controle_acesso', ALM: 'alarme', INC: 'incendio', SPDA: 'spda', AUT: 'automacao', FV: 'solar', VE: 'carregador',
-  // só em nome de bloco (HM-HOSP-…, HM-SOL-…)
-  HOSP: 'eletrica_hospitalar', SOL: 'solar',
+  // só em nome de bloco (HM-HOSP-…, HM-SOL-…, HM-CLIM-…)
+  HOSP: 'eletrica_hospitalar', SOL: 'solar', CLIM: 'climatizacao',
 };
 // prefixos de outros escritórios (token inteiro da layer ou do nome do bloco)
 const PREFIXO_OUTROS = {
@@ -78,17 +79,17 @@ function semPrefixoDeDisciplina(nome) {
   return (PREFIXO_HM[t] || PREFIXO_OUTROS[t]) ? m[2].trim() : s;
 }
 
-// Altura de instalação num texto ("h=1,20m", "H = 0,30 m", "(teto)", "piso",
-// "topo da porta"). Devolve { altura_m, montagem } ou null quando não diz.
+// Altura de instalação num texto ("h=1,20m", "H = 0,30 m", "a 2,20m do piso", "(teto)",
+// "piso", "topo da porta"). Devolve { altura_m, montagem } ou null quando não diz.
+// A altura escrita vem do leitor único (./textoCad.js) e vale ANTES das palavras: "Tomada
+// alta a 2,20m do piso" saía { 0, 'piso' } pela palavra "piso" (CAD-02, 02/11/2026).
 function alturaDoTexto(texto) {
   const s = semAcento(texto).toLowerCase();
   if (!s.trim()) return null;
-  const m = /\bh\s*[=:]\s*(\d+(?:[.,]\d+)?)\s*(m|cm)?\b/.exec(s) || /\baltura\s*[=:]?\s*(\d+(?:[.,]\d+)?)\s*(m|cm)?\b/.exec(s);
-  if (m) {
-    let v = Number(m[1].replace(',', '.'));
-    if (m[2] === 'cm' || (!m[2] && v > 10)) v /= 100;
-    if (v >= 0 && v <= 30) return { altura_m: Math.round(v * 100) / 100, montagem: v === 0 ? 'piso' : 'parede' };
-  }
+  const a = lerAltura(s);
+  // "h= 20 cm abaixo do forro": na parede, perto do forro (a altura do piso depende do pé-direito)
+  if (a?.abaixoDoForro) return { altura_m: null, montagem: 'parede' };
+  if (a && a.altura_m >= 0 && a.altura_m <= 30) return { altura_m: a.altura_m, montagem: a.altura_m === 0 ? 'piso' : 'parede' };
   if (/\b(teto|forro|laje)\b/.test(s)) return { altura_m: null, montagem: 'teto' };
   if (/\bpiso\b/.test(s)) return { altura_m: 0, montagem: 'piso' };
   if (/topo da porta|sobre a porta|acima da porta/.test(s)) return { altura_m: 2.1, montagem: 'parede' };
@@ -104,6 +105,29 @@ const BLOCOS_HM = Object.fromEntries(Object.entries(SIMBOLOS).map(([nome, s]) =>
   return [nome, { descricao: s.legenda, disciplina, layer: s.layer, ...(alt || {}) }];
 }));
 
+// ── Traçado de infraestrutura: UMA regra para a análise (orçamento), o mapa do CAD e o 3D (CAD-10) ──
+// Layers medidas em metros (eletroduto, eletrocalha, perfilado, leito, infra, fiação e cabeamento desenhados).
+// Antes o mapa do CAD tinha outra regex (sem INFRA, FIAÇÃO nem CABEAMENTO) e a disciplina fixa "eletrica": o
+// mesmo DXF dava metragem e disciplina diferentes no 3D e no orçamento (R04: CA-INFRA sumia, INC-ELETRODUTO 66,83 × 66,2 m).
+const RE_LAYER_INFRA = 'ELETRODUT|ELETROCALHA|PERFILADO|LEITO|CONDU[IÍ]TE|CONDUIT|INFRA|CABEAMENTO|FIA[ÇC][ÃA]O|FIACAO|TUBELE|INST.*TUBULA|EL[ÉE]T.*TUBULA|TUBULA.*EL[ÉE]T|TUB.*(L[ÓO]GIC|TELEF|DADOS|CFTV)|(L[ÓO]GIC|TELEF|DADOS|CFTV).*(TUB|INFRA|ELETROD)';
+// tipo do traçado pela layer; fiação e cabeamento desenhados são ROTA (cabo = rota × condutores), não material
+function tipoDoTracado(layer) {
+  const L = String(layer || '');
+  const tipo = /ELETROCALHA|\bCALHA/i.test(L) ? 'eletrocalha' : /PERFILADO/i.test(L) ? 'perfilado' : /LEITO/i.test(L) ? 'leito'
+    : /FIA[ÇC][ÃA]O|FIACAO/i.test(L) ? 'fiacao' : /CABEAMENTO/i.test(L) && !/INFRA|ELETROD|TUB/i.test(L) ? 'cabeamento' : 'eletroduto';
+  return { tipo, rota: tipo === 'fiacao' || tipo === 'cabeamento' };
+}
+
+// ── Ponto de extensão por disciplina: o que é "de outra área" e passa a ser da PRÓPRIA disciplina ──
+// Para as disciplinas de sempre, duto, difusor, grelha e as layers HVAC/AVAC/MEC são de outra área (ficam fora da
+// contagem: services/analiseCad RE_OUTRA_AREA). Quando o arquivo é marcado com uma disciplina desta tabela, o que
+// casa com a regex dela deixa de ser "outra área". Nova disciplina: uma linha aqui (fase 3, 02/11/2026).
+const PROPRIOS_DA_DISCIPLINA = {
+  climatizacao: /HVAC|AVAC|CLIMATIZ|AR.?CONDICION|(^|[-_ ])MEC([-_ ]|$)|MEC[-_ ]?DUTOS?|\bDUTOS?\b|DIFUSOR|GRELHA|COLARINHO|DAMPER|VENEZIANA|FANCOIL|FAN ?COIL|FANCOLETE|EXAUSTOR|VENTILADOR|\bSPLIT\b|CONDENSADORA|EVAPORADORA|CHILLER|HI-?WALL|CASSETE|PISO.?TETO|TERMINAIS DE AR|\bVAV\b/i,
+};
+// o texto (nome do bloco + layers) é da própria disciplina de uma das `disciplinas` marcadas no arquivo?
+const daPropriaDisciplina = (texto, disciplinas = []) => (disciplinas || []).some(d => PROPRIOS_DA_DISCIPLINA[d]?.test(String(texto || '')));
+
 // prefixos de layer do padrão H&M por disciplina (padrao-hm.json), para conferência
 const LAYERS_HM = (padrao.layers || []).map(l => l.nome).filter(n => /^[A-Z]+-/.test(n));
 const PREFIXOS_LAYER_HM = Object.fromEntries([...new Set(LAYERS_HM.map(n => n.split('-')[0]))].filter(p => PREFIXO_HM[p]).map(p => [p, PREFIXO_HM[p]]));
@@ -114,4 +138,5 @@ const ehLayerDeInstalacao = (layer) => !!disciplinaDoTexto(layer, { palavras: fa
 module.exports = {
   BLOCOS_HM, PREFIXO_HM, PREFIXO_OUTROS, PREFIXOS_LAYER_HM,
   separarXref, disciplinaDaLayer, disciplinaDoBloco, disciplinaDoTexto, semPrefixoDeDisciplina, alturaDoTexto, ehLayerDeInstalacao,
+  RE_LAYER_INFRA, tipoDoTracado, PROPRIOS_DA_DISCIPLINA, daPropriaDisciplina,
 };

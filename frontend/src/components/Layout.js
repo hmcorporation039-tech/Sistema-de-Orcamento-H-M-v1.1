@@ -5,6 +5,7 @@ import {
   LogOut, PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { rotuloPapel } from '../utils/papeis';
 import toast from 'react-hot-toast';
 import ErrorBoundary from './ErrorBoundary';
 import PainelAssistente from './assistente/PainelAssistente';
@@ -112,13 +113,15 @@ export default function Layout() {
           <div style={{ display: 'flex', justifyContent: recolhido ? 'center' : 'flex-start', padding: '0 4px' }}>
             <IndicadorNovidades />
           </div>
-          <div className="menu-usuario" title={recolhido ? usuario?.nome : undefined}>
+          {/* Fase 6: o nome leva a "Minha conta" (sessões, duas etapas, Telegram/WhatsApp) */}
+          <NavLink to="/cadastros?aba=conta" className="menu-usuario" title={recolhido ? `${usuario?.nome} — Minha conta` : 'Minha conta'}
+            style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="menu-avatar">{iniciais(usuario?.nome)}</div>
             <div className="menu-usuario-info" style={{ minWidth: 0 }}>
               <div className="menu-usuario-nome">{usuario?.nome}</div>
-              <div className="menu-usuario-papel">{ehAdmin ? 'Administrador' : 'Usuário'}</div>
+              <div className="menu-usuario-papel">{rotuloPapel(usuario?.role)}</div>
             </div>
-          </div>
+          </NavLink>
           {!estreita && <button className="menu-botao" onClick={alternarRecolhido}
             title={recolhido ? 'Expandir menu' : 'Recolher menu'}>
             {recolhido ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}

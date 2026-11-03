@@ -10,13 +10,20 @@ const crypto = require('crypto');
 
 const ENTRADA = path.join(__dirname, 'app.js');
 const SAIDA = path.join(__dirname, 'app.bundle.js');
+// fontes locais que entram no bundle (o three vem do node_modules, pela versão)
+// fase 5: o mapa de iluminância e o cálculo ponto a ponto (o mesmo da skill de iluminação)
+const FONTES = [ENTRADA, path.join(__dirname, 'quadro.js'), path.join(__dirname, 'interativo.js'), path.join(__dirname, '..', '..', 'instalacao', 'simulador.js'),
+  path.join(__dirname, 'mapaIluminancia.js'), path.join(__dirname, '..', '..', 'fotometria', 'pontoAPonto.js')];
 
 function assinatura() {
   const versaoThree = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'node_modules', 'three', 'package.json'), 'utf8')).version;
-  // app.js + quadro.js (cena de quadro elétrico): mudar qualquer um pede bundle novo.
+  // app.js + quadro.js (cena de quadro elétrico) + interativo.js e o simulador lógico da
+  // instalação (3D interativo, fase 2): mudar qualquer um pede bundle novo.
   // Sem \r: o checkout da produção vem com CRLF e o hash tem de bater com o do teste.
   const fonte = (f) => fs.readFileSync(f, 'utf8').replace(/\r\n/g, '\n');
-  const hash = crypto.createHash('sha256').update(fonte(ENTRADA)).update(fonte(path.join(__dirname, 'quadro.js'))).update(versaoThree).digest('hex').slice(0, 16);
+  const h = crypto.createHash('sha256');
+  for (const f of FONTES) h.update(fonte(f));
+  const hash = h.update(versaoThree).digest('hex').slice(0, 16);
   return { versaoThree, hash };
 }
 

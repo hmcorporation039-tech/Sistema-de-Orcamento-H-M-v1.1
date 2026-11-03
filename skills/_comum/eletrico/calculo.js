@@ -126,13 +126,15 @@ function agrupar(itens, limiteVa) {
   return grupos;
 }
 
-function sugerirCircuitos(previsao, c) {
+// semIluminacao: ambientes cuja iluminação vem do projeto luminotécnico (circuitos IL*
+// da skill de iluminação) — não ganham circuito de iluminação próprio aqui
+function sugerirCircuitos(previsao, c, semIluminacao = null) {
   const circuitos = [];
   const add = (tipo, descricao, va, ambientes, ligacao = 'FN') => circuitos.push({
     id: String(circuitos.length + 1), tipo, descricao, potencia_va: Math.round(va), ligacao, ambientes,
     comprimento_m: c.comprimentoPadrao, sugerido: true,
   });
-  agrupar(previsao.map(a => ({ nome: a.nome, va: a.iluminacao })), c.limiteIluminacaoA * c.vfn)
+  agrupar(previsao.filter(a => !semIluminacao?.has(a.nome)).map(a => ({ nome: a.nome, va: a.iluminacao })), c.limiteIluminacaoA * c.vfn)
     .forEach((g, i) => add('iluminacao', `Iluminação ${i + 1} — ${g.ambientes.join(', ')}`, g.va, g.ambientes));
   const cozinhas = previsao.filter(a => T.LOCAIS_COZINHA.includes(a.tipo) && a.tugVa > 0);
   const banheiros = previsao.filter(a => a.tipo === 'banheiro' && a.tugVa > 0);
@@ -362,8 +364,10 @@ function materiais(circuitos, alim, quadro, previsao, c) {
   const nAmb = previsao.length;
   add('TOM', 'Tomada 2P+T 10 A (padrão NBR 14136) com placa', 'un', nTug, 'NBR 5410, 9.5.2.2');
   if (nTue) add('TOM-E', 'Ponto de força para equipamento (TUE) — tomada 20 A ou conexão direta', 'un', nTue, 'NBR 5410, 9.5.3.1 e 9.5.2.3');
+  // pontos de luz: 1 por cômodo (9.5.2.1.1) ou a grade do luminotécnico, quando houver
+  const nLuz = previsao.reduce((s, a) => s + (a.pontosLuz ?? 1), 0);
   add('INT', 'Interruptor simples com placa', 'un', nAmb, 'NBR 5410, 9.5.2.1.1');
-  add('LUZ', 'Ponto de luz no teto (caixa octogonal + conexões)', 'un', nAmb, 'NBR 5410, 9.5.2.1.1');
+  add('LUZ', 'Ponto de luz no teto (caixa octogonal + conexões)', 'un', nLuz, 'NBR 5410, 9.5.2.1.1');
   add('CX', 'Caixa de embutir 4×2"', 'un', nTug + nAmb, '—');
   const eletroduto = circuitos.reduce((s, x) => s + x.comprimento, 0) + alim.comprimento;
   add('ELE', 'Eletroduto corrugado/rígido PVC (estimativa pelo comprimento dos circuitos — conferir no projeto)', 'm', Math.ceil(eletroduto), 'NBR 5410, 6.2.11');
@@ -372,9 +376,24 @@ function materiais(circuitos, alim, quadro, previsao, c) {
 
 // ── Cálculo completo ───────────────────────────────────────────────────────
 
-function calcular(dados) {
+// opcoes.luminotecnico (só a skill eletrica, com o projeto luminotécnico — achado SK-06):
+//   { ambientes: Map nome do ambiente da elétrica → { va, pontosLuz }, circuitos: [circuitos IL* da iluminação] }
+// Nos ambientes cobertos, a iluminação da previsão é a carga do luminotécnico (no lugar
+// do mínimo de 9.5.2.1.2) e os circuitos IL* entram no quadro de cargas como estão
+// (id, potência, comprimento, ligação, DR) — sem eles, o cálculo é o de sempre.
+function calcular(dados, opcoes = {}) {
   const c = config(dados);
+  const lum = opcoes.luminotecnico || null;
   const previsao = preverCargas(dados);
+  if (lum) {
+    for (const a of previsao) {
+      const l = lum.ambientes.get(a.nome);
+      if (!l) continue;
+      a.iluminacao = l.va;
+      a.pontosLuz = l.pontosLuz;
+      a.iluminacaoDe = 'luminotecnico';
+    }
+  }
   // potência em VA ou em W com o FP do circuito; "fases" do formulário = fases fixas
   const vaDe = (x) => numeroOuNulo(x.potencia_va) ?? (numeroOuNulo(x.potencia_w) != null ? x.potencia_w / (numeroOuNulo(x.fp) || c.fp) : null);
   const informados = (dados.circuitos || []).filter(x => vaDe(x) > 0);
@@ -383,7 +402,17 @@ function calcular(dados) {
       ...x, id: x.id || String(i + 1), potencia_va: vaDe(x), fases_fixas: x.fases || null, fases: undefined,
       ambientes: Array.isArray(x.ambientes) ? x.ambientes : String(x.ambientes || '').split(/[,;]/).map(s => s.trim()).filter(Boolean),
     }))
-    : sugerirCircuitos(previsao, c);
+    : sugerirCircuitos(previsao, c, lum ? new Set(lum.ambientes.keys()) : null);
+  const avisosLum = [];
+  if (lum) {
+    const ids = new Set(base.map(x => String(x.id)));
+    for (const x of lum.circuitos) {
+      if (ids.has(String(x.id))) continue; // já trazido para o quadro de cargas editável
+      base.push({ id: String(x.id), tipo: 'iluminacao', descricao: x.descricao, potencia_va: x.potencia_va, ligacao: x.ligacao, comprimento_m: x.comprimento_m, dr: !!x.dr, ambientes: [...(x.ambientes || [])], origem: 'luminotecnico' });
+    }
+    const dobrados = base.filter(x => x.tipo === 'iluminacao' && x.origem !== 'luminotecnico' && !/^IL/i.test(String(x.id)) && (x.ambientes || []).some(n => lum.ambientes.has(n)));
+    if (dobrados.length) avisosLum.push(`Circuito(s) ${dobrados.map(x => x.id).join(', ')} de iluminação atendem ambiente coberto pelo luminotécnico (circuitos IL*) — confira se a carga não está contada duas vezes. [CONFERIR]`);
+  }
   const semAmbiente = (dados.tues || []).filter(t => !(dados.ambientes || []).some(a => (a.nome || '').trim() === (t.ambiente || '').trim()));
   if (semAmbiente.length) throw new Error(`Equipamento sem ambiente correspondente: ${semAmbiente.map(t => t.descricao || '?').join(', ')} — confira o nome do ambiente.`);
   if (!base.length) throw new Error('Informe os ambientes (com área e perímetro) ou os circuitos.');
@@ -432,7 +461,7 @@ function calcular(dados) {
   const mat = materiais(circuitos, alim, quadro, previsao, c);
   const quedaTotal = alim.queda + maiorQueda;
   const limiteTotal = c.pontoEntrega === 'trafo' ? T.QUEDA.total_trafo : T.QUEDA.total_bt;
-  const avisos = [...circuitos.flatMap(x => x.avisos), ...avisosFalta];
+  const avisos = [...circuitos.flatMap(x => x.avisos), ...avisosFalta, ...avisosLum];
   if (quedaTotal > limiteTotal + 1e-9) {
     const pior = circuitos.find(x => x.queda === maiorQueda);
     avisos.push(`Queda de tensão total de ${arred(quedaTotal)} % acima de ${limiteTotal} % (6.2.7.1): o circuito ${pior.id} sozinho tem ${arred(maiorQueda)} % — aumentar a seção desse circuito terminal${alim.folgaQuedaInsuficiente ? ` (o alimentador ficou no seu limite de ${arred(alim.limiteQueda)} %, sem ser superdimensionado para compensar)` : ''}.`);
@@ -444,7 +473,7 @@ function calcular(dados) {
   if (!informados.length) avisos.push('Circuitos sugeridos automaticamente (9.5.3) com comprimento padrão — informe os comprimentos reais no formulário (botão "Trazer os circuitos calculados" na seção 4). [CONFERIR]');
   if (c.fdIlumTugFixo == null || c.fdTueFixo == null) avisos.push('Fatores de demanda típicos de concessionária — conferir com a norma da distribuidora local. [CONFERIR]');
   if (!falta.iccInformada) avisos.push(`Icc presumida no ponto de entrega não informada: adotados ${ICC_ENTRADA_PADRAO_KA} kA para a capacidade de interrupção (Icc no quadro ≈ ${arred(falta.iccQuadro / 1000, 1)} kA) e laço de falta sem a impedância a montante do alimentador (Zs real maior) — informe a Icc da distribuidora. [CONFERIR]`);
-  return { config: c, previsao, circuitos, fases, demanda: dem, alimentador: alim, quadro, falta, materiais: mat.itens, cabos: mat.cabos, maiorQueda, quedaTotal, limiteQuedaTotal: limiteTotal, avisos, circuitosSugeridos: !informados.length };
+  return { config: c, previsao, circuitos, fases, demanda: dem, alimentador: alim, quadro, falta, materiais: mat.itens, cabos: mat.cabos, maiorQueda, quedaTotal, limiteQuedaTotal: limiteTotal, avisos, circuitosSugeridos: !informados.length, ...(lum ? { luminotecnico: true } : {}) };
 }
 
 module.exports = { calcular, preverCargas, iluminacaoMinima, tomadasMinimas, dimensionarCircuito, config, ligacaoTue, balancearFases, protecaoFalta };

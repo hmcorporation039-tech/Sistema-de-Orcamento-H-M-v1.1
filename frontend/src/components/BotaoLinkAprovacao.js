@@ -26,11 +26,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link2, Copy, MessageCircle, RefreshCw, Ban, CheckCircle2, XCircle, ShieldCheck } from 'lucide-react';
 import { gerarLinkAprovacao, getLinksAprovacao, revogarLinkAprovacao, getDecisoesAprovacao } from '../services/api';
-import { formatarMoeda as moeda } from '../utils/format';
+import { formatarMoeda as moeda, dataHoraBr } from '../utils/format';
 import Modal from './ui/Modal';
 import { estilos } from './ui/estilos';
-const dataHora = (v) => (v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
-const data = (v) => (v ? new Date(v).toLocaleDateString('pt-BR') : '—');
 
 const ESTADOS = {
   ativo: { rotulo: 'Ativo', cor: '#7fc77f' },
@@ -69,7 +67,7 @@ function montarMensagem({ cliente, numero, total, url, expira }) {
 
 ${url}
 
-Pelo link você confere os itens, baixa o PDF e aprova ou recusa informando nome e CPF/CNPJ. O link vale até ${data(expira)}.
+Pelo link você confere os itens, baixa o PDF e aprova ou recusa informando nome e CPF/CNPJ. O link vale até ${dataHoraBr(expira, { hora: false })}.
 
 Qualquer dúvida, estamos à disposição.
 H&M Engenharia e Tecnologia — WhatsApp (61) 99185-8745`;
@@ -198,7 +196,7 @@ export default function BotaoLinkAprovacao({ propostaId, numero, status, onAlter
 
               {novo && (
                 <div style={{ marginTop: 12, border: '1px solid #c9a22755', borderRadius: 8, padding: 12, background: '#16130a' }}>
-                  <label style={rotulo}>Endereço para o cliente (válido até {dataHora(novo.expira_em)})</label>
+                  <label style={rotulo}>Endereço para o cliente (válido até {dataHoraBr(novo.expira_em)})</label>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <input readOnly value={novo.url} onFocus={e => e.target.select()} style={{ fontFamily: 'Consolas, monospace', fontSize: 12 }} />
                     <button type="button" onClick={() => copiar(novo.url, 'Link')} style={btnPrimario}><Copy size={13} /> Copiar</button>
@@ -233,7 +231,7 @@ export default function BotaoLinkAprovacao({ propostaId, numero, status, onAlter
                 <div key={d.id} style={{ border: '1px solid #2a2a2a', borderRadius: 8, padding: 10, marginBottom: 8, fontSize: 11.5, lineHeight: 1.6 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: d.decisao === 'aprovada' ? '#7fc77f' : '#e08080' }}>
                     {d.decisao === 'aprovada' ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
-                    {d.decisao === 'aprovada' ? 'Aprovada' : 'Recusada'} em {dataHora(d.decidido_em)}
+                    {d.decisao === 'aprovada' ? 'Aprovada' : 'Recusada'} em {dataHoraBr(d.decidido_em)}
                     <span style={{ marginLeft: 'auto', color: '#c9a227', fontFamily: 'Consolas, monospace' }}>{d.codigo}</span>
                   </div>
                   <div style={{ color: '#ccc' }}>
@@ -256,12 +254,12 @@ export default function BotaoLinkAprovacao({ propostaId, numero, status, onAlter
                   <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid #1e1e1e', padding: '7px 0', fontSize: 12 }}>
                     <div style={{ flex: 1, minWidth: 0, lineHeight: 1.5 }}>
                       <div style={{ color: '#ccc' }}>
-                        <b>#{l.id}</b> · gerado {dataHora(l.criado_em)}{l.criado_por_nome ? ` por ${l.criado_por_nome}` : ''}
+                        <b>#{l.id}</b> · gerado {dataHoraBr(l.criado_em)}{l.criado_por_nome ? ` por ${l.criado_por_nome}` : ''}
                       </div>
                       <div style={{ color: 'var(--texto-3)' }}>
-                        válido até {dataHora(l.expira_em)} · {l.acessos} acesso{l.acessos === 1 ? '' : 's'}
-                        {l.ultimo_acesso_em ? ` (último ${dataHora(l.ultimo_acesso_em)})` : ''}
-                        {l.revogado_em ? ` · revogado ${dataHora(l.revogado_em)}${l.revogado_por_nome ? ` por ${l.revogado_por_nome}` : ''}` : ''}
+                        válido até {dataHoraBr(l.expira_em)} · {l.acessos} acesso{l.acessos === 1 ? '' : 's'}
+                        {l.ultimo_acesso_em ? ` (último ${dataHoraBr(l.ultimo_acesso_em)})` : ''}
+                        {l.revogado_em ? ` · revogado ${dataHoraBr(l.revogado_em)}${l.revogado_por_nome ? ` por ${l.revogado_por_nome}` : ''}` : ''}
                       </div>
                     </div>
                     <span style={{ color: e.cor, border: `1px solid ${e.cor}55`, borderRadius: 10, padding: '1px 8px', fontWeight: 700, whiteSpace: 'nowrap' }}>{e.rotulo}</span>

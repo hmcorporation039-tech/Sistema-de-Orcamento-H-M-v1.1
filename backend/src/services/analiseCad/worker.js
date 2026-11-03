@@ -48,12 +48,18 @@ const { CAD } = require('../../config/caminhos');
         try { escritorio = chaveEscritorio(carimbo(projeto.texto)); } catch { escritorio = ''; } // sem carimbo legível o mapa sai igual, só sem o costume do escritório
         const mapa = aplicarConfirmacoes(propostaDeMapa(arq, { aprendidos: w.aprendidos || [], notasAprendidas: w.notasAprendidas || [], escritorio }), w.confirmados || []);
         const { pontos } = aplicarMapa(arq, mapa);
+        // circuito e retorno escritos junto de cada símbolo ("3", "a"): sugestão no mapa; vale para o
+        // 3D só na linha conferida (skills/_comum/cad/circuitoDoDesenho.js — fase 1 do roteiro)
+        let circuitosPorLinha = new Map();
+        try { circuitosPorLinha = require(path.join(CAD, 'circuitoDoDesenho.js')).anotarCircuitos(pontos, projeto.textos).porLinha; } catch { /* a leitura do circuito não derruba o mapa */ }
         // o mapa vai junto (tela de confirmação): cada linha com a origem do tipo; trechos só com o resumo
         desenho = {
           pontos, legenda: legendaDoProjeto(arq), notas: notasDeAltura(arq), escritorio,
           mapa: {
-            simbolos: mapa.simbolos.map(s => ({ ...s, origem: origemDaLinha(s) })),
+            simbolos: mapa.simbolos.map((s, i) => ({ ...s, origem: origemDaLinha(s), ...(circuitosPorLinha.has(i) ? { circuitos_lidos: circuitosPorLinha.get(i) } : {}) })),
             trechos: mapa.trechos.map(({ layer, tipo, disciplina, comprimento_m }) => ({ layer, tipo, disciplina, comprimento_m })),
+            // formas de símbolo além do limite de linhas do mapa: ditas no aviso, não somem caladas
+            ...(mapa.aviso ? { aviso: mapa.aviso } : {}),
           },
         };
       } catch (e) { desenho = { pontos: [], legenda: [], erro: e.message }; }

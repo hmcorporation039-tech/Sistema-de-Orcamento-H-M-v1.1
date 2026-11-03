@@ -15,6 +15,7 @@ const { Helper } = require('dxf');
 const { transformar } = require('./arquitetura');
 const { separarXref, alturaDoTexto, disciplinaDoTexto } = require('./disciplinasCad');
 const { pontosDaPolilinha, pontosDaCurva, comprimento } = require('./geometriaCad');
+const { limparMtext } = require('./textoCad');
 
 // símbolo = bloco pequeno (até 3 m no maior lado, já em metros); maior é
 // "contêiner" (desenho inteiro dentro de um bloco, xref inserida): abre e conta dentro
@@ -38,12 +39,8 @@ const RE_QTD = /^(QTDE?|QUANT(IDADE)?|QNT|QDE)\b\.?\s*[:=.]?\s*/i;
 const RE_FIM_LEGENDA = /^(NOTAS?|OBSERVA[ÇC][ÕO]ES|OBS\.?)\s*:?\s*$/i;
 const RE_QTD_NO_FIM = /\s[—–-]\s*(\d+)\s*(un|unid|p[çc])\.?\s*$/i;
 
-const limparTexto = (s) => String(s || '')
-  .replace(/\\P/g, '\n')
-  .replace(/\\[A-Za-z][^;\\{}]*;/g, '')
-  .replace(/\\[~ ]/g, ' ')
-  .replace(/[{}]/g, '')
-  .replace(/%%[cC]/g, 'Ø').replace(/%%[dD]/g, '°').replace(/%%[pP]/g, '±').replace(/%%[uUoO]/g, '')
+// códigos do MTEXT pelo limpador único (./textoCad.js — CAD-01); \P vira quebra de linha
+const limparTexto = (s) => limparMtext(s, { quebra: '\n' })
   .replace(/[ \t]+/g, ' ')
   .trim();
 
@@ -65,6 +62,23 @@ const layerFora = (l) => { const { xref, nome } = separarXref(l || ''); return R
 
 const escalaDe = (transforms) => transforms.reduce((m, t) => m * Math.max(Math.abs(t.scaleX || 1), Math.abs(t.scaleY || 1)), 1);
 
+// deslocamentos (no sistema de quem insere) das cópias de um MINSERT — arranjo retangular de
+// linhas × colunas, afetado pela rotação e não pela escala; INSERT comum: [[0, 0]]
+function arranjo(e) {
+  const nl = Math.max(1, e.rowCount || 1), nc = Math.max(1, e.columnCount || 1);
+  const rot = ((e.rotation || 0) * Math.PI) / 180;
+  const out = [];
+  for (let r = 0; r < nl; r++) {
+    for (let c = 0; c < nc; c++) {
+      out.push([
+        -Math.sin(rot) * (e.rowSpacing || 0) * r + Math.cos(rot) * (e.columnSpacing || 0) * c,
+        Math.cos(rot) * (e.rowSpacing || 0) * r + Math.sin(rot) * (e.columnSpacing || 0) * c,
+      ]);
+    }
+  }
+  return out;
+}
+
 // "17", "QTD: 2 + 1", "6 (10 RJ45)", "12 un" → número; senão null
 function numeroDaQtd(s) {
   const t = String(s || '').replace(RE_QTD, '').replace(/\([^)]*\)/g, ' ').trim();
@@ -72,10 +86,43 @@ function numeroDaQtd(s) {
   return m ? m[1].split('+').reduce((a, n) => a + Number(n), 0) : null;
 }
 
+// Bloco DINÂMICO com um parâmetro alterado (a tomada com a visibilidade "alta", a luminária
+// esticada) o AutoCAD grava como bloco anônimo "*U…"; o nome verdadeiro fica no registro do
+// bloco (tabela BLOCK_RECORD): xdata "AcDbBlockRepBTag" (1005 = handle do bloco dinâmico, como o
+// AutoCAD grava) ou "AcDbDynamicBlockTrueName" (1000 = o nome, como ./dwg-para-dxf.mjs grava).
+// A lib `dxf` não lê essa tabela: leitura direta do texto. Devolve Map(nome anônimo → verdadeiro).
+function nomesDeBlocosDinamicos(textoDxf) {
+  const nomes = new Map();
+  const ini = String(textoDxf || '').search(/\n[ \t]*2[ \t]*\r?\nBLOCK_RECORD[ \t]*\r?\n/);
+  if (ini < 0) return nomes;
+  const fim = textoDxf.indexOf('\nENDTAB', ini);
+  const linhas = textoDxf.slice(ini + 1, fim < 0 ? undefined : fim).split(/\r?\n/);
+  const registros = [];
+  let r = null, app = null;
+  for (let i = 0; i + 1 < linhas.length; i += 2) {
+    const codigo = linhas[i].trim(), valor = linhas[i + 1].trim();
+    if (codigo === '0') { r = valor === 'BLOCK_RECORD' ? {} : null; app = null; if (r) registros.push(r); continue; }
+    if (!r) continue;
+    if (codigo === '5') r.handle = valor.toUpperCase();
+    else if (codigo === '2') r.nome = valor;
+    else if (codigo === '1001') app = valor;
+    else if (codigo === '1000' && app === 'AcDbDynamicBlockTrueName' && !r.verdadeiro) r.verdadeiro = valor;
+    else if (codigo === '1005' && app === 'AcDbBlockRepBTag' && !r.bloco) r.bloco = valor.toUpperCase();
+  }
+  const porHandle = new Map(registros.filter(x => x.handle).map(x => [x.handle, x]));
+  for (const x of registros) {
+    if (!x.nome || !x.nome.startsWith('*')) continue;
+    const v = x.verdadeiro || porHandle.get(x.bloco)?.nome;
+    if (v && !v.startsWith('*')) nomes.set(x.nome, v);
+  }
+  return nomes;
+}
+
 // Lê o DXF. opcoes: { fator (unidade → metro, de lerArquitetura), reLayerLinha (layers medidas) }
 function lerProjetoDxf(textoDxf, { fator = 1, reLayerLinha = null } = {}) {
   const { parsed } = new Helper(textoDxf);
   const blocos = new Map((parsed.blocks || []).map(b => [b.name, b]));
+  const dinamicos = nomesDeBlocosDinamicos(textoDxf);
 
   // extensão de cada bloco (unidades dele, sem escala), com os blocos internos pela extensão deles
   const extensoes = new Map();
@@ -210,33 +257,32 @@ function lerProjetoDxf(textoDxf, { fator = 1, reLayerLinha = null } = {}) {
       for (const a of e.attribs || []) guardarTexto({ ...a, type: 'ATTRIB', text: a.text || { string: a.string, x: a.x, y: a.y, textHeight: a.textHeight } }, transforms, layer);
       const t = { x: e.x || 0, y: e.y || 0, scaleX: e.scaleX, scaleY: e.scaleY, rotation: e.rotation, extrusionZ: e.extrusionZ };
       const tamanhoM = m(extensao(e.block) * escalaDe([t, ...transforms]));
-      const anonimo = /^\*/.test(e.block);
-      if (!anonimo && tamanhoM <= SIMBOLO_MAX_M && tamanhoM >= SIMBOLO_MIN_M) {
-        const [[x, y]] = transformar([[t.x, t.y]], transforms);
+      // bloco anônimo: só é símbolo quando é um bloco dinâmico de nome conhecido ("*U12" →
+      // "TOMADA"); antes todo "*U" era aberto como contêiner e a tomada dinâmica não contava (CAD-07)
+      const nomeBloco = /^\*/.test(e.block) ? dinamicos.get(e.block) || null : e.block;
+      if (nomeBloco && tamanhoM <= SIMBOLO_MAX_M && tamanhoM >= SIMBOLO_MIN_M) {
         const attribs = [...(e.attribs || []), ...(atributosDe.get(e) || [])];
         const atributos = Object.fromEntries(attribs.map(a => [String(a.tag || '').toUpperCase(), valorAtributo(a)]).filter(([k, v]) => k && v));
         const alt = Object.entries(atributos).find(([k]) => /^(ALTURA|ALT|H|MONTAGEM|INSTALA)/.test(k));
         const xrefProprio = separarXref(e.block).xref;
-        insercoes.push({
-          bloco: e.block, layer, x: m(x), y: m(y), tamanho: tamanhoM,
-          deReferencia: !!deReferencia || xrefDeReferencia(xrefProprio),
-          xref: xrefProprio || xref || null,
-          altura: alt ? alturaDoTexto(alt[1]) || alturaDoTexto(`h=${alt[1]}`) : null,
-          atributos,
-        });
+        const altura = alt ? alturaDoTexto(alt[1]) || alturaDoTexto(`h=${alt[1]}`) : null;
+        // MINSERT (símbolo em arranjo linhas × colunas): cada cópia é um símbolo — antes contava 1
+        for (const [dx, dy] of arranjo(e)) {
+          const [[x, y]] = transformar([[t.x + dx, t.y + dy]], transforms);
+          insercoes.push({
+            bloco: nomeBloco, layer, x: m(x), y: m(y), tamanho: tamanhoM,
+            deReferencia: !!deReferencia || xrefDeReferencia(xrefProprio),
+            xref: xrefProprio || xref || null,
+            altura, atributos,
+          });
+        }
         continue;
       }
-      // contêiner (ou bloco anônimo/dinâmico): abre, com arranjo retangular como em arquitetura.js
+      // contêiner (ou bloco anônimo sem nome conhecido): abre, com arranjo retangular como em arquitetura.js
       const xrefAqui = xrefDoConteiner(e.block, b) || xref;
       const referencia = deReferencia || ehReferencia(e.block, b);
-      const nl = Math.max(1, e.rowCount || 1), nc = Math.max(1, e.columnCount || 1);
-      const rot = ((e.rotation || 0) * Math.PI) / 180;
-      for (let r = 0; r < nl; r++) {
-        for (let c = 0; c < nc; c++) {
-          const dx = -Math.sin(rot) * (e.rowSpacing || 0) * r + Math.cos(rot) * (e.columnSpacing || 0) * c;
-          const dy = Math.cos(rot) * (e.rowSpacing || 0) * r + Math.sin(rot) * (e.columnSpacing || 0) * c;
-          visitar(b.entities || [], [{ x: -(b.x || 0), y: -(b.y || 0) }, { ...t, x: t.x + dx, y: t.y + dy }, ...transforms], layer, prof + 1, referencia, xrefAqui);
-        }
+      for (const [dx, dy] of arranjo(e)) {
+        visitar(b.entities || [], [{ x: -(b.x || 0), y: -(b.y || 0) }, { ...t, x: t.x + dx, y: t.y + dy }, ...transforms], layer, prof + 1, referencia, xrefAqui);
       }
     }
   }
@@ -397,4 +443,4 @@ function remontarTexto(textos) {
     .join('\n');
 }
 
-module.exports = { lerProjetoDxf, nomeLimpoDoBloco, limparTexto, numeroDaQtd, layerFora, RE_LAYER_FORA, RE_BLOCO_FORA, RE_TITULO_LEGENDA, RE_REFERENCIA };
+module.exports = { lerProjetoDxf, nomeLimpoDoBloco, nomesDeBlocosDinamicos, limparTexto, numeroDaQtd, layerFora, RE_LAYER_FORA, RE_BLOCO_FORA, RE_TITULO_LEGENDA, RE_REFERENCIA };

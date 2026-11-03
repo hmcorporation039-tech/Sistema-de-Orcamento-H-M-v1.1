@@ -10,19 +10,21 @@ const fs = require('fs');
 const path = require('path');
 const { escapeHtml, formatarMoeda } = require('./htmlPdf');
 const { EMPRESA } = require('./pdfTemplate');
+const { ASSETS_COMUM } = require('../config/caminhos');
 
 const e = escapeHtml;
 
-function imagem(nome) {
+// caminho completo: a logo vem da identidade visual comum (skills/_comum/assets); brasão e selo, de src/assets/fiscal
+function imagem(arquivo) {
   try {
-    return `data:image/png;base64,${fs.readFileSync(path.join(__dirname, '..', 'assets', nome)).toString('base64')}`;
+    return `data:image/png;base64,${fs.readFileSync(arquivo).toString('base64')}`;
   } catch {
     return null;
   }
 }
-const LOGO = imagem('logo.png');
-const BRASAO = imagem(path.join('fiscal', 'brasao-df.png'));
-const SELO = imagem(path.join('fiscal', 'nfse-selo.png'));
+const LOGO = imagem(path.join(ASSETS_COMUM, 'logo.png'));
+const BRASAO = imagem(path.join(__dirname, '..', 'assets', 'fiscal', 'brasao-df.png'));
+const SELO = imagem(path.join(__dirname, '..', 'assets', 'fiscal', 'nfse-selo.png'));
 
 // o que o ISS DF imprime em "Informações Adicionais" para ME/EPP do Simples
 const TEXTO_SIMPLES = 'I - "DOCUMENTO EMITIDO POR ME OU EPP OPTANTE PELO SIMPLES NACIONAL"; e\n'

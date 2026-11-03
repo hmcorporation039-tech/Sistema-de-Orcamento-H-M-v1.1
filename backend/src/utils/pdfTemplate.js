@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { COMUM } = require('../config/caminhos');
+const { COMUM, ASSETS_COMUM } = require('../config/caminhos');
 const { ehMaoDeObra, detalharBdi } = require('./calculoProposta');
 const { calcularCurvaAbc } = require('./curvaAbc');
 const {
@@ -9,7 +9,7 @@ const {
 
 function carregarImagem(nome) {
   try {
-    const buffer = fs.readFileSync(path.join(__dirname, '..', 'assets', nome));
+    const buffer = fs.readFileSync(path.join(ASSETS_COMUM, nome));
     return `data:image/png;base64,${buffer.toString('base64')}`;
   } catch {
     return null;

@@ -20,7 +20,8 @@ async function receberPacote(req, res) {
   res.status(201).json(await Pacotes.receberPacote(recebidos, req.usuario));
 }
 
-// POST /projetos/pacotes/:token/analisar { arquivos: [{ id, disciplinas, referencia, tipoReferencia }], finalidade, obra_id, nome_projeto }
+// POST /projetos/pacotes/:token/analisar { arquivos: [{ id, disciplinas, referencia, tipoReferencia, escala? }], finalidade, obra_id, nome_projeto }
+// (escala: denominador informado para o PDF sem escala no carimbo — 50 para 1:50)
 async function analisarPacote(req, res) {
   const escolhas = Array.isArray(req.body?.arquivos) ? req.body.arquivos : [];
   if (!escolhas.length) return res.status(400).json({ erro: 'Escolha os arquivos do pacote a analisar.' });

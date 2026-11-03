@@ -16,14 +16,17 @@ async function statusEmail(req, res) {
   });
 }
 
-async function verificarAgora(req, res) {
+async function verificarAgora(req, res, next) {
   try {
     // pelo registro comum das rotinas (services/rotinas.js) — aparece no painel de Integrações
     const resumo = await rotinas.executarRotina('notas-email', { origem: 'manual', usuarioId: req.usuario?.id });
     res.json(resumo);
   } catch (err) {
     console.error('Erro ao verificar caixa de entrada:', err);
-    res.status(err.code === 'EMAIL_CONEXAO' ? 503 : 500).json({ erro: err.message || 'Erro ao verificar caixa de entrada' });
+    // falha de conexão com a caixa: mensagem escrita para o usuário; o resto vai
+    // para o tratarErros (registra no resumo de erros e não mostra texto interno)
+    if (err.code === 'EMAIL_CONEXAO') return res.status(503).json({ erro: err.message || 'Erro ao verificar caixa de entrada' });
+    return next(err);
   }
 }
 

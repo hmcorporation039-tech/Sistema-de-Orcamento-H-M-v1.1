@@ -12,6 +12,7 @@ const P = require('../../services/pastasSistema');
 const { pastaDoProjeto } = require('../../services/pastasRegistros');
 const { ehArquivoCad } = require('../../services/analiseCad');
 const mapaCad = require('../../services/mapaCad');
+const simbolosAprendidos = require('../../services/simbolosAprendidos');
 const notasAprendidas = require('../../services/notasAprendidas');
 const { executarAnalise } = require('./analises');
 
@@ -64,8 +65,9 @@ async function salvar(req, res) {
     throw e;
   }
   // aprendizado fora da transação: se falhar, a correção da análise já está salva
-  const aprendidas = await mapaCad.aprender(resultado.alteradas, arquivo);
-  const esquecidas = await mapaCad.esquecer(resultado.alteradas);
+  // (biblioteca de blocos: a medida real e o escritório do carimbo vão na chave — CAD-08)
+  const aprendidas = await mapaCad.aprender(resultado.alteradas, arquivo, undefined, resultado.escritorio);
+  const esquecidas = await mapaCad.esquecer(resultado.alteradas, undefined, resultado.escritorio);
   // a altura confirmada para um TIPO de ponto vira sugestão para os próximos desenhos do mesmo escritório (item 8)
   const alturasAprendidas = await notasAprendidas.aprenderConfirmadas(resultado.alteradas, resultado.escritorio, arquivo);
   await notasAprendidas.esquecer(resultado.alteradas, resultado.escritorio);
@@ -101,7 +103,7 @@ async function reprocessar(req, res) {
   for (const q of analisados) {
     const nome = P.nomeSeguro(q.arquivo, 'arquivo');
     if (!noDisco.includes(nome)) { faltando.push(q.arquivo); continue; }
-    arquivos.push({ buffer: await fsp.readFile(path.join(pasta, nome)), nomeArquivo: q.arquivo, disciplinas: [...new Set([...(q.disciplinas || []), ...(disciplinasExtras[q.arquivo] || [])])] });
+    arquivos.push({ buffer: await fsp.readFile(path.join(pasta, nome)), nomeArquivo: q.arquivo, disciplinas: [...new Set([...(q.disciplinas || []), ...(disciplinasExtras[q.arquivo] || [])])], ...(q.escala ? { escala: q.escala } : {}) });
   }
   if (faltando.length) return res.status(409).json({ erro: `Os arquivos originais não estão mais na pasta do projeto (${faltando.slice(0, 3).join(', ')}). Envie o projeto de novo para analisar.` });
   const nomesAnalisados = new Set(analisados.map(q => P.nomeSeguro(q.arquivo, 'arquivo')));
@@ -116,4 +118,25 @@ async function reprocessar(req, res) {
   await executarAnalise(req, res, arquivos, corpo, { mapasConfirmados, analiseAnterior: a });
 }
 
-module.exports = { ler, salvar, reprocessar };
+// ── Biblioteca de blocos (fase 3, CAD-08): o que o sistema aprendeu, em JSON, para levar a outra instalação ──
+// GET /projetos/biblioteca-blocos → o arquivo (services/simbolosAprendidos.exportar)
+async function exportarBiblioteca(req, res) {
+  const json = await simbolosAprendidos.exportar();
+  res.setHeader('Content-Disposition', `attachment; filename="biblioteca-blocos-hm-${new Date().toISOString().slice(0, 10)}.json"`);
+  res.json(json);
+}
+
+// POST /projetos/biblioteca-blocos (só administrador) { formato: 'hm-biblioteca-blocos', linhas: [...] }
+// O que esta instalação já tem conferido pelo usuário não é trocado por linha de legenda importada.
+async function importarBiblioteca(req, res) {
+  const { linhas, erros } = simbolosAprendidos.validarBiblioteca(req.body, new Set(mapaCad.tiposDisponiveis().map(t => t.simbolo)));
+  if (!linhas.length) return res.status(400).json({ erro: erros[0] || 'A biblioteca não tem linhas.', erros: erros.slice(0, 20) });
+  const r = await simbolosAprendidos.importar(linhas, `biblioteca importada por ${req.usuario.nome || req.usuario.email || req.usuario.id}`);
+  await registrarAuditoria(pool, {
+    entidade: 'cad_simbolos_aprendidos', entidadeId: null, acao: 'importar_biblioteca', usuarioId: req.usuario.id,
+    detalhes: { linhas: linhas.length, gravadas: r.gravadas, mantidas: r.mantidas, recusadas: erros.length },
+  });
+  res.json({ ...r, recusadas: erros.length, erros: erros.slice(0, 20) });
+}
+
+module.exports = { ler, salvar, reprocessar, exportarBiblioteca, importarBiblioteca };

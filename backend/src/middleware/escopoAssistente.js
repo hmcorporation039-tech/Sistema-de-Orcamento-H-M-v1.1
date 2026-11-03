@@ -8,6 +8,8 @@
 //    serviços, preços, usuários, financeiro, contratos e obras. Para isso o
 //    assistente só tem `propor_acao`, que grava uma ação PENDENTE; quem executa
 //    é o usuário, clicando "Aplicar" com o próprio login.
+//    Fase 6: o financeiro entra só para LEITURA, pelas rotas /consultas/* (custos,
+//    margem, Pix sem obra, notas), que exigem o papel admin ou financeiro.
 // 2. ALTERAR só o que ele criou NESTA conversa (coluna assistente_conversa_id).
 //    Proposta, análise ou projeto de qualquer pessoa — inclusive do próprio
 //    usuário, feito na tela — volta 403 com o código ASSISTENTE_NAO_CRIOU.
@@ -53,6 +55,8 @@ const ROTAS = [
   ['GET', '/laudos/:id/arquitetura'],
   ['GET', '/composicoes'], ['GET', '/composicoes/:id'],
   ['GET', '/componentes-quadro'], ['GET', '/componentes-quadro/:id'],
+  // BDI e impostos padrão (gerar_orcamento com origem "itens" lê daqui)
+  ['GET', '/configuracoes/padroes-orcamento'],
   // cálculos que não gravam
   ['POST', '/laudos/:id/calcular'], ['POST', '/composicoes/explodir'], ['POST', '/composicoes/calcular'],
   // pesquisa de preço (gasta cota; tem o limite de uso da rota)
@@ -82,6 +86,12 @@ const ROTAS = [
   ['GET', '/assistente/ferramentas/arquivos/:id/conteudo'],
   ['GET', '/assistente/ferramentas/norma'],
   ['GET', '/assistente/ferramentas/historico-preco'],
+  // Fase 6 — leituras (routes/v2/canalConsultas.js; o financeiro com exigePapel admin/financeiro)
+  ['GET', '/consultas/historico-preco'],
+  ['GET', '/consultas/obras/:id/custos'], ['GET', '/consultas/obras/:id/margem'], ['GET', '/consultas/pix-sem-obra'],
+  ['GET', '/consultas/notas-fiscais'], ['GET', '/consultas/notas-a-receber'],
+  ['GET', '/consultas/vencimentos'], ['GET', '/consultas/novidades-pastas'], ['GET', '/consultas/cotacoes'],
+  ['GET', '/obras/:id/cronograma'],
   ['POST', '/assistente/ferramentas/acoes'],
 ];
 

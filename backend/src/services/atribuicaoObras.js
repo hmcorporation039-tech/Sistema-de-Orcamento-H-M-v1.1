@@ -6,6 +6,9 @@
 // e o administrador confirma por grupo. A escolha pode ser lembrada: os próximos Pix desse nome já
 // entram ligados (aplicarRegras, chamada depois da importação por e-mail). Nada é ligado sem confirmação,
 // a não ser por regra que o próprio administrador criou.
+// O sinal mais seguro é o Pix ligado a uma nota fiscal cuja proposta é de uma obra (nota → proposta → obra):
+// vira sugestão de confiança alta. Ao ligar o Pix à nota ele já leva essa obra (services/notasAReceber.js),
+// então aqui só aparecem os ligados antes disso ou cuja nota ganhou proposta/obra depois.
 const pool = require('../config/database');
 const { normalizarTexto } = require('../utils/obras');
 
@@ -25,7 +28,7 @@ function agrupar(movimentos) {
     const id = `${m.tipo}|${chave}`;
     let g = mapa.get(id);
     if (!g) {
-      g = { tipo: m.tipo, chave, nome: String(m.nome).trim(), n: 0, total: 0, de: null, ate: null, prestadores: new Set() };
+      g = { tipo: m.tipo, chave, nome: String(m.nome).trim(), n: 0, total: 0, de: null, ate: null, prestadores: new Set(), obrasDasNotas: new Set(), comNotaDeObra: 0 };
       mapa.set(id, g);
     }
     g.n++;
@@ -34,19 +37,40 @@ function agrupar(movimentos) {
     if (dia && (!g.de || dia < g.de)) g.de = dia;
     if (dia && (!g.ate || dia > g.ate)) g.ate = dia;
     if (m.prestador_id) g.prestadores.add(m.prestador_id);
+    // obra da proposta da nota a que o Pix está ligado (carregarPendentes)
+    if (m.obra_da_nota) { g.obrasDasNotas.add(m.obra_da_nota); g.comNotaDeObra++; }
   }
-  return [...mapa.values()].map(g => ({ ...g, total: arred(g.total), prestadores: [...g.prestadores] }))
+  return [...mapa.values()].map(g => ({ ...g, total: arred(g.total), prestadores: [...g.prestadores], obrasDasNotas: [...g.obrasDasNotas] }))
     .sort((a, b) => b.total - a.total);
 }
 
 // Sugestão para um grupo, ou null. Só sinal seguro:
+//  - recebido ligado a nota: TODOS os Pix do grupo estão ligados a notas cuja proposta é da MESMA obra →
+//    confiança 'alta'. Só parte deles (ou notas de obras diferentes): essas obras entram como candidatas;
 //  - realizado: o prestador tem contrato ligado a UMA única obra;
 //  - recebido: o nome do pagador é o cliente de UMA única obra que ainda não foi encerrada.
-// Quando há mais de uma obra possível, devolve `candidatas` (sem sugerir uma).
-function sugerir(grupo, { obras = [], contratos = [] } = {}) {
+// Quando há mais de uma obra possível, devolve `candidatas` (sem sugerir uma). As sugestões pelo contrato
+// ou pelo nome do cliente são 'media': o administrador confere antes de confirmar.
+function sugerir(grupo, contexto = {}) {
+  const base = sugerirPeloCadastro(grupo, contexto);
+  const daNota = grupo.tipo === 'recebido' ? (grupo.obrasDasNotas || []) : [];
+  if (!daNota.length) return base;
+  if (daNota.length === 1 && grupo.comNotaDeObra === grupo.n) {
+    return { obra_id: daNota[0], motivo: grupo.n === 1 ? 'o Pix está ligado a uma nota desta obra' : 'os Pix estão ligados a notas desta obra', confianca: 'alta' };
+  }
+  // todos com nota (de obras diferentes): só as obras das notas; parte sem nota: o cadastro também conta
+  const todos = grupo.comNotaDeObra === grupo.n;
+  const doCadastro = todos ? [] : [...(base?.obra_id ? [base.obra_id] : []), ...(base?.candidatas || [])];
+  const candidatas = [...new Set([...daNota, ...doCadastro])];
+  const parte = `${grupo.comNotaDeObra} de ${grupo.n} Pix estão ligados a notas`;
+  if (candidatas.length === 1) return { obra_id: candidatas[0], motivo: base ? `${base.motivo}; ${parte} desta obra` : `${parte} desta obra`, confianca: 'media' };
+  return { obra_id: null, candidatas, motivo: todos ? 'os Pix desse nome estão ligados a notas de obras diferentes' : `${parte} de outra obra (ou de mais de uma)` };
+}
+
+function sugerirPeloCadastro(grupo, { obras = [], contratos = [] } = {}) {
   if (grupo.tipo === 'realizado' && grupo.prestadores.length === 1) {
     const ids = [...new Set(contratos.filter(c => c.prestador_id === grupo.prestadores[0] && c.obra_id).map(c => c.obra_id))];
-    if (ids.length === 1) return { obra_id: ids[0], motivo: 'o prestador tem contrato nesta obra' };
+    if (ids.length === 1) return { obra_id: ids[0], motivo: 'o prestador tem contrato nesta obra', confianca: 'media' };
     if (ids.length > 1) return { obra_id: null, candidatas: ids, motivo: 'o prestador tem contrato em mais de uma obra' };
   }
   if (grupo.tipo === 'recebido') {
@@ -55,7 +79,7 @@ function sugerir(grupo, { obras = [], contratos = [] } = {}) {
       return c.length >= 6 && grupo.chave.length >= 6 && (c === grupo.chave || c.includes(grupo.chave) || grupo.chave.includes(c));
     };
     const ativas = obras.filter(o => !STATUS_ENCERRADA.has(o.status) && casa(o));
-    if (ativas.length === 1) return { obra_id: ativas[0].id, motivo: 'o pagador é o cliente desta obra' };
+    if (ativas.length === 1) return { obra_id: ativas[0].id, motivo: 'o pagador é o cliente desta obra', confianca: 'media' };
     if (ativas.length > 1) return { obra_id: null, candidatas: ativas.map(o => o.id), motivo: 'o pagador é cliente de mais de uma obra' };
   }
   return null;
@@ -63,7 +87,12 @@ function sugerir(grupo, { obras = [], contratos = [] } = {}) {
 
 async function carregarPendentes(db = pool) {
   const [movs, regras, obras, contratos] = await Promise.all([
-    db.query(`SELECT id, tipo, nome, valor, data_hora, prestador_id FROM financeiro_movimentos WHERE obra_id IS NULL AND nome IS NOT NULL`),
+    // obra_da_nota: nota emitida → proposta → obra (o sinal de confiança alta)
+    db.query(`SELECT fm.id, fm.tipo, fm.nome, fm.valor, fm.data_hora, fm.prestador_id, pr.obra_id AS obra_da_nota
+                FROM financeiro_movimentos fm
+                LEFT JOIN notas_fiscais n ON n.id = fm.nota_id AND n.situacao = 'emitida'
+                LEFT JOIN propostas pr ON pr.id = n.proposta_id
+               WHERE fm.obra_id IS NULL AND fm.nome IS NOT NULL`),
     db.query('SELECT tipo, nome_chave FROM regras_movimento_obra WHERE geral'),
     db.query('SELECT id, codigo, nome, cliente_nome, status FROM obras ORDER BY codigo'),
     db.query('SELECT prestador_id, obra_id FROM contratos WHERE obra_id IS NOT NULL'),

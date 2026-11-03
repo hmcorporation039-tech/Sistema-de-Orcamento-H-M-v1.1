@@ -11,16 +11,21 @@
 //     olhos a 1,60 m, arrastar gira a cabeça, roda/pinça muda a lente (zoom),
 //     duplo clique no piso anda até o ponto; etiquetas dos pontos próximos.
 // Desempenho: paredes numa geometria só (o corte é feito no shader, sem refazer
-// geometria), dispositivos e trechos em InstancedMesh por tipo, e a escala dos
-// símbolos pela distância é calculada na GPU.
+// geometria), pisos numa geometria por nível, dispositivos e trechos em
+// InstancedMesh por tipo, e a escala dos símbolos pela distância é calculada na
+// GPU. Desenho SÓ quando algo muda (câmera, animação, teclas, botões, tamanho da
+// tela) — como o 3D do quadro (./quadro.js): parado, não gasta CPU nem GPU
+// (celular do cliente, captura do PDF). Revisão de 02/11/2026.
 import {
   WebGLRenderer, Scene, Color, PerspectiveCamera, HemisphereLight, DirectionalLight, AmbientLight,
   BufferGeometry, Float32BufferAttribute, Mesh, MeshStandardMaterial, MeshBasicMaterial, LineBasicMaterial, LineSegments,
   Shape, ShapeGeometry, ExtrudeGeometry, PlaneGeometry, BoxGeometry, CylinderGeometry, SphereGeometry,
-  InstancedMesh, Object3D, Vector3, Vector2, Raycaster, Group, DoubleSide, SRGBColorSpace, MathUtils,
+  InstancedMesh, Object3D, Vector3, Vector2, Raycaster, Group, DoubleSide, SRGBColorSpace, MathUtils, PointLight,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { iniciarQuadro } from './quadro.js';
+import { simuladorDaCena, htmlFichaPonto, ligarBotoes, criarAviso, cenaQuadroEsquematica, htmlCenas } from './interativo.js';
+import { criarMapa } from './mapaIluminancia.js';
 
 // Cena de QUADRO elétrico (skills/quadros): visualizador próprio em ./quadro.js.
 // A cena de prédio abaixo segue igual, só dentro de iniciarPredio().
@@ -53,6 +58,10 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.outputColorSpace = SRGBColorSpace;
 const cena = new Scene();
 cena.background = new Color('#14161b');
+// há o que redesenhar? (etq: as etiquetas HTML também precisam ser refeitas)
+let sujo = true, etqSujas = true;
+function pedirDesenho(etq = false) { sujo = true; if (etq) etqSujas = true; }
+tela.addEventListener('webglcontextrestored', () => pedirDesenho(true));
 
 const [lx0, ly0, lx1, ly1] = CENA.limites;
 const larg = lx1 - lx0, prof = ly1 - ly0;
@@ -69,9 +78,13 @@ controles.maxDistance = diag * 4;
 controles.autoRotateSpeed = 0.9;
 // zoom na direção do cursor: a roda leva até o ambiente que se quer ver
 controles.zoomToCursor = true;
+controles.addEventListener('change', () => pedirDesenho());
 
-cena.add(new HemisphereLight('#ffffff', '#5a5a4e', 1.6));
-cena.add(new AmbientLight('#ffffff', 0.6));
+// (referências: no 3D interativo, dentro do ambiente, a luz geral cai quando as luminárias apagam)
+const LUZ_CEU = 1.6, LUZ_AMB = 0.6;
+const luzCeu = new HemisphereLight('#ffffff', '#5a5a4e', LUZ_CEU);
+const luzAmb = new AmbientLight('#ffffff', LUZ_AMB);
+cena.add(luzCeu, luzAmb);
 const sol = new DirectionalLight('#fff4e0', 1.4);
 sol.position.set(diag * 0.6, diag * 0.9, diag * 0.4);
 cena.add(sol);
@@ -109,21 +122,64 @@ function grupo(k, pai = cena) {
   }
 }
 
-// pisos dos ambientes (o menor por cima: ambientes sobrepostos no desenho)
+// pisos dos ambientes. Ambientes sobrepostos no desenho: o menor por cima — mas só
+// sobe o que de fato cruza a caixa de um maior, e no máximo NIVEIS_PISO degraus.
+// Antes cada ambiente subia 0,4 mm pela ordem de área, sem teto: com 300 ambientes
+// o piso das salas menores chegava a 0,125 m (enterrava postes, caixas de piso e
+// catracas, e cobria a planta das louças) e com 1.200, a 0,485 m, acima das tomadas
+// baixas (revisão de 02/11/2026). Os pisos de um mesmo nível vão numa geometria
+// só, com cor por vértice (uma chamada de desenho por nível, não por ambiente);
+// o duplo clique acha o ambiente pelo triângulo atingido (userData.ambientes).
+const NIVEIS_PISO = 20;
+const alturaPiso = (n) => 0.005 + n * 0.0004;
 const pisos = [];
-const ordem = [...CENA.ambientes].sort((a, b) => b.area_m2 - a.area_m2);
-ordem.forEach((a, k) => {
-  if (a.poligono.length < 3) return;
-  const s = new Shape(a.poligono.map(([x, y]) => new Vector2(x, y)));
-  const g = new ShapeGeometry(s);
-  const cor = (CENA.tiposAmbiente[a.tipo] || CENA.tiposAmbiente.outros).cor;
-  const mesh = new Mesh(g, new MeshStandardMaterial({ color: cor, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -1 - k * 0.05, polygonOffsetUnits: -1 - k }));
-  mesh.rotation.x = -Math.PI / 2;
-  mesh.position.y = 0.005 + k * 0.0004;
-  mesh.userData = { ambiente: a };
-  grupo('ambientes').add(mesh);
-  pisos.push(mesh);
+const ordem = CENA.ambientes.filter(a => a.poligono.length >= 3).sort((a, b) => b.area_m2 - a.area_m2);
+const caixaPiso = ordem.map(a => {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y] of a.poligono) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  return [x0, y0, x1, y1];
 });
+const nivelPiso = [];
+ordem.forEach((a, k) => {
+  const c = caixaPiso[k];
+  let n = 0;
+  for (let j = 0; j < k && n < NIVEIS_PISO; j++) {
+    const d = caixaPiso[j];
+    if (c[0] < d[2] && c[2] > d[0] && c[1] < d[3] && c[3] > d[1]) n = Math.max(n, nivelPiso[j] + 1);
+  }
+  nivelPiso.push(Math.min(n, NIVEIS_PISO));
+});
+// planta de referência (louças, móveis) e campo das câmeras: sempre acima do piso mais alto
+const ALTURA_PLANTA = Math.max(0.03, alturaPiso(nivelPiso.reduce((m, n) => Math.max(m, n), 0)) + 0.01);
+{
+  const porNivel = new Map();
+  ordem.forEach((a, k) => {
+    const n = nivelPiso[k];
+    if (!porNivel.has(n)) porNivel.set(n, { pos: [], cor: [], idx: [], ambientes: [] });
+    const P = porNivel.get(n);
+    const g = new ShapeGeometry(new Shape(a.poligono.map(([x, y]) => new Vector2(x, y))));
+    const p = g.attributes.position.array;
+    const c = new Color((CENA.tiposAmbiente[a.tipo] || CENA.tiposAmbiente.outros).cor);
+    const base = P.pos.length / 3, y = alturaPiso(n);
+    // (x, y) da planta → (x, altura, −y): o mesmo que a rotação de −90° em x de antes
+    for (let i = 0; i < p.length; i += 3) { P.pos.push(p[i], y, -p[i + 1]); P.cor.push(c.r, c.g, c.b); }
+    const ix = g.index ? g.index.array : [...Array(p.length / 3).keys()];
+    for (let i = 0; i < ix.length; i++) P.idx.push(base + ix[i]);
+    for (let i = 0; i < ix.length / 3; i++) P.ambientes.push(a);
+    g.dispose();
+  });
+  for (const [n, P] of porNivel) {
+    const g = new BufferGeometry();
+    g.setAttribute('position', new Float32BufferAttribute(P.pos, 3));
+    g.setAttribute('normal', new Float32BufferAttribute(P.pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+    g.setAttribute('color', new Float32BufferAttribute(P.cor, 3));
+    g.setIndex(P.idx);
+    const mesh = new Mesh(g, new MeshStandardMaterial({ vertexColors: true, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -1 - n * 0.05, polygonOffsetUnits: -1 - n }));
+    mesh.userData = { ambientes: P.ambientes };
+    grupo('ambientes').add(mesh);
+    pisos.push(mesh);
+  }
+}
 
 // ── Corte das paredes da frente (no shader) ─────────────────────────────────
 // Cada vértice de parede leva o centro da sua parede (aParede = cx, z0, cz).
@@ -245,7 +301,7 @@ if (CENA.planta) {
   for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
   const i16 = new Int16Array(u8.buffer);
   const pos = new Float32Array((i16.length / 2) * 3);
-  for (let k = 0, j = 0; k < i16.length; k += 2, j += 3) { pos[j] = i16[k] / 100; pos[j + 1] = 0.03; pos[j + 2] = -i16[k + 1] / 100; }
+  for (let k = 0, j = 0; k < i16.length; k += 2, j += 3) { pos[j] = i16[k] / 100; pos[j + 1] = ALTURA_PLANTA; pos[j + 2] = -i16[k + 1] / 100; }
   const g = new BufferGeometry();
   g.setAttribute('position', new Float32BufferAttribute(pos, 3));
   grupo('planta').add(new LineSegments(g, new LineBasicMaterial({ color: '#3a382f', transparent: true, opacity: 0.6 })));
@@ -415,11 +471,12 @@ for (const t of CENA.dispositivos) {
       const pts = [];
       for (let k = 0; k < campo.length; k += 2) pts.push([campo[k], campo[k + 1]]);
       const ap = [x, z, -y];
-      for (let k = 1; k < pts.length - 1; k++) piso.push(pts[0][0], 0.03, -pts[0][1], pts[k][0], 0.03, -pts[k][1], pts[k + 1][0], 0.03, -pts[k + 1][1]);
+      const h = ALTURA_PLANTA;
+      for (let k = 1; k < pts.length - 1; k++) piso.push(pts[0][0], h, -pts[0][1], pts[k][0], h, -pts[k][1], pts[k + 1][0], h, -pts[k + 1][1]);
       for (let k = 0; k < pts.length; k++) {
         const a = pts[k], b = pts[(k + 1) % pts.length];
-        vol.push(...ap, a[0], 0.03, -a[1], b[0], 0.03, -b[1]);
-        borda.push(a[0], 0.035, -a[1], b[0], 0.035, -b[1]);
+        vol.push(...ap, a[0], h, -a[1], b[0], h, -b[1]);
+        borda.push(a[0], h + 0.005, -a[1], b[0], h + 0.005, -b[1]);
       }
     }
     const malha = (arr, mat, Cls = Mesh) => { const g = new BufferGeometry(); g.setAttribute('position', new Float32BufferAttribute(arr, 3)); const m = new Cls(g, mat); m.renderOrder = 4; grupo('campo').add(m); return m; };
@@ -427,6 +484,122 @@ for (const t of CENA.dispositivos) {
     malha(vol, new MeshBasicMaterial({ color: t.cor, transparent: true, opacity: 0.05, depthWrite: false, side: DoubleSide }));
     malha(borda, new LineBasicMaterial({ color: t.cor, transparent: true, opacity: 0.7 }), LineSegments);
   }
+}
+
+// ── 3D INTERATIVO (fase 2 do roteiro, 02/11/2026) ───────────────────────────
+// Com o modelo único da instalação na cena (cena.instalacao, versão 3), o simulador
+// lógico (../../instalacao/simulador.js) decide o que está energizado: clicar no
+// interruptor/pulsador/botoeira aciona o comando; clicar na luminária aciona o comando
+// dela; clicar no quadro abre o quadro (tampa e alavanca de cada disjuntor) — desligar o
+// Q3 lá apaga as luminárias do circuito 3 aqui e marca as tomadas dele sem energia. A cor
+// e o brilho mudam POR INSTÂNCIA (setColorAt, sem geometria nova); dentro do ambiente, no
+// máximo 8 (celular) ou 12 luzes dinâmicas, só nas luminárias acesas do ambiente atual.
+// Estado só na aba (sessionStorage). Cena sem instalação (antiga/cache): nada disto liga.
+const INST = CENA.instalacao && Array.isArray(CENA.instalacao.pontos) && Array.isArray(CENA.instalacao.quadros) ? CENA.instalacao : null;
+const sim = INST ? simuladorDaCena(INST, CENA.titulo) : null;
+const TIPO_SIM = { luminaria: 'luz', ponto_luz: 'luz', tomada: 'tomada', tue: 'tomada', motor: 'motor' };
+const interativos = [];           // { t, i, it, id, kind: luz|tomada|motor|comando|quadro, quadro }
+const interativoDe = new WeakMap(); // item da cena → interativo
+const BRANCO = new Color(1, 1, 1);
+const corSim = new Color();
+let mapa = null; // mapa de iluminância (fase 5) — criado no fim, com os botões do 3D interativo
+if (sim) {
+  const quadroDoPonto = new Map(sim.quadros().filter(q => q.ponto).map(q => [String(q.ponto), q.tag]));
+  for (const t of CENA.dispositivos) {
+    if (!t.malha) continue;
+    t.itens.forEach((it, i) => {
+      const id = String(it[6] || '');
+      let kind = null;
+      let quadro = null;
+      if (t.forma === 'quadro') { kind = 'quadro'; quadro = quadroDoPonto.get(id) || null; }
+      else if (id && sim.temPonto(id)) kind = TIPO_SIM[sim.ponto(id).tipo] || 'comando';
+      if (kind) interativos.push({ t, i, it, id, kind, quadro });
+    });
+  }
+  // um quadro no modelo e um desenhado sem id do modelo: são o mesmo
+  const soltos = interativos.filter(x => x.kind === 'quadro' && !x.quadro);
+  if (soltos.length === 1 && sim.quadros().length === 1) soltos[0].quadro = sim.quadros()[0].tag;
+  for (let k = interativos.length - 1; k >= 0; k--) if (interativos[k].kind === 'quadro' && !interativos[k].quadro) interativos.splice(k, 1);
+  for (const x of interativos) interativoDe.set(x.it, x);
+  // cor por instância desde o 1º desenho (o shader já sai com USE_INSTANCING_COLOR)
+  for (const t of new Set(interativos.map(x => x.t))) {
+    for (let i = 0; i < t.itens.length; i++) t.malha.setColorAt(i, BRANCO);
+    t.malha.instanceColor.needsUpdate = true;
+  }
+}
+// cor (multiplica a da peça e o brilho próprio) pelo estado do ponto
+function corDoInterativo(x) {
+  if (x.kind === 'quadro') {
+    const q = sim.quadro(x.quadro);
+    const algumDesligado = q && [q.geral?.tag, ...(q.disjuntores || []).map(d => d.tag), ...(q.drs || []).map(d => d.tag)].filter(Boolean).some(tag => !sim.ligado(tag, q.tag));
+    return algumDesligado ? corSim.setRGB(1.6, 1.05, 0.35) : corSim.copy(BRANCO);
+  }
+  const e = sim.estadoPonto(x.id);
+  if (!e) return corSim.copy(BRANCO);
+  if (x.kind === 'luz') {
+    if (!e.alimentado) return corSim.setRGB(0.2, 0.2, 0.24);
+    const n = e.nivel;
+    return corSim.setRGB(0.3 + 1.45 * n, 0.3 + 1.32 * n, 0.33 + 0.97 * n);
+  }
+  if (x.kind === 'tomada') return e.alimentado ? corSim.copy(BRANCO) : corSim.setRGB(1.55, 0.18, 0.18);
+  if (x.kind === 'motor') {
+    const pn = sim.painel(e.circuito);
+    if (!e.alimentado) return corSim.setRGB(0.45, 0.25, 0.25);
+    if (e.energizado) return corSim.setRGB(0.45, 1.7, 0.55);
+    return pn?.termico ? corSim.setRGB(1.7, 1.1, 0.2) : corSim.setRGB(0.7, 0.7, 0.7);
+  }
+  return e.alimentado ? corSim.copy(BRANCO) : corSim.setRGB(0.6, 0.3, 0.3);
+}
+function aplicarEstadoSim() {
+  if (!sim) return;
+  const malhas = new Set();
+  for (const x of interativos) { x.t.malha.setColorAt(x.i, corDoInterativo(x)); malhas.add(x.t.malha); }
+  for (const m of malhas) m.instanceColor.needsUpdate = true;
+  atualizarLuzes();
+  atualizarFicha();
+  // fase 5: o mapa de iluminância e as cenas do ambiente acompanham o simulador
+  mapa?.atualizar();
+  atualizarCenasDentro();
+  pedirDesenho(true);
+}
+
+// luzes dinâmicas: só dentro do ambiente, só nas luminárias acesas dele, até LUZES_MAX
+const LUZES_MAX = (window.matchMedia?.('(pointer: coarse)').matches || window.innerWidth <= 900) ? 8 : 12;
+const luzesSim = [];
+const gLuzes = grupo('luzes-sim');
+gLuzes.visible = false;
+if (sim && interativos.some(x => x.kind === 'luz')) {
+  for (let k = 0; k < LUZES_MAX; k++) {
+    const l = new PointLight('#fff1d6', 0, 7, 2);
+    gLuzes.add(l);
+    luzesSim.push(l);
+  }
+}
+function atualizarLuzes() {
+  if (!luzesSim.length) return;
+  const dentro = modo === 'dentro' && atual >= 0;
+  let total = 0;
+  const acesas = [];
+  if (dentro) {
+    for (const x of interativos) {
+      if (x.kind !== 'luz' || x.it[5] !== atual) continue;
+      total++;
+      const n = sim.estadoPonto(x.id).nivel;
+      if (n > 0) acesas.push({ x, n, d: camera.position.distanceToSquared(vTmp.set(x.it[0], x.it[2], -x.it[1])) });
+    }
+  }
+  // fora do ambiente (ou ambiente sem luminária do modelo): a iluminação de sempre
+  gLuzes.visible = dentro && total > 0;
+  const frac = gLuzes.visible ? acesas.reduce((s, a) => s + a.n, 0) / total : 1;
+  luzCeu.intensity = LUZ_CEU * (0.3 + 0.7 * frac);
+  luzAmb.intensity = LUZ_AMB * (0.3 + 0.7 * frac);
+  acesas.sort((a, b) => a.d - b.d);
+  luzesSim.forEach((l, k) => {
+    const a = acesas[k];
+    l.intensity = a ? 3.2 * a.n : 0;
+    if (a) l.position.set(a.x.it[0], a.x.it[2] - 0.15, -a.x.it[1]);
+  });
+  pedirDesenho();
 }
 
 // ── Infraestrutura (eletrocalhas, eletrodutos, leitos, perfilados, fiação) ───
@@ -630,7 +803,7 @@ function areaLivre() {
   const topo = document.querySelector('#barra')?.getBoundingClientRect().bottom || 0;
   return { w, h, lateral, topo, livreW: Math.max(200, w - lateral - 32), livreH: Math.max(200, h - topo - 50) };
 }
-function ajustarFov(fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
+function ajustarFov(fov) { camera.fov = fov; camera.updateProjectionMatrix(); pedirDesenho(); }
 function vista3d() {
   sairDoAmbiente();
   ajustarFov(45);
@@ -721,6 +894,7 @@ function pontoDeVista(a) {
 function aplicarOlhar() {
   camera.rotation.order = 'YXZ';
   camera.rotation.set(pitch, yaw, 0);
+  pedirDesenho();
 }
 function olharPara(p) {
   const d = vTmp.copy(p).sub(camera.position).normalize();
@@ -737,10 +911,12 @@ function pontoOlhado(dist) {
 const suave = (k) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
 function animar(a0, pos, alvo, fov, dur, fim) {
   anim = { t0: performance.now(), dur, p0: camera.position.clone(), p1: pos.clone(), a0, a1: alvo.clone(), f0: camera.fov, f1: fov, fim };
+  pedirDesenho(true);
   if (!dur) passoAnimacao(performance.now());
 }
 function passoAnimacao(agora) {
   if (!anim) return;
+  pedirDesenho(true);
   const k = anim.dur ? Math.min(1, (agora - anim.t0) / anim.dur) : 1;
   const e = suave(k);
   camera.position.lerpVectors(anim.p0, anim.p1, e);
@@ -761,6 +937,7 @@ function trocarForro(a) {
   forro.rotation.x = -Math.PI / 2;
   forro.position.y = PD + 0.002;
   grupo('forro').add(forro);
+  pedirDesenho();
 }
 
 const painelDentro = $('#dentro');
@@ -774,6 +951,10 @@ function mostrarPainel(a) {
     redimensionar();
   }
   aplicarGrandes();
+  atualizarLuzes(); // 3D interativo: luzes dinâmicas só no ambiente atual
+  atualizarCenasDentro(); // fase 5: cenas do ambiente no painel de baixo
+  mapa?.legenda();        // e os números do mapa de iluminância do ambiente
+  pedirDesenho(true);
 }
 function entrarAmbiente(ref, op = {}) {
   const a = typeof ref === 'number' ? CENA.ambientes[ref] : CENA.ambientes.find(x => x.nome === ref);
@@ -802,6 +983,7 @@ function sairDoAmbiente() {
   camera.rotation.order = 'XYZ';
   controles.enabled = true;
   controles.autoRotate = estado.giro;
+  pedirDesenho(true);
 }
 function voltarVistaGeral(op = {}) {
   if (modo === 'geral') return;
@@ -846,18 +1028,20 @@ function aplicarParedes() {
   }
   $('#b-paredes').textContent = `Paredes: ${MODOS_PAREDE[m]}`;
   $('#b-paredes').classList.toggle('ativo', m !== 2);
+  pedirDesenho();
 }
 function alternar(botao, chave, aplicar) {
   const b = $(botao);
   if (!b) return;
   b.classList.toggle('ativo', !!estado[chave]);
-  b.addEventListener('click', () => { estado[chave] = !estado[chave]; b.classList.toggle('ativo', estado[chave]); aplicar(); });
+  b.addEventListener('click', () => { estado[chave] = !estado[chave]; b.classList.toggle('ativo', estado[chave]); aplicar(); pedirDesenho(true); });
 }
 function aplicarGrandes() {
   // dentro do ambiente o mínimo na tela é maior: a ideia é conferir as peças
   UD.uMin.value = (estado.grandes ? 26 : 14) + (modo === 'dentro' ? 6 : 0);
   UD.uBase.value = estado.grandes ? 1.5 : 1;
   UD.uMinInfra.value = estado.grandes ? 6 : 3;
+  pedirDesenho(true);
 }
 $('#b-paredes').addEventListener('click', () => { estado.paredes = (estado.paredes + 1) % 3; aplicarParedes(); });
 alternar('#b-corte', 'corte', () => {});
@@ -907,6 +1091,7 @@ for (const [k, d] of Object.entries(CENA.disciplinas)) {
     g.visible = !g.visible;
     if (grupos[`infra:${k}`]) grupos[`infra:${k}`].visible = g.visible;
     b.classList.toggle('ativo', g.visible);
+    pedirDesenho(true);
   });
   barraDisc.appendChild(b);
 }
@@ -938,6 +1123,7 @@ legenda.querySelectorAll('.leg').forEach(b => b.addEventListener('click', () => 
   if (!o) return;
   o.visible = !o.visible;
   b.classList.toggle('ativo', o.visible);
+  pedirDesenho(true);
 }));
 
 // ── Ponto sob o mouse/dedo (na tela, com a mesma escala do shader) ──────────
@@ -995,7 +1181,15 @@ function mostrarDica(cx, cy) {
   } else {
     const { t, it } = p;
     const amb = CENA.ambientes[it[5]];
-    dica.innerHTML = `<b>${esc(t.rotulo)}</b>${it[6] ? ` · ${esc(it[6])}` : ''}<br>${amb ? `${esc(amb.nome)} · ` : ''}${esc(alturaDoItem(t, it))}<br><small>${esc(CENA.disciplinas[t.disciplina]?.rotulo || '')}</small>`;
+    // circuito e comando do modelo único da instalação (cena versão 3: it[8], it[9])
+    const ligacao = it[8] ? `<br>circuito ${esc(it[8])}${it[9] ? ` · comando ${esc(it[9])}` : ''}` : '';
+    // 3D interativo: estado do ponto e o que o clique faz
+    const x = sim ? interativoDe.get(it) : null;
+    const e = x && x.kind !== 'quadro' ? sim.estadoPonto(x.id) : null;
+    const comando = x && sim.ponto(x.id)?.comando;
+    const oQueFaz = !x ? '' : x.kind === 'quadro' ? 'clique para abrir o quadro' : x.kind === 'comando' ? 'clique para acionar' : x.kind === 'luz' && comando ? 'clique para acionar o comando' : 'clique para ver o circuito';
+    const estadoSim = x ? `<br>${e ? `<b class="${e.energizado ? 'sim-on' : 'sim-off'}">${esc(e.texto)}</b><br>` : ''}<small>${oQueFaz}</small>` : '';
+    dica.innerHTML = `<b>${esc(t.rotulo)}</b>${it[6] ? ` · ${esc(it[6])}` : ''}<br>${amb ? `${esc(amb.nome)} · ` : ''}${esc(alturaDoItem(t, it))}${ligacao}${estadoSim}<br><small>${esc(CENA.disciplinas[t.disciplina]?.rotulo || '')}</small>`;
   }
   dica.style.display = 'block';
   dica.style.left = `${Math.max(8, Math.min(cx - r.left + 14, r.width - 290))}px`;
@@ -1018,6 +1212,8 @@ const raio = new Raycaster();
 const ndc = new Vector2();
 function aoDuploClique(cx, cy) {
   if (anim) return false;
+  // 3D interativo: o duplo clique num ponto que liga/desliga não entra no ambiente
+  if (sim && pontoInterativo(cx, cy)) return false;
   const r = tela.getBoundingClientRect();
   const x = cx - r.left, y = cy - r.top;
   if (modo === 'geral') {
@@ -1028,7 +1224,9 @@ function aoDuploClique(cx, cy) {
   const alvos = modo === 'dentro' && malhaParedes && grupo('paredes').visible ? [...pisos, malhaParedes] : pisos;
   const hit = raio.intersectObjects(alvos, false)[0];
   if (!hit || hit.object === malhaParedes) return false;
-  const a = hit.object.userData.ambiente;
+  // pisos juntos por nível: o ambiente é o do triângulo atingido
+  const a = hit.object.userData.ambientes[hit.faceIndex];
+  if (!a) return false;
   if (modo === 'dentro') { andarAte(hit.point.x, hit.point.z, a); return true; }
   return entrarAmbiente(a.i);
 }
@@ -1069,7 +1267,9 @@ tela.addEventListener('pointerup', (ev) => {
   if (toques.size < 2) pinca = null;
   if (!ini || toques.size) return;
   const curto = ev.timeStamp - ini.t < 350 && Math.hypot(ev.clientX - ini.x, ev.clientY - ini.y) < 10;
-  if (!curto || ev.pointerType !== 'touch') return;
+  if (!curto) return;
+  // 3D interativo: clique (mouse) num ponto do modelo aciona e abre a ficha
+  if (ev.pointerType !== 'touch') { if (sim) clicarInterativo(ev.clientX, ev.clientY); return; }
   const agora = ev.timeStamp; // hora do evento (o quadro pode atrasar o tratamento)
   if (ultimoToque && agora - ultimoToque.t < 450 && Math.hypot(ev.clientX - ultimoToque.x, ev.clientY - ultimoToque.y) < 30) {
     ultimoToque = null;
@@ -1077,6 +1277,7 @@ tela.addEventListener('pointerup', (ev) => {
     return;
   }
   ultimoToque = { x: ev.clientX, y: ev.clientY, t: agora };
+  if (sim && clicarInterativo(ev.clientX, ev.clientY)) return;
   // toque simples: dica do ponto (some sozinha)
   if (mostrarDica(ev.clientX, ev.clientY)) { clearTimeout(tempoDica); tempoDica = setTimeout(() => { dica.style.display = 'none'; }, 3000); }
 });
@@ -1091,6 +1292,9 @@ tela.addEventListener('wheel', (ev) => {
 const teclas = new Set();
 window.addEventListener('keydown', (ev) => {
   if (ev.target && /INPUT|SELECT|TEXTAREA/.test(ev.target.tagName)) return;
+  // quadro aberto por cima do prédio: Esc volta ao prédio; as teclas não andam no prédio
+  if (quadroAberto) { if (ev.key === 'Escape') fecharQuadro(); return; }
+  if (ev.key === 'Escape' && fichaEl?.classList.contains('aberta')) { fecharFicha(); return; }
   if (ev.key === 'Escape' && modo === 'dentro') { voltarVistaGeral(); return; }
   if (modo === 'dentro' && /^(Arrow(Up|Down|Left|Right)|[wasdWASD])$/.test(ev.key)) { teclas.add(ev.key.toLowerCase()); ev.preventDefault(); }
 });
@@ -1106,8 +1310,135 @@ function andarPeloTeclado(dt) {
   const v = 1.8 * dt;
   camera.position.x += (-Math.sin(yaw) * f + Math.cos(yaw) * l) * v;
   camera.position.z += (-Math.cos(yaw) * f - Math.sin(yaw) * l) * v;
+  pedirDesenho(true);
   const a = ambienteNoPonto(camera.position.x, -camera.position.z);
   if (a && a.i !== atual) { atual = a.i; trocarForro(a); mostrarPainel(a); }
+}
+
+// ── 3D interativo: clique, ficha e o quadro por cima do prédio ──────────────
+const aviso = sim ? criarAviso() : null;
+function pontoInterativo(cx, cy) {
+  const p = escolherDispositivo(cx, cy);
+  return p ? interativoDe.get(p.it) || null : null;
+}
+// clique/toque: aciona o comando (interruptor, pulsador, botoeira, sensor, dimmer; a
+// luminária aciona o comando dela) e mostra a ficha; o quadro abre o quadro
+function clicarInterativo(cx, cy) {
+  const x = pontoInterativo(cx, cy);
+  if (!x) return false;
+  dica.style.display = 'none';
+  if (x.kind === 'quadro') { abrirQuadro(x.quadro); return true; }
+  let r = null;
+  if (x.kind === 'comando' || (x.kind === 'luz' && sim.ponto(x.id)?.comando)) r = sim.acionar(x.id);
+  if (r) aviso(r);
+  abrirFicha(x);
+  return true;
+}
+let fichaEl = null, fichaCorpo = null, fichaDe = null;
+function abrirFicha(x) {
+  if (!fichaEl) {
+    fichaEl = document.createElement('div');
+    fichaEl.id = 'ficha';
+    const fechar = document.createElement('button');
+    fechar.className = 'fechar';
+    fechar.title = 'Fechar';
+    fechar.textContent = '×';
+    fechar.addEventListener('click', fecharFicha);
+    fichaCorpo = document.createElement('div');
+    fichaEl.append(fechar, fichaCorpo);
+    document.body.appendChild(fichaEl);
+    ligarBotoes(fichaCorpo, sim, { abrirQuadro, aviso });
+  }
+  fichaDe = x;
+  fichaEl.classList.add('aberta');
+  atualizarFicha();
+}
+function fecharFicha() { fichaDe = null; fichaEl?.classList.remove('aberta'); }
+function atualizarFicha() {
+  if (!fichaDe || !fichaCorpo) return;
+  const amb = CENA.ambientes[fichaDe.it[5]];
+  fichaCorpo.innerHTML = htmlFichaPonto(sim, fichaDe.id, { rotulo: fichaDe.t.rotulo, ambiente: amb ? amb.nome : '' });
+}
+
+// botões na barra: abrir cada quadro e religar tudo
+if (sim) {
+  const antes = $('#b-tela');
+  const barra = $('#barra');
+  const botao = (texto, titulo, fn) => { const b = document.createElement('button'); b.textContent = texto; b.title = titulo; b.addEventListener('click', fn); barra.insertBefore(b, antes || null); return b; };
+  for (const q of sim.quadros().slice(0, 4)) botao(`Quadro ${q.tag}`, `Abrir o quadro ${q.tag}: porta, disjuntores com alavanca (desligar um disjuntor apaga o circuito no prédio)`, () => abrirQuadro(q.tag));
+  botao('Religar tudo', 'Simulação: volta tudo ao estado inicial (disjuntores ligados, luzes acesas)', () => { sim.reiniciar(); aviso('Simulação reiniciada: tudo ligado'); });
+  // fase 5: mapa de iluminância no piso (falsa-cor em lux), calculado aqui pelo mesmo módulo
+  // ponto a ponto da skill — só na cena com o luminotécnico (fotometria das luminárias)
+  mapa = criarMapa({
+    CENA, INST, sim, interativos, pai: grupo('mapa-lux'), altura: ALTURA_PLANTA + 0.004, esc,
+    celular: LUZES_MAX <= 8, pedirDesenho, ambienteAtual: () => (modo === 'dentro' ? atual : -1),
+  });
+  if (mapa) {
+    const b = botao('Mapa de iluminância', 'Cores no piso com a iluminância calculada ponto a ponto (lux), com o estado atual das luzes: cenas, dimerização e disjuntores', () => {
+      const v = mapa.alternar();
+      b.classList.toggle('ativo', v);
+      aviso(v ? 'Mapa de iluminância: só luz direta (sem interreflexão)' : 'Mapa de iluminância desligado');
+    });
+  }
+  sim.assinar(aplicarEstadoSim);
+}
+
+// cenas do ambiente atual no painel "Dentro do ambiente" (fase 5): um grupo de botões por
+// comando com cenas (teclado de cenas ou DALI-2 com cenas do projeto)
+function atualizarCenasDentro() {
+  if (!sim || !painelDentro) return;
+  let el = document.getElementById('dentro-cenas');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'dentro-cenas';
+    painelDentro.insertBefore(el, document.getElementById('b-voltar'));
+    ligarBotoes(el, sim, { aviso: (t) => aviso?.(t) });
+  }
+  if (modo !== 'dentro' || atual < 0) { el.innerHTML = ''; return; }
+  const ids = [...new Set(interativos.filter(x => x.kind === 'luz' && x.it[5] === atual).map(x => sim.ponto(x.id)?.comando).filter(Boolean))];
+  el.innerHTML = ids.map(id => htmlCenas(sim, id, { titulo: ids.length > 1 })).filter(Boolean).join('<i></i>');
+}
+
+// o quadro em 3D numa camada por cima do prédio, com o MESMO simulador (mesmo estado)
+let quadroAberto = false;
+let qsim = null; // { el, ctrl, tag }
+function abrirQuadro(tag) {
+  const q = sim && sim.quadro(tag);
+  if (!q) return;
+  if (!qsim) {
+    const el = document.createElement('div');
+    el.id = 'q-sim';
+    el.innerHTML = `<canvas id="tela"></canvas><div id="etiquetas"></div>
+<nav id="barra"><button id="b-voltar-predio" title="Voltar ao prédio (Esc)">← Voltar ao prédio</button><span class="q-nome"></span>
+<button id="b-3d">Vista 3D</button><button id="b-frente">Vista frontal</button><button id="b-porta" title="Abrir ou fechar a porta">Porta aberta</button><button id="b-etiquetas">Etiquetas</button></nav>
+<aside><section><h2>Disjuntores — clique para ligar/desligar</h2><div id="simulacao"></div></section><section><h2>Dispositivo</h2><div id="info"></div></section></aside>`;
+    document.body.appendChild(el);
+    el.querySelectorAll('aside h2').forEach(h => { h.onclick = () => h.parentNode.classList.toggle('fechada'); });
+    qsim = { el, ctrl: null, tag: null };
+  }
+  quadroAberto = true;
+  qsim.el.classList.add('aberto');
+  fecharFicha();
+  dica.style.display = 'none';
+  if (qsim.tag !== tag) {
+    // outro quadro: desmonta o anterior (um contexto WebGL só) e começa num canvas novo
+    if (qsim.ctrl) { qsim.ctrl.destruir(); const c = document.createElement('canvas'); c.id = 'tela'; qsim.el.querySelector('#tela').replaceWith(c); qsim.el.querySelector('#etiquetas').innerHTML = ''; }
+    const C = q.cena3d ? { ...q.cena3d } : cenaQuadroEsquematica(q, sim);
+    delete C.instalacao;
+    qsim.el.querySelector('.q-nome').textContent = `${q.tag}${q.descricao ? ` — ${q.descricao}` : ''}${q.cena3d ? '' : ' (arranjo esquemático)'}`;
+    qsim.ctrl = iniciarQuadro(C, { raiz: qsim.el, sim, quadroTag: tag, embutido: true, portaFechada: true, aoVoltar: fecharQuadro, aviso });
+    qsim.tag = tag;
+  } else {
+    qsim.ctrl.ativar(true);
+    qsim.ctrl.abrirAnimado();
+  }
+}
+function fecharQuadro() {
+  if (!quadroAberto) return;
+  quadroAberto = false;
+  qsim.el.classList.remove('aberto');
+  qsim.ctrl?.ativar(false);
+  pedirDesenho(true);
 }
 
 // ── Corte e plano próximo, por quadro ───────────────────────────────────────
@@ -1145,6 +1476,7 @@ function redimensionar() {
   // o centro da imagem vai para o meio da área livre
   camera.setViewOffset(a.w, a.h, a.lateral / 2, -(a.topo - 44) / 2, a.w, a.h);
   camera.updateProjectionMatrix();
+  pedirDesenho(true);
 }
 window.addEventListener('resize', redimensionar);
 window.addEventListener('load', redimensionar);
@@ -1152,20 +1484,43 @@ redimensionar();
 aplicarParedes();
 aplicarGrandes();
 vista3d();
+aplicarEstadoSim(); // 3D interativo: cores do estado salvo na aba (ou do inicial)
 
 let tAnterior = performance.now();
+// câmera do último desenho: as etiquetas HTML só são refeitas quando ela muda
+// (ou quando um botão muda o que elas mostram: pedirDesenho(true))
+const camAnterior = new Float64Array(33).fill(NaN);
+function cameraMudou() {
+  const a = camera.matrixWorld.elements, p = camera.projectionMatrix.elements;
+  const tam = tela.clientWidth * 1e5 + tela.clientHeight;
+  let mudou = camAnterior[32] !== tam;
+  camAnterior[32] = tam;
+  for (let i = 0; i < 16; i++) {
+    if (camAnterior[i] !== a[i]) { mudou = true; camAnterior[i] = a[i]; }
+    if (camAnterior[16 + i] !== p[i]) { mudou = true; camAnterior[16 + i] = p[i]; }
+  }
+  return mudou;
+}
 function desenhar(agora = performance.now()) {
   const dt = Math.min(0.1, Math.max(0, (agora - tAnterior) / 1000));
   tAnterior = agora;
+  // quadro aberto por cima (3D interativo): o prédio não desenha por baixo
+  if (quadroAberto) return;
   passoAnimacao(agora);
   andarPeloTeclado(dt);
-  if (modo === 'geral' && !anim) controles.update();
+  // amortecimento e giro automático: update() diz se a câmera andou
+  if (modo === 'geral' && !anim && controles.update()) sujo = true;
+  if (!sujo) return;
+  sujo = false;
   ajustarPlanoProximo();
   UD.uPx.value = 2 * Math.tan(MathUtils.degToRad(camera.fov / 2)) / Math.max(tela.clientHeight, 1);
   atualizarCorte();
   renderer.render(cena, camera);
-  atualizarEtiquetas();
-  atualizarEtiquetasPontos();
+  if (cameraMudou() || etqSujas) {
+    etqSujas = false;
+    atualizarEtiquetas();
+    atualizarEtiquetasPontos();
+  }
 }
 // atalhos para captura/integração: window.HM3D.vistaDeCima(), entrarAmbiente('SALA', { instantaneo: true }) etc.
 window.HM3D = {
@@ -1174,10 +1529,20 @@ window.HM3D = {
   girarCabeca: (graus, pitchGraus) => { if (modo !== 'dentro') return; yaw += MathUtils.degToRad(graus); if (pitchGraus != null) pitch = MathUtils.degToRad(pitchGraus); aplicarOlhar(); },
   lente: (fov) => ajustarFov(MathUtils.clamp(fov, 15, 90)),
   olharPara: (x, y, z) => { if (modo === 'dentro') olharPara(W(x, y, z)); },
-  irPara: (x, y) => { if (modo === 'dentro') { camera.position.set(x, ALTURA_OLHOS, -y); const a = ambienteNoPonto(x, y); if (a && a.i !== atual) { atual = a.i; trocarForro(a); mostrarPainel(a); } } },
+  irPara: (x, y) => { if (modo === 'dentro') { camera.position.set(x, ALTURA_OLHOS, -y); pedirDesenho(true); const a = ambienteNoPonto(x, y); if (a && a.i !== atual) { atual = a.i; trocarForro(a); mostrarPainel(a); } } },
   escolherDispositivo, mostrarDica, aoDuploClique,
   get modo() { return modo; }, get ambienteAtual() { return atual; },
-  render: () => desenhar(performance.now()),
+  // desenho forçado (captura do PDF: services/modelo3d), etiquetas inclusive
+  render: () => { pedirDesenho(true); desenhar(performance.now()); },
+  get sujo() { return sujo; },
+  // 3D interativo (fase 2): simulador, quadro por cima do prédio, clique num ponto e a cor
+  // por instância de um ponto do modelo (para a captura e o teste no navegador)
+  sim, abrirQuadro, fecharQuadro, clicarInterativo,
+  get quadroAberto() { return quadroAberto; }, get quadro3d() { return qsim?.ctrl || null; },
+  corDoPonto: (id) => { const x = interativos.find(k => k.id === id); if (!x?.t.malha.instanceColor) return null; const c = new Color(); x.t.malha.getColorAt(x.i, c); return [c.r, c.g, c.b].map(v => Math.round(v * 100) / 100); },
+  get luzesAcesas() { return luzesSim.filter(l => l.intensity > 0).length; },
+  // fase 5: mapa de iluminância (null sem luminotécnico na cena)
+  get mapa() { return mapa; },
 };
 function quadro(agora) {
   requestAnimationFrame(quadro);

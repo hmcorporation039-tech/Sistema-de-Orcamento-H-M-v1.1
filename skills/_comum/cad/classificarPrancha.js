@@ -45,6 +45,8 @@ const ROTULO = {
 // o que não é planta: fica fora do 3D e da leitura de ambientes
 const NAO_PLANTA = new Set(['diagrama', 'vista_quadro', 'quadro_cargas', 'legenda', 'detalhe', 'corte_fachada', 'carimbo']);
 const PONTUACAO_MINIMA = 1.5;
+// parede em linha dupla que vale sozinha como planta (sem porta nem nome de sala): ver pontuar
+const PAREDE_SEM_APOIO_M = 150;
 
 // ── Vocabulário ──────────────────────────────────────────────────────────
 // título → tipo (a 1ª regra que casa vale: "VISTA FRONTAL DO QUADRO" é vista de
@@ -485,7 +487,10 @@ function pontuar(reg, folha, ctx) {
   if (areas >= 2) somar('planta', 2, `${areas} rótulos de área (m²)`);
   // parede em linha dupla é sinal de apoio: retângulos do diagrama (disjuntor,
   // barramento) e caixas da legenda também fazem pares; sem porta nem nome de sala, vale a metade
-  const apoio = portas || salas.size || areas >= 2 ? 1 : 0.5;
+  // — mas centenas de metros de parede dupla não são diagrama nem legenda: a prancha luminotécnica A0
+  // da Paróquia (texto SHX em traço, portas sem a folha desenhada) tinha 700 m e caía como "legenda"
+  // (CAD-14, fase 3 — 02/11/2026); a legenda dela mesma tinha 59 m
+  const apoio = portas || salas.size || areas >= 2 || paredeM >= PAREDE_SEM_APOIO_M ? 1 : 0.5;
   if (paredeM >= 8) somar('planta', (paredeM >= 30 ? 2.5 : 1.5) * apoio, `${Math.round(paredeM)} m de parede em linha dupla`);
   // layer de planta pesa muito (título de nota/detalhe DENTRO do bloco da planta não
   // pode valer mais que milhares de traços de arquitetura/instalação), mas só com

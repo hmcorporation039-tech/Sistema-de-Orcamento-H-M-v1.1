@@ -1,0 +1,99 @@
+{
+ "meta": {
+  "schema": "1.0",
+  "titulo": "",
+  "prefixo": "",
+  "data": "AAAA-MM-DD",
+  "revisao": "R00"
+ },
+ "responsavel": {
+  "empresa": "H&M Engenharia e Tecnologia LTDA",
+  "cnpj": "",
+  "nome": "",
+  "titulo": "",
+  "crea": "",
+  "art": ""
+ },
+ "cliente": {
+  "nome": "",
+  "cnpj": "",
+  "contato": "",
+  "endereco": "",
+  "cidade": "Brasília",
+  "uf": "DF"
+ },
+ "obra": {
+  "nome": "",
+  "uso": ""
+ },
+ "projeto": {
+  "cidade": "",
+  "altitude_m": 1100,
+  "tbs_externa_c": null,
+  "tbu_externa_c": null,
+  "tbs_interna_c": 24,
+  "ur_interna_pct": 50,
+  "fator_seguranca_pct": 10,
+  "sistema": "auto",
+  "distribuicao": "vac",
+  "distribuicao_ar": "teto_frio",
+  "delta_t_insuflamento_c": 10,
+  "simultaneidade": 1,
+  "minimo_27_m3h_pessoa": true,
+  "uso_publico_coletivo": true,
+  "distancia_condensadora_m": 7
+ },
+ "ambientes": [],
+ "envoltoria": [],
+ "unidades": [],
+ "ar": {
+  "reaquecimento": "nenhum"
+ },
+ "central": {
+  "tipo_chiller": "ar",
+  "chillers": null,
+  "chiller_reserva": false,
+  "t_saida_agua_c": 7,
+  "delta_t_agua_c": 5.5,
+  "cop": null,
+  "cop_100": null,
+  "cop_75": null,
+  "cop_50": null,
+  "cop_25": null,
+  "iplv": null,
+  "arranjo_bombas": "primario_secundario",
+  "bomba_reserva": true,
+  "comprimento_rede_m": null
+ },
+ "eletrica": {
+  "tensao_ff": 380
+ },
+ "equipamentos_existentes": [],
+ "pmoc": {
+  "responsavel_tecnico": "",
+  "registro_profissional": "",
+  "art_trt": "",
+  "uso_publico_coletivo": true,
+  "ocupantes_fixos": null,
+  "ocupantes_flutuantes": null,
+  "area_climatizada_m2": null,
+  "data_inicio": ""
+ },
+ "inspecao": {
+  "tipo": "",
+  "data_inspecao": "",
+  "documento_n": "",
+  "equipe": "",
+  "abrangencia": "",
+  "fora_escopo": "",
+  "criterio_qai": "nbr17037",
+  "documentos": [],
+  "instrumentos": [],
+  "checklist": [],
+  "ncs": [],
+  "vazoes": [],
+  "ambiente": [],
+  "agua": [],
+  "fotos": []
+ }
+}

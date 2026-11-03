@@ -1,5 +1,6 @@
 import axios from 'axios';
-import { aguardarNovoLogin, avisarSenhaProvisoria, temOuvinteSessao } from './sessao';
+import { aguardarNovoLogin, avisarSenhaProvisoria, avisarTotpObrigatorio, temOuvinteSessao } from './sessao';
+import { renovarSessao, temRenovacao, idDispositivo } from './renovacaoSessao';
 
 const api = axios.create({
   baseURL: process.env.REACT_APP_API_URL
@@ -15,27 +16,46 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Sessão (ver services/sessao.js):
-//   401 → a tela continua onde está; abre o "Entre de novo" e a requisição é
+// Sessão (ver services/sessao.js e services/renovacaoSessao.js):
+//   401 → primeiro renova o token curto com a chave da sessão, sem a pessoa
+//         perceber, e repete o pedido (Fase 6). Se a renovação for recusada:
+//         a tela continua onde está; abre o "Entre de novo" e a requisição é
 //         repetida com o token novo depois do login (nada do que está na tela
 //         se perde). Desistir = sair e ir para /login.
 //   403 com codigo SENHA_PROVISORIA → tela de definir senha.
 //   Demais 403 (posse: registro de outro usuário; só admin) → só recusa; quem
 //         chamou mostra a mensagem. Antes o 403 também deslogava: salvar a
 //         proposta de outro usuário jogava fora tudo o que estava na tela.
+//   403 com codigo TOTP_OBRIGATORIO → tela de ativar a verificação em duas etapas.
 // `semSessao: true` na config: o 401 é resposta da própria tela (login, senha
 // atual errada) e não "sessão vencida".
 function sairParaLogin() {
   localStorage.removeItem('hm_token');
   localStorage.removeItem('hm_usuario');
+  localStorage.removeItem('hm_renovacao');
   window.location.href = '/login';
 }
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     const config = error.config || {};
     const status = error.response?.status;
+    // token curto vencido (ou sessão encerrada): tenta renovar uma vez e repetir o pedido. Vale também
+    // para os pedidos `semSessao` (troca de senha) quando o 401 veio do autenticar (esses dois códigos
+    // nunca querem dizer "senha errada")
+    const codigo = error.response?.data?.codigo;
+    const doAutenticar = codigo === 'TOKEN_EXPIRADO' || codigo === 'SESSAO_ENCERRADA';
+    if (status === 401 && (!config.semSessao || doAutenticar) && !config._renovada && temRenovacao()) {
+      try {
+        await renovarSessao();
+        return await api({ ...config, _renovada: true });
+      } catch (erroRenovacao) {
+        // o erro é do pedido repetido (que já passou por aqui, inclusive pelo "Entre de novo"): é o que vale
+        if (erroRenovacao?.config?._renovada) return Promise.reject(erroRenovacao);
+        // renovação recusada: segue para o "Entre de novo"
+      }
+    }
     if (config.semSessao) return Promise.reject(error);
     if (status === 401) {
       if (config._repetidaAposLogin || !temOuvinteSessao() || !localStorage.getItem('hm_usuario')) {
@@ -48,6 +68,7 @@ api.interceptors.response.use(
       );
     }
     if (status === 403 && error.response?.data?.codigo === 'SENHA_PROVISORIA') avisarSenhaProvisoria();
+    if (status === 403 && error.response?.data?.codigo === 'TOTP_OBRIGATORIO') avisarTotpObrigatorio();
     return Promise.reject(error);
   }
 );
@@ -59,12 +80,32 @@ export const getSaude = () =>
   api.get('/health', { baseURL: process.env.REACT_APP_API_URL || '', semSessao: true });
 
 // ── AUTH ──────────────────────────────────────────────────────────────
+// Resposta: { token, renovacao, usuario } ou, com a verificação em duas etapas ativa,
+// { precisaTotp: true, desafio } — aí o código vai em loginComCodigo.
 export const login = (email, senha) =>
-  api.post('/auth/login', { email, senha }, { semSessao: true });
+  api.post('/auth/login', { email, senha, dispositivo: idDispositivo() }, { semSessao: true });
+export const loginComCodigo = (desafio, codigo) =>
+  api.post('/auth/login/totp', { desafio, codigo, dispositivo: idDispositivo() }, { semSessao: true });
 
 // 401 aqui é "senha atual incorreta" (DefinirSenha mostra na tela, sem deslogar)
 export const alterarSenha = (senhaAtual, novaSenha) =>
   api.post('/auth/senha', { senhaAtual, novaSenha }, { semSessao: true });
+
+// ── MINHA CONTA (Fase 6): sessões, verificação em duas etapas, Telegram/WhatsApp ──
+// Senha errada nestas rotas volta 400 (401 é "sessão vencida").
+export const getConta = () => api.get('/conta');
+export const encerrarSessao = (id) => api.delete(`/conta/sessoes/${id}`);
+export const encerrarOutrasSessoes = () => api.post('/conta/sessoes/encerrar-outras');
+export const iniciarTotp = (senha) => api.post('/conta/totp/iniciar', { senha });
+export const confirmarTotp = (codigo) => api.post('/conta/totp/confirmar', { codigo });
+export const desativarTotp = (senha, codigo) => api.post('/conta/totp/desativar', { senha, codigo });
+export const novosCodigosRecuperacao = (senha, codigo) => api.post('/conta/totp/codigos-recuperacao', { senha, codigo });
+export const gerarCodigoVinculo = (canal) => api.post('/conta/vinculos/codigo', { canal });
+export const removerVinculo = (id) => api.delete(`/conta/vinculos/${id}`);
+// administrador
+export const getAuditoria = (params) => api.get('/auditoria', { params });
+export const encerrarSessoesDoUsuario = (id) => api.post(`/usuarios/${id}/sessoes/encerrar`);
+export const desativarTotpDoUsuario = (id) => api.post(`/usuarios/${id}/totp/desativar`);
 
 // ── MATERIAIS ─────────────────────────────────────────────────────────
 export const getMateriais = (params) => api.get('/materiais', { params });
@@ -153,6 +194,9 @@ export const gerarOrcamentoDaAnalise = (id) => api.post(`/projetos/analises/${id
 export const getMapaCad = (id) => api.get(`/projetos/analises/${id}/mapa`);
 export const salvarMapaCad = (id, arquivo, linhas) => api.put(`/projetos/analises/${id}/mapa`, { arquivo, linhas });
 export const reprocessarMapaCad = (id, corpo = {}) => api.post(`/projetos/analises/${id}/mapa/reprocessar`, corpo, { timeout: 300000 });
+// biblioteca de blocos (o que o mapa do CAD ensinou), em JSON: exportar (logado) e importar (administrador)
+export const exportarBibliotecaBlocos = () => api.get('/projetos/biblioteca-blocos');
+export const importarBibliotecaBlocos = (json) => api.post('/projetos/biblioteca-blocos', json);
 // Pasta do projeto (2.3: na pasta do cliente ou da obra, no servidor)
 export const getPastaAnalise = (id) => api.get(`/projetos/analises/${id}/pasta`);
 export const abrirPastaAnalise = (id) => api.post(`/projetos/analises/${id}/pasta/abrir`);
@@ -501,3 +545,5 @@ export const getNotasAReceber = () => api.get('/notas-a-receber');
 export const ligarSugeridasNotas = () => api.post('/notas-a-receber/ligar-sugeridas');
 export const ligarPixNaNota = (notaId, movimentoId) => api.post(`/notas-a-receber/${notaId}/ligar`, { movimento_id: movimentoId });
 export const darBaixaNota = (notaId, obs) => api.post(`/notas-a-receber/${notaId}/baixa`, { obs });
+// Pix já ligados a nota de obra, mas sem obra: levam a obra da nota (só preenche obra vazia)
+export const levarObraDasNotas = () => api.post('/notas-a-receber/obra-das-notas');

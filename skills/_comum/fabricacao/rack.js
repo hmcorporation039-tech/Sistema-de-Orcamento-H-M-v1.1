@@ -42,8 +42,8 @@ const TIPICOS = {
   tampa: { rotulo: 'Tampa cega', u: 1, profundidade_mm: 15, peso_kg: 0.4, cor: '#f7f7f7', traco: '#999' },
 };
 
-const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ESC[c]);
+// escape de HTML/SVG: pacote comum (base/html.js)
+const { escapeHtml: esc } = require('../base/html');
 const br = (v, c = 0) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
 const r1 = (v) => Math.round(v * 10) / 10;
 

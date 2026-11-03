@@ -297,6 +297,109 @@ caso('routes/index.js e o router público de aprovação usam protegerRotasAsync
   assert.strictEqual(r3.code, 400);
 });
 
+// ════════ revisão de 02/11/2026 — BK-02 a BK-05 ════════
+caso('rota /api inexistente: 404 em JSON (não a página HTML do Express); troca de senha com limite por usuário', silencio(async () => {
+  const express = require('express');
+  const { tratarErros } = require('../src/middleware/erros');
+  const app = express(); app.use(express.json()); app.use('/api', require('../src/routes')); app.use(tratarErros);
+  const srv = app.listen(0, '127.0.0.1');
+  await new Promise(r => srv.once('listening', r));
+  try {
+    assert.deepStrictEqual(await pedir(srv, 'GET', '/api/nao-existe-mesmo'), { status: 404, corpo: { erro: 'Rota não encontrada.' } });
+    assert.deepStrictEqual(await pedir(srv, 'POST', '/api/outra/que/nao/existe', {}), { status: 404, corpo: { erro: 'Rota não encontrada.' } });
+  } finally { srv.close(); }
+  const idx = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'index.js'), 'utf8');
+  assert.match(idx, /router\.post\('\/auth\/senha', autenticar, limiteTrocaSenha, authCtrl\.alterarSenha\)/);
+  assert.match(idx, /const limiteTrocaSenha = rateLimit\(\{[^}]*skipSuccessfulRequests: true,[^}]*keyGenerator: \(req\) => `usuario:\$\{req\.usuario\?\.id\}`/);
+}));
+
+caso('"verificar agora" e executar rotina: erro interno vai para o tratarErros; falha de conexão do e-mail continua 503 com a mensagem', silencio(async () => {
+  const rotinas = require('../src/services/rotinas');
+  const original = rotinas.executarRotina;
+  const res = () => ({ status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; } });
+  const alvos = [
+    [require('../src/controllers/integracoesController').verificarAgora, {}],
+    [require('../src/controllers/financeiroController').verificarAgora, {}],
+    [require('../src/controllers/materiaisController').verificarFornecedoresAgora, {}],
+    [require('../src/controllers/rotinasController').executar, { params: { chave: 'notas-email' } }],
+  ];
+  try {
+    for (const [fn, extra] of alvos) {
+      rotinas.executarRotina = async () => { throw new Error('relation "x" does not exist — C:\\HM-Engenharia\\...'); };
+      let erroNoNext = null;
+      const r1 = res();
+      await fn({ usuario: { id: 1 }, ...extra }, r1, (e) => { erroNoNext = e; });
+      assert.ok(erroNoNext && /relation/.test(erroNoNext.message), 'erro interno não foi para o next');
+      assert.strictEqual(r1.body, undefined, 'mensagem interna respondida direto');
+      if (fn === alvos[2][0]) continue;   // pasta de fornecedores não lê e-mail
+      rotinas.executarRotina = async () => { throw Object.assign(new Error('Sem conexão com a caixa de e-mail.'), { code: 'EMAIL_CONEXAO' }); };
+      const r2 = res();
+      await fn({ usuario: { id: 1 }, ...extra }, r2, () => { throw new Error('não devia chamar o next'); });
+      assert.deepStrictEqual([r2.code, r2.body], [503, { erro: 'Sem conexão com a caixa de e-mail.' }]);
+    }
+  } finally { rotinas.executarRotina = original; }
+}));
+
+caso('usuários: e-mail em minúsculas e sem espaço, mesma validação no criar, duplicado sem caixa = 409; login sem caixa', silencio(async () => {
+  const U = require('../src/controllers/usuariosController');
+  assert.strictEqual(U.lerCamposUsuario({ email: '  Marcio@HM.com.br ' }).email, 'marcio@hm.com.br');
+  assert.ok(U.lerCamposUsuario({ nome: 'x'.repeat(101) }).erro);
+  assert.ok(U.lerCamposUsuario({ email: 'sem-arroba' }).erro);
+  const res = () => ({ status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; } });
+  const sqls = [];
+  let existente = false;
+  banco.pool = { query: async (sql, p) => {
+    sqls.push({ sql, p });
+    if (/LOWER\(email\) = LOWER\(\$1\)/.test(sql) && /SELECT 1/.test(sql)) return { rows: existente ? [{ '?column?': 1 }] : [] };
+    if (/INSERT INTO usuarios/.test(sql)) return { rows: [{ id: 5, nome: p[0], email: p[1], role: p[3] }] };
+    return { rows: [] };
+  } };
+  try {
+    const nada = () => { throw new Error('não devia chamar o next'); };
+    for (const [corpo, codigo] of [
+      [{ nome: 'Ana', email: 'ana@x.com', senha: 12345678 }, 400],          // senha número: antes quebrava no bcrypt (500)
+      [{ nome: 'x'.repeat(101), email: 'ana@x.com', senha: 'abcdefgh' }, 400], // antes: erro 22001 → 500
+      [{ nome: 'Ana', email: 'ana@x.com', senha: 'curta' }, 400],
+      [{ nome: 'Ana', email: 'ana@x.com', senha: 'abcdefgh', role: 'root' }, 400],
+      [{ email: 'ana@x.com', senha: 'abcdefgh' }, 400],
+    ]) {
+      const r = res(); await U.criar({ body: corpo, usuario: { id: 1 } }, r, nada);
+      assert.strictEqual(r.code, codigo, JSON.stringify(corpo).slice(0, 80));
+    }
+    const ok = res(); await U.criar({ body: { nome: ' Ana ', email: ' Ana@X.com ', senha: 'abcdefgh' }, usuario: { id: 1 } }, ok, nada);
+    assert.strictEqual(ok.code, 201);
+    assert.deepStrictEqual(sqls.find(s => /INSERT INTO usuarios/.test(s.sql)).p.filter((_, i) => i !== 2), ['Ana', 'ana@x.com', 'user']);
+    existente = true;
+    const dup = res(); await U.criar({ body: { nome: 'Ana', email: 'ANA@x.com', senha: 'abcdefgh' }, usuario: { id: 1 } }, dup, nada);
+    assert.strictEqual(dup.code, 409);
+    const dupEd = res(); await U.atualizar({ params: { id: '9' }, body: { email: 'ANA@x.com' }, usuario: { id: 1 } }, dupEd, nada);
+    assert.strictEqual(dupEd.code, 409);
+    // erro inesperado vai para o tratarErros (antes: 500 genérico sem log)
+    existente = false;
+    banco.pool = { query: async (sql) => { if (/INSERT/.test(sql)) throw Object.assign(new Error('falha'), { code: 'XX000' }); return { rows: [] }; } };
+    let proximo = null;
+    await U.criar({ body: { nome: 'Ana', email: 'ana@x.com', senha: 'abcdefgh' }, usuario: { id: 1 } }, res(), (e) => { proximo = e; });
+    assert.strictEqual(proximo?.code, 'XX000');
+    // login compara sem caixa e sem espaço nas pontas
+    let loginSql;
+    // só a busca da conta (depois dela o login grava a tentativa na auditoria — Fase 6)
+    banco.pool = { query: async (sql, p) => { if (/FROM usuarios/.test(sql)) loginSql = { sql, p }; return { rows: [] }; } };
+    const auth = require('../src/controllers/authController');
+    const rl = res(); await auth.login({ body: { email: ' Marcio@HM.com.br ', senha: 'qualquer1' } }, rl);
+    assert.strictEqual(rl.code, 401);
+    assert.match(loginSql.sql, /LOWER\(email\) = LOWER\(\$1\)/);
+    assert.strictEqual(loginSql.p[0], 'Marcio@HM.com.br');
+  } finally { banco.pool = null; }
+  // migração: índice único em LOWER(email) só sem duplicados (com duplicados, só avisa)
+  const mig = require('../src/models/migracoes/2.0-41-email-usuario-sem-caixa');
+  const feitos = [];
+  await mig({ query: async (sql) => { feitos.push(sql); return { rows: /GROUP BY/.test(sql) ? [{ email: 'a@x', contas: 2, ids: '1, 2' }] : [] }; } });
+  assert.ok(!feitos.some(s => /CREATE UNIQUE INDEX/.test(s)), 'criou o índice com duplicados (falharia e desfaria as migrações)');
+  feitos.length = 0;
+  await mig({ query: async (sql) => { feitos.push(sql); return { rows: [] }; } });
+  assert.ok(feitos.some(s => /CREATE UNIQUE INDEX IF NOT EXISTS uq_usuarios_email_lower ON usuarios \(LOWER\(email\)\)/.test(s)));
+}));
+
 // ════════ item 14 / 16 — migrações ════════
 caso('schema: ALTER TYPE do documento só quando preciso; trava de migração; lock_timeout; ROLLBACK protegido', silencio(async () => {
   const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'models', 'schema.js'), 'utf8');

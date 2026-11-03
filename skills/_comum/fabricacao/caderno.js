@@ -113,11 +113,8 @@ function tabelaHtml({ colunas = [], linhas = [], proporcoes = null, classe = '' 
 
 const kv = (pares) => `<table class="kv"><tbody>${pares.filter(p => p && p[0]).map(([k, v]) => `<tr><th>${e(k)}</th><td>${e(v == null || v === '' ? '—' : v)}</td></tr>`).join('')}</tbody></table>`;
 
-function dataBr(d) {
-  if (!d) return '';
-  const s = String(d);
-  return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10).split('-').reverse().join('/') : s;
-}
+// 'AAAA-MM-DD' → 'DD/MM/AAAA' (pacote comum, base/formato.js)
+const { dataIsoBr: dataBr } = require('../base/formato');
 
 const CSS = `
 @page { size: A4; margin: ${MARGEM.topo}mm ${MARGEM.lado}mm ${MARGEM.base}mm ${MARGEM.lado}mm; }

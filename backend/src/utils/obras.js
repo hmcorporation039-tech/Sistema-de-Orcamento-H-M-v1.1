@@ -172,18 +172,31 @@ const arred = arredondar;
 // CONTRATADO = soma dos contratos de prestador ligados (custo comprometido,
 // informativo — não entra na margem, que só conta o que já saiu).
 // MARGEM = orçado − realizado (e % sobre o orçado); A RECEBER = orçado − recebido.
-function resumoFinanceiro({ propostas = [], movimentos = [], contratos = [] } = {}) {
+// FATURADO = notas fiscais emitidas (situação 'emitida': rascunho, cancelada e substituída não contam) das
+// propostas da obra — valor dos serviços (bruto) e líquido (o que cai na conta, retenções descontadas).
+// A RECEBER FATURADO = faturado líquido − recebido − o que teve baixa manual (nota paga por fora do Pix:
+// TED, boleto), nunca negativo. É pelo líquido porque o Pix do cliente vem sem as retenções; pelo bruto,
+// o ISS/INSS retido ficaria "a receber" para sempre.
+// notas: [{ valor_servicos, valor_liquido, baixa_manual_em, recebido }] (recebido = Pix ligados à nota)
+function resumoFinanceiro({ propostas = [], movimentos = [], contratos = [], notas = [] } = {}) {
   const orcado = calcularOrcado(propostas);
   const soma = (tipo) => arred(movimentos.filter(m => m.tipo === tipo).reduce((s, m) => s + (Number(m.valor) || 0), 0));
   const realizado = soma('realizado');
   const recebido = soma('recebido');
   const contratado = arred(contratos.reduce((s, c) => s + (Number(c.valor) || 0), 0));
   const margem = arred(orcado.valor - realizado);
+  const faturado = arred(notas.reduce((s, n) => s + (Number(n.valor_servicos) || 0), 0));
+  const faturadoLiquido = arred(notas.reduce((s, n) => s + (Number(n.valor_liquido) || 0), 0));
+  // nota com baixa manual: o que faltava receber pelo Pix foi pago por fora
+  const baixado = arred(notas.filter(n => n.baixa_manual_em)
+    .reduce((s, n) => s + Math.max(0, (Number(n.valor_liquido) || 0) - (Number(n.recebido) || 0)), 0));
   return {
     orcado: orcado.valor, orcado_base: orcado.base, orcado_propostas: orcado.propostas,
     realizado, recebido, contratado,
     margem, margem_pct: orcado.valor > 0 ? Math.round((margem / orcado.valor) * 1000) / 10 : null,
     a_receber: arred(orcado.valor - recebido),
+    faturado, faturado_liquido: faturadoLiquido, baixado_manual: baixado, qtd_notas: notas.length,
+    a_receber_faturado: arred(Math.max(0, faturadoLiquido - recebido - baixado)),
   };
 }
 

@@ -1,10 +1,13 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import NotasAReceber from './NotasAReceber';
-import { getNotasAReceber, ligarSugeridasNotas, ligarPixNaNota, darBaixaNota } from '../services/api';
+import toast from 'react-hot-toast';
+import { getNotasAReceber, ligarSugeridasNotas, ligarPixNaNota, darBaixaNota, levarObraDasNotas } from '../services/api';
 
 // Cartão "Notas a receber": resumo, ligar o Pix sugerido (um ou todos os de confiança alta) e dar baixa com observação.
-jest.mock('../services/api', () => ({ getNotasAReceber: jest.fn(), ligarSugeridasNotas: jest.fn(), ligarPixNaNota: jest.fn(), darBaixaNota: jest.fn() }));
+jest.mock('../services/api', () => ({ getNotasAReceber: jest.fn(), ligarSugeridasNotas: jest.fn(), ligarPixNaNota: jest.fn(), darBaixaNota: jest.fn(), levarObraDasNotas: jest.fn() }));
+// o aviso de obra divergente sai num toast simples: o mock deixa conferir o texto
+jest.mock('react-hot-toast', () => { const t = jest.fn(); t.success = jest.fn(); t.error = jest.fn(); return { __esModule: true, default: t }; });
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 let raiz;
@@ -13,7 +16,7 @@ beforeEach(() => {
   caixa = document.createElement('div');
   document.body.appendChild(caixa);
   raiz = createRoot(caixa);
-  [getNotasAReceber, ligarSugeridasNotas, ligarPixNaNota, darBaixaNota].forEach(f => f.mockReset());
+  [getNotasAReceber, ligarSugeridasNotas, ligarPixNaNota, darBaixaNota, levarObraDasNotas, toast, toast.success, toast.error].forEach(f => f.mockReset());
 });
 afterEach(() => {
   act(() => raiz.unmount());
@@ -102,4 +105,30 @@ test('notas antigas ficam recolhidas e não contam como atraso', async () => {
   act(() => { botao('1 nota antiga').click(); });
   expect(caixa.querySelectorAll('[data-testid="areceber-linha"]')).toHaveLength(2);
   expect(caixa.textContent).toContain('antes do primeiro Pix');
+});
+
+test('ligar o Pix que leva a obra da nota avisa; obra divergente vira aviso', async () => {
+  getNotasAReceber.mockResolvedValue(resposta([item({})]));
+  // a lista nova ainda tem outra nota com Pix sugerido, para o segundo clique
+  ligarPixNaNota.mockResolvedValue(resposta([item({ id: 2, numero: '29' })], { obra_preenchida: true, aviso: null }));
+  await abrir();
+  await act(async () => { botao('Ligar Pix').click(); });
+  expect(toast.success).toHaveBeenCalledWith('Pix ligado à nota e à obra da proposta.');
+  expect(toast).not.toHaveBeenCalled();
+  ligarPixNaNota.mockResolvedValue(resposta([], { obra_preenchida: false, aviso: 'O Pix já está na obra OB-7 e a proposta da nota é da obra OB-5.' }));
+  await act(async () => { botao('Ligar Pix').click(); });
+  expect(ligarPixNaNota).toHaveBeenLastCalledWith(2, 10);
+  expect(toast.success).toHaveBeenLastCalledWith('Pix ligado à nota.');
+  expect(toast).toHaveBeenCalledWith(expect.stringContaining('OB-7'), expect.anything());
+});
+
+test('Pix já ligados a nota de obra, mas sem obra: botão leva a obra das notas (mesmo sem nota em aberto)', async () => {
+  getNotasAReceber.mockResolvedValue(resposta([], { obra_pela_nota: { n: 3, valor: 4500 } }));
+  levarObraDasNotas.mockResolvedValue(resposta([], { preenchidos: 3, obras: 2, obra_pela_nota: { n: 0, valor: 0 } }));
+  await abrir();
+  expect(caixa.querySelector('[data-testid="notas-a-receber"]')).not.toBeNull();
+  await act(async () => { botao('Levar a obra das notas para 3 Pix').click(); });
+  expect(levarObraDasNotas).toHaveBeenCalledTimes(1);
+  expect(toast.success).toHaveBeenCalledWith('3 Pix ganharam a obra da nota (2 obras).');
+  expect(caixa.querySelector('[data-testid="notas-a-receber"]')).toBeNull();   // nada mais a mostrar
 });

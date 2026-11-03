@@ -129,6 +129,43 @@ igual('NCs do checklist', r.ncs.length, 2);
   igual('com Ra/UGR informados e dentro do limite → atendidos', [ind2.ok, ind2.detalhe], [true, 'Em, Ra e UGR atendidos']);
 }
 
+// ── Fase 5: ponto a ponto (só luz direta), fotometria IES e cenas ─────────
+{
+  // à mão: 1 luminária lambertiana de 1.000π lm (I0 = Φ/π = 1.000 cd) no centro de uma sala
+  // 2 × 2 m, montagem 2,75 m, plano 0,75 m (h = 2 m), FM 0,80. Malha p = 0,2 × 5^log10(2) = 0,325 m
+  // → 7 × 7. Centro (1; 1): E = 0,8 × 1.000 / 2² = 200 lx. Canto (0,143; 0,143): r² = 2 × 0,857² =
+  // 1,469; d² = 5,469; E = 0,8 × I0 × h² / d⁴ = 0,8 × 4.000 / 29,91 = 107,0 lx
+  const sala = { nome: 'Sala', atividade: 'escritorio', comprimento_m: 2, largura_m: 2, pe_direito_m: 2.75, plano_trabalho_m: 0.75, fu: 0.6, conservacao: 'limpo', luminaria: 'X', quantidade: 1 };
+  const umaLum = C.calcular({ luminarias: [{ codigo: 'X', potencia_w: 30, fluxo_lm: Math.PI * 1000, angulo_facho_graus: 120 }], ambientes: [sala] });
+  const pp = umaLum.ambientes[0].pontoAPonto;
+  igual('ponto a ponto: malha 7 × 7', [pp.nx, pp.ny, pp.pontos], [7, 7, 49]);
+  perto('ponto a ponto: Emáx sob a luminária = FM·I0/h²', pp.emax, 200, 0.5);
+  perto('ponto a ponto: Emín no canto = FM·I0·h²/d⁴', pp.emin, 0.8 * 4000 / (5.4694 ** 2), 0.5);
+  perto('ponto a ponto: U0 = Emín/Em', pp.u0, pp.emin / pp.em, 1e-9);
+  igual('ponto a ponto: fotometria aproximada (sem arquivo)', pp.fonte, 'aproximada');
+  igual('ponto a ponto: avisos "sem interreflexão" e da curva aproximada', [/sem interreflexão/.test(umaLum.avisos.join(' ')), /SIMÉTRICA APROXIMADA/.test(umaLum.avisos.join(' '))], [true, true]);
+  // arquivo IES do "fabricante" (sintético: lambertiana de 1.000 cd) no cadastro → mesmo resultado
+  const V = []; for (let g = 0; g <= 90; g += 5) V.push(g);
+  const ies = ['IESNA:LM-63-2002', '[MANUFAC] Sintético', 'TILT=NONE', `1 -1 1 ${V.length} 1 1 2 0.6 0.6 0`, '1 1 30', V.join(' '), '0', V.map(g => (1000 * Math.cos(g * Math.PI / 180)).toFixed(2)).join(' ')].join('\n');
+  const comIes = C.calcular({ luminarias: [{ codigo: 'X', potencia_w: 30, fluxo_lm: Math.PI * 1000, fotometria: { nome: 'x.ies', conteudo: ies } }], ambientes: [sala] });
+  igual('IES do cadastro: fonte', comIes.ambientes[0].pontoAPonto.fonte, 'ies');
+  perto('IES do cadastro: mesma Emáx da lambertiana', comIes.ambientes[0].pontoAPonto.emax, 200, 0.5);
+  igual('IES do cadastro: sem aviso de curva aproximada', /APROXIMADA/.test(comIes.avisos.join(' ')), false);
+  // exemplo: todos os ambientes com ponto a ponto
+  igual('exemplo: ponto a ponto em todos os ambientes', r.calc.ambientes.every(x => x.pontoAPonto && x.pontoAPonto.em > 0 && x.pontoAPonto.u0 > 0 && x.pontoAPonto.u0 <= 1), true);
+  igual('exemplo: circulação U0 ≥ 0,4 e o 0,4 marcado [CONFERIR]', [ex('Circulação').pontoAPonto.okU0, ex('Circulação').pontoAPonto.uoConferir], [true, true]);
+  // cenas: grupos pela grade (filas 2-3 = Mesa, demais = Tela) e o comando com as cenas
+  const reu = ex('Sala de reunião');
+  igual('cenas: grupos Mesa (filas 2-3) e Tela (fila 1)', reu.grupos.map(g => [g.nome, g.luminarias.length]), [['Mesa', 8], ['Tela', 4]]);
+  igual('cenas: Apresentação = Mesa 40 %, Tela 0 %', reu.cenas[1].niveis, { Mesa: 0.4, Tela: 0 });
+  const k = r.instalacao.comandos.find(x => x.ambiente === 'Sala de reunião');
+  igual('cenas: no modelo da instalação', [k.tipo, k.cenas.length, k.grupos], ['cena', 4, ['Mesa', 'Tela']]);
+  igual('cenas: cada luminária com o grupo e o código (fotometria do 3D)', r.instalacao.pontos.filter(p => k.pontos.includes(p.id)).every(p => p.grupo && p.luminaria === 'DL1'), true);
+  igual('cenas: luminotécnico na instalação (3D)', [Object.keys(r.instalacao.luminotecnico.fotometrias).length, r.instalacao.luminotecnico.ambientes['Sala de reunião'].em_lumens], [5, Math.round(reu.emObtida)]);
+  igual('cenas em ambiente sem DALI: ignoradas com aviso', /cenas ignoradas/.test(C.calcular({ luminarias: LUM, ambientes: [{ ...escritorio, controle: 'interruptor' }], cenas: [{ ambiente: 'Escritório', nome: 'A', niveis: '50' }] }).avisos.join(' ')), true);
+  igual('resumo: tabelas do ponto a ponto e das cenas', motor.resumir(r).tabelas.map(t => t.titulo).filter(t => /Ponto a ponto|Cenas/.test(t)).length, 2);
+}
+
 (async () => {
   for (const t of motor.tiposDisponiveis(r)) igual(`documento ${t}`, (await motor.gerarDocumento(r, t)).buffer.slice(0, 2).toString(), 'PK');
   const exec = motor.montarOrcamento(r, 'execucao');

@@ -12,7 +12,7 @@ import BuscaCodigo, { formatarCep } from '../components/fiscal/BuscaCodigo';
 import PainelPasta from '../components/PainelPasta';
 import { AvisoNovidades } from '../components/NovidadesPastas';
 import Paginacao from '../components/Paginacao';
-import { formatarTelefone, formatarCpfCnpj, validarCpf, validarCnpj } from '../utils/format';
+import { formatarTelefone, formatarCpfCnpj, validarCpf, validarCnpj, validarCpfCnpj } from '../utils/format';
 import Select from '../components/Select';
 import Modal from '../components/ui/Modal';
 import { invalidarCacheClientes } from '../components/ClienteSelect';
@@ -30,7 +30,7 @@ const VAZIO = { nome: '', documento: '', tipo: 'Empresa', responsavel: '', telef
 function pendenciasNota(c) {
   const p = [];
   const doc = String(c.documento || '').replace(/\D/g, '');
-  if (!(doc.length === 11 ? validarCpf(doc) : doc.length === 14 && validarCnpj(doc))) p.push('CPF/CNPJ válido');
+  if (!validarCpfCnpj(doc)) p.push('CPF/CNPJ válido');
   if (!c.cep) p.push('CEP');
   if (!c.logradouro) p.push('logradouro');
   if (!c.codigo_municipio) p.push('município');

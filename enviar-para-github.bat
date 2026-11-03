@@ -13,6 +13,15 @@ echo Pasta: %CD%
 echo.
 git --version >nul 2>&1 || (echo ERRO: git nao encontrado. & goto :fim)
 
+REM Antes do "git add -A": mostra o que mudou e recusa se houver pasta de build
+REM (frontend\build-2.x.0-anterior, ~40 MB minificados) ou arquivo maior que 20 MB.
+echo Situacao da pasta (git status):
+git -c core.quotepath=off status --short
+echo.
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$ruins = @(); foreach ($f in (git -c core.quotepath=off ls-files -m -o --exclude-standard)) { if ($f -match '(^|/)build-[^/]*/') { $ruins += ('pasta de build: ' + $f) } elseif ((Test-Path -LiteralPath $f -PathType Leaf) -and ((Get-Item -LiteralPath $f).Length -gt 20MB)) { $ruins += ('maior que 20 MB: ' + $f) } }; if ($ruins.Count -gt 0) { Write-Host 'RECUSADO - nao envie estes arquivos para o GitHub:'; $ruins | Select-Object -First 30 | ForEach-Object { Write-Host ('  ' + $_) }; Write-Host 'Tire da pasta (ou ponha no .gitignore) e rode de novo.'; exit 1 }"
+if errorlevel 1 goto :fim
+
 git add -A
 git diff --cached --quiet
 if not errorlevel 1 (

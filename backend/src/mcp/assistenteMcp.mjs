@@ -7,11 +7,16 @@
 //   ASSISTENTE_TOKEN     token curto do usuário logado, escopo 'assistente',
 //                        válido só enquanto a execução está no ar
 //   ASSISTENTE_CONTEXTO  JSON com a tela aberta (obra, proposta, análise, projeto)
+//   ASSISTENTE_PAPEL     papel do usuário: as ferramentas do financeiro só para
+//                        admin/financeiro (a rota confere de novo)
 // Não lê o .env do backend, não abre porta e não acessa banco nem disco: tudo
 // passa pela API, com as regras do servidor (middleware/escopoAssistente.js).
+// A lista de ferramentas é a única do sistema (catalogoFerramentas.mjs, INT-05);
+// o canal Telegram/WhatsApp usa este mesmo servidor.
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { criarApi, definirFerramentas } from './assistenteFerramentas.mjs';
+import { criarApi } from './assistenteFerramentas.mjs';
+import { ferramentasDoServidor, registrarFerramentas } from './catalogoFerramentas.mjs';
 
 const url = process.env.ASSISTENTE_API_URL;
 const token = process.env.ASSISTENTE_TOKEN;
@@ -21,11 +26,10 @@ if (!url || !token) {
 }
 let contexto = {};
 try { contexto = JSON.parse(process.env.ASSISTENTE_CONTEXTO || '{}') || {}; } catch { contexto = {}; }
+const papel = String(process.env.ASSISTENTE_PAPEL || '').trim() || null;
 
 const servidor = new McpServer({ name: 'hm', version: '1.0.0' });
-for (const f of definirFerramentas({ api: criarApi({ url, token }), contexto, token })) {
-  servidor.registerTool(f.nome, { title: f.titulo, description: f.descricao, inputSchema: f.entrada }, f.executar);
-}
+registrarFerramentas(servidor, ferramentasDoServidor('assistente', { api: criarApi({ url, token }), contexto, token, papel }));
 
 await servidor.connect(new StdioServerTransport());
 // o Claude Code fechou (fim da execução, cancelamento): sai junto

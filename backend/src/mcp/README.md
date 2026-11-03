@@ -83,7 +83,7 @@ antes de usar as ferramentas — o servidor MCP só existe pra falar com ele.
 | `pesquisar_preco_mercado` | leitura (cache 48h) | Pesquisa real na web pelo motor da tela: Claude Max (assinatura) → Claude pela API → Gemini |
 | `historico_preco` | leitura | Preço no catálogo + pesquisas de mercado já feitas (o histórico de preços do catálogo por nota fiscal/cotação existe no banco, mas esta ferramenta ainda não o mostra) |
 | `salvar_pesquisa_mercado` | **grava** | Grava a pesquisa que o próprio Claude fez na web. Fica no histórico **marcada "não verificada"** e **fora do cache** de 48h da pesquisa automática |
-| `analisar_projeto` | **cria uma análise salva** | Envia um PDF de uma das pastas permitidas pro mesmo analisador da tela — fica em "Análises salvas". `finalidade` opcional: `orcamento` (padrão) ou `elaboracao` (versão 2.1; a análise nunca gera laudo) |
+| `analisar_projeto` | **cria uma análise salva** | Envia um PDF, DWG ou DXF (até 40 MB) de uma das pastas permitidas (inclui `PASTA_CLIENTES`) pro mesmo analisador da tela — fica em "Análises salvas". `finalidade` opcional: `orcamento` (padrão) ou `elaboracao` (versão 2.1; a análise nunca gera laudo); `obra_id` opcional liga a análise à obra |
 | `enriquecer_analise_projeto` | **grava** | Acrescenta funcionamento e pontos por disciplina a uma análise criada pelo próprio MCP |
 | `listar_propostas` / `buscar_proposta` | leitura | Consulta o histórico de orçamentos |
 | `criar_rascunho_proposta` | **cria uma proposta** | Monta uma proposta rascunho, pelo mesmo caminho da tela de Orçamento |
@@ -91,6 +91,20 @@ antes de usar as ferramentas — o servidor MCP só existe pra falar com ele.
 As marcadas em negrito **gravam algo no sistema** — sempre como
 rascunho/análise/pesquisa pra revisão humana depois, nunca finalizando ou
 enviando nada ao cliente sozinhas.
+
+**Lista única (INT-05, Fase 6).** As ferramentas não são mais escritas no
+`mcpServer.mjs`: os dois servidores tiram a lista de `catalogoFerramentas.mjs`.
+As do sistema ficam em `assistenteFerramentas.mjs` (as mesmas do assistente e
+do canal Telegram/WhatsApp); as que só existem no Desktop (as da tabela acima)
+ficam em `ferramentasDesktop.mjs`, com os mesmos nomes e parâmetros. O Desktop
+ganhou também, só de leitura: `buscar_obras`, `ver_obra`, `buscar_propostas`,
+`ver_proposta`, `buscar_clientes`, `buscar_materiais`, `buscar_servicos`,
+`buscar_kits`, `ver_analise`, `ver_projeto`, `calcular_projeto`,
+`custos_obra`, `margem_obra`, `pix_sem_obra`, `notas_fiscais`,
+`notas_a_receber` (essas cinco só respondem se o usuário dedicado for
+administrador ou financeiro), `vencimentos`, `novidades_pastas`,
+`cotacoes_fornecedores` e `cronograma_obra`. O teste `testes/canal.test.js`
+confere que a interface antiga não mudou.
 
 ## 6. Testando
 

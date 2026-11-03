@@ -19,6 +19,8 @@ const path = require('path');
 
   const guardado = (await pool.query('SELECT chave, valor FROM configuracoes WHERE chave = ANY($1)', [chaves])).rows;
   const auditoriasAntes = (await pool.query("SELECT COUNT(*)::int n FROM auditoria WHERE acao = 'padroes_orcamento'").catch(() => ({ rows: [{ n: null }] }))).rows[0].n;
+  // último id da auditoria antes do teste: no fim saem só as linhas que o teste gravou (usuário nulo)
+  const ultimaAuditoria = (await pool.query('SELECT COALESCE(MAX(id), 0)::int n FROM auditoria').catch(() => ({ rows: [{ n: null }] }))).rows[0].n;
   try {
     await pool.query('DELETE FROM configuracoes WHERE chave = ANY($1)', [chaves]);
 
@@ -73,11 +75,14 @@ const path = require('path');
       assert.ok(src(f).includes('padroesParaPropostaNova(client)'), `${f} usa o padrão`);
       assert.ok(!/\n\s+0, 0, 0, totais\.subtotal_materiais/.test(src(f)), `${f} não grava BDI/impostos 0 fixos`);
     }
-    for (const f of ['mcp/assistenteFerramentas.mjs', 'mcp/mcpServer.mjs']) assert.ok(src(f).includes('/api/configuracoes/padroes-orcamento'), f);
+    for (const f of ['mcp/assistenteFerramentas.mjs', 'mcp/ferramentasDesktop.mjs']) assert.ok(src(f).includes('/api/configuracoes/padroes-orcamento'), f);
     assert.ok(!/bdi:\s*20,|imposto_servico:\s*6,/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'frontend', 'src', 'pages', 'Orcamento.js'), 'utf8')), 'tela sem 20 %/6 % fixos');
   } finally {
     await pool.query('DELETE FROM configuracoes WHERE chave = ANY($1)', [chaves]);
     for (const g of guardado) await pool.query('INSERT INTO configuracoes (chave, valor) VALUES ($1, $2) ON CONFLICT (chave) DO UPDATE SET valor = $2', [g.chave, g.valor]);
+    if (ultimaAuditoria != null) {
+      await pool.query("DELETE FROM auditoria WHERE acao = 'padroes_orcamento' AND usuario_id IS NULL AND id > $1", [ultimaAuditoria]).catch(() => {});
+    }
     await pool.end();
   }
   console.log('padroesOrcamento: ok');

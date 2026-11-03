@@ -24,6 +24,7 @@ const DOCUMENTOS = {
   desenho: 'projeto',    // quadros: desenho de fabricação DXF (vista frontal e layout interno)
   modelo3d: 'projeto',   // quadros: modelo 3D do quadro (HTML autossuficiente)
   ensaios: 'ambos',      // quadros: checklist de fabricação e ensaios de rotina — vai à oficina (projeto) e à inspeção (laudo)
+  pmoc: 'ambos',         // climatização: PMOC — sai com o projeto (plano inicial) e com a vistoria/manutenção
   caderno: 'projeto',    // quadros, racks: caderno de fabricação e montagem (PDF — layout, componentes, materiais, plaquetas)
 };
 
@@ -43,6 +44,7 @@ const MODOS = {
   automacao: 'projeto',  // pressurização: automação / adequação do painel
   fabricacao: 'projeto', // quadros: fabricação do quadro (materiais + montagem qd_*)
   inspecao: 'laudo',
+  pmoc: 'laudo',         // climatização: contrato de PMOC (manutenção de 12 meses) — vai com a vistoria
   vistoria: 'laudo',
   certificacao: 'laudo',
   diagnostico: 'laudo',

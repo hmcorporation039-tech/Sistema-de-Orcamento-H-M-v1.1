@@ -3,16 +3,16 @@
 // abortar o processo em arquivos corrompidos ou de versões mal suportadas —
 // assim o backend não cai junto. Uso interno: node dwg-para-dxf.mjs < a.dwg > a.dxf
 //
-// O DXF é montado aqui a partir do banco lido pelo LibreDWG (convertEx), só com
-// a geometria que a leitura de arquitetura usa (linhas, polilinhas, arcos,
-// círculos, textos, blocos e atributos): a escrita DXF do próprio LibreDWG
-// (dwg_write_dxf) descarta blocos com POLYLINE2D — portas "Door (2D)" e blocos
-// dinâmicos sumiam. Hachuras, cotas, sólidos 3D e imagens ficam de fora.
+// O DXF é montado a partir do banco lido pelo LibreDWG (convertEx) por
+// ./dxfDoDwg.js (o que vai e o que fica de fora está lá): a escrita DXF do
+// próprio LibreDWG (dwg_write_dxf) descarta blocos com POLYLINE2D — portas
+// "Door (2D)" e blocos dinâmicos sumiam.
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { LibreDwg, Dwg_File_Type } from '@mlightcad/libredwg-web';
 
 const require = createRequire(import.meta.url);
+const { montarDxf } = require('./dxfDoDwg.js');
 const wasmDir = path.join(path.dirname(path.dirname(require.resolve('@mlightcad/libredwg-web'))), 'wasm') + path.sep;
 
 const partes = [];
@@ -24,137 +24,55 @@ const lib = await LibreDwg.create(wasmDir);
 const ptr = lib.dwg_read_data(ab, Dwg_File_Type.DWG);
 if (!ptr) { process.stderr.write('DWG não pôde ser lido (arquivo corrompido ou versão não suportada).\n'); process.exit(3); }
 const { database: db } = lib.convertEx(ptr);
-lib.dwg_free(ptr);
 
-const out = [];
-const g = (codigo, valor) => out.push(String(codigo), String(valor));
-const num = (v) => (Number.isFinite(v) ? Number(v.toFixed(6)) : 0);
-const graus = (r) => num((r * 180) / Math.PI);
-// texto numa linha só (o DXF não aceita quebra; o MTEXT usa \P)
-const txt = (s) => String(s ?? '').replace(/\r?\n/g, '\\P').replace(/[\u0000-\u0008\u000B-\u001F]/g, '');
-const extrusao = (e) => { if ((e.extrusionDirection?.z ?? 1) < 0) { g(210, 0); g(220, 0); g(230, -1); } };
-const comum = (tipo, e) => { g(0, tipo); g(8, txt(e.layer || '0')); };
-
-// laço do contorno da hachura → pontos (polilinha, ou arestas reta/arco)
-function contornoHachura(p) {
-  if (p.vertices?.length) return p.vertices.map(v => [v.x, v.y]);
-  const pts = [];
-  for (const a of p.edges || []) {
-    if (a.type === 2 && a.center && a.radius) {
-      let a0 = a.startAngle || 0, a1 = a.endAngle || 0;
-      if (a.isCCW === 0 || a.counterClockWise === false) [a0, a1] = [-a0, -a1];
-      if (a1 <= a0) a1 += 2 * Math.PI;
-      for (let i = 0; i < 8; i++) { const t = a0 + ((a1 - a0) * i) / 8; pts.push([a.center.x + a.radius * Math.cos(t), a.center.y + a.radius * Math.sin(t)]); }
-    } else if (a.start) pts.push([a.start.x, a.start.y]);
-    else if (a.center) pts.push([a.center.x, a.center.y]);
-  }
-  return pts;
-}
-
-function entidade(e) {
-  switch (e.type) {
-    case 'LINE':
-      comum('LINE', e);
-      g(10, num(e.startPoint.x)); g(20, num(e.startPoint.y)); g(11, num(e.endPoint.x)); g(21, num(e.endPoint.y));
-      break;
-    case 'LWPOLYLINE':
-    case 'POLYLINE2D': {
-      const v = e.vertices || [];
-      if (v.length < 2) break;
-      const fechada = e.type === 'LWPOLYLINE' ? (e.flag & 512) : (e.flag & 1);
-      comum('LWPOLYLINE', e);
-      g(90, v.length); g(70, fechada ? 1 : 0);
-      for (const p of v) { g(10, num(p.x)); g(20, num(p.y)); if (p.bulge) g(42, num(p.bulge)); }
-      extrusao(e);
-      break;
+// Bloco dinâmico com parâmetro alterado (tomada com visibilidade "alta", luminária esticada): o
+// AutoCAD grava a inserção como bloco anônimo "*U…". O nome verdadeiro está no objeto
+// BLOCKREPRESENTATION ("AcDbRepData"), no dicionário de extensão da inserção:
+// INSERT → dicionário → "AcDbBlockRepresentation" → "AcDbRepData" → bloco dinâmico.
+// O convertEx não entrega esse objeto: lido direto do LibreDWG, antes de liberar o arquivo.
+// Falhou: segue sem os nomes (o "*U" continua aberto como contêiner, como antes).
+const DWG_TYPE_BLOCKREPRESENTATION = 601;
+function nomesDinamicos() {
+  const nomes = new Map();
+  try {
+    const w = lib.wasmInstance;
+    const registros = db.tables?.BLOCK_RECORD?.entries || [];
+    const blocoPorHandle = new Map(registros.map(b => [b.handle, b.name]));
+    const alvoDaRep = new Map(); // handle do AcDbRepData → handle do bloco dinâmico
+    for (let i = 0, n = w.dwg_get_num_objects(ptr); i < n; i++) {
+      const obj = w.dwg_get_object(ptr, i);
+      if (!obj || w.dwg_object_get_fixedtype(obj) !== DWG_TYPE_BLOCKREPRESENTATION) continue;
+      const ref = lib.dwg_dynapi_entity_data(w.dwg_object_to_object_tio(obj), 'block');
+      const alvo = ref ? lib.dwg_ref_get_id(ref) : null;
+      const h = lib.dwg_obj_get_handle_value(obj);
+      if (alvo && h != null) alvoDaRep.set(h.toString(16).toUpperCase(), alvo);
     }
-    case 'ARC':
-      comum('ARC', e);
-      g(10, num(e.center.x)); g(20, num(e.center.y)); g(40, num(e.radius)); g(50, graus(e.startAngle)); g(51, graus(e.endAngle));
-      extrusao(e);
-      break;
-    case 'CIRCLE':
-      comum('CIRCLE', e);
-      g(10, num(e.center.x)); g(20, num(e.center.y)); g(40, num(e.radius));
-      extrusao(e);
-      break;
-    case 'TEXT': {
-      // alinhado (centro/direita): a posição real é o ponto de alinhamento
-      const p = (e.halign || e.valign) && e.endPoint && (e.endPoint.x || e.endPoint.y) ? e.endPoint : e.startPoint;
-      comum('TEXT', e);
-      g(10, num(p.x)); g(20, num(p.y)); g(40, num(e.textHeight) || 1); g(1, txt(e.text)); if (e.rotation) g(50, graus(e.rotation));
-      break;
-    }
-    case 'MTEXT':
-      comum('MTEXT', e);
-      g(10, num(e.insertionPoint.x)); g(20, num(e.insertionPoint.y)); g(40, num(e.textHeight) || 1); g(1, txt(e.text));
-      break;
-    case 'ATTRIB': {
-      // atributo vira texto na mesma posição (nome do ambiente em etiqueta de bloco)
-      const t = e.text || {};
-      if (!t.startPoint || !String(t.text ?? '').trim()) break;
-      comum('TEXT', e);
-      g(10, num(t.startPoint.x)); g(20, num(t.startPoint.y)); g(40, num(t.textHeight) || 1); g(1, txt(t.text));
-      break;
-    }
-    case 'INSERT':
-      if (!blocosValidos.has(e.name)) break;
-      comum('INSERT', e);
-      g(2, txt(e.name)); g(10, num(e.insertionPoint.x)); g(20, num(e.insertionPoint.y));
-      g(41, num(e.xScale ?? 1) || 1); g(42, num(e.yScale ?? 1) || 1); g(43, num(e.zScale ?? 1) || 1);
-      if (e.rotation) g(50, graus(e.rotation));
-      if (e.columnCount > 1 || e.rowCount > 1) { g(70, e.columnCount || 1); g(71, e.rowCount || 1); g(44, num(e.columnSpacing)); g(45, num(e.rowSpacing)); }
-      extrusao(e);
-      for (const a of e.attribs || []) entidade(a);
-      break;
-    case 'HATCH': {
-      // só o preenchimento sólido, com o contorno como polilinha: é ele que separa
-      // os símbolos iguais no traço (tomada baixa vazia × alta cheia × média meio
-      // cheia, legenda do QiBuilder) — sem ele a tomada do chuveiro saía a 0,30 m
-      if (!e.solidFill && !/^SOLID$/i.test(e.patternName || '')) break;
-      const lacos = (e.boundaryPaths || []).map(contornoHachura).filter(l => l.length >= 3);
-      if (!lacos.length) break;
-      comum('HATCH', e);
-      g(10, 0); g(20, 0); g(30, 0); g(210, 0); g(220, 0); g(230, (e.extrusionDirection?.z ?? 1) < 0 ? -1 : 1);
-      g(2, 'SOLID'); g(70, 1); g(71, 0); g(91, lacos.length);
-      for (const l of lacos) {
-        g(92, 2); g(72, 0); g(73, 1); g(93, l.length);
-        for (const [x, y] of l) { g(10, num(x)); g(20, num(y)); }
-        g(97, 0);
+    if (!alvoDaRep.size) return nomes;
+    const dicionarios = new Map((db.objects?.DICTIONARY || []).map(d => [d.handle, d]));
+    const verdadeiroDe = (dono) => {
+      const rep = dicionarios.get(dicionarios.get(dono)?.entries?.AcDbBlockRepresentation)?.entries?.AcDbRepData;
+      const v = blocoPorHandle.get(alvoDaRep.get(rep));
+      return v && !v.startsWith('*') ? v : null;
+    };
+    const visitar = (ents) => {
+      for (const e of ents || []) {
+        if (e.type !== 'INSERT' || !/^\*U/i.test(e.name || '') || nomes.has(e.name)) continue;
+        const v = verdadeiroDe(e.ownerDictionaryHardId);
+        if (v) nomes.set(e.name, v);
       }
-      g(75, 0); g(76, 1); g(98, 0);
-      break;
-    }
-    default:
-      break; // cota, 3D, imagem, ponto: não usados na leitura
+    };
+    visitar(db.entities);
+    for (const b of registros) visitar(b.entities);
+  } catch (e) {
+    process.stderr.write(`aviso: nomes dos blocos dinâmicos não lidos (${e.message})\n`);
   }
+  return nomes;
 }
+const dinamicos = nomesDinamicos();
+lib.dwg_free(ptr);
 
 if (!db?.entities?.length && !(db?.tables?.BLOCK_RECORD?.entries || []).some(b => b.entities?.length)) {
   process.stderr.write('DWG sem entidades legíveis (arquivo corrompido ou versão não suportada).\n');
   process.exit(4);
 }
-const registros = db.tables?.BLOCK_RECORD?.entries || [];
-const modelo = registros.find(b => /^\*Model_Space$/i.test(b.name));
-// blocos de cota (*D) e espaços de papel ficam de fora; dinâmicos (*U) entram
-const blocos = registros.filter(b => b !== modelo && !/^\*(Paper_Space|D\d)/i.test(b.name));
-const blocosValidos = new Set(blocos.map(b => b.name));
-
-g(0, 'SECTION'); g(2, 'HEADER');
-g(9, '$ACADVER'); g(1, 'AC1015');
-g(9, '$INSUNITS'); g(70, db.header?.INSUNITS ?? 0);
-g(0, 'ENDSEC');
-g(0, 'SECTION'); g(2, 'BLOCKS');
-for (const b of blocos) {
-  g(0, 'BLOCK'); g(8, '0'); g(2, txt(b.name)); g(70, 0); g(10, num(b.basePoint?.x)); g(20, num(b.basePoint?.y)); g(3, txt(b.name));
-  for (const e of b.entities || []) entidade(e);
-  g(0, 'ENDBLK'); g(8, '0');
-}
-g(0, 'ENDSEC');
-g(0, 'SECTION'); g(2, 'ENTITIES');
-// só o espaço do modelo (o espaço de papel tem carimbo e viewports)
-const doModelo = modelo?.entities?.length ? modelo.entities : db.entities.filter(e => !modelo || e.ownerBlockRecordSoftId === modelo.handle);
-for (const e of doModelo) entidade(e);
-g(0, 'ENDSEC');
-g(0, 'EOF');
-process.stdout.write(out.join('\n') + '\n');
+process.stdout.write(montarDxf(db, { nomesDinamicos: dinamicos }));

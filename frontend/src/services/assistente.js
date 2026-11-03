@@ -4,6 +4,7 @@
 // linha JSON por evento). O token vai no cabeçalho Authorization — nunca na URL.
 import api from './api';
 import { aguardarNovoLogin, temOuvinteSessao } from './sessao';
+import { renovarSessao, temRenovacao } from './renovacaoSessao';
 
 export const statusAssistente = () => api.get('/assistente/status', { timeout: 30000 });
 export const contextoAssistente = (ctx) => api.get('/assistente/contexto', { params: ctx });
@@ -51,10 +52,15 @@ async function pedirStream(metodo, caminho, corpo, aoEvento, signal, repetida = 
     body: corpo ? JSON.stringify(corpo) : undefined,
     signal,
   });
-  // sessão vencida: espera o "Entre de novo" e repete (o 401 sai antes de gravar qualquer coisa)
-  if (resposta.status === 401 && !repetida && temOuvinteSessao()) {
-    await aguardarNovoLogin();
-    return pedirStream(metodo, caminho, corpo, aoEvento, signal, true);
+  // sessão vencida: renova o token curto (Fase 6) ou, se recusada, espera o "Entre de novo"
+  // e repete (o 401 sai antes de gravar qualquer coisa)
+  if (resposta.status === 401 && !repetida) {
+    let renovou = false;
+    if (temRenovacao()) { try { await renovarSessao(); renovou = true; } catch { /* segue */ } }
+    if (renovou || temOuvinteSessao()) {
+      if (!renovou) await aguardarNovoLogin();
+      return pedirStream(metodo, caminho, corpo, aoEvento, signal, true);
+    }
   }
   if (resposta.status === 204) return { status: 204 };
   const tipo = resposta.headers.get('content-type') || '';

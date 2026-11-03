@@ -227,4 +227,217 @@ caso('metragem pela curva: arco de polilinha (bulge), spline e elipse', () => {
   assert.ok(Math.abs(m('INC-ELETRODUTO') - 9.69) < 0.1, `elipse: ${m('INC-ELETRODUTO')}`);
 });
 
+// ── Revisão de 02/11/2026 (leitura de DWG/DXF: CAD-01 a CAD-07, CAD-11, CAD-13) ──
+const BS = '\\';
+const { limparMtext, lerAltura, alturaEscrita } = require('./textoCad');
+const { alturaDoTexto } = require('./disciplinasCad');
+const { montarDxf } = require('./dxfDoDwg');
+const { propostaDeMapa, aplicarMapa, aplicarConfirmacoes } = require('./pontosDoDesenho');
+
+caso('CAD-01: limpador único de MTEXT — sublinhado/sobrelinha/riscado sem ";", \\U+, \\S, escapes', () => {
+  assert.strictEqual(limparMtext(`${BS}LLEGENDA${BS}l`), 'LEGENDA');
+  assert.strictEqual(limparMtext(`${BS}L${BS}OMAPA CHAVE}`), 'MAPA CHAVE');
+  // o texto entre "\l" e o próximo ";" não some mais
+  assert.strictEqual(limparMtext(`${BS}LNOTAS:${BS}l tomadas baixas a 0,30 m do piso; interruptores a 1,10 m`), 'NOTAS: tomadas baixas a 0,30 m do piso; interruptores a 1,10 m');
+  assert.strictEqual(limparMtext(`ELETRODUTO ${BS}U+2205 25mm`), 'ELETRODUTO ∅ 25mm');
+  assert.strictEqual(limparMtext(`{${BS}fArial|b1|i0|c0|p34;${BS}H0.5x;${BS}C1;QUADRO}${BS}PQD-1`), 'QUADRO\nQD-1');
+  assert.strictEqual(limparMtext(`${BS}PQD-1`, { quebra: ' ' }), ' QD-1');
+  assert.strictEqual(limparMtext(`A=12m${BS}S2^; ${BS}S1/2;"`), 'A=12m2 1/2"');
+  assert.strictEqual(limparMtext(`C:${BS}${BS}pasta ${BS}{x${BS}} %%c25`), 'C:\\pasta {x} Ø25');
+  // a arquitetura usa o mesmo limpador (o nome da sala numa linha só)
+  const g = new DesenhoDxf({ layers: [{ nome: 'A-PAREDE', cor: 8 }, { nome: 'A-TEXTO', cor: 7 }] });
+  g.polilinha([[0, 0], [6, 0], [6, 4], [0, 4]], { layer: 'A-PAREDE', fechada: true });
+  g.dxf.addMText({ x: 2, y: 2, z: 0 }, 0.2, `${BS}L${BS}OSALA${BS}PDE ESTAR${BS}o${BS}l`, { layerName: 'A-TEXTO' });
+  assert.deepStrictEqual(lerArquitetura(g.toString()).ambientes.map(a => a.nome), ['SALA DE ESTAR']);
+});
+
+// legenda com título em MTEXT sublinhado (como o AutoCAD grava) e descrição "a 2,20m do piso"
+function desenhoLegendaSublinhada() {
+  const g = new DesenhoDxf({ layers: [{ nome: 'ELE-TOMADA', cor: 1 }, { nome: 'TEXTO', cor: 7 }] });
+  g.bloco('TA', (b) => { b.addCircle({ x: 0, y: 0, z: 0 }, 0.1, { layerName: '0' }); });
+  for (const x of [1, 2, 3, 4]) g.inserir('TA', x, 1, { layer: 'ELE-TOMADA' });
+  g.dxf.addMText({ x: 20, y: 10, z: 0 }, 0.25, `${BS}LLEGENDA${BS}l`, { layerName: 'TEXTO' });
+  g.inserir('TA', 20.2, 9.4, { layer: 'ELE-TOMADA' });
+  g.texto(20.8, 9.35, 0.2, 'Tomada alta a 2,20m do piso', { layer: 'TEXTO' });
+  g.dxf.addMText({ x: 20, y: 5, z: 0 }, 0.2, `${BS}LNOTAS:${BS}l tomadas baixas a 0,30 m do piso; interruptores a 1,10 m`, { layerName: 'TEXTO' });
+  return g.toString();
+}
+
+caso('CAD-01: título "\\LLEGENDA\\l" reconhecido — a amostra da legenda não conta e a descrição chega ao bloco', () => {
+  const p2 = lerProjetoDxf(desenhoLegendaSublinhada(), { fator: 1 });
+  const t = p2.simbolos.find(s => s.nomeLimpo === 'TA');
+  assert.strictEqual(p2.legenda, 'LEGENDA');
+  assert.strictEqual(t.quantidade, 4, 'antes: 5 (a amostra da legenda contava)');
+  assert.strictEqual(t.descricaoLegenda, 'Tomada alta a 2,20m do piso');
+  assert.match(p2.texto, /tomadas baixas a 0,30 m do piso; interruptores a 1,10 m/);
+});
+
+caso('CAD-02/CAD-11: um leitor de altura só — "a 2,20m do piso" é 2,20 m (não piso), "h:" vale', () => {
+  assert.deepStrictEqual(alturaDoTexto('Tomada alta a 2,20m do piso'), { altura_m: 2.2, montagem: 'parede' });
+  assert.deepStrictEqual(alturaDoTexto('Tomada baixa a 0,30m do piso'), { altura_m: 0.3, montagem: 'parede' });
+  assert.deepStrictEqual(alturaDoTexto('Interruptor simples 1 tecla - 1,20m do piso'), { altura_m: 1.2, montagem: 'parede' });
+  assert.deepStrictEqual(alturaDoTexto('Interruptor h: 1,10 m'), { altura_m: 1.1, montagem: 'parede' });
+  assert.deepStrictEqual(alturaDoTexto('Tomada de piso'), { altura_m: 0, montagem: 'piso' });
+  assert.deepStrictEqual(alturaDoTexto('Detector (teto)'), { altura_m: null, montagem: 'teto' });
+  assert.deepStrictEqual(alturaDoTexto('Tomada h= 20 cm abaixo do forro'), { altura_m: null, montagem: 'parede' });
+  assert.deepStrictEqual(alturaDoTexto('Tomada baixa 2P+T (h = 0,30 m)'), { altura_m: 0.3, montagem: 'parede' });
+  // o leitor do mapa/3D dá o mesmo valor
+  for (const [s, h] of [['Tomada alta a 2,20m do piso', 2.2], ['Interruptor h: 1,10 m', 1.1], ['altura: 97,5 cm', 0.98], ['h=30', 0.3], ['h=300mm', 0.3], ['poste h=8', 8], ['Tomada de piso', null]]) {
+    assert.strictEqual(alturaEscrita(s), h, s);
+  }
+  assert.deepStrictEqual(lerAltura('h= 20 cm abaixo do forro'), { altura_m: 0.2, abaixoDoForro: true });
+  // o bloco da legenda "a 2,20m do piso" (DXF com blocos): altura na descrição, não no piso
+  const t = lerProjetoDxf(desenhoLegendaSublinhada(), { fator: 1 }).simbolos.find(s => s.nomeLimpo === 'TA');
+  assert.deepStrictEqual(alturaDoTexto(t.descricaoLegenda), { altura_m: 2.2, montagem: 'parede' });
+});
+
+// DXF cru (tuplas) para o que o DesenhoDxf não escreve: tabela BLOCK_RECORD com xdata e MINSERT
+function dxfCru(montar) {
+  const o = [];
+  const g = (c, v) => o.push(String(c), String(v));
+  montar(g);
+  return o.join('\n') + '\n';
+}
+const blocoCirculo = (g, nome) => { g(0, 'BLOCK'); g(8, '0'); g(2, nome); g(70, 0); g(10, 0); g(20, 0); g(3, nome); g(0, 'CIRCLE'); g(8, '0'); g(10, 0); g(20, 0); g(40, 0.15); g(0, 'ENDBLK'); g(8, '0'); };
+const inserirCru = (g, nome, x, y, extra = []) => { g(0, 'INSERT'); g(8, 'ILU-LUMINARIA'); g(2, nome); g(10, x); g(20, y); for (const [c, v] of extra) g(c, v); };
+
+caso('CAD-07: bloco dinâmico (*U) contado pelo nome verdadeiro e MINSERT de símbolo conta linhas × colunas', () => {
+  // como o AutoCAD grava: xdata AcDbBlockRepBTag no registro do *U aponta (1005) para o bloco dinâmico
+  const autocad = dxfCru((g) => {
+    g(0, 'SECTION'); g(2, 'HEADER'); g(9, '$INSUNITS'); g(70, 6); g(0, 'ENDSEC');
+    g(0, 'SECTION'); g(2, 'TABLES'); g(0, 'TABLE'); g(2, 'BLOCK_RECORD'); g(5, '9'); g(70, 2);
+    g(0, 'BLOCK_RECORD'); g(5, '1F3'); g(100, 'AcDbSymbolTableRecord'); g(100, 'AcDbBlockTableRecord'); g(2, 'LUMINARIA');
+    g(0, 'BLOCK_RECORD'); g(5, '2A1'); g(100, 'AcDbSymbolTableRecord'); g(100, 'AcDbBlockTableRecord'); g(2, '*U12'); g(1001, 'AcDbBlockRepBTag'); g(1070, 1); g(1005, '1F3');
+    g(0, 'ENDTAB'); g(0, 'ENDSEC');
+    g(0, 'SECTION'); g(2, 'BLOCKS'); blocoCirculo(g, 'LUMINARIA'); blocoCirculo(g, '*U12'); blocoCirculo(g, '*U99'); g(0, 'ENDSEC');
+    g(0, 'SECTION'); g(2, 'ENTITIES');
+    inserirCru(g, 'LUMINARIA', 0, 0);
+    for (const x of [5, 7, 9]) inserirCru(g, '*U12', x, 0);
+    inserirCru(g, '*U99', 30, 0); // anônimo sem nome conhecido: continua contêiner (não conta)
+    inserirCru(g, 'LUMINARIA', 20, 0, [[70, 3], [71, 2], [44, 2], [45, 2]]); // MINSERT 3 colunas × 2 linhas
+    g(0, 'ENDSEC'); g(0, 'EOF');
+  });
+  const s = lerProjetoDxf(autocad, { fator: 1 }).simbolos;
+  assert.deepStrictEqual(s.map(x => [x.bloco, x.quantidade]), [['LUMINARIA', 10]], 'antes: LUMINARIA 2');
+  const pos = s[0].posicoes.map(p => p.join(',')).sort();
+  assert.ok(['20,0', '22,0', '24,0', '20,2', '22,2', '24,2'].every(p => pos.includes(p)), pos.join(' '));
+  // como o conversor de DWG grava: xdata AcDbDynamicBlockTrueName com o nome
+  const conversor = autocad.replace('1001\nAcDbBlockRepBTag\n1070\n1\n1005\n1F3', '1001\nAcDbDynamicBlockTrueName\n1000\nLUMINARIA');
+  assert.ok(conversor !== autocad);
+  assert.strictEqual(lerProjetoDxf(conversor, { fator: 1 }).simbolos[0].quantidade, 10);
+});
+
+// Banco no formato do LibreDWG (convertEx), como ./dwg-para-dxf.mjs entrega a ./dxfDoDwg.js
+function bancoDwg() {
+  const att = (tag, valor, x, y) => ({ type: 'ATTRIB', layer: 'ELE-TOMADA', tag, flags: 0, text: { text: valor, startPoint: { x, y }, endPoint: { x: 0, y: 0 }, textHeight: 0.1, rotation: 0 } });
+  const circulo = { type: 'CIRCLE', layer: '0', center: { x: 0, y: 0 }, radius: 0.1 };
+  const modelo = [
+    { type: 'LWPOLYLINE', layer: 'A-PAREDE', flag: 512, vertices: [{ x: 0, y: 0 }, { x: 6, y: 0 }, { x: 6, y: 4 }, { x: 0, y: 4 }] },
+    // etiqueta de sala em bloco: o nome é atributo
+    { type: 'INSERT', layer: 'A-TEXTO', name: 'ETIQUETA', insertionPoint: { x: 3, y: 2 }, xScale: 1, yScale: 1, zScale: 1, rotation: 0, attribs: [{ ...att('AMBIENTE', 'SALA DE REUNIAO', 2.2, 2), layer: 'A-TEXTO', text: { text: 'SALA DE REUNIAO', startPoint: { x: 2.2, y: 2 }, textHeight: 0.2 } }] },
+    { type: 'INSERT', layer: 'ELE-TOMADA', name: 'TOMADA', insertionPoint: { x: 1, y: 1 }, xScale: 1, yScale: 1, zScale: 1, rotation: 0,
+      attribs: [att('ALTURA', '2,20', 1.2, 0.9), att('DESCR', 'Tomada alta 2P+T 20A', 1.2, 0.75)] },
+    // bloco dinâmico com a visibilidade alterada: anônimo *U5
+    { type: 'INSERT', layer: 'ELE-TOMADA', name: '*U5', insertionPoint: { x: 3, y: 1 }, xScale: 1, yScale: 1, zScale: 1, rotation: 0, attribs: [] },
+    // rota em spline (por pontos de controle e só por pontos de ajuste) e em elipse
+    { type: 'SPLINE', layer: 'CAB-ELETROCALHA', flag: 8, degree: 3, knots: [0, 0, 0, 0, 1, 1, 1, 1], controlPoints: [{ x: 0, y: 5, z: 0 }, { x: 3, y: 5, z: 0 }, { x: 7, y: 5, z: 0 }, { x: 10, y: 5, z: 0 }], fitPoints: [] },
+    { type: 'SPLINE', layer: 'ELE-ELETRODUTO', flag: 8, degree: 3, knots: [], controlPoints: [], fitPoints: [{ x: 0, y: 8, z: 0 }, { x: 4, y: 8, z: 0 }, { x: 10, y: 8, z: 0 }] },
+    { type: 'ELLIPSE', layer: 'INC-ELETRODUTO', center: { x: 20, y: 0, z: 0 }, majorAxisEndPoint: { x: 2, y: 0, z: 0 }, axisRatio: 0.5, startAngle: 0, endAngle: 2 * Math.PI },
+    { type: 'SOLID', layer: 'ELE-TOMADA', corner1: { x: 0, y: 0 }, corner2: { x: 0.1, y: 0 }, corner3: { x: 0, y: 0.1 }, corner4: { x: 0.1, y: 0.1 } },
+    { type: 'POINT', layer: 'ELE-TOMADA', position: { x: 5, y: 5, z: 0 } },
+    { type: 'DIMENSION', layer: 'COTAS', styleName: 'H&M', definitionPoint: { x: 0, y: -1, z: 0 }, textPoint: { x: 3, y: -1.2 }, measurement: 6, text: '', dimensionType: 32, subDefinitionPoint1: { x: 0, y: 0, z: 0 }, subDefinitionPoint2: { x: 6, y: 0, z: 0 } },
+    { type: 'DIMENSION', layer: 'COTAS', styleName: 'H&M', definitionPoint: { x: 0, y: -2, z: 0 }, textPoint: { x: 3, y: -2.2 }, measurement: 6, text: 'ELETROCALHA 300x100 <>', dimensionType: 0 },
+    { type: 'MULTILEADER', layer: 'ANOTACAO', textContent: 'Eletrocalha 300x100 perfurada', textAnchor: { x: 5, y: 6, z: 0 }, textHeight: 0.15 },
+  ];
+  return {
+    header: { INSUNITS: 6 },
+    entities: modelo,
+    tables: {
+      BLOCK_RECORD: { entries: [
+        { name: '*Model_Space', handle: '1F', entities: modelo },
+        { name: 'TOMADA', basePoint: { x: 0, y: 0 }, entities: [circulo] },
+        { name: '*U5', basePoint: { x: 0, y: 0 }, entities: [circulo] },
+        { name: 'ETIQUETA', basePoint: { x: 0, y: 0 }, entities: [] },
+      ] },
+      DIMSTYLE: { entries: [{ name: 'H&M', DIMTXT: 0.25, DIMSCALE: 1 }] },
+    },
+  };
+}
+
+caso('CAD-04/05: DWG convertido — atributo é ATTRIB de verdade (tag e altura chegam ao bloco), curvas e chamadas entram', () => {
+  const dxf = montarDxf(bancoDwg(), { nomesDinamicos: new Map([['*U5', 'TOMADA']]) });
+  const tipos = new Set(dxf.split('\n').filter((l, i, v) => v[i - 1] === '0').map(l => l.trim()));
+  for (const t of ['ATTRIB', 'SEQEND', 'SPLINE', 'ELLIPSE', 'SOLID', 'POINT', 'DIMENSION', 'MTEXT']) assert.ok(tipos.has(t), `sem ${t}`);
+  const p2 = lerProjetoDxf(dxf, { fator: 1, reLayerLinha: /ELETRODUT|ELETROCALHA/i });
+  const t = p2.simbolos.find(s => s.nomeLimpo === 'TOMADA');
+  assert.strictEqual(t.quantidade, 2, 'a tomada dinâmica (*U5) conta como TOMADA');
+  assert.strictEqual(t.atributos.ALTURA, '2,20');
+  assert.strictEqual(t.atributos.DESCR, 'Tomada alta 2P+T 20A');
+  assert.deepStrictEqual(t.alturas, [2.2, null]);
+  // a arquitetura acha o nome da sala no atributo (não precisa do TEXT solto de antes)
+  assert.deepStrictEqual(lerArquitetura(dxf).ambientes.map(a => a.nome), ['SALA DE REUNIAO']);
+  // texto da chamada e da cota escrita à mão; a cota só com a medida não vira texto
+  assert.match(p2.texto, /Eletrocalha 300x100 perfurada/);
+  assert.match(p2.texto, /ELETROCALHA 300x100 6/);
+  assert.ok(!p2.textos.some(x => x.s === '6'), 'a medida da cota não entra como texto');
+  // metragem pela curva igual à do DXF (teste "metragem pela curva" acima): spline 10 m, elipse 9,69 m;
+  // a spline só com pontos de ajuste é medida pelas cordas entre eles
+  const m = (l) => p2.linhas.find(x => x.layer === l)?.metros;
+  assert.ok(Math.abs(m('CAB-ELETROCALHA') - 10) < 0.1, `spline: ${m('CAB-ELETROCALHA')}`);
+  assert.ok(Math.abs(m('ELE-ELETRODUTO') - 10) < 0.1, `spline por pontos de ajuste: ${m('ELE-ELETRODUTO')}`);
+  assert.ok(Math.abs(m('INC-ELETRODUTO') - 9.69) < 0.1, `elipse: ${m('INC-ELETRODUTO')}`);
+});
+
+caso('CAD-05: mesma rota em DWG e em DXF dá a mesma metragem', () => {
+  const g = new DesenhoDxf({ layers: [{ nome: 'CAB-ELETROCALHA', cor: 5 }, { nome: 'INC-ELETRODUTO', cor: 1 }] });
+  g.dxf.addSpline({ controlPoints: [{ x: 0, y: 5, z: 0 }, { x: 3, y: 5, z: 0 }, { x: 7, y: 5, z: 0 }, { x: 10, y: 5, z: 0 }], degreeCurve: 3 }, { layerName: 'CAB-ELETROCALHA' });
+  g.dxf.addEllipse({ x: 20, y: 0, z: 0 }, { x: 2, y: 0, z: 0 }, 0.5, 0, 2 * Math.PI, { layerName: 'INC-ELETRODUTO' });
+  const re = /ELETRODUT|ELETROCALHA/i;
+  const doDxf = lerProjetoDxf(g.toString(), { fator: 1, reLayerLinha: re }).linhas;
+  const doDwg = lerProjetoDxf(montarDxf(bancoDwg()), { fator: 1, reLayerLinha: re }).linhas;
+  for (const l of ['CAB-ELETROCALHA', 'INC-ELETRODUTO']) {
+    assert.strictEqual(doDwg.find(x => x.layer === l)?.metros, doDxf.find(x => x.layer === l)?.metros, l);
+  }
+});
+
+// arquitetura mínima para o mapa de símbolos explodidos (pontosDoDesenho)
+const quadrado = (x, y, l, layer) => ({ layer, tipo: 'poli', fechada: true, pts: [[x, y], [x + l, y], [x + l, y + l], [x, y + l], [x, y]] });
+const arqDe = (refs) => ({ ambientes: [], referencia: refs, notas: [], preenchimentos: [], simbolosDaLegenda: [] });
+
+caso('CAD-03: cada símbolo desenhado vai para UMA linha do mapa (linhas vizinhas com tipos diferentes)', () => {
+  const refs = [];
+  [0.20, 0.22, 0.24].forEach((l, k) => { for (let i = 0; i < 3; i++) refs.push(quadrado(i * 2, k * 2, l, 'EL-SIMBOLOS')); });
+  const arq = arqDe(refs);
+  const mapa = propostaDeMapa(arq);
+  const conf = mapa.simbolos.map((s, i) => ({ layer: s.layer, medida: s.medida, simbolo: i === 0 ? 'HM-ELE-TOMADA-BAIXA' : 'HM-ELE-INTERRUPTOR', disciplina: 'eletrica' }));
+  const { pontos } = aplicarMapa(arq, aplicarConfirmacoes(mapa, conf));
+  assert.strictEqual(pontos.length, 9, `9 símbolos desenhados viraram ${pontos.length} pontos (antes: 12)`);
+  assert.strictEqual(new Set(pontos.map(p => `${p.x},${p.y}`)).size, 9, 'dois pontos no mesmo lugar');
+  // a contagem de cada linha bate com os pontos que ela gera
+  mapa.simbolos.forEach((s, i) => assert.strictEqual(pontos.filter(p => p.linha === i).length, s.quantidade, `linha ${i}`));
+  // linhas vizinhas (20 e 22 cm) confirmadas com tipos diferentes: cada uma fica com a confirmação dela
+  const m2 = { simbolos: [{ layer: 'EL-SIMBOLOS', medida: [0.2, 0.2], quantidade: 3, simbolo: '?' }, { layer: 'EL-SIMBOLOS', medida: [0.22, 0.22], quantidade: 3, simbolo: '?' }], trechos: [] };
+  const c2 = aplicarConfirmacoes(m2, [{ layer: 'EL-SIMBOLOS', medida: [0.2, 0.2], simbolo: 'HM-ELE-TOMADA-BAIXA' }, { layer: 'EL-SIMBOLOS', medida: [0.22, 0.22], simbolo: 'HM-ELE-INTERRUPTOR' }]);
+  assert.deepStrictEqual(c2.simbolos.map(s => s.simbolo), ['HM-ELE-TOMADA-BAIXA', 'HM-ELE-INTERRUPTOR']);
+});
+
+caso('CAD-06: todas as formas de símbolo da layer viram linha do mapa (antes só as 8 mais frequentes)', () => {
+  const refs = [];
+  for (let k = 0; k < 10; k++) for (let i = 0; i < 2; i++) refs.push(quadrado(i * 3, k * 3, 0.1 + 0.06 * k, 'EL-SIMBOLOS'));
+  const mapa = propostaDeMapa(arqDe(refs));
+  assert.strictEqual(mapa.simbolos.length, 10);
+  assert.strictEqual(mapa.simbolos.reduce((t, s) => t + s.quantidade, 0), 20);
+  assert.ok(!mapa.aviso);
+});
+
+caso('CAD-13: simbologia de arquitetura e mobiliário não vira linha do mapa nem poste sugerido', () => {
+  const refs = [];
+  for (const layer of ['#ARQUITETURA SIMBOLOGIA', 'ARQ-SIMBOLOS', 'MOBILIARIO', 'XREF$0$ARQ-SIMB']) {
+    for (let i = 0; i < 3; i++) refs.push({ layer, tipo: 'linha', pts: [[i * 5, 0], [i * 5 + 1.36, 0.2]] }, quadrado(i * 5, 3, 0.2, layer));
+  }
+  refs.push(quadrado(0, 10, 0.2, 'EL-SIMBOLOS'), quadrado(2, 10, 0.2, 'EL-SIMBOLOS'));
+  const mapa = propostaDeMapa(arqDe(refs));
+  assert.deepStrictEqual([...new Set(mapa.simbolos.map(s => s.layer))], ['EL-SIMBOLOS']);
+});
+
 console.log(`projetoDxf: ${ok} casos ok`);

@@ -6,6 +6,7 @@
 const { nomeDaDisciplina } = require('./disciplinasProjeto');
 const { semMarcador, metrosBR, temDisciplina } = require('./analiseProjetoItens');
 const { achadosNBR5410 } = require('./conferenciaNBR5410');
+const { descreverEscala, DEDUZIDA } = require('./escalaDaPlanta');
 
 // Monta o detalhe por arquivo de um tipo de ponto codificado (câmera, rede ou
 // antena) — mesma tabela que já existia só para câmeras, agora reutilizada
@@ -194,6 +195,20 @@ function achadosDoDesenho(analises, vetoriais, opcoes = {}) {
       achados.push({
         tema: 'Escala das vistas da folha',
         observacao: `"${a.arquivo}": ${escalas.map(p => `${p.pagina ? `pág. ${p.pagina}: ` : ''}${p.avisoEscala}`).join('; ')}. Metragens de trecho em vista sem escala definida não foram calculadas — confira na planta.`,
+      });
+    }
+    // escala da planta deduzida (fase 3, CAD-09): pelo nome do arquivo, pelas portas ou pelas cotas — vale, mas confere;
+    // folha com trecho medido e sem escala nenhuma: dá para informar a escala no envio do arquivo
+    const deduzidas = (vetoriais[i] || []).filter(p => p.origem !== 'cad' && p.pagina && p.escala && DEDUZIDA.has(p.origemEscala));
+    const semEscala = (vetoriais[i] || []).filter(p => p.origem !== 'cad' && p.pagina && !p.escala && !p.avisoEscala && !p.ignorada
+      && (p.itens || []).some(it => it.tipo === 'linha' && it.metros == null));
+    if (deduzidas.length || semEscala.length) {
+      achados.push({
+        tema: 'Escala da planta',
+        observacao: `"${a.arquivo}": ${[
+          ...deduzidas.map(p => `pág. ${p.pagina}: ${descreverEscala(p.escala, p.origemEscala)}`),
+          ...semEscala.map(p => `pág. ${p.pagina}: sem escala (nem no carimbo, no nome do arquivo, nas portas ou nas cotas) — metragem não calculada`),
+        ].join('; ')}. ${deduzidas.length ? 'A metragem usa a escala deduzida: confira uma medida conhecida na planta. ' : ''}Se souber a escala, informe-a no envio do arquivo.`,
       });
     }
     // itens da legenda com QTDE prevista que o desenho não achou nesta folha

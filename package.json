@@ -1,0 +1,9 @@
+{
+  "name": "hm-engenharia-sistema",
+  "private": true,
+  "description": "Raiz do Sistema de Orçamentos H&M: só o npm test único. Sem dependências e sem workspaces — backend, frontend e skills continuam instalados cada um na sua pasta (instalar.bat / atualizar-sistema.bat).",
+  "scripts": {
+    "test": "cd backend && npm test",
+    "test:rapido": "cd backend && npm run test:rapido"
+  }
+}

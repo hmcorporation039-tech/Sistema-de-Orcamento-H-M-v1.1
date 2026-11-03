@@ -162,10 +162,96 @@ function montar({ notas, livres, primeiroPix }, hoje) {
 
 async function listar(hoje = hojeBrasilia()) {
   const itens = montar(await carregar(), hoje);
-  return { prazo_dias: PRAZO_DIAS, resumo: resumir(itens), itens };
+  // obra_pela_nota: Pix já ligados a nota de obra, mas ainda sem obra (botão "Levar a obra das notas")
+  return { prazo_dias: PRAZO_DIAS, resumo: resumir(itens), itens, obra_pela_nota: await contarObraPelaNota() };
 }
 
 function erro(status, mensagem) { const e = new Error(mensagem); e.status = status; return e; }
+
+// ── Obra do Pix pela nota ───────────────────────────────────────────────────
+// A nota já sabe a obra (nota → proposta → obra). Ligado o Pix à nota, ele passa a contar no "recebido" e na margem
+// da obra (utils/obras.js, resumoFinanceiro), mas SÓ se ainda não tinha obra: obra posta à mão, por regra
+// ("lembrar") ou pela Atribuição nunca é trocada. Se a do Pix for outra, nada muda e volta um aviso para o
+// administrador decidir em Financeiro › Movimentos.
+// Desligar o Pix da nota NÃO tira a obra dele: financeiro_movimentos não guarda de onde a obra veio (mão, regra ou
+// nota), então apagar poderia desfazer uma escolha do administrador. A auditoria do "ligar" grava obra_preenchida
+// (true quando foi este vínculo que pôs a obra), para quem precisar conferir depois.
+function decidirObraDoPix(obraDoPix, obraDaNota) {
+  if (!obraDaNota) return 'sem_obra_na_nota';
+  if (obraDoPix == null) return 'preencher';
+  return Number(obraDoPix) === Number(obraDaNota) ? 'ja_na_obra' : 'divergente';
+}
+
+// Aplica a decisão acima a um Pix que acabou de ser ligado à nota. `c` = pool ou client da transação.
+// Devolve { obra_id, obra_preenchida, aviso }.
+async function levarObraDaNota(c, notaId, movimentoId) {
+  const { rows: [r] } = await c.query(
+    `SELECT fm.obra_id AS do_pix, op.codigo AS codigo_pix, pr.obra_id AS da_nota, onota.codigo AS codigo_nota
+       FROM financeiro_movimentos fm
+       LEFT JOIN obras op ON op.id = fm.obra_id
+       LEFT JOIN notas_fiscais n ON n.id = $1
+       LEFT JOIN propostas pr ON pr.id = n.proposta_id
+       LEFT JOIN obras onota ON onota.id = pr.obra_id
+      WHERE fm.id = $2`, [notaId, movimentoId]);
+  const sem = { obra_id: r?.do_pix ?? null, obra_preenchida: false, aviso: null };
+  if (!r) return sem;
+  const decisao = decidirObraDoPix(r.do_pix, r.da_nota);
+  if (decisao === 'divergente') {
+    return { ...sem, aviso: `O Pix já está na obra ${r.codigo_pix} e a proposta da nota é da obra ${r.codigo_nota}. A obra do Pix não mudou; troque em Financeiro › Movimentos se for o caso.` };
+  }
+  if (decisao !== 'preencher') return sem;
+  // `obra_id IS NULL` de novo no UPDATE: se alguém pôs a obra no meio do caminho, a dele fica
+  const { rowCount } = await c.query('UPDATE financeiro_movimentos SET obra_id = $1 WHERE id = $2 AND obra_id IS NULL', [r.da_nota, movimentoId]);
+  if (!rowCount) return sem;
+  await c.query('UPDATE obras SET atualizado_em = NOW() WHERE id = $1', [r.da_nota]);
+  return { obra_id: r.da_nota, obra_preenchida: true, aviso: null };
+}
+
+// A nota ganhou (ou trocou de) proposta depois que os Pix já estavam ligados a ela: cada um passa pela mesma regra
+// do "ligar" (levarObraDaNota), então só o Pix sem obra leva a obra da proposta; o que já está em outra obra fica
+// e vira aviso. `c` = pool ou client da transação. Devolve { preenchidos: [ids dos Pix], avisos } (sem repetir).
+async function levarObraAosPixDaNota(c, notaId) {
+  const { rows } = await c.query("SELECT id FROM financeiro_movimentos WHERE nota_id = $1 AND tipo = 'recebido' ORDER BY data_hora, id", [notaId]);
+  const preenchidos = [];
+  const avisos = new Set();
+  for (const m of rows) {
+    const r = await levarObraDaNota(c, notaId, m.id);
+    if (r.obra_preenchida) preenchidos.push(m.id);
+    if (r.aviso) avisos.add(r.aviso);
+  }
+  return { preenchidos, avisos: [...avisos] };
+}
+
+// Pix recebidos ligados a nota emitida cuja proposta tem obra, mas que ainda estão sem obra (ligados antes da
+// versão que leva a obra junto, ou a nota ganhou proposta/obra depois). O botão do administrador aplica a todos.
+const SQL_PIX_SEM_OBRA_PELA_NOTA = `
+  FROM financeiro_movimentos fm
+  JOIN notas_fiscais n ON n.id = fm.nota_id AND n.situacao = 'emitida'
+  JOIN propostas pr ON pr.id = n.proposta_id AND pr.obra_id IS NOT NULL
+ WHERE fm.tipo = 'recebido' AND fm.obra_id IS NULL`;
+
+async function contarObraPelaNota(c = pool) {
+  const { rows: [r] } = await c.query(`SELECT count(*)::int AS n, COALESCE(sum(fm.valor), 0) AS valor ${SQL_PIX_SEM_OBRA_PELA_NOTA}`);
+  return { n: r.n, valor: arred(r.valor) };
+}
+
+// Mesma regra do "ligar": só preenche obra vazia. Uma auditoria só, com os ids, para a ação em lote.
+// `somenteMovimentos` (lista de ids) restringe a esses Pix — o teste usa para não mexer nos Pix reais do banco v2.
+async function aplicarObraDasNotas(usuarioId, c = pool, somenteMovimentos = null) {
+  const params = [];
+  let filtro = '';
+  if (somenteMovimentos) { params.push(somenteMovimentos); filtro = ` AND fm.id = ANY($${params.length}::int[])`; }
+  const { rows } = await c.query(
+    `UPDATE financeiro_movimentos f SET obra_id = x.obra_id
+       FROM (SELECT fm.id, pr.obra_id ${SQL_PIX_SEM_OBRA_PELA_NOTA}${filtro}) x
+      WHERE f.id = x.id AND f.obra_id IS NULL
+      RETURNING f.id, f.obra_id`, params);
+  if (!rows.length) return { preenchidos: 0, obras: 0 };
+  const obras = [...new Set(rows.map(r => r.obra_id))];
+  await c.query('UPDATE obras SET atualizado_em = NOW() WHERE id = ANY($1::int[])', [obras]);
+  await registrarAuditoria(c, { entidade: 'financeiro_movimento', acao: 'obra_pela_nota', usuarioId, detalhes: { movimentos: rows.map(r => r.id), obras } });
+  return { preenchidos: rows.length, obras: obras.length };
+}
 
 async function ligarNoBanco(c, notaId, movimentoId, usuarioId) {
   const { rows: [n] } = await c.query('SELECT id, situacao FROM notas_fiscais WHERE id = $1', [notaId]);
@@ -173,25 +259,36 @@ async function ligarNoBanco(c, notaId, movimentoId, usuarioId) {
   if (n.situacao !== 'emitida') throw erro(409, 'Só nota emitida recebe pagamento.');
   const { rows } = await c.query("UPDATE financeiro_movimentos SET nota_id = $1 WHERE id = $2 AND tipo = 'recebido' AND nota_id IS NULL RETURNING id", [notaId, movimentoId]);
   if (!rows.length) throw erro(409, 'Esse movimento não é um recebimento livre (já está ligado a outra nota?).');
-  await registrarAuditoria(c, { entidade: 'notas_fiscais', entidadeId: notaId, acao: 'ligar_recebimento', usuarioId, detalhes: { movimento_id: movimentoId, origem: 'notas_a_receber' } });
+  const obra = await levarObraDaNota(c, notaId, movimentoId);
+  await registrarAuditoria(c, { entidade: 'notas_fiscais', entidadeId: notaId, acao: 'ligar_recebimento', usuarioId,
+    detalhes: { movimento_id: movimentoId, origem: 'notas_a_receber', obra_id: obra.obra_id, obra_preenchida: obra.obra_preenchida } });
+  return obra;
 }
 
+// Devolve { obra_id, obra_preenchida, aviso } do Pix (ver levarObraDaNota).
 async function ligar(notaId, movimentoId, usuarioId) {
   if (!Number.isInteger(movimentoId) || movimentoId <= 0) throw erro(400, 'Movimento inválido.');
-  await ligarNoBanco(pool, notaId, movimentoId, usuarioId);
+  return ligarNoBanco(pool, notaId, movimentoId, usuarioId);
 }
 
 // Liga de uma vez só as sugestões de confiança alta. Tudo ou nada: se uma falhar (alguém ligou o Pix em outra tela
 // no meio do caminho), nenhuma fica pela metade.
 // `somenteNotas` (lista de ids) restringe a ligação a essas notas; sem ele vale para todas.
+// Devolve { ligadas, obras_preenchidas, avisos } (avisos = Pix que já estavam em outra obra).
 async function ligarSugeridas(usuarioId, hoje = hojeBrasilia(), somenteNotas = null) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const itens = montar(await carregar(client), hoje).filter(i => i.sugestao?.confianca === 'alta' && (!somenteNotas || somenteNotas.includes(i.id)));
-    for (const i of itens) await ligarNoBanco(client, i.id, i.sugestao.movimento.id, usuarioId);
+    let obrasPreenchidas = 0;
+    const avisos = [];
+    for (const i of itens) {
+      const r = await ligarNoBanco(client, i.id, i.sugestao.movimento.id, usuarioId);
+      if (r.obra_preenchida) obrasPreenchidas++;
+      if (r.aviso) avisos.push(`Nota ${i.numero}: ${r.aviso}`);
+    }
     await client.query('COMMIT');
-    return itens.length;
+    return { ligadas: itens.length, obras_preenchidas: obrasPreenchidas, avisos };
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     throw e;
@@ -216,4 +313,7 @@ async function desfazerBaixa(notaId, usuarioId) {
   await registrarAuditoria(pool, { entidade: 'notas_fiscais', entidadeId: notaId, acao: 'desfazer_baixa', usuarioId, detalhes: {} });
 }
 
-module.exports = { PRAZO_DIAS, nomesParecidos, estadoDaNota, faixaDe, sugerirLigacoes, resumir, montar, listar, ligar, ligarSugeridas, darBaixa, desfazerBaixa };
+module.exports = {
+  PRAZO_DIAS, nomesParecidos, estadoDaNota, faixaDe, sugerirLigacoes, resumir, montar, listar, ligar, ligarSugeridas, darBaixa, desfazerBaixa,
+  decidirObraDoPix, levarObraDaNota, levarObraAosPixDaNota, contarObraPelaNota, aplicarObraDasNotas,
+};

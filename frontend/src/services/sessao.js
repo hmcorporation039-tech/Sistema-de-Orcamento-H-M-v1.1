@@ -63,3 +63,10 @@ export function desistirDoNovoLogin() {
 export function avisarSenhaProvisoria() {
   avisar({ tipo: 'senha-provisoria' });
 }
+
+// 403 TOTP_OBRIGATORIO (Fase 6): o servidor exige a verificação em duas etapas
+// do administrador (TOTP_OBRIGATORIO_ADMIN=true no .env) e ela ainda não foi
+// ativada — useAuth leva para a tela de ativar.
+export function avisarTotpObrigatorio() {
+  avisar({ tipo: 'totp-obrigatorio' });
+}

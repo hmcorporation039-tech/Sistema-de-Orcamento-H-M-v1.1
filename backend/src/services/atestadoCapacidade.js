@@ -1,6 +1,7 @@
 const JSZip = require('jszip');
 const { EMPRESA } = require('../utils/pdfTemplate');
 const T = require('../utils/textoAtestado');
+const { esc } = require('../utils/xml');
 
 // Atestado de capacidade técnica (item 9 do plano), no modelo formal do Márcio
 // ("Modelo_Atestado_Capacidade_Tecnica_HM_formal"): 5 partes (responsável técnico, dados do
@@ -27,7 +28,7 @@ const HM = Object.freeze({
 
 const limpar = (v, max = LIMITE_LINHA) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 const digitos = (v) => String(v ?? '').replace(/\D/g, '');
-const dinheiro = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const { formatarMoeda: dinheiro } = require('../utils/htmlPdf'); // pacote comum (skills/_comum/base)
 
 function dataBR(v) {
   if (!v) return null;
@@ -291,7 +292,6 @@ function blocosParaTexto(blocos) {
 }
 
 // ── .docx no padrão do modelo: Arial 10, A4, tabelas com borda cinza ───────────
-const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const FONTE = '<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial" w:eastAsia="Arial"/>';
 const run = (texto, { b = false, u = false } = {}) =>
   `<w:r><w:rPr>${FONTE}${b ? '<w:b/><w:bCs/>' : ''}<w:sz w:val="20"/><w:szCs w:val="20"/>${u ? '<w:u w:val="single"/>' : ''}</w:rPr><w:t xml:space="preserve">${esc(texto)}</w:t></w:r>`;

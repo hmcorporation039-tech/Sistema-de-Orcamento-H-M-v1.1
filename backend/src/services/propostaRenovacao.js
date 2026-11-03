@@ -12,18 +12,42 @@ const { validarProposta } = require('../utils/validacaoProposta');
 const { padroesParaPropostaNova } = require('./padroesOrcamento');
 const { faixasPorDescricao, chaveDescricao } = require('./precosVendidos');
 const { inserirSecoesEItens, proximoNumero, registrarEvento } = require('../controllers/propostasController');
+const { registroDisciplinas } = require('../config/caminhos');
 
 const SECAO = 'Mão de obra';
 const UNIDADE = 'vb';
-const ROTULOS = { spda: 'SPDA', incendio: 'incêndio', eletrica: 'instalações elétricas', cftv: 'CFTV', cabeamento: 'cabeamento', outro: 'serviço' };
+// Texto que a 2.26.0 gravou nos itens (tabela própria de 6 disciplinas): só para o histórico de preços achar a
+// renovação já vendida com o texto antigo. O texto novo sai do registro único (skills/_comum/disciplinas.js).
+const TEXTO_ANTIGO = { spda: 'SPDA', incendio: 'incêndio', eletrica: 'instalações elétricas', cftv: 'CFTV', cabeamento: 'cabeamento', outros: 'serviço' };
 
 const erro = (status, mensagem) => Object.assign(new Error(mensagem), { status });
 const dataBr = (iso) => String(iso).split('-').reverse().join('/');
 
+// Chave do registro; 'outro' é a chave antiga do formulário de vencimentos (hoje 'outros', como no registro).
+const chaveDa = (disciplina) => { const c = String(disciplina || '').trim().toLowerCase(); return c === 'outro' ? 'outros' : c; };
+
+// Nome da disciplina no texto do item: o nome do laudo no registro, sem a norma entre parênteses (a edição da
+// norma muda e o texto tem de ficar o mesmo) e com minúscula no começo, salvo sigla (SPDA, CFTV).
+function nomeNoItem(chave) {
+  const d = registroDisciplinas().porChave(chave);
+  const nome = String(d?.nomes?.laudo || '').replace(/\s*\(.*\)$/, '').trim();
+  if (!nome) return null;
+  return /^\p{Lu}{2}/u.test(nome) ? nome : nome.charAt(0).toLowerCase() + nome.slice(1);
+}
+
 // Texto do item: sempre o mesmo para a mesma disciplina, para o histórico de preços vendidos encontrar a
 // renovação anterior (a descrição do laudo, com o nome do cliente, entra só no escopo).
 function descricaoDoItem(disciplina) {
-  return `Renovação do laudo de ${ROTULOS[String(disciplina).toLowerCase()] || String(disciplina).toUpperCase()}`;
+  const chave = chaveDa(disciplina);
+  if (chave === 'outros') return 'Renovação do laudo técnico';
+  return `Renovação do laudo de ${nomeNoItem(chave) || String(disciplina).toUpperCase()}`;
+}
+
+// O texto da 2.26.0 para a mesma disciplina, quando era outro (null se não havia)
+function descricaoAntiga(disciplina) {
+  const antigo = TEXTO_ANTIGO[chaveDa(disciplina)];
+  const texto = antigo && `Renovação do laudo de ${antigo}`;
+  return texto && texto !== descricaoDoItem(disciplina) ? texto : null;
 }
 
 function escopoDaRenovacao(v) {
@@ -65,7 +89,10 @@ async function criarPropostaRenovacao(vencimentoId, usuario) {
     }
 
     const descricao = descricaoDoItem(v.disciplina);
-    const faixa = (await faixasPorDescricao([{ descricao, unidade: UNIDADE }], {}, client))[chaveDescricao(descricao, UNIDADE)];
+    const antiga = descricaoAntiga(v.disciplina);
+    const faixas = await faixasPorDescricao([descricao, antiga].filter(Boolean).map(d => ({ descricao: d, unidade: UNIDADE })), {}, client);
+    // o texto de hoje vale mais; o antigo só serve enquanto não há renovação vendida com o novo
+    const faixa = faixas[chaveDescricao(descricao, UNIDADE)] || (antiga ? faixas[chaveDescricao(antiga, UNIDADE)] : undefined);
     const item = { secao_nome: SECAO, descricao, quantidade: 1, unidade: UNIDADE, valor_unitario: faixa ? faixa.ultimo : 0, status: 'a_cotar' };
     const secoes = [{ id: 1, nome: SECAO }];
     const itens = [item];
@@ -97,4 +124,4 @@ async function criarPropostaRenovacao(vencimentoId, usuario) {
   });
 }
 
-module.exports = { criarPropostaRenovacao, descricaoDoItem, escopoDaRenovacao, SECAO, UNIDADE };
+module.exports = { criarPropostaRenovacao, descricaoDoItem, descricaoAntiga, escopoDaRenovacao, SECAO, UNIDADE };

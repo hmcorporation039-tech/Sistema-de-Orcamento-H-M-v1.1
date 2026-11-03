@@ -122,6 +122,29 @@ caso('resumo: realizado = despesas (realizado), recebido = entradas, margem sobr
   assert.strictEqual(vazio.orcado_base, 'nenhuma');
 });
 
+caso('resumo: faturado = notas emitidas; a receber do faturado = líquido − recebido − baixa manual, nunca negativo', () => {
+  const r = O.resumoFinanceiro({
+    propostas: [{ id: 1, status: 'Aprovada', total: 10000 }],
+    movimentos: [{ tipo: 'recebido', valor: 3000 }],
+    notas: [
+      { valor_servicos: '4000', valor_liquido: '3800', recebido: 3000 },             // parcial: faltam 800
+      { valor_servicos: 2000, valor_liquido: 1900, recebido: 0, baixa_manual_em: '2026-10-10' },   // paga por TED
+      { valor_servicos: 1000, valor_liquido: 1000, recebido: 0 },                     // em aberto
+    ],
+  });
+  assert.strictEqual(r.faturado, 7000);
+  assert.strictEqual(r.faturado_liquido, 6700);
+  assert.strictEqual(r.baixado_manual, 1900);
+  assert.strictEqual(r.qtd_notas, 3);
+  assert.strictEqual(r.a_receber_faturado, 1800);   // 6700 − 3000 − 1900
+  assert.strictEqual(r.a_receber, 7000, 'o a receber do orçado não muda');
+  // recebido maior que o faturado (adiantamento): a receber do faturado fica em zero
+  assert.strictEqual(O.resumoFinanceiro({ movimentos: [{ tipo: 'recebido', valor: 5000 }], notas: [{ valor_servicos: 1000, valor_liquido: 1000 }] }).a_receber_faturado, 0);
+  const vazio = O.resumoFinanceiro({});
+  assert.strictEqual(vazio.faturado, 0);
+  assert.strictEqual(vazio.a_receber_faturado, 0);
+});
+
 caso('obra_id no pedido: ausente mantém, null desliga, inteiro liga, lixo é erro', () => {
   assert.deepStrictEqual(O.lerObraId({}), { presente: false, valor: null });
   assert.deepStrictEqual(O.lerObraId({ obra_id: null }), { presente: true, valor: null });

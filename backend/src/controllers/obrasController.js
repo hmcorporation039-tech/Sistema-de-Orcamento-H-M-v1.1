@@ -116,8 +116,15 @@ async function gerarCodigo(client) {
 }
 
 // ── totais (regra única de utils/obras.js) ─────────────────────────────
+// Notas fiscais emitidas das propostas da obra (o "faturado"). Notas são do financeiro: só para administrador.
+// recebido = Pix ligados à nota (financeiro_movimentos.nota_id), para a baixa manual e a coluna da tabela.
+const SQL_NOTA_FATURADA = `n.id, n.numero, n.data_emissao, n.tomador->>'nome' AS tomador_nome, n.valor_servicos, n.valor_liquido,
+       n.baixa_manual_em, n.proposta_id, pr.numero AS proposta_numero,
+       (SELECT COALESCE(sum(f.valor), 0) FROM financeiro_movimentos f WHERE f.nota_id = n.id) AS recebido
+  FROM notas_fiscais n JOIN propostas pr ON pr.id = n.proposta_id`;
+
 async function resumosDasObras(ids, admin) {
-  const mapa = new Map(ids.map(id => [id, { propostas: [], movimentos: [], contratos: [] }]));
+  const mapa = new Map(ids.map(id => [id, { propostas: [], movimentos: [], contratos: [], notas: [] }]));
   if (!ids.length) return mapa;
   const props = await pool.query('SELECT id, obra_id, status, total, data FROM propostas WHERE obra_id = ANY($1::int[])', [ids]);
   for (const p of props.rows) mapa.get(p.obra_id).propostas.push(p);
@@ -126,6 +133,8 @@ async function resumosDasObras(ids, admin) {
     for (const m of movs.rows) mapa.get(m.obra_id).movimentos.push(m);
     const ctrs = await pool.query('SELECT obra_id, SUM(valor) AS valor FROM contratos WHERE obra_id = ANY($1::int[]) GROUP BY obra_id', [ids]);
     for (const c of ctrs.rows) mapa.get(c.obra_id).contratos.push(c);
+    const notas = await pool.query(`SELECT pr.obra_id, ${SQL_NOTA_FATURADA} WHERE pr.obra_id = ANY($1::int[]) AND n.situacao = 'emitida'`, [ids]);
+    for (const n of notas.rows) mapa.get(n.obra_id).notas.push(n);
   }
   const resumos = new Map();
   for (const [id, dados] of mapa) resumos.set(id, esconderFinanceiro(O.resumoFinanceiro(dados), admin));
@@ -134,7 +143,8 @@ async function resumosDasObras(ids, admin) {
 
 function esconderFinanceiro(resumo, admin) {
   if (admin) return resumo;
-  return { ...resumo, realizado: null, recebido: null, contratado: null, margem: null, margem_pct: null, a_receber: null };
+  return { ...resumo, realizado: null, recebido: null, contratado: null, margem: null, margem_pct: null, a_receber: null,
+    faturado: null, faturado_liquido: null, baixado_manual: null, qtd_notas: null, a_receber_faturado: null };
 }
 
 const SQL_CONTAGENS = `
@@ -240,23 +250,25 @@ async function buscarUma(req, res, next) {
   ]);
   let contratos = { rows: [] };
   let movimentos = { rows: [] };
+  let notas = { rows: [] };
   if (admin) {
-    [contratos, movimentos] = await Promise.all([
+    [contratos, movimentos, notas] = await Promise.all([
       pool.query(`SELECT c.id, c.codigo_registro, c.objeto, c.local_obra, c.periodo_inicio, c.periodo_fim, c.valor, pr.nome AS prestador_nome
                     FROM contratos c JOIN prestadores pr ON pr.id = c.prestador_id
                    WHERE c.obra_id = $1 ORDER BY c.periodo_inicio DESC, c.id DESC`, [id]),
       pool.query(`SELECT fm.id, fm.tipo, fm.nome, fm.valor, fm.data_hora, fm.categoria, fm.origem, pr.nome AS prestador_nome
                     FROM financeiro_movimentos fm LEFT JOIN prestadores pr ON pr.id = fm.prestador_id
                    WHERE fm.obra_id = $1 ORDER BY fm.data_hora DESC`, [id]),
+      pool.query(`SELECT ${SQL_NOTA_FATURADA} WHERE pr.obra_id = $1 AND n.situacao = 'emitida' ORDER BY n.data_emissao DESC NULLS LAST, n.id DESC`, [id]),
     ]);
   }
   const resumo = esconderFinanceiro(O.resumoFinanceiro({
-    propostas: propostas.rows, movimentos: movimentos.rows, contratos: contratos.rows,
+    propostas: propostas.rows, movimentos: movimentos.rows, contratos: contratos.rows, notas: notas.rows,
   }), admin);
   res.json({
     ...obra,
     analises: analises.rows, laudos: laudos.rows, propostas: propostas.rows,
-    contratos: contratos.rows, movimentos: movimentos.rows,
+    contratos: contratos.rows, movimentos: movimentos.rows, notas: notas.rows,
     resumo, restrito_financeiro: !admin, pode_editar: podeEditar(req, obra), pode_excluir: admin,
   });
 }

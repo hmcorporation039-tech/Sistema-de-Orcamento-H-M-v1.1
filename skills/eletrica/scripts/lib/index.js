@@ -8,6 +8,9 @@ const B = require('../../../_comum/docx-base');
 const T = require('./tabelas');
 const { calcular } = require('./calculo');
 const { gerarPlanilhaQuadro } = require('./planilhaQuadro');
+const { prepararLuminotecnico } = require('./luminotecnico');
+const { instalacaoDaEletrica } = require('./instalacao');
+const { validarInstalacao } = require('../../../_comum/instalacao');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
 const MODELO = require('../../exemplos/modelo-vazio.json');
@@ -49,14 +52,25 @@ function medicoes(insp) {
   return { isolamento, continuidade, dr, aterramento: insp.aterramento || [] };
 }
 
+// o que a planta e o 3D usam do luminotécnico: o cálculo e a grade de cada ambiente coberto
+const resumoLuminotecnico = (lum) => ({
+  calc: lum.calc,
+  ambientes: Object.fromEntries([...lum.cobertos].map(([nome, a]) => [nome, { n: a.n, nx: a.nx, ny: a.ny, sensores: { n: a.sensores.n, nx: a.sensores.nx, ny: a.sensores.ny } }])),
+});
+
 function processar(dados) {
-  const calc = calcular(dados);
+  // projeto luminotécnico junto (dados.luminotecnico): circuitos IL* no quadro de cargas e a grade na planta (SK-06)
+  const lum = prepararLuminotecnico(dados);
+  const calc = lum ? calcular(dados, lum.opcoes) : calcular(dados);
+  if (lum) calc.avisos.push(...lum.avisos);
   const insp = dados.inspecao || {};
   const checklist = I.mesclarChecklist(CHECKLIST, insp.checklist, {});
   const ncs = I.consolidarNcs(checklist, insp.ncs);
   const med = medicoes(insp);
   const parecer = I.parecer(checklist, ncs, [...med.isolamento, ...med.continuidade, ...med.dr]);
-  return { dados, calc, insp, checklist, ncs, med, parecer };
+  // modelo único da instalação: quadro → disjuntor → circuito → comando → ponto (planta, 3D, quadros)
+  const instalacao = instalacaoDaEletrica(calc, { quadro: dados.instalacao?.quadro_tag || undefined, lum });
+  return { dados, calc, insp, checklist, ncs, med, parecer, instalacao, validacaoInstalacao: validarInstalacao(instalacao), ...(lum ? { luminotecnico: resumoLuminotecnico(lum) } : {}) };
 }
 
 // ── Resumo para a tela ──────────────────────────────────────────────────────
@@ -77,7 +91,8 @@ function resumir(res) {
       { rotulo: 'Balanceamento', valor: `${num(calc.fases.desequilibrio * 100, 0)} %`, ok: calc.fases.desequilibrio <= 0.2, detalhe: Object.entries(calc.fases.carga).map(([f, v]) => `${f} ${num(v / 1000)} kVA`).join(' · ') },
       ...(temInspecao ? [{ rotulo: 'Parecer da inspeção', valor: res.parecer.situacao.replace(/_/g, ' '), ok: res.parecer.situacao === 'CONFORME' ? true : res.parecer.situacao === 'INCONCLUSIVO' ? undefined : false, detalhe: `NC ${res.parecer.cont.NC} · NV ${res.parecer.cont.NV}` }] : []),
     ],
-    textos: calc.avisos,
+    // incoerência do modelo único (ponto sem circuito, soma que não bate…): só aparece quando existe
+    textos: [...calc.avisos, ...(res.validacaoInstalacao?.erros || []).slice(0, 10).map(e => `Modelo da instalação (planta × quadro de cargas × 3D): ${e}`)],
     // valores que a tela copia para o formulário ("Trazer os circuitos calculados" / "Trazer os fatores padrão")
     preencher: {
       circuitos: calc.circuitos.map(c => ({
@@ -141,6 +156,8 @@ function secoesMemorial(res) {
     ] },
     { titulo: '2. Previsão de cargas (NBR 5410, 9.5.2)', paragrafos: [
       'Iluminação: 100 VA para os primeiros 6 m² e mais 60 VA a cada 4 m² inteiros (9.5.2.1.2). Tomadas: banheiro ≥ 1; cozinha e área de serviço 1 a cada 3,5 m de perímetro; salas e dormitórios 1 a cada 5 m; demais cômodos conforme a área (9.5.2.2.1). Potência: 600 VA nas três primeiras tomadas (duas, se o conjunto passar de seis) de banheiros, cozinhas e áreas de serviço e 100 VA nas demais (9.5.2.2.2).',
+      // com o projeto luminotécnico: a carga e os circuitos IL* dele (SK-06)
+      ...(calc.luminotecnico ? [`Iluminação de ${calc.previsao.filter(p => p.iluminacaoDe === 'luminotecnico').map(p => p.nome).join(', ')} conforme o projeto luminotécnico (ABNT NBR ISO/CIE 8995-1, método dos lúmens): a carga é a potência das luminárias calculadas (com o mínimo de 9.5.2.1.2 nos locais de habitação) e os circuitos ${calc.circuitos.filter(x => x.origem === 'luminotecnico').map(x => x.id).join(', ') || 'IL*'} vêm do luminotécnico.`] : []),
     ],
     tabela: { colunas: ['Ambiente', 'Área (m²)', 'Perímetro (m)', 'Iluminação (VA)', 'Tomadas', 'TUG (VA)', 'TUE'],
       linhas: calc.previsao.map(p => [p.nome, num(p.area_m2), num(p.perimetro_m), num(p.iluminacao, 0), p.nTug, num(p.tugVa, 0), p.tues.map(t => `${t.descricao} (${num(t.potencia_w, 0)} W)`).join('; ') || '—']),
@@ -252,6 +269,8 @@ function montarOrcamento(res, modo) {
   if (modo === 'execucao') {
     const nTug = calc.previsao.reduce((s, a) => s + a.nTug, 0);
     const nAmb = calc.previsao.length;
+    // pontos de luz: 1 por ambiente ou a grade do luminotécnico (calc.previsao[].pontosLuz)
+    const nLuz = calc.previsao.reduce((s, a) => s + (a.pontosLuz ?? 1), 0);
     const nTue = calc.circuitos.filter(x => x.tipo === 'tue').length;
     const nDisp = calc.circuitos.length + calc.circuitos.filter(x => x.dr).length + 1;
     return {
@@ -265,7 +284,7 @@ function montarOrcamento(res, modo) {
         srv('ele_eletrodutos', 'Passagem de eletrodutos e fiação dos circuitos', 1, 'vb'),
         srv('ele_tomada_baixa', 'Instalação de pontos de tomada', nTug, 'un'),
         srv('ele_interruptor', 'Instalação de interruptores', nAmb, 'un'),
-        srv('ele_ponto_energia', 'Instalação de pontos de luz e de força (TUE)', nAmb + nTue, 'un'),
+        srv('ele_ponto_energia', 'Instalação de pontos de luz e de força (TUE)', nLuz + nTue, 'un'),
         srv('ele_projeto', 'Projeto elétrico executivo com memorial e ART', 1, 'vb'),
       ],
     };

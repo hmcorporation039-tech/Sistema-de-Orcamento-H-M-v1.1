@@ -410,7 +410,8 @@ function compatibilizar(arquivos, { temPdf = false } = {}) {
       espacialReferencia = {
         referencia: g.ref.arquivo,
         // a altura de instalação vai junto quando se sabe (o 3D pode pôr o ponto na cota certa)
-        pontos: pontos.slice(0, 20000).map(({ x, y, descricao, disciplina, classe, altura_m, montagem }) => ({ x, y, descricao, disciplina, classe, ...(montagem ? { altura_m: altura_m ?? null, montagem } : {}) })),
+        // e o circuito/comando conferido no Mapa do CAD (fase 1 do roteiro: o 3D deixa de perder o circuito — 3D-06)
+        pontos: pontos.slice(0, 20000).map(({ x, y, descricao, disciplina, classe, altura_m, montagem, circuito, comando }) => ({ x, y, descricao, disciplina, classe, ...(montagem ? { altura_m: altura_m ?? null, montagem } : {}), ...(circuito ? { circuito, comando: comando || '' } : {}) })),
         // tipo, material e medida de cada trecho (services/analiseCad/medidasInfra.js) vão junto: o 3D desenha a seção real
         trechos: trechos.map(t => ({
           disciplina: t.disciplina, layer: t.layer,

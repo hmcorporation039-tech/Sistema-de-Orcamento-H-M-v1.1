@@ -7,6 +7,8 @@ const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
 const { fmtNum } = require('../../../_comum/docx-base');
 const C = require('./calculo');
+const { instalacaoDaIluminacao } = require('./instalacao');
+const { validarInstalacao } = require('../../../_comum/instalacao');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
 const MODELO = require('../../exemplos/modelo-vazio.json');
@@ -72,13 +74,32 @@ function processar(dados) {
   });
   const ncs = I.consolidarNcs(checklist, insp.ncs);
   const medicoes = (insp.medicoes_iluminancia || []).filter(m => m && m.ambiente).map(m => avaliarMedicao(m, calc));
-  return { dados, calc, insp, checklist, ncs, medicoes, parecer: I.parecer(checklist, ncs, medicoes) };
+  // modelo único da instalação (luminária → circuito IL* → disjuntor → quadro; comandos)
+  const instalacao = instalacaoDaIluminacao(calc, { quadro: dados.instalacao?.quadro_tag || undefined });
+  return { dados, calc, insp, checklist, ncs, medicoes, parecer: I.parecer(checklist, ncs, medicoes), instalacao, validacaoInstalacao: validarInstalacao(instalacao) };
 }
 
 // ── Resumo para a tela e a CLI ─────────────────────────────────────────────
 
 function linhasAmbientes(calc) {
   return calc.ambientes.map(a => [a.nome, a.atividadeRotulo, num(a.area, 1), num(a.hm), num(a.k), num(a.fu), num(a.fm), a.emExigida, num(a.nCalc, 1), `${a.nx} × ${a.ny}`, a.n, Math.round(a.emObtida), num(a.dpi, 1), C.CONTROLES[a.controle].split(' (')[0], a.circuitos.join(', ')]);
+}
+
+// ── Ponto a ponto e cenas (fase 5) ─────────────────────────────────────────
+const FONTE_FOTO = { ies: 'IES', ldt: 'LDT', aproximada: 'aproximada' };
+const abaixoU0 = (calc) => calc.ambientes.filter(a => a.pontoAPonto?.okU0 === false);
+const PP_COLUNAS = ['Ambiente', 'Fotometria', 'Malha', 'Em lúmens (lx)', 'Em ponto a ponto (lx)', 'Emín (lx)', 'Emáx (lx)', 'U0 calc.', 'U0 mín.', 'Situação'];
+function linhasPontoAPonto(calc) {
+  return calc.ambientes.map(a => {
+    const p = a.pontoAPonto;
+    const f = a.luminaria.fotometria;
+    return [a.nome, `${a.luminaria.codigo} — ${FONTE_FOTO[f.fonte]}${f.fonte === 'aproximada' ? ` ${f.angulo_graus}°` : ''}`, `${p.nx} × ${p.ny} (${num(p.p)} m)`, Math.round(a.emObtida), Math.round(p.em), Math.round(p.emin), Math.round(p.emax),
+      num(p.u0), a.uoMin == null ? '—' : `${num(a.uoMin)}${p.uoConferir ? ' [CONFERIR]' : ''}`, p.okU0 == null ? '—' : p.okU0 ? 'atende' : 'abaixo [CONFERIR]'];
+  });
+}
+function linhasCenas(calc) {
+  const { textoCena } = require('./cenas');
+  return calc.ambientes.flatMap(a => (a.cenas || []).map(c => [a.nome, c.nome, textoCena(c, a.grupos.map(g => g.nome))]));
 }
 
 function resumir(res) {
@@ -93,16 +114,23 @@ function resumir(res) {
       { rotulo: 'Ambientes', valor: String(t.ambientes), detalhe: `${num(t.area, 1)} m²` },
       { rotulo: 'Luminárias', valor: String(t.luminarias), detalhe: tipos + (t.metrosPerfil ? ` (${num(t.metrosPerfil, 1)} m de perfil)` : '') },
       { rotulo: 'Requisitos da NBR ISO/CIE 8995-1', valor: `${t.ambientes - naoAtende.length - naoVerificados.length} de ${t.ambientes}`, detalhe: [naoAtende.length ? `revisar: ${naoAtende.map(a => a.nome).join(', ')}` : '', naoVerificados.length ? `Ra/UGR não verificados (dado da luminária ausente): ${naoVerificados.map(a => a.nome).join(', ')}` : ''].filter(Boolean).join(' · ') || 'Em, Ra e UGR atendidos', ok: naoAtende.length ? false : naoVerificados.length ? undefined : true },
+      // fase 5: uniformidade calculada (ponto a ponto, só luz direta — conservadora)
+      { rotulo: 'Uniformidade calculada (ponto a ponto)', valor: `${calc.ambientes.length - abaixoU0(calc).length} de ${calc.ambientes.length}`,
+        detalhe: abaixoU0(calc).length ? `U0 abaixo do mínimo (só luz direta, ambiente inteiro): ${abaixoU0(calc).map(a => `${a.nome} ${num(a.pontoAPonto.u0)} < ${num(a.uoMin)}`).join(' · ')}` : 'U0 = Emín/Em ≥ mínimo da atividade (só luz direta)',
+        ok: abaixoU0(calc).length ? undefined : true },
       { rotulo: 'Potência instalada', valor: `${num(t.potencia / 1000, 2)} kW`, detalhe: `densidade média ${num(t.dpi, 1)} W/m²`, ok: calc.ambientes.some(a => a.okDpi === false) ? false : undefined },
       { rotulo: 'Circuitos de iluminação', valor: String(t.circuitos), detalhe: calc.circuitos.map(x => `${x.id}: ${sec(x.secao)} / ${x.disjuntor} A`).join(' · ') },
       { rotulo: 'Automação', valor: `${t.sensores} sensor(es)`, detalhe: `${t.comandos} comando(s) · ${t.enderecosDali} endereço(s) DALI em ${t.barramentos} linha(s)` },
       ...(res.medicoes.length ? [{ rotulo: 'Medições de iluminância', valor: `${medidos.filter(m => m.resultado === 'C').length} de ${medidos.length}`, detalhe: 'ambientes dentro do critério', ok: medidos.length ? medidos.every(m => m.resultado === 'C') : undefined }] : []),
     ],
-    textos: calc.avisos,
+    // incoerência do modelo único (ponto sem circuito, soma que não bate…): só aparece quando existe
+    textos: [...calc.avisos, ...(res.validacaoInstalacao?.erros || []).slice(0, 10).map(e => `Modelo da instalação (planta × quadro de cargas × 3D): ${e}`)],
     tabelas: [
       { titulo: 'Cálculo por ambiente (método dos lúmens)', colunas: ['Ambiente', 'Atividade', 'Área (m²)', 'hm (m)', 'k', 'FU', 'FM', 'Em exig. (lx)', 'N calc.', 'Grade', 'N', 'Em obtida (lx)', 'W/m²', 'Controle', 'Circuito'], linhas: linhasAmbientes(calc) },
       { titulo: 'Circuitos de iluminação (NBR 5410)', colunas: ['Circuito', 'Ambientes', 'VA', 'Ib (A)', 'L eq. (m)', 'Seção', 'Disjuntor', 'DR', 'ΔV %'],
         linhas: calc.circuitos.map(x => [x.id, x.ambientes.join(', '), x.potencia_va, num(x.ib, 2), num(x.comprimento, 1), sec(x.secao), `${x.polos}P ${x.disjuntor} A`, x.dr ? 'sim' : '—', num(x.queda)]) },
+      { titulo: 'Ponto a ponto (só luz direta, sem interreflexão)', colunas: PP_COLUNAS, linhas: linhasPontoAPonto(calc) },
+      ...(calc.ambientes.some(a => a.cenas?.length) ? [{ titulo: 'Cenas de iluminação', colunas: ['Ambiente', 'Cena', 'Níveis por grupo'], linhas: linhasCenas(calc) }] : []),
     ],
   };
 }
@@ -148,6 +176,12 @@ function secoesMemorial(res) {
       linhas: amb.map(a => [a.nome, `${num(a.comprimento)} × ${num(a.largura)}`, num(a.area, 1), num(a.hm), num(a.k), num(a.fu), num(a.fm), num(a.nCalc, 2), `${a.nx} × ${a.ny}`, a.n, `${num(a.dx)} × ${num(a.dy)}`, num(a.smax), `${Math.round(a.emObtida)} (+${num(a.folga * 100, 0)} %)`]),
       proporcoes: [1.2, 0.8, 0.5, 0.45, 0.4, 0.4, 0.4, 0.5, 0.5, 0.35, 0.8, 0.5, 0.8], tamanho: 14 },
       notas: [`FU: ${[...new Set(amb.map(a => a.fuFonte))].join('; ')}. Refletâncias teto/parede/piso por ambiente na planilha.`] },
+    { titulo: '6.1 Verificação ponto a ponto (uniformidade calculada)', paragrafos: [
+      'Iluminância horizontal no plano de referência calculada ponto a ponto, nos centros da malha de medição do item 6.2 do relatório, pela lei do inverso do quadrado da distância e do cosseno: E = FM × Σ I(C, γ) × cos γ / d², em que I(C, γ) é a intensidade luminosa da luminária na direção do ponto (cd), γ o ângulo com a vertical e d a distância da luminária ao ponto. Uniformidade calculada U0 = Emín / Em.',
+      'Considera apenas a luz direta das luminárias, SEM interreflexão (refletâncias de teto, paredes e piso não entram): por isso a Em do ponto a ponto fica abaixo da do método dos lúmens, que inclui a luz refletida no fator de utilização, e a uniformidade obtida é conservadora. A grade cobre o ambiente inteiro, inclusive a faixa junto às paredes; a norma pede a uniformidade na área da tarefa. [CONFERIR a área da tarefa]',
+      `Distribuição de intensidade: arquivo fotométrico do fabricante (IES LM-63 ou LDT/EULUMDAT) quando carregado; sem ele, curva simétrica aproximada I(γ) = I0 × cos^m γ, com m pelo ângulo de facho e I0 pelo fluxo da luminária (facho não informado: 120°, distribuição lambertiana). ${calc.luminarias.some(l => l.fotometria.fonte === 'aproximada') ? '[CONFERIR com a curva do fabricante]' : ''}`.trim(),
+    ], tabela: { colunas: PP_COLUNAS, linhas: linhasPontoAPonto(calc), proporcoes: [1.2, 1.1, 0.8, 0.6, 0.6, 0.5, 0.5, 0.45, 0.6, 0.7], tamanho: 14 },
+      notas: ['U0 mínima: 0,7 na área da tarefa (NBR ISO/CIE 8995-1, seção 4); 0,4 e 0,6 adotadas da EN 12464-1 para circulação, depósito e garagem. [CONFERIR]'] },
     { titulo: '7. Eficiência energética', paragrafos: ['Luminárias LED com registro no Inmetro (PBE) e, quando disponível, Selo Procel. A referência de densidade de potência é a do método das atividades (RTQ-C/Inmetro, nível A), apenas indicativa; a classificação oficial segue a INI-C em vigor. [CONFERIR]'],
       tabela: { colunas: ['Ambiente', 'Potência (W)', 'DPI (W/m²)', 'W/m²/100 lx', 'Referência (W/m²)', 'Situação'],
         linhas: amb.map(a => [a.nome, num(a.potencia, 0), num(a.dpi, 1), num(a.dpi100, 2), a.dpiRef ? num(a.dpiRef, 1) : '—', a.okDpi == null ? '—' : a.okDpi ? 'dentro' : 'ACIMA'])
@@ -156,7 +190,13 @@ function secoesMemorial(res) {
     { titulo: '8. Comando e automação', tabela: { colunas: ['Ambiente', 'Controle', 'Sensores', 'Comandos (junto à porta)', 'Drivers/fontes', 'End. DALI', 'Linha DALI'],
       linhas: amb.map(a => [a.nome, C.CONTROLES[a.controle], a.sensores.n ? `${a.sensores.n} (${a.sensores.nx} × ${a.sensores.ny})` : '—', comandosTexto(a), a.fontes || 'integrado', a.enderecos || '—', (a.barramentos || []).join(', ') || '—']),
       proporcoes: [1.2, 1.4, 0.7, 1.8, 0.7, 0.5, 0.6], tamanho: 15 },
-      marcadores: calc.barramentos.map(b => `${b.id}: ${b.enderecos} endereço(s) de driver e ${b.dispositivos} dispositivo(s) de controle — ${b.ambientes.join(', ')}.`) },
+      marcadores: [
+        ...calc.barramentos.map(b => `${b.id}: ${b.enderecos} endereço(s) de driver e ${b.dispositivos} dispositivo(s) de controle — ${b.ambientes.join(', ')}.`),
+        // fase 5: grupos e cenas definidos (o 3D mostra cada cena)
+        ...amb.filter(a => a.grupos?.length > 1).map(a => `${a.nome} — grupos: ${a.grupos.map(g => `${g.nome} (${g.luminarias.length} luminária${g.luminarias.length === 1 ? '' : 's'})`).join(', ')}.`),
+        ...amb.filter(a => a.cenas?.length).map(a => `${a.nome} — cenas: ${linhasCenas({ ambientes: [a] }).map(l => `${l[1]} (${l[2]})`).join('; ')}.`),
+        ...amb.filter(a => a.controle === 'cena' && !a.cenas?.length).map(a => `${a.nome} — teclado de cenas sem cenas definidas no projeto: programação padrão 100 % / 60 % / 30 % / desligado. [CONFERIR com o cliente]`),
+      ] },
     { titulo: '9. Circuitos de iluminação (NBR 5410)', paragrafos: [`Alimentação ${p.ligacao === 'FN' ? `F-N ${c.vfn} V` : `F-F ${c.vff} V`}, cabos de cobre ${c.isolacao}, método ${c.metodo}, ${c.temperatura} °C, agrupamento de ${c.agrupamento} circuitos. Circuitos de iluminação separados dos de tomadas (9.5.3.1).`],
       tabela: { colunas: ['Circuito', 'Ambientes', 'Lum.', 'VA', 'Ib (A)', 'L eq. (m)', 'Rota (m)', 'Seção F/N/PE', 'Iz (A)', 'Disjuntor', 'DR', 'ΔV %'],
         linhas: calc.circuitos.map(x => [x.id, x.ambientes.join(', '), x.luminarias, x.potencia_va, num(x.ib), num(x.comprimento, 1), num(x.rota, 1), `${sec(x.secao)} / ${sec(x.secaoNeutro)} / ${sec(x.secaoPE)}`, num(x.iz, 1), `${x.polos}P ${x.disjuntor} A`, x.dr ? '30 mA' : '—', num(x.queda)]),
@@ -245,6 +285,10 @@ const DOCUMENTOS = [
             ...a.sensores.posicoes.map((pt, i) => ({ ambiente: a.nome, elemento: 'Sensor de presença', id: `SP-${i + 1}`, ...pt, obs: '' })),
             ...(a.comandos.total ? [{ ambiente: a.nome, elemento: 'Comando', id: 'S', x: null, y: null, obs: `${comandosTexto(a)} — junto à porta (h = 1,10 m)` }] : []),
           ]) },
+        { nome: 'Ponto a ponto', colunas: PP_COLUNAS.map((h, i) => ({ header: h, key: `c${i}`, width: i === 0 || i === 1 ? 24 : 14 })),
+          linhas: linhasPontoAPonto(calc).map(l => Object.fromEntries(l.map((v, i) => [`c${i}`, v]))) },
+        ...(calc.ambientes.some(a => a.cenas?.length) ? [{ nome: 'Cenas', colunas: [{ header: 'Ambiente', key: 'a', width: 24 }, { header: 'Cena', key: 'c', width: 20 }, { header: 'Níveis por grupo', key: 'n', width: 50 }],
+          linhas: linhasCenas(calc).map(([a, c, n]) => ({ a, c, n })) }] : []),
         D.abaMateriais(calc.materiais),
       ]);
     } },
@@ -312,6 +356,8 @@ const OP = {
   conservacao: F.op(Object.entries(C.ROTULO_CONSERVACAO).map(([k, v]) => [k, `${v} — FM ${String(C.FM[k]).replace('.', ',')}`])),
   tipoLum: F.op(Object.entries(C.TIPOS_LUMINARIA).map(([k, v]) => [k, v.charAt(0).toUpperCase() + v.slice(1)])),
   controle: F.op(Object.entries(C.CONTROLES)),
+  // só vale no controle "interruptor": pulsadores com relé de impulso ou contator com botoeira e selo
+  comandoTipo: F.op(Object.entries(C.COMANDOS_TIPO)),
   atividade: F.op([...C.ATIVIDADES].sort((a, b) => a.rotulo.localeCompare(b.rotulo, 'pt-BR')).map(a => [a.id, `${a.rotulo} — ${a.em} lx`])),
   teto: F.op([['0.8', 'Branco (0,8)'], ['0.7', 'Claro (0,7)'], ['0.5', 'Médio (0,5)'], ['0.3', 'Escuro (0,3)']]),
   parede: F.op([['0.5', 'Clara (0,5)'], ['0.3', 'Média (0,3)'], ['0.1', 'Escura (0,1)']]),
@@ -350,9 +396,9 @@ const FORMULARIO = [
     ] },
   ] },
   { titulo: '3. Luminárias do projeto', aberta: true, resumo: null, itens: [
-    { tipo: 'nota', texto: 'Uma linha por modelo. Fluxo = lm da LUMINÁRIA (ficha técnica). Perfil LED: potência e fluxo POR PEÇA do comprimento informado. FU do fabricante é opcional (substitui a tabela simplificada).' },
+    { tipo: 'nota', texto: 'Uma linha por modelo. Fluxo = lm da LUMINÁRIA (ficha técnica). Perfil LED: potência e fluxo POR PEÇA do comprimento informado. FU do fabricante é opcional (substitui a tabela simplificada). Fotometria: carregue o arquivo IES ou LDT do fabricante para o cálculo ponto a ponto e o mapa de iluminância do 3D; sem ele, vale a curva simétrica aproximada pelo fluxo e pelo facho (sem facho, 120°).' },
     { tipo: 'tabela', caminho: 'luminarias', rotuloAdicionar: 'Adicionar luminária',
-      novaLinha: { codigo: 'L{n}', descricao: '', tipo: 'embutir', potencia_w: null, fluxo_lm: null, ra: 80, tcc_k: 4000, ugr: null, fu: null, suspensao_m: null, comprimento_m: null, driver_externo: false },
+      novaLinha: { codigo: 'L{n}', descricao: '', tipo: 'embutir', potencia_w: null, fluxo_lm: null, ra: 80, tcc_k: 4000, ugr: null, fu: null, suspensao_m: null, comprimento_m: null, driver_externo: false, angulo_facho_graus: null, fotometria: null },
       colunas: [
         { campo: 'codigo', rotulo: 'Código', largura: 70 }, { campo: 'descricao', rotulo: 'Descrição / modelo' },
         { campo: 'tipo', rotulo: 'Tipo', tipo: 'selecao', opcoes: OP.tipoLum, largura: 130 },
@@ -361,12 +407,14 @@ const FORMULARIO = [
         { campo: 'ugr', rotulo: 'UGR', tipo: 'numero', largura: 55 }, { campo: 'fu', rotulo: 'FU fabr.', tipo: 'numero', largura: 65 },
         { campo: 'suspensao_m', rotulo: 'Suspensão (m)', tipo: 'numero', largura: 80 }, { campo: 'comprimento_m', rotulo: 'Peça perfil (m)', tipo: 'numero', largura: 80 },
         { campo: 'driver_externo', rotulo: 'Driver à parte', tipo: 'check', largura: 70 },
+        { campo: 'angulo_facho_graus', rotulo: 'Facho (°)', tipo: 'numero', largura: 60 },
+        { campo: 'fotometria', rotulo: 'Fotometria (IES/LDT)', tipo: 'arquivo', aceita: '.ies,.ldt', largura: 150 },
       ] },
   ] },
   { titulo: '4. Ambientes', aberta: true, itens: [
     { tipo: 'nota', texto: 'Atividade pela NBR ISO/CIE 8995-1 (define Em, UGR e Ra). Informe comprimento × largura (ou só a área, se irregular). Luminária = código da tabela acima. Plano de trabalho vazio usa o da atividade (0,75 m mesa; 0 = piso). Opcionais: FU do ambiente, Em própria, quantidade fixa (verificar projeto existente) e circuito.' },
     { tipo: 'tabela', caminho: 'ambientes', rotuloAdicionar: 'Adicionar ambiente',
-      novaLinha: { nome: '', atividade: 'escritorio', comprimento_m: null, largura_m: null, area_m2: null, pe_direito_m: 2.8, plano_trabalho_m: null, refl_teto: '0.7', refl_parede: '0.5', refl_piso: '0.2', luminaria: '', controle: 'interruptor', sensor_presenca: false, conservacao: '', portas: 1, distancia_quadro_m: null, fu: null, em_lx: null, quantidade: null, circuito: '' },
+      novaLinha: { nome: '', atividade: 'escritorio', comprimento_m: null, largura_m: null, area_m2: null, pe_direito_m: 2.8, plano_trabalho_m: null, refl_teto: '0.7', refl_parede: '0.5', refl_piso: '0.2', luminaria: '', controle: 'interruptor', comando_tipo: '', sensor_presenca: false, conservacao: '', portas: 1, distancia_quadro_m: null, fu: null, em_lx: null, quantidade: null, circuito: '' },
       colunas: [
         { campo: 'nome', rotulo: 'Ambiente', largura: 140 }, { campo: 'atividade', rotulo: 'Atividade (NBR ISO/CIE 8995-1)', tipo: 'selecao', opcoes: OP.atividade, largura: 260 },
         { campo: 'comprimento_m', rotulo: 'C (m)', tipo: 'numero', largura: 60 }, { campo: 'largura_m', rotulo: 'L (m)', tipo: 'numero', largura: 60 },
@@ -374,12 +422,19 @@ const FORMULARIO = [
         { campo: 'plano_trabalho_m', rotulo: 'Plano (m)', tipo: 'numero', largura: 65 },
         { campo: 'refl_teto', rotulo: 'Teto', tipo: 'selecao', opcoes: OP.teto, largura: 110 }, { campo: 'refl_parede', rotulo: 'Parede', tipo: 'selecao', opcoes: OP.parede, largura: 110 }, { campo: 'refl_piso', rotulo: 'Piso', tipo: 'selecao', opcoes: OP.piso, largura: 100 },
         { campo: 'luminaria', rotulo: 'Luminária', largura: 75 }, { campo: 'controle', rotulo: 'Controle', tipo: 'selecao', opcoes: OP.controle, largura: 190 },
+        { campo: 'comando_tipo', rotulo: 'Comando de vários pontos', tipo: 'selecao', opcoes: OP.comandoTipo, largura: 210 },
         { campo: 'sensor_presenca', rotulo: 'Sensor de presença', tipo: 'check', largura: 75 },
         { campo: 'conservacao', rotulo: 'Conservação', tipo: 'selecao', opcoes: [{ valor: '', rotulo: '— padrão do projeto' }, ...OP.conservacao], largura: 150 },
         { campo: 'portas', rotulo: 'Portas', tipo: 'numero', largura: 55 }, { campo: 'distancia_quadro_m', rotulo: 'Dist. quadro (m)', tipo: 'numero', largura: 80 },
         { campo: 'fu', rotulo: 'FU', tipo: 'numero', largura: 55 }, { campo: 'em_lx', rotulo: 'Em própria (lx)', tipo: 'numero', largura: 75 },
         { campo: 'quantidade', rotulo: 'Qtd. fixa', tipo: 'numero', largura: 65 }, { campo: 'circuito', rotulo: 'Circuito', largura: 65 },
       ] },
+    { tipo: 'nota', texto: 'Grupos de luminárias (opcional): por ambiente, quais luminárias formam cada grupo — posição na grade (1 = canto de origem, linha a linha: "1-4, 7"), "fila 1", "filas 2-3", "coluna 1", "todas" ou "demais". Sem grupo, o ambiente tem um grupo só ("Geral").' },
+    { tipo: 'tabela', caminho: 'grupos', rotuloAdicionar: 'Adicionar grupo', novaLinha: { ambiente: '', grupo: '', luminarias: '' },
+      colunas: [{ campo: 'ambiente', rotulo: 'Ambiente', largura: 160 }, { campo: 'grupo', rotulo: 'Grupo', largura: 140 }, { campo: 'luminarias', rotulo: 'Luminárias (posição na grade)' }] },
+    { tipo: 'nota', texto: 'Cenas (ambientes com controle DALI-2 ou teclado de cenas): nome e nível de cada grupo, ex.: "Mesa 100; Tela 30" ou "70" (todos os grupos). Grupo não citado fica desligado. O 3D mostra cada cena e troca de uma para outra.' },
+    { tipo: 'tabela', caminho: 'cenas', rotuloAdicionar: 'Adicionar cena', novaLinha: { ambiente: '', nome: '', niveis: '' },
+      colunas: [{ campo: 'ambiente', rotulo: 'Ambiente', largura: 160 }, { campo: 'nome', rotulo: 'Cena', largura: 160 }, { campo: 'niveis', rotulo: 'Nível de cada grupo (%)' }] },
   ] },
   F.secaoInspecao(5, F.op([['comissionamento', 'Comissionamento (instalação nova)'], ['periodica', 'Medição periódica'], ['diagnostico', 'Diagnóstico de instalação existente']])),
   F.secaoChecklist(6, CHECKLIST.length),

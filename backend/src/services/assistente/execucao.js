@@ -116,6 +116,8 @@ function criarGerenciador(opcoes = {}) {
               ASSISTENTE_API_URL: cfg.apiUrl,
               ASSISTENTE_TOKEN: token,
               ASSISTENTE_CONTEXTO: JSON.stringify(estado.contexto || {}),
+              // o MCP só registra as ferramentas do papel (o financeiro, para admin/financeiro)
+              ASSISTENTE_PAPEL: estado.papel || '',
             },
           },
         },
@@ -123,7 +125,7 @@ function criarGerenciador(opcoes = {}) {
       const interpretador = new CLI.InterpretadorStream((ev) => emitir(estado, ev));
       estado.interpretador = interpretador;
       const args = CLI.montarArgs({
-        mensagem, sessionId, retomar, mcpConfig, modelo: cfg.modelo, maxTurnos: cfg.maxTurnos,
+        mensagem, sessionId, retomar, mcpConfig, modelo: cfg.modelo, maxTurnos: cfg.maxTurnos, papel: estado.papel,
         sistema: textoDeSistema({ hoje: hojeBrasilia() }),
       });
       const saida = await executarProcesso({
@@ -147,7 +149,7 @@ function criarGerenciador(opcoes = {}) {
       [conversa.id, estado.mensagemUsuarioId]);
     const saida = await executarPelaApi({
       cfg, mensagem, historico: historico.rows.reverse(), sistema: textoDeSistema({ hoje: hojeBrasilia() }),
-      mcp: { command: process.execPath, args: [CAMINHO_MCP], env: { ASSISTENTE_API_URL: cfg.apiUrl, ASSISTENTE_TOKEN: token, ASSISTENTE_CONTEXTO: JSON.stringify(estado.contexto || {}) } },
+      mcp: { command: process.execPath, args: [CAMINHO_MCP], env: { ASSISTENTE_API_URL: cfg.apiUrl, ASSISTENTE_TOKEN: token, ASSISTENTE_CONTEXTO: JSON.stringify(estado.contexto || {}), ASSISTENTE_PAPEL: estado.papel || '' } },
       interpretador, signal: estado.abort.signal, tempoLimiteMs: cfg.tempoLimiteMs,
     });
     return { interpretador, saida };
@@ -186,6 +188,7 @@ function criarGerenciador(opcoes = {}) {
     const registro = S.registrarExecucao({ exec, conversaId: conversa.id, usuarioId: usuario.id, mensagemId: msgAssist.id });
     const estado = {
       exec, registro, conversaId: conversa.id, usuarioId: usuario.id, mensagemId: msgAssist.id, mensagemUsuarioId: msgUsuario.id,
+      papel: usuario.papel || usuario.role || null,
       contexto, status: 'fila', posicao: null, ouvintes: new Set(), abort: new AbortController(), cancelado: false, interpretador: null,
       inicio: Date.now(),
     };

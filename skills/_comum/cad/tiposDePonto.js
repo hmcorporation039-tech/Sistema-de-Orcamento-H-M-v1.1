@@ -17,7 +17,8 @@ const TIPOS = [
   [/^(INC|PCI)[-_ ].*CENTRAL|CENTRAL.{0,12}INC/i, /central.{0,30}inc[êe]ndio/i, 'HM-INC-CENTRAL', 'incendio'],
   [/C[ÂA]MERA|CFTV/i, /c[âa]mera|cftv|(?<![a-z])dome|bullet/i, 'HM-CFTV-CAMERA', 'cftv'],
   [/RACK/i, /\brack\b/i, 'HM-CAB-RACK', 'rede'],
-  [/WI.?FI|ACCESS.?POINT/i, /access.?point|ponto de acesso.{0,10}(sem fio|wi)|wi.?fi/i, 'HM-CAB-AP', 'rede'],
+  // (layer "CAB-AP" e o modelo "AP 3000 AX" na legenda: no R04 o AP saía como ponto de rede — fase 3, 02/11/2026)
+  [/WI.?FI|ACCESS.?POINT|(^|[-_ ])AP([-_ ]|$)/i, /access.?point|ponto de acesso.{0,10}(sem fio|wi)|wi.?fi|\bAP\s?\d{3,4}\s?(AX|AC|N)\b/i, 'HM-CAB-AP', 'rede'],
   [/(^|[-_ ])(REDE|L[ÓO]GICA|DADOS|RJ.?45|CAB)([-_ ]|$)/i, /(ponto|tomada).{0,15}(rede|l[óo]gica|dados)|l[óo]gica|rj.?45|cat\.?\s?6/i, 'HM-CAB-PONTO-REDE', 'rede'],
   [/PORTEIRO/i, /porteiro/i, 'HM-TEL-PORTEIRO', 'telefonia'],
   [/^TEL[-_ ]|TELEF|INTERF/i, /telef[ôo]n|telefone|interfon|ramal/i, 'HM-TEL-PONTO', 'telefonia'],
@@ -49,17 +50,10 @@ const familia = (simbolo) => (simbolo || '').replace(/-(BAIXA|MEDIA|ALTA)$/, '')
 const tipoPelaLayer = (layer) => TIPOS.find(([rl]) => rl.test(layer || ''));
 const tipoPeloTexto = (texto) => TIPOS.find(([, rt]) => rt.test(texto || ''));
 
-// Altura escrita: "2,20m do piso", "H=0,30", "altura: 97,5 cm". Sem unidade, acima de 10 é
-// cm ("h=30") e até 10 é metro ("h=2,2", poste "h=8") — a mesma regra em todo o sistema.
-const metros = (v, un) => { const n = Number(String(v).replace(',', '.')); return un ? (/cm/i.test(un) ? n / 100 : n) : (n > 10 ? n / 100 : n); };
-const RE_ALTURA_PISO = /([0-9]+(?:[.,][0-9]+)?)\s*(cm|m)\s*do\s+piso/i;
-const RE_ALTURA_H = /(?:\bh\s*[=:]|\baltura\b\s*[=:]?)\s*([0-9]+(?:[.,][0-9]+)?)\s*(cm|m)?/i;
-function alturaEscrita(texto) {
-  const m = RE_ALTURA_PISO.exec(texto || '') || RE_ALTURA_H.exec(texto || '');
-  if (!m) return null;
-  const h = Math.round(metros(m[1], m[2]) * 100) / 100;
-  return h > 0 && h <= 30 ? h : null;
-}
+// Altura escrita: "2,20m do piso", "H=0,30", "h: 1,10 m", "altura: 97,5 cm". Sem unidade, acima
+// de 10 é cm ("h=30") e até 10 é metro ("h=2,2", poste "h=8"). O leitor é o de ./textoCad.js —
+// o mesmo da análise do DWG (disciplinasCad.alturaDoTexto) e das notas do mapa (pontosDoDesenho)
+const { metros, alturaEscrita, RE_ALTURA_PISO, RE_ALTURA_H } = require('./textoCad');
 
 // tomada pela altura (a peça do 3D e o nome do tipo): o meio entre as alturas típicas
 // (0,30 / 1,10 / 2,20 m) — baixa até 0,6 m, média até 1,6 m, alta acima

@@ -8,6 +8,7 @@ const https = require('https');
 const zlib = require('zlib');
 const forge = require('node-forge');
 const { SignedXml } = require('xml-crypto');
+const { esc } = require('../utils/xml');
 
 const NS = 'http://www.sped.fazenda.gov.br/nfse';
 const PASTA_CERT_PADRAO = 'C:\\HM-Engenharia\\Certificados';
@@ -21,8 +22,6 @@ const ALGORITMOS = {
 };
 const C14N = 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315';
 const ENVELOPED = 'http://www.w3.org/2000/09/xmldsig#enveloped-signature';
-
-const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 function ambienteConfigurado() {
   return String(process.env.NFSE_AMBIENTE || 'homologacao').toLowerCase() === 'producao' ? 'producao' : 'homologacao';

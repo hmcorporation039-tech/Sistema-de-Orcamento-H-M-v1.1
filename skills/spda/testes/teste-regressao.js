@@ -80,6 +80,15 @@ igual('NC por prioridade (P3 4 | P4 1)', [res.parecer.porP.P3, res.parecer.porP.
 igual('sem "NBR NBR" nas referências', res.checklist.filter(c => /NBR\s+NBR/.test(c.requisito)).length, 0);
 igual('F.7 com dados estimados marcado [CONFERIR]', /\[CONFERIR/.test(res.ensaios.find(e => e.tipo_ensaio === 'F.7').criterio), true);
 
+// Formulário sem município/UF e sem NG: a mensagem fala com quem preenche (antes: "NG não encontrado para /")
+const erroNg = (estrutura) => {
+  const d = JSON.parse(JSON.stringify(dados));
+  Object.assign(d.estrutura, { ng: null, ...estrutura });
+  try { processar(d); return null; } catch (e) { return e.message; }
+};
+igual('formulário vazio pede município e UF, ou o NG', erroNg({ municipio: '', uf: '' }), 'Informe o município e a UF da obra, ou o NG.');
+igual('município fora da Tabela F.1 diz qual e o que fazer', /Cidade Inexistente\/GO não está na Tabela F\.1.*informe o NG/.test(erroNg({ municipio: 'Cidade Inexistente', uf: 'GO' }) || ''), true);
+
 // Geração dos documentos (só confere que saem e abrem como zip válido)
 (async () => {
   const B = require('../../_comum/docx-base');

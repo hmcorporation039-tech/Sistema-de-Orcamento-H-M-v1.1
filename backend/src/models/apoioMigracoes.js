@@ -64,4 +64,24 @@ async function inserirKits(client, kits, { prefixoServico = null } = {}) {
   return { kits: criados, materiais_no_catalogo: casados, materiais_sem_catalogo: semCatalogo };
 }
 
-module.exports = { umaVez, inserirKits };
+// Ordem de execução das migrações pelo NÚMERO ("2.0-9" < "2.0-10" < "2.0-100"), não pelo
+// texto: em ordem alfabética a 2.0-100 rodaria entre a 2.0-10 e a 2.0-11 num banco novo.
+// Usada por models/schema.js (listarMigracoes) e pelo scripts/pre-deploy.js.
+function chaveMigracao(nome) {
+  const m = String(nome).match(/^(\d+)\.(\d+)-(\d+)-/);
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+function ordenarMigracoes(nomes) {
+  return [...nomes].sort((a, b) => {
+    const ka = chaveMigracao(a);
+    const kb = chaveMigracao(b);
+    if (ka && kb) {
+      for (let i = 0; i < 3; i++) if (ka[i] !== kb[i]) return ka[i] - kb[i];
+    } else if (ka || kb) {
+      return ka ? -1 : 1;   // nome fora do padrão vai para o fim (o pre-deploy reprova)
+    }
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
+}
+
+module.exports = { umaVez, inserirKits, ordenarMigracoes };

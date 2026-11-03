@@ -30,18 +30,42 @@
 
 ## 1. Arquitetura atual
 
-- **Backend:** Node.js + Express (`backend/src/server.js`) e PostgreSQL (`hm_orcamentos`), com autenticação JWT.
-  - Organização: `routes/index.js` → `controllers/*` → `utils/*` e `services/*`.
-  - O schema é criado e migrado de forma idempotente em `models/schema.js`.
-- **Frontend:** React (CRA). Páginas em `frontend/src/pages`, chamadas de API em `frontend/src/services/api.js` e login em `hooks/useAuth.js`.
+*(Revisada em 02/11/2026, depois da auditoria; o histórico detalhado está na seção 2.)*
+
+- **Ambientes:**
+  - Produção em `C:\HM-Engenharia\hm-eng`: ramo `main`, porta 3001, banco `hm_orcamentos`.
+  - Teste em `C:\HM-Engenharia\hm-eng-v2`: ramo `versao-2.0`, porta 3002, banco `hm_orcamentos_v2`.
+  - Fluxo: teste → aprovação → backup → merge → versão. Depois de cada versão na `main`, mesclar a `main` de volta no `versao-2.0`.
+- **Backend:** Node.js 22.12+ com Express (`backend/src/server.js`) e PostgreSQL, com autenticação JWT HS256. No v2 (Fase 6, 02/11/2026): sessões revogáveis por navegador (token de 15 min renovado sozinho), verificação em duas etapas opcional (TOTP), auditoria de acesso e papéis admin, financeiro, técnico e user (`exigePapel`).
+  - Rotas:
+    - `routes/index.js` tem as rotas da 1.x;
+    - `routes/v2/*.js` são carregadas sozinhas;
+    - toda rota passa por `autenticar`, e por posse/admin quando é o caso;
+    - rota inexistente devolve 404 em JSON.
+  - Banco: a base está em `models/schema.js`, e as migrações idempotentes `models/migracoes/2.0-NN-*.js` rodam em ordem numérica a cada partida. São cerca de 65 tabelas, e o que é de engenharia fica em JSONB (análises e laudos).
+  - Motores de engenharia: as skills em `skills/` são usadas direto pelo backend (`config/caminhos.js`, `utils/disciplinasLaudo.js`), pelo registro único `skills/_comum/disciplinas.js`.
+- **Frontend:** React 18 (CRA 5).
+  - Páginas em `frontend/src/pages`, agrupadas em 6 grupos com abas.
+  - API em `services/api.js`; o proxy de desenvolvimento lê a porta do `backend/.env` (`src/setupProxy.js`).
+  - O app de campo `/campo` funciona sem rede.
+  - O 3D é uma página HTML isolada, gerada no servidor (`skills/_comum/cad/visualizador3d`).
 - **Produção:** um único processo. O backend serve a API e o build do React em `http://localhost:3001` e sobe sozinho quando o Windows faz login (`scripts/iniciar-producao.ps1`).
 - **IA:**
   - Versão 2.0: módulo único `services/ia.js` com uma cadeia só, na ordem Claude Max (CLI `claude -p` isolada) → Claude via API → Gemini (`IA_ORDEM` troca a ordem). Painel em Administração › Integrações (`GET /integracoes/rotinas`, `POST /integracoes/ia/testar`).
   - Gemini (`services/geminiClient.js`, transporte usado por `ia.js`), com troca para um modelo alternativo quando a cota estoura.
   - Claude Desktop via servidor MCP: é o caminho recomendado, porque não gasta cota.
-- **Tabelas:** usuarios, clientes, materiais, mao_de_obra_itens, propostas, proposta_secoes, proposta_itens, proposta_eventos, analises_projeto, precos_mao_de_obra_referencia, pesquisas_mercado, configuracoes, emails_processados, notas_processadas, arquivos_fornecedores_processados, prestadores, contratos, financeiro_movimentos.
-- **Testes:** Cypress E2E em `frontend/cypress/e2e/01..10` (43 testes), cobrindo login, clientes, materiais, orçamento/histórico, usuários, dashboard, relatórios, financeiro, prestadores e contratos. O backend ainda **não** tem testes automatizados (`npm test`); o passo 2 da seção 4 propõe começar por `calculoEletrico.js`.
-- **Tarefas automáticas** (`server.js`), todas às **06:00 e às 18:00** (hora do PC): notas fiscais por e-mail, Pix por e-mail e leitura das pastas de orçamentos de fornecedores. Fora desses horários, use os botões "Verificar agora" em Materiais e Financeiro. Se o PC estiver desligado no horário, aquela leitura é pulada.
+- **Assistente:** painel na tela que usa `claude -p` (assinatura Max) com o MCP próprio (`backend/src/mcp/assistenteFerramentas.mjs`) e um token de escopo curto (`middleware/escopoAssistente.js`).
+  - Toda ação irreversível vira "ação pendente", aplicada pelo usuário.
+  - O MCP do Claude Desktop (`mcpServer.mjs`, "hm-orcamentos") é outro servidor e usa a porta do `.env`.
+- **Testes:** `cd backend && npm test` roda `scripts/pre-deploy.js`. Ele confere:
+  - todos os `backend/testes/*.test.js` (os de banco só no v2);
+  - o Jest do frontend;
+  - todas as skills (`skills/testar-todas.js`);
+  - as versões dos 4 package.json/lock;
+  - a ordem das migrações.
+  Se algo falhar, mostra "NÃO SUBA". Há também 14 specs Cypress (`frontend/cypress/e2e`): elas leem a porta do `backend/.env` e recusam rodar contra a produção.
+- **Tarefas automáticas** (`services/rotinas.js`), às **06:00 e às 18:00** (hora do PC), com nova tentativa: notas por e-mail, Pix por e-mail, pastas de fornecedores, pasta da SINAPI, vencimentos a renovar e resumo de erros. O painel fica em Integrações. O monitor de pastas de clientes roda à parte, a cada 10 min.
+- **Roteiro:** `docs/ROTEIRO-GRANDE-IMPLEMENTACAO.md`. Fases: modelo único da instalação, 3D interativo, leitura PDF/DWG com placar, Climatização, iluminação no 3D e canal remoto.
 
 ---
 
@@ -805,3 +829,53 @@ Só código, sem migração. Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-b
 - **Banco:** migração `2.0-38-proposta-renovacao` (idempotente): coluna `proposta_renovacao_id` em `vencimentos_laudos`. Acontece sozinha ao reiniciar o backend.
 - Testes: `propostaRenovacao` em `backend/testes` (5 verificações); 2 casos novos em `VencimentosLaudos.test.js` no frontend.
 - Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.26_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_19-49.dump`.
+
+### 02/11/2026: auditoria completa e fase 0 do roteiro (no v2, ainda não instalada)
+- **Auditoria** em 8 áreas (backend e segurança, banco e testes, leitura PDF/DWG, 3D, skills, frontend, integração e assistente, lixo e operação). Foram 15 agentes, cada achado conferido por um verificador cético.
+  - 73 achados confirmados (5 altos, 19 médios, 49 baixos) e 1 refutado. Nenhuma falha crítica de segurança.
+  - Relatório completo: `docs/historico/AUDITORIA-2026-11-02.md`.
+- **Roteiro da grande implementação:** `docs/ROTEIRO-GRANDE-IMPLEMENTACAO.md`.
+  - Fases: modelo único da instalação, 3D interativo, precisão PDF/DWG com placar, Climatização (HVAC/VAV/chiller/PMOC), iluminação no 3D, canal remoto por WhatsApp/Telegram/voz e estrutura.
+  - Inclui o que tirar de cada referência: AutoCAD Electrical, Revit MEP, QiElétrico, EPLAN e IFC.
+- **Fase 0 (correções) feita no v2.** A lista por achado está no roteiro, seção "Fase 0". Os principais:
+  - Leitura de DWG: atributos dos blocos, splines, elipses, cotas, blocos dinâmicos e MINSERT; MTEXT e altura num módulo só (`skills/_comum/cad/textoCad.js`); sem contagem dupla no Mapa do CAD; layers de arquitetura fora dos pontos.
+  - 3D: ambiente certo nos pontos do DWG; cena 20× mais rápida; desenho só quando algo muda; cache que acompanha o aprendizado; botão "Gerar de novo".
+  - Assistente: gerar orçamento por itens voltou a funcionar; e-mail e link pelo assistente passam pela conferência de envio; o MCP do v2 não aponta mais para a produção.
+  - Segurança: limite de tentativas na troca de senha; e-mail do login sem diferença de maiúsculas e minúsculas; 404 da API em JSON; erro interno não vaza mensagem.
+  - Operação: o `npm test` do backend passa a rodar também o Jest do frontend e as skills; Cypress e proxy do v2 leem a porta do `.env`; `.gitignore` cobre os builds antigos; README com Node 22.12+; `skills/ligar-skills.ps1`.
+  - Frontend e skills: disciplinas dos vencimentos vêm do registro; listas em ordem alfabética; catálogo que falha ao carregar avisa; abrir proposta e laudo pelo teclado; luminárias completas em sala em L; mensagem clara da SPDA.
+- **Banco:** migrações idempotentes:
+  - `2.0-39` cria índices nas chaves estrangeiras;
+  - `2.0-40` apaga modelos 3D órfãos (na produção, conferir antes com SELECT);
+  - `2.0-41` cria índice único do e-mail sem diferença de caixa, e só avisa se houver duplicados.
+  - A `2.0-25` ficou condicional.
+  - As migrações passam a ser ordenadas pelo número.
+- **Segunda rodada (pedido "ok corrija"):**
+  - INT-04: o Pix ligado a uma nota leva a obra da proposta da nota, mas só quando o Pix está sem obra; obra diferente nunca é trocada e gera aviso. A Atribuição de obras usa esse vínculo como sugestão de confiança alta. A obra mostra faturado, recebido e "a receber do faturado", calculado pelo líquido das notas emitidas e visível só para admin. Em Notas a receber, o botão "Levar a obra das notas" corrige os Pix antigos (rota `POST /notas-a-receber/obra-das-notas`, só admin). Não há migração.
+  - BD-06: o teste `migracoesBancoVazio` cria um banco temporário, roda as migrações duas vezes e compara tabelas, colunas e tipos com o v2. Hoje são 65 tabelas e 809 colunas, sem diferença.
+  - BD-08: a coluna `pastas_movidas.pasta_obra_antes` fica no banco, documentada como sem uso no `LEIA-ME.md` das migrações.
+  - OP-06: a seção 1 deste resumo foi reescrita com a arquitetura atual.
+  - OP-09 (backend): `semAcento` vem só de `utils/texto.js`, e o `esc` de XML só de `utils/xml.js`.
+  - OP-11: a logo e o cabeçalho dos PDFs vêm só de `skills/_comum/assets`. As cópias do backend saíram, e o teste `identidadeVisual` confere pelo hash que `frontend/public/logo.png` é a mesma imagem.
+  - Validação: pré-deploy com 64/64 do backend, 120/120 do Jest e skills ok; o build do frontend compila sem avisos.
+
+### 02/11/2026: fases 1 a 5 e 7 do roteiro (no v2, ainda não instaladas)
+Pedido: "faça tudo e deixe a comunicação com o canal remoto por último". O detalhe de cada fase, com o que ficou para depois, está em `docs/ROTEIRO-GRANDE-IMPLEMENTACAO.md` (blocos "Feito no v2").
+- **Fase 4, climatização** (`d752b05`): skill nova `skills/climatizacao/` (carga térmica, seleção, chiller/VAV/dutos, PMOC, planta). Os motores e os dutos foram para `skills/_comum/eletrico/motores.js` e `skills/_comum/dutos.js`. Tabela `equipamentos_catalogo` (migração `2.0-42`) com rotas `/equipamentos-catalogo` (escrita só admin).
+- **Fase 3, leitura de PDF e DWG** (`934ce3c`): escala da planta detectada (carimbo, título, nome do arquivo, portas e cotas); biblioteca de blocos aprendidos por medida e escritório, com exportar e importar (migração `2.0-43`, rotas `/projetos/biblioteca-blocos`); circuito lido junto ao símbolo; placar de precisão (`scripts/placar-precisao.js`, `docs/PLACAR-PRECISAO.md`).
+- **Fases 1 e 2, modelo único e 3D interativo** (`c94531e`): `skills/_comum/instalacao/` liga quadros, circuitos, pontos e comandos; no 3D, interruptores, disjuntores, DR e painéis de motor funcionam, e a ficha mostra o circuito. O estado fica só na aba do navegador.
+- **Blocos HM-CLIM-*** reconhecidos como climatização na análise do CAD (`df08e34`).
+- **Fase 7, estrutura** (`3303e15`): formatação comum em `skills/_comum/base` (os módulos antigos do backend viraram ponte); `Orcamento.js`, `NotasFiscais.js` e `pdfVetorial.js` divididos em módulos; `package.json` na raiz só com o atalho do `npm test`. Sem npm workspaces.
+- **Fase 5, iluminação no 3D** (`3bb4728`): leitura de IES/LDT, cálculo ponto a ponto (Em, Emín, U0) em `skills/_comum/fotometria`, cenas e grupos no formulário, no memorial, na planilha e no 3D, e mapa de iluminância em falsa-cor no piso.
+- **Validação:** o pré-deploy completo passa (backend, Jest do frontend e skills).
+- **Para implantar no v2:** reiniciar o backend do v2 para carregar as rotas novas (as migrações `2.0-42` e `2.0-43` já estão no banco do v2), rodar o build do frontend e ligar a skill climatizacao (`skills/ligar-skills.ps1`). Para o placar, criar a pasta `C:\HM-Engenharia\Placar de precisao` e conferir as contagens do rascunho gerado com `--modelo`.
+- **Produção:** nada instalado. Falta conferir na produção, com SELECT, os modelos 3D órfãos antes da `2.0-40`.
+- **Fase 6 (canal remoto):** a próxima, depende das decisões do Márcio (canal, domínio público e quem pode usar).
+
+### 02/11/2026: fase 6 do roteiro — segurança e canal remoto (no v2, canal desligado)
+- **Segurança:** sessões revogáveis com token de 15 min renovado sozinho, verificação em duas etapas (TOTP) opcional, telefone ou chat vinculado por código, auditoria de acesso (Cadastros › Auditoria) e papéis financeiro e técnico. Migrações `2.0-44` a `2.0-46`, já aplicadas no banco do v2.
+- **Canal:** fila no banco, webhooks do Telegram e do WhatsApp com assinatura obrigatória, comandos sem IA, ação pendente "SIM 1234" com prazo e nova conferência, ferramentas novas do assistente, lista única de ferramentas com o Claude Desktop (INT-05) e voz por whisper.cpp local. Migração `2.0-47`. Tela Cadastros › Canal remoto, com simulador.
+- **Desligado por padrão.** Para ligar, o Márcio precisa decidir o canal, o domínio público e quem pode usar; o passo a passo está no roteiro, Fase 6.
+- **Para testar no v2:** reiniciar o backend do v2 e rodar o build do frontend. O `.env` do v2 já tem `TOTP_CHAVE_CIFRA`; na produção, gerar outra e guardar com o backup do `.env`.
+- **Transição:** tokens antigos, sem sessão, valem até vencer (no máximo 8 h depois da instalação).
+- **Validação:** pré-deploy completo com 71/71 do backend, 130/130 do Jest e skills ok; builds de conferência compilam.

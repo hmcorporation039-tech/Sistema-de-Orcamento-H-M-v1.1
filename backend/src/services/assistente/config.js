@@ -13,6 +13,8 @@
 //   ASSISTENTE_API_URL                endereço da API que o MCP do assistente chama
 //                                     (padrão: http://127.0.0.1:<PORT>)
 //   ASSISTENTE_CLI_PATH               caminho do claude.exe (padrão: CLAUDE_CLI_PATH ou ~/.local/bin)
+//   ASSISTENTE_ACAO_PRAZO_HORAS=24    prazo para aplicar uma ação pendente na tela (INT-08); depois
+//                                     disso ela não executa (pede de novo). O canal usa CANAL_ACAO_PRAZO_MIN.
 //   ASSISTENTE_LIMPEZA=ligada         apaga conversas com mais de ASSISTENTE_GUARDA_MESES (12)
 //                                     meses sem uso — desligada por padrão
 const os = require('os');
@@ -37,6 +39,7 @@ function config(env = process.env) {
     apiUrl: (env.ASSISTENTE_API_URL || `http://127.0.0.1:${env.PORT || 3001}`).replace(/\/+$/, ''),
     caminhoCli: env.ASSISTENTE_CLI_PATH || env.CLAUDE_CLI_PATH
       || path.join(os.homedir(), '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude'),
+    acaoPrazoHoras: inteiro(env.ASSISTENTE_ACAO_PRAZO_HORAS, 24, 1),
     limpeza: String(env.ASSISTENTE_LIMPEZA || '').toLowerCase() === 'ligada',
     guardaMeses: inteiro(env.ASSISTENTE_GUARDA_MESES, 12, 1),
   };

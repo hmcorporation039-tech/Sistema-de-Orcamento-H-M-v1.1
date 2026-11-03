@@ -10,13 +10,13 @@ import toast from 'react-hot-toast';
 import { Bell, CheckCheck, FileSearch, RefreshCw, WifiOff } from 'lucide-react';
 import { getNovidadesPastas, marcarNovidadesVistas, pacoteDasNovidades, getResumoNovidades } from '../services/api';
 import { mensagemDeErro } from '../utils/download';
+import { dataHoraBr } from '../utils/format';
 
 const SITUACAO = {
   novo: { rotulo: 'Novo', cor: '#3fb95f', fundo: '#112a17' },
   alterado: { rotulo: 'Alterado', cor: '#e0a030', fundo: '#2a2111' },
   removido: { rotulo: 'Removido', cor: '#e05555', fundo: '#2a1414' },
 };
-const quando = (d) => (d ? new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '');
 
 // clienteId OU obraId; onAnalisar(pacote) recebe o pacote pronto (mesmo formato do envio da análise)
 export function AvisoNovidades({ clienteId = null, obraId = null, onAnalisar = null, sempre = false }) {
@@ -79,7 +79,7 @@ export function AvisoNovidades({ clienteId = null, obraId = null, onAnalisar = n
                 <span style={{ fontSize: 11.5, fontWeight: 700, color: s.cor, background: s.fundo, borderRadius: 4, padding: '1px 6px', minWidth: 58, textAlign: 'center' }}>{s.rotulo}</span>
                 <span style={{ flex: 1, minWidth: 0, wordBreak: 'break-word' }}>{i.nome}<span style={{ color: 'var(--texto-3)' }}> — {i.caminho.split('/').slice(1, -1).join(' › ') || 'pasta do cliente'}</span></span>
                 {i.obra_codigo && !obraId && <span style={{ color: 'var(--texto-3)' }}>{i.obra_codigo}</span>}
-                <span style={{ color: 'var(--texto-3)', whiteSpace: 'nowrap' }}>{quando(i.detectado_em)}</span>
+                <span style={{ color: 'var(--texto-3)', whiteSpace: 'nowrap' }}>{dataHoraBr(i.detectado_em, { ano: false, vazio: '' })}</span>
               </label>
             );
           })}

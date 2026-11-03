@@ -9,6 +9,7 @@ import {
 import { useAuth } from '../../hooks/useAuth';
 import Select from '../../components/Select';
 import { baixarArquivo, mensagemDeErro } from '../../utils/download';
+import { dataBr, dataHoraBr } from '../../utils/format';
 import { Etiqueta, estilos as E, Campo } from './comum';
 
 // Aba "Campo (OS)" da obra (versão 2.0, Fase 4J): ordens de serviço que o
@@ -31,8 +32,6 @@ const RESPOSTA = {
 };
 const FILTROS = { ativas: 'Abertas e em execução', todas: 'Todas', concluida: 'Concluídas', cancelada: 'Canceladas' };
 
-const dataHora = (v) => (v ? new Date(v).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
-const dataCurta = (s) => (s ? String(s).slice(0, 10).split('-').reverse().join('/') : '—');
 const coord = (p) => (p ? `${Number(p.lat).toFixed(5)}, ${Number(p.lon).toFixed(5)}` : '');
 const nomeDisciplina = (modelos, chave) => {
   const m = modelos.find(x => x.disciplina === chave);
@@ -112,7 +111,7 @@ export default function OrdensServicoObra({ obra, podeEditar }) {
                 <td style={E.td}>{o.titulo}{o.disciplina && <span style={{ color: 'var(--texto-3)', fontSize: 11.5 }}> · {nomeDisciplina(modelos, o.disciplina)}</span>}</td>
                 <td style={{ ...E.td, fontSize: 12, color: 'var(--texto-2)' }}>{TIPOS_OS[o.tipo] || o.tipo}</td>
                 <td style={E.td}>{o.responsavel_nome || <span style={{ color: 'var(--texto-3)' }}>sem responsável</span>}</td>
-                <td style={{ ...E.td, whiteSpace: 'nowrap' }}>{dataCurta(o.agendada_para)}</td>
+                <td style={{ ...E.td, whiteSpace: 'nowrap' }}>{dataBr(o.agendada_para, { vazio: '—' })}</td>
                 <td style={E.td}><Etiqueta info={STATUS_OS[o.status]}>{STATUS_OS[o.status]?.rotulo || o.status}</Etiqueta></td>
                 <td style={{ ...E.td, textAlign: 'center', whiteSpace: 'nowrap' }}>
                   {o.resumo.total ? `${o.resumo.respondidos}/${o.resumo.total}` : '—'}
@@ -351,11 +350,11 @@ function VerOS({ id, modelos, ehAdmin, onFechar, onEditar, onMudou }) {
           <Info rotulo="Tipo" valor={TIPOS_OS[os.tipo] || os.tipo} />
           <Info rotulo="Disciplina" valor={os.disciplina ? nomeDisciplina(modelos, os.disciplina) : '—'} />
           <Info rotulo="Responsável" valor={os.responsavel_nome || 'sem responsável'} />
-          <Info rotulo="Agendada para" valor={dataCurta(os.agendada_para)} />
-          <Info rotulo="Iniciada" valor={dataHora(os.iniciada_em)} nota={coord(os.inicio)} />
-          <Info rotulo="Concluída" valor={dataHora(os.concluida_em)} nota={coord(os.conclusao)} />
-          {os.cancelada_em && <Info rotulo="Cancelada" valor={dataHora(os.cancelada_em)} />}
-          <Info rotulo="Criada" valor={dataHora(os.criado_em)} nota={os.criado_por_nome ? `por ${os.criado_por_nome}` : ''} />
+          <Info rotulo="Agendada para" valor={dataBr(os.agendada_para, { vazio: '—' })} />
+          <Info rotulo="Iniciada" valor={dataHoraBr(os.iniciada_em)} nota={coord(os.inicio)} />
+          <Info rotulo="Concluída" valor={dataHoraBr(os.concluida_em)} nota={coord(os.conclusao)} />
+          {os.cancelada_em && <Info rotulo="Cancelada" valor={dataHoraBr(os.cancelada_em)} />}
+          <Info rotulo="Criada" valor={dataHoraBr(os.criado_em)} nota={os.criado_por_nome ? `por ${os.criado_por_nome}` : ''} />
         </div>
         {os.descricao && <p style={{ color: 'var(--texto-2)', fontSize: 12, whiteSpace: 'pre-wrap', margin: '14px 0 0' }}>{os.descricao}</p>}
       </div>
@@ -389,7 +388,7 @@ function VerOS({ id, modelos, ehAdmin, onFechar, onEditar, onMudou }) {
                     </td>
                     <td style={{ ...E.td, width: 130, textAlign: 'right' }}>
                       {i.resposta ? <Etiqueta info={RESPOSTA[i.resposta]}>{RESPOSTA[i.resposta].rotulo}</Etiqueta> : <span style={{ color: 'var(--texto-3)', fontSize: 12 }}>sem resposta</span>}
-                      {i.respondido_em && <div style={{ color: 'var(--texto-3)', fontSize: 11.5, marginTop: 4 }}>{dataHora(i.respondido_em)}</div>}
+                      {i.respondido_em && <div style={{ color: 'var(--texto-3)', fontSize: 11.5, marginTop: 4 }}>{dataHoraBr(i.respondido_em)}</div>}
                     </td>
                   </tr>
                 )),
@@ -415,7 +414,7 @@ function VerOS({ id, modelos, ehAdmin, onFechar, onEditar, onMudou }) {
                 <FotoCampo foto={{ ...f, n: idx + 1 }} tamanho="100%" />
                 <div style={{ color: '#ccc', fontSize: 12, fontWeight: 700, marginTop: 5 }}>Foto {idx + 1}{f.item_id ? ` · item ${f.item_id}` : ''}</div>
                 {f.legenda && <div style={{ color: 'var(--texto-2)', fontSize: 12 }}>{f.legenda}</div>}
-                <div style={{ color: 'var(--texto-3)', fontSize: 11.5 }}>{dataHora(f.tirada_em)}{f.lat != null ? ` · ${coord(f)}` : ''}</div>
+                <div style={{ color: 'var(--texto-3)', fontSize: 11.5 }}>{dataHoraBr(f.tirada_em)}{f.lat != null ? ` · ${coord(f)}` : ''}</div>
               </div>
             ))}
           </div>
@@ -429,7 +428,7 @@ function VerOS({ id, modelos, ehAdmin, onFechar, onEditar, onMudou }) {
             <ImagemCampo url={os.assinatura.url} alt={`Assinatura de ${os.assinatura.nome}`}
               style={{ background: '#fff', borderRadius: 6, maxWidth: 360, maxHeight: 140, display: 'block', padding: 4 }} />
             <div style={{ color: '#ddd', fontSize: 12, fontWeight: 700, marginTop: 6 }}>{os.assinatura.nome}{os.assinatura.documento ? ` — ${os.assinatura.documento}` : ''}</div>
-            <div style={{ color: 'var(--texto-3)', fontSize: 11.5 }}>assinada no aparelho em {dataHora(os.assinatura.assinada_em)}</div>
+            <div style={{ color: 'var(--texto-3)', fontSize: 11.5 }}>assinada no aparelho em {dataHoraBr(os.assinatura.assinada_em)}</div>
           </div>
         ) : <p style={{ color: 'var(--texto-3)', fontSize: 12, margin: 0 }}>Ainda sem assinatura.</p>}
       </div>
@@ -448,7 +447,7 @@ function VerOS({ id, modelos, ehAdmin, onFechar, onEditar, onMudou }) {
 }
 
 function descreverHistorico(h) {
-  const quando = dataHora(h.respondido_em || h.feita_em || h.assinada_em);
+  const quando = dataHoraBr(h.respondido_em || h.feita_em || h.assinada_em);
   const motivo = h.motivo === 'mais_antiga' ? 'chegou depois, mas era mais antiga' : 'substituída por uma mais nova';
   if (h.tipo === 'resposta_substituida') {
     return `Item ${h.item_id}: ${h.resposta ? RESPOSTA[h.resposta]?.rotulo || h.resposta : 'sem resposta'}${h.observacao ? ` — "${h.observacao}"` : ''} (${quando}; ${motivo})`;

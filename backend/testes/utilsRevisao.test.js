@@ -216,7 +216,8 @@ caso('MCP: pesquisa gravada de fora fica "não verificada" e fora do cache autom
 });
 
 caso('MCP: descrições e README atualizados (ordem da IA, histórico, não-admin)', () => {
-  const mcp = fs.readFileSync(path.join(__dirname, '..', 'src', 'mcp', 'mcpServer.mjs'), 'utf8');
+  // INT-05 (Fase 6): as ferramentas só do Desktop saíram do mcpServer.mjs para ferramentasDesktop.mjs
+  const mcp = ['mcpServer.mjs', 'ferramentasDesktop.mjs'].map(n => fs.readFileSync(path.join(__dirname, '..', 'src', 'mcp', n), 'utf8')).join('\n');
   assert.ok(!/Gemini com fallback pago no Claude/.test(mcp));
   assert.match(mcp, /Claude Max \(assinatura, sem custo por chamada\) → Claude pela API → Gemini/);
   assert.ok(!/o sistema ainda não guarda isso/.test(mcp));

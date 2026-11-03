@@ -6,16 +6,21 @@ const pool = require('../../config/database');
 const { tiposDocumento, motorDaDisciplina } = require('../../utils/disciplinasLaudo');
 const P = require('../../services/pastasSistema');
 const componentesQuadro = require('../../services/componentesQuadro');
+const equipamentosCatalogo = require('../../services/equipamentosCatalogo');
 
 // Quadros (2.4): o catálogo de componentes do banco (medidas oficiais por
 // fabricante) entra nos dados antes do cálculo — ver injetarNosDados.
 const DISCIPLINA_QUADROS = 'quadros';
+// Climatização (fase 4): o catálogo de equipamentos (equipamentos_catalogo, migração 2.0-42)
+// entra em dados.catalogo_equipamentos — a skill escolhe o menor modelo que atende.
+const DISCIPLINA_CLIMATIZACAO = 'climatizacao';
 
 async function carregarLaudo(id) {
   const { rows } = await pool.query('SELECT * FROM laudos_projetos WHERE id = $1', [id]);
   const laudo = rows[0] || null;
   // o cálculo da skill é síncrono: relê o catálogo agora para processarComMotor usar
   if (laudo?.disciplina === DISCIPLINA_QUADROS) await componentesQuadro.atualizarCache();
+  if (laudo?.disciplina === DISCIPLINA_CLIMATIZACAO) await equipamentosCatalogo.atualizarCache();
   return laudo;
 }
 
@@ -36,9 +41,15 @@ function ehMotorDeQuadros(motor) {
 // registros do banco dos fabricantes escolhidos (cópia — o que é salvo no
 // registro não muda). Outras disciplinas, sem fabricante escolhido ou tabela
 // vazia: os mesmos dados.
+function ehMotorDeClimatizacao(motor) {
+  try { return motor === motorDaDisciplina(DISCIPLINA_CLIMATIZACAO); } catch { return false; }
+}
+
 function dadosParaMotor(motor, dados) {
-  if (!dados || typeof dados !== 'object' || !ehMotorDeQuadros(motor)) return dados;
-  return componentesQuadro.injetarNosDados(dados);
+  if (!dados || typeof dados !== 'object') return dados;
+  if (ehMotorDeQuadros(motor)) return componentesQuadro.injetarNosDados(dados);
+  if (ehMotorDeClimatizacao(motor)) return equipamentosCatalogo.injetarNosDados(dados);
+  return dados;
 }
 
 function processarComMotor(motor, dados) {
