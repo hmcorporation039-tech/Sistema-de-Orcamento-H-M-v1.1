@@ -808,7 +808,7 @@ Só código, sem migração. Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-b
 
 ### 02/11/2026: auditoria completa e fase 0 do roteiro (no v2, ainda não instalada)
 - **Auditoria** em 8 áreas (backend e segurança, banco e testes, leitura PDF/DWG, 3D, skills, frontend, integração e assistente, lixo e operação). Foram 15 agentes, cada achado conferido por um verificador cético.
-  - 73 achados confirmados (5 altos, 21 médios, 47 baixos) e 1 refutado. Nenhuma falha crítica de segurança.
+  - 73 achados confirmados (5 altos, 19 médios, 49 baixos) e 1 refutado. Nenhuma falha crítica de segurança.
   - Relatório completo: `docs/historico/AUDITORIA-2026-11-02.md`.
 - **Roteiro da grande implementação:** `docs/ROTEIRO-GRANDE-IMPLEMENTACAO.md`.
   - Fases: modelo único da instalação, 3D interativo, precisão PDF/DWG com placar, Climatização (HVAC/VAV/chiller/PMOC), iluminação no 3D, canal remoto por WhatsApp/Telegram/voz e estrutura.

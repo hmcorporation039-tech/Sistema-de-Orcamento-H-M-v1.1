@@ -301,7 +301,7 @@ Fase 1, passo 1 e 3: identificador de circuito comum e o 3D gravando circuito e 
 
 **Escopo:** 8 áreas (backend e segurança, banco e testes, leitura PDF/DWG, 3D, skills, frontend, integração e assistente, lixo e operação), 15 agentes e um verificador cético por área.
 
-**Resultado:** 73 achados confirmados (5 altos, 21 médios, 47 baixos), 1 refutado (SK-03: limite já documentado) e nenhuma falha crítica de segurança.
+**Resultado:** 73 achados confirmados (5 altos, 19 médios, 49 baixos), 1 refutado (SK-03: limite já documentado) e nenhuma falha crítica de segurança.
 
 **Testes rodados na auditoria:**
 
