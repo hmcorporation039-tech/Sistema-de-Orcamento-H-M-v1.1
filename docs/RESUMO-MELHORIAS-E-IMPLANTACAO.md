@@ -36,7 +36,7 @@
   - Produção em `C:\HM-Engenharia\hm-eng`: ramo `main`, porta 3001, banco `hm_orcamentos`.
   - Teste em `C:\HM-Engenharia\hm-eng-v2`: ramo `versao-2.0`, porta 3002, banco `hm_orcamentos_v2`.
   - Fluxo: teste → aprovação → backup → merge → versão. Depois de cada versão na `main`, mesclar a `main` de volta no `versao-2.0`.
-- **Backend:** Node.js 22.12+ com Express (`backend/src/server.js`) e PostgreSQL, com autenticação JWT HS256 de 8 h e papéis admin/user.
+- **Backend:** Node.js 22.12+ com Express (`backend/src/server.js`) e PostgreSQL, com autenticação JWT HS256. No v2 (Fase 6, 02/11/2026): sessões revogáveis por navegador (token de 15 min renovado sozinho), verificação em duas etapas opcional (TOTP), auditoria de acesso e papéis admin, financeiro, técnico e user (`exigePapel`).
   - Rotas:
     - `routes/index.js` tem as rotas da 1.x;
     - `routes/v2/*.js` são carregadas sozinhas;
@@ -871,3 +871,11 @@ Pedido: "faça tudo e deixe a comunicação com o canal remoto por último". O d
 - **Para implantar no v2:** reiniciar o backend do v2 para carregar as rotas novas (as migrações `2.0-42` e `2.0-43` já estão no banco do v2), rodar o build do frontend e ligar a skill climatizacao (`skills/ligar-skills.ps1`). Para o placar, criar a pasta `C:\HM-Engenharia\Placar de precisao` e conferir as contagens do rascunho gerado com `--modelo`.
 - **Produção:** nada instalado. Falta conferir na produção, com SELECT, os modelos 3D órfãos antes da `2.0-40`.
 - **Fase 6 (canal remoto):** a próxima, depende das decisões do Márcio (canal, domínio público e quem pode usar).
+
+### 02/11/2026: fase 6 do roteiro — segurança e canal remoto (no v2, canal desligado)
+- **Segurança:** sessões revogáveis com token de 15 min renovado sozinho, verificação em duas etapas (TOTP) opcional, telefone ou chat vinculado por código, auditoria de acesso (Cadastros › Auditoria) e papéis financeiro e técnico. Migrações `2.0-44` a `2.0-46`, já aplicadas no banco do v2.
+- **Canal:** fila no banco, webhooks do Telegram e do WhatsApp com assinatura obrigatória, comandos sem IA, ação pendente "SIM 1234" com prazo e nova conferência, ferramentas novas do assistente, lista única de ferramentas com o Claude Desktop (INT-05) e voz por whisper.cpp local. Migração `2.0-47`. Tela Cadastros › Canal remoto, com simulador.
+- **Desligado por padrão.** Para ligar, o Márcio precisa decidir o canal, o domínio público e quem pode usar; o passo a passo está no roteiro, Fase 6.
+- **Para testar no v2:** reiniciar o backend do v2 e rodar o build do frontend. O `.env` do v2 já tem `TOTP_CHAVE_CIFRA`; na produção, gerar outra e guardar com o backup do `.env`.
+- **Transição:** tokens antigos, sem sessão, valem até vencer (no máximo 8 h depois da instalação).
+- **Validação:** pré-deploy completo com 71/71 do backend, 130/130 do Jest e skills ok; builds de conferência compilam.

@@ -315,6 +315,26 @@ O que for irreversível pede confirmação ("SIM 4821"), com prazo.
 6. Ação pendente com prazo e nova conferência ao aplicar (INT-08), e a conferência de envio no cartão (INT-03, fase 0).
 7. Papéis além de admin/user (financeiro, técnico de campo) antes de dar acesso a mais gente.
 
+**Segurança feita no v2 em 02/11/2026** (itens 2 a 5 e 7; o 1 ficou só configurado, desligado; falta o OK do Márcio):
+- **Sessões revogáveis** (`services/sessoesUsuario.js`, migração 2.0-44): o login abre uma sessão por navegador, com token de acesso de 15 min (`SESSAO_TOKEN_MINUTOS`) e chave de renovação guardada no banco só como hash. A chave muda a cada renovação; a anterior vale 60 s (duas abas) e, depois disso, usá-la derruba a sessão. A sessão termina ao sair, em "encerrar", em "encerrar as outras", com a senha trocada ou redefinida, com o usuário desativado, com 7 dias parada ou com 30 dias de vida. A tela renova sozinha (`frontend/src/services/renovacaoSessao.js`, usado pelo axios, pelo app de campo e pelo assistente); só se a renovação for recusada aparece o "Entre de novo". Tokens de antes (sem `sid`) valem até vencer.
+- **Duas etapas (TOTP, RFC 6238)** só com `crypto` (`services/totp.js` e `segundaEtapa.js`, migração 2.0-45). Ativa em Cadastros › Minha conta, com QR (o `qrcode` do backend), chave e URL otpauth, e 10 códigos de recuperação de uso único. A chave fica cifrada (AES-256-GCM) com `TOTP_CHAVE_CIFRA`. Obrigatoriedade no `.env`, desligada: `TOTP_OBRIGATORIO_ADMIN` e `TOTP_OBRIGATORIO_FORA`.
+- **Telegram/WhatsApp verificados** (`services/telefonesVerificados.js`, migração 2.0-46): código de 6 dígitos com 10 min, uso único, guardado como hash; o canal chama `confirmarVinculo` com "/vincular 123456" e `usuarioPeloCanal` antes de atender. 5 erros em 15 min travam o id externo (50 no total).
+- **Auditoria de acesso** na tabela `auditoria` (entidade `acesso`, com origem e IP): login com e sem sucesso, segunda etapa, renovação, saída, sessões encerradas, senha, duas etapas e vínculos. "Login novo" (aparelho ou IP nunca vistos) vai para a auditoria e por e-mail, se o envio estiver configurado. Tela em Cadastros › Auditoria, só administrador.
+- **Papéis** `financeiro` e `tecnico`, escolhidos na tela de usuários. Nenhuma rota existente mudou; rota nova usa `exigePapel('financeiro')` depois do `autenticar` (`middleware/auth.js`), e o administrador passa sempre.
+- **Para o túnel** (não ligado): `TRUST_PROXY` e `CORS_ORIGENS` documentados no `.env.example`. Sem `TRUST_PROXY`, pedido com cabeçalho de proxy conta como "de fora".
+
+**Canal feito no v2 em 02/11/2026** (desligado: `CANAL_TELEGRAM_ATIVO` e `CANAL_WHATSAPP_ATIVO` em `false`; falta o OK e as decisões do Márcio):
+- **Fila no banco** (`services/canal/fila.js`, migração 2.0-47): `canal_mensagens` com `(canal, id_externo)` único, para não processar duas vezes. O webhook responde na hora e um trabalhador no backend processa e responde.
+- **Webhooks** em `/api/canal/webhook/telegram` e `/whatsapp`, sem login mas com assinatura obrigatória (segredo do Telegram e `X-Hub-Signature-256` do WhatsApp, em tempo constante, sobre o corpo bruto), limite de tamanho e de taxa. Com o canal desligado, devolvem 404.
+- **Interpretador local, sem IA:** ajuda, custos <obra> [este mês], margem, notas abertas ou a receber, Pix sem obra, vencimentos, novidades, cotações, proposta <nº>, enviar <proposta> para <cliente>, enviar projeto <nome> para <cliente>. Com mais de um candidato, pergunta qual. O resto vai para o assistente.
+- **Ação pendente com prazo (INT-08):** envio pede "SIM 1234" em 10 min (`CANAL_ACAO_PRAZO_MIN`); ao confirmar, confere de novo se o registro mudou e se o usuário ainda pode, e passa pela conferência de envio da tela (INT-03). O "Aplicar" da tela do assistente também confere prazo e mudança.
+- **Ferramentas novas do assistente** (só leitura): custos, margem, Pix sem obra, notas fiscais, notas a receber, vencimentos, novidades das pastas, cotações e cronograma; as do financeiro só para admin e financeiro. Envio do pacote do projeto por e-mail como ação pendente.
+- **INT-05:** uma lista só de ferramentas (`mcp/catalogoFerramentas.mjs`) para o Claude Desktop e o assistente; as 10 de antes mantêm nomes e parâmetros.
+- **Voz:** transcrição local com whisper.cpp se `WHISPER_CPP_BIN` e `WHISPER_MODELO` existirem; senão, responde que a voz não está ativada.
+- **Tela Cadastros › Canal remoto** (só admin): estado dos canais e o que falta no `.env`, simulador de conversa (o que for confirmado ali é executado de verdade), ações e mensagens.
+- **Ficou de fora:** troca Claude Max → API → Gemini dentro do canal; NFS-e pelo canal (depende da etapa 2); áudio no simulador; teste automático do envio real de e-mail do projeto; limpeza periódica da auditoria.
+- **Para ligar o Telegram:** @BotFather → token; `CANAL_TELEGRAM_TOKEN`, `CANAL_TELEGRAM_SEGREDO` e `CANAL_TELEGRAM_ATIVO=true` no `.env`; Cloudflare Tunnel só para a API, com `TRUST_PROXY` e `CORS_ORIGENS`; reiniciar; `setWebhook` com `secret_token`; cada pessoa vincula com `/vincular`.
+
 **Canal:**
 - **Telegram:** gratuito, sem aprovação, o mais rápido para começar.
 - **WhatsApp Business Cloud API (Meta):** exige verificar a empresa e um número próprio, e tem custo por mensagem conforme a categoria. É o que o Márcio e os clientes já usam.

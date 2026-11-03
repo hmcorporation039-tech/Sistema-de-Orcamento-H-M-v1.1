@@ -75,7 +75,7 @@ const path = require('path');
       assert.ok(src(f).includes('padroesParaPropostaNova(client)'), `${f} usa o padrão`);
       assert.ok(!/\n\s+0, 0, 0, totais\.subtotal_materiais/.test(src(f)), `${f} não grava BDI/impostos 0 fixos`);
     }
-    for (const f of ['mcp/assistenteFerramentas.mjs', 'mcp/mcpServer.mjs']) assert.ok(src(f).includes('/api/configuracoes/padroes-orcamento'), f);
+    for (const f of ['mcp/assistenteFerramentas.mjs', 'mcp/ferramentasDesktop.mjs']) assert.ok(src(f).includes('/api/configuracoes/padroes-orcamento'), f);
     assert.ok(!/bdi:\s*20,|imposto_servico:\s*6,/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'frontend', 'src', 'pages', 'Orcamento.js'), 'utf8')), 'tela sem 20 %/6 % fixos');
   } finally {
     await pool.query('DELETE FROM configuracoes WHERE chave = ANY($1)', [chaves]);

@@ -7,6 +7,8 @@
 // gerar link de aprovação, excluir, mexer no catálogo ou na base de serviços:
 // para isso há só `propor_acao` (ação pendente que o usuário aplica).
 const NOME_SERVIDOR_MCP = 'hm';
+// quem vê as ferramentas do financeiro (o administrador sempre)
+const PAPEIS_FINANCEIRO = ['admin', 'financeiro'];
 
 const FERRAMENTAS = [
   { nome: 'buscar_obras', rotulo: 'Consultando as obras' },
@@ -31,21 +33,35 @@ const FERRAMENTAS = [
   { nome: 'inserir_kit', rotulo: 'Inserindo kit no rascunho' },
   { nome: 'pesquisar_preco_mercado', rotulo: 'Pesquisando preço de mercado (usa cota)' },
   { nome: 'consultar_norma', rotulo: 'Consultando a norma' },
+  // Fase 6 (leitura): o financeiro (custos, margem, Pix sem obra, notas) só aparece para o
+  // administrador e o papel financeiro (`papeis`); a rota confere de novo (routes/v2/canalConsultas.js).
+  { nome: 'custos_obra', rotulo: 'Consultando os custos da obra', papeis: PAPEIS_FINANCEIRO },
+  { nome: 'margem_obra', rotulo: 'Calculando a margem da obra', papeis: PAPEIS_FINANCEIRO },
+  { nome: 'pix_sem_obra', rotulo: 'Consultando os Pix sem obra', papeis: PAPEIS_FINANCEIRO },
+  { nome: 'notas_fiscais', rotulo: 'Consultando as notas fiscais', papeis: PAPEIS_FINANCEIRO },
+  { nome: 'notas_a_receber', rotulo: 'Consultando as notas a receber', papeis: PAPEIS_FINANCEIRO },
+  { nome: 'vencimentos', rotulo: 'Consultando os vencimentos' },
+  { nome: 'novidades_pastas', rotulo: 'Consultando as novidades das pastas' },
+  { nome: 'cotacoes_fornecedores', rotulo: 'Consultando as cotações de fornecedores' },
+  { nome: 'cronograma_obra', rotulo: 'Abrindo o cronograma da obra' },
   { nome: 'propor_acao', rotulo: 'Preparando uma ação para você confirmar' },
 ];
 
 // Tipos de ação que o assistente pode PROPOR (propor_acao). A regra, a
 // validação e a execução de cada um ficam em services/assistente/acoes.js (o
 // teste confere que as duas listas batem).
-const TIPOS_ACAO = ['mudar_status_proposta', 'enviar_email_proposta', 'gerar_link_aprovacao', 'excluir_proposta', 'excluir_analise',
+const TIPOS_ACAO = ['mudar_status_proposta', 'enviar_email_proposta', 'enviar_email_projeto', 'gerar_link_aprovacao', 'excluir_proposta', 'excluir_analise',
   'excluir_projeto', 'editar_proposta', 'atualizar_projeto', 'atualizar_analise', 'alterar_preco_material', 'alterar_preco_servico'];
 
 // Nomes que NÃO podem existir (o teste confere): o que só o usuário faz.
 const PROIBIDAS = /aprovar|status|enviar_email|email|link_aprova|excluir|remover|apagar|deletar|delete|preco_catalogo|alterar_preco|catalogo_preco|usuario|senha|financeiro|contrato/i;
 
 const nomeCompleto = (nome) => `mcp__${NOME_SERVIDOR_MCP}__${nome}`;
-const ferramentasPermitidas = () => FERRAMENTAS.map(f => nomeCompleto(f.nome));
+// papel do usuário (admin, user, financeiro, tecnico): sem papel, a lista inteira (testes, MCP do Desktop)
+const ferramentaVisivel = (f, papel) => !papel || !f.papeis || papel === 'admin' || f.papeis.includes(papel);
+const ferramentasDoPapel = (papel) => FERRAMENTAS.filter(f => ferramentaVisivel(f, papel));
+const ferramentasPermitidas = (papel) => ferramentasDoPapel(papel).map(f => nomeCompleto(f.nome));
 const nomeCurto = (nomeOuCompleto) => String(nomeOuCompleto || '').replace(`mcp__${NOME_SERVIDOR_MCP}__`, '');
 const rotuloDa = (nomeOuCompleto) => FERRAMENTAS.find(f => f.nome === nomeCurto(nomeOuCompleto))?.rotulo || nomeCurto(nomeOuCompleto);
 
-module.exports = { FERRAMENTAS, PROIBIDAS, TIPOS_ACAO, ferramentasPermitidas, rotuloDa, nomeCurto };
+module.exports = { FERRAMENTAS, PROIBIDAS, TIPOS_ACAO, PAPEIS_FINANCEIRO, ferramentasPermitidas, ferramentasDoPapel, ferramentaVisivel, rotuloDa, nomeCurto };

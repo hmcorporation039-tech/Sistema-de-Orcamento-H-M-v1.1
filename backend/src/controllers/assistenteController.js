@@ -10,7 +10,7 @@ const pool = require('../config/database');
 const { config } = require('../services/assistente/config');
 const { gerenciador } = require('../services/assistente/execucao');
 const A = require('../services/assistente/arquivos');
-const { prepararAcao, executarAcao, criarChamadaApi, ErroAcao, tiposDeAcao } = require('../services/assistente/acoes');
+const { prepararAcao, executarAcao, criarChamadaApi, ErroAcao, tiposDeAcao, reconferirAcao } = require('../services/assistente/acoes');
 const { consultarNorma, historicoPreco } = require('../services/assistente/consultas');
 const { normalizarContexto, descreverContexto } = require('../services/assistente/prompt');
 const { statusLogin } = require('../services/assistente/claudeCli');
@@ -250,6 +250,15 @@ async function aplicarAcao(req, res) {
   if (aplicando.has(acao.id)) return res.status(409).json({ erro: 'Esta ação já está sendo aplicada.' });
   aplicando.add(acao.id);
   try {
+    // INT-08: prazo e nova conferência (o registro pode ter mudado depois do cartão)
+    const conferida = await reconferirAcao(acao);
+    if (!conferida.ok) {
+      const { rows: [nova] } = await pool.query(
+        `UPDATE assistente_acoes SET status = 'descartada', resultado = $2, decidido_por = $3, decidido_em = NOW()
+          WHERE id = $1 AND status = 'pendente' RETURNING *`,
+        [acao.id, { erro: conferida.mensagem, motivo: conferida.motivo, em: new Date().toISOString() }, req.usuario.id]);
+      return res.status(409).json({ erro: conferida.mensagem, motivo: conferida.motivo, acao: nova ? { ...nova, decidido_por_nome: req.usuario.nome } : null });
+    }
     // a MESMA rota da tela, com o token de quem clicou (posse, admin, validação, auditoria)
     const api = criarChamadaApi(config().apiUrl, req.headers.authorization);
     let resultado;
@@ -332,9 +341,9 @@ async function ferramentaProporAcao(req, res) {
   try {
     const p = await prepararAcao(req.body || {});
     const { rows: [acao] } = await pool.query(
-      `INSERT INTO assistente_acoes (conversa_id, mensagem_id, usuario_id, tipo, alvo_tipo, alvo_id, descricao, payload)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [req.assistente.conversaId, req.assistente.mensagemId, req.usuario.id, p.tipo, p.alvo_tipo, p.alvo_id, p.descricao, p.payload]);
+      `INSERT INTO assistente_acoes (conversa_id, mensagem_id, usuario_id, tipo, alvo_tipo, alvo_id, descricao, payload, impressao, expira_em)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, NOW() + make_interval(hours => $10::int)) RETURNING *`,
+      [req.assistente.conversaId, req.assistente.mensagemId, req.usuario.id, p.tipo, p.alvo_tipo, p.alvo_id, p.descricao, p.payload, p.impressao, config().acaoPrazoHoras]);
     registrarAcao(req.assistente.exec, acao);
     res.status(201).json({ id: acao.id, resumo: p.resumo, status: acao.status });
   } catch (e) {

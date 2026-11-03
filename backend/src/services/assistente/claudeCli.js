@@ -46,7 +46,7 @@ function pastaDeTrabalho() {
   return fs.realpathSync.native(p);
 }
 
-function montarArgs({ mensagem, sessionId, retomar, mcpConfig, modelo, maxTurnos, sistema }) {
+function montarArgs({ mensagem, sessionId, retomar, mcpConfig, modelo, maxTurnos, sistema, papel = null }) {
   const args = [
     '-p', mensagem,
     '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
@@ -54,7 +54,8 @@ function montarArgs({ mensagem, sessionId, retomar, mcpConfig, modelo, maxTurnos
     '--restricted', '--strict-mcp-config', '--mcp-config', mcpConfig,
     '--disable-slash-commands', '--tools', '',
     '--permission-mode', 'dontAsk',
-    '--allowedTools', ...ferramentasPermitidas(),
+    // papel do usuário: o financeiro só para admin/financeiro (services/assistente/ferramentas.js)
+    '--allowedTools', ...ferramentasPermitidas(papel),
     '--max-turns', String(maxTurnos),
     '--system-prompt', sistema,
     '--exclude-dynamic-system-prompt-sections',
