@@ -101,7 +101,7 @@ export default function PlantaMapaCad({ planta, simbolos, nomeDoTipo, ativa, onE
   // quadro de outro tamanho (tela cheia): mesmo centro e mesma escala, só a proporção acompanha
   const chaveCaixa = caixaInicial.join(',');
   const tamanhoAnterior = useRef(null);
-  useEffect(() => { setVb(enquadrar(caixaInicial, tamanho)); }, [chaveCaixa]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setVb(enquadrar(caixaInicial, tamanho)); }, [chaveCaixa]);
   useEffect(() => {
     const t0 = tamanhoAnterior.current;
     tamanhoAnterior.current = tamanho;
@@ -111,13 +111,13 @@ export default function PlantaMapaCad({ planta, simbolos, nomeDoTipo, ativa, onE
       const w = v.w * (tamanho.w / t0.w), h = w * (tamanho.h / tamanho.w);
       return { x: v.x + v.w / 2 - w / 2, y: v.y + v.h / 2 - h / 2, w, h };
     });
-  }, [tamanho]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tamanho]);
   // a tabela pediu para mostrar uma linha: enquadra os pontos dela
   useEffect(() => {
     if (!foco) return;
     const pts = planta.pontos.filter(p => p[0] === foco.idx);
     if (pts.length) setVb(enquadrar(caixaDosPontos(pts), tamanho, 0.25));
-  }, [foco]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [foco]);
 
   // roda do mouse: o listener é registrado à mão para poder impedir a rolagem da página (o onWheel do React é passivo)
   useEffect(() => {
