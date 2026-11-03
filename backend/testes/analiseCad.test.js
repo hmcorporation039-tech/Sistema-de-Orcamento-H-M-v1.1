@@ -65,6 +65,21 @@ function dxfSintetico() {
     assert.strictEqual(f.descricao, null);
   });
 
+  await caso('média tensão: blocos da subestação na layer 0 ganham disciplina só no arquivo de MT ou com kV no nome (03/11/2026)', async () => {
+    const mt = { disciplinas: ['media_tensao'] };
+    const t = descreverSimbolo(g('TRANSFORMADOR A SECO 225KVA', '0'), mt);
+    assert.deepStrictEqual([t.disciplina, /^Transformador de potência/.test(t.descricao)], ['media_tensao', true], JSON.stringify(t));
+    // "PUNHO DE MANOBRA SECCIONADORA" é o punho, não a seccionadora
+    assert.match(descreverSimbolo(g('PUNHO DE MANOBRA SECCIONADORA', '0'), mt).descricao, /^Punho de manobra/);
+    assert.match(descreverSimbolo(g('TAPETE DE BORRACHA', 'CURVA ELETRODUTO'), mt).descricao, /^Tapete isolante/);
+    // a tensão em kV no nome basta, mesmo sem a disciplina marcada
+    const s = descreverSimbolo(g('CHAVE SECCIONADOR SEM CARGA COM BASE FUSÍVEL 15KV', '0'), { disciplinas: ['eletrica'] });
+    assert.deepStrictEqual([s.disciplina, /^Chave seccionadora de MT/.test(s.descricao)], ['media_tensao', true], JSON.stringify(s));
+    // fora da MT o transformador não muda de disciplina (kVA não é kV) e o de separação nunca é de MT
+    assert.notStrictEqual(descreverSimbolo(g('TRANSFORMADOR A SECO 225KVA', '0'), { disciplinas: ['eletrica_industrial'] }).disciplina, 'media_tensao');
+    assert.notStrictEqual(descreverSimbolo(g('TRANSFORMADOR DE SEPARACAO 10KVA', '0'), mt).disciplina, 'media_tensao');
+  });
+
   await caso('legenda da prancha vale mais que a sigla', async () => {
     const t = descreverSimbolo(g('T3', 'TUBELE', { descricaoLegenda: 'TOMADA DE CORRENTE 2P+T INSTALADA H=0,30m' }));
     assert.strictEqual(t.origem, 'legenda');
@@ -316,6 +331,21 @@ function dxfSintetico() {
     // lista × contagem pelo desenho do PDF (sem DWG): vale a lista
     const s2 = semDuplicarFontes([m('Luminária LED 18 W', 10, 'un', 'lista', 'iluminacao'), m('LUMINÁRIA DE SOBREPOR', 12, 'un', 'pdf', 'iluminacao')], []);
     assert.deepStrictEqual(s2.map(x => x.quantidade), [10]);
+  });
+
+  await caso('DXF de subestação: transformador e seccionadora contados; seta de cota não é "não identificado"', async () => {
+    const d = new DesenhoDxf({ layers: [{ nome: 'A-PAREDE', cor: 8 }] });
+    d.polilinha([[0, 0], [8, 0], [8, 5], [0, 5]], { layer: 'A-PAREDE', fechada: true });
+    d.bloco('TRANSFORMADOR A SECO 225KVA', (b) => { b.addCircle({ x: 0, y: 0, z: 0 }, 0.4, { layerName: '0' }); });
+    d.bloco('CHAVE SECCIONADORA 15KV', (b) => { b.addCircle({ x: 0, y: 0, z: 0 }, 0.2, { layerName: '0' }); });
+    d.bloco('_ArchTick', (b) => { b.addCircle({ x: 0, y: 0, z: 0 }, 0.1, { layerName: '0' }); });
+    d.inserir('TRANSFORMADOR A SECO 225KVA', 2, 2, { layer: '0' });
+    d.inserir('CHAVE SECCIONADORA 15KV', 5, 2, { layer: '0' });
+    for (const x of [1, 3, 6]) d.inserir('_ArchTick', x, 4.5, { layer: '0' });
+    const r = await lerArquivoCad(Buffer.from(d.toString()), 'se.dxf', { disciplinas: ['media_tensao'] });
+    const itens = r.pagina.itens.filter(it => it.tipo === 'simbolo' && !it.ambiguo);
+    assert.deepStrictEqual(itens.map(it => [it.disciplina, it.quantidade]).sort(), [['media_tensao', 1], ['media_tensao', 1]], JSON.stringify(itens));
+    assert.ok(!(r.pagina.naoIdentificados || []).some(b => /ARCHTICK/i.test(b.bloco)), JSON.stringify(r.pagina.naoIdentificados));
   });
 
   console.log(`analiseCad: ${ok} casos ok`);

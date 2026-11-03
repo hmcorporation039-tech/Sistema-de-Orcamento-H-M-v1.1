@@ -97,7 +97,8 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
     return [...por.entries()];
   }, [mapa]);
 
-  if (!mapa?.disponivel) return null;
+  // análise com DWG feita antes do mapa existir: sem ele os pontos do desenho não têm onde ser conferidos
+  if (!mapa?.disponivel && !mapa?.semMapa) return null;
   const totalConferidas = mapa.arquivos.reduce((t, a) => t + a.resumo.conferidas, 0);
   const totalPontosPendentes = mapa.arquivos.reduce((t, a) => t + a.resumo.pontosPendentes, 0);
   const disciplinasFaltando = mapa.arquivos.flatMap(a => (a.disciplinasAIncluir || []).map(d => ({ ...d, arquivo: a.arquivo })));
@@ -136,7 +137,7 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
       const r = await reprocessarMapaCad(analiseId, { incluirDisciplinas });
       const h = r.data.edicoesHerdadas;
       const copiadas = h?.copiadas ? h.alterados + h.removidos + h.acrescentados : 0;
-      toast.success(`Nova análise gravada com o mapa conferido. A anterior continua salva.${copiadas ? ` ${copiadas} edição(ões) sua(s) foram copiadas.` : ''}`);
+      toast.success(`${mapa.disponivel ? 'Nova análise gravada com o mapa conferido.' : 'Nova análise gravada com o mapa do CAD — confira as layers nela.'} A anterior continua salva.${copiadas ? ` ${copiadas} edição(ões) sua(s) foram copiadas.` : ''}`);
       if (h && !h.copiadas) toast(h.motivo, { duration: 10000, icon: 'ℹ️' });
       if (h?.recalculados?.length) toast(`${h.recalculados.length} item(ns) que você tinha ajustado na quantidade foram recalculados pelo mapa conferido — vale a do mapa; revise: ${h.recalculados.slice(0, 4).join('; ')}${h.recalculados.length > 4 ? '…' : ''}`, { duration: 14000, icon: '⚠️' });
       navigate(`/obras/analise/${r.data.id}`);
@@ -172,6 +173,22 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
     } catch (err) {
       toast.error(err instanceof SyntaxError ? 'O arquivo não é um JSON válido.' : await mensagemDeErro(err, 'Não consegui importar a biblioteca (só administrador)'), { duration: 9000 });
     } finally { setOcupado(false); }
+  }
+
+  if (!mapa.disponivel) {
+    return (
+      <div style={estiloCartao} data-testid="cartao-mapa-cad-ausente">
+        <h3 style={estiloTitulo}>Mapa do CAD — esta análise ainda não tem</h3>
+        <p style={{ fontSize: 12, color: 'var(--texto-3)', lineHeight: 1.6, margin: '0 0 12px' }}>
+          Ela foi feita antes do mapa do CAD: os pontos dos símbolos desenhados no DWG/DXF (tomadas, luminárias, quadros) foram lidos,
+          mas <b>não entram no orçamento</b> sem conferência. Ler o desenho de novo grava uma análise nova com o mapa para conferir
+          (a atual continua salva e o que você editou nela é copiado).
+        </p>
+        <button type="button" style={{ ...botao, borderColor: '#c9a227', color: '#c9a227' }} onClick={reprocessar} disabled={ocupado} data-testid="gerar-mapa">
+          <RefreshCw size={13} /> {ocupado ? 'Lendo o desenho…' : 'Ler o DWG de novo e gerar o mapa'}
+        </button>
+      </div>
+    );
   }
 
   return (
