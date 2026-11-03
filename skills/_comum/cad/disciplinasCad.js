@@ -9,6 +9,7 @@
 // services/analiseCad e utils/compatibilidadeEspacial.js. Nenhum dado de cliente.
 const { SIMBOLOS } = require('./simbolos');
 const { padrao } = require('./padrao');
+const { lerAltura } = require('./textoCad');
 
 // prefixo de disciplina do padrão H&M (<DISC>-<ELEMENTO>) → chave da análise de projeto
 const PREFIXO_HM = {
@@ -78,17 +79,17 @@ function semPrefixoDeDisciplina(nome) {
   return (PREFIXO_HM[t] || PREFIXO_OUTROS[t]) ? m[2].trim() : s;
 }
 
-// Altura de instalação num texto ("h=1,20m", "H = 0,30 m", "(teto)", "piso",
-// "topo da porta"). Devolve { altura_m, montagem } ou null quando não diz.
+// Altura de instalação num texto ("h=1,20m", "H = 0,30 m", "a 2,20m do piso", "(teto)",
+// "piso", "topo da porta"). Devolve { altura_m, montagem } ou null quando não diz.
+// A altura escrita vem do leitor único (./textoCad.js) e vale ANTES das palavras: "Tomada
+// alta a 2,20m do piso" saía { 0, 'piso' } pela palavra "piso" (CAD-02, 02/11/2026).
 function alturaDoTexto(texto) {
   const s = semAcento(texto).toLowerCase();
   if (!s.trim()) return null;
-  const m = /\bh\s*[=:]\s*(\d+(?:[.,]\d+)?)\s*(m|cm)?\b/.exec(s) || /\baltura\s*[=:]?\s*(\d+(?:[.,]\d+)?)\s*(m|cm)?\b/.exec(s);
-  if (m) {
-    let v = Number(m[1].replace(',', '.'));
-    if (m[2] === 'cm' || (!m[2] && v > 10)) v /= 100;
-    if (v >= 0 && v <= 30) return { altura_m: Math.round(v * 100) / 100, montagem: v === 0 ? 'piso' : 'parede' };
-  }
+  const a = lerAltura(s);
+  // "h= 20 cm abaixo do forro": na parede, perto do forro (a altura do piso depende do pé-direito)
+  if (a?.abaixoDoForro) return { altura_m: null, montagem: 'parede' };
+  if (a && a.altura_m >= 0 && a.altura_m <= 30) return { altura_m: a.altura_m, montagem: a.altura_m === 0 ? 'piso' : 'parede' };
   if (/\b(teto|forro|laje)\b/.test(s)) return { altura_m: null, montagem: 'teto' };
   if (/\bpiso\b/.test(s)) return { altura_m: 0, montagem: 'piso' };
   if (/topo da porta|sobre a porta|acima da porta/.test(s)) return { altura_m: 2.1, montagem: 'parede' };

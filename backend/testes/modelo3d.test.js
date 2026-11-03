@@ -164,6 +164,57 @@ const caso = async (nome, fn) => { await fn(); ok++; };
     assert.notStrictEqual(k, M.chaveDa({ ...fonte, proposta: 'P300' }));
   });
 
+  // revisão de 02/11/2026 (3D-05): a legenda aprendida muda a leitura dos símbolos e
+  // entra na chave; o gerador é TODO o skills/_comum/cad (+ empresa.js), pelo conteúdo
+  await caso('chave do cache muda com os símbolos aprendidos (a ordem não importa)', async () => {
+    const a1 = { layer: 'EL-TOMADAS', medida: [0.2, 0.2], fracao: 0.5, simbolo: 'HM-ELE-TOMADA-ALTA', disciplina: 'eletrica', altura_m: 2.2, texto: 'Tomada alta' };
+    const a2 = { ...a1, layer: 'EL-INTERRUPTORES', simbolo: 'HM-ELE-INTERRUPTOR', texto: 'Interruptor' };
+    const k = M.chaveDa(fonte, [a1, a2]);
+    assert.strictEqual(k, M.chaveDa(fonte, [a2, a1]));
+    assert.notStrictEqual(k, M.chaveDa(fonte, [a1]));
+    assert.notStrictEqual(k, M.chaveDa(fonte, [a1, { ...a2, usuario: true }]));
+    assert.notStrictEqual(k, M.chaveDa(fonte));
+  });
+
+  await caso('versão do gerador: todos os .js/.json de _comum/cad e o empresa.js, sem testes', async () => {
+    const nomes = M.arquivosDoGerador().map(f => path.relative(CAD, f).split(path.sep).join('/'));
+    for (const f of ['simbolos.js', 'disciplinasCad.js', 'planta.js', 'plantasDisciplina.js', 'posicionamento.js', 'modelo3d.js', 'infraestrutura.js', 'visualizador3d/app.bundle.js', 'padrao-hm.json']) assert.ok(nomes.includes(f), f);
+    assert.ok(!nomes.some(f => /(^|\/)teste-|node_modules/.test(f)), nomes.join(' '));
+    const v = M.versaoDoGerador();
+    assert.match(v, /^[0-9a-f]{64}$/);
+    assert.strictEqual(M.versaoDoGerador(), v);
+  });
+
+  await caso('componente do projeto entra no 3D com a chave do registro (carregador, controle_acesso)', async () => {
+    const { dispositivos } = M.dispositivosDoEspacial({ pontos: [
+      { disciplina: 'carregador', descricao: 'Carregador veicular wallbox 7 kW', x: 2, y: 2 },
+      { disciplina: 'controle_acesso', descricao: 'Leitor facial', x: 6.5, y: 2 },
+    ], trechos: [] });
+    assert.deepStrictEqual(dispositivos.map(d => d.disciplina), ['carregador', 'controle_acesso']);
+    const r = await M.gerarNoWorker({ ...fonte, dispositivosReais: dispositivos });
+    const cena = JSON.parse(r.html.match(/window\.CENA=(.*?);document\.querySelectorAll/s)[1]);
+    assert.deepStrictEqual(Object.keys(cena.disciplinas).sort(), ['carregador', 'controle_acesso']);
+    assert.ok(Object.values(cena.disciplinas).every(d => d.cor !== '#dddddd'), JSON.stringify(cena.disciplinas));
+    // o componente lido do DWG vem sem ambiente: o 3D acha o da posição (3D-01)
+    assert.ok(cena.dispositivos.every(t => t.itens.every(i => i[5] >= 0)), JSON.stringify(cena.dispositivos.map(t => t.itens)));
+  });
+
+  await caso('"Gerar de novo": rota com login, id válido e dono da origem (ou admin)', async () => {
+    const rotas = [];
+    const router = { get: (p, ...f) => rotas.push(['get', p, f]), post: (p, ...f) => rotas.push(['post', p, f]), patch: (p, ...f) => rotas.push(['patch', p, f]) };
+    const marca = (nome) => Object.assign((req, res, next) => next(nome), { nome });
+    const chamados = [];
+    const posse = { laudo: (req, res, next) => { chamados.push('laudo'); next(); }, analise: (req, res, next) => { chamados.push('analise'); next(); }, proposta: (req, res, next) => { chamados.push('proposta'); next(); } };
+    require('../src/routes/v2/modelo3d')(router, { autenticar: marca('autenticar'), validarId: marca('validarId'), posse, uploadArquitetura: { single: () => marca('upload') } });
+    const r = rotas.find(([m, p]) => m === 'post' && p === '/modelo-3d/:origem/:id/gerar-de-novo');
+    assert.ok(r, rotas.map(x => x[1]).join(' '));
+    assert.deepStrictEqual(r[2].slice(0, 2).map(f => f.nome), ['autenticar', 'validarId']);
+    const posseDaOrigem = r[2][2];
+    for (const origem of ['laudo', 'analise', 'proposta', 'constructor', '__proto__']) posseDaOrigem({ params: { origem } }, {}, () => {});
+    assert.deepStrictEqual(chamados, ['laudo', 'analise', 'proposta']);
+    assert.strictEqual(typeof M.refazerModelo, 'function');
+  });
+
   await caso('link curto: formato, validade e origem', async () => {
     const t = M.criarLink('laudo', 7);
     assert.match(t, /^[0-9a-f]{48}$/);

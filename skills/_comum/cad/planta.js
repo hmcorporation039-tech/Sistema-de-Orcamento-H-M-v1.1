@@ -67,7 +67,8 @@ const REGRAS = {
   grade: (pol, n) => P.gradeComQuantidade(pol, n),
   cantos: (pol, n) => P.nosCantos(pol, n),
   centro: (pol, n) => (n ? [P.centro(pol)] : []),
-  // grade nx × ny calculada pela skill (it.nx, it.ny)
+  // grade nx × ny calculada pela skill (it.nx, it.ny); em sala irregular a grade já
+  // vem completada dentro do polígono (posicionamento.gradeNxNy)
   grade_nxny: (pol, n, fase, it) => P.gradeNxNy(pol, it.nx, it.ny).slice(0, n),
   // junto às portas detectadas (it.lado: fechadura | dobradica | centro; it.fora);
   // grupo com `porta` (índice): todos na mesma porta; sem portas → perímetro
@@ -153,10 +154,13 @@ function carimbo(d, x, y, c, escalaPlotagem) {
 // Posição de cada ponto pelas regras (perímetro, grade, cantos, porta…), sem
 // desenhar — usado pela planta DXF (abaixo) e pelo modelo 3D (./modelo3d.js).
 // pontos: [{ ambiente, itens: [{ simbolo, n, regra, prefixo, atributos(i) }] }]
+// avisos: quando a regra põe MENOS pontos que a skill pediu ("N de M fora"), para
+// a planta e o 3D não mostrarem menos que o memorial sem ninguém saber
 function posicionarPontos(arquitetura, pontos) {
   const contagem = {};
   const contadorId = {};
   const naoEncontrados = [];
+  const avisos = [];
   const posicoes = [];
   for (const grupo of pontos) {
     const amb = grupo.poligono ? { poligono: grupo.poligono, nome: grupo.ambiente } : acharAmbiente(arquitetura, grupo.ambiente);
@@ -169,6 +173,10 @@ function posicionarPontos(arquitetura, pontos) {
       const k0 = deParede.indexOf(it);
       const fase = k0 < 0 ? 0.5 : (0.5 + k0 / (deParede.length + 1)) % 1 || 0.15;
       const locais = (REGRAS[it.regra] || REGRAS.perimetro)(amb.poligono, it.n, fase, it, ctx);
+      if (it.n > locais.length) {
+        const nome = SIMBOLOS[it.simbolo]?.legenda || it.simbolo;
+        avisos.push(`${amb.nome}: ${it.n - locais.length} de ${it.n} ${nome} ficaram fora da planta (não couberam no ambiente pela regra "${it.regra || 'perimetro'}") — [CONFERIR] e posicione à mão.`);
+      }
       locais.forEach((pos, k) => {
         const prefixo = it.prefixo || '';
         contadorId[prefixo] = (contadorId[prefixo] || 0) + 1;
@@ -183,7 +191,7 @@ function posicionarPontos(arquitetura, pontos) {
       });
     }
   }
-  return { posicoes, contagem, naoEncontrados };
+  return { posicoes, contagem, naoEncontrados, avisos };
 }
 
 function gerarPlanta({ arquitetura, pontos, carimbo: dadosCarimbo = {}, notas = [], escalaPlotagem = 50 }) {
@@ -193,7 +201,7 @@ function gerarPlanta({ arquitetura, pontos, carimbo: dadosCarimbo = {}, notas = 
   definirSimbolos(d, usados);
   desenharReferencia(d, arquitetura);
 
-  const { posicoes: pos, contagem, naoEncontrados } = posicionarPontos(arquitetura, pontos);
+  const { posicoes: pos, contagem, naoEncontrados, avisos } = posicionarPontos(arquitetura, pontos);
   for (const p of pos) d.inserir(p.simbolo, p.x, p.y, { layer: SIMBOLOS[p.simbolo].layer, rotacao: p.rotacao, atributos: p.atributos });
   const posicoes = pos.map(p => ({ simbolo: p.simbolo, id: p.id, ambiente: p.ambiente, x: p.x, y: p.y, ...(p.porta ? { porta: p.porta } : {}) }));
 
@@ -212,7 +220,7 @@ function gerarPlanta({ arquitetura, pontos, carimbo: dadosCarimbo = {}, notas = 
   // carimbo (120 mm de altura com as revisões × escala) abaixo das notas
   const alturaCarimbo = (120 / 1000) * escalaPlotagem;
   carimbo(d, x0, Math.min(yMin, y - alturaCarimbo - 0.5), dadosCarimbo, escalaPlotagem);
-  return { dxf: d.toString(), quantitativo, posicoes, naoEncontrados };
+  return { dxf: d.toString(), quantitativo, posicoes, naoEncontrados, avisos };
 }
 
 module.exports = { gerarPlanta, posicionarPontos, acharAmbiente, casaNome, normalizar, portasDoAmbiente };

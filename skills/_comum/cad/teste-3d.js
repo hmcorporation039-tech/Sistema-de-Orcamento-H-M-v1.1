@@ -483,4 +483,90 @@ caso('página: corte, infraestrutura, "Ir para ambiente" e painel de dentro do a
   assert.deepStrictEqual(cru, [], 'texto da cena sem esc() em template de HTML');
 });
 
+// ── Revisão de 02/11/2026: ambiente pelo polígono, chaves do registro, desempenho ──
+caso('3D-01 componente do DWG com ambiente null: vai para o menor ambiente que contém o ponto (ou o de contorno mais perto)', () => {
+  const c = montarCena(arq, { peDireito: PD, dispositivos: [
+    { simbolo: 'HM-ILU-LUMINARIA', disciplina: 'iluminacao', x: 2, y: 2, id: '', ambiente: null },
+    { simbolo: 'HM-ILU-LUMINARIA', disciplina: 'iluminacao', x: 6.5, y: 2.5, id: '', ambiente: null },
+    // dentro da parede (5 cm fora do contorno, que corre pela face interna): a sala do lado
+    { simbolo: 'HM-ELE-TOMADA-BAIXA', disciplina: 'eletrica', x: 2, y: 5.05, id: '', ambiente: null },
+    // nome que não casa com nenhum ambiente: também pelo polígono
+    { simbolo: 'HM-ELE-TOMADA-BAIXA', disciplina: 'eletrica', x: 6.5, y: 0.2, id: '', ambiente: 'SALA QUE NÃO EXISTE' },
+    // longe de tudo: continua sem ambiente
+    { simbolo: 'HM-ILU-POSTE', disciplina: 'iluminacao-externa', x: 11, y: 2, id: '', ambiente: null },
+  ] });
+  const nome = (i) => (i >= 0 ? c.ambientes[i].nome : null);
+  const lum = c.dispositivos.find(t => t.simbolo === 'HM-ILU-LUMINARIA').itens.map(i => nome(i[5]));
+  assert.deepStrictEqual(lum, ['SALA DE ESTAR', 'COZINHA']);
+  const tom = c.dispositivos.find(t => t.simbolo === 'HM-ELE-TOMADA-BAIXA').itens.map(i => nome(i[5]));
+  assert.deepStrictEqual(tom, ['SALA DE ESTAR', 'COZINHA']);
+  assert.strictEqual(c.dispositivos.find(t => t.simbolo === 'HM-ILU-POSTE').itens[0][5], -1);
+  // pelo nome, quando casa, continua valendo
+  const c2 = montarCena(arq, { peDireito: PD, dispositivos: [{ simbolo: 'HM-ILU-LUMINARIA', x: 2, y: 2, ambiente: 'COZINHA' }] });
+  assert.strictEqual(c2.ambientes[c2.dispositivos[0].itens[0][5]].nome, 'COZINHA');
+});
+
+caso('SK-05 chaves de disciplina do 3D = as do registro único; nomes antigos aceitos (controle-acesso, veicular)', () => {
+  const { DISCIPLINAS: REG } = require('../disciplinas');
+  const { DISCIPLINAS: D3, chaveDisciplina } = require('./modelo3d');
+  const chaves = new Set(REG.map(d => d.chave));
+  assert.deepStrictEqual(Object.keys(D3).filter(k => !chaves.has(k)), ['iluminacao-externa']);
+  assert.strictEqual(chaveDisciplina('controle-acesso'), 'controle_acesso');
+  assert.strictEqual(chaveDisciplina('veicular'), 'carregador');
+  const c = montarCena(arq, { peDireito: PD, dispositivos: [
+    { simbolo: 'HM-VE-CARREGADOR', disciplina: 'carregador', x: 2, y: 3.9 },
+    { simbolo: 'HM-VE-CARREGADOR', disciplina: 'veicular', x: 3, y: 3.9 },
+    { simbolo: 'HM-ACE-LEITOR', disciplina: 'controle-acesso', x: 6, y: 3.9 },
+    { simbolo: 'HM-HOSP-TOMADA-IT', x: 1, y: 3.9 },
+  ], trechos: [{ disciplina: 'controle-acesso', tipo: 'eletroduto', segmentos: [[5.5, 1, 7.5, 1]] }] });
+  // um tipo só, com a cor e o rótulo da disciplina (antes: cinza #dddddd e 'carregador' cru)
+  const ve = c.dispositivos.filter(t => t.simbolo === 'HM-VE-CARREGADOR');
+  assert.deepStrictEqual(ve.map(t => [t.disciplina, t.itens.length]), [['carregador', 2]]);
+  assert.deepStrictEqual(Object.keys(c.disciplinas).sort(), ['carregador', 'controle_acesso', 'eletrica_hospitalar']);
+  assert.ok(Object.values(c.disciplinas).every(d => d.cor !== '#dddddd' && !/_/.test(d.rotulo)), JSON.stringify(c.disciplinas));
+  assert.ok(c.infra.every(g => g.disciplina === 'controle_acesso'), JSON.stringify(c.infra.map(g => g.disciplina)));
+});
+
+caso('3D-03 busca pela grade = busca em todos os segmentos (mesmo segmento, mesma distância, mesmo empate)', () => {
+  const { buscaMaisPerto } = require('./infraestrutura');
+  let sem = 7;
+  const rnd = () => { sem = (sem * 1103515245 + 12345) % 2147483648; return sem / 2147483648; };
+  const segs = [];
+  for (let i = 0; i < 500; i++) { const x = Math.round(rnd() * 80), y = Math.round(rnd() * 60), L = Math.round(rnd() * 6); segs.push(...(rnd() < 0.5 ? [x, y, x + L, y] : [x, y, x, y + L])); }
+  const pela = buscaMaisPerto(segs);
+  for (let k = 0; k < 400; k++) {
+    const x = Math.round(rnd() * 100) - 10, y = Math.round(rnd() * 80) - 10;
+    let m = null;
+    for (let i = 0; i < segs.length; i += 4) {
+      const [x1, y1, vx, vy] = [segs[i], segs[i + 1], segs[i + 2] - segs[i], segs[i + 3] - segs[i + 1]];
+      const L2 = vx * vx + vy * vy, t = L2 ? Math.max(0, Math.min(1, ((x - x1) * vx + (y - y1) * vy) / L2)) : 0;
+      const d = Math.hypot(x - (x1 + vx * t), y - (y1 + vy * t));
+      if (!m || d < m.d) m = { d, s: i / 4 };
+    }
+    const g = pela(x, y);
+    assert.deepStrictEqual([g.d, g.s], [m.d, m.s], `ponto ${x}, ${y}`);
+  }
+});
+
+caso('3D-03 caminhos sugeridos em planta grande: rápido; no teto de ligações para e conta os que ficaram de fora', () => {
+  // 300 salas de 4 × 4 m, 9 pontos cada (antes: 3,4 s na cena; a de 1.200 salas, 51 s)
+  const pecas = [], paredes = [];
+  for (let i = 0; i < 20; i++) for (let j = 0; j < 15; j++) {
+    const x0 = i * 4 + 0.15, y0 = j * 4 + 0.15, amb = i * 15 + j;
+    for (let k = 0; k < 4; k++) pecas.push({ x: x0 + 0.5 + k * 0.9, y: y0 + 0.02, tipo: 'outro', amb });
+    for (let k = 0; k < 4; k++) pecas.push({ x: x0 + 1 + (k % 2) * 2, y: y0 + 1 + Math.floor(k / 2) * 2, tipo: 'luminaria', amb });
+    pecas.push({ x: x0 + 0.02, y: y0 + 1, tipo: 'interruptor', amb });
+  }
+  for (let i = 0; i <= 20; i++) paredes.push([i * 4, 0, i * 4, 60], [i * 4 + 0.15, 0, i * 4 + 0.15, 60]);
+  for (let j = 0; j <= 15; j++) paredes.push([0, j * 4, 80, j * 4], [0, j * 4 + 0.15, 80, j * 4 + 0.15]);
+  const t = Date.now();
+  const r = sugerirCaminhos({ pecas, paredes });
+  const ms = Date.now() - t;
+  assert.deepStrictEqual([r.sugeridos, r.sem, r.cortados], [2699, 0, 0]);
+  assert.ok(ms < 2500, `${ms} ms`);
+  // teto: para no limite e conta os que ficaram de fora (10 salas: 10 retornos, 1 raiz, 10 ligações)
+  const rc = sugerirCaminhos({ pecas: pecas.slice(0, 90), paredes, maxSugeridos: 10 });
+  assert.deepStrictEqual([rc.sugeridos, rc.sem, rc.cortados], [20, 69, 69]);
+});
+
 console.log(`3d: ${ok} casos ok`);

@@ -21,12 +21,18 @@ const { dentro } = require('./arquitetura');
 const { ESPEC } = require('./modelo3d');
 const { tipoDoAmbiente } = require('./estimativaArquitetura');
 const { TIPOS, familia, tipoPelaLayer, tipoPeloTexto, metros, alturaEscrita, tomadaPelaAltura, DE_PAREDE } = require('./tiposDePonto');
+const { lerAltura } = require('./textoCad');
 
 const MAIOR_SIMBOLO_M = 3; // grupo maior que isso é traçado, não símbolo
 const COLA_M = 0.05;       // traços a até 5 cm um do outro são do mesmo símbolo
+const MAX_LINHAS_MAPA = 300;        // linhas do mapa (formas de símbolo) por desenho; o resto vai no aviso
+const MAX_FORMAS_PDF_SUGERIDAS = 8; // na cor do PDF, só as formas mais frequentes recebem tipo sugerido
 // layers de instalação (o resto — arquitetura, prancha — não tem pontos)
 const RE_INSTALACAO = /^PDF-COR-|^(EL|ELE|IFC|P|INC|CFTV|TEL|SPDA|PCI|HID|CAB|ACE|ALM|ANT|AUT|FV|VE|ILU)[-_ ]|SIMB|L[ÂA]MP|LUMIN|TOMAD|INTERRUP|CAIXA|QUADRO|POSTE|REFLET|PROJETOR|DETEC|C[ÂA]MERA|SENSOR|CONDUT|ELETROD|ELETROCALHA|LEITO|PERFILADO|EMERG|BALIZ|ACION|AVISAD|SIREN|CENTRAL|RACK|PORTEIRO|TELEF|INTERF|ANTENA|LEITOR|FECHAD|BOTOEIRA|CATRACA|\bIVP\b|INFRAV|MAGN[EÉ]T|TECLADO|CAPTOR|DESCIDA|INSPE[ÇC]|CARREG|WALLBOX|INVERSOR|FUMA[ÇC]|(^|[-_ ])(REDE|L[ÓO]GICA|DADOS|RJ.?45|WI.?FI|TV)([-_ ]|$)/i;
-const RE_FORA = /FIOS?\b|TEXTO|TXT|DIAGRAM|^DI[-_ ]|BARRAMENTO|UNIFILAR|TABELA|CONEX[ÕO]ES|MARGEM|PRANCHA|CONTORNO\d|HATCH|HACH|COTA/i;
+// (arquitetura e mobiliário também: "#ARQUITETURA SIMBOLOGIA" casava "SIMB" e o DWG só de
+// arquitetura da Paróquia saía com 8 linhas de mapa e 2 "postes" — CAD-13, 02/11/2026; a mesma
+// regra de RE_LAYER_FORA de ./projetoDxf.js, também na layer de xref "XREF$0$ARQ-…")
+const RE_FORA = /FIOS?\b|TEXTO|TXT|DIAGRAM|^DI[-_ ]|BARRAMENTO|UNIFILAR|TABELA|CONEX[ÕO]ES|MARGEM|PRANCHA|CONTORNO\d|HATCH|HACH|COTA|ARQUIT|(^|\$\d+\$|\|)#?(0-)?ARQ|MOBIL/i;
 const RE_TRECHO = /CONDUT|ELETROD|ELETROCALHA|LEITO|PERFILADO/i;
 
 // tipos de ponto de todas as disciplinas, a altura escrita e a tomada pela altura: ./tiposDePonto.js
@@ -110,6 +116,24 @@ function redondo(s, refs) {
 const ROTULO_PADRAO = { 'HM-ILU-POSTE': 'Poste de iluminação', 'HM-ELE-CAIXA-PISO': 'Caixa de passagem no piso' };
 const r2 = (v) => Math.round(v * 100) / 100;
 const mesmaMedida = (a, b, tol) => Math.abs(a[0] - b[0]) <= tol && Math.abs(a[1] - b[1]) <= tol;
+// De várias formas candidatas [{ medida (maior lado primeiro), tol, preenchimento? }], a de medida mais
+// próxima de um símbolo desenhado (dentro da tolerância e do mesmo preenchimento, ±0,08). Empate: a
+// menor forma (não depende da ordem das linhas). Devolve o índice ou -1. Usada pela proposta do mapa e
+// por aplicarMapa: cada símbolo é de UMA forma só (CAD-03).
+function maisProxima(formas, medida, fracao) {
+  let melhor = -1, custoMelhor = Infinity;
+  formas.forEach((f, i) => {
+    if (!mesmaMedida(medida, f.medida, f.tol)) return;
+    const dF = Number.isFinite(f.preenchimento) ? Math.abs((fracao || 0) - f.preenchimento) : 0;
+    if (dF > 0.08) return;
+    const custo = Math.abs(medida[0] - f.medida[0]) + Math.abs(medida[1] - f.medida[1]) + dF;
+    const empate = Math.abs(custo - custoMelhor) <= 1e-9;
+    if (custo < custoMelhor - 1e-9 || (empate && (f.medida[0] < formas[melhor].medida[0] - 1e-9 || (Math.abs(f.medida[0] - formas[melhor].medida[0]) <= 1e-9 && f.medida[1] < formas[melhor].medida[1] - 1e-9)))) {
+      melhor = i; custoMelhor = custo;
+    }
+  });
+  return melhor;
+}
 const comprimento = (r) => r.pts.slice(1).reduce((t, p, i) => t + Math.hypot(p[0] - r.pts[i][0], p[1] - r.pts[i][1]), 0);
 
 // ambiente do ponto (o menor que o contém) e se ele está na área externa
@@ -132,9 +156,8 @@ function contexto(arq) {
 // PREENCHIMENTO (vazio = baixa, meio cheio = média, cheio = alta). Então cada
 // símbolo da planta é comparado com os da legenda pela fração preenchida e pela
 // proporção, e a nota escrita ao lado do ponto ("altura: 97,5 cm", "h= 20 cm
-// abaixo do forro") vale sobre a legenda.
-const RE_ALTURA_LEGENDA = /([0-9]+(?:[.,][0-9]+)?)\s*(cm|m)\s*do\s+piso/i;
-const RE_ALTURA_NOTA = /(?:\bh\s*=|\baltura\b\s*:?)\s*([0-9]+(?:[.,][0-9]+)?)\s*(cm|m)?/i;
+// abaixo do forro") vale sobre a legenda. A altura escrita é lida pelo leitor único
+// (./textoCad.js): antes a legenda só entendia "… do piso" e a nota não entendia "h:" (CAD-11).
 const areaPol = (pts) => Math.abs(pts.reduce((s, p, i) => { const q = pts[(i + 1) % pts.length]; return s + p[0] * q[1] - q[0] * p[1]; }, 0)) / 2;
 
 // fração da caixa do símbolo coberta por preenchimento sólido da mesma layer
@@ -173,8 +196,7 @@ function legendaDoProjeto(arq) {
         .sort((a, b) => Math.abs(a.y - s.centro[1]) - Math.abs(b.y - s.centro[1]))[0];
       if (!t) continue;
       const [, , simbolo, disciplina] = tipoPeloTexto(t.s);
-      const m = RE_ALTURA_LEGENDA.exec(t.s);
-      const altura_m = m ? r2(metros(m[1], m[2])) : undefined;
+      const altura_m = alturaEscrita(t.s) || undefined;
       out.push({
         layer, medida: s.medida.map(r2), fracao: r2(fracaoPreenchida(s, layer, arq.preenchimentos)),
         simbolo: /TOMADA/.test(simbolo) && altura_m ? tomadaPelaAltura(altura_m) : simbolo, disciplina,
@@ -201,15 +223,15 @@ function daLegenda(legenda, layer, medida, fracao) {
 function aplicarNotas(arq, pontos) {
   for (const n of arq.notas || []) {
     if (n.legenda) continue;
-    const m = RE_ALTURA_NOTA.exec(n.s);
+    const a = lerAltura(n.s);
     // "altura do forro: 3,00 m", "pé-direito h=2,80": é do ambiente, não do ponto
-    if (!m || (/forro|p[ée].?direito|\bteto\b|\blaje\b/i.test(n.s) && !/abaixo\s+do\s+forro/i.test(n.s))) continue;
+    if (!a || (/forro|p[ée].?direito|\bteto\b|\blaje\b/i.test(n.s) && !a.abaixoDoForro)) continue;
     const alvo = pontos.filter(p => DE_PAREDE.test(p.simbolo)).map(p => [p, Math.hypot(p.x - n.x, p.y - n.y)]).filter(([, d]) => d <= 1.5).sort((a, b) => a[1] - b[1])[0]?.[0];
     if (!alvo) continue;
-    const h = r2(metros(m[1], m[2]));
+    const h = a.altura_m;
     if (!(h > 0 && h < 10)) continue;
     delete alvo.altura_m; delete alvo.abaixoDoForro_m;
-    if (/abaixo\s+do\s+forro/i.test(n.s)) alvo.abaixoDoForro_m = h;
+    if (a.abaixoDoForro) alvo.abaixoDoForro_m = h;
     else alvo.altura_m = h;
     if (/TOMADA/.test(alvo.simbolo)) alvo.simbolo = alvo.altura_m ? tomadaPelaAltura(alvo.altura_m) : 'HM-ELE-TOMADA-ALTA';
     alvo.rotulo = `${/TOMADA/.test(alvo.simbolo) ? 'Tomada' : /INTERRUPTOR/.test(alvo.simbolo) ? 'Interruptor' : (alvo.rotulo || 'Ponto').replace(/\s*\(nota do projeto:.*$/, '')} (nota do projeto: ${n.s})`.slice(0, 100);
@@ -298,24 +320,40 @@ function propostaDeMapa(arq, opcoes = {}) {
     }
     // tipos de símbolo da layer: medidas parecidas (±3 cm) e o mesmo preenchimento juntos
     const cheios = !pdf && (arq.preenchimentos || []).some(p => p.layer === layer);
+    // a forma de cada tipo é a do primeiro símbolo que não cabia em nenhum; depois cada símbolo vai
+    // para o tipo de medida MAIS PRÓXIMA — a mesma regra de aplicarMapa (CAD-03): a contagem da
+    // linha e os pontos que ela gera batem
     const tipos = [];
+    const formas = [];
     for (const s of agrupar(refs)) {
       if (pdf && !simboloPdf(s)) continue;
       const fracao = fracaoPreenchida(s, layer, arq.preenchimentos);
-      let t = tipos.find(x => mesmaMedida(x.medida, s.medida, 0.03) && Math.abs(x.fracao - fracao) <= 0.08);
-      if (!t) tipos.push(t = { medida: s.medida, fracao, itens: [] });
-      t.itens.push(s);
+      formas.push({ s, fracao });
+      if (!tipos.some(x => mesmaMedida(x.medida, s.medida, 0.03) && Math.abs(x.fracao - fracao) <= 0.08)) tipos.push({ medida: s.medida, fracao, itens: [] });
+    }
+    // (com a medida e o preenchimento arredondados como ficam na linha: o empate sai igual nos dois)
+    const candidatos = tipos.map(t => ({ medida: t.medida.map(r2), tol: 0.03, ...(cheios ? { preenchimento: r2(t.fracao) } : {}) }));
+    const exatos = tipos.map(t => ({ medida: t.medida, tol: 0.03, preenchimento: t.fracao }));
+    for (const { s, fracao } of formas) {
+      let i = maisProxima(candidatos, s.medida, cheios ? fracao : 0);
+      if (i < 0) i = maisProxima(exatos, s.medida, fracao); // no limite da tolerância, o arredondamento não tira o símbolo
+      if (i >= 0) tipos[i].itens.push(s);
     }
     // símbolo isolado só entra se o nome da layer diz o que é (o quadro geral costuma ser um só)
     // (no PDF, sem nome de layer, só o que se repete)
-    const mais = (x) => x.itens.length >= 2 || (!pdf && (!!sugestao(layer, x.medida, x.itens.every(q => ehExterno(q.centro))) || !!pelaLegenda(layer, null, x)));
-    for (const t of tipos.filter(mais).sort((a, b) => b.itens.length - a.itens.length).slice(0, 8)) {
+    const mais = (x) => x.itens.length >= 2 || (x.itens.length === 1 && !pdf && (!!sugestao(layer, x.medida, x.itens.every(q => ehExterno(q.centro))) || !!pelaLegenda(layer, null, x)));
+    // Todas as formas viram linha (antes, só as 8 mais frequentes de cada layer: numa layer
+    // genérica "SIMBOLOS" o resto sumia do mapa sem aviso — CAD-06). Na cor do PDF, depois das
+    // 8 mais frequentes, a forma aparece para conferir mas sem tipo sugerido (letra e seta
+    // convertidas em traço não viram ponto sozinhas).
+    for (const [ordem, t] of tipos.filter(mais).sort((a, b) => b.itens.length - a.itens.length).entries()) {
       // área externa: fora das salas, ou em ambiente externo (estacionamento, quadra, pátio)
       const fora = t.itens.filter(s => ehExterno(s.centro)).length;
       const circular = t.itens.filter(q => redondo(q, refs)).length > t.itens.length / 2;
       // na cor que é traçado, as marcas miúdas são setas e indicações do eletroduto: só o círculo (luminária) vira ponto
       let sug = pdf ? sugestaoPdf(t.medida, fora > t.itens.length / 2, circular) : sugestao(layer, t.medida, fora > t.itens.length / 2);
       if (pdf && ehTracado && sug?.simbolo !== 'HM-ILU-LUMINARIA') sug = null;
+      if (pdf && ordem >= MAX_FORMAS_PDF_SUGERIDAS) sug = null;
       // tipo e altura pela legenda do projeto (tomada alta/média/baixa, interruptor a 1,20 m;
       // layer genérica "SIMBOLOS" com "Detector de fumaça" ao lado na legenda)
       const leg = pelaLegenda(layer, sug, t);
@@ -333,7 +371,16 @@ function propostaDeMapa(arq, opcoes = {}) {
       });
     }
   }
-  return { simbolos, trechos };
+  // limite de linhas (o mapa vai guardado na análise): ficam as reconhecidas e as mais frequentes;
+  // o que sobra é dito no aviso, nunca some calado
+  if (simbolos.length <= MAX_LINHAS_MAPA) return { simbolos, trechos };
+  const ficam = new Set(simbolos.map((s, i) => [s, i])
+    .sort(([a], [b]) => (b.simbolo !== '?') - (a.simbolo !== '?') || b.quantidade - a.quantidade)
+    .slice(0, MAX_LINHAS_MAPA).map(([, i]) => i));
+  const saem = simbolos.filter((_, i) => !ficam.has(i));
+  const comTipo = saem.filter(s => s.simbolo !== '?').length;
+  const aviso = `o mapa do desenho mostra ${MAX_LINHAS_MAPA} formas de símbolo; outras ${saem.length} (${saem.reduce((t, s) => t + s.quantidade, 0)} símbolos${comTipo ? `, ${comTipo} delas com tipo sugerido` : ', nenhuma reconhecida'}; layers ${[...new Set(saem.map(s => s.layer))].slice(0, 5).join(', ')}) ficaram fora da lista e da contagem — [CONFERIR] no desenho`;
+  return { simbolos: simbolos.filter((_, i) => ficam.has(i)), trechos, aviso };
 }
 
 // Confirmações do engenheiro (tela do mapa do CAD) sobre o mapa proposto: [{ layer, medida, preenchimento?,
@@ -342,9 +389,13 @@ function propostaDeMapa(arq, opcoes = {}) {
 function aplicarConfirmacoes(mapa, confirmados) {
   if (!confirmados?.length) return mapa;
   const simbolos = (mapa.simbolos || []).map((s) => {
-    const c = confirmados.find(x => String(x.layer).toUpperCase() === String(s.layer).toUpperCase()
-      && Array.isArray(x.medida) && mesmaMedida([...x.medida].sort((a, b) => b - a), [...s.medida].sort((a, b) => b - a), 0.03)
+    if (!Array.isArray(s.medida) || s.medida.length < 2) return s;
+    // a confirmação de medida mais próxima (não a primeira a ±3 cm: duas linhas vizinhas,
+    // 20 e 22 cm, confirmadas com tipos diferentes, pegavam as duas o tipo da primeira)
+    const daLayer = confirmados.filter(x => String(x.layer).toUpperCase() === String(s.layer).toUpperCase() && Array.isArray(x.medida) && x.medida.length >= 2
       && (!Number.isFinite(x.preenchimento) || !Number.isFinite(s.preenchimento) || Math.abs(x.preenchimento - s.preenchimento) <= 0.08));
+    const k = maisProxima(daLayer.map(x => ({ medida: [...x.medida].sort((a, b) => b - a), tol: 0.03 })), [...s.medida].sort((a, b) => b - a), 0);
+    const c = k >= 0 ? daLayer[k] : null;
     if (!c) return s;
     const { altura_m, alturaDe, ...resto } = s;
     return {
@@ -368,17 +419,42 @@ function aplicarMapa(arq, mapa) {
   const { ambienteDe, ehExterno, porLayer } = contexto(arq);
   const pontos = [];
   const contagem = new Map();
-  for (const [linha, m] of (mapa.simbolos || []).entries()) {
+  const linhasDoMapa = mapa.simbolos || [];
+  for (const m of linhasDoMapa) {
+    if (m.simbolo && m.simbolo !== '?' && !ESPEC[m.simbolo]) throw new Error(`Símbolo "${m.simbolo}" (layer ${m.layer}) não existe no 3D (use: ${Object.keys(ESPEC).join(', ')}).`);
+  }
+  // Cada símbolo desenhado vai para UMA linha: a de medida mais próxima (e mesmo preenchimento). Antes
+  // ele entrava em toda linha da layer a ±3 cm — duas linhas vizinhas confirmadas com tipos diferentes
+  // davam o mesmo símbolo como tomada E interruptor (9 símbolos → 12 pontos; CAD-03, 02/11/2026).
+  // A linha "não é ponto" ('?') também fica com os seus símbolos (eles não vão para a vizinha).
+  const doMapa = new Map(); // linha → símbolos desenhados dela
+  const linhasPorLayer = new Map();
+  linhasDoMapa.forEach((m, i) => {
+    if (!Array.isArray(m.medida) || m.medida.length < 2) return;
+    (linhasPorLayer.get(m.layer) || linhasPorLayer.set(m.layer, []).get(m.layer)).push(i);
+  });
+  for (const [layer, idxs] of linhasPorLayer) {
+    const pdf = RE_PDF_COR.test(layer);
+    const formas = idxs.map(i => {
+      const m = linhasDoMapa[i];
+      return { i, area: m.area, medida: [...m.medida].sort((a, b) => b - a), tol: Number(m.tolerancia) > 0 ? Number(m.tolerancia) : 0.03, ...(Number.isFinite(m.preenchimento) ? { preenchimento: m.preenchimento } : {}) };
+    });
+    const comPreenchimento = formas.some(f => Number.isFinite(f.preenchimento));
+    const comArea = formas.some(f => f.area === 'externa' || f.area === 'interna');
+    for (const s of agrupar(porLayer.get(layer) || [])) {
+      if (pdf && !simboloPdf(s)) continue;
+      const fracao = comPreenchimento ? fracaoPreenchida(s, layer, arq.preenchimentos) : 0;
+      const externo = comArea ? ehExterno(s.centro) : null;
+      const cand = formas.filter(f => !(f.area === 'externa' && !externo) && !(f.area === 'interna' && externo));
+      const k = maisProxima(cand, s.medida, fracao);
+      if (k < 0) continue;
+      const linha = cand[k].i;
+      (doMapa.get(linha) || doMapa.set(linha, []).get(linha)).push(s);
+    }
+  }
+  for (const [linha, m] of linhasDoMapa.entries()) {
     if (!m.simbolo || m.simbolo === '?') continue;
-    if (!ESPEC[m.simbolo]) throw new Error(`Símbolo "${m.simbolo}" (layer ${m.layer}) não existe no 3D (use: ${Object.keys(ESPEC).join(', ')}).`);
-    const medida = [...m.medida].sort((a, b) => b - a);
-    const tol = Number(m.tolerancia) > 0 ? Number(m.tolerancia) : 0.03;
-    const pdf = RE_PDF_COR.test(m.layer);
-    for (const s of agrupar(porLayer.get(m.layer) || [])) {
-      if (!mesmaMedida(s.medida, medida, tol) || (pdf && !simboloPdf(s))) continue;
-      if (Number.isFinite(m.preenchimento) && Math.abs(fracaoPreenchida(s, m.layer, arq.preenchimentos) - m.preenchimento) > 0.08) continue;
-      if (m.area === 'externa' && !ehExterno(s.centro)) continue;
-      if (m.area === 'interna' && ehExterno(s.centro)) continue;
+    for (const s of doMapa.get(linha) || []) {
       // o mesmo aparelho em pedaços (quadro desenhado em partes) ou em duas layers
       // (EL-Lâmpada + IFC-Luminária-Contorno): um ponto só
       if (pontos.some(o => o.simbolo === m.simbolo && Math.hypot(o.x - s.centro[0], o.y - s.centro[1]) < 0.3)) continue;

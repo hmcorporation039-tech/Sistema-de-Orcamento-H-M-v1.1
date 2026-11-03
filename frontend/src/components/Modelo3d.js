@@ -5,8 +5,8 @@
 // enviarArquitetura(): o envio da arquitetura é o mesmo na análise e no projeto.
 import { useState, useRef, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { Box, FileDown, Upload } from 'lucide-react';
-import {
+import { Box, FileDown, Upload, RefreshCw } from 'lucide-react';
+import api, {
   abrirModelo3d, baixarModelo3d, urlModelo3d, enviarArquiteturaAnalise, getArquiteturaAnalise,
   getModelo3d, mostrarModelo3dAoCliente,
 } from '../services/api';
@@ -42,18 +42,23 @@ export async function enviarArquitetura(enviar, arquivo, { extra = () => '' } = 
   }
 }
 
+// "Gerar de novo": apaga o 3D guardado e gera outra vez (dono do registro ou
+// administrador — o servidor confere). Mesma resposta de abrirModelo3d.
+const gerarModelo3dDeNovo = (origem, id) => api.post(`/modelo-3d/${origem}/${id}/gerar-de-novo`, null, { timeout: 180000 });
+
 // antes: chamado antes de gerar (ex.: salvar o formulário pendente)
 export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null, estilo = {} }) {
   const [ocupado, setOcupado] = useState('');
 
-  async function ver() {
+  // deNovo: descarta o modelo guardado (3D velho depois de conferir símbolos no Mapa do CAD etc.)
+  async function ver(deNovo = false) {
     // a aba é aberta já no clique: aberta depois de esperar o servidor, o navegador bloquearia
     const aba = window.open('', '_blank');
     if (aba) aba.document.title = 'Gerando o modelo 3D…';
-    setOcupado('ver');
+    setOcupado(deNovo ? 'refazer' : 'ver');
     try {
       if (antes) await antes();
-      const r = await abrirModelo3d(origem, id);
+      const r = deNovo ? await gerarModelo3dDeNovo(origem, id) : await abrirModelo3d(origem, id);
       const url = urlModelo3d(r.data.url);
       if (aba && !aba.closed) aba.location.href = url;
       else toast((t) => <span>O navegador bloqueou a aba. <a href={url} target="_blank" rel="noreferrer" onClick={() => toast.dismiss(t.id)}>Abrir o 3D</a></span>, { duration: 15000 });
@@ -88,13 +93,17 @@ export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null,
 
   return (
     <>
-      <button type="button" style={{ ...btn3d, ...estilo }} disabled={desabilitado || !!ocupado} onClick={ver} data-testid="ver-3d"
+      <button type="button" style={{ ...btn3d, ...estilo }} disabled={desabilitado || !!ocupado} onClick={() => ver()} data-testid="ver-3d"
         title="Modelo 3D ilustrativo da arquitetura com os pontos previstos — gira, aproxima e liga/desliga camadas. Abre numa aba nova.">
         <Box size={13} style={{ marginRight: 5 }} /> {ocupado === 'ver' ? 'Gerando 3D…' : 'Ver em 3D'}
       </button>
       <button type="button" style={{ ...btn3d, ...estilo }} disabled={desabilitado || !!ocupado} onClick={baixar}
         title="Baixa o modelo 3D como uma página (.html) que abre em qualquer navegador, sem internet — para enviar ao cliente">
         <FileDown size={13} style={{ marginRight: 5 }} /> {ocupado === 'baixar' ? 'Gerando…' : 'Baixar 3D (.html)'}
+      </button>
+      <button type="button" style={{ ...btn3d, ...estilo }} disabled={desabilitado || !!ocupado} onClick={() => ver(true)} data-testid="refazer-3d"
+        title="Descarta o 3D guardado e gera outra vez (ex.: depois de conferir símbolos no Mapa do CAD). Só o dono do registro ou um administrador.">
+        <RefreshCw size={13} style={{ marginRight: 5 }} /> {ocupado === 'refazer' ? 'Gerando de novo…' : 'Gerar de novo'}
       </button>
     </>
   );

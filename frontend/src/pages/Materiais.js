@@ -15,18 +15,10 @@ import Select, { Sugestoes } from '../components/Select';
 import Modal from '../components/ui/Modal';
 import { estilos, Campo } from '../components/ui/estilos';
 import { useAuth } from '../hooks/useAuth';
+import { categoriasComUsadas } from '../utils/categoriasMateriais';
 
 const VAZIO = { codigo: '', descricao: '', categoria: '', unidade: 'un', preco: '', preco_compra: '', marca: '', ncm: '' };
 const UNIDADES = ['un', 'm', 'm²', 'm³', 'kg', 'cx', 'pct', 'rl', 'sc', 'pç', 'kit', 'h'];
-// Categorias padrão sugeridas (mesmas que o classificador automático usa, veja
-// backend/src/utils/classificadorMaterial.js) — além destas, qualquer categoria
-// já usada em algum material também vira sugestão, e dá pra digitar uma nova.
-const CATEGORIAS_PADRAO = [
-  // categorias usadas no catálogo (a tela mostra em ordem alfabética); 'Não classificado'
-  // só aparece se algum material ainda estiver aguardando a classificação automática
-  'Alarme', 'Antena coletiva', 'Automação', 'CFTV', 'Controle de acesso', 'Elétrica', 'EPI', 'Ferragens', 'Ferramentas',
-  'Informatica', 'Infraestrutura', 'Interfonia', 'Nobreaks', 'Redes / Cabeamento Estruturado', 'Sonorização',
-];
 const ORIGEM_LABEL = {
   manual: 'Manual', importacao: 'Importação', nota_xml: 'NF-e (XML)', nota_pdf: 'NF-e (PDF)',
   email_xml: 'E-mail (XML)', email_pdf: 'E-mail (PDF)', fornecedor_whatsapp: 'Orçamento fornecedor (pasta)',
@@ -77,7 +69,7 @@ export default function Materiais() {
   }, []);
 
   // Sugestões de categoria: as padrão da empresa + as que já estão em uso no banco
-  const categoriasSugeridas = Array.from(new Set([...CATEGORIAS_PADRAO, ...categorias])).sort((x, y) => x.localeCompare(y, 'pt-BR'));
+  const categoriasSugeridas = categoriasComUsadas(categorias);
 
   useEffect(() => {
     getStatusEmail().then(res => setStatusEmail(res.data)).catch(() => {});

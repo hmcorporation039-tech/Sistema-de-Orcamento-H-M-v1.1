@@ -11,8 +11,11 @@
 //     olhos a 1,60 m, arrastar gira a cabeça, roda/pinça muda a lente (zoom),
 //     duplo clique no piso anda até o ponto; etiquetas dos pontos próximos.
 // Desempenho: paredes numa geometria só (o corte é feito no shader, sem refazer
-// geometria), dispositivos e trechos em InstancedMesh por tipo, e a escala dos
-// símbolos pela distância é calculada na GPU.
+// geometria), pisos numa geometria por nível, dispositivos e trechos em
+// InstancedMesh por tipo, e a escala dos símbolos pela distância é calculada na
+// GPU. Desenho SÓ quando algo muda (câmera, animação, teclas, botões, tamanho da
+// tela) — como o 3D do quadro (./quadro.js): parado, não gasta CPU nem GPU
+// (celular do cliente, captura do PDF). Revisão de 02/11/2026.
 import {
   WebGLRenderer, Scene, Color, PerspectiveCamera, HemisphereLight, DirectionalLight, AmbientLight,
   BufferGeometry, Float32BufferAttribute, Mesh, MeshStandardMaterial, MeshBasicMaterial, LineBasicMaterial, LineSegments,
@@ -53,6 +56,10 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.outputColorSpace = SRGBColorSpace;
 const cena = new Scene();
 cena.background = new Color('#14161b');
+// há o que redesenhar? (etq: as etiquetas HTML também precisam ser refeitas)
+let sujo = true, etqSujas = true;
+function pedirDesenho(etq = false) { sujo = true; if (etq) etqSujas = true; }
+tela.addEventListener('webglcontextrestored', () => pedirDesenho(true));
 
 const [lx0, ly0, lx1, ly1] = CENA.limites;
 const larg = lx1 - lx0, prof = ly1 - ly0;
@@ -69,6 +76,7 @@ controles.maxDistance = diag * 4;
 controles.autoRotateSpeed = 0.9;
 // zoom na direção do cursor: a roda leva até o ambiente que se quer ver
 controles.zoomToCursor = true;
+controles.addEventListener('change', () => pedirDesenho());
 
 cena.add(new HemisphereLight('#ffffff', '#5a5a4e', 1.6));
 cena.add(new AmbientLight('#ffffff', 0.6));
@@ -109,21 +117,64 @@ function grupo(k, pai = cena) {
   }
 }
 
-// pisos dos ambientes (o menor por cima: ambientes sobrepostos no desenho)
+// pisos dos ambientes. Ambientes sobrepostos no desenho: o menor por cima — mas só
+// sobe o que de fato cruza a caixa de um maior, e no máximo NIVEIS_PISO degraus.
+// Antes cada ambiente subia 0,4 mm pela ordem de área, sem teto: com 300 ambientes
+// o piso das salas menores chegava a 0,125 m (enterrava postes, caixas de piso e
+// catracas, e cobria a planta das louças) e com 1.200, a 0,485 m, acima das tomadas
+// baixas (revisão de 02/11/2026). Os pisos de um mesmo nível vão numa geometria
+// só, com cor por vértice (uma chamada de desenho por nível, não por ambiente);
+// o duplo clique acha o ambiente pelo triângulo atingido (userData.ambientes).
+const NIVEIS_PISO = 20;
+const alturaPiso = (n) => 0.005 + n * 0.0004;
 const pisos = [];
-const ordem = [...CENA.ambientes].sort((a, b) => b.area_m2 - a.area_m2);
-ordem.forEach((a, k) => {
-  if (a.poligono.length < 3) return;
-  const s = new Shape(a.poligono.map(([x, y]) => new Vector2(x, y)));
-  const g = new ShapeGeometry(s);
-  const cor = (CENA.tiposAmbiente[a.tipo] || CENA.tiposAmbiente.outros).cor;
-  const mesh = new Mesh(g, new MeshStandardMaterial({ color: cor, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -1 - k * 0.05, polygonOffsetUnits: -1 - k }));
-  mesh.rotation.x = -Math.PI / 2;
-  mesh.position.y = 0.005 + k * 0.0004;
-  mesh.userData = { ambiente: a };
-  grupo('ambientes').add(mesh);
-  pisos.push(mesh);
+const ordem = CENA.ambientes.filter(a => a.poligono.length >= 3).sort((a, b) => b.area_m2 - a.area_m2);
+const caixaPiso = ordem.map(a => {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y] of a.poligono) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  return [x0, y0, x1, y1];
 });
+const nivelPiso = [];
+ordem.forEach((a, k) => {
+  const c = caixaPiso[k];
+  let n = 0;
+  for (let j = 0; j < k && n < NIVEIS_PISO; j++) {
+    const d = caixaPiso[j];
+    if (c[0] < d[2] && c[2] > d[0] && c[1] < d[3] && c[3] > d[1]) n = Math.max(n, nivelPiso[j] + 1);
+  }
+  nivelPiso.push(Math.min(n, NIVEIS_PISO));
+});
+// planta de referência (louças, móveis) e campo das câmeras: sempre acima do piso mais alto
+const ALTURA_PLANTA = Math.max(0.03, alturaPiso(nivelPiso.reduce((m, n) => Math.max(m, n), 0)) + 0.01);
+{
+  const porNivel = new Map();
+  ordem.forEach((a, k) => {
+    const n = nivelPiso[k];
+    if (!porNivel.has(n)) porNivel.set(n, { pos: [], cor: [], idx: [], ambientes: [] });
+    const P = porNivel.get(n);
+    const g = new ShapeGeometry(new Shape(a.poligono.map(([x, y]) => new Vector2(x, y))));
+    const p = g.attributes.position.array;
+    const c = new Color((CENA.tiposAmbiente[a.tipo] || CENA.tiposAmbiente.outros).cor);
+    const base = P.pos.length / 3, y = alturaPiso(n);
+    // (x, y) da planta → (x, altura, −y): o mesmo que a rotação de −90° em x de antes
+    for (let i = 0; i < p.length; i += 3) { P.pos.push(p[i], y, -p[i + 1]); P.cor.push(c.r, c.g, c.b); }
+    const ix = g.index ? g.index.array : [...Array(p.length / 3).keys()];
+    for (let i = 0; i < ix.length; i++) P.idx.push(base + ix[i]);
+    for (let i = 0; i < ix.length / 3; i++) P.ambientes.push(a);
+    g.dispose();
+  });
+  for (const [n, P] of porNivel) {
+    const g = new BufferGeometry();
+    g.setAttribute('position', new Float32BufferAttribute(P.pos, 3));
+    g.setAttribute('normal', new Float32BufferAttribute(P.pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+    g.setAttribute('color', new Float32BufferAttribute(P.cor, 3));
+    g.setIndex(P.idx);
+    const mesh = new Mesh(g, new MeshStandardMaterial({ vertexColors: true, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -1 - n * 0.05, polygonOffsetUnits: -1 - n }));
+    mesh.userData = { ambientes: P.ambientes };
+    grupo('ambientes').add(mesh);
+    pisos.push(mesh);
+  }
+}
 
 // ── Corte das paredes da frente (no shader) ─────────────────────────────────
 // Cada vértice de parede leva o centro da sua parede (aParede = cx, z0, cz).
@@ -245,7 +296,7 @@ if (CENA.planta) {
   for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
   const i16 = new Int16Array(u8.buffer);
   const pos = new Float32Array((i16.length / 2) * 3);
-  for (let k = 0, j = 0; k < i16.length; k += 2, j += 3) { pos[j] = i16[k] / 100; pos[j + 1] = 0.03; pos[j + 2] = -i16[k + 1] / 100; }
+  for (let k = 0, j = 0; k < i16.length; k += 2, j += 3) { pos[j] = i16[k] / 100; pos[j + 1] = ALTURA_PLANTA; pos[j + 2] = -i16[k + 1] / 100; }
   const g = new BufferGeometry();
   g.setAttribute('position', new Float32BufferAttribute(pos, 3));
   grupo('planta').add(new LineSegments(g, new LineBasicMaterial({ color: '#3a382f', transparent: true, opacity: 0.6 })));
@@ -415,11 +466,12 @@ for (const t of CENA.dispositivos) {
       const pts = [];
       for (let k = 0; k < campo.length; k += 2) pts.push([campo[k], campo[k + 1]]);
       const ap = [x, z, -y];
-      for (let k = 1; k < pts.length - 1; k++) piso.push(pts[0][0], 0.03, -pts[0][1], pts[k][0], 0.03, -pts[k][1], pts[k + 1][0], 0.03, -pts[k + 1][1]);
+      const h = ALTURA_PLANTA;
+      for (let k = 1; k < pts.length - 1; k++) piso.push(pts[0][0], h, -pts[0][1], pts[k][0], h, -pts[k][1], pts[k + 1][0], h, -pts[k + 1][1]);
       for (let k = 0; k < pts.length; k++) {
         const a = pts[k], b = pts[(k + 1) % pts.length];
-        vol.push(...ap, a[0], 0.03, -a[1], b[0], 0.03, -b[1]);
-        borda.push(a[0], 0.035, -a[1], b[0], 0.035, -b[1]);
+        vol.push(...ap, a[0], h, -a[1], b[0], h, -b[1]);
+        borda.push(a[0], h + 0.005, -a[1], b[0], h + 0.005, -b[1]);
       }
     }
     const malha = (arr, mat, Cls = Mesh) => { const g = new BufferGeometry(); g.setAttribute('position', new Float32BufferAttribute(arr, 3)); const m = new Cls(g, mat); m.renderOrder = 4; grupo('campo').add(m); return m; };
@@ -630,7 +682,7 @@ function areaLivre() {
   const topo = document.querySelector('#barra')?.getBoundingClientRect().bottom || 0;
   return { w, h, lateral, topo, livreW: Math.max(200, w - lateral - 32), livreH: Math.max(200, h - topo - 50) };
 }
-function ajustarFov(fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
+function ajustarFov(fov) { camera.fov = fov; camera.updateProjectionMatrix(); pedirDesenho(); }
 function vista3d() {
   sairDoAmbiente();
   ajustarFov(45);
@@ -721,6 +773,7 @@ function pontoDeVista(a) {
 function aplicarOlhar() {
   camera.rotation.order = 'YXZ';
   camera.rotation.set(pitch, yaw, 0);
+  pedirDesenho();
 }
 function olharPara(p) {
   const d = vTmp.copy(p).sub(camera.position).normalize();
@@ -737,10 +790,12 @@ function pontoOlhado(dist) {
 const suave = (k) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
 function animar(a0, pos, alvo, fov, dur, fim) {
   anim = { t0: performance.now(), dur, p0: camera.position.clone(), p1: pos.clone(), a0, a1: alvo.clone(), f0: camera.fov, f1: fov, fim };
+  pedirDesenho(true);
   if (!dur) passoAnimacao(performance.now());
 }
 function passoAnimacao(agora) {
   if (!anim) return;
+  pedirDesenho(true);
   const k = anim.dur ? Math.min(1, (agora - anim.t0) / anim.dur) : 1;
   const e = suave(k);
   camera.position.lerpVectors(anim.p0, anim.p1, e);
@@ -761,6 +816,7 @@ function trocarForro(a) {
   forro.rotation.x = -Math.PI / 2;
   forro.position.y = PD + 0.002;
   grupo('forro').add(forro);
+  pedirDesenho();
 }
 
 const painelDentro = $('#dentro');
@@ -774,6 +830,7 @@ function mostrarPainel(a) {
     redimensionar();
   }
   aplicarGrandes();
+  pedirDesenho(true);
 }
 function entrarAmbiente(ref, op = {}) {
   const a = typeof ref === 'number' ? CENA.ambientes[ref] : CENA.ambientes.find(x => x.nome === ref);
@@ -802,6 +859,7 @@ function sairDoAmbiente() {
   camera.rotation.order = 'XYZ';
   controles.enabled = true;
   controles.autoRotate = estado.giro;
+  pedirDesenho(true);
 }
 function voltarVistaGeral(op = {}) {
   if (modo === 'geral') return;
@@ -846,18 +904,20 @@ function aplicarParedes() {
   }
   $('#b-paredes').textContent = `Paredes: ${MODOS_PAREDE[m]}`;
   $('#b-paredes').classList.toggle('ativo', m !== 2);
+  pedirDesenho();
 }
 function alternar(botao, chave, aplicar) {
   const b = $(botao);
   if (!b) return;
   b.classList.toggle('ativo', !!estado[chave]);
-  b.addEventListener('click', () => { estado[chave] = !estado[chave]; b.classList.toggle('ativo', estado[chave]); aplicar(); });
+  b.addEventListener('click', () => { estado[chave] = !estado[chave]; b.classList.toggle('ativo', estado[chave]); aplicar(); pedirDesenho(true); });
 }
 function aplicarGrandes() {
   // dentro do ambiente o mínimo na tela é maior: a ideia é conferir as peças
   UD.uMin.value = (estado.grandes ? 26 : 14) + (modo === 'dentro' ? 6 : 0);
   UD.uBase.value = estado.grandes ? 1.5 : 1;
   UD.uMinInfra.value = estado.grandes ? 6 : 3;
+  pedirDesenho(true);
 }
 $('#b-paredes').addEventListener('click', () => { estado.paredes = (estado.paredes + 1) % 3; aplicarParedes(); });
 alternar('#b-corte', 'corte', () => {});
@@ -907,6 +967,7 @@ for (const [k, d] of Object.entries(CENA.disciplinas)) {
     g.visible = !g.visible;
     if (grupos[`infra:${k}`]) grupos[`infra:${k}`].visible = g.visible;
     b.classList.toggle('ativo', g.visible);
+    pedirDesenho(true);
   });
   barraDisc.appendChild(b);
 }
@@ -938,6 +999,7 @@ legenda.querySelectorAll('.leg').forEach(b => b.addEventListener('click', () => 
   if (!o) return;
   o.visible = !o.visible;
   b.classList.toggle('ativo', o.visible);
+  pedirDesenho(true);
 }));
 
 // ── Ponto sob o mouse/dedo (na tela, com a mesma escala do shader) ──────────
@@ -1028,7 +1090,9 @@ function aoDuploClique(cx, cy) {
   const alvos = modo === 'dentro' && malhaParedes && grupo('paredes').visible ? [...pisos, malhaParedes] : pisos;
   const hit = raio.intersectObjects(alvos, false)[0];
   if (!hit || hit.object === malhaParedes) return false;
-  const a = hit.object.userData.ambiente;
+  // pisos juntos por nível: o ambiente é o do triângulo atingido
+  const a = hit.object.userData.ambientes[hit.faceIndex];
+  if (!a) return false;
   if (modo === 'dentro') { andarAte(hit.point.x, hit.point.z, a); return true; }
   return entrarAmbiente(a.i);
 }
@@ -1106,6 +1170,7 @@ function andarPeloTeclado(dt) {
   const v = 1.8 * dt;
   camera.position.x += (-Math.sin(yaw) * f + Math.cos(yaw) * l) * v;
   camera.position.z += (-Math.cos(yaw) * f - Math.sin(yaw) * l) * v;
+  pedirDesenho(true);
   const a = ambienteNoPonto(camera.position.x, -camera.position.z);
   if (a && a.i !== atual) { atual = a.i; trocarForro(a); mostrarPainel(a); }
 }
@@ -1145,6 +1210,7 @@ function redimensionar() {
   // o centro da imagem vai para o meio da área livre
   camera.setViewOffset(a.w, a.h, a.lateral / 2, -(a.topo - 44) / 2, a.w, a.h);
   camera.updateProjectionMatrix();
+  pedirDesenho(true);
 }
 window.addEventListener('resize', redimensionar);
 window.addEventListener('load', redimensionar);
@@ -1154,18 +1220,38 @@ aplicarGrandes();
 vista3d();
 
 let tAnterior = performance.now();
+// câmera do último desenho: as etiquetas HTML só são refeitas quando ela muda
+// (ou quando um botão muda o que elas mostram: pedirDesenho(true))
+const camAnterior = new Float64Array(33).fill(NaN);
+function cameraMudou() {
+  const a = camera.matrixWorld.elements, p = camera.projectionMatrix.elements;
+  const tam = tela.clientWidth * 1e5 + tela.clientHeight;
+  let mudou = camAnterior[32] !== tam;
+  camAnterior[32] = tam;
+  for (let i = 0; i < 16; i++) {
+    if (camAnterior[i] !== a[i]) { mudou = true; camAnterior[i] = a[i]; }
+    if (camAnterior[16 + i] !== p[i]) { mudou = true; camAnterior[16 + i] = p[i]; }
+  }
+  return mudou;
+}
 function desenhar(agora = performance.now()) {
   const dt = Math.min(0.1, Math.max(0, (agora - tAnterior) / 1000));
   tAnterior = agora;
   passoAnimacao(agora);
   andarPeloTeclado(dt);
-  if (modo === 'geral' && !anim) controles.update();
+  // amortecimento e giro automático: update() diz se a câmera andou
+  if (modo === 'geral' && !anim && controles.update()) sujo = true;
+  if (!sujo) return;
+  sujo = false;
   ajustarPlanoProximo();
   UD.uPx.value = 2 * Math.tan(MathUtils.degToRad(camera.fov / 2)) / Math.max(tela.clientHeight, 1);
   atualizarCorte();
   renderer.render(cena, camera);
-  atualizarEtiquetas();
-  atualizarEtiquetasPontos();
+  if (cameraMudou() || etqSujas) {
+    etqSujas = false;
+    atualizarEtiquetas();
+    atualizarEtiquetasPontos();
+  }
 }
 // atalhos para captura/integração: window.HM3D.vistaDeCima(), entrarAmbiente('SALA', { instantaneo: true }) etc.
 window.HM3D = {
@@ -1174,10 +1260,12 @@ window.HM3D = {
   girarCabeca: (graus, pitchGraus) => { if (modo !== 'dentro') return; yaw += MathUtils.degToRad(graus); if (pitchGraus != null) pitch = MathUtils.degToRad(pitchGraus); aplicarOlhar(); },
   lente: (fov) => ajustarFov(MathUtils.clamp(fov, 15, 90)),
   olharPara: (x, y, z) => { if (modo === 'dentro') olharPara(W(x, y, z)); },
-  irPara: (x, y) => { if (modo === 'dentro') { camera.position.set(x, ALTURA_OLHOS, -y); const a = ambienteNoPonto(x, y); if (a && a.i !== atual) { atual = a.i; trocarForro(a); mostrarPainel(a); } } },
+  irPara: (x, y) => { if (modo === 'dentro') { camera.position.set(x, ALTURA_OLHOS, -y); pedirDesenho(true); const a = ambienteNoPonto(x, y); if (a && a.i !== atual) { atual = a.i; trocarForro(a); mostrarPainel(a); } } },
   escolherDispositivo, mostrarDica, aoDuploClique,
   get modo() { return modo; }, get ambienteAtual() { return atual; },
-  render: () => desenhar(performance.now()),
+  // desenho forçado (captura do PDF: services/modelo3d), etiquetas inclusive
+  render: () => { pedirDesenho(true); desenhar(performance.now()); },
+  get sujo() { return sujo; },
 };
 function quadro(agora) {
   requestAnimationFrame(quadro);

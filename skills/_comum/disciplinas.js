@@ -17,7 +17,9 @@
 //   subgrupo.material / subgrupo.servico — subgrupo do item na proposta. JÁ
 //     GRAVADO em propostas antigas: mudar o texto quebra o reconhecimento —
 //     acrescente o antigo em `aliases`.
-//   aliases   — outros nomes de subgrupo que valem como esta disciplina
+//   aliases   — outros nomes de subgrupo que valem como esta disciplina (inclusive
+//     os que o orçamento das skills grava: 'Usina solar', 'Recarga de VE',
+//     'Medição de iluminação')
 const DISCIPLINAS = [
   { chave: 'eletrica', pasta: 'eletrica', skill: 'eletrica', laudo: true, grupo: 'Elétrica', sigla: 'ELE',
     nomes: { laudo: 'Elétrica predial (NBR 5410)', analise: 'Elétrica predial/residencial (NBR 5410)', servico: 'Elétrica (infraestrutura)' },
@@ -36,13 +38,13 @@ const DISCIPLINAS = [
     subgrupo: { material: 'Quadros elétricos', servico: 'Montagem de quadros' }, aliases: ['Quadros elétricos', 'Montagem de painéis', 'Painéis elétricos', 'Montagem de quadros elétricos e de automação'] },
   { chave: 'iluminacao', pasta: 'iluminacao', skill: 'iluminacao', laudo: true, grupo: 'Elétrica', sigla: 'ILUM',
     nomes: { laudo: 'Iluminação — luminotécnico e automação (NBR ISO/CIE 8995-1)', analise: 'Iluminação (NBR ISO/CIE 8995-1)', servico: 'Iluminação' },
-    subgrupo: { material: 'Elétrica', servico: 'Iluminação' }, aliases: [] },
+    subgrupo: { material: 'Elétrica', servico: 'Iluminação' }, aliases: ['Medição de iluminação'] },
   { chave: 'solar', pasta: 'solar', skill: 'solar', laudo: true, grupo: 'Energia', sigla: 'SOL',
     nomes: { laudo: 'Usina solar fotovoltaica (NBR 16690 / REN 1000)', analise: 'Energia solar fotovoltaica', servico: 'Usina solar fotovoltaica' },
-    subgrupo: { material: 'Elétrica', servico: 'Solar' }, aliases: ['Energia solar', 'Usina solar fotovoltaica', 'Fotovoltaico'] },
+    subgrupo: { material: 'Elétrica', servico: 'Solar' }, aliases: ['Energia solar', 'Usina solar fotovoltaica', 'Fotovoltaico', 'Usina solar'] },
   { chave: 'carregador', pasta: 'carregador', skill: 'carregador', laudo: true, grupo: 'Energia', sigla: 'VE',
     nomes: { laudo: 'Carregador veicular (NBR 17019)', analise: 'Carregadores veiculares (NBR 17019)', servico: 'Recarga de veículo elétrico — Laudos e projetos' },
-    subgrupo: { material: 'Elétrica', servico: 'Recarga de veículo elétrico' }, aliases: ['Carregador veicular', 'Recarga de veículo elétrico — Laudos e projetos'] },
+    subgrupo: { material: 'Elétrica', servico: 'Recarga de veículo elétrico' }, aliases: ['Carregador veicular', 'Recarga de veículo elétrico — Laudos e projetos', 'Recarga de VE'] },
   { chave: 'spda', pasta: 'spda', skill: 'spda', laudo: true, grupo: 'Proteção', sigla: 'SPDA',
     nomes: { laudo: 'SPDA — para-raios (NBR 5419:2026)', analise: 'SPDA (NBR 5419)', servico: 'SPDA (para-raios) — Laudos e projetos' },
     subgrupo: { material: 'Elétrica', servico: 'SPDA' }, aliases: ['Para-raios', 'SPDA (para-raios)', 'SPDA (para-raios) — Laudos e projetos'] },

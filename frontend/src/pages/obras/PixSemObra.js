@@ -4,11 +4,11 @@ import { Link2 } from 'lucide-react';
 import { getPixSemObra, atribuirPixObra } from '../../services/api';
 import Modal from '../../components/ui/Modal';
 import { moeda, estilos as E } from './comum';
+import { dataBr } from '../../utils/format';
 
 // A margem de cada obra só conta os Pix LIGADOS a ela. Este aviso (só administrador) mostra quanto ainda
 // está solto e abre a lista por nome do pagador/favorecido: escolha a obra (já vem a sugerida, quando o
 // sinal é seguro), o período se precisar, e "lembrar" para os próximos Pix desse nome (services/atribuicaoObras.js).
-const dataBr = (iso) => (iso ? iso.split('-').reverse().join('/') : '');
 
 function Linha({ grupo, obras, ocupado, onAtribuir }) {
   const sug = grupo.sugestao;

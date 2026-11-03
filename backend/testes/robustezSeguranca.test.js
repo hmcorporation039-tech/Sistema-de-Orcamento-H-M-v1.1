@@ -35,7 +35,7 @@ const { comTransacao } = require('../src/services/transacao');
 const { registrarAuditoria } = require('../src/services/auditoria');
 const { conferirZipOffice } = require('../src/services/assistente/arquivos');
 const R = require('../src/utils/assistenteRascunho');
-const { prepararAcao } = require('../src/services/assistente/acoes');
+const { prepararAcao, executarAcao } = require('../src/services/assistente/acoes');
 const E = require('../src/services/assistente/execucao');
 
 const SK = require('../src/config/caminhos').RAIZ_SKILLS;
@@ -224,14 +224,30 @@ caso('ação "enviar e-mail": o cartão traz destinatário, assunto e o TEXTO do
     return { rows: [] };
   };
   const mensagem = 'Bom dia,\n\n\nsegue a proposta revisada. Qualquer dúvida estou à disposição.';
-  const a = await prepararAcao({ tipo: 'enviar_email_proposta', alvo_id: 7, payload: { destinatario: 'cliente@exemplo.com.br', mensagem }, descricao: 'pedido do usuário' });
+  // conferência antes do envio (revisaoPreEnvio): proposta sem itens é BLOQUEIO —
+  // a ação é recusada, salvo confirmação explícita, que vai no cartão
+  for (const tipo of ['enviar_email_proposta', 'gerar_link_aprovacao']) {
+    await assert.rejects(
+      prepararAcao({ tipo, alvo_id: 7, payload: { destinatario: 'cliente@exemplo.com.br' } }),
+      (e) => e.status === 400 && /Conferência antes do envio: .*nenhum item/.test(e.message) && /confirmar_bloqueio/.test(e.message), tipo);
+  }
+  const link = await prepararAcao({ tipo: 'gerar_link_aprovacao', alvo_id: 7, payload: { dias: 10, confirmar_bloqueio: true } });
+  assert.match(link.descricao, /BLOQUEIO \(enviar mesmo assim, a pedido do usuário\): A proposta não tem nenhum item/);
+  assert.deepStrictEqual(link.payload, { dias: 10, confirmar_bloqueio: true });
+  // no clique, a confirmação não vai para a rota da tela; sem ela, o clique é recusado
+  const chamadas = [];
+  const apiFalsa = async (metodo, caminho, corpo) => { chamadas.push([metodo, caminho, corpo]); return { ok: true }; };
+  await executarAcao({ tipo: 'gerar_link_aprovacao', alvo_id: 7, payload: link.payload }, apiFalsa);
+  assert.deepStrictEqual(chamadas, [['POST', '/api/propostas/7/link-aprovacao', { dias: 10 }]]);
+  await assert.rejects(executarAcao({ tipo: 'gerar_link_aprovacao', alvo_id: 7, payload: { dias: 10 } }, apiFalsa), /mudou depois que o cartão/);
+  const a = await prepararAcao({ tipo: 'enviar_email_proposta', alvo_id: 7, payload: { destinatario: 'cliente@exemplo.com.br', mensagem, confirmar_bloqueio: true }, descricao: 'pedido do usuário' });
   const [resumo, motivo] = a.descricao.split('\n\nMotivo informado pelo assistente: ');
   assert.strictEqual(motivo, 'pedido do usuário');
   assert.match(resumo, /Para: cliente@exemplo\.com\.br/);
   assert.match(resumo, /Assunto: Proposta P254 — H&M Engenharia e Tecnologia/);
   assert.match(resumo, /Texto: "Bom dia,\nsegue a proposta revisada\. Qualquer dúvida estou à disposição\."/);
   // sem mensagem: o texto padrão que vai sair
-  const padrao = await prepararAcao({ tipo: 'enviar_email_proposta', alvo_id: 7, payload: { destinatario: 'cliente@exemplo.com.br' } });
+  const padrao = await prepararAcao({ tipo: 'enviar_email_proposta', alvo_id: 7, payload: { destinatario: 'cliente@exemplo.com.br', confirmar_bloqueio: true } });
   assert.match(padrao.descricao, /Texto: "Olá,\nSegue em anexo a proposta P254\."/);
 
   const pj = await prepararAcao({ tipo: 'atualizar_projeto', alvo_id: 9, payload: { dados: { cliente: { nome: 'Novo' }, gravacao_dias: 30 } } });

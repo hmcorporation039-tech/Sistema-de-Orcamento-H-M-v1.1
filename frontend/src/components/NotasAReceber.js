@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { Wallet, Link2, CheckCircle2 } from 'lucide-react';
 import { getNotasAReceber, ligarSugeridasNotas, ligarPixNaNota, darBaixaNota } from '../services/api';
-import { formatarMoeda } from '../utils/format';
+import { formatarMoeda, dataBr } from '../utils/format';
 import { estilos } from './ui/estilos';
 
 // Notas emitidas ainda sem pagamento (services/notasAReceber.js). A nota emitida é o valor a receber; o Pix ligado
@@ -10,7 +10,6 @@ import { estilos } from './ui/estilos';
 // administrador. Notas de antes do primeiro Pix que o sistema leu ficam separadas ("sem histórico") para não
 // parecerem atraso: podem ter sido pagas antes, e a baixa manual registra como.
 const COR = { atrasada: '#d69a2d', no_prazo: 'var(--texto-3)', mais90: '#e5534b' };
-const dataBr = (iso) => (iso ? iso.split('-').reverse().join('/') : '');
 const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
 
 function Linha({ i, ocupado, onLigar, onBaixa }) {

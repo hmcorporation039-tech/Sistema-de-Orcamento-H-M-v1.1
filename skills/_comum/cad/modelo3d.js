@@ -22,7 +22,7 @@
 const { dentro, centroide, perimetro, distanciaContorno, RE_PAREDE, RE_NAO_PAREDE } = require('./arquitetura');
 const { tipoDoAmbiente, ehAmbienteValido } = require('./estimativaArquitetura');
 const { SIMBOLOS } = require('./simbolos');
-const { separarEletrocalhas, sugerirCaminhos } = require('./infraestrutura');
+const { separarEletrocalhas, sugerirCaminhos, buscaMaisPerto, MAX_SUGERIDOS } = require('./infraestrutura');
 
 const AVISO = 'Ilustração — não substitui o projeto executivo. Modelo gerado automaticamente a partir da planta 2D (não é BIM): alturas, esquadrias e posições dos pontos são típicas e indicativas.';
 const PE_DIREITO_PADRAO = 2.8;
@@ -448,14 +448,23 @@ const ESPEC = {
 const ESPEC_PADRAO = { h: 1.1, forma: 'caixa' };
 // especificação completa (com o tamanho da forma quando o símbolo não traz o seu)
 const espec = (simbolo) => { const e = ESPEC[simbolo] || ESPEC_PADRAO; return { ...e, tam: e.tam || TAM_FORMA[e.forma] || TAM_FORMA.caixa }; };
+// Chaves = as do registro único (../disciplinas.js; revisão de 02/11/2026): antes o
+// 3D tinha as suas ('controle-acesso', 'veicular', HOSP como 'eletrica') e o ponto
+// do DWG lido na layer VE-* ('carregador') saía cinza, com a chave crua na legenda.
+// Só 'iluminacao-externa' é do 3D (postes e caixas: eletroduto enterrado à parte).
 const DISCIPLINAS = {
   eletrica: { rotulo: 'Elétrica', cor: '#ff9f43' }, iluminacao: { rotulo: 'Iluminação', cor: '#ffe27a' }, rede: { rotulo: 'Rede (cabeamento)', cor: '#4fa3ff' },
+  eletrica_hospitalar: { rotulo: 'Elétrica hospitalar', cor: '#ff7a59' },
   cftv: { rotulo: 'CFTV', cor: '#ff5c8a' }, incendio: { rotulo: 'Incêndio', cor: '#ff4b3e' }, alarme: { rotulo: 'Alarme', cor: '#b388ff' },
-  'controle-acesso': { rotulo: 'Controle de acesso', cor: '#5ee38a' }, telefonia: { rotulo: 'Telefonia', cor: '#c49a6c' }, antena: { rotulo: 'Antena / TV', cor: '#3fd0c0' },
+  controle_acesso: { rotulo: 'Controle de acesso', cor: '#5ee38a' }, telefonia: { rotulo: 'Telefonia', cor: '#c49a6c' }, antena: { rotulo: 'Antena / TV', cor: '#3fd0c0' },
   'iluminacao-externa': { rotulo: 'Iluminação externa', cor: '#ffb84d' },
-  automacao: { rotulo: 'Automação', cor: '#7fe0ff' }, solar: { rotulo: 'Solar', cor: '#f6c90e' }, veicular: { rotulo: 'Recarga veicular', cor: '#a4e05a' }, spda: { rotulo: 'SPDA', cor: '#bfc5cc' },
+  automacao: { rotulo: 'Automação', cor: '#7fe0ff' }, solar: { rotulo: 'Solar', cor: '#f6c90e' }, carregador: { rotulo: 'Recarga veicular', cor: '#a4e05a' }, spda: { rotulo: 'SPDA', cor: '#bfc5cc' },
 };
-const disciplinaDoSimbolo = (s) => ({ ELE: 'eletrica', ILU: 'iluminacao', CAB: 'rede', CFTV: 'cftv', INC: 'incendio', ALM: 'alarme', ACE: 'controle-acesso', TEL: 'telefonia', ANT: 'antena', HOSP: 'eletrica', AUT: 'automacao', SOL: 'solar', VE: 'veicular', SPDA: 'spda' })[s.split('-')[1]] || 'outros';
+// nomes antigos (classificador de pontos, mapa do CAD, análises e caches gravados
+// antes da unificação) → chave do registro; cabeamento é a rede no 3D
+const ALIAS_DISCIPLINA = { 'controle-acesso': 'controle_acesso', veicular: 'carregador', cabeamento: 'rede', 'eletrica-hospitalar': 'eletrica_hospitalar' };
+const chaveDisciplina = (k) => ALIAS_DISCIPLINA[k] || k;
+const disciplinaDoSimbolo = (s) => ({ ELE: 'eletrica', ILU: 'iluminacao', CAB: 'rede', CFTV: 'cftv', INC: 'incendio', ALM: 'alarme', ACE: 'controle_acesso', TEL: 'telefonia', ANT: 'antena', HOSP: 'eletrica_hospitalar', AUT: 'automacao', SOL: 'solar', VE: 'carregador', SPDA: 'spda' })[s.split('-')[1]] || 'outros';
 
 // ── Infraestrutura (eletrocalhas, eletrodutos, leitos, perfilados, fiação) ───
 // seção [largura, altura] em m e quanto fica abaixo do teto (centro da seção):
@@ -481,7 +490,8 @@ const INFRA_ESTIMADA = {
   cftv: { material: 'PVC rígido', mm: 25, pol: '3/4"' },
   incendio: { material: 'PVC rígido exclusivo', mm: 25, pol: '3/4"' },
   alarme: { material: 'PVC rígido', mm: 25, pol: '3/4"' },
-  'controle-acesso': { material: 'PVC rígido', mm: 25, pol: '3/4"' },
+  eletrica_hospitalar: { material: 'PVC corrugado', mm: 25, pol: '3/4"' },
+  controle_acesso: { material: 'PVC rígido', mm: 25, pol: '3/4"' },
   telefonia: { material: 'PVC rígido', mm: 25, pol: '3/4"' },
   antena: { material: 'PVC rígido', mm: 25, pol: '3/4"' },
   automacao: { material: 'PVC rígido', mm: 25, pol: '3/4"' },
@@ -492,6 +502,8 @@ const INFRA_ESTIMADA = {
 const RE_CENTRO_DISCIPLINA = /QUADRO|RACK|CENTRAL|-DG\b|CONTROLADOR|NVR|DVR|INVERSOR/;
 // descida até a peça de parede: o eletroduto mais próximo a até 1,5 m em planta
 const DESCIDA_RAIO_M = 1.5;
+// ponto fora de todo ambiente, a até isso do contorno de um: é dele (tomada na linha da parede)
+const AMBIENTE_FOLGA_M = 0.3;
 // acima disso a página fica pesada no celular: ficam os segmentos mais longos
 const LIMITE_SEGMENTOS = 20000;
 
@@ -637,7 +649,7 @@ function montarInfra(trechos, P, caixa, peDireito, avisos) {
   for (const t of lista) {
     const tipo = TRECHOS[t.tipo] ? t.tipo : 'eletroduto';
     const e = TRECHOS[tipo];
-    const disc = t.disciplina === 'cabeamento' ? 'rede' : (t.disciplina || 'eletrica');
+    const disc = chaveDisciplina(t.disciplina || 'eletrica');
     // seção do projeto (mm) quando o desenho diz; senão a padrão da tabela
     const mm = Array.isArray(t.secao_mm) && t.secao_mm.length >= 2 && t.secao_mm.every(v => Number(v) > 0) ? t.secao_mm.map(Number) : null;
     const secao = mm ? [mm[0] / 1000, mm[1] / 1000] : e.secao;
@@ -739,17 +751,11 @@ function ligarDescidas(g, pecas, destino = g) {
   let total = 0;
   // eletroduto do piso (embutido/enterrado): sobe até a base da peça de parede
   const doPiso = g.z < 0.5;
+  // trecho mais perto da peça (pela grade: antes cada peça conferia todos os segmentos)
+  const perto = buscaMaisPerto(seg);
   for (const { x, y, topo, base, piso, teto } of pecas) {
     if (doPiso ? piso || teto || !(base > g.z + 0.1) : topo >= g.z - 0.15) continue; // no teto ou acima do trecho: não desce
-    let m = null;
-    for (let i = 0; i + 3 < seg.length; i += 4) {
-      const [x1, y1, x2, y2] = [seg[i], seg[i + 1], seg[i + 2], seg[i + 3]];
-      const vx = x2 - x1, vy = y2 - y1, L2 = vx * vx + vy * vy;
-      const t = L2 ? Math.max(0, Math.min(1, ((x - x1) * vx + (y - y1) * vy) / L2)) : 0;
-      const q = [x1 + vx * t, y1 + vy * t];
-      const d = Math.hypot(x - q[0], y - q[1]);
-      if (!m || d < m.d) m = { d, q };
-    }
+    const m = perto(x, y);
     if (!m || m.d > DESCIDA_RAIO_M) continue;
     if (m.d >= 0.05) { ramais.push(r2(m.q[0]), r2(m.q[1]), r2(x), r2(y)); total += m.d; }
     if (doPiso) { destino.descidas.push(r2(x), r2(y), g.z, r2(base)); total += base - g.z; continue; }
@@ -792,19 +798,20 @@ function completarInfra(infra, tipos, peDireito, avisos, { estimar = true, suger
     if (doProjeto.length) {
       // cada peça desce do trecho mais próximo dela (o de maior seção vence o empate)
       for (const g of doProjeto) g._pecas = [];
+      // todos os segmentos em sequência (grupo a grupo: o empate fica com o primeiro),
+      // e só os do alto para a peça do teto (luminária não sobe do piso). Busca pela
+      // grade: antes cada peça conferia todos os segmentos (revisão de 02/11/2026)
+      const juntar = (gs) => {
+        const segs = [], dono = [];
+        for (const g of gs) for (let i = 0; i + 3 < g.segmentos.length; i += 4) { segs.push(g.segmentos[i], g.segmentos[i + 1], g.segmentos[i + 2], g.segmentos[i + 3]); dono.push(g); }
+        return { perto: buscaMaisPerto(segs), dono };
+      };
+      const todos = juntar(doProjeto);
+      const doAlto = doProjeto.some(g => g.z < 0.5) ? juntar(doProjeto.filter(g => !(g.z < 0.5))) : todos;
       for (const p of pecas) {
-        let m = null;
-        for (const g of doProjeto) {
-          if (p.teto && g.z < 0.5) continue; // luminária não sobe do piso
-          for (let i = 0; i + 3 < g.segmentos.length; i += 4) {
-            const [x1, y1, x2, y2] = g.segmentos.slice(i, i + 4);
-            const vx = x2 - x1, vy = y2 - y1, L2 = vx * vx + vy * vy;
-            const t = L2 ? Math.max(0, Math.min(1, ((p.x - x1) * vx + (p.y - y1) * vy) / L2)) : 0;
-            const d = Math.hypot(p.x - (x1 + vx * t), p.y - (y1 + vy * t));
-            if (!m || d < m.d) m = { d, g };
-          }
-        }
-        if (m) m.g._pecas.push(p);
+        const b = p.teto ? doAlto : todos;
+        const m = b.perto(p.x, p.y);
+        if (m) b.dono[m.s]._pecas.push(p);
       }
       for (const g of doProjeto) {
         // do eletroduto do projeto a descida é o mesmo eletroduto; da eletrocalha/leito/perfilado
@@ -849,7 +856,9 @@ function completarInfra(infra, tipos, peDireito, avisos, { estimar = true, suger
 // elétrica, iluminação e iluminação externa usam a mesma tubulação
 // cor única dos caminhos sugeridos (translúcidos no 3D): não se confundem com o projeto
 const COR_SUGERIDO = '#8fe9ff';
-const FAMILIA = (d) => (['iluminacao', 'iluminacao-externa'].includes(d) ? 'eletrica' : d);
+// (a elétrica hospitalar — tomada do IT médico, BEL — desce da mesma tubulação, como antes
+// de ter chave própria; o circuito IT separado é assunto do projeto, não do 3D ilustrativo)
+const FAMILIA = (d) => (['iluminacao', 'iluminacao-externa', 'eletrica_hospitalar'].includes(d) ? 'eletrica' : d);
 
 // Caminhos SUGERIDOS (./infraestrutura.js): por família de disciplina, o que o
 // desenho deixou solto liga-se à rede do projeto (ou ao quadro) — no teto para os
@@ -863,7 +872,7 @@ function caminhosSugeridos(infra, porDisc, peDireito, paredes, avisos) {
     familias.get(f).push(...pecas.map(p => ({ ...p, disc })));
   }
   const grupos = [];
-  let total = 0, n = 0, sem = 0;
+  let total = 0, n = 0, sem = 0, cortados = 0;
   for (const [fam, pecas] of familias) {
     for (const piso of [false, true]) {
       // postes e caixas de piso saem do quadro (de parede) quando não há rede enterrada desenhada
@@ -875,7 +884,7 @@ function caminhosSugeridos(infra, porDisc, peDireito, paredes, avisos) {
       // ponto de parede já ligado pelo eletroduto do piso (sobe do piso) não ganha caminho pelo teto
       const redeParede = piso ? [] : infra.filter(g => FAMILIA(g.disciplina) === fam && g.forma !== 'linha' && g.z < 0.5).flatMap(g => g.segmentos);
       const r = sugerirCaminhos({ pecas: doNivel, rede, redeParede, paredes });
-      sem += r.sem;
+      sem += r.sem - (r.cortados || 0); cortados += r.cortados || 0;
       if (!r.segmentos.length) continue;
       // a cor/disciplina do grupo: a da maioria das peças da família no nível
       const cont = {};
@@ -898,6 +907,8 @@ function caminhosSugeridos(infra, porDisc, peDireito, paredes, avisos) {
     avisos.push(`Caminhos SUGERIDOS pelo sistema (o desenho não liga esses pontos): ${n} pontos ligados à tubulação do projeto ou ao quadro por ${String(Math.round(total * 10) / 10).replace('.', ',')} m de eletroduto — interruptor até a luminária do ambiente, tomada e luminária até a rede mais próxima, em "L" junto às paredes e pelo lado que atravessa menos paredes. É sugestão: conferir no projeto executivo (botão "Sugeridos" do 3D liga/desliga).`);
   }
   if (sem) avisos.push(`${sem} ponto(s) longe demais (mais de 40 m) da rede e do quadro ficaram sem caminho sugerido.`);
+  // teto de ./infraestrutura.js (MAX_SUGERIDOS): desenho enorme não estoura o tempo do 3D
+  if (cortados) avisos.push(`${cortados.toLocaleString('pt-BR')} ponto(s) ficaram sem caminho sugerido: o sistema sugere no máximo ${MAX_SUGERIDOS.toLocaleString('pt-BR')} ligações por disciplina e nível numa planta (desenho muito grande) — conferir no projeto.`);
   return grupos;
 }
 
@@ -945,11 +956,35 @@ function montarCena(arquitetura, opcoes = {}) {
   const grandes = []; // quadros, racks e centrais já postos (para não sobrepor)
   const indiceAmb = new Map();
   ambs.forEach((a, i) => { if (!indiceAmb.has(a.nome)) indiceAmb.set(a.nome, i); });
+  // ponto sem ambiente (ou com nome que não casa — o componente lido do DWG vem com
+  // ambiente null): o MENOR ambiente cujo polígono contém o ponto, como em
+  // ./pontosDoDesenho.js. Sem isso o visualizador não acha o ponto "dentro" da sala
+  // (etiqueta, dica, escolha do ponto de vista) — revisão de 02/11/2026. A tomada
+  // desenhada na linha da parede fica fora do contorno da sala (que corre pela face
+  // interna): vale a sala de contorno mais perto, a até AMBIENTE_FOLGA_M
+  const caixasAmb = ambientes.map(a => caixaDe(a.poligono));
+  const ambienteDoPonto = (x, y) => {
+    let k = -1;
+    for (let i = 0; i < ambientes.length; i++) {
+      const c = caixasAmb[i];
+      if (x < c[0] || x > c[2] || y < c[1] || y > c[3] || (k >= 0 && !(ambs[i].area_m2 < ambs[k].area_m2))) continue;
+      if (dentro([x, y], ambientes[i].poligono)) k = i;
+    }
+    if (k >= 0) return k;
+    let dk = AMBIENTE_FOLGA_M;
+    for (let i = 0; i < ambientes.length; i++) {
+      const c = expandir(caixasAmb[i], AMBIENTE_FOLGA_M);
+      if (x < c[0] || x > c[2] || y < c[1] || y > c[3]) continue;
+      const d = distanciaContorno([x, y], ambientes[i].poligono);
+      if (d < dk) { dk = d; k = i; }
+    }
+    return k;
+  };
   for (const d0 of opcoes.dispositivos || []) {
     if (!naCaixa(expandir(caixa, 1), [d0.x, d0.y])) continue;
     // nota do projeto "h = 20 cm abaixo do forro" (./pontosDoDesenho.js): conta do pé-direito
     const d = Number(d0.abaixoDoForro_m) > 0 ? { ...d0, altura_m: r2(Math.max(0.1, peDireito - Number(d0.abaixoDoForro_m))) } : d0;
-    const disc = d.disciplina || disciplinaDoSimbolo(d.simbolo);
+    const disc = chaveDisciplina(d.disciplina || disciplinaDoSimbolo(d.simbolo));
     // componente do projeto recebido vem com a descrição dele (d.rotulo): um tipo
     // por descrição — "Detector de fumaça DFE 521", não só "Detector"
     const chaveTipo = d.rotulo ? `${d.simbolo}|${d.rotulo}` : d.simbolo;
@@ -965,7 +1000,7 @@ function montarCena(arquitetura, opcoes = {}) {
     const p = posicionar3d(d, faces, peDireito);
     if (FORMAS_DE_PAREDE.has(t.forma)) afastarDosVizinhos(p, t.tam, grandes);
     const [x, y] = P([p.x, p.y]);
-    const amb = indiceAmb.has(d.ambiente) ? indiceAmb.get(d.ambiente) : -1;
+    const amb = indiceAmb.has(d.ambiente) ? indiceAmb.get(d.ambiente) : Number.isFinite(d.x) && Number.isFinite(d.y) ? ambienteDoPonto(d.x, d.y) : -1;
     t.itens.push([x, y, r2(p.z), r2(p.nx), r2(p.ny), amb, d.id || '', ...(p.campo ? [p.campo.map(P).flat()] : [])]);
   }
 
@@ -1025,4 +1060,4 @@ function montarCena(arquitetura, opcoes = {}) {
   };
 }
 
-module.exports = { montarCena, montarInfra, regiaoDoModelo, recortarArquitetura, extrairElementos, classeDaLayer, haLayerDeParede, simboloRedondo, encostar, espec, ESPEC, TAM_FORMA, TRECHOS, LIMITE_SEGMENTOS, ESPESSURA_MIN_DESENHO, DISCIPLINAS, TIPOS, AVISO, PE_DIREITO_PADRAO };
+module.exports = { chaveDisciplina, ALIAS_DISCIPLINA, montarCena, montarInfra, regiaoDoModelo, recortarArquitetura, extrairElementos, classeDaLayer, haLayerDeParede, simboloRedondo, encostar, espec, ESPEC, TAM_FORMA, TRECHOS, LIMITE_SEGMENTOS, ESPESSURA_MIN_DESENHO, DISCIPLINAS, TIPOS, AVISO, PE_DIREITO_PADRAO };

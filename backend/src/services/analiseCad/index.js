@@ -179,15 +179,8 @@ function descreverLinha(l) {
   return { descricao, disciplina, tipo, rota };
 }
 
-// ponto dentro de polígono (mesma regra de skills/_comum/cad/arquitetura.js)
-function dentro([x, y], p) {
-  let d = false;
-  for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
-    const [xi, yi] = p[i], [xj, yj] = p[j];
-    if (((yi > y) !== (yj > y)) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) d = !d;
-  }
-  return d;
-}
+// ponto dentro de polígono: a função da própria arquitetura (antes, uma cópia aqui — CAD-11)
+const { dentro } = require(path.join(CAD, 'arquitetura.js'));
 const COLUNA_POR_AMBIENTE = { cftv: 'cftv', rede: 'rede', cabeamento: 'rede', antena: 'antena' };
 const ramo = (d) => ({ cabeamento: 'rede', telefonia: 'rede' }[d] || d);
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -369,6 +362,7 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
     r.avisoUnidade,
     doDesenho.length ? `${doDesenho.reduce((s, g) => s + g.posicoes.length, 0)} pontos lidos dos símbolos desenhados (blocos explodidos), pela layer, pela medida e pela legenda da prancha — [CONFERIR] as quantidades` : null,
     r.desenho?.erro ? `leitura dos símbolos desenhados falhou: ${r.desenho.erro}` : null,
+    r.desenho?.mapa?.aviso || null,
   ].filter(Boolean);
   if (avisos.length) pagina.aviso = [pagina.aviso, ...avisos].filter(Boolean).join('; ');
   const arquitetura = r.arquitetura?.ambientes?.length ? {
@@ -408,6 +402,7 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
     simbolos: r.desenho.mapa.simbolos.map(({ centros, ...m }, idx) => ({ idx, ...m, contados: contadosPorLinha.get(idx) || 0 })),
     trechos: r.desenho.mapa.trechos,
     planta: plantaDoMapa(r.desenho.mapa.simbolos, ambientesArq, naPlanta),
+    ...(r.desenho.mapa.aviso ? { aviso: r.desenho.mapa.aviso } : {}),
   } : null;
   return { analise, pagina, pontosPorAmbiente, arquitetura, espacial, mapa, aprendizado: { legenda: r.desenho?.legenda || [], notas: r.desenho?.notas || [], escritorio: r.desenho?.escritorio || '' } };
 }

@@ -175,6 +175,8 @@ const T = require('../src/utils/textoAtestado');
       await pool.query('DELETE FROM propostas WHERE id = $1', [prop]);
       assert.strictEqual((await pool.query('SELECT proposta_id FROM notas_fiscais WHERE id = $1', [nf])).rows[0].proposta_id, null);
     } finally {
+      // a auditoria (vincular_proposta) das notas do teste sai antes delas
+      await pool.query("DELETE FROM auditoria WHERE entidade = 'notas_fiscais' AND entidade_id IN (SELECT id FROM notas_fiscais WHERE discriminacao = 'TESTE ATESTADO')").catch(() => {});
       await pool.query("DELETE FROM notas_fiscais WHERE discriminacao = 'TESTE ATESTADO'").catch(() => {});
       await pool.query("DELETE FROM propostas WHERE cliente_nome = 'ZZ' AND numero LIKE 'T9%'").catch(() => {});
       await pool.query("DELETE FROM clientes WHERE nome IN ('ZZ Cliente atestado', 'ZZ Outro cliente')").catch(() => {});

@@ -54,6 +54,8 @@ const { CAD } = require('../../config/caminhos');
           mapa: {
             simbolos: mapa.simbolos.map(s => ({ ...s, origem: origemDaLinha(s) })),
             trechos: mapa.trechos.map(({ layer, tipo, disciplina, comprimento_m }) => ({ layer, tipo, disciplina, comprimento_m })),
+            // formas de símbolo além do limite de linhas do mapa: ditas no aviso, não somem caladas
+            ...(mapa.aviso ? { aviso: mapa.aviso } : {}),
           },
         };
       } catch (e) { desenho = { pontos: [], legenda: [], erro: e.message }; }

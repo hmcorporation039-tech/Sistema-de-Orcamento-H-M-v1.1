@@ -212,6 +212,18 @@ export function iniciarQuadro(C) {
   const ray = new Raycaster();
   const ptr = new Vector2();
   let selecionado = null;
+  // material de destaque em cache por material de origem (como material() faz por
+  // cor): antes cada clique clonava um e a cópia descartada nunca era liberada
+  // (revisão de 02/11/2026; o 3D interativo vai trocar o estado das peças a toda hora)
+  const destaques = new Map();
+  function destaque(mat) {
+    if (!destaques.has(mat)) {
+      const d = mat.clone();
+      d.emissive.set('#5a4500');
+      destaques.set(mat, d);
+    }
+    return destaques.get(mat);
+  }
   function visivel(o) { for (let x = o; x; x = x.parent) if (!x.visible) return false; return true; }
   function apontado(ev) {
     const r = tela.getBoundingClientRect();
@@ -227,8 +239,7 @@ export function iniciarQuadro(C) {
     if (!hit) { if (info) info.innerHTML = '<small>Clique num dispositivo para ver TAG, fabricante, referência e medidas.</small>'; return; }
     selecionado = hit.object;
     selecionado.userData.__mat = selecionado.material;
-    selecionado.material = selecionado.material.clone();
-    selecionado.material.emissive.set('#5a4500');
+    selecionado.material = destaque(selecionado.material);
     const b = selecionado.userData;
     if (info) info.innerHTML = `<b class="tag">${esc(b.rotulo || '')}</b><table>${(b.info || []).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${/^https?:/.test(String(v)) ? `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(v)}</a>` : esc(v)}</td></tr>`).join('')}</table>`;
   }

@@ -10,6 +10,7 @@ import {
 } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { estilos } from '../components/ui/estilos';
+import Select from '../components/Select';
 import { formatarMoeda } from '../utils/format';
 
 // Painel de Integrações (2.0): as rotinas automáticas (notas e Pix por e-mail,
@@ -475,24 +476,24 @@ function CartaoSinapi({ ehAdmin }) {
         <>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: 'var(--texto-2)', alignItems: 'center' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>Estado
-              <select value={sit.uf} disabled={!ehAdmin || trocando || ufs.length < 2} onChange={e => trocar({ uf: e.target.value })}>
+              <Select value={sit.uf} disabled={!ehAdmin || trocando || ufs.length < 2} onChange={e => trocar({ uf: e.target.value })}>
                 {ufs.map(u => <option key={u} value={u}>{u}</option>)}
-              </select>
+              </Select>
             </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>Regime
-              <select value={sit.regime} disabled={!ehAdmin || trocando} onChange={e => trocar({ regime: e.target.value })}>
+              <Select value={sit.regime} disabled={!ehAdmin || trocando} onChange={e => trocar({ regime: e.target.value })}>
                 <option value="sem">sem desoneração</option>
                 <option value="com">com desoneração</option>
-              </select>
+              </Select>
             </label>
             {!ehAdmin && <span style={{ color: 'var(--texto-3)' }}>(só o administrador troca)</span>}
           </div>
           <form onSubmit={buscar} style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
             <input type="text" value={termo} onChange={e => setTermo(e.target.value)} placeholder="Buscar (ex.: cabo flexivel 2,5)" style={{ flex: 1, minWidth: 160 }} />
-            <select value={tipo} onChange={e => { setTipo(e.target.value); setAchados(null); }}>
+            <Select value={tipo} onChange={e => { setTipo(e.target.value); setAchados(null); }}>
               <option value="insumos">Insumos (material, mão de obra)</option>
               <option value="composicoes">Composições (serviço)</option>
-            </select>
+            </Select>
             <button type="submit" disabled={buscando || termo.trim().length < 2} style={{ ...btnSecundario, opacity: buscando ? 0.6 : 1 }}>{buscando ? 'Buscando…' : 'Buscar'}</button>
           </form>
           {achados && (

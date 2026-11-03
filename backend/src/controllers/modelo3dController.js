@@ -10,6 +10,7 @@ const P = require('../services/pastasSistema');
 const { pastaDoLaudo, pastaDoProjeto, seguro } = require('../services/pastasRegistros');
 
 const ORIGENS = new Set(['laudo', 'analise', 'proposta']);
+const TABELA_ORIGEM = { laudo: 'laudos_projetos', analise: 'analises_projeto', proposta: 'propostas' };
 
 function lerOrigem(req, res) {
   const { origem } = req.params;
@@ -45,6 +46,18 @@ async function abrir(req, res) {
   if (!o) return;
   const m = await M.obterModelo(o.origem, o.id);
   if (!m) return res.status(400).json({ erro: 'Envie primeiro a arquitetura (.dwg, .dxf ou PDF) para gerar o modelo 3D.' });
+  if (o.origem !== 'proposta') await gravarNaPasta(m);
+  res.json({ url: `/api/modelo-3d/ver/${M.criarLink(o.origem, o.id)}`, ...resumoPublico(m) });
+}
+
+// POST /modelo-3d/:origem/:id/gerar-de-novo — apaga o 3D guardado e gera outra vez
+// (dono do registro ou administrador); devolve o mesmo que /abrir
+async function gerarDeNovo(req, res) {
+  const o = lerOrigem(req, res);
+  if (!o) return;
+  const m = await M.refazerModelo(o.origem, o.id);
+  if (!m) return res.status(400).json({ erro: 'Envie primeiro a arquitetura (.dwg, .dxf ou PDF) para gerar o modelo 3D.' });
+  await registrarAuditoria(pool, { entidade: TABELA_ORIGEM[o.origem], entidadeId: o.id, acao: 'modelo_3d_gerar_de_novo', usuarioId: req.usuario.id });
   if (o.origem !== 'proposta') await gravarNaPasta(m);
   res.json({ url: `/api/modelo-3d/ver/${M.criarLink(o.origem, o.id)}`, ...resumoPublico(m) });
 }
@@ -132,4 +145,4 @@ async function mostrarAoCliente(req, res) {
   res.json({ modelo_3d_cliente: mostrar });
 }
 
-module.exports = { situacao, abrir, arquivo, ver, enviarPagina, enviarArquiteturaAnalise, verArquiteturaAnalise, mostrarAoCliente };
+module.exports = { situacao, abrir, gerarDeNovo, arquivo, ver, enviarPagina, enviarArquiteturaAnalise, verArquiteturaAnalise, mostrarAoCliente };

@@ -53,6 +53,8 @@ const ROTAS = [
   ['GET', '/laudos/:id/arquitetura'],
   ['GET', '/composicoes'], ['GET', '/composicoes/:id'],
   ['GET', '/componentes-quadro'], ['GET', '/componentes-quadro/:id'],
+  // BDI e impostos padrão (gerar_orcamento com origem "itens" lê daqui)
+  ['GET', '/configuracoes/padroes-orcamento'],
   // cálculos que não gravam
   ['POST', '/laudos/:id/calcular'], ['POST', '/composicoes/explodir'], ['POST', '/composicoes/calcular'],
   // pesquisa de preço (gasta cota; tem o limite de uso da rota)

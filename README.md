@@ -1,7 +1,7 @@
 # H&M Engenharia — Sistema de Orçamentos
 
 ## Pré-requisitos
-- Node.js 18+ instalado
+- Node.js 22.12+ instalado (o puppeteer, que gera os PDFs, exige 22.12; os `package.json` declaram `engines`)
 - PostgreSQL 15+ instalado e rodando
 - VS Code
 
@@ -28,8 +28,15 @@ DB_PORT=5432
 DB_NAME=hm_orcamentos
 DB_USER=postgres
 DB_PASS=SUA_SENHA_AQUI
-JWT_SECRET=hm_eng_secret_2024_mude_isso
+JWT_SECRET=COLE_AQUI_A_CHAVE_GERADA
 ```
+
+O `JWT_SECRET` precisa ter **32 caracteres ou mais** e ser aleatório — com menos, o backend
+não sobe (`backend/src/config/segredos.js`). Gere um com:
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+```
+O modelo completo das variáveis (e-mail, IA, rotinas) está em `backend/.env.example`.
 
 ### Frontend
 Crie o arquivo `frontend/.env` com:

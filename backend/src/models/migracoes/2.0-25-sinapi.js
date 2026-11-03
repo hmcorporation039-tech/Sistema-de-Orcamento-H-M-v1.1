@@ -44,9 +44,22 @@ module.exports = async (client) => {
       PRIMARY KEY (mes, uf)
     )
   `);
-  // colunas alargadas depois do primeiro teste com a planilha real (grupo e unidade passavam do limite)
-  await client.query(`ALTER TABLE sinapi_composicoes ALTER COLUMN grupo TYPE VARCHAR(200), ALTER COLUMN unidade TYPE VARCHAR(40)`);
-  await client.query(`ALTER TABLE sinapi_insumos ALTER COLUMN classificacao TYPE VARCHAR(120), ALTER COLUMN unidade TYPE VARCHAR(40)`);
+  // colunas alargadas depois do primeiro teste com a planilha real (grupo e unidade passavam do limite).
+  // Só quando ainda estão menores (como na 2.0-01): o ALTER TYPE incondicional pedia trava exclusiva
+  // das tabelas SINAPI (~21 mil e ~10 mil linhas) em TODA partida do backend.
+  for (const [tabela, coluna, tamanho] of [
+    ['sinapi_composicoes', 'grupo', 200], ['sinapi_composicoes', 'unidade', 40],
+    ['sinapi_insumos', 'classificacao', 120], ['sinapi_insumos', 'unidade', 40],
+  ]) {
+    await client.query(`
+      DO $$ BEGIN
+        IF (SELECT character_maximum_length FROM information_schema.columns
+             WHERE table_schema = current_schema() AND table_name = '${tabela}' AND column_name = '${coluna}') < ${tamanho} THEN
+          ALTER TABLE ${tabela} ALTER COLUMN ${coluna} TYPE VARCHAR(${tamanho});
+        END IF;
+      END $$;
+    `);
+  }
   // estado e regime de referência: ajustáveis (DF e sem desoneração até o Márcio decidir)
   await client.query(`INSERT INTO configuracoes (chave, valor) VALUES ('sinapi_uf', 'DF') ON CONFLICT (chave) DO NOTHING`);
   await client.query(`INSERT INTO configuracoes (chave, valor) VALUES ('sinapi_regime', 'sem') ON CONFLICT (chave) DO NOTHING`);

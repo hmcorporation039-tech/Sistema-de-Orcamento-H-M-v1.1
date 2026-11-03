@@ -91,3 +91,18 @@ export function validarCpfCnpj(v) {
   if (digitos.length === 14) return validarCnpj(digitos);
   return false;
 }
+
+// Data ISO ('AAAA-MM-DD', ou o começo de um timestamp) → 'DD/MM/AAAA', sem passar por Date (não muda de dia
+// pelo fuso). Vazio ou nulo → ''. Antes havia uma cópia em cada componente, e a de VencimentosLaudos quebrava com nulo.
+export function dataBr(iso) {
+  return iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '';
+}
+
+// 'AAAA-MM-DD' de uma data no fuso do computador (o dia que a pessoa vê no calendário)
+export function paraIso(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export function hojeIso() {
+  return paraIso(new Date());
+}

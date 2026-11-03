@@ -25,6 +25,8 @@ export const estilos = {
   },
   link: { color: 'var(--ouro-claro)', textDecoration: 'none', fontWeight: 600 },
   linhaTabela: { borderTop: '1px solid var(--borda)' },
+  // botão com cara de texto, para a célula da linha clicável abrir também pelo teclado (Tab + Enter)
+  botaoTexto: { background: 'none', border: 'none', padding: 0, margin: 0, font: 'inherit', color: 'inherit', cursor: 'pointer', textAlign: 'left' },
   ajuda: { color: 'var(--texto-3)', fontSize: 13, margin: '0 0 10px', lineHeight: 1.6 },
 };
 

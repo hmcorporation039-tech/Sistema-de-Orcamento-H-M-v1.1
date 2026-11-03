@@ -8,9 +8,31 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
 
 (async () => {
   await caso('o texto do item é fixo por disciplina (para o histórico de preços achar a renovação anterior)', () => {
-    assert.strictEqual(r.descricaoDoItem('spda'), 'Renovação do laudo de SPDA');
-    assert.strictEqual(r.descricaoDoItem('INCENDIO'), 'Renovação do laudo de incêndio');
+    assert.strictEqual(r.descricaoDoItem('spda'), 'Renovação do laudo de SPDA — para-raios');
+    assert.strictEqual(r.descricaoDoItem('INCENDIO'), 'Renovação do laudo de incêndio — detecção, alarme e iluminação de emergência');
     assert.strictEqual(r.descricaoDoItem('geotecnia'), 'Renovação do laudo de GEOTECNIA');
+  });
+
+  await caso('o nome vem do registro único: qualquer disciplina com laudo, sem a norma; "outro" (chave antiga) vale "outros"', () => {
+    const { DISCIPLINAS } = require('../../skills/_comum/disciplinas');
+    for (const d of DISCIPLINAS.filter(x => x.laudo)) {
+      const t = r.descricaoDoItem(d.chave);
+      // o nome do laudo no registro, sem a norma entre parênteses (e não a chave crua da disciplina desconhecida)
+      assert.strictEqual(t.toLowerCase(), ('Renovação do laudo de ' + d.nomes.laudo.replace(/\s*\(.*\)$/, '')).toLowerCase(), d.chave);
+      assert.ok(!t.includes('('), d.chave + ': ' + t);
+    }
+    assert.strictEqual(r.descricaoDoItem('pressurizacao'), 'Renovação do laudo de pressurização de escadas — controle de fumaça e automação');
+    assert.strictEqual(r.descricaoDoItem('cftv'), 'Renovação do laudo de CFTV');
+    assert.strictEqual(r.descricaoDoItem('outro'), 'Renovação do laudo técnico');
+    assert.strictEqual(r.descricaoDoItem('outros'), 'Renovação do laudo técnico');
+  });
+
+  await caso('o texto gravado pela 2.26.0 continua valendo para achar o preço já vendido', () => {
+    assert.strictEqual(r.descricaoAntiga('spda'), 'Renovação do laudo de SPDA');
+    assert.strictEqual(r.descricaoAntiga('eletrica'), 'Renovação do laudo de instalações elétricas');
+    assert.strictEqual(r.descricaoAntiga('outro'), 'Renovação do laudo de serviço');
+    assert.strictEqual(r.descricaoAntiga('cftv'), null, 'o texto não mudou');
+    assert.strictEqual(r.descricaoAntiga('pressurizacao'), null, 'não existia');
   });
 
   await caso('o escopo diz as datas e deixa escopo e valor para o engenheiro confirmar', () => {
@@ -49,7 +71,7 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
         assert.match(p.escopo, /ZZ Renov laudo SPDA/);
         const itens = (await pool.query('SELECT descricao, quantidade, unidade, valor_unitario, status FROM proposta_itens WHERE proposta_id = $1', [a.propostaId])).rows;
         assert.strictEqual(itens.length, 1);
-        assert.strictEqual(itens[0].descricao, 'Renovação do laudo de SPDA');
+        assert.strictEqual(itens[0].descricao, 'Renovação do laudo de SPDA — para-raios');
         assert.strictEqual(Number(itens[0].valor_unitario), 0);
         assert.strictEqual(itens[0].status, 'a_cotar');
         assert.match(a.sugestaoDePreco, /Sem valor sugerido/);
@@ -74,6 +96,20 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
         const item = (await pool.query('SELECT valor_unitario, status FROM proposta_itens WHERE proposta_id = $1', [segunda.propostaId])).rows[0];
         assert.strictEqual(Number(item.valor_unitario), 1800);
         assert.strictEqual(item.status, 'a_cotar', 'o valor é sugestão: continua a cotar até o engenheiro confirmar');
+      });
+
+      await caso('banco: renovação vendida com o texto antigo (2.26.0) vira sugestão; a chave antiga "outro" funciona', async () => {
+        const id = await novoVenc({ disciplina: 'outro', descricao: 'ZZ Renov laudo texto antigo' });
+        const primeira = await r.criarPropostaRenovacao(id, usuario);
+        assert.strictEqual((await pool.query('SELECT descricao FROM proposta_itens WHERE proposta_id = $1', [primeira.propostaId])).rows[0].descricao, 'Renovação do laudo técnico');
+        // simula a proposta feita pela 2.26.0: mesmo item, com o texto antigo
+        await pool.query("UPDATE proposta_itens SET descricao = 'Renovação do laudo de serviço', valor_unitario = 950, valor_total = 950, status = 'confirmado' WHERE proposta_id = $1", [primeira.propostaId]);
+        await pool.query("UPDATE propostas SET status = 'Aprovada' WHERE id = $1", [primeira.propostaId]);
+        const segunda = await r.criarPropostaRenovacao(id, usuario);
+        assert.match(segunda.sugestaoDePreco, /R\$ 950,00/);
+        const item = (await pool.query('SELECT descricao, valor_unitario FROM proposta_itens WHERE proposta_id = $1', [segunda.propostaId])).rows[0];
+        assert.strictEqual(item.descricao, 'Renovação do laudo técnico', 'o item novo sai com o texto de hoje');
+        assert.strictEqual(Number(item.valor_unitario), 950);
       });
 
       await caso('banco: documento da empresa, vencimento encerrado, laudo sem cliente e id inexistente são recusados', async () => {

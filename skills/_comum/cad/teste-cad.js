@@ -399,3 +399,43 @@ caso('nota e contagem dentro da planta não são nome de sala', () => {
 
 // casos assíncronos (DWG) terminam depois dos síncronos
 process.on('beforeExit', () => { if (!process.__fimCad) { process.__fimCad = true; console.log(`cad: ${ok} casos ok`); } });
+
+// ── SK-01: grade nx × ny em sala que não é retangular ──────────────────────
+// Sala em L de 64 m² (8 × 8 sem o quadrado 4 × 4 de um canto) com a grade 4 × 4
+// da skill de iluminação: 4 centros caem no recorte. Antes saíam 12 luminárias
+// sem aviso; agora as 4 que faltam vão para dentro do L e a planta/3D batem
+// com o memorial (16). Se nem assim couber, sai um aviso "N de M".
+{
+  const { posicionarPontos } = require('./planta');
+  const { dentro: dentroL } = require('./arquitetura');
+  const salaL = [[0, 0], [8, 0], [8, 4], [4, 4], [4, 8], [0, 8]];
+  const arqL = { ambientes: [{ nome: 'SALA EM L', poligono: salaL }], portas: [] };
+  const lum = (n) => [{ ambiente: 'SALA EM L', itens: [{ simbolo: 'HM-ILU-LUMINARIA', n, regra: 'grade_nxny', nx: 4, ny: 4, prefixo: 'L' }] }];
+
+  caso('SK-01 grade 4 × 4 em sala em L: as 16 luminárias ficam dentro do L, sem repetir posição e sem aviso', () => {
+    const out = posicionarPontos(arqL, lum(16));
+    assert.strictEqual(out.posicoes.length, 16, `posicionadas ${out.posicoes.length}`);
+    assert.deepStrictEqual(out.avisos, []);
+    for (const p of out.posicoes) assert.ok(dentroL([p.x, p.y], salaL), `fora do L: ${p.x},${p.y}`);
+    let menor = Infinity;
+    out.posicoes.forEach((a, i) => out.posicoes.slice(i + 1).forEach(b => { menor = Math.min(menor, Math.hypot(a.x - b.x, a.y - b.y)); }));
+    assert.ok(menor >= 0.9, `luminárias amontoadas (menor distância ${menor.toFixed(2)} m)`);
+    // os 12 centros da grade original continuam onde estavam
+    assert.strictEqual(out.posicoes.filter(p => [1, 3, 5, 7].includes(p.x) && [1, 3, 5, 7].includes(p.y)).length, 12);
+  });
+
+  caso('SK-01 sala retangular continua com a grade exata (nada redistribuído)', () => {
+    const ret = { ambientes: [{ nome: 'SALA EM L', poligono: [[0, 0], [8, 0], [8, 8], [0, 8]] }], portas: [] };
+    const out = posicionarPontos(ret, lum(16));
+    assert.deepStrictEqual(out.posicoes.map(p => [p.x, p.y]).sort((a, b) => a[0] - b[0] || a[1] - b[1]),
+      [1, 3, 5, 7].flatMap(x => [1, 3, 5, 7].map(y => [x, y])));
+    assert.deepStrictEqual(out.avisos, []);
+  });
+
+  caso('SK-01 quando a regra põe menos pontos que o pedido, sai o aviso "N de M"', () => {
+    const out = posicionarPontos(arqL, lum(20));   // a skill pediu 20, a grade 4 × 4 só tem 16
+    assert.strictEqual(out.posicoes.length, 16);
+    assert.strictEqual(out.avisos.length, 1);
+    assert.match(out.avisos[0], /SALA EM L: 4 de 20 .*fora da planta/);
+  });
+}

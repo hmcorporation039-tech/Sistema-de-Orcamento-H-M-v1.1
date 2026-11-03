@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Plus, Trash2, FolderPlus, FileDown, Send, FilePlus2, Search, ArrowLeft, Calculator, BarChart3 } from 'lucide-react';
@@ -7,6 +7,7 @@ import {
   getPadroesOrcamento, getPrecosVendidos, pesquisarPrecoMercado, getAnaliseProjeto, getLaudo, getObra, duplicarProposta, baixarPdfProposta, baixarPlanilhaProposta,
 } from '../services/api';
 import { formatarMoeda } from '../utils/format';
+import { categoriasComUsadas } from '../utils/categoriasMateriais';
 import { arred2, arredQtd, totalDaLinha } from '../utils/dinheiro';
 import { baixarArquivo, mensagemDeErro } from '../utils/download';
 import { useAuth } from '../hooks/useAuth';
@@ -130,16 +131,16 @@ const SUBGRUPOS_PADRAO = [
   'Alarme', 'Automação', 'CFTV', 'Controle de Acesso', 'Elétrica', 'Redes', 'Sonorização', 'Climatização',
 ];
 
-// Mesma lista usada no cadastro de Materiais (ver CATEGORIAS_PADRAO em
-// Materiais.js) — nas seções de Materiais do orçamento, o campo que antes era
-// "Subgrupo" (texto livre) virou "Categoria", com as mesmas opções do
-// cadastro, pra ficar coligado com o catálogo (ver opcoesAgrupamento).
-const CATEGORIAS_PADRAO_MATERIAIS = [
-  // categorias usadas no catálogo (a tela mostra em ordem alfabética); 'Não classificado'
-  // só aparece se algum material ainda estiver aguardando a classificação automática
-  'Alarme', 'Antena coletiva', 'Automação', 'CFTV', 'Controle de acesso', 'Elétrica', 'EPI', 'Ferragens', 'Ferramentas',
-  'Informatica', 'Infraestrutura', 'Interfonia', 'Nobreaks', 'Redes / Cabeamento Estruturado', 'Sonorização',
-];
+// Nas seções de Materiais do orçamento, o campo que antes era "Subgrupo" (texto livre) virou "Categoria",
+// com as mesmas opções do cadastro de Materiais (utils/categoriasMateriais.js), pra ficar coligado com o
+// catálogo (ver opcoesAgrupamento).
+
+// Bases que o editor carrega inteiras ao abrir (nome = como aparece no aviso de falha)
+const BASES_DO_EDITOR = {
+  clientes: { nome: 'a lista de clientes', carregar: () => getTodosClientes() },
+  materiais: { nome: 'o catálogo de materiais', carregar: () => getTodosMateriais() },
+  servicos: { nome: 'a base de serviços', carregar: () => getServicos() },
+};
 
 // Propostas antigas guardam no item subgrupos de texto livre que não batem com
 // as categorias do catálogo ("Redes de Computadores (dados)", "Controle de
@@ -255,12 +256,18 @@ export default function Orcamento() {
   const [padroesOrc, setPadroesOrc] = useState(null);
   const buscarPadroes = () => getPadroesOrcamento().then(r => { setPadroesOrc(r.data); return r.data; }).catch(() => null);
 
-  useEffect(() => {
-    // catálogo e clientes inteiros (o servidor pagina em até 1000 por vez)
-    getTodosClientes().then(res => setClientes(res.data.itens)).catch(() => {});
-    getTodosMateriais().then(res => setMateriais(res.data.itens)).catch(() => {});
-    getServicos().then(res => setServicos(res.data.itens || [])).catch(() => {});
+  // catálogo e clientes inteiros (o servidor pagina em até 1000 por vez). Se uma base não carregar, avisa e
+  // oferece "Tentar de novo": antes o erro era engolido, e a lista vazia do "+ catálogo" parecia material não cadastrado.
+  const [basesComFalha, setBasesComFalha] = useState([]);
+  const carregarBases = useCallback((quais = Object.keys(BASES_DO_EDITOR)) => {
+    const guardar = { clientes: (d) => setClientes(d.itens), materiais: (d) => setMateriais(d.itens), servicos: (d) => setServicos(d.itens || []) };
+    setBasesComFalha(f => f.filter(b => !quais.includes(b)));
+    quais.forEach(b => BASES_DO_EDITOR[b].carregar().then(res => guardar[b](res.data)).catch(() => {
+      setBasesComFalha(f => (f.includes(b) ? f : [...f, b]));
+      toast.error(`Não foi possível carregar ${BASES_DO_EDITOR[b].nome}. Use "Tentar de novo" no aviso do topo.`, { id: `falha-base-${b}` });
+    }));
   }, []);
+  useEffect(() => { carregarBases(); }, [carregarBases]);
 
   // ── alteração não salva, rascunho e aviso ao sair ──
   const estadoAtual = useMemo(() => retrato(form, secoes, itens), [form, secoes, itens]);
@@ -1090,6 +1097,16 @@ export default function Orcamento() {
         )}
       </div>
 
+      {basesComFalha.length > 0 && (
+        <div data-testid="aviso-bases" role="alert" style={{ ...card, padding: '12px 16px', borderColor: '#6a2a2a', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 260, fontSize: 12.5, color: '#ddd', lineHeight: 1.5 }}>
+            Não foi possível carregar <b style={{ color: '#e0a050' }}>{basesComFalha.map(b => BASES_DO_EDITOR[b].nome).join(', ')}</b>.
+            As listas podem estar vazias ou incompletas: um material que não aparece no "+ catálogo" pode só não ter carregado.
+          </div>
+          <button type="button" onClick={() => carregarBases(basesComFalha)} style={{ ...btnSecundario, padding: '8px 14px' }}>Tentar de novo</button>
+        </div>
+      )}
+
       {rascunhoPendente && (
         <div data-testid="aviso-rascunho" style={{ ...card, padding: '12px 16px', borderColor: '#5a4a12', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 260, fontSize: 12.5, color: '#ddd', lineHeight: 1.5 }}>
@@ -1299,7 +1316,7 @@ export default function Orcamento() {
         // Mão de Obra continuam com os subgrupos livres de sempre.
         const opcoesSubgrupo = maoDeObra
           ? subgruposDaSecao(sec.id)
-          : Array.from(new Set([...CATEGORIAS_PADRAO_MATERIAIS, ...materiais.map(m => m.categoria).filter(Boolean)])).sort((x, y) => x.localeCompare(y, 'pt-BR'));
+          : categoriasComUsadas(materiais.map(m => m.categoria));
 
         return (
           <div key={sec.id} style={card}>

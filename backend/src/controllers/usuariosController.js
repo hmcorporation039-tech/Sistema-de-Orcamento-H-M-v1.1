@@ -11,29 +11,53 @@ async function listar(req, res) {
   res.json(result.rows);
 }
 
-async function criar(req, res) {
-  const { nome, email, senha, role } = req.body;
+// E-mail é guardado e comparado sem espaços e em minúsculas: 'Marcio@...' e
+// 'marcio@...' são a mesma conta (login com LOWER(email); índice único em
+// LOWER(email) pela migração 2.0-41). Antes contavam como contas diferentes e o
+// login falhava se a pessoa digitasse com outra caixa.
+const normalizarEmail = (e) => e.trim().toLowerCase();
+const LIMITE_TEXTO = 100;   // usuarios.nome e usuarios.email são VARCHAR(100)
 
-  if (!nome || !email || !senha) {
+// Já existe outra conta com o mesmo e-mail, sem diferença de caixa?
+async function emailEmUso(email, idAtual = null) {
+  const { rows } = await pool.query(
+    'SELECT 1 FROM usuarios WHERE LOWER(email) = LOWER($1) AND ($2::int IS NULL OR id <> $2) LIMIT 1', [email, idAtual]);
+  return rows.length > 0;
+}
+
+async function criar(req, res, next) {
+  const corpo = req.body || {};
+  // mesma validação da edição (tipos, tamanho, papel); aqui nome e e-mail são obrigatórios
+  const campos = lerCamposUsuario(corpo);
+  if (campos.erro) return res.status(400).json({ erro: campos.erro });
+  const { nome, email, role } = campos;
+  const { senha } = corpo;
+
+  if (!nome || !email || senha == null || senha === '') {
     return res.status(400).json({ erro: 'Nome, e-mail e senha são obrigatórios' });
   }
+  // senha enviada como número passava pelo `senha.length < 8` (undefined) e quebrava no bcrypt
+  if (typeof senha !== 'string') return res.status(400).json({ erro: 'A senha deve ser um texto.' });
   if (senha.length < 8) {
     return res.status(400).json({ erro: 'A senha deve ter ao menos 8 caracteres' });
   }
+  if (senha.length > 200) return res.status(400).json({ erro: 'Senha longa demais (até 200 caracteres).' });
 
   try {
+    if (await emailEmUso(email)) return res.status(409).json({ erro: 'Já existe um usuário com esse e-mail' });
     const senhaHash = await bcrypt.hash(senha, 12);
     const result = await pool.query(
       `INSERT INTO usuarios (nome, email, senha, role, senha_provisoria)
        VALUES ($1,$2,$3,$4, true) RETURNING id, nome, email, role, ativo, criado_em`,
-      [nome, email, senhaHash, role === 'admin' ? 'admin' : 'user']
+      [nome, email, senhaHash, role || 'user']
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
     if (err.code === '23505') {
       return res.status(409).json({ erro: 'Já existe um usuário com esse e-mail' });
     }
-    res.status(500).json({ erro: 'Erro ao criar usuário' });
+    // o resto vai para o tratarErros (registra no resumo de erros)
+    return next(err);
   }
 }
 
@@ -44,11 +68,14 @@ function lerCamposUsuario(body) {
   const out = { nome: null, email: null, role: null, ativo: null };
   if (tem('nome')) {
     if (typeof body.nome !== 'string' || !body.nome.trim()) return { erro: 'Nome inválido.' };
+    if (body.nome.trim().length > LIMITE_TEXTO) return { erro: `Nome longo demais (até ${LIMITE_TEXTO} caracteres).` };
     out.nome = body.nome.trim();
   }
   if (tem('email')) {
     if (typeof body.email !== 'string' || !body.email.trim()) return { erro: 'E-mail inválido.' };
-    out.email = body.email.trim();
+    const email = normalizarEmail(body.email);
+    if (email.length > LIMITE_TEXTO || !/^[^\s@]+@[^\s@]+$/.test(email)) return { erro: 'E-mail inválido.' };
+    out.email = email;
   }
   if (tem('role')) {
     if (!['admin', 'user'].includes(body.role)) return { erro: 'Papel inválido (admin ou user).' };
@@ -61,7 +88,7 @@ function lerCamposUsuario(body) {
   return out;
 }
 
-async function atualizar(req, res) {
+async function atualizar(req, res, next) {
   const { id } = req.params;
   const campos = lerCamposUsuario(req.body || {});
   if (campos.erro) return res.status(400).json({ erro: campos.erro });
@@ -75,6 +102,7 @@ async function atualizar(req, res) {
   }
 
   try {
+    if (email && await emailEmUso(email, Number(id))) return res.status(409).json({ erro: 'Já existe um usuário com esse e-mail' });
     // Campo ausente no corpo mantém o valor gravado (COALESCE). Antes `ativo`
     // ausente virava true (editar o nome de um usuário desativado o reativava)
     // e `role` ausente virava 'user' (revisão de 27/10/2026).
@@ -94,8 +122,8 @@ async function atualizar(req, res) {
     if (err.code === '23505') {
       return res.status(409).json({ erro: 'Já existe um usuário com esse e-mail' });
     }
-    console.error('Erro ao atualizar usuário:', err);
-    res.status(500).json({ erro: 'Erro ao atualizar usuário' });
+    // o resto vai para o tratarErros (registra no resumo de erros)
+    return next(err);
   }
 }
 

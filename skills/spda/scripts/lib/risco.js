@@ -52,7 +52,13 @@ function eventos(dados) {
   let ngFonte = est.ng_fonte;
   if (ng == null) {
     const achado = buscarNg(est.municipio, est.uf);
-    if (!achado) throw new Error(`NG não encontrado para ${est.municipio}/${est.uf} na Tabela F.1 — informe estrutura.ng`);
+    // mensagem para quem preenche o formulário (antes saía 'para /' com o formulário vazio e o nome técnico do campo)
+    if (!achado) {
+      const local = [est.municipio, est.uf].map(s => String(s || '').trim()).filter(Boolean).join('/');
+      throw new Error(local
+        ? `O município ${local} não está na Tabela F.1 da NBR 5419-2 — confira o nome e a UF, ou informe o NG da obra.`
+        : 'Informe o município e a UF da obra, ou o NG.');
+    }
     ng = achado.ng;
     ngFonte = `${FONTE}, Tabela F.1 (${achado.municipio}/${achado.uf})`;
   }

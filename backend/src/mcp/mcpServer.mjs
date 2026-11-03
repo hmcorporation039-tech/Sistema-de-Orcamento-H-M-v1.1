@@ -32,7 +32,10 @@ import { createRequire } from 'node:module';
 // server.js). O .env fica dois níveis acima (backend/.env).
 dotenv.config({ path: path.join(import.meta.dirname, '..', '..', '.env') });
 
-const API_URL = process.env.MCP_API_URL || 'http://localhost:3001';
+// Sem MCP_API_URL, usa a PORT do mesmo .env (como o MCP do assistente,
+// services/assistente/config.js): no ambiente de teste (3002) o padrão fixo
+// 3001 mandava as gravações para a PRODUÇÃO.
+const API_URL = process.env.MCP_API_URL || `http://localhost:${process.env.PORT || 3001}`;
 const LOGIN_EMAIL = process.env.MCP_LOGIN_EMAIL;
 const LOGIN_SENHA = process.env.MCP_LOGIN_SENHA;
 
@@ -314,12 +317,39 @@ server.registerTool(
 // Claude lê do PDF anexado e a contagem por texto não alcança: o FUNCIONAMENTO
 // do projeto e os PONTOS POR DISCIPLINA (tipo/modelo/quantidade), inclusive as
 // disciplinas que são só símbolo gráfico (elétrica, iluminação, telefonia,
-// automação, alarme). Só ADICIONA — nada do que a análise já tinha muda.
+// automação, alarme). Só ADICIONA: o PUT da análise troca a lista inteira, então
+// aqui se lê a análise (GET), mescla por disciplina (item novo entra, item com a
+// mesma descrição fica como estava — inclusive o que o usuário editou na tela) e
+// grava com a versao lida (se alguém salvou no meio, o PUT volta conflito 409).
+const chaveItem = (i) => String(i?.descricao || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase().replace(/\s+/g, ' ');
+function mesclarPontos(atuais, novos) {
+  const grupos = (Array.isArray(atuais) ? atuais : []).map(g => ({ ...g, itens: Array.isArray(g?.itens) ? [...g.itens] : [] }));
+  let acrescentados = 0;
+  for (const g of novos) {
+    let alvo = grupos.find(x => x.disciplina === g.disciplina);
+    if (!alvo) { alvo = { disciplina: g.disciplina, itens: [] }; grupos.push(alvo); }
+    const vistos = new Set(alvo.itens.map(chaveItem));
+    for (const it of g.itens || []) {
+      const k = chaveItem(it);
+      if (!k || vistos.has(k)) continue;
+      vistos.add(k);
+      alvo.itens.push(it);
+      acrescentados++;
+    }
+  }
+  return { grupos, acrescentados };
+}
+function mesclarFuncionamento(atual, novo) {
+  const a = String(atual || '').trim();
+  const n = String(novo || '').trim();
+  if (!n || a.includes(n)) return a;
+  return a ? `${a}\n\n${n}` : n;
+}
 server.registerTool(
   'enriquecer_analise_projeto',
   {
     title: 'Enriquecer análise de projeto',
-    description: `Adiciona a uma análise já criada (pelo analisar_projeto — com o usuário dedicado não-administrador, só as análises que ele mesmo criou podem ser alteradas) o FUNCIONAMENTO do projeto e os PONTOS POR DISCIPLINA (com tipo, modelo e quantidade) que você leu VISUALMENTE do PDF anexado na conversa. Use depois do analisar_projeto, com o id que ele retornou. REGRA IMPORTANTE: descreva e marque APENAS as disciplinas SELECIONADAS naquela análise (o campo "disciplinas" que o analisar_projeto retornou) — não saia procurando disciplinas que não foram escolhidas. Isso é proposital: economiza tempo, porque é comum vir projeto só de uma disciplina (só elétrica, só CFTV, etc.). Não substitui nada do que a análise já tem; só acrescenta. Disciplinas válidas: ${DISCIPLINAS_VALIDAS.join(', ')}.`,
+    description: `Adiciona a uma análise já criada (pelo analisar_projeto — com o usuário dedicado não-administrador, só as análises que ele mesmo criou podem ser alteradas) o FUNCIONAMENTO do projeto e os PONTOS POR DISCIPLINA (com tipo, modelo e quantidade) que você leu VISUALMENTE do PDF anexado na conversa. Use depois do analisar_projeto, com o id que ele retornou. REGRA IMPORTANTE: descreva e marque APENAS as disciplinas SELECIONADAS naquela análise (o campo "disciplinas" que o analisar_projeto retornou) — não saia procurando disciplinas que não foram escolhidas. Isso é proposital: economiza tempo, porque é comum vir projeto só de uma disciplina (só elétrica, só CFTV, etc.). Não substitui nada do que a análise já tem; só acrescenta: o funcionamento novo entra como parágrafo a mais e, em cada disciplina, só entram os itens cuja descrição ainda não está lá (os existentes, inclusive os editados na tela, ficam como estão — para corrigir um item existente, use a tela). Disciplinas válidas: ${DISCIPLINAS_VALIDAS.join(', ')}.`,
     inputSchema: {
       id: z.number().int().positive().describe('Id da análise (retornado por analisar_projeto)'),
       funcionamento: z.string().optional().describe('Como o projeto funciona/opera — só das disciplinas selecionadas'),
@@ -337,15 +367,23 @@ server.registerTool(
   },
   async ({ id, funcionamento, pontos_por_disciplina }) => {
     try {
-      const body = {};
-      if (funcionamento !== undefined) body.funcionamento = funcionamento;
-      if (pontos_por_disciplina !== undefined) body.pontos_por_disciplina = pontos_por_disciplina;
-      if (Object.keys(body).length === 0) {
+      if (funcionamento === undefined && pontos_por_disciplina === undefined) {
         return textoErro('Informe pelo menos funcionamento e/ou pontos_por_disciplina.');
       }
+      const atual = await chamarApi(`/api/projetos/analises/${id}`);
+      const body = { versao: atual.versao };
+      const feito = [];
+      if (funcionamento !== undefined) {
+        body.funcionamento = mesclarFuncionamento(atual.funcionamento, funcionamento);
+        feito.push('funcionamento');
+      }
+      if (pontos_por_disciplina !== undefined) {
+        const { grupos, acrescentados } = mesclarPontos(atual.pontosPorDisciplina, pontos_por_disciplina);
+        body.pontos_por_disciplina = grupos;
+        feito.push(`${acrescentados} ponto(s) por disciplina acrescentado(s)`);
+      }
       await chamarApi(`/api/projetos/analises/${id}`, { method: 'PUT', body: JSON.stringify(body) });
-      const oQue = Object.keys(body).map(k => (k === 'pontos_por_disciplina' ? 'pontos por disciplina' : k)).join(' e ');
-      return textoOk(`Análise #${id} enriquecida (${oQue}). Abra "Análise de Projeto" no sistema pra revisar e ajustar antes de gerar o orçamento.`);
+      return textoOk(`Análise #${id} enriquecida (${feito.join(' e ')}). Abra "Análise de Projeto" no sistema pra revisar e ajustar antes de gerar o orçamento.`);
     } catch (err) {
       return textoErro(err.message);
     }

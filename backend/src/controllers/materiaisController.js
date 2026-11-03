@@ -193,14 +193,16 @@ async function categorias(req, res) {
 // Dispara na hora a mesma varredura que já roda sozinha às 06:00 e às 18:00 (ver
 // agendarVerificacaoDePastaFornecedores em server.js) — pra quem acabou de
 // salvar um PDF na pasta e não quer esperar o ciclo automático nem reiniciar o backend.
-async function verificarFornecedoresAgora(req, res) {
+async function verificarFornecedoresAgora(req, res, next) {
   try {
     // pelo registro comum das rotinas (services/rotinas.js) — aparece no painel de Integrações
     const resumo = await rotinas.executarRotina('fornecedores-pastas', { origem: 'manual', usuarioId: req.usuario?.id });
     res.json(resumo);
   } catch (err) {
     console.error('Erro ao verificar pasta de orçamentos de fornecedores:', err);
-    res.status(500).json({ erro: err.message || 'Erro ao verificar pasta de orçamentos de fornecedores' });
+    // erro interno vai para o tratarErros (registra no resumo de erros e não
+    // mostra texto do banco/caminho na tela); erro com status/publico passa a mensagem
+    return next(err);
   }
 }
 

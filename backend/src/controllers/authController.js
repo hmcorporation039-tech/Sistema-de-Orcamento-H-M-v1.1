@@ -23,9 +23,13 @@ async function login(req, res) {
     return res.status(400).json({ erro: 'E-mail e senha devem ser texto' });
   }
 
+  // e-mail sem diferença de caixa nem espaços nas pontas (o cadastro grava em
+  // minúsculas). Se ainda houver duas contas antigas só com a caixa diferente
+  // (a migração 2.0-41 avisa no log), vale a de grafia idêntica.
   const result = await pool.query(
-    'SELECT * FROM usuarios WHERE email = $1 AND ativo = true',
-    [email]
+    `SELECT * FROM usuarios WHERE LOWER(email) = LOWER($1) AND ativo = true
+      ORDER BY (email = $1) DESC, id LIMIT 1`,
+    [email.trim()]
   );
 
   const usuario = result.rows[0];

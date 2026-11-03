@@ -10,7 +10,7 @@ async function listar(req, res) {
 }
 
 // Roda a rotina na hora (mesma execução do horário automático, com registro).
-async function executar(req, res) {
+async function executar(req, res, next) {
   const chave = String(req.params.chave || '');
   if (!rotinas.existe(chave)) return res.status(404).json({ erro: 'Rotina desconhecida' });
   try {
@@ -19,7 +19,10 @@ async function executar(req, res) {
     res.json({ chave, resumo, rotina: status.rotinas.find(r => r.chave === chave) || null });
   } catch (err) {
     console.error(`Erro ao executar a rotina ${chave}:`, err);
-    res.status(500).json({ erro: err.message || 'Erro ao executar a rotina' });
+    // falha de conexão com a caixa de e-mail: mensagem escrita para o usuário; o
+    // resto vai para o tratarErros (registra no resumo de erros, sem texto interno)
+    if (err.code === 'EMAIL_CONEXAO') return res.status(503).json({ erro: err.message || 'Erro ao executar a rotina' });
+    return next(err);
   }
 }
 

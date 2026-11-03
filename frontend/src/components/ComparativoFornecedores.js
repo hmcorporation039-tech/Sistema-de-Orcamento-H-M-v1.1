@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { Pencil, Check } from 'lucide-react';
 import { getCotacoesMaterial, getOportunidadesCotacao, renomearFornecedorCotacao } from '../services/api';
-import { formatarMoeda } from '../utils/format';
+import { formatarMoeda, dataBr } from '../utils/format';
 import Modal from './ui/Modal';
 import { estilos } from './ui/estilos';
 
@@ -10,7 +10,6 @@ import { estilos } from './ui/estilos';
 // últimos 90 dias e onde o custo do catálogo está acima do melhor preço. Só aponta: o catálogo não muda
 // por cotação, quem decide é o engenheiro. O nome do fornecedor é um palpite tirado do documento e pode
 // ser corrigido aqui.
-const dataBr = (iso) => (iso ? iso.split('-').reverse().join('/') : '');
 const pct = (v) => `${String(v).replace('.', ',')} %`;
 const cnpjBr = (c) => String(c).replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
 

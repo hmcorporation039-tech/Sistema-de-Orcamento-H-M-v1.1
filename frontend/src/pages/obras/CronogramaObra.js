@@ -6,7 +6,7 @@ import {
   baixarPlanilhaCronogramaObra, baixarBoletimMedicaoObra,
 } from '../../services/api';
 import Select from '../../components/Select';
-import { formatarData } from '../../utils/format';
+import { formatarData, hojeIso } from '../../utils/format';
 import { baixarArquivo, mensagemDeErro } from '../../utils/download';
 import { moeda, estilos as E, Campo, Etiqueta } from './comum';
 import CurvaS from './CurvaS';
@@ -25,10 +25,6 @@ const SITUACAO = {
 };
 
 const pc = (v, casas = 1) => `${(Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas })}%`;
-const hojeIso = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
 const numeroBR = (v) => {
   const s = v == null ? '' : String(v).trim();
   if (s === '') return null;

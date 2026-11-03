@@ -19,6 +19,8 @@ const path = require('path');
 
   const guardado = (await pool.query('SELECT chave, valor FROM configuracoes WHERE chave = ANY($1)', [chaves])).rows;
   const auditoriasAntes = (await pool.query("SELECT COUNT(*)::int n FROM auditoria WHERE acao = 'padroes_orcamento'").catch(() => ({ rows: [{ n: null }] }))).rows[0].n;
+  // último id da auditoria antes do teste: no fim saem só as linhas que o teste gravou (usuário nulo)
+  const ultimaAuditoria = (await pool.query('SELECT COALESCE(MAX(id), 0)::int n FROM auditoria').catch(() => ({ rows: [{ n: null }] }))).rows[0].n;
   try {
     await pool.query('DELETE FROM configuracoes WHERE chave = ANY($1)', [chaves]);
 
@@ -78,6 +80,9 @@ const path = require('path');
   } finally {
     await pool.query('DELETE FROM configuracoes WHERE chave = ANY($1)', [chaves]);
     for (const g of guardado) await pool.query('INSERT INTO configuracoes (chave, valor) VALUES ($1, $2) ON CONFLICT (chave) DO UPDATE SET valor = $2', [g.chave, g.valor]);
+    if (ultimaAuditoria != null) {
+      await pool.query("DELETE FROM auditoria WHERE acao = 'padroes_orcamento' AND usuario_id IS NULL AND id > $1", [ultimaAuditoria]).catch(() => {});
+    }
     await pool.end();
   }
   console.log('padroesOrcamento: ok');

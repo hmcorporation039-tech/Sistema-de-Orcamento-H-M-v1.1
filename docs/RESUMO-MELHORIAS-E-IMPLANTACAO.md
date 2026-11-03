@@ -805,3 +805,24 @@ Só código, sem migração. Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-b
 - **Banco:** migração `2.0-38-proposta-renovacao` (idempotente): coluna `proposta_renovacao_id` em `vencimentos_laudos`. Acontece sozinha ao reiniciar o backend.
 - Testes: `propostaRenovacao` em `backend/testes` (5 verificações); 2 casos novos em `VencimentosLaudos.test.js` no frontend.
 - Backup antes da instalação: `C:\HM-Engenharia\Backups\hm-eng_repositorio_antes-v2.26_2026-11-02.bundle` e `backend\backups\hm_orcamentos_2026-11-02_19-49.dump`.
+
+### 02/11/2026: auditoria completa e fase 0 do roteiro (no v2, ainda não instalada)
+- **Auditoria** em 8 áreas (backend e segurança, banco e testes, leitura PDF/DWG, 3D, skills, frontend, integração e assistente, lixo e operação). Foram 15 agentes, cada achado conferido por um verificador cético.
+  - 73 achados confirmados (5 altos, 21 médios, 47 baixos) e 1 refutado. Nenhuma falha crítica de segurança.
+  - Relatório completo: `docs/historico/AUDITORIA-2026-11-02.md`.
+- **Roteiro da grande implementação:** `docs/ROTEIRO-GRANDE-IMPLEMENTACAO.md`.
+  - Fases: modelo único da instalação, 3D interativo, precisão PDF/DWG com placar, Climatização (HVAC/VAV/chiller/PMOC), iluminação no 3D, canal remoto por WhatsApp/Telegram/voz e estrutura.
+  - Inclui o que tirar de cada referência: AutoCAD Electrical, Revit MEP, QiElétrico, EPLAN e IFC.
+- **Fase 0 (correções) feita no v2.** A lista por achado está no roteiro, seção "Fase 0". Os principais:
+  - Leitura de DWG: atributos dos blocos, splines, elipses, cotas, blocos dinâmicos e MINSERT; MTEXT e altura num módulo só (`skills/_comum/cad/textoCad.js`); sem contagem dupla no Mapa do CAD; layers de arquitetura fora dos pontos.
+  - 3D: ambiente certo nos pontos do DWG; cena 20× mais rápida; desenho só quando algo muda; cache que acompanha o aprendizado; botão "Gerar de novo".
+  - Assistente: gerar orçamento por itens voltou a funcionar; e-mail e link pelo assistente passam pela conferência de envio; o MCP do v2 não aponta mais para a produção.
+  - Segurança: limite de tentativas na troca de senha; e-mail do login sem diferença de maiúsculas e minúsculas; 404 da API em JSON; erro interno não vaza mensagem.
+  - Operação: o `npm test` do backend passa a rodar também o Jest do frontend e as skills; Cypress e proxy do v2 leem a porta do `.env`; `.gitignore` cobre os builds antigos; README com Node 22.12+; `skills/ligar-skills.ps1`.
+  - Frontend e skills: disciplinas dos vencimentos vêm do registro; listas em ordem alfabética; catálogo que falha ao carregar avisa; abrir proposta e laudo pelo teclado; luminárias completas em sala em L; mensagem clara da SPDA.
+- **Banco:** migrações idempotentes:
+  - `2.0-39` cria índices nas chaves estrangeiras;
+  - `2.0-40` apaga modelos 3D órfãos (na produção, conferir antes com SELECT);
+  - `2.0-41` cria índice único do e-mail sem diferença de caixa, e só avisa se houver duplicados.
+  - A `2.0-25` ficou condicional.
+  - As migrações passam a ser ordenadas pelo número.

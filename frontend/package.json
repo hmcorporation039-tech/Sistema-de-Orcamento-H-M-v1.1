@@ -2,6 +2,9 @@
   "name": "hm-eng-frontend",
   "version": "2.26.0",
   "private": true,
+  "engines": {
+    "node": ">=22.12"
+  },
   "dependencies": {
     "axios": "^1.6.0",
     "lucide-react": "^0.292.0",
@@ -14,9 +17,10 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "node scripts/build-seguro.js",
-    "build:direto": "react-scripts build"
+    "build:direto": "react-scripts build",
+    "test": "react-scripts test",
+    "test:ci": "node -e \"process.env.CI='true';process.argv.splice(1,0,'react-scripts','test','--watchAll=false');require('react-scripts/bin/react-scripts.js')\""
   },
-  "proxy": "http://localhost:3001",
   "browserslist": {
     "production": [
       ">0.2%",

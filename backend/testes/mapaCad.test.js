@@ -96,6 +96,23 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
     assert.strictEqual(r.mapa.simbolos[i].contados, 0);
   });
 
+  await caso('CAD-03: linhas vizinhas (20/22/24 cm) confirmadas com tipos diferentes não contam o mesmo símbolo duas vezes', async () => {
+    const d = new DesenhoDxf({ layers: [{ nome: 'A-PAREDE', cor: 8 }, { nome: 'A-TEXTO', cor: 7 }, { nome: 'EL-SIMBOLOS', cor: 3 }] });
+    d.polilinha([[0, 0], [10, 0], [10, 8], [0, 8]], { layer: 'A-PAREDE', fechada: true });
+    d.texto(5, 7, 0.2, 'SALA', { layer: 'A-TEXTO' });
+    [0.20, 0.22, 0.24].forEach((l, k) => { for (let i = 0; i < 3; i++) d.polilinha([[1 + i * 2, 1 + k * 2], [1 + i * 2 + l, 1 + k * 2], [1 + i * 2 + l, 1 + k * 2 + l], [1 + i * 2, 1 + k * 2 + l]], { layer: 'EL-SIMBOLOS', fechada: true }); });
+    const buf = Buffer.from(d.toString());
+    const r0 = await lerArquivoCad(buf, 'vizinhas.dxf');
+    const linhas = r0.mapa.simbolos.filter(s => s.layer === 'EL-SIMBOLOS');
+    assert.strictEqual(linhas.reduce((t, s) => t + s.quantidade, 0), 9, JSON.stringify(linhas.map(s => [s.medida, s.quantidade])));
+    const confirmados = mapaCad.confirmadasDoMapa(mapaCad.aplicarNoMapa(r0.mapa, linhas.map((s, k) => ({ idx: s.idx, simbolo: k === 0 ? 'HM-ELE-TOMADA-BAIXA' : 'HM-ELE-INTERRUPTOR', confirmado: true }))).mapa);
+    const r = await lerArquivoCad(buf, 'vizinhas.dxf', { confirmados });
+    const pontos = r.pagina.itens.filter(it => it.tipo === 'simbolo').reduce((t, it) => t + it.quantidade, 0);
+    assert.strictEqual(pontos, 9, `9 símbolos desenhados viraram ${pontos} pontos no orçamento (antes: 12)`);
+    // e a contagem de cada linha na tela bate com o que ela gera
+    for (const s of r.mapa.simbolos.filter(x => x.layer === 'EL-SIMBOLOS')) assert.strictEqual(s.contados, s.quantidade, JSON.stringify(s));
+  });
+
   await caso('validação das correções', async () => {
     assert.match(mapaCad.validarLinhas([], proposto), /ao menos uma/);
     assert.match(mapaCad.validarLinhas([{ idx: 99, simbolo: '?' }], proposto), /inexistente/);
@@ -304,6 +321,8 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
           assert.strictEqual((await pool.query('SELECT nome_projeto FROM analises_projeto WHERE id = $1', [analise.id])).rows[0].nome_projeto, 'ZZ Mapa CAD');
         } finally {
           servidor.close();
+          // a trilha de auditoria das análises do teste sai junto (não fica apontando para o nada)
+          await pool.query("DELETE FROM auditoria WHERE entidade = 'analises_projeto' AND entidade_id = ANY($1)", [[analise.id, ...novas]]).catch(() => {});
           await pool.query('DELETE FROM analises_projeto WHERE id = ANY($1)', [[analise.id, ...novas]]);
         }
       });

@@ -41,6 +41,14 @@ Projetos recebidos clientes/
 # Documentos gerados pelas skills ao rodar o CLI nos exemplos
 skills/*/exemplos/documentos/
 
-# build seguro do frontend (scripts/build-seguro.js)
+# build seguro do frontend (scripts/build-seguro.js) e as cópias de volta de cada
+# instalação (frontend/build-2.x.0-anterior/, ~4 MB cada, minificado)
 frontend/build-novo/
 frontend/build-anterior/
+frontend/build-*/
+
+# relatórios do Cypress (reporter mochawesome)
+frontend/cypress/reports/
+
+# atalhos do Windows (ex.: o atalho antigo da Inicialização)
+*.lnk

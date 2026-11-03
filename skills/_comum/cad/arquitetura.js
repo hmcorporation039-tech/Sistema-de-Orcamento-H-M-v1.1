@@ -14,6 +14,7 @@
 const { Helper } = require('dxf');
 const { classificarFolha, NAO_PLANTA, RE_NOME_SALA } = require('./classificarPrancha');
 const { ehLayerDeInstalacao } = require('./disciplinasCad');
+const { limparMtext } = require('./textoCad');
 
 // $INSUNITS → fator para metros (0 = sem unidade: decide pelas portas/tamanho)
 const FATOR = { 1: 0.0254, 2: 0.3048, 4: 0.001, 5: 0.01, 6: 1 };
@@ -79,7 +80,9 @@ const RE_NAO_NOME = new RegExp([
 ].map(r => r.source).join('|'), 'i');
 // sigla curta que é sala; fora delas, 1–3 letras sozinhas ("ST", "DI", "ALC") são código
 const RE_SIGLA_SALA = /^(WC|BWC|DML|CPD|ADM|LAV|COZ|QTO|SL|DEP|ALM|GAR|CME|UTI|RX|PS|HALL|LOJA|BAR|SPA)$/i;
-const limparTexto = (s) => String(s || '').replace(/\\P/g, ' ').replace(/\{\\[^;]*;|\}|\\[A-Za-z][^;]*;|[{}]/g, '').replace(/\s+/g, ' ').trim();
+// o limpador de MTEXT é o mesmo do projeto (./textoCad.js): a cópia daqui apagava o texto
+// entre "\L" e o próximo ";" (CAD-01/CAD-11, 02/11/2026); o nome da sala fica numa linha só
+const limparTexto = (s) => limparMtext(s, { quebra: ' ' }).replace(/\s+/g, ' ').trim();
 // "AUDITÓRIO ÁREA = 108m²" → "AUDITÓRIO"
 const nomeLimpo = (s) => s.replace(/\s*[ÁA]REA\s*[:=].*$/i, '').replace(/\s*[\d.,]+\s*m[²2]\s*$/i, '').replace(/[\s:;,.\-–]+$/, '').replace(/\s+/g, ' ').trim();
 // Etiqueta de equipamento ("CAM-04", "FOG5", "DET 3", "AM-01"): em planta sem nome de
@@ -461,8 +464,9 @@ function lerTexto(e) {
   const escala = e.transforms?.reduce((m, t) => m * Math.abs(t.scaleY || 1), 1) || 1;
   return { s, x: tx, y: ty, h: (e.nominalTextHeight || e.textHeight || (e.type === 'ATTRIB' ? e.text.textHeight : 0) || 0) * escala, layer: e.layer, ...(e.type === 'ATTRIB' ? { tag: e.tag || '' } : {}) };
 }
-// "Tomada alta a 2,20m do piso", "h= 20 cm abaixo do forro", "altura: 97,5 cm", "H=1,10"
-const RE_NOTA_ALTURA = /do\s+piso|abaixo\s+do\s+forro|\baltura\b|\bh\s*=\s*[0-9]/i;
+// "Tomada alta a 2,20m do piso", "h= 20 cm abaixo do forro", "altura: 97,5 cm", "H=1,10", "h: 1,10 m"
+// (o valor é lido por ./textoCad.js; aqui só se separa o texto que fala de altura)
+const RE_NOTA_ALTURA = /do\s+piso|abaixo\s+do\s+forro|\baltura\b|\bh\s*[=:]\s*[0-9]/i;
 
 function lerArquitetura(textoDxf, opcoes = {}) {
   const { parsed } = new Helper(textoDxf);

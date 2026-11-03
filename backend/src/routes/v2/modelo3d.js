@@ -1,6 +1,8 @@
 // Modelo 3D ilustrativo (versão 2.3) — controllers/modelo3dController.js.
 //
 // Ver/gerar/baixar: qualquer usuário logado (como ver o projeto ou a análise).
+// Gerar de novo (apaga o 3D guardado): dono da origem — laudo, análise ou
+// proposta — ou administrador.
 // Enviar a arquitetura da análise: dono da análise ou administrador. Mostrar ao
 // cliente: dono da proposta ou administrador.
 // /modelo-3d/ver/:token é a única sem login: o token curto (10 min, em memória)
@@ -9,11 +11,15 @@ const ctrl = require('../../controllers/modelo3dController');
 
 // uploadArquitetura (DWG/DXF/PDF): o mesmo da arquitetura do projeto, em routes/index.js
 module.exports = (router, { autenticar, validarId, posse, uploadArquitetura }) => {
-  const { analise: posseAnalise, proposta: posseProposta } = posse;
+  const { analise: posseAnalise, proposta: posseProposta, laudo: posseLaudo } = posse;
+  // posse pela origem da rota (:origem); origem desconhecida o controller recusa (400)
+  const POSSE_ORIGEM = { laudo: posseLaudo, analise: posseAnalise, proposta: posseProposta };
+  const posseDaOrigem = (req, res, next) => (Object.hasOwn(POSSE_ORIGEM, req.params.origem) ? POSSE_ORIGEM[req.params.origem](req, res, next) : next());
 
   router.get('/modelo-3d/ver/:token', ctrl.ver);
   router.get('/modelo-3d/:origem/:id', autenticar, validarId, ctrl.situacao);
   router.post('/modelo-3d/:origem/:id/abrir', autenticar, validarId, ctrl.abrir);
+  router.post('/modelo-3d/:origem/:id/gerar-de-novo', autenticar, validarId, posseDaOrigem, ctrl.gerarDeNovo);
   router.get('/modelo-3d/:origem/:id/arquivo', autenticar, validarId, ctrl.arquivo);
 
   router.post('/projetos/analises/:id/arquitetura', autenticar, validarId, posseAnalise, uploadArquitetura.single('arquivo'), ctrl.enviarArquiteturaAnalise);

@@ -1,7 +1,7 @@
 # Migrações da versão 2.0
 
 Um arquivo por tema (`2.0-01-codigo-servico.js`, `2.0-02-servicos.js`…), carregado em ordem
-alfabética no fim de `criarTabelas` (models/schema.js), dentro da mesma transação. Só entra
+NUMÉRICA (2.0-9 < 2.0-10 < 2.0-100; models/apoioMigracoes.js, ordenarMigracoes) no fim de `criarTabelas` (models/schema.js), dentro da mesma transação. Só entra
 arquivo cujo nome começa com número.
 
 Cada arquivo exporta `async (client) => { ... }` e precisa ser **idempotente**:

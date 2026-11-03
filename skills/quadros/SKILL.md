@@ -5,7 +5,7 @@ description: Projeto de fabricação de quadros elétricos e de automação a pa
 
 # Quadros elétricos e de automação — projeto de fabricação (NBR IEC 61439) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por quadro** (o unifilar/quadro de cargas), o projeto de fabricação do quadro. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills/quadros` ou `skills`: 118 verificações). **Não refaça contas de cabeça: rode os scripts.** As partidas de motores usam o motor da skill de elétrica industrial (`eletrica-industrial/scripts/lib/calculo.js → dispositivosPartida`) e o DPS a função comum `_comum/dps.js`.
+Gera, a partir de **um arquivo JSON por quadro** (o unifilar/quadro de cargas), o projeto de fabricação do quadro. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills/quadros` ou `skills`: 207 verificações). **Não refaça contas de cabeça: rode os scripts.** As partidas de motores usam o motor da skill de elétrica industrial (`eletrica-industrial/scripts/lib/calculo.js → dispositivosPartida`) e o DPS a função comum `_comum/dps.js`.
 
 | Documento | Tipo | Formato | Registro |
 |---|---|---|---|

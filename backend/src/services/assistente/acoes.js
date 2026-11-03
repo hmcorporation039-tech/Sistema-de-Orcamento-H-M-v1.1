@@ -16,6 +16,7 @@
 const pool = require('../../config/database');
 const { EMPRESA } = require('../../utils/pdfTemplate');
 const { propostaParaPayload, aplicarOperacoes, payloadParaEnvio, mesclarDados, ErroRascunho, cortarTexto, citar } = require('../../utils/assistenteRascunho');
+const { revisarProposta } = require('../revisaoPreEnvio');
 
 class ErroAcao extends Error {
   constructor(msg, status = 400) { super(msg); this.status = status; }
@@ -39,6 +40,28 @@ const valorNoResumo = (v) => {
   return String(v);
 };
 const rotuloProposta = (p) => `${p.numero} — ${p.cliente_nome || 'sem cliente'}, ${brl(p.total)} (${p.status})`;
+
+// Conferência antes do envio (services/revisaoPreEnvio.js, a mesma do ModalEnviarEmail
+// da tela) para o e-mail e o link de aprovação pedidos pelo assistente. Bloqueio
+// (sem itens, total zerado, total que não bate com os itens) recusa a ação, salvo
+// `confirmar_bloqueio: true` no payload — o usuário pediu para enviar mesmo assim;
+// avisos (a cotar, BDI 0 %, validade vencida...) vão no resumo do cartão.
+const CAMPO_CONFIRMACAO = 'confirmar_bloqueio';
+async function conferirEnvio(id, confirmado, { noClique = false } = {}) {
+  const revisao = await revisarProposta(id, pool);
+  const achados = revisao?.achados || [];
+  const bloqueios = achados.filter(a => a.nivel === 'bloqueio');
+  if (bloqueios.length && !confirmado) {
+    throw new ErroAcao(`Conferência antes do envio: ${bloqueios.map(b => b.mensagem).join(' ')} `
+      + (noClique
+        ? 'A proposta mudou depois que o cartão foi preparado. Corrija a proposta e peça a ação de novo.'
+        : `Corrija a proposta antes, ou, se o usuário pedir explicitamente para enviar assim mesmo, proponha de novo com dados.${CAMPO_CONFIRMACAO}: true.`));
+  }
+  const linhas = achados.filter(a => a.nivel !== 'info').map(a => `${a.nivel === 'bloqueio' ? 'BLOQUEIO (enviar mesmo assim, a pedido do usuário)' : 'Atenção'}: ${a.mensagem}`);
+  return { bloqueios: bloqueios.length, texto: linhas.length ? `\nConferência antes do envio:\n${linhas.join('\n')}` : '' };
+}
+const confirmouBloqueio = (dados) => dados?.[CAMPO_CONFIRMACAO] === true;
+const semConfirmacao = ({ [CAMPO_CONFIRMACAO]: _c, ...resto }) => resto;
 
 async function analise(id) {
   const { rows: [a] } = await pool.query('SELECT id, cliente_nome, nome_projeto, finalidade, funcionamento, obra_id FROM analises_projeto WHERE id = $1', [id]);
@@ -70,20 +93,29 @@ const TIPOS = {
       if (!emailValido(dados.destinatario)) throw new ErroAcao('Informe um e-mail de destino válido.');
       if (dados.mensagem != null && (typeof dados.mensagem !== 'string' || dados.mensagem.length > 10000)) throw new ErroAcao('Mensagem do e-mail inválida (até 10.000 caracteres).');
       const p = await proposta(id);
+      const conferencia = await conferirEnvio(id, confirmouBloqueio(dados));
       // o cartão mostra o e-mail INTEIRO que vai sair (mesmo assunto e corpo de
       // propostaDocumentos.enviarEmail): antes dizia só "com a mensagem
       // proposta" e o usuário aprovava sem ler o texto que o assistente escreveu
       const corpo = (dados.mensagem && dados.mensagem.trim()) || `Olá,\nSegue em anexo a proposta ${p.numero}.`;
       return {
-        payload: { destinatario: dados.destinatario, ...(dados.mensagem ? { mensagem: dados.mensagem } : {}) },
+        payload: {
+          destinatario: dados.destinatario, ...(dados.mensagem ? { mensagem: dados.mensagem } : {}),
+          ...(conferencia.bloqueios ? { [CAMPO_CONFIRMACAO]: true } : {}),
+        },
         resumo: `Enviar a proposta ${rotuloProposta(p)} por e-mail.\n`
           + `Para: ${dados.destinatario}\n`
           + `Assunto: Proposta ${p.numero} — ${EMPRESA.nomeFantasia}\n`
           + `Texto: ${citar(corpo)} (+ assinatura padrão da empresa)\n`
-          + `Anexo: PDF da proposta ${p.numero}`,
+          + `Anexo: PDF da proposta ${p.numero}`
+          + conferencia.texto,
       };
     },
-    executar: (id, d, api) => api('POST', `/api/propostas/${id}/enviar-email`, d),
+    // confere de novo no clique: a proposta pode ter mudado depois do cartão
+    async executar(id, d, api) {
+      await conferirEnvio(id, confirmouBloqueio(d), { noClique: true });
+      return api('POST', `/api/propostas/${id}/enviar-email`, semConfirmacao(d));
+    },
   },
   gerar_link_aprovacao: {
     alvo: 'proposta', rotulo: 'Gerar link de aprovação',
@@ -91,9 +123,16 @@ const TIPOS = {
       const dias = dados.dias == null ? null : Number(dados.dias);
       if (dias != null && (!Number.isInteger(dias) || dias < 1 || dias > 90)) throw new ErroAcao('Validade do link inválida (1 a 90 dias).');
       const p = await proposta(id);
-      return { payload: dias ? { dias } : {}, resumo: `Gerar um link de aprovação para o cliente da proposta ${rotuloProposta(p)}${dias ? `, válido por ${dias} dias` : ''}.` };
+      const conferencia = await conferirEnvio(id, confirmouBloqueio(dados));
+      return {
+        payload: { ...(dias ? { dias } : {}), ...(conferencia.bloqueios ? { [CAMPO_CONFIRMACAO]: true } : {}) },
+        resumo: `Gerar um link de aprovação para o cliente da proposta ${rotuloProposta(p)}${dias ? `, válido por ${dias} dias` : ''}.${conferencia.texto}`,
+      };
     },
-    executar: (id, d, api) => api('POST', `/api/propostas/${id}/link-aprovacao`, d),
+    async executar(id, d, api) {
+      await conferirEnvio(id, confirmouBloqueio(d), { noClique: true });
+      return api('POST', `/api/propostas/${id}/link-aprovacao`, semConfirmacao(d));
+    },
   },
   excluir_proposta: {
     alvo: 'proposta', rotulo: 'Excluir a proposta',

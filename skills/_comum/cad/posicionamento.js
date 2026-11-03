@@ -87,10 +87,58 @@ function gradeComQuantidade(poligono, n) {
   return [centro(poligono)];
 }
 
+// distância do ponto ao contorno do polígono (à parede mais próxima)
+function distanciaAoContorno([px, py], poligono) {
+  let d = Infinity;
+  for (let i = 0; i < poligono.length; i++) {
+    const [x1, y1] = poligono[i];
+    const [x2, y2] = poligono[(i + 1) % poligono.length];
+    const vx = x2 - x1, vy = y2 - y1;
+    const t = Math.max(0, Math.min(1, ((px - x1) * vx + (py - y1) * vy) / (vx * vx + vy * vy || 1)));
+    d = Math.min(d, Math.hypot(px - (x1 + vx * t), py - (y1 + vy * t)));
+  }
+  return d;
+}
+
+// Completa até `total` os pontos de uma grade que perdeu células fora do
+// polígono (sala em L, em T…): candidatos numa malha de passo 1/2, 1/3… da
+// célula (a de 1/2 inclui os centros e os pontos médios entre eles), só os de
+// dentro; a cada passo entra o candidato mais longe dos pontos já postos e das
+// paredes (a parede pesa em dobro: a luminária fica a ~meio espaçamento dela).
+// Assim os que faltam vão para o vazio da sala, sem amontoar.
+// Determinístico. Devolve menos que `total` só se nem a malha de 1/6 couber.
+function completarDentro(poligono, pts, total, caixa) {
+  const { minX, minY, L, W, cx, cy } = caixa;
+  for (let k = 2; k <= 6 && pts.length < total; k++) {
+    const cand = [];
+    for (let j = 0; j < cy * k - 1; j++) for (let i = 0; i < cx * k - 1; i++) {
+      const p = [minX + (L / cx) * ((i + 1) / k), minY + (W / cy) * ((j + 1) / k)];
+      if (dentro(p, poligono)) cand.push({ p, nota: 2 * distanciaAoContorno(p, poligono) });
+    }
+    if (cand.length < total - pts.length) continue;
+    const saida = pts.slice();
+    const perto = (c) => saida.reduce((m, q) => Math.min(m, Math.hypot(q.x - c.p[0], q.y - c.p[1])), Infinity);
+    cand.forEach(c => { c.nota = Math.min(c.nota, perto(c)); });
+    while (saida.length < total) {
+      let melhor = 0;
+      for (let i = 1; i < cand.length; i++) if (cand[i].nota > cand[melhor].nota + 1e-9) melhor = i;
+      const [escolhido] = cand.splice(melhor, 1);
+      const novo = { x: escolhido.p[0], y: escolhido.p[1], rotacao: 0 };
+      saida.push(novo);
+      cand.forEach(c => { c.nota = Math.min(c.nota, Math.hypot(novo.x - c.p[0], novo.y - c.p[1])); });
+    }
+    return saida;
+  }
+  return pts;
+}
+
 // Grade nx × ny JÁ CALCULADA pela skill (luminotécnico: nx no sentido do
 // comprimento, a maior dimensão): o eixo do nx vai no lado maior do ambiente.
-// Centros das células do retângulo envolvente; células fora de ambiente
-// irregular caem (o aviso de quantidade fica com quem chama).
+// Centros das células do retângulo envolvente. Em ambiente irregular (L, T)
+// as células fora do polígono caem e os pontos que faltam são redistribuídos
+// dentro dele (completarDentro): a planta e o 3D mostram a MESMA quantidade do
+// memorial e do orçamento. Se ainda faltar, o aviso fica com quem chama
+// (planta.posicionarPontos → avisos).
 function gradeNxNy(poligono, nx, ny) {
   if (!nx || !ny) return [];
   const xs = poligono.map(p => p[0]), ys = poligono.map(p => p[1]);
@@ -102,7 +150,7 @@ function gradeNxNy(poligono, nx, ny) {
     const p = [minX + (L / cx) * (i + 0.5), minY + (W / cy) * (j + 0.5)];
     if (dentro(p, poligono)) pts.push({ x: p[0], y: p[1], rotacao: 0 });
   }
-  return pts;
+  return pts.length < nx * ny ? completarDentro(poligono, pts, nx * ny, { minX, minY, L, W, cx, cy }) : pts;
 }
 
 function nosCantos(poligono, n, { recuo = 0.3 } = {}) {

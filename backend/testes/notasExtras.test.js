@@ -49,6 +49,9 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
     let admin = null;
     const limpar = async () => {
       await pool.query("DELETE FROM financeiro_movimentos WHERE nome LIKE 'ZZ Extras%'").catch(() => {});
+      // a auditoria das notas do teste (criar_de_proposta, ligar/desligar recebimento) sai antes das notas
+      await pool.query(`DELETE FROM auditoria WHERE entidade = 'notas_fiscais' AND entidade_id IN (SELECT id FROM notas_fiscais
+        WHERE discriminacao LIKE 'ZZ EXTRAS%' OR discriminacao LIKE 'Prestação de serviços conforme proposta comercial nº ZZEX%')`).catch(() => {});
       await pool.query("DELETE FROM notas_fiscais WHERE discriminacao LIKE 'ZZ EXTRAS%' OR discriminacao LIKE 'Prestação de serviços conforme proposta comercial nº ZZEX%'").catch(() => {});
       await pool.query("DELETE FROM propostas WHERE numero LIKE 'ZZEX%'").catch(() => {});
       await pool.query("DELETE FROM clientes WHERE nome LIKE 'ZZ Extras%'").catch(() => {});

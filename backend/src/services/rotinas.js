@@ -5,6 +5,10 @@
 //   notas-email          notas fiscais (XML) e orçamentos anexos que chegam por e-mail
 //   pix-email            Pix recebidos/enviados (e-mails do banco) → Financeiro
 //   fornecedores-pastas  orçamentos de fornecedores salvos nas pastas
+//   sinapi-pasta         planilha mensal do SINAPI deixada na pasta SINAPI
+//   vencimentos          vencimentos a renovar: laudos, documentos da empresa e
+//                        certificado digital A1 (aviso por e-mail a 60/30 dias e no dia)
+//   erros-sistema        resumo diário dos erros inesperados (500) por e-mail
 //
 // Antes cada rotina tinha o próprio agendamento em server.js e o próprio
 // botão "Verificar agora" sem registro comum; agora horário e botão passam pelo
@@ -98,17 +102,17 @@ function definicoesPadrao() {
       ultimoRegistroSql: 'SELECT MAX(importado_em) AS em FROM sinapi_importacoes',
     },
     vencimentos: {
-      nome: 'Laudos a vencer',
-      descricao: 'Traz os laudos do sistema para a lista de vencimentos e avisa por e-mail quando faltam 60 e 30 dias e quando vence.',
+      nome: 'Vencimentos a renovar',
+      descricao: 'Traz os laudos do sistema e o certificado digital A1 para a lista de vencimentos (junto com os documentos da empresa cadastrados) e avisa por e-mail quando faltam 60 e 30 dias e quando vence.',
       atrasoSegundos: 60,
       configurada: () => true,
-      logAgendada: () => `Aviso de laudos a vencer ativo (${quando})`,
+      logAgendada: () => `Aviso de vencimentos a renovar ativo (${quando})`,
       executar: () => require('./vencimentos').executarRotina(),
       itens: (r) => r.avisados,
-      texto: (r) => `${r.total || 0} laudo(s) acompanhado(s): ${r.vencidos || 0} vencido(s), ${r.urgentes || 0} a menos de 30 dias; ${r.avisados || 0} aviso(s) enviado(s)`,
-      logResultado: (r) => r.avisados > 0 && `Laudos a vencer: ${r.avisados} aviso(s) enviado(s) por e-mail`,
-      prefixoAviso: 'Aviso (laudos a vencer):',
-      logErro: 'Erro no aviso de laudos a vencer:',
+      texto: (r) => `${r.total || 0} vencimento(s) acompanhado(s): ${r.vencidos || 0} vencido(s), ${r.urgentes || 0} a menos de 30 dias; ${r.avisados || 0} aviso(s) enviado(s)`,
+      logResultado: (r) => r.avisados > 0 && `Vencimentos a renovar: ${r.avisados} aviso(s) enviado(s) por e-mail`,
+      prefixoAviso: 'Aviso (vencimentos a renovar):',
+      logErro: 'Erro no aviso de vencimentos a renovar:',
       ultimoRegistroSql: 'SELECT MAX(avisado_em) AS em FROM vencimentos_laudos',
     },
     'erros-sistema': {
@@ -256,7 +260,7 @@ function criarRotinas({ definicoes = definicoesPadrao, db = null, agendar = setT
   // Chamado por server.js quando a API sobe.
   function agendarRotinas() {
     if (!rotinasAutomaticasLigadas()) {
-      log.log('Rotinas automáticas desligadas (ROTINAS_AUTOMATICAS) — e-mail de notas, Pix e cotações não rodam nesta instância');
+      log.log('Rotinas automáticas desligadas (ROTINAS_AUTOMATICAS) — e-mail de notas, Pix, cotações, SINAPI, vencimentos e resumo de erros não rodam pelo horário nesta instância');
       return;
     }
     for (const [chave, def] of Object.entries(defs())) {

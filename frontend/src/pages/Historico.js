@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Search, Trash2, X, FileDown, FileSpreadsheet, Copy, Send, Pencil, Plus, Link2, CheckCircle2, XCircle } from 'lucide-react';
+import { Search, Trash2, FileDown, FileSpreadsheet, Copy, Send, Pencil, Plus, Link2, CheckCircle2, XCircle } from 'lucide-react';
 import {
   getPropostas, getProposta, atualizarStatus, removerProposta, duplicarProposta, getRelatorioPropostas,
   exportarRelatorioPropostas, baixarPdfProposta,
 } from '../services/api';
-import { formatarMoeda, formatarData, formatarNcm } from '../utils/format';
+import { formatarMoeda, formatarData, formatarNcm, paraIso, hojeIso } from '../utils/format';
 import { baixarArquivo, salvarBlob, mensagemDeErro } from '../utils/download';
 import Paginacao from '../components/Paginacao';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
@@ -84,14 +84,6 @@ const POR_PAGINA = 30;
 // mês atual). Sem período escolhido aqui, a lista mostra todo o histórico —
 // então o resumo e a exportação vão de uma data bem antiga até hoje.
 const INICIO_DO_HISTORICO = '2000-01-01';
-
-function paraIso(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function hojeIso() {
-  return paraIso(new Date());
-}
 
 const ATALHOS_PERIODO = [
   { rotulo: 'Todo o histórico', calcular: () => ['', ''] },
@@ -424,7 +416,11 @@ export default function Historico() {
               const dias = diasParaVencer(p);
               return (
                 <tr key={p.id} style={{ borderTop: '1px solid #1e1e1e', cursor: 'pointer' }} onClick={() => abrirDetalhe(p.id)}>
-                  <td style={{ ...td, color: '#c9a227', fontWeight: 700 }}>{p.numero}</td>
+                  <td style={{ ...td, color: '#c9a227', fontWeight: 700 }}>
+                    {/* botão para abrir pelo teclado também (Tab + Enter); o clique na linha continua valendo */}
+                    <button type="button" style={estilos.botaoTexto} aria-label={`Abrir a proposta ${p.numero}`}
+                      onClick={(e) => { e.stopPropagation(); abrirDetalhe(p.id); }}>{p.numero}</button>
+                  </td>
                   <td style={td}>{formatarData(p.data)}</td>
                   <td style={td}>{p.cliente_nome}</td>
                   <td style={td}>{p.local_obra || '—'}</td>

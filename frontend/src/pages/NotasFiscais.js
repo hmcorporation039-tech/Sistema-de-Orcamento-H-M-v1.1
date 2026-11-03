@@ -1364,11 +1364,11 @@ function ModalCancelar({ nota, onFechar, onFeito }) {
           </div>
         )}
         <Campo label="Motivo *">
-          <select value={codigo} onChange={(e) => setCodigo(e.target.value)}>
+          <Select value={codigo} onChange={(e) => setCodigo(e.target.value)}>
             <option value="1">Erro na emissão</option>
             <option value="2">Serviço não prestado</option>
             <option value="9">Outros</option>
-          </select>
+          </Select>
         </Campo>
         <Campo label="Descreva o motivo * (mínimo 15 caracteres)">
           <textarea rows={3} value={motivo} onChange={(e) => setMotivo(e.target.value)} maxLength={255}

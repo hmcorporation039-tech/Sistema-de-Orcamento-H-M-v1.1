@@ -68,6 +68,18 @@ const limiteLoginConta = rateLimit({
   legacyHeaders: false,
   message: { erro: 'Muitas tentativas de login nesta conta. Aguarde 15 minutos e tente novamente.' },
 });
+// Troca de senha: limite por USUÁRIO (vem depois do autenticar). Sem ele, quem
+// tivesse um token de sessão vazado (vale 8 h) podia testar a senha atual sem
+// limite e, ao acertar, trocar a senha e ficar com a conta. Acerto não conta.
+const limiteTrocaSenha = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => `usuario:${req.usuario?.id}`,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { erro: 'Muitas tentativas de troca de senha sem sucesso. Aguarde 15 minutos e tente novamente.' },
+});
 // Envio de proposta por e-mail sai da caixa da empresa: limite por usuário.
 const limiteEnvioEmail = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -115,7 +127,7 @@ const uploadArquitetura = criarUpload({
 
 // ── AUTH ──────────────────────────────────────────────────────────────
 router.post('/auth/login', limiteLogin, limiteLoginConta, authCtrl.login);
-router.post('/auth/senha', autenticar, authCtrl.alterarSenha);
+router.post('/auth/senha', autenticar, limiteTrocaSenha, authCtrl.alterarSenha);
 
 // ── MATERIAIS ─────────────────────────────────────────────────────────
 router.get('/materiais', autenticar, matCtrl.listar);
@@ -280,5 +292,10 @@ router.post('/pesquisa-mercado/salvar', autenticar, pesqCtrl.salvar);
 for (const f of require('fs').readdirSync(require('path').join(__dirname, 'v2')).filter(n => /\.js$/.test(n)).sort()) {
   require(`./v2/${f}`)(router, { autenticar, admin, validarId, exigirPosse, posse, limitePesquisaMercado, limiteAnaliseProjeto, uploadArquitetura });
 }
+
+// Rota /api que não existe: 404 em JSON com `erro` (o frontend, o assistente e
+// os futuros clientes esperam sempre JSON). Antes caía na página HTML padrão
+// do Express ("Cannot GET ..."). Tem de ser a ÚLTIMA coisa deste roteador.
+router.use((req, res) => res.status(404).json({ erro: 'Rota não encontrada.' }));
 
 module.exports = router;
