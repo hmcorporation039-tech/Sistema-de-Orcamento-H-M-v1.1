@@ -207,6 +207,9 @@ function Resumo({ obra, recarregar, podeEditar }) {
         <Cartao rotulo="Realizado (despesas)" valor={restrito ? '—' : moeda(r.realizado)} cor="#e08080"
           nota={restrito ? 'só administradores' : (r.contratado ? `contratado com prestadores: ${moeda(r.contratado)}` : 'movimentos de saída ligados')} />
         <Cartao rotulo="Recebido" valor={restrito ? '—' : moeda(r.recebido)} cor="#3fb95f" nota={restrito ? 'só administradores' : `a receber: ${moeda(r.a_receber)}`} />
+        {/* notas fiscais emitidas das propostas da obra; a receber = líquido − recebido − baixas manuais */}
+        <Cartao rotulo="Faturado (notas)" valor={restrito ? '—' : moeda(r.faturado)} cor="#9fb3ff"
+          nota={restrito ? 'só administradores' : (r.qtd_notas ? `a receber do faturado: ${moeda(r.a_receber_faturado)}` : 'nenhuma nota emitida nas propostas')} />
         <Cartao rotulo="Margem" valor={restrito ? '—' : moeda(r.margem)} cor={corMargem(restrito ? null : r.margem)}
           nota={restrito ? 'só administradores' : (r.margem_pct != null ? `${pct(r.margem_pct)} do orçado (orçado − realizado)` : 'orçado − realizado')} />
         <Cartao rotulo="% físico executado" valor={fisico ? pct(fisico.fisico_realizado.toFixed(1)) : '—'} cor="#5fc9c0"
@@ -510,6 +513,50 @@ function Financeiro({ obra, ligar, desligar }) {
             <td style={E.td}>{m.prestador_nome || '—'}</td>
             <td style={{ ...E.td, textAlign: 'right', fontWeight: 700, color: m.tipo === 'realizado' ? '#e08080' : '#3fb95f' }}>{m.tipo === 'realizado' ? '- ' : '+ '}{moeda(m.valor)}</td>
             <td style={{ ...E.td, textAlign: 'right' }}><BotaoDesligar onClick={() => desligar('movimento', m.id, 'o movimento')} /></td>
+          </tr>
+        ))}
+      </Tabela>
+      <NotasDaObra obra={obra} />
+    </div>
+  );
+}
+
+// Notas fiscais emitidas das propostas da obra (o faturado). Só administrador: a aba Financeiro já não abre
+// para os outros, e o backend nem manda as notas. "Recebido (Pix)" = Pix ligados à nota; o Pix ligado à nota
+// já leva a obra dela, então entra também no recebido da obra.
+function NotasDaObra({ obra }) {
+  const r = obra.resumo;
+  const notas = obra.notas || [];
+  const situacao = (n) => {
+    if (n.baixa_manual_em) return 'baixa manual';
+    const liq = Number(n.valor_liquido) || 0;
+    const rec = Number(n.recebido) || 0;
+    if (rec >= liq - 0.01) return 'recebida';
+    return rec > 0 ? 'parcial' : 'em aberto';
+  };
+  return (
+    <div style={{ marginTop: 18 }} data-testid="obra-notas">
+      <Cabecalho titulo="Notas fiscais emitidas (faturado)">
+        <Link to="/financeiro?aba=notas" style={E.btnSecundario}><FileText size={13} /> Notas fiscais</Link>
+      </Cabecalho>
+      <div style={{ display: 'flex', gap: 18, marginBottom: 10, fontSize: 12, flexWrap: 'wrap' }} data-testid="obra-faturado">
+        <span>Faturado: <b style={{ color: '#9fb3ff' }}>{moeda(r.faturado)}</b>{r.faturado_liquido !== r.faturado ? ` (líquido ${moeda(r.faturado_liquido)})` : ''}</span>
+        <span>Recebido: <b style={{ color: '#3fb95f' }}>{moeda(r.recebido)}</b></span>
+        {r.baixado_manual > 0 && <span>Baixa manual: <b>{moeda(r.baixado_manual)}</b></span>}
+        <span>A receber do faturado: <b style={{ color: r.a_receber_faturado > 0 ? '#d69a2d' : '#3fb95f' }}>{moeda(r.a_receber_faturado)}</b></span>
+      </div>
+      <Tabela colunas={[{ rotulo: 'Nota' }, { rotulo: 'Emissão' }, { rotulo: 'Proposta' }, { rotulo: 'Tomador' }, { rotulo: 'Valor', direita: true }, { rotulo: 'Líquido', direita: true }, { rotulo: 'Recebido (Pix)', direita: true }, { rotulo: 'Situação' }]}
+        vazio="Nenhuma nota emitida nas propostas desta obra. A nota entra aqui quando é ligada a uma proposta da obra (Financeiro › Notas fiscais).">
+        {notas.map(n => (
+          <tr key={n.id} style={tr}>
+            <td style={E.td}>{n.numero || '—'}</td>
+            <td style={E.td}>{n.data_emissao ? formatarData(n.data_emissao) : '—'}</td>
+            <td style={E.td}>{n.proposta_numero || '—'}</td>
+            <td style={E.td}>{n.tomador_nome || '—'}</td>
+            <td style={{ ...E.td, textAlign: 'right' }}>{moeda(n.valor_servicos)}</td>
+            <td style={{ ...E.td, textAlign: 'right', fontWeight: 700 }}>{moeda(n.valor_liquido)}</td>
+            <td style={{ ...E.td, textAlign: 'right', color: '#3fb95f' }}>{moeda(n.recebido)}</td>
+            <td style={E.td}>{situacao(n)}</td>
           </tr>
         ))}
       </Tabela>

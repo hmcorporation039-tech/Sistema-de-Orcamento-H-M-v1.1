@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { Wallet, Link2, CheckCircle2 } from 'lucide-react';
-import { getNotasAReceber, ligarSugeridasNotas, ligarPixNaNota, darBaixaNota } from '../services/api';
+import { getNotasAReceber, ligarSugeridasNotas, ligarPixNaNota, darBaixaNota, levarObraDasNotas } from '../services/api';
 import { formatarMoeda, dataBr } from '../utils/format';
 import { estilos } from './ui/estilos';
 
@@ -75,15 +75,26 @@ export default function NotasAReceber() {
 
   const agir = async (acao, ok) => {
     setOcupado(true);
-    try { const r = await acao(); setDados(r.data); toast.success(typeof ok === 'function' ? ok(r.data) : ok); }
+    try {
+      const r = await acao();
+      setDados(r.data);
+      toast.success(typeof ok === 'function' ? ok(r.data) : ok);
+      // Pix que já era de outra obra: o vínculo com a nota não troca a obra, só avisa
+      for (const aviso of [r.data?.aviso, ...(r.data?.avisos || [])].filter(Boolean)) toast(aviso, { duration: 12000, icon: '⚠️' });
+    }
     catch (e) { toast.error(e.response?.data?.erro || 'Não foi possível concluir.'); }
     finally { setOcupado(false); }
   };
-  const ligar = (nota, mov) => agir(() => ligarPixNaNota(nota, mov), 'Pix ligado à nota.');
+  // o Pix ligado à nota leva a obra da proposta dela (só quando ainda não tinha obra)
+  const ligar = (nota, mov) => agir(() => ligarPixNaNota(nota, mov), (d) => (d.obra_preenchida ? 'Pix ligado à nota e à obra da proposta.' : 'Pix ligado à nota.'));
   const baixa = (nota, obs) => agir(() => darBaixaNota(nota, obs), 'Baixa registrada.');
-  const ligarTodas = () => agir(() => ligarSugeridasNotas(), (d) => `${plural(d.ligadas, 'Pix ligado', 'Pix ligados')}.`);
+  const ligarTodas = () => agir(() => ligarSugeridasNotas(),
+    (d) => `${plural(d.ligadas, 'Pix ligado', 'Pix ligados')}${d.obras_preenchidas ? ` (${d.obras_preenchidas} com a obra da proposta)` : ''}.`);
+  const levarObras = () => agir(() => levarObraDasNotas(),
+    (d) => `${plural(d.preenchidos, 'Pix ganhou', 'Pix ganharam')} a obra da nota (${plural(d.obras, 'obra', 'obras')}).`);
 
-  if (!dados || dados.itens.length === 0) return null;
+  const pelaNota = dados?.obra_pela_nota;
+  if (!dados || (dados.itens.length === 0 && !pelaNota?.n)) return null;
   const { resumo } = dados;
   const abertas = dados.itens.filter(i => i.estado !== 'sem_historico');
   const semHistorico = dados.itens.filter(i => i.estado === 'sem_historico');
@@ -108,6 +119,12 @@ export default function NotasAReceber() {
           <button type="button" style={estilos.btnSecundario} onClick={() => setAntigas(!antigas)}
             title="Emitidas antes do primeiro Pix que o sistema leu: podem ter sido pagas antes">
             {plural(semHistorico.length, 'nota antiga', 'notas antigas')} sem como conferir
+          </button>
+        )}
+        {pelaNota?.n > 0 && (
+          <button type="button" disabled={ocupado} style={estilos.btnSecundario} onClick={levarObras} data-testid="areceber-obra-das-notas"
+            title={`Pix já ligados a notas cuja proposta tem obra, mas ainda sem obra (${formatarMoeda(pelaNota.valor)}). Só preenche obra vazia: Pix que já tem obra não muda.`}>
+            <Link2 size={13} /> Levar a obra das notas para {plural(pelaNota.n, 'Pix', 'Pix')}
           </button>
         )}
       </div>

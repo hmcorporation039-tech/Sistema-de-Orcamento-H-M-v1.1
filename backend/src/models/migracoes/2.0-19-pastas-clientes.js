@@ -61,7 +61,7 @@ module.exports = async (client) => {
       origem TEXT NOT NULL,
       destino TEXT NOT NULL,
       pasta_antes VARCHAR(200),
-      pasta_obra_antes INTEGER,
+      pasta_obra_antes INTEGER, -- sem uso: o script não mexe em pasta_obra_id (migracoes/LEIA-ME.md)
       movido_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       desfeito_em TIMESTAMPTZ
     )

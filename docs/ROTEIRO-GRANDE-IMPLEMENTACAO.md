@@ -81,6 +81,7 @@ O ramo `versao-2.0` estava marcado 2.10.0 e sem as entradas do RESUMO da 2.11 à
 - **Frontend e skills:**
   - Frontend: FE-01, 02, 04, 06 e 07, mais OP-09 e parte do FE-05.
   - Skills: SK-01, 07, 09 e 10.
+- **Segunda rodada:** INT-04 (o Pix leva a obra da nota; faturado e a receber na obra), BD-06 (teste das migrações num banco vazio), BD-08 (coluna documentada), OP-06 (arquitetura do resumo), OP-09 no backend (`utils/texto.js` e `utils/xml.js`) e OP-11 (logo e cabeçalho com fonte única e teste de hash).
 - **Desfeito de propósito:** OP-10. Tirar duas dependências sem uso obrigava a refazer o package-lock com mocha e typescript novos, um risco que não compensa.
 
 **Mudanças que o Márcio vai notar:**
@@ -271,7 +272,7 @@ O que for irreversível pede confirmação ("SIM 4821"), com prazo.
 - npm workspaces na raiz com um pacote `comum` (formatação, texto, dinheiro, XML, escapeHtml, timbrado único: OP-09, OP-11) e um `npm test` único.
 - Motor de CAD/PDF como pacote próprio, com as fixtures e o placar da fase 3.
 - Quebrar os arquivos grandes quando forem tocados: Orcamento.js, NotasFiscais.js, visualizador3d/app.js, modelo3d.js, pdfVetorial.js.
-- Teste das migrações num banco vazio (BD-06).
+- ~~Teste das migrações num banco vazio (BD-06).~~ Feito na fase 0.
 
 ---
 
@@ -327,7 +328,7 @@ Fase 1, passo 1 e 3: identificador de circuito comum e o 3D gravando circuito e 
 - **3D-01:** pontos do DWG sem ambiente no 3D.
 - **3D-05:** cache do 3D que não acompanha o aprendizado.
 - **INT-03:** e-mail pelo assistente sem a conferência de envio.
-- **INT-04:** Pix ligado à nota não chega à obra.
+- **INT-04:** Pix ligado à nota não chega à obra. *(corrigido)*
 - **FE-01:** vencimentos com 6 disciplinas fixas.
 - **SK-01:** luminárias somem em sala em L.
 

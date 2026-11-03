@@ -59,6 +59,39 @@ const mov = (tipo, nome, valor, dia, prestador_id = null) => ({ tipo, nome, valo
     assert.strictEqual(a.sugerir(g(null), { contratos }), null);
   });
 
+  await caso('Pix ligado a nota de obra: todos da mesma obra → confiança alta, mesmo contra o nome do cliente', () => {
+    const comNota = (obra) => ({ ...mov('recebido', 'Rebeca Drummond', 500, '2026-10-01'), obra_da_nota: obra });
+    const g = a.agrupar([comNota(7), comNota(7)])[0];
+    assert.deepStrictEqual(g.obrasDasNotas, [7]);
+    assert.strictEqual(g.comNotaDeObra, 2);
+    const s = a.sugerir(g, { obras });
+    assert.strictEqual(s.obra_id, 7, 'a nota manda: pelo nome seria a obra 6');
+    assert.strictEqual(s.confianca, 'alta');
+    // pelo cadastro (nome do cliente / contrato do prestador) continua média
+    assert.strictEqual(a.sugerir(a.agrupar([mov('recebido', 'Rebeca Drummond', 1, '2026-09-01')])[0], { obras }).confianca, 'media');
+  });
+
+  await caso('Pix ligado a nota: só parte do grupo ou obras diferentes não vira alta', () => {
+    const comNota = (obra) => ({ ...mov('recebido', 'Rebeca Drummond', 500, '2026-10-01'), obra_da_nota: obra });
+    const semNota = mov('recebido', 'Rebeca Drummond', 300, '2026-10-02');
+    // parte ligada a nota da obra 6, e o nome do cliente também aponta a 6 → sugere 6, mas média
+    const mesma = a.sugerir(a.agrupar([comNota(6), semNota])[0], { obras });
+    assert.strictEqual(mesma.obra_id, 6);
+    assert.strictEqual(mesma.confianca, 'media');
+    assert.match(mesma.motivo, /1 de 2 Pix/);
+    // parte ligada a nota da obra 7, e o nome aponta a 6 → não adivinha
+    const outra = a.sugerir(a.agrupar([comNota(7), semNota])[0], { obras });
+    assert.strictEqual(outra.obra_id, null);
+    assert.deepStrictEqual(outra.candidatas.sort((x, y) => x - y), [6, 7]);
+    // todos ligados, mas a notas de obras diferentes → candidatas
+    const duas = a.sugerir(a.agrupar([comNota(7), comNota(12)])[0], { obras });
+    assert.strictEqual(duas.obra_id, null);
+    assert.deepStrictEqual(duas.candidatas.sort((x, y) => x - y), [7, 12]);
+    // despesa (realizado) não usa nota
+    const desp = a.agrupar([{ ...mov('realizado', 'Prestador X', 100, '2026-09-10', 1), obra_da_nota: 7 }])[0];
+    assert.strictEqual(a.sugerir(desp, { contratos: [{ prestador_id: 1, obra_id: 5 }] }).obra_id, 5);
+  });
+
   await caso('atribuir recusa pedido malformado antes de tocar no banco', async () => {
     const db = { query: async () => { throw new Error('não era para consultar'); } };
     await assert.rejects(() => a.atribuir(db, { tipo: 'outro', chave: 'x', obra_id: 1 }), /Tipo inválido/);
@@ -75,6 +108,8 @@ const mov = (tipo, nome, valor, dia, prestador_id = null) => ({ tipo, nome, valo
     const limpar = async () => {
       await pool.query("DELETE FROM regras_movimento_obra WHERE nome_chave LIKE 'zz atrib%'").catch(() => {});
       await pool.query("DELETE FROM financeiro_movimentos WHERE nome LIKE 'ZZ Atrib%'").catch(() => {});
+      await pool.query("DELETE FROM notas_fiscais WHERE tomador->>'nome' = 'ZZ Atrib Nota'").catch(() => {});
+      await pool.query("DELETE FROM propostas WHERE numero LIKE 'ZZATR%'").catch(() => {});
       await pool.query("DELETE FROM obras WHERE codigo LIKE 'ZZ-ATRIB%'").catch(() => {});
     };
     try {
@@ -121,6 +156,25 @@ const mov = (tipo, nome, valor, dia, prestador_id = null) => ({ tipo, nome, valo
         assert.ok((await a.carregarPendentes(pool)).grupos.some(g => g.chave === 'zz atrib despesa geral'));
         await a.atribuir(pool, { tipo: 'realizado', chave: 'zz atrib despesa geral', geral: true });
         assert.ok(!(await a.carregarPendentes(pool)).grupos.some(g => g.chave === 'zz atrib despesa geral'), 'despesa geral sai da lista');
+      });
+
+      await caso('banco: Pix ligado a nota cuja proposta tem obra aparece com sugestão alta dessa obra', async () => {
+        const o3 = await obra('ZZ-ATRIB-3', 'Outro Cliente Qualquer');
+        const prop = (await pool.query(
+          "INSERT INTO propostas (numero, sequencial, data, cliente_nome, status, total, obra_id) VALUES ('ZZATR1', 2099999001, CURRENT_DATE, 'ZZ Atrib Nota', 'Aprovada', 1000, $1) RETURNING id", [o3])).rows[0].id;
+        const nota = (await pool.query(
+          "INSERT INTO notas_fiscais (situacao, numero, data_emissao, valor_servicos, valor_liquido, tomador, proposta_id) VALUES ('emitida', 2099999001, CURRENT_DATE, 1000, 1000, $1::jsonb, $2) RETURNING id",
+          [JSON.stringify({ nome: 'ZZ Atrib Nota' }), prop])).rows[0].id;
+        const m = await lanca('recebido', 'ZZ Atrib Pagador Da Nota', 1000, '2026-10-20');
+        await pool.query('UPDATE financeiro_movimentos SET nota_id = $1 WHERE id = $2', [nota, m]);
+        const grupo = (await a.carregarPendentes(pool)).grupos.find(g => g.chave === 'zz atrib pagador da nota');
+        assert.strictEqual(grupo.sugestao.obra_id, o3);
+        assert.strictEqual(grupo.sugestao.confianca, 'alta');
+        assert.strictEqual(grupo.sugestao.obra.codigo, 'ZZ-ATRIB-3');
+        // nota cancelada não é sinal
+        await pool.query("UPDATE notas_fiscais SET situacao = 'cancelada' WHERE id = $1", [nota]);
+        const depois = (await a.carregarPendentes(pool)).grupos.find(g => g.chave === 'zz atrib pagador da nota');
+        assert.notStrictEqual(depois.sugestao?.confianca, 'alta');
       });
     } finally {
       await limpar();

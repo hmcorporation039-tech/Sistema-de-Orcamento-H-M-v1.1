@@ -18,6 +18,7 @@ const { DISCIPLINAS } = requerer('../utils/disciplinasProjeto.js');
 const { DISCIPLINAS_LAUDO } = requerer('../utils/disciplinasLaudo.js');
 const { propostaParaPayload, aplicarOperacoes, payloadParaEnvio, mesclarDados } = requerer('../utils/assistenteRascunho.js');
 const { hojeBrasilia } = requerer('../utils/dataHoje.js');
+const { semAcento: semAcentoTexto } = requerer('../utils/texto.js');
 // nomes dos tipos de ação (a regra de cada um fica no servidor: services/assistente/acoes.js)
 const { TIPOS_ACAO: TIPOS_ACAO_LISTA } = requerer('../services/assistente/ferramentas.js');
 
@@ -30,7 +31,7 @@ const dataBR = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/')
 const cortar = (t, n) => { const s = String(t ?? ''); return s.length > n ? `${s.slice(0, n)}… [cortado]` : s; };
 const ok = (texto) => ({ content: [{ type: 'text', text: texto }] });
 const falha = (texto) => ({ content: [{ type: 'text', text: `Erro: ${texto}` }], isError: true });
-const semAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const semAcento = (s) => semAcentoTexto(s).toLowerCase(); // busca: sem acento (utils/texto.js) e sem caixa
 
 export function criarApi({ url, token, fetchImpl = globalThis.fetch }) {
   return async function api(metodo, caminho, corpo, { formulario = false, binario = false } = {}) {

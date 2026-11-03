@@ -20,6 +20,7 @@ const { lerXmlNfse } = require('../utils/nfseXml');
 const nfseNacional = require('../services/nfseNacional');
 const atestado = require('../services/atestadoCapacidade');
 const { ASSINATURA_EMPRESA } = require('./propostaDocumentos');
+const { levarObraDaNota } = require('../services/notasAReceber');
 
 const CNPJ_HM = EMPRESA.cnpj.replace(/\D/g, '');
 const digitos = (v) => String(v ?? '').replace(/\D/g, '');
@@ -762,22 +763,32 @@ async function recebimentosCandidatos(req, res) {
 }
 
 // Liga (ou desliga, com `ligar: false`) um Pix recebido à nota. Uma nota pode ter mais de um (pagamento parcelado).
+// Ao ligar, o Pix sem obra leva a obra da proposta da nota (services/notasAReceber.js, levarObraDaNota); obra que
+// ele já tinha não muda. Ao desligar, a obra fica: não há como saber se veio da nota ou foi posta à mão.
 async function ligarRecebimento(req, res) {
   const n = await lerNota(req.params.id);
   if (!n) return res.status(404).json({ erro: 'Nota não encontrada' });
   const movimentoId = Number(req.body?.movimento_id);
   if (!Number.isInteger(movimentoId) || movimentoId <= 0) return res.status(400).json({ erro: 'Movimento inválido.' });
   const ligar = req.body?.ligar !== false;
+  let obra = { obra_id: null, obra_preenchida: false, aviso: null };
   if (ligar) {
     if (n.situacao !== 'emitida') return res.status(409).json({ erro: 'Só nota emitida recebe pagamento.' });
     const { rows } = await pool.query("UPDATE financeiro_movimentos SET nota_id = $1 WHERE id = $2 AND tipo = 'recebido' AND (nota_id IS NULL OR nota_id = $1) RETURNING id", [n.id, movimentoId]);
     if (!rows.length) return res.status(409).json({ erro: 'Esse movimento não é um recebimento livre (já está ligado a outra nota?).' });
+    obra = await levarObraDaNota(pool, n.id, movimentoId);
   } else {
-    await pool.query('UPDATE financeiro_movimentos SET nota_id = NULL WHERE id = $1 AND nota_id = $2', [movimentoId, n.id]);
+    const { rows: [m] } = await pool.query(
+      `UPDATE financeiro_movimentos fm SET nota_id = NULL WHERE fm.id = $1 AND fm.nota_id = $2
+       RETURNING fm.obra_id, (SELECT o.codigo FROM obras o WHERE o.id = fm.obra_id) AS codigo,
+                 fm.obra_id = (SELECT pr.obra_id FROM propostas pr WHERE pr.id = $3) AS da_nota`, [movimentoId, n.id, n.proposta_id]);
+    // a obra que pode ter vindo da nota continua no Pix: avisa, para o administrador trocar se não for dela
+    if (m?.da_nota) obra = { obra_id: m.obra_id, obra_preenchida: false, aviso: `O Pix continua na obra ${m.codigo}. Se ele não é dessa obra, troque em Financeiro › Movimentos.` };
   }
-  await registrarAuditoria(pool, { entidade: 'notas_fiscais', entidadeId: n.id, acao: ligar ? 'ligar_recebimento' : 'desligar_recebimento', usuarioId: req.usuario.id, detalhes: { movimento_id: movimentoId } });
+  await registrarAuditoria(pool, { entidade: 'notas_fiscais', entidadeId: n.id, acao: ligar ? 'ligar_recebimento' : 'desligar_recebimento', usuarioId: req.usuario.id,
+    detalhes: ligar ? { movimento_id: movimentoId, obra_id: obra.obra_id, obra_preenchida: obra.obra_preenchida } : { movimento_id: movimentoId } });
   const nova = await lerNota(n.id);
-  res.json({ recebido_valor: nova.recebido_valor, recebido_em: nova.recebido_em });
+  res.json({ recebido_valor: nova.recebido_valor, recebido_em: nova.recebido_em, obra_id: obra.obra_id, obra_preenchida: obra.obra_preenchida, aviso: obra.aviso });
 }
 
 module.exports = {

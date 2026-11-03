@@ -4,7 +4,7 @@
 // linha, agrupadas por disciplina, e os itens com quantidade explícita viram a planilha de
 // serviços. Tudo determinístico e sem IA; o engenheiro confere e ajusta na tela antes de baixar.
 
-const semAcento = (s) => String(s).normalize('NFD').replace(/\p{M}/gu, '');
+const { semAcento } = require('./texto'); // um lugar só (auditoria 02/11/2026, OP-09)
 
 // palavras comuns de nota de serviço: chave sem acento → forma correta (também as com letra perdida)
 const PALAVRAS = {

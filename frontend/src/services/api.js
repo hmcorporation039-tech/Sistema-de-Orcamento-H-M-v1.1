@@ -501,3 +501,5 @@ export const getNotasAReceber = () => api.get('/notas-a-receber');
 export const ligarSugeridasNotas = () => api.post('/notas-a-receber/ligar-sugeridas');
 export const ligarPixNaNota = (notaId, movimentoId) => api.post(`/notas-a-receber/${notaId}/ligar`, { movimento_id: movimentoId });
 export const darBaixaNota = (notaId, obs) => api.post(`/notas-a-receber/${notaId}/baixa`, { obs });
+// Pix já ligados a nota de obra, mas sem obra: levam a obra da nota (só preenche obra vazia)
+export const levarObraDasNotas = () => api.post('/notas-a-receber/obra-das-notas');

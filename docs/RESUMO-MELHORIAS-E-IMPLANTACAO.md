@@ -30,18 +30,42 @@
 
 ## 1. Arquitetura atual
 
-- **Backend:** Node.js + Express (`backend/src/server.js`) e PostgreSQL (`hm_orcamentos`), com autenticação JWT.
-  - Organização: `routes/index.js` → `controllers/*` → `utils/*` e `services/*`.
-  - O schema é criado e migrado de forma idempotente em `models/schema.js`.
-- **Frontend:** React (CRA). Páginas em `frontend/src/pages`, chamadas de API em `frontend/src/services/api.js` e login em `hooks/useAuth.js`.
+*(Revisada em 02/11/2026, depois da auditoria; o histórico detalhado está na seção 2.)*
+
+- **Ambientes:**
+  - Produção em `C:\HM-Engenharia\hm-eng`: ramo `main`, porta 3001, banco `hm_orcamentos`.
+  - Teste em `C:\HM-Engenharia\hm-eng-v2`: ramo `versao-2.0`, porta 3002, banco `hm_orcamentos_v2`.
+  - Fluxo: teste → aprovação → backup → merge → versão. Depois de cada versão na `main`, mesclar a `main` de volta no `versao-2.0`.
+- **Backend:** Node.js 22.12+ com Express (`backend/src/server.js`) e PostgreSQL, com autenticação JWT HS256 de 8 h e papéis admin/user.
+  - Rotas:
+    - `routes/index.js` tem as rotas da 1.x;
+    - `routes/v2/*.js` são carregadas sozinhas;
+    - toda rota passa por `autenticar`, e por posse/admin quando é o caso;
+    - rota inexistente devolve 404 em JSON.
+  - Banco: a base está em `models/schema.js`, e as migrações idempotentes `models/migracoes/2.0-NN-*.js` rodam em ordem numérica a cada partida. São cerca de 65 tabelas, e o que é de engenharia fica em JSONB (análises e laudos).
+  - Motores de engenharia: as skills em `skills/` são usadas direto pelo backend (`config/caminhos.js`, `utils/disciplinasLaudo.js`), pelo registro único `skills/_comum/disciplinas.js`.
+- **Frontend:** React 18 (CRA 5).
+  - Páginas em `frontend/src/pages`, agrupadas em 6 grupos com abas.
+  - API em `services/api.js`; o proxy de desenvolvimento lê a porta do `backend/.env` (`src/setupProxy.js`).
+  - O app de campo `/campo` funciona sem rede.
+  - O 3D é uma página HTML isolada, gerada no servidor (`skills/_comum/cad/visualizador3d`).
 - **Produção:** um único processo. O backend serve a API e o build do React em `http://localhost:3001` e sobe sozinho quando o Windows faz login (`scripts/iniciar-producao.ps1`).
 - **IA:**
   - Versão 2.0: módulo único `services/ia.js` com uma cadeia só, na ordem Claude Max (CLI `claude -p` isolada) → Claude via API → Gemini (`IA_ORDEM` troca a ordem). Painel em Administração › Integrações (`GET /integracoes/rotinas`, `POST /integracoes/ia/testar`).
   - Gemini (`services/geminiClient.js`, transporte usado por `ia.js`), com troca para um modelo alternativo quando a cota estoura.
   - Claude Desktop via servidor MCP: é o caminho recomendado, porque não gasta cota.
-- **Tabelas:** usuarios, clientes, materiais, mao_de_obra_itens, propostas, proposta_secoes, proposta_itens, proposta_eventos, analises_projeto, precos_mao_de_obra_referencia, pesquisas_mercado, configuracoes, emails_processados, notas_processadas, arquivos_fornecedores_processados, prestadores, contratos, financeiro_movimentos.
-- **Testes:** Cypress E2E em `frontend/cypress/e2e/01..10` (43 testes), cobrindo login, clientes, materiais, orçamento/histórico, usuários, dashboard, relatórios, financeiro, prestadores e contratos. O backend ainda **não** tem testes automatizados (`npm test`); o passo 2 da seção 4 propõe começar por `calculoEletrico.js`.
-- **Tarefas automáticas** (`server.js`), todas às **06:00 e às 18:00** (hora do PC): notas fiscais por e-mail, Pix por e-mail e leitura das pastas de orçamentos de fornecedores. Fora desses horários, use os botões "Verificar agora" em Materiais e Financeiro. Se o PC estiver desligado no horário, aquela leitura é pulada.
+- **Assistente:** painel na tela que usa `claude -p` (assinatura Max) com o MCP próprio (`backend/src/mcp/assistenteFerramentas.mjs`) e um token de escopo curto (`middleware/escopoAssistente.js`).
+  - Toda ação irreversível vira "ação pendente", aplicada pelo usuário.
+  - O MCP do Claude Desktop (`mcpServer.mjs`, "hm-orcamentos") é outro servidor e usa a porta do `.env`.
+- **Testes:** `cd backend && npm test` roda `scripts/pre-deploy.js`. Ele confere:
+  - todos os `backend/testes/*.test.js` (os de banco só no v2);
+  - o Jest do frontend;
+  - todas as skills (`skills/testar-todas.js`);
+  - as versões dos 4 package.json/lock;
+  - a ordem das migrações.
+  Se algo falhar, mostra "NÃO SUBA". Há também 14 specs Cypress (`frontend/cypress/e2e`): elas leem a porta do `backend/.env` e recusam rodar contra a produção.
+- **Tarefas automáticas** (`services/rotinas.js`), às **06:00 e às 18:00** (hora do PC), com nova tentativa: notas por e-mail, Pix por e-mail, pastas de fornecedores, pasta da SINAPI, vencimentos a renovar e resumo de erros. O painel fica em Integrações. O monitor de pastas de clientes roda à parte, a cada 10 min.
+- **Roteiro:** `docs/ROTEIRO-GRANDE-IMPLEMENTACAO.md`. Fases: modelo único da instalação, 3D interativo, leitura PDF/DWG com placar, Climatização, iluminação no 3D e canal remoto.
 
 ---
 
@@ -826,3 +850,11 @@ Só código, sem migração. Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-b
   - `2.0-41` cria índice único do e-mail sem diferença de caixa, e só avisa se houver duplicados.
   - A `2.0-25` ficou condicional.
   - As migrações passam a ser ordenadas pelo número.
+- **Segunda rodada (pedido "ok corrija"):**
+  - INT-04: o Pix ligado a uma nota leva a obra da proposta da nota, mas só quando o Pix está sem obra; obra diferente nunca é trocada e gera aviso. A Atribuição de obras usa esse vínculo como sugestão de confiança alta. A obra mostra faturado, recebido e "a receber do faturado", calculado pelo líquido das notas emitidas e visível só para admin. Em Notas a receber, o botão "Levar a obra das notas" corrige os Pix antigos (rota `POST /notas-a-receber/obra-das-notas`, só admin). Não há migração.
+  - BD-06: o teste `migracoesBancoVazio` cria um banco temporário, roda as migrações duas vezes e compara tabelas, colunas e tipos com o v2. Hoje são 65 tabelas e 809 colunas, sem diferença.
+  - BD-08: a coluna `pastas_movidas.pasta_obra_antes` fica no banco, documentada como sem uso no `LEIA-ME.md` das migrações.
+  - OP-06: a seção 1 deste resumo foi reescrita com a arquitetura atual.
+  - OP-09 (backend): `semAcento` vem só de `utils/texto.js`, e o `esc` de XML só de `utils/xml.js`.
+  - OP-11: a logo e o cabeçalho dos PDFs vêm só de `skills/_comum/assets`. As cópias do backend saíram, e o teste `identidadeVisual` confere pelo hash que `frontend/public/logo.png` é a mesma imagem.
+  - Validação: pré-deploy com 64/64 do backend, 120/120 do Jest e skills ok; o build do frontend compila sem avisos.
