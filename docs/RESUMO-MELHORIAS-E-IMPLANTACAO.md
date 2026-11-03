@@ -896,3 +896,10 @@ Pedido: "faça tudo e deixe a comunicação com o canal remoto por último". O d
 - **Claude Desktop:** depois de reiniciar o backend, reinicie também o Claude Desktop para carregar a lista única de ferramentas (as 10 de antes mantêm nomes e parâmetros). O MCP reloga sozinho a cada 15 min.
 - **Skill climatizacao:** ligar no Claude Code com `skills\ligar-skills.ps1`.
 - **Backup antes da instalação:** `backend\backups\hm_orcamentos_2026-11-03_06-32.dump` (com cópia na rede e no Drive), `C:\HM-Engenharia\Backups\hm-eng_antes-v2.27.0_2026-11-03_06-35.bundle`, `env-producao_antes-v2.27.0_2026-11-03_06-35.env` e a tela anterior em `frontend\build-2.26.0-anterior`.
+
+### 03/11/2026: versão 2.27.1 — análises de projeto sem orçamento zerado
+
+- **Como foi achado:** as três análises da produção (48, 49 e 51) foram abertas por todas as rotas de leitura (detalhe, relatório, pasta, mapa, arquitetura, DXF de compatibilização), sem nenhum erro. Depois, o código atual rodou de novo nos mesmos arquivos, sem gravar nada. O log e a tabela de erros do sistema estavam limpos; o único erro do log (vínculo de obra de 01/11) já estava resolvido na 2.27.0.
+- **Subestação (DWG de média tensão):** transformador, chave seccionadora, punho de manobra e tapete de borracha na layer 0 iam para "não identificados", e a análise saía com 0 material. Agora há siglas de MT, que valem só no arquivo marcado como média tensão ou com kV no nome do bloco. A seta de cota do AutoCAD não aparece mais como bloco não identificado.
+- **DWG analisado antes do mapa do CAD:** os pontos dos símbolos explodidos (566 no projeto da Arena) ficavam fora do orçamento e não havia mapa para conferir. A tela agora mostra "Ler o DWG de novo e gerar o mapa". O botão grava uma análise nova "(lida de novo)", com o mapa e com as edições copiadas; a antiga fica como está.
+- **Validação:** pré-deploy do v2 com 71/71 do backend, Jest e skills ok. O placar de precisão foi pulado: a pasta `C:\HM-Engenharia\Placar de precisao` ainda não tem os gabaritos. Sem migração de banco.
