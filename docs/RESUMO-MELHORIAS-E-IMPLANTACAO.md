@@ -858,3 +858,16 @@ Só código, sem migração. Para carregar: `C:\HM-Engenharia\hm-eng\reiniciar-b
   - OP-09 (backend): `semAcento` vem só de `utils/texto.js`, e o `esc` de XML só de `utils/xml.js`.
   - OP-11: a logo e o cabeçalho dos PDFs vêm só de `skills/_comum/assets`. As cópias do backend saíram, e o teste `identidadeVisual` confere pelo hash que `frontend/public/logo.png` é a mesma imagem.
   - Validação: pré-deploy com 64/64 do backend, 120/120 do Jest e skills ok; o build do frontend compila sem avisos.
+
+### 02/11/2026: fases 1 a 5 e 7 do roteiro (no v2, ainda não instaladas)
+Pedido: "faça tudo e deixe a comunicação com o canal remoto por último". O detalhe de cada fase, com o que ficou para depois, está em `docs/ROTEIRO-GRANDE-IMPLEMENTACAO.md` (blocos "Feito no v2").
+- **Fase 4, climatização** (`d752b05`): skill nova `skills/climatizacao/` (carga térmica, seleção, chiller/VAV/dutos, PMOC, planta). Os motores e os dutos foram para `skills/_comum/eletrico/motores.js` e `skills/_comum/dutos.js`. Tabela `equipamentos_catalogo` (migração `2.0-42`) com rotas `/equipamentos-catalogo` (escrita só admin).
+- **Fase 3, leitura de PDF e DWG** (`934ce3c`): escala da planta detectada (carimbo, título, nome do arquivo, portas e cotas); biblioteca de blocos aprendidos por medida e escritório, com exportar e importar (migração `2.0-43`, rotas `/projetos/biblioteca-blocos`); circuito lido junto ao símbolo; placar de precisão (`scripts/placar-precisao.js`, `docs/PLACAR-PRECISAO.md`).
+- **Fases 1 e 2, modelo único e 3D interativo** (`c94531e`): `skills/_comum/instalacao/` liga quadros, circuitos, pontos e comandos; no 3D, interruptores, disjuntores, DR e painéis de motor funcionam, e a ficha mostra o circuito. O estado fica só na aba do navegador.
+- **Blocos HM-CLIM-*** reconhecidos como climatização na análise do CAD (`df08e34`).
+- **Fase 7, estrutura** (`3303e15`): formatação comum em `skills/_comum/base` (os módulos antigos do backend viraram ponte); `Orcamento.js`, `NotasFiscais.js` e `pdfVetorial.js` divididos em módulos; `package.json` na raiz só com o atalho do `npm test`. Sem npm workspaces.
+- **Fase 5, iluminação no 3D** (`3bb4728`): leitura de IES/LDT, cálculo ponto a ponto (Em, Emín, U0) em `skills/_comum/fotometria`, cenas e grupos no formulário, no memorial, na planilha e no 3D, e mapa de iluminância em falsa-cor no piso.
+- **Validação:** o pré-deploy completo passa (backend, Jest do frontend e skills).
+- **Para implantar no v2:** reiniciar o backend do v2 para carregar as rotas novas (as migrações `2.0-42` e `2.0-43` já estão no banco do v2), rodar o build do frontend e ligar a skill climatizacao (`skills/ligar-skills.ps1`). Para o placar, criar a pasta `C:\HM-Engenharia\Placar de precisao` e conferir as contagens do rascunho gerado com `--modelo`.
+- **Produção:** nada instalado. Falta conferir na produção, com SELECT, os modelos 3D órfãos antes da `2.0-40`.
+- **Fase 6 (canal remoto):** a próxima, depende das decisões do Márcio (canal, domínio público e quem pode usar).

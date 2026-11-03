@@ -111,6 +111,13 @@ Passos:
 4. No DWG recebido: ler o texto do circuito e do retorno junto ao símbolo (ex.: "3", "a", "b") e confirmar no Mapa do CAD.
 5. Teste sem navegador: para um projeto exemplo, todo ponto tem circuito, todo circuito tem disjuntor e a soma das cargas bate com o quadro de cargas.
 
+**Feito no v2 em 02/11/2026** (commit c94531e, junto com a fase 2; falta o OK do Márcio para levar à produção):
+- Modelo único em `skills/_comum/instalacao/` (quadros, circuitos, pontos e comandos), gerado pelas skills eletrica, iluminacao e quadros e gravado na cena 3D (versão 3).
+- Os circuitos IL* do luminotécnico entram no quadro de cargas, e a planta elétrica usa a grade do luminotécnico.
+- O 3D grava circuito e comando por ponto, com ids iguais ao regerar. No DWG, o texto do circuito junto ao símbolo é lido (`circuitoDoDesenho.js`, commit 934ce3c).
+- O validador sem navegador confere que todo ponto tem circuito, todo circuito tem disjuntor e a soma bate com o quadro. O caso IL2 (160 × 260 VA) foi resolvido na fase 5.
+- **Falta:** ligar pela tela o projeto de iluminação ao de elétrica da mesma obra.
+
 ### Fase 2 — 3D interativo
 **Entrega:**
 - No 3D do prédio, clicar no quadro abre o quadro: a tampa abre e cada disjuntor tem alavanca.
@@ -137,6 +144,12 @@ Como:
 5. **Dentro do sistema:** hoje o 3D abre numa aba isolada, sem login. Para gravar estado ou mostrar a ficha do circuito vinda do banco, embutir num iframe com `postMessage`.
 
 Referências: Revit MEP (circuito ↔ painel), EPLAN (painel 3D a partir do esquema), AutoCAD Electrical (bobina ↔ contatos).
+
+**Feito no v2 em 02/11/2026** (commit c94531e; falta o OK do Márcio para levar à produção):
+- Simulador lógico em `skills/_comum/instalacao/simulador.js` (geral, DR, disjuntor, interruptores simples/paralelo/intermediário, relé de impulso, contator com selo, emergência e relé térmico), testado no Node.
+- No 3D: clicar no interruptor ou na luminária liga e desliga; o quadro abre por cima do prédio com alavanca em cada disjuntor e DR; tomada sem energia fica vermelha; painel de motor com liga, desliga, emergência e sinaleiros; ficha do circuito com disjuntor, DR, corrente, seção e queda de tensão.
+- Cena antiga abre como antes, sem a interação.
+- **Falta:** estado salvo (`modelo_3d_estados`) e iframe com `postMessage` (hoje o estado fica só na aba); seletor MAN-0-AUT só liga e desliga; botões da porta do painel vão para os motores pela ordem.
 
 ### Fase 3 — Precisão da leitura de PDF e DWG
 **Entrega:** um placar de precisão por projeto real e as correções que o fazem subir.
@@ -169,7 +182,7 @@ Referências: Revit MEP (circuito ↔ painel), EPLAN (painel 3D a partir do esqu
    - teste que compara e mostra a % de acerto por disciplina;
    - cada mudança de leitor roda o placar antes de subir.
 
-**Feito no v2 em 02/11/2026** (sem commit; falta o OK do Márcio para levar à produção):
+**Feito no v2 em 02/11/2026** (commit 934ce3c; falta o OK do Márcio para levar à produção):
 - **Legenda** (`pontosDoDesenho.legendaDoProjeto`): cada texto da legenda é do símbolo mais perto dele. A linha sem tipo fica sem tipo, e a amostra de traço (raio de cobertura, campo de visão) não vira ponto.
   - No R04, INC-ISOLADOR passou a "?" com a descrição "Isolador de laço IDL 521" e INC-SIRENE voltou a avisador (legenda, 2,40 m).
   - O detector falso de INC-RAIO-COBERTURA sumiu, e CAB-AP virou access point.
@@ -246,6 +259,12 @@ Referências: Revit MEP (circuito ↔ painel), EPLAN (painel 3D a partir do esqu
 - 3D: dutos e equipamentos.
 - Banco: tabela `equipamentos_catalogo` (tipo, dados técnicos em JSON, fabricante, fonte, verificado), no padrão de `componentes_quadro`.
 
+**Feito no v2 em 02/11/2026** (commit d752b05; falta o OK do Márcio para levar à produção):
+- Skill `skills/climatizacao/` (carga térmica, seleção, centrais com chiller/VAV/dutos, PMOC, planta e símbolos HVAC) com 77 verificações; motores e dutos passaram para `skills/_comum/eletrico/motores.js` e `skills/_comum/dutos.js`, com a mesma saída nas skills eletrica-industrial e pressurizacao.
+- Tabela `equipamentos_catalogo` (migração 2.0-42) e rotas `/equipamentos-catalogo` (leitura com login; escrita só admin); 22 códigos de mão de obra clim_*.
+- Blocos HM-CLIM-* reconhecidos como climatização na análise do CAD (commit df08e34).
+- **Falta:** tela do catálogo de equipamentos; estimativa 3D da climatização pela arquitetura; ligar a skill no Claude (`skills/ligar-skills.ps1`); conferir na norma os valores marcados [CONFERIR].
+
 ### Fase 5 — Iluminação no 3D
 **Entrega:** o 3D mostra as luminárias da skill iluminacao-nbr8995 ligadas ao circuito e ao comando (sensor, dimmer, DALI, cena). A cena liga e desliga, dimeriza e troca de cena, e mostra o **mapa de iluminância** (cores no piso), à maneira do DIALux.
 
@@ -259,7 +278,7 @@ Passos:
 
 Iluminação de emergência continua na skill de incêndio (NBR 10898).
 
-**Feito no v2 em 02/11/2026** (sem commit; falta o OK do Márcio para levar à produção):
+**Feito no v2 em 02/11/2026** (commit 3bb4728; falta o OK do Márcio para levar à produção):
 - **Fotometria** (`skills/_comum/fotometria/leitor.js`, JS puro): lê IES LM-63 (tipo C, TILT, multiplicador e fator de reator, simetrias de eixo, quadrantes, C0–C180, C90–C270 e completa) e LDT/EULUMDAT (simetrias 0 a 4). Sem arquivo, curva simétrica aproximada I0·cos^m γ pelo fluxo e pelo facho do cadastro (sem facho, 120°), avisada com [CONFERIR]. Testado com arquivos sintéticos gerados no teste; nenhum arquivo de fabricante no repositório.
 - **Ponto a ponto** (`skills/_comum/fotometria/pontoAPonto.js`, o mesmo código na skill e no 3D): E = FM × Σ I(C, γ) × cos γ / d², só luz direta, sem interreflexão (avisado). A skill dá Em, Emín, Emáx e U0 nos centros da malha de medição. Ficam lado a lado com a Em do método dos lúmens e com a U0 mínima da atividade, no resumo, no memorial (item 6.1) e na planilha (aba "Ponto a ponto").
 - **Cenas** (`skills/iluminacao/scripts/lib/cenas.js`): no formulário, tabelas de grupos ("filas 2-3", "1-4", "coluna 1", "demais") e de cenas ("Mesa 100; Tela 30"), para DALI-2 e teclado de cenas. Vão para o modelo da instalação (`comando.cenas`, `ponto.grupo`, `ponto.luminaria` e `instalacao.luminotecnico`, com a fotometria compacta). No simulador, o nível de cada luminária segue o grupo dela na cena ativa; o teclado troca de cena (… → desligado → 1ª) e o DALI-2 com cenas também chama cena. O teclado sem cenas no projeto segue com 100/60/30 %/desligado, como antes.
@@ -330,7 +349,7 @@ O que for irreversível pede confirmação ("SIM 4821"), com prazo.
 - Quebrar os arquivos grandes quando forem tocados: Orcamento.js, NotasFiscais.js, visualizador3d/app.js, modelo3d.js, pdfVetorial.js.
 - ~~Teste das migrações num banco vazio (BD-06).~~ Feito na fase 0.
 
-**Feito no v2 em 02/11/2026** (sem commit; falta o OK do Márcio para levar à produção). Nada muda no jeito de instalar e rodar, nem no que o usuário vê:
+**Feito no v2 em 02/11/2026** (commit 3303e15; falta o OK do Márcio para levar à produção). Nada muda no jeito de instalar e rodar, nem no que o usuário vê:
 - **Pacote comum sem npm workspaces.** Fica em `skills/_comum/base` (`texto`, `formato`, `dinheiro`, `html`, `xml`, `timbrado` e `index.js`), sem dependências, e é carregado por `require` relativo, como o resto do `_comum`.
   - Por que não workspaces:
     - as skills vão ao Claude como pastas soltas (`ligar-skills.ps1`) e chegam ao `_comum` por caminho relativo, então um pacote fora de `skills/` não iria junto;
