@@ -1,6 +1,7 @@
 // Apresentação da planilha Excel do orçamento (services/planilhaOrcamentoCliente.js +
 // skills/_comum/excel-estilo.js e empresa.js): faixa de título com logo, cabeçalho e
-// rodapé de impressão alinhados, impressão A4 ajustada à largura com títulos repetidos.
+// rodapé de impressão alinhados, impressão A4 ajustada à largura com títulos repetidos; bloco de
+// identificação, faixas de sistema, zebra e guias coloridas (apresentação para o cliente, 03/11/2026).
 // Dados SINTÉTICOS, sem banco. Rodar: npm test (pasta backend).
 const assert = require('assert');
 const ExcelJS = require('exceljs');
@@ -41,28 +42,56 @@ const caso = async (nome, fn) => { try { await fn(); ok++; console.log(`  ok  ${
     }
     for (const nome of ['Orçamento', 'Pesquisa de Preços', 'Cronograma', 'Curva ABC']) assert.strictEqual(wb.getWorksheet(nome).pageSetup.orientation, 'landscape', `${nome}: paisagem`);
     for (const nome of ['Parâmetros', 'Resumo', 'Instruções']) assert.strictEqual(wb.getWorksheet(nome).pageSetup.orientation, 'portrait', `${nome}: retrato`);
-    assert.strictEqual(wb.getWorksheet('Orçamento').pageSetup.printTitlesRow, '4:4');
+    assert.strictEqual(wb.getWorksheet('Orçamento').pageSetup.printTitlesRow, '8:8');
   });
 
-  await caso('Orçamento: título, subtítulo com fórmula, cabeçalho preto e linhas de sistema/subtotal/total destacadas', () => {
+  await caso('Orçamento: título, linha da empresa, bloco de identificação, cabeçalho preto e linhas de sistema/subtotal/total destacadas', () => {
     const ws = wb.getWorksheet('Orçamento');
     assert.ok(ws.model.merges.includes('A1:N1') && ws.model.merges.includes('A2:N2'));
     assert.match(ws.getCell('A1').value, /PLANILHA ORÇAMENTÁRIA/);
-    assert.ok(ws.getCell('A2').value.formula, 'o subtítulo continua sendo a fórmula');
-    assert.strictEqual(ws.getCell('A4').fill.fgColor.argb, 'FF141414');
-    assert.strictEqual(ws.getCell('A5').fill.fgColor.argb, 'FFF2F2F2'); // título do sistema
-    assert.strictEqual(ws.getCell('A5').alignment.horizontal, 'left');
+    assert.match(ws.getCell('A2').value, /CNPJ 04\.003\.376/, 'linha da empresa sob o título');
+    // identificação: rótulo em faixa grafite, valor por fórmula dos Parâmetros
+    assert.strictEqual(ws.getCell('A4').value, 'CLIENTE');
+    assert.strictEqual(ws.getCell('A4').fill.fgColor.argb, 'FF2B2B2B');
+    assert.strictEqual(ws.getCell('C4').value.formula, 'Parâmetros!$B$3');
+    assert.strictEqual(ws.getCell('A6').value, 'PREÇO FINAL DA PROPOSTA');
+    assert.match(ws.getCell('C6').value.formula, /^Resumo!\$D\$\d+$/);
+    assert.strictEqual(ws.getCell('A8').fill.fgColor.argb, 'FF141414'); // cabeçalho da tabela
+    assert.strictEqual(ws.getCell('A9').fill.fgColor.argb, 'FFEFE3BC'); // título do sistema (faixa dourada)
+    assert.strictEqual(ws.getCell('A9').alignment.horizontal, 'left');
     const sub = [...Array(ws.rowCount)].map((_, i) => i + 1).find(l => /^Subtotal/.test(ws.getCell(l, 3).value || ''));
     assert.strictEqual(ws.getCell(sub, 10).fill.fgColor.argb, 'FFFBF4DE');
-    assert.strictEqual(ws.getCell(ws.rowCount, 10).fill.fgColor.argb, 'FF141414'); // TOTAL CUSTO DIRETO
-    assert.strictEqual(ws.getCell('F6').font.color.argb, 'FF1F4E9E', 'fonte azul = valor digitado continua');
+    const total = [...Array(ws.rowCount)].map((_, i) => i + 1).find(l => ws.getCell(l, 3).value === 'TOTAL CUSTO DIRETO');
+    assert.strictEqual(ws.getCell(total, 10).fill.fgColor.argb, 'FF141414');
+    assert.strictEqual(ws.getCell('F10').font.color.argb, 'FF1F4E9E', 'fonte azul = valor digitado continua');
+    assert.strictEqual(ws.getCell('F10').fill.fgColor.argb, 'FFEEF4FC', 'e com fundo azul claro');
+    assert.strictEqual(ws.views[0].ySplit, 8);
+    assert.strictEqual(ws.views[0].showGridLines, false);
+    assert.strictEqual(ws.properties.tabColor.argb, 'FFC9A227');
+    assert.ok(ws.getCell(total + 2, 1).value === 'OBSERVAÇÕES', 'observações ao pé da tabela');
   });
 
-  await caso('Resumo: o preço final continua na mesma célula (as fórmulas não se mexeram)', () => {
+  await caso('Orçamento: linhas zebradas (cada sistema começa na branca) e quantidade inteira sem casas', async () => {
+    const itens2 = [1, 2, 3].map(i => ({ id: i, secao_id: 1, descricao: `Item ${i}`, unidade: 'un', quantidade: i === 3 ? 2.5 : 4, valor_unitario: 10, subgrupo: 'Elétrica' }));
+    const { buffer: b2 } = await montarPlanilhaCliente({ p, secoes, itens: itens2 });
+    const w2 = new ExcelJS.Workbook(); await w2.xlsx.load(b2);
+    const ws = w2.getWorksheet('Orçamento');
+    assert.ok(!ws.getCell('C10').fill || ws.getCell('C10').fill.fgColor?.argb !== 'FFF7F7F7', 'primeira linha branca');
+    assert.strictEqual(ws.getCell('C11').fill.fgColor.argb, 'FFF7F7F7', 'segunda linha cinza');
+    assert.strictEqual(ws.getCell('F10').numFmt, '#,##0');
+    assert.strictEqual(ws.getCell('F12').numFmt, '#,##0.00');
+  });
+
+  await caso('Resumo: capa com identificação, preço final em destaque e condições', () => {
     const ws = wb.getWorksheet('Resumo');
     assert.strictEqual(ws.getCell('A1').value, 'RESUMO DO ORÇAMENTO');
-    assert.strictEqual(ws.getCell('A4').value, 'Sistema');
-    assert.ok(/ROUND/.test(ws.getCell('D12').value.formula || ''), JSON.stringify(ws.getCell('D12').value));
+    assert.strictEqual(ws.getCell('A4').value, 'CLIENTE');
+    assert.strictEqual(ws.getCell('A9').value, 'Sistema');
+    let final = null; ws.eachRow((row, r) => { if (row.getCell(1).value === 'PREÇO FINAL DA PROPOSTA') final = r; });
+    assert.ok(/ROUND/.test(ws.getCell(final, 4).value.formula || ''), JSON.stringify(ws.getCell(final, 4).value));
+    assert.strictEqual(ws.getCell(final, 4).fill.fgColor.argb, 'FF141414');
+    assert.strictEqual(ws.getCell(final + 4, 1).value, 'VALIDADE DA PROPOSTA');
+    assert.match(ws.getCell(final + 5, 2).value.formula, /^Cronograma!/);
   });
 
   console.log(`planilhaExcel: ${ok} casos ok`);

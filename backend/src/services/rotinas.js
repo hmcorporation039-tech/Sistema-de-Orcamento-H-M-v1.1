@@ -9,7 +9,7 @@
 //   vencimentos          vencimentos a renovar: laudos, documentos da empresa e
 //                        certificado digital A1 (aviso por e-mail a 60/30 dias e no dia)
 //   erros-sistema        resumo diário dos erros inesperados (500) por e-mail
-//   treino-acervo        lê os DWG/DXF das obras já feitas (pasta dos clientes) e aprende, sem IA
+//   treino-acervo        lê os DWG/DXF, planilhas e orçamentos das obras já feitas (pasta dos clientes) e aprende, por disciplina, sem IA
 //
 // Antes cada rotina tinha o próprio agendamento em server.js e o próprio
 // botão "Verificar agora" sem registro comum; agora horário e botão passam pelo
@@ -132,14 +132,14 @@ function definicoesPadrao() {
     },
     'treino-acervo': {
       nome: 'Treino com as obras já feitas',
-      descricao: 'Lê os DWG/DXF da pasta dos clientes com o leitor do sistema (sem IA) e aprende as legendas, as alturas e os nomes de bloco de cada escritório. Lê por até 2 h e continua na próxima rodada; só relê o arquivo que mudou.',
+      descricao: 'Lê a pasta dos clientes com os leitores do sistema (sem IA), sempre por disciplina: dos DWG/DXF aprende as legendas, as alturas e os nomes de bloco de cada escritório; das planilhas e dos orçamentos em PDF, só os materiais que o catálogo ainda não tem. Arquitetura, hidráulica e estrutura ficam de fora. Lê por até 2 h e continua na próxima rodada; só relê o arquivo que mudou.',
       atrasoSegundos: 180,
       configurada: () => true,
       pastas: () => [require('./pastasSistema').RAIZ_CLIENTES_SERVIDOR],
       logAgendada: () => `Treino com as obras da pasta dos clientes ativo (${quando})`,
       executar: () => require('./treinoAcervo').treinar(),
       itens: (r) => r.lidos,
-      texto: (r) => (r.jaRodando ? 'já havia um treino em andamento' : `${r.lidos || 0} arquivo(s) lido(s) de ${r.pendentes || 0} pendente(s) (${r.total || 0} na pasta), ${r.erros || 0} com erro — aprendeu ${r.ensinou?.simbolos || 0} símbolo(s), ${r.ensinou?.blocos || 0} bloco(s) e ${r.ensinou?.notas || 0} altura(s); ${r.mensagem || ''}`),
+      texto: (r) => (r.jaRodando ? 'já havia um treino em andamento' : `${r.lidos || 0} arquivo(s) lido(s) de ${r.pendentes || 0} pendente(s) (${r.total || 0} na pasta), ${r.ignorados || 0} de outra disciplina, ${r.erros || 0} com erro — aprendeu ${r.ensinou?.simbolos || 0} símbolo(s), ${r.ensinou?.blocos || 0} bloco(s), ${r.ensinou?.notas || 0} altura(s) e ${r.ensinou?.materiais || 0} material(is) novo(s); ${r.mensagem || ''}`),
       logResultado: (r) => r.lidos > 0 && `Treino com o acervo: ${r.lidos} arquivo(s) lido(s), ${r.restam || 0} para a próxima rodada`,
       prefixoAviso: 'Aviso (treino com o acervo):',
       logErro: 'Erro no treino com as obras da pasta dos clientes:',

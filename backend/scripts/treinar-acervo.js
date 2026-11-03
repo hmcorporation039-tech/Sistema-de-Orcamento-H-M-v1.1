@@ -1,7 +1,8 @@
-// Treino com as obras já feitas (services/treinoAcervo.js) pela linha de comando: lê os DWG/DXF da pasta dos
-// clientes (PASTA_CLIENTES do .env) e grava no banco do .env o que eles ensinam — legendas, alturas e nomes de bloco.
+// Treino com as obras já feitas (services/treinoAcervo.js) pela linha de comando: lê os DWG/DXF, as planilhas e os
+// orçamentos em PDF da pasta dos clientes (PASTA_CLIENTES do .env) e grava no banco do .env o que eles ensinam, por
+// disciplina — legendas, alturas, nomes de bloco e os materiais que o catálogo ainda não tem.
 // Sem IA. Só lê a pasta; retoma de onde parou (o arquivo já lido e não alterado não é relido).
-//   node scripts/treinar-acervo.js [--limite 50] [--horas 2] [--pasta "<outra pasta>"]
+//   node scripts/treinar-acervo.js [--limite 50] [--horas 2] [--pasta "<outra pasta>"] [--tipos planilha,pdf,cad]
 require('../src/config/env');
 const pool = require('../src/config/database');
 const { criarTabelas } = require('../src/models/schema');
@@ -20,9 +21,10 @@ const arg = (nome) => { const i = process.argv.indexOf(`--${nome}`); return i > 
       limite: Number(arg('limite')) || undefined,
       tempoMaxMs: (Number(arg('horas')) || 2) * 3600 * 1000,
       ...(arg('pasta') ? { raiz: arg('pasta') } : {}),
+      ...(arg('tipos') ? { tipos: arg('tipos').split(',') } : {}),
     });
-    console.log(`${r.lidos} lido(s), ${r.erros} com erro, de ${r.pendentes} pendente(s) (${r.total} DWG/DXF na pasta)`);
-    console.log(`aprendeu: ${r.ensinou.simbolos} linha(s) de legenda de símbolo, ${r.ensinou.blocos} nome(s) de bloco, ${r.ensinou.notas} altura(s) — ${r.mensagem}`);
+    console.log(`${r.lidos} lido(s), ${r.ignorados} de outra disciplina, ${r.erros} com erro, de ${r.pendentes} pendente(s) (${r.total} arquivo(s) na pasta)`);
+    console.log(`aprendeu: ${r.ensinou.simbolos} linha(s) de legenda de símbolo, ${r.ensinou.blocos} nome(s) de bloco, ${r.ensinou.notas} altura(s), ${r.ensinou.materiais} material(is) novo(s) no catálogo e ${r.ensinou.semPreco} sem preço — ${r.mensagem}`);
   } finally {
     clearInterval(relogio);
     await pool.end();

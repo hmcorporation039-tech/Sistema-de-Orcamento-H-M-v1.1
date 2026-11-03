@@ -1,0 +1,152 @@
+// Treino por disciplina (03/11/2026: "faça com que o sistema sempre aprenda por disciplinas. Em relação às planilhas,
+// usem apenas os materiais que não têm no sistema"): disciplina do arquivo pelo nome/pastas, disciplina do material,
+// leitura de planilha de qualquer layout (seções da planilha geral de obra, preço do material × mão de obra) e o
+// treino gravando SÓ o material novo — o que o catálogo já tem não muda. Arquivos, descrições e preços SINTÉTICOS.
+// A parte de banco só roda com DB_NAME=hm_orcamentos_v2. Rodar: node testes/treinoPorDisciplina.test.js
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const ExcelJS = require('exceljs');
+const { disciplinaDoArquivo, disciplinaDoTexto } = require('../src/utils/disciplinaDoArquivo');
+const { disciplinaDoMaterial } = require('../src/utils/disciplinaDoMaterial');
+const { lerPlanilhaMateriais } = require('../src/utils/leitorPlanilhaMateriais');
+
+let ok = 0;
+const caso = async (nome, fn) => { try { await fn(); ok++; console.log(`  ok  ${nome}`); } catch (e) { e.message = `${nome}: ${e.message}`; throw e; } };
+
+// planilha geral de obra sintética: seções numeradas, material e mão de obra separados, subtotal
+function planilhaGeral(sufixo) {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Planilha orçamentária');
+  ws.addRow(['OBRA TESTE']);
+  ws.addRow([]);
+  ws.addRow(['ITEM', 'DESCRIÇÃO DO SERVIÇO', 'UND', 'QUANT', 'UNIT MO', 'UNIT MAT', 'VALOR UNIT COM BDI']);
+  ws.addRow(['12', 'PINTURA']);
+  ws.addRow(['12.1', `Tinta acrílica fosca ${sufixo}`, 'gl', 2, 10, 300, 400]);
+  ws.addRow(['13', 'INSTALAÇÕES ELÉTRICAS']);
+  ws.addRow(['13.1', `Disjuntor termomagnético bipolar 40 A ${sufixo}`, 'un', 3, 20, 85.5, 130]);
+  ws.addRow(['13.2', `Instalação de quadro de distribuição ${sufixo}`, 'un', 1, 500, 0, 600]);
+  ws.addRow(['13.3', 'INFRAESTRUTURA']);
+  ws.addRow(['13.3.1', `Eletrocalha perfurada 100x50 mm ${sufixo}`, 'm', 40, 8, 42, 60]);
+  ws.addRow(['13.3.2', `Abraçadeira tipo D 3/4" ${sufixo}`, 'un', 50, 1, '', '']);
+  ws.addRow(['', 'Subtotal – 13. Instalações elétricas']);
+  ws.addRow(['15', 'INSTALAÇÕES HIDROSSANITÁRIAS']);
+  ws.addRow(['15.1', `Tê 90° soldável PVC marrom 25 mm ${sufixo}`, 'un', 10, 2, 3.2, 6]);
+  ws.addRow(['16', 'SISTEMA DE VOZ E DADOS']);
+  ws.addRow(['16.1', `Patch panel Cat.6 24 portas ${sufixo}`, 'un', 2, 30, 650, 800]);
+  ws.addRow(['16.2', `Conectorização de ponto de rede ${sufixo}`, 'pt', 24, 40, 0, 50]);
+  wb.addWorksheet('SINAPI').addRow(['DESCRIÇÃO', 'UN', 'QTD']); // base de preço: não é lista da obra
+  return wb;
+}
+
+(async () => {
+  await caso('disciplina do arquivo: nome primeiro, depois as pastas; outra disciplina fica de fora', () => {
+    assert.deepStrictEqual(disciplinaDoArquivo('Cliente/PARTE 2/ELETRICA/001_ELE_ALM-01_CAMPUS_EXE.pdf'), { chave: 'alarme', origem: 'nome' });
+    assert.deepStrictEqual(disciplinaDoArquivo('Cliente/Arquitetura/ELE_OBRA_R00.dwg'), { chave: 'eletrica', origem: 'nome' });
+    assert.deepStrictEqual(disciplinaDoArquivo('Cliente/Arquitetura/planta-baixa.dwg'), { fora: 'Arquitetura' });
+    assert.deepStrictEqual(disciplinaDoArquivo('Cliente/5000 - Eletrica/5300 - Cabeamento Estruturado/LM-XYZ-5300-R00.xlsx'), { chave: 'cabeamento', origem: 'nome' });
+    assert.deepStrictEqual(disciplinaDoArquivo('Cliente/02 Planta de Hidráulica.pdf'), { fora: 'Hidráulica' });
+    assert.deepStrictEqual(disciplinaDoArquivo('Cliente/07 Planta de Forro e Ar Condicionado.pdf'), { chave: 'climatizacao', origem: 'nome' });
+    assert.strictEqual(disciplinaDoArquivo('Sol Nascente/casa.dwg'), null, '"Sol" de bairro não é solar');
+    assert.deepStrictEqual(disciplinaDoTexto('INSTALAÇÃO DE ESGOTO E VENTILAÇÃO'), { fora: 'Hidráulica' });
+    assert.deepStrictEqual(disciplinaDoTexto('16.2 SPRINKLERS'), { fora: 'Civil' });
+    assert.deepStrictEqual(disciplinaDoTexto('SISTEMA DE PREVENÇÃO E COMBATE A INCÊNDIO'), { chave: 'incendio' });
+    assert.strictEqual(disciplinaDoTexto('Cobertura 1201'), null);
+  });
+
+  await caso('disciplina do material: palavra própria > obra de fora > infraestrutura da lista > categoria > apoio', () => {
+    assert.strictEqual(disciplinaDoMaterial('Detector de fumaça óptico endereçável', { categoria: 'Alarme' }), 'incendio');
+    assert.strictEqual(disciplinaDoMaterial('Câmera bullet IP 4 MP', { categoria: 'Redes / Cabeamento Estruturado', contexto: 'cabeamento' }), 'cftv');
+    assert.strictEqual(disciplinaDoMaterial('Tê 90° soldável PVC rígido marrom 25 mm', { categoria: 'Infraestrutura', contexto: 'eletrica' }), null);
+    assert.strictEqual(disciplinaDoMaterial('Eletroduto PVC rígido roscável 3/4"', { categoria: 'Infraestrutura' }), 'eletrica');
+    assert.strictEqual(disciplinaDoMaterial('Eletroduto galvanizado 1"', { categoria: 'Infraestrutura', contexto: 'cftv' }), 'cftv');
+    assert.strictEqual(disciplinaDoMaterial('Placa de gesso acartonado 12,5 mm', { categoria: null, contexto: 'eletrica' }), null);
+    assert.strictEqual(disciplinaDoMaterial('Parafuso sextavado 1/4" com bucha', { categoria: 'Ferragens', contexto: 'cabeamento' }), 'cabeamento');
+    assert.strictEqual(disciplinaDoMaterial('Parafuso sextavado 1/4" com bucha', { categoria: 'Ferragens' }), null, 'apoio sem disciplina da lista não entra');
+    assert.strictEqual(disciplinaDoMaterial('Disjuntor bipolar 40 A', { categoria: 'Elétrica', contexto: 'climatizacao' }), 'eletrica');
+  });
+
+  await caso('planilha de qualquer layout: preço do material, seções, subtotal e base de preço de fora', () => {
+    const abas = lerPlanilhaMateriais(planilhaGeral('S'));
+    assert.deepStrictEqual(abas.map(a => a.aba), ['Planilha orçamentária'], 'a aba SINAPI não é lida');
+    const it = abas[0].itens;
+    const de = (txt) => it.find(i => i.descricao.includes(txt));
+    assert.strictEqual(de('Disjuntor').preco, 85.5, 'UNIT MAT, não UNIT MO nem o "com BDI"');
+    assert.deepStrictEqual(de('Disjuntor').secao, { chave: 'eletrica' });
+    assert.deepStrictEqual(de('Eletrocalha').secao, { chave: 'eletrica' }, '13.3 INFRAESTRUTURA fica com a disciplina do 13');
+    assert.strictEqual(de('Abraçadeira').preco, null);
+    assert.deepStrictEqual(de('Tinta').secao, { fora: 'Civil' });
+    assert.deepStrictEqual(de('Tê 90°').secao, { fora: 'Hidráulica' });
+    assert.deepStrictEqual(de('Patch panel').secao, { chave: 'cabeamento' });
+    assert.ok(!it.some(i => /Subtotal|INFRAESTRUTURA|PINTURA/.test(i.descricao)), 'título e subtotal não são item');
+  });
+
+  if (process.env.DB_NAME !== 'hm_orcamentos_v2') {
+    console.log(`treinoPorDisciplina: ${ok} casos ok (parte de banco pulada: DB_NAME=${process.env.DB_NAME || '(vazio)'})`);
+    return;
+  }
+  const pool = require('../src/config/database');
+  try {
+    for (const m of ['2.0-49-treino-com-o-acervo', '2.0-50-treino-por-disciplina', '2.0-50-treino-por-disciplina']) await require(`../src/models/migracoes/${m}`)(pool); // idempotente
+
+    await caso('treino com a planilha: só o material novo entra (com preço no catálogo, sem preço como conhecido); o existente não muda', async () => {
+      const { aprenderDaPlanilha } = require('../src/services/treinoMateriais');
+      const s = `T${Date.now()}`;
+      const { rows: [ja] } = await pool.query(`INSERT INTO materiais (descricao, categoria, unidade, preco, origem) VALUES ($1, 'Redes / Cabeamento Estruturado', 'un', 999, 'manual') RETURNING id`, [`Patch panel Cat.6 24 portas ${s}`]);
+      try {
+        const r = await aprenderDaPlanilha(planilhaGeral(s), { arquivo: `geral-${s}.xlsx` });
+        assert.strictEqual(r.novos, 2, JSON.stringify(r)); // disjuntor e eletrocalha
+        assert.strictEqual(r.semPreco, 1); // abraçadeira
+        assert.strictEqual(r.existentes, 1); // o patch panel que já existia
+        assert.strictEqual(r.servicos, 2); // instalação e conectorização
+        assert.strictEqual(r.semDisciplina, 2); // tinta (civil) e tê soldável (hidráulica)
+        const { rows } = await pool.query(`SELECT descricao, preco, origem, categoria FROM materiais WHERE descricao LIKE $1 ORDER BY descricao`, [`%${s}`]);
+        const disj = rows.find(x => /Disjuntor/.test(x.descricao));
+        assert.deepStrictEqual([Number(disj.preco), disj.origem], [85.5, 'acervo']);
+        assert.strictEqual(Number(rows.find(x => /Patch/.test(x.descricao)).preco), 999, 'o existente não muda de preço');
+        assert.ok(!rows.some(x => /Abraçadeira|Tinta|Tê 90/.test(x.descricao)), 'sem preço e de fora não vão ao catálogo');
+        const { rows: am } = await pool.query(`SELECT descricao, disciplina, material_id FROM acervo_materiais WHERE descricao LIKE $1 ORDER BY descricao`, [`%${s}`]);
+        assert.deepStrictEqual(am.map(x => [x.descricao.split(' ')[0], x.disciplina, x.material_id != null]), [['Abraçadeira', 'eletrica', false], ['Disjuntor', 'eletrica', true], ['Eletrocalha', 'eletrica', true]]);
+        // a mesma planilha de novo: nada novo (já existe), e nada muda
+        const r2 = await aprenderDaPlanilha(planilhaGeral(s), { arquivo: `geral-${s}.xlsx` });
+        assert.strictEqual(r2.novos, 0);
+      } finally {
+        await pool.query('DELETE FROM acervo_materiais WHERE descricao LIKE $1', [`%${s}`]);
+        await pool.query('DELETE FROM materiais WHERE descricao LIKE $1', [`%${s}`]);
+        await pool.query('DELETE FROM materiais WHERE id = $1', [ja.id]);
+      }
+    });
+
+    await caso('treino com o acervo: disciplina do caminho vai ao leitor e ao aprendizado; arquitetura não é lida', async () => {
+      const { treinar } = require('../src/services/treinoAcervo');
+      const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'acervo-disc-'));
+      const s = Date.now();
+      fs.mkdirSync(path.join(raiz, 'Cliente Y', 'Arquitetura'), { recursive: true });
+      fs.mkdirSync(path.join(raiz, 'Cliente Y', 'CFTV'), { recursive: true });
+      fs.writeFileSync(path.join(raiz, 'Cliente Y', 'Arquitetura', `planta-${s}.dwg`), `arq ${s}`);
+      fs.writeFileSync(path.join(raiz, 'Cliente Y', 'CFTV', `cameras-${s}.dxf`), `cftv ${s}`);
+      fs.writeFileSync(path.join(raiz, 'Cliente Y', `PROPOSTA COMERCIAL ${s}.pdf`), 'x'); // proposta da H&M: não entra
+      const vistas = [];
+      const ler = async (buffer, nome, o) => { vistas.push([nome, o.disciplinas]); return { aprendizado: {}, mapa: { simbolos: [] } }; };
+      const aprendidas = [];
+      const aprender = async (r, nome, o) => { aprendidas.push(o.disciplina); return { simbolos: 0, notas: 0, blocos: 0 }; };
+      try {
+        const r = await treinar({ raiz, ler, aprender, tipos: ['cad'] });
+        assert.deepStrictEqual([r.total, r.lidos, r.ignorados, r.erros], [2, 1, 1, 0]);
+        assert.deepStrictEqual(vistas, [[`cameras-${s}.dxf`, ['cftv']]]);
+        assert.deepStrictEqual(aprendidas, ['cftv']);
+        const { rows } = await pool.query('SELECT caminho, situacao, disciplina, resumo FROM acervo_treino WHERE caminho LIKE $1 ORDER BY caminho', [`%${s}%`]);
+        assert.deepStrictEqual(rows.map(x => [x.situacao, x.disciplina]), [['ignorado', null], ['lido', 'cftv']]);
+        assert.strictEqual(rows[0].resumo.fora, 'Arquitetura');
+      } finally {
+        await pool.query('DELETE FROM acervo_treino WHERE caminho LIKE $1', [`%${s}%`]);
+        fs.rmSync(raiz, { recursive: true, force: true });
+      }
+    });
+  } finally {
+    await pool.end();
+  }
+  console.log(`treinoPorDisciplina: ${ok} casos ok`);
+})().catch((e) => { console.error(e); process.exit(1); });

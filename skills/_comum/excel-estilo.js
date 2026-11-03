@@ -7,13 +7,19 @@
 // cabeçalho da tabela, bordas finas, linhas de seção/subtotal/total e a
 // configuração de impressão (A4, ajustada à largura, títulos repetidos).
 // O cabeçalho e o rodapé de impressão (empresa, página) continuam em empresa.js.
+//
+// Apresentação para o cliente (pedido do usuário, 03/11/2026: "cabeçalho bem definido, cores nas células e
+// linhas, bem profissional e apresentável"): bloco de identificação (empresa, cliente, obra, proposta, data)
+// em quadros com rótulo, faixa dourada em cada sistema, linhas zebradas, célula digitável com fundo azul
+// claro, guias coloridas e sem as linhas de grade do Excel.
 
 const fs = require('fs');
 const path = require('path');
 
 const COR = Object.freeze({
-  preto: 'FF141414', dourado: 'FFC9A227', douradoEscuro: 'FF8A6A0C', branco: 'FFFFFFFF',
-  cinzaTexto: 'FF6B6B6B', borda: 'FFD0D0D0', secao: 'FFF2F2F2', subtotal: 'FFFBF4DE',
+  preto: 'FF141414', grafite: 'FF2B2B2B', dourado: 'FFC9A227', douradoEscuro: 'FF8A6A0C', branco: 'FFFFFFFF',
+  cinzaTexto: 'FF6B6B6B', borda: 'FFD0D0D0', secao: 'FFEFE3BC', subtotal: 'FFFBF4DE', zebra: 'FFF7F7F7',
+  entrada: 'FFEEF4FC',
 });
 const fundo = (argb) => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
 const fina = (argb = COR.borda) => ({ style: 'thin', color: { argb } });
@@ -57,6 +63,48 @@ function faixaTitulo(wb, ws, { titulo, subtitulo, ultimaColuna }) {
   l2.height = 20;
 }
 
+// Bloco de identificação do documento (abas de apresentação): quadros "RÓTULO | valor" lado a lado.
+//   colunas: um quadro por posição — { rotulo: [col. inicial, col. final], valor: [col. inicial, col. final] }
+//   linhas:  por linha, um campo por quadro { rotulo, valor (texto, número, data ou { formula }), formato?,
+//            destaque? } — null deixa o quadro vazio nessa linha.
+// Rótulo em faixa grafite com o texto dourado; valor em branco, negrito, com borda.
+function blocoIdentificacao(ws, { linha, colunas, linhas }) {
+  linhas.forEach((campos, i) => {
+    const l = linha + i;
+    ws.getRow(l).height = 20;
+    campos.forEach((campo, k) => {
+      const q = colunas[k];
+      if (!q || !campo) return;
+      const [r1, r2] = q.rotulo;
+      const [v1, v2] = q.valor;
+      if (r2 > r1) ws.mergeCells(l, r1, l, r2);
+      if (v2 > v1) ws.mergeCells(l, v1, l, v2);
+      const cr = ws.getCell(l, r1);
+      cr.value = String(campo.rotulo || '').toUpperCase();
+      cr.font = { name: 'Arial', bold: true, size: 8, color: { argb: COR.dourado } };
+      cr.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+      for (let c = r1; c <= r2; c++) {
+        const x = ws.getCell(l, c);
+        x.fill = fundo(COR.grafite);
+        x.border = { top: fina(COR.grafite), bottom: fina(COR.grafite), left: fina(COR.grafite), right: fina(COR.grafite) };
+      }
+      const cv = ws.getCell(l, v1);
+      cv.value = campo.valor ?? '';
+      if (campo.formato) cv.numFmt = campo.formato;
+      cv.font = { name: 'Arial', bold: true, size: campo.destaque ? 11 : 10, color: { argb: campo.destaque ? COR.douradoEscuro : COR.preto } };
+      cv.alignment = { horizontal: 'left', vertical: 'middle', indent: 1, shrinkToFit: true };
+      for (let c = v1; c <= v2; c++) {
+        const x = ws.getCell(l, c);
+        x.fill = fundo(COR.branco);
+        x.border = { top: fina(), bottom: fina(), ...(c === v1 ? { left: fina() } : {}), ...(c === v2 ? { right: fina() } : {}) };
+      }
+    });
+  });
+}
+
+// Linha baixa de separação (entre o bloco de identificação e a tabela)
+function espaco(ws, linha, altura = 8) { ws.getRow(linha).height = altura; }
+
 // Linha de cabeçalho da tabela: fundo preto, texto branco em negrito, centralizado e com quebra
 function cabecalhoTabela(ws, linha, titulos) {
   const r = ws.getRow(linha);
@@ -85,21 +133,43 @@ function corpoTabela(ws, { de, ate, ultimaColuna, quebrar = [], centralizar = []
   }
 }
 
+// Linhas zebradas: uma sim, outra não, em cinza bem claro. As linhas de `pular` (sistema, subtotal, total)
+// ficam com a cor delas e recomeçam a contagem: cada sistema começa na linha branca.
+function zebrar(ws, { de, ate, ultimaColuna, pular = [] }) {
+  const fora = new Set(pular);
+  let k = 0;
+  for (let l = de; l <= ate; l++) {
+    if (fora.has(l)) { k = 0; continue; }
+    if (k++ % 2 === 1) for (let c = 1; c <= ultimaColuna; c++) ws.getCell(l, c).fill = fundo(COR.zebra);
+  }
+}
+
+// Célula de valor digitado (pode alterar): além da fonte azul, fundo azul bem claro
+function marcarEntrada(cel) { cel.fill = fundo(COR.entrada); }
+
 // Linhas de destaque da tabela (o texto e as fórmulas já estão nelas):
-//   'secao'    — título do sistema: faixa cinza clara, dourado escuro, negrito
-//   'subtotal' — creme, negrito, borda de cima
+//   'secao'    — título do sistema: faixa dourada clara, texto preto em negrito, filete dourado em cima
+//   'subtotal' — creme, negrito, filete dourado escuro em cima
 //   'total'    — faixa preta, texto dourado em negrito (TOTAL, PREÇO FINAL)
 function destacarLinha(ws, linha, ultimaColuna, tipo) {
   for (let c = 1; c <= ultimaColuna; c++) {
     const cel = ws.getCell(linha, c);
-    const base = { name: 'Arial', size: tipo === 'total' ? 10 : 9, bold: true };
-    if (tipo === 'secao') { cel.fill = fundo(COR.secao); cel.font = { ...base, color: { argb: COR.douradoEscuro } }; }
+    const base = { name: 'Arial', size: tipo === 'subtotal' ? 9 : 10, bold: true };
+    if (tipo === 'secao') { cel.fill = fundo(COR.secao); cel.font = { ...base, color: { argb: COR.preto } }; }
     if (tipo === 'subtotal') { cel.fill = fundo(COR.subtotal); cel.font = { ...base, color: { argb: COR.preto } }; }
     if (tipo === 'total') { cel.fill = fundo(COR.preto); cel.font = { ...base, color: { argb: COR.dourado } }; }
-    cel.border = { top: { style: tipo === 'secao' ? 'thin' : 'medium', color: { argb: tipo === 'total' ? COR.dourado : COR.borda } }, bottom: fina(), left: fina(), right: fina() };
+    const cima = tipo === 'subtotal' ? { style: 'thin', color: { argb: COR.douradoEscuro } } : { style: 'medium', color: { argb: COR.dourado } };
+    cel.border = { top: cima, bottom: fina(), left: fina(), right: fina() };
     cel.alignment = { ...(cel.alignment || {}), vertical: 'middle', ...(tipo === 'secao' ? { horizontal: 'left' } : {}) };
   }
-  ws.getRow(linha).height = tipo === 'total' ? 22 : 18;
+  ws.getRow(linha).height = tipo === 'total' ? 24 : tipo === 'secao' ? 20 : 18;
+}
+
+// Aba de apresentação: cor na guia e sem as linhas de grade do Excel (os painéis congelados continuam)
+function apresentacao(ws, { corDaGuia = COR.dourado } = {}) {
+  ws.properties.tabColor = { argb: corDaGuia };
+  const views = ws.views?.length ? ws.views : [{}];
+  ws.views = views.map(v => ({ ...v, showGridLines: false }));
 }
 
 // Impressão: A4, ajustada à largura da página (altura livre), centralizada,
@@ -116,4 +186,4 @@ function configurarImpressao(ws, { linhasTitulo = null, ultimaColuna = ws.column
   };
 }
 
-module.exports = { COR, faixaTitulo, cabecalhoTabela, corpoTabela, destacarLinha, configurarImpressao, larguraTotal };
+module.exports = { COR, faixaTitulo, blocoIdentificacao, espaco, cabecalhoTabela, corpoTabela, zebrar, marcarEntrada, destacarLinha, apresentacao, configurarImpressao, larguraTotal };

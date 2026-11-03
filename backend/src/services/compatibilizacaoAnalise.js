@@ -107,8 +107,9 @@ async function analisarProjetoCompleto(todosArquivos, opcoes = {}) {
   const sabido = temCad ? await aprenderDoDesenho.conhecimento() : {};
   const lerCad = ({ buffer, nomeArquivo, disciplinas }) => lerArquivoCad(buffer, nomeArquivo, { ...sabido, disciplinas: disciplinas || [], confirmados: opcoes.mapasConfirmados?.[nomeArquivo] || [] })
     .then((r) => {
-      // (a releitura com o mapa confirmado não ensina de novo o que o primeiro envio já ensinou)
-      if (!opcoes.mapasConfirmados) aprenderDoDesenho.registrarLeitura(r, nomeArquivo).catch(() => {});
+      // (a releitura com o mapa confirmado não ensina de novo o que o primeiro envio já ensinou). Arquivo com UMA
+      // disciplina marcada ensina por ela: a linha de legenda/bloco que não diz a sua fica com a do arquivo.
+      if (!opcoes.mapasConfirmados) aprenderDoDesenho.registrarLeitura(r, nomeArquivo, { disciplina: disciplinas?.length === 1 ? disciplinas[0] : null }).catch(() => {});
       return r;
     })
     .catch((e) => { throw Object.assign(new Error(`Não consegui ler "${nomeArquivo}": ${e.message}`), { leituraCad: true }); });

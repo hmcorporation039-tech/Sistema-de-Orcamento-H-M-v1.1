@@ -25,6 +25,13 @@ const { formulaDuracaoExcel, ETAPA_MOBILIZACAO, ETAPA_ENTREGA } = require('../ut
 const AZUL = { color: { argb: 'FF1F4E9E' } }; // fonte azul = valor digitado (convenção da planilha H&M)
 const MOEDA = '"R$" #,##0.00';
 const PCT = '0.00%';
+// quantidade inteira sem casas ("13", não "13,00"); fracionada (metros) com 2
+const formatoQtd = (q) => (Number.isInteger(Number(q)) ? '#,##0' : '#,##0.00');
+// Apresentação (03/11/2026): Orçamento e Resumo abrem com o bloco de identificação (linhas 4 a 6/7) e a tabela
+// começa abaixo dele. A linha do cabeçalho de cada uma fica aqui: fórmulas, painel congelado, filtro e
+// títulos de impressão saem dela.
+const CAB_ORCAMENTO = 8;
+const CAB_RESUMO = 9;
 
 const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
@@ -68,6 +75,7 @@ function montarAbaCurvaAbc(ws, { itens, secoes, linhaNoOrcamento }) {
   ws.getCell('B3').value = 'Limite da classe B (% acumulado do valor)';
   const limA = ws.getCell('D2'); limA.value = LIMITES_CURVA_ABC.A / 100; limA.numFmt = PCT; limA.font = AZUL;
   const limB = ws.getCell('D3'); limB.value = LIMITES_CURVA_ABC.B / 100; limB.numFmt = PCT; limB.font = AZUL;
+  [limA, limB].forEach(E.marcarEntrada); // valor digitado: fundo azul claro, como nas outras abas
   ws.getCell('F2').value = 'Custo direto (sem BDI e impostos). A classe vem do acumulado ANTES do item: o item que cruza o limite ainda entra na classe de cima.';
   ws.getCell('F2').font = { italic: true, color: { argb: 'FF777777' } };
   cabecalho(ws, 5, ['#', 'Item', 'Tipo', 'Qtd.', 'Un.', 'Valor total', '%', '% acumulado', 'Classe', 'Linhas no Orçamento']);
@@ -241,12 +249,12 @@ async function montarPlanilhaCliente({ p, secoes, itens, pesquisaPor = new Map()
   wsO.columns = [7, 30, 60, 28, 8, 9, 10, 15, 15, 16, 16, 17, 28, 40].map(w => ({ width: w }));
   wsO.getCell('A1').value = `${EMPRESA.razaoSocial.toUpperCase()} – PLANILHA ORÇAMENTÁRIA`;
   wsO.getCell('A1').font = { bold: true, size: 13 };
-  wsO.getCell('A2').value = { formula: `"Cliente: "&${P_.cliente}&"   |   Obra: "&${P_.obra}&"   |   Proposta "&${P_.proposta}` };
-  cabecalho(wsO, 4, ['Item', 'Sistema', 'Descrição', 'Fabricante / modelo', 'Un.', 'Qtd.', 'ID pesquisa', 'P. unit. material', 'P. unit. mão de obra', 'Total material', 'Total mão de obra', 'Total do item', 'Origem do preço', 'Observações']);
+  cabecalho(wsO, CAB_ORCAMENTO, ['Item', 'Sistema', 'Descrição', 'Fabricante / modelo', 'Un.', 'Qtd.', 'ID pesquisa', 'P. unit. material', 'P. unit. mão de obra', 'Total material', 'Total mão de obra', 'Total do item', 'Origem do preço', 'Observações']);
   // agrupa por sistema (subgrupo; sem subgrupo = nome da seção)
   const sistemaDe = (it) => it.subgrupo || secoes.find(s => s.id === it.secao_id)?.nome || 'Geral';
   const sistemas = [...new Set(itens.map(sistemaDe))];
-  let r = 5;
+  let r = CAB_ORCAMENTO + 1;
+  const espacos = []; // linha vazia entre um sistema e outro (sem borda, baixa)
   const subtotais = [];
   const linhaNoOrcamento = new Map(); // id do item → linha na aba Orçamento
   const linhasSecao = []; // título de cada sistema (faixa de destaque no fim)
@@ -265,7 +273,7 @@ async function montarPlanilhaCliente({ p, secoes, itens, pesquisaPor = new Map()
       L.getCell(3).value = it.descricao;
       L.getCell(4).value = [it.marca, it.codigo && !mo ? it.codigo : null].filter(Boolean).join(' ') || '—';
       L.getCell(5).value = it.unidade || 'un';
-      const q = L.getCell(6); q.value = Number(it.quantidade) || 0; q.font = AZUL;
+      const q = L.getCell(6); q.value = Number(it.quantidade) || 0; q.font = AZUL; q.numFmt = formatoQtd(q.value);
       if (mo) {
         L.getCell(8).value = 0;
         const v = L.getCell(9); v.value = Number(it.valor_unitario) || 0; v.font = AZUL;
@@ -291,24 +299,25 @@ async function montarPlanilhaCliente({ p, secoes, itens, pesquisaPor = new Map()
     S.getCell(3).font = { bold: true };
     ['J', 'K', 'L'].forEach((col, j) => { const c = S.getCell(10 + j); c.value = { formula: `SUM(${col}${ini}:${col}${fim})` }; c.numFmt = MOEDA; c.font = { bold: true }; });
     subtotais.push({ nome: nomeSis, linha: r });
+    espacos.push(r + 1);
     r += 2;
   });
   const linhaTotalO = r;
   wsO.getCell(r, 3).value = 'TOTAL CUSTO DIRETO';
   wsO.getCell(r, 3).font = { bold: true };
   ['J', 'K', 'L'].forEach((col, j) => { const c = wsO.getCell(r, 10 + j); c.value = { formula: subtotais.map(s => `${col}${s.linha}`).join('+') || '0' }; c.numFmt = MOEDA; c.font = { bold: true }; });
-  wsO.views = [{ state: 'frozen', ySplit: 4 }];
-  wsO.autoFilter = { from: 'A4', to: 'N4' };
+  wsO.views = [{ state: 'frozen', ySplit: CAB_ORCAMENTO }];
+  wsO.autoFilter = { from: `A${CAB_ORCAMENTO}`, to: `N${CAB_ORCAMENTO}` };
 
   // ── Resumo ──
   wsR.columns = [{ width: 50 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 14 }];
   wsR.getCell('A1').value = 'RESUMO DO ORÇAMENTO';
   wsR.getCell('A1').font = { bold: true, size: 13 };
-  wsR.getCell('A2').value = { formula: `"Cliente: "&${P_.cliente}&"  |  Obra: "&${P_.obra}` };
-  cabecalho(wsR, 4, ['Sistema', 'Material', 'Mão de obra', 'Custo direto', '% do total']);
-  const ultimoSis = 4 + subtotais.length;
+  cabecalho(wsR, CAB_RESUMO, ['Sistema', 'Material', 'Mão de obra', 'Custo direto', '% do total']);
+  const primeiroSis = CAB_RESUMO + 1;
+  const ultimoSis = CAB_RESUMO + subtotais.length;
   subtotais.forEach((s, i) => {
-    const l = 5 + i;
+    const l = primeiroSis + i;
     wsR.getCell(l, 1).value = s.nome;
     wsR.getCell(l, 2).value = { formula: `SUMIF(Orçamento!$B:$B,$A${l},Orçamento!$J:$J)` };
     wsR.getCell(l, 3).value = { formula: `SUMIF(Orçamento!$B:$B,$A${l},Orçamento!$K:$K)` };
@@ -318,7 +327,7 @@ async function montarPlanilhaCliente({ p, secoes, itens, pesquisaPor = new Map()
   const lt = ultimoSis + 1;
   wsR.getCell(lt, 1).value = 'TOTAL CUSTO DIRETO';
   // subtotais com 2 casas, como subtotal_materiais / subtotal_mao_obra da proposta
-  ['B', 'C', 'D', 'E'].forEach((col, j) => { wsR.getCell(lt, 2 + j).value = { formula: col === 'E' ? `SUM(E5:E${ultimoSis})` : `ROUND(SUM(${col}5:${col}${ultimoSis}),2)` }; });
+  ['B', 'C', 'D', 'E'].forEach((col, j) => { wsR.getCell(lt, 2 + j).value = { formula: col === 'E' ? `SUM(E${primeiroSis}:E${ultimoSis})` : `ROUND(SUM(${col}${primeiroSis}:${col}${ultimoSis}),2)` }; });
   wsR.getCell(lt + 1, 1).value = 'Conferência com a aba Orçamento (deve dar 0)';
   wsR.getCell(lt + 1, 4).value = { formula: `D${lt}-Orçamento!L${linhaTotalO}` };
   // BDI com o mesmo arredondamento de calculoProposta.detalharBdi: diferenciado =
@@ -338,9 +347,13 @@ async function montarPlanilhaCliente({ p, secoes, itens, pesquisaPor = new Map()
   wsR.getCell(lf, 1).value = 'PREÇO FINAL DA PROPOSTA';
   wsR.getCell(lf, 4).value = { formula: `ROUND(D${lt}+D${lt + 3}+D${lt + 4}+D${lt + 5},2)` };
   wsR.getCell(lf, 4).font = { bold: true };
-  for (let l = 5; l <= lf; l++) { [2, 3, 4].forEach(c => { wsR.getCell(l, c).numFmt = MOEDA; }); wsR.getCell(l, 5).numFmt = PCT; }
+  for (let l = primeiroSis; l <= lf; l++) { [2, 3, 4].forEach(c => { wsR.getCell(l, c).numFmt = MOEDA; }); wsR.getCell(l, 5).numFmt = PCT; }
   wsR.getCell(lf + 2, 1).value = `Total da proposta ${p.numero} no sistema: R$ ${Number(p.total || 0).toFixed(2).replace('.', ',')} — com os parâmetros e preços padrão desta planilha, o preço final é o mesmo.`;
   wsR.getCell(lf + 2, 1).font = { italic: true, color: { argb: 'FF777777' } };
+  if (subtotais.length) {
+    // barra no "% do total": o peso de cada sistema à vista
+    wsR.addConditionalFormatting({ ref: `E${primeiroSis}:E${ultimoSis}`, rules: [{ type: 'dataBar', cfvo: [{ type: 'num', value: 0 }, { type: 'num', value: 1 }], color: { argb: 'FFC9A227' }, gradient: false }] });
+  }
 
   // ── Quantitativos ── (itens medidos: metros, caixas, bobinas, barras)
   wsT.columns = [{ width: 60 }, { width: 14 }, { width: 10 }, { width: 50 }];
@@ -414,6 +427,14 @@ async function montarPlanilhaCliente({ p, secoes, itens, pesquisaPor = new Map()
 
   // ── Apresentação (skills/_comum/excel-estilo.js): faixa de título com logo, tabelas com
   // bordas, linhas de sistema/subtotal/total e impressão A4 ajustada à largura ──
+  // Para o cliente (03/11/2026): Orçamento e Resumo abrem com a linha da empresa e o bloco de identificação
+  // (cliente, obra, proposta, data, preço final), sistema em faixa dourada, linhas zebradas, célula digitável
+  // com fundo azul claro, guias coloridas e sem as linhas de grade do Excel.
+  const linhaEmpresa = `${EMPRESA.razaoSocial}  ·  CNPJ ${EMPRESA.cnpj}  ·  ${EMPRESA.endereco}  ·  ${EMPRESA.telefone}  ·  ${EMPRESA.email}`;
+  const DATA = 'dd/mm/yyyy';
+  const prazoTotal = `Cronograma!$C$${lu + 1}`;
+  const precoFinal = `Resumo!$D$${lf}`;
+
   wsI.getColumn(1).width = 110;
   E.faixaTitulo(wb, wsI, { titulo: 'Como usar esta planilha', subtitulo: false, ultimaColuna: 1 });
   // a faixa tomou a linha 1: o texto de instruções começa na 3 e o título antigo some
@@ -425,53 +446,150 @@ async function montarPlanilhaCliente({ p, secoes, itens, pesquisaPor = new Map()
     c.alignment = { vertical: 'top', wrapText: true };
   }
   E.configurarImpressao(wsI, { ultimaColuna: 1, paisagem: false });
+  E.apresentacao(wsI, { corDaGuia: E.COR.cinzaTexto });
 
-  E.faixaTitulo(wb, wsP, { titulo: 'Parâmetros do orçamento', subtitulo: 'Fonte azul = valor digitado (pode alterar)', ultimaColuna: 3 });
+  E.faixaTitulo(wb, wsP, { titulo: 'Parâmetros do orçamento', subtitulo: 'Fonte azul em fundo azul claro = valor digitado (pode alterar)', ultimaColuna: 3 });
   E.corpoTabela(wsP, { de: 3, ate: 3 + parametros.length - 1, ultimaColuna: 3, quebrar: [2, 3] });
-  for (let l = 3; l < 3 + parametros.length; l++) { wsP.getCell(l, 1).font = { name: 'Arial', size: 9, bold: true }; wsP.getCell(l, 2).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true }; wsP.getCell(l, 3).font = { name: 'Arial', size: 9, italic: true, color: { argb: E.COR.cinzaTexto } }; }
+  for (let l = 3; l < 3 + parametros.length; l++) {
+    wsP.getCell(l, 1).font = { name: 'Arial', size: 9, bold: true };
+    wsP.getCell(l, 2).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    wsP.getCell(l, 3).font = { name: 'Arial', size: 9, italic: true, color: { argb: E.COR.cinzaTexto } };
+    if (!wsP.getCell(l, 2).value?.formula) E.marcarEntrada(wsP.getCell(l, 2));
+  }
   E.configurarImpressao(wsP, { ultimaColuna: 3, paisagem: false });
+  E.apresentacao(wsP, { corDaGuia: 'FF1F4E9E' });
 
-  E.faixaTitulo(wb, wsO, { titulo: `${EMPRESA.razaoSocial} – planilha orçamentária`, ultimaColuna: 14 });
-  E.corpoTabela(wsO, { de: 5, ate: linhaTotalO, ultimaColuna: 14, quebrar: [2, 3, 4, 14], centralizar: [1, 5, 6, 7] });
+  // Orçamento: identificação em dois quadros (A:B | C:D e E:H | I:N), tabela a partir da linha CAB_ORCAMENTO.
+  // O preço final (que vem do Resumo, que soma as colunas B, J, K e L daqui) fica no quadro da esquerda: o valor
+  // mesclado em C:D não cruza nenhuma coluna somada — no quadro da direita (I:N) a mescla passa por J, K e L
+  // e a conta ficaria circular para quem lê a mescla célula a célula.
+  E.faixaTitulo(wb, wsO, { titulo: `${EMPRESA.razaoSocial} – planilha orçamentária`, subtitulo: linhaEmpresa, ultimaColuna: 14 });
+  E.blocoIdentificacao(wsO, {
+    linha: 4,
+    colunas: [{ rotulo: [1, 2], valor: [3, 4] }, { rotulo: [5, 8], valor: [9, 14] }],
+    linhas: [
+      [{ rotulo: 'Cliente', valor: { formula: P_.cliente } }, { rotulo: 'Proposta nº', valor: { formula: P_.proposta } }],
+      [{ rotulo: 'Obra / local', valor: { formula: P_.obra } }, { rotulo: 'Data da proposta', valor: { formula: P_.data }, formato: DATA }],
+      [{ rotulo: 'Preço final da proposta', valor: { formula: precoFinal }, formato: MOEDA, destaque: true }, { rotulo: 'Validade', valor: { formula: `${P_.validade}&" dias"` } }],
+    ],
+  });
+  E.espaco(wsO, 3, 8);
+  E.espaco(wsO, CAB_ORCAMENTO - 1, 8);
+  E.corpoTabela(wsO, { de: CAB_ORCAMENTO + 1, ate: linhaTotalO, ultimaColuna: 14, quebrar: [2, 3, 4, 14], centralizar: [1, 5, 6, 7] });
+  E.zebrar(wsO, { de: CAB_ORCAMENTO + 1, ate: linhaTotalO - 1, ultimaColuna: 14, pular: [...linhasSecao, ...subtotais.map(s => s.linha), ...espacos] });
   linhasSecao.forEach(l => E.destacarLinha(wsO, l, 14, 'secao'));
   subtotais.forEach(s => E.destacarLinha(wsO, s.linha, 14, 'subtotal'));
   E.destacarLinha(wsO, linhaTotalO, 14, 'total');
-  // o sistema repete em cada linha só para o Resumo/Cronograma somarem por ele: texto discreto
-  for (let l = 5; l <= linhaTotalO; l++) if (wsO.getCell(l, 2).value && !linhasSecao.includes(l)) wsO.getCell(l, 2).font = { name: 'Arial', size: 8, color: { argb: E.COR.cinzaTexto } };
-  E.configurarImpressao(wsO, { linhasTitulo: '4:4', ultimaColuna: 14 });
+  // a linha entre um sistema e outro é só respiro: sem borda e baixa
+  espacos.forEach((l) => { E.espaco(wsO, l, 8); for (let c = 1; c <= 14; c++) wsO.getCell(l, c).border = {}; });
+  for (let l = CAB_ORCAMENTO + 1; l < linhaTotalO; l++) {
+    if (linhasSecao.includes(l) || espacos.includes(l)) continue;
+    // o sistema repete em cada linha só para o Resumo/Cronograma somarem por ele: texto discreto
+    if (wsO.getCell(l, 2).value) wsO.getCell(l, 2).font = { name: 'Arial', size: 8, color: { argb: E.COR.cinzaTexto } };
+    if (!subtotais.some(s => s.linha === l)) {
+      wsO.getCell(l, 12).font = { name: 'Arial', size: 9, bold: true }; // total do item em negrito
+      [6, 8, 9].forEach((c) => { const x = wsO.getCell(l, c); if (x.font?.color?.argb === AZUL.color.argb) E.marcarEntrada(x); });
+    }
+  }
+  // observações ao pé da tabela (as mesmas da aba Instruções) e a data de emissão
+  const obsO = [
+    'OBSERVAÇÕES',
+    '• Preços de pesquisa de mercado são de varejo online na data da pesquisa — confirme com o fornecedor antes da compra.',
+    '• Quantidades estimadas a partir do projeto: confirme no projeto executivo / medição em campo.',
+    '• Não inclui obras civis, forros, pinturas e itens não listados, salvo indicação.',
+    `Planilha emitida em ${new Date().toLocaleDateString('pt-BR')} — ${EMPRESA.nomeFantasia}.`,
+  ];
+  obsO.forEach((t, i) => {
+    const l = linhaTotalO + 2 + i;
+    wsO.mergeCells(l, 1, l, 14);
+    const c = wsO.getCell(l, 1);
+    c.value = t;
+    c.font = i === 0 ? { name: 'Arial', size: 9, bold: true, color: { argb: E.COR.douradoEscuro } } : { name: 'Arial', size: 8, italic: i === obsO.length - 1, color: { argb: E.COR.cinzaTexto } };
+    c.alignment = { vertical: 'middle', wrapText: true };
+  });
+  E.configurarImpressao(wsO, { linhasTitulo: `${CAB_ORCAMENTO}:${CAB_ORCAMENTO}`, ultimaColuna: 14 });
+  E.apresentacao(wsO);
 
-  E.faixaTitulo(wb, wsR, { titulo: 'Resumo do orçamento', ultimaColuna: 5 });
-  E.corpoTabela(wsR, { de: 5, ate: lf, ultimaColuna: 5 });
+  // Resumo (a capa para o cliente): identificação, sistemas com barra do peso, BDI/impostos e o preço final em destaque
+  E.faixaTitulo(wb, wsR, { titulo: 'Resumo do orçamento', subtitulo: linhaEmpresa, ultimaColuna: 5 });
+  E.blocoIdentificacao(wsR, {
+    linha: 4,
+    colunas: [{ rotulo: [1, 1], valor: [2, 5] }],
+    linhas: [
+      [{ rotulo: 'Cliente', valor: { formula: P_.cliente } }],
+      [{ rotulo: 'Obra / local', valor: { formula: P_.obra } }],
+      [{ rotulo: 'Proposta nº', valor: { formula: P_.proposta } }],
+      [{ rotulo: 'Data da proposta', valor: { formula: P_.data }, formato: DATA }],
+    ],
+  });
+  E.espaco(wsR, 3, 8);
+  E.espaco(wsR, CAB_RESUMO - 1, 8);
+  E.corpoTabela(wsR, { de: primeiroSis, ate: lf, ultimaColuna: 5 });
+  E.zebrar(wsR, { de: primeiroSis, ate: ultimoSis, ultimaColuna: 5 });
+  for (let l = primeiroSis; l <= ultimoSis; l++) wsR.getCell(l, 1).font = { name: 'Arial', size: 9, bold: true };
   E.destacarLinha(wsR, lt, 5, 'subtotal');
   E.destacarLinha(wsR, lf, 5, 'total');
+  wsR.getRow(lf).height = 30;
+  [1, 4].forEach((c) => { wsR.getCell(lf, c).font = { name: 'Arial', size: 12, bold: true, color: { argb: E.COR.dourado } }; });
+  // a linha vazia entre o total e o BDI (lt + 2) é só respiro
+  E.espaco(wsR, lt + 2, 8);
+  for (let c = 1; c <= 5; c++) wsR.getCell(lt + 2, c).border = {};
   wsR.getCell(lt + 1, 1).font = { name: 'Arial', size: 8, italic: true, color: { argb: E.COR.cinzaTexto } };
-  E.configurarImpressao(wsR, { ultimaColuna: 5, paisagem: false });
   wsR.getCell(lf + 2, 1).alignment = { wrapText: false };
+  // condições logo abaixo do preço final
+  const condicoes = [
+    ['Validade da proposta', { formula: `${P_.validade}&" dias a partir da data da proposta"` }],
+    ['Prazo estimado de execução', { formula: `${prazoTotal}&" dias úteis (aba Cronograma)"` }],
+    ['Composição do preço', 'Material + mão de obra + BDI + impostos (mesma regra da proposta em PDF)'],
+  ];
+  E.blocoIdentificacao(wsR, { linha: lf + 4, colunas: [{ rotulo: [1, 1], valor: [2, 5] }], linhas: condicoes.map(([rotulo, valor]) => [{ rotulo, valor }]) });
+  for (let l = lf + 4; l < lf + 4 + condicoes.length; l++) wsR.getCell(l, 2).font = { name: 'Arial', size: 9, color: { argb: E.COR.preto } };
+  E.configurarImpressao(wsR, { ultimaColuna: 5, paisagem: false });
+  E.apresentacao(wsR);
 
   E.faixaTitulo(wb, wsT, { titulo: 'Quantitativos', subtitulo: 'Itens medidos (metros, caixas, bobinas) com a origem da quantidade.', ultimaColuna: 4 });
   E.corpoTabela(wsT, { de: 4, ate: Math.max(4, wsT.rowCount), ultimaColuna: 4, quebrar: [1, 4], centralizar: [3] });
+  E.zebrar(wsT, { de: 4, ate: wsT.rowCount, ultimaColuna: 4 });
   E.configurarImpressao(wsT, { linhasTitulo: '3:3', ultimaColuna: 4, paisagem: false });
+  E.apresentacao(wsT, { corDaGuia: E.COR.grafite });
 
-  E.faixaTitulo(wb, wsQ, { titulo: 'Pesquisa de preços de mercado', subtitulo: 'Fonte azul = valor digitado. Critério MANUAL usa o preço digitado; MÉDIA/MÍNIMO usam as fontes.', ultimaColuna: 18 });
+  E.faixaTitulo(wb, wsQ, { titulo: 'Pesquisa de preços de mercado', subtitulo: 'Fonte azul em fundo azul claro = valor digitado. Critério MANUAL usa o preço digitado; MÉDIA/MÍNIMO usam as fontes.', ultimaColuna: 18 });
   E.corpoTabela(wsQ, { de: 4, ate: Math.max(4, ultimaQ), ultimaColuna: 18, quebrar: [2, 3, 6, 9, 18], centralizar: [1, 15] });
+  E.zebrar(wsQ, { de: 4, ate: ultimaQ, ultimaColuna: 18 });
+  for (let l = 4; l <= ultimaQ; l++) { E.marcarEntrada(wsQ.getCell(l, 15)); E.marcarEntrada(wsQ.getCell(l, 16)); }
   E.configurarImpressao(wsQ, { linhasTitulo: '3:3', ultimaColuna: 18 });
+  E.apresentacao(wsQ, { corDaGuia: 'FF1F4E9E' });
 
   E.faixaTitulo(wb, wsF, { titulo: 'Fornecedores pesquisados', subtitulo: 'Lojas e distribuidores das pesquisas de preço, com os itens cotados em cada um.', ultimaColuna: 4 });
   E.corpoTabela(wsF, { de: 4, ate: Math.max(4, rf - 1), ultimaColuna: 4, quebrar: [1, 2] });
+  E.zebrar(wsF, { de: 4, ate: rf - 1, ultimaColuna: 4 });
   E.configurarImpressao(wsF, { linhasTitulo: '3:3', ultimaColuna: 4 });
+  E.apresentacao(wsF, { corDaGuia: E.COR.grafite });
 
   E.faixaTitulo(wb, wsC, { titulo: 'Cronograma físico (estimado)', ultimaColuna: 5 + SEMANAS });
   wsC.getRow(2).height = 28;
   E.corpoTabela(wsC, { de: 5, ate: lu, ultimaColuna: 5 + SEMANAS, centralizar: [3, 4, 5] });
+  E.zebrar(wsC, { de: 5, ate: lu, ultimaColuna: 5 });
+  for (let l = 5; l <= lu; l++) { wsC.getCell(l, 1).font = { name: 'Arial', size: 9, bold: true }; if (wsC.getCell(l, 3).font?.color?.argb === AZUL.color.argb) E.marcarEntrada(wsC.getCell(l, 3)); }
   E.destacarLinha(wsC, lu + 1, 5 + SEMANAS, 'subtotal');
   E.configurarImpressao(wsC, { linhasTitulo: '4:4', ultimaColuna: 5 + SEMANAS });
+  E.apresentacao(wsC, { corDaGuia: E.COR.grafite });
 
   E.faixaTitulo(wb, wsAbc, { titulo: 'Curva ABC do orçamento', subtitulo: false, ultimaColuna: 10 });
+  let totalAbc = null;
   for (let l = 6; l <= wsAbc.rowCount; l++) {
     if (wsAbc.getCell(l, 2).value === 'Classe') continue; // cabeçalho do resumo por classe
+    if (totalAbc == null && wsAbc.getCell(l, 2).value === 'TOTAL (custo direto)') totalAbc = l;
     E.corpoTabela(wsAbc, { de: l, ate: l, ultimaColuna: 10, quebrar: [2, 10], centralizar: [1, 3, 5, 9] });
   }
+  if (totalAbc) {
+    E.zebrar(wsAbc, { de: 6, ate: totalAbc - 1, ultimaColuna: 10 });
+    E.destacarLinha(wsAbc, totalAbc, 10, 'subtotal');
+    E.espaco(wsAbc, totalAbc + 1, 8);
+    for (let c = 1; c <= 10; c++) wsAbc.getCell(totalAbc + 1, c).border = {};
+  }
   E.configurarImpressao(wsAbc, { linhasTitulo: '5:5', ultimaColuna: 10 });
+  E.apresentacao(wsAbc, { corDaGuia: E.COR.grafite });
 
   timbrarPastaDeTrabalho(wb, `Orçamento ${p.numero || ''}`.trim());
   return { buffer: await wb.xlsx.writeBuffer(), proposta: p };

@@ -953,3 +953,30 @@ Pedido do usuário: "temos que treinar o sistema para ser autônomo, depender s�
   - **treino com o acervo:** andamento, com botões "Treinar agora" e "Parar" (admin);
   - **o que o sistema já sabe**, também por disciplina;
   - **quanto já sai sem IA** por função, nos últimos 90 dias.
+- **Validação:** em produção desde 03/11/2026. As migrações 2.0-48/49 rodaram; os vínculos das propostas antigas deram 80 descrições ligadas a material.
+
+### 03/11/2026: versão 2.29.0 — treino por disciplina, materiais novos do acervo e planilha do cliente apresentável
+
+Pedido do usuário: "faça o treino, mas faça com que o sistema sempre aprenda por disciplinas. Em relação às planilhas, usem apenas os materiais que não têm no sistema para alimentá-lo; o modelo que quero seguir como padrão é o que o sistema gera atualmente. Apenas melhore essa planilha, principalmente em relação ao layout, com um cabeçalho bem definido, cores nas células e linhas, bem profissional e apresentável para os clientes."
+
+- **Treino sempre por disciplina** (`utils/disciplinaDoArquivo.js`, `services/treinoAcervo.js`, migração 2.0-50):
+  - cada arquivo da pasta dos clientes ganha a disciplina do **nome** ("001_ELE_ALM-01" é alarme, "…_CFT_…" é CFTV) ou, sem ela, das **pastas**, da mais funda para a raiz ("5300 - Cabeamento Estruturado", "CLIMATIZAÇÃO");
+  - o leitor do CAD recebe essa disciplina como "marcada", e a linha de legenda ou o nome de bloco que não diz a sua fica com a do arquivo. A disciplina que o leitor detecta no desenho só classifica o arquivo no painel;
+  - arquivo de **arquitetura, hidráulica ou estrutura** não é lido (situação `ignorado`, não conta como erro);
+  - a análise de projeto do dia a dia faz o mesmo: arquivo com uma só disciplina marcada ensina por ela.
+- **Materiais novos das planilhas e dos orçamentos em PDF do acervo** (`utils/leitorPlanilhaMateriais.js`, `services/treinoMateriais.js`, `utils/disciplinaDoMaterial.js`):
+  - planilha de **qualquer layout**: cabeçalho achado pelas palavras e coluna pelo nome. Quando a planilha separa material e mão de obra, o preço é o unitário do **material**; "com BDI" e totais não servem. Abas de base de preço (PINI, SINAPI), composições e apoio ficam de fora;
+  - **seções** da planilha geral de obra ("13.1 INSTALAÇÕES ELÉTRICAS", "15.1 INSTALAÇÕES HIDROSSANITÁRIAS", "16.2 SPRINKLERS"): o item herda a disciplina da seção, e as seções de civil, hidráulica e sprinklers ficam de fora inteiras. O subtotal não abre seção;
+  - orçamento/cotação em PDF: o mesmo leitor das cotações de fornecedor, **sem IA** e só com leitura conferida com o total. A proposta da própria H&M não entra;
+  - **só o que o catálogo não tem**: mesma descrição, mesmo código de fabricante, vínculo aprendido ou texto ≥ 90 % igual conta como "já existe", e o existente **não muda** (nem preço nem nada);
+  - serviço (instalação, ART, verba, ponto, retrofit), item de pacote ("conforme projeto", "miudezas", "software") e etiqueta de quadro da obra ("QF-IT-1° PAV") não entram;
+  - cada material novo ganha categoria (a classificação local do catálogo) e **disciplina**: palavra própria ("câmera" é CFTV, "detector de fumaça" é incêndio, "evaporadora" é climatização) > a infraestrutura segue a disciplina da lista > categoria > material de apoio com a disciplina do arquivo. Sem disciplina da H&M (drywall, tubo soldável, louça), não entra;
+  - **com preço**: entra no catálogo com origem `acervo` e o preço da planilha como referência (a primeira cotação ou nota fiscal real grava o custo). **Sem preço**: fica em `acervo_materiais` como conhecido, sem ir ao catálogo a R$ 0,00 (regra de 28/10/2026);
+  - no ensaio com a pasta real (banco de teste): 92 planilhas/PDFs lidos e 14 de outra disciplina ignorados. Entraram cerca de 350 materiais novos com preço (elétrica 187, climatização 47, cabeamento 31, CFTV 20, automação 18, incêndio 12…) e cerca de 600 ficaram como conhecidos sem preço.
+- **Painel "O que o sistema sabe"**: o treino mostra os arquivos lidos **por disciplina** (desenhos, planilhas/PDFs, linhas de legenda aprendidas) e os materiais novos por disciplina (no catálogo e sem preço), mais os arquivos de outra disciplina.
+- **Planilha do orçamento para o cliente** (`services/planilhaOrcamentoCliente.js`, `skills/_comum/excel-estilo.js`): as mesmas abas e fórmulas de sempre, com outro visual:
+  - **Orçamento:** abre com a linha da empresa (CNPJ, endereço, contatos) e um bloco de identificação em quadros (cliente, obra, proposta, data, validade e o **preço final** em destaque); a tabela começa na linha 8;
+  - cada sistema em faixa dourada, linhas zebradas (cada sistema começa na branca), total do item em negrito, quantidade inteira sem casas e observações ao pé da tabela;
+  - **Resumo**, a capa para o cliente: identificação, sistemas com barra do peso de cada um, preço final em faixa preta maior e as condições (validade, prazo estimado pelo Cronograma, composição do preço);
+  - em todas as abas: célula digitável com fundo azul claro (além da fonte azul), guias coloridas e sem as linhas de grade do Excel;
+  - com os parâmetros padrão, o preço final continua igual ao do PDF: o teste recalcula 40 propostas aleatórias.

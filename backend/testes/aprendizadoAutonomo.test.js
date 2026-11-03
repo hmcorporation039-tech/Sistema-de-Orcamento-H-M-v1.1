@@ -168,6 +168,7 @@ const TEXTO_REF = [
     await caso('treino com o acervo: lê, aprende, a cópia idêntica não ensina de novo e a segunda rodada não relê', async () => {
       await require('../src/models/migracoes/2.0-49-treino-com-o-acervo')(pool);
       await require('../src/models/migracoes/2.0-49-treino-com-o-acervo')(pool); // idempotente
+      await require('../src/models/migracoes/2.0-50-treino-por-disciplina')(pool);
       const { treinar } = require('../src/services/treinoAcervo');
       const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'acervo-teste-'));
       const sufixo = Date.now();
@@ -186,7 +187,7 @@ const TEXTO_REF = [
         const r1 = await treinar({ raiz, ler, aprender });
         assert.deepStrictEqual([r1.total, r1.lidos, r1.erros], [2, 2, 0]);
         assert.deepStrictEqual([lidas, aprendidas], [1, 1], 'a cópia não foi lida nem ensinou');
-        assert.deepStrictEqual(r1.ensinou, { simbolos: 1, notas: 0, blocos: 2 });
+        assert.deepStrictEqual(r1.ensinou, { simbolos: 1, notas: 0, blocos: 2, materiais: 0, semPreco: 0 });
         const { rows } = await pool.query('SELECT caminho, resumo FROM acervo_treino WHERE caminho LIKE $1 ORDER BY caminho', [`%${sufixo}.dxf`]);
         assert.strictEqual(rows.length, 2);
         assert.ok(rows.some(x => x.resumo.copiaDe), JSON.stringify(rows));

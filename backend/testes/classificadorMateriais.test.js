@@ -68,7 +68,9 @@ const CATALOGO = [
   } else {
     const pool = require('../src/config/database');
     try {
-      const { rows } = await pool.query("SELECT descricao, categoria FROM materiais WHERE ativo = true AND COALESCE(categoria, '') NOT IN ('Não classificado', 'Geral', '')");
+      // o material do treino com o acervo (origem 'acervo') tem a categoria tirada da disciplina do arquivo, não de
+      // uma classificação conferida: não serve de gabarito
+      const { rows } = await pool.query("SELECT descricao, categoria FROM materiais WHERE ativo = true AND COALESCE(categoria, '') NOT IN ('Não classificado', 'Geral', '') AND COALESCE(origem, '') <> 'acervo'");
       if (rows.length < 200) {
         console.log(`classificadorMateriais: catálogo com ${rows.length} itens classificados — medição pulada (precisa de 200)`);
       } else {

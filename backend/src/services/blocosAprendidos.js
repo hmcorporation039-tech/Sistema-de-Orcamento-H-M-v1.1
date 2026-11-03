@@ -3,7 +3,9 @@
 // o bloco TUG-30 pelo nome — sem IA. Alimentado por cada análise de DWG/DXF e pelo treino com o acervo da pasta dos
 // clientes (services/treinoAcervo.js).
 //   carregar()                          → [{ nome, escritorio, descricao, disciplina, vezes, usuario? }] sem conflito
-//   registrar(itens, escritorio, arquivo) → grava/reforça as linhas da legenda (pagina.legendaItens do leitor do CAD)
+//   registrar(itens, escritorio, arquivo, executor, disciplinaDoArquivo) → grava/reforça as linhas da legenda
+//                                         (pagina.legendaItens do leitor do CAD); a disciplina do arquivo vale
+//                                         quando nem o nome nem a descrição dizem a sua (treino por disciplina)
 //   procurar(aprendidos, nome, escritorio) → a linha que vale para o bloco (função pura: o leitor do CAD usa)
 const pool = require('../config/database');
 const path = require('path');
@@ -29,7 +31,7 @@ async function carregar(executor = pool) {
 
 // itens: [{ nomeLimpo, descricao }]. Mesmo nome e mesma disciplina: reforça; outra disciplina: conflito (sai do uso).
 // A descrição mais recente fica (a legenda do escritório pode ter ganho detalhe), a disciplina é o que se confere.
-async function registrar(itens, escritorio, arquivo, executor = pool) {
+async function registrar(itens, escritorio, arquivo, executor = pool, disciplinaDoArquivo = null) {
   let gravados = 0;
   const vistos = new Set();
   for (const it of itens || []) {
@@ -38,8 +40,9 @@ async function registrar(itens, escritorio, arquivo, executor = pool) {
     vistos.add(nome);
     const descricao = String(it.descricao).replace(/\s+/g, ' ').trim().slice(0, 200);
     // o prefixo do nome manda ("INC CENTRAL" é incêndio, mesmo com "Central de alarme…" na legenda); sem ele, o texto.
-    // Bloco sem disciplina de instalação (identificador de janela, mobiliário) não se aprende.
-    const disciplina = disciplinaDoBloco(nome) || detectarDisciplinas(descricao)[0]?.chave || null;
+    // Bloco sem disciplina de instalação (identificador de janela, mobiliário) não se aprende; o de uma prancha que
+    // diz a disciplina no nome/pasta ("…_CFT_…") fica com ela.
+    const disciplina = disciplinaDoBloco(nome) || detectarDisciplinas(descricao)[0]?.chave || disciplinaDoArquivo || null;
     if (!disciplina) continue;
     try {
       await executor.query(

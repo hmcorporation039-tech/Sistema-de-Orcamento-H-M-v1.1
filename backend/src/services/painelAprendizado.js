@@ -66,7 +66,8 @@ async function resumo() {
       const chave = chaveDoProjeto(x.disciplina) || x.disciplina || 'outra';
       return { chave, nome: nomeDaDisciplina(chave) || (x.disciplina ? x.disciplina : 'Sem disciplina'), n: x.n };
     })).catch(() => []),
-    contar(`SELECT (SELECT COUNT(*) FROM material_aliases)::int AS vinculos, (SELECT COUNT(*) FROM materiais WHERE ativo)::int AS catalogo`),
+    contar(`SELECT (SELECT COUNT(*) FROM material_aliases)::int AS vinculos, (SELECT COUNT(*) FROM materiais WHERE ativo)::int AS catalogo,
+              (SELECT COUNT(*) FROM materiais WHERE ativo AND origem = 'acervo')::int AS do_acervo`),
     contar(`SELECT COUNT(*) FILTER (WHERE origem = 'usuario')::int AS conferidos, COUNT(*) FILTER (WHERE origem = 'legenda' AND conflitos = 0)::int AS da_legenda,
               COUNT(*) FILTER (WHERE origem <> 'usuario' AND conflitos > 0)::int AS em_conflito, COUNT(DISTINCT NULLIF(escritorio, ''))::int AS escritorios
               FROM cad_simbolos_aprendidos`),
@@ -81,6 +82,10 @@ async function resumo() {
                   FROM analises_projeto a CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(a.dados_extraidos) = 'array' THEN a.dados_extraidos ELSE '[]'::jsonb END) d
                  WHERE d->'mapa_cad' ? 'simbolos' ORDER BY a.id DESC`).then(r => r.rows).catch(() => []),
   ]);
+  // o treino com o acervo por disciplina (03/11/2026: "sempre por disciplinas"): arquivos lidos e materiais novos
+  const nomeDe = (chave) => (chave ? nomeDaDisciplina(chaveDoProjeto(chave) || chave) || chave : 'Sem disciplina no nome/pasta');
+  acervo.porDisciplina = (acervo.porDisciplina || []).map(d => ({ ...d, chave: d.disciplina || '', nome: nomeDe(d.disciplina) }));
+  acervo.materiais = (acervo.materiais || []).map(d => ({ ...d, chave: d.disciplina, nome: nomeDe(d.disciplina) }));
   return {
     materiais, simbolos, blocos, notas, acervo, porDisciplina,
     autonomia: {

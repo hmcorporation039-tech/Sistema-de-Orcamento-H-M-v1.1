@@ -11,7 +11,8 @@ import { mensagemDeErro } from '../utils/download';
 // "O que o sistema sabe" (plano "sistema autônomo", 03/11/2026): o conhecimento que o sistema acumulou sem IA (vínculos
 // de material, símbolos e blocos por escritório, alturas), o treino com as obras da pasta dos clientes, quanto do
 // trabalho já sai sem IA, o ACERTO da leitura automática medido no que o engenheiro conferiu no mapa do CAD e a fila do
-// que falta conferir (mais pontos primeiro). Backend: controllers/aprendizadoController.js.
+// que falta conferir (mais pontos primeiro). O treino é por disciplina: arquivos lidos e materiais novos do acervo
+// aparecem separados por disciplina. Backend: controllers/aprendizadoController.js.
 
 const ORIGEM = { legenda: 'da legenda', aprendido: 'aprendido', semelhante: 'parecido', regra: 'regra da layer', nao_reconhecido: 'não reconhecido' };
 const corDaTaxa = (t) => (t == null ? 'var(--texto-3)' : t >= 90 ? '#3fb95f' : t >= 70 ? '#d9a53a' : '#e08080');
@@ -141,14 +142,55 @@ export default function Aprendizado() {
       <div style={estilos.card}>
         <Titulo Icone={FolderSearch}>Treino com as obras já feitas</Titulo>
         <p style={estilos.ajuda}>
-          O sistema lê os DWG/DXF da pasta dos clientes (só leitura, sem IA) e aprende as legendas, as alturas e os nomes de bloco de cada escritório.
-          Roda sozinho às 06:00 e às 18:00 (até 2 h por vez) e só relê o arquivo que mudou; cópia idêntica em outra pasta não conta duas vezes.
+          O sistema lê a pasta dos clientes (só leitura, sem IA), <b>sempre por disciplina</b> — a do nome e das pastas de cada arquivo. Dos DWG/DXF aprende as
+          legendas, as alturas e os nomes de bloco de cada escritório; das planilhas e dos orçamentos em PDF, só os <b>materiais que o catálogo ainda não tem</b>
+          (o que já existe não muda). Arquitetura, hidráulica e estrutura ficam de fora. Roda sozinho às 06:00 e às 18:00 (até 2 h por vez) e só relê o
+          arquivo que mudou; cópia idêntica em outra pasta não conta duas vezes.
         </p>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
           <Numero valor={n(acervo.lidos)} rotulo="arquivo(s) já lido(s)" detalhe={acervo.ultimo ? `último em ${dataHoraBr(acervo.ultimo)}` : 'nenhuma rodada ainda'} />
+          <Numero valor={n(materiais.do_acervo)} rotulo="material(is) novo(s) no catálogo vindos do acervo" detalhe="das planilhas e orçamentos das obras, com o preço como referência" />
           <Numero valor={n(acervo.escritorios)} rotulo="escritório(s) de projeto identificados" />
+          <Numero valor={n(acervo.ignorados)} rotulo="arquivo(s) de outra disciplina (não lidos)" detalhe="arquitetura, hidráulica, estrutura" />
           <Numero valor={n(acervo.erros)} rotulo="arquivo(s) que não deu para ler" cor={acervo.erros ? '#d9a53a' : undefined} />
         </div>
+        {(acervo.porDisciplina?.length > 0 || acervo.materiais?.length > 0) && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, marginBottom: 12 }} data-testid="treino-por-disciplina">
+            {acervo.porDisciplina?.length > 0 && (
+              <div style={estilos.caixaTabela}>
+                <table style={estilos.tabela}>
+                  <thead><tr>{['Disciplina', 'Desenhos', 'Planilhas / PDFs', 'Legenda aprendida'].map(h => <th key={h} style={estilos.th}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {acervo.porDisciplina.map(d => (
+                      <tr key={d.chave || '-'} style={estilos.linhaTabela}>
+                        <td style={estilos.td}>{d.nome}</td>
+                        <td style={estilos.td}>{n(d.desenhos)}</td>
+                        <td style={estilos.td}>{n(d.documentos)}</td>
+                        <td style={{ ...estilos.td, color: 'var(--ouro)', fontWeight: 700 }}>{n(d.legenda)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {acervo.materiais?.length > 0 && (
+              <div style={estilos.caixaTabela}>
+                <table style={estilos.tabela}>
+                  <thead><tr>{['Disciplina', 'Materiais novos no catálogo', 'Conhecidos sem preço'].map(h => <th key={h} style={estilos.th}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {acervo.materiais.map(d => (
+                      <tr key={d.chave} style={estilos.linhaTabela}>
+                        <td style={estilos.td}>{d.nome}</td>
+                        <td style={{ ...estilos.td, color: 'var(--ouro)', fontWeight: 700 }}>{n(d.no_catalogo)}</td>
+                        <td style={{ ...estilos.td, color: 'var(--texto-2)' }}>{n(d.sem_preco)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
         {rodada.rodando ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }} data-testid="treino-andamento">
             <span style={{ color: '#6fa8dc', fontSize: 13 }}>
@@ -160,7 +202,7 @@ export default function Aprendizado() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <button style={estilos.btnPrimario} onClick={iniciar} data-testid="iniciar-treino"><Play size={14} /> Treinar agora</button>
             {rodada.terminadoEm && <span style={{ fontSize: 12, color: 'var(--texto-3)' }}>
-              Última rodada: {n(rodada.lidos)} lido(s), {n(rodada.erros)} com erro — aprendeu {n(rodada.ensinou?.simbolos)} símbolo(s), {n(rodada.ensinou?.blocos)} bloco(s), {n(rodada.ensinou?.notas)} altura(s). {rodada.mensagem || ''}
+              Última rodada: {n(rodada.lidos)} lido(s), {n(rodada.ignorados)} de outra disciplina, {n(rodada.erros)} com erro — aprendeu {n(rodada.ensinou?.simbolos)} símbolo(s), {n(rodada.ensinou?.blocos)} bloco(s), {n(rodada.ensinou?.notas)} altura(s), {n(rodada.ensinou?.materiais)} material(is) novo(s). {rodada.mensagem || ''}
             </span>}
           </div>
         )}
