@@ -23,7 +23,8 @@ class ErroAcao extends Error {
 }
 
 const STATUS_PROPOSTA = ['Ativa', 'Aprovada', 'Recusada', 'Cancelada'];
-const brl = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+// dinheiro em reais: a formatação única do pacote comum (utils/htmlPdf.js → skills/_comum/base)
+const { formatarMoeda: brl } = require('../../utils/htmlPdf');
 const emailValido = (e) => typeof e === 'string' && e.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 const idValido = (v) => Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 2147483647;
 

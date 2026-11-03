@@ -13,22 +13,10 @@
 //   - tem vírgula  -> vírgula é decimal e pontos são milhar  (1.234,56)
 //   - sem vírgula e pontos separando grupos de 3 dígitos -> milhar  (1.234)
 //   - sem vírgula e um ponto com 1-2 casas -> decimal  (12.5 / 12.50)
-function paraNumeroBR(valor) {
-  if (valor === null || valor === undefined || valor === '') return null;
-  const texto = String(valor).trim().replace(/\s/g, '');
-  if (!texto) return null;
-
-  let normalizado;
-  if (texto.includes(',')) {
-    normalizado = texto.replace(/\./g, '').replace(',', '.');
-  } else if (/^-?\d{1,3}(\.\d{3})+$/.test(texto)) {
-    normalizado = texto.replace(/\./g, '');
-  } else {
-    normalizado = texto;
-  }
-
-  const n = parseFloat(normalizado);
-  return Number.isFinite(n) ? n : null;
-}
+//
+// A regra está no pacote comum (skills/_comum/base/dinheiro.js, Fase 7), a mesma do frontend.
+const path = require('path');
+const { COMUM } = require('../config/caminhos');
+const { paraNumeroBR } = require(path.join(COMUM, 'base', 'dinheiro'));
 
 module.exports = { paraNumeroBR };

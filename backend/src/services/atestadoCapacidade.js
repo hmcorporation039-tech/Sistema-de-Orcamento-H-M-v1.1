@@ -28,7 +28,7 @@ const HM = Object.freeze({
 
 const limpar = (v, max = LIMITE_LINHA) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 const digitos = (v) => String(v ?? '').replace(/\D/g, '');
-const dinheiro = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const { formatarMoeda: dinheiro } = require('../utils/htmlPdf'); // pacote comum (skills/_comum/base)
 
 function dataBR(v) {
   if (!v) return null;

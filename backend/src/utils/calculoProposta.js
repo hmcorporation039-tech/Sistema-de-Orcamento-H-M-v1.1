@@ -16,30 +16,13 @@
 // Agora o valor de cada item e todos os totais são recalculados aqui, a partir
 // dos itens — o que o cliente manda nesses campos é ignorado.
 
-// Converte com segurança: aceita número ou string, rejeita NaN/Infinity.
-// (`Number('abc') * 10` produzia NaN, e o PostgreSQL ACEITA NaN em coluna
-// numeric — contaminando para sempre qualquer SUM() do dashboard.)
-function numeroSeguro(valor, padrao = 0) {
-  const n = Number(valor);
-  return Number.isFinite(n) ? n : padrao;
-}
-
-function arredondar(valor) {
-  return Math.round((numeroSeguro(valor) + Number.EPSILON) * 100) / 100;
-}
-
-// Quantidade com 3 casas, como a coluna proposta_itens.quantidade DECIMAL(10,3)
-// grava. Antes a conta usava a quantidade cheia (1,0004 × 1.000 = 1.000,40) e o
-// banco gravava 1,000: o PDF saía "1 × 1.000,00 = 1.000,40" e Excel, curva ABC,
-// cronograma e a tela depois de recarregar davam outro número. O arredondamento
-// é o do PostgreSQL (metade para longe do zero sobre o número como escrito:
-// "1.0005" → 1,001), feito na notação decimal para não errar no binário.
-function arredondarQuantidade(valor, padrao = 0) {
-  const n = numeroSeguro(valor, padrao);
-  const abs = String(Math.abs(n));
-  const r = /e/i.test(abs) ? Math.round(Math.abs(n) * 1000) / 1000 : Number(`${Math.round(Number(`${abs}e3`))}e-3`);
-  return n < 0 ? -r : r;
-}
+// Número seguro (aceita número ou string, rejeita NaN/Infinity — o PostgreSQL ACEITA NaN em coluna
+// numeric), centavos e quantidade com 3 casas (DECIMAL(10,3), arredondamento do PostgreSQL): as regras
+// estão no pacote comum (skills/_comum/base/dinheiro.js, Fase 7), as mesmas do frontend
+// (frontend/src/utils/dinheiro.js, conferido em testes/comum.test.js).
+const path = require('path');
+const { COMUM } = require('../config/caminhos');
+const { numeroSeguro, arredondar, arredondarQuantidade } = require(path.join(COMUM, 'base', 'dinheiro'));
 
 // Uma seção é de mão de obra pelo nome — mesma regra do frontend, mantida para
 // que os dois lados cheguem ao mesmo número.

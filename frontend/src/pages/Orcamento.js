@@ -1,11 +1,8 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, FolderPlus, FileDown, Send, FilePlus2, Search, ArrowLeft, Calculator, BarChart3 } from 'lucide-react';
-import {
-  getTodosClientes, getTodosMateriais, getServicos, getSegmentoCliente, getProximoNumero, criarProposta, atualizarProposta, getProposta,
-  getPadroesOrcamento, getPrecosVendidos, pesquisarPrecoMercado, getAnaliseProjeto, getLaudo, getObra, duplicarProposta, baixarPdfProposta, baixarPlanilhaProposta,
-} from '../services/api';
+import { Plus, Trash2, FolderPlus, Calculator, BarChart3 } from 'lucide-react';
+import { getSegmentoCliente, getProximoNumero, criarProposta, atualizarProposta, getProposta, getPadroesOrcamento, getPrecosVendidos, pesquisarPrecoMercado, getAnaliseProjeto, getLaudo, getObra, duplicarProposta, baixarPdfProposta, baixarPlanilhaProposta } from '../services/api';
 import { formatarMoeda } from '../utils/format';
 import { categoriasComUsadas } from '../utils/categoriasMateriais';
 import { arred2, arredQtd, totalDaLinha } from '../utils/dinheiro';
@@ -13,11 +10,8 @@ import { baixarArquivo, mensagemDeErro } from '../utils/download';
 import { useAuth } from '../hooks/useAuth';
 import useAlteracoesNaoSalvas from '../hooks/useAlteracoesNaoSalvas';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
-import CampoMoeda from '../components/CampoMoeda';
-import BlocoPesquisaMercado, { resultadoDaPesquisa } from '../components/PesquisaMercado';
-import ObraSelect from '../components/ObraSelect';
-import Select, { Sugestoes, comparador } from '../components/Select';
-import { ROTULO_SEGMENTO } from '../utils/disciplinasServico';
+import { resultadoDaPesquisa } from '../components/PesquisaMercado';
+import { comparador } from '../components/Select';
 import useDisciplinas from '../hooks/useDisciplinas';
 // Fase 3F (2.0): BDI pela fórmula do TCU e curva ABC da proposta
 import CalculadoraBdi from '../components/CalculadoraBdi';
@@ -25,162 +19,21 @@ import CurvaAbcPainel from '../components/CurvaAbcPainel';
 import { normalizarMemoriaBdi, tributosBdi } from '../utils/bdiTcu';
 // Fase 3 (2.0): kits da base de preços e aprovação da proposta por link
 import InserirComposicao, { distribuirNasSecoes } from '../components/InserirComposicao';
-import BotaoLinkAprovacao from '../components/BotaoLinkAprovacao';
 import { OpcaoModelo3dProposta } from '../components/Modelo3d';
-import { estilos, Campo } from '../components/ui/estilos';
-
-// BDI diferenciado de materiais preenchido? (vazio/null = mesmo BDI para tudo — calculoProposta.bdiMateriaisDefinido)
-const temBdiMateriais = (v) => v !== undefined && v !== null && v !== '' && Number.isFinite(Number(v));
-
-// Item pertence à seção só quando os DOIS lados têm id (calculoProposta.itemPertenceASecao:
-// sid e id ambos vazios contavam o item em todas as seções)
-const pertenceASecao = (it, sid) => sid != null && it.sid != null && String(it.sid) === String(sid);
+import { BASES_DO_EDITOR, SECOES_PADRAO, SUBGRUPOS_PADRAO, apagarRascunho, chaveRascunho, ehMaoDeObra, formVazio, gerarId, gravarRascunho, lerRascunho, normalizarNome, origemDaProposta, pertenceASecao, retrato, temBdiMateriais } from './orcamento/apoio';
+import { btnIcone, btnPrimario, btnSecundario, card, fieldsetLimpo } from './orcamento/estilos';
+import AvisoOrigem from './orcamento/AvisoOrigem';
+import DadosGerais from './orcamento/DadosGerais';
+import LinhaItem from './orcamento/LinhaItem';
+import BarraTotais from './orcamento/BarraTotais';
 
 // Arredondamentos iguais aos do servidor (utils/dinheiro.js ↔ calculoProposta):
 // quantidade 3 casas, unitário 2, linha 2 (totalDaLinha), parcelas 2 (arred2).
-
-// Rascunho da proposta neste navegador (localStorage), por usuário e por
-// proposta ("nova" = ainda não gravada): sessão vencida, aba fechada ou queda
-// de energia não levam o trabalho junto — ao reabrir, a tela oferece restaurar.
-const chaveRascunho = (usuarioId, propostaId) => `hm_rascunho_proposta:${usuarioId || 0}:${propostaId || 'nova'}`;
-function lerRascunho(chave) {
-  try {
-    const r = JSON.parse(localStorage.getItem(chave) || 'null');
-    return r && r.form && Array.isArray(r.secoes) && Array.isArray(r.itens) ? r : null;
-  } catch { return null; }
-}
-function gravarRascunho(chave, dados) {
-  try { localStorage.setItem(chave, JSON.stringify(dados)); } catch { /* armazenamento cheio: segue sem rascunho */ }
-}
-function apagarRascunho(chave) {
-  try { localStorage.removeItem(chave); } catch { /* nada */ }
-}
-// retrato do que está na tela, para saber se há alteração não salva — sem os
-// ids temporários (mudam a cada carga): seção pela posição, item sem id
-function retrato(form, secoes, itens) {
-  const posicao = new Map(secoes.map((s, i) => [String(s.id), i]));
-  return JSON.stringify({
-    form,
-    secoes: secoes.map(s => s.nome),
-    itens: itens.map(({ id, sid, ...resto }) => ({ ...resto, sid: posicao.has(String(sid)) ? posicao.get(String(sid)) : String(sid) })),
-  });
-}
 
 // Proposta nova gravada: a URL vira /propostas/editar/:id e o React Router pode
 // montar a tela de novo — o que estava nela (inclusive as pesquisas de mercado
 // abertas) passa por aqui em vez de ser relido do servidor.
 let transporte = null;
-
-let contador = 0;
-const gerarId = () => `tmp_${Date.now()}_${contador++}`;
-
-// `padroes` = BDI e impostos padrão do administrador (Integrações); sem valor definido o campo
-// nasce 0 — não há número de fábrica (as alíquotas da reforma tributária ainda não existem)
-const formVazio = (padroes) => ({
-  // data local (toISOString é UTC: depois das 21 h saía o dia seguinte)
-  data: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10),
-  validade: 5,
-  tipo: '',
-  porte: '',
-  cliente_nome: '',
-  responsavel: '',
-  local_obra: '',
-  escopo: '',
-  pagamento: '',
-  observacoes: '',
-  bdi: padroes?.bdi ?? 0,
-  // BDI diferenciado dos materiais (null = o mesmo BDI) e memória do cálculo
-  // pelo TCU (null = BDI digitado à mão) — 2.0, Fase 3F
-  bdi_materiais: null,
-  bdi_memoria: null,
-  imposto_venda: padroes?.imposto_venda ?? 0,
-  imposto_servico: padroes?.imposto_servico ?? 0,
-  // Só registram o percentual do ÚLTIMO reajuste/desconto aplicado direto
-  // nos valores unitários (ver aplicarAjustePercentual) — não entram em
-  // nenhuma conta de total, servem só pro PDF avisar quando foi desconto.
-  desconto_materiais_pct: null,
-  desconto_mao_obra_pct: null,
-  // obra (2.0, Fase 2D/2E): a proposta pertence a uma obra (ou a nenhuma);
-  // proposta nova aberta a partir da obra (?obra=ID) já vem com ela
-  obra_id: null,
-});
-
-const SECOES_PADRAO = () => [
-  { id: gerarId(), nome: 'Materiais' },
-  { id: gerarId(), nome: 'Mão de Obra' },
-];
-
-// Remove acentuação e normaliza caixa/espaços — usado pra comparar nome de
-// cliente sem falhar por causa de "CLINICA" x "CLÍNICA", maiúscula/minúscula
-// ou espaço a mais.
-function normalizarNome(txt) {
-  return (txt || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
-}
-
-// Seções cujo nome sugere trabalho/serviço entram no subtotal de mão de obra; o restante conta como material.
-function ehMaoDeObra(nome) {
-  return /m[ãa]o.?de.?obra|serviç|servic/i.test(nome || '');
-}
-
-const CATEGORIAS_MAO_DE_OBRA = [
-  'Elétrica', 'Projetos', 'Automação', 'Cabeamento Estruturado', 'Controle de Acesso', 'CFTV', 'Configuração',
-];
-
-// Subgrupos sugeridos por padrão (além destes, qualquer nome digitado no item vira sugestão também)
-const SUBGRUPOS_PADRAO = [
-  'Alarme', 'Automação', 'CFTV', 'Controle de Acesso', 'Elétrica', 'Redes', 'Sonorização', 'Climatização',
-];
-
-// Nas seções de Materiais do orçamento, o campo que antes era "Subgrupo" (texto livre) virou "Categoria",
-// com as mesmas opções do cadastro de Materiais (utils/categoriasMateriais.js), pra ficar coligado com o
-// catálogo (ver opcoesAgrupamento).
-
-// Bases que o editor carrega inteiras ao abrir (nome = como aparece no aviso de falha)
-const BASES_DO_EDITOR = {
-  clientes: { nome: 'a lista de clientes', carregar: () => getTodosClientes() },
-  materiais: { nome: 'o catálogo de materiais', carregar: () => getTodosMateriais() },
-  servicos: { nome: 'a base de serviços', carregar: () => getServicos() },
-};
-
-// Propostas antigas guardam no item subgrupos de texto livre que não batem com
-// as categorias do catálogo ("Redes de Computadores (dados)", "Controle de
-// Acesso" x "Controle de acesso"...). Comparar sem diferenciar maiúsculas e,
-// sem nenhuma correspondência, mostrar o catálogo inteiro evita que o
-// "+ catálogo" dessas linhas apareça vazio.
-function filtrarCatalogoPorCategoria(materiais, categoria) {
-  const alvo = (categoria || '').trim().toLowerCase();
-  if (!alvo) return materiais;
-  const daCategoria = materiais.filter(m => (m.categoria || '').trim().toLowerCase() === alvo);
-  return daCategoria.length > 0 ? daCategoria : materiais;
-}
-
-// Origem do rascunho (versão 2.0 — editor único de orçamento): a Análise de
-// Projeto e os laudos GERAM a proposta e abrem este editor. A proposta guarda
-// a origem em origem_tipo/origem_id (migração 2.0-05); propostas sem esse
-// campo caem na leitura do histórico ("… a partir da Análise de Projeto #12"
-// / "… a partir de Laudos e projetos #5 (SPDA — Execução)"; vale o evento mais
-// antigo) e do escopo. O vínculo é conferido depois na própria origem
-// (analises_projeto.proposta_id / laudos_projetos.propostas), porque uma
-// proposta duplicada herda o escopo sem ser a vinculada.
-function origemDaProposta(p) {
-  if ((p.origem_tipo === 'analise' || p.origem_tipo === 'laudo') && p.origem_id) {
-    const doHistorico = [...(p.eventos || [])].map(e => /Laudos e projetos #\d+\s*\(([^)]*)\)/i.exec(String(e.detalhes || ''))).find(Boolean);
-    return { tipo: p.origem_tipo, id: Number(p.origem_id), rotulo: doHistorico ? doHistorico[1] : '' };
-  }
-  const textos = [...(p.eventos || [])].reverse().map(e => String(e.detalhes || ''));
-  textos.push(String(p.escopo || ''));
-  for (const t of textos) {
-    let m = /An[áa]lise de Projeto #(\d+)/i.exec(t);
-    if (m) return { tipo: 'analise', id: Number(m[1]) };
-    m = /Laudos e projetos #(\d+)(?:\s*\(([^)]*)\))?/i.exec(t);
-    if (m) return { tipo: 'laudo', id: Number(m[1]), rotulo: m[2] || '' };
-  }
-  return null;
-}
-
-// registro (2.1): 'projeto' | 'laudo' — sem ele, a aba Laudos leva o projeto para a aba certa
-const linkDaOrigem = (o) => (o.tipo === 'analise' ? `/obras/analise/${o.id}` : `/obras?aba=${o.registro === 'projeto' ? 'projetos' : 'laudos'}&laudo=${o.id}`);
-const nomeDoRegistro = (o) => (o.registro === 'projeto' ? 'projeto' : o.registro === 'laudo' ? 'laudo' : 'laudo/projeto');
 
 export default function Orcamento() {
   const { nomeServico: nomeDisciplina } = useDisciplinas();
@@ -1150,45 +1003,7 @@ export default function Orcamento() {
         </div>
       )}
 
-      {origem && (
-        <div style={{ ...card, padding: '12px 16px', borderColor: '#3a3216' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 260, fontSize: 12, color: 'var(--texto-2)', lineHeight: 1.5 }}>
-              Rascunho gerado a partir {origem.tipo === 'analise'
-                ? <>da <b style={{ color: '#c9a227' }}>Análise de Projeto #{origem.id}</b></>
-                : <>do <b style={{ color: '#c9a227' }}>{nomeDoRegistro(origem)} #{origem.id}</b>{origem.rotulo ? ` (${origem.rotulo})` : ''}</>}
-              {origem.titulo ? ` — ${origem.titulo}` : ''}.{' '}
-              <span style={{ color: 'var(--texto-3)' }}>
-                {origem.existe === false
-                  ? (origem.tipo === 'analise' ? 'A análise foi excluída.' : `O ${nomeDoRegistro(origem)} foi excluído.`)
-                  : origem.vinculada === false
-                    ? 'A origem hoje está vinculada a outra proposta (esta pode ser uma cópia).'
-                    : `Quantidades, preços, pesquisa de mercado e referências são revisados aqui. ${origem.tipo === 'analise' ? '"Atualizar orçamento" na análise' : `"Atualizar e abrir" no ${nomeDoRegistro(origem)}`} substitui os itens desta proposta pelos de lá.`}
-              </span>
-            </div>
-            {origem.existe !== false && (
-              <Link to={linkDaOrigem(origem)} style={{ ...btnSecundario, textDecoration: 'none', borderStyle: 'solid', borderColor: '#5a4a12', color: '#c9a227' }}>
-                <ArrowLeft size={13} style={{ marginRight: 4 }} /> Voltar {origem.tipo === 'analise' ? 'à análise' : `ao ${nomeDoRegistro(origem)}`}
-              </Link>
-            )}
-          </div>
-          {origem.faltando?.length > 0 && (
-            <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #222', fontSize: 12, color: 'var(--texto-2)' }}>
-              <div style={{ marginBottom: 6 }}>
-                {origem.faltando.length} item(ns) da análise ficaram fora do rascunho por estarem com <b>quantidade 0</b> (modelo ainda não conferido na planta). Inclua os que fizerem parte e informe a quantidade:
-              </div>
-              {origem.faltando.map((x, i) => (
-                <div key={`${x.tipo}_${i}_${x.descricao}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}>
-                  <span style={{ flex: 1, color: 'var(--texto-2)' }}>{x.descricao} <span style={{ color: 'var(--texto-3)' }}>({x.tipo === 'servico' ? 'serviço' : 'material'}{x.subgrupo ? ` — ${x.subgrupo}` : ''})</span></span>
-                  <button type="button" onClick={() => incluirFaltante(x)} style={{ ...btnSecundario, padding: '3px 10px', fontSize: 12 }}>
-                    <Plus size={11} style={{ marginRight: 3 }} /> Incluir
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {origem && <AvisoOrigem origem={origem} incluirFaltante={incluirFaltante} />}
 
       {(() => {
         const aCotar = itens.filter(it => it.status === 'a_cotar').length;
@@ -1232,78 +1047,12 @@ export default function Orcamento() {
           todos os campos e botões de edição de uma vez */}
       <fieldset disabled={!!somenteLeitura} style={fieldsetLimpo}>
       {/* Dados gerais */}
-      <div style={card}>
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
-          <Campo label="Cliente *">
-            <input
-              list="clientes-lista"
-              value={form.cliente_nome}
-              onChange={e => setForm({ ...form, cliente_nome: e.target.value })}
-              placeholder="Nome do cliente"
-            />
-            <Sugestoes id="clientes-lista">
-              {clientes.map(c => <option key={c.id} value={c.nome} />)}
-            </Sugestoes>
-          </Campo>
-          <Campo label="Data">
-            <input type="date" value={form.data} onChange={e => setForm({ ...form, data: e.target.value })} />
-          </Campo>
-          <Campo label="Validade (dias)">
-            <input type="number" min="1" value={form.validade} onChange={e => setForm({ ...form, validade: e.target.value })} />
-          </Campo>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
-          <Campo label="Tipo">
-            <input list="tipos-lista" value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })} placeholder="Instalação, Manutenção..." />
-            <Sugestoes id="tipos-lista">
-              <option value="Instalação" /><option value="Manutenção" /><option value="Reforma" /><option value="Projeto" />
-            </Sugestoes>
-          </Campo>
-          <Campo label="Porte">
-            <input list="portes-lista" value={form.porte} onChange={e => setForm({ ...form, porte: e.target.value })} placeholder="Pequeno, Médio, Grande" />
-            <Sugestoes id="portes-lista">
-              <option value="Pequeno" /><option value="Médio" /><option value="Grande" />
-            </Sugestoes>
-          </Campo>
-          <Campo label="Responsável técnico">
-            <input value={form.responsavel} onChange={e => setForm({ ...form, responsavel: e.target.value })} />
-          </Campo>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-          <Campo label="Obra">
-            <ObraSelect
-              value={form.obra_id}
-              clienteId={clienteResolvido?.id || null}
-              clienteNome={form.cliente_nome}
-              onChange={(id, obra) => setForm(f => ({
-                ...f, obra_id: id,
-                // obra escolhida numa proposta ainda sem cliente: traz o cliente da obra
-                cliente_nome: f.cliente_nome.trim() || !obra?.cliente_nome ? f.cliente_nome : obra.cliente_nome,
-              }))}
-            />
-          </Campo>
-          <Campo label="Local da obra">
-            <input value={form.local_obra} onChange={e => setForm({ ...form, local_obra: e.target.value })} />
-          </Campo>
-        </div>
-
-        <div style={{ marginBottom: 12 }}>
-          <Campo label="Escopo">
-            <textarea rows={3} value={form.escopo} onChange={e => setForm({ ...form, escopo: e.target.value })} placeholder="O que está sendo executado/fornecido — aparece logo após a saudação no PDF" />
-          </Campo>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Campo label="Condições de pagamento">
-            <textarea rows={3} value={form.pagamento} onChange={e => setForm({ ...form, pagamento: e.target.value })} />
-          </Campo>
-          <Campo label="Observações">
-            <textarea rows={3} value={form.observacoes} onChange={e => setForm({ ...form, observacoes: e.target.value })} placeholder="Notas gerais — aparece logo após as condições de pagamento no PDF" />
-          </Campo>
-        </div>
-      </div>
+      <DadosGerais
+        clienteResolvido={clienteResolvido}
+        clientes={clientes}
+        form={form}
+        setForm={setForm}
+      />
 
       {/* Seções e itens */}
       {secoes.map(sec => {
@@ -1365,110 +1114,28 @@ export default function Orcamento() {
                 );
               }
               const it = linha.item;
-              const aCotar = it.status === 'a_cotar';
-              const semPreco = !(Number(it.valor_unitario) > 0);
-              const pesquisa = pesquisas[it.id];
               return (
-                <div
+                <LinhaItem
                   key={it.id}
-                  style={{
-                    marginBottom: 8, background: aCotar ? 'rgba(201,162,39,0.08)' : 'transparent',
-                    borderRadius: 4, padding: aCotar ? '4px 4px' : 0,
-                  }}
-                >
-                <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, alignItems: 'start' }}>
-                  <Select
-                    value={it.subgrupo || ''}
-                    onChange={e => {
-                      if (e.target.value === '__novo__') {
-                        const novo = window.prompt(maoDeObra ? 'Nome do novo subgrupo:' : 'Nome da nova categoria:', it.subgrupo || '');
-                        if (novo !== null) atualizarItem(it.id, 'subgrupo', novo.trim());
-                        return;
-                      }
-                      atualizarItem(it.id, 'subgrupo', e.target.value);
-                    }}
-                  >
-                    <option value="">{maoDeObra ? '(sem subgrupo)' : '(sem categoria)'}</option>
-                    {opcoesSubgrupo.map(sg => <option key={sg} value={sg}>{sg}</option>)}
-                    {it.subgrupo && !opcoesSubgrupo.includes(it.subgrupo) && (
-                      <option value={it.subgrupo}>{it.subgrupo}</option>
-                    )}
-                    <option value="__novo__">{maoDeObra ? '+ novo subgrupo...' : '+ nova categoria...'}</option>
-                  </Select>
-                  {maoDeObra ? (
-                    <Select value="" onChange={e => {
-                      const [tipo, valor] = e.target.value.split('::');
-                      if (tipo === 'cat') aplicarCategoriaMaoDeObra(it.id, valor);
-                      else if (tipo === 'srv') aplicarServicoNoItem(it.id, valor);
-                    }} title="Serviços da base única (padrão + já lançados em propostas), com o preço sugerido para o segmento do cliente">
-                      <option value="">+ serviço</option>
-                      <optgroup label="Categorias">
-                        {CATEGORIAS_MAO_DE_OBRA.map(c => <option key={c} value={`cat::${c}`}>{c}</option>)}
-                      </optgroup>
-                      {gruposServicos.map(g => (
-                        <optgroup key={g.disc} label={g.nome}>
-                          {g.lista.map(s => {
-                            const sug = sugestaoDoServico(s);
-                            return <option key={s.codigo} value={`srv::${s.codigo}`}>{s.descricao}{sug != null ? ` — ${formatarMoeda(sug)}` : ''}</option>;
-                          })}
-                        </optgroup>
-                      ))}
-                    </Select>
-                  ) : (
-                    <Select value="" onChange={e => aplicarMaterialNoItem(it.id, e.target.value)}>
-                      <option value="">{it.subgrupo ? `+ catálogo (${it.subgrupo})` : '+ catálogo'}</option>
-                      {filtrarCatalogoPorCategoria(materiais, it.subgrupo).map(m => <option key={m.id} value={m.id}>{m.descricao}</option>)}
-                    </Select>
-                  )}
-                  <div>
-                    <input value={it.descricao} onChange={e => atualizarItem(it.id, 'descricao', e.target.value)} placeholder="Descrição do item" style={{ width: '100%' }} />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3, flexWrap: 'wrap' }}>
-                      <button type="button" onClick={() => pesquisarMercado(it, maoDeObra)} disabled={pesquisa?.carregando}
-                        title={maoDeObra ? 'Pesquisa o preço deste serviço no mercado (busca real na web; leva de 30 s a 1 min)' : 'Pesquisa o preço deste material no mercado (busca real na web; leva de 30 s a 1 min)'}
-                        style={btnPesquisar}>
-                        <Search size={10} style={{ marginRight: 3 }} /> {pesquisa?.carregando ? 'Pesquisando...' : 'Pesquisar mercado'}
-                      </button>
-                      {aCotar && <span style={{ ...etiqueta, color: '#c9a227', borderColor: '#5a4a12' }} title='Preço estimado ou pendente — confirme antes de enviar ao cliente'>a cotar</span>}
-                      {semPreco && <span style={{ ...etiqueta, color: '#e08080', borderColor: '#5a2a2a' }} title="Item com valor unitário R$ 0,00">sem preço</span>}
-                    </div>
-                  </div>
-                  {!maoDeObra && (
-                    <input value={it.ncm} onChange={e => atualizarItem(it.id, 'ncm', e.target.value.replace(/[^\d.]/g, ''))} placeholder="NCM/SH" />
-                  )}
-                  <input type="number" step="any" min="0" value={it.quantidade} onChange={e => atualizarItem(it.id, 'quantidade', e.target.value)} />
-                  <input value={it.unidade} onChange={e => atualizarItem(it.id, 'unidade', e.target.value)} />
-                  {maoDeObra ? (
-                    <div>
-                      <CampoMoeda value={it.valor_unitario} onChange={v => atualizarItem(it.id, 'valor_unitario', v)} />
-                      <DicasReferencia servico={servicoDoItem(it)} segmento={segmento} valor={it.valor_unitario}
-                        onUsar={v => atualizarItem(it.id, 'valor_unitario', v)} />
-                    </div>
-                  ) : (
-                    <div>
-                      <CampoMoeda value={it.valor_unitario} onChange={v => atualizarItem(it.id, 'valor_unitario', v)} />
-                      <DicaCatalogo material={it.material_id ? materiaisPorId[String(it.material_id)] : null} valor={it.valor_unitario}
-                        onUsar={v => atualizarItem(it.id, 'valor_unitario', v)} />
-                      <DicaVendido faixa={it.material_id ? vendidos[it.material_id] : null} valor={it.valor_unitario}
-                        material={it.material_id ? materiaisPorId[String(it.material_id)] : null} />
-                    </div>
-                  )}
-                  <span style={{ fontSize: 12, color: '#ccc', textAlign: 'right', paddingRight: 4 }}>
-                    {formatarMoeda(totalDaLinha(it.quantidade, it.valor_unitario))}
-                  </span>
-                  <Select value={it.status || 'confirmado'} onChange={e => atualizarItem(it.id, 'status', e.target.value)}>
-                    <option value="confirmado">Confirmado</option>
-                    <option value="a_cotar">A cotar</option>
-                  </Select>
-                  <button onClick={() => removerItem(it.id)} style={{ ...btnIcone, color: '#b04040' }} title="Remover item">
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-                {/* key com a data: a pesquisa que chega salva (da análise) já nasce recolhida */}
-                <BlocoPesquisaMercado key={`${it.id}_${pesquisa?.pesquisadoEm || ''}`} pesquisa={pesquisa} precoAtual={it.valor_unitario}
-                  onUsarPreco={v => atualizarItem(it.id, 'valor_unitario', v)}
-                  onPesquisarDeNovo={pesquisa?.carregando ? null : () => pesquisarMercado(it, maoDeObra, true)} />
-                {pesquisa?.erro && <div style={{ marginTop: 6, fontSize: 12, color: '#b04040' }}>{pesquisa.erro}</div>}
-                </div>
+                  aplicarCategoriaMaoDeObra={aplicarCategoriaMaoDeObra}
+                  aplicarMaterialNoItem={aplicarMaterialNoItem}
+                  aplicarServicoNoItem={aplicarServicoNoItem}
+                  atualizarItem={atualizarItem}
+                  colunas={colunas}
+                  gruposServicos={gruposServicos}
+                  it={it}
+                  maoDeObra={maoDeObra}
+                  materiais={materiais}
+                  materiaisPorId={materiaisPorId}
+                  opcoesSubgrupo={opcoesSubgrupo}
+                  pesquisa={pesquisas[it.id]}
+                  pesquisarMercado={pesquisarMercado}
+                  removerItem={removerItem}
+                  segmento={segmento}
+                  servicoDoItem={servicoDoItem}
+                  sugestaoDoServico={sugestaoDoServico}
+                  vendidos={vendidos}
+                />
               );
             })}
 
@@ -1505,148 +1172,45 @@ export default function Orcamento() {
       {idAtual && <OpcaoModelo3dProposta propostaId={idAtual} somenteLeitura={!!somenteLeitura} />}
 
       {/* Totais */}
-      <div style={{ ...card, position: 'sticky', bottom: 16 }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'center', justifyContent: 'space-between' }}>
-          <fieldset disabled={!!somenteLeitura} style={{ ...fieldsetLimpo, display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'center' }}>
-            <Totalzinho label="Materiais" valor={subtotalMateriais} />
-            <Totalzinho label="Mão de obra" valor={subtotalMaoObra} />
-            <div>
-              <label style={rotulo}>Imp. Vendas (%)</label>
-              <input type="number" step="0.1" min="0" value={form.imposto_venda} onChange={e => setForm({ ...form, imposto_venda: e.target.value })} style={{ width: 80 }} />
-              <div style={{ fontSize: 12, color: 'var(--texto-3)', marginTop: 4 }}>{formatarMoeda(valorImpostoVenda)}</div>
-            </div>
-            <div>
-              <label style={rotulo}>Imp. Serviços (%)</label>
-              <input type="number" step="0.1" min="0" value={form.imposto_servico} onChange={e => setForm({ ...form, imposto_servico: e.target.value })} style={{ width: 80 }} />
-              <div style={{ fontSize: 12, color: 'var(--texto-3)', marginTop: 4 }}>{formatarMoeda(valorImpostoServico)}</div>
-            </div>
-            <div>
-              <label style={rotulo}>{temBdiMateriais(form.bdi_materiais) ? 'BDI mão de obra (%)' : 'BDI (%)'}</label>
-              <div style={{ display: 'flex', gap: 4 }}>
-                <input type="number" step="0.01" min="0" value={form.bdi} onChange={e => setForm({ ...form, bdi: e.target.value })} style={{ width: 80 }} />
-                <button type="button" onClick={() => setCalculadoraBdiAberta(true)}
-                  style={{ ...btnSecundario, padding: '4px 8px', fontSize: 12, ...(ehPublico && !memoriaBdi ? { borderStyle: 'solid', borderColor: '#c9a227', color: '#c9a227' } : {}) }}
-                  title="Calcular o BDI pela fórmula do TCU (Acórdão 2.622/2013) — tipo de obra, regime, parcelas e faixas de referência">
-                  <Calculator size={12} style={{ marginRight: 3 }} /> TCU
-                </button>
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--texto-3)', marginTop: 4 }}>
-                {formatarMoeda(temBdiMateriais(form.bdi_materiais) ? valorBdiMaoObra : valorBdi)}
-                {memoriaBdi && (
-                  <span title={`Composição pelo TCU guardada na proposta (${memoriaBdi.regime === 'desonerado' ? 'desonerado' : 'não desonerado'})`} style={{ color: '#8a7333' }}>
-                    {' '}· composição <button type="button" onClick={removerComposicaoBdi} style={btnUsar} title="Remover a composição do BDI">remover</button>
-                  </span>
-                )}
-              </div>
-            </div>
-            {form.bdi_materiais != null && (
-              <div>
-                <label style={rotulo} title="BDI diferenciado (reduzido) para o fornecimento de materiais — Acórdão 2.622/2013-TCU. Vazio = o mesmo BDI para tudo.">BDI materiais (%)</label>
-                <input type="number" step="0.01" min="0" value={form.bdi_materiais} onChange={e => setForm({ ...form, bdi_materiais: e.target.value })} style={{ width: 80 }} />
-                <div style={{ fontSize: 12, color: 'var(--texto-3)', marginTop: 4 }}>{formatarMoeda(valorBdiMateriais)}</div>
-              </div>
-            )}
-            <div>
-              <label style={rotulo} title="Multiplica o valor unitário de cada item de Materiais por esse percentual. (+) aumenta, (-) desconta. Roda na hora, ao clicar em Aplicar — não recalcula sozinho depois.">Reajuste Materiais (%)</label>
-              <div style={{ display: 'flex', gap: 4 }}>
-                <input type="number" step="0.1" value={ajusteMateriaisInput} onChange={e => setAjusteMateriaisInput(e.target.value)} placeholder="+10 / -10" style={{ width: 70 }} />
-                <button
-                  type="button"
-                  onClick={() => { aplicarAjustePercentual('materiais', ajusteMateriaisInput); setAjusteMateriaisInput(''); }}
-                  style={{ ...btnSecundario, padding: '4px 8px', fontSize: 12 }}
-                >
-                  Aplicar
-                </button>
-              </div>
-              {form.desconto_materiais_pct < 0 && (
-                <div style={{ fontSize: 10.5, color: '#e08080', marginTop: 4 }}>Desconto de {Math.abs(form.desconto_materiais_pct)}% já aplicado</div>
-              )}
-            </div>
-            <div>
-              <label style={rotulo} title="Multiplica o valor unitário de cada item de Mão de Obra por esse percentual. (+) aumenta, (-) desconta. Roda na hora, ao clicar em Aplicar — não recalcula sozinho depois.">Reajuste Mão de Obra (%)</label>
-              <div style={{ display: 'flex', gap: 4 }}>
-                <input type="number" step="0.1" value={ajusteMaoDeObraInput} onChange={e => setAjusteMaoDeObraInput(e.target.value)} placeholder="+10 / -10" style={{ width: 70 }} />
-                <button
-                  type="button"
-                  onClick={() => { aplicarAjustePercentual('maoDeObra', ajusteMaoDeObraInput); setAjusteMaoDeObraInput(''); }}
-                  style={{ ...btnSecundario, padding: '4px 8px', fontSize: 12 }}
-                >
-                  Aplicar
-                </button>
-              </div>
-              {form.desconto_mao_obra_pct < 0 && (
-                <div style={{ fontSize: 10.5, color: '#e08080', marginTop: 4 }}>Desconto de {Math.abs(form.desconto_mao_obra_pct)}% já aplicado</div>
-              )}
-            </div>
-            <div>
-              <div style={rotulo}>Total geral</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#c9a227' }}>{formatarMoeda(total)}</div>
-            </div>
-          </fieldset>
-          {somenteLeitura ? (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-              <span style={{ fontSize: 12, color: '#8ab4f8', marginRight: 4, whiteSpace: 'nowrap' }}>Somente leitura</span>
-              {idAtual && !sujo && (<>
-                <button onClick={baixarPdf} disabled={gerandoPdf} style={btnSecundario}>
-                  <FileDown size={13} style={{ marginRight: 4 }} /> {gerandoPdf ? 'Gerando...' : 'Baixar PDF'}
-                </button>
-                <button onClick={baixarPlanilha} disabled={gerandoPlanilha} style={btnSecundario}>
-                  <FileDown size={13} style={{ marginRight: 4 }} /> {gerandoPlanilha ? 'Gerando...' : 'Planilha Excel'}
-                </button>
-              </>)}
-              <button onClick={salvarComoCopia} disabled={salvando} style={{ ...btnPrimario, padding: '13px 20px', fontSize: 13 }}>
-                {salvando ? 'Salvando...' : sujo ? 'Salvar como cópia minha' : 'Duplicar para mim'}
-              </button>
-            </div>
-          ) : propostaSalva ? (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-              <span style={{ fontSize: 12, color: alteracoesPendentes ? '#c9a227' : '#3fb95f', marginRight: 4, whiteSpace: 'nowrap' }}>
-                {alteracoesPendentes
-                  ? `Proposta ${propostaSalva.numero} — alterações não salvas`
-                  : `Proposta ${propostaSalva.numero} salva`}
-              </span>
-              {alteracoesPendentes && (
-                <button onClick={salvar} disabled={salvando} style={{ ...btnPrimario, padding: '13px 20px', fontSize: 13 }}>
-                  {salvando ? 'Salvando...' : 'Salvar Alterações'}
-                </button>
-              )}
-              <button onClick={baixarPdf} disabled={gerandoPdf || alteracoesPendentes} style={btnSecundario}
-                title={alteracoesPendentes ? 'Salve as alterações antes de gerar o PDF' : ''}>
-                <FileDown size={13} style={{ marginRight: 4 }} /> {gerandoPdf ? 'Gerando...' : 'Baixar PDF'}
-              </button>
-              {/* anexos opcionais do PDF (Fase 3F) */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 10.5, color: 'var(--texto-3)' }} title="Anexos no fim do PDF da proposta">
-                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                  <input type="checkbox" checked={anexosPdf.curva_abc} onChange={e => setAnexosPdf(a => ({ ...a, curva_abc: e.target.checked }))} style={{ width: 'auto' }} />
-                  anexo curva ABC
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', whiteSpace: 'nowrap' }}
-                  title={memoriaBdi ? 'Composição do BDI pela fórmula do TCU (exigida em proposta para órgão público)' : 'Sem composição calculada: o anexo mostra só o BDI adotado'}>
-                  <input type="checkbox" checked={anexosPdf.composicao_bdi} onChange={e => setAnexosPdf(a => ({ ...a, composicao_bdi: e.target.checked }))} style={{ width: 'auto' }} />
-                  anexo composição do BDI
-                </label>
-              </div>
-              <button onClick={baixarPlanilha} disabled={gerandoPlanilha || alteracoesPendentes} style={btnSecundario}
-                title={alteracoesPendentes ? 'Salve as alterações antes de gerar a planilha' : 'Planilha para o cliente: orçamento, resumo, pesquisa de preços, fornecedores e cronograma'}>
-                <FileDown size={13} style={{ marginRight: 4 }} /> {gerandoPlanilha ? 'Gerando...' : 'Planilha Excel'}
-              </button>
-              <button onClick={() => setModalEmail(true)} disabled={alteracoesPendentes} style={btnSecundario}
-                title={alteracoesPendentes ? 'Salve as alterações antes de enviar' : ''}>
-                <Send size={13} style={{ marginRight: 4 }} /> Enviar E-mail
-              </button>
-              <BotaoLinkAprovacao propostaId={propostaSalva.id} numero={propostaSalva.numero}
-                status={propostaSalva.status} onAlterado={atualizarStatusSalvo} />
-              <button onClick={novoOrcamento} style={{ ...btnPrimario, padding: '13px 20px', fontSize: 13 }}>
-                <FilePlus2 size={13} style={{ marginRight: 4 }} /> Novo Orçamento
-              </button>
-            </div>
-          ) : (
-            <button onClick={salvar} disabled={salvando} style={{ ...btnPrimario, padding: '13px 26px', fontSize: 13 }}>
-              {salvando ? 'Salvando...' : (editandoId ? 'Salvar Alterações' : 'Salvar Proposta')}
-            </button>
-          )}
-        </div>
-      </div>
+      <BarraTotais
+        ajusteMaoDeObraInput={ajusteMaoDeObraInput}
+        ajusteMateriaisInput={ajusteMateriaisInput}
+        alteracoesPendentes={alteracoesPendentes}
+        anexosPdf={anexosPdf}
+        aplicarAjustePercentual={aplicarAjustePercentual}
+        atualizarStatusSalvo={atualizarStatusSalvo}
+        baixarPdf={baixarPdf}
+        baixarPlanilha={baixarPlanilha}
+        editandoId={editandoId}
+        ehPublico={ehPublico}
+        form={form}
+        gerandoPdf={gerandoPdf}
+        gerandoPlanilha={gerandoPlanilha}
+        idAtual={idAtual}
+        memoriaBdi={memoriaBdi}
+        novoOrcamento={novoOrcamento}
+        propostaSalva={propostaSalva}
+        removerComposicaoBdi={removerComposicaoBdi}
+        salvando={salvando}
+        salvar={salvar}
+        salvarComoCopia={salvarComoCopia}
+        setAjusteMaoDeObraInput={setAjusteMaoDeObraInput}
+        setAjusteMateriaisInput={setAjusteMateriaisInput}
+        setAnexosPdf={setAnexosPdf}
+        setCalculadoraBdiAberta={setCalculadoraBdiAberta}
+        setForm={setForm}
+        setModalEmail={setModalEmail}
+        somenteLeitura={somenteLeitura}
+        subtotalMaoObra={subtotalMaoObra}
+        subtotalMateriais={subtotalMateriais}
+        sujo={sujo}
+        total={total}
+        valorBdi={valorBdi}
+        valorBdiMaoObra={valorBdiMaoObra}
+        valorBdiMateriais={valorBdiMateriais}
+        valorImpostoServico={valorImpostoServico}
+        valorImpostoVenda={valorImpostoVenda}
+      />
 
       <ModalEnviarEmail
         aberto={modalEmail}
@@ -1667,96 +1231,3 @@ export default function Orcamento() {
     </div>
   );
 }
-
-// Referências do serviço do item, como na Análise de Projeto: "Ref." é o valor
-// H&M adotado (tela Preços de Mão de Obra) e oficial / particular são as
-// referências de mercado; só aparecem quando diferem do valor da linha, e a do
-// segmento do cliente vem destacada. "usar" troca o valor unitário.
-function DicasReferencia({ servico, segmento, valor, onUsar }) {
-  if (!servico) return null;
-  const dicas = [
-    ['hm', servico.valor_referencia, 'valor adotado pela H&M (tela Preços de Mão de Obra)'],
-    ['publico', servico.valor_publico, servico.fonte_publico],
-    ['privado', servico.valor_privado, servico.fonte_privado],
-  ].filter(([, v]) => v != null && Number(v) !== Number(valor || 0));
-  if (!dicas.length) return null;
-  return dicas.map(([seg, v, fonte]) => (
-    <div key={seg} style={{ fontSize: 10.5, color: seg === 'hm' || seg === segmento ? '#8a7333' : '#6f7f8f', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-      title={seg === 'hm' ? `Referência: ${fonte}` : `Referência ${ROTULO_SEGMENTO[seg]}${seg === segmento ? ' (segmento do cliente)' : ''}${fonte ? ` — ${fonte}` : ''}`}>
-      {seg === 'hm' ? 'Ref.' : seg === 'publico' ? 'oficial' : 'particular'}: {formatarMoeda(v)}{' '}
-      <button type="button" onClick={() => onUsar(Number(v))} style={btnUsar}>usar</button>
-    </div>
-  ));
-}
-
-// Preço do material no catálogo, quando o item está ligado a ele e o valor da
-// linha é outro (pesquisa de mercado adotada, reajuste, digitado à mão).
-function DicaCatalogo({ material, valor, onUsar }) {
-  if (!material || material.preco == null || !(Number(material.preco) > 0) || Number(material.preco) === Number(valor || 0)) return null;
-  return (
-    <div style={{ fontSize: 10.5, color: '#8a7333', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-      title={`Preço do catálogo de materiais — ${material.descricao}`}>
-      catálogo: {formatarMoeda(material.preco)}{' '}
-      <button type="button" onClick={() => onUsar(Number(material.preco))} style={btnUsar}>usar</button>
-    </div>
-  );
-}
-
-// Faixa do valor unitário (antes do BDI, como lançado no item) em propostas aprovadas: menor – maior, mediana e quantas
-// propostas. Avisa quando o valor da linha está abaixo do menor preço já vendido, e quando o
-// custo de compra do catálogo passou do último preço vendido (venda no prejuízo).
-function DicaVendido({ faixa, valor, material }) {
-  if (!faixa) return null;
-  const v = Number(valor) || 0;
-  const custo = Number(material?.preco_compra) || 0;
-  const abaixo = v > 0 && v < faixa.minimo;
-  const custoAcima = custo > faixa.ultimo;
-  const [ano, mes, dia] = String(faixa.ultima_data || '').split('-');
-  const quando = ano ? ` em ${dia}/${mes}/${ano}` : '';
-  const alertas = [
-    abaixo && `abaixo do menor valor unitário já aprovado (${formatarMoeda(faixa.minimo)})`,
-    custoAcima && `custo de compra ${formatarMoeda(custo)} acima do último valor unitário aprovado (${formatarMoeda(faixa.ultimo)})`,
-  ].filter(Boolean);
-  const linha = { fontSize: 10.5, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
-  return (
-    <>
-      <div style={{ ...linha, color: '#6f7f8f' }}
-        title={`Valor unitário (antes do BDI) já lançado em propostas aprovadas (${faixa.propostas} proposta${faixa.propostas > 1 ? 's' : ''}). Último: ${formatarMoeda(faixa.ultimo)} na proposta ${faixa.ultima_proposta}${quando}.`}>
-        vendido: {faixa.minimo === faixa.maximo ? formatarMoeda(faixa.minimo) : `${formatarMoeda(faixa.minimo)} – ${formatarMoeda(faixa.maximo)}`}
-        {faixa.propostas > 1 ? ` · mediana ${formatarMoeda(faixa.mediana)}` : ''} · {faixa.propostas}×
-      </div>
-      {alertas.map(a => <div key={a} style={{ ...linha, color: '#e08080' }} title={a}>⚠ {a}</div>)}
-    </>
-  );
-}
-
-function Totalzinho({ label, valor }) {
-  return (
-    <div>
-      <div style={rotulo}>{label}</div>
-      <div style={{ fontSize: 15, color: '#ccc', fontWeight: 600 }}>{formatarMoeda(valor)}</div>
-    </div>
-  );
-}
-
-const fieldsetLimpo = { border: 0, padding: 0, margin: 0, minWidth: 0 };
-const btnUsar = { background: 'none', border: 'none', color: '#c9a227', textDecoration: 'underline', cursor: 'pointer', fontSize: 10.5, padding: 0 };
-const btnPesquisar = {
-  display: 'inline-flex', alignItems: 'center', padding: '2px 7px', background: 'transparent', border: '1px dashed #333',
-  borderRadius: 5, color: 'var(--texto-2)', fontWeight: 700, fontSize: 10.5, cursor: 'pointer', whiteSpace: 'nowrap',
-};
-const etiqueta = { fontSize: 11.5, border: '1px solid', borderRadius: 4, padding: '0 5px', textTransform: 'uppercase', letterSpacing: '.4px' };
-
-// Estilos do kit de tela (components/ui/estilos.js), com o que esta tela tem
-// de diferente por cima — o visual ficou como era.
-const rotulo = estilos.rotulo;
-const card = { ...estilos.card, padding: 20 };
-const btnPrimario = { ...estilos.btnPrimario, display: 'flex' };
-
-const btnSecundario = {
-  display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent',
-  border: '1px dashed #333', borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700,
-  fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
-};
-
-const btnIcone = { ...estilos.btnIcone, display: 'flex' };

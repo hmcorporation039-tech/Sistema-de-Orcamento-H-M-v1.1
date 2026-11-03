@@ -311,6 +311,53 @@ O que for irreversível pede confirmação ("SIM 4821"), com prazo.
 - Quebrar os arquivos grandes quando forem tocados: Orcamento.js, NotasFiscais.js, visualizador3d/app.js, modelo3d.js, pdfVetorial.js.
 - ~~Teste das migrações num banco vazio (BD-06).~~ Feito na fase 0.
 
+**Feito no v2 em 02/11/2026** (sem commit; falta o OK do Márcio para levar à produção). Nada muda no jeito de instalar e rodar, nem no que o usuário vê:
+- **Pacote comum sem npm workspaces.** Fica em `skills/_comum/base` (`texto`, `formato`, `dinheiro`, `html`, `xml`, `timbrado` e `index.js`), sem dependências, e é carregado por `require` relativo, como o resto do `_comum`.
+  - Por que não workspaces:
+    - as skills vão ao Claude como pastas soltas (`ligar-skills.ps1`) e chegam ao `_comum` por caminho relativo, então um pacote fora de `skills/` não iria junto;
+    - workspaces içariam o `node_modules` para a raiz, o que muda o `npm install` de cada pasta (`instalar.bat`, `atualizar-sistema.bat`) e arrisca a checagem de dependências do CRA;
+    - o CRA não compila código de fora de `frontend/src`.
+  - Backend: `utils/htmlPdf.js`, `texto.js`, `xml.js` e `numeroBR.js`, além das regras de centavo e quantidade de `calculoProposta.js`, viraram ponte para o pacote. Os `require` de sempre continuam valendo. O `esc` de XML continua passando por `String()`, então o XML da NFS-e sai igual.
+  - O assistente (`acoes.js`) e o atestado de capacidade passaram a usar o `formatarMoeda` único.
+  - Skills: `docx-base` (`fmtNum`, `fmtData` e a pasta da identidade visual), `entrega.js` (XML e data) e `fabricacao/caderno.js`, `svg.js` e `rack.js` (data e escape) usam o pacote.
+  - Timbrado: `base/timbrado.js` reúne os dados da empresa (`empresa.js`, que continua sendo a fonte) e os caminhos da logo e do cabeçalho.
+  - Frontend: continua com `utils/format.js` e `utils/dinheiro.js`. O teste novo `backend/testes/comum.test.js` roda as duas versões, frontend e pacote, com a mesma tabela de valores e falha se o resultado divergir. Ele também confere que backend e skills usam o pacote, sem cópia própria.
+- **`npm test` único na raiz:** o `package.json` da raiz não tem dependências nem workspaces. O `npm test` chama o pré-deploy (`cd backend && npm test`), e há também o `npm run test:rapido`.
+- **Arquivos grandes quebrados, sem mudar comportamento.** O conteúdo foi conferido linha a linha contra o original.
+  - `frontend/src/pages/Orcamento.js`: de 1.762 para 1.233 linhas. As partes foram para `pages/orcamento/`:
+    - `apoio.js`: rascunho, formulário vazio e origem da proposta;
+    - `estilos.js` e `Dicas.js`;
+    - `AvisoOrigem.js`, `DadosGerais.js`, `LinhaItem.js` e `BarraTotais.js`.
+  - `frontend/src/pages/NotasFiscais.js`: de 1.473 para 327 linhas. As partes foram para `pages/notasFiscais/`: `comum.js` e um arquivo por modal.
+  - `backend/src/utils/pdfVetorial.js`: de 966 para 185 linhas.
+    - Ficaram aqui a entrada, os limites e o resumo da folha. Os `require('./pdfVetorial')` e o worker não mudam.
+    - Os passos foram para `utils/pdfVetorial/`: `pagina.js`, `simbolos.js`, `legenda.js`, `tabelaLegenda.js`, `escala.js`, `analise.js` e `tempo.js`.
+- **Ficou fora de propósito:**
+  - `visualizador3d/app.js` e `modelo3d.js`, porque a fase 2 está editando esses arquivos;
+  - as cópias de escape do visualizador 3D, que são bundles do navegador;
+  - o `semAcento` de `cad/disciplinasCad.js` e o `normalizar` de `cad/planta.js`, que vão junto com o motor de CAD;
+  - os `arred` das skills, que tratam nulo de jeitos diferentes;
+  - o `moeda` de `pesquisaMercado.js` e de `revisaoPreEnvio.js`, que usam espaço comum em vez do espaço que não quebra do `toLocaleString` (trocar mudaria o texto);
+  - o `xml` de `planilhaCronograma.js`, que escapa o apóstrofo com `&apos;`.
+
+**Plano: motor de CAD/PDF como pacote próprio** (avaliado, nada foi movido: há trabalho não comitado das fases 1, 2 e 3 nesses arquivos):
+- **Hoje o motor está em dois lugares:**
+  - DWG/DXF, 3D e símbolos em `skills/_comum/cad`. As dependências (`dxf`, `@tarikjabiri/dxf`, `@mlightcad/libredwg-web`, `three` e `esbuild`) ficam em `skills/package.json`.
+  - A leitura de PDF no backend, com `pdfjs-dist` no `backend/package.json`:
+    - em `utils/`: `pdfVetorial*`, `desenhoPdf`, `escalaDaPlanta`, `classificarPranchaPdf`, `pontosPorAmbiente` e `compatibilidadeEspacial`;
+    - em `services/`: `pdfParaDxf`, `analiseCad`, `mapaCad` e `tarefasCad`.
+  - O placar e as fixtures da fase 3 estão em `backend/scripts/placar-precisao.js`, `utils/placarPrecisao.js` e na pasta externa `HM_PLACAR_PASTA`.
+- **Destino:** `skills/_comum/cad` vira o pacote `cad`, com subpastas `dxf/`, `pdf/`, `3d/` e `placar/`. Fica pelo mesmo motivo do pacote comum: as skills e o modelo 3D já usam o motor de lá. O backend chega a ele por `config/caminhos.js` (`CAD`).
+- **Passos, um commit cada e com o placar rodando antes e depois:**
+  1. Mover `utils/pdfVetorial/` e `pdfVetorialWorker.js` para `cad/pdf/`, que agora são módulos pequenos. `utils/pdfVetorial.js` fica como ponte de uma linha.
+     - O `pdfjs-dist` passa para `skills/package.json` com a mesma versão exata. O `backend/package.json` mantém a dele até a ponte sair, para não mudar o `npm install`.
+     - O worker continua no backend (`executarNoWorker`), recebendo só o caminho do módulo.
+  2. Mover `desenhoPdf`, `escalaDaPlanta` e `classificarPranchaPdf`, que não dependem do banco, para `cad/pdf/`.
+  3. Mover o núcleo de `placarPrecisao.js` para `cad/placar/`. O script `placar-precisao.js` do backend fica como interface de linha de comando.
+  4. Separar em `cad/3d/` o que é 3D (`modelo3d`, `visualizador3d` e `modelosPorPlanta`), só depois de a fase 2 comitar. Ao mesmo tempo, quebrar `visualizador3d/app.js` e `modelo3d.js`. O hash do gerador (`services/modelo3d`) passa a olhar `cad/3d` e `cad/dxf`.
+  5. Escrever um `cad/README` curto com a entrada de cada parte: `lerPdfVetorial`, leitura de DXF/DWG, `gerar-3d` e o placar.
+- **Risco principal:** o hash do gerador do 3D muda, e todo 3D guardado é refeito uma vez na próxima abertura. É esperado, mas é bom avisar o Márcio.
+
 ---
 
 ## 4. Ordem sugerida e tamanho
