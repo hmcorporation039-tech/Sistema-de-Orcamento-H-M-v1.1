@@ -170,7 +170,7 @@ router.delete('/propostas/:id', autenticar, validarId, posseProposta, propCtrl.r
 
 // ── INTEGRAÇÕES ───────────────────────────────────────────────────────
 router.get('/integracoes/email/status', autenticar, integCtrl.statusEmail);
-router.post('/integracoes/email/verificar-agora', autenticar, integCtrl.verificarAgora);
+router.post('/integracoes/email/verificar-agora', autenticar, admin, integCtrl.verificarAgora);
 router.get('/integracoes/email/historico', autenticar, integCtrl.historico);
 router.get('/configuracoes/margem', autenticar, integCtrl.obterMargem);
 router.put('/configuracoes/margem', autenticar, admin, integCtrl.atualizarMargem);

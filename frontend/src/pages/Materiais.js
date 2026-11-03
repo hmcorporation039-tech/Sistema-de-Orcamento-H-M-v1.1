@@ -404,15 +404,17 @@ export default function Materiais() {
           )}
         </div>
 
-        {statusEmail?.configurado && (
+        {ehAdmin && statusEmail?.configurado && (
           <button onClick={verificarEmail} disabled={verificandoEmail} style={{ ...btnSecundario, padding: '5px 10px' }}>
             <RefreshCw size={12} style={{ marginRight: 5 }} /> {verificandoEmail ? 'Verificando...' : 'Verificar agora'}
           </button>
         )}
 
+        {ehAdmin && (
         <button onClick={verificarFornecedores} disabled={verificandoFornecedores} style={{ ...btnSecundario, padding: '5px 10px' }} title="Lê agora os orçamentos (PDF, PDF escaneado ou foto, de qualquer fornecedor) salvos em 'Orçamentos recebidos fornecedores', sem esperar a leitura automática das 06:00 e das 18:00">
           <RefreshCw size={12} style={{ marginRight: 5 }} /> {verificandoFornecedores ? 'Verificando...' : 'Verificar orçamentos de fornecedores'}
         </button>
+        )}
 
         <button onClick={() => setModalOportunidades(true)} style={{ ...btnSecundario, padding: '5px 10px' }} title="Mostra quem cotou mais barato cada material e onde o custo do catálogo está acima da melhor cotação">
           <Scale size={12} style={{ marginRight: 5 }} /> Comparar fornecedores
