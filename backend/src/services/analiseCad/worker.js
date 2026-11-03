@@ -10,6 +10,9 @@ const path = require('path');
 const { parentPort, workerData } = require('worker_threads');
 
 const { CAD } = require('../../config/caminhos');
+const { fundoDoMapa, regiaoDeInteresse } = require('./fundoDoMapa');
+// regiões da folha que não são planta (skills/_comum/cad/classificarPrancha.js)
+const REGIOES_FORA = ['diagrama', 'vista_quadro', 'quadro_cargas', 'carimbo'];
 
 (async () => {
   try {
@@ -73,8 +76,17 @@ const { CAD } = require('../../config/caminhos');
         // são planta, em metros (skills/_comum/cad/classificarPrancha.js)
         folha: arq.classificacao && {
           tipo: arq.classificacao.tipo, resumo: arq.classificacao.resumo, temPlanta: arq.classificacao.temPlanta, semPlanta: arq.classificacao.semPlanta,
-          regioesFora: arq.classificacao.regioes.filter(r => ['diagrama', 'vista_quadro', 'quadro_cargas', 'carimbo'].includes(r.tipo)).map(r => r.caixa),
+          regioesFora: arq.classificacao.regioes.filter(r => REGIOES_FORA.includes(r.tipo)).map(r => r.caixa),
         },
+        // traços da planta para o fundo da tela do mapa do CAD (./fundoDoMapa.js); sem ele a tela fica só com os pontos
+        fundo: (() => {
+          try {
+            const fora = (arq.classificacao?.regioes || []).filter(r => REGIOES_FORA.includes(r.tipo)).map(r => r.caixa);
+            const naPlanta = ([x, y]) => !fora.some(c => x >= c[0] && x <= c[2] && y >= c[1] && y <= c[3]);
+            const centros = (desenho?.mapa?.simbolos || []).flatMap(s => s.centros || []).filter(naPlanta);
+            return fundoDoMapa(arq.referencia, fora, regiaoDeInteresse(centros, arq.ambientes.map(a => a.poligono || [])));
+          } catch { return null; }
+        })(),
       },
       projeto: {
         texto: projeto.texto, simbolos: projeto.simbolos, linhas: projeto.linhas, legenda: projeto.legenda, legendaItens: projeto.legendaItens,

@@ -24,6 +24,14 @@ function caminhoDaPasta(row) {
 // parseado pelo driver do pg) para o mesmo formato camelCase que o restante
 // do pipeline (analisarProjetoCompleto, o template do relatório e o
 // frontend) já usa.
+// O desenho de fundo da planta do mapa do CAD (até 20 mil vértices por DWG) só vai pela rota do mapa
+// (GET /projetos/analises/:id/mapa): na análise inteira ele pesaria em toda abertura da tela.
+const semFundoDoMapa = (dados) => (Array.isArray(dados) ? dados.map((d) => {
+  if (!d?.mapa_cad?.planta?.fundo) return d;
+  const { fundo, ...planta } = d.mapa_cad.planta;
+  return { ...d, mapa_cad: { ...d.mapa_cad, planta } };
+}) : dados);
+
 function linhaParaAnalise(row) {
   return {
     id: row.id,
@@ -50,7 +58,7 @@ function linhaParaAnalise(row) {
     servicos: row.servicos,
     materiais: row.materiais,
     // Por arquivo: carimbo, quadros de carga, listas de materiais, disciplinas detectadas
-    dadosExtraidos: row.dados_extraidos,
+    dadosExtraidos: semFundoDoMapa(row.dados_extraidos),
     // 2.3: compatibilização por posição entre os DWG/DXF (utils/compatibilidadeEspacial.js)
     conflitos: row.conflitos || [],
     compatibilizacao: row.compatibilizacao || null,

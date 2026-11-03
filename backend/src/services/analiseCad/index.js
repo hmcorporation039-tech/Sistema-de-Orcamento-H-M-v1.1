@@ -24,6 +24,7 @@ const { CAD } = require('../../config/caminhos');
 const { BLOCOS_HM, disciplinaDaLayer, disciplinaDoBloco, disciplinaDoTexto, semPrefixoDeDisciplina, alturaDoTexto, RE_LAYER_INFRA, tipoDoTracado, daPropriaDisciplina } = require(path.join(CAD, 'disciplinasCad.js'));
 const { retanguloMinimo } = require(path.join(CAD, 'geometriaCad.js'));
 const { medirTrechos } = require('./medidasInfra');
+const { caixaPrincipal } = require('./fundoDoMapa');
 const { circuitoConferido } = require(path.join(CAD, 'circuitoDoDesenho.js'));
 // Ponto lido do desenho (símbolo explodido) → descrição do item: a linha da legenda do
 // projeto quando houver ("Tomada alta a 2,20m do piso"), senão o nome do símbolo na
@@ -464,18 +465,19 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
       const d = descreverLinha(l);
       return { layer: l.layer, tipo: d.tipo, disciplina: d.disciplina, comprimento_m: l.metros, ...(d.rota ? { rota: true } : {}), ...(l.xref ? { xref: l.xref } : {}) };
     }),
-    planta: plantaDoMapa(r.desenho.mapa.simbolos, ambientesArq, naPlanta),
+    planta: plantaDoMapa(r.desenho.mapa.simbolos, ambientesArq, naPlanta, r.arquitetura?.fundo),
     ...(r.desenho.mapa.aviso ? { aviso: r.desenho.mapa.aviso } : {}),
   } : null;
   return { analise, pagina, pontosPorAmbiente, arquitetura, espacial, mapa, aprendizado: { legenda: r.desenho?.legenda || [], notas: r.desenho?.notas || [], escritorio: r.desenho?.escritorio || '' } };
 }
 
-// Planta da tela de confirmação do mapa: contorno dos ambientes + a posição de cada símbolo desenhado (inclusive os
-// que o sistema não reconheceu), com o número da linha do mapa (a tela destaca os da linha escolhida). Coordenadas
-// em 2 casas, no sistema do desenho; só o que a tela precisa (limites para não inflar a análise guardada).
+// Planta da tela de confirmação do mapa: o desenho de fundo (./fundoDoMapa.js), o contorno dos ambientes e a posição
+// de cada símbolo desenhado (inclusive os que o sistema não reconheceu), com o número da linha do mapa (a tela
+// destaca os da linha escolhida). Coordenadas em 2 casas, em metros; só o que a tela precisa (limites para não
+// inflar a análise guardada). caixa: o enquadramento inicial, sem o que está perdido longe do desenho; extensao: tudo.
 const MAX_PONTOS_PLANTA = 4000;
 const MAX_VERTICES_PLANTA = 400;
-function plantaDoMapa(linhasDoMapa, ambientes, naPlanta) {
+function plantaDoMapa(linhasDoMapa, ambientes, naPlanta, fundo = null) {
   const pontos = [];
   for (const [linha, m] of (linhasDoMapa || []).entries()) {
     for (const c of m.centros || []) {
@@ -495,8 +497,12 @@ function plantaDoMapa(linhasDoMapa, ambientes, naPlanta) {
   }
   const xs = [...pontos.map(p => p[1]), ...salas.flatMap(s => s.poligono.map(p => p[0]))];
   const ys = [...pontos.map(p => p[2]), ...salas.flatMap(s => s.poligono.map(p => p[1]))];
+  // o enquadramento é pelo que se confere (pontos e ambientes); a extensão inclui o fundo
+  const caixa = caixaPrincipal(xs, ys);
+  for (const l of fundo?.linhas || []) for (let i = 1; i < l.length; i += 2) { xs.push(l[i]); ys.push(l[i + 1]); }
   const min = (v) => v.reduce((m, x) => (x < m ? x : m), Infinity), max = (v) => v.reduce((m, x) => (x > m ? x : m), -Infinity);
-  return { caixa: [min(xs), min(ys), max(xs), max(ys)], salas, pontos };
+  const extensao = [min(xs), min(ys), max(xs), max(ys)];
+  return { caixa: caixa || extensao, extensao, salas, pontos, ...(fundo ? { fundo } : {}) };
 }
 
 // Classe do componente para as regras de afastamento da compatibilização

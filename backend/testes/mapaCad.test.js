@@ -335,6 +335,12 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
           assert.strictEqual((await chamar('PUT', URL, { arquivo: NOME, linhas: [] })).status, 400);
           assert.strictEqual((await chamar('POST', URL + '/reprocessar', {})).status, 400, 'sem confirmar nada não reprocessa');
           assert.strictEqual(r.corpo.semMapa, false);
+          // o desenho de fundo da planta vem pela rota do mapa, não na análise inteira (pesaria em toda abertura)
+          assert.strictEqual(r.corpo.semFundo, false);
+          assert.ok(r.corpo.arquivos[0].planta.fundo?.linhas.length > 0, 'a planta do mapa traz as paredes');
+          const inteira = await chamar('GET', `/projetos/analises/${analise.id}`);
+          assert.strictEqual(inteira.status, 200);
+          assert.ok(inteira.corpo.dadosExtraidos[0].mapa_cad.planta && !inteira.corpo.dadosExtraidos[0].mapa_cad.planta.fundo);
           // análise feita ANTES do mapa (DWG/DXF sem mapa_cad — caso real de 03/11/2026): dá para ler de novo sem confirmar
           const dadosComMapa = (await pool.query('SELECT dados_extraidos FROM analises_projeto WHERE id = $1', [analise.id])).rows[0].dados_extraidos;
           await pool.query('UPDATE analises_projeto SET dados_extraidos = $1 WHERE id = $2', [JSON.stringify(dadosComMapa.map(({ mapa_cad, ...d }) => d)), analise.id]);

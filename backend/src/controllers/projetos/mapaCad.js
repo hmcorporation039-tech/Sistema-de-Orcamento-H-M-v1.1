@@ -32,12 +32,14 @@ const respostaDoMapa = (dados) => ({
 // fora do orçamento e não havia onde conferi-los (caso real de 03/11/2026: 566 pontos lidos, orçamento zerado)
 const semMapaComCad = (a) => !arquivosComMapa(a.dados_extraidos).length
   && (Array.isArray(a.arquivos_analisados) ? a.arquivos_analisados : []).some(q => ehArquivoCad(q?.arquivo));
+// mapa guardado antes do desenho de fundo (services/analiseCad/fundoDoMapa.js): a planta da tela fica só com os pontos
+const mapaSemFundo = (a) => arquivosComMapa(a.dados_extraidos).some(d => !d.mapa_cad.planta?.fundo);
 
-// GET /projetos/analises/:id/mapa — semMapa: dá para ler o DWG de novo e gerar o mapa (reprocessar sem confirmar nada)
+// GET /projetos/analises/:id/mapa — semMapa / semFundo: dá para ler o DWG de novo (reprocessar sem confirmar nada)
 async function ler(req, res) {
   const { rows: [a] } = await pool.query('SELECT dados_extraidos, arquivos_analisados FROM analises_projeto WHERE id = $1', [req.params.id]);
   if (!a) return res.status(404).json({ erro: 'Análise não encontrada' });
-  res.json({ ...respostaDoMapa(a.dados_extraidos), semMapa: semMapaComCad(a) });
+  res.json({ ...respostaDoMapa(a.dados_extraidos), semMapa: semMapaComCad(a), semFundo: mapaSemFundo(a) });
 }
 
 // PUT /projetos/analises/:id/mapa { arquivo, linhas: [{ idx, simbolo, altura_m, confirmado }] }
@@ -82,11 +84,12 @@ async function salvar(req, res) {
 // projeto, com os tipos conferidos, e grava uma análise NOVA (a antiga fica como está). As edições da antiga (quantidade,
 // valor, itens retirados ou acrescentados) vão junto (services/edicoesDaAnalise.js). Disciplina com ponto conferido que não
 // tinha sido marcada no envio entra na análise nova, salvo `incluirDisciplinas: false`.
-// Análise feita antes do mapa (semMapaComCad): reprocessa sem confirmação — a análise nova vem com o mapa para conferir.
+// Análise feita antes do mapa (semMapaComCad) ou do desenho de fundo (mapaSemFundo): reprocessa sem confirmação — a
+// análise nova vem com o mapa completo para conferir.
 async function reprocessar(req, res) {
   const { rows: [a] } = await pool.query('SELECT * FROM analises_projeto WHERE id = $1', [req.params.id]);
   if (!a) return res.status(404).json({ erro: 'Análise não encontrada' });
-  const semMapa = semMapaComCad(a);
+  const semMapa = semMapaComCad(a) || mapaSemFundo(a);
   const mapas = arquivosComMapa(a.dados_extraidos);
   const mapasConfirmados = {};
   const disciplinasExtras = {}; // arquivo → disciplinas conferidas que faltavam na marcação do envio
@@ -120,7 +123,7 @@ async function reprocessar(req, res) {
   if (!arquivos.length) return res.status(409).json({ erro: 'Não há arquivos do projeto para reprocessar.' });
 
   const base = String(a.nome_projeto || a.cliente_nome || 'Projeto').replace(/\s*\((mapa confirmado|lida de novo)\)$/, '');
-  const corpo = { finalidade: a.finalidade || 'orcamento', obra_id: a.obra_id, nome_projeto: `${base} (${semMapa ? 'lida de novo' : 'mapa confirmado'})`.slice(0, 200) };
+  const corpo = { finalidade: a.finalidade || 'orcamento', obra_id: a.obra_id, nome_projeto: `${base} (${Object.keys(mapasConfirmados).length ? 'mapa confirmado' : 'lida de novo'})`.slice(0, 200) };
   await executarAnalise(req, res, arquivos, corpo, { mapasConfirmados, analiseAnterior: a });
 }
 

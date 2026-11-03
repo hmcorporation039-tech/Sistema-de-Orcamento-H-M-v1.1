@@ -1,13 +1,15 @@
 // Mapa do CAD (item 3 do plano): o que o sistema entendeu de cada layer do DWG/DXF com símbolos desenhados
 // (QiBuilder/AltoQi, PDF convertido). O engenheiro confere o tipo e a altura; cada confirmação fica na
 // análise, vira aprendizado (o próximo desenho do escritório já vem certo) e, ao reprocessar, entra no orçamento.
-// Até conferir, esses pontos NÃO entram no orçamento.
+// Até conferir, esses pontos NÃO entram no orçamento. A planta (./PlantaMapaCad.js) e a tabela andam juntas: clique no
+// ponto escolhe a linha (e abre a ficha para conferir na própria planta); clique na linha enquadra os pontos dela.
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { CheckCheck, Download, RefreshCw, Undo2, Upload } from 'lucide-react';
 import { getMapaCad, salvarMapaCad, reprocessarMapaCad, exportarBibliotecaBlocos, importarBibliotecaBlocos } from '../../services/api';
 import { mensagemDeErro } from '../../utils/download';
+import PlantaMapaCad, { SITUACAO, situacaoDaLinha } from './PlantaMapaCad';
 
 const ORIGEM = {
   legenda: ['da legenda do desenho', '#4a9'],
@@ -37,30 +39,13 @@ function textoCircuitos(c) {
 const campo = { background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 5, color: '#ddd', fontSize: 12, padding: '5px 7px', boxSizing: 'border-box', fontFamily: 'inherit' };
 const botao = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 6, border: '1px solid #2f2f2f', background: '#1a1a1a', color: '#ddd', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
 
-// Planta do mapa: contorno dos ambientes e os pontos lidos; os da linha escolhida (passe o mouse na tabela) em destaque.
-// Coordenadas no sistema do desenho; o eixo Y é invertido para a planta ficar na posição de leitura.
-function PlantaDoMapa({ planta, simbolos, ativa }) {
-  const [x0, y0, x1, y1] = planta.caixa;
-  const larg = Math.max(x1 - x0, 1), alt = Math.max(y1 - y0, 1);
-  const folga = Math.max(larg, alt) * 0.03;
-  const raio = Math.max(larg, alt) / 260;
-  const confirmadas = new Set(simbolos.filter(q => q.confirmado).map(q => q.idx));
-  const ponto = (p, i, cor, r) => <circle key={i} cx={p[1]} cy={p[2]} r={r} fill={cor} />;
-  const outros = planta.pontos.filter(p => p[0] !== ativa);
-  const daLinha = planta.pontos.filter(p => p[0] === ativa);
-  return (
-    <svg viewBox={`${x0 - folga} ${-(y1 + folga)} ${larg + 2 * folga} ${alt + 2 * folga}`} role="img" aria-label="Planta com os pontos lidos do desenho"
-      style={{ width: '100%', maxHeight: 340, background: '#0d0d0d', border: '1px solid #222', borderRadius: 6, display: 'block' }} data-testid="planta-mapa-cad">
-      <g transform="scale(1,-1)">
-        {planta.salas.map((sala, i) => (
-          <polygon key={i} points={sala.poligono.map(p => p.join(',')).join(' ')} fill="none" stroke="#3a3a3a" strokeWidth={1} vectorEffect="non-scaling-stroke" />
-        ))}
-        {outros.map((p, i) => ponto(p, i, confirmadas.has(p[0]) ? '#3f8f58' : '#6b6b6b', raio))}
-        {daLinha.map((p, i) => ponto(p, `a${i}`, '#f0c63c', raio * 1.9))}
-      </g>
-    </svg>
-  );
-}
+// filtro da tabela pela situação da linha (as mesmas cores da planta)
+const FILTROS = [
+  ['todas', 'Todas', () => true],
+  ['conferir', 'A conferir', (s) => ['nao_reconhecido', 'reconhecido'].includes(situacaoDaLinha(s))],
+  ['nao_reconhecido', 'Não reconhecidas', (s) => situacaoDaLinha(s) === 'nao_reconhecido'],
+  ['conferido', 'Conferidas', (s) => situacaoDaLinha(s) === 'conferido'],
+];
 
 const br = (v) => (v == null || v === '' ? '' : String(v).replace('.', ','));
 const paraNumero = (t) => { const n = Number(String(t).replace(',', '.')); return Number.isFinite(n) && n > 0 ? n : null; };
@@ -79,7 +64,9 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
   const [edicao, setEdicao] = useState({}); // `${arquivo}|${idx}` → { simbolo, altura }
   const [ocupado, setOcupado] = useState(false);
   const [mostrarTodas, setMostrarTodas] = useState({});
-  const [ativa, setAtiva] = useState({}); // arquivo → linha do mapa em destaque na planta
+  const [ativa, setAtiva] = useState({}); // arquivo → linha do mapa escolhida (destaque na planta e na tabela)
+  const [foco, setFoco] = useState({}); // arquivo → { idx, vez }: a planta enquadra os pontos dessa linha
+  const [filtro, setFiltro] = useState({}); // arquivo → chave de FILTROS
   const [incluirDisciplinas, setIncluirDisciplinas] = useState(true);
 
   useEffect(() => {
@@ -96,6 +83,8 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
     }
     return [...por.entries()];
   }, [mapa]);
+  const nomes = useMemo(() => new Map((mapa?.tipos || []).map(t => [t.simbolo, t.nome])), [mapa]);
+  const nomeDoTipo = (simbolo) => nomes.get(simbolo) || simbolo;
 
   // análise com DWG feita antes do mapa existir: sem ele os pontos do desenho não têm onde ser conferidos
   if (!mapa?.disponivel && !mapa?.semMapa) return null;
@@ -105,6 +94,41 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
 
   const valorDe = (arquivo, s) => edicao[`${arquivo}|${s.idx}`] || { simbolo: s.simbolo, altura: br(s.altura_m) };
   const mudar = (arquivo, s, parte) => setEdicao(e => ({ ...e, [`${arquivo}|${s.idx}`]: { ...valorDe(arquivo, s), ...parte } }));
+
+  // controles de uma linha — os mesmos na tabela e na ficha da planta
+  const seletorTipo = (arquivo, s, largura = '100%') => (
+    <select value={valorDe(arquivo, s).simbolo} onChange={(e) => mudar(arquivo, s, { simbolo: e.target.value })} style={{ ...campo, width: largura }} disabled={ocupado || s.confirmado} aria-label="Tipo do ponto">
+      <option value="?">{s.origem === 'nao_reconhecido' && !s.confirmado ? '— escolha o tipo ou "não é ponto" —' : 'Não é ponto'}</option>
+      {grupos.map(([disc, tipos]) => (
+        <optgroup key={disc} label={NOME_DISC[disc] || disc}>
+          {tipos.map(t => <option key={t.simbolo} value={t.simbolo}>{t.nome}</option>)}
+        </optgroup>
+      ))}
+    </select>
+  );
+  const campoAltura = (arquivo, s) => (
+    <input value={valorDe(arquivo, s).altura} onChange={(e) => mudar(arquivo, s, { altura: e.target.value })} placeholder="altura" inputMode="decimal" style={{ ...campo, width: 70 }} disabled={ocupado || s.confirmado} aria-label="Altura (m)" />
+  );
+  const botaoAcao = (arquivo, s) => {
+    const v = valorDe(arquivo, s);
+    const mudou = v.simbolo !== s.simbolo || v.altura !== br(s.altura_m);
+    return s.confirmado
+      ? <button type="button" style={botao} onClick={() => desfazer(arquivo, s)} disabled={ocupado}><Undo2 size={12} /> Desfazer</button>
+      : <button type="button" style={{ ...botao, ...(mudou || s.simbolo !== '?' ? { borderColor: '#5fbf7a', color: '#5fbf7a' } : {}) }} onClick={() => confirmar(arquivo, s)} disabled={ocupado}>Confirmar</button>;
+  };
+  // escolher a linha: pela planta (só destaca e garante que ela aparece na tabela) ou pela tabela (enquadra na planta)
+  const escolherNaPlanta = (a, idx) => {
+    setAtiva(m => ({ ...m, [a.arquivo]: idx }));
+    if (a.simbolos.findIndex(x => x.idx === idx) >= LIMITE_LINHAS) setMostrarTodas(m => ({ ...m, [a.arquivo]: true }));
+    const f = FILTROS.find(([k]) => k === (filtro[a.arquivo] || 'todas'));
+    const s = a.simbolos.find(x => x.idx === idx);
+    if (s && f && !f[2](s)) setFiltro(m => ({ ...m, [a.arquivo]: 'todas' }));
+  };
+  const escolherNaTabela = (a, idx) => {
+    setAtiva(m => ({ ...m, [a.arquivo]: idx }));
+    setFoco(m => ({ ...m, [a.arquivo]: { idx, vez: (m[a.arquivo]?.vez || 0) + 1 } }));
+  };
+  const irParaTabela = (arquivo, idx) => document.querySelector(`[data-mapa-linha="${CSS.escape(`${arquivo}|${idx}`)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
   async function enviar(arquivo, linhas, mensagem) {
     setOcupado(true);
@@ -200,6 +224,12 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
             <RefreshCw size={13} /> Reprocessar com o mapa conferido
           </button>
         )}
+        {mapa.semFundo && totalConferidas === 0 && (
+          <button type="button" style={{ ...botao, borderColor: '#c9a227', color: '#c9a227' }} onClick={reprocessar} disabled={ocupado} data-testid="ler-de-novo"
+            title="Grava uma análise nova com o desenho de fundo e a leitura atual (a atual continua salva)">
+            <RefreshCw size={13} /> {ocupado ? 'Lendo o desenho…' : 'Ler o DWG de novo'}
+          </button>
+        )}
       </div>
       <p style={{ fontSize: 12, color: 'var(--texto-3)', lineHeight: 1.6, margin: '0 0 12px' }}>
         Cada linha é uma layer × forma de símbolo do desenho. Confira o <b>tipo</b> e a <b>altura</b>: o que for conferido vira aprendizado do sistema
@@ -227,7 +257,9 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
       )}
       {mapa.arquivos.map(a => {
         const aberta = mostrarTodas[a.arquivo];
-        const linhas = aberta ? a.simbolos : a.simbolos.slice(0, LIMITE_LINHAS);
+        const filtroDaLinha = (FILTROS.find(([k]) => k === (filtro[a.arquivo] || 'todas')) || FILTROS[0])[2];
+        const filtradas = a.simbolos.filter(filtroDaLinha);
+        const linhas = aberta ? filtradas : filtradas.slice(0, LIMITE_LINHAS);
         return (
           <div key={a.arquivo} style={{ marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
@@ -250,39 +282,60 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
                 Desenho misto: nas layers com blocos nomeados ({a.layersComBloco.slice(0, 6).join(', ')}{a.layersComBloco.length > 6 ? '…' : ''}) o orçamento conta pelos blocos; nas outras, pelos símbolos conferidos aqui.
               </div>
             )}
-            {a.planta && <div style={{ marginBottom: 8 }}><PlantaDoMapa planta={a.planta} simbolos={a.simbolos} ativa={ativa[a.arquivo]} /></div>}
+            {a.planta && (
+              <div style={{ marginBottom: 10 }}>
+                <PlantaMapaCad planta={a.planta} simbolos={a.simbolos} nomeDoTipo={nomeDoTipo} ativa={ativa[a.arquivo] ?? null} foco={foco[a.arquivo]}
+                  onEscolher={(idx) => escolherNaPlanta(a, idx)}
+                  ficha={(s) => (
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                      {seletorTipo(a.arquivo, s, 240)}
+                      {campoAltura(a.arquivo, s)}
+                      {botaoAcao(a.arquivo, s)}
+                      <button type="button" style={botao} onClick={() => irParaTabela(a.arquivo, s.idx)}>Ver na tabela</button>
+                      <button type="button" style={botao} onClick={() => setAtiva(m => ({ ...m, [a.arquivo]: null }))} aria-label="Fechar a ficha">✕</button>
+                    </div>
+                  )} />
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+              {FILTROS.map(([k, rotulo, f]) => {
+                const n = a.simbolos.filter(f).length;
+                const sel = (filtro[a.arquivo] || 'todas') === k;
+                return (
+                  <button key={k} type="button" onClick={() => setFiltro(m => ({ ...m, [a.arquivo]: k }))}
+                    style={{ ...botao, padding: '3px 10px', ...(sel ? { borderColor: '#c9a227', color: '#c9a227', background: '#1f1c12' } : {}) }}>
+                    {rotulo} ({n})
+                  </button>
+                );
+              })}
+            </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr style={{ textAlign: 'left', color: 'var(--texto-3)' }}>
-                    {['Layer', 'Símbolo (cm)', 'Qtd', 'Tipo do ponto', 'Altura (m)', 'Origem', ''].map(h => <th key={h} style={{ padding: '6px 8px', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>)}
+                    {['', 'Layer', 'Símbolo (cm)', 'Qtd', 'Tipo do ponto', 'Altura (m)', 'Origem', ''].map((h, i) => <th key={i} style={{ padding: '6px 8px', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
                   {linhas.map(s => {
-                    const v = valorDe(a.arquivo, s);
                     const [rotuloOrigem, corOrigem] = ORIGEM[s.origem] || ORIGEM.regra;
-                    const mudou = v.simbolo !== s.simbolo || v.altura !== br(s.altura_m);
+                    const sit = SITUACAO[situacaoDaLinha(s)];
+                    const temPontos = a.planta?.pontos.some(p => p[0] === s.idx);
                     return (
-                      <tr key={s.idx} style={{ borderTop: '1px solid #1e1e1e', ...(ativa[a.arquivo] === s.idx ? { background: '#1b1a12' } : {}) }} data-testid={`linha-mapa-${s.idx}`}
-                        onMouseEnter={() => a.planta && setAtiva(m => (m[a.arquivo] === s.idx ? m : { ...m, [a.arquivo]: s.idx }))}>
+                      <tr key={s.idx} style={{ borderTop: '1px solid #1e1e1e', cursor: temPontos ? 'pointer' : 'default', ...(ativa[a.arquivo] === s.idx ? { background: '#1b1a12', boxShadow: 'inset 3px 0 0 #f0c63c' } : {}) }}
+                        data-testid={`linha-mapa-${s.idx}`} data-mapa-linha={`${a.arquivo}|${s.idx}`}
+                        title={temPontos ? 'Clique para ver os pontos desta linha na planta' : undefined}
+                        // clique na linha (fora dos campos) enquadra os pontos dela na planta
+                        onClick={(e) => { if (temPontos && !e.target.closest('select, input, button, option')) escolherNaTabela(a, s.idx); }}>
+                        <td style={{ padding: '6px 4px 6px 8px' }}><span title={sit.rotulo} style={{ width: 9, height: 9, borderRadius: '50%', background: sit.cor, display: 'inline-block' }} /></td>
                         <td style={{ padding: '6px 8px', color: '#ddd', whiteSpace: 'nowrap' }}>{s.layer}</td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap', color: 'var(--texto-2)' }}>{cm(s.medida)}</td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap', color: 'var(--texto-2)' }} title={MOTIVO_FORA[s.foraDoOrcamento] || 'pontos que entram na contagem / símbolos desta forma no desenho'}>
                           {s.contados}{s.contados !== s.quantidade ? ` / ${s.quantidade}` : ''}
                         </td>
-                        <td style={{ padding: '6px 8px', minWidth: 190 }}>
-                          <select value={v.simbolo} onChange={(e) => mudar(a.arquivo, s, { simbolo: e.target.value })} style={{ ...campo, width: '100%' }} disabled={ocupado || s.confirmado}>
-                            <option value="?">{s.origem === 'nao_reconhecido' && !s.confirmado ? '— escolha o tipo ou "não é ponto" —' : 'Não é ponto'}</option>
-                            {grupos.map(([disc, tipos]) => (
-                              <optgroup key={disc} label={NOME_DISC[disc] || disc}>
-                                {tipos.map(t => <option key={t.simbolo} value={t.simbolo}>{t.nome}</option>)}
-                              </optgroup>
-                            ))}
-                          </select>
-                        </td>
+                        <td style={{ padding: '6px 8px', minWidth: 190 }}>{seletorTipo(a.arquivo, s)}</td>
                         <td style={{ padding: '6px 8px', width: 80 }}>
-                          <input value={v.altura} onChange={(e) => mudar(a.arquivo, s, { altura: e.target.value })} placeholder="padrão" inputMode="decimal" style={{ ...campo, width: 70 }} disabled={ocupado || s.confirmado} />
+                          {campoAltura(a.arquivo, s)}
                           {!s.confirmado && ALTURA_DE[s.alturaDe] && <div style={{ fontSize: 10, color: '#8ab4f8', marginTop: 2, maxWidth: 130, lineHeight: 1.3 }} title={s.alturaTexto || ''}>{ALTURA_DE[s.alturaDe]}</div>}
                         </td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
@@ -295,19 +348,18 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
                             </div>
                           )}
                         </td>
-                        <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
-                          {s.confirmado
-                            ? <button type="button" style={botao} onClick={() => desfazer(a.arquivo, s)} disabled={ocupado}><Undo2 size={12} /> Desfazer</button>
-                            : <button type="button" style={{ ...botao, ...(mudou || s.simbolo !== '?' ? { borderColor: '#5fbf7a', color: '#5fbf7a' } : {}) }} onClick={() => confirmar(a.arquivo, s)} disabled={ocupado}>Confirmar</button>}
-                        </td>
+                        <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{botaoAcao(a.arquivo, s)}</td>
                       </tr>
                     );
                   })}
+                  {!linhas.length && (
+                    <tr><td colSpan={8} style={{ padding: '10px 8px', color: 'var(--texto-3)' }}>Nenhuma linha nesta situação.</td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
-            {a.simbolos.length > LIMITE_LINHAS && !aberta && (
-              <button type="button" style={{ ...botao, marginTop: 8 }} onClick={() => setMostrarTodas(m => ({ ...m, [a.arquivo]: true }))}>Mostrar as {a.simbolos.length} linhas</button>
+            {filtradas.length > LIMITE_LINHAS && !aberta && (
+              <button type="button" style={{ ...botao, marginTop: 8 }} onClick={() => setMostrarTodas(m => ({ ...m, [a.arquivo]: true }))}>Mostrar as {filtradas.length} linhas</button>
             )}
             {a.trechos?.length > 0 && (
               <div style={{ fontSize: 12, color: 'var(--texto-3)', marginTop: 8 }}>
