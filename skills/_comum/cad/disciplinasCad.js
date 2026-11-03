@@ -15,8 +15,8 @@ const { lerAltura } = require('./textoCad');
 const PREFIXO_HM = {
   ELE: 'eletrica', ILU: 'iluminacao', CAB: 'rede', TEL: 'telefonia', ANT: 'antena', CFTV: 'cftv',
   ACE: 'controle_acesso', ALM: 'alarme', INC: 'incendio', SPDA: 'spda', AUT: 'automacao', FV: 'solar', VE: 'carregador',
-  // só em nome de bloco (HM-HOSP-…, HM-SOL-…)
-  HOSP: 'eletrica_hospitalar', SOL: 'solar',
+  // só em nome de bloco (HM-HOSP-…, HM-SOL-…, HM-CLIM-…)
+  HOSP: 'eletrica_hospitalar', SOL: 'solar', CLIM: 'climatizacao',
 };
 // prefixos de outros escritórios (token inteiro da layer ou do nome do bloco)
 const PREFIXO_OUTROS = {
