@@ -903,3 +903,18 @@ Pedido: "faça tudo e deixe a comunicação com o canal remoto por último". O d
 - **Subestação (DWG de média tensão):** transformador, chave seccionadora, punho de manobra e tapete de borracha na layer 0 iam para "não identificados", e a análise saía com 0 material. Agora há siglas de MT, que valem só no arquivo marcado como média tensão ou com kV no nome do bloco. A seta de cota do AutoCAD não aparece mais como bloco não identificado.
 - **DWG analisado antes do mapa do CAD:** os pontos dos símbolos explodidos (566 no projeto da Arena) ficavam fora do orçamento e não havia mapa para conferir. A tela agora mostra "Ler o DWG de novo e gerar o mapa". O botão grava uma análise nova "(lida de novo)", com o mapa e com as edições copiadas; a antiga fica como está.
 - **Validação:** pré-deploy do v2 com 71/71 do backend, Jest e skills ok. O placar de precisão foi pulado: a pasta `C:\HM-Engenharia\Placar de precisao` ainda não tem os gabaritos. Sem migração de banco.
+
+### 03/11/2026: versão 2.27.2 — mapa do CAD que dá para usar
+
+- **Problema:** a planta do mapa era um quadro fixo, só com pontos cinza e, quando havia, o contorno dos ambientes. Não tinha zoom e não dizia o que cada ponto era. Na subestação não dava para ver nem conferir nada.
+- **Agora:** a planta mostra o desenho de verdade (paredes, portas, equipamentos), com estes recursos:
+  - zoom pela roda do mouse e arrastar para mover;
+  - botões Ajustar, Tudo, Linha e planta maior;
+  - "Ir para…" quando a folha tem várias plantas;
+  - pontos coloridos pela situação (vermelho: não reconhecido; amarelo: falta conferir; verde: conferido; cinza: fora), com legenda e contagem;
+  - dica ao passar o mouse;
+  - clicar num ponto ou numa linha da tabela abre uma ficha para escolher o tipo e confirmar ali mesmo;
+  - filtro da tabela (a conferir, não reconhecidas, conferidas).
+- **Análises antigas:** quem tem mapa sem o desenho de fundo vê o aviso e o botão "Ler o DWG de novo". O botão grava uma análise nova, e a antiga fica.
+- **Peso:** o fundo fica no mapa da análise, com no máximo 30 mil vértices (cerca de 230 a 380 KB nos DWG reais), e só vai pela rota do mapa, não na análise inteira.
+- **Validação:** pré-deploy do v2 com 72/72 do backend, Jest e skills ok. Prints conferidos com os DWG da subestação e da Arena. Sem migração de banco.
