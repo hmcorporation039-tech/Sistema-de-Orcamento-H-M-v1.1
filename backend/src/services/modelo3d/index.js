@@ -47,6 +47,10 @@ const EXTRA_GERADOR = [
   // fase 2 (3D interativo): o simulador lógico, e o quadro do prédio sai do caderno de
   // fabricação da skill quadros (pasta inteira, abaixo)
   path.join(COMUM, 'instalacao', 'simulador.js'),
+  // fase 5 (iluminação no 3D): fotometria, ponto a ponto (mapa de iluminância) e as cenas e a
+  // fotometria que o luminotécnico grava na instalação da cena
+  path.join(COMUM, 'fotometria', 'leitor.js'), path.join(COMUM, 'fotometria', 'pontoAPonto.js'),
+  path.join(RAIZ_SKILLS, 'iluminacao', 'scripts', 'lib', 'calculo.js'), path.join(RAIZ_SKILLS, 'iluminacao', 'scripts', 'lib', 'cenas.js'),
 ];
 const PASTA_QUADROS = path.join(RAIZ_SKILLS, 'quadros', 'scripts', 'lib');
 function arquivosDoGerador(pasta = CAD, lista = []) {

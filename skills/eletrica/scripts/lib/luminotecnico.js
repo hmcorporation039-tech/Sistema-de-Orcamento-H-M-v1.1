@@ -14,7 +14,8 @@ const normalizar = (s) => String(s || '').toUpperCase().normalize('NFD').replace
 const DA_ELETRICA = ['tensao_fn', 'tensao_ff', 'sistema', 'esquema', 'isolacao', 'metodo', 'temperatura', 'agrupamento', 'fp', 'queda_max_terminal_pct'];
 
 // → null (sem luminotécnico) ou { calc (da iluminação), opcoes (para o motor da elétrica),
-//   cobertos: Map nome da elétrica → ambiente do luminotécnico, avisos }
+//   cobertos: Map nome da elétrica → ambiente do luminotécnico, fora: [ambientes do
+//   luminotécnico que a elétrica não tem], nomeDaEletrica(nome do luminotécnico), avisos }
 function prepararLuminotecnico(dados) {
   const lt = dados.luminotecnico;
   if (!lt || typeof lt !== 'object' || !(lt.ambientes || []).length) return null;
@@ -30,7 +31,7 @@ function prepararLuminotecnico(dados) {
     const nome = porNome.get(normalizar(a.nome));
     if (nome) cobertos.set(nome, a); else fora.push(a.nome);
   }
-  if (fora.length) avisos.push(`Luminotécnico: ${fora.join(', ')} não está(ão) nos ambientes da elétrica — os circuitos entram no quadro de cargas, mas sem previsão de tomadas para esses ambientes. [CONFERIR]`);
+  if (fora.length) avisos.push(`Luminotécnico: ${fora.join(', ')} não está(ão) nos ambientes da elétrica — os circuitos e as luminárias entram no quadro de cargas e no modelo da instalação, mas sem previsão de tomadas nem posição na planta elétrica. [CONFERIR]`);
   const nomeDaEletrica = (n) => porNome.get(normalizar(n)) || n;
   const opcoes = {
     luminotecnico: {
@@ -38,7 +39,7 @@ function prepararLuminotecnico(dados) {
       circuitos: calc.circuitos.map(x => ({ id: x.id, descricao: x.descricao, potencia_va: x.potencia_va, ligacao: x.ligacao, comprimento_m: x.comprimento, dr: x.dr, ambientes: (x.ambientes || []).map(nomeDaEletrica) })),
     },
   };
-  return { calc, opcoes, cobertos, avisos };
+  return { calc, opcoes, cobertos, fora: calc.ambientes.filter(a => fora.includes(a.nome)), nomeDaEletrica, avisos };
 }
 
 module.exports = { prepararLuminotecnico, normalizar };

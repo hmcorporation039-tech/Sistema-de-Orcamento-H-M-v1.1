@@ -24,7 +24,8 @@ import {
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { iniciarQuadro } from './quadro.js';
-import { simuladorDaCena, htmlFichaPonto, ligarBotoes, criarAviso, cenaQuadroEsquematica } from './interativo.js';
+import { simuladorDaCena, htmlFichaPonto, ligarBotoes, criarAviso, cenaQuadroEsquematica, htmlCenas } from './interativo.js';
+import { criarMapa } from './mapaIluminancia.js';
 
 // Cena de QUADRO elétrico (skills/quadros): visualizador próprio em ./quadro.js.
 // A cena de prédio abaixo segue igual, só dentro de iniciarPredio().
@@ -501,6 +502,7 @@ const interativos = [];           // { t, i, it, id, kind: luz|tomada|motor|coma
 const interativoDe = new WeakMap(); // item da cena → interativo
 const BRANCO = new Color(1, 1, 1);
 const corSim = new Color();
+let mapa = null; // mapa de iluminância (fase 5) — criado no fim, com os botões do 3D interativo
 if (sim) {
   const quadroDoPonto = new Map(sim.quadros().filter(q => q.ponto).map(q => [String(q.ponto), q.tag]));
   for (const t of CENA.dispositivos) {
@@ -555,6 +557,9 @@ function aplicarEstadoSim() {
   for (const m of malhas) m.instanceColor.needsUpdate = true;
   atualizarLuzes();
   atualizarFicha();
+  // fase 5: o mapa de iluminância e as cenas do ambiente acompanham o simulador
+  mapa?.atualizar();
+  atualizarCenasDentro();
   pedirDesenho(true);
 }
 
@@ -947,6 +952,8 @@ function mostrarPainel(a) {
   }
   aplicarGrandes();
   atualizarLuzes(); // 3D interativo: luzes dinâmicas só no ambiente atual
+  atualizarCenasDentro(); // fase 5: cenas do ambiente no painel de baixo
+  mapa?.legenda();        // e os números do mapa de iluminância do ambiente
   pedirDesenho(true);
 }
 function entrarAmbiente(ref, op = {}) {
@@ -1360,7 +1367,36 @@ if (sim) {
   const botao = (texto, titulo, fn) => { const b = document.createElement('button'); b.textContent = texto; b.title = titulo; b.addEventListener('click', fn); barra.insertBefore(b, antes || null); return b; };
   for (const q of sim.quadros().slice(0, 4)) botao(`Quadro ${q.tag}`, `Abrir o quadro ${q.tag}: porta, disjuntores com alavanca (desligar um disjuntor apaga o circuito no prédio)`, () => abrirQuadro(q.tag));
   botao('Religar tudo', 'Simulação: volta tudo ao estado inicial (disjuntores ligados, luzes acesas)', () => { sim.reiniciar(); aviso('Simulação reiniciada: tudo ligado'); });
+  // fase 5: mapa de iluminância no piso (falsa-cor em lux), calculado aqui pelo mesmo módulo
+  // ponto a ponto da skill — só na cena com o luminotécnico (fotometria das luminárias)
+  mapa = criarMapa({
+    CENA, INST, sim, interativos, pai: grupo('mapa-lux'), altura: ALTURA_PLANTA + 0.004, esc,
+    celular: LUZES_MAX <= 8, pedirDesenho, ambienteAtual: () => (modo === 'dentro' ? atual : -1),
+  });
+  if (mapa) {
+    const b = botao('Mapa de iluminância', 'Cores no piso com a iluminância calculada ponto a ponto (lux), com o estado atual das luzes: cenas, dimerização e disjuntores', () => {
+      const v = mapa.alternar();
+      b.classList.toggle('ativo', v);
+      aviso(v ? 'Mapa de iluminância: só luz direta (sem interreflexão)' : 'Mapa de iluminância desligado');
+    });
+  }
   sim.assinar(aplicarEstadoSim);
+}
+
+// cenas do ambiente atual no painel "Dentro do ambiente" (fase 5): um grupo de botões por
+// comando com cenas (teclado de cenas ou DALI-2 com cenas do projeto)
+function atualizarCenasDentro() {
+  if (!sim || !painelDentro) return;
+  let el = document.getElementById('dentro-cenas');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'dentro-cenas';
+    painelDentro.insertBefore(el, document.getElementById('b-voltar'));
+    ligarBotoes(el, sim, { aviso: (t) => aviso?.(t) });
+  }
+  if (modo !== 'dentro' || atual < 0) { el.innerHTML = ''; return; }
+  const ids = [...new Set(interativos.filter(x => x.kind === 'luz' && x.it[5] === atual).map(x => sim.ponto(x.id)?.comando).filter(Boolean))];
+  el.innerHTML = ids.map(id => htmlCenas(sim, id, { titulo: ids.length > 1 })).filter(Boolean).join('<i></i>');
 }
 
 // o quadro em 3D numa camada por cima do prédio, com o MESMO simulador (mesmo estado)
@@ -1505,6 +1541,8 @@ window.HM3D = {
   get quadroAberto() { return quadroAberto; }, get quadro3d() { return qsim?.ctrl || null; },
   corDoPonto: (id) => { const x = interativos.find(k => k.id === id); if (!x?.t.malha.instanceColor) return null; const c = new Color(); x.t.malha.getColorAt(x.i, c); return [c.r, c.g, c.b].map(v => Math.round(v * 100) / 100); },
   get luzesAcesas() { return luzesSim.filter(l => l.intensity > 0).length; },
+  // fase 5: mapa de iluminância (null sem luminotécnico na cena)
+  get mapa() { return mapa; },
 };
 function quadro(agora) {
   requestAnimationFrame(quadro);

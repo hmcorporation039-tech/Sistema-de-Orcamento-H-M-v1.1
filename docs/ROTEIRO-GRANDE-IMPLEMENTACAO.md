@@ -259,6 +259,25 @@ Passos:
 
 Iluminação de emergência continua na skill de incêndio (NBR 10898).
 
+**Feito no v2 em 02/11/2026** (sem commit; falta o OK do Márcio para levar à produção):
+- **Fotometria** (`skills/_comum/fotometria/leitor.js`, JS puro): lê IES LM-63 (tipo C, TILT, multiplicador e fator de reator, simetrias de eixo, quadrantes, C0–C180, C90–C270 e completa) e LDT/EULUMDAT (simetrias 0 a 4). Sem arquivo, curva simétrica aproximada I0·cos^m γ pelo fluxo e pelo facho do cadastro (sem facho, 120°), avisada com [CONFERIR]. Testado com arquivos sintéticos gerados no teste; nenhum arquivo de fabricante no repositório.
+- **Ponto a ponto** (`skills/_comum/fotometria/pontoAPonto.js`, o mesmo código na skill e no 3D): E = FM × Σ I(C, γ) × cos γ / d², só luz direta, sem interreflexão (avisado). A skill dá Em, Emín, Emáx e U0 nos centros da malha de medição. Ficam lado a lado com a Em do método dos lúmens e com a U0 mínima da atividade, no resumo, no memorial (item 6.1) e na planilha (aba "Ponto a ponto").
+- **Cenas** (`skills/iluminacao/scripts/lib/cenas.js`): no formulário, tabelas de grupos ("filas 2-3", "1-4", "coluna 1", "demais") e de cenas ("Mesa 100; Tela 30"), para DALI-2 e teclado de cenas. Vão para o modelo da instalação (`comando.cenas`, `ponto.grupo`, `ponto.luminaria` e `instalacao.luminotecnico`, com a fotometria compacta). No simulador, o nível de cada luminária segue o grupo dela na cena ativa; o teclado troca de cena (… → desligado → 1ª) e o DALI-2 com cenas também chama cena. O teclado sem cenas no projeto segue com 100/60/30 %/desligado, como antes.
+- **3D:** o botão "Mapa de iluminância" pinta o piso de cada ambiente do luminotécnico em falsa-cor, com legenda em lux. Leva em conta o estado das luzes (cena, dimerização, disjuntor). Dentro do ambiente, mostra Em, Emín e U0 na mesma malha do memorial, e os números batem: na cena de teste, 463 / 268 / 0,58 nos dois. O painel "Dentro do ambiente" tem os botões das cenas, e a ficha da luminária e do teclado mostra a cena ativa e o grupo. A grade é grossa (≤ 250 células por ambiente no celular, ≤ 600 no computador), calculada só quando o botão é ligado; numa cena grande demais, só o ambiente atual. Cena antiga ou sem luminotécnico abre como antes, sem o botão.
+- **Formulário:** coluna "Fotometria (IES/LDT)" com botão "Carregar" (novo tipo de coluna `arquivo` em `frontend/src/components/laudos/campos.js`, até 512 KB, guardado no próprio formulário) e coluna "Facho (°)".
+- **SK-01:** já resolvido na fase 0 (`posicionamento.gradeNxNy` → `completarDentro`, casos SK-01 em `teste-cad.js`). O 3D usa a mesma regra da planta.
+- **Achado da fase 2 ("Circuito IL2: os pontos somam 160 VA e o quadro de cargas tem 260 VA"):**
+  - Era dado incompleto no modelo, não erro do validador. O IL2 (Cozinha + Banheiro) entrava inteiro no quadro de cargas, mas a elétrica só gerava pontos para os ambientes dela, e o Banheiro estava só no luminotécnico.
+  - Agora as luminárias desses ambientes entram no modelo, depois dos ids da planta, sem posição (a planta elétrica não tem o ambiente). O validador continua exigindo que a soma feche.
+- **Testes:** fotometria 10 casos, instalação 11 (+1), simulador 12 (+1), iluminação 83 verificações (+18, com cálculo à mão), testar-todas sem falha, backend modelo3d 16. No navegador headless, o mapa aparece, a troca de cena muda luzes e mapa, o dimmer e o disjuntor mudam o mapa, a cena antiga abre sem o botão, nenhum erro de JS e 9 ms para calcular no celular.
+- **[CONFERIR]:**
+  - U0 mínima de 0,4/0,6 (premissa EN 12464-1, já marcada no JSON das atividades).
+  - Malha p = 0,2 × 5^log10(d).
+  - Área da tarefa: o ponto a ponto usa o ambiente inteiro, inclusive junto às paredes.
+  - Curva aproximada sem arquivo e facho padrão de 120°.
+  - Fluxo do arquivo × cadastro quando diferem mais de 5 %.
+- **Fica para depois:** interreflexão (radiosidade) e luz natural; orientação da luminária diferente da grade (C0 ao longo do lado maior); fonte linear (o perfil é tratado como pontual); cenas salvas por cliente (`modelo_3d_estados`).
+
 ### Fase 6 — Falar com o sistema de fora do escritório (WhatsApp, Telegram, voz)
 **Entrega:** mandar mensagem e receber resposta, por exemplo:
 - "custos da obra Santa Lucia este mês";

@@ -9,6 +9,11 @@ const E = require('../../../_comum/eletrico/calculo');
 const T = require('../../../_comum/eletrico/tabelas');
 const ATIV = require('../../dados/atividades_iso8995.json');
 const FUT = require('../../dados/fator_utilizacao.json');
+// fase 5 (iluminação no 3D): fotometria IES/LDT ou aproximada, ponto a ponto (o MESMO
+// módulo do mapa de iluminância do 3D) e cenas com grupos
+const FOTO = require('../../../_comum/fotometria/leitor');
+const PP = require('../../../_comum/fotometria/pontoAPonto');
+const { gruposECenas } = require('./cenas');
 
 const ATIVIDADES = ATIV.atividades;
 const ATIVIDADE = Object.fromEntries(ATIVIDADES.map(a => [a.id, a]));
@@ -112,14 +117,9 @@ function escolherGrade(nMin, C, L, smax, razaoMax = 1.5, exata = false) {
 }
 
 // Malha de medição: p = 0,2·5^log10(d), d = maior dimensão (premissa da
-// EN 12464-1 [CONFERIR com a NBR ISO/CIE 8995-1]); pontos no centro das células
-function malhaMedicao(C, L) {
-  const d = Math.max(C, L);
-  const p = Math.min(10, 0.2 * 5 ** Math.log10(Math.max(d, 1)));
-  const nx = Math.max(1, Math.ceil(C / p - 1e-9));
-  const ny = Math.max(1, Math.ceil(L / p - 1e-9));
-  return { p, nx, ny, pontos: nx * ny };
-}
+// EN 12464-1 [CONFERIR com a NBR ISO/CIE 8995-1]); pontos no centro das células.
+// A conta fica em ../../../_comum/fotometria/pontoAPonto.js: o mapa do 3D usa a mesma malha.
+const malhaMedicao = (C, L) => PP.malhaMedicao(C, L);
 
 function posicoesGrade(nx, ny, C, L) {
   const dx = C / nx;
@@ -159,9 +159,14 @@ function normalizarLuminaria(l, i) {
     suspensao: num(l.suspensao_m, tipo === 'pendente' ? 0.8 : 0),
     comprimento: tipo === 'perfil' ? num(l.comprimento_m, 1) : null,
     driverExterno: tipo === 'perfil' || !!l.driver_externo,
+    angulo: num(l.angulo_facho_graus, null),
+    arquivoFotometria: l.fotometria && typeof l.fotometria === 'object' ? (l.fotometria.nome || 'arquivo') : (l.fotometria ? 'arquivo colado' : null),
   };
   if (!(lum.potencia > 0) || !(lum.fluxo > 0)) throw new Error(`Luminária ${lum.codigo}: informe potência (W) e fluxo luminoso (lm) maiores que zero.`);
   lum.eficacia = lum.fluxo / lum.potencia;
+  // distribuição de intensidade: arquivo do fabricante (IES/LDT) ou a simétrica aproximada
+  // pelo fluxo e pelo ângulo de facho do cadastro (avisada) — ../../../_comum/fotometria
+  lum.fotometria = FOTO.fotometriaDaLuminaria({ arquivo: l.fotometria, fluxo: lum.fluxo, angulo: lum.angulo });
   return lum;
 }
 
@@ -283,6 +288,30 @@ function calcularAmbiente(a, idx, luminarias, p, avisos) {
     distanciaQuadro: num(a.distancia_quadro_m, 0) > 0 ? num(a.distancia_quadro_m) : null,
     circuitoInformado: String(a.circuito || '').trim() || null,
     instaladaVa, minimoVa, cargaVa, malha: malhaMedicao(C, L), circuitos: [], distribuicao: [], comandoTipo,
+  };
+}
+
+// ── Ponto a ponto (verificação da uniformidade) ────────────────────────────
+// E = FM · Σ I(C, γ) · cos γ / d² nos centros da malha de medição do ambiente, com a
+// fotometria da luminária (../../../_comum/fotometria). Só luz direta, sem
+// interreflexão: Em fica abaixo da do método dos lúmens (que inclui a luz refletida no
+// FU) e a U0 sai conservadora. Compara U0 = Emín/Em com a uniformidade da atividade.
+function pontoAPonto(a, avisos) {
+  const lum = a.luminaria;
+  const r = PP.calcularAmbiente({
+    poligono: [[0, 0], [a.comprimento, 0], [a.comprimento, a.largura], [0, a.largura]], plano: a.plano, fm: a.fm,
+    nx: a.malha.nx, ny: a.malha.ny,
+    luminarias: a.posicoes.map(p => ({ x: p.x, y: p.y, z: a.alturaMontagem, fotometria: lum.fotometria })),
+  });
+  const okU0 = a.uoMin != null ? r.u0 >= a.uoMin - 1e-9 : null;
+  const v = (x) => String(arred(x, 2)).replace('.', ',');
+  if (okU0 === false) avisos.push(`${a.nome}: uniformidade calculada U0 = ${v(r.u0)} < ${v(a.uoMin)} no ponto a ponto (só luz direta, grade do ambiente inteiro, inclusive junto às paredes; a norma pede na área da tarefa) — conferir a área da tarefa, o espaçamento ou a curva da luminária. [CONFERIR]`);
+  return {
+    em: r.em, emin: r.emin, emax: r.emax, u0: r.u0, okU0, pontos: r.pontos, nx: a.malha.nx, ny: a.malha.ny, p: a.malha.p,
+    razaoLumens: a.emObtida > 0 ? r.em / a.emObtida : null, fonte: lum.fotometria.fonte,
+    // 0,7 na tarefa (seção 4 da norma, como já usado na medição); 0,4 e 0,6 são premissas da
+    // EN 12464-1 marcadas [CONFERIR] em dados/atividades_iso8995.json
+    uoConferir: a.uoMin != null && a.uoMin !== 0.7,
   };
 }
 
@@ -468,6 +497,24 @@ function calcular(dados) {
   const lista = (dados.ambientes || []).filter(a => a && (a.nome || a.area_m2 || a.comprimento_m));
   if (!lista.length) throw new Error('Cadastre ao menos um ambiente (nome, atividade, dimensões e luminária).');
   const ambientes = lista.map((a, i) => calcularAmbiente(a, i, luminarias, p, avisos));
+  // grupos de luminárias e cenas (nome e % de cada grupo) — vão para o modelo da instalação
+  for (const a of ambientes) Object.assign(a, gruposECenas(a, dados.grupos, dados.cenas, avisos));
+  const chaveNome = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  const nomes = new Set(ambientes.map(a => chaveNome(a.nome)));
+  const sem = [...(dados.grupos || []), ...(dados.cenas || [])].filter(l => l && l.ambiente && !nomes.has(chaveNome(l.ambiente)));
+  if (sem.length) avisos.push(`Grupos/cenas de ambiente que não está na tabela de ambientes: ${[...new Set(sem.map(l => l.ambiente))].join(', ')}.`);
+  // ponto a ponto por ambiente (uniformidade calculada) e os avisos da fotometria
+  for (const a of ambientes) a.pontoAPonto = pontoAPonto(a, avisos);
+  const usadas = luminarias.filter(l => ambientes.some(a => a.luminaria === l));
+  for (const l of usadas) {
+    const f = l.fotometria;
+    // (o ângulo adotado sem dado entra no aviso da distribuição aproximada, abaixo)
+    for (const t of f.avisos.filter(x => !/não informado/.test(x))) avisos.push(`Luminária ${l.codigo}: ${t}`);
+    if (f.fonte !== 'aproximada' && Math.abs(f.fluxo_lm - l.fluxo) > 0.05 * l.fluxo) avisos.push(`Luminária ${l.codigo}: o arquivo fotométrico integra ${f.fluxo_lm} lm e o cadastro diz ${l.fluxo} lm — o ponto a ponto usa o arquivo; o método dos lúmens, o cadastro. [CONFERIR]`);
+  }
+  const aprox = usadas.filter(l => l.fotometria.fonte === 'aproximada').map(l => `${l.codigo} (${l.fotometria.angulo_graus}°${l.angulo ? '' : ' adotado, sem ângulo no cadastro'})`);
+  if (aprox.length) avisos.push(`Ponto a ponto com distribuição SIMÉTRICA APROXIMADA I = I0·cos^m γ pelo fluxo e pelo ângulo de facho do cadastro: ${aprox.join(', ')} — carregue o arquivo IES/LDT do fabricante para a curva real. [CONFERIR]`);
+  avisos.push('Ponto a ponto: só a luz direta (lei do inverso do quadrado × cosseno), sem interreflexão de teto, paredes e piso — a Em calculada fica abaixo da do método dos lúmens; serve para verificar a uniformidade (U0 = Emín/Em, conservadora).');
   const circuitos = montarCircuitos(ambientes, c, p, avisos);
   const barramentos = montarBarramentos(ambientes, p, avisos);
   const mats = materiais(ambientes, circuitos, barramentos, p, avisos);
@@ -489,6 +536,6 @@ function calcular(dados) {
 }
 
 module.exports = {
-  calcular, calcularAmbiente, indiceRecinto, fatorUtilizacao, metodoLumens, escolherGrade, malhaMedicao, posicoesGrade,
+  calcular, calcularAmbiente, pontoAPonto, indiceRecinto, fatorUtilizacao, metodoLumens, escolherGrade, malhaMedicao, posicoesGrade,
   ATIVIDADES, ATIVIDADE, FM, ROTULO_CONSERVACAO, CONTROLES, COMANDOS_TIPO, TIPOS_LUMINARIA, DIMERIZAVEL, DALI,
 };

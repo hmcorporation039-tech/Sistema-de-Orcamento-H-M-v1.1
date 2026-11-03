@@ -253,4 +253,46 @@ caso('quadro de automação (skill quadros): um painel por partida de motor, dis
   assert.strictEqual(s.alimentado(ddr.circuitos[0]), false);
 });
 
-console.log(`simulador da instalação (fase 2): ${ok} casos ok`);
+// ── Fase 5: cenas definidas no projeto (nome e % de cada grupo) ─────────────
+caso('cenas do projeto: nível por grupo, troca de cena, desligado e DALI-2 com cenas (fase 5)', () => {
+  const ILU = require(path.join(SKILLS, 'iluminacao', 'scripts', 'lib', 'index.js'));
+  const r = ILU.processar(ILU.exemplo());
+  const s = criarSimulador(r.instalacao);
+  const k = r.instalacao.comandos.find(c => c.tipo === 'cena');
+  assert.deepStrictEqual(k.cenas.map(c => c.nome), ['Reunião', 'Apresentação', 'Videoconferência', 'Limpeza']);
+  const ponto = (g) => k.pontos.find(id => s.ponto(id).grupo === g);
+  const [mesa, tela] = [ponto('Mesa'), ponto('Tela')];
+  const niveis = () => [s.estadoPonto(mesa).nivel, s.estadoPonto(tela).nivel];
+  assert.deepStrictEqual(niveis(), [1, 1], 'começa na 1ª cena (Reunião)');
+  const tc = k.dispositivos[0];
+  s.acionar(tc); assert.deepStrictEqual(niveis(), [0.4, 0], 'Apresentação: mesa 40 %, tela apagada');
+  assert.match(s.estadoPonto(mesa).texto, /40 %/);
+  assert.strictEqual(s.estadoComando(k.id).cenaAtiva, 'Apresentação');
+  s.acionar(tc); assert.deepStrictEqual(niveis(), [0.8, 0.5], 'Videoconferência');
+  s.acionar(tc); assert.deepStrictEqual(niveis(), [1, 1], 'Limpeza: todos os grupos 100 %');
+  s.acionar(tc); assert.deepStrictEqual(niveis(), [0, 0], 'depois da última: desligado');
+  s.acionar(tc); assert.deepStrictEqual(niveis(), [1, 1], 'volta à 1ª');
+  s.acionar(tc, { cena: 2 }); assert.deepStrictEqual(niveis(), [0.8, 0.5], 'chamar a cena 3 direto');
+  s.acionar(tc, { cena: -1 }); assert.deepStrictEqual(niveis(), [0, 0], 'desligar');
+  // desligar o disjuntor apaga a cena; religar volta a ela
+  s.acionar(tc, 1); s.desligar(s.circuito(k.circuitos[0]).disjuntor);
+  assert.deepStrictEqual(niveis(), [0, 0]);
+  s.ligar(s.circuito(k.circuitos[0]).disjuntor);
+  assert.deepStrictEqual(niveis(), [0.4, 0]);
+  // estado salvo e recarregado (troca de planta): a cena volta
+  const s2 = criarSimulador(r.instalacao); s2.importar(s.exportar());
+  assert.strictEqual(s2.estadoComando(k.id).cenaAtiva, 'Apresentação');
+  // DALI-2 com cenas: começa no nível manual; chamar cena e depois a botoeira volta ao manual
+  const inst = clone(r.instalacao);
+  const kd = inst.comandos.find(c => c.tipo === 'cena'); kd.tipo = 'dali';
+  const d = criarSimulador(inst);
+  const n = () => [d.estadoPonto(mesa).nivel, d.estadoPonto(tela).nivel];
+  assert.deepStrictEqual(n(), [1, 1]);
+  d.acionar(tc, { cena: 1 }); assert.deepStrictEqual(n(), [0.4, 0]);
+  d.acionar(tc, 0.25); assert.deepStrictEqual(n(), [0.25, 0.25], 'nível manual sai da cena');
+  // validador: cena com grupo que não existe vira aviso
+  kd.cenas[0].niveis.Palco = 1;
+  assert.ok(I.validarInstalacao(inst).avisos.some(a => /Palco/.test(a)));
+});
+
+console.log(`simulador da instalação (fases 2 e 5): ${ok} casos ok`);

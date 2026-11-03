@@ -7,7 +7,7 @@
 // Os ids são os da planta (T1, E1, L1, S1, SP1 — ./plantasDisciplina.js usa estes).
 
 const I = require('../../../_comum/instalacao');
-const { pontosDoAmbiente, circuitoDoModelo, ligarPontosAosCircuitos } = require('../../../iluminacao/scripts/lib/instalacao');
+const { pontosDoAmbiente, circuitoDoModelo, ligarPontosAosCircuitos, luminotecnicoDoModelo } = require('../../../iluminacao/scripts/lib/instalacao');
 const { normalizar } = require('./luminotecnico');
 
 // pontos da planta elétrica nos ambientes do luminotécnico
@@ -81,6 +81,18 @@ function instalacaoDaEletrica(calc, { quadro: tag = 'QD-01', lum = null } = {}) 
       s.comando = id;
     }
   }
+  // ambientes do luminotécnico que a elétrica não lista (achado da fase 2: "Circuito IL2: os
+  // pontos somam 160 VA e o quadro de cargas tem 260 VA" com Sala e Cozinha na elétrica e o
+  // Banheiro só no luminotécnico): o circuito IL* deles está no quadro de cargas, então as
+  // luminárias também entram no modelo — sem posição (a planta elétrica não tem o ambiente).
+  // Ids depois dos da planta: os pontos que já existiam não mudam de id.
+  for (const a of lum?.fora || []) {
+    const r = pontosDoAmbiente(a, ctx);
+    inst.pontos.push(...r.pontos);
+    if (r.comando) inst.comandos.push(r.comando);
+  }
+  // fase 5: fotometria e dados por ambiente do luminotécnico (mapa de iluminância do 3D)
+  if (lum) inst.luminotecnico = luminotecnicoDoModelo(lum.calc, lum.nomeDaEletrica || ((n) => n));
   // o quadro na planta (1º ambiente): o id do símbolo fica no quadro, não é ponto de circuito
   if (calc.previsao.length) q.ponto = ctx.ids('QD');
 

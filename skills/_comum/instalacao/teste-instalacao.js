@@ -226,4 +226,25 @@ caso('DWG: texto "3a", "3" + "b" e "C4" junto das luminárias vira sugestão de 
   assert.deepStrictEqual(circuitoConferido({ ...em(1.5, 1.5), confirmado: true }), { circuito: '3', retorno: 'a', comando: '3a' });
 });
 
-console.log(`instalação (modelo único, fase 1): ${ok} casos ok`);
+// ── Achado da fase 2 (corrigido na fase 5): luminotécnico com ambiente que a elétrica não tem ──
+caso('elétrica sem o Banheiro do luminotécnico: o IL2 fecha (luminárias do Banheiro no modelo, sem posição na planta)', () => {
+  // a cena reduzida da fase 2 (Sala e Cozinha na elétrica; o luminotécnico com o Banheiro):
+  // antes, "Circuito IL2: os pontos somam 160 VA e o quadro de cargas tem 260 VA" — o IL2
+  // (Cozinha + Banheiro) estava inteiro no quadro de cargas e só as luminárias da Cozinha no modelo
+  const dados = () => { const d = dadosCasa(); d.luminotecnico = clone(EXEMPLO.luminotecnico); return d; };
+  const r = ELE.processar(dados());
+  assert.deepStrictEqual(r.validacaoInstalacao.erros, []);
+  const ban = r.instalacao.pontos.filter(p => p.ambiente === 'Banheiro');
+  assert.ok(ban.some(p => p.tipo === 'ponto_luz' && p.circuito === 'IL2'), 'luminária do Banheiro no IL2');
+  assert.ok(r.instalacao.comandos.some(c => c.ambiente === 'Banheiro'));
+  // os ids da planta não mudam (os do Banheiro vêm depois) e o 3D não posiciona o que não tem ambiente
+  const { montarCenasPorPlanta } = require(path.join(CAD, 'modelosPorPlanta.js'));
+  const cena = montarCenasPorPlanta(lerArquitetura(arquitetura()), { disciplinas: ['eletrica'], dadosPorDisciplina: { eletrica: dados() }, sugerirInfra: false }).cenas[0];
+  assert.ok(cena.instalacao.pontos.filter(p => p.ambiente === 'Banheiro').every(p => p.posicao === null));
+  assert.ok(cena.instalacao.pontos.filter(p => p.ambiente === 'Sala' && p.tipo === 'ponto_luz').every(p => Array.isArray(p.posicao)));
+  assert.deepStrictEqual(I.validarInstalacao(cena.instalacao).erros, []);
+  // fase 5: a cena leva a fotometria e os dados do luminotécnico (mapa de iluminância do 3D)
+  assert.ok(cena.instalacao.luminotecnico.fotometrias.DL1 && cena.instalacao.luminotecnico.ambientes.Sala.plano_m >= 0);
+});
+
+console.log(`instalação (modelo único, fases 1 e 5): ${ok} casos ok`);

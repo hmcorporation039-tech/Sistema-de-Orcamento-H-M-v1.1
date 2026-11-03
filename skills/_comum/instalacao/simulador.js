@@ -12,10 +12,26 @@
 // (./teste-simulador.js) e o mesmo código roda no visualizador 3D (bundle esbuild).
 // O estado fica só no objeto (no navegador: a aba); exportar()/importar() o levam de uma
 // vista para outra (prédio ↔ quadro, troca de planta).
+//
+// Fase 5 (iluminação no 3D): cenas DEFINIDAS no projeto — comando.cenas = [{ nome, niveis:
+// { grupo: 0–1 }, padrao }] e ponto.grupo — dão o nível de CADA luminária (grupo a grupo);
+// o teclado troca de cena (…→ última → desligado → 1ª) e o DALI-2 com cenas também chama
+// cena. Lista só de números (comando antigo, sem cenas no projeto) segue como antes:
+// 100 % → 60 % → 30 % → desligado.
 
 // tipos de ponto que são CARGA ligada ao comando (acendem/giram)
 const LUZ = new Set(['luminaria', 'ponto_luz']);
 const MOTOR = 'motor';
+
+// cenas do comando: definidas no projeto (objetos) ou a lista antiga de níveis
+const cenasDefinidas = (k) => Array.isArray(k.cenas) && k.cenas.length && k.cenas.every(c => c && typeof c === 'object');
+const CENAS_PADRAO = [1, 0.6, 0.3, 0];
+// nível (0–1) de um grupo numa cena definida
+function nivelNaCena(cena, grupo) {
+  const v = cena?.niveis && grupo != null && grupo in cena.niveis ? cena.niveis[grupo] : cena?.padrao;
+  return Math.max(0, Math.min(1, Number(v) || 0));
+}
+const nivelMaximoDaCena = (cena) => Math.max(nivelNaCena(cena, null), ...Object.values(cena?.niveis || {}).map(v => Math.max(0, Math.min(1, Number(v) || 0))));
 
 // estado inicial dos comandos: 'ligado' (luzes acesas — desligar um disjuntor mostra o
 // efeito na hora) ou 'desligado'. Motores começam sempre parados (painel: aperte LIGA).
@@ -59,7 +75,10 @@ function criarSimulador(instalacao, opcoes = {}) {
       if (!disp.length) s.pos._ = false;
       if (on) {
         s.pos[Object.keys(s.pos)[0]] = true;
-        s.rele = true; s.k = true; s.presenca = true; s.nivel = 1; s.cena = 0;
+        s.rele = true; s.k = true; s.presenca = true; s.nivel = 1;
+        // teclado de cenas começa na 1ª cena; o DALI-2 com cenas, no nível manual (100 %)
+        s.cena = k.tipo === 'cena' || !cenasDefinidas(k) ? 0 : -1;
+        if (k.tipo === 'cena' && cenasDefinidas(k)) s.nivel = nivelMaximoDaCena(k.cenas[0]);
       }
       e.comandos[S(k.id)] = s;
     }
@@ -139,9 +158,18 @@ function criarSimulador(instalacao, opcoes = {}) {
       case 'pulsador_rele_impulso': return s.rele ? 1 : 0;
       case 'contator_botoeira': return s.k && !s.emergencia ? 1 : 0;
       case 'sensor_presenca': return s.presenca && s.habilitado ? 1 : 0;
-      case 'dimmer': case 'dimmer_010': case 'dali': case 'cena': return Math.max(0, Math.min(1, Number(s.nivel) || 0));
+      case 'dimmer': case 'dimmer_010': case 'dali': case 'cena':
+        if (cenasDefinidas(k) && (k.tipo === 'cena' || s.cena >= 0)) return s.cena >= 0 && k.cenas[s.cena] ? nivelMaximoDaCena(k.cenas[s.cena]) : 0;
+        return Math.max(0, Math.min(1, Number(s.nivel) || 0));
       default: return Object.values(s.pos).reduce((x, v) => x !== !!v, false) ? 1 : 0;
     }
+  }
+
+  // nível de UMA carga do comando: com cena definida ativa, o do grupo da carga na cena
+  function saidaDoPonto(k, p) {
+    const s = estado.comandos[S(k.id)];
+    if (s && cenasDefinidas(k) && (k.tipo === 'cena' || s.cena >= 0)) return s.cena >= 0 && k.cenas[s.cena] ? nivelNaCena(k.cenas[s.cena], p?.grupo) : 0;
+    return saida(k);
   }
 
   // contator e painel de motor sem tensão na bobina: o selo cai (não volta sozinho)
@@ -186,7 +214,7 @@ function criarSimulador(instalacao, opcoes = {}) {
     let nivel = al ? 1 : 0;
     let texto;
     if (LUZ.has(p.tipo)) {
-      if (k) nivel = al ? saida(k) : 0;
+      if (k) nivel = al ? saidaDoPonto(k, p) : 0;
       texto = !al ? `apagada — sem energia (${m})` : nivel > 0 ? (nivel < 1 ? `acesa em ${Math.round(nivel * 100)} %` : 'acesa') : `apagada pelo comando ${k ? k.id : ''}`.trim();
     } else if (p.tipo === MOTOR) {
       const pn = painel(p.circuito);
@@ -206,7 +234,8 @@ function criarSimulador(instalacao, opcoes = {}) {
     const k = comandoDe.get(S(id));
     if (!k) return null;
     const s = estado.comandos[S(id)];
-    return { id: S(id), tipo: k.tipo, saida: saida(k), bobina: bobinaAlimentada(k), ...JSON.parse(JSON.stringify(s)) };
+    const cenas = cenasDefinidas(k) ? k.cenas.map(c => c.nome || '') : null;
+    return { id: S(id), tipo: k.tipo, saida: saida(k), bobina: bobinaAlimentada(k), ...JSON.parse(JSON.stringify(s)), ...(cenas ? { cenas, cenaAtiva: s.cena >= 0 ? cenas[s.cena] ?? null : null } : {}) };
   }
 
   // ── ações ─────────────────────────────────────────────────────────────────
@@ -247,6 +276,13 @@ function criarSimulador(instalacao, opcoes = {}) {
     const tipoDisp = p?.tipo || '';
     const ev = (texto) => { mudou({ tipo: 'comando', comando: S(k.id), ponto: p ? S(p.id) : null }); return texto; };
     const toggleNivel = () => { if (s.nivel > 0) { s.ultimo = s.nivel; s.nivel = 0; } else s.nivel = s.ultimo || 1; };
+    // chamar uma cena definida: acao { cena: índice } (−1 = desligar), em qualquer comando com cenas
+    if (cenasDefinidas(k) && acao && typeof acao === 'object' && Number.isFinite(Number(acao.cena))) {
+      const i = Math.round(Number(acao.cena));
+      s.cena = i >= 0 && i < k.cenas.length ? i : -1;
+      if (s.cena >= 0) s.nivel = nivelMaximoDaCena(k.cenas[s.cena]); else if (k.tipo === 'cena') s.nivel = 0;
+      return ev(s.cena >= 0 ? `cena "${k.cenas[s.cena].nome}"` : k.tipo === 'cena' ? 'cenas: desligado' : 'nível manual');
+    }
     // sensor fora do comando de presença (DALI com sensor): simula a detecção como um liga/desliga
     if (tipoDisp === 'sensor' && k.tipo === 'sensor_presenca') { s.presenca = !s.presenca; return ev(s.presenca ? 'presença detectada' : 'ambiente vazio (sensor)'); }
     switch (k.tipo) {
@@ -278,13 +314,23 @@ function criarSimulador(instalacao, opcoes = {}) {
         return ev(s.habilitado ? 'sensor habilitado' : 'desligamento manual (sensor inibido)');
       }
       case 'dimmer': case 'dimmer_010': case 'dali': {
+        // botoeira/dimmer manual: sai da cena (DALI-2 com cenas) para o nível manual
+        if (s.cena >= 0 && cenasDefinidas(k)) { s.nivel = saida(k); s.cena = -1; }
         if (typeof acao === 'number' && Number.isFinite(acao)) { s.nivel = Math.max(0, Math.min(1, acao)); if (s.nivel > 0) s.ultimo = s.nivel; }
         else toggleNivel();
         return ev(s.nivel > 0 ? `nível ${Math.round(s.nivel * 100)} %` : 'desligado');
       }
       case 'cena': {
-        // teclado de cenas: 100 % → 60 % → 30 % → desligado → 100 %…
-        const cenas = Array.isArray(k.cenas) && k.cenas.length ? k.cenas.map(Number) : [1, 0.6, 0.3, 0];
+        if (cenasDefinidas(k)) {
+          // cenas do projeto: 1ª → … → última → desligado → 1ª; número = índice (−1 = desligado)
+          const n = k.cenas.length;
+          if (typeof acao === 'number' && Number.isFinite(acao)) s.cena = Math.round(acao) >= 0 && Math.round(acao) < n ? Math.round(acao) : -1;
+          else s.cena = s.cena >= n - 1 ? -1 : s.cena + 1;
+          s.nivel = s.cena >= 0 ? nivelMaximoDaCena(k.cenas[s.cena]) : 0;
+          return ev(s.cena >= 0 ? `cena "${k.cenas[s.cena].nome}"` : 'cenas: desligado');
+        }
+        // teclado de cenas sem cenas no projeto: 100 % → 60 % → 30 % → desligado → 100 %…
+        const cenas = Array.isArray(k.cenas) && k.cenas.length ? k.cenas.map(Number) : CENAS_PADRAO;
         if (typeof acao === 'number' && Number.isFinite(acao)) s.cena = Math.max(0, Math.min(cenas.length - 1, Math.round(acao)));
         else s.cena = (s.cena + 1) % cenas.length;
         s.nivel = cenas[s.cena];
@@ -382,4 +428,4 @@ const ROTULO_PONTO = {
   controlador_010: 'Controlador 0-10 V', botoeira_dali: 'Botoeira DALI', teclado_cena: 'Teclado de cenas',
 };
 
-module.exports = { criarSimulador, ROTULO_PONTO };
+module.exports = { criarSimulador, ROTULO_PONTO, nivelNaCena };

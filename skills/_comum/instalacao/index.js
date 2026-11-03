@@ -12,8 +12,12 @@
 //                 carga_instalada_va? }],
 //   circuitos: [{ id, quadro, disjuntor, tipo, descricao, potencia_va, ligacao, fases, dr, ambientes[], pontos[] }],
 //   pontos:    [{ id, tipo, simbolo, ambiente, circuito, comando, carga_va, posicao }],
-//   comandos:  [{ id, tipo, ambiente, circuitos[], retorno, dispositivos[], pontos[], rele? }],
+//   comandos:  [{ id, tipo, ambiente, circuitos[], retorno, dispositivos[], pontos[], rele?,
+//                 grupos?, cenas?: [{ nome, niveis: { grupo: 0–1 }, padrao }] }],
+//   luminotecnico?: { fotometrias: { código: fotometria compacta }, ambientes: { nome: { plano_m,
+//                 altura_montagem_m, fm, em_exigida, uo_min, em_lumens, ponto_a_ponto } } }
 // }
+// Fase 5: a luminária leva ponto.luminaria (código → fotometria) e ponto.grupo (cenas).
 //
 // Identificadores (comuns à elétrica, à iluminação, aos quadros e ao 3D):
 //   - circuito: o número do quadro de cargas ("3", "IL1");
@@ -206,6 +210,11 @@ function validarInstalacao(inst, opcoes = {}) {
     }
     for (const id of k.dispositivos || []) if (!pontoDe.has(String(id))) erros.push(`Comando ${k.id}: dispositivo ${id} não existe.`);
     for (const id of k.circuitos || []) if (!circuitoDe.has(String(id))) erros.push(`Comando ${k.id}: circuito ${id} não existe.`);
+    // cenas (fase 5): os grupos citados existem nas luminárias do comando
+    if (Array.isArray(k.cenas) && k.cenas.some(c => c && typeof c === 'object')) {
+      const grupos = new Set((k.pontos || []).map(id => pontoDe.get(String(id))?.grupo).filter(Boolean));
+      for (const c of k.cenas) for (const g of Object.keys(c?.niveis || {})) if (!grupos.has(g)) avisos.push(`Comando ${k.id}, cena "${c.nome}": grupo ${g} sem luminária.`);
+    }
   }
 
   return { ok: !erros.length, erros, avisos, resumo: resumoInstalacao(inst) };
@@ -239,6 +248,14 @@ function juntarInstalacoes(base, extra) {
   for (const [chave, campo] of [['circuitos', 'id'], ['pontos', 'id'], ['comandos', 'id']]) {
     const ja = tem(r[chave], campo);
     for (const x of extra[chave] || []) if (!ja.has(String(x[campo]))) r[chave].push(JSON.parse(JSON.stringify(x)));
+  }
+  // fotometrias e ambientes do luminotécnico (fase 5): o da base vale
+  if (extra.luminotecnico) {
+    const l = r.luminotecnico || (r.luminotecnico = { fotometrias: {}, ambientes: {} });
+    for (const k of ['fotometrias', 'ambientes']) {
+      l[k] = l[k] || {};
+      for (const [n, v] of Object.entries(extra.luminotecnico[k] || {})) if (!(n in l[k])) l[k][n] = JSON.parse(JSON.stringify(v));
+    }
   }
   return r;
 }

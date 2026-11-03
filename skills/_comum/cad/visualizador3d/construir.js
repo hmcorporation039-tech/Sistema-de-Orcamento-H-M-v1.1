@@ -11,7 +11,9 @@ const crypto = require('crypto');
 const ENTRADA = path.join(__dirname, 'app.js');
 const SAIDA = path.join(__dirname, 'app.bundle.js');
 // fontes locais que entram no bundle (o three vem do node_modules, pela versão)
-const FONTES = [ENTRADA, path.join(__dirname, 'quadro.js'), path.join(__dirname, 'interativo.js'), path.join(__dirname, '..', '..', 'instalacao', 'simulador.js')];
+// fase 5: o mapa de iluminância e o cálculo ponto a ponto (o mesmo da skill de iluminação)
+const FONTES = [ENTRADA, path.join(__dirname, 'quadro.js'), path.join(__dirname, 'interativo.js'), path.join(__dirname, '..', '..', 'instalacao', 'simulador.js'),
+  path.join(__dirname, 'mapaIluminancia.js'), path.join(__dirname, '..', '..', 'fotometria', 'pontoAPonto.js')];
 
 function assinatura() {
   const versaoThree = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'node_modules', 'three', 'package.json'), 'utf8')).version;

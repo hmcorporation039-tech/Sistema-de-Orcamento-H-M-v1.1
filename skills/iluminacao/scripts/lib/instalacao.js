@@ -47,10 +47,17 @@ function pontosDoAmbiente(a, ctx) {
     pontos.push(p);
     return p;
   };
-  // luminárias: na ordem da grade, circuito a circuito (partes de um ambiente grande)
+  // luminárias: na ordem da grade, circuito a circuito (partes de um ambiente grande). Fase 5:
+  // cada uma leva o código da luminária (fotometria do mapa de iluminância) e o grupo (cenas)
   const luminarias = [];
+  let indice = 0;
   for (const d of distrib) {
-    for (let k = 0; k < d.luminarias; k++) luminarias.push(novo(perfil.luminaria, { tipo: perfil.luminaria.tipo || 'luminaria', circuito: d.circuito, carga_va: Math.round((d.va / d.luminarias) * 100) / 100 }));
+    for (let k = 0; k < d.luminarias; k++, indice++) {
+      const extra = { tipo: perfil.luminaria.tipo || 'luminaria', circuito: d.circuito, carga_va: Math.round((d.va / d.luminarias) * 100) / 100 };
+      if (a.luminaria?.codigo) extra.luminaria = a.luminaria.codigo;
+      if (a.grupoDe?.[indice]) extra.grupo = a.grupoDe[indice];
+      luminarias.push(novo(perfil.luminaria, extra));
+    }
   }
   const sensores = [];
   for (let k = 0; k < (a.sensores?.n || 0); k++) sensores.push(novo(perfil.sensor, { tipo: 'sensor', circuito: c1, carga_va: 0 }));
@@ -65,6 +72,8 @@ function pontosDoAmbiente(a, ctx) {
   const comando = comandoId ? {
     id: comandoId, tipo: tipo || 'interruptor_simples', ambiente: a.nome, circuitos: distrib.map(d => d.circuito), retorno: comandoId.slice(c1.length),
     dispositivos: [...sensores, ...deParede].map(p => p.id), pontos: luminarias.map(p => p.id), ...(rele ? { rele } : {}),
+    // fase 5: cenas definidas no projeto (nome e nível de cada grupo, 0–1) — o simulador troca de cena
+    ...(a.cenas?.length ? { grupos: (a.grupos || []).map(g => g.nome), cenas: a.cenas.map(c => ({ nome: c.nome, niveis: { ...c.niveis }, padrao: c.padrao || 0 })) } : {}),
   } : null;
   return { pontos, comando, porSimbolo };
 }
@@ -89,6 +98,29 @@ function ligarPontosAosCircuitos(inst) {
   return inst;
 }
 
+// Dados do luminotécnico que o 3D usa no mapa de iluminância (fase 5), calculado no navegador
+// pelo MESMO módulo ponto a ponto da skill (../../../_comum/fotometria/pontoAPonto.js):
+// a fotometria compacta de cada luminária usada e, por ambiente, plano de trabalho, altura
+// de montagem, FM e os requisitos. nomeDe: nome do ambiente no modelo (a elétrica usa o dela).
+function luminotecnicoDoModelo(calc, nomeDe = (n) => n) {
+  const fotometrias = {};
+  for (const a of calc.ambientes) {
+    const f = a.luminaria.fotometria;
+    if (!f || fotometrias[a.luminaria.codigo]) continue;
+    fotometrias[a.luminaria.codigo] = { fonte: f.fonte, nome: f.nome || '', C: f.C, G: f.G, I: f.I, fluxo_lm: f.fluxo_lm, ...(f.angulo_graus ? { angulo_graus: f.angulo_graus } : {}) };
+  }
+  const r2 = (v) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
+  const ambientes = {};
+  for (const a of calc.ambientes) {
+    ambientes[nomeDe(a.nome)] = {
+      luminaria: a.luminaria.codigo, plano_m: r2(a.plano), altura_montagem_m: r2(a.alturaMontagem), fm: r2(a.fm),
+      em_exigida: a.emExigida, uo_min: a.uoMin ?? null, em_lumens: Math.round(a.emObtida),
+      ...(a.pontoAPonto ? { ponto_a_ponto: { em: Math.round(a.pontoAPonto.em), emin: Math.round(a.pontoAPonto.emin), u0: r2(a.pontoAPonto.u0) } } : {}),
+    };
+  }
+  return { fotometrias, ambientes };
+}
+
 // calc = resultado de ./calculo.js; opcoes.quadro = tag do quadro (padrão QD-01, o da elétrica)
 function instalacaoDaIluminacao(calc, opcoes = {}) {
   const tag = opcoes.quadro || 'QD-01';
@@ -108,7 +140,8 @@ function instalacaoDaIluminacao(calc, opcoes = {}) {
     inst.pontos.push(...r.pontos);
     if (r.comando) inst.comandos.push(r.comando);
   }
+  inst.luminotecnico = luminotecnicoDoModelo(calc);
   return ligarPontosAosCircuitos(inst);
 }
 
-module.exports = { instalacaoDaIluminacao, pontosDoAmbiente, circuitoDoModelo, ligarPontosAosCircuitos, dispositivosDeParede, PERFIL_ILUMINACAO };
+module.exports = { luminotecnicoDoModelo, instalacaoDaIluminacao, pontosDoAmbiente, circuitoDoModelo, ligarPontosAosCircuitos, dispositivosDeParede, PERFIL_ILUMINACAO };

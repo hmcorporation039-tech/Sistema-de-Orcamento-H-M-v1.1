@@ -70,6 +70,16 @@
   { "nome": "Copa", "atividade": "copa", "comprimento_m": 4, "largura_m": 3, "pe_direito_m": 2.7, "refl_teto": "0.7", "refl_parede": "0.5", "refl_piso": "0.2", "luminaria": "SB1", "controle": "interruptor", "portas": 1, "distancia_quadro_m": 16 },
   { "nome": "Depósito", "atividade": "deposito", "comprimento_m": 4, "largura_m": 3, "pe_direito_m": 2.7, "refl_teto": "0.5", "refl_parede": "0.3", "refl_piso": "0.1", "luminaria": "SB1", "controle": "interruptor", "conservacao": "sujo", "portas": 1, "distancia_quadro_m": 20 }
  ],
+ "grupos": [
+  { "ambiente": "Sala de reunião", "grupo": "Mesa", "luminarias": "filas 2-3" },
+  { "ambiente": "Sala de reunião", "grupo": "Tela", "luminarias": "demais" }
+ ],
+ "cenas": [
+  { "ambiente": "Sala de reunião", "nome": "Reunião", "niveis": "Mesa 100; Tela 100" },
+  { "ambiente": "Sala de reunião", "nome": "Apresentação", "niveis": "Mesa 40; Tela 0" },
+  { "ambiente": "Sala de reunião", "nome": "Videoconferência", "niveis": "Mesa 80; Tela 50" },
+  { "ambiente": "Sala de reunião", "nome": "Limpeza", "niveis": "100" }
+ ],
  "inspecao": {
   "tipo": "comissionamento",
   "data_inspecao": "2026-10-20",

@@ -34,6 +34,23 @@ export function simuladorDaCena(inst, titulo) {
   return sim;
 }
 
+// ── Cenas (fase 5): botões de cada cena do comando + desligar ───────────────
+// cenas definidas no projeto (nome e nível de cada grupo) ou, no teclado sem cenas no
+// projeto, a programação padrão 100 / 60 / 30 % / desligado
+const CENAS_PADRAO = ['100 %', '60 %', '30 %', 'Desligado'];
+export function htmlCenas(sim, comandoId, { titulo = false } = {}) {
+  const k = sim.comando(comandoId);
+  if (!k) return '';
+  const ek = sim.estadoComando(k.id);
+  const definidas = Array.isArray(ek.cenas);
+  if (!definidas && k.tipo !== 'cena') return '';
+  const alvo = (k.dispositivos || [])[0] ?? (k.pontos || [])[0];
+  if (alvo == null) return '';
+  const nomes = definidas ? ek.cenas : CENAS_PADRAO;
+  const b = (i, rot) => `<button class="sim-b${ek.cena === i ? ' ativo' : ''}" data-sim="cena" data-ponto="${esc(alvo)}" data-cena="${i}" data-def="${definidas ? 1 : 0}">${esc(rot)}</button>`;
+  return `${titulo ? `<span>Cenas · ${esc(k.ambiente || k.id)}</span>` : ''}${nomes.map((n, i) => b(i, n)).join('')}${definidas ? b(-1, 'Desligar') : ''}`;
+}
+
 // ── Fichas (HTML) ──────────────────────────────────────────────────────────
 const lin = (k, v) => (v == null || v === '' ? '' : `<tr><th>${esc(k)}</th><td>${v}</td></tr>`);
 const estadoTag = (on, sim = 'ligado', nao = 'desligado') => `<b class="${on ? 'sim-on' : 'sim-off'}">${on ? sim : nao}</b>`;
@@ -77,6 +94,14 @@ export function htmlPainel(pn) {
 ${pn.termico ? b('rearmar', 'Rearmar térmico') : b('desarmar_termico', 'Simular térmico desarmado')}</div></div>`;
 }
 
+// cena ativa do comando (fase 5)
+function linhaCena(sim, k) {
+  const ek = sim.estadoComando(k.id);
+  if (Array.isArray(ek.cenas)) return lin('Cena', esc(ek.cenaAtiva || (ek.saida > 0 ? 'nível manual' : 'desligado')));
+  if (k.tipo === 'cena') return lin('Cena', esc(ek.saida > 0 ? `${Math.round(ek.saida * 100)} %` : 'desligado'));
+  return '';
+}
+
 // ficha de um ponto da planta (luminária, tomada, interruptor, motor…)
 export function htmlFichaPonto(sim, id, { rotulo = '', ambiente = '' } = {}) {
   const p = sim.ponto(id);
@@ -92,8 +117,11 @@ export function htmlFichaPonto(sim, id, { rotulo = '', ambiente = '' } = {}) {
     if (k.tipo === 'contator_botoeira') {
       const a = (acao, rot, cls = '') => `<button class="sim-b ${cls}" data-sim="acionar" data-ponto="${esc(ehDisp ? id : k.dispositivos?.[0] ?? id)}" data-acao="${acao}">${rot}</button>`;
       acoes = `${a('liga', 'LIGA', 'liga')}${a('desliga', 'DESLIGA', 'desliga')}${ek.emergencia ? a('liberar', 'Soltar emergência', 'emerg') : a('emergencia', 'EMERGÊNCIA', 'emerg')}`;
+    } else if (k.tipo === 'cena') {
+      acoes = htmlCenas(sim, k.id);
     } else if (['dimmer', 'dimmer_010', 'dali'].includes(k.tipo)) {
-      acoes = `<button class="sim-b" data-sim="acionar" data-ponto="${esc(id)}">${ek.saida > 0 ? 'Desligar' : 'Ligar'}</button>${[0.25, 0.5, 1].map(n => `<button class="sim-b" data-sim="acionar" data-ponto="${esc(id)}" data-nivel="${n}">${n * 100} %</button>`).join('')}`;
+      // DALI-2 com cenas do projeto: as cenas e também o nível manual
+      acoes = `${htmlCenas(sim, k.id)}<button class="sim-b" data-sim="acionar" data-ponto="${esc(id)}">${ek.saida > 0 ? 'Desligar' : 'Ligar'}</button>${[0.25, 0.5, 1].map(n => `<button class="sim-b" data-sim="acionar" data-ponto="${esc(id)}" data-nivel="${n}">${n * 100} %</button>`).join('')}`;
     } else {
       const rot = p.tipo === 'pulsador' ? 'Apertar o pulsador' : p.tipo === 'sensor' ? (ek.presenca ? 'Simular ambiente vazio' : 'Simular presença') : p.tipo === 'teclado_cena' ? 'Próxima cena' : ehDisp ? 'Acionar' : `Acionar o comando ${esc(k.id)}`;
       acoes = `<button class="sim-b" data-sim="acionar" data-ponto="${esc(id)}">${rot}</button>`;
@@ -102,7 +130,7 @@ export function htmlFichaPonto(sim, id, { rotulo = '', ambiente = '' } = {}) {
   const pn = p.tipo === 'motor' ? sim.painel(p.circuito) : null;
   return `<div class="sim-tit grande">${titulo}</div>
 <div class="sim-est"><b class="${cor}">${esc(e.texto)}</b>${ambiente ? ` · ${esc(ambiente)}` : ''}</div>
-${k ? `<table>${lin('Comando', `${esc(k.id)} — ${esc(TIPO_COMANDO[k.tipo] || k.tipo)}`)}${k.rele?.tag ? lin(k.rele.tipo === 'impulso' ? 'Relé de impulso' : 'Contator', `${esc(k.rele.tag)} · ${sim.estadoComando(k.id).saida > 0 ? 'fechado' : 'aberto'}`) : ''}${lin('Dispositivos', esc((k.dispositivos || []).join(', ')))}${lin('Comanda', `${(k.pontos || []).length} ponto(s)`)}</table>` : ''}
+${k ? `<table>${lin('Comando', `${esc(k.id)} — ${esc(TIPO_COMANDO[k.tipo] || k.tipo)}`)}${linhaCena(sim, k)}${p.grupo ? lin('Grupo', esc(p.grupo)) : ''}${k.rele?.tag ? lin(k.rele.tipo === 'impulso' ? 'Relé de impulso' : 'Contator', `${esc(k.rele.tag)} · ${sim.estadoComando(k.id).saida > 0 ? 'fechado' : 'aberto'}`) : ''}${lin('Dispositivos', esc((k.dispositivos || []).join(', ')))}${lin('Comanda', `${(k.pontos || []).length} ponto(s)`)}</table>` : ''}
 ${acoes ? `<div class="sim-bs">${acoes}</div>` : ''}${pn ? htmlPainel(pn) : ''}${p.circuito ? htmlCircuito(sim, p.circuito) : ''}`;
 }
 
@@ -133,6 +161,8 @@ export function ligarBotoes(el, sim, { abrirQuadro, aviso } = {}) {
     let r = null;
     if (d.sim === 'disjuntor') { sim.alternar(d.tag, d.quadro); r = `${d.tag} ${sim.ligado(d.tag, d.quadro) ? 'ligado' : 'desligado'}`; }
     else if (d.sim === 'acionar') r = sim.acionar(d.ponto, d.nivel != null ? Number(d.nivel) : d.acao || undefined);
+    // cena (fase 5): definida no projeto → { cena: i }; teclado sem cenas no projeto → índice
+    else if (d.sim === 'cena') r = sim.acionar(d.ponto, d.def === '1' ? { cena: Number(d.cena) } : Number(d.cena));
     else if (d.sim === 'motor') r = sim.motor(d.motor, d.acao);
     else if (d.sim === 'emergencia-quadro') { const a = !sim.emergenciaDoQuadro(d.quadro); sim.emergenciaQuadro(d.quadro, a); r = a ? 'Emergência do quadro acionada: motores parados' : 'Emergência do quadro liberada'; }
     else if (d.sim === 'reiniciar') { sim.reiniciar(); r = 'Simulação reiniciada'; }
