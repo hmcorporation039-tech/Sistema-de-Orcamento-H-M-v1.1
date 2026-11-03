@@ -879,3 +879,20 @@ Pedido: "faça tudo e deixe a comunicação com o canal remoto por último". O d
 - **Para testar no v2:** reiniciar o backend do v2 e rodar o build do frontend. O `.env` do v2 já tem `TOTP_CHAVE_CIFRA`; na produção, gerar outra e guardar com o backup do `.env`.
 - **Transição:** tokens antigos, sem sessão, valem até vencer (no máximo 8 h depois da instalação).
 - **Validação:** pré-deploy completo com 71/71 do backend, 130/130 do Jest e skills ok; builds de conferência compilam.
+
+### 03/11/2026: versão 2.27.0 — auditoria, fases 0 a 7 do roteiro e canal remoto (desligado)
+
+- **O que entra:** tudo das três seções anteriores (auditoria e fase 0; fases 1 a 5 e 7; fase 6). Destaques:
+  - Elétrica e iluminação com modelo único da instalação e 3D interativo (disjuntores, DR, interruptores, painéis de motor, ficha do circuito);
+  - iluminação com fotometria IES/LDT, cálculo ponto a ponto, cenas e mapa de iluminância no 3D;
+  - skill nova de climatização (NBR 16401, PMOC) e catálogo de equipamentos;
+  - leitura de PDF e DWG mais precisa (escala, biblioteca de blocos, placar);
+  - sessões revogáveis (token de 15 min renovado sozinho), verificação em duas etapas opcional, auditoria de acesso, papéis financeiro e técnico;
+  - canal remoto (Telegram e WhatsApp) pronto e DESLIGADO, com simulador em Cadastros › Canal remoto.
+- **Banco:** migrações `2.0-39` a `2.0-47`, idempotentes, rodam sozinhas ao reiniciar o backend. Antes de instalar, foram rodadas numa cópia da produção de 03/11 (`hm_orcamentos_ensaio`, porta 3003) sem erro. Na cópia: nenhum modelo 3D órfão (a `2.0-40` não apaga nada), nenhum e-mail duplicado (a `2.0-41` entra) e os usuários são todos admin (aceitos pela regra nova da `2.0-45`).
+- **Ensaio na cópia:** login, renovação, saída (o token deixa de valer na hora), auditoria, telas principais, webhook desligado (404) e o simulador do canal (ajuda, vencimentos, notas abertas) responderam certo.
+- **.env da produção:** ganhou `TOTP_CHAVE_CIFRA` própria (diferente da do v2). Cópia do .env com a chave em `C:\HM-Engenharia\Backups\env-producao_v2.27.0_com-chave-totp.env`. O canal continua desligado (sem `CANAL_*`).
+- **Transição:** quem estiver logado na hora da troca continua com o token antigo, sem sessão, até ele vencer (no máximo 8 h). Depois disso, tudo é sessão revogável.
+- **Claude Desktop:** depois de reiniciar o backend, reinicie também o Claude Desktop para carregar a lista única de ferramentas (as 10 de antes mantêm nomes e parâmetros). O MCP reloga sozinho a cada 15 min.
+- **Skill climatizacao:** ligar no Claude Code com `skills\ligar-skills.ps1`.
+- **Backup antes da instalação:** `backend\backups\hm_orcamentos_2026-11-03_06-32.dump` (com cópia na rede e no Drive), `C:\HM-Engenharia\Backups\hm-eng_antes-v2.27.0_2026-11-03_06-35.bundle`, `env-producao_antes-v2.27.0_2026-11-03_06-35.env` e a tela anterior em `frontend\build-2.26.0-anterior`.
