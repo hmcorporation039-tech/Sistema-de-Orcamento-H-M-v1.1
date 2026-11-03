@@ -33,7 +33,7 @@ export default function BlocoPesquisaMercado({ pesquisa, onUsarPreco, precoAtual
         <b style={{ color: '#c9a227' }}>Pesquisa de mercado ({fonteLabel} — confira antes de usar):</b>
         {pesquisa.pesquisadoEm && (
           <span style={{ color: 'var(--texto-3)', fontWeight: 400 }}>
-            {' '}— {pesquisa.deCache ? 'reaproveitada do histórico, ' : pesquisa.daAnalise ? 'salva na análise, ' : ''}feita em {new Date(pesquisa.pesquisadoEm).toLocaleString('pt-BR')}{idadeEmDias(pesquisa.pesquisadoEm)}
+            {' '}— {pesquisa.interna ? 'cotações, vendas, catálogo e SINAPI da H&M, ' : pesquisa.deCache ? 'reaproveitada do histórico, ' : pesquisa.daAnalise ? 'salva na análise, ' : ''}feita em {new Date(pesquisa.pesquisadoEm).toLocaleString('pt-BR')}{idadeEmDias(pesquisa.pesquisadoEm)}
           </span>
         )}
         <span style={{ marginLeft: 'auto', color: 'var(--texto-3)', fontSize: 12, textDecoration: 'underline', whiteSpace: 'nowrap' }}>
@@ -42,8 +42,9 @@ export default function BlocoPesquisaMercado({ pesquisa, onUsarPreco, precoAtual
       </div>
       {pesquisa.deCache && onPesquisarDeNovo && (
         <div style={{ marginTop: 8 }}>
-          <button type="button" onClick={onPesquisarDeNovo} style={btnUsarPreco} title="Ignora a pesquisa guardada e consulta a web de novo (leva de 30 s a 1 min)">
-            Pesquisar de novo
+          <button type="button" onClick={onPesquisarDeNovo} style={btnUsarPreco}
+            title={pesquisa.interna ? 'As referências acima são da própria H&M (sem IA). Consulta a web pela IA (leva de 30 s a 1 min)' : 'Ignora a pesquisa guardada e consulta a web de novo (leva de 30 s a 1 min)'}>
+            {pesquisa.interna ? 'Pesquisar na web' : 'Pesquisar de novo'}
           </button>
         </div>
       )}
@@ -95,7 +96,7 @@ function idadeEmDias(iso) {
 export function resultadoDaPesquisa(dados) {
   return {
     resultado: dados.resultado, fonte: dados.fonte,
-    pesquisadoEm: dados.pesquisadoEm || new Date().toISOString(), deCache: !!dados.deCache,
+    pesquisadoEm: dados.pesquisadoEm || new Date().toISOString(), deCache: !!dados.deCache, interna: !!dados.interna,
     ofertas: dados.ofertas || [], estatistica: dados.estatistica || null, precoSugerido: dados.precoSugerido ?? null,
   };
 }

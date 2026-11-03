@@ -155,6 +155,17 @@ async function pesquisarPrecoMercado(descricao, { tipo = 'material', prompt: pro
   const desc = (descricao || '').trim();
   if (!desc) throw new ErroPesquisaMercado('Informe a descrição do material a pesquisar', 400);
 
+  // Referências PRÓPRIAS primeiro (plano "sistema autônomo", 03/11/2026 — services/referenciasDePreco.js): cotações
+  // dos fornecedores, o vendido nas propostas aprovadas, o catálogo e a SINAPI. Com alguma delas, não vai à web;
+  // "Pesquisar de novo" (fresco) consulta a web. Funciona mesmo sem IA configurada.
+  if (tipo === 'material' && !promptProprio && !fresco) {
+    const internas = await require('./referenciasDePreco').referenciasInternas(desc).catch(() => null);
+    if (internas) {
+      await iaCache.registrarUso(NOME_USO, true);
+      return { descricao: desc, ...internas, fonte: 'Referências da H&M (sem IA)', interna: true, deCache: true, pesquisadoEm: new Date().toISOString() };
+    }
+  }
+
   if (!ia.disponivel({ web: true })) {
     throw new ErroPesquisaMercado('Pesquisa de mercado desativada — nenhuma IA disponível (Claude Code com a assinatura Max, GEMINI_API_KEY ou ANTHROPIC_API_KEY)', 422);
   }

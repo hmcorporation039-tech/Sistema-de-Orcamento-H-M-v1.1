@@ -1,5 +1,6 @@
 const ia = require('./ia');
 const iaCache = require('./iaCache');
+const { lerEquipamentosRef } = require('../utils/leitorEquipamentosRef');
 
 // versão no nome: se o roteiro abaixo mudar, subir o número para não reaproveitar resposta antiga
 const NOME_CACHE = 'equipamentos_projeto v1';
@@ -39,4 +40,23 @@ Responda em JSON: {"itens":[{"descricao":"...","referencia":"..."}]}`;
   }
 }
 
-module.exports = { extrairEquipamentosComIA };
+// Leitor LOCAL primeiro (plano "sistema autônomo", 03/11/2026 — utils/leitorEquipamentosRef.js): antes, todo arquivo
+// ia para a IA, mesmo o que não tinha nenhum "REF.". Agora:
+//   - sem "REF.:" no texto: não há o que extrair (nada de IA);
+//   - o leitor local leu o código de quase todos (COBERTURA_LOCAL): fica a leitura local, e conta como chamada evitada;
+//   - leitura local fraca: pergunta à IA (com o cache de 90 dias); se a IA não responder, fica o que o leitor local leu.
+const COBERTURA_LOCAL = 0.8;
+async function extrairEquipamentos(textoCompleto) {
+  const local = lerEquipamentosRef(textoCompleto);
+  if (!local.marcadores) return { itens: [], fonte: 'local' };
+  const semRef = ({ fabricante, ...it }) => it; // o mesmo formato da resposta da IA
+  if (local.completos / local.marcadores >= COBERTURA_LOCAL) {
+    await iaCache.registrarUso(NOME_CACHE, true);
+    return { itens: local.itens.map(semRef), fonte: 'local' };
+  }
+  const daIA = await extrairEquipamentosComIA(textoCompleto);
+  if (daIA.itens.length) return { ...daIA, fonte: 'ia' };
+  return { itens: local.itens.map(semRef), fonte: 'local', ...(daIA.aviso ? { aviso: `${daIA.aviso} — ficou a leitura local (${local.completos} de ${local.marcadores} códigos lidos)` } : {}) };
+}
+
+module.exports = { extrairEquipamentosComIA, extrairEquipamentos, COBERTURA_LOCAL };

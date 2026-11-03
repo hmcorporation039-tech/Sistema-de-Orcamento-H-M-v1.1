@@ -918,3 +918,38 @@ Pedido: "faça tudo e deixe a comunicação com o canal remoto por último". O d
 - **Análises antigas:** quem tem mapa sem o desenho de fundo vê o aviso e o botão "Ler o DWG de novo". O botão grava uma análise nova, e a antiga fica.
 - **Peso:** o fundo fica no mapa da análise, com no máximo 30 mil vértices (cerca de 230 a 380 KB nos DWG reais), e só vai pela rota do mapa, não na análise inteira.
 - **Validação:** pré-deploy do v2 com 72/72 do backend, Jest e skills ok. Prints conferidos com os DWG da subestação e da Arena. Sem migração de banco.
+
+### 03/11/2026: versão 2.28.0 — sistema que aprende e depende menos de IA
+
+Pedido do usuário: "temos que treinar o sistema para ser autônomo, depender só o necessário de IA", principalmente na análise de DWG e PDF e por disciplina, aproveitando as obras já feitas na pasta dos clientes. Antes, foi feita uma pesquisa dos programas de takeoff (AutoCAD Count, Bluebeam, Procore, STACK, PlanSwift, Kreo) e dos de orçamento (SINAPI, OrçaFascio); o que valia copiar entrou abaixo.
+
+- **Treino com as obras já feitas** (`services/treinoAcervo.js`, rotina `treino-acervo`, `scripts/treinar-acervo.js`):
+  - lê os DWG/DXF da pasta dos clientes (só leitura, sem IA) com o mesmo leitor da análise;
+  - grava no banco o que cada desenho ensina: as linhas da legenda, as notas de altura do escritório e os nomes de bloco;
+  - roda às 06:00 e às 18:00 por até 2 h e retoma de onde parou; só relê o arquivo que mudou (`acervo_treino`, migração 2.0-49);
+  - a cópia idêntica em outra pasta (pelo conteúdo) não ensina de novo, para que três cópias não contem como três projetos concordando.
+- **Nomes de bloco aprendidos** (`services/blocosAprendidos.js`, tabela `cad_blocos_aprendidos`):
+  - a legenda "TUG-30 = Tomada baixa a 30 cm" de uma prancha reconhece o bloco TUG-30 na prancha sem legenda do mesmo escritório;
+  - de outro escritório, só quando todos concordam na disciplina, e nunca com nome curto como "T1";
+  - disciplina diferente para o mesmo nome conta conflito e tira o nome de uso.
+- **Reconhecimento por semelhança** (`skills/_comum/cad/semelhancaDeSimbolo.js`):
+  - o símbolo explodido que nenhuma regra reconhece é comparado com tudo o que já foi aprendido, de qualquer escritório: nome da layer parecido (trigramas, sem plural), mesma medida e mesmo preenchimento;
+  - os vizinhos votam, e a conferência do engenheiro vale o dobro da legenda;
+  - a resposta sai com confiança e faixa "provável" ou "possível" (origem "parecido com outro projeto" na tela do mapa). Abaixo de 50 % não chuta;
+  - continua sugestão: só conta no orçamento depois de conferido.
+- **Lista de equipamentos sem IA** (`utils/leitorEquipamentosRef.js`):
+  - os itens "… REF.: código, FABRICANTE OU EQUIVALENTE" são lidos localmente, com a descrição remontada das linhas quebradas do PDF;
+  - arquivo sem "REF." não vai mais para a IA;
+  - a IA só entra quando o leitor local lê menos de 80 % dos códigos, e mesmo aí a leitura local fica de reserva;
+  - nos dois PDFs reais da pasta de projetos recebidos, o leitor local leu os 35 códigos.
+- **Preço em cascata** (`services/referenciasDePreco.js`):
+  - "Pesquisar preço de mercado" mostra primeiro as referências da H&M: cotações dos fornecedores dos últimos 180 dias, a mediana do que foi vendido nas propostas aprovadas, o preço do catálogo e a SINAPI. A SINAPI fica fora da média, por ser busca por palavras;
+  - funciona sem IA configurada;
+  - a web pela IA só roda em "Pesquisar na web" ou quando não há referência nenhuma.
+- **Propostas antigas ensinam** (migração 2.0-48, uma vez só): os itens confirmados com material das propostas gravadas antes de 01/11/2026 viram vínculos descrição → material.
+- **Painel "O que o sistema sabe"** (Obras → aba "O que o sistema sabe"; `services/painelAprendizado.js`, `GET /aprendizado`):
+  - **acerto da leitura automática:** linhas do mapa do CAD conferidas na tela em que o sistema já tinha acertado o tipo, por origem da sugestão e por disciplina. A releitura com o mapa confirmado não conta de novo;
+  - **fila do que falta conferir**, mais pontos primeiro, com link para a análise;
+  - **treino com o acervo:** andamento, com botões "Treinar agora" e "Parar" (admin);
+  - **o que o sistema já sabe**, também por disciplina;
+  - **quanto já sai sem IA** por função, nos últimos 90 dias.

@@ -22,6 +22,7 @@ const { ESPEC } = require('./modelo3d');
 const { tipoDoAmbiente } = require('./estimativaArquitetura');
 const { TIPOS, familia, tipoPelaLayer, tipoPeloTexto, metros, alturaEscrita, tomadaPelaAltura, DE_PAREDE } = require('./tiposDePonto');
 const { lerAltura } = require('./textoCad');
+const { porSemelhanca, prepararExemplos } = require('./semelhancaDeSimbolo');
 
 const MAIOR_SIMBOLO_M = 3; // grupo maior que isso é traçado, não símbolo
 const COLA_M = 0.05;       // traços a até 5 cm um do outro são do mesmo símbolo
@@ -338,6 +339,9 @@ function propostaDeMapa(arq, opcoes = {}) {
   const semTipoDaqui = legendaToda.filter(l => !l.simbolo);
   const comLegenda = new Set(legendaDaqui.map(l => l.layer.toUpperCase()));
   const legenda = [...legendaDaqui, ...(opcoes.aprendidos || []).filter(l => l?.layer && Array.isArray(l.medida) && !comLegenda.has(l.layer.toUpperCase())).map(l => ({ ...l, aprendido: true }))];
+  // forma que nenhuma regra reconhece: a mais parecida entre tudo o que já foi aprendido, de qualquer escritório
+  // e com outro nome de layer (./semelhancaDeSimbolo.js) — sugestão com confiança, nunca contagem sem conferir
+  const exemplos = prepararExemplos([...legendaDaqui, ...(opcoes.aprendidos || [])]);
   // símbolo da layer → tipo da legenda (do mesmo aparelho: tomada continua tomada)
   const pelaLegenda = (layer, sug, t) => {
     if (RE_PDF_COR.test(layer)) return null;
@@ -423,8 +427,11 @@ function propostaDeMapa(arq, opcoes = {}) {
       // layer genérica "SIMBOLOS" com "Detector de fumaça" ao lado na legenda)
       const leg = pelaLegenda(layer, sug, t);
       if (leg) sug = { simbolo: leg.simbolo, disciplina: sug?.disciplina || leg.disciplina, rotulo: leg.texto };
+      const sem = !sug && !pdf ? porSemelhanca(exemplos, layer, t.medida, t.fracao) : null;
+      if (sem) sug = { simbolo: sem.simbolo, disciplina: sem.disciplina, rotulo: sem.texto };
       // o mesmo aparelho desenhado em duas layers (símbolo + contorno IFC): conta uma vez só
       if (sug && simbolos.some(o => o.layer !== layer && o.simbolo === sug.simbolo && o.quantidade === t.itens.length)) sug = null;
+      const semUsada = sug && sem ? sem : null;
       // (o tipo e a altura da legenda só valem se a linha ficou com o tipo: antes a linha "?" saía com origem "legenda")
       const legUsada = sug && leg ? leg : null;
       const sugAltura = !legUsada?.altura_m ? alturaSugerida(sug?.simbolo) : null;
@@ -434,6 +441,7 @@ function propostaDeMapa(arq, opcoes = {}) {
         layer, medida: t.medida.map(r2), quantidade: t.itens.length, fora, simbolo: sug ? sug.simbolo : '?', rotulo: sug?.rotulo || semTipo?.texto || '', disciplina: sug ? sug.disciplina : '',
         // layer com preenchimento: o tipo vale só para os símbolos com a mesma fração (aplicarMapa)
         ...(cheios ? { preenchimento: r2(t.fracao) } : {}), ...(legUsada?.altura_m ? { altura_m: legUsada.altura_m, alturaDe: legUsada.aprendido ? 'aprendido' : 'legenda' } : sugAltura ? { altura_m: sugAltura.altura_m, alturaDe: sugAltura.de, alturaTexto: sugAltura.texto } : {}), ...(legUsada ? { tipoDe: legUsada.aprendido ? 'aprendido' : 'legenda' } : {}),
+        ...(semUsada ? { tipoDe: 'semelhante', semelhanca: { confianca: semUsada.confianca, faixa: semUsada.faixa, base: semUsada.base } } : {}),
         ...(sug && sug.simbolo === 'HM-ELE-CAIXA-PISO' && !pdf ? { area: 'externa' } : {}),
         // onde cada símbolo desta forma está (a planta da tela do mapa mostra também o que não foi reconhecido)
         centros: t.itens.slice(0, 400).map(q => [r2(q.centro[0]), r2(q.centro[1])]),
@@ -479,7 +487,7 @@ function aplicarConfirmacoes(mapa, confirmados) {
 // outro projeto × regra (nome da layer, medida) × não reconhecido
 function origemDaLinha(s) {
   if (s.confirmado) return 'confirmado';
-  if (s.tipoDe === 'legenda' || s.tipoDe === 'aprendido') return s.tipoDe;
+  if (s.tipoDe === 'legenda' || s.tipoDe === 'aprendido' || s.tipoDe === 'semelhante') return s.tipoDe;
   return s.simbolo && s.simbolo !== '?' ? 'regra' : 'nao_reconhecido';
 }
 

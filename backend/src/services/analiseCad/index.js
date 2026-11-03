@@ -20,6 +20,8 @@ const path = require('path');
 const { executarNoWorker } = require('../executarNoWorker');
 const { analisarTexto } = require('../../utils/projetoParser');
 const { detectarDisciplinas } = require('../../utils/leitoresTabelaProjeto');
+const { chaveEscritorio } = require('../../utils/escritorioDoProjeto');
+const { procurar: procurarBlocoAprendido } = require('../blocosAprendidos');
 const { CAD } = require('../../config/caminhos');
 const { BLOCOS_HM, disciplinaDaLayer, disciplinaDoBloco, disciplinaDoTexto, semPrefixoDeDisciplina, alturaDoTexto, RE_LAYER_INFRA, tipoDoTracado, daPropriaDisciplina } = require(path.join(CAD, 'disciplinasCad.js'));
 const { retanguloMinimo } = require(path.join(CAD, 'geometriaCad.js'));
@@ -147,6 +149,7 @@ function disciplinaDasLayers(layers) {
 
 // opcoes.disciplinas: as marcadas no arquivo — o que é "outra área" para as de sempre pode ser da própria disciplina
 // (climatização: duto, difusor, layer HVAC — ponto de extensão em skills/_comum/cad/disciplinasCad.js, PROPRIOS_DA_DISCIPLINA)
+// opcoes.blocosAprendidos / opcoes.escritorio: o nome do bloco lido na legenda de outras pranchas (services/blocosAprendidos.js)
 function descreverSimbolo(g, opcoes = {}) {
   const camadas = (g.layers || [g.layer]).join(' ');
   const atributo = Object.entries(g.atributos || {}).find(([k, v]) => /DESC|TIPO|NOME|MODELO|EQUIP/.test(k) && textoDescritivo(v))?.[1];
@@ -158,6 +161,8 @@ function descreverSimbolo(g, opcoes = {}) {
   const mt = (opcoes.disciplinas || []).includes('media_tensao') || RE_TENSAO_MT.test(`${g.nomeLimpo} ${g.bloco}`);
   const sigla = (mt && SIGLAS_MT.find(([re]) => re.test(g.nomeLimpo) || re.test(g.bloco))) || SIGLAS.find(([re, , , curta]) => (!curta || nomeCurto || semPrefixo !== g.nomeLimpo) && (re.test(g.nomeLimpo) || re.test(g.bloco) || re.test(semPrefixo)));
   const daLegenda = textoDescritivo(g.descricaoLegenda) ? g.descricaoLegenda : null;
+  // a prancha sem legenda: o que a legenda de outra prancha (do mesmo escritório, de preferência) disse deste bloco
+  const aprendido = !daLegenda && !hm ? procurarBlocoAprendido(opcoes.blocosAprendidos, g.nomeLimpo, opcoes.escritorio) : null;
   // nome de bloco que já descreve (famílias do Revit: "Sensor de pressão Belimo 22ADP")
   const nomeDescritivo = /[A-Za-zÀ-ú]{3,}.*\s.*[A-Za-zÀ-ú0-9]{2,}/.test(g.nomeLimpo) && g.nomeLimpo.length >= 8;
   const emergencia = /EMERG/i.test(`${g.bloco} ${camadas}`);
@@ -166,6 +171,7 @@ function descreverSimbolo(g, opcoes = {}) {
   if (daLegenda) { descricao = daLegenda; origem = 'legenda'; }
   else if (atributo) { descricao = atributo; origem = 'atributo'; }
   else if (hm) { descricao = hm.descricao; origem = 'biblioteca'; }
+  else if (aprendido) { descricao = aprendido.descricao; origem = 'aprendido'; }
   else if (sigla) { descricao = sigla[1]; origem = 'sigla'; }
   else if (nomeDescritivo) { descricao = g.nomeLimpo; origem = 'nome'; }
   if (descricao && emergencia && !/EMERG/i.test(descricao)) descricao += ' (circuito de emergência)';
@@ -173,18 +179,18 @@ function descreverSimbolo(g, opcoes = {}) {
   if (descricao && origem !== 'nome' && !descricao.includes(g.nomeLimpo)) descricao += ` — bloco ${g.nomeLimpo}`;
 
   const base = `${descricao || ''} ${g.nomeLimpo} ${camadas}`;
-  const outraArea = !hm && !sigla && !daLegenda && RE_OUTRA_AREA.test(`${g.nomeLimpo} ${camadas}`) && !daPropriaDisciplina(`${g.nomeLimpo} ${camadas}`, opcoes.disciplinas);
+  const outraArea = !hm && !sigla && !daLegenda && !aprendido && RE_OUTRA_AREA.test(`${g.nomeLimpo} ${camadas}`) && !daPropriaDisciplina(`${g.nomeLimpo} ${camadas}`, opcoes.disciplinas);
   // Disciplina (M1 da revisão de 29/10/2026), do mais específico ao mais vago:
   // biblioteca H&M → prefixo do nome do bloco ("INC_SIRENE_AV") → sigla (a layer
   // manda quando as duas são do ramo de segurança: "SIRENE" em INC-AVISADOR é
   // incêndio) → prefixo/palavra da layer ("CA-DISPOSITIVO", "D10_TEL_…") → texto
   const daLayer = disciplinaDasLayers(g.layers || [g.layer]);
-  let disciplina = hm?.disciplina || disciplinaDoBloco(g.nomeLimpo) || disciplinaDoBloco(g.bloco) || null;
+  let disciplina = hm?.disciplina || aprendido?.disciplina || disciplinaDoBloco(g.nomeLimpo) || disciplinaDoBloco(g.bloco) || null;
   if (!disciplina && sigla) disciplina = (daLayer && RAMO_SEGURANCA.has(daLayer) && RAMO_SEGURANCA.has(sigla[2])) ? daLayer : sigla[2];
   if (!disciplina) disciplina = daLayer || detectarDisciplinas(base)[0]?.chave || (/TOMADA|EL[ÉE]TRIC|^E[-_ ]|INST\b/i.test(camadas) ? 'eletrica' : null);
 
   // altura de instalação do tipo (a da posição — atributo ALTURA — vale mais: alturasDoGrupo)
-  const altura = alturaDoTexto(daLegenda || '') || (hm?.montagem ? { altura_m: hm.altura_m ?? null, montagem: hm.montagem } : null)
+  const altura = alturaDoTexto(daLegenda || aprendido?.descricao || '') || (hm?.montagem ? { altura_m: hm.altura_m ?? null, montagem: hm.montagem } : null)
     || (sigla && /^Detector/.test(sigla[1]) ? { altura_m: null, montagem: 'teto' } : null);
   return { descricao, origem, disciplina: outraArea ? null : disciplina, outraArea, altura };
 }
@@ -262,7 +268,10 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
     return filtrarPosicoes(g, (i) => naPlanta(g.posicoes[i]));
   }).filter(g => g.quantidade > 0);
 
-  const descritos = simbolosDaPlanta.filter(s => !s.fora).map(g => ({ g, d: descreverSimbolo(g, { disciplinas: opcoes.disciplinas }) }));
+  // o escritório do carimbo (o mesmo do mapa; sem planta legível, do texto da prancha) escolhe os blocos aprendidos
+  let escritorio = r.desenho?.escritorio || '';
+  if (!escritorio) { try { escritorio = chaveEscritorio(analise.carimbo); } catch { escritorio = ''; } }
+  const descritos = simbolosDaPlanta.filter(s => !s.fora).map(g => ({ g, d: descreverSimbolo(g, { disciplinas: opcoes.disciplinas, blocosAprendidos: opcoes.blocosAprendidos, escritorio }) }));
   // Xref de OUTRA disciplina é referência (A11): a disciplina da xref sai do nome
   // dela ("…TOMADAS…" é elétrica); as do desenho, do que está FORA de xref.
   // Desenho todo dentro de xref (nada fora): nenhuma xref vira referência.
@@ -468,7 +477,7 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
     planta: plantaDoMapa(r.desenho.mapa.simbolos, ambientesArq, naPlanta, r.arquitetura?.fundo),
     ...(r.desenho.mapa.aviso ? { aviso: r.desenho.mapa.aviso } : {}),
   } : null;
-  return { analise, pagina, pontosPorAmbiente, arquitetura, espacial, mapa, aprendizado: { legenda: r.desenho?.legenda || [], notas: r.desenho?.notas || [], escritorio: r.desenho?.escritorio || '' } };
+  return { analise, pagina, pontosPorAmbiente, arquitetura, espacial, mapa, aprendizado: { legenda: r.desenho?.legenda || [], notas: r.desenho?.notas || [], escritorio, blocos: p.legendaItens || [] } };
 }
 
 // Planta da tela de confirmação do mapa: o desenho de fundo (./fundoDoMapa.js), o contorno dos ambientes e a posição

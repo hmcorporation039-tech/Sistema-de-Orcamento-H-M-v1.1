@@ -547,3 +547,9 @@ export const ligarPixNaNota = (notaId, movimentoId) => api.post(`/notas-a-recebe
 export const darBaixaNota = (notaId, obs) => api.post(`/notas-a-receber/${notaId}/baixa`, { obs });
 // Pix já ligados a nota de obra, mas sem obra: levam a obra da nota (só preenche obra vazia)
 export const levarObraDasNotas = () => api.post('/notas-a-receber/obra-das-notas');
+
+// ── O QUE O SISTEMA SABE (aprendizado, treino com as obras da pasta dos clientes) ─────────────
+export const getAprendizado = () => api.get('/aprendizado', { timeout: 60000 });
+export const getTreinoAcervo = () => api.get('/aprendizado/treino');
+export const iniciarTreinoAcervo = (dados = {}) => api.post('/aprendizado/treino', dados);
+export const pararTreinoAcervo = () => api.post('/aprendizado/treino/parar');

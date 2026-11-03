@@ -133,6 +133,7 @@ const relCtrl = require('../controllers/relatoriosController');
 const finCtrl = require('../controllers/financeiroController');
 const prestCtrl = require('../controllers/prestadoresController');
 const contrCtrl = require('../controllers/contratosController');
+const aprendCtrl = require('../controllers/aprendizadoController');
 const projCtrl = require('../controllers/projetos');
 const pesqCtrl = require('../controllers/pesquisaMercadoController');
 const precosMOCtrl = require('../controllers/precosMaoDeObraController');
@@ -197,6 +198,12 @@ router.put('/propostas/:id', autenticar, validarId, posseProposta, propCtrl.atua
 router.post('/propostas/:id/duplicar', autenticar, validarId, propCtrl.duplicar);
 router.patch('/propostas/:id/status', autenticar, validarId, posseProposta, propCtrl.atualizarStatus);
 router.delete('/propostas/:id', autenticar, validarId, posseProposta, propCtrl.remover);
+
+// ── APRENDIZADO (o que o sistema já sabe; treino com as obras da pasta dos clientes) ──
+router.get('/aprendizado', autenticar, aprendCtrl.resumo);
+router.get('/aprendizado/treino', autenticar, aprendCtrl.andamento);
+router.post('/aprendizado/treino', autenticar, admin, aprendCtrl.iniciarTreino);
+router.post('/aprendizado/treino/parar', autenticar, admin, aprendCtrl.pararTreino);
 
 // ── INTEGRAÇÕES ───────────────────────────────────────────────────────
 router.get('/integracoes/email/status', autenticar, integCtrl.statusEmail);

@@ -1,0 +1,30 @@
+// Treino com as obras já feitas (services/treinoAcervo.js) pela linha de comando: lê os DWG/DXF da pasta dos
+// clientes (PASTA_CLIENTES do .env) e grava no banco do .env o que eles ensinam — legendas, alturas e nomes de bloco.
+// Sem IA. Só lê a pasta; retoma de onde parou (o arquivo já lido e não alterado não é relido).
+//   node scripts/treinar-acervo.js [--limite 50] [--horas 2] [--pasta "<outra pasta>"]
+require('../src/config/env');
+const pool = require('../src/config/database');
+const { criarTabelas } = require('../src/models/schema');
+const { treinar, situacao } = require('../src/services/treinoAcervo');
+
+const arg = (nome) => { const i = process.argv.indexOf(`--${nome}`); return i > 0 ? process.argv[i + 1] : undefined; };
+
+(async () => {
+  await criarTabelas(); // as tabelas do aprendizado (migrações 2.0-48/49) existem antes da primeira rodada
+  const relogio = setInterval(() => {
+    const s = situacao();
+    if (s.rodando && s.atual) console.log(`[${s.feitos}/${s.pendentes}] ${s.atual}`);
+  }, 15000);
+  try {
+    const r = await treinar({
+      limite: Number(arg('limite')) || undefined,
+      tempoMaxMs: (Number(arg('horas')) || 2) * 3600 * 1000,
+      ...(arg('pasta') ? { raiz: arg('pasta') } : {}),
+    });
+    console.log(`${r.lidos} lido(s), ${r.erros} com erro, de ${r.pendentes} pendente(s) (${r.total} DWG/DXF na pasta)`);
+    console.log(`aprendeu: ${r.ensinou.simbolos} linha(s) de legenda de símbolo, ${r.ensinou.blocos} nome(s) de bloco, ${r.ensinou.notas} altura(s) — ${r.mensagem}`);
+  } finally {
+    clearInterval(relogio);
+    await pool.end();
+  }
+})().catch((e) => { console.error(e); process.exit(1); });

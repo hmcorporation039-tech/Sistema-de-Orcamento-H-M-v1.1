@@ -7,13 +7,12 @@
 // utils/analiseProjetoAchados.js (achados).
 const pool = require('../config/database');
 const { analisarProjeto, extrairAmbientes, comRepeticoesPorPosicao } = require('../utils/projetoParser');
-const { extrairEquipamentosComIA } = require('./equipamentoExtratorIA');
+const { extrairEquipamentos } = require('./equipamentoExtratorIA');
 const { calcularPontosPorAmbiente } = require('../utils/pontosPorAmbiente');
 const { buscarReferencias, valorSugerido, segmentoPorNomeDoCliente } = require('./precosMaoDeObraReferencia');
 const { lerPdfVetorial } = require('../utils/pdfVetorial');
 const { ehArquivoCad, lerArquivoCad } = require('./analiseCad');
-const simbolosAprendidos = require('./simbolosAprendidos');
-const notasAprendidasDb = require('./notasAprendidas');
+const aprenderDoDesenho = require('./aprenderDoDesenho');
 const aprendizadoMateriais = require('./aprendizadoMateriais');
 const { compatibilizar } = require('../utils/compatibilidadeEspacial');
 const {
@@ -51,19 +50,17 @@ function extrairCliente(texto) {
   return null;
 }
 
-// Extrai os equipamentos de cada arquivo (via IA, reformatando o texto já
-// obtido do PDF) e junta tudo numa lista só, sem duplicar itens que
-// aparecem repetidos entre arquivos (mesma descrição + mesma referência).
-// Um arquivo não espera o outro — as chamadas ao Gemini rodam em paralelo
-// (senão, com 3 arquivos, o tempo total vira a soma de cada chamada).
+// Extrai os equipamentos de cada arquivo (leitor local dos itens "REF.:" primeiro; a IA só quando a leitura local
+// fica fraca — services/equipamentoExtratorIA.extrairEquipamentos) e junta tudo numa lista só, sem duplicar itens
+// que aparecem repetidos entre arquivos (mesma descrição + mesma referência). Um arquivo não espera o outro.
 async function extrairEquipamentosDosArquivos(analises, achados) {
-  const resultados = await emLotes(analises, 2, a => extrairEquipamentosComIA(a.textoBruto).then(r => ({ arquivo: a.arquivo, ...r })));
+  const resultados = await emLotes(analises, 2, a => extrairEquipamentos(a.textoBruto).then(r => ({ arquivo: a.arquivo, ...r })));
 
   const vistos = new Set();
   const equipamentos = [];
   for (const { arquivo, itens, aviso } of resultados) {
     if (aviso) {
-      achados.push({ tema: 'Extração de equipamentos por IA', observacao: `"${arquivo}": ${aviso}` });
+      achados.push({ tema: 'Extração de equipamentos', observacao: `"${arquivo}": ${aviso}` });
     }
     for (const it of itens) {
       const chave = it.descricao.toUpperCase() + '|' + (it.referencia_fabricante || '');
@@ -104,16 +101,14 @@ async function analisarProjetoCompleto(todosArquivos, opcoes = {}) {
   const arquivosRef = todosArquivos.filter(a => a.referencia);
   const arquivos = todosArquivos.filter(a => !a.referencia);
   if (!arquivos.length) throw new Error('Marque a disciplina de ao menos um arquivo: só arquivos de referência não geram análise.');
-  // o que o sistema já aprendeu das legendas de outros projetos entra na leitura, e a legenda
-  // deste arquivo vira aprendizado para os próximos (services/simbolosAprendidos.js)
+  // o que o sistema já aprendeu (legendas, notas de altura e nomes de bloco de outros projetos) entra na leitura, e a
+  // legenda deste arquivo vira aprendizado para os próximos (services/aprenderDoDesenho.js)
   const temCad = todosArquivos.some(a => ehArquivoCad(a.nomeArquivo));
-  const aprendidos = temCad ? await simbolosAprendidos.carregar() : [];
-  const notasAprendidas = temCad ? await notasAprendidasDb.carregar() : [];
-  const lerCad = ({ buffer, nomeArquivo, disciplinas }) => lerArquivoCad(buffer, nomeArquivo, { aprendidos, notasAprendidas, disciplinas: disciplinas || [], confirmados: opcoes.mapasConfirmados?.[nomeArquivo] || [] })
+  const sabido = temCad ? await aprenderDoDesenho.conhecimento() : {};
+  const lerCad = ({ buffer, nomeArquivo, disciplinas }) => lerArquivoCad(buffer, nomeArquivo, { ...sabido, disciplinas: disciplinas || [], confirmados: opcoes.mapasConfirmados?.[nomeArquivo] || [] })
     .then((r) => {
-      if (!opcoes.mapasConfirmados && r?.aprendizado?.legenda?.length) simbolosAprendidos.registrar(r.aprendizado.legenda, nomeArquivo).catch(() => {});
-      // as notas gerais de altura deste desenho viram aprendizado do escritório (item 8)
-      if (!opcoes.mapasConfirmados && r?.aprendizado?.notas?.length) notasAprendidasDb.registrar(r.aprendizado.notas, r.aprendizado.escritorio, nomeArquivo).catch(() => {});
+      // (a releitura com o mapa confirmado não ensina de novo o que o primeiro envio já ensinou)
+      if (!opcoes.mapasConfirmados) aprenderDoDesenho.registrarLeitura(r, nomeArquivo).catch(() => {});
       return r;
     })
     .catch((e) => { throw Object.assign(new Error(`Não consegui ler "${nomeArquivo}": ${e.message}`), { leituraCad: true }); });

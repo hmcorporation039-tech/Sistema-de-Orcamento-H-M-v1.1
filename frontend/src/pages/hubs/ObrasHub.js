@@ -4,6 +4,7 @@ import Compatibilizacao from '../AnaliseProjeto';
 import LaudosProjetos from '../../components/laudos/LaudosProjetos';
 import ListaObras from '../obras/ListaObras';
 import DetalheObra from '../obras/DetalheObra';
+import Aprendizado from '../Aprendizado';
 
 // Grupo "Obras" (versão 2.0; abas separadas na 2.1). A lista de obras é a
 // primeira aba; depois vêm as três coisas que NÃO se misturam:
@@ -21,6 +22,7 @@ import DetalheObra from '../obras/DetalheObra';
 //   /obras/analise/:id              → análise salva (Compatibilizacao lê o :id)
 //   /obras?aba=projetos[&laudo=ID][&obra=ID] → projetos por disciplina
 //   /obras?aba=laudos[&laudo=ID][&obra=ID]   → laudos
+//   /obras?aba=aprendizado          → o que o sistema já sabe (aprendizado, treino com o acervo, acerto da leitura)
 // O ?laudo=ID abre o registro direto. Links antigos (?aba=laudos&laudo=ID de
 // um registro que é projeto) são levados para a aba certa pelo tipo — quem
 // faz isso é o LaudosProjetos, que regrava a URL como ?aba=<projetos|laudos>.
@@ -35,6 +37,8 @@ const ABAS = [
   { chave: 'analise', rotulo: 'Análise de projeto', render: () => <Compatibilizacao /> },
   { chave: 'projetos', rotulo: 'Projetos por disciplina', render: () => <LaudosProjetos key="projeto" tipo="projeto" /> },
   { chave: 'laudos', rotulo: 'Laudos', render: () => <LaudosProjetos key="laudo" tipo="laudo" /> },
+  // o que o sistema aprendeu das análises e das obras já feitas, o acerto da leitura e o que falta conferir (03/11/2026)
+  { chave: 'aprendizado', rotulo: 'O que o sistema sabe', render: () => <Aprendizado /> },
 ];
 
 export default function ObrasHub({ abaFixa }) {

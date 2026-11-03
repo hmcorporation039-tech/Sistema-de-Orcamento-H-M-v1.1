@@ -14,6 +14,8 @@ import PlantaMapaCad, { SITUACAO, situacaoDaLinha } from './PlantaMapaCad';
 const ORIGEM = {
   legenda: ['da legenda do desenho', '#4a9'],
   aprendido: ['aprendido de outro projeto', '#8ab4f8'],
+  // forma parecida com o que já foi aprendido, com outro nome de layer (skills/_comum/cad/semelhancaDeSimbolo.js)
+  semelhante: ['parecido com outro projeto', '#b48ead'],
   regra: ['pela regra da layer', '#c9a227'],
   nao_reconhecido: ['não reconhecido', '#c06060'],
   confirmado: ['conferido', '#5fbf7a'],
@@ -340,6 +342,12 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
                         </td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
                           <span style={{ color: corOrigem }}>{rotuloOrigem}</span>
+                          {s.origem === 'semelhante' && s.semelhanca && (
+                            <div style={{ fontSize: 10, color: '#b48ead', marginTop: 2 }} data-testid={`semelhanca-${s.idx}`}
+                              title={`parecido com a layer "${s.semelhanca.base?.layer}"${s.semelhanca.base?.usuario ? ' (conferida por um engenheiro)' : ' (lida da legenda)'} — confiança ${Math.round(s.semelhanca.confianca * 100)}%`}>
+                              {s.semelhanca.faixa === 'provavel' ? 'provável' : 'possível'} · {Math.round(s.semelhanca.confianca * 100)}%
+                            </div>
+                          )}
                           {s.corrigido && <span style={{ color: 'var(--texto-3)' }} title={`o sistema tinha proposto: ${s.proposto?.simbolo}`}> · corrigido</span>}
                           {s.circuitos_lidos && (
                             <div style={{ fontSize: 10, color: '#8ab4f8', marginTop: 2, maxWidth: 220, whiteSpace: 'normal', lineHeight: 1.3 }}
