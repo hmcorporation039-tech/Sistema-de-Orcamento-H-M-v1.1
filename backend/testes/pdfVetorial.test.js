@@ -299,6 +299,32 @@ async function caso(nome, fn) {
     assert.deepStrictEqual(soDetalhe.regioesFora, []);
   });
 
+  // (fase 3, CAD-09) escala automática: informada → carimbo → nome do arquivo → portas → cotas; o resultado diz a origem
+  await caso('escala: do carimbo, informada, pelo nome do arquivo e nenhuma (sem chutar)', async () => {
+    assert.strictEqual(p.origemEscala, 'carimbo');
+    const semCarimbo = montarPdf(pranchaSintetica().toString('latin1').match(/stream\n([\s\S]*?)\nendstream/)[1].replace(/BT[^\n]*\(ESC\. 1:50\) Tj ET/, ''));
+    const [n] = await lerPdfVetorial(semCarimbo, { nomeArquivo: 'Planta Terreo - A1 1_50.pdf' });
+    assert.deepStrictEqual([n.escala, n.origemEscala], [50, 'nome_arquivo']);
+    assert.ok(Math.abs(n.itens.find(i => i.tipo === 'linha').metros - 6.2) < 0.06);
+    const [i] = await lerPdfVetorial(semCarimbo, { nomeArquivo: 'Planta 1_50.pdf', escala: 100 });
+    assert.deepStrictEqual([i.escala, i.origemEscala], [100, 'informada']);
+    const [s] = await lerPdfVetorial(semCarimbo, { nomeArquivo: 'Planta Terreo 01-07.pdf' });
+    assert.deepStrictEqual([s.escala, s.origemEscala], [null, null]);
+    assert.strictEqual(s.itens.find(x => x.tipo === 'linha').metros, null);
+    // o achado diz de onde veio a escala deduzida e pede para conferir
+    const { achadosDoDesenho } = require('../src/utils/analiseProjetoAchados');
+    const ach = achadosDoDesenho([{ arquivo: 'p.pdf', disciplinas: ['eletrica'] }], [[{ ...n, pagina: 1 }]], { maxPaginas: 15 });
+    const esc = ach.find(a => a.tema === 'Escala da planta');
+    assert.match(esc?.observacao || '', /1:50 do nome do arquivo \[CONFERIR\]/, JSON.stringify(ach.map(a => a.tema)));
+  });
+
+  await caso('título sublinhado da legenda ("DETALHES…") não vira tipo de linha', async () => {
+    const c = pranchaSintetica().toString('latin1').match(/stream\n([\s\S]*?)\nendstream/)[1];
+    const [q] = await lerPdfVetorial(montarPdf([c, reta(945, 700, 965, 700, '0.5 0 0.5', 1), texto(970, 697, 'DETALHES EM MARCENARIA, MARMORES, ETC.'), reta(100, 500, 400, 500, '0.5 0 0.5', 1)].join('\n')));
+    assert.ok(!q.itens.some(i => /DETALHES/.test(i.descricao)), JSON.stringify(q.itens.map(i => i.descricao)));
+    assert.ok(q.itens.some(i => i.tipo === 'linha' && /ELETRODUTO/.test(i.descricao)));
+  });
+
   await caso('PDF sem desenho (só texto) não quebra e não inventa itens', async () => {
     const [q] = await lerPdfVetorial(montarPdf(texto(100, 700, 'MEMORIAL DESCRITIVO')));
     assert.strictEqual(q.itens.length, 0);

@@ -34,6 +34,33 @@ const RE_INSTALACAO = /^PDF-COR-|^(EL|ELE|IFC|P|INC|CFTV|TEL|SPDA|PCI|HID|CAB|AC
 // regra de RE_LAYER_FORA de ./projetoDxf.js, também na layer de xref "XREF$0$ARQ-…")
 const RE_FORA = /FIOS?\b|TEXTO|TXT|DIAGRAM|^DI[-_ ]|BARRAMENTO|UNIFILAR|TABELA|CONEX[ÕO]ES|MARGEM|PRANCHA|CONTORNO\d|HATCH|HACH|COTA|ARQUIT|(^|\$\d+\$|\|)#?(0-)?ARQ|MOBIL/i;
 const RE_TRECHO = /CONDUT|ELETROD|ELETROCALHA|LEITO|PERFILADO/i;
+// Traçado de infraestrutura: a MESMA regra de layer, tipo e disciplina da medição do orçamento
+// (./disciplinasCad.js — CAD-10). Antes o mapa tinha só RE_TRECHO (sem INFRA), tudo saía "eletrica" e
+// o trecho repetido por cima contava duas vezes: o 3D e o orçamento mediam diferente o mesmo DXF.
+// Fiação e cabeamento desenhados são rota (cabo), não traçado do 3D.
+const { disciplinaDaLayer, RE_LAYER_INFRA, tipoDoTracado } = require('./disciplinasCad');
+const RE_INFRA = new RegExp(RE_LAYER_INFRA, 'i');
+const ehLayerDeTracado = (layer) => RE_TRECHO.test(layer || '') || (RE_INFRA.test(layer || '') && !tipoDoTracado(layer).rota);
+// disciplina da análise → a do 3D (cor da peça: ./modelo3d.js)
+const DISCIPLINA_DO_3D = { controle_acesso: 'controle-acesso', carregador: 'veicular', cabeamento: 'rede' };
+const disciplinaDoTracado = (layer) => { const d = disciplinaDaLayer(layer); return d ? (DISCIPLINA_DO_3D[d] || d) : 'eletrica'; };
+// segmentos dos traços, sem repetição (mesmas pontas ao milímetro, em qualquer sentido): [[x1, y1, x2, y2]]
+function segmentosUnicos(refs) {
+  const vistos = new Set();
+  const out = [];
+  const pega = (a, b) => {
+    const s = [a[0], a[1], b[0], b[1]].map(v => Math.round(v * 1000) / 1000);
+    const k = s[0] < s[2] || (s[0] === s[2] && s[1] <= s[3]) ? s.join(',') : [s[2], s[3], s[0], s[1]].join(',');
+    if (vistos.has(k) || (s[0] === s[2] && s[1] === s[3])) return;
+    vistos.add(k);
+    out.push([a[0], a[1], b[0], b[1]].map(r2));
+  };
+  for (const r of refs) {
+    for (let i = 1; i < r.pts.length; i++) pega(r.pts[i - 1], r.pts[i]);
+    if (r.fechada && r.pts.length > 2) pega(r.pts.at(-1), r.pts[0]);
+  }
+  return out;
+}
 
 // tipos de ponto de todas as disciplinas, a altura escrita e a tomada pela altura: ./tiposDePonto.js
 const RE_SO_CONTORNO = /IFC|CONTORNO|CAIXA/i;
@@ -142,7 +169,7 @@ function contexto(arq) {
   const ehExterno = (p) => { const a = ambienteDe(p); return !a || tipoDoAmbiente(a.nome) === 'externo'; };
   const porLayer = new Map();
   for (const r of arq.referencia) {
-    if (!r.pts.length || !RE_INSTALACAO.test(r.layer || '') || RE_FORA.test(r.layer || '')) continue;
+    if (!r.pts.length || !(RE_INSTALACAO.test(r.layer || '') || ehLayerDeTracado(r.layer)) || RE_FORA.test(r.layer || '')) continue;
     if (!porLayer.has(r.layer)) porLayer.set(r.layer, []);
     porLayer.get(r.layer).push(r);
   }
@@ -174,35 +201,59 @@ function fracaoPreenchida(s, layer, preenchimentos) {
 }
 
 // legenda → [{ layer, medida, fracao, simbolo, disciplina, altura_m?, texto }]: cada símbolo
-// da legenda fica com o texto mais perto à sua direita, na mesma linha. O TEXTO diz o tipo
+// da legenda fica com o texto da SUA linha (o mais perto à direita). O TEXTO diz o tipo
 // (qualquer disciplina) e a altura ("… a 2,20m do piso"). Layer de nome claro só aceita
 // texto do mesmo tipo (a luminária da linha de cima não pega a altura do interruptor).
-function legendaDoProjeto(arq) {
-  const textos = (arq.notas || []).filter(n => n.legenda && tipoPeloTexto(n.s));
+//
+// O texto que está mais perto de OUTRO símbolo da legenda é da linha dele. Antes só se olhava
+// o texto que diz um tipo: o símbolo cuja linha não diz tipo nenhum ("Isolador de laço IDL 521")
+// pegava o texto da linha vizinha — no R04, o INC-ISOLADOR saía como avisador e, com isso, o
+// INC-SIRENE (mesma quantidade) virava "?" no mapa (fase 3, 02/11/2026). Agora a linha sem tipo
+// fica sem tipo. A amostra de TRAÇO (raio de cobertura, campo de visão, eletrocalha — lado
+// menor < 2 cm) não é símbolo de ponto. opcoes.comSemTipo: devolve também essas linhas, com
+// simbolo null e o texto (a tela do mapa mostra a descrição na linha "?").
+const RE_TEXTO_NAO_PONTO = /^\s*(raio|campo de vis|cobertura|eletrocalha|eletroduto|leito|perfilado|cabo|cabeamento|tubula|rota|tra[çc]ado)\b/i;
+const ehTracoDeLegenda = (s) => s.medida[1] < 0.02;
+function legendaDoProjeto(arq, opcoes = {}) {
+  const textos = (arq.notas || []).filter(n => n.legenda && String(n.s || '').trim());
   if (!textos.length || !arq.simbolosDaLegenda?.length) return [];
-  const porLayer = new Map();
+  // todos os símbolos da legenda (de qualquer layer, inclusive traço e contorno): dizem de quem é cada texto
+  const porLayerTodas = new Map();
   for (const r of arq.simbolosDaLegenda) {
-    if (!RE_INSTALACAO.test(r.layer || '') || RE_FORA.test(r.layer || '') || RE_TRECHO.test(r.layer || '')) continue;
-    if (!porLayer.has(r.layer)) porLayer.set(r.layer, []);
-    porLayer.get(r.layer).push(r);
+    if (!porLayerTodas.has(r.layer)) porLayerTodas.set(r.layer, []);
+    porLayerTodas.get(r.layer).push(r);
   }
+  const grupos = [...porLayerTodas].flatMap(([layer, refs]) => agrupar(refs).map(s => ({ layer, s })));
+  const naJanela = (s, n) => s.centro[0] >= n.x - 4 && s.centro[0] <= n.x + 0.1 && Math.abs(s.centro[1] - n.y) <= 1;
+  // o texto é de outro símbolo quando outro grupo (de outra posição) está claramente mais perto dele
+  const deOutro = (s, n) => {
+    const d = Math.abs(s.centro[1] - n.y);
+    // (o de outra coluna da legenda, bem mais à esquerda, não toma o texto desta)
+    return grupos.some(o => o.s !== s && naJanela(o.s, n) && Math.abs(o.s.centro[1] - n.y) < d - 0.05 && Math.abs(o.s.centro[1] - s.centro[1]) > 0.05 && o.s.centro[0] >= s.centro[0] - 0.5);
+  };
   const out = [];
-  for (const [layer, refs] of porLayer) {
+  for (const { layer, s } of grupos) {
+    if (!RE_INSTALACAO.test(layer || '') || RE_FORA.test(layer || '') || RE_TRECHO.test(layer || '')) continue;
     const daLayer = tipoPelaLayer(layer);
     if (!daLayer && RE_SO_CONTORNO.test(layer)) continue;
-    for (const s of agrupar(refs)) {
-      const t = textos.filter(n => s.centro[0] >= n.x - 4 && s.centro[0] <= n.x + 0.1 && Math.abs(s.centro[1] - n.y) <= 1)
-        .filter(n => !daLayer || familia(tipoPeloTexto(n.s)[2]) === familia(daLayer[2]))
-        .sort((a, b) => Math.abs(a.y - s.centro[1]) - Math.abs(b.y - s.centro[1]))[0];
-      if (!t) continue;
-      const [, , simbolo, disciplina] = tipoPeloTexto(t.s);
-      const altura_m = alturaEscrita(t.s) || undefined;
-      out.push({
-        layer, medida: s.medida.map(r2), fracao: r2(fracaoPreenchida(s, layer, arq.preenchimentos)),
-        simbolo: /TOMADA/.test(simbolo) && altura_m ? tomadaPelaAltura(altura_m) : simbolo, disciplina,
-        ...(altura_m ? { altura_m } : {}), texto: t.s.slice(0, 120),
-      });
+    const daLinha = textos.filter(n => naJanela(s, n) && !deOutro(s, n));
+    if (!daLinha.length) continue;
+    // texto de várias linhas ("Tomada alta" / "a 2,20m do piso"): vale o que diz o tipo, o mais perto
+    const perto = (a, b) => Math.abs(a.y - s.centro[1]) - Math.abs(b.y - s.centro[1]) || (a.x - s.centro[0]) - (b.x - s.centro[0]);
+    const comTipo = ehTracoDeLegenda(s) ? [] : daLinha.filter(n => tipoPeloTexto(n.s) && !RE_TEXTO_NAO_PONTO.test(n.s)).sort(perto);
+    const t = comTipo.find(n => !daLayer || familia(tipoPeloTexto(n.s)[2]) === familia(daLayer[2]));
+    const base = { layer, medida: s.medida.map(r2), fracao: r2(fracaoPreenchida(s, layer, arq.preenchimentos)) };
+    if (!t) {
+      // linha sem tipo (ou de outro tipo que a layer): fica sem tipo, com o texto dela
+      if (opcoes.comSemTipo) out.push({ ...base, simbolo: null, disciplina: '', texto: [...daLinha].sort(perto)[0].s.slice(0, 120), semTipo: true });
+      continue;
     }
+    const [, , simbolo, disciplina] = tipoPeloTexto(t.s);
+    const altura_m = alturaEscrita(t.s) || undefined;
+    out.push({
+      ...base, simbolo: /TOMADA/.test(simbolo) && altura_m ? tomadaPelaAltura(altura_m) : simbolo, disciplina,
+      ...(altura_m ? { altura_m } : {}), texto: t.s.slice(0, 120),
+    });
   }
   return out;
 }
@@ -210,9 +261,19 @@ const legendaDeAlturas = (arq) => legendaDoProjeto(arq).filter(l => l.altura_m);
 
 // o tipo da planta na legenda: mesma layer, mesma fração preenchida e mesma proporção
 // (a planta pode estar noutra escala). Dois tipos ou duas alturas possíveis: nenhum (fica [CONFERIR]).
-function daLegenda(legenda, layer, medida, fracao) {
+//
+// Biblioteca de blocos (CAD-08): a linha aprendida de uma confirmação no mapa (porMedida — DWG/DXF em
+// tamanho real) casa pela MEDIDA (±2 cm ou 8 %), não só pela proporção: a tomada de 20 cm e o quadro de
+// 40 cm, dois quadrados na mesma layer, deixam de se confundir. A do mesmo escritório do carimbo vem antes
+// da de outro escritório. A linha sem medida (legenda lida, aprendizado antigo) segue pela proporção.
+function daLegenda(legenda, layer, medida, fracao, escritorio = '') {
   const prop = (m) => m[1] / m[0];
-  const cand = legenda.filter(l => l.layer.toUpperCase() === layer.toUpperCase() && Math.abs(l.fracao - fracao) <= 0.08 && Math.abs(prop(l.medida) - prop(medida)) <= 0.15 * prop(l.medida));
+  const daLayer = legenda.filter(l => l.layer.toUpperCase() === layer.toUpperCase() && Math.abs(l.fracao - fracao) <= 0.08);
+  const comMedida = daLayer.filter(l => l.porMedida && Array.isArray(l.medida)
+    && mesmaMedida([...l.medida].sort((a, b) => b - a), medida, Math.max(0.02, 0.08 * medida[0])));
+  const doEscritorio = escritorio ? comMedida.filter(l => l.escritorio === escritorio) : [];
+  const cand = doEscritorio.length ? doEscritorio : comMedida.length ? comMedida
+    : daLayer.filter(l => !l.porMedida && Math.abs(prop(l.medida) - prop(medida)) <= 0.15 * prop(l.medida));
   const chaves = new Set(cand.map(l => `${familia(l.simbolo)}|${l.altura_m || ''}`));
   return chaves.size === 1 ? cand.sort((a, b) => Math.abs(a.medida[0] - medida[0]) - Math.abs(b.medida[0] - medida[0]))[0] : null;
 }
@@ -253,7 +314,7 @@ function aplicarNotas(arq, pontos) {
 function notasDeAltura(arq) {
   const por = new Map();
   for (const n of arq.notas || []) {
-    if (n.legenda || /forro|p[ée].?direito|teto|laje/i.test(n.s)) continue;
+    if (n.legenda || /forro|p[ée].?direito|\bteto\b|\blaje\b/i.test(n.s)) continue;
     const h = alturaEscrita(n.s);
     const tipos = TIPOS.filter(([, rt]) => rt.test(n.s));
     if (!(h > 0 && h <= 5) || !tipos.length || new Set(tipos.map(t => familia(t[2]))).size !== 1) continue;
@@ -271,13 +332,16 @@ function notasDeAltura(arq) {
 // usada só na layer que não tem legenda neste desenho — o sistema aprende a cada projeto.
 function propostaDeMapa(arq, opcoes = {}) {
   const { ehExterno, porLayer } = contexto(arq);
-  const legendaDaqui = legendaDoProjeto(arq);
+  // (as linhas da legenda sem tipo — "Isolador de laço" — só emprestam a descrição à linha "?" do mapa)
+  const legendaToda = legendaDoProjeto(arq, { comSemTipo: true });
+  const legendaDaqui = legendaToda.filter(l => l.simbolo);
+  const semTipoDaqui = legendaToda.filter(l => !l.simbolo);
   const comLegenda = new Set(legendaDaqui.map(l => l.layer.toUpperCase()));
   const legenda = [...legendaDaqui, ...(opcoes.aprendidos || []).filter(l => l?.layer && Array.isArray(l.medida) && !comLegenda.has(l.layer.toUpperCase())).map(l => ({ ...l, aprendido: true }))];
   // símbolo da layer → tipo da legenda (do mesmo aparelho: tomada continua tomada)
   const pelaLegenda = (layer, sug, t) => {
     if (RE_PDF_COR.test(layer)) return null;
-    const l = daLegenda(legenda, layer, t.medida, t.fracao);
+    const l = daLegenda(legenda, layer, t.medida, t.fracao, opcoes.escritorio || '');
     if (!l) return null;
     // tipo conferido pelo engenheiro em outro projeto (l.usuario) vale mesmo quando a regra da layer dizia outra família
     if (!l.usuario && (sug ? familia(l.simbolo) !== familia(sug.simbolo) : RE_SO_CONTORNO.test(layer))) return null;
@@ -297,9 +361,10 @@ function propostaDeMapa(arq, opcoes = {}) {
   const simbolos = [];
   const trechos = [];
   for (const [layer, refs] of [...porLayer].sort((a, b) => a[0].localeCompare(b[0]))) {
-    if (RE_TRECHO.test(layer)) {
+    if (ehLayerDeTracado(layer)) {
       const piso = /PISO|DIRETA|ENTERR|SOLO/i.test(layer);
-      trechos.push({ layer, tipo: /ELETROCALHA/i.test(layer) ? 'eletrocalha' : /LEITO/i.test(layer) ? 'leito' : /PERFILADO/i.test(layer) ? 'perfilado' : 'eletroduto', disciplina: 'eletrica', ...(piso ? { altura: 0.04 } : {}), comprimento_m: r2(refs.reduce((s, r) => s + comprimento(r), 0)) });
+      // tipo e disciplina pela regra comum (a do orçamento) e o comprimento sem os trechos repetidos (CAD-10)
+      trechos.push({ layer, tipo: tipoDoTracado(layer).tipo, disciplina: disciplinaDoTracado(layer), ...(piso ? { altura: 0.04 } : {}), comprimento_m: r2(segmentosUnicos(refs).reduce((s, g) => s + Math.hypot(g[2] - g[0], g[3] - g[1]), 0)) });
       continue;
     }
     const pdf = RE_PDF_COR.test(layer);
@@ -360,11 +425,15 @@ function propostaDeMapa(arq, opcoes = {}) {
       if (leg) sug = { simbolo: leg.simbolo, disciplina: sug?.disciplina || leg.disciplina, rotulo: leg.texto };
       // o mesmo aparelho desenhado em duas layers (símbolo + contorno IFC): conta uma vez só
       if (sug && simbolos.some(o => o.layer !== layer && o.simbolo === sug.simbolo && o.quantidade === t.itens.length)) sug = null;
-      const sugAltura = !leg?.altura_m ? alturaSugerida(sug?.simbolo) : null;
+      // (o tipo e a altura da legenda só valem se a linha ficou com o tipo: antes a linha "?" saía com origem "legenda")
+      const legUsada = sug && leg ? leg : null;
+      const sugAltura = !legUsada?.altura_m ? alturaSugerida(sug?.simbolo) : null;
+      // linha sem tipo: a descrição da legenda deste desenho, se a linha dela não diz tipo (a tela mostra o que é)
+      const semTipo = !sug && !pdf ? daLegenda(semTipoDaqui.map(l => ({ ...l, simbolo: 'SEM-TIPO' })), layer, t.medida, t.fracao) : null;
       simbolos.push({
-        layer, medida: t.medida.map(r2), quantidade: t.itens.length, fora, simbolo: sug ? sug.simbolo : '?', rotulo: sug?.rotulo || '', disciplina: sug ? sug.disciplina : '',
+        layer, medida: t.medida.map(r2), quantidade: t.itens.length, fora, simbolo: sug ? sug.simbolo : '?', rotulo: sug?.rotulo || semTipo?.texto || '', disciplina: sug ? sug.disciplina : '',
         // layer com preenchimento: o tipo vale só para os símbolos com a mesma fração (aplicarMapa)
-        ...(cheios ? { preenchimento: r2(t.fracao) } : {}), ...(leg?.altura_m ? { altura_m: leg.altura_m, alturaDe: leg.aprendido ? 'aprendido' : 'legenda' } : sugAltura ? { altura_m: sugAltura.altura_m, alturaDe: sugAltura.de, alturaTexto: sugAltura.texto } : {}), ...(leg ? { tipoDe: leg.aprendido ? 'aprendido' : 'legenda' } : {}),
+        ...(cheios ? { preenchimento: r2(t.fracao) } : {}), ...(legUsada?.altura_m ? { altura_m: legUsada.altura_m, alturaDe: legUsada.aprendido ? 'aprendido' : 'legenda' } : sugAltura ? { altura_m: sugAltura.altura_m, alturaDe: sugAltura.de, alturaTexto: sugAltura.texto } : {}), ...(legUsada ? { tipoDe: legUsada.aprendido ? 'aprendido' : 'legenda' } : {}),
         ...(sug && sug.simbolo === 'HM-ELE-CAIXA-PISO' && !pdf ? { area: 'externa' } : {}),
         // onde cada símbolo desta forma está (a planta da tela do mapa mostra também o que não foi reconhecido)
         centros: t.itens.slice(0, 400).map(q => [r2(q.centro[0]), r2(q.centro[1])]),
@@ -477,11 +546,8 @@ function aplicarMapa(arq, mapa) {
     const refs = porLayer.get(t.layer) || [];
     // layer de cor do PDF: o traçado sem os símbolos da mesma cor
     const noSimbolo = t.foraDosSimbolos ? new Set(agrupar(refs, Infinity).filter(simboloPdf).flatMap(s => s.membros)) : null;
-    for (const [i, r] of refs.entries()) {
-      if (noSimbolo?.has(i)) continue;
-      for (let i = 1; i < r.pts.length; i++) segmentos.push([...r.pts[i - 1], ...r.pts[i]].map(r2));
-      if (r.fechada && r.pts.length > 2) segmentos.push([...r.pts.at(-1), ...r.pts[0]].map(r2));
-    }
+    // (o trecho desenhado de novo por cima entra uma vez só — a mesma regra da medição do orçamento, CAD-10)
+    segmentos.push(...segmentosUnicos(refs.filter((_, i) => !noSimbolo?.has(i))));
     const { comprimento_m, foraDosSimbolos, ...resto } = t;
     if (segmentos.length) trechos.push({ ...resto, segmentos });
   }

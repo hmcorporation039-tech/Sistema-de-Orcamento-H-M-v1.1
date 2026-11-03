@@ -105,6 +105,29 @@ const BLOCOS_HM = Object.fromEntries(Object.entries(SIMBOLOS).map(([nome, s]) =>
   return [nome, { descricao: s.legenda, disciplina, layer: s.layer, ...(alt || {}) }];
 }));
 
+// ── Traçado de infraestrutura: UMA regra para a análise (orçamento), o mapa do CAD e o 3D (CAD-10) ──
+// Layers medidas em metros (eletroduto, eletrocalha, perfilado, leito, infra, fiação e cabeamento desenhados).
+// Antes o mapa do CAD tinha outra regex (sem INFRA, FIAÇÃO nem CABEAMENTO) e a disciplina fixa "eletrica": o
+// mesmo DXF dava metragem e disciplina diferentes no 3D e no orçamento (R04: CA-INFRA sumia, INC-ELETRODUTO 66,83 × 66,2 m).
+const RE_LAYER_INFRA = 'ELETRODUT|ELETROCALHA|PERFILADO|LEITO|CONDU[IÍ]TE|CONDUIT|INFRA|CABEAMENTO|FIA[ÇC][ÃA]O|FIACAO|TUBELE|INST.*TUBULA|EL[ÉE]T.*TUBULA|TUBULA.*EL[ÉE]T|TUB.*(L[ÓO]GIC|TELEF|DADOS|CFTV)|(L[ÓO]GIC|TELEF|DADOS|CFTV).*(TUB|INFRA|ELETROD)';
+// tipo do traçado pela layer; fiação e cabeamento desenhados são ROTA (cabo = rota × condutores), não material
+function tipoDoTracado(layer) {
+  const L = String(layer || '');
+  const tipo = /ELETROCALHA|\bCALHA/i.test(L) ? 'eletrocalha' : /PERFILADO/i.test(L) ? 'perfilado' : /LEITO/i.test(L) ? 'leito'
+    : /FIA[ÇC][ÃA]O|FIACAO/i.test(L) ? 'fiacao' : /CABEAMENTO/i.test(L) && !/INFRA|ELETROD|TUB/i.test(L) ? 'cabeamento' : 'eletroduto';
+  return { tipo, rota: tipo === 'fiacao' || tipo === 'cabeamento' };
+}
+
+// ── Ponto de extensão por disciplina: o que é "de outra área" e passa a ser da PRÓPRIA disciplina ──
+// Para as disciplinas de sempre, duto, difusor, grelha e as layers HVAC/AVAC/MEC são de outra área (ficam fora da
+// contagem: services/analiseCad RE_OUTRA_AREA). Quando o arquivo é marcado com uma disciplina desta tabela, o que
+// casa com a regex dela deixa de ser "outra área". Nova disciplina: uma linha aqui (fase 3, 02/11/2026).
+const PROPRIOS_DA_DISCIPLINA = {
+  climatizacao: /HVAC|AVAC|CLIMATIZ|AR.?CONDICION|(^|[-_ ])MEC([-_ ]|$)|MEC[-_ ]?DUTOS?|\bDUTOS?\b|DIFUSOR|GRELHA|COLARINHO|DAMPER|VENEZIANA|FANCOIL|FAN ?COIL|FANCOLETE|EXAUSTOR|VENTILADOR|\bSPLIT\b|CONDENSADORA|EVAPORADORA|CHILLER|HI-?WALL|CASSETE|PISO.?TETO|TERMINAIS DE AR|\bVAV\b/i,
+};
+// o texto (nome do bloco + layers) é da própria disciplina de uma das `disciplinas` marcadas no arquivo?
+const daPropriaDisciplina = (texto, disciplinas = []) => (disciplinas || []).some(d => PROPRIOS_DA_DISCIPLINA[d]?.test(String(texto || '')));
+
 // prefixos de layer do padrão H&M por disciplina (padrao-hm.json), para conferência
 const LAYERS_HM = (padrao.layers || []).map(l => l.nome).filter(n => /^[A-Z]+-/.test(n));
 const PREFIXOS_LAYER_HM = Object.fromEntries([...new Set(LAYERS_HM.map(n => n.split('-')[0]))].filter(p => PREFIXO_HM[p]).map(p => [p, PREFIXO_HM[p]]));
@@ -115,4 +138,5 @@ const ehLayerDeInstalacao = (layer) => !!disciplinaDoTexto(layer, { palavras: fa
 module.exports = {
   BLOCOS_HM, PREFIXO_HM, PREFIXO_OUTROS, PREFIXOS_LAYER_HM,
   separarXref, disciplinaDaLayer, disciplinaDoBloco, disciplinaDoTexto, semPrefixoDeDisciplina, alturaDoTexto, ehLayerDeInstalacao,
+  RE_LAYER_INFRA, tipoDoTracado, PROPRIOS_DA_DISCIPLINA, daPropriaDisciplina,
 };

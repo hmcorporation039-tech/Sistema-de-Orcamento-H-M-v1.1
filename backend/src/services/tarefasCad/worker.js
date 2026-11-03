@@ -23,7 +23,7 @@ const TAREFAS = {
     try {
       if (/\.pdf$/i.test(nome || '')) {
         // processo à parte: um erro nativo do leitor de PDF não derruba o sistema
-        const r = await require('../pdfParaDxf').pdfParaDxfIsolado(Buffer.from(buffer), { escala, pagina });
+        const r = await require('../pdfParaDxf').pdfParaDxfIsolado(Buffer.from(buffer), { escala, pagina, nomeArquivo: nome });
         ({ texto } = r);
         origem = 'pdf';
         pdf = { escala: r.escala, origemEscala: r.origemEscala, pagina: r.pagina, paginas: r.paginas, avisos: r.avisos, folhas: r.folhas || [] };

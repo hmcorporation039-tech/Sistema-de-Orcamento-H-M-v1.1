@@ -235,6 +235,9 @@ router.post('/projetos/analises/:id/gerar-orcamento', autenticar, validarId, pos
 router.get('/projetos/analises/:id/mapa', autenticar, validarId, projCtrl.lerMapaCad);
 router.put('/projetos/analises/:id/mapa', autenticar, validarId, posseAnalise, projCtrl.salvarMapaCad);
 router.post('/projetos/analises/:id/mapa/reprocessar', autenticar, validarId, posseAnalise, projCtrl.reprocessarMapaCad);
+// biblioteca de blocos (o que o mapa do CAD ensinou), em JSON: levar de uma instalação para outra; importar só administrador
+router.get('/projetos/biblioteca-blocos', autenticar, projCtrl.exportarBibliotecaBlocos);
+router.post('/projetos/biblioteca-blocos', autenticar, admin, projCtrl.importarBibliotecaBlocos);
 
 // ── PROJETOS E LAUDOS POR DISCIPLINA (hub Obras) ──────────────────────────
 // Versão 2.1: /laudos guarda os dois tipos de registro (?tipo=projeto|laudo);

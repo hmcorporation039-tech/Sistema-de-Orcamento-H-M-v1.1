@@ -92,6 +92,12 @@ const carregarCatalogo = () => aprendizadoMateriais.carregarCatalogo();
 // A leitura tem tempo-limite por página e por arquivo, numa thread à parte
 // (utils/pdfVetorial.js) — o teto de folhas pode ser maior que os 6 de antes.
 const MAX_PAGINAS_DESENHO = 15;
+// escala do PDF (fase 3, CAD-09): a informada no envio do arquivo vale mais; sem ela, o leitor tenta o carimbo, o
+// nome do arquivo, as portas e as cotas (utils/escalaDaPlanta.js) e diz de onde veio
+const escalaDoArquivo = (a) => {
+  const e = Number(a?.escala);
+  return { nomeArquivo: a?.nomeArquivo || '', ...(e >= 1 && e <= 5000 ? { escala: Math.round(e) } : {}) };
+};
 
 // opcoes.mapasConfirmados: { [nome do arquivo]: [tipos conferidos no mapa do CAD] } (services/mapaCad.js)
 async function analisarProjetoCompleto(todosArquivos, opcoes = {}) {
@@ -103,7 +109,7 @@ async function analisarProjetoCompleto(todosArquivos, opcoes = {}) {
   const temCad = todosArquivos.some(a => ehArquivoCad(a.nomeArquivo));
   const aprendidos = temCad ? await simbolosAprendidos.carregar() : [];
   const notasAprendidas = temCad ? await notasAprendidasDb.carregar() : [];
-  const lerCad = ({ buffer, nomeArquivo }) => lerArquivoCad(buffer, nomeArquivo, { aprendidos, notasAprendidas, confirmados: opcoes.mapasConfirmados?.[nomeArquivo] || [] })
+  const lerCad = ({ buffer, nomeArquivo, disciplinas }) => lerArquivoCad(buffer, nomeArquivo, { aprendidos, notasAprendidas, disciplinas: disciplinas || [], confirmados: opcoes.mapasConfirmados?.[nomeArquivo] || [] })
     .then((r) => {
       if (!opcoes.mapasConfirmados && r?.aprendizado?.legenda?.length) simbolosAprendidos.registrar(r.aprendizado.legenda, nomeArquivo).catch(() => {});
       // as notas gerais de altura deste desenho viram aprendizado do escritório (item 8)
@@ -124,7 +130,7 @@ async function analisarProjetoCompleto(todosArquivos, opcoes = {}) {
   // geometria do desenho (símbolos/linhas pela legenda), com a classificação de
   // cada folha (planta × unifilar × quadro de cargas — utils/classificarPranchaPdf.js);
   // falha não derruba a análise
-  const vetoriais = await emLotes(analises, 3, (a, i) => (cads[i] ? [cads[i].pagina] : a.semTexto ? [] : lerPdfVetorial(arquivos[i].buffer, { maxPaginas: MAX_PAGINAS_DESENHO }).catch((e) => {
+  const vetoriais = await emLotes(analises, 3, (a, i) => (cads[i] ? [cads[i].pagina] : a.semTexto ? [] : lerPdfVetorial(arquivos[i].buffer, { maxPaginas: MAX_PAGINAS_DESENHO, ...escalaDoArquivo(arquivos[i]) }).catch((e) => {
     console.warn(`[analise] leitura vetorial de "${a.arquivo}" falhou:`, e.message);
     return [{ pagina: null, itens: [], legenda: null, escala: null, aviso: `leitura do desenho falhou (${e.message}) — conferir na planta` }];
   })));
@@ -268,7 +274,7 @@ async function analisarProjetoCompleto(todosArquivos, opcoes = {}) {
     totaisQuadro: a.totaisQuadro,
     listaMateriais: a.listaMateriais,
     esquadrias: a.esquadrias,
-    desenho: (vetoriais[i] || []).map(p => ({ pagina: p.pagina, escala: p.escala, ...(p.origem ? { origem: p.origem, nao_identificados: p.naoIdentificados } : {}), itens: (p.itens || []).map(({ posicoes, ...it }) => it), ...(p.aviso ? { aviso: p.aviso } : {}), ...(p.folha ? { folha: p.folha.resumo, tipo_folha: p.folha.tipo } : {}), ...(p.ignorada ? { ignorada: p.ignorada } : {}), ...(p.pulada ? { pulada: p.pulada } : {}), ...(p.naoContados?.length ? { nao_contados: p.naoContados } : {}), ...(p.avisoEscala ? { aviso_escala: p.avisoEscala } : {}), ...(p.conferenciaLegenda?.length ? { conferencia_legenda: p.conferenciaLegenda } : {}), ...(p.xrefsDeOutraDisciplina?.length ? { xrefs_outra_disciplina: p.xrefsDeOutraDisciplina } : {}), ...(p.rotas?.length ? { rotas: p.rotas.map(({ layer, tipo, disciplina, rota_m }) => ({ layer, tipo, disciplina, rota_m })) } : {}) })),
+    desenho: (vetoriais[i] || []).map(p => ({ pagina: p.pagina, escala: p.escala, ...(p.origemEscala ? { origem_escala: p.origemEscala } : {}), ...(p.origem ? { origem: p.origem, nao_identificados: p.naoIdentificados } : {}), itens: (p.itens || []).map(({ posicoes, ...it }) => it), ...(p.aviso ? { aviso: p.aviso } : {}), ...(p.folha ? { folha: p.folha.resumo, tipo_folha: p.folha.tipo } : {}), ...(p.ignorada ? { ignorada: p.ignorada } : {}), ...(p.pulada ? { pulada: p.pulada } : {}), ...(p.naoContados?.length ? { nao_contados: p.naoContados } : {}), ...(p.avisoEscala ? { aviso_escala: p.avisoEscala } : {}), ...(p.conferenciaLegenda?.length ? { conferencia_legenda: p.conferenciaLegenda } : {}), ...(p.xrefsDeOutraDisciplina?.length ? { xrefs_outra_disciplina: p.xrefsDeOutraDisciplina } : {}), ...(p.rotas?.length ? { rotas: p.rotas.map(({ layer, tipo, disciplina, rota_m }) => ({ layer, tipo, disciplina, rota_m })) } : {}) })),
     ...(analises[i].origemCad ? { cad: analises[i].origemCad } : {}),
     // mapa do CAD (tela de confirmação do engenheiro): layers, tipos, quantidades e de onde veio cada tipo
     ...(cads[i]?.mapa ? { mapa_cad: cads[i].mapa } : {}),
@@ -278,7 +284,8 @@ async function analisarProjetoCompleto(todosArquivos, opcoes = {}) {
     cliente,
     segmentoPreco: segmento, // órgão público → referência oficial; demais → mercado particular
     disciplinas: disciplinasEfetivas,
-    arquivosAnalisados: analises.map(a => ({ arquivo: a.arquivo, disciplinas: a.disciplinas })),
+    // (a escala informada no envio vai junto: o reprocessamento do mapa do CAD relê o PDF com ela)
+    arquivosAnalisados: analises.map((a, i) => ({ arquivo: a.arquivo, disciplinas: a.disciplinas, ...(escalaDoArquivo(arquivos[i]).escala ? { escala: escalaDoArquivo(arquivos[i]).escala } : {}) })),
     ambientes,
     pontosPorAmbiente: montarPontosPorAmbiente(arquivos, analises, pontosPorAmbienteBrutos),
     cameras: {

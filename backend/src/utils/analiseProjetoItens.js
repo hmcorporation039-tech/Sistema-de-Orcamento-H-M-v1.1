@@ -10,6 +10,8 @@ const { detectarDisciplinas } = require('./leitoresTabelaProjeto');
 // preço sugerido do catálogo pela semelhança da descrição (Jaccard >= 0,45)
 const { compararComCatalogo } = require('./semelhancaMateriais');
 const { chaveNome } = require('./texto');
+// escala da folha e de onde veio (fase 3, CAD-09): a deduzida pelo nome do arquivo, portas ou cotas vai marcada [CONFERIR]
+const { descreverEscala } = require('./escalaDaPlanta');
 
 // "rede" e "cabeamento" são a mesma skill (NBR 14565): o pacote sugere
 // "cabeamento" para LOG/REDE/CAB e a tela deixa marcar qualquer das duas. Antes
@@ -840,8 +842,11 @@ function condutoresDoProjeto(analises) {
   const [n, vezes] = [...cont].sort((x, y) => y[1] - x[1])[0] || [];
   return n ? { n, lido: true, circuitos: vezes } : { n: CONDUTORES_ADOTADOS, lido: false };
 }
-// tipo do trecho pela descrição/layer (formato antigo) ou o que o CAD já diz (tipoLinha)
-const tipoDaLinha = (s) => (/eletrocalha|\bcalha/i.test(s) ? 'eletrocalha' : /perfilado/i.test(s) ? 'perfilado' : /leito/i.test(s) ? 'leito'
+// tipo do trecho pela descrição/layer (formato antigo) ou o que o CAD já diz (tipoLinha).
+// Perfil e fita de LED medidos em metros (prancha luminotécnica) são luminária linear, não eletroduto: com a
+// escala tirada do nome do arquivo (fase 3, CAD-09) o "PERFIL EMBUTIDO PDL21" da Paróquia ganhou metros e cairia
+// no eletroduto da iluminação — vira material em metros com a própria descrição
+const tipoDaLinha = (s) => (/\bperfil\b(?!ado)|\bfita\s+(de\s+)?led\b|\blinha\s+de\s+luz\b/i.test(s) ? 'linear' : /eletrocalha|\bcalha/i.test(s) ? 'eletrocalha' : /perfilado/i.test(s) ? 'perfilado' : /leito/i.test(s) ? 'leito'
   : /fia[çc][ãa]o|fiacao/i.test(s) ? 'fiacao' : /^cabeamento|rota do cabeamento/i.test(s) ? 'cabeamento' : 'eletroduto');
 // Trechos medidos de uma página, nos dois formatos do CAD: item "linha" (com
 // rota_m) e, no formato novo, a rota de fiação/cabeamento só em `pag.rotas`
@@ -907,7 +912,7 @@ function montarMateriaisDoDesenho(analises, vetoriais, catalogo) {
         if (l.ambiguo || l.rota_m == null) continue;
         const disciplina = disciplinaDoItemDesenho(l.it, pag, a.disciplinas);
         if (!disciplina) continue;
-        const medida = `${metrosBR(l.rota_m)}${pag.origem === 'cad' ? ` na layer "${l.layer}"` : ` na escala 1:${pag.escala}`}`;
+        const medida = `${metrosBR(l.rota_m)}${pag.origem === 'cad' ? ` na layer "${l.layer}"` : ` na escala ${descreverEscala(pag.escala, pag.origemEscala || 'carimbo')}`}`;
         if (['eletroduto', 'fiacao'].includes(l.tipo) || (l.tipo === 'cabeamento' && !l.it.descricao)) {
           const g = porDisc.get(disciplina) || porDisc.set(disciplina, { eletrodutos: [], fiacoes: [], cabeamento: [] }).get(disciplina);
           ({ eletroduto: g.eletrodutos, fiacao: g.fiacoes, cabeamento: g.cabeamento })[l.tipo].push({ ...l, pag, medida });

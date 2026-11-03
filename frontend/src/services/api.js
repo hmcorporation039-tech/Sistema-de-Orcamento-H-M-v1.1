@@ -153,6 +153,9 @@ export const gerarOrcamentoDaAnalise = (id) => api.post(`/projetos/analises/${id
 export const getMapaCad = (id) => api.get(`/projetos/analises/${id}/mapa`);
 export const salvarMapaCad = (id, arquivo, linhas) => api.put(`/projetos/analises/${id}/mapa`, { arquivo, linhas });
 export const reprocessarMapaCad = (id, corpo = {}) => api.post(`/projetos/analises/${id}/mapa/reprocessar`, corpo, { timeout: 300000 });
+// biblioteca de blocos (o que o mapa do CAD ensinou), em JSON: exportar (logado) e importar (administrador)
+export const exportarBibliotecaBlocos = () => api.get('/projetos/biblioteca-blocos');
+export const importarBibliotecaBlocos = (json) => api.post('/projetos/biblioteca-blocos', json);
 // Pasta do projeto (2.3: na pasta do cliente ou da obra, no servidor)
 export const getPastaAnalise = (id) => api.get(`/projetos/analises/${id}/pasta`);
 export const abrirPastaAnalise = (id) => api.post(`/projetos/analises/${id}/pasta/abrir`);

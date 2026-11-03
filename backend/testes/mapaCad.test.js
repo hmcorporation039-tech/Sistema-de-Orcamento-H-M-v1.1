@@ -15,6 +15,7 @@ const mapaCad = require('../src/services/mapaCad');
 
 const SK = require('../src/config/caminhos').RAIZ_SKILLS;
 const { DesenhoDxf } = require(path.join(SK, '_comum', 'cad', 'dxf.js'));
+const { point3d } = require(require.resolve('@tarikjabiri/dxf', { paths: [path.join(SK, '_comum', 'cad'), path.join(SK, 'node_modules')] }));
 
 function dxfExplodido() {
   const d = new DesenhoDxf({ layers: [
@@ -37,6 +38,32 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
 (async () => {
   const dxf = Buffer.from(dxfExplodido());
   let proposto;
+
+  await caso('desenho misto (CAD-12): o quadro em bloco conta pelo bloco e as tomadas explodidas entram pelo mapa; trechos do mapa = os do orçamento (CAD-10)', async () => {
+    const d = new DesenhoDxf({ layers: [{ nome: 'A-PAREDE', cor: 8 }, { nome: 'EL-QUADRO', cor: 1 }, { nome: 'EL-TOMADAS', cor: 1 }, { nome: 'CA-INFRA', cor: 4 }] });
+    d.polilinha([[0, 0], [8, 0], [8, 5], [0, 5]], { layer: 'A-PAREDE', fechada: true });
+    d.bloco('QD', (b) => { b.addLine(point3d(0, 0), point3d(0.4, 0), { layerName: '0' }); b.addLine(point3d(0.4, 0), point3d(0.4, 0.6), { layerName: '0' }); b.addLine(point3d(0.4, 0.6), point3d(0, 0.6), { layerName: '0' }); b.addLine(point3d(0, 0.6), point3d(0, 0), { layerName: '0' }); });
+    d.inserir('QD', 0.3, 4, { layer: 'EL-QUADRO' });
+    for (const x of [1, 2.5, 4, 5.5]) d.polilinha([[x, 0.3], [x + 0.3, 0.3], [x + 0.15, 0.56]], { layer: 'EL-TOMADAS', fechada: true });
+    // eletroduto do controle de acesso desenhado duas vezes por cima (conta uma vez)
+    d.polilinha([[1, 2], [7, 2]], { layer: 'CA-INFRA' });
+    d.polilinha([[1, 2], [7, 2]], { layer: 'CA-INFRA' });
+    const r = await lerArquivoCad(Buffer.from(d.toString()), 'misto.dxf');
+    const itens = r.pagina.itens.filter(it => it.tipo === 'simbolo');
+    assert.ok(itens.some(it => it.bloco === 'QD' && it.quantidade === 1), JSON.stringify(itens.map(i => [i.bloco, i.quantidade])));
+    const tomadas = itens.find(it => /TOMADA|PONTO/.test(it.bloco || ''));
+    assert.ok(tomadas && tomadas.quantidade === 4 && tomadas.conferir, 'as tomadas explodidas entram (a conferir) mesmo com um bloco no desenho');
+    assert.strictEqual(r.mapa.valeParaOrcamento, true);
+    assert.deepStrictEqual(r.mapa.layersComBloco, ['EL-QUADRO']);
+    const linhaTomadas = r.mapa.simbolos.find(s => s.layer === 'EL-TOMADAS');
+    assert.strictEqual(linhaTomadas.contados, 4);
+    // a mesma medição: o trecho do mapa é o item de metros do orçamento, com a disciplina da layer
+    const item = r.pagina.itens.find(it => it.tipo === 'linha' && it.layer === 'CA-INFRA');
+    const trecho = r.mapa.trechos.find(t => t.layer === 'CA-INFRA');
+    assert.ok(item && trecho, JSON.stringify(r.mapa.trechos));
+    assert.deepStrictEqual([trecho.comprimento_m, trecho.disciplina], [item.metros, item.disciplina]);
+    assert.strictEqual(trecho.comprimento_m, 6);
+  });
 
   await caso('o desenho com símbolos explodidos devolve o mapa', async () => {
     const r = await lerArquivoCad(dxf, 'planta.dxf');
@@ -216,6 +243,41 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
         assert.deepStrictEqual([linha.simbolo, linha.origem, linha.altura_m], ['HM-ALM-SIRENE', 'aprendido', 2.4]);
         // mas continua a conferir: o aprendido só pré-preenche, quem conta é a confirmação
         assert.ok(r.pagina.itens.filter(it => it.tipo === 'simbolo').every(it => it.ambiguo));
+      });
+      await caso('biblioteca de blocos: a medida real e o escritório entram na chave; exporta e importa sem sobrescrever o conferido', async () => {
+        // dois quadrados na mesma layer, 20 e 40 cm: antes a mesma chave (a última confirmação apagava a outra) — CAD-08
+        const m = { arquivo: ARQ, simbolos: [
+          { idx: 0, layer: 'ZZ-TESTE-BIB', medida: [0.2, 0.2], quantidade: 3, simbolo: '?' },
+          { idx: 1, layer: 'ZZ-TESTE-BIB', medida: [0.4, 0.4], quantidade: 2, simbolo: '?' },
+        ] };
+        const { alteradas } = mapaCad.aplicarNoMapa(m, [{ idx: 0, simbolo: 'HM-ELE-TOMADA-BAIXA', confirmado: true }, { idx: 1, simbolo: 'HM-ELE-QUADRO', confirmado: true }]);
+        assert.strictEqual(await mapaCad.aprender(alteradas, ARQ, undefined, 'ZZ ESCRITORIO'), 2);
+        const daLayer = (await simbolosAprendidos.carregar()).filter(l => l.layer === 'ZZ-TESTE-BIB');
+        assert.deepStrictEqual(daLayer.map(l => [l.medida[0], l.simbolo, l.escritorio, l.porMedida]).sort(),
+          [[0.2, 'HM-ELE-TOMADA-BAIXA', 'ZZ ESCRITORIO', true], [0.4, 'HM-ELE-QUADRO', 'ZZ ESCRITORIO', true]]);
+        // exportar: o formato e as duas linhas, sem o nome do arquivo de onde vieram
+        const json = await simbolosAprendidos.exportar();
+        const exportadas = json.linhas.filter(l => l.layer === 'ZZ-TESTE-BIB');
+        assert.strictEqual(json.formato, 'hm-biblioteca-blocos');
+        assert.strictEqual(exportadas.length, 2);
+        assert.ok(!JSON.stringify(exportadas).includes(ARQ));
+        // importar: linha de legenda não troca o que o usuário conferiu; tipo inexistente é recusado
+        const tipos = new Set(mapaCad.tiposDisponiveis().map(t => t.simbolo));
+        const { linhas, erros } = simbolosAprendidos.validarBiblioteca({ formato: 'hm-biblioteca-blocos', linhas: [
+          { ...exportadas[0], simbolo: 'HM-ELE-INTERRUPTOR', origem: 'legenda' },
+          { layer: 'ZZ-TESTE-BIB2', medida: [0.3, 0.3], fracao: 0, simbolo: 'HM-INC-DETECTOR-FUMACA', origem: 'usuario', por_medida: true, escritorio: '' },
+          { layer: 'ZZ-TESTE-BIB2', medida: [0.3, 0.3], simbolo: 'NAO-EXISTE' },
+        ] }, tipos);
+        assert.deepStrictEqual([linhas.length, erros.length], [2, 1]);
+        const r = await simbolosAprendidos.importar(linhas, ARQ);
+        assert.deepStrictEqual([r.gravadas, r.mantidas], [1, 1]);
+        const depois = (await simbolosAprendidos.carregar()).filter(l => /^ZZ-TESTE-BIB/.test(l.layer));
+        assert.ok(depois.some(l => l.medida[0] === exportadas[0].medida[0] && l.simbolo === exportadas[0].simbolo), 'o conferido continua');
+        assert.ok(depois.some(l => l.layer === 'ZZ-TESTE-BIB2' && l.simbolo === 'HM-INC-DETECTOR-FUMACA' && l.usuario));
+        // as rotas: exportar com login; importar só administrador
+        const rotas = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'index.js'), 'utf8');
+        assert.match(rotas, /router\.get\('\/projetos\/biblioteca-blocos', autenticar, projCtrl\.exportarBibliotecaBlocos\)/);
+        assert.match(rotas, /router\.post\('\/projetos\/biblioteca-blocos', autenticar, admin, projCtrl\.importarBibliotecaBlocos\)/);
       });
       await caso('rotas de ponta a ponta: ler, corrigir, aprender, desfazer e reprocessar', async () => {
         const express = require('express');

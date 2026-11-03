@@ -17,7 +17,8 @@ const TIPOS = [
   [/^(INC|PCI)[-_ ].*CENTRAL|CENTRAL.{0,12}INC/i, /central.{0,30}inc[êe]ndio/i, 'HM-INC-CENTRAL', 'incendio'],
   [/C[ÂA]MERA|CFTV/i, /c[âa]mera|cftv|(?<![a-z])dome|bullet/i, 'HM-CFTV-CAMERA', 'cftv'],
   [/RACK/i, /\brack\b/i, 'HM-CAB-RACK', 'rede'],
-  [/WI.?FI|ACCESS.?POINT/i, /access.?point|ponto de acesso.{0,10}(sem fio|wi)|wi.?fi/i, 'HM-CAB-AP', 'rede'],
+  // (layer "CAB-AP" e o modelo "AP 3000 AX" na legenda: no R04 o AP saía como ponto de rede — fase 3, 02/11/2026)
+  [/WI.?FI|ACCESS.?POINT|(^|[-_ ])AP([-_ ]|$)/i, /access.?point|ponto de acesso.{0,10}(sem fio|wi)|wi.?fi|\bAP\s?\d{3,4}\s?(AX|AC|N)\b/i, 'HM-CAB-AP', 'rede'],
   [/(^|[-_ ])(REDE|L[ÓO]GICA|DADOS|RJ.?45|CAB)([-_ ]|$)/i, /(ponto|tomada).{0,15}(rede|l[óo]gica|dados)|l[óo]gica|rj.?45|cat\.?\s?6/i, 'HM-CAB-PONTO-REDE', 'rede'],
   [/PORTEIRO/i, /porteiro/i, 'HM-TEL-PORTEIRO', 'telefonia'],
   [/^TEL[-_ ]|TELEF|INTERF/i, /telef[ôo]n|telefone|interfon|ramal/i, 'HM-TEL-PONTO', 'telefonia'],

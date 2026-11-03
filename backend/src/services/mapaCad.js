@@ -16,7 +16,7 @@ const { CAD } = require('../config/caminhos');
 const { SIMBOLOS } = require(path.join(CAD, 'simbolos.js'));
 const { ESPEC } = require(path.join(CAD, 'modelo3d.js'));
 const { TIPOS } = require(path.join(CAD, 'tiposDePonto.js'));
-const { chaveDe } = require('./simbolosAprendidos');
+const { chaveDe, chaveComMedida } = require('./simbolosAprendidos');
 const { DISCIPLINAS, nomeDaDisciplina } = require('../utils/disciplinasProjeto');
 
 const NOMES_EXTRA = {
@@ -102,24 +102,36 @@ function confirmadasDoMapa(mapa) {
   }));
 }
 
+// chave antiga (só a proporção, antes da migração 2.0-43): a confirmação nova da mesma forma a substitui
 const chaveAprendida = (s) => chaveDe({ layer: s.layer, medida: [...s.medida].sort((a, b) => b - a), fracao: s.preenchimento || 0 });
+// Biblioteca de blocos (CAD-08): o DWG/DXF está em tamanho real — a confirmação vale pela MEDIDA (±2 cm) e pelo
+// escritório do carimbo. A cor do PDF convertido (layer PDF-COR-…) não tem escala confiável: fica pela proporção.
+const RE_PDF_COR = /^PDF-COR-/i;
+const porMedida = (s) => !RE_PDF_COR.test(String(s.layer || ''));
+const chaveDaConfirmacao = (s, escritorio) => (porMedida(s)
+  ? chaveComMedida({ layer: s.layer, medida: s.medida, fracao: s.preenchimento || 0 }, escritorio)
+  : chaveAprendida(s));
 
 // Cada tipo conferido vira aprendizado de origem 'usuario' (vale mais que a legenda e não conta conflito).
 // "Não é ponto" ('?') não se aprende: a mesma forma pode ser ponto em outro desenho.
-async function aprender(alteradas, arquivo, executor = pool) {
+// escritorio: o responsável técnico do carimbo (mapa_cad.escritorio); '' = o carimbo não diz
+async function aprender(alteradas, arquivo, executor = pool, escritorio = '') {
   let gravadas = 0;
   for (const { depois: s, desfeita } of alteradas) {
     if (desfeita || !s.confirmado || s.simbolo === '?' || !Array.isArray(s.medida) || !(s.medida[0] > 0)) continue;
     const medida = [...s.medida].sort((a, b) => b - a);
+    const chave = chaveDaConfirmacao(s, escritorio);
     try {
       await executor.query(
-        `INSERT INTO cad_simbolos_aprendidos (chave, layer, medida, fracao, simbolo, disciplina, altura_m, texto, origem, arquivo)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'usuario', $9)
+        `INSERT INTO cad_simbolos_aprendidos (chave, layer, medida, fracao, simbolo, disciplina, altura_m, texto, origem, arquivo, escritorio, por_medida)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'usuario', $9, $10, $11)
          ON CONFLICT (chave) DO UPDATE SET simbolo = EXCLUDED.simbolo, disciplina = EXCLUDED.disciplina, altura_m = EXCLUDED.altura_m,
            texto = EXCLUDED.texto, origem = 'usuario', conflitos = 0, arquivo = EXCLUDED.arquivo, atualizado_em = NOW(),
            vezes = cad_simbolos_aprendidos.vezes + CASE WHEN cad_simbolos_aprendidos.origem = 'usuario' AND cad_simbolos_aprendidos.simbolo = EXCLUDED.simbolo THEN 1 ELSE 0 END`,
-        [chaveAprendida(s), String(s.layer).slice(0, 120), medida, Math.round((s.preenchimento || 0) * 1000) / 1000, s.simbolo, s.disciplina || null,
-          s.altura_m > 0 ? s.altura_m : null, String(s.rotulo || '').slice(0, 200), String(arquivo || '').slice(0, 200)]);
+        [chave, String(s.layer).slice(0, 120), medida, Math.round((s.preenchimento || 0) * 1000) / 1000, s.simbolo, s.disciplina || null,
+          s.altura_m > 0 ? s.altura_m : null, String(s.rotulo || '').slice(0, 200), String(arquivo || '').slice(0, 200), String(escritorio || '').slice(0, 120), porMedida(s)]);
+      // a chave antiga (só proporção) da mesma forma sai: senão a forma de 40 cm continuava pegando o tipo da de 20 cm
+      if (chave !== chaveAprendida(s)) await executor.query(`DELETE FROM cad_simbolos_aprendidos WHERE chave = $1 AND origem = 'usuario'`, [chaveAprendida(s)]);
       gravadas++;
     } catch (e) { console.warn('[mapaCad] confirmação não aprendida:', e.message); }
   }
@@ -127,12 +139,12 @@ async function aprender(alteradas, arquivo, executor = pool) {
 }
 
 // Desfazer uma confirmação tira o que ela ensinou (só se o aprendizado ainda é o do usuário)
-async function esquecer(alteradas, executor = pool) {
+async function esquecer(alteradas, executor = pool, escritorio = '') {
   let removidas = 0;
   for (const { antes: s, desfeita } of alteradas) {
     if (!desfeita || !Array.isArray(s.medida)) continue;
     try {
-      const r = await executor.query(`DELETE FROM cad_simbolos_aprendidos WHERE chave = $1 AND origem = 'usuario'`, [chaveAprendida(s)]);
+      const r = await executor.query(`DELETE FROM cad_simbolos_aprendidos WHERE chave = ANY($1) AND origem = 'usuario'`, [[chaveDaConfirmacao(s, escritorio), chaveAprendida(s)]]);
       removidas += r.rowCount;
     } catch (e) { console.warn('[mapaCad] aprendizado não removido:', e.message); }
   }

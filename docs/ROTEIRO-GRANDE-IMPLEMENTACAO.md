@@ -169,6 +169,43 @@ Referências: Revit MEP (circuito ↔ painel), EPLAN (painel 3D a partir do esqu
    - teste que compara e mostra a % de acerto por disciplina;
    - cada mudança de leitor roda o placar antes de subir.
 
+**Feito no v2 em 02/11/2026** (sem commit; falta o OK do Márcio para levar à produção):
+- **Legenda** (`pontosDoDesenho.legendaDoProjeto`): cada texto da legenda é do símbolo mais perto dele. A linha sem tipo fica sem tipo, e a amostra de traço (raio de cobertura, campo de visão) não vira ponto.
+  - No R04, INC-ISOLADOR passou a "?" com a descrição "Isolador de laço IDL 521" e INC-SIRENE voltou a avisador (legenda, 2,40 m).
+  - O detector falso de INC-RAIO-COBERTURA sumiu, e CAB-AP virou access point.
+- **Escala automática** (CAD-09, `backend/src/utils/escalaDaPlanta.js`): informada no envio → carimbo → título da vista → nome do arquivo → portas → cotas. Portas e cotas só contam dentro da planta.
+  - O resultado traz `origemEscala`. A escala deduzida gera o achado "Escala da planta [CONFERIR]".
+  - A tela de envio ganhou o campo "Escala 1:" para cada PDF.
+  - O 3D também lê a escala do nome do arquivo.
+- **Biblioteca de blocos** (CAD-08, migração `2.0-43`): a confirmação do Mapa do CAD vale pela medida real (±2 cm) e pelo escritório do carimbo.
+  - Exporta e importa em JSON (`GET/POST /projetos/biblioteca-blocos`; importar só administrador).
+  - Os botões ficam no rodapé do Mapa do CAD.
+- **Mapa único** (CAD-10/12): o traçado do mapa é a mesma medição do orçamento (regra `RE_LAYER_INFRA` e `tipoDoTracado` em `disciplinasCad.js`, sem trecho repetido). A decisão entre bloco e símbolo explodido é por layer, com o motivo em cada linha do mapa.
+- **PDF** (CAD-14): a prancha luminotécnica A0 da Paróquia passou a planta (parede dupla ≥ 150 m vale sozinha) e ganhou a escala pelo nome do arquivo.
+  - Perfil e fita de LED medidos viram material em metros, não eletroduto.
+  - Título sublinhado ("DETALHES EM …") não vira tipo de linha.
+- **Placar** (`backend/scripts/placar-precisao.js`, formato em `docs/PLACAR-PRECISAO.md`): a pasta de fixtures fica fora do repositório (`HM_PLACAR_PASTA`). Sem a pasta, o teste diz "pulado".
+- **Ponto de extensão por disciplina** (`PROPRIOS_DA_DISCIPLINA` em `skills/_comum/cad/disciplinasCad.js`): para a climatização, duto, difusor e layers HVAC/AVAC/MEC deixam de ser "outra área".
+
+**Ficou para depois:**
+- **OCR do texto SHX desenhado como traço.** O desenho proposto:
+  1. Achar os grupos de traços miúdos alinhados como texto dentro da planta.
+  2. Renderizar só esses recortes, a cerca de 300 dpi, no processo principal. Na thread de leitura o @napi-rs/canvas é bloqueado.
+  3. Passar os recortes pelo tesseract.js já instalado (`services/leitorCotacao.js`, função `ocr`).
+  4. Devolver `{ s, x, y, h }` como texto da página, para o classificador (nome de sala) e para os ambientes.
+
+  Uma A0 inteira a 300 dpi dá cerca de 100 MP, inviável dentro do tempo-limite de 60 s por página; por isso, só os recortes.
+- **Legenda e carimbo pela posição na folha.** Não há prancha real que falhe nisso para calibrar. A legenda em tabela, o título e o carimbo pelos campos já funcionam.
+- **IFC com web-ifc.** O desenho:
+  - `web-ifc` com versão exata (a estável do dia, conferida no npm), só no backend;
+  - leitura numa thread à parte, como `analiseCad/worker.js`;
+  - classe: `IfcLightFixture`, `IfcOutlet`, `IfcSwitchingDevice`, `IfcFireSuppressionTerminal`, `IfcAlarm`, `IfcSensor`, `IfcCableCarrierSegment`, `IfcDuctSegment`…;
+  - pavimento por `IfcRelContainedInSpatialStructure` → `IfcBuildingStorey`;
+  - família por `IfcRelDefinesByType` → `*Type.Name`;
+  - posição por `IfcLocalPlacement`;
+  - saída no mesmo formato de `lerArquivoCad` (itens, espacial, ambientes por `IfcSpace`);
+  - teste com um IFC sintético pequeno escrito à mão.
+
 ### Fase 4 — Disciplina Climatização (nova skill)
 **Entrega:** a skill `climatizacao` no mesmo contrato das outras: formulário, memorial, planilhas, orçamento, laudo/PMOC, planta e 3D.
 

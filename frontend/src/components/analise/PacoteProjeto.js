@@ -120,6 +120,16 @@ export function ListaPacote({ itens, onMudar, disciplinas, token, onDescartar })
                       </Select>
                     </div>
                   )}
+                  {/* PDF sem "ESC. 1:50" no carimbo: a escala informada vale mais que a deduzida (nome do arquivo, portas, cotas) */}
+                  {it.tipo === 'pdf' && !it.referencia && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 5, color: 'var(--texto-3)', fontSize: 12 }}
+                      title="Escala da planta do PDF. Em branco, o sistema lê do carimbo, do nome do arquivo, das portas ou das cotas e diz de onde veio">
+                      Escala 1:
+                      <input type="number" min="1" max="5000" step="1" inputMode="numeric" placeholder="auto" value={it.escala || ''}
+                        aria-label={`Escala de ${it.nome}`} style={{ ...sel, width: 70 }}
+                        onChange={e => mudar(it.id, { escala: e.target.value.replace(/\D/g, '').slice(0, 4) })} />
+                    </label>
+                  )}
                 </td>
                 <td style={td}>
                   <Select value={it.referencia ? (it.tipoReferencia || 'arquitetura') : ''} aria-label={`Referência: ${it.nome}`} style={sel}

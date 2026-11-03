@@ -21,9 +21,10 @@ const { executarNoWorker } = require('../executarNoWorker');
 const { analisarTexto } = require('../../utils/projetoParser');
 const { detectarDisciplinas } = require('../../utils/leitoresTabelaProjeto');
 const { CAD } = require('../../config/caminhos');
-const { BLOCOS_HM, disciplinaDaLayer, disciplinaDoBloco, disciplinaDoTexto, semPrefixoDeDisciplina, alturaDoTexto } = require(path.join(CAD, 'disciplinasCad.js'));
+const { BLOCOS_HM, disciplinaDaLayer, disciplinaDoBloco, disciplinaDoTexto, semPrefixoDeDisciplina, alturaDoTexto, RE_LAYER_INFRA, tipoDoTracado, daPropriaDisciplina } = require(path.join(CAD, 'disciplinasCad.js'));
 const { retanguloMinimo } = require(path.join(CAD, 'geometriaCad.js'));
 const { medirTrechos } = require('./medidasInfra');
+const { circuitoConferido } = require(path.join(CAD, 'circuitoDoDesenho.js'));
 // Ponto lido do desenho (símbolo explodido) → descrição do item: a linha da legenda do
 // projeto quando houver ("Tomada alta a 2,20m do piso"), senão o nome do símbolo na
 // biblioteca da H&M (skills/_comum/cad/simbolos.js), sem a altura típica
@@ -38,10 +39,13 @@ function descricaoDoPonto(pt) {
 const DISCIPLINA_DO_3D = { 'controle-acesso': 'controle_acesso', 'iluminacao-externa': 'iluminacao', veicular: 'carregador' };
 
 const RE_CAD = /\.(dwg|dxf)$/i;
+// layer de referência de outra disciplina desenhada junto (R04: "REF-LUMINOTECNICO"): no desenho com blocos, os pontos
+// explodidos dela ficam só no mapa (3D e aprendizado), fora do orçamento
+const RE_LAYER_REFERENCIA = /^(REF|XREF)[-_ ]|REFER[ÊE]NCIA/i;
 const ehArquivoCad = (nome) => RE_CAD.test(String(nome || ''));
 
-// layers medidas como infraestrutura (em metros)
-const RE_LAYER_LINHA = 'ELETRODUT|ELETROCALHA|PERFILADO|LEITO|CONDU[IÍ]TE|CONDUIT|INFRA|CABEAMENTO|FIA[ÇC][ÃA]O|FIACAO|TUBELE|INST.*TUBULA|EL[ÉE]T.*TUBULA|TUBULA.*EL[ÉE]T|TUB.*(L[ÓO]GIC|TELEF|DADOS|CFTV)|(L[ÓO]GIC|TELEF|DADOS|CFTV).*(TUB|INFRA|ELETROD)';
+// layers medidas como infraestrutura (em metros): a mesma regra do mapa do CAD e do 3D (skills/_comum/cad/disciplinasCad.js, CAD-10)
+const RE_LAYER_LINHA = RE_LAYER_INFRA;
 const TEMPO_LIMITE_MS = 180 * 1000;
 
 // worker com fila global (services/executarNoWorker.js): no máximo 2 leituras de CAD ao mesmo tempo
@@ -122,7 +126,9 @@ function disciplinaDasLayers(layers) {
   return [...cont].sort((a, b) => b[1] - a[1])[0]?.[0] || null;
 }
 
-function descreverSimbolo(g) {
+// opcoes.disciplinas: as marcadas no arquivo — o que é "outra área" para as de sempre pode ser da própria disciplina
+// (climatização: duto, difusor, layer HVAC — ponto de extensão em skills/_comum/cad/disciplinasCad.js, PROPRIOS_DA_DISCIPLINA)
+function descreverSimbolo(g, opcoes = {}) {
   const camadas = (g.layers || [g.layer]).join(' ');
   const atributo = Object.entries(g.atributos || {}).find(([k, v]) => /DESC|TIPO|NOME|MODELO|EQUIP/.test(k) && textoDescritivo(v))?.[1];
   const nomeCurto = g.nomeLimpo.length <= 12 || RE_LAYER_ELETRICA.test(camadas);
@@ -147,7 +153,7 @@ function descreverSimbolo(g) {
   if (descricao && origem !== 'nome' && !descricao.includes(g.nomeLimpo)) descricao += ` — bloco ${g.nomeLimpo}`;
 
   const base = `${descricao || ''} ${g.nomeLimpo} ${camadas}`;
-  const outraArea = !hm && !sigla && !daLegenda && RE_OUTRA_AREA.test(`${g.nomeLimpo} ${camadas}`);
+  const outraArea = !hm && !sigla && !daLegenda && RE_OUTRA_AREA.test(`${g.nomeLimpo} ${camadas}`) && !daPropriaDisciplina(`${g.nomeLimpo} ${camadas}`, opcoes.disciplinas);
   // Disciplina (M1 da revisão de 29/10/2026), do mais específico ao mais vago:
   // biblioteca H&M → prefixo do nome do bloco ("INC_SIRENE_AV") → sigla (a layer
   // manda quando as duas são do ramo de segurança: "SIRENE" em INC-AVISADOR é
@@ -168,10 +174,9 @@ function descreverSimbolo(g) {
 // item ainda tirava o modelo "Eletroduto" do orçamento (revisão de 29/10/2026, A8).
 function descreverLinha(l) {
   const L = l.layer;
-  const tipo = /ELETROCALHA|\bCALHA/i.test(L) ? 'eletrocalha' : /PERFILADO/i.test(L) ? 'perfilado' : /LEITO/i.test(L) ? 'leito'
-    : /FIA[ÇC][ÃA]O|FIACAO/i.test(L) ? 'fiacao' : /CABEAMENTO/i.test(L) && !/INFRA|ELETROD|TUB/i.test(L) ? 'cabeamento' : 'eletroduto';
+  // tipo pela regra comum do traçado (a mesma do mapa do CAD e do 3D: skills/_comum/cad/disciplinasCad.js, CAD-10)
+  const { tipo, rota } = tipoDoTracado(L);
   const nome = { eletrocalha: 'Eletrocalha', perfilado: 'Perfilado', leito: 'Leito para cabos', eletroduto: 'Eletroduto' }[tipo];
-  const rota = tipo === 'fiacao' || tipo === 'cabeamento';
   const descricao = rota
     ? `Rota ${tipo === 'fiacao' ? 'da fiação' : 'do cabeamento'} — medida no desenho (layer "${L}"); cabo = (rota + descidas) × nº de condutores`
     : `${nome} — medido no desenho (layer "${L}")`;
@@ -237,7 +242,7 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
     return filtrarPosicoes(g, (i) => naPlanta(g.posicoes[i]));
   }).filter(g => g.quantidade > 0);
 
-  const descritos = simbolosDaPlanta.filter(s => !s.fora).map(g => ({ g, d: descreverSimbolo(g) }));
+  const descritos = simbolosDaPlanta.filter(s => !s.fora).map(g => ({ g, d: descreverSimbolo(g, { disciplinas: opcoes.disciplinas }) }));
   // Xref de OUTRA disciplina é referência (A11): a disciplina da xref sai do nome
   // dela ("…TOMADAS…" é elétrica); as do desenho, do que está FORA de xref.
   // Desenho todo dentro de xref (nada fora): nenhuma xref vira referência.
@@ -284,19 +289,47 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
   // leitor do 3D: skills/_comum/cad/pontosDoDesenho.js). Antes a análise saía com 0 itens e
   // o 3D com todos; agora entram no orçamento, marcados para conferir.
   const doDesenho = [];
-  // pontos por linha do mapa (a tela de confirmação mostra a quantidade que de fato entra: fora do unifilar/quadro)
+  // Blocos nomeados × símbolos explodidos, decidido POR LAYER (CAD-12, fase 3): antes era tudo ou nada — um único
+  // bloco reconhecido no desenho tirava do orçamento todos os pontos explodidos (o quadro em bloco e centenas de
+  // tomadas explodidas: as tomadas não entravam nem depois de conferidas). Agora o ponto do mapa fica de fora só
+  // na layer que tem bloco nomeado, na layer de referência (REF-…, num desenho com blocos) e quando repete um bloco
+  // da mesma família a menos de 0,3 m. O resto entra (marcado para conferir até a confirmação no mapa).
+  const linhasDoMapa = r.desenho?.mapa?.simbolos || [];
+  const layerDoPonto = (pt) => String(linhasDoMapa[pt.linha]?.layer || '').toUpperCase();
+  // layers com bloco reconhecido — o que entrou no orçamento e também o que ficou de fora de propósito (xref de outra
+  // disciplina, outra área): a geometria desses blocos também aparece no mapa e não pode voltar como ponto explodido
+  const layersComBloco = new Set(descritos
+    .filter(({ g, d }) => d.outraArea || (d.descricao && d.disciplina) || (g.xrefs || []).some(xrefOutra))
+    .flatMap(({ g }) => g.layers || [g.layer]).filter(Boolean).map(l => String(l).toUpperCase()));
+  const comBlocos = layersComBloco.size > 0;
+  const pontosDeBloco = pontos.filter(b => b.classe && b.classe !== 'outro');
+  const repeteBloco = (pt) => {
+    const classe = classeDoComponente(descricaoDoPonto(pt));
+    return classe !== 'outro' && pontosDeBloco.some(b => b.classe === classe && Math.hypot(b.x - pt.x, b.y - pt.y) < 0.3);
+  };
+  const foraDoOrcamento = (pt) => (!naPlanta([pt.x, pt.y]) ? 'fora_da_planta'
+    : layersComBloco.has(layerDoPonto(pt)) ? 'layer_com_bloco'
+      : comBlocos && RE_LAYER_REFERENCIA.test(layerDoPonto(pt)) ? 'referencia'
+        : repeteBloco(pt) ? 'repete_bloco' : null);
+  // pontos por linha do mapa (a tela de confirmação mostra a quantidade que de fato entra) e, da que não entra, o porquê
   const contadosPorLinha = new Map();
-  for (const pt of r.desenho?.pontos || []) if (naPlanta([pt.x, pt.y])) contadosPorLinha.set(pt.linha, (contadosPorLinha.get(pt.linha) || 0) + 1);
-  const usaMapa = !itens.some(it => it.tipo === 'simbolo') && !!r.desenho?.pontos?.length;
+  const motivoPorLinha = new Map();
+  const usados = [];
+  for (const pt of r.desenho?.pontos || []) {
+    const motivo = foraDoOrcamento(pt);
+    if (!motivo) { usados.push(pt); contadosPorLinha.set(pt.linha, (contadosPorLinha.get(pt.linha) || 0) + 1); } else if (motivo !== 'fora_da_planta') motivoPorLinha.set(pt.linha, motivo);
+  }
+  const usaMapa = usados.length > 0;
   if (usaMapa) {
     const grupos = new Map();
-    for (const pt of r.desenho.pontos) {
-      if (!naPlanta([pt.x, pt.y])) continue;
+    for (const pt of usados) {
       const descricao = descricaoDoPonto(pt);
       const disciplina = DISCIPLINA_DO_3D[pt.disciplina] || pt.disciplina || 'eletrica';
       const k = `${descricao}|${disciplina}|${pt.altura_m ?? ''}|${pt.confirmado ? 1 : 0}`;
-      const g = grupos.get(k) || grupos.set(k, { descricao, disciplina, simbolo: pt.simbolo, altura_m: Number(pt.altura_m) > 0 ? Number(pt.altura_m) : null, alturaDe: pt.alturaDe || null, confirmado: !!pt.confirmado, posicoes: [] }).get(k);
+      const g = grupos.get(k) || grupos.set(k, { descricao, disciplina, simbolo: pt.simbolo, altura_m: Number(pt.altura_m) > 0 ? Number(pt.altura_m) : null, alturaDe: pt.alturaDe || null, confirmado: !!pt.confirmado, posicoes: [], circuitos: [] }).get(k);
       g.posicoes.push([pt.x, pt.y]);
+      // circuito/retorno escrito junto do símbolo, só da linha conferida no mapa (vai para o 3D)
+      g.circuitos.push(circuitoConferido(pt));
     }
     for (const g of grupos.values()) {
       const montagem = /LUMINARIA|PONTO-LUZ|DETECTOR|SENSOR|CAB-AP|CAPTOR|CAMERA/.test(g.simbolo) ? 'teto' : g.altura_m ? 'parede' : null;
@@ -307,7 +340,7 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
         ...(g.altura_m ? { altura_m: g.altura_m, montagem: montagem || 'parede', alturaDe: g.alturaDe } : montagem ? { montagem } : {}),
       });
       doDesenho.push(g);
-      g.posicoes.forEach(([x, y]) => pontos.push({ x, y, descricao: g.descricao, disciplina: g.disciplina, classe: classeDoComponente(g.descricao), altura_m: g.altura_m, montagem }));
+      g.posicoes.forEach(([x, y], i) => pontos.push({ x, y, descricao: g.descricao, disciplina: g.disciplina, classe: classeDoComponente(g.descricao), altura_m: g.altura_m, montagem, ...(g.circuitos[i] ? { circuito: g.circuitos[i].circuito, comando: g.circuitos[i].comando } : {}) }));
     }
   }
   for (const l of p.linhas) {
@@ -399,8 +432,15 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
   // mapa do CAD (tela de confirmação): uma linha por layer × forma de símbolo, com o que o sistema entendeu e de onde veio
   const mapa = r.desenho?.mapa ? {
     arquivo: nome, valeParaOrcamento: usaMapa, escritorio: r.desenho.escritorio || '',
-    simbolos: r.desenho.mapa.simbolos.map(({ centros, ...m }, idx) => ({ idx, ...m, contados: contadosPorLinha.get(idx) || 0 })),
-    trechos: r.desenho.mapa.trechos,
+    // a linha que não entra diz o porquê (layer com bloco nomeado, layer de referência, repete um bloco) — CAD-12
+    ...(comBlocos ? { layersComBloco: [...layersComBloco].sort() } : {}),
+    simbolos: r.desenho.mapa.simbolos.map(({ centros, ...m }, idx) => ({ idx, ...m, contados: contadosPorLinha.get(idx) || 0, ...(motivoPorLinha.has(idx) && !contadosPorLinha.get(idx) ? { foraDoOrcamento: motivoPorLinha.get(idx) } : {}) })),
+    // uma medição só (CAD-10): os trechos do mapa são as MESMAS linhas medidas para o orçamento (sem as repetições,
+    // com a disciplina pela layer e a mesma regra de layer) — antes o mapa media de novo, com outra regex e tudo "eletrica"
+    trechos: p.linhas.filter(l => !xrefOutra(l.xref)).map(l => {
+      const d = descreverLinha(l);
+      return { layer: l.layer, tipo: d.tipo, disciplina: d.disciplina, comprimento_m: l.metros, ...(d.rota ? { rota: true } : {}), ...(l.xref ? { xref: l.xref } : {}) };
+    }),
     planta: plantaDoMapa(r.desenho.mapa.simbolos, ambientesArq, naPlanta),
     ...(r.desenho.mapa.aviso ? { aviso: r.desenho.mapa.aviso } : {}),
   } : null;

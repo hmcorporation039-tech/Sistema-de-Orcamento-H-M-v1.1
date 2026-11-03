@@ -583,6 +583,11 @@ function escalasDaFolha(textos, regioesFolha = [], escalaInformada = null) {
   return { distintas, temSemEscala, vistas, porVista };
 }
 
+const RE_TITULO_NAO_LINHA = /^\s*(DETALHES?|NOTAS?|OBSERVA[ÇC]|LEGENDA|VER\s|ATEN[ÇC][ÃA]O|IMPORTANTE)\b/i;
+// a folha tem escala escrita (carimbo, título da vista, "SEM ESCALA")? Então a de reserva não é usada
+const escalaEscrita = (textos) => !!escalaDoCarimbo(textos) || rotulosDeEscala(textos).length > 0;
+const { escalaDeReserva } = require('./escalaDaPlanta');
+
 // ── 4) Página → itens da legenda com contagem e metragem ─────────────────
 // `regioesFora` ([[x0, y0, x1, y1]] em pontos): regiões da folha que não são planta
 // (diagrama unifilar, vista de quadro, quadro de cargas, carimbo — utils/classificarPranchaPdf.js):
@@ -591,7 +596,9 @@ function escalasDaFolha(textos, regioesFolha = [], escalaInformada = null) {
 // `regioesFolha` ([{ tipo, caixa }], do classificador): dão a escala de cada vista
 // (folha com mais de uma escala) — ver escalasDaFolha.
 // `prazo` (Date.now() limite): passou, para com erro TEMPO_ESGOTADO.
-function analisarGeometria({ caminhos, textos, largura, altura }, { escala, regioesFora = [], regioesFolha = [], prazo = null } = {}) {
+// `escalaReserva` ({ escala, origem }, utils/escalaDaPlanta.js): nome do arquivo, portas ou cotas — só vale sem a
+// informada e sem escala escrita na folha. `origemEscala` ('informada', 'carimbo', …) diz de onde veio a escala dada.
+function analisarGeometria({ caminhos, textos, largura, altura }, { escala, origemEscala: origemInformada = null, escalaReserva = null, regioesFora = [], regioesFolha = [], prazo = null } = {}) {
   const foraDaPlanta = (caixa) => regioesFora.some(r => dentroDe(r, caixa));
   const relogio = cronometro(prazo);
   const blobs = simbolos(caminhos, { prazo });
@@ -617,7 +624,12 @@ function analisarGeometria({ caminhos, textos, largura, altura }, { escala, regi
   const naLegendaClassica = (caixa) => regioesClassicas.some(r => dentroDe(r, caixa));
   const escalas = escalasDaFolha(textos, regioesFolha, escala);
   // sem escala no carimbo, o "1:50" do título da vista vale quando é o único valor da folha
-  const esc = escala || escalaDoCarimbo(textos) || (escalas.distintas.length === 1 && escalas.distintas[0] >= 10 ? escalas.distintas[0] : null);
+  // e, sem nenhuma escrita, a de reserva (nome do arquivo → portas → cotas — CAD-09); a origem vai no resultado
+  const doCarimbo = escala ? null : escalaDoCarimbo(textos);
+  const doTitulo = escala || doCarimbo ? null : (escalas.distintas.length === 1 && escalas.distintas[0] >= 10 ? escalas.distintas[0] : null);
+  const reserva = escala || doCarimbo || doTitulo || escalas.porVista ? null : escalaReserva;
+  const esc = escala || doCarimbo || doTitulo || reserva?.escala || null;
+  const origemEscala = escala ? (origemInformada || 'informada') : doCarimbo ? 'carimbo' : doTitulo ? 'titulo_vista' : reserva?.origem || null;
 
   // traço de legenda só se isolado: lado de um símbolo (quadrado, caixa) toca outros caminhos
   const daLegenda = caminhos.filter(c => naLegendaClassica(c.caixa));
@@ -710,6 +722,9 @@ function analisarGeometria({ caminhos, textos, largura, altura }, { escala, regi
         _sig: e.sig,
       });
     } else {
+      // título sublinhado ("DETALHES EM MARCENARIA…", "NOTAS") não é tipo de linha: com a escala do nome do arquivo
+      // (CAD-09) ele ganhava 236 m de "material" na prancha luminotécnica da Paróquia
+      if (RE_TITULO_NAO_LINHA.test(e.desc.texto || '')) continue;
       itens.push({ tipo: 'linha', descricao: e.desc.texto, ...medirLinha(e.estilo, caminhos, { naLegenda, foraDaPlanta, esc, escalas, relogio }), estilo: { cor: e.cor, espessura: e.lw, tracejado: e.dash || null }, ...doProjeto });
     }
   }
@@ -744,7 +759,7 @@ function analisarGeometria({ caminhos, textos, largura, altura }, { escala, regi
   ];
   const linhasSemEscala = itens.filter(i => i.tipo === 'linha' && valido(i) && i.metros == null && escalas.porVista && escalas.distintas.length > 1);
   return {
-    itens: itens.filter(valido), legenda: regiao ? regiao.map(Math.round) : null, legendas: regioes.map(r => r.map(Math.round)), escala: esc, pagina_pt: [Math.round(largura), Math.round(altura)],
+    itens: itens.filter(valido), legenda: regiao ? regiao.map(Math.round) : null, legendas: regioes.map(r => r.map(Math.round)), escala: esc, origemEscala, pagina_pt: [Math.round(largura), Math.round(altura)],
     ...(tabelas.length ? { tabelasLegenda: tabelas.map(t => ({ caixa: t.caixa.map(Math.round), colunas: t.colunas, linhas: t.entradas.length + t.semSimbolo.length })) } : {}),
     ...(naoContados.length ? { naoContados } : {}),
     ...(escalas.distintas.length > 1 || escalas.temSemEscala ? { escalas: { distintas: escalas.distintas, semEscala: escalas.temSemEscala, vistas: escalas.vistas.map(v => ({ tipo: v.tipo, caixa: v.caixa.map(Math.round), escala: v.escala })) } } : {}),
@@ -847,7 +862,7 @@ async function lerPdfVetorial(buffer, opcoes = {}) {
   return m.paginas;
 }
 
-async function lerPdfVetorialAqui(buffer, { paginas, escala, maxPaginas = 10, maxCaminhos = MAX_CAMINHOS_PAGINA, tempoPaginaMs = TEMPO_PAGINA_MS, tempoLimiteMs = TEMPO_TOTAL_MS } = {}) {
+async function lerPdfVetorialAqui(buffer, { paginas, escala, nomeArquivo = '', maxPaginas = 10, maxCaminhos = MAX_CAMINHOS_PAGINA, tempoPaginaMs = TEMPO_PAGINA_MS, tempoLimiteMs = TEMPO_TOTAL_MS } = {}) {
   const prazoTotal = Date.now() + tempoLimiteMs;
   const { getDocument, OPS } = await pdfjs();
   const doc = await getDocument({ data: new Uint8Array(buffer), isEvalSupported: false, verbosity: 0, disableFontFace: true }).promise;
@@ -862,7 +877,7 @@ async function lerPdfVetorialAqui(buffer, { paginas, escala, maxPaginas = 10, ma
       }
       const t0 = Date.now();
       const prazo = Math.min(t0 + tempoPaginaMs, prazoTotal);
-      let pag = null, nCaminhos = null, folha = null;
+      let pag = null, nCaminhos = null, folha = null, reserva = null;
       let r = { ...vazio };
       try {
         pag = await doc.getPage(n);
@@ -880,6 +895,13 @@ async function lerPdfVetorialAqui(buffer, { paginas, escala, maxPaginas = 10, ma
           nCaminhos = geo.caminhos.length;
           if (geo.caminhos.length) {
             try { folha = resumoDaFolha(classificarPaginaPdf(geo, { escala })); } catch (e) { console.warn(`[pdfVetorial] classificação da página ${n} falhou:`, e.message); }
+            // escala de reserva (CAD-09) — sem a informada e sem escala escrita na folha: nome do arquivo e, só dentro
+            // das regiões de PLANTA, portas e cotas (o arco do disjuntor no unifilar dava 1:500). Medida antes de
+            // liberar os trechos. A classificação não muda por ela (fica a de sempre).
+            if (!escala && !escalaEscrita(geo.textos) && !folha?.semPlanta) {
+              const regioesPlanta = (folha?.regioes || []).filter(rg => rg.tipo === 'planta').map(rg => rg.caixa);
+              try { reserva = escalaDeReserva({ nomeArquivo, geo, regioesPlanta }); } catch (e) { console.warn(`[pdfVetorial] escala de reserva da página ${n} falhou:`, e.message); }
+            }
             for (const c of geo.caminhos) delete c.subs; // a contagem não usa os trechos: libera a memória
             if (Date.now() > prazo) throw erroDeTempo();
           }
@@ -887,7 +909,7 @@ async function lerPdfVetorialAqui(buffer, { paginas, escala, maxPaginas = 10, ma
             r.ignorada = `${folha.resumo} — sem contagem de símbolos (não é planta)`;
           } else if (geo.caminhos.length) {
             try {
-              r = analisarGeometria(geo, { escala, regioesFora: folha?.regioesFora || [], regioesFolha: folha?.regioes || [], prazo });
+              r = analisarGeometria(geo, { escala, escalaReserva: reserva, regioesFora: folha?.regioesFora || [], regioesFolha: folha?.regioes || [], prazo });
               if (r.avisoEscala) r.aviso = r.avisoEscala;
             } catch (e) {
               if (e.codigo === 'TEMPO_ESGOTADO') throw e;
