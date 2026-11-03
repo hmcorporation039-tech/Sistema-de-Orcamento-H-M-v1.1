@@ -207,6 +207,21 @@ async function levarObraDaNota(c, notaId, movimentoId) {
   return { obra_id: r.da_nota, obra_preenchida: true, aviso: null };
 }
 
+// A nota ganhou (ou trocou de) proposta depois que os Pix já estavam ligados a ela: cada um passa pela mesma regra
+// do "ligar" (levarObraDaNota), então só o Pix sem obra leva a obra da proposta; o que já está em outra obra fica
+// e vira aviso. `c` = pool ou client da transação. Devolve { preenchidos: [ids dos Pix], avisos } (sem repetir).
+async function levarObraAosPixDaNota(c, notaId) {
+  const { rows } = await c.query("SELECT id FROM financeiro_movimentos WHERE nota_id = $1 AND tipo = 'recebido' ORDER BY data_hora, id", [notaId]);
+  const preenchidos = [];
+  const avisos = new Set();
+  for (const m of rows) {
+    const r = await levarObraDaNota(c, notaId, m.id);
+    if (r.obra_preenchida) preenchidos.push(m.id);
+    if (r.aviso) avisos.add(r.aviso);
+  }
+  return { preenchidos, avisos: [...avisos] };
+}
+
 // Pix recebidos ligados a nota emitida cuja proposta tem obra, mas que ainda estão sem obra (ligados antes da
 // versão que leva a obra junto, ou a nota ganhou proposta/obra depois). O botão do administrador aplica a todos.
 const SQL_PIX_SEM_OBRA_PELA_NOTA = `
@@ -300,5 +315,5 @@ async function desfazerBaixa(notaId, usuarioId) {
 
 module.exports = {
   PRAZO_DIAS, nomesParecidos, estadoDaNota, faixaDe, sugerirLigacoes, resumir, montar, listar, ligar, ligarSugeridas, darBaixa, desfazerBaixa,
-  decidirObraDoPix, levarObraDaNota, contarObraPelaNota, aplicarObraDasNotas,
+  decidirObraDoPix, levarObraDaNota, levarObraAosPixDaNota, contarObraPelaNota, aplicarObraDasNotas,
 };

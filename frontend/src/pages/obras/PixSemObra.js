@@ -10,6 +10,22 @@ import { dataBr } from '../../utils/format';
 // está solto e abre a lista por nome do pagador/favorecido: escolha a obra (já vem a sugerida, quando o
 // sinal é seguro), o período se precisar, e "lembrar" para os próximos Pix desse nome (services/atribuicaoObras.js).
 
+// Quanto confiar na sugestão (services/atribuicaoObras.js): 'alta' vem da nota fiscal ligada ao Pix (nota →
+// proposta → obra); 'media' vem do cadastro (contrato do prestador ou cliente da obra) e pede conferência.
+const CONFIANCA = {
+  alta: { rotulo: 'confiança alta', cor: '#3fb95f', fundo: '#0a1a0f', borda: '#1a4a26', dica: 'O Pix está ligado a uma nota fiscal cuja proposta é desta obra.' },
+  media: { rotulo: 'confira', cor: '#c9a227', fundo: '#1a1a0a', borda: '#4a3d10', dica: 'Sugestão pelo cadastro (contrato do prestador ou cliente da obra): confira antes de ligar.' },
+};
+
+function SeloConfianca({ confianca }) {
+  const c = CONFIANCA[confianca];
+  if (!c) return null;
+  return (
+    <span title={c.dica} data-testid={`confianca-${confianca}`} style={{ padding: '1px 7px', borderRadius: 20, fontSize: 10.5, fontWeight: 700, marginRight: 6,
+      whiteSpace: 'nowrap', color: c.cor, background: c.fundo, border: `1px solid ${c.borda}` }}>{c.rotulo}</span>
+  );
+}
+
 function Linha({ grupo, obras, ocupado, onAtribuir }) {
   const sug = grupo.sugestao;
   const [obraId, setObraId] = useState(sug?.obra_id ? String(sug.obra_id) : '');
@@ -24,7 +40,8 @@ function Linha({ grupo, obras, ocupado, onAtribuir }) {
         <span style={{ color: 'var(--texto-3)' }}>{grupo.n} lançamento{grupo.n > 1 ? 's' : ''} · {dataBr(grupo.de)}{grupo.ate !== grupo.de ? ` a ${dataBr(grupo.ate)}` : ''}</span>
         <b style={{ color: grupo.tipo === 'recebido' ? '#3fb95f' : '#e08080' }}>{moeda(grupo.total)}</b>
       </div>
-      {sug && <div style={{ color: 'var(--texto-3)', fontSize: 11.5, margin: '3px 0' }}>
+      {sug && <div style={{ color: sug.obra_id && sug.confianca === 'alta' ? 'var(--texto-2)' : 'var(--texto-3)', fontSize: 11.5, margin: '3px 0' }}>
+        {sug.obra_id && <SeloConfianca confianca={sug.confianca} />}
         {sug.obra_id ? `Sugestão: ${sug.obra?.codigo} — ${sug.motivo}.` : `${sug.motivo}: ${(sug.candidatas || []).map(c => c.codigo).join(', ')}. Escolha a obra (ou use o período).`}
       </div>}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 }}>

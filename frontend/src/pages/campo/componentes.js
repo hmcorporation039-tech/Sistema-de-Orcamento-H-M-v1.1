@@ -5,6 +5,7 @@ import { Camera, Loader2 } from 'lucide-react';
 import { reduzirImagem, obterPosicao } from './imagem';
 import { baixarArquivo } from './apiCampo';
 import { criarCacheBlob } from './cacheBlob';
+import { dataBr, dataHoraBr } from '../../utils/format';
 
 export const COR = {
   fundo: '#000000',
@@ -89,18 +90,9 @@ export const COR_STATUS = {
   concluida: [COR.verde, '#fff'], cancelada: [COR.cinza, '#fff'],
 };
 
-export function formatarData(dia) {
-  if (!dia) return 'Sem data';
-  const [a, m, d] = String(dia).slice(0, 10).split('-');
-  return d && m ? `${d}/${m}/${a}` : String(dia);
-}
-
-export function formatarDataHora(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-}
+// Datas do app de campo: as funções únicas de utils/format.js, com o texto de vazio e a hora sem ano do campo
+export const formatarData = (dia) => dataBr(dia, { vazio: 'Sem data' });
+export const formatarDataHora = (iso) => dataHoraBr(iso, { ano: false, vazio: '' });
 
 // Botão que abre a câmera (input file com capture — funciona em HTTP), reduz a
 // foto no aparelho e entrega { bytes, tipo_mime, lat, lon } a onFoto.

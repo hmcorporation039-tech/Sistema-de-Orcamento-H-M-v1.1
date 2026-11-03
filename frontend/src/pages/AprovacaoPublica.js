@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { CheckCircle2, XCircle, FileDown, Printer, AlertTriangle, ShieldCheck, ArrowLeft, Box } from 'lucide-react';
 import { getAprovacaoPublica, enviarDecisaoAprovacao, urlPdfAprovacaoPublica, urlModelo3dAprovacaoPublica } from '../services/api';
-import { formatarMoeda } from '../utils/format';
+import { formatarMoeda, dataBr, dataHoraBr, FUSO_BRASILIA } from '../utils/format';
 
 const OURO = '#c9a227';
 const OURO_ESCURO = '#8a6d12';
@@ -23,16 +23,6 @@ const BORDA = '#e2dccd';
 const moeda = formatarMoeda;
 const qtd = (v) => (Number(v) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 });
 const pct = (v) => (Number(v) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
-function dataBR(iso) {
-  if (!iso) return '—';
-  const [a, m, d] = String(iso).slice(0, 10).split('-');
-  return `${d}/${m}/${a}`;
-}
-function dataHoraBR(v) {
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
 
 // CPF / CNPJ (inclusive o CNPJ alfanumérico da Receita) — mesma regra do backend
 const limparDoc = (v) => String(v || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
@@ -198,8 +188,8 @@ export default function AprovacaoPublica() {
             <div style={{ fontSize: 26, fontWeight: 800, color: OURO_ESCURO, lineHeight: 1.1 }}>{p.numero}</div>
           </div>
           <div style={{ textAlign: 'right', fontSize: 13, color: SUAVE, lineHeight: 1.6 }}>
-            <div>Emitida em <b style={{ color: TINTA }}>{dataBR(p.data)}</b></div>
-            {p.vence_em && <div>Válida até <b style={{ color: TINTA }}>{dataBR(p.vence_em)}</b></div>}
+            <div>Emitida em <b style={{ color: TINTA }}>{dataBr(p.data, { vazio: '—' })}</b></div>
+            {p.vence_em && <div>Válida até <b style={{ color: TINTA }}>{dataBr(p.vence_em, { vazio: '—' })}</b></div>}
           </div>
         </div>
         <div style={gradeInfo}>
@@ -408,7 +398,7 @@ function Comprovante({ c, token, pdfDisponivel }) {
       <div style={gradeInfo}>
         <Info rotuloTexto="Proposta" valor={c.numero} />
         <Info rotuloTexto="Valor total" valor={moeda(c.total)} />
-        <Info rotuloTexto="Data e hora" valor={c.decidido_em_texto || dataHoraBR(c.decidido_em)} />
+        <Info rotuloTexto="Data e hora" valor={c.decidido_em_texto || dataHoraBr(c.decidido_em, { fuso: FUSO_BRASILIA })} />
         <Info rotuloTexto="Decisão" valor={aprovada ? 'Aprovada' : 'Recusada'} />
         <Info rotuloTexto="Nome" valor={c.nome} />
         <Info rotuloTexto={c.tipo_documento} valor={c.documento} />

@@ -1,4 +1,8 @@
-export function formatarMoeda(v) {
+// Dinheiro em reais ('R$ 1.234,56'). Sem opção, vazio ou nulo vira 'R$ 0,00' (totais e somas). Com `vazio`
+// (ex.: '—'), nulo, indefinido ou texto vazio mostram esse texto: é o "sem valor" de custo, preço e margem que
+// ainda não existem, que não pode parecer zero. É o lugar único: as telas não têm mais cópia própria.
+export function formatarMoeda(v, { vazio } = {}) {
+  if (vazio !== undefined && (v == null || v === '')) return vazio;
   return (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
@@ -93,9 +97,30 @@ export function validarCpfCnpj(v) {
 }
 
 // Data ISO ('AAAA-MM-DD', ou o começo de um timestamp) → 'DD/MM/AAAA', sem passar por Date (não muda de dia
-// pelo fuso). Vazio ou nulo → ''. Antes havia uma cópia em cada componente, e a de VencimentosLaudos quebrava com nulo.
-export function dataBr(iso) {
-  return iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '';
+// pelo fuso). Vazio ou nulo → `vazio` ('' por padrão; '—' na página do cliente e nas OS, 'Sem data' no app de campo).
+// Antes havia uma cópia em cada componente, e a de VencimentosLaudos quebrava com nulo.
+export function dataBr(iso, { vazio = '' } = {}) {
+  return iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : vazio;
+}
+
+// Fuso da empresa. A nota fiscal e a página pública de aprovação mostram a hora de Brasília, seja qual for o
+// fuso do computador de quem abre; o resto das telas usa o fuso do computador.
+export const FUSO_BRASILIA = 'America/Sao_Paulo';
+
+// Instante (timestamp ou Date) → 'DD/MM/AAAA, HH:MM'. Opções, para as variações que as telas já mostravam:
+//   hora: false → só 'DD/MM/AAAA' (o dia no fuso, diferente de dataBr, que corta o texto ISO);
+//   ano: false  → 'DD/MM, HH:MM' (listas curtas: novidades da pasta, app de campo);
+//   fuso        → ex.: FUSO_BRASILIA; sem ele, o do computador;
+//   vazio       → texto para nulo, vazio ou data inválida ('—' por padrão).
+export function dataHoraBr(v, { hora = true, ano = true, fuso, vazio = '—' } = {}) {
+  if (v == null || v === '') return vazio;
+  const d = v instanceof Date ? v : new Date(v);
+  if (Number.isNaN(d.getTime())) return vazio;
+  return d.toLocaleString('pt-BR', {
+    ...(fuso ? { timeZone: fuso } : {}),
+    day: '2-digit', month: '2-digit', ...(ano ? { year: 'numeric' } : {}),
+    ...(hora ? { hour: '2-digit', minute: '2-digit' } : {}),
+  });
 }
 
 // 'AAAA-MM-DD' de uma data no fuso do computador (o dia que a pessoa vê no calendário)

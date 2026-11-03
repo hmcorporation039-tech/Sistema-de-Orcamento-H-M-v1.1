@@ -31,7 +31,8 @@ export function Etiqueta({ info, children }) {
   );
 }
 
-export const moeda = (v) => (v == null ? '—' : formatarMoeda(v));
+// valor que ainda não existe (margem sem orçado, custo sem lançamento) aparece como '—', não como R$ 0,00
+export const moeda = (v) => formatarMoeda(v, { vazio: '—' });
 export const pct = (v) => (v == null ? '' : `${String(v).replace('.', ',')}%`);
 export const corMargem = (v) => (v == null ? '#777' : v < 0 ? '#e08080' : '#3fb95f');
 

@@ -17,7 +17,7 @@ import CampoMoeda from '../components/CampoMoeda';
 import ClienteSelect, { useClientes } from '../components/ClienteSelect';
 import BuscaCodigo, { formatarCtribNac } from '../components/fiscal/BuscaCodigo';
 import { estilos, Campo } from '../components/ui/estilos';
-import { formatarMoeda, formatarData, formatarCpfCnpj } from '../utils/format';
+import { formatarMoeda, formatarData, formatarCpfCnpj, dataHoraBr, FUSO_BRASILIA } from '../utils/format';
 import { baixarArquivo, mensagemDeErro } from '../utils/download';
 
 // Notas fiscais de serviço (versão 2.5) — aba do Financeiro, só administrador.
@@ -39,9 +39,6 @@ const CHIPS = [
 
 const EMISSOR_NACIONAL = 'https://www.nfse.gov.br/EmissorNacional';
 const hoje = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
-const dataHora = (v) => (v ? new Date(v).toLocaleString('pt-BR', {
-  timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-}) : '—');
 const competencia = (v) => { const s = String(v || '').slice(0, 10); return s ? `${s.slice(5, 7)}/${s.slice(0, 4)}` : '—'; };
 
 async function imprimirPdf(id) {
@@ -601,8 +598,8 @@ function ModalNota({ abrir, onFechar, onSalvo, acoes }) {
         <div style={{ background: 'var(--superficie-2)', border: '1px solid var(--borda)', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13 }}>
           {nota.padrao === 'nacional' && nota.chave_acesso && <div><span style={{ color: 'var(--texto-3)' }}>Chave de acesso:</span> <code>{nota.chave_acesso}</code></div>}
           {nota.codigo_verificacao && <div><span style={{ color: 'var(--texto-3)' }}>Código de verificação:</span> <code>{nota.codigo_verificacao}</code></div>}
-          <div>Emitida em {dataHora(nota.data_emissao)}{nota.origem === 'importada' ? ` · importada (${nota.padrao === 'abrasf' ? 'ISSnet/SYSB1' : 'Emissor Nacional'})` : ''}</div>
-          {nota.situacao === 'cancelada' && <div style={{ color: 'var(--perigo)', marginTop: 4, fontWeight: 500 }}>Cancelada em {dataHora(nota.cancelada_em)}: {nota.motivo_cancelamento}</div>}
+          <div>Emitida em {dataHoraBr(nota.data_emissao, { fuso: FUSO_BRASILIA })}{nota.origem === 'importada' ? ` · importada (${nota.padrao === 'abrasf' ? 'ISSnet/SYSB1' : 'Emissor Nacional'})` : ''}</div>
+          {nota.situacao === 'cancelada' && <div style={{ color: 'var(--perigo)', marginTop: 4, fontWeight: 500 }}>Cancelada em {dataHoraBr(nota.cancelada_em, { fuso: FUSO_BRASILIA })}: {nota.motivo_cancelamento}</div>}
           <div style={{ color: 'var(--texto-3)', marginTop: 4 }}>Nota emitida não pode ser editada — use <b>Duplicar</b> para refazer com outro valor ou data.</div>
         </div>
       )}
@@ -1045,6 +1042,12 @@ function ModalDaProposta({ onFechar, onFeito }) {
   );
 }
 
+// Pix que já era de outra obra (ou que continua na obra depois de desligado): a obra não muda, só fica o aviso,
+// no mesmo jeito do painel Notas a receber
+function avisarObra(avisos) {
+  for (const aviso of avisos.filter(Boolean)) toast(aviso, { duration: 12000, icon: '⚠️' });
+}
+
 // Liga um Pix recebido (Financeiro) à nota que ele quitou. Só sugere o que bate no valor; quem confirma é o administrador.
 function ModalRecebimento({ nota, onFechar, onMudou }) {
   const [dados, setDados] = useState(null);
@@ -1052,9 +1055,15 @@ function ModalRecebimento({ nota, onFechar, onMudou }) {
   const carregar = useCallback(() => getRecebimentosNotaFiscal(nota.id).then(r => setDados(r.data)).catch(() => toast.error('Erro ao buscar os recebimentos')), [nota.id]);
   useEffect(() => { carregar(); }, [carregar]);
 
+  // ligado, o Pix sem obra leva a obra da proposta da nota; o que já tinha obra (ou a mantém ao desligar) vem com aviso
   async function mudar(m, ligar) {
     setOcupado(m.id);
-    try { await ligarRecebimentoNotaFiscal(nota.id, m.id, ligar); await carregar(); onMudou?.(); }
+    try {
+      const { data: r } = await ligarRecebimentoNotaFiscal(nota.id, m.id, ligar);
+      await carregar(); onMudou?.();
+      toast.success(!ligar ? 'Pix desligado da nota' : r.obra_preenchida ? 'Pix ligado à nota e à obra da proposta' : 'Pix ligado à nota');
+      avisarObra([r.aviso]);
+    }
     catch (err) { toast.error(err.response?.data?.erro || 'Erro ao ligar o recebimento'); }
     finally { setOcupado(null); }
   }
@@ -1142,12 +1151,16 @@ function ModalAtestado({ nota, onFechar, onVinculado }) {
 
   async function trocarProposta(valor) {
     try {
-      await vincularPropostaNotaFiscal(nota.id, valor || null);
+      const { data: r } = await vincularPropostaNotaFiscal(nota.id, valor || null);
       setPropostaId(valor);
       localPreenchido.current = false;
       setOp(o => ({ ...o, atividades: null, planilha: null, local: '' })); // refaz a partir da nova proposta
       onVinculado?.();
-      toast.success(valor ? 'Nota ligada à proposta' : 'Vínculo com a proposta removido');
+      // os Pix já ligados à nota e sem obra vão para a obra da proposta (o backend nunca troca obra existente)
+      const n = r.obras_preenchidas || 0;
+      const levados = n === 0 ? '' : n === 1 ? '; 1 Pix da nota foi para a obra da proposta' : `; ${n} Pix da nota foram para a obra da proposta`;
+      toast.success(valor ? `Nota ligada à proposta${levados}` : 'Vínculo com a proposta removido');
+      avisarObra(r.avisos || []);
     } catch (err) {
       toast.error(err.response?.data?.erro || 'Erro ao ligar a proposta');
     }

@@ -209,14 +209,16 @@ const pix = (extra) => ({ id: 10, nome: 'Hospital Santa Lucia S A', valor: 1000,
       await pool.query('UPDATE financeiro_movimentos SET nota_id = NULL WHERE id = $1', [m3b]);   // n2 volta a ficar em aberto para o caso da baixa
     });
 
+    // chama a rota da tela de notas direto no controller, sem HTTP
+    const ctrl = require('../src/controllers/notasFiscaisController');
+    const chamar = async (fn, req) => {
+      const out = { status: 200, corpo: null };
+      const res = { status(st) { out.status = st; return this; }, json(c) { out.corpo = c; return this; } };
+      await fn({ params: {}, body: {}, usuario: { id: usuarioId }, ...req }, res);
+      return out;
+    };
+
     await caso('banco: pela tela da nota também leva a obra; desligar a nota deixa a obra e avisa', async () => {
-      const ctrl = require('../src/controllers/notasFiscaisController');
-      const chamar = async (fn, req) => {
-        const out = { status: 200, corpo: null };
-        const res = { status(st) { out.status = st; return this; }, json(c) { out.corpo = c; return this; } };
-        await fn({ params: {}, body: {}, usuario: { id: usuarioId }, ...req }, res);
-        return out;
-      };
       const n4 = await criarNota('4', 5555.53, 'EMPRESA TESTE AREC LTDA', hoje, pA);
       ids.notas.push(n4);
       const m4 = await criarPix(5555.53, 'Empresa Teste Arec Ltda', hoje);
@@ -230,6 +232,36 @@ const pix = (extra) => ({ id: 10, nome: 'Hospital Santa Lucia S A', valor: 1000,
       assert.match(des.corpo.aviso, /continua na obra ZZ-AREC-A/);
       assert.strictEqual(await obraDe(m4), obraA, 'desligar a nota não apaga a obra (pode ter sido posta à mão)');
       assert.strictEqual((await pool.query('SELECT nota_id FROM financeiro_movimentos WHERE id = $1', [m4])).rows[0].nota_id, null);
+    });
+
+    await caso('banco: nota que ganha proposta depois leva a obra aos Pix já ligados; obra posta antes fica e avisa', async () => {
+      // nota sem proposta, já com dois Pix (pagamento parcelado): um sem obra, outro já na obra B
+      const n6 = await criarNota('6', 3333.39, 'EMPRESA TESTE AREC LTDA', hoje);
+      ids.notas.push(n6);
+      const m6 = await criarPix(1111.13, 'Empresa Teste Arec Ltda', hoje);
+      const m6b = await criarPix(2222.26, 'Empresa Teste Arec Ltda', hoje, obraB);
+      ids.movs.push(m6, m6b);
+      await pool.query('UPDATE financeiro_movimentos SET nota_id = $1 WHERE id = ANY($2::int[])', [n6, [m6, m6b]]);
+      const r = await chamar(ctrl.vincularProposta, { params: { id: n6 }, body: { proposta_id: pA } });
+      assert.strictEqual(r.status, 200);
+      assert.strictEqual(r.corpo.proposta_id, pA);
+      assert.strictEqual(r.corpo.obra_id, obraA);
+      assert.strictEqual(r.corpo.obras_preenchidas, 1);
+      assert.strictEqual(r.corpo.avisos.length, 1);
+      assert.match(r.corpo.avisos[0], /ZZ-AREC-B/);
+      assert.strictEqual(await obraDe(m6), obraA, 'o Pix sem obra leva a obra da proposta');
+      assert.strictEqual(await obraDe(m6b), obraB, 'a obra posta antes nunca é trocada');
+      const { rows: [aud] } = await pool.query(
+        "SELECT detalhes FROM auditoria WHERE entidade = 'notas_fiscais' AND entidade_id = $1 AND acao = 'vincular_proposta' ORDER BY id DESC LIMIT 1", [n6]);
+      assert.strictEqual(aud.detalhes.obra_id, obraA);
+      assert.deepStrictEqual(aud.detalhes.obra_preenchida_movimentos, [m6]);
+      // ligar de novo à mesma proposta não muda nada; desligar a proposta não tira a obra dos Pix
+      assert.strictEqual((await chamar(ctrl.vincularProposta, { params: { id: n6 }, body: { proposta_id: pA } })).corpo.obras_preenchidas, 0);
+      const des = await chamar(ctrl.vincularProposta, { params: { id: n6 }, body: { proposta_id: null } });
+      assert.strictEqual(des.status, 200);
+      assert.strictEqual(des.corpo.proposta_id, null);
+      assert.deepStrictEqual(des.corpo.avisos, []);
+      assert.strictEqual(await obraDe(m6), obraA);
     });
 
     await caso('banco: Pix ligado a nota antes da mudança ganha a obra pelo botão do administrador', async () => {

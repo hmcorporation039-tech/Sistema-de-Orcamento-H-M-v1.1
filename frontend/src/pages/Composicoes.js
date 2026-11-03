@@ -21,11 +21,10 @@ import { estilos } from '../components/ui/estilos';
 // Ver: qualquer usuário. Criar/editar/duplicar/desativar/excluir: admin.
 
 const SEGMENTOS = ['privado', 'publico'];
-const moeda = (v) => (v == null ? '—' : formatarMoeda(v));
 const numero = (v) => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
 // rolo/caixa contado em metro: "convertido de RL 100 m (R$ 283,04 a embalagem)"
 const precoEmbalagem = (l) => (l.conversao?.preco_embalagem != null
-  ? `${l.observacao_preco} (${moeda(l.conversao.preco_embalagem)} a embalagem)`
+  ? `${l.observacao_preco} (${formatarMoeda(l.conversao.preco_embalagem, { vazio: '—' })} a embalagem)`
   : l.observacao_preco);
 const notaConversao = { color: '#8fb3d9', fontSize: 10.5 };
 const semAcento = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -42,7 +41,7 @@ function CustoResumo({ c }) {
   if (!c) return <span style={{ color: 'var(--texto-3)' }}>—</span>;
   return (
     <span>
-      <span style={{ color: c.completo ? '#e8e0cc' : '#bbb' }}>{moeda(c.custo_unitario)}</span>
+      <span style={{ color: c.completo ? '#e8e0cc' : '#bbb' }}>{formatarMoeda(c.custo_unitario, { vazio: '—' })}</span>
       {c.itens_a_cotar > 0 && <span style={etiquetaCotar} title="Itens sem preço — entram na proposta como a cotar">+{c.itens_a_cotar} a cotar</span>}
     </span>
   );
@@ -269,10 +268,10 @@ function DetalheItens({ comp }) {
                 </td>
                 <td style={{ ...td, textAlign: 'right' }}>{numero(l.coeficiente)}</td>
                 <td style={td}>{l.unidade}</td>
-                <td style={{ ...td, textAlign: 'right' }}>{l.a_cotar ? <span style={{ color: '#d9a441' }}>a cotar</span> : moeda(l.preco_unitario)}</td>
-                <td style={{ ...td, textAlign: 'right' }}>{moeda(l.custo)}</td>
-                <td style={{ ...td, textAlign: 'right' }}>{pub.a_cotar ? <span style={{ color: '#d9a441' }}>a cotar</span> : moeda(pub.preco_unitario)}</td>
-                <td style={{ ...td, textAlign: 'right' }}>{moeda(pub.custo)}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{l.a_cotar ? <span style={{ color: '#d9a441' }}>a cotar</span> : formatarMoeda(l.preco_unitario, { vazio: '—' })}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{formatarMoeda(l.custo, { vazio: '—' })}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{pub.a_cotar ? <span style={{ color: '#d9a441' }}>a cotar</span> : formatarMoeda(pub.preco_unitario, { vazio: '—' })}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{formatarMoeda(pub.custo, { vazio: '—' })}</td>
               </tr>
             );
           })}
@@ -449,8 +448,8 @@ function EditorComposicao({ form, setForm, onFechar }) {
                     </Select>
                   ) : vinculado ? it.unidade : <input value={it.unidade} maxLength={10} onChange={e => alterarItem(it.chave, 'unidade', e.target.value)} aria-label="Unidade" />}
                 </td>
-                <td style={{ ...td, textAlign: 'right' }}>{lp ? (lp.a_cotar ? <span style={{ color: '#d9a441' }}>a cotar</span> : moeda(lp.custo)) : '—'}</td>
-                <td style={{ ...td, textAlign: 'right' }}>{lo ? (lo.a_cotar ? <span style={{ color: '#d9a441' }}>a cotar</span> : moeda(lo.custo)) : '—'}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{lp ? (lp.a_cotar ? <span style={{ color: '#d9a441' }}>a cotar</span> : formatarMoeda(lp.custo, { vazio: '—' })) : '—'}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{lo ? (lo.a_cotar ? <span style={{ color: '#d9a441' }}>a cotar</span> : formatarMoeda(lo.custo, { vazio: '—' })) : '—'}</td>
                 <td style={td}>
                   <div style={{ display: 'flex', gap: 3, justifyContent: 'flex-end' }}>
                     <button style={btnIcone} title="Subir" onClick={() => mover(i, -1)}><ArrowUp size={12} /></button>
@@ -476,7 +475,7 @@ function EditorComposicao({ form, setForm, onFechar }) {
           {buscaMat.trim() && (
             <Select value="" onChange={e => addMaterial(e.target.value)} style={{ marginTop: 6 }} aria-label="Material do catálogo">
               <option value="">{materiaisFiltrados.length ? `Escolha (${materiaisFiltrados.length}${materiaisFiltrados.length === 150 ? '+' : ''})…` : 'Nada encontrado'}</option>
-              {materiaisFiltrados.map(m => <option key={m.id} value={m.id}>{`${m.descricao} — ${m.unidade}${Number(m.preco) > 0 ? ` — ${moeda(m.preco)}` : ' — sem preço'}`}</option>)}
+              {materiaisFiltrados.map(m => <option key={m.id} value={m.id}>{`${m.descricao} — ${m.unidade}${Number(m.preco) > 0 ? ` — ${formatarMoeda(m.preco, { vazio: '—' })}` : ' — sem preço'}`}</option>)}
             </Select>
           )}
         </div>

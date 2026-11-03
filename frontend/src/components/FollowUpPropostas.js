@@ -3,13 +3,12 @@ import toast from 'react-hot-toast';
 import { PhoneCall, Clock, XCircle } from 'lucide-react';
 import { getFollowUpPropostas, registrarFollowUp, registrarEnvioProposta, atualizarStatus } from '../services/api';
 import { estilos } from './ui/estilos';
-import { dataBr } from '../utils/format';
+import { dataBr, formatarMoeda } from '../utils/format';
 
 // Propostas enviadas por e-mail e ainda sem resposta (services/followUpPropostas.js): quem precisa de um
 // contato hoje. "Fiz contato" recomeça a contagem; "Adiar" escolhe a data; depois de 3 contatos sem resposta
 // o sistema sugere encerrar. Os prazos (5 dias, depois 10) são sugestão da casa.
 const COR = { encerrar: '#e5534b', atrasado: '#d69a2d', hoje: '#c9a227', aguardando: 'var(--texto-3)' };
-const moeda = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const amanhaMais = (dias) => {
   const d = new Date(); d.setDate(d.getDate() + dias);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -39,7 +38,7 @@ function Linha({ i, ocupado, onRegistrar, onEncerrar }) {
           <b>{i.numero}</b> · {i.cliente_nome}
           {i.responsavel && <span style={{ color: 'var(--texto-3)' }}> · {i.responsavel}</span>}
         </span>
-        <b>{moeda(i.total)}</b>
+        <b>{formatarMoeda(i.total)}</b>
         <span style={{ color: COR[i.nivel], fontWeight: 700 }}>{rotulo(i)}</span>
         <span style={{ color: 'var(--texto-3)' }} title="Dias desde o último e-mail">enviada há {plural(i.dias_desde_envio, 'dia', 'dias')}</span>
         {i.validade_vencida && <span style={{ color: '#e5534b' }} title="A validade da proposta já acabou">validade vencida</span>}
@@ -69,7 +68,7 @@ function LinhaSemEnvio({ p, ocupado, onEnviei }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '6px 4px', borderTop: '1px solid var(--borda)', fontSize: 12.5 }} data-testid="followup-sem-envio">
       <span style={{ flex: '1 1 220px', minWidth: 0 }}><b>{p.numero}</b> · {p.cliente_nome}</span>
-      <b>{moeda(p.total)}</b>
+      <b>{formatarMoeda(p.total)}</b>
       <span style={{ color: 'var(--texto-3)' }}>proposta de {dataBr(p.data)}</span>
       <input type="date" value={dia} min={p.data} max={amanhaMais(0)} onChange={e => setDia(e.target.value)} aria-label={`Enviada em (${p.numero})`} />
       <button type="button" disabled={ocupado || !dia} style={estilos.btnSecundario} onClick={() => onEnviei(p.id, { data: dia })}>Já enviei</button>
@@ -120,8 +119,8 @@ export default function FollowUpPropostas() {
         <PhoneCall size={16} color="#c9a227" />
         <h3 style={{ fontSize: 13, color: '#c9a227', fontWeight: 700, margin: 0 }}>Propostas sem resposta</h3>
         <span style={{ fontSize: 12, color: 'var(--texto-3)' }}>
-          {plural(resumo.aguardando, 'enviada', 'enviadas')} · {moeda(resumo.valor_aguardando)}
-          {resumo.atrasados > 0 && <b style={{ color: COR.atrasado }}> · {plural(resumo.atrasados, 'atrasada', 'atrasadas')} ({moeda(resumo.valor_atrasado)})</b>}
+          {plural(resumo.aguardando, 'enviada', 'enviadas')} · {formatarMoeda(resumo.valor_aguardando)}
+          {resumo.atrasados > 0 && <b style={{ color: COR.atrasado }}> · {plural(resumo.atrasados, 'atrasada', 'atrasadas')} ({formatarMoeda(resumo.valor_atrasado)})</b>}
           {resumo.para_hoje > 0 && <b style={{ color: COR.hoje }}> · {resumo.para_hoje} para hoje</b>}
         </span>
         <span style={{ flex: 1 }} />

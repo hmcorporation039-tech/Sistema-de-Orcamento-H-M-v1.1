@@ -6,7 +6,7 @@ import {
   getPropostas, getProposta, atualizarStatus, removerProposta, duplicarProposta, getRelatorioPropostas,
   exportarRelatorioPropostas, baixarPdfProposta,
 } from '../services/api';
-import { formatarMoeda, formatarData, formatarNcm, paraIso, hojeIso } from '../utils/format';
+import { formatarMoeda, formatarData, formatarNcm, paraIso, hojeIso, dataHoraBr } from '../utils/format';
 import { baixarArquivo, salvarBlob, mensagemDeErro } from '../utils/download';
 import Paginacao from '../components/Paginacao';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
@@ -29,8 +29,6 @@ const ACAO_LABEL = {
   recusada_link: 'Recusada pelo cliente (link)',
 };
 
-const dataHoraCurta = (d) => d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-
 // Decisão do cliente pelo link de aprovação (decisao_cliente da listagem:
 // { decisao, nome, data } da última decisão). Selo pequeno ao lado do status;
 // o nome e a hora ficam na dica (title) para não alargar a tabela.
@@ -40,7 +38,7 @@ function SeloDecisaoCliente({ decisao }) {
   const quando = decisao.data ? new Date(decisao.data) : null;
   const dica = `${aprovou ? 'Aprovada' : 'Recusada'} pelo cliente pelo link de aprovação`
     + (decisao.nome ? ` — ${decisao.nome}` : '')
-    + (quando ? `, ${dataHoraCurta(quando)}` : '');
+    + (quando ? `, ${dataHoraBr(quando)}` : '');
   const Icone = aprovou ? CheckCircle2 : XCircle;
   return (
     <span title={dica} aria-label={dica} data-testid="selo-decisao-cliente"
