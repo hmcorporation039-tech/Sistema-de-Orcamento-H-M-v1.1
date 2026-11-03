@@ -382,7 +382,8 @@ caso('usuários: e-mail em minúsculas e sem espaço, mesma validação no criar
     assert.strictEqual(proximo?.code, 'XX000');
     // login compara sem caixa e sem espaço nas pontas
     let loginSql;
-    banco.pool = { query: async (sql, p) => { loginSql = { sql, p }; return { rows: [] }; } };
+    // só a busca da conta (depois dela o login grava a tentativa na auditoria — Fase 6)
+    banco.pool = { query: async (sql, p) => { if (/FROM usuarios/.test(sql)) loginSql = { sql, p }; return { rows: [] }; } };
     const auth = require('../src/controllers/authController');
     const rl = res(); await auth.login({ body: { email: ' Marcio@HM.com.br ', senha: 'qualquer1' } }, rl);
     assert.strictEqual(rl.code, 401);
