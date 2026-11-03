@@ -25,6 +25,11 @@ const CONTROLES = {
   '010': '0-10 V (dimerização analógica)',
   cena: 'Cenas (DALI-2 com teclado de cenas)',
 };
+const COMANDOS_TIPO = {
+  '': 'Interruptores (simples, paralelo, intermediário)',
+  pulsador: 'Pulsadores com relé de impulso',
+  contator: 'Contator com botoeira liga/desliga (selo)',
+};
 const TIPOS_LUMINARIA = { embutir: 'de embutir', sobrepor: 'de sobrepor', pendente: 'pendente', perfil: 'perfil LED linear' };
 const DIMERIZAVEL = ['dimmer', 'dali', '010', 'cena'];
 const DALI = ['dali', 'cena'];
@@ -237,6 +242,9 @@ function calcularAmbiente(a, idx, luminarias, p, avisos) {
   const controle = CONTROLES[a.controle] ? a.controle : 'interruptor';
   const presenca = controle === 'sensor' || !!a.sensor_presenca;
   const portas = Math.max(1, Math.round(num(a.portas, 1)));
+  // interruptor de vários pontos: paralelo/intermediário (padrão), pulsadores com relé de
+  // impulso ou contator com botoeira liga/desliga e selo (salão, galpão, carga > 10 A)
+  const comandoTipo = controle === 'interruptor' && COMANDOS_TIPO[a.comando_tipo] && a.comando_tipo ? a.comando_tipo : '';
   const lado = p.sensorDiametro / Math.SQRT2; // quadrado inscrito no círculo de detecção
   const sNx = presenca ? Math.max(1, Math.ceil(C / lado - 1e-9)) : 0;
   const sNy = presenca ? Math.max(1, Math.ceil(L / lado - 1e-9)) : 0;
@@ -274,7 +282,7 @@ function calcularAmbiente(a, idx, luminarias, p, avisos) {
     controle, presenca, portas, sensores, fontes, enderecos, comandos, percursoInterno,
     distanciaQuadro: num(a.distancia_quadro_m, 0) > 0 ? num(a.distancia_quadro_m) : null,
     circuitoInformado: String(a.circuito || '').trim() || null,
-    instaladaVa, minimoVa, cargaVa, malha: malhaMedicao(C, L), circuitos: [],
+    instaladaVa, minimoVa, cargaVa, malha: malhaMedicao(C, L), circuitos: [], distribuicao: [], comandoTipo,
   };
 }
 
@@ -328,6 +336,9 @@ function montarCircuitos(ambientes, c, p, avisos) {
     d.potenciaW = gr.pedacos.reduce((s, x) => s + x.va * p.fpDriver, 0);
     if (gr.id && d.ib > limiteVa / v + 1e-6) avisos.push(`Circuito ${id} informado com ${arred(d.ib, 1)} A — acima do limite adotado de ${c.limiteIluminacaoA} A por circuito de iluminação.`);
     for (const x of gr.pedacos) if (!x.amb.circuitos.includes(id)) x.amb.circuitos.push(id);
+    // quantas luminárias (e quantos VA) do ambiente vão em cada circuito — o modelo
+    // único da instalação liga cada luminária ao seu circuito (./instalacao.js)
+    for (const x of gr.pedacos) x.amb.distribuicao.push({ circuito: id, luminarias: x.lum, va: x.va });
     return d;
   });
 }
@@ -398,15 +409,19 @@ function materiais(ambientes, circuitos, barramentos, p, avisos) {
   add('SEN', `Sensor de presença de teto 360° com relé, Ø ${String(p.sensorDiametro).replace('.', ',')} m de detecção [CONFERIR cobertura no fabricante]`, 'un', sens.rele, 'Projeto');
   add('SEN-DALI', 'Sensor multifunção DALI-2 (presença + luz natural) de teto, IEC 62386-303/304', 'un', sens.dali, 'IEC 62386');
   add('SEN-010', 'Sensor de presença com saída 0-10 V e relé (dimerização por luz natural)', 'un', sens['010'], 'Projeto');
-  const int = { simples: 0, paralelo: 0, intermediario: 0 };
+  const int = { simples: 0, paralelo: 0, intermediario: 0, pulsador: 0, releImpulso: 0, botoeira: 0, contator: 0 };
   ambientes.forEach(a => {
     const nInt = a.comandos.interruptores;
-    if (nInt === 1) int.simples++;
+    if (a.comandoTipo === 'pulsador' && nInt) { int.pulsador += nInt; int.releImpulso++; } else if (a.comandoTipo === 'contator' && nInt) { int.botoeira += nInt; int.contator++; } else if (nInt === 1) int.simples++;
     else if (nInt >= 2) { int.paralelo += 2; int.intermediario += nInt - 2; }
   });
   add('INT', 'Interruptor simples 10 A com placa', 'un', int.simples, 'NBR 5410, 9.5.2.1.1');
   add('INT-P', 'Interruptor paralelo (three-way) 10 A com placa', 'un', int.paralelo, 'NBR 5410');
   add('INT-I', 'Interruptor intermediário (four-way) 10 A com placa', 'un', int.intermediario, 'NBR 5410');
+  add('PULS', 'Pulsador (botão de campainha) 10 A com placa — comando do relé de impulso', 'un', int.pulsador, 'NBR 5410');
+  add('RELE-IMP', 'Relé de impulso (biestável) 16 A para trilho DIN, bobina na tensão do circuito', 'un', int.releImpulso, 'IEC 60669-2-2');
+  add('BOT-LD', 'Botoeira dupla liga/desliga (NA + NF) com placa — comando do contator', 'un', int.botoeira, 'NBR IEC 60947-5-1');
+  add('CONT', 'Contator modular 25 A para trilho DIN com contato auxiliar de selo (NA), bobina na tensão do circuito', 'un', int.contator, 'NBR IEC 60947-4-1 / IEC 61095');
   add('DIM', `Dimmer para LED (corte de fase) até ${p.dimmerW} W, com placa`, 'un', soma(a => a.comandos.dimmers), 'Ficha técnica do fabricante');
   add('BOT-DALI', 'Interface de pulsadores DALI-2 com botoeira (liga/desliga e dimerização)', 'un', soma(a => a.comandos.botoeirasDali), 'IEC 62386-301');
   add('CENA', 'Teclado de cenas DALI-2 (4 cenas + liga/desliga) com placa', 'un', soma(a => a.comandos.tecladosCena), 'IEC 62386');
@@ -475,5 +490,5 @@ function calcular(dados) {
 
 module.exports = {
   calcular, calcularAmbiente, indiceRecinto, fatorUtilizacao, metodoLumens, escolherGrade, malhaMedicao, posicoesGrade,
-  ATIVIDADES, ATIVIDADE, FM, ROTULO_CONSERVACAO, CONTROLES, TIPOS_LUMINARIA, DIMERIZAVEL, DALI,
+  ATIVIDADES, ATIVIDADE, FM, ROTULO_CONSERVACAO, CONTROLES, COMANDOS_TIPO, TIPOS_LUMINARIA, DIMERIZAVEL, DALI,
 };

@@ -43,6 +43,10 @@ Com a planta de arquitetura do cliente em DXF (no AutoCAD: Salvar como → DXF 2
 
 Regra de posicionamento: tomadas pela previsão da NBR 5410 (9.5.2.2) distribuídas nas paredes, TUE com a potência, pontos de luz (mínimo 1 por cômodo) e interruptor por ambiente, quadro no primeiro ambiente. Posições são indicativas — o projetista revisa no AutoCAD, completa eletrodutos/infraestrutura e emite. No sistema: aba Laudos e projetos → "Enviar arquitetura (DXF)" e "Baixar planta (DXF)".
 
+## Com o projeto luminotécnico (modelo único da instalação)
+
+Com `luminotecnico` no JSON (o formulário da skill `iluminacao`: luminárias e ambientes de mesmo nome; exemplo em `exemplos/exemplo-com-luminotecnico.json`), a elétrica roda o cálculo da iluminação: os circuitos **IL*** entram no quadro de cargas, na planilha e no unifilar com o mesmo número; nos ambientes cobertos a iluminação da previsão é a carga do luminotécnico (com o mínimo de 9.5.2.1.2 em habitação) e a planta usa a **grade calculada** (nx × ny) no lugar de "1 ponto a cada 16 m²". O resultado leva `instalacao` (`skills/_comum/instalacao`): quadro QD-01 com Q0, disjuntores Q<circuito> (as tags da skill quadros), DR por circuito, cada ponto com circuito e comando (circuito + letra do retorno, ex. `1a`) e `validacaoInstalacao` (todo ponto com circuito, todo circuito com disjuntor, soma das cargas = quadro de cargas). Incoerência aparece nos avisos da tela como "Modelo da instalação".
+
 ## Quadro de cargas editável
 
 O projetista ajusta o quadro de cargas durante o projeto sem perder as contas da norma:

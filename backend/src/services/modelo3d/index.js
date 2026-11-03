@@ -36,8 +36,19 @@ const TEMPO_LIMITE_MS = 90 * 1000;
 // Agora: hash do CONTEÚDO de todo .js/.json de skills/_comum/cad (subpastas
 // inclusive, sem node_modules e sem os testes) e de skills/_comum/empresa.js.
 // O hash só é refeito quando a data ou o tamanho de algum arquivo muda.
-const { CAD, COMUM } = require('../../config/caminhos');
-const EXTRA_GERADOR = [path.join(COMUM, 'empresa.js')];
+const { CAD, COMUM, RAIZ_SKILLS } = require('../../config/caminhos');
+// Fase 1 do roteiro (02/11/2026): a cena (versão 3) leva circuito e comando por ponto e o
+// modelo único da instalação — o módulo comum e os geradores das skills de elétrica e
+// iluminação também mudam o 3D do formulário, então entram na chave do cache
+const EXTRA_GERADOR = [
+  path.join(COMUM, 'empresa.js'), path.join(COMUM, 'instalacao', 'index.js'),
+  path.join(RAIZ_SKILLS, 'eletrica', 'scripts', 'lib', 'instalacao.js'), path.join(RAIZ_SKILLS, 'eletrica', 'scripts', 'lib', 'luminotecnico.js'),
+  path.join(RAIZ_SKILLS, 'iluminacao', 'scripts', 'lib', 'instalacao.js'),
+  // fase 2 (3D interativo): o simulador lógico, e o quadro do prédio sai do caderno de
+  // fabricação da skill quadros (pasta inteira, abaixo)
+  path.join(COMUM, 'instalacao', 'simulador.js'),
+];
+const PASTA_QUADROS = path.join(RAIZ_SKILLS, 'quadros', 'scripts', 'lib');
 function arquivosDoGerador(pasta = CAD, lista = []) {
   for (const e of fs.readdirSync(pasta, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     const f = path.join(pasta, e.name);
@@ -49,7 +60,7 @@ function arquivosDoGerador(pasta = CAD, lista = []) {
 let geradorCache = { assinatura: null, hash: null };
 function versaoDoGerador() {
   try {
-    const arquivos = [...arquivosDoGerador(), ...EXTRA_GERADOR];
+    const arquivos = [...arquivosDoGerador(), ...EXTRA_GERADOR, ...(fs.existsSync(PASTA_QUADROS) ? arquivosDoGerador(PASTA_QUADROS) : [])];
     const assinatura = arquivos.map(f => { const st = fs.statSync(f); return `${path.relative(COMUM, f)}:${st.mtimeMs}:${st.size}`; }).join('|');
     if (geradorCache.assinatura !== assinatura) {
       const h = crypto.createHash('sha256');
@@ -144,7 +155,9 @@ function dispositivosDoEspacial(espacial) {
     if (!proprio) genericos++;
     const simbolo = proprio || SIMBOLO_GENERICO;
     dispositivos.push({ simbolo, rotulo: rotuloDoComponente(p.descricao) || null, disciplina: p.disciplina,
-      ...(p.montagem !== 'teto' && Number(p.altura_m) > 0 ? { altura_m: Number(p.altura_m) } : {}), x: p.x, y: p.y, rotacao: 0, id: '', ambiente: null });
+      ...(p.montagem !== 'teto' && Number(p.altura_m) > 0 ? { altura_m: Number(p.altura_m) } : {}), x: p.x, y: p.y, rotacao: 0, id: '', ambiente: null,
+      // circuito e comando conferidos no Mapa do CAD (texto junto do símbolo): o 3D grava por ponto
+      ...(p.circuito ? { circuito: String(p.circuito), comando: p.comando || '' } : {}) });
   }
   // tipo, material e medida lidos do desenho (services/analiseCad/medidasInfra.js); análise
   // antiga, sem eles: o tipo pela layer e a medida null (o 3D usa a seção ilustrativa)

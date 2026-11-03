@@ -7,6 +7,8 @@
 // fabricação e ensaios de rotina, relatório de ensaios e orçamento.
 
 const { criarDisciplina } = require('../../../_comum/disciplina');
+const { validarInstalacao } = require('../../../_comum/instalacao');
+const { instalacaoDoQuadro } = require('./instalacao');
 const D = require('../../../_comum/documentos');
 const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
@@ -77,7 +79,9 @@ function processar(dados, opcoes = {}) {
   const ncs = I.consolidarNcs(checklist, insp.ncs);
   const med = medicoes(insp, calc);
   const parecer = I.parecer(checklist, ncs, [...med.isolamento, ...med.dieletrico, ...med.continuidade, ...med.funcional]);
-  return { dados, calc, insp, checklist, ncs, med, parecer };
+  // modelo único da instalação: o quadro, os disjuntores (mesmas tags do caderno) e os circuitos
+  const instalacao = instalacaoDoQuadro(calc, dados);
+  return { dados, calc, insp, checklist, ncs, med, parecer, instalacao, validacaoInstalacao: validarInstalacao(instalacao) };
 }
 
 // ── Resumo para a tela ──────────────────────────────────────────────────────
@@ -107,7 +111,7 @@ function resumir(res) {
       ...(aut.ativo ? [{ rotulo: 'Automação', valor: `${aut.usados.DI} DI · ${aut.usados.DO} DO · ${aut.usados.AI} AI · ${aut.usados.AO} AO`, detalhe: `módulos ${['DI', 'DO', 'AI', 'AO'].map(t => `${aut.modulos[t]} ${t}`).join(', ')} · fonte ${aut.fontes > 1 ? `${aut.fontes} × ` : ''}${aut.fonteA} A (${num(aut.totalMa / 1000, 2)} A + ${pct(aut.margem)})` }] : []),
       ...(temInspecao ? [{ rotulo: 'Ensaios de rotina', valor: res.parecer.situacao.replace(/_/g, ' '), ok: res.parecer.situacao === 'CONFORME' ? true : res.parecer.situacao === 'INCONCLUSIVO' ? undefined : false, detalhe: `NC ${res.parecer.cont.NC} · NV ${res.parecer.cont.NV}` }] : []),
     ],
-    textos: [...calc.avisos, ...calc.premissas],
+    textos: [...calc.avisos, ...calc.premissas, ...(res.validacaoInstalacao?.erros || []).slice(0, 10).map(e => `Modelo da instalação (planta × quadro de cargas × 3D): ${e}`)],
     tabelas: [
       { titulo: 'Circuitos e coordenação', colunas: ['Nº', 'Descrição', 'Lig.', 'Fases', 'Ib (A)', 'Disjuntor', 'Icu (kA)', 'DR', 'Observações'],
         linhas: calc.circuitos.map(x => [x.n, x.descricao, LIG[x.ligacao], x.fases.join(''), num(x.ib, 1), `${x.polos}P ${x.disjuntor} A ${x.curva}`, num(x.icu, 1), drTxt(x), x.notas.join('; ')]) },

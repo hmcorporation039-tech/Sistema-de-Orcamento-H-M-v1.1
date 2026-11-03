@@ -35,7 +35,7 @@ Entrada `fabricantes: { padrao, por_tipo: { contator: "WEG", … } }` e, em qual
    - `circuitos`: um por linha na ordem do unifilar (ligação FN/FF/FFN/FFF/FFFN, fases, P ou Ib, disjuntor, curva, Icu, DR `ddr`/`idr` + `dr_grupo`, cabo, `local_dr` para os locais de 5.1.3.2.2).
    - `motores`: dados de placa e partida (direta, estrela-triângulo, soft-starter, inversor).
    - `automacao`: CLP (E/S da CPU), sinais de campo, cargas 24 Vcc, IHM, comunicação, dispositivos de porta.
-   - **Importar** de um projeto já feito: `node skills/quadros/scripts/importar.js <projeto.json> --de eletrica [--tag QD-01]` ou `--de eletrica-industrial --quadro CCM-01` (só lê as outras skills; revise grupos de DR, local e montagem).
+   - **Importar** de um projeto já feito: `node skills/quadros/scripts/importar.js <projeto.json> --de eletrica [--tag QD-01]` ou `--de eletrica-industrial --quadro CCM-01` ou `--de iluminacao [--tag QL-01]` (circuitos IL* do luminotécnico) (só lê as outras skills; revise grupos de DR, local e montagem). Da elétrica e da iluminação vem também `instalacao_origem` (pontos e comandos de cada circuito): o resultado leva `instalacao` com as mesmas tags do caderno (Q0, Q<circuito>, DRn) — o 3D do quadro e o da planta falam do mesmo disjuntor.
 3. **Calcular e conferir com o engenheiro:** `node _comum/cli.js quadros calcular <quadro>.json` — mostre indicadores, avisos e premissas [CONFERIR].
 4. **Documentos:** `node _comum/cli.js quadros documentos <quadro>.json --saida <pasta do cliente>` (`--so memorial,desenho`).
 5. **Orçamento:** `node _comum/cli.js quadros orcamento <quadro>.json --modo fabricacao|inspecao`; no sistema, ferramenta MCP `criar_rascunho_proposta` ou o botão da aba de projetos.

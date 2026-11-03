@@ -8,6 +8,7 @@
 const path = require('path');
 const { PLANTAS } = require('./plantasDisciplina');
 const { posicionarPontos } = require('./planta');
+const { juntarInstalacoes } = require('../instalacao');
 
 // nome aceito na linha de comando → pasta da skill
 const DISCIPLINAS = {
@@ -133,11 +134,13 @@ function carregarMotor(pasta) {
 }
 
 // disciplinas: ['cftv', 'rede', …]; dadosPorDisciplina: { cftv: {...formulário real} }
-// → { dispositivos: [{ disciplina, simbolo, id, ambiente, x, y, rotacao, regra }], avisos, porDisciplina }
+// → { dispositivos: [{ disciplina, simbolo, id, ambiente, x, y, rotacao, regra, circuito?, comando? }], avisos, porDisciplina,
+//     instalacao (modelo único das skills que o geram: elétrica, iluminação — skills/_comum/instalacao) }
 function pontosDasDisciplinas(arquitetura, disciplinas, { dadosPorDisciplina = {}, peDireito = 2.8 } = {}) {
   const dispositivos = [];
   const avisos = [];
   const porDisciplina = [];
+  let instalacao = null;
   for (const nome of disciplinas) {
     const pasta = DISCIPLINAS[nome];
     if (!pasta) throw new Error(`Disciplina "${nome}" sem pontos no 3D (disponível: ${Object.keys(DISCIPLINAS).join(', ')}).`);
@@ -163,10 +166,28 @@ function pontosDasDisciplinas(arquitetura, disciplinas, { dadosPorDisciplina = {
     const { pontos } = gerador(res, arq);
     const { posicoes, contagem, naoEncontrados } = posicionarPontos(arq, pontos);
     if (naoEncontrados.length) avisos.push(`${motor.nome || pasta}: ambientes do formulário que não estão na arquitetura (sem pontos no 3D): ${[...new Set(naoEncontrados)].join('; ')}.`);
-    for (const p of posicoes) dispositivos.push({ ...p, disciplina: nome === 'cabeamento' ? 'rede' : nome, ambiente: original.get(p.ambiente) || p.ambiente });
+    // ponto do modelo único: o 3D grava a posição dele na instalação da cena (3D-06)
+    const doModelo = new Set((res.instalacao?.pontos || []).map(p => String(p.id)));
+    if (res.instalacao && instalacao) {
+      const repetidos = res.instalacao.pontos.filter(p => instalacao.pontos.some(q => q.id === p.id)).length;
+      if (repetidos) avisos.push(`${motor.nome || pasta}: ${repetidos} ponto(s) com o mesmo id de outra disciplina ficaram fora do modelo da instalação do 3D (vale o da primeira).`);
+    }
+    // 3D interativo (fase 2): o quadro do prédio é o do caderno de fabricação da skill quadros
+    // (mesmas TAGs, grupos de DR e arranjo); se a skill quadros falhar, fica o da elétrica
+    if (pasta === 'eletrica' && res.instalacao?.quadros?.length) {
+      try {
+        const q0 = res.instalacao.quadros[0];
+        const fab = require(path.join(__dirname, '..', '..', 'quadros', 'scripts', 'lib', 'predio3d.js')).quadroDoPredio(dados, { tag: q0.tag });
+        const ids = new Set(res.instalacao.circuitos.filter(c => String(c.quadro) === String(q0.tag)).map(c => String(c.id)));
+        const disj = fab.quadro.disjuntores.filter(d => ids.has(String(d.circuito)));
+        if (disj.length === ids.size) Object.assign(q0, { geral: fab.quadro.geral, drs: fab.quadro.drs, disjuntores: disj, cena3d: fab.cena });
+      } catch (e) { avisos.push(`Quadro em 3D: sem o arranjo do caderno de fabricação (${e.message}) — mostrado um arranjo esquemático.`); }
+    }
+    if (res.instalacao) instalacao = instalacao ? juntarInstalacoes(instalacao, res.instalacao) : res.instalacao;
+    for (const p of posicoes) dispositivos.push({ ...p, disciplina: nome === 'cabeamento' ? 'rede' : nome, ambiente: original.get(p.ambiente) || p.ambiente, ...(doModelo.has(String(p.id)) ? { daInstalacao: true } : {}) });
     porDisciplina.push({ disciplina: nome, nome: motor.nome || pasta, contagem });
   }
-  return { dispositivos, avisos, porDisciplina };
+  return { dispositivos, avisos, porDisciplina, instalacao };
 }
 
 module.exports = { pontosDasDisciplinas, tipoDoAmbiente, ehAmbienteValido, DISCIPLINAS };

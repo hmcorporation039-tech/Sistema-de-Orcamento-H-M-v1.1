@@ -18,6 +18,7 @@ const CAT = require('./catalogo');
 const { posicoesPorta } = require('./porta');
 const { ENTRADA_CABOS, tcNasBarras } = require('./layout');
 const V = require('../../../_comum/cad/visualizador3d');
+const { instalacaoDoQuadro } = require('./instalacao');
 const { EMPRESA } = require('../../../_comum/empresa');
 
 const Z_PLACA = 25;        // placa de montagem afastada do fundo (mm)
@@ -419,6 +420,9 @@ const CSS_QUADRO = `
 
 function gerarHtml(calc, dados = {}) {
   const cena = montarCena(calc, dados);
+  // 3D interativo (fase 2): o modelo único do quadro — disjuntores com alavanca, partidas
+  // de motor com o painel (liga, desliga, emergência, sinaleiros, relé térmico)
+  try { cena.instalacao = instalacaoDoQuadro(calc, dados); } catch (e) { /* sem simulação: o quadro abre como antes */ }
   const esc = V.escapeHtml;
   const logo = `data:image/png;base64,${fs.readFileSync(path.join(__dirname, '..', '..', '..', '_comum', 'assets', 'logo-pequeno.png')).toString('base64')}`;
   const meta = [[cena.cliente && `Cliente: <b>${esc(cena.cliente)}</b>`, cena.obra && `Obra: <b>${esc(cena.obra)}</b>`].filter(Boolean).join(' · '), `gerado em ${esc(cena.data)}`].filter(Boolean).join('<br>');
@@ -450,7 +454,7 @@ function gerarHtml(calc, dados = {}) {
 </nav>
 <aside>
   <section><h2>Números do quadro</h2><div id="numeros"></div></section>
-  <section><h2>Camadas</h2><div id="camadas"></div></section>
+${cena.instalacao ? '  <section><h2>Simulação — clique nos disjuntores</h2><div id="simulacao"></div></section>\n' : ''}  <section${cena.instalacao ? ' class="fechada"' : ''}><h2>Camadas</h2><div id="camadas"></div></section>
   <section><h2>Dispositivo</h2><div id="info"><small>Clique num dispositivo para ver TAG, fabricante, referência e medidas.</small></div></section>
 </aside>
 <footer>

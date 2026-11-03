@@ -23,6 +23,9 @@ const { dentro, centroide, perimetro, distanciaContorno, RE_PAREDE, RE_NAO_PARED
 const { tipoDoAmbiente, ehAmbienteValido } = require('./estimativaArquitetura');
 const { SIMBOLOS } = require('./simbolos');
 const { separarEletrocalhas, sugerirCaminhos, buscaMaisPerto, MAX_SUGERIDOS } = require('./infraestrutura');
+const { comPosicoes } = require('../instalacao');
+// peças e duto da climatização (fase 4), declarados na skill
+const CLIM = require('../../climatizacao/scripts/lib/cad');
 
 const AVISO = 'Ilustração — não substitui o projeto executivo. Modelo gerado automaticamente a partir da planta 2D (não é BIM): alturas, esquadrias e posições dos pontos são típicas e indicativas.';
 const PE_DIREITO_PADRAO = 2.8;
@@ -444,6 +447,9 @@ const ESPEC = {
   'HM-ILU-POSTE': { h: 'piso', forma: 'poste' }, 'HM-ELE-CAIXA-PISO': { h: 'piso', forma: 'caixa-piso' },
   // ponto de parede do PDF sem legenda (tomada ou interruptor: a forma não diz qual)
   'HM-ELE-PONTO': { h: 1.1, forma: 'tomada' },
+  // climatização (fase 4): difusor, grelha, VAV, evaporadora, fancoil, condensadora e
+  // chiller — declarados na skill (skills/climatizacao/scripts/lib/cad.js)
+  ...CLIM.ESPEC_3D,
 };
 const ESPEC_PADRAO = { h: 1.1, forma: 'caixa' };
 // especificação completa (com o tamanho da forma quando o símbolo não traz o seu)
@@ -459,12 +465,13 @@ const DISCIPLINAS = {
   controle_acesso: { rotulo: 'Controle de acesso', cor: '#5ee38a' }, telefonia: { rotulo: 'Telefonia', cor: '#c49a6c' }, antena: { rotulo: 'Antena / TV', cor: '#3fd0c0' },
   'iluminacao-externa': { rotulo: 'Iluminação externa', cor: '#ffb84d' },
   automacao: { rotulo: 'Automação', cor: '#7fe0ff' }, solar: { rotulo: 'Solar', cor: '#f6c90e' }, carregador: { rotulo: 'Recarga veicular', cor: '#a4e05a' }, spda: { rotulo: 'SPDA', cor: '#bfc5cc' },
+  climatizacao: { rotulo: 'Climatização', cor: '#5ec8f2' },
 };
 // nomes antigos (classificador de pontos, mapa do CAD, análises e caches gravados
 // antes da unificação) → chave do registro; cabeamento é a rede no 3D
 const ALIAS_DISCIPLINA = { 'controle-acesso': 'controle_acesso', veicular: 'carregador', cabeamento: 'rede', 'eletrica-hospitalar': 'eletrica_hospitalar' };
 const chaveDisciplina = (k) => ALIAS_DISCIPLINA[k] || k;
-const disciplinaDoSimbolo = (s) => ({ ELE: 'eletrica', ILU: 'iluminacao', CAB: 'rede', CFTV: 'cftv', INC: 'incendio', ALM: 'alarme', ACE: 'controle_acesso', TEL: 'telefonia', ANT: 'antena', HOSP: 'eletrica_hospitalar', AUT: 'automacao', SOL: 'solar', VE: 'carregador', SPDA: 'spda' })[s.split('-')[1]] || 'outros';
+const disciplinaDoSimbolo = (s) => ({ ELE: 'eletrica', ILU: 'iluminacao', CAB: 'rede', CFTV: 'cftv', INC: 'incendio', ALM: 'alarme', ACE: 'controle_acesso', TEL: 'telefonia', ANT: 'antena', HOSP: 'eletrica_hospitalar', AUT: 'automacao', SOL: 'solar', VE: 'carregador', SPDA: 'spda', CLIM: 'climatizacao' })[s.split('-')[1]] || 'outros';
 
 // ── Infraestrutura (eletrocalhas, eletrodutos, leitos, perfilados, fiação) ───
 // seção [largura, altura] em m e quanto fica abaixo do teto (centro da seção):
@@ -477,6 +484,8 @@ const TRECHOS = {
   perfilado: { rotulo: 'Perfilado', secao: [0.038, 0.038], medida: '38 × 38 mm', desce: 0.22, forma: 'caixa' },
   eletroduto: { rotulo: 'Eletroduto', secao: [0.032, 0.032], medida: 'Ø 32 mm (1")', desce: 0.15, forma: 'tubo' },
   fiacao: { rotulo: 'Fiação / cabos', secao: [0.012, 0.012], medida: '', desce: 0.10, forma: 'linha' },
+  // climatização: duto retangular no forro (seção padrão ilustrativa)
+  ...CLIM.TRECHO_3D,
 };
 // Projeto sem infraestrutura desenhada (gerado pelo sistema, ou DWG só com os
 // pontos): eletroduto ESTIMADO por disciplina, do quadro/rack/central até cada
@@ -931,7 +940,8 @@ function afastarDosVizinhos(p, tam, postos) {
 
 // ── Cena ────────────────────────────────────────────────────────────────────
 // opcoes: { peDireito, dispositivos (de pontosDasDisciplinas), trechos (ver
-// montarInfra), titulo, cliente, obra, proposta, avisos,
+// montarInfra), titulo, cliente, obra, proposta, avisos, instalacao (modelo único
+// da skill: skills/_comum/instalacao — vai inteiro para a cena),
 // estimarInfra (false: disciplina sem traçado no projeto fica sem eletroduto) }
 function montarCena(arquitetura, opcoes = {}) {
   const peDireito = Number(opcoes.peDireito) > 1.5 ? Number(opcoes.peDireito) : PE_DIREITO_PADRAO;
@@ -980,6 +990,7 @@ function montarCena(arquitetura, opcoes = {}) {
     }
     return k;
   };
+  const posInstalacao = new Map(); // id do ponto do modelo único → posição na cena
   for (const d0 of opcoes.dispositivos || []) {
     if (!naCaixa(expandir(caixa, 1), [d0.x, d0.y])) continue;
     // nota do projeto "h = 20 cm abaixo do forro" (./pontosDoDesenho.js): conta do pé-direito
@@ -1001,7 +1012,17 @@ function montarCena(arquitetura, opcoes = {}) {
     if (FORMAS_DE_PAREDE.has(t.forma)) afastarDosVizinhos(p, t.tam, grandes);
     const [x, y] = P([p.x, p.y]);
     const amb = indiceAmb.has(d.ambiente) ? indiceAmb.get(d.ambiente) : Number.isFinite(d.x) && Number.isFinite(d.y) ? ambienteDoPonto(d.x, d.y) : -1;
-    t.itens.push([x, y, r2(p.z), r2(p.nx), r2(p.ny), amb, d.id || '', ...(p.campo ? [p.campo.map(P).flat()] : [])]);
+    // item: [x, y, z, nx, ny, ambiente, id, campo | null, circuito, comando] — circuito e comando
+    // do modelo único da instalação (antes o 3D descartava o atributo CIRCUITO: achado 3D-06);
+    // sem eles o item termina no id (ou no campo da câmera), como antes. O elemento é
+    // identificado por símbolo + id (estável entre regerações: o id vem do modelo/da planta)
+    const circuito = String(d.circuito || d.atributos?.CIRCUITO || '');
+    const comando = String(d.comando || '');
+    const it = [x, y, r2(p.z), r2(p.nx), r2(p.ny), amb, d.id || ''];
+    if (p.campo || circuito || comando) it.push(p.campo ? p.campo.map(P).flat() : null);
+    if (circuito || comando) it.push(circuito, comando);
+    t.itens.push(it);
+    if (d.id && d.daInstalacao) posInstalacao.set(String(d.id), [x, y, r2(p.z)]);
   }
 
   const internos = ambs.filter(a => a.tipo !== 'externo');
@@ -1034,8 +1055,12 @@ function montarCena(arquitetura, opcoes = {}) {
   };
 
   const C = (w) => [...P(w.a), ...P(w.b), r2(w.esp), r2(w.z0), r2(w.z1)];
+  // modelo único da instalação (quadros, circuitos, pontos com a posição na cena, comandos):
+  // a base do 3D interativo (fase 2) — ponto fora desta planta fica com posicao null
+  const instalacao = opcoes.instalacao ? comPosicoes(opcoes.instalacao, posInstalacao) : null;
   return {
-    versao: 2,
+    // 3: itens com circuito e comando e a instalação inteira (02/11/2026)
+    versao: 3,
     aviso: AVISO,
     titulo: opcoes.titulo || 'Modelo 3D ilustrativo',
     cliente: opcoes.cliente || '', obra: opcoes.obra || '', proposta: opcoes.proposta || '',
@@ -1057,6 +1082,7 @@ function montarCena(arquitetura, opcoes = {}) {
     infra,
     numeros,
     avisos,
+    ...(instalacao ? { instalacao } : {}),
   };
 }
 

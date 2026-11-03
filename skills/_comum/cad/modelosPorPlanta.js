@@ -13,6 +13,7 @@ const { plantasDoDesenho } = require('./pranchas');
 const { pontosDoDesenho } = require('./pontosDoDesenho');
 const { DE_PAREDE } = require('./tiposDePonto');
 const { pontosDasDisciplinas } = require('./estimativaArquitetura');
+const { juntarInstalacoes } = require('../instalacao');
 
 const naCaixa = (c, [x, y], m = 0) => x >= c[0] - m && x <= c[2] + m && y >= c[1] - m && y <= c[3] + m;
 const ROTULO_SIMBOLO = { 'HM-ILU-LUMINARIA': 'luminárias', 'HM-ILU-POSTE': 'postes', 'HM-ELE-TOMADA-BAIXA': 'tomadas baixas', 'HM-ELE-TOMADA-MEDIA': 'tomadas médias', 'HM-ELE-TOMADA-ALTA': 'tomadas altas','HM-ELE-INTERRUPTOR': 'interruptores', 'HM-ELE-QUADRO': 'quadros', 'HM-ELE-CAIXA-PISO': 'caixas de passagem' };
@@ -33,6 +34,7 @@ function montarCenasPorPlanta(arquitetura, opcoes = {}) {
     let dispositivos = [];
     let trechos = (opcoes.trechos || []).map(t => ({ ...t, segmentos: varias ? t.segmentos.filter(s => naCaixa(p.caixa, [s[0], s[1]], 1) || naCaixa(p.caixa, [s[2], s[3]], 1)) : t.segmentos })).filter(t => t.segmentos.length);
     let origem = '';
+    let instalacao = null; // modelo único da instalação (formulário da skill)
     if (opcoes.dispositivosReais?.length) {
       dispositivos = varias ? opcoes.dispositivosReais.filter(d => naCaixa(p.caixa, [d.x, d.y], 1)) : opcoes.dispositivosReais;
       if (dispositivos.length) origem = 'projeto';
@@ -63,6 +65,7 @@ function montarCenasPorPlanta(arquitetura, opcoes = {}) {
         try {
           const pts = pontosDasDisciplinas(arq, [disc], { dadosPorDisciplina: { [disc]: dados }, peDireito: opcoes.peDireito });
           if (pts.dispositivos.length) { dispositivos.push(...pts.dispositivos); avisos.push(...pts.avisos); origem = 'formulario'; }
+          if (pts.instalacao) instalacao = instalacao ? juntarInstalacoes(instalacao, pts.instalacao) : pts.instalacao;
         } catch (e) { avisos.push(`${disc}: sem pontos no 3D — ${e.message}`); }
       }
     }
@@ -73,6 +76,7 @@ function montarCenasPorPlanta(arquitetura, opcoes = {}) {
     const cena = montarCena(arq, {
       peDireito: opcoes.peDireito, dispositivos, avisos, trechos, estimarInfra: false, sugerirInfra: opcoes.sugerirInfra !== false,
       titulo: opcoes.titulo, cliente: opcoes.cliente, obra: opcoes.obra, proposta: opcoes.proposta,
+      ...(instalacao ? { instalacao } : {}),
     });
     cena.plantaInfo = { n: p.n, nome: p.nome, caixa: p.caixa.map(v => Math.round(v * 100) / 100), pontos: dispositivos.length, origem, area_m2: p.area_m2 };
     cenas.push(cena);
@@ -90,7 +94,7 @@ function montarCenasPorPlanta(arquitetura, opcoes = {}) {
 function resumoDasCenas({ cenas, principal }) {
   const c = cenas[principal];
   return {
-    numeros: { ...c.numeros, plantas: cenas.map(x => ({ nome: x.plantaInfo.nome, pontos: x.plantaInfo.pontos, origem: x.plantaInfo.origem, ambientes: x.numeros.ambientes })) },
+    numeros: { ...c.numeros, plantas: cenas.map(x => ({ nome: x.plantaInfo.nome, pontos: x.plantaInfo.pontos, origem: x.plantaInfo.origem, ambientes: x.numeros.ambientes, interativo: !!x.instalacao })) },
     avisos: [...(cenas.length > 1 ? [`${cenas.length} plantas no desenho — cada uma é um modelo à parte (escolha no seletor "Planta" do 3D).`] : []), ...c.avisos],
   };
 }

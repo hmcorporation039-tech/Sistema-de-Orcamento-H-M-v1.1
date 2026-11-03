@@ -7,6 +7,8 @@ const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
 const { fmtNum } = require('../../../_comum/docx-base');
 const C = require('./calculo');
+const { instalacaoDaIluminacao } = require('./instalacao');
+const { validarInstalacao } = require('../../../_comum/instalacao');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
 const MODELO = require('../../exemplos/modelo-vazio.json');
@@ -72,7 +74,9 @@ function processar(dados) {
   });
   const ncs = I.consolidarNcs(checklist, insp.ncs);
   const medicoes = (insp.medicoes_iluminancia || []).filter(m => m && m.ambiente).map(m => avaliarMedicao(m, calc));
-  return { dados, calc, insp, checklist, ncs, medicoes, parecer: I.parecer(checklist, ncs, medicoes) };
+  // modelo único da instalação (luminária → circuito IL* → disjuntor → quadro; comandos)
+  const instalacao = instalacaoDaIluminacao(calc, { quadro: dados.instalacao?.quadro_tag || undefined });
+  return { dados, calc, insp, checklist, ncs, medicoes, parecer: I.parecer(checklist, ncs, medicoes), instalacao, validacaoInstalacao: validarInstalacao(instalacao) };
 }
 
 // ── Resumo para a tela e a CLI ─────────────────────────────────────────────
@@ -98,7 +102,8 @@ function resumir(res) {
       { rotulo: 'Automação', valor: `${t.sensores} sensor(es)`, detalhe: `${t.comandos} comando(s) · ${t.enderecosDali} endereço(s) DALI em ${t.barramentos} linha(s)` },
       ...(res.medicoes.length ? [{ rotulo: 'Medições de iluminância', valor: `${medidos.filter(m => m.resultado === 'C').length} de ${medidos.length}`, detalhe: 'ambientes dentro do critério', ok: medidos.length ? medidos.every(m => m.resultado === 'C') : undefined }] : []),
     ],
-    textos: calc.avisos,
+    // incoerência do modelo único (ponto sem circuito, soma que não bate…): só aparece quando existe
+    textos: [...calc.avisos, ...(res.validacaoInstalacao?.erros || []).slice(0, 10).map(e => `Modelo da instalação (planta × quadro de cargas × 3D): ${e}`)],
     tabelas: [
       { titulo: 'Cálculo por ambiente (método dos lúmens)', colunas: ['Ambiente', 'Atividade', 'Área (m²)', 'hm (m)', 'k', 'FU', 'FM', 'Em exig. (lx)', 'N calc.', 'Grade', 'N', 'Em obtida (lx)', 'W/m²', 'Controle', 'Circuito'], linhas: linhasAmbientes(calc) },
       { titulo: 'Circuitos de iluminação (NBR 5410)', colunas: ['Circuito', 'Ambientes', 'VA', 'Ib (A)', 'L eq. (m)', 'Seção', 'Disjuntor', 'DR', 'ΔV %'],
@@ -312,6 +317,8 @@ const OP = {
   conservacao: F.op(Object.entries(C.ROTULO_CONSERVACAO).map(([k, v]) => [k, `${v} — FM ${String(C.FM[k]).replace('.', ',')}`])),
   tipoLum: F.op(Object.entries(C.TIPOS_LUMINARIA).map(([k, v]) => [k, v.charAt(0).toUpperCase() + v.slice(1)])),
   controle: F.op(Object.entries(C.CONTROLES)),
+  // só vale no controle "interruptor": pulsadores com relé de impulso ou contator com botoeira e selo
+  comandoTipo: F.op(Object.entries(C.COMANDOS_TIPO)),
   atividade: F.op([...C.ATIVIDADES].sort((a, b) => a.rotulo.localeCompare(b.rotulo, 'pt-BR')).map(a => [a.id, `${a.rotulo} — ${a.em} lx`])),
   teto: F.op([['0.8', 'Branco (0,8)'], ['0.7', 'Claro (0,7)'], ['0.5', 'Médio (0,5)'], ['0.3', 'Escuro (0,3)']]),
   parede: F.op([['0.5', 'Clara (0,5)'], ['0.3', 'Média (0,3)'], ['0.1', 'Escura (0,1)']]),
@@ -366,7 +373,7 @@ const FORMULARIO = [
   { titulo: '4. Ambientes', aberta: true, itens: [
     { tipo: 'nota', texto: 'Atividade pela NBR ISO/CIE 8995-1 (define Em, UGR e Ra). Informe comprimento × largura (ou só a área, se irregular). Luminária = código da tabela acima. Plano de trabalho vazio usa o da atividade (0,75 m mesa; 0 = piso). Opcionais: FU do ambiente, Em própria, quantidade fixa (verificar projeto existente) e circuito.' },
     { tipo: 'tabela', caminho: 'ambientes', rotuloAdicionar: 'Adicionar ambiente',
-      novaLinha: { nome: '', atividade: 'escritorio', comprimento_m: null, largura_m: null, area_m2: null, pe_direito_m: 2.8, plano_trabalho_m: null, refl_teto: '0.7', refl_parede: '0.5', refl_piso: '0.2', luminaria: '', controle: 'interruptor', sensor_presenca: false, conservacao: '', portas: 1, distancia_quadro_m: null, fu: null, em_lx: null, quantidade: null, circuito: '' },
+      novaLinha: { nome: '', atividade: 'escritorio', comprimento_m: null, largura_m: null, area_m2: null, pe_direito_m: 2.8, plano_trabalho_m: null, refl_teto: '0.7', refl_parede: '0.5', refl_piso: '0.2', luminaria: '', controle: 'interruptor', comando_tipo: '', sensor_presenca: false, conservacao: '', portas: 1, distancia_quadro_m: null, fu: null, em_lx: null, quantidade: null, circuito: '' },
       colunas: [
         { campo: 'nome', rotulo: 'Ambiente', largura: 140 }, { campo: 'atividade', rotulo: 'Atividade (NBR ISO/CIE 8995-1)', tipo: 'selecao', opcoes: OP.atividade, largura: 260 },
         { campo: 'comprimento_m', rotulo: 'C (m)', tipo: 'numero', largura: 60 }, { campo: 'largura_m', rotulo: 'L (m)', tipo: 'numero', largura: 60 },
@@ -374,6 +381,7 @@ const FORMULARIO = [
         { campo: 'plano_trabalho_m', rotulo: 'Plano (m)', tipo: 'numero', largura: 65 },
         { campo: 'refl_teto', rotulo: 'Teto', tipo: 'selecao', opcoes: OP.teto, largura: 110 }, { campo: 'refl_parede', rotulo: 'Parede', tipo: 'selecao', opcoes: OP.parede, largura: 110 }, { campo: 'refl_piso', rotulo: 'Piso', tipo: 'selecao', opcoes: OP.piso, largura: 100 },
         { campo: 'luminaria', rotulo: 'Luminária', largura: 75 }, { campo: 'controle', rotulo: 'Controle', tipo: 'selecao', opcoes: OP.controle, largura: 190 },
+        { campo: 'comando_tipo', rotulo: 'Comando de vários pontos', tipo: 'selecao', opcoes: OP.comandoTipo, largura: 210 },
         { campo: 'sensor_presenca', rotulo: 'Sensor de presença', tipo: 'check', largura: 75 },
         { campo: 'conservacao', rotulo: 'Conservação', tipo: 'selecao', opcoes: [{ valor: '', rotulo: '— padrão do projeto' }, ...OP.conservacao], largura: 150 },
         { campo: 'portas', rotulo: 'Portas', tipo: 'numero', largura: 55 }, { campo: 'distancia_quadro_m', rotulo: 'Dist. quadro (m)', tipo: 'numero', largura: 80 },

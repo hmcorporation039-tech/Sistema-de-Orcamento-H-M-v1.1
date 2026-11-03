@@ -24,7 +24,7 @@ export async function enviarArquitetura(enviar, arquivo, { extra = () => '' } = 
     try {
       const { data } = await enviar(arquivo, { escala });
       const n = Array.isArray(data.ambientes) ? data.ambientes.length : data.ambientes;
-      const pdf = data.pdf ? ` — PDF na escala 1:${data.pdf.escala}${data.pdf.origemEscala === 'portas' ? ' (pelo tamanho das portas)' : data.pdf.origemEscala === 'carimbo' ? ' (do carimbo)' : ''}` : data.origem === 'dwg' ? ' (DWG)' : '';
+      const pdf = data.pdf ? ` — PDF na escala 1:${data.pdf.escala}${data.pdf.origemEscala === 'portas' ? ' (pelo tamanho das portas)' : data.pdf.origemEscala === 'carimbo' ? ' (do carimbo)' : data.pdf.origemEscala === 'nome_arquivo' ? ' (do nome do arquivo)' : ''}` : data.origem === 'dwg' ? ' (DWG)' : '';
       toast.success(`${n} ambientes e ${data.portas ?? 0} portas lidos da arquitetura${pdf}${extra(data)}`, { duration: 8000 });
       for (const aviso of data.pdf?.avisos || []) toast(aviso, { icon: '⚠️', duration: 12000 });
       return data;
@@ -70,6 +70,8 @@ export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null,
       // pontos que o desenho deixou soltos: caminho SUGERIDO até o quadro/a rede (camada à parte no 3D)
       const sugerido = (r.data.numeros?.infraestrutura || []).filter(g => g.sugerido).reduce((s, g) => s + (g.comprimento_m || 0), 0);
       if (sugerido) toast(`${sugerido.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} m de eletroduto SUGERIDO (azul-claro) ligando ao quadro/à tubulação os pontos que o projeto deixou soltos — liga/desliga no botão "Sugeridos" do 3D.`, { icon: 'ℹ️', duration: 9000 });
+      // 3D interativo (fase 2): com circuitos e comandos do projeto, o 3D simula a instalação
+      if (plantas.some(p => p.interativo)) toast('3D interativo: clique no quadro para abrir a porta e ligar/desligar os disjuntores; clique nos interruptores e nas luminárias. O estado fica só nesta aba.', { icon: '💡', duration: 9000 });
     } catch (err) {
       if (aba && !aba.closed) aba.close();
       toast.error(await mensagemDeErro(err, 'Erro ao gerar o modelo 3D'), { duration: 9000 });

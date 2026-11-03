@@ -70,7 +70,7 @@ async function main() {
     const pts = comDados.length ? pontosDasDisciplinas(arquitetura, comDados, { dadosPorDisciplina, peDireito }) : { dispositivos: [], avisos: [] };
     cenas = [montarCena(arquitetura, {
       peDireito, dispositivos: [...pts.dispositivos, ...pontos], avisos: pts.avisos, trechos,
-      titulo, cliente: op.cliente, obra: op.obra, proposta: op.proposta,
+      titulo, cliente: op.cliente, obra: op.obra, proposta: op.proposta, ...(pts.instalacao ? { instalacao: pts.instalacao } : {}),
     })];
   } else {
     ({ cenas, principal } = montarCenasPorPlanta(arquitetura, {

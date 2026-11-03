@@ -7,8 +7,10 @@ let falhou = false;
 // base comum: CAD (DXF, leitura de arquitetura, posicionamento, plantas, modelo 3D ilustrativo),
 // classificação projeto × laudo dos documentos, as entregas do projeto (as-built, ZIP)
 // e a leitura de data/GPS das fotos (EXIF) dos relatórios fotográficos; o caderno de
-// fabricação e montagem (PDF) de quadros e racks
-for (const teste of ['cad/teste-cad.js', 'cad/teste-3d.js', 'cad/teste-projeto-dxf.js', 'teste-tipos-documento.js', 'teste-entrega.js', 'teste-inspecao.js', 'teste-exif.js', 'fabricacao/teste-fabricacao.js']) {
+// fabricação e montagem (PDF) de quadros e racks; o modelo único da instalação (quadro →
+// circuito → comando → ponto) da elétrica, da iluminação, dos quadros e do 3D e o
+// simulador lógico dele (3D interativo: disjuntores, interruptores, contatores, motores)
+for (const teste of ['cad/teste-cad.js', 'cad/teste-3d.js', 'cad/teste-projeto-dxf.js', 'cad/teste-leitura-precisao.js', 'teste-tipos-documento.js', 'teste-entrega.js', 'teste-inspecao.js', 'teste-exif.js', 'fabricacao/teste-fabricacao.js', 'instalacao/teste-instalacao.js', 'instalacao/teste-simulador.js']) {
   try {
     process.stdout.write(execFileSync(process.execPath, [path.join(__dirname, '_comum', ...teste.split('/'))], { encoding: 'utf8' }));
   } catch (e) {

@@ -13,6 +13,9 @@ const lin = (b, x1, y1, x2, y2) => b.addLine(P(x1, y1), P(x2, y2), L0);
 const poli = (b, pts) => pts.slice(1).forEach((p, i) => lin(b, pts[i][0], pts[i][1], p[0], p[1]));
 const txt = (b, x, y, h, t) => b.addText(P(x, y), h, t, L0);
 const ID = { tag: 'ID', x: 0.2, y: 0.12, altura: 0.12, padrao: '' };
+// circuito e letra do retorno do modelo único da instalação ("3" + "a": skills/_comum/instalacao)
+const CIRCUITO = { tag: 'CIRCUITO', x: 0.2, y: -0.08, altura: 0.1 };
+const RETORNO = { tag: 'RETORNO', x: 0.2, y: -0.22, altura: 0.1 };
 
 // triângulo de tomada (vértice para cima), com marca da altura de instalação
 const triangulo = (b, s = 0.18) => poli(b, [[-s, -s * 0.6], [s, -s * 0.6], [0, s * 0.9], [-s, -s * 0.6]]);
@@ -22,15 +25,15 @@ const SIMBOLOS = {
   'HM-ELE-TOMADA-MEDIA': { layer: 'ELE-TOMADA', legenda: 'Tomada média 2P+T (h = 1,10 m)', desenhar: b => { triangulo(b); lin(b, -0.09, 0.0, 0.09, 0.0); }, atributos: [ID, { tag: 'CIRCUITO', x: 0.2, y: -0.08, altura: 0.1 }] },
   'HM-ELE-TOMADA-ALTA': { layer: 'ELE-TOMADA', legenda: 'Tomada alta 2P+T (h = 2,00 m)', desenhar: b => { triangulo(b); lin(b, -0.09, 0.0, 0.09, 0.0); lin(b, -0.05, 0.08, 0.05, 0.08); }, atributos: [ID, { tag: 'CIRCUITO', x: 0.2, y: -0.08, altura: 0.1 }] },
   'HM-ELE-TUE': { layer: 'ELE-TOMADA-ESPECIAL', legenda: 'Ponto de uso específico (TUE)', desenhar: b => { triangulo(b); txt(b, -0.06, -0.06, 0.1, 'E'); }, atributos: [ID, { tag: 'POTENCIA', x: 0.2, y: -0.08, altura: 0.1 }] },
-  'HM-ELE-PONTO-LUZ': { layer: 'ILU-LUMINARIA', legenda: 'Ponto de luz no teto', desenhar: b => { circ(b, 0, 0, 0.15); lin(b, -0.1, -0.1, 0.1, 0.1); lin(b, -0.1, 0.1, 0.1, -0.1); }, atributos: [ID, { tag: 'CIRCUITO', x: 0.2, y: -0.08, altura: 0.1 }] },
-  'HM-ELE-INTERRUPTOR': { layer: 'ILU-INTERRUPTOR', legenda: 'Interruptor simples (h = 1,10 m)', desenhar: b => { circ(b, 0, 0, 0.08); lin(b, 0.06, 0.06, 0.18, 0.18); }, atributos: [ID] },
+  'HM-ELE-PONTO-LUZ': { layer: 'ILU-LUMINARIA', legenda: 'Ponto de luz no teto', desenhar: b => { circ(b, 0, 0, 0.15); lin(b, -0.1, -0.1, 0.1, 0.1); lin(b, -0.1, 0.1, 0.1, -0.1); }, atributos: [ID, CIRCUITO, RETORNO] },
+  'HM-ELE-INTERRUPTOR': { layer: 'ILU-INTERRUPTOR', legenda: 'Interruptor simples (h = 1,10 m)', desenhar: b => { circ(b, 0, 0, 0.08); lin(b, 0.06, 0.06, 0.18, 0.18); }, atributos: [ID, RETORNO] },
   'HM-ELE-QUADRO': { layer: 'ELE-QUADRO', legenda: 'Quadro de distribuição', desenhar: b => { poli(b, [[-0.3, -0.12], [0.3, -0.12], [0.3, 0.12], [-0.3, 0.12], [-0.3, -0.12]]); lin(b, -0.3, -0.12, 0.3, 0.12); }, atributos: [{ ...ID, x: 0.35 }] },
-  'HM-ILU-LUMINARIA': { layer: 'ILU-LUMINARIA', legenda: 'Luminária (embutir/sobrepor)', desenhar: b => { poli(b, [[-0.3, -0.15], [0.3, -0.15], [0.3, 0.15], [-0.3, 0.15], [-0.3, -0.15]]); lin(b, -0.3, 0, 0.3, 0); }, atributos: [{ ...ID, x: 0.35 }] },
+  'HM-ILU-LUMINARIA': { layer: 'ILU-LUMINARIA', legenda: 'Luminária (embutir/sobrepor)', desenhar: b => { poli(b, [[-0.3, -0.15], [0.3, -0.15], [0.3, 0.15], [-0.3, 0.15], [-0.3, -0.15]]); lin(b, -0.3, 0, 0.3, 0); }, atributos: [{ ...ID, x: 0.35 }, { ...CIRCUITO, x: 0.35 }, { ...RETORNO, x: 0.35 }] },
   'HM-HOSP-TOMADA-IT': { layer: 'ELE-TOMADA-ESPECIAL', legenda: 'Tomada do sistema IT médico (identificada)', desenhar: b => { triangulo(b); txt(b, -0.08, -0.06, 0.08, 'IT'); }, atributos: [ID, { tag: 'CIRCUITO', x: 0.2, y: -0.08, altura: 0.1 }] },
   'HM-HOSP-BEL': { layer: 'ELE-QUADRO', legenda: 'Barramento de equipotencialização local (BEL)', desenhar: b => { poli(b, [[-0.2, -0.06], [0.2, -0.06], [0.2, 0.06], [-0.2, 0.06], [-0.2, -0.06]]); lin(b, -0.12, -0.06, -0.12, -0.16); lin(b, 0, -0.06, 0, -0.16); lin(b, 0.12, -0.06, 0.12, -0.16); }, atributos: [ID] },
   'HM-HOSP-PAINEL-ALARME': { layer: 'ELE-QUADRO', legenda: 'Painel de alarme do DSI (IT médico)', desenhar: b => { poli(b, [[-0.15, -0.1], [0.15, -0.1], [0.15, 0.1], [-0.15, 0.1], [-0.15, -0.1]]); txt(b, -0.09, -0.05, 0.09, 'DSI'); }, atributos: [ID] },
-  'HM-ILU-SENSOR': { layer: 'ILU-SENSOR', legenda: 'Sensor de presença (teto)', desenhar: b => { circ(b, 0, 0, 0.13); txt(b, -0.05, -0.05, 0.1, 'P'); lin(b, -0.18, 0, -0.13, 0); lin(b, 0.13, 0, 0.18, 0); }, atributos: [ID] },
-  'HM-ILU-COMANDO': { layer: 'ILU-INTERRUPTOR', legenda: 'Comando de iluminação (interruptor, dimmer, botoeira/teclado DALI)', desenhar: b => { poli(b, [[-0.1, -0.1], [0.1, -0.1], [0.1, 0.1], [-0.1, 0.1], [-0.1, -0.1]]); circ(b, 0, 0, 0.04); }, atributos: [ID] },
+  'HM-ILU-SENSOR': { layer: 'ILU-SENSOR', legenda: 'Sensor de presença (teto)', desenhar: b => { circ(b, 0, 0, 0.13); txt(b, -0.05, -0.05, 0.1, 'P'); lin(b, -0.18, 0, -0.13, 0); lin(b, 0.13, 0, 0.18, 0); }, atributos: [ID, RETORNO] },
+  'HM-ILU-COMANDO': { layer: 'ILU-INTERRUPTOR', legenda: 'Comando de iluminação (interruptor, dimmer, botoeira/teclado DALI)', desenhar: b => { poli(b, [[-0.1, -0.1], [0.1, -0.1], [0.1, 0.1], [-0.1, 0.1], [-0.1, -0.1]]); circ(b, 0, 0, 0.04); }, atributos: [ID, RETORNO] },
   'HM-CAB-PONTO-REDE': { layer: 'CAB-PONTO', legenda: 'Ponto de telecomunicações (RJ-45)', desenhar: b => { triangulo(b); txt(b, -0.06, -0.06, 0.1, 'R'); }, atributos: [ID] },
   'HM-CAB-AP': { layer: 'CAB-PONTO', legenda: 'Ponto de acesso Wi-Fi (AP)', desenhar: b => { circ(b, 0, 0, 0.15); txt(b, -0.1, -0.05, 0.1, 'AP'); }, atributos: [ID] },
   'HM-CAB-RACK': { layer: 'CAB-RACK', legenda: 'Rack / distribuidor', desenhar: b => { poli(b, [[-0.3, -0.3], [0.3, -0.3], [0.3, 0.3], [-0.3, 0.3], [-0.3, -0.3]]); lin(b, -0.3, -0.3, 0.3, 0.3); lin(b, -0.3, 0.3, 0.3, -0.3); }, atributos: [{ ...ID, x: 0.35 }] },
@@ -65,6 +68,9 @@ const SIMBOLOS = {
   'HM-AUT-CONTROLADOR': { layer: 'AUT-CONTROLADOR', legenda: 'Controlador / quadro de automação', desenhar: b => { poli(b, [[-0.3, -0.2], [0.3, -0.2], [0.3, 0.2], [-0.3, 0.2], [-0.3, -0.2]]); txt(b, -0.15, -0.06, 0.12, 'DDC'); }, atributos: [{ ...ID, x: 0.35 }] },
   'HM-SOL-INVERSOR': { layer: 'FV-INVERSOR', legenda: 'Inversor fotovoltaico', desenhar: b => { poli(b, [[-0.25, -0.2], [0.25, -0.2], [0.25, 0.2], [-0.25, 0.2], [-0.25, -0.2]]); lin(b, -0.25, -0.2, 0.25, 0.2); txt(b, -0.2, 0.05, 0.08, '='); txt(b, 0.08, -0.15, 0.08, '~'); }, atributos: [{ ...ID, x: 0.3 }] },
   'HM-VE-CARREGADOR': { layer: 'VE-CARREGADOR', legenda: 'Carregador veicular (wallbox)', desenhar: b => { poli(b, [[-0.15, -0.2], [0.15, -0.2], [0.15, 0.2], [-0.15, 0.2], [-0.15, -0.2]]); txt(b, -0.1, -0.06, 0.12, 'VE'); }, atributos: [ID] },
+  // climatização (fase 4): declarados na skill (difusor, grelha, VAV, fancoil, evaporadora,
+  // condensadora, chiller — layers HVAC-*), com o ESPEC do 3D em ./modelo3d.js
+  ...require('../../climatizacao/scripts/lib/cad').SIMBOLOS_PLANTA,
 };
 
 // Define no desenho só os símbolos usados (ou todos)

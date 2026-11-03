@@ -25,24 +25,37 @@
 // por peça, materiais em cache por cor/opacidade, compilação dos shaders
 // antes do 1º desenho, desenho só quando algo muda e redesenho ao restaurar
 // o contexto.
+//
+// 3D INTERATIVO (fase 2 do roteiro, 02/11/2026): com o modelo único da instalação
+// (cena.instalacao na página da skill quadros, ou o simulador do prédio quando o quadro
+// abre de dentro do 3D do prédio — ./app.js), cada disjuntor/DR ganha ALAVANCA articulada
+// e a bandeirola I/O; clicar liga/desliga pelo simulador lógico
+// (../../instalacao/simulador.js). Partidas de motor: contator que "fecha" (verde),
+// relé térmico desarmado (âmbar), sinaleiros da porta acesos pelo estado, emergência e
+// rearme da porta. Sem instalação, o quadro abre como antes (só a ficha de cada peça).
+// iniciarQuadro(C, { raiz, sim, quadroTag, embutido, portaFechada, aoVoltar, aviso })
 import {
   WebGLRenderer, Scene, Color, PerspectiveCamera, HemisphereLight, DirectionalLight, AmbientLight,
   BoxGeometry, CylinderGeometry, EdgesGeometry, Mesh, MeshStandardMaterial, LineSegments, LineBasicMaterial,
   Group, Raycaster, Vector2, Vector3, SRGBColorSpace,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { simuladorDaCena, htmlQuadro, htmlCircuito, htmlPainel, ligarBotoes, criarAviso } from './interativo.js';
 
 const M = 0.001;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
 
-export function iniciarQuadro(C) {
-  const $ = (s) => document.querySelector(s);
+export function iniciarQuadro(C, op = {}) {
+  // embutido no 3D do prédio: o DOM do quadro fica dentro de op.raiz (camada sobre o prédio)
+  const raiz = op.raiz || document;
+  const $ = (s) => raiz.querySelector(s);
   const tela = $('#tela');
   let renderer;
   try {
     renderer = new WebGLRenderer({ canvas: tela, antialias: true, preserveDrawingBuffer: true });
   } catch (e) {
-    $('#semwebgl').style.display = 'flex';
+    const sem = $('#semwebgl') || document.querySelector('#semwebgl');
+    if (sem) sem.style.display = 'flex';
     throw e;
   }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -98,6 +111,7 @@ export function iniciarQuadro(C) {
   const clicaveis = [];
   const etiquetas = [];
   const portaGrupo = new Group();
+  const comTag = []; // peças com TAG (disjuntores, DR, partidas, botões da porta)
 
   function peca(b, pai) {
     const l = Math.max(0.5, b.l) * M, a = Math.max(0.5, b.a) * M, p = Math.max(0.5, b.p) * M;
@@ -113,6 +127,7 @@ export function iniciarQuadro(C) {
     // semEtiqueta: só a dica do mouse (trilho, placa, canaleta vertical, bornes um a um),
     // senão a etiqueta fixa delas tomaria o lugar das TAGs dos dispositivos
     if (b.rotulo && !b.semEtiqueta) etiquetas.push({ mesh, texto: b.rotulo, el: null, porta: pai === portaGrupo });
+    if (b.tag) comTag.push(mesh);
     pai.add(mesh);
     return mesh;
   }
@@ -142,7 +157,139 @@ export function iniciarQuadro(C) {
   const ABERTA = -Math.PI * 0.58;
   let anguloAlvo = C.portaAberta === false ? 0 : ABERTA;
   portaGrupo.rotation.y = anguloAlvo;
+  // aberto a partir do prédio: começa fechado e a tampa abre na frente do cliente
+  if (op.portaFechada) { anguloAlvo = 0; portaGrupo.rotation.y = 0; setTimeout(() => abrirPorta(true), 350); }
   const portaAberta = () => Math.abs(portaGrupo.rotation.y) > 0.2;
+
+  // ── 3D interativo: simulador, alavancas e estados ──────────────────────
+  let selecionado = null;
+  // material "de estado" de cada peça (contator fechado, sinaleiro aceso…): guardado à
+  // parte, para o destaque da seleção não se perder quando o estado muda
+  const matBase = new WeakMap();
+  const baseDe = (m) => matBase.get(m) || m.material;
+  function porMaterial(mesh, mat) {
+    matBase.set(mesh, mat);
+    mesh.material = mesh === selecionado ? destaque(mat) : mat;
+  }
+  const corpoDe = new WeakMap(); // alavanca → corpo do disjuntor
+  const sim = op.sim || (C.instalacao && Array.isArray(C.instalacao.quadros) ? simuladorDaCena(C.instalacao, C.titulo) : null);
+  const quadroTag = sim ? String(op.quadroTag || sim.quadros()[0]?.tag || '') : '';
+  const aviso = sim ? (op.aviso || criarAviso()) : null;
+  const elemDe = new WeakMap();
+  const elementoDe = (m) => (m ? elemDe.get(m) || null : null);
+  const alavancas = []; // { giro, band, tag, alvo }
+  const estados = [];   // { mesh, el, base }
+  const LIGADO = -0.55, DESLIGADO = 0.55; // alavanca para cima = ligado
+  const mats2 = new Map();
+  function variante(base, k, f) {
+    const key = `${base.uuid}|${k}`;
+    if (!mats2.has(key)) { const m = base.clone(); f(m); mats2.set(key, m); }
+    return mats2.get(key);
+  }
+  const brilho = (base, cor, i) => variante(base, `b${cor}${i}`, (m) => { m.emissive.set(cor); m.emissiveIntensity = i; });
+  const escuro = (base) => variante(base, 'escuro', (m) => { m.color.multiplyScalar(0.35); });
+  function criarAlavanca(mesh, el) {
+    const sx = mesh.scale.x, sy = mesh.scale.y, sz = mesh.scale.z;
+    const pivo = new Group();
+    pivo.position.set(mesh.position.x, mesh.position.y, mesh.position.z + sz / 2);
+    const giro = new Group();
+    const comp = Math.min(0.016, Math.max(0.008, sy * 0.2));
+    const alav = new Mesh(GEO.caixa, material('#2b2d31', 1, false));
+    alav.scale.set(Math.min(0.012, sx * 0.45), Math.max(0.004, comp * 0.45), comp);
+    alav.position.set(0, 0, comp / 2);
+    giro.add(alav);
+    // bandeirola de estado (vermelha = I ligado, verde = O desligado), acima da alavanca
+    const band = new Mesh(GEO.caixa, material('#d62828', 1, false));
+    band.scale.set(Math.min(0.008, sx * 0.4), Math.min(0.006, sy * 0.07), 0.0015);
+    band.position.set(0, sy * 0.27, 0.0008);
+    pivo.add(giro, band);
+    mesh.parent.add(pivo);
+    for (const m of [alav, band]) { corpoDe.set(m, mesh); m.userData = mesh.userData; }
+    clicaveis.push(alav);
+    const on = sim.ligado(el.tag, quadroTag);
+    giro.rotation.x = on ? LIGADO : DESLIGADO;
+    alavancas.push({ giro, band, tag: el.tag, alvo: giro.rotation.x });
+  }
+  if (sim) {
+    const q = sim.quadro(quadroTag);
+    const motores = sim.paineis().filter(p => String(p.quadro) === quadroTag).map(p => p.id);
+    const contPorta = {};
+    for (const mesh of comTag) {
+      const tag = String(mesh.userData.tag);
+      let el = null;
+      if (q && sim.dispositivo(tag, quadroTag)) el = { tipo: 'protecao', tag };
+      else {
+        // partida de motor da skill quadros: "M-01/Q1" (disjuntor-motor M-01-Q1), "M-01/K1"
+        // (contator), "M-01/F4" (relé de sobrecarga), "M-01/T1" (soft-starter/inversor)
+        const m = tag.match(/^(.+)\/([A-Z]+)(\d*)$/);
+        const p = tag.match(/^(liga|desliga|emergencia|reset|seletor|sinaleiro_verde|sinaleiro_vermelho|sinaleiro_amarelo|sinaleiro_branco):\d+$/);
+        if (m && motores.includes(m[1])) {
+          const qm = `${m[1]}-${m[2]}${m[3]}`;
+          el = m[2] === 'Q' && sim.dispositivo(qm, quadroTag) ? { tipo: 'protecao', tag: qm, motor: m[1] }
+            : m[2] === 'K' ? { tipo: 'contator', motor: m[1] } : m[2] === 'F' ? { tipo: 'termico', motor: m[1] } : { tipo: 'partida', motor: m[1] };
+        } else if (p) {
+          // botões e sinaleiros da porta: o k-ésimo de cada tipo vai para o k-ésimo motor
+          const k = p[1];
+          const i = (contPorta[k] = (contPorta[k] ?? -1) + 1);
+          const motor = motores.length ? motores[i % motores.length] : null;
+          if (k === 'emergencia') el = { tipo: 'porta', acao: 'emergencia' };
+          else if (k === 'reset') el = { tipo: 'porta', acao: 'rearme' };
+          else if (k === 'liga' || k === 'desliga') el = motor ? { tipo: 'porta', acao: k, motor } : null;
+          else if (k === 'seletor') el = motor ? { tipo: 'porta', acao: 'alternar', motor } : null;
+          else el = { tipo: 'sinaleiro', sinal: k.slice(10), motor: k === 'sinaleiro_branco' ? null : motor };
+        }
+      }
+      if (!el) continue;
+      elemDe.set(mesh, el);
+      if (el.tipo === 'protecao' && mesh.parent !== portaGrupo) criarAlavanca(mesh, el);
+      if (el.tipo !== 'porta' && (el.tipo !== 'protecao' || el.motor)) estados.push({ mesh, el, base: mesh.material });
+    }
+  }
+  function agir(el) {
+    if (!el) return null;
+    if (el.tipo === 'protecao') { sim.alternar(el.tag, quadroTag); return `${el.tag} ${sim.ligado(el.tag, quadroTag) ? 'ligado' : 'desligado'}`; }
+    if (el.tipo !== 'porta') return null; // contator, térmico, sinaleiro: a ficha tem o painel
+    if (el.acao === 'emergencia') {
+      const a = !sim.emergenciaDoQuadro(quadroTag);
+      sim.emergenciaQuadro(quadroTag, a);
+      return a ? 'EMERGÊNCIA acionada: motores parados (clique de novo para soltar)' : 'Emergência liberada (aperte LIGA)';
+    }
+    if (el.acao === 'rearme') {
+      for (const p of sim.paineis()) if (String(p.quadro) === quadroTag && p.termico) sim.motor(p.id, 'rearmar');
+      return 'Rearme: relés térmicos rearmados';
+    }
+    if (el.acao === 'alternar') return sim.motor(el.motor, sim.painel(el.motor).contator ? 'desliga' : 'liga');
+    return sim.motor(el.motor, el.acao);
+  }
+  const painelSim = sim ? $('#simulacao') : null;
+  function atualizarEstado() {
+    if (!sim) return;
+    const q = sim.quadro(quadroTag);
+    const energizado = !q?.geral || sim.ligado(q.geral.tag, quadroTag);
+    for (const a of alavancas) {
+      const on = sim.ligado(a.tag, quadroTag);
+      a.alvo = on ? LIGADO : DESLIGADO;
+      porMaterial(a.band, material(on ? '#d62828' : '#2f9e44', 1, false));
+    }
+    for (const e of estados) {
+      const pn = e.el.motor ? sim.painel(e.el.motor) : null;
+      let mat = e.base;
+      if (e.el.tipo === 'contator' || e.el.tipo === 'partida') { if (pn?.girando) mat = brilho(e.base, '#2fbf5a', 0.6); }
+      else if (e.el.tipo === 'termico' || e.el.tipo === 'protecao') { if (pn?.termico) mat = brilho(e.base, '#e0a000', 0.9); }
+      else if (e.el.tipo === 'sinaleiro') {
+        const s = e.el.sinal;
+        const aceso = s === 'branco' ? energizado : pn ? !!pn.sinaleiros[s] : s === 'vermelho' && sim.emergenciaDoQuadro(quadroTag);
+        mat = aceso ? brilho(e.base, `#${e.base.color.getHexString()}`, 1.6) : escuro(e.base);
+      }
+      porMaterial(e.mesh, mat);
+    }
+    if (painelSim) painelSim.innerHTML = htmlQuadro(sim, quadroTag);
+    mostrarFicha();
+    pedirDesenho();
+  }
+  const sairDoSim = sim ? sim.assinar(atualizarEstado) : () => {};
+  if (painelSim) ligarBotoes(painelSim, sim, { aviso });
+  if (sim && $('#info')) ligarBotoes($('#info'), sim, { aviso });
 
   // ── vistas ─────────────────────────────────────────────────────────────
   let anim = null;
@@ -206,12 +353,12 @@ export function iniciarQuadro(C) {
   $('#b-etiquetas') && $('#b-etiquetas').classList.add('ativo');
   $('#b-porta') && $('#b-porta').classList.toggle('ativo', anguloAlvo !== 0);
   liga('#b-tela', () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); });
+  liga('#b-voltar-predio', () => { if (op.aoVoltar) op.aoVoltar(); });
 
   // seleção: clique numa peça → dados (TAG, fabricante, referência, medidas, fonte);
   // passar o mouse mostra a TAG (útil nas peças estreitas, sem etiqueta fixa)
   const ray = new Raycaster();
   const ptr = new Vector2();
-  let selecionado = null;
   // material de destaque em cache por material de origem (como material() faz por
   // cor): antes cada clique clonava um e a cópia descartada nunca era liberada
   // (revisão de 02/11/2026; o 3D interativo vai trocar o estado das peças a toda hora)
@@ -231,17 +378,36 @@ export function iniciarQuadro(C) {
     ray.setFromCamera(ptr, camera);
     return ray.intersectObjects(clicaveis.filter(visivel), false)[0] || null;
   }
+  const fichaPeca = (b) => `<b class="tag">${esc(b.rotulo || '')}</b><table>${(b.info || []).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${/^https?:/.test(String(v)) ? `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(v)}</a>` : esc(v)}</td></tr>`).join('')}</table>`;
+  let fichaAtual = null; // peça mostrada no painel (refeito quando o estado muda)
+  function mostrarFicha() {
+    const info = $('#info');
+    if (!info) return;
+    if (!fichaAtual) { info.innerHTML = `<small>Clique num dispositivo para ver TAG, fabricante, referência e medidas.${sim ? ' Clique num disjuntor para ligar/desligar.' : ''}</small>`; return; }
+    const b = fichaAtual.userData;
+    const el = sim && elementoDe(fichaAtual);
+    let extra = '';
+    if (el?.tipo === 'protecao') {
+      const c = sim.dispositivo(el.tag, quadroTag);
+      const circ = c?.tipo === 'dr' ? null : (c?.item?.circuito ?? null);
+      extra = circ != null ? htmlCircuito(sim, circ, { abrir: false }) : `<div class="sim-est">${el.tag}: <b class="${sim.ligado(el.tag, quadroTag) ? 'sim-on' : 'sim-off'}">${sim.ligado(el.tag, quadroTag) ? 'ligado' : 'desligado'}</b></div>`;
+    } else if (el?.motor) extra = htmlPainel(sim.painel(el.motor));
+    info.innerHTML = fichaPeca(b) + extra;
+  }
   function escolher(ev) {
     const hit = apontado(ev);
-    if (selecionado) { selecionado.material = selecionado.userData.__mat; selecionado = null; }
-    const info = $('#info');
+    if (selecionado) { selecionado.material = baseDe(selecionado); selecionado = null; }
     pedirDesenho();
-    if (!hit) { if (info) info.innerHTML = '<small>Clique num dispositivo para ver TAG, fabricante, referência e medidas.</small>'; return; }
-    selecionado = hit.object;
-    selecionado.userData.__mat = selecionado.material;
-    selecionado.material = destaque(selecionado.material);
-    const b = selecionado.userData;
-    if (info) info.innerHTML = `<b class="tag">${esc(b.rotulo || '')}</b><table>${(b.info || []).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${/^https?:/.test(String(v)) ? `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(v)}</a>` : esc(v)}</td></tr>`).join('')}</table>`;
+    if (!hit) { fichaAtual = null; mostrarFicha(); return; }
+    const alvo = corpoDe.get(hit.object) || hit.object;
+    selecionado = alvo;
+    matBase.set(alvo, baseDe(alvo));
+    alvo.material = destaque(baseDe(alvo));
+    fichaAtual = alvo;
+    // 3D interativo: o clique no disjuntor/DR liga ou desliga; no botão da porta, aperta
+    const r = sim ? agir(elementoDe(alvo)) : null;
+    if (r && aviso) aviso(r);
+    mostrarFicha();
   }
   let baixo = null;
   tela.addEventListener('pointerdown', (e) => { baixo = [e.clientX, e.clientY]; });
@@ -257,8 +423,11 @@ export function iniciarQuadro(C) {
     if (agora - ultimoMov < 60) return;
     ultimoMov = agora;
     const hit = apontado(e);
-    const t = hit && (hit.object.userData.dica || hit.object.userData.rotulo); // dica: TAG, tipo e medida
+    let t = hit && (hit.object.userData.dica || hit.object.userData.rotulo); // dica: TAG, tipo e medida
     if (!t) { dica.style.display = 'none'; return; }
+    const el = sim && elementoDe(corpoDe.get(hit.object) || hit.object);
+    if (el?.tipo === 'protecao') t += sim.ligado(el.tag, quadroTag) ? ' — LIGADO (clique para desligar)' : ' — DESLIGADO (clique para ligar)';
+    else if (el?.acao) t += ' — clique para apertar';
     dica.textContent = t;
     dica.style.display = 'block';
     dica.style.transform = `translate(${e.clientX + 12}px, ${e.clientY - 26}px)`;
@@ -303,7 +472,9 @@ export function iniciarQuadro(C) {
     }
   }
 
+  let ativo = true; // embutido no prédio e escondido: não desenha
   function redimensionar() {
+    if (!ativo) return;
     const w = tela.clientWidth || window.innerWidth, h = tela.clientHeight || window.innerHeight;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
@@ -314,27 +485,57 @@ export function iniciarQuadro(C) {
   tela.addEventListener('webglcontextrestored', pedirDesenho);
   redimensionar();
   vista3d(true);
+  atualizarEstado();
+  if (!sim) mostrarFicha();
   renderer.compile(cena, camera); // shaders prontos antes do 1º desenho
 
   function desenhar(agora) {
+    if (!ativo) return;
     if (anim) { anim(agora); sujo = true; }
     const d = anguloAlvo - portaGrupo.rotation.y;
     if (Math.abs(d) > 1e-3) { portaGrupo.rotation.y += d * 0.12; sujo = true; } else if (portaGrupo.rotation.y !== anguloAlvo) { portaGrupo.rotation.y = anguloAlvo; sujo = true; }
+    // alavancas dos disjuntores indo para a posição do estado
+    for (const a of alavancas) {
+      const da = a.alvo - a.giro.rotation.x;
+      if (Math.abs(da) > 1e-3) { a.giro.rotation.x += da * 0.3; sujo = true; } else if (a.giro.rotation.x !== a.alvo) { a.giro.rotation.x = a.alvo; sujo = true; }
+    }
     if (controles.update()) sujo = true;
     if (!sujo) return;
     sujo = false;
     renderer.render(cena, camera);
     atualizarEtiquetas();
   }
-  // atalhos para captura/integração
-  window.HM3D = {
-    tipo: 'quadro', grupos, camera, controles, cena, renderer,
+  const api = {
+    tipo: 'quadro', grupos, camera, controles, cena, renderer, sim, quadroTag,
     abrirPorta: (s = true) => { abrirPorta(s); portaGrupo.rotation.y = anguloAlvo; },
     vistaFrente: () => { vistaFrente(true); }, vista3d: () => { vista3d(true); }, soPlaca: (s = true) => soPlaca(s),
     mostrar, etiquetas: (s) => { mostrarEtq = s; pedirDesenho(); }, render: () => { anim = null; sujo = true; desenhar(performance.now()); },
+    // 3D interativo: alavanca de um disjuntor (para a captura e o teste no navegador)
+    alternar: (tag) => (sim ? agir({ tipo: 'protecao', tag }) : null),
+    alavanca: (tag) => { const a = alavancas.find(x => x.tag === tag); return a ? a.giro.rotation.x : null; },
+    get sujo() { return sujo; },
   };
-  function quadroAnim(agora) { requestAnimationFrame(quadroAnim); desenhar(agora); }
+  let laco = 0;
+  function quadroAnim(agora) { laco = requestAnimationFrame(quadroAnim); desenhar(agora); }
   desenhar(performance.now());
-  requestAnimationFrame(quadroAnim);
+  laco = requestAnimationFrame(quadroAnim);
+  if (op.embutido) {
+    // controle para o prédio (./app.js): mostrar/esconder a camada e desmontar ao trocar de quadro
+    return {
+      ...api,
+      ativar(sim2 = true) { ativo = sim2; if (ativo) { redimensionar(); atualizarEstado(); } },
+      // reaberto a partir do prédio: a tampa (porta) abre de novo na frente do cliente
+      abrirAnimado() { anguloAlvo = 0; portaGrupo.rotation.y = 0; pedirDesenho(); setTimeout(() => abrirPorta(true), 300); },
+      destruir() {
+        ativo = false; cancelAnimationFrame(laco); sairDoSim();
+        window.removeEventListener('resize', redimensionar);
+        dica.remove();
+        renderer.dispose(); renderer.forceContextLoss?.();
+      },
+    };
+  }
+  // atalhos para captura/integração
+  window.HM3D = api;
   document.body.classList.add('pronto');
+  return api;
 }

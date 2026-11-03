@@ -179,13 +179,18 @@ function posicionarPontos(arquitetura, pontos) {
       }
       locais.forEach((pos, k) => {
         const prefixo = it.prefixo || '';
-        contadorId[prefixo] = (contadorId[prefixo] || 0) + 1;
-        const id = `${prefixo}${contadorId[prefixo]}`;
+        // it.ids: ids do modelo único da instalação (skills/_comum/instalacao) — estáveis
+        // mesmo quando um ponto anterior não coube; sem eles, prefixo + contador
+        let id = it.ids?.[k];
+        if (!id) { contadorId[prefixo] = (contadorId[prefixo] || 0) + 1; id = `${prefixo}${contadorId[prefixo]}`; }
         const atributos = { ID: id, ...(typeof it.atributos === 'function' ? it.atributos(k) : it.atributos || {}) };
         const regra = it.regra || 'perimetro';
+        // it.ligacao(k): circuito e comando do ponto (vão para o 3D — achado 3D-06)
+        const ligacao = typeof it.ligacao === 'function' ? it.ligacao(k) : null;
         posicoes.push({
           simbolo: it.simbolo, id, ambiente: amb.nome, x: pos.x, y: pos.y, regra, atributos, poligono: amb.poligono,
           rotacao: ['perimetro', 'porta'].includes(regra) ? pos.rotacao : 0, ...(pos.porta ? { porta: pos.porta } : {}),
+          ...(ligacao?.circuito ? { circuito: ligacao.circuito } : {}), ...(ligacao?.comando ? { comando: ligacao.comando } : {}),
         });
         contagem[it.simbolo] = (contagem[it.simbolo] || 0) + 1;
       });

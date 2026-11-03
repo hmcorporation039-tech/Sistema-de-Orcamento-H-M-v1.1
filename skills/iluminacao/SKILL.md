@@ -34,6 +34,8 @@ O mesmo motor roda no Sistema de Orçamentos: **Análise de Projeto → Laudos e
    ```
 5. **Orçamento:** `node _comum/cli.js iluminacao orcamento <obra>.json --modo execucao` gera o rascunho (modos: `execucao` (fornecimento e instalação) ou `inspecao` (medição e relatório)). Para criar no sistema, use a ferramenta MCP `criar_rascunho_proposta` (servidor `hm-orcamentos`) com os itens gerados, ou o botão na aba Análise de Projeto.
 
+**Comando de vários pontos** (controle "interruptor"): `comando_tipo` vazio = interruptores simples/paralelo/intermediário pelas portas; `pulsador` = pulsadores com relé de impulso; `contator` = contator com botoeira liga/desliga e selo (os materiais mudam só quando escolhido). O resultado leva `instalacao` (`skills/_comum/instalacao`): cada luminária, sensor e comando com o circuito IL* e o comando (`IL1a`), os mesmos ids da planta e do 3D.
+
 A CLI acha a skill pelo nome da pasta (`skills/iluminacao/scripts/lib/index.js`).
 
 ## Critérios adotados

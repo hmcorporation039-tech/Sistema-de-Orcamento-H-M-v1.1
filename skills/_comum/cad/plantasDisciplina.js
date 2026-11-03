@@ -4,8 +4,76 @@
 const { normalizar, casaNome } = require('./planta');
 const palavrasDe = (s) => normalizar(s).split(' ').filter(Boolean);
 
+// Pontos do modelo único da instalação (res.instalacao — skills/_comum/instalacao) por
+// ambiente e símbolo: os ids da planta e do 3D são os do modelo (estáveis entre
+// regerações) e cada ponto leva o circuito e o retorno (achados SK-02 e 3D-06).
+// tirar(ambiente, simbolo, n?) devolve os próximos n pontos (todos, sem n) — dois
+// ambientes de mesmo nome não pegam os pontos um do outro.
+function pontosDoModelo(res) {
+  const inst = res.instalacao;
+  if (!inst?.pontos) return null;
+  const fila = new Map();
+  for (const p of inst.pontos) {
+    const k = `${p.ambiente}|${p.simbolo}`;
+    (fila.get(k) || fila.set(k, []).get(k)).push(p);
+  }
+  const retorno = new Map((inst.comandos || []).map(c => [c.id, c.retorno || '']));
+  return (ambiente, simbolo, n) => {
+    const lista = fila.get(`${ambiente}|${simbolo}`) || [];
+    const pts = n == null ? lista.splice(0) : lista.splice(0, n);
+    return {
+      n: pts.length, ids: pts.map(p => p.id),
+      atributos: (k) => ({ CIRCUITO: pts[k]?.circuito || '', RETORNO: retorno.get(pts[k]?.comando) || '' }),
+      ligacao: (k) => ({ circuito: pts[k]?.circuito || null, comando: pts[k]?.comando || null }),
+    };
+  };
+}
+
 // ── Elétrica (NBR 5410 9.5.2) ──
+// Com o modelo único: os pontos dele (nos ambientes do luminotécnico, a grade calculada
+// pela skill de iluminação no lugar de "1 ponto a cada 16 m²" — SK-06). A lista de itens
+// de cada ambiente é a mesma de antes (mesma ordem e as de parede iguais): as tomadas
+// caem no mesmo lugar da planta.
 function eletrica(res) {
+  const modelo = pontosDoModelo(res);
+  if (!modelo) return eletricaSemModelo(res);
+  const { calc } = res;
+  const lt = res.luminotecnico?.ambientes || {};
+  const pontos = calc.previsao.map(a => {
+    const m = (s) => modelo(a.nome, s);
+    const l = lt[a.nome];
+    const tue = m('HM-ELE-TUE');
+    const sensores = l ? m('HM-ILU-SENSOR') : null;
+    return {
+      ambiente: a.nome,
+      itens: [
+        { simbolo: 'HM-ELE-TOMADA-BAIXA', regra: 'perimetro', prefixo: 'T', ...m('HM-ELE-TOMADA-BAIXA') },
+        { simbolo: 'HM-ELE-TUE', regra: 'perimetro', prefixo: 'E', ...tue, atributos: (k) => ({ ...tue.atributos(k), POTENCIA: `${a.tues[k].potencia_w} W` }) },
+        l ? { simbolo: 'HM-ELE-PONTO-LUZ', regra: 'grade_nxny', nx: l.nx, ny: l.ny, prefixo: 'L', ...m('HM-ELE-PONTO-LUZ') }
+          : { simbolo: 'HM-ELE-PONTO-LUZ', regra: 'grade', prefixo: 'L', ...m('HM-ELE-PONTO-LUZ') },
+        ...(sensores?.n ? [{ simbolo: 'HM-ILU-SENSOR', regra: l.sensores.nx ? 'grade_nxny' : 'centro', nx: l.sensores.nx, ny: l.sensores.ny, prefixo: 'SP', ...sensores }] : []),
+        { simbolo: 'HM-ELE-INTERRUPTOR', regra: 'porta', lado: 'fechadura', prefixo: 'S', ...m('HM-ELE-INTERRUPTOR') },
+      ],
+    };
+  });
+  const qd = res.instalacao.quadros?.[0]?.ponto;
+  if (pontos[0]) pontos[0].itens.push({ simbolo: 'HM-ELE-QUADRO', n: 1, regra: 'perimetro', prefixo: 'QD', ...(qd ? { ids: [qd] } : {}) });
+  const comLum = Object.keys(lt);
+  return {
+    pontos,
+    notas: [
+      'Tomadas pela NBR 5410 9.5.2.2 (quantidade mínima por perímetro/área), distribuídas igualmente nas paredes.',
+      comLum.length
+        ? `Pontos de luz: em ${comLum.join(', ')}, a grade do projeto luminotécnico (NBR ISO/CIE 8995-1) nos circuitos IL*; nos demais, mínimo 1 por cômodo (9.5.2.1) e quantidade por área a conferir.`
+        : 'Pontos de luz: mínimo 1 por cômodo (9.5.2.1); quantidade por área a conferir com o projeto luminotécnico.',
+      'Interruptores junto ao batente da fechadura das portas detectadas na arquitetura (a 1,10 m do piso); posição do quadro indicativa — ajustar ao layout.',
+      'Eletrodutos e numeração final dos circuitos a completar pelo projetista.',
+    ],
+  };
+}
+
+// sem o modelo único (resultado antigo, sem res.instalacao): as regras de antes
+function eletricaSemModelo(res) {
   const { calc } = res;
   const circuitoDe = (amb, tipo) => {
     const c = calc.circuitos.find(x => x.tipo === tipo && normalizar(`${x.ambientes || ''} ${x.descricao || ''}`).includes(normalizar(amb)));
@@ -129,15 +197,20 @@ function alarme(res) {
 
 // ── Iluminação (NBR ISO/CIE 8995-1, método dos lúmens) ──
 // Luminárias e sensores na grade que a SKILL calculou (nx × ny); comandos na parede.
+// Com o modelo único, cada luminária leva o circuito IL* e o retorno (SK-02).
 function iluminacao(res) {
-  const pontos = res.calc.ambientes.map(a => ({
-    ambiente: a.nome,
-    itens: [
-      { simbolo: 'HM-ILU-LUMINARIA', n: a.n, regra: 'grade_nxny', nx: a.nx, ny: a.ny, prefixo: 'L', atributos: { } },
-      ...(a.sensores?.n ? [{ simbolo: 'HM-ILU-SENSOR', n: a.sensores.n, regra: a.sensores.nx ? 'grade_nxny' : 'centro', nx: a.sensores.nx, ny: a.sensores.ny, prefixo: 'SP' }] : []),
-      { simbolo: 'HM-ILU-COMANDO', n: Math.max(1, a.comandos?.total || 0), regra: 'perimetro', prefixo: 'CMD' },
-    ],
-  }));
+  const modelo = pontosDoModelo(res);
+  const pontos = res.calc.ambientes.map(a => {
+    const m = (s, n) => (modelo ? modelo(a.nome, s, n) : {});
+    return {
+      ambiente: a.nome,
+      itens: [
+        { simbolo: 'HM-ILU-LUMINARIA', n: a.n, regra: 'grade_nxny', nx: a.nx, ny: a.ny, prefixo: 'L', atributos: { }, ...m('HM-ILU-LUMINARIA', a.n) },
+        ...(a.sensores?.n ? [{ simbolo: 'HM-ILU-SENSOR', n: a.sensores.n, regra: a.sensores.nx ? 'grade_nxny' : 'centro', nx: a.sensores.nx, ny: a.sensores.ny, prefixo: 'SP', ...m('HM-ILU-SENSOR', a.sensores.n) }] : []),
+        { simbolo: 'HM-ILU-COMANDO', n: Math.max(1, a.comandos?.total || 0), regra: 'perimetro', prefixo: 'CMD', ...m('HM-ILU-COMANDO', Math.max(1, a.comandos?.total || 0)) },
+      ],
+    };
+  });
   return {
     pontos,
     notas: [
@@ -303,6 +376,8 @@ function antena(res, arquitetura) {
 }
 
 // ── Alarme e elétrica usam as portas detectadas quando existem ──
-const PLANTAS = { eletrica, incendio, cftv, cabeamento, alarme, iluminacao, eletrica_hospitalar: eletricaHospitalar, controle_acesso: controleAcesso, telefonia, antena };
+const PLANTAS = { eletrica, incendio, cftv, cabeamento, alarme, iluminacao, eletrica_hospitalar: eletricaHospitalar, controle_acesso: controleAcesso, telefonia, antena,
+  // climatização (fase 4): a planta automática é da própria skill
+  climatizacao: (res, arq) => require('../../climatizacao/scripts/lib/cad').planta(res, arq) };
 
 module.exports = { PLANTAS };

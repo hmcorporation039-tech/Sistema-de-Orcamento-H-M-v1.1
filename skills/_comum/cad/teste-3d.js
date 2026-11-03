@@ -203,7 +203,8 @@ caso('ESPEC: todo símbolo da biblioteca tem forma desenhada no visualizador, ta
   assert.strictEqual(tipo('HM-ELE-TOMADA-BAIXA').montagem, 'parede');
   assert.strictEqual(tipo('HM-ELE-PONTO-LUZ').montagem, 'teto');
   assert.strictEqual(tipo('HM-CAB-PONTO-REDE').forma, 'rede');
-  assert.strictEqual(cena.versao, 2);
+  // 3 (fase 1 do roteiro, 02/11/2026): itens com circuito e comando e o modelo da instalação
+  assert.strictEqual(cena.versao, 3);
 });
 
 caso('parede em linha simples ganha a espessura mínima de desenho (15 cm)', () => {
