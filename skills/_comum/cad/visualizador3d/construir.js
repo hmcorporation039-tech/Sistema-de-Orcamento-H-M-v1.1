@@ -13,7 +13,9 @@ const SAIDA = path.join(__dirname, 'app.bundle.js');
 // fontes locais que entram no bundle (o three vem do node_modules, pela versão)
 // fase 5: o mapa de iluminância e o cálculo ponto a ponto (o mesmo da skill de iluminação)
 const FONTES = [ENTRADA, path.join(__dirname, 'quadro.js'), path.join(__dirname, 'interativo.js'), path.join(__dirname, '..', '..', 'instalacao', 'simulador.js'),
-  path.join(__dirname, 'mapaIluminancia.js'), path.join(__dirname, '..', '..', 'fotometria', 'pontoAPonto.js')];
+  path.join(__dirname, 'mapaIluminancia.js'), path.join(__dirname, '..', '..', 'fotometria', 'pontoAPonto.js'),
+  // 2.30: modo de edição de componentes (3D embutido na tela da análise)
+  path.join(__dirname, 'edicao.js')];
 
 function assinatura() {
   const versaoThree = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'node_modules', 'three', 'package.json'), 'utf8')).version;

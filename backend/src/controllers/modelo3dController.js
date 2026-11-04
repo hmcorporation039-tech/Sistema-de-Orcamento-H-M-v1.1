@@ -47,7 +47,9 @@ async function abrir(req, res) {
   const m = await M.obterModelo(o.origem, o.id);
   if (!m) return res.status(400).json({ erro: 'Envie primeiro a arquitetura (.dwg, .dxf ou PDF) para gerar o modelo 3D.' });
   if (o.origem !== 'proposta') await gravarNaPasta(m);
-  res.json({ url: `/api/modelo-3d/ver/${M.criarLink(o.origem, o.id)}`, ...resumoPublico(m) });
+  // embutido (2.30): o 3D dentro da tela da análise, com o modo de edição de componentes
+  const embutido = req.body?.embutido === true && o.origem === 'analise';
+  res.json({ url: `/api/modelo-3d/ver/${M.criarLink(o.origem, o.id, { embutido })}`, ...resumoPublico(m) });
 }
 
 // POST /modelo-3d/:origem/:id/gerar-de-novo — apaga o 3D guardado e gera outra vez
@@ -74,10 +76,10 @@ async function arquivo(req, res) {
 }
 
 // Página do 3D com a política própria (script embutido em sandbox)
-function enviarPagina(res, html) {
+function enviarPagina(res, html, { embutido = false } = {}) {
   res.set({
     'Content-Type': 'text/html; charset=utf-8',
-    'Content-Security-Policy': M.CSP_MODELO_3D,
+    'Content-Security-Policy': embutido ? M.CSP_MODELO_3D_EMBUTIDO : M.CSP_MODELO_3D,
     'Cache-Control': 'no-store',
     'X-Robots-Tag': 'noindex, nofollow',
   });
@@ -91,7 +93,7 @@ async function ver(req, res) {
   try {
     const m = await M.obterModelo(l.origemTipo, l.origemId);
     if (!m) return res.status(404).type('text/plain; charset=utf-8').send('Este registro não tem mais arquitetura para o modelo 3D.');
-    enviarPagina(res, m.html);
+    enviarPagina(res, m.html, { embutido: !!l.embutido });
   } catch (err) {
     console.error('Erro ao servir o modelo 3D:', err.message);
     res.status(err.status && err.status < 500 ? err.status : 500).type('text/plain; charset=utf-8').send(err.status ? err.message : 'Erro ao gerar o modelo 3D.');

@@ -57,7 +57,7 @@ function filaDeConferencia(linhas, limite = 15) {
 const contar = async (sql) => { try { return (await pool.query(sql)).rows[0]; } catch { return {}; } };
 
 async function resumo() {
-  const [porDisciplina, materiais, simbolos, blocos, notas, acervo, ia, mapas] = await Promise.all([
+  const [porDisciplina, materiais, simbolos, blocos, notas, acervo, ia, mapas, legendasPdf] = await Promise.all([
     // o que o sistema reconhece sozinho, por disciplina (formas de símbolo + nomes de bloco em uso)
     pool.query(`SELECT disciplina, SUM(n)::int AS n FROM (
                   SELECT disciplina, COUNT(*) AS n FROM cad_simbolos_aprendidos WHERE origem = 'usuario' OR conflitos = 0 GROUP BY disciplina
@@ -81,13 +81,16 @@ async function resumo() {
                        d->'mapa_cad'->'simbolos' AS simbolos
                   FROM analises_projeto a CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(a.dados_extraidos) = 'array' THEN a.dados_extraidos ELSE '[]'::jsonb END) d
                  WHERE d->'mapa_cad' ? 'simbolos' ORDER BY a.id DESC`).then(r => r.rows).catch(() => []),
+    // legenda das pranchas em PDF, por escritório (versão 2.30: services/legendasPdfAprendidas.js)
+    contar(`SELECT COUNT(*) FILTER (WHERE conflitos = 0)::int AS em_uso, COUNT(*) FILTER (WHERE conflitos > 0)::int AS em_conflito,
+              COUNT(DISTINCT escritorio)::int AS escritorios FROM pdf_legendas_aprendidas`),
   ]);
   // o treino com o acervo por disciplina (03/11/2026: "sempre por disciplinas"): arquivos lidos e materiais novos
   const nomeDe = (chave) => (chave ? nomeDaDisciplina(chaveDoProjeto(chave) || chave) || chave : 'Sem disciplina no nome/pasta');
   acervo.porDisciplina = (acervo.porDisciplina || []).map(d => ({ ...d, chave: d.disciplina || '', nome: nomeDe(d.disciplina) }));
   acervo.materiais = (acervo.materiais || []).map(d => ({ ...d, chave: d.disciplina, nome: nomeDe(d.disciplina) }));
   return {
-    materiais, simbolos, blocos, notas, acervo, porDisciplina,
+    materiais, simbolos, blocos, notas, acervo, porDisciplina, legendasPdf,
     autonomia: {
       dias: ia.dias, taxa: ia.taxa, semIA: ia.acertos, comIA: ia.chamadas,
       funcoes: ia.funcoes.map(f => ({ ...f, nome: FUNCOES_IA[f.nome] || f.nome, taxa: f.acertos + f.chamadas ? Math.round(100 * f.acertos / (f.acertos + f.chamadas)) : null })),

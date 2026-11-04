@@ -27,6 +27,7 @@ const NOMES_EXTRA = {
 const DISCIPLINA_PELO_PREFIXO = {
   ELE: 'eletrica', ILU: 'iluminacao', HOSP: 'eletrica_hospitalar', CAB: 'rede', TEL: 'telefonia', ANT: 'antena', CFTV: 'cftv',
   ACE: 'controle-acesso', ALM: 'alarme', INC: 'incendio', AUT: 'automacao', SOL: 'solar', VE: 'veicular', SPDA: 'spda',
+  CLIM: 'climatizacao', // antes caía em 'eletrica': a evaporadora inserida no mapa ia para o orçamento de elétrica
 };
 const DISCIPLINA_EXTERNA = { 'HM-ILU-POSTE': 'iluminacao-externa', 'HM-ELE-CAIXA-PISO': 'iluminacao-externa' };
 
@@ -173,6 +174,13 @@ function disciplinasAIncluir(mapa, marcadas) {
     const g = porChave.get(chave) || porChave.set(chave, { chave, nome: nomeDaDisciplina(chave), linhas: 0, pontos: 0 }).get(chave);
     g.linhas++; g.pontos += s.contados > 0 ? s.contados : (s.quantidade || 0); // linha que era "não reconhecida" ainda não tem pontos contados: vale o que o desenho tem
   }
+  // componente inserido pelo engenheiro (services/edicoesDoMapa.js): também é prova de que a disciplina entra
+  for (const a of mapa?.edicoes?.adicionados || []) {
+    const chave = chaveDoProjeto(a.disciplina);
+    if (!chave || marcadasEmGrupo.has(chave)) continue;
+    const g = porChave.get(chave) || porChave.set(chave, { chave, nome: nomeDaDisciplina(chave), linhas: 0, pontos: 0 }).get(chave);
+    g.pontos++;
+  }
   return [...porChave.values()];
 }
 
@@ -187,6 +195,9 @@ function resumoDoMapa(mapa) {
     pendentes: pendentes.length,
     pontosPendentes: pendentes.filter(s => s.simbolo !== '?').reduce((t, s) => t + (s.contados ?? s.quantidade ?? 0), 0),
     naoReconhecidas: simbolos.filter(s => s.simbolo === '?' && !s.confirmado).length,
+    // componentes inseridos e retirados na planta ou no 3D (services/edicoesDoMapa.js)
+    inseridos: mapa?.edicoes?.adicionados?.length || 0,
+    retirados: mapa?.edicoes?.removidos?.length || 0,
   };
 }
 

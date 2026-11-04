@@ -104,18 +104,19 @@ async function fonteDoModelo(origemTipo, origemId, executor = pool) {
     };
   }
   if (origemTipo === 'analise') {
-    const { rows: [an] } = await executor.query('SELECT id, nome_projeto, cliente_nome, disciplinas, espacial, arquivos_analisados FROM analises_projeto WHERE id = $1', [origemId]);
+    const { rows: [an] } = await executor.query('SELECT id, nome_projeto, cliente_nome, disciplinas, espacial, arquivos_analisados, dados_extraidos, compatibilizacao FROM analises_projeto WHERE id = $1', [origemId]);
     if (!an) throw erro(404, 'Análise não encontrada.');
     const { rows: [a] } = await executor.query('SELECT nome_arquivo, conteudo FROM analises_projeto_arquitetura WHERE analise_id = $1', [an.id]);
     if (!a) return null;
     // 2.3: análise feita com o DWG/DXF do projeto → o 3D mostra o que está DESENHADO
     // (posições reais dos blocos e o traçado das eletrocalhas/eletrodutos), sem estimar
-    const reais = dispositivosDoEspacial(an.espacial);
+    // componentes inseridos/retirados pelo engenheiro (planta do mapa ou 3D) aparecem na hora, antes do reprocessamento
+    const reais = comEdicoes(dispositivosDoEspacial(an.espacial), an);
     if (reais.dispositivos.length || reais.trechos.length) {
       return {
         origemTipo: 'analise', origemId: an.id, nomeArquivo: a.nome_arquivo, dxf: a.conteudo.toString('utf8'),
         disciplinas: [], dadosPorDisciplina: {}, dispositivosReais: reais.dispositivos, trechos: reais.trechos,
-        semPontos: `Componentes e traçados nas posições do projeto recebido (DWG/DXF${an.espacial.referencia ? `, alinhados a "${an.espacial.referencia}"` : ''}).${reais.genericos ? ` ${reais.genericos} componente(s) sem símbolo próprio aparecem como caixa com o nome do projeto.` : ''}`,
+        semPontos: `Componentes e traçados nas posições do projeto recebido (DWG/DXF${an.espacial?.referencia ? `, alinhados a "${an.espacial.referencia}"` : ''}).${reais.genericos ? ` ${reais.genericos} componente(s) sem símbolo próprio aparecem como caixa com o nome do projeto.` : ''}${reais.inseridos || reais.retirados ? ` Edições do engenheiro: ${reais.inseridos} inserido(s), ${reais.retirados} retirado(s).` : ''}`,
         peDireito: null,
         titulo: `Modelo 3D — ${an.nome_projeto || 'Projeto'}`, cliente: an.cliente_nome || '', obra: '',
       };
@@ -139,6 +140,8 @@ async function fonteDoModelo(origemTipo, origemId, executor = pool) {
 // (skills/_comum/cad/tiposDePonto.js: o mesmo da leitura dos símbolos explodidos). Tomada
 // pela altura escrita ("H=0,30m", "2,20 m do piso") quando houver.
 const { simboloDaDescricao } = require(path.join(CAD, 'tiposDePonto.js'));
+const { ESPEC } = require(path.join(CAD, 'modelo3d.js'));
+const edicoesDoMapa = require('../edicoesDoMapa');
 const tipoDoTrecho = (layer) => (/ELETROCALHA/i.test(layer) ? 'eletrocalha' : /PERFILADO/i.test(layer) ? 'perfilado' : /LEITO/i.test(layer) ? 'leito' : /FIA[ÇC][ÃA]O|FIACAO/i.test(layer) ? 'fiacao' : 'eletroduto');
 // disciplina: a chave do registro único (skills/_comum/disciplinas.js) vai como está —
 // o 3D usa as mesmas chaves e traduz os nomes antigos (modelo3d.chaveDisciplina);
@@ -155,11 +158,13 @@ function dispositivosDoEspacial(espacial) {
   let genericos = 0;
   for (const p of espacial?.pontos || []) {
     if (!p.disciplina) continue; // climatização/hidráulica: referência, não é da H&M
-    const proprio = simboloDaDescricao(p.descricao);
+    // o tipo exato quando a leitura o guardou (2.30: ponto do mapa do CAD e componente inserido); senão pela descrição
+    const proprio = (p.simbolo && ESPEC[p.simbolo] ? p.simbolo : null) || simboloDaDescricao(p.descricao);
     if (!proprio) genericos++;
     const simbolo = proprio || SIMBOLO_GENERICO;
     dispositivos.push({ simbolo, rotulo: rotuloDoComponente(p.descricao) || null, disciplina: p.disciplina,
-      ...(p.montagem !== 'teto' && Number(p.altura_m) > 0 ? { altura_m: Number(p.altura_m) } : {}), x: p.x, y: p.y, rotacao: 0, id: '', ambiente: null,
+      ...(p.montagem !== 'teto' && Number(p.altura_m) > 0 ? { altura_m: Number(p.altura_m) } : {}), x: p.x, y: p.y, rotacao: 0, id: p.edicao || '', ambiente: null,
+      ...(p.edicao ? { edicao: p.edicao } : {}),
       // circuito e comando conferidos no Mapa do CAD (texto junto do símbolo): o 3D grava por ponto
       ...(p.circuito ? { circuito: String(p.circuito), comando: p.comando || '' } : {}) });
   }
@@ -171,6 +176,42 @@ function dispositivosDoEspacial(espacial) {
     ...(t.quantidade > 1 ? { quantidade: t.quantidade } : {}),
   }));
   return { dispositivos, trechos, genericos };
+}
+
+// Edições do engenheiro (services/edicoesDoMapa.js) sobre os componentes do 3D. Cada arquivo guarda as suas nas
+// coordenadas dele; o 3D está nas da referência (utils/compatibilidadeEspacial: dx/dy de cada arquivo do grupo). Arquivo
+// fora do grupo da referência não tem como ser alinhado: as edições dele esperam o reprocessamento. O retirado não tira
+// componente inserido (inserir no lugar de um retirado é trocar), e o inserido que a leitura já aplicou não repete.
+function comEdicoes(reais, an) {
+  const dados = (Array.isArray(an.dados_extraidos) ? an.dados_extraidos : []).filter(d => edicoesDoMapa.temEdicoes(d?.mapa_cad?.edicoes));
+  if (!dados.length) return reais;
+  const membros = an.compatibilizacao?.grupos?.[0]?.membros || [];
+  const referencia = an.espacial?.referencia || an.compatibilizacao?.referencia || null;
+  let dispositivos = [...reais.dispositivos];
+  const aplicados = new Set(dispositivos.map(d => d.edicao).filter(Boolean));
+  let inseridos = 0, retirados = 0;
+  for (const d of dados) {
+    const nome = d.mapa_cad.arquivo || d.arquivo;
+    const m = membros.find(x => x.arquivo === nome);
+    if (!m && membros.length && nome !== referencia) continue;
+    const dx = m?.dx || 0, dy = m?.dy || 0;
+    const ed = d.mapa_cad.edicoes;
+    // cada retirada tira o componente do desenho mais perto (o inserido não: inserir no lugar de um retirado é trocar)
+    const doDesenho = dispositivos.map((p, i) => [p, i]).filter(([p]) => !p.edicao);
+    const fora = edicoesDoMapa.indicesRetirados(doDesenho.map(([p]) => [p.x, p.y]), ed, dx, dy);
+    const tirar = new Set([...fora].map(k => doDesenho[k][1]));
+    dispositivos = dispositivos.filter((_, i) => !tirar.has(i));
+    retirados += tirar.size;
+    for (const pt of edicoesDoMapa.pontosInseridos(ed)) {
+      if (aplicados.has(pt.edicao)) continue;
+      const teto = ESPEC[pt.simbolo]?.h === 'teto';
+      dispositivos.push({ simbolo: pt.simbolo, rotulo: String(pt.rotulo || '').slice(0, 70) || null, disciplina: pt.disciplina,
+        ...(!teto && pt.altura_m > 0 ? { altura_m: pt.altura_m } : {}), x: Math.round((pt.x + dx) * 100) / 100, y: Math.round((pt.y + dy) * 100) / 100,
+        rotacao: 0, id: pt.edicao, ambiente: null, edicao: pt.edicao });
+      inseridos++;
+    }
+  }
+  return { ...reais, dispositivos, inseridos, retirados };
 }
 
 // aprendidos: a legenda aprendida que vai ao worker (services/simbolosAprendidos.js) —
@@ -300,6 +341,9 @@ async function imagemDoModelo(origemTipo, origemId) {
 // em "sandbox" sem allow-same-origin: origem opaca, sem acesso ao login do
 // sistema guardado no navegador, sem rede.
 const CSP_MODELO_3D = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; sandbox allow-scripts; frame-ancestors 'none'";
+// O 3D EMBUTIDO na tela da análise (modo de edição, versão 2.30): a mesma página, que só a própria tela do sistema
+// pode emoldurar. Continua em sandbox sem allow-same-origin — fala com a tela só por postMessage, sem login e sem rede.
+const CSP_MODELO_3D_EMBUTIDO = CSP_MODELO_3D.replace("frame-ancestors 'none'", "frame-ancestors 'self'");
 
 const nomeArquivo = (fonte) => `Modelo 3D - ${String(fonte.titulo || '').replace(/^Modelo 3D — /, '').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Projeto'}.html`;
 
@@ -309,11 +353,12 @@ const nomeArquivo = (fonte) => `Modelo 3D - ${String(fonte.titulo || '').replace
 // (script bloqueado). Guardado em memória — some ao reiniciar o servidor.
 const LINKS = new Map();
 const VALIDADE_LINK_MS = 2 * 60 * 60 * 1000;
-function criarLink(origemTipo, origemId) {
+// embutido: o link vale para a página dentro da tela do sistema (o cabeçalho deixa emoldurar)
+function criarLink(origemTipo, origemId, { embutido = false } = {}) {
   const agora = Date.now();
   for (const [t, l] of LINKS) if (l.expira < agora) LINKS.delete(t);
   const token = crypto.randomBytes(24).toString('hex');
-  LINKS.set(token, { origemTipo, origemId: Number(origemId), expira: agora + VALIDADE_LINK_MS });
+  LINKS.set(token, { origemTipo, origemId: Number(origemId), expira: agora + VALIDADE_LINK_MS, ...(embutido ? { embutido: true } : {}) });
   return token;
 }
 function lerLink(token) {
@@ -322,6 +367,7 @@ function lerLink(token) {
 }
 
 module.exports = {
-  CSP_MODELO_3D, obterModelo, refazerModelo, situacao, imagemDoModelo, nomeArquivo, criarLink, lerLink,
+  comEdicoes,
+  CSP_MODELO_3D, CSP_MODELO_3D_EMBUTIDO, obterModelo, refazerModelo, situacao, imagemDoModelo, nomeArquivo, criarLink, lerLink,
   chaveDa, versaoDoGerador, arquivosDoGerador, gerarNoWorker, dispositivosDoEspacial,
 };

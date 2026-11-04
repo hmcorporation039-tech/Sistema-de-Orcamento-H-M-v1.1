@@ -21,7 +21,12 @@ const RE_TITULO_NAO_LINHA = /^\s*(DETALHES?|NOTAS?|OBSERVA[ÇC]|LEGENDA|VER\s|AT
 // `prazo` (Date.now() limite): passou, para com erro TEMPO_ESGOTADO.
 // `escalaReserva` ({ escala, origem }, utils/escalaDaPlanta.js): nome do arquivo, portas ou cotas — só vale sem a
 // informada e sem escala escrita na folha. `origemEscala` ('informada', 'carimbo', …) diz de onde veio a escala dada.
-function analisarGeometria({ caminhos, textos, largura, altura }, { escala, origemEscala: origemInformada = null, escalaReserva = null, regioesFora = [], regioesFolha = [], prazo = null } = {}) {
+// `legendaConhecida` ([{ texto, sig: { blob: { chave, w, h }, comps }, origem }], versão 2.30): a página SEM legenda
+// própria conta os símbolos por ela — 'outra_pagina' (legenda de outra folha do mesmo PDF: vale como a da folha) ou
+// 'outro_arquivo' (legenda de outro PDF do mesmo projeto, enviado junto: também vale) ou 'aprendida' (legenda de
+// outro projeto do mesmo escritório: só sugestão, sai marcada para conferir). A legenda da
+// própria página volta em `legendaPropria` (para as outras folhas e para o aprendizado).
+function analisarGeometria({ caminhos, textos, largura, altura }, { escala, origemEscala: origemInformada = null, escalaReserva = null, regioesFora = [], regioesFolha = [], prazo = null, legendaConhecida = [] } = {}) {
   const foraDaPlanta = (caixa) => regioesFora.some(r => dentroDe(r, caixa));
   const relogio = cronometro(prazo);
   const blobs = simbolos(caminhos, { prazo });
@@ -108,6 +113,20 @@ function analisarGeometria({ caminhos, textos, largura, altura }, { escala, orig
     if (e.qtde != null) igual.qtde = (igual.qtde ?? 0) + e.qtde;
   }
 
+  // legenda desta página (antes da emprestada): símbolos com texto, sem duas descrições para a mesma assinatura
+  const proprias = unicas.filter(e => e.tipo === 'simbolo' && (e.texto || '').length >= 6);
+  const legendaPropria = proprias
+    .filter(e => !proprias.some(o => o !== e && o.texto !== e.texto && mesmaAssinatura(o.sig, e.sig)))
+    .map(e => ({ texto: e.texto, sig: { blob: { chave: e.blob.chave, w: +e.blob.w.toFixed(2), h: +e.blob.h.toFixed(2) }, comps: e.sig.comps.map(c => ({ chave: c.chave, w: +c.w.toFixed(2), h: +c.h.toFixed(2), d: +c.d.toFixed(2) })) } }));
+  // sem símbolo na legenda desta página: a legenda conhecida (outra folha do PDF, ou a aprendida do escritório)
+  if (!proprias.length && legendaConhecida.length) {
+    for (const k of legendaConhecida) {
+      if (!k?.sig?.blob || !Array.isArray(k.sig.comps) || !k.texto) continue;
+      const blob = { ...k.sig.blob, cx: NaN, cy: NaN };
+      unicas.push({ tipo: 'simbolo', texto: k.texto, desc: { texto: k.texto }, blob, sig: { blob, comps: k.sig.comps }, emprestada: k.origem || 'outra_pagina' });
+    }
+  }
+
   // ocorrências na planta: cada símbolo vai para a entrada que ele satisfaz com
   // MAIS partes (o círculo com miolo é do "AR111", não do "círculo sozinho");
   // empate: conta para as duas (e elas ficam ambíguas)
@@ -135,6 +154,9 @@ function analisarGeometria({ caminhos, textos, largura, altura }, { escala, orig
       ...(e.fornecedor ? { fornecedor: e.fornecedor } : {}),
       ...(e.codigo ? { codigo: e.codigo } : {}),
       ...(e.daTabela ? { origem_legenda: 'tabela', linha_tabela: e.linhaTabela } : {}),
+      // legenda de outra folha do mesmo PDF ou aprendida de outro projeto (a aprendida não entra no orçamento sem conferir)
+      ...(e.emprestada ? { origem_legenda: e.emprestada } : {}),
+      ...(e.emprestada === 'aprendida' ? { ambiguo: true, conferir: true } : {}),
     };
     if (e.tipo === 'simbolo') {
       itens.push({
@@ -182,6 +204,7 @@ function analisarGeometria({ caminhos, textos, largura, altura }, { escala, orig
   ];
   const linhasSemEscala = itens.filter(i => i.tipo === 'linha' && valido(i) && i.metros == null && escalas.porVista && escalas.distintas.length > 1);
   return {
+    ...(legendaPropria.length ? { legendaPropria } : {}),
     itens: itens.filter(valido), legenda: regiao ? regiao.map(Math.round) : null, legendas: regioes.map(r => r.map(Math.round)), escala: esc, origemEscala, pagina_pt: [Math.round(largura), Math.round(altura)],
     ...(tabelas.length ? { tabelasLegenda: tabelas.map(t => ({ caixa: t.caixa.map(Math.round), colunas: t.colunas, linhas: t.entradas.length + t.semSimbolo.length })) } : {}),
     ...(naoContados.length ? { naoContados } : {}),

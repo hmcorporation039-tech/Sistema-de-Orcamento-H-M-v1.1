@@ -23,20 +23,24 @@ const { RAIZ_CLIENTES_SERVIDOR } = require('./pastasSistema');
 const { disciplinaDoArquivo } = require('../utils/disciplinaDoArquivo');
 
 const RE_CAD = /\.(dwg|dxf)$/i;
-const RE_PLANILHA = /\.(xlsx|xlsm)$/i;
+// .xls (Excel 97-2003): leitor próprio, sem dependência nova (utils/leitorXls.js — versão 2.30)
+const RE_PLANILHA = /\.(xlsx|xlsm|xls)$/i;
 // PDF que ensina material: orçamento, cotação, lista/planilha de material. As pranchas, a proposta da própria H&M
 // (preço de venda) e os documentos (contrato, nota, laudo, memorial) não entram.
 const RE_PDF_MATERIAIS = /or[cç]amento|cota[cç][aã]o|lista (de )?materia|materia(l|is)\b|planilha|pedido de (compra|material)|\bLM[-_ ]/i;
 const RE_PDF_FORA = /proposta comercial|^P\d{2,4}[- ]|contrato|nota fiscal|\bNF[-_ e]|boleto|conta de|laudo|memorial|relat[oó]rio|\bART\b|caderno|certificado/i;
 const ehPdfDeMateriais = (nome) => /\.pdf$/i.test(nome) && RE_PDF_MATERIAIS.test(nome) && !RE_PDF_FORA.test(nome);
-const tipoDe = (nome) => (RE_CAD.test(nome) ? 'cad' : RE_PLANILHA.test(nome) ? 'planilha' : ehPdfDeMateriais(nome) ? 'pdf' : null);
+// prancha em PDF (versão 2.30): o PDF que não é lista de material nem documento ensina a legenda (símbolo + descrição)
+// e as notas de altura do escritório que projetou (services/legendasPdfAprendidas.js)
+const ehPrancha = (nome) => /\.pdf$/i.test(nome) && !ehPdfDeMateriais(nome) && !RE_PDF_FORA.test(nome);
+const tipoDe = (nome) => (RE_CAD.test(nome) ? 'cad' : RE_PLANILHA.test(nome) ? 'planilha' : ehPdfDeMateriais(nome) ? 'pdf' : ehPrancha(nome) ? 'prancha' : null);
 // pastas do próprio sistema que não são obra (lixeira, reserva local) e pastas ocultas
 const RE_PASTA_FORA = /^(_Exclu[ií]dos|_Aguardando servidor|\.|~\$)/i;
 const MAIOR_ARQUIVO = 120 * 1024 * 1024; // DWG maior que isso costuma ser modelo 3D ou nuvem de pontos: não ensina símbolo
 const MAIOR_DOCUMENTO = 25 * 1024 * 1024; // planilha/PDF maior que isso é base de preço ou caderno inteiro, não lista da obra
 const PAUSA_MS = 300; // folga entre um arquivo e outro: o treino não monopoliza o processador
 
-const zerado = () => ({ simbolos: 0, notas: 0, blocos: 0, materiais: 0, semPreco: 0 });
+const zerado = () => ({ simbolos: 0, notas: 0, blocos: 0, materiais: 0, semPreco: 0, legendasPdf: 0 });
 const estado = { rodando: false, parar: false, iniciadoEm: null, terminadoEm: null, total: 0, pendentes: 0, feitos: 0, lidos: 0, ignorados: 0, erros: 0, atual: null, ensinou: zerado(), mensagem: null };
 const situacao = () => ({ ...estado, ensinou: { ...estado.ensinou } });
 
@@ -89,9 +93,13 @@ async function treinarArquivo(arq, { ler, aprender, buffer: dado, disciplina = n
 
 // Planilha: os materiais novos de cada aba (services/treinoMateriais.js)
 async function treinarPlanilha(buffer, nome, { disciplina, ctx }) {
-  const ExcelJS = require('exceljs');
-  const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buffer);
+  let wb;
+  if (/\.xls$/i.test(nome)) wb = require('../utils/leitorXls').workbookDoXls(buffer);
+  else {
+    const ExcelJS = require('exceljs');
+    wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer);
+  }
   return require('./treinoMateriais').aprenderDaPlanilha(wb, { disciplina, arquivo: nome, ctx });
 }
 
@@ -105,13 +113,40 @@ async function treinarPdf(buffer, nome, { disciplina, ctx }) {
   return { ...r, metodo: leitura.metodo };
 }
 
-// opcoes: { raiz, tempoMaxMs, limite, ler, aprender, tipos } → resumo da rodada
+// Prancha em PDF: lê o carimbo (escritório) e, com ele, a legenda de cada folha e as notas de altura. Sem escritório no
+// carimbo não há de quem aprender (o tamanho do símbolo no papel é costume de quem plota): nem lê o desenho.
+async function treinarPrancha(buffer, nome, { disciplina, lerVetorial }) {
+  const { analisarProjeto } = require('../utils/projetoParser');
+  const { escritorioDoPdf } = require('../utils/escritorioDoProjeto');
+  const analise = await analisarProjeto(buffer, nome);
+  if (analise.semTexto) return { prancha: true, ignorado: 'PDF só imagem (escaneado): sem texto para aprender' };
+  let escritorio = '';
+  try { escritorio = escritorioDoPdf(analise.carimbo, (analise.textoPorPagina || []).join('\n'), nome); } catch { escritorio = ''; }
+  if (!escritorio) return { prancha: true, escritorio: '', legendasPdf: 0, notas: 0, aviso: 'sem autor do projeto (carimbo, texto ou código do desenho)' };
+  const ler = lerVetorial || ((b, o) => require('../utils/pdfVetorial').lerPdfVetorial(b, o));
+  const paginas = await ler(buffer, { nomeArquivo: nome, maxPaginas: 15 });
+  const r = await require('./legendasPdfAprendidas').registrar(paginas, { escritorio, arquivo: nome, disciplina, textoDasNotas: (analise.textoPorPagina || []).join('\n') });
+  return {
+    prancha: true, escritorio, disciplina,
+    folhas: paginas.filter(p => p.pagina).length, comLegenda: paginas.filter(p => p.legendaPropria?.length).length,
+    simbolosContados: paginas.reduce((t, p) => t + (p.itens || []).filter(i => i.tipo === 'simbolo').reduce((u, i) => u + (i.quantidade || 0), 0), 0),
+    legendasPdf: r.legendas, notas: r.notas,
+  };
+}
+
+// opcoes: { raiz, tempoMaxMs, limite, ler, aprender, tipos, lerVetorial } → resumo da rodada
 async function treinar(opcoes = {}) {
   if (estado.rodando) return { ...situacao(), jaRodando: true };
   const raiz = opcoes.raiz || RAIZ_CLIENTES_SERVIDOR;
-  const ler = opcoes.ler || ((buffer, nome, o) => require('./analiseCad').lerArquivoCad(buffer, nome, o));
+  // o DWG é lido com o que o sistema JÁ sabe (como na análise): o "reconhecidas" do treino passa a medir o sistema de
+  // verdade. O que ele grava continua vindo só da legenda e das notas do próprio desenho (não reforça o que já sabia).
+  let sabido = null, lidosComSabido = 0;
+  const ler = opcoes.ler || (async (buffer, nome, o) => {
+    if (!sabido || lidosComSabido++ >= 100) { sabido = await require('./aprenderDoDesenho').conhecimento(); lidosComSabido = 0; }
+    return require('./analiseCad').lerArquivoCad(buffer, nome, { ...sabido, ...o });
+  });
   const aprender = opcoes.aprender || require('./aprenderDoDesenho').registrarLeitura;
-  const tipos = new Set(opcoes.tipos || ['planilha', 'pdf', 'cad']);
+  const tipos = new Set(opcoes.tipos || ['planilha', 'pdf', 'cad', 'prancha']);
   const fim = Date.now() + (opcoes.tempoMaxMs || 2 * 3600 * 1000);
   Object.assign(estado, { rodando: true, parar: false, iniciadoEm: new Date(), terminadoEm: null, total: 0, pendentes: 0, feitos: 0, lidos: 0, ignorados: 0, erros: 0, atual: null, ensinou: zerado(), mensagem: 'listando os arquivos da pasta dos clientes' });
   let ctx = null; // catálogo carregado uma vez para as planilhas/PDFs da rodada
@@ -119,7 +154,7 @@ async function treinar(opcoes = {}) {
     const todos = (await listarArquivos(raiz)).filter(a => tipos.has(tipoDe(a.caminho)));
     const { rows } = await pool.query('SELECT caminho, tamanho, modificado_em FROM acervo_treino');
     const ja = new Map(rows.map(r => [r.caminho, r]));
-    const ordem = { planilha: 0, pdf: 1, cad: 2 };
+    const ordem = { planilha: 0, pdf: 1, cad: 2, prancha: 3 }; // a prancha em PDF é a mais lenta
     const pendentes = todos.filter((a) => {
       const j = ja.get(path.relative(raiz, a.caminho));
       return !j || Number(j.tamanho) !== a.tamanho || Math.abs(new Date(j.modificado_em) - a.modificado) > 2000;
@@ -157,6 +192,10 @@ async function treinar(opcoes = {}) {
         if (tipo === 'cad') {
           resumo = await treinarArquivo(arq, { ler, aprender, buffer, disciplina });
           for (const k of ['simbolos', 'notas', 'blocos']) estado.ensinou[k] += Number(resumo[k === 'blocos' ? 'blocosAprendidos' : k]) || 0;
+        } else if (tipo === 'prancha') {
+          resumo = await treinarPrancha(buffer, nome, { disciplina, lerVetorial: opcoes.lerVetorial });
+          estado.ensinou.legendasPdf += resumo.legendasPdf || 0;
+          estado.ensinou.notas += resumo.notas || 0;
         } else {
           if (!ctx) ctx = await require('./treinoMateriais').prepararContexto();
           resumo = await (tipo === 'planilha' ? treinarPlanilha : treinarPdf)(buffer, nome, { disciplina, ctx });
@@ -170,7 +209,7 @@ async function treinar(opcoes = {}) {
         estado.erros++;
       }
       estado.feitos++;
-      await new Promise(r => setTimeout(r, tipo === 'cad' ? PAUSA_MS : 50));
+      await new Promise(r => setTimeout(r, tipo === 'cad' || tipo === 'prancha' ? PAUSA_MS : 50));
     }
     const restam = pendentes.length - estado.feitos;
     estado.mensagem = restam > 0 ? `${restam} arquivo(s) ficam para a próxima rodada` : 'todos os arquivos da pasta foram lidos';
@@ -197,8 +236,10 @@ async function resumoDoAcervo() {
       pool.query(
         `SELECT COALESCE(disciplina, '') AS disciplina,
                 COUNT(*) FILTER (WHERE tipo IN ('dwg', 'dxf'))::int AS desenhos,
-                COUNT(*) FILTER (WHERE tipo NOT IN ('dwg', 'dxf'))::int AS documentos,
-                COALESCE(SUM((resumo->>'simbolos')::int + (resumo->>'blocosAprendidos')::int) FILTER (WHERE resumo ? 'simbolos'), 0)::int AS legenda
+                COUNT(*) FILTER (WHERE tipo NOT IN ('dwg', 'dxf') AND NOT resumo ? 'prancha')::int AS documentos,
+                COUNT(*) FILTER (WHERE resumo ? 'prancha')::int AS pranchas,
+                -- legenda aprendida: dos DWG (formas e nomes de bloco) e das pranchas em PDF (versão 2.30)
+                COALESCE(SUM(COALESCE((resumo->>'simbolos')::int, 0) + COALESCE((resumo->>'blocosAprendidos')::int, 0) + COALESCE((resumo->>'legendasPdf')::int, 0)), 0)::int AS legenda
            FROM acervo_treino WHERE situacao = 'lido' GROUP BY 1 ORDER BY 2 DESC, 3 DESC`),
       require('./treinoMateriais').resumoDosMateriais(),
     ]);
@@ -208,4 +249,4 @@ async function resumoDoAcervo() {
   }
 }
 
-module.exports = { treinar, pararTreino, situacao, resumoDoAcervo, listarArquivos, treinarArquivo, paraTestes: { tipoDe, ehPdfDeMateriais } };
+module.exports = { treinar, pararTreino, situacao, resumoDoAcervo, listarArquivos, treinarArquivo, treinarPrancha, paraTestes: { tipoDe, ehPdfDeMateriais, ehPrancha } };

@@ -764,7 +764,7 @@ function montarMateriaisDaLista(analises, catalogo, achados) {
 const semMarcador = (s) => String(s).replace(/^[-–•\s]+/, '');
 const metrosBR = (m) => `${String(m).replace('.', ',')} m`;
 
-const ORIGEM_DESCRICAO = { legenda: 'descrição da legenda da prancha', atributo: 'descrição do atributo do bloco', sigla: 'sigla do bloco — confirmar o tipo', nome: 'nome do bloco', biblioteca: 'biblioteca de símbolos H&M', confirmado: 'tipo confirmado pelo engenheiro no mapa do CAD', desenho: 'símbolo desenhado, tipo a confirmar' };
+const ORIGEM_DESCRICAO = { legenda: 'descrição da legenda da prancha', atributo: 'descrição do atributo do bloco', sigla: 'sigla do bloco — confirmar o tipo', nome: 'nome do bloco', biblioteca: 'biblioteca de símbolos H&M', confirmado: 'tipo confirmado pelo engenheiro no mapa do CAD', inserido: 'componente inserido pelo engenheiro (biblioteca H&M)', desenho: 'símbolo desenhado, tipo a confirmar' };
 // "rede" e "cabeamento" são a mesma skill: bloco de rede vale para arquivo marcado com qualquer das duas
 function doMesmoGrupo(marcadas, sugerida) {
   return doGrupo(sugerida).find(x => marcadas.includes(x)) || null;

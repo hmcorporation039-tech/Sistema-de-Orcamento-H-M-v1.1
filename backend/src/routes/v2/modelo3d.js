@@ -5,7 +5,7 @@
 // proposta — ou administrador.
 // Enviar a arquitetura da análise: dono da análise ou administrador. Mostrar ao
 // cliente: dono da proposta ou administrador.
-// /modelo-3d/ver/:token é a única sem login: o token curto (10 min, em memória)
+// /modelo-3d/ver/:token é a única sem login: o token curto (2 h, em memória)
 // é emitido por /abrir para quem está logado.
 const ctrl = require('../../controllers/modelo3dController');
 

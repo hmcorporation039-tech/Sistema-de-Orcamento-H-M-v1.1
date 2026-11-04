@@ -1,11 +1,11 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import MapaCad from './MapaCad';
-import { getMapaCad, salvarMapaCad, reprocessarMapaCad } from '../../services/api';
+import { getMapaCad, salvarMapaCad, editarMapaCad, reprocessarMapaCad } from '../../services/api';
 
 // Mapa do CAD (03/11/2026): planta com o desenho de fundo, pontos coloridos pela situação, ficha para conferir na
 // própria planta, filtro da tabela e "Ir para" quando a folha tem várias plantas. Dados SINTÉTICOS.
-jest.mock('../../services/api', () => ({ getMapaCad: jest.fn(), salvarMapaCad: jest.fn(), reprocessarMapaCad: jest.fn(), exportarBibliotecaBlocos: jest.fn(), importarBibliotecaBlocos: jest.fn() }));
+jest.mock('../../services/api', () => ({ getMapaCad: jest.fn(), salvarMapaCad: jest.fn(), editarMapaCad: jest.fn(), reprocessarMapaCad: jest.fn(), abrirModelo3d: jest.fn(), urlModelo3d: (u) => u, exportarBibliotecaBlocos: jest.fn(), importarBibliotecaBlocos: jest.fn() }));
 jest.mock('react-router-dom', () => ({ useNavigate: () => jest.fn() }));
 jest.mock('react-hot-toast', () => { const t = jest.fn(); t.success = jest.fn(); t.error = jest.fn(); return { __esModule: true, default: t }; });
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -16,7 +16,7 @@ beforeEach(() => {
   caixa = document.createElement('div');
   document.body.appendChild(caixa);
   raiz = createRoot(caixa);
-  [getMapaCad, salvarMapaCad, reprocessarMapaCad].forEach(f => f.mockReset());
+  [getMapaCad, salvarMapaCad, editarMapaCad, reprocessarMapaCad].forEach(f => f.mockReset());
 });
 afterEach(() => {
   act(() => raiz.unmount());
@@ -103,4 +103,62 @@ test('mapa antigo, sem o desenho de fundo: aviso e "Ler o DWG de novo"', async (
   reprocessarMapaCad.mockResolvedValue({ data: { id: 99 } });
   await act(async () => { caixa.querySelector('[data-testid="ler-de-novo"]').click(); });
   expect(reprocessarMapaCad).toHaveBeenCalledWith(7, { incluirDisciplinas: true });
+});
+
+// ── 2.30: componentes da biblioteca inseridos e retirados na planta ──
+const componentes = [
+  { simbolo: 'HM-INC-DETECTOR-FUMACA', nome: 'Detector pontual de fumaça', disciplina: 'incendio', montagem: 'teto', altura_m: null, svg: { d: 'M-0.15 0a0.15 0.15 0 1 0 0.3 0a0.15 0.15 0 1 0 -0.3 0', textos: [{ x: -0.05, y: 0.06, h: 0.12, t: 'F' }], raio: 0.15 } },
+  { simbolo: 'HM-ELE-TOMADA-BAIXA', nome: 'Tomada baixa 2P+T', disciplina: 'eletrica', montagem: 'parede', altura_m: 0.3, svg: { d: 'M-0.18 0.108L0.18 0.108L0 -0.162L-0.18 0.108', textos: [], raio: 0.18 } },
+];
+const clicarNaPlanta = async (x, y) => {
+  const svg = caixa.querySelector('[data-testid="planta-mapa-cad"] svg');
+  svg.getBoundingClientRect = () => ({ left: 0, top: 0, width: 900, height: 480, right: 900, bottom: 480 });
+  await act(async () => {
+    svg.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: x, clientY: y, button: 0 }));
+    svg.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, clientX: x, clientY: y, button: 0 }));
+  });
+};
+
+test('Inserir: escolhe o componente da biblioteca e clica na planta (posição do desenho, em metros)', async () => {
+  await montar(resposta({ componentes }));
+  editarMapaCad.mockResolvedValue({ data: resposta({ componentes }).data });
+  await act(async () => { caixa.querySelector('[data-testid="modo-inserir"]').click(); });
+  const sel = caixa.querySelector('[data-testid="componente-a-inserir"]');
+  // paleta por disciplina em ordem alfabética: Elétrica antes de Incêndio
+  expect([...sel.querySelectorAll('optgroup')].map(g => g.label)).toEqual(['Elétrica', 'Incêndio']);
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
+  await act(async () => { setter.call(sel, 'HM-INC-DETECTOR-FUMACA'); sel.dispatchEvent(new Event('change', { bubbles: true })); });
+  // centro do quadro = centro da caixa da planta (155; 2,5)
+  await clicarNaPlanta(450, 240);
+  expect(editarMapaCad).toHaveBeenCalledTimes(1);
+  const [id, corpo] = editarMapaCad.mock.calls[0];
+  expect(id).toBe(7);
+  expect(corpo.arquivo).toBe('planta.dxf');
+  expect(corpo.adicionar[0].simbolo).toBe('HM-INC-DETECTOR-FUMACA');
+  expect(corpo.adicionar[0].x).toBeCloseTo(155, 1);
+  expect(corpo.adicionar[0].y).toBeCloseTo(2.5, 1);
+});
+
+test('Retirar: clique no ponto manda a posição dele; inseridos e retirados aparecem na planta e no resumo', async () => {
+  const r = resposta({ componentes });
+  r.data.arquivos[0].edicoes = {
+    adicionados: [{ id: 'a0123456789', simbolo: 'HM-INC-DETECTOR-FUMACA', x: 100, y: 3, em: '2026-11-03T10:00:00Z' }],
+    removidos: [{ id: 'r0123456789', x: 301, y: 3, em: '2026-11-03T11:00:00Z' }],
+  };
+  r.data.arquivos[0].resumo = { ...r.data.arquivos[0].resumo, inseridos: 1, retirados: 1 };
+  await montar(r);
+  expect(caixa.querySelectorAll('[data-testid="componente-inserido"]')).toHaveLength(1);
+  expect(caixa.querySelectorAll('[data-testid="ponto-retirado"]')).toHaveLength(1);
+  const resumo = caixa.querySelector('[data-testid="edicoes-do-arquivo"]').textContent;
+  expect(resumo).toContain('1 × Detector pontual de fumaça');
+  expect(resumo).toContain('1 ponto(s) retirado(s)');
+  expect(caixa.querySelector('[data-testid="aviso-reprocessar"]').textContent).toContain('ainda não estão no orçamento');
+  editarMapaCad.mockResolvedValue({ data: r.data });
+  // desfazer a última: a mais recente é a retirada
+  await act(async () => { caixa.querySelector('[data-testid="desfazer-ultima-edicao"]').click(); });
+  expect(editarMapaCad).toHaveBeenLastCalledWith(7, { arquivo: 'planta.dxf', desfazer: ['r0123456789'] });
+  // modo Retirar: o ponto (1; 1) da linha 0 fica a ~51 px da esquerda e ~244 px do topo
+  await act(async () => { caixa.querySelector('[data-testid="modo-retirar"]').click(); });
+  await clicarNaPlanta(50.8, 243.9);
+  expect(editarMapaCad).toHaveBeenLastCalledWith(7, { arquivo: 'planta.dxf', remover: [{ x: 1, y: 1, simbolo: 'HM-ELE-TOMADA-BAIXA', linha: 0 }] });
 });

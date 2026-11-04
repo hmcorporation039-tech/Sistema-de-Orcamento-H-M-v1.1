@@ -62,7 +62,12 @@ async function registrar(itens, escritorio, arquivo, executor = pool, disciplina
 
 // A linha que vale para o bloco: a do mesmo escritório; senão a de outros escritórios só se todos concordam na
 // disciplina e o nome apareceu em 2+ arquivos (nome curto como "T1" é convenção de cada escritório: não atravessa).
-function procurar(aprendidos, nome, escritorio = '') {
+// disciplinas (versão 2.30, "sempre por disciplinas"): as marcadas no arquivo. O bloco aprendido de OUTRO escritório
+// só vale se a disciplina dele é uma delas — o mesmo nome em outro escritório e outra disciplina é outra coisa
+// ("SENSOR" de alarme × de automação). No mesmo escritório o nome é convenção dele e vale como sempre.
+const MESMO_RAMO = { rede: 'cabeamento', telefonia: 'cabeamento', cabeamento: 'cabeamento', 'controle-acesso': 'controle_acesso', veicular: 'carregador' };
+const ramoDe = (d) => MESMO_RAMO[d] || d;
+function procurar(aprendidos, nome, escritorio = '', disciplinas = []) {
   const chave = chaveDoNome(nome);
   if (!chave || RE_NOME_SEM_SENTIDO.test(chave) || !aprendidos?.length) return null;
   const doNome = aprendidos.filter(a => a.nome === chave);
@@ -70,9 +75,12 @@ function procurar(aprendidos, nome, escritorio = '') {
   const proprio = doNome.find(a => a.escritorio === (escritorio || ''));
   if (proprio) return { ...proprio, deOutroEscritorio: false };
   if (chave.length < 4) return null;
-  const disciplinas = new Set(doNome.map(a => a.disciplina || ''));
+  const discDoNome = new Set(doNome.map(a => a.disciplina || ''));
   const vezes = doNome.reduce((s, a) => s + a.vezes, 0);
-  if (disciplinas.size !== 1 || vezes < 2) return null;
+  if (discDoNome.size !== 1 || vezes < 2) return null;
+  const marcadas = (disciplinas || []).map(ramoDe);
+  const unica = [...discDoNome][0];
+  if (marcadas.length && unica && !marcadas.includes(ramoDe(unica))) return null;
   return { ...doNome.sort((a, b) => b.vezes - a.vezes)[0], deOutroEscritorio: true };
 }
 

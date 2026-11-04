@@ -271,6 +271,8 @@ router.post('/projetos/analises/:id/gerar-orcamento', autenticar, validarId, pos
 // mapa do CAD: o que o sistema entendeu de cada layer do DWG/DXF; o engenheiro corrige e a correção vira aprendizado
 router.get('/projetos/analises/:id/mapa', autenticar, validarId, projCtrl.lerMapaCad);
 router.put('/projetos/analises/:id/mapa', autenticar, validarId, posseAnalise, projCtrl.salvarMapaCad);
+// componentes inseridos e retirados pelo engenheiro (planta do mapa ou 3D), com os símbolos da biblioteca — 2.30
+router.put('/projetos/analises/:id/mapa/edicoes', autenticar, validarId, posseAnalise, projCtrl.editarMapaCad);
 router.post('/projetos/analises/:id/mapa/reprocessar', autenticar, validarId, posseAnalise, projCtrl.reprocessarMapaCad);
 // biblioteca de blocos (o que o mapa do CAD ensinou), em JSON: levar de uma instalação para outra; importar só administrador
 router.get('/projetos/biblioteca-blocos', autenticar, projCtrl.exportarBibliotecaBlocos);

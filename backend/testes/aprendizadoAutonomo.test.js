@@ -95,6 +95,10 @@ const TEXTO_REF = [
       assert.strictEqual(blocos.procurar(ap, 'T1', 'ESC C'), null);
       assert.strictEqual(blocos.procurar(ap, 'DET-X', 'ESC C'), null); // escritórios discordam
       assert.strictEqual(blocos.procurar(ap, 'A$C1F2E3', 'ESC A'), null);
+      // 2.30: de outro escritório, só se a disciplina aprendida é uma das marcadas no arquivo
+      assert.strictEqual(blocos.procurar(ap, 'tug-30', 'ESC C', ['alarme']), null);
+      assert.strictEqual(blocos.procurar(ap, 'tug-30', 'ESC C', ['eletrica']).deOutroEscritorio, true);
+      assert.strictEqual(blocos.procurar(ap, 'TUG-30', 'ESC B', ['alarme']).descricao, 'Tomada de uso geral a 30 cm', 'no mesmo escritório vale como sempre');
       // no leitor do CAD: a prancha sem legenda reconhece o bloco pelo nome aprendido
       const d = descreverSimbolo({ bloco: 'TUG-30', nomeLimpo: 'TUG-30', layer: '0', layers: ['0'], atributos: {}, descricaoLegenda: null }, { blocosAprendidos: ap, escritorio: 'ESC A' });
       assert.strictEqual(d.origem, 'aprendido');
@@ -187,7 +191,7 @@ const TEXTO_REF = [
         const r1 = await treinar({ raiz, ler, aprender });
         assert.deepStrictEqual([r1.total, r1.lidos, r1.erros], [2, 2, 0]);
         assert.deepStrictEqual([lidas, aprendidas], [1, 1], 'a cópia não foi lida nem ensinou');
-        assert.deepStrictEqual(r1.ensinou, { simbolos: 1, notas: 0, blocos: 2, materiais: 0, semPreco: 0 });
+        assert.deepStrictEqual(r1.ensinou, { simbolos: 1, notas: 0, blocos: 2, materiais: 0, semPreco: 0, legendasPdf: 0 });
         const { rows } = await pool.query('SELECT caminho, resumo FROM acervo_treino WHERE caminho LIKE $1 ORDER BY caminho', [`%${sufixo}.dxf`]);
         assert.strictEqual(rows.length, 2);
         assert.ok(rows.some(x => x.resumo.copiaDe), JSON.stringify(rows));

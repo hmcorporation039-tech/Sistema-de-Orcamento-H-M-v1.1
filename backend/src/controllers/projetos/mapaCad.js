@@ -12,6 +12,8 @@ const P = require('../../services/pastasSistema');
 const { pastaDoProjeto } = require('../../services/pastasRegistros');
 const { ehArquivoCad } = require('../../services/analiseCad');
 const mapaCad = require('../../services/mapaCad');
+const edicoesDoMapa = require('../../services/edicoesDoMapa');
+const { componentes } = require('../../services/bibliotecaComponentes');
 const simbolosAprendidos = require('../../services/simbolosAprendidos');
 const notasAprendidas = require('../../services/notasAprendidas');
 const { executarAnalise } = require('./analises');
@@ -27,6 +29,8 @@ const respostaDoMapa = (dados) => ({
     disciplinasMarcadas: d.disciplinas || [], disciplinasAIncluir: mapaCad.disciplinasAIncluir(d.mapa_cad, d.disciplinas),
   })),
   tipos: mapaCad.tiposDisponiveis(),
+  // biblioteca de componentes por disciplina, com o símbolo de planta em SVG (inserir na planta e no 3D)
+  componentes: componentes(),
 });
 // análise com DWG/DXF e sem mapa nenhum: feita antes do mapa do CAD existir. Os pontos explodidos dela ficaram
 // fora do orçamento e não havia onde conferi-los (caso real de 03/11/2026: 566 pontos lidos, orçamento zerado)
@@ -80,6 +84,81 @@ async function salvar(req, res) {
   res.json({ ...respostaDoMapa(resultado.dados), aprendidas, esquecidas, alturasAprendidas });
 }
 
+// Pedido vindo do 3D (sistema: '3d'): as posições estão nas coordenadas da REFERÊNCIA (utils/compatibilidadeEspacial — o
+// 3D é montado com cada arquivo deslocado de dx/dy). Cada posição vai para o arquivo do grupo cuja planta a contém, já
+// nas coordenadas dele. Devolve { [arquivo]: { adicionar, remover } } ou texto de erro.
+function pedidosDo3d(corpo, an) {
+  const dados = Array.isArray(an.dados_extraidos) ? an.dados_extraidos : [];
+  const comMapa = dados.filter(d => d?.mapa_cad?.simbolos);
+  if (!comMapa.length) return 'Esta análise não tem planta do CAD para gravar as edições do 3D.';
+  const membros = an.compatibilizacao?.grupos?.[0]?.membros || [];
+  const referencia = an.espacial?.referencia || an.compatibilizacao?.referencia || null;
+  const candidatos = comMapa.map(d => {
+    const nome = d.mapa_cad.arquivo || d.arquivo;
+    const m = membros.find(x => x.arquivo === nome);
+    return { nome, dx: m?.dx || 0, dy: m?.dy || 0, noGrupo: !!m || nome === referencia || !membros.length, ext: d.mapa_cad.planta?.extensao || null };
+  }).filter(c => c.noGrupo);
+  if (!candidatos.length) return 'Os arquivos com planta do CAD não estão alinhados ao 3D: edite pela planta do Mapa do CAD.';
+  const contem = (c, x, y) => Array.isArray(c.ext) && x - c.dx >= c.ext[0] - 2 && x - c.dx <= c.ext[2] + 2 && y - c.dy >= c.ext[1] - 2 && y - c.dy <= c.ext[3] + 2;
+  const porArquivo = {};
+  const incluir = (lista, item) => {
+    const x = Number(item?.x), y = Number(item?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    const c = candidatos.find(k => contem(k, x, y)) || candidatos.find(k => k.nome === referencia) || candidatos[0];
+    const p = porArquivo[c.nome] || (porArquivo[c.nome] = { adicionar: [], remover: [] });
+    p[lista].push({ ...item, x: Math.round((x - c.dx) * 1000) / 1000, y: Math.round((y - c.dy) * 1000) / 1000 });
+  };
+  for (const a of Array.isArray(corpo?.adicionar) ? corpo.adicionar.slice(0, 500) : []) incluir('adicionar', a);
+  for (const r of Array.isArray(corpo?.remover) ? corpo.remover.slice(0, 500) : []) incluir('remover', r);
+  if (!Object.keys(porArquivo).length) return 'Nada para alterar.';
+  return porArquivo;
+}
+
+// PUT /projetos/analises/:id/mapa/edicoes { arquivo, adicionar: [{ simbolo, x, y, altura_m?, rotulo? }], remover: [{ x, y, simbolo?, linha? }],
+// desfazer: [id] } — componentes inseridos e retirados pelo engenheiro (services/edicoesDoMapa.js). O 3D mostra na hora;
+// o orçamento muda no reprocessamento (a mesma regra do tipo confirmado no mapa).
+// { sistema: '3d', adicionar, remover } (sem arquivo): pedido do modo de edição do 3D, nas coordenadas do 3D.
+async function editar(req, res) {
+  const { id } = req.params;
+  const corpo = req.body || {};
+  let resultado;
+  try {
+    resultado = await comTransacao(async (client) => {
+      const { rows: [a] } = await client.query('SELECT dados_extraidos, compatibilizacao, espacial FROM analises_projeto WHERE id = $1 FOR UPDATE', [id]);
+      if (!a) throw Object.assign(new Error('Análise não encontrada'), { status: 404 });
+      const dados = Array.isArray(a.dados_extraidos) ? a.dados_extraidos : [];
+      let pedidos;
+      if (corpo.sistema === '3d') {
+        pedidos = pedidosDo3d(corpo, a);
+        if (typeof pedidos === 'string') throw Object.assign(new Error(pedidos), { status: 400 });
+      } else {
+        pedidos = { [corpo.arquivo]: { adicionar: corpo.adicionar, remover: corpo.remover, desfazer: corpo.desfazer } };
+      }
+      const resumo = { adicionados: 0, removidos: 0, desfeitos: 0 };
+      for (const [arquivo, pedido] of Object.entries(pedidos)) {
+        const i = dados.findIndex(d => d?.mapa_cad?.simbolos && (d.mapa_cad.arquivo || d.arquivo) === arquivo);
+        if (i < 0) throw Object.assign(new Error('Esta análise não tem planta do CAD para esse arquivo (análise feita antes do mapa, ou arquivo que não é DWG/DXF).'), { status: 404 });
+        const erro = edicoesDoMapa.validarPedido(pedido, dados[i].mapa_cad);
+        if (erro) throw Object.assign(new Error(erro), { status: 400 });
+        const r = edicoesDoMapa.aplicarPedido(dados[i].mapa_cad.edicoes, pedido, req.usuario.id);
+        dados[i] = { ...dados[i], mapa_cad: { ...dados[i].mapa_cad, edicoes: r.edicoes, edicoesNoOrcamento: false } };
+        for (const k of Object.keys(resumo)) resumo[k] += r.resumo[k];
+      }
+      await client.query('UPDATE analises_projeto SET dados_extraidos = $1 WHERE id = $2', [JSON.stringify(dados), id]);
+      await registrarAuditoria(client, {
+        entidade: 'analises_projeto', entidadeId: Number(id), acao: 'mapa_cad_componentes', usuarioId: req.usuario.id,
+        detalhes: { arquivos: Object.keys(pedidos), origem: corpo.sistema === '3d' ? '3d' : 'planta', ...resumo,
+          inseridos: Object.values(pedidos).flatMap(p => (p.adicionar || []).map(x => x.simbolo)).slice(0, 50) },
+      });
+      return { dados, resumo };
+    });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ erro: e.message });
+    throw e;
+  }
+  res.json({ ...respostaDoMapa(resultado.dados), resumo: resultado.resumo });
+}
+
 // POST /projetos/analises/:id/mapa/reprocessar { incluirDisciplinas } — lê de novo os arquivos guardados na pasta do
 // projeto, com os tipos conferidos, e grava uma análise NOVA (a antiga fica como está). As edições da antiga (quantidade,
 // valor, itens retirados ou acrescentados) vão junto (services/edicoesDaAnalise.js). Disciplina com ponto conferido que não
@@ -92,14 +171,17 @@ async function reprocessar(req, res) {
   const semMapa = semMapaComCad(a) || mapaSemFundo(a);
   const mapas = arquivosComMapa(a.dados_extraidos);
   const mapasConfirmados = {};
+  const mapasEditados = {}; // arquivo → componentes inseridos/retirados (services/edicoesDoMapa.js)
   const disciplinasExtras = {}; // arquivo → disciplinas conferidas que faltavam na marcação do envio
   for (const d of mapas) {
     const confirmadas = mapaCad.confirmadasDoMapa(d.mapa_cad);
     const nome = d.mapa_cad.arquivo || d.arquivo;
     if (confirmadas.length) mapasConfirmados[nome] = confirmadas;
+    if (edicoesDoMapa.temEdicoes(d.mapa_cad.edicoes)) mapasEditados[nome] = d.mapa_cad.edicoes;
     if (req.body?.incluirDisciplinas !== false) disciplinasExtras[nome] = mapaCad.disciplinasAIncluir(d.mapa_cad, d.disciplinas).map(x => x.chave);
   }
-  if (!semMapa && !Object.keys(mapasConfirmados).length) return res.status(400).json({ erro: 'Confirme o tipo de ao menos uma layer no mapa antes de reprocessar.' });
+  const comEdicao = Object.keys(mapasConfirmados).length + Object.keys(mapasEditados).length > 0;
+  if (!semMapa && !comEdicao) return res.status(400).json({ erro: 'Confirme o tipo de ao menos uma layer, ou insira/retire um componente na planta, antes de reprocessar.' });
 
   // os arquivos originais ficam na pasta do projeto; os que não estão na lista da análise eram referência (arquitetura etc.)
   let pasta;
@@ -123,8 +205,8 @@ async function reprocessar(req, res) {
   if (!arquivos.length) return res.status(409).json({ erro: 'Não há arquivos do projeto para reprocessar.' });
 
   const base = String(a.nome_projeto || a.cliente_nome || 'Projeto').replace(/\s*\((mapa confirmado|lida de novo)\)$/, '');
-  const corpo = { finalidade: a.finalidade || 'orcamento', obra_id: a.obra_id, nome_projeto: `${base} (${Object.keys(mapasConfirmados).length ? 'mapa confirmado' : 'lida de novo'})`.slice(0, 200) };
-  await executarAnalise(req, res, arquivos, corpo, { mapasConfirmados, analiseAnterior: a });
+  const corpo = { finalidade: a.finalidade || 'orcamento', obra_id: a.obra_id, nome_projeto: `${base} (${comEdicao ? 'mapa confirmado' : 'lida de novo'})`.slice(0, 200) };
+  await executarAnalise(req, res, arquivos, corpo, { mapasConfirmados, mapasEditados, analiseAnterior: a });
 }
 
 // ── Biblioteca de blocos (fase 3, CAD-08): o que o sistema aprendeu, em JSON, para levar a outra instalação ──
@@ -148,4 +230,4 @@ async function importarBiblioteca(req, res) {
   res.json({ ...r, recusadas: erros.length, erros: erros.slice(0, 20) });
 }
 
-module.exports = { ler, salvar, reprocessar, exportarBiblioteca, importarBiblioteca };
+module.exports = { ler, salvar, editar, reprocessar, exportarBiblioteca, importarBiblioteca };

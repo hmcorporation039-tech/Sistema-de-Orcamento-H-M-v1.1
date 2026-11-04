@@ -411,7 +411,9 @@ function compatibilizar(arquivos, { temPdf = false } = {}) {
         referencia: g.ref.arquivo,
         // a altura de instalação vai junto quando se sabe (o 3D pode pôr o ponto na cota certa)
         // e o circuito/comando conferido no Mapa do CAD (fase 1 do roteiro: o 3D deixa de perder o circuito — 3D-06)
-        pontos: pontos.slice(0, 20000).map(({ x, y, descricao, disciplina, classe, altura_m, montagem, circuito, comando }) => ({ x, y, descricao, disciplina, classe, ...(montagem ? { altura_m: altura_m ?? null, montagem } : {}), ...(circuito ? { circuito, comando: comando || '' } : {}) })),
+        // o tipo exato do ponto (o 3D não precisa adivinhar pela descrição) e o id do componente inserido pelo engenheiro
+        // (services/edicoesDoMapa.js: o 3D sabe que ele já está aplicado) — versão 2.30
+        pontos: pontos.slice(0, 20000).map(({ x, y, descricao, disciplina, classe, altura_m, montagem, circuito, comando, simbolo, edicao }) => ({ x, y, descricao, disciplina, classe, ...(montagem ? { altura_m: altura_m ?? null, montagem } : {}), ...(circuito ? { circuito, comando: comando || '' } : {}), ...(simbolo ? { simbolo } : {}), ...(edicao ? { edicao } : {}) })),
         // tipo, material e medida de cada trecho (services/analiseCad/medidasInfra.js) vão junto: o 3D desenha a seção real
         trechos: trechos.map(t => ({
           disciplina: t.disciplina, layer: t.layer,

@@ -33,6 +33,7 @@ Na pasta `backend`:
 | `node scripts/placar-precisao.js --json placar.json` | Grava também o resultado completo |
 | `node scripts/placar-precisao.js --rascunhos` | Inclui os gabaritos com `"conferido": false` |
 | `node scripts/placar-precisao.js --modelo "<pasta do projeto>"` | Grava `gabarito.rascunho.json` com o que o sistema lê hoje |
+| `node scripts/placar-precisao.js --com-aprendizado` | Lê com o que o sistema aprendeu (banco do `.env`): legenda, notas e blocos do DWG e a legenda de PDF do escritório (versão 2.30) |
 
 Para começar um gabarito:
 
@@ -40,7 +41,7 @@ Para começar um gabarito:
 2. Confira cada número na planta e corrija.
 3. Marque `"conferido": true` e renomeie o arquivo para `gabarito.json`.
 
-O placar não usa o banco: mede o leitor, sem o aprendizado do escritório.
+Sem `--com-aprendizado` o placar não usa o banco: mede o leitor, sem o aprendizado do escritório. Rodar sem e com mostra o ganho do treino. Para essa medida valer, os arquivos do placar **não** podem estar na pasta que o treino lê: o gabarito viraria treino.
 
 ## Formato do `gabarito.json`
 

@@ -28,6 +28,7 @@ const { retanguloMinimo } = require(path.join(CAD, 'geometriaCad.js'));
 const { medirTrechos } = require('./medidasInfra');
 const { caixaPrincipal } = require('./fundoDoMapa');
 const { circuitoConferido } = require(path.join(CAD, 'circuitoDoDesenho.js'));
+const edicoesDoMapa = require('../edicoesDoMapa');
 // Ponto lido do desenho (símbolo explodido) → descrição do item: a linha da legenda do
 // projeto quando houver ("Tomada alta a 2,20m do piso"), senão o nome do símbolo na
 // biblioteca da H&M (skills/_comum/cad/simbolos.js), sem a altura típica
@@ -162,7 +163,7 @@ function descreverSimbolo(g, opcoes = {}) {
   const sigla = (mt && SIGLAS_MT.find(([re]) => re.test(g.nomeLimpo) || re.test(g.bloco))) || SIGLAS.find(([re, , , curta]) => (!curta || nomeCurto || semPrefixo !== g.nomeLimpo) && (re.test(g.nomeLimpo) || re.test(g.bloco) || re.test(semPrefixo)));
   const daLegenda = textoDescritivo(g.descricaoLegenda) ? g.descricaoLegenda : null;
   // a prancha sem legenda: o que a legenda de outra prancha (do mesmo escritório, de preferência) disse deste bloco
-  const aprendido = !daLegenda && !hm ? procurarBlocoAprendido(opcoes.blocosAprendidos, g.nomeLimpo, opcoes.escritorio) : null;
+  const aprendido = !daLegenda && !hm ? procurarBlocoAprendido(opcoes.blocosAprendidos, g.nomeLimpo, opcoes.escritorio, opcoes.disciplinas) : null;
   // nome de bloco que já descreve (famílias do Revit: "Sensor de pressão Belimo 22ADP")
   const nomeDescritivo = /[A-Za-zÀ-ú]{3,}.*\s.*[A-Za-zÀ-ú0-9]{2,}/.test(g.nomeLimpo) && g.nomeLimpo.length >= 8;
   const emergencia = /EMERG/i.test(`${g.bloco} ${camadas}`);
@@ -238,6 +239,7 @@ function alturasDoGrupo(g, d) {
 // pagina: { itens, rotas, naoIdentificados, legendaItens, conferenciaLegenda, xrefsDeOutraDisciplina, outraArea, … }
 // opcoes.aprendidos: legenda de projetos anteriores (services/simbolosAprendidos.js)
 // opcoes.confirmados: tipos que o engenheiro conferiu no mapa do CAD desta análise (services/mapaCad.js)
+// opcoes.edicoes: componentes inseridos e retirados pelo engenheiro na planta ou no 3D (services/edicoesDoMapa.js)
 async function lerArquivoCad(buffer, nome, opcoes = {}) {
   const r = await lerNoWorker(buffer, nome, opcoes.aprendidos || [], opcoes.confirmados || [], opcoes.notasAprendidas || []);
   const p = r.projeto;
@@ -291,10 +293,23 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
     reg[campo] += v;
   };
 
+  // o que o engenheiro retirou da planta não conta, seja bloco nomeado ou símbolo explodido: cada retirada tira o
+  // componente mais perto do clique (services/edicoesDoMapa.indicesRetirados), entre os blocos e os pontos do desenho
+  const edicoes = edicoesDoMapa.temEdicoes(opcoes.edicoes) ? edicoesDoMapa.normalizar(opcoes.edicoes) : null;
+  const retiradas = new Set(); // 'b<grupo>|<posição>' (bloco) ou 'p<ponto>' (símbolo explodido)
+  if (edicoes) {
+    const chaves = [], candidatos = [];
+    descritos.forEach(({ g }, gi) => g.posicoes.forEach(([x, y], i) => { chaves.push(`b${gi}|${i}`); candidatos.push([x, y]); }));
+    (r.desenho?.pontos || []).forEach((pt, k) => { chaves.push(`p${k}`); candidatos.push([pt.x, pt.y]); });
+    for (const i of edicoesDoMapa.indicesRetirados(candidatos, edicoes)) retiradas.add(chaves[i]);
+  }
+  const retiradosDoDesenho = retiradas.size;
   const pontos = [];
-  for (const { g: g0, d } of descritos) {
-    const g = filtrarPosicoes(g0, (i) => !xrefOutra(g0.xrefs?.[i]));
-    if (g.quantidade < g0.quantidade) for (const x of g0.xrefs || []) if (xrefOutra(x)) anotarXref(x, 'componentes', 1);
+  for (const [gi, { g: g0, d }] of descritos.entries()) {
+    const g1 = retiradas.size ? filtrarPosicoes(g0, (i) => !retiradas.has(`b${gi}|${i}`)) : g0;
+    const gx = filtrarPosicoes(g1, (i) => !xrefOutra(g1.xrefs?.[i]));
+    if (gx.quantidade < g1.quantidade) for (const x of g1.xrefs || []) if (xrefOutra(x)) anotarXref(x, 'componentes', 1);
+    const g = gx;
     if (!g.quantidade) continue;
     if (d.outraArea) { outraArea.push(g); continue; }
     if (!d.descricao || !d.disciplina) {
@@ -348,32 +363,41 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
   const contadosPorLinha = new Map();
   const motivoPorLinha = new Map();
   const usados = [];
-  for (const pt of r.desenho?.pontos || []) {
+  for (const [k, pt] of (r.desenho?.pontos || []).entries()) {
+    if (retiradas.has(`p${k}`)) continue;
     const motivo = foraDoOrcamento(pt);
     if (!motivo) { usados.push(pt); contadosPorLinha.set(pt.linha, (contadosPorLinha.get(pt.linha) || 0) + 1); } else if (motivo !== 'fora_da_planta') motivoPorLinha.set(pt.linha, motivo);
   }
+  // componente inserido da biblioteca: ponto conferido (entra no orçamento), sem linha do mapa
+  const inseridos = edicoes ? edicoesDoMapa.pontosInseridos(edicoes) : [];
+  usados.push(...inseridos);
   const usaMapa = usados.length > 0;
   if (usaMapa) {
     const grupos = new Map();
     for (const pt of usados) {
       const descricao = descricaoDoPonto(pt);
       const disciplina = DISCIPLINA_DO_3D[pt.disciplina] || pt.disciplina || 'eletrica';
-      const k = `${descricao}|${disciplina}|${pt.altura_m ?? ''}|${pt.confirmado ? 1 : 0}`;
-      const g = grupos.get(k) || grupos.set(k, { descricao, disciplina, simbolo: pt.simbolo, altura_m: Number(pt.altura_m) > 0 ? Number(pt.altura_m) : null, alturaDe: pt.alturaDe || null, confirmado: !!pt.confirmado, posicoes: [], circuitos: [] }).get(k);
+      const k = `${descricao}|${disciplina}|${pt.altura_m ?? ''}|${pt.confirmado ? 1 : 0}|${pt.edicao ? 1 : 0}`;
+      const g = grupos.get(k) || grupos.set(k, { descricao, disciplina, simbolo: pt.simbolo, altura_m: Number(pt.altura_m) > 0 ? Number(pt.altura_m) : null, alturaDe: pt.alturaDe || null, confirmado: !!pt.confirmado, inserido: !!pt.edicao, posicoes: [], circuitos: [], simbolos: [], edicoes: [] }).get(k);
       g.posicoes.push([pt.x, pt.y]);
+      // o tipo exato vai ao 3D (antes ele adivinhava pela descrição) e o inserido leva o id da edição
+      g.simbolos.push(pt.simbolo || null);
+      g.edicoes.push(pt.edicao || null);
       // circuito/retorno escrito junto do símbolo, só da linha conferida no mapa (vai para o 3D)
       g.circuitos.push(circuitoConferido(pt));
     }
     for (const g of grupos.values()) {
       const montagem = /LUMINARIA|PONTO-LUZ|DETECTOR|SENSOR|CAB-AP|CAPTOR|CAMERA/.test(g.simbolo) ? 'teto' : g.altura_m ? 'parede' : null;
       itens.push({
-        tipo: 'simbolo', descricao: g.descricao, quantidade: g.posicoes.length, disciplina: g.disciplina, origemDescricao: g.confirmado ? 'confirmado' : 'desenho',
+        tipo: 'simbolo', descricao: g.descricao, quantidade: g.posicoes.length, disciplina: g.disciplina, origemDescricao: g.inserido ? 'inserido' : g.confirmado ? 'confirmado' : 'desenho',
         // tipo confirmado pelo engenheiro no mapa do CAD: conta no orçamento; o que ainda não foi conferido fica de fora
         bloco: g.simbolo, layer: '', posicoes: g.posicoes, ambiguo: !g.confirmado, conferir: !g.confirmado,
         ...(g.altura_m ? { altura_m: g.altura_m, montagem: montagem || 'parede', alturaDe: g.alturaDe } : montagem ? { montagem } : {}),
       });
       doDesenho.push(g);
-      g.posicoes.forEach(([x, y], i) => pontos.push({ x, y, descricao: g.descricao, disciplina: g.disciplina, classe: classeDoComponente(g.descricao), altura_m: g.altura_m, montagem, ...(g.circuitos[i] ? { circuito: g.circuitos[i].circuito, comando: g.circuitos[i].comando } : {}) }));
+      g.posicoes.forEach(([x, y], i) => pontos.push({ x, y, descricao: g.descricao, disciplina: g.disciplina, classe: classeDoComponente(g.descricao), altura_m: g.altura_m, montagem,
+        ...(g.simbolos[i] ? { simbolo: g.simbolos[i] } : {}), ...(g.edicoes[i] ? { edicao: g.edicoes[i] } : {}),
+        ...(g.circuitos[i] ? { circuito: g.circuitos[i].circuito, comando: g.circuitos[i].comando } : {}) }));
     }
   }
   for (const l of p.linhas) {
@@ -426,7 +450,8 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
   };
   const avisos = [
     r.avisoUnidade,
-    doDesenho.length ? `${doDesenho.reduce((s, g) => s + g.posicoes.length, 0)} pontos lidos dos símbolos desenhados (blocos explodidos), pela layer, pela medida e pela legenda da prancha — [CONFERIR] as quantidades` : null,
+    edicoes ? `edições do engenheiro: ${inseridos.length} componente(s) inserido(s) da biblioteca e ${retiradosDoDesenho} retirado(s) do desenho` : null,
+    doDesenho.length ? `${doDesenho.filter(g => !g.inserido).reduce((s, g) => s + g.posicoes.length, 0)} pontos lidos dos símbolos desenhados (blocos explodidos), pela layer, pela medida e pela legenda da prancha — [CONFERIR] as quantidades` : null,
     r.desenho?.erro ? `leitura dos símbolos desenhados falhou: ${r.desenho.erro}` : null,
     r.desenho?.mapa?.aviso || null,
   ].filter(Boolean);
@@ -475,6 +500,9 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
       return { layer: l.layer, tipo: d.tipo, disciplina: d.disciplina, comprimento_m: l.metros, ...(d.rota ? { rota: true } : {}), ...(l.xref ? { xref: l.xref } : {}) };
     }),
     planta: plantaDoMapa(r.desenho.mapa.simbolos, ambientesArq, naPlanta, r.arquitetura?.fundo),
+    // a lista de edições segue com o mapa (um segundo reprocessamento aplica de novo); edicoesNoOrcamento: esta leitura já
+    // contou todas — a tela avisa quando uma edição nova ainda precisa do reprocessamento para chegar ao orçamento
+    ...(edicoes ? { edicoes, edicoesNoOrcamento: true } : {}),
     ...(r.desenho.mapa.aviso ? { aviso: r.desenho.mapa.aviso } : {}),
   } : null;
   return { analise, pagina, pontosPorAmbiente, arquitetura, espacial, mapa, aprendizado: { legenda: r.desenho?.legenda || [], notas: r.desenho?.notas || [], escritorio, blocos: p.legendaItens || [] } };
@@ -495,7 +523,8 @@ function plantaDoMapa(linhasDoMapa, ambientes, naPlanta, fundo = null) {
       pontos.push([linha, r2(c[0]), r2(c[1])]);
     }
   }
-  if (!pontos.length) return null;
+  // sem nenhum símbolo (só a arquitetura) a planta ainda serve: é nela que o engenheiro insere os componentes
+  if (!pontos.length && !(ambientes || []).length && !fundo?.linhas?.length) return null;
   let vertices = 0;
   const salas = [];
   for (const a of ambientes || []) {

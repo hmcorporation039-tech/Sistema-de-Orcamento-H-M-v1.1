@@ -1067,6 +1067,8 @@ function montarCena(arquitetura, opcoes = {}) {
     data: opcoes.data || new Date().toLocaleDateString('pt-BR'),
     peDireito, alturaPorta: ALTURA_PORTA,
     limites: [...P([caixa[0], caixa[1]]), ...P([caixa[2], caixa[3]])],
+    // ponto (0, 0) da cena nas coordenadas do desenho: o modo de edição do 3D devolve o clique na planta (versão 2.30)
+    origem: [r2(origem[0]), r2(origem[1])],
     paredes: el.paredes.filter(w => ['parede', 'verga'].includes(w.classe)).map(C),
     muretas: el.paredes.filter(w => ['mureta', 'media', 'peitoril'].includes(w.classe)).map(C),
     guardas: el.paredes.filter(w => w.classe === 'guarda').map(C),

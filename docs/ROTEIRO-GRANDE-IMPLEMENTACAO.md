@@ -149,7 +149,9 @@ Referências: Revit MEP (circuito ↔ painel), EPLAN (painel 3D a partir do esqu
 - Simulador lógico em `skills/_comum/instalacao/simulador.js` (geral, DR, disjuntor, interruptores simples/paralelo/intermediário, relé de impulso, contator com selo, emergência e relé térmico), testado no Node.
 - No 3D: clicar no interruptor ou na luminária liga e desliga; o quadro abre por cima do prédio com alavanca em cada disjuntor e DR; tomada sem energia fica vermelha; painel de motor com liga, desliga, emergência e sinaleiros; ficha do circuito com disjuntor, DR, corrente, seção e queda de tensão.
 - Cena antiga abre como antes, sem a interação.
-- **Falta:** estado salvo (`modelo_3d_estados`) e iframe com `postMessage` (hoje o estado fica só na aba); seletor MAN-0-AUT só liga e desliga; botões da porta do painel vão para os motores pela ordem.
+- **Falta:** estado salvo (`modelo_3d_estados`); seletor MAN-0-AUT só liga e desliga; botões da porta do painel vão para os motores pela ordem.
+
+**Feito no v2 em 03/11/2026 (versão 2.30.0):** o 3D embutido na tela da análise, em iframe com `postMessage` (sandbox sem a origem do sistema; a tela confere e grava), com o modo de edição de componentes (inserir/retirar com a biblioteca de símbolos por disciplina). O componente inserido tem id estável no 3D; a cena traz a `origem` do desenho. Detalhes no resumo, versão 2.30.0.
 
 ### Fase 3 — Precisão da leitura de PDF e DWG
 **Entrega:** um placar de precisão por projeto real e as correções que o fazem subir.
@@ -199,6 +201,8 @@ Referências: Revit MEP (circuito ↔ painel), EPLAN (painel 3D a partir do esqu
   - Título sublinhado ("DETALHES EM …") não vira tipo de linha.
 - **Placar** (`backend/scripts/placar-precisao.js`, formato em `docs/PLACAR-PRECISAO.md`): a pasta de fixtures fica fora do repositório (`HM_PLACAR_PASTA`). Sem a pasta, o teste diz "pulado".
 - **Ponto de extensão por disciplina** (`PROPRIOS_DA_DISCIPLINA` em `skills/_comum/cad/disciplinasCad.js`): para a climatização, duto, difusor e layers HVAC/AVAC/MEC deixam de ser "outra área".
+
+**Feito no v2 em 03/11/2026 (versão 2.30.0):** a prancha em PDF sem legenda deixou de contar zero — legenda de outra folha do mesmo PDF e dos outros PDFs do projeto enviados juntos; legenda de PDF aprendida por escritório (só sugestão a conferir); o treino lê as pranchas em PDF e o .xls antigo (leitor próprio, sem dependência); placar com `--com-aprendizado`.
 
 **Ficou para depois:**
 - **OCR do texto SHX desenhado como traço.** O desenho proposto:

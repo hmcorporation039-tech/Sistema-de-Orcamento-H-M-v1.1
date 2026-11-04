@@ -13,6 +13,8 @@ const { buscarReferencias, valorSugerido, segmentoPorNomeDoCliente } = require('
 const { lerPdfVetorial } = require('../utils/pdfVetorial');
 const { ehArquivoCad, lerArquivoCad } = require('./analiseCad');
 const aprenderDoDesenho = require('./aprenderDoDesenho');
+const legendasPdfAprendidas = require('./legendasPdfAprendidas');
+const { escritorioDoPdf } = require('../utils/escritorioDoProjeto');
 const aprendizadoMateriais = require('./aprendizadoMateriais');
 const { compatibilizar } = require('../utils/compatibilidadeEspacial');
 const {
@@ -97,6 +99,7 @@ const escalaDoArquivo = (a) => {
 };
 
 // opcoes.mapasConfirmados: { [nome do arquivo]: [tipos conferidos no mapa do CAD] } (services/mapaCad.js)
+// opcoes.mapasEditados: { [nome do arquivo]: componentes inseridos/retirados na planta ou no 3D } (services/edicoesDoMapa.js)
 async function analisarProjetoCompleto(todosArquivos, opcoes = {}) {
   const arquivosRef = todosArquivos.filter(a => a.referencia);
   const arquivos = todosArquivos.filter(a => !a.referencia);
@@ -105,7 +108,7 @@ async function analisarProjetoCompleto(todosArquivos, opcoes = {}) {
   // legenda deste arquivo vira aprendizado para os próximos (services/aprenderDoDesenho.js)
   const temCad = todosArquivos.some(a => ehArquivoCad(a.nomeArquivo));
   const sabido = temCad ? await aprenderDoDesenho.conhecimento() : {};
-  const lerCad = ({ buffer, nomeArquivo, disciplinas }) => lerArquivoCad(buffer, nomeArquivo, { ...sabido, disciplinas: disciplinas || [], confirmados: opcoes.mapasConfirmados?.[nomeArquivo] || [] })
+  const lerCad = ({ buffer, nomeArquivo, disciplinas }) => lerArquivoCad(buffer, nomeArquivo, { ...sabido, disciplinas: disciplinas || [], confirmados: opcoes.mapasConfirmados?.[nomeArquivo] || [], edicoes: opcoes.mapasEditados?.[nomeArquivo] || null })
     .then((r) => {
       // (a releitura com o mapa confirmado não ensina de novo o que o primeiro envio já ensinou). Arquivo com UMA
       // disciplina marcada ensina por ela: a linha de legenda/bloco que não diz a sua fica com a do arquivo.
@@ -126,10 +129,33 @@ async function analisarProjetoCompleto(todosArquivos, opcoes = {}) {
   // geometria do desenho (símbolos/linhas pela legenda), com a classificação de
   // cada folha (planta × unifilar × quadro de cargas — utils/classificarPranchaPdf.js);
   // falha não derruba a análise
-  const vetoriais = await emLotes(analises, 3, (a, i) => (cads[i] ? [cads[i].pagina] : a.semTexto ? [] : lerPdfVetorial(arquivos[i].buffer, { maxPaginas: MAX_PAGINAS_DESENHO, ...escalaDoArquivo(arquivos[i]) }).catch((e) => {
+  // prancha em PDF (versão 2.30): o escritório do carimbo escolhe a legenda aprendida de outros PDFs dele (vale só para
+  // o PDF sem legenda nenhuma, e sai "a conferir"); a legenda de cada folha vale para as outras folhas do mesmo PDF
+  const escritorioPdf = analises.map((a, i) => { if (cads[i] || a.semTexto) return ''; try { return escritorioDoPdf(a.carimbo, (a.textoPorPagina || []).join('\n'), arquivos[i].nomeArquivo); } catch { return ''; } });
+  const legendaDoEscritorio = new Map();
+  for (const e of new Set(escritorioPdf.filter(Boolean))) legendaDoEscritorio.set(e, await legendasPdfAprendidas.carregar(e));
+  const vetoriais = await emLotes(analises, 3, (a, i) => (cads[i] ? [cads[i].pagina] : a.semTexto ? [] : lerPdfVetorial(arquivos[i].buffer, { maxPaginas: MAX_PAGINAS_DESENHO, ...escalaDoArquivo(arquivos[i]), legendaAprendida: legendaDoEscritorio.get(escritorioPdf[i]) || [] }).catch((e) => {
     console.warn(`[analise] leitura vetorial de "${a.arquivo}" falhou:`, e.message);
     return [{ pagina: null, itens: [], legenda: null, escala: null, aviso: `leitura do desenho falhou (${e.message}) — conferir na planta` }];
   })));
+  // PDFs do mesmo projeto enviados juntos (versão 2.30): o que não tem legenda em folha nenhuma conta pela legenda dos
+  // outros — é a do próprio projeto (o conjunto "1-5 … 5-5" com a legenda numa folha só saía com zero símbolos)
+  const legendaDoConjunto = new Map();
+  vetoriais.forEach((v, i) => { if (cads[i]) return; for (const p of v || []) for (const k of p.legendaPropria || []) legendaDoConjunto.set(`${k.texto}|${k.sig.blob.chave}|${Math.round(k.sig.blob.w)}|${Math.round(k.sig.blob.h)}`, k); });
+  const semLegendaNoArquivo = (v) => (v || []).some(p => p.pagina && !p.ignorada && !p.pulada && p.caminhos > 0) && !(v || []).some(p => p.legendaPropria?.length);
+  if (legendaDoConjunto.size) {
+    const relidos = await emLotes(analises, 2, (a, i) => (cads[i] || a.semTexto || !semLegendaNoArquivo(vetoriais[i]) ? null
+      : lerPdfVetorial(arquivos[i].buffer, { maxPaginas: MAX_PAGINAS_DESENHO, ...escalaDoArquivo(arquivos[i]), legendaDoProjeto: [...legendaDoConjunto.values()] }).catch(() => null)));
+    relidos.forEach((r, i) => { if (r) vetoriais[i] = r; });
+  }
+  // a legenda e as notas de altura de cada PDF viram aprendizado do escritório (não na releitura de um reprocessamento)
+  if (!opcoes.mapasConfirmados) {
+    analises.forEach((a, i) => {
+      if (cads[i] || !escritorioPdf[i]) return;
+      const disc = arquivos[i].disciplinas?.length === 1 ? arquivos[i].disciplinas[0] : null;
+      legendasPdfAprendidas.registrar(vetoriais[i], { escritorio: escritorioPdf[i], arquivo: arquivos[i].nomeArquivo, disciplina: disc, textoDasNotas: (a.textoPorPagina || []).join('\n') }).catch(() => {});
+    });
+  }
   // folhas que não são planta (só unifilar, quadro de cargas, tabela): fora dos
   // ambientes e dos pontos por ambiente. Os ambientes saem só das outras folhas
   // ("A= 12,5m²" de um quadro de áreas na folha do quadro não é sala desenhada).

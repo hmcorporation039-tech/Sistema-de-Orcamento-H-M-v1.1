@@ -3,13 +3,16 @@
 // análise, vira aprendizado (o próximo desenho do escritório já vem certo) e, ao reprocessar, entra no orçamento.
 // Até conferir, esses pontos NÃO entram no orçamento. A planta (./PlantaMapaCad.js) e a tabela andam juntas: clique no
 // ponto escolhe a linha (e abre a ficha para conferir na própria planta); clique na linha enquadra os pontos dela.
-import { useEffect, useMemo, useState } from 'react';
+// Versão 2.30: componentes da biblioteca H&M (com o símbolo) inseridos e retirados na planta ou no 3D
+// (./Modelo3dEditor.js) — aparecem no 3D na hora e entram no orçamento ao reprocessar.
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { CheckCheck, Download, RefreshCw, Undo2, Upload } from 'lucide-react';
-import { getMapaCad, salvarMapaCad, reprocessarMapaCad, exportarBibliotecaBlocos, importarBibliotecaBlocos } from '../../services/api';
+import { Box, CheckCheck, Download, RefreshCw, Undo2, Upload } from 'lucide-react';
+import { getMapaCad, salvarMapaCad, editarMapaCad, reprocessarMapaCad, exportarBibliotecaBlocos, importarBibliotecaBlocos } from '../../services/api';
 import { mensagemDeErro } from '../../utils/download';
-import PlantaMapaCad, { SITUACAO, situacaoDaLinha } from './PlantaMapaCad';
+import PlantaMapaCad, { SITUACAO, situacaoDaLinha, IconeComponente, COR_INSERIDO } from './PlantaMapaCad';
+import Modelo3dEditor from './Modelo3dEditor';
 
 const ORIGEM = {
   legenda: ['da legenda do desenho', '#4a9'],
@@ -23,8 +26,15 @@ const ORIGEM = {
 const NOME_DISC = {
   eletrica: 'Elétrica', iluminacao: 'Iluminação', 'iluminacao-externa': 'Iluminação externa', incendio: 'Incêndio', cftv: 'CFTV', rede: 'Rede',
   alarme: 'Alarme', telefonia: 'Telefonia', antena: 'Antena', 'controle-acesso': 'Controle de acesso', automacao: 'Automação', spda: 'SPDA',
-  solar: 'Solar', veicular: 'Veicular', eletrica_hospitalar: 'Elétrica hospitalar',
+  solar: 'Solar', veicular: 'Veicular', eletrica_hospitalar: 'Elétrica hospitalar', climatizacao: 'Climatização',
 };
+const nomeDisciplina = (d) => NOME_DISC[d] || d;
+// componentes inseridos de um arquivo, por tipo: [{ simbolo, nome, quantidade }]
+function inseridosPorTipo(edicoes, nomeDoTipo) {
+  const por = new Map();
+  for (const a of edicoes?.adicionados || []) por.set(a.simbolo, (por.get(a.simbolo) || 0) + 1);
+  return [...por].map(([simbolo, quantidade]) => ({ simbolo, nome: nomeDoTipo(simbolo), quantidade })).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+}
 // de onde veio a altura sugerida (quando não é da legenda do desenho nem conferida)
 const ALTURA_DE = { nota: 'sugerida pela nota do desenho', nota_aprendida: 'costume deste escritório (notas anteriores)' };
 const LIMITE_LINHAS = 60;
@@ -70,6 +80,7 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
   const [foco, setFoco] = useState({}); // arquivo → { idx, vez }: a planta enquadra os pontos dessa linha
   const [filtro, setFiltro] = useState({}); // arquivo → chave de FILTROS
   const [incluirDisciplinas, setIncluirDisciplinas] = useState(true);
+  const [editor3d, setEditor3d] = useState(false);
 
   useEffect(() => {
     let vivo = true;
@@ -86,13 +97,20 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
     return [...por.entries()];
   }, [mapa]);
   const nomes = useMemo(() => new Map((mapa?.tipos || []).map(t => [t.simbolo, t.nome])), [mapa]);
-  const nomeDoTipo = (simbolo) => nomes.get(simbolo) || simbolo;
+  const porSimbolo = useMemo(() => new Map((mapa?.componentes || []).map(c => [c.simbolo, c])), [mapa]);
+  const nomeDoTipo = (simbolo) => nomes.get(simbolo) || porSimbolo.get(simbolo)?.nome || simbolo;
+  // resposta do servidor depois de uma edição feita no 3D: a planta e os totais acompanham
+  const aoEditarNo3d = useCallback((dados) => setMapa(m => ({ ...m, ...dados })), []);
 
   // análise com DWG feita antes do mapa existir: sem ele os pontos do desenho não têm onde ser conferidos
   if (!mapa?.disponivel && !mapa?.semMapa) return null;
   const totalConferidas = mapa.arquivos.reduce((t, a) => t + a.resumo.conferidas, 0);
   const totalPontosPendentes = mapa.arquivos.reduce((t, a) => t + a.resumo.pontosPendentes, 0);
   const disciplinasFaltando = mapa.arquivos.flatMap(a => (a.disciplinasAIncluir || []).map(d => ({ ...d, arquivo: a.arquivo })));
+  const totalEditadas = mapa.arquivos.reduce((t, a) => t + (a.resumo.inseridos || 0) + (a.resumo.retirados || 0), 0);
+  const edicoesForaDoOrcamento = mapa.arquivos.some(a => ((a.resumo.inseridos || 0) + (a.resumo.retirados || 0)) > 0 && !a.edicoesNoOrcamento);
+  const podeReprocessar = totalConferidas > 0 || totalEditadas > 0;
+  const componentes = mapa.componentes || [];
 
   const valorDe = (arquivo, s) => edicao[`${arquivo}|${s.idx}`] || { simbolo: s.simbolo, altura: br(s.altura_m) };
   const mudar = (arquivo, s, parte) => setEdicao(e => ({ ...e, [`${arquivo}|${s.idx}`]: { ...valorDe(arquivo, s), ...parte } }));
@@ -150,6 +168,23 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
       (d) => (d.aprendidas ? 'Conferido — o sistema aprendeu esse tipo para os próximos desenhos' : 'Conferido'));
   };
   const desfazer = (arquivo, s) => enviar(arquivo, [{ idx: s.idx, confirmado: false }], () => 'Confirmação desfeita');
+
+  // inserir/retirar componentes (planta): pedido = { adicionar } | { remover } | { desfazer }
+  async function editar(arquivo, pedido, mensagem) {
+    setOcupado(true);
+    try {
+      const r = await editarMapaCad(analiseId, { arquivo, ...pedido });
+      setMapa(m => ({ ...m, ...r.data }));
+      if (mensagem) toast.success(mensagem, { duration: 2500 });
+    } catch (err) {
+      toast.error(await mensagemDeErro(err, 'Não consegui gravar a edição'), { duration: 8000 });
+    } finally { setOcupado(false); }
+  }
+  // a edição mais recente do arquivo (inserida ou retirada) volta atrás
+  const desfazerUltima = (a) => {
+    const todas = [...(a.edicoes?.adicionados || []), ...(a.edicoes?.removidos || [])].sort((x, y) => String(y.em).localeCompare(String(x.em)));
+    if (todas.length) editar(a.arquivo, { desfazer: [todas[0].id] }, 'Última edição desfeita');
+  };
   const confirmarReconhecidas = (a) => {
     const linhas = a.simbolos.filter(s => !s.confirmado && s.simbolo !== '?' && s.quantidade > 0)
       .map(s => ({ idx: s.idx, simbolo: valorDe(a.arquivo, s).simbolo, altura_m: paraNumero(valorDe(a.arquivo, s).altura), confirmado: true }));
@@ -221,12 +256,18 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
     <div style={estiloCartao} data-testid="cartao-mapa-cad">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
         <h3 style={{ ...estiloTitulo, flex: 1, marginBottom: 0 }}>Mapa do CAD — confira o que o sistema entendeu do desenho</h3>
-        {totalConferidas > 0 && (
+        {componentes.length > 0 && (
+          <button type="button" style={botao} onClick={() => setEditor3d(true)} disabled={ocupado} data-testid="editar-no-3d"
+            title="Abre o modelo 3D aqui, com a biblioteca de componentes para inserir e retirar">
+            <Box size={13} /> Editar no 3D
+          </button>
+        )}
+        {podeReprocessar && (
           <button type="button" style={{ ...botao, borderColor: '#c9a227', color: '#c9a227' }} onClick={reprocessar} disabled={ocupado} data-testid="reprocessar-mapa">
             <RefreshCw size={13} /> Reprocessar com o mapa conferido
           </button>
         )}
-        {mapa.semFundo && totalConferidas === 0 && (
+        {mapa.semFundo && !podeReprocessar && (
           <button type="button" style={{ ...botao, borderColor: '#c9a227', color: '#c9a227' }} onClick={reprocessar} disabled={ocupado} data-testid="ler-de-novo"
             title="Grava uma análise nova com o desenho de fundo e a leitura atual (a atual continua salva)">
             <RefreshCw size={13} /> {ocupado ? 'Lendo o desenho…' : 'Ler o DWG de novo'}
@@ -237,20 +278,23 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
         Cada linha é uma layer × forma de símbolo do desenho. Confira o <b>tipo</b> e a <b>altura</b>: o que for conferido vira aprendizado do sistema
         (o próximo desenho do escritório já vem certo) e, ao reprocessar, entra no orçamento. Pontos ainda não conferidos <b>não entram no orçamento</b>
         {totalPontosPendentes > 0 ? ` — hoje são ${totalPontosPendentes} ponto(s) fora.` : '.'} "Não é ponto" tira a layer da contagem.
+        {componentes.length > 0 && <> Na planta, <b>Inserir</b> e <b>Retirar</b> põem e tiram componentes da biblioteca (com o símbolo de cada disciplina); o 3D mostra na hora.</>}
       </p>
-      {totalConferidas > 0 && (
-        <div style={{ fontSize: 12, color: '#c9a227', marginBottom: 10 }}>
-          Depois de conferir, use "Reprocessar com o mapa conferido": ele grava uma análise nova com esses pontos já no orçamento (a atual continua salva).
+      {podeReprocessar && (
+        <div style={{ fontSize: 12, color: '#c9a227', marginBottom: 10 }} data-testid="aviso-reprocessar">
+          {edicoesForaDoOrcamento
+            ? 'Há componentes inseridos ou retirados que ainda não estão no orçamento: use "Reprocessar com o mapa conferido" (grava uma análise nova; a atual continua salva).'
+            : 'Depois de conferir, use "Reprocessar com o mapa conferido": ele grava uma análise nova com esses pontos já no orçamento (a atual continua salva).'}
         </div>
       )}
-      {totalConferidas > 0 && (
+      {podeReprocessar && (
         <div style={{ fontSize: 12, color: 'var(--texto-2)', marginBottom: 10, lineHeight: 1.6 }}>
           Ao reprocessar, o que você editou nesta análise (quantidades, valores, itens retirados ou acrescentados) é copiado para a nova.
           {disciplinasFaltando.length > 0 && (
             <label style={{ display: 'flex', gap: 6, alignItems: 'flex-start', marginTop: 6, color: '#c9a227', cursor: 'pointer' }}>
               <input type="checkbox" checked={incluirDisciplinas} onChange={(e) => setIncluirDisciplinas(e.target.checked)} style={{ marginTop: 3 }} data-testid="incluir-disciplinas" />
               <span>
-                Incluir na análise nova as disciplinas dos pontos conferidos que não foram marcadas no envio:{' '}
+                Incluir na análise nova as disciplinas dos pontos conferidos ou inseridos que não foram marcadas no envio:{' '}
                 {disciplinasFaltando.map(d => `${d.nome} (${d.pontos} ponto(s))`).join('; ')}. Sem elas, esses pontos ficariam fora do orçamento.
               </span>
             </label>
@@ -288,6 +332,8 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
               <div style={{ marginBottom: 10 }}>
                 <PlantaMapaCad planta={a.planta} simbolos={a.simbolos} nomeDoTipo={nomeDoTipo} ativa={ativa[a.arquivo] ?? null} foco={foco[a.arquivo]}
                   onEscolher={(idx) => escolherNaPlanta(a, idx)}
+                  componentes={componentes} edicoes={a.edicoes} ocupado={ocupado} nomeDisciplina={nomeDisciplina}
+                  onEditar={(pedido, mensagem) => editar(a.arquivo, pedido, mensagem)}
                   ficha={(s) => (
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                       {seletorTipo(a.arquivo, s, 240)}
@@ -297,6 +343,21 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
                       <button type="button" style={botao} onClick={() => setAtiva(m => ({ ...m, [a.arquivo]: null }))} aria-label="Fechar a ficha">✕</button>
                     </div>
                   )} />
+              </div>
+            )}
+            {((a.edicoes?.adicionados?.length || 0) + (a.edicoes?.removidos?.length || 0)) > 0 && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, color: 'var(--texto-2)', margin: '-2px 0 10px', padding: '8px 10px', border: '1px solid #3a3320', borderRadius: 8, background: '#16140d' }} data-testid="edicoes-do-arquivo">
+                <b style={{ color: COR_INSERIDO }}>Edições do engenheiro:</b>
+                {inseridosPorTipo(a.edicoes, nomeDoTipo).map(t => (
+                  <span key={t.simbolo} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <IconeComponente componente={porSimbolo.get(t.simbolo)} tamanho={16} cor={COR_INSERIDO} /> {t.quantidade} × {t.nome}
+                  </span>
+                ))}
+                {a.edicoes?.removidos?.length > 0 && <span style={{ color: '#e5534b' }}>✕ {a.edicoes.removidos.length} ponto(s) retirado(s)</span>}
+                <span style={{ color: a.edicoesNoOrcamento ? '#57ab5a' : '#c9a227' }}>{a.edicoesNoOrcamento ? '· já no orçamento' : '· entram no orçamento ao reprocessar'}</span>
+                <button type="button" style={{ ...botao, marginLeft: 'auto' }} onClick={() => desfazerUltima(a)} disabled={ocupado} data-testid="desfazer-ultima-edicao">
+                  <Undo2 size={12} /> Desfazer a última
+                </button>
               </div>
             )}
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
@@ -388,6 +449,10 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
           <input type="file" accept=".json,application/json" style={{ display: 'none' }} onChange={importarBiblioteca} disabled={ocupado} data-testid="importar-biblioteca" />
         </label>
       </div>
+      {editor3d && (
+        <Modelo3dEditor analiseId={analiseId} componentes={componentes} nomeDisciplina={nomeDisciplina}
+          onEditado={aoEditarNo3d} onFechar={() => setEditor3d(false)} />
+      )}
     </div>
   );
 }

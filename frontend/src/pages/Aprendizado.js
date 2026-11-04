@@ -143,7 +143,8 @@ export default function Aprendizado() {
         <Titulo Icone={FolderSearch}>Treino com as obras já feitas</Titulo>
         <p style={estilos.ajuda}>
           O sistema lê a pasta dos clientes (só leitura, sem IA), <b>sempre por disciplina</b> — a do nome e das pastas de cada arquivo. Dos DWG/DXF aprende as
-          legendas, as alturas e os nomes de bloco de cada escritório; das planilhas e dos orçamentos em PDF, só os <b>materiais que o catálogo ainda não tem</b>
+          legendas, as alturas e os nomes de bloco de cada escritório; das <b>pranchas em PDF</b>, a legenda (símbolo + descrição) e as notas de altura do
+          escritório; das planilhas (inclusive o .xls antigo) e dos orçamentos em PDF, só os <b>materiais que o catálogo ainda não tem</b>
           (o que já existe não muda). Arquitetura, hidráulica e estrutura ficam de fora. Roda sozinho às 06:00 e às 18:00 (até 2 h por vez) e só relê o
           arquivo que mudou; cópia idêntica em outra pasta não conta duas vezes.
         </p>
@@ -151,6 +152,7 @@ export default function Aprendizado() {
           <Numero valor={n(acervo.lidos)} rotulo="arquivo(s) já lido(s)" detalhe={acervo.ultimo ? `último em ${dataHoraBr(acervo.ultimo)}` : 'nenhuma rodada ainda'} />
           <Numero valor={n(materiais.do_acervo)} rotulo="material(is) novo(s) no catálogo vindos do acervo" detalhe="das planilhas e orçamentos das obras, com o preço como referência" />
           <Numero valor={n(acervo.escritorios)} rotulo="escritório(s) de projeto identificados" />
+          <Numero valor={n(dados.legendasPdf?.em_uso)} rotulo="linha(s) de legenda de PDF aprendida(s)" detalhe={`de ${n(dados.legendasPdf?.escritorios)} escritório(s) — na prancha sem legenda, só sugestão a conferir`} />
           <Numero valor={n(acervo.ignorados)} rotulo="arquivo(s) de outra disciplina (não lidos)" detalhe="arquitetura, hidráulica, estrutura" />
           <Numero valor={n(acervo.erros)} rotulo="arquivo(s) que não deu para ler" cor={acervo.erros ? '#d9a53a' : undefined} />
         </div>
@@ -159,12 +161,13 @@ export default function Aprendizado() {
             {acervo.porDisciplina?.length > 0 && (
               <div style={estilos.caixaTabela}>
                 <table style={estilos.tabela}>
-                  <thead><tr>{['Disciplina', 'Desenhos', 'Planilhas / PDFs', 'Legenda aprendida'].map(h => <th key={h} style={estilos.th}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['Disciplina', 'Desenhos', 'Pranchas PDF', 'Planilhas / orçamentos', 'Legenda aprendida'].map(h => <th key={h} style={estilos.th}>{h}</th>)}</tr></thead>
                   <tbody>
                     {acervo.porDisciplina.map(d => (
                       <tr key={d.chave || '-'} style={estilos.linhaTabela}>
                         <td style={estilos.td}>{d.nome}</td>
                         <td style={estilos.td}>{n(d.desenhos)}</td>
+                        <td style={estilos.td}>{n(d.pranchas)}</td>
                         <td style={estilos.td}>{n(d.documentos)}</td>
                         <td style={{ ...estilos.td, color: 'var(--ouro)', fontWeight: 700 }}>{n(d.legenda)}</td>
                       </tr>

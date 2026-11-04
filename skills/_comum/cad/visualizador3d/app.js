@@ -26,6 +26,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { iniciarQuadro } from './quadro.js';
 import { simuladorDaCena, htmlFichaPonto, ligarBotoes, criarAviso, cenaQuadroEsquematica, htmlCenas } from './interativo.js';
 import { criarMapa } from './mapaIluminancia.js';
+import { iniciarEdicao } from './edicao.js';
 
 // Cena de QUADRO elétrico (skills/quadros): visualizador próprio em ./quadro.js.
 // A cena de prédio abaixo segue igual, só dentro de iniciarPredio().
@@ -1135,6 +1136,7 @@ function escolherDispositivo(cx, cy) {
     const m = t.malha;
     if (!m || !m.visible || !m.parent.visible) continue;
     for (const it of t.itens) {
+      if (it.fora) continue; // retirado no modo de edição (./edicao.js)
       vTmp.set(it[0], it[2], -it[1]);
       const d = camera.position.distanceTo(vTmp);
       // dentro do ambiente: só os dele e os muito próximos (sem "ver" através da parede)
@@ -1197,6 +1199,8 @@ function mostrarDica(cx, cy) {
   tela.style.cursor = 'pointer';
   return true;
 }
+// modo de edição de componentes (versão 2.30): só dentro da tela da análise, quando ela manda a paleta
+const edicao = iniciarEdicao({ CENA, tela, camera, cena, pisos, escolherDispositivo, pedirDesenho, esc });
 let pendenteMouse = null;
 tela.addEventListener('pointermove', (ev) => {
   if (ev.pointerType !== 'mouse' || ev.buttons) return;
@@ -1268,6 +1272,8 @@ tela.addEventListener('pointerup', (ev) => {
   if (!ini || toques.size) return;
   const curto = ev.timeStamp - ini.t < 350 && Math.hypot(ev.clientX - ini.x, ev.clientY - ini.y) < 10;
   if (!curto) return;
+  // modo de edição: o clique insere ou retira um componente
+  if (edicao.ativo()) { edicao.clique(ev.clientX, ev.clientY); return; }
   // 3D interativo: clique (mouse) num ponto do modelo aciona e abre a ficha
   if (ev.pointerType !== 'touch') { if (sim) clicarInterativo(ev.clientX, ev.clientY); return; }
   const agora = ev.timeStamp; // hora do evento (o quadro pode atrasar o tratamento)

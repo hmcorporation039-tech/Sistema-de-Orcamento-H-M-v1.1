@@ -81,19 +81,28 @@ async function lerPdfVetorial(buffer, opcoes = {}) {
   return m.paginas;
 }
 
-async function lerPdfVetorialAqui(buffer, { paginas, escala, nomeArquivo = '', maxPaginas = 10, maxCaminhos = MAX_CAMINHOS_PAGINA, tempoPaginaMs = TEMPO_PAGINA_MS, tempoLimiteMs = TEMPO_TOTAL_MS } = {}) {
+// Legenda conhecida (versão 2.30): a folha SEM legenda própria conta os símbolos pela legenda de outra folha do mesmo
+// PDF (o conjunto de pranchas costuma trazer a legenda numa folha só — antes essas folhas saíam com zero símbolos) ou,
+// sem nenhuma no arquivo, pela dos outros PDFs enviados junto na mesma análise (`legendaDoProjeto`: é a legenda do
+// próprio projeto — o conjunto de pranchas com a legenda numa folha só) e, por último, pela legenda aprendida do mesmo
+// escritório (`legendaAprendida`, só sugestão: a conferir).
+// A folha lida antes de a legenda aparecer é lida de novo no fim, se o tempo do arquivo deixar.
+const chaveDaLegenda = (k) => `${k.texto}|${k.sig.blob.chave}|${Math.round(k.sig.blob.w)}|${Math.round(k.sig.blob.h)}|${k.sig.comps.length}`;
+async function lerPdfVetorialAqui(buffer, { paginas, escala, nomeArquivo = '', maxPaginas = 10, maxCaminhos = MAX_CAMINHOS_PAGINA, tempoPaginaMs = TEMPO_PAGINA_MS, tempoLimiteMs = TEMPO_TOTAL_MS, legendaAprendida = [], legendaDoProjeto = [] } = {}) {
   const prazoTotal = Date.now() + tempoLimiteMs;
   const { getDocument, OPS } = await pdfjs();
   const doc = await getDocument({ data: new Uint8Array(buffer), isEvalSupported: false, verbosity: 0, disableFontFace: true }).promise;
   try {
     const lista = paginas || Array.from({ length: Math.min(doc.numPages, maxPaginas) }, (_, i) => i + 1);
     const saida = [];
-    for (const n of lista) {
+    const doArquivo = new Map(); // legenda das folhas deste PDF (chave → entrada)
+    const semLegenda = []; // folhas de planta contadas sem legenda própria nem de outra folha (posição em `saida`)
+    const legendaParaPagina = () => (doArquivo.size
+      ? [...doArquivo.values()].map(k => ({ ...k, origem: 'outra_pagina' }))
+      : legendaDoProjeto?.length ? legendaDoProjeto.map(k => ({ ...k, origem: 'outro_arquivo' }))
+        : (legendaAprendida || []).map(k => ({ ...k, origem: 'aprendida' })));
+    const lerFolha = async (n, legendaConhecida) => {
       const vazio = { itens: [], legenda: null, escala: null };
-      if (Date.now() > prazoTotal) {
-        saida.push({ pagina: n, caminhos: null, ...vazio, aviso: `não lida: o tempo de leitura do arquivo (${seg(tempoLimiteMs)} s) acabou antes desta página — conferir na planta`, pulada: { motivo: 'tempo_total', limite_s: seg(tempoLimiteMs) } });
-        continue;
-      }
       const t0 = Date.now();
       const prazo = Math.min(t0 + tempoPaginaMs, prazoTotal);
       let pag = null, nCaminhos = null, folha = null, reserva = null;
@@ -128,7 +137,7 @@ async function lerPdfVetorialAqui(buffer, { paginas, escala, nomeArquivo = '', m
             r.ignorada = `${folha.resumo} — sem contagem de símbolos (não é planta)`;
           } else if (geo.caminhos.length) {
             try {
-              r = analisarGeometria(geo, { escala, escalaReserva: reserva, regioesFora: folha?.regioesFora || [], regioesFolha: folha?.regioes || [], prazo });
+              r = analisarGeometria(geo, { escala, escalaReserva: reserva, regioesFora: folha?.regioesFora || [], regioesFolha: folha?.regioes || [], prazo, legendaConhecida });
               if (r.avisoEscala) r.aviso = r.avisoEscala;
             } catch (e) {
               if (e.codigo === 'TEMPO_ESGOTADO') throw e;
@@ -144,8 +153,25 @@ async function lerPdfVetorialAqui(buffer, { paginas, escala, nomeArquivo = '', m
           pulada: { motivo: 'tempo', limite_s: seg(prazo - t0) },
         };
       }
-      saida.push({ pagina: n, caminhos: nCaminhos, ms: Date.now() - t0, ...r, ...(folha ? { folha: { tipo: folha.tipo, resumo: folha.resumo, temPlanta: folha.temPlanta, semPlanta: folha.semPlanta, misto: folha.misto, regioes: folha.regioes } } : {}) });
       if (pag) pag.cleanup();
+      return { pagina: n, caminhos: nCaminhos, ms: Date.now() - t0, ...r, ...(folha ? { folha: { tipo: folha.tipo, resumo: folha.resumo, temPlanta: folha.temPlanta, semPlanta: folha.semPlanta, misto: folha.misto, regioes: folha.regioes } } : {}) };
+    };
+    const contadaSemLegenda = (p) => !p.legendaPropria && !p.ignorada && !p.pulada && p.caminhos > 0 && !p.itens.some(it => it.tipo === 'simbolo' && it.origem_legenda === 'outra_pagina');
+    for (const n of lista) {
+      if (Date.now() > prazoTotal) {
+        saida.push({ pagina: n, caminhos: null, itens: [], legenda: null, escala: null, aviso: `não lida: o tempo de leitura do arquivo (${seg(tempoLimiteMs)} s) acabou antes desta página — conferir na planta`, pulada: { motivo: 'tempo_total', limite_s: seg(tempoLimiteMs) } });
+        continue;
+      }
+      const p = await lerFolha(n, legendaParaPagina());
+      for (const k of p.legendaPropria || []) if (!doArquivo.has(chaveDaLegenda(k))) doArquivo.set(chaveDaLegenda(k), k);
+      if (contadaSemLegenda(p)) semLegenda.push(saida.length);
+      saida.push(p);
+    }
+    // folhas lidas antes de a legenda do arquivo aparecer: de novo, agora com ela
+    for (const i of doArquivo.size ? semLegenda : []) {
+      if (Date.now() > prazoTotal) break;
+      const p = await lerFolha(saida[i].pagina, legendaParaPagina());
+      if (!p.pulada) saida[i] = p;
     }
     // páginas além do limite: não somem caladas
     if (!paginas && doc.numPages > maxPaginas) {

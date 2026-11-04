@@ -980,3 +980,64 @@ Pedido do usuário: "faça o treino, mas faça com que o sistema sempre aprenda 
   - **Resumo**, a capa para o cliente: identificação, sistemas com barra do peso de cada um, preço final em faixa preta maior e as condições (validade, prazo estimado pelo Cronograma, composição do preço);
   - em todas as abas: célula digitável com fundo azul claro (além da fonte azul), guias coloridas e sem as linhas de grade do Excel;
   - com os parâmetros padrão, o preço final continua igual ao do PDF: o teste recalcula 40 propostas aleatórias.
+
+### 03/11/2026: versão 2.30.0 — biblioteca de componentes (inserir e retirar na planta e no 3D) e limites do treino superados
+
+Pedido do usuário: "treine para ficar o mais preciso possível, supere os limites encontrados e encontre soluções eficazes para resolver. Deixe o sistema o mais profissional possível, como as aplicações que citei anteriormente (QiBuilder, Revit MEP, AutoCAD Electrical, EPLAN), para desenvolvimento e projetos das disciplinas do sistema. Se possível, vamos deixar componentes que podemos inserir ou retirar de projetos analisados, já com os símbolos definidos, isso tanto no diagrama do projeto como no 3D."
+
+- **Biblioteca de componentes por disciplina** (`services/bibliotecaComponentes.js`):
+  - os 57 tipos de ponto que o orçamento e o 3D entendem (`mapaCad.tiposDisponiveis`), cada um com o **símbolo de planta da H&M** em SVG. É o mesmo bloco do DXF que a H&M entrega (`skills/_comum/cad/simbolos.js`): o detector é o círculo com "F", a tomada é o triângulo;
+  - cada tipo traz também a **montagem** (teto, parede, piso, canto, topo da porta) e a altura típica do 3D. A altura é sugestão do modelo, não norma: o engenheiro troca;
+  - os tipos de climatização passam a ter a disciplina **climatização** (antes caíam em "elétrica").
+- **Inserir e retirar componentes na planta do Mapa do CAD** (`components/analise/PlantaMapaCad.js`, `MapaCad.js`):
+  - modos **Conferir / Inserir / Retirar**. A paleta fica por disciplina, em ordem alfabética, com o símbolo ao lado;
+  - com o zoom perto, cada ponto aparece com o **símbolo do tipo** (cor pela situação), não uma bolinha;
+  - o inserido fica em dourado e o retirado com um X vermelho. Clicar de novo num deles (modo Retirar) desfaz, e há "Desfazer a última";
+  - a planta passa a existir mesmo no desenho só de arquitetura (sem nenhum símbolo): é nela que se insere.
+- **As edições** (`services/edicoesDoMapa.js`, `PUT /projetos/analises/:id/mapa/edicoes`, com autenticação e posse):
+  - ficam em `dados_extraidos[i].mapa_cad.edicoes`, nas coordenadas do arquivo, com auditoria (`mapa_cad_componentes`);
+  - o retirado é guardado pela **posição**, não pela linha do mapa. Cada retirada tira **um** componente, o mais perto, até 35 cm: o ponto de inserção do bloco nomeado pode ficar fora do centro dele;
+  - retirar o que foi inserido desfaz a inserção.
+- **Orçamento:** no "Reprocessar com o mapa conferido" (agora também só com edições):
+  - o inserido entra como **ponto conferido** (origem "componente inserido pelo engenheiro"), com a altura típica da biblioteca, e o retirado sai da contagem, seja bloco nomeado ou símbolo explodido;
+  - a disciplina do inserido que não estava marcada entra na análise nova, como já acontecia com os pontos conferidos;
+  - a lista de edições segue com o mapa, e a tela avisa quando há edição ainda fora do orçamento.
+- **3D:**
+  - o modelo mostra as edições **na hora**, sem reprocessar (`modelo3d.comEdicoes`). Elas são alinhadas ao arquivo de referência pelo deslocamento de cada arquivo, e o inserido tem id estável;
+  - o ponto lido do desenho leva o **tipo exato** ao 3D: antes o 3D adivinhava o tipo pela descrição;
+  - a cena ganhou `origem` (o ponto 0,0 nas coordenadas do desenho).
+- **Editar no 3D** (`components/analise/Modelo3dEditor.js`, `skills/_comum/cad/visualizador3d/edicao.js`):
+  - o 3D abre **dentro da tela da análise**, com o painel Navegar / Inserir / Retirar e a mesma paleta;
+  - inserir: clique no piso; o marcador aparece na cor da disciplina, na altura do tipo. Retirar: clique no componente;
+  - "Atualizar 3D" gera de novo, com a peça encostada na parede e no ambiente certos.
+- **Segurança do 3D embutido:**
+  - a página continua em sandbox, sem a origem do sistema, sem login e sem rede, e só **avisa** a tela por `postMessage`;
+  - a tela confere de onde veio a mensagem e o conteúdo (componente da biblioteca, números finitos) e grava com o login de quem está nela;
+  - só o link pedido como "embutido" pode ser emoldurado, e só pela própria tela (`frame-ancestors 'self'`). O 3D em outra aba, o arquivo baixado e o link do cliente continuam como antes, sem o modo de edição.
+- **Limites do treino superados:**
+  - **.xls antigo (Excel 97-2003):** leitor próprio, sem dependência nova (`utils/leitorXls.js`: arquivo composto + registros BIFF8, inclusive texto que atravessa o CONTINUE e resultado guardado das fórmulas). Os dois .xls reais do acervo agora são lidos: 184 e 119 itens, listas de quantidade sem preço. A instalação do pacote SheetJS foi bloqueada pela permissão automática, e o leitor próprio dispensa o pacote;
+  - **prancha em PDF sem legenda:** antes contava zero símbolos. Agora conta:
+    - pela legenda de **outra folha do mesmo PDF**; a folha lida antes de a legenda aparecer é relida no fim;
+    - pela dos **outros PDFs do mesmo projeto** enviados juntos (o conjunto "1-5 … 5-5" com a legenda numa folha só). As duas valem como a legenda do projeto;
+  - **legenda de PDF aprendida por escritório** (migração 2.0-51, `services/legendasPdfAprendidas.js`):
+    - cada linha de legenda lida num PDF (assinatura do símbolo + descrição) fica guardada por escritório;
+    - no PDF do mesmo escritório **sem legenda nenhuma**, ela conta como **sugestão a conferir** (fora do orçamento até conferir);
+    - só é guardada a linha que vira um tipo de ponto do sistema; mesma assinatura com tipo diferente é conflito e sai do uso;
+    - as notas de altura do texto da prancha também ensinam;
+  - **escritório da prancha em PDF** (`escritorioDoPdf`): no acervo real o carimbo quase nunca traz o responsável. Por isso entram, nesta ordem, a linha "AUTOR DO PROJETO / PROJETISTA / RESPONSÁVEL TÉCNICO" e a sigla da projetista no código do desenho ("DE-HSL-5300-DME-…"). Rótulo lido como nome ("RESPONSAVEL TECNICO", "PELA") é descartado;
+  - **o treino lê as pranchas em PDF do acervo** (tipo `prancha`, a última da fila por ser a mais lenta), e o DWG passa a ser lido **com o que o sistema já sabe**: o "reconhecidas" do treino mede o sistema de verdade;
+  - **disciplina na busca do aprendido:** bloco aprendido de outro escritório só vale se a disciplina dele é uma das marcadas no arquivo. No mesmo escritório, vale como sempre;
+  - **placar:** `node scripts/placar-precisao.js --com-aprendizado` lê com o aprendizado do banco, para medir o ganho do treino. Ainda não há gabarito conferido na pasta do placar: a medida real depende de o engenheiro conferir os primeiros projetos (`--modelo`).
+- **Ensaio com o acervo real** (só leitura, banco de teste, depois limpo):
+  - das 1483 pranchas em PDF do acervo, 30 foram amostradas: 46 linhas de legenda de 4 escritórios, cada prancha lida em 0 a 22 s;
+  - o achado do carimbo sem responsável levou às reservas do escritório.
+- **Integração** (cópia temporária do servidor de teste, isolada):
+  - DXF sintético analisado e uma tomada conferida;
+  - inserção de 2 detectores pela planta, retirada de 1 tomada e inserção de 1 câmera pelo 3D;
+  - o 3D embutido tem `frame-ancestors 'self'`, e o de aba continua com `'none'`;
+  - o reprocessamento deu 4 tomadas, 2 detectores e 1 câmera no orçamento, com Incêndio e CFTV incluídos.
+- **Ficou para depois:**
+  - OCR do texto SHX desenhado em traços;
+  - leitura de IFC (web-ifc);
+  - legenda e carimbo pela posição na folha;
+  - arrastar (mover) um componente na planta e no 3D. Hoje é retirar e inserir de novo.

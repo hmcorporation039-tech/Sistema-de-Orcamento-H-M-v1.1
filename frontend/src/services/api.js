@@ -193,6 +193,8 @@ export const gerarOrcamentoDaAnalise = (id) => api.post(`/projetos/analises/${id
 // Mapa do CAD: o que o sistema entendeu de cada layer do DWG/DXF; a correção vira aprendizado; reprocessar grava uma análise nova
 export const getMapaCad = (id) => api.get(`/projetos/analises/${id}/mapa`);
 export const salvarMapaCad = (id, arquivo, linhas) => api.put(`/projetos/analises/${id}/mapa`, { arquivo, linhas });
+// componentes inseridos/retirados (2.30): { arquivo, adicionar, remover, desfazer } ou { sistema: '3d', adicionar, remover }
+export const editarMapaCad = (id, corpo) => api.put(`/projetos/analises/${id}/mapa/edicoes`, corpo);
 export const reprocessarMapaCad = (id, corpo = {}) => api.post(`/projetos/analises/${id}/mapa/reprocessar`, corpo, { timeout: 300000 });
 // biblioteca de blocos (o que o mapa do CAD ensinou), em JSON: exportar (logado) e importar (administrador)
 export const exportarBibliotecaBlocos = () => api.get('/projetos/biblioteca-blocos');
@@ -227,8 +229,8 @@ export const enviarArquiteturaLaudo = (id, arquivo, opcoes) => api.post(`/laudos
 export const getArquiteturaLaudo = (id) => api.get(`/laudos/${id}/arquitetura`);
 // Modelo 3D ilustrativo (2.3) — origem: 'laudo' | 'analise' | 'proposta'
 export const getModelo3d = (origem, id) => api.get(`/modelo-3d/${origem}/${id}`);
-// { url: '/api/modelo-3d/ver/<token>' (vale 10 min), numeros, avisos }
-export const abrirModelo3d = (origem, id) => api.post(`/modelo-3d/${origem}/${id}/abrir`, null, { timeout: 180000 });
+// { url: '/api/modelo-3d/ver/<token>' (vale 2 h), numeros, avisos }; embutido: o 3D dentro da tela da análise (modo de edição)
+export const abrirModelo3d = (origem, id, { embutido = false } = {}) => api.post(`/modelo-3d/${origem}/${id}/abrir`, embutido ? { embutido: true } : null, { timeout: 180000 });
 export const urlModelo3d = (caminho) => `${process.env.REACT_APP_API_URL || ''}${caminho}`;
 export const baixarModelo3d = (origem, id) => api.get(`/modelo-3d/${origem}/${id}/arquivo`, { responseType: 'blob', timeout: 180000 });
 export const enviarArquiteturaAnalise = (id, arquivo, opcoes) => api.post(`/projetos/analises/${id}/arquitetura`, formArquitetura(arquivo, opcoes), { timeout: 240000 });
