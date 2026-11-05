@@ -25,6 +25,8 @@ const { SIMBOLOS } = require('./simbolos');
 const { separarEletrocalhas, sugerirCaminhos, buscaMaisPerto, MAX_SUGERIDOS } = require('./infraestrutura');
 const { comPosicoes } = require('../instalacao');
 const { instalacaoDoDesenho } = require('../instalacao/doDesenho');
+const { anotarCircuitos } = require('./circuitoDoDesenho');
+const { tagNaPlanta } = require('./quadrosDoDiagrama');
 // peças e duto da climatização (fase 4), declarados na skill
 const CLIM = require('../../climatizacao/scripts/lib/cad');
 
@@ -1025,7 +1027,7 @@ function montarCena(arquitetura, opcoes = {}) {
     if (circuito || comando) it.push(circuito, comando);
     t.itens.push(it);
     if (d.id && d.daInstalacao) posInstalacao.set(String(d.id), [x, y, r2(p.z)]);
-    if (!opcoes.instalacao) doDesenho.push({ it, simbolo: d.simbolo, forma: t.forma, disciplina: disc, ambiente: amb, nomeAmbiente: amb >= 0 ? ambs[amb].nome : null, x, y, id: d.id || '', circuito, comando });
+    if (!opcoes.instalacao) doDesenho.push({ it, simbolo: d.simbolo, forma: t.forma, disciplina: disc, ambiente: amb, nomeAmbiente: amb >= 0 ? ambs[amb].nome : null, x, y, rx: d.x, ry: d.y, id: d.id || '', circuito, comando });
   }
 
   const internos = ambs.filter(a => a.tipo !== 'externo');
@@ -1064,7 +1066,21 @@ function montarCena(arquitetura, opcoes = {}) {
   // abre, o disjuntor desliga e o interruptor acende as luminárias do ambiente — marcada como estimativa
   let instalacao = opcoes.instalacao ? comPosicoes(opcoes.instalacao, posInstalacao) : null;
   if (!instalacao && opcoes.instalacaoEstimada !== false) {
-    const est = instalacaoDoDesenho(doDesenho);
+    // número do circuito escrito junto do ponto na planta (o conferido no Mapa do CAD vale mais) e a tag
+    // do quadro escrita junto do símbolo dele: ligam o ponto ao circuito ORIGINAL do diagrama do projeto
+    let lidosNaPlanta = 0;
+    if (opcoes.rotulos?.length) {
+      const alvo = doDesenho.filter(x => !x.circuito && x.forma !== 'quadro' && Number.isFinite(x.rx)).map(x => ({ x: x.rx, y: x.ry, simbolo: x.simbolo, ref: x }));
+      anotarCircuitos(alvo, opcoes.rotulos);
+      for (const a of alvo) {
+        if (!a.circuito_lido) continue;
+        a.ref.circuito = a.circuito_lido;
+        if (a.retorno_lido && !a.ref.comando) a.ref.comando = `${a.circuito_lido}${a.retorno_lido.split(',')[0]}`;
+        lidosNaPlanta++;
+      }
+      for (const x of doDesenho) if (x.forma === 'quadro' && Number.isFinite(x.rx)) x.tag = tagNaPlanta(x.rx, x.ry, opcoes.rotulos);
+    }
+    const est = instalacaoDoDesenho(doDesenho, { quadros: opcoes.quadrosDoDiagrama || [] });
     if (est) {
       est.ids.forEach((id, k) => {
         if (!id) return;
@@ -1073,7 +1089,13 @@ function montarCena(arquitetura, opcoes = {}) {
         posInstalacao.set(id, [it[0], it[1], it[2]]);
       });
       instalacao = comPosicoes(est.instalacao, posInstalacao);
-      avisos.push('3D interativo com a instalação ESTIMADA pelo desenho: circuitos por ambiente (ou o número escrito no desenho) e os interruptores do ambiente comandando as luminárias dele — simulação para conferir, não é o projeto elétrico [CONFERIR].');
+      const r = est.resumo || {};
+      if (r.quadrosLidos?.length) {
+        avisos.push(`3D interativo com os circuitos ORIGINAIS do projeto (diagrama unifilar / quadro de cargas): ${r.quadrosLidos.join(', ')} — ${r.circuitosLidos} circuitos com disjuntor, seção e DR do diagrama. Pontos ligados: ${r.porNumero} pelo número do circuito escrito na planta${lidosNaPlanta ? ' (leitura a conferir no Mapa do CAD)' : ''}, ${r.porDescricao} pela descrição do circuito, ${r.porTipo} pelo único circuito do tipo no quadro${r.estimados ? `; ${r.estimados} sem circuito identificado ficaram num circuito ESTIMADO` : ''} [CONFERIR].`);
+      } else {
+        avisos.push('3D interativo com a instalação ESTIMADA pelo desenho: circuitos por ambiente (ou o número escrito no desenho) e os interruptores do ambiente comandando as luminárias dele — simulação para conferir, não é o projeto elétrico [CONFERIR].');
+        if ((opcoes.quadrosDoDiagrama || []).length) avisos.push(`Quadros lidos no diagrama do projeto (${opcoes.quadrosDoDiagrama.map(q => q.tag).join(', ')}) sem quadro com a mesma tag desenhado nesta planta: escreva a tag junto do símbolo do quadro para o 3D usar os circuitos originais [CONFERIR].`);
+      }
     }
   }
   return {

@@ -75,6 +75,9 @@ function montarCenasPorPlanta(arquitetura, opcoes = {}) {
     if (varias && !dispositivos.length && !arq.ambientes.some(a => !a.semNome)) continue;
     const cena = montarCena(arq, {
       peDireito: opcoes.peDireito, dispositivos, avisos, trechos, estimarInfra: false, sugerirInfra: opcoes.sugerirInfra !== false,
+      // circuitos originais dos quadros (unifilar/quadro de cargas, lidos no desenho inteiro) e os textos curtos da
+      // planta (número do circuito junto do ponto, tag junto do quadro): ./quadrosDoDiagrama.js
+      quadrosDoDiagrama: arquitetura.quadrosDoDiagrama || [], rotulos: arquitetura.rotulos || [],
       titulo: opcoes.titulo, cliente: opcoes.cliente, obra: opcoes.obra, proposta: opcoes.proposta,
       ...(instalacao ? { instalacao } : {}),
     });

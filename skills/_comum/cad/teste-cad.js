@@ -397,6 +397,52 @@ caso('nota e contagem dentro da planta não são nome de sala', () => {
   assert.deepStrictEqual(nomes([[2.5, '30A-30mA'], [7.5, 'PD SOB VIGA= 1,85m'], [12.5, 'TOTAL VAGAS: 7'], [17.5, 'RECEPÇÃO']]), ['RECEPÇÃO']);
 });
 
+// ── Circuitos originais dos quadros: diagrama unifilar e quadro de cargas (04/11/2026) ─────────
+// Desenho SINTÉTICO no arranjo do QiBuilder: barramento no meio, saídas dos dois lados com número,
+// potência e descrição na mesma linha e o disjuntor/seção logo acima; DR com a corrente acima do "DR"
+caso('quadros do diagrama: unifilar (disjuntor, seção, DR, geral, título) e quadro de cargas em tabela', () => {
+  const { lerQuadrosDoDiagrama, tagNaPlanta, tipoDoCircuito } = require('./quadrosDoDiagrama');
+  const T = [];
+  const t = (s, x, y, h = 0.2) => T.push({ s, x, y, h, layer: 'DI-Textos do diagrama' });
+  T.push({ s: 'QD-01 (TÉRREO)', x: -3.5, y: 24, h: 0.25, layer: 'DI-Títulos' });
+  t('3#10(10)10mm²', 10.5, 23); t('50 A', 10, 22);
+  t('40 A', 11.2, 21.5); t('DR', 11.2, 21); t('30 mA', 11.9, 20.8);
+  // lado direito (número à direita): 1 e 3, sob o DR do alto
+  t('10 A', 12, 20.88); t('1.5', 12.5, 20.52); t('ILUM. RECEPÇÃO', 14.1, 20); t('180 W', 18.3, 20); t('1', 19.7, 20);
+  t('20 A', 12, 17.32); t('2.5', 12.5, 16.96); t("TUG'S RECEPÇÃO", 14.1, 16.44); t('1200 W', 18.3, 16.44); t('3', 19.7, 16.44);
+  // lado esquerdo: chuveiro com DR próprio entre a descrição e o barramento
+  t('40 A', 2.6, 19.8); t('32 A', 3.9, 19.04); t('6', 3.4, 18.68); t('DR', 2.6, 18.26);
+  t('2', -3.4, 18.22); t('5400 W', -2, 18.22); t('CHUVEIRO', 1.8, 18.22);
+  // legenda de luminárias (número + potência + nome, sem disjuntor): não é quadro
+  t('1', 40, 10); t('LUMINÁRIA LED', 41.5, 10); t('15 W', 45, 10);
+  t('2', 40, 9); t('PLAFON', 41.5, 9); t('9 W', 45, 9);
+  // quadro de cargas em tabela
+  const c = (s, x, y) => T.push({ s, x, y, h: 0.13, layer: 'TABELA' });
+  c('QUADRO DE CARGAS - QDL-2 (COZINHA)', 60, 51);
+  [['CIRCUITO', 60], ['DESCRIÇÃO', 62], ['QTD', 66], ['POTÊNCIA (VA)', 68], ['DISJUNTOR', 71], ['SEÇÃO (mm²)', 73], ['FASES', 75], ['DR', 77]].forEach(([s, x]) => c(s, x, 50));
+  [['1', 60.3], ['ILUM. COZINHA', 62], ['-', 66.3], ['300', 68.2], ['10 A', 71.2], ['1,5', 73.3], ['R', 75.2], ['-', 77.1]].forEach(([s, x]) => c(s, x, 49.6));
+  [['2', 60.3], ['TOMADAS COZINHA', 62], ['4', 66.3], ['1.800', 68.2], ['2P-20A', 71.2], ['2,5', 73.3], ['RS', 75.2], ['30mA', 77.1]].forEach(([s, x]) => c(s, x, 49.2));
+  c('TOTAL', 60, 48.8); c('2100', 68.2, 48.8);
+
+  const qs = lerQuadrosDoDiagrama(T);
+  assert.deepStrictEqual(qs.map(q => q.tag), ['QD-01', 'QDL-2'], 'o unifilar e a tabela; a legenda de luminárias não é quadro');
+  const [u, tab] = qs;
+  assert.strictEqual(u.descricao, 'TÉRREO');
+  assert.deepStrictEqual(u.geral, { In: 50, polos: 3 }, 'geral logo abaixo do cabo do alimentador');
+  assert.deepStrictEqual(u.circuitos.map(x => [x.numero, x.descricao, x.potencia_w, x.In, x.secao_mm2, x.dr]), [
+    ['1', 'ILUM. RECEPÇÃO', 180, 10, 1.5, 'DR1'], ['2', 'CHUVEIRO', 5400, 32, 6, 'DR2'], ['3', "TUG'S RECEPÇÃO", 1200, 20, 2.5, 'DR1'],
+  ], 'a corrente do DR (40 A acima do "DR") não vira disjuntor do chuveiro');
+  assert.deepStrictEqual(u.drs.map(d => [d.tag, d.In, d.idn_ma, d.circuitos]), [['DR1', 40, 30, ['1', '3']], ['DR2', 40, null, ['2']]]);
+  assert.deepStrictEqual(tab.circuitos.map(x => [x.numero, x.descricao, x.potencia_va, x.In, x.polos, x.secao_mm2, x.fases, !!x.dr]), [
+    ['1', 'ILUM. COZINHA', 300, 10, null, 1.5, 1, false], ['2', 'TOMADAS COZINHA', 1800, 20, 2, 2.5, 2, true],
+  ], 'colunas pelo cabeçalho (a "QTD" não desloca a potência); para no TOTAL');
+  assert.strictEqual(tab.descricao, 'COZINHA');
+  assert.deepStrictEqual(['ILUM. QUADRA 1', "TUG'S WC'S", 'CHUV. COMUM', 'AR-CONDICIONADO', 'BOMBA DE RECALQUE', 'RESERVA'].map(tipoDoCircuito), ['iluminacao', 'tug', 'tue', 'ar_condicionado', 'motor', 'reserva']);
+  assert.strictEqual(tagNaPlanta(0, 0, [{ s: 'QDFL-7', x: 0.6, y: 0.2 }, { s: 'QGBT', x: 5, y: 0 }]), 'QDFL-7');
+  assert.strictEqual(tagNaPlanta(0, 0, [{ s: 'QUADRAS 1 E 2', x: 0.5, y: 0 }]), null, '"QUADRAS 1" não é tag de quadro');
+  assert.deepStrictEqual(lerQuadrosDoDiagrama([]), []);
+});
+
 // casos assíncronos (DWG) terminam depois dos síncronos
 process.on('beforeExit', () => { if (!process.__fimCad) { process.__fimCad = true; console.log(`cad: ${ok} casos ok`); } });
 

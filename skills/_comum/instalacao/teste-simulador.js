@@ -330,4 +330,53 @@ caso('instalação estimada pelo desenho: quadro, circuito por ambiente e interr
   assert.strictEqual(instalacaoDoDesenho([it('HM-CFTV-CAMERA', 'camera', 0, 0, 0, { disciplina: 'cftv' })]), null, 'sem nada elétrico: sem instalação');
 });
 
+// pedido de 04/11/2026: o quadro do 3D com os circuitos ORIGINAIS do diagrama unifilar/quadro de cargas do projeto
+caso('instalação pelo desenho com os quadros lidos do diagrama: circuitos originais, ponto pelo número, pela descrição e pelo tipo', () => {
+  const { instalacaoDoDesenho } = require('./doDesenho');
+  const it = (simbolo, forma, nome, x, y, extra = {}) => ({ simbolo, forma, disciplina: 'eletrica', ambiente: nome ? 0 : -1, nomeAmbiente: nome, x, y, id: '', circuito: '', comando: '', ...extra });
+  const lidos = [
+    { tag: 'QD-01', descricao: 'TÉRREO', origem: 'unifilar', geral: { In: 50, polos: 3 },
+      drs: [{ tag: 'DR1', In: 40, idn_ma: null, circuitos: ['1', '3'] }, { tag: 'DR2', In: 40, idn_ma: 30, circuitos: ['2'] }],
+      circuitos: [
+        { numero: '1', descricao: 'ILUM. RECEPÇÃO', tipo: 'iluminacao', potencia_w: 180, In: 10, secao_mm2: 1.5, dr: 'DR1' },
+        { numero: '2', descricao: 'CHUVEIRO', tipo: 'tue', potencia_w: 5400, In: 32, secao_mm2: 6, dr: 'DR2' },
+        { numero: '3', descricao: "TUG'S RECEPÇÃO", tipo: 'tug', potencia_w: 1200, In: 20, secao_mm2: 2.5, dr: 'DR1' },
+      ] },
+    { tag: 'QD-02', descricao: 'COZINHA', origem: 'tabela', geral: null, drs: [],
+      circuitos: [{ numero: '1', descricao: 'ILUM. COZINHA', tipo: 'iluminacao', potencia_va: 300, In: 10 }, { numero: '2', descricao: 'TOMADAS COZINHA', tipo: 'tug', potencia_va: 1800, In: 20 }] },
+    { tag: 'QD-03', descricao: 'GARAGEM', origem: 'unifilar', geral: null, drs: [], circuitos: [{ numero: '1', descricao: 'ILUM. GARAGEM', tipo: 'iluminacao', In: 10 }] },
+  ];
+  const itens = [
+    it('HM-ELE-QUADRO', 'quadro', 'RECEPÇÃO', 0, 0, { tag: 'QD-01' }),
+    it('HM-ILU-LUMINARIA', 'luminaria', 'RECEPÇÃO', 2, 2),                       // pela descrição: ILUM. RECEPÇÃO
+    it('HM-ELE-TOMADA-BAIXA', 'tomada', 'RECEPÇÃO', 3, 0, { circuito: '3' }),     // pelo número escrito junto
+    it('HM-ELE-TOMADA-TUE', 'tomada', 'RECEPÇÃO', 4, 0),                          // o único TUE do quadro
+    it('HM-ELE-INTERRUPTOR', 'interruptor', 'RECEPÇÃO', 1, 0),
+    it('HM-ILU-LUMINARIA', 'luminaria', 'COZINHA', 30, 2),                        // QD-02 não desenhado: pela descrição
+  ];
+  const r = instalacaoDoDesenho(itens, { quadros: lidos });
+  const inst = r.instalacao;
+  assert.deepStrictEqual(inst.quadros.map(q => q.tag), ['QD-01', 'QD-02'], 'o QD-03 (sem ponto nesta planta) fica de fora');
+  const qd1 = inst.quadros[0];
+  assert.strictEqual(qd1.ponto, r.ids[0], 'o quadro lido é o desenhado com a mesma tag');
+  assert.deepStrictEqual(qd1.disjuntores.map(d => [d.tag, d.In]), [['Q1', 10], ['Q2', 32], ['Q3', 20]], 'disjuntores do diagrama');
+  assert.strictEqual(qd1.geral.In, 50);
+  assert.ok(qd1.drs.every(d => d.lido) && qd1.drs[0].idn_ma === null, 'sensibilidade não escrita fica null (o 3D diz "a conferir")');
+  const circ = (k) => inst.circuitos.find(c => c.id === inst.pontos.find(p => p.id === r.ids[k]).circuito);
+  assert.strictEqual(circ(1).descricao, 'ILUM. RECEPÇÃO');
+  assert.strictEqual(circ(2).id, 'QD-01.3');
+  assert.strictEqual(circ(3).descricao, 'CHUVEIRO');
+  assert.strictEqual(circ(5).id, 'QD-02.1');
+  assert.ok(inst.circuitos.filter(c => c.quadro === 'QD-01').every(c => c.origem === 'diagrama' && !c.estimado));
+  assert.deepStrictEqual([r.resumo.porNumero, r.resumo.porDescricao, r.resumo.porTipo, r.resumo.estimados], [1, 2, 1, 0]);
+  const sim = criarSimulador(inst);
+  assert.ok(sim.energizado(r.ids[1]) && sim.energizado(r.ids[2]));
+  sim.desligar('DR1', 'QD-01');
+  assert.ok(!sim.energizado(r.ids[1]) && !sim.energizado(r.ids[2]) && sim.energizado(r.ids[3]), 'o DR1 do diagrama protege os circuitos 1 e 3, não o chuveiro');
+  // quadro desenhado sem tag, no ambiente do quadro lido: liga pelo nome do ambiente
+  const r2 = instalacaoDoDesenho([it('HM-ELE-QUADRO', 'quadro', 'COZINHA', 30, 0), it('HM-ILU-LUMINARIA', 'luminaria', 'COZINHA', 30, 2)], { quadros: lidos });
+  assert.strictEqual(r2.instalacao.quadros[0].tag, 'QD-02');
+  assert.strictEqual(r2.instalacao.quadros[0].ponto, r2.ids[0]);
+});
+
 console.log(`simulador da instalação (fases 2 e 5): ${ok} casos ok`);

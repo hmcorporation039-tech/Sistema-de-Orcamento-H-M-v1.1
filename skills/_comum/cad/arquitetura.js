@@ -15,6 +15,8 @@ const { Helper } = require('dxf');
 const { classificarFolha, NAO_PLANTA, RE_NOME_SALA } = require('./classificarPrancha');
 const { ehLayerDeInstalacao } = require('./disciplinasCad');
 const { limparMtext } = require('./textoCad');
+const { lerQuadrosDoDiagrama, RE_TAG } = require('./quadrosDoDiagrama');
+const { lerMarcacao } = require('./circuitoDoDesenho');
 
 // $INSUNITS → fator para metros (0 = sem unidade: decide pelas portas/tamanho)
 const FATOR = { 1: 0.0254, 2: 0.3048, 4: 0.001, 5: 0.01, 6: 1 };
@@ -576,6 +578,11 @@ function lerArquitetura(textoDxf, opcoes = {}) {
   // espaço do modelo (planta + unifilar ao lado) era lido inteiro como planta.
   const classificacao = opcoes.classificar === false ? null : classificarDesenho(refM, arcosM, textosTodos);
   const regioesPlanta = (classificacao?.regioes || []).filter(r => r.tipo === 'planta').map(r => r.caixa);
+  // circuitos ORIGINAIS dos quadros (unifilar e quadro de cargas, ./quadrosDoDiagrama.js): lidos antes de
+  // os textos do diagrama saírem da planta — o 3D os leva ao quadro desenhado (pedido de 04/11/2026)
+  let quadrosDoDiagrama = [];
+  // (os textos das layers de tabela/diagrama vêm separados: as notas "da legenda")
+  try { quadrosDoDiagrama = lerQuadrosDoDiagrama([...textosTodos, ...notasM.filter(n => n.legenda)], classificacao?.regioes || []); } catch { /* a leitura do diagrama não derruba a planta */ }
   if (classificacao) {
     const fora = classificacao.regioes.filter(r => NAO_PLANTA.has(r.tipo)).map(r => r.caixa);
     const dentroDe = (lista, [x, y]) => lista.some(c => x >= c[0] - 0.05 && x <= c[2] + 0.05 && y >= c[1] - 0.05 && y <= c[3] + 0.05);
@@ -589,6 +596,8 @@ function lerArquitetura(textoDxf, opcoes = {}) {
     }
   }
   const textosM = textosTodos.filter(ehNome);
+  // número do circuito e tag do quadro escritos na planta (só os textos curtos que podem ser isso)
+  const rotulos = textosTodos.filter(t => t.s.length <= 30 && (RE_TAG.test(t.s) || lerMarcacao(t.s))).map(({ s, x, y }) => ({ s, x, y }));
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const r of refM) for (const [x, y] of r.pts) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
   const extensao = Number.isFinite(x0) ? { min: [x0, y0], max: [x1, y1] } : { min: [0, 0], max: [0, 0] };
@@ -658,6 +667,7 @@ function lerArquitetura(textoDxf, opcoes = {}) {
     // classificação da folha (planta × diagrama × tabela…) e as caixas de planta, em metros
     classificacao: classificacao && { tipo: classificacao.tipo, resumo: classificacao.resumo, temPlanta: classificacao.temPlanta, semPlanta: classificacao.semPlanta, misto: classificacao.misto, regioes: classificacao.regioes.map(({ caixa, tipo, rotulo, titulo, confianca, motivos }) => ({ caixa, tipo, rotulo, titulo, confianca, motivos })) },
     regioesPlanta,
+    quadrosDoDiagrama, rotulos,
   };
 }
 

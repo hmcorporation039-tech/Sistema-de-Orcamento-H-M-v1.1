@@ -1068,3 +1068,37 @@ Pedidos do usuário: "revise todo sistema, veja se o mesmo é capaz de não depe
   - solar: limite de 3 MW da minigeração para fonte não despachável (Lei 14.300);
   - edições novas publicadas, com aviso [CONFERIR] no cálculo: NBR 14565:2025, IEC 62676-4:2025 (DORI redefinido), NBR 9077:2025, NBR 16401-1/-2:2024 (a -3:2024 está suspensa, vale a 2008), ISO/CIE 8995-1:2025; SPDA: seção do aço cobreado na captação [CONFERIR Tabela 7 da 5419-3:2026]. A NBR 5410 continua a de 2004 (revisão em consulta).
 - **Aprendizado:** bloco aprendido de "iluminação externa" passa a valer em arquivo marcado como iluminação.
+
+### 04/11/2026: versão 2.32.0 — o quadro do 3D com os circuitos originais do diagrama unifilar do projeto
+
+Pedido do usuário: "Os quadros elétricos não estão importando os circuitos originais dos diagramas unifilares dos projetos e transportando para a visualização 3D. Corrija."
+
+- **Antes:** a análise só reconhecia a região do unifilar para tirá-la da planta. O 3D montava um circuito de iluminação e um de tomadas por ambiente, com o disjuntor "a definir".
+- **Leitor dos quadros do desenho** (`skills/_comum/cad/quadrosDoDiagrama.js`, determinístico, sem IA):
+  - **unifilar** (arranjo do QiBuilder/AltoQi): em cada saída, número, descrição e potência na mesma linha; o disjuntor e a seção logo acima, do lado do barramento. O DR é o "DR" com a corrente logo acima dele e protege as saídas de baixo do mesmo lado. A sensibilidade só é lida se estiver escrita. O geral fica abaixo do cabo do alimentador ("3#95(50)50"). A tag vem do título ("QDFL-1 (EXTERIOR E RECEPÇÃO)");
+  - **quadro de cargas em tabela**: pelo cabeçalho (CIRCUITO, DESCRIÇÃO, POTÊNCIA, DISJUNTOR, SEÇÃO, FASES, DR), até a linha do TOTAL;
+  - o mesmo quadro nos dois vira um só. Nada é inventado: o que não está escrito fica null.
+  - Conferido em dois desenhos reais (dados só na pasta temporária, fora do repositório):
+    - Arena: 7 quadros, QDFL-1 a QDFL-7, com 52 circuitos, disjuntores, seções e DRs iguais aos do diagrama;
+    - subestação: quadro de carga CX.P1.
+- **Leitura da arquitetura** (`arquitetura.js`): os quadros do diagrama são lidos antes de o diagrama sair da planta, incluindo os textos das layers de tabela/diagrama. A leitura também guarda os textos curtos da planta: número do circuito e tag do quadro.
+- **3D** (`instalacao/doDesenho.js`, `modelo3d.js`, `modelosPorPlanta.js`):
+  - **ligação do quadro desenhado ao quadro lido, em ordem:**
+    1. pela tag escrita junto do símbolo;
+    2. pelo ambiente ("QDFL-7 (ACADEMIA)" ↔ o quadro desenhado na ACADEMIA);
+    3. se houver um só quadro de cada lado, é ele;
+  - **circuito de cada ponto, em ordem:**
+    1. o número escrito junto dele, num circuito do mesmo tipo;
+    2. a descrição do circuito (palavras do ambiente, pelo radical: "ESTACIONAMENTO" casa com o "ESTACIOMENTO" do diagrama);
+    3. o único circuito do tipo no quadro do mesmo ambiente;
+    4. só o que não casar fica no circuito estimado, marcado;
+  - o quadro lido que não está desenhado nesta planta entra sem posição, mas só se algum ponto dela for de um circuito dele;
+  - ficha do circuito com a potência em W (como está no diagrama) e a origem (diagrama do projeto ou estimado); DR sem sensibilidade escrita aparece como "sensibilidade a conferir", sem 30 mA inventado;
+  - aviso no modelo: quais quadros vieram do diagrama e quantos pontos foram ligados por número, por descrição e por tipo [CONFERIR].
+- **Testes:**
+  - `teste-cad.js`: unifilar e tabela sintéticos (a legenda de luminárias "15 W" não vira quadro; a corrente do DR não vira disjuntor);
+  - `teste-simulador.js`: quadro lido; ponto pelo número, pela descrição e pelo tipo; DR do diagrama desligando só os circuitos dele;
+  - no navegador, com o desenho real: abrir o QDFL-1 e desligar o Q1 apaga a luminária da recepção e deixa as tomadas.
+- **Limites:**
+  - unifilar desenhado com texto SHX explodido em traços não tem texto para ler;
+  - quadro do diagrama sem a tag no título fica "QUADRO-n" e só liga pelo ambiente.
