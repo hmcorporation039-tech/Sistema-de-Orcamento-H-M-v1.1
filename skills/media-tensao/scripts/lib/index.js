@@ -543,7 +543,6 @@ const FORMULARIO = [
       { caminho: 'cargas.fator_diversidade', rotulo: 'Fator de diversidade entre quadros', tipo: 'numero' },
       { caminho: 'cargas.crescimento_pct', rotulo: 'Crescimento previsto (%)', tipo: 'numero' },
       { caminho: 'cargas.carregamento_max_pct', rotulo: 'Carregamento máximo do trafo (%)', tipo: 'numero' },
-      { caminho: 'cargas.arquivo_eletrica', rotulo: 'Arquivo(s) da skill de elétrica', largura: 'inteira', dica: 'Caminho do JSON da obra elétrica (uso pela CLI)' },
     ] },
     { tipo: 'tabela', caminho: 'cargas.quadros', rotuloAdicionar: 'Adicionar quadro', novaLinha: { id: 'Q{n}', descricao: '', demanda_kw: null, fp: 0.92 },
       colunas: [{ campo: 'id', rotulo: 'Quadro', largura: 80 }, { campo: 'descricao', rotulo: 'Descrição' }, { campo: 'demanda_kw', rotulo: 'Demanda (kW)', tipo: 'numero', largura: 110 }, { campo: 'fp', rotulo: 'FP', tipo: 'numero', largura: 80 }] },

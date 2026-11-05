@@ -188,6 +188,9 @@ const resposta = () => ({ statusCode: 200, body: null, status(c) { this.statusCo
         const s = await S.criarSessao(u, { dispositivoId: 'disp-teste-0001', dispositivo: 'Teste', ip: '127.0.0.1' });
         assert.strictEqual(jwt.verify(s.token, JWT_SECRET).sid, s.sessaoId);
         assert.strictEqual(await pelaPorta(s.token), 200);
+        // chave inventada para uma sessão que existe: recusa SEM derrubar a sessão (senão qualquer um, sem login, derrubava todas)
+        assert.deepStrictEqual(await S.renovarSessao(`${s.sessaoId}.${'A'.repeat(43)}`), { ok: false, motivo: 'invalida' });
+        assert.strictEqual(await pelaPorta(s.token), 200, 'a sessão continua depois da chave inventada');
         const r1 = await S.renovarSessao(s.renovacao, { ip: '127.0.0.1' });
         assert.ok(r1.ok && r1.token && r1.renovacao, 'renovou');
         assert.notStrictEqual(r1.renovacao, s.renovacao, 'a chave muda a cada renovação');

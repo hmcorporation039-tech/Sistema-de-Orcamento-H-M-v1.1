@@ -58,18 +58,21 @@ const limitePesquisaMercado = rateLimit({
   message: { erro: 'Muitas pesquisas de mercado em pouco tempo. Aguarde um pouco e tente novamente.' },
 });
 // Limite por CONTA (além do limite por IP): impede tentar senhas de uma
-// mesma conta a partir de vários computadores.
+// mesma conta a partir de vários computadores. A chave é conta + IP (revisão de segurança de 04/11/2026): só pela
+// conta, 10 senhas erradas de qualquer máquina travavam o login do dono, até com a senha certa, a cada 15 min.
+// Cada IP continua com 10 tentativas por conta, e o limite por IP (limiteLogin) segura quem troca de conta.
 const limiteLoginConta = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
   skipSuccessfulRequests: true,
-  keyGenerator: (req) => `conta:${String(req.body?.email || '').trim().toLowerCase()}`,
+  keyGenerator: (req) => `conta:${String(req.body?.email || '').trim().toLowerCase()}|${rateLimit.ipKeyGenerator(req.ip)}`,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { erro: 'Muitas tentativas de login nesta conta. Aguarde 15 minutos e tente novamente.' },
 });
-// Segunda etapa do login: além do limite por IP (limiteLogin), por CONTA — o id vem do desafio,
-// lido sem conferir a assinatura só para escolher o contador (o controller confere de verdade).
+// Segunda etapa do login: além do limite por IP (limiteLogin), por CONTA — o id vem do desafio com a assinatura
+// CONFERIDA: lido sem conferir, um desafio forjado com o id de outra pessoa gastava o limite dela e a travava.
+// Desafio inválido conta por IP.
 // 6 dígitos com 10 erros a cada 15 min não dão para adivinhar.
 const limiteSegundaEtapa = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -77,8 +80,8 @@ const limiteSegundaEtapa = rateLimit({
   skipSuccessfulRequests: true,
   keyGenerator: (req) => {
     let id = null;
-    try { id = require('jsonwebtoken').decode(String(req.body?.desafio || ''))?.id ?? null; } catch { /* desafio ilegível */ }
-    return `totp:${Number.isInteger(id) ? id : 'desconhecido'}`;
+    try { id = require('jsonwebtoken').verify(String(req.body?.desafio || ''), require('../config/segredos').JWT_SECRET, { algorithms: ['HS256'] })?.id ?? null; } catch { /* desafio inválido ou vencido */ }
+    return Number.isInteger(id) ? `totp:${id}` : `totp-ip:${rateLimit.ipKeyGenerator(req.ip)}`;
   },
   standardHeaders: 'draft-7',
   legacyHeaders: false,

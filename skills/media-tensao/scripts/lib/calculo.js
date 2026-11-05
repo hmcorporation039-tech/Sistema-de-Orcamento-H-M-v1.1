@@ -58,8 +58,12 @@ function demandaDaEletrica(dadosEletrica) {
   return { kw: r.demanda.demandaKw, kva, fp: kva ? r.demanda.demandaKw / kva : r.config.fp, nome: dadosEletrica.obra?.nome || dadosEletrica.cliente?.nome || 'Projeto elétrico' };
 }
 
-function lerArquivosEletrica(cargas, baseDir) {
+// Arquivo JSON da skill de elétrica: SÓ por quem roda a skill no próprio PC (opcoes.permitirArquivos). Pelo sistema o
+// campo vinha do formulário e o servidor lia qualquer caminho — inclusive \hostpasta, que no Windows entrega o hash
+// NTLM da conta do serviço, e a mensagem do JSON.parse mostrava o começo do arquivo (revisão de segurança de 04/11/2026).
+function lerArquivosEletrica(cargas, baseDir, permitir = false) {
   const arquivos = [].concat(cargas.arquivo_eletrica || []).filter(Boolean);
+  if (arquivos.length && !permitir) throw new Error('o arquivo da skill de elétrica só vale na linha de comando; no sistema, importe a elétrica pelos dados (cargas.eletrica)');
   return arquivos.map(a => {
     const caminho = path.isAbsolute(a) ? a : path.resolve(baseDir || process.cwd(), a);
     if (!fs.existsSync(caminho)) throw new Error(`Arquivo da skill de elétrica não encontrado: ${a}`);
@@ -74,7 +78,7 @@ function calcularDemanda(dados, opcoes = {}) {
     const fp = numero(q.fp) || fpPadrao;
     return { id: q.id || `Q${i + 1}`, descricao: q.descricao || `Quadro ${i + 1}`, kw: Number(q.demanda_kw), fp, kva: Number(q.demanda_kw) / fp, origem: 'informado' };
   });
-  const importados = [...[].concat(cg.eletrica || []).filter(Boolean), ...lerArquivosEletrica(cg, opcoes.baseDir)];
+  const importados = [...[].concat(cg.eletrica || []).filter(Boolean), ...lerArquivosEletrica(cg, opcoes.baseDir, opcoes.permitirArquivos === true)];
   importados.forEach((d, i) => {
     const r = demandaDaEletrica(d);
     quadros.push({ id: `EL${i + 1}`, descricao: `${r.nome} (skill de elétrica)`, kw: r.kw, fp: r.fp, kva: r.kva, origem: 'skill elétrica' });

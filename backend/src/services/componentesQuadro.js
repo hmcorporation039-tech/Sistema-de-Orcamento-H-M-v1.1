@@ -587,7 +587,9 @@ async function pesquisarMedida(entrada, usuario, { signal } = {}) {
   } catch (err) {
     if (!err?.indisponivel) throw err;
     const detalhe = (err.erros || []).map(e => `${e.rotulo || e.provedor}: ${e.mensagem === 'resposta sem dado aproveitável' ? 'sem medida oficial' : e.mensagem}`).join(' | ') || err.message;
-    throw new ErroHttp(502, `Não foi possível buscar a medida agora (${String(detalhe).slice(0, 300)})`);
+    // nenhum provedor RESPONDEU (fora do ar, sem login, sem crédito): o lote para (abaixo), em vez de passar cada item pela cadeia inteira
+    const nenhumRespondeu = !(err.erros || []).some(e => e.mensagem === 'resposta sem dado aproveitável');
+    throw Object.assign(new ErroHttp(502, `Não foi possível buscar a medida agora (${String(detalhe).slice(0, 300)})`), { semIA: nenhumRespondeu });
   }
   const v = validarRespostaIA(r.json, pedido);
   if (!v.ok) return { situacao: 'nao_encontrado', motivo: v.problemas.join('; '), provedor: r.fonte, pedido };
@@ -673,7 +675,7 @@ async function iniciarPesquisaEmLote(lista, usuario, { executar = pesquisarMedid
         item.situacao = 'erro';
         item.motivo = String(e?.message || e).slice(0, 300);
         // sem IA nenhuma: não adianta seguir com os próximos
-        if (e?.status === 422) { tarefa.erro = item.motivo; break; }
+        if (e?.status === 422 || e?.semIA) { tarefa.erro = item.motivo; break; }
       }
     }
     for (const item of tarefa.itens) { delete item.pedido; if (item.situacao === 'pendente') { item.situacao = 'erro'; item.motivo = tarefa.erro || 'não pesquisado'; } }

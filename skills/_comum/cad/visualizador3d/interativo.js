@@ -6,6 +6,9 @@
 // Texto vindo da cena sempre escapado (esc) — nada de HTML da cena na página.
 import { criarSimulador, ROTULO_PONTO } from '../../instalacao/simulador.js';
 
+// corrente nominal do disjuntor/DR; a instalação estimada pelo desenho (../../instalacao/doDesenho.js) não tem
+const amp = (v) => (v != null && v !== '' ? `${v} A` : 'corrente a definir');
+
 export { criarSimulador, ROTULO_PONTO };
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
@@ -70,9 +73,9 @@ export function htmlCircuito(sim, circuitoId, { abrir = true } = {}) {
   const m = sim.motivo(c.id);
   return `<div class="sim-circ"><div class="sim-tit">Circuito ${esc(c.id)}${c.descricao ? ` — ${esc(c.descricao)}` : ''}</div>
 <table>${lin('Estado', m ? `<b class="sim-off">sem energia</b> <small>(${esc(m)})</small>` : '<b class="sim-on">energizado</b>')}
-${q?.geral ? lin(`Geral ${q.geral.tag}`, `${estadoTag(sim.ligado(q.geral.tag, q.tag))} · ${esc(q.geral.In ?? '—')} A`) : ''}
+${q?.geral ? lin(`Geral ${q.geral.tag}`, `${estadoTag(sim.ligado(q.geral.tag, q.tag))} · ${esc(amp(q.geral.In))}`) : ''}
 ${drs.map(dr => lin(`DR ${dr.tag}`, `${estadoTag(sim.ligado(dr.tag, q.tag))} · ${esc(dr.idn_ma ?? 30)} mA`)).join('')}
-${d ? lin(`${ddr ? 'DDR' : 'Disjuntor'} ${d.tag}`, `${estadoTag(sim.ligado(d.tag, q.tag))} · ${esc(d.In ?? '—')} A${d.curva ? ` curva ${esc(d.curva)}` : ''}${d.polos ? ` · ${esc(d.polos)}P` : ''}`) : ''}
+${d ? lin(`${ddr ? 'DDR' : 'Disjuntor'} ${d.tag}`, `${estadoTag(sim.ligado(d.tag, q.tag))} · ${esc(amp(d.In))}${d.curva ? ` curva ${esc(d.curva)}` : ''}${d.polos ? ` · ${esc(d.polos)}P` : ''}`) : ''}
 ${lin('Quadro', esc(c.quadro))}
 ${Number(c.potencia_va) > 0 ? lin('Potência', `${br(c.potencia_va, 0)} VA`) : ''}
 ${c.ib_a != null ? lin('Corrente de projeto Ib', `${br(c.ib_a, 1)} A`) : ''}
@@ -144,9 +147,9 @@ export function htmlQuadro(sim, tag) {
   };
   const circ = (id) => sim.circuito(id);
   const motores = sim.paineis().filter(p => String(p.quadro) === String(q.tag));
-  return `<div class="sim-lista">${q.geral ? linha(q.geral.tag, `Geral ${q.geral.In ?? ''} A`, '') : ''}
+  return `<div class="sim-lista">${q.geral ? linha(q.geral.tag, `Geral ${amp(q.geral.In)}`, '') : ''}
 ${(q.drs || []).filter(d => !d.ddr).map(d => linha(d.tag, `DR ${d.idn_ma ?? 30} mA`, `circuitos ${(d.circuitos || []).join(', ')}`)).join('')}
-${(q.disjuntores || []).map(d => { const c = circ(d.circuito); return linha(d.tag, `${d.In ?? ''} A — circuito ${d.circuito}`, c?.descricao || ''); }).join('')}</div>
+${(q.disjuntores || []).map(d => { const c = circ(d.circuito); return linha(d.tag, `${amp(d.In)} — circuito ${d.circuito}`, c?.descricao || ''); }).join('')}</div>
 ${motores.length ? `<div class="sim-bs"><button class="sim-b emerg" data-sim="emergencia-quadro" data-quadro="${esc(q.tag)}">${sim.emergenciaDoQuadro(q.tag) ? 'Soltar a emergência do quadro' : 'EMERGÊNCIA do quadro'}</button></div>${motores.map(htmlPainel).join('')}` : ''}
 <div class="sim-bs"><button class="sim-b" data-sim="reiniciar">Religar tudo (estado inicial)</button></div>`;
 }
@@ -219,7 +222,7 @@ export function cenaQuadroEsquematica(q, sim) {
     let x = 60 + 6;
     for (const it of fila) {
       const c = it.tipo === 'disjuntor' ? sim?.circuito(it.d.circuito) : null;
-      const desc = it.tipo === 'geral' ? `Disjuntor geral ${it.d.In ?? ''} A` : it.tipo === 'dr' ? `DR ${it.d.In ?? ''} A / ${it.d.idn_ma ?? 30} mA — circuitos ${(it.d.circuitos || []).join(', ')}` : `Disjuntor ${it.d.In ?? ''} A${it.d.curva ? ` curva ${it.d.curva}` : ''} — circuito ${it.d.circuito}${c?.descricao ? ` (${c.descricao})` : ''}`;
+      const desc = it.tipo === 'geral' ? `Disjuntor geral ${amp(it.d.In)}` : it.tipo === 'dr' ? `DR ${amp(it.d.In)} / ${it.d.idn_ma ?? 30} mA — circuitos ${(it.d.circuitos || []).join(', ')}` : `Disjuntor ${amp(it.d.In)}${it.d.curva ? ` curva ${it.d.curva}` : ''} — circuito ${it.d.circuito}${c?.descricao ? ` (${c.descricao})` : ''}`;
       caixas.push({ camada: 'protecao', tag: it.tag, x, y: yc - ALT / 2, z: 27.5, l: it.l, a: ALT, p: 70, cor: it.tipo === 'dr' ? '#cfe3ff' : '#f1f3f5', rotulo: it.tag, dica: `${it.tag} — ${desc}`,
         info: [['TAG', it.tag], ['Dispositivo', desc], ['Medidas', `${it.l} × ${ALT} mm (típicas)`]] });
       x += it.l;

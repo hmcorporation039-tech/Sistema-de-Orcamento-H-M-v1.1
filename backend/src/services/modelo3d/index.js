@@ -47,6 +47,8 @@ const EXTRA_GERADOR = [
   // fase 2 (3D interativo): o simulador lógico, e o quadro do prédio sai do caderno de
   // fabricação da skill quadros (pasta inteira, abaixo)
   path.join(COMUM, 'instalacao', 'simulador.js'),
+  // instalação estimada pelo desenho (análise sem o modelo da skill: o 3D também é interativo)
+  path.join(COMUM, 'instalacao', 'doDesenho.js'),
   // fase 5 (iluminação no 3D): fotometria, ponto a ponto (mapa de iluminância) e as cenas e a
   // fotometria que o luminotécnico grava na instalação da cena
   path.join(COMUM, 'fotometria', 'leitor.js'), path.join(COMUM, 'fotometria', 'pontoAPonto.js'),

@@ -295,4 +295,39 @@ caso('cenas do projeto: nível por grupo, troca de cena, desligado e DALI-2 com 
   assert.ok(I.validarInstalacao(inst).avisos.some(a => /Palco/.test(a)));
 });
 
+// revisão de 04/11/2026: o 3D de uma análise de DWG (sem o modelo da skill) monta a instalação pelo desenho
+caso('instalação estimada pelo desenho: quadro, circuito por ambiente e interruptor do ambiente', () => {
+  const { instalacaoDoDesenho } = require('./doDesenho');
+  const it = (simbolo, forma, ambiente, x, y, extra = {}) => ({ simbolo, forma, disciplina: 'eletrica', ambiente, nomeAmbiente: ambiente >= 0 ? `Sala ${ambiente + 1}` : null, x, y, id: '', circuito: '', comando: '', ...extra });
+  const itens = [
+    it('HM-ELE-QUADRO', 'quadro', 0, 0, 0),
+    it('HM-ILU-LUMINARIA', 'luminaria', 0, 2, 2), it('HM-ILU-LUMINARIA', 'luminaria', 0, 4, 2),
+    it('HM-ELE-INTERRUPTOR', 'interruptor', 0, 1, 0), it('HM-ELE-INTERRUPTOR', 'interruptor', 0, 5, 0),
+    it('HM-ELE-TOMADA-BAIXA', 'tomada', 0, 3, 0),
+    it('HM-ILU-LUMINARIA', 'luminaria', 1, 10, 2, { circuito: '7' }),
+    it('HM-CFTV-CAMERA', 'camera', 1, 10, 3, { disciplina: 'cftv' }),
+  ];
+  const r = instalacaoDoDesenho(itens);
+  assert.ok(r && r.instalacao.estimada);
+  assert.strictEqual(r.ids[7], '', 'câmera não entra na instalação elétrica');
+  assert.strictEqual(new Set(r.ids.filter(Boolean)).size, 7, 'ids únicos');
+  const inst = r.instalacao;
+  assert.strictEqual(inst.quadros.length, 1);
+  assert.strictEqual(inst.quadros[0].ponto, r.ids[0], 'o quadro desenhado é o quadro da simulação');
+  assert.ok(inst.circuitos.some(c => c.id === '7'), 'circuito escrito no desenho vale');
+  assert.ok(inst.quadros[0].disjuntores.every(d => d.In == null), 'sem corrente nominal inventada');
+  const k = inst.comandos.find(c => c.ambiente === 'Sala 1');
+  assert.strictEqual(k.tipo, 'interruptor_paralelo', 'dois interruptores na sala → paralelo');
+  const sim = criarSimulador(inst);
+  const [l1, l2] = [r.ids[1], r.ids[2]];
+  assert.ok(sim.energizado(l1) && sim.energizado(l2), 'começa aceso');
+  sim.acionar(r.ids[3]);
+  assert.ok(!sim.energizado(l1) && !sim.energizado(l2), 'o interruptor apaga as luminárias da sala');
+  sim.acionar(r.ids[4]);
+  assert.ok(sim.energizado(l1), 'o outro paralelo acende de novo');
+  sim.desligar(sim.circuito(sim.ponto(r.ids[5]).circuito).disjuntor, inst.quadros[0].tag);
+  assert.ok(!sim.energizado(r.ids[5]) && sim.energizado(l1), 'desligar o disjuntor das tomadas não apaga a luz');
+  assert.strictEqual(instalacaoDoDesenho([it('HM-CFTV-CAMERA', 'camera', 0, 0, 0, { disciplina: 'cftv' })]), null, 'sem nada elétrico: sem instalação');
+});
+
 console.log(`simulador da instalação (fases 2 e 5): ${ok} casos ok`);

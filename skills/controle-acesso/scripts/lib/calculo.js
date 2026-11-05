@@ -96,6 +96,8 @@ function comercial(lista, necessario) {
 function calcular(dados) {
   const s = dados.sistema || {};
   const avisos = [];
+  // situação das normas (revisão de 04/11/2026): edição nova publicada depois da usada no cálculo
+  avisos.push("A ABNT NBR 9077 tem edição nova (07/2025, \"Projeto de saídas de emergência\"): rota de fuga, porta fail-safe e liberação por incêndio seguem a edição anterior e a IT do corpo de bombeiros. [CONFERIR edição 2025]");
   const ncsProjeto = [];
   const ppc = Number(s.portas_por_controladora) || 4;
   const lpc = Number(s.leitores_por_controladora) || ppc;

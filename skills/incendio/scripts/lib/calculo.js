@@ -119,7 +119,10 @@ function calcular(dados) {
   const iRepouso = linhas.reduce((s, l) => s + l.totalRepouso, 0);
   const iAlarme = linhas.reduce((s, l) => s + l.totalAlarme, 0);
   const tRepouso = Number(sis.tempo_repouso_h) || 24;
-  const tAlarme = Number(sis.tempo_alarme_min) || 5;
+  // alarme na bateria: 5 min (15 min com avisador de mensagem de voz) — roteiro da NBR 17240:2010; várias NT/IT de
+  // corpo de bombeiros pedem 15 min em qualquer caso (ex.: CBMGO NT 19/2022). Revisão de normas de 04/11/2026.
+  const tAlarme = Number(sis.tempo_alarme_min) || (sis.avisador_voz ? 15 : 5);
+  if (!Number(sis.tempo_alarme_min)) avisos.push(`Bateria da central com ${tRepouso} h em repouso + ${tAlarme} min em alarme${sis.avisador_voz ? ' (avisador por voz)' : ''}: a IT/NT do corpo de bombeiros local pode exigir 15 min de alarme. [CONFERIR IT/NT local]`);
   const fonteA = 1.2 * iAlarme / 1000;
   const bateriaAh = 1.2 * (tRepouso * iRepouso + (tAlarme / 60) * iAlarme) / 1000;
   const bateriaEscolhida = BATERIAS_AH.find(b => b >= bateriaAh) || Math.ceil(bateriaAh);

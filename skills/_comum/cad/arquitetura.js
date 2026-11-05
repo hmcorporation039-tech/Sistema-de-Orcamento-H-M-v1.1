@@ -127,9 +127,48 @@ const escolherNome = (ts) => {
 const RE_LAYER_FORA_PLANTA = /UNIFILAR|TRIFILAR|MULTIFILAR|DIAGRAMA|ESQUEMA|QUADRO.?DE.?CARGA|TABELA|PLANILHA|LEGENDA|CARIMBO|\bSELO|MOLDURA|MARGEM|VIEWPORT|\bVPORT/i;
 const RE_LAYER_MOLDURA = /MOLDURA|MARGEM/i;
 const RE_BLOCO_FORA_PLANTA = /UNIFILAR|TRIFILAR|DIAGRAMA|ESQUEMA|QUADRO.?DE.?CARGA|LEGENDA|CARIMBO|\bSELO|MOLDURA|FOLHA.?A[0-4]\b|^A[0-4]$|DETALHE/i;
+// Teto de entidades explodidas (revisão de 04/11/2026): cada instância de bloco vira uma cópia da geometria, e um DWG
+// de 4 MB de incêndio (sprinklers em blocos aninhados) chegou a 3,1 milhões de entidades e 4 GB — o worker de 2 GB
+// caía e o arquivo ficava sem leitura nenhuma. Acima do teto, os níveis de aninhamento MAIS FUNDOS (detalhe interno
+// de equipamento, mobiliário) não entram; o resultado sai com `detalheReduzido` para o aviso de conferir.
+const MAX_ENTIDADES = 1000000;
+function contarPorNivel(parsed, blocos, temModelo) {
+  const porNivel = [];
+  const memo = new Map(); // bloco → [entidades por nível relativo] (sem repetir a contagem a cada instância)
+  const doBloco = (nome, prof) => {
+    if (memo.has(nome)) return memo.get(nome);
+    memo.set(nome, []); // bloco que se referencia não entra em laço
+    const b = blocos.get(nome);
+    const c = contarLista(b?.entities || [], prof);
+    memo.set(nome, c);
+    return c;
+  };
+  const contarLista = (ents, prof) => {
+    const c = [0];
+    for (const e of ents) {
+      if (e.type !== 'INSERT') { c[0]++; continue; }
+      if (!blocos.has(e.block) || RE_BLOCO_FORA_PLANTA.test(e.block || '')) continue;
+      const n = Math.max(1, e.rowCount || 1) * Math.max(1, e.columnCount || 1);
+      doBloco(e.block, prof + 1).forEach((v, i) => { c[i + 1] = (c[i + 1] || 0) + n * v; });
+    }
+    return c;
+  };
+  const topo = (parsed.entities || []).filter(e => !(e.paperSpace && temModelo));
+  contarLista(topo, 0).forEach((v, i) => { porNivel[i] = v; });
+  return porNivel;
+}
+
 function explodir(parsed) {
   const blocos = new Map((parsed.blocks || []).map(b => [b.name, b]));
   const out = [];
+  // profundidade máxima de blocos aninhados: 12, ou menos se o total explodido passar do teto
+  let profMax = 12;
+  const porNivel = contarPorNivel(parsed, blocos, (parsed.entities || []).some(e => !e.paperSpace));
+  let acumulado = 0;
+  for (let i = 0; i < porNivel.length && i <= 13; i++) {
+    acumulado += porNivel[i] || 0;
+    if (acumulado > MAX_ENTIDADES) { profMax = i - 2; out.detalheReduzido = { niveis: i, entidades: porNivel.reduce((a, b) => a + (b || 0), 0) }; break; }
+  }
   // a moldura da folha não entra no desenho, mas diz onde está cada prancha (./pranchas.js)
   out.molduras = [];
   out.textosFora = [];
@@ -147,7 +186,7 @@ function explodir(parsed) {
       }
       if (e.type !== 'INSERT') { out.push({ ...e, layer, transforms }); continue; }
       const b = blocos.get(e.block);
-      if (!b || prof > 12 || RE_BLOCO_FORA_PLANTA.test(e.block || '')) continue;
+      if (!b || prof > profMax || RE_BLOCO_FORA_PLANTA.test(e.block || '')) continue;
       const nl = Math.max(1, e.rowCount || 1), nc = Math.max(1, e.columnCount || 1);
       const rot = ((e.rotation || 0) * Math.PI) / 180;
       for (let r = 0; r < nl; r++) {
@@ -525,7 +564,11 @@ function lerArquitetura(textoDxf, opcoes = {}) {
   // da planta logo abaixo, mas é com eles que se reconhece cada tipo na planta
   const naLinha = (n, [x, y]) => x >= n.x - 4 && x <= n.x + 0.1 && Math.abs(y - n.y) <= 1;
   const legendas = notasM.filter(n => n.legenda);
-  const simbolosDaLegenda = legendas.length ? refM.filter(r => r.pts.length && legendas.some(n => naLinha(n, r.pts[0]))) : [];
+  // caixa que contém todas as linhas da legenda: o traço fora dela nem passa pelo teste linha a linha
+  // (3 milhões de traços × 400 linhas levavam 140 s)
+  const cx = legendas.length && [Math.min(...legendas.map(n => n.x)) - 4, Math.max(...legendas.map(n => n.x)) + 0.1, Math.min(...legendas.map(n => n.y)) - 1, Math.max(...legendas.map(n => n.y)) + 1];
+  const naCaixa = ([x, y]) => x >= cx[0] && x <= cx[1] && y >= cx[2] && y <= cx[3];
+  const simbolosDaLegenda = legendas.length ? refM.filter(r => r.pts.length && naCaixa(r.pts[0]) && legendas.some(n => naLinha(n, r.pts[0]))) : [];
 
   // O que é planta e o que não é (./classificarPrancha.js): o que cai numa região de
   // diagrama, quadro de cargas, legenda, detalhe ou carimbo — e não numa de planta — sai
@@ -610,6 +653,8 @@ function lerArquitetura(textoDxf, opcoes = {}) {
     molduras: ents.molduras.map(o => ({ pts: m(o.pts), layer: o.layer })),
     // alturas do projeto (./pontosDoDesenho.js): notas, preenchimentos e os símbolos da legenda
     notas: notasM, preenchimentos: preenchimentosM, simbolosDaLegenda,
+    // desenho grande demais: blocos aninhados mais fundos ficaram fora (explodir, MAX_ENTIDADES)
+    ...(ents.detalheReduzido ? { detalheReduzido: ents.detalheReduzido } : {}),
     // classificação da folha (planta × diagrama × tabela…) e as caixas de planta, em metros
     classificacao: classificacao && { tipo: classificacao.tipo, resumo: classificacao.resumo, temPlanta: classificacao.temPlanta, semPlanta: classificacao.semPlanta, misto: classificacao.misto, regioes: classificacao.regioes.map(({ caixa, tipo, rotulo, titulo, confianca, motivos }) => ({ caixa, tipo, rotulo, titulo, confianca, motivos })) },
     regioesPlanta,

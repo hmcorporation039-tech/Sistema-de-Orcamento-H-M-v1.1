@@ -65,7 +65,7 @@ async function registrar(itens, escritorio, arquivo, executor = pool, disciplina
 // disciplinas (versão 2.30, "sempre por disciplinas"): as marcadas no arquivo. O bloco aprendido de OUTRO escritório
 // só vale se a disciplina dele é uma delas — o mesmo nome em outro escritório e outra disciplina é outra coisa
 // ("SENSOR" de alarme × de automação). No mesmo escritório o nome é convenção dele e vale como sempre.
-const MESMO_RAMO = { rede: 'cabeamento', telefonia: 'cabeamento', cabeamento: 'cabeamento', 'controle-acesso': 'controle_acesso', veicular: 'carregador' };
+const MESMO_RAMO = { rede: 'cabeamento', telefonia: 'cabeamento', cabeamento: 'cabeamento', 'controle-acesso': 'controle_acesso', veicular: 'carregador', 'iluminacao-externa': 'iluminacao' };
 const ramoDe = (d) => MESMO_RAMO[d] || d;
 function procurar(aprendidos, nome, escritorio = '', disciplinas = []) {
   const chave = chaveDoNome(nome);

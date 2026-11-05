@@ -183,7 +183,8 @@ function dimensionarCircuito(circ, c, { minimo, limiteQueda }) {
     const izRef = T.capacidade(s, metodo, carregados, c.isolacao);
     if (izRef == null) return null;
     const iz = izRef * fct * fca;
-    const queda = (k * T.RHO_COBRE * L * ib) / (s * v) * 100;
+    // circ.kQueda / circ.vQueda: o alimentador 2F+N com carga fase-neutro (abaixo, alimentador) mede a queda na fase
+    const queda = ((circ.kQueda ?? k) * T.RHO_COBRE * L * ib) / (s * (circ.vQueda ?? v)) * 100;
     return { secao: s, izRef, iz, queda, okCap: iz >= ib, okProt: inDisj != null && ib <= inDisj && inDisj <= iz, okQueda: queda <= limiteQueda, okMin: s >= smin };
   };
   const avisos = [];
@@ -287,7 +288,18 @@ function alimentador(dem, fases, c, maiorQuedaTerminal) {
   // potência equivalente que dá Ib no motor de dimensionamento (3F: √3·Vff; 2F+N: Vff; F+N: Vfn)
   const vEq = ligacao === 'FFF' ? Math.sqrt(3) * c.vff : ligacao === 'FF' ? c.vff : c.vfn;
   const circ = { id: 'ALIM', descricao: 'Alimentador do quadro', tipo: 'alimentador', ligacao, potencia_va: ib * vEq, comprimento_m: c.comprimentoAlimentador, agrupamento: 1 };
-  if (c.sistema === 'bifasico') circ.carregados = 3; // F-F-N: 3 condutores carregados (Tabela 46)
+  if (c.sistema === 'bifasico') {
+    circ.carregados = 3; // F-F-N: 3 condutores carregados (Tabela 46)
+    // Queda de tensão do 2F+N (revisão de normas de 04/11/2026): as cargas são fase-neutro (127 V) e o neutro do 2F+N
+    // leva corrente mesmo com as duas fases iguais (fases a 120°: |In| = I). Na fase mais carregada (Ia), com a outra
+    // em Ib = x·Ia, a queda até o neutro é R·(2·Ia + Ib) → parte em fase com a tensão ≈ R·Ia·(2 − 0,5·x), sobre Vfn.
+    // Antes: 2·R·I sobre Vff (220 V), que é a fórmula de carga ENTRE fases e dava 23 % (fases iguais) a 42 % (uma fase
+    // só) a menos que a queda real.
+    const correntes = Object.values(fases.corrente).filter(i => i > 0).sort((a, b) => b - a);
+    const x = correntes.length > 1 && correntes[0] > 0 ? Math.min(1, correntes[1] / correntes[0]) : 0;
+    circ.kQueda = 2 - 0.5 * x;
+    circ.vQueda = c.vfn;
+  }
   const d = dimensionarCircuito(circ, c, { minimo: T.SECAO_MINIMA.alimentador, limiteQueda: limite });
   d.potencia_va = dem.demandaVa;
   d.fd = fd;

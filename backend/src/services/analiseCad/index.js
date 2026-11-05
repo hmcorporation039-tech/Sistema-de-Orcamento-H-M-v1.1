@@ -450,6 +450,7 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
   };
   const avisos = [
     r.avisoUnidade,
+    r.detalheReduzido ? `desenho muito pesado (${Math.round(r.detalheReduzido.entidades / 1000)} mil traços com os blocos explodidos): o detalhe interno dos blocos aninhados mais fundos não foi lido, para não esgotar a memória — os blocos de ponto contam normalmente; [CONFERIR] os símbolos explodidos` : null,
     edicoes ? `edições do engenheiro: ${inseridos.length} componente(s) inserido(s) da biblioteca e ${retiradosDoDesenho} retirado(s) do desenho` : null,
     doDesenho.length ? `${doDesenho.filter(g => !g.inserido).reduce((s, g) => s + g.posicoes.length, 0)} pontos lidos dos símbolos desenhados (blocos explodidos), pela layer, pela medida e pela legenda da prancha — [CONFERIR] as quantidades` : null,
     r.desenho?.erro ? `leitura dos símbolos desenhados falhou: ${r.desenho.erro}` : null,

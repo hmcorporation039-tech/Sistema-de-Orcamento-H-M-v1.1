@@ -439,7 +439,7 @@ export function definirFerramentas({ api, contexto = {}, token = '', papel = nul
     },
     {
       nome: 'gerar_orcamento', titulo: 'Gerar rascunho de proposta',
-      descricao: 'Monta um RASCUNHO de proposta (status Ativa, marcado como criado pelo assistente). origem "analise" (id da análise), "projeto" (id do projeto + modo do orçamento, ex.: execucao) ou "itens" (cliente_nome + itens livres). Itens sem preço confiável ficam "a cotar". Gerar de uma análise/projeto que já tem proposta Ativa que não é sua é recusado (use propor_acao).',
+      descricao: 'Monta um RASCUNHO de proposta (status Ativa, marcado como criado pelo assistente). origem "analise" (id da análise), "projeto" (id do projeto + modo do orçamento, ex.: execucao) ou "itens" (cliente_nome + itens livres). Os itens entram "a cotar" (só o item ligado a material do catálogo pode ir confirmado); o engenheiro confirma na tela. Gerar de uma análise/projeto que já tem proposta Ativa que não é sua é recusado (use propor_acao).',
       entrada: {
         origem: z.enum(['analise', 'projeto', 'itens']),
         id: z.number().int().positive().optional(),

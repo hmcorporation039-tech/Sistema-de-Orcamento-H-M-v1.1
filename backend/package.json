@@ -1,6 +1,6 @@
 {
   "name": "hm-eng-backend",
-  "version": "2.30.0",
+  "version": "2.31.0",
   "description": "API H&M Engenharia - Sistema de Orçamentos",
   "engines": {
     "node": ">=22.12"

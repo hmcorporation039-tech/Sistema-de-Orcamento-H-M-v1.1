@@ -5,11 +5,12 @@
 // enviarArquitetura(): o envio da arquitetura é o mesmo na análise e no projeto.
 import { useState, useRef, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { Box, FileDown, Upload, RefreshCw } from 'lucide-react';
+import { Box, FileDown, Upload, RefreshCw, PencilRuler } from 'lucide-react';
 import api, {
   abrirModelo3d, baixarModelo3d, urlModelo3d, enviarArquiteturaAnalise, getArquiteturaAnalise,
-  getModelo3d, mostrarModelo3dAoCliente,
+  getModelo3d, mostrarModelo3dAoCliente, getMapaCad,
 } from '../services/api';
+import Modelo3dEditor, { nomeDaDisciplina3d } from './analise/Modelo3dEditor';
 import { baixarArquivo, mensagemDeErro } from '../utils/download';
 
 export const ACEITA_ARQUITETURA = '.dxf,.dwg,.pdf';
@@ -49,6 +50,22 @@ const gerarModelo3dDeNovo = (origem, id) => api.post(`/modelo-3d/${origem}/${id}
 // antes: chamado antes de gerar (ex.: salvar o formulário pendente)
 export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null, estilo = {} }) {
   const [ocupado, setOcupado] = useState('');
+  // análise: o 3D com a barra de edição (inserir/retirar componentes da biblioteca), dentro da tela — a aba nova não
+  // grava nada (página em sandbox, sem login); aqui a tela grava pelo sistema (./analise/Modelo3dEditor.js)
+  const [componentes, setComponentes] = useState(null);
+  async function editar() {
+    setOcupado('editar');
+    try {
+      if (antes) await antes();
+      const { data } = await getMapaCad(id);
+      if (!data?.disponivel || !data.componentes?.length) { toast.error(data?.semMapa ? 'Esta análise foi lida antes do Mapa do CAD: use "Ler o DWG de novo" no Mapa do CAD e depois edite no 3D.' : 'Inserir e retirar componentes vale para a análise com DWG/DXF do projeto (Mapa do CAD).', { duration: 9000 }); return; }
+      setComponentes(data.componentes);
+    } catch (err) {
+      toast.error(await mensagemDeErro(err, 'Não consegui abrir a edição no 3D'), { duration: 9000 });
+    } finally {
+      setOcupado('');
+    }
+  }
 
   // deNovo: descarta o modelo guardado (3D velho depois de conferir símbolos no Mapa do CAD etc.)
   async function ver(deNovo = false) {
@@ -99,6 +116,12 @@ export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null,
         title="Modelo 3D ilustrativo da arquitetura com os pontos previstos — gira, aproxima e liga/desliga camadas. Abre numa aba nova.">
         <Box size={13} style={{ marginRight: 5 }} /> {ocupado === 'ver' ? 'Gerando 3D…' : 'Ver em 3D'}
       </button>
+      {origem === 'analise' && (
+        <button type="button" style={{ ...btn3d, ...estilo, borderColor: '#c9a227', color: '#c9a227' }} disabled={desabilitado || !!ocupado} onClick={editar} data-testid="editar-3d"
+          title="Abre o 3D aqui na tela com a barra de ferramentas: inserir e retirar componentes da biblioteca H&M (com o símbolo), quadros, interruptores e luminárias com clique. Gravado na análise; entra no orçamento ao reprocessar.">
+          <PencilRuler size={13} style={{ marginRight: 5 }} /> {ocupado === 'editar' ? 'Abrindo…' : 'Editar componentes no 3D'}
+        </button>
+      )}
       <button type="button" style={{ ...btn3d, ...estilo }} disabled={desabilitado || !!ocupado} onClick={baixar}
         title="Baixa o modelo 3D como uma página (.html) que abre em qualquer navegador, sem internet — para enviar ao cliente">
         <FileDown size={13} style={{ marginRight: 5 }} /> {ocupado === 'baixar' ? 'Gerando…' : 'Baixar 3D (.html)'}
@@ -107,6 +130,10 @@ export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null,
         title="Descarta o 3D guardado e gera outra vez (ex.: depois de conferir símbolos no Mapa do CAD). Só o dono do registro ou um administrador.">
         <RefreshCw size={13} style={{ marginRight: 5 }} /> {ocupado === 'refazer' ? 'Gerando de novo…' : 'Gerar de novo'}
       </button>
+      {componentes && (
+        <Modelo3dEditor analiseId={id} componentes={componentes} nomeDisciplina={nomeDaDisciplina3d}
+          onEditado={() => {}} onFechar={() => setComponentes(null)} />
+      )}
     </>
   );
 }

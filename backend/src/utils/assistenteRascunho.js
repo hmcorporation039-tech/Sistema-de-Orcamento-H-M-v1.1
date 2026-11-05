@@ -100,7 +100,11 @@ function itemNovo(payload, it) {
   const secao = secaoDoItem(payload, it.secao);
   const vu = it.valor_unitario == null ? 0 : arredondar(numeroValido(it.valor_unitario, 'Valor unitário'));
   const qtd = arredondarQuantidade(numeroValido(it.quantidade ?? 1, 'Quantidade'), 1);
-  const status = STATUS_ITEM.includes(it.status) ? it.status : (vu > 0 ? 'confirmado' : 'a_cotar');
+  // item novo vindo do assistente (IA) entra "a cotar": só o engenheiro confirma (regra do usuário — o que a IA sugere
+  // é sugestão). Antes, todo item com preço entrava confirmado e contava no orçamento sem ninguém conferir. A exceção
+  // é o item ligado a um material do catálogo (material_id) pedido explicitamente como confirmado.
+  const materialId = Number.isInteger(Number(it.material_id)) && Number(it.material_id) > 0 ? Number(it.material_id) : null;
+  const status = it.status === 'confirmado' && materialId ? 'confirmado' : 'a_cotar';
   return {
     sid: secao.id, desc: descricao.slice(0, 500), qtd, un: it.unidade ? String(it.unidade).slice(0, 20) : null, vu,
     ncm: it.ncm || null, codigo: it.codigo ? String(it.codigo).slice(0, 50) : null,

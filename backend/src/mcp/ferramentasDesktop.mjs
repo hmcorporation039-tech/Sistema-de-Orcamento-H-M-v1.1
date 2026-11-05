@@ -58,7 +58,7 @@ const ItemPropostaSchema = z.object({
   unidade: z.string().optional(),
   valor_unitario: z.number().min(0).optional(),
   subgrupo: z.string().optional().describe('Sub-agrupamento visual dentro da seção, ex.: "CFTV"'),
-  status: z.enum(['confirmado', 'a_cotar']).optional().describe('Padrão: "confirmado" se tiver preço, "a_cotar" se não tiver'),
+  status: z.enum(['confirmado', 'a_cotar']).optional().describe('Ignorado: todo item criado por aqui entra "a_cotar" e o engenheiro confirma na tela'),
 });
 
 // compartilhadas: Map nome → ferramenta da lista única (já com o executar embrulhado)
@@ -223,7 +223,7 @@ export function definirFerramentasDesktop({ api, compartilhadas, pastasPdf, lerA
         const secoes = nomesSecoes.map((nome, i) => ({ id: i + 1, nome }));
         const itensPayload = itens.map(it => ({
           secao_nome: it.secao, descricao: it.descricao, quantidade: it.quantidade, unidade: it.unidade || null,
-          valor_unitario: it.valor_unitario || 0, subgrupo: it.subgrupo || null, status: it.status || (it.valor_unitario ? 'confirmado' : 'a_cotar'),
+          valor_unitario: it.valor_unitario || 0, subgrupo: it.subgrupo || null, status: 'a_cotar', // a IA sugere; o engenheiro confirma na tela (regra do usuário)
         }));
         // hoje em Brasília (em UTC, depois das 21h a proposta nascia com a data de amanhã)
         const padroes = await api('GET', '/api/configuracoes/padroes-orcamento');

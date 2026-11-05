@@ -89,7 +89,13 @@ function agrupar(refs, maior = MAIOR_SIMBOLO_M) {
     return [x0, y0, x1, y1];
   });
   const pai = bb.map((_, i) => i);
-  const raiz = (i) => (pai[i] === i ? i : (pai[i] = raiz(pai[i])));
+  // sem recursão: cadeia longa de traços colados (milhares) estourava a pilha
+  const raiz = (i) => {
+    let r = i;
+    while (pai[r] !== r) r = pai[r];
+    while (pai[i] !== r) { const p = pai[i]; pai[i] = r; i = p; }
+    return r;
+  };
   const ordem = bb.map((_, i) => i).sort((i, j) => bb[i][0] - bb[j][0]);
   for (let a = 0; a < ordem.length; a++) {
     const i = ordem[a];

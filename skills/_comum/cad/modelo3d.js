@@ -24,6 +24,7 @@ const { tipoDoAmbiente, ehAmbienteValido } = require('./estimativaArquitetura');
 const { SIMBOLOS } = require('./simbolos');
 const { separarEletrocalhas, sugerirCaminhos, buscaMaisPerto, MAX_SUGERIDOS } = require('./infraestrutura');
 const { comPosicoes } = require('../instalacao');
+const { instalacaoDoDesenho } = require('../instalacao/doDesenho');
 // peças e duto da climatização (fase 4), declarados na skill
 const CLIM = require('../../climatizacao/scripts/lib/cad');
 
@@ -991,6 +992,7 @@ function montarCena(arquitetura, opcoes = {}) {
     return k;
   };
   const posInstalacao = new Map(); // id do ponto do modelo único → posição na cena
+  const doDesenho = []; // sem o modelo da skill: os itens elétricos viram a instalação estimada (abaixo)
   for (const d0 of opcoes.dispositivos || []) {
     if (!naCaixa(expandir(caixa, 1), [d0.x, d0.y])) continue;
     // nota do projeto "h = 20 cm abaixo do forro" (./pontosDoDesenho.js): conta do pé-direito
@@ -1023,6 +1025,7 @@ function montarCena(arquitetura, opcoes = {}) {
     if (circuito || comando) it.push(circuito, comando);
     t.itens.push(it);
     if (d.id && d.daInstalacao) posInstalacao.set(String(d.id), [x, y, r2(p.z)]);
+    if (!opcoes.instalacao) doDesenho.push({ it, simbolo: d.simbolo, forma: t.forma, disciplina: disc, ambiente: amb, nomeAmbiente: amb >= 0 ? ambs[amb].nome : null, x, y, id: d.id || '', circuito, comando });
   }
 
   const internos = ambs.filter(a => a.tipo !== 'externo');
@@ -1057,7 +1060,22 @@ function montarCena(arquitetura, opcoes = {}) {
   const C = (w) => [...P(w.a), ...P(w.b), r2(w.esp), r2(w.z0), r2(w.z1)];
   // modelo único da instalação (quadros, circuitos, pontos com a posição na cena, comandos):
   // a base do 3D interativo (fase 2) — ponto fora desta planta fica com posicao null
-  const instalacao = opcoes.instalacao ? comPosicoes(opcoes.instalacao, posInstalacao) : null;
+  // Sem ele (análise de DWG/PDF), a instalação ESTIMADA pelo próprio desenho (../instalacao/doDesenho.js): o quadro
+  // abre, o disjuntor desliga e o interruptor acende as luminárias do ambiente — marcada como estimativa
+  let instalacao = opcoes.instalacao ? comPosicoes(opcoes.instalacao, posInstalacao) : null;
+  if (!instalacao && opcoes.instalacaoEstimada !== false) {
+    const est = instalacaoDoDesenho(doDesenho);
+    if (est) {
+      est.ids.forEach((id, k) => {
+        if (!id) return;
+        const { it } = doDesenho[k];
+        it[6] = id;
+        posInstalacao.set(id, [it[0], it[1], it[2]]);
+      });
+      instalacao = comPosicoes(est.instalacao, posInstalacao);
+      avisos.push('3D interativo com a instalação ESTIMADA pelo desenho: circuitos por ambiente (ou o número escrito no desenho) e os interruptores do ambiente comandando as luminárias dele — simulação para conferir, não é o projeto elétrico [CONFERIR].');
+    }
+  }
   return {
     // 3: itens com circuito e comando e a instalação inteira (02/11/2026)
     versao: 3,

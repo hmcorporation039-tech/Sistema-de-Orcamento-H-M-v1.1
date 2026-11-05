@@ -488,6 +488,8 @@ function calcular(dados) {
   const p = configProjeto(dados);
   const c = E.config({ instalacao: { ...(dados.instalacao || {}) } });
   const avisos = [];
+  // situação das normas (revisão de 04/11/2026): edição nova publicada depois da usada no cálculo
+  avisos.push("A ABNT NBR ISO/CIE 8995-1 vigente é a de 2013 (usada aqui); a ISO/CIE 8995-1:2025 internacional já saiu e deve gerar revisão da ABNT. [CONFERIR quando publicada]");
   const luminarias = (dados.luminarias || []).filter(l => l && (l.codigo || l.potencia_w || l.fluxo_lm)).map(normalizarLuminaria);
   if (!luminarias.length) throw new Error('Cadastre ao menos uma luminária (código, potência e fluxo luminoso).');
   const repetidos = luminarias.map(l => l.codigo).filter((x, i, arr) => arr.indexOf(x) !== i);

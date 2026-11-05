@@ -59,13 +59,19 @@ function listaDePontos(dados, s, avisos) {
 function zonasClimatizacao(dados, s, avisos = []) {
   const ocup = n(s.ocupacao_media_pct, 60) / 100;
   const co2Max = n(s.co2_max_ppm, 1100); // teto prático do setpoint de CO₂
+  // mínimo legal da Portaria 3.523 (27 m³/h·pessoa), como na skill de climatização; desliga com minimo_27_m3h_pessoa: false
+  // (revisão de normas de 04/11/2026: a automação usava só Fp·Pz + Fa·Az — numa sala de reunião, ~11 m³/h por pessoa)
+  const portaria = s.minimo_27_m3h_pessoa !== false;
+  const minimoPessoa = portaria ? T.RENOVACAO_MINIMA_M3H_PESSOA / 3.6 : 0; // L/s por pessoa
   return (dados.zonas || []).filter(z => z.nome && n(z.area_m2, 0) > 0).map(z => {
     const ref = T.AR_EXTERNO[z.uso] || T.AR_EXTERNO.outro;
     const fp = n(z.fp, ref.fp);
     const fa = n(z.fa, ref.fa);
     const area = n(z.area_m2, 0);
     const pessoas = n(z.pessoas, 0) || Math.max(1, Math.ceil(area * ref.densidade / 100));
-    const vbz = fp * pessoas + fa * area; // L/s — Ez = 1 (insuflamento e retorno pelo teto, resfriamento)
+    const vNorma = fp * pessoas + fa * area; // L/s — Ez = 1 (insuflamento e retorno pelo teto, resfriamento)
+    const vbz = Math.max(vNorma, minimoPessoa * pessoas);
+    const criterioAr = vbz > vNorma ? `Portaria 3.523 (27 m³/h·pessoa) > NBR 16401-3 (${br(vNorma * 3.6, 0)} m³/h)` : 'NBR 16401-3 (Fp·Pz + Fa·Az)';
     const porPessoa = vbz / pessoas;
     // CO₂ em regime com a vazão de projeto: Cint = Cext + G / (vazão por pessoa)
     const co2Regime = Math.round((T.CO2_EXTERNO_PPM + T.CO2_PESSOA_LS / porPessoa * 1e6) / 10) * 10;
@@ -77,13 +83,14 @@ function zonasClimatizacao(dados, s, avisos = []) {
     // ABAIXO do regime (teto de 1 100 ppm numa zona densa), manter o setpoint pede
     // Pz·ocupação·G/(setpoint − Cext) de ar externo, que pode passar da vazão de projeto: a
     // DCV fica no máximo e a redução declarada não acontece (achado A2.5 da revisão de 27/10/2026).
-    const vProporcional = fa * area + fp * pessoas * ocup;
+    // com a ocupação média, o mínimo legal vale para as pessoas presentes
+    const vProporcional = Math.max(fa * area + fp * pessoas * ocup, minimoPessoa * pessoas * ocup);
     const setpointAbaixo = dcv && setpointCo2 < co2Regime;
     const vSetpoint = setpointAbaixo ? (pessoas * ocup * T.CO2_PESSOA_LS) / ((setpointCo2 - T.CO2_EXTERNO_PPM) * 1e-6) : 0;
     const vMedia = Math.min(vbz, Math.max(vProporcional, vSetpoint));
     const reducao = dcv ? Math.max(0, 1 - vMedia / vbz) : 0;
     if (setpointAbaixo) avisos.push(`Zona ${z.nome}: com o ar externo de projeto o CO₂ em regime é ~${co2Regime} ppm, acima do setpoint de ${setpointCo2} ppm. Para segurar ${setpointCo2} ppm na ocupação média (${Math.round(ocup * 100)} %) seriam ${br(vSetpoint, 0)} L/s de ar externo (projeto: ${br(vbz, 0)} L/s) — a ventilação por CO₂ ${reducao > 0 ? `reduz só ${Math.round(reducao * 100)} %` : 'fica no máximo e não reduz a vazão'}. Para economizar, ajustar o setpoint ao regime ou rever o ar externo de projeto. [CONFERIR]`);
-    return { ...z, uso: z.uso || 'outro', rotuloUso: ref.rotulo, fp, fa, area, pessoas, vbz, m3h: vbz * 3.6, co2Regime, setpointCo2, setpointAbaixo, dcv, vMin, vMedia, reducao, setpoint: n(z.setpoint, 24) };
+    return { ...z, uso: z.uso || 'outro', rotuloUso: ref.rotulo, fp, fa, area, pessoas, vbz, criterioAr, m3h: vbz * 3.6, co2Regime, setpointCo2, setpointAbaixo, dcv, vMin, vMedia, reducao, setpoint: n(z.setpoint, 24) };
   });
 }
 

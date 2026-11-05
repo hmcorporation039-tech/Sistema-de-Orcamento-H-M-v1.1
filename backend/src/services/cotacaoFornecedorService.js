@@ -88,7 +88,8 @@ async function registrarArquivo(client, nome, hash, dados) {
 // contexto = { documento, data }: com ele, o preço cotado também vai para o comparativo de fornecedores
 // (cotacoes_itens), se o documento trouxe o CNPJ do fornecedor.
 async function importarItens(client, indice, leitura, origemBase, margem, contexto = null) {
-  const origem = leitura.metodo?.startsWith('IA') ? `${origemBase}_ia` : leitura.viaOcr ? `${origemBase}_ocr` : origemBase;
+  // "IA (…)" e também "OCR + IA (…) concordantes": o preço passou pela IA (fica marcado: projetos/orcamento.js)
+  const origem = /\bIA\b/.test(leitura.metodo || '') ? `${origemBase}_ia` : leitura.viaOcr ? `${origemBase}_ocr` : origemBase;
   let criados = 0, atualizados = 0, existentes = 0;
   for (const item of leitura.itens) {
     const r = await registrarItemCotacao(client, indice, item, origem, margem);
@@ -112,7 +113,7 @@ async function guardarCotacoesDoArquivo(client, { pasta, nome }, { indice, ler =
   if (!leitura.fornecedor || !leitura.itens.length) return { itens: leitura.itens.length, guardados: 0, semFornecedor: !leitura.fornecedor && leitura.itens.length > 0 };
   const d = await dataDoArquivo(caminho);
   const data = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  const origem = leitura.metodo?.startsWith('IA') ? 'fornecedor_whatsapp_ia' : leitura.viaOcr ? 'fornecedor_whatsapp_ocr' : 'fornecedor_whatsapp';
+  const origem = /\bIA\b/.test(leitura.metodo || '') ? 'fornecedor_whatsapp_ia' : leitura.viaOcr ? 'fornecedor_whatsapp_ocr' : 'fornecedor_whatsapp';
   const documento = `arq:${hashArquivo(buffer)}`;
   let guardados = 0;
   await client.query('BEGIN');

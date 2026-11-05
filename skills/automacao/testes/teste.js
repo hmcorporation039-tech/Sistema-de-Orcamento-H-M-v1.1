@@ -45,7 +45,12 @@ igual('proposta toda em branco não gera avaliação', eficiencia({ funcoes: { a
 const avZ = [];
 const zz = zonasClimatizacao({ zonas: [
   { nome: 'Auditório', area_m2: 200, uso: 'auditorio', controle: 'co2' },
-  { nome: 'Escritório', area_m2: 100, uso: 'escritorio', controle: 'co2' }] }, {}, avZ);
+  { nome: 'Escritório', area_m2: 100, uso: 'escritorio', controle: 'co2' }] }, { minimo_27_m3h_pessoa: false }, avZ);
+// (o caso acima isola a lógica da DCV: sem o mínimo da Portaria 3.523. Com ele — o padrão, revisão de 04/11/2026 —
+// o auditório recebe 27 m³/h × 300 = 2 250 L/s e o CO₂ de regime cai para 420 + 0,0052/2,25 × 10⁶/300 ≈ 1 110 ppm)
+const zp = zonasClimatizacao({ zonas: [{ nome: 'Auditório', area_m2: 200, uso: 'auditorio', controle: 'co2' }] }, {}, []);
+perto('Portaria 3.523: auditório com 27 m³/h·pessoa (2 250 L/s)', zp[0].vbz, 27 * 300 / 3.6);
+igual('… CO₂ de regime ~1 110 ppm e o critério diz Portaria', [zp[0].co2Regime, /Portaria 3.523/.test(zp[0].criterioAr)], [1110, true]);
 igual('auditório: regime 2 350 ppm, setpoint 1 100, redução 0 (antes 37 %)', [zz[0].co2Regime, zz[0].setpointCo2, zz[0].reducao], [2350, 1100, 0]);
 igual('… com aviso de que a DCV fica no máximo', avZ.some(a => /Auditório/.test(a) && /não reduz/.test(a)), true);
 // escritório: setpoint = regime (1 030 ppm) → redução de 12 %: 1 − (0,3·100 + 2,5·5·0,6)/42,5

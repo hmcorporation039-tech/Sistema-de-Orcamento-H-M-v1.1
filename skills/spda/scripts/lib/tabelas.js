@@ -223,7 +223,9 @@ const MATERIAIS_CAPTACAO = {
   cobre_35: { descricao: 'cobre nu 35 mm²', secao: 35 },
   aluminio_70: { descricao: 'alumínio 70 mm²', secao: 70 },
   aco_galvanizado_50: { descricao: 'aço zincado a quente 50 mm²', secao: 50 },
-  aco_cobreado_35: { descricao: 'aço cobreado 35 mm²', secao: 35 },
+  // [CONFERIR] revisão de 04/11/2026: na NBR 5419-3:2015 (Tabela 6) a lembrança é de 50 mm² para o aço cobreado na
+  // captação — conferir a seção mínima na Tabela 7 da NBR 5419-3:2026 antes de usar
+  aco_cobreado_35: { descricao: 'aço cobreado 35 mm² [CONFERIR seção mínima — NBR 5419-3:2026, Tabela 7]', secao: 35 },
 };
 const MATERIAIS_ATERRAMENTO = {
   cobre_50: { descricao: 'cobre nu 50 mm²', secao: 50 },

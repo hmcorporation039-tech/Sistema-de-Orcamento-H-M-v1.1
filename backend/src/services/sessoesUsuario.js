@@ -146,7 +146,10 @@ async function renovarSessao(chave, { ip = null } = {}, executor = pool) {
   if (s.na_folga && iguais(h, s.renovacao_anterior_hash)) {
     return { ok: true, sessaoId: s.id, usuario, token: emitirTokenAcesso(usuario, s.id, { minutos: cfg.tokenMinutos }) };
   }
-  // chave antiga (já trocada há mais de 60 s) ou inventada para uma sessão que existe: encerra a sessão
+  // chave inventada (não é a atual nem a anterior): só recusa. Antes também derrubava a sessão, e como os ids são
+  // sequenciais qualquer um, sem login, encerrava a sessão do escritório inteiro (revisão de segurança de 04/11/2026)
+  if (!iguais(h, s.renovacao_anterior_hash)) return { ok: false, motivo: 'invalida' };
+  // chave ANTERIOR passada a folga de 60 s: sinal de cópia da chave — encerra a sessão
   await revogarSessao(s.id, 'reuso', {}, executor);
   await registrarAuditoria({ usuario_id: s.usuario_id, acao: 'sessao_chave_reusada', detalhe: { sessao_id: s.id }, ip });
   return { ok: false, motivo: 'invalida' };

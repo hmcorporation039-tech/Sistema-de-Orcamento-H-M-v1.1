@@ -200,7 +200,10 @@ function calcular(dados) {
   // potência instalada da central FV = menor entre a soma dos módulos (kWp) e a dos inversores (kW)
   // — critério da distribuidora (Neoenergia, cartilha MMGD Brasília) para a REN 1000 [CONFERIR artigo vigente]
   const potenciaInstalada = Math.min(nTotal * wp / 1000, pcaTotal);
-  const enquadramento = potenciaInstalada <= 75 ? 'Microgeração distribuída (≤ 75 kW)' : 'Minigeração distribuída (> 75 kW)';
+  // Lei 14.300/2022, art. 1º, XIII: minigeração vai até 5 MW (fonte despachável) ou 3 MW (não despachável — a solar
+  // sem armazenamento). Acima disso não é geração distribuída (revisão de normas de 04/11/2026)
+  const enquadramento = potenciaInstalada <= 75 ? 'Microgeração distribuída (≤ 75 kW)' : potenciaInstalada <= 3000 ? 'Minigeração distribuída (> 75 kW e ≤ 3 MW)' : 'Acima de 3 MW — fora da minigeração distribuída para fonte não despachável';
+  if (potenciaInstalada > 3000) avisos.push(`Potência instalada de ${br(potenciaInstalada / 1000, 2)} MW acima de 3 MW: a Lei 14.300 (art. 1º, XIII) limita a minigeração a 3 MW para fonte não despachável (5 MW se despachável, por exemplo com armazenamento) — não entra no SCEE como GD. [CONFERIR]`);
 
   // ── Geração ────────────────────────────────────────────────────────────
   const hspMensal = MESES.map(m => n((loc.hsp_mensal || {})[m], null));

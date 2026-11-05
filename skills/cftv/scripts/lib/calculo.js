@@ -43,6 +43,8 @@ function calcular(dados) {
   const atividade = s.modo_gravacao === 'movimento' ? (Number(s.atividade_pct) || 40) / 100 : 1;
   const hdTb = Number(s.hd_tb) || 8;
   const avisos = [];
+  // situação das normas (revisão de 04/11/2026): edição nova publicada depois da usada no cálculo
+  avisos.push("IEC 62676-4:2025 (Ed. 2, 10/2025) substituiu a de 2014 e redefiniu as densidades de pixels (sistema O2DCPVS: 20/40/80/125/250/500/1500 px/m); este cálculo usa o DORI da edição 2014 (25/62/125/250 px/m). [CONFERIR edição]");
 
   const cameras = (dados.cameras || []).filter(c => c && qtdDe(c) > 0 && c.local !== undefined).map((c, i) => {
     const qtd = qtdDe(c);

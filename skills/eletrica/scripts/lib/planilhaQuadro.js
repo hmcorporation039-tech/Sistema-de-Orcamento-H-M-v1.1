@@ -445,7 +445,10 @@ function abaDemanda(wb, res, q, tab) {
   linha('smin', 'Seção mínima (mm²)', T.SECAO_MINIMA.alimentador, 'Editável', { editavel: true });
   linha('in', 'Disjuntor geral In (A)', fx(disjuntorPara(B('ib')), al.disjuntor), 'Menor disjuntor ≥ Ib (editável — seletividade, padrão de entrada)', { editavel: true });
   linha('lim', 'Limite de queda no alimentador (%)', fx(`IF(${P('qTotal')}-MAX(${quedas})<0.5,${P('qAlim')},MIN(${P('qAlim')},${P('qTotal')}-MAX(${quedas})))`, r2(al.limiteQueda)), 'Menor entre o critério do alimentador e (total − maior queda terminal); com folga < 0,5 % o circuito terminal é que deve ser aumentado', { fmt: '0.00' });
-  const k = `IF(${tri},SQRT(3),2)`, v = `IF(${mono},${P('vfn')},${P('vff')})`;
+  // 2F+N com carga fase-neutro: queda na fase mais carregada sobre Vfn, k = 2 − 0,5·(2ª fase ÷ 1ª; a 2ª das três = soma − maior − menor) — o mesmo de
+  // _comum/eletrico/calculo.js (alimentador, revisão de 04/11/2026)
+  const bif = `${P('sistema')}="bifasico"`, cs = q.correntes.join(',');
+  const k = `IF(${tri},SQRT(3),IF(${bif},2-0.5*IFERROR(MIN(1,(SUM(${cs})-MAX(${cs})-MIN(${cs}))/MAX(${cs})),0),2))`, v = `IF(OR(${mono},${bif}),${P('vfn')},${P('vff')})`;
   linha('scalc', 'Seção calculada (mm²)', fx(secaoQueAtende({ smin: B('smin'), metodo: B('met'), carregados: B('carr'), fct: B('fct'), fca: B('fca'), inDisj: B('in'), k, L: B('L'), ib: B('ib'), v, limite: B('lim') }), al.secao), 'Menor seção que atende mínima, Iz ≥ In e queda');
   linha('sad', 'Seção adotada (mm²)', fx(B('scalc'), al.secao), 'Editável', { editavel: true });
   linha('iz', 'Iz corrigida (A)', fx(`IFERROR(INDEX(${CAPR},MATCH(${B('sad')},${SEC},0),${colunaCap(B('met'), B('carr'))})*${B('fct')}*${B('fca')},"—")`, r2(al.iz)), '', { fmt: '0.0' });

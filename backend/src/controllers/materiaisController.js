@@ -69,6 +69,8 @@ function dadosDoMaterial(body, atual = null) {
     d[c] = n;
   }
   for (const [c, max] of Object.entries(LIMITE_MATERIAL)) if (d[c] && String(d[c]).length > max) return { erro: `O campo ${c} passa de ${max} caracteres.` };
+  // catálogo não guarda item a R$ 0,00 (regra do usuário; migracoes/2.0-52): o item sem preço fica só na proposta
+  if (!(d.preco > 0)) return { erro: 'Informe o preço de venda: o catálogo não guarda item a R$ 0,00.' };
   return { d };
 }
 
@@ -136,19 +138,21 @@ async function importar(req, res, next) {
     return res.status(400).json({ erro: 'Lista de materiais inválida' });
   }
 
+  let semPreco = 0;
   try {
     const importados = await comTransacao(async (client) => {
     let importados = 0;
     for (const m of materiais) {
       if (!m.descricao || !m.categoria || !m.unidade) continue;
-      if (Number(m.preco || m.pr || 0) < 0) continue;
+      const preco = Number(String(m.preco ?? m.pr ?? 0).replace(',', '.'));
+      if (!(preco > 0)) { semPreco++; continue; } // R$ 0,00 não entra no catálogo (migracoes/2.0-52)
       // descrição que já existe no catálogo é ignorada (índice único do banco)
       const r = await client.query(
         `INSERT INTO materiais (codigo, descricao, categoria, unidade, preco, preco_compra, marca, ncm, origem)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
          ON CONFLICT ((LOWER(TRIM(descricao)))) WHERE ativo = true DO NOTHING`,
         [m.codigo || m.cod, m.descricao || m.desc, m.categoria || m.cat,
-         m.unidade || m.un, m.preco || m.pr || 0, m.preco_compra || null, m.marca || '', m.ncm || null,
+         m.unidade || m.un, preco, m.preco_compra || null, m.marca || '', m.ncm || null,
          m.origem || 'importacao']
       );
       importados += r.rowCount;
@@ -156,7 +160,7 @@ async function importar(req, res, next) {
       return importados;
     });
 
-    res.json({ mensagem: `${importados} materiais importados com sucesso` });
+    res.json({ mensagem: `${importados} materiais importados com sucesso${semPreco ? ` (${semPreco} sem preço ficaram fora do catálogo)` : ''}` });
   } catch (err) {
     // Antes esse catch descartava o erro sem logar: o usuário importava 500
     // materiais, recebia "Erro ao importar materiais" e não havia nenhum

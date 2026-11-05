@@ -92,6 +92,12 @@ async function pesquisar(req, res) {
     const { rows: [item] } = await pool.query('SELECT codigo, descricao, unidade FROM precos_mao_de_obra_referencia WHERE codigo = $1', [req.params.codigo]);
     if (!item) return res.status(404).json({ erro: 'Serviço não encontrado' });
     const r = await pesquisarReferenciaMaoDeObra(item.descricao, item.unidade, segmento, { fresco: req.query.fresco === '1' });
+    // a pesquisa não achou valor: o que havia fica (antes o UPDATE gravava null e apagava a referência boa, por
+    // exemplo o SINAPI adotado à mão — revisão de 04/11/2026)
+    if (r.valor == null) {
+      const { rows: [mantido] } = await pool.query(`SELECT ${COLUNAS.join(', ')} FROM precos_mao_de_obra_referencia WHERE codigo = $1`, [item.codigo]);
+      return res.json({ item: mantido, resultado: r.resultado, deCache: r.deCache, encontrado: false });
+    }
     const { rows: [atual] } = await pool.query(
       `UPDATE precos_mao_de_obra_referencia
          SET valor_${segmento} = $1, fonte_${segmento} = $2, link_${segmento} = $3, ofertas_${segmento} = $4, data_${segmento} = NOW(), atualizado_em = NOW()

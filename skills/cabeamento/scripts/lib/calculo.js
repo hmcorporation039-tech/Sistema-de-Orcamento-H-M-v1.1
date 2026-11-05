@@ -52,6 +52,8 @@ function calcular(dados) {
   };
   const hMax = comprimentoHorizontalMax(cfg);
   const avisos = [];
+  // situação das normas (revisão de 04/11/2026): edição nova publicada depois da usada no cálculo
+  avisos.push("A ABNT NBR 14565 tem edição nova (11/2025); limites de enlace e canal conferidos com a edição 2019. [CONFERIR edição 2025]");
   if (cfg.F > 10) avisos.push(`Patch cords somando ${cfg.F} m (> 10 m): o cabo horizontal foi reduzido pela Tabela 3.`);
 
   const pavimentos = (dados.pavimentos || []).filter(p => Number(p.area_util_m2) > 0 || Number(p.pontos_extra) > 0 || Number(p.aps) > 0).map(p => {

@@ -74,6 +74,8 @@ const kwParaTr = (w) => w / T.W_POR_TR;
 function config(dados) {
   const p = dados.projeto || {};
   const avisos = [];
+  // situação das normas (revisão de 04/11/2026): edição nova publicada depois da usada no cálculo
+  avisos.push("ABNT NBR 16401-1 e -2 têm edição de 11/2024 (conferir dados externos e condições internas); a NBR 16401-3:2024 está suspensa e vale a de 2008, usada aqui. [CONFERIR]");
   const pendencias = new Set();
   const altitude = num(p.altitude_m, T.EXTERNO_PADRAO.altitude_m);
   const tbsExt = num(p.tbs_externa_c, null);

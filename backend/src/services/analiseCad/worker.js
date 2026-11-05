@@ -69,6 +69,8 @@ const REGIOES_FORA = ['diagrama', 'vista_quadro', 'quadro_cargas', 'carimbo'];
     }
     parentPort.postMessage({
       ok: true, dxf: texto, origem, versao: versao || null, desenho, avisoUnidade,
+      // desenho grande demais (skills/_comum/cad/arquitetura.js, MAX_ENTIDADES): blocos aninhados mais fundos ficaram fora
+      detalheReduzido: arq?.detalheReduzido || null,
       arquitetura: arq && {
         fatorUnidade: fator, portas: arq.portas.length, layers: arq.layers.length,
         ambientes: arq.ambientes.map(a => ({ nome: a.nome, area_m2: a.area_m2, perimetro_m: a.perimetro_m, poligono: a.poligono, origem: a.origem })),

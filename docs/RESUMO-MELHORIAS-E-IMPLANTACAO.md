@@ -1041,3 +1041,30 @@ Pedido do usuário: "treine para ficar o mais preciso possível, supere os limit
   - leitura de IFC (web-ifc);
   - legenda e carimbo pela posição na folha;
   - arrastar (mover) um componente na planta e no 3D. Hoje é retirar e inserir de novo.
+
+### 04/11/2026: versão 2.31.0 — revisão geral (segurança, IA, normas), 3D interativo em toda análise e desenho pesado sem queda
+
+Pedidos do usuário: "revise todo sistema, veja se o mesmo é capaz de não depender tanto de IA para fazer análises, mostre o que aprendeu por disciplina e corrija qualquer erro, veja a disponibilidade e se a segurança e eficácia nas decisões estão corretas. Todas as disciplinas devem seguir suas normas, mais recentes e de forma fiel." e "A visualização em 3D ainda não tem a barra de ferramentas para modificar os componentes do projeto, os quadros, interruptores e outros componentes da visualização não têm interação".
+
+- **3D:**
+  - **interativo em toda análise** (`skills/_comum/instalacao/doDesenho.js`): sem o modelo da skill de elétrica, a instalação sai **estimada do próprio desenho**. Cada quadro desenhado vira um quadro; o circuito é o número escrito no desenho ou, sem ele, um de iluminação e um de tomadas por ambiente e um por TUE; os interruptores do ambiente comandam as luminárias dele (1 → simples, 2 → paralelo, 3+ → intermediário). Clicar no quadro abre a porta e liga/desliga disjuntores; clicar no interruptor apaga/acende. Não inventa valor de projeto: disjuntor sem corrente nominal ("corrente a definir") e carga vazia, com aviso [CONFERIR] de que é estimativa;
+  - **"Editar componentes no 3D"** no cartão do 3D da análise (`components/Modelo3d.js`): abre o 3D na tela com a barra Navegar / Inserir / Retirar (antes só pelo Mapa do CAD).
+- **Desenho pesado:** um DWG de 4 MB (blocos aninhados de incêndio) virava 3,1 milhões de traços e 4 GB, derrubando o leitor (11 arquivos do treino). Agora, acima de 1 milhão de traços, os níveis de bloco mais fundos ficam fora, com aviso [CONFERIR] (`skills/_comum/cad/arquitetura.js`, `MAX_ENTIDADES`); a busca dos símbolos da legenda filtra pela caixa da legenda (140 s → 1 s); a união dos traços colados ficou sem recursão (`pontosDoDesenho.js`, estourava a pilha). O mesmo arquivo: 7 s e 154 MB.
+- **Catálogo sem R$ 0,00:** cadastro manual, edição e importação recusam preço zero; a migração `2.0-52` desativa (não apaga) os materiais ativos sem preço que nenhum kit usa — na produção, 22 dos 25 (3 ficam: estão em kits e aparecem "a cotar").
+- **Segurança** (revisão independente):
+  - Média tensão: o campo "arquivo da skill de elétrica" fazia o servidor ler qualquer caminho (inclusive `\host\pasta`, que entrega o hash NTLM). Agora só vale na linha de comando;
+  - `POST /auth/renovar`: chave inventada derrubava a sessão de outra pessoa (ids sequenciais, sem login). Agora só a chave **anterior** fora da folga derruba;
+  - limite de login por conta **+ IP** (antes alguém travava o login do administrador) e limite da 2ª etapa com o desafio **conferido**.
+- **IA só sugere:**
+  - item criado pelo assistente/MCP entra **"a cotar"** (antes, com preço, entrava confirmado);
+  - preço lido por IA de cotação (`*_ia`, inclusive "OCR + IA concordantes") não confirma item do orçamento até alguém conferir;
+  - pesquisa de mão de obra sem resultado não apaga mais a referência que havia;
+  - equipamentos "REF.": a resposta da IA não substitui a leitura local — só entra item com código que está no texto, somado aos lidos localmente; 90 s por provedor;
+  - busca de medidas em lote para quando nenhuma IA responde.
+- **Normas:**
+  - **NBR 5410 — queda de tensão do alimentador 2F+N** (`_comum/eletrico/calculo.js` e a planilha do quadro): com carga fase-neutro, a queda é na fase sobre 127 V, k = 2 − 0,5·(2ª fase ÷ 1ª). Antes usava a fórmula de carga entre fases e subestimava 23 a 42 %. Vale para todas as skills que usam o módulo;
+  - automação: ar externo com o mínimo de **27 m³/h·pessoa** (Portaria 3.523), como a climatização;
+  - incêndio: alarme na bateria de 15 min com avisador por voz e aviso [CONFERIR IT/NT local];
+  - solar: limite de 3 MW da minigeração para fonte não despachável (Lei 14.300);
+  - edições novas publicadas, com aviso [CONFERIR] no cálculo: NBR 14565:2025, IEC 62676-4:2025 (DORI redefinido), NBR 9077:2025, NBR 16401-1/-2:2024 (a -3:2024 está suspensa, vale a 2008), ISO/CIE 8995-1:2025; SPDA: seção do aço cobreado na captação [CONFERIR Tabela 7 da 5419-3:2026]. A NBR 5410 continua a de 2004 (revisão em consulta).
+- **Aprendizado:** bloco aprendido de "iluminação externa" passa a valer em arquivo marcado como iluminação.

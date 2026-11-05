@@ -47,6 +47,12 @@ async function gerarOrcamento(req, res, next) {
   );
   const clienteId = clienteEncontrado.rows[0]?.id || null;
 
+  // material cujo preço foi lido POR IA de uma cotação (origem *_ia) e ninguém conferiu (preco_manual): o preço do
+  // catálogo dele não confirma o item sozinho — a regra é "o que a IA lê é sugestão" (auditoria de IA de 04/11/2026)
+  const idsMateriais = [...new Set(materiaisParaOrcar.map(m => Number(m.material_id)).filter(n => Number.isInteger(n) && n > 0))];
+  const precoDaIA = new Set(idsMateriais.length ? (await pool.query(
+    "SELECT id FROM materiais WHERE id = ANY($1::int[]) AND origem LIKE '%\_ia' AND NOT COALESCE(preco_manual, false)", [idsMateriais])).rows.map(r => r.id) : []);
+
   const NOME_SECAO_SERVICOS = 'Serviços (Mão de Obra)';
   const NOME_SECAO_MATERIAIS = 'Materiais e Equipamentos';
 
@@ -77,7 +83,7 @@ async function gerarOrcamento(req, res, next) {
       // preço 0 no catálogo (padrão da coluna) não é preço: antes saía "confirmado" a R$ 0
       // o preço do catálogo só confirma com o material quase igual (≥ 90%: utils/semelhancaMateriais.js);
       // o adotado na pesquisa de mercado ("Usar") é escolha do usuário e confirma
-      status: (Number(m.quantidade) > 0 && (Number(m.preco_unitario) > 0 || (Number(m.preco_catalogo) > 0 && Number(m.confianca_catalogo) >= CONFIANCA_CONFIRMA))) ? 'confirmado' : 'a_cotar',
+      status: (Number(m.quantidade) > 0 && (Number(m.preco_unitario) > 0 || (Number(m.preco_catalogo) > 0 && Number(m.confianca_catalogo) >= CONFIANCA_CONFIRMA && !precoDaIA.has(Number(m.material_id))))) ? 'confirmado' : 'a_cotar',
     })),
   ];
   // `id` aqui não é opcional: inserirSecoesEItens casa item->seção por

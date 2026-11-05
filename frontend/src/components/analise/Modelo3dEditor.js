@@ -13,6 +13,14 @@ const botao = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '
 // cor da disciplina no 3D (skills/_comum/disciplinas.js) para o marcador do componente inserido
 const COR_DISC = { eletrica: '#f2c14e', iluminacao: '#ffe680', 'iluminacao-externa': '#ffd34d', incendio: '#e5534b', cftv: '#6cb6ff', rede: '#57ab5a', telefonia: '#8ddb8c', antena: '#b083f0', 'controle-acesso': '#f69d50', alarme: '#ff938a', automacao: '#39c5cf', spda: '#adbac7', solar: '#e0823d', veicular: '#4fd1c5', eletrica_hospitalar: '#ffb3b3', climatizacao: '#5ec8f2' };
 
+// nome da disciplina na paleta (quem abre o editor fora do Mapa do CAD: o cartão do 3D da análise, ../Modelo3d.js)
+const NOME_DISC = {
+  eletrica: 'Elétrica', iluminacao: 'Iluminação', 'iluminacao-externa': 'Iluminação externa', incendio: 'Incêndio', cftv: 'CFTV', rede: 'Rede',
+  alarme: 'Alarme', telefonia: 'Telefonia', antena: 'Antena', 'controle-acesso': 'Controle de acesso', automacao: 'Automação', spda: 'SPDA',
+  solar: 'Solar', veicular: 'Veicular', eletrica_hospitalar: 'Elétrica hospitalar', climatizacao: 'Climatização',
+};
+export const nomeDaDisciplina3d = (d) => NOME_DISC[d] || d;
+
 export default function Modelo3dEditor({ analiseId, componentes, nomeDisciplina, onEditado, onFechar }) {
   const quadro = useRef(null);
   const [url, setUrl] = useState(null);

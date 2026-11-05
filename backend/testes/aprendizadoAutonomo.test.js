@@ -52,7 +52,7 @@ const TEXTO_REF = [
       const orig = { perguntarJSON: ia.perguntarJSON, disponivel: ia.disponivel };
       let pedidos = 0;
       ia.disponivel = () => true;
-      ia.perguntarJSON = async () => { pedidos++; return { provedor: 'teste', json: { itens: [{ descricao: 'Item lido pela IA', referencia: 'X-1' }] } }; };
+      ia.perguntarJSON = async () => { pedidos++; return { provedor: 'teste', json: { itens: [{ descricao: 'Item lido pela IA', referencia: 'ABC-123' }] } }; };
       try {
         const { extrairEquipamentos } = require('../src/services/equipamentoExtratorIA');
         assert.deepStrictEqual(await extrairEquipamentos('PLANTA BAIXA SEM LISTA'), { itens: [], fonte: 'local' });
@@ -60,9 +60,15 @@ const TEXTO_REF = [
         assert.strictEqual(boa.fonte, 'local');
         assert.strictEqual(boa.itens.length, 5);
         assert.ok(!('fabricante' in boa.itens[0]), 'mesmo formato da resposta da IA');
-        const fraca = await extrairEquipamentos(`texto fraco ${Date.now()}\nREF.:\nREF.:\nREF.:`);
-        assert.strictEqual(fraca.fonte, 'ia');
+        const fraca = await extrairEquipamentos(`texto fraco ${Date.now()}\nItem lido pela IA código ABC-123\nREF.:\nREF.:\nREF.:`);
+        assert.match(fraca.fonte, /ia/); // o código está no texto: o item da IA entra
+        assert.ok(fraca.itens.some(it => it.referencia_fabricante === 'ABC-123'));
         assert.strictEqual(pedidos, 1);
+        // revisão de 04/11/2026: código que a IA devolve e não está no texto é invenção — fica fora, e fica a leitura local
+        const inventado = await extrairEquipamentos(`outro texto fraco ${Date.now()}\nREF.:\nREF.:\nREF.:`);
+        assert.strictEqual(inventado.fonte, 'local');
+        assert.ok(!inventado.itens.some(it => it.referencia_fabricante === 'ABC-123'));
+        assert.strictEqual(pedidos, 2);
       } finally { Object.assign(ia, orig); }
     });
 

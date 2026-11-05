@@ -26,7 +26,9 @@ Responda em JSON: {"itens":[{"descricao":"...","referencia":"..."}]}`;
     // O mesmo texto de projeto (reenvio, reanálise) não gasta IA de novo: 90 dias.
     // Lista vazia ou erro da IA não são guardados (ver services/iaCache.js).
     const { valor, deCache } = await iaCache.comCache(NOME_CACHE, textoCompleto, { ttlDias: 90 }, async () => {
-      const { json: resultado } = await ia.perguntarJSON(prompt, { documento: textoCompleto, finalidade: 'equipamentos do projeto' });
+      // 90 s por provedor: é reformatar texto; sem o limite, com a CLI travada a análise inteira (no POST) esperava 4–5 min
+      // por arquivo e a tela desistia (auditoria de IA de 04/11/2026)
+      const { json: resultado } = await ia.perguntarJSON(prompt, { documento: textoCompleto, finalidade: 'equipamentos do projeto', timeoutMs: 90 * 1000 });
       const itens = Array.isArray(resultado?.itens) ? resultado.itens : [];
       return {
         itens: itens
@@ -55,7 +57,18 @@ async function extrairEquipamentos(textoCompleto) {
     return { itens: local.itens.map(semRef), fonte: 'local' };
   }
   const daIA = await extrairEquipamentosComIA(textoCompleto);
-  if (daIA.itens.length) return { ...daIA, fonte: 'ia' };
+  // a resposta da IA não substitui a leitura local às cegas: o código que ela devolve tem de estar no texto (senão é
+  // invenção) e o que o leitor local já leu fica; a IA só completa os que faltavam
+  const chave = (v) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const noTexto = chave(textoCompleto);
+  const daIAValidos = daIA.itens.filter(it => !it.referencia_fabricante || (chave(it.referencia_fabricante).length >= 3 && noTexto.includes(chave(it.referencia_fabricante))));
+  if (daIAValidos.length) {
+    const locais = local.itens.map(semRef);
+    const jaLidos = new Set(locais.map(it => chave(it.referencia_fabricante)).filter(Boolean));
+    const novos = daIAValidos.filter(it => !it.referencia_fabricante || !jaLidos.has(chave(it.referencia_fabricante)));
+    const descartados = daIA.itens.length - daIAValidos.length;
+    return { itens: [...locais, ...novos], fonte: locais.length ? 'local+ia' : 'ia', ...(daIA.deCache ? { deCache: true } : {}), ...(descartados ? { aviso: `${descartados} equipamento(s) sugerido(s) pela IA com código que não está no texto do projeto ficaram fora` } : {}) };
+  }
   return { itens: local.itens.map(semRef), fonte: 'local', ...(daIA.aviso ? { aviso: `${daIA.aviso} — ficou a leitura local (${local.completos} de ${local.marcadores} códigos lidos)` } : {}) };
 }
 
