@@ -196,6 +196,8 @@ export const salvarMapaCad = (id, arquivo, linhas) => api.put(`/projetos/analise
 // componentes inseridos/retirados (2.30): { arquivo, adicionar, remover, desfazer } ou { sistema: '3d', adicionar, remover }
 export const editarMapaCad = (id, corpo) => api.put(`/projetos/analises/${id}/mapa/edicoes`, corpo);
 export const reprocessarMapaCad = (id, corpo = {}) => api.post(`/projetos/analises/${id}/mapa/reprocessar`, corpo, { timeout: 300000 });
+// o engenheiro diz o que é um bloco nomeado do desenho: { arquivo, bloco, descricao, disciplina } — aprendizado confirmado
+export const confirmarBlocoMapaCad = (id, corpo) => api.put(`/projetos/analises/${id}/mapa/blocos`, corpo);
 // biblioteca de blocos (o que o mapa do CAD ensinou), em JSON: exportar (logado) e importar (administrador)
 export const exportarBibliotecaBlocos = () => api.get('/projetos/biblioteca-blocos');
 export const importarBibliotecaBlocos = (json) => api.post('/projetos/biblioteca-blocos', json);
@@ -555,3 +557,22 @@ export const getAprendizado = () => api.get('/aprendizado', { timeout: 60000 });
 export const getTreinoAcervo = () => api.get('/aprendizado/treino');
 export const iniciarTreinoAcervo = (dados = {}) => api.post('/aprendizado/treino', dados);
 export const pararTreinoAcervo = () => api.post('/aprendizado/treino/parar');
+
+// ── CONCORRÊNCIA E APRENDIZADO DE ORÇAMENTO (06/11/2026) ────────────────────────────────────────
+// Comparador: o orçamento do concorrente (PDF ou Excel) para o mesmo projeto, comparado com a nossa proposta.
+export const getConcorrencia = (params) => api.get('/concorrencia', { params });
+export const getComparacaoConcorrente = (id) => api.get(`/concorrencia/${id}`, { timeout: 60000 });
+export const importarOrcamentoConcorrente = (arquivo, { propostaId, concorrente, usarIA } = {}) => {
+  const fd = new FormData();
+  fd.append('arquivo', arquivo);
+  if (propostaId) fd.append('proposta_id', propostaId);
+  if (concorrente) fd.append('concorrente', concorrente);
+  if (usarIA) fd.append('usar_ia', 'true');
+  // a leitura com IA pode levar alguns minutos
+  return api.post('/concorrencia', fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: usarIA ? 300000 : 120000 });
+};
+export const atualizarConcorrente = (id, dados) => api.patch(`/concorrencia/${id}`, dados);
+export const vincularItemConcorrente = (id, itemId, dados) => api.patch(`/concorrencia/${id}/itens/${itemId}`, dados);
+export const removerConcorrente = (id) => api.delete(`/concorrencia/${id}`);
+// o que o sistema já sabe orçar em cada disciplina (propostas aprovadas)
+export const getAprendizadoOrcamento = () => api.get('/orcamentos/aprendizado', { timeout: 60000 });

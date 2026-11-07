@@ -4,10 +4,10 @@ const { cronometro } = require('./tempo');
 const { simbolos, uniaoBusca } = require('./simbolos');
 const {
   ehDescricao, textoAoLado, regioesLegenda, descricaoCompleta,
-  dentroDe, tocam, parecido, indiceDeCompanheiros, faixaDe, partesCasam, mesmaAssinatura,
+  dentroDe, tocam, parecido, diferencaDeForma, indiceDeCompanheiros, faixaDe, partesCasam, mesmaAssinatura,
 } = require('./legenda');
 const { tabelasDeLegenda } = require('./tabelaLegenda');
-const { escalaDoCarimbo, PT_PARA_M, escalasDaFolha } = require('./escala');
+const { escalaDaPlanta, PT_PARA_M, escalasDaFolha } = require('./escala');
 
 const RE_TITULO_NAO_LINHA = /^\s*(DETALHES?|NOTAS?|OBSERVA[ÇC]|LEGENDA|VER\s|ATEN[ÇC][ÃA]O|IMPORTANTE)\b/i;
 
@@ -51,13 +51,12 @@ function analisarGeometria({ caminhos, textos, largura, altura }, { escala, orig
   const naLegenda = (caixa) => regioes.some(r => dentroDe(r, caixa));
   const naLegendaClassica = (caixa) => regioesClassicas.some(r => dentroDe(r, caixa));
   const escalas = escalasDaFolha(textos, regioesFolha, escala);
-  // sem escala no carimbo, o "1:50" do título da vista vale quando é o único valor da folha
-  // e, sem nenhuma escrita, a de reserva (nome do arquivo → portas → cotas — CAD-09); a origem vai no resultado
-  const doCarimbo = escala ? null : escalaDoCarimbo(textos);
-  const doTitulo = escala || doCarimbo ? null : (escalas.distintas.length === 1 && escalas.distintas[0] >= 10 ? escalas.distintas[0] : null);
-  const reserva = escala || doCarimbo || doTitulo || escalas.porVista ? null : escalaReserva;
-  const esc = escala || doCarimbo || doTitulo || reserva?.escala || null;
-  const origemEscala = escala ? (origemInformada || 'informada') : doCarimbo ? 'carimbo' : doTitulo ? 'titulo_vista' : reserva?.origem || null;
+  // escala da PLANTA (escala.js/escalaDaPlanta, a mesma do 3D): carimbo sem as de detalhe → o "1:50" do título da
+  // vista quando é o único valor de planta → a de reserva (nome do arquivo → portas → cotas — CAD-09), esta só sem
+  // nenhuma escala de planta escrita ("SEM ESCALA" de um detalhe não a bloqueia mais); a origem vai no resultado
+  const daPlanta = escalaDaPlanta(textos, regioesFolha, { informada: escala, reserva: escalaReserva });
+  const esc = daPlanta.escala || null;
+  const origemEscala = escala ? (origemInformada || 'informada') : daPlanta.origem;
 
   // traço de legenda só se isolado: lado de um símbolo (quadrado, caixa) toca outros caminhos
   const daLegenda = caminhos.filter(c => naLegendaClassica(c.caixa));
@@ -128,10 +127,13 @@ function analisarGeometria({ caminhos, textos, largura, altura }, { escala, orig
   }
 
   // ocorrências na planta: cada símbolo vai para a entrada que ele satisfaz com
-  // MAIS partes (o círculo com miolo é do "AR111", não do "círculo sozinho");
-  // empate: conta para as duas (e elas ficam ambíguas)
+  // MAIS partes (o círculo com miolo é do "AR111", não do "círculo sozinho") e,
+  // entre essas, para a de forma mais parecida (tamanho; o girado fora de 90° perde
+  // para o que casa direto). Cada símbolo conta num item só: antes o empate contava
+  // o mesmo símbolo nos dois itens. Empate de verdade (mesma semelhança): vai para o
+  // 1º e os empatados ficam ambíguos — a conferir, fora do orçamento automático.
   const entradasSimb = unicas.filter(e => e.tipo === 'simbolo');
-  for (const e of entradasSimb) e.ocorr = [];
+  for (const e of entradasSimb) { e.ocorr = []; e.empates = 0; }
   const amostras = new Set(entradasSimb.map(e => e.blob));
   for (const b of blobs) {
     relogio();
@@ -143,7 +145,10 @@ function analisarGeometria({ caminhos, textos, largura, altura }, { escala, orig
     const ok = cand.filter(e => partesCasam(e.sig, sb));
     if (!ok.length) continue;
     const max = Math.max(...ok.map(e => e.sig.comps.length));
-    for (const e of ok) if (e.sig.comps.length === max) e.ocorr.push(b);
+    const melhores = ok.filter(e => e.sig.comps.length === max).map(e => ({ e, d: diferencaDeForma(b, e.blob) })).sort((x, y) => x.d - y.d);
+    melhores[0].e.ocorr.push(b);
+    const empatados = melhores.filter(m => m.d - melhores[0].d <= 1e-6);
+    if (empatados.length > 1) for (const m of empatados) m.e.empates++;
   }
 
   const itens = [];
@@ -163,6 +168,8 @@ function analisarGeometria({ caminhos, textos, largura, altura }, { escala, orig
         tipo: 'simbolo', descricao: e.desc.texto, quantidade: e.ocorr.length,
         assinatura: { cor: e.blob.chave.slice(1).split('|')[0], preenchido: e.blob.chave[0] === 'F', largura_pt: +e.blob.w.toFixed(1), altura_pt: +e.blob.h.toFixed(1), ...(e.sig.comps.length ? { partes: e.sig.comps.length } : {}) },
         ...doProjeto,
+        // símbolos da planta que casam igualmente com este item e com outro: contados uma vez só (no 1º), conferir
+        ...(e.empates ? { empates: e.empates, ambiguo: true, conferir: true } : {}),
         posicoes: e.ocorr.slice(0, 500).map(b => [Math.round(b.cx), Math.round(b.cy)]),
         _sig: e.sig,
       });
@@ -170,7 +177,7 @@ function analisarGeometria({ caminhos, textos, largura, altura }, { escala, orig
       // título sublinhado ("DETALHES EM MARCENARIA…", "NOTAS") não é tipo de linha: com a escala do nome do arquivo
       // (CAD-09) ele ganhava 236 m de "material" na prancha luminotécnica da Paróquia
       if (RE_TITULO_NAO_LINHA.test(e.desc.texto || '')) continue;
-      itens.push({ tipo: 'linha', descricao: e.desc.texto, ...medirLinha(e.estilo, caminhos, { naLegenda, foraDaPlanta, esc, escalas, relogio }), estilo: { cor: e.cor, espessura: e.lw, tracejado: e.dash || null }, ...doProjeto });
+      itens.push({ tipo: 'linha', descricao: e.desc.texto, ...medirLinha(e.estilo, caminhos, { naLegenda, foraDaPlanta, esc, escPlanta: daPlanta.ambigua ? null : esc, escalas, relogio }), estilo: { cor: e.cor, espessura: e.lw, tracejado: e.dash || null }, ...doProjeto });
     }
   }
   // duas linhas da tabela com a mesma descrição e símbolos diferentes: o código
@@ -195,21 +202,27 @@ function analisarGeometria({ caminhos, textos, largura, altura }, { escala, orig
   // o mesmo estilo de linha em duas descrições: não dá para separar as metragens
   itens.filter(i => i.tipo === 'linha').forEach((i, _, l) => { if (l.some(j => j !== i && JSON.stringify(j.estilo) === JSON.stringify(i.estilo))) i.ambiguo = true; });
   itens.sort((a, b) => (a.tipo === b.tipo ? a.descricao.localeCompare(b.descricao, 'pt-BR') : a.tipo === 'simbolo' ? -1 : 1));
-  const valido = (i) => i.descricao.length >= 6 && !/^(SOBE|DESCE)\b/i.test(i.descricao) && (i.tipo === 'simbolo' ? i.quantidade > 0 : i.comprimento_pt > 0);
+  // o item empatado que ficou com 0 continua à vista (ambíguo) — senão o empate sumia calado
+  const valido = (i) => i.descricao.length >= 6 && !/^(SOBE|DESCE)\b/i.test(i.descricao) && (i.tipo === 'simbolo' ? i.quantidade > 0 || i.empates > 0 : i.comprimento_pt > 0);
   // o que o projetista quantificou na tabela e não foi contado no desenho: fica à
   // vista (para o achado de conferência "legenda diz N, desenho tem 0")
   const naoContados = [
     ...tabelas.flatMap(t => t.semSimbolo),
     ...itens.filter(i => !valido(i) && i.qtde_projeto != null).map(i => ({ descricao: i.descricao, qtde_projeto: i.qtde_projeto, ...(i.codigo ? { codigo: i.codigo } : {}), motivo: 'símbolo não encontrado na planta' })),
   ];
-  const linhasSemEscala = itens.filter(i => i.tipo === 'linha' && valido(i) && i.metros == null && escalas.porVista && escalas.distintas.length > 1);
+  // trecho em vista sem escala resolvida (não só na folha de duas escalas: também o detalhe 1:25 numa planta de
+  // escala deduzida) — a metragem fica null e o aviso diz por quê
+  const linhasSemEscala = itens.filter(i => i.tipo === 'linha' && valido(i) && i.metros == null && i.escala_indefinida_pt > 0);
+  const naFolha = [...new Set([...escalas.distintas, ...(esc ? [esc] : [])])].sort((a, b) => a - b);
   return {
     ...(legendaPropria.length ? { legendaPropria } : {}),
     itens: itens.filter(valido), legenda: regiao ? regiao.map(Math.round) : null, legendas: regioes.map(r => r.map(Math.round)), escala: esc, origemEscala, pagina_pt: [Math.round(largura), Math.round(altura)],
+    // escalas empatadas no texto (ex.: "ESC. 1:50" e "ESC. 1:25" sem carimbo que desempate): usada a maior — conferir
+    ...(daPlanta.ambigua ? { escalaAmbigua: daPlanta.ambigua } : {}),
     ...(tabelas.length ? { tabelasLegenda: tabelas.map(t => ({ caixa: t.caixa.map(Math.round), colunas: t.colunas, linhas: t.entradas.length + t.semSimbolo.length })) } : {}),
     ...(naoContados.length ? { naoContados } : {}),
     ...(escalas.distintas.length > 1 || escalas.temSemEscala ? { escalas: { distintas: escalas.distintas, semEscala: escalas.temSemEscala, vistas: escalas.vistas.map(v => ({ tipo: v.tipo, caixa: v.caixa.map(Math.round), escala: v.escala })) } } : {}),
-    ...(linhasSemEscala.length ? { avisoEscala: `folha com mais de uma escala (${escalas.distintas.map(v => `1:${v}`).join(', ')}): ${linhasSemEscala.length} linha(s) da legenda caem em vista sem escala identificada — metragem não calculada, conferir na planta` } : {}),
+    ...(linhasSemEscala.length ? { avisoEscala: `${naFolha.length > 1 ? `folha com mais de uma escala (${naFolha.map(v => `1:${v}`).join(', ')})` : naFolha.length ? `folha só com escala de detalhe (1:${naFolha[0]}), sem a da planta` : 'folha sem escala da planta'}: ${linhasSemEscala.length} linha(s) da legenda caem em vista sem escala identificada — metragem não calculada, conferir na planta` } : {}),
   };
 }
 
@@ -218,14 +231,16 @@ function analisarGeometria({ caminhos, textos, largura, altura }, { escala, orig
 // cada trecho na escala da sua vista; trecho em vista "sem escala" não entra nos
 // metros; trecho em vista sem escala identificada, com mais de uma escala na
 // folha, bloqueia os metros (null) em vez de chutar uma escala.
-function medirLinha(estilo, caminhos, { naLegenda, foraDaPlanta, esc, escalas, relogio }) {
+// Vista de PLANTA sem rótulo próprio fica com `escPlanta` (a escala da planta, sem empate): antes ela ficava sem
+// escala (ou com a do detalhe vizinho) mesmo com o carimbo dizendo 1:50. Fora das vistas, só a escala única da folha.
+function medirLinha(estilo, caminhos, { naLegenda, foraDaPlanta, esc, escPlanta = esc, escalas, relogio }) {
   // comprimento do caminho se ele é deste estilo (null se não é). Faixa: o
   // comprimento é o lado maior (só faixa alinhada aos eixos — a inclinada fica de fora)
   const [, familia, tRef] = estilo.startsWith('faixa|') ? estilo.match(/^faixa\|(.+)\|([\d.]+)$/) : [];
   const casa = familia
     ? (c) => { const f = faixaDe(c); return f && f.familia === familia && Math.abs(f.T - +tRef) <= Math.max(0.25, +tRef * 0.2) ? f.L : null; }
     : (c) => (c.traco && `${c.stroke}|${c.lw}|${c.dash}` === estilo ? c.comp : null);
-  let comp = 0, n = 0, metros = 0, semEscalaPt = 0, indefinidoPt = 0;
+  let comp = 0, n = 0, metros = 0, semEscalaPt = 0, indefinidoPt = 0, semNenhumaPt = 0;
   const porEscala = {};
   const vistaDe = (caixa) => {
     const cx = (caixa[0] + caixa[2]) / 2, cy = (caixa[1] + caixa[3]) / 2;
@@ -238,6 +253,10 @@ function medirLinha(estilo, caminhos, { naLegenda, foraDaPlanta, esc, escalas, r
     }
     return melhor?.v || null;
   };
+  // escala única da folha (fora das vistas): nenhuma escrita → a da planta; uma só → ela, se não for só de detalhe
+  const { distintas, distintasPlanta = distintas } = escalas;
+  const unica = !distintas.length ? esc
+    : distintas.length === 1 && (distintasPlanta.length === 1 || esc === distintas[0]) ? distintas[0] : null;
   for (const c of caminhos) {
     const L = casa(c);
     if (L == null || naLegenda(c.caixa) || foraDaPlanta(c.caixa)) continue;
@@ -245,16 +264,17 @@ function medirLinha(estilo, caminhos, { naLegenda, foraDaPlanta, esc, escalas, r
     comp += L; n++;
     if (!escalas.porVista) continue;
     const v = vistaDe(c.caixa);
-    const e = v?.escala ?? (escalas.distintas.length === 1 ? escalas.distintas[0] : null);
+    const e = v ? (v.escala ?? (v.tipo === 'planta' ? escPlanta : unica)) : unica;
     if (e === 0) semEscalaPt += L;
-    else if (e == null) indefinidoPt += L;
+    // folha sem escala nenhuma (só "SEM ESCALA" de detalhe): não é "vista sem escala definida", é a folha sem escala
+    else if (e == null) { if (distintas.length || esc) indefinidoPt += L; else semNenhumaPt += L; }
     else { metros += L * PT_PARA_M * e; porEscala[e] = (porEscala[e] || 0) + L; }
   }
   const r = { comprimento_pt: Math.round(comp), trechos: n };
   if (!escalas.porVista) return { ...r, metros: esc ? Math.round(comp * PT_PARA_M * esc * 10) / 10 : null };
   return {
     ...r,
-    metros: indefinidoPt > 0 || !Object.keys(porEscala).length ? null : Math.round(metros * 10) / 10,
+    metros: indefinidoPt > 0 || semNenhumaPt > 0 || !Object.keys(porEscala).length ? null : Math.round(metros * 10) / 10,
     escalas_pt: Object.fromEntries(Object.entries(porEscala).map(([k, v]) => [`1:${k}`, Math.round(v)])),
     ...(semEscalaPt ? { sem_escala_pt: Math.round(semEscalaPt) } : {}),
     ...(indefinidoPt ? { escala_indefinida_pt: Math.round(indefinidoPt) } : {}),

@@ -26,6 +26,10 @@ const TAMANHO_MAX_RESULTADO_MANUAL = 20000;
 // uma pesquisa nova. Os acertos entram no contador de Integrações (services/iaCache.js).
 const HORAS_CACHE = 24 * 7;
 const NOME_USO = 'pesquisa_mercado';
+// Tempo total da pesquisa (todos os provedores somados): a tela desiste em 300 s (frontend/src/services/api.js); antes
+// a cadeia podia levar ~17 min e, com a tela já fechada, o backend seguia e caía na API paga (revisão do uso de IA de
+// 06/11/2026). Quem chama passa também um AbortSignal ligado ao fechamento da requisição (sinalDaRequisicao).
+const TEMPO_TOTAL_MS = Number(process.env.PESQUISA_TEMPO_TOTAL_MS) || 270 * 1000;
 
 class ErroPesquisaMercado extends Error {
   constructor(mensagem, status) {
@@ -151,7 +155,7 @@ async function salvarCache(descricaoOriginal, descricaoNormalizada, resultado, f
 // texto continua sendo gravado para a tela e o histórico.
 // `prompt` e `chaveCache` permitem pesquisas com roteiro próprio (referência
 // de mão de obra por segmento) no mesmo cache, histórico e ordem de provedores.
-async function pesquisarPrecoMercado(descricao, { tipo = 'material', prompt: promptProprio, chaveCache, fresco = false } = {}) {
+async function pesquisarPrecoMercado(descricao, { tipo = 'material', prompt: promptProprio, chaveCache, fresco = false, signal, timeoutTotalMs = TEMPO_TOTAL_MS } = {}) {
   const desc = (descricao || '').trim();
   if (!desc) throw new ErroPesquisaMercado('Informe a descrição do material a pesquisar', 400);
 
@@ -161,7 +165,7 @@ async function pesquisarPrecoMercado(descricao, { tipo = 'material', prompt: pro
   if (tipo === 'material' && !promptProprio && !fresco) {
     const internas = await require('./referenciasDePreco').referenciasInternas(desc).catch(() => null);
     if (internas) {
-      await iaCache.registrarUso(NOME_USO, true);
+      await iaCache.registrarUso(NOME_USO, 'sem_ia');
       return { descricao: desc, ...internas, fonte: 'Referências da H&M (sem IA)', interna: true, deCache: true, pesquisadoEm: new Date().toISOString() };
     }
   }
@@ -175,20 +179,22 @@ async function pesquisarPrecoMercado(descricao, { tipo = 'material', prompt: pro
   // a pesquisa segue normalmente (não trava por causa disso).
   const emCache = fresco ? null : await buscarCache(normalizada).catch(() => null);
   if (emCache) {
-    await iaCache.registrarUso(NOME_USO, true);
+    await iaCache.registrarUso(NOME_USO, 'cache');
     const ofertas = emCache.ofertas || [];
     return { descricao: desc, resultado: emCache.resultado, fonte: emCache.fonte, deCache: true, pesquisadoEm: emCache.criado_em, ofertas, estatistica: estatistica(ofertas), precoSugerido: emCache.preco_sugerido != null ? Number(emCache.preco_sugerido) : null };
   }
 
   const prompt = promptProprio || montarPrompt(desc, tipo);
-  await iaCache.registrarUso(NOME_USO, false);
   let r;
   try {
     r = await ia.pesquisarWeb(prompt, {
       finalidade: 'pesquisa de mercado',
       aceitar: (json, { ultimo }) => ultimo || normalizarOfertas(json).length > 0,
+      signal, timeoutTotalMs,
     });
   } catch (err) {
+    await iaCache.registrarUso(NOME_USO, 'falha');
+    if (err?.cancelado) throw new ErroPesquisaMercado('Pesquisa cancelada (a tela foi fechada ou desistiu de esperar).', 499);
     const detalhe = (err.erros || []).map(e => `${FONTE_CACHE[e.provedor] || e.provedor}: ${e.mensagem === 'resposta sem dado aproveitável' ? 'nenhuma oferta' : e.mensagem}`).join(' | ') || err.message;
     throw new ErroPesquisaMercado(`Não foi possível pesquisar o preço agora (${detalhe.slice(0, 300)})`, 502);
   }
@@ -197,7 +203,10 @@ async function pesquisarPrecoMercado(descricao, { tipo = 'material', prompt: pro
   const ofertas = normalizarOfertas(json);
   const est = estatistica(ofertas);
   const texto = textoDasOfertas(ofertas, est, json?.observacao ? String(json.observacao).slice(0, 300) : '');
-  await salvarCache(desc.slice(0, 500), normalizada, texto, fonte, ofertas, est.media).catch(() => {});
+  await iaCache.registrarUso(NOME_USO, 'ia');
+  // resultado SEM oferta não vai para o cache: antes ficava 7 dias como "pesquisa feita" (e contava como "sem IA" a
+  // cada consulta) e o item nunca era pesquisado de novo nesse prazo
+  if (ofertas.length) await salvarCache(desc.slice(0, 500), normalizada, texto, fonte, ofertas, est.media).catch(() => {});
   return { descricao: desc, resultado: texto, fonte, deCache: false, ofertas, estatistica: est, precoSugerido: est.media };
 }
 
@@ -226,10 +235,19 @@ async function salvarPesquisaManual(descricao, resultado, fonte = 'claude_deskto
 
 // Referência de mão de obra de um segmento ('publico' | 'privado'): média das
 // referências equivalentes (mesmo_item), com as fontes e o 1º link
-async function pesquisarReferenciaMaoDeObra(descricao, unidade, segmento, { fresco = false } = {}) {
+// Antes da web (revisão do uso de IA de 06/11/2026): o que a H&M já vendeu desse serviço a clientes do mesmo segmento
+// (services/referenciasDePreco.referenciasInternasMaoDeObra). "Pesquisar de novo" (fresco) vai à web.
+async function pesquisarReferenciaMaoDeObra(descricao, unidade, segmento, { fresco = false, codigo = null, signal, timeoutTotalMs } = {}) {
   if (!SEGMENTOS_MO[segmento]) throw new ErroPesquisaMercado('Segmento inválido (use publico ou privado)', 400);
+  if (!fresco) {
+    const interna = await require('./referenciasDePreco').referenciasInternasMaoDeObra({ codigo, descricao, unidade }, segmento).catch(() => null);
+    if (interna) {
+      await iaCache.registrarUso(NOME_USO, 'sem_ia');
+      return interna;
+    }
+  }
   const r = await pesquisarPrecoMercado(descricao, {
-    fresco,
+    fresco, signal, timeoutTotalMs,
     tipo: 'servico',
     prompt: promptServicoSegmento(descricao, unidade, segmento),
     // versão do roteiro na chave: roteiro novo não reaproveita pesquisa antiga do cache
@@ -245,4 +263,4 @@ async function pesquisarReferenciaMaoDeObra(descricao, unidade, segmento, { fres
   };
 }
 
-module.exports = { pesquisarPrecoMercado, pesquisarReferenciaMaoDeObra, salvarPesquisaManual, ErroPesquisaMercado, normalizarOfertas, estatistica, promptServicoSegmento, SEGMENTOS_MO, FONTES_AUTOMATICAS, MARCA_NAO_VERIFICADA };
+module.exports = { TEMPO_TOTAL_MS, pesquisarPrecoMercado, pesquisarReferenciaMaoDeObra, salvarPesquisaManual, ErroPesquisaMercado, normalizarOfertas, estatistica, promptServicoSegmento, SEGMENTOS_MO, FONTES_AUTOMATICAS, MARCA_NAO_VERIFICADA };

@@ -102,3 +102,80 @@ caso('categorias da H&M: alarme, acesso, automação, interfonia e infraestrutur
 });
 
 console.log(`leitor de cotações: ${ok} casos ok`);
+
+// ── revisão do uso de IA de 06/11/2026: documento que só a IA leria ─────────
+// IA desligada → "aguardando IA" (não é relido com OCR a cada varredura); o mesmo arquivo lido pela IA não volta à IA
+// (resposta guardada pelo hash); IA fora do ar → pendente. Leitor de PDF e IA FALSOS (injetados no require).
+(async () => {
+  require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+  const path = require('path');
+  const arq = (m) => require.resolve(path.join(__dirname, '..', 'src', m));
+  const TEXTO = 'ORÇAMENTO DE FORNECEDOR PARA H&M ENGENHARIA — condições comerciais e prazo de entrega\nSubtotal 10,00\nFrete 5,00\nDesconto 1,00\nTotal 20,00';
+  const estado = { disponivel: false, chamadas: 0, falhar: false };
+  const falsos = {
+    'utils/leitorPdf.js': { textoDoPdf: async () => TEXTO, paginasComoImagem: async () => [] },
+    'services/leitorCotacaoIA.js': {
+      iaDisponivel: () => estado.disponivel,
+      extrairComIA: async () => {
+        estado.chamadas++;
+        if (estado.falhar) throw Object.assign(new Error('nenhuma IA respondeu'), { indisponivel: true });
+        return { fonte: 'IA falsa', ehOrcamento: true, totalDocumento: 20, itens: [{ descricao: 'CABO PP 3X2,5MM', codigo: null, marca: '', unidade: 'm', quantidade: 2, precoImpresso: 10, total: 20, ipi: 0, ncm: null }] };
+      },
+    },
+  };
+  const guardados = {};
+  for (const [m, falso] of Object.entries(falsos)) { guardados[m] = require.cache[arq(m)]; require.cache[arq(m)] = { id: arq(m), filename: arq(m), loaded: true, exports: falso }; }
+  const guardadoLeitor = require.cache[arq('services/leitorCotacao.js')];
+  delete require.cache[arq('services/leitorCotacao.js')];
+  const pool = require('../src/config/database');
+  const iaCache = require('../src/services/iaCache');
+  const buffer = Buffer.from(`%PDF-1.4 teste ${Date.now()}`);
+  const chave = iaCache.chaveDe('leitura_cotacao_ia v1', require('crypto').createHash('sha256').update(buffer).digest('hex'));
+  try {
+    const { lerDocumentoCotacao } = require('../src/services/leitorCotacao');
+    let r = await lerDocumentoCotacao(buffer, 'orc.pdf');
+    assert.deepStrictEqual([r.aguardaIA, !!r.pendente, r.usouIA, r.itens.length], [true, false, false, 0], 'IA desligada: aguardando IA, não pendente');
+    console.log('  ok  IA desligada: o documento fica "aguardando IA" (não é relido a cada varredura)');
+    estado.disponivel = true; estado.falhar = true;
+    r = await lerDocumentoCotacao(buffer, 'orc.pdf');
+    assert.deepStrictEqual([r.pendente, r.iaFalhou, r.aguardaIA], [true, true, false], 'IA fora do ar: pendente (tenta na próxima)');
+    console.log('  ok  IA fora do ar: pendente e marcado como falha no contador');
+    if (process.env.DB_NAME === 'hm_orcamentos_v2') {
+      estado.falhar = false; estado.chamadas = 0;
+      r = await lerDocumentoCotacao(buffer, 'orc.pdf');
+      assert.deepStrictEqual([r.itens.length, r.usouIA, r.iaDeCache, estado.chamadas], [1, true, false, 1]);
+      const r2 = await lerDocumentoCotacao(buffer, 'outro-nome.pdf'); // o mesmo PDF reencaminhado
+      assert.deepStrictEqual([r2.itens.length, r2.iaDeCache, estado.chamadas], [1, true, 1], 'o mesmo arquivo não volta à IA');
+      // passou o prazo total por documento para a IA (leitorCotacaoIA.extrairComIA recebe timeoutTotalMs)
+      console.log('  ok  o mesmo PDF lido pela IA não gasta IA de novo (resposta guardada pelo hash)');
+    }
+  } catch (e) {
+    console.error(`  FALHOU leitura com IA: ${e.stack || e.message}`);
+    process.exitCode = 1;
+  } finally {
+    for (const [m, antes] of Object.entries(guardados)) { if (antes) require.cache[arq(m)] = antes; else delete require.cache[arq(m)]; }
+    if (guardadoLeitor) require.cache[arq('services/leitorCotacao.js')] = guardadoLeitor; else delete require.cache[arq('services/leitorCotacao.js')];
+    await pool.query('DELETE FROM ia_cache WHERE chave = $1', [chave]).catch(() => {});
+  }
+
+  // arquivo da pasta "aguardando IA": não é relido com a IA desligada; com ela ligada, sim
+  try {
+    const ia = require('../src/services/ia');
+    const { _interno: { jaProcessado } } = require('../src/services/cotacaoFornecedorService');
+    const { VERSAO_LEITOR } = require('../src/services/leitorCotacao');
+    const cliente = { query: async () => ({ rows: [{ itens_lidos: 0, itens_novos: 0, itens_atualizados: 0, leitor_versao: VERSAO_LEITOR, aguardando_ia: true }] }) };
+    const orig = ia.disponivel;
+    try {
+      ia.disponivel = () => false;
+      assert.strictEqual(await jaProcessado(cliente, 'x'), true, 'IA desligada: não relê');
+      ia.disponivel = () => true;
+      assert.strictEqual(await jaProcessado(cliente, 'x'), false, 'IA ligada: relê');
+    } finally { ia.disponivel = orig; }
+    console.log('  ok  pasta: "aguardando IA" só é relido quando a IA estiver ligada');
+  } catch (e) {
+    console.error(`  FALHOU pasta aguardando IA: ${e.stack || e.message}`);
+    process.exitCode = 1;
+  } finally {
+    await require('../src/config/database').end().catch(() => {});
+  }
+})();

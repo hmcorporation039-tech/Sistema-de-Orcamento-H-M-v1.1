@@ -45,6 +45,11 @@ const TEXTO_REF = [
       assert.deepStrictEqual([piso.descricao, piso.referencia_fabricante], ['Piso vinílico em manta', 'Marca Exemplo Cinza 0001']);
       assert.match(parede.descricao, /^Parede de gesso acartonado, esp\.95mm, Placa ST, afastamento 400mm$/);
       assert.strictEqual(lerEquipamentosRef('PLANTA BAIXA\nTOMADA BAIXA').marcadores, 0);
+      // revisão do uso de IA (06/11/2026): "REF.:" do carimbo não é item nem conta como marcador (antes "FOLHA 01/03"
+      // e "DES" viravam itens sem código e baixavam a cobertura local, mandando o arquivo para a IA)
+      const comCarimbo = lerEquipamentosRef(`FOLHA 01/03\nREF.: 12\nDES. REF.: 07\n${TEXTO_REF}\nESC.: 1/50 REF.:`);
+      assert.deepStrictEqual([comCarimbo.marcadores, comCarimbo.completos, comCarimbo.itens.length], [5, 5, 5]);
+      assert.ok(!comCarimbo.itens.some(it => /^(FOLHA|DES|ESC)/.test(it.descricao)));
     });
 
     await caso('extração de equipamentos: sem "REF." e com leitura local boa não chama a IA; leitura fraca chama', async () => {
@@ -63,6 +68,8 @@ const TEXTO_REF = [
         const fraca = await extrairEquipamentos(`texto fraco ${Date.now()}\nItem lido pela IA código ABC-123\nREF.:\nREF.:\nREF.:`);
         assert.match(fraca.fonte, /ia/); // o código está no texto: o item da IA entra
         assert.ok(fraca.itens.some(it => it.referencia_fabricante === 'ABC-123'));
+        assert.strictEqual(fraca.itens.find(it => it.referencia_fabricante === 'ABC-123').sugerido_ia, true, 'o item da IA fica marcado');
+        assert.ok(!boa.itens.some(it => it.sugerido_ia), 'a leitura local não leva a marca');
         assert.strictEqual(pedidos, 1);
         // revisão de 04/11/2026: código que a IA devolve e não está no texto é invenção — fica fora, e fica a leitura local
         const inventado = await extrairEquipamentos(`outro texto fraco ${Date.now()}\nREF.:\nREF.:\nREF.:`);
@@ -104,7 +111,17 @@ const TEXTO_REF = [
       // 2.30: de outro escritório, só se a disciplina aprendida é uma das marcadas no arquivo
       assert.strictEqual(blocos.procurar(ap, 'tug-30', 'ESC C', ['alarme']), null);
       assert.strictEqual(blocos.procurar(ap, 'tug-30', 'ESC C', ['eletrica']).deOutroEscritorio, true);
-      assert.strictEqual(blocos.procurar(ap, 'TUG-30', 'ESC B', ['alarme']).descricao, 'Tomada de uso geral a 30 cm', 'no mesmo escritório vale como sempre');
+      // diretriz de 06/11/2026: sempre por disciplina — nem no mesmo escritório o bloco de outra disciplina vale sozinho
+      assert.strictEqual(blocos.procurar(ap, 'TUG-30', 'ESC B', ['alarme']), null, 'o escritório é preferência, não coringa');
+      assert.strictEqual(blocos.procurar(ap, 'TUG-30', 'ESC B', ['eletrica']).descricao, 'Tomada de uso geral a 30 cm', 'no mesmo escritório e disciplina vale');
+      // escritório vazio nunca é "o próprio" (item 1 da revisão): dois desenhos sem carimbo não são do mesmo escritório
+      const semCarimbo = [{ nome: 'T1', escritorio: '', descricao: 'Tomada 2P+T baixa', disciplina: 'eletrica', vezes: 1 }];
+      assert.strictEqual(blocos.procurar(semCarimbo, 'T1', '', ['cftv']), null, 'nome curto, sem carimbo, outra disciplina: nada');
+      assert.strictEqual(blocos.procurar(semCarimbo, 'T1', ''), null, 'nome curto não atravessa nem sem carimbo');
+      const semCarimboLongo = [{ nome: 'TOM-BAIXA', escritorio: '', descricao: 'Tomada 2P+T baixa', disciplina: 'eletrica', vezes: 1 }];
+      assert.strictEqual(blocos.procurar(semCarimboLongo, 'TOM-BAIXA', ''), null, '1 projeto só não basta');
+      assert.strictEqual(blocos.procurar([{ ...semCarimboLongo[0], vezes: 2 }], 'TOM-BAIXA', '', ['eletrica']).deOutroEscritorio, true);
+      assert.strictEqual(blocos.procurar([{ ...semCarimboLongo[0], usuario: true }], 'TOM-BAIXA', '', ['eletrica']).deOutroEscritorio, true, 'confirmado pelo engenheiro vale com 1');
       // no leitor do CAD: a prancha sem legenda reconhece o bloco pelo nome aprendido
       const d = descreverSimbolo({ bloco: 'TUG-30', nomeLimpo: 'TUG-30', layer: '0', layers: ['0'], atributos: {}, descricaoLegenda: null }, { blocosAprendidos: ap, escritorio: 'ESC A' });
       assert.strictEqual(d.origem, 'aprendido');
@@ -114,6 +131,7 @@ const TEXTO_REF = [
 
     await caso('legenda → nome de bloco: o prefixo do nome dá a disciplina; bloco sem disciplina de instalação não se aprende', async () => {
       await require('../src/models/migracoes/2.0-49-treino-com-o-acervo')(pool);
+      await require('../src/models/migracoes/2.0-53-aprendizado-por-disciplina')(pool);
       const s = Date.now();
       const esc = `ESC TESTE ${s}`;
       try {
@@ -125,9 +143,73 @@ const TEXTO_REF = [
         assert.strictEqual(n, 1);
         const { rows } = await pool.query('SELECT nome, disciplina FROM cad_blocos_aprendidos WHERE escritorio = $1', [esc]);
         assert.deepStrictEqual(rows, [{ nome: `INC CENTRAL ${s}`, disciplina: 'incendio' }]);
+        // cada PROJETO conta uma vez (votos): relido não soma; outro projeto reforça
+        await blocos.registrar([{ nomeLimpo: `INC CENTRAL ${s}`, descricao: 'Central de alarme 1 laço classe A' }], esc, 'teste.dwg', undefined, null, 'obra:zz1');
+        await blocos.registrar([{ nomeLimpo: `INC CENTRAL ${s}`, descricao: 'Central de alarme 1 laço classe A' }], esc, 'teste.dwg', undefined, null, 'obra:zz1');
+        let v = (await pool.query('SELECT vezes, conflitos FROM cad_blocos_aprendidos WHERE escritorio = $1', [esc])).rows[0];
+        assert.deepStrictEqual(v, { vezes: 2, conflitos: 0 }, 'teste.dwg (sem fonte) + obra zz1 relida = 2 projetos');
+        // o engenheiro confirma outra disciplina: vence
+        const conf = await blocos.confirmar({ nome: `INC CENTRAL ${s}`, escritorio: esc, descricao: 'Central de alarme de intrusão', disciplina: 'alarme', fonte: 'analise:zz9' });
+        assert.deepStrictEqual([conf.origem, conf.disciplina, conf.descricao], ['usuario', 'alarme', 'Central de alarme de intrusão']);
+        await assert.rejects(blocos.confirmar({ nome: '*U12', escritorio: esc, descricao: 'x', disciplina: 'alarme', fonte: 'analise:zz9' }), e => e.status === 400);
+        v = (await blocos.carregar()).find(b => b.escritorio === esc);
+        assert.strictEqual(v.usuario, true);
       } finally {
+        await pool.query("DELETE FROM aprendizado_votos WHERE tipo = 'bloco' AND chave LIKE $1", [`%|${esc}`]);
         await pool.query('DELETE FROM cad_blocos_aprendidos WHERE escritorio = $1', [esc]);
       }
+    });
+
+    await caso('votos: a confirmação vence; maioria com 3+ e 2/3; empate é conflito; o conflito antigo só pesa contra', () => {
+      const { decidir, CONFLITO_LEGADO } = require('../src/services/votosAprendizado');
+      const v = (valor, origem = 'legenda', peso = 1, em = 0) => ({ valor, origem, peso, em: new Date(em), dados: { valor } });
+      assert.strictEqual(decidir([]), null);
+      assert.deepStrictEqual(pick(decidir([v('A'), v('A')])), ['A', 2, 0, false]);
+      assert.deepStrictEqual(pick(decidir([v('A'), v('B')])), ['A', 1, 1, false], '1 × 1: em conflito');
+      assert.deepStrictEqual(pick(decidir([v('A'), v('A'), v('B')])), ['A', 2, 0, false], '2 de 3: a maioria resolve');
+      assert.deepStrictEqual(pick(decidir([v('A'), v('A'), v('A'), v('B'), v('B')])).slice(2), [2, false], '3 de 5 não chega a 2/3');
+      assert.deepStrictEqual(pick(decidir([v('A'), v('A'), v('B', 'usuario')])), ['B', 1, 0, true], 'o engenheiro vence');
+      assert.deepStrictEqual(pick(decidir([v('A', 'usuario', 1, 1), v('B', 'usuario', 1, 2)])), ['B', 1, 0, true], 'entre engenheiros, o mais recente desempata');
+      assert.deepStrictEqual(pick(decidir([v('A', 'legenda', 5), v(CONFLITO_LEGADO, 'legenda', 1)])), ['A', 5, 0, false], 'legado 5 × 1: maioria');
+      assert.deepStrictEqual(pick(decidir([v('A', 'legenda', 1), v(CONFLITO_LEGADO, 'legenda', 1)])), ['A', 1, 1, false]);
+      function pick(d) { return [d.valor, d.vezes, d.conflitos, d.usuario]; }
+    });
+
+    await caso('o aprendizado vale para o desenho por disciplina: alturas confirmadas sem carimbo, legenda na escala da planta', () => {
+      const { notasParaOMotor, marcarEscalaDePlanta, ESCRITORIO_DO_MOTOR } = require('../src/services/analiseCad/aprendidoNoDesenho');
+      const notas = [
+        { escritorio: 'ESC A', simbolo: 'HM-ELE-TOMADA-BAIXA', altura_m: 0.3, disciplina: 'eletrica' },
+        { escritorio: '', simbolo: 'HM-ELE-TOMADA-BAIXA', altura_m: 0.4, disciplina: 'eletrica', usuario: true },
+        { escritorio: '', simbolo: 'HM-ELE-INTERRUPTOR', altura_m: 1.1, disciplina: 'eletrica', usuario: true },
+        { escritorio: '', simbolo: 'HM-ELE-TOMADA-ALTA', altura_m: 2.2, disciplina: 'eletrica' }, // não confirmada: não vale sem escritório
+      ];
+      const sem = notasParaOMotor(notas, '', ['eletrica']);
+      assert.strictEqual(sem.escritorio, ESCRITORIO_DO_MOTOR);
+      assert.deepStrictEqual(sem.notas.map(n => [n.simbolo, n.altura_m]).sort(), [['HM-ELE-INTERRUPTOR', 1.1], ['HM-ELE-TOMADA-BAIXA', 0.4]]);
+      assert.deepStrictEqual(notasParaOMotor(notas, '', ['cftv']).notas, [], 'outra disciplina: nada');
+      const comEsc = notasParaOMotor(notas, 'ESC A', ['eletrica']);
+      assert.deepStrictEqual(comEsc.notas.map(n => [n.simbolo, n.altura_m]).sort(), [['HM-ELE-INTERRUPTOR', 1.1], ['HM-ELE-TOMADA-BAIXA', 0.3]], 'o do escritório vale mais; o que falta vem da disciplina');
+      const leg = marcarEscalaDePlanta([{ layer: 'EL-TOMADAS', medida: [0.2, 0.2] }, { layer: 'EL-TOMADAS', medida: [1.0, 1.0] }],
+        [{ layer: 'el-tomadas', medida: [0.205, 0.2], quantidade: 12 }]);
+      assert.deepStrictEqual(leg.map(l => !!l.escalaDePlanta), [true, false]);
+    });
+
+    await caso('painel: o que o sistema sabe por disciplina (confirmado × sugerido) e a fila só das análises de quem pede', () => {
+      const { sabePorDisciplina } = require('../src/services/painelAprendizado');
+      const d = sabePorDisciplina([
+        { tipo: 'simbolo', disciplina: 'eletrica', confirmado: true, n: 3 }, { tipo: 'simbolo', disciplina: 'eletrica', confirmado: false, n: 5 },
+        { tipo: 'bloco', disciplina: 'eletrica', confirmado: false, n: 2 }, { tipo: 'altura', disciplina: 'eletrica', confirmado: true, n: 1 },
+        { tipo: 'nao_ponto', disciplina: 'eletrica', confirmado: true, n: 1 }, { tipo: 'simbolo', disciplina: 'rede', confirmado: false, n: 4 },
+        { tipo: 'legenda_pdf', disciplina: 'cabeamento', confirmado: false, n: 2 },
+      ]);
+      const ele = d.find(x => x.chave === 'eletrica');
+      assert.deepStrictEqual([ele.simbolos, ele.blocos, ele.alturas, ele.naoPonto, ele.confirmados, ele.sugeridos], [8, 2, 1, 1, 5, 7]);
+      const cab = d.find(x => x.chave === 'cabeamento');
+      assert.deepStrictEqual([cab.simbolos, cab.legendasPdf], [4, 2], 'rede (símbolo do 3D) e cabeamento são a mesma disciplina');
+      const painel = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'painelAprendizado.js'), 'utf8');
+      assert.ok(painel.includes("usuario.role !== 'admin' ? mapas.filter(m => m.usuario_id == null || m.usuario_id === usuario.id)"), 'a fila é a de quem pede (o admin vê todas)');
+      const ctrl = fs.readFileSync(path.join(__dirname, '..', 'src', 'controllers', 'aprendizadoController.js'), 'utf8');
+      assert.ok(ctrl.includes('painel.resumo(req.usuario)'));
     });
 
     await caso('painel: acerto pelo que o engenheiro conferiu (sem contar a releitura) e fila pelos pontos', () => {
@@ -179,6 +261,7 @@ const TEXTO_REF = [
       await require('../src/models/migracoes/2.0-49-treino-com-o-acervo')(pool);
       await require('../src/models/migracoes/2.0-49-treino-com-o-acervo')(pool); // idempotente
       await require('../src/models/migracoes/2.0-50-treino-por-disciplina')(pool);
+      await require('../src/models/migracoes/2.0-53-aprendizado-por-disciplina')(pool);
       const { treinar } = require('../src/services/treinoAcervo');
       const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'acervo-teste-'));
       const sufixo = Date.now();

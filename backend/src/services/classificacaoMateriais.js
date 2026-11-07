@@ -16,9 +16,13 @@ const { registrarUso } = require('./iaCache');
 //   2. regras de palavras-chave (utils/classificadorMaterial.js);
 //   3. NCM igual ao de materiais já classificados (categoria mais comum) — por último, medido: o NCM
 //      sozinho acerta ~89 % e, na frente das outras etapas, derrubava o acerto do conjunto;
+//   3b. o vizinho mais votado do kNN mesmo abaixo do corte, marcado "a conferir" (categoria_origem 'knn_baixa');
 //   4. IA (cadeia única de services/ia.js: Claude Max → API → Gemini), escolhendo SÓ entre as
 //      categorias que já existem — numa rotina em lote (classificarPendentes),
-//      fora da gravação da proposta ou da varredura.
+//      fora da gravação da proposta ou da varredura. Só para o que não tem vizinho nenhum no catálogo, e uma vez a
+//      cada DIAS_NOVA_TENTATIVA_IA por material (categoria_ia_tentada_em). A categoria da IA fica marcada 'ia'.
+// Cada categoria grava quem a escolheu (materiais.categoria_origem) e o kNN aprende SÓ com a escolhida por gente e com
+// o catálogo anterior à marca (revisão do uso de IA de 06/11/2026; SQL_CATEGORIA_CONFIAVEL).
 // Enquanto a IA não responde, o material fica "Não classificado" e a rotina
 // tenta de novo (após cada varredura de fornecedores/e-mail, às 06:00 e 18:00
 // e logo depois de salvar uma proposta que cadastrou material novo).
@@ -49,9 +53,15 @@ function modeloDe(referencia) {
 const termos = (descricao) => termosDaDescricao(descricao, { minimo: 2, manterVirgula: true, palavrasVazias: PALAVRAS_VAZIAS });
 const similaridade = indiceJaccard;
 
-// Referência = materiais já classificados (carregada uma vez por rotina).
+// Categoria em que dá para confiar como gabarito (revisão do uso de IA de 06/11/2026): a escolhida por gente
+// (categoria_origem 'usuario', ou material cadastrado/editado na tela — origem 'manual') e o catálogo anterior a esta
+// marca (NULL). A categoria dada pela IA, pelo próprio kNN, pelo NCM, pelas palavras-chave ou pela disciplina do
+// arquivo no treino NÃO ensina: antes o classificador aprendia com o próprio chute e o erro se espalhava.
+const SQL_CATEGORIA_CONFIAVEL = `(categoria_origem IS NULL OR categoria_origem = 'usuario' OR origem = 'manual')`;
+
+// Referência = materiais já classificados com categoria confiável (carregada uma vez por rotina).
 async function carregarReferencia(client) {
-  const { rows } = await client.query(`SELECT descricao, categoria, ncm FROM materiais WHERE ativo = true AND COALESCE(categoria, '') <> ALL($1)`, [PENDENTES]);
+  const { rows } = await client.query(`SELECT descricao, categoria, ncm FROM materiais WHERE ativo = true AND COALESCE(categoria, '') <> ALL($1) AND ${SQL_CATEGORIA_CONFIAVEL}`, [PENDENTES]);
   return rows.map(r => ({ ...r, termos: termos(r.descricao) }));
 }
 
@@ -65,25 +75,31 @@ function maisParecido(referencia, descricao) {
   return melhor;
 }
 
-// Categoria sem IA (etapas 0 a 3). Devolve { categoria, criterio } ou null.
+// Categoria sem IA (etapas 0 a 3 e, por último, a sugestão fraca do kNN). Devolve { categoria, criterio, origem } ou
+// null; `origem` vai para materiais.categoria_origem ('knn', 'parecido', 'palavras', 'ncm' ou 'knn_baixa').
 async function categoriaLocal(client, item, referencia) {
   const ref = referencia || await carregarReferencia(client);
   const aprendido = knn.classificar(modeloDe(ref), item.descricao);
   if (aprendido && aprendido.confianca >= CORTE_KNN) {
-    return { categoria: aprendido.categoria, criterio: `aprendido do catálogo (${Math.round(aprendido.confianca * 100)} %), parecido com "${aprendido.vizinhos[0].descricao}"` };
+    return { categoria: aprendido.categoria, criterio: `aprendido do catálogo (${Math.round(aprendido.confianca * 100)} %), parecido com "${aprendido.vizinhos[0].descricao}"`, origem: 'knn' };
   }
   const parecido = maisParecido(ref, item.descricao);
-  if (parecido) return { categoria: parecido.categoria, criterio: `parecido com "${parecido.descricao}"` };
+  if (parecido) return { categoria: parecido.categoria, criterio: `parecido com "${parecido.descricao}"`, origem: 'parecido' };
   const porRegra = classificarPorDescricao(item.descricao);
-  if (porRegra) return { categoria: porRegra, criterio: 'palavras-chave' };
+  if (porRegra) return { categoria: porRegra, criterio: 'palavras-chave', origem: 'palavras' };
   // NCM por último: um mesmo NCM serve a categorias diferentes (cabo de cobre é elétrica e é rede) e, no teste,
   // acertava só ~89 % — passando à frente das outras etapas derrubava o acerto do conjunto de 96 % para 92 %
   if (item.ncm && client) {
     const r = await client.query(
-      `SELECT categoria FROM materiais WHERE ncm = $1 AND ativo = true AND COALESCE(categoria, '') <> ALL($2) GROUP BY categoria ORDER BY count(*) DESC LIMIT 1`,
+      `SELECT categoria FROM materiais WHERE ncm = $1 AND ativo = true AND COALESCE(categoria, '') <> ALL($2) AND ${SQL_CATEGORIA_CONFIAVEL} GROUP BY categoria ORDER BY count(*) DESC LIMIT 1`,
       [item.ncm, PENDENTES]
     );
-    if (r.rows.length) return { categoria: r.rows[0].categoria, criterio: `NCM ${item.ncm}` };
+    if (r.rows.length) return { categoria: r.rows[0].categoria, criterio: `NCM ${item.ncm}`, origem: 'ncm' };
+  }
+  // abaixo do corte, o vizinho mais votado do kNN ainda é uma sugestão melhor que perguntar à IA: entra marcado
+  // "a conferir" (categoria_origem 'knn_baixa' — a tela de Materiais mostra) e a IA fica só para o que não tem vizinho
+  if (aprendido) {
+    return { categoria: aprendido.categoria, criterio: `sugestão do catálogo (${Math.round(aprendido.confianca * 100)} %, abaixo do corte) — a conferir`, origem: 'knn_baixa' };
   }
   return null;
 }
@@ -110,8 +126,13 @@ async function categoriasPorIA(itens, categorias) {
 // Só grava se o material AINDA está pendente: a IA demora segundos por lote e,
 // nesse meio-tempo, alguém pode ter escolhido a categoria na tela — antes a
 // classificação automática passava por cima (revisão de 27/10/2026).
-const SQL_GRAVAR_CATEGORIA = `UPDATE materiais SET categoria = $1, atualizado_em = NOW()
+// $4 = quem escolheu (materiais.categoria_origem): a categoria da IA fica marcada 'ia' e não ensina o kNN.
+const SQL_GRAVAR_CATEGORIA = `UPDATE materiais SET categoria = $1, categoria_origem = $4, atualizado_em = NOW()
   WHERE id = $2 AND (categoria IS NULL OR categoria = ANY($3))`;
+
+// A IA já foi perguntada sobre a categoria deste material e não resolveu: espera DIAS_NOVA_TENTATIVA_IA para perguntar
+// de novo (antes cada proposta salva, varredura de fornecedor ou orçamento gerado perguntava de novo pelos mesmos itens).
+const DIAS_NOVA_TENTATIVA_IA = 7;
 
 let emAndamento = null;
 function classificarPendentes() {
@@ -123,7 +144,9 @@ async function executar() {
   const resumo = { pendentes: 0, classificadosLocal: 0, classificadosIA: 0, restantes: 0, fonteIA: null, avisos: [] };
   const client = await pool.connect();
   try {
-    const { rows } = await client.query(`SELECT id, descricao, ncm FROM materiais WHERE ativo = true AND (categoria IS NULL OR categoria = ANY($1)) ORDER BY id`, [PENDENTES]);
+    const { rows } = await client.query(
+      `SELECT id, descricao, ncm, (categoria_ia_tentada_em IS NULL OR categoria_ia_tentada_em < NOW() - ($2 || ' days')::interval) AS pode_ia
+         FROM materiais WHERE ativo = true AND (categoria IS NULL OR categoria = ANY($1)) ORDER BY id`, [PENDENTES, String(DIAS_NOVA_TENTATIVA_IA)]);
     resumo.pendentes = rows.length;
     if (!rows.length) return resumo;
     const referencia = await carregarReferencia(client);
@@ -131,9 +154,10 @@ async function executar() {
     for (const m of rows) {
       const c = await categoriaLocal(client, m, referencia);
       if (c) {
-        const r = await client.query(SQL_GRAVAR_CATEGORIA, [c.categoria, m.id, PENDENTES]);
-        if (r.rowCount) { resumo.classificadosLocal++; await registrarUso('classificacao_material', true); }
-      } else semLocal.push(m);
+        const r = await client.query(SQL_GRAVAR_CATEGORIA, [c.categoria, m.id, PENDENTES, c.origem || null]);
+        if (r.rowCount) { resumo.classificadosLocal++; await registrarUso('classificacao_material', 'sem_ia'); }
+      } else if (m.pode_ia) semLocal.push(m);
+      else resumo.aguardandoNovaTentativa = (resumo.aguardandoNovaTentativa || 0) + 1;
     }
     if (semLocal.length) {
       const categorias = await categoriasExistentes(client);
@@ -142,13 +166,16 @@ async function executar() {
         try {
           const { fonte, resultado } = await categoriasPorIA(lote, categorias);
           resumo.fonteIA = fonte;
+          // a IA respondeu: registra a tentativa de todo o lote (o que ela não classificou espera DIAS_NOVA_TENTATIVA_IA)
+          await client.query('UPDATE materiais SET categoria_ia_tentada_em = NOW() WHERE id = ANY($1)', [lote.map(m => m.id)]);
           for (const m of lote) {
-            if (!resultado[m.id]) continue;
-            const r = await client.query(SQL_GRAVAR_CATEGORIA, [resultado[m.id], m.id, PENDENTES]);
-            if (r.rowCount) { resumo.classificadosIA++; await registrarUso('classificacao_material', false); }
+            if (!resultado[m.id]) { await registrarUso('classificacao_material', 'falha'); continue; }
+            const r = await client.query(SQL_GRAVAR_CATEGORIA, [resultado[m.id], m.id, PENDENTES, 'ia']);
+            if (r.rowCount) { resumo.classificadosIA++; await registrarUso('classificacao_material', 'ia'); }
           }
         } catch (e) {
           resumo.avisos.push(`Classificação por IA indisponível agora (${e.message.slice(0, 160)}) — tenta de novo na próxima rotina`);
+          for (let n = 0; n < lote.length; n++) await registrarUso('classificacao_material', 'falha');
           // marca como "Não classificado" (não "Geral") para aparecer no filtro e ser retentado
           await client.query(`UPDATE materiais SET categoria = 'Não classificado' WHERE id = ANY($1) AND (categoria IS NULL OR categoria = ANY($2)) AND categoria IS DISTINCT FROM 'Não classificado'`, [lote.map(m => m.id), PENDENTES]);
           break;
@@ -168,4 +195,4 @@ function classificarPendentesEmSegundoPlano() {
   setImmediate(() => classificarPendentes().catch(e => console.error('Classificação de materiais:', e.message)));
 }
 
-module.exports = { categoriaLocal, carregarReferencia, termos, classificarPendentes, classificarPendentesEmSegundoPlano, paraTestes: { similaridade, maisParecido, CORTE_KNN } };
+module.exports = { categoriaLocal, carregarReferencia, termos, classificarPendentes, classificarPendentesEmSegundoPlano, SQL_CATEGORIA_CONFIAVEL, DIAS_NOVA_TENTATIVA_IA, paraTestes: { similaridade, maisParecido, CORTE_KNN } };

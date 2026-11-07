@@ -30,6 +30,7 @@
 const { valorSugerido, ITENS_REFERENCIA } = require('../services/precosMaoDeObraReferencia');
 const { resolverCodigo, DISCIPLINA_OUTROS } = require('./servicosBase');
 const DISC = require('../config/caminhos').registroDisciplinas();
+const { arredondar: arredondarCentavos } = require(require('path').join(require('../config/caminhos').COMUM, 'base', 'dinheiro'));
 
 const SECAO_MATERIAIS = 'Materiais e Equipamentos';
 const SECAO_SERVICOS = 'Serviços (Mão de Obra)';
@@ -40,7 +41,8 @@ const MAX_QUANTIDADE = 1e6;
 
 const DISCIPLINAS = [...new Set([...ITENS_REFERENCIA.map(i => i.disciplina), DISCIPLINA_OUTROS])];
 
-const arred2 = (v) => Math.round(((Number(v) || 0) + Number.EPSILON) * 100) / 100;
+// centavos: a mesma regra da proposta (meio para longe do zero, robusto ao binário)
+const arred2 = (v) => arredondarCentavos(Number(v) || 0);
 const arred3 = (v) => Math.round(((Number(v) || 0) + Number.EPSILON) * 1000) / 1000;
 const numOuNulo = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
 const segmentoValido = (s) => (s === 'publico' ? 'publico' : 'privado');
@@ -186,7 +188,8 @@ function validarComposicao(corpo, { parcial = false } = {}) {
 
 // ── Custo ───────────────────────────────────────────────────────────────
 // itens: [{ tipo, material_id, servico_codigo, coeficiente, descricao, unidade }]
-// materiais: { [id]: { id, descricao, unidade, preco, ativo, categoria, codigo, ncm } }
+// materiais: { [id]: { id, descricao, unidade, preco, ativo, categoria, codigo, ncm, origem, preco_origem, preco_manual } }
+//            (as três últimas dizem se o preço foi lido por IA — sem elas, o preço conta como conferido)
 // servicos:  { [codigo]: { codigo, descricao, unidade, ativo, fundido_em,
 //              valor_referencia, valor_publico, valor_privado } }
 function precoDoItem(it, { materiais = {}, servicos = {} }, segmento) {
@@ -214,13 +217,17 @@ function precoDoItem(it, { materiais = {}, servicos = {} }, segmento) {
     }
     const preco = numOuNulo(m.preco);
     if (!(preco > 0)) return { ...atual, a_cotar: true, motivo: 'Material sem preço no catálogo — a cotar' };
+    // preço lido por IA (cotação lida pela IA) e não conferido: entra como sugestão — fonte 'catalogo_ia', o item sai
+    // "a cotar" no orçamento (services/catalogoMateriais.precoConferido; revisão do uso de IA de 06/11/2026)
+    const fonte = require('../services/catalogoMateriais').precoConferido(m) ? 'catalogo' : 'catalogo_ia';
+    const avisoIA = fonte === 'catalogo_ia' ? 'preço lido por IA de uma cotação — conferir' : null;
     if (conversao) {
       return {
-        ...atual, preco_unitario: preco / conversao.metros, fonte_preco: 'catalogo',
-        conversao: { ...conversao, preco_embalagem: preco }, observacao_preco: conversao.texto,
+        ...atual, preco_unitario: preco / conversao.metros, fonte_preco: fonte,
+        conversao: { ...conversao, preco_embalagem: preco }, observacao_preco: [conversao.texto, avisoIA].filter(Boolean).join('; '),
       };
     }
-    return { ...atual, preco_unitario: preco, fonte_preco: 'catalogo' };
+    return { ...atual, preco_unitario: preco, fonte_preco: fonte, ...(avisoIA ? { observacao_preco: avisoIA } : {}) };
   }
   if (!it.servico_codigo) return { a_cotar: true, motivo: 'Serviço fora da base — a cotar' };
   const porCodigo = new Map(Object.entries(servicos));
@@ -276,6 +283,7 @@ function explodirComposicao(composicao, custo, quantidade) {
     const ehServico = l.tipo === 'servico';
     const quantidadeItem = arred3(l.coeficiente * qtd);
     const valor = l.preco_unitario != null ? arred2(l.preco_unitario) : 0;
+    // 'catalogo_ia' (preço do catálogo lido por IA, não conferido) não fecha: entra "a cotar"
     const fechado = l.fonte_preco === 'catalogo' || l.fonte_preco === 'hm';
     return {
       secao: ehServico ? SECAO_SERVICOS : SECAO_MATERIAIS,

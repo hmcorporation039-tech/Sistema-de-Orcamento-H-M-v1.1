@@ -202,6 +202,82 @@ caso('argumentos da CLI isolada continuam em ia.js (mesma função do teste de s
   assert.strictEqual(require('../src/services/leitorCotacaoIA').argsClaudeMax, ia.argsClaudeMax);
 });
 
+// ── revisão do uso de IA de 06/11/2026 ─────────────────────────────────────
+caso('prazo total da cadeia: provedor lento esgota o prazo e a cadeia PARA (não segue para o próximo)', async () => {
+  const chamadas = [];
+  const lento = { ...falso('lento', null, { chamadas }), timeoutPadrao: () => 60000, executar: (p) => { chamadas.push(p); return new Promise(() => {}); } };
+  const pago = falso('pago', { ok: 1 }, { chamadas });
+  const c = criarIA({ provedores: { lento, pago }, ordem: () => ['lento', 'pago'], registrarLog: false, prazoMinimoMs: 100, folgaMs: 20 });
+  const inicio = Date.now();
+  await assert.rejects(c.perguntarJSON('x', { timeoutTotalMs: 400 }), (e) => e.indisponivel && e.timeout === true && /prazo total esgotado/.test(e.message));
+  assert.ok(Date.now() - inicio < 1000, 'respeitou o prazo');
+  assert.strictEqual(chamadas.length, 1, 'o provedor seguinte (pago) não foi chamado');
+  assert.ok(chamadas[0].timeoutMs <= 380, 'o provedor recebeu o que sobrava do prazo (menos a folga)');
+});
+
+caso('fila do Claude Max: no máximo N ao mesmo tempo; o cancelamento tira da fila; o tempo na fila não conta no provedor', async () => {
+  const fila = ia.criarFila(() => 2);
+  const soltar1 = await fila.reservar(null, 1000);
+  const soltar2 = await fila.reservar(null, 1000);
+  assert.deepStrictEqual(fila.situacao(), { ativos: 2, esperando: 0, maximo: 2 });
+  let entrou = false;
+  const terceiro = fila.reservar(null, 1000).then((s) => { entrou = true; return s; });
+  await new Promise(r => setTimeout(r, 20));
+  assert.strictEqual(entrou, false, 'o terceiro espera');
+  const ctrl = new AbortController();
+  const quarto = fila.reservar(ctrl.signal, 1000);
+  ctrl.abort();
+  await assert.rejects(quarto, (e) => e.cancelado === true);
+  soltar1(); soltar1(); // soltar duas vezes não libera duas vagas
+  const soltar3 = await terceiro;
+  assert.deepStrictEqual(fila.situacao(), { ativos: 2, esperando: 0, maximo: 2 });
+  soltar2(); soltar3();
+  await assert.rejects(ia.criarFila(() => 0).reservar(null, 30), (e) => e.timeout === true); // sem vaga no prazo: erro
+  // na cadeia: o provedor com fila espera a vez e só então o relógio dele começa
+  const filaProv = ia.criarFila(() => 1);
+  const ocupada = await filaProv.reservar(null, 1000);
+  const prov = { ...falso('max', { ok: 1 }), fila: filaProv, timeoutPadrao: () => 100 };
+  const c = cadeia([prov]);
+  const resposta = c.perguntarJSON('x');
+  setTimeout(ocupada, 300); // fica 300 ms na fila (mais que o tempo-limite de 100 ms do provedor)
+  assert.deepStrictEqual((await resposta).json, { ok: 1 });
+  assert.strictEqual(filaProv.situacao().ativos, 0, 'a vaga foi devolvida');
+});
+
+caso('texto longo para a CLI: dividido em partes que a Read lê inteiras; acima do limite sai "parcial"', async () => {
+  const curto = ia.partesDoTexto('linha 1\nlinha 2');
+  assert.deepStrictEqual([curto.partes.length, curto.parcial], [1, false]);
+  const longo = ia.partesDoTexto(Array.from({ length: 4000 }, (_, i) => `linha ${i}`).join('\n'));
+  assert.ok(longo.partes.length === 3 && !longo.parcial, String(longo.partes.length));
+  assert.ok(longo.partes.every(p => p.split('\n').length <= 1500));
+  const linhaEnorme = ia.partesDoTexto('x'.repeat(5000));
+  assert.ok(linhaEnorme.partes[0].split('\n').every(l => l.length <= 1500), 'linha comprida é quebrada');
+  const demais = 'y'.repeat(100) + '\n';
+  assert.strictEqual(ia.partesDoTexto(demais.repeat(13000)).parcial, true);
+  assert.strictEqual(ia.textoCabeNaCli('abc'), true);
+  // um turno por arquivo + 2
+  const a = ia.argsClaudeMax('p', true, { leituras: 5 });
+  assert.strictEqual(a[a.indexOf('--max-turns') + 1], '7');
+  assert.strictEqual(ia.argsClaudeMax('p', true)[ia.argsClaudeMax('p', true).indexOf('--max-turns') + 1], '4');
+  // a resposta de quem leu só parte do texto sai marcada (quem tem cache não guarda)
+  const max = { ...falso('claude_max', { itens: [] }), cortaDocumento: ia.PROVEDORES.claude_max.cortaDocumento };
+  const r = await cadeia([max]).perguntarJSON('x', { documento: demais.repeat(13000) });
+  assert.strictEqual(r.parcial, true);
+  assert.strictEqual((await cadeia([max]).perguntarJSON('x', { documento: 'curto' })).parcial, undefined);
+});
+
+caso('sinal da requisição: dispara quando a tela fecha antes da resposta, não depois de respondida', () => {
+  const { EventEmitter } = require('events');
+  const res1 = Object.assign(new EventEmitter(), { writableFinished: false });
+  const s1 = ia.sinalDaRequisicao({}, res1);
+  res1.emit('close');
+  assert.strictEqual(s1.aborted, true);
+  const res2 = Object.assign(new EventEmitter(), { writableFinished: true });
+  const s2 = ia.sinalDaRequisicao({}, res2);
+  res2.emit('close');
+  assert.strictEqual(s2.aborted, false);
+});
+
 (async () => {
   for (const [nome, fn] of casos) {
     try { await fn(); ok++; console.log(`  ok  ${nome}`); } catch (e) { console.error(`  FALHOU ${nome}: ${e.message}`); process.exitCode = 1; }

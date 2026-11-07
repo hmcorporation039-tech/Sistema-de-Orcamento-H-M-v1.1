@@ -12,8 +12,23 @@
 //   (utils/semelhancaMateriais.chaveDaDescricao); vezes: em quantos arquivos apareceu.
 module.exports = async (client) => {
   await client.query('ALTER TABLE acervo_treino ADD COLUMN IF NOT EXISTS disciplina VARCHAR(40)');
-  await client.query('ALTER TABLE acervo_treino DROP CONSTRAINT IF EXISTS acervo_treino_situacao_check');
-  await client.query(`ALTER TABLE acervo_treino ADD CONSTRAINT acervo_treino_situacao_check CHECK (situacao IN ('lido', 'erro', 'ignorado'))`);
+  // A trava de situação só é refeita quando ainda não aceita 'ignorado' (a da 2.0-49 tinha só 'lido'/'erro').
+  // Antes era DROP + ADD a cada partida do backend: trava exclusiva na tabela e varredura de todas as linhas
+  // sempre, e qualquer falha ali derrubava a subida (revisão de 11/2026).
+  await client.query(`
+    DO $$
+    DECLARE def TEXT;
+    BEGIN
+      SELECT pg_get_constraintdef(c.oid) INTO def FROM pg_constraint c
+       WHERE c.conrelid = 'acervo_treino'::regclass AND c.conname = 'acervo_treino_situacao_check';
+      IF def IS NULL OR def NOT LIKE '%''lido''%' OR def NOT LIKE '%''erro''%' OR def NOT LIKE '%''ignorado''%' THEN
+        IF def IS NOT NULL THEN
+          ALTER TABLE acervo_treino DROP CONSTRAINT acervo_treino_situacao_check;
+        END IF;
+        ALTER TABLE acervo_treino ADD CONSTRAINT acervo_treino_situacao_check CHECK (situacao IN ('lido', 'erro', 'ignorado'));
+      END IF;
+    END $$;
+  `);
   await client.query('CREATE INDEX IF NOT EXISTS idx_acervo_treino_disciplina ON acervo_treino(disciplina)');
   await client.query(`
     CREATE TABLE IF NOT EXISTS acervo_materiais (

@@ -570,4 +570,104 @@ caso('3D-03 caminhos sugeridos em planta grande: rápido; no teto de ligações 
   assert.deepStrictEqual([rc.sugeridos, rc.sem, rc.cortados], [20, 69, 69]);
 });
 
+// ── Revisão do motor de leitura (06/11/2026): pontos do desenho, tipos, nomes repetidos, recorte ──
+{
+  const { tipoPelaLayer, tipoPeloTexto } = require('./tiposDePonto');
+  const { pontosDoDesenho } = require('./pontosDoDesenho');
+  const { recortarArquitetura } = require('./modelo3d');
+  const { criarSimulador } = require('../instalacao/simulador');
+  const quadradoR = (x, y, s, layer) => ({ tipo: 'poli', fechada: true, layer, pts: [[x, y], [x + s, y], [x + s, y + s], [x, y + s], [x, y]] });
+  const arqDeR = (referencia) => ({ ambientes: [], referencia, notas: [], preenchimentos: [], simbolosDaLegenda: [] });
+  const ret = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+
+  caso('R-01 luminárias do térreo e do superior (mesma quantidade, outro lugar) contam as duas: 12, não 6', () => {
+    const refs = [];
+    for (let i = 0; i < 6; i++) refs.push(quadradoR(i * 2, 0, 0.3, 'EL-LUMINARIA-TERREO'), quadradoR(i * 2, 30, 0.3, 'EL-LUMINARIA-SUPERIOR'));
+    const mapa = propostaDeMapa(arqDeR(refs));
+    assert.deepStrictEqual(mapa.simbolos.map(s => s.simbolo), ['HM-ILU-LUMINARIA', 'HM-ILU-LUMINARIA']);
+    assert.strictEqual(aplicarMapa(arqDeR(refs), mapa).pontos.length, 12);
+    // o mesmo aparelho em duas layers NO MESMO LUGAR (símbolo + contorno IFC) continua contando uma vez
+    const dup = [];
+    for (let i = 0; i < 6; i++) dup.push(quadradoR(i * 2, 0, 0.3, 'EL-LUMINARIA'), quadradoR(i * 2 - 0.02, -0.02, 0.34, 'IFC-LUMINARIA'));
+    assert.strictEqual(pontosDoDesenho(arqDeR(dup)).pontos.length, 6);
+  });
+
+  caso('R-02 duas tomadas a 25 cm na bancada são duas (8 em 4 bancadas); a cópia no mesmo lugar continua uma', () => {
+    const tri = (x, y, s = 0.15) => ({ tipo: 'poli', fechada: true, layer: 'EL-TOMADAS', pts: [[x, y], [x + s, y], [x + s / 2, y + s * 0.87], [x, y]] });
+    const refs = [];
+    for (let i = 0; i < 4; i++) refs.push(tri(i * 3, 0), tri(i * 3 + 0.25, 0));
+    assert.strictEqual(pontosDoDesenho(arqDeR(refs)).pontos.length, 8);
+    // bloco inserido duas vezes no mesmo ponto (com 1 cm de diferença): um ponto
+    assert.strictEqual(pontosDoDesenho(arqDeR([tri(0, 0), tri(0.01, 0), tri(3, 0)])).pontos.length, 2);
+  });
+
+  caso('R-03 símbolo explodido em SOLID (tomada cheia) e ELLIPSE (luminária oval) é lido; o SOLID conta como preenchido', () => {
+    const solid = (x, y, l) => ['0', 'SOLID', '8', l, '10', x, '20', y, '30', 0, '11', x + 0.2, '21', y, '31', 0, '12', x + 0.1, '22', y + 0.17, '32', 0, '13', x + 0.1, '23', y + 0.17, '33', 0];
+    const elipse = (x, y, l) => ['0', 'ELLIPSE', '8', l, '10', x, '20', y, '30', 0, '11', 0.15, '21', 0, '31', 0, '40', 0.5, '41', 0, '42', 6.283185];
+    const ents = [solid(0, 0, 'EL-TOMADAS'), solid(2, 0, 'EL-TOMADAS'), solid(4, 0, 'EL-TOMADAS'), elipse(0, 3, 'EL-LUMINARIA'), elipse(3, 3, 'EL-LUMINARIA')];
+    const txt = ['0', 'SECTION', '2', 'HEADER', '9', '$INSUNITS', '70', 6, '0', 'ENDSEC', '0', 'SECTION', '2', 'ENTITIES', ...ents.flat(), '0', 'ENDSEC', '0', 'EOF'].join('\n');
+    const a = lerArquitetura(txt, { classificar: false });
+    assert.strictEqual(a.preenchimentos.length, 3);
+    const mapa = propostaDeMapa(a);
+    const tom = mapa.simbolos.find(s => s.layer === 'EL-TOMADAS');
+    // (triângulo cheio = metade da caixa, como o mesmo triângulo em HATCH sólido; antes o SOLID dava 0 — vazio)
+    assert.deepStrictEqual([tom.quantidade, tom.preenchimento], [3, 0.5], 'tomada cheia: preenchida como a de HATCH');
+    const p = aplicarMapa(a, mapa).pontos;
+    assert.deepStrictEqual([p.filter(x => /TOMADA/.test(x.simbolo)).length, p.filter(x => x.simbolo === 'HM-ILU-LUMINARIA').length], [3, 2]);
+  });
+
+  caso('R-08 tipos: "detector de presença" é sensor (não fumaça); ILUMINAÇÃO na layer não engole interruptor, quadro e poste; ALM-SENSOR é alarme', () => {
+    assert.strictEqual(tipoPeloTexto('Detector de presença de teto')[2], 'HM-ILU-SENSOR');
+    assert.strictEqual(tipoPeloTexto('Detector de fumaça óptico')[2], 'HM-INC-DETECTOR-FUMACA');
+    assert.strictEqual(tipoPeloTexto('Sensor de presença IVP do alarme')[2], 'HM-ALM-IVP');
+    const l = (x) => tipoPelaLayer(x)?.[2];
+    assert.deepStrictEqual(['EL-ILUMINACAO-INTERRUPTORES', 'EL-QUADRO-ILUMINACAO', 'ILUMINACAO-POSTES', 'EL-DETECTOR-PRESENCA', 'ALM-SENSOR', 'ALM-SENSOR-MAGNETICO', 'EL-ILUMINACAO', 'EL-LUMINARIA', 'INC-DETECTOR'].map(l),
+      ['HM-ELE-INTERRUPTOR', 'HM-ELE-QUADRO', 'HM-ILU-POSTE', 'HM-ILU-SENSOR', 'HM-ALM-IVP', 'HM-ALM-MAGNETICO', 'HM-ILU-LUMINARIA', 'HM-ILU-LUMINARIA', 'HM-INC-DETECTOR-FUMACA']);
+  });
+
+  // dois "BANHEIRO" (o 2º maior): os pontos chegam com o NOME do ambiente, como de pontosDoDesenho
+  const b1 = ret(0, 0, 2, 2), b2 = ret(10, 0, 14, 3);
+  const paredes = (p) => p.map((a, i) => ({ tipo: 'linha', layer: 'A-PAREDE', pts: [a, p[(i + 1) % p.length]] }));
+  const arqBanheiros = () => ({
+    ambientes: [{ nome: 'BANHEIRO', poligono: b1, area_m2: 4, centro: [1, 1] }, { nome: 'BANHEIRO', poligono: b2, area_m2: 12, centro: [12, 1.5] }],
+    referencia: [...paredes(b1), ...paredes(b2)], portas: [], regioesPlanta: [], extensao: { min: [0, 0], max: [14, 3] },
+  });
+  const dispositivosBanheiros = () => [
+    { simbolo: 'HM-ELE-QUADRO', x: 0.2, y: 1, ambiente: 'BANHEIRO', disciplina: 'eletrica' },
+    { simbolo: 'HM-ILU-LUMINARIA', x: 1, y: 1, ambiente: 'BANHEIRO', disciplina: 'eletrica', id: 'L-1' },
+    { simbolo: 'HM-ELE-INTERRUPTOR', x: 0.1, y: 0.5, ambiente: 'BANHEIRO', disciplina: 'eletrica', id: 'I-1' },
+    { simbolo: 'HM-ILU-LUMINARIA', x: 12, y: 1.5, ambiente: 'BANHEIRO', disciplina: 'eletrica', id: 'L-2' },
+    { simbolo: 'HM-ELE-INTERRUPTOR', x: 10.1, y: 0.5, ambiente: 'BANHEIRO', disciplina: 'eletrica', id: 'I-2' },
+  ];
+  caso('R-09 3D com dois ambientes "BANHEIRO": cada ponto no seu, e o interruptor de um não acende a luz do outro', () => {
+    const c = montarCena(arqBanheiros(), { peDireito: 2.8, dispositivos: dispositivosBanheiros(), estimarInfra: false });
+    const amb = Object.fromEntries(c.dispositivos.flatMap(t => t.itens.map(it => [it[6], it[5]])));
+    assert.deepStrictEqual([amb['L-1'], amb['I-1'], amb['L-2'], amb['I-2']], [0, 0, 1, 1]);
+    assert.deepStrictEqual(c.instalacao.comandos.map(k => `${k.dispositivos}→${k.pontos}`), ['I-1→L-1', 'I-2→L-2']);
+  });
+
+  caso('R-19 circuito lido no texto da planta entra na simulação marcado "lido, a conferir" (com aviso)', () => {
+    const c = montarCena(arqBanheiros(), { peDireito: 2.8, dispositivos: dispositivosBanheiros(), estimarInfra: false, rotulos: [{ s: '3', x: 1.2, y: 1.1 }] });
+    const p = c.instalacao.pontos.find(x => x.id === 'L-1');
+    assert.deepStrictEqual([p.circuito, p.circuitoLido], ['3', 'a_conferir']);
+    assert.match(c.instalacao.circuitos.find(x => x.id === '3').descricao, /lido na planta, a conferir/);
+    assert.ok(c.avisos.some(a => /LIDO no texto da planta.*\[CONFERIR\]/.test(a)), c.avisos.join(' | '));
+    assert.strictEqual(criarSimulador(c.instalacao).estadoPonto('L-1').circuitoLido, 'a_conferir');
+    assert.strictEqual(c.instalacao.pontos.find(x => x.id === 'L-2').circuitoLido, undefined, 'o ponto sem número lido não é marcado');
+  });
+
+  caso('R-20 recorte de uma planta: a parede que cruza a borda é recortada nela (antes sumia)', () => {
+    const arq = { ambientes: [], portas: [], referencia: [
+      { tipo: 'linha', layer: 'A-PAREDE', pts: [[1, 1], [20, 1]] },          // sai pela direita
+      { tipo: 'linha', layer: 'A-PAREDE', pts: [[-5, 2], [30, 2]] },         // atravessa a planta
+      { tipo: 'poli', layer: 'A-PAREDE', fechada: true, pts: [[8, 3], [12, 3], [12, 4], [8, 4]] }, // metade fora
+      { tipo: 'linha', layer: 'A-PAREDE', pts: [[40, 1], [50, 1]] },         // toda fora
+      { tipo: 'linha', layer: 'A-PAREDE', pts: [[1, 4], [2, 4]] },           // toda dentro
+    ] };
+    const r = recortarArquitetura(arq, [0, 0, 10, 5]).referencia;
+    const fmt = (x) => x.pts.map(p => p.map(v => Math.round(v * 100) / 100).join(',')).join(' ');
+    assert.deepStrictEqual(r.map(fmt), ['1,1 10.5,1', '-0.5,2 10.5,2', '10.5,4 8,4 8,3 10.5,3', '1,4 2,4']);
+  });
+}
+
 console.log(`3d: ${ok} casos ok`);

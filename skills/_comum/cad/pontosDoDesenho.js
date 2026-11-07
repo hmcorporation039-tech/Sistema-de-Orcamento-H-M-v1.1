@@ -168,6 +168,11 @@ function maisProxima(formas, medida, fracao) {
   });
   return melhor;
 }
+// as posições de uma linha do mapa (centros, até 400) e os símbolos de outra são as mesmas (±30 cm, a folga
+// de aplicarMapa para o mesmo aparelho em duas layers): todo símbolo de uma tem um da outra ao lado
+const DUAS_LAYERS_M = 0.3;
+const mesmasPosicoes = (centros, itens) => (centros || []).length > 0
+  && itens.slice(0, centros.length).every(s => centros.some(c => Math.hypot(c[0] - s.centro[0], c[1] - s.centro[1]) < DUAS_LAYERS_M));
 const comprimento = (r) => r.pts.slice(1).reduce((t, p, i) => t + Math.hypot(p[0] - r.pts[i][0], p[1] - r.pts[i][1]), 0);
 
 // ambiente do ponto (o menor que o contém) e se ele está na área externa
@@ -435,8 +440,10 @@ function propostaDeMapa(arq, opcoes = {}) {
       if (leg) sug = { simbolo: leg.simbolo, disciplina: sug?.disciplina || leg.disciplina, rotulo: leg.texto };
       const sem = !sug && !pdf ? porSemelhanca(exemplos, layer, t.medida, t.fracao) : null;
       if (sem) sug = { simbolo: sem.simbolo, disciplina: sem.disciplina, rotulo: sem.texto };
-      // o mesmo aparelho desenhado em duas layers (símbolo + contorno IFC): conta uma vez só
-      if (sug && simbolos.some(o => o.layer !== layer && o.simbolo === sug.simbolo && o.quantidade === t.itens.length)) sug = null;
+      // o mesmo aparelho desenhado em duas layers (símbolo + contorno IFC): conta uma vez só — mas só quando as
+      // POSIÇÕES coincidem. Antes bastava o mesmo tipo e a mesma quantidade: EL-LUMINARIA-TERREO (6) e
+      // EL-LUMINARIA-SUPERIOR (6, noutro lugar) davam 6 luminárias em vez de 12 (revisão de 06/11/2026)
+      if (sug && simbolos.some(o => o.layer !== layer && o.simbolo === sug.simbolo && o.quantidade === t.itens.length && mesmasPosicoes(o.centros, t.itens))) sug = null;
       const semUsada = sug && sem ? sem : null;
       // (o tipo e a altura da legenda só valem se a linha ficou com o tipo: antes a linha "?" saía com origem "legenda")
       const legUsada = sug && leg ? leg : null;
@@ -535,12 +542,21 @@ function aplicarMapa(arq, mapa) {
       (doMapa.get(linha) || doMapa.set(linha, []).get(linha)).push(s);
     }
   }
+  // Ponto repetido (revisão de 06/11/2026). Antes, dois pontos do mesmo tipo a menos de 30 cm viravam um só —
+  // as 2 tomadas a 25 cm de cada bancada saíam 1. A regra agora separa os dois casos:
+  //   - de OUTRA linha do mapa (outra layer ou outra forma: EL-Lâmpada + IFC-Luminária-Contorno, o quadro
+  //     desenhado em partes): é o mesmo aparelho até 30 cm, como antes;
+  //   - da MESMA linha (mesma layer e mesma forma): dois símbolos iguais lado a lado são dois aparelhos; só é o
+  //     mesmo quando as caixas se sobrepõem — o centro a menos de meio símbolo (a cópia sobreposta, o bloco
+  //     inserido duas vezes no mesmo ponto).
+  const vistos = []; // { x, y, simbolo, linha, meio }
   for (const [linha, m] of linhasDoMapa.entries()) {
     if (!m.simbolo || m.simbolo === '?') continue;
     for (const s of doMapa.get(linha) || []) {
-      // o mesmo aparelho em pedaços (quadro desenhado em partes) ou em duas layers
-      // (EL-Lâmpada + IFC-Luminária-Contorno): um ponto só
-      if (pontos.some(o => o.simbolo === m.simbolo && Math.hypot(o.x - s.centro[0], o.y - s.centro[1]) < 0.3)) continue;
+      const meio = Math.max(0.02, s.medida[0] / 2);
+      const repetido = vistos.some(o => o.simbolo === m.simbolo && Math.hypot(o.x - s.centro[0], o.y - s.centro[1]) < (o.linha === linha ? Math.max(meio, o.meio) : DUAS_LAYERS_M));
+      if (repetido) continue;
+      vistos.push({ x: s.centro[0], y: s.centro[1], simbolo: m.simbolo, linha, meio });
       const amb = ambienteDe(s.centro);
       const n = (contagem.get(m.simbolo) || 0) + 1;
       contagem.set(m.simbolo, n);

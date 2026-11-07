@@ -6,7 +6,7 @@ const pool = require('../config/database');
 //   nome     = função + versão do roteiro (ex.: 'equipamentos_projeto v1'); roteiro novo
 //              muda o nome e não reaproveita resposta antiga
 //   entrada  = o que a IA recebe; vai para o hash normalizada (espaços e caixa não contam)
-//   ttlDias  = validade; resposta vazia, nula ou com erro nunca é guardada
+//   ttlDias  = validade; resposta vazia, nula ou com erro não é guardada (cacheVazio: guarda a vazia)
 
 const normalizar = (entrada) => (typeof entrada === 'string' ? entrada : JSON.stringify(entrada ?? null)).replace(/\s+/g, ' ').trim().toLowerCase();
 
@@ -16,26 +16,47 @@ function chaveDe(nome, entrada) {
 
 const vazio = (v) => v == null || v === '' || (Array.isArray(v) && !v.length) || (Array.isArray(v?.itens) && !v.itens.length) || (typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length);
 
-async function registrarUso(nome, acerto) {
+// ── Contador "quanto sai sem IA" (ia_cache_uso, por função e por dia) ────────────────────────────
+// Revisão do uso de IA de 06/11/2026: antes um número só ("acertos") misturava o resolvido sem IA com a resposta
+// antiga da IA reaproveitada do cache, e a chamada que falhava não contava. Agora, por função, quatro contagens:
+//   'sem_ia'  resolvido pelo motor determinístico (leitor local, catálogo, referências próprias)  → coluna sem_ia
+//   'cache'   reaproveitou uma resposta que a IA já tinha dado (não chamou de novo)              → coluna acertos
+//   'ia'      chamou a IA e ela respondeu                                                         → coluna chamadas
+//   'falha'   chamou a IA e ela não respondeu (fora do ar, sem cota, tempo esgotado)              → coluna falhas
+// Cada função conta na sua unidade (documento, material, pesquisa, arquivo) — o painel mostra por função.
+// O nome da função é gravado sem a versão do roteiro ('equipamentos_projeto v1' → 'equipamentos_projeto').
+const COLUNA_DO_TIPO = { sem_ia: 'sem_ia', cache: 'acertos', ia: 'chamadas', falha: 'falhas' };
+const nomeDaFuncao = (nome) => String(nome || '').replace(/\s+v\d+$/i, '').slice(0, 60);
+
+// tipo: 'sem_ia' | 'cache' | 'ia' | 'falha' (true/false de antes = 'cache'/'ia')
+async function registrarUso(nome, tipo) {
+  const t = tipo === true ? 'cache' : tipo === false ? 'ia' : tipo;
+  const coluna = COLUNA_DO_TIPO[t];
+  if (!coluna) return;
   await pool.query(
-    `INSERT INTO ia_cache_uso (nome, dia, acertos, chamadas) VALUES ($1, CURRENT_DATE, $2, $3)
-     ON CONFLICT (nome, dia) DO UPDATE SET acertos = ia_cache_uso.acertos + EXCLUDED.acertos, chamadas = ia_cache_uso.chamadas + EXCLUDED.chamadas`,
-    [nome, acerto ? 1 : 0, acerto ? 0 : 1]
+    `INSERT INTO ia_cache_uso (nome, dia, ${coluna}) VALUES ($1, CURRENT_DATE, 1)
+     ON CONFLICT (nome, dia) DO UPDATE SET ${coluna} = ia_cache_uso.${coluna} + 1`,
+    [nomeDaFuncao(nome)]
   ).catch(() => {});
 }
 
-// Leitura de cotação de fornecedor (pasta e e-mail): documento lido só com os leitores locais
-// (layouts conhecidos, universal, OCR) conta como chamada evitada; o que foi para a IA conta
-// como chamada. Documento sem itens e sem IA não entra na conta. Nunca derruba a leitura.
+// Leitura de cotação de fornecedor (pasta e e-mail), por documento: lido só com os leitores locais (layouts
+// conhecidos, universal, OCR) = sem IA; leitura da IA reaproveitada do mesmo documento já lido (hash) = cache; foi para
+// a IA = chamada (ou falha, se ela não respondeu). Documento sem itens e sem IA não entra na conta. Nunca derruba a leitura.
 function contarLeituraCotacao(leitura) {
-  if (leitura?.usouIA) return registrarUso('leitura_cotacao', false);
-  if (leitura?.itens?.length) return registrarUso('leitura_cotacao', true);
+  if (leitura?.iaDeCache) return registrarUso('leitura_cotacao', 'cache');
+  if (leitura?.usouIA) return registrarUso('leitura_cotacao', leitura.iaFalhou ? 'falha' : 'ia');
+  if (leitura?.itens?.length) return registrarUso('leitura_cotacao', 'sem_ia');
   return Promise.resolve();
 }
 
-// comCache(nome, entrada, { ttlDias, fresco }, () => chamadaÀIA())
+// comCache(nome, entrada, { ttlDias, fresco, cacheVazio, guardar }, () => chamadaÀIA())
 //   → { valor, deCache, criadoEm }. `fresco` ignora o que está guardado (e regrava).
-async function comCache(nome, entrada, { ttlDias, fresco = false } = {}, chamada) {
+//   cacheVazio: guarda também a resposta vazia (a IA já disse que não há nada neste texto — não perguntar de novo).
+//   guardar(valor) → false: não guarda esta resposta (ex.: a IA leu só parte do texto).
+//   contar: false — quem chama conta o uso na própria unidade (ex.: leitura de cotação, por documento).
+async function comCache(nome, entrada, { ttlDias, fresco = false, cacheVazio = false, guardar, contar = true } = {}, chamada) {
+  const uso = (tipo) => (contar ? registrarUso(nome, tipo) : Promise.resolve());
   const chave = chaveDe(nome, entrada);
   if (!fresco) {
     const guardado = await pool.query(
@@ -43,13 +64,20 @@ async function comCache(nome, entrada, { ttlDias, fresco = false } = {}, chamada
       [chave]
     ).then(r => r.rows[0]).catch(() => null);
     if (guardado) {
-      await registrarUso(nome, true);
+      await uso('cache');
       return { valor: guardado.resultado, deCache: true, criadoEm: guardado.criado_em };
     }
   }
-  const valor = await chamada(); // erro da IA sobe daqui: nada é guardado
-  await registrarUso(nome, false);
-  if (!vazio(valor)) {
+  let valor;
+  try {
+    valor = await chamada(); // erro da IA sobe daqui: nada é guardado
+  } catch (e) {
+    await uso('falha');
+    throw e;
+  }
+  await uso('ia');
+  const podeGuardar = valor != null && (cacheVazio || !vazio(valor)) && (!guardar || guardar(valor) !== false);
+  if (podeGuardar) {
     limparExpiradosDeVezEmQuando();
     await pool.query(
       `INSERT INTO ia_cache (chave, nome, resultado, expira_em) VALUES ($1, $2, $3, NOW() + ($4 || ' days')::interval)
@@ -60,19 +88,32 @@ async function comCache(nome, entrada, { ttlDias, fresco = false } = {}, chamada
   return { valor, deCache: false, criadoEm: null };
 }
 
-// Painel de Integrações: por função, quantas chamadas à IA o cache evitou
+// Painel de Integrações e "O que o sistema já sabe": por função, as quatro contagens e as taxas
+//   taxaSemIA = resolvido sem IA nenhuma; taxa = não precisou chamar a IA agora (sem IA + cache)
 async function situacao(dias = 30) {
   try {
     const uso = await pool.query(
-      `SELECT nome, SUM(acertos)::int AS acertos, SUM(chamadas)::int AS chamadas FROM ia_cache_uso
-       WHERE dia > CURRENT_DATE - $1::int GROUP BY nome ORDER BY nome`, [dias]);
+      `SELECT regexp_replace(nome, '\\s+v[0-9]+$', '') AS nome, SUM(sem_ia)::int AS sem_ia, SUM(acertos)::int AS cache,
+              SUM(chamadas)::int AS chamadas, SUM(falhas)::int AS falhas
+         FROM ia_cache_uso WHERE dia > CURRENT_DATE - $1::int GROUP BY 1 ORDER BY 1`, [dias]);
     const guardadas = await pool.query(`SELECT COUNT(*)::int AS n FROM ia_cache WHERE expira_em > NOW()`);
-    const porNome = uso.rows.map(r => ({ nome: r.nome, acertos: r.acertos, chamadas: r.chamadas }));
-    const acertos = porNome.reduce((s, r) => s + r.acertos, 0);
-    const chamadas = porNome.reduce((s, r) => s + r.chamadas, 0);
-    return { dias, acertos, chamadas, evitadas: acertos, taxa: acertos + chamadas ? Math.round(100 * acertos / (acertos + chamadas)) : 0, guardadas: guardadas.rows[0].n, funcoes: porNome };
+    const pct = (a, b) => (b ? Math.round(100 * a / b) : null);
+    const funcoes = uso.rows.map(r => {
+      const total = r.sem_ia + r.cache + r.chamadas + r.falhas;
+      return {
+        nome: r.nome, semIA: r.sem_ia, cache: r.cache, chamadas: r.chamadas, falhas: r.falhas, total,
+        acertos: r.sem_ia + r.cache, // compatível com a tela antiga: não chamou a IA agora
+        taxaSemIA: pct(r.sem_ia, total), taxa: pct(r.sem_ia + r.cache, total),
+      };
+    });
+    const soma = (c) => funcoes.reduce((s, f) => s + f[c], 0);
+    const semIA = soma('semIA'), cache = soma('cache'), chamadas = soma('chamadas'), falhas = soma('falhas');
+    return {
+      dias, semIA, cache, chamadas, falhas, acertos: semIA + cache, evitadas: semIA + cache,
+      taxa: pct(semIA + cache, semIA + cache + chamadas + falhas) ?? 0, guardadas: guardadas.rows[0].n, funcoes,
+    };
   } catch {
-    return { dias, acertos: 0, chamadas: 0, evitadas: 0, taxa: 0, guardadas: 0, funcoes: [] };
+    return { dias, semIA: 0, cache: 0, chamadas: 0, falhas: 0, acertos: 0, evitadas: 0, taxa: 0, guardadas: 0, funcoes: [] };
   }
 }
 
@@ -90,4 +131,4 @@ function limparExpiradosDeVezEmQuando() {
   limparExpirados().catch(() => {});
 }
 
-module.exports = { comCache, chaveDe, registrarUso, contarLeituraCotacao, situacao, limparExpirados };
+module.exports = { comCache, chaveDe, registrarUso, contarLeituraCotacao, situacao, limparExpirados, nomeDaFuncao };

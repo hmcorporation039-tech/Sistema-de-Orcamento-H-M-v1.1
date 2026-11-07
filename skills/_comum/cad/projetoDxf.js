@@ -14,7 +14,7 @@
 const { Helper } = require('dxf');
 const { transformar } = require('./arquitetura');
 const { separarXref, alturaDoTexto, disciplinaDoTexto } = require('./disciplinasCad');
-const { pontosDaPolilinha, pontosDaCurva, comprimento } = require('./geometriaCad');
+const { pontosDaPolilinha, pontosDaCurva, pontosDoSolido, lacosDaHachura, comprimento } = require('./geometriaCad');
 const { limparMtext } = require('./textoCad');
 
 // símbolo = bloco pequeno (até 3 m no maior lado, já em metros); maior é
@@ -33,7 +33,16 @@ const RE_REFERENCIA = /\bdwg$|_dwg$|^ARQ|ARQUIT|^EST-|ESTRUT|^FORMA|HIDR[ÁA]UL|
 const RE_NOME_XREF = /XREF|^X[-_ ]/i;
 // título de legenda de símbolos (não "LEGENDA CORTE" nem "legenda de fixação")
 const RE_TITULO_LEGENDA = /^(LEGENDA|CONVEN[ÇC][ÕO]ES|SIMBOLOGIA)(\s+(GERAL|DE (S[ÍI]MBOLOS|EL[ÉE]TRICA|ILUMINA[ÇC][ÃA]O|INSTALA[ÇC][ÕO]ES|PONTOS|CFTV|REDE|L[ÓO]GICA|TELEFONIA|INC[ÊE]NDIO|ALARME|SEGURAN[ÇC]A|AUTOMA[ÇC][ÃA]O)))?\s*:?\s*$/i;
-const RE_BLOCO_FORA = /PORTA|JANELA|\bDOOR|WINDOW|NORTE|NORTH|CARIMBO|SELO|\bCOTA|N[IÍ]VEL|^NI$|^NV$|CORTE|DETALHE|^SETA|CHAMADA|LOGO|MARGEM|FOLHA|T[IÍ]TULO|ESCALA|MOBILI|CADEIRA|\bMESA|SOF[AÁ]|\bCAMA\b|ARM[AÁ]RIO|BACIA|LAVAT|\bPIA\b|CUBA|CHUVEIRO|\bVASO|CARRO|VE[IÍ]CULO|VEGETA|[ÁA]RVORE|PESSOA|SITUA[ÇC][ÃA]O|LAYOUT|MATRIZ|^FORMA|^EST-|^ARQ-|BANCADA|ESCADA|ELEVADOR|^REV|REVIS[ÃA]O|LEGENDA/i;
+// Bloco fora do orçamento, em duas partes (revisão de 06/11/2026): "TOMADA CHUVEIRO", "BOTÃO DE CHAMADA",
+// "CHAVE DE NÍVEL" e o "ARMÁRIO" de telecom saíam do orçamento porque o nome tinha CHUVEIRO, CHAMADA, NÍVEL ou
+// ARMÁRIO. Agora:
+//   - anotação e folha (norte, carimbo, cota, corte, título, legenda…): sempre fora;
+//   - objeto de arquitetura/mobiliário (porta, chuveiro, armário, bancada…): fora, SALVO se o nome também diz um
+//     ponto da instalação (tomada, botão, chave, sensor, quadro, rack, telecom…) — aí é o ponto, não o objeto.
+const RE_BLOCO_ANOTACAO = /NORTE|NORTH|CARIMBO|SELO|\bCOTA|^NI$|^NV$|CORTE|DETALHE|^SETA|LOGO|MARGEM|FOLHA|T[IÍ]TULO|ESCALA|SITUA[ÇC][ÃA]O|LAYOUT|MATRIZ|^FORMA|^EST-|^ARQ-|^REV|REVIS[ÃA]O|LEGENDA/i;
+const RE_BLOCO_OBJETO = /PORTA|JANELA|\bDOOR|WINDOW|N[IÍ]VEL|CHAMADA|MOBILI|CADEIRA|\bMESA|SOF[AÁ]|\bCAMA\b|ARM[AÁ]RIO|BACIA|LAVAT|\bPIA\b|CUBA|CHUVEIRO|\bVASO|CARRO|VE[IÍ]CULO|VEGETA|[ÁA]RVORE|PESSOA|BANCADA|ESCADA|ELEVADOR/i;
+const RE_BLOCO_PONTO = /TOMADA|\bTUG|\bTUE|PONTO|INTERRUP|BOT[ÃA]O|BOTOEIRA|CHAVE|SENSOR|DETECTOR|ACIONADOR|SIRENE|AVISADOR|LUMIN|L[ÂA]MPADA|ARANDELA|PLAFON|SPOT|REFLETOR|EMERG|QUADRO|\bQD|\bQGBT|RACK|TELECOM|\bDG\b|DADOS|REDE|L[ÓO]GIC|TELEF|INTERFON|PORTEIRO|ANTENA|C[ÂA]MERA|CFTV|LEITOR|FECHADURA|ELETRO[ÍI]M|CAIXA|DISJUNTOR|\bDPS|MOTOR|BOMBA|EXAUST|CARREGADOR|WALLBOX|ALARME|\bIVP/i;
+const RE_BLOCO_FORA = { test: (s) => RE_BLOCO_ANOTACAO.test(s || '') || (RE_BLOCO_OBJETO.test(s || '') && !RE_BLOCO_PONTO.test(s || '')) };
 // coluna de quantidade da legenda ("QTD: 17", "QTDE", "QUANT.", "QNT") e título que encerra a legenda
 const RE_QTD = /^(QTDE?|QUANT(IDADE)?|QNT|QDE)\b\.?\s*[:=.]?\s*/i;
 const RE_FIM_LEGENDA = /^(NOTAS?|OBSERVA[ÇC][ÕO]ES|OBS\.?)\s*:?\s*$/i;
@@ -118,6 +127,19 @@ function nomesDeBlocosDinamicos(textoDxf) {
   return nomes;
 }
 
+// Atributo ALTURA do bloco. Número SEM unidade segue a unidade do desenho (revisão de 06/11/2026): no bloco
+// desenhado em mm, "1100" é 1,10 m — a regra geral ("acima de 10 é cm", ./textoCad.js) dava 11 m. Em mm, valor
+// ≥ 100 é mm; em cm, valor > 10 é cm; em metro (ou sem unidade conhecida) vale a regra geral.
+function alturaDoAtributo(valor, fator = 1) {
+  const v = String(valor || '').trim();
+  if (/^\d+(?:[.,]\d+)?$/.test(v)) {
+    const n = Number(v.replace(',', '.'));
+    if (fator <= 0.0011 && n >= 100) return alturaDoTexto(`h=${v} mm`);
+    if (fator > 0.0011 && fator <= 0.011 && n > 10) return alturaDoTexto(`h=${v} cm`);
+  }
+  return alturaDoTexto(v) || alturaDoTexto(`h=${v}`);
+}
+
 // Lê o DXF. opcoes: { fator (unidade → metro, de lerArquitetura), reLayerLinha (layers medidas) }
 function lerProjetoDxf(textoDxf, { fator = 1, reLayerLinha = null } = {}) {
   const { parsed } = new Helper(textoDxf);
@@ -136,6 +158,11 @@ function lerProjetoDxf(textoDxf, { fator = 1, reLayerLinha = null } = {}) {
       if (e.type === 'LINE') { somar(e.start.x, e.start.y); somar(e.end.x, e.end.y); }
       else if (e.vertices) for (const v of e.vertices) somar(v.x, v.y);
       else if (e.type === 'CIRCLE' || e.type === 'ARC') { somar(e.x - e.r, e.y - e.r); somar(e.x + e.r, e.y + e.r); }
+      // bloco desenhado só com SOLID (tomada cheia), ELLIPSE (luminária oval), SPLINE ou HATCH tinha extensão 0
+      // e não era símbolo: virava "contêiner", era aberto e sumia da contagem (revisão de 06/11/2026)
+      else if (e.type === 'SOLID') for (const [x, y] of pontosDoSolido(e) || []) somar(x, y);
+      else if (e.type === 'ELLIPSE' || e.type === 'SPLINE') for (const [x, y] of pontosDaCurva(e) || []) somar(x, y);
+      else if (e.type === 'HATCH') for (const laco of lacosDaHachura(e)) for (const [x, y] of laco) somar(x, y);
       else if (e.type === 'INSERT' && prof < 8) {
         const r = extensao(e.block, prof + 1) * Math.max(Math.abs(e.scaleX || 1), Math.abs(e.scaleY || 1)) / 2;
         somar((e.x || 0) - r, (e.y || 0) - r); somar((e.x || 0) + r, (e.y || 0) + r);
@@ -172,7 +199,8 @@ function lerProjetoDxf(textoDxf, { fator = 1, reLayerLinha = null } = {}) {
     const bruto = textoDe(e);
     const x = e.type === 'ATTRIB' ? e.text?.x : e.x, y = e.type === 'ATTRIB' ? e.text?.y : e.y;
     if (bruto == null || !Number.isFinite(x)) return;
-    const [[tx, ty]] = transformar([[x, y]], transforms);
+    // TEXT/ATTRIB com normal −Z: o ponto está no sistema da entidade, com o X invertido (o do MTEXT já é do desenho — 06/11/2026)
+    const [[tx, ty]] = transformar([[e.type !== 'MTEXT' && Number(e.extrusionZ) < 0 ? -x : x, y]], transforms);
     const h = (e.nominalTextHeight || e.textHeight || e.text?.textHeight || 0) * escalaDe(transforms);
     const partes = limparTexto(bruto).split('\n').map(s => s.trim()).filter(Boolean);
     partes.forEach((s, i) => textos.push({ s, x: m(tx), y: m(ty) - i * m(h || 0) * 1.6, h: m(h), layer, ...(e.type === 'ATTRIB' ? { atributo: true } : {}) }));
@@ -206,7 +234,8 @@ function lerProjetoDxf(textoDxf, { fator = 1, reLayerLinha = null } = {}) {
     let pts = null;
     if (e.type === 'LINE') pts = [[e.start.x, e.start.y], [e.end.x, e.end.y]];
     // polilinha com o arco (bulge) seguindo a curva — antes, medida pela corda
-    else if (e.type === 'LWPOLYLINE' || e.type === 'POLYLINE') pts = pontosDaPolilinha(e);
+    // (normal −Z: os vértices estão no sistema da entidade, com o X invertido — 06/11/2026)
+    else if (e.type === 'LWPOLYLINE' || e.type === 'POLYLINE') { pts = pontosDaPolilinha(e); if (pts && Number(e.extrusionZ) < 0) pts = pts.map(([x, y]) => [-x, y]); }
     // SPLINE e ELLIPSE: antes não eram medidas
     else if (e.type === 'SPLINE' || e.type === 'ELLIPSE') pts = pontosDaCurva(e);
     else if (e.type === 'ARC') {
@@ -265,7 +294,7 @@ function lerProjetoDxf(textoDxf, { fator = 1, reLayerLinha = null } = {}) {
         const atributos = Object.fromEntries(attribs.map(a => [String(a.tag || '').toUpperCase(), valorAtributo(a)]).filter(([k, v]) => k && v));
         const alt = Object.entries(atributos).find(([k]) => /^(ALTURA|ALT|H|MONTAGEM|INSTALA)/.test(k));
         const xrefProprio = separarXref(e.block).xref;
-        const altura = alt ? alturaDoTexto(alt[1]) || alturaDoTexto(`h=${alt[1]}`) : null;
+        const altura = alt ? alturaDoAtributo(alt[1], fator) : null;
         // MINSERT (símbolo em arranjo linhas × colunas): cada cópia é um símbolo — antes contava 1
         for (const [dx, dy] of arranjo(e)) {
           const [[x, y]] = transformar([[t.x + dx, t.y + dy]], transforms);
@@ -443,4 +472,4 @@ function remontarTexto(textos) {
     .join('\n');
 }
 
-module.exports = { lerProjetoDxf, nomeLimpoDoBloco, nomesDeBlocosDinamicos, limparTexto, numeroDaQtd, layerFora, RE_LAYER_FORA, RE_BLOCO_FORA, RE_TITULO_LEGENDA, RE_REFERENCIA };
+module.exports = { lerProjetoDxf, alturaDoAtributo, nomeLimpoDoBloco, nomesDeBlocosDinamicos, limparTexto, numeroDaQtd, layerFora, RE_LAYER_FORA, RE_BLOCO_FORA, RE_TITULO_LEGENDA, RE_REFERENCIA };

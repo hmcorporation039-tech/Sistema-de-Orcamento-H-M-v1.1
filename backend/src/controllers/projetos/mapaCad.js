@@ -16,6 +16,8 @@ const edicoesDoMapa = require('../../services/edicoesDoMapa');
 const { componentes } = require('../../services/bibliotecaComponentes');
 const simbolosAprendidos = require('../../services/simbolosAprendidos');
 const notasAprendidas = require('../../services/notasAprendidas');
+const blocosAprendidos = require('../../services/blocosAprendidos');
+const { DISCIPLINAS } = require('../../utils/disciplinasProjeto');
 const { executarAnalise } = require('./analises');
 
 const SUBPASTA_ARQUIVOS = 'Arquivos do projeto';
@@ -31,7 +33,12 @@ const respostaDoMapa = (dados) => ({
   tipos: mapaCad.tiposDisponiveis(),
   // biblioteca de componentes por disciplina, com o símbolo de planta em SVG (inserir na planta e no 3D)
   componentes: componentes(),
+  // disciplinas para "confirmar bloco" (o bloco aprendido vale dentro da disciplina dele)
+  disciplinas: DISCIPLINAS.map(d => ({ chave: d.chave, nome: d.nome })).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
 });
+// Quem ensina, no aprendizado (services/votosAprendizado.js): a OBRA da análise (o reprocessamento grava outra análise da
+// mesma obra — confirmar de novo nela não soma) ou, sem obra, a análise. Confirmar/desfazer duas vezes não muda nada.
+const fonteDaAnalise = (a, id) => (a?.obra_id ? `obra:${a.obra_id}` : `analise:${id}`);
 // análise com DWG/DXF e sem mapa nenhum: feita antes do mapa do CAD existir. Os pontos explodidos dela ficaram
 // fora do orçamento e não havia onde conferi-los (caso real de 03/11/2026: 566 pontos lidos, orçamento zerado)
 const semMapaComCad = (a) => !arquivosComMapa(a.dados_extraidos).length
@@ -54,7 +61,7 @@ async function salvar(req, res) {
   let resultado;
   try {
     resultado = await comTransacao(async (client) => {
-      const { rows: [a] } = await client.query('SELECT dados_extraidos FROM analises_projeto WHERE id = $1 FOR UPDATE', [id]);
+      const { rows: [a] } = await client.query('SELECT dados_extraidos, obra_id FROM analises_projeto WHERE id = $1 FOR UPDATE', [id]);
       if (!a) throw Object.assign(new Error('Análise não encontrada'), { status: 404 });
       const dados = Array.isArray(a.dados_extraidos) ? a.dados_extraidos : [];
       const i = dados.findIndex(d => d?.mapa_cad?.simbolos && (d.mapa_cad.arquivo || d.arquivo) === arquivo);
@@ -68,19 +75,22 @@ async function salvar(req, res) {
         entidade: 'analises_projeto', entidadeId: Number(id), acao: 'mapa_cad', usuarioId: req.usuario.id,
         detalhes: { arquivo, linhas: alteradas.map(x => ({ layer: x.depois.layer, de: x.antes.simbolo, para: x.depois.simbolo, altura_m: x.depois.altura_m ?? null, desfeita: x.desfeita })) },
       });
-      return { dados, alteradas, escritorio: dados[i].mapa_cad.escritorio || '' };
+      return { dados, alteradas, escritorio: dados[i].mapa_cad.escritorio || '', fonte: fonteDaAnalise(a, id), disciplinas: dados[i].disciplinas || [], mapa };
     });
   } catch (e) {
     if (e.status) return res.status(e.status).json({ erro: e.message });
     throw e;
   }
   // aprendizado fora da transação: se falhar, a correção da análise já está salva
-  // (biblioteca de blocos: a medida real e o escritório do carimbo vão na chave — CAD-08)
-  const aprendidas = await mapaCad.aprender(resultado.alteradas, arquivo, undefined, resultado.escritorio);
-  const esquecidas = await mapaCad.esquecer(resultado.alteradas, undefined, resultado.escritorio);
-  // a altura confirmada para um TIPO de ponto vira sugestão para os próximos desenhos do mesmo escritório (item 8)
-  const alturasAprendidas = await notasAprendidas.aprenderConfirmadas(resultado.alteradas, resultado.escritorio, arquivo);
-  await notasAprendidas.esquecer(resultado.alteradas, resultado.escritorio);
+  // (biblioteca de blocos: a medida real e o escritório do carimbo vão na chave — CAD-08). Cada confirmação é o voto
+  // deste projeto (obra/análise); "não é ponto" também se aprende, pelas disciplinas marcadas no arquivo.
+  const { fonte, disciplinas, escritorio } = resultado;
+  const aprendidas = await mapaCad.aprender(resultado.alteradas, arquivo, undefined, escritorio, { fonte, disciplinas });
+  const esquecidas = await mapaCad.esquecer(resultado.alteradas, undefined, escritorio, { fonte, disciplinas, arquivo });
+  // a altura confirmada para um TIPO de ponto vira sugestão para os próximos desenhos do mesmo escritório — ou, sem
+  // escritório no carimbo, da mesma disciplina (item 8)
+  const alturasAprendidas = await notasAprendidas.aprenderConfirmadas(resultado.alteradas, escritorio, arquivo, undefined, { fonte });
+  await notasAprendidas.esquecer(resultado.alteradas, escritorio, undefined, { fonte, arquivo, mapa: resultado.mapa });
   res.json({ ...respostaDoMapa(resultado.dados), aprendidas, esquecidas, alturasAprendidas });
 }
 
@@ -209,6 +219,41 @@ async function reprocessar(req, res) {
   await executarAnalise(req, res, arquivos, corpo, { mapasConfirmados, mapasEditados, analiseAnterior: a });
 }
 
+// PUT /projetos/analises/:id/mapa/blocos { arquivo, bloco, descricao, disciplina } — o engenheiro diz o que é um bloco
+// nomeado (não identificado, ou reconhecido só pelo que outra prancha ensinou): vira aprendizado CONFIRMADO
+// (services/blocosAprendidos.confirmar, origem 'usuario') para o escritório do carimbo — ou, sem carimbo, para a
+// disciplina. Entra no orçamento desta análise ao reprocessar (a releitura já reconhece o bloco).
+async function confirmarBloco(req, res) {
+  const { id } = req.params;
+  const { arquivo, bloco, descricao, disciplina } = req.body || {};
+  if (!DISCIPLINAS.some(d => d.chave === disciplina)) return res.status(400).json({ erro: 'Escolha a disciplina do bloco.' });
+  let resultado;
+  try {
+    resultado = await comTransacao(async (client) => {
+      const { rows: [a] } = await client.query('SELECT dados_extraidos, obra_id FROM analises_projeto WHERE id = $1 FOR UPDATE', [id]);
+      if (!a) throw Object.assign(new Error('Análise não encontrada'), { status: 404 });
+      const dados = Array.isArray(a.dados_extraidos) ? a.dados_extraidos : [];
+      const i = dados.findIndex(x => x?.mapa_cad && (x.mapa_cad.arquivo || x.arquivo) === arquivo);
+      if (i < 0) throw Object.assign(new Error('Esta análise não tem mapa do CAD para esse arquivo.'), { status: 404 });
+      const blocos = dados[i].mapa_cad.blocos || [];
+      if (!blocos.some(b => b.bloco === bloco)) throw Object.assign(new Error('Bloco não encontrado neste arquivo: atualize a tela.'), { status: 400 });
+      const linha = await blocosAprendidos.confirmar({ nome: bloco, escritorio: dados[i].mapa_cad.escritorio || '', descricao, disciplina, fonte: fonteDaAnalise(a, id), arquivo }, client);
+      // fica guardado na análise: o reprocessamento conta o bloco como conferido (mapaCad.confirmadasDoMapa)
+      dados[i] = { ...dados[i], mapa_cad: { ...dados[i].mapa_cad, blocos: blocos.map(b => (b.bloco === bloco ? { ...b, situacao: 'confirmado', descricao: linha.descricao, disciplina } : b)) } };
+      await client.query('UPDATE analises_projeto SET dados_extraidos = $1 WHERE id = $2', [JSON.stringify(dados), id]);
+      await registrarAuditoria(client, {
+        entidade: 'analises_projeto', entidadeId: Number(id), acao: 'mapa_cad_bloco', usuarioId: req.usuario.id,
+        detalhes: { arquivo, bloco, descricao: linha.descricao, disciplina },
+      });
+      return { dados, linha };
+    });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ erro: e.message });
+    throw e;
+  }
+  res.json({ ...respostaDoMapa(resultado.dados), bloco: resultado.linha });
+}
+
 // ── Biblioteca de blocos (fase 3, CAD-08): o que o sistema aprendeu, em JSON, para levar a outra instalação ──
 // GET /projetos/biblioteca-blocos → o arquivo (services/simbolosAprendidos.exportar)
 async function exportarBiblioteca(req, res) {
@@ -230,4 +275,4 @@ async function importarBiblioteca(req, res) {
   res.json({ ...r, recusadas: erros.length, erros: erros.slice(0, 20) });
 }
 
-module.exports = { ler, salvar, editar, reprocessar, exportarBiblioteca, importarBiblioteca };
+module.exports = { ler, salvar, editar, reprocessar, confirmarBloco, exportarBiblioteca, importarBiblioteca };

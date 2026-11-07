@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, FolderPlus, Calculator, BarChart3 } from 'lucide-react';
+import { Plus, Trash2, FolderPlus, Calculator, BarChart3, Scale } from 'lucide-react';
 import { getSegmentoCliente, getProximoNumero, criarProposta, atualizarProposta, getProposta, getPadroesOrcamento, getPrecosVendidos, pesquisarPrecoMercado, getAnaliseProjeto, getLaudo, getObra, duplicarProposta, baixarPdfProposta, baixarPlanilhaProposta } from '../services/api';
 import { formatarMoeda } from '../utils/format';
 import { categoriasComUsadas } from '../utils/categoriasMateriais';
@@ -265,7 +265,9 @@ export default function Orcamento() {
         id: gerarId(), sid: it.secao_id, material_id: it.material_id,
         descricao: it.descricao, quantidade: Number(it.quantidade), unidade: it.unidade,
         valor_unitario: Number(it.valor_unitario), ncm: it.ncm || '', codigo: it.codigo || '',
-        subgrupo: it.subgrupo || '', status: it.status || 'confirmado'
+        subgrupo: it.subgrupo || '', status: it.status || 'confirmado',
+        // 'assistente' = sugerido pela IA (assistente virtual): fica "a cotar" até o engenheiro confirmar aqui
+        origem_item: it.origem_item || null
       }));
       for (const sid of new Set(itensCarregados.map(it => it.sid))) {
         itensCarregados = reordenarPorSubgrupo(itensCarregados, sid);
@@ -614,7 +616,10 @@ export default function Orcamento() {
 
   function atualizarItem(id, campo, valor) {
     setItens(it => {
-      const atualizado = it.map(i => i.id === id ? { ...i, [campo]: valor } : i);
+      // confirmar na tela é o engenheiro conferindo: o item sugerido pela IA perde a marca e, ao salvar, entra no
+      // catálogo e ensina o vínculo como qualquer item confirmado (revisão do uso de IA de 06/11/2026)
+      const confirmou = campo === 'status' && valor === 'confirmado';
+      const atualizado = it.map(i => i.id === id ? { ...i, [campo]: valor, ...(confirmou ? { origem_item: null } : {}) } : i);
       if (campo !== 'subgrupo') return atualizado;
       const item = atualizado.find(i => i.id === id);
       return reordenarPorSubgrupo(atualizado, item.sid);
@@ -649,7 +654,7 @@ export default function Orcamento() {
     }
     const fator = 1 + pct / 100;
     setItens(it => it.map(item => sidsDaCategoria.includes(item.sid)
-      ? { ...item, valor_unitario: Math.round((Number(item.valor_unitario) || 0) * fator * 100) / 100 }
+      ? { ...item, valor_unitario: arred2((Number(item.valor_unitario) || 0) * fator) }
       : item
     ));
     const campoDesconto = ehCategoriaMaoDeObra ? 'desconto_mao_obra_pct' : 'desconto_materiais_pct';
@@ -822,7 +827,9 @@ export default function Orcamento() {
         sid: it.sid, desc: it.descricao, qtd: arredQtd(it.quantidade),
         un: it.unidade, vu: arred2(it.valor_unitario), ncm: it.ncm || null,
         codigo: it.codigo || null, material_id: it.material_id || null,
-        subgrupo: it.subgrupo?.trim() || null, status: it.status || 'confirmado'
+        subgrupo: it.subgrupo?.trim() || null, status: it.status || 'confirmado',
+        // a marca do item sugerido pela IA vai junto (o servidor o mantém "a cotar" e fora do catálogo enquanto existir)
+        origem_item: it.origem_item || null
       })),
     };
   }
@@ -1159,6 +1166,13 @@ export default function Orcamento() {
           title="Itens do maior para o menor valor, com % do total, % acumulado e classe A/B/C">
           <BarChart3 size={13} style={{ marginRight: 4 }} /> {mostrarCurvaAbc ? 'Fechar curva ABC' : 'Curva ABC'}
         </button>
+        {/* comparador com o orçamento de um concorrente para o mesmo projeto (aba Concorrência, 06/11/2026) */}
+        {editandoId && (
+          <Link to={`/propostas?aba=concorrencia&proposta=${editandoId}`} style={{ ...btnSecundario, textDecoration: 'none' }}
+            title="Importar o orçamento de um concorrente para este projeto e comparar item a item">
+            <Scale size={13} style={{ marginRight: 4 }} /> Comparar com concorrente
+          </Link>
+        )}
       </div>
 
       {mostrarCurvaAbc && itens.length > 0 && (

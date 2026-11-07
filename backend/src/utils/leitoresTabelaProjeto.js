@@ -58,9 +58,40 @@ const CAUDA = [ // colunas do fim da linha, alinhadas pela direita
 ];
 const ehCabecalhoQuadro = (cel) => cel.some(c => /^Circuito$/i.test(c))
   && cel.filter(c => /^(Esquema|M[ée]todo|Tens[ãa]o|Disj|Se[çc][ãa]o|Ip|In'?|Ic|dV|Fases|Pot)/i.test(c)).length >= 4;
+// Linhas lidas por tabela (proteção contra texto corrido sem fim). Tabela maior que o limite não some calada: o
+// quadro sai com `cortado` e os itens da lista com `listaCortada` ({ leitor, limite }) — viram achado
+// (utils/analiseProjetoAchados.js) para conferir o resto direto no PDF.
+const LIMITE_QUADRO = 400, LIMITE_COLUNAS = 300, LIMITE_ALTOQI = 1500, LIMITE_QTD_DESC = 200, LIMITE_TAG = 200;
+// a tabela segue depois da linha `j` (próxima linha não vazia ainda tem cara de linha da tabela)?
+function continua(linhas, j, ehLinha) {
+  for (let k = j; k < linhas.length && k < j + 3; k++) {
+    const l = linhas[k];
+    if (!l) continue;
+    return !RE_FIM_BLOCO.test(l) && ehLinha(l);
+  }
+  return false;
+}
+const marcarCortada = (itens, desde, leitor, limite) => { for (let k = desde; k < itens.length; k++) itens[k].listaCortada = { leitor, limite }; };
+
 // Quadro alimentado por um circuito deste ("QD-1PAV" no QGBT): é alimentador, não carga
 // ("CD-01" é condensadora: fica de fora)
 const RE_NOME_QUADRO = /^(Q[A-Z]{0,4}\d*|CCM|PAINEL)\s*[- ]/i;
+
+// Título do quadro: "Quadro de Cargas (QGBT) - SUB-SOLO", "QUADRO DE CARGAS - QD-01 - TERREO", "QUADRO DE CARGAS: QD1".
+// O hífen COLADO é do nome ("QD-01"); nome e pavimento se separam por hífen com espaço. Antes o nome era cortado
+// no 1º hífen: "QD-01" e "QD-02" viravam o mesmo "QD" (ids de circuito repetidos e alimentador errado na ponte da skill).
+function tituloDoQuadro(linha) {
+  const t = String(linha).match(/^QUADRO DE CARGAS?\b\s*(.*)$/i);
+  if (!t) return null;
+  const resto = t[1].trim();
+  if (!resto) return { quadro: null, pavimento: null };
+  const par = resto.match(/^\(([^)]+)\)\s*(?:[-–:]\s*(.*))?$/);
+  if (par) return { quadro: par[1].trim() || null, pavimento: par[2]?.trim() || null };
+  const sep = resto.match(/^[-–:]\s*(.*)$/);
+  if (!sep || /\t/.test(sep[1])) return null; // sem separador depois do título (ou célula de tabela): não é o título
+  const [nome, ...pav] = sep[1].split(/\s+[-–]\s*|[-–]\s+/);
+  return { quadro: nome.trim() || null, pavimento: pav.join(' - ').trim() || null };
+}
 
 function quadrosPorColunas(linhas) {
   const quadros = [];
@@ -70,8 +101,8 @@ function quadrosPorColunas(linhas) {
     // título "Quadro de Cargas (QGBT) - SUB-SOLO" logo acima
     let quadro = null, pavimento = null;
     for (let k = 1; k <= 3 && i - k >= 0; k++) {
-      const t = linhas[i - k].match(/^QUADRO DE CARGAS?\s*(?:\(([^)]+)\)|[-–:]\s*([^\t-]+))?\s*(?:[-–]\s*(.+))?$/i);
-      if (t) { quadro = (t[1] || t[2] || '').trim() || null; pavimento = t[3]?.trim() || null; break; }
+      const t = tituloDoQuadro(linhas[i - k]);
+      if (t) { ({ quadro, pavimento } = t); break; }
     }
     // colunas do fim: as do cabeçalho depois da última "Pot. - T" (ou de "Fases")
     let fimCabeca = -1;
@@ -84,7 +115,7 @@ function quadrosPorColunas(linhas) {
     const circuitos = [];
     let totais = null;
     let j = i + 1;
-    for (; j < linhas.length && j < i + 400; j++) {
+    for (; j < linhas.length && j < i + LIMITE_QUADRO; j++) {
       const l = linhas[j];
       if (!l) continue;
       const c = celulas(l).filter(Boolean);
@@ -138,7 +169,12 @@ function quadrosPorColunas(linhas) {
       const m = naDemanda && linhas[k].match(/^TOTAL\s+([\d.,]+)$/i);
       if (m) { demanda_kVA = num(m[1]); break; }
     }
-    quadros.push({ quadro, pavimento, circuitos, totais: totais || demanda_kVA != null ? { ...(totais || {}), demanda_kVA } : null, layout: 'COLUNAS' });
+    // parou no limite com a tabela ainda seguindo: o resto não foi lido — avisa (achado), em vez de cortar calado
+    const cortado = j === i + LIMITE_QUADRO && continua(linhas, j, (l) => celulas(l).filter(Boolean).length >= 8 && !/^TOTAL\b/i.test(l));
+    quadros.push({
+      quadro, pavimento, circuitos, totais: totais || demanda_kVA != null ? { ...(totais || {}), demanda_kVA } : null, layout: 'COLUNAS',
+      ...(cortado ? { cortado: { limite: LIMITE_QUADRO } } : {}),
+    });
     i = j - 1;
   }
   // circuito com o nome de outro quadro do mesmo arquivo também é alimentador
@@ -212,6 +248,7 @@ const COLUNAS = {
 const COLUNAS_DESCRICAO_ALTERNATIVA = /^(TIPO|MODELO|PRODUTO|EQUIPAMENTO|PE[ÇC]A)S?\.?$/i;
 function listaPorColunas(linhas) {
   const itens = [];
+  const usadas = new Set();
   for (let i = 0; i < linhas.length; i++) {
     if (!emColunas(linhas[i])) continue;
     const cab = celulas(linhas[i]);
@@ -221,8 +258,9 @@ function listaPorColunas(linhas) {
     const colsDescricao = col.descricao != null ? [col.descricao]
       : cab.map((c, k) => (COLUNAS_DESCRICAO_ALTERNATIVA.test(c) ? k : -1)).filter(k => k >= 0);
     if (!colsDescricao.length || col.qtd == null) continue;
+    const inicio = itens.length;
     let j = i + 1;
-    for (; j < linhas.length && j < i + 300; j++) {
+    for (; j < linhas.length && j < i + LIMITE_COLUNAS; j++) {
       const l = linhas[j];
       if (!l || RE_FIM_BLOCO.test(l)) break;
       const c = celulas(l);
@@ -238,9 +276,12 @@ function listaPorColunas(linhas) {
         layout: 'COLUNAS',
       });
     }
+    if (j === i + LIMITE_COLUNAS && continua(linhas, j, (l) => celulas(l).length >= cab.length - 1)) marcarCortada(itens, inicio, 'COLUNAS', LIMITE_COLUNAS);
+    // linhas lidas por esta tabela: saem do texto dos leitores por padrão de linha (listaMateriais)
+    if (itens.length > inicio) for (let k = i; k < j; k++) usadas.add(k);
     i = j - 1;
   }
-  return itens;
+  return { itens, usadas };
 }
 
 // E) Lista de materiais do AltoQi (Lumine/QiBuilder): grupos em linhas sem
@@ -263,8 +304,9 @@ function listaAltoQi(linhas) {
     if (!linhas.slice(i + 1, i + 8).some(l => RE_ITEM_ALTOQI.test(l))) continue;
     let grupo = [];
     let novos = [];
+    const inicio = itens.length;
     let j = i + 1;
-    for (; j < linhas.length && j < i + 1500; j++) {
+    for (; j < linhas.length && j < i + LIMITE_ALTOQI; j++) {
       const l = linhas[j];
       if (!l) continue;
       if (RE_FIM_BLOCO.test(l) || /^LISTA DE MATERIA/i.test(l)) break;
@@ -287,6 +329,7 @@ function listaAltoQi(linhas) {
       novos.push(l);
       if (novos.length > 4) { j -= novos.length - 1; break; } // texto corrido: a lista acabou
     }
+    if (j === i + LIMITE_ALTOQI && continua(linhas, j, (l) => RE_ITEM_ALTOQI.test(l) || !/\t/.test(l))) marcarCortada(itens, inicio, 'ALTOQI', LIMITE_ALTOQI);
     for (let k = i; k < j; k++) usadas.add(k);
     i = j - 1;
   }
@@ -301,8 +344,9 @@ function listaQtdDescricao(linhas) {
   for (let i = 0; i < linhas.length; i++) {
     if (!/LISTA DE MATERIA|QUANT\.?\s*\(UN\)|^QTD\.?\s+DESCRI/i.test(linhas[i])) continue;
     let atual = null;
+    const inicio = itens.length;
     let j = i + 1;
-    for (; j < linhas.length && j < i + 200; j++) {
+    for (; j < linhas.length && j < i + LIMITE_QTD_DESC; j++) {
       const l = linhas[j];
       if (!l) { if (atual) break; continue; }
       if (/^QUANT|^QTD|^DESCRI/i.test(l)) continue; // cabeçalho
@@ -327,6 +371,7 @@ function listaQtdDescricao(linhas) {
       if (atual && atual.descricao.length < 300) { atual.descricao += ` ${l}`; continue; }
       if (atual) break;
     }
+    if (atual && j === i + LIMITE_QTD_DESC && continua(linhas, j, (l) => !emColunas(l) && /^\d{1,4}(\s|$)/.test(l))) marcarCortada(itens, inicio, 'QTD+DESC', LIMITE_QTD_DESC);
     // cabeçalho em duas linhas ("LISTA DE MATERIAIS…" + "QUANT. (UN)…"): o
     // bloco já foi lido; continua depois dele para não ler de novo
     if (atual) i = j - 1;
@@ -342,15 +387,18 @@ function listaTagFabricante(linhas) {
   linhas.forEach((l, i) => { if (/\bTAG\s+(PREFIX\s+)?QTD\s+FABRICANTE\s+MODELO/i.test(l)) cabecalhos.push({ i, resumo: /PREFIX/i.test(l) }); });
   const usar = cabecalhos.some(c => c.resumo) ? cabecalhos.filter(c => c.resumo) : cabecalhos;
   const itens = [];
+  const RE_LINHA_TAG = /^([A-Z][A-Z0-9]{0,7}(?:\s*-\s*\d+)?(?:,\s*[A-Z][A-Z0-9]{0,7}\s*-\s*\d+)*)\s+(\d{1,4})\s+(.+)$/;
   for (const { i } of usar) {
-    for (let j = i + 1; j < linhas.length && j < i + 200; j++) {
+    const inicio = itens.length;
+    let j = i + 1;
+    for (; j < linhas.length && j < i + LIMITE_TAG; j++) {
       const l = linhas[j];
       if (!l || RE_FIM_BLOCO.test(l)) break;
       // "TE - 1, TE - 2 2 BELIMO ..." (detalhe) ou "TE 10 BELIMO ..." (resumo)
-      const m = l.match(/^([A-Z][A-Z0-9]{0,7}(?:\s*-\s*\d+)?(?:,\s*[A-Z][A-Z0-9]{0,7}\s*-\s*\d+)*)\s+(\d{1,4})\s+(.+)$/);
+      const m = l.match(RE_LINHA_TAG);
       if (!m) continue;
       if (/\*/.test(m[3])) { // "QUADROS 9 * * *VER TABELA DE QUADROS": item real, detalhado em outra tabela
-        itens.push({ tag: m[1], qtd: Number(m[2]), fabricante: '', modelo: '', descricao: `${m[1]} — ${m[3].replace(/\*/g, '').trim().toLowerCase()}`, unidade: 'un', layout: 'TAG+QTD+FAB+MODELO' });
+        itens.push({ tag: m[1], qtd: Number(m[2]), fabricante: '', modelo: '', descricao: `${m[1]} — ${m[3].replace(/\*/g, '').trim().toLowerCase()}`, unidade: 'un', layout: 'TAG+QTD+FAB+MODELO', _linha: j });
         continue;
       }
       const partes = m[3].split(/\s+/);
@@ -360,8 +408,9 @@ function listaTagFabricante(linhas) {
       const modelo = partes[n] || '';
       const descricao = partes.slice(n + 1).join(' ');
       if (!descricao) continue;
-      itens.push({ tag: m[1].replace(/\s+/g, ' '), qtd: Number(m[2]), fabricante, modelo, descricao, unidade: 'un', layout: 'TAG+QTD+FAB+MODELO' });
+      itens.push({ tag: m[1].replace(/\s+/g, ' '), qtd: Number(m[2]), fabricante, modelo, descricao, unidade: 'un', layout: 'TAG+QTD+FAB+MODELO', _linha: j });
     }
+    if (j === i + LIMITE_TAG && continua(linhas, j, (l) => RE_LINHA_TAG.test(l))) marcarCortada(itens, inicio, 'TAG+QTD+FAB+MODELO', LIMITE_TAG);
   }
   return itens;
 }
@@ -399,7 +448,7 @@ function listaItemDescQtdUn(linhas) {
     // "2.5 mm² - Preto 131.78 m": "2.5" é bitola, não nº de item
     if (m[1] && RE_MEDIDA_INICIO.test(desc)) continue;
     const n = lerNumero(m[3]);
-    itens.push({ item: codigo, descricao: desc.trim(), qtd: n.valor, unidade: m[4].toLowerCase().replace(/\.$/, ''), ...marcaAmbigua(n), disciplinaSecao, layout: 'ITEM+DESC+QTD+UN' });
+    itens.push({ item: codigo, descricao: desc.trim(), qtd: n.valor, unidade: m[4].toLowerCase().replace(/\.$/, ''), ...marcaAmbigua(n), disciplinaSecao, layout: 'ITEM+DESC+QTD+UN', _linha: i });
   }
   return itens;
 }
@@ -410,12 +459,16 @@ function listaMateriais(texto) {
   // (senão "16 mm² - Azul claro ⇥ 40.26 m" vira 16 un no leitor "QTD + descrição")
   const altoqi = listaAltoQi(linhas);
   const resto = altoqi.usadas.size ? linhas.map((l, k) => (altoqi.usadas.has(k) ? '' : l)) : linhas;
-  // a tabela em colunas (cabeçalho reconhecido) vale mais que os leitores por padrão de linha
+  // a tabela em colunas (cabeçalho reconhecido) vale mais que os leitores por padrão de linha: o item que eles acharem
+  // numa linha dela (`_linha`) sai, e o que ainda vier repetido sai pela descrição IGUAL (normalizada). Antes era por
+  // "começa com": "Cabo" da tabela apagava "24 Cabo flexível 2,5mm²" de outra lista (revisão de 06/11/2026)
   const colunas = listaPorColunas(resto);
-  const linhasDeColuna = new Set(colunas.map(c => c.descricao));
+  const normal = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[\s—–-]+/g, ' ').replace(/[.;,:]+$/, '').trim();
+  const linhasDeColuna = new Set(colunas.itens.map(c => normal(c.descricao)));
   const porLinha = [...listaQtdDescricao(resto), ...listaTagFabricante(resto), ...listaItemDescQtdUn(resto)]
-    .filter(it => !linhasDeColuna.has(it.descricao) && ![...linhasDeColuna].some(d => it.descricao.startsWith(d)));
-  return [...altoqi.itens, ...colunas, ...porLinha].filter(it => Number.isFinite(it.qtd) && it.qtd > 0);
+    .filter(it => !colunas.usadas.has(it._linha) && !linhasDeColuna.has(normal(it.descricao)))
+    .map(({ _linha, ...it }) => it);
+  return [...altoqi.itens, ...colunas.itens, ...porLinha].filter(it => Number.isFinite(it.qtd) && it.qtd > 0);
 }
 
 // ── Carimbo (bloco de título) ────────────────────────────────────────────
@@ -426,9 +479,10 @@ function listaMateriais(texto) {
 const valorDeCampo = (v) => !!v && !/^[\d\s./-]+$/.test(v) && !/:\s*$/.test(v) && /[A-Za-zÀ-ú]{2,}/.test(v);
 // Escala: com rótulo ("ESC. 1:50", "ESCALA 1:75"), a mais repetida na folha; no
 // empate, a de maior denominador (planta, não detalhe — "ESCALA 1:5" do detalhe
-// de uma folha de plantas em 1:75 saía como a escala da folha)
+// de uma folha de plantas em 1:75 saía como a escala da folha). "ESCALA 1/50" e "ESCALA - 1:50" também
+// (antes não eram lidos); a barra só depois do rótulo — "1/12" solto pode ser data. Sai sempre "1:50".
 function escalaDaFolha(t) {
-  const rotuladas = [...t.matchAll(/\bESC(?:ALA)?\.?[ \t]*:?[ \t]*(1[ \t]*:[ \t]*\d{1,4})\b/gi)].map(m => m[1].replace(/\s/g, ''));
+  const rotuladas = [...t.matchAll(/\bESC(?:ALA)?\.?[ \t]*[:=\-–]?[ \t]*(1[ \t]*[:/][ \t]*\d{1,4})\b/gi)].map(m => m[1].replace(/\s/g, '').replace('/', ':'));
   if (!rotuladas.length) return null;
   const vezes = {};
   for (const e of rotuladas) vezes[e] = (vezes[e] || 0) + 1;
@@ -440,7 +494,9 @@ function carimbo(texto) {
   const pega = (re) => { const m = t.match(re); return m ? limpa(m[1]) : null; };
   // primeira ocorrência com valor de verdade (re com /g)
   const pegaValido = (re) => { for (const m of t.matchAll(re)) { const v = limpa(m[1]); if (valorDeCampo(v)) return v; } return null; };
-  const escalas = [...new Set((t.match(/\b1[ \t]*:[ \t]*\d{2,4}\b/g) || []).map(s => s.replace(/\s/g, '')))];
+  // escalas da folha: "1:50" solto e as rotuladas com barra ("ESCALA 1/50")
+  const escalas = [...new Set([...(t.match(/\b1[ \t]*:[ \t]*\d{2,4}\b/g) || []).map(s => s.replace(/\s/g, '')),
+    ...[...t.matchAll(/\bESC(?:ALA)?\.?[ \t]*[:=\-–]?[ \t]*(1[ \t]*\/[ \t]*\d{2,4})\b/gi)].map(m => m[1].replace(/\s/g, '').replace('/', ':'))])];
   return {
     escala: escalaDaFolha(t) || (escalas.length === 1 ? escalas[0] : null)
       || (/\bINDICADA\b/i.test(t) ? 'INDICADA' : null),

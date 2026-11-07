@@ -78,6 +78,12 @@ export default function LinhaItem({
           </button>
           {aCotar && <span style={{ ...etiqueta, color: '#c9a227', borderColor: '#5a4a12' }} title='Preço estimado ou pendente — confirme antes de enviar ao cliente'>a cotar</span>}
           {semPreco && <span style={{ ...etiqueta, color: '#e08080', borderColor: '#5a2a2a' }} title="Item com valor unitário R$ 0,00">sem preço</span>}
+          {it.origem_item === 'assistente' && (
+            <span style={{ ...etiqueta, color: '#b9a6ff', borderColor: '#4a3f6b' }}
+              title="Item criado ou alterado pelo assistente (IA): descrição, quantidade e preço são sugestão. Confira e mude para Confirmado — só então ele entra no catálogo e ensina o sistema.">
+              sugerido pela IA
+            </span>
+          )}
         </div>
       </div>
       {!maoDeObra && (

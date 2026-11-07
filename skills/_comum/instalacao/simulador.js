@@ -226,7 +226,8 @@ function criarSimulador(instalacao, opcoes = {}) {
     } else {
       texto = al ? 'com energia' : `sem energia (${m})`;
     }
-    return { id: S(p.id), tipo: p.tipo, circuito: c ? S(c.id) : null, comando: k ? S(k.id) : null, alimentado: al, motivo: m, nivel, energizado: nivel > 0, texto };
+    // circuitoLido 'a_conferir': o número do circuito veio do texto da planta, sem conferência (./doDesenho.js)
+    return { id: S(p.id), tipo: p.tipo, circuito: c ? S(c.id) : null, comando: k ? S(k.id) : null, alimentado: al, motivo: m, nivel, energizado: nivel > 0, texto, ...(p.circuitoLido ? { circuitoLido: p.circuitoLido } : {}) };
   }
   const energizado = (id) => !!estadoPonto(id)?.energizado;
 

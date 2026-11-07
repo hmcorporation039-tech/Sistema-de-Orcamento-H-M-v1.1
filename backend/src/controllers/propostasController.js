@@ -38,6 +38,10 @@ async function inserirSecoesEItens(client, propostaId, secoes, itens) {
     const itensDaSecao = (itens || []).filter(it => itemPertenceASecao(it, sec));
     for (let j = 0; j < itensDaSecao.length; j++) {
       const item = normalizarItem(itensDaSecao[j], j);
+      // item criado/alterado pelo assistente virtual (IA): sempre "a cotar", fora do catálogo e sem ensinar vínculo até
+      // o engenheiro confirmar na tela — a tela limpa a marca ao confirmar (revisão do uso de IA de 06/11/2026)
+      const origemItem = itensDaSecao[j].origem_item === 'assistente' ? 'assistente' : null;
+      if (origemItem) item.status = 'a_cotar';
 
       // Padroniza o catálogo: um item digitado à mão (não veio do "+
       // catálogo", então material_id chega nulo) é comparado com o que já
@@ -51,24 +55,25 @@ async function inserirSecoesEItens(client, propostaId, secoes, itens) {
       if (maoDeObra) {
         await garantirMaoDeObraCadastrada(client, {
           descricao: item.descricao, unidade: item.unidade, valor_unitario: item.valor_unitario,
-          codigo: item.codigo, subgrupo: item.subgrupo
+          codigo: item.codigo, subgrupo: item.subgrupo, origem_item: origemItem
         });
       } else if (!materialId) {
         materialId = await garantirMaterialCadastrado(client, {
-          descricao: item.descricao, unidade: item.unidade, ncm: item.ncm, valor_unitario: item.valor_unitario
+          descricao: item.descricao, unidade: item.unidade, ncm: item.ncm, valor_unitario: item.valor_unitario, origem_item: origemItem
         });
       }
 
       await client.query(
         `INSERT INTO proposta_itens
-         (proposta_id, secao_id, material_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, codigo, subgrupo, status, ordem)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+         (proposta_id, secao_id, material_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, codigo, subgrupo, status, ordem, origem_item)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
         [propostaId, secId, materialId, item.descricao, item.quantidade, item.unidade,
-         item.valor_unitario, item.valor_total, item.ncm, item.codigo, item.subgrupo, item.status, item.ordem]
+         item.valor_unitario, item.valor_total, item.ncm, item.codigo, item.subgrupo, item.status, item.ordem, origemItem]
       );
       // o item confirmado com material do catálogo ensina o vínculo descrição → material
-      // (services/aprendizadoMateriais.js); falha aqui não derruba a proposta (SAVEPOINT)
-      if (!maoDeObra && materialId && item.status === 'confirmado') {
+      // (services/aprendizadoMateriais.js); falha aqui não derruba a proposta (SAVEPOINT).
+      // Item do assistente (IA) nunca ensina: só depois que o engenheiro o confirma na tela (sem a marca).
+      if (!maoDeObra && materialId && item.status === 'confirmado' && !origemItem) {
         await client.query('SAVEPOINT aprendizado');
         try {
           await aprendizadoMateriais.registrar([{ descricao: item.descricao, material_id: materialId, status: item.status }], client);
@@ -230,7 +235,9 @@ async function criar(req, res, next) {
 
   const proposta = propResult.rows[0];
 
-  await inserirSecoesEItens(client, proposta.id, secoes, itens);
+  // proposta criada pelas ferramentas do assistente (middleware/escopoAssistente.js): todo item é sugestão da IA,
+  // mesmo que o pedido não traga a marca — defesa no servidor da regra "a IA só sugere"
+  await inserirSecoesEItens(client, proposta.id, secoes, req.assistente ? (itens || []).map(it => ({ ...it, origem_item: 'assistente' })) : itens);
 
   await registrarEvento(client, proposta.id, req.usuario.id, 'criada', `Proposta ${numero} criada`);
 
@@ -254,20 +261,8 @@ async function atualizar(req, res, next) {
   const erroValidacao = validarProposta(req.body);
   if (erroValidacao) return res.status(400).json({ erro: erroValidacao });
 
-  // Aprovada pelo cliente no link (2.0, Fase 3I): o aceite guarda o hash do
-  // que ele viu; editar depois deixaria o sistema diferente do aceito sem
-  // aviso. Só o administrador altera (para corrigir); o normal é duplicar.
-  if (req.usuario?.role !== 'admin') {
-    const { rows: [aceite] } = await pool.query(
-      `SELECT 1 FROM propostas p
-        WHERE p.id = $1 AND p.status = 'Aprovada'
-          AND EXISTS (SELECT 1 FROM proposta_decisoes_aprovacao d WHERE d.proposta_id = p.id AND d.decisao = 'aprovada')`,
-      [id]
-    );
-    if (aceite) {
-      return res.status(409).json({ erro: 'Esta proposta foi aprovada pelo cliente pelo link e não pode mais ser alterada. Use "Duplicar" para fazer uma nova versão (ou peça a um administrador).' });
-    }
-  }
+  // Aprovada pelo cliente no link (2.0, Fase 3I): conferida DENTRO da
+  // transação, com a linha travada (travaDeAprovacao) — ver abaixo.
 
   // BDI diferenciado e memória do BDI (2.0, Fase 3F): ausentes no corpo
   // (cliente antigo, MCP) mantêm o que a proposta já tem — e o total é
@@ -288,6 +283,20 @@ async function atualizar(req, res, next) {
   if (erroObra) return res.status(400).json({ erro: erroObra });
 
   const proposta = await comTransacao(async (client) => {
+  // Aprovada pelo cliente no link (2.0, Fase 3I): o aceite guarda o hash do
+  // que ele viu; editar depois deixaria o sistema diferente do aceito sem
+  // aviso. Só o administrador altera (para corrigir); o normal é duplicar.
+  // Antes a conferência era fora da transação e sem trava: um aceite chegando
+  // entre ela e o UPDATE passava. Agora a linha fica travada (FOR UPDATE) até
+  // o fim da gravação — a aprovação pelo link espera ou já está visível.
+  if (req.usuario?.role !== 'admin') {
+    const trava = await travaDeAprovacao(client, id);
+    if (trava && trava.status === 'Aprovada' && trava.aceite_link) {
+      throw new ErroHttp(409,
+        'Esta proposta foi aprovada pelo cliente pelo link e não pode mais ser alterada. Use "Duplicar" para fazer uma nova versão (ou peça a um administrador).',
+        { codigo: 'APROVADA_PELO_CLIENTE' });
+    }
+  }
   const propResult = await client.query(
     `UPDATE propostas SET
       data=$1, validade=$2, tipo=$3, porte=$4,
@@ -395,9 +404,10 @@ async function duplicar(req, res, next) {
     for (const it of itensDaSecao) {
       await client.query(
         `INSERT INTO proposta_itens
-         (proposta_id, secao_id, material_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, codigo, subgrupo, status, ordem)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-        [nova.id, novoSecId, it.material_id, it.descricao, it.quantidade, it.unidade, it.valor_unitario, it.valor_total, it.ncm, it.codigo, it.subgrupo, it.status, it.ordem]
+         (proposta_id, secao_id, material_id, descricao, quantidade, unidade, valor_unitario, valor_total, ncm, codigo, subgrupo, status, ordem, origem_item)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+        // a marca de sugestão da IA vai junto: a cópia não pode confirmar o que o engenheiro ainda não conferiu
+        [nova.id, novoSecId, it.material_id, it.descricao, it.quantidade, it.unidade, it.valor_unitario, it.valor_total, it.ncm, it.codigo, it.subgrupo, it.status, it.ordem, it.origem_item || null]
       );
     }
   }
@@ -432,6 +442,29 @@ async function atualizarStatus(req, res) {
   res.json(proposta);
 }
 
+// Trava a linha da proposta até o fim da transação e diz se ela foi aprovada
+// pelo cliente no link — a mesma consulta para editar, trocar o status e
+// excluir (as três precisam da trava: sem ela um aceite chegando no meio passa).
+async function travaDeAprovacao(client, id) {
+  const { rows: [atual] } = await client.query(
+    `SELECT p.status,
+            EXISTS (SELECT 1 FROM proposta_decisoes_aprovacao d WHERE d.proposta_id = p.id AND d.decisao = 'aprovada') AS aceite_link
+       FROM propostas p WHERE p.id = $1 FOR UPDATE`,
+    [id]
+  );
+  if (!atual) return null;
+  // Se a linha estava travada pela aprovação do link, o FOR UPDATE espera e
+  // devolve o status NOVO ("Aprovada"), mas o EXISTS acima ainda enxerga o
+  // banco de antes da espera (o aceite recém-gravado não aparece). Confere de
+  // novo numa consulta nova, que já vê o que foi gravado.
+  if (atual.status === 'Aprovada' && !atual.aceite_link) {
+    const { rows: [aceite] } = await client.query(
+      "SELECT 1 AS aceite FROM proposta_decisoes_aprovacao WHERE proposta_id = $1 AND decisao = 'aprovada' LIMIT 1", [id]);
+    if (aceite) atual.aceite_link = true;
+  }
+  return atual;
+}
+
 // Aprovada pelo cliente no link (2.0, Fase 3I): o comprovante guarda o hash do
 // que ele aceitou. Tirar do status "Aprovada" (para Ativa, Recusada ou
 // Cancelada) deixaria o sistema contradizendo o aceite registrado — o mesmo
@@ -439,12 +472,7 @@ async function atualizarStatus(req, res) {
 // 27/10/2026: a troca de status não tinha essa trava).
 async function conferirSaidaDeAprovada(client, id, novoStatus, { admin = false } = {}) {
   if (admin || novoStatus === 'Aprovada') return;
-  const { rows: [atual] } = await client.query(
-    `SELECT p.status,
-            EXISTS (SELECT 1 FROM proposta_decisoes_aprovacao d WHERE d.proposta_id = p.id AND d.decisao = 'aprovada') AS aceite_link
-       FROM propostas p WHERE p.id = $1 FOR UPDATE`,
-    [id]
-  );
+  const atual = await travaDeAprovacao(client, id);
   if (atual && atual.status === 'Aprovada' && atual.aceite_link) {
     throw new ErroHttp(409,
       'Esta proposta foi aprovada pelo cliente pelo link de aprovação e o status não pode mais ser alterado. Peça a um administrador se for mesmo preciso (o comprovante do cliente continua registrado).',
@@ -481,6 +509,30 @@ async function remover(req, res, next) {
   // A exclusão apaga seções, itens e histórico em cascata: guarda uma cópia
   // completa na auditoria (dá para reconstruir a proposta se foi engano).
   const removida = await comTransacao(async (client) => {
+    // Revisão de 11/2026: editar e trocar o status de proposta aprovada pelo
+    // cliente no link já eram bloqueados, mas excluir não — o não-admin
+    // apagava o aceite (e o comprovante) junto. Mesma regra, com a linha travada.
+    const trava = await travaDeAprovacao(client, id);
+    if (!trava) return null;
+    if (req.usuario?.role !== 'admin' && trava.status === 'Aprovada' && trava.aceite_link) {
+      throw new ErroHttp(409,
+        'Esta proposta foi aprovada pelo cliente pelo link de aprovação e não pode ser excluída. Peça a um administrador se for mesmo preciso (o comprovante do cliente continua registrado).',
+        { codigo: 'APROVADA_PELO_CLIENTE' });
+    }
+    // Nota fiscal emitida a partir da proposta: o ON DELETE SET NULL soltaria
+    // a nota da proposta sem aviso (a nota vale como documento fiscal; o
+    // vínculo é o que liga faturamento e obra). Nem o admin exclui: cancele ou
+    // desvincule a nota antes.
+    const { rows: notas } = await client.query(
+      "SELECT numero FROM notas_fiscais WHERE proposta_id = $1 AND situacao = 'emitida' ORDER BY id",
+      [id]
+    );
+    if (notas.length) {
+      const nums = notas.map(n => (n.numero ? `nº ${n.numero}` : 'sem número')).join(', ');
+      throw new ErroHttp(409,
+        `Esta proposta tem nota fiscal emitida (${nums}) e não pode ser excluída. Cancele a nota ou tire o vínculo dela com a proposta antes.`,
+        { codigo: 'PROPOSTA_COM_NOTA_FISCAL' });
+    }
     const secoes = await client.query(
       `SELECT s.nome, s.ordem, COALESCE(json_agg(i.* ORDER BY i.id) FILTER (WHERE i.id IS NOT NULL), '[]') AS itens
          FROM proposta_secoes s LEFT JOIN proposta_itens i ON i.secao_id = s.id

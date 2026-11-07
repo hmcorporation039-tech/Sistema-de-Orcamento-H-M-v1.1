@@ -7,6 +7,7 @@ const assert = require('assert');
 const knn = require('../src/utils/classificadorKnn');
 const { categoriaLocal, termos, paraTestes } = require('../src/services/classificacaoMateriais');
 const { classificarPorDescricao } = require('../src/utils/classificadorMaterial');
+const c2origem = (c) => c && c.origem;
 
 const CATALOGO = [
   ['CAMERA BULLET IP 2MP 3,6MM IR 30M HIKVISION', 'CFTV'], ['CAMERA DOME IP 4MP POE VARIFOCAL', 'CFTV'], ['CAMERA IP BULLET 5MP EXTERNA', 'CFTV'],
@@ -18,6 +19,49 @@ const CATALOGO = [
   ['CABO UTP CAT6 CAIXA 305M AZUL', 'Redes'], ['CABO UTP CAT5E CAIXA 305M CINZA', 'Redes'], ['RACK 19 36U PISO 570MM', 'Redes'], ['PATCH CORD CAT6 1,5M', 'Redes'],
   ['CENTRAL ALARME 8 ZONAS MONITORAVEL', 'Alarme'], ['SENSOR MAGNETICO ABERTURA SEM FIO', 'Alarme'], ['SENSOR INFRAVERMELHO PASSIVO IVP PET', 'Alarme'], ['SIRENE ALARME 120DB', 'Alarme'], ['TECLADO ALARME LED 8 ZONAS', 'Alarme'],
 ].map(([descricao, categoria]) => ({ descricao, categoria, ncm: null }));
+
+async function rotinaEmLote(pool) {
+  const ia = require('../src/services/ia');
+  const svc = require('../src/services/classificacaoMateriais');
+  const orig = { perguntarJSON: ia.perguntarJSON };
+  // só pontuação: nenhum vizinho no catálogo, nem palavra-chave — é o caso que vai à IA
+  const marca = `~~ ${'#'.repeat(1 + (Date.now() % 7))} ¤ ${'+'.repeat(1 + (Date.now() % 5))}`;
+  let perguntas = 0;
+  const ids = [];
+  // a rotina passa por TODOS os pendentes do banco de teste: a tentativa registrada pela IA falsa é desfeita no fim
+  const { rows: semTentativa } = await pool.query('SELECT id FROM materiais WHERE categoria_ia_tentada_em IS NULL');
+  try {
+    for (const d of [`${marca} §`, `${marca} ¶`]) {
+      const { rows: [m] } = await pool.query("INSERT INTO materiais (descricao, categoria, unidade, preco, origem) VALUES ($1, 'Não classificado', 'un', 1, 'teste') RETURNING id", [d]);
+      ids.push(m.id);
+    }
+    // a IA falsa "classifica" só o primeiro, com a primeira categoria da lista que recebeu
+    ia.perguntarJSON = async (p) => {
+      perguntas++;
+      const cats = JSON.parse(p.slice(p.indexOf('['), p.indexOf(']') + 1));
+      return { fonte: 'teste', json: { [ids[0]]: cats[0] } };
+    };
+    const r1 = await svc.classificarPendentes();
+    const { rows } = await pool.query('SELECT id, categoria, categoria_origem, categoria_ia_tentada_em FROM materiais WHERE id = ANY($1) ORDER BY id', [ids]);
+    if (rows[0].categoria_origem === 'ia') {
+      assert.ok(perguntas >= 1 && r1.classificadosIA >= 1, JSON.stringify(r1));
+      assert.ok(rows[1].categoria_ia_tentada_em, 'tentativa registrada no que a IA não classificou');
+      assert.strictEqual(rows[1].categoria, 'Não classificado');
+      const antes = perguntas;
+      await svc.classificarPendentes();
+      assert.strictEqual(perguntas, antes, 'o mesmo material não volta à IA antes de 7 dias');
+      console.log('  rotina em lote: categoria da IA marcada e nova tentativa só depois de 7 dias');
+    } else {
+      // o catálogo achou um vizinho: sugestão local marcada (nunca IA sem marca)
+      assert.ok(['knn_baixa', 'parecido', 'palavras', 'knn', 'ncm'].includes(rows[0].categoria_origem), JSON.stringify(rows[0]));
+      console.log(`  rotina em lote: resolvido sem IA (${rows[0].categoria_origem})`);
+    }
+  } finally {
+    Object.assign(ia, orig);
+    if (ids.length) await pool.query('DELETE FROM materiais WHERE id = ANY($1)', [ids]);
+    await pool.query('UPDATE materiais SET categoria_ia_tentada_em = NULL WHERE id = ANY($1)', [semTentativa.map(r => r.id)]);
+  }
+}
 
 (async () => {
   // ── modelo pequeno demais não responde ──
@@ -47,7 +91,7 @@ const CATALOGO = [
   const ref = CATALOGO.map(c => ({ ...c, termos: termos(c.descricao) }));
   let c = await categoriaLocal(null, { descricao: 'CAMERA BULLET IP 8MP 2,8MM HIKVISION' }, ref);
   assert.strictEqual(c.categoria, 'CFTV'); assert.match(c.criterio, /^aprendido do catálogo \(\d+ %\), parecido com "/);
-  // o que acabou de ser classificado entra na referência e ensina o item seguinte (catalogoMateriais faz push)
+  // a referência que cresce (material com categoria escolhida por gente) refaz o modelo
   const antes = await categoriaLocal(null, { descricao: 'BALIZA EMERGENCIA AUTONOMA 30 LEDS' }, ref);
   for (let i = 0; i < 3; i++) ref.push({ descricao: `BALIZA EMERGENCIA AUTONOMA ${i} LEDS`, categoria: 'Iluminação', ncm: null, termos: termos(`BALIZA EMERGENCIA AUTONOMA ${i} LEDS`) });
   c = await categoriaLocal(null, { descricao: 'BALIZA EMERGENCIA AUTONOMA 30 LEDS' }, ref);
@@ -61,6 +105,29 @@ const CATALOGO = [
   c = await categoriaLocal(clienteFalso, { descricao: 'ZZQQ XXWW', ncm: '73181500' }, ref);
   assert.deepStrictEqual([c.categoria, c.criterio], ['Ferragens', 'NCM 73181500'], 'sem outra resposta, o NCM decide');
 
+  // ── revisão do uso de IA (06/11/2026): cada categoria diz de onde veio (materiais.categoria_origem) ──
+  c = await categoriaLocal(null, { descricao: 'CAMERA BULLET IP 8MP 2,8MM HIKVISION' }, ref);
+  assert.strictEqual(c.origem, 'knn');
+  assert.strictEqual(c2origem(await categoriaLocal(clienteFalso, { descricao: 'ZZQQ XXWW', ncm: '73181500' }, ref)), 'ncm');
+  // abaixo do corte, o vizinho mais votado vira SUGESTÃO "a conferir" (knn_baixa) em vez de ir para a IA
+  let achouFraco = false;
+  for (const d of ['SUPORTE PAREDE METALICO', 'CAIXA', 'FITA ISOLANTE 20M', 'PARAFUSO 6MM', 'ABRACADEIRA NYLON']) {
+    const fraco = knn.classificar(knn.treinar(ref), d);
+    if (!fraco || fraco.confianca >= paraTestes.CORTE_KNN || paraTestes.maisParecido(ref, d) || classificarPorDescricao(d)) continue;
+    c = await categoriaLocal(null, { descricao: d }, ref);
+    assert.deepStrictEqual([c.categoria, c.origem], [fraco.categoria, 'knn_baixa'], d);
+    assert.match(c.criterio, /a conferir/);
+    achouFraco = true;
+    break;
+  }
+  console.log(`  sugestão fraca do kNN (knn_baixa): ${achouFraco ? 'conferida' : 'nenhum exemplo no catálogo sintético'}`);
+  // o gabarito do kNN (e do NCM) é só a categoria confiável: escolhida por gente ou o catálogo anterior à marca
+  const { SQL_CATEGORIA_CONFIAVEL, carregarReferencia } = require('../src/services/classificacaoMateriais');
+  assert.match(SQL_CATEGORIA_CONFIAVEL, /categoria_origem IS NULL OR categoria_origem = 'usuario'/);
+  let sqlRef = '';
+  await carregarReferencia({ query: async (sql) => { sqlRef = sql; return { rows: [] }; } });
+  assert.ok(sqlRef.includes(SQL_CATEGORIA_CONFIAVEL), 'carregarReferencia filtra a categoria confiável');
+
   // ── medição no catálogo real (só no banco do v2): é ela que autoriza o classificador ──
   const BANCO_DE_TESTE = 'hm_orcamentos_v2';
   if (process.env.DB_NAME !== BANCO_DE_TESTE) {
@@ -70,6 +137,9 @@ const CATALOGO = [
     try {
       // o material do treino com o acervo (origem 'acervo') tem a categoria tirada da disciplina do arquivo, não de
       // uma classificação conferida: não serve de gabarito
+      // rotina em lote (revisão do uso de IA de 06/11/2026): a categoria da IA fica marcada 'ia' e o material que a IA
+      // já viu espera 7 dias — com a IA falsa (sem gastar nada) e materiais de teste
+      await rotinaEmLote(pool);
       const { rows } = await pool.query("SELECT descricao, categoria FROM materiais WHERE ativo = true AND COALESCE(categoria, '') NOT IN ('Não classificado', 'Geral', '') AND COALESCE(origem, '') <> 'acervo'");
       if (rows.length < 200) {
         console.log(`classificadorMateriais: catálogo com ${rows.length} itens classificados — medição pulada (precisa de 200)`);

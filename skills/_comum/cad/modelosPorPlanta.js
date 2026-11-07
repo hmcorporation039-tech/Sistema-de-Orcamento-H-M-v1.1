@@ -30,7 +30,8 @@ function montarCenasPorPlanta(arquitetura, opcoes = {}) {
   for (const p of plantas) {
     // uma planta só: o desenho inteiro (a leitura já tirou diagrama, tabela e legenda)
     const arq = varias ? recortarArquitetura(arquitetura, p.caixa) : arquitetura;
-    const avisos = [...(opcoes.avisos || [])];
+    // (diagrama do projeto no desenho que não foi lido: o aviso da leitura vai junto — ./arquitetura.js, 06/11/2026)
+    const avisos = [...(opcoes.avisos || []), ...(arquitetura.avisosDiagrama || [])];
     let dispositivos = [];
     let trechos = (opcoes.trechos || []).map(t => ({ ...t, segmentos: varias ? t.segmentos.filter(s => naCaixa(p.caixa, [s[0], s[1]], 1) || naCaixa(p.caixa, [s[2], s[3]], 1)) : t.segmentos })).filter(t => t.segmentos.length);
     let origem = '';

@@ -17,7 +17,8 @@ async function carregarBases(executor, itens) {
   const materiais = {};
   if (idsMat.length) {
     const { rows } = await executor.query(
-      'SELECT id, codigo, descricao, unidade, preco, ativo, categoria, ncm FROM materiais WHERE id = ANY($1::int[])', [idsMat]);
+      // origem/preco_origem/preco_manual: preço lido por IA e não conferido entra "a cotar" no kit (utils/composicoes.js)
+      'SELECT id, codigo, descricao, unidade, preco, ativo, categoria, ncm, origem, preco_origem, preco_manual FROM materiais WHERE id = ANY($1::int[])', [idsMat]);
     for (const m of rows) materiais[m.id] = m;
   }
   // serviços: todos (são ~300 linhas) — a fusão de um livre pode apontar para qualquer código

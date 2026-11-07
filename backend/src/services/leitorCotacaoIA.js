@@ -78,13 +78,14 @@ function normalizarResposta(r, fonte) {
 // o documento fica pendente e é tentado de novo na próxima varredura.
 // Cada provedor recebe o mesmo texto da 1.x: a CLI lê o arquivo com o formato
 // no prompt, a API usa o esquema fixo (ferramenta) e o Gemini, o formato no prompt.
-async function extrairComIA(buffer, tipo) {
+// opcoes.timeoutTotalMs: prazo da cadeia inteira de provedores (ia.perguntarJSON) para este documento
+async function extrairComIA(buffer, tipo, { timeoutTotalMs } = {}) {
   const r = await ia.perguntarJSON({
     padrao: `${INSTRUCOES}\nFormato do JSON: ${FORMATO}`,
     claude_max: `${INSTRUCOES}\nFormato do JSON: ${FORMATO}`,
     claude_api: INSTRUCOES,
     gemini: `${INSTRUCOES}\nResponda SOMENTE com JSON neste formato: ${FORMATO}`,
-  }, { anexo: { buffer, tipo }, esquema: ESQUEMA_CLAUDE, modeloApi: MODELO_CLAUDE, finalidade: 'leitura de orçamento de fornecedor' });
+  }, { anexo: { buffer, tipo }, esquema: ESQUEMA_CLAUDE, modeloApi: MODELO_CLAUDE, finalidade: 'leitura de orçamento de fornecedor', ...(timeoutTotalMs ? { timeoutTotalMs } : {}) });
   return normalizarResposta(r.json || {}, r.fonte);
 }
 

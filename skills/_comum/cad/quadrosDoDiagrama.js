@@ -30,23 +30,58 @@ const { limparMtext } = require('./textoCad');
 
 const SECOES = new Set([0.5, 0.75, 1, 1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300, 400, 500]);
 const RE_POT = /^(\d{1,3}(?:[.\s]\d{3})+|\d+)(?:,(\d+))?\s*(W|VA|kW|kVA)$/i;
-const RE_AMPERE = /^(\d{1,4})\s*A$/;
+// "5.5 kW", "1.2 kVA" (ponto decimal: antes "5.5" não era potência e o quadro inteiro não era lido)
+const RE_POT_PONTO = /^(\d+)\.(\d+)\s*(W|VA|kW|kVA)$/i;
+// Corrente do disjuntor (revisão de 06/11/2026): antes só "NN A". Agora também "1x20A", "3x40A", "3 x 40 A",
+// "2P 32A", "3P-40A", a curva + corrente "C20", "C 20 A", "1P C20". Número solto ("20") NÃO é corrente — é o
+// número do circuito ou a seção. Grupos: 1/2 polos (NxA / NP), 3 curva, 4 corrente, 5 o "A".
+const RE_CORRENTE = /^(?:(\d)\s*[xX×]\s*|(\d)\s*P\s*[-–]?\s*)?(?:([BCDK])\s*-?\s*)?(\d{1,4})\s*(A)?$/i;
+function correnteDe(s) {
+  const m = RE_CORRENTE.exec(String(s || '').trim());
+  if (!m || !(m[5] || m[3] || m[1] || m[2])) return null;
+  return { In: Number(m[4]), polos: m[1] || m[2] ? Number(m[1] || m[2]) : null, curva: m[3] ? m[3].toUpperCase() : null };
+}
+const RE_AMPERE = { test: (s) => !!correnteDe(s), exec: (s) => { const c = correnteDe(s); return c ? [s, String(c.In)] : null; } };
 const RE_DR = /^(I?DR|DDR|IDR)$/i;
 const RE_NUMERO = /^(?:C\s*-?\s*)?(\d{1,3})$/i;
 const RE_SECAO = /^#?\s*(\d{1,3}(?:[.,]\d{1,2})?)\s*(?:mm²|mm2)?$/i;
 const RE_LETRAS = /[A-Za-zÀ-ÿ]{2}/;
 // texto técnico ao lado da saída que não é descrição (isolação, eletroduto, cor do fio)
 const RE_NAO_DESCRICAO = /^(Unipolar|Multipolar|Conduto|Eletroduto|PVC|EPR|XLPE|HEPR|DPS|DR|IDR|DDR|Branco|Preto|Vermelho|Azul|Verde|Cinza|Fase|Neutro|PE|Terra|R|S|T|N)\b|\bkA\b|\bmA\b|\d\s*#\s*\d|ø|Ø|^\d/i;
-// tag de quadro: QDFL-1, QD1, QM2, QGBT, QDG-01, CCM-1, CX.P1
-const RE_TAG = /\b(Q[A-Z]{0,5}[-.]?\d{1,3}[A-Z]?|QGBT\s*-?\s*\d*|QGD\s*-?\s*\d*|CCM\s*-?\s*\d*|CX\.?\s?P\d+)\b/i;
+// tag de quadro: QDFL-1, QD1, QM2, QGBT, QDG-01, CCM-1, CX.P1; e (revisão de 06/11/2026) "QGBT-A"/"QGBT-B" e
+// "CCM-BOMBAS" (antes viravam "QGBT-"/"CCM-" e os dois QGBT se fundiam num só), "QD 01" (com espaço: antes não
+// era tag). O sufixo de letras só quando colado no hífen ("QGBT - TÉRREO" é o QGBT do térreo); "QTD", "QUADRO",
+// "QUARTO" não são tag. As bordas são por letra/número (com acento): o \b do JS não vê o "É" como letra.
+const L_TAG = 'A-Za-zÀ-ÿ0-9';
+const RE_TAG = new RegExp(`(?<![${L_TAG}])((?!QTD|QUA|QUE|QUI)(?:`
+  + '(?:QGBT|QGD|CCM)(?:\\s*[-.]?\\s*\\d{1,3}[A-Z]?|-[A-Z]{1,10}\\d{0,2})?'   // QGBT, QGBT-1, QGBT 2, QGBT-A, CCM-BOMBAS
+  + '|Q[A-Z]{0,5}[-.]?\\d{1,3}[A-Z]?'                                          // QDFL-1, QD1, QM2, QDG-01
+  + '|Q[A-Z]{0,3}\\s+-?\\s*\\d{1,3}[A-Z]?'                                     // QD 01, QDFL - 2
+  + '|Q[A-Z]{1,4}-[A-Z]{1,10}\\d{0,2}'                                         // QD-A, QDL-COZINHA
+  + `|CX\\.?\\s?P\\d+))(?![${L_TAG}])`, 'i');
 const RE_TITULO_QUADRO = /QUADRO|DIAGRAMA|UNIFILAR|TRIFILAR|PAINEL/i;
 const RE_ALIMENTADOR = /\d\s*#\s*\d/;
 
 const num = (s) => Number(String(s).replace(',', '.'));
 const limpo = (s) => limparMtext(String(s || ''), { quebra: ' ' }).replace(/\s+/g, ' ').trim();
 const normTag = (t) => String(t || '').toUpperCase().replace(/\s+/g, '').replace(/\./g, '-');
+// Chave de COMPARAÇÃO da tag (a tag mostrada continua a escrita, normTag): sem hífen, ponto, espaço e zero à
+// esquerda — "QD01", "QD-01", "QD1" e "QD 01" são o mesmo quadro (revisão de 06/11/2026: a planta escrevia
+// "QD01", o diagrama "QD-01", e o 3D não ligava um ao outro)
+const chaveTag = (t) => normTag(t).replace(/[-_]/g, '').replace(/(^|\D)0+(?=\d)/g, '$1');
+// número do circuito: sem zero à esquerda, sem hífen e espaço ("01" do diagrama = "1" da planta — a planta já
+// tirava o zero, ./circuitoDoDesenho.js, e o diagrama não: o 3D criava "1 (estimado)" ao lado do "01")
+const normNumero = (n) => String(n ?? '').toUpperCase().replace(/[\s-]/g, '').replace(/^0+(?=\d)/, '');
 
 function potenciaDe(s) {
+  // "1.200 W" é mil e duzentos; "1.2 kW" e "5.5 kW" são decimais. Ponto seguido de 3 algarismos só é decimal
+  // em kW/kVA ("1.250 kW" num quadro de prédio é 1,25 kW, não 1.250 kW)
+  const p = RE_POT_PONTO.exec(s);
+  if (p && (p[2].length !== 3 || /^k/i.test(p[3]))) {
+    const v = Number(`${p[1]}.${p[2]}`);
+    const u = p[3].toUpperCase();
+    return { valor: Math.round((/^K/.test(u) ? v * 1000 : v) * 100) / 100, unidade: /VA$/.test(u) ? 'VA' : 'W' };
+  }
   const m = RE_POT.exec(s);
   if (!m) return null;
   const v = Number(m[1].replace(/[.\s]/g, '') + (m[2] ? `.${m[2]}` : ''));
@@ -147,9 +182,9 @@ function saidasDoUnifilar(T, perto, hMed) {
     }
     [ip, iNum, iDesc, iDj].forEach(j => j >= 0 && usados.add(j));
     saidas.push({
-      x: p.x, y: p.y, hh, lado, xDj: dj ? dj.x : d.x, xDesc: d.x, numero: RE_NUMERO.exec(n.s)[1].toUpperCase(), descricao: d.s.slice(0, 60),
+      x: p.x, y: p.y, hh, lado, xDj: dj ? dj.x : d.x, xDesc: d.x, numero: normNumero(RE_NUMERO.exec(n.s)[1]), descricao: d.s.slice(0, 60),
       potencia_w: pot.unidade === 'W' ? pot.valor : null, potencia_va: pot.unidade === 'VA' ? pot.valor : null,
-      In: dj ? Number(RE_AMPERE.exec(dj.s)[1]) : null, secao_mm2: secao, dr: null, caixa: [Math.min(n.x, d.x, p.x, dj?.x ?? p.x), p.y, Math.max(n.x, d.x, p.x, dj?.x ?? p.x), dj ? dj.y : p.y],
+      In: dj ? correnteDe(dj.s).In : null, polos: dj ? correnteDe(dj.s).polos : null, secao_mm2: secao, dr: null, caixa: [Math.min(n.x, d.x, p.x, dj?.x ?? p.x), p.y, Math.max(n.x, d.x, p.x, dj?.x ?? p.x), dj ? dj.y : p.y],
     });
   });
   return { saidas, drs };
@@ -207,7 +242,9 @@ function tabelas(T, perto, hMed) {
     const potCol = pots.find(c => /TOTAL/i.test(c.t.s) && !/K\s*VA|KW/i.test(c.t.s)) || pots.find(c => !/K\s*VA|KW/i.test(c.t.s)) || pots[0];
     const fatorPot = potCol && /\(\s*K/i.test(potCol.t.s) ? 1000 : 1;
     const unidadePot = potCol && /VA/i.test(potCol.t.s) ? 'VA' : 'W';
-    const x0 = Math.min(...cols.map(c => c.t.x)) - 3 * hh, x1 = Math.max(...cols.map(c => c.t.x)) + 25 * hh;
+    // (8 alturas à esquerda do 1º cabeçalho: com o cabeçalho centralizado, o valor alinhado à esquerda da
+    // célula fica antes dele)
+    const x0 = Math.min(...cols.map(c => c.t.x)) - 8 * hh, x1 = Math.max(...cols.map(c => c.t.x)) + 25 * hh;
     // linhas abaixo do cabeçalho, até o TOTAL ou um vão grande
     const abaixo = perto(x0, c0.y - 200 * hh, x1, c0.y - 0.5 * hh).map(j => T[j]).sort((a, b) => b.y - a.y);
     const linhas = [];
@@ -215,6 +252,18 @@ function tabelas(T, perto, hMed) {
       const l = linhas.at(-1);
       if (l && Math.abs(l.y - t.y) <= 0.45 * hh) l.textos.push(t); else linhas.push({ y: t.y, textos: [t] });
     }
+    // Coluna de cada valor (revisão de 06/11/2026). Antes só "a do cabeçalho mais à direita que começa antes
+    // do valor" — certo com o cabeçalho alinhado à esquerda, mas com o cabeçalho CENTRALIZADO (o ponto do MTEXT
+    // no meio da coluna) e o valor alinhado à esquerda da célula, o valor caía na coluna da esquerda e nenhum
+    // circuito era lido. As duas leituras são feitas e fica a que dá mais valores coerentes (número, descrição
+    // com letras, potência numérica, disjuntor em ampère, seção comercial); empate: a de antes.
+    const comecaAntes = (t) => { let col = null; for (const c of cols) if (c.t.x <= t.x + 1.2 * hh) col = c; return col; };
+    // cabeçalho centralizado: o valor à esquerda da célula fica antes do CENTRO do cabeçalho da sua coluna
+    const centroDepois = (t) => cols.find(c => c.t.x >= t.x - 0.3 * hh) || (t.x <= cols.at(-1).t.x + 25 * hh ? cols.at(-1) : null);
+    const lidas = [comecaAntes, centroDepois].map(colunaDoTexto => lerLinhas(colunaDoTexto));
+    const pontua = (r) => r.circuitos.reduce((s, c) => s + 1 + (c.descricao && RE_LETRAS.test(c.descricao) ? 1 : 0) + (c.potencia_w || c.potencia_va ? 1 : 0) + (c.In ? 1 : 0) + (c.secao_mm2 ? 1 : 0), 0);
+    const { circuitos, yAnt } = pontua(lidas[1]) > pontua(lidas[0]) ? lidas[1] : lidas[0];
+    function lerLinhas(colunaDoTexto) {
     const circuitos = [];
     let yAnt = c0.y, passo = null;
     for (const l of linhas) {
@@ -222,11 +271,9 @@ function tabelas(T, perto, hMed) {
       if (passo != null && gap > 3.5 * passo) break;
       if (passo == null && gap > 8 * hh) break;
       if (l.textos.some(t => /^TOTA/i.test(t.s))) break;
-      // coluna do texto: a do cabeçalho mais à direita que começa antes dele
       const val = {};
       for (const t of l.textos) {
-        let col = null;
-        for (const c of cols) if (c.t.x <= t.x + 1.2 * hh) col = c;
+        const col = colunaDoTexto(t);
         if (!col) continue;
         const k = col === potCol ? 'potencia' : col.k === 'potencia' ? null : col.k;
         if (k && val[k] == null) val[k] = t.s;
@@ -241,12 +288,14 @@ function tabelas(T, perto, hMed) {
       const sec = /(\d{1,3}(?:[.,]\d{1,2})?)/.exec(String(val.secao || '').replace(/^\d\s*#\s*/, ''));
       const fases = val.fases ? (String(val.fases).toUpperCase().match(/[RSTABC]/g) || []).length || null : null;
       circuitos.push({
-        numero: mNum[1].toUpperCase(), descricao: val.descricao ? String(val.descricao).slice(0, 60) : null,
+        numero: normNumero(mNum[1]), descricao: val.descricao ? String(val.descricao).slice(0, 60) : null,
         potencia_w: Number.isFinite(pot) && pot > 0 && unidadePot === 'W' ? pot * fatorPot : null,
         potencia_va: Number.isFinite(pot) && pot > 0 && unidadePot === 'VA' ? pot * fatorPot : null,
         In: dj ? Number(dj[3]) : null, polos, secao_mm2: sec && SECOES.has(num(sec[1])) ? num(sec[1]) : null, fases,
         dr: val.dr && !/^(N[ÃA]O|-|–|NAO)$/i.test(String(val.dr).trim()) ? { In: null, idn_ma: /(\d{2,3})\s*mA/i.test(val.dr) ? Number(/(\d{2,3})\s*mA/i.exec(val.dr)[1]) : null } : null,
       });
+    }
+    return { circuitos, yAnt };
     }
     if (!circuitos.length) return;
     // título: acima do cabeçalho, com a tag do quadro
@@ -319,9 +368,16 @@ function lerQuadrosDoDiagrama(textos, regioes = []) {
       }
     }
     if (alim) cx[3] = Math.max(cx[3], alim.y);
-    // título: no alto à esquerda (o QiBuilder põe ali); senão embaixo
+    // título: no alto à esquerda (o QiBuilder põe ali); senão embaixo. A busca vai até DENTRO da caixa — do
+    // alto da caixa até o topo das saídas (e de baixo até a última saída): com a moldura do diagrama como região,
+    // o título escrito dentro dela, 1,1 m abaixo do topo, ficava fora da faixa e o quadro saía "QUADRO-1"
+    // (revisão de 06/11/2026); e até 40 alturas de texto à esquerda (diagrama com saídas de um lado só)
     let titulo = null, melhor = Infinity;
-    const candidatos = [...perto(cx[0] - 15 * hh, cx[3] - 3 * hh, cx[2], cx[3] + 12 * hh).map(j => [j, 0]), ...perto(cx[0] - 15 * hh, cx[1] - 12 * hh, cx[2], cx[1] + 3 * hh).map(j => [j, 1])];
+    const baseSaidas = Math.min(...g.saidas.map(s => s.caixa[1]));
+    const candidatos = [
+      ...perto(cx[0] - 40 * hh, Math.min(cx[3] - 3 * hh, topoSaidas + 0.5 * hh), cx[2] + 5 * hh, cx[3] + 12 * hh).map(j => [j, 0]),
+      ...perto(cx[0] - 40 * hh, cx[1] - 12 * hh, cx[2] + 5 * hh, Math.max(cx[1] + 3 * hh, baseSaidas - 0.5 * hh)).map(j => [j, 1]),
+    ];
     for (const [j, embaixo] of candidatos) {
       if (titulosUsados.has(j) || !RE_TAG.test(T[j].s) || potenciaDe(T[j].s) || RE_NUMERO.test(T[j].s)) continue;
       const t = T[j];
@@ -334,7 +390,7 @@ function lerQuadrosDoDiagrama(textos, regioes = []) {
     const tagDr = new Map(drsVistos.map((r, i) => [r, `DR${i + 1}`]));
     const circuitos = g.saidas.sort((a, b) => (Number.parseInt(a.numero, 10) - Number.parseInt(b.numero, 10)) || a.numero.localeCompare(b.numero)).map(s => ({
       numero: s.numero, descricao: s.descricao, tipo: tipoDoCircuito(s.descricao), potencia_w: s.potencia_w, potencia_va: s.potencia_va,
-      In: s.In, polos: null, secao_mm2: s.secao_mm2, fases: null, dr: s.dr ? tagDr.get(s.dr) : null,
+      In: s.In, polos: s.polos ?? null, secao_mm2: s.secao_mm2, fases: null, dr: s.dr ? tagDr.get(s.dr) : null,
     }));
     quadros.push({
       titulo: titulo != null ? T[titulo].s : null, origem: 'unifilar', caixa: cx, geral, circuitos,
@@ -361,8 +417,9 @@ function lerQuadrosDoDiagrama(textos, regioes = []) {
     q.tag = tag || `QUADRO-${++semTag}`;
     q.tagLida = !!tag;
     q.descricao = descricao;
-    const ja = tag ? porTag.get(tag) : null;
-    if (!ja) { if (tag) porTag.set(tag, q); saida.push(q); continue; }
+    // (o mesmo quadro escrito "QD-01" no unifilar e "QD01" na tabela: pela chave da tag)
+    const ja = tag ? porTag.get(chaveTag(tag)) : null;
+    if (!ja) { if (tag) porTag.set(chaveTag(tag), q); saida.push(q); continue; }
     ja.origem = ja.origem === q.origem ? ja.origem : 'unifilar+tabela';
     ja.geral = ja.geral || q.geral;
     ja.descricao = ja.descricao || q.descricao;
@@ -392,4 +449,4 @@ function tagNaPlanta(x, y, rotulos, raio = 3) {
   return melhor;
 }
 
-module.exports = { lerQuadrosDoDiagrama, tagNaPlanta, tipoDoCircuito, normTag, RE_TAG };
+module.exports = { lerQuadrosDoDiagrama, tagNaPlanta, tipoDoCircuito, normTag, chaveTag, normNumero, correnteDe, potenciaDe, RE_TAG };

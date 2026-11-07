@@ -64,18 +64,29 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
     const pool = require('../src/config/database');
     const notas = require('../src/services/notasAprendidas');
     const ESC = chaveEscritorio({ responsavel: RESPONSAVEL });
-    const limpar = () => pool.query("DELETE FROM cad_notas_aprendidas WHERE escritorio LIKE 'ZZ%'");
+    // as linhas e os votos de quem ensinou (services/votosAprendizado.js); '' = as confirmações por disciplina do teste
+    const limpar = async () => {
+      await pool.query("DELETE FROM aprendizado_votos WHERE tipo = 'nota' AND (chave LIKE 'ZZ%' OR fonte LIKE '%zz-disc%')");
+      await pool.query("DELETE FROM cad_notas_aprendidas WHERE escritorio LIKE 'ZZ%' OR arquivo LIKE 'zz-disc%'");
+    };
     const dele = async () => (await notas.carregar()).filter(n => n.escritorio === ESC);
     try {
+      await require('../src/models/migracoes/2.0-53-aprendizado-por-disciplina')(pool);
       await limpar();
-      await caso('uma nota lida uma vez só ainda não vale; duas vezes sem contradição vale; contradição tira do uso', async () => {
+      await caso('uma nota lida uma vez só ainda não vale; duas vezes sem contradição vale; a maioria resolve; empate tira do uso', async () => {
         const n = [{ simbolo: 'HM-ELE-TOMADA-BAIXA', altura_m: 0.3, texto: 'Tomadas baixas a 0,30 m do piso' }];
         await notas.registrar(n, ESC, 'p1.dxf');
         assert.strictEqual((await dele()).length, 0);
         await notas.registrar(n, ESC, 'p2.dxf');
         assert.deepStrictEqual((await dele()).map(x => [x.simbolo, x.altura_m]), [['HM-ELE-TOMADA-BAIXA', 0.3]]);
         await notas.registrar([{ ...n[0], altura_m: 0.4 }], ESC, 'p3.dxf'); // outro desenho disse outra altura
-        assert.strictEqual((await dele()).length, 0, 'com conflito a sugestão sai do uso');
+        // 2 de 3 projetos (2/3) dizem 0,30: a maioria resolve (antes o conflito era para sempre)
+        assert.deepStrictEqual((await dele()).map(x => x.altura_m), [0.3], 'a maioria (3+ projetos, 2/3 deles) vale');
+        await notas.registrar([{ ...n[0], altura_m: 0.4 }], ESC, 'p4.dxf');
+        assert.strictEqual((await dele()).length, 0, '2 × 2: com conflito a sugestão sai do uso');
+        // o mesmo projeto relido não vota de novo
+        await notas.registrar([{ ...n[0], altura_m: 0.4 }], ESC, 'p4.dxf');
+        assert.strictEqual((await dele()).length, 0);
       });
 
       await caso('o mesmo arquivo analisado de novo não conta como outro desenho; escritório vazio não grava', async () => {
@@ -110,11 +121,35 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
         const r = await dele();
         assert.deepStrictEqual([r.length, r[0].simbolo, r[0].altura_m, r[0].usuario], [1, 'HM-ELE-TOMADA-MEDIA', 1.1, true], 'o engenheiro vale sem esperar o segundo desenho');
         const { alteradas: desf } = mapaCad.aplicarNoMapa(mapa, [{ idx: 0, confirmado: false }]);
-        assert.strictEqual(await notas.esquecer(desf, ESC), 1);
+        assert.strictEqual(await notas.esquecer(desf, ESC, undefined, { arquivo: 'x.dxf' }), 1);
         assert.strictEqual((await dele()).length, 0);
         // confirmação sem altura não ensina nada
         const { alteradas: semAltura } = mapaCad.aplicarNoMapa(m, [{ idx: 0, simbolo: 'HM-ELE-TOMADA-MEDIA', confirmado: true }]);
         assert.strictEqual(await notas.aprenderConfirmadas(semAltura, ESC, 'x.dxf'), 0);
+      });
+      await caso('sem escritório no carimbo, a altura que o engenheiro confirmou vale pela DISCIPLINA (e desfazer só tira o voto do projeto)', async () => {
+        await limpar();
+        const m = { arquivo: 'zz-disc.dxf', simbolos: [{ idx: 0, layer: 'EL-TOMADAS', medida: [0.3, 0.26], quantidade: 3, simbolo: 'HM-ELE-TOMADA-BAIXA', origem: 'regra' }] };
+        const { mapa, alteradas } = mapaCad.aplicarNoMapa(m, [{ idx: 0, simbolo: 'HM-ELE-TOMADA-BAIXA', altura_m: 0.35, confirmado: true }]);
+        await notas.aprenderConfirmadas(alteradas, '', 'zz-disc.dxf', undefined, { fonte: 'analise:zz-disc-1' });
+        await notas.aprenderConfirmadas(alteradas, '', 'zz-disc.dxf', undefined, { fonte: 'analise:zz-disc-2' });
+        const daDisciplina = (await notas.carregar()).filter(n => n.escritorio === '' && n.simbolo === 'HM-ELE-TOMADA-BAIXA');
+        assert.deepStrictEqual(daDisciplina.map(n => [n.altura_m, n.disciplina, n.usuario]), [[0.35, 'eletrica', true]]);
+        const aprendidas = await notas.carregar();
+        // o desenho sem carimbo (antes a linha morta: o motor não usava altura sem escritório) e o de elétrica
+        const sem = linhaTomada(await lerArquivoCad(desenho({ responsavel: '' }), 'zz-sem.dxf', { notasAprendidas: aprendidas, disciplinas: ['eletrica'] }));
+        assert.deepStrictEqual([sem.altura_m, sem.alturaDe], [0.35, 'nota_disciplina']);
+        // outra disciplina marcada: não vale
+        const cftv = linhaTomada(await lerArquivoCad(desenho({ responsavel: '' }), 'zz-sem2.dxf', { notasAprendidas: aprendidas, disciplinas: ['cftv'] }));
+        assert.strictEqual(cftv.altura_m, undefined);
+        // o escritório dele vale mais (a nota aprendida do próprio escritório), mas sem ela vale a da disciplina
+        const comEsc = linhaTomada(await lerArquivoCad(desenho(), 'zz-com.dxf', { notasAprendidas: aprendidas, disciplinas: ['eletrica'] }));
+        assert.deepStrictEqual([comEsc.altura_m, comEsc.alturaDe], [0.35, 'nota_disciplina']);
+        // desfazer no projeto 1: o projeto 2 continua ensinando
+        const { alteradas: desf } = mapaCad.aplicarNoMapa(mapa, [{ idx: 0, confirmado: false }]);
+        assert.strictEqual(await notas.esquecer(desf, '', undefined, { fonte: 'analise:zz-disc-1' }), 1);
+        const { rows } = await pool.query("SELECT vezes, origem FROM cad_notas_aprendidas WHERE escritorio = '' AND simbolo = 'HM-ELE-TOMADA-BAIXA'");
+        assert.deepStrictEqual(rows, [{ vezes: 1, origem: 'usuario' }]);
       });
     } finally { await limpar(); await pool.end(); }
   }

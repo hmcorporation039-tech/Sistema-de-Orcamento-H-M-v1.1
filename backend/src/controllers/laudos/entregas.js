@@ -13,7 +13,7 @@ const { gerarHtmlFolhaEntrega } = require('../../utils/folhaEntregaTemplate');
 const P = require('../../services/pastasSistema');
 const { pastaDoLaudo, seguro, rotasDePasta } = require('../../services/pastasRegistros');
 const { carregarLaudo, conferirUso, processarComMotor, erro400, nomeSeguroArquivo } = require('./comum');
-const { montarPlanta, montarUnifilar } = require('./desenhos');
+const { montarPlanta, montarUnifilar, podeGravarNaPasta } = require('./desenhos');
 const { prepararFotos } = require('./fotos');
 
 // ── Cálculo e documentos ────────────────────────────────────────────────────
@@ -36,12 +36,13 @@ async function calcular(req, res) {
 // Gera os documentos pedidos do padrão da disciplina e grava cada um na pasta
 // do laudo com nome fixo (o rótulo do documento) — a versão nova SOBRESCREVE a
 // anterior, sem acumular cópias. Devolve os gerados (buffer e nomes).
-async function gerarDocumentosDoLaudo(laudo, tipos) {
+// `gravar: false` (quem pede não é o dono): só gera, não toca na pasta.
+async function gerarDocumentosDoLaudo(laudo, tipos, { gravar = true } = {}) {
   const motor = motorDaDisciplina(laudo.disciplina);
   const preparado = await prepararFotos(laudo.id, laudo.dados);
   try {
     const resultado = processarComMotor(motor, preparado.dados);
-    const pasta = await seguro(`pasta laudo ${laudo.id}`, () => pastaDoLaudo(laudo));
+    const pasta = gravar ? await seguro(`pasta laudo ${laudo.id}`, () => pastaDoLaudo(laudo)) : null;
     const gerados = [];
     for (const tipo of tipos) {
       const doc = motor.documentos.find(d => d.tipo === tipo);
@@ -70,7 +71,8 @@ const mimeDo = (gerado) => gerado.mime || MIME_POR_EXTENSAO[path.extname(gerado.
 const ehHtml = (gerado) => /^text\/html/i.test(mimeDo(gerado));
 
 // Gera UM documento do registro (com as conferências de tipo e uso). Erro → { erro, status }.
-async function gerarUmDocumento(id, tipo) {
+// Grava na pasta só quando quem pede pode alterar o registro (podeGravarNaPasta).
+async function gerarUmDocumento(id, tipo, req) {
   const laudo = await carregarLaudo(id);
   if (!laudo) return { status: 404, erro: 'Registro não encontrado.' };
   const motor = motorDaDisciplina(laudo.disciplina);
@@ -78,12 +80,12 @@ async function gerarUmDocumento(id, tipo) {
   if (!doc) return { status: 400, erro: 'Tipo de documento inválido.' };
   const erroUso = conferirUso(laudo, tiposDocumento().usoDoDocumento(laudo.disciplina, tipo), `"${doc.rotulo}"`);
   if (erroUso) return { status: 400, erro: erroUso };
-  const { gerados: [gerado] } = await gerarDocumentosDoLaudo(laudo, [tipo]);
+  const { gerados: [gerado] } = await gerarDocumentosDoLaudo(laudo, [tipo], { gravar: podeGravarNaPasta(req, laudo) });
   return { gerado, doc };
 }
 
 async function documento(req, res) {
-  const { gerado, status, erro } = await gerarUmDocumento(req.params.id, req.params.tipo);
+  const { gerado, status, erro } = await gerarUmDocumento(req.params.id, req.params.tipo, req);
   if (erro) return res.status(status).json({ erro });
   res.setHeader('Content-Type', mimeDo(gerado));
   res.setHeader('Content-Disposition', contentDisposition(gerado.nomeArquivo));
@@ -112,7 +114,7 @@ function guardarPagina(buffer, nome) {
 
 // POST /laudos/:id/documento/:tipo/abrir → { url, arquivo }
 async function abrirDocumento(req, res) {
-  const { gerado, status, erro } = await gerarUmDocumento(req.params.id, req.params.tipo);
+  const { gerado, status, erro } = await gerarUmDocumento(req.params.id, req.params.tipo, req);
   if (erro) return res.status(status).json({ erro });
   if (!ehHtml(gerado)) return res.status(400).json({ erro: 'Este documento não abre no navegador — use o botão para baixar.' });
   res.json({ url: `/api/documentos-html/ver/${guardarPagina(gerado.buffer, gerado.nomeArquivo)}`, arquivo: gerado.nomeArquivo });

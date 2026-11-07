@@ -4,6 +4,7 @@ const { RAIZ_REPOSITORIO } = require('../config/caminhos');
 const crypto = require('crypto');
 const pool = require('../config/database');
 const { lerDocumentoCotacao, encerrarOcr, VERSAO_LEITOR, EXTENSOES } = require('./leitorCotacao');
+const { iaDisponivel } = require('./leitorCotacaoIA');
 const { carregarIndice, registrarItemCotacao, obterMargemPadrao, encontrarExistente } = require('./catalogoMateriais');
 const { classificarPendentes } = require('./classificacaoMateriais');
 const { executarComTrava } = require('./travaJob');
@@ -19,6 +20,10 @@ const PASTAS_FORNECEDORES = [PASTA_FORNECEDORES_LOCAL, PASTA_FORNECEDORES_REDE];
 // Teto de leituras por IA numa varredura (só para arquivos que o leitor local
 // não reconheceu) — evita custo alto se cair uma pasta cheia de arquivos estranhos.
 const MAX_IA_POR_VARREDURA = Number(process.env.COTACAO_IA_MAX_POR_VARREDURA) || 15;
+// Tempo máximo de IA numa varredura (revisão do uso de IA de 06/11/2026): 15 documentos × até ~14 min cada prendiam a
+// varredura por horas. Passado o limite, o resto fica pendente para a próxima (o leitor local continua lendo tudo).
+const TEMPO_IA_VARREDURA_MS = (Number(process.env.COTACAO_IA_MINUTOS_POR_VARREDURA) || 20) * 60 * 1000;
+const podeUsarIA = (resumo) => resumo.leiturasPorIA < MAX_IA_POR_VARREDURA && Date.now() - (resumo.inicio || Date.now()) < TEMPO_IA_VARREDURA_MS;
 
 function hashArquivo(buffer) {
   return crypto.createHash('sha256').update(buffer).digest('hex');
@@ -64,22 +69,26 @@ async function listarArquivos(pasta, resumo, criarSeNaoExistir) {
 }
 
 // Já lido de vez: teve itens, ou foi lido com 0 itens pela versão atual do
-// leitor. Arquivo com 0 itens de uma versão antiga é lido de novo.
+// leitor. Arquivo com 0 itens de uma versão antiga é lido de novo. Arquivo que só a IA leria, lido com ela
+// desligada (aguardando_ia), volta a ser lido quando ela estiver ligada — e não antes (era relido com OCR toda vez).
 async function jaProcessado(client, hash) {
-  const r = await client.query('SELECT itens_lidos, itens_novos, itens_atualizados, leitor_versao FROM arquivos_fornecedores_processados WHERE hash = $1', [hash]);
+  const r = await client.query('SELECT itens_lidos, itens_novos, itens_atualizados, leitor_versao, aguardando_ia FROM arquivos_fornecedores_processados WHERE hash = $1', [hash]);
   if (!r.rows.length) return false;
   const x = r.rows[0];
+  if (x.aguardando_ia && (x.leitor_versao || 1) >= VERSAO_LEITOR) return !iaDisponivel();
   return (x.itens_lidos || 0) > 0 || (x.itens_novos || 0) > 0 || (x.itens_atualizados || 0) > 0 || (x.leitor_versao || 1) >= VERSAO_LEITOR;
 }
 
 async function registrarArquivo(client, nome, hash, dados) {
   await client.query(
-    `INSERT INTO arquivos_fornecedores_processados (arquivo, hash, itens_novos, itens_atualizados, itens_lidos, metodo, confere_total, leitor_versao)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+    `INSERT INTO arquivos_fornecedores_processados (arquivo, hash, itens_novos, itens_atualizados, itens_lidos, metodo, confere_total, leitor_versao, aguardando_ia)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
      ON CONFLICT (hash) DO UPDATE SET arquivo=EXCLUDED.arquivo, itens_novos=EXCLUDED.itens_novos, itens_atualizados=EXCLUDED.itens_atualizados,
-       itens_lidos=EXCLUDED.itens_lidos, metodo=EXCLUDED.metodo, confere_total=EXCLUDED.confere_total, leitor_versao=EXCLUDED.leitor_versao, processado_em=NOW()`,
-    // pendente (precisava de IA e ela estava indisponível): versão anterior, para ser relido
-    [nome, hash, dados.criados || 0, dados.atualizados || 0, dados.lidos || 0, dados.metodo || null, dados.confere ?? null, dados.pendente ? VERSAO_LEITOR - 1 : VERSAO_LEITOR]
+       itens_lidos=EXCLUDED.itens_lidos, metodo=EXCLUDED.metodo, confere_total=EXCLUDED.confere_total, leitor_versao=EXCLUDED.leitor_versao,
+       aguardando_ia=EXCLUDED.aguardando_ia, processado_em=NOW()`,
+    // pendente (precisava de IA e ela estava fora do ar/sem vez): versão anterior, para ser relido;
+    // aguardaIA (só a IA leria e ela está desligada): relido quando ela for ligada (jaProcessado)
+    [nome, hash, dados.criados || 0, dados.atualizados || 0, dados.lidos || 0, dados.metodo || null, dados.confere ?? null, dados.pendente ? VERSAO_LEITOR - 1 : VERSAO_LEITOR, !!dados.aguardaIA && !dados.pendente]
   );
 }
 
@@ -160,17 +169,17 @@ async function processarArquivo(client, { pasta, nome }, { resumo, margem, indic
 
   let leitura;
   try {
-    leitura = await ler(buffer, nome, { permitirIA: resumo.leiturasPorIA < MAX_IA_POR_VARREDURA });
+    leitura = await ler(buffer, nome, { permitirIA: podeUsarIA(resumo) });
   } catch (err) {
     leitura = { itens: [], metodo: null, avisos: [`erro na leitura: ${err.message}`] };
   }
-  if (leitura.usouIA) resumo.leiturasPorIA++;
+  if (leitura.usouIA && !leitura.iaDeCache) resumo.leiturasPorIA++; // a resposta guardada do mesmo arquivo não gasta IA
   await iaCache.contarLeituraCotacao(leitura);
 
   await client.query('BEGIN');
   try {
     const r = leitura.itens.length ? await importarItens(client, indice, leitura, 'fornecedor_whatsapp', margem, { documento: `arq:${hash}` }) : { criados: 0, atualizados: 0, existentes: 0 };
-    await registrarArquivo(client, nome, hash, { ...r, lidos: leitura.itens.length, metodo: leitura.metodo || (leitura.pendente ? 'aguardando IA' : null), confere: leitura.conferencia?.confere, pendente: leitura.pendente });
+    await registrarArquivo(client, nome, hash, { ...r, lidos: leitura.itens.length, metodo: leitura.metodo || (leitura.pendente || leitura.aguardaIA ? 'aguardando IA' : null), confere: leitura.conferencia?.confere, pendente: leitura.pendente, aguardaIA: leitura.aguardaIA });
     await client.query('COMMIT');
     resumo.arquivosProcessados++;
     resumo.materiaisCriados += r.criados;
@@ -196,7 +205,7 @@ async function executarVarredura() {
   const resumo = {
     arquivosEncontrados: 0, arquivosProcessados: 0,
     materiaisCriados: 0, materiaisAtualizados: 0, materiaisJaCadastrados: 0,
-    leiturasPorIA: 0, arquivos: [], avisos: [],
+    leiturasPorIA: 0, arquivos: [], avisos: [], inicio: Date.now(),
   };
 
   const arquivos = [
@@ -221,4 +230,4 @@ async function executarVarredura() {
   return resumo;
 }
 
-module.exports = { verificarPastaFornecedores, importarItens, guardarCotacoesDoArquivo, listarArquivos, PASTAS_FORNECEDORES, _interno: { processarArquivo } };
+module.exports = { verificarPastaFornecedores, importarItens, guardarCotacoesDoArquivo, listarArquivos, PASTAS_FORNECEDORES, podeUsarIA, _interno: { processarArquivo, jaProcessado } };

@@ -17,10 +17,11 @@
 // Tudo marcado para conferir: o desenho manda, mas sigla de bloco é convenção
 // de cada escritório.
 const path = require('path');
+const crypto = require('crypto');
 const { executarNoWorker } = require('../executarNoWorker');
 const { analisarTexto } = require('../../utils/projetoParser');
 const { detectarDisciplinas } = require('../../utils/leitoresTabelaProjeto');
-const { chaveEscritorio } = require('../../utils/escritorioDoProjeto');
+const { escritorioDoProjeto } = require('../../utils/escritorioDoProjeto');
 const { procurar: procurarBlocoAprendido } = require('../blocosAprendidos');
 const { CAD } = require('../../config/caminhos');
 const { BLOCOS_HM, disciplinaDaLayer, disciplinaDoBloco, disciplinaDoTexto, semPrefixoDeDisciplina, alturaDoTexto, RE_LAYER_INFRA, tipoDoTracado, daPropriaDisciplina } = require(path.join(CAD, 'disciplinasCad.js'));
@@ -53,11 +54,11 @@ const RE_LAYER_LINHA = RE_LAYER_INFRA;
 const TEMPO_LIMITE_MS = 180 * 1000;
 
 // worker com fila global (services/executarNoWorker.js): no máximo 2 leituras de CAD ao mesmo tempo
-async function lerNoWorker(buffer, nome, aprendidos = [], confirmados = [], notasAprendidas = []) {
+async function lerNoWorker(buffer, nome, aprendidos = [], confirmados = [], notasAprendidas = [], { naoPonto = [], disciplinas = [] } = {}) {
   let m;
   try {
     m = await executarNoWorker(path.join(__dirname, 'worker.js'),
-      { buffer, nome, reLayerLinha: RE_LAYER_LINHA, aprendidos, confirmados, notasAprendidas }, { tempoLimiteMs: TEMPO_LIMITE_MS, memoriaMb: 2048 });
+      { buffer, nome, reLayerLinha: RE_LAYER_LINHA, aprendidos, confirmados, notasAprendidas, naoPonto, disciplinas }, { tempoLimiteMs: TEMPO_LIMITE_MS, memoriaMb: 2048 });
   } catch (e) {
     if (e.codigo === 'TEMPO_ESGOTADO') throw new Error(`a leitura de "${nome}" passou de ${TEMPO_LIMITE_MS / 1000} s`);
     throw e;
@@ -168,8 +169,12 @@ function descreverSimbolo(g, opcoes = {}) {
   const nomeDescritivo = /[A-Za-zÀ-ú]{3,}.*\s.*[A-Za-zÀ-ú0-9]{2,}/.test(g.nomeLimpo) && g.nomeLimpo.length >= 8;
   const emergencia = /EMERG/i.test(`${g.bloco} ${camadas}`);
 
+  // o que o engenheiro confirmou para este bloco NESTA análise ("Confirmar bloco" no mapa): vale mais que tudo e conta
+  const chaveBloco = (n) => String(n || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+  const conferido = (opcoes.blocosConfirmados || []).find(b => chaveBloco(b.bloco) === chaveBloco(g.nomeLimpo));
   let descricao = null, origem = null;
-  if (daLegenda) { descricao = daLegenda; origem = 'legenda'; }
+  if (conferido) { descricao = conferido.descricao; origem = 'confirmado'; }
+  else if (daLegenda) { descricao = daLegenda; origem = 'legenda'; }
   else if (atributo) { descricao = atributo; origem = 'atributo'; }
   else if (hm) { descricao = hm.descricao; origem = 'biblioteca'; }
   else if (aprendido) { descricao = aprendido.descricao; origem = 'aprendido'; }
@@ -180,13 +185,13 @@ function descreverSimbolo(g, opcoes = {}) {
   if (descricao && origem !== 'nome' && !descricao.includes(g.nomeLimpo)) descricao += ` — bloco ${g.nomeLimpo}`;
 
   const base = `${descricao || ''} ${g.nomeLimpo} ${camadas}`;
-  const outraArea = !hm && !sigla && !daLegenda && !aprendido && RE_OUTRA_AREA.test(`${g.nomeLimpo} ${camadas}`) && !daPropriaDisciplina(`${g.nomeLimpo} ${camadas}`, opcoes.disciplinas);
+  const outraArea = !conferido && !hm && !sigla && !daLegenda && !aprendido && RE_OUTRA_AREA.test(`${g.nomeLimpo} ${camadas}`) && !daPropriaDisciplina(`${g.nomeLimpo} ${camadas}`, opcoes.disciplinas);
   // Disciplina (M1 da revisão de 29/10/2026), do mais específico ao mais vago:
   // biblioteca H&M → prefixo do nome do bloco ("INC_SIRENE_AV") → sigla (a layer
   // manda quando as duas são do ramo de segurança: "SIRENE" em INC-AVISADOR é
   // incêndio) → prefixo/palavra da layer ("CA-DISPOSITIVO", "D10_TEL_…") → texto
   const daLayer = disciplinaDasLayers(g.layers || [g.layer]);
-  let disciplina = hm?.disciplina || aprendido?.disciplina || disciplinaDoBloco(g.nomeLimpo) || disciplinaDoBloco(g.bloco) || null;
+  let disciplina = conferido?.disciplina || hm?.disciplina || aprendido?.disciplina || disciplinaDoBloco(g.nomeLimpo) || disciplinaDoBloco(g.bloco) || null;
   if (!disciplina && sigla) disciplina = (daLayer && RAMO_SEGURANCA.has(daLayer) && RAMO_SEGURANCA.has(sigla[2])) ? daLayer : sigla[2];
   if (!disciplina) disciplina = daLayer || detectarDisciplinas(base)[0]?.chave || (/TOMADA|EL[ÉE]TRIC|^E[-_ ]|INST\b/i.test(camadas) ? 'eletrica' : null);
 
@@ -241,7 +246,9 @@ function alturasDoGrupo(g, d) {
 // opcoes.confirmados: tipos que o engenheiro conferiu no mapa do CAD desta análise (services/mapaCad.js)
 // opcoes.edicoes: componentes inseridos e retirados pelo engenheiro na planta ou no 3D (services/edicoesDoMapa.js)
 async function lerArquivoCad(buffer, nome, opcoes = {}) {
-  const r = await lerNoWorker(buffer, nome, opcoes.aprendidos || [], opcoes.confirmados || [], opcoes.notasAprendidas || []);
+  // opcoes.confirmados: as linhas do mapa (layer × medida) vão ao leitor dos símbolos; os blocos confirmados, ao descreverSimbolo
+  const blocosConfirmados = (opcoes.confirmados || []).filter(c => c?.bloco);
+  const r = await lerNoWorker(buffer, nome, opcoes.aprendidos || [], (opcoes.confirmados || []).filter(c => !c?.bloco), opcoes.notasAprendidas || [], { naoPonto: opcoes.naoPonto || [], disciplinas: opcoes.disciplinas || [] });
   const p = r.projeto;
   const analise = analisarTexto(p.texto, nome);
   // ambientes com área real da arquitetura (o rótulo "A=" do texto fica de reserva):
@@ -272,8 +279,8 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
 
   // o escritório do carimbo (o mesmo do mapa; sem planta legível, do texto da prancha) escolhe os blocos aprendidos
   let escritorio = r.desenho?.escritorio || '';
-  if (!escritorio) { try { escritorio = chaveEscritorio(analise.carimbo); } catch { escritorio = ''; } }
-  const descritos = simbolosDaPlanta.filter(s => !s.fora).map(g => ({ g, d: descreverSimbolo(g, { disciplinas: opcoes.disciplinas, blocosAprendidos: opcoes.blocosAprendidos, escritorio }) }));
+  if (!escritorio) { try { escritorio = escritorioDoProjeto(analise.carimbo, p.texto, nome); } catch { escritorio = ''; } }
+  const descritos = simbolosDaPlanta.filter(s => !s.fora).map(g => ({ g, d: descreverSimbolo(g, { disciplinas: opcoes.disciplinas, blocosAprendidos: opcoes.blocosAprendidos, escritorio, blocosConfirmados }) }));
   // Xref de OUTRA disciplina é referência (A11): a disciplina da xref sai do nome
   // dela ("…TOMADAS…" é elétrica); as do desenho, do que está FORA de xref.
   // Desenho todo dentro de xref (nada fora): nenhuma xref vira referência.
@@ -321,7 +328,9 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
     const uniforme = alts.every(a => a.altura_m === alts[0].altura_m && a.montagem === alts[0].montagem);
     itens.push({
       tipo: 'simbolo', descricao: d.descricao, quantidade: g.quantidade, disciplina: d.disciplina, origemDescricao: d.origem,
-      bloco: g.nomeLimpo, layer: g.layers.join(', '), posicoes: g.posicoes, ambiguo: false,
+      // o nome de bloco aprendido de OUTRA prancha é sugestão: fica a conferir, fora do orçamento (como a legenda aprendida
+      // do PDF, utils/pdfVetorial/analise.js) — só a legenda/atributo/biblioteca deste desenho conta direto
+      bloco: g.nomeLimpo, layer: g.layers.join(', '), posicoes: g.posicoes, ambiguo: d.origem === 'aprendido', ...(d.origem === 'aprendido' ? { conferir: true } : {}),
       ...(uniforme && alts[0].montagem ? { altura_m: alts[0].altura_m, montagem: alts[0].montagem } : {}),
       ...(g.quantidadeLegenda != null ? { quantidadeLegenda: g.quantidadeLegenda } : {}),
       // inserções repetidas no mesmo ponto, contadas uma vez só (para conferir)
@@ -455,6 +464,7 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
     doDesenho.length ? `${doDesenho.filter(g => !g.inserido).reduce((s, g) => s + g.posicoes.length, 0)} pontos lidos dos símbolos desenhados (blocos explodidos), pela layer, pela medida e pela legenda da prancha — [CONFERIR] as quantidades` : null,
     r.desenho?.erro ? `leitura dos símbolos desenhados falhou: ${r.desenho.erro}` : null,
     r.desenho?.mapa?.aviso || null,
+    ...(r.avisosDiagrama || []),
   ].filter(Boolean);
   if (avisos.length) pagina.aviso = [pagina.aviso, ...avisos].filter(Boolean).join('; ');
   const arquitetura = r.arquitetura?.ambientes?.length ? {
@@ -489,8 +499,17 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
   };
   // o que a legenda das pranchas ensinou (services/simbolosAprendidos.js grava)
   // mapa do CAD (tela de confirmação): uma linha por layer × forma de símbolo, com o que o sistema entendeu e de onde veio
+  // blocos nomeados que o engenheiro pode confirmar no mapa (POST …/mapa/blocos — services/blocosAprendidos.confirmar):
+  // os não identificados e os reconhecidos só pelo que outra prancha ensinou (sugestão a conferir)
+  const blocosParaConferir = [
+    ...naoIdentificados.map(b => ({ bloco: b.bloco, layer: b.layer, quantidade: b.quantidade, situacao: 'nao_identificado' })),
+    ...itens.filter(i => i.tipo === 'simbolo' && i.origemDescricao === 'aprendido').map(i => ({ bloco: i.bloco, layer: i.layer, quantidade: i.quantidade, situacao: 'aprendido', descricao: i.descricao, disciplina: i.disciplina })),
+    // o confirmado continua na lista (a releitura seguinte conta de novo com ele)
+    ...blocosConfirmados.map(b => ({ quantidade: itens.find(i => i.tipo === 'simbolo' && i.bloco === b.bloco)?.quantidade || 0, bloco: b.bloco, situacao: 'confirmado', descricao: b.descricao, disciplina: b.disciplina })),
+  ].slice(0, 200);
   const mapa = r.desenho?.mapa ? {
     arquivo: nome, valeParaOrcamento: usaMapa, escritorio: r.desenho.escritorio || '',
+    ...(blocosParaConferir.length ? { blocos: blocosParaConferir } : {}),
     // a linha que não entra diz o porquê (layer com bloco nomeado, layer de referência, repete um bloco) — CAD-12
     ...(comBlocos ? { layersComBloco: [...layersComBloco].sort() } : {}),
     simbolos: r.desenho.mapa.simbolos.map(({ centros, ...m }, idx) => ({ idx, ...m, contados: contadosPorLinha.get(idx) || 0, ...(motivoPorLinha.has(idx) && !contadosPorLinha.get(idx) ? { foraDoOrcamento: motivoPorLinha.get(idx) } : {}) })),
@@ -506,7 +525,10 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
     ...(edicoes ? { edicoes, edicoesNoOrcamento: true } : {}),
     ...(r.desenho.mapa.aviso ? { aviso: r.desenho.mapa.aviso } : {}),
   } : null;
-  return { analise, pagina, pontosPorAmbiente, arquitetura, espacial, mapa, aprendizado: { legenda: r.desenho?.legenda || [], notas: r.desenho?.notas || [], escritorio, blocos: p.legendaItens || [] } };
+  // fonte: quem ensina (services/votosAprendizado.js) — o projeto quando quem chama sabe (opcoes.fonte: obra/análise), senão
+  // o CONTEÚDO do arquivo: reler o mesmo desenho não conta de novo, e "PLANTA.dwg" de duas obras são dois projetos
+  const fonte = opcoes.fonte || `arquivo:${crypto.createHash('sha1').update(Buffer.from(buffer)).digest('hex')}`;
+  return { analise, pagina, pontosPorAmbiente, arquitetura, espacial, mapa, aprendizado: { legenda: r.desenho?.legenda || [], notas: r.desenho?.notas || [], escritorio, blocos: p.legendaItens || [], fonte } };
 }
 
 // Planta da tela de confirmação do mapa: o desenho de fundo (./fundoDoMapa.js), o contorno dos ambientes e a posição

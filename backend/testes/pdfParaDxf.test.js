@@ -68,9 +68,9 @@ const plantaSoDesenho = () => planta().replace(/^[\s\S]*?<svg[^>]*>/, '').replac
 (async () => {
   const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
   const pdfDe = async (html) => { const p = await browser.newPage(); await p.setContent(html); const b = await p.pdf({ width: '420mm', height: '297mm', printBackground: true }); await p.close(); return Buffer.from(b); };
-  let comCarimbo, semCarimbo, semPortas, iguais, soTexto, soQuadros, duasPaginas, mista, comEletrica;
+  let comCarimbo, semCarimbo, semPortas, iguais, soTexto, soQuadros, duasPaginas, mista, comEletrica, duasEscalas;
   try {
-    [comEletrica, comCarimbo, semCarimbo, semPortas, iguais, soTexto, soQuadros, duasPaginas, mista] = await Promise.all([
+    [comEletrica, comCarimbo, semCarimbo, semPortas, iguais, soTexto, soQuadros, duasPaginas, mista, duasEscalas] = await Promise.all([
       pdfDe(planta({ eletrica: true })),
       pdfDe(planta()), pdfDe(planta({ carimbo: false })), pdfDe(planta({ carimbo: false, portas: false })), pdfDe(planta({ mesmaEspessura: true })),
       pdfDe('<html><body><p>Memorial descritivo — só texto, sem desenho.</p></body></html>'),
@@ -80,6 +80,8 @@ const plantaSoDesenho = () => planta().replace(/^[\s\S]*?<svg[^>]*>/, '').replac
       pdfDe(html(svg(folhaQuadros()) + svg(plantaSoDesenho() + '<text x="330" y="285" font-family="Arial" font-size="3">ESC. 1:50</text>'))),
       // (c) folha mista: planta à esquerda, unifilar e quadro de cargas à direita
       pdfDe(html(svg(`${plantaSoDesenho()}${unifilar(300, 20)}${quadroDeCargas(290, 160, 8)}<text x="20" y="280" font-family="Arial" font-size="3">ESC. 1:50</text>`))),
+      // (d) "ESC. 1:50" e "ESC. 1:25" na mesma folha (empate no texto): antes o 3D pegava 1:25 e saía na metade
+      pdfDe(planta().replace('</svg>', '<text x="385" y="293" font-family="Arial" font-size="3">ESC. 1:25</text></svg>')),
     ]);
   } finally { await browser.close(); }
 
@@ -187,6 +189,16 @@ const plantaSoDesenho = () => planta().replace(/^[\s\S]*?<svg[^>]*>/, '').replac
     assert.ok(Math.abs(amb.find(a => a.nome === 'SALA DE ESTAR').area_m2 - 20) < 0.4);
     // nada do lado direito da folha (a planta vai até 13,3 m; o quadro do unifilar começa em 294 mm → 14,7 m em 1:50)
     assert.ok(lida.leitura.extensao.max[0] < 14, `extensão ${JSON.stringify(lida.leitura.extensao)}`);
+  });
+
+  // (revisão 06/11/2026) o 3D e a metragem da análise usam a MESMA escala (pdfVetorial/escala.js, escalaDaPlanta)
+  await caso('duas escalas escritas na folha: o 3D usa a mesma escala do quantitativo (1:50, não a metade)', async () => {
+    const r = await pdfParaDxf(duasEscalas);
+    const [q] = await require('../src/utils/pdfVetorial').lerPdfVetorial(duasEscalas);
+    assert.strictEqual(r.escala, 50, JSON.stringify([r.escala, r.origemEscala, r.avisos]));
+    assert.strictEqual(q.escala, r.escala);
+    // sem desempate pelas regiões, avisa que usou a maior
+    if (q.escalaAmbigua) assert.ok(r.avisos.some(a => /1:25 e 1:50/.test(a)), JSON.stringify(r.avisos));
   });
 
   console.log(`pdfParaDxf: ${ok} casos ok`);

@@ -223,9 +223,12 @@ const SERVICO_DO_SIMBOLO = [
   [/haste/i, 'mt_hastes', 'media_tensao'],
 ];
 // trecho medido (eletroduto, eletrocalha, fiação) → serviço de infraestrutura por metro
+// rede/cabeamento: a rota do cabeamento medida no DWG/DXF (ex.: 850 m) virava só "40 pontos de rede" e os metros
+// sumiam — agora vira o serviço de lançamento por metro (cab_lancamento, sem preço de referência: a cotar)
 const INFRA_DA_DISCIPLINA = {
   incendio: 'inc_infra', controle_acesso: 'ace_infra', alarme: 'alarme_infra', iluminacao: 'ilum_infraestrutura',
   telefonia: 'tel_infra', pressurizacao: 'pres_infra', carregador: 've_infraestrutura', media_tensao: 'mt_infra_subterranea',
+  cabeamento: 'cab_lancamento', rede: 'cab_lancamento',
 };
 function servicoDaLinha(disciplina, it) {
   const texto = `${it.layer || ''} ${it.descricao || ''}`;
@@ -460,8 +463,16 @@ function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = 
       ? [item('cab_certificacao', 'Certificação e etiquetagem dos pontos (rede + câmeras)', totalRede + totalCameras, 'pt', 'cabeamento',
           (totalRede > 0 || totalCameras > 0) ? 'Quantidade = pontos de rede + câmeras encontrados no desenho.' : SEM_CODIGO)]
       : []),
-    item('cab_passagem', 'Passagem de cabeamento (infraestrutura + lançamento de cabos)', 1, 'vb', 'cabeamento',
-      'Marque como "já pronto" se o cabeamento já estiver passado no local (não entra na mão de obra).'),
+    // com a rota medida no desenho (contagemDoDesenho → cab_lancamento) o lançamento sai por metro, sem preço de
+    // referência (a cotar), e a verba fica zerada para não cobrar duas vezes — quem precisar dela para o trecho não
+    // medido preenche a quantidade
+    item('cab_passagem', 'Passagem de cabeamento (infraestrutura + lançamento de cabos)', cad.cab_lancamento?.quantidade > 0 ? 0 : 1, 'vb', 'cabeamento',
+      cad.cab_lancamento?.quantidade > 0
+        ? 'Rota medida no desenho: o lançamento está no item por metro. Use esta verba só para o que não foi medido.'
+        : 'Marque como "já pronto" se o cabeamento já estiver passado no local (não entra na mão de obra).'),
+    ...(cad.cab_lancamento?.quantidade > 0
+      ? [item('cab_lancamento', 'Cabeamento: lançamento de cabos pela rota medida no desenho (infraestrutura conforme projeto)', 0, 'm', 'cabeamento', SEM_ROTA)]
+      : []),
 
     // Telefonia
     item('tel_ponto', 'Conectorização de ponto de telefonia (RJ-11/RJ-45 + teste)', 0, 'pt', 'telefonia', SEM_CODIGO),
@@ -764,7 +775,7 @@ function montarMateriaisDaLista(analises, catalogo, achados) {
 const semMarcador = (s) => String(s).replace(/^[-–•\s]+/, '');
 const metrosBR = (m) => `${String(m).replace('.', ',')} m`;
 
-const ORIGEM_DESCRICAO = { legenda: 'descrição da legenda da prancha', atributo: 'descrição do atributo do bloco', sigla: 'sigla do bloco — confirmar o tipo', nome: 'nome do bloco', biblioteca: 'biblioteca de símbolos H&M', confirmado: 'tipo confirmado pelo engenheiro no mapa do CAD', inserido: 'componente inserido pelo engenheiro (biblioteca H&M)', desenho: 'símbolo desenhado, tipo a confirmar' };
+const ORIGEM_DESCRICAO = { legenda: 'descrição da legenda da prancha', atributo: 'descrição do atributo do bloco', sigla: 'sigla do bloco — confirmar o tipo', nome: 'nome do bloco', biblioteca: 'biblioteca de símbolos H&M', confirmado: 'tipo confirmado pelo engenheiro no mapa do CAD', inserido: 'componente inserido pelo engenheiro (biblioteca H&M)', desenho: 'símbolo desenhado, tipo a confirmar', aprendido: 'aprendido de outro projeto — conferir' };
 // "rede" e "cabeamento" são a mesma skill: bloco de rede vale para arquivo marcado com qualquer das duas
 function doMesmoGrupo(marcadas, sugerida) {
   return doGrupo(sugerida).find(x => marcadas.includes(x)) || null;
@@ -889,7 +900,8 @@ function montarMateriaisDoDesenho(analises, vetoriais, catalogo) {
     const pontosPorDisc = new Map();
     const fontePag = (pag) => (pag.origem === 'cad' ? 'cad' : 'pdf');
     for (const pag of pags) {
-      for (const it of (pag.itens || []).filter(x => x.tipo === 'simbolo' && !x.ambiguo)) {
+      // (o nome de bloco aprendido de outra prancha é sugestão: não vira material sem conferir, mesmo sem a marca ambiguo)
+      for (const it of (pag.itens || []).filter(x => x.tipo === 'simbolo' && !x.ambiguo && x.origemDescricao !== 'aprendido')) {
         const disciplina = disciplinaDoItemDesenho(it, pag, a.disciplinas);
         if (!disciplina) continue;
         (pontosPorDisc.get(disciplina) || pontosPorDisc.set(disciplina, []).get(disciplina)).push(it);
@@ -952,6 +964,19 @@ function montarMateriaisDoDesenho(analises, vetoriais, catalogo) {
         const metros = Math.ceil((rotaCabo * SOBRA_ROTA + desc.metros) * condutores.n);
         materiais.push(base(`Cabo flexível 750 V — ${condutores.n} condutores × (rota + descidas) (bitola conforme quadro de cargas)`, metros, 'm', disciplina,
           `Calculado ${onde(l0.pag)}: (rota ${rotaFiacao ? 'da fiação' : 'dos eletrodutos'} ${metrosBR(Math.round(rotaCabo * 10) / 10)} × 1,10${desc.metros > 0 ? ` + ${textoDescidas(desc)}` : ''}) × ${condutores.n} condutores (${condutores.lido ? `esquema mais comum no quadro de cargas, ${condutores.circuitos} circuito(s)` : 'F + N + PE adotado — sem quadro de cargas lido'}). Um circuito por trecho: onde passam vários circuitos o cabo é maior — conferir no projeto.`,
+          'estimativa', null));
+      }
+      // rota do cabeamento (DWG/DXF, só em `pag.rotas`): ficava guardada em g.cabeamento e não virava nada — os 850 m
+      // medidos sumiam e o orçamento ficava só com os pontos. Vira o cabo, com quantidade a conferir (o desenho pode
+      // traçar o caminho comum, não um cabo por ponto) e sem preço (a cotar); o serviço sai em cab_lancamento
+      if (g.cabeamento.length) {
+        const rotaCab = g.cabeamento.reduce((s, l) => s + l.rota_m, 0);
+        const l0 = g.cabeamento[0];
+        const layers = [...new Set(g.cabeamento.map(l => `"${l.layer}"`))].join(', ');
+        const parTrancado = ['rede', 'cabeamento', 'cftv'].includes(disciplina);
+        materiais.push(base(`Cabo ${parTrancado ? 'de par trançado U/UTP (categoria conforme projeto)' : '(tipo conforme projeto)'} — rota do cabeamento medida no desenho (layer ${layers})`,
+          Math.ceil(rotaCab * SOBRA_ROTA + desc.metros), 'm', disciplina,
+          `[CONFERIR] Medido ${onde(l0.pag)}: rota do cabeamento ${metrosBR(Math.round(rotaCab * 10) / 10)} × 1,10${desc.metros > 0 ? ` + ${textoDescidas(desc)}` : ''}. Se o desenho traça um cabo por ponto (do rack até a tomada), é a metragem do cabo; se traça só o caminho comum, o cabo é maior (um por ponto) — confira no projeto. Sem preço de referência: a cotar.`,
           'estimativa', null));
       }
     }

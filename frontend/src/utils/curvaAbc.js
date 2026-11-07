@@ -8,7 +8,13 @@
 // ainda é A (a classe A cobre pelo menos 80 % do valor e nunca fica vazia).
 const LIMITES_CURVA_ABC = { A: 80, B: 95 };
 
-const arred2Abc = (v) => Math.round(((Number(v) || 0) + Number.EPSILON) * 100) / 100;
+// centavos com o meio para longe do zero, igual ao total da linha da proposta
+// (arredondar de skills/_comum/base/dinheiro.js; o "+ EPSILON" dava 5,015 → 5,01)
+const arred2Abc = (v) => {
+  const n = Number(v) || 0;
+  const r = Math.round(Number((Math.abs(n) * 100).toPrecision(15))) / 100;
+  return n < 0 && r !== 0 ? -r : r;
+};
 const normAbc = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase().replace(/\s+/g, ' ');
 
 function classeAbc(acumuladoAnteriorPct, limites) {

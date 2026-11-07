@@ -5,6 +5,7 @@
 //                         aprendidos (legenda de projetos anteriores: cad_simbolos_aprendidos)
 //                         confirmados (tipos conferidos pelo engenheiro no mapa do CAD, desta análise)
 //                         notasAprendidas (alturas que o escritório costuma escrever nas notas: cad_notas_aprendidas)
+//                         naoPonto (formas que o engenheiro disse "não é ponto" em outros projetos), disciplinas (as marcadas)
 // Saída (postMessage): { ok, dxf, origem, versao, arquitetura, projeto, desenho, avisoUnidade } ou { ok: false, erro }
 const path = require('path');
 const { parentPort, workerData } = require('worker_threads');
@@ -21,7 +22,8 @@ const REGIOES_FORA = ['diagrama', 'vista_quadro', 'quadro_cargas', 'carimbo'];
     const { lerProjetoDxf } = require(path.join(CAD, 'projetoDxf.js'));
     const { RE_TEXTO_CANDIDATO } = require('./medidasInfra');
     const { carimbo } = require('../../utils/leitoresTabelaProjeto');
-    const { chaveEscritorio } = require('../../utils/escritorioDoProjeto');
+    const { escritorioDoProjeto } = require('../../utils/escritorioDoProjeto');
+    const { notasParaOMotor, marcarNaoPonto, marcarEscalaDePlanta } = require('./aprendidoNoDesenho');
     const w = workerData;
     const { texto, origem, versao } = await textoDxfDoArquivo(Buffer.from(w.buffer), w.nome);
     let arq = null;
@@ -47,9 +49,13 @@ const REGIOES_FORA = ['diagrama', 'vista_quadro', 'quadro_cargas', 'carimbo'];
     if (arq) {
       try {
         const { propostaDeMapa, aplicarMapa, aplicarConfirmacoes, origemDaLinha, legendaDoProjeto, notasDeAltura } = require(path.join(CAD, 'pontosDoDesenho.js'));
-        // o escritório (responsável técnico do carimbo) escolhe quais notas aprendidas valem para este desenho
-        try { escritorio = chaveEscritorio(carimbo(projeto.texto)); } catch { escritorio = ''; } // sem carimbo legível o mapa sai igual, só sem o costume do escritório
-        const mapa = aplicarConfirmacoes(propostaDeMapa(arq, { aprendidos: w.aprendidos || [], notasAprendidas: w.notasAprendidas || [], escritorio }), w.confirmados || []);
+        // o escritório (responsável técnico do carimbo; sem ele, o autor no texto ou o código do desenho no nome do arquivo —
+        // a mesma regra do PDF) escolhe quais notas aprendidas valem para este desenho
+        try { escritorio = escritorioDoProjeto(carimbo(projeto.texto), projeto.texto, w.nome); } catch { escritorio = ''; } // sem carimbo legível o mapa sai igual, só sem o costume do escritório
+        // a altura que o engenheiro confirmou vale por disciplina quando o carimbo não diz o escritório (./aprendidoNoDesenho.js)
+        const motor = notasParaOMotor(w.notasAprendidas || [], escritorio, w.disciplinas || []);
+        const proposta = marcarNaoPonto(propostaDeMapa(arq, { aprendidos: w.aprendidos || [], notasAprendidas: motor.notas, escritorio: motor.escritorio }), w.naoPonto || [], w.aprendidos || [], escritorio, w.disciplinas || []);
+        const mapa = aplicarConfirmacoes(proposta, w.confirmados || []);
         const { pontos } = aplicarMapa(arq, mapa);
         // circuito e retorno escritos junto de cada símbolo ("3", "a"): sugestão no mapa; vale para o
         // 3D só na linha conferida (skills/_comum/cad/circuitoDoDesenho.js — fase 1 do roteiro)
@@ -57,9 +63,10 @@ const REGIOES_FORA = ['diagrama', 'vista_quadro', 'quadro_cargas', 'carimbo'];
         try { circuitosPorLinha = require(path.join(CAD, 'circuitoDoDesenho.js')).anotarCircuitos(pontos, projeto.textos).porLinha; } catch { /* a leitura do circuito não derruba o mapa */ }
         // o mapa vai junto (tela de confirmação): cada linha com a origem do tipo; trechos só com o resumo
         desenho = {
-          pontos, legenda: legendaDoProjeto(arq), notas: notasDeAltura(arq), escritorio,
+          pontos, legenda: marcarEscalaDePlanta(legendaDoProjeto(arq), mapa.simbolos), notas: notasDeAltura(arq), escritorio,
           mapa: {
-            simbolos: mapa.simbolos.map((s, i) => ({ ...s, origem: origemDaLinha(s), ...(circuitosPorLinha.has(i) ? { circuitos_lidos: circuitosPorLinha.get(i) } : {}) })),
+            simbolos: mapa.simbolos.map((s, i) => ({ ...s, origem: s.naoPontoAprendido && !s.confirmado ? 'nao_ponto' : origemDaLinha(s),
+              ...(s.alturaDe === 'nota_aprendida' && motor.daDisciplina.has(s.simbolo) ? { alturaDe: 'nota_disciplina' } : {}), ...(circuitosPorLinha.has(i) ? { circuitos_lidos: circuitosPorLinha.get(i) } : {}) })),
             trechos: mapa.trechos.map(({ layer, tipo, disciplina, comprimento_m }) => ({ layer, tipo, disciplina, comprimento_m })),
             // formas de símbolo além do limite de linhas do mapa: ditas no aviso, não somem caladas
             ...(mapa.aviso ? { aviso: mapa.aviso } : {}),
@@ -71,6 +78,8 @@ const REGIOES_FORA = ['diagrama', 'vista_quadro', 'quadro_cargas', 'carimbo'];
       ok: true, dxf: texto, origem, versao: versao || null, desenho, avisoUnidade,
       // desenho grande demais (skills/_comum/cad/arquitetura.js, MAX_ENTIDADES): blocos aninhados mais fundos ficaram fora
       detalheReduzido: arq?.detalheReduzido || null,
+      // unifilar / quadro de cargas no desenho sem circuito lido (skills/_comum/cad/arquitetura.js): o 3D usa circuitos estimados
+      avisosDiagrama: arq?.avisosDiagrama || [],
       arquitetura: arq && {
         fatorUnidade: fator, portas: arq.portas.length, layers: arq.layers.length,
         ambientes: arq.ambientes.map(a => ({ nome: a.nome, area_m2: a.area_m2, perimetro_m: a.perimetro_m, poligono: a.poligono, origem: a.origem })),

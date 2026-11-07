@@ -443,6 +443,182 @@ caso('quadros do diagrama: unifilar (disjuntor, seção, DR, geral, título) e q
   assert.deepStrictEqual(lerQuadrosDoDiagrama([]), []);
 });
 
+// ── Revisão do motor de leitura (06/11/2026) ────────────────────────────────────────────────────
+// Desenhos SINTÉTICOS em DXF cru (sem dado de cliente), cada caso falhava antes da correção.
+{
+  const { lerQuadrosDoDiagrama, tagNaPlanta, chaveTag } = require('./quadrosDoDiagrama');
+  const { posicionarPontos } = require('./planta');
+  const dxfR = (ents, { insunits = 6, blocos = [] } = {}) => ['0', 'SECTION', '2', 'HEADER', ...(insunits == null ? [] : ['9', '$INSUNITS', '70', insunits]), '0', 'ENDSEC',
+    '0', 'SECTION', '2', 'BLOCKS', ...blocos.flat(), '0', 'ENDSEC', '0', 'SECTION', '2', 'ENTITIES', ...ents.flat(), '0', 'ENDSEC', '0', 'EOF'].join('\n');
+  const linhaR = (x1, y1, x2, y2, layer = 'A-PAREDE') => ['0', 'LINE', '8', layer, '10', x1, '20', y1, '30', 0, '11', x2, '21', y2, '31', 0];
+  const textoR = (s, x, y, h = 0.15, layer = 'A-TEXTO', extra = []) => ['0', 'TEXT', '8', layer, '10', x, '20', y, '30', 0, '40', h, '1', s, ...extra];
+  const mtextR = (s, x, y, h = 0.2) => ['0', 'MTEXT', '8', 'A-TEXTO', '10', x, '20', y, '30', 0, '40', h, '71', 5, '1', s];
+  const poliR = (pts, layer = 'A-AREA', extra = []) => ['0', 'LWPOLYLINE', '8', layer, '90', pts.length, '70', 1, ...extra, ...pts.flatMap(([x, y]) => ['10', x, '20', y])];
+  const ret = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  const nomes = (a) => a.ambientes.map(x => `${x.nome} ${x.area_m2}`);
+
+  caso('R-05 etiqueta em MTEXT "COZINHA\\PA = 8,50 m²" (também com códigos de formatação) não apaga o ambiente', () => {
+    for (const rotulo of ['COZINHA\\PA = 8,50 m²', '{\\fArial|b1;COZINHA}\\P{\\H0.7x;A=8,50m²}']) {
+      const a = lerArquitetura(dxfR([poliR(ret(0, 0, 3.4, 2.5)), mtextR(rotulo, 1.7, 1.25)]), { classificar: false });
+      assert.deepStrictEqual(nomes(a), ['COZINHA 8.5'], rotulo);
+    }
+  });
+
+  // sala 3,0 × 2,0 m e WC 1,2 × 2,0 m pelas PAREDES (só LINE), parede interna dupla de 15 cm
+  const plantaPorLinhas = (dx = 0) => [
+    linhaR(dx, 0, dx + 4.35, 0), linhaR(dx + 4.35, 0, dx + 4.35, 2), linhaR(dx + 4.35, 2, dx, 2), linhaR(dx, 2, dx, 0),
+    linhaR(dx + 3.0, 0, dx + 3.0, 2), linhaR(dx + 3.15, 0, dx + 3.15, 2), textoR('SALA', dx + 1.2, 1), textoR('WC', dx + 3.6, 1),
+  ];
+  caso('R-06 outra prancha a 1,3 km no mesmo desenho não engrossa a grade: as salas pelas paredes não encolhem nem somem', () => {
+    const so = lerArquitetura(dxfR(plantaPorLinhas()), { classificar: false });
+    const longe = lerArquitetura(dxfR([...plantaPorLinhas(), linhaR(1300, 600, 1310, 600), linhaR(1310, 600, 1310, 610)]), { classificar: false });
+    assert.deepStrictEqual(nomes(longe), nomes(so));
+    assert.deepStrictEqual(nomes(so), ['SALA 5.98', 'WC 2.38']);
+    // corredor de 0,90 m com a prancha a 1,5 km: antes sumia
+    const corredor = [linhaR(0, 0, 6, 0), linhaR(6, 0, 6, 0.9), linhaR(6, 0.9, 0, 0.9), linhaR(0, 0.9, 0, 0), textoR('CORREDOR', 2, 0.4)];
+    assert.deepStrictEqual(nomes(lerArquitetura(dxfR([...corredor, linhaR(1500, 750, 1505, 750)]), { classificar: false })), ['CORREDOR 5.38']);
+  });
+
+  caso('R-07 DWG em mm sem $INSUNITS, só LINE e sem porta é lido em mm; em metros nas coordenadas UTM continua metro', () => {
+    const mm = [linhaR(0, 0, 5000, 0), linhaR(5000, 0, 5000, 4000), linhaR(5000, 4000, 0, 4000), linhaR(0, 4000, 0, 0),
+      linhaR(5000, 0, 9000, 0), linhaR(9000, 0, 9000, 4000), linhaR(9000, 4000, 5000, 4000), textoR('SALA', 2000, 2000, 200), textoR('COZINHA', 7000, 2000, 200)];
+    const a = lerArquitetura(dxfR(mm, { insunits: null }));
+    assert.strictEqual(a.fatorUnidade, 0.001);
+    assert.deepStrictEqual(nomes(a), ['COZINHA 15.98', 'SALA 19.98']);
+    const X = 500000, Y = 7000000; // UTM em metros: a coordenada passa de 2000, a largura não
+    const utm = [linhaR(X, Y, X + 5, Y), linhaR(X + 5, Y, X + 5, Y + 4), linhaR(X + 5, Y + 4, X, Y + 4), linhaR(X, Y + 4, X, Y), textoR('SALA', X + 2, Y + 2, 0.2),
+      poliR(ret(X + 10, Y, X + 13, Y + 3), 'A-AREA'), textoR('DEPOSITO', X + 11, Y + 1.5, 0.2)];
+    const b = lerArquitetura(dxfR(utm, { insunits: null }));
+    assert.strictEqual(b.fatorUnidade, 1);
+    assert.deepStrictEqual(nomes(b), ['DEPOSITO 9', 'SALA 19.98']);
+  });
+
+  caso('R-17 contorno do prédio em polilinha com divisória em LINE: um ambiente por nome (não um só com a área do prédio)', () => {
+    const contorno = [poliR(ret(0, 0, 9, 4), 'A-PAREDE'), linhaR(5, 0, 5, 4), textoR('SALA', 2, 2, 0.2), textoR('COZINHA', 7, 2, 0.2)];
+    assert.deepStrictEqual(nomes(lerArquitetura(dxfR(contorno), { classificar: false })), ['COZINHA 15.98', 'SALA 19.98']);
+    // sem a divisória (ambiente integrado com dois nomes): o polígono continua sendo a sala
+    const integrado = [poliR(ret(0, 0, 9, 4), 'A-PAREDE'), textoR('ESTAR', 2, 2, 0.25), textoR('JANTAR', 7, 2, 0.2)];
+    assert.deepStrictEqual(nomes(lerArquitetura(dxfR(integrado), { classificar: false })), ['ESTAR 36']);
+  });
+
+  caso('R-18 polilinha e TEXT com normal −Z (espelhados) caem do lado certo do eixo', () => {
+    const Z = ['210', 0, '220', 0, '230', -1];
+    // a sala de x = −5 a −1 desenhada espelhada (OCS x de 1 a 5); o nome em MTEXT (já no sistema do desenho)
+    const a = lerArquitetura(dxfR([poliR(ret(1, 0, 5, 3), 'A-AREA', Z), mtextR('SALA', -3, 1.5)]), { classificar: false });
+    assert.deepStrictEqual(nomes(a), ['SALA 12']);
+    assert.ok(a.ambientes[0].poligono.every(([x]) => x <= -1 + 1e-9), 'polígono em x negativo');
+    // o TEXT espelhado (OCS x = 3) dentro da sala desenhada normalmente em x de −5 a −1
+    const b = lerArquitetura(dxfR([poliR(ret(-5, 0, -1, 3)), textoR('COPA', 3, 1.5, 0.2, 'A-TEXTO', Z)]), { classificar: false });
+    assert.deepStrictEqual(nomes(b), ['COPA 12']);
+  });
+
+  // unifilar do teste acima (QiBuilder), com moldura, para a leitura pelo lerArquitetura
+  const unifilarR = (titulo = 'QD-01 (TÉRREO)', layer = 'DI-TEXTOS') => {
+    const T = [];
+    const t = (s, x, y, h = 0.2) => T.push(textoR(s, x, y, h, layer));
+    t(titulo, -3.5, 24, 0.25); t('3#10(10)10mm²', 10.5, 23); t('50 A', 10, 22); t('40 A', 11.2, 21.5); t('DR', 11.2, 21); t('30 mA', 11.9, 20.8);
+    t('10 A', 12, 20.88); t('1.5', 12.5, 20.52); t('ILUM. RECEPÇÃO', 14.1, 20); t('180 W', 18.3, 20); t('1', 19.7, 20);
+    t('20 A', 12, 17.32); t('2.5', 12.5, 16.96); t("TUG'S RECEPÇÃO", 14.1, 16.44); t('1200 W', 18.3, 16.44); t('3', 19.7, 16.44);
+    t('40 A', 2.6, 19.8); t('32 A', 3.9, 19.04); t('6', 3.4, 18.68); t('DR', 2.6, 18.26); t('2', -3.4, 18.22); t('5400 W', -2, 18.22); t('CHUVEIRO', 1.8, 18.22);
+    const L = (x1, y1, x2, y2, l) => linhaR(x1, y1, x2, y2, l);
+    const tracos = [L(11, 15, 11, 23, 'DI-BARRA'), L(11, 20.1, 20, 20.1, 'DI-CIRC'), L(11, 16.54, 20, 16.54, 'DI-CIRC'), L(4, 18.4, 11, 18.4, 'DI-CIRC'),
+      L(-4, 25, 21, 25, 'DI-MOLD'), L(-4, 14, 21, 14, 'DI-MOLD'), L(-4, 14, -4, 25, 'DI-MOLD'), L(21, 14, 21, 25, 'DI-MOLD')];
+    return { T, tracos };
+  };
+  const resumoQ = (qs) => qs.map(q => `${q.tag}: ${q.circuitos.map(c => `${c.numero}(${c.In}A,${c.potencia_w ?? c.potencia_va})`).join(' ')}`);
+
+  caso('R-14 título dentro da moldura do diagrama (1,1 m abaixo do topo) é achado', () => {
+    const { T, tracos } = unifilarR();
+    const a = lerArquitetura(dxfR([...T, ...tracos]));
+    assert.ok(a.classificacao.regioes.some(r => r.tipo === 'diagrama'), 'a moldura é a região do diagrama');
+    assert.deepStrictEqual(a.quadrosDoDiagrama.map(q => q.tag), ['QD-01']);
+  });
+
+  caso('R-15 unifilar inserido como bloco "DIAGRAMA UNIFILAR QD-01": os textos vão para o leitor dos quadros (e não viram sala)', () => {
+    const { T, tracos } = unifilarR('QD-01 (TÉRREO)', '0');
+    const nome = 'DIAGRAMA UNIFILAR QD-01';
+    const bloco = ['0', 'BLOCK', '8', '0', '2', nome, '70', 0, '10', 0, '20', 0, '30', 0, '3', nome, '1', '', ...T.flat(), ...tracos.flat(), '0', 'ENDBLK', '8', '0'];
+    const a = lerArquitetura(dxfR([['0', 'INSERT', '8', 'DI-DIAGRAMA', '2', nome, '10', 0, '20', 0, '30', 0], linhaR(0, 0, 1, 0, 'X')], { blocos: [bloco] }));
+    assert.deepStrictEqual(resumoQ(a.quadrosDoDiagrama), ['QD-01: 1(10A,180) 2(32A,5400) 3(20A,1200)']);
+    assert.deepStrictEqual(a.ambientes, []);
+  });
+
+  caso('R-12 disjuntor "1x20A", "C20" e potência "1.2 kW" no unifilar; diagrama não lido deixa aviso', () => {
+    const base = (dj, pot = (w) => w) => {
+      const T = [];
+      const t = (s, x, y, h = 0.2) => T.push({ s, x, y, h, layer: 'DI' });
+      T.push({ s: 'QD-01 (TÉRREO)', x: -3.5, y: 24, h: 0.25, layer: 'DI-Títulos' });
+      t('3#10(10)10mm²', 10.5, 23); t(dj(50), 10, 22); t('40 A', 11.2, 21.5); t('DR', 11.2, 21);
+      t(dj(10), 12, 20.88); t('1.5', 12.5, 20.52); t('ILUM. RECEPÇÃO', 14.1, 20); t(pot('180 W'), 18.3, 20); t('1', 19.7, 20);
+      t(dj(20), 12, 17.32); t('2.5', 12.5, 16.96); t("TUG'S RECEPÇÃO", 14.1, 16.44); t(pot('1200 W'), 18.3, 16.44); t('3', 19.7, 16.44);
+      t('40 A', 2.6, 19.8); t(dj(32), 3.9, 19.04); t('6', 3.4, 18.68); t('DR', 2.6, 18.26); t('2', -3.4, 18.22); t(pot('5400 W'), -2, 18.22); t('CHUVEIRO', 1.8, 18.22);
+      return T;
+    };
+    const esperado = ['QD-01: 1(10A,180) 2(32A,5400) 3(20A,1200)'];
+    assert.deepStrictEqual(resumoQ(lerQuadrosDoDiagrama(base((a) => `1x${a}A`))), esperado);
+    assert.deepStrictEqual(resumoQ(lerQuadrosDoDiagrama(base((a) => `C${a}`))), esperado);
+    const kw = { '1200 W': '1.2 kW', '5400 W': '5.4 kW' };
+    assert.deepStrictEqual(resumoQ(lerQuadrosDoDiagrama(base((a) => `${a} A`, (w) => kw[w] || w))), esperado);
+    assert.deepStrictEqual(lerQuadrosDoDiagrama(base((a) => `3x${a}A`))[0].circuitos.map(c => c.polos), [3, 3, 3]);
+    // o diagrama que não dá para ler (potência sem unidade): aviso, não silêncio
+    const { T, tracos } = unifilarR('DIAGRAMA UNIFILAR - QD-01');
+    const ilegivel = T.map(e => e.map(v => (/^\d+ W$/.test(v) ? v.replace(' W', '') : v)));
+    const a = lerArquitetura(dxfR([...ilegivel, ...tracos]));
+    assert.deepStrictEqual(a.quadrosDoDiagrama, []);
+    assert.match(a.avisosDiagrama.join(' '), /sem circuitos lidos.*\[CONFERIR\]/);
+    assert.deepStrictEqual(lerArquitetura(dxfR([...T, ...tracos])).avisosDiagrama, []);
+  });
+
+  caso('R-10/R-11 tags QGBT-A × QGBT-B, CCM-BOMBAS, "QD 01"; QD01 = QD-01 = QD1; número "01" do diagrama vira "1"', () => {
+    const umQuadro = (titulo, dx) => {
+      const T = [];
+      const t = (s, x, y) => T.push({ s, x: x + dx, y, h: 0.2, layer: 'DI' });
+      T.push({ s: titulo, x: -3.5 + dx, y: 24, h: 0.25, layer: 'DI-Títulos' });
+      t('3#10(10)10mm²', 10.5, 23); t('50 A', 10, 22);
+      t('10 A', 12, 20.88); t('ILUM. RECEPÇÃO', 14.1, 20); t('180 W', 18.3, 20); t('1', 19.7, 20);
+      t('20 A', 12, 17.32); t("TUG'S RECEPÇÃO", 14.1, 16.44); t('1200 W', 18.3, 16.44); t('3', 19.7, 16.44);
+      t('32 A', 3.9, 19.04); t('2', -3.4, 18.22); t('5400 W', -2, 18.22); t('CHUVEIRO', 1.8, 18.22);
+      return T;
+    };
+    assert.deepStrictEqual(lerQuadrosDoDiagrama([...umQuadro('QGBT-A', 0), ...umQuadro('QGBT-B', 200)]).map(q => `${q.tag} ${q.circuitos.length}`), ['QGBT-A 3', 'QGBT-B 3']);
+    const tag = (s) => tagNaPlanta(0, 0, [{ s, x: 0, y: 0 }]);
+    assert.deepStrictEqual(['QGBT - TÉRREO', 'CCM-BOMBAS', 'QD 01', 'QGBT-TÉRREO', 'QTD 2', 'QUARTO 1'].map(tag), ['QGBT', 'CCM-BOMBAS', 'QD01', 'QGBT', null, null]);
+    assert.deepStrictEqual(new Set(['QD01', 'QD-01', 'QD1', 'QD 01', 'qd.01'].map(chaveTag)).size, 1);
+    assert.notStrictEqual(chaveTag('QGBT-A'), chaveTag('QGBT-B'));
+    // tabela numerada 01, 02: o mesmo quadro do unifilar "QD-01" escrito "QD01" na tabela se junta a ele
+    const T = umQuadro('QD-01 (TÉRREO)', 0);
+    const c = (s, x, y) => T.push({ s, x, y, h: 0.13, layer: 'TABELA' });
+    c('QUADRO DE CARGAS - QD01', 60, 51);
+    [['CIRCUITO', 60], ['DESCRIÇÃO', 62], ['POTÊNCIA (VA)', 68], ['DISJUNTOR', 71]].forEach(([s, x]) => c(s, x, 50));
+    [['04', 60.3], ['ILUM. COZINHA', 62], ['300', 68.2], ['10 A', 71.2]].forEach(([s, x]) => c(s, x, 49.6));
+    [['01', 60.3], ['ILUM. RECEPÇÃO', 62], ['180', 68.2], ['10 A', 71.2]].forEach(([s, x]) => c(s, x, 49.2));
+    const qs = lerQuadrosDoDiagrama(T);
+    assert.deepStrictEqual(qs.map(q => [q.tag, q.origem, q.circuitos.map(x => x.numero).join(',')]), [['QD-01', 'unifilar+tabela', '1,2,3,4']]);
+  });
+
+  caso('R-13 quadro de cargas com cabeçalho CENTRALIZADO e valor alinhado à esquerda da célula', () => {
+    const H = [];
+    const h = (s, x, y) => H.push({ s, x, y, h: 0.13, layer: 'TABELA' });
+    h('QUADRO DE CARGAS - QD-02', 60, 51);
+    // colunas: CIRC 60–61, DESCRIÇÃO 61–66 (centro 63,5), POTÊNCIA 66–69 (centro 67,5), DISJUNTOR 69–71 (centro 70)
+    [['CIRC.', 60.5], ['DESCRIÇÃO', 63.5], ['POTÊNCIA (VA)', 67.5], ['DISJUNTOR', 70]].forEach(([s, x]) => h(s, x, 50));
+    [['1', 60.1], ['ILUM. COZINHA', 61.1], ['300', 66.1], ['10 A', 69.1]].forEach(([s, x]) => h(s, x, 49.6));
+    [['2', 60.1], ['TOMADAS COZINHA', 61.1], ['1800', 66.1], ['20 A', 69.1]].forEach(([s, x]) => h(s, x, 49.2));
+    assert.deepStrictEqual(lerQuadrosDoDiagrama(H).map(q => [q.tag, q.circuitos.map(c => [c.numero, c.descricao, c.potencia_va, c.In])]),
+      [['QD-02', [['1', 'ILUM. COZINHA', 300, 10], ['2', 'TOMADAS COZINHA', 1800, 20]]]]);
+  });
+
+  caso('R-09 planta da skill: dois ambientes "BANHEIRO" — os pontos do 2º vão para o 2º, não para o 1º', () => {
+    const arq = { ambientes: [{ nome: 'BANHEIRO', poligono: ret(0, 0, 2, 2), area_m2: 4 }, { nome: 'BANHEIRO', poligono: ret(10, 0, 14, 3), area_m2: 12 }], portas: [] };
+    const lum = { simbolo: 'HM-ILU-LUMINARIA', n: 1, regra: 'centro', prefixo: 'L' };
+    const out = posicionarPontos(arq, [{ ambiente: 'BANHEIRO', itens: [lum] }, { ambiente: 'BANHEIRO', itens: [lum] }]);
+    assert.deepStrictEqual(out.posicoes.map(p => [p.id, p.x, p.y]), [['L1', 1, 1], ['L2', 12, 1.5]]);
+    // grupos com símbolos diferentes para o mesmo ambiente (terminal e porteiro) continuam juntos no 1º
+    const tel = posicionarPontos(arq, [{ ambiente: 'BANHEIRO', itens: [{ ...lum, simbolo: 'HM-TEL-PONTO' }] }, { ambiente: 'BANHEIRO', itens: [{ ...lum, simbolo: 'HM-TEL-PORTEIRO', prefixo: 'P' }] }]);
+    assert.deepStrictEqual(tel.posicoes.map(p => [p.x, p.y]), [[1, 1], [1, 1]]);
+  });
+}
+
 // casos assíncronos (DWG) terminam depois dos síncronos
 process.on('beforeExit', () => { if (!process.__fimCad) { process.__fimCad = true; console.log(`cad: ${ok} casos ok`); } });
 

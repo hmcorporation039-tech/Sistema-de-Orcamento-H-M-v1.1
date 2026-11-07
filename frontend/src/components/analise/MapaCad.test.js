@@ -1,11 +1,11 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import MapaCad from './MapaCad';
-import { getMapaCad, salvarMapaCad, editarMapaCad, reprocessarMapaCad } from '../../services/api';
+import { getMapaCad, salvarMapaCad, editarMapaCad, reprocessarMapaCad, confirmarBlocoMapaCad } from '../../services/api';
 
 // Mapa do CAD (03/11/2026): planta com o desenho de fundo, pontos coloridos pela situação, ficha para conferir na
 // própria planta, filtro da tabela e "Ir para" quando a folha tem várias plantas. Dados SINTÉTICOS.
-jest.mock('../../services/api', () => ({ getMapaCad: jest.fn(), salvarMapaCad: jest.fn(), editarMapaCad: jest.fn(), reprocessarMapaCad: jest.fn(), abrirModelo3d: jest.fn(), urlModelo3d: (u) => u, exportarBibliotecaBlocos: jest.fn(), importarBibliotecaBlocos: jest.fn() }));
+jest.mock('../../services/api', () => ({ getMapaCad: jest.fn(), salvarMapaCad: jest.fn(), editarMapaCad: jest.fn(), reprocessarMapaCad: jest.fn(), confirmarBlocoMapaCad: jest.fn(), abrirModelo3d: jest.fn(), urlModelo3d: (u) => u, exportarBibliotecaBlocos: jest.fn(), importarBibliotecaBlocos: jest.fn() }));
 jest.mock('react-router-dom', () => ({ useNavigate: () => jest.fn() }));
 jest.mock('react-hot-toast', () => { const t = jest.fn(); t.success = jest.fn(); t.error = jest.fn(); return { __esModule: true, default: t }; });
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -161,4 +161,28 @@ test('Retirar: clique no ponto manda a posição dele; inseridos e retirados apa
   await act(async () => { caixa.querySelector('[data-testid="modo-retirar"]').click(); });
   await clicarNaPlanta(50.8, 243.9);
   expect(editarMapaCad).toHaveBeenLastCalledWith(7, { arquivo: 'planta.dxf', remover: [{ x: 1, y: 1, simbolo: 'HM-ELE-TOMADA-BAIXA', linha: 0 }] });
+});
+
+// revisão de 06/11/2026: o bloco nomeado não identificado (ou só aprendido de outra prancha) se confirma no mapa, na disciplina
+test('confirmar bloco: descrição e disciplina vão ao servidor e a linha fica confirmada; "não é ponto" aprendido aparece como origem', async () => {
+  const r = resposta({ disciplinas: [{ chave: 'cftv', nome: 'CFTV' }, { chave: 'eletrica', nome: 'Elétrica' }] });
+  r.data.arquivos[0].blocos = [{ bloco: 'ZQX-77', layer: '0', quantidade: 3, situacao: 'nao_identificado' }];
+  r.data.arquivos[0].simbolos = [...simbolos, { idx: 3, layer: 'EL-SETA', medida: [0.12, 0.05], quantidade: 9, contados: 0, simbolo: '?', origem: 'nao_ponto', confirmado: false }];
+  await montar(r);
+  expect(caixa.textContent).toContain('"não é ponto" aprendido — conferir');
+  const linha = caixa.querySelector('[data-testid="bloco-ZQX-77"]');
+  expect(linha.textContent).toContain('não identificado');
+  const entrada = linha.querySelector('input');
+  const seletor = linha.querySelector('select');
+  const mudar = (el, valor) => {
+    const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set;
+    setter.call(el, valor);
+    el.dispatchEvent(new Event(el.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
+  };
+  await act(async () => { mudar(entrada, 'Tomada baixa 2P+T a 30 cm'); });
+  await act(async () => { mudar(seletor, 'eletrica'); });
+  confirmarBlocoMapaCad.mockResolvedValue({ data: { bloco: { nome: 'ZQX-77', origem: 'usuario' } } });
+  await act(async () => { caixa.querySelector('[data-testid="confirmar-bloco-ZQX-77"]').click(); });
+  expect(confirmarBlocoMapaCad).toHaveBeenCalledWith(7, { arquivo: 'planta.dxf', bloco: 'ZQX-77', descricao: 'Tomada baixa 2P+T a 30 cm', disciplina: 'eletrica' });
+  expect(caixa.querySelector('[data-testid="bloco-ZQX-77"]').textContent).toContain('confirmado: Tomada baixa 2P+T a 30 cm (Elétrica)');
 });

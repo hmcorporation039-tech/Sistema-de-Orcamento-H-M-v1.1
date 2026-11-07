@@ -40,8 +40,10 @@ const LIMIAR_SEM_ESCALA_PT = 28;
 
 const MAIOR_NUMERO_PLAUSIVEL = 500;
 
-// tipo de ponto -> prefixo do código no desenho (mesmos usados em projetoParser.js)
-const TIPOS = [['cftv', 'CAM'], ['rede', 'R'], ['antena', 'A']];
+// tipo de ponto -> prefixo do código no desenho (mesmos usados em projetoParser.js). A câmera aceita também
+// "CAM-01", "CAM_01" e "CAM 01" (escritórios que separam o número): antes só "CAM01" contava. Rede e antena
+// continuam sem separador ("R-1"/"A-1" costumam ser revisão, corte, eixo)
+const TIPOS = [['cftv', 'CAM[-_ ]?'], ['rede', 'R'], ['antena', 'A']];
 // nome de sala: cada parte até ~3 linhas acima da anterior (em pontos, na folha
 // como se vê: origem no topo, y para baixo, rotação da página aplicada)
 const PERTO_X = 150;

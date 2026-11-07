@@ -30,7 +30,7 @@ const { erroDeTempo } = require('./pdfVetorial/tempo');
 const { simbolos, uniaoBusca } = require('./pdfVetorial/simbolos');
 const { textoAoLado, regioesLegenda } = require('./pdfVetorial/legenda');
 const { tabelasDeLegenda } = require('./pdfVetorial/tabelaLegenda');
-const { escalaDoCarimbo, escalasDaFolha, rotulosDeEscala, escalaEscrita } = require('./pdfVetorial/escala');
+const { escalaDoCarimbo, escalasDaFolha, rotulosDeEscala, escalaEscrita, escalaDaPlanta } = require('./pdfVetorial/escala');
 const { analisarGeometria } = require('./pdfVetorial/analise');
 const { escalaDeReserva } = require('./escalaDaPlanta');
 
@@ -105,7 +105,7 @@ async function lerPdfVetorialAqui(buffer, { paginas, escala, nomeArquivo = '', m
       const vazio = { itens: [], legenda: null, escala: null };
       const t0 = Date.now();
       const prazo = Math.min(t0 + tempoPaginaMs, prazoTotal);
-      let pag = null, nCaminhos = null, folha = null, reserva = null;
+      let pag = null, nCaminhos = null, folha = null, reserva = null, procurada = null;
       let r = { ...vazio };
       try {
         pag = await doc.getPage(n);
@@ -126,8 +126,14 @@ async function lerPdfVetorialAqui(buffer, { paginas, escala, nomeArquivo = '', m
             // escala de reserva (CAD-09) — sem a informada e sem escala escrita na folha: nome do arquivo e, só dentro
             // das regiões de PLANTA, portas e cotas (o arco do disjuntor no unifilar dava 1:500). Medida antes de
             // liberar os trechos. A classificação não muda por ela (fica a de sempre).
-            if (!escala && !escalaEscrita(geo.textos) && !folha?.semPlanta) {
+            // "SEM ESCALA" de um detalhe e a escala só de detalhe não contam como escala escrita da planta: antes um
+            // "DETALHE 1 - SEM ESCALA" deixava a folha toda sem escala e a reserva nem era tentada.
+            // `procurada`: onde a escala foi de fato procurada — o achado "sem escala" diz só a verdade
+            if (!escala && !folha?.semPlanta) procurada = ['carimbo'];
+            if (!escala && !escalaEscrita(geo.textos, folha?.regioes || []) && !folha?.semPlanta) {
               const regioesPlanta = (folha?.regioes || []).filter(rg => rg.tipo === 'planta').map(rg => rg.caixa);
+              // portas e cotas só dentro das regiões de planta: sem planta classificada, não são medidas
+              procurada.push('nome_arquivo', ...(regioesPlanta.length ? ['portas', 'cotas'] : []));
               try { reserva = escalaDeReserva({ nomeArquivo, geo, regioesPlanta }); } catch (e) { console.warn(`[pdfVetorial] escala de reserva da página ${n} falhou:`, e.message); }
             }
             for (const c of geo.caminhos) delete c.subs; // a contagem não usa os trechos: libera a memória
@@ -139,6 +145,7 @@ async function lerPdfVetorialAqui(buffer, { paginas, escala, nomeArquivo = '', m
             try {
               r = analisarGeometria(geo, { escala, escalaReserva: reserva, regioesFora: folha?.regioesFora || [], regioesFolha: folha?.regioes || [], prazo, legendaConhecida });
               if (r.avisoEscala) r.aviso = r.avisoEscala;
+              if (!r.escala && procurada) r.escalaProcurada = procurada;
             } catch (e) {
               if (e.codigo === 'TEMPO_ESGOTADO') throw e;
               r.aviso = `falha ao ler o desenho (${e.message}) — conferir na planta`;
@@ -208,4 +215,4 @@ function resumoDaFolha(c) {
 // carregada na hora (utils/classificarPranchaPdf.js usa escalaDoCarimbo daqui)
 const classificarPaginaPdf = (...a) => require('./classificarPranchaPdf').classificarPaginaPdf(...a);
 
-module.exports = { lerPdfVetorial, analisarGeometria, simbolos, escalaDoCarimbo, escalasDaFolha, MAX_CAMINHOS_PAGINA, TEMPO_PAGINA_MS, TEMPO_TOTAL_MS, paraTestes: { textoAoLado, regioesLegenda, lerPagina, pdfjs, uniaoBusca, tabelasDeLegenda, rotulosDeEscala, resumoDaFolha } };
+module.exports = { lerPdfVetorial, analisarGeometria, simbolos, escalaDoCarimbo, escalasDaFolha, escalaDaPlanta, MAX_CAMINHOS_PAGINA, TEMPO_PAGINA_MS, TEMPO_TOTAL_MS, paraTestes: { textoAoLado, regioesLegenda, lerPagina, pdfjs, uniaoBusca, tabelasDeLegenda, rotulosDeEscala, resumoDaFolha } };

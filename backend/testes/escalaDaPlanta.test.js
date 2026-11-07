@@ -26,6 +26,15 @@ caso('nome do arquivo: "A0 1_50", "ESC 1-100", "1:75"; data e revisão não são
   assert.strictEqual(escalaDoNome('planta 1_50 e ampliacao 1_25.pdf'), null); // duas escalas: nenhuma
 });
 
+caso('nome do arquivo (revisão 06/11/2026): "_" colado a outra palavra é numeração, não escala', () => {
+  assert.strictEqual(escalaDoNome('ELE_1_25.pdf'), null); // antes: 1:25
+  assert.strictEqual(escalaDoNome('A1_1_50.pdf'), null);
+  assert.strictEqual(escalaDoNome('LUM 1_50.pdf'), 50); // palavra solta: o "_" no lugar do ":" (proibido no Windows)
+  assert.strictEqual(escalaDoNome('planta (1_50).pdf'), 50);
+  assert.strictEqual(escalaDoNome('PLANTA_ESC_1_50.pdf'), 50); // com ESC/ESCALA explícito vale
+  assert.strictEqual(escalaDoNome('PLANTA ESCALA-1-100.pdf'), 100);
+});
+
 caso('cotas: o número em metros sobre a linha de cota dá a escala que se repete', () => {
   const cota = (v, x, y, L) => ({ texto: { s: v.toFixed(2).replace('.', ','), x: x + L / 2 - 10, y, w: 20, h: 6, horizontal: true }, linha: reta([x, y + 2], [x + L, y + 2]) });
   const cotas = [cota(3.53, 100, 100, pt(3.53, 50)), cota(7.06, 100, 200, pt(7.06, 50)), cota(1.8, 400, 300, pt(1.8, 50)),

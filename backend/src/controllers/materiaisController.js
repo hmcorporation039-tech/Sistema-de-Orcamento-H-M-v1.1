@@ -83,8 +83,9 @@ async function criar(req, res) {
     const existente = await pool.query('SELECT id FROM materiais WHERE ativo = true AND LOWER(TRIM(descricao)) = LOWER(TRIM($1))', [d.descricao]);
     if (existente.rows.length) return res.status(409).json({ erro: 'Já existe um material com essa descrição no catálogo' });
     const result = await pool.query(
-      `INSERT INTO materiais (codigo, descricao, categoria, unidade, preco, preco_compra, marca, ncm, origem, preco_manual)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'manual',true) RETURNING *`,
+      // preço e categoria digitados pelo usuário: conferidos (services/catalogoMateriais.precoConferido) e base do kNN
+      `INSERT INTO materiais (codigo, descricao, categoria, unidade, preco, preco_compra, marca, ncm, origem, preco_manual, preco_origem, categoria_origem)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'manual',true,'manual','usuario') RETURNING *`,
       [d.codigo, d.descricao, d.categoria, d.unidade, d.preco || 0, d.preco_compra || null, d.marca, d.ncm]
     );
     await registrarAuditoria(pool, { entidade: 'material', entidadeId: result.rows[0].id, acao: 'criado', detalhes: { descricao: d.descricao }, usuarioId: req.usuario.id });
@@ -104,7 +105,7 @@ async function atualizar(req, res) {
     if (erro) return res.status(400).json({ erro });
     const result = await pool.query(
       `UPDATE materiais SET codigo=$1, descricao=$2, categoria=$3,
-       unidade=$4, preco=$5, preco_compra=$6, marca=$7, ncm=$8, origem='manual', preco_manual=true, atualizado_em=NOW()
+       unidade=$4, preco=$5, preco_compra=$6, marca=$7, ncm=$8, origem='manual', preco_manual=true, preco_origem='manual', categoria_origem='usuario', atualizado_em=NOW()
        WHERE id=$9 AND ativo=true RETURNING *`,
       [d.codigo, d.descricao, d.categoria, d.unidade, d.preco || 0, d.preco_compra || null, d.marca, d.ncm, id]
     );
@@ -148,8 +149,9 @@ async function importar(req, res, next) {
       if (!(preco > 0)) { semPreco++; continue; } // R$ 0,00 não entra no catálogo (migracoes/2.0-52)
       // descrição que já existe no catálogo é ignorada (índice único do banco)
       const r = await client.query(
-        `INSERT INTO materiais (codigo, descricao, categoria, unidade, preco, preco_compra, marca, ncm, origem)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        // categoria da planilha importada é do usuário; o preço segue a origem informada (lido por IA continua a conferir)
+        `INSERT INTO materiais (codigo, descricao, categoria, unidade, preco, preco_compra, marca, ncm, origem, preco_origem, categoria_origem)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,'usuario')
          ON CONFLICT ((LOWER(TRIM(descricao)))) WHERE ativo = true DO NOTHING`,
         [m.codigo || m.cod, m.descricao || m.desc, m.categoria || m.cat,
          m.unidade || m.un, preco, m.preco_compra || null, m.marca || '', m.ncm || null,

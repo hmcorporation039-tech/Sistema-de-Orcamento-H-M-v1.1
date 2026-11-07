@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const { pesquisarPrecoMercado, salvarPesquisaManual, ErroPesquisaMercado } = require('../services/pesquisaMercado');
+const { sinalDaRequisicao } = require('../services/ia');
 
 // Endpoint HTTP — a lógica de verdade (prompt, fallback Gemini→Claude, cache)
 // mora em services/pesquisaMercado.js, reaproveitada também pelas
@@ -9,7 +10,8 @@ async function pesquisar(req, res) {
     const tipo = req.body.tipo === 'servico' ? 'servico' : 'material';
     // fresco (corpo ou ?fresco=1): ignora a pesquisa guardada e consulta de novo
     const fresco = req.body.fresco === true || req.query.fresco === '1';
-    const resultado = await pesquisarPrecoMercado(typeof req.body.descricao === 'string' ? req.body.descricao.slice(0, 500) : '', { tipo, fresco });
+    // signal: a pesquisa para (sem seguir a cadeia até a API paga) quando a tela desiste da requisição
+    const resultado = await pesquisarPrecoMercado(typeof req.body.descricao === 'string' ? req.body.descricao.slice(0, 500) : '', { tipo, fresco, signal: sinalDaRequisicao(req, res) });
     res.json(resultado);
   } catch (err) {
     if (err instanceof ErroPesquisaMercado) {

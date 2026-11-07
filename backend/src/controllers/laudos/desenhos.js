@@ -141,13 +141,23 @@ function montarUnifilar(laudo, { asBuilt = null } = {}) {
   return { nome, buffer: Buffer.from(xml, 'utf8') };
 }
 
+// Ver/baixar é livre para qualquer usuário (regra do sistema: todos veem tudo),
+// mas gravar na pasta do laudo é alterar o registro: só o dono, o admin, ou
+// registro antigo sem dono (como middleware/posse.js). Antes os GETs de
+// documento, planta e unifilar gravavam na pasta para qualquer um que abrisse
+// (revisão de 11/2026) — sobrescrevendo a versão do dono com o cálculo do momento.
+function podeGravarNaPasta(req, laudo) {
+  const dono = laudo?.usuario_id;
+  return req.usuario?.role === 'admin' || dono == null || dono === req.usuario?.id;
+}
+
 async function gerarPlantaDxf(req, res) {
   const laudo = await carregarLaudo(req.params.id);
   if (!laudo) return res.status(404).json({ erro: 'Registro não encontrado.' });
   const erroUso = conferirUso(laudo, tiposDocumento().usoDoDocumento(laudo.disciplina, 'planta'), 'A planta (DXF)');
   if (erroUso) return res.status(400).json({ erro: erroUso });
   const { nome, buffer, naoEncontrados } = await montarPlanta(laudo);
-  await seguro(`planta laudo ${laudo.id}`, async () => P.gravarArquivo(await pastaDoLaudo(laudo), nome, buffer));
+  if (podeGravarNaPasta(req, laudo)) await seguro(`planta laudo ${laudo.id}`, async () => P.gravarArquivo(await pastaDoLaudo(laudo), nome, buffer));
   res.set({ 'Content-Type': 'application/dxf', 'Content-Disposition': contentDisposition(nome), 'X-Nome-Arquivo': encodeURIComponent(nome), 'X-Ambientes-Nao-Encontrados': encodeURIComponent(naoEncontrados.join('; ')) });
   res.send(buffer);
 }
@@ -158,11 +168,11 @@ async function gerarUnifilarQet(req, res) {
   const erroUso = conferirUso(laudo, tiposDocumento().usoDoDocumento(laudo.disciplina, 'unifilar'), 'O unifilar (QElectroTech)');
   if (erroUso) return res.status(400).json({ erro: erroUso });
   const { nome, buffer } = montarUnifilar(laudo);
-  await seguro(`unifilar laudo ${laudo.id}`, async () => P.gravarArquivo(await pastaDoLaudo(laudo), nome, buffer));
+  if (podeGravarNaPasta(req, laudo)) await seguro(`unifilar laudo ${laudo.id}`, async () => P.gravarArquivo(await pastaDoLaudo(laudo), nome, buffer));
   res.set({ 'Content-Type': 'application/xml', 'Content-Disposition': contentDisposition(nome), 'X-Nome-Arquivo': encodeURIComponent(nome) });
   res.send(buffer);
 }
 
 module.exports = {
-  enviarArquitetura, verArquitetura, gerarPlantaDxf, gerarUnifilarQet, montarPlanta, montarUnifilar,
+  enviarArquitetura, verArquitetura, gerarPlantaDxf, gerarUnifilarQet, montarPlanta, montarUnifilar, podeGravarNaPasta,
 };

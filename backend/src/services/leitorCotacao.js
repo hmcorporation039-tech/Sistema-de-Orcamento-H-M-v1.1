@@ -3,7 +3,9 @@ const { textoDoPdf, paginasComoImagem: paginasDoPdf } = require('../utils/leitor
 const { extrairLayoutsConhecidos } = require('../utils/cotacaoFornecedorParser');
 const { extrairFornecedor } = require('../utils/cnpj');
 const { extrairUniversal, conferirTotal } = require('../utils/leitorCotacaoUniversal');
+const crypto = require('crypto');
 const { extrairComIA, iaDisponivel } = require('./leitorCotacaoIA');
+const iaCache = require('./iaCache');
 
 // Leitura de orçamento/cotação de fornecedor em QUALQUER layout, vindo da pasta
 // ou do e-mail (PDF com texto, PDF escaneado ou foto). Ordem, da mais barata e
@@ -19,6 +21,10 @@ const { extrairComIA, iaDisponivel } = require('./leitorCotacaoIA');
 // saíram com 0 itens voltam a ser lidos automaticamente na próxima varredura.
 const VERSAO_LEITOR = 2;
 const MAX_PAGINAS_OCR = 6;
+// leitura pela IA: resposta guardada pelo hash do arquivo (1 ano) e prazo total por documento (todos os provedores)
+const NOME_CACHE_IA = 'leitura_cotacao_ia v1';
+const DIAS_CACHE_IA = 365;
+const TEMPO_IA_DOCUMENTO_MS = Number(process.env.COTACAO_IA_TEMPO_DOCUMENTO_MS) || 300 * 1000;
 const EXTENSOES = /\.(pdf|png|jpe?g)$/i;
 
 function tipoDoArquivo(buffer, nome = '') {
@@ -115,7 +121,9 @@ function itensDaIA(r, texto) {
   return { itens, conferencia };
 }
 
-// opcoes.permitirIA: false para nunca chamar a IA (ex.: limite por varredura)
+// opcoes.permitirIA: false para nunca chamar a IA (ex.: limite por varredura); opcoes.prazoIAms: prazo total da IA
+// → { itens, metodo, conferencia, usouIA, iaDeCache, iaFalhou, pendente (tentar de novo na próxima varredura),
+//     aguardaIA (só a IA leria e ela está desligada), avisos, fornecedor, … }
 async function lerDocumentoCotacao(buffer, nome, opcoes = {}) {
   const avisos = [];
   const tipo = tipoDoArquivo(buffer, nome);
@@ -154,17 +162,28 @@ async function lerDocumentoCotacao(buffer, nome, opcoes = {}) {
   }
 
   let usouIA = false;
+  let iaDeCache = false; // a IA já tinha lido ESTE documento (mesmo arquivo em outro e-mail/pasta): resposta guardada
+  let iaFalhou = false;
   let pendente = false; // IA necessária mas indisponível agora — tentar de novo depois
+  let aguardaIA = false; // IA necessária e DESLIGADA (COTACAO_IA=desligada/sem provedor): só relê quando ela voltar
   // IA só para documento com cara de lista de preços (3+ linhas com valor em
   // reais): proposta de preço global, logotipo de assinatura, boleto ou
   // contrato não gastam a cota do Claude Max.
   const linhasComValor = String(texto || '').split('\n').filter(l => /\d,\d{2}(?!\d)/.test(l)).length;
   const precisaIA = linhasComValor >= 3 && (!resultado.itens.length || (exigeConferencia && !resultado.conferencia?.confere));
   if (precisaIA && opcoes.permitirIA === false && iaDisponivel()) pendente = true;
+  // revisão do uso de IA de 06/11/2026: com a IA desligada o arquivo sem conferência voltava a ser lido com OCR a cada
+  // varredura (ficava "pendente"); agora fica marcado aguardando a IA e só é relido quando ela estiver ligada
+  if (precisaIA && !iaDisponivel()) aguardaIA = true;
   if (precisaIA && opcoes.permitirIA !== false && iaDisponivel()) {
     try {
       usouIA = true;
-      const r = await extrairComIA(buffer, tipo);
+      // o mesmo PDF reencaminhado em vários e-mails (ou salvo de novo na pasta) não vai à IA outra vez: a resposta fica
+      // guardada pelo hash do arquivo (services/iaCache.js), inclusive a de "não é orçamento"
+      const hash = crypto.createHash('sha256').update(buffer).digest('hex');
+      const { valor: r, deCache } = await iaCache.comCache(NOME_CACHE_IA, hash, { ttlDias: DIAS_CACHE_IA, cacheVazio: true, contar: false },
+        () => extrairComIA(buffer, tipo, { timeoutTotalMs: opcoes.prazoIAms || TEMPO_IA_DOCUMENTO_MS }));
+      iaDeCache = deCache;
       if (!r.ehOrcamento) {
         avisos.push(`a IA (${r.fonte}) indicou que o documento não é orçamento de fornecedor`);
       } else {
@@ -183,6 +202,7 @@ async function lerDocumentoCotacao(buffer, nome, opcoes = {}) {
         }
       }
     } catch (e) {
+      iaFalhou = true;
       if (e.indisponivel) pendente = true;
       avisos.push(`leitura por IA indisponível agora (${e.message.slice(0, 160)}) — será tentada de novo na próxima varredura`);
     }
@@ -193,12 +213,12 @@ async function lerDocumentoCotacao(buffer, nome, opcoes = {}) {
   // com ruído). Fica como aviso para revisão manual (relido se o leitor melhorar).
   if (exigeConferencia && !/^IA/.test(resultado.metodo || '') && resultado.itens.length && !resultado.conferencia?.confere) {
     avisos.push(`${viaOcr ? 'OCR' : 'Leitor universal'} leu ${resultado.itens.length} itens, mas a soma não confere com o total do documento — não importados; revise o arquivo`);
-    return { itens: [], metodo: `${viaOcr ? 'OCR' : 'leitor universal'} sem conferência`, conferencia: resultado.conferencia, viaOcr, usouIA, pendente: pendente || falhaOcr || !usouIA, avisos };
+    return { itens: [], metodo: `${viaOcr ? 'OCR' : 'leitor universal'} sem conferência`, conferencia: resultado.conferencia, viaOcr, usouIA, iaDeCache, iaFalhou, pendente: pendente || falhaOcr, aguardaIA, avisos };
   }
   if (resultado.itens.length && resultado.conferencia && !resultado.conferencia.confere) {
     avisos.push(`soma dos itens (R$ ${resultado.conferencia.soma.toFixed(2)}) não bate com nenhum total do documento — pode faltar item ou o total incluir impostos/frete`);
   }
-  return { ...resultado, viaOcr, usouIA, pendente: (pendente || falhaOcr) && !resultado.itens.length, avisos, fornecedor: extrairFornecedor(texto) };
+  return { ...resultado, viaOcr, usouIA, iaDeCache, iaFalhou, pendente: (pendente || falhaOcr) && !resultado.itens.length, aguardaIA: aguardaIA && !resultado.itens.length, avisos, fornecedor: extrairFornecedor(texto) };
 }
 
 module.exports = { lerDocumentoCotacao, encerrarOcr, ehDocumentoDaHM, VERSAO_LEITOR, EXTENSOES,

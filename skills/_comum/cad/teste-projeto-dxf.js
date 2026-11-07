@@ -440,4 +440,50 @@ caso('CAD-13: simbologia de arquitetura e mobiliário não vira linha do mapa ne
   assert.deepStrictEqual([...new Set(mapa.simbolos.map(s => s.layer))], ['EL-SIMBOLOS']);
 });
 
+// ── Revisão do motor de leitura (06/11/2026): blocos do orçamento ───────────────────────────────
+{
+  const linhaB = (x1, y1, x2, y2) => ['0', 'LINE', '8', '0', '10', x1, '20', y1, '30', 0, '11', x2, '21', y2, '31', 0];
+  const solidB = (pts) => ['0', 'SOLID', '8', '0', ...pts.flatMap(([x, y], i) => [`1${i}`, x, `2${i}`, y, `3${i}`, 0])];
+  const elipseB = () => ['0', 'ELLIPSE', '8', '0', '10', 0, '20', 0, '30', 0, '11', 0.15, '21', 0, '31', 0, '40', 0.5, '41', 0, '42', 6.283185];
+  const splineB = () => ['0', 'SPLINE', '8', '0', '70', 8, '71', 3, '72', 8, '73', 4, ...[0, 0, 0, 0, 1, 1, 1, 1].flatMap(k => ['40', k]),
+    ...[[0, 0], [0.05, 0.1], [0.15, 0.1], [0.2, 0]].flatMap(([x, y]) => ['10', x, '20', y, '30', 0])];
+  const hachuraB = () => ['0', 'HATCH', '8', '0', '10', 0, '20', 0, '30', 0, '2', 'SOLID', '70', 1, '71', 0, '91', 1, '92', 2, '72', 0, '73', 1, '93', 4,
+    ...[[0, 0], [0.2, 0], [0.2, 0.2], [0, 0.2]].flatMap(([x, y]) => ['10', x, '20', y]), '97', 0, '75', 0, '76', 1, '98', 0];
+  const blocoB = (nome, ents) => ['0', 'BLOCK', '8', '0', '2', nome, '70', 0, '10', 0, '20', 0, '30', 0, '3', nome, '1', '', ...ents.flat(), '0', 'ENDBLK', '8', '0'];
+  const insertB = (nome, x, y, layer, attribs = []) => [
+    '0', 'INSERT', '8', layer, ...(attribs.length ? ['66', 1] : []), '2', nome, '10', x, '20', y, '30', 0,
+    ...attribs.flatMap(([tag, v]) => ['0', 'ATTRIB', '8', layer, '100', 'AcDbText', '10', x, '20', y, '30', 0, '40', 0.1, '1', v, '100', 'AcDbAttribute', '2', tag, '70', 0]), ...(attribs.length ? ['0', 'SEQEND', '8', layer] : [])];
+  const dxfB = (blocos, ents) => ['0', 'SECTION', '2', 'HEADER', '0', 'ENDSEC', '0', 'SECTION', '2', 'BLOCKS', ...blocos.flat(), '0', 'ENDSEC',
+    '0', 'SECTION', '2', 'ENTITIES', ...ents.flat(), '0', 'ENDSEC', '0', 'EOF'].join('\n');
+  const contagem = (p) => Object.fromEntries(p.simbolos.map(s => [s.bloco, `${s.quantidade}${s.fora ? ' fora' : ''}`]));
+  const quadradoB = [linhaB(0, 0, 0.2, 0), linhaB(0.2, 0, 0.2, 0.2), linhaB(0.2, 0.2, 0, 0.2), linhaB(0, 0.2, 0, 0)];
+
+  caso('R-03 bloco desenhado só com SOLID, ELLIPSE, SPLINE ou HATCH é símbolo (antes tinha extensão 0 e sumia)', () => {
+    const blocos = [blocoB('TOMADA ALTA', [solidB([[0, 0], [0.2, 0], [0.1, 0.17], [0.1, 0.17]])]), blocoB('LUMINARIA OVAL', [elipseB()]),
+      blocoB('ARANDELA CURVA', [splineB()]), blocoB('TOMADA PISO', [hachuraB()])];
+    const ents = [];
+    for (let i = 0; i < 4; i++) ents.push(insertB('TOMADA ALTA', i * 2, 0, 'EL-TOMADAS'));
+    for (let i = 0; i < 3; i++) ents.push(insertB('LUMINARIA OVAL', i * 2, 5, 'EL-ILUMINACAO'));
+    for (let i = 0; i < 2; i++) ents.push(insertB('ARANDELA CURVA', i * 2, 8, 'EL-ILUMINACAO'));
+    for (let i = 0; i < 5; i++) ents.push(insertB('TOMADA PISO', i * 2, 10, 'EL-TOMADAS'));
+    assert.deepStrictEqual(contagem(lerProjetoDxf(dxfB(blocos, ents), { fator: 1 })), { 'TOMADA PISO': '5', 'TOMADA ALTA': '4', 'LUMINARIA OVAL': '3', 'ARANDELA CURVA': '2' });
+  });
+
+  caso('R-04 ponto elétrico com CHUVEIRO, CHAMADA, NÍVEL ou ARMÁRIO no nome entra no orçamento; o objeto de arquitetura continua fora', () => {
+    const nomes = ['TOMADA CHUVEIRO', 'BOTAO DE CHAMADA', 'CHAVE DE NIVEL', 'ARMARIO TELECOM', 'CHUVEIRO', 'PORTA 80', 'ARMARIO', 'NORTE', 'LEGENDA TOMADA'];
+    const p = lerProjetoDxf(dxfB(nomes.map(n => blocoB(n, quadradoB)), nomes.flatMap((n, k) => [insertB(n, k * 2, 0, 'EL-PONTOS'), insertB(n, k * 2, 3, 'EL-PONTOS')])), { fator: 1 });
+    const c = contagem(p);
+    assert.deepStrictEqual(nomes.map(n => c[n]), ['2', '2', '2', '2', '2 fora', '2 fora', '2 fora', '2 fora', '2 fora']);
+  });
+
+  caso('R-16 atributo ALTURA sem unidade no bloco em mm ("1100" = 1,10 m, não 11 m); "Altura de instalação: 1,20 m", "a 1.20m do chão", "H(m)=1,10"', () => {
+    const tomadaMm = blocoB('TOMADA', [linhaB(0, 0, 200, 0), linhaB(200, 0, 100, 170), linhaB(100, 170, 0, 0)]);
+    const ents = [['1100', 0], ['300', 2000], ['2200', 4000], ['teto', 6000]].map(([v, x]) => insertB('TOMADA', x, 0, 'EL-TOMADAS', [['ALTURA', v]]));
+    const p = lerProjetoDxf(dxfB([tomadaMm], ents), { fator: 0.001 });
+    assert.deepStrictEqual(p.simbolos.find(s => s.bloco === 'TOMADA').alturas, [1.1, 0.3, 2.2, null]);
+    assert.deepStrictEqual(['Altura de instalação: 1,20 m', 'Altura de montagem = 2,40m', 'Tomada a 1.20m do chão', 'H(m)=1,10', 'Altura (cm): 110'].map(alturaEscrita), [1.2, 2.4, 1.2, 1.1, 1.1]);
+    assert.deepStrictEqual(alturaDoTexto('Interruptor - altura de instalação 1,10 m'), { altura_m: 1.1, montagem: 'parede' });
+  });
+}
+
 console.log(`projetoDxf: ${ok} casos ok`);

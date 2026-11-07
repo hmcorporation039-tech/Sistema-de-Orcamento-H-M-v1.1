@@ -29,10 +29,20 @@ const CATEGORIA_INFO = {
 const VAZIO = { tipo: 'recebido', nome: '', valor: '', dataHora: '', idTransacao: '', obraId: null };
 const VAZIO_VINCULO = { prestadorId: '', categoria: '', obraId: null };
 
-function paraDatetimeLocal(iso) {
+// Valor do <input type="datetime-local"> ("AAAA-MM-DDTHH:MM") na hora de
+// Brasília — a mesma em que o servidor guarda data_hora (TIMESTAMP sem fuso).
+// O texto vai para o servidor como está, SEM toISOString(): o "Z" da hora UTC
+// era descartado pelo banco e o lançamento ficava 3 h adiantado (e mais 3 h a
+// cada edição).
+const FORMATO_BRASILIA = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+});
+export function paraDatetimeLocal(iso) {
   const d = iso ? new Date(iso) : new Date();
-  const pad = n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  if (Number.isNaN(d.getTime())) return '';
+  const p = Object.fromEntries(FORMATO_BRASILIA.formatToParts(d).map(x => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
 }
 
 export default function Financeiro() {
@@ -139,7 +149,7 @@ export default function Financeiro() {
     }
     setSalvando(true);
     try {
-      const dados = { ...form, dataHora: new Date(form.dataHora).toISOString() };
+      const dados = { ...form }; // dataHora local de Brasília, sem conversão (ver paraDatetimeLocal)
       if (editandoId) {
         await atualizarFinanceiroMovimento(editandoId, dados);
         toast.success('Lançamento atualizado');

@@ -325,6 +325,116 @@ async function caso(nome, fn) {
     assert.ok(q.itens.some(i => i.tipo === 'linha' && /ELETRODUTO/.test(i.descricao)));
   });
 
+  await caso('pontos por ambiente: câmera "CAM-01" / "CAM_02" / "CAM 3" também conta (antes só "CAM01")', async () => {
+    const { lerPontosDoPdf } = require('../src/utils/pontosPorAmbiente');
+    const f = [texto(200, 400, 'SALA'), texto(200, 388, 'A= 20,00m2'), texto(150, 300, 'CAM-01'), texto(400, 300, 'CAM_02'), texto(300, 200, 'CAM 3'), texto(500, 200, 'R-1')].join('\n');
+    const { porAmbiente, codigos } = await lerPontosDoPdf(montarPdfPaginas([f]));
+    assert.deepStrictEqual(porAmbiente, [{ ambiente: 'SALA', cftv: 3, rede: 0, antena: 0 }]); // "R-1" (revisão/corte) continua fora
+    assert.strictEqual(codigos.cftv.totalUnicos, 3);
+  });
+
+  // ── revisão de 06/11/2026: escala da planta × detalhe, empate, "SEM ESCALA", giro e empate de símbolos ──
+  const { analisarGeometria: ag } = require('../src/utils/pdfVetorial');
+  const esc = require('../src/utils/pdfVetorial/escala');
+  const tx = (s, x, y, h = 6) => ({ s, x, y, h, w: s.length * h * 0.5, horizontal: true });
+  const traco = (x0, y0, x1, y1) => ({ cheio: false, traco: true, fill: '#000000', stroke: '#ff0000', lw: 0.5, dash: '', caixa: [Math.min(x0, x1), Math.min(y0, y1), Math.max(x0, x1), Math.max(y0, y1)], comp: Math.hypot(x1 - x0, y1 - y0), segs: 1, curvas: 0, reto: true });
+  // amostra da legenda + 500 pt de eletroduto na planta (500 pt a 1:50 = 8,8 m)
+  const folha = (textos) => ({ largura: 1200, altura: 800, caminhos: [traco(900, 103, 930, 103), traco(100, 400, 600, 400)], textos: [tx('LEGENDA', 900, 90), tx('ELETRODUTO PVC 25MM EMBUTIDO', 935, 105), ...textos] });
+  const regioes = [{ tipo: 'planta', caixa: [50, 50, 650, 550] }, { tipo: 'detalhe', caixa: [680, 560, 850, 700] }, { tipo: 'carimbo', caixa: [950, 700, 1190, 790] }];
+  const metros = (r) => r.itens.find(i => i.tipo === 'linha')?.metros;
+
+  await caso('escala: "DETALHE ESC. 1:25" perto da planta não vira a escala dela — vale a do carimbo', () => {
+    const r = ag(folha([tx('ESC. 1:50', 1000, 760), tx('DETALHE 1 - ESC. 1:25', 700, 600)]), { regioesFolha: regioes });
+    assert.deepStrictEqual([r.escala, r.origemEscala, metros(r)], [50, 'carimbo', 8.8], JSON.stringify(r.itens));
+    // detalhe longe (antes: metragem null com o carimbo dizendo 1:50)
+    const longe = ag(folha([tx('ESC. 1:50', 1000, 760), tx('DETALHE 1 - ESC. 1:25', 900, 600)]), { regioesFolha: [...regioes.slice(0, 1), { tipo: 'detalhe', caixa: [880, 560, 1000, 700] }, regioes[2]] });
+    assert.deepStrictEqual([longe.escala, metros(longe), longe.avisoEscala], [50, 8.8, undefined]);
+    // título do detalhe numa linha e a escala na de baixo (o CAD separa os textos)
+    const separado = ag(folha([tx('ESC. 1:50', 1000, 760), tx('DETALHE 1', 700, 592), tx('ESC. 1:25', 700, 602)]), { regioesFolha: regioes });
+    assert.deepStrictEqual([separado.escala, metros(separado)], [50, 8.8]);
+    // o trecho DENTRO do detalhe continua na escala dele
+    const noDetalhe = ag({ ...folha([tx('ESC. 1:50', 1000, 760), tx('DETALHE 1 - ESC. 1:25', 700, 600)]), caminhos: [traco(900, 103, 930, 103), traco(100, 400, 600, 400), traco(690, 620, 790, 620)] }, { regioesFolha: regioes });
+    assert.deepStrictEqual(noDetalhe.itens.find(i => i.tipo === 'linha').escalas_pt, { '1:25': 100, '1:50': 500 });
+  });
+
+  await caso('escala: empate 1:50 × 1:25 desempata pelo carimbo; sem desempate usa a maior e avisa (achado)', () => {
+    const t2 = [tx('ESC. 1:50', 100, 700), tx('ESC. 1:25', 500, 700)];
+    assert.deepStrictEqual(esc.escalaDoCarimboDetalhada(t2), { escala: 50, ambigua: [25, 50] }); // antes: 25 (o 3D na metade)
+    // o rótulo dentro da região "carimbo" decide
+    assert.deepStrictEqual(esc.escalaDoCarimboDetalhada([tx('ESC. 1:100', 100, 700), tx('ESC. 1:50', 1000, 760)], [regioes[2]]), { escala: 50, ambigua: null });
+    // a mais frequente
+    assert.strictEqual(esc.escalaDoCarimbo([...t2, tx('ESCALA 1:25', 300, 300)]), 25);
+    const r = ag(folha(t2));
+    assert.deepStrictEqual([r.escala, r.escalaAmbigua], [50, [25, 50]]);
+    const { achadosDoDesenho } = require('../src/utils/analiseProjetoAchados');
+    const a = achadosDoDesenho([{ arquivo: 'p.pdf', disciplinas: ['eletrica'] }], [[{ ...r, pagina: 1 }]]).find(x => x.tema === 'Escala da planta');
+    assert.match(a?.observacao || '', /escalas 1:25 e 1:50 .* usada 1:50 \[CONFERIR\]/);
+  });
+
+  await caso('escala: "ESCALA - 1:50", "PLANTA BAIXA 1:50" e "ESCALA 1/50" são lidas', () => {
+    for (const s of ['ESCALA - 1:50', 'ESCALA – 1:50', 'PLANTA BAIXA 1:50', 'ESCALA 1/50', 'ESC: 1:50']) assert.strictEqual(esc.escalaDoCarimbo([tx(s, 0, 0)]), 50, s);
+    assert.strictEqual(esc.escalaDoCarimbo([tx('DIAGRAMA UNIFILAR - SEM ESCALA', 0, 0)]), null);
+  });
+
+  await caso('"SEM ESCALA" de um detalhe não anula a escala da folha; o achado diz onde a escala foi procurada', async () => {
+    // direto: com a reserva (nome do arquivo), a planta fica com ela e o detalhe sem escala
+    const r = ag(folha([tx('DETALHE 1 - SEM ESCALA', 700, 600)]), { regioesFolha: regioes, escalaReserva: { escala: 50, origem: 'nome_arquivo' } });
+    assert.deepStrictEqual([r.escala, r.origemEscala, metros(r)], [50, 'nome_arquivo', 8.8]);
+    assert.strictEqual(esc.escalaEscrita([tx('DETALHE 1 - SEM ESCALA', 700, 600)], regioes), false);
+    // ponta a ponta: a prancha sem carimbo com um "SEM ESCALA" de detalhe ainda tira a escala do nome do arquivo
+    const corpo = pranchaSintetica().toString('latin1').match(/stream\n([\s\S]*?)\nendstream/)[1].replace(/BT[^\n]*\(ESC\. 1:50\) Tj ET/, '');
+    const pdf = montarPdf([corpo, texto(700, 300, 'DETALHE 1 - SEM ESCALA')].join('\n'));
+    const [n] = await lerPdfVetorial(pdf, { nomeArquivo: 'Planta - A1 1_50.pdf' });
+    assert.deepStrictEqual([n.escala, n.origemEscala], [50, 'nome_arquivo'], JSON.stringify([n.escala, n.origemEscala, n.escalaProcurada]));
+    // sem escala nenhuma: o achado lista só o que foi tentado (antes dizia portas e cotas mesmo sem tentar)
+    const [s] = await lerPdfVetorial(pdf, { nomeArquivo: 'Planta.pdf' });
+    assert.strictEqual(s.escala, null);
+    assert.ok(s.escalaProcurada.includes('nome_arquivo'), JSON.stringify(s.escalaProcurada));
+    const { achadosDoDesenho } = require('../src/utils/analiseProjetoAchados');
+    const a = achadosDoDesenho([{ arquivo: 'p.pdf', disciplinas: ['eletrica'] }], [[{ ...s, pagina: 1 }]]).find(x => x.tema === 'Escala da planta');
+    const tentou = s.escalaProcurada.includes('portas');
+    assert.match(a.observacao, tentou ? /não achada no carimbo, no nome do arquivo, nas portas nem nas cotas/ : /não achada no carimbo nem no nome do arquivo; portas e cotas não medidas/, a.observacao);
+    const sem = achadosDoDesenho([{ arquivo: 'p.pdf', disciplinas: ['eletrica'] }], [[{ ...s, pagina: 1, escalaProcurada: ['carimbo'] }]]).find(x => x.tema === 'Escala da planta');
+    assert.match(sem.observacao, /nome do arquivo, portas e cotas não tentados/);
+  });
+
+  // símbolo quadrado 6 × 6 (cheio, azul) e o mesmo girado num ângulo qualquer
+  const quadradoGirado = (cx, cy, ang, lado = 6, cor = '#0000ff') => {
+    const m = lado / 2;
+    const p = [[-m, -m], [m, -m], [m, m], [-m, m]].map(([x, y]) => [cx + x * Math.cos(ang) - y * Math.sin(ang), cy + x * Math.sin(ang) + y * Math.cos(ang)]);
+    const xs = p.map(q => q[0]), ys = p.map(q => q[1]);
+    return { cheio: true, traco: false, fill: cor, stroke: '#000000', lw: 0.5, dash: '', caixa: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)], comp: 4 * lado, segs: 4, curvas: 0, reto: false };
+  };
+  await caso('símbolo girado fora de 0°/90° casa com a legenda (comprimento, trechos e curvas não mudam com o giro)', () => {
+    const geo = {
+      largura: 1200, altura: 800, textos: [tx('LEGENDA', 900, 90), tx('TOMADA BAIXA 2P+T 10A', 915, 105)],
+      caminhos: [quadradoGirado(905, 103, 0), quadradoGirado(100, 100, 0), quadradoGirado(200, 100, Math.PI / 4), quadradoGirado(300, 100, Math.PI / 6), quadradoGirado(400, 100, Math.PI / 2),
+        // círculo de mesmo perímetro e mesma cor não é o quadrado girado (4 curvas × 4 retas)
+        { ...quadradoGirado(500, 100, Math.PI / 5), curvas: 4, segs: 4 }],
+    };
+    const tom = ag(geo, { escala: 50 }).itens.find(i => /TOMADA/.test(i.descricao));
+    assert.strictEqual(tom?.quantidade, 4, JSON.stringify(tom)); // 0°, 45°, 30° e 90° (antes: 2)
+  });
+
+  await caso('empate de assinatura: cada símbolo conta num item só (o mais parecido); empate de verdade fica ambíguo', () => {
+    // legenda com dois quadrados quase do mesmo tamanho (6 e 6,3 pt): os dois "parecem" o da planta
+    const base = {
+      largura: 1200, altura: 800,
+      textos: [tx('LEGENDA', 900, 90), tx('TOMADA BAIXA 2P+T 10A', 915, 105), tx('TOMADA MEDIA 2P+T 10A', 915, 135)],
+      caminhos: [quadradoGirado(905, 103, 0, 6), quadradoGirado(905, 133, 0, 6.3), ...[100, 200, 300].map(x => quadradoGirado(x, 100, 0, 6)), quadradoGirado(400, 100, 0, 6.3)],
+    };
+    const it = ag(base, { escala: 50 }).itens.filter(i => i.tipo === 'simbolo');
+    const baixa = it.find(i => /BAIXA/.test(i.descricao)), media = it.find(i => /MEDIA/.test(i.descricao));
+    // antes: 4 e 4 (os mesmos símbolos nos dois itens)
+    assert.deepStrictEqual([baixa?.quantidade, media?.quantidade], [3, 1], JSON.stringify(it));
+    assert.strictEqual(it.reduce((s, i) => s + i.quantidade, 0), 4);
+    // mesma assinatura com duas descrições: o símbolo conta uma vez e os dois itens ficam ambíguos (conferir)
+    const igual = ag({ ...base, caminhos: [quadradoGirado(905, 103, 0, 6), quadradoGirado(905, 133, 0, 6), ...[100, 200].map(x => quadradoGirado(x, 100, 0, 6))] }, { escala: 50 }).itens.filter(i => i.tipo === 'simbolo');
+    assert.strictEqual(igual.length, 2, JSON.stringify(igual));
+    assert.strictEqual(igual.reduce((s, i) => s + i.quantidade, 0), 2);
+    assert.ok(igual.every(i => i.ambiguo && i.empates === 2), JSON.stringify(igual));
+  });
+
   await caso('PDF sem desenho (só texto) não quebra e não inventa itens', async () => {
     const [q] = await lerPdfVetorial(montarPdf(texto(100, 700, 'MEMORIAL DESCRITIVO')));
     assert.strictEqual(q.itens.length, 0);

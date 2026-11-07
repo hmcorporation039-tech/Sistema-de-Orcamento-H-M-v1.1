@@ -4,7 +4,8 @@ const { chaveNome } = require('./texto');
 
 const chaveEscritorio = (carimbo) => chaveNome(carimbo?.responsavel || carimbo?.crea || '').slice(0, 120);
 
-// Prancha em PDF (versão 2.30): no acervo real o leitor do carimbo quase nunca acha o responsável (12 de 12 pranchas
+// Prancha em PDF (versão 2.30) e DWG/DXF (revisão de 06/11/2026: o DWG usava o carimbo puro e aprendia com
+// "RESPONSAVEL TECNICO" como escritório): no acervo real o leitor do carimbo quase nunca acha o responsável (12 de 12 pranchas
 // recentes sem ele). Reservas, nesta ordem: a linha "AUTOR DO PROJETO: …" / "PROJETISTA: …" / "RESPONSÁVEL TÉCNICO: …"
 // do texto da folha e a sigla da projetista no código do desenho ("DE-HSL-5300-DME-PE-002…" → DME), o padrão de
 // numeração de pranchas dos grandes clientes.
@@ -14,7 +15,7 @@ const RE_CODIGO_DESENHO = /^[A-Z]{2}-[A-Z0-9]{2,6}-\d{3,5}-([A-Z]{3})-[A-Z]{2}-/
 // "LOCALIZACAO ESQUEMATICA"): nome de verdade tem 2+ palavras e nenhuma palavra de rótulo; o CREA vale sozinho
 const RE_ROTULO = /\b(RESPONSAVEL|TECNICO|LOCALIZACAO|ESQUEMATICA|PELA|PELO|PROJETO|DESENHO|DATA|ESCALA|FOLHA|REVISAO|ASSINATURA|CLIENTE|OBRA|ENDERECO|PRANCHA|CONTEUDO|APROVADO|VERIFICADO)\b/;
 const nomeValido = (n) => !!n && !RE_ROTULO.test(n) && (/^CREA\b/.test(n) || n.split(' ').filter(p => p.length >= 2).length >= 2);
-function escritorioDoPdf(carimbo, texto = '', nomeArquivo = '') {
+function escritorioDoProjeto(carimbo, texto = '', nomeArquivo = '') {
   const doCarimbo = chaveEscritorio(carimbo);
   if (nomeValido(doCarimbo)) return doCarimbo;
   const m = RE_AUTOR.exec(String(texto || ''));
@@ -26,4 +27,7 @@ function escritorioDoPdf(carimbo, texto = '', nomeArquivo = '') {
   return c ? `CODIGO ${c[1].toUpperCase()}` : '';
 }
 
-module.exports = { chaveEscritorio, escritorioDoPdf };
+// o mesmo para o PDF e para o DWG/DXF: uma regra só
+const escritorioDoPdf = escritorioDoProjeto;
+
+module.exports = { chaveEscritorio, escritorioDoProjeto, escritorioDoPdf, nomeValido };

@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Box, CheckCheck, Download, RefreshCw, Undo2, Upload } from 'lucide-react';
-import { getMapaCad, salvarMapaCad, editarMapaCad, reprocessarMapaCad, exportarBibliotecaBlocos, importarBibliotecaBlocos } from '../../services/api';
+import { getMapaCad, salvarMapaCad, editarMapaCad, reprocessarMapaCad, confirmarBlocoMapaCad, exportarBibliotecaBlocos, importarBibliotecaBlocos } from '../../services/api';
 import { mensagemDeErro } from '../../utils/download';
 import PlantaMapaCad, { SITUACAO, situacaoDaLinha, IconeComponente, COR_INSERIDO } from './PlantaMapaCad';
 import Modelo3dEditor from './Modelo3dEditor';
@@ -20,6 +20,8 @@ const ORIGEM = {
   // forma parecida com o que já foi aprendido, com outro nome de layer (skills/_comum/cad/semelhancaDeSimbolo.js)
   semelhante: ['parecido com outro projeto', '#b48ead'],
   regra: ['pela regra da layer', '#c9a227'],
+  // "não é ponto" que o engenheiro confirmou em outro projeto da mesma disciplina: sugestão, a conferir
+  nao_ponto: ['"não é ponto" aprendido — conferir', '#8a8f98'],
   nao_reconhecido: ['não reconhecido', '#c06060'],
   confirmado: ['conferido', '#5fbf7a'],
 };
@@ -36,7 +38,7 @@ function inseridosPorTipo(edicoes, nomeDoTipo) {
   return [...por].map(([simbolo, quantidade]) => ({ simbolo, nome: nomeDoTipo(simbolo), quantidade })).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
 }
 // de onde veio a altura sugerida (quando não é da legenda do desenho nem conferida)
-const ALTURA_DE = { nota: 'sugerida pela nota do desenho', nota_aprendida: 'costume deste escritório (notas anteriores)' };
+const ALTURA_DE = { nota: 'sugerida pela nota do desenho', nota_aprendida: 'costume deste escritório (notas anteriores)', nota_disciplina: 'confirmada pelo engenheiro em outro projeto da disciplina' };
 const LIMITE_LINHAS = 60;
 // circuito e retorno escritos junto dos símbolos da linha ("3", "a" — fase 1 do roteiro): sugestão; ao conferir
 // a linha, o circuito de cada ponto vai para o 3D
@@ -81,6 +83,7 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
   const [filtro, setFiltro] = useState({}); // arquivo → chave de FILTROS
   const [incluirDisciplinas, setIncluirDisciplinas] = useState(true);
   const [editor3d, setEditor3d] = useState(false);
+  const [blocoEdicao, setBlocoEdicao] = useState({}); // `${arquivo}|${bloco}` → { descricao, disciplina }
 
   useEffect(() => {
     let vivo = true;
@@ -109,7 +112,8 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
   const disciplinasFaltando = mapa.arquivos.flatMap(a => (a.disciplinasAIncluir || []).map(d => ({ ...d, arquivo: a.arquivo })));
   const totalEditadas = mapa.arquivos.reduce((t, a) => t + (a.resumo.inseridos || 0) + (a.resumo.retirados || 0), 0);
   const edicoesForaDoOrcamento = mapa.arquivos.some(a => ((a.resumo.inseridos || 0) + (a.resumo.retirados || 0)) > 0 && !a.edicoesNoOrcamento);
-  const podeReprocessar = totalConferidas > 0 || totalEditadas > 0;
+  const totalBlocosConfirmados = mapa.arquivos.reduce((t, a) => t + (a.resumo.blocosConfirmados || 0), 0);
+  const podeReprocessar = totalConferidas > 0 || totalEditadas > 0 || totalBlocosConfirmados > 0;
   const componentes = mapa.componentes || [];
 
   const valorDe = (arquivo, s) => edicao[`${arquivo}|${s.idx}`] || { simbolo: s.simbolo, altura: br(s.altura_m) };
@@ -168,6 +172,24 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
       (d) => (d.aprendidas ? 'Conferido — o sistema aprendeu esse tipo para os próximos desenhos' : 'Conferido'));
   };
   const desfazer = (arquivo, s) => enviar(arquivo, [{ idx: s.idx, confirmado: false }], () => 'Confirmação desfeita');
+
+  // "Confirmar bloco" (revisão de 06/11/2026): o bloco nomeado que o sistema não identificou — ou só reconheceu pelo que
+  // outra prancha ensinou — vira aprendizado CONFIRMADO, na disciplina escolhida (vale ao reprocessar e nos próximos desenhos)
+  const valorBloco = (arquivo, b) => blocoEdicao[`${arquivo}|${b.bloco}`] || { descricao: b.situacao === 'aprendido' ? String(b.descricao || '').replace(/ — bloco .*$/, '') : '', disciplina: b.disciplina || '' };
+  const mudarBloco = (arquivo, b, parte) => setBlocoEdicao(e => ({ ...e, [`${arquivo}|${b.bloco}`]: { ...valorBloco(arquivo, b), ...parte } }));
+  async function confirmarBloco(arquivo, b) {
+    const v = valorBloco(arquivo, b);
+    if (!v.descricao.trim() || !v.disciplina) return toast.error('Escreva o que é o bloco e escolha a disciplina.');
+    setOcupado(true);
+    try {
+      const r = await confirmarBlocoMapaCad(analiseId, { arquivo, bloco: b.bloco, descricao: v.descricao.trim(), disciplina: v.disciplina });
+      if (r.data?.arquivos) setMapa(m => ({ ...m, ...r.data }));
+      else setMapa(m => ({ ...m, arquivos: m.arquivos.map(a => (a.arquivo !== arquivo ? a : { ...a, blocos: (a.blocos || []).map(x => (x.bloco === b.bloco ? { ...x, situacao: 'confirmado', descricao: v.descricao.trim(), disciplina: v.disciplina } : x)) })) }));
+      toast.success(`Bloco ${b.bloco} confirmado — o sistema aprendeu (entra no orçamento ao reprocessar)`);
+    } catch (err) {
+      toast.error(await mensagemDeErro(err, 'Não consegui confirmar o bloco'), { duration: 8000 });
+    } finally { setOcupado(false); }
+  }
 
   // inserir/retirar componentes (planta): pedido = { adicionar } | { remover } | { desfazer }
   async function editar(arquivo, pedido, mensagem) {
@@ -429,6 +451,33 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
             </div>
             {filtradas.length > LIMITE_LINHAS && !aberta && (
               <button type="button" style={{ ...botao, marginTop: 8 }} onClick={() => setMostrarTodas(m => ({ ...m, [a.arquivo]: true }))}>Mostrar as {filtradas.length} linhas</button>
+            )}
+            {a.blocos?.length > 0 && (
+              <div style={{ marginTop: 10, padding: '8px 10px', border: '1px solid #2a2a2a', borderRadius: 8 }} data-testid="blocos-a-confirmar">
+                <div style={{ fontSize: 12, color: 'var(--texto-2)', marginBottom: 6 }}>
+                  <b>Blocos nomeados a confirmar</b> — os que o sistema não identificou ou só reconheceu pelo que outra prancha ensinou (sugestão, fora do orçamento).
+                  Diga o que é cada um: vira aprendizado confirmado na disciplina escolhida.
+                </div>
+                {a.blocos.map(b => {
+                  const v = valorBloco(a.arquivo, b);
+                  return (
+                    <div key={b.bloco} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', padding: '4px 0', fontSize: 12 }} data-testid={`bloco-${b.bloco}`}>
+                      <span style={{ minWidth: 140, color: '#ddd' }}>{b.bloco} <span style={{ color: 'var(--texto-3)' }}>× {b.quantidade}</span></span>
+                      {b.situacao === 'confirmado'
+                        ? <span style={{ color: '#5fbf7a' }}>confirmado: {b.descricao} ({(mapa.disciplinas || []).find(d => d.chave === b.disciplina)?.nome || nomeDisciplina(b.disciplina)})</span>
+                        : <>
+                          <span style={{ color: b.situacao === 'aprendido' ? '#8ab4f8' : '#c06060' }}>{b.situacao === 'aprendido' ? 'aprendido — conferir' : 'não identificado'}</span>
+                          <input value={v.descricao} onChange={(e) => mudarBloco(a.arquivo, b, { descricao: e.target.value })} placeholder="o que é (ex.: Tomada baixa 2P+T a 30 cm)" style={{ ...campo, width: 260 }} disabled={ocupado} aria-label={`O que é o bloco ${b.bloco}`} />
+                          <select value={v.disciplina} onChange={(e) => mudarBloco(a.arquivo, b, { disciplina: e.target.value })} style={{ ...campo, width: 170 }} disabled={ocupado} aria-label={`Disciplina do bloco ${b.bloco}`}>
+                            <option value="">— disciplina —</option>
+                            {(mapa.disciplinas || []).map(d => <option key={d.chave} value={d.chave}>{d.nome}</option>)}
+                          </select>
+                          <button type="button" style={{ ...botao, borderColor: '#5fbf7a', color: '#5fbf7a' }} onClick={() => confirmarBloco(a.arquivo, b)} disabled={ocupado} data-testid={`confirmar-bloco-${b.bloco}`}>Confirmar bloco</button>
+                        </>}
+                    </div>
+                  );
+                })}
+              </div>
             )}
             {a.trechos?.length > 0 && (
               <div style={{ fontSize: 12, color: 'var(--texto-3)', marginTop: 8 }}>

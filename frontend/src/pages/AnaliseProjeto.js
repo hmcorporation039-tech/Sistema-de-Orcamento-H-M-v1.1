@@ -76,11 +76,14 @@ export default function Compatibilizacao() {
   const [versaoLista, setVersaoLista] = useState(0); // muda para a lista de análises recarregar
   const idAutosaveRef = useRef(null);
   const pendenteRef = useRef(false); // há edição aguardando o autosave disparar
-  // Versão gravada no servidor (bloqueio otimista). Em ref, não em estado:
-  // mudar a versão não pode disparar outro autosave.
-  const versaoRef = useRef(null);
+  // Versão gravada no servidor (bloqueio otimista), POR ANÁLISE. Em ref, não
+  // em estado: mudar a versão não pode disparar outro autosave. Era uma só:
+  // a gravação da análise A terminando depois de abrir a B punha a versão de A
+  // no lugar da de B, e a próxima gravação de B dava 409 falso (revisão de 11/2026).
+  const versoesRef = useRef(new Map()); // id → versão
   const filaSalvarRef = useRef(Promise.resolve()); // gravações em sequência, cada uma com a versão da anterior
-  const conflitoRef = useRef(false); // outra pessoa gravou: para o autosave até recarregar
+  const conflitosRef = useRef(new Set()); // ids que outra pessoa gravou: para o autosave até recarregar
+  const idAtualRef = useRef(null); // análise aberta agora (resposta de outra não mexe na tela)
 
   const popularAnalise = useCallback((dados) => {
     const servicosComId = dados.servicos.map(s => ({ ...s, id: gerarId() }));
@@ -90,8 +93,9 @@ export default function Compatibilizacao() {
       servicos: servicosComId,
       materiais: materiaisComId,
     });
-    versaoRef.current = dados.versao ?? null;
-    conflitoRef.current = false;
+    idAtualRef.current = dados.id ?? null;
+    versoesRef.current.set(dados.id, dados.versao ?? null);
+    conflitosRef.current.delete(dados.id);
     setSalvoEm(dados.atualizadoEm ? new Date(dados.atualizadoEm) : null);
     // A pesquisa de mercado que já tinha ficado salva num item
     // (pesquisa_mercado, de antes do editor único) continua aparecendo aqui,
@@ -100,18 +104,30 @@ export default function Compatibilizacao() {
   }, []);
 
   useEffect(() => {
+    // Trocou de análise com edição esperando o autosave (< 1,5 s): grava a
+    // anterior AGORA. O timer dela é cancelado quando a nova chega e o
+    // "salvar ao sair" só roda ao desmontar — a edição se perdia. Aqui a
+    // função de salvar ainda é a da análise anterior (a tela não trocou).
+    if (pendenteRef.current) {
+      pendenteRef.current = false;
+      salvarAgoraRef.current?.();
+    }
     if (!idParam) {
+      idAtualRef.current = null;
       setAnalise(null);
       return;
     }
+    let cancelado = false; // resposta de uma análise que já não é a pedida não entra na tela
     setCarregandoAnalise(true);
     getAnaliseProjeto(idParam)
-      .then(res => popularAnalise(res.data))
+      .then(res => { if (!cancelado) popularAnalise(res.data); })
       .catch(() => {
+        if (cancelado) return;
         toast.error('Análise não encontrada');
         navigate('/obras?aba=analise');
       })
-      .finally(() => setCarregandoAnalise(false));
+      .finally(() => { if (!cancelado) setCarregandoAnalise(false); });
+    return () => { cancelado = true; };
   }, [idParam, navigate, popularAnalise]);
 
   // volta para a aba de análise (envio novo). Antes ia para /obras, que abre a
@@ -127,7 +143,7 @@ export default function Compatibilizacao() {
   // momento em que existe um id (a análise já foi persistida), toda edição
   // vira uma gravação no banco, não só um estado do React.
   const salvarAgora = useCallback(() => {
-    if (!analise?.id || conflitoRef.current) return Promise.resolve();
+    if (!analise?.id || conflitosRef.current.has(analise.id)) return Promise.resolve();
     const id = analise.id;
     const corpo = {
       cliente_nome: analise.cliente,
@@ -140,21 +156,23 @@ export default function Compatibilizacao() {
     };
     // em fila: duas gravações ao mesmo tempo mandariam a mesma versão e a
     // segunda seria recusada como conflito (falso alarme)
+    // A versão e o conflito são os DESTA análise (id): a gravação pode
+    // terminar depois de o usuário abrir outra.
     filaSalvarRef.current = filaSalvarRef.current.then(async () => {
-      if (conflitoRef.current) return;
+      if (conflitosRef.current.has(id)) return;
       setSalvando(true);
       try {
-        const res = await atualizarAnaliseProjeto(id, { ...corpo, versao: versaoRef.current });
-        versaoRef.current = res.data?.versao ?? null;
-        setSalvoEm(new Date());
+        const res = await atualizarAnaliseProjeto(id, { ...corpo, versao: versoesRef.current.get(id) ?? null });
+        versoesRef.current.set(id, res.data?.versao ?? null);
+        if (idAtualRef.current === id) setSalvoEm(new Date());
       } catch (err) {
         if (err.response?.status === 409) {
-          conflitoRef.current = true;
+          conflitosRef.current.add(id);
           toast.error(err.response.data?.erro || 'A análise foi alterada em outro lugar. Recarregue a página.', { duration: 15000 });
         } else if (err.response?.status === 403 && err.response?.data?.codigo !== 'SENHA_PROVISORIA') {
           // análise de outro usuário (posse): não desloga mais; para o
           // salvamento automático e diz por quê
-          conflitoRef.current = true;
+          conflitosRef.current.add(id);
           toast.error(`${err.response.data?.erro || 'Você não pode alterar esta análise.'} As alterações feitas aqui não são gravadas.`, { duration: 15000 });
         } else if (!err.sessaoEncerrada) {
           toast.error(err.response?.data?.erro || 'Erro ao salvar automaticamente — tente novamente em instantes');
@@ -698,6 +716,12 @@ function TabelaItensLeitura({ tipo, itens, disciplinas, onPronto }) {
               <div style={{ color: '#ddd' }}>
                 {it.descricao || <i style={{ color: 'var(--texto-3)' }}>(sem descrição)</i>}
                 {it.referencia_fabricante && <div style={{ color: 'var(--texto-3)', fontSize: 12 }}>Ref. fabricante: {it.referencia_fabricante}</div>}
+                {it.sugerido_ia && (
+                  <span title={`Item lido pela IA${it.ia_de_cache ? ' (resposta guardada de uma leitura anterior)' : ''} — confira no projeto; entra no orçamento como "a cotar"`}
+                    style={{ display: 'inline-block', marginTop: 3, fontSize: 10.5, padding: '1px 6px', borderRadius: 3, border: '1px solid #4a3f6b', color: '#b9a6ff' }}>
+                    sugerido pela IA — conferir
+                  </span>
+                )}
               </div>
               <span style={{ color: 'var(--texto-2)', fontSize: 12 }}>{it.disciplina ? nomeDisc(it.disciplina) : (it.subgrupo || '—')}</span>
               <span style={{ color: semQtd ? '#c9a227' : '#ccc', fontWeight: semQtd ? 700 : 400 }}

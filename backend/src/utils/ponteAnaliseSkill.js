@@ -54,9 +54,28 @@ function retanguloDoPoligono(p) {
   return melhor ? { comprimento: Math.max(melhor.d1, melhor.d2), largura: Math.min(melhor.d1, melhor.d2) } : null;
 }
 const poligonoValido = (p) => Array.isArray(p) && p.length >= 3 && p.every(q => Array.isArray(q) && q.length >= 2 && Number.isFinite(q[0]) && Number.isFinite(q[1]));
-function medidasDoAmbiente(a, poligonosPorNome) {
+function areaDoPoligono(p) {
+  let s = 0;
+  for (let i = 0; i < p.length; i++) { const [x1, y1] = p[i], [x2, y2] = p[(i + 1) % p.length]; s += x1 * y2 - x2 * y1; }
+  return Math.abs(s) / 2;
+}
+// Polígono da referência para o ambiente. Ambientes de MESMO nome (dois "BANHEIRO") não trocam de polígono: o mapa
+// guarda a lista de polígonos de cada nome e vale o de área mais perto da lida, ainda não usado (`usados`). Antes o
+// mapa por nome guardava só o último: o banheiro de 2 m² saía com as medidas do de 12 m².
+function poligonoDaReferencia(a, poligonosPorNome, usados) {
+  const v = poligonosPorNome?.get(chaveAmb(a.nome));
+  if (!v) return null;
+  const lista = poligonoValido(v) ? [v] : v.filter(poligonoValido); // aceita o formato antigo (um polígono por nome)
+  const livres = lista.filter(p => !usados?.has(p));
   const area = Number(a.area_m2) || 0;
-  const pol = poligonoValido(a.poligono) ? a.poligono : poligonosPorNome?.get(chaveAmb(a.nome)) || null;
+  const escolhido = (livres.length ? livres : lista)
+    .map(p => ({ p, d: area > 0 ? Math.abs(areaDoPoligono(p) - area) : 0 })).sort((x, y) => x.d - y.d)[0]?.p || null;
+  if (escolhido) usados?.add(escolhido);
+  return escolhido;
+}
+function medidasDoAmbiente(a, poligonosPorNome, usados = null) {
+  const area = Number(a.area_m2) || 0;
+  const pol = poligonoValido(a.poligono) ? a.poligono : poligonoDaReferencia(a, poligonosPorNome, usados);
   const per = Number(a.perimetro_m) > 0 ? Number(a.perimetro_m) : pol ? perimetroDoPoligono(pol) : null;
   // retângulo mínimo já calculado pela leitura do CAD (services/analiseCad), quando vem
   const r = a.retangulo;
@@ -78,9 +97,27 @@ function medidasDoAmbiente(a, poligonosPorNome) {
     pe_direito_m: Number(a.pe_direito_m) > 0 ? Number(a.pe_direito_m) : null,
   };
 }
+// nomes repetidos ficam únicos no formulário da skill ("BANHEIRO", "BANHEIRO 2"): a skill e a tela tratam o
+// ambiente pelo nome, e dois iguais se confundiam
 function ambientesComMedidas(analise) {
-  const poligonos = new Map((analise.espacial?.ambientes || []).filter(x => poligonoValido(x.poligono)).map(x => [chaveAmb(x.nome), x.poligono]));
-  return (analise.ambientes || []).filter(a => a.area_m2 > 0).map(a => ({ ...a, medidas: medidasDoAmbiente(a, poligonos) }));
+  const poligonos = new Map();
+  for (const x of (analise.espacial?.ambientes || []).filter(y => poligonoValido(y.poligono))) {
+    const k = chaveAmb(x.nome);
+    (poligonos.get(k) || poligonos.set(k, []).get(k)).push(x.poligono);
+  }
+  const usados = new Set();
+  const lista = (analise.ambientes || []).filter(a => a.area_m2 > 0);
+  const nomes = new Set(lista.map(a => chaveAmb(a.nome)));
+  const vezes = new Map();
+  return lista.map(a => {
+    const k = chaveAmb(a.nome);
+    let n = (vezes.get(k) || 0) + 1;
+    // o 2º "BANHEIRO" vira "BANHEIRO 2" (pulando um "BANHEIRO 2" que já exista)
+    while (n > 1 && nomes.has(chaveAmb(`${a.nome} ${n}`))) n++;
+    vezes.set(k, n);
+    if (n > 1) nomes.add(chaveAmb(`${a.nome} ${n}`));
+    return { ...a, ...(n > 1 ? { nome: `${a.nome} ${n}` } : {}), medidas: medidasDoAmbiente(a, poligonos, usados) };
+  });
 }
 function avisoMedidas(amb, avisos, oQueEstima) {
   const estimados = amb.filter(a => !a.medidas.lido).length;
@@ -106,6 +143,22 @@ function quadrosLidos(extraido) {
     for (const [quadro, circuitos] of porTitulo) lista.push({ quadro, pavimento: circuitos[0]?.pavimento || null, circuitos, totais: null, totaisTexto: e.totaisQuadro || null, arquivo: e.arquivo });
   }
   return lista;
+}
+// Nome único de cada quadro para o ID do circuito e a escolha na skill de quadros: dois quadros de mesmo título
+// (ou sem título, em arquivos diferentes) levam o pavimento/arquivo e, se ainda repetir, o nº — senão os IDs
+// "QD C1" se repetiam e a skill pegava sempre o 1º
+const chaveQuadro = (s) => String(s || '').replace(/\s/g, '').toUpperCase();
+function rotulosDosQuadros(quadros) {
+  const vezes = new Map();
+  for (const q of quadros) vezes.set(chaveQuadro(q.quadro), (vezes.get(chaveQuadro(q.quadro)) || 0) + 1);
+  const usados = new Map();
+  return new Map(quadros.map((q) => {
+    let r = q.quadro || null;
+    if (vezes.get(chaveQuadro(q.quadro)) > 1) r = `${q.quadro || 'Quadro'} (${q.pavimento || q.arquivo || 'sem título'})`;
+    const n = (usados.get(chaveQuadro(r)) || 0) + 1;
+    usados.set(chaveQuadro(r), n);
+    return [q, r && n > 1 ? `${r} #${n}` : r];
+  }));
 }
 // "3F+N+T" → 3 fases, com neutro; sem esquema, pelas letras das fases
 function ligacaoDoCircuito(c) {
@@ -162,14 +215,16 @@ function eletrica(motor, analise, extraido, avisos) {
     }
   }
   if (circuitos.length) {
+    const rotulo = rotulosDosQuadros(quadros);
     dados.circuitos = circuitos.map(({ c, q }) => {
       const { nF } = ligacaoDoCircuito(c);
+      const nomeQ = rotulo.get(q);
       return {
-        id: varios && q.quadro ? `${q.quadro} ${c.circuito}` : c.circuito,
-        descricao: c.descricao || (varios && q.quadro ? `${c.circuito} (${q.quadro})` : c.circuito), tipo: tipoCircuito(c),
+        id: varios && nomeQ ? `${nomeQ} ${c.circuito}` : c.circuito,
+        descricao: c.descricao || (varios && nomeQ ? `${c.circuito} (${nomeQ})` : c.circuito), tipo: tipoCircuito(c),
         ligacao: nF >= 3 ? 'FFF' : nF === 2 ? 'FF' : 'FN',
         potencia_va: Math.round(Number(c.potencia_VA) > 0 ? c.potencia_VA : c.potencia_W / (c.fp || 1)), comprimento_m: null, agrupamento: null, ambientes: '',
-        ...(q.quadro ? { quadro: q.quadro } : {}),
+        ...(nomeQ ? { quadro: nomeQ } : {}),
       };
     });
     avisos.push(`${circuitos.length} circuitos lidos do quadro de cargas (potência e ligação do projeto)${alimentadores ? `; ${alimentadores} alimentador(es) de outros quadros fora da lista` : ''}${semPotencia ? `; ${semPotencia} reserva(s)/circuito(s) sem potência fora` : ''}. [CONFERIR] comprimentos: o PDF não traz — o cálculo usa o comprimento médio do formulário até você informar.`);
@@ -227,14 +282,17 @@ function circuitoDoQuadro(c) {
 function quadrosSkill(motor, analise, extraido, avisos, opcoes = {}) {
   const dados = base(motor, analise, extraido);
   const lista = quadrosLidos(extraido).filter(q => q.circuitos.length);
-  const candidatos = lista.map(q => ({ quadro: q.quadro, pavimento: q.pavimento || null, circuitos: q.circuitos.length, arquivo: q.arquivo, potencia_VA: q.totais?.potencia_VA ?? null }));
+  const rotulo = rotulosDosQuadros(lista);
+  // `rotulo`: nome único (dois quadros de mesmo título) — a tela pode mandá-lo em opcoes.quadro
+  const candidatos = lista.map(q => ({ quadro: q.quadro, ...(rotulo.get(q) !== q.quadro ? { rotulo: rotulo.get(q) } : {}), pavimento: q.pavimento || null, circuitos: q.circuitos.length, arquivo: q.arquivo, potencia_VA: q.totais?.potencia_VA ?? null }));
   if (!lista.length) {
     avisos.push('Nenhum quadro de cargas lido na análise — preencha o quadro e os circuitos no formulário.');
     return { dados, candidatos };
   }
-  const q = lista.find(x => opcoes.quadro && x.quadro === opcoes.quadro) || lista[0];
-  // disjuntor geral = o do alimentador deste quadro no quadro de cima (QGBT)
-  const alimentador = lista.flatMap(x => x.circuitos).find(c => c.alimentador && q.quadro && String(c.circuito).trim() === String(q.quadro).trim());
+  const q = (opcoes.quadro && (lista.find(x => rotulo.get(x) === opcoes.quadro) || lista.find(x => x.quadro === opcoes.quadro))) || lista[0];
+  // disjuntor geral = o do alimentador deste quadro no quadro de cima (QGBT) — nome comparado sem espaço/caixa,
+  // e nunca um circuito do próprio quadro
+  const alimentador = lista.filter(x => x !== q).flatMap(x => x.circuitos).find(c => c.alimentador && q.quadro && chaveQuadro(c.circuito) === chaveQuadro(q.quadro));
   const tres = q.circuitos.some(c => ligacaoDoCircuito(c).nF === 3);
   const tensoes = new Set(q.circuitos.map(c => Number(c.tensao_V)).filter(Boolean));
   Object.assign(dados.quadro, {

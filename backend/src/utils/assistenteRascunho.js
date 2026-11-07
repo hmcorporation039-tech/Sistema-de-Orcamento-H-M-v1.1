@@ -13,6 +13,9 @@ const { ehMaoDeObra, arredondar, arredondarQuantidade } = require('./calculoProp
 const SECAO_SERVICOS = 'Serviços (Mão de Obra)';
 const SECAO_MATERIAIS = 'Materiais e Equipamentos';
 const STATUS_ITEM = ['confirmado', 'a_cotar'];
+// proposta_itens.origem_item do item criado/alterado pelo assistente (migracoes/2.0-54): "a cotar", fora do catálogo
+// e sem ensinar vínculo até o engenheiro confirmar na tela (propostasController.inserirSecoesEItens)
+const ORIGEM_ASSISTENTE = 'assistente';
 const CAMPOS_PROPOSTA = ['cliente_nome', 'local_obra', 'escopo', 'pagamento', 'observacoes', 'responsavel'];
 const PERCENTUAIS = ['bdi', 'imposto_venda', 'imposto_servico'];
 const MAX_OPERACOES = 300;
@@ -63,6 +66,8 @@ function propostaParaPayload(p) {
       _id: it.id, sid: it.secao_id, desc: it.descricao, qtd: Number(it.quantidade), un: it.unidade,
       vu: Number(it.valor_unitario), ncm: it.ncm || null, codigo: it.codigo || null,
       material_id: it.material_id || null, subgrupo: it.subgrupo || null, status: it.status || 'confirmado',
+      // marca de item do assistente (IA): preservada ao regravar a proposta inteira
+      origem_item: it.origem_item || null,
     })),
   };
 }
@@ -100,16 +105,15 @@ function itemNovo(payload, it) {
   const secao = secaoDoItem(payload, it.secao);
   const vu = it.valor_unitario == null ? 0 : arredondar(numeroValido(it.valor_unitario, 'Valor unitário'));
   const qtd = arredondarQuantidade(numeroValido(it.quantidade ?? 1, 'Quantidade'), 1);
-  // item novo vindo do assistente (IA) entra "a cotar": só o engenheiro confirma (regra do usuário — o que a IA sugere
-  // é sugestão). Antes, todo item com preço entrava confirmado e contava no orçamento sem ninguém conferir. A exceção
-  // é o item ligado a um material do catálogo (material_id) pedido explicitamente como confirmado.
-  const materialId = Number.isInteger(Number(it.material_id)) && Number(it.material_id) > 0 ? Number(it.material_id) : null;
-  const status = it.status === 'confirmado' && materialId ? 'confirmado' : 'a_cotar';
+  // item novo vindo do assistente (IA) entra SEMPRE "a cotar" e marcado (origem_item 'assistente'): só o engenheiro
+  // confirma, na tela (regra do dono — "a IA só sugere"). Antes o item ligado a material do catálogo pedido como
+  // confirmado entrava confirmado com o valor que a IA quisesse e, ao salvar, ensinava o vínculo descrição → material
+  // (revisão do uso de IA de 06/11/2026). O `status` pedido é ignorado.
   return {
     sid: secao.id, desc: descricao.slice(0, 500), qtd, un: it.unidade ? String(it.unidade).slice(0, 20) : null, vu,
     ncm: it.ncm || null, codigo: it.codigo ? String(it.codigo).slice(0, 50) : null,
     material_id: Number.isInteger(Number(it.material_id)) && Number(it.material_id) > 0 ? Number(it.material_id) : null,
-    subgrupo: it.subgrupo ? String(it.subgrupo).slice(0, 100) : null, status,
+    subgrupo: it.subgrupo ? String(it.subgrupo).slice(0, 100) : null, status: 'a_cotar', origem_item: ORIGEM_ASSISTENTE,
   };
 }
 
@@ -142,14 +146,22 @@ function aplicarOperacoes(payloadOriginal, ops = {}) {
     const antes = { ...it };
     const mudou = [];
     const rotuloStatus = (st) => (st === 'a_cotar' ? 'a cotar' : 'confirmado');
-    if (alt.quantidade != null) { it.qtd = arredondarQuantidade(numeroValido(alt.quantidade, 'Quantidade'), 1); mudou.push(`qtd ${antes.qtd} → ${it.qtd}`); }
-    if (alt.valor_unitario != null) { it.vu = arredondar(numeroValido(alt.valor_unitario, 'Valor unitário')); mudou.push(`unitário ${reais(antes.vu)} → ${reais(it.vu)}`); }
-    if (alt.descricao != null && String(alt.descricao).trim()) { it.desc = String(alt.descricao).trim().slice(0, 500); mudou.push(`descrição ${citar(antes.desc)} → ${citar(it.desc)}`); }
-    if (alt.unidade != null) { it.un = String(alt.unidade).slice(0, 20) || null; mudou.push(`unidade ${antes.un || '(vazio)'} → ${it.un || '(vazio)'}`); }
+    if (alt.status != null && !STATUS_ITEM.includes(alt.status)) throw new ErroRascunho(`Status de item inválido: ${alt.status} (use confirmado ou a_cotar).`);
+    let mudouValor = false; // quantidade, preço, descrição ou unidade dados pela IA: o item volta a ser sugestão
+    if (alt.quantidade != null) { it.qtd = arredondarQuantidade(numeroValido(alt.quantidade, 'Quantidade'), 1); mudou.push(`qtd ${antes.qtd} → ${it.qtd}`); mudouValor = true; }
+    if (alt.valor_unitario != null) { it.vu = arredondar(numeroValido(alt.valor_unitario, 'Valor unitário')); mudou.push(`unitário ${reais(antes.vu)} → ${reais(it.vu)}`); mudouValor = true; }
+    if (alt.descricao != null && String(alt.descricao).trim()) { it.desc = String(alt.descricao).trim().slice(0, 500); mudou.push(`descrição ${citar(antes.desc)} → ${citar(it.desc)}`); mudouValor = true; }
+    if (alt.unidade != null) { it.un = String(alt.unidade).slice(0, 20) || null; mudou.push(`unidade ${antes.un || '(vazio)'} → ${it.un || '(vazio)'}`); mudouValor = true; }
     if (alt.subgrupo != null) { it.subgrupo = String(alt.subgrupo).slice(0, 100) || null; mudou.push(`subgrupo ${citar(antes.subgrupo)} → ${citar(it.subgrupo)}`); }
-    if (alt.status != null) {
-      if (!STATUS_ITEM.includes(alt.status)) throw new ErroRascunho(`Status de item inválido: ${alt.status} (use confirmado ou a_cotar).`);
-      it.status = alt.status; mudou.push(`${rotuloStatus(antes.status)} → ${rotuloStatus(it.status)}`);
+    // O assistente pode REBAIXAR um item para "a cotar", nunca promover a "confirmado": confirmar é do engenheiro, na
+    // tela (revisão do uso de IA de 06/11/2026). Item que ele alterou fica "a cotar" e marcado como sugestão da IA.
+    if (alt.status === 'confirmado' && (mudouValor || (antes.status || 'confirmado') === 'a_cotar')) {
+      throw new ErroRascunho(`O assistente não confirma item (item ${alt.item_id}): só o engenheiro confirma, na tela do orçamento. Deixe "a cotar".`);
+    }
+    if (mudouValor) it.origem_item = ORIGEM_ASSISTENTE;
+    if (alt.status === 'a_cotar' || mudouValor) {
+      it.status = 'a_cotar';
+      if ((antes.status || 'confirmado') !== 'a_cotar') mudou.push(`${rotuloStatus(antes.status)} → ${rotuloStatus(it.status)}`);
     }
     if (mudou.length) resumo.push(`alterado: ${cortarTexto(antes.desc, 200)} (${mudou.join(', ')})`);
   }

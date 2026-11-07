@@ -217,7 +217,7 @@ caso('rascunho: operações sobre a proposta lida (GET → PUT)', () => {
   assert.strictEqual(base.data, '2026-10-27');
   assert.strictEqual(base.versao, 3);
   const { payload, resumo } = R.aplicarOperacoes(base, {
-    alterar: [{ item_id: 901, valor_unitario: 450.555, status: 'confirmado' }],
+    alterar: [{ item_id: 901, valor_unitario: 450.555 }],
     remover: [900],
     adicionar: [{ secao: 'servicos', descricao: 'Configuração do NVR', quantidade: 1 }, { secao: 'materiais', descricao: 'Switch PoE 8p', quantidade: 1, valor_unitario: 900 }],
     campos: { bdi: 15, escopo: 'Novo escopo' },
@@ -235,6 +235,40 @@ caso('rascunho: operações sobre a proposta lida (GET → PUT)', () => {
   // proposta vazia (rascunho a partir de itens): seção nova criada
   const vazio = R.aplicarOperacoes({ data: '2026-10-28', cliente_nome: 'Y', secoes: [], itens: [] }, { adicionar: [{ secao: 'materiais', descricao: 'Cabo', quantidade: 100, unidade: 'm' }] });
   assert.deepStrictEqual(vazio.payload.secoes, [{ id: 1, nome: 'Materiais e Equipamentos' }]);
+});
+
+caso('rascunho: a IA só sugere — item do assistente entra/fica "a cotar", marcado, e ele nunca confirma (06/11/2026)', () => {
+  const p = {
+    data: '2026-11-06', validade: 5, cliente_nome: 'Cliente X', bdi: '0', imposto_venda: '0', imposto_servico: '0',
+    secoes: [{ id: 51, nome: 'Materiais e Equipamentos' }],
+    itens: [
+      { id: 910, secao_id: 51, descricao: 'Cabo PP 3x2,5', quantidade: '10', unidade: 'm', valor_unitario: '12.00', status: 'confirmado', material_id: 7 },
+      { id: 911, secao_id: 51, descricao: 'Disjuntor 16 A', quantidade: '2', unidade: 'un', valor_unitario: '30.00', status: 'a_cotar', material_id: 8, origem_item: 'assistente' },
+    ],
+  };
+  const base = R.propostaParaPayload(p);
+  assert.strictEqual(base.itens[1].origem_item, 'assistente', 'a marca sobrevive ao regravar a proposta');
+  assert.strictEqual(base.itens[0].origem_item, null);
+  // item novo ligado ao catálogo e pedido "confirmado": entra a cotar e marcado (antes entrava confirmado)
+  const { payload } = R.aplicarOperacoes(base, { adicionar: [{ secao: 'materiais', descricao: 'Tomada 2P+T', quantidade: 4, valor_unitario: 15, material_id: 9, status: 'confirmado' }] });
+  const novo = payload.itens.find(i => i.desc === 'Tomada 2P+T');
+  assert.deepStrictEqual([novo.status, novo.origem_item, novo.material_id], ['a_cotar', 'assistente', 9]);
+  // não promove: nem o item a cotar, nem o confirmado que ele alterou
+  assert.throws(() => R.aplicarOperacoes(base, { alterar: [{ item_id: 911, status: 'confirmado' }] }), /não confirma item/);
+  assert.throws(() => R.aplicarOperacoes(base, { alterar: [{ item_id: 910, valor_unitario: 9, status: 'confirmado' }] }), /não confirma item/);
+  // alterar quantidade/preço/descrição de item confirmado: volta a cotar e fica marcado
+  const alt = R.aplicarOperacoes(base, { alterar: [{ item_id: 910, quantidade: 20 }] });
+  const cabo = alt.payload.itens.find(i => i._id === 910);
+  assert.deepStrictEqual([cabo.qtd, cabo.status, cabo.origem_item], [20, 'a_cotar', 'assistente']);
+  assert.ok(alt.resumo.some(r => /confirmado → a cotar/.test(r)), alt.resumo.join(' | '));
+  // só o subgrupo (visual) não mexe no status nem marca
+  const sub = R.aplicarOperacoes(base, { alterar: [{ item_id: 910, subgrupo: 'Elétrica' }] }).payload.itens.find(i => i._id === 910);
+  assert.deepStrictEqual([sub.status, sub.origem_item], ['confirmado', null]);
+  // rebaixar pode
+  const reb = R.aplicarOperacoes(base, { alterar: [{ item_id: 910, status: 'a_cotar' }] }).payload.itens.find(i => i._id === 910);
+  assert.strictEqual(reb.status, 'a_cotar');
+  // a marca vai no corpo do PUT (o servidor mantém o item a cotar, fora do catálogo e sem ensinar vínculo)
+  assert.strictEqual(R.payloadParaEnvio(payload).itens.find(i => i.desc === 'Tomada 2P+T').origem_item, 'assistente');
 });
 
 caso('formulário do projeto: mescla campo a campo, listas substituem, sem poluir protótipo', () => {

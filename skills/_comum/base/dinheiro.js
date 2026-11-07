@@ -10,9 +10,18 @@ function numeroSeguro(valor, padrao = 0) {
   return Number.isFinite(n) ? n : padrao;
 }
 
-// 2 casas (centavos)
+// 2 casas (centavos), metade para longe do zero — como o ROUND do PostgreSQL e o
+// ARRED do Excel. Antes era Math.round((v + EPSILON) * 100) / 100, que errava o
+// meio quando o produto no binário dá …,4999…: o ISS de 5 % sobre 100,30
+// (5,015 × 100 = 501,49999…) saía 5,01 em vez de 5,02 (o EPSILON é pequeno
+// demais para mexer em 5,015); e no negativo o Math.round leva o meio para
+// cima (-1,005 → -1,00). O produto é arredondado a 15 algarismos significativos
+// (exatos num double) antes do Math.round, sobre o valor absoluto, e o sinal
+// volta no fim. A cópia do frontend (utils/dinheiro.js, arred2) é igual.
 function arredondar(valor) {
-  return Math.round((numeroSeguro(valor) + Number.EPSILON) * 100) / 100;
+  const n = numeroSeguro(valor);
+  const r = Math.round(Number((Math.abs(n) * 100).toPrecision(15))) / 100;
+  return n < 0 && r !== 0 ? -r : r;
 }
 
 // Quantidade com 3 casas, como a coluna proposta_itens.quantidade DECIMAL(10,3)

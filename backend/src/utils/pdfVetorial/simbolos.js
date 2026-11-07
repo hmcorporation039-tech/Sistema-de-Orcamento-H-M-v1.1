@@ -86,9 +86,10 @@ function simbolos(caminhos, { tamanhoMax = 40, tolerancia = 0.6, prazo = null } 
     const porRaiz = new Map();
     lista.forEach((c, i) => {
       const r = raiz(i);
-      const b = porRaiz.get(r) || { chave, caixa: [Infinity, Infinity, -Infinity, -Infinity], n: 0 };
+      // comprimento, trechos e curvas somados: a assinatura do símbolo que não muda com o giro (legenda.js/parecido)
+      const b = porRaiz.get(r) || { chave, caixa: [Infinity, Infinity, -Infinity, -Infinity], n: 0, comp: 0, segs: 0, curvas: 0 };
       b.caixa = [Math.min(b.caixa[0], c.caixa[0]), Math.min(b.caixa[1], c.caixa[1]), Math.max(b.caixa[2], c.caixa[2]), Math.max(b.caixa[3], c.caixa[3])];
-      b.n++;
+      b.n++; b.comp += Number(c.comp) || 0; b.segs += Number(c.segs) || 0; b.curvas += Number(c.curvas) || 0;
       porRaiz.set(r, b);
     });
     for (const b of porRaiz.values()) {

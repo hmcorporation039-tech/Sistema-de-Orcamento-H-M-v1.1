@@ -395,5 +395,29 @@ caso('M8: ponte para as skills usa perímetro/polígono, dimensões do recinto e
   motorDaDisciplina('quadros').processar(q.dados);
 });
 
+// (revisão 06/11/2026) DWG de cabeamento com a rota medida (850 m): antes virava só "40 pontos de rede"
+caso('rota do cabeamento medida no desenho vira cabo (a conferir, sem preço) e serviço de lançamento por metro', () => {
+  const a = [analise('CAB-TERREO.dwg', ['cabeamento'])];
+  const vet = [[{ origem: 'cad', pagina: 'DWG', itens: [{ tipo: 'simbolo', descricao: 'Ponto de rede — bloco PR', quantidade: 40, disciplina: 'rede', bloco: 'PR', layer: 'CAB-PONTOS', origemDescricao: 'sigla' }],
+    rotas: [{ layer: 'CAB-CABEAMENTO', tipo: 'cabeamento', disciplina: 'cabeamento', rota_m: 850 }] }]];
+  const cabo = I.montarMateriaisDoDesenho(a, vet, []).find(m => /^Cabo de par trançado/.test(m.descricao));
+  assert.ok(cabo, 'sem o cabo da rota');
+  assert.strictEqual(cabo.unidade, 'm');
+  assert.ok(cabo.quantidade >= Math.ceil(850 * 1.1), String(cabo.quantidade)); // rota × 1,10 (+ descidas)
+  assert.strictEqual(cabo.preco_catalogo, null); // sem preço inventado: a cotar
+  assert.match(cabo.observacao, /\[CONFERIR\].*850 m × 1,10.*a cotar/);
+  const cont = I.contagemDoDesenho(a, vet);
+  assert.strictEqual(cont.cab_lancamento?.metros, 850);
+  const serv = I.montarServicosPadrao(a, ['cabeamento'], { cab_passagem: 500 }, {}, cont).find(s => s.codigo === 'cab_lancamento');
+  assert.deepStrictEqual([serv?.unidade, serv?.quantidade, serv?.valor_referencia_mercado], ['m', cont.cab_lancamento.quantidade, null]);
+  assert.match(serv.observacao, /rota medida no desenho.*850 m/);
+  // com a rota medida, a verba de passagem fica zerada (não cobra o lançamento duas vezes)
+  const verba = I.montarServicosPadrao(a, ['cabeamento'], {}, {}, cont).find(s => s.codigo === 'cab_passagem');
+  assert.strictEqual(verba.quantidade, 0);
+  // sem rota medida: o item por metro não aparece
+  assert.ok(!I.montarServicosPadrao(a, ['cabeamento'], {}, {}, {}).some(s => s.codigo === 'cab_lancamento'));
+  assert.strictEqual(I.montarServicosPadrao(a, ['cabeamento'], {}, {}, {}).find(s => s.codigo === 'cab_passagem').quantidade, 1);
+});
+
 console.log(`analiseProjetoItens: ${ok} casos ok`);
 process.exit(process.exitCode || 0);

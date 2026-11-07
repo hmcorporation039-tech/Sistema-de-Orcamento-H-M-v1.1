@@ -113,7 +113,14 @@ const TRIBUTOS_BDI = [
   ['cprb', 'CPRB (desonerado)'],
 ];
 
-const arred2Bdi = (v) => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+// metade para longe do zero, robusto ao binário (como arredondar() de
+// skills/_comum/base/dinheiro.js): 22,115 × 100 = 2211,4999… dava 22,11
+const arred2Bdi = (v) => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return n;
+  const r = Math.round(Number((Math.abs(n) * 100).toPrecision(15))) / 100;
+  return n < 0 && r !== 0 ? -r : r;
+};
 const numBdi = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 
 function referenciaTcu(tipoId) {
@@ -202,7 +209,8 @@ function normalizarMemoriaBdi(m) {
     materiais = limparParcelasBdi(m.materiais.parcelas, regime);
     if (!materiais) return null;
   }
-  const ano = Number.isInteger(Number(m.ano_cprb)) ? Number(m.ano_cprb) : null;
+  // Number(null) e Number('') dão 0 (inteiro): "sem ano" virava ano 0
+  const ano = m.ano_cprb != null && m.ano_cprb !== '' && Number.isInteger(Number(m.ano_cprb)) ? Number(m.ano_cprb) : null;
   return {
     versao: 1,
     fonte: FONTE_BDI_TCU,

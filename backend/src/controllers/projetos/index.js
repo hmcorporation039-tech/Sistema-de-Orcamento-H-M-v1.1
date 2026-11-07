@@ -17,6 +17,6 @@ const mapaCad = require('./mapaCad');
 module.exports = {
   listar, buscarUma, analisar, atualizar, remover, gerarRelatorio, gerarOrcamento, pasta, abrirPasta,
   receberPacote, analisarPacote, descartarPacote, compatibilizacaoDxf,
-  lerMapaCad: mapaCad.ler, salvarMapaCad: mapaCad.salvar, editarMapaCad: mapaCad.editar, reprocessarMapaCad: mapaCad.reprocessar,
+  lerMapaCad: mapaCad.ler, salvarMapaCad: mapaCad.salvar, editarMapaCad: mapaCad.editar, reprocessarMapaCad: mapaCad.reprocessar, confirmarBlocoMapaCad: mapaCad.confirmarBloco,
   exportarBibliotecaBlocos: mapaCad.exportarBiblioteca, importarBibliotecaBlocos: mapaCad.importarBiblioteca,
 };

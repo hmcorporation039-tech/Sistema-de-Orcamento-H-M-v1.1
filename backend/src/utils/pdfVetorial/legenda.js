@@ -118,7 +118,28 @@ const dentroDe = (r, [x0, y0, x1, y1]) => r && x0 >= r[0] && x1 <= r[2] && y0 >=
 const tocam = (a, b, t = 0.8) => a[0] <= b[2] + t && b[0] <= a[2] + t && a[1] <= b[3] + t && b[1] <= a[3] + t;
 // mesmo símbolo, também girado 90° na planta (largura e altura trocadas)
 const perto = (x, y) => Math.abs(x - y) <= Math.max(0.8, y * 0.08);
-const parecido = (a, b) => a.chave === b.chave && ((perto(a.w, b.w) && perto(a.h, b.h)) || (perto(a.w, b.h) && perto(a.h, b.w)));
+const direto = (a, b) => (perto(a.w, b.w) && perto(a.h, b.h)) || (perto(a.w, b.h) && perto(a.h, b.w));
+// Girado num ângulo qualquer (tomada na parede inclinada): a caixa muda, mas o comprimento do traço, o nº de
+// caminhos, de trechos e de curvas não (simbolos.js soma os três). A caixa ainda limita: o diâmetro do símbolo fica
+// entre o maior lado e a diagonal da caixa em qualquer giro, e a soma dos lados varia no máximo √2. Antes o
+// quadrado da legenda girado 45° (caixa 8,5 × 8,5 em vez de 6 × 6) não era contado. Só vale com as somas
+// (a legenda aprendida guarda só a caixa: para ela, só 0°/90° como antes).
+function giradoQualquer(a, b) {
+  if (!(a.comp > 0 && b.comp > 0) || !perto(a.comp, b.comp)) return false;
+  if (a.n !== b.n || (a.segs ?? -1) !== (b.segs ?? -2) || (a.curvas ?? -1) !== (b.curvas ?? -2)) return false;
+  const tol = (v) => Math.max(0.8, v * 0.08);
+  const [minA, maxA, minB, maxB] = [Math.max(a.w, a.h), Math.hypot(a.w, a.h), Math.max(b.w, b.h), Math.hypot(b.w, b.h)];
+  if (minA > maxB + tol(maxB) || minB > maxA + tol(maxA)) return false;
+  const sA = a.w + a.h, sB = b.w + b.h;
+  return sA <= sB * Math.SQRT2 + tol(sB) && sB <= sA * Math.SQRT2 + tol(sA);
+}
+const parecido = (a, b) => a.chave === b.chave && (direto(a, b) || giradoQualquer(a, b));
+// quanto a forma de `a` difere da de `b` (0 = igual): o que casa direto (0°/90°) sempre na frente do girado
+function diferencaDeForma(a, b) {
+  const rel = (x, y) => Math.abs(x - y) / Math.max(Math.abs(y), 1e-9);
+  if (direto(a, b)) return Math.min(rel(a.w, b.w) + rel(a.h, b.h), rel(a.w, b.h) + rel(a.h, b.w));
+  return 1 + (a.comp > 0 && b.comp > 0 ? rel(a.comp, b.comp) : 1);
+}
 
 // Partes de um símbolo: blocos de OUTRA família (cheio × traço, outra cor ou
 // espessura), não maiores que ele, com o centro dentro dele (folga de 1 pt).
@@ -139,7 +160,7 @@ function indiceDeCompanheiros(blobs) {
         for (let gy = Math.floor(y0 / lado); gy <= Math.floor(y1 / lado); gy++) {
           for (const o of grade.get(gx * 1048576 + gy) || []) {
             if (o === b || o.chave === b.chave || o.w * o.h > b.w * b.h * 1.1) continue;
-            if (o.cx >= x0 && o.cx <= x1 && o.cy >= y0 && o.cy <= y1) r.push({ chave: o.chave, w: o.w, h: o.h, d: Math.hypot(o.cx - b.cx, o.cy - b.cy) });
+            if (o.cx >= x0 && o.cx <= x1 && o.cy >= y0 && o.cy <= y1) r.push({ chave: o.chave, w: o.w, h: o.h, d: Math.hypot(o.cx - b.cx, o.cy - b.cy), n: o.n, comp: o.comp, segs: o.segs, curvas: o.curvas });
           }
         }
       }
@@ -180,5 +201,5 @@ function descricaoCompleta(entrada, textos, inicios) {
 
 module.exports = {
   ehDescricao, meioDoTexto, textoAoLado, regioesLegenda, descricaoCompleta,
-  dentroDe, tocam, parecido, indiceDeCompanheiros, faixaDe, partesCasam, mesmaAssinatura,
+  dentroDe, tocam, parecido, diferencaDeForma, indiceDeCompanheiros, faixaDe, partesCasam, mesmaAssinatura,
 };

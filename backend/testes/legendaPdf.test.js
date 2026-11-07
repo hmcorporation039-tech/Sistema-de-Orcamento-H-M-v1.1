@@ -109,12 +109,14 @@ const contagem = (p) => Object.fromEntries((p.itens || []).filter(i => i.tipo ==
     const pool = require('../src/config/database');
     const ESC = 'zz teste escritorio pdf';
     const limpar = async () => {
+      await pool.query("DELETE FROM aprendizado_votos WHERE tipo IN ('pdf', 'nota') AND chave LIKE $1", [`${ESC}|%`]);
       await pool.query('DELETE FROM pdf_legendas_aprendidas WHERE escritorio = $1', [ESC]);
       await pool.query('DELETE FROM cad_notas_aprendidas WHERE escritorio = $1', [ESC]);
     };
     try {
+      await require('../src/models/migracoes/2.0-53-aprendizado-por-disciplina')(pool);
       await limpar();
-      await caso('registrar e carregar por escritório; tipo diferente para a mesma assinatura é conflito (sai do uso)', async () => {
+      await caso('registrar e carregar por escritório; tipo diferente para a mesma assinatura: vale a maioria, empate é conflito (sai do uso)', async () => {
         const paginas = [{ legendaPropria: legendaDaFolha }];
         const r = await legendas.registrar(paginas, { escritorio: ESC, arquivo: 'ZZ-a.pdf', textoDasNotas: 'NOTAS GERAIS\nTODAS AS TOMADAS BAIXAS A 0,30 M DO PISO ACABADO' });
         assert.strictEqual(r.legendas, 2);
@@ -122,14 +124,22 @@ const contagem = (p) => Object.fromEntries((p.itens || []).filter(i => i.tipo ==
         let lidas = await legendas.carregar(ESC);
         assert.strictEqual(lidas.length, 2);
         assert.deepStrictEqual(await legendas.carregar('outro escritorio zz'), [], 'só vale para o mesmo escritório');
-        // outro PDF do escritório reforça; um terceiro diz que o quadrado vermelho é sirene: conflito
+        // outro PDF do escritório reforça (o mesmo PDF relido não); um terceiro diz que o quadrado vermelho é sirene: 2 × 1,
+        // a maioria (3+ projetos, 2/3 deles) vale; um quarto empata: conflito (sai do uso)
+        await legendas.registrar(paginas, { escritorio: ESC, arquivo: 'ZZ-b.pdf' });
         await legendas.registrar(paginas, { escritorio: ESC, arquivo: 'ZZ-b.pdf' });
         const sirene = [{ legendaPropria: [{ ...legendaDaFolha.find(k => /TOMADA/.test(k.texto)), texto: 'SIRENE DE ALARME 120DB' }] }];
         await legendas.registrar(sirene, { escritorio: ESC, arquivo: 'ZZ-c.pdf' });
         lidas = await legendas.carregar(ESC);
+        assert.strictEqual(lidas.length, 2, 'a maioria resolve');
+        await legendas.registrar(sirene, { escritorio: ESC, arquivo: 'ZZ-d.pdf' });
+        lidas = await legendas.carregar(ESC);
         assert.deepStrictEqual(lidas.map(k => k.texto), ['DETECTOR DE FUMACA PONTUAL']);
         const { rows } = await pool.query('SELECT texto, vezes, conflitos FROM pdf_legendas_aprendidas WHERE escritorio = $1 ORDER BY texto', [ESC]);
-        assert.deepStrictEqual(rows.map(x => [x.vezes, x.conflitos]), [[2, 0], [3, 1]]);
+        assert.deepStrictEqual(rows.map(x => [x.vezes, x.conflitos]), [[2, 0], [2, 2]]);
+        // por disciplina: com as disciplinas marcadas, a linha de outra disciplina não vale sozinha
+        assert.deepStrictEqual((await legendas.carregar(ESC, undefined, { disciplinas: ['cftv'] })).length, 0);
+        assert.deepStrictEqual((await legendas.carregar(ESC, undefined, { disciplinas: ['incendio'] })).map(k => k.texto), ['DETECTOR DE FUMACA PONTUAL']);
       });
       await caso('treino da prancha: carimbo sem responsável não lê o desenho; com responsável, aprende a legenda', async () => {
         const { treinarPrancha } = require('../src/services/treinoAcervo');

@@ -277,6 +277,8 @@ router.put('/projetos/analises/:id/mapa', autenticar, validarId, posseAnalise, p
 // componentes inseridos e retirados pelo engenheiro (planta do mapa ou 3D), com os símbolos da biblioteca — 2.30
 router.put('/projetos/analises/:id/mapa/edicoes', autenticar, validarId, posseAnalise, projCtrl.editarMapaCad);
 router.post('/projetos/analises/:id/mapa/reprocessar', autenticar, validarId, posseAnalise, projCtrl.reprocessarMapaCad);
+// o engenheiro diz o que é um bloco nomeado do desenho: aprendizado confirmado, por escritório/disciplina (revisão de 11/2026)
+router.put('/projetos/analises/:id/mapa/blocos', autenticar, validarId, posseAnalise, projCtrl.confirmarBlocoMapaCad);
 // biblioteca de blocos (o que o mapa do CAD ensinou), em JSON: levar de uma instalação para outra; importar só administrador
 router.get('/projetos/biblioteca-blocos', autenticar, projCtrl.exportarBibliotecaBlocos);
 router.post('/projetos/biblioteca-blocos', autenticar, admin, projCtrl.importarBibliotecaBlocos);
@@ -291,6 +293,7 @@ router.get('/laudos/modelo/:disciplina', autenticar, laudoCtrl.modelo);
 router.get('/laudos', autenticar, laudoCtrl.listar);
 router.post('/laudos', autenticar, laudoCtrl.criar);
 router.post('/laudos/de-analise', autenticar, laudoCtrl.criarDeAnalise);
+// documento, planta e unifilar: qualquer um vê/baixa; só o dono/admin grava na pasta (laudos/desenhos.js, podeGravarNaPasta)
 router.get('/laudos/:id/documento/:tipo', autenticar, validarId, laudoCtrl.documento);
 // documento em HTML (2.4: modelo 3D do quadro) numa aba nova: link curto de 10 min e
 // página em sandbox — o GET do link é o único sem login, como /modelo-3d/ver/:token
@@ -299,7 +302,8 @@ router.get('/documentos-html/ver/:token', laudoCtrl.verDocumentoHtml);
 // Pasta do laudo em "Arquivos do Sistema/Laudos": gravar todos os documentos, consultar e abrir
 router.post('/laudos/:id/salvar-documentos', autenticar, validarId, posseLaudo, laudoCtrl.salvarDocumentos);
 router.get('/laudos/:id/pasta', autenticar, validarId, laudoCtrl.pasta);
-router.post('/laudos/:id/pasta/abrir', autenticar, validarId, laudoCtrl.abrirPasta);
+// abrir a pasta no Explorer do servidor: só o dono/admin (revisão de 11/2026 — antes sem posse)
+router.post('/laudos/:id/pasta/abrir', autenticar, validarId, posseLaudo, laudoCtrl.abrirPasta);
 router.get('/laudos/:id/fotos/:fotoId', autenticar, validarId, laudoCtrl.verFoto);
 router.post('/laudos/:id/fotos', autenticar, validarId, posseLaudo, uploadFotos.array('fotos', 20), laudoCtrl.enviarFotos);
 // arquitetura (.dxf) do projeto e planta gerada pela skill da disciplina

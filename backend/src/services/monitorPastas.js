@@ -190,21 +190,34 @@ async function caminhoAbsoluto(rel) {
 }
 
 let relogio = null;
+let emCurso = false;
+// Uma rodada por vez. Antes era setInterval: com a pasta de rede lenta (ou
+// muitas obras), a rodada passava dos 10 min e a próxima começava por cima —
+// duas varreduras e dois envios da reserva ao mesmo tempo (arquivo copiado
+// duas vezes, avisos repetidos). Agora a próxima só é marcada quando a atual
+// termina (setTimeout encadeado), e a guarda segura uma chamada fora de hora.
+async function rodadaDoMonitor() {
+  if (emCurso) return false;
+  emCurso = true;
+  try {
+    const enviados = await P.enviarPendentesAoServidor();
+    if (enviados) console.log(`Pasta dos clientes: ${enviados} arquivo(s) gravado(s) com o servidor fora foram enviados.`);
+    await escanearTodos();
+  } catch (e) {
+    console.warn(`Monitor de pastas: ${e.message}`);
+  } finally {
+    emCurso = false;
+  }
+  return true;
+}
 function iniciarMonitor() {
   P.registrarAoGravar((abs) => { registrarGravacaoSistema(abs); });
   if (String(process.env.MONITOR_PASTAS || '').toLowerCase() === 'desligado' || relogio) return;
-  const rodada = async () => {
-    try {
-      const enviados = await P.enviarPendentesAoServidor();
-      if (enviados) console.log(`Pasta dos clientes: ${enviados} arquivo(s) gravado(s) com o servidor fora foram enviados.`);
-      await escanearTodos();
-    } catch (e) {
-      console.warn(`Monitor de pastas: ${e.message}`);
-    }
+  const agendar = (ms) => {
+    relogio = setTimeout(async () => { await rodadaDoMonitor(); agendar(INTERVALO_MS); }, ms);
+    relogio.unref?.();
   };
-  setTimeout(rodada, 60 * 1000).unref?.();
-  relogio = setInterval(rodada, INTERVALO_MS);
-  relogio.unref?.();
+  agendar(60 * 1000);
 }
 
-module.exports = { iniciarMonitor, registrarGravacaoSistema, escanearCliente, escanearTodos, novidades, resumo, marcarVisto, caminhoAbsoluto, ANALISAVEL };
+module.exports = { iniciarMonitor, rodadaDoMonitor, registrarGravacaoSistema, escanearCliente, escanearTodos, novidades, resumo, marcarVisto, caminhoAbsoluto, ANALISAVEL };

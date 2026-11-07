@@ -147,13 +147,45 @@ const haLayerDeParede = (layers) => layers.some(l => RE_PAREDE_3D.test(l || '') 
 // Uma planta da folha: a prancha de projeto costuma trazer várias lado a lado
 // (a da Arena, 7 — implantação, lojas, detalhes) e o modelo juntava todas.
 // Ficam os ambientes, as linhas e as portas dentro de `caixa` [x0, y0, x1, y1] (m).
+// O traço que cruza a borda da caixa é RECORTADO nela (revisão de 06/11/2026): antes só entrava o traço com todos
+// os pontos dentro, e a parede comprida que passava um pouco da borda (ou atravessava a planta) sumia do 3D.
+function recortarSegmento(a, b, c) {
+  // Liang–Barsky: o pedaço de a→b dentro de c = [x0, y0, x1, y1], ou null
+  let t0 = 0, t1 = 1;
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  for (const [p, q] of [[-dx, a[0] - c[0]], [dx, c[2] - a[0]], [-dy, a[1] - c[1]], [dy, c[3] - a[1]]]) {
+    if (Math.abs(p) < 1e-12) { if (q < 0) return null; continue; }
+    const r = q / p;
+    if (p < 0) { if (r > t1) return null; if (r > t0) t0 = r; } else { if (r < t0) return null; if (r < t1) t1 = r; }
+  }
+  return [[a[0] + t0 * dx, a[1] + t0 * dy], [a[0] + t1 * dx, a[1] + t1 * dy]];
+}
+function recortarReferencia(r, c) {
+  if (r.pts.every(p => naCaixa(c, p))) return [r];
+  const seq = r.fechada && r.pts.length > 2 ? [...r.pts, r.pts[0]] : r.pts;
+  const pedacos = [];
+  let atual = null;
+  for (let i = 1; i < seq.length; i++) {
+    const s = recortarSegmento(seq[i - 1], seq[i], c);
+    if (!s || dist(s[0], s[1]) < 1e-6) { atual = null; continue; }
+    // o pedaço continua o anterior quando começa onde ele terminou (o trecho ficou dentro)
+    if (atual && dist(atual.pts.at(-1), s[0]) < 1e-9) atual.pts.push(s[1]);
+    else { atual = { ...r, pts: [s[0], s[1]], fechada: false, recortada: true }; pedacos.push(atual); }
+  }
+  // polilinha fechada: o último pedaço continua no primeiro (a volta passa pelo ponto inicial)
+  if (pedacos.length > 1 && dist(pedacos.at(-1).pts.at(-1), pedacos[0].pts[0]) < 1e-9) {
+    const ultimo = pedacos.pop();
+    pedacos[0].pts = [...ultimo.pts, ...pedacos[0].pts.slice(1)];
+  }
+  return pedacos;
+}
 function recortarArquitetura(arq, caixa) {
   const c = expandir(caixa, 0.5);
   return {
     ...arq,
     ambientes: arq.ambientes.filter(a => naCaixa(c, centroide(a.poligono))),
     portas: (arq.portas || []).filter(p => naCaixa(c, p.meio)),
-    referencia: arq.referencia.filter(r => r.pts.length && r.pts.every(p => naCaixa(c, p))),
+    referencia: arq.referencia.filter(r => r.pts.length).flatMap(r => recortarReferencia(r, c)),
     regioesPlanta: [caixa],
   };
 }
@@ -969,6 +1001,9 @@ function montarCena(arquitetura, opcoes = {}) {
   const grandes = []; // quadros, racks e centrais já postos (para não sobrepor)
   const indiceAmb = new Map();
   ambs.forEach((a, i) => { if (!indiceAmb.has(a.nome)) indiceAmb.set(a.nome, i); });
+  // nome repetido (dois "BANHEIRO"): o nome não diz qual é — vale a posição do ponto (revisão de 06/11/2026;
+  // antes o ponto do 2º banheiro ia para o 1º e o interruptor de um comandava a luz do outro)
+  const nomesRepetidos = new Set(ambs.filter((a, i) => indiceAmb.get(a.nome) !== i).map(a => a.nome));
   // ponto sem ambiente (ou com nome que não casa — o componente lido do DWG vem com
   // ambiente null): o MENOR ambiente cujo polígono contém o ponto, como em
   // ./pontosDoDesenho.js. Sem isso o visualizador não acha o ponto "dentro" da sala
@@ -1015,7 +1050,10 @@ function montarCena(arquitetura, opcoes = {}) {
     const p = posicionar3d(d, faces, peDireito);
     if (FORMAS_DE_PAREDE.has(t.forma)) afastarDosVizinhos(p, t.tam, grandes);
     const [x, y] = P([p.x, p.y]);
-    const amb = indiceAmb.has(d.ambiente) ? indiceAmb.get(d.ambiente) : Number.isFinite(d.x) && Number.isFinite(d.y) ? ambienteDoPonto(d.x, d.y) : -1;
+    const temXY = Number.isFinite(d.x) && Number.isFinite(d.y);
+    let amb = indiceAmb.has(d.ambiente) && !(temXY && nomesRepetidos.has(d.ambiente)) ? indiceAmb.get(d.ambiente) : temXY ? ambienteDoPonto(d.x, d.y) : -1;
+    // (nome repetido e o ponto fora de todos: o primeiro de mesmo nome, como antes)
+    if (amb < 0 && indiceAmb.has(d.ambiente)) amb = indiceAmb.get(d.ambiente);
     // item: [x, y, z, nx, ny, ambiente, id, campo | null, circuito, comando] — circuito e comando
     // do modelo único da instalação (antes o 3D descartava o atributo CIRCUITO: achado 3D-06);
     // sem eles o item termina no id (ou no campo da câmera), como antes. O elemento é
@@ -1075,6 +1113,9 @@ function montarCena(arquitetura, opcoes = {}) {
       for (const a of alvo) {
         if (!a.circuito_lido) continue;
         a.ref.circuito = a.circuito_lido;
+        // lido no texto da planta, sem a conferência do Mapa do CAD: entra na simulação marcado "lido, a
+        // conferir" (o ponto e o circuito — ../instalacao/doDesenho.js), não como circuito do projeto (06/11/2026)
+        a.ref.circuitoDaPlanta = true;
         if (a.retorno_lido && !a.ref.comando) a.ref.comando = `${a.circuito_lido}${a.retorno_lido.split(',')[0]}`;
         lidosNaPlanta++;
       }
@@ -1095,6 +1136,7 @@ function montarCena(arquitetura, opcoes = {}) {
       } else {
         avisos.push('3D interativo com a instalação ESTIMADA pelo desenho: circuitos por ambiente (ou o número escrito no desenho) e os interruptores do ambiente comandando as luminárias dele — simulação para conferir, não é o projeto elétrico [CONFERIR].');
         if ((opcoes.quadrosDoDiagrama || []).length) avisos.push(`Quadros lidos no diagrama do projeto (${opcoes.quadrosDoDiagrama.map(q => q.tag).join(', ')}) sem quadro com a mesma tag desenhado nesta planta: escreva a tag junto do símbolo do quadro para o 3D usar os circuitos originais [CONFERIR].`);
+        if (r.lidosNaPlanta) avisos.push(`${r.lidosNaPlanta} ponto(s) com o número do circuito LIDO no texto da planta, sem conferência no Mapa do CAD: na simulação aparecem como "lido, a conferir" [CONFERIR].`);
       }
     }
   }

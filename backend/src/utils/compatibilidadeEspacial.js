@@ -28,6 +28,8 @@ const ENERGIA = new Set(['eletrica', 'iluminacao', 'eletrica_hospitalar', 'eletr
 const TELECOM = new Set(['cabeamento', 'rede', 'cftv', 'telefonia', 'antena']);
 const TRACADO_DIST_M = 0.15;
 const MAX_CONFLITOS = 300;
+// componentes e segmentos de traçado guardados para o 3D (peso no banco); passou, vira achado
+const LIMITE_3D = 20000;
 // segmento de traçado mais longo que isso não é eletroduto/eletrocalha de
 // verdade (linha de construção, erro de escala/unidade): fica de fora, com aviso
 const MAX_SEGMENTO_M = 1000;
@@ -413,16 +415,28 @@ function compatibilizar(arquivos, { temPdf = false } = {}) {
         // e o circuito/comando conferido no Mapa do CAD (fase 1 do roteiro: o 3D deixa de perder o circuito — 3D-06)
         // o tipo exato do ponto (o 3D não precisa adivinhar pela descrição) e o id do componente inserido pelo engenheiro
         // (services/edicoesDoMapa.js: o 3D sabe que ele já está aplicado) — versão 2.30
-        pontos: pontos.slice(0, 20000).map(({ x, y, descricao, disciplina, classe, altura_m, montagem, circuito, comando, simbolo, edicao }) => ({ x, y, descricao, disciplina, classe, ...(montagem ? { altura_m: altura_m ?? null, montagem } : {}), ...(circuito ? { circuito, comando: comando || '' } : {}), ...(simbolo ? { simbolo } : {}), ...(edicao ? { edicao } : {}) })),
+        pontos: pontos.slice(0, LIMITE_3D).map(({ x, y, descricao, disciplina, classe, altura_m, montagem, circuito, comando, simbolo, edicao }) => ({ x, y, descricao, disciplina, classe, ...(montagem ? { altura_m: altura_m ?? null, montagem } : {}), ...(circuito ? { circuito, comando: comando || '' } : {}), ...(simbolo ? { simbolo } : {}), ...(edicao ? { edicao } : {}) })),
         // tipo, material e medida de cada trecho (services/analiseCad/medidasInfra.js) vão junto: o 3D desenha a seção real
         trechos: trechos.map(t => ({
           disciplina: t.disciplina, layer: t.layer,
           ...(t.tipo ? { tipo: t.tipo, material: t.material ?? null, medida: t.medida ?? null, secao_mm: t.secao_mm ?? null, origem_medida: t.origem_medida ?? null } : {}),
           ...(t.quantidade > 1 ? { quantidade: t.quantidade } : {}),
-          segmentos: t.segmentos.slice(0, Math.max(0, 20000 - nSeg)).map(s => { nSeg++; return s.map(v => Math.round(v * 1000) / 1000); }),
+          segmentos: t.segmentos.slice(0, Math.max(0, LIMITE_3D - nSeg)).map(s => { nSeg++; return s.map(v => Math.round(v * 1000) / 1000); }),
         }))
           .filter(t => t.segmentos.length),
       };
+      // o 3D recebe no máximo LIMITE_3D pontos e LIMITE_3D segmentos (peso no banco): o que passou disso não aparece
+      // no modelo — avisa em vez de cortar calado (a contagem e o orçamento usam tudo; só o 3D fica incompleto)
+      const totalSeg = trechos.reduce((s, t) => s + t.segmentos.length, 0);
+      const cortes = [
+        ...(pontos.length > LIMITE_3D ? [`${pontos.length - LIMITE_3D} de ${pontos.length} componentes`] : []),
+        ...(totalSeg > LIMITE_3D ? [`${totalSeg - LIMITE_3D} de ${totalSeg} segmentos de traçado`] : []),
+      ];
+      if (cortes.length) {
+        espacialReferencia.cortado = { limite: LIMITE_3D, pontos: pontos.length, segmentos: totalSeg };
+        achados.push({ tema: '3D do projeto incompleto (limite de desenho)',
+          observacao: `O desenho de "${g.ref.arquivo}" passa do limite do modelo 3D (${LIMITE_3D.toLocaleString('pt-BR')} componentes e ${LIMITE_3D.toLocaleString('pt-BR')} segmentos): ${cortes.join(' e ')} ficaram fora do 3D. A contagem e o orçamento usam o desenho inteiro; para ver tudo no 3D, gere um modelo por pavimento/prancha.` });
+      }
     }
     achados.push(...conferenciaIncendio(pontos, ambRef));
     // NBR 14565: enlace permanente de até 90 m do distribuidor à tomada

@@ -14,6 +14,8 @@ const REDE_PADRAO = '\\\\MARCIO-SERVER\\Arquivos Gerais 2\\H&M\\Projeto do siste
 // passou disso desde o último dump, a tarefa das 02:00 não rodou (2 h de folga sobre as 24 h)
 const LIMITE_ATRASO_HORAS = 26;
 const TIMEOUT_EXECUCAO_MS = 10 * 60 * 1000;
+// depois de matar a árvore no tempo-limite, espera o processo fechar; se nem assim fechar, solta a trava
+const ESPERA_FECHAR_APOS_MATAR_MS = 60 * 1000;
 const TIMEOUT_CONSULTA_DESTINO_MS = 3000;
 const MAX_LISTA = 15;
 
@@ -49,10 +51,15 @@ async function existeEm(pasta, nome) {
 function listarDumps(pasta, banco) {
   let nomes;
   try { nomes = fs.readdirSync(pasta); } catch { return []; }
+  // Um dump pode sumir entre o readdir e o stat (a limpeza do script apagando
+  // os antigos, ou a cópia .tmp sendo renomeada): o statSync lançava e o painel
+  // inteiro respondia 500. O que sumiu fica de fora.
   return nomes.filter(n => ehDump(banco, n)).map(nome => {
-    const st = fs.statSync(path.join(pasta, nome));
-    return { nome, tamanho: st.size, em: st.mtime };
-  }).sort((a, b) => b.em - a.em);
+    try {
+      const st = fs.statSync(path.join(pasta, nome));
+      return { nome, tamanho: st.size, em: st.mtime };
+    } catch { return null; }
+  }).filter(Boolean).sort((a, b) => b.em - a.em);
 }
 
 // Situação a partir da lista e da hora: separada para testar sem disco.
@@ -97,9 +104,24 @@ function interpretarSaida(texto) {
   };
 }
 
+// Mata o processo E os filhos dele. filho.kill() mata só o powershell: o
+// pg_dump que ele abriu continuava rodando (e gravando o dump) sozinho.
+function matarArvore(filho) {
+  if (!filho || !filho.pid) return;
+  if (process.platform === 'win32') {
+    const t = spawn('taskkill', ['/T', '/F', '/PID', String(filho.pid)], { windowsHide: true, stdio: 'ignore' });
+    t.on('error', () => { try { filho.kill(); } catch { /* já saiu */ } });
+  } else {
+    try { filho.kill('SIGKILL'); } catch { /* já saiu */ }
+  }
+}
+
 // Roda o script só com o banco. Uma de cada vez: o segundo clique recebe 409.
-// `comando`/`argumentos` existem para o teste trocar o PowerShell por um script de mentira.
-function executar({ usuarioId = null, comando = 'powershell.exe', argumentos = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', SCRIPT, '-SomenteBanco'] } = {}) {
+// `comando`/`argumentos`/`tempoLimiteMs` existem para o teste trocar o PowerShell por um script de mentira.
+// A trava (emExecucao) só é solta quando o processo TERMINA (revisão de 11/2026):
+// antes o tempo-limite soltava na hora, com o pg_dump ainda rodando — o
+// próximo clique abria um segundo dump por cima do primeiro.
+function executar({ usuarioId = null, comando = 'powershell.exe', argumentos = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', SCRIPT, '-SomenteBanco'], tempoLimiteMs = TIMEOUT_EXECUCAO_MS } = {}) {
   if (process.platform !== 'win32' && comando === 'powershell.exe') {
     const e = new Error('O backup pelo painel só funciona no servidor Windows.'); e.status = 501;
     return Promise.reject(e);
@@ -108,29 +130,53 @@ function executar({ usuarioId = null, comando = 'powershell.exe', argumentos = [
     const e = new Error('Já existe um backup em andamento.'); e.status = 409;
     return Promise.reject(e);
   }
-  emExecucao = { desde: new Date().toISOString(), usuarioId };
+  const execucao = { desde: new Date().toISOString(), usuarioId };
+  emExecucao = execucao;
   return new Promise((resolve) => {
     let saida = '';
-    let encerrado = false;
-    const filho = spawn(comando, argumentos, { windowsHide: true });
-    const terminar = (resultado) => {
-      if (encerrado) return;
-      encerrado = true;
-      clearTimeout(timer);
-      emExecucao = null;
+    let respondido = false;
+    let timer = null;
+    let timerFechar = null;
+    const responder = (resultado) => {
+      if (respondido) return;
+      respondido = true;
       resolve(resultado);
     };
-    const timer = setTimeout(() => {
-      filho.kill();
-      terminar({ ok: false, codigo: null, erro: 'O backup passou de 10 minutos e foi interrompido.', ...interpretarSaida(saida) });
-    }, TIMEOUT_EXECUCAO_MS);
-    filho.stdout.on('data', d => { saida += d.toString('utf8'); });
-    filho.stderr.on('data', d => { saida += d.toString('utf8'); });
-    filho.on('error', err => terminar({ ok: false, codigo: null, erro: `Não consegui iniciar o script: ${err.message}`, ...interpretarSaida(saida) }));
+    const liberar = () => {
+      clearTimeout(timer);
+      clearTimeout(timerFechar);
+      if (emExecucao === execucao) emExecucao = null;
+    };
+    let filho;
+    try {
+      filho = spawn(comando, argumentos, { windowsHide: true });
+    } catch (err) {
+      // exceção síncrona do spawn (argumento inválido etc.): antes a trava ficava presa até reiniciar o backend
+      liberar();
+      responder({ ok: false, codigo: null, erro: `Não consegui iniciar o script: ${err.message}`, ...interpretarSaida('') });
+      return;
+    }
+    timer = setTimeout(() => {
+      matarArvore(filho);
+      const minutos = Math.round(tempoLimiteMs / 60000);
+      responder({ ok: false, codigo: null, erro: `O backup passou de ${minutos >= 1 ? `${minutos} minutos` : 'tempo-limite'} e foi interrompido.`, ...interpretarSaida(saida) });
+      timerFechar = setTimeout(() => {
+        console.warn('Backup: o processo não fechou depois de interrompido; a trava foi solta mesmo assim.');
+        liberar();
+      }, ESPERA_FECHAR_APOS_MATAR_MS);
+      timerFechar.unref?.();
+    }, tempoLimiteMs);
+    filho.stdout?.on('data', d => { saida += d.toString('utf8'); });
+    filho.stderr?.on('data', d => { saida += d.toString('utf8'); });
+    filho.on('error', err => {
+      liberar();
+      responder({ ok: false, codigo: null, erro: `Não consegui iniciar o script: ${err.message}`, ...interpretarSaida(saida) });
+    });
     filho.on('close', codigo => {
+      liberar();
       const r = interpretarSaida(saida);
       const ok = codigo === 0 && !!r.arquivo;
-      terminar({ ok, codigo, erro: ok ? null : (r.avisos.find(l => /ERRO/.test(l)) || `O script terminou com código ${codigo}.`), ...r });
+      responder({ ok, codigo, erro: ok ? null : (r.avisos.find(l => /ERRO/.test(l)) || `O script terminou com código ${codigo}.`), ...r });
     });
   });
 }

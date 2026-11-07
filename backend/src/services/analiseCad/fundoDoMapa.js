@@ -18,8 +18,14 @@ const valido = (p) => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFini
 function regiaoDeInteresse(centros = [], poligonos = []) {
   const pts = [...centros, ...poligonos.flat()].filter(valido);
   if (!pts.length) return null;
-  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
-  const c = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  // laço e não Math.min(...xs): com centenas de milhares de vértices o espalhamento estoura a pilha (RangeError)
+  const c = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const [x, y] of pts) {
+    if (x < c[0]) c[0] = x;
+    if (y < c[1]) c[1] = y;
+    if (x > c[2]) c[2] = x;
+    if (y > c[3]) c[3] = y;
+  }
   const folga = Math.max(10, Math.max(c[2] - c[0], c[3] - c[1]) * 0.15);
   return [c[0] - folga, c[1] - folga, c[2] + folga, c[3] + folga];
 }

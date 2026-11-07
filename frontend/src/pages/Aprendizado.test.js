@@ -44,3 +44,17 @@ test('mostra o acerto, a fila de conferência com link para a análise e inicia 
   await act(async () => { caixa.querySelector('[data-testid="iniciar-treino"]').click(); });
   expect(caixa.querySelector('[data-testid="treino-andamento"]').textContent).toContain('Lendo 0 de 825');
 });
+
+// diretriz de 06/11/2026: o aprendizado é POR DISCIPLINA — quanto cada uma sabe, confirmado × sugerido
+test('mostra o que cada disciplina já sabe, confirmado pelo engenheiro × sugerido pelo sistema', async () => {
+  getAprendizado.mockResolvedValue({ data: { ...dados, porDisciplinaDetalhe: [
+    { chave: 'eletrica', nome: 'Elétrica', simbolos: 8, blocos: 2, legendasPdf: 0, alturas: 1, naoPonto: 1, confirmados: 5, sugeridos: 7, total: 12 },
+    { chave: 'cftv', nome: 'CFTV', simbolos: 0, blocos: 3, legendasPdf: 1, alturas: 0, naoPonto: 0, confirmados: 0, sugeridos: 4, total: 4 },
+  ] } });
+  await act(async () => { raiz.render(<Aprendizado />); });
+  const tabela = caixa.querySelector('[data-testid="sabe-por-disciplina"]');
+  expect(tabela.textContent).toContain('confirmado');
+  const ele = [...caixa.querySelector('[data-testid="sabe-eletrica"]').querySelectorAll('td')].map(td => td.textContent);
+  expect(ele).toEqual(['Elétrica', '8', '2', '0', '1', '1', '5', '7']);
+  expect(caixa.querySelector('[data-testid="sabe-cftv"]').textContent).toContain('CFTV');
+});

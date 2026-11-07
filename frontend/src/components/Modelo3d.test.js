@@ -51,3 +51,32 @@ test('sem Mapa do CAD, avisa e não abre', async () => {
   expect(document.querySelector('[data-testid="editor-3d"]')).toBeNull();
   expect(toast.error).toHaveBeenCalled();
 });
+
+// revisão de 11/2026: trocar de análise/proposta antes de a resposta chegar não mostra a da anterior
+test('resposta atrasada de outra análise não entra no cartão', async () => {
+  const { CartaoModelo3dAnalise } = require('./Modelo3d');
+  const { getArquiteturaAnalise } = require('../services/api');
+  let soltarA;
+  getArquiteturaAnalise.mockReset();
+  getArquiteturaAnalise.mockImplementation((id) => (id === 1
+    ? new Promise(r => { soltarA = () => r({ data: { nome_arquivo: 'arquitetura-A.dxf', resumo: { ambientes: [] } } }); })
+    : Promise.resolve({ data: null })));
+  await act(async () => { raiz.render(<CartaoModelo3dAnalise analiseId={1} />); });
+  await act(async () => { raiz.render(<CartaoModelo3dAnalise analiseId={2} />); });
+  await act(async () => { soltarA(); });
+  expect(caixa.textContent).not.toContain('arquitetura-A.dxf');
+});
+
+test('resposta atrasada de outra proposta não liga a opção do 3D', async () => {
+  const { OpcaoModelo3dProposta } = require('./Modelo3d');
+  const { getModelo3d } = require('../services/api');
+  let soltarA;
+  getModelo3d.mockReset();
+  getModelo3d.mockImplementation((_o, id) => (id === 1
+    ? new Promise(r => { soltarA = () => r({ data: { disponivel: true, modelo_3d_cliente: true } }); })
+    : Promise.resolve({ data: { disponivel: false } })));
+  await act(async () => { raiz.render(<OpcaoModelo3dProposta propostaId={1} />); });
+  await act(async () => { raiz.render(<OpcaoModelo3dProposta propostaId={2} />); });
+  await act(async () => { soltarA(); });
+  expect(caixa.innerHTML).toBe('');
+});

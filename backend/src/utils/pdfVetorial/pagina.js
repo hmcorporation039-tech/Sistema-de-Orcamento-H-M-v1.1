@@ -41,7 +41,8 @@ async function lerPagina(pagina, OPS, { geometria = false, ops: opsLidos = null,
         const pintura = a[0];
         const d = a[1]?.[0];
         if (!d || typeof d.length !== 'number') break;
-        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, comp = 0, segs = 0;
+        // `curvas`: quantos trechos são curva — com `segs` e `comp`, não muda quando o símbolo é girado (legenda.js)
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, comp = 0, segs = 0, curvas = 0;
         let cx = 0, cy = 0, sx = 0, sy = 0, ini = null, fim = null;
         const ponto = (x, y) => { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; };
         const subs = geometria ? [] : null;
@@ -56,7 +57,7 @@ async function lerPagina(pagina, OPS, { geometria = false, ops: opsLidos = null,
             const c2 = o === 2 ? ap(st.ctm, d[k++], d[k++]) : null;
             const [x, y] = ap(st.ctm, d[k++], d[k++]);
             if (sub) sub.segs.push(o === 2 ? ['c', [cx, cy], c1, c2, [x, y]] : ['l', [cx, cy], [x, y]]);
-            comp += Math.hypot(x - cx, y - cy); cx = x; cy = y; segs++; ponto(x, y); fim = [x, y];
+            comp += Math.hypot(x - cx, y - cy); cx = x; cy = y; segs++; if (o === 2) curvas++; ponto(x, y); fim = [x, y];
           } else if (o === 3) {
             if (sub) { if (Math.hypot(sx - cx, sy - cy) > 1e-6) sub.segs.push(['l', [cx, cy], [sx, sy]]); sub.fechado = true; }
             comp += Math.hypot(sx - cx, sy - cy); cx = sx; cy = sy; segs++;
@@ -67,7 +68,7 @@ async function lerPagina(pagina, OPS, { geometria = false, ops: opsLidos = null,
         if (!cheio && !traco) break;
         // reta: um segmento só (ou caminho cujo comprimento ≈ distância das pontas)
         const reto = !!(ini && fim) && Math.abs(Math.hypot(fim[0] - ini[0], fim[1] - ini[1]) - comp) < 0.5;
-        const c = { cheio, traco, fill: st.fill, stroke: st.stroke, lw: +(+st.lw).toFixed(2), dash: st.dash, caixa: [x0, y0, x1, y1], comp, segs, reto };
+        const c = { cheio, traco, fill: st.fill, stroke: st.stroke, lw: +(+st.lw).toFixed(2), dash: st.dash, caixa: [x0, y0, x1, y1], comp, segs, curvas, reto };
         if (subs) Object.assign(c, { subs: subs.filter(s => s.segs.length), lwPg: (+st.lw || 0) * Math.sqrt(Math.abs(st.ctm[0] * st.ctm[3] - st.ctm[1] * st.ctm[2])) });
         caminhos.push(c);
         break;

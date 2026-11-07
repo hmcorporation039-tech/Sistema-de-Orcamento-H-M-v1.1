@@ -205,9 +205,21 @@ async function enviarPendentesAoServidor() {
       console.warn(`Não foi possível enviar "${a.arquivo}" ao servidor: ${e.message}`);
     }
   }
-  // pastas vazias que sobraram na reserva
-  if (n === lista.length) await fsp.rm(RAIZ_CLIENTES_PENDENTE, { recursive: true, force: true }).catch(() => {});
+  // Pastas vazias que sobraram na reserva. Antes apagava a reserva INTEIRA
+  // (rm recursivo) quando todos os da lista tinham ido — mas a lista é do
+  // começo: um arquivo gravado na reserva durante o envio (o servidor caiu e
+  // voltou no meio) era apagado sem ter ido. Agora só sai pasta vazia.
+  await removerPastasVazias(RAIZ_CLIENTES_PENDENTE);
   return n;
+}
+
+// Apaga, de baixo para cima, as pastas que ficaram vazias (rmdir falha em pasta
+// com arquivo — e aí ela fica).
+async function removerPastasVazias(dir) {
+  let entradas;
+  try { entradas = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
+  for (const e of entradas) if (e.isDirectory()) await removerPastasVazias(path.join(dir, e.name));
+  await fsp.rmdir(dir).catch(() => {});
 }
 
 // Avisos de gravação: o monitor das pastas dos clientes registra o que o

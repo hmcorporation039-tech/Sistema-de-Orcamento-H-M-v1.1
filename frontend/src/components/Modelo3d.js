@@ -145,8 +145,12 @@ export function CartaoModelo3dAnalise({ analiseId, estiloCartao, estiloTitulo })
   const [enviando, setEnviando] = useState(false);
 
   useEffect(() => {
+    // trocou de análise antes da resposta chegar: a arquitetura da anterior não
+    // entra no cartão da nova (revisão de 11/2026)
+    let cancelado = false;
     setArquitetura(null);
-    if (analiseId) getArquiteturaAnalise(analiseId).then(r => setArquitetura(r.data)).catch(() => {});
+    if (analiseId) getArquiteturaAnalise(analiseId).then(r => { if (!cancelado) setArquitetura(r.data); }).catch(() => {});
+    return () => { cancelado = true; };
   }, [analiseId]);
 
   async function enviar(arquivo) {
@@ -193,8 +197,11 @@ export function OpcaoModelo3dProposta({ propostaId, somenteLeitura = false }) {
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
+    // resposta de outra proposta (trocou antes de chegar) é descartada
+    let cancelado = false;
     setSituacao(null);
-    if (propostaId) getModelo3d('proposta', propostaId).then(r => { setSituacao(r.data); setValor(!!r.data.modelo_3d_cliente); }).catch(() => {});
+    if (propostaId) getModelo3d('proposta', propostaId).then(r => { if (cancelado) return; setSituacao(r.data); setValor(!!r.data.modelo_3d_cliente); }).catch(() => {});
+    return () => { cancelado = true; };
   }, [propostaId]);
 
   if (!situacao?.disponivel) return null;

@@ -12,7 +12,7 @@
 const pool = require('../config/database');
 const { carregarIndice, indexar, encontrarExistente, unidadeBase, codigosFabricante } = require('./catalogoMateriais');
 const { carregarCatalogo } = require('./aprendizadoMateriais');
-const { categoriaLocal, carregarReferencia, termos } = require('./classificacaoMateriais');
+const { categoriaLocal, carregarReferencia } = require('./classificacaoMateriais');
 const { compararComCatalogo, chaveDaDescricao, CONFIANCA_CONFIRMA } = require('../utils/semelhancaMateriais');
 const { disciplinaDoMaterial, CATEGORIA_DA_DISCIPLINA } = require('../utils/disciplinaDoMaterial');
 const { disciplinaDoTexto } = require('../utils/disciplinaDoArquivo');
@@ -45,17 +45,30 @@ async function prepararContexto(client = pool) {
   return { indice, catalogo };
 }
 
-async function jaExiste(client, ctx, descricao) {
+// novos: os cadastrados nesta transação, ainda fora do índice da rodada (entram nele só depois do COMMIT)
+async function jaExiste(client, ctx, descricao, novos = []) {
   if (await encontrarExistente(client, ctx.indice, descricao)) return true;
-  const achado = compararComCatalogo(descricao, ctx.catalogo);
+  const achado = compararComCatalogo(descricao, novos.length ? [...ctx.catalogo, ...novos.map(n => n.catalogo)] : ctx.catalogo);
   return !!achado && (achado.origem === 'alias' || achado.confianca >= CONFIANCA_CONFIRMA);
+}
+
+// Depois do COMMIT: o que a transação cadastrou entra no índice e no catálogo da rodada. Antes isso era feito no meio da
+// transação — se ela desse ROLLBACK, o material ficava no índice sem existir no banco e a linha igual de outro arquivo
+// era descartada como "já existe".
+function indexarNovos(ctx, novos) {
+  for (const n of novos || []) {
+    indexar(ctx.indice, n.indice);
+    ctx.catalogo.push(n.catalogo);
+    if (n.referencia) ctx.indice.referencia.push(n.referencia);
+  }
 }
 
 // itens: [{ descricao, unidade, preco, marca, codigo, ncm, secao? }] de UMA aba/documento.
 // disciplina: a do arquivo (ou da aba) — vale para o material de apoio, a infraestrutura e o que o catálogo não sabe
 // classificar. A seção da planilha geral de obra (item.secao) vale mais que ela; seção de outra disciplina
 // (hidráulica, civil, sprinklers) fica de fora inteira.
-async function aprenderItens(client, ctx, itens, { disciplina = null, arquivo = '' } = {}) {
+// novos: lista onde vão os materiais cadastrados (indexarNovos depois do COMMIT)
+async function aprenderItens(client, ctx, itens, { disciplina = null, arquivo = '', novos = [] } = {}) {
   const r = { lidos: 0, novos: 0, semPreco: 0, existentes: 0, servicos: 0, genericos: 0, semDisciplina: 0, porDisciplina: {}, exemplos: [] };
   const vistos = new Set();
   for (const bruto of itens || []) {
@@ -68,7 +81,7 @@ async function aprenderItens(client, ctx, itens, { disciplina = null, arquivo = 
     if (it.secao?.fora) { r.semDisciplina++; continue; }
     if (ehServico(it)) { r.servicos++; continue; }
     if (RE_GENERICO.test(it.descricao) || RE_ETIQUETA.test(it.descricao)) { r.genericos++; continue; }
-    if (await jaExiste(client, ctx, it.descricao)) { r.existentes++; continue; }
+    if (await jaExiste(client, ctx, it.descricao, novos)) { r.existentes++; continue; }
     const cat = await categoriaLocal(client, { descricao: it.descricao, ncm: it.ncm || null }, ctx.indice.referencia);
     const categoriaLida = cat && !RE_PENDENTE.test(cat.categoria) ? cat.categoria : null;
     const disc = disciplinaDoMaterial(it.descricao, { categoria: categoriaLida, contexto: it.secao?.chave || disciplina });
@@ -80,15 +93,16 @@ async function aprenderItens(client, ctx, itens, { disciplina = null, arquivo = 
     if (preco) {
       const codigo = codigoDe(it.codigo) || codigosFabricante(it.descricao)[0]?.slice(0, 20) || null;
       const ins = await client.query(
-        `INSERT INTO materiais (codigo, descricao, categoria, unidade, preco, marca, ncm, origem)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'acervo')
+        // categoria escolhida pelo sistema (kNN, palavras, NCM ou a padrão da disciplina): grava quem escolheu, para o
+        // kNN não aprender com ela (classificacaoMateriais.SQL_CATEGORIA_CONFIAVEL)
+        `INSERT INTO materiais (codigo, descricao, categoria, unidade, preco, marca, ncm, origem, preco_origem, categoria_origem)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'acervo', 'acervo', $8)
          ON CONFLICT ((LOWER(TRIM(descricao)))) WHERE ativo = true DO NOTHING RETURNING id, descricao`,
-        [codigo, it.descricao, categoria, unidade, preco, it.marca || '', it.ncm || null]);
+        [codigo, it.descricao, categoria, unidade, preco, it.marca || '', it.ncm || null, categoriaLida ? (cat.origem || 'automatica') : 'padrao_disciplina']);
       if (ins.rows.length) {
         materialId = ins.rows[0].id;
-        indexar(ctx.indice, ins.rows[0]);
-        ctx.catalogo.push({ id: materialId, descricao: it.descricao, preco, unidade, categoria });
-        if (categoriaLida) ctx.indice.referencia.push({ descricao: it.descricao, categoria, ncm: it.ncm || null, termos: termos(it.descricao) });
+        // não entra na referência do kNN: categoria automática não treina o classificador (só a do usuário)
+        novos.push({ indice: ins.rows[0], catalogo: { id: materialId, descricao: it.descricao, preco, unidade, categoria } });
         r.novos++;
         if (r.exemplos.length < 10) r.exemplos.push({ descricao: it.descricao, disciplina: disc, preco });
       } else {
@@ -119,25 +133,27 @@ const somar = (a, b) => {
 const vazio = () => ({ lidos: 0, novos: 0, semPreco: 0, existentes: 0, servicos: 0, genericos: 0, semDisciplina: 0, porDisciplina: {}, exemplos: [] });
 
 // Uma planilha (pasta de trabalho ExcelJS já carregada): cada aba com a disciplina dela ("Telecom", "HVAC") ou a do
-// arquivo. Tudo numa transação: o arquivo ensina inteiro ou nada.
-async function aprenderDaPlanilha(wb, { disciplina = null, arquivo = '', ctx = null, client: dado = null } = {}) {
+// arquivo. Tudo numa transação: o arquivo ensina inteiro ou nada. client (dado): a transação de quem chama (o treino
+// grava o aprendizado e a situação do arquivo juntos) — aí quem chama faz o COMMIT e o indexarNovos(ctx, novos).
+async function aprenderDaPlanilha(wb, { disciplina = null, arquivo = '', ctx = null, client: dado = null, novos: novosDeFora = null } = {}) {
   const { lerPlanilhaMateriais } = require('../utils/leitorPlanilhaMateriais');
   const abas = lerPlanilhaMateriais(wb);
   const total = { ...vazio(), abas: abas.length };
   if (!abas.length) return total;
   const client = dado || await pool.connect();
+  const novos = novosDeFora || [];
   try {
-    await client.query('BEGIN');
+    if (!dado) await client.query('BEGIN');
     const contexto = ctx || await prepararContexto(client);
     for (const a of abas) {
       const daAba = disciplinaDoTexto(a.aba);
       if (daAba?.fora) continue; // aba de arquitetura/hidráulica numa planilha geral
-      somar(total, await aprenderItens(client, contexto, a.itens, { disciplina: daAba?.chave || disciplina, arquivo }));
+      somar(total, await aprenderItens(client, contexto, a.itens, { disciplina: daAba?.chave || disciplina, arquivo, novos }));
     }
-    await client.query('COMMIT');
+    if (!dado) { await client.query('COMMIT'); indexarNovos(contexto, novos); }
     return total;
   } catch (e) {
-    await client.query('ROLLBACK').catch(() => {});
+    if (!dado) await client.query('ROLLBACK').catch(() => {});
     throw e;
   } finally {
     if (!dado) client.release();
@@ -145,15 +161,17 @@ async function aprenderDaPlanilha(wb, { disciplina = null, arquivo = '', ctx = n
 }
 
 // Itens de um orçamento/cotação em PDF já lidos (leitorCotacao, sem IA)
-async function aprenderDoDocumento(itens, { disciplina = null, arquivo = '', ctx = null, client: dado = null } = {}) {
+async function aprenderDoDocumento(itens, { disciplina = null, arquivo = '', ctx = null, client: dado = null, novos: novosDeFora = null } = {}) {
   const client = dado || await pool.connect();
+  const novos = novosDeFora || [];
   try {
-    await client.query('BEGIN');
-    const r = await aprenderItens(client, ctx || await prepararContexto(client), itens, { disciplina, arquivo });
-    await client.query('COMMIT');
+    if (!dado) await client.query('BEGIN');
+    const contexto = ctx || await prepararContexto(client);
+    const r = await aprenderItens(client, contexto, itens, { disciplina, arquivo, novos });
+    if (!dado) { await client.query('COMMIT'); indexarNovos(contexto, novos); }
     return r;
   } catch (e) {
-    await client.query('ROLLBACK').catch(() => {});
+    if (!dado) await client.query('ROLLBACK').catch(() => {});
     throw e;
   } finally {
     if (!dado) client.release();
@@ -173,4 +191,4 @@ async function resumoDosMateriais(executor = pool) {
   }
 }
 
-module.exports = { aprenderItens, aprenderDaPlanilha, aprenderDoDocumento, prepararContexto, resumoDosMateriais, paraTestes: { ehServico, limpar, unidadeDe } };
+module.exports = { aprenderItens, aprenderDaPlanilha, aprenderDoDocumento, prepararContexto, indexarNovos, resumoDosMateriais, paraTestes: { ehServico, limpar, unidadeDe } };

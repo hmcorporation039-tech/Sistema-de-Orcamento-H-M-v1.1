@@ -224,6 +224,7 @@ export function definirFerramentasDesktop({ api, compartilhadas, pastasPdf, lerA
         const itensPayload = itens.map(it => ({
           secao_nome: it.secao, descricao: it.descricao, quantidade: it.quantidade, unidade: it.unidade || null,
           valor_unitario: it.valor_unitario || 0, subgrupo: it.subgrupo || null, status: 'a_cotar', // a IA sugere; o engenheiro confirma na tela (regra do usuário)
+          origem_item: 'assistente', // marca de sugestão da IA: não entra no catálogo nem no aprendizado até o engenheiro confirmar
         }));
         // hoje em Brasília (em UTC, depois das 21h a proposta nascia com a data de amanhã)
         const padroes = await api('GET', '/api/configuracoes/padroes-orcamento');

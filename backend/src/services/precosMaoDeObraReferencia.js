@@ -20,6 +20,7 @@ const ITENS_REFERENCIA = [
   { codigo: 'cab_nobreak', descricao: 'Instalação de nobreaks + kit de ventilação', unidade: 'un', disciplina: 'cabeamento' },
   { codigo: 'cab_certificacao', descricao: 'Certificação e etiquetagem dos pontos (rede + câmeras + telefonia)', unidade: 'pt', disciplina: 'cabeamento' },
   { codigo: 'cab_passagem', descricao: 'Passagem de cabeamento (infraestrutura + lançamento de cabos)', unidade: 'vb', disciplina: 'cabeamento' },
+  { codigo: 'cab_lancamento', descricao: 'Cabeamento: lançamento de cabos pela rota medida no desenho (infraestrutura conforme projeto)', unidade: 'm', disciplina: 'cabeamento' },
   { codigo: 'tel_ponto', descricao: 'Conectorização de ponto de telefonia (RJ-11/RJ-45 + teste)', unidade: 'pt', disciplina: 'telefonia' },
   { codigo: 'tel_central', descricao: 'Instalação de central telefônica / PABX', unidade: 'un', disciplina: 'telefonia' },
   { codigo: 'ele_qdg', descricao: 'Instalação de quadro de distribuição geral (QDG)', unidade: 'un', disciplina: 'eletrica' },

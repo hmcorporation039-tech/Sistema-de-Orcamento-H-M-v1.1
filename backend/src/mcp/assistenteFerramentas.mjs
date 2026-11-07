@@ -439,7 +439,7 @@ export function definirFerramentas({ api, contexto = {}, token = '', papel = nul
     },
     {
       nome: 'gerar_orcamento', titulo: 'Gerar rascunho de proposta',
-      descricao: 'Monta um RASCUNHO de proposta (status Ativa, marcado como criado pelo assistente). origem "analise" (id da análise), "projeto" (id do projeto + modo do orçamento, ex.: execucao) ou "itens" (cliente_nome + itens livres). Os itens entram "a cotar" (só o item ligado a material do catálogo pode ir confirmado); o engenheiro confirma na tela. Gerar de uma análise/projeto que já tem proposta Ativa que não é sua é recusado (use propor_acao).',
+      descricao: 'Monta um RASCUNHO de proposta (status Ativa, marcado como criado pelo assistente). origem "analise" (id da análise), "projeto" (id do projeto + modo do orçamento, ex.: execucao) ou "itens" (cliente_nome + itens livres). Todo item entra "a cotar", marcado como sugestão da IA; só o engenheiro confirma, na tela (você nunca confirma item). Gerar de uma análise/projeto que já tem proposta Ativa que não é sua é recusado (use propor_acao).',
       entrada: {
         origem: z.enum(['analise', 'projeto', 'itens']),
         id: z.number().int().positive().optional(),
@@ -448,7 +448,8 @@ export function definirFerramentas({ api, contexto = {}, token = '', papel = nul
         itens: z.array(z.object({
           secao: z.string().describe('"servicos" ou "materiais"'), descricao: z.string(), quantidade: z.number().min(0),
           unidade: z.string().optional(), valor_unitario: z.number().min(0).optional(), codigo: z.string().optional(),
-          material_id: z.number().int().positive().optional(), subgrupo: z.string().optional(), status: z.enum(['confirmado', 'a_cotar']).optional(),
+          material_id: z.number().int().positive().optional(), subgrupo: z.string().optional(),
+          status: z.enum(['confirmado', 'a_cotar']).optional().describe('Ignorado: todo item seu entra "a_cotar" e o engenheiro confirma na tela'),
         })).optional(),
       },
       async executar({ origem, id, modo, cliente_nome, escopo, obra_id, itens }) {
@@ -466,7 +467,8 @@ export function definirFerramentas({ api, contexto = {}, token = '', papel = nul
             const disc = (await api('GET', `/api/laudos/disciplinas?tipo=${p.tipo || 'projeto'}`)).find(d => d.chave === p.disciplina);
             return falha(`Informe o modo do orçamento. Modos deste ${p.tipo === 'laudo' ? 'laudo' : 'projeto'}: ${(disc?.modosOrcamento || []).map(m => `${m.modo} (${m.rotulo})`).join('; ')}`);
           }
-          r = await api('POST', `/api/laudos/${pid}/gerar-orcamento`, { modo });
+          // projeto nasce sem orçamento (laudos/crud.js): pedir o orçamento pelo assistente é pedir para ligá-lo
+          r = await api('POST', `/api/laudos/${pid}/gerar-orcamento`, { modo, ligar_orcamento: true });
         } else {
           if (!cliente_nome || !itens?.length) return falha('Para origem "itens", informe cliente_nome e ao menos um item.');
           // BDI e impostos padrão definidos pelo administrador; o que não foi definido fica 0 e o
@@ -488,17 +490,19 @@ export function definirFerramentas({ api, contexto = {}, token = '', papel = nul
     },
     {
       nome: 'editar_rascunho', titulo: 'Editar rascunho de proposta',
-      descricao: 'Edita uma proposta CRIADA POR VOCÊ nesta conversa (outra qualquer: use propor_acao tipo editar_proposta). Operações: adicionar itens, alterar (por item_id de ver_proposta: quantidade, valor_unitario, descricao, unidade, status, subgrupo), remover (ids) e campos (bdi, imposto_venda, imposto_servico, escopo, observacoes, cliente_nome, local_obra, pagamento, validade, obra_id). O servidor recalcula os totais.',
+      descricao: 'Edita uma proposta CRIADA POR VOCÊ nesta conversa (outra qualquer: use propor_acao tipo editar_proposta). Operações: adicionar itens, alterar (por item_id de ver_proposta: quantidade, valor_unitario, descricao, unidade, status, subgrupo — item alterado por você volta a "a cotar"; status só rebaixa para a_cotar, nunca confirma), remover (ids) e campos (bdi, imposto_venda, imposto_servico, escopo, observacoes, cliente_nome, local_obra, pagamento, validade, obra_id). O servidor recalcula os totais.',
       entrada: {
         proposta_id: z.number().int().positive(),
         adicionar: z.array(z.object({
           secao: z.string().describe('"servicos" ou "materiais"'), descricao: z.string(), quantidade: z.number().min(0),
           unidade: z.string().optional(), valor_unitario: z.number().min(0).optional(), codigo: z.string().optional(),
-          material_id: z.number().int().positive().optional(), subgrupo: z.string().optional(), status: z.enum(['confirmado', 'a_cotar']).optional(),
+          material_id: z.number().int().positive().optional(), subgrupo: z.string().optional(),
+          status: z.enum(['confirmado', 'a_cotar']).optional().describe('Ignorado: todo item seu entra "a_cotar" e o engenheiro confirma na tela'),
         })).optional(),
         alterar: z.array(z.object({
           item_id: z.number().int().positive(), quantidade: z.number().min(0).optional(), valor_unitario: z.number().min(0).optional(),
-          descricao: z.string().optional(), unidade: z.string().optional(), status: z.enum(['confirmado', 'a_cotar']).optional(), subgrupo: z.string().optional(),
+          descricao: z.string().optional(), unidade: z.string().optional(), subgrupo: z.string().optional(),
+          status: z.enum(['confirmado', 'a_cotar']).optional().describe('Só "a_cotar" (rebaixar): confirmar é do engenheiro, na tela'),
         })).optional(),
         remover: z.array(z.number().int().positive()).optional(),
         campos: z.object({

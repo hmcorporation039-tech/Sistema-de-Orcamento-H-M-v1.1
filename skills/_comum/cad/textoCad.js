@@ -85,19 +85,24 @@ const metros = (v, un) => {
   if (un) return /^mm$/i.test(un) ? n / 1000 : /^cm$/i.test(un) ? n / 100 : n;
   return n > 10 ? n / 100 : n;
 };
-// "2,20m do piso", "a 0,30 m do piso", "1,20 do piso"
-const RE_ALTURA_PISO = /([0-9]+(?:[.,][0-9]+)?)\s*(mm|cm|m)?\s*do\s+piso/i;
-// "h=0,30", "H = 1,10 m", "h: 1,10 m", "altura: 97,5 cm", "altura 2,20"
-const RE_ALTURA_H = /(?:\bh\s*[=:]|\baltura\b\s*[=:]?)\s*([0-9]+(?:[.,][0-9]+)?)\s*(mm|cm|m)?/i;
+// "2,20m do piso", "a 0,30 m do piso", "1,20 do piso", "a 1.20m do chão" (06/11/2026: "do chão" e "ao piso")
+const RE_ALTURA_PISO = /([0-9]+(?:[.,][0-9]+)?)\s*(mm|cm|m)?\s*(?:do|ao)\s+(?:piso|ch[ãa]o)/i;
+// "h=0,30", "H = 1,10 m", "h: 1,10 m", "altura: 97,5 cm", "altura 2,20"; e (06/11/2026) "Altura de
+// instalação: 1,20 m", "Altura de montagem = 2,40m", "H(m)=1,10" — a unidade entre parênteses vale
+// como a escrita depois do número (grupo 1: unidade do "H(m)"; 2: valor; 3: unidade depois do valor)
+const RE_ALTURA_H = /(?:\bh\s*(?:\(\s*(mm|cm|m)\s*\))?\s*[=:]|\baltura\b(?:\s+d[eoa]\s+(?:instala[çc][ãa]o|montagem|fixa[çc][ãa]o|centro))?\s*(?:\(\s*(?:mm|cm|m)\s*\))?\s*[=:]?)\s*([0-9]+(?:[.,][0-9]+)?)\s*(mm|cm|m)?/i;
 const RE_ABAIXO_DO_FORRO = /abaixo\s+do\s+forro/i;
+// "Altura (cm): 110" — a unidade entre parênteses depois de "altura" (o RE_ALTURA_H só guarda a do "H(m)")
+const RE_UNIDADE_PARENTESES = /\baltura\b[^(\d]{0,30}\(\s*(mm|cm|m)\s*\)/i;
 
 // Altura escrita num texto → { altura_m, abaixoDoForro } ou null quando não diz.
 // "h= 20 cm abaixo do forro": a medida é a partir do forro (abaixoDoForro: true).
 function lerAltura(texto) {
   const s = String(texto || '');
-  const m = RE_ALTURA_PISO.exec(s) || RE_ALTURA_H.exec(s);
-  if (!m) return null;
-  const v = metros(m[1], m[2]);
+  const p = RE_ALTURA_PISO.exec(s);
+  const h = p ? null : RE_ALTURA_H.exec(s);
+  if (!p && !h) return null;
+  const v = p ? metros(p[1], p[2]) : metros(h[2], h[3] || h[1] || RE_UNIDADE_PARENTESES.exec(s)?.[1]);
   if (!Number.isFinite(v)) return null;
   return { altura_m: Math.round(v * 100) / 100, abaixoDoForro: RE_ABAIXO_DO_FORRO.test(s) };
 }

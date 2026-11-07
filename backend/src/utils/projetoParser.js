@@ -93,7 +93,10 @@ const MAIOR_NUMERO_PLAUSIVEL = 500;
 // câmeras (CAMx) quanto para pontos de rede (Rx) e antena/TV (Ax).
 function extrairPontosPorCodigo(texto, prefixo) {
   const conteudo = String(texto || '');
-  const regex = new RegExp(`\\b${prefixo}(\\d+)\\b`, 'g');
+  // câmera também como "CAM-01"/"CAM_01"/"CAM 01" (o mesmo de pontosPorAmbiente.js, TIPOS); R e A só colados,
+  // porque "R-1"/"A-1" costumam ser revisão, corte ou eixo
+  const separador = prefixo === 'CAM' ? '[-_ ]?' : '';
+  const regex = new RegExp(`\\b${prefixo}${separador}(\\d+)\\b`, 'g');
 
   const numeros = [];
   const descartados = [];

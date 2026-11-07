@@ -10,8 +10,12 @@ const numeroSeguro = (valor, padrao = 0) => {
   return Number.isFinite(n) ? n : padrao;
 };
 
+// metade para longe do zero, como o servidor (skills/_comum/base/dinheiro.js):
+// 5,015 → 5,02 (o "+ EPSILON" de antes dava 5,01) e -1,005 → -1,01
 export function arred2(valor) {
-  return Math.round((numeroSeguro(valor) + Number.EPSILON) * 100) / 100;
+  const n = numeroSeguro(valor);
+  const r = Math.round(Number((Math.abs(n) * 100).toPrecision(15))) / 100;
+  return n < 0 && r !== 0 ? -r : r;
 }
 
 // metade para longe do zero sobre o número como escrito ("1.0005" → 1,001),

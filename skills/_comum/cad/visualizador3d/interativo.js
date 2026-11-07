@@ -80,6 +80,7 @@ ${drs.map(dr => lin(`DR ${dr.tag}`, `${estadoTag(sim.ligado(dr.tag, q.tag))} · 
 ${d ? lin(`${ddr ? 'DDR' : 'Disjuntor'} ${d.tag}`, `${estadoTag(sim.ligado(d.tag, q.tag))} · ${esc(amp(d.In))}${d.curva ? ` curva ${esc(d.curva)}` : ''}${d.polos ? ` · ${esc(d.polos)}P` : ''}`) : ''}
 ${lin('Quadro', esc(c.quadro))}
 ${c.origem === 'diagrama' ? lin('Origem', 'diagrama unifilar / quadro de cargas do projeto') : c.estimado ? lin('Origem', '<small>estimado pelo desenho — conferir</small>') : ''}
+${c.lidoNaPlanta ? lin('Ligação', `<small>${esc(c.lidoNaPlanta)} ponto(s) pelo número lido na planta — a conferir</small>`) : ''}
 ${Number(c.potencia_va) > 0 ? lin('Potência', `${br(c.potencia_va, 0)} VA`) : Number(c.potencia_w) > 0 ? lin('Potência', `${br(c.potencia_w, 0)} W`) : ''}
 ${c.ib_a != null ? lin('Corrente de projeto Ib', `${br(c.ib_a, 1)} A`) : ''}
 ${c.secao_mm2 != null ? lin('Seção', `${br(c.secao_mm2, 1)} mm²`) : ''}
@@ -135,7 +136,7 @@ export function htmlFichaPonto(sim, id, { rotulo = '', ambiente = '' } = {}) {
   }
   const pn = p.tipo === 'motor' ? sim.painel(p.circuito) : null;
   return `<div class="sim-tit grande">${titulo}</div>
-<div class="sim-est"><b class="${cor}">${esc(e.texto)}</b>${ambiente ? ` · ${esc(ambiente)}` : ''}</div>
+<div class="sim-est"><b class="${cor}">${esc(e.texto)}</b>${ambiente ? ` · ${esc(ambiente)}` : ''}${p.circuitoLido === 'a_conferir' ? ' · <small>circuito lido na planta, a conferir</small>' : ''}</div>
 ${k ? `<table>${lin('Comando', `${esc(k.id)} — ${esc(TIPO_COMANDO[k.tipo] || k.tipo)}`)}${linhaCena(sim, k)}${p.grupo ? lin('Grupo', esc(p.grupo)) : ''}${k.rele?.tag ? lin(k.rele.tipo === 'impulso' ? 'Relé de impulso' : 'Contator', `${esc(k.rele.tag)} · ${sim.estadoComando(k.id).saida > 0 ? 'fechado' : 'aberto'}`) : ''}${lin('Dispositivos', esc((k.dispositivos || []).join(', ')))}${lin('Comanda', `${(k.pontos || []).length} ponto(s)`)}</table>` : ''}
 ${acoes ? `<div class="sim-bs">${acoes}</div>` : ''}${pn ? htmlPainel(pn) : ''}${p.circuito ? htmlCircuito(sim, p.circuito) : ''}`;
 }

@@ -91,6 +91,49 @@ const b = require('../src/services/backup');
   assert.strictEqual(semComando.ok, false);
   assert.match(semComando.erro, /iniciar/);
 
+  // revisão de 11/2026: exceção síncrona do spawn não deixa a trava presa
+  const argInvalido = await b.executar({ comando: process.execPath, argumentos: ['a\u0000b'] });
+  assert.strictEqual(argInvalido.ok, false);
+  assert.match(argInvalido.erro, /iniciar/);
+  assert.strictEqual((await b.executar(falso(`console.log('x')`))).ok, false, 'a trava foi solta');
+
+  // revisão de 11/2026: um dump que some entre o readdir e o stat fica de fora (antes: 500 no painel)
+  const statOriginal = fs.statSync;
+  fs.statSync = (p, ...r) => {
+    if (String(p).endsWith('hm_orcamentos_2026-11-01_02-00.dump')) throw Object.assign(new Error('sumiu'), { code: 'ENOENT' });
+    return statOriginal(p, ...r);
+  };
+  try {
+    assert.deepStrictEqual(b.listarDumps(dir, 'hm_orcamentos').map(d => d.nome), ['hm_orcamentos_2026-11-02_02-00.dump']);
+  } finally { fs.statSync = statOriginal; }
+
+  // revisão de 11/2026: no tempo-limite mata a ÁRVORE e só solta a trava quando o processo termina.
+  // Como no servidor: o powershell abre um "pg_dump" (aqui um node que escreveria a marca 4 s depois de
+  // começar). Com o filho.kill() de antes, o neto seguia vivo, escrevia a marca e a trava era solta na hora.
+  // (Node abrindo node não serve: no Windows o neto morre junto com o pai node, pelo job object do libuv.)
+  if (process.platform === 'win32') {
+    const marca = path.join(dir, 'neto-vivo.txt');
+    const comecou = path.join(dir, 'neto-comecou.txt');
+    const netoJs = path.join(dir, 'neto.js');
+    fs.writeFileSync(netoJs, `const fs = require('fs'); fs.writeFileSync(${JSON.stringify(comecou)}, 'x');
+      setTimeout(() => fs.writeFileSync(${JSON.stringify(marca)}, 'x'), 4000); setTimeout(() => {}, 6000);`);
+    const t0 = Date.now();
+    const estourou = await b.executar({
+      comando: 'powershell.exe', argumentos: ['-NoProfile', '-NonInteractive', '-Command', `& '${process.execPath}' '${netoJs}'`],
+      tempoLimiteMs: 2500,
+    });
+    assert.strictEqual(estourou.ok, false);
+    assert.match(estourou.erro, /interrompido/);
+    assert.ok(fs.existsSync(comecou), 'o neto chegou a começar (senão o teste não prova nada)');
+    // trava solta só depois de o processo fechar — e sem esperar os 6 s do neto
+    const emAndamento = async () => (await b.situacao({ pasta: dir, env: { DB_NAME: 'x' } })).emExecucao;
+    for (let i = 0; i < 50 && await emAndamento(); i++) await new Promise(r => setTimeout(r, 100));
+    assert.strictEqual(await emAndamento(), null, 'trava solta depois que a árvore morreu');
+    assert.ok(Date.now() - t0 < 5500, 'a árvore foi morta (não esperou o neto terminar sozinho)');
+    while (Date.now() - t0 < 7000) await new Promise(r => setTimeout(r, 200));
+    assert.ok(!fs.existsSync(marca), 'o processo neto (o pg_dump) também foi morto');
+  }
+
   fs.rmSync(dir, { recursive: true, force: true });
   console.log('backup: ok');
 })().catch(e => { console.error(e); process.exit(1); });

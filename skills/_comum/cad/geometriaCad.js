@@ -49,6 +49,38 @@ function pontosDaCurva(e) {
   }
 }
 
+// SOLID (triângulo/quadrilátero cheio — a tomada alta "cheia" de muitos escritórios): os cantos na ordem
+// do contorno. O DXF grava 1-2-3-4 em "Z" (o contorno é 1-2-4-3); no triângulo o 4º repete o 3º.
+function pontosDoSolido(e) {
+  const c = (e.corners || []).filter(p => Number.isFinite(p?.x) && Number.isFinite(p?.y)).map(p => [p.x, p.y]);
+  if (c.length < 3) return null;
+  const pts = c.length === 4 ? [c[0], c[1], c[3], c[2]] : c;
+  return pts.filter((p, i) => i === 0 || Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) > 1e-9);
+}
+
+// HATCH: cada laço do contorno em pontos (polilinha do laço, ou as arestas: reta, arco e elipse pelos
+// extremos e pelo centro ± raio — basta para a extensão e o preenchimento de um símbolo)
+function lacosDaHachura(e) {
+  const out = [];
+  for (const l of e.boundary?.loops || []) {
+    const pts = [];
+    for (const x of l.entities || []) {
+      if (x.type === 'POLYLINE') for (const p of x.points || []) pts.push([p.x, p.y]);
+      else if (x.start && x.end) pts.push([x.start.x, x.start.y]);
+      else if (x.center && Number.isFinite(x.radius) && x.radius > 0) {
+        const a0 = (x.startAngle || 0) * Math.PI / 180, a1 = (x.endAngle || 360) * Math.PI / 180;
+        for (let k = 0; k <= 8; k++) { const a = a0 + ((a1 - a0) * k) / 8; pts.push([x.center.x + x.radius * Math.cos(a), x.center.y + x.radius * Math.sin(a)]); }
+      } else if (x.center && x.major) {
+        const r = Math.hypot(x.major.x, x.major.y);
+        pts.push([x.center.x - r, x.center.y - r], [x.center.x + r, x.center.y + r]);
+      }
+    }
+    const ok = pts.filter(p => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+    if (ok.length >= 2) out.push(ok);
+  }
+  return out;
+}
+
 const comprimento = (pts) => pts.slice(1).reduce((s, p, i) => s + Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]), 0);
 
 // fecho convexo (cadeia monótona)
@@ -86,4 +118,4 @@ function retanguloMinimo(poligono) {
   return { largura_m: r(Math.min(melhor.du, melhor.dv)), comprimento_m: r(Math.max(melhor.du, melhor.dv)), angulo_graus: Math.round(ang * 10) / 10 };
 }
 
-module.exports = { arcoDoBulge, pontosDaPolilinha, pontosDaCurva, comprimento, retanguloMinimo, fechoConvexo };
+module.exports = { arcoDoBulge, pontosDaPolilinha, pontosDaCurva, pontosDoSolido, lacosDaHachura, comprimento, retanguloMinimo, fechoConvexo };

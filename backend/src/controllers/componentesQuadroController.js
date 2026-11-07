@@ -1,6 +1,7 @@
 // Catálogo de componentes de quadros (versão 2.4) — services/componentesQuadro.js.
 // Rotas em routes/v2/componentesQuadro.js.
 const S = require('../services/componentesQuadro');
+const { sinalDaRequisicao } = require('../services/ia');
 
 // GET /componentes-quadro?fabricante=&tipo=&verificado=sim|nao&texto=&origem=
 async function listar(req, res) {
@@ -32,8 +33,11 @@ async function remover(req, res) {
 }
 
 // POST /componentes-quadro/pesquisar-medida { fabricante, tipo, especificacao }
+// a busca para quando a tela desiste (conexão fechada) e tem prazo total menor que o da tela; `fresco` (corpo ou
+// ?fresco=1) pesquisa de novo o que a IA já não tinha achado (revisão do uso de IA de 06/11/2026)
 async function pesquisarMedida(req, res) {
-  res.json(await S.pesquisarMedida(req.body || {}, req.usuario));
+  const fresco = req.body?.fresco === true || req.query.fresco === '1';
+  res.json(await S.pesquisarMedida(req.body || {}, req.usuario, { signal: sinalDaRequisicao(req, res), fresco }));
 }
 
 // POST /componentes-quadro/pesquisar-medidas { componentes: [{ tag, tipo, fabricante, especificacao }] }

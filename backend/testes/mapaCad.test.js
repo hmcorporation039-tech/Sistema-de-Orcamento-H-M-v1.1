@@ -199,6 +199,8 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
     assert.match(rotas, /router\.get\('\/projetos\/analises\/:id\/mapa', autenticar, validarId, projCtrl\.lerMapaCad\)/);
     assert.match(rotas, /router\.put\('\/projetos\/analises\/:id\/mapa', autenticar, validarId, posseAnalise, projCtrl\.salvarMapaCad\)/);
     assert.match(rotas, /router\.post\('\/projetos\/analises\/:id\/mapa\/reprocessar', autenticar, validarId, posseAnalise, projCtrl\.reprocessarMapaCad\)/);
+    // confirmar bloco (revisão de 06/11/2026): grava aprendizado — login e posse da análise
+    assert.match(rotas, /router\.put\('\/projetos\/analises\/:id\/mapa\/blocos', autenticar, validarId, posseAnalise, projCtrl\.confirmarBlocoMapaCad\)/);
   });
 
   // ── aprendizado (só no banco do v2) ──
@@ -209,8 +211,19 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
     const pool = require('../src/config/database');
     const simbolosAprendidos = require('../src/services/simbolosAprendidos');
     const ARQ = 'ZZ-teste-mapa.dxf';
-    const limpar = () => pool.query(`DELETE FROM cad_simbolos_aprendidos WHERE arquivo = ANY($1) OR layer LIKE 'ZZ-TESTE-%'`, [[ARQ, 'ZZ-planta-mapa.dxf']]);
+    const ARQUIVOS_DO_TESTE = [ARQ, 'ZZ-planta-mapa.dxf'];
+    // tudo o que o teste ensinou sai: as linhas, os votos (services/votosAprendizado.js) e as alturas confirmadas — antes
+    // a altura confirmada no teste de ponta a ponta ('' | HM-ELE-TOMADA-MEDIA 1,10, vezes 47) ficava no banco como se um
+    // engenheiro a tivesse ensinado (item 14 da revisão)
+    const limpar = async () => {
+      await pool.query(`DELETE FROM aprendizado_votos WHERE dados->>'arquivo' = ANY($1) OR fonte = ANY($2) OR chave LIKE 'ZZ-TESTE-%' OR chave LIKE 'NP|ZZ-TESTE-%' OR chave LIKE 'ZZ BLOCO%'`,
+        [ARQUIVOS_DO_TESTE, ARQUIVOS_DO_TESTE.map(a => `arquivo:${a}`)]);
+      await pool.query(`DELETE FROM cad_simbolos_aprendidos WHERE arquivo = ANY($1) OR layer LIKE 'ZZ-TESTE-%'`, [ARQUIVOS_DO_TESTE]);
+      await pool.query('DELETE FROM cad_notas_aprendidas WHERE arquivo = ANY($1)', [ARQUIVOS_DO_TESTE]);
+      await pool.query("DELETE FROM cad_blocos_aprendidos WHERE nome LIKE 'ZZ BLOCO%'");
+    };
     try {
+      await require('../src/models/migracoes/2.0-53-aprendizado-por-disciplina')(pool);
       await limpar();
       await caso('confirmação vira aprendizado do usuário, vale mais que a legenda e se desfaz', async () => {
         const m = { arquivo: ARQ, simbolos: [{ idx: 0, layer: 'ZZ-TESTE-LAYER', medida: [0.4, 0.4], quantidade: 3, simbolo: '?', origem: 'nao_reconhecido' }] };
@@ -224,12 +237,12 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
         await mapaCad.aprender(a2, ARQ);
         const { rows } = await pool.query(`SELECT simbolo, origem, conflitos, vezes FROM cad_simbolos_aprendidos WHERE layer = 'ZZ-TESTE-LAYER'`);
         assert.deepStrictEqual([rows.length, rows[0].simbolo, rows[0].origem, rows[0].conflitos], [1, 'HM-INC-AVISADOR', 'usuario', 0]);
-        // "não é ponto" não se aprende
+        // "não é ponto" sem escritório nem disciplina não tem a quem valer: não se aprende
         const { alteradas: a3 } = mapaCad.aplicarNoMapa(mapa, [{ idx: 0, simbolo: '?', confirmado: true }]);
         assert.strictEqual(await mapaCad.aprender(a3, ARQ), 0);
-        // desfazer esquece
+        // desfazer esquece (o voto deste projeto)
         const { alteradas: a4 } = mapaCad.aplicarNoMapa(a2[0].depois ? { ...m, simbolos: [a2[0].depois] } : m, [{ idx: 0, confirmado: false }]);
-        assert.strictEqual(await mapaCad.esquecer(a4), 1);
+        assert.strictEqual(await mapaCad.esquecer(a4, undefined, '', { arquivo: ARQ }), 1);
         aprendidos = (await simbolosAprendidos.carregar()).filter(l => l.layer === 'ZZ-TESTE-LAYER');
         assert.strictEqual(aprendidos.length, 0);
       });
@@ -278,6 +291,51 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
         const rotas = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'index.js'), 'utf8');
         assert.match(rotas, /router\.get\('\/projetos\/biblioteca-blocos', autenticar, projCtrl\.exportarBibliotecaBlocos\)/);
         assert.match(rotas, /router\.post\('\/projetos\/biblioteca-blocos', autenticar, admin, projCtrl\.importarBibliotecaBlocos\)/);
+      });
+      await caso('votos: confirmar de novo não soma; desfazer num projeto tira só o voto dele e confere o tipo', async () => {
+        const linha = { idx: 0, layer: 'ZZ-TESTE-VOTO', medida: [0.25, 0.25], quantidade: 4, simbolo: '?', origem: 'nao_reconhecido' };
+        const conf = mapaCad.aplicarNoMapa({ arquivo: ARQ, simbolos: [linha] }, [{ idx: 0, simbolo: 'HM-ELE-TOMADA-BAIXA', confirmado: true }]);
+        const vezes = async () => (await pool.query("SELECT vezes, origem FROM cad_simbolos_aprendidos WHERE layer = 'ZZ-TESTE-VOTO'")).rows;
+        await mapaCad.aprender(conf.alteradas, ARQ, undefined, 'ZZ ESC VOTO', { fonte: 'analise:ZZ1' });
+        await mapaCad.aprender(conf.alteradas, ARQ, undefined, 'ZZ ESC VOTO', { fonte: 'analise:ZZ1' }); // o mesmo clique de novo
+        assert.deepStrictEqual(await vezes(), [{ vezes: 1, origem: 'usuario' }], 'reenviar a mesma confirmação não soma');
+        await mapaCad.aprender(conf.alteradas, ARQ, undefined, 'ZZ ESC VOTO', { fonte: 'analise:ZZ2' }); // outro projeto
+        assert.deepStrictEqual(await vezes(), [{ vezes: 2, origem: 'usuario' }]);
+        // desfazer com o tipo errado (o guardado é outro) não tira nada
+        const errado = mapaCad.aplicarNoMapa({ arquivo: ARQ, simbolos: [{ ...conf.mapa.simbolos[0], simbolo: 'HM-ELE-QUADRO' }] }, [{ idx: 0, confirmado: false }]);
+        assert.strictEqual(await mapaCad.esquecer(errado.alteradas, undefined, 'ZZ ESC VOTO', { fonte: 'analise:ZZ1' }), 0);
+        // desfazer no projeto 1: o que o projeto 2 ensinou continua
+        const desf = mapaCad.aplicarNoMapa(conf.mapa, [{ idx: 0, confirmado: false }]);
+        assert.strictEqual(await mapaCad.esquecer(desf.alteradas, undefined, 'ZZ ESC VOTO', { fonte: 'analise:ZZ1' }), 1);
+        assert.deepStrictEqual(await vezes(), [{ vezes: 1, origem: 'usuario' }], 'desfazer desconta só a contribuição deste projeto');
+        assert.strictEqual(await mapaCad.esquecer(desf.alteradas, undefined, 'ZZ ESC VOTO', { fonte: 'analise:ZZ2' }), 1);
+        assert.deepStrictEqual(await vezes(), [], 'sem nenhum voto a linha sai');
+      });
+      await caso('a confirmação do engenheiro desempata a linha da LEGENDA em conflito (a de proporção, de outra chave)', async () => {
+        const leg = (simbolo, arquivo) => simbolosAprendidos.registrar([{ layer: 'ZZ-TESTE-DESEMPATE', medida: [0.3, 0.3], fracao: 0, simbolo, disciplina: 'eletrica', texto: simbolo }], arquivo, undefined, { fonte: `arquivo:${arquivo}` });
+        await leg('HM-ELE-TOMADA-BAIXA', ARQ); await leg('HM-ELE-INTERRUPTOR', 'ZZ-planta-mapa.dxf');
+        const daLegenda = async () => (await pool.query("SELECT simbolo, origem, conflitos FROM cad_simbolos_aprendidos WHERE layer = 'ZZ-TESTE-DESEMPATE' AND NOT por_medida")).rows[0];
+        assert.ok((await daLegenda()).conflitos > 0, '1 × 1: conflito');
+        const conf = mapaCad.aplicarNoMapa({ arquivo: ARQ, simbolos: [{ idx: 0, layer: 'ZZ-TESTE-DESEMPATE', medida: [0.3, 0.3], quantidade: 2, simbolo: '?' }] }, [{ idx: 0, simbolo: 'HM-ELE-INTERRUPTOR', confirmado: true }]);
+        await mapaCad.aprender(conf.alteradas, ARQ, undefined, 'ZZ ESC DESEMPATE', { fonte: 'analise:ZZ3' });
+        assert.deepStrictEqual(await daLegenda(), { simbolo: 'HM-ELE-INTERRUPTOR', origem: 'usuario', conflitos: 0 }, 'a confirmação vence o conflito');
+      });
+      await caso('"não é ponto" confirmado se aprende por disciplina (e escritório) e volta como sugestão no próximo desenho', async () => {
+        const { marcarNaoPonto } = require('../src/services/analiseCad/aprendidoNoDesenho');
+        const linha = { idx: 0, layer: 'ZZ-TESTE-SETA', medida: [0.12, 0.05], quantidade: 9, simbolo: 'HM-ELE-TOMADA-BAIXA', origem: 'regra' };
+        const conf = mapaCad.aplicarNoMapa({ arquivo: ARQ, simbolos: [linha] }, [{ idx: 0, simbolo: '?', confirmado: true }]);
+        assert.strictEqual(await mapaCad.aprender(conf.alteradas, ARQ, undefined, '', { fonte: 'analise:ZZ4', disciplinas: ['eletrica'] }), 1);
+        const np = (await simbolosAprendidos.carregarNaoPonto()).filter(l => l.layer === 'ZZ-TESTE-SETA');
+        assert.deepStrictEqual(np.map(l => [l.disciplina, l.escritorio, l.usuario]), [['eletrica', '', true]]);
+        assert.ok(!(await simbolosAprendidos.carregar()).some(l => l.layer === 'ZZ-TESTE-SETA'), 'não vai ao motor como tipo de ponto');
+        const proximo = { simbolos: [{ ...linha, medida: [0.121, 0.05] }] };
+        const daEletrica = marcarNaoPonto(proximo, np, [], '', ['eletrica']).simbolos[0];
+        assert.deepStrictEqual([daEletrica.simbolo, daEletrica.naoPontoAprendido, !!daEletrica.confirmado], ['?', true, false], 'sugestão, a conferir');
+        assert.strictEqual(marcarNaoPonto(proximo, np, [], '', ['cftv']).simbolos[0].simbolo, 'HM-ELE-TOMADA-BAIXA', 'outra disciplina: não vale');
+        // desfazer tira
+        const desf = mapaCad.aplicarNoMapa(conf.mapa, [{ idx: 0, confirmado: false }]);
+        assert.strictEqual(await mapaCad.esquecer(desf.alteradas, undefined, '', { fonte: 'analise:ZZ4', disciplinas: ['eletrica'] }), 1);
+        assert.strictEqual((await simbolosAprendidos.carregarNaoPonto()).filter(l => l.layer === 'ZZ-TESTE-SETA').length, 0);
       });
       await caso('rotas de ponta a ponta: ler, corrigir, aprender, desfazer e reprocessar', async () => {
         const express = require('express');
@@ -400,6 +458,22 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
           novas.push(r.corpo.id);
           assert.ok(r.corpo.disciplinas.includes('alarme') && r.corpo.disciplinas.includes('eletrica'), JSON.stringify(r.corpo.disciplinas));
           assert.ok(r.corpo.dadosExtraidos[0].desenho[0].itens.some(it => it.bloco === 'HM-ALM-SIRENE' && it.ambiguo === false), 'a sirene conferida entra na contagem');
+          // confirmar bloco: só um bloco do próprio arquivo, com descrição e disciplina; vira aprendizado do engenheiro
+          assert.strictEqual((await chamar('PUT', URL + '/blocos', { arquivo: NOME, bloco: 'ZZ BLOCO X', descricao: 'Tomada', disciplina: 'eletrica' }, true)).status, 401);
+          assert.strictEqual((await chamar('PUT', URL + '/blocos', { arquivo: NOME, bloco: 'ZZ BLOCO X', descricao: 'Tomada baixa', disciplina: 'nao-existe' })).status, 400);
+          assert.strictEqual((await chamar('PUT', URL + '/blocos', { arquivo: NOME, bloco: 'ZZ BLOCO NAO ESTA', descricao: 'Tomada baixa', disciplina: 'eletrica' })).status, 400);
+          {
+            const d0 = (await pool.query('SELECT dados_extraidos FROM analises_projeto WHERE id = $1', [analise.id])).rows[0].dados_extraidos;
+            d0[0].mapa_cad.blocos = [{ bloco: 'ZZ BLOCO X', layer: '0', quantidade: 2, situacao: 'nao_identificado' }];
+            await pool.query('UPDATE analises_projeto SET dados_extraidos = $1 WHERE id = $2', [JSON.stringify(d0), analise.id]);
+            r = await chamar('PUT', URL + '/blocos', { arquivo: NOME, bloco: 'ZZ BLOCO X', descricao: 'Tomada baixa 2P+T a 30 cm', disciplina: 'eletrica' });
+            assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+            assert.deepStrictEqual([r.corpo.bloco.nome, r.corpo.bloco.origem, r.corpo.bloco.disciplina], ['ZZ BLOCO X', 'usuario', 'eletrica']);
+            // fica guardado na análise e vai para a releitura como conferido
+            const guardado = (await pool.query('SELECT dados_extraidos FROM analises_projeto WHERE id = $1', [analise.id])).rows[0].dados_extraidos[0].mapa_cad;
+            assert.deepStrictEqual(mapaCad.confirmadasDoMapa(guardado).filter(c => c.bloco), [{ bloco: 'ZZ BLOCO X', descricao: 'Tomada baixa 2P+T a 30 cm', disciplina: 'eletrica' }]);
+            assert.strictEqual(r.corpo.arquivos[0].resumo.blocosConfirmados, 1);
+          }
           // a análise de origem não mudou
           assert.strictEqual((await pool.query('SELECT nome_projeto FROM analises_projeto WHERE id = $1', [analise.id])).rows[0].nome_projeto, 'ZZ Mapa CAD');
         } finally {

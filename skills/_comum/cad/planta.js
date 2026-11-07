@@ -7,6 +7,7 @@ const { point3d } = require('@tarikjabiri/dxf');
 const { DesenhoDxf } = require('./dxf');
 const { SIMBOLOS, definirSimbolos, legenda } = require('./simbolos');
 const P = require('./posicionamento');
+const { dentro, distanciaContorno } = require('./arquitetura');
 const { EMPRESA } = require('../empresa');
 
 const normalizar = (s) => String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]+/g, ' ').trim();
@@ -162,12 +163,32 @@ function posicionarPontos(arquitetura, pontos) {
   const naoEncontrados = [];
   const avisos = [];
   const posicoes = [];
+  // Ambientes de MESMO nome na planta (dois "BANHEIRO"): o nome não diz qual é, e os pontos dos dois iam para o
+  // primeiro (revisão de 06/11/2026). As skills fazem um grupo por ambiente do formulário, na ordem; então o grupo
+  // que repete um símbolo já posto num "BANHEIRO" é o do próximo "BANHEIRO" (o grupo com outros símbolos para o
+  // mesmo ambiente — telefonia: terminal e porteiro — fica no mesmo). As portas são as do polígono dele.
+  const ocupacao = new Map(); // nome normalizado → [Set(símbolos)] de cada ambiente de mesmo nome
+  const ambienteDoGrupo = (grupo) => {
+    if (grupo.poligono) return { amb: { poligono: grupo.poligono, nome: grupo.ambiente }, repetido: false };
+    const alvo = normalizar(grupo.ambiente);
+    const iguais = (arquitetura.ambientes || []).filter(a => normalizar(a.nome) === alvo);
+    if (iguais.length < 2) return { amb: acharAmbiente(arquitetura, grupo.ambiente), repetido: false };
+    const slots = ocupacao.get(alvo) || ocupacao.set(alvo, []).get(alvo);
+    const simbs = grupo.itens.map(i => i.simbolo);
+    let k = slots.findIndex(s => !simbs.some(x => s.has(x)));
+    if (k < 0) k = slots.length;
+    if (k >= iguais.length) k = 0; // mais grupos que ambientes desse nome: o primeiro (como antes)
+    const s = slots[k] || (slots[k] = new Set());
+    simbs.forEach(x => s.add(x));
+    return { amb: iguais[k], repetido: true };
+  };
   for (const grupo of pontos) {
-    const amb = grupo.poligono ? { poligono: grupo.poligono, nome: grupo.ambiente } : acharAmbiente(arquitetura, grupo.ambiente);
+    const { amb, repetido } = ambienteDoGrupo(grupo);
     if (!amb) { naoEncontrados.push(grupo.ambiente); continue; }
     // cada tipo de ponto de parede do ambiente começa numa fase diferente
     const deParede = grupo.itens.filter(i => ['perimetro', 'porta'].includes(i.regra || 'perimetro'));
-    const portas = portasDoAmbiente(arquitetura, amb.nome);
+    const portas = portasDoAmbiente(arquitetura, amb.nome)
+      .filter(p => !repetido || !p.meio || dentro(p.meio, amb.poligono) || distanciaContorno(p.meio, amb.poligono) < 0.6);
     const ctx = { portas, porta: grupo.porta != null ? portas[Math.min(grupo.porta, portas.length - 1)] : null };
     for (const it of grupo.itens) {
       const k0 = deParede.indexOf(it);

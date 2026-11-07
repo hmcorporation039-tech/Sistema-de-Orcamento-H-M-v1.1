@@ -20,7 +20,8 @@
 // "ILUM. RECEPÇÃO" para a luminária da recepção) ou pelo único circuito daquele tipo no quadro; só o que
 // não casar fica no circuito estimado. Planta com um quadro desenhado sem tag e um só quadro lido: é ele.
 //
-// itens: [{ simbolo, forma, disciplina, ambiente (índice ou -1), nomeAmbiente, x, y, id, circuito, comando, tag? }]
+// itens: [{ simbolo, forma, disciplina, ambiente (índice ou -1), nomeAmbiente, x, y, id, circuito, comando, tag?,
+//          circuitoDaPlanta? (o circuito veio do texto da planta, sem conferência: fica "lido, a conferir") }]
 // opcoes: { quadros: lidos do diagrama }
 // Devolve { instalacao, ids: [id de cada item ('' = não faz parte)], resumo } ou null (nada elétrico no desenho).
 const I = require('./index');
@@ -39,7 +40,10 @@ function tipoDoItem(it) {
 const PREFIXO = { quadro: 'QD-', luminaria: 'L', ponto_luz: 'L', tomada: 'T', tue: 'E', interruptor: 'S', sensor: 'SP' };
 const LUZ = new Set(['luminaria', 'ponto_luz']);
 
-const normTag = (t) => String(t || '').toUpperCase().replace(/\s+/g, '').replace(/\./g, '-');
+// tag mostrada (normTag), chave de comparação (chaveTag: QD01 = QD-01 = QD1 = "QD 01") e número do circuito sem
+// zero à esquerda ("01" do diagrama = "1" da planta): as mesmas regras do leitor do diagrama (revisão de 06/11/2026;
+// antes a planta "QD01" não casava com o diagrama "QD-01" e o ponto "1" criava um "1 (estimado)" ao lado do "01")
+const { normTag, chaveTag, normNumero } = require('../cad/quadrosDoDiagrama');
 const normTexto = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
 // palavras que identificam o circuito pelo ambiente ("RECEPÇÃO", "VEST FEM", "QUADRA 1"): as de 3+ letras pelo
 // radical (6 letras, sem o plural: "ESTACIONAMENTO" casa com o "ESTACIOMENTO" escrito no diagrama) e os números
@@ -72,8 +76,8 @@ function instalacaoDoDesenho(itens, opcoes = {}) {
   const quadrosDesenhados = lista.filter(x => x.tipo === 'quadro');
   // quadro lido do diagrama ↔ desenhado: pela tag escrita junto do símbolo; sem ela, pelo ambiente do quadro
   // ("QDFL-7 (ACADEMIA)" ↔ o quadro desenhado na ACADEMIA); um desenhado sem tag e um só lido → é ele
-  const lidoPorTag = new Map(lidos.map(q => [normTag(q.tag), q]));
-  const lidoDe = quadrosDesenhados.map(x => (x.tag ? lidoPorTag.get(normTag(x.tag)) || null : null));
+  const lidoPorTag = new Map(lidos.map(q => [chaveTag(q.tag), q]));
+  const lidoDe = quadrosDesenhados.map(x => (x.tag ? lidoPorTag.get(chaveTag(x.tag)) || null : null));
   const ligado = new Set(lidoDe.filter(Boolean));
   quadrosDesenhados.forEach((x, i) => {
     if (lidoDe[i] || !x.nomeAmbiente || GENERICO.test(x.nomeAmbiente)) return;
@@ -115,18 +119,18 @@ function instalacaoDoDesenho(itens, opcoes = {}) {
   for (const q of comLido) {
     const Q = porTag.get(q.tag);
     for (const c of q.lido.circuitos) {
-      const id = idLido(q, c.numero);
+      const id = idLido(q, normNumero(c.numero));
       if (circuitos.has(id)) continue;
       circuitos.set(id, {
-        id, quadro: q.tag, disjuntor: `Q${c.numero}`, tipo: c.tipo || 'outro', descricao: c.descricao || `Circuito ${c.numero}`,
+        id, quadro: q.tag, disjuntor: `Q${normNumero(c.numero)}`, tipo: c.tipo || 'outro', descricao: c.descricao || `Circuito ${c.numero}`,
         potencia_va: c.potencia_va ?? null, potencia_w: c.potencia_w ?? null, secao_mm2: c.secao_mm2 ?? null, ligacao: null, fases: c.fases ?? null,
         dr: c.dr || null, ambientes: [], pontos: [], estimado: false, origem: 'diagrama',
       });
-      Q.disjuntores.push({ tag: `Q${c.numero}`, circuito: id, polos: c.polos ?? null, In: c.In ?? null, curva: null });
+      Q.disjuntores.push({ tag: `Q${normNumero(c.numero)}`, circuito: id, polos: c.polos ?? null, In: c.In ?? null, curva: null });
     }
-    Q.drs = (q.lido.drs || []).map(d => ({ tag: d.tag, In: d.In ?? null, idn_ma: d.idn_ma ?? null, polos: null, lido: true, circuitos: (d.circuitos || []).map(k => idLido(q, k)) }));
+    Q.drs = (q.lido.drs || []).map(d => ({ tag: d.tag, In: d.In ?? null, idn_ma: d.idn_ma ?? null, polos: null, lido: true, circuitos: (d.circuitos || []).map(k => idLido(q, normNumero(k))) }));
   }
-  const resumo = { quadrosLidos: [], circuitosLidos: 0, porNumero: 0, porDescricao: 0, porTipo: 0, estimados: 0 };
+  const resumo = { quadrosLidos: [], circuitosLidos: 0, porNumero: 0, porDescricao: 0, porTipo: 0, estimados: 0, lidosNaPlanta: 0 };
   const perto = (lst, x) => {
     let m = lst[0], dm = Infinity;
     for (const q of lst) { if (!Number.isFinite(q.x)) continue; const d = Math.hypot(q.x - x.x, q.y - x.y); if (d < dm) { dm = d; m = q; } }
@@ -140,8 +144,8 @@ function instalacaoDoDesenho(itens, opcoes = {}) {
     if (!comLido.length) return null;
     const tipos = TIPO_DO_PONTO[x.tipo] || [];
     if (x.circuito) {
-      const num = String(x.circuito).toUpperCase().replace(/^0+(?=\d)/, '');
-      const com = posicionados.filter(q => q.lido.circuitos.some(c => c.numero === num && (tipos.includes(c.tipo) || c.tipo === 'outro')));
+      const num = normNumero(x.circuito);
+      const com = posicionados.filter(q => q.lido.circuitos.some(c => normNumero(c.numero) === num && (tipos.includes(c.tipo) || c.tipo === 'outro')));
       if (com.length) { resumo.porNumero++; return doQuadro(perto(com, x), num); }
       return null;
     }
@@ -185,8 +189,9 @@ function instalacaoDoDesenho(itens, opcoes = {}) {
     if (c) {
       if (!c.ambientes.includes(nomeAmb(x))) c.ambientes.push(nomeAmb(x));
     } else if (x.circuito) {
-      const id = quadros.length > 1 ? `${q}.${x.circuito}` : String(x.circuito);
-      c = circuito(id, q, LUZ.has(x.tipo) ? 'iluminacao' : x.tipo === 'tue' ? 'tue' : 'tug', `Circuito ${x.circuito} (do desenho)`, nomeAmb(x));
+      const numero = normNumero(x.circuito);
+      const id = quadros.length > 1 ? `${q}.${numero}` : numero;
+      c = circuito(id, q, LUZ.has(x.tipo) ? 'iluminacao' : x.tipo === 'tue' ? 'tue' : 'tug', `Circuito ${numero} (${x.circuitoDaPlanta ? 'lido na planta, a conferir' : 'do desenho'})`, nomeAmb(x));
     } else if (LUZ.has(x.tipo)) {
       const k = chaveAmb(x);
       if (!ilPorAmb.has(k)) ilPorAmb.set(k, `IL${++nIl}`);
@@ -199,7 +204,13 @@ function instalacaoDoDesenho(itens, opcoes = {}) {
       c = circuito(tugPorAmb.get(k), q, 'tug', `Tomadas — ${nomeAmb(x)} (estimado)`, nomeAmb(x));
     }
     c.pontos.push(x.id);
-    inst.pontos.push({ id: x.id, tipo: x.tipo, simbolo: x.simbolo, ambiente: nomeAmb(x), circuito: c.id, comando: null, carga_va: null, posicao: null });
+    // número do circuito lido na PLANTA (texto ao lado do ponto, sem a conferência do Mapa do CAD): a ligação fica
+    // marcada "lido, a conferir" no ponto e no circuito — a simulação mostra (revisão de 06/11/2026)
+    if (x.circuitoDaPlanta && x.circuito) {
+      c.lidoNaPlanta = (c.lidoNaPlanta || 0) + 1;
+      resumo.lidosNaPlanta++;
+    }
+    inst.pontos.push({ id: x.id, tipo: x.tipo, simbolo: x.simbolo, ambiente: nomeAmb(x), circuito: c.id, comando: null, carga_va: null, posicao: null, ...(x.circuitoDaPlanta && x.circuito ? { circuitoLido: 'a_conferir' } : {}) });
   }
   // quadro lido que não está desenhado aqui e não ficou com nenhum ponto: fora desta planta
   const usadosQ = new Set([...circuitos.values()].filter(c => c.pontos.length).map(c => c.quadro));

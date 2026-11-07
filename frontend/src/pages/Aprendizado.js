@@ -14,7 +14,7 @@ import { mensagemDeErro } from '../utils/download';
 // que falta conferir (mais pontos primeiro). O treino é por disciplina: arquivos lidos e materiais novos do acervo
 // aparecem separados por disciplina. Backend: controllers/aprendizadoController.js.
 
-const ORIGEM = { legenda: 'da legenda', aprendido: 'aprendido', semelhante: 'parecido', regra: 'regra da layer', nao_reconhecido: 'não reconhecido' };
+const ORIGEM = { legenda: 'da legenda', aprendido: 'aprendido', semelhante: 'parecido', regra: 'regra da layer', nao_ponto: '"não é ponto" aprendido', nao_reconhecido: 'não reconhecido' };
 const corDaTaxa = (t) => (t == null ? 'var(--texto-3)' : t >= 90 ? '#3fb95f' : t >= 70 ? '#d9a53a' : '#e08080');
 const n = (v) => Number(v || 0).toLocaleString('pt-BR');
 
@@ -220,7 +220,32 @@ export default function Aprendizado() {
           <Numero valor={n(notas.em_uso)} rotulo="alturas de instalação por escritório" detalhe={`${n(notas.lidas)} nota(s) lida(s), ${n(notas.escritorios)} escritório(s)`} />
           <Numero valor={n(materiais.vinculos)} rotulo="descrições ligadas a um material" detalhe={`de ${n(materiais.catalogo)} materiais no catálogo — vêm dos orçamentos confirmados`} />
         </div>
-        {dados.porDisciplina?.length > 0 && (
+        {/* por disciplina (diretriz de 06/11/2026: o aprendizado é POR DISCIPLINA): quanto cada uma já sabe e quanto disso o
+            engenheiro confirmou (certo) × o sistema aprendeu sozinho (sugestão, a conferir) */}
+        {dados.porDisciplinaDetalhe?.length > 0 ? (
+          <div style={{ marginTop: 14, overflowX: 'auto' }} data-testid="sabe-por-disciplina">
+            <div style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 6 }}>
+              O que cada disciplina já sabe — <b style={{ color: '#3fb95f' }}>confirmado</b> pelo engenheiro (vale como certo) × <b style={{ color: '#d9a53a' }}>sugerido</b> pelo próprio sistema (a conferir)
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ textAlign: 'left', color: 'var(--texto-3)' }}>
+                  {['Disciplina', 'Símbolos', 'Blocos', 'Legendas de PDF', 'Alturas', '"Não é ponto"', 'Confirmados', 'Sugeridos'].map(h => <th key={h} style={{ padding: '5px 8px', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {dados.porDisciplinaDetalhe.map(d => (
+                  <tr key={d.chave} style={{ borderTop: '1px solid var(--borda)' }} data-testid={`sabe-${d.chave}`}>
+                    <td style={{ padding: '5px 8px', fontWeight: 600 }}>{d.nome}</td>
+                    {[d.simbolos, d.blocos, d.legendasPdf, d.alturas, d.naoPonto].map((v, i) => <td key={i} style={{ padding: '5px 8px', color: v ? 'var(--texto)' : 'var(--texto-3)' }}>{n(v)}</td>)}
+                    <td style={{ padding: '5px 8px', color: '#3fb95f', fontWeight: 600 }}>{n(d.confirmados)}</td>
+                    <td style={{ padding: '5px 8px', color: '#d9a53a' }}>{n(d.sugeridos)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : dados.porDisciplina?.length > 0 && (
           <div style={{ marginTop: 14 }} data-testid="sabe-por-disciplina">
             <div style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 6 }}>Símbolos e blocos que reconhece, por disciplina</div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -236,10 +261,18 @@ export default function Aprendizado() {
 
       <div style={estilos.card}>
         <Titulo Icone={Cpu}>Quanto já sai sem IA (últimos {autonomia.dias} dias)</Titulo>
+        {/* por função, na unidade dela: sem IA (motor do sistema) · reaproveitado de resposta anterior da IA · chamou a IA (revisão de 06/11/2026) */}
         {autonomia.funcoes.length ? autonomia.funcoes.map(f => (
           <div key={f.nome} style={{ display: 'grid', gridTemplateColumns: '1fr 120px 150px', gap: 10, alignItems: 'center', padding: '5px 0', fontSize: 12.5 }}>
-            <span>{f.nome}</span><Barra taxa={f.taxa} />
-            <span style={{ color: 'var(--texto-2)' }}>{f.taxa == null ? '—' : `${f.taxa}% sem IA`} <span style={{ color: 'var(--texto-3)' }}>({n(f.acertos)} / {n(f.acertos + f.chamadas)})</span></span>
+            <span>{f.nome}
+              {f.total != null && (
+                <span style={{ display: 'block', fontSize: 11, color: 'var(--texto-3)' }}>
+                  {n(f.semIA)} sem IA · {n(f.cache)} reaproveitado(s) da IA · {n(f.chamadas)} chamada(s) à IA{f.falhas ? ` (+${n(f.falhas)} falha(s))` : ''}{f.unidade ? ` — por ${f.unidade}` : ''}
+                </span>
+              )}
+            </span>
+            <Barra taxa={f.taxa} />
+            <span style={{ color: 'var(--texto-2)' }}>{f.taxa == null ? '—' : `${f.taxa}% sem IA`} <span style={{ color: 'var(--texto-3)' }}>({n(f.total != null ? f.semIA : f.acertos)} / {n(f.total != null ? f.total : f.acertos + f.chamadas)})</span></span>
           </div>
         )) : <p style={estilos.ajuda}>Nenhuma consulta registrada no período.</p>}
       </div>

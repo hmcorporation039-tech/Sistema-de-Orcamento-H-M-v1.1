@@ -121,10 +121,13 @@ async function criar(req, res) {
   const dados = req.body.dados || motor.modeloVazio();
   const erro = validarDados(dados);
   if (erro) return res.status(400).json({ erro });
-  const gerarOrc = req.body.gerar_orcamento !== false;
   // tipo (2.1): 'projeto' ou 'laudo' — ausente = laudo (o "Novo laudo" de sempre)
   const tipo = lerTipoRegistro(req.body.tipo);
   if (!tipo) return res.status(400).json({ erro: 'Tipo inválido (projeto ou laudo).' });
+  // projeto e orçamento são trabalhos separados (pedido do usuário, 06/11/2026: "às vezes faremos projetos sem gerar
+  // orçamento"): o projeto nasce SEM orçamento de execução e a opção é ligada quando a obra também for orçada; o laudo
+  // continua com o orçamento de inspeção/correção ligado. Quem manda gerar_orcamento explícito decide.
+  const gerarOrc = typeof req.body.gerar_orcamento === 'boolean' ? req.body.gerar_orcamento : tipo !== 'projeto';
   // obra (2.0): registro novo ligado à obra → pasta em Obras\<obra>\Laudos\<disciplina>
   // (laudo) ou Obras\<obra>\Projetos\<disciplina> (projeto)
   const leituraObra = lerObraId(req.body);
@@ -177,10 +180,13 @@ async function criarDeAnalise(req, res) {
   if (erro) return res.status(400).json({ erro });
   // confere já que o cálculo roda com os dados mapeados (erro vira aviso, o formulário corrige)
   try { motor.processar(dados); } catch (e) { avisos.push(`O cálculo ainda não fecha com os dados lidos: ${e.message}`); }
+  // projeto e orçamento separados (06/11/2026): da análise de ELABORAÇÃO o projeto nasce sem orçamento de execução;
+  // da análise de ORÇAMENTO ("dimensionar pela norma") ele existe justamente para orçar, então nasce com orçamento
+  const gerarOrc = typeof req.body.gerar_orcamento === 'boolean' ? req.body.gerar_orcamento : linha.finalidade !== 'elaboracao';
   const { rows } = await pool.query(
     `INSERT INTO laudos_projetos (disciplina, titulo, cliente_nome, dados, usuario_id, gerar_orcamento, obra_id, analise_id, cliente_id, tipo)
-     VALUES ($1,$2,$3,$4,$5,true,$6,$7,$8,'projeto') RETURNING *`,
-    [disciplina, tituloDe(dados), dados.cliente?.nome || null, dados, req.usuario.id, obraId, linha.id, linha.cliente_id || null]
+     VALUES ($1,$2,$3,$4,$5,$9,$6,$7,$8,'projeto') RETURNING *`,
+    [disciplina, tituloDe(dados), dados.cliente?.nome || null, dados, req.usuario.id, obraId, linha.id, linha.cliente_id || null, gerarOrc]
   );
   // arquitetura enviada na análise (2.3, para o 3D) vale para o projeto: planta e 3D já saem
   await pool.query(

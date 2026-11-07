@@ -7,6 +7,7 @@ import {
   TIPOS_OBRA_TCU, FORNECIMENTO_TCU, REGIMES_BDI, PARCELAS_BDI, FONTE_BDI_TCU,
   aliquotaCprb, referenciaTcu, tributosBdi, calcularBdiTcu, sugestaoBdi, avaliarBdi, normalizarMemoriaBdi,
 } from '../utils/bdiTcu';
+import { arred2 as arred2Dinheiro } from '../utils/dinheiro';
 
 // Calculador de BDI pela fórmula do TCU (Acórdão 2.622/2013-Plenário) — versão
 // 2.0, Fase 3F. Abre com a memória gravada na proposta ou, sem ela, com os
@@ -16,7 +17,8 @@ import {
 // A conta é a de utils/bdiTcu.js — o mesmo núcleo que o servidor usa.
 
 const fmt = (n) => (Number.isFinite(Number(n)) ? Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—');
-const arred2 = (v) => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+// mesma regra de centavos do servidor (meio para longe do zero; o "+ EPSILON" errava 22,115 → 22,11)
+const arred2 = (v) => arred2Dinheiro(v);
 
 export default function CalculadoraBdi({ aberto, onFechar, memoria, publico, impostoVenda, impostoServico, onAplicar }) {
   const anoAtual = new Date().getFullYear();

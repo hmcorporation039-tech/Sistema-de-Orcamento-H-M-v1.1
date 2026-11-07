@@ -10,6 +10,8 @@ const { classificarPendentes } = require('./classificacaoMateriais');
 const { verificarAutenticidade, listaDoEnv } = require('../utils/autenticidadeEmail');
 const { executarComTrava } = require('./travaJob');
 const iaCache = require('./iaCache');
+const crypto = require('crypto');
+const { iaDisponivel } = require('./leitorCotacaoIA');
 
 // Piso fixo: nunca busca e-mails anteriores a essa data. Toda verificação
 // (manual ou agendada) parte sempre daqui, nunca "N dias atrás". O backfill
@@ -143,8 +145,9 @@ async function processarOrcamentosPorEmail(imapClient, dbClient, margem, indice,
   for (const uid of uids) {
     const ident = idents.get(uid);
     if (!ident) continue; // sumiu da caixa entre a busca e a leitura
-    const lido = await registroProcessado(dbClient, ident, 'itens_lidos, leitor_versao');
-    if (lido && ((lido.itens_lidos || 0) > 0 || (lido.leitor_versao || 0) >= VERSAO_LEITOR || lido.leitor_versao == null)) continue;
+    const lido = await registroProcessado(dbClient, ident, 'itens_lidos, leitor_versao, anexos_lidos, aguardando_ia');
+    if (lido && orcamentoJaLido(lido)) continue;
+    const anexosJaLidos = new Set(lido?.anexos_lidos || []);
     resumo.emailsEncontrados++;
 
     // Um e-mail ilegível não trava os seguintes (antes o download/parse ficava
@@ -176,15 +179,26 @@ async function processarOrcamentosPorEmail(imapClient, dbClient, margem, indice,
       .filter(a => /\.(pdf|png|jpe?g)$/i.test(a.filename || '') || /pdf|image\/(png|jpe?g)/i.test(a.contentType || ''))
       .filter(a => (a.size || a.content?.length || 0) <= TAMANHO_MAX_ANEXO);
 
-    // lê todos os anexos antes de abrir a transação (OCR/IA podem demorar)
+    // lê todos os anexos antes de abrir a transação (OCR/IA podem demorar). POR ANEXO (revisão do uso de IA de
+    // 06/11/2026): antes bastava um anexo ter itens para o e-mail inteiro ficar lido, e o anexo que precisava da IA (fora
+    // do ar naquela hora) nunca mais era relido. Agora o e-mail guarda o hash dos anexos já resolvidos (anexos_lidos) e,
+    // relido, só passa pelos que faltam.
     const leituras = [];
+    const lidosAgora = [];
     let pendente = false;
+    let aguardaIA = false;
     for (const anexo of anexos) {
+      const hashAnexo = crypto.createHash('sha256').update(anexo.content || Buffer.alloc(0)).digest('hex');
+      if (anexosJaLidos.has(hashAnexo)) continue;
       try {
-        const leitura = await lerDocumento(anexo.content, anexo.filename || 'anexo', { permitirIA: resumo.leiturasPorIA < MAX_IA_POR_VARREDURA, exigirClienteHM: true });
-        if (leitura.usouIA) resumo.leiturasPorIA++;
+        const leitura = await lerDocumento(anexo.content, anexo.filename || 'anexo', { permitirIA: podeUsarIA(resumo), exigirClienteHM: true });
+        if (leitura.usouIA && !leitura.iaDeCache) resumo.leiturasPorIA++; // a resposta guardada do mesmo arquivo não gasta IA
         await iaCache.contarLeituraCotacao(leitura);
         if (leitura.pendente) pendente = true;
+        else if (leitura.aguardaIA) aguardaIA = true;
+        // resolvido de vez: leu itens, ou não é cotação para nós (proposta da H&M, não endereçado à H&M). O lido com 0
+        // itens fica de fora: volta a ser lido quando a versão do leitor subir, como antes
+        else if (leitura.itens.length || leitura.daHM || leitura.ignorado) lidosAgora.push(hashAnexo);
         if (leitura.itens.length) leituras.push({ anexo, leitura });
       } catch (err) {
         resumo.avisos.push(`"${email.subject || uid}" / ${anexo.filename}: erro na leitura — ${err.message}`);
@@ -202,10 +216,14 @@ async function processarOrcamentosPorEmail(imapClient, dbClient, margem, indice,
         resumo.orcamentosImportados++;
         for (const a of leitura.avisos || []) resumo.avisos.push(`"${email.subject || uid}" / ${anexo.filename}: ${a}`);
       }
+      // anexo pendente (IA fora do ar ou sem vez nesta varredura): versão anterior, o e-mail é relido (só os anexos que
+      // faltam); anexo que só a IA leria, com a IA desligada: aguardando_ia, relido quando ela for ligada
       await dbClient.query(
-        `INSERT INTO emails_processados (message_id, assunto, tipo, itens_lidos, leitor_versao) VALUES ($1,$2,'orcamento',$3,$4)
-         ON CONFLICT (message_id) DO UPDATE SET tipo='orcamento', itens_lidos=EXCLUDED.itens_lidos, leitor_versao=EXCLUDED.leitor_versao, processado_em=NOW()`,
-        [ident.chave, email.subject || '', lidosNoEmail, pendente && !lidosNoEmail ? VERSAO_LEITOR - 1 : VERSAO_LEITOR]
+        `INSERT INTO emails_processados (message_id, assunto, tipo, itens_lidos, leitor_versao, anexos_lidos, aguardando_ia) VALUES ($1,$2,'orcamento',$3,$4,$5,$6)
+         ON CONFLICT (message_id) DO UPDATE SET tipo='orcamento', itens_lidos=COALESCE(emails_processados.itens_lidos, 0) + EXCLUDED.itens_lidos,
+           leitor_versao=EXCLUDED.leitor_versao, aguardando_ia=EXCLUDED.aguardando_ia, processado_em=NOW(),
+           anexos_lidos=ARRAY(SELECT DISTINCT x FROM unnest(COALESCE(emails_processados.anexos_lidos, '{}') || EXCLUDED.anexos_lidos) AS x)`,
+        [ident.chave, email.subject || '', lidosNoEmail, pendente ? VERSAO_LEITOR - 1 : VERSAO_LEITOR, [...anexosJaLidos, ...lidosAgora], aguardaIA && !pendente]
       );
       await dbClient.query('COMMIT');
       resumo.emailsProcessados++;
@@ -218,6 +236,19 @@ async function processarOrcamentosPorEmail(imapClient, dbClient, margem, indice,
 }
 
 const conexaoCaiu = (imapClient) => imapClient && imapClient.usable === false;
+
+// E-mail de orçamento já lido de vez? Registro novo (com anexos_lidos): lido pela versão atual do leitor, sem anexo
+// pendente — e, se esperava a IA desligada, até ela ser ligada. Registro antigo (sem anexos_lidos): a regra de antes.
+function orcamentoJaLido(lido) {
+  const versaoAtual = (lido.leitor_versao || 0) >= VERSAO_LEITOR;
+  if (lido.aguardando_ia && versaoAtual) return !iaDisponivel();
+  if (lido.anexos_lidos != null) return versaoAtual;
+  return (lido.itens_lidos || 0) > 0 || versaoAtual || lido.leitor_versao == null;
+}
+
+// Teto de IA da varredura: nº de leituras e tempo (cotacaoFornecedorService.podeUsarIA usa o mesmo critério)
+const TEMPO_IA_VARREDURA_MS = (Number(process.env.COTACAO_IA_MINUTOS_POR_VARREDURA) || 20) * 60 * 1000;
+const podeUsarIA = (resumo) => resumo.leiturasPorIA < MAX_IA_POR_VARREDURA && Date.now() - (resumo.inicio || Date.now()) < TEMPO_IA_VARREDURA_MS;
 
 // Trava contra execução simultânea (horário automático × "Verificar agora" × outra instância)
 function verificarCaixaDeEntrada({ origem = 'manual' } = {}) {
@@ -233,7 +264,7 @@ async function lerCaixaDeEntrada({
   const resumo = {
     emailsEncontrados: 0, emailsProcessados: 0,
     materiaisCriados: 0, materiaisAtualizados: 0,
-    notasImportadas: 0, orcamentosImportados: 0, leiturasPorIA: 0, avisos: [],
+    notasImportadas: 0, orcamentosImportados: 0, leiturasPorIA: 0, avisos: [], inicio: Date.now(),
   };
 
   if (!configurado()) {

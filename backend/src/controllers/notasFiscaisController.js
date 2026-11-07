@@ -21,12 +21,16 @@ const nfseNacional = require('../services/nfseNacional');
 const atestado = require('../services/atestadoCapacidade');
 const { ASSINATURA_EMPRESA } = require('./propostaDocumentos');
 const { levarObraDaNota, levarObraAosPixDaNota } = require('../services/notasAReceber');
+const { arredondar } = require('../utils/calculoProposta');
 
 const CNPJ_HM = EMPRESA.cnpj.replace(/\D/g, '');
 const digitos = (v) => String(v ?? '').replace(/\D/g, '');
 const tem = (body, c) => Object.prototype.hasOwnProperty.call(body || {}, c);
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const centavos = (n) => Math.round(Number(n || 0) * 100) / 100;
+// centavos com o meio para longe do zero, a mesma regra da proposta
+// (skills/_comum/base/dinheiro.js): Math.round(x * 100) / 100 dava ISS de 5 %
+// sobre 100,30 = 5,015 → 5,01 (5,015 × 100 = 501,4999… no binário); certo 5,02
+const centavos = (n) => arredondar(n);
 
 const VALORES = [
   'valor_servicos', 'valor_deducoes', 'desconto_incondicionado', 'desconto_condicionado',
@@ -116,7 +120,11 @@ async function dadosDoRascunho(body, atual = {}) {
     if (!m) return { erro: 'Município da prestação (código IBGE) não encontrado.' };
   }
   d.codigo_municipio_prestacao = local;
-  return { d: calcularTotais(d) };
+  calcularTotais(d);
+  // retenções + descontos maiores que o serviço: líquido negativo ia para a
+  // nota (e a NFS-e é recusada pela Receita, ou sai com valor a pagar errado)
+  if (d.valor_liquido < 0) return { erro: 'As retenções e os descontos passam do valor dos serviços: o valor líquido ficaria negativo. Confira os valores.' };
+  return { d };
 }
 
 // ── Lista, detalhe ─────────────────────────────────────────────────────────
@@ -504,11 +512,19 @@ async function gravarImportada(n, usuarioId, resumo) {
     return;
   }
   // a nota emitida no portal a partir de um rascunho daqui: o rascunho do mesmo
-  // cliente e valor vira a nota (fica com o vínculo de origem dele)
+  // cliente e valor vira a nota (fica com o vínculo de origem dele).
+  // Só quando há UM rascunho assim (revisão de 11/2026): com dois do mesmo
+  // cliente e valor (duas propostas iguais, por exemplo) o "mais novo" podia
+  // ser o errado — a nota ia para a proposta errada. Aí a nota entra como
+  // nova e o aviso pede para o usuário apagar o rascunho que ela substituiu.
   if (n.padrao === 'nacional' && clienteId) {
-    const { rows: [rasc] } = await pool.query(
-      `SELECT id FROM notas_fiscais WHERE situacao = 'rascunho' AND cliente_id = $1 AND valor_servicos = $2 ORDER BY id DESC LIMIT 1`,
+    const { rows: rascunhos } = await pool.query(
+      `SELECT id FROM notas_fiscais WHERE situacao = 'rascunho' AND cliente_id = $1 AND valor_servicos = $2 ORDER BY id DESC LIMIT 2`,
       [clienteId, n.valor_servicos]);
+    const rasc = rascunhos.length === 1 ? rascunhos[0] : null;
+    if (rascunhos.length > 1) {
+      resumo.erros.push(`Nota ${n.numero || '?'}: há mais de um rascunho do mesmo cliente com o mesmo valor — importada como nota nova. Ligue a proposta certa à nota e apague o rascunho que ela substituiu.`);
+    }
     if (rasc) {
       await pool.query(
         `UPDATE notas_fiscais SET ${CAMPOS_IMPORTADOS.map((c, i) => `${c} = $${i + 1}`).join(', ')}, origem = 'importada', atualizado_em = NOW()
@@ -546,11 +562,15 @@ async function importarConteudos(arquivos, usuarioId) {
     }
     for (const c of lido.cancelamentos) {
       const { rowCount } = await pool.query(
+        // nota já "substituída" (por outra nota) não vira "cancelada" com um
+        // evento de cancelamento depois: o vínculo com a substituta se perdia
         `UPDATE notas_fiscais SET situacao = $4, cancelada_em = $2, motivo_cancelamento = $3, atualizado_em = NOW()
-          WHERE chave_acesso = $1 AND situacao <> 'rascunho'`,
+          WHERE chave_acesso = $1 AND situacao <> 'rascunho' AND NOT (situacao = 'substituida' AND $4 = 'cancelada')`,
         [c.chave, c.data, c.motivo, c.substituida ? 'substituida' : 'cancelada']);
-      if (rowCount) resumo.canceladas++;
-      else resumo.erros.push(`${a.nome}: cancelamento de uma nota que ainda não está no sistema (importe a nota primeiro).`);
+      if (rowCount) { resumo.canceladas++; continue; }
+      const { rows: [jaSubstituida] } = await pool.query(
+        "SELECT 1 FROM notas_fiscais WHERE chave_acesso = $1 AND situacao = 'substituida'", [c.chave]);
+      if (!jaSubstituida) resumo.erros.push(`${a.nome}: cancelamento de uma nota que ainda não está no sistema (importe a nota primeiro).`);
     }
   }
   return resumo;

@@ -15,6 +15,7 @@ const { Helper } = require('dxf');
 const { classificarFolha, NAO_PLANTA, RE_NOME_SALA } = require('./classificarPrancha');
 const { ehLayerDeInstalacao } = require('./disciplinasCad');
 const { limparMtext } = require('./textoCad');
+const { pontosDoSolido, pontosDaCurva, lacosDaHachura } = require('./geometriaCad');
 const { lerQuadrosDoDiagrama, RE_TAG } = require('./quadrosDoDiagrama');
 const { lerMarcacao } = require('./circuitoDoDesenho');
 
@@ -129,6 +130,10 @@ const escolherNome = (ts) => {
 const RE_LAYER_FORA_PLANTA = /UNIFILAR|TRIFILAR|MULTIFILAR|DIAGRAMA|ESQUEMA|QUADRO.?DE.?CARGA|TABELA|PLANILHA|LEGENDA|CARIMBO|\bSELO|MOLDURA|MARGEM|VIEWPORT|\bVPORT/i;
 const RE_LAYER_MOLDURA = /MOLDURA|MARGEM/i;
 const RE_BLOCO_FORA_PLANTA = /UNIFILAR|TRIFILAR|DIAGRAMA|ESQUEMA|QUADRO.?DE.?CARGA|LEGENDA|CARIMBO|\bSELO|MOLDURA|FOLHA.?A[0-4]\b|^A[0-4]$|DETALHE/i;
+// Bloco de diagrama/quadro de cargas (revisão de 06/11/2026): continua fora da planta (não vira parede nem sala),
+// mas os TEXTOS dele vão para o leitor dos quadros (./quadrosDoDiagrama.js) — o unifilar inserido como bloco
+// "DIAGRAMA UNIFILAR QD-01" saía sem nenhum circuito original
+const RE_BLOCO_DIAGRAMA = /UNIFILAR|TRIFILAR|MULTIFILAR|DIAGRAMA|ESQUEMA|QUADRO.?DE.?CARGA/i;
 // Teto de entidades explodidas (revisão de 04/11/2026): cada instância de bloco vira uma cópia da geometria, e um DWG
 // de 4 MB de incêndio (sprinklers em blocos aninhados) chegou a 3,1 milhões de entidades e 4 GB — o worker de 2 GB
 // caía e o arquivo ficava sem leitura nenhuma. Acima do teto, os níveis de aninhamento MAIS FUNDOS (detalhe interno
@@ -174,21 +179,41 @@ function explodir(parsed) {
   // a moldura da folha não entra no desenho, mas diz onde está cada prancha (./pranchas.js)
   out.molduras = [];
   out.textosFora = [];
+  // bloco de diagrama inserido: os textos dele (início e fim em textosFora) — a caixa deles é a região do diagrama
+  // para o leitor dos quadros, já que os traços do bloco não entram na classificação da folha
+  out.blocosDiagrama = [];
+  const abrirDiagrama = (e, b, transforms, layer, prof, dentroDeDiagrama) => {
+    const ini = out.textosFora.length;
+    const t = { x: e.x || 0, y: e.y || 0, scaleX: e.scaleX, scaleY: e.scaleY, rotation: e.rotation, extrusionZ: e.extrusionZ };
+    visitar(b.entities || [], [{ x: -(b.x || 0), y: -(b.y || 0) }, t, ...transforms], layer, prof + 1, true);
+    if (!dentroDeDiagrama && out.textosFora.length > ini) out.blocosDiagrama.push([ini, out.textosFora.length]);
+  };
   // DWG convertido de PDF às vezes traz tudo no espaço do papel: aí ele é o desenho
   const temModelo = (parsed.entities || []).some(e => !e.paperSpace);
-  const visitar = (ents, transforms, layerPai, prof) => {
+  // diagrama: dentro de um bloco de diagrama (só os textos saem, para o leitor dos quadros)
+  const visitar = (ents, transforms, layerPai, prof, diagrama = false) => {
     for (const e of ents) {
       if (prof === 0 && e.paperSpace && temModelo) continue;
       const layer = layerPai && (!e.layer || e.layer === '0') ? layerPai : e.layer;
-      if (RE_LAYER_FORA_PLANTA.test(layer || '')) {
-        if (RE_LAYER_MOLDURA.test(layer || '') && (e.type === 'LWPOLYLINE' || e.type === 'POLYLINE') && e.vertices?.length >= 4 && e.vertices.length <= 5) out.molduras.push({ pts: transformar(e.vertices.map(v => [v.x, v.y]), transforms), layer });
+      if (diagrama || RE_LAYER_FORA_PLANTA.test(layer || '')) {
+        if (!diagrama && RE_LAYER_MOLDURA.test(layer || '') && (e.type === 'LWPOLYLINE' || e.type === 'POLYLINE') && e.vertices?.length >= 4 && e.vertices.length <= 5) out.molduras.push({ pts: transformar(e.vertices.map(v => [v.x, v.y]), transforms), layer });
         // o texto da legenda (layer de tabela) diz a altura de cada símbolo: ./pontosDoDesenho.js
-        else if (e.type === 'TEXT' || e.type === 'MTEXT') out.textosFora.push({ ...e, layer, transforms });
+        else if (e.type === 'TEXT' || e.type === 'MTEXT' || (diagrama && e.type === 'ATTRIB' && e.text)) out.textosFora.push({ ...e, layer, transforms });
+        // bloco dentro do diagrama (disjuntor, DR, título em bloco com atributos) ou bloco de diagrama/tabela na
+        // layer do diagrama ("DI-DIAGRAMA", "TABELA"): só os textos
+        else if (e.type === 'INSERT' && blocos.has(e.block) && prof <= profMax
+          && (diagrama || RE_BLOCO_DIAGRAMA.test(e.block || '') || RE_BLOCO_DIAGRAMA.test(layer || '') || /TABELA|PLANILHA/i.test(layer || ''))) {
+          abrirDiagrama(e, blocos.get(e.block), transforms, layer, prof, diagrama);
+        }
         continue;
       }
       if (e.type !== 'INSERT') { out.push({ ...e, layer, transforms }); continue; }
       const b = blocos.get(e.block);
-      if (!b || prof > profMax || RE_BLOCO_FORA_PLANTA.test(e.block || '')) continue;
+      if (!b || prof > profMax) continue;
+      if (RE_BLOCO_FORA_PLANTA.test(e.block || '')) {
+        if (RE_BLOCO_DIAGRAMA.test(e.block || '')) abrirDiagrama(e, b, transforms, layer, prof, false);
+        continue;
+      }
       const nl = Math.max(1, e.rowCount || 1), nc = Math.max(1, e.columnCount || 1);
       const rot = ((e.rotation || 0) * Math.PI) / 180;
       for (let r = 0; r < nl; r++) {
@@ -215,10 +240,17 @@ function transformar(pts, transforms = []) {
       [x, y] = [x * Math.cos(a) - y * Math.sin(a), y * Math.cos(a) + x * Math.sin(a)];
     }
     x += t.x || 0; y += t.y || 0;
-    if (t.extrusionZ === -1) x = -x;
+    if (Number(t.extrusionZ) < 0) x = -x;
     return [x, y];
   }), pts);
 }
+
+// Entidade com normal −Z (espelhada no AutoCAD com MIRROR, ou vinda de bloco espelhado e explodido): as
+// coordenadas dela estão no sistema da entidade (OCS), com o X invertido. Antes só ARC/CIRCLE eram tratados;
+// a polilinha, o texto, o SOLID e a hachura caíam do outro lado do eixo Y (revisão de 06/11/2026). O INSERT
+// espelha pelo transforms (transformar). LINE, ELLIPSE, SPLINE e o ponto do MTEXT já vêm no sistema do desenho.
+const normalNegativa = (e) => Number(e.extrusionZ) < 0 || Number(e.extrusionDir?.z) < 0;
+const ocs = (e, pts) => (normalNegativa(e) ? pts.map(([x, y]) => [-x, y]) : pts);
 
 // Arco/círculo em pontos; extrusão −Z do próprio arco espelha em X (porta espelhada)
 function pontosArco(e) {
@@ -227,7 +259,7 @@ function pontosArco(e) {
   if (a1 <= a0) a1 += 2 * Math.PI;
   const n = Math.max(4, Math.ceil((a1 - a0) / (Math.PI / 16)));
   const pts = Array.from({ length: n + 1 }, (_, i) => { const a = a0 + ((a1 - a0) * i) / n; return [e.x + e.r * Math.cos(a), e.y + e.r * Math.sin(a)]; });
-  const espelho = (p) => (e.extrusionZ === -1 ? [-p[0], p[1]] : p);
+  const espelho = (p) => (Number(e.extrusionZ) < 0 ? [-p[0], p[1]] : p);
   const centro = transformar([espelho([e.x, e.y])], e.transforms)[0];
   const tp = transformar(pts.map(espelho), e.transforms);
   return { pts: tp, centro, r: dist(centro, tp[0]), varredura: ((a1 - a0) * 180) / Math.PI };
@@ -241,7 +273,7 @@ function pontosArco(e) {
 // vistas em escalas diferentes no mesmo espaço do modelo (Arena: plantas em metros
 // na origem, diagramas a 80 mil unidades, cabeçalho em polegadas) tem extensão
 // total implausível em metros, e a planta saía 40× menor (29/10/2026).
-function decidirFator(insUnits, arcos, tamanho, extensao, miolo = extensao) {
+function decidirFator(insUnits, arcos, extensao, miolo = extensao) {
   const doCabecalho = FATOR[insUnits] || null;
   const dentro = (e, f) => e * f >= 3 && e * f <= 3000;
   const plausivel = (f) => dentro(extensao, f) || dentro(miolo, f);
@@ -250,7 +282,12 @@ function decidirFator(insUnits, arcos, tamanho, extensao, miolo = extensao) {
   const melhor = [1, 0.01, 0.001, 0.0254].filter(plausivel).map(f => ({ f, n: portasCom(f) })).sort((a, b) => b.n - a.n)[0];
   if (melhor && melhor.n >= 3) return melhor.f;
   if (doCabecalho) return doCabecalho;
-  return tamanho > 2000 ? 0.001 : 1; // sem unidade: plantas em mm têm coordenadas na casa dos milhares
+  // sem unidade e sem porta: pela LARGURA do desenho, não pela coordenada (revisão de 06/11/2026). Antes valia a
+  // maior coordenada absoluta das polilinhas: o DWG em mm só com LINE (sem polilinha) era lido em metros, e a
+  // planta em metros nas coordenadas UTM (> 2000) saía em mm. Mais de 2.000 unidades de largura é planta em mm
+  // (em metros seriam 2 km); a menor das duas medidas da extensão, para a sujeira longe não decidir
+  const largura = Math.min(extensao || 0, miolo || extensao || 0);
+  return largura > 2000 ? 0.001 : 1;
 }
 
 // ── Portas ────────────────────────────────────────────────────────────────
@@ -372,7 +409,88 @@ function semGradeRepetida(polis) {
 const RE_NAO_PAREDE = /MOB|LOU[CÇ]A|PISO|HACH|COTA|TEXT|DIM|EIXO|TRACEJ|VEGET|LAYOUT|EQUIP|PAGIN|FORRO|ILUM|EL[EÉ]T|HIDR|SANIT|TUBUL|DEFPOINTS|VIEWPORT|CARIMBO|SELO|NOTA/i;
 const RE_PAREDE = /PAREDE|ALVEN|WALL|DRYWALL|DIVIS|ESTRUT|PILAR|COLUN|JANEL|ESQUAD|CAIXILH|VIDRO|WINDOW|FECHAMENTO|PERIM/i;
 
-function ambientesPorParedes(segmentos, portas, textos, { areaMinima = 1, areaMaxima = 5000 } = {}) {
+// A grade de 5 cm é feita por REGIÃO do desenho (revisão de 06/11/2026). Antes era uma só, do tamanho do desenho
+// inteiro, com no máximo 16 milhões de células: com outra prancha a 1,3 km no mesmo espaço do modelo a célula
+// passava de 30 cm, a parede dupla de 15 cm sumia, o corredor de 0,90 m fechava e as salas pequenas encolhiam ou
+// desapareciam. Agora as paredes são separadas em grupos ligados (células grossas de 5 m, vão de até 10 m entre
+// elas) e cada grupo com nome dentro tem a sua grade fina — a célula só cresce se um prédio sozinho passar do teto.
+const CELULA_REGIAO_M = 5;
+function regioesDasParedes(segmentos) {
+  const cel = CELULA_REGIAO_M;
+  const chave = (i, j) => `${i},${j}`;
+  const ocupada = new Map(); // célula → índice do grupo (-1 = ainda sem grupo)
+  const doSegmento = segmentos.map(([p, q]) => {
+    const n = Math.max(1, Math.ceil(dist(p, q) / cel));
+    let k0 = null;
+    for (let t = 0; t <= n; t++) {
+      const k = chave(Math.floor((p[0] + ((q[0] - p[0]) * t) / n) / cel), Math.floor((p[1] + ((q[1] - p[1]) * t) / n) / cel));
+      if (!ocupada.has(k)) ocupada.set(k, -1);
+      if (k0 == null) k0 = k;
+    }
+    return k0;
+  });
+  // grupos de células ligadas (vizinhas até 2 células: vão de até ~10 m entre paredes é o mesmo prédio)
+  let grupos = 0;
+  for (const k of ocupada.keys()) {
+    if (ocupada.get(k) !== -1) continue;
+    const g = grupos++;
+    const fila = [k];
+    ocupada.set(k, g);
+    while (fila.length) {
+      const [i, j] = fila.pop().split(',').map(Number);
+      for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) {
+        const v = chave(i + a, j + b);
+        if (ocupada.get(v) === -1) { ocupada.set(v, g); fila.push(v); }
+      }
+    }
+  }
+  // grupo de um ponto (texto): a célula dele ou a ocupada mais perto, a até 2 células
+  const grupoDe = (x, y) => {
+    const i = Math.floor(x / cel), j = Math.floor(y / cel);
+    let melhor = null, dm = Infinity;
+    for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) {
+      const g = ocupada.get(chave(i + a, j + b));
+      if (g != null && g >= 0 && a * a + b * b < dm) { dm = a * a + b * b; melhor = g; }
+    }
+    return melhor;
+  };
+  return { grupos, grupoDoSegmento: doSegmento.map(k => ocupada.get(k)), grupoDe };
+}
+
+function ambientesPorParedes(segmentos0, portas, textos, opcoes = {}) {
+  // traço de mais de 1 km não é parede de sala (linha perdida até a origem, divisa de loteamento) e ligaria
+  // pranchas distantes num grupo só — a grade voltaria a ser a do desenho inteiro
+  const segmentos = segmentos0.filter(s => dist(s[0], s[1]) <= 1000);
+  if (!segmentos.length || !textos.length) return [];
+  const { grupos, grupoDoSegmento, grupoDe } = regioesDasParedes(segmentos);
+  if (grupos <= 1) return ambientesPorParedesNaRegiao(segmentos, portas, textos, opcoes);
+  const segs = new Map(), txts = new Map();
+  segmentos.forEach((s, i) => { const g = grupoDoSegmento[i]; (segs.get(g) || segs.set(g, []).get(g)).push(s); });
+  const caixas = new Map();
+  for (const [g, ss] of segs) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const s of ss) for (const [x, y] of s) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    caixas.set(g, [x0, y0, x1, y1]);
+  }
+  const area = (c) => (c[2] - c[0]) * (c[3] - c[1]);
+  for (const t of textos) {
+    let g = grupoDe(t.x, t.y);
+    // nome no meio de um salão grande (a mais de 10 m de qualquer parede): o grupo cuja caixa o contém
+    if (g == null) for (const [k, c] of caixas) if (t.x >= c[0] && t.x <= c[2] && t.y >= c[1] && t.y <= c[3] && (g == null || area(c) < area(caixas.get(g)))) g = k;
+    if (g != null) (txts.get(g) || txts.set(g, []).get(g)).push(t);
+  }
+  const out = [];
+  for (const [g, ts] of txts) {
+    const ss = segs.get(g) || [];
+    if (!ss.length) continue;
+    const [x0, y0, x1, y1] = caixas.get(g);
+    const ps = portas.filter(p => p.meio[0] >= x0 - 1 && p.meio[0] <= x1 + 1 && p.meio[1] >= y0 - 1 && p.meio[1] <= y1 + 1);
+    out.push(...ambientesPorParedesNaRegiao(ss, ps, ts, opcoes));
+  }
+  return out;
+}
+
+function ambientesPorParedesNaRegiao(segmentos, portas, textos, { areaMinima = 1, areaMaxima = 5000 } = {}) {
   if (!segmentos.length || !textos.length) return [];
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const s of segmentos) for (const [x, y] of s) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
@@ -498,16 +616,31 @@ function simplificar(pts, tol) {
 // ── Leitura ──────────────────────────────────────────────────────────────
 // texto/atributo → { s, x, y, h, layer } (atributo: etiqueta de ambiente em bloco, NOME/AMBIENTE)
 function lerTexto(e) {
-  const s = limparTexto(e.type === 'ATTRIB' ? e.text.string : e.string);
+  const bruto = e.type === 'ATTRIB' ? e.text.string : e.string;
+  const s = limparTexto(bruto);
   const x = e.type === 'ATTRIB' ? e.text.x : e.x, y = e.type === 'ATTRIB' ? e.text.y : e.y;
   if (!s || !Number.isFinite(x)) return null;
-  const [[tx, ty]] = transformar([[x, y]], e.transforms);
+  // TEXT/ATTRIB com normal −Z: o ponto está no sistema da entidade (o do MTEXT já é do desenho)
+  const [[tx, ty]] = transformar(e.type === 'MTEXT' ? [[x, y]] : ocs(e, [[x, y]]), e.transforms);
   const escala = e.transforms?.reduce((m, t) => m * Math.abs(t.scaleY || 1), 1) || 1;
-  return { s, x: tx, y: ty, h: (e.nominalTextHeight || e.textHeight || (e.type === 'ATTRIB' ? e.text.textHeight : 0) || 0) * escala, layer: e.layer, ...(e.type === 'ATTRIB' ? { tag: e.tag || '' } : {}) };
+  // Etiqueta de sala em MTEXT de várias linhas, nome + área ("COZINHA\PA = 8,50 m²"): juntas, as linhas davam
+  // "COZINHA A = 8,50 m²", que é "não nome" pela área, e o ambiente sumia (revisão de 06/11/2026). Cada linha é
+  // avaliada antes de juntar: o nome da sala (sNome) fica só com as linhas que podem ser nome; o texto inteiro (s)
+  // continua para as notas de altura e a legenda
+  let sNome = null;
+  if (e.type === 'MTEXT') {
+    const linhas = limparMtext(bruto, { quebra: '\n' }).split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const nomes = linhas.filter(l => !RE_NAO_NOME.test(l));
+    if (linhas.length > 1 && nomes.length && nomes.length < linhas.length) sNome = nomes.join(' ');
+  }
+  return { s, x: tx, y: ty, h: (e.nominalTextHeight || e.textHeight || (e.type === 'ATTRIB' ? e.text.textHeight : 0) || 0) * escala, layer: e.layer, ...(e.type === 'ATTRIB' ? { tag: e.tag || '' } : {}), ...(sNome ? { sNome } : {}) };
 }
-// "Tomada alta a 2,20m do piso", "h= 20 cm abaixo do forro", "altura: 97,5 cm", "H=1,10", "h: 1,10 m"
+// para achar e nomear a sala: o nome sem as linhas de área/cota do MTEXT (lerTexto)
+const paraNome = (t) => (t.sNome ? { ...t, s: t.sNome } : t);
+// "Tomada alta a 2,20m do piso", "h= 20 cm abaixo do forro", "altura: 97,5 cm", "H=1,10", "h: 1,10 m"; e
+// "a 1,20 m do chão", "H(m)=1,10" (06/11/2026)
 // (o valor é lido por ./textoCad.js; aqui só se separa o texto que fala de altura)
-const RE_NOTA_ALTURA = /do\s+piso|abaixo\s+do\s+forro|\baltura\b|\bh\s*[=:]\s*[0-9]/i;
+const RE_NOTA_ALTURA = /(do|ao)\s+(piso|ch[ãa]o)|abaixo\s+do\s+forro|\baltura\b|\bh\s*(\(\s*(mm|cm|m)\s*\))?\s*[=:]\s*[0-9]/i;
 
 function lerArquitetura(textoDxf, opcoes = {}) {
   const { parsed } = new Helper(textoDxf);
@@ -519,8 +652,9 @@ function lerArquitetura(textoDxf, opcoes = {}) {
   const arcos = [];
   const preenchimentos = [];
   for (const e of ents) {
+    // (coordenadas no sistema da entidade — OCS — espelhadas quando a normal é −Z: ocs(), abaixo)
     if ((e.type === 'LWPOLYLINE' || e.type === 'POLYLINE') && e.vertices?.length >= 2) {
-      const pts = transformar(e.vertices.map(v => [v.x, v.y]), e.transforms);
+      const pts = transformar(ocs(e, e.vertices.map(v => [v.x, v.y])), e.transforms);
       const fechada = pts.length >= 3 && (e.closed || dist(pts[0], pts.at(-1)) < 1e-6);
       if (fechada && (!opcoes.layersAmbiente || opcoes.layersAmbiente.test(e.layer))) poligonos.push({ pts, layer: e.layer });
       referencia.push({ tipo: 'poli', pts, fechada, layer: e.layer });
@@ -530,12 +664,24 @@ function lerArquitetura(textoDxf, opcoes = {}) {
       const a = pontosArco(e);
       referencia.push({ tipo: 'arco', pts: a.pts, fechada: e.type === 'CIRCLE', layer: e.layer });
       if (e.type === 'ARC') arcos.push(a);
+    } else if (e.type === 'SOLID') {
+      // SOLID (revisão de 06/11/2026): o símbolo explodido desenhado com ele sumia; a tomada "cheia" em SOLID
+      // conta como preenchida (alta × média × baixa pela fração cheia: ./pontosDoDesenho.js)
+      const p = pontosDoSolido(e);
+      if (p && p.length >= 3) {
+        const pts = transformar(ocs(e, p), e.transforms);
+        // (o SOLID que preenche a parede é hachura, não traço: na layer de parede não entra na referência)
+        if (!RE_PAREDE.test(e.layer || '')) referencia.push({ tipo: 'poli', pts: [...pts, pts[0]], fechada: true, layer: e.layer });
+        preenchimentos.push({ pts, layer: e.layer });
+      }
+    } else if (e.type === 'ELLIPSE' || e.type === 'SPLINE') {
+      // luminária oval (ELLIPSE) e traço curvo (SPLINE) também são desenho (antes, ignorados)
+      const p = pontosDaCurva(e);
+      if (p) referencia.push({ tipo: 'poli', pts: transformar(p, e.transforms), fechada: dist(p[0], p.at(-1)) < 1e-6, layer: e.layer });
     } else if (e.type === 'HATCH' && (e.fillType === 'SOLID' || /^SOLID$/i.test(e.patternName || ''))) {
       // preenchimento sólido (tomada alta cheia × média meio cheia): ./pontosDoDesenho.js
-      for (const l of e.boundary?.loops || []) {
-        const pl = l.entities?.find(x => x.type === 'POLYLINE');
-        const pts = pl ? pl.points.map(p => [p.x, p.y]) : (l.entities || []).filter(x => x.start).map(x => [x.start.x, x.start.y]);
-        if (pts.length >= 3) preenchimentos.push({ pts: transformar(pts, e.transforms), layer: e.layer });
+      for (const pts of lacosDaHachura(e)) {
+        if (pts.length >= 3) preenchimentos.push({ pts: transformar(ocs(e, pts), e.transforms), layer: e.layer });
       }
     } else if (e.type === 'TEXT' || e.type === 'MTEXT' || (e.type === 'ATTRIB' && e.text)) {
       const t = lerTexto(e);
@@ -545,16 +691,15 @@ function lerArquitetura(textoDxf, opcoes = {}) {
   // notas de altura: as da legenda (layer de tabela, fora da planta) e as escritas ao lado dos pontos
   // (todas as linhas da legenda ficam: o texto diz o TIPO do símbolo ao lado — detector,
   // câmera, ponto de rede… — em qualquer disciplina, mesmo com a layer de nome genérico)
-  const notas = [...ents.textosFora.map(lerTexto).filter(Boolean).map(t => ({ ...t, legenda: true })), ...textos.filter(t => RE_NOTA_ALTURA.test(t.s))];
+  const textosFora = ents.textosFora.map(lerTexto);
+  const notas = [...textosFora.filter(Boolean).map(t => ({ ...t, legenda: true })), ...textos.filter(t => RE_NOTA_ALTURA.test(t.s))];
 
-  let tamanho = 0;
-  for (const p of poligonos) for (const [x, y] of p.pts) tamanho = Math.max(tamanho, Math.abs(x), Math.abs(y));
   // extensão típica (percentis 2–98 %, ignora entidades perdidas longe do desenho)
   const xs = referencia.flatMap(r => [r.pts[0][0]]).sort((a, b) => a - b), ys = referencia.flatMap(r => [r.pts[0][1]]).sort((a, b) => a - b);
   const pct = (v, q) => v[Math.min(v.length - 1, Math.floor(q * v.length))] ?? 0;
   const ext = Math.max(pct(xs, 0.98) - pct(xs, 0.02), pct(ys, 0.98) - pct(ys, 0.02));
   const miolo = 2 * Math.max(pct(xs, 0.75) - pct(xs, 0.25), pct(ys, 0.75) - pct(ys, 0.25));
-  const fator = decidirFator(parsed.header?.insUnits, arcos, tamanho, ext, miolo);
+  const fator = decidirFator(parsed.header?.insUnits, arcos, ext, miolo);
   const m = (pts) => pts.map(([x, y]) => [x * fator, y * fator]);
   let textosTodos = textos.map(t => ({ ...t, x: t.x * fator, y: t.y * fator, h: t.h * fator }));
   let refM = referencia.map(r => ({ ...r, pts: m(r.pts) }));
@@ -582,7 +727,26 @@ function lerArquitetura(textoDxf, opcoes = {}) {
   // os textos do diagrama saírem da planta — o 3D os leva ao quadro desenhado (pedido de 04/11/2026)
   let quadrosDoDiagrama = [];
   // (os textos das layers de tabela/diagrama vêm separados: as notas "da legenda")
-  try { quadrosDoDiagrama = lerQuadrosDoDiagrama([...textosTodos, ...notasM.filter(n => n.legenda)], classificacao?.regioes || []); } catch { /* a leitura do diagrama não derruba a planta */ }
+  // (a caixa dos textos de cada bloco de diagrama também é região: separa um diagrama do vizinho e acha o título)
+  const regioesBlocos = (ents.blocosDiagrama || []).map(([a, b]) => {
+    const ts = textosFora.slice(a, b).filter(Boolean);
+    if (!ts.length) return null;
+    const hm = Math.max(...ts.map(t => t.h || 0)) * fator;
+    return { tipo: 'diagrama', caixa: [Math.min(...ts.map(t => t.x)) * fator - hm, Math.min(...ts.map(t => t.y)) * fator - hm, Math.max(...ts.map(t => t.x)) * fator + hm, Math.max(...ts.map(t => t.y)) * fator + hm] };
+  }).filter(Boolean);
+  try { quadrosDoDiagrama = lerQuadrosDoDiagrama([...textosTodos, ...notasM.filter(n => n.legenda)], [...(classificacao?.regioes || []), ...regioesBlocos]); } catch { /* a leitura do diagrama não derruba a planta */ }
+  // Diagrama no desenho que NÃO foi lido (formato de texto não reconhecido): o 3D cai nos circuitos estimados — antes
+  // calado; agora com aviso (revisão de 06/11/2026). Região classificada como diagrama/quadro de cargas sem quadro
+  // lido nela, ou título de unifilar/quadro de cargas no desenho e nenhum quadro lido.
+  const avisosDiagrama = [];
+  {
+    const cruza = (a, b) => a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
+    const naoLidas = (classificacao?.regioes || []).filter(r => (r.tipo === 'diagrama' || r.tipo === 'quadro_cargas') && !quadrosDoDiagrama.some(q => cruza(q.caixa, r.caixa)));
+    const titulo = !quadrosDoDiagrama.length && [...textosTodos, ...notasM].some(t => /UNIFILAR|TRIFILAR|QUADRO\s+DE\s+CARGAS?|DIAGRAMA\s+(EL[ÉE]TRICO|DO\s+QUADRO|DE\s+FOR[ÇC]A)/i.test(t.s));
+    if (naoLidas.length || titulo) {
+      avisosDiagrama.push(`Diagrama unifilar / quadro de cargas no desenho${naoLidas.length ? ` (${naoLidas.length} região(ões))` : ''} sem circuitos lidos: o formato dos textos (disjuntor, potência, número do circuito) não foi reconhecido — o 3D usa circuitos ESTIMADOS; confira os circuitos no diagrama do projeto [CONFERIR].`);
+    }
+  }
   if (classificacao) {
     const fora = classificacao.regioes.filter(r => NAO_PLANTA.has(r.tipo)).map(r => r.caixa);
     const dentroDe = (lista, [x, y]) => lista.some(c => x >= c[0] - 0.05 && x <= c[2] + 0.05 && y >= c[1] - 0.05 && y <= c[3] + 0.05);
@@ -595,7 +759,7 @@ function lerArquitetura(textoDxf, opcoes = {}) {
       textosTodos = textosTodos.filter(t => !tira([t.x, t.y]));
     }
   }
-  const textosM = textosTodos.filter(ehNome);
+  const textosM = textosTodos.map(paraNome).filter(ehNome);
   // número do circuito e tag do quadro escritos na planta (só os textos curtos que podem ser isso)
   const rotulos = textosTodos.filter(t => t.s.length <= 30 && (RE_TAG.test(t.s) || lerMarcacao(t.s))).map(({ s, x, y }) => ({ s, x, y }));
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -619,7 +783,7 @@ function lerArquitetura(textoDxf, opcoes = {}) {
   const soltos = [];
   // sementes sem nome: qualquer etiqueta com cara de código (CAM-04, QD-01, TUG 3…) ou
   // texto curto de layer de instalação. Fora do prédio a sala "vaza" e é descartada.
-  const etiquetas = textosTodos
+  const etiquetas = textosTodos.map(paraNome)
     .filter(t => !ehNome(t) && t.s.length <= 20 && (RE_CODIGO.test(t.s) || (RE_LAYER_INSTALACAO.test(t.layer || '') && /[A-Za-z]/.test(t.s))))
     .map(t => ({ ...t, etiqueta: true }));
   // desenho que não é planta (quadro, unifilar, detalhe): nenhuma sala — o painel
@@ -630,6 +794,20 @@ function lerArquitetura(textoDxf, opcoes = {}) {
     candidatos.forEach((p, i) => { if (dentro([t.x, t.y], p.pts) && (melhor < 0 || p.area < candidatos[melhor].area)) melhor = i; });
     if (melhor >= 0) (nomes.get(melhor) || nomes.set(melhor, []).get(melhor)).push(t);
     else soltos.push(t);
+  }
+  // Polígono com VÁRIOS nomes diferentes dentro não é uma sala só (revisão de 06/11/2026): é o contorno externo do
+  // prédio com as divisórias em LINE (a regra das 3 portas no meio não pega a casa com 1 ou 2 portas) — todos os
+  // nomes caíam nele e saía um ambiente com a área do prédio. Os nomes vão para a leitura pelas PAREDES; se as
+  // paredes não fecharem nenhuma sala com esses nomes, o polígono volta (é o ambiente integrado "ESTAR / JANTAR").
+  const contornos = new Map(); // índice do polígono → textos dele (para voltar se as paredes não acharem nada)
+  if (!semPlanta && opcoes.paredes !== false) {
+    for (const [i, ts] of nomes) {
+      const distintos = new Set(ts.filter(t => !t.etiqueta).map(t => nomeLimpo(t.s).toUpperCase()));
+      if (distintos.size < 2) continue;
+      contornos.set(i, ts);
+      nomes.delete(i);
+      soltos.push(...ts);
+    }
   }
   const ambientes = [...nomes.entries()].map(([i, ts]) => {
     const p = candidatos[i];
@@ -649,6 +827,15 @@ function lerArquitetura(textoDxf, opcoes = {}) {
     const folha = (s) => portas.some(p => (dist(s[0], p.dobradica) < 0.08 || dist(s[1], p.dobradica) < 0.08) && Math.min(dist(s[0], p.dobradica), dist(s[1], p.dobradica)) < 0.08 && Math.abs(dist(s[0], s[1]) - p.largura_m / (p.dupla ? 2 : 1)) < 0.1);
     ambientes.push(...ambientesPorParedes(segParede.filter(s => !folha(s)), portas, soltos, opcoes));
   }
+  // contorno com vários nomes em que as paredes não separaram os nomes (nenhuma sala, ou uma só com todos eles):
+  // fica o polígono, com a área exata dele (como antes)
+  for (const [i, ts] of contornos) {
+    const p = candidatos[i];
+    const salas = ambientes.filter(a => a.origem === 'paredes' && ts.some(t => dentro([t.x, t.y], a.poligono)));
+    if (salas.length > 1 || (salas.length === 1 && !ts.every(t => dentro([t.x, t.y], salas[0].poligono)))) continue;
+    if (salas.length === 1) ambientes.splice(ambientes.indexOf(salas[0]), 1);
+    ambientes.push({ nome: escolherNome(ts), area_m2: Math.round(p.area * 100) / 100, perimetro_m: Math.round(perimetro(p.pts) * 100) / 100, poligono: p.pts, centro: centroide(p.pts), layer: p.layer, origem: 'polilinha' });
+  }
   // sala achada só por etiqueta de equipamento: existe (o 3D e a contagem por ambiente
   // precisam dela), mas não leva o código do equipamento como nome
   let semNome = 0;
@@ -667,7 +854,7 @@ function lerArquitetura(textoDxf, opcoes = {}) {
     // classificação da folha (planta × diagrama × tabela…) e as caixas de planta, em metros
     classificacao: classificacao && { tipo: classificacao.tipo, resumo: classificacao.resumo, temPlanta: classificacao.temPlanta, semPlanta: classificacao.semPlanta, misto: classificacao.misto, regioes: classificacao.regioes.map(({ caixa, tipo, rotulo, titulo, confianca, motivos }) => ({ caixa, tipo, rotulo, titulo, confianca, motivos })) },
     regioesPlanta,
-    quadrosDoDiagrama, rotulos,
+    quadrosDoDiagrama, rotulos, avisosDiagrama,
   };
 }
 

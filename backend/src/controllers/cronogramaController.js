@@ -61,25 +61,31 @@ async function carregarObra(id, executor = pool) {
 }
 
 async function carregarDados(obraId, executor = pool) {
-  const [cfg, etapas, dist, medicoes] = await Promise.all([
-    executor.query(
+  // No pool, as quatro consultas vão em paralelo; numa conexão de transação
+  // (client), uma por vez — o pg não aceita consultas sobrepostas na mesma
+  // conexão (aviso de "deprecated" e erro no pg 9).
+  const consultar = executor === pool
+    ? (lista) => Promise.all(lista.map(([sql, p]) => executor.query(sql, p)))
+    : async (lista) => { const r = []; for (const [sql, p] of lista) r.push(await executor.query(sql, p)); return r; };
+  const [cfg, etapas, dist, medicoes] = await consultar([
+    [
       `SELECT c.id, c.obra_id, c.proposta_id, c.periodicidade, to_char(c.data_inicio, 'YYYY-MM-DD') AS data_inicio, c.criterio_peso,
               c.custo_hh, c.equipe, c.observacoes, c.gerado_em, c.criado_em, c.atualizado_em, c.versao, p.numero AS proposta_numero, p.status AS proposta_status
-         FROM obra_cronogramas c LEFT JOIN propostas p ON p.id = c.proposta_id WHERE c.obra_id = $1`, [obraId]),
-    executor.query(
+         FROM obra_cronogramas c LEFT JOIN propostas p ON p.id = c.proposta_id WHERE c.obra_id = $1`, [obraId]],
+    [
       `SELECT id, obra_id, proposta_id, ordem, nome, origem, valor, peso, mao_obra, dias_uteis,
               to_char(inicio, 'YYYY-MM-DD') AS inicio, to_char(fim, 'YYYY-MM-DD') AS fim
-         FROM obra_etapas WHERE obra_id = $1 ORDER BY ordem, id`, [obraId]),
-    executor.query(
+         FROM obra_etapas WHERE obra_id = $1 ORDER BY ordem, id`, [obraId]],
+    [
       `SELECT d.etapa_id, to_char(d.periodo, 'YYYY-MM-DD') AS periodo, d.percentual
          FROM obra_etapa_periodos d JOIN obra_etapas e ON e.id = d.etapa_id
-        WHERE e.obra_id = $1 ORDER BY d.periodo`, [obraId]),
-    executor.query(
+        WHERE e.obra_id = $1 ORDER BY d.periodo`, [obraId]],
+    [
       `SELECT m.id, m.etapa_id, m.etapa_nome, e.nome AS etapa_nome_atual, to_char(m.data_medicao, 'YYYY-MM-DD') AS data_medicao,
               to_char(m.periodo, 'YYYY-MM-DD') AS periodo, m.percentual_acumulado, m.valor_medido, m.observacao, m.substitui_id,
               m.usuario_id, u.nome AS usuario_nome, m.criado_em
          FROM obra_medicoes m LEFT JOIN obra_etapas e ON e.id = m.etapa_id LEFT JOIN usuarios u ON u.id = m.usuario_id
-        WHERE m.obra_id = $1 ORDER BY m.periodo, m.id`, [obraId]),
+        WHERE m.obra_id = $1 ORDER BY m.periodo, m.id`, [obraId]],
   ]);
   const config = cfg.rows[0] || null;
   const porEtapa = new Map();
@@ -184,10 +190,10 @@ async function gerar(req, res, next) {
   if (!propostaId) propostaId = propostas.find(p => p.status === 'Aprovada')?.id || null;
   if (!propostaId) return res.status(400).json({ erro: 'A obra não tem proposta aprovada. Escolha a proposta de base do cronograma.' });
 
-  const atual = await carregarDados(obra.id);
-  const periodicidade = b.periodicidade || atual.config?.periodicidade || 'mensal';
+  const anterior = await carregarDados(obra.id); // só para os padrões do pedido (as etapas são relidas na transação)
+  const periodicidade = b.periodicidade || anterior.config?.periodicidade || 'mensal';
   if (!C.PERIODICIDADES.includes(periodicidade)) return res.status(400).json({ erro: 'Periodicidade inválida (mensal ou semanal).' });
-  const dataInicio = data(b.data_inicio, 'a data de início') || atual.config?.data_inicio || obra.inicio_previsto || hojeLocal();
+  const dataInicio = data(b.data_inicio, 'a data de início') || anterior.config?.data_inicio || obra.inicio_previsto || hojeLocal();
   const custoHH = numero(b.custo_hh, 'o custo do homem-hora', { min: 0.01, max: 100000 }) ?? D.CUSTO_HH_PADRAO;
   const equipe = numero(b.equipe, 'a equipe', { min: 1, max: 1000 }) ?? D.EQUIPE_PADRAO;
   if (!Number.isInteger(equipe)) return res.status(400).json({ erro: 'A equipe é um número inteiro de pessoas.' });
@@ -202,6 +208,11 @@ async function gerar(req, res, next) {
   const avisos = [];
   await comTransacao(async (client) => {
     await client.query('SELECT id FROM obras WHERE id = $1 FOR UPDATE', [obra.id]);
+    // Revisão de 11/2026: as etapas existentes eram lidas ANTES da trava (fora
+    // da transação). Dois cliques em "Gerar" liam a mesma lista vazia e cada um
+    // inseria todas as etapas — cronograma em dobro. Relidas aqui, depois do
+    // FOR UPDATE: o segundo espera o primeiro e encontra (e atualiza) as dele.
+    const atual = await carregarDados(obra.id, client);
     const comMedicao = new Set((await client.query('SELECT DISTINCT etapa_id FROM obra_medicoes WHERE obra_id = $1 AND etapa_id IS NOT NULL', [obra.id])).rows.map(r => r.etapa_id));
     // casa pela origem exata (sistema da proposta; a planilha diferencia
     // maiúsculas) ou, nas etapas fixas/manuais, pelo nome

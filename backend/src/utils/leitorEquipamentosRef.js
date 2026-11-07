@@ -26,6 +26,14 @@ const continua = (primeira, juntado) => /^[a-zà-ú]/.test(primeira) || RE_ATRIB
 // a linha de cima termina no meio da frase: pontuação de continuação ou conectivo ("… Cat.6 PARA")
 const terminaAberta = (s) => (/[,.:]$/.test(s) || /\s(PARA|DE|DA|DO|COM|SEM|EM|E|OU)$/i.test(s)) && !RE_FIM.test(s);
 
+// Carimbo da prancha ("DES. REF.:", "FOLHA 01/03", "ESC.: 1/50", "REV. 02"): texto só com rótulos de carimbo,
+// números e datas — nenhuma palavra que descreva um equipamento
+const RE_ROTULO_CARIMBO = /^(DES|DESENHO|DESENHISTA|FOLHA|FL|FLS|PRANCHA|ESC|ESCALA|REV|REVIS[ÃA]O|DATA|ARQ|ARQUIVO|N|NO|N[º°]|C[ÓO]D|C[ÓO]DIGO|PROJ|PROJETO|PROJETISTA|RESP|RESPONS[ÁA]VEL|VISTO|APROV|APROVADO|REF|REFER[ÊE]NCIA|DE|DO|DA)$/i;
+function ehCarimbo(texto) {
+  const palavras = String(texto || '').split(/[\s,;:/()\-]+/).map(p => p.replace(/\.+$/, '')).filter(Boolean);
+  return !palavras.some(p => /[A-Za-zÀ-ú]{3,}/.test(p) && !RE_ROTULO_CARIMBO.test(p));
+}
+
 function lerReferencia(depois) {
   // "1375055-X, AMP OU TECNICAMENTE EQUIVALENTE" → código "1375055-X", fabricante "AMP"
   const s = limpar(depois).replace(/^[:\s]+/, '');
@@ -46,9 +54,10 @@ function lerEquipamentosRef(texto) {
     const l = linhas[i];
     const m = RE_REF.exec(l);
     if (!m) continue;
-    marcadores++;
     let antes = l.slice(0, m.index);
     let depois = l.slice(m.index + m[0].length);
+    // "DES. REF.: 12" do carimbo da prancha não é item (nem consome a linha de baixo)
+    if (limpar(antes) && ehCarimbo(limpar(antes))) continue;
     // "REF.:" no fim da linha: o código está na linha seguinte
     let j = i;
     if (!limpar(depois) && i + 1 < linhas.length && !RE_REF.test(linhas[i + 1])) { j = i + 1; depois = linhas[j]; }
@@ -78,7 +87,10 @@ function lerEquipamentosRef(texto) {
       .replace(RE_EQUIVALENTE, '').replace(/^[,.;\s]+|[,.;\s]+$/g, '');
     const descricao = limpar(`${limpar(antes).replace(/[,.;:\s]+$/, '')}${resto && !/^[A-Za-zÀ-ú]{1,25}$/.test(resto) ? `, ${resto}` : ''}`)
       .replace(/,\s*,/g, ',').replace(/,\s*-\s/g, ' - ').slice(0, 300);
-    if (!/[A-Za-zÀ-ú]{3,}/.test(descricao)) continue;
+    // só conta o item válido (revisão do uso de IA de 06/11/2026): antes o marcador era contado ANTES deste filtro, e
+    // "REF.:" de carimbo ("FOLHA 01/03" / "REF.: 12") baixava a cobertura local e mandava o arquivo para a IA
+    if (!/[A-Za-zÀ-ú]{3,}/.test(descricao) || ehCarimbo(descricao)) continue;
+    marcadores++;
     const completo = !!referencia && /[A-Za-z0-9]{2,}/.test(referencia);
     if (completo) completos++;
     itens.push({ descricao, referencia_fabricante: completo ? referencia : null, ...(fabricante ? { fabricante } : {}) });
@@ -94,4 +106,4 @@ function lerEquipamentosRef(texto) {
   return { itens: unicos, marcadores, completos };
 }
 
-module.exports = { lerEquipamentosRef };
+module.exports = { lerEquipamentosRef, ehCarimbo };

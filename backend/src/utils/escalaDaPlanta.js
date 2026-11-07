@@ -24,13 +24,16 @@ const DEDUZIDA = new Set(['nome_arquivo', 'portas', 'cota']);
 
 // "Lumino … A0 1_50.pdf", "PLANTA ESC 1-100.pdf", "planta 1:75.pdf" → 50 / 100 / 75. Só escala usual, e um valor só
 // (datas como "01-07" não passam: o "1" não pode vir colado a outro dígito e 7 não é escala). Com hífen ou barra
-// só depois de "ESC"/"ESCALA": "PROJ_1-25.pdf" costuma ser a folha 1 de 25, não 1:25
+// só depois de "ESC"/"ESCALA": "PROJ_1-25.pdf" costuma ser a folha 1 de 25, não 1:25.
+// O "_" no lugar do ":" (o Windows não aceita ":" no nome) só vale como palavra solta, entre espaços ("A0 1_50"):
+// colado por "_" a outra palavra ("ELE_1_25.pdf") é numeração de folha, não escala — saía 1:25 (revisão 06/11/2026).
 function escalaDoNome(nome) {
   const s = String(nome || '').replace(/\.[a-z0-9]{2,4}$/i, '');
   const valores = new Set();
   const achar = (re) => { for (const m of s.matchAll(re)) { const v = Number(m[1]); if (ESCALAS_USUAIS.includes(v)) valores.add(v); } };
-  achar(/(?<![\d.,])1\s*[_:]\s*(\d{2,4})(?![\d.,])/g);
-  achar(/ESC(?:ALA)?\.?\s*[_:=]?\s*1\s*[-/]\s*(\d{2,4})(?![\d.,])/gi);
+  achar(/(?<![\d.,])1\s*:\s*(\d{2,4})(?![\d.,])/g);
+  achar(/(?<![^\s([])1_(\d{2,4})(?![^\s)\]])/g);
+  achar(/ESC(?:ALA)?\.?\s*[_:=-]?\s*1\s*[-/_]\s*(\d{2,4})(?![\d.,])/gi);
   return valores.size === 1 ? [...valores][0] : null;
 }
 

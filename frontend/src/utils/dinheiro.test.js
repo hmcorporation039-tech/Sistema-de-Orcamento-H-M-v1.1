@@ -42,8 +42,20 @@ describe('arredondamentos da proposta', () => {
     expect(arredQtd(1.0005)).toBe(1.001);
     expect(totalDaLinha(1.0004, 1000)).toBe(1000);
   });
+  // revisão de 11/2026: o meio vai para longe do zero mesmo quando o produto no binário dá …,4999…
+  test('centavos: meio para longe do zero, robusto ao binário', () => {
+    expect(arred2(100.3 * 5 / 100)).toBe(5.02); // ISS de 5 % sobre 100,30 (antes 5,01)
+    expect(arred2(5.015)).toBe(5.02);
+    expect(arred2(1.005)).toBe(1.01);
+    expect(arred2(-1.005)).toBe(-1.01); // antes -1,00
+    expect(arred2(-0.125)).toBe(-0.13);
+    expect(arred2(1.15 * 3)).toBe(3.45);
+    expect(arred2(0.1 + 0.2)).toBe(0.3);
+    expect(Object.is(arred2(-0.001), 0)).toBe(true); // sem "-0,00"
+    expect(arred2('abc')).toBe(0);
+  });
   (backend?.arredondarQuantidade ? test : test.skip)('igual ao backend', () => {
-    for (const v of [1.0004, 1.0005, 2.675, 0.1 + 0.2, 1e-7, -1.0005, 12345.6785]) {
+    for (const v of [1.0004, 1.0005, 2.675, 0.1 + 0.2, 1e-7, -1.0005, 12345.6785, 5.015, -1.005, -0.125, 100.3 * 0.05, 1000.005]) {
       expect(arredQtd(v)).toBe(backend.arredondarQuantidade(v));
       expect(arred2(v)).toBe(backend.arredondar(v));
     }

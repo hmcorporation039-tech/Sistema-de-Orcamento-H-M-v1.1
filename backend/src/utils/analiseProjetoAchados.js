@@ -113,6 +113,19 @@ function gerarAchados(analises) {
         observacao: `"${a.arquivo}": ${ambiguas.slice(0, 10).map(it => `${String(it.descricao || '').slice(0, 60)} — lido ${fmt(it.qtd)} ${it.unidade || ''}`.trim() + (it.qtdAlternativa != null ? ` (seria ${fmt(it.qtdAlternativa)} se o ponto for separador de milhar)` : '')).join('; ')}${ambiguas.length > 10 ? ` (+${ambiguas.length - 10})` : ''}. Confira na lista do projeto antes de fechar.`,
       });
     }
+    // tabela maior que o limite de linhas do leitor (utils/leitoresTabelaProjeto.js): o resto não foi lido —
+    // antes a lista/quadro era cortado calado e o orçamento saía com menos itens
+    const cortes = [
+      ...(a.quadrosDeCargas || []).filter(q => q.cortado).map(q => `quadro de cargas ${q.quadro || '(sem título)'}: ${q.circuitos.length} circuito(s) lidos, parou no limite de ${q.cortado.limite} linhas`),
+      ...[...new Map((a.listaMateriais || []).filter(it => it.listaCortada).map(it => [`${it.listaCortada.leitor}|${it.listaCortada.limite}`, it.listaCortada])).values()]
+        .map(c => `lista de materiais (formato ${c.leitor}): parou no limite de ${c.limite} linhas`),
+    ];
+    if (cortes.length) {
+      achados.push({
+        tema: 'Tabela do projeto lida só em parte',
+        observacao: `"${a.arquivo}": ${cortes.join('; ')}. As linhas seguintes não foram lidas — confira o resto da tabela direto no PDF e lance o que faltar.`,
+      });
+    }
     const cb = a.carimbo || {};
     // DWG/DXF: o desenho está em tamanho real, a medição não depende da escala da folha
     if (!a.origemCad && (cb.escala === 'INDICADA' || (cb.escalasNaFolha || []).length > 1)) {
@@ -153,6 +166,17 @@ const MOTIVO_PULADA = {
   tempo: 'passou do tempo-limite da página', tempo_total: 'acabou o tempo de leitura do arquivo', tracos: 'traços demais',
   memoria: 'estourou a memória reservada', limite_paginas: 'além do limite de páginas lidas',
 };
+// onde a escala da folha foi procurada (pdfVetorial.js, `escalaProcurada`): a mensagem diz só o que foi tentado —
+// antes dizia "nem no carimbo, no nome do arquivo, nas portas ou nas cotas" mesmo quando a reserva nem tinha rodado
+const ONDE_ESCALA = { carimbo: 'no carimbo', nome_arquivo: 'no nome do arquivo', portas: 'nas portas', cotas: 'nas cotas' };
+function fontesProcuradas(p) {
+  const lista = (p.escalaProcurada || []).map(k => ONDE_ESCALA[k]).filter(Boolean);
+  if (!lista.length) return 'nenhuma escala identificada';
+  const frase = lista.length > 1 ? `${lista.slice(0, -1).join(', ')} nem ${lista[lista.length - 1]}` : lista[0];
+  const faltou = !p.escalaProcurada.includes('nome_arquivo') ? '; nome do arquivo, portas e cotas não tentados (há escala escrita na folha, mas nenhuma que valha para a planta)'
+    : !p.escalaProcurada.includes('portas') ? '; portas e cotas não medidas (sem região de planta identificada na folha)' : '';
+  return `não achada ${frase}${faltou}`;
+}
 const qtdeDaLegenda = (it) => {
   const v = it.qtde_projeto ?? it.quantidadeLegenda;
   return v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v);
@@ -202,13 +226,16 @@ function achadosDoDesenho(analises, vetoriais, opcoes = {}) {
     const deduzidas = (vetoriais[i] || []).filter(p => p.origem !== 'cad' && p.pagina && p.escala && DEDUZIDA.has(p.origemEscala));
     const semEscala = (vetoriais[i] || []).filter(p => p.origem !== 'cad' && p.pagina && !p.escala && !p.avisoEscala && !p.ignorada
       && (p.itens || []).some(it => it.tipo === 'linha' && it.metros == null));
-    if (deduzidas.length || semEscala.length) {
+    // escalas empatadas no texto (pdfVetorial/escala.js): usada a maior — o 3D usa a mesma
+    const empatadas = (vetoriais[i] || []).filter(p => p.origem !== 'cad' && p.pagina && p.escala && p.escalaAmbigua?.length > 1);
+    if (deduzidas.length || semEscala.length || empatadas.length) {
       achados.push({
         tema: 'Escala da planta',
         observacao: `"${a.arquivo}": ${[
           ...deduzidas.map(p => `pág. ${p.pagina}: ${descreverEscala(p.escala, p.origemEscala)}`),
-          ...semEscala.map(p => `pág. ${p.pagina}: sem escala (nem no carimbo, no nome do arquivo, nas portas ou nas cotas) — metragem não calculada`),
-        ].join('; ')}. ${deduzidas.length ? 'A metragem usa a escala deduzida: confira uma medida conhecida na planta. ' : ''}Se souber a escala, informe-a no envio do arquivo.`,
+          ...empatadas.map(p => `pág. ${p.pagina}: escalas ${p.escalaAmbigua.map(v => `1:${v}`).join(' e ')} escritas sem indicação de qual é a da planta — usada 1:${p.escala} [CONFERIR]`),
+          ...semEscala.map(p => `pág. ${p.pagina}: sem escala (${fontesProcuradas(p)}) — metragem não calculada`),
+        ].join('; ')}. ${deduzidas.length || empatadas.length ? 'A metragem usa essa escala: confira uma medida conhecida na planta. ' : ''}Se souber a escala, informe-a no envio do arquivo.`,
       });
     }
     // itens da legenda com QTDE prevista que o desenho não achou nesta folha

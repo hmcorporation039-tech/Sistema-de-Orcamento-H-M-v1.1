@@ -4,7 +4,7 @@
 // carimbo, ambientes) — nenhum dado de cliente. Rodar: npm test (pasta backend).
 const assert = require('assert');
 const L = require('../src/utils/leitoresTabelaProjeto');
-const { extrairAmbientes, extrairTabelaCabos } = require('../src/utils/projetoParser');
+const { extrairAmbientes, extrairTabelaCabos, analisarTexto } = require('../src/utils/projetoParser');
 
 let ok = 0;
 function caso(nome, fn) {
@@ -231,7 +231,6 @@ caso('quadro de cargas do AltoQi lido pelas colunas, separado por quadro', () =>
 });
 
 caso('quadro de cargas presente e não lido vira sinal; formato em linha continua igual', () => {
-  const { analisarTexto } = require('../src/utils/projetoParser');
   assert.strictEqual(analisarTexto(QUADRO_ALTOQI, 'q.pdf').quadroCargasNaoLido, false);
   // título e cabeçalho, mas linhas num formato que nenhum leitor entende
   const ilegivel = ['Quadro de Cargas (QD-9) - PAVIMENTO X', "Circuito \tEsquema \tTensão \tDisj \tSeção \tIp", 'C1 tomadas 16A'].join('\n');
@@ -316,6 +315,79 @@ caso('código repetido: pela posição, repetição distante conta de novo; sem 
   const ant = comRepeticoesPorPosicao({ total: 0, totalUnicos: 0, unicas: [] }, { repetidasDistantes: [{ numero: 1, pontos: 2, paginas: [1] }] });
   assert.strictEqual(ant.total, 0);
   assert.deepStrictEqual(comRepeticoesPorPosicao(a.cameras, null), { ...a.cameras, totalUnicos: 0 });
+});
+
+// ── revisão de 06/11/2026 ──
+const CAB_QD = ['Circuito', 'Descrição', 'Esquema', 'Método', 'Tensão', 'Pot. total.', 'Pot. total.', 'Fases', 'FCT', 'FCA', "In'", 'Ip', 'Seção', 'Ic', 'Icc', 'Disj', 'dV parc', 'dV total', 'Status'].join('\t');
+const linhaQd = (c, esq = 'F+N+T', v = '220 V', fases = 'R', disj = '16') => [c, 'Tomadas', esq, 'B1', v, '1200', '1100', fases, '1', '1', '10', '5,5', '2,5', '24', '3', disj, '1,2', '2,0', 'OK'].join('\t');
+const motorVazio = { modeloVazio: () => ({ meta: {}, cliente: {}, obra: {}, instalacao: {}, quadro: {}, circuitos: [] }) };
+
+caso('título "QUADRO DE CARGAS - QD-01 - TERREO": o hífen colado é do nome (QD-01 ≠ QD-02); ids e alimentador certos', () => {
+  const t = ['QUADRO DE CARGAS - QGBT', CAB_QD, linhaQd('QD-01', '3F+N+T', '380 V', 'R+S+T', '40'), linhaQd('QD-02', '3F+N+T', '380 V', 'R+S+T', '50'), '',
+    'QUADRO DE CARGAS - QD-01 - TERREO', CAB_QD, linhaQd('C1'), linhaQd('C2'), '', 'QUADRO DE CARGAS - QD-02 - SUPERIOR', CAB_QD, linhaQd('C1')].join('\n');
+  const q = L.quadrosDeCargas(t);
+  assert.deepStrictEqual(q.map(x => [x.quadro, x.pavimento, x.circuitos.length]), [['QGBT', null, 2], ['QD-01', 'TERREO', 2], ['QD-02', 'SUPERIOR', 1]]); // antes: "QD" e "01 - TERREO"
+  assert.ok(q[0].circuitos.every(c => c.alimentador));
+  const { dadosDaAnalise } = require('../src/utils/ponteAnaliseSkill');
+  const extraido = [{ arquivo: 'ele.pdf', quadrosDeCargas: q, quadroCargas: q.flatMap(x => x.circuitos) }];
+  assert.deepStrictEqual(dadosDaAnalise('eletrica', motorVazio, { dadosExtraidos: extraido }).dados.circuitos.map(c => c.id), ['QD-01 C1', 'QD-01 C2', 'QD-02 C1']);
+  const qd2 = dadosDaAnalise('quadros', motorVazio, { dadosExtraidos: extraido }, { quadro: 'QD-02' });
+  assert.deepStrictEqual([qd2.dados.quadro.tag, qd2.dados.quadro.disjuntor_geral_a], ['QD-02', 50]); // o alimentador do QD-02, não o do QD-01
+  // dois quadros com o MESMO título (arquivos diferentes): ids continuam únicos
+  const dois = dadosDaAnalise('eletrica', motorVazio, { dadosExtraidos: [{ arquivo: 'a.pdf', quadrosDeCargas: [q[1]] }, { arquivo: 'b.pdf', quadrosDeCargas: [{ ...q[1], pavimento: 'SUPERIOR' }] }] });
+  const ids = dois.dados.circuitos.map(c => c.id);
+  assert.strictEqual(new Set(ids).size, ids.length, JSON.stringify(ids));
+  // formatos antigos do título continuam
+  assert.deepStrictEqual(L.quadrosDeCargas(['Quadro de Cargas (QD-1) - TERREO', CAB_QD, linhaQd('C1')].join('\n')).map(x => [x.quadro, x.pavimento]), [['QD-1', 'TERREO']]);
+});
+
+caso('lista: a descrição curta de uma tabela não apaga item maior de outra lista (igualdade, não "começa com")', () => {
+  const t = ['ITEM\tDESCRIÇÃO\tUN\tQTD', '1\tCabo\tm\t100', '', 'LISTA DE MATERIAIS', 'QUANT. (UN) DESCRIÇÃO', '24 Cabo flexível 2,5mm² azul', '10 Tomada 2P+T 10A'].join('\n');
+  assert.deepStrictEqual(L.listaMateriais(t).map(i => [i.qtd, i.descricao]), [[100, 'Cabo'], [24, 'Cabo flexível 2,5mm² azul'], [10, 'Tomada 2P+T 10A']]);
+  // a mesma linha lida pelos dois leitores continua contando uma vez
+  const dup = ['ITEM\tDESCRIÇÃO\tMARCA\tQTD\tUN', '1.1\tCabo flexível\tSIL\t100\tm'].join('\n');
+  assert.strictEqual(L.listaMateriais(dup).length, 1, JSON.stringify(L.listaMateriais(dup)));
+});
+
+caso('tabela maior que o limite do leitor: itens marcados e achado "lida só em parte" (antes: cortada calada)', () => {
+  const colunas = ['ITEM\tDESCRIÇÃO\tUN\tQTD', ...Array.from({ length: 350 }, (_, i) => `${i + 1}\tMaterial número ${i + 1}\tun\t2`)].join('\n');
+  const l = L.listaMateriais(colunas);
+  assert.ok(l.length < 350 && l.every(i => i.listaCortada?.leitor === 'COLUNAS'), `${l.length}`);
+  const tag = ['TAG PREFIX QTD FABRICANTE MODELO DESCRICAO', ...Array.from({ length: 250 }, (_, i) => `TE${i} 1 BELIMO M${i} SENSOR DE TEMPERATURA`)].join('\n');
+  assert.ok(L.listaMateriais(tag).every(i => i.listaCortada?.limite === 200));
+  // tabela que cabe no limite: sem marca
+  assert.ok(!L.listaMateriais(['ITEM\tDESCRIÇÃO\tUN\tQTD', '1\tCabo flexível\tm\t100'].join('\n'))[0].listaCortada);
+  const qd = ['QUADRO DE CARGAS - QD-01', CAB_QD, ...Array.from({ length: 450 }, (_, i) => linhaQd(`C${i + 1}`))].join('\n');
+  const [q] = L.quadrosDeCargas(qd);
+  assert.deepStrictEqual(q.cortado, { limite: 400 });
+  const { gerarAchados } = require('../src/utils/analiseProjetoAchados');
+  const a = gerarAchados([{ arquivo: 'x.pdf', disciplinas: ['eletrica'], cameras: { ocorrencias: 0 }, pontosRedeAntena: { rede: { ocorrencias: 0 }, antena: { ocorrencias: 0 } }, listaMateriais: l, quadrosDeCargas: [q], quadroCargas: [] }])
+    .find(x => x.tema === 'Tabela do projeto lida só em parte');
+  assert.match(a?.observacao || '', /quadro de cargas QD-01: \d+ circuito\(s\) lidos, parou no limite de 400 linhas; lista de materiais \(formato COLUNAS\): parou no limite de 300 linhas/);
+});
+
+caso('carimbo: "ESCALA 1/50" e "ESCALA - 1:50" são lidos (sai sempre "1:50")', () => {
+  assert.strictEqual(L.carimbo('PRANCHA 01\nESCALA 1/50').escala, '1:50');
+  assert.strictEqual(L.carimbo('ESCALA - 1:75').escala, '1:75');
+  assert.deepStrictEqual(L.carimbo('ESCALA 1/50\nDATA 01/12/2026').escalasNaFolha, ['1:50']); // a data não vira escala
+});
+
+caso('ponte: ambientes de mesmo nome não trocam de polígono e ficam com nomes únicos', () => {
+  const { dadosDaAnalise } = require('../src/utils/ponteAnaliseSkill');
+  const analise = {
+    ambientes: [{ nome: 'BANHEIRO', area_m2: 2 }, { nome: 'BANHEIRO', area_m2: 12 }],
+    // a referência traz os dois na ordem inversa: casa pela área, não pela ordem nem pelo último do nome
+    espacial: { ambientes: [{ nome: 'BANHEIRO', poligono: [[10, 0], [13, 0], [13, 4], [10, 4]] }, { nome: 'BANHEIRO', poligono: [[0, 0], [1, 0], [1, 2], [0, 2]] }] },
+    dadosExtraidos: [],
+  };
+  const { dados } = dadosDaAnalise('incendio', motorVazio, analise);
+  assert.deepStrictEqual(dados.ambientes.map(a => [a.nome, a.comprimento_m, a.largura_m]), [['BANHEIRO', 2, 1], ['BANHEIRO 2', 4, 3]]);
+});
+
+caso('câmeras: "CAM-01", "CAM_02" e "CAM 03" contam como CAM4; "R-1" não vira ponto de rede', () => {
+  const a = analisarTexto('PLANTA CFTV\nCAM-01 CAM_02 CAM 03 CAM4\nR-1 FOLHA A3', 'c.pdf');
+  assert.deepStrictEqual(a.cameras.unicas, [1, 2, 3, 4]);
+  assert.strictEqual(a.pontosRedeAntena?.rede?.total || 0, 0);
 });
 
 console.log(`leitores de projeto: ${ok} casos ok`);

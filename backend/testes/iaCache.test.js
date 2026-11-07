@@ -6,6 +6,7 @@ const pool = require('../src/config/database');
 const iaCache = require('../src/services/iaCache');
 const ia = require('../src/services/ia');
 const migracao = require('../src/models/migracoes/2.0-26-ia-cache');
+const migracaoSoSugere = require('../src/models/migracoes/2.0-54-ia-so-sugere'); // colunas sem_ia/falhas do contador
 
 const NOME = 'teste_cache v1';
 const NOME_EXT = 'equipamentos_projeto v1';
@@ -16,6 +17,7 @@ const NOME_EXT = 'equipamentos_projeto v1';
     await client.query('BEGIN');
     await migracao(client);
     await migracao(client); // idempotente
+    await migracaoSoSugere(client);
     await client.query('COMMIT');
   } finally { client.release(); }
 
@@ -63,22 +65,50 @@ const NOME_EXT = 'equipamentos_projeto v1';
     const guardados = await pool.query("SELECT COUNT(*)::int n FROM ia_cache WHERE nome = $1 AND chave IN ($2, $3)", [NOME, iaCache.chaveDe(NOME, 'dá erro'), iaCache.chaveDe(NOME, 'vazio')]);
     assert.strictEqual(guardados.rows[0].n, 0);
 
-    // contador do painel: acertos = chamadas evitadas
-    const uso = (await iaCache.situacao(1)).funcoes.find(f => f.nome === NOME);
-    assert.ok(uso.acertos >= 2 && uso.chamadas >= 4, JSON.stringify(uso));
+    // contador do painel (revisão do uso de IA de 06/11/2026): por função SEM a versão do roteiro, com cache (resposta
+    // antiga da IA), chamadas e FALHAS separadas — a resposta do cache não conta como "sem IA"
+    const uso = (await iaCache.situacao(1)).funcoes.find(f => f.nome === 'teste_cache');
+    assert.ok(uso, 'nome gravado sem a versão do roteiro');
+    assert.ok(uso.cache >= 2 && uso.chamadas >= 4 && uso.falhas >= 1, JSON.stringify(uso));
+    assert.strictEqual(uso.semIA, 0, 'cache não é "sem IA"');
+    assert.strictEqual(uso.taxaSemIA, 0);
+    assert.strictEqual(uso.total, uso.semIA + uso.cache + uso.chamadas + uso.falhas);
     const s = await iaCache.situacao(1);
-    assert.strictEqual(s.evitadas, s.acertos);
+    assert.strictEqual(s.evitadas, s.semIA + s.cache);
     assert.ok(s.taxa >= 0 && s.taxa <= 100);
+    await iaCache.registrarUso('teste_cache_tipos v3', 'sem_ia');
+    await iaCache.registrarUso('teste_cache_tipos', 'falha');
+    await iaCache.registrarUso('teste_cache_tipos', 'invalido'); // tipo desconhecido: ignorado
+    const tipos = (await iaCache.situacao(1)).funcoes.find(f => f.nome === 'teste_cache_tipos');
+    assert.deepStrictEqual([tipos.semIA, tipos.cache, tipos.chamadas, tipos.falhas, tipos.taxaSemIA], [1, 0, 0, 1, 50]);
 
-    // leitura de cotação: lida só com leitores locais = evitada; foi para a IA = chamada; vazia = fora da conta
-    const lido = async () => (await iaCache.situacao(1)).funcoes.find(f => f.nome === 'leitura_cotacao') || { acertos: 0, chamadas: 0 };
+    // cacheVazio guarda a resposta vazia (a IA já disse que não há nada); guardar() = false não guarda; contar:false não conta
+    let n = 0;
+    await iaCache.comCache(NOME, 'texto sem nada', { ttlDias: 7, cacheVazio: true }, async () => { n++; return { itens: [] }; });
+    const vz = await iaCache.comCache(NOME, 'texto sem nada', { ttlDias: 7, cacheVazio: true }, async () => { n++; return { itens: [9] }; });
+    assert.deepStrictEqual([n, vz.deCache, vz.valor], [1, true, { itens: [] }]);
+    await iaCache.comCache(NOME, 'lido pela metade', { ttlDias: 7, guardar: (v) => !v.parcial }, async () => { n++; return { itens: [1], parcial: true }; });
+    await iaCache.comCache(NOME, 'lido pela metade', { ttlDias: 7, guardar: (v) => !v.parcial }, async () => { n++; return { itens: [1] }; });
+    assert.strictEqual(n, 3, 'a resposta parcial não ficou guardada');
+    const antesSemContar = (await iaCache.situacao(1)).funcoes.find(f => f.nome === 'teste_cache_sem_conta');
+    await iaCache.comCache('teste_cache_sem_conta v1', 'x', { ttlDias: 7, contar: false }, async () => ({ itens: [1] }));
+    assert.strictEqual(antesSemContar, undefined);
+    assert.strictEqual((await iaCache.situacao(1)).funcoes.find(f => f.nome === 'teste_cache_sem_conta'), undefined);
+    await pool.query("DELETE FROM ia_cache WHERE nome = 'teste_cache_sem_conta v1'");
+
+    // leitura de cotação, por documento: leitores locais = sem IA; IA = chamada (ou falha); resposta da IA guardada do
+    // mesmo arquivo = cache; vazia sem IA = fora da conta
+    const lido = async () => (await iaCache.situacao(1)).funcoes.find(f => f.nome === 'leitura_cotacao') || { semIA: 0, cache: 0, chamadas: 0, falhas: 0 };
     const u0 = await lido();
     await iaCache.contarLeituraCotacao({ itens: [{}], usouIA: false });
     await iaCache.contarLeituraCotacao({ itens: [{}], usouIA: true });
+    await iaCache.contarLeituraCotacao({ itens: [{}], usouIA: true, iaDeCache: true });
+    await iaCache.contarLeituraCotacao({ itens: [], usouIA: true, iaFalhou: true });
     await iaCache.contarLeituraCotacao({ itens: [], usouIA: false });
     const u1 = await lido();
-    assert.deepStrictEqual([u1.acertos - u0.acertos, u1.chamadas - u0.chamadas], [1, 1]);
-    await pool.query("UPDATE ia_cache_uso SET acertos = acertos - 1, chamadas = chamadas - 1 WHERE nome = 'leitura_cotacao' AND dia = CURRENT_DATE"); // devolve a contagem real
+    assert.deepStrictEqual([u1.semIA - u0.semIA, u1.cache - u0.cache, u1.chamadas - u0.chamadas, u1.falhas - u0.falhas], [1, 1, 1, 1]);
+    // devolve a contagem real
+    await pool.query("UPDATE ia_cache_uso SET sem_ia = sem_ia - 1, acertos = acertos - 1, chamadas = chamadas - 1, falhas = falhas - 1 WHERE nome = 'leitura_cotacao' AND dia = CURRENT_DATE");
 
     // extrator de equipamentos: mesmo texto de projeto não chama a IA duas vezes; erro cai no aviso
     const { extrairEquipamentosComIA } = require('../src/services/equipamentoExtratorIA');
@@ -100,6 +130,16 @@ const NOME_EXT = 'equipamentos_projeto v1';
       const e4 = await extrairEquipamentosComIA(`${texto} outro`); // o erro não ficou guardado: tenta a IA de novo
       assert.strictEqual(pedidos, 3);
       assert.deepStrictEqual(e4.itens, []);
+      // lista vazia da IA fica guardada (não pergunta de novo pelo mesmo texto); a lida pela metade (parcial) não
+      ia.perguntarJSON = async () => { pedidos++; return { provedor: 'gemini', json: { itens: [] } }; };
+      await extrairEquipamentosComIA(`${texto} sem equipamento`);
+      const e5 = await extrairEquipamentosComIA(`${texto} sem equipamento`);
+      assert.deepStrictEqual([pedidos, e5.deCache, e5.itens], [4, true, []]);
+      ia.perguntarJSON = async () => { pedidos++; return { provedor: 'claude_max', parcial: true, json: { itens: [{ descricao: 'Item da metade', referencia: 'X-1' }] } }; };
+      const e6 = await extrairEquipamentosComIA(`${texto} longo`);
+      assert.match(e6.aviso, /longo demais/);
+      await extrairEquipamentosComIA(`${texto} longo`);
+      assert.strictEqual(pedidos, 6, 'a resposta parcial não foi guardada');
     } finally { Object.assign(ia, orig); }
   } finally {
     await limpa();

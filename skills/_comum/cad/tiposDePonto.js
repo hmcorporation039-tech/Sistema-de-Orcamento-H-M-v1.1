@@ -9,6 +9,11 @@
 // genérica ("SIMBOLOS", "INC-PONTOS"). A ordem importa: o mais específico antes
 // (emergência antes de luminária; rede/TV/telefone e quadro antes de tomada).
 const TIPOS = [
+  // Sensor de PRESENÇA (06/11/2026): "Detector de presença de teto" e a layer EL-DETECTOR-PRESENCA caíam no
+  // detector de fumaça (incêndio) pela linha DETEC abaixo, e o sensor da layer de ALARME ("ALM-SENSOR") ia para a
+  // iluminação. O de alarme (layer ALM-/ALARME-, ou "IVP"/"alarme" no texto) é o IVP; o resto é o da iluminação.
+  [/^(ALM|ALARME?|INTRUS[ÃA]O)[-_ ](?!.*MAGN).*(SENSOR|PRESEN|DETEC)/i, /^(?=.*(alarme|intrus|\bivp\b)).*(sensor|detector)\s+de\s+(presen[çc]a|movimento)/i, 'HM-ALM-IVP', 'alarme'],
+  [/(DETEC|SENSOR).{0,12}PRESEN|PRESEN[ÇC]A/i, /^(?!.*(alarme|intrus|\bivp\b|infraverm)).*(sensor|detector)\s+de\s+presen[çc]a/i, 'HM-ILU-SENSOR', 'iluminacao'],
   [/EMERG|BALIZ|ACLAR/i, /(lumin[áa]ria|ilumina[çc][ãa]o|bloco|l[âa]mpada).{0,40}emerg|bloco aut[ôo]nomo|balizamento|aclaramento/i, 'HM-INC-EMERGENCIA', 'incendio'],
   [/DETEC.{0,12}(TEMP|TERM)/i, /detector.{0,30}(temperatura|t[ée]rmic|termovelo)/i, 'HM-INC-DETECTOR-TEMP', 'incendio'],
   [/DETEC|FUMA[ÇC]/i, /detector|fuma[çc]a/i, 'HM-INC-DETECTOR-FUMACA', 'incendio'],
@@ -39,11 +44,16 @@ const TIPOS = [
   [/INVERSOR/i, /inversor/i, 'HM-SOL-INVERSOR', 'solar'],
   [/SENSOR/i, /sensor de presen[çc]a/i, 'HM-ILU-SENSOR', 'iluminacao'],
   [/PONTO.?(DE.?)?LUZ/i, /ponto de luz/i, 'HM-ELE-PONTO-LUZ', 'eletrica'],
-  [/L[ÂA]MP|LUMIN|REFLET|PROJETOR|ARANDELA|PLAFON/i, /lumin[áa]ria|l[âa]mpada|arandela|plafon|refletor|projetor|spot\b|pendente|downlight/i, 'HM-ILU-LUMINARIA', 'iluminacao'],
+  // (a layer "ILUMINAÇÃO" sozinha não diz o aparelho: "EL-ILUMINACAO-INTERRUPTORES", "EL-QUADRO-ILUMINACAO" e
+  // "ILUMINACAO-POSTES" saíam como luminária porque "ILUMINA" contém "LUMIN" — 06/11/2026. Agora o LUMIN da
+  // layer não vale dentro de "ILUMINA"; a layer só de iluminação continua luminária pela última linha da tabela)
+  [/L[ÂA]MP|(?<!I)LUMIN|REFLET|PROJETOR|ARANDELA|PLAFON/i, /lumin[áa]ria|l[âa]mpada|arandela|plafon|refletor|projetor|spot\b|pendente|downlight/i, 'HM-ILU-LUMINARIA', 'iluminacao'],
   [/POSTE/i, /poste/i, 'HM-ILU-POSTE', 'iluminacao-externa'],
   [/QUADRO/i, /quadro|\bq[dg][a-z]*\b|\bql\b/i, 'HM-ELE-QUADRO', 'eletrica'],
   [/TOMAD/i, /tomada|for[çc]a|chuveiro/i, 'HM-ELE-TOMADA-BAIXA', 'eletrica'],
   [/INTERRUP/i, /interruptor/i, 'HM-ELE-INTERRUPTOR', 'eletrica'],
+  // layer de iluminação sem outro aparelho no nome ("EL-ILUMINACAO"): luminária — só pela layer (o texto nunca casa)
+  [/ILUMINA/i, /(?!)/, 'HM-ILU-LUMINARIA', 'iluminacao'],
 ];
 // família do tipo (a altura muda a tomada baixa/média/alta, não o tipo)
 const familia = (simbolo) => (simbolo || '').replace(/-(BAIXA|MEDIA|ALTA)$/, '');

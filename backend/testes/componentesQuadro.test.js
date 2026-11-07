@@ -255,11 +255,34 @@ const PEDIDO = { fabricante: 'weg', tipo: 'disjuntor_din', especificacao: `disju
       assert.strictEqual(r.registro.origem, 'pesquisa_ia');
       assert.strictEqual(r.registro.verificado, false);
       assert.strictEqual(r.registro.fabricante, 'WEG');
-      const de2 = await S.pesquisarMedida(PEDIDO, null);
-      assert.strictEqual(de2.situacao, 'encontrado', 'pesquisa_ia ainda não conferida pode ser atualizada');
+      // revisão do uso de IA (06/11/2026): a mesma especificação já pesquisada sai do catálogo, sem IA; "pesquisar de
+      // novo" (fresco) atualiza o achado da IA ainda não conferido
+      const antes = chamadas;
+      const deNovo = await S.pesquisarMedida(PEDIDO, null);
+      assert.deepStrictEqual([deNovo.situacao, chamadas], ['ja_no_catalogo', antes], 'já pesquisado: não chama a IA');
+      const de2 = await S.pesquisarMedida(PEDIDO, null, { fresco: true });
+      assert.strictEqual(de2.situacao, 'encontrado', 'pesquisa_ia ainda não conferida pode ser atualizada (fresco)');
       const loja = await S.pesquisarMedida({ ...PEDIDO, especificacao: `LOJAMARCA ${SUF}` }, null);
       assert.strictEqual(loja.situacao, 'nao_encontrado');
       assert.match(loja.motivo, /loja/);
+      // o "não encontrado" fica lembrado (30 dias): a mesma especificação não gasta IA de novo; fresco tenta outra vez
+      const n = chamadas;
+      const lembrado = await S.pesquisarMedida({ ...PEDIDO, especificacao: `LOJAMARCA ${SUF}` }, null);
+      assert.deepStrictEqual([lembrado.situacao, lembrado.lembrado, chamadas], ['nao_encontrado', true, n]);
+      assert.match(lembrado.motivo, /já pesquisado em/);
+      await S.pesquisarMedida({ ...PEDIDO, especificacao: `LOJAMARCA ${SUF}` }, null, { fresco: true });
+      assert.strictEqual(chamadas, n + 1);
+      // a busca passa o prazo total e o sinal de cancelamento para a IA
+      let opcoesVistas = null;
+      const pesquisarAntes = ia.pesquisarWeb;
+      ia.pesquisarWeb = async (p, o) => { opcoesVistas = o; return pesquisarAntes(p, o); };
+      const sinal = new AbortController().signal;
+      try { await S.pesquisarMedida({ ...PEDIDO, especificacao: `LOJAMARCA prazo ${SUF}` }, null, { signal: sinal }); } finally { ia.pesquisarWeb = pesquisarAntes; }
+      assert.ok(opcoesVistas.timeoutTotalMs > 0 && opcoesVistas.timeoutTotalMs < 300000, 'prazo total menor que o da tela');
+      assert.strictEqual(opcoesVistas.signal, sinal);
+      // cancelada pela tela: 499, sem seguir a cadeia
+      ia.pesquisarWeb = async () => { throw Object.assign(new Error('pedido à IA cancelado'), { cancelado: true }); };
+      try { await assert.rejects(S.pesquisarMedida({ ...PEDIDO, especificacao: `cancelada ${SUF}` }, null), (e) => e.status === 499); } finally { ia.pesquisarWeb = pesquisarAntes; }
       const { rows } = await pool.query('SELECT 1 FROM componentes_quadro WHERE referencia = $1', [`LOJA-${SUF}`]);
       assert.strictEqual(rows.length, 0);
       await assert.rejects(S.pesquisarMedida({ fabricante: 'WEG', tipo: 'xx', especificacao: 'a' }), (e) => e.status === 400);
@@ -267,7 +290,7 @@ const PEDIDO = { fabricante: 'weg', tipo: 'disjuntor_din', especificacao: `disju
 
     await caso('sem IA disponível: 422 com a explicação', async () => {
       ia.disponivel = () => false;
-      try { await assert.rejects(S.pesquisarMedida(PEDIDO), (e) => e.status === 422); } finally { ia.disponivel = () => true; }
+      try { await assert.rejects(S.pesquisarMedida({ ...PEDIDO, especificacao: `sem IA ${SUF}` }), (e) => e.status === 422); } finally { ia.disponivel = () => true; }
     });
 
     await caso(`busca em lote: no máximo ${S.LIMITE_LOTE} por pedido, sem repetir, pula o já pesquisado`, async () => {
@@ -352,6 +375,7 @@ const PEDIDO = { fabricante: 'weg', tipo: 'disjuntor_din', especificacao: `disju
     ia.pesquisarWeb = pesquisarOriginal;
     if (servidor) servidor.close();
     await pool.query("DELETE FROM componentes_quadro WHERE referencia LIKE $1 OR fabricante LIKE $2", [`%${SUF}`, `%${SUF}`]).catch(() => {});
+    await pool.query("DELETE FROM componentes_quadro_nao_encontrados WHERE chave LIKE $1", [`%${SUF.toLowerCase()}%`]).catch(() => {});
     await pool.query("DELETE FROM auditoria WHERE entidade = 'componente_quadro' AND detalhes::text LIKE $1", [`%${SUF}%`]).catch(() => {});
     if (criados.usuarios.length) await pool.query('DELETE FROM usuarios WHERE id = ANY($1)', [criados.usuarios]).catch(() => {});
     await pool.end();

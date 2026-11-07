@@ -8,8 +8,9 @@ const treino = require('../services/treinoAcervo');
 const pool = require('../config/database');
 const { registrarAuditoria } = require('../services/auditoria');
 
+// a fila do que conferir é a de quem pede (o administrador vê a de todos)
 async function resumo(req, res) {
-  res.json(await painel.resumo());
+  res.json(await painel.resumo(req.usuario));
 }
 
 function andamento(req, res) {

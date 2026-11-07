@@ -348,5 +348,39 @@ function dxfSintetico() {
     assert.ok(!(r.pagina.naoIdentificados || []).some(b => /ARCHTICK/i.test(b.bloco)), JSON.stringify(r.pagina.naoIdentificados));
   });
 
+  await caso('bloco aprendido de outra prancha é sugestão (a conferir, fora do orçamento); escritório pelo código do desenho; blocos para confirmar no mapa', async () => {
+    const d = new DesenhoDxf({ layers: [{ nome: 'A-PAREDE', cor: 8 }] });
+    d.polilinha([[0, 0], [8, 0], [8, 5], [0, 5]], { layer: 'A-PAREDE', fechada: true });
+    d.bloco('ZQX-77', (b) => { b.addCircle({ x: 0, y: 0, z: 0 }, 0.1, { layerName: '0' }); });
+    d.bloco('ZQY-88', (b) => { b.addCircle({ x: 0, y: 0, z: 0 }, 0.1, { layerName: '0' }); });
+    for (const x of [1, 2, 3]) d.inserir('ZQX-77', x, 1, { layer: '0' });
+    d.inserir('ZQY-88', 5, 1, { layer: '0' });
+    const blocosAprendidos = [{ nome: 'ZQX-77', escritorio: 'OUTRO ESCRITORIO', descricao: 'Tomada baixa 2P+T a 30 cm', disciplina: 'eletrica', vezes: 1, usuario: true }];
+    const r = await lerArquivoCad(Buffer.from(d.toString()), 'DE-HSL-5100-MPE-PE-003-TERREO-R00.dxf', { blocosAprendidos, disciplinas: ['eletrica'] });
+    const it = r.pagina.itens.find(i => i.bloco === 'ZQX-77');
+    assert.deepStrictEqual([it.origemDescricao, it.ambiguo, it.conferir, it.quantidade], ['aprendido', true, true, 3], JSON.stringify(it));
+    // o escritório: sem carimbo, o código do desenho no nome do arquivo (a mesma regra do PDF)
+    assert.strictEqual(r.aprendizado.escritorio, 'CODIGO MPE');
+    assert.match(r.aprendizado.fonte, /^arquivo:[0-9a-f]{40}$/, 'quem ensina: o conteúdo do arquivo');
+    // o mapa leva os blocos que o engenheiro pode confirmar
+    assert.deepStrictEqual((r.mapa?.blocos || []).map(b => [b.bloco, b.situacao]).sort(), [['ZQX-77', 'aprendido'], ['ZQY-88', 'nao_identificado']]);
+    // de outra disciplina marcada, o aprendido não vale
+    const r2 = await lerArquivoCad(Buffer.from(d.toString()), 'x.dxf', { blocosAprendidos, disciplinas: ['cftv'] });
+    assert.ok(!r2.pagina.itens.some(i => i.bloco === 'ZQX-77'));
+    // o bloco que o engenheiro confirmou nesta análise (Confirmar bloco → mapaCad.confirmadasDoMapa) conta na releitura
+    const r3 = await lerArquivoCad(Buffer.from(d.toString()), 'x.dxf', { disciplinas: ['eletrica'], confirmados: [{ bloco: 'ZQY-88', descricao: 'Tomada média 2P+T a 1,10 m', disciplina: 'eletrica' }] });
+    const conf = r3.pagina.itens.find(i => i.bloco === 'ZQY-88');
+    assert.deepStrictEqual([conf.origemDescricao, conf.ambiguo, conf.disciplina], ['confirmado', false, 'eletrica'], JSON.stringify(conf));
+    assert.ok(!(r3.pagina.naoIdentificados || []).some(b => b.bloco === 'ZQY-88'));
+  });
+
+  await caso('rótulo do carimbo não é escritório (DWG e PDF com a mesma regra)', async () => {
+    const { escritorioDoProjeto, escritorioDoPdf } = require('../src/utils/escritorioDoProjeto');
+    assert.strictEqual(escritorioDoProjeto({ responsavel: 'RESPONSAVEL TECNICO' }, '', 'planta.dwg'), '');
+    assert.strictEqual(escritorioDoProjeto({ responsavel: 'PELA' }, 'AUTOR DO PROJETO: Fulano de Tal Engenharia', 'planta.dwg'), 'FULANO DE TAL ENGENHARIA');
+    assert.strictEqual(escritorioDoProjeto({}, '', 'DE-HSL-5300-DME-PE-002.dwg'), 'CODIGO DME');
+    assert.strictEqual(escritorioDoPdf, escritorioDoProjeto);
+  });
+
   console.log(`analiseCad: ${ok} casos ok`);
 })().catch((e) => { console.error('FALHOU:', e); process.exit(1); });

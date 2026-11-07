@@ -469,7 +469,7 @@ caso('classificação de materiais: UPDATE só se ainda pendente; contagem pelo 
   const { classificarPendentes } = require('../src/services/classificacaoMateriais');
   const updates = [];
   banco.cliente = clientePg({ responder: (s, p) => {
-    if (/SELECT id, descricao, ncm FROM materiais/.test(s)) return { rows: [{ id: 1, descricao: 'ITEM QWZX', ncm: '85444900' }, { id: 2, descricao: 'COISA YYZZ', ncm: null }] };
+    if (/SELECT id, descricao, ncm\b/.test(s)) return { rows: [{ id: 1, descricao: 'ITEM QWZX', ncm: '85444900', pode_ia: true }, { id: 2, descricao: 'COISA YYZZ', ncm: null, pode_ia: true }] }; // pode_ia: a IA não foi perguntada nos últimos 7 dias
     if (/WHERE ncm = \$1/.test(s)) return { rows: [{ categoria: 'Elétrica' }] };
     if (/SELECT DISTINCT categoria/.test(s)) return { rows: [{ categoria: 'Elétrica' }, { categoria: 'CFTV' }] };
     if (/^UPDATE materiais SET categoria = \$1/.test(s)) { updates.push({ s, p }); return { rows: [], rowCount: 0 }; } // alguém já classificou na tela

@@ -60,15 +60,21 @@ async function extrairEquipamentosDosArquivos(analises, achados) {
 
   const vistos = new Set();
   const equipamentos = [];
-  for (const { arquivo, itens, aviso } of resultados) {
+  for (const { arquivo, itens, aviso, fonte, deCache } of resultados) {
     if (aviso) {
       achados.push({ tema: 'Extração de equipamentos', observacao: `"${arquivo}": ${aviso}` });
+    }
+    // a marca da IA não se perde (revisão do uso de IA de 06/11/2026): o item que veio dela fica `sugerido_ia` (e
+    // `ia_de_cache` quando é a resposta guardada de uma leitura anterior) e a análise avisa para conferir
+    const daIA = itens.filter(it => it.sugerido_ia).length;
+    if (daIA && /ia/.test(fonte || '')) {
+      achados.push({ tema: 'Extração de equipamentos', observacao: `"${arquivo}": ${daIA} equipamento(s) sugerido(s) pela IA${deCache ? ' (resposta guardada de uma leitura anterior do mesmo texto)' : ''} — conferir no projeto antes de orçar` });
     }
     for (const it of itens) {
       const chave = it.descricao.toUpperCase() + '|' + (it.referencia_fabricante || '');
       if (vistos.has(chave)) continue;
       vistos.add(chave);
-      equipamentos.push(it);
+      equipamentos.push(it.sugerido_ia && deCache ? { ...it, ia_de_cache: true } : it);
     }
   }
 
@@ -108,7 +114,9 @@ async function analisarProjetoCompleto(todosArquivos, opcoes = {}) {
   // legenda deste arquivo vira aprendizado para os próximos (services/aprenderDoDesenho.js)
   const temCad = todosArquivos.some(a => ehArquivoCad(a.nomeArquivo));
   const sabido = temCad ? await aprenderDoDesenho.conhecimento() : {};
-  const lerCad = ({ buffer, nomeArquivo, disciplinas }) => lerArquivoCad(buffer, nomeArquivo, { ...sabido, disciplinas: disciplinas || [], confirmados: opcoes.mapasConfirmados?.[nomeArquivo] || [], edicoes: opcoes.mapasEditados?.[nomeArquivo] || null })
+  // quem ensina (services/votosAprendizado.js): a obra, quando a análise é de uma; senão o conteúdo de cada arquivo
+  const fonte = opcoes.obraId ? `obra:${opcoes.obraId}` : undefined;
+  const lerCad = ({ buffer, nomeArquivo, disciplinas }) => lerArquivoCad(buffer, nomeArquivo, { ...sabido, disciplinas: disciplinas || [], confirmados: opcoes.mapasConfirmados?.[nomeArquivo] || [], edicoes: opcoes.mapasEditados?.[nomeArquivo] || null, fonte })
     .then((r) => {
       // (a releitura com o mapa confirmado não ensina de novo o que o primeiro envio já ensinou). Arquivo com UMA
       // disciplina marcada ensina por ela: a linha de legenda/bloco que não diz a sua fica com a do arquivo.
@@ -133,7 +141,11 @@ async function analisarProjetoCompleto(todosArquivos, opcoes = {}) {
   // o PDF sem legenda nenhuma, e sai "a conferir"); a legenda de cada folha vale para as outras folhas do mesmo PDF
   const escritorioPdf = analises.map((a, i) => { if (cads[i] || a.semTexto) return ''; try { return escritorioDoPdf(a.carimbo, (a.textoPorPagina || []).join('\n'), arquivos[i].nomeArquivo); } catch { return ''; } });
   const legendaDoEscritorio = new Map();
-  for (const e of new Set(escritorioPdf.filter(Boolean))) legendaDoEscritorio.set(e, await legendasPdfAprendidas.carregar(e));
+  // só a legenda aprendida das disciplinas marcadas nos PDFs desse escritório (a de CFTV não vale para a elétrica)
+  for (const e of new Set(escritorioPdf.filter(Boolean))) {
+    const disciplinas = [...new Set(arquivos.flatMap((a, i) => (escritorioPdf[i] === e ? a.disciplinas || [] : [])))];
+    legendaDoEscritorio.set(e, await legendasPdfAprendidas.carregar(e, undefined, { disciplinas }));
+  }
   const vetoriais = await emLotes(analises, 3, (a, i) => (cads[i] ? [cads[i].pagina] : a.semTexto ? [] : lerPdfVetorial(arquivos[i].buffer, { maxPaginas: MAX_PAGINAS_DESENHO, ...escalaDoArquivo(arquivos[i]), legendaAprendida: legendaDoEscritorio.get(escritorioPdf[i]) || [] }).catch((e) => {
     console.warn(`[analise] leitura vetorial de "${a.arquivo}" falhou:`, e.message);
     return [{ pagina: null, itens: [], legenda: null, escala: null, aviso: `leitura do desenho falhou (${e.message}) — conferir na planta` }];
@@ -153,7 +165,7 @@ async function analisarProjetoCompleto(todosArquivos, opcoes = {}) {
     analises.forEach((a, i) => {
       if (cads[i] || !escritorioPdf[i]) return;
       const disc = arquivos[i].disciplinas?.length === 1 ? arquivos[i].disciplinas[0] : null;
-      legendasPdfAprendidas.registrar(vetoriais[i], { escritorio: escritorioPdf[i], arquivo: arquivos[i].nomeArquivo, disciplina: disc, textoDasNotas: (a.textoPorPagina || []).join('\n') }).catch(() => {});
+      legendasPdfAprendidas.registrar(vetoriais[i], { escritorio: escritorioPdf[i], arquivo: arquivos[i].nomeArquivo, disciplina: disc, textoDasNotas: (a.textoPorPagina || []).join('\n'), fonte }).catch(() => {});
     });
   }
   // folhas que não são planta (só unifilar, quadro de cargas, tabela): fora dos
@@ -271,7 +283,10 @@ async function analisarProjetoCompleto(todosArquivos, opcoes = {}) {
   const paraIA = analises.filter(precisaIA);
   const equipamentos = paraIA.length ? await extrairEquipamentosDosArquivos(paraIA, achados) : [];
   const catalogo = await carregarCatalogo();
-  const materiaisEquipamentos = montarMateriais(equipamentos, catalogo);
+  // montarMateriais é 1:1 com a lista: devolve a marca "sugerido pela IA" de cada equipamento ao material (a tela da
+  // análise mostra; o gerar orçamento o trata como sugestão, "a cotar")
+  const materiaisEquipamentos = montarMateriais(equipamentos, catalogo)
+    .map((m, i) => (equipamentos[i]?.sugerido_ia ? { ...m, sugerido_ia: true, ...(equipamentos[i].ia_de_cache ? { ia_de_cache: true } : {}) } : m));
   const materiaisQuantitativos = montarMateriaisQuantitativos(analises);
   const materiaisDoDesenho = montarMateriaisDoDesenho(analises, vetoriais, catalogo);
   // DWG/DXF e PDF vetorial (item não ambíguo) alimentam a mão de obra e os materiais de terminação

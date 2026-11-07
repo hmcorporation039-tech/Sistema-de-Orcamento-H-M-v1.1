@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const { comTransacao } = require('../services/transacao');
 const { pesquisarReferenciaMaoDeObra, ErroPesquisaMercado } = require('../services/pesquisaMercado');
+const { sinalDaRequisicao } = require('../services/ia');
 const { ITENS_REFERENCIA } = require('../services/precosMaoDeObraReferencia');
 const { DISCIPLINA_OUTROS } = require('../utils/servicosBase');
 
@@ -91,7 +92,9 @@ async function pesquisar(req, res) {
   try {
     const { rows: [item] } = await pool.query('SELECT codigo, descricao, unidade FROM precos_mao_de_obra_referencia WHERE codigo = $1', [req.params.codigo]);
     if (!item) return res.status(404).json({ erro: 'Serviço não encontrado' });
-    const r = await pesquisarReferenciaMaoDeObra(item.descricao, item.unidade, segmento, { fresco: req.query.fresco === '1' });
+    // antes da web, o que a H&M já vendeu desse serviço ao mesmo segmento (sem IA); a pesquisa na web para quando a
+    // tela desiste (revisão do uso de IA de 06/11/2026)
+    const r = await pesquisarReferenciaMaoDeObra(item.descricao, item.unidade, segmento, { fresco: req.query.fresco === '1', codigo: item.codigo, signal: sinalDaRequisicao(req, res) });
     // a pesquisa não achou valor: o que havia fica (antes o UPDATE gravava null e apagava a referência boa, por
     // exemplo o SINAPI adotado à mão — revisão de 04/11/2026)
     if (r.valor == null) {

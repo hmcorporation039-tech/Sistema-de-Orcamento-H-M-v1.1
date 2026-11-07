@@ -6,6 +6,7 @@ const pool = require('../../config/database');
 const { motorDaDisciplina, tiposDocumento } = require('../../utils/disciplinasLaudo');
 const { compararComCatalogo, confirmaPreco } = require('../../utils/semelhancaMateriais');
 const aprendizadoMateriais = require('../../services/aprendizadoMateriais');
+const { idsComPrecoNaoConferido } = require('../../services/catalogoMateriais');
 const { comTransacao } = require('../../services/transacao');
 const { hojeBrasilia } = require('../../utils/dataHoje');
 const { calcularTotais } = require('../../utils/calculoProposta');
@@ -15,6 +16,8 @@ const { inserirSecoesEItens, proximoNumero, registrarEvento } = require('../prop
 const { classificarPendentesEmSegundoPlano } = require('../../services/classificacaoMateriais');
 const { buscarPrecosReferencia, segmentoDoCliente } = require('../../services/precosMaoDeObraReferencia');
 const { carregarLaudo, conferirUso, processarComMotor } = require('./comum');
+const { ehMaoDeObra } = require('../../utils/calculoProposta');
+const aprendizadoOrcamento = require('../../services/aprendizadoOrcamento');
 
 const nomeDoTipo = (laudo) => (laudo?.tipo === 'projeto' ? 'Projeto' : 'Laudo');
 
@@ -32,6 +35,9 @@ async function montarItensProposta(orcamento, segmento = 'privado') {
   // com os vínculos aprendidos nos orçamentos confirmados (services/aprendizadoMateriais.js)
   const catalogo = await aprendizadoMateriais.carregarCatalogo();
   const ref = await buscarPrecosReferencia(segmento);
+  // material com o preço lido por IA (cotação lida pela IA) e não conferido: o preço dele é sugestão e não confirma o
+  // item sozinho (services/catalogoMateriais.precoConferido — revisão do uso de IA de 06/11/2026)
+  const precoDaIA = await idsComPrecoNaoConferido(catalogo.map(m => m.id));
 
   const estatistica = { materiaisNoCatalogo: 0, materiaisNovos: 0, servicosComReferencia: 0, servicosSemReferencia: 0, segmento };
   const itens = orcamento.itens.map(it => {
@@ -41,16 +47,18 @@ async function montarItensProposta(orcamento, segmento = 'privado') {
       const achado = compararComCatalogo(it.descricao, catalogo);
       if (achado && achado.preco_catalogo > 0) {
         estatistica.materiaisNoCatalogo++;
-        // preço do catálogo só entra confirmado com o material quase igual (confirmaPreco):
-        // o parecido entra com o preço sugerido, a cotar
-        return { ...base, material_id: achado.material_id, valor_unitario: achado.preco_catalogo, status: base.quantidade > 0 && confirmaPreco(achado) ? 'confirmado' : 'a_cotar' };
+        // preço do catálogo só entra confirmado com o material quase igual (confirmaPreco) e o preço conferido
+        // (não lido por IA): o parecido ou o preço da IA entra como sugestão, a cotar
+        const confirma = base.quantidade > 0 && confirmaPreco(achado) && !precoDaIA.has(Number(achado.material_id));
+        return { ...base, material_id: achado.material_id, valor_unitario: achado.preco_catalogo, status: confirma ? 'confirmado' : 'a_cotar' };
       }
       estatistica.materiaisNovos++;
       return { ...base, material_id: achado?.material_id || null, valor_unitario: 0, status: 'a_cotar' };
     }
     const valor = it.codigo && ref[it.codigo] ? ref[it.codigo] : 0;
     estatistica[valor ? 'servicosComReferencia' : 'servicosSemReferencia']++;
-    return { ...base, valor_unitario: valor, status: 'a_cotar' };
+    // preco_referencia: a referência de mercado cede lugar ao preço que a H&M já praticou (aprendizadoOrcamento)
+    return { ...base, valor_unitario: valor, status: 'a_cotar', preco_referencia: !!valor };
   });
   return { itens, estatistica };
 }
@@ -58,6 +66,12 @@ async function montarItensProposta(orcamento, segmento = 'privado') {
 async function gerarOrcamento(req, res) {
   const laudo = await carregarLaudo(req.params.id);
   if (!laudo) return res.status(404).json({ erro: 'Registro não encontrado.' });
+  // projeto nasce sem orçamento (06/11/2026); o pedido explícito de orçar (ligar_orcamento: o assistente quando o
+  // usuário pede o orçamento do projeto) liga a opção antes de gerar
+  if (laudo.gerar_orcamento === false && req.body?.ligar_orcamento === true) {
+    await pool.query('UPDATE laudos_projetos SET gerar_orcamento = true WHERE id = $1', [laudo.id]);
+    laudo.gerar_orcamento = true;
+  }
   if (laudo.gerar_orcamento === false) return res.status(409).json({ erro: `Este ${nomeDoTipo(laudo).toLowerCase()} está marcado como "sem orçamento". Ative a opção de orçamento para gerar.` });
   const motor = motorDaDisciplina(laudo.disciplina);
   const modo = req.body?.modo;
@@ -93,7 +107,18 @@ async function gerarOrcamento(req, res) {
 
   if (!cli?.id) cli = (await pool.query('SELECT id, tipo FROM clientes WHERE LOWER(nome) = LOWER($1) AND ativo = true LIMIT 1', [clienteNome])).rows[0] || cli;
   const clienteId = cli?.id || null;
-  const { itens, estatistica } = await montarItensProposta(orcamento, segmentoDoCliente(cli?.tipo, clienteNome));
+  const montados = await montarItensProposta(orcamento, segmentoDoCliente(cli?.tipo, clienteNome));
+  const { estatistica } = montados;
+  // aprendizado de orçamento da disciplina do registro (services/aprendizadoOrcamento.js): preço praticado nas
+  // propostas aprovadas para o serviço sem preço e os itens que a H&M sempre acrescenta, "a cotar"
+  const vinculadaAntes = (laudo.propostas || {})[modo] || null;
+  const conhecimento = await aprendizadoOrcamento.carregarConhecimento({ excluirPropostaId: vinculadaAntes });
+  const { itens, resumo: aprendido } = aprendizadoOrcamento.aplicar(montados.itens, conhecimento, {
+    disciplinaPadrao: aprendizadoOrcamento.disciplinaDoSubgrupo(laudo.disciplina) || laudo.disciplina,
+    secaoServicos: montados.itens.find(i => ehMaoDeObra(i.secao_nome))?.secao_nome || 'Serviços (Mão de Obra)',
+    secaoMateriais: 'Materiais e Equipamentos',
+  });
+  const textoAprendido = aprendizadoOrcamento.textoDoResumo(aprendido);
   const nomesSecoes = [...new Set(itens.map(i => i.secao_nome))];
   // `id` distinto por seção: inserirSecoesEItens casa item→seção por sid OU nome
   const secoes = nomesSecoes.map((nome, i) => ({ id: i + 1, nome }));
@@ -115,8 +140,13 @@ async function gerarOrcamento(req, res) {
     // recusada fica intacta e nasce uma nova), mantendo BDI e impostos dela.
     const vinculadaId = (trava.rows[0].propostas || {})[modo] || null;
     const vinculadaInfo = vinculadaId
-      ? (await client.query('SELECT numero, status, bdi, bdi_materiais, imposto_venda, imposto_servico FROM propostas WHERE id = $1 FOR UPDATE', [vinculadaId])).rows[0]
+      ? (await client.query('SELECT numero, status, bdi, bdi_materiais, imposto_venda, imposto_servico, usuario_id FROM propostas WHERE id = $1 FOR UPDATE', [vinculadaId])).rows[0]
       : null;
+    // a proposta ligada só é sobrescrita por quem pode alterá-la (dono, administrador ou proposta antiga sem dono —
+    // regra de middleware/posse.js); a rota confere só a posse do registro (revisão de 06/11/2026)
+    if (vinculadaInfo && req.usuario.role !== 'admin' && vinculadaInfo.usuario_id != null && vinculadaInfo.usuario_id !== req.usuario.id) {
+      return { semPermissao: vinculadaInfo.numero };
+    }
     const vinculada = vinculadaInfo && vinculadaInfo.status === 'Ativa' ? vinculadaId : null;
     // proposta nova nasce com o BDI e os impostos padrão configurados (0 onde não foram definidos)
     const padrao = vinculada ? null : await padroesParaPropostaNova(client);
@@ -138,7 +168,7 @@ async function gerarOrcamento(req, res) {
       );
       await client.query('DELETE FROM proposta_secoes WHERE proposta_id = $1', [vinculada]);
       await inserirSecoesEItens(client, vinculada, secoes, itens);
-      await registrarEvento(client, vinculada, req.usuario.id, 'editada', `Atualizada a partir de ${origem}`);
+      await registrarEvento(client, vinculada, req.usuario.id, 'editada', `Atualizada a partir de ${origem}. ${textoAprendido}`.trim());
       return { propostaId: vinculada, numero: vinculadaInfo.numero, criada: false };
     }
     const seq = await proximoNumero(client);
@@ -155,7 +185,7 @@ async function gerarOrcamento(req, res) {
     );
     const novaId = rows[0].id;
     await inserirSecoesEItens(client, novaId, secoes, itens);
-    await registrarEvento(client, novaId, req.usuario.id, 'criada', `Proposta ${numeroGerado} criada a partir de ${origem}`);
+    await registrarEvento(client, novaId, req.usuario.id, 'criada', `Proposta ${numeroGerado} criada a partir de ${origem}. ${textoAprendido}`.trim());
     await client.query(
       `UPDATE laudos_projetos SET propostas = propostas || jsonb_build_object($1::text, $2::int) WHERE id = $3`,
       [modo, novaId, laudo.id]
@@ -163,13 +193,15 @@ async function gerarOrcamento(req, res) {
     return { propostaId: novaId, numero: numeroGerado, criada: true, aviso: padrao.aviso };
   });
   if (!resultadoTx) return res.status(404).json({ erro: 'Registro não encontrado.' });
+  if (resultadoTx.semPermissao) return res.status(403).json({ erro: `O orçamento ${resultadoTx.semPermissao} ligado a este registro foi criado por outro usuário. Peça a ele ou a um administrador para atualizá-lo.` });
   const { propostaId, numero, criada, aviso: avisoPadroes } = resultadoTx;
 
   classificarPendentesEmSegundoPlano(); // materiais novos do orçamento sem categoria → IA
   res.json({
-    propostaId, numero, criada, estatistica,
+    propostaId, numero, criada, estatistica, aprendizado: aprendido,
     mensagem: `Orçamento ${numero} ${criada ? 'criado' : 'atualizado'} (${rotuloModo}): ${estatistica.materiaisNoCatalogo} materiais com preço do catálogo, ` +
-      `${estatistica.materiaisNovos} a cotar, ${estatistica.servicosComReferencia} serviços com preço de referência (${estatistica.segmento === 'publico' ? 'referência oficial — cliente órgão público' : 'mercado particular'}).` + (avisoPadroes ? ` ${avisoPadroes}` : ''),
+      `${estatistica.materiaisNovos} a cotar, ${estatistica.servicosComReferencia} serviços com preço de referência (${estatistica.segmento === 'publico' ? 'referência oficial — cliente órgão público' : 'mercado particular'}).`
+      + (textoAprendido ? ` ${textoAprendido}` : '') + (avisoPadroes ? ` ${avisoPadroes}` : ''),
   });
 }
 

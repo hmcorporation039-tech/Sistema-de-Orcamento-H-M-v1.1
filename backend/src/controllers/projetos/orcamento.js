@@ -10,6 +10,8 @@ const { inserirSecoesEItens, proximoNumero, registrarEvento } = require('../prop
 const { linhaParaAnalise } = require('./comum');
 const mapaCad = require('../../services/mapaCad');
 const { CONFIANCA_CONFIRMA } = require('../../utils/semelhancaMateriais');
+const { idsComPrecoNaoConferido } = require('../../services/catalogoMateriais');
+const aprendizadoOrcamento = require('../../services/aprendizadoOrcamento');
 
 // Gera (ou atualiza, se já existir) uma proposta rascunho na aba Orçamentos a
 // partir do que está salvo na análise — é daqui que o orçamento é concluído
@@ -47,11 +49,9 @@ async function gerarOrcamento(req, res, next) {
   );
   const clienteId = clienteEncontrado.rows[0]?.id || null;
 
-  // material cujo preço foi lido POR IA de uma cotação (origem *_ia) e ninguém conferiu (preco_manual): o preço do
-  // catálogo dele não confirma o item sozinho — a regra é "o que a IA lê é sugestão" (auditoria de IA de 04/11/2026)
-  const idsMateriais = [...new Set(materiaisParaOrcar.map(m => Number(m.material_id)).filter(n => Number.isInteger(n) && n > 0))];
-  const precoDaIA = new Set(idsMateriais.length ? (await pool.query(
-    "SELECT id FROM materiais WHERE id = ANY($1::int[]) AND origem LIKE '%\_ia' AND NOT COALESCE(preco_manual, false)", [idsMateriais])).rows.map(r => r.id) : []);
+  // material cujo preço foi lido POR IA (cotação lida pela IA, item do assistente) e ninguém conferiu: o preço do
+  // catálogo dele não confirma o item sozinho — regra única "o que a IA lê é sugestão" (services/catalogoMateriais.js)
+  const precoDaIA = await idsComPrecoNaoConferido(materiaisParaOrcar.map(m => m.material_id));
 
   const NOME_SECAO_SERVICOS = 'Serviços (Mão de Obra)';
   const NOME_SECAO_MATERIAIS = 'Materiais e Equipamentos';
@@ -60,7 +60,7 @@ async function gerarOrcamento(req, res, next) {
   // "a_cotar" (mesmo status que a tela de Orçamento já usa pra sinalizar
   // preço estimado/pendente), pra não passar pro cliente como fechado algo
   // que ainda depende de conferência manual.
-  const itens = [
+  const itensDaAnalise = [
     ...servicosParaOrcar.map(s => ({
       secao_nome: NOME_SECAO_SERVICOS,
       codigo: s.codigo || null,
@@ -82,10 +82,18 @@ async function gerarOrcamento(req, res, next) {
       subgrupo: m.subgrupo || null,
       // preço 0 no catálogo (padrão da coluna) não é preço: antes saía "confirmado" a R$ 0
       // o preço do catálogo só confirma com o material quase igual (≥ 90%: utils/semelhancaMateriais.js);
-      // o adotado na pesquisa de mercado ("Usar") é escolha do usuário e confirma
-      status: (Number(m.quantidade) > 0 && (Number(m.preco_unitario) > 0 || (Number(m.preco_catalogo) > 0 && Number(m.confianca_catalogo) >= CONFIANCA_CONFIRMA && !precoDaIA.has(Number(m.material_id))))) ? 'confirmado' : 'a_cotar',
+      // o adotado na pesquisa de mercado ("Usar") é escolha do usuário e confirma; material SUGERIDO pela IA
+      // (compatibilizacaoAnalise: sugerido_ia) é sugestão até alguém conferir no orçamento
+      status: (!m.sugerido_ia && Number(m.quantidade) > 0 && (Number(m.preco_unitario) > 0 || (Number(m.preco_catalogo) > 0 && Number(m.confianca_catalogo) >= CONFIANCA_CONFIRMA && !precoDaIA.has(Number(m.material_id))))) ? 'confirmado' : 'a_cotar',
     })),
   ];
+  // aprendizado de orçamento da disciplina (services/aprendizadoOrcamento.js): o serviço sem preço recebe o preço
+  // praticado nas propostas aprovadas e os itens que a H&M sempre acrescenta nessa disciplina entram "a cotar"
+  const conhecimento = await aprendizadoOrcamento.carregarConhecimento({ excluirPropostaId: analise.propostaId || null });
+  const { itens, resumo: aprendido } = aprendizadoOrcamento.aplicar(itensDaAnalise, conhecimento,
+    { secaoServicos: NOME_SECAO_SERVICOS, secaoMateriais: NOME_SECAO_MATERIAIS });
+  const temServicos = itens.some(i => i.secao_nome === NOME_SECAO_SERVICOS);
+  const temMateriais = itens.some(i => i.secao_nome === NOME_SECAO_MATERIAIS);
   // `id` aqui não é opcional: inserirSecoesEItens casa item->seção por
   // `it.sid === sec.id || it.secao_nome === sec.nome` — com as duas seções
   // sem id, a primeira condição virava `undefined === undefined` (true) e
@@ -93,8 +101,8 @@ async function gerarOrcamento(req, res, next) {
   // duas seções saíam com a lista inteira duplicada). Qualquer valor
   // distinto de undefined já resolve, já que os itens não usam `sid`.
   const secoes = [
-    ...(servicosParaOrcar.length > 0 ? [{ id: 1, nome: NOME_SECAO_SERVICOS }] : []),
-    ...(materiaisParaOrcar.length > 0 ? [{ id: 2, nome: NOME_SECAO_MATERIAIS }] : []),
+    ...(temServicos ? [{ id: 1, nome: NOME_SECAO_SERVICOS }] : []),
+    ...(temMateriais ? [{ id: 2, nome: NOME_SECAO_MATERIAIS }] : []),
   ];
 
   const montarEscopo = (temVinculo) => `Gerado automaticamente a partir da Análise de Projeto #${analise.id}` +
@@ -119,8 +127,13 @@ async function gerarOrcamento(req, res, next) {
     // sobrescrita). Ao atualizar, mantém BDI e impostos que já estavam nela
     // (antes o total era recalculado com BDI/impostos zerados).
     const vinculadaInfo = vinculadaId
-      ? (await client.query('SELECT numero, status, bdi, bdi_materiais, imposto_venda, imposto_servico FROM propostas WHERE id = $1 FOR UPDATE', [vinculadaId])).rows[0]
+      ? (await client.query('SELECT numero, status, bdi, bdi_materiais, imposto_venda, imposto_servico, usuario_id FROM propostas WHERE id = $1 FOR UPDATE', [vinculadaId])).rows[0]
       : null;
+    // a proposta ligada só é sobrescrita por quem pode alterá-la (dono, administrador ou proposta antiga sem dono —
+    // a regra de middleware/posse.js): a rota confere só a posse da ANÁLISE, e uma análise sem dono deixava qualquer
+    // usuário trocar os itens editados à mão na proposta de outra pessoa (revisão de 06/11/2026)
+    const podeAlterar = !vinculadaInfo || req.usuario.role === 'admin' || vinculadaInfo.usuario_id == null || vinculadaInfo.usuario_id === req.usuario.id;
+    if (!podeAlterar) return { semPermissao: vinculadaInfo.numero };
     const atualizarVinculada = !!vinculadaInfo && vinculadaInfo.status === 'Ativa';
     // proposta nova nasce com o BDI e os impostos padrão configurados (0 onde não foram definidos)
     const padrao = atualizarVinculada ? null : await padroesParaPropostaNova(client);
@@ -145,7 +158,7 @@ async function gerarOrcamento(req, res, next) {
       );
       await client.query('DELETE FROM proposta_secoes WHERE proposta_id = $1', [vinculadaId]);
       await inserirSecoesEItens(client, vinculadaId, secoes, itens);
-      await registrarEvento(client, vinculadaId, req.usuario.id, 'editada', `Atualizada a partir da Análise de Projeto #${analise.id}`);
+      await registrarEvento(client, vinculadaId, req.usuario.id, 'editada', `Atualizada a partir da Análise de Projeto #${analise.id}. ${aprendizadoOrcamento.textoDoResumo(aprendido)}`.trim());
       return { propostaId: vinculadaId, numero: vinculadaInfo.numero, criada: false };
     }
     // sem vínculo, ou a proposta vinculada foi excluída/aprovada/recusada: cria uma nova
@@ -166,19 +179,22 @@ async function gerarOrcamento(req, res, next) {
     );
     const novaPropostaId = propResult.rows[0].id;
     await inserirSecoesEItens(client, novaPropostaId, secoes, itens);
-    await registrarEvento(client, novaPropostaId, req.usuario.id, 'criada', `Proposta ${numeroGerado} criada a partir da Análise de Projeto #${analise.id}`);
+    await registrarEvento(client, novaPropostaId, req.usuario.id, 'criada', `Proposta ${numeroGerado} criada a partir da Análise de Projeto #${analise.id}. ${aprendizadoOrcamento.textoDoResumo(aprendido)}`.trim());
     await client.query('UPDATE analises_projeto SET proposta_id = $1 WHERE id = $2', [novaPropostaId, analise.id]);
     return { propostaId: novaPropostaId, numero: numeroGerado, criada: true, aviso: padrao.aviso };
   });
   if (!resultadoTx) return res.status(404).json({ erro: 'Análise não encontrada' });
+  if (resultadoTx.semPermissao) return res.status(403).json({ erro: `O orçamento ${resultadoTx.semPermissao} ligado a esta análise foi criado por outro usuário. Peça a ele ou a um administrador para atualizá-lo.` });
   const { propostaId, numero, criada, aviso: avisoPadroes } = resultadoTx;
+  const textoAprendido = aprendizadoOrcamento.textoDoResumo(aprendido);
 
   const aviso = semQuantidade ? ` (${semQuantidade} item(ns) com quantidade 0 ficaram de fora — preencha na análise se fizerem parte)` : '';
   // pontos do desenho (CAD) que o engenheiro ainda não conferiu no mapa: ficaram fora do orçamento (services/mapaCad.js)
   const pontosCadSemConferir = (analise.dadosExtraidos || []).filter(d => d?.mapa_cad?.valeParaOrcamento).reduce((t, d) => t + mapaCad.resumoDoMapa(d.mapa_cad).pontosPendentes, 0);
   res.json({
-    propostaId, numero, criada, semQuantidade, pontosCadSemConferir,
-    mensagem: (criada ? `Orçamento ${numero} criado a partir desta análise` : `Orçamento ${numero} atualizado com os itens desta análise`) + aviso + (avisoPadroes ? ` ${avisoPadroes}` : ''),
+    propostaId, numero, criada, semQuantidade, pontosCadSemConferir, aprendizado: aprendido,
+    mensagem: (criada ? `Orçamento ${numero} criado a partir desta análise` : `Orçamento ${numero} atualizado com os itens desta análise`) + aviso
+      + (textoAprendido ? ` ${textoAprendido}` : '') + (avisoPadroes ? ` ${avisoPadroes}` : ''),
   });
 }
 

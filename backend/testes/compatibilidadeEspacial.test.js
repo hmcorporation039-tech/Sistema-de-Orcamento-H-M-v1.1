@@ -365,5 +365,19 @@ const pt = (x, y, descricao, disciplina, classe) => ({ x, y, descricao, discipli
     assert.ok(tr.every(x => x.a.descricao === 'layer "ELE-ELETRODUTO"'), 'o eletroduto de incêndio não é energia');
   });
 
+  // (revisão 06/11/2026) o 3D guarda no máximo 20 mil pontos e 20 mil segmentos: antes cortava calado
+  await caso('3D acima do limite de pontos/segmentos: corta, mas avisa (achado + espacial.cortado)', async () => {
+    const pontos = Array.from({ length: 25000 }, (_, i) => pt((i % 200) * 0.1, Math.floor(i / 200) * 0.03, 'Tomada', 'eletrica', 'outro'));
+    const trechos = [{ layer: 'ELE-ELETRODUTO', disciplina: 'eletrica', segmentos: Array.from({ length: 21000 }, (_, i) => [0, i * 0.001, 0.5, i * 0.001]) }];
+    const r = compatibilizar([{ arquivo: 'ELE.dwg', disciplinas: ['eletrica'], referencia: false, espacial: { ambientes: salas(), pontos, trechos } }]);
+    assert.strictEqual(r.espacial.pontos.length, 20000);
+    assert.deepStrictEqual(r.espacial.cortado, { limite: 20000, pontos: 25000, segmentos: 21000 });
+    const a = r.achados.find(x => x.tema === '3D do projeto incompleto (limite de desenho)');
+    assert.match(a?.observacao || '', /5000 de 25000 componentes e 1000 de 21000 segmentos/);
+    // abaixo do limite: nada muda
+    const p = compatibilizar([{ arquivo: 'ELE.dwg', disciplinas: ['eletrica'], referencia: false, espacial: { ambientes: salas(), pontos: pontos.slice(0, 50), trechos: [] } }]);
+    assert.ok(!p.espacial.cortado && !p.achados.some(x => /limite de desenho/.test(x.tema)));
+  });
+
   console.log(`compatibilidadeEspacial + pacote: ${ok} casos ok`);
 })().catch((e) => { console.error('FALHOU:', e); process.exit(1); });

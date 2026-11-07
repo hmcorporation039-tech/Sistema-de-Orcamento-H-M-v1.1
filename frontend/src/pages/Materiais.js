@@ -16,6 +16,7 @@ import Modal from '../components/ui/Modal';
 import { estilos, Campo } from '../components/ui/estilos';
 import { useAuth } from '../hooks/useAuth';
 import { categoriasComUsadas } from '../utils/categoriasMateriais';
+import { arred2 } from '../utils/dinheiro';
 
 const VAZIO = { codigo: '', descricao: '', categoria: '', unidade: 'un', preco: '', preco_compra: '', marca: '', ncm: '' };
 const UNIDADES = ['un', 'm', 'm²', 'm³', 'kg', 'cx', 'pct', 'rl', 'sc', 'pç', 'kit', 'h'];
@@ -296,7 +297,7 @@ export default function Materiais() {
           categoria: '',
           unidade: it.unidade || 'un',
           preco_compra: precoCompra,
-          preco: Math.round(precoCompra * (1 + margem / 100) * 100) / 100,
+          preco: arred2(precoCompra * (1 + margem / 100)),
           marca: '',
         };
       }));
@@ -479,10 +480,28 @@ export default function Materiais() {
                   )}
                 </td>
                 <td style={td}>{formatarNcm(m.ncm) || '—'}</td>
-                <td style={td}>{m.categoria}</td>
+                <td style={td}>
+                  {m.categoria}
+                  {/* categoria dada pela IA ou sugerida pelo kNN abaixo do corte: confira (editar e salvar confirma) */}
+                  {['ia', 'knn_baixa'].includes(m.categoria_origem) && m.origem !== 'manual' && (
+                    <span title={m.categoria_origem === 'ia' ? 'Categoria escolhida pela IA — confira' : 'Categoria sugerida pelo catálogo com pouca certeza — confira'}
+                      style={{ display: 'block', fontSize: 10.5, color: '#b9a6ff' }}>
+                      {m.categoria_origem === 'ia' ? 'sugerida pela IA' : 'a conferir'}
+                    </span>
+                  )}
+                </td>
                 <td style={td}>{m.unidade}</td>
                 <td style={{ ...td, textAlign: 'right', color: 'var(--texto-3)' }}>{m.preco_compra ? formatarMoeda(m.preco_compra) : '—'}</td>
-                <td style={{ ...td, textAlign: 'right', color: '#c9a227', fontWeight: 700 }}>{formatarMoeda(m.preco)}</td>
+                <td style={{ ...td, textAlign: 'right', color: '#c9a227', fontWeight: 700 }}>
+                  {formatarMoeda(m.preco)}
+                  {/* preço lido por IA de uma cotação e não conferido: no orçamento entra "a cotar" (revisão de 06/11/2026) */}
+                  {!m.preco_manual && /(^|_)ia$/i.test(m.preco_origem || m.origem || '') && (
+                    <span title="Preço lido pela IA de uma cotação — confira (editar e salvar o material confirma)"
+                      style={{ display: 'block', fontSize: 10.5, fontWeight: 400, color: '#b9a6ff' }}>
+                      lido pela IA
+                    </span>
+                  )}
+                </td>
                 <td style={td}>{m.marca || '—'}</td>
                 <td style={{ ...td, display: 'flex', gap: 6 }}>
                   <button onClick={() => setMaterialComparar(m)} style={btnIcone} title="Comparar fornecedores" aria-label={`Comparar fornecedores de ${m.descricao}`}>
@@ -570,7 +589,7 @@ export default function Materiais() {
                   onClick={() => {
                     const compra = parseFloat(form.preco_compra) || 0;
                     const margem = parseFloat(margemPadrao) || 0;
-                    setForm({ ...form, preco: String(Math.round(compra * (1 + margem / 100) * 100) / 100) });
+                    setForm({ ...form, preco: String(arred2(compra * (1 + margem / 100))) });
                   }}
                 >
                   Sugerir com margem

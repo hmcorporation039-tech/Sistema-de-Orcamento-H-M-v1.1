@@ -8,15 +8,16 @@
 //   - tiposDisponiveis(): os tipos que o 3D e o orçamento entendem (lista da tela)
 //   - validarLinhas() / aplicarNoMapa(): a correção do engenheiro sobre as linhas do mapa
 //   - confirmadasDoMapa(): as linhas conferidas, no formato que a releitura do DWG aplica
-//   - aprender() / esquecer(): cada confirmação vira cad_simbolos_aprendidos (origem 'usuario'),
-//     então o mesmo erro não precisa ser corrigido de novo no próximo desenho do escritório
+//   - aprender() / esquecer(): cada confirmação é o voto do engenheiro em cad_simbolos_aprendidos (origem 'usuario'),
+//     então o mesmo erro não precisa ser corrigido de novo no próximo desenho do escritório (ou da disciplina)
 const path = require('path');
 const pool = require('../config/database');
 const { CAD } = require('../config/caminhos');
 const { SIMBOLOS } = require(path.join(CAD, 'simbolos.js'));
 const { ESPEC } = require(path.join(CAD, 'modelo3d.js'));
 const { TIPOS } = require(path.join(CAD, 'tiposDePonto.js'));
-const { chaveDe, chaveComMedida } = require('./simbolosAprendidos');
+const { chaveDe, chaveComMedida, votarSimbolo, retirarVoto, valorDe } = require('./simbolosAprendidos');
+const votos = require('./votosAprendizado');
 const { DISCIPLINAS, nomeDaDisciplina } = require('../utils/disciplinasProjeto');
 
 const NOMES_EXTRA = {
@@ -96,11 +97,16 @@ function aplicarNoMapa(mapa, linhas) {
 }
 
 // linhas conferidas → o que a releitura do DWG aplica (pontosDoDesenho.aplicarConfirmacoes)
+// + os blocos nomeados que o engenheiro confirmou nesta análise ({ bloco, descricao, disciplina } — "Confirmar bloco"):
+// a releitura (services/analiseCad lerArquivoCad) os conta como conferidos
 function confirmadasDoMapa(mapa) {
-  return (mapa?.simbolos || []).filter(s => s.confirmado).map(s => ({
-    layer: s.layer, medida: s.medida, ...(Number.isFinite(s.preenchimento) ? { preenchimento: s.preenchimento } : {}),
-    simbolo: s.simbolo, disciplina: s.disciplina || '', rotulo: s.rotulo || '', ...(s.altura_m > 0 ? { altura_m: s.altura_m } : {}),
-  }));
+  return [
+    ...(mapa?.simbolos || []).filter(s => s.confirmado).map(s => ({
+      layer: s.layer, medida: s.medida, ...(Number.isFinite(s.preenchimento) ? { preenchimento: s.preenchimento } : {}),
+      simbolo: s.simbolo, disciplina: s.disciplina || '', rotulo: s.rotulo || '', ...(s.altura_m > 0 ? { altura_m: s.altura_m } : {}),
+    })),
+    ...(mapa?.blocos || []).filter(b => b.situacao === 'confirmado' && b.descricao && b.disciplina).map(b => ({ bloco: b.bloco, descricao: b.descricao, disciplina: b.disciplina })),
+  ];
 }
 
 // chave antiga (só a proporção, antes da migração 2.0-43): a confirmação nova da mesma forma a substitui
@@ -113,40 +119,75 @@ const chaveDaConfirmacao = (s, escritorio) => (porMedida(s)
   ? chaveComMedida({ layer: s.layer, medida: s.medida, fracao: s.preenchimento || 0 }, escritorio)
   : chaveAprendida(s));
 
-// Cada tipo conferido vira aprendizado de origem 'usuario' (vale mais que a legenda e não conta conflito).
-// "Não é ponto" ('?') não se aprende: a mesma forma pode ser ponto em outro desenho.
-// escritorio: o responsável técnico do carimbo (mapa_cad.escritorio); '' = o carimbo não diz
-async function aprender(alteradas, arquivo, executor = pool, escritorio = '') {
+// Cada tipo conferido vira o voto 'usuario' deste projeto (fonte: a obra ou a análise — services/votosAprendizado.js):
+// vence a legenda e não conta conflito; confirmar de novo no mesmo projeto não soma (antes cada clique somava vezes).
+// "Não é ponto" ('?') também se aprende (lacuna 15 da revisão: a mesma seta/letra explodida voltava a cada projeto),
+// como SUGESTÃO para a mesma forma — por disciplina (as marcadas no arquivo) e pelo escritório quando houver; sem
+// escritório nem disciplina não há a quem valer (services/analiseCad/aprendidoNoDesenho.marcarNaoPonto).
+// escritorio: o do carimbo (mapa_cad.escritorio); '' = o carimbo não diz. opcoes: { fonte, disciplinas }
+const chavesNaoPonto = (s, escritorio, disciplinas) => {
+  const forma = porMedida(s) ? chaveComMedida({ layer: s.layer, medida: s.medida, fracao: s.preenchimento || 0 }, escritorio) : `${chaveAprendida(s)}|${String(escritorio || '').slice(0, 120)}`;
+  return ((disciplinas || []).length ? disciplinas : ['']).filter(d => escritorio || d).map(d => [`NP|${forma}|${d}`, d]);
+};
+const dadosDaLinha = (s, escritorio, arquivo, extra = {}) => ({
+  layer: String(s.layer).slice(0, 120), medida: [...s.medida].map(Number).sort((a, b) => b - a), fracao: Math.round((s.preenchimento || 0) * 1000) / 1000,
+  simbolo: s.simbolo, disciplina: s.disciplina || null, altura_m: s.altura_m > 0 ? s.altura_m : null, texto: String(s.rotulo || '').slice(0, 200),
+  escritorio: String(escritorio || '').slice(0, 120), por_medida: porMedida(s), arquivo: String(arquivo || '').slice(0, 200), ...extra,
+});
+async function aprender(alteradas, arquivo, executor = pool, escritorio = '', { fonte = null, disciplinas = [] } = {}) {
   let gravadas = 0;
+  const quem = fonte || `arquivo:${String(arquivo || '')}`;
   for (const { depois: s, desfeita } of alteradas) {
-    if (desfeita || !s.confirmado || s.simbolo === '?' || !Array.isArray(s.medida) || !(s.medida[0] > 0)) continue;
-    const medida = [...s.medida].sort((a, b) => b - a);
-    const chave = chaveDaConfirmacao(s, escritorio);
+    if (desfeita || !s.confirmado || !Array.isArray(s.medida) || !(s.medida[0] > 0)) continue;
     try {
-      await executor.query(
-        `INSERT INTO cad_simbolos_aprendidos (chave, layer, medida, fracao, simbolo, disciplina, altura_m, texto, origem, arquivo, escritorio, por_medida)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'usuario', $9, $10, $11)
-         ON CONFLICT (chave) DO UPDATE SET simbolo = EXCLUDED.simbolo, disciplina = EXCLUDED.disciplina, altura_m = EXCLUDED.altura_m,
-           texto = EXCLUDED.texto, origem = 'usuario', conflitos = 0, arquivo = EXCLUDED.arquivo, atualizado_em = NOW(),
-           vezes = cad_simbolos_aprendidos.vezes + CASE WHEN cad_simbolos_aprendidos.origem = 'usuario' AND cad_simbolos_aprendidos.simbolo = EXCLUDED.simbolo THEN 1 ELSE 0 END`,
-        [chave, String(s.layer).slice(0, 120), medida, Math.round((s.preenchimento || 0) * 1000) / 1000, s.simbolo, s.disciplina || null,
-          s.altura_m > 0 ? s.altura_m : null, String(s.rotulo || '').slice(0, 200), String(arquivo || '').slice(0, 200), String(escritorio || '').slice(0, 120), porMedida(s)]);
-      // a chave antiga (só proporção) da mesma forma sai: senão a forma de 40 cm continuava pegando o tipo da de 20 cm
-      if (chave !== chaveAprendida(s)) await executor.query(`DELETE FROM cad_simbolos_aprendidos WHERE chave = $1 AND origem = 'usuario'`, [chaveAprendida(s)]);
+      if (s.simbolo === '?') {
+        for (const [chave, d] of chavesNaoPonto(s, escritorio, disciplinas)) {
+          await votarSimbolo(executor, chave, { fonte: quem, origem: 'usuario', dados: dadosDaLinha(s, escritorio, arquivo, { simbolo: '?', disciplina: d || null, altura_m: null, texto: 'não é ponto' }) });
+          gravadas++;
+        }
+        continue;
+      }
+      const chave = chaveDaConfirmacao(s, escritorio);
+      await votarSimbolo(executor, chave, { fonte: quem, origem: 'usuario', dados: dadosDaLinha(s, escritorio, arquivo) });
+      const prop = chaveAprendida(s);
+      if (chave !== prop) {
+        const { rows: [r] } = await executor.query('SELECT * FROM cad_simbolos_aprendidos WHERE chave = $1', [prop]);
+        if (r?.origem === 'usuario' && r.por_medida) {
+          // a chave antiga (só proporção, confirmação de antes da 2.0-43) da mesma forma sai: senão a forma de 40 cm
+          // continuava pegando o tipo da de 20 cm
+          await executor.query('DELETE FROM cad_simbolos_aprendidos WHERE chave = $1', [prop]);
+          await executor.query(`DELETE FROM aprendizado_votos WHERE tipo = 'simbolo' AND chave = $1`, [prop]);
+        } else if (r && r.origem !== 'usuario' && r.conflitos > 0) {
+          // a linha da LEGENDA desta forma está em conflito (outro tipo em outro projeto): a confirmação do engenheiro
+          // desempata — só entre as opções que a legenda já tinha (não impõe um tipo novo a todos os tamanhos da layer)
+          const valor = valorDe(s.simbolo, s.altura_m);
+          const daLegenda = (await votos.votosDe(executor, 'simbolo', prop)).find(v => v.valor === valor && v.dados?.layer)?.dados
+            || (valorDe(r.simbolo, r.altura_m) === valor ? { layer: r.layer, medida: r.medida.map(Number), fracao: Number(r.fracao), simbolo: r.simbolo, disciplina: r.disciplina, altura_m: r.altura_m != null ? Number(r.altura_m) : null, texto: r.texto || '', escritorio: '', por_medida: false } : null);
+          if (daLegenda) await votarSimbolo(executor, prop, { fonte: quem, origem: 'usuario', dados: { ...daLegenda, arquivo: String(arquivo || '').slice(0, 200) } });
+        }
+      }
       gravadas++;
     } catch (e) { console.warn('[mapaCad] confirmação não aprendida:', e.message); }
   }
   return gravadas;
 }
 
-// Desfazer uma confirmação tira o que ela ensinou (só se o aprendizado ainda é o do usuário)
-async function esquecer(alteradas, executor = pool, escritorio = '') {
+// Desfazer uma confirmação tira só o voto DESTE projeto, e só se ele ainda diz o tipo e a altura que estão sendo
+// desfeitos (antes apagava a linha inteira — o que outros projetos tinham ensinado). Confirmação de antes dos votos:
+// desconta 1 do que ela tinha somado.
+async function esquecer(alteradas, executor = pool, escritorio = '', { fonte = null, disciplinas = [], arquivo = '' } = {}) {
   let removidas = 0;
+  const quem = fonte || `arquivo:${String(arquivo || '')}`;
   for (const { antes: s, desfeita } of alteradas) {
-    if (!desfeita || !Array.isArray(s.medida)) continue;
+    if (!desfeita || !Array.isArray(s.medida) || !s.simbolo) continue;
     try {
-      const r = await executor.query(`DELETE FROM cad_simbolos_aprendidos WHERE chave = ANY($1) AND origem = 'usuario'`, [[chaveDaConfirmacao(s, escritorio), chaveAprendida(s)]]);
-      removidas += r.rowCount;
+      if (s.simbolo === '?') {
+        for (const [chave] of chavesNaoPonto(s, escritorio, disciplinas)) removidas += await retirarVoto(executor, chave, { fonte: quem, simbolo: '?', altura_m: null });
+        continue;
+      }
+      const chave = chaveDaConfirmacao(s, escritorio);
+      removidas += await retirarVoto(executor, chave, { fonte: quem, simbolo: s.simbolo, altura_m: s.altura_m });
+      if (chave !== chaveAprendida(s)) await retirarVoto(executor, chaveAprendida(s), { fonte: quem, simbolo: s.simbolo, altura_m: s.altura_m });
     } catch (e) { console.warn('[mapaCad] aprendizado não removido:', e.message); }
   }
   return removidas;
@@ -195,6 +236,7 @@ function resumoDoMapa(mapa) {
     pendentes: pendentes.length,
     pontosPendentes: pendentes.filter(s => s.simbolo !== '?').reduce((t, s) => t + (s.contados ?? s.quantidade ?? 0), 0),
     naoReconhecidas: simbolos.filter(s => s.simbolo === '?' && !s.confirmado).length,
+    blocosConfirmados: (mapa?.blocos || []).filter(b => b.situacao === 'confirmado').length,
     // componentes inseridos e retirados na planta ou no 3D (services/edicoesDoMapa.js)
     inseridos: mapa?.edicoes?.adicionados?.length || 0,
     retirados: mapa?.edicoes?.removidos?.length || 0,

@@ -15,6 +15,7 @@
 // coluna e derrubava o salvamento da PROPOSTA inteira (a transação é única).
 const TAMANHO_MAX_DESCRICAO_CATALOGO = 300;
 const { categoriaLocal } = require('./classificacaoMateriais');
+const { registrarUso } = require('./iaCache');
 const { garantirServicoCadastrado } = require('../utils/servicosBase');
 
 // Só vira item de catálogo o que tem PREÇO e cara de item reutilizável
@@ -33,8 +34,12 @@ function ehItemDeCatalogo(descricao, valorUnitario) {
 // caixa/espaços) ou cadastra um novo a partir dos dados do item. Só é
 // chamado quando o item NÃO veio do "+ catálogo" (material_id já nulo) —
 // itens escolhidos do catálogo já têm o vínculo certo e não passam por aqui.
-async function garantirMaterialCadastrado(client, { descricao, unidade, ncm, valor_unitario }) {
+// origem_item 'assistente' (item criado/alterado pelo assistente virtual — IA): não entra no catálogo nem se liga a um
+// material sozinho; descrição e preço são sugestão até o engenheiro confirmar o item na tela (a tela limpa a marca e o
+// próximo salvamento cadastra). Revisão do uso de IA de 06/11/2026.
+async function garantirMaterialCadastrado(client, { descricao, unidade, ncm, valor_unitario, origem_item }) {
   const desc = (descricao || '').trim();
+  if (origem_item === 'assistente') return null;
   if (!ehItemDeCatalogo(desc, valor_unitario)) return null;
 
   const existente = await client.query(
@@ -48,13 +53,16 @@ async function garantirMaterialCadastrado(client, { descricao, unidade, ncm, val
   // (disparada depois que a proposta é salva). Antes entrava sempre "Geral".
   const c = await categoriaLocal(client, { descricao: desc, ncm });
   const novo = await client.query(
-    `INSERT INTO materiais (descricao, categoria, unidade, preco, ncm, origem, preco_manual)
-     VALUES ($1, $2, $3, $4, $5, 'proposta', true)
+    `INSERT INTO materiais (descricao, categoria, unidade, preco, ncm, origem, preco_manual, preco_origem, categoria_origem)
+     VALUES ($1, $2, $3, $4, $5, 'proposta', true, 'proposta', $6)
      ON CONFLICT ((LOWER(TRIM(descricao)))) WHERE ativo = true DO NOTHING
      RETURNING id`,
-    [desc, c ? c.categoria : 'Não classificado', unidade || 'un', valor_unitario || 0, ncm || null]
+    [desc, c ? c.categoria : 'Não classificado', unidade || 'un', valor_unitario || 0, ncm || null, c?.origem || null]
   );
-  if (novo.rows.length) return novo.rows[0].id;
+  if (novo.rows.length) {
+    if (c) await registrarUso('classificacao_material', 'sem_ia'); // classificado sem IA já no cadastro
+    return novo.rows[0].id;
+  }
   // cadastrado ao mesmo tempo por outra gravação: usa o que já existe (índice único do banco)
   return (await client.query('SELECT id FROM materiais WHERE ativo = true AND TRIM(LOWER(descricao)) = TRIM(LOWER($1)) LIMIT 1', [desc])).rows[0]?.id || null;
 }
@@ -64,7 +72,8 @@ async function garantirMaterialCadastrado(client, { descricao, unidade, ncm, val
 // alimenta a lista suspensa da tela Orçamento e a tela Preços de Mão de Obra.
 // A tabela antiga mao_de_obra_itens continua sendo escrita junto (dá o id
 // estável do código e mantém a 1.x funcionando). Ver utils/servicosBase.js.
-async function garantirMaoDeObraCadastrada(client, { descricao, unidade, valor_unitario, codigo, subgrupo }) {
+async function garantirMaoDeObraCadastrada(client, { descricao, unidade, valor_unitario, codigo, subgrupo, origem_item }) {
+  if (origem_item === 'assistente') return null; // serviço sugerido pela IA: só entra na base depois de confirmado na tela
   if (!ehItemDeCatalogo(descricao, valor_unitario)) return null; // mesma regra dos materiais
   return garantirServicoCadastrado(client, { descricao, unidade, valor_unitario, codigo, subgrupo });
 }

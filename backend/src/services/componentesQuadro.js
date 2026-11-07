@@ -571,8 +571,51 @@ async function gravarAchado(registro, pedido, usuario) {
 
 // Uma especificação: { fabricante, tipo, especificacao } → { situacao, registro?, motivo?, provedor? }
 //   situacao: 'encontrado' | 'nao_encontrado' | 'ja_no_catalogo'
-async function pesquisarMedida(entrada, usuario, { signal } = {}) {
+// Revisão do uso de IA de 06/11/2026: antes a busca unitária ia direto à IA (a em lote já conferia o catálogo), o
+// "não encontrado" não era lembrado (a mesma especificação gastava IA de novo a cada clique) e a pesquisa não tinha
+// prazo total (a tela desiste em 300 s e o backend seguia até a API paga). Agora, nesta ordem:
+//   1. já no catálogo (JSON da skill ou banco) com a mesma referência, ou a mesma especificação já pesquisada → sem IA;
+//   2. a mesma especificação que a IA não achou nos últimos DIAS_LEMBRAR_NAO_ENCONTRADO dias → devolve o motivo
+//      guardado (`fresco` pesquisa de novo);
+//   3. a IA, com prazo total (TEMPO_TOTAL_MS) e cancelada quando a tela fecha a requisição (`signal`).
+const DIAS_LEMBRAR_NAO_ENCONTRADO = 30;
+const TEMPO_TOTAL_MS = Number(process.env.PESQUISA_TEMPO_TOTAL_MS) || 270 * 1000;
+const USO_IA = 'componente_quadro_medida';
+const iaCache = require('./iaCache');
+
+// fresco: o achado da IA ainda não conferido não segura a nova pesquisa (o conferido e o cadastrado à mão seguram)
+async function jaConhecido(pedido, { fresco = false } = {}) {
+  const k = chavePesquisa(pedido);
+  const { rows: [pesquisada] } = await pool.query('SELECT * FROM componentes_quadro WHERE especificacao_pesquisada = $1 ORDER BY verificado DESC, id DESC LIMIT 1', [k])
+    .catch(e => (tabelaFaltando(e) ? { rows: [] } : Promise.reject(e)));
+  if (pesquisada && !(fresco && pesquisada.origem === 'pesquisa_ia' && !pesquisada.verificado)) return paraSaida(pesquisada);
+  if (!pedido.referencia) return null;
+  const alvo = chaveRegistro(pedido.fabricante, pedido.referencia);
+  return mesclarCatalogo(catalogoEmbutido().componentes, await linhasDoBanco()).find(c => chaveRegistro(c.fabricante, c.referencia) === alvo) || null;
+}
+
+async function naoEncontradoRecente(pedido) {
+  const { rows: [r] } = await pool.query(
+    `SELECT motivo, pesquisado_em FROM componentes_quadro_nao_encontrados WHERE chave = $1 AND pesquisado_em > NOW() - ($2 || ' days')::interval`,
+    [chavePesquisa(pedido), String(DIAS_LEMBRAR_NAO_ENCONTRADO)]).catch(() => ({ rows: [] }));
+  return r || null;
+}
+
+async function pesquisarMedida(entrada, usuario, { signal, fresco = false, timeoutTotalMs = TEMPO_TOTAL_MS } = {}) {
   const pedido = lerPedido(entrada);
+  const conhecido = await jaConhecido(pedido, { fresco });
+  if (conhecido) {
+    await iaCache.registrarUso(USO_IA, 'sem_ia');
+    return { situacao: 'ja_no_catalogo', registro: conhecido, pedido };
+  }
+  if (!fresco) {
+    const lembrado = await naoEncontradoRecente(pedido);
+    if (lembrado) {
+      await iaCache.registrarUso(USO_IA, 'cache');
+      const quando = new Date(lembrado.pesquisado_em).toLocaleDateString('pt-BR');
+      return { situacao: 'nao_encontrado', motivo: `já pesquisado em ${quando} sem a medida oficial: ${lembrado.motivo || 'não encontrado'} (pesquise de novo para tentar outra vez)`, lembrado: true, pedido };
+    }
+  }
   if (!ia.disponivel({ web: true })) {
     throw new ErroHttp(422, 'Busca de medidas desativada — nenhuma IA disponível (Claude Code com a assinatura Max, ANTHROPIC_API_KEY ou GEMINI_API_KEY).');
   }
@@ -580,19 +623,29 @@ async function pesquisarMedida(entrada, usuario, { signal } = {}) {
   try {
     r = await ia.pesquisarWeb(montarPromptMedida(pedido), {
       finalidade: 'medida de componente de quadro',
-      signal,
+      signal, timeoutTotalMs,
       // resposta recusada passa para o próximo provedor (o último é aceito para dar o motivo)
       aceitar: (json, { ultimo }) => ultimo || validarRespostaIA(json, pedido).ok,
     });
   } catch (err) {
+    await iaCache.registrarUso(USO_IA, 'falha');
+    if (err?.cancelado) throw Object.assign(new ErroHttp(499, 'Busca cancelada (a tela foi fechada ou desistiu de esperar).'), { semIA: true });
     if (!err?.indisponivel) throw err;
     const detalhe = (err.erros || []).map(e => `${e.rotulo || e.provedor}: ${e.mensagem === 'resposta sem dado aproveitável' ? 'sem medida oficial' : e.mensagem}`).join(' | ') || err.message;
     // nenhum provedor RESPONDEU (fora do ar, sem login, sem crédito): o lote para (abaixo), em vez de passar cada item pela cadeia inteira
     const nenhumRespondeu = !(err.erros || []).some(e => e.mensagem === 'resposta sem dado aproveitável');
     throw Object.assign(new ErroHttp(502, `Não foi possível buscar a medida agora (${String(detalhe).slice(0, 300)})`), { semIA: nenhumRespondeu });
   }
+  await iaCache.registrarUso(USO_IA, 'ia');
   const v = validarRespostaIA(r.json, pedido);
-  if (!v.ok) return { situacao: 'nao_encontrado', motivo: v.problemas.join('; '), provedor: r.fonte, pedido };
+  if (!v.ok) {
+    // a IA respondeu e não achou (ou achou fora das regras): lembra por DIAS_LEMBRAR_NAO_ENCONTRADO dias
+    await pool.query(
+      `INSERT INTO componentes_quadro_nao_encontrados (chave, motivo) VALUES ($1, $2)
+       ON CONFLICT (chave) DO UPDATE SET motivo = EXCLUDED.motivo, pesquisado_em = NOW()`,
+      [chavePesquisa(pedido), v.problemas.join('; ').slice(0, 1000)]).catch(() => {});
+    return { situacao: 'nao_encontrado', motivo: v.problemas.join('; '), provedor: r.fonte, pedido };
+  }
   const g = await gravarAchado(v.registro, pedido, usuario);
   return { ...g, provedor: r.fonte, pedido };
 }

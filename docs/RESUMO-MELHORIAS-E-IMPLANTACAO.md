@@ -1102,3 +1102,146 @@ Pedido do usuário: "Os quadros elétricos não estão importando os circuitos o
 - **Limites:**
   - unifilar desenhado com texto SHX explodido em traços não tem texto para ler;
   - quadro do diagrama sem a tag no título fica "QUADRO-n" e só liga pelo ambiente.
+
+### 06/11/2026: versão 2.33.0 — orçamento que aprende por disciplina, projeto separado do orçamento, comparador da concorrência e revisão geral
+
+Pedido do usuário (depois da revisão geral do código): corrigir tudo; separar projeto e orçamento (às vezes só se orça analisando projetos, às vezes se faz projeto sem orçamento); aprendizado organizado pelas disciplinas (elétrica, CFTV etc.); orçamento que aprende para sair sozinho, sem IA, usando IA só quando não souber ou precisar pesquisar item novo; comparador de orçamentos da concorrência para o mesmo projeto.
+
+- **Projeto × orçamento:**
+  - projeto novo (`laudos_projetos.tipo = 'projeto'`) nasce **sem** orçamento (`gerar_orcamento = false`); o laudo continua com o orçamento de inspeção/correção. Quem manda `gerar_orcamento` no corpo decide;
+  - projeto criado de uma análise segue a finalidade: "elaboração" nasce sem orçamento, "orçamento" com;
+  - "Gerar orçamento" do projeto aceita `ligar_orcamento: true`, que liga a opção antes de gerar;
+  - a análise com finalidade "Orçamento" continua só para orçar, sem gerar projeto.
+- **Aprendizado de orçamento por disciplina** (`services/aprendizadoOrcamento.js`, determinístico, sem IA nem tabela nova):
+  - lido das propostas **aprovadas** dos últimos 2 anos, por disciplina (o subgrupo da seção);
+  - de cada item: preço praticado (mediana dos confirmados com valor > 0), preço recente (último ano) e quantidade por ponto da disciplina;
+  - no "Gerar orçamento" da análise e do projeto:
+    - o serviço sem preço recebe o preço praticado. Entra **confirmado** só com quantidade, preço recente e 2 ou mais propostas; se não, fica "a cotar";
+    - o item que aparece em ≥ 60 % das propostas da disciplina (mínimo 2) e não está no orçamento entra como sugestão "a cotar", com quantidade = mediana por ponto × pontos;
+  - o resumo do que foi aprendido vai na mensagem e no histórico da proposta;
+  - aba nova **Propostas → "O que já sabe orçar"** (`GET /api/orcamentos/aprendizado`): autonomia por disciplina ("orça sozinho" com 3 ou mais propostas) e os itens que sempre acompanham.
+  - É separado do aprendizado de **desenho** (blocos, legendas, símbolos), que ensina a ler os projetos.
+- **Comparador de orçamentos da concorrência** (migração 2.0-55: `orcamentos_concorrentes` e `orcamento_concorrente_itens`):
+  - importa o orçamento do concorrente em PDF, XLSX ou XLS (`utils/leitorOrcamentoConcorrente.js`):
+    - na planilha, pelo cabeçalho, com material e mão de obra separados, títulos de seção e sem as linhas de subtotal;
+    - no PDF, pelo texto (q × (mat + mo) = total, ou o leitor universal de cotações), conferindo a soma com o total do documento;
+    - IA só se marcado "Ler com IA" e a leitura local não achar nada (PDF escaneado);
+  - compara com a proposta (`utils/comparadorOrcamentos.js`):
+    - nosso preço de **venda** (com BDI e impostos, pelo fator total ÷ custo);
+    - equivalência por semelhança da descrição, sem casar especificações que conflitam (bitola, polegadas, resolução);
+    - vínculo manual corrige o automático;
+  - mostra:
+    - diferença de quantidade e de preço por item;
+    - o que só o concorrente incluiu e o que só nós incluímos;
+    - totais por tipo e disciplina;
+    - quanto daria para reduzir igualando o menor preço;
+    - recomendações do que fazer, sem IA;
+  - telas: aba **Propostas → "Concorrência"** e botão "Comparar com concorrente" no editor da proposta;
+  - rotas `/api/concorrencia` (`autenticar`; alterar/vincular/excluir com posse).
+- **"Gerar orçamento" não sobrescreve a proposta de outro usuário:** se a proposta vinculada tem dono e quem gera não é ele nem admin, a resposta é 403.
+- **Erros gerais corrigidos:**
+  - financeiro: a hora gravada somava 3 h a cada edição (`toISOString` na tela). Agora a hora vai como está, em Brasília (`dataHoraBrasilia`), e filtro de datas inválido dá 400;
+  - excluir proposta aprovada pelo cliente: 409 para não-admin; com nota fiscal emitida, 409 para todos. A conferência do aceite em editar e trocar status ficou dentro da transação (`FOR UPDATE` + releitura);
+  - cronograma gerado em dobro por dois cliques: as etapas são relidas dentro da transação;
+  - centavos com a mesma regra em todo lugar (meio para longe do zero, como o ROUND do PostgreSQL): proposta, BDI, curva ABC, composições, notas, reajuste por fator do editor e preço de venda do catálogo. 5,015 → 5,02. Nenhum total dos testes de regressão mudou;
+  - migração 2.0-50 só recria a trava quando falta uma das situações novas (não derruba a cada partida);
+  - monitor de pastas sem rodadas sobrepostas; a reserva só apaga pastas vazias;
+  - backup: no tempo-limite mata a árvore de processos do pg_dump;
+  - laudo: abrir pasta exige posse; quem não é dono vê e baixa os documentos sem gravar na pasta;
+  - análise e cartão do 3D descartam respostas atrasadas de outra análise;
+  - notas: líquido negativo recusado; importação só liga ao rascunho quando é um só; cancelamento não troca nota substituída.
+- **Leitura de PDF e tabelas do projeto (determinística):**
+  - escala:
+    - a escala de um detalhe ("DETALHE 1 — ESC. 1:25") não vai mais para a planta. No empate entre duas escalas vale, em ordem: o carimbo, a mais frequente, a mais perto da maior planta; se ainda empatar, marca [CONFERIR];
+    - um "SEM ESCALA" de detalhe não anula mais a escala da folha;
+    - passam a ser lidas "ESCALA - 1:50", "PLANTA BAIXA 1:50" e "ESCALA 1/50";
+    - no nome do arquivo, "ELE_1_25" não vira mais escala. "1_50" só vale como palavra solta ou depois de ESC;
+    - o 3D e o quantitativo usam a mesma escala (`escalaDaPlanta`), e o 3D também tenta as cotas;
+  - quadros "QD-01" e "QD-02" não se fundem mais;
+  - "Cabo" genérico não apaga "Cabo flexível 2,5 mm²". O item lido pela tabela e pelo padrão de linha não conta duas vezes;
+  - tabela, lista ou 3D cortados pelo limite agora geram achado ("lida só em parte", "3D incompleto"), em vez de cortar calado;
+  - a rota de cabeamento medida vira material (rota × 1,10 + descidas, [CONFERIR], a cotar) e o serviço `cab_lancamento` por metro. Com a rota medida, a verba `cab_passagem` sai zerada para não cobrar duas vezes. `cab_lancamento` entrou na tabela de preços de referência da mão de obra;
+  - símbolo girado em qualquer ângulo casa com a legenda;
+  - o mesmo símbolo não conta em dois itens: no empate conta uma vez, e os itens ficam marcados para conferir;
+  - câmera escrita "CAM-01", "CAM_02" ou "CAM 03" é contada, tanto pela posição quanto pelo texto;
+  - ambientes de mesmo nome não trocam de polígono ("BANHEIRO", "BANHEIRO 2");
+  - DWG com centenas de milhares de vértices não estoura mais ao calcular a região do fundo do mapa.
+- **Motor de leitura de DWG/DXF** (`skills/_comum/cad`, `skills/_comum/instalacao`, determinístico; testes R-01 a R-20 com desenhos sintéticos, que falhavam no código antigo):
+  - contagem de pontos:
+    - o mesmo aparelho em duas layers só deixa de contar se as posições coincidirem;
+    - dois símbolos iguais lado a lado (a menos de 30 cm) são dois aparelhos; a cópia sobreposta continua um só;
+    - bloco desenhado só com SOLID, ELLIPSE, SPLINE ou HATCH não some mais;
+    - bloco com nome de arquitetura (porta, armário…) que também diz ponto da instalação (tomada, rack…) entra;
+  - arquitetura:
+    - MTEXT com nome e área da sala;
+    - a grade das paredes é calculada por prédio, não pelo desenho inteiro (com duas pranchas leva mais tempo, mas a área fica certa);
+    - unidade sem $INSUNITS decidida pela largura do desenho;
+    - normal −Z (desenho espelhado);
+    - contorno com dois nomes passa a ser separado pelas paredes;
+    - ambientes de mesmo nome são distinguidos pela posição;
+  - tipos: sensor de presença antes de detector, IVP do alarme, "LUMIN" dentro de "ILUMINA" não casa;
+  - diagrama unifilar:
+    - tags QGBT-A, CCM-BOMBAS e "QD 01";
+    - número "01" igual a "1" nos dois lados;
+    - disjuntores "3x40A", "2P 32A" e "C20", potência "5.5 kW";
+    - cabeçalho centralizado e título dentro da moldura;
+    - textos dentro de bloco;
+    - diagrama sem circuito lido agora gera aviso [CONFERIR], no 3D e na Análise de Projeto (`avisosDiagrama`);
+  - altura do atributo em mm/cm e frases como "Altura de instalação: 1,20 m";
+  - circuito lido só pelo número na planta fica marcado "lido na planta, a conferir";
+  - traço que cruza a borda da planta é recortado, e não descartado.
+- **Aprendizado de desenho por disciplina** (migração 2.0-53, `services/votosAprendizado.js`, tabela `aprendizado_votos`):
+  - cada projeto vota uma vez (`obra:<id>`, `analise:<id>`, `acervo:<cliente>/<obra>` ou o conteúdo do arquivo). Rever o mesmo projeto não soma voto, e desfazer tira só o voto daquele projeto;
+  - quem decide, em ordem:
+    - a confirmação do engenheiro vence sempre;
+    - sem engenheiro, vale a maioria (3 ou mais votos, com 2/3 numa opção);
+    - abaixo disso, a linha fica em conflito e sai do uso;
+  - blocos, alturas, símbolos e legendas de PDF valem **na disciplina**:
+    - escritório em branco não conta como "o próprio";
+    - bloco de outro escritório só vale com 2 projetos ou com confirmação;
+    - a altura confirmada sem escritório vale para a disciplina;
+  - item aprendido de outro projeto sai "aprendido de outro projeto — conferir";
+  - um escritório só (`escritorioDoProjeto`) para DWG e PDF;
+  - tela do mapa: "Blocos nomeados a confirmar", com o botão "Confirmar bloco" (`PUT /projetos/analises/:id/mapa/blocos`, com posse);
+  - "não é ponto" passa a ser aprendido por disciplina;
+  - disciplina pelo caminho do arquivo:
+    - olha primeiro o nome do arquivo, depois as pastas mais próximas;
+    - ignora a pasta do cliente;
+    - aceita várias disciplinas por arquivo;
+    - os arquivos ignorados por uma regra antiga são reavaliados;
+  - treino do acervo:
+    - o material novo só entra no índice depois do COMMIT;
+    - arquivo com erro é relido até 3 vezes;
+    - a rotina não roda duas vezes ao mesmo tempo;
+    - a categoria escolhida pelo próprio sistema não treina o classificador;
+  - a análise de uma obra vota como um projeto só (R01 e R02 do mesmo desenho), e a legenda de PDF aprendida vale só nas disciplinas marcadas;
+  - painel Aprendizado: tabela por disciplina (símbolos, blocos, legendas, alturas, "não é ponto", confirmados × sugeridos). A fila de conferência mostra as análises do usuário (o admin vê todas).
+- **IA só sugere, e menos chamadas de IA** (migração 2.0-54):
+  - item criado ou alterado pelo assistente (tela, Claude Desktop ou ferramentas): sempre "a cotar", com a etiqueta "sugerido pela IA";
+    - não entra no catálogo nem no aprendizado até o engenheiro confirmar;
+    - o servidor marca sozinho a proposta criada pelo assistente;
+    - a cópia da proposta mantém a marca;
+  - origem do preço e da categoria de cada material (`preco_origem`, `categoria_origem`):
+    - preço lido por IA não confirma item, no orçamento da análise, do projeto/laudo, nos kits e nas referências, até alguém conferir (`precoConferido`, `idsComPrecoNaoConferido`);
+    - só categoria escolhida pelo usuário treina o classificador;
+    - abaixo do corte, o vizinho mais parecido vira sugestão "a conferir" antes da IA;
+    - a IA não é perguntada de novo sobre o mesmo material antes de 7 dias;
+  - pesquisa de mercado:
+    - resultado vazio não vai para o cache;
+    - prazo total de 270 s, que termina sem cair na API paga;
+    - cancelar na tela cancela de fato;
+  - componentes de quadro: confere catálogo e "já pesquisado" antes da IA, e "não encontrado" fica lembrado por 30 dias;
+  - e-mails e pastas de fornecedores:
+    - lidos por anexo;
+    - a leitura da IA fica guardada pelo hash do arquivo por um ano;
+    - no máximo 2 `claude -p` ao mesmo tempo e 20 min de IA por varredura;
+    - com a IA fora, o documento fica "aguardando IA";
+  - mão de obra: a referência interna é a mediana do vendido em propostas aprovadas do segmento, antes da web;
+  - painel "sem IA" por função: sem IA, cache, chamadas e falhas.
+  - Ficou para depois: o layout de leitura por CNPJ do fornecedor (precisa de documentos reais para validar) e o dicionário de códigos REF.
+- **Testes novos:**
+  - `orcamentoAutonomo`;
+  - `correcoesGerais`;
+  - os casos R-01 a R-20 das skills de CAD;
+  - os casos novos de pdfVetorial, leitoresProjeto, compatibilidadeEspacial, pdfParaDxf, escalaDaPlanta, analiseProjetoItens, mapaCad, notasAprendidas, treinoPorDisciplina, iaCache, classificadorMateriais, assistente, precosReferencia, leituraEmail e componentesQuadro;
+  - Jest: Concorrencia, Financeiro, AnaliseProjeto, Modelo3d e dinheiro.

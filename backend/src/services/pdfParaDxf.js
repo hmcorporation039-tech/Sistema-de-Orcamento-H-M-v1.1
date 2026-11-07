@@ -22,8 +22,8 @@
 // mesma espessura, móveis desenhados podem virar parede no 3D (aviso).
 const path = require('path');
 const { lerPagina, pdfjs } = require('../utils/pdfVetorial').paraTestes;
-const { escalaDoCarimbo } = require('../utils/pdfVetorial');
-const { escalaDoNome } = require('../utils/escalaDaPlanta');
+const { escalaDaPlanta } = require('../utils/pdfVetorial');
+const { escalaDoNome, escalaPelasCotas } = require('../utils/escalaDaPlanta');
 
 const { DesenhoDxf } = require(path.join(require('../config/caminhos').CAD, 'dxf.js'));
 
@@ -227,7 +227,15 @@ function escreverFolha(d, L, geo, classificacao, { n, escalaInformada, escalaDoN
   // luminárias com 1,3 m
   const informada = Number(escalaInformada) || null;
   let escala = obrigatoria ? informada : null, origemEscala = escala ? 'informada' : null;
-  if (!escala) { escala = escalaDoCarimbo(geo.textos); if (escala) origemEscala = 'carimbo'; }
+  // escala escrita: a MESMA função da metragem da análise (pdfVetorial/escala.js, escalaDaPlanta) — o carimbo sem a
+  // escala de detalhe, o título da vista de planta; antes o 3D usava só o carimbo e, no empate 1:50 × 1:25, saía na metade
+  if (!escala) {
+    const e = escalaDaPlanta(geo.textos, classificacao?.regioes || []);
+    if (e.escala) {
+      escala = e.escala; origemEscala = e.origem;
+      if (e.ambigua) avisos.push(`A folha ${n} tem as escalas ${e.ambigua.map(v => `1:${v}`).join(' e ')} escritas sem dizer qual é a da planta: usada 1:${escala} (a mesma da metragem da análise) — confira as medidas ou informe a escala.`);
+    }
+  }
   if (!escala && informada) { escala = informada; origemEscala = 'informada'; }
   if (!escala && escalaDoNomeArquivo) {
     escala = escalaDoNomeArquivo; origemEscala = 'nome_arquivo';
@@ -236,6 +244,12 @@ function escreverFolha(d, L, geo, classificacao, { n, escalaInformada, escalaDoN
   if (!escala) {
     escala = escalaPelasPortas(arcosPt, retasPt);
     if (escala) { origemEscala = 'portas'; avisos.push(`Escala 1:${escala} da folha ${n} deduzida pelo tamanho das portas (o carimbo não tem a escala) — confira as medidas.`); }
+  }
+  // as cotas, como na metragem da análise (utils/escalaDaPlanta.js): só dentro das regiões de planta
+  if (!escala) {
+    const regioesPlanta = (classificacao?.regioes || []).filter(r => r.tipo === 'planta').map(r => r.caixa);
+    escala = escalaPelasCotas(geo, regioesPlanta);
+    if (escala) { origemEscala = 'cota'; avisos.push(`Escala 1:${escala} da folha ${n} deduzida pelas cotas do desenho (o carimbo não tem a escala) — confira as medidas.`); }
   }
   if (!escala || escala < 1 || escala > 5000) {
     return falhar('não achei a escala da planta no PDF (nem "ESC. 1:50" no carimbo, nem portas para medir). Informe a escala (ex.: 50 para 1:50).', 'ESCALA');

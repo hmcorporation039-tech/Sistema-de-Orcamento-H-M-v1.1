@@ -54,6 +54,18 @@ function planilhaGeral(sufixo) {
     assert.deepStrictEqual(disciplinaDoTexto('16.2 SPRINKLERS'), { fora: 'Civil' });
     assert.deepStrictEqual(disciplinaDoTexto('SISTEMA DE PREVENÇÃO E COMBATE A INCÊNDIO'), { chave: 'incendio' });
     assert.strictEqual(disciplinaDoTexto('Cobertura 1201'), null);
+    // revisão de 06/11/2026: o nome da pasta do CLIENTE não diz disciplina; o arquivo pode dizer várias; Solar/Concreto/
+    // Limpeza só com contexto técnico
+    assert.deepStrictEqual(disciplinaDoArquivo('Nossa Senhora/Paroquia_NSA_Incendio_CFTV_Cabeamento_R04.dxf'),
+      { chave: 'incendio', chaves: ['incendio', 'cftv', 'cabeamento'], origem: 'nome' });
+    assert.strictEqual(disciplinaDoArquivo('Condominio Solar das Palmeiras/Obras/Reforma/Planta Baixa R01.dwg'), null);
+    assert.strictEqual(disciplinaDoArquivo('SLU - Servico de Limpeza Urbana/Obras/Sede/Planta Baixa R01.dwg'), null);
+    assert.strictEqual(disciplinaDoArquivo('Concreto Forte Construtora/Obras/Galpao/QD-01 unifilar.dwg'), null);
+    assert.deepStrictEqual(disciplinaDoArquivo('Cliente/Obras/Usina/Usina Solar Fotovoltaica 75 kWp.dwg'), { chave: 'solar', origem: 'nome' });
+    assert.deepStrictEqual(disciplinaDoArquivo('Cliente/Obras/Galpao/Estrutura de concreto armado/forma.dwg'), { fora: 'Estrutura' });
+    assert.deepStrictEqual(disciplinaDoArquivo('C:/Servidor/Clientes/Instalacoes Eletricas Ltda/Obras/Loja/CFTV/cameras.dwg'), { chave: 'cftv', origem: 'pasta' });
+    // no texto solto (seção da planilha) a palavra vale como sempre
+    assert.deepStrictEqual(disciplinaDoTexto('12.4 LIMPEZA'), { fora: 'Civil' });
   });
 
   await caso('disciplina do material: palavra própria > obra de fora > infraestrutura da lista > categoria > apoio', () => {
@@ -143,6 +155,75 @@ function planilhaGeral(sufixo) {
       } finally {
         await pool.query('DELETE FROM acervo_treino WHERE caminho LIKE $1', [`%${s}%`]);
         fs.rmSync(raiz, { recursive: true, force: true });
+      }
+    });
+    await caso('treino: erro passageiro é relido (até 3 vezes, com espera); ignorado por regra antiga é reavaliado; a obra é quem ensina', async () => {
+      await require('../src/models/migracoes/2.0-53-aprendizado-por-disciplina')(pool);
+      const { treinar, paraTestes: { pendente, fonteDoCaminho, MAX_TENTATIVAS } } = require('../src/services/treinoAcervo');
+      const { REGRA_VERSAO } = require('../src/utils/disciplinaDoArquivo');
+      const agora = Date.now();
+      const arq = { tamanho: 10, modificado: new Date(agora - 86400000) };
+      const base = { tamanho: 10, modificado_em: arq.modificado };
+      assert.strictEqual(pendente(null, arq), true);
+      assert.strictEqual(pendente({ ...base, situacao: 'lido' }, arq), false);
+      assert.strictEqual(pendente({ ...base, situacao: 'erro', tentativas: 1, lido_em: new Date(agora - 2 * 3600000) }, arq, agora), true, 'erro de 2 h atrás: tenta de novo');
+      assert.strictEqual(pendente({ ...base, situacao: 'erro', tentativas: 1, lido_em: new Date(agora - 60000) }, arq, agora), false, 'espera entre tentativas');
+      assert.strictEqual(pendente({ ...base, situacao: 'erro', tentativas: MAX_TENTATIVAS, lido_em: new Date(0) }, arq, agora), false, 'depois de 3, não insiste');
+      assert.strictEqual(pendente({ ...base, situacao: 'ignorado', regra_disciplina: REGRA_VERSAO - 1 }, arq), true, 'regra mudou: reavalia');
+      assert.strictEqual(pendente({ ...base, situacao: 'ignorado', regra_disciplina: REGRA_VERSAO }, arq), false);
+      assert.strictEqual(fonteDoCaminho('Cli/Obras/Hospital/Eletrica/PLANTA R01.dwg'), 'acervo:Cli/Obras/Hospital');
+      assert.strictEqual(fonteDoCaminho('Cli/Obras/Hospital/Eletrica/PLANTA R02.dwg'), 'acervo:Cli/Obras/Hospital', 'R01 e R02 da obra: um projeto');
+      assert.notStrictEqual(fonteDoCaminho('Outro/Obras/Escola/PLANTA ELETRICA.dwg'), fonteDoCaminho('Cli/Obras/Hospital/PLANTA ELETRICA.dwg'));
+
+      const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'acervo-erro-'));
+      const s = Date.now();
+      fs.mkdirSync(path.join(raiz, 'Cliente Z', 'Obras', 'Obra A'), { recursive: true });
+      fs.writeFileSync(path.join(raiz, 'Cliente Z', 'Obras', 'Obra A', `ele-${s}.dxf`), `ele ${s}`);
+      let vez = 0;
+      const fontes = [];
+      const ler = async () => { vez++; if (vez === 1) throw new Error('tempo-limite (passageiro)'); return { aprendizado: {}, mapa: { simbolos: [] } }; };
+      const aprender = async (r, nome, o) => { fontes.push(o.fonte); return { simbolos: 0, notas: 0, blocos: 0 }; };
+      try {
+        const r1 = await treinar({ raiz, ler, aprender, tipos: ['cad'] });
+        assert.deepStrictEqual([r1.erros, r1.lidos], [1, 0]);
+        const linha = async () => (await pool.query('SELECT situacao, tentativas FROM acervo_treino WHERE caminho LIKE $1', [`%ele-${s}.dxf`])).rows[0];
+        assert.deepStrictEqual(await linha(), { situacao: 'erro', tentativas: 1 });
+        // a próxima rodada antes da espera não relê; depois da espera relê e lê
+        assert.strictEqual((await treinar({ raiz, ler, aprender, tipos: ['cad'] })).pendentes, 0);
+        await pool.query("UPDATE acervo_treino SET lido_em = NOW() - INTERVAL '2 hours' WHERE caminho LIKE $1", [`%ele-${s}.dxf`]);
+        const r3 = await treinar({ raiz, ler, aprender, tipos: ['cad'] });
+        assert.deepStrictEqual([r3.lidos, r3.erros], [1, 0]);
+        assert.deepStrictEqual(await linha(), { situacao: 'lido', tentativas: 0 });
+        assert.deepStrictEqual(fontes, ['acervo:Cliente Z/Obras/Obra A']);
+      } finally {
+        await pool.query('DELETE FROM acervo_treino WHERE caminho LIKE $1', [`%-${s}.dxf`]);
+        fs.rmSync(raiz, { recursive: true, force: true });
+      }
+    });
+
+    await caso('treino: o material de uma planilha que deu ROLLBACK não fica no índice da rodada', async () => {
+      const tm = require('../src/services/treinoMateriais');
+      const ctx = await tm.prepararContexto();
+      const s = Date.now();
+      const desc = `Disjuntor termomagnético tripolar 63 A teste rollback ${s}`;
+      const antes = ctx.catalogo.length;
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const novos = [];
+        await tm.aprenderDoDocumento([{ descricao: desc, unidade: 'un', preco: 99.9 }], { disciplina: 'eletrica', arquivo: `rollback-${s}.pdf`, ctx, client, novos });
+        assert.strictEqual(novos.length, 1, 'cadastrado dentro da transação de quem chamou');
+        assert.strictEqual(ctx.catalogo.length, antes, 'antes do COMMIT, fora do índice da rodada');
+        await client.query('ROLLBACK');
+        // (quem chama só indexa depois do COMMIT — treinoAcervo); sem o COMMIT o material não existe e não está no índice
+        const { rows } = await pool.query('SELECT id FROM materiais WHERE descricao = $1', [desc]);
+        assert.strictEqual(rows.length, 0);
+        assert.ok(!ctx.catalogo.some(m => m.descricao === desc));
+      } finally {
+        await client.query('ROLLBACK').catch(() => {});
+        client.release();
+        await pool.query('DELETE FROM acervo_materiais WHERE descricao = $1', [desc]);
+        await pool.query('DELETE FROM materiais WHERE descricao = $1', [desc]);
       }
     });
   } finally {

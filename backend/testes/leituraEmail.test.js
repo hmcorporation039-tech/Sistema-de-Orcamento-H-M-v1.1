@@ -61,7 +61,10 @@ function bancoFalso({ processados = [], movimentos = [] } = {}) {
         return { rows: r ? [r] : [] };
       }
       if (/^INSERT INTO emails_processados/.test(s)) {
-        if (!b.processados.some(x => x.message_id === p[0])) b.processados.push({ message_id: p[0], assunto: p[1], itens_lidos: p[2], leitor_versao: p[3] });
+        const existente = b.processados.find(x => x.message_id === p[0]);
+        // orçamento (com anexos_lidos): ON CONFLICT soma os itens e junta os anexos já lidos, como o SQL de verdade
+        if (existente && /anexos_lidos/.test(s)) Object.assign(existente, { itens_lidos: (existente.itens_lidos || 0) + p[2], leitor_versao: p[3], anexos_lidos: [...new Set([...(existente.anexos_lidos || []), ...p[4]])], aguardando_ia: p[5] });
+        else if (!existente) b.processados.push({ message_id: p[0], assunto: p[1], itens_lidos: p[2], leitor_versao: p[3], ...(p.length > 4 ? { anexos_lidos: p[4], aguardando_ia: p[5] } : {}) });
         return { rows: [], rowCount: 1 };
       }
       if (/FROM financeiro_movimentos WHERE id_transacao/.test(s)) return { rows: b.movimentos.filter(m => m.id_transacao === p[0]) };
@@ -213,6 +216,61 @@ caso('orçamento por e-mail sem DKIM/DMARC válido: ignorado (registrado como re
   const rej = b.processados.find(p => p.message_id === 'gm:f1');
   assert.ok(rej && /^\[rejeitado\]/.test(rej.assunto), 'rejeitado não volta a ser lido');
   assert.ok(b.processados.some(p => p.message_id === 'gm:f2' && p.itens_lidos === 1));
+}));
+
+// ════════ revisão do uso de IA de 06/11/2026 — orçamento por e-mail lido POR ANEXO ════════
+caso('orçamento com 2 anexos: o que precisava da IA (fora do ar) é relido depois, sem reler o que já entrou', calado(async () => {
+  const b = bancoFalso();
+  const cliente = await b.db.connect();
+  const { VERSAO_LEITOR } = require('../src/services/leitorCotacao');
+  const anexoA = { filename: 'a.pdf', contentType: 'application/pdf', content: Buffer.from('%PDF A'), size: 6 };
+  const anexoB = { filename: 'b.pdf', contentType: 'application/pdf', content: Buffer.from('%PDF B'), size: 6 };
+  const msg = { uid: 7, emailId: 'm7', assunto: 'Orçamento', conteudo: email({ assunto: 'Orçamento', de: 'vendas@loja.com.br', aut: 'mx.google.com; dkim=pass header.i=@loja.com.br; dmarc=pass header.from=loja.com.br', anexos: [anexoA, anexoB] }) };
+  const lidos = [];
+  let iaVoltou = false;
+  const lerDocumento = async (buf, nome) => {
+    lidos.push(nome);
+    if (nome === 'b.pdf' && !iaVoltou) return { itens: [], pendente: true, usouIA: true, iaFalhou: true, avisos: [] };
+    return { itens: [{ descricao: `Item ${nome}`, preco: 1 }], avisos: [] };
+  };
+  const importados = [];
+  const importar = async (c, i, leitura) => { importados.push(leitura.itens[0].descricao); return { criados: 1, atualizados: 0 }; };
+  const novoResumo = () => ({ emailsEncontrados: 0, emailsProcessados: 0, materiaisCriados: 0, materiaisAtualizados: 0, orcamentosImportados: 0, leiturasPorIA: 0, avisos: [] });
+  await processarOrcamentosPorEmail(imapFalso([msg]), cliente, 30, {}, novoResumo(), { lerEmail, lerDocumento, importar });
+  const reg = b.processados.find(p => p.message_id === 'gm:m7');
+  assert.strictEqual(reg.leitor_versao, VERSAO_LEITOR - 1, 'anexo pendente: o e-mail volta a ser lido');
+  assert.strictEqual(reg.anexos_lidos.length, 1);
+  assert.deepStrictEqual(importados, ['Item a.pdf']);
+  iaVoltou = true;
+  await processarOrcamentosPorEmail(imapFalso([msg]), cliente, 30, {}, novoResumo(), { lerEmail, lerDocumento, importar });
+  assert.deepStrictEqual(lidos, ['a.pdf', 'b.pdf', 'b.pdf'], 'o anexo já importado não é lido de novo');
+  assert.deepStrictEqual(importados, ['Item a.pdf', 'Item b.pdf']);
+  assert.deepStrictEqual([reg.leitor_versao, reg.anexos_lidos.length, reg.itens_lidos], [VERSAO_LEITOR, 2, 2]);
+  // terceira rodada: nada a fazer
+  await processarOrcamentosPorEmail(imapFalso([msg]), cliente, 30, {}, novoResumo(), { lerEmail, lerDocumento, importar });
+  assert.strictEqual(lidos.length, 3);
+}));
+
+caso('orçamento que só a IA leria, com a IA desligada: "aguardando IA" — não relê até ela ser ligada', calado(async () => {
+  const b = bancoFalso();
+  const cliente = await b.db.connect();
+  const ia = require('../src/services/ia');
+  const anexo = { filename: 'foto.png', contentType: 'image/png', content: Buffer.from('PNG x'), size: 5 };
+  const msg = { uid: 8, emailId: 'm8', assunto: 'Orçamento', conteudo: email({ assunto: 'Orçamento', de: 'vendas@loja.com.br', aut: 'mx.google.com; dkim=pass header.i=@loja.com.br; dmarc=pass header.from=loja.com.br', anexos: [anexo] }) };
+  let leituras = 0;
+  const lerDocumento = async () => { leituras++; return { itens: [], aguardaIA: true, avisos: [] }; };
+  const resumo = () => ({ emailsEncontrados: 0, emailsProcessados: 0, materiaisCriados: 0, materiaisAtualizados: 0, orcamentosImportados: 0, leiturasPorIA: 0, avisos: [] });
+  const orig = ia.disponivel;
+  try {
+    ia.disponivel = () => false;
+    await processarOrcamentosPorEmail(imapFalso([msg]), cliente, 30, {}, resumo(), { lerEmail, lerDocumento, importar: async () => ({ criados: 0, atualizados: 0 }) });
+    assert.strictEqual(b.processados.find(p => p.message_id === 'gm:m8').aguardando_ia, true);
+    await processarOrcamentosPorEmail(imapFalso([msg]), cliente, 30, {}, resumo(), { lerEmail, lerDocumento, importar: async () => ({ criados: 0, atualizados: 0 }) });
+    assert.strictEqual(leituras, 1, 'IA desligada: não relê (antes era OCR a cada rodada)');
+    ia.disponivel = () => true;
+    await processarOrcamentosPorEmail(imapFalso([msg]), cliente, 30, {}, resumo(), { lerEmail, lerDocumento, importar: async () => ({ criados: 0, atualizados: 0 }) });
+    assert.strictEqual(leituras, 2, 'IA ligada: relê');
+  } finally { ia.disponivel = orig; }
 }));
 
 (async () => {

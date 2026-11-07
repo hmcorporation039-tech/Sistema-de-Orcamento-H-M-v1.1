@@ -379,4 +379,33 @@ caso('instalação pelo desenho com os quadros lidos do diagrama: circuitos orig
   assert.strictEqual(r2.instalacao.quadros[0].ponto, r2.ids[0]);
 });
 
+// revisão de 06/11/2026 (R-11 e R-19): a planta escreve "QD01" e "1", o diagrama "QD-01" e "01"
+caso('R-11 planta "QD01" × diagrama "QD-01" e circuito "1" × "01": o mesmo quadro e o mesmo circuito (sem "1 (estimado)")', () => {
+  const { instalacaoDoDesenho } = require('./doDesenho');
+  const it = (simbolo, forma, x, y, extra = {}) => ({ simbolo, forma, disciplina: 'eletrica', ambiente: 0, nomeAmbiente: 'COZINHA', x, y, id: '', circuito: '', comando: '', ...extra });
+  const lidos = [{ tag: 'QD-01', descricao: null, origem: 'tabela', geral: null, drs: [{ tag: 'DR-02', circuitos: ['02'] }],
+    circuitos: [{ numero: '01', descricao: 'ILUM. COZINHA', tipo: 'iluminacao', potencia_va: 300, In: 10 }, { numero: '02', descricao: 'TOMADAS COZINHA', tipo: 'tug', potencia_va: 1800, In: 20 }] }];
+  const r = instalacaoDoDesenho([it('HM-ELE-QUADRO', 'quadro', 0, 0, { tag: 'QD01' }), it('HM-ILU-LUMINARIA', 'luminaria', 2, 2, { circuito: '1' })], { quadros: lidos });
+  const inst = r.instalacao;
+  assert.deepStrictEqual(inst.quadros.map(q => [q.tag, q.ponto]), [['QD-01', r.ids[0]]], 'o quadro desenhado "QD01" é o "QD-01" do diagrama');
+  assert.deepStrictEqual(inst.circuitos.map(c => `${c.id}${c.estimado ? ' (estimado)' : ''}`), ['1', '2']);
+  assert.strictEqual(inst.pontos.find(p => p.id === r.ids[1]).circuito, '1');
+  assert.deepStrictEqual(inst.quadros[0].drs[0].circuitos, ['2']);
+  assert.deepStrictEqual([r.resumo.porNumero, r.resumo.estimados], [1, 0]);
+});
+
+caso('R-19 número do circuito lido no texto da planta: ponto e circuito marcados "lido, a conferir"', () => {
+  const { instalacaoDoDesenho } = require('./doDesenho');
+  const it = (simbolo, forma, x, y, extra = {}) => ({ simbolo, forma, disciplina: 'eletrica', ambiente: 0, nomeAmbiente: 'SALA', x, y, id: '', circuito: '', comando: '', ...extra });
+  const r = instalacaoDoDesenho([it('HM-ELE-QUADRO', 'quadro', 0, 0), it('HM-ILU-LUMINARIA', 'luminaria', 2, 2, { circuito: '05', circuitoDaPlanta: true }), it('HM-ELE-TOMADA-BAIXA', 'tomada', 3, 0, { circuito: '6' })]);
+  const p = (k) => r.instalacao.pontos.find(x => x.id === r.ids[k]);
+  assert.deepStrictEqual([p(1).circuito, p(1).circuitoLido], ['5', 'a_conferir']);
+  assert.strictEqual(p(2).circuitoLido, undefined, 'circuito do desenho conferido não é marcado');
+  const c5 = r.instalacao.circuitos.find(c => c.id === '5');
+  assert.match(c5.descricao, /lido na planta, a conferir/);
+  assert.strictEqual(c5.lidoNaPlanta, 1);
+  assert.strictEqual(r.resumo.lidosNaPlanta, 1);
+  assert.strictEqual(criarSimulador(r.instalacao).estadoPonto(r.ids[1]).circuitoLido, 'a_conferir');
+});
+
 console.log(`simulador da instalação (fases 2 e 5): ${ok} casos ok`);
