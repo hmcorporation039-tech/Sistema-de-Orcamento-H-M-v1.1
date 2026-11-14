@@ -6,6 +6,9 @@ import { getCotacoesMaterial, getOportunidadesCotacao, renomearFornecedorCotacao
 // Comparativo de fornecedores: modal por material (menor preço, outra unidade, aviso de confira) e o painel de
 // oportunidades (ranking, vazio, abrir o material). A tela só mostra o que o servidor calculou.
 jest.mock('../services/api', () => ({ getCotacoesMaterial: jest.fn(), getOportunidadesCotacao: jest.fn(), renomearFornecedorCotacao: jest.fn() }));
+// corrigir o nome do fornecedor é só de administrador (2.36): o papel vem do login
+let mockPapel = 'admin';
+jest.mock('../hooks/useAuth', () => ({ useAuth: () => ({ usuario: { id: 1, role: mockPapel } }) }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 let raiz;
@@ -75,6 +78,18 @@ test('material: corrigir o nome do fornecedor salva e recarrega', async () => {
   await act(async () => { q('button[aria-label="Salvar nome"]').click(); });
   expect(renomearFornecedorCotacao).toHaveBeenCalledWith('33578308000178', 'DF Atacadista Ltda');
   expect(getCotacoesMaterial).toHaveBeenCalledTimes(2);
+});
+
+test('material: quem não é administrador não vê o botão de corrigir o nome', async () => {
+  mockPapel = 'usuario';
+  try {
+    getCotacoesMaterial.mockResolvedValue(comparacao());
+    await abrirMaterial();
+    expect(document.body.textContent).toContain('DF ATACADISTA');
+    expect(q('button[aria-label="Corrigir o nome de DF ATACADISTA"]')).toBeNull();
+  } finally {
+    mockPapel = 'admin';
+  }
 });
 
 test('material: erro ao carregar avisa em vez de ficar em branco', async () => {

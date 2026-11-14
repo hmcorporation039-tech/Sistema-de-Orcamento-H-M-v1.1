@@ -20,7 +20,7 @@ import BotaoExcluir from '../../components/ui/BotaoExcluir';
 import { rotuloFinalidade } from '../../utils/finalidades';
 import { AvisoNovidades } from '../../components/NovidadesPastas';
 import { invalidarCacheObras } from '../../components/ObraSelect';
-import { formatarData } from '../../utils/format';
+import { formatarData, hojeBrasilia, paraIso } from '../../utils/format';
 import { STATUS_OBRA, SEGMENTO, STATUS_PROPOSTA, BASE_ORCADO, Etiqueta, moeda, pct, corMargem, estilos as E, Campo } from './comum';
 
 // Página da obra (/obras/:id), dentro do hub Obras. Abas em ?secao= (F5 e
@@ -484,8 +484,9 @@ function Execucao({ obra, ligar, desligar }) {
 function Financeiro({ obra, ligar, desligar }) {
   const carregar = useCallback(() => {
     const hoje = new Date();
-    const inicio = new Date(hoje.getFullYear(), hoje.getMonth() - 6, 1).toISOString().slice(0, 10);
-    return getFinanceiroMovimentos({ obraId: 'sem', dataInicio: inicio, dataFim: hoje.toISOString().slice(0, 10) })
+    const inicio = paraIso(new Date(hoje.getFullYear(), hoje.getMonth() - 6, 1));
+    // fim em Brasília: em UTC, depois das 21h o período terminava amanhã
+    return getFinanceiroMovimentos({ obraId: 'sem', dataInicio: inicio, dataFim: hojeBrasilia(hoje) })
       .then(r => (r.data.movimentos || []).map(m => ({
         id: m.id,
         rotulo: `${new Date(m.data_hora).toLocaleDateString('pt-BR')} — ${m.tipo === 'realizado' ? 'saída' : 'entrada'} ${moeda(m.valor)} — ${m.nome || 'sem nome'}`,

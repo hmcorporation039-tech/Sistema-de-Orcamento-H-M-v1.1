@@ -115,9 +115,13 @@ async function renomearFornecedor(db, cnpjBruto, nome) {
   const cnpj = soDigitos(cnpjBruto);
   const limpo = String(nome || '').trim().replace(/\s+/g, ' ');
   if (!limpo || limpo.length > 200) throw Object.assign(new Error('Informe um nome de até 200 caracteres.'), { status: 400 });
-  const r = await db.query('UPDATE cotacao_fornecedores SET nome=$1, atualizado_em=NOW() WHERE cnpj=$2', [limpo, cnpj]);
+  // o nome anterior volta junto, para a auditoria registrar de → para
+  const r = await db.query(
+    `UPDATE cotacao_fornecedores f SET nome=$1, atualizado_em=NOW()
+       FROM (SELECT cnpj, nome FROM cotacao_fornecedores WHERE cnpj=$2) antes
+      WHERE f.cnpj = antes.cnpj RETURNING antes.nome AS anterior`, [limpo, cnpj]);
   if (!r.rowCount) throw Object.assign(new Error('Fornecedor não encontrado.'), { status: 404 });
-  return { cnpj, nome: limpo };
+  return { cnpj, nome: limpo, anterior: r.rows[0].anterior };
 }
 
 // ── Leitura ────────────────────────────────────────────────────────────────

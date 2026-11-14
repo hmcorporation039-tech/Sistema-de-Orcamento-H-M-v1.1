@@ -12,13 +12,14 @@ import { marcarDoProjeto } from './componentesDoProjeto';
 
 const botao = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 6, border: '1px solid #2f2f2f', background: '#1a1a1a', color: '#ddd', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
 // cor da disciplina no 3D (skills/_comum/disciplinas.js) para o marcador do componente inserido
-const COR_DISC = { eletrica: '#f2c14e', iluminacao: '#ffe680', 'iluminacao-externa': '#ffd34d', incendio: '#e5534b', cftv: '#6cb6ff', rede: '#57ab5a', telefonia: '#8ddb8c', antena: '#b083f0', 'controle-acesso': '#f69d50', alarme: '#ff938a', automacao: '#39c5cf', spda: '#adbac7', solar: '#e0823d', veicular: '#4fd1c5', eletrica_hospitalar: '#ffb3b3', climatizacao: '#5ec8f2', pressurizacao: '#7fb2e5' };
+const COR_DISC = { eletrica: '#f2c14e', iluminacao: '#ffe680', 'iluminacao-externa': '#ffd34d', incendio: '#e5534b', cftv: '#6cb6ff', rede: '#57ab5a', telefonia: '#8ddb8c', antena: '#b083f0', 'controle-acesso': '#f69d50', alarme: '#ff938a', automacao: '#39c5cf', spda: '#adbac7', solar: '#e0823d', veicular: '#4fd1c5', eletrica_hospitalar: '#ffb3b3', climatizacao: '#5ec8f2', pressurizacao: '#7fb2e5', media_tensao: '#c792ea' };
 
 // nome da disciplina na paleta (quem abre o editor fora do Mapa do CAD: o cartão do 3D da análise, ../Modelo3d.js)
 const NOME_DISC = {
   eletrica: 'Elétrica', iluminacao: 'Iluminação', 'iluminacao-externa': 'Iluminação externa', incendio: 'Incêndio', cftv: 'CFTV', rede: 'Rede',
   alarme: 'Alarme', telefonia: 'Telefonia', antena: 'Antena', 'controle-acesso': 'Controle de acesso', automacao: 'Automação', spda: 'SPDA',
   solar: 'Solar', veicular: 'Veicular', eletrica_hospitalar: 'Elétrica hospitalar', climatizacao: 'Climatização', pressurizacao: 'Pressurização',
+  media_tensao: 'Média tensão',
 };
 export const nomeDaDisciplina3d = (d) => NOME_DISC[d] || d;
 

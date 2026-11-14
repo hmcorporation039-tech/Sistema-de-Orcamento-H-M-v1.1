@@ -7,8 +7,10 @@
 //   marcarNaoPonto(mapa, naoPonto, aprendidos, esc, disciplinas) → o mapa com o "não é ponto" aprendido (sugestão)
 //   marcarEscalaDePlanta(legenda, simbolos) → a linha da legenda desenhada no tamanho da planta ganha escalaDePlanta
 
-// disciplina do símbolo (3D) ou da análise → o ramo (rede, telefonia e cabeamento são a mesma skill de cabeamento…)
-const MESMO_RAMO = { rede: 'cabeamento', telefonia: 'cabeamento', cabeamento: 'cabeamento', 'controle-acesso': 'controle_acesso', veicular: 'carregador', 'iluminacao-externa': 'iluminacao' };
+// disciplina do símbolo (3D) ou da análise → o ramo (rede e cabeamento são a mesma skill de cabeamento…).
+// Telefonia NÃO: é skill própria (skills/telefonia) — no mesmo ramo, o símbolo aprendido num
+// desenho de telefonia valia sozinho numa análise só de cabeamento, e vice-versa.
+const MESMO_RAMO = { rede: 'cabeamento', cabeamento: 'cabeamento', 'controle-acesso': 'controle_acesso', veicular: 'carregador', 'iluminacao-externa': 'iluminacao' };
 const ramoDe = (d) => MESMO_RAMO[d] || d;
 const daDisciplina = (disciplina, disciplinas) => {
   const marcadas = (disciplinas || []).map(ramoDe);

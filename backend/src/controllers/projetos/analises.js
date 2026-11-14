@@ -20,6 +20,7 @@ const { lerObraId, conferirObra, sqlObraJson } = require('../../utils/obras');
 const { lerFinalidade } = require('../../utils/projetoLaudo');
 const { ehArquivoCad } = require('../../services/analiseCad');
 const { ehConteudoCad, nomeUtf8, linhaParaAnalise } = require('./comum');
+const { podeAlterar } = require('../../middleware/posse');
 
 // Versão 2.1 — finalidade da análise (escolhida ao enviar, editável depois):
 //   'orcamento'  — orçar a partir do projeto recebido (itens + "Gerar orçamento")
@@ -362,8 +363,8 @@ async function gerarRelatorio(req, res, next) {
     footerTemplate: gerarFooterTemplate(),
   });
 
-  // cópia na pasta do projeto (sobrescreve a versão anterior)
-  await seguro(`relatório análise ${id}`, async () => P.gravarArquivo(await pastaDoProjeto(result.rows[0]), 'Relatório de compatibilização.pdf', pdf));
+  // cópia na pasta do projeto (sobrescreve a versão anterior) — só o dono ou admin: ver é de todos, gravar é alterar
+  if (podeAlterar(req.usuario, result.rows[0].usuario_id)) await seguro(`relatório análise ${id}`, async () => P.gravarArquivo(await pastaDoProjeto(result.rows[0]), 'Relatório de compatibilização.pdf', pdf));
 
   const nomeCliente = String(analise.nomeProjeto || analise.cliente || 'projeto').trim().replace(/[^a-zA-Z0-9À-ÿ]+/g, '_');
   res.set({

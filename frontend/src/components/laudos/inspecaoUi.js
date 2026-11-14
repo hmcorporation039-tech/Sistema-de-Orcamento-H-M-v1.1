@@ -97,8 +97,13 @@ export function FotosInspecao({ lista, fotos, urlsFotos, onChange, onEnviarFotos
               {camposExtras && camposExtras(f, (campo, valor) => alterar(i, campo, valor))}
               <div style={{ display: 'flex', gap: 6 }}>
                 <input style={estiloInput} placeholder="Itens/NC relacionados" value={f.ref || ''} onChange={e => alterar(i, 'ref', e.target.value)} />
-                <button title="Remover foto" style={{ ...btnAdicionar, color: '#b04040' }}
-                  onClick={() => { if (idFoto) onRemoverFoto(Number(idFoto)); onChange(lista.filter((_, j) => j !== i)); }}><Trash2 size={12} /></button>
+                <button title="Remover foto" aria-label="Remover foto" style={{ ...btnAdicionar, color: '#b04040' }}
+                  onClick={() => {
+                    // a foto enviada é apagada no servidor na hora (não volta com "desfazer"): pergunta antes
+                    if (idFoto && !window.confirm('Remover esta foto? Ela é apagada do servidor e não pode ser recuperada.')) return;
+                    if (idFoto) onRemoverFoto(Number(idFoto));
+                    onChange(lista.filter((_, j) => j !== i));
+                  }}><Trash2 size={12} /></button>
               </div>
             </div>
           );

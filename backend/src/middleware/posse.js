@@ -24,13 +24,7 @@ function exigirPosse(tabela, { naoEncontrado, semPermissao }) {
         return res.status(404).json({ erro: naoEncontrado });
       }
 
-      const dono = rows[0].usuario_id;
-      const ehAdmin = req.usuario.role === 'admin';
-      // Registro antigo sem dono (anterior a este controle) fica liberado —
-      // bloquear tornaria propostas históricas ineditáveis por qualquer pessoa.
-      const semDono = dono === null || dono === undefined;
-
-      if (ehAdmin || semDono || dono === req.usuario.id) return next();
+      if (podeAlterar(req.usuario, rows[0].usuario_id)) return next();
 
       return res.status(403).json({ erro: semPermissao });
     } catch (err) {
@@ -55,4 +49,12 @@ const posse = {
   obra: (acao = 'alterar') => regra('obras', 'obra', true, 'Obra não encontrada.', acao),
 };
 
-module.exports = { exigirPosse, posse };
+// Quem pode alterar o registro: o dono, o administrador, ou qualquer um quando o registro é antigo e não tem dono
+// (anterior a este controle — bloquear tornaria propostas históricas ineditáveis por qualquer pessoa). Serve também
+// para os GETs que gravam uma cópia na pasta (PDF da proposta, relatório da análise, documentos do laudo): ver é de
+// todos, mas gravar na pasta é alterar — antes quem só abria sobrescrevia a versão do dono.
+function podeAlterar(usuario, dono) {
+  return usuario?.role === 'admin' || dono == null || dono === usuario?.id;
+}
+
+module.exports = { exigirPosse, posse, podeAlterar };

@@ -10,6 +10,7 @@ const { gerarHtmlProposta, gerarFooterTemplate, EMPRESA } = require('../utils/pd
 const { criarTransportador } = require('../services/email/smtp');
 const { comTransacao } = require('../services/transacao');
 const { salvarPdfPropostaNasPastas } = require('../services/pastasRegistros');
+const { podeAlterar } = require('../middleware/posse');
 const { gerarPlanilhaCliente } = require('../services/planilhaOrcamentoCliente');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');
 const { registrarEvento } = require('./propostasController');
@@ -94,8 +95,9 @@ async function gerarPdf(req, res) {
   try {
     const resultado = await montarPdfBuffer(id, lerAnexosPdf(req.query));
     if (!resultado) return res.status(404).json({ erro: 'Proposta não encontrada' });
-    // orçamento vindo de análise/laudo: a cópia na pasta deles vira esta versão
-    await salvarPdfPropostaNasPastas(resultado.proposta, resultado.pdf);
+    // orçamento vindo de análise/laudo: a cópia na pasta deles vira esta versão — só quando quem abre pode alterar a
+    // proposta (dono ou admin); antes qualquer usuário que abrisse o PDF sobrescrevia a cópia da pasta
+    if (podeAlterar(req.usuario, resultado.proposta.usuario_id)) await salvarPdfPropostaNasPastas(resultado.proposta, resultado.pdf);
 
     res.set({
       'Content-Type': 'application/pdf',

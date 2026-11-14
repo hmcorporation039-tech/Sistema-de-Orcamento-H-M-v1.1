@@ -29,6 +29,9 @@ const DISCIPLINA_PELO_PREFIXO = {
   ELE: 'eletrica', ILU: 'iluminacao', HOSP: 'eletrica_hospitalar', CAB: 'rede', TEL: 'telefonia', ANT: 'antena', CFTV: 'cftv',
   ACE: 'controle-acesso', ALM: 'alarme', INC: 'incendio', AUT: 'automacao', SOL: 'solar', VE: 'veicular', SPDA: 'spda',
   CLIM: 'climatizacao',
+  // equipamentos da subestação (skills/_comum/cad/equipamentos3d.js): antes caíam no padrão 'eletrica' e o
+  // transformador, o cubículo e a mufla inseridos no mapa iam para o orçamento de elétrica predial
+  EQ: 'media_tensao',
   PRZ: 'pressurizacao', // painel de comando da pressurização de escadas (14/11/2026) // antes caía em 'eletrica': a evaporadora inserida no mapa ia para o orçamento de elétrica
 };
 const DISCIPLINA_EXTERNA = { 'HM-ILU-POSTE': 'iluminacao-externa', 'HM-ELE-CAIXA-PISO': 'iluminacao-externa' };

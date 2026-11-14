@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { PackageCheck, FolderDown } from 'lucide-react';
 import { getEntregasProjeto, gerarEntregaProjeto } from '../../services/api';
 import { baixarArquivo, mensagemDeErro } from '../../utils/download';
+import { hojeBrasilia } from '../../utils/format';
 
 // Entregas do PROJETO (versão 2.1): o projetista escolhe o que entregar —
 // Definições técnicas, As-built, DXF (DWG não é gerado), QElectroTech e PDF —
@@ -19,7 +20,7 @@ function revisaoAsBuiltSugerida(revisaoAtual) {
   return `R${String(n).padStart(2, '0')} — As built`;
 }
 
-const hoje = () => new Date().toISOString().slice(0, 10);
+const hoje = () => hojeBrasilia(); // data do as-built em Brasília (em UTC, depois das 21h saía a de amanhã)
 
 export default function EntregasProjeto({ laudo, desenhos, temArquitetura, revisaoAtual, salvarAgora, ocupado, setOcupado, onGerado }) {
   const [catalogo, setCatalogo] = useState(catalogoCache);

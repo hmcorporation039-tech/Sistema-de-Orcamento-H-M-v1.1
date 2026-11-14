@@ -16,7 +16,7 @@ const { versaoDoPedido, responderConflitoOuAusente } = require('../utils/versao'
 const { registrarAuditoria } = require('../services/auditoria');
 const { segmentoDoCliente } = require('../services/precosMaoDeObraReferencia');
 const { condicaoPodeAbrirOS } = require('../utils/campo');
-const { ehDataIso } = require('../utils/dataHoje');
+const { ehDataIso, hojeBrasilia } = require('../utils/dataHoje');
 const { pastaDaObra, sincronizarObra, caminhoRegistrado, seguro, rotasDePasta } = require('../services/pastasRegistros');
 
 // regra de quem edita a obra: utils/obras.js (a mesma do cronograma e do campo)
@@ -110,7 +110,7 @@ async function montarDados(body, atual = {}) {
 // Próximo código OB-AAAA-NNN — trava a numeração dentro da transação.
 async function gerarCodigo(client) {
   await client.query("SELECT pg_advisory_xact_lock(hashtext('obras_codigo'))");
-  const ano = new Date().getFullYear();
+  const ano = Number(hojeBrasilia().slice(0, 4)); // ano em Brasília (como o código da OS do campo)
   const { rows } = await client.query('SELECT codigo FROM obras WHERE codigo LIKE $1', [`OB-${ano}-%`]);
   return O.formatarCodigo(ano, O.proximoSequencial(rows.map(r => r.codigo), ano));
 }

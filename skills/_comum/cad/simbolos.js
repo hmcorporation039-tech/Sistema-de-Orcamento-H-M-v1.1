@@ -23,7 +23,7 @@ const triangulo = (b, s = 0.18) => poli(b, [[-s, -s * 0.6], [s, -s * 0.6], [0, s
 const SIMBOLOS = {
   'HM-ELE-TOMADA-BAIXA': { layer: 'ELE-TOMADA', legenda: 'Tomada baixa 2P+T (h = 0,30 m)', desenhar: b => triangulo(b), atributos: [ID, { tag: 'CIRCUITO', x: 0.2, y: -0.08, altura: 0.1 }] },
   'HM-ELE-TOMADA-MEDIA': { layer: 'ELE-TOMADA', legenda: 'Tomada média 2P+T (h = 1,10 m)', desenhar: b => { triangulo(b); lin(b, -0.09, 0.0, 0.09, 0.0); }, atributos: [ID, { tag: 'CIRCUITO', x: 0.2, y: -0.08, altura: 0.1 }] },
-  'HM-ELE-TOMADA-ALTA': { layer: 'ELE-TOMADA', legenda: 'Tomada alta 2P+T (h = 2,00 m)', desenhar: b => { triangulo(b); lin(b, -0.09, 0.0, 0.09, 0.0); lin(b, -0.05, 0.08, 0.05, 0.08); }, atributos: [ID, { tag: 'CIRCUITO', x: 0.2, y: -0.08, altura: 0.1 }] },
+  'HM-ELE-TOMADA-ALTA': { layer: 'ELE-TOMADA', legenda: 'Tomada alta 2P+T (h = 2,20 m)', desenhar: b => { triangulo(b); lin(b, -0.09, 0.0, 0.09, 0.0); lin(b, -0.05, 0.08, 0.05, 0.08); }, atributos: [ID, { tag: 'CIRCUITO', x: 0.2, y: -0.08, altura: 0.1 }] },
   'HM-ELE-TUE': { layer: 'ELE-TOMADA-ESPECIAL', legenda: 'Ponto de uso específico (TUE)', desenhar: b => { triangulo(b); txt(b, -0.06, -0.06, 0.1, 'E'); }, atributos: [ID, { tag: 'POTENCIA', x: 0.2, y: -0.08, altura: 0.1 }] },
   'HM-ELE-PONTO-LUZ': { layer: 'ILU-LUMINARIA', legenda: 'Ponto de luz no teto', desenhar: b => { circ(b, 0, 0, 0.15); lin(b, -0.1, -0.1, 0.1, 0.1); lin(b, -0.1, 0.1, 0.1, -0.1); }, atributos: [ID, CIRCUITO, RETORNO] },
   'HM-ELE-INTERRUPTOR': { layer: 'ILU-INTERRUPTOR', legenda: 'Interruptor simples (h = 1,10 m)', desenhar: b => { circ(b, 0, 0, 0.08); lin(b, 0.06, 0.06, 0.18, 0.18); }, atributos: [ID, RETORNO] },

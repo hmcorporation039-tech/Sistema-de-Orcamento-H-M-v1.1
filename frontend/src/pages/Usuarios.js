@@ -89,6 +89,8 @@ export default function Usuarios() {
       toast.error('Você não pode desativar seu próprio usuário');
       return;
     }
+    // desativar tranca a pessoa fora do sistema na hora: pergunta, como excluir e encerrar sessões
+    if (u.ativo && !window.confirm(`Desativar ${u.nome}? A pessoa não consegue mais entrar no sistema até ser reativada.`)) return;
     try {
       await atualizarUsuario(u.id, { nome: u.nome, email: u.email, ativo: !u.ativo });
       toast.success(u.ativo ? 'Usuário desativado' : 'Usuário reativado');

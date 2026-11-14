@@ -131,3 +131,10 @@ export function paraIso(d) {
 export function hojeIso() {
   return paraIso(new Date());
 }
+
+// 'AAAA-MM-DD' de hoje em Brasília, seja qual for o fuso do computador (o mesmo do backend, utils/dataHoje.js).
+// Para data que vai para documento ou para o banco: `new Date().toISOString().slice(0, 10)` é o dia em UTC e,
+// depois das 21h, já é amanhã (o as-built saía com a data do dia seguinte).
+export function hojeBrasilia(agora = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: FUSO_BRASILIA, year: 'numeric', month: '2-digit', day: '2-digit' }).format(agora);
+}

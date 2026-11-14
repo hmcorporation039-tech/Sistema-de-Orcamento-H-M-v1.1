@@ -16,6 +16,7 @@
 const TAMANHO_MAX_DESCRICAO_CATALOGO = 300;
 const { categoriaLocal } = require('./classificacaoMateriais');
 const { registrarUso } = require('./iaCache');
+const { arredondar } = require(require('path').join(require('../config/caminhos').COMUM, 'base', 'dinheiro'));
 const { garantirServicoCadastrado } = require('../utils/servicosBase');
 
 // Só vira item de catálogo o que tem PREÇO e cara de item reutilizável
@@ -27,7 +28,9 @@ const { garantirServicoCadastrado } = require('../utils/servicosBase');
 const RE_NAO_REUTILIZAVEL = /\t|—\s*bloco\b|medido no desenho|contado no\b|^NC-\d+/i;
 function ehItemDeCatalogo(descricao, valorUnitario) {
   const desc = String(descricao || '').trim();
-  return !!desc && desc.length <= TAMANHO_MAX_DESCRICAO_CATALOGO && Number(valorUnitario) > 0 && !RE_NAO_REUTILIZAVEL.test(desc);
+  // pelo menos R$ 0,01 já em centavos: "> 0" deixava passar 0,004, gravado como 0,00 (a coluna é DECIMAL(10,2))
+  const v = Number(valorUnitario);
+  return !!desc && desc.length <= TAMANHO_MAX_DESCRICAO_CATALOGO && Number.isFinite(v) && arredondar(v) >= 0.01 && !RE_NAO_REUTILIZAVEL.test(desc);
 }
 
 // Acha o material do catálogo com a mesma descrição (ignorando
@@ -43,7 +46,8 @@ async function garantirMaterialCadastrado(client, { descricao, unidade, ncm, val
   if (!ehItemDeCatalogo(desc, valor_unitario)) return null;
 
   const existente = await client.query(
-    `SELECT id FROM materiais WHERE ativo = true AND TRIM(LOWER(descricao)) = TRIM(LOWER($1)) LIMIT 1`,
+    // LOWER(TRIM(...)) — a mesma expressão do índice único ux_materiais_descricao_ativa, para a busca usar o índice
+    `SELECT id FROM materiais WHERE ativo = true AND LOWER(TRIM(descricao)) = LOWER(TRIM($1)) LIMIT 1`,
     [desc]
   );
   if (existente.rows.length > 0) return existente.rows[0].id;

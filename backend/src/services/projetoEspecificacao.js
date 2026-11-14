@@ -157,9 +157,17 @@ function resumir(projeto, esp) {
 
 // qualquer disciplina (14/11/2026): o projeto pela especificação é o laudo com dados.especificacao
 async function carregarRegistro(id, { db = pool } = {}) {
-  const { rows: [l] } = await db.query("SELECT id, usuario_id, disciplina, dados FROM laudos_projetos WHERE id = $1 AND dados ? 'especificacao'", [id]);
+  const { rows: [l] } = await db.query("SELECT id, usuario_id, disciplina, dados, versao FROM laudos_projetos WHERE id = $1 AND dados ? 'especificacao'", [id]);
   if (!l) throw erro('Projeto não encontrado.', 404);
   return l;
+}
+
+// Grava `dados` com o mesmo bloqueio otimista da tela do laudo (controllers/laudos/crud.js): soma a versão e só grava
+// se ninguém mudou o registro desde a leitura. Sem isso, com a tela do laudo e a da especificação abertas, a que
+// salvasse por último apagava a outra sem aviso — agora a tela do laudo recebe 409 e pede para recarregar.
+async function gravarDados(db, l, sql, params) {
+  const r = await db.query(sql, [...params, l.id, l.versao]);
+  if (!r.rowCount) throw erro('O projeto foi alterado em outra tela enquanto era atualizado. Abra de novo e repita.', 409);
 }
 
 async function ver(id, opcoes = {}) {
@@ -180,7 +188,7 @@ async function atualizar(id, { lidos, decisoes, respostas, pedido, contingencia,
   if (Array.isArray(precosAprovados)) esp.precos = { ...(esp.precos || {}), aprendidos: [...(esp.precos?.aprendidos || []).filter(a => !precosAprovados.some(p => p.chave === a.chave)), ...precosAprovados.filter(p => Number(p.preco) > 0)] };
   const { projeto } = solucaoDoRegistro({ ...l.dados, especificacao: esp });
   const { dados } = dadosDoLaudo(projeto, esp, { anteriores: l.dados });
-  await db.query('UPDATE laudos_projetos SET dados = $1, titulo = $2, atualizado_em = NOW() WHERE id = $3', [dados, tituloDo(projeto), id]);
+  await gravarDados(db, l, 'UPDATE laudos_projetos SET dados = $1, titulo = $2, atualizado_em = NOW(), versao = versao + 1 WHERE id = $3 AND versao = $4', [dados, tituloDo(projeto)]);
   return { id, resumo: resumir(projeto, { ...esp, dadosLaudo: dados }) };
 }
 
@@ -212,7 +220,10 @@ async function sugerirPrecos(id, { web = false, signal } = {}, { db = pool } = {
     }
   }
   const esp = { ...especificacao, precos: { ...(especificacao.precos || {}), referencias } };
-  await db.query('UPDATE laudos_projetos SET dados = jsonb_set(dados, \'{especificacao}\', $1::jsonb), atualizado_em = NOW() WHERE id = $2', [JSON.stringify(esp), id]);
+  // só o ramo `especificacao` (jsonb_set sobre o que está no banco agora): não apaga o que a tela do laudo gravou
+  // durante a pesquisa (até 8 buscas na web), então não compara a versão — mas soma, para a tela do laudo aberta
+  // não gravar por cima depois sem saber (ela recebe 409 e recarrega)
+  await db.query('UPDATE laudos_projetos SET dados = jsonb_set(dados, \'{especificacao}\', $1::jsonb), atualizado_em = NOW(), versao = versao + 1 WHERE id = $2', [JSON.stringify(esp), id]);
   return { referencias: Object.keys(referencias).length, sugestoes, resumo: resumir(projeto, { ...esp, dadosLaudo: { ...l.dados, especificacao: esp } }) };
 }
 

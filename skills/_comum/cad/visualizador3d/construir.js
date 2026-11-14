@@ -20,7 +20,12 @@ const FONTES = [ENTRADA, path.join(__dirname, 'quadro.js'), path.join(__dirname,
   path.join(__dirname, '..', '..', 'instalacao', 'painelQuadro.js'), path.join(__dirname, '..', '..', 'instalacao', 'interacao.js'),
   path.join(__dirname, '..', '..', 'instalacao', 'paineis.js'), path.join(__dirname, '..', '..', '..', 'quadros', 'scripts', 'lib', 'tabelas.js'),
   // 09/11/2026: comando por relés do quadro gerado pela especificação (modo do 3D + o avaliador da lógica)
-  path.join(__dirname, 'comandoReles.js'), path.join(__dirname, '..', '..', 'especificacao', 'logica.js')];
+  path.join(__dirname, 'comandoReles.js'), path.join(__dirname, '..', '..', 'especificacao', 'logica.js'),
+  // 2.36: a fiação de comando e o perfil da pressurização entram pelo paineis.js desde a 2.35 e
+  // faltavam aqui (mudar um deles deixava o bundle velho sem aviso). construir() agora confere.
+  path.join(__dirname, '..', '..', 'instalacao', 'fiacaoComando.js'), path.join(__dirname, '..', '..', 'especificacao', 'comando.js'),
+  path.join(__dirname, '..', '..', 'especificacao', 'blocos-comando.json'),
+  path.join(__dirname, '..', '..', '..', 'pressurizacao', 'dados', 'perfil-especificacao.json')];
 
 function assinatura() {
   const versaoThree = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'node_modules', 'three', 'package.json'), 'utf8')).version;
@@ -45,12 +50,26 @@ function bundleAtualizado() {
 function construir() {
   const esbuild = require('esbuild');
   const { versaoThree, hash } = assinatura();
-  esbuild.buildSync({
+  const r = esbuild.buildSync({
     entryPoints: [ENTRADA], bundle: true, minify: true, format: 'iife', target: ['es2020'], outfile: SAIDA,
-    legalComments: 'none', charset: 'utf8',
+    legalComments: 'none', charset: 'utf8', metafile: true,
     banner: { js: `/* Visualizador 3D H&M — fonte:${hash} — inclui three.js r${versaoThree.split('.')[1]} (${versaoThree}) e OrbitControls: MIT License, Copyright © 2010-2026 three.js authors (https://threejs.org/) */` },
   });
+  // todo arquivo local que entrou no bundle tem de estar em FONTES, senão mudá-lo não pede bundle novo
+  const faltando = arquivosForaDasFontes(r.metafile);
+  if (faltando.length) {
+    fs.rmSync(SAIDA, { force: true });
+    throw new Error(`construir.js: arquivo(s) no bundle fora de FONTES (acrescente na lista): ${faltando.join(', ')}`);
+  }
   return { arquivo: SAIDA, bytes: fs.statSync(SAIDA).size, hash };
+}
+
+// entradas do metafile do esbuild (relativas à pasta de onde ele rodou) que não estão em FONTES
+function arquivosForaDasFontes(metafile) {
+  const fontes = new Set(FONTES.map(f => path.resolve(f).toLowerCase()));
+  return Object.keys(metafile.inputs)
+    .filter(f => !/node_modules/.test(f))
+    .filter(f => !fontes.has(path.resolve(f).toLowerCase()));
 }
 
 if (require.main === module) {
@@ -58,4 +77,4 @@ if (require.main === module) {
   console.log(`Bundle do visualizador 3D: ${r.arquivo} (${(r.bytes / 1024).toFixed(0)} KB, fonte ${r.hash})`);
 }
 
-module.exports = { construir, bundleAtualizado, SAIDA };
+module.exports = { construir, bundleAtualizado, arquivosForaDasFontes, FONTES, SAIDA };

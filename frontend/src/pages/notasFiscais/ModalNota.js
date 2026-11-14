@@ -8,10 +8,10 @@ import CampoMoeda from '../../components/CampoMoeda';
 import ClienteSelect, { useClientes } from '../../components/ClienteSelect';
 import BuscaCodigo, { formatarCtribNac } from '../../components/fiscal/BuscaCodigo';
 import { estilos, Campo } from '../../components/ui/estilos';
-import { formatarMoeda, formatarCpfCnpj, dataHoraBr, FUSO_BRASILIA } from '../../utils/format';
+import { formatarMoeda, formatarCpfCnpj, dataHoraBr, FUSO_BRASILIA, hojeBrasilia } from '../../utils/format';
 import { SITUACOES } from './comum';
 
-const hoje = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+const hoje = () => hojeBrasilia();
 
 // ── Modal de edição / visualização da nota ────────────────────────────────────
 

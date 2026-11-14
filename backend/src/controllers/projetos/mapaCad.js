@@ -15,6 +15,7 @@ const mapaCad = require('../../services/mapaCad');
 const edicoesDoMapa = require('../../services/edicoesDoMapa');
 const { componentes } = require('../../services/bibliotecaComponentes');
 const simbolosAprendidos = require('../../services/simbolosAprendidos');
+const { hojeBrasilia } = require('../../utils/dataHoje');
 const notasAprendidas = require('../../services/notasAprendidas');
 const blocosAprendidos = require('../../services/blocosAprendidos');
 const { DISCIPLINAS } = require('../../utils/disciplinasProjeto');
@@ -272,7 +273,7 @@ async function confirmarBloco(req, res) {
 // GET /projetos/biblioteca-blocos → o arquivo (services/simbolosAprendidos.exportar)
 async function exportarBiblioteca(req, res) {
   const json = await simbolosAprendidos.exportar();
-  res.setHeader('Content-Disposition', `attachment; filename="biblioteca-blocos-hm-${new Date().toISOString().slice(0, 10)}.json"`);
+  res.setHeader('Content-Disposition', `attachment; filename="biblioteca-blocos-hm-${hojeBrasilia()}.json"`);
   res.json(json);
 }
 

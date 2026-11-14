@@ -14,6 +14,7 @@
 // - legenda das origens e notas de data-base e do que "não inclui".
 // Nada aqui grava no banco: recebe as linhas prontas e devolve o Buffer do .xlsx.
 const ExcelJS = require('exceljs');
+const { hojeBrasilia } = require('../../utils/dataHoje');
 
 const ORIGENS = {
   pesquisado: 'Pesquisado',
@@ -123,7 +124,8 @@ async function gerarPlanilhaPrecos(dados) {
     { key: 'origem', width: 15 }, { key: 'faixa', width: 26 }, { key: 'fonte', width: 40 }, { key: 'obs', width: 40 },
   ];
   const borda = { top: { style: 'thin', color: { argb: 'FFBFBFBF' } }, bottom: { style: 'thin', color: { argb: 'FFBFBFBF' } }, left: { style: 'thin', color: { argb: 'FFBFBFBF' } }, right: { style: 'thin', color: { argb: 'FFBFBFBF' } } };
-  const dataBase = dados.dataBase || new Date().toISOString().slice(0, 10);
+  // em Brasília: em UTC, depois das 21h a planilha saía com a data-base de amanhã
+  const dataBase = dados.dataBase || hojeBrasilia();
   const pct = Number.isFinite(Number(dados.contingenciaPct)) ? Number(dados.contingenciaPct) : 10;
 
   ws.mergeCells('A1:L1');

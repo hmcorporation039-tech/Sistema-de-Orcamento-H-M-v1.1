@@ -42,6 +42,9 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 const gemini = require('./geminiClient');
+// só as variáveis do Windows que a CLI precisa: sem DB_PASS, JWT_SECRET e chaves de API (com a
+// ANTHROPIC_API_KEY no ambiente o Claude Code usaria a API paga em vez da assinatura Max)
+const { ambienteFiltrado } = require('./assistente/claudeCli');
 
 const MODELO_CLI = process.env.CLAUDE_CLI_MODELO || 'sonnet'; // Sonnet: acertou fotos onde o Haiku perdia linhas
 const CAMINHO_CLI = process.env.CLAUDE_CLI_PATH || path.join(os.homedir(), '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude');
@@ -250,7 +253,7 @@ function executarClaudeMax(prompt, anexo, { web = false, timeoutMs, signal, docu
   const args = argsClaudeMax(texto, !!anexo || documento != null, { web, leituras });
   const limite = timeoutMs || (web ? 300000 : 240000);
   return new Promise((resolve, reject) => {
-    const filho = execFile(CAMINHO_CLI, args, { cwd: pasta, timeout: limite, maxBuffer: 20 * 1024 * 1024, windowsHide: true, ...(signal ? { signal } : {}) },
+    const filho = execFile(CAMINHO_CLI, args, { cwd: pasta, env: ambienteFiltrado(), timeout: limite, maxBuffer: 20 * 1024 * 1024, windowsHide: true, ...(signal ? { signal } : {}) },
       (erro, stdout, stderr) => {
         fs.rmSync(pasta, { recursive: true, force: true });
         if (erro && (erro.name === 'AbortError' || signal?.aborted)) return reject(erroCancelado(signal));

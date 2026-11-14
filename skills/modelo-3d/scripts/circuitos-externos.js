@@ -44,8 +44,9 @@ const DUTOS = [
   { pol: '3"', de: 90, di: 75 }, { pol: '4"', de: 125, di: 103 },
 ];
 const OCUPACAO_MAX = 0.4; // 3 ou mais cabos (NBR 5410, 6.2.11.1.6)
-// condutor de proteção pela tabela 58
-const secaoPE = (s) => (s <= 16 ? s : s <= 35 ? 16 : s / 2);
+// condutor de proteção pela tabela 58 — a função comum: acima de 35 mm² a metade da fase vai para a seção
+// comercial seguinte (a cópia que havia aqui devolvia S/2 cru: 95 → 47,5 mm², que não existe)
+const { secaoPE } = require('../../_comum/eletrico/tabelas');
 
 const r1 = (v) => Math.round(v * 10) / 10;
 const r2 = (v) => Math.round(v * 100) / 100;

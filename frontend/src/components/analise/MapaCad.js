@@ -11,6 +11,7 @@ import toast from 'react-hot-toast';
 import { Box, CheckCheck, Download, RefreshCw, Undo2, Upload } from 'lucide-react';
 import { getMapaCad, salvarMapaCad, editarMapaCad, reprocessarMapaCad, confirmarBlocoMapaCad, exportarBibliotecaBlocos, importarBibliotecaBlocos } from '../../services/api';
 import { mensagemDeErro } from '../../utils/download';
+import { hojeBrasilia } from '../../utils/format';
 import PlantaMapaCad, { SITUACAO, situacaoDaLinha, IconeComponente, COR_INSERIDO } from './PlantaMapaCad';
 import Modelo3dEditor from './Modelo3dEditor';
 
@@ -29,6 +30,7 @@ const NOME_DISC = {
   eletrica: 'Elétrica', iluminacao: 'Iluminação', 'iluminacao-externa': 'Iluminação externa', incendio: 'Incêndio', cftv: 'CFTV', rede: 'Rede',
   alarme: 'Alarme', telefonia: 'Telefonia', antena: 'Antena', 'controle-acesso': 'Controle de acesso', automacao: 'Automação', spda: 'SPDA',
   solar: 'Solar', veicular: 'Veicular', eletrica_hospitalar: 'Elétrica hospitalar', climatizacao: 'Climatização', pressurizacao: 'Pressurização',
+  media_tensao: 'Média tensão',
 };
 const nomeDisciplina = (d) => NOME_DISC[d] || d;
 // componentes inseridos de um arquivo, por tipo: [{ simbolo, nome, quantidade }]
@@ -235,7 +237,7 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
       const url = URL.createObjectURL(new Blob([JSON.stringify(r.data, null, 2)], { type: 'application/json' }));
       const link = document.createElement('a');
       link.href = url;
-      link.download = `biblioteca-blocos-hm-${new Date().toISOString().slice(0, 10)}.json`;
+      link.download = `biblioteca-blocos-hm-${hojeBrasilia()}.json`;
       link.click();
       URL.revokeObjectURL(url);
       toast.success(`${r.data.linhas.length} linha(s) da biblioteca exportada(s)`);

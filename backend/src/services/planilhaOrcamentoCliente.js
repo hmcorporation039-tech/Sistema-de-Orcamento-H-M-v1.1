@@ -497,7 +497,7 @@ async function montarPlanilhaCliente({ p, secoes, itens, pesquisaPor = new Map()
     '• Preços de pesquisa de mercado são de varejo online na data da pesquisa — confirme com o fornecedor antes da compra.',
     '• Quantidades estimadas a partir do projeto: confirme no projeto executivo / medição em campo.',
     '• Não inclui obras civis, forros, pinturas e itens não listados, salvo indicação.',
-    `Planilha emitida em ${new Date().toLocaleDateString('pt-BR')} — ${EMPRESA.nomeFantasia}.`,
+    `Planilha emitida em ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })} —${EMPRESA.nomeFantasia}.`,
   ];
   obsO.forEach((t, i) => {
     const l = linhaTotalO + 2 + i;

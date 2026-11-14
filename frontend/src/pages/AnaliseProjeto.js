@@ -582,7 +582,14 @@ export default function Compatibilizacao() {
                           <input value={it.modelo || ''} onChange={(e) => atualizarPontoDisciplina(disc, idx, 'modelo', e.target.value)} style={inputPonto} />
                           <input type="number" min="0" value={it.quantidade ?? 0} onChange={(e) => atualizarPontoDisciplina(disc, idx, 'quantidade', e.target.value === '' ? 0 : Number(e.target.value))} style={{ ...inputPonto, textAlign: 'right' }} />
                           <input value={it.observacao || ''} onChange={(e) => atualizarPontoDisciplina(disc, idx, 'observacao', e.target.value)} style={inputPonto} />
-                          <button type="button" onClick={() => removerPontoDisciplina(disc, idx)} title="Remover ponto" style={{ background: 'none', border: 'none', color: '#8a4040', cursor: 'pointer', padding: 0 }}>
+                          <button type="button" title="Remover ponto" aria-label="Remover ponto"
+                            onClick={() => {
+                              // o salvamento automático grava em ~1,5 s: sem pergunta, um clique errado some com o ponto
+                              const nome = (it.descricao || '').trim();
+                              if (!window.confirm(`Remover o ponto${nome ? ` "${nome}"` : ''}${it.quantidade ? ` (${it.quantidade} un.)` : ''} da análise?`)) return;
+                              removerPontoDisciplina(disc, idx);
+                            }}
+                            style={{ background: 'none', border: 'none', color: '#8a4040', cursor: 'pointer', padding: 0 }}>
                             <Trash2 size={14} />
                           </button>
                         </div>

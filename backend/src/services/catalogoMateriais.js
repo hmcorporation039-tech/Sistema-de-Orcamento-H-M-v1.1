@@ -77,10 +77,15 @@ async function categoriaDoItem(client, item, indice) {
   return c ? { categoria: c.categoria, origem: c.origem || null } : { categoria: 'Não classificado', origem: null };
 }
 
+// Preço que o catálogo aceita: pelo menos R$ 0,01 DEPOIS de arredondar aos centavos (a coluna é DECIMAL(10,2)).
+// Conferir só "> 0" deixava passar 0,004, que o banco grava como 0,00 — e o catálogo nunca tem item a R$ 0,00.
+const precoDeCatalogo = (v) => { const n = Number(v); return Number.isFinite(n) && arredondar(n) >= 0.01; };
+
 async function inserirMaterial(client, indice, item, origem, margem) {
-  const { categoria, origem: categoriaOrigem } = await categoriaDoItem(client, item, indice);
   const preco = Number(item.preco);
   const precoVenda = arredondar(preco * (1 + margem / 100));
+  if (!precoDeCatalogo(preco) || !precoDeCatalogo(precoVenda)) return null; // não cadastra a R$ 0,00
+  const { categoria, origem: categoriaOrigem } = await categoriaDoItem(client, item, indice);
   // preco_origem = a origem da leitura: "…_ia" (cotação lida por IA) sai "a cotar" no orçamento até alguém conferir
   const r = await client.query(
     `INSERT INTO materiais (codigo, descricao, categoria, unidade, preco, preco_compra, marca, ncm, origem, preco_origem, categoria_origem)
@@ -106,7 +111,7 @@ async function inserirMaterial(client, indice, item, origem, margem) {
 async function registrarItemCotacao(client, indice, item, origem, margem) {
   if (!normalizar(item.descricao)) return null;
   const preco = Number(item.preco);
-  if (!Number.isFinite(preco) || preco <= 0) return null; // preço não identificado com confiança — não grava lixo
+  if (!precoDeCatalogo(preco)) return null; // preço não identificado com confiança (ou abaixo de R$ 0,01) — não grava lixo
   const achado = await encontrarExistente(client, indice, item.descricao);
   if (!achado) {
     const novo = await inserirMaterial(client, indice, item, origem, margem);
@@ -152,7 +157,7 @@ async function registrarHistoricoPreco(client, mat, dados) {
 async function registrarItemNotaFiscal(client, indice, item, origem, margem) {
   if (!normalizar(item.descricao)) return null;
   const preco = Number(item.preco);
-  if (!Number.isFinite(preco) || preco <= 0) return null;
+  if (!precoDeCatalogo(preco)) return null;
   const achado = await encontrarExistente(client, indice, item.descricao);
   if (!achado) {
     await inserirMaterial(client, indice, item, origem, margem);

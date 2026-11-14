@@ -11,6 +11,8 @@ const { tipoAmbiente } = require('../../utils/ponteAnaliseSkill');
 const { pastaDoLaudo, seguro } = require('../../services/pastasRegistros');
 const { lerArquiteturaNoWorker, mensagemDaLeitura, resumoDaArquitetura, dxfParaGuardar, dxfConvertido, faltouEscala, gerarPlantaNoWorker } = require('../../services/tarefasCad');
 const { carregarLaudo, conferirUso, processarComMotor, erro400, nomeSeguroArquivo } = require('./comum');
+const { hojeBrasilia } = require('../../utils/dataHoje');
+const { podeAlterar } = require('../../middleware/posse');
 
 // ── Arquitetura (DWG/DXF) e planta gerada pela skill ─────────────────────
 // A arquitetura recebida do cliente é a base da planta de projeto: ambientes
@@ -113,7 +115,7 @@ async function montarPlanta(laudo, { asBuilt = null } = {}) {
       carimbo: {
         cliente: d.cliente?.nome, obra: d.obra?.nome || laudo.titulo,
         titulo: `${asBuilt ? 'AS BUILT — ' : ''}Projeto — ${motor.nome || laudo.disciplina} — planta baixa`,
-        data: asBuilt ? entrega().dataBr(asBuilt.data) : new Date().toLocaleDateString('pt-BR'),
+        data: asBuilt ? entrega().dataBr(asBuilt.data) : entrega().dataBr(hojeBrasilia()),
         revisao: asBuilt ? (asBuilt.revisao || d.meta?.revisao) : d.meta?.revisao,
         responsavel: d.responsavel?.nome, crea: d.responsavel?.crea,
         ...(asBuilt ? { fase: 'AS BUILT (conforme executado)', descricaoRevisao: entrega().textoAsBuilt(asBuilt) } : {}),
@@ -147,8 +149,7 @@ function montarUnifilar(laudo, { asBuilt = null } = {}) {
 // documento, planta e unifilar gravavam na pasta para qualquer um que abrisse
 // (revisão de 11/2026) — sobrescrevendo a versão do dono com o cálculo do momento.
 function podeGravarNaPasta(req, laudo) {
-  const dono = laudo?.usuario_id;
-  return req.usuario?.role === 'admin' || dono == null || dono === req.usuario?.id;
+  return podeAlterar(req.usuario, laudo?.usuario_id);
 }
 
 async function gerarPlantaDxf(req, res) {

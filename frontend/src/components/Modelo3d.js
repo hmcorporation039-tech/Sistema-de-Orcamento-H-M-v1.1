@@ -48,7 +48,8 @@ export async function enviarArquitetura(enviar, arquivo, { extra = () => '' } = 
 const gerarModelo3dDeNovo = (origem, id) => api.post(`/modelo-3d/${origem}/${id}/gerar-de-novo`, null, { timeout: 180000 });
 
 // antes: chamado antes de gerar (ex.: salvar o formulário pendente)
-export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null, estilo = {} }) {
+// podeRefazer: false esconde "Gerar de novo" (proposta somente leitura — ver e baixar continuam)
+export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null, estilo = {}, podeRefazer = true }) {
   const [ocupado, setOcupado] = useState('');
   // análise: o 3D com a barra de edição (inserir/retirar componentes da biblioteca), dentro da tela — a aba nova não
   // grava nada (página em sandbox, sem login); aqui a tela grava pelo sistema (./analise/Modelo3dEditor.js)
@@ -69,6 +70,8 @@ export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null,
 
   // deNovo: descarta o modelo guardado (3D velho depois de conferir símbolos no Mapa do CAD etc.)
   async function ver(deNovo = false) {
+    // descarta o modelo guardado (e as edições vistas nele) e gera outro, o que leva tempo: pergunta antes
+    if (deNovo && !window.confirm('Gerar o modelo 3D de novo? O 3D guardado é descartado e gerado outra vez a partir do desenho atual (pode levar alguns minutos).')) return;
     // a aba é aberta já no clique: aberta depois de esperar o servidor, o navegador bloquearia
     const aba = window.open('', '_blank');
     if (aba) aba.document.title = 'Gerando o modelo 3D…';
@@ -126,10 +129,12 @@ export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null,
         title="Baixa o modelo 3D como uma página (.html) que abre em qualquer navegador, sem internet — para enviar ao cliente">
         <FileDown size={13} style={{ marginRight: 5 }} /> {ocupado === 'baixar' ? 'Gerando…' : 'Baixar 3D (.html)'}
       </button>
-      <button type="button" style={{ ...btn3d, ...estilo }} disabled={desabilitado || !!ocupado} onClick={() => ver(true)} data-testid="refazer-3d"
-        title="Descarta o 3D guardado e gera outra vez (ex.: depois de conferir símbolos no Mapa do CAD). Só o dono do registro ou um administrador.">
-        <RefreshCw size={13} style={{ marginRight: 5 }} /> {ocupado === 'refazer' ? 'Gerando de novo…' : 'Gerar de novo'}
-      </button>
+      {podeRefazer && (
+        <button type="button" style={{ ...btn3d, ...estilo }} disabled={desabilitado || !!ocupado} onClick={() => ver(true)} data-testid="refazer-3d"
+          title="Descarta o 3D guardado e gera outra vez (ex.: depois de conferir símbolos no Mapa do CAD). Só o dono do registro ou um administrador.">
+          <RefreshCw size={13} style={{ marginRight: 5 }} /> {ocupado === 'refazer' ? 'Gerando de novo…' : 'Gerar de novo'}
+        </button>
+      )}
       {componentes && (
         <Modelo3dEditor analiseId={id} componentes={componentes.lista} disciplinasDoProjeto={componentes.disciplinasDoProjeto} nomeDisciplina={nomeDaDisciplina3d}
           onEditado={() => {}} onFechar={() => setComponentes(null)} />
@@ -228,7 +233,7 @@ export function OpcaoModelo3dProposta({ propostaId, somenteLeitura = false }) {
       </label>
       <span style={{ fontSize: 12, color: 'var(--texto-3)' }}>arquitetura: {situacao.arquivo}</span>
       <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
-        <BotoesModelo3d origem="proposta" id={propostaId} />
+        <BotoesModelo3d origem="proposta" id={propostaId} podeRefazer={!somenteLeitura} />
       </div>
     </div>
   );

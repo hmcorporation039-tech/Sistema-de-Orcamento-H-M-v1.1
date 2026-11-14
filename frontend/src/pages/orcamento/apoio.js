@@ -1,4 +1,5 @@
 import { getTodosClientes, getTodosMateriais, getServicos } from '../../services/api';
+import { hojeBrasilia } from '../../utils/format';
 
 // Funções de apoio do editor de orçamento (pages/Orcamento.js): rascunho no navegador,
 // formulário vazio, seções padrão, origem da proposta e filtros do catálogo.
@@ -43,8 +44,8 @@ export const gerarId = () => `tmp_${Date.now()}_${contador++}`;
 // `padroes` = BDI e impostos padrão do administrador (Integrações); sem valor definido o campo
 // nasce 0 — não há número de fábrica (as alíquotas da reforma tributária ainda não existem)
 export const formVazio = (padroes) => ({
-  // data local (toISOString é UTC: depois das 21 h saía o dia seguinte)
-  data: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10),
+  // data em Brasília (toISOString é UTC: depois das 21 h saía o dia seguinte)
+  data: hojeBrasilia(),
   validade: 5,
   tipo: '',
   porte: '',

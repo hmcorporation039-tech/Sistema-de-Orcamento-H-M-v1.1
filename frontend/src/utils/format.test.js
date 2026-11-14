@@ -1,4 +1,11 @@
-import { dataBr, paraIso, hojeIso, validarCpfCnpj, formatarMoeda, dataHoraBr, FUSO_BRASILIA } from './format';
+import { dataBr, paraIso, hojeIso, hojeBrasilia, validarCpfCnpj, formatarMoeda, dataHoraBr, FUSO_BRASILIA } from './format';
+
+// 2.36: "hoje" para documento (as-built, proposta, nome de arquivo) é o dia em Brasília — em UTC, depois das 21h já era amanhã
+test('hojeBrasilia: 22h30 de 14/11 em Brasília (01h30 UTC de 15/11) ainda é 14/11', () => {
+  expect(hojeBrasilia(new Date('2026-11-15T01:30:00Z'))).toBe('2026-11-14');
+  expect(hojeBrasilia(new Date('2026-11-15T03:00:00Z'))).toBe('2026-11-15');
+  expect(hojeBrasilia()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+});
 
 // Datas num lugar só (antes cada componente tinha a sua cópia, e a de VencimentosLaudos quebrava com nulo)
 test('dataBr: ISO vira DD/MM/AAAA sem mudar de dia pelo fuso; vazio ou nulo vira texto vazio', () => {

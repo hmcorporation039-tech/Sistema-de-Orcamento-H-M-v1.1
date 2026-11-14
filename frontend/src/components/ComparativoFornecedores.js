@@ -5,17 +5,19 @@ import { getCotacoesMaterial, getOportunidadesCotacao, renomearFornecedorCotacao
 import { formatarMoeda, dataBr } from '../utils/format';
 import Modal from './ui/Modal';
 import { estilos } from './ui/estilos';
+import { useAuth } from '../hooks/useAuth';
 
 // Comparativo de fornecedores (services/cotacoesFornecedor.js): quem cotou mais barato cada material nos
 // últimos 90 dias e onde o custo do catálogo está acima do melhor preço. Só aponta: o catálogo não muda
 // por cotação, quem decide é o engenheiro. O nome do fornecedor é um palpite tirado do documento e pode
-// ser corrigido aqui.
+// ser corrigido aqui — só por administrador (o nome vale para todos; o servidor confere e registra na auditoria).
 const pct = (v) => `${String(v).replace('.', ',')} %`;
 const cnpjBr = (c) => String(c).replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
 
 function NomeFornecedor({ f, onRenomeado }) {
   const [editando, setEditando] = useState(false);
   const [nome, setNome] = useState(f.nome);
+  const podeRenomear = useAuth()?.usuario?.role === 'admin';
   const salvar = async () => {
     try { await renomearFornecedorCotacao(f.cnpj, nome); setEditando(false); toast.success('Nome do fornecedor atualizado.'); onRenomeado(); }
     catch (e) { toast.error(e.response?.data?.erro || 'Não foi possível renomear.'); }
@@ -24,7 +26,7 @@ function NomeFornecedor({ f, onRenomeado }) {
     return (
       <span>
         {f.nome}
-        <button type="button" aria-label={`Corrigir o nome de ${f.nome}`} title="Corrigir o nome" style={{ ...estilos.btnIcone, width: 22, height: 22, marginLeft: 6 }} onClick={() => setEditando(true)}><Pencil size={11} /></button>
+        {podeRenomear && <button type="button" aria-label={`Corrigir o nome de ${f.nome}`} title="Corrigir o nome" style={{ ...estilos.btnIcone, width: 22, height: 22, marginLeft: 6 }} onClick={() => setEditando(true)}><Pencil size={11} /></button>}
         <div style={{ fontSize: 11, color: 'var(--texto-3)' }}>CNPJ {cnpjBr(f.cnpj)}</div>
       </span>
     );

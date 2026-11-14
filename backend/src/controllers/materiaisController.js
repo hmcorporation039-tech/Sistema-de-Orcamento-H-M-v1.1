@@ -7,6 +7,7 @@ const rotinas = require('../services/rotinas');
 const { registrarAuditoria } = require('../services/auditoria');
 const { registrarHistoricoPreco } = require('../services/catalogoMateriais');
 const precosVendidosServico = require('../services/precosVendidos');
+const { arredondar } = require('../utils/calculoProposta');
 
 // Compara uma descrição livre (ex.: vinda de um projeto, de uma cotação, ou
 // perguntada na conversa via MCP) com o catálogo — mesma lógica de
@@ -66,11 +67,11 @@ function dadosDoMaterial(body, atual = null) {
     const n = typeof d[c] === 'number' ? d[c] : Number(String(d[c]).replace(',', '.'));
     if (!Number.isFinite(n)) return { erro: `Preço inválido: "${d[c]}".` };
     if (n < 0) return { erro: 'Preço não pode ser negativo' };
-    d[c] = n;
+    d[c] = arredondar(n); // em centavos já aqui: a coluna é DECIMAL(10,2) e 0,004 virava 0,00 depois de conferido
   }
   for (const [c, max] of Object.entries(LIMITE_MATERIAL)) if (d[c] && String(d[c]).length > max) return { erro: `O campo ${c} passa de ${max} caracteres.` };
   // catálogo não guarda item a R$ 0,00 (regra do usuário; migracoes/2.0-52): o item sem preço fica só na proposta
-  if (!(d.preco > 0)) return { erro: 'Informe o preço de venda: o catálogo não guarda item a R$ 0,00.' };
+  if (!(d.preco >= 0.01)) return { erro: 'Informe o preço de venda: o catálogo não guarda item a R$ 0,00.' };
   return { d };
 }
 
@@ -86,7 +87,7 @@ async function criar(req, res) {
       // preço e categoria digitados pelo usuário: conferidos (services/catalogoMateriais.precoConferido) e base do kNN
       `INSERT INTO materiais (codigo, descricao, categoria, unidade, preco, preco_compra, marca, ncm, origem, preco_manual, preco_origem, categoria_origem)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'manual',true,'manual','usuario') RETURNING *`,
-      [d.codigo, d.descricao, d.categoria, d.unidade, d.preco || 0, d.preco_compra || null, d.marca, d.ncm]
+      [d.codigo, d.descricao, d.categoria, d.unidade, d.preco, d.preco_compra || null, d.marca, d.ncm]
     );
     await registrarAuditoria(pool, { entidade: 'material', entidadeId: result.rows[0].id, acao: 'criado', detalhes: { descricao: d.descricao }, usuarioId: req.usuario.id });
     res.status(201).json(result.rows[0]);
@@ -107,7 +108,7 @@ async function atualizar(req, res) {
       `UPDATE materiais SET codigo=$1, descricao=$2, categoria=$3,
        unidade=$4, preco=$5, preco_compra=$6, marca=$7, ncm=$8, origem='manual', preco_manual=true, preco_origem='manual', categoria_origem='usuario', atualizado_em=NOW()
        WHERE id=$9 AND ativo=true RETURNING *`,
-      [d.codigo, d.descricao, d.categoria, d.unidade, d.preco || 0, d.preco_compra || null, d.marca, d.ncm, id]
+      [d.codigo, d.descricao, d.categoria, d.unidade, d.preco, d.preco_compra || null, d.marca, d.ncm, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ erro: 'Material não encontrado' });
     // histórico de preço: edição manual também fica registrada
@@ -145,8 +146,10 @@ async function importar(req, res, next) {
     let importados = 0;
     for (const m of materiais) {
       if (!m.descricao || !m.categoria || !m.unidade) continue;
-      const preco = Number(String(m.preco ?? m.pr ?? 0).replace(',', '.'));
-      if (!(preco > 0)) { semPreco++; continue; } // R$ 0,00 não entra no catálogo (migracoes/2.0-52)
+      const lido = Number(String(m.preco ?? m.pr ?? 0).replace(',', '.'));
+      const preco = Number.isFinite(lido) ? arredondar(lido) : 0;
+      // R$ 0,00 não entra no catálogo (migracoes/2.0-52) — conferido já em centavos (0,004 virava 0,00 no banco)
+      if (!(preco >= 0.01)) { semPreco++; continue; }
       // descrição que já existe no catálogo é ignorada (índice único do banco)
       const r = await client.query(
         // categoria da planilha importada é do usuário; o preço segue a origem informada (lido por IA continua a conferir)
