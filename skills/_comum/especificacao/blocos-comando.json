@@ -1936,5 +1936,32 @@
     "KC{i} comanda o {par.tag} quando ele é o líder (pela KL2) ou no 2º estágio (KS2); a bomba dedicada {tag} em AUT parte com KC{i}; o {par.tag} só é habilitado com KC{i} E o fluxostato FS{i} fechado (água circulando) — intertravamento bomba → fluxo → chiller."
    ]
   }
- ]
+ ],
+ "conjuntos": {
+  "pressurizacao": {
+   "descricao": "Painel de pressurização de escadas (NBR 14880; CBMDF NT 10; IT 13 / CBMGO NT 13): partida pelo alarme da central, MAN-0-AUT por ventilador, reversão para o reserva, modo manual/teste, status para a central. Traz os blocos a usar e as regras padrão (tempo de reversão e referências de inversor/soft-starter). Usado pelo perfil de especificação da skill pressurização (blocos.conjunto) e pelo painel do 3D (instalacao/paineis.js) — 2.40: antes a lista ficava só no perfil da skill e o 3D lia o arquivo da skill.",
+   "usar": [
+    "emergencia_rele",
+    "partida_por_alarme",
+    "motor_man_0_aut",
+    "pressostato_fluxo",
+    "reversao_automatica",
+    "modo_manual",
+    "status_acionamento",
+    "status_para_central",
+    "sinalizacao",
+    "contatos_livres",
+    "rede_serial"
+   ],
+   "regras": {
+    "variaveis_comando": {
+     "tempo_reversao": 15
+    },
+    "referencias": {
+     "inversor": "WEG CFW500 / Danfoss FC 101 / ABB ACH580 ou equivalente (função PID, relé de falha e saída em funcionamento)",
+     "soft": "WEG SSW07 / ABB PSR ou equivalente"
+    }
+   }
+  }
+ }
 }

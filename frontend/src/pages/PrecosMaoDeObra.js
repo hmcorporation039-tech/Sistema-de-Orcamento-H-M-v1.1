@@ -422,10 +422,7 @@ const tituloSecao = { fontSize: 15, color: '#c9a227', fontWeight: 700, marginBot
 
 const btnPrimario = { ...estilos.btnPrimario, display: 'flex', fontSize: 13 };
 
-const btnSecundario = {
-  display: 'flex', alignItems: 'center', padding: '6px 10px', background: 'transparent', border: '1px solid #2f4f6f',
-  borderRadius: 6, color: '#8ab4f8', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
-};
+const btnSecundario = { ...estilos.btnContornoAzul, padding: '6px 10px' };
 
 const btnIcone = { ...estilos.btnIcone, display: 'flex', height: 30, borderRadius: 6, color: '#c9a227', padding: 0, flexShrink: 0 };
 

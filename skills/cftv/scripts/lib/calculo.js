@@ -13,8 +13,9 @@ const HRES = { 1: 1280, 2: 1920, 3: 2304, 4: 2560, 5: 2592, 6: 3072, 8: 3840, 12
 const BITRATE_H265 = { 1: 1, 2: 2, 3: 2.5, 4: 3.5, 5: 4, 6: 5, 8: 6, 12: 8 };
 const POE_PADRAO = { dome: 6, bullet: 8, ptz: 25, fisheye: 8 };
 const CANAIS_NVR = [4, 8, 16, 32, 64, 128, 256];
-const NOBREAK_VA = [600, 1000, 1500, 2200, 3000, 6000, 10000];
-const { dimensionarNobreak } = require('../../../_comum/bateria'); // nobreak pela carga e pela autonomia
+// nobreak pela carga e pela autonomia, com a série de nobreak até 10 kVA e a bateria do nobreak (_comum/bateria.js)
+const { dimensionarNobreak, SERIES_NOBREAK_VA, SERIES_BATERIA, FATOR_ENVELHECIMENTO } = require('../../../_comum/bateria');
+const NOBREAK_VA = SERIES_NOBREAK_VA.ate10kva;
 // Potência disponível no equipamento alimentado (PD) por padrão PoE — IEEE 802.3af
 // 12,95 W; 802.3at (PoE+) 25,5 W; 802.3bt tipo 3 51 W e tipo 4 71,3 W.
 const POE_CLASSES = [{ w: 12.95, padrao: 'IEEE 802.3af' }, { w: 25.5, padrao: 'IEEE 802.3at' }, { w: 51, padrao: 'IEEE 802.3bt tipo 3' }, { w: 71.3, padrao: 'IEEE 802.3bt tipo 4' }];
@@ -35,7 +36,8 @@ function bitrateDe(c, s) {
   return base * fator;
 }
 
-const br = (v, c = 1) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+const { numeroFixoBr } = require('../../../_comum/base/formato');
+const br = (v, c = 1) => numeroFixoBr(v, c); // número pt-BR com casas fixas (o comum)
 
 function calcular(dados) {
   const s = dados.sistema || {};
@@ -93,7 +95,7 @@ function calcular(dados) {
   // 1,25) e bateria pela autonomia (Wh ÷ rendimento do inversor → Ah em 12 V × 1,25). Antes o VA saía só
   // da carga com FP 0,9 e a autonomia não dimensionava nada (aparecia só como Wh no texto).
   const autonomiaMin = Number(s.autonomia_min) || 30;
-  const nobreak = dimensionarNobreak({ cargaW, autonomiaH: autonomiaMin / 60, nobreaksVa: NOBREAK_VA });
+  const nobreak = dimensionarNobreak({ cargaW, autonomiaH: autonomiaMin / 60, nobreaksVa: NOBREAK_VA, bateriasAh: SERIES_BATERIA.vrla12vNobreak, fatorBateria: FATOR_ENVELHECIMENTO.nobreak });
   const nobreakVa = nobreak.va;
   const energiaWh = nobreak.whNec;
   const caboM = Math.ceil(cameras.reduce((a, c) => a + (c.cabo + 3) * c.qtd, 0));

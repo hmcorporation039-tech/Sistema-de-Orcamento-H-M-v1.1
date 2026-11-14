@@ -50,7 +50,8 @@ async function cancelar(req, res) {
     try {
       resp = await nfseNacional.cancelarNfse({ chave: nota.chave_acesso, codigoMotivo: codigo, motivo, ambiente });
     } catch (err) {
-      console.error('Cancelamento direto NFS-e:', err.message);
+      // falha de comunicação com a Receita: entra no resumo diário de erros (2.40)
+      require('../../middleware/erros').registrarErroInesperado(req, err);
       return res.status(502).json({ erro: `Não consegui falar com a Receita: ${err.message}` });
     }
     await registrarAuditoria(pool, { entidade: 'notas_fiscais', entidadeId: nota.id, acao: 'cancelar_receita', usuarioId: req.usuario.id,

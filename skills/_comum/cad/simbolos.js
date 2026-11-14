@@ -69,9 +69,9 @@ const SIMBOLOS = {
   'HM-PRZ-PAINEL': { layer: 'PRZ-PAINEL', legenda: 'Painel de comando da pressurização de escadas', desenhar: b => { poli(b, [[-0.3, -0.2], [0.3, -0.2], [0.3, 0.2], [-0.3, 0.2], [-0.3, -0.2]]); txt(b, -0.18, -0.06, 0.12, 'QPE'); }, atributos: [{ ...ID, x: 0.35 }] },
   'HM-SOL-INVERSOR': { layer: 'FV-INVERSOR', legenda: 'Inversor fotovoltaico', desenhar: b => { poli(b, [[-0.25, -0.2], [0.25, -0.2], [0.25, 0.2], [-0.25, 0.2], [-0.25, -0.2]]); lin(b, -0.25, -0.2, 0.25, 0.2); txt(b, -0.2, 0.05, 0.08, '='); txt(b, 0.08, -0.15, 0.08, '~'); }, atributos: [{ ...ID, x: 0.3 }] },
   'HM-VE-CARREGADOR': { layer: 'VE-CARREGADOR', legenda: 'Carregador veicular (wallbox)', desenhar: b => { poli(b, [[-0.15, -0.2], [0.15, -0.2], [0.15, 0.2], [-0.15, 0.2], [-0.15, -0.2]]); txt(b, -0.1, -0.06, 0.12, 'VE'); }, atributos: [ID] },
-  // climatização (fase 4): declarados na skill (difusor, grelha, VAV, fancoil, evaporadora,
+  // climatização (fase 4): declarados em ./climatizacao.js (difusor, grelha, VAV, fancoil, evaporadora,
   // condensadora, chiller — layers HVAC-*), com o ESPEC do 3D em ./modelo3d.js
-  ...require('../../climatizacao/scripts/lib/cad').SIMBOLOS_PLANTA,
+  ...require('./climatizacao').SIMBOLOS_PLANTA,
 };
 
 // Define no desenho só os símbolos usados (ou todos)

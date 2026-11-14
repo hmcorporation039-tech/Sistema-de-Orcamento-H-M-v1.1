@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { FileDown, Send, FilePlus2, Calculator } from 'lucide-react';
 import { formatarMoeda } from '../../utils/format';
 import BotaoLinkAprovacao from '../../components/BotaoLinkAprovacao';
@@ -15,6 +16,7 @@ export default function BarraTotais({
   setCalculadoraBdiAberta, setForm, setModalEmail, somenteLeitura, subtotalMaoObra, subtotalMateriais,
   sujo, total, valorBdi, valorBdiMaoObra, valorBdiMateriais, valorImpostoServico, valorImpostoVenda,
 }) {
+  const idBarra = useId(); // cada rótulo (%) ligado ao seu campo
   return (
     <div style={{ ...card, position: 'sticky', bottom: 16 }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'center', justifyContent: 'space-between' }}>
@@ -22,19 +24,19 @@ export default function BarraTotais({
           <Totalzinho label="Materiais" valor={subtotalMateriais} />
           <Totalzinho label="Mão de obra" valor={subtotalMaoObra} />
           <div>
-            <label style={rotulo}>Imp. Vendas (%)</label>
-            <input type="number" step="0.1" min="0" value={form.imposto_venda} onChange={e => setForm({ ...form, imposto_venda: e.target.value })} style={{ width: 80 }} />
+            <label style={rotulo} htmlFor={`${idBarra}impVenda`}>Imp. Vendas (%)</label>
+            <input id={`${idBarra}impVenda`} type="number" step="0.1" min="0" value={form.imposto_venda} onChange={e => setForm({ ...form, imposto_venda: e.target.value })} style={{ width: 80 }} />
             <div style={{ fontSize: 12, color: 'var(--texto-3)', marginTop: 4 }}>{formatarMoeda(valorImpostoVenda)}</div>
           </div>
           <div>
-            <label style={rotulo}>Imp. Serviços (%)</label>
-            <input type="number" step="0.1" min="0" value={form.imposto_servico} onChange={e => setForm({ ...form, imposto_servico: e.target.value })} style={{ width: 80 }} />
+            <label style={rotulo} htmlFor={`${idBarra}impServico`}>Imp. Serviços (%)</label>
+            <input id={`${idBarra}impServico`} type="number" step="0.1" min="0" value={form.imposto_servico} onChange={e => setForm({ ...form, imposto_servico: e.target.value })} style={{ width: 80 }} />
             <div style={{ fontSize: 12, color: 'var(--texto-3)', marginTop: 4 }}>{formatarMoeda(valorImpostoServico)}</div>
           </div>
           <div>
-            <label style={rotulo}>{temBdiMateriais(form.bdi_materiais) ? 'BDI mão de obra (%)' : 'BDI (%)'}</label>
+            <label style={rotulo} htmlFor={`${idBarra}bdi`}>{temBdiMateriais(form.bdi_materiais) ? 'BDI mão de obra (%)' : 'BDI (%)'}</label>
             <div style={{ display: 'flex', gap: 4 }}>
-              <input type="number" step="0.01" min="0" value={form.bdi} onChange={e => setForm({ ...form, bdi: e.target.value })} style={{ width: 80 }} />
+              <input id={`${idBarra}bdi`} type="number" step="0.01" min="0" value={form.bdi} onChange={e => setForm({ ...form, bdi: e.target.value })} style={{ width: 80 }} />
               <button type="button" onClick={() => setCalculadoraBdiAberta(true)}
                 style={{ ...btnSecundario, padding: '4px 8px', fontSize: 12, ...(ehPublico && !memoriaBdi ? { borderStyle: 'solid', borderColor: '#c9a227', color: '#c9a227' } : {}) }}
                 title="Calcular o BDI pela fórmula do TCU (Acórdão 2.622/2013) — tipo de obra, regime, parcelas e faixas de referência">
@@ -52,15 +54,15 @@ export default function BarraTotais({
           </div>
           {form.bdi_materiais != null && (
             <div>
-              <label style={rotulo} title="BDI diferenciado (reduzido) para o fornecimento de materiais — Acórdão 2.622/2013-TCU. Vazio = o mesmo BDI para tudo.">BDI materiais (%)</label>
-              <input type="number" step="0.01" min="0" value={form.bdi_materiais} onChange={e => setForm({ ...form, bdi_materiais: e.target.value })} style={{ width: 80 }} />
+              <label style={rotulo} htmlFor={`${idBarra}bdiMat`} title="BDI diferenciado (reduzido) para o fornecimento de materiais — Acórdão 2.622/2013-TCU. Vazio = o mesmo BDI para tudo.">BDI materiais (%)</label>
+              <input id={`${idBarra}bdiMat`} type="number" step="0.01" min="0" value={form.bdi_materiais} onChange={e => setForm({ ...form, bdi_materiais: e.target.value })} style={{ width: 80 }} />
               <div style={{ fontSize: 12, color: 'var(--texto-3)', marginTop: 4 }}>{formatarMoeda(valorBdiMateriais)}</div>
             </div>
           )}
           <div>
-            <label style={rotulo} title="Multiplica o valor unitário de cada item de Materiais por esse percentual. (+) aumenta, (-) desconta. Roda na hora, ao clicar em Aplicar — não recalcula sozinho depois.">Reajuste Materiais (%)</label>
+            <label style={rotulo} htmlFor={`${idBarra}reajMat`} title="Multiplica o valor unitário de cada item de Materiais por esse percentual. (+) aumenta, (-) desconta. Roda na hora, ao clicar em Aplicar — não recalcula sozinho depois.">Reajuste Materiais (%)</label>
             <div style={{ display: 'flex', gap: 4 }}>
-              <input type="number" step="0.1" value={ajusteMateriaisInput} onChange={e => setAjusteMateriaisInput(e.target.value)} placeholder="+10 / -10" style={{ width: 70 }} />
+              <input id={`${idBarra}reajMat`} type="number" step="0.1" value={ajusteMateriaisInput} onChange={e => setAjusteMateriaisInput(e.target.value)} placeholder="+10 / -10" style={{ width: 70 }} />
               <button
                 type="button"
                 onClick={() => { aplicarAjustePercentual('materiais', ajusteMateriaisInput); setAjusteMateriaisInput(''); }}
@@ -74,9 +76,9 @@ export default function BarraTotais({
             )}
           </div>
           <div>
-            <label style={rotulo} title="Multiplica o valor unitário de cada item de Mão de Obra por esse percentual. (+) aumenta, (-) desconta. Roda na hora, ao clicar em Aplicar — não recalcula sozinho depois.">Reajuste Mão de Obra (%)</label>
+            <label style={rotulo} htmlFor={`${idBarra}reajMo`} title="Multiplica o valor unitário de cada item de Mão de Obra por esse percentual. (+) aumenta, (-) desconta. Roda na hora, ao clicar em Aplicar — não recalcula sozinho depois.">Reajuste Mão de Obra (%)</label>
             <div style={{ display: 'flex', gap: 4 }}>
-              <input type="number" step="0.1" value={ajusteMaoDeObraInput} onChange={e => setAjusteMaoDeObraInput(e.target.value)} placeholder="+10 / -10" style={{ width: 70 }} />
+              <input id={`${idBarra}reajMo`} type="number" step="0.1" value={ajusteMaoDeObraInput} onChange={e => setAjusteMaoDeObraInput(e.target.value)} placeholder="+10 / -10" style={{ width: 70 }} />
               <button
                 type="button"
                 onClick={() => { aplicarAjustePercentual('maoDeObra', ajusteMaoDeObraInput); setAjusteMaoDeObraInput(''); }}

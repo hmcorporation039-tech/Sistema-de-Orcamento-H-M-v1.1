@@ -28,7 +28,7 @@ const { instalacaoDoDesenho } = require('../instalacao/doDesenho');
 const { anotarCircuitos } = require('./circuitoDoDesenho');
 const { tagNaPlanta } = require('./quadrosDoDiagrama');
 // peças e duto da climatização (fase 4), declarados na skill
-const CLIM = require('../../climatizacao/scripts/lib/cad');
+const CLIM = require('./climatizacao'); // formas, disciplina e duto da climatização (antes na skill)
 // equipamentos do objetivo do projeto (transformador, seccionadora, poste, tapete…): ./equipamentos3d.js
 const EQUIP = require('./equipamentos3d');
 // cor da infraestrutura por TIPO (eletroduto rígido, corrugado, eletrocalha…), do projeto ou da paleta (09/11/2026)
@@ -489,7 +489,7 @@ const ESPEC = {
   // ponto de parede do PDF sem legenda (tomada ou interruptor: a forma não diz qual)
   'HM-ELE-PONTO': { h: 1.1, forma: 'tomada' },
   // climatização (fase 4): difusor, grelha, VAV, evaporadora, fancoil, condensadora e
-  // chiller — declarados na skill (skills/climatizacao/scripts/lib/cad.js)
+  // chiller — declarados em ./climatizacao.js
   ...CLIM.ESPEC_3D,
   // equipamentos do objetivo do projeto (subestação e afins, 09/11/2026): HM-EQ-* (./equipamentos3d.js)
   ...EQUIP.ESPEC_EQUIPAMENTOS,

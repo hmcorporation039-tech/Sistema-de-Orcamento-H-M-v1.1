@@ -20,7 +20,8 @@ const NORMAS = [
   { codigo: 'ABNT NBR IEC 60529', titulo: 'Graus de proteção do invólucro', aplicacao: 'grau IP da caixa do headend' },
 ];
 
-const arred = (v, c = 0) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+const { numeroFixoBr } = require('../../../_comum/base/formato');
+const arred = (v, c = 0) => numeroFixoBr(v, c); // número pt-BR com casas fixas (o comum)
 
 // Dimensões típicas do multiswitch por número de saídas [CONFERIR]
 const dimMs = (s) => (s <= 4 ? [160, 100, 35] : s <= 8 ? [220, 110, 40] : s <= 16 ? [280, 130, 45] : [440, 160, 50]);

@@ -1,5 +1,6 @@
-import { Search, FileDown, FileSpreadsheet } from 'lucide-react';
+import { FileDown, FileSpreadsheet } from 'lucide-react';
 import Select from '../../components/Select';
+import CampoBusca from '../../components/ui/CampoBusca';
 import { ATALHOS_PERIODO, Campo, rotulo, card, btnPrimario, btnSecundario } from './apoio';
 
 // Filtros e exportação (antigo Relatórios) — valem para a lista e para os totais.
@@ -38,16 +39,12 @@ export default function FiltrosPropostas({
           </Select>
         </Campo>
         <Campo label="Buscar" flexivel>
-          <div style={{ position: 'relative' }}>
-            <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--texto-3)' }} />
-            <input
-              value={busca}
-              onChange={e => setBusca(e.target.value)}
-              placeholder="Número, cliente ou local..."
-              aria-label="Buscar proposta"
-              style={{ paddingLeft: 30 }}
-            />
-          </div>
+          <CampoBusca
+            value={busca}
+            onChange={e => setBusca(e.target.value)}
+            placeholder="Número, cliente ou local..."
+            aria-label="Buscar proposta"
+          />
         </Campo>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button

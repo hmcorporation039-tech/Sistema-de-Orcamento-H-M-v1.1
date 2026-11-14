@@ -1,5 +1,5 @@
 import { estilos } from '../../components/ui/estilos';
-import { useRotuloLigado } from '../../components/ui/rotuloLigado';
+import { Rotulo, useRotuloLigado } from '../../components/ui/rotuloLigado';
 import { hojeBrasilia, somarDias } from '../../utils/format';
 
 // Regras e estilos da lista de propostas (pages/Historico.js e as peças da pasta historico/).
@@ -65,11 +65,11 @@ export const btnSecundario = { ...estilos.btnSecundario, padding: '9px 16px', co
 // largura: coluna de tamanho fixo; flexivel: ocupa o que sobrar da linha
 // Campo com largura fixa ou flexível (a barra de filtros quebra em linhas)
 export function Campo({ label, children, largura, flexivel }) {
-  const { idCampo, filhos } = useRotuloLigado(children);
+  const ligacao = useRotuloLigado(children);
   return (
-    <div style={flexivel ? { flex: '1 1 220px', minWidth: 0 } : { width: largura, flex: '0 1 auto' }}>
-      <label style={rotulo} htmlFor={idCampo || undefined}>{label}</label>
-      {filhos}
+    <div style={flexivel ? { flex: '1 1 220px', minWidth: 0 } : { width: largura, flex: '0 1 auto' }} {...ligacao.propsCaixa}>
+      <Rotulo ligacao={ligacao} style={rotulo}>{label}</Rotulo>
+      {ligacao.filhos}
     </div>
   );
 }

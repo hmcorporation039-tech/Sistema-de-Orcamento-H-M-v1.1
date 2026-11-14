@@ -21,7 +21,7 @@ const NORMAS = [
 ];
 const SECOES_CHECKLIST = ['Documentação', 'Circuito', 'Proteção diferencial', 'Proteção contra surtos', 'Equipamento', 'Sinalização e acesso'];
 const num = fmtNum; // número pt-BR; '—' quando vazio ou inválido
-const sec = (s) => (s == null ? '—' : `${String(s).replace('.', ',')} mm²`);
+const sec = require('../../../_comum/docx-base').fmtSecao; // "2,5 mm²" (o comum)
 const MODO = { modo2: 'Modo 2 (tomada + cabo IC-CPD)', modo3_ac: 'Modo 3 (estação CA / wallbox)', modo4_dc: 'Modo 4 (estação CC rápida)' };
 
 function processar(dados) {

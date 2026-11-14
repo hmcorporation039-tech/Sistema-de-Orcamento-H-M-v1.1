@@ -22,7 +22,7 @@
 // "Enviar por e-mail"), lista os links (estado, acessos, revogar) e as decisões
 // registradas (quem, documento, quando, IP, código do comprovante, hash).
 // Aceite eletrônico simples — não é assinatura ICP-Brasil.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link2, Copy, MessageCircle, RefreshCw, Ban, CheckCircle2, XCircle, ShieldCheck } from 'lucide-react';
 import { gerarLinkAprovacao, getLinksAprovacao, revogarLinkAprovacao, getDecisoesAprovacao } from '../services/api';
@@ -74,6 +74,7 @@ H&M Engenharia e Tecnologia — WhatsApp (61) 99185-8745`;
 }
 
 export default function BotaoLinkAprovacao({ propostaId, numero, status, onAlterado, estiloBotao, aberto: abertoPai, onFechar }) {
+  const idLink = useId(); // rótulos ligados aos campos (validade, endereço, mensagem)
   const controlado = abertoPai !== undefined;
   const [abertoInterno, setAberto] = useState(false);
   const aberto = controlado ? !!abertoPai : abertoInterno;
@@ -183,8 +184,8 @@ export default function BotaoLinkAprovacao({ propostaId, numero, status, onAlter
               {podeGerar ? (
                 <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
                   <div style={{ width: 200 }}>
-                    <label style={rotulo}>Validade do link (dias)</label>
-                    <input type="number" min={1} max={90} value={dias} onChange={e => setDias(e.target.value)} placeholder="validade da proposta" />
+                    <label style={rotulo} htmlFor={`${idLink}dias`}>Validade do link (dias)</label>
+                    <input id={`${idLink}dias`} type="number" min={1} max={90} value={dias} onChange={e => setDias(e.target.value)} placeholder="validade da proposta" />
                   </div>
                   <button type="button" onClick={gerar} disabled={gerando} style={btnPrimario}>
                     <Link2 size={13} /> {gerando ? 'Gerando...' : 'Gerar link'}
@@ -196,9 +197,9 @@ export default function BotaoLinkAprovacao({ propostaId, numero, status, onAlter
 
               {novo && (
                 <div style={{ marginTop: 12, border: '1px solid #c9a22755', borderRadius: 8, padding: 12, background: '#16130a' }}>
-                  <label style={rotulo}>Endereço para o cliente (válido até {dataHoraBr(novo.expira_em)})</label>
+                  <label style={rotulo} htmlFor={`${idLink}url`}>Endereço para o cliente (válido até {dataHoraBr(novo.expira_em)})</label>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <input readOnly value={novo.url} onFocus={e => e.target.select()} style={{ fontFamily: 'Consolas, monospace', fontSize: 12 }} />
+                    <input id={`${idLink}url`} readOnly value={novo.url} onFocus={e => e.target.select()} style={{ fontFamily: 'Consolas, monospace', fontSize: 12 }} />
                     <button type="button" onClick={() => copiar(novo.url, 'Link')} style={btnPrimario}><Copy size={13} /> Copiar</button>
                   </div>
                   <p style={{ fontSize: 11.5, color: '#c9a227', marginTop: 6 }}>
@@ -210,8 +211,8 @@ export default function BotaoLinkAprovacao({ propostaId, numero, status, onAlter
                       internet e o endereço configurado em URL_PUBLICA no .env do backend.
                     </p>
                   )}
-                  <label style={{ ...rotulo, marginTop: 10 }}>Mensagem pronta</label>
-                  <textarea readOnly rows={8} value={novo.mensagem} onFocus={e => e.target.select()} style={{ fontSize: 11.5 }} />
+                  <label style={{ ...rotulo, marginTop: 10 }} htmlFor={`${idLink}msg`}>Mensagem pronta</label>
+                  <textarea id={`${idLink}msg`} readOnly rows={8} value={novo.mensagem} onFocus={e => e.target.select()} style={{ fontSize: 11.5 }} />
                   <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
                     <button type="button" onClick={() => copiar(novo.mensagem, 'Texto')} style={btnSecundario}><Copy size={13} /> Copiar texto</button>
                     <a href={`https://wa.me/?text=${encodeURIComponent(novo.mensagem)}`} target="_blank" rel="noopener noreferrer" style={{ ...btnSecundario, textDecoration: 'none' }}>

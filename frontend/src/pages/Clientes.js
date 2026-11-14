@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import useUltimoPedido from '../hooks/useUltimoPedido';
 import toast from 'react-hot-toast';
-import { Plus, Search, Pencil, Trash2, X, FolderOpen, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, FolderOpen, ChevronDown, ChevronUp } from 'lucide-react';
 import {
   getClientes, criarCliente, atualizarCliente, removerCliente, getPastaCliente, abrirPastaCliente, getOpcoesPastaCliente, ligarPastaCliente,
   consultarCep, buscarMunicipios,
@@ -15,6 +15,7 @@ import Paginacao from '../components/Paginacao';
 import { formatarTelefone, formatarCpfCnpj, validarCpfCnpj, erroDocumento } from '../utils/format';
 import Select from '../components/Select';
 import Modal from '../components/ui/Modal';
+import CampoBusca from '../components/ui/CampoBusca';
 import { invalidarCacheClientes } from '../components/ClienteSelect';
 import { estilos, Campo } from '../components/ui/estilos';
 import Etiqueta from '../components/ui/Etiqueta';
@@ -149,15 +150,8 @@ export default function Clientes() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
         <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>Clientes</h2>
 
-        <div style={{ position: 'relative', width: 260 }}>
-          <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--texto-3)' }} />
-          <input
-            value={busca}
-            onChange={e => setBusca(e.target.value)}
-            placeholder="Buscar por nome, documento ou e-mail..."
-            style={{ paddingLeft: 30 }}
-          />
-        </div>
+        <CampoBusca value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por nome, documento ou e-mail..."
+          aria-label="Buscar cliente" estiloCaixa={{ width: 260 }} />
 
         <button onClick={abrirNovo} style={btnPrimario}>
           <Plus size={14} /> Novo Cliente

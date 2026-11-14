@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
@@ -10,6 +10,7 @@ const caixaErro = {
 };
 
 export default function Login() {
+  const idLogin = useId(); // rótulos E-mail/Senha ligados aos campos
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [carregando, setCarregando] = useState(false);
@@ -158,10 +159,11 @@ export default function Login() {
           )}
 
           <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 12, color: 'var(--texto-3)', marginBottom: 6, fontWeight: 500 }}>
+            <label style={{ display: 'block', fontSize: 12, color: 'var(--texto-3)', marginBottom: 6, fontWeight: 500 }} htmlFor={`${idLogin}email`}>
               E-mail
             </label>
             <input
+              id={`${idLogin}email`}
               type="email"
               autoComplete="off"
               value={email}
@@ -177,10 +179,11 @@ export default function Login() {
           </div>
 
           <div style={{ marginBottom: 24 }}>
-            <label style={{ display: 'block', fontSize: 12, color: 'var(--texto-3)', marginBottom: 6, fontWeight: 500 }}>
+            <label style={{ display: 'block', fontSize: 12, color: 'var(--texto-3)', marginBottom: 6, fontWeight: 500 }} htmlFor={`${idLogin}senha`}>
               Senha
             </label>
             <input
+              id={`${idLogin}senha`}
               type="password"
               autoComplete="off"
               value={senha}

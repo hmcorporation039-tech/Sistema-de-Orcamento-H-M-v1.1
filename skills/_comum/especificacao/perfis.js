@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 
 const RAIZ = path.join(__dirname, '..', '..');
+const BIBLIOTECA = require('./blocos-comando.json');
 const clonar = (o) => JSON.parse(JSON.stringify(o));
 
 function arquivosDePerfil() {
@@ -22,12 +23,27 @@ function arquivosDePerfil() {
   return out;
 }
 
+// Conjunto nomeado de blocos (blocos-comando.json → conjuntos): o perfil diz "blocos": { "conjunto": … } e
+// recebe dali os blocos a usar e as regras padrão do painel (variáveis de comando, referências de
+// equipamento) — as regras do próprio perfil prevalecem. O conjunto mora no _comum porque o painel do 3D
+// (../instalacao/paineis.js) usa o mesmo sem ler a skill (2.40: o da pressurização saiu de
+// skills/pressurizacao/dados/perfil-especificacao.json). Expandido na leitura, o perfil fica como era —
+// a herança e o resto não mudam.
+function expandirConjunto(p) {
+  const nome = p.blocos && p.blocos.conjunto;
+  if (!nome) return p;
+  const cj = (BIBLIOTECA.conjuntos || {})[nome];
+  if (!cj) throw new Error(`Perfil ${p.chave}: conjunto de blocos de comando desconhecido: ${nome}`);
+  const { conjunto, ...blocos } = p.blocos;
+  return { ...p, regras: mesclarObj(cj.regras, p.regras), blocos: { usar: clonar(cj.usar), ...blocos } };
+}
+
 let cache = null;
 function brutos() {
   if (cache) return cache;
   cache = new Map();
   for (const { pasta, arq } of arquivosDePerfil()) {
-    const p = JSON.parse(fs.readFileSync(arq, 'utf8'));
+    const p = expandirConjunto(JSON.parse(fs.readFileSync(arq, 'utf8')));
     cache.set(p.chave, { ...p, pasta });
   }
   return cache;

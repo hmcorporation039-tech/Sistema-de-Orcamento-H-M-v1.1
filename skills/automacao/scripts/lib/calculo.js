@@ -7,7 +7,8 @@ const T = require('./tabelas');
 
 const FOLGA = 1.1;
 const n = (v, padrao) => (v == null || v === '' || Number.isNaN(Number(v)) ? padrao : Number(v));
-const br = (v, c = 1) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+const { numeroFixoBr } = require('../../../_comum/base/formato');
+const br = (v, c = 1) => numeroFixoBr(v, c); // número pt-BR com casas fixas (o comum)
 
 // ── BMS ──────────────────────────────────────────────────────────────────
 function listaDePontos(dados, s, avisos) {

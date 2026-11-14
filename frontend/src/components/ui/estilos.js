@@ -1,4 +1,4 @@
-import { useRotuloLigado } from './rotuloLigado';
+import { Rotulo, useRotuloLigado } from './rotuloLigado';
 
 // Kit de tela do sistema: estilos e peças comuns (revisão de 28/10/2026 —
 // btnPrimario/overlay/Campo estavam copiados em até 19 páginas, com pequenas
@@ -32,6 +32,12 @@ export const estilos = {
     padding: '9px 16px', background: 'transparent', border: '1px solid #2a2a2a',
     borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer',
   },
+  // contorno azul = ação de consulta/ferramenta ("Ver em 3D", "Preencher pelo cadastro", "Pesquisar
+  // referências") — 2.40: estava copiado no Modelo3d, nos laudos e nos preços de mão de obra
+  btnContornoAzul: {
+    display: 'flex', alignItems: 'center', padding: '8px 12px', background: 'transparent', border: '1px solid #2f4f6f',
+    borderRadius: 6, color: '#8ab4f8', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
+  },
   btnIcone: {
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, background: 'var(--superficie-2)',
     border: '1px solid var(--borda-forte)', borderRadius: 6, color: 'var(--texto-2)', cursor: 'pointer',
@@ -45,12 +51,13 @@ export const estilos = {
 
 // Rótulo + campo. O rótulo fica ligado ao campo (htmlFor/id gerado — ui/rotuloLigado.js)
 // quando o primeiro filho é um campo: leitor de tela lê o nome e o clique no rótulo foca.
+// Sem campo (botões, texto), a caixa vira um grupo nomeado pelo rótulo.
 export function Campo({ label, children, style }) {
-  const { idCampo, filhos } = useRotuloLigado(children);
+  const ligacao = useRotuloLigado(children);
   return (
-    <div style={style}>
-      <label style={estilos.rotulo} htmlFor={idCampo || undefined}>{label}</label>
-      {filhos}
+    <div style={style} {...ligacao.propsCaixa}>
+      <Rotulo ligacao={ligacao} style={estilos.rotulo}>{label}</Rotulo>
+      {ligacao.filhos}
     </div>
   );
 }

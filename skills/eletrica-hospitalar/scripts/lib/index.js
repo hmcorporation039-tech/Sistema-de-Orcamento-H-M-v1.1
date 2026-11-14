@@ -30,7 +30,7 @@ const NORMAS = [
 const SECOES_CHECKLIST = ['Documentação', 'Classificação dos locais', 'Sistema IT médico', 'Proteção e circuitos', 'Equipotencialização', 'Tomadas e identificação', 'Fonte de segurança', 'Iluminação de segurança'];
 
 const num = fmtNum; // número pt-BR; '—' quando vazio ou inválido
-const sec = (s) => (s == null ? '—' : `${String(s).replace('.', ',')} mm²`);
+const sec = require('../../../_comum/docx-base').fmtSecao; // "2,5 mm²" (o comum)
 const kva = (va) => `${num(va / 1000)} kVA`;
 const classeCurta = (k) => (C.CLASSES[k] || C.CLASSES['']).curto;
 const sim = (v) => (v ? 'sim' : '—');

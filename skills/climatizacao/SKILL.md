@@ -41,7 +41,7 @@ Tudo o mais é **[CONFERIR]** e sai listado no memorial (`calc.pendencias`): con
 
 ## CAD e 3D
 
-`scripts/lib/cad.js`: tipos de ponto HVAC (difusor, grelha, VAV, fancoil, evaporadora, condensadora, chiller) no formato de `_comum/cad/tiposDePonto.js`, reconhecimento das layers HVAC/AVAC/AR-COND/MEC-DUTOS (`ehLayerDaClimatizacao`, para o ponto de extensão dos leitores de DWG/PDF), símbolos de planta (`SIMBOLOS_PLANTA`), ESPEC do 3D (`ESPEC_3D`, formas que o visualizador já desenha) e o gerador da planta (`planta`). A ligação em `_comum/cad/simbolos.js`, `modelo3d.js` e `plantasDisciplina.js` está pendente (o teste do 3D exige ESPEC para todo símbolo da biblioteca).
+`_comum/cad/climatizacao.js` (reexportado em `scripts/lib/cad.js`; desde a 2.40 no `_comum`, porque o CAD comum o usa): tipos de ponto HVAC (difusor, grelha, VAV, fancoil, evaporadora, condensadora, chiller) no formato de `_comum/cad/tiposDePonto.js`, reconhecimento das layers HVAC/AVAC/AR-COND/MEC-DUTOS (`ehLayerDaClimatizacao`, para o ponto de extensão dos leitores de DWG/PDF), símbolos de planta (`SIMBOLOS_PLANTA`), ESPEC do 3D (`ESPEC_3D`, formas que o visualizador já desenha) e o gerador da planta (`planta`). Ligado em `_comum/cad/simbolos.js`, `modelo3d.js` e `plantasDisciplina.js`.
 
 ## Regras
 

@@ -27,7 +27,7 @@ const NORMAS = [
 const SECOES_CHECKLIST = ['Documentação', 'Quadros', 'Proteção', 'Condutores', 'Tomadas e pontos', 'Aterramento', 'Segurança NR-10'];
 
 const num = B.fmtNum; // número pt-BR; '—' quando vazio ou inválido
-const sec = (s) => (s == null ? '—' : `${String(s).replace('.', ',')} mm²`);
+const sec = require('../../../_comum/docx-base').fmtSecao; // "2,5 mm²" (o comum)
 
 // ── Inspeção (laudo NBR 5410 seção 7 / NR-10) ───────────────────────────────
 

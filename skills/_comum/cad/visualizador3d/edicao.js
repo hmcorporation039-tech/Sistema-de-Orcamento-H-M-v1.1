@@ -142,7 +142,8 @@ ${temOutras ? `<label class="outras" title="Mostra também os componentes das di
     if (!p) { mostrarAviso('Clique em cima do componente a retirar.', true); return true; }
     const { t, it } = p;
     const i = t.itens.indexOf(it);
-    if (t.malha && i >= 0) { t.malha.setMatrixAt(i, zero); t.malha.instanceMatrix.needsUpdate = true; }
+    // (2.40: tipos da mesma peça dividem a malha — a instância do item fica em t.base + i)
+    if (t.malha && i >= 0) { t.malha.setMatrixAt((t.base || 0) + i, zero); t.malha.instanceMatrix.needsUpdate = true; }
     it.fora = true; // a busca do clique e a dica deixam de achar o retirado
     estado.retirados++;
     atualizarConta();

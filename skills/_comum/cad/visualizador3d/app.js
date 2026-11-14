@@ -11,16 +11,17 @@
 //     olhos a 1,60 m, arrastar gira a cabeça, roda/pinça muda a lente (zoom),
 //     duplo clique no piso anda até o ponto; etiquetas dos pontos próximos.
 // Desempenho: paredes numa geometria só (o corte é feito no shader, sem refazer
-// geometria), pisos numa geometria por nível, dispositivos e trechos em
-// InstancedMesh por tipo, e a escala dos símbolos pela distância é calculada na
-// GPU. Desenho SÓ quando algo muda (câmera, animação, teclas, botões, tamanho da
+// geometria), pisos numa geometria por nível, dispositivos em InstancedMesh por
+// peça (os tipos com a mesma forma e tamanho dividem uma — 2.40), a infraestrutura
+// inteira em poucas InstancedMesh (por geometria, não por grupo — 2.40), e a escala
+// dos símbolos pela distância é calculada na GPU. Desenho SÓ quando algo muda (câmera, animação, teclas, botões, tamanho da
 // tela) — como o 3D do quadro (./quadro.js): parado, não gasta CPU nem GPU
 // (celular do cliente, captura do PDF). Revisão de 02/11/2026.
 import {
   WebGLRenderer, Scene, Color, PerspectiveCamera, HemisphereLight, DirectionalLight, AmbientLight,
   BufferGeometry, Float32BufferAttribute, Mesh, MeshStandardMaterial, MeshBasicMaterial, LineBasicMaterial, LineSegments,
   Shape, ShapeGeometry, ExtrudeGeometry, PlaneGeometry, BoxGeometry, CylinderGeometry, SphereGeometry,
-  InstancedMesh, Object3D, Vector3, Vector2, Quaternion, Raycaster, Group, DoubleSide, SRGBColorSpace, MathUtils, PointLight,
+  InstancedMesh, InstancedBufferAttribute, BufferAttribute, Object3D, Vector3, Vector2, Quaternion, Raycaster, Group, DoubleSide, SRGBColorSpace, MathUtils, PointLight,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { iniciarQuadro } from './quadro.js';
@@ -603,7 +604,7 @@ function posicionarInstancias(t, mesh) {
     }
     o3.scale.set(1, 1, 1);
     o3.updateMatrix();
-    mesh.setMatrixAt(i, o3.matrix);
+    mesh.setMatrixAt((t.base || 0) + i, o3.matrix); // a faixa do tipo na malha da peça
   });
   mesh.instanceMatrix.needsUpdate = true;
 }
@@ -612,25 +613,73 @@ function posicionarInstancias(t, mesh) {
 // luminárias tampam as salas e o que está nas paredes
 const matsTeto = [];
 const porAmbiente = new Map(); // índice do ambiente → [[tipo, item], …] (etiquetas de perto)
+// TIPOS DA MESMA PEÇA NUMA MALHA SÓ (2.40): a análise faz um tipo por descrição ("Tomada 2P+T 10 A", "Tomada
+// 20 A", "Luminária LED 40 W"…), e cada tipo era uma InstancedMesh — uma chamada de desenho cada. Agora os tipos
+// com a mesma peça (disciplina, forma, tamanho, no teto ou não — a mesma geometria e o mesmo material) dividem uma
+// InstancedMesh: o tipo guarda o começo da sua faixa (t.base) e a COR DO TIPO vai por instância (instanceColor =
+// cor do tipo × estado do 3D interativo; material branco). A aparência não muda: a cor da peça já multiplicava a
+// cor de vértice e o brilho próprio. Esconder um tipo (legenda) zera a matriz das instâncias dele.
+const brilhoDaForma = (f) => (f === 'luminaria' ? 0.55 : f === 'ponto-luz' ? 0.5 : 0.22);
+const MATRIZ_ZERO = new Float32Array(16);
+const pecas = new Map(); // chave da peça → { tipos, n }
 for (const t of CENA.dispositivos) {
   if (!t.itens.length) continue;
-  const brilho = t.forma === 'luminaria' ? 0.55 : t.forma === 'ponto-luz' ? 0.5 : 0.22;
   t.tamMax = Math.max(...t.tam);
-  const geo = (FORMAS[t.forma] || FORMAS.caixa)(...t.tam);
-  const mat = materialDispositivo(t.cor, t.tamMax, brilho);
-  if (t.montagem === 'teto') { mat.transparent = true; matsTeto.push(mat); }
-  const mesh = new InstancedMesh(geo, mat, t.itens.length);
-  mesh.userData = { tipo: t };
+  const chave = [t.disciplina, t.forma, t.tam.join(','), t.montagem === 'teto' ? 'teto' : ''].join('|');
+  if (!pecas.has(chave)) pecas.set(chave, { tipos: [], n: 0 });
+  const p = pecas.get(chave);
+  t.base = p.n;
+  p.n += t.itens.length;
+  p.tipos.push(t);
+}
+for (const p of pecas.values()) {
+  const t0 = p.tipos[0];
+  const geo = (FORMAS[t0.forma] || FORMAS.caixa)(...t0.tam);
+  const mat = materialDispositivo('#ffffff', t0.tamMax, brilhoDaForma(t0.forma));
+  if (t0.montagem === 'teto') { mat.transparent = true; matsTeto.push(mat); }
+  const mesh = new InstancedMesh(geo, mat, p.n);
+  mesh.userData = { tipos: p.tipos };
   mesh.renderOrder = 1;
-  posicionarInstancias(t, mesh);
+  for (const t of p.tipos) {
+    t.malha = mesh;
+    t.corBase = new Color(t.cor);
+    t.estadoCor = new Float32Array(t.itens.length * 3).fill(1); // cor do estado (3D interativo), sem a do tipo
+    posicionarInstancias(t, mesh);
+    for (let i = 0; i < t.itens.length; i++) mesh.setColorAt(t.base + i, t.corBase);
+  }
+  mesh.instanceColor.needsUpdate = true;
+  mesh.userData.matrizes = mesh.instanceMatrix.array.slice(); // para voltar a mostrar um tipo escondido
   // a escala do shader aumenta a peça além da caixa calculada na CPU: a esfera das instâncias ganha a folga da
-  // maior escala (ESCALA_MAX) — assim o tipo inteiro fora da vista não é desenhado (2.37: antes, nunca recortado)
+  // maior escala (ESCALA_MAX) — assim a peça inteira fora da vista não é desenhada (2.37: antes, nunca recortada)
   mesh.computeBoundingSphere();
-  mesh.boundingSphere.radius += t.tamMax * ESCALA_MAX;
+  mesh.boundingSphere.radius += t0.tamMax * ESCALA_MAX;
   mesh.frustumCulled = true;
-  grupo(`disc:${t.disciplina}`).add(mesh);
+  grupo(`disc:${t0.disciplina}`).add(mesh);
   malhasDispositivos.push(mesh);
-  t.malha = mesh;
+}
+// o tipo aparece? (ligado na legenda e com a disciplina ligada)
+const tipoAparece = (t) => !!t.malha && t.visivel !== false && t.malha.parent.visible;
+// liga/desliga um tipo (legenda): zera ou devolve a matriz das instâncias dele; o retirado na edição continua fora
+function mostrarTipo(t, v) {
+  if (!t.malha) return;
+  t.visivel = !!v;
+  const m = t.malha, a = m.instanceMatrix.array, orig = m.userData.matrizes;
+  t.itens.forEach((it, i) => { const k = (t.base + i) * 16; a.set(v && !it.fora ? orig.subarray(k, k + 16) : MATRIZ_ZERO, k); });
+  m.instanceMatrix.needsUpdate = true;
+  // nenhum tipo da peça ligado: a malha nem é desenhada
+  m.visible = m.userData.tipos.some(x => x.visivel !== false);
+}
+// cor do estado (3D interativo/rede) de uma instância: multiplica a cor do tipo
+const corInst = new Color();
+function pintarItem(t, i, c) {
+  t.pintado = true; // (HM3D.corDoItem: só os tipos com estado, como antes)
+  t.estadoCor.set([c.r, c.g, c.b], i * 3);
+  t.malha.setColorAt(t.base + i, corInst.copy(t.corBase).multiply(c));
+  t.malha.instanceColor.needsUpdate = true;
+}
+const corDoEstado = (t, i) => [0, 1, 2].map(k => Math.round(t.estadoCor[i * 3 + k] * 100) / 100);
+for (const t of CENA.dispositivos) {
+  if (!t.malha) continue;
   for (const it of t.itens) {
     if (!porAmbiente.has(it[5])) porAmbiente.set(it[5], []);
     porAmbiente.get(it[5]).push([t, it]);
@@ -696,8 +745,7 @@ if (sim) {
   for (const x of interativos) interativoDe.set(x.it, x);
   // cor por instância desde o 1º desenho (o shader já sai com USE_INSTANCING_COLOR)
   for (const t of new Set(interativos.map(x => x.t))) {
-    for (let i = 0; i < t.itens.length; i++) t.malha.setColorAt(i, BRANCO);
-    t.malha.instanceColor.needsUpdate = true;
+    for (let i = 0; i < t.itens.length; i++) pintarItem(t, i, BRANCO);
   }
 }
 // cor (multiplica a da peça e o brilho próprio) pelo estado do ponto
@@ -725,9 +773,7 @@ function corDoInterativo(x) {
 }
 function aplicarEstadoSim() {
   if (!sim) return;
-  const malhas = new Set();
-  for (const x of interativos) { x.t.malha.setColorAt(x.i, corDoInterativo(x)); malhas.add(x.t.malha); }
-  for (const m of malhas) m.instanceColor.needsUpdate = true;
+  for (const x of interativos) pintarItem(x.t, x.i, corDoInterativo(x));
   atualizarLuzes();
   atualizarFicha();
   // fase 5: o mapa de iluminância e as cenas do ambiente acompanham o simulador
@@ -815,8 +861,7 @@ const itensDoNo = new Map();  // id de equipamento → [{ t, i }]
     if (sim) ligarAoSimulador(rede, sim);
     for (const t of new Set([...itensDoNo.values()].flat().map(x => x.t))) {
       if (!t.malha) continue;
-      for (let i = 0; i < t.itens.length; i++) t.malha.setColorAt(i, BRANCO);
-      t.malha.instanceColor.needsUpdate = true;
+      for (let i = 0; i < t.itens.length; i++) pintarItem(t, i, BRANCO);
     }
   }
 }
@@ -832,56 +877,83 @@ function aplicarEstadoRede() {
   pedirDesenho(true);
 }
 function pintarRede() {
-  const malhas = new Set();
   for (const [it, ids] of noDoItem) {
     const id = noPrincipal(it, ids);
     for (const { t, i } of itensDoNo.get(id) || []) {
       if (t.itens[i] !== it || !t.malha) continue;
       const c = COR_APARENCIA[rede.aparencia(id)] || COR_APARENCIA.normal;
-      t.malha.setColorAt(i, corSim.setRGB(c[0], c[1], c[2]));
-      malhas.add(t.malha);
+      pintarItem(t, i, corSim.setRGB(c[0], c[1], c[2]));
     }
   }
-  for (const m of malhas) m.instanceColor.needsUpdate = true;
 }
 if (rede) { rede.assinar(aplicarEstadoRede); pintarRede(); }
 
 // ── Infraestrutura (eletrocalhas, eletrodutos, leitos, perfilados, fiação) ───
-// Um InstancedMesh por grupo (caixa unitária ou tubo de 8 lados esticado em
-// cada segmento) + uma linha fina no mesmo eixo, que continua visível de longe.
-// A seção também engrossa com a distância (mínimo de uMinInfra px na tela).
+// Cada trecho é uma instância (caixa unitária ou tubo de 8 lados esticado no segmento) + uma linha fina no mesmo
+// eixo, que continua visível de longe. A seção também engrossa com a distância (mínimo de uMinInfra px na tela).
+// MALHAS JUNTAS (2.40): antes cada grupo da cena (um por tipo, medida, layer ou circuito estimado) tinha a sua
+// InstancedMesh de trechos, uma por componente (curvas, caixas de passagem, conduletes), uma de descidas e uma linha
+// — até 6 chamadas de desenho por grupo (400 grupos passavam de 2.000 por quadro). Agora todos os grupos vão em
+// POUCAS malhas, pela geometria e pelo acabamento: trechos em tubo (com as descidas), trechos em caixa, curvas
+// (esferas), caixas de passagem/conduletes (caixas) — os translúcidos (caminhos sugeridos) em malhas à parte — e uma
+// linha só, com a cor por vértice. A cor do grupo vai por instância (instanceColor, material branco); a seção que
+// engrossa com a distância, o brilho próprio (destaque do tipo) e o "aparece" (camadas: tipo, grupo, disciplina,
+// sugeridos) vão em atributos por instância lidos no shader — ligar/desligar e destacar só reescrevem esses
+// números, sem geometria nova. A infraestrutura não entra no corte das paredes da frente (como antes).
 // caminho SUGERIDO pelo sistema (não é do projeto): translúcido
 const materialSugerido = (sugerido) => (sugerido ? { transparent: true, opacity: 0.55, depthWrite: false } : {});
-function materialInfra(cor, secaoMax, sugerido = false) {
-  const mat = new MeshStandardMaterial({ color: cor, emissive: cor, emissiveIntensity: 0.18, roughness: 0.45, metalness: 0.35, ...materialSugerido(sugerido) });
+// aInfra = (aparece 0/1, seção que engrossa com a distância — 0 = não engrossa); aEmissivo = cor × brilho próprio
+function materialInfra({ roughness, metalness }, sugerido = false) {
+  const mat = new MeshStandardMaterial({ color: '#ffffff', emissive: '#000000', roughness, metalness, ...materialSugerido(sugerido) });
   mat.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, { uPx: UD.uPx, uMinInfra: UD.uMinInfra, uSecao: { value: secaoMax } });
+    Object.assign(sh.uniforms, { uPx: UD.uPx, uMinInfra: UD.uMinInfra });
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uPx; uniform float uMinInfra; uniform float uSecao;')
+      .replace('#include <common>', '#include <common>\nuniform float uPx; uniform float uMinInfra;\nattribute vec2 aInfra; attribute vec3 aEmissivo; varying vec3 vEmissivo;')
       .replace('#include <begin_vertex>', `#include <begin_vertex>
+vEmissivo = aEmissivo;
 #ifdef USE_INSTANCING
-{
+if (aInfra.y > 0.0) {
   vec3 o = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-  float s = clamp(uMinInfra * uPx * distance(cameraPosition, o) / uSecao, 1.0, 15.0);
+  float s = clamp(uMinInfra * uPx * distance(cameraPosition, o) / aInfra.y, 1.0, 15.0);
   transformed.yz *= s;
 }
-#endif`);
+#endif
+transformed *= aInfra.x;`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vEmissivo;')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance = vEmissivo;');
   };
-  mat.customProgramCacheKey = () => 'infra';
+  mat.customProgramCacheKey = () => 'infra-junta';
   return mat;
 }
 const gInfra = grupo('infra');
+// geometria e acabamento de cada malha junta (os mesmos de antes: trechos e descidas 0,45/0,35; componentes 0,5/0,3)
+const PECA_INFRA = {
+  tubo: { geo: () => new CylinderGeometry(0.5, 0.5, 1, 8).rotateZ(Math.PI / 2), roughness: 0.45, metalness: 0.35, ordem: 1 },
+  caixa: { geo: () => new BoxGeometry(1, 1, 1), roughness: 0.45, metalness: 0.35, ordem: 1 },
+  curva: { geo: () => new SphereGeometry(0.5, 10, 6), roughness: 0.5, metalness: 0.3, ordem: 0 },
+  peca: { geo: () => new BoxGeometry(1, 1, 1), roughness: 0.5, metalness: 0.3, ordem: 0 },
+};
+const lotesInfra = new Map(); // "peça|sugerido" → { peca, sugerido, matrizes, secao, donos }
+function noLote(peca, g, secao) {
+  const k = `${peca}|${g.sugerido ? 1 : 0}`;
+  if (!lotesInfra.has(k)) lotesInfra.set(k, { peca, sugerido: !!g.sugerido, matrizes: [], secao: [], donos: [] });
+  const L = lotesInfra.get(k);
+  o3.updateMatrix();
+  const e = o3.matrix.elements;
+  for (let i = 0; i < 16; i++) L.matrizes.push(e[i]);
+  L.secao.push(secao);
+  L.donos.push(g);
+}
+const linhaPos = [], linhaCor = [];
 for (const g of INFRA) {
   const seg = g.segmentos || [];
   const n = Math.floor(seg.length / 4);
   if (!n) continue;
-  const item = new Group();
-  grupo(`infra:${g.disciplina}`, gInfra).add(item);
-  g.objeto = item;
+  g.desenhado = true;
+  g.corLin = new Color(g.cor);
   const [sw, sh] = g.secao || [0.05, 0.05];
   if (g.forma !== 'linha') {
-    const geo = g.forma === 'tubo' ? new CylinderGeometry(0.5, 0.5, 1, 8).rotateZ(Math.PI / 2) : new BoxGeometry(1, 1, 1);
-    const mesh = new InstancedMesh(geo, materialInfra(g.cor, Math.max(sw, sh), g.sugerido), n);
     for (let i = 0; i < n; i++) {
       const x1 = seg[i * 4], y1 = seg[i * 4 + 1], x2 = seg[i * 4 + 2], y2 = seg[i * 4 + 3];
       const L = Math.hypot(x2 - x1, y2 - y1);
@@ -890,14 +962,8 @@ for (const g of INFRA) {
       o3.rotation.set(0, Math.atan2(y2 - y1, x2 - x1), 0);
       // emenda: cada segmento avança meia largura nas pontas (cantos fechados)
       o3.scale.set(L + sw, sh, sw);
-      o3.updateMatrix();
-      mesh.setMatrixAt(i, o3.matrix);
+      noLote(g.forma === 'tubo' ? 'tubo' : 'caixa', g, Math.max(sw, sh));
     }
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.frustumCulled = false;
-    mesh.renderOrder = 1;
-    item.add(mesh);
-    g.mats = [mesh.material];
   }
   // descidas até as peças de parede: tubo vertical (da eletrocalha desce eletroduto de 25 mm)
   const desc = g.descidas || [];
@@ -924,45 +990,63 @@ for (const g of INFRA) {
     }
     const conduletes = [];
     for (let i = 0; i < nd; i++) { const [x, y, z0, z1] = desc.slice(i * 4, i * 4 + 4); conduletes.push([x, Math.abs(z0 - g.z) < Math.abs(z1 - g.z) ? z0 : z1, -y]); }
-    const matComp = new MeshStandardMaterial({ color: g.cor, emissive: g.cor, emissiveIntensity: 0.18, roughness: 0.5, metalness: 0.3, ...materialSugerido(g.sugerido) });
-    g.mats = [...(g.mats || []), matComp];
-    const pecasInfra = (lista, geo, s) => {
+    const pecasInfra = (lista, peca, s) => {
       const m = Math.min(lista.length, 6000);
-      if (!m) return;
-      const im = new InstancedMesh(geo, matComp, m);
-      for (let i = 0; i < m; i++) { o3.position.set(...lista[i]); o3.quaternion.identity(); o3.rotation.set(0, 0, 0); o3.scale.set(s, s, s); o3.updateMatrix(); im.setMatrixAt(i, o3.matrix); }
-      im.instanceMatrix.needsUpdate = true;
-      im.frustumCulled = false;
-      item.add(im);
+      for (let i = 0; i < m; i++) { o3.position.set(...lista[i]); o3.quaternion.identity(); o3.rotation.set(0, 0, 0); o3.scale.set(s, s, s); noLote(peca, g, 0); }
     };
     const base = Math.max(sw, sh);
-    pecasInfra(curvas, new SphereGeometry(0.5, 10, 6), base * 1.3);
-    pecasInfra(caixasP, new BoxGeometry(1, 1, 1), Math.max(base * 2.2, 0.08));
-    pecasInfra(conduletes, new BoxGeometry(1, 1, 1), Math.max(dd * 2.4, 0.06));
+    pecasInfra(curvas, 'curva', base * 1.3);
+    pecasInfra(caixasP, 'peca', Math.max(base * 2.2, 0.08));
+    pecasInfra(conduletes, 'peca', Math.max(dd * 2.4, 0.06));
     g.componentes = { curvas: curvas.length, caixas: caixasP.length, conduletes: conduletes.length };
-  }
-  if (nd && g.forma !== 'linha') {
-    const md = new InstancedMesh(new CylinderGeometry(0.5, 0.5, 1, 8), new MeshStandardMaterial({ color: g.cor, emissive: g.cor, emissiveIntensity: 0.18, roughness: 0.45, metalness: 0.35, ...materialSugerido(g.sugerido) }), nd);
-    g.mats = [...(g.mats || []), md.material];
+    // descida: na malha dos tubos (o tubo deitado no x, girado −90° em z, fica em pé — o mesmo cilindro de antes),
+    // sem engrossar com a distância (como antes)
     for (let i = 0; i < nd; i++) {
       const [x, y, z0, z1] = desc.slice(i * 4, i * 4 + 4);
       o3.position.set(x, (z0 + z1) / 2, -y);
       o3.quaternion.identity();
-      o3.rotation.set(0, 0, 0);
-      o3.scale.set(dd, Math.max(0.01, z1 - z0), dd);
-      o3.updateMatrix();
-      md.setMatrixAt(i, o3.matrix);
+      o3.rotation.set(0, 0, -Math.PI / 2);
+      o3.scale.set(Math.max(0.01, z1 - z0), dd, dd);
+      noLote('tubo', g, 0);
     }
-    md.instanceMatrix.needsUpdate = true;
-    md.frustumCulled = false;
-    item.add(md);
   }
-  const pos = new Float32Array((n + nd) * 6);
-  for (let i = 0; i < n; i++) pos.set([seg[i * 4], g.z, -seg[i * 4 + 1], seg[i * 4 + 2], g.z, -seg[i * 4 + 3]], i * 6);
-  for (let i = 0; i < nd; i++) pos.set([desc[i * 4], desc[i * 4 + 2], -desc[i * 4 + 1], desc[i * 4], desc[i * 4 + 3], -desc[i * 4 + 1]], (n + i) * 6);
+  // a linha fina do eixo (trechos e descidas), com a cor e a opacidade do grupo por vértice
+  const alfa = g.forma === 'linha' ? 0.95 : 0.8;
+  const ini = linhaPos.length / 3;
+  for (let i = 0; i < n; i++) linhaPos.push(seg[i * 4], g.z, -seg[i * 4 + 1], seg[i * 4 + 2], g.z, -seg[i * 4 + 3]);
+  for (let i = 0; i < nd; i++) linhaPos.push(desc[i * 4], desc[i * 4 + 2], -desc[i * 4 + 1], desc[i * 4], desc[i * 4 + 3], -desc[i * 4 + 1]);
+  g.faixaLinha = [ini, linhaPos.length / 3 - ini];
+  for (let k = 0; k < g.faixaLinha[1]; k++) linhaCor.push(g.corLin.r, g.corLin.g, g.corLin.b, alfa);
+}
+const malhasInfra = [];
+for (const L of lotesInfra.values()) {
+  const n = L.donos.length;
+  const P = PECA_INFRA[L.peca];
+  const mesh = new InstancedMesh(P.geo(), materialInfra(P, L.sugerido), n);
+  mesh.instanceMatrix.array.set(L.matrizes);
+  mesh.instanceMatrix.needsUpdate = true;
+  const info = new Float32Array(n * 2);
+  for (let k = 0; k < n; k++) { info[k * 2] = 1; info[k * 2 + 1] = L.secao[k]; }
+  mesh.geometry.setAttribute('aInfra', new InstancedBufferAttribute(info, 2));
+  mesh.geometry.setAttribute('aEmissivo', new InstancedBufferAttribute(new Float32Array(n * 3), 3));
+  mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(n * 3), 3);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = P.ordem;
+  mesh.userData = { donos: L.donos, infra: L.peca };
+  gInfra.add(mesh);
+  malhasInfra.push(mesh);
+}
+let linhaInfra = null;
+if (linhaPos.length) {
+  const nv = linhaPos.length / 3;
   const gl = new BufferGeometry();
-  gl.setAttribute('position', new Float32BufferAttribute(pos, 3));
-  item.add(new LineSegments(gl, new LineBasicMaterial({ color: g.cor, transparent: true, opacity: g.forma === 'linha' ? 0.95 : 0.8 })));
+  gl.setAttribute('position', new Float32BufferAttribute(linhaPos, 3));
+  gl.setAttribute('color', new Float32BufferAttribute(linhaCor, 4));
+  // camadas: o índice leva só os grupos que aparecem (refeito ao ligar/desligar)
+  gl.setIndex(new BufferAttribute(nv > 65535 ? new Uint32Array(nv) : new Uint16Array(nv), 1));
+  linhaInfra = new LineSegments(gl, new LineBasicMaterial({ vertexColors: true, transparent: true }));
+  linhaInfra.frustumCulled = false;
+  gInfra.add(linhaInfra);
 }
 // ── Legenda de cores da infraestrutura (09/11/2026): só os tipos presentes ──
 // (a cena traz pronta — cena.legendaInfra, ../coresInfra.js; cena antiga: monta pelo grupo)
@@ -981,17 +1065,48 @@ const LEG_INFRA = Array.isArray(CENA.legendaInfra) && CENA.legendaInfra.length ?
 })();
 const tipoVisivel = {};
 let tipoDestacado = null;
-function aplicarInfraTipos() {
+const discInfraVisivel = {}; // disciplina → false quando o botão dela está desligado
+let sugeridosVisiveis = true; // botão "Sugeridos" (estado.sugerido)
+// o grupo aparece? (camadas; o botão Infraestrutura é o gInfra inteiro)
+const infraLigada = (g) => !!g.desenhado && g.visivel !== false && discInfraVisivel[g.disciplina] !== false && tipoVisivel[tipoDaInfra(g)] !== false && (!g.sugerido || sugeridosVisiveis);
+const infraAparece = (g) => gInfra.visible && infraLigada(g);
+const COR_APAGADA = new Color('#3a3d42');
+// camadas e destaque nas malhas juntas: cor, brilho próprio e "aparece" de cada instância, e o índice da linha
+function pintarInfra() {
   for (const g of INFRA) {
-    if (!g.objeto) continue;
+    if (!g.desenhado) continue;
     const k = tipoDaInfra(g);
-    g.objeto.visible = tipoVisivel[k] !== false && (!g.sugerido || estado.sugerido);
-    // destaque: o tipo escolhido brilha, os outros ficam apagados
-    for (const m of g.mats || []) {
-      m.emissiveIntensity = !tipoDestacado ? 0.18 : k === tipoDestacado ? 0.85 : 0.02;
-      m.color.set(!tipoDestacado || k === tipoDestacado ? g.cor : '#3a3d42');
-    }
+    g.aparece = infraLigada(g) ? 1 : 0;
+    // destaque: o tipo escolhido brilha, os outros ficam apagados (o brilho próprio continua na cor do grupo)
+    const brilho = !tipoDestacado ? 0.18 : k === tipoDestacado ? 0.85 : 0.02;
+    g.corAgora = !tipoDestacado || k === tipoDestacado ? g.corLin : COR_APAGADA;
+    g.emissivo = [g.corLin.r * brilho, g.corLin.g * brilho, g.corLin.b * brilho];
   }
+  for (const m of malhasInfra) {
+    const donos = m.userData.donos, info = m.geometry.attributes.aInfra, emis = m.geometry.attributes.aEmissivo, cor = m.instanceColor;
+    let algum = false;
+    for (let k = 0; k < donos.length; k++) {
+      const g = donos[k];
+      info.array[k * 2] = g.aparece;
+      if (g.aparece) algum = true;
+      cor.array[k * 3] = g.corAgora.r; cor.array[k * 3 + 1] = g.corAgora.g; cor.array[k * 3 + 2] = g.corAgora.b;
+      emis.array.set(g.emissivo, k * 3);
+    }
+    info.needsUpdate = emis.needsUpdate = cor.needsUpdate = true;
+    m.visible = algum; // nada ligado nesta malha: nem é desenhada
+  }
+  if (linhaInfra) {
+    const idx = linhaInfra.geometry.index;
+    let c = 0;
+    for (const g of INFRA) if (g.desenhado && g.aparece) for (let v = g.faixaLinha[0], f = v + g.faixaLinha[1]; v < f; v++) idx.array[c++] = v;
+    idx.needsUpdate = true;
+    linhaInfra.geometry.setDrawRange(0, c);
+    linhaInfra.visible = c > 0;
+  }
+}
+pintarInfra();
+function aplicarInfraTipos() {
+  pintarInfra();
   pedirDesenho(true);
 }
 // "Eletroduto PVC rígido Ø 25 mm (3/4")" e de onde veio a medida
@@ -1069,7 +1184,7 @@ function atualizarEtiquetasPontos() {
     const w = tela.clientWidth, h = tela.clientHeight;
     const cands = [];
     for (const [t, it] of porAmbiente.get(atual) || []) {
-      if (!t.malha.visible || !t.malha.parent.visible) continue;
+      if (!tipoAparece(t)) continue;
       vTmp.set(it[0], it[2], -it[1]);
       const d = camera.position.distanceTo(vTmp);
       // etiqueta acima da peça (quadro grande não fica coberto); no teto, abaixo
@@ -1369,7 +1484,7 @@ alternar('#b-giro', 'giro', () => { controles.autoRotate = estado.giro && modo =
 alternar('#b-grandes', 'grandes', aplicarGrandes);
 alternar('#b-infra', 'infra', () => { gInfra.visible = estado.infra; });
 if (!INFRA.length) $('#b-infra')?.remove();
-alternar('#b-sugerido', 'sugerido', aplicarInfraTipos);
+alternar('#b-sugerido', 'sugerido', () => { sugeridosVisiveis = estado.sugerido; aplicarInfraTipos(); });
 if (!INFRA.some(g => g.sugerido)) $('#b-sugerido')?.remove();
 grupo('campo').visible = estado.campo;
 $('#b-cima').addEventListener('click', vistaDeCima);
@@ -1403,7 +1518,8 @@ for (const [k, d] of Object.entries(CENA.disciplinas)) {
   b.addEventListener('click', () => {
     const g = grupo(`disc:${k}`);
     g.visible = !g.visible;
-    if (grupos[`infra:${k}`]) grupos[`infra:${k}`].visible = g.visible;
+    // a infraestrutura da disciplina está nas malhas juntas (2.40): liga/desliga por instância
+    if (INFRA.some(x => x.disciplina === k)) { discInfraVisivel[k] = g.visible; aplicarInfraTipos(); }
     b.classList.toggle('ativo', g.visible);
     pedirDesenho(true);
   });
@@ -1433,10 +1549,20 @@ legenda.innerHTML = CENA.dispositivos.map((t, i) => `<button class="leg ativo" d
   + INFRA.map((g, i) => `<button class="leg ativo" data-infra="${i}" title="Mostrar/ocultar"><i class="f-infra f-${esc(g.forma)}" style="--cor:${esc(g.cor)}"></i><span>${esc(nomeInfra(g))}<small>${esc(CENA.disciplinas[g.disciplina]?.rotulo || g.disciplina)} · h = ${br(g.z)} m · ${esc(origemInfra(g))}${g.layers?.length ? ` · ${esc(g.layers.slice(0, 2).join(', '))}` : ''}</small></span><b>${br(g.comprimento_m, 1)} m</b></button>`).join('')
   + `<div class="tipos">${[...new Set(CENA.ambientes.map(a => a.tipo))].map(k => `<span><i style="background:${CENA.tiposAmbiente[k].cor}"></i>${esc(CENA.tiposAmbiente[k].rotulo)}</span>`).join('')}</div>`;
 legenda.querySelectorAll('.leg').forEach(b => b.addEventListener('click', () => {
-  const o = b.dataset.infra != null ? INFRA[Number(b.dataset.infra)].objeto : CENA.dispositivos[Number(b.dataset.i)].malha;
-  if (!o) return;
-  o.visible = !o.visible;
-  b.classList.toggle('ativo', o.visible);
+  // (2.40: tipos e trechos ficam em malhas divididas — liga/desliga a faixa deles, não a malha)
+  let v;
+  if (b.dataset.infra != null) {
+    const g = INFRA[Number(b.dataset.infra)];
+    if (!g.desenhado) return;
+    v = g.visivel = g.visivel === false;
+    aplicarInfraTipos();
+  } else {
+    const t = CENA.dispositivos[Number(b.dataset.i)];
+    if (!t.malha) return;
+    v = t.visivel === false;
+    mostrarTipo(t, v);
+  }
+  b.classList.toggle('ativo', v);
   pedirDesenho(true);
 }));
 // painel "Infraestrutura — cores por tipo": cor, nome, medidas, metragem e a fonte da cor;
@@ -1469,8 +1595,8 @@ function chaveDaTela(w, h) {
   const e = camera.matrixWorld.elements, p = camera.projectionMatrix.elements;
   let s = `${w}|${h}|${UD.uPx.value}|${gInfra.visible ? 1 : 0}|`;
   for (let i = 0; i < 16; i++) s += `${e[i].toFixed(4)},${p[i].toFixed(4)},`;
-  for (const t of CENA.dispositivos) s += t.malha && t.malha.visible && t.malha.parent.visible ? '1' : '0';
-  for (const g of INFRA) s += g.objeto && g.objeto.visible && g.objeto.parent.visible ? '1' : '0';
+  for (const t of CENA.dispositivos) s += tipoAparece(t) ? '1' : '0';
+  for (const g of INFRA) s += infraAparece(g) ? '1' : '0';
   return s;
 }
 // põe a entrada nas células da caixa [x0,x1]×[y0,y1] (recortada na tela); devolve false se cobriria células demais
@@ -1491,8 +1617,7 @@ function prepararTela(w, h) {
   if (cacheTela.chave === chave) return cacheTela;
   const disp = new Map(), infra = new Map(), grandes = [];
   for (const t of CENA.dispositivos) {
-    const m = t.malha;
-    if (!m || !m.visible || !m.parent.visible) continue;
+    if (!tipoAparece(t)) continue;
     for (const it of t.itens) {
       vTmp.set(it[0], it[2], -it[1]);
       const d = camera.position.distanceTo(vTmp);
@@ -1506,7 +1631,7 @@ function prepararTela(w, h) {
   if (gInfra.visible) {
     const tela2d = (x, y, z) => { vTmp2.set(x, y, z).project(camera); return vTmp2.z > 1 || vTmp2.z < -1 ? null : [(vTmp2.x + 1) / 2 * w, (1 - vTmp2.y) / 2 * h]; };
     for (const g of INFRA) {
-      if (!g.objeto || !g.objeto.visible || !g.objeto.parent.visible) continue;
+      if (!infraAparece(g)) continue;
       const s = g.segmentos || [], dsc = g.descidas || [];
       const guardar = (a, b) => {
         if (!a || !b) return;
@@ -2051,12 +2176,17 @@ window.HM3D = {
   abrirPainelDe: (simbolo, k = 0) => { const t = CENA.dispositivos.find(x => x.simbolo === simbolo); if (t?.itens[k]) abrirPainel(t, t.itens[k]); return !!t; },
   fichaDoEquipamento: (id) => { const par = (itensDoNo.get(String(id)) || [])[0]; if (!par) { abrirFicha({ lista: [String(id)] }); return false; } abrirFicha({ t: par.t, it: par.t.itens[par.i], componente: componenteDe(par.t), rede: noDoItem.get(par.t.itens[par.i]), painel: PAINEL_DO_SIMBOLO[par.t.simbolo] || null }); return true; },
   abrirManobras: () => { if (rede) abrirFicha({ lista: rede.lista().filter(e => (e.interacao.acoes || []).length || e.interacao.proxy).map(e => e.id) }); },
-  corDoItem: (simbolo, k = 0) => { const t = CENA.dispositivos.find(x => x.simbolo === simbolo || String(x.componente) === String(simbolo)); if (!t?.malha?.instanceColor) return null; const c = new Color(); t.malha.getColorAt(k, c); return [c.r, c.g, c.b].map(v => Math.round(v * 100) / 100); },
+  corDoItem: (simbolo, k = 0) => { const t = CENA.dispositivos.find(x => x.simbolo === simbolo || String(x.componente) === String(simbolo)); return t?.pintado && t.itens[k] ? corDoEstado(t, k) : null; },
   get quadroAberto() { return quadroAberto; }, get quadro3d() { return qsim?.ctrl || null; },
-  corDoPonto: (id) => { const x = interativos.find(k => k.id === id); if (!x?.t.malha.instanceColor) return null; const c = new Color(); x.t.malha.getColorAt(x.i, c); return [c.r, c.g, c.b].map(v => Math.round(v * 100) / 100); },
+  corDoPonto: (id) => { const x = interativos.find(k => k.id === id); return x?.t.pintado ? corDoEstado(x.t, x.i) : null; },
   get luzesAcesas() { return luzesSim.filter(l => l.intensity > 0).length; },
   // fase 5: mapa de iluminância (null sem luminotécnico na cena)
   get mapa() { return mapa; },
+  // 2.40 (malhas juntas, para o teste no navegador): quantas malhas, e se o item/grupo aparece de fato
+  // (tipo ligado, disciplina ligada e a matriz da instância não zerada; grupo de infraestrutura com o "aparece" ligado)
+  malhas: () => ({ dispositivos: malhasDispositivos.length, tipos: CENA.dispositivos.filter(t => t.malha).length, infra: malhasInfra.length, gruposInfra: INFRA.filter(g => g.desenhado).length, linhasInfra: linhaInfra ? linhaInfra.geometry.drawRange.count : 0 }),
+  itemAparece: (rotulo, k = 0) => { const t = CENA.dispositivos.find(x => x.rotulo === rotulo); if (!t?.malha || !t.itens[k]) return null; const a = t.malha.instanceMatrix.array, i = (t.base + k) * 16; return tipoAparece(t) && t.malha.visible && [0, 5, 10].some(j => a[i + j] !== 0); },
+  infraAparece: (i) => { const g = INFRA[i]; if (!g?.desenhado) return null; return infraAparece(g) && (g.forma === 'linha' || malhasInfra.some(m => m.visible && m.userData.donos.some((d, k) => d === g && m.geometry.attributes.aInfra.array[k * 2] === 1))); },
 };
 function quadro(agora) {
   requestAnimationFrame(quadro);

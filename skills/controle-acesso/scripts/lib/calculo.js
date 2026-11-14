@@ -14,7 +14,7 @@
 // Regras comuns (14/11/2026): queda de tensão em CC, bateria pela autonomia, modelo comercial e DPS
 const ET = require('../../../_comum/eletrico/tabelas');
 const { quedaCC } = require('../../../_comum/eletrico/calculo');
-const { capacidadeBateriaAh, comercial } = require('../../../_comum/bateria');
+const { capacidadeBateriaAh, comercial, SERIES_BATERIA, FATOR_ENVELHECIMENTO } = require('../../../_comum/bateria');
 const { especificarDps, descricaoDps } = require('../../../_comum/dps');
 
 const TIPOS = {
@@ -62,7 +62,7 @@ const TECNOLOGIAS = {
 
 const CORRENTE_CONTROLADORA = 0.3; // A em 12 Vcc [CONFERIR]
 const FONTES_A = [3, 5, 10];
-const BATERIAS_AH = [7, 9, 12, 18, 26, 40];
+const BATERIAS_AH = SERIES_BATERIA.vrla12vFonteAcesso; // _comum/bateria.js
 const SECOES_MM2 = [0.5, 0.75, 1, 1.5, 2.5];
 // Ω·mm²/m — cobre em operação, o da tabela comum (_comum/eletrico/tabelas.js). Antes 0,0178 (cobre a
 // 20 °C), que subestimava a queda em ~26 % nos cabos aquecidos pela corrente.
@@ -73,10 +73,11 @@ const QUEDA_MAX = 0.10; // 10 % de 12 V na fechadura [CONFERIR com o fabricante]
 const LICENCAS = [4, 8, 16, 32, 64, 128, 256, 512];
 const FATOR_CABO = 1.15;
 const MARGEM_FONTE = 1.25;
-const FATOR_BATERIA = 1.25; // envelhecimento/temperatura [CONFERIR]
+const FATOR_BATERIA = FATOR_ENVELHECIMENTO.controleAcesso; // envelhecimento/temperatura [CONFERIR]
 const LIMITE = { wiegand: 100, rs485: 1000, utp: 90 };
 
-const br = (v, c = 1) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+const { numeroFixoBr } = require('../../../_comum/base/formato');
+const br = (v, c = 1) => numeroFixoBr(v, c); // número pt-BR com casas fixas (o comum)
 const sim = (v) => v === true || v === 'true' || v === 'sim' || v === 1;
 
 function forcaRecomendada(p, tipo) {

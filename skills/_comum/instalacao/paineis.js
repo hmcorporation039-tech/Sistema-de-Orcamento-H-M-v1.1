@@ -256,14 +256,15 @@ const cond = (id, funcao, camada, cor, d_mm, pts, de, para, energia, extra = {})
 const termP = (b, col, n, lado, dy = 0) => ({ x: b.x + b.l * (col + 0.5) / Math.max(1, n), y: lado === 'cima' ? b.y + b.a - 9 - dy : b.y + 9 + dy, z: b.z + b.p - 14, lado });
 
 // ── PAINEL DE PRESSURIZAÇÃO DE ESCADAS (NBR 14880; CBMDF NT 10; IT 13 / CBMGO NT 13) ──
-// A lógica é a do PERFIL de especificação da skill pressurização (skills/pressurizacao/dados/
-// perfil-especificacao.json): os mesmos blocos de função compilados pela mesma escada
+// A lógica é a do PERFIL de especificação da skill pressurização: o conjunto de blocos nomeado
+// "pressurizacao" da biblioteca comum (../especificacao/blocos-comando.json → conjuntos, que o perfil da
+// skill usa por nome — 2.40: antes este arquivo lia o JSON da skill): os mesmos blocos de função compilados pela mesma escada
 // (../especificacao/comando.js) — partida pelo alarme da central, MAN-0-AUT por ventilador,
 // reversão para o reserva por falta de fluxo/falha do acionamento, modo TESTE com chave,
 // inibição pela fumaça na casa de máquinas e operação/falha para a central. A vista interna abre
 // com a simulação da escada (seletoras e sinaleiros na porta, relés na placa) e a fiação de força e
 // de comando desenhada (./fiacaoComando.js).
-const PERFIL_PRZ = require('../../pressurizacao/dados/perfil-especificacao.json');
+const CONJ_PRZ = require('../especificacao/blocos-comando.json').conjuntos.pressurizacao;
 const CMD = require('../especificacao/comando');
 const FC = require('./fiacaoComando');
 
@@ -276,7 +277,7 @@ function dadosDoPainelPressurizacao({ calculo = null, tag = 'QPE', tempoReversao
   return {
     tag, fonte, nVentiladores: n, nUsado: n && n >= 1 ? Math.min(2, n) : 2, partida, partidaUsada: partida || 'inversor',
     cv: c.vent?.cv || null, inA: c.vent?.in ? Math.round(c.vent.in * 10) / 10 : null,
-    tempoReversao: tempoReversao ?? PERFIL_PRZ.regras?.variaveis_comando?.tempo_reversao ?? 15,
+    tempoReversao: tempoReversao ?? CONJ_PRZ.regras?.variaveis_comando?.tempo_reversao ?? 15,
   };
 }
 
@@ -287,7 +288,7 @@ function comandoDaPressurizacao(d) {
   const req = ['comando.partida_alarme', 'comando.pressostato_fluxo', 'comando.modo_teste', 'comando.inibicao_fumaca', 'automacao.status_central', 'comando.seletora_man_0_aut', ...(n === 2 ? ['comando.reversao'] : [])];
   const listas = { 'sinalizacao.porta': SINALIZACAO_PRZ.filter(t => n === 2 || !/V2/.test(t)).map(texto => ({ texto })), 'automacao.contatos_livres': [] };
   return CMD.compilarComando({ req: new Set(req), decisoes: {}, combinacao: 'qualquer', motores, externos: [], valvulas: [], rotuloMotor: 'ventilador', rotuloMotores: 'ventiladores', listas, tensaoComando: '24 Vcc', contatosPorRele: 4, variaveis: { tempo_reversao: d.tempoReversao } },
-    { usar: (PERFIL_PRZ.blocos?.usar || []).filter(id => id !== 'emergencia_rele') });
+    { usar: (CONJ_PRZ.usar || []).filter(id => id !== 'emergencia_rele') });
 }
 
 const COR_PORTA = { seletora: '#202226', seletora_chave: '#202226', botao: '#2f9e44', emergencia: '#d62828', branco: '#f1f1f1', vermelho: '#e5484d', verde: '#3fb950', amarelo: '#f2c94c', azul: '#4c8dff' };
@@ -329,7 +330,7 @@ function cenaDoPainelPressurizacao(d) {
     if (acion === 'direta') break;
     const inv = acion === 'inversor';
     const b = { camada: 'partidas', tag: `V${k + 1}/T1`, x: 90 + k * 130, y: 205, z: Z_PLACA + 8, l: inv ? 100 : 60, a: inv ? 240 : 150, p: inv ? 170 : 120, cor: inv ? COR_PECA.inversor : COR_PECA.soft, rotulo: `U${k + 1}`, dica: `U${k + 1} — ${inv ? 'inversor de frequência' : 'soft-starter'} do ventilador V${k + 1}`,
-      ficha: [lin('Acionamento', inv ? 'Inversor de frequência (PID pela pressão diferencial, relé de falha e saída em funcionamento)' : 'Soft-starter', d.partida ? fonte : 'perfil de pressurização (típico) [CONFERIR]'), lin('Referência', PERFIL_PRZ.regras?.referencias?.[inv ? 'inversor' : 'soft'] || null, 'perfil de pressurização'), lin('Motor', d.cv ? `${String(d.cv).replace('.', ',')} cv` : null, fonte)] };
+      ficha: [lin('Acionamento', inv ? 'Inversor de frequência (PID pela pressão diferencial, relé de falha e saída em funcionamento)' : 'Soft-starter', d.partida ? fonte : 'perfil de pressurização (típico) [CONFERIR]'), lin('Referência', CONJ_PRZ.regras?.referencias?.[inv ? 'inversor' : 'soft'] || null, 'perfil de pressurização'), lin('Motor', d.cv ? `${String(d.cv).replace('.', ',')} cv` : null, fonte)] };
     acs.push(b); pecas.push(b);
   }
   // linha D: réguas X1 (força dos ventiladores) e X2 (campo — a ordem das conexões da escada)

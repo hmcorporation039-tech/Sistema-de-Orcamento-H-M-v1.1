@@ -117,6 +117,12 @@ test('lista: hoje / próximas / concluídas', () => {
   expect(r.concluidas.map(o => o.uuid)).toEqual(['f']);
 });
 
+test('mesma data: desempate pelo título em ordem A–Z do sistema (acento e número natural)', () => {
+  const os = (uuid, titulo) => ({ ...base(), uuid, titulo, agendada_para: '2026-11-10' });
+  const r = classificarOS([os('a', 'Poste 10'), os('b', 'Écran'), os('c', 'Poste 2'), os('d', 'elevador')], '2026-11-03');
+  expect(r.proximas.map(o => o.uuid)).toEqual(['b', 'd', 'c', 'a']);
+});
+
 test('agrupa checklist na ordem e formata datas locais', () => {
   expect(agruparChecklist(base().checklist).map(g => [g.nome, g.itens.length])).toEqual([['Câmeras', 2], ['Rede', 1]]);
   const d = new Date(2026, 10, 3, 22, 30, 5);

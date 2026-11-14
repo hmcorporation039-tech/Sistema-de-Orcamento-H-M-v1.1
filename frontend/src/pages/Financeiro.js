@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import useUltimoPedido from '../hooks/useUltimoPedido';
 import toast from 'react-hot-toast';
-import { FileSpreadsheet, RefreshCw, Search, ArrowDownCircle, ArrowUpCircle, Plus, Pencil, Trash2, Tag } from 'lucide-react';
+import { FileSpreadsheet, RefreshCw, ArrowDownCircle, ArrowUpCircle, Plus, Pencil, Trash2, Tag } from 'lucide-react';
 import {
   getFinanceiroMovimentos, verificarPixAgora, getPrestadores,
   criarFinanceiroMovimento, atualizarFinanceiroMovimento, categorizarFinanceiroMovimento, removerFinanceiroMovimento,
@@ -13,6 +13,7 @@ import Select from '../components/Select';
 import Modal from '../components/ui/Modal';
 import { estilos, Campo } from '../components/ui/estilos';
 import Indicador from '../components/ui/Indicador';
+import CampoBusca from '../components/ui/CampoBusca';
 import ObraSelect from '../components/ObraSelect';
 import CampoMoeda from '../components/CampoMoeda';
 import { Link } from 'react-router-dom';
@@ -255,15 +256,7 @@ export default function Financeiro() {
             </Select>
           </Campo>
           <Campo label="Buscar">
-            <div style={{ position: 'relative' }}>
-              <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--texto-3)' }} />
-              <input
-                value={busca}
-                onChange={e => setBusca(e.target.value)}
-                placeholder="Nome do favorecido ou pagador..."
-                style={{ paddingLeft: 30 }}
-              />
-            </div>
+            <CampoBusca value={busca} onChange={e => setBusca(e.target.value)} placeholder="Nome do favorecido ou pagador..." />
           </Campo>
           <button onClick={exportarCsv} disabled={exportando || movimentos.length === 0} style={btnPrimario}>
             <FileSpreadsheet size={13} style={{ marginRight: 4 }} /> {exportando ? 'Gerando...' : 'Exportar CSV'}

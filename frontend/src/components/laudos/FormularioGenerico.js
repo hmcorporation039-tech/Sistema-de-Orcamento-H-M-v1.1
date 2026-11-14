@@ -1,11 +1,9 @@
 import { RefreshCw } from 'lucide-react';
+import { estilos } from '../ui/estilos';
 import { Campo, Selecao, CampoSugestao, Marcador, Grade, Secao, TabelaEditavel, Nota } from './campos';
 import { ChecklistEditor, FotosInspecao, resumoChecklist } from './inspecaoUi';
 
-const btnPreencher = {
-  display: 'inline-flex', alignItems: 'center', padding: '5px 10px', marginBottom: 8, background: 'transparent',
-  border: '1px solid #2f4f6f', borderRadius: 6, color: '#8ab4f8', fontWeight: 700, fontSize: 12,
-};
+const btnPreencher = { ...estilos.btnContornoAzul, display: 'inline-flex', padding: '5px 10px', marginBottom: 8 };
 
 // Formulário desenhado a partir do esquema da disciplina (skills/_comum/formulario.js).
 // Qualquer disciplina nova aparece na tela sem precisar de componente próprio.

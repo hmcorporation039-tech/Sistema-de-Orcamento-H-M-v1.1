@@ -160,7 +160,7 @@ async function principal(argv) {
   else {
     console.log('');
     const suites = [];
-    if (!semFrontend) suites.push(rodarJestFrontend);
+    if (!semFrontend) suites.push(rodarJestFrontend, rodarLintFrontend);
     if (!semSkills) suites.push(rodarTestesSkills);
     for (const rodar of suites) {
       const r = await rodar();
@@ -196,6 +196,12 @@ function rodarJestFrontend(pasta = PASTA_FRONTEND) {
   return rodarNode('frontend (Jest)', [bin, '--watchAll=false'], { cwd: pasta, env: { ...process.env, CI: 'true' }, tempoMaximo: TEMPO_MAXIMO_SUITE_MS });
 }
 
+// Lint do frontend como o build do CRA (scripts/lint-frontend.js): o Jest não pega erro de lint que derruba o build
+// nem variável inexistente numa tela (2.40).
+function rodarLintFrontend(pasta = PASTA_FRONTEND) {
+  return rodarNode('frontend (lint do build)', [path.join(__dirname, 'lint-frontend.js'), pasta], { cwd: pasta, tempoMaximo: TEMPO_MAXIMO_SUITE_MS });
+}
+
 // Testes de regressão de todas as skills (skills/testar-todas.js = "npm test" na pasta skills).
 function rodarTestesSkills(pasta = PASTA_SKILLS) {
   return rodarNode('skills (testar-todas)', [path.join(pasta, 'testar-todas.js')], { cwd: pasta, tempoMaximo: TEMPO_MAXIMO_SUITE_MS });
@@ -205,11 +211,13 @@ function rodarTestesSkills(pasta = PASTA_SKILLS) {
 function resumoSuite(r) {
   const jest = r.saida.match(/Tests:\s+([^\n]+)/);
   if (jest) return jest[1].trim();
+  const lint = r.saida.match(/lint do frontend: ([^\n]+)/);
+  if (lint) return lint[1].trim();
   const falhas = (r.saida.match(/: FALHOU/g) || []).length;
   return falhas ? `${falhas} teste(s) de skill falharam` : '';
 }
 
-module.exports = { listarTestes, verificarVersoes, verificarMigracoes, rodarTeste, rodarNode, rodarJestFrontend, rodarTestesSkills, resumoSuite };
+module.exports = { listarTestes, verificarVersoes, verificarMigracoes, rodarTeste, rodarNode, rodarJestFrontend, rodarLintFrontend, rodarTestesSkills, resumoSuite };
 
 if (require.main === module) {
   principal(process.argv.slice(2)).then(c => process.exit(c), e => { console.error(e); process.exit(1); });

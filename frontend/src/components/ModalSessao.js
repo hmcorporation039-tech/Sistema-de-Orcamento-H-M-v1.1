@@ -59,8 +59,8 @@ export default function ModalSessao() {
           Entre de novo para continuar. <b style={{ color: '#ddd' }}>Nada do que está na tela foi perdido</b> — o que
           estava sendo gravado é enviado assim que você entrar.
         </p>
-        <label style={rotulo}>E-mail</label>
-        <input value={usuario.email || ''} readOnly style={{ ...entrada, color: 'var(--texto-3)', marginBottom: 12 }} />
+        <label style={rotulo} htmlFor="email-sessao">E-mail</label>
+        <input id="email-sessao" value={usuario.email || ''} readOnly style={{ ...entrada, color: 'var(--texto-3)', marginBottom: 12 }} />
         {desafio ? (
           <>
             <label style={rotulo} htmlFor="codigo-sessao">Código do aplicativo (ou de recuperação)</label>

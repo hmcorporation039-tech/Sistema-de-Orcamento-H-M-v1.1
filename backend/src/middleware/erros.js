@@ -63,6 +63,7 @@ const ERROS_DE_ENTRADA = {
   '23502': 'Campo obrigatório não informado.',                    // not_null_violation
   '23503': 'Registro relacionado não encontrado.',                // foreign_key_violation
   '23505': 'Já existe um registro com esse valor.',               // unique_violation
+  'HMP01': 'Material sem preço: o catálogo não tem item a R$ 0,00. Informe o preço.', // gatilho materiais_sem_preco_zero (2.0-59)
 };
 
 // Middleware de erro do Express (precisa dos 4 parâmetros para ser reconhecido).

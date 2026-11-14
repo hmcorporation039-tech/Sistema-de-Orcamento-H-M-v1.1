@@ -10,12 +10,8 @@ const { conferirConsistencia } = require('./consistencia');
 
 const CHECKLIST_BASE = require('../../dados/checklist_base.json');
 
-const PRAZOS = {
-  P1: 'imediato (providência provisória em até 48 h)',
-  P2: 'até 30 dias',
-  P3: 'até 90 dias',
-  P4: 'na próxima manutenção programada',
-};
+// prazos por prioridade da não conformidade: os da inspeção comum (eram cópia idêntica — 2.40)
+const { PRAZOS } = require('../../../_comum/inspecao');
 
 // Critérios do Anexo F da NBR 5419-3:2026
 const ENSAIOS = {

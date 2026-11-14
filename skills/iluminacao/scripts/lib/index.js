@@ -27,7 +27,7 @@ const NORMAS = [
 const SECOES_CHECKLIST = ['Documentação', 'Luminárias', 'Níveis de iluminação', 'Controle e automação', 'Instalação elétrica'];
 
 const num = fmtNum; // número pt-BR; '—' quando vazio ou inválido
-const sec = (s) => (s == null ? '—' : `${String(s).replace('.', ',')} mm²`);
+const sec = require('../../../_comum/docx-base').fmtSecao; // "2,5 mm²" (o comum)
 const sim = (ok, exigido) => (ok == null ? (exigido == null ? '—' : 'não verificado (dado da luminária ausente)') : ok ? 'atende' : 'NÃO atende');
 // requisito exigido pela atividade sem o dado da luminária para comparar
 const semDado = (a) => (a.okRa == null && a.raMin != null) || (a.okUgr == null && a.ugrL != null);

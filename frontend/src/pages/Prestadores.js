@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import useUltimoPedido from '../hooks/useUltimoPedido';
 import toast from 'react-hot-toast';
-import { Plus, Search, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { getPrestadores, criarPrestador, atualizarPrestador, removerPrestador } from '../services/api';
 import Paginacao from '../components/Paginacao';
 import { formatarTelefone, formatarCpfCnpj, erroDocumento, formatarMoeda } from '../utils/format';
 import Select from '../components/Select';
 import Modal from '../components/ui/Modal';
+import CampoBusca from '../components/ui/CampoBusca';
 import { estilos, Campo } from '../components/ui/estilos';
 
 const VAZIO = { nome: '', email: '', telefone: '', documento: '', chavePix: '', categoria: '', tipo: 'Pessoa Física' };
@@ -116,15 +117,8 @@ export default function Prestadores() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
         <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>Prestadores de Serviços</h2>
 
-        <div style={{ position: 'relative', width: 260 }}>
-          <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--texto-3)' }} />
-          <input
-            value={busca}
-            onChange={e => setBusca(e.target.value)}
-            placeholder="Buscar por nome, CPF/CNPJ ou e-mail..."
-            style={{ paddingLeft: 30 }}
-          />
-        </div>
+        <CampoBusca value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por nome, CPF/CNPJ ou e-mail..."
+          aria-label="Buscar prestador" estiloCaixa={{ width: 260 }} />
 
         <Select value={categoriaFiltro} onChange={e => setCategoriaFiltro(e.target.value)} style={{ width: 170 }}>
           <option value="">Todas as categorias</option>

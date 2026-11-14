@@ -203,8 +203,9 @@ function dimensionarCircuito(circ, c, { minimo, limiteQueda }) {
     const izRef = T.capacidade(s, metodo, carregados, c.isolacao);
     if (izRef == null) return null;
     const iz = izRef * fct * fca;
-    // circ.kQueda / circ.vQueda: o alimentador 2F+N com carga fase-neutro (abaixo, alimentador) mede a queda na fase
-    const queda = ((circ.kQueda ?? k) * T.RHO_COBRE * L * ib) / (s * (circ.vQueda ?? v)) * 100;
+    // circ.kQueda / circ.vQueda: o alimentador 2F+N com carga fase-neutro (abaixo, alimentador) mede a queda na fase.
+    // A fórmula do trecho é a comum (quedaTrecho: só a resistência, ρ do cobre em operação) — antes repetida aqui.
+    const queda = quedaTrecho({ comprimento: L, corrente: ib, secao: s, k: circ.kQueda ?? k }) / (circ.vQueda ?? v) * 100;
     return { secao: s, izRef, iz, queda, okCap: iz >= ib, okProt: inDisj != null && ib <= inDisj && inDisj <= iz, okQueda: queda <= limiteQueda, okMin: s >= smin };
   };
   const avisos = [];
@@ -512,4 +513,4 @@ function calcular(dados, opcoes = {}) {
   return { config: c, previsao, circuitos, fases, demanda: dem, alimentador: alim, quadro, falta, materiais: mat.itens, cabos: mat.cabos, maiorQueda, quedaTotal, limiteQuedaTotal: limiteTotal, avisos, circuitosSugeridos: !informados.length, ...(lum ? { luminotecnico: true } : {}) };
 }
 
-module.exports = { calcular, preverCargas, iluminacaoMinima, tomadasMinimas, dimensionarCircuito, config, ligacaoTue, balancearFases, protecaoFalta, quedaTrecho, quedaCC };
+module.exports = { calcular, preverCargas, iluminacaoMinima, tomadasMinimas, agrupar, dimensionarCircuito, config, ligacaoTue, balancearFases, protecaoFalta, quedaTrecho, quedaCC };

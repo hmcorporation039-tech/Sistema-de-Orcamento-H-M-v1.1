@@ -1,6 +1,6 @@
 import { act, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import CampoCliente, { clientePorNome } from './CampoCliente';
+import CampoCliente, { clienteDaProposta, clientePorNome } from './CampoCliente';
 import { Campo } from './ui/estilos';
 
 // Cliente escolhido da lista (2.39 — Orçamento e Análise de Projeto). Dados SINTÉTICOS.
@@ -87,6 +87,19 @@ test('nome igual ao de um só cliente liga; com homônimos não liga', () => {
   const { chamadas, campo } = montar();
   digitar(campo(), 'zeta comércio');
   expect(chamadas.at(-1)).toEqual({ id: 3, nome: 'zeta comércio' });
+});
+
+test('cliente da proposta (Orçamento e Histórico): pelo cliente_id primeiro; o nome só sem id', () => {
+  const comEmail = [{ id: 7, nome: 'Clínica X', email: '' }, { id: 8, nome: 'Clinica X ', email: 'outro@x.test' }, { id: 9, nome: 'Única', email: 'u@x.test' }];
+  // ligada por id: é ESTE cliente, mesmo com um homônimo que tem e-mail (antes o nome achava o outro)
+  expect(clienteDaProposta(comEmail, 7, 'Clínica X')).toBe(comEmail[0]);
+  expect(clienteDaProposta(comEmail, '9', 'nome antigo')).toBe(comEmail[2]);
+  // ligada a um cliente fora da lista (inativo): continua ligada, sem e-mail emprestado
+  expect(clienteDaProposta(comEmail, 99, 'Inativo')).toEqual({ id: 99, nome: 'Inativo' });
+  // sem id (proposta antiga): só o nome igual ao de um único cliente
+  expect(clienteDaProposta(comEmail, null, 'UNICA')).toBe(comEmail[2]);
+  expect(clienteDaProposta(comEmail, '', 'Clinica X')).toBeNull();
+  expect(clienteDaProposta(comEmail, undefined, '')).toBeNull();
 });
 
 test('o rótulo do Campo fica ligado ao campo de cliente', () => {

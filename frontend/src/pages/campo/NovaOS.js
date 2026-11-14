@@ -3,11 +3,12 @@
 // usar sem rede. A OS nasce com UUID do aparelho e vai na fila (criar_os).
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check, Search } from 'lucide-react';
+import { ArrowLeft, Check } from 'lucide-react';
 import { useCampo } from './CampoApp';
 import { ROTULO_TIPO_OS } from './operacoes';
 import { COR, Botao, Cartao } from './componentes';
 import Select, { comparador } from '../../components/Select';
+import CampoBusca from '../../components/ui/CampoBusca';
 
 export default function NovaOS() {
   const navigate = useNavigate();
@@ -73,11 +74,9 @@ export default function NovaOS() {
           </div>
         ) : (
           <>
-            <div style={{ position: 'relative' }}>
-              <Search size={18} style={{ position: 'absolute', left: 12, top: 15, color: COR.texto3 }} />
-              <input id="busca-obra" value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por nome, código ou cliente"
-                style={{ paddingLeft: 38 }} />
-            </div>
+            {/* rótulo "Obra" ligado pelo id (htmlFor="busca-obra"); lupa na escala do app de campo */}
+            <CampoBusca id="busca-obra" value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por nome, código ou cliente"
+              style={{ paddingLeft: 38 }} lupa={{ tamanho: 18, esquerda: 12, topo: 15, cor: COR.texto3 }} />
             <div role="listbox" aria-label="Obras" style={{ maxHeight: 300, overflowY: 'auto', marginTop: 8 }}>
               {obrasFiltradas.map(o => (
                 <button key={o.id} type="button" role="option" aria-selected={o.id === obraId} onClick={() => setObraId(o.id)}

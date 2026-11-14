@@ -24,7 +24,8 @@ const BATERIAS = {
 };
 
 const arr = (n, f) => Array.from({ length: n }, (_, i) => f(i + 1));
-const br = (v, c = 0) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+const { numeroFixoBr } = require('../../../_comum/base/formato');
+const br = (v, c = 0) => numeroFixoBr(v, c); // número pt-BR com casas fixas (o comum)
 
 function montarCaixa(res) {
   const { calc, dados } = res;

@@ -47,7 +47,7 @@ const SECOES_CHECKLIST = [...new Set(CHECKLIST.map(c => c.secao))];
 
 const num = fmtNum;
 const ka = (v) => `${num(v, 1)} kA`;
-const sec = (s) => (s == null ? '—' : `${String(s).replace('.', ',')} mm²`);
+const sec = require('../../../_comum/docx-base').fmtSecao; // "2,5 mm²" (o comum)
 const pct = (v) => `${num(v * 100, 0)} %`;
 const LIG = { FN: 'F-N', FF: 'F-F', FFN: '2F+N', FFF: '3F', FFFN: '3F+N' };
 const drTxt = (x) => (x.dr === 'ddr' ? `DDR ${x.drMa} mA` : x.dr === 'idr' ? `${x.drId}` : (x.drFalta ? 'FALTA' : '—'));

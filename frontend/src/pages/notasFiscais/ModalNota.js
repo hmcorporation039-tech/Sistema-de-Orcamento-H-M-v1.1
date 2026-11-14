@@ -296,7 +296,7 @@ export function ModalNota({ abrir, onFechar, onSalvo, acoes }) {
                     <input value={f[ak] ?? ''} onChange={(e) => {
                       const aliq = e.target.value;
                       setF({ ...f, [ak]: aliq, [c]: calcR(f.valor_servicos, aliq) });
-                    }} inputMode="decimal" placeholder="0,00" style={{ width: 50, fontSize: 12, textAlign: 'right' }} />
+                    }} inputMode="decimal" placeholder="0,00" aria-label={`Alíquota ${r} (%)`} style={{ width: 50, fontSize: 12, textAlign: 'right' }} />
                     <span style={{ fontSize: 11, color: 'var(--texto-3)' }}>%</span>
                   </div>
                   <CampoMoeda value={f[c]} onChange={(v) => setF({ ...f, [c]: v })} />

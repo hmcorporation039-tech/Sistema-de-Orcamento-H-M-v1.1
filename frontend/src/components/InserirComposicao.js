@@ -6,6 +6,8 @@ import Select, { comparador } from './Select';
 import Modal from './ui/Modal';
 import { estilos } from './ui/estilos';
 import { formatarMoeda as moeda } from '../utils/format';
+import { gerarId as gerarIdProvisorio } from '../utils/ids';
+import { ehMaoDeObra as ehSecaoDeServico } from '../utils/secoesProposta';
 import { ROTULO_SEGMENTO } from '../utils/disciplinasServico';
 import useDisciplinas from '../hooks/useDisciplinas';
 
@@ -58,10 +60,8 @@ import useDisciplinas from '../hooks/useDisciplinas';
 
 const SECAO_MATERIAIS = 'Materiais e Equipamentos';
 const SECAO_SERVICOS = 'Serviços (Mão de Obra)';
-// mesma regra de ehMaoDeObra (Orcamento.js): seção cujo nome sugere serviço
-const ehSecaoDeServico = (nome) => /m[ãa]o.?de.?obra|serviç|servic/i.test(nome || '');
-let contador = 0;
-const gerarIdPadrao = () => `tmp_kit_${Date.now()}_${contador++}`;
+// id provisório do utils/ids, com a marca de que veio de uma composição
+const gerarIdPadrao = () => gerarIdProvisorio('tmp_kit');
 const qtdBR = (v) => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 3 });
 
 // Converte a resposta de /composicoes/explodir nos itens do editor

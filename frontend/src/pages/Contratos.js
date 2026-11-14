@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import useUltimoPedido from '../hooks/useUltimoPedido';
 import toast from 'react-hot-toast';
-import { Plus, Search, FileDown, Pencil, Trash2 } from 'lucide-react';
+import { Plus, FileDown, Pencil, Trash2 } from 'lucide-react';
 import { getContratos, criarContrato, atualizarContrato, removerContrato, getPrestadores, baixarPdfContrato } from '../services/api';
 import Paginacao from '../components/Paginacao';
 import { formatarMoeda, formatarData } from '../utils/format';
 import { baixarArquivo, mensagemDeErro } from '../utils/download';
 import Select from '../components/Select';
 import Modal from '../components/ui/Modal';
+import CampoBusca from '../components/ui/CampoBusca';
 import { estilos, Campo } from '../components/ui/estilos';
 import ObraSelect from '../components/ObraSelect';
 import CampoMoeda from '../components/CampoMoeda';
@@ -154,15 +155,8 @@ export default function Contratos() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
         <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>Contratos de Prestação de Serviço</h2>
 
-        <div style={{ position: 'relative', width: 260 }}>
-          <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--texto-3)' }} />
-          <input
-            value={busca}
-            onChange={e => setBusca(e.target.value)}
-            placeholder="Buscar por prestador, código ou obra..."
-            style={{ paddingLeft: 30 }}
-          />
-        </div>
+        <CampoBusca value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por prestador, código ou obra..."
+          aria-label="Buscar contrato" estiloCaixa={{ width: 260 }} />
 
         <div style={{ width: 380 }}>
           <ObraSelect value={obraFiltro} onChange={id => setObraFiltro(id)} rotuloVazio="Todas as obras" permitirNova={false} />

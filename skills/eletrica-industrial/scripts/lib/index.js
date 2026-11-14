@@ -31,7 +31,7 @@ const NORMAS = [
 const SECOES_CHECKLIST = ['Documentação', 'Quadros e CCM', 'Motores e partidas', 'Proteção', 'Aterramento', 'Banco de capacitores', 'Segurança NR-10 / NR-12', 'Ensaios e termografia'];
 
 const num = fmtNum; // número pt-BR; '—' quando vazio ou inválido
-const sec = (s) => (s == null ? '—' : `${String(s).replace('.', ',')} mm²`);
+const sec = require('../../../_comum/docx-base').fmtSecao; // "2,5 mm²" (o comum)
 const ka = (a) => `${num(a / 1000, 2)} kA`;
 const caboTxt = (a) => (a ? `${a.paralelos > 1 ? `${a.paralelos} × ` : ''}${a.condutores === 6 ? '6 × ' : '3 × '}${sec(a.secao)}${a.secaoNeutro ? ` + N ${sec(a.secaoNeutro)}` : ''} + PE ${sec(a.secaoPE)}` : '—');
 const caboAlim = (a) => (a ? `${a.paralelos > 1 ? `${a.paralelos} × (` : ''}3 × ${sec(a.secao)}${a.secaoNeutro ? ` + N ${sec(a.secaoNeutro)}` : ''}${a.paralelos > 1 ? ')' : ''} + PE ${a.paralelos > 1 ? `${a.paralelos} × ` : ''}${sec(a.secaoPE)}` : '—');

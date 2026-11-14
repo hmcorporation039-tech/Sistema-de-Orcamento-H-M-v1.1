@@ -257,7 +257,8 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
         setBusca(comObra(T.aba), { replace: true });
       })
       .catch(() => { toast.error('Registro não encontrado'); setBusca(comObra(T.aba), { replace: true }); });
-  }, [laudoDaUrl]); // só quando o id da URL muda
+  // só quando o id da URL muda (não a cada troca de aba ou de disciplina)
+  }, [laudoDaUrl]); // eslint-disable-line
 
   async function novo(base) {
     if (!(await gravarPendente())) return;

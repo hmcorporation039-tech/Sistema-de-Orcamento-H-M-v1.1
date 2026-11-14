@@ -4,6 +4,8 @@ import { Campo } from './estilos';
 import Select from '../Select';
 import CampoMoeda from '../CampoMoeda';
 import Paginacao from '../Paginacao';
+import BuscaCodigo from '../fiscal/BuscaCodigo';
+import CampoBusca from './CampoBusca';
 
 // Acessibilidade (2.39): o rótulo do Campo liga ao campo (htmlFor + id gerado) e os botões de
 // página, que são só ícone, têm nome.
@@ -38,7 +40,7 @@ test('Campo liga o rótulo a input, Select e CampoMoeda (id gerado, um por campo
   expect(caixa.querySelector(`[id="${ids[2]}"]`).tagName).toBe('INPUT');
 });
 
-test('Campo mantém o id que o campo já tinha e não liga o que não é campo', () => {
+test('Campo mantém o id que o campo já tinha; sem campo, vira grupo nomeado (nenhum <label> solto)', () => {
   desenhar(
     <>
       <Campo label="E-mail"><input id="email-proprio" /></Campo>
@@ -46,10 +48,27 @@ test('Campo mantém o id que o campo já tinha e não liga o que não é campo',
       <Campo label="Ativo"><input type="checkbox" /></Campo>
     </>,
   );
-  const [email, acoes, ativo] = caixa.querySelectorAll('label');
-  expect(email.htmlFor).toBe('email-proprio');
-  expect(acoes.hasAttribute('for')).toBe(false);
-  expect(ativo.hasAttribute('for')).toBe(false);
+  const rotulos = caixa.querySelectorAll('label');
+  expect(rotulos).toHaveLength(1);
+  expect(rotulos[0].htmlFor).toBe('email-proprio');
+  const grupos = [...caixa.querySelectorAll('[role="group"]')];
+  expect(grupos.map(g => document.getElementById(g.getAttribute('aria-labelledby')).textContent)).toEqual(['Ações', 'Ativo']);
+  expect(grupos.every(g => document.getElementById(g.getAttribute('aria-labelledby')).tagName === 'SPAN')).toBe(true);
+});
+
+test('BuscaCodigo e CampoBusca recebem o id: o rótulo liga à busca e, já escolhido, ao código mostrado', () => {
+  const buscar = () => Promise.resolve({ data: [] });
+  desenhar(
+    <>
+      <Campo label="Município"><BuscaCodigo buscar={buscar} valor={null} onEscolher={() => {}} /></Campo>
+      <Campo label="Serviço"><BuscaCodigo buscar={buscar} valor={{ codigo: '070201', descricao: 'Engenharia' }} onEscolher={() => {}} /></Campo>
+      <Campo label="Buscar"><CampoBusca value="" onChange={() => {}} /></Campo>
+    </>,
+  );
+  const alvo = [...caixa.querySelectorAll('label')].map(r => document.getElementById(r.htmlFor));
+  expect(alvo.map(el => el && el.tagName)).toEqual(['INPUT', 'OUTPUT', 'INPUT']);
+  expect(alvo[1].textContent).toContain('Engenharia');
+  expect(caixa.querySelector('button[title="Trocar"]').getAttribute('aria-label')).toBe('Trocar');
 });
 
 test('Paginação: botões de ícone com nome', () => {

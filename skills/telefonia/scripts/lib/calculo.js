@@ -56,7 +56,7 @@ const JUMPER_M = 1.5; // m de fio jumper por cruzamento no DG [CONFERIR]
 const LIMITE_UTP = 90; // m — cabo horizontal (NBR 14565)
 const LIMITE_CCI = 500; // m — alcance prático do ramal analógico [CONFERIR com o fabricante]
 const PORTAS_PATCH = 24;
-const RACKS_U = [6, 8, 12, 16, 24, 32, 36, 40, 44];
+const RACKS_U = require('../../../_comum/fabricacao/rack').RACKS_U_PROJETO; // série comum do projeto
 // Consumo / PoE típicos (W) [CONFERIR]
 const W_PLACA = 4;
 const W_GATEWAY = 15;
@@ -68,12 +68,14 @@ const W_PORTEIRO_IP = 8;
 const NB = require('../../../_comum/bateria');
 const { especificarDps, descricaoDps } = require('../../../_comum/dps'); // DPS da alimentação CA
 const { comercial } = NB;
-const { FP_NOBREAK, MARGEM_NOBREAK, NOBREAKS_VA } = NB;
+const { FP_NOBREAK, MARGEM_NOBREAK } = NB;
+const NOBREAKS_VA = NB.SERIES_NOBREAK_VA.ate3kva;
 const EFICIENCIA = NB.EFICIENCIA_INVERSOR;
-const FATOR_BATERIA = NB.FATOR_BATERIA_NOBREAK; // envelhecimento/temperatura [CONFERIR]
-const BATERIAS_AH = NB.BATERIAS_NOBREAK_AH;
+const FATOR_BATERIA = NB.FATOR_ENVELHECIMENTO.nobreak; // envelhecimento/temperatura [CONFERIR]
+const BATERIAS_AH = NB.SERIES_BATERIA.vrla12vNobreak;
 
-const br = (v, c = 1) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+const { numeroFixoBr } = require('../../../_comum/base/formato');
+const br = (v, c = 1) => numeroFixoBr(v, c); // número pt-BR com casas fixas (o comum)
 const sim = (v) => v === true || v === 'true' || v === 'sim' || v === 1 || v === '1';
 const nao = (v) => v === false || v === 'false' || v === 'nao' || v === 'não' || v === 0 || v === '0';
 const numOu = (v, padrao) => (v === null || v === undefined || v === '' || Number.isNaN(Number(v)) ? padrao : Number(v));
@@ -81,7 +83,7 @@ const pad2 = (n) => String(n).padStart(2, '0');
 
 // modelo comercial (comercial) e nobreak: as funções comuns
 function nobreakPara(local, cargaW, autonomiaH) {
-  const nb = NB.dimensionarNobreak({ cargaW, autonomiaH });
+  const nb = NB.dimensionarNobreak({ cargaW, autonomiaH, nobreaksVa: NOBREAKS_VA, bateriasAh: BATERIAS_AH, fatorBateria: FATOR_BATERIA });
   return { local, cargaW, vaNec: nb.vaNec, va: nb.va, nNobreaks: nb.nNobreaks, whNec: nb.whNec, ahNec: nb.ahNec, bateriaAh: nb.bateriaAh, nBaterias: nb.nBaterias };
 }
 

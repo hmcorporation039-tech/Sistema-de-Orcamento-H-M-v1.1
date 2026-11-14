@@ -279,7 +279,8 @@ async function aplicarAcao(req, res) {
       resultado = await executarAcao(acao, api);
     } catch (e) {
       const erro = e instanceof ErroAcao ? e.message : 'Falha ao aplicar a ação.';
-      if (!(e instanceof ErroAcao)) console.error('[assistente] falha ao aplicar ação:', e);
+      // falha inesperada (não é erro de validação da própria ação): entra no resumo diário de erros (2.40)
+      if (!(e instanceof ErroAcao)) require('../middleware/erros').registrarErroInesperado(req, e);
       await pool.query('UPDATE assistente_acoes SET resultado = $2 WHERE id = $1', [acao.id, { erro, em: new Date().toISOString() }]);
       return res.status(e.status && e.status >= 400 && e.status < 500 ? e.status : 502).json({ erro });
     }

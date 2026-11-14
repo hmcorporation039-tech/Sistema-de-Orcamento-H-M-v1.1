@@ -40,7 +40,7 @@ Entrada `fabricantes: { padrao, por_tipo: { contator: "WEG", … } }` e, em qual
 4. **Documentos:** `node _comum/cli.js quadros documentos <quadro>.json --saida <pasta do cliente>` (`--so memorial,desenho`).
 5. **Orçamento:** `node _comum/cli.js quadros orcamento <quadro>.json --modo fabricacao|inspecao`; no sistema, ferramenta MCP `criar_rascunho_proposta` ou o botão da aba de projetos.
 
-## Critérios adotados (resumo; detalhes e fontes em `scripts/lib/tabelas.js`)
+## Critérios adotados (resumo; detalhes e fontes em `skills/_comum/fabricacao/tabelasQuadro.js`, reexportado em `scripts/lib/tabelas.js`; configuração do quadro e barramentos em `skills/_comum/fabricacao/quadro.js`)
 
 - **Correntes:** Ib = P/(V·FP) ou P/(√3·V·FP); quadro = FD × ΣIb por fase + motores (1,25 × In do maior + Σ dos demais, NBR 5410 6.5.1); FD = fator de diversidade nominal da NBR IEC 61439-2 pelo nº de saídas quando não informado [CONFERIR].
 - **Coordenação:** Ib ≤ In ≤ Iz (5.3.4.1); Icu/Icn ≥ Icc (5.3.5.5.1), filiação só com tabela do fabricante; Ics da NBR NM 60898; seletividade por razão In ≥ 1,6 só como aviso; redução de corrente DIN no ar interno ≈ 0,45 %/°C [CONFERIR].

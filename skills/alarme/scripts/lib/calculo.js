@@ -53,10 +53,12 @@ const CENTRAIS = [
 ];
 const ZONAS_POR_EXPANSOR = 8;
 const DISPOSITIVOS_POR_RECEPTOR = 64; // [CONFERIR] capacidade do receptor sem fio
-const BATERIAS_AH = [7, 12, 18, 26, 40, 65]; // 12 V seladas (VRLA)
+// série de bateria 12 V (VRLA) e fator de envelhecimento: os nomeados de _comum/bateria.js
+const BAT = require('../../../_comum/bateria');
+const BATERIAS_AH = BAT.SERIES_BATERIA.vrla12vCentralAlarme;
 const BATERIA_MAX_GABINETE_AH = 18; // [CONFERIR] maior bateria que cabe no gabinete típico
 const FONTES_A = [1, 2, 3, 5, 10];
-const FATOR_BATERIA = 1.25; // envelhecimento e fim de vida da bateria [CONFERIR]
+const FATOR_BATERIA = BAT.FATOR_ENVELHECIMENTO.alarme; // envelhecimento e fim de vida da bateria [CONFERIR]
 
 // Consumos típicos a 12 V (mA): [repouso, alarme]. Dispositivos sem fio usam pilha própria. [CONFERIR]
 const CONSUMO_PADRAO = {
@@ -86,11 +88,12 @@ const ROTULO_DETECTOR = { ivp: 'IVP', ivp_pet: 'IVP pet', ivp_dupla: 'IVP + MW (
 const ROTULO_TECNOLOGIA = { com_fio: 'Com fio', sem_fio: 'Sem fio', hibrido: 'Híbrido (janelas sem fio)' };
 
 const n0 = (v) => Math.max(0, Math.round(Number(v) || 0));
-const br = (v, c = 1) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+const { numeroFixoBr } = require('../../../_comum/base/formato');
+const br = (v, c = 1) => numeroFixoBr(v, c); // número pt-BR com casas fixas (o comum)
 const naLista = (lista, v) => lista.find(x => x >= v - 1e-9);
 
 // Regras comuns (14/11/2026): bateria pela autonomia e modelo comercial, queda de tensão em CC e DPS
-const { capacidadeBateriaAh, comercial } = require('../../../_comum/bateria');
+const { capacidadeBateriaAh, comercial } = BAT;
 const { quedaCC } = require('../../../_comum/eletrico/calculo');
 const { especificarDps, descricaoDps } = require('../../../_comum/dps');
 const SECAO_CABO_SIRENE = 0.75; // mm² — cabo paralelo das sirenes

@@ -337,7 +337,8 @@ export default function PainelAssistente({ usuario }) {
       if (ultima && /^\d+$/.test(ultima)) abrirConversa(Number(ultima));
       else setVerLista(true);
     }
-  }, [aberto]); // de propósito só ao abrir/fechar o painel
+  // de propósito só ao abrir/fechar o painel (não a cada conversa ou lista nova)
+  }, [aberto]); // eslint-disable-line
 
   useEffect(() => () => pararLeitura(), []);
   useEffect(() => { fimRef.current?.scrollIntoView({ block: 'end' }); }, [conversa?.mensagens?.length, aoVivo]);

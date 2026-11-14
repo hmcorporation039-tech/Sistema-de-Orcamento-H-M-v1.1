@@ -383,8 +383,9 @@ function cnaesSugeridos(ctribNac) {
 }
 
 // Lista das atividades da empresa com código e descrição, com busca; as que
-// combinam com o código de tributação escolhido aparecem primeiro.
-function EscolhaCnae({ cnaes, ctribNac, valor, onEscolher }) {
+// combinam com o código de tributação escolhido aparecem primeiro. O `id` vai
+// para o filtro (o rótulo do Campo liga a ele).
+function EscolhaCnae({ id, cnaes, ctribNac, valor, onEscolher }) {
   const [filtro, setFiltro] = useState('');
   const divisoes = cnaesSugeridos(ctribNac);
   const casa = (c) => !filtro || c.codigo.includes(filtro.replace(/D/g, '') || '§') || c.descricao.toLowerCase().includes(filtro.toLowerCase());
@@ -404,7 +405,7 @@ function EscolhaCnae({ cnaes, ctribNac, valor, onEscolher }) {
         <span style={{ flex: 1 }}>{escolhida ? <>Escolhida: <code>{formatarCnae(escolhida.codigo)}</code> {escolhida.descricao}</> : 'Nenhuma (a nota sai sem CNAE)'}</span>
         {valor && <button type="button" onClick={() => onEscolher('')} style={estilos.btnSecundario}>Não informar</button>}
       </div>
-      <input value={filtro} onChange={(e) => setFiltro(e.target.value)} placeholder="Filtrar por código ou palavra (ex.: elétrica, 43.21)" />
+      <input id={id} value={filtro} onChange={(e) => setFiltro(e.target.value)} placeholder="Filtrar por código ou palavra (ex.: elétrica, 43.21)" />
       <div style={{ maxHeight: 220, overflowY: 'auto', marginTop: 6, border: '1px solid var(--borda)', borderRadius: 8 }}>
         {sugeridas.length > 0 && <div style={grupoCnae}>Combinam com o código {ctribNac ? formatarCtribNac(ctribNac) : ''}</div>}
         {sugeridas.map(linha)}
@@ -415,6 +416,7 @@ function EscolhaCnae({ cnaes, ctribNac, valor, onEscolher }) {
     </div>
   );
 }
+EscolhaCnae.encaminhaId = true;
 const itemCnae = {
   display: 'flex', gap: 10, alignItems: 'baseline', width: '100%', textAlign: 'left', padding: '6px 10px', fontSize: 12.5,
   background: 'transparent', border: 0, borderTop: '1px solid var(--borda)', color: 'var(--texto-2)', cursor: 'pointer',

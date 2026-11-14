@@ -3,7 +3,7 @@ import toast from 'react-hot-toast';
 import { KeyRound } from 'lucide-react';
 import { alterarSenha } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
-import { useRotuloLigado } from '../components/ui/rotuloLigado';
+import { Rotulo, useRotuloLigado } from '../components/ui/rotuloLigado';
 
 // Tela de troca obrigatória de senha, exibida logo após o login quando a senha
 // atual é provisória (conta recém-criada ou senha redefinida por um
@@ -105,16 +105,16 @@ export default function DefinirSenha() {
 }
 
 function Campo({ label, children }) {
-  const { idCampo, filhos } = useRotuloLigado(children);
+  const ligacao = useRotuloLigado(children);
   return (
-    <div style={{ marginBottom: 14 }}>
-      <label htmlFor={idCampo || undefined} style={{
+    <div style={{ marginBottom: 14 }} {...ligacao.propsCaixa}>
+      <Rotulo ligacao={ligacao} style={{
         display: 'block', fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase',
         letterSpacing: '.5px', marginBottom: 5,
       }}>
         {label}
-      </label>
-      {filhos}
+      </Rotulo>
+      {ligacao.filhos}
     </div>
   );
 }

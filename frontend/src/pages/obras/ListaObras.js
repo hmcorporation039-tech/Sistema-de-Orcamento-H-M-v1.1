@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Plus, Search } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { getObras, criarObra } from '../../services/api';
 import Select from '../../components/Select';
 import ClienteSelect from '../../components/ClienteSelect';
 import Modal from '../../components/ui/Modal';
 import Paginacao from '../../components/Paginacao';
+import CampoBusca from '../../components/ui/CampoBusca';
 import PixSemObra from './PixSemObra';
 import { invalidarCacheObras } from '../../components/ObraSelect';
 import { STATUS_OBRA, SEGMENTO, SEGMENTO_CURTO, BASE_ORCADO, Etiqueta, moeda, pct, corMargem, estilos as E, Campo } from './comum';
@@ -57,10 +58,7 @@ export default function ListaObras() {
 
       <div style={{ ...E.card, display: 'grid', gridTemplateColumns: 'minmax(220px, 2fr) 1fr 1fr minmax(180px, 1.5fr)', gap: 12, alignItems: 'end' }}>
         <Campo label="Buscar">
-          <div style={{ position: 'relative' }}>
-            <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--texto-3)' }} />
-            <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Código, nome, cliente ou local..." style={{ paddingLeft: 30 }} />
-          </div>
+          <CampoBusca value={busca} onChange={e => setBusca(e.target.value)} placeholder="Código, nome, cliente ou local..." />
         </Campo>
         <Campo label="Status">
           <Select value={status} onChange={e => setStatus(e.target.value)}>

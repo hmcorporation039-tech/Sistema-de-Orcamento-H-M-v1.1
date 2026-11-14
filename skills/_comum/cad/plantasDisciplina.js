@@ -377,7 +377,7 @@ function antena(res, arquitetura) {
 
 // ── Alarme e elétrica usam as portas detectadas quando existem ──
 const PLANTAS = { eletrica, incendio, cftv, cabeamento, alarme, iluminacao, eletrica_hospitalar: eletricaHospitalar, controle_acesso: controleAcesso, telefonia, antena,
-  // climatização (fase 4): a planta automática é da própria skill
-  climatizacao: (res, arq) => require('../../climatizacao/scripts/lib/cad').planta(res, arq) };
+  // climatização (fase 4): a planta automática fica em ./climatizacao.js (antes na skill)
+  climatizacao: (res, arq) => require('./climatizacao').planta(res, arq) };
 
 module.exports = { PLANTAS };

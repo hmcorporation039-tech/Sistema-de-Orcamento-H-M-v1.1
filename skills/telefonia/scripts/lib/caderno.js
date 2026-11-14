@@ -19,7 +19,8 @@ const NORMAS = [
   { codigo: 'ABNT NBR IEC 60529', titulo: 'Graus de proteção do invólucro', aplicacao: 'grau IP da caixa' },
 ];
 
-const arred = (v, c = 0) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+const { numeroFixoBr } = require('../../../_comum/base/formato');
+const arred = (v, c = 0) => numeroFixoBr(v, c); // número pt-BR com casas fixas (o comum)
 
 function descricaoCentral(calc) {
   if (calc.analogica) return `${calc.nCentrais > 1 ? `${calc.nCentrais} × ` : ''}${calc.central.rotulo}${calc.placas ? ` com ${calc.placas} placa(s) de ramais` : ''}`;

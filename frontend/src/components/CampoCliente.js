@@ -32,6 +32,16 @@ export function clientePorNome(clientes, nome) {
   return iguais.length === 1 ? iguais[0] : null;
 }
 
+// Cliente do cadastro de uma proposta (Orçamento e Histórico, 2.40): o cliente_id manda —
+// ligado e fora da lista (inativo) continua ligado, como { id, nome }; sem cliente_id
+// (proposta antiga), só o nome igual ao de um único cliente (clientePorNome).
+export function clienteDaProposta(clientes, clienteId, nome) {
+  if (clienteId != null && clienteId !== '') {
+    return (clientes || []).find(c => String(c.id) === String(clienteId)) || { id: Number(clienteId), nome };
+  }
+  return clientePorNome(clientes, nome);
+}
+
 // repassa o `id` ao <input>: o Campo do kit liga o rótulo a ele (ui/rotuloLigado.js)
 CampoCliente.encaminhaId = true;
 

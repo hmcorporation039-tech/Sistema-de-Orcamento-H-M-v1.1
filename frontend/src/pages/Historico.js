@@ -8,12 +8,11 @@ import {
 } from '../services/api';
 import { formatarMoeda, hojeBrasilia } from '../utils/format';
 import { baixarArquivo, salvarBlob, mensagemDeErro } from '../utils/download';
-// acha o cliente pelo nome quando a proposta não está ligada por cliente_id ("CLINICA" x "CLÍNICA")
-import { normalizarNome } from '../utils/texto';
 import Paginacao from '../components/Paginacao';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
 import BotaoLinkAprovacao from '../components/BotaoLinkAprovacao';
 import { useClientes } from '../components/ClienteSelect';
+import { clienteDaProposta } from '../components/CampoCliente';
 import Indicador from '../components/ui/Indicador';
 import { POR_PAGINA, INICIO_DO_HISTORICO, filtrosDoRelatorio, btnPrimario } from './historico/apoio';
 import FiltrosPropostas from './historico/FiltrosPropostas';
@@ -59,11 +58,13 @@ export default function Historico() {
   const inicioEfetivo = dataInicio || INICIO_DO_HISTORICO;
   const fimEfetivo = dataFim || hojeBrasilia();
 
-  // Fallback pro e-mail do cliente quando a proposta não está linkada por
-  // cliente_id (detalhe.cliente_email vem nulo) — busca pelo nome no cadastro.
-  const clienteResolvidoPeloNome = useMemo(
-    () => clientes.find(c => normalizarNome(c.nome) === normalizarNome(detalhe?.cliente_nome)),
-    [clientes, detalhe?.cliente_nome]
+  // Reserva para o e-mail do cliente quando o servidor não trouxe (detalhe.cliente_email
+  // vem do cadastro ligado por cliente_id): o cliente pelo cliente_id da proposta; só sem
+  // ele (proposta antiga) pelo nome igual ao de um único cliente — antes era sempre pelo
+  // nome, e um homônimo podia emprestar o e-mail de outro cliente.
+  const clienteDoDetalhe = useMemo(
+    () => clienteDaProposta(clientes, detalhe?.cliente_id, detalhe?.cliente_nome),
+    [clientes, detalhe?.cliente_id, detalhe?.cliente_nome]
   );
 
   const recarregar = useCallback(() => setVersao(v => v + 1), []);
@@ -273,7 +274,7 @@ export default function Historico() {
         aberto={modalEmail}
         onFechar={() => setModalEmail(false)}
         proposta={detalhe}
-        emailInicial={detalhe?.cliente_email || clienteResolvidoPeloNome?.email || ''}
+        emailInicial={detalhe?.cliente_email || clienteDoDetalhe?.email || ''}
       />
     </div>
   );

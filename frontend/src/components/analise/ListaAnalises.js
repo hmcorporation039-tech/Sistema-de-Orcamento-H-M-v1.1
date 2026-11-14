@@ -4,12 +4,12 @@
 // sem nome — uma análise sem obra que saísse das 20 sumia da tela.
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search } from 'lucide-react';
 import { getAnalisesProjeto, removerAnaliseProjeto } from '../../services/api';
 import { rotuloFinalidade, corFinalidade } from '../../utils/finalidades';
 import { formatarData } from '../../utils/format';
 import Paginacao from '../Paginacao';
 import Select from '../Select';
+import CampoBusca from '../ui/CampoBusca';
 import BotaoExcluir from '../ui/BotaoExcluir';
 import { estilos as E } from '../ui/estilos';
 
@@ -78,10 +78,8 @@ export default function AnalisesSalvas({ disciplinas, ativaId, versao, onExcluid
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
-          <Search size={13} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--texto-3)' }} />
-          <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por nome, cliente, obra ou nº da análise" style={{ paddingLeft: 30 }} data-testid="busca-analises" />
-        </div>
+        <CampoBusca value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por nome, cliente, obra ou nº da análise"
+          aria-label="Buscar análise" data-testid="busca-analises" estiloCaixa={{ flex: 1, minWidth: 220 }} lupa={{ tamanho: 13 }} />
         <Select value={filtroObra} onChange={e => setFiltroObra(e.target.value)} style={{ width: 'auto', minWidth: 170 }}>
           <option value="">Todas (com e sem obra)</option>
           <option value="sem">Só as sem obra</option>

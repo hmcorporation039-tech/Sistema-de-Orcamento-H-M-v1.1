@@ -6,6 +6,8 @@
 // fotos que só existem no aparelho. Assim uma sincronização que traz a cópia do
 // servidor nunca apaga da tela o que o técnico fez e ainda não foi enviado.
 
+import { comparador } from '../../components/Select';
+
 export const TIPOS_OPERACAO = ['criar_os', 'iniciar', 'responder', 'item_extra', 'observacao', 'assinar', 'concluir'];
 export const RESPOSTAS = ['conforme', 'nao_conforme', 'na'];
 
@@ -235,8 +237,10 @@ export function classificarOS(lista, hoje = diaLocal()) {
     else if (os.status === 'em_execucao' || (os.agendada_para && os.agendada_para <= hoje)) r.hoje.push(os);
     else r.proximas.push(os);
   }
+  // mesma data: título em ordem A–Z pela regra única do sistema (Select.comparador — sem acento,
+  // sem maiúsculas, números em ordem natural: "Poste 2" antes de "Poste 10")
   const porData = (a, b) => String(a.agendada_para || '9999').localeCompare(String(b.agendada_para || '9999'))
-    || String(a.titulo || '').localeCompare(String(b.titulo || ''), 'pt-BR');
+    || comparador.compare(String(a.titulo || ''), String(b.titulo || ''));
   r.hoje.sort((a, b) => (a.status === 'em_execucao' ? 0 : 1) - (b.status === 'em_execucao' ? 0 : 1) || porData(a, b));
   r.proximas.sort(porData);
   r.concluidas.sort((a, b) => tempo(b.concluida_em || b.atualizado_em) - tempo(a.concluida_em || a.atualizado_em));

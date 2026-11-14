@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
 import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import Select, { Sugestoes } from '../Select';
+import { estilos } from '../ui/estilos';
 
 // Componentes de formulário compartilhados pelos formulários de laudo/projeto
 // de todas as disciplinas (aba Análise de Projeto → Laudos e projetos).
@@ -216,10 +217,8 @@ function CampoArquivoTexto({ valor, onChange, aceita }) {
   );
 }
 
-export const btnAdicionar = {
-  display: 'inline-flex', alignItems: 'center', padding: '5px 10px', background: 'transparent',
-  border: '1px dashed #333', borderRadius: 5, color: 'var(--texto-2)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-};
+// tracejado do kit (ui/estilos.js), menor e em linha com o texto
+export const btnAdicionar = { ...estilos.btnTracejado, display: 'inline-flex', padding: '5px 10px' };
 const btnIconeRemover = {
   display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 28,
   background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 5, color: '#b04040', cursor: 'pointer',

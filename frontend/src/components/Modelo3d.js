@@ -12,6 +12,7 @@ import api, {
 } from '../services/api';
 import Modelo3dEditor from './analise/Modelo3dEditor';
 import { baixarArquivo, mensagemDeErro } from '../utils/download';
+import { estilos } from './ui/estilos';
 
 export const ACEITA_ARQUITETURA = '.dxf,.dwg,.pdf';
 export const DICA_ARQUITETURA = 'Planta de arquitetura em DWG ou DXF (AutoCAD 2004 ou mais novo) ou em PDF exportado do AutoCAD/Revit (não escaneado), com o nome dos ambientes escrito dentro deles; portas pelo arco de abertura.';
@@ -239,7 +240,4 @@ export function OpcaoModelo3dProposta({ propostaId, somenteLeitura = false }) {
   );
 }
 
-const btn3d = {
-  display: 'flex', alignItems: 'center', padding: '8px 12px', background: 'transparent', border: '1px solid #2f4f6f',
-  borderRadius: 6, color: '#8ab4f8', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
-};
+const btn3d = estilos.btnContornoAzul;

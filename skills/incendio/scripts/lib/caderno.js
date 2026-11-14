@@ -12,7 +12,8 @@ const { cadernoDeCaixas } = require('../../../_comum/fabricacao/caixa');
 const { gerarCadernoPdf } = require('../../../_comum/fabricacao/caderno');
 const { especificarDps, descricaoDps } = require('../../../_comum/dps');
 
-const br = (v, c = 1) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+const { numeroFixoBr } = require('../../../_comum/base/formato');
+const br = (v, c = 1) => numeroFixoBr(v, c); // número pt-BR com casas fixas (o comum)
 
 const NORMAS = [
   { codigo: 'ABNT NBR 17240:2010', titulo: 'Sistemas de detecção e alarme de incêndio — projeto, instalação, comissionamento e manutenção', aplicacao: 'central (5.3 e 6.1), fonte e baterias (Anexo B: 24 h em repouso + alarme), supervisão de laços e falhas, sinalização e comandos da central' },

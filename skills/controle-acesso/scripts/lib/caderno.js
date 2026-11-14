@@ -11,7 +11,8 @@ const { cadernoDeCaixas } = require('../../../_comum/fabricacao/caixa');
 const { gerarCadernoPdf } = require('../../../_comum/fabricacao/caderno');
 const { descricaoDps } = require('../../../_comum/dps');
 
-const br = (v, c = 0) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+const { numeroFixoBr } = require('../../../_comum/base/formato');
+const br = (v, c = 0) => numeroFixoBr(v, c); // número pt-BR com casas fixas (o comum)
 const sim = (v) => v === true || v === 'true' || v === 'sim' || v === 1 || v === '1';
 
 const NORMAS = [

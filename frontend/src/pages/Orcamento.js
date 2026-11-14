@@ -2,14 +2,14 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { FolderPlus, BarChart3, Scale } from 'lucide-react';
-import { getProximoNumero, criarProposta, atualizarProposta, getProposta, getPadroesOrcamento, pesquisarPrecoMercado, getAnaliseProjeto, getLaudo, duplicarProposta, baixarPdfProposta, baixarPlanilhaProposta } from '../services/api';
+import { pesquisarPrecoMercado, baixarPdfProposta, baixarPlanilhaProposta } from '../services/api';
 import { arred2 } from '../utils/dinheiro';
 import { baixarArquivo, mensagemDeErro } from '../utils/download';
 import { useAuth } from '../hooks/useAuth';
 import useAlteracoesNaoSalvas from '../hooks/useAlteracoesNaoSalvas';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
 import { resultadoDaPesquisa } from '../components/PesquisaMercado';
-import { clientePorNome } from '../components/CampoCliente';
+import { clienteDaProposta } from '../components/CampoCliente';
 import useDisciplinas from '../hooks/useDisciplinas';
 // Fase 3F (2.0): BDI pela fórmula do TCU e curva ABC da proposta
 import CalculadoraBdi from '../components/CalculadoraBdi';
@@ -18,11 +18,12 @@ import { normalizarMemoriaBdi } from '../utils/bdiTcu';
 // Fase 3 (2.0): kits da base de preços e aprovação da proposta por link
 import InserirComposicao, { distribuirNasSecoes } from '../components/InserirComposicao';
 import { OpcaoModelo3dProposta } from '../components/Modelo3d';
-import { SECOES_PADRAO, apagarRascunho, chaveRascunho, ehMaoDeObra, formVazio, gerarId, gravarRascunho, lerRascunho, normalizarNome, origemDaProposta, retrato } from './orcamento/apoio';
-import {
-  avisosDoBdi, calcularTotais, formDaProposta, itensDaProposta, itensParaCurvaAbc, montarPayload, problemaParaSalvar, reordenarPorSubgrupo,
-} from './orcamento/calculos';
+import { SECOES_PADRAO, ehMaoDeObra, formVazio, gerarId, retrato } from './orcamento/apoio';
+import { avisosDoBdi, calcularTotais, itensParaCurvaAbc, reordenarPorSubgrupo } from './orcamento/calculos';
 import { useBasesDoEditor, usePrecosVendidos, useSegmentoProposta, useServicosDoEditor } from './orcamento/ganchos';
+import useRascunho from './orcamento/useRascunho';
+import useCargaProposta from './orcamento/useCargaProposta';
+import useSalvarProposta from './orcamento/useSalvarProposta';
 import { btnSecundario, card, fieldsetLimpo } from './orcamento/estilos';
 import AvisoOrigem from './orcamento/AvisoOrigem';
 import {
@@ -36,13 +37,10 @@ import BarraTotais from './orcamento/BarraTotais';
 // aqui), sem mudar o funcionamento: as contas e montagens sem estado estão em
 // orcamento/calculos.js; as bases (clientes, catálogo, serviços), o segmento do cliente/obra,
 // os serviços e os preços praticados em orcamento/ganchos.js; as faixas de aviso em
-// orcamento/Avisos.js e cada seção em orcamento/SecaoOrcamento.js. Aqui ficam o estado da
-// proposta (formulário, seções, itens), rascunho, carga, salvar e as ações da tela.
-
-// Proposta nova gravada: a URL vira /propostas/editar/:id e o React Router pode
-// montar a tela de novo — o que estava nela (inclusive as pesquisas de mercado
-// abertas) passa por aqui em vez de ser relido do servidor.
-let transporte = null;
+// orcamento/Avisos.js e cada seção em orcamento/SecaoOrcamento.js. Em 2.40 saíram também a
+// carga (orcamento/useCargaProposta.js), o rascunho (orcamento/useRascunho.js) e o salvar
+// (orcamento/useSalvarProposta.js). Aqui ficam o estado da proposta (formulário, seções,
+// itens, versão, situação) e as ações de edição da tela.
 
 export default function Orcamento() {
   const { nomeServico: nomeDisciplina } = useDisciplinas();
@@ -50,8 +48,6 @@ export default function Orcamento() {
   const navigate = useNavigate();
   const [busca] = useSearchParams();
   const obraDaUrl = Number(busca.get('obra')) || null; // /propostas?aba=editar&obra=ID
-
-  const [proximoNumero, setProximoNumero] = useState(null);
 
   const [form, setForm] = useState(formVazio);
   const [secoes, setSecoes] = useState(SECOES_PADRAO);
@@ -61,7 +57,6 @@ export default function Orcamento() {
   // aplicarAjustePercentual), não fica guardado como parte da proposta.
   const [ajusteMateriaisInput, setAjusteMateriaisInput] = useState('');
   const [ajusteMaoDeObraInput, setAjusteMaoDeObraInput] = useState('');
-  const [salvando, setSalvando] = useState(false);
   const [propostaSalva, setPropostaSalva] = useState(null);
   // versão da proposta no servidor (bloqueio otimista): quem gravou depois
   // que esta tela abriu faz o salvar daqui ser recusado, em vez de sobrescrito
@@ -76,19 +71,10 @@ export default function Orcamento() {
   const [somenteLeitura, setSomenteLeitura] = useState(null);
   // { mensagem } — 409: outra pessoa gravou a proposta depois que esta tela abriu
   const [conflito, setConflito] = useState(null);
-  // rascunho guardado neste navegador esperando a pessoa decidir (restaurar/descartar)
-  const [rascunhoPendente, setRascunhoPendente] = useState(null);
   const [gerandoPdf, setGerandoPdf] = useState(false);
   const [modalEmail, setModalEmail] = useState(false);
   const [carregandoEdicao, setCarregandoEdicao] = useState(!!editandoId);
   const [numeroEditando, setNumeroEditando] = useState('');
-  // rascunho montado pelo assistente virtual (propostas.assistente_conversa_id)
-  const [criadaPeloAssistente, setCriadaPeloAssistente] = useState(false);
-  // E-mail do cliente já resolvido pelo backend via cliente_id (JOIN com a
-  // tabela clientes) ao carregar uma proposta salva — mais confiável do que
-  // bater o texto de cliente_nome contra a lista de clientes, que falha se o
-  // nome tiver alguma diferença de digitação/espaço.
-  const [clienteEmailCadastro, setClienteEmailCadastro] = useState('');
   // Pesquisa de mercado por item (editor único: antes só a Análise de Projeto
   // tinha) — { [id do item na tela]: { carregando } | resultado | { erro } }.
   // Fica na memória da tela; repetir a pesquisa da mesma descrição em até 48 h
@@ -101,9 +87,6 @@ export default function Orcamento() {
   const [mostrarCurvaAbc, setMostrarCurvaAbc] = useState(false);
   const [anexosPdf, setAnexosPdf] = useState({ curva_abc: false, composicao_bdi: false });
   const calculadoraJaSugerida = useRef(null); // id da proposta em que o calculador já abriu sozinho
-  // BDI e impostos padrão do administrador (null = ainda não carregou ou não conseguiu)
-  const [padroesOrc, setPadroesOrc] = useState(null);
-  const buscarPadroes = () => getPadroesOrcamento().then(r => { setPadroesOrc(r.data); return r.data; }).catch(() => null);
 
   // clientes, catálogo de materiais e base de serviços (inteiros), com o aviso de falha
   const { clientes, materiais, servicos, basesComFalha, carregarBases } = useBasesDoEditor();
@@ -111,44 +94,14 @@ export default function Orcamento() {
   // ── alteração não salva, rascunho e aviso ao sair ──
   const estadoAtual = useMemo(() => retrato(form, secoes, itens), [form, secoes, itens]);
   const sujo = base !== null && estadoAtual !== base;
-  const chaveDoRascunho = chaveRascunho(usuario?.id, editandoId);
   const { liberar } = useAlteracoesNaoSalvas(sujo && !carregandoEdicao,
     'Há alterações não salvas nesta proposta. Sair mesmo assim?\n\n(Elas ficam guardadas como rascunho neste navegador e podem ser restauradas ao abrir a proposta de novo.)');
 
-  // grava o rascunho ~1 s depois da última alteração (não enquanto a tela
-  // oferece restaurar um rascunho anterior — senão ele seria sobrescrito)
-  useEffect(() => {
-    if (!sujo || rascunhoPendente || carregandoEdicao) return undefined;
-    const t = setTimeout(() => gravarRascunho(chaveDoRascunho, {
-      salvoEm: new Date().toISOString(), versao: versaoRef.current, numero: numeroEditando || null, form, secoes, itens,
-    }), 800);
-    return () => clearTimeout(t);
-  }, [sujo, rascunhoPendente, carregandoEdicao, chaveDoRascunho, form, secoes, itens, numeroEditando]);
-
-  // depois de carregar (ou abrir em branco): há rascunho diferente do que veio?
-  function oferecerRascunho(chave, retratoCarregado) {
-    const r = lerRascunho(chave);
-    if (r && retrato(r.form, r.secoes, r.itens) !== retratoCarregado) setRascunhoPendente({ ...r, chave });
-    else if (r) apagarRascunho(chave);
-  }
-
-  function restaurarRascunho() {
-    const r = rascunhoPendente;
-    if (!r) return;
-    setForm({ ...formVazio(), ...r.form });
-    setSecoes(r.secoes);
-    setItens(r.itens);
-    // a versão do rascunho: se a proposta mudou no servidor depois dele, o
-    // salvar dá conflito (409) em vez de sobrescrever o trabalho do outro
-    if (editandoId && r.versao != null) versaoRef.current = r.versao;
-    setRascunhoPendente(null);
-    toast.success('Rascunho restaurado — confira e salve');
-  }
-
-  function descartarRascunho() {
-    if (rascunhoPendente) apagarRascunho(rascunhoPendente.chave);
-    setRascunhoPendente(null);
-  }
+  // rascunho no navegador: grava sozinho, oferece restaurar ao abrir (orcamento/useRascunho.js)
+  const { rascunhoPendente, setRascunhoPendente, chaveDoRascunho, oferecerRascunho, restaurarRascunho, descartarRascunho } = useRascunho({
+    usuarioId: usuario?.id, editandoId, sujo, carregandoEdicao, numeroEditando, versaoRef,
+    form, secoes, itens, setForm, setSecoes, setItens,
+  });
 
   // segmento do cliente (pelo nome, no servidor) e da obra: órgão público pela obra OU pelo cliente
   const { segmento, segmentoObra, ehPublico } = useSegmentoProposta(form.cliente_nome, form.obra_id);
@@ -174,120 +127,17 @@ export default function Orcamento() {
   // Faixa praticada (propostas aprovadas) dos materiais que estão nesta proposta
   const vendidos = usePrecosVendidos(itens, editandoId);
 
-  // Carrega a proposta do servidor e tira o retrato "salvo" (base). Usado ao
-  // abrir e no "Recarregar do servidor" do conflito de versão.
-  function carregarDoServidor(id, { oferecer = true } = {}) {
-    setCarregandoEdicao(true);
-    return getProposta(id).then(res => {
-      const p = res.data;
-      versaoRef.current = p.versao ?? null;
-      setNumeroEditando(p.numero);
-      setCriadaPeloAssistente(p.assistente_conversa_id != null);
-      setClienteEmailCadastro(p.cliente_email || '');
-      const formCarregado = formDaProposta(p);
-      const secoesCarregadas = (p.secoes || []).map(s => ({ id: s.id, nome: s.nome }));
-      const itensCarregados = itensDaProposta(p);
-      setForm(formCarregado);
-      setSecoes(secoesCarregadas);
-      setItens(itensCarregados);
-      const retratoCarregado = retrato(formCarregado, secoesCarregadas, itensCarregados);
-      setBase(retratoCarregado);
-      setPropostaSalva(null);
-      setConflito(null);
-      // Proposta de outro usuário: abre só para leitura (o servidor recusaria
-      // o salvar com 403). Registro antigo sem dono é livre, como na posse.
-      const deOutro = usuario && usuario.role !== 'admin' && p.usuario_id != null && Number(p.usuario_id) !== Number(usuario.id);
-      const criador = [...(p.eventos || [])].reverse().find(e => e.usuario_nome)?.usuario_nome || '';
-      setSomenteLeitura(deOutro ? { mensagem: `Esta proposta é de ${criador || 'outro usuário'}: só quem a criou (ou um administrador) altera.` } : null);
-      if (oferecer && !deOutro) oferecerRascunho(chaveRascunho(usuario?.id, id), retratoCarregado);
-      carregarOrigem(p, itensCarregados);
-    }).catch((err) => {
-      if (err?.response?.status === 401) return; // sessão: o "Entre de novo" cuida
-      toast.error(err?.response?.data?.erro || 'Erro ao carregar proposta para edição');
-      navigate('/propostas?aba=lista');
-    }).finally(() => setCarregandoEdicao(false));
-  }
+  // id e número da proposta aberta (salva agora ou carregada para edição)
+  const idAtual = propostaSalva?.id || editandoId || null;
+  const numeroAtual = propostaSalva?.numero || numeroEditando || '';
 
-  useEffect(() => {
-    // acabou de criar esta proposta aqui (a URL passou a ter o id): a tela já
-    // tem tudo — recarregar perderia as pesquisas de mercado abertas
-    // (a troca de rota pode montar a tela de novo: o estado vem pelo `transporte`)
-    if (editandoId && transporte && transporte.id === String(editandoId)) {
-      const t = transporte;
-      transporte = null;
-      setForm(t.form); setSecoes(t.secoes); setItens(t.itens);
-      setPesquisas(t.pesquisas); setOrigem(t.origem);
-      setPropostaSalva(t.propostaSalva); setNumeroEditando(t.numero || '');
-      versaoRef.current = t.versao;
-      setBase(t.base);
-      setConflito(null); setSomenteLeitura(null); setRascunhoPendente(null);
-      setCarregandoEdicao(false);
-      return;
-    }
-    setPesquisas({});
-    setOrigem(null);
-    setRascunhoPendente(null);
-    setConflito(null);
-    setSomenteLeitura(null);
-    if (!editandoId) {
-      getProximoNumero().then(res => setProximoNumero(res.data.proximo)).catch(() => {});
-      // o padrão de BDI/impostos vem do servidor: a proposta nova só monta depois dele (uma
-      // chamada curta); se falhar, nasce com 0 e o aviso abaixo continua valendo
-      let vivo = true;
-      buscarPadroes().then(padroes => {
-        if (!vivo) return;
-        const inicial = { ...formVazio(padroes), obra_id: obraDaUrl || null };
-        const secoesIniciais = SECOES_PADRAO();
-        setForm(inicial);
-        setSecoes(secoesIniciais);
-        setItens([]);
-        setPropostaSalva(null);
-        const r = retrato(inicial, secoesIniciais, []);
-        setBase(r);
-        oferecerRascunho(chaveRascunho(usuario?.id, null), r);
-      });
-      return () => { vivo = false; };
-    }
-    carregarDoServidor(editandoId);
-  }, [editandoId, obraDaUrl]); // eslint-disable-line
-
-  // Origem do rascunho (análise ou laudo): mostra no topo com o link de volta.
-  // Da análise, traz também (1) as pesquisas de mercado que ficaram salvas
-  // nos itens dela — reabertas recolhidas, sem pesquisar de novo — e (2) os
-  // itens que o gerar deixou de fora por estarem com quantidade 0, para
-  // incluir aqui (a Análise não edita mais quantidade).
-  function carregarOrigem(p, itensCarregados) {
-    const org = origemDaProposta(p);
-    if (!org) return;
-    setOrigem(org);
-    const ehDestaProposta = (id) => id != null && String(id) === String(p.id);
-    if (org.tipo === 'analise') {
-      getAnaliseProjeto(org.id).then(({ data: a }) => {
-        const doItem = [...(a.servicos || []).map(s => ({ ...s, tipo: 'servico' })), ...(a.materiais || []).map(m => ({ ...m, tipo: 'material' }))];
-        const pesquisaPorDescricao = new Map(doItem.filter(x => x.pesquisa_mercado?.resultado && x.descricao)
-          .map(x => [normalizarNome(x.descricao), x.pesquisa_mercado]));
-        const salvas = {};
-        for (const it of itensCarregados) {
-          const pm = pesquisaPorDescricao.get(normalizarNome(it.descricao));
-          if (pm) salvas[it.id] = { ...pm, recolhidaInicial: true, daAnalise: true };
-        }
-        setPesquisas(atual => ({ ...salvas, ...atual }));
-        const naProposta = new Set(itensCarregados.map(it => normalizarNome(it.descricao)));
-        const faltando = doItem.filter(x => !x.pronto && !(Number(x.quantidade) > 0) && String(x.descricao || '').trim()
-          && !naProposta.has(normalizarNome(x.descricao)));
-        setOrigem({ ...org, existe: true, vinculada: ehDestaProposta(a.propostaId), titulo: a.nomeProjeto || a.cliente || '', faltando });
-      }).catch(() => setOrigem({ ...org, existe: false }));
-    } else {
-      getLaudo(org.id).then(({ data: l }) => {
-        setOrigem({
-          ...org, existe: true, vinculada: Object.values(l.propostas || {}).some(ehDestaProposta),
-          titulo: l.dados?.obra?.nome || l.titulo || l.cliente_nome || '',
-          registro: l.tipo === 'projeto' ? 'projeto' : 'laudo', // 2.1: projeto ou laudo
-
-        });
-      }).catch(() => setOrigem({ ...org, existe: false }));
-    }
-  }
+  // abrir a proposta (salva, recém-gravada ou em branco), "Novo Orçamento" e "Recarregar do
+  // servidor" (orcamento/useCargaProposta.js)
+  const { proximoNumero, criadaPeloAssistente, clienteEmailCadastro, padroesOrc, novoOrcamento, recarregarDoServidor } = useCargaProposta({
+    editandoId, obraDaUrl, usuario, navigate, versaoRef, sujo, liberar, idAtual, chaveDoRascunho,
+    setForm, setSecoes, setItens, setBase, setPropostaSalva, setNumeroEditando, setCarregandoEdicao,
+    setConflito, setSomenteLeitura, setPesquisas, setOrigem, setRascunhoPendente, oferecerRascunho,
+  });
 
   // Inclui um item que ficou fora do rascunho (quantidade 0 na análise), com
   // quantidade 0 e "a cotar": a pessoa informa a quantidade aqui.
@@ -337,12 +187,10 @@ export default function Orcamento() {
   // antiga ou rascunho de antes), só o nome IGUAL ao de um único cliente liga — sem acento e
   // maiúsculas ("CLINICA" × "CLÍNICA"); com dois homônimos não liga mais o primeiro que achar.
   // Cliente ligado que saiu da lista (inativo) continua ligado: não se perde o cliente_id ao salvar.
-  const clienteResolvido = useMemo(() => {
-    if (form.cliente_id != null && form.cliente_id !== '') {
-      return clientes.find(c => String(c.id) === String(form.cliente_id)) || { id: Number(form.cliente_id), nome: form.cliente_nome };
-    }
-    return clientePorNome(clientes, form.cliente_nome);
-  }, [clientes, form.cliente_id, form.cliente_nome]);
+  const clienteResolvido = useMemo(
+    () => clienteDaProposta(clientes, form.cliente_id, form.cliente_nome),
+    [clientes, form.cliente_id, form.cliente_nome],
+  );
 
   // Botão de salvar, PDF/planilha/e-mail: "alterações não salvas" = sujo
   const alteracoesPendentes = sujo;
@@ -408,16 +256,6 @@ export default function Orcamento() {
       for (const sid of new Set(comSid.map(i => i.sid))) l = reordenarPorSubgrupo(l, sid);
       return l;
     });
-  }
-
-  // o cliente aprovou/recusou pelo link: o status (e a versão) mudam no servidor;
-  // sem isso o próximo "Salvar" daria conflito de versão à toa
-  function atualizarStatusSalvo() {
-    if (!propostaSalva) return;
-    getProposta(propostaSalva.id).then(res => {
-      if (!alteracoesPendentes) versaoRef.current = res.data.versao ?? versaoRef.current;
-      setPropostaSalva(ps => (ps ? { ...ps, status: res.data.status } : ps));
-    }).catch(() => {});
   }
 
   function atualizarItem(id, campo, valor) {
@@ -510,32 +348,6 @@ export default function Orcamento() {
     setItens(it => it.filter(i => i.id !== id));
   }
 
-  function novoOrcamento() {
-    if (sujo && !window.confirm('Há alterações não salvas nesta proposta. Começar um orçamento novo mesmo assim?\n\n(Elas ficam guardadas como rascunho neste navegador.)')) return;
-    liberar();
-    setPropostaSalva(null);
-    if (editandoId) {
-      navigate('/propostas?aba=editar');
-    } else {
-      // já está em "nova": o efeito de carga não roda de novo — limpa aqui
-      buscarPadroes().then(padroes => {
-        const inicial = formVazio(padroes);
-        const secoesIniciais = SECOES_PADRAO();
-        setForm(inicial);
-        setSecoes(secoesIniciais);
-        setItens([]);
-        setPesquisas({});
-        setOrigem(null);
-        setBase(retrato(inicial, secoesIniciais, []));
-      });
-      getProximoNumero().then(r => setProximoNumero(r.data.proximo)).catch(() => {});
-    }
-  }
-
-  // id e número da proposta aberta (salva agora ou carregada para edição)
-  const idAtual = propostaSalva?.id || editandoId || null;
-  const numeroAtual = propostaSalva?.numero || numeroEditando || '';
-
   const [gerandoPlanilha, setGerandoPlanilha] = useState(false);
   async function baixarPlanilha() {
     if (!idAtual) return;
@@ -571,112 +383,12 @@ export default function Orcamento() {
     }
   }
 
-  // Confere o que o servidor também recusaria, apontando o item com problema
-  function validarParaSalvar() {
-    const problema = problemaParaSalvar(form, itens);
-    if (problema) toast.error(problema);
-    return !problema;
-  }
-
-  // Gravou: o que está na tela passa a ser o "salvo" e o rascunho sai
-  function marcarSalvo(chaveRascunhoAntiga) {
-    setBase(estadoAtual);
-    apagarRascunho(chaveRascunhoAntiga || chaveDoRascunho);
-    setConflito(null);
-  }
-
-  // Proposta nova gravada: a URL passa a ser a da proposta (F5, voltar e
-  // favoritos abrem ela), sem recarregar a tela
-  function irParaProposta(id, salva) {
-    transporte = {
-      id: String(id), form, secoes, itens, pesquisas, origem, propostaSalva: salva,
-      numero: salva?.numero || '', versao: versaoRef.current, base: estadoAtual,
-    };
-    liberar();
-    navigate(`/propostas/editar/${id}`, { replace: true });
-  }
-
-  async function salvar() {
-    if (somenteLeitura) return;
-    if (!validarParaSalvar()) return;
-    setSalvando(true);
-    try {
-      const payload = montarPayload(form, secoes, itens, clienteResolvido?.id);
-      // Depois de salvar uma proposta nova, novas gravações precisam ATUALIZAR
-      // aquela proposta — antes o botão sumia e as correções feitas em seguida
-      // não tinham como ser salvas (o PDF saía com os valores antigos).
-      const idAlvo = editandoId || propostaSalva?.id;
-      const res = idAlvo ? await atualizarProposta(idAlvo, { ...payload, versao: versaoRef.current }) : await criarProposta(payload);
-      versaoRef.current = res.data.versao ?? null;
-      toast.success(res.data.mensagem || 'Proposta salva com sucesso!');
-      setPropostaSalva(res.data);
-      if (res.data.numero) setNumeroEditando(res.data.numero);
-      marcarSalvo();
-      if (!idAlvo && res.data.id) irParaProposta(res.data.id, res.data);
-    } catch (err) {
-      const status = err.response?.status;
-      const mensagem = err.response?.data?.erro;
-      if (status === 409) {
-        // outra pessoa gravou depois que esta tela abriu: nada é sobrescrito;
-        // a pessoa escolhe recarregar (perde o daqui) ou salvar como cópia
-        setConflito({ mensagem: mensagem || 'Esta proposta foi alterada por outra pessoa depois que você a abriu.' });
-      } else if (status === 403 && err.response?.data?.codigo !== 'SENHA_PROVISORIA') {
-        // não é dono: a tela fica só para leitura, com as alterações à vista
-        // (rascunho guardado) e a opção de salvar como cópia própria
-        setSomenteLeitura({ mensagem: mensagem || 'Você não pode alterar esta proposta.' });
-        toast.error(mensagem || 'Você não pode alterar esta proposta', { duration: 8000 });
-      } else if (!err.sessaoEncerrada) {
-        toast.error(mensagem || (err.response ? 'Erro ao salvar proposta' : 'Sem resposta do servidor — a proposta continua na tela e guardada como rascunho; tente de novo'));
-      }
-    } finally {
-      setSalvando(false);
-    }
-  }
-
-  // "Salvar como cópia" (conflito de versão ou proposta de outro usuário): grava
-  // o que está na tela como uma proposta NOVA, deste usuário, com outro número.
-  // Sem alteração na tela, usa o duplicar do servidor (copia tudo, inclusive a origem).
-  async function salvarComoCopia() {
-    if (!idAtual) return;
-    if (!sujo) {
-      setSalvando(true);
-      try {
-        const r = await duplicarProposta(idAtual);
-        toast.success(r.data.mensagem || 'Proposta duplicada');
-        liberar();
-        navigate(`/propostas/editar/${r.data.id}`);
-      } catch (err) {
-        if (!err.sessaoEncerrada) toast.error(err.response?.data?.erro || 'Erro ao duplicar a proposta');
-      } finally {
-        setSalvando(false);
-      }
-      return;
-    }
-    if (!validarParaSalvar()) return;
-    setSalvando(true);
-    try {
-      const chaveAntiga = chaveDoRascunho;
-      const res = await criarProposta(montarPayload(form, secoes, itens, clienteResolvido?.id));
-      toast.success(`Salva como cópia: proposta ${res.data.numero || ''}`.trim());
-      versaoRef.current = res.data.versao ?? null;
-      setPropostaSalva(res.data);
-      setNumeroEditando(res.data.numero || '');
-      setSomenteLeitura(null);
-      marcarSalvo(chaveAntiga);
-      irParaProposta(res.data.id, res.data);
-    } catch (err) {
-      if (!err.sessaoEncerrada) toast.error(err.response?.data?.erro || 'Erro ao salvar a cópia');
-    } finally {
-      setSalvando(false);
-    }
-  }
-
-  function recarregarDoServidor() {
-    if (sujo && !window.confirm('Descartar as suas alterações e carregar a versão que está no servidor?')) return;
-    apagarRascunho(chaveDoRascunho);
-    setPesquisas({});
-    carregarDoServidor(idAtual, { oferecer: false });
-  }
+  // gravar, "Salvar como cópia" e o status depois da decisão pelo link (orcamento/useSalvarProposta.js)
+  const { salvando, salvar, salvarComoCopia, atualizarStatusSalvo } = useSalvarProposta({
+    form, secoes, itens, clienteId: clienteResolvido?.id, editandoId, idAtual, propostaSalva, somenteLeitura, sujo, alteracoesPendentes,
+    pesquisas, origem, estadoAtual, chaveDoRascunho, versaoRef, liberar, navigate,
+    setPropostaSalva, setNumeroEditando, setConflito, setSomenteLeitura, setBase,
+  });
 
   if (carregandoEdicao) {
     return <p style={{ color: 'var(--texto-3)', textAlign: 'center', padding: 40 }}>Carregando proposta...</p>;

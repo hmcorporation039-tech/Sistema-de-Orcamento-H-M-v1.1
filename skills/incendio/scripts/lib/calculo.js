@@ -8,9 +8,10 @@
 const RAIO = { fumaca: 9 / Math.SQRT2, temperatura: 6 / Math.SQRT2 };
 const ALTURA_MAX = { fumaca: 8 }; // 5.4.1.1: detector pontual de fumaça até 8 m
 const CAMINHAMENTO_ACIONADOR = 30; // 5.5.3
-const BATERIAS_AH = [7, 12, 18, 26, 40, 55, 65, 100]; // capacidades comerciais (12 V; ligar 2 em série para 24 V)
-// bateria pela autonomia e modelo comercial: as regras comuns (alarme, controle de acesso, telefonia)
-const { capacidadeBateriaAh, comercial } = require('../../../_comum/bateria');
+// bateria pela autonomia, modelo comercial, série (12 V; ligar 2 em série para 24 V) e fator do Anexo B:
+// os comuns (alarme, controle de acesso, telefonia) — _comum/bateria.js
+const { capacidadeBateriaAh, comercial, SERIES_BATERIA, FATOR_ENVELHECIMENTO } = require('../../../_comum/bateria');
+const BATERIAS_AH = SERIES_BATERIA.vrla12vIncendio;
 
 // Consumos padrão (mA) — substituíveis pelos dados do fabricante no formulário
 const CONSUMO_PADRAO = {
@@ -138,7 +139,7 @@ function calcular(dados) {
   const fonteA = 1.2 * iAlarme / 1000;
   // Anexo B pela função comum (_comum/bateria.js), correntes em A. Modelo comercial pela regra comum:
   // acima de 100 Ah, pares de 24 V em paralelo (antes saía uma "bateria" de ⌈Ah⌉, fora da série)
-  const bateriaAh = capacidadeBateriaAh({ iRepouso: iRepouso / 1000, tRepouso, iAlarme: iAlarme / 1000, tAlarme: tAlarme / 60, fator: 1.2 });
+  const bateriaAh = capacidadeBateriaAh({ iRepouso: iRepouso / 1000, tRepouso, iAlarme: iAlarme / 1000, tAlarme: tAlarme / 60, fator: FATOR_ENVELHECIMENTO.nbr17240 });
   const { valor: bateriaEscolhida, qtd: nConjuntos } = comercial(BATERIAS_AH, bateriaAh);
 
   const nAclar = iluminacao.reduce((s, x) => s + x.aclaramento, 0);

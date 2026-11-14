@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { getConta } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
 import VerificacaoDuasEtapas from './VerificacaoDuasEtapas';
+import { estilos } from '../../components/ui/estilos';
 
 // Tela obrigatória (Fase 6, 02/11/2026): com TOTP_OBRIGATORIO_ADMIN=true no servidor, o administrador
 // sem a verificação em duas etapas só usa o sistema depois de ativá-la (o servidor recusa as outras
@@ -11,14 +12,17 @@ export default function AtivarDuasEtapas() {
   const { usuario, sair, totpAtivado } = useAuth();
   const [situacao, setSituacao] = useState(null);
   const [ativou, setAtivou] = useState(false);
+  // totpAtivado muda a cada render do AuthProvider: a consulta roda uma vez, ao abrir,
+  // e chama a versão mais recente pela referência (sem precisar calar o eslint)
+  const liberar = useRef(totpAtivado);
+  liberar.current = totpAtivado;
 
   useEffect(() => {
     getConta().then(r => {
       setSituacao(r.data.totp);
       // já ativa (em outra aba, por exemplo): libera
-      if (r.data.totp.ativo) totpAtivado();
+      if (r.data.totp.ativo) liberar.current();
     }).catch(() => setSituacao({ ativo: false, configurado: true }));
-  // uma vez, ao abrir (totpAtivado muda a cada render do AuthProvider)
   }, []);
 
   return (
@@ -40,13 +44,9 @@ export default function AtivarDuasEtapas() {
         )}
         <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
           {ativou && (
-            <button type="button" onClick={totpAtivado} style={{
-              padding: '10px 18px', background: '#c9a227', border: 'none', borderRadius: 6, color: '#000', fontWeight: 700, fontSize: 13, cursor: 'pointer',
-            }}>Continuar para o sistema</button>
+            <button type="button" onClick={totpAtivado} style={{ ...estilos.btnPrimario, padding: '10px 18px' }}>Continuar para o sistema</button>
           )}
-          <button type="button" onClick={sair} style={{
-            padding: '10px 14px', background: 'transparent', border: '1px dashed #333', borderRadius: 6, color: 'var(--texto-2)', fontSize: 13, cursor: 'pointer',
-          }}>Sair</button>
+          <button type="button" onClick={sair} style={{ ...estilos.btnTracejado, padding: '10px 14px', fontSize: 13 }}>Sair</button>
         </div>
       </div>
     </div>

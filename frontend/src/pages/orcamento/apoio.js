@@ -2,10 +2,12 @@ import { getTodosClientes, getTodosMateriais, getServicos } from '../../services
 import { hojeBrasilia } from '../../utils/format';
 import { gerarId } from '../../utils/ids';
 import { normalizarNome } from '../../utils/texto';
+import { ehMaoDeObra } from '../../utils/secoesProposta';
 
 // gerarId e normalizarNome moram em utils/ (eram cópias aqui e na análise/histórico);
 // reexportados para o Orcamento.js continuar importando daqui.
-export { gerarId, normalizarNome };
+// ehMaoDeObra também (2.40, para o InserirComposicao usar a mesma regra)
+export { gerarId, normalizarNome, ehMaoDeObra };
 
 // Funções de apoio do editor de orçamento (pages/Orcamento.js): rascunho no navegador,
 // formulário vazio, seções padrão, origem da proposta e filtros do catálogo.
@@ -81,11 +83,6 @@ export const SECOES_PADRAO = () => [
   { id: gerarId(), nome: 'Materiais' },
   { id: gerarId(), nome: 'Mão de Obra' },
 ];
-
-// Seções cujo nome sugere trabalho/serviço entram no subtotal de mão de obra; o restante conta como material.
-export function ehMaoDeObra(nome) {
-  return /m[ãa]o.?de.?obra|serviç|servic/i.test(nome || '');
-}
 
 export const CATEGORIAS_MAO_DE_OBRA = [
   'Elétrica', 'Projetos', 'Automação', 'Cabeamento Estruturado', 'Controle de Acesso', 'CFTV', 'Configuração',

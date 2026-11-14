@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Search, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import useUltimoPedido from '../../hooks/useUltimoPedido';
+import CampoBusca from '../ui/CampoBusca';
 
 // Formatos dos códigos fiscais (o banco guarda só os dígitos).
 export const formatarCtribNac = (c) => (c && c.length === 6 ? `${c.slice(0, 2)}.${c.slice(2, 4)}.${c.slice(4)}` : c || '');
@@ -16,7 +17,9 @@ export const formatarCep = (c) => {
 // descrição, com X para limpar.
 //   buscar(texto) → Promise<{ data: [{ codigo, descricao|nome, uf? }] }>
 //   valor: { codigo, descricao } | null
-export default function BuscaCodigo({ buscar, valor, onEscolher, formatar = (c) => c, placeholder, testid, desabilitado }) {
+//   id: vai para a caixa de busca — ou, já escolhido, para o <output> que mostra o
+//   código (elemento que aceita rótulo), para o <label> do Campo continuar ligado.
+export default function BuscaCodigo({ id, buscar, valor, onEscolher, formatar = (c) => c, placeholder, testid, desabilitado }) {
   const [texto, setTexto] = useState('');
   const [itens, setItens] = useState([]);
   const [aberto, setAberto] = useState(false);
@@ -45,29 +48,29 @@ export default function BuscaCodigo({ buscar, valor, onEscolher, formatar = (c) 
 
   if (valor?.codigo) {
     return (
-      <div style={escolhido} data-testid={testid}>
+      <output id={id} style={escolhido} data-testid={testid}>
         <code style={{ color: 'var(--ouro-claro)', whiteSpace: 'nowrap' }}>{formatar(valor.codigo)}</code>
         <span style={{ flex: 1, minWidth: 0, color: 'var(--texto-2)', fontSize: 12.5, lineHeight: 1.4 }}>{valor.descricao}</span>
         {!desabilitado && (
-          <button type="button" onClick={() => { onEscolher(null); setTexto(''); }} style={btnLimpar} title="Trocar">
+          <button type="button" onClick={() => { onEscolher(null); setTexto(''); }} style={btnLimpar} title="Trocar" aria-label="Trocar">
             <X size={13} />
           </button>
         )}
-      </div>
+      </output>
     );
   }
 
   return (
     <div ref={caixa} style={{ position: 'relative' }}>
-      <Search size={14} style={{ position: 'absolute', left: 10, top: 11, color: 'var(--texto-3)' }} />
-      <input
+      <CampoBusca
+        id={id}
         value={texto}
         onChange={(e) => { setTexto(e.target.value); setAberto(true); }}
         onFocus={() => setAberto(true)}
         placeholder={placeholder}
-        style={{ paddingLeft: 30 }}
         disabled={desabilitado}
         data-testid={testid}
+        lupa={{ topo: 11 }}
       />
       {aberto && itens.length > 0 && (
         <ul style={lista} role="listbox">
@@ -91,6 +94,9 @@ export default function BuscaCodigo({ buscar, valor, onEscolher, formatar = (c) 
     </div>
   );
 }
+
+// repassa o `id` ao campo: o Campo do kit liga o rótulo a ele (ui/rotuloLigado.js)
+BuscaCodigo.encaminhaId = true;
 
 const escolhido = {
   display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 10px', borderRadius: 8,

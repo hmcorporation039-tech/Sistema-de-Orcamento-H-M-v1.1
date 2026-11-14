@@ -23,7 +23,9 @@
 //     o padrão da skill quadros) e diâmetro pela seção do projeto. Serve à cena esquemática
 //     e à cena de fabricação da skill quadros (as mesmas TAGs; barras com o campo `barra`).
 // Coordenadas da cena em mm, origem no canto inferior-esquerdo-fundo (x direita, y cima, z frente).
-const T = require('../../quadros/scripts/lib/tabelas');
+// módulo DIN, altura do dispositivo de trilho e diâmetro do condutor: a tabela elétrica comum (a mesma da
+// skill quadros — antes este arquivo lia quadros/scripts/lib/tabelas.js; o _comum não depende de skill)
+const T = require('../eletrico/tabelas');
 
 const CONFERIR = '[CONFERIR] — não consta no projeto';
 const FONTE = {

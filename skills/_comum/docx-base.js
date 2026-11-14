@@ -26,6 +26,9 @@ const { numeroBr, dataIsoBr } = require('./base/formato');
 // ou valor que não vira número finito ('abc', NaN, Infinity) sai como '—',
 // nunca "NaN"/"∞" no documento. Usado também como `num` pelas skills.
 const fmtNum = numeroBr;
+// Seção de condutor: "2,5 mm²"; nulo → '—'. Era o `sec` copiado em sete skills (elétrica, hospitalar,
+// industrial, iluminação, quadros, solar, carregador) — 2.40.
+const fmtSecao = (s) => (s == null ? '—' : `${String(s).replace('.', ',')} mm²`);
 // mesmo guarda do fmtNum: um texto que chegasse aqui quebrava em v.toExponential
 function fmtExp(v) {
   const n = Number(v);
@@ -256,6 +259,6 @@ async function salvar(doc, caminho) {
 }
 
 module.exports = {
-  COR, fmtNum, fmtExp, fmtData, somarAnos, runs, p, titulo, nota, marcador, quebraPagina,
+  COR, fmtNum, fmtSecao, fmtExp, fmtData, somarAnos, runs, p, titulo, nota, marcador, quebraPagina,
   celula, tabela, tabelaKV, espaco, imagem, capa, criarDocumento, salvar, AlignmentType, Paragraph, TextRun,
 };

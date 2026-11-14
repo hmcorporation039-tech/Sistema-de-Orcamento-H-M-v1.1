@@ -4,7 +4,7 @@
 // piso (6.7.3), APs (Seção 15), rack, patch panels e lista de materiais.
 
 const CAIXA_CABO_M = 305;
-const RACKS_U = [6, 8, 12, 16, 24, 32, 36, 40, 44];
+const RACKS_U = require('../../../_comum/fabricacao/rack').RACKS_U_PROJETO; // série comum do projeto
 
 // Tabela 3: constante da equação conforme classe e modelo
 // classe D (Cat 5e): interconexão 109, conexão cruzada 107

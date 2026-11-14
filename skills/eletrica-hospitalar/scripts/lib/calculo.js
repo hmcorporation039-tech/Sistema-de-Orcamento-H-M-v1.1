@@ -154,16 +154,8 @@ function dividir(total, n) {
   return Array.from({ length: n }, (_, k) => base + (k < total - base * n ? 1 : 0));
 }
 
-function agrupar(itens, limiteVa) {
-  const grupos = [];
-  let atual = null;
-  for (const it of itens) {
-    if (!atual || atual.va + it.va > limiteVa) { atual = { va: 0, ambientes: [] }; grupos.push(atual); }
-    atual.va += it.va;
-    atual.ambientes.push(it.nome);
-  }
-  return grupos;
-}
+// agrupamento dos pontos em circuitos pelo limite de VA: o da elétrica comum (era cópia idêntica — 2.40)
+const { agrupar } = E;
 
 const vTn = (lig, c) => (lig === 'FN' ? c.vfn : c.vff);
 

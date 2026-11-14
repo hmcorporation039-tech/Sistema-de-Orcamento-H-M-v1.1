@@ -20,6 +20,9 @@ const FUROS_U_MM = [6.35, 22.225, 38.1];
 const FOLGA_PAINEL_MM = 0.79;  // altura do painel = n·U − 1/32"
 
 const ALTURAS = { parede: [6, 8, 10, 12], piso: [12, 16, 20, 24, 28, 32, 36, 40, 44] };
+// Série de racks (U) do DIMENSIONAMENTO do projeto (cabeamento e telefonia — era cópia idêntica nas duas,
+// 2.40). Difere de ALTURAS (fabricação: 10, 20 e 28 U a mais) — [CONFERIR] qual série vale para as duas.
+const RACKS_U_PROJETO = [6, 8, 12, 16, 24, 32, 36, 40, 44];
 const PROFUNDIDADES = { parede: [350, 450, 570], piso: [600, 800, 1000] };
 // Geometria típica [CONFERIR] com o fabricante do rack escolhido
 const GEOMETRIA = {
@@ -769,7 +772,7 @@ function conferirRack(rack) {
 }
 
 module.exports = {
-  U_MM, LARGURA_19_MM, VAO_TRILHOS_MM, FUROS_ENTRE_MM, FUROS_U_MM, ALTURAS, PROFUNDIDADES, TIPICOS, NORMAS_RACK,
+  U_MM, LARGURA_19_MM, VAO_TRILHOS_MM, FUROS_ENTRE_MM, FUROS_U_MM, ALTURAS, RACKS_U_PROJETO, PROFUNDIDADES, TIPICOS, NORMAS_RACK,
   dimensionarRack, elevacaoSvg, lateralSvg, materiaisMontagem, plaquetasRack, componentesRack, caracteristicasRack,
   verificacoesRack, ocupacaoTabela, partesDoRack, cadernoDeRacks, conferirRack, faixas,
 };

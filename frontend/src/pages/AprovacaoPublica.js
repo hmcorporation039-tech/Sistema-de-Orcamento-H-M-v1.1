@@ -12,6 +12,7 @@ import { useParams } from 'react-router-dom';
 import { CheckCircle2, XCircle, FileDown, Printer, AlertTriangle, ShieldCheck, ArrowLeft, Box } from 'lucide-react';
 import { getAprovacaoPublica, enviarDecisaoAprovacao, urlPdfAprovacaoPublica, urlModelo3dAprovacaoPublica } from '../services/api';
 import { formatarMoeda, dataBr, dataHoraBr, FUSO_BRASILIA } from '../utils/format';
+import { Rotulo, useRotuloLigado } from '../components/ui/rotuloLigado';
 
 const OURO = '#c9a227';
 const OURO_ESCURO = '#8a6d12';
@@ -470,12 +471,16 @@ const Bloco = ({ titulo: t, children }) => (
     <div style={{ fontSize: 14.5, lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{children}</div>
   </section>
 );
-const Campo = ({ rotuloTexto, children }) => (
-  <label style={{ display: 'block', marginBottom: 12 }}>
-    <span style={{ ...rotulo, display: 'block', marginBottom: 5 }}>{rotuloTexto}</span>
-    {children}
-  </label>
-);
+// rótulo ligado ao campo por htmlFor/id (ui/rotuloLigado.js), como no resto do sistema
+function Campo({ rotuloTexto, children }) {
+  const ligacao = useRotuloLigado(children);
+  return (
+    <div style={{ marginBottom: 12 }} {...ligacao.propsCaixa}>
+      <Rotulo ligacao={ligacao} style={{ ...rotulo, display: 'block', marginBottom: 5 }}>{rotuloTexto}</Rotulo>
+      {ligacao.filhos}
+    </div>
+  );
+}
 const LinhaTotal = ({ t, v }) => (
   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '4px 0' }}>
     <span style={{ color: SUAVE }}>{t}</span><span>{formatarMoeda(v)}</span>

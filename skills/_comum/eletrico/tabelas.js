@@ -94,15 +94,35 @@ function reservaQuadro(n) {
   return Math.ceil(0.15 * n);
 }
 
-// Correntes nominais usuais de disjuntores (NBR NM 60898 / IEC 60947-2)
-const DISJUNTORES = [6, 10, 13, 16, 20, 25, 32, 40, 50, 63, 70, 80, 100, 125, 160, 200, 250, 320, 400, 500, 630];
+// ── Disjuntores: série comum de correntes nominais (A) ──────────────────────
+// Uma série só (2.40). Antes eram três listas: DISJUNTORES aqui (6 a 630 A, circuitos e alimentadores),
+// DISJUNTORES_DIN nos quadros (2 a 125 A) e DISJUNTORES_CM_ABERTOS (16 a 6300 A; esta já juntava as
+// cópias de motores.js, quadros e média tensão em 14/11/2026). Cada tipo recorta a sua faixa:
+//   din          — minidisjuntor de trilho DIN: NBR NM 60898 até 63 A, IEC 60947-2 até 125 A;
+//   caixaMoldada — caixa moldada (IEC 60947-2) até 1600 A e abertos acima (até 6300 A);
+//   predial      — a série dos circuitos e alimentadores (elétrica, hospitalar, carregador, 3D externo):
+//                  DIN e caixa moldada de 6 a 630 A, com o 70 A.
+// O 70 A só existe na série predial (sempre esteve nela; nem a série DIN nem a de caixa moldada o tinham)
+// [CONFERIR com o fabricante].
+const SERIE_DISJUNTORES = [2, 4, 6, 10, 13, 16, 20, 25, 32, 40, 50, 63, 70, 80, 100, 125, 160, 200, 250, 320, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500, 3200, 4000, 5000, 6300];
+const FAIXA_DISJUNTORES = { din: [2, 125], caixaMoldada: [16, 6300], predial: [6, 630] };
+const SO_PREDIAL = [70];
+// valores da série do tipo, recortados em [de, ate]
+function disjuntoresDoTipo(tipo, de = 0, ate = Infinity) {
+  const faixa = FAIXA_DISJUNTORES[tipo];
+  if (!faixa) throw new Error(`Tipo de disjuntor desconhecido: ${tipo}`);
+  return SERIE_DISJUNTORES.filter(a => a >= Math.max(faixa[0], de) && a <= Math.min(faixa[1], ate) && (tipo === 'predial' || !SO_PREDIAL.includes(a)));
+}
 
-// Disjuntores de caixa moldada e abertos (A), IEC 60947-2 — série única (14/11/2026). Antes havia
-// três cópias com faixas diferentes: motores.js (16 a 4000 A, proteção de motor grande e geral),
-// quadros (16 a 1600 A, só caixa moldada) e média tensão (100 a 6300 A, geral de BT do trafo).
-// Os valores são os mesmos nas três; cada uso recorta a sua faixa com serieDisjuntores(de, ate).
-const DISJUNTORES_CM_ABERTOS = [16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250, 320, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500, 3200, 4000, 5000, 6300];
-const serieDisjuntores = (de = 0, ate = Infinity) => DISJUNTORES_CM_ABERTOS.filter(a => a >= de && a <= ate);
+// Correntes nominais usuais de disjuntores (NBR NM 60898 / IEC 60947-2) — circuitos e alimentadores
+const DISJUNTORES = disjuntoresDoTipo('predial');
+// Minidisjuntores DIN (quadros)
+const DISJUNTORES_DIN = disjuntoresDoTipo('din');
+// Caixa moldada e abertos (A), IEC 60947-2: motores.js (até 4000 A, proteção de motor grande e geral),
+// quadros (até 1600 A, só caixa moldada) e média tensão (100 a 6300 A, geral de BT do trafo) recortam
+// a sua faixa com serieDisjuntores(de, ate).
+const DISJUNTORES_CM_ABERTOS = disjuntoresDoTipo('caixaMoldada');
+const serieDisjuntores = (de = 0, ate = Infinity) => disjuntoresDoTipo('caixaMoldada', de, ate);
 
 // Correntes nominais de DR (interruptor diferencial) usuais (A). Antes [25, 40, 63, 80, 100] em linha
 // na elétrica, hospitalar, iluminação e carregador (sem o 125) e [25 … 125] nos quadros.
@@ -160,6 +180,19 @@ function escolherBarra(corrente, k2, pintada, { conjuntos = false } = {}) {
 // Rótulo da barra: "1 × (40 × 10 mm)"
 const rotuloBarra = (b) => `${b.n || 1} × (${b.l} × ${b.e} mm)`;
 
+// ── Montagem em trilho DIN e fiação de quadros ─────────────────────────────
+// Usadas pela fabricação de quadros (../fabricacao/tabelasQuadro.js) e pelo quadro do 3D
+// (../instalacao/painelQuadro.js, que entra no bundle do visualizador). Vinham de quadros/tabelas.js (2.40).
+// Módulo DIN (DIN 43880): 17,5 mm; alguns fabricantes usam 18 mm — o espaço é
+// reservado com 18 mm (lado da segurança). Trilho TS35 × 7,5 (EN 60715).
+const MODULO_MM = 18;
+const MODULO_NOMINAL_MM = 17.5;
+// Altura (mm) e profundidade (mm, a partir da placa) típicas
+const DIN_ALTURA = 90;
+const DIN_PROF = 80;
+// Diâmetro externo de condutor flexível 450/750 V (NBR NM 247-3) — aproximado [CONFERIR catálogo]
+const DIAMETRO_FIO = { 0.5: 2.2, 0.75: 2.4, 1: 2.6, 1.5: 3.0, 2.5: 3.6, 4: 4.3, 6: 4.9, 10: 6.4, 16: 7.6, 25: 9.6, 35: 10.9, 50: 13.0, 70: 15.0, 95: 17.5, 120: 19.3 };
+
 // Resistividade do cobre em operação (Ω·mm²/m) — valor conservador para 70 °C
 const RHO_COBRE = 0.0225;
 // Resistividade do cobre a 20 °C (1/56 Ω·mm²/m) — curto-circuito máximo (capacidade de interrupção)
@@ -207,7 +240,7 @@ const LOCAIS_600VA = ['banheiro', 'cozinha', 'area_servico'];
 
 module.exports = {
   SECOES, METODOS, capacidade, fatorTemperatura, fatorAgrupamento, SECAO_MINIMA, NEUTRO_REDUZIDO, secaoPE,
-  reservaQuadro, DISJUNTORES, DISJUNTORES_CM_ABERTOS, serieDisjuntores, DR_IN, drComercial, IP_IN_PADRAO, ICW_KA,
+  reservaQuadro, SERIE_DISJUNTORES, FAIXA_DISJUNTORES, disjuntoresDoTipo, DISJUNTORES, DISJUNTORES_DIN, DISJUNTORES_CM_ABERTOS, serieDisjuntores, DR_IN, drComercial, IP_IN_PADRAO, ICW_KA,
   BARRAS_DIN43671, CONJUNTOS_DIN43671, EXPOENTE_K2, k2Temperatura, escolherBarra, rotuloBarra, RHO_COBRE, RHO_COBRE_20, kCurto, ICN_KA, CURVA_IA, QUEDA, ISOLAMENTO, DEMANDA_ILUM_TUG_PADRAO, DEMANDA_TUE_PADRAO,
-  LOCAIS_DR, LOCAIS_COZINHA, LOCAIS_600VA,
+  LOCAIS_DR, LOCAIS_COZINHA, LOCAIS_600VA, MODULO_MM, MODULO_NOMINAL_MM, DIN_ALTURA, DIN_PROF, DIAMETRO_FIO,
 };

@@ -126,15 +126,7 @@
     ],
     "obrigatorios": []
   },
-  "regras": {
-    "variaveis_comando": {
-      "tempo_reversao": 15
-    },
-    "referencias": {
-      "inversor": "WEG CFW500 / Danfoss FC 101 / ABB ACH580 ou equivalente (função PID, relé de falha e saída em funcionamento)",
-      "soft": "WEG SSW07 / ABB PSR ou equivalente"
-    }
-  },
+  "regras": {},
   "verificacoes": {
     "regras": [
       {
@@ -205,19 +197,7 @@
     ]
   },
   "blocos": {
-    "usar": [
-      "emergencia_rele",
-      "partida_por_alarme",
-      "motor_man_0_aut",
-      "pressostato_fluxo",
-      "reversao_automatica",
-      "modo_manual",
-      "status_acionamento",
-      "status_para_central",
-      "sinalizacao",
-      "contatos_livres",
-      "rede_serial"
-    ],
+    "conjunto": "pressurizacao",
     "variaveis": {
       "tempo_reversao": {
         "requisito": "comando.tempo_reversao",

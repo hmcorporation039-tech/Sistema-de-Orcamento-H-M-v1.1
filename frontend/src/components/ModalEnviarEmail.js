@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
 import toast from 'react-hot-toast';
 import { Send, AlertTriangle, XOctagon, Info, CheckCircle2 } from 'lucide-react';
 import { enviarPropostaPorEmail, getRevisaoEnvio } from '../services/api';
@@ -6,6 +6,7 @@ import Modal from './ui/Modal';
 import { estilos } from './ui/estilos';
 
 export default function ModalEnviarEmail({ aberto, onFechar, proposta, emailInicial, onEnviado }) {
+  const idEmail = useId(); // rótulos E-mail/Mensagem ligados aos campos
   const [destinatarioEmail, setDestinatarioEmail] = useState('');
   const [mensagemEmail, setMensagemEmail] = useState('');
   const [enviando, setEnviando] = useState(false);
@@ -53,8 +54,9 @@ export default function ModalEnviarEmail({ aberto, onFechar, proposta, emailInic
         <form onSubmit={enviar}>
           <RevisaoEnvio revisao={revisao} aceitou={aceitouBloqueio} onAceitar={setAceitouBloqueio} />
           <div style={{ marginBottom: 12 }}>
-            <label style={rotulo}>E-mail do cliente *</label>
+            <label style={rotulo} htmlFor={`${idEmail}para`}>E-mail do cliente *</label>
             <input
+              id={`${idEmail}para`}
               type="email"
               value={destinatarioEmail}
               onChange={e => setDestinatarioEmail(e.target.value)}
@@ -68,8 +70,9 @@ export default function ModalEnviarEmail({ aberto, onFechar, proposta, emailInic
             )}
           </div>
           <div style={{ marginBottom: 12 }}>
-            <label style={rotulo}>Mensagem (opcional)</label>
+            <label style={rotulo} htmlFor={`${idEmail}msg`}>Mensagem (opcional)</label>
             <textarea
+              id={`${idEmail}msg`}
               rows={4}
               value={mensagemEmail}
               onChange={e => setMensagemEmail(e.target.value)}

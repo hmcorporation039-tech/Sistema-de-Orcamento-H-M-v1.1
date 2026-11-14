@@ -22,7 +22,7 @@ const NORMAS = [
 ];
 const SECOES_CHECKLIST = ['Documentação', 'Arranjo fotovoltaico', 'Proteção CC', 'Inversor', 'Lado CA e conexão', 'Ensaios'];
 const num = fmtNum; // número pt-BR; '—' quando vazio ou inválido
-const sec = (s) => (s == null ? '—' : `${String(s).replace('.', ',')} mm²`);
+const sec = require('../../../_comum/docx-base').fmtSecao; // "2,5 mm²" (o comum)
 const ROTULO_MES = { jan: 'Jan', fev: 'Fev', mar: 'Mar', abr: 'Abr', mai: 'Mai', jun: 'Jun', jul: 'Jul', ago: 'Ago', set: 'Set', out: 'Out', nov: 'Nov', dez: 'Dez' };
 
 function processar(dados) {

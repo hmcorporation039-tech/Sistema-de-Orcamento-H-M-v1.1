@@ -28,7 +28,8 @@
 
 const { limparMtext } = require('./textoCad');
 
-const SECOES = new Set([0.5, 0.75, 1, 1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300, 400, 500]);
+// seções válidas: a série da tabela elétrica comum até 500 mm² (era cópia da lista — 2.40)
+const SECOES = new Set(require('../eletrico/tabelas').SECOES.filter(s => s <= 500));
 const RE_POT = /^(\d{1,3}(?:[.\s]\d{3})+|\d+)(?:,(\d+))?\s*(W|VA|kW|kVA)$/i;
 // "5.5 kW", "1.2 kVA" (ponto decimal: antes "5.5" não era potência e o quadro inteiro não era lido)
 const RE_POT_PONTO = /^(\d+)\.(\d+)\s*(W|VA|kW|kVA)$/i;

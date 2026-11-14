@@ -1,13 +1,14 @@
 // Barramentos de um quadro LIDO DO PROJETO (diagrama unifilar / quadro de cargas) quando o
 // projeto não traz as medidas das barras: o MESMO cálculo da skill quadros (DIN 43671 para
-// as fases, Tabela 58 da NBR 5410 e o curto fase-massa para o PE — calculo.barramento), sem
-// duplicar nada. Só no Node (a skill quadros lê catálogo e tabelas); o 3D recebe pronto em
+// as fases, Tabela 58 da NBR 5410 e o curto fase-massa para o PE — barramento()), sem duplicar
+// nada: ../fabricacao/quadro.js, de onde a skill também importa (2.40; antes este arquivo lia
+// quadros/scripts/lib/calculo.js). Só no Node; o 3D recebe pronto em
 // quadro.barramentos e mostra "calculado — conferir com o fabricante".
 //
 // Sem a corrente do geral no projeto não há o que calcular: devolve null e o 3D mostra
 // "[CONFERIR] — não consta no projeto". Sem a Icc no projeto, a premissa da skill (10 kA)
 // fica registrada (icc_informada: false) e aparece na ficha como [CONFERIR].
-const QC = require('../../quadros/scripts/lib/calculo');
+const QC = require('../fabricacao/quadro');
 
 const polosDe = (v) => { const n = Number(v); return Number.isInteger(n) && n >= 1 && n <= 4 ? n : null; };
 

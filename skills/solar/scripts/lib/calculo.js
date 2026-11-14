@@ -59,7 +59,8 @@ function distribuirStrings(nMod, faixa, entradas, fixo) {
   return Array(Math.ceil(nMod / melhor.ns)).fill(melhor.ns);
 }
 
-const br = (v, c = 1) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+const { numeroFixoBr } = require('../../../_comum/base/formato');
+const br = (v, c = 1) => numeroFixoBr(v, c); // número pt-BR com casas fixas (o comum)
 
 function calcular(dados) {
   const mod = dados.modulo || {};

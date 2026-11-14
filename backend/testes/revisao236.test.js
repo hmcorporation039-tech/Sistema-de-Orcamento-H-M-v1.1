@@ -94,7 +94,7 @@ caso('fornecedor: renomear exige administrador e registra na auditoria', () => {
   require('../src/routes/v2/cotacoesFornecedor')(router, { autenticar: () => {}, admin, validarId: () => {} });
   const put = rotas.find(r => r.url === '/cotacoes/fornecedores/:cnpj');
   assert.ok(put && put.mw.includes(admin), 'PUT sem o middleware admin');
-  assert.match(ler('backend', 'src', 'routes', 'v2', 'cotacoesFornecedor.js'), /registrarAuditoria\(pool, \{\s*entidade: 'cotacao_fornecedor', acao: 'renomear'/);
+  assert.match(ler('backend', 'src', 'controllers', 'cotacoesFornecedorController.js'), /registrarAuditoria\(pool, \{\s*entidade: 'cotacao_fornecedor', acao: 'renomear'/);
 });
 
 caso('especificação: grava dados somando a versão (a tela do laudo aberta recebe 409 em vez de apagar)', () => {

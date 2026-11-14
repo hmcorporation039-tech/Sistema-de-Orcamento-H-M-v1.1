@@ -3,7 +3,7 @@
 // por postMessage o que o engenheiro clicou (skills/_comum/cad/visualizador3d/edicao.js). Esta tela confere a mensagem
 // (vem do quadro do 3D, componente da biblioteca, números finitos) e grava pelo sistema, com o login de quem está aqui.
 // "Atualizar 3D" gera o modelo de novo com as edições aplicadas (peça encostada na parede, no ambiente certo).
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { RefreshCw, X } from 'lucide-react';
 import { abrirModelo3d, urlModelo3d, editarMapaCad } from '../../services/api';
@@ -23,19 +23,21 @@ export default function Modelo3dEditor({ analiseId, componentes, disciplinasDoPr
   const { nomeCurto, cor } = useDisciplinas();
   // o que a mensagem usa sempre na versão mais nova, sem refazer o ouvinte a cada desenho da tela
   const atual = useRef({});
-  atual.current = { componentes: marcarDoProjeto(componentes, disciplinasDoProjeto), nomeCurto, cor, onEditado, validos: new Set(componentes.map(c => c.simbolo)) };
+  atual.current = { componentes: marcarDoProjeto(componentes, disciplinasDoProjeto), nomeCurto, cor, onEditado, onFechar, validos: new Set(componentes.map(c => c.simbolo)) };
 
-  async function abrir() {
+  // abre ao montar e a cada análise nova (e no "Atualizar 3D"); o onFechar vem pela referência:
+  // a tela de cima o recria a cada desenho, e isso não pode reabrir o 3D
+  const abrir = useCallback(async () => {
     setCarregando(true);
     try {
       const r = await abrirModelo3d('analise', analiseId, { embutido: true });
       setUrl(urlModelo3d(r.data.url)); // link novo a cada vez: o quadro recarrega
     } catch (err) {
       toast.error(await mensagemDeErro(err, 'Não consegui abrir o modelo 3D'), { duration: 9000 });
-      onFechar();
+      atual.current.onFechar();
     } finally { setCarregando(false); }
-  }
-  useEffect(() => { abrir(); }, [analiseId]);
+  }, [analiseId]);
+  useEffect(() => { abrir(); }, [abrir]);
 
   useEffect(() => {
     const responder = (msg) => quadro.current?.contentWindow?.postMessage(msg, '*');

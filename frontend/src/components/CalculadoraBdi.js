@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useId, useMemo } from 'react';
 import { Calculator, RotateCcw } from 'lucide-react';
 import Select from './Select';
 import Modal from './ui/Modal';
@@ -21,6 +21,7 @@ const fmt = (n) => (Number.isFinite(Number(n)) ? Number(n).toLocaleString('pt-BR
 const arred2 = (v) => arred2Dinheiro(v);
 
 export default function CalculadoraBdi({ aberto, onFechar, memoria, publico, impostoVenda, impostoServico, onAplicar }) {
+  const idBdi = useId(); // rótulos Tipo de obra/Regime/Ano CPRB ligados aos campos
   const anoAtual = new Date().getFullYear();
   const [tipo, setTipo] = useState('edificios');
   const [regime, setRegime] = useState('nao_desonerado');
@@ -118,20 +119,20 @@ export default function CalculadoraBdi({ aberto, onFechar, memoria, publico, imp
 
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.3fr 0.6fr', gap: 10, marginBottom: 12 }}>
           <div>
-            <label style={rotulo}>Tipo de obra</label>
-            <Select value={tipo} onChange={e => trocarTipo(e.target.value)}>
+            <label style={rotulo} htmlFor={`${idBdi}tipo`}>Tipo de obra</label>
+            <Select id={`${idBdi}tipo`} value={tipo} onChange={e => trocarTipo(e.target.value)}>
               {TIPOS_OBRA_TCU.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
             </Select>
           </div>
           <div>
-            <label style={rotulo}>Regime</label>
-            <Select value={regime} onChange={e => trocarRegime(e.target.value)}>
+            <label style={rotulo} htmlFor={`${idBdi}regime`}>Regime</label>
+            <Select id={`${idBdi}regime`} value={regime} onChange={e => trocarRegime(e.target.value)}>
               {Object.entries(REGIMES_BDI).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </Select>
           </div>
           <div>
-            <label style={rotulo} title="Ano da alíquota da CPRB (reoneração gradual da Lei 14.973/2024)">Ano CPRB</label>
-            <input type="number" min="2013" max="2035" value={ano} onChange={e => trocarAno(e.target.value)} disabled={regime !== 'desonerado'} />
+            <label style={rotulo} htmlFor={`${idBdi}ano`} title="Ano da alíquota da CPRB (reoneração gradual da Lei 14.973/2024)">Ano CPRB</label>
+            <input id={`${idBdi}ano`} type="number" min="2013" max="2035" value={ano} onChange={e => trocarAno(e.target.value)} disabled={regime !== 'desonerado'} />
           </div>
         </div>
 

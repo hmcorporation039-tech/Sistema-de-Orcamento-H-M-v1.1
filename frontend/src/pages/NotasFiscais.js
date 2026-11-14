@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Upload, FileDown, Printer, Mail, Copy, Ban, Trash2, Pencil, Eye, Send, Search, FileCode, ExternalLink, ScanEye } from 'lucide-react';
+import { Plus, Upload, FileDown, Printer, Mail, Copy, Ban, Trash2, Pencil, Eye, Send, FileCode, ExternalLink, ScanEye } from 'lucide-react';
 import { getNotasFiscais, removerNotaFiscal, baixarPdfNotaFiscal, baixarXmlNotaFiscal } from '../services/api';
 import useUltimoPedido from '../hooks/useUltimoPedido';
 import Paginacao from '../components/Paginacao';
 import { formatarCtribNac } from '../components/fiscal/BuscaCodigo';
 import { estilos } from '../components/ui/estilos';
 import Indicador from '../components/ui/Indicador';
+import CampoBusca from '../components/ui/CampoBusca';
 import { formatarMoeda, formatarData, formatarCpfCnpj } from '../utils/format';
 import { baixarArquivo, mensagemDeErro } from '../utils/download';
 import { BtnTexto, ItemMenu, MenuAcoes, SITUACOES, sub } from './notasFiscais/comum';
@@ -47,6 +48,7 @@ async function imprimirPdf(id) {
 }
 
 export default function NotasFiscais() {
+  const idFiltro = useId(); // rótulos De/Até/Buscar ligados aos campos
   const [dados, setDados] = useState({ itens: [], total: 0, totalPaginas: 1, totais: null });
   const [carregando, setCarregando] = useState(true);
   const [pagina, setPagina] = useState(1);
@@ -161,21 +163,18 @@ export default function NotasFiscais() {
         {/* linha 2: período + busca */}
         <div style={{ display: 'grid', gridTemplateColumns: '120px 120px 1fr', gap: 8, alignItems: 'center' }}>
           <div>
-            <label style={{ ...estilos.rotulo, marginBottom: 4 }}>De</label>
-            <input type="date" value={de} onChange={(e) => setDe(e.target.value)} title="Competência a partir de" />
+            <label style={{ ...estilos.rotulo, marginBottom: 4 }} htmlFor={`${idFiltro}de`}>De</label>
+            <input id={`${idFiltro}de`} type="date" value={de} onChange={(e) => setDe(e.target.value)} title="Competência a partir de" />
           </div>
           <div>
-            <label style={{ ...estilos.rotulo, marginBottom: 4 }}>Até</label>
-            <input type="date" value={ate} onChange={(e) => setAte(e.target.value)} title="Competência até" />
+            <label style={{ ...estilos.rotulo, marginBottom: 4 }} htmlFor={`${idFiltro}ate`}>Até</label>
+            <input id={`${idFiltro}ate`} type="date" value={ate} onChange={(e) => setAte(e.target.value)} title="Competência até" />
           </div>
           <div>
-            <label style={{ ...estilos.rotulo, marginBottom: 4 }}>Buscar</label>
-            <div style={{ position: 'relative' }}>
-              <Search size={14} style={{ position: 'absolute', left: 10, top: 11, color: 'var(--texto-3)', pointerEvents: 'none' }} />
-              <input value={busca} onChange={(e) => setBusca(e.target.value)}
-                placeholder="Cliente, CNPJ, número da nota ou descrição do serviço…"
-                style={{ paddingLeft: 32 }} />
-            </div>
+            <label style={{ ...estilos.rotulo, marginBottom: 4 }} htmlFor={`${idFiltro}busca`}>Buscar</label>
+            <CampoBusca id={`${idFiltro}busca`} value={busca} onChange={(e) => setBusca(e.target.value)}
+              placeholder="Cliente, CNPJ, número da nota ou descrição do serviço…"
+              style={{ paddingLeft: 32 }} lupa={{ topo: 11 }} />
           </div>
         </div>
       </div>

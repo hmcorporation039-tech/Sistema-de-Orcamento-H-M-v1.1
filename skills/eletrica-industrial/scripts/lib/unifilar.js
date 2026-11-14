@@ -90,62 +90,9 @@ function montarUnifilar(calc) {
   };
 }
 
-// Adaptador para o gerador de unifilar de quadro que já existe na base comum
-// (skills/_comum/cad/qet/unifilar-qd.mjs → gerarUnifilarQD): mesma forma de
-// dados de skills/_comum/cad/unifilar.js (dadosUnifilar). Desenha cada saída
-// com disjuntor + carga; o símbolo de motor (M 3~), contatores e relé ainda não
-// existem nesse gerador — por isso a partida vai no texto do disjuntor.
-const virgula = (n, d = 1) => String(Number(n).toFixed(d)).replace('.', ',').replace(/,0+$/, '');
-const mm2 = (s) => `${virgula(s, 1)} mm²`;
-const curtoTxt = (s, max) => (String(s).length > max ? `${String(s).slice(0, max - 1)}…` : String(s));
-const SIGLA_PARTIDA = { direta: 'direta', estrela_triangulo: 'Y-Δ', soft_starter: 'soft', inversor: 'inversor' };
-
-function dadosUnifilarQD(res, { quadro = 'QGBT' } = {}) {
-  const { calc, dados } = res;
-  const c = calc.config;
-  const q = quadro === 'QGBT' ? calc.qgbt : calc.quadros.find(x => x.id === quadro);
-  if (!q) throw new Error(`Quadro "${quadro}" não existe (disponíveis: QGBT, ${calc.quadros.map(x => x.id).join(', ')}).`);
-  const hoje = new Date();
-  const cabo = quadro === 'QGBT' ? calc.entrada.cabo : q.alim;
-  const geral = quadro === 'QGBT' ? calc.entrada.disjuntorGeral : q.alim.disjuntor;
-  const circuitos = [];
-  const add = (tipo, descricao, disjuntor, secao, carga) => circuitos.push({ id: circuitos.length + 1, tipo, descricao: curtoTxt(descricao, 23), disjuntor, secao, carga, dr: null });
-  if (quadro === 'QGBT') calc.quadros.filter(x => x.alim).forEach(x => add('tue', `Alim. ${x.id}`, `${x.alim.disjuntor} A — 3P`, `${x.alim.paralelos > 1 ? `${x.alim.paralelos}×` : ''}${mm2(x.alim.secao)}`, `${virgula(x.projeto.ib, 0)} A`));
-  for (const u of q.motores) {
-    const prot = u.partidaInfo.dispositivos.find(d => d.ref === 'Q1' || d.ref === 'F1-F3');
-    const pTxt = prot.faixa ? `${virgula(prot.faixa[0])}–${virgula(prot.faixa[1])} A` : `${prot.nominal_a} A`;
-    add('tue', `${u.tag} ${virgula(u.cv)} cv ${SIGLA_PARTIDA[u.partida]}`, `${pTxt} — ${prot.tipo === 'fusivel' ? 'fus.' : 'DM'}`, `${u.circuito.condutores === 6 ? '6×' : ''}${mm2(u.circuito.secao)}`, `${virgula(u.pKw)} kW`);
-  }
-  for (const o of q.outras) add(o.tipo === 'iluminacao' ? 'iluminacao' : o.tipo === 'resistiva' ? 'aquecedor' : 'tomada', o.descricao, `${o.circuito.disjuntor} A — ${o.circuito.polos}P`, mm2(o.circuito.secao), `${virgula(o.kw)} kW`);
-  if (quadro === 'QGBT' && calc.banco.necessario) add('tue', `Banco capac. ${virgula(calc.banco.total)} kvar`, `${calc.banco.cabo.disjuntor} A — 3P`, mm2(calc.banco.cabo.secao), `${virgula(calc.banco.total)} kvar`);
-  return {
-    quadro,
-    obra: dados.obra?.nome || dados.meta?.titulo || 'Obra',
-    cliente: dados.cliente?.nome || '',
-    local: q.descricao || '',
-    data: `${hoje.getFullYear()}${String(hoje.getMonth() + 1).padStart(2, '0')}${String(hoje.getDate()).padStart(2, '0')}`,
-    rev: dados.meta?.revisao || 'R00',
-    responsavel: dados.responsavel?.nome || '',
-    crea: dados.responsavel?.crea ? `CREA ${dados.responsavel.crea}` : '',
-    arquivo: `unifilar-${quadro.toLowerCase()}`,
-    alimentacao: {
-      texto: `3F${cabo.secaoNeutro ? '+N' : ''}+PE — ${c.vff}/${c.vfn} V — ${c.frequencia} Hz`,
-      secao: `${cabo.paralelos > 1 ? `${cabo.paralelos} × (` : ''}${cabo.secaoNeutro ? 4 : 3} × ${mm2(cabo.secao)}${cabo.paralelos > 1 ? ')' : ''} + PE ${mm2(cabo.secaoPE)} (Cu/${c.isolacao})`,
-      secaoCurta: mm2(cabo.secao),
-    },
-    geral: { descricao: `${geral} A — 3P` },
-    dr: null,
-    dps: { descricao: `classe II\n${calc.dps.uc} V — 20 kA`, secao: '16 mm²' }, // Uc pela NBR 5410, Tabela 49 (antes fixo em 275 V)
-    circuitos,
-    notas: [
-      'NOTAS',
-      `1. Icc no barramento ${virgula(q.curto.icc / 1000, 1)} kA;`,
-      `    Icu mínimo ${q.curto.icuMin} kA.`,
-      '2. Partidas: ver memorial (contatores',
-      '    AC-3, relés e soft/inversor).',
-      '3. Gerado pelo sistema H&M — revisar.',
-    ],
-  };
-}
+// O adaptador para o gerador de unifilar de quadro (dadosUnifilarQD) mora em
+// skills/_comum/cad/unifilarDados.js (dadosUnifilarIndustrial) desde a 2.40: o unifilar comum o usava e o
+// _comum não pode depender da skill. Reexportado aqui com o nome antigo.
+const { dadosUnifilarIndustrial: dadosUnifilarQD } = require('../../../_comum/cad/unifilarDados');
 
 module.exports = { montarUnifilar, dadosUnifilarQD };

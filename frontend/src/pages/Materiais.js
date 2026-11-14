@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import useUltimoPedido from '../hooks/useUltimoPedido';
 import toast from 'react-hot-toast';
-import { Plus, Search, Upload, FileScan } from 'lucide-react';
+import { Plus, Upload, FileScan } from 'lucide-react';
 import {
   getMateriais, removerMaterial, importarMateriais, getCategoriasMateriais,
   getStatusEmail, verificarEmailAgora, getHistoricoEmail, getMargemPadrao, verificarFornecedoresAgora,
@@ -9,6 +9,7 @@ import {
 import Paginacao from '../components/Paginacao';
 import ModalOportunidades, { ModalCompararMaterial } from '../components/ComparativoFornecedores';
 import Select, { Sugestoes } from '../components/Select';
+import CampoBusca from '../components/ui/CampoBusca';
 import { useAuth } from '../hooks/useAuth';
 import { categoriasComUsadas } from '../utils/categoriasMateriais';
 import { btnPrimario, btnSecundario } from './materiais/apoio';
@@ -187,16 +188,8 @@ export default function Materiais() {
           {categoriasSugeridas.map(c => <option key={c} value={c} />)}
         </Sugestoes>
 
-        <div style={{ position: 'relative', width: 240 }}>
-          <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--texto-3)' }} />
-          <input
-            value={busca}
-            onChange={e => setBusca(e.target.value)}
-            placeholder="Buscar descrição, código, marca..."
-            aria-label="Buscar material"
-            style={{ paddingLeft: 30 }}
-          />
-        </div>
+        <CampoBusca value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar descrição, código, marca..."
+          aria-label="Buscar material" estiloCaixa={{ width: 240 }} />
 
         <button onClick={() => setModalImport(true)} style={btnSecundario}>
           <Upload size={14} style={{ marginRight: 6 }} /> Importar CSV
