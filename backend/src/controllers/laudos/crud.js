@@ -80,7 +80,7 @@ async function listar(req, res) {
   }
   const where = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
   const { rows } = await pool.query(
-    `SELECT l.id, l.tipo, l.disciplina, l.titulo, l.cliente_nome, l.propostas, l.gerar_orcamento, l.atualizado_em,
+    `SELECT l.id, l.tipo, l.disciplina, l.titulo, l.cliente_id, l.cliente_nome, l.propostas, l.gerar_orcamento, l.atualizado_em,
             l.dados->'meta'->>'revisao' AS revisao, u.nome AS usuario_nome,
             (SELECT count(*)::int FROM laudos_projetos_fotos f WHERE f.laudo_id = l.id) AS total_fotos,
             l.obra_id, l.analise_id, ${sqlObraJson('ob')} AS obra

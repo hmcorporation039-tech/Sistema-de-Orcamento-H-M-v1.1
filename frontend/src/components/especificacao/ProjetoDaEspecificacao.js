@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Upload, FileText, Play, Download, BookOpen, Search, CheckCircle2, AlertTriangle } from 'lucide-react';
 import Select from '../Select';
+import ClienteSelect, { useClientes } from '../ClienteSelect';
+import ObraSelect from '../ObraSelect';
 import CampoMoeda from '../CampoMoeda';
 import { estilos, Campo } from '../ui/estilos';
-import { baixarDocumentoLaudo } from '../../services/api';
+import { baixarDocumentoLaudo, getObra } from '../../services/api';
 import { formatarMoeda } from '../../utils/format';
 import {
   getPerfisEspecificacao, lerEspecificacao, gerarProjetoEspecificacao, atualizarProjetoEspecificacao,
@@ -42,7 +45,13 @@ export default function ProjetoDaEspecificacao() {
   const [perfil, setPerfil] = useState('');
   const [arquivo, setArquivo] = useState(null);
   const [pedido, setPedido] = useState('');
+  // 2.42: cliente e obra escolhidos das listas (antes eram texto livre e o projeto nascia sem obra); ?obra=ID
+  // (botão "Pela especificação" da obra) já vem com a obra e o cliente dela
+  const [parametros] = useSearchParams();
+  const clientes = useClientes();
+  const [clienteId, setClienteId] = useState('');
   const [cliente, setCliente] = useState('');
+  const [obraId, setObraId] = useState(parametros.get('obra') ? Number(parametros.get('obra')) : null);
   const [obra, setObra] = useState('');
   const [lida, setLida] = useState(null);
   const [ignorados, setIgnorados] = useState(new Set());
@@ -56,6 +65,17 @@ export default function ProjetoDaEspecificacao() {
   const [ocupado, setOcupado] = useState('');
 
   useEffect(() => { getPerfisEspecificacao().then(r => setPerfis(r.data.perfis || [])).catch(() => {}); }, []);
+  useEffect(() => {
+    const id = Number(parametros.get('obra'));
+    if (!id) return;
+    getObra(id).then(r => { setObra(r.data.nome || ''); if (r.data.cliente_id) setClienteId(String(r.data.cliente_id)); setCliente(r.data.cliente_nome || ''); }).catch(() => {});
+  }, [parametros]);
+  const escolherObra = (id, o) => {
+    setObraId(id); setObra(o?.nome || '');
+    if (o?.cliente_id) setClienteId(String(o.cliente_id));
+    if (o?.cliente_nome) setCliente(o.cliente_nome);
+  };
+  const escolherCliente = (e) => { setClienteId(e.target.value); setCliente(clientes.find(c => String(c.id) === e.target.value)?.nome || ''); };
 
   const tentar = async (rotulo, fn) => {
     setOcupado(rotulo);
@@ -73,7 +93,7 @@ export default function ProjetoDaEspecificacao() {
   const lidosParaEnviar = () => ({ ...lida.lidos, requisitos: lida.lidos.requisitos.filter((_, i) => !ignorados.has(i)) });
 
   const gerar = () => tentar('gerar', async () => {
-    const r = await gerarProjetoEspecificacao({ perfil: lida.perfil, lidos: lidosParaEnviar(), pedido, cliente, obra });
+    const r = await gerarProjetoEspecificacao({ perfil: lida.perfil, lidos: lidosParaEnviar(), pedido, cliente, obra, obra_id: obraId || null });
     setProjeto(r.data); setRespostas({}); setPrecos({}); setExtras({}); setSimSaidas(null);
     const fun = r.data.resumo.funcional;
     toast.success(r.data.resumo.tipo === 'skill' || !fun
@@ -159,8 +179,8 @@ export default function ProjetoDaEspecificacao() {
               {perfis.map(p => <option key={p.chave} value={p.chave}>{p.nome}</option>)}
             </Select>
           </Campo>
-          <Campo label="Cliente"><input className="input" value={cliente} onChange={e => setCliente(e.target.value)} /></Campo>
-          <Campo label="Obra"><input className="input" value={obra} onChange={e => setObra(e.target.value)} /></Campo>
+          <Campo label="Obra" style={{ gridColumn: 'span 2' }}><ObraSelect value={obraId} onChange={escolherObra} clienteId={clienteId ? Number(clienteId) : null} clienteNome={cliente} /></Campo>
+          <Campo label="Cliente"><ClienteSelect value={clienteId} onChange={escolherCliente} /></Campo>
           <Campo label="Pedido (o que gerar)"><input className="input" value={pedido} onChange={e => setPedido(e.target.value)} placeholder="ex.: unifilar, comando e layout" /></Campo>
           <button type="button" style={estilos.btnPrimario} onClick={ler} disabled={!!ocupado}><Upload size={14} />{ocupado === 'ler' ? 'Lendo…' : 'Ler especificação'}</button>
         </div>
@@ -202,7 +222,7 @@ export default function ProjetoDaEspecificacao() {
           <h3 style={{ margin: '0 0 6px', fontSize: 15 }}>{R.meta.titulo} — projeto #{projeto.id}</h3>
           {ehSkill
             ? (<>
-              <p style={estilos.ajuda}>Calculado pela skill da disciplina ({R.disciplina}) com o formulário preenchido pela especificação · também em Obras → Projetos por disciplina, onde o formulário pode ser editado.</p>
+              <p style={estilos.ajuda}>Calculado pela skill da disciplina ({R.disciplina}) com o formulário preenchido pela especificação · também na obra (seção Projeto), onde o formulário pode ser editado.</p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 8, marginBottom: 12 }}>
                 {(R.indicadores || []).map((i, k) => (
                   <div key={k} style={{ border: '1px solid var(--borda)', borderRadius: 8, padding: '8px 10px' }}>
@@ -212,7 +232,7 @@ export default function ProjetoDaEspecificacao() {
                   </div>))}
               </div>
             </>)
-            : <p style={estilos.ajuda}>Geral {R.geral.texto} · demanda {Math.round(R.demanda.iProj)} A ({R.demanda.faseMax}) · {R.comando.reles.length} relés/temporizadores · fonte {R.comando.fonte.A} A · {R.funcional.filter(f => f.ok).length}/{R.funcional.length} cenários do comando atendidos · também em Obras → Projetos por disciplina.</p>}
+            : <p style={estilos.ajuda}>Geral {R.geral.texto} · demanda {Math.round(R.demanda.iProj)} A ({R.demanda.faseMax}) · {R.comando.reles.length} relés/temporizadores · fonte {R.comando.fonte.A} A · {R.funcional.filter(f => f.ok).length}/{R.funcional.length} cenários do comando atendidos · também na obra (seção Projeto).</p>}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
             {docs.map(([t, rot, ext]) => <button key={t} type="button" style={estilos.btnSecundario} onClick={() => baixar(t, ext)}><Download size={13} />{rot}</button>)}
           </div>

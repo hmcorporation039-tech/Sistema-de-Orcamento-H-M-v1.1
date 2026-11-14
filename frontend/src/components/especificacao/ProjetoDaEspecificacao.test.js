@@ -1,5 +1,6 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
 import ProjetoDaEspecificacao from './ProjetoDaEspecificacao';
 import { getPerfisEspecificacao, lerEspecificacao, gerarProjetoEspecificacao, aprovarProjetoEspecificacao, atualizarProjetoEspecificacao } from '../../services/apiEspecificacao';
 
@@ -9,7 +10,11 @@ jest.mock('../../services/apiEspecificacao', () => ({
   getPerfisEspecificacao: jest.fn(), lerEspecificacao: jest.fn(), gerarProjetoEspecificacao: jest.fn(), atualizarProjetoEspecificacao: jest.fn(),
   simularProjetoEspecificacao: jest.fn(), precosProjetoEspecificacao: jest.fn(), aprovarProjetoEspecificacao: jest.fn(),
 }));
-jest.mock('../../services/api', () => ({ baixarDocumentoLaudo: jest.fn() }));
+jest.mock('../../services/api', () => ({
+  baixarDocumentoLaudo: jest.fn(), getObra: () => Promise.resolve({ data: {} }),
+  getTodosClientes: () => Promise.resolve([]), getObras: () => Promise.resolve({ data: { dados: [] } }),
+  criarObra: jest.fn(), buscarTodasPaginas: () => Promise.resolve([]),
+}));
 jest.mock('react-hot-toast', () => { const t = jest.fn(); t.success = jest.fn(); t.error = jest.fn(); return { __esModule: true, default: t }; });
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -43,7 +48,7 @@ test('lê a especificação, mostra a frase de origem e gera o projeto', async (
   getPerfisEspecificacao.mockResolvedValue({ data: { perfis: [{ chave: 'painel_pressurizacao', nome: 'Painel de pressurização' }, { chave: 'quadro_forca_comando', nome: 'Quadro de força' }] } });
   lerEspecificacao.mockResolvedValue({ data: lida });
   gerarProjetoEspecificacao.mockResolvedValue({ data: { id: 7, resumo } });
-  await act(async () => { raiz.render(<ProjetoDaEspecificacao />); });
+  await act(async () => { raiz.render(<MemoryRouter><ProjetoDaEspecificacao /></MemoryRouter>); });
   const opcoes = [...caixa.querySelectorAll('select option')].map(o => o.textContent);
   expect(opcoes.indexOf('Painel de pressurização')).toBeGreaterThan(opcoes.indexOf('Automático (pelo texto)'));
   expect(opcoes.indexOf('Quadro de força')).toBeGreaterThan(opcoes.indexOf('Painel de pressurização'));
@@ -92,7 +97,7 @@ test('projeto pela skill da disciplina: indicadores, documentos da skill e matri
     precos: { subtotal: 0, total: 0, aCotar: 1 }, materiais: [{ item: 1, tag: 'CEN', descricao: 'Central endereçável com 2 laços', quantidade: 1, unidade: 'un', preco: null, origem: 'A cotar', chave: 'cen' }],
   };
   gerarProjetoEspecificacao.mockResolvedValue({ data: { id: 9, resumo: resumoSkill } });
-  await act(async () => { raiz.render(<ProjetoDaEspecificacao />); });
+  await act(async () => { raiz.render(<MemoryRouter><ProjetoDaEspecificacao /></MemoryRouter>); });
   const input = caixa.querySelector('input[type=file]');
   Object.defineProperty(input, 'files', { value: [new File(['x'], 'cdi.txt', { type: 'text/plain' })] });
   await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })); });

@@ -444,6 +444,8 @@ async function registrarMedicao(req, res, next) {
         [obra.id, l.etapa.id, l.etapa.nome, dataMed, per, l.pctAc, l.valor, l.obs, l.substitui, req.usuario.id]);
       criados.push(rows[0].id);
     }
+    // 2.42: medição registrada numa obra contratada põe a obra em execução (a etapa anda sozinha)
+    await require('../utils/obras').avancarStatusObra(client, obra.id, 'execucao', ['contratada']);
     await registrarAuditoria(client, {
       entidade: 'obra_medicao', entidadeId: obra.id, acao: 'registrar', usuarioId: req.usuario.id,
       detalhes: { periodo: per, medicoes: criados, corrigidas: linhas.filter(l => l.substitui).map(l => l.substitui) },
@@ -512,4 +514,4 @@ async function boletim(req, res, next) {
   res.send(Buffer.from(pdf));
 }
 
-module.exports = { obter, gerar, salvar, registrarMedicao, listarMedicoes, planilha, boletim, _interno: { montarMedicao } };
+module.exports = { obter, gerar, salvar, registrarMedicao, listarMedicoes, planilha, boletim, _interno: { montarMedicao, carregarDados, calcular } };

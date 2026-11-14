@@ -156,4 +156,47 @@ caso('obra_id no pedido: ausente mantém, null desliga, inteiro liga, lixo é er
   assert.ok(O.lerObraId({ obra_id: 1.5 }).erro);
 });
 
+// ── 2.42: etapa, próximo passo, obras parecidas, margem sem custos ──────
+caso('próximo passo segue a etapa da obra', () => {
+  const P = (o) => O.proximoPasso({ id: 9, ...o });
+  assert.deepStrictEqual(P({ status: 'orcamento' }).acao, { tipo: 'secao', secao: 'projeto', rotulo: 'Enviar projeto' });
+  assert.match(P({ status: 'orcamento', analises_sem_proposta: [{ id: 154 }], qtd_analises: 1 }).texto, /Análise #154/);
+  assert.strictEqual(P({ status: 'orcamento', analises_sem_proposta: [{ id: 154 }] }).acao.para, '/obras/analise/154');
+  const ativa = P({ status: 'prospeccao', propostas: [{ id: 3, numero: 'P230', status: 'Ativa' }, { id: 7, numero: 'P241', status: 'Ativa' }] });
+  assert.match(ativa.texto, /P241/); // a mais recente
+  assert.strictEqual(ativa.acao.para, '/propostas/editar/7');
+  assert.deepStrictEqual(P({ status: 'orcamento', propostas: [{ id: 3, status: 'Aprovada' }] }).acao, { tipo: 'status', para: 'contratada', rotulo: 'Marcar como contratada' });
+  assert.match(P({ status: 'orcamento', propostas: [{ id: 3, status: 'Recusada' }] }).texto, /recusadas/);
+  assert.strictEqual(P({ status: 'orcamento', qtd_projetos: 2 }).acao.para, '/propostas?aba=editar&obra=9');
+  assert.strictEqual(P({ status: 'contratada' }).acao.rotulo, 'Gerar cronograma');
+  assert.strictEqual(P({ status: 'contratada', tem_cronograma: true }).acao.secao, 'execucao');
+  assert.match(P({ status: 'execucao', tem_cronograma: true, fisico_realizado: 42.25 }).texto, /42,[23] % executado/);
+  assert.deepStrictEqual(P({ status: 'execucao', tem_cronograma: true, fisico_realizado: 100 }).acao, { tipo: 'status', para: 'concluida', rotulo: 'Marcar como concluída' });
+  assert.match(P({ status: 'concluida', a_receber_faturado: 1500 }).texto, /1\.500,00/);
+  assert.strictEqual(P({ status: 'concluida', a_receber_faturado: null }).acao, null);
+  assert.strictEqual(P({ status: 'cancelada', juntada_a: 4, juntada_codigo: 'OB-2026-004' }).acao.para, '/obras/4');
+});
+
+caso('obras parecidas: nome igual/contido, local, palavras só no mesmo cliente; canceladas fora', () => {
+  const obras = [
+    { id: 1, codigo: 'OB-2026-001', nome: 'CRH - CLINICA DO RIM E HIPERTENSÃO — 13/09/2026', cliente_id: 5, status: 'orcamento' },
+    { id: 5, codigo: 'OB-2026-005', nome: 'Hospital Santa Lucia Sobradinho — Sobradinho - DF', local: 'Sobradinho - DF', cliente_id: 7, status: 'contratada' },
+    { id: 12, codigo: 'OB-2026-012', nome: 'Hospital Santa Lucia S/A — Hospital Santa Lúcia Sobradinho - DF', cliente_id: 7, status: 'orcamento' },
+    { id: 20, codigo: 'OB-2026-020', nome: 'Clínica do Rim', cliente_id: 5, status: 'cancelada' },
+    { id: 30, codigo: 'OB-2026-030', nome: 'Paróquia Águas Claras', cliente_id: null, status: 'orcamento' },
+  ];
+  assert.deepStrictEqual(O.obrasParecidas({ nome: 'crh clinica do rim e hipertensao 13 09 2026' }, obras).map(o => o.id), [1]);
+  assert.deepStrictEqual(O.obrasParecidas({ nome: 'Hospital Santa Lúcia Sobradinho', cliente_id: 7 }, obras, { excluir: 12 }).map(o => o.id), [5]);
+  assert.deepStrictEqual(O.obrasParecidas({ nome: 'Santa Lucia Sobradinho reforma', cliente_id: 7 }, obras).map(o => o.id).sort((a, b) => a - b), [5, 12]);
+  assert.deepStrictEqual(O.obrasParecidas({ nome: 'Santa Lucia Sobradinho reforma', cliente_id: 99 }, obras), []); // só palavras, de outro cliente
+  assert.deepStrictEqual(O.obrasParecidas({ nome: 'Clínica do Rim' }, obras).map(o => o.id), [1]); // a 20 está cancelada
+  assert.deepStrictEqual(O.obrasParecidas({ nome: 'ab' }, obras), []);
+});
+
+caso('margem sem custos ligados: flag sem_custos (a tela não mostra 100 %)', () => {
+  assert.strictEqual(O.resumoFinanceiro({ propostas: [{ id: 1, status: 'Ativa', total: 1000, data: '2026-11-01' }] }).sem_custos, true);
+  assert.strictEqual(O.resumoFinanceiro({ movimentos: [{ tipo: 'realizado', valor: 10 }] }).sem_custos, false);
+  assert.strictEqual(O.resumoFinanceiro({ contratos: [{ valor: 50 }] }).sem_custos, true); // contrato sem pagamento: o custo ainda não saiu
+});
+
 console.log(`obras.test.js: ${ok} casos ok`);

@@ -348,6 +348,9 @@ export const getObra = (id) => api.get(`/obras/${id}`);
 export const criarObra = (data) => api.post('/obras', data);
 export const atualizarObra = (id, data) => api.put(`/obras/${id}`, data);
 export const removerObra = (id) => api.delete(`/obras/${id}`);
+// 2.42: obras que parecem a mesma ({ nome, cliente_id, local, excluir }) e juntar a repetida nesta (admin)
+export const getObrasParecidas = (params) => api.get('/obras/parecidas', { params });
+export const juntarObra = (destinoId, origemId) => api.post(`/obras/${destinoId}/juntar`, { origem_id: origemId });
 // liga/desliga um item existente: tipo 'proposta' | 'analise' | 'laudo' | 'contrato' | 'movimento'
 export const vincularItemObra = (obraId, tipo, itemId, ligar = true) =>
   api.put(`/obras/${obraId}/vinculos`, { tipo, id: itemId, ligar });

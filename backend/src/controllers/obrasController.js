@@ -118,6 +118,35 @@ const SQL_NOTA_FATURADA = `n.id, n.numero, n.data_emissao, n.tomador->>'nome' AS
        (SELECT COALESCE(sum(f.valor), 0) FROM financeiro_movimentos f WHERE f.nota_id = n.id) AS recebido
   FROM notas_fiscais n JOIN propostas pr ON pr.id = n.proposta_id`;
 
+// Próximo passo de várias obras (lista): o que a regra de utils/obras.js (proximoPasso) precisa, em poucas consultas.
+// O % físico só é calculado na página da obra (precisa do cronograma inteiro); aqui fica null.
+async function passosDasObras(obras, resumos, admin) {
+  const ids = obras.map(o => o.id);
+  const passos = new Map();
+  if (!ids.length) return passos;
+  const [props, analises, crono, juntadas] = await Promise.all([
+    pool.query('SELECT id, obra_id, numero, status FROM propostas WHERE obra_id = ANY($1::int[])', [ids]),
+    pool.query(`SELECT id, obra_id FROM analises_projeto WHERE obra_id = ANY($1::int[]) AND proposta_id IS NULL
+                  AND COALESCE(finalidade, 'orcamento') = 'orcamento' ORDER BY id DESC`, [ids]),
+    pool.query('SELECT DISTINCT obra_id FROM obra_etapas WHERE obra_id = ANY($1::int[])', [ids]),
+    pool.query('SELECT o.id, j.codigo FROM obras o JOIN obras j ON j.id = o.juntada_a WHERE o.id = ANY($1::int[])', [ids]),
+  ]);
+  const por = (rows) => rows.reduce((m, r) => m.set(r.obra_id, [...(m.get(r.obra_id) || []), r]), new Map());
+  const propsPor = por(props.rows);
+  const analisesPor = por(analises.rows);
+  const comCrono = new Set(crono.rows.map(r => r.obra_id));
+  const codigoJuntada = new Map(juntadas.rows.map(r => [r.id, r.codigo]));
+  for (const o of obras) {
+    passos.set(o.id, O.proximoPasso({
+      id: o.id, status: o.status, juntada_a: o.juntada_a, juntada_codigo: codigoJuntada.get(o.id),
+      propostas: propsPor.get(o.id) || [], analises_sem_proposta: analisesPor.get(o.id) || [],
+      qtd_analises: o.qtd_analises, qtd_projetos: o.qtd_projetos, tem_cronograma: comCrono.has(o.id),
+      fisico_realizado: null, a_receber_faturado: admin ? resumos.get(o.id)?.a_receber_faturado ?? null : null,
+    }));
+  }
+  return passos;
+}
+
 async function resumosDasObras(ids, admin) {
   const mapa = new Map(ids.map(id => [id, { propostas: [], movimentos: [], contratos: [], notas: [] }]));
   if (!ids.length) return mapa;
@@ -138,7 +167,7 @@ async function resumosDasObras(ids, admin) {
 
 function esconderFinanceiro(resumo, admin) {
   if (admin) return resumo;
-  return { ...resumo, realizado: null, recebido: null, contratado: null, margem: null, margem_pct: null, a_receber: null,
+  return { ...resumo, realizado: null, recebido: null, contratado: null, sem_custos: null, margem: null, margem_pct: null, a_receber: null,
     faturado: null, faturado_liquido: null, baixado_manual: null, qtd_notas: null, a_receber_faturado: null };
 }
 
@@ -163,11 +192,13 @@ async function listar(req, res, next) {
     params.push(`%${String(busca).trim()}%`);
     cond.push(`(o.codigo ILIKE $${params.length} OR o.nome ILIKE $${params.length} OR o.cliente_nome ILIKE $${params.length} OR o.local ILIKE $${params.length})`);
   }
+  let condStatus = null;
   if (status) {
     const lista = String(status).split(',').filter(s => O.STATUS_OBRA.includes(s));
     if (!lista.length) return res.status(400).json({ erro: 'Status inválido.' });
     params.push(lista);
-    cond.push(`o.status = ANY($${params.length}::text[])`);
+    condStatus = `o.status = ANY($${params.length}::text[])`;
+    cond.push(condStatus);
   }
   if (segmento) {
     if (!O.SEGMENTOS.includes(segmento)) return res.status(400).json({ erro: 'Segmento inválido.' });
@@ -196,20 +227,29 @@ async function listar(req, res, next) {
       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
     [...params, porPagina, offset]
   );
+  let contagemStatus;
   if (!basico) {
     const resumos = await resumosDasObras(rows.map(r => r.id), ehAdmin(req));
+    const passos = await passosDasObras(rows, resumos, ehAdmin(req));
     for (const r of rows) {
       r.resumo = resumos.get(r.id);
+      r.proximo_passo = passos.get(r.id);
       r.pode_editar = podeEditar(req, r);
       if (!ehAdmin(req)) { r.qtd_contratos = null; r.qtd_movimentos = null; }
     }
+    // quantas obras em cada status com os MESMOS filtros, menos o de status (botões de status da lista)
+    // (o parâmetro do status continua citado — sempre verdadeiro — para a numeração $n dos outros não mudar)
+    const semStatus = cond.map(c => (c === condStatus ? condStatus.replace(/^o\.status = ANY\((\$\d+)::text\[\]\)$/, '$1::text[] IS NOT NULL') : c));
+    const { rows: cont } = await pool.query(
+      `SELECT o.status, count(*)::int AS n FROM obras o ${semStatus.length ? `WHERE ${semStatus.join(' AND ')}` : ''} GROUP BY o.status`, params);
+    contagemStatus = Object.fromEntries(O.STATUS_OBRA.map(s => [s, cont.find(c => c.status === s)?.n || 0]));
   }
   const totalObras = parseInt(total.rows[0].count, 10);
   // ?campos=basico (listas de escolha) vem numa página só de até 1000: acima
   // disso a lista era cortada sem aviso — `incompleto` avisa quem chamou
   const incompleto = offset + rows.length < totalObras;
   if (incompleto) res.set('X-Lista-Truncada', '1');
-  res.json({ ...montarResposta(rows, totalObras, pagina, porPagina), incompleto, restrito_financeiro: !ehAdmin(req) });
+  res.json({ ...montarResposta(rows, totalObras, pagina, porPagina), incompleto, restrito_financeiro: !ehAdmin(req), ...(contagemStatus ? { contagem_status: contagemStatus } : {}) });
 }
 
 async function carregarObra(id, executor = pool) {
@@ -257,15 +297,104 @@ async function buscarUma(req, res, next) {
       pool.query(`SELECT ${SQL_NOTA_FATURADA} WHERE pr.obra_id = $1 AND n.situacao = 'emitida' ORDER BY n.data_emissao DESC NULLS LAST, n.id DESC`, [id]),
     ]);
   }
-  const resumo = esconderFinanceiro(O.resumoFinanceiro({
+  const resumoCompleto = O.resumoFinanceiro({
     propostas: propostas.rows, movimentos: movimentos.rows, contratos: contratos.rows, notas: notas.rows,
-  }), admin);
+  });
+  const resumo = esconderFinanceiro(resumoCompleto, admin);
+  // etapa e próximo passo (2.42): % físico pelo cronograma, quando houver
+  const CR = require('./cronogramaController')._interno;
+  let fisico = null;
+  let temCronograma = false;
+  const dadosCrono = await CR.carregarDados(id).catch(() => null);
+  if (dadosCrono?.etapas?.length) {
+    temCronograma = true;
+    try { fisico = CR.calcular(dadosCrono).calc.resumo.fisico_realizado; } catch { fisico = null; }
+  }
+  const juntada = obra.juntada_a ? (await pool.query('SELECT id, codigo, nome FROM obras WHERE id = $1', [obra.juntada_a])).rows[0] || null : null;
+  const proximo = O.proximoPasso({
+    id, status: obra.status, juntada_a: obra.juntada_a, juntada_codigo: juntada?.codigo,
+    propostas: propostas.rows, qtd_analises: analises.rows.length, qtd_projetos: laudos.rows.filter(l => l.tipo === 'projeto').length,
+    analises_sem_proposta: analises.rows.filter(a => !a.proposta_id && (a.finalidade || 'orcamento') === 'orcamento').sort((a, b) => b.id - a.id),
+    tem_cronograma: temCronograma, fisico_realizado: fisico, a_receber_faturado: admin ? resumoCompleto.a_receber_faturado : null,
+  });
   res.json({
     ...obra,
     analises: analises.rows, laudos: laudos.rows, propostas: propostas.rows,
     contratos: contratos.rows, movimentos: movimentos.rows, notas: notas.rows,
     resumo, restrito_financeiro: !admin, pode_editar: podeEditar(req, obra), pode_excluir: admin,
+    proximo_passo: proximo, juntada, fisico_realizado: fisico, tem_cronograma: temCronograma,
   });
+}
+
+// GET /obras/parecidas?nome=&cliente_id=&local=&excluir= — obras que parecem a mesma (aviso ao criar e
+// sugestão do "juntar"). Qualquer usuário logado (é só a lista de obras, que todos veem).
+async function parecidas(req, res) {
+  const { nome = '', local = '', cliente_id: clienteId = null } = req.query;
+  const excluir = inteiroOuNull(req.query.excluir).valor || null;
+  if (String(nome).trim().length < 3 && String(local).trim().length < 3) return res.json({ itens: [] });
+  const { rows } = await pool.query("SELECT id, codigo, nome, local, cliente_id, cliente_nome, status FROM obras WHERE status <> 'cancelada'");
+  res.json({ itens: O.obrasParecidas({ nome, local, cliente_id: clienteId }, rows, { excluir }) });
+}
+
+// POST /obras/:id/juntar { origem_id } (admin) — junta a obra repetida (origem) NESTA (destino): tudo o que
+// estava ligado à origem passa para cá (propostas, análises, projetos/laudos, contratos, movimentos, OS,
+// regras do Pix, vencimentos, comparativos e o cronograma, se só a origem tinha) e a origem fica
+// "cancelada", com juntada_a apontando para cá — nada é apagado, e a pasta da origem fica onde está (os
+// arquivos dela aparecem em "Pastas anteriores" da obra). Dados que faltam no destino (cliente, local,
+// datas, responsável) vêm da origem. Tudo numa transação, com auditoria.
+const TABELAS_JUNTAR = ['propostas', 'analises_projeto', 'laudos_projetos', 'contratos', 'financeiro_movimentos',
+  'ordens_servico', 'regras_movimento_obra', 'vencimentos_laudos', 'orcamentos_concorrentes'];
+async function juntar(req, res) {
+  const destinoId = Number(req.params.id);
+  const origem = inteiroOuNull(req.body?.origem_id);
+  if (origem.erro || !origem.valor) return res.status(400).json({ erro: 'Escolha a obra que será juntada a esta.' });
+  if (origem.valor === destinoId) return res.status(400).json({ erro: 'Escolha outra obra: não dá para juntar a obra com ela mesma.' });
+  const r = await comTransacao(async (client) => {
+    // trava as duas na ordem do id (duas junções cruzadas não se travam)
+    const { rows } = await client.query('SELECT * FROM obras WHERE id = ANY($1::int[]) ORDER BY id FOR UPDATE', [[destinoId, origem.valor]]);
+    const destino = rows.find(o => o.id === destinoId);
+    const org = rows.find(o => o.id === origem.valor);
+    if (!destino || !org) return { status: 404, erro: 'Obra não encontrada.' };
+    if (org.juntada_a) return { status: 409, erro: `A obra ${org.codigo} já foi juntada a outra.` };
+    if (destino.juntada_a) return { status: 409, erro: `A obra ${destino.codigo} foi juntada a outra: junte na obra que ficou.` };
+    const crono = await client.query('SELECT obra_id, count(*)::int AS n FROM obra_etapas WHERE obra_id = ANY($1::int[]) GROUP BY obra_id', [[destinoId, org.id]]);
+    const cronoDe = (id) => crono.rows.find(c => c.obra_id === id)?.n || 0;
+    if (cronoDe(destinoId) && cronoDe(org.id)) {
+      return { status: 409, erro: `As duas obras têm cronograma. Apague o cronograma de uma delas (aba Execução) antes de juntar.` };
+    }
+    const movidos = {};
+    for (const t of TABELAS_JUNTAR) {
+      const u = await client.query(`UPDATE ${t} SET obra_id = $1 WHERE obra_id = $2`, [destinoId, org.id]);
+      if (u.rowCount) movidos[t] = u.rowCount;
+    }
+    if (cronoDe(org.id)) {
+      // o cronograma (config, etapas, medições) vem junto — o destino não tinha nenhum
+      await client.query('DELETE FROM obra_cronogramas WHERE obra_id = $1', [destinoId]);
+      for (const t of ['obra_cronogramas', 'obra_etapas', 'obra_medicoes']) {
+        const u = await client.query(`UPDATE ${t} SET obra_id = $1 WHERE obra_id = $2`, [destinoId, org.id]);
+        if (u.rowCount) movidos[t] = u.rowCount;
+      }
+    }
+    // o que falta no destino vem da origem; o status fica o mais adiantado das duas (cancelada/concluída não puxam)
+    const ordem = O.ETAPAS_OBRA;
+    const status = ordem.indexOf(org.status) > ordem.indexOf(destino.status) && org.status !== 'concluida' ? org.status : destino.status;
+    await client.query(
+      `UPDATE obras SET cliente_id = COALESCE(cliente_id, $2), cliente_nome = COALESCE(cliente_nome, $3), local = COALESCE(NULLIF(local, ''), $4),
+              inicio_previsto = COALESCE(inicio_previsto, $5), fim_previsto = COALESCE(fim_previsto, $6), responsavel_id = COALESCE(responsavel_id, $7),
+              status = $8, atualizado_em = NOW(), versao = versao + 1
+        WHERE id = $1`,
+      [destinoId, org.cliente_id, org.cliente_nome, org.local, org.inicio_previsto, org.fim_previsto, org.responsavel_id, status]);
+    const nota = `Juntada à obra ${destino.codigo} em ${hojeBrasilia().split('-').reverse().join('/')}.`;
+    await client.query(
+      `UPDATE obras SET status = 'cancelada', juntada_a = $2, observacoes = TRIM(BOTH E'\\n' FROM COALESCE(observacoes, '') || E'\\n' || $3),
+              atualizado_em = NOW(), versao = versao + 1 WHERE id = $1`, [org.id, destinoId, nota]);
+    await registrarAuditoria(client, { entidade: 'obras', entidadeId: destinoId, acao: 'juntar', usuarioId: req.usuario.id,
+      detalhes: { origem: { id: org.id, codigo: org.codigo, nome: org.nome, status: org.status }, movidos } });
+    return { status: 200, destino, origem: org, movidos };
+  });
+  if (r.status !== 200) return res.status(r.status).json({ erro: r.erro });
+  const total = Object.values(r.movidos).reduce((s, n) => s + n, 0);
+  res.json({ mensagem: `Obra ${r.origem.codigo} juntada à ${r.destino.codigo} (${total} ite${total === 1 ? 'm' : 'ns'} passaram para cá).`, movidos: r.movidos });
 }
 
 // POST /obras
@@ -369,6 +498,11 @@ async function vincular(req, res, next) {
   if (ligar) {
     await pool.query(`UPDATE ${cfg.tabela} SET obra_id = $1 WHERE id = $2`, [obraId, row.id]);
     novo = obraId;
+    // 2.42: proposta já aprovada ligada à obra leva a obra para "contratada" (como aprovar depois de ligada)
+    if (tipo === 'proposta') {
+      const { rows: [p] } = await pool.query('SELECT status FROM propostas WHERE id = $1', [row.id]);
+      if (p?.status === 'Aprovada') await O.avancarStatusObra(pool, obraId, 'contratada', ['prospeccao', 'orcamento']);
+    }
   } else if (row.obra_id === obraId) {
     await pool.query(`UPDATE ${cfg.tabela} SET obra_id = NULL WHERE id = $1 AND obra_id = $2`, [row.id, obraId]);
     novo = null;
@@ -431,4 +565,4 @@ async function pacoteDaPasta(req, res, next) {
   res.status(201).json({ ...pacote, pasta: dir });
 }
 
-module.exports = { listar, buscarUma, criar, atualizar, remover, vincular, pasta, abrirPasta, pacoteDaPasta };
+module.exports = { listar, buscarUma, criar, atualizar, remover, vincular, pasta, abrirPasta, pacoteDaPasta, parecidas, juntar };

@@ -19,8 +19,10 @@ const SITUACAO = {
 };
 
 // clienteId OU obraId; onAnalisar(pacote) recebe o pacote pronto (mesmo formato do envio da análise)
-export function AvisoNovidades({ clienteId = null, obraId = null, onAnalisar = null, sempre = false }) {
+// compacto (2.42, página da obra): uma linha só ("6 arquivos novos na pasta — ver / analisar"); a lista abre no clique
+export function AvisoNovidades({ clienteId = null, obraId = null, onAnalisar = null, sempre = false, compacto = false }) {
   const [dados, setDados] = useState(null);
+  const [aberta, setAberta] = useState(!compacto);
   const [marcados, setMarcados] = useState([]);
   const [ocupado, setOcupado] = useState('');
 
@@ -53,12 +55,13 @@ export function AvisoNovidades({ clienteId = null, obraId = null, onAnalisar = n
   }
 
   return (
-    <div data-testid="aviso-novidades" style={{ border: '1px solid #3a3215', background: '#16140c', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: itens.length ? 10 : 0 }}>
+    <div data-testid="aviso-novidades" style={{ border: '1px solid #3a3215', background: '#16140c', borderRadius: 10, padding: compacto && !aberta ? '8px 14px' : '12px 14px', marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: itens.length && aberta ? 10 : 0 }}>
         <Bell size={15} style={{ color: '#e2c35a' }} />
         <b style={{ color: '#e2c35a', fontSize: 13, flex: 1 }}>
-          {itens.length ? `${itens.length} novidade(s) na pasta do cliente` : 'Nenhuma novidade na pasta do cliente'}
+          {itens.length ? `${itens.length} ${itens.length === 1 ? 'arquivo novo ou alterado' : 'arquivos novos ou alterados'} na pasta do cliente` : 'Nenhuma novidade na pasta do cliente'}
         </b>
+        {compacto && itens.length > 0 && <button type="button" onClick={() => setAberta(a => !a)} style={btn} aria-expanded={aberta} data-testid="ver-novidades">{aberta ? 'Esconder' : 'Ver'}</button>}
         {!dados.disponivel && <span style={{ color: '#e05555', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}><WifiOff size={13} /> servidor das pastas fora do ar — mostrando o último retrato</span>}
         <button type="button" onClick={() => carregar(true)} disabled={!!ocupado} style={btn} title="Procurar arquivos novos agora"><RefreshCw size={12} /> {ocupado === 'varrer' ? 'Procurando…' : 'Procurar agora'}</button>
         {onAnalisar && analisaveis.length > 0 && (
@@ -69,7 +72,7 @@ export function AvisoNovidades({ clienteId = null, obraId = null, onAnalisar = n
         )}
         {itens.length > 0 && <button type="button" onClick={() => visto(marcados.length ? marcados : itens.map(i => i.id))} disabled={!!ocupado} style={btn} data-testid="marcar-visto"><CheckCheck size={12} /> Marcar como visto</button>}
       </div>
-      {itens.length > 0 && (
+      {itens.length > 0 && aberta && (
         <div style={{ maxHeight: 240, overflowY: 'auto' }}>
           {itens.map(i => {
             const s = SITUACAO[i.situacao] || SITUACAO.novo;

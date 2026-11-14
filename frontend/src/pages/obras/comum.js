@@ -29,6 +29,20 @@ export { Etiqueta } from '../../components/ui/Etiqueta';
 export const moeda = (v) => formatarMoeda(v, { vazio: '—' });
 export const pct = (v) => (v == null ? '' : `${String(v).replace('.', ',')}%`);
 export const corMargem = (v) => (v == null ? '#777' : v < 0 ? '#e08080' : '#3fb95f');
+// orçado sem proposta aprovada nem ativa: '—' (antes saía "R$ 0,00", que parecia obra de graça)
+export const orcadoTexto = (r) => (!r || r.orcado_base === 'nenhuma' ? '—' : moeda(r.orcado));
+
+// Linha curta com o que a obra tem ligado — só o que existe ("1 análise · 2 projetos · 1 proposta").
+// Antes a lista mostrava "0 análise · 0 projeto · 0 laudo · 0 proposta · 0 contrato · 0 mov.".
+const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
+export function resumoItens(o, restrito = false) {
+  const partes = [
+    [o.qtd_analises, 'análise', 'análises'], [o.qtd_projetos, 'projeto', 'projetos'], [o.qtd_laudos, 'laudo', 'laudos'],
+    [o.qtd_propostas, 'proposta', 'propostas'],
+    ...(restrito ? [] : [[o.qtd_contratos, 'contrato', 'contratos'], [o.qtd_movimentos, 'lançamento', 'lançamentos']]),
+  ].filter(([n]) => Number(n) > 0).map(([n, um, varios]) => plural(Number(n), um, varios));
+  return partes.join(' · ');
+}
 
 // estilos e Campo moraram aqui até a revisão de 28/10/2026; agora são do kit de tela
 export { estilos, Campo } from '../../components/ui/estilos';

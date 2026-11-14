@@ -208,6 +208,8 @@ async function inserirOS(client, { uuid, obraId, dados, modelo, checklist, criad
     [uuid, numero, obraId, dados.titulo, dados.descricao, dados.tipo, dados.disciplina, modelo, dados.responsavel_id,
      dados.agendada_para, JSON.stringify(checklist), criadoPor]
   );
+  // 2.42: a primeira OS de uma obra contratada põe a obra em execução (a etapa anda sozinha)
+  await require('../utils/obras').avancarStatusObra(client, obraId, 'execucao', ['contratada']);
   return os;
 }
 

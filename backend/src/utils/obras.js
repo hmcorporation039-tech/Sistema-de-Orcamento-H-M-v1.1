@@ -193,6 +193,9 @@ function resumoFinanceiro({ propostas = [], movimentos = [], contratos = [], not
   return {
     orcado: orcado.valor, orcado_base: orcado.base, orcado_propostas: orcado.propostas,
     realizado, recebido, contratado,
+    // nenhum pagamento ligado: a margem é só o orçado (a tela mostra "sem pagamentos ligados", não 100 %).
+    // Contrato de prestador sem pagamento ligado também não conta: o custo ainda não saiu.
+    sem_custos: realizado === 0,
     margem, margem_pct: orcado.valor > 0 ? Math.round((margem / orcado.valor) * 1000) / 10 : null,
     a_receber: arred(orcado.valor - recebido),
     faturado, faturado_liquido: faturadoLiquido, baixado_manual: baixado, qtd_notas: notas.length,
@@ -248,7 +251,96 @@ const sqlObraJson = (alias) => `CASE WHEN ${alias}.id IS NULL THEN NULL ELSE jso
 const ehAdmin = (usuario) => usuario?.role === 'admin';
 const podeEditarObra = (usuario, obra) => !!usuario && (ehAdmin(usuario) || (!!obra && (obra.usuario_id == null || obra.usuario_id === usuario.id)));
 
+// ── etapa e próximo passo da obra (revisão da aba Obras, 2.42) ─────────────
+// A obra anda por Prospecção → Orçamento → Contratada → Em execução → Concluída.
+// "Próximo passo" é o que falta para andar, com a ação que resolve:
+//   acao.tipo 'secao'  → abre uma seção da página da obra (resumo, projeto, propostas, execucao, financeiro, arquivos)
+//   acao.tipo 'link'   → vai para outra tela (análise, proposta)
+//   acao.tipo 'status' → muda o status da obra (só sugere: a pessoa confirma)
+// Entrada (montada pelo controller): { id, status, juntada_a, juntada_codigo, propostas: [{ id, numero, status }],
+//   analises_sem_proposta: [{ id }] (finalidade orçamento, sem proposta), qtd_analises, qtd_projetos,
+//   tem_cronograma, fisico_realizado (null = não calculado), a_receber_faturado (null = não admin) }
+const ETAPAS_OBRA = ['prospeccao', 'orcamento', 'contratada', 'execucao', 'concluida'];
+const moedaBr = (v) => `R$ ${(Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function proximoPasso(o = {}) {
+  const props = o.propostas || [];
+  const ativa = props.filter(p => p.status === 'Ativa').sort((a, b) => b.id - a.id)[0];
+  const aprovada = props.some(p => p.status === 'Aprovada');
+  const secao = (s, rotulo) => ({ tipo: 'secao', secao: s, rotulo });
+  const link = (para, rotulo) => ({ tipo: 'link', para, rotulo });
+  const status = (para, rotulo) => ({ tipo: 'status', para, rotulo });
+  switch (o.status) {
+    case 'cancelada':
+      return o.juntada_a
+        ? { texto: `Juntada à obra ${o.juntada_codigo || `#${o.juntada_a}`}`, acao: link(`/obras/${o.juntada_a}`, 'Abrir a obra') }
+        : { texto: 'Obra cancelada', acao: null };
+    case 'concluida':
+      if (o.a_receber_faturado > 0.009) return { texto: `Falta receber ${moedaBr(o.a_receber_faturado)} do faturado`, acao: secao('financeiro', 'Ver notas') };
+      return { texto: 'Obra concluída', acao: null };
+    case 'execucao':
+      if (o.fisico_realizado != null && o.fisico_realizado >= 99.95) return { texto: 'Execução em 100 % — falta encerrar a obra', acao: status('concluida', 'Marcar como concluída') };
+      if (!o.tem_cronograma) return { texto: 'Em execução sem cronograma — gere o cronograma para medir', acao: secao('execucao', 'Gerar cronograma') };
+      return {
+        texto: o.fisico_realizado != null ? `Registrar a medição (${o.fisico_realizado.toFixed(1).replace('.', ',')} % executado)` : 'Registrar a medição do período',
+        acao: secao('execucao', 'Registrar medição'),
+      };
+    case 'contratada':
+      if (!o.tem_cronograma) return { texto: 'Contratada — gere o cronograma a partir da proposta aprovada', acao: secao('execucao', 'Gerar cronograma') };
+      return { texto: 'Cronograma pronto — abra a OS de início ou registre a 1ª medição', acao: secao('execucao', 'Ir para a execução') };
+    default: { // prospecção e orçamento
+      if (aprovada) return { texto: 'Proposta aprovada — a obra pode passar para Contratada', acao: status('contratada', 'Marcar como contratada') };
+      if (ativa) return { texto: `Proposta ${ativa.numero} enviada — aguardando o cliente`, acao: link(`/propostas/editar/${ativa.id}`, 'Abrir a proposta') };
+      const analise = (o.analises_sem_proposta || [])[0];
+      if (analise) return { texto: `Análise #${analise.id} pronta — gere a proposta`, acao: link(`/obras/analise/${analise.id}`, 'Abrir a análise') };
+      if (props.length) return { texto: 'Propostas recusadas ou canceladas — revise ou encerre a obra', acao: link(`/propostas?aba=editar&obra=${o.id}`, 'Nova proposta') };
+      if (o.qtd_analises || o.qtd_projetos) return { texto: 'Projeto em andamento — monte a proposta', acao: link(`/propostas?aba=editar&obra=${o.id}`, 'Nova proposta') };
+      return { texto: 'Comece pelo projeto recebido do cliente (ou monte a proposta direto)', acao: secao('projeto', 'Enviar projeto') };
+    }
+  }
+}
+
+// Obras parecidas (aviso de obra repetida ao criar e sugestão do "juntar"): nome igual ou contido em
+// palavras inteiras; local igual/contido; ou várias palavras em comum — essa última só no mesmo cliente.
+// Canceladas não contam. Mais parecida primeiro (mesmo cliente pesa mais).
+function obrasParecidas({ nome, cliente_id: clienteId = null, local = '' }, obras, { excluir = null, limite = 5 } = {}) {
+  const n = normalizarTexto(nome);
+  const l = normalizarTexto(local);
+  if (!n && !l) return [];
+  const pal = (s) => new Set(normalizarTexto(s).split(' ').filter(p => p.length >= 4));
+  const alvo = pal(`${nome || ''} ${local || ''}`);
+  const lista = [];
+  for (const o of obras || []) {
+    if (o.id === excluir || o.status === 'cancelada') continue;
+    const on = normalizarTexto(o.nome);
+    const ol = normalizarTexto(o.local);
+    let pontos = 0;
+    if (n && (on === n || contemPalavras(on, n) || contemPalavras(n, on))) pontos = 3;
+    else if (l && ol && (ol === l || contemPalavras(ol, l) || contemPalavras(l, ol) || contemPalavras(on, l))) pontos = 2;
+    else {
+      const deles = pal(`${o.nome || ''} ${o.local || ''}`);
+      const comuns = [...alvo].filter(p => deles.has(p)).length;
+      if (comuns >= 2 && comuns >= Math.min(alvo.size, deles.size) * 0.6) pontos = 1;
+    }
+    if (!pontos) continue;
+    const mesmoCliente = clienteId != null && clienteId !== '' && o.cliente_id === Number(clienteId);
+    if (pontos === 1 && !mesmoCliente) continue;
+    lista.push({ id: o.id, codigo: o.codigo, nome: o.nome, cliente_nome: o.cliente_nome, status: o.status, pontos: pontos + (mesmoCliente ? 2 : 0) });
+  }
+  return lista.sort((a, b) => b.pontos - a.pontos || b.id - a.id).slice(0, limite);
+}
+
+// Leva a obra adiante sem voltar atrás (executor = pool ou client): só muda se o status atual está em `de`.
+async function avancarStatusObra(executor, obraId, para, de) {
+  if (!obraId) return false;
+  const r = await executor.query(
+    'UPDATE obras SET status = $1, atualizado_em = NOW(), versao = versao + 1 WHERE id = $2 AND status = ANY($3::text[])',
+    [para, obraId, de]);
+  return r.rowCount > 0;
+}
+
 module.exports = {
+  ETAPAS_OBRA, proximoPasso, obrasParecidas, avancarStatusObra,
   STATUS_OBRA, SEGMENTOS,
   normalizarTexto, formatarCodigo, proximoSequencial, nomeObraDaAnalise,
   chavePropostaSolta, agruparPropostasSoltas, nomeObraDasPropostas, deduzirStatus,

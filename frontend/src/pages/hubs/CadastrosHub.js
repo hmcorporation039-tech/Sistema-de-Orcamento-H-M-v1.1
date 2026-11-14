@@ -7,12 +7,13 @@ import DadosFiscais from '../DadosFiscais';
 import MinhaConta from '../conta/MinhaConta';
 import Auditoria from '../conta/Auditoria';
 import CanalRemoto from '../CanalRemoto';
+import Aprendizado from '../Aprendizado';
 
 // Grupo "Cadastros e administração": clientes (todos), dados fiscais da
 // empresa para a NFS-e, usuários e integrações (rotinas automáticas, e-mail,
 // IA) — esses três só admin. Fase 6 (02/11/2026): "Minha conta" (sessões,
 // verificação em duas etapas, Telegram/WhatsApp) para todos e "Auditoria" só admin.
-//   /cadastros?aba=clientes | ?aba=conta | ?aba=fiscal | ?aba=usuarios | ?aba=auditoria | ?aba=integracoes
+//   /cadastros?aba=clientes | ?aba=conhecimento | ?aba=conta | ?aba=fiscal | ?aba=usuarios | ?aba=auditoria | ?aba=integracoes
 const ABAS = [
   { chave: 'clientes', rotulo: 'Clientes', render: () => <Clientes /> },
   { chave: 'fiscal', rotulo: 'Dados fiscais', admin: true, render: () => <DadosFiscais /> },
@@ -21,6 +22,8 @@ const ABAS = [
   // Fase 6: estado do Telegram/WhatsApp, fila, ações pendentes e simulador (?aba=canal)
   { chave: 'canal', rotulo: 'Canal remoto', admin: true, render: () => <CanalRemoto /> },
   { chave: 'auditoria', rotulo: 'Auditoria', admin: true, render: () => <Auditoria /> },
+  // 2.42: o que o sistema aprendeu das análises e das obras (antes era uma aba de Obras: /obras?aba=aprendizado redireciona)
+  { chave: 'conhecimento', rotulo: 'O que o sistema sabe', render: () => <Aprendizado /> },
   { chave: 'conta', rotulo: 'Minha conta', render: () => <MinhaConta /> },
 ];
 

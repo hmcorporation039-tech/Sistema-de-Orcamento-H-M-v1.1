@@ -10,9 +10,11 @@ import ErrorBoundary from '../../components/ErrorBoundary';
 // (ex.: /propostas/editar/:id, porque o Orcamento lê o id com useParams) —
 // nesse caso a rota passa `abaFixa`, que tem prioridade sobre o ?aba=.
 //
-// Cada aba: { chave, rotulo, render, admin?, para? }
+// Cada aba: { chave, rotulo, render, admin?, para?, oculta? }
 //   admin: só aparece para administradores (a API também exige admin);
-//   para:  destino do clique quando não é o padrão `${base}?aba=${chave}`.
+//   para:  destino do clique quando não é o padrão `${base}?aba=${chave}`;
+//   oculta: abre pela URL (links antigos e botões das outras telas) mas não fica no menu de abas — só
+//           aparece nele enquanto está aberta, para a pessoa saber onde está (2.42: hub Obras).
 // Aba pedida na URL que não existe (ou que é só de admin) cai na primeira
 // visível. Sem nenhuma aba visível, volta para o painel.
 export default function Hub({ grupo, base, abas, abaFixa, larga = false }) {
@@ -21,7 +23,8 @@ export default function Hub({ grupo, base, abas, abaFixa, larga = false }) {
   const ehAdmin = usuario?.role === 'admin';
   const visiveis = abas.filter(a => !a.admin || ehAdmin);
   const pedida = abaFixa || busca.get('aba');
-  const ativa = visiveis.find(a => a.chave === pedida) || visiveis[0];
+  const ativa = visiveis.find(a => a.chave === pedida) || visiveis.find(a => !a.oculta);
+  const noMenu = visiveis.filter(a => !a.oculta || a === ativa);
 
   if (!ativa) return <Navigate to="/dashboard" replace />;
 
@@ -29,9 +32,9 @@ export default function Hub({ grupo, base, abas, abaFixa, larga = false }) {
     <div style={larga ? paginaLargaTela : undefined}>
       <div style={barra}>
         <span style={rotuloGrupo}>{grupo}</span>
-        {visiveis.length > 1 && (
+        {noMenu.length > 1 && (
           <div role="tablist" aria-label={grupo} style={trilho}>
-            {visiveis.map(a => {
+            {noMenu.map(a => {
               const selecionada = a.chave === ativa.chave;
               return (
                 <Link
