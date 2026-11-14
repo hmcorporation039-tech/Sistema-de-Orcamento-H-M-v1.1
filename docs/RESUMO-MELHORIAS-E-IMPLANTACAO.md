@@ -1245,3 +1245,49 @@ Pedido do usuário (depois da revisão geral do código): corrigir tudo; separar
   - os casos R-01 a R-20 das skills de CAD;
   - os casos novos de pdfVetorial, leitoresProjeto, compatibilidadeEspacial, pdfParaDxf, escalaDaPlanta, analiseProjetoItens, mapaCad, notasAprendidas, treinoPorDisciplina, iaCache, classificadorMateriais, assistente, precosReferencia, leituraEmail e componentesQuadro;
   - Jest: Concorrencia, Financeiro, AnaliseProjeto, Modelo3d e dinheiro.
+
+### 09/11/2026: versão 2.34.0 — o sistema entende o projeto, gera o quadro pela especificação do cliente, 3D com manobras e agentes próprios com suporte do Claude Max
+
+Pedidos do usuário:
+- a análise deve entender o objetivo do projeto (ex.: subestação abrigada colada sobre a planta da arena), focar nos componentes da disciplina e usar as legendas como fonte; vale para todas as disciplinas;
+- 3D interativo: acionar disjuntores e chaves, cabeamento completo nos quadros, barramentos de terra e neutro com medidas, disjuntores fiéis ao projeto e infraestrutura com uma cor por tipo;
+- gerar sozinho o projeto do quadro a partir da especificação do cliente (exemplo: quadro da CAG), no mesmo nível ou melhor que o anteprojeto feito no Claude Max, com a pesquisa de preços no critério da planilha QF-CAG, aprendendo para depender cada vez menos de IA;
+- agentes próprios no sistema, assistente alimentado com tudo isso e ligado ao Claude Max como suporte para o que ele não souber.
+
+- **O que é o projeto** (`skills/_comum/cad/objetivoDoProjeto.js`, `componentesDoProjeto.js`, `perfisDisciplina.js`, determinísticos):
+  - lê o carimbo, os títulos das vistas e as legendas e decide a disciplina, o tipo (ex.: subestação abrigada) e o objeto (arquitetura, abrigo ou equipamento);
+  - classifica cada vista da folha: **principal** (vale), **contexto** (base de outro projeto colada na folha — ignorada, com as camadas dela) e **apoio** (cortes, detalhes, legendas);
+  - componentes tirados da relação de materiais e das legendas, com item, quantidade, unidade, especificação e a fonte de cada um. O que o projeto não escreve fica com quantidade 0 e [CONFERIR] — nada inventado;
+  - divergências entre fontes viram aviso (ex.: o bloco diz 225 kVA, a relação diz 150 kVA — vale a relação [CONFERIR]);
+  - escala da vista pelas cotas (a SE real estava desenhada ao dobro: fator 0,5);
+  - na análise (`services/analiseCad`): mapa, ambientes, símbolos e linhas só da vista principal; os componentes do objetivo viram materiais e serviços (`mt_se_abrigada`, `mt_cabo`, `mt_malha`, `mt_qgbt`) com a fonte; cartão novo **"O que é o projeto"** na tela da análise;
+  - a ponte para a skill de média tensão preenche o formulário com o que o projeto escreve (kVA, tensões, demanda, Z %, proteção, cabo, malha, hastes); a demanda em kVA é convertida pelo FP do formulário [CONFERIR];
+  - 3D do abrigo (`cenaDoObjetivo.js`, `equipamentos3d.js`): só o abrigo, o poste e os equipamentos, em metros reais, com compartimentos, porta pela especificação e peças sem posição no lugar típico ou no pátio, sempre "posição a conferir".
+- **3D interativo** (`skills/_comum/instalacao/painelQuadro.js`, `interacao.js`, `paineis.js`, `barramentosCalculados.js`; `skills/_comum/cad/coresInfra.js`):
+  - quadro aberto com cada disjuntor/DR fiel ao projeto (polos, In, curva, Icu, IΔn, seção, com a fonte; o que falta é [CONFERIR]), barras N e PE com medida (do projeto ou calculadas pela skill quadros), pente, canaletas, bornes e a fiação F/N/PE pelas canaletas; desligar um disjuntor acinzenta o circuito;
+  - motor genérico de interação (contrato `interacao`: fonte, série, carga, gatilho, central), com manobras recusadas e explicadas quando a sequência está errada;
+  - subestação: chave fusível, seccionadora (recusa com o disjuntor de MT fechado), disjuntor de MT com trip pelo relé e disjuntor geral de BT; abrir a seccionadora apaga o trafo e a BT;
+  - incêndio (acionador → central → avisadores, silenciar, reset), rack (switch PoE → câmeras), alarme e controle de acesso;
+  - infraestrutura com uma cor por tipo (eletroduto rígido, corrugado, enterrado, eletrocalha, perfilado, leito, canaleta…), legenda com medidas e metragem, destaque por tipo.
+- **Projeto pela especificação do cliente** (`skills/_comum/especificacao/`, `skills/quadros/scripts/lib/especificacao.js`, perfis em `skills/quadros/dados/` e `skills/pressurizacao/dados/`; migração 2.0-56 `especificacao_aprendizado`):
+  - lê PDF, DOCX, XLSX ou TXT e transforma em requisitos com a página e a frase de origem; o engenheiro desmarca o que foi lido errado e ensina os trechos não lidos;
+  - gera a solução do quadro, a lógica de comando por blocos de função (em dados) com simulação de cenários, as folhas FL01–FL07 em PDF A3 com o carimbo H&M (unifilar, comando por relés, tabela de contatos, interfaces e réguas, layout em escala pelo arranjo da skill, cargas/materiais/pendências, memória), a ficha técnica e o texto de entrega;
+  - verificações da especificação em dados no perfil ("pontos a levantar": seletora titular × automação, falta de troca automática por falha, emergência que corta o comando e não a força) e pendências automáticas (Icc, atuador, inversor, cabos, aterramento);
+  - planilha de preços no formato QF-CAG (origem Pesquisado / Estimativa H&M / Cliente, faixa, fonte, SUMIFS por origem, contingência editável, sem BDI e sem mão de obra, nunca R$ 0,00), com aba de resumo: itens que mais pesam, pesquisado × estimativa, onde economizar, mudanças em relação ao anteprojeto e itens que dependem da Icc;
+  - aprendizado por perfil: vocabulário, escolhas, decisões (ex.: a seletora B1·REM·B2 vira o padrão), respostas aos pontos e preços/equivalências; o aprovado pelo engenheiro vale antes do perfil e do código;
+  - skill quadros: motor de reserva fora da demanda, arranjo por zonas (força | comando lado a lado), relés auxiliares no arranjo, nas perdas e no 3D; 3D com simulação do comando por relés (seletoras, emergência, temporizadores, sinaleiros);
+  - tela: Obras → "Projeto pela especificação"; rotas `/api/v2/especificacao` (`autenticar`, alterações com posse);
+  - validado com a especificação real do quadro da CAG contra o anteprojeto do Claude Max: mesmas proteções, os mesmos 11 relés e os mesmos pontos a levantar; geral 250 A com Ir 225 A (demanda 221 A com os 25 % do maior motor); invólucro 1200 × 800 × 300; 30/30 cenários simulados; material R$ 14,4 mil (R$ 15,8 mil com 10 %), contra R$ 13,9 / 15,3 mil da referência, pela barra 40×5 calculada pela DIN 43671.
+- **Agentes próprios e assistente** (`backend/src/services/agentes/`, `backend/src/services/conhecimento/`):
+  - 5 agentes determinísticos definidos em dados: análise de projeto, projeto da disciplina, orçamento, pesquisa de preços (QF-CAG) e quadro pela especificação;
+  - roteador de intenção sem IA, antes do modelo (vocabulário em dados, com frases de exemplo testadas); a IA só entra quando nenhuma regra reconhece o pedido, em pergunta aberta ou quando o usuário pede;
+  - suporte Claude Max (`claude -p` com a assinatura, modo restrito): chamado quando o agente fica sem dado ou regra, ou em "pesquisa aprofundada" (só ferramentas de leitura + WebSearch/WebFetch, conferido no início); a resposta entra como sugestão pendente e só vira conhecimento depois de aprovada;
+  - selo em cada resposta ("Agente próprio · sem IA", "Suporte Claude Max", "IA"), botão "Aprovar como conhecimento" e o indicador de dependência de IA por agente em "O que o sistema sabe";
+  - base de conhecimento por disciplina (textos do sistema, resumo das skills e o que os engenheiros aprovaram);
+  - tabelas `agentes_execucoes`, `agentes_pedidos`, `agentes_sugestoes` e `agentes_suporte` (migração idempotente no `schema.js`); configuração `AGENTES_*` no `.env.example`.
+- **Testes novos:** `objetivoDoProjeto`, `agentes`, `agentesSuporte`, `agentesIntegracao` e `projetoEspecificacao` (backend); `teste-objetivo.js`, OBJ-01 a OBJ-11 do `teste-3d.js`, `instalacao/teste-painel.js`, `especificacao/teste-especificacao.js`, `quadros/testes/teste-especificacao.js` e `pressurizacao/testes/teste-especificacao.js` (skills); `ObjetivoDoProjeto`, `OrigemResposta` e `ProjetoDaEspecificacao` (Jest). Todos com dados sintéticos.
+- **Limites:**
+  - ligações da MT que o projeto não desenha são deduzidas da sequência típica e marcadas [CONFERIR no unifilar];
+  - quadro de automação (CLP) e painel de pressurização ainda sem vista interna no 3D; a fiação de comando não é desenhada no 3D (a simulação do comando é pelo painel lateral);
+  - réguas X3/X4 e chapa separadora aparecem nas folhas, mas não no 3D;
+  - o projeto pela especificação tem perfis para quadro de força e comando e para pressurização; automação/BMS, central de incêndio, climatização (sequência de chillers), média tensão e QD predial precisam de perfil próprio.

@@ -63,6 +63,17 @@ const RE_TITULO_QUADRO = /QUADRO|DIAGRAMA|UNIFILAR|TRIFILAR|PAINEL/i;
 const RE_ALIMENTADOR = /\d\s*#\s*\d/;
 
 const num = (s) => Number(String(s).replace(',', '.'));
+// de onde veio cada dado do circuito (3D fiel ao projeto, 09/11/2026): 'unifilar' ou 'tabela', só nos campos escritos
+const CAMPOS_FONTE = ['numero', 'descricao', 'potencia_w', 'potencia_va', 'In', 'polos', 'curva', 'secao_mm2', 'fases', 'dr'];
+function comFontes(c, origem) {
+  c.fontes = Object.fromEntries(CAMPOS_FONTE.filter(k => c[k] != null && c[k] !== '').map(k => [k, origem]));
+  return c;
+}
+// seção de fase do alimentador escrito "3#95(50)50" → 95 (só as seções comerciais)
+function secaoDoAlimentador(s) {
+  const m = /#\s*(\d{1,3}(?:[.,]\d+)?)/.exec(String(s || ''));
+  return m && SECOES.has(num(m[1])) ? num(m[1]) : null;
+}
 const limpo = (s) => limparMtext(String(s || ''), { quebra: ' ' }).replace(/\s+/g, ' ').trim();
 const normTag = (t) => String(t || '').toUpperCase().replace(/\s+/g, '').replace(/\./g, '-');
 // Chave de COMPARAÇÃO da tag (a tag mostrada continua a escrita, normTag): sem hífen, ponto, espaço e zero à
@@ -184,7 +195,7 @@ function saidasDoUnifilar(T, perto, hMed) {
     saidas.push({
       x: p.x, y: p.y, hh, lado, xDj: dj ? dj.x : d.x, xDesc: d.x, numero: normNumero(RE_NUMERO.exec(n.s)[1]), descricao: d.s.slice(0, 60),
       potencia_w: pot.unidade === 'W' ? pot.valor : null, potencia_va: pot.unidade === 'VA' ? pot.valor : null,
-      In: dj ? correnteDe(dj.s).In : null, polos: dj ? correnteDe(dj.s).polos : null, secao_mm2: secao, dr: null, caixa: [Math.min(n.x, d.x, p.x, dj?.x ?? p.x), p.y, Math.max(n.x, d.x, p.x, dj?.x ?? p.x), dj ? dj.y : p.y],
+      In: dj ? correnteDe(dj.s).In : null, polos: dj ? correnteDe(dj.s).polos : null, curva: dj ? correnteDe(dj.s).curva : null, secao_mm2: secao, dr: null, caixa: [Math.min(n.x, d.x, p.x, dj?.x ?? p.x), p.y, Math.max(n.x, d.x, p.x, dj?.x ?? p.x), dj ? dj.y : p.y],
     });
   });
   return { saidas, drs };
@@ -291,7 +302,7 @@ function tabelas(T, perto, hMed) {
         numero: normNumero(mNum[1]), descricao: val.descricao ? String(val.descricao).slice(0, 60) : null,
         potencia_w: Number.isFinite(pot) && pot > 0 && unidadePot === 'W' ? pot * fatorPot : null,
         potencia_va: Number.isFinite(pot) && pot > 0 && unidadePot === 'VA' ? pot * fatorPot : null,
-        In: dj ? Number(dj[3]) : null, polos, secao_mm2: sec && SECOES.has(num(sec[1])) ? num(sec[1]) : null, fases,
+        In: dj ? Number(dj[3]) : null, polos, curva: /(?:^|[^A-Z])([BCD])\s*-?\s*\d/i.exec(` ${val.disjuntor || ''}`)?.[1]?.toUpperCase() || null, secao_mm2: sec && SECOES.has(num(sec[1])) ? num(sec[1]) : null, fases,
         dr: val.dr && !/^(N[ÃA]O|-|–|NAO)$/i.test(String(val.dr).trim()) ? { In: null, idn_ma: /(\d{2,3})\s*mA/i.test(val.dr) ? Number(/(\d{2,3})\s*mA/i.exec(val.dr)[1]) : null } : null,
       });
     }
@@ -388,19 +399,21 @@ function lerQuadrosDoDiagrama(textos, regioes = []) {
     // DRs na ordem em que aparecem (de cima para baixo): DR1, DR2…
     const drsVistos = [...new Set(g.saidas.map(s => s.dr).filter(Boolean))].sort((a, b) => b.y - a.y || a.x - b.x);
     const tagDr = new Map(drsVistos.map((r, i) => [r, `DR${i + 1}`]));
-    const circuitos = g.saidas.sort((a, b) => (Number.parseInt(a.numero, 10) - Number.parseInt(b.numero, 10)) || a.numero.localeCompare(b.numero)).map(s => ({
+    const circuitos = g.saidas.sort((a, b) => (Number.parseInt(a.numero, 10) - Number.parseInt(b.numero, 10)) || a.numero.localeCompare(b.numero)).map(s => comFontes({
       numero: s.numero, descricao: s.descricao, tipo: tipoDoCircuito(s.descricao), potencia_w: s.potencia_w, potencia_va: s.potencia_va,
-      In: s.In, polos: s.polos ?? null, secao_mm2: s.secao_mm2, fases: null, dr: s.dr ? tagDr.get(s.dr) : null,
-    }));
+      In: s.In, polos: s.polos ?? null, curva: s.curva ?? null, secao_mm2: s.secao_mm2, fases: null, dr: s.dr ? tagDr.get(s.dr) : null,
+    }, 'unifilar'));
     quadros.push({
       titulo: titulo != null ? T[titulo].s : null, origem: 'unifilar', caixa: cx, geral, circuitos,
+      // o cabo do alimentador escrito ("3#95(50)50"): a seção de fase vai para a fiação de entrada do 3D
+      ...(alim ? { alimentador: limpo(alim.s), alimentador_secao_mm2: secaoDoAlimentador(alim.s) } : {}),
       drs: drsVistos.map(r => ({ tag: tagDr.get(r), In: r.In, idn_ma: r.idn_ma, circuitos: circuitos.filter(c => c.dr === tagDr.get(r)).map(c => c.numero) })),
     });
   }
 
   // tabelas (quadro de cargas): a que cai dentro de um diagrama já lido não conta de novo
   for (const t of tabelas(T, perto, hMed)) {
-    t.circuitos.forEach(c => { c.tipo = tipoDoCircuito(c.descricao); });
+    t.circuitos.forEach(c => { c.tipo = tipoDoCircuito(c.descricao); comFontes(c, 'tabela'); });
     const drComum = t.circuitos.some(c => c.dr) ? [{ tag: 'DR', In: null, idn_ma: t.circuitos.find(c => c.dr?.idn_ma)?.dr.idn_ma ?? null, circuitos: t.circuitos.filter(c => c.dr).map(c => c.numero) }] : [];
     // DR por circuito na tabela: cada um com o seu (a tabela não diz o agrupamento)
     const drs = drComum.length ? t.circuitos.filter(c => c.dr).map(c => ({ tag: `DR-${c.numero}`, In: null, idn_ma: c.dr.idn_ma, circuitos: [c.numero] })) : [];
@@ -426,12 +439,16 @@ function lerQuadrosDoDiagrama(textos, regioes = []) {
     for (const c of q.circuitos) {
       const o = ja.circuitos.find(x => x.numero === c.numero);
       if (!o) { ja.circuitos.push(c); continue; }
-      for (const k of ['descricao', 'potencia_w', 'potencia_va', 'In', 'polos', 'secao_mm2', 'fases']) if (o[k] == null && c[k] != null) o[k] = c[k];
+      // o que o unifilar não escreveu vem da tabela — e a ficha do 3D mostra a fonte de cada dado
+      for (const k of ['descricao', 'potencia_w', 'potencia_va', 'In', 'polos', 'curva', 'secao_mm2', 'fases']) {
+        if (o[k] == null && c[k] != null) { o[k] = c[k]; o.fontes = { ...(o.fontes || {}), [k]: c.fontes?.[k] || q.origem }; }
+      }
       if (!o.dr && c.dr) { o.dr = c.dr; ja.drs.push(...q.drs.filter(d => d.tag === c.dr && !ja.drs.some(x => x.tag === d.tag))); }
     }
   }
-  return saida.map(({ tag, tagLida, descricao, titulo, origem, caixa, geral, drs, circuitos }) => ({
+  return saida.map(({ tag, tagLida, descricao, titulo, origem, caixa, geral, drs, circuitos, alimentador, alimentador_secao_mm2 }) => ({
     tag, tagLida, descricao, titulo, origem, caixa: caixa.map(v => Math.round(v * 100) / 100), geral, drs, circuitos,
+    ...(alimentador ? { alimentador, alimentador_secao_mm2: alimentador_secao_mm2 ?? null } : {}),
   }));
 }
 

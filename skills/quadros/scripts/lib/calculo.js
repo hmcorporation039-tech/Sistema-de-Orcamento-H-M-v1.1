@@ -69,6 +69,9 @@ function config(dados) {
     uimpKv: num(q.uimp_kv, vff > 300 ? 6 : 4), ui: num(q.ui_v, vff > 400 ? 690 : 500),
     metodoSaida: q.metodo_saida || 'B1', isolacaoSaida: q.isolacao_saida || 'PVC', temperaturaCabos: num(q.temperatura_cabos, 30),
     residencial: !!q.residencial,
+    // arranjo por zonas (09/11/2026): força em cima, partidas | comando lado a lado, bornes embaixo —
+    // o arranjo padrão empilha cada zona numa fileira de largura total
+    layoutZonas: q.layout === 'zonas',
   };
 }
 
@@ -156,6 +159,8 @@ function lerMotores(dados, c) {
         limitePartida: partida === 'soft_starter' ? XI.LIMITE_SOFT_PADRAO : XI.LIMITE_INVERSOR_PADRAO, pKw,
       };
       const p = EI.dispositivosPartida(u);
+      // comando do inversor/soft pela entrada digital, sem contator de linha (projeto pela especificação: sem_contator)
+      if (m.sem_contator && ['inversor', 'soft_starter'].includes(partida)) p.dispositivos = p.dispositivos.filter(d => d.tipo !== 'contator');
       const tagBase = m.tag || `M${i + 1}`;
       out.push({
         tag: qtd > 1 ? `${tagBase}.${k + 1}` : tagBase, descricao: m.descricao || 'Motor', pKw, cv: pKw / XI.CV_KW, eta, fp, in: In, inPlaca: inPlaca != null,
@@ -165,6 +170,8 @@ function lerMotores(dados, c) {
         // referência única vale para o soft-starter/inversor (T1) ou, na partida direta, para o contator K1
         referencias: m.referencias && typeof m.referencias === 'object' ? m.referencias : (m.referencia ? { [partida === 'soft_starter' || partida === 'inversor' ? 'T1' : 'K1']: m.referencia } : {}),
         semPlaca: num(m.rendimento) == null || num(m.fp) == null,
+        // motor de reserva (stand-by): equipado no quadro, mas fora da demanda (operando: número de unidades em operação ou false)
+        operando: typeof m.operando === 'number' ? k < m.operando : (m.operando !== false && m.reserva !== true),
       });
     }
   }
@@ -183,11 +190,13 @@ function demanda(circuitos, motores, c) {
   const fd = c.fatorDiversidade ?? rdf(nSaidas);
   const fase = { A: 0, B: 0, C: 0 };
   ativos.forEach(x => x.fases.forEach(f => { fase[f] += x.ib; }));
-  const somaMot = motores.reduce((s, m) => s + m.in, 0);
-  const maiorMot = motores.reduce((a, m) => Math.max(a, m.in), 0);
+  // só os motores em operação: o de reserva (stand-by) não soma na demanda
+  const emOperacao = motores.filter(m => m.operando !== false);
+  const somaMot = emOperacao.reduce((s, m) => s + m.in, 0);
+  const maiorMot = emOperacao.reduce((a, m) => Math.max(a, m.in), 0);
   const fasesUsadas = ['A', 'B', 'C'].slice(0, c.nFases);
   // corrente de projeto do quadro por fase: FD × Σ Ib + motores (NBR 5410, 6.5.1: 1,25 × In do maior + Σ In dos demais)
-  const porFase = Object.fromEntries(fasesUsadas.map(f => [f, fd * fase[f] + (motores.length ? somaMot + 0.25 * maiorMot : 0)]));
+  const porFase = Object.fromEntries(fasesUsadas.map(f => [f, fd * fase[f] + (emOperacao.length ? somaMot + 0.25 * maiorMot : 0)]));
   const vals = Object.values(porFase);
   const iMax = Math.max(...vals, 0);
   const iMin = Math.min(...vals);
@@ -362,12 +371,19 @@ const PORTA = {
   potenciometro: { rotulo: 'Potenciômetro (referência)', cor: '—', sinal: 'AI' },
 };
 
+// Relés auxiliares, contatores e temporizadores do comando por relés (projeto pela especificação):
+// automacao.reles_auxiliares = [{ tag, tipo: 'rele'|'contator'|'temporizador', rotulo, corrente_a }]
+function relesAuxiliares(a) {
+  return (a.reles_auxiliares || []).filter(r => r && r.tag).map(r => ({ tag: String(r.tag), tipo: ['contator', 'temporizador'].includes(r.tipo) ? r.tipo : 'rele', rotulo: r.rotulo || '', corrente: num(r.corrente_a, 9) }));
+}
+
 function automacao(dados, c, motores) {
   const a = dados.automacao || {};
+  const relesAux = relesAuxiliares(a);
   const porta = (a.porta || []).filter(p => p && PORTA[p.tipo]).map(p => ({ ...PORTA[p.tipo], tipo: p.tipo, funcao: p.funcao || '', quantidade: Math.max(1, Math.round(num(p.quantidade, 1))) }));
   const ativo = !!a.ativo || c.tipo === 'automacao';
   if (c.maquina && !porta.some(p => p.tipo === 'emergencia')) porta.unshift({ ...PORTA.emergencia, tipo: 'emergencia', funcao: 'Parada de emergência (NBR IEC 60204-1 / NR-12)', quantidade: 1, automatico: true });
-  if (!ativo) return { ativo: false, porta, releSeguranca: c.maquina };
+  if (!ativo) return { ativo: false, porta, releSeguranca: c.maquina, relesAux, cargas24: (a.cargas_24v || []).filter(Boolean), fonteInformada: num(a.fonte_a) };
   const usados = { DI: 0, DO: 0, AI: 0, AO: 0 };
   const origem = [];
   for (const s of a.sinais || []) {
@@ -413,6 +429,7 @@ function automacao(dados, c, motores) {
     add(`Saídas analógicas em uso (${usados.AO} × 20 mA)`, usados.AO * 20);
   }
   add(`Relés de interface (${reles} × ${T.RELE_INTERFACE.consumo_ma} mA)`, reles * T.RELE_INTERFACE.consumo_ma);
+  for (const [t, d] of Object.entries(T.RELE_AUXILIAR)) { const q = relesAux.filter(r => r.tipo === t).length; add(`${q} × ${d.rotulo} (${d.consumo_ma} mA)`, q * d.consumo_ma); }
   if (ihm) add(`IHM ${ihm}"`, T.CONSUMO_24V_MA.ihm);
   if (switchPortas) add(`Switch ${switchPortas} portas`, T.SWITCH.consumo_ma);
   if (releSeguranca) add('Relé de segurança', T.CONSUMO_24V_MA.rele_seguranca);
@@ -439,7 +456,7 @@ function automacao(dados, c, motores) {
     alimentacao24: 2 * ramos24,
   };
   return {
-    ativo: true, clp: temClp, cpuReferencia: a.cpu_referencia || null, usados, reserva, req, cpu, modulos, disponivel, origem, comunicacao, rs485, ihm, switchPortas, reles,
+    ativo: true, clp: temClp, relesAux, cpuReferencia: a.cpu_referencia || null, usados, reserva, req, cpu, modulos, disponivel, origem, comunicacao, rs485, ihm, switchPortas, reles,
     consumo, totalMa, margem, iFonte, fonteA: fonteNominal, fontes, pSaida, iEntrada, disjFonte, ramos24, bornes, porta, releSeguranca,
     folgaIo: Object.fromEntries(['DI', 'DO', 'AI', 'AO'].map(t => [t, disponivel[t] - usados[t]])),
   };
@@ -622,6 +639,17 @@ function componentes(c, circuitos, drs, geral, dpsInfo, motores, aut, dem, sel, 
     for (const k of kts) { filhos.push({ ...k, x: xx, y: qf.h + gap }); if (f4f && k.ref === 'K1') filhos.push({ ...f4f, l: Math.min(f4f.l, k.l + 10), x: xx, y: qf.h + gap + k.h + 2 }); xx += k.l + gap; }
     if (ktf) { filhos.push({ ...ktf, x: xx, y: qf.h + gap }); xx += ktf.l + gap; }
     if (ef) filhos.push({ ...ef, x: xx, y: qf.h + gap });
+    // arranjo por zonas: o disjuntor-motor do inversor/soft vai para a fileira das saídas de força e o
+    // bloco da partida fica só com o acionamento (no fluxo de ar, ao lado do comando)
+    if (c.layoutZonas && ef && !kts.length && !ktf) {
+      add({ ref: `${m.tag}-Q1`, tipo: 'disjuntor_motor', zona: 'placa', motor: m.tag, descricao: `Disjuntor-motor da partida ${m.tag} (entrada do ${ef.ref === 'T1' ? 'acionamento' : ef.ref})`,
+        largura: qf.l, altura: qf.h, prof: qf.p, perda: qf.perda || 0, medida: qf.medida });
+      const so = [{ ...filhos.find(f => f.ref === ef.ref), x: 0, y: 0 }];
+      add({ ref: m.tag, tipo: 'partida', zona: 'partidas', motor: m.tag, descricao: `Partida ${m.partidaRotulo.toLowerCase()} — ${m.tag} ${m.descricao} (${arred(m.pKw, 2)} kW, In ${arred(m.in, 1)} A)`,
+        largura: so[0].l, altura: so[0].h, prof: so[0].p || T.DIN_PROF, filhos: so, perda: so[0].perda || 0,
+        medida: { origem: so[0].medida && so[0].medida.origem === 'catalogo' ? 'catalogo' : 'tipica', fabricante: m.fabricante || null, referencia: '', fonte_url: '', verificado: !!(so[0].medida && so[0].medida.verificado) } });
+      continue;
+    }
     const perda = filhos.reduce((s, f) => s + (f.perda || 0), 0);
     const nCat = filhos.filter(f => f.medida && f.medida.origem === 'catalogo').length;
     add({ ref: m.tag, tipo: 'partida', zona: 'partidas', motor: m.tag, descricao: `Partida ${m.partidaRotulo.toLowerCase()} — ${m.tag} ${m.descricao} (${arred(m.pKw, 2)} kW, In ${arred(m.in, 1)} A)`,
@@ -630,7 +658,12 @@ function componentes(c, circuitos, drs, geral, dpsInfo, motores, aut, dem, sel, 
   }
   // comando e automação
   if (aut.ativo || motores.length || aut.porta.length) {
-    const fonteA = aut.ativo ? aut.fonteA : 2.5;
+    // sem CLP (comando por relés): pelo consumo dos relés auxiliares, sinaleiros e cargas 24 Vcc, ou a fonte informada
+    const maAux = !aut.ativo && (aut.relesAux || []).length
+      ? aut.relesAux.reduce((s, r) => s + T.RELE_AUXILIAR[r.tipo].consumo_ma, 0) + aut.porta.filter(p => /^sinaleiro/.test(p.tipo)).reduce((s, p) => s + p.quantidade, 0) * T.CONSUMO_24V_MA.sinaleiro
+        + (aut.cargas24 || []).reduce((s, k) => s + num(k.quantidade, 1) * num(k.corrente_ma, 0), 0)
+      : 0;
+    const fonteA = aut.ativo ? aut.fonteA : (aut.fonteInformada || (maAux ? (T.proximo(T.FONTES_24V_A, maAux / 1000 * 1.25) || 40) : 2.5));
     const fontes = aut.ativo ? aut.fontes : 1;
     const fDim = T.FONTE_DIM[fonteA];
     const disjC = aut.ativo ? aut.disjFonte : 6;
@@ -654,6 +687,13 @@ function componentes(c, circuitos, drs, geral, dpsInfo, motores, aut, dem, sel, 
     }
     for (let j = 0; j < aut.rs485; j++) dev({ ref: `A${k++}`, tipo: 'modulo_rs485', zona: 'clp', descricao: T.CLP.RS485.rotulo, largura: T.CLP.RS485.l, altura: T.CLP.RS485.h, prof: T.CLP.RS485.p, perda: T.CLP.RS485.perda_w }, 'clp_modulo', { ponto: 'RS485', canais: 1 }, {});
     if (aut.switchPortas) dev({ ref: 'A90', tipo: 'switch', zona: 'clp', descricao: `Switch Ethernet industrial ${aut.switchPortas} portas, trilho DIN`, largura: T.SWITCH.l, altura: T.SWITCH.h, prof: T.SWITCH.p, perda: T.SWITCH.perda_w }, 'switch', { portas: aut.switchPortas }, {});
+  }
+  // relés auxiliares, contatores e temporizadores do comando por relés (zona 'reles'; contam no arranjo, nas perdas e no 3D)
+  for (const r of aut.relesAux || []) {
+    const d = T.RELE_AUXILIAR[r.tipo];
+    const dim = r.tipo === 'contator' ? T.dimPorCorrente(T.CONTATOR_DIM, r.corrente) : d;
+    dev({ ref: r.tag, tipo: r.tipo === 'contator' ? 'contator_comando' : r.tipo === 'temporizador' ? 'temporizador' : 'rele_auxiliar', zona: 'reles', descricao: `${d.rotulo}${r.rotulo ? ` — ${r.rotulo}` : ''}`,
+      largura: dim.l, altura: dim.h, prof: dim.p, perda: d.perda_w }, r.tipo === 'contator' ? 'contator' : 'rele_interface', r.tipo === 'contator' ? { ac3: r.corrente, bobina: '24 Vcc' } : {}, {});
   }
   if (aut.ativo && aut.reles) {
     for (let j = 0; j < aut.reles; j++) dev({ ref: `KA${j + 1}`, tipo: 'rele_interface', zona: 'reles', descricao: 'Relé de interface 24 Vcc 1 contato reversível 6 A, base "slim" com LED e diodo', largura: T.RELE_INTERFACE.l, altura: T.RELE_INTERFACE.h, prof: T.RELE_INTERFACE.p, perda: T.RELE_INTERFACE.perda_w }, 'rele_interface', {}, {});
@@ -973,6 +1013,7 @@ function materiais(calc) {
   for (const k of comps.lista) {
     // partidas, TCs, bloco de aferição e termostato têm linha própria (Medição / Climatização) abaixo
     if (['partida', 'tc', 'bloco_afericao', 'termostato'].includes(k.tipo)) continue;
+    if (k.tipo === 'disjuntor_motor' && k.motor) continue; // já entra na linha da partida do motor
     add('Proteção e manobra', k.descricao.replace(/ — circ\. [^—]*/, '').replace(/ — circuitos [^—]*/, '').trim(), 'un', 1, k.tipo === 'dps' ? 'NBR 5410, 6.3.5.2' : k.tipo.startsWith('modulo') || k.tipo === 'clp' ? 'Automação' : 'NBR IEC 60947 / NBR NM 60898', origem(k.medida, k.largura, k.altura, k.prof));
   }
   for (const m of motores) {
@@ -1151,6 +1192,7 @@ function resumoEspaco(calc) {
 }
 
 module.exports = {
-  calcular, config, lerCircuitos, correnteDoCircuito, demanda, disjuntorGeral, kAdiabatico, k2Temperatura, escolherBarra,
+  // barramento: também para o quadro lido do diagrama do projeto no 3D (../../_comum/instalacao/barramentosCalculados.js)
+  calcular, config, lerCircuitos, correnteDoCircuito, demanda, disjuntorGeral, kAdiabatico, k2Temperatura, escolherBarra, barramento,
   superficieEfetiva, termica, dps, automacao, rdf, resumoEspaco, LIGACOES, TIPOS_CIRCUITO, TIPOS_QUADRO, PORTA, SINAIS_POR_PARTIDA,
 };

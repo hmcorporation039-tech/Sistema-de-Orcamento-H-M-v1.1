@@ -15,7 +15,12 @@ const SAIDA = path.join(__dirname, 'app.bundle.js');
 const FONTES = [ENTRADA, path.join(__dirname, 'quadro.js'), path.join(__dirname, 'interativo.js'), path.join(__dirname, '..', '..', 'instalacao', 'simulador.js'),
   path.join(__dirname, 'mapaIluminancia.js'), path.join(__dirname, '..', '..', 'fotometria', 'pontoAPonto.js'),
   // 2.30: modo de edição de componentes (3D embutido na tela da análise)
-  path.join(__dirname, 'edicao.js')];
+  path.join(__dirname, 'edicao.js'),
+  // 09/11/2026: quadro fiel com a fiação, motor genérico de interação e vista interna dos painéis
+  path.join(__dirname, '..', '..', 'instalacao', 'painelQuadro.js'), path.join(__dirname, '..', '..', 'instalacao', 'interacao.js'),
+  path.join(__dirname, '..', '..', 'instalacao', 'paineis.js'), path.join(__dirname, '..', '..', '..', 'quadros', 'scripts', 'lib', 'tabelas.js'),
+  // 09/11/2026: comando por relés do quadro gerado pela especificação (modo do 3D + o avaliador da lógica)
+  path.join(__dirname, 'comandoReles.js'), path.join(__dirname, '..', '..', 'especificacao', 'logica.js')];
 
 function assinatura() {
   const versaoThree = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'node_modules', 'three', 'package.json'), 'utf8')).version;

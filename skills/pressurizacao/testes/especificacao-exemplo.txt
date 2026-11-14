@@ -1,0 +1,29 @@
+QP-ESC — PAINEL DE COMANDO DA PRESSURIZAÇÃO DA ESCADA
+Especificação para cotação — Edifício Exemplo · Rev. 00 · 02/11/2026
+(DADOS FICTÍCIOS, usados só no teste da skill)
+
+1. OBJETIVO
+Fornecimento do painel de força e comando da pressurização da escada de segurança. O painel alimenta 2 ventiladores (1 operando + 1 reserva) e comanda a partida automática pela central de alarme de incêndio do edifício.
+
+2. DADOS DE ENTRADA
+Alimentação | 380/220 V · 3F + N + PE · 60 Hz, vinda do QGBT de emergência (gerador)
+Ventiladores (2 un.) | Centrífugo genérico VX-500 · 7,5 cv · 380 V · 1 operando + 1 reserva
+Inversores (2 un.) | Inversor de frequência para 7,5 cv, montados no painel, com transmissor de pressão e controle PID
+
+3. FUNCIONAMENTO
+3.1 Comando
+- Uma seletora por ventilador: MANUAL – 0 – AUTOMÁTICO.
+- AUTOMÁTICO: o alarme de incêndio da central liga a pressurização na hora (contato do módulo de comando).
+- Reversão automática: se o pressostato de fluxo do ventilador principal não confirmar em 20 s, ou se o inversor falhar, o ventilador reserva parte sozinho.
+- O detector de fumaça da casa de máquinas inibe a partida automática; a partida manual continua possível.
+- Chave de teste para o teste semanal, sem acionar a central.
+- Parada somente no painel.
+- Sinais de operação e falha para a central por módulos de entrada.
+
+3.2 Sinalização na porta
+Painel energizado · alarme de incêndio · ventilador V1 operando · ventilador V2 operando · falha V1 · falha V2 · reversão
+
+4. CONSTRUÇÃO
+- Painel de sobrepor em aço, IP54. Dimensão de referência 1000 × 800 × 300 mm.
+- Ventilação forçada com filtro e termostato.
+- Normas: ABNT NBR IEC 61439-1/2, NBR 5410, NBR 14880 e NR-10.

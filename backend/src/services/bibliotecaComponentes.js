@@ -22,8 +22,28 @@ const SEM_BLOCO = {
   'HM-ELE-PONTO': { d: 'M-0.18 0.108L0.18 0.108L0 -0.162L-0.18 0.108', textos: [{ x: -0.05, y: 0.08, h: 0.1, t: '?' }], raio: 0.18 },
 };
 
+// Equipamentos da biblioteca do 3D (subestação, abrigo — skills/_comum/cad/equipamentos3d.js, 09/11/2026): sem bloco
+// de planta na H&M; o símbolo é o retângulo da planta do equipamento (limitado a 0,15–0,6 m de meio-lado, para caber na
+// tela do mapa) com a sigla dentro
+const SIGLA_EQ = {
+  TRANSFORMADOR: 'TR', SECCIONADORA: 'SC', MUFLA: 'MF', 'PARA-RAIOS': 'PR', 'CHAVE-FUSIVEL': 'CF', POSTE: 'PT', CRUZETA: 'CZ', ISOLADOR: 'IS',
+  'CABO-MT': 'CB', ELETRODUTO: 'ED', POCO: 'PP', 'DISJUNTOR-MT': 'DJ', RELE: 'RL', TC: 'TC', TP: 'TP', MEDICAO: 'MD', QGBT: 'QG', BARRAMENTO: 'BR',
+  CUBICULO: 'CU', HASTE: 'H', CORDOALHA: 'CD', 'CAIXA-INSPECAO': 'CI', TAPETE: 'TA', EXTINTOR: 'EX', PLACA: 'PL', TELA: 'TL', VENEZIANA: 'VZ', CANALETA: 'CN', GENERICO: '?',
+};
+function svgDoEquipamento(simbolo) {
+  const m = /^HM-EQ-(.+)$/.exec(simbolo);
+  if (!m) return null;
+  const tam = ESPEC[simbolo]?.tam || [0.4, 0.4, 0.4];
+  const meio = (v) => Math.min(0.6, Math.max(0.15, (Number(v) || 0.4) / 2));
+  const a = r3(meio(tam[0])), b = r3(meio(tam[1]));
+  const t = SIGLA_EQ[m[1]] || m[1].slice(0, 2);
+  const h = r3(Math.min(a, b) * 0.8);
+  return { d: `M${-a} ${-b}L${a} ${-b}L${a} ${b}L${-a} ${b}L${-a} ${-b}`, textos: [{ x: r3(-h * 0.35 * t.length), y: r3(h * 0.4), h, t }], raio: r3(Math.max(a, b)) };
+}
+
 function svgDoSimbolo(simbolo) {
   if (SEM_BLOCO[simbolo]) return SEM_BLOCO[simbolo];
+  if (/^HM-EQ-/.test(simbolo)) return svgDoEquipamento(simbolo);
   const s = SIMBOLOS[simbolo];
   if (!s || typeof s.desenhar !== 'function') return null;
   const linhas = [], circulos = [], textos = [];

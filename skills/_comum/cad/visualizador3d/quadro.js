@@ -37,10 +37,21 @@
 import {
   WebGLRenderer, Scene, Color, PerspectiveCamera, HemisphereLight, DirectionalLight, AmbientLight,
   BoxGeometry, CylinderGeometry, EdgesGeometry, Mesh, MeshStandardMaterial, LineSegments, LineBasicMaterial,
-  Group, Raycaster, Vector2, Vector3, SRGBColorSpace,
+  Group, Raycaster, Vector2, Vector3, SRGBColorSpace, InstancedMesh, Quaternion, Matrix4,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { simuladorDaCena, htmlQuadro, htmlCircuito, htmlPainel, ligarBotoes, criarAviso } from './interativo.js';
+import { condutorEnergizado } from '../../instalacao/painelQuadro.js';
+import { iniciarComandoReles } from './comandoReles.js';
+import { simuladorDaCena, htmlQuadro, htmlCircuito, htmlPainel, ligarBotoes, criarAviso, htmlFichaFiel, htmlCondutor, htmlEquipamento, ligarBotoesRede, criarInteracao, combinarRedes } from './interativo.js';
+// 09/11/2026 — QUADRO FIEL AO PROJETO COM O CABEAMENTO COMPLETO e VISTA INTERNA DE PAINEL:
+//   cena.condutores: [{ id, circuito, funcao: 'F'|'N'|'PE'|'dados'|…, fase, secao_mm2, d_mm, cor, cor2,
+//     pts: [[x, y, z] mm], camada, de, para, energia: { tipo: 'entrada'|'tags'|'circuito'|'terra'|'equipamento', … } }]
+//     → um InstancedMesh por camada (fiacao-F, fiacao-N, fiacao-PE, cordoes…), cilindro por trecho com
+//     o diâmetro pela seção; a cor de cada trecho muda com o estado (desligar o disjuntor acinzenta
+//     os condutores do circuito); o PE em faixas verde/amarelo; mouse/clique: a ficha do condutor.
+//   caixa.ficha: [{ campo, valor, fonte, conferir }] → tabela "fiel ao projeto" com a fonte de cada dado.
+//   caixa.equipamento: id no motor de interação (op.rede ou cena.equipamentos) → clique mostra as
+//     manobras; caixa.acendeEm: aparências em que a peça acende (LED de alarme, PoE…).
 
 const M = 0.001;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
@@ -112,6 +123,7 @@ export function iniciarQuadro(C, op = {}) {
   const etiquetas = [];
   const portaGrupo = new Group();
   const comTag = []; // peças com TAG (disjuntores, DR, partidas, botões da porta)
+  const comEquip = []; // peças ligadas a um equipamento do motor de interação (switch, central, bateria…)
 
   function peca(b, pai) {
     const l = Math.max(0.5, b.l) * M, a = Math.max(0.5, b.a) * M, p = Math.max(0.5, b.p) * M;
@@ -123,7 +135,8 @@ export function iniciarQuadro(C, op = {}) {
     mesh.position.set(b.x * M + l / 2, b.y * M + a / 2, b.z * M + p / 2);
     if (!b.semBorda && forma === 'caixa') mesh.add(new LineSegments(ARESTAS.caixa, materialAresta(cor, op)));
     mesh.userData = b;
-    if (b.info) clicaveis.push(mesh);
+    if (b.info || b.ficha || b.equipamento != null) clicaveis.push(mesh);
+    if (b.equipamento != null) comEquip.push(mesh);
     // semEtiqueta: só a dica do mouse (trilho, placa, canaleta vertical, bornes um a um),
     // senão a etiqueta fixa delas tomaria o lugar das TAGs dos dispositivos
     if (b.rotulo && !b.semEtiqueta) etiquetas.push({ mesh, texto: b.rotulo, el: null, porta: pai === portaGrupo });
@@ -153,6 +166,63 @@ export function iniciarQuadro(C, op = {}) {
   // conteúdo
   for (const b of C.caixas || []) peca(b, grupo(b.camada || 'outros'));
 
+  // ── fiação: condutores com a cor da função e o diâmetro pela seção ──────
+  // Um InstancedMesh por camada (uma chamada de desenho por camada, mesmo com centenas de
+  // condutores — o quadro já sofreu "context lost" no SwiftShader); a cor de cada trecho
+  // muda pelo estado (setColorAt), sem geometria nova.
+  const GEO_FIO = new CylinderGeometry(0.5, 0.5, 1, 6); // eixo Y
+  const matFio = new MeshStandardMaterial({ color: '#ffffff', roughness: 0.55, metalness: 0.08 });
+  const fios = [];        // { c, mesh, inst: [i], faixa: Set(i) }
+  const malhasFio = [];   // as malhas (para o raio do mouse)
+  {
+    const porCamada = new Map();
+    for (const c of Array.isArray(C.condutores) ? C.condutores : []) {
+      if (!Array.isArray(c.pts) || c.pts.length < 2) continue;
+      const cam = c.camada || 'fiacao';
+      if (!porCamada.has(cam)) porCamada.set(cam, []);
+      porCamada.get(cam).push(c);
+    }
+    const yUp = new Vector3(0, 1, 0), a = new Vector3(), b = new Vector3(), dir = new Vector3(), qt = new Quaternion(), m4 = new Matrix4(), sc = new Vector3(), meio = new Vector3();
+    for (const [cam, lista] of porCamada) {
+      const pecas = [];
+      for (const c of lista) {
+        const fio = { c, mesh: null, inst: [], faixa: new Set() };
+        fios.push(fio);
+        const d = Math.max(1.2, Number(c.d_mm) || 2.6) * M;
+        for (let i = 1; i < c.pts.length; i++) {
+          a.fromArray(c.pts[i - 1]).multiplyScalar(M); b.fromArray(c.pts[i]).multiplyScalar(M);
+          const L = a.distanceTo(b);
+          if (L < 1e-5) continue;
+          // PE: faixas verde/amarelo de 15 mm (cor2 em instâncias alternadas)
+          const n = c.cor2 ? Math.max(1, Math.ceil(L / 0.015)) : 1;
+          for (let k = 0; k < n; k++) pecas.push({ fio, p0: a.clone().lerp(b, k / n), p1: a.clone().lerp(b, (k + 1) / n), d, alt: !!c.cor2 && k % 2 === 1, junta: k === n - 1 });
+        }
+      }
+      if (!pecas.length) continue;
+      const mesh = new InstancedMesh(GEO_FIO, matFio, pecas.length);
+      pecas.forEach((p, i) => {
+        dir.subVectors(p.p1, p.p0);
+        const L = dir.length();
+        dir.normalize();
+        qt.setFromUnitVectors(yUp, dir);
+        // o último pedaço avança meio diâmetro: a curva do condutor fica fechada
+        m4.compose(meio.addVectors(p.p0, p.p1).multiplyScalar(0.5), qt, sc.set(p.d, L + (p.junta ? p.d : 0), p.d));
+        mesh.setMatrixAt(i, m4);
+        p.fio.mesh = mesh;
+        p.fio.inst.push(i);
+        if (p.alt) p.fio.faixa.add(i);
+      });
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.userData = { fioDe: pecas.map(p => p.fio) };
+      for (let i = 0; i < pecas.length; i++) mesh.setColorAt(i, new Color('#ffffff'));
+      grupo(cam).add(mesh);
+      malhasFio.push(mesh);
+    }
+  }
+  const corTmp = new Color();
+  let fioSel = null;
+  const APAGADO = '#7d828a';
+
   // ── porta: abrir/fechar com animação ───────────────────────────────────
   const ABERTA = -Math.PI * 0.58;
   let anguloAlvo = C.portaAberta === false ? 0 : ABERTA;
@@ -172,9 +242,30 @@ export function iniciarQuadro(C, op = {}) {
     mesh.material = mesh === selecionado ? destaque(mat) : mat;
   }
   const corpoDe = new WeakMap(); // alavanca → corpo do disjuntor
-  const sim = op.sim || (C.instalacao && Array.isArray(C.instalacao.quadros) ? simuladorDaCena(C.instalacao, C.titulo) : null);
+  // quadro gerado pela especificação: a porta e os relés seguem o modelo da lógica por relés (./comandoReles.js)
+  const CR = C.comandoReles && C.comandoReles.modelo ? C.comandoReles : null;
+  const sim = CR ? null : (op.sim || (C.instalacao && Array.isArray(C.instalacao.quadros) ? simuladorDaCena(C.instalacao, C.titulo) : null));
   const quadroTag = sim ? String(op.quadroTag || sim.quadros()[0]?.tag || '') : '';
-  const aviso = sim ? (op.aviso || criarAviso()) : null;
+  // motor de interação dos equipamentos do painel (rack, central, subestação): o do prédio
+  // (op.rede, o mesmo estado) ou o da própria cena
+  // (os equipamentos próprios do painel que o prédio não tem — o switch de dados do rack — numa rede local)
+  const proprios = (Array.isArray(C.equipamentos) ? C.equipamentos : []).filter(e => !op.rede?.tem(e.id));
+  const rede = combinarRedes(op.rede || null, proprios.length ? criarInteracao(proprios) : null);
+  const aviso = sim || rede || CR ? (op.aviso || criarAviso()) : null;
+  // condutor energizado? pelo circuito (disjuntor, DR, geral), pelos dispositivos a montante,
+  // pela chegada do quadro ou pelo equipamento do painel; o PE não é seccionado
+  const fioEnergizado = (c) => condutorEnergizado(c, { sim, quadroTag, rede });
+  function pintarFios() {
+    for (const f of fios) {
+      const on = fioEnergizado(f.c);
+      const sel = fioSel === f;
+      for (const i of f.inst) {
+        const base = sel ? '#ffcc33' : !on ? APAGADO : f.faixa.has(i) ? f.c.cor2 : (f.c.cor || '#cccccc');
+        f.mesh.setColorAt(i, corTmp.set(base));
+      }
+    }
+    for (const m of malhasFio) if (m.instanceColor) m.instanceColor.needsUpdate = true;
+  }
   const elemDe = new WeakMap();
   const elementoDe = (m) => (m ? elemDe.get(m) || null : null);
   const alavancas = []; // { giro, band, tag, alvo }
@@ -261,9 +352,42 @@ export function iniciarQuadro(C, op = {}) {
     if (el.acao === 'alternar') return sim.motor(el.motor, sim.painel(el.motor).contator ? 'desliga' : 'liga');
     return sim.motor(el.motor, el.acao);
   }
-  const painelSim = sim ? $('#simulacao') : null;
+  const painelSim = sim || rede ? $('#simulacao') : null;
+  // comando por relés: cada peça guarda a sua cor de base; aceso = brilho, apagado = escuro (sinaleiros) ou a base (relés)
+  const baseRele = new WeakMap();
+  const rele = CR ? iniciarComandoReles({
+    CR, comTag, painel: $('#simulacao'), aviso,
+    pintar: (mesh, on, cor) => {
+      if (!baseRele.has(mesh)) baseRele.set(mesh, mesh.material);
+      const base = baseRele.get(mesh);
+      porMaterial(mesh, on ? brilho(base, cor || `#${base.color.getHexString()}`, cor ? 0.7 : 1.6) : (cor ? base : escuro(base)));
+    },
+    aoMudar: () => pedirDesenho(),
+  }) : null;
+  // peças de equipamento (switch, central, bateria, LED): a cor pela aparência no motor
+  const baseEquip = new Map(comEquip.map(m => [m, m.material]));
+  function atualizarEquipamentos() {
+    if (!rede) return;
+    for (const mesh of comEquip) {
+      const b = mesh.userData, base = baseEquip.get(mesh);
+      if (b.semTinta) continue;
+      const ap = rede.aparencia(b.equipamento);
+      let mat = base;
+      if (Array.isArray(b.acendeEm)) mat = b.acendeEm.includes(ap) ? brilho(base, b.corAceso || `#${base.color.getHexString()}`, 1.6) : escuro(base);
+      else if (ap === 'apagado' || ap === 'aberto') mat = escuro(base);
+      else if (ap === 'alarme' || ap === 'falha') mat = brilho(base, ap === 'falha' ? '#e0a000' : '#e5484d', 0.8);
+      porMaterial(mesh, mat);
+    }
+  }
   function atualizarEstado() {
-    if (!sim) return;
+    pintarFios();
+    atualizarEquipamentos();
+    if (!sim) {
+      if (painelSim && rede) painelSim.innerHTML = htmlEquipamento(rede, C.equipamentosPainel || rede.lista().filter(e => (e.interacao.acoes || []).length).map(e => e.id));
+      mostrarFicha();
+      pedirDesenho();
+      return;
+    }
     const q = sim.quadro(quadroTag);
     const energizado = !q?.geral || sim.ligado(q.geral.tag, quadroTag);
     for (const a of alavancas) {
@@ -283,13 +407,17 @@ export function iniciarQuadro(C, op = {}) {
       }
       porMaterial(e.mesh, mat);
     }
-    if (painelSim) painelSim.innerHTML = htmlQuadro(sim, quadroTag);
+    if (painelSim) painelSim.innerHTML = htmlQuadro(sim, quadroTag) + (rede && C.equipamentosPainel ? htmlEquipamento(rede, C.equipamentosPainel) : '');
     mostrarFicha();
     pedirDesenho();
   }
-  const sairDoSim = sim ? sim.assinar(atualizarEstado) : () => {};
-  if (painelSim) ligarBotoes(painelSim, sim, { aviso });
+  const sairDoSim0 = sim ? sim.assinar(atualizarEstado) : () => {};
+  const sairDaRede = rede ? rede.assinar(atualizarEstado) : () => {};
+  const sairDoSim = () => { sairDoSim0(); sairDaRede(); };
+  if (painelSim && sim) ligarBotoes(painelSim, sim, { aviso });
   if (sim && $('#info')) ligarBotoes($('#info'), sim, { aviso });
+  if (rede && painelSim) ligarBotoesRede(painelSim, rede, { aviso });
+  if (rede && $('#info')) ligarBotoesRede($('#info'), rede, { aviso });
 
   // ── vistas ─────────────────────────────────────────────────────────────
   let anim = null;
@@ -376,15 +504,21 @@ export function iniciarQuadro(C, op = {}) {
     const r = tela.getBoundingClientRect();
     ptr.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(ptr, camera);
-    return ray.intersectObjects(clicaveis.filter(visivel), false)[0] || null;
+    // o condutor (fino) só vence a peça quando está na frente dela
+    const h = ray.intersectObjects([...clicaveis, ...malhasFio].filter(visivel), false)[0] || null;
+    if (h && h.object.userData?.fioDe) return { fio: h.object.userData.fioDe[h.instanceId], object: h.object };
+    return h;
   }
-  const fichaPeca = (b) => `<b class="tag">${esc(b.rotulo || '')}</b><table>${(b.info || []).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${/^https?:/.test(String(v)) ? `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(v)}</a>` : esc(v)}</td></tr>`).join('')}</table>`;
+  // ficha da peça: os dados "fiéis ao projeto" (campo · valor · fonte), quando a peça traz, e a ficha técnica
+  const fichaPeca = (b) => `<b class="tag">${esc(b.rotulo || '')}</b>${b.ficha ? htmlFichaFiel(b.ficha) : ''}<table>${(b.info || []).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${/^https?:/.test(String(v)) ? `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(v)}</a>` : esc(v)}</td></tr>`).join('')}</table>`;
   let fichaAtual = null; // peça mostrada no painel (refeito quando o estado muda)
   function mostrarFicha() {
     const info = $('#info');
     if (!info) return;
-    if (!fichaAtual) { info.innerHTML = `<small>Clique num dispositivo para ver TAG, fabricante, referência e medidas.${sim ? ' Clique num disjuntor para ligar/desligar.' : ''}</small>`; return; }
+    if (fioSel) { info.innerHTML = htmlCondutor(fioSel.c, { energizado: fioEnergizado(fioSel.c) }); return; }
+    if (!fichaAtual) { info.innerHTML = `<small>Clique num dispositivo para ver TAG, dados do projeto e medidas; num cabo, para ver o circuito, a função e a seção.${sim ? ' Clique num disjuntor para ligar/desligar.' : ''}</small>`; return; }
     const b = fichaAtual.userData;
+    if (rede && b.equipamento != null) { info.innerHTML = fichaPeca(b) + htmlEquipamento(rede, b.equipamento); return; }
     const el = sim && elementoDe(fichaAtual);
     let extra = '';
     if (el?.tipo === 'protecao') {
@@ -398,6 +532,10 @@ export function iniciarQuadro(C, op = {}) {
     const hit = apontado(ev);
     if (selecionado) { selecionado.material = baseDe(selecionado); selecionado = null; }
     pedirDesenho();
+    const tinhaFio = fioSel;
+    fioSel = hit?.fio || null;
+    if (fioSel || tinhaFio) pintarFios();
+    if (fioSel) { fichaAtual = null; mostrarFicha(); return; }
     if (!hit) { fichaAtual = null; mostrarFicha(); return; }
     const alvo = corpoDe.get(hit.object) || hit.object;
     selecionado = alvo;
@@ -405,7 +543,7 @@ export function iniciarQuadro(C, op = {}) {
     alvo.material = destaque(baseDe(alvo));
     fichaAtual = alvo;
     // 3D interativo: o clique no disjuntor/DR liga ou desliga; no botão da porta, aperta
-    const r = sim ? agir(elementoDe(alvo)) : null;
+    const r = sim ? agir(elementoDe(alvo)) : rele ? rele.cliqueMesh(alvo) : null;
     if (r && aviso) aviso(r);
     mostrarFicha();
   }
@@ -423,8 +561,18 @@ export function iniciarQuadro(C, op = {}) {
     if (agora - ultimoMov < 60) return;
     ultimoMov = agora;
     const hit = apontado(e);
+    // condutor: circuito, função, fase, seção, origem → destino
+    if (hit?.fio) {
+      const c = hit.fio.c;
+      const nome = { F: 'Fase', N: 'Neutro', PE: 'PE' }[c.funcao] || c.funcao;
+      dica.textContent = `${nome}${c.fase ? ` ${c.fase}` : ''}${c.circuito != null ? ` · circuito ${c.circuito}` : ''} · ${c.secao_mm2 ? `${String(c.secao_mm2).replace('.', ',')} mm²` : 'seção [CONFERIR]'} · ${c.de} → ${c.para}${fioEnergizado(c) ? '' : ' — SEM TENSÃO'}`;
+      dica.style.display = 'block';
+      dica.style.transform = `translate(${e.clientX + 12}px, ${e.clientY - 26}px)`;
+      return;
+    }
     let t = hit && (hit.object.userData.dica || hit.object.userData.rotulo); // dica: TAG, tipo e medida
     if (!t) { dica.style.display = 'none'; return; }
+    if (rede && hit.object.userData.equipamento != null && rede.tem(hit.object.userData.equipamento)) t += ` — ${rede.textoEstado(hit.object.userData.equipamento)} (clique para as manobras)`;
     const el = sim && elementoDe(corpoDe.get(hit.object) || hit.object);
     if (el?.tipo === 'protecao') t += sim.ligado(el.tag, quadroTag) ? ' — LIGADO (clique para desligar)' : ' — DESLIGADO (clique para ligar)';
     else if (el?.acao) t += ' — clique para apertar';
@@ -512,7 +660,20 @@ export function iniciarQuadro(C, op = {}) {
     mostrar, etiquetas: (s) => { mostrarEtq = s; pedirDesenho(); }, render: () => { anim = null; sujo = true; desenhar(performance.now()); },
     // 3D interativo: alavanca de um disjuntor (para a captura e o teste no navegador)
     alternar: (tag) => (sim ? agir({ tipo: 'protecao', tag }) : null),
+    // comando por relés (projeto pela especificação): acionar(id, estado), aplicarCenario(i), estado()
+    comando: rele,
     alavanca: (tag) => { const a = alavancas.find(x => x.tag === tag); return a ? a.giro.rotation.x : null; },
+    // fiação (09/11/2026): condutores e o estado de cada um; selecionar um condutor mostra a ficha
+    rede, condutores: () => fios.map(f => ({ id: f.c.id, circuito: f.c.circuito, funcao: f.c.funcao, energizado: fioEnergizado(f.c), cor: (() => { f.mesh.getColorAt(f.inst[0], corTmp); return `#${corTmp.getHexString()}`; })() })),
+    selecionarFio: (id) => { fioSel = fios.find(f => f.c.id === id) || null; pintarFios(); fichaAtual = null; mostrarFicha(); pedirDesenho(); return !!fioSel; },
+    selecionarPeca: (tag) => {
+      const m = [...clicaveis].find(x => x.userData?.tag === tag || x.userData?.equipamento === tag);
+      if (!m) return false;
+      if (selecionado) selecionado.material = baseDe(selecionado);
+      const alvo = corpoDe.get(m) || m;
+      selecionado = alvo; matBase.set(alvo, baseDe(alvo)); alvo.material = destaque(baseDe(alvo));
+      fioSel = null; fichaAtual = alvo; pintarFios(); mostrarFicha(); pedirDesenho(); return true;
+    },
     get sujo() { return sujo; },
   };
   let laco = 0;
@@ -527,7 +688,7 @@ export function iniciarQuadro(C, op = {}) {
       // reaberto a partir do prédio: a tampa (porta) abre de novo na frente do cliente
       abrirAnimado() { anguloAlvo = 0; portaGrupo.rotation.y = 0; pedirDesenho(); setTimeout(() => abrirPorta(true), 300); },
       destruir() {
-        ativo = false; cancelAnimationFrame(laco); sairDoSim();
+        ativo = false; cancelAnimationFrame(laco); sairDoSim(); if (rele) rele.parar();
         window.removeEventListener('resize', redimensionar);
         dica.remove();
         renderer.dispose(); renderer.forceContextLoss?.();

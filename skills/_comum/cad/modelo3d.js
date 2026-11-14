@@ -29,6 +29,10 @@ const { anotarCircuitos } = require('./circuitoDoDesenho');
 const { tagNaPlanta } = require('./quadrosDoDiagrama');
 // peças e duto da climatização (fase 4), declarados na skill
 const CLIM = require('../../climatizacao/scripts/lib/cad');
+// equipamentos do objetivo do projeto (transformador, seccionadora, poste, tapete…): ./equipamentos3d.js
+const EQUIP = require('./equipamentos3d');
+// cor da infraestrutura por TIPO (eletroduto rígido, corrugado, eletrocalha…), do projeto ou da paleta (09/11/2026)
+const CORES_INFRA = require('./coresInfra');
 
 const AVISO = 'Ilustração — não substitui o projeto executivo. Modelo gerado automaticamente a partir da planta 2D (não é BIM): alturas, esquadrias e posições dos pontos são típicas e indicativas.';
 const PE_DIREITO_PADRAO = 2.8;
@@ -456,7 +460,7 @@ const TAM_FORMA = {
 };
 // formas de parede que vão ENCOSTADAS na parede mais próxima mesmo quando o
 // símbolo da planta está longe dela (quadro no meio da sala vira quadro na parede)
-const FORMAS_DE_PAREDE = new Set(['quadro', 'rack', 'caixa', 'teclado', 'acionador', 'sirene', 'emergencia', 'wallbox']);
+const FORMAS_DE_PAREDE = new Set(['quadro', 'rack', 'caixa', 'teclado', 'acionador', 'sirene', 'emergencia', 'wallbox', ...EQUIP.FORMAS_DE_PAREDE_EQUIP]);
 const ESPEC = {
   'HM-ELE-TOMADA-BAIXA': { h: 0.3, forma: 'tomada' }, 'HM-ELE-TOMADA-MEDIA': { h: 1.1, forma: 'tomada' }, 'HM-ELE-TOMADA-ALTA': { h: 2.2, forma: 'tomada' },
   'HM-ELE-TUE': { h: 1.1, hMolhado: 2.2, forma: 'tomada' }, 'HM-ELE-PONTO-LUZ': { h: 'teto', forma: 'ponto-luz' },
@@ -485,6 +489,8 @@ const ESPEC = {
   // climatização (fase 4): difusor, grelha, VAV, evaporadora, fancoil, condensadora e
   // chiller — declarados na skill (skills/climatizacao/scripts/lib/cad.js)
   ...CLIM.ESPEC_3D,
+  // equipamentos do objetivo do projeto (subestação e afins, 09/11/2026): HM-EQ-* (./equipamentos3d.js)
+  ...EQUIP.ESPEC_EQUIPAMENTOS,
 };
 const ESPEC_PADRAO = { h: 1.1, forma: 'caixa' };
 // especificação completa (com o tamanho da forma quando o símbolo não traz o seu)
@@ -501,6 +507,10 @@ const DISCIPLINAS = {
   'iluminacao-externa': { rotulo: 'Iluminação externa', cor: '#ffb84d' },
   automacao: { rotulo: 'Automação', cor: '#7fe0ff' }, solar: { rotulo: 'Solar', cor: '#f6c90e' }, carregador: { rotulo: 'Recarga veicular', cor: '#a4e05a' }, spda: { rotulo: 'SPDA', cor: '#bfc5cc' },
   climatizacao: { rotulo: 'Climatização', cor: '#5ec8f2' },
+  // cena focada no objetivo do projeto (./cenaDoObjetivo.js): a subestação, a indústria e os quadros como objeto
+  media_tensao: { rotulo: 'Média tensão / subestação', cor: '#e8a33d' },
+  eletrica_industrial: { rotulo: 'Elétrica industrial', cor: '#ff8c5a' },
+  quadros: { rotulo: 'Quadros elétricos', cor: '#f0b35a' },
 };
 // nomes antigos (classificador de pontos, mapa do CAD, análises e caches gravados
 // antes da unificação) → chave do registro; cabeamento é a rede no 3D
@@ -700,11 +710,13 @@ function montarInfra(trechos, P, caixa, peDireito, avisos) {
     const medida = mm && t.medida ? String(t.medida) : null;
     const material = t.material ? String(t.material) : null;
     const z = Number.isFinite(Number(t.altura)) && Number(t.altura) > 0 ? Math.min(Number(t.altura), peDireito - secao[1] / 2) : Math.max(0.1, peDireito - e.desce);
-    const chave = `${disc}|${tipo}|${r2(z)}|${material || ''}|${medida || ''}`;
+    // cor do projeto (legenda, entidade ou layer do DXF): trechos de cores diferentes não se juntam
+    const corProjeto = CORES_INFRA.corDoTrecho(t);
+    const chave = `${disc}|${tipo}|${r2(z)}|${material || ''}|${medida || ''}|${corProjeto ? corProjeto.cor : ''}`;
     let g = grupos.get(chave);
     if (!g) {
       g = { disciplina: disc, tipo, rotulo: e.rotulo, forma: e.forma, secao, z: r2(z), layers: [], comprimento: 0, n: 0, segs: [],
-        material, medida: medida || e.medida, origem_medida: medida ? (t.origem_medida || 'desenho') : 'padrao' };
+        material, medida: medida || e.medida, origem_medida: medida ? (t.origem_medida || 'desenho') : 'padrao', cor_projeto: corProjeto };
       grupos.set(chave, g);
     }
     if (t.layer && !g.layers.includes(String(t.layer))) g.layers.push(String(t.layer));
@@ -728,7 +740,8 @@ function montarInfra(trechos, P, caixa, peDireito, avisos) {
   return [...grupos.values()].filter(g => g.n).map(g => ({
     disciplina: g.disciplina, tipo: g.tipo, rotulo: g.rotulo, forma: g.forma, secao: g.secao, z: g.z, layers: g.layers,
     material: g.material, medida: g.medida, origem_medida: g.origem_medida, estimado: false,
-    cor: (DISCIPLINAS[g.disciplina] || { cor: '#dddddd' }).cor,
+    // a cor final é a do TIPO (coresInfra.aplicarCoresInfra, no fim de completarInfra)
+    cor: (DISCIPLINAS[g.disciplina] || { cor: '#dddddd' }).cor, ...(g.cor_projeto ? { cor_projeto: g.cor_projeto } : {}),
     comprimento_m: Math.round(g.comprimento * 10) / 10, segmentos_total: g.n,
     segmentos: g.segs.flatMap(s => s.p), descidas: [], descidas_m: 0,
   }));
@@ -827,7 +840,7 @@ function grupoEletroduto(disc, z, estimado) {
 // disciplina sem traçado ganha o eletroduto estimado (INFRA_ESTIMADA) — só com
 // estimar (o modelo por planta do desenho não inventa traçado). `tipos`:
 // os tipos de dispositivo da cena (itens já em coordenadas da cena).
-function completarInfra(infra, tipos, peDireito, avisos, { estimar = true, sugerir = false, paredes = [] } = {}) {
+function completarInfra(infra, tipos, peDireito, avisos, { estimar = true, sugerir = false, paredes = [], legendaInfra = null } = {}) {
   const porDisc = new Map();
   for (const t of tipos) {
     if (!porDisc.has(t.disciplina)) porDisc.set(t.disciplina, []);
@@ -894,7 +907,8 @@ function completarInfra(infra, tipos, peDireito, avisos, { estimar = true, suger
   if (estimadas.length > semTracado.length) {
     avisos.push('Descidas da eletrocalha/leito/perfilado até as peças de parede: eletroduto ESTIMADO (bitola típica da disciplina) — conferir no projeto.');
   }
-  return [...infra, ...estimadas];
+  // cor por TIPO de infraestrutura (do projeto quando ele define; senão a paleta padrão)
+  return CORES_INFRA.aplicarCoresInfra([...infra, ...estimadas], { legendaInfra });
 }
 
 // elétrica, iluminação e iluminação externa usam a mesma tubulação
@@ -983,7 +997,8 @@ function montarCena(arquitetura, opcoes = {}) {
   const { ambientes, caixa: caixaSalas } = regiaoDoModelo(arquitetura);
   // postes e caixas da área externa (estacionamento, quadras) ficam fora das
   // salas: a região cresce até eles, senão o 3D os descarta
-  const noPiso = (opcoes.dispositivos || []).filter(d => espec(d.simbolo).h === 'piso' && Number.isFinite(d.x) && Number.isFinite(d.y));
+  // (o equipamento do objetivo do projeto também: poste de entrada, peças no poste, pátio dos sem posição)
+  const noPiso = (opcoes.dispositivos || []).filter(d => (espec(d.simbolo).h === 'piso' || d.expandeRegiao) && Number.isFinite(d.x) && Number.isFinite(d.y));
   const caixa = noPiso.length ? expandir(uniao(caixaSalas, caixaDe(noPiso.map(d => [d.x, d.y]))), 2) : caixaSalas;
   const origem = [(caixa[0] + caixa[2]) / 2, (caixa[1] + caixa[3]) / 2];
   const P = ([x, y]) => [r2(x - origem[0]), r2(y - origem[1])];
@@ -1037,7 +1052,8 @@ function montarCena(arquitetura, opcoes = {}) {
     const disc = chaveDisciplina(d.disciplina || disciplinaDoSimbolo(d.simbolo));
     // componente do projeto recebido vem com a descrição dele (d.rotulo): um tipo
     // por descrição — "Detector de fumaça DFE 521", não só "Detector"
-    const chaveTipo = d.rotulo ? `${d.simbolo}|${d.rotulo}` : d.simbolo;
+    // (equipamento do objetivo do projeto: um tipo por componente da relação — a ficha é dele)
+    const chaveTipo = d.componente ? `${d.simbolo}|#${d.componente}` : d.rotulo ? `${d.simbolo}|${d.rotulo}` : d.simbolo;
     let t = tipos.get(chaveTipo);
     if (!t) {
       const e0 = espec(d.simbolo);
@@ -1045,10 +1061,20 @@ function montarCena(arquitetura, opcoes = {}) {
       const k = (porDisc[disc] = (porDisc[disc] ?? -1) + 1);
       // tam e montagem: o visualizador desenha a peça no tamanho e na posição (parede/teto/canto) certos
       t = { simbolo: d.simbolo, disciplina: disc, rotulo: String(d.rotulo || SIMBOLOS[d.simbolo]?.legenda || d.simbolo).replace(/\s*\(h = [^)]*\)/, ''), forma: e.forma, tam: e.tam, montagem: typeof e.h === 'number' ? 'parede' : e.h, altura: alturaTexto(e, peDireito), cor: tom((DISCIPLINAS[disc] || { cor: '#dddddd' }).cor, k), itens: [] };
+      // equipamento do objetivo do projeto (./cenaDoObjetivo.js): tamanho pela especificação (kVA do
+      // transformador, medida do tapete), cor própria e o componente da ficha (clique no 3D)
+      if (Array.isArray(d.tam) && d.tam.length === 3 && d.tam.every(v => Number(v) > 0)) t.tam = d.tam.map(Number);
+      if (d.cor) t.cor = String(d.cor);
+      if (d.componente) t.componente = String(d.componente);
       tipos.set(chaveTipo, t);
     }
-    const p = posicionar3d(d, faces, peDireito);
-    if (FORMAS_DE_PAREDE.has(t.forma)) afastarDosVizinhos(p, t.tam, grandes);
+    // posição fixa (peça no poste de entrada ou no pátio dos sem posição): não encosta na parede
+    // mais próxima; z_fixo = altura imposta (no poste, acima do pé-direito); direcao = para onde a
+    // peça olha (parede) ou o eixo x dela (piso) — só os equipamentos do objetivo trazem estes campos
+    const p = d.posicaoFixa ? { x: d.x, y: d.y, z: Number(d.z_fixo) || 0, nx: 0, ny: 0 } : posicionar3d(d, faces, peDireito);
+    if (!d.posicaoFixa && Number.isFinite(d.z_fixo)) p.z = d.z_fixo;
+    if (Array.isArray(d.direcao) && (d.direcao[0] || d.direcao[1])) { const L = Math.hypot(d.direcao[0], d.direcao[1]); p.nx = d.direcao[0] / L; p.ny = d.direcao[1] / L; }
+    if (FORMAS_DE_PAREDE.has(t.forma) && !d.posicaoFixa) afastarDosVizinhos(p, t.tam, grandes);
     const [x, y] = P([p.x, p.y]);
     const temXY = Number.isFinite(d.x) && Number.isFinite(d.y);
     let amb = indiceAmb.has(d.ambiente) && !(temXY && nomesRepetidos.has(d.ambiente)) ? indiceAmb.get(d.ambiente) : temXY ? ambienteDoPonto(d.x, d.y) : -1;
@@ -1076,7 +1102,7 @@ function montarCena(arquitetura, opcoes = {}) {
   if (el.simbolosRedondos) avisos.push(`${el.simbolosRedondos} símbolos redondos (poste, caixa, tomada de piso…) na layer de parede não subiram como pilar nem parede.`);
   // traçado do projeto (com as descidas até as peças) + o estimado das disciplinas sem traçado
   const infra = completarInfra(montarInfra(opcoes.trechos, P, caixa, peDireito, avisos), listaTipos, peDireito, avisos, {
-    estimar: opcoes.estimarInfra !== false, sugerir: !!opcoes.sugerirInfra,
+    estimar: opcoes.estimarInfra !== false, sugerir: !!opcoes.sugerirInfra, legendaInfra: opcoes.legendaInfra || null,
     paredes: el.paredes.filter(w => w.classe === 'parede').map(w => [...P(w.a), ...P(w.b)]),
   });
   const numeros = {
@@ -1164,6 +1190,8 @@ function montarCena(arquitetura, opcoes = {}) {
     disciplinas: Object.fromEntries([...new Set([...listaTipos.map(t => t.disciplina), ...infra.map(g => g.disciplina)])].map(k => [k, DISCIPLINAS[k] || { rotulo: k, cor: '#dddddd' }])),
     dispositivos: listaTipos,
     infra,
+    // legenda de cores da infraestrutura: só os tipos presentes, com medidas, metragem e a fonte da cor
+    legendaInfra: CORES_INFRA.legendaDeCores(infra),
     numeros,
     avisos,
     ...(instalacao ? { instalacao } : {}),

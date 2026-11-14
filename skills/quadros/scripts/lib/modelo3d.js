@@ -19,6 +19,8 @@ const { posicoesPorta } = require('./porta');
 const { ENTRADA_CABOS, tcNasBarras } = require('./layout');
 const V = require('../../../_comum/cad/visualizador3d');
 const { instalacaoDoQuadro } = require('./instalacao');
+// fiação completa e ficha fiel ao projeto (compartilhado com o 3D do projeto)
+const PQ = require('../../../_comum/instalacao/painelQuadro');
 const { EMPRESA } = require('../../../_comum/empresa');
 
 const Z_PLACA = 25;        // placa de montagem afastada do fundo (mm)
@@ -190,7 +192,7 @@ function montarCena(calc, dados = {}) {
   layout.fileiras.forEach((f, iF) => {
     const yc = f.y + f.altura / 2;
     if (f.trilho) {
-      add({ camada: 'trilhos', x: xU, y: Yw(yc + 17.5), z: zFrente, l: layout.larguraUtil, a: 35, p: ALTURA_TRILHO, cor: '#b8bcc2', metal: true, rotulo: `Trilho DIN 35 × 7,5 mm — ${Math.round(layout.larguraUtil)} mm`, semEtiqueta: true,
+      add({ camada: 'trilhos', x: xU + (f.trilhoX || 0), y: Yw(yc + 17.5), z: zFrente, l: f.trilhoL ?? layout.larguraUtil, a: 35, p: ALTURA_TRILHO, cor: '#b8bcc2', metal: true, rotulo: `Trilho DIN 35 × 7,5 mm — ${Math.round(layout.larguraUtil)} mm`, semEtiqueta: true,
         info: infoMedida('', 'Trilho DIN TS35 × 7,5 mm perfurado (EN 60715)', mTrilho, layout.larguraUtil, 35, ALTURA_TRILHO, [['Fileira', `${iF + 1} — ${f.zonas.map(z => layout.rotuloZona[z] || z).join(' / ')}`], ['Comprimento', `${Math.round(layout.larguraUtil)} mm`]]) });
     }
     const zBase = zFrente + (f.trilho ? ALTURA_TRILHO : 0);
@@ -212,7 +214,7 @@ function montarCena(calc, dados = {}) {
           const bi = rot[i] === 'N' ? (b.neutro || b.fase) : b.fase;
           const larg = bi ? bi.l : 20, esp = bi ? bi.e : 5;
           const ycb = yTop + 10 + i * c.entreFases + c.entreFases / 2;
-          add({ camada: 'barramentos', tag: 'BARR', x, y: Yw(ycb + larg / 2), z: zFrente + ALTURA_ISOLADOR, l: k.largura, a: larg, p: esp, cor: rot[i] === 'N' ? '#3a6ed8' : '#c87533', metal: true, rotulo: `${rot[i]} ${larg}×${esp}`,
+          add({ camada: 'barramentos', tag: 'BARR', barra: rot[i], x, y: Yw(ycb + larg / 2), z: zFrente + ALTURA_ISOLADOR, l: k.largura, a: larg, p: esp, cor: rot[i] === 'N' ? '#3a6ed8' : '#c87533', metal: true, rotulo: `${rot[i]} ${larg}×${esp}`,
             dica: `Barramento ${rot[i]} — barra de cobre ${larg} × ${esp} mm · ${Math.round(k.largura)} mm`,
             info: [['TAG', 'BARR'], ['Barramento', `${rot[i]} — barra de cobre eletrolítico ${larg} × ${esp} mm (${larg * esp} mm²)`], ['Conjunto', conjunto], ['Medidas L × A × P', mm(k.largura, larg, esp)],
               ['Capacidade corrigida', b.capacidade ? `${Math.round(b.capacidade)} A (k2 = ${String(Math.round(b.k2 * 1000) / 1000).replace('.', ',')})` : '—'], ['Suportabilidade', `Icw ${b.icw} kA / ${c.tempoIcw} s`],
@@ -237,7 +239,7 @@ function montarCena(calc, dados = {}) {
         const nCirc = calc.circuitos.length + calc.motores.length;
         const nN = calc.circuitos.filter(x => x.neutro).length;
         const secao = pe ? `Cu ${b.pe.l} × ${b.pe.e} mm (${b.pe.l * b.pe.e} mm²)` : (b.neutro ? `Cu ${b.neutro.l} × ${b.neutro.e} mm` : `≥ ${n1(b.secaoNeutro)} mm² (seção do neutro)`);
-        add({ camada: 'barramentos', tag: k.ref, x, y: Yw(yTop + h * 0.75), z: zFrente + 30, l: k.largura, a: h * 0.5, p: 6, cor: pe ? '#4caf50' : '#3a6ed8', metal: true,
+        add({ camada: 'barramentos', tag: k.ref, barra: pe ? 'PE' : 'N', x, y: Yw(yTop + h * 0.75), z: zFrente + 30, l: k.largura, a: h * 0.5, p: 6, cor: pe ? '#4caf50' : '#3a6ed8', metal: true,
           rotulo: k.parte > 1 ? `${pe ? 'PE' : 'N'} (cont.)` : (pe ? `PE ${b.pe.l}×${b.pe.e}` : 'N'),
           dica: `${k.ref} — barra de ${pe ? 'terra (PE)' : 'neutro (N)'} ${secao} · ${Math.round(k.largura)} mm`,
           info: [['TAG', k.ref], ['Barra', pe ? 'Terra (PE), verde-amarelo' : 'Neutro (N) isolado, azul'], ['Seção', secao],
@@ -287,7 +289,7 @@ function montarCena(calc, dados = {}) {
         info: infoMedida(k.ref, k.descricao, k.medida, k.largura, h, k.prof || T.DIN_PROF) });
       // pente logo acima dos bornes superiores (antes ficava DENTRO do corpo do disjuntor e não aparecia)
       if (b.tipo === 'pente' && (k.tipo === 'disjuntor' || k.tipo === 'ddr') && f.zonas.includes('distribuicao')) {
-        add({ camada: 'barramentos', tag: 'PENTE', x, y: Yw(yTop - 1), z: zBase + 25, l: k.largura, a: 7, p: 12, cor: '#c87533', metal: true, semBorda: true, rotulo: `Pente ${c.nFases}P ${b.pente.a} A`, semEtiqueta: true,
+        add({ camada: 'barramentos', tag: 'PENTE', barra: 'pente', x, y: Yw(yTop - 1), z: zBase + 25, l: k.largura, a: 7, p: 12, cor: '#c87533', metal: true, semBorda: true, rotulo: `Pente ${c.nFases}P ${b.pente.a} A`, semEtiqueta: true,
           info: [['Peça', `Barramento tipo pente ${c.nFases}P ${b.pente.a} A (${b.pente.s} mm²)`], ['Fileiras com pente', String(Math.max(1, b.fileirasPente || 1))], ['Suportabilidade ao curto', 'pelo fabricante, com o disjuntor a montante']] });
       }
     }
@@ -383,8 +385,8 @@ function montarCena(calc, dados = {}) {
     entrada: `Entrada de cabos (${c.entradaCabos}) — flange e prensa-cabos`,
     placa: `Placa de montagem ${placa.altura} × ${placa.largura} mm`,
   };
-  return {
-    tipo: 'quadro', titulo: `${c.tag} — ${c.tipoRotulo}`, cliente: dados.cliente?.nome || '', obra: dados.obra?.nome || '',
+  const cena = {
+    tipo: 'quadro', titulo: `${c.tag} — ${(dados.especificacao || dados.meta?.gerado_da_especificacao) && c.descricao ? c.descricao : c.tipoRotulo}`, cliente: dados.cliente?.nome || '', obra: dados.obra?.nome || '',
     data: dados.meta?.data ? String(dados.meta.data).split('-').reverse().join('/') : new Date().toLocaleDateString('pt-BR'),
     involucro: { L: W, A: H, P: D, espessura: ESP, cor: '#d4d2cc', rotulo: `Invólucro ${H} × ${W} × ${D} mm`,
       info: [['Invólucro', `${({ sobrepor: 'De sobrepor', embutir: 'De embutir', autoportante: 'Autoportante' })[c.montagem] || c.montagem} — ${({ aco: 'chapa de aço pintada', inox: 'aço inox', aluminio: 'alumínio', poliester: 'poliéster' })[c.material] || c.material}`],
@@ -403,13 +405,34 @@ function montarCena(calc, dados = {}) {
     ],
     avisos: [
       'Medidas dos dispositivos: catálogo do fabricante quando há registro; senão típicas [CONFERIR].',
-      'Barramentos, canaletas e fiação em posição esquemática; a fiação não é desenhada.',
+      'Barramentos, canaletas e fiação em posição esquemática: a fiação F/N/PE segue as canaletas, com a cor da função e a seção do caderno (N azul-claro e PE verde-amarelo, NBR 5410 6.1.5.3; fases em preto com anilha).',
       'Prensa-cabos em quantidade ilustrativa (um por cabo de entrada/saída); diâmetros pelos cabos [CONFERIR].',
     ],
   };
+  // fiação completa (09/11/2026): alimentação → geral → pente/barras → disjuntores; saídas, N
+  // (pelo DR quando há) e PE — o MESMO roteamento do quadro esquemático (_comum/instalacao/painelQuadro.js)
+  try {
+    const inst = instalacaoDoQuadro(calc, dados);
+    const q = inst.quadros[0];
+    PQ.completarCenaComFiacao(cena, q, new Map(inst.circuitos.map(x => [String(x.id), x])), { nFases: c.nFases });
+    // os disjuntores e DR com a ficha "fiel" (dado · valor · fonte), como no 3D do projeto
+    const drDe = (id) => (q.drs || []).find(d => !d.ddr && (d.circuitos || []).map(String).includes(String(id))) || null;
+    for (const bx of cena.caixas) {
+      if (!bx.tag || bx.camada !== 'protecao') continue;
+      const d = q.disjuntores.find(x => x.tag === bx.tag);
+      const dr = (q.drs || []).find(x => !x.ddr && x.tag === bx.tag);
+      if (d) bx.ficha = PQ.fichaDoDisjuntor(q, d, inst.circuitos.find(x => String(x.id) === String(d.circuito)), drDe(d.circuito));
+      else if (dr) bx.ficha = PQ.fichaDoDr(q, dr);
+      else if (q.geral && bx.tag === q.geral.tag) bx.ficha = PQ.fichaDoGeral(q);
+    }
+  } catch (e) { /* sem a fiação: o quadro abre como antes */ }
+  return cena;
 }
 
 const CSS_QUADRO = `
+.cr{font-size:12px}.cr-sub{margin:8px 0 4px;font-weight:600;color:var(--ouro,#c9a227)}.cr-lin{display:flex;justify-content:space-between;align-items:center;gap:6px;margin:3px 0}.cr-lin button{margin-left:3px;padding:2px 6px;font-size:11px;cursor:pointer}.cr-lin button.cr-at{background:#c9a227;color:#111}
+.cr-pills{display:flex;flex-wrap:wrap;gap:4px}.cr-pill{padding:2px 6px;border-radius:9px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);font-size:11px}.cr-pill.cr-on{background:#2fbf5a;color:#111;font-weight:600}
+.cr-cen{margin:0;padding-left:18px;max-height:260px;overflow:auto}.cr-cen li{margin:2px 0}.cr-cen button{font-size:10.5px;padding:1px 5px;margin-right:4px;cursor:pointer}.cr-ok{color:#9fe0ae}.cr-falha{color:#ff8a80}.cr-cen li.cr-at{outline:1px solid #c9a227}.cr-aviso{color:#ff8a80;margin:6px 0}
 #etiquetas{position:fixed;inset:0;pointer-events:none;z-index:2;overflow:hidden}
 .etq-q{position:absolute;left:0;top:0;padding:1px 5px;border-radius:4px;background:rgba(12,13,16,.78);border:1px solid rgba(201,162,39,.55);color:#fff;font-size:10.5px;white-space:nowrap}
 .etq-dica{position:fixed;z-index:7;pointer-events:none;border-color:var(--ouro);font-size:12px}
@@ -418,8 +441,29 @@ const CSS_QUADRO = `
 #info td{padding:3px 0;word-break:break-word}#info a{color:var(--ouro2)}#info .tag{display:block;font-size:16px;color:var(--ouro2);margin-bottom:6px}#info small{color:var(--suave)}
 `;
 
-function gerarHtml(calc, dados = {}) {
+// Comando por relés do quadro gerado pela especificação (09/11/2026): o modelo da lógica, o formato de
+// interação, os cenários da verificação funcional e o mapa peça do 3D → controle/sinal
+// (porta: "seletor:1" → S1, "sinaleiro_verde:9" → H3; placa: KE, KB1…, "B1/T1" → U1.RUN)
+function comandoReles(calc, projeto) {
+  const cmd = projeto && projeto.comando;
+  if (!cmd || !cmd.modelo) return null;
+  const PT = posicoesPorta(calc);
+  const porta = PT.botoes.map((bt, i) => ({ meshTag: `${bt.tipo}:${i + 1}`, id: String(bt.funcao || '').split(/\s+/)[0] })).filter(x => /^[A-Z]+\d*$/.test(x.id));
+  const placa = {};
+  for (const r of cmd.reles || []) placa[r.tag] = r.tag;
+  for (const m of projeto.motores || []) {
+    if (m.acion) placa[`${m.id}/T1`] = `${m.acion.tag}.RUN`;
+    placa[`${m.id}-Q1`] = m.acion ? `${m.acion.tag}.RUN` : `KM${String(m.id).replace(/\D/g, '')}`;
+  }
+  const res = new Map((projeto.funcional || []).map(f => [f.nome, f]));
+  const cenarios = (cmd.cenarios || []).map(c => ({ nome: c.nome, entradas: c.entradas || {}, passos: c.passos || null, espera: c.espera || {}, ok: res.get(c.nome) ? res.get(c.nome).ok : true, falhas: res.get(c.nome) ? res.get(c.nome).falhas : [] }));
+  return { modelo: cmd.modelo, interacao: cmd.interacao || projeto.interacao, cenarios, porta, placa };
+}
+
+function gerarHtml(calc, dados = {}, opcoes = {}) {
   const cena = montarCena(calc, dados);
+  const cr = comandoReles(calc, opcoes.especificacao);
+  if (cr) cena.comandoReles = cr;
   // 3D interativo (fase 2): o modelo único do quadro — disjuntores com alavanca, partidas
   // de motor com o painel (liga, desliga, emergência, sinaleiros, relé térmico)
   try { cena.instalacao = instalacaoDoQuadro(calc, dados); } catch (e) { /* sem simulação: o quadro abre como antes */ }
@@ -454,7 +498,7 @@ function gerarHtml(calc, dados = {}) {
 </nav>
 <aside>
   <section><h2>Números do quadro</h2><div id="numeros"></div></section>
-${cena.instalacao ? '  <section><h2>Simulação — clique nos disjuntores</h2><div id="simulacao"></div></section>\n' : ''}  <section${cena.instalacao ? ' class="fechada"' : ''}><h2>Camadas</h2><div id="camadas"></div></section>
+${cena.comandoReles ? '  <section><h2>Simulação do comando por relés — clique nas seletoras e na emergência da porta</h2><div id="simulacao"></div></section>\n' : cena.instalacao ? '  <section><h2>Simulação — clique nos disjuntores</h2><div id="simulacao"></div></section>\n' : ''}  <section${cena.instalacao || cena.comandoReles ? ' class="fechada"' : ''}><h2>Camadas</h2><div id="camadas"></div></section>
   <section><h2>Dispositivo</h2><div id="info"><small>Clique num dispositivo para ver TAG, fabricante, referência e medidas.</small></div></section>
 </aside>
 <footer>

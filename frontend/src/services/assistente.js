@@ -79,3 +79,12 @@ export const enviarMensagemStream = (conversaId, dados, aoEvento, signal) =>
 
 export const acompanharStream = (conversaId, aoEvento, signal) =>
   pedirStream('GET', `/assistente/conversas/${conversaId}/acompanhar`, null, aoEvento, signal);
+
+// Agentes próprios e suporte Claude Max (09/11/2026)
+export const baixarArquivoConversa = (id) => api.get(`/assistente/arquivos/${id}`, { responseType: 'blob', timeout: 120000 });
+export const avaliarPedido = (pedidoId, aceito) => api.post(`/agentes/pedidos/${pedidoId}/avaliacao`, { aceito });
+export const aprovarComoConhecimento = (mensagemId, resposta) => api.post(`/assistente/mensagens/${mensagemId}/conhecimento`, resposta ? { resposta } : {});
+export const listarSugestoesAgentes = (params) => api.get('/agentes/sugestoes', { params });
+export const decidirSugestaoAgentes = (id, dados) => api.put(`/agentes/sugestoes/${id}`, dados);
+export const indicadoresAgentes = (meses = 6) => api.get('/agentes/indicadores', { params: { meses } });
+export const listarAgentes = () => api.get('/agentes');

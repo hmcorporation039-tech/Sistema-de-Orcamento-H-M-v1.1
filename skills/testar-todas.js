@@ -10,8 +10,11 @@ let falhou = false;
 // fabricação e montagem (PDF) de quadros e racks; o modelo único da instalação (quadro →
 // circuito → comando → ponto) da elétrica, da iluminação, dos quadros e do 3D e o
 // simulador lógico dele (3D interativo: disjuntores, interruptores, contatores, motores);
-// a fotometria (IES/LDT) e o cálculo ponto a ponto da iluminação (skill e mapa do 3D)
-for (const teste of ['cad/teste-cad.js', 'cad/teste-3d.js', 'cad/teste-projeto-dxf.js', 'cad/teste-leitura-precisao.js', 'teste-tipos-documento.js', 'teste-entrega.js', 'teste-inspecao.js', 'teste-exif.js', 'fabricacao/teste-fabricacao.js', 'instalacao/teste-instalacao.js', 'instalacao/teste-simulador.js', 'fotometria/teste-fotometria.js']) {
+// a fotometria (IES/LDT) e o cálculo ponto a ponto da iluminação (skill e mapa do 3D); o entendimento do projeto
+// (objetivo, papel de cada vista, legendas, componentes e abrigo — 09/11/2026); o quadro fiel com a fiação
+// F/N/PE, o motor genérico de interação (subestação, incêndio, alarme, CFTV, acesso), a vista interna
+// do rack e da central e a cor da infraestrutura por tipo (09/11/2026)
+for (const teste of ['cad/teste-cad.js', 'cad/teste-3d.js', 'cad/teste-projeto-dxf.js', 'cad/teste-leitura-precisao.js', 'cad/teste-objetivo.js', 'teste-tipos-documento.js', 'teste-entrega.js', 'teste-inspecao.js', 'teste-exif.js', 'fabricacao/teste-fabricacao.js', 'instalacao/teste-instalacao.js', 'instalacao/teste-simulador.js', 'instalacao/teste-painel.js', 'fotometria/teste-fotometria.js', 'especificacao/teste-especificacao.js']) {
   try {
     process.stdout.write(execFileSync(process.execPath, [path.join(__dirname, '_comum', ...teste.split('/'))], { encoding: 'utf8' }));
   } catch (e) {

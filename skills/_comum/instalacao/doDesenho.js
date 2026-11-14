@@ -44,6 +44,7 @@ const LUZ = new Set(['luminaria', 'ponto_luz']);
 // zero à esquerda ("01" do diagrama = "1" da planta): as mesmas regras do leitor do diagrama (revisão de 06/11/2026;
 // antes a planta "QD01" não casava com o diagrama "QD-01" e o ponto "1" criava um "1 (estimado)" ao lado do "01")
 const { normTag, chaveTag, normNumero } = require('../cad/quadrosDoDiagrama');
+const { calcularBarramentos } = require('./barramentosCalculados');
 const normTexto = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
 // palavras que identificam o circuito pelo ambiente ("RECEPÇÃO", "VEST FEM", "QUADRA 1"): as de 3+ letras pelo
 // radical (6 letras, sem o plural: "ESTACIONAMENTO" casa com o "ESTACIOMENTO" escrito no diagrama) e os números
@@ -109,8 +110,10 @@ function instalacaoDoDesenho(itens, opcoes = {}) {
   };
   const porTag = new Map(quadros.map(q => [q.tag, {
     tag: q.tag, descricao: q.lido ? q.lido.descricao || 'Quadro (circuitos do diagrama do projeto)' : 'Quadro (do desenho)', local: q.local, ponto: q.ponto,
-    geral: q.lido?.geral ? { tag: 'QG', In: q.lido.geral.In ?? null, polos: q.lido.geral.polos ?? null, curva: null } : null, drs: [], disjuntores: [],
+    geral: q.lido?.geral ? { tag: 'QG', In: q.lido.geral.In ?? null, polos: q.lido.geral.polos ?? null, curva: q.lido.geral.curva ?? null } : null, drs: [], disjuntores: [],
     ...(q.lido ? { origem: q.lido.origem } : {}),
+    // cabo do alimentador escrito no diagrama ("3#95(50)50"): seção da fiação de entrada no 3D
+    ...(q.lido?.alimentador ? { alimentador: q.lido.alimentador, alimentador_secao_mm2: q.lido.alimentador_secao_mm2 ?? null } : {}),
   }]));
 
   // circuitos ORIGINAIS dos quadros lidos (todos, mesmo sem ponto nesta planta: o quadro mostra o que o projeto tem)
@@ -124,9 +127,10 @@ function instalacaoDoDesenho(itens, opcoes = {}) {
       circuitos.set(id, {
         id, quadro: q.tag, disjuntor: `Q${normNumero(c.numero)}`, tipo: c.tipo || 'outro', descricao: c.descricao || `Circuito ${c.numero}`,
         potencia_va: c.potencia_va ?? null, potencia_w: c.potencia_w ?? null, secao_mm2: c.secao_mm2 ?? null, ligacao: null, fases: c.fases ?? null,
-        dr: c.dr || null, ambientes: [], pontos: [], estimado: false, origem: 'diagrama',
+        dr: c.dr || null, ambientes: [], pontos: [], estimado: false, origem: 'diagrama', ...(c.fontes ? { fontes: c.fontes } : {}),
       });
-      Q.disjuntores.push({ tag: `Q${normNumero(c.numero)}`, circuito: id, polos: c.polos ?? null, In: c.In ?? null, curva: null });
+      // o disjuntor como está no projeto (polos, In, curva) e de onde veio cada dado (3D fiel, 09/11/2026)
+      Q.disjuntores.push({ tag: `Q${normNumero(c.numero)}`, circuito: id, polos: c.polos ?? null, In: c.In ?? null, curva: c.curva ?? null, ...(c.fontes ? { fontes: c.fontes } : {}) });
     }
     Q.drs = (q.lido.drs || []).map(d => ({ tag: d.tag, In: d.In ?? null, idn_ma: d.idn_ma ?? null, polos: null, lido: true, circuitos: (d.circuitos || []).map(k => idLido(q, normNumero(k))) }));
   }
@@ -262,6 +266,12 @@ function instalacaoDoDesenho(itens, opcoes = {}) {
   }
   // interruptor/sensor que não comanda nada (sem luz no ambiente): fica fora da simulação
   for (const d of dispositivos) if (!pontoDe.has(d.id)) ids[d.k] = '';
+  // barramentos do quadro lido (o projeto não traz as barras): o cálculo da skill quadros pela
+  // corrente do geral do projeto, marcado "calculado — conferir com o fabricante" no 3D
+  for (const q of inst.quadros) {
+    if (q.barramentos) continue;
+    try { const b = calcularBarramentos(q); if (b) q.barramentos = b; } catch (e) { /* sem cálculo: o 3D mostra [CONFERIR] */ }
+  }
   return { instalacao: inst, ids, resumo };
 }
 

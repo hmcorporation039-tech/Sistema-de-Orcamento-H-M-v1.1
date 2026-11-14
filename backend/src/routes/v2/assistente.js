@@ -24,6 +24,8 @@ module.exports = (router, { autenticar, validarId }) => {
   router.get('/assistente/arquivos/:id', autenticar, validarId, ctrl.baixarArquivo);
   router.post('/assistente/acoes/:id/aplicar', autenticar, validarId, ctrl.aplicarAcao);
   router.post('/assistente/acoes/:id/descartar', autenticar, validarId, ctrl.descartarAcao);
+  // resposta da IA/suporte aprovada como conhecimento (dono da conversa; o token do assistente não passa aqui)
+  router.post('/assistente/mensagens/:id/conhecimento', autenticar, validarId, ctrl.aprovarComoConhecimento);
 
   router.get('/assistente/ferramentas/contexto', autenticar, ctrl.soAssistente, ctrl.ferramentaContexto);
   router.get('/assistente/ferramentas/arquivos', autenticar, ctrl.soAssistente, ctrl.ferramentaArquivos);

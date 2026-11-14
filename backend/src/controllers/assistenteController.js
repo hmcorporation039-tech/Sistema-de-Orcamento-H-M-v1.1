@@ -16,6 +16,8 @@ const { normalizarContexto, descreverContexto } = require('../services/assistent
 const { statusLogin } = require('../services/assistente/claudeCli');
 const { registrarAcao } = require('../services/assistente/sessoes');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');
+const roteador = require('../services/agentes/roteador');
+const { termosSignificativos } = require('../services/agentes/textoPedido');
 
 const MAX_TEXTO = 12000;
 const idValido = (v) => /^\d{1,10}$/.test(String(v)) && Number(v) >= 1 && Number(v) <= 2147483647;
@@ -30,7 +32,8 @@ async function usadasHoje(usuarioId) {
   const { rows: [r] } = await pool.query(
     `SELECT count(*)::int AS n FROM assistente_mensagens m JOIN assistente_conversas c ON c.id = m.conversa_id
       WHERE c.usuario_id = $1 AND m.papel = 'usuario'
-        AND m.criado_em >= (date_trunc('day', NOW() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')`, [usuarioId]);
+        AND m.criado_em >= (date_trunc('day', NOW() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')
+        AND NOT EXISTS (SELECT 1 FROM agentes_pedidos ap WHERE ap.mensagem_id = m.id AND ap.decisao IN ('agente', 'resposta'))`, [usuarioId]);
   return r.n;
 }
 
@@ -58,6 +61,9 @@ async function status(req, res) {
       em: geral.limiteUso.em,
     } : null,
     uploadMb: Math.round(cfg.uploadBytes / 1048576), tiposArquivo: A.TIPOS_ACEITOS, tiposDeAcao: tiposDeAcao(),
+    // agentes próprios: funcionam sem a IA (o roteador reconhece os pedidos comuns); suporte Claude Max só quando falta
+    agentes: cfg.ligado,
+    suporteClaude: (() => { const sc = require('../services/agentes/suporteClaude').config(); return { ligado: sc.ligado && disponivel, consultor: sc.ligado && sc.consultor && disponivel }; })(),
   });
 }
 
@@ -93,7 +99,14 @@ async function verConversa(req, res) {
   const c = await conversaDoUsuario(req.params.id, req.usuario.id);
   if (!c) return res.status(404).json({ erro: 'Conversa não encontrada.' });
   const [mensagens, acoes, arquivos] = await Promise.all([
-    pool.query('SELECT id, papel, texto, passos, criados, contexto, arquivos, status, erro, tempo_ms, criado_em FROM assistente_mensagens WHERE conversa_id = $1 ORDER BY id', [c.id]),
+    pool.query(`SELECT m.id, m.papel, m.texto, m.passos, m.criados, m.contexto, m.arquivos, m.status, m.erro, m.tempo_ms, m.criado_em, m.provedor,
+                       m.agente_execucao_id, m.agente_pedido_id, m.sugestao_id, ap.aceito AS pedido_aceito, ap.agente AS pedido_agente,
+                       sg.situacao AS sugestao_situacao, e.agente AS execucao_agente, e.status AS execucao_status
+                  FROM assistente_mensagens m
+                  LEFT JOIN agentes_pedidos ap ON ap.id = m.agente_pedido_id
+                  LEFT JOIN agentes_sugestoes sg ON sg.id = m.sugestao_id
+                  LEFT JOIN agentes_execucoes e ON e.id = m.agente_execucao_id
+                 WHERE m.conversa_id = $1 ORDER BY m.id`, [c.id]),
     pool.query(`SELECT a.*, u.nome AS decidido_por_nome FROM assistente_acoes a LEFT JOIN usuarios u ON u.id = a.decidido_por
                  WHERE a.conversa_id = $1 ORDER BY a.id`, [c.id]),
     pool.query('SELECT * FROM assistente_arquivos WHERE conversa_id = $1 ORDER BY id', [c.id]),
@@ -191,13 +204,18 @@ async function enviarMensagem(req, res) {
     if (rows.length !== ids.length) return res.status(400).json({ erro: 'Arquivo anexado não pertence a esta conversa.' });
     arquivos = rows.map(A.publico);
   }
-  if (cfg.limiteDiario > 0 && await usadasHoje(req.usuario.id) >= cfg.limiteDiario) {
+  // ROTEADOR DE INTENÇÃO (services/agentes/roteador.js), antes do modelo: pedido comum vai para o agente próprio
+  // (sem IA); só cai na IA quando não reconhece ou quando o usuário pede. Falha no roteador = caminho de sempre.
+  const rota = await roteador.decidir({ db: pool, texto, arquivos, conversaId: c.id, contexto: normalizarContexto(req.body?.contexto) })
+    .catch((e) => { console.error('[assistente] roteador falhou:', e.message); return { decisao: 'ia', motivo: 'roteador falhou' }; });
+  const semIa = rota.decisao === 'agente' || rota.decisao === 'resposta';
+  if (!semIa && cfg.limiteDiario > 0 && await usadasHoje(req.usuario.id) >= cfg.limiteDiario) {
     return res.status(429).json({ erro: `Limite diário do assistente atingido (${cfg.limiteDiario} mensagens por usuário). Volta amanhã — ou peça ao administrador para ajustar ASSISTENTE_LIMITE_DIARIO.` });
   }
   const g = gerenciador();
   let inicio;
   try {
-    inicio = await g.iniciar({ usuario: req.usuario, conversa: c, texto, contexto: normalizarContexto(req.body?.contexto), arquivos });
+    inicio = await g.iniciar({ usuario: req.usuario, conversa: c, texto, contexto: normalizarContexto(req.body?.contexto), arquivos, rota });
   } catch (e) {
     if (e.status) return res.status(e.status).json({ erro: e.message });
     throw e;
@@ -352,7 +370,38 @@ async function ferramentaProporAcao(req, res) {
   }
 }
 
+// POST /assistente/mensagens/:id/conhecimento — a resposta (da IA ou do suporte Claude Max) vira CONHECIMENTO aprovado:
+// da próxima vez a mesma pergunta é respondida pela base, sem IA. Só respostas da própria conversa do usuário; a
+// resposta pode vir corrigida no corpo (o engenheiro ajusta antes de aprovar).
+async function aprovarComoConhecimento(req, res) {
+  if (!idValido(req.params.id)) return res.status(400).json({ erro: 'Mensagem inválida.' });
+  const { rows: [m] } = await pool.query(
+    `SELECT m.*, c.usuario_id FROM assistente_mensagens m JOIN assistente_conversas c ON c.id = m.conversa_id
+      WHERE m.id = $1 AND c.usuario_id = $2 AND m.papel = 'assistente' AND m.status = 'concluida'`, [req.params.id, req.usuario.id]);
+  if (!m) return res.status(404).json({ erro: 'Resposta não encontrada.' });
+  if (m.provedor === 'agente') return res.status(400).json({ erro: 'Esta resposta já veio de um agente próprio (sem IA): não há o que aprender.' });
+  const resposta = typeof req.body?.resposta === 'string' && req.body.resposta.trim() ? req.body.resposta.trim().slice(0, 20000) : String(m.texto || '').trim();
+  if (!resposta) return res.status(400).json({ erro: 'Resposta vazia.' });
+  if (m.sugestao_id) {
+    const { rows: [s] } = await pool.query(
+      `UPDATE agentes_sugestoes SET situacao = 'aprovada', resposta = $2, decidido_por = $3, decidido_em = NOW(), atualizado_em = NOW() WHERE id = $1 RETURNING id, situacao`,
+      [m.sugestao_id, resposta, req.usuario.id]);
+    return res.json(s);
+  }
+  const { rows: [pergunta] } = await pool.query(`SELECT texto FROM assistente_mensagens WHERE conversa_id = $1 AND papel = 'usuario' AND id < $2 ORDER BY id DESC LIMIT 1`, [m.conversa_id, m.id]);
+  if (!pergunta) return res.status(400).json({ erro: 'Pergunta não encontrada.' });
+  const termos = termosSignificativos(pergunta.texto, { max: 12 });
+  if (termos.length < 2) return res.status(400).json({ erro: 'A pergunta é curta demais para virar conhecimento (precisa de ao menos 2 termos).' });
+  const { rows: [s] } = await pool.query(
+    `INSERT INTO agentes_sugestoes (tipo, fonte, modo, pergunta, resposta, termos, chave, situacao, mensagem_id, conversa_id, usuario_id, decidido_por, decidido_em)
+     VALUES ('conhecimento', 'claude-max', 'assistente', $1, $2, $3, $4, 'aprovada', $5, $6, $7, $7, NOW()) RETURNING id, situacao`,
+    [String(pergunta.texto).slice(0, 2000), resposta, JSON.stringify(termos), `conhecimento:mensagem:${m.id}`, m.id, m.conversa_id, req.usuario.id]);
+  await pool.query('UPDATE assistente_mensagens SET sugestao_id = $2 WHERE id = $1', [m.id, s.id]);
+  res.status(201).json(s);
+}
+
 module.exports = {
+  aprovarComoConhecimento,
   status, contextoDaTela, listarConversas, criarConversa, verConversa, alterarConversa, receberArquivos, enviarArquivos, baixarArquivo,
   enviarMensagem, acompanhar, cancelar, aplicarAcao, descartarAcao,
   soAssistente, ferramentaContexto, ferramentaArquivos, ferramentaArquivo, ferramentaArquivoConteudo, ferramentaNorma,

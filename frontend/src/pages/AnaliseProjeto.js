@@ -17,6 +17,7 @@ import EnviarParaAnalise from '../components/analise/EnviarParaAnalise';
 import AnalisesSalvas from '../components/analise/ListaAnalises';
 import ConflitosCompatibilizacao from '../components/analise/ConflitosCompatibilizacao';
 import MapaCad from '../components/analise/MapaCad';
+import ObjetivoDoProjeto from '../components/analise/ObjetivoDoProjeto';
 // Finalidade da análise (versão 2.1 — análise ≠ laudo): escolhida ao enviar e
 // editável depois; nenhuma das duas cria laudo. Lista e rótulos em utils/finalidades.
 import { FINALIDADES } from '../utils/finalidades';
@@ -604,6 +605,8 @@ export default function Compatibilizacao() {
               ))}
             </div>
           )}
+
+          <ObjetivoDoProjeto analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
 
           <MapaCad key={analise.id} analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />
 

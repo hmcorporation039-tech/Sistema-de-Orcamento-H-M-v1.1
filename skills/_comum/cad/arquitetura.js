@@ -139,6 +139,33 @@ const RE_BLOCO_DIAGRAMA = /UNIFILAR|TRIFILAR|MULTIFILAR|DIAGRAMA|ESQUEMA|QUADRO.
 // caía e o arquivo ficava sem leitura nenhuma. Acima do teto, os níveis de aninhamento MAIS FUNDOS (detalhe interno
 // de equipamento, mobiliário) não entram; o resultado sai com `detalheReduzido` para o aviso de conferir.
 const MAX_ENTIDADES = 1000000;
+// teto do registro de inserções de bloco (só leitura: o entendimento do projeto conta componentes por bloco)
+const MAX_INSERCOES = 200000;
+
+// Bloco ANÔNIMO (*U…: instância de bloco dinâmico) → o bloco nomeado de mesma assinatura (mesmo número de entidades
+// de cada tipo). O DWG guarda o nome verdadeiro só no dicionário do bloco dinâmico, que o conversor não traz; sem
+// isto, o transformador inserido como *U400 não teria nome (09/11/2026). Só assinatura ÚNICA e com 20+ entidades.
+function nomesDosBlocosAnonimos(blocks = []) {
+  const assinatura = (b) => {
+    const c = {};
+    for (const e of b.entities || []) c[e.type] = (c[e.type] || 0) + 1;
+    return (b.entities || []).length >= 20 ? JSON.stringify(Object.entries(c).sort()) : null;
+  };
+  const nomeados = new Map();
+  for (const b of blocks) {
+    if (!b.name || /^\*/.test(b.name)) continue;
+    const a = assinatura(b);
+    if (!a) continue;
+    nomeados.set(a, nomeados.has(a) ? null : b.name); // null = assinatura repetida (ambígua)
+  }
+  const out = {};
+  for (const b of blocks) {
+    if (!/^\*[UX]/i.test(b.name || '')) continue;
+    const n = nomeados.get(assinatura(b));
+    if (n) out[b.name] = n;
+  }
+  return out;
+}
 function contarPorNivel(parsed, blocos, temModelo) {
   const porNivel = [];
   const memo = new Map(); // bloco → [entidades por nível relativo] (sem repetir a contagem a cada instância)
@@ -182,6 +209,7 @@ function explodir(parsed) {
   // bloco de diagrama inserido: os textos dele (início e fim em textosFora) — a caixa deles é a região do diagrama
   // para o leitor dos quadros, já que os traços do bloco não entram na classificação da folha
   out.blocosDiagrama = [];
+  out.insercoes = [];
   const abrirDiagrama = (e, b, transforms, layer, prof, dentroDeDiagrama) => {
     const ini = out.textosFora.length;
     const t = { x: e.x || 0, y: e.y || 0, scaleX: e.scaleX, scaleY: e.scaleY, rotation: e.rotation, extrusionZ: e.extrusionZ };
@@ -195,6 +223,12 @@ function explodir(parsed) {
     for (const e of ents) {
       if (prof === 0 && e.paperSpace && temModelo) continue;
       const layer = layerPai && (!e.layer || e.layer === '0') ? layerPai : e.layer;
+      // inserções de bloco (nome, ponto de inserção, layer) — só para o entendimento do projeto (./objetivoDoProjeto.js):
+      // o nome do bloco diz o componente ("BUCHA DE PASSAGEM… 15KV"). Registro à parte, nada abaixo muda (09/11/2026)
+      if (e.type === 'INSERT' && out.insercoes.length < MAX_INSERCOES) {
+        const [[ix, iy]] = transformar([[e.x || 0, e.y || 0]], transforms);
+        out.insercoes.push({ bloco: e.block, x: ix, y: iy, layer, prof, diagrama: !!diagrama });
+      }
       if (diagrama || RE_LAYER_FORA_PLANTA.test(layer || '')) {
         if (!diagrama && RE_LAYER_MOLDURA.test(layer || '') && (e.type === 'LWPOLYLINE' || e.type === 'POLYLINE') && e.vertices?.length >= 4 && e.vertices.length <= 5) out.molduras.push({ pts: transformar(e.vertices.map(v => [v.x, v.y]), transforms), layer });
         // o texto da legenda (layer de tabela) diz a altura de cada símbolo: ./pontosDoDesenho.js
@@ -651,6 +685,9 @@ function lerArquitetura(textoDxf, opcoes = {}) {
   const referencia = []; // em unidades do desenho até decidir o fator
   const arcos = [];
   const preenchimentos = [];
+  // círculos (revisão de 09/11/2026): o balão numerado da relação de materiais é um círculo pequeno com o nº do
+  // item dentro — o entendimento do projeto (./objetivoDoProjeto.js) conta os itens por eles
+  const circulos = [];
   for (const e of ents) {
     // (coordenadas no sistema da entidade — OCS — espelhadas quando a normal é −Z: ocs(), abaixo)
     if ((e.type === 'LWPOLYLINE' || e.type === 'POLYLINE') && e.vertices?.length >= 2) {
@@ -664,6 +701,7 @@ function lerArquitetura(textoDxf, opcoes = {}) {
       const a = pontosArco(e);
       referencia.push({ tipo: 'arco', pts: a.pts, fechada: e.type === 'CIRCLE', layer: e.layer });
       if (e.type === 'ARC') arcos.push(a);
+      else circulos.push({ centro: a.centro, r: a.r, layer: e.layer });
     } else if (e.type === 'SOLID') {
       // SOLID (revisão de 06/11/2026): o símbolo explodido desenhado com ele sumia; a tomada "cheia" em SOLID
       // conta como preenchida (alta × média × baixa pela fração cheia: ./pontosDoDesenho.js)
@@ -707,6 +745,18 @@ function lerArquitetura(textoDxf, opcoes = {}) {
   let poligonosM = poligonos.map(p => ({ ...p, pts: m(p.pts) }));
   const notasM = notas.map(t => ({ ...t, x: t.x * fator, y: t.y * fator, h: t.h * fator }));
   const preenchimentosM = preenchimentos.map(p => ({ ...p, pts: m(p.pts) }));
+  // TODOS os textos com posição (metros) e os círculos, antes de a classificação tirar o que não é planta: o
+  // entendimento do projeto (./objetivoDoProjeto.js) lê o carimbo, os títulos das vistas, a relação de materiais e
+  // os balões — dados, não geometria (09/11/2026). Só leitura: nada abaixo muda por causa deles
+  const textosDoDesenho = textosTodos.map(({ s, x, y, h, layer, tag }) => ({ s, x, y, h, layer, ...(tag ? { tag } : {}) }));
+  const circulosM = circulos.map(c => ({ centro: m([c.centro])[0], r: c.r * fator, layer: c.layer }));
+  // blocos: as inserções (com o nome do bloco dinâmico resolvido) e as definições com quantas vezes foram inseridas —
+  // bloco que só existe na biblioteca do DWG ("TRANSFORMADOR A SECO 225KVA", 0 inserções) não é componente
+  const anonimos = nomesDosBlocosAnonimos(parsed.blocks || []);
+  const insercoesM = ents.insercoes.map(i => ({ ...i, x: i.x * fator, y: i.y * fator, nome: anonimos[i.bloco] || i.bloco, ...(anonimos[i.bloco] ? { anonimo: i.bloco } : {}) }));
+  const vezes = new Map();
+  for (const i of insercoesM) vezes.set(i.nome, (vezes.get(i.nome) || 0) + 1);
+  const blocosDefinidos = (parsed.blocks || []).filter(b => b.name && !/^\*|^_|^A\$C/i.test(b.name)).map(b => ({ nome: b.name, insercoes: vezes.get(b.name) || 0 }));
   // os símbolos da legenda (à esquerda do texto, na mesma linha): a região da legenda sai
   // da planta logo abaixo, mas é com eles que se reconhece cada tipo na planta
   const naLinha = (n, [x, y]) => x >= n.x - 4 && x <= n.x + 0.1 && Math.abs(y - n.y) <= 1;
@@ -855,6 +905,7 @@ function lerArquitetura(textoDxf, opcoes = {}) {
     classificacao: classificacao && { tipo: classificacao.tipo, resumo: classificacao.resumo, temPlanta: classificacao.temPlanta, semPlanta: classificacao.semPlanta, misto: classificacao.misto, regioes: classificacao.regioes.map(({ caixa, tipo, rotulo, titulo, confianca, motivos }) => ({ caixa, tipo, rotulo, titulo, confianca, motivos })) },
     regioesPlanta,
     quadrosDoDiagrama, rotulos, avisosDiagrama,
+    textosDoDesenho, circulos: circulosM, insercoes: insercoesM, blocosDefinidos,
   };
 }
 

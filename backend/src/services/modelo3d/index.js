@@ -241,6 +241,8 @@ async function gerarNoWorker(fonte, aprendidos) {
       dxf: fonte.dxf, disciplinas: fonte.disciplinas, dadosPorDisciplina: fonte.dadosPorDisciplina, peDireito: fonte.peDireito,
       semPontos: fonte.semPontos, titulo: fonte.titulo, cliente: fonte.cliente, obra: fonte.obra, proposta: fonte.proposta || '',
       dispositivosReais: fonte.dispositivosReais || null, trechos: fonte.trechos || null,
+      // o nome do arquivo e as disciplinas marcadas ajudam a entender o projeto (objetivoDoProjeto.js)
+      nomeArquivo: fonte.nomeArquivo || '', disciplinasMarcadas: fonte.disciplinasMarcadas || fonte.disciplinas || [],
       // legenda das pranchas lida em projetos anteriores (services/simbolosAprendidos.js)
       aprendidos: aprendidos || await simbolosAprendidos.carregar(),
     }, { tempoLimiteMs: TEMPO_LIMITE_MS, memoriaMb: 1024 });

@@ -682,6 +682,128 @@ async function criarTabelas() {
     // nome do arquivo; cada uma exporta async (client) => {} e precisa ser idempotente).
     for (const m of listarMigracoes()) await require(m)(client);
 
+    // ── Agentes próprios e suporte Claude Max (09/11/2026 — services/agentes/*) ──
+    // Depois das migrações 2.0-NN porque liga às tabelas do assistente (2.0-15).
+    //   agentes_execucoes  uma execução de agente: entrada, passos, logs, resultado, pendências [CONFERIR], status
+    //   agentes_pedidos    cada mensagem do assistente que passou pelo roteador de intenção: decisão (agente, IA,
+    //                      resposta sem IA, suporte), regra usada e se o usuário aceitou o resultado
+    //   agentes_sugestoes  o que o sistema PODE aprender, pendente até o engenheiro/admin aprovar: regra de vocabulário
+    //                      do roteador e conhecimento vindo do suporte Claude Max (fonte 'claude-max'); aprovada, o
+    //                      agente responde sozinho, sem IA
+    //   agentes_suporte    cada pedido de suporte ao Claude Max (indicador de dependência de IA por agente)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS agentes_execucoes (
+        id SERIAL PRIMARY KEY,
+        agente VARCHAR(60) NOT NULL,
+        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+        conversa_id INTEGER REFERENCES assistente_conversas(id) ON DELETE SET NULL,
+        mensagem_id INTEGER REFERENCES assistente_mensagens(id) ON DELETE SET NULL,
+        origem VARCHAR(20) NOT NULL DEFAULT 'tela',
+        texto_pedido TEXT,
+        entrada JSONB NOT NULL DEFAULT '{}'::jsonb,
+        status VARCHAR(20) NOT NULL DEFAULT 'fila',
+        passos JSONB NOT NULL DEFAULT '[]'::jsonb,
+        logs JSONB NOT NULL DEFAULT '[]'::jsonb,
+        resultado JSONB,
+        pendencias JSONB NOT NULL DEFAULT '[]'::jsonb,
+        precisa_ia BOOLEAN NOT NULL DEFAULT false,
+        motivo_ia TEXT,
+        erro TEXT,
+        criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        iniciado_em TIMESTAMPTZ,
+        terminado_em TIMESTAMPTZ
+      )`);
+    await client.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_agentes_execucoes_status') THEN
+        ALTER TABLE agentes_execucoes ADD CONSTRAINT ck_agentes_execucoes_status
+          CHECK (status IN ('fila', 'executando', 'concluida', 'pendente', 'erro', 'cancelada', 'aguardando_modulo'));
+      END IF;
+    END $$`);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_agentes_execucoes_usuario ON agentes_execucoes(usuario_id, id DESC)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_agentes_execucoes_conversa ON agentes_execucoes(conversa_id, id DESC)');
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS agentes_pedidos (
+        id SERIAL PRIMARY KEY,
+        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+        conversa_id INTEGER REFERENCES assistente_conversas(id) ON DELETE CASCADE,
+        mensagem_id INTEGER REFERENCES assistente_mensagens(id) ON DELETE SET NULL,
+        resposta_id INTEGER REFERENCES assistente_mensagens(id) ON DELETE SET NULL,
+        texto TEXT NOT NULL,
+        normalizado TEXT NOT NULL,
+        decisao VARCHAR(10) NOT NULL,
+        intencao VARCHAR(40),
+        agente VARCHAR(60),
+        regra VARCHAR(80),
+        confianca NUMERIC(4,2),
+        motivo TEXT,
+        execucao_id INTEGER REFERENCES agentes_execucoes(id) ON DELETE SET NULL,
+        aceito BOOLEAN,
+        avaliado_em TIMESTAMPTZ,
+        criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`);
+    await client.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_agentes_pedidos_decisao') THEN
+        ALTER TABLE agentes_pedidos ADD CONSTRAINT ck_agentes_pedidos_decisao CHECK (decisao IN ('agente', 'ia', 'resposta', 'suporte'));
+      END IF;
+    END $$`);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_agentes_pedidos_resposta ON agentes_pedidos(resposta_id)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_agentes_pedidos_mensagem ON agentes_pedidos(mensagem_id)');
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS agentes_sugestoes (
+        id SERIAL PRIMARY KEY,
+        tipo VARCHAR(20) NOT NULL,
+        fonte VARCHAR(20) NOT NULL,
+        modo VARCHAR(12),
+        agente VARCHAR(60),
+        intencao VARCHAR(40),
+        disciplina VARCHAR(40),
+        termos JSONB NOT NULL DEFAULT '[]'::jsonb,
+        pergunta TEXT NOT NULL,
+        resposta TEXT NOT NULL,
+        chave TEXT NOT NULL UNIQUE,
+        situacao VARCHAR(12) NOT NULL DEFAULT 'pendente',
+        vezes INTEGER NOT NULL DEFAULT 1,
+        pedido_id INTEGER REFERENCES agentes_pedidos(id) ON DELETE SET NULL,
+        execucao_id INTEGER REFERENCES agentes_execucoes(id) ON DELETE SET NULL,
+        mensagem_id INTEGER REFERENCES assistente_mensagens(id) ON DELETE SET NULL,
+        conversa_id INTEGER REFERENCES assistente_conversas(id) ON DELETE SET NULL,
+        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+        decidido_por INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+        decidido_em TIMESTAMPTZ,
+        criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`);
+    await client.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_agentes_sugestoes_tipo') THEN
+        ALTER TABLE agentes_sugestoes ADD CONSTRAINT ck_agentes_sugestoes_tipo CHECK (tipo IN ('vocabulario', 'conhecimento'));
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_agentes_sugestoes_situacao') THEN
+        ALTER TABLE agentes_sugestoes ADD CONSTRAINT ck_agentes_sugestoes_situacao CHECK (situacao IN ('pendente', 'aprovada', 'recusada'));
+      END IF;
+    END $$`);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_agentes_sugestoes_situacao ON agentes_sugestoes(tipo, situacao)');
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS agentes_suporte (
+        id SERIAL PRIMARY KEY,
+        agente VARCHAR(60),
+        origem VARCHAR(20) NOT NULL DEFAULT 'agente',
+        motivo VARCHAR(300),
+        modo VARCHAR(12) NOT NULL,
+        ok BOOLEAN NOT NULL DEFAULT false,
+        tempo_ms INTEGER,
+        erro TEXT,
+        sugestao_id INTEGER REFERENCES agentes_sugestoes(id) ON DELETE SET NULL,
+        execucao_id INTEGER REFERENCES agentes_execucoes(id) ON DELETE SET NULL,
+        conversa_id INTEGER REFERENCES assistente_conversas(id) ON DELETE SET NULL,
+        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+        criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_agentes_suporte_agente ON agentes_suporte(agente, criado_em)');
+    // a resposta do assistente diz se veio de um agente próprio (provedor 'agente'), do suporte ou da IA
+    await client.query('ALTER TABLE assistente_mensagens ADD COLUMN IF NOT EXISTS agente_execucao_id INTEGER REFERENCES agentes_execucoes(id) ON DELETE SET NULL');
+    await client.query('ALTER TABLE assistente_mensagens ADD COLUMN IF NOT EXISTS agente_pedido_id INTEGER REFERENCES agentes_pedidos(id) ON DELETE SET NULL');
+    await client.query('ALTER TABLE assistente_mensagens ADD COLUMN IF NOT EXISTS sugestao_id INTEGER REFERENCES agentes_sugestoes(id) ON DELETE SET NULL');
+
     // COMMIT de transação abortada (erro engolido numa migração) volta como ROLLBACK
     const fim = await client.query('COMMIT');
     if (fim && fim.command === 'ROLLBACK') throw new Error('As migrações foram desfeitas pelo banco: um comando falhou no meio e nada foi gravado.');

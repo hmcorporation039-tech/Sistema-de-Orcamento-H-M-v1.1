@@ -9,6 +9,8 @@
 //   ASSISTENTE_CONTEXTO  JSON com a tela aberta (obra, proposta, análise, projeto)
 //   ASSISTENTE_PAPEL     papel do usuário: as ferramentas do financeiro só para
 //                        admin/financeiro (a rota confere de novo)
+//   ASSISTENTE_SOMENTE_LEITURA=1  só as ferramentas de leitura (suporte Claude Max dos
+//                        agentes e pesquisa aprofundada — services/agentes/suporteClaude.js)
 // Não lê o .env do backend, não abre porta e não acessa banco nem disco: tudo
 // passa pela API, com as regras do servidor (middleware/escopoAssistente.js).
 // A lista de ferramentas é a única do sistema (catalogoFerramentas.mjs, INT-05);
@@ -27,9 +29,10 @@ if (!url || !token) {
 let contexto = {};
 try { contexto = JSON.parse(process.env.ASSISTENTE_CONTEXTO || '{}') || {}; } catch { contexto = {}; }
 const papel = String(process.env.ASSISTENTE_PAPEL || '').trim() || null;
+const somenteLeitura = process.env.ASSISTENTE_SOMENTE_LEITURA === '1';
 
 const servidor = new McpServer({ name: 'hm', version: '1.0.0' });
-registrarFerramentas(servidor, ferramentasDoServidor('assistente', { api: criarApi({ url, token }), contexto, token, papel }));
+registrarFerramentas(servidor, ferramentasDoServidor('assistente', { api: criarApi({ url, token }), contexto, token, papel, somenteLeitura }));
 
 await servidor.connect(new StdioServerTransport());
 // o Claude Code fechou (fim da execução, cancelamento): sai junto

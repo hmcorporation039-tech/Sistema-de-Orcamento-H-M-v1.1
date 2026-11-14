@@ -319,6 +319,14 @@ function contagemDoDesenho(analises, vetoriais = [], opcoes = {}) {
       const onde = cad ? `${p.pagina || 'DWG/DXF'} "${a.arquivo}"` : `PDF "${a.arquivo}" pág. ${p.pagina}`;
       for (const it of p.itens || []) {
         if (it.ambiguo) continue;
+        // componente do OBJETIVO do projeto (services/analiseCad: relação de materiais/legenda) que já diz o serviço
+        if (cad && it.servico && it.origemDescricao === 'objetivo' && temDisciplina(marcadas, it.disciplina)) {
+          if (it.tipo === 'simbolo' && Number(it.quantidade) > 0) {
+            entradas.push({ codigo: it.servico, disciplina: it.disciplina, quantidade: Number(it.quantidade), fonte: 'cad', arquivo: a.arquivo,
+              rotulo: `${onde}: ${semMarcador(it.descricao).slice(0, 50)}${it.item != null ? ` (item ${it.item})` : ''} × ${it.quantidade}` });
+          }
+          continue;
+        }
         if (it.tipo === 'simbolo') {
           const discItem = cad ? disciplinaDoItemCad(it, marcadas)
             : (() => { const s = detectarDisciplinas(it.descricao)[0]?.chave; return s ? doMesmoGrupo(marcadas, s) : null; })();
@@ -342,7 +350,7 @@ function contagemDoDesenho(analises, vetoriais = [], opcoes = {}) {
         if (l.ambiguo || l.rota_m == null) continue;
         const disc = cad ? disciplinaDoItemCad(l.it, marcadas)
           : (() => { const s = detectarDisciplinas(l.descricao)[0]?.chave; return (s && doMesmoGrupo(marcadas, s)) || disciplinaUnica(marcadas); })();
-        const codigo = disc && servicoDaLinha(disc, { layer: l.layer, descricao: l.descricao });
+        const codigo = disc && ((l.it?.origemDescricao === 'objetivo' && l.it.servico) || servicoDaLinha(disc, { layer: l.layer, descricao: l.descricao }));
         if (!codigo) continue;
         const rota = Number(l.rota_m) || 0;
         entradas.push({ codigo, disciplina: disc, quantidade: rota, metros: true, fonte: cad ? 'cad' : 'pdf', arquivo: a.arquivo, rotulo: `${onde}: ${metrosBR(rota)}${l.layer ? ` (layer ${l.layer})` : ''}` });
@@ -574,6 +582,12 @@ function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = 
     item('mt_terminacao', 'MT: terminação (mufla) de MT', 0, 'un', 'media_tensao', SEM_CODIGO),
     item('mt_hastes', 'MT: haste e caixa de inspeção da malha', 0, 'un', 'media_tensao', SEM_CODIGO),
     item('mt_infra_subterranea', 'MT: infraestrutura do ramal subterrâneo de MT', 0, 'm', 'media_tensao', SEM_ROTA),
+    // pelo objetivo do projeto (services/analiseCad → skills/_comum/cad/perfisDisciplina.js): a montagem inteira e o que a
+    // relação de materiais diz (mesmos códigos da skill media-tensao e de services/precosMaoDeObraReferencia.js)
+    item('mt_se_abrigada', 'MT: montagem eletromecânica de subestação abrigada', 0, 'un', 'media_tensao', SEM_CODIGO),
+    item('mt_cabo', 'MT: lançamento de cabo de MT (por metro de circuito trifásico)', 0, 'm', 'media_tensao', SEM_ROTA),
+    item('mt_malha', 'MT: malha de aterramento (vala, cabo nu, conexões exotérmicas)', 0, 'm', 'media_tensao', SEM_ROTA),
+    item('mt_qgbt', 'MT: montagem do QGBT e cabos do transformador ao QGBT', 0, 'un', 'media_tensao', SEM_CODIGO),
   ];
 
   // símbolo contado que não é serviço (tomada sem altura, ponto de luz): nota no item
@@ -901,9 +915,15 @@ function montarMateriaisDoDesenho(analises, vetoriais, catalogo) {
     const fontePag = (pag) => (pag.origem === 'cad' ? 'cad' : 'pdf');
     for (const pag of pags) {
       // (o nome de bloco aprendido de outra prancha é sugestão: não vira material sem conferir, mesmo sem a marca ambiguo)
-      for (const it of (pag.itens || []).filter(x => x.tipo === 'simbolo' && !x.ambiguo && x.origemDescricao !== 'aprendido')) {
+      for (const it of (pag.itens || []).filter(x => x.tipo === 'simbolo' && !x.ambiguo && x.origemDescricao !== 'aprendido' && !x.semMaterial)) {
         const disciplina = disciplinaDoItemDesenho(it, pag, a.disciplinas);
         if (!disciplina) continue;
+        if (it.origemDescricao === 'objetivo') {
+          const descricao = semMarcador(it.descricao).slice(0, 240);
+          const corr = compararComCatalogo(descricao, catalogo);
+          materiais.push(base(descricao, Number(it.quantidade) || 0, it.unidade || corr?.unidade_catalogo || 'un', disciplina, `Do projeto ${onde(pag)}: ${it.observacaoMaterial || 'componente do projeto'}.`, fontePag(pag), corr));
+          continue;
+        }
         (pontosPorDisc.get(disciplina) || pontosPorDisc.set(disciplina, []).get(disciplina)).push(it);
         const descricao = semMarcador(it.descricao).slice(0, 240);
         const corr = compararComCatalogo(descricao, catalogo);
@@ -921,6 +941,16 @@ function montarMateriaisDoDesenho(analises, vetoriais, catalogo) {
     const porDisc = new Map();
     for (const pag of pags) {
       for (const l of linhasDaPagina(pag)) {
+        // componente em metros do objetivo (cabo de MT, cordoalha, eletroduto da relação): o metro que o projeto escreve; sem
+        // ele, o material entra com 0 m e a nota [CONFERIR] (a relação cita o item, mas não a metragem)
+        if (l.it?.origemDescricao === 'objetivo') {
+          const disciplina = disciplinaDoItemDesenho(l.it, pag, a.disciplinas);
+          if (!disciplina) continue;
+          const descricao = semMarcador(l.descricao).slice(0, 240);
+          const corr = compararComCatalogo(descricao, catalogo);
+          materiais.push(base(descricao, l.rota_m != null ? Math.ceil(Number(l.rota_m)) : 0, 'm', disciplina, `Do projeto ${onde(pag)}: ${l.it.observacaoMaterial || 'componente do projeto'}.`, fontePag(pag), corr));
+          continue;
+        }
         if (l.ambiguo || l.rota_m == null) continue;
         const disciplina = disciplinaDoItemDesenho(l.it, pag, a.disciplinas);
         if (!disciplina) continue;

@@ -6,7 +6,7 @@
 //                         confirmados (tipos conferidos pelo engenheiro no mapa do CAD, desta análise)
 //                         notasAprendidas (alturas que o escritório costuma escrever nas notas: cad_notas_aprendidas)
 //                         naoPonto (formas que o engenheiro disse "não é ponto" em outros projetos), disciplinas (as marcadas)
-// Saída (postMessage): { ok, dxf, origem, versao, arquitetura, projeto, desenho, avisoUnidade } ou { ok: false, erro }
+// Saída (postMessage): { ok, dxf, origem, versao, arquitetura, projeto, desenho, avisoUnidade, objetivo } ou { ok: false, erro }
 const path = require('path');
 const { parentPort, workerData } = require('worker_threads');
 
@@ -28,6 +28,14 @@ const REGIOES_FORA = ['diagrama', 'vista_quadro', 'quadro_cargas', 'carimbo'];
     const { texto, origem, versao } = await textoDxfDoArquivo(Buffer.from(w.buffer), w.nome);
     let arq = null;
     try { arq = lerArquitetura(texto); } catch { /* sem arquitetura legível: o projeto ainda pode ter texto e blocos */ }
+    // O QUE É O PROJETO (skills/_comum/cad/objetivoDoProjeto.js — pedido de 09/11/2026): disciplina e tipo, o papel
+    // de cada vista da folha (principal × contexto × apoio), as camadas de base de outro projeto, os componentes
+    // pela relação de materiais e pelas legendas, os dados escritos e o abrigo. Sem ele, a SE 150 kVA saía com o
+    // trafo 225 kVA de um bloco e as luminárias da arena. Falha aqui não derruba a leitura: segue como antes.
+    let objetivo = null;
+    if (arq) {
+      try { objetivo = require(path.join(CAD, 'objetivoDoProjeto.js')).entenderProjeto(arq, { nomeArquivo: w.nome, disciplinas: w.disciplinas || [] }); } catch (e) { objetivo = { erro: e.message }; }
+    }
     // sem arquitetura, a unidade sai do cabeçalho ($INSUNITS) — antes ficava 1 calado e o
     // desenho em mm dava os metros de eletroduto ×1000 no orçamento
     let avisoUnidade = null;
@@ -76,6 +84,7 @@ const REGIOES_FORA = ['diagrama', 'vista_quadro', 'quadro_cargas', 'carimbo'];
     }
     parentPort.postMessage({
       ok: true, dxf: texto, origem, versao: versao || null, desenho, avisoUnidade,
+      objetivo,
       // desenho grande demais (skills/_comum/cad/arquitetura.js, MAX_ENTIDADES): blocos aninhados mais fundos ficaram fora
       detalheReduzido: arq?.detalheReduzido || null,
       // unifilar / quadro de cargas no desenho sem circuito lido (skills/_comum/cad/arquitetura.js): o 3D usa circuitos estimados
@@ -95,7 +104,12 @@ const REGIOES_FORA = ['diagrama', 'vista_quadro', 'quadro_cargas', 'carimbo'];
             const fora = (arq.classificacao?.regioes || []).filter(r => REGIOES_FORA.includes(r.tipo)).map(r => r.caixa);
             const naPlanta = ([x, y]) => !fora.some(c => x >= c[0] && x <= c[2] && y >= c[1] && y <= c[3]);
             const centros = (desenho?.mapa?.simbolos || []).flatMap(s => s.centros || []).filter(naPlanta);
-            return fundoDoMapa(arq.referencia, fora, regiaoDeInteresse(centros, arq.ambientes.map(a => a.poligono || [])));
+            // o fundo é o desenho do PROJETO: sem as camadas de base de outro projeto e, no abrigo/equipamento, só a vista principal
+            const filtro = objetivo && !objetivo.erro ? require(path.join(CAD, 'objetivoDoProjeto.js')).filtroDoPonto(objetivo) : null;
+            const ctx = new Set(objetivo?.camadasDeContexto || []);
+            const ref = filtro || ctx.size ? arq.referencia.filter(r => !ctx.has(r.layer) && (!filtro || (r.pts || []).some(filtro))) : arq.referencia;
+            const doFiltro = filtro ? centros.filter(filtro) : centros;
+            return fundoDoMapa(ref, fora, regiaoDeInteresse(doFiltro, arq.ambientes.map(a => a.poligono || [])));
           } catch { return null; }
         })(),
       },

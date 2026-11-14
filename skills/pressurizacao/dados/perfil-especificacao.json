@@ -1,0 +1,228 @@
+{
+  "chave": "painel_pressurizacao",
+  "herda": "quadro_forca_comando",
+  "disciplina": "pressurizacao",
+  "versao": 1,
+  "nome": "Painel de comando da pressurização de escadas a partir da especificação",
+  "descricao": "Lê a especificação do painel de pressurização (ventilador principal e reserva com inversor ou soft-starter, partida pelo alarme da central, pressostato de fluxo com reversão automática, modos manual/automático/teste, inibição pela fumaça na casa de máquinas, operação e falha para a central) e gera o anteprojeto do painel pelo mesmo motor do quadro de força e comando.",
+  "detectar": [
+    "pressuriza[çc][ãa]o (?:da|de) escada",
+    "escada pressurizada",
+    "ventiladores? de pressuriza"
+  ],
+  "solucao": "skills/quadros/scripts/lib/especificacao.js",
+  "vocabulario": {
+    "requisitos": [
+      {
+        "id": "comando.partida_alarme",
+        "grupo": "comando",
+        "rotulo": "Partida automática pelo alarme da central",
+        "padroes": [
+          "(?:alarme|sinal)[^.]{0,40}?central[^.]{0,60}?(?:liga|parte|partida|aciona)",
+          "partida autom[áa]tica[^.]{0,60}?alarme",
+          "central de (?:detec[çc][ãa]o e )?alarme[^.]{0,60}?(?:liga|aciona|partida)"
+        ]
+      },
+      {
+        "id": "comando.reversao",
+        "grupo": "comando",
+        "rotulo": "Reversão automática para o ventilador reserva",
+        "padroes": [
+          "revers[ãa]o autom[áa]tica",
+          "(?:ventilador )?reserva (?:parte|entra) (?:sozinho|automaticamente)",
+          "N\\s*\\+\\s*1"
+        ]
+      },
+      {
+        "id": "comando.tempo_reversao",
+        "grupo": "comando",
+        "rotulo": "Tempo para a reversão",
+        "padroes": [
+          "(?:revers[ãa]o|reserva)[^.]{0,80}?(\\d{1,3})\\s*s(?:egundos)?\\b",
+          "(\\d{1,3})\\s*s(?:egundos)?\\b[^.]{0,40}?revers"
+        ],
+        "captura": {
+          "s": 1
+        },
+        "numeros": [
+          "s"
+        ]
+      },
+      {
+        "id": "comando.pressostato_fluxo",
+        "grupo": "comando",
+        "rotulo": "Pressostato de fluxo (prova de ar)",
+        "padroes": [
+          "pressostato[^.]{0,30}?(?:de fluxo|diferencial)",
+          "prova de ar"
+        ]
+      },
+      {
+        "id": "comando.transmissor_pressao",
+        "grupo": "comando",
+        "rotulo": "Transmissor de pressão diferencial (PID no inversor)",
+        "padroes": [
+          "transmissor de press[ãa]o",
+          "\\bPID\\b"
+        ]
+      },
+      {
+        "id": "comando.modo_teste",
+        "grupo": "comando",
+        "rotulo": "Modo teste (chave)",
+        "padroes": [
+          "modo teste",
+          "chave de teste",
+          "teste semanal",
+          "posi[çc][ãa]o (?:de )?teste"
+        ]
+      },
+      {
+        "id": "comando.inibicao_fumaca",
+        "grupo": "comando",
+        "rotulo": "Fumaça na casa de máquinas inibe a partida automática",
+        "padroes": [
+          "fuma[çc]a na casa de m[áa]quinas",
+          "detector[^.]{0,40}?casa de m[áa]quinas",
+          "inibe a partida autom[áa]tica"
+        ]
+      },
+      {
+        "id": "comando.parada_so_painel",
+        "grupo": "comando",
+        "rotulo": "Parada só no painel",
+        "padroes": [
+          "parada (?:s[óo]|somente|apenas) no painel",
+          "desligamento (?:s[óo]|somente|apenas) no painel"
+        ]
+      },
+      {
+        "id": "automacao.status_central",
+        "grupo": "automacao",
+        "rotulo": "Operação e falha para a central",
+        "padroes": [
+          "(?:opera[çc][ãa]o|funcionamento)[^.]{0,20}?e falha[^.]{0,60}?central",
+          "m[óo]dulos? de entrada"
+        ]
+      }
+    ],
+    "listas": [
+      {
+        "id": "sinalizacao.porta",
+        "rotulo": "Sinalização na porta",
+        "secoes": [
+          "sinaliza"
+        ],
+        "tipos": [
+          "paragrafo",
+          "item"
+        ],
+        "separadores": "\\s+·\\s+|;|,\\s+|\\s+•\\s+",
+        "remover": [
+          "\\([^)]*\\)",
+          "^\\s*sinaleiros?\\s*(?:de|:)\\s*"
+        ]
+      }
+    ],
+    "obrigatorios": []
+  },
+  "regras": {
+    "variaveis_comando": {
+      "tempo_reversao": 15
+    },
+    "referencias": {
+      "inversor": "WEG CFW500 / Danfoss FC 101 / ABB ACH580 ou equivalente (função PID, relé de falha e saída em funcionamento)",
+      "soft": "WEG SSW07 / ABB PSR ou equivalente"
+    }
+  },
+  "verificacoes": {
+    "regras": [
+      {
+        "id": "emergencia_em_seguranca",
+        "tipo": "ponto",
+        "se": [
+          "req:comando.emergencia"
+        ],
+        "texto": "A especificação pede botão de emergência: na pressurização (sistema de segurança contra incêndio) nenhum dispositivo fora do painel pode parar os ventiladores durante o alarme — parada só no painel (CBMDF NT 10 / CBMGO NT 13). [CONFERIR]",
+        "sugestao": {
+          "decisao": "sem_emergencia",
+          "valor": "SIM",
+          "texto": "Sem botão de emergência que desligue os ventiladores; desligamento só pela seletora no painel, com chave."
+        },
+        "se_mantido": "Botão de emergência mantido a pedido do cliente: desliga os ventiladores de pressurização — registrar a responsabilidade do cliente frente à NT/IT do corpo de bombeiros."
+      },
+      {
+        "id": "pend_tempo_reversao",
+        "tipo": "pendencia",
+        "se": [
+          "req:comando.reversao"
+        ],
+        "nao": [
+          "req:comando.tempo_reversao"
+        ],
+        "texto": "Tempo de reversão para o ventilador reserva não informado — adotado {tempo_reversao} s (prática da H&M). [CONFERIR no comissionamento]"
+      },
+      {
+        "id": "pend_central",
+        "tipo": "pendencia",
+        "se": [
+          "req:comando.partida_alarme"
+        ],
+        "texto": "Central de alarme existente: módulo de comando (contato seco NA, tensão máxima) e módulos de entrada para operação/falha — confirmar modelo e compatibilidade."
+      },
+      {
+        "id": "pend_pressostato",
+        "tipo": "pendencia",
+        "se": [
+          "req:comando.pressostato_fluxo"
+        ],
+        "texto": "Pressostatos de fluxo: faixa e ponto de ajuste (prova de ar) e local de instalação no duto — definir no comissionamento."
+      },
+      {
+        "id": "pend_pid",
+        "tipo": "pendencia",
+        "se": [
+          "req:comando.transmissor_pressao"
+        ],
+        "texto": "Transmissor de pressão diferencial e malha PID do inversor (setpoint de ΔP na escada) — parametrização no comissionamento. [CONFERIR]"
+      },
+      {
+        "id": "exc_parada_painel",
+        "tipo": "excecao",
+        "se": [
+          "req:comando.partida_alarme"
+        ],
+        "nao": [
+          "req:comando.emergencia"
+        ],
+        "texto": "Parada somente no painel: não há botão de emergência que desligue os ventiladores (sistema de segurança contra incêndio)."
+      }
+    ],
+    "remover": [
+      "exc_valvulas",
+      "titular_x_automacao",
+      "reserva_sem_troca"
+    ]
+  },
+  "blocos": {
+    "usar": [
+      "emergencia_rele",
+      "partida_por_alarme",
+      "motor_man_0_aut",
+      "pressostato_fluxo",
+      "reversao_automatica",
+      "modo_manual",
+      "status_acionamento",
+      "status_para_central",
+      "sinalizacao",
+      "contatos_livres",
+      "rede_serial"
+    ],
+    "variaveis": {
+      "tempo_reversao": {
+        "requisito": "comando.tempo_reversao",
+        "campo": "s"
+      }
+    }
+  }
+}

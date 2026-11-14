@@ -9,8 +9,8 @@
 import { definirFerramentas } from './assistenteFerramentas.mjs';
 import { definirFerramentasDesktop } from './ferramentasDesktop.mjs';
 
-export function ferramentasDoServidor(servidor, { api, contexto = {}, token = '', papel = null, pastasPdf = [], lerArquivo } = {}) {
-  if (servidor === 'assistente') return definirFerramentas({ api, contexto, token, papel, servidor: 'assistente' });
+export function ferramentasDoServidor(servidor, { api, contexto = {}, token = '', papel = null, pastasPdf = [], lerArquivo, somenteLeitura = false } = {}) {
+  if (servidor === 'assistente') return definirFerramentas({ api, contexto, token, papel, servidor: 'assistente', somenteLeitura });
   if (servidor !== 'desktop') throw new Error(`Servidor MCP desconhecido: ${servidor}`);
   const comuns = definirFerramentas({ api, contexto, token, papel, servidor: 'desktop' });
   const proprias = definirFerramentasDesktop({ api, compartilhadas: new Map(comuns.map(f => [f.nome, f])), pastasPdf, lerArquivo });

@@ -29,7 +29,10 @@ const { propostaParaPayload, aplicarOperacoes, payloadParaEnvio, mesclarDados } 
 const { hojeBrasilia } = requerer('../utils/dataHoje.js');
 const { semAcento: semAcentoTexto } = requerer('../utils/texto.js');
 // nomes dos tipos de ação (a regra de cada um fica no servidor: services/assistente/acoes.js)
-const { TIPOS_ACAO: TIPOS_ACAO_LISTA, FERRAMENTAS: LISTA_ASSISTENTE, ferramentaVisivel } = requerer('../services/assistente/ferramentas.js');
+const { TIPOS_ACAO: TIPOS_ACAO_LISTA, FERRAMENTAS: LISTA_ASSISTENTE, FERRAMENTAS_LEITURA, ferramentaVisivel } = requerer('../services/assistente/ferramentas.js');
+// agentes próprios (registro em dados) e o resumo do objetivo do projeto (sem IA)
+const { AGENTES } = requerer('../services/agentes/registro.js');
+const { linhasDoObjetivo } = requerer('../services/agentes/objetivoResumo.js');
 
 // Ferramentas que também aparecem no MCP do Claude Desktop: só leitura e cálculo (as que gravam
 // dependem da marca "criado nesta conversa" do assistente, e as de arquivo, do anexo da conversa).
@@ -37,7 +40,7 @@ export const COMPARTILHADAS = [
   'buscar_obras', 'ver_obra', 'buscar_propostas', 'ver_proposta', 'buscar_clientes', 'buscar_materiais', 'buscar_servicos',
   'buscar_kits', 'historico_preco', 'ver_analise', 'ver_projeto', 'calcular_projeto', 'pesquisar_preco_mercado',
   'custos_obra', 'margem_obra', 'pix_sem_obra', 'notas_fiscais', 'notas_a_receber', 'vencimentos', 'novidades_pastas',
-  'cotacoes_fornecedores', 'cronograma_obra',
+  'cotacoes_fornecedores', 'cronograma_obra', 'objetivo_do_projeto', 'consultar_conhecimento',
 ];
 // papéis de cada ferramenta: a mesma lista de services/assistente/ferramentas.js (o --allowedTools)
 const PAPEIS = new Map(LISTA_ASSISTENTE.filter(f => f.papeis).map(f => [f.nome, f.papeis]));
@@ -116,7 +119,8 @@ function resumoCalculo(r) {
 // Cada uma: { nome, titulo, descricao, entrada (shape do zod), executar(args), servidores, papeis? }
 //   servidor  'assistente' (padrão) ou 'desktop' — devolve só as ferramentas daquele servidor
 //   papel     papel do usuário (admin, user, financeiro, tecnico); sem papel, todas (o servidor confere)
-export function definirFerramentas({ api, contexto = {}, token = '', papel = null, servidor = 'assistente' }) {
+//   somenteLeitura  true: só as de FERRAMENTAS_LEITURA (suporte Claude Max dos agentes e pesquisa aprofundada com web)
+export function definirFerramentas({ api, contexto = {}, token = '', papel = null, servidor = 'assistente', somenteLeitura = false }) {
   const conv = conversaDoToken(token);
   const desktop = servidor === 'desktop';
   const obraPadrao = Number.isInteger(contexto.obra_id) ? contexto.obra_id : null;
@@ -636,6 +640,50 @@ export function definirFerramentas({ api, contexto = {}, token = '', papel = nul
         return ok(l.join('\n'));
       },
     },
+    // ── Agentes próprios (09/11/2026): motores determinísticos, sem IA ──
+    {
+      nome: 'executar_agente', titulo: 'Executar agente próprio (sem IA)',
+      descricao: `Roda um AGENTE PRÓPRIO do sistema — passos fixos com os motores determinísticos (nenhuma IA), com links, arquivos gerados e pendências [CONFERIR]. PREFIRA isto à conversa livre sempre que o pedido for um destes: ${AGENTES.map(a => `${a.chave} (${a.nome}: ${a.resumo.split('. ')[0]}; entrada: ${a.exigeUm.join(' ou ')}${a.situacao === 'aguardando_modulo' ? '; pode estar AGUARDANDO MÓDULO' : ''})`).join('; ')}. "entrada" leva os campos do agente (ex.: { "arquivo_id": 12, "disciplinas": ["cftv"] }, { "analise_id": 40, "disciplina": "eletrica" }, { "projeto_id": 7 }, { "proposta_id": 255, "pesquisar_mercado": false }). Pesquisa na web (pesquisar_mercado) gasta cota: só com a permissão do usuário. Espera até ~4 min; se ainda estiver rodando, use ver_execucao.`,
+      entrada: {
+        agente: z.enum(AGENTES.map(a => a.chave)),
+        entrada: z.record(z.string(), z.any()),
+      },
+      async executar({ agente, entrada }) {
+        const r = await api('POST', '/api/agentes/execucoes', { agente, entrada, aguardar: true });
+        return ok(`${r.texto || `Execução #${r.id} — ${r.status}`}\n\n(execução #${r.id}; status ${r.status}${r.status === 'fila' || r.status === 'executando' ? ' — consulte com ver_execucao' : ''})`);
+      },
+    },
+    {
+      nome: 'ver_execucao', titulo: 'Ver execução de agente',
+      descricao: 'Estado e resultado de uma execução de agente próprio (passos, links, arquivos gerados, pendências [CONFERIR] e se pediu suporte à IA).',
+      entrada: { id: z.number().int().positive() },
+      async executar({ id }) {
+        const r = await api('GET', `/api/agentes/execucoes/${id}`);
+        return ok(r.texto || `Execução #${r.id} — ${r.status}`);
+      },
+    },
+    {
+      nome: 'objetivo_do_projeto', titulo: 'Objetivo do projeto (análise)',
+      descricao: 'O que a leitura local (sem IA) entendeu que é o projeto de uma análise salva: disciplina e tipo (ex.: subestação abrigada), vista principal × contexto × apoio, dados (kVA, kV, abrigo na escala das cotas), componentes pela relação de materiais e pelas legendas e o que ficou [CONFERIR]. Sem id, a análise da tela aberta.',
+      entrada: { id: z.number().int().positive().optional() },
+      async executar({ id }) {
+        const aid = id || contexto.analise_id;
+        if (!aid) return falha('Informe o id da análise.');
+        const a = await api('GET', `/api/projetos/analises/${aid}`);
+        const { linhas, pendencias } = linhasDoObjetivo(a);
+        return ok([`Análise #${a.id} — ${a.nomeProjeto || a.cliente || 'sem nome'} — link /obras/analise/${a.id}`, ...linhas, ...(pendencias.length ? ['', 'Pendências:', ...pendencias.map(p => `- ${p}`)] : [])].join('\n'));
+      },
+    },
+    {
+      nome: 'consultar_conhecimento', titulo: 'Base de conhecimento do sistema',
+      descricao: 'Base de conhecimento do sistema H&M (sem dado de cliente): o que o sistema faz por disciplina, critérios (QF-CAG, a cotar, [CONFERIR]), normas usadas, fluxos, agentes próprios, 3D e o conhecimento APROVADO pelos engenheiros. Consulte antes de responder "como o sistema faz X".',
+      entrada: { disciplina: z.string().optional(), busca: z.string().optional() },
+      async executar({ disciplina, busca }) {
+        const q = new URLSearchParams(); if (disciplina) q.set('disciplina', disciplina); if (busca) q.set('busca', busca);
+        const r = await api('GET', `/api/agentes/conhecimento?${q}`);
+        return ok(r.texto || 'Nada encontrado na base de conhecimento.');
+      },
+    },
     {
       nome: 'propor_acao', titulo: 'Propor ação para o usuário confirmar',
       descricao: `Única forma de pedir o que você não faz sozinho: a ação fica PENDENTE e o usuário vê um cartão "Aplicar / Descartar" (só o clique dele executa, com o login dele). Tipos: mudar_status_proposta (dados.status: Ativa|Aprovada|Recusada|Cancelada), enviar_email_proposta (dados.destinatario, dados.mensagem?), gerar_link_aprovacao (dados.dias?) — esses dois passam pela conferência antes do envio (total zerado, total que não bate com os itens, sem itens = recusa; itens a cotar, BDI 0 %, validade vencida = aviso no cartão); dados.confirmar_bloqueio: true só se o usuário pedir explicitamente para enviar apesar do bloqueio, enviar_email_projeto (alvo_id = id do PROJETO; dados.destinatario, dados.mensagem?, dados.itens? entre definicoes, asbuilt, dxf, qet, pdf — sem itens, as entregas escolhidas da última vez; vai o ZIP do pacote de entrega), excluir_proposta, excluir_analise, excluir_projeto, editar_proposta (dados.operacoes: {adicionar, alterar, remover, campos} como em editar_rascunho), atualizar_projeto (dados.dados: campos do formulário), atualizar_analise (dados: cliente_nome, nome_projeto, finalidade, funcionamento, obra_id), alterar_preco_material (alvo_id = id do material; dados.preco, dados.preco_compra?), alterar_preco_servico (dados.codigo, dados.valor_referencia). Depois diga ao usuário que a ação está esperando a confirmação dele no cartão (pelo celular, ele confirma respondendo o código que o sistema manda junto). A ação tem prazo e, ao confirmar, é conferida de novo: se o registro mudou, não executa.`,
@@ -654,6 +702,6 @@ export function definirFerramentas({ api, contexto = {}, token = '', papel = nul
 
   return lista
     .map(f => ({ ...f, servidores: COMPARTILHADAS.includes(f.nome) ? ['assistente', 'desktop'] : ['assistente'], ...(PAPEIS.has(f.nome) ? { papeis: PAPEIS.get(f.nome) } : {}) }))
-    .filter(f => f.servidores.includes(servidor) && ferramentaVisivel(f, papel))
+    .filter(f => f.servidores.includes(servidor) && ferramentaVisivel(f, papel) && (!somenteLeitura || FERRAMENTAS_LEITURA.includes(f.nome)))
     .map(f => ({ ...f, executar: embrulhar(f.executar) }));
 }

@@ -670,4 +670,248 @@ caso('3D-03 caminhos sugeridos em planta grande: rápido; no teto de ligações 
   });
 }
 
+// ── 3D focado no objetivo do projeto (09/11/2026): subestação abrigada num DWG com a planta de
+// situação de OUTRO projeto colada ao lado (estacionamento, luminárias) — tudo sintético ──
+{
+  const { montarCenasPorPlanta } = require('./modelosPorPlanta');
+  const EQ = require('./equipamentos3d');
+  const ret = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  const linha = (layer, a, b) => ({ tipo: 'linha', layer, pts: [a, b] });
+  const contornoLinhas = (layer, [x0, y0, x1, y1]) => [linha(layer, [x0, y0], [x1, y0]), linha(layer, [x1, y0], [x1, y1]), linha(layer, [x1, y1], [x0, y1]), linha(layer, [x0, y1], [x0, y0])];
+  const ABRIGO = [105, 3, 107.5, 8.25]; // 2,50 × 5,25 m
+  // desenho: situação (0..60 × 0..40: prédio, estacionamento, base em PDF) e a SE (100..115 × 0..12)
+  function arqDuasPlantas() {
+    const referencia = [
+      ...contornoLinhas('A-PAREDE', [5, 5, 25, 20]), ...contornoLinhas('A-PAREDE', [30, 5, 55, 35]),
+      ...contornoLinhas('PDF_ARQ-PIS-VT1', [2, 22, 28, 38]), linha('PDF_ARQ-PIS-VT1', [2, 30], [28, 30]),
+      // planta da SE: o desenho dela (paredes em layer "0", o transformador desenhado, a malha)
+      ...contornoLinhas('0', ABRIGO), ...contornoLinhas('0', [105.6, 6.5, 106.8, 7.5]), linha('0', [104, 2], [109, 2]),
+    ];
+    return {
+      referencia, portas: [], notas: [], preenchimentos: [], simbolosDaLegenda: [], rotulos: [],
+      ambientes: [
+        { nome: 'ESTACIONAMENTO', poligono: ret(2, 22, 28, 38), area_m2: 416, perimetro_m: 84, layer: 'PDF_ARQ-PIS-VT1' },
+        { nome: 'LOJA', poligono: ret(5, 5, 25, 20), area_m2: 300, perimetro_m: 70 },
+        { nome: 'GALPÃO', poligono: ret(30, 5, 55, 35), area_m2: 750, perimetro_m: 110 },
+      ],
+      extensao: { min: [0, 0], max: [115, 40] },
+      classificacao: { regioes: [{ tipo: 'planta', caixa: [0, 0, 60, 40], titulo: 'PLANTA DE SITUAÇÃO' }, { tipo: 'planta', caixa: [100, 0, 115, 12], titulo: 'PLANTA BAIXA SUBESTAÇÃO' }] },
+    };
+  }
+  // pontos "do projeto" da situação (os postes do estacionamento, da base em PDF) — não podem entrar
+  const dispositivosReais = [
+    { simbolo: 'HM-ILU-POSTE', x: 10, y: 30, layer: 'PDF_IFC-Luminária-Contorno' }, { simbolo: 'HM-ILU-POSTE', x: 20, y: 30, layer: 'PDF_IFC-Luminária-Contorno' },
+    { simbolo: 'HM-ILU-LUMINARIA', x: 40, y: 20 },
+  ];
+  const objetivo = () => ({
+    disciplina: 'media_tensao', tipo: 'subestacao_abrigada', titulo: 'Subestação abrigada 150 kVA', confianca: 0.9, evidencias: [],
+    vistas: [
+      { id: 'v-sit', caixa: [0, 0, 60, 40], tipo: 'situacao', titulo: 'Planta de situação', papel: 'contexto', motivo: 'base de outro projeto' },
+      { id: 'v-se', caixa: [100, 0, 115, 12], tipo: 'planta', titulo: 'Planta baixa da subestação', papel: 'principal', motivo: 'abrigo e equipamentos' },
+    ],
+    camadasDeContexto: ['PDF_ARQ-PIS-VT1', 'PDF_IFC-Luminária-Contorno'],
+    componentes: [
+      { id: 'c-trafo', tipo: 'transformador', descricao: 'Transformador trifásico a óleo', item: 11, quantidade: 1, unidade: 'un', especificacao: '150 kVA, 13.800 V - 380/220 V, isolamento a óleo', posicoes: [{ x: 106.2, y: 7, vista: 'v-se' }], fontes: ['relacao', 'balao'] },
+      { id: 'c-secc', tipo: 'chave_seccionadora', descricao: 'Chave seccionadora tripolar 15 kV 400 A', item: 2, quantidade: 1, unidade: 'un', especificacao: { tensao_kv: 15, corrente_a: 400 }, posicoes: [{ x: 105.3, y: 6.5, vista: 'v-se' }], fontes: ['relacao', 'layer'] },
+      { id: 'c-tapete', tipo: 'tapete_borracha', descricao: 'Tapete de borracha isolante', item: 28, quantidade: 1, unidade: 'un', especificacao: '1000x1000 mm, classe 2', posicoes: [{ x: 106.9, y: 4.5, vista: 'v-se' }], fontes: ['legenda'] },
+      { id: 'c-porta', tipo: 'porta', descricao: 'Porta metálica', item: 18, quantidade: 1, unidade: 'un', especificacao: '2,10x1,20 m', posicoes: [{ x: 105, y: 4.6, vista: 'v-se' }] },
+      { id: 'c-ext', tipo: 'extintor', descricao: 'Extintor CO2 6 kg', item: 17, quantidade: 1, unidade: 'un', especificacao: { altura_m: 1.5 }, posicoes: [], fontes: ['relacao'], conferir: true },
+      { id: 'c-poste', tipo: 'poste', descricao: 'Poste DT 11 m/300 daN', item: 1, quantidade: 1, unidade: 'un', posicoes: [] },
+      { id: 'c-pr', tipo: 'para_raios', descricao: 'Para-raios 12 kV 10 kA', item: 4, quantidade: 3, unidade: 'pç', posicoes: [] },
+      { id: 'c-haste', tipo: 'haste', descricao: 'Haste cobreada 5/8 pol. × 2,40 m', item: 30, quantidade: 4, unidade: 'un', posicoes: [] },
+      { id: 'c-rele', tipo: 'rele', descricao: 'Relé de proteção 50/51', item: 9, quantidade: 1, unidade: 'un', posicoes: [] },
+      // posição numa vista de contexto: não vale para o abrigo
+      { id: 'c-lum', tipo: 'luminaria', descricao: 'Luminária do estacionamento', item: 99, quantidade: 1, unidade: 'un', posicoes: [{ x: 10, y: 30, vista: 'v-sit' }] },
+    ],
+    dados: { potencia_kva: 150, tensao_primaria_kv: 13.8, tensao_secundaria_v: 380 },
+    abrigo: { vista: 'v-se', contorno: ret(...ABRIGO), largura_m: 2.5, comprimento_m: 5.25, area_m2: 13.13, compartimentos: [], portas: [] },
+    avisos: ['Medição em BT pela distribuidora [CONFERIR].'],
+  });
+  const noDesenho = (c, x, y) => [x + c.origem[0], y + c.origem[1]];
+  const r = montarCenasPorPlanta(arqDuasPlantas(), { dispositivosReais, objetivo: objetivo(), titulo: 'SE' });
+  const cena = r.cenas[0];
+  const tipoDe = (id) => cena.dispositivos.find(t => t.componente === id);
+  const itemNoDesenho = (id, k = 0) => { const it = tipoDe(id).itens[k]; return [...noDesenho(cena, it[0], it[1]), it[2]]; };
+  const ficha = (id) => cena.componentes.find(c => c.id === id);
+  const noAbrigo = ([x, y]) => x >= ABRIGO[0] && x <= ABRIGO[2] && y >= ABRIGO[1] && y <= ABRIGO[3];
+
+  caso('OBJ-01 com objetivo: uma cena só, a da subestação; a planta de situação (contexto) não vira cena', () => {
+    assert.strictEqual(r.cenas.length, 1);
+    assert.deepStrictEqual(cena.objetivoInfo, { disciplina: 'media_tensao', tipo: 'subestacao_abrigada', titulo: 'Subestação abrigada 150 kVA', vistaPrincipal: 'v-se', componentes: 9, semPosicao: 5 });
+    assert.ok(cena.plantaInfo && cena.plantaInfo.origem === 'objetivo' && /Subestação abrigada/.test(cena.plantaInfo.nome), JSON.stringify(cena.plantaInfo));
+    assert.ok(!cena.ambientes.some(a => /ESTACIONAMENTO|LOJA|GALP/.test(a.nome)), cena.ambientes.map(a => a.nome).join());
+  });
+
+  caso('OBJ-02 nenhuma parede nem ponto da situação: paredes só no contorno do abrigo, peças só do objetivo', () => {
+    for (const w of cena.paredes) {
+      for (const [x, y] of [noDesenho(cena, w[0], w[1]), noDesenho(cena, w[2], w[3])]) assert.ok(x >= ABRIGO[0] - 0.2 && x <= ABRIGO[2] + 0.2 && y >= ABRIGO[1] - 0.2 && y <= ABRIGO[3] + 0.2, `parede fora do abrigo: ${x},${y}`);
+    }
+    // o transformador desenhado (layer "0" dentro do abrigo) não subiu como parede: 5 trechos (vão da porta) + a verga
+    assert.ok(cena.paredes.length <= 6, `${cena.paredes.length} paredes`);
+    assert.ok(cena.dispositivos.every(t => t.componente), cena.dispositivos.map(t => t.simbolo).join());
+    assert.ok(!cena.dispositivos.some(t => t.simbolo === 'HM-ILU-POSTE' || t.componente === 'c-lum'), 'luminária/poste da situação no 3D');
+    assert.ok(!cena.avisos.some(a => /Pontos lidos dos símbolos/.test(a)), 'leu pontos do desenho');
+    assert.ok(cena.avisos.some(a => /focado no objetivo/.test(a)) && cena.avisos.includes('Medição em BT pela distribuidora [CONFERIR].'));
+    assert.ok(!cena.instalacao && !cena.infra.length, 'instalação ou infraestrutura estimada na SE');
+  });
+
+  caso('OBJ-03 abrigo com as medidas do contorno, pé-direito típico [CONFERIR] e a porta no vão da parede', () => {
+    assert.deepStrictEqual(cena.numeros.abrigo, { largura_m: 2.5, comprimento_m: 5.25, area_m2: 13.13, pe_direito_m: 3, pe_direito_do_projeto: false });
+    assert.strictEqual(cena.peDireito, 3);
+    assert.ok(cena.avisos.some(a => /Pé-direito do abrigo não informado.*3,00 m.*\[CONFERIR\]/.test(a)));
+    assert.strictEqual(cena.portas.length, 1);
+    assert.strictEqual(cena.portas[0].largura, 1.2); // "2,10x1,20 m": a menor é a largura
+    const [px, py] = noDesenho(cena, ...cena.portas[0].meio);
+    assert.ok(Math.abs(px - 105) < 0.01 && Math.abs(py - 4.6) < 0.01, `${px},${py}`);
+    // nenhuma parede cheia (do piso) atravessa o vão da porta
+    assert.ok(!cena.paredes.filter(w => w[5] === 0).some(w => { const [ax, ay] = noDesenho(cena, w[0], w[1]), [bx, by] = noDesenho(cena, w[2], w[3]); return Math.abs(ax - 105) < 0.01 && Math.abs(bx - 105) < 0.01 && Math.min(ay, by) < 4.5 && Math.max(ay, by) > 4.7; }));
+    assert.strictEqual(cena.numeros.area_externa_m2, 0, 'pátio não conta como área');
+    assert.strictEqual(cena.numeros.area_interna_m2, 13.13);
+  });
+
+  caso('OBJ-04 transformador, chave e tapete nas posições do projeto, com forma e tamanho da biblioteca', () => {
+    const tr = tipoDe('c-trafo');
+    assert.deepStrictEqual([tr.forma, tr.montagem, tr.tam], ['transformador', 'piso', [1.3, 0.9, 1.4]]); // 150 kVA lido no TEXTO da especificação
+    assert.strictEqual(tr.cor, EQ.EQUIPAMENTOS.transformador.cor);
+    const [tx, ty, tz] = itemNoDesenho('c-trafo');
+    assert.ok(perto(tx, 106.2) && perto(ty, 7) && tz === 0, `${tx},${ty},${tz}`);
+    const [sx, sy, sz] = itemNoDesenho('c-secc');
+    assert.ok(perto(sx, 105 + 0.075 + 0.01, 0.03) && perto(sy, 6.5, 0.05) && perto(sz, 2.2), `chave ${sx},${sy},${sz}`);
+    assert.strictEqual(tipoDe('c-secc').montagem, 'parede');
+    const tp = tipoDe('c-tapete');
+    assert.deepStrictEqual([tp.forma, tp.montagem, tp.tam], ['tapete', 'piso', [1, 1, 0.012]]);
+    const [ax, ay] = itemNoDesenho('c-tapete');
+    assert.ok(perto(ax, 106.9) && perto(ay, 4.5));
+    // mais kVA, transformador maior
+    assert.ok(EQ.tamanhoDe(EQ.equipamentoDe({ tipo: 'transformador' }), '300 kVA')[0] > 1.6);
+  });
+
+  caso('OBJ-05 componente sem posição: lugar típico do tipo ou pátio, sempre "posição a conferir"', () => {
+    assert.deepStrictEqual(['c-trafo', 'c-secc', 'c-tapete'].map(id => [ficha(id).posicao, ficha(id).posicaoAConferir]), [['desenho', false], ['desenho', false], ['desenho', false]]);
+    for (const id of ['c-ext', 'c-poste', 'c-pr', 'c-haste', 'c-rele']) assert.ok(ficha(id).posicaoAConferir, id);
+    // poste fora do abrigo, a 3 m da parede; para-raios no poste (3 peças, 0,90 m abaixo do topo de 11 m)
+    const [qx, qy] = itemNoDesenho('c-poste');
+    assert.ok(!noAbrigo([qx, qy]), 'poste dentro do abrigo');
+    assert.strictEqual(tipoDe('c-poste').tam[2], 11);
+    assert.strictEqual(tipoDe('c-pr').itens.length, 3);
+    for (let k = 0; k < 3; k++) { const [x, y, z] = itemNoDesenho('c-pr', k); assert.ok(perto(z, 10.1) && Math.hypot(x - qx, y - qy) < 0.9, `para-raios ${x},${y},${z}`); }
+    // extintor por dentro, junto da porta, na parede a 1,50 m (a especificação diz)
+    const [ex, ey, ez] = itemNoDesenho('c-ext');
+    assert.ok(ex > 105 && ex < 105.3 && Math.abs(ey - 4.6) < 1.3 && perto(ez, 1.5), `extintor ${ex},${ey},${ez}`);
+    // 4 hastes, nos cantos do abrigo, por fora
+    assert.strictEqual(tipoDe('c-haste').itens.length, 4);
+    for (let k = 0; k < 4; k++) assert.ok(!noAbrigo(itemNoDesenho('c-haste', k)), `haste ${k} dentro`);
+    // relé sem lugar típico: no pátio ao lado
+    assert.strictEqual(ficha('c-rele').posicao, 'patio');
+    assert.ok(!noAbrigo(itemNoDesenho('c-rele')));
+    assert.ok(cena.ambientes.some(a => /PÁTIO — COMPONENTES SEM POSIÇÃO/.test(a.nome)));
+    // (o poste tem o aviso próprio; a luminária com posição só na situação fica fora, com aviso)
+    assert.ok(cena.avisos.some(a => /4 componente\(s\) sem posição na planta.*Relé de proteção.*\[CONFERIR\]/.test(a)), cena.avisos.join(' | '));
+    assert.ok(cena.avisos.some(a => /posição só em outra vista.*Luminária do estacionamento/.test(a)));
+  });
+
+  caso('OBJ-06 ficha do componente na cena: item, descrição, especificação (texto ou objeto) e fontes', () => {
+    const f = ficha('c-trafo');
+    assert.deepStrictEqual([f.item, f.descricao, f.especificacaoTexto, f.fontes], [11, 'Transformador trifásico a óleo', '150 kVA, 13.800 V - 380/220 V, isolamento a óleo', ['relacao', 'balao']]);
+    assert.deepStrictEqual(ficha('c-secc').especificacao, { tensao_kv: 15, corrente_a: 400 });
+    assert.ok(ficha('c-ext').conferir);
+    assert.ok(!ficha('c-porta'), 'porta é o vão, não uma peça');
+    // a página leva os componentes (o visualizador abre a ficha no clique)
+    const html = gerarHtml(r.cenas);
+    assert.ok(html.includes('"componentes":[') && html.includes('"c-trafo"') && html.includes('"objetivoInfo"'));
+  });
+
+  caso('OBJ-07 sem objetivo, tudo como antes: as plantas do desenho e os pontos do projeto', () => {
+    const antes = montarCenasPorPlanta(arqDuasPlantas(), { dispositivosReais, data: 'x' });
+    const igual = montarCenasPorPlanta(arqDuasPlantas(), { dispositivosReais, data: 'x', objetivo: null });
+    assert.strictEqual(JSON.stringify(antes), JSON.stringify(igual));
+    assert.ok(antes.cenas.some(c => c.dispositivos.some(t => t.simbolo === 'HM-ILU-POSTE')));
+    assert.ok(antes.cenas.every(c => !c.objetivoInfo && !c.componentes));
+  });
+
+  caso('OBJ-08 objetivo sem abrigo (elétrica): só a vista principal vira cena, sem as camadas de contexto', () => {
+    const o = objetivo();
+    delete o.abrigo;
+    o.disciplina = 'eletrica'; o.tipo = null;
+    o.vistas = [{ id: 'v-sit', caixa: [0, 0, 60, 40], papel: 'principal', titulo: 'Térreo' }, { id: 'v-se', caixa: [100, 0, 115, 12], papel: 'apoio', titulo: 'Detalhe' }];
+    o.componentes = [{ id: 'q1', tipo: 'qgbt', descricao: 'QGBT', item: 5, quantidade: 1, unidade: 'un', posicoes: [{ x: 24.8, y: 10, vista: 'v-sit' }] }];
+    const rr = montarCenasPorPlanta(arqDuasPlantas(), { dispositivosReais, objetivo: o });
+    assert.strictEqual(rr.cenas.length, 1);
+    const c = rr.cenas[0];
+    assert.ok(!c.ambientes.some(a => a.nome === 'ESTACIONAMENTO'), 'ambiente da camada de contexto');
+    assert.ok(!c.dispositivos.some(t => t.simbolo === 'HM-ILU-POSTE'), 'ponto da camada de contexto');
+    assert.ok(c.dispositivos.some(t => t.simbolo === 'HM-ILU-LUMINARIA'), 'ponto do projeto (fora das camadas de contexto) sumiu');
+    assert.ok(c.dispositivos.some(t => t.componente === 'q1' && t.forma === 'quadro'));
+    assert.strictEqual(c.objetivoInfo.vistaPrincipal, 'v-sit');
+    assert.strictEqual(c.componentes[0].item, 5);
+  });
+
+  caso('OBJ-09 biblioteca: toda forma de equipamento tem desenho no visualizador; medidas lidas do texto', () => {
+    for (const f of EQ.FORMAS_EQUIPAMENTO) assert.ok(formasDoApp.has(f), `forma ${f} sem desenho em visualizador3d/app.js`);
+    for (const [s, e] of Object.entries(EQ.ESPEC_EQUIPAMENTOS)) assert.deepStrictEqual(ESPEC[s], e, s);
+    const eqDe = (tipo) => EQ.equipamentoDe({ tipo });
+    assert.deepStrictEqual(EQ.tamanhoDe(eqDe('veneziana'), 'Veneziana 500x1000 mm').slice(0, 2), [1, 0.5]);
+    assert.deepStrictEqual(EQ.tamanhoDe(eqDe('canaleta'), 'canaleta 30x30 cm'), [1, 0.3, 0.3]);
+    assert.strictEqual(EQ.larguraDaPorta('porta 2,10x1,20 m'), 1.2);
+    assert.strictEqual(EQ.medidasDaEspecificacao('1.000 kVA, 13.800 V').kva, 1000);
+    assert.strictEqual(eqDe('trafo').chave, 'transformador');
+    assert.strictEqual(EQ.equipamentoDe({ tipo: 'coisa_nova' }).forma, 'caixa');
+  });
+
+  caso('OBJ-11 desenho em escala dobrada (fator pelas cotas): abrigo em metros reais, uma porta dupla, trafo sem duplicar', () => {
+    // a SE desenhada ao dobro: 5 × 10,5 unidades = 2,50 × 5,25 m (fator 0,5 lido das cotas)
+    const AB2 = [200, 0, 205, 10.5];
+    const arq2 = {
+      referencia: [...contornoLinhas('0', AB2)], portas: [], notas: [], preenchimentos: [], simbolosDaLegenda: [], rotulos: [], ambientes: [],
+      extensao: { min: [195, -2], max: [210, 12] },
+      classificacao: { regioes: [{ tipo: 'planta', caixa: [195, -2, 210, 12], titulo: 'PLANTA BAIXA SUBESTAÇÃO' }] },
+    };
+    const obj = {
+      disciplina: 'media_tensao', tipo: 'subestacao_abrigada', titulo: 'SE dobrada', confianca: 0.9, evidencias: [],
+      vistas: [{ id: 'v', caixa: [195, -2, 210, 12], tipo: 'planta', titulo: 'Planta baixa', papel: 'principal', escala: { fator: 0.5, fonte: 'cotas' } }],
+      camadasDeContexto: [],
+      componentes: [
+        // a mesma peça achada pelo balão e pelo bloco: quantidade 1, fica o bloco
+        { id: 't', tipo: 'transformador', descricao: 'Transformador 150 kVA', quantidade: 1, unidade: 'un', especificacao: '150 kVA',
+          posicoes: [{ x: 202, y: 8, vista: 'v', origem: 'balao' }, { x: 203, y: 9, vista: 'v', origem: 'bloco' }] },
+        // a porta da relação de materiais e a porta lida no desenho são a mesma
+        { id: 'p', tipo: 'porta', descricao: 'Porta metálica de 2 folhas', quantidade: 1, unidade: 'un', especificacao: '2,10x1,20 m', posicoes: [{ x: 200, y: 3, vista: 'v' }] },
+      ],
+      dados: {},
+      abrigo: { vista: 'v', contorno: ret(...AB2), origem: [200, 0], escala: { fator: 0.5, fonte: 'cotas' }, largura_m: 2.5, comprimento_m: 5.25, area_m2: 13.13, compartimentos: [],
+        portas: [{ x: 200, y: 3, largura_m: 1.2, folhas: 2 }] },
+      avisos: [],
+    };
+    const c = montarCenasPorPlanta(arq2, { dispositivosReais: [], objetivo: obj, titulo: 'SE' }).cenas[0];
+    const nd = (x, y) => [x + c.origem[0], y + c.origem[1]];
+    // paredes no contorno em metros: 200..202,5 × 0..5,25
+    for (const w of c.paredes) for (const [x, y] of [nd(w[0], w[1]), nd(w[2], w[3])]) assert.ok(x >= 199.8 && x <= 202.7 && y >= -0.2 && y <= 5.45, `parede fora da escala real: ${x},${y}`);
+    assert.strictEqual(c.portas.length, 1, `${c.portas.length} portas`);
+    assert.ok(c.portas[0].dupla, 'porta de 2 folhas');
+    assert.ok(perto(c.portas[0].largura, 1.2));
+    const [py] = [nd(...c.portas[0].meio)[1]];
+    assert.ok(perto(py, 1.5, 0.05), `porta em y=${py} (3 unidades × 0,5)`);
+    const tr = c.dispositivos.find(t => t.componente === 't');
+    assert.strictEqual(tr.itens.length, 1, 'transformador duplicado (balão + bloco)');
+    const [tx, ty] = nd(tr.itens[0][0], tr.itens[0][1]);
+    assert.ok(perto(tx, 201.5) && perto(ty, 4.5), `trafo em ${tx},${ty} (o bloco, na escala)`);
+  });
+}
+
+// ficha do equipamento no visualizador (o ESM do 3D, carregado aqui sem o navegador)
+{
+  const avisoOriginal = process.emitWarning;
+  process.emitWarning = () => {};
+  import('./visualizador3d/interativo.js').then(({ htmlFichaComponente }) => {
+    process.emitWarning = avisoOriginal;
+    caso('OBJ-10 ficha: item, quantidade, especificação, fonte, [CONFERIR] e posição a conferir; texto escapado', () => {
+      const h = htmlFichaComponente({ id: 'c1', descricao: 'Transformador <b>150</b>', item: 11, quantidade: 1, unidade: 'un', especificacao: { kva: 150, tensao_kv: 13.8 }, especificacaoTexto: '150 kVA, 13.800 V', fontes: ['relacao', 'balao', 'layer: SUBEST'], conferir: true, posicao: 'patio', posicaoAConferir: true, dimensoes_m: [1.3, 0.9, 1.4] });
+      for (const t of ['nº 11', '1 un', '150 kVA, 13.800 V', 'Potência</th><td>150 kVA', 'relação de materiais · balão na planta · layer do desenho: SUBEST', '[CONFERIR]', 'a conferir', 'ilustrativas', 'Transformador &lt;b&gt;150']) assert.ok(h.includes(t), `${t} — ${h}`);
+      assert.ok(!h.includes('<b>150</b>'));
+      const sem = htmlFichaComponente({ id: 'c2', descricao: 'Tapete', posicao: 'desenho', posicaoAConferir: false });
+      assert.ok(!/CONFERIR|a conferir|Item da relação/.test(sem), sem);
+    });
+  }).catch(e => { process.emitWarning = avisoOriginal; console.error(`  FALHOU ficha do equipamento: ${e.message}`); process.exitCode = 1; });
+}
+
 console.log(`3d: ${ok} casos ok`);

@@ -20,11 +20,14 @@ import {
   WebGLRenderer, Scene, Color, PerspectiveCamera, HemisphereLight, DirectionalLight, AmbientLight,
   BufferGeometry, Float32BufferAttribute, Mesh, MeshStandardMaterial, MeshBasicMaterial, LineBasicMaterial, LineSegments,
   Shape, ShapeGeometry, ExtrudeGeometry, PlaneGeometry, BoxGeometry, CylinderGeometry, SphereGeometry,
-  InstancedMesh, Object3D, Vector3, Vector2, Raycaster, Group, DoubleSide, SRGBColorSpace, MathUtils, PointLight,
+  InstancedMesh, Object3D, Vector3, Vector2, Quaternion, Raycaster, Group, DoubleSide, SRGBColorSpace, MathUtils, PointLight,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { iniciarQuadro } from './quadro.js';
-import { simuladorDaCena, htmlFichaPonto, ligarBotoes, criarAviso, cenaQuadroEsquematica, htmlCenas } from './interativo.js';
+import { simuladorDaCena, htmlFichaPonto, htmlFichaComponente, ligarBotoes, criarAviso, cenaQuadroEsquematica, htmlCenas,
+  criarInteracao, redeDaSubestacao, redeDeSinal, ligarAoSimulador, PAPEL_DO_SIMBOLO, htmlEquipamento, ligarBotoesRede } from './interativo.js';
+// vista interna do rack (cabeamento/CFTV) e da central de incêndio (09/11/2026)
+import { dadosDoRack, cenaDoRack, dadosDaCentral, cenaDaCentral } from '../../instalacao/paineis.js';
 import { criarMapa } from './mapaIluminancia.js';
 import { iniciarEdicao } from './edicao.js';
 
@@ -335,6 +338,11 @@ const bx = (w, h, d, x = 0, y = 0, z = 0) => new BoxGeometry(w, h, d).translate(
 // poucos lados: milhares de peças por tipo, e de perto 14 lados já parecem redondos
 const ci = (r, d, x = 0, y = 0, z = 0, seg = 14) => new CylinderGeometry(r, r, d, seg).rotateX(Math.PI / 2).translate(x, y, z + d / 2);
 const semi = (r, x = 0, y = 0, z = 0) => new SphereGeometry(r, 14, 6, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(Math.PI / 2).translate(x, y, z);
+// (equipamentos do objetivo) cilindro em pé no eixo y local, de y a y + L, a z da parede;
+// tronco de cone no eixo z (r0 embaixo, r1 em cima); tubo deitado no eixo x, a z do piso
+const cy = (r, L, x = 0, y = 0, z = 0, seg = 12) => new CylinderGeometry(r, r, L, seg).translate(x, y + L / 2, z);
+const cone = (r0, r1, L, x = 0, y = 0, z = 0, seg = 12) => new CylinderGeometry(r1, r0, L, seg).rotateX(Math.PI / 2).translate(x, y, z + L / 2);
+const tuboX = (r, L, z, x = 0, seg = 10) => new CylinderGeometry(r, r, L, seg).rotateZ(Math.PI / 2).translate(x, 0, z);
 const ESC = 0.12; // furos, telas, lentes
 const FORMAS = {
   // placa 4×2 com o rebaixo redondo e os 2 furos (NBR 14136)
@@ -377,7 +385,100 @@ const FORMAS = {
     [bx(w * 0.55, 0.05, 0.05, w * 0.27, 0, d - 0.3), 0.55], [bx(0.42, h, 0.12, w * 0.55, 0, d - 0.42), 1.0], [bx(0.36, h * 0.8, 0.004, w * 0.55, 0, d - 0.424), 1.8]]),
   // caixa de passagem no piso: corpo e tampa
   'caixa-piso': (w, h, d) => juntar([[bx(w, h, d), 0.6], [bx(w * 0.9, h * 0.9, 0.004, 0, 0, d), 1.1]]),
+
+  // ── Equipamentos do objetivo do projeto (subestação e afins, 09/11/2026: ../equipamentos3d.js) ──
+  // Dimensões típicas e ilustrativas. No PISO: w = largura (x), h = profundidade (y), d = ALTURA (z).
+  // Na PAREDE: w = largura, h = altura, d = profundidade (como as tomadas e os quadros).
+  // transformador a óleo: base, tanque, tampa, radiadores dos dois lados e buchas de AT e BT
+  transformador: (w, h, d) => {
+    const tw = w * 0.55, tp = h * 0.78, th = d * 0.6, z0 = 0.08;
+    const p = [[bx(tw * 1.06, tp * 1.06, z0), 0.45], [bx(tw, tp, th, 0, 0, z0), 1], [bx(tw * 1.05, tp * 1.05, 0.04, 0, 0, z0 + th), 0.82]];
+    for (const s of [-1, 1]) for (let k = 0; k < 6; k++) p.push([bx((w - tw) / 2 * 0.9, 0.025, th * 0.82, s * (tw / 2 + (w - tw) / 4), -tp * 0.4 + (k * tp * 0.8) / 5, z0 + th * 0.09), 0.9]);
+    const topo = z0 + th + 0.04;
+    for (const x of [-tw * 0.3, 0, tw * 0.3]) p.push([ci(0.045, d * 0.24, x, -tp * 0.22, topo, 10), 0.5], [ci(0.07, 0.02, x, -tp * 0.22, topo + d * 0.08, 10), 0.5], [ci(0.07, 0.02, x, -tp * 0.22, topo + d * 0.15, 10), 0.5]);
+    for (const x of [-tw * 0.36, -tw * 0.12, tw * 0.12, tw * 0.36]) p.push([ci(0.03, d * 0.12, x, tp * 0.25, topo, 8), 0.55]);
+    return juntar(p);
+  },
+  // chave seccionadora tripolar de parede: travessas, isoladores, lâminas e o eixo de manobra
+  seccionadora: (w, h, d) => {
+    const p = [[bx(w, 0.06, 0.06, 0, h * 0.4), 0.7], [bx(w, 0.06, 0.06, 0, -h * 0.4), 0.7], [bx(w * 0.95, 0.03, 0.03, 0, -h * 0.47, 0.03), 0.8]];
+    for (const x of [-w / 3, 0, w / 3]) p.push([cy(0.035, h * 0.18, x, h * 0.22, d * 0.45), 0.55], [cy(0.035, h * 0.18, x, -h * 0.4, d * 0.45), 0.55], [bx(0.035, 0.035, d * 0.45, x, h * 0.31, 0.06), 0.6], [bx(0.035, 0.035, d * 0.45, x, -h * 0.31, 0.06), 0.6], [bx(0.03, h * 0.62, 0.02, x, 0, d * 0.82), 1.25]);
+    return juntar(p);
+  },
+  // mufla (terminação de MT): suporte e três corpos com saias
+  mufla: (w, h, d) => {
+    const p = [[bx(w, 0.06, 0.08, 0, -h * 0.32), 0.7]];
+    for (const x of [-w / 3, 0, w / 3]) {
+      p.push([cy(0.035, h * 0.72, x, -h * 0.35, d * 0.6), 1], [cy(0.012, h * 0.1, x, h * 0.37, d * 0.6, 6), 1.4]);
+      for (const y of [h * 0.05, h * 0.17, h * 0.29]) p.push([cy(0.06, 0.012, x, y, d * 0.6), 0.9]);
+    }
+    return juntar(p);
+  },
+  // para-raios: suporte e três corpos de saias
+  'para-raios': (w, h, d) => {
+    const p = [[bx(w, 0.05, 0.06, 0, -h * 0.45), 0.7]];
+    for (const x of [-w / 3, 0, w / 3]) {
+      p.push([cy(0.035, h * 0.8, x, -h * 0.42, d * 0.6), 1]);
+      for (const y of [-h * 0.25, -h * 0.08, h * 0.09, h * 0.26]) p.push([cy(0.06, 0.014, x, y, d * 0.6), 0.9]);
+    }
+    return juntar(p);
+  },
+  // chave fusível: suporte, isolador e o porta-fusível
+  'chave-fusivel': (w, h, d) => juntar([[bx(0.06, 0.08, d * 0.4), 0.6], [cy(0.035, h * 0.6, 0, -h * 0.3, d * 0.45), 1], [bx(0.03, h * 0.85, 0.03, w * 0.3, 0, d * 0.8), 0.7], [bx(0.08, 0.04, 0.05, w * 0.3, h * 0.43, d * 0.7), 1.3], [bx(0.08, 0.04, 0.05, w * 0.3, -h * 0.43, d * 0.7), 1.3]]),
+  // poste de concreto (d = altura) com a cruzeta e os isoladores no topo; w = comprimento da cruzeta
+  'poste-mt': (w, h, d) => juntar([[bx(0.5, 0.5, 0.06), 0.6], [cone(0.17, 0.09, d - 0.06, 0, 0, 0.06), 1], [bx(w, 0.1, 0.1, 0, 0, d - 0.45), 0.72],
+    ...[-w * 0.4, 0, w * 0.4].map(x => [ci(0.04, 0.14, x, 0, d - 0.35, 8), 0.5])]),
+  cruzeta: (w, h, d) => juntar([[bx(w, h, d), 1], [bx(0.06, h * 1.6, d * 0.6), 0.6]]),
+  isolador: (w, h, d) => juntar([[cy(w * 0.28, h * 0.8, 0, -h * 0.4, d / 2), 1], [cy(w * 0.5, 0.02, 0, -h * 0.1, d / 2), 0.9], [cy(w * 0.42, 0.02, 0, h * 0.12, d / 2), 0.9]]),
+  // cabo de MT: bobina (lote) no piso
+  cabo: (w, h, d) => juntar([[ci(w * 0.5, d * 0.1), 0.75], [ci(w * 0.36, d * 0.8, 0, 0, d * 0.1), 1], [ci(w * 0.5, d * 0.1, 0, 0, d * 0.9), 0.75]]),
+  // pedaço de eletroduto deitado no piso, com as luvas
+  'eletroduto-peca': (w, h, d) => juntar([[tuboX(h * 0.4, w, d * 0.45), 1], [tuboX(h * 0.5, 0.06, d * 0.45, -w / 2 + 0.03), 0.7], [tuboX(h * 0.5, 0.06, d * 0.45, w / 2 - 0.03), 0.7]]),
+  // poço de passagem circular: anel e tampa
+  poco: (w, h, d) => juntar([[ci(w * 0.5, d, 0, 0, 0, 20), 0.85], [ci(w * 0.42, 0.012, 0, 0, d, 20), 0.55], [bx(w * 0.2, 0.03, 0.01, 0, 0, d + 0.012), ESC]]),
+  // disjuntor de MT (sobre carrinho): base, corpo, três polos e o painel de comando
+  'disjuntor-mt': (w, h, d) => {
+    const p = [[bx(w, h, d * 0.18), 0.55], [bx(w * 0.9, h * 0.6, d * 0.52, 0, -h * 0.12, d * 0.18), 1], [bx(w * 0.5, 0.01, d * 0.2, 0, -h * 0.42 - 0.005, d * 0.3), ESC]];
+    for (const x of [-w * 0.28, 0, w * 0.28]) p.push([ci(0.06, d * 0.3, x, h * 0.12, d * 0.7, 10), 0.7]);
+    return juntar(p);
+  },
+  // cubículo (painel de piso): armário, porta com visor e o puxador
+  cubiculo: (w, h, d) => juntar([[bx(w, h, d), 1], [bx(w * 0.88, 0.012, d * 0.8, 0, -h / 2 - 0.006, d * 0.08), 1.1], [bx(w * 0.3, 0.014, d * 0.12, 0, -h / 2 - 0.007, d * 0.6), 0.3], [bx(0.03, 0.03, 0.12, w * 0.36, -h / 2 - 0.02, d * 0.45), ESC]]),
+  // haste de aterramento: tampa da caixa de inspeção, ponta da haste e o conector
+  haste: (w, h, d) => juntar([[ci(w * 0.5, 0.04, 0, 0, 0, 16), 0.6], [ci(0.009, d, 0, 0, 0, 6), 1], [bx(0.045, 0.045, 0.045, 0, 0, d * 0.55), 0.75]]),
+  cordoalha: (w, h, d) => juntar([[tuboX(h / 2, w, d / 2), 1]]),
+  tapete: (w, h, d) => juntar([[bx(w, h, d), 1], [bx(w * 0.92, h * 0.92, 0.002, 0, 0, d), 1.25]]),
+  // tela de proteção (painel em pé): montantes, quadro e a malha
+  tela: (w, h, d) => {
+    const p = [[ci(0.025, d, -w / 2, 0, 0, 8), 0.8], [ci(0.025, d, w / 2, 0, 0, 8), 0.8], [bx(w, 0.03, 0.03, 0, 0, d - 0.03), 0.8], [bx(w, 0.03, 0.03, 0, 0, 0.05), 0.8], [bx(w, 0.004, d * 0.9, 0, 0, 0.06), 1.15]];
+    for (let k = 1, n = Math.max(2, Math.round(w / 0.15)); k < n; k++) p.push([bx(0.006, 0.012, d * 0.9, -w / 2 + (k * w) / n, 0, 0.06), 0.6]);
+    return juntar(p);
+  },
+  // canaleta no piso: caixa e grelha
+  canaleta: (w, h, d) => {
+    const p = [[bx(w, h, d), 0.55]];
+    for (let k = 0; k < 6; k++) p.push([bx(w, 0.012, 0.006, 0, -h * 0.42 + (k * h * 0.84) / 5, d), 1.2]);
+    return juntar(p);
+  },
+  rele: (w, h, d) => juntar([[bx(w, h, d), 1], [bx(w * 0.62, h * 0.24, 0.004, 0, h * 0.2, d), ESC], [bx(w * 0.12, h * 0.06, 0.006, -w * 0.2, -h * 0.15, d), 1.6], [bx(w * 0.12, h * 0.06, 0.006, w * 0.2, -h * 0.15, d), 1.6]]),
+  'tc-tp': (w, h, d) => juntar([[bx(w, h * 0.2, d, 0, -h * 0.4), 0.7], [cy(w * 0.42, h * 0.62, 0, -h * 0.3, d / 2), 1], [bx(w * 0.6, 0.04, 0.04, 0, h * 0.36, d / 2), 1.3]]),
+  // caixa de medição: caixa, visor do medidor e o lacre
+  medicao: (w, h, d) => juntar([[bx(w, h, d), 1], [bx(w * 0.5, h * 0.3, 0.004, 0, h * 0.15, d), 0.3], [bx(0.03, 0.08, 0.012, w * 0.4, 0, d), 0.6]]),
+  barramento: (w, h, d) => juntar([[bx(0.04, h * 0.9, d * 0.6, -w * 0.45), 0.5], [bx(0.04, h * 0.9, d * 0.6, w * 0.45), 0.5],
+    ...[-h * 0.3, 0, h * 0.3].map(y => [bx(w, 0.05, 0.012, 0, y, d * 0.6), 1])]),
+  // extintor: suporte, cilindro, válvula, alça e mangueira
+  extintor: (w, h, d) => juntar([[bx(0.07, 0.12, 0.02), 0.5], [cy(w * 0.45, h * 0.78, 0, -h / 2, d / 2), 1], [cy(0.02, h * 0.08, 0, h * 0.28, d / 2, 8), 0.4], [bx(0.1, 0.015, 0.025, 0, h * 0.38, d / 2), 0.4], [bx(0.016, h * 0.42, 0.016, w * 0.45, -h * 0.1, d / 2), 0.25]]),
+  // placa de advertência: placa com o símbolo (raio)
+  placa: (w, h, d) => juntar([[bx(w, h, d), 1], [bx(w * 0.86, h * 0.82, 0.002, 0, 0, d), 1.15], [bx(w * 0.12, h * 0.5, 0.003, 0, 0, d + 0.002), ESC]]),
+  // veneziana: quadro e aletas
+  veneziana: (w, h, d) => {
+    const p = [[bx(w, h, d * 0.4), 0.75]];
+    for (let k = 0; k < 6; k++) p.push([bx(w * 0.94, h / 11, d * 0.6, 0, -h / 2 + ((k + 0.5) * h) / 6, d * 0.4), 1.1]);
+    return juntar(p);
+  },
 };
+// equipamentos do piso: o eixo z local é o vertical (etiqueta acima de d)
+const PISO_ALTURA_Z = new Set(['poste', 'transformador', 'poste-mt', 'cabo', 'eletroduto-peca', 'poco', 'disjuntor-mt', 'cubiculo', 'haste', 'cordoalha', 'tapete', 'tela', 'canaleta']);
 // cenas antigas (versão 1) não trazem tam/montagem
 const TAM_PADRAO = { tomada: [0.1, 0.16, 0.03], interruptor: [0.1, 0.16, 0.03], quadro: [0.6, 0.8, 0.15], rack: [0.6, 0.6, 0.45], luminaria: [0.62, 0.62, 0.06], 'ponto-luz': [0.26, 0.26, 0.1], detector: [0.16, 0.16, 0.07], sensor: [0.13, 0.13, 0.06], camera: [0.11, 0.11, 0.32], 'sensor-canto': [0.08, 0.13, 0.07], catraca: [0.3, 1, 0.8], barra: [0.3, 0.06, 0.05] };
 const NO_TETO = new Set(['luminaria', 'ponto-luz', 'detector', 'sensor', 'ap', 'dome']);
@@ -418,6 +519,8 @@ function escalaDe(tamMax, d) { return Math.max(UD.uBase.value, Math.min(UD.uMin.
 const malhasDispositivos = [];
 const o3 = new Object3D();
 const eixoZ = new Vector3(0, 0, 1);
+const eixoY = new Vector3(0, 1, 0);
+const qGiro = new Quaternion();
 const vTmp = new Vector3();
 
 function posicionarInstancias(t, mesh) {
@@ -428,6 +531,8 @@ function posicionarInstancias(t, mesh) {
       o3.quaternion.setFromUnitVectors(eixoZ, vTmp.set(0, -1, 0)); // face para baixo, fundo no forro
     } else if (t.montagem === 'piso') {
       if (t.forma !== 'catraca') o3.quaternion.setFromUnitVectors(eixoZ, vTmp.set(0, 1, 0));
+      // equipamento do objetivo do projeto: o eixo x da peça na direção (nx, ny) da planta (paralela à parede)
+      if ((nx || ny) && t.forma !== 'catraca') o3.quaternion.premultiply(qGiro.setFromAxisAngle(eixoY, Math.atan2(ny, nx)));
     } else if (nx || ny) {
       vTmp.set(nx, 0, -ny).normalize();
       if (t.forma === 'camera') vTmp.y = -0.45; else if (t.forma === 'sensor-canto') vTmp.y = -0.35; // inclinada para baixo
@@ -603,6 +708,77 @@ function atualizarLuzes() {
   pedirDesenho();
 }
 
+// ── INTERAÇÃO GENÉRICA (09/11/2026): subestação, incêndio, alarme, CFTV, acesso ──
+// O motor (../../instalacao/interacao.js) recebe os equipamentos da cena: os componentes do
+// objetivo do projeto (chave fusível, seccionadora, disjuntor de MT, relé, trafo, QGBT) e os
+// dispositivos com papel (acionador, detector, avisador, sensor, sirene, câmera, fechadura…).
+// Clicar abre a ficha com as manobras; o estado muda a cor da peça (energizado, aberto,
+// disparado, alarme) e, ligado ao simulador de BT, a seccionadora aberta apaga o QGBT e os
+// circuitos. Ligações não declaradas no projeto ficam marcadas como inferidas [CONFERIR].
+let rede = null;
+const noDoItem = new Map();   // item da cena → [ids de equipamento]
+const itensDoNo = new Map();  // id de equipamento → [{ t, i }]
+{
+  const se = redeDaSubestacao(Array.isArray(CENA.componentes) ? CENA.componentes : []);
+  const disp = [];
+  CENA.dispositivos.forEach((t) => {
+    if (!PAPEL_DO_SIMBOLO[t.simbolo]) return;
+    t.itens.forEach((it, i) => disp.push({ id: it[6] ? String(it[6]) : `${t.simbolo}#${i + 1}`, simbolo: t.simbolo, x: it[0], y: it[1], rotulo: String(t.rotulo) + ' ' + String(it[6] || i + 1), _t: t, _i: i })); // (texto: escapado na ficha)
+  });
+  // o rack só é "switch PoE" quando há câmera na cena
+  const temCam = disp.some(d => d.simbolo === 'HM-CFTV-CAMERA');
+  const dispOk = disp.filter(d => d.simbolo !== 'HM-CAB-RACK' || temCam);
+  const si = redeDeSinal(dispOk);
+  const eqs = [...se.equipamentos, ...si.equipamentos];
+  if (eqs.length) {
+    rede = criarInteracao(eqs);
+    const vincular = (id, t, i) => {
+      const it = t.itens[i];
+      if (!noDoItem.has(it)) noDoItem.set(it, []);
+      if (!noDoItem.get(it).includes(id)) noDoItem.get(it).push(id);
+      if (!itensDoNo.has(id)) itensDoNo.set(id, []);
+      itensDoNo.get(id).push({ t, i });
+    };
+    for (const [eqId, compId] of se.vinculos) for (const t of CENA.dispositivos.filter(x => x.componente != null && String(x.componente) === compId)) t.itens.forEach((_, i) => vincular(eqId, t, i));
+    for (const [eqId, dispId] of si.vinculos) { const d = dispOk.find(x => x.id === dispId); if (d) vincular(eqId, d._t, d._i); }
+    // estado da rede na aba (troca de planta e volta do painel com o mesmo estado)
+    const chaveRede = `hm3d-rede:${(CENA.titulo || '').slice(0, 40)}|${eqs.length}`;
+    try { const s = window.sessionStorage.getItem(chaveRede); if (s) rede.importar(JSON.parse(s)); } catch (e) { /* sem armazenamento */ }
+    rede.assinar(() => { try { window.sessionStorage.setItem(chaveRede, JSON.stringify(rede.exportar())); } catch (e) { /* idem */ } });
+    if (sim) ligarAoSimulador(rede, sim);
+    for (const t of new Set([...itensDoNo.values()].flat().map(x => x.t))) {
+      if (!t.malha) continue;
+      for (let i = 0; i < t.itens.length; i++) t.malha.setColorAt(i, BRANCO);
+      t.malha.instanceColor.needsUpdate = true;
+    }
+  }
+}
+// cor por aparência (multiplica a cor da peça): aberto = verde (como a bandeirola "O" do
+// disjuntor), falha/disparo = âmbar, alarme = vermelho, desenergizado = escuro
+const COR_APARENCIA = { energizado: [1, 1, 1], normal: [1, 1, 1], apagado: [0.22, 0.22, 0.26], aberto: [0.45, 1.45, 0.55], falha: [1.75, 1.1, 0.2], alarme: [1.95, 0.32, 0.28], alerta: [1.65, 0.95, 0.3], armado: [0.6, 0.95, 1.7] };
+// a peça com mais de um equipamento (o QGBT e o geral de BT dentro dele) mostra o principal
+const noPrincipal = (it, ids) => ids.find(id => !String(id).includes(':')) || ids[0];
+function aplicarEstadoRede() {
+  if (!rede) return;
+  pintarRede();
+  atualizarFicha();
+  pedirDesenho(true);
+}
+function pintarRede() {
+  const malhas = new Set();
+  for (const [it, ids] of noDoItem) {
+    const id = noPrincipal(it, ids);
+    for (const { t, i } of itensDoNo.get(id) || []) {
+      if (t.itens[i] !== it || !t.malha) continue;
+      const c = COR_APARENCIA[rede.aparencia(id)] || COR_APARENCIA.normal;
+      t.malha.setColorAt(i, corSim.setRGB(c[0], c[1], c[2]));
+      malhas.add(t.malha);
+    }
+  }
+  for (const m of malhas) m.instanceColor.needsUpdate = true;
+}
+if (rede) { rede.assinar(aplicarEstadoRede); pintarRede(); }
+
 // ── Infraestrutura (eletrocalhas, eletrodutos, leitos, perfilados, fiação) ───
 // Um InstancedMesh por grupo (caixa unitária ou tubo de 8 lados esticado em
 // cada segmento) + uma linha fina no mesmo eixo, que continua visível de longe.
@@ -654,13 +830,53 @@ for (const g of INFRA) {
     mesh.frustumCulled = false;
     mesh.renderOrder = 1;
     item.add(mesh);
+    g.mats = [mesh.material];
   }
   // descidas até as peças de parede: tubo vertical (da eletrocalha desce eletroduto de 25 mm)
   const desc = g.descidas || [];
   const nd = Math.floor(desc.length / 4);
   const dd = g.forma === 'tubo' ? sw : 0.025;
+  // COMPONENTES da infraestrutura na cor do tipo (09/11/2026): curvas e tês nos vértices do
+  // traçado (caixa de passagem onde 3+ trechos se encontram) e o condulete no alto de cada descida
+  if (g.forma !== 'linha') {
+    const pontas = new Map();
+    const chave = (x, y) => `${Math.round(x * 50)}|${Math.round(y * 50)}`;
+    for (let i = 0; i < n && i < 20000; i++) {
+      const x1 = seg[i * 4], y1 = seg[i * 4 + 1], x2 = seg[i * 4 + 2], y2 = seg[i * 4 + 3];
+      const L = Math.hypot(x2 - x1, y2 - y1) || 1;
+      for (const [x, y, dx, dy] of [[x1, y1, (x2 - x1) / L, (y2 - y1) / L], [x2, y2, (x1 - x2) / L, (y1 - y2) / L]]) {
+        const k = chave(x, y);
+        if (!pontas.has(k)) pontas.set(k, { x, y, d: [] });
+        pontas.get(k).d.push([dx, dy]);
+      }
+    }
+    const curvas = [], caixasP = [];
+    for (const p of pontas.values()) {
+      if (p.d.length >= 3) caixasP.push([p.x, g.z, -p.y]);
+      else if (p.d.length === 2 && p.d[0][0] * p.d[1][0] + p.d[0][1] * p.d[1][1] > -0.95) curvas.push([p.x, g.z, -p.y]);
+    }
+    const conduletes = [];
+    for (let i = 0; i < nd; i++) { const [x, y, z0, z1] = desc.slice(i * 4, i * 4 + 4); conduletes.push([x, Math.abs(z0 - g.z) < Math.abs(z1 - g.z) ? z0 : z1, -y]); }
+    const matComp = new MeshStandardMaterial({ color: g.cor, emissive: g.cor, emissiveIntensity: 0.18, roughness: 0.5, metalness: 0.3, ...materialSugerido(g.sugerido) });
+    g.mats = [...(g.mats || []), matComp];
+    const pecasInfra = (lista, geo, s) => {
+      const m = Math.min(lista.length, 6000);
+      if (!m) return;
+      const im = new InstancedMesh(geo, matComp, m);
+      for (let i = 0; i < m; i++) { o3.position.set(...lista[i]); o3.quaternion.identity(); o3.rotation.set(0, 0, 0); o3.scale.set(s, s, s); o3.updateMatrix(); im.setMatrixAt(i, o3.matrix); }
+      im.instanceMatrix.needsUpdate = true;
+      im.frustumCulled = false;
+      item.add(im);
+    };
+    const base = Math.max(sw, sh);
+    pecasInfra(curvas, new SphereGeometry(0.5, 10, 6), base * 1.3);
+    pecasInfra(caixasP, new BoxGeometry(1, 1, 1), Math.max(base * 2.2, 0.08));
+    pecasInfra(conduletes, new BoxGeometry(1, 1, 1), Math.max(dd * 2.4, 0.06));
+    g.componentes = { curvas: curvas.length, caixas: caixasP.length, conduletes: conduletes.length };
+  }
   if (nd && g.forma !== 'linha') {
     const md = new InstancedMesh(new CylinderGeometry(0.5, 0.5, 1, 8), new MeshStandardMaterial({ color: g.cor, emissive: g.cor, emissiveIntensity: 0.18, roughness: 0.45, metalness: 0.35, ...materialSugerido(g.sugerido) }), nd);
+    g.mats = [...(g.mats || []), md.material];
     for (let i = 0; i < nd; i++) {
       const [x, y, z0, z1] = desc.slice(i * 4, i * 4 + 4);
       o3.position.set(x, (z0 + z1) / 2, -y);
@@ -680,6 +896,36 @@ for (const g of INFRA) {
   const gl = new BufferGeometry();
   gl.setAttribute('position', new Float32BufferAttribute(pos, 3));
   item.add(new LineSegments(gl, new LineBasicMaterial({ color: g.cor, transparent: true, opacity: g.forma === 'linha' ? 0.95 : 0.8 })));
+}
+// ── Legenda de cores da infraestrutura (09/11/2026): só os tipos presentes ──
+// (a cena traz pronta — cena.legendaInfra, ../coresInfra.js; cena antiga: monta pelo grupo)
+const ROT_TIPO_INFRA = { eletroduto: 'Eletroduto', eletrocalha: 'Eletrocalha', leito: 'Leito para cabos', perfilado: 'Perfilado', fiacao: 'Fiação / cabos', duto: 'Duto de ar' };
+const tipoDaInfra = (g) => g.tipoInfra || (g.sugerido ? 'sugerido' : g.tipo || 'eletroduto');
+const LEG_INFRA = Array.isArray(CENA.legendaInfra) && CENA.legendaInfra.length ? CENA.legendaInfra : (() => {
+  const por = new Map();
+  for (const g of INFRA) {
+    const k = tipoDaInfra(g);
+    if (!por.has(k)) por.set(k, { tipo: k, rotulo: g.sugerido ? 'Caminho sugerido pelo sistema' : ROT_TIPO_INFRA[k] || k, cor: g.cor, cor_fonte: 'padrao', fonte_texto: 'cor da cena', medidas: [], materiais: [], comprimento_m: 0 });
+    const e = por.get(k);
+    e.comprimento_m = Math.round((e.comprimento_m + (g.comprimento_m || 0)) * 10) / 10;
+    if (g.medida && !e.medidas.includes(g.medida)) e.medidas.push(g.medida);
+  }
+  return [...por.values()];
+})();
+const tipoVisivel = {};
+let tipoDestacado = null;
+function aplicarInfraTipos() {
+  for (const g of INFRA) {
+    if (!g.objeto) continue;
+    const k = tipoDaInfra(g);
+    g.objeto.visible = tipoVisivel[k] !== false && (!g.sugerido || estado.sugerido);
+    // destaque: o tipo escolhido brilha, os outros ficam apagados
+    for (const m of g.mats || []) {
+      m.emissiveIntensity = !tipoDestacado ? 0.18 : k === tipoDestacado ? 0.85 : 0.02;
+      m.color.set(!tipoDestacado || k === tipoDestacado ? g.cor : '#3a3d42');
+    }
+  }
+  pedirDesenho(true);
 }
 // "Eletroduto PVC rígido Ø 25 mm (3/4")" e de onde veio a medida
 const nomeInfra = (g) => [g.rotulo, g.material, g.medida].filter(Boolean).join(' ');
@@ -762,7 +1008,7 @@ function atualizarEtiquetasPontos() {
       // etiqueta acima da peça (quadro grande não fica coberto); no teto, abaixo
       const s = escalaDe(t.tamMax, d);
       const embaixo = t.montagem === 'teto';
-      vTmp.y += embaixo ? -t.tam[2] * s : t.montagem === 'piso' ? (t.forma === 'poste' ? t.tam[2] : t.tam[1]) * s : (t.tam[1] / 2) * s;
+      vTmp.y += embaixo ? -t.tam[2] * s : t.montagem === 'piso' ? (PISO_ALTURA_Z.has(t.forma) ? t.tam[2] : t.tam[1]) * s : (t.tam[1] / 2) * s;
       vTmp.project(camera);
       if (vTmp.z > 1 || vTmp.z < -1) continue;
       const x = (vTmp.x + 1) / 2 * w, y = (1 - vTmp.y) / 2 * h;
@@ -1056,7 +1302,7 @@ alternar('#b-giro', 'giro', () => { controles.autoRotate = estado.giro && modo =
 alternar('#b-grandes', 'grandes', aplicarGrandes);
 alternar('#b-infra', 'infra', () => { gInfra.visible = estado.infra; });
 if (!INFRA.length) $('#b-infra')?.remove();
-alternar('#b-sugerido', 'sugerido', () => { for (const g of INFRA) if (g.sugerido && g.objeto) g.objeto.visible = estado.sugerido; });
+alternar('#b-sugerido', 'sugerido', aplicarInfraTipos);
 if (!INFRA.some(g => g.sugerido)) $('#b-sugerido')?.remove();
 grupo('campo').visible = estado.campo;
 $('#b-cima').addEventListener('click', vistaDeCima);
@@ -1110,7 +1356,7 @@ $('#numeros').innerHTML = [
   cartao(N.portas, 'un', 'portas'),
   N.janelas ? cartao(N.janelas, 'un', 'janelas / esquadrias') : '',
   N.pilares ? cartao(N.pilares, 'un', 'pilares') : '',
-  ...N.dispositivos.map(d => cartao(d.quantidade, 'un', esc(d.rotulo))),
+  ...N.dispositivos.map(d => cartao(typeof d.quantidade === 'number' && !Number.isInteger(d.quantidade) ? br(d.quantidade) : d.quantidade, esc(d.unidade || 'un'), esc(d.rotulo))),
   ...INFRA.map(g => cartao(br(g.comprimento_m, 1), 'm', `${esc(nomeInfra(g))} · ${esc(CENA.disciplinas[g.disciplina]?.rotulo || g.disciplina)}${g.sugerido ? ' (sugerido)' : g.estimado ? ' (estimado)' : ''}`)),
 ].join('');
 $('#lista-ambientes').innerHTML = `<table><thead><tr><th>Ambiente</th><th>m²</th><th>perím. m</th></tr></thead><tbody>${[...N.por_ambiente].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true })).map(a => `<tr><td><i style="background:${(CENA.tiposAmbiente[a.tipo] || CENA.tiposAmbiente.outros).cor}"></i>${esc(a.nome)}</td><td>${br(a.area_m2)}</td><td>${br(a.perimetro_m, 1)}</td></tr>`).join('')}</tbody></table>`;
@@ -1126,6 +1372,24 @@ legenda.querySelectorAll('.leg').forEach(b => b.addEventListener('click', () => 
   b.classList.toggle('ativo', o.visible);
   pedirDesenho(true);
 }));
+// painel "Infraestrutura — cores por tipo": cor, nome, medidas, metragem e a fonte da cor;
+// clicar liga/desliga o tipo, o ◎ destaca o tipo (os outros apagam)
+let legendaInfraEl = null;
+if (LEG_INFRA.length && INFRA.length) {
+  const sec = document.createElement('section');
+  sec.innerHTML = '<h2>Infraestrutura — cores por tipo</h2><div id="legenda-infra"></div>';
+  legenda.closest('section')?.after(sec);
+  sec.querySelector('h2').addEventListener('click', () => sec.classList.toggle('fechada'));
+  if (window.innerWidth <= 900) sec.classList.add('fechada');
+  legendaInfraEl = sec.querySelector('#legenda-infra');
+  const fonteCor = (l) => (l.cor_fonte === 'padrao' ? 'cor padrão do sistema' : `cor do projeto (${l.cor_fonte === 'legenda' ? 'legenda' : l.cor_fonte === 'entidade' ? 'traçado no DXF' : 'layer no DXF'})`);
+  legendaInfraEl.innerHTML = LEG_INFRA.map(l => `<div class="leg-infra ativo" data-tipo="${esc(l.tipo)}"><button class="leg ativo" data-tipo-vis="${esc(l.tipo)}" title="Mostrar/ocultar este tipo"><i class="f-infra" style="--cor:${esc(l.cor)}"></i><span>${esc(l.rotulo)}<small>${esc([(l.medidas || []).slice(0, 3).join(', '), (l.materiais || []).slice(0, 2).join(', ')].filter(Boolean).join(' · ') || 'medida não informada')} · ${esc(fonteCor(l))}${(l.outras_cores || []).length ? ` · +${l.outras_cores.length} cor(es) do projeto` : ''}</small></span><b>${br(l.comprimento_m, 1)} m</b></button><button class="dest" data-tipo-dest="${esc(l.tipo)}" title="Destacar este tipo">◎</button></div>`).join('');
+  legendaInfraEl.addEventListener('click', (ev) => {
+    const v = ev.target.closest('[data-tipo-vis]'), d = ev.target.closest('[data-tipo-dest]');
+    if (v) { const k = v.dataset.tipoVis; tipoVisivel[k] = tipoVisivel[k] === false; v.classList.toggle('ativo', tipoVisivel[k] !== false); aplicarInfraTipos(); }
+    if (d) { const k = d.dataset.tipoDest; tipoDestacado = tipoDestacado === k ? null : k; legendaInfraEl.querySelectorAll('.dest').forEach(b => b.classList.toggle('ativo', b.dataset.tipoDest === tipoDestacado)); aplicarInfraTipos(); }
+  });
+}
 
 // ── Ponto sob o mouse/dedo (na tela, com a mesma escala do shader) ──────────
 function escolherDispositivo(cx, cy) {
@@ -1179,7 +1443,8 @@ function mostrarDica(cx, cy) {
   const gi = p ? null : escolherInfra(cx, cy);
   if (!p && !gi) { dica.style.display = 'none'; tela.style.cursor = ''; return false; }
   if (gi) {
-    dica.innerHTML = `<b>${esc(nomeInfra(gi))}</b><br>${esc(CENA.disciplinas[gi.disciplina]?.rotulo || gi.disciplina)} · h = ${br(gi.z)} m · ${br(gi.comprimento_m, 1)} m${gi.descidas_m ? ` (${br(gi.descidas_m, 1)} m de descidas)` : ''}<br><small>${esc(origemInfra(gi))}${gi.layers?.length ? ` · layer ${esc(gi.layers.slice(0, 2).join(', '))}` : ''}</small>`;
+    const li = LEG_INFRA.find(l => l.tipo === tipoDaInfra(gi));
+    dica.innerHTML = `<b>${esc(nomeInfra(gi))}</b><br>${li ? `<i class="cor-infra" style="--cor:${esc(gi.cor)}"></i>${esc(li.rotulo)} · ` : ''}${esc(CENA.disciplinas[gi.disciplina]?.rotulo || gi.disciplina)} · h = ${br(gi.z)} m · ${br(gi.comprimento_m, 1)} m${gi.descidas_m ? ` (${br(gi.descidas_m, 1)} m de descidas)` : ''}${gi.componentes && (gi.componentes.curvas + gi.componentes.caixas + gi.componentes.conduletes) ? `<br>${gi.componentes.curvas} curva(s), ${gi.componentes.caixas} caixa(s) de passagem, ${gi.componentes.conduletes} condulete(s) — ilustrativos` : ''}<br><small>${esc(origemInfra(gi))}${gi.layers?.length ? ` · layer ${esc(gi.layers.slice(0, 2).join(', '))}` : ''}${gi.cor_fonte && gi.cor_fonte !== 'padrao' ? ' · cor do projeto' : ''}</small>`;
   } else {
     const { t, it } = p;
     const amb = CENA.ambientes[it[5]];
@@ -1191,7 +1456,13 @@ function mostrarDica(cx, cy) {
     const comando = x && sim.ponto(x.id)?.comando;
     const oQueFaz = !x ? '' : x.kind === 'quadro' ? 'clique para abrir o quadro' : x.kind === 'comando' ? 'clique para acionar' : x.kind === 'luz' && comando ? 'clique para acionar o comando' : 'clique para ver o circuito';
     const estadoSim = x ? `<br>${e ? `<b class="${e.energizado ? 'sim-on' : 'sim-off'}">${esc(e.texto)}</b><br>` : ''}<small>${oQueFaz}</small>` : '';
-    dica.innerHTML = `<b>${esc(t.rotulo)}</b>${it[6] ? ` · ${esc(it[6])}` : ''}<br>${amb ? `${esc(amb.nome)} · ` : ''}${esc(alturaDoItem(t, it))}${ligacao}${estadoSim}<br><small>${esc(CENA.disciplinas[t.disciplina]?.rotulo || '')}</small>`;
+    // equipamento do objetivo do projeto: item da relação, posição a conferir e o convite à ficha
+    const comp = !x && componenteDe(t);
+    const doComp = comp ? `${comp.item != null && comp.item !== '' ? `<br>item ${esc(comp.item)} da relação` : ''}${comp.posicaoAConferir ? '<br><b class="sim-off">posição a conferir</b>' : ''}<br><small>clique para ver a ficha${rede && noDoItem.get(it) ? ' e as manobras' : ''}</small>` : '';
+    // equipamento com interação: o estado agora
+    const idsRede = rede ? noDoItem.get(it) : null;
+    const doRede = idsRede?.length && !comp ? `<br><b class="${['apagado', 'aberto', 'falha', 'alarme'].includes(rede.aparencia(noPrincipal(it, idsRede))) ? 'sim-off' : 'sim-on'}">${esc(rede.textoEstado(noPrincipal(it, idsRede)))}</b><br><small>clique para operar</small>` : idsRede?.length ? `<br><b>${esc(rede.textoEstado(noPrincipal(it, idsRede)))}</b>` : '';
+    dica.innerHTML = `<b>${esc(t.rotulo)}</b>${it[6] && !comp ? ` · ${esc(it[6])}` : ''}<br>${amb ? `${esc(amb.nome)} · ` : ''}${esc(alturaDoItem(t, it))}${ligacao}${estadoSim}${doRede}${doComp}<br><small>${esc(CENA.disciplinas[t.disciplina]?.rotulo || '')}</small>`;
   }
   dica.style.display = 'block';
   dica.style.left = `${Math.max(8, Math.min(cx - r.left + 14, r.width - 290))}px`;
@@ -1275,7 +1546,8 @@ tela.addEventListener('pointerup', (ev) => {
   // modo de edição: o clique insere ou retira um componente
   if (edicao.ativo()) { edicao.clique(ev.clientX, ev.clientY); return; }
   // 3D interativo: clique (mouse) num ponto do modelo aciona e abre a ficha
-  if (ev.pointerType !== 'touch') { if (sim) clicarInterativo(ev.clientX, ev.clientY); return; }
+  // (equipamento do objetivo do projeto: o clique abre a ficha do componente)
+  if (ev.pointerType !== 'touch') { if (!(sim && clicarInterativo(ev.clientX, ev.clientY)) && !clicarRede(ev.clientX, ev.clientY)) clicarComponente(ev.clientX, ev.clientY); return; }
   const agora = ev.timeStamp; // hora do evento (o quadro pode atrasar o tratamento)
   if (ultimoToque && agora - ultimoToque.t < 450 && Math.hypot(ev.clientX - ultimoToque.x, ev.clientY - ultimoToque.y) < 30) {
     ultimoToque = null;
@@ -1284,6 +1556,8 @@ tela.addEventListener('pointerup', (ev) => {
   }
   ultimoToque = { x: ev.clientX, y: ev.clientY, t: agora };
   if (sim && clicarInterativo(ev.clientX, ev.clientY)) return;
+  if (clicarRede(ev.clientX, ev.clientY)) return;
+  if (clicarComponente(ev.clientX, ev.clientY)) return;
   // toque simples: dica do ponto (some sozinha)
   if (mostrarDica(ev.clientX, ev.clientY)) { clearTimeout(tempoDica); tempoDica = setTimeout(() => { dica.style.display = 'none'; }, 3000); }
 });
@@ -1322,7 +1596,20 @@ function andarPeloTeclado(dt) {
 }
 
 // ── 3D interativo: clique, ficha e o quadro por cima do prédio ──────────────
-const aviso = sim ? criarAviso() : null;
+const aviso = sim || rede ? criarAviso() : null;
+// painel com vista interna: o rack (cabeamento/CFTV) e a central de incêndio
+const PAINEL_DO_SIMBOLO = { 'HM-CAB-RACK': 'rack', 'HM-INC-CENTRAL': 'central_incendio' };
+// clique num equipamento com interação (ou num rack/central): a ficha com as manobras
+function clicarRede(cx, cy) {
+  const p = escolherDispositivo(cx, cy);
+  if (!p) return false;
+  const ids = rede ? noDoItem.get(p.it) || [] : [];
+  const painel = PAINEL_DO_SIMBOLO[p.t.simbolo] || null;
+  if (!ids.length && !painel) return false;
+  dica.style.display = 'none';
+  abrirFicha({ t: p.t, it: p.it, componente: componenteDe(p.t), rede: ids, painel });
+  return true;
+}
 function pontoInterativo(cx, cy) {
   const p = escolherDispositivo(cx, cy);
   return p ? interativoDe.get(p.it) || null : null;
@@ -1353,7 +1640,10 @@ function abrirFicha(x) {
     fichaCorpo = document.createElement('div');
     fichaEl.append(fechar, fichaCorpo);
     document.body.appendChild(fichaEl);
-    ligarBotoes(fichaCorpo, sim, { abrirQuadro, aviso });
+    if (sim) ligarBotoes(fichaCorpo, sim, { abrirQuadro, aviso });
+    if (rede) ligarBotoesRede(fichaCorpo, rede, { aviso });
+    // "Abrir a vista interna" do rack/central
+    fichaCorpo.addEventListener('click', (ev) => { const b = ev.target.closest('[data-painel]'); if (b && fichaDe?.it) { ev.stopPropagation(); abrirPainel(fichaDe.t, fichaDe.it); } });
   }
   fichaDe = x;
   fichaEl.classList.add('aberta');
@@ -1362,8 +1652,32 @@ function abrirFicha(x) {
 function fecharFicha() { fichaDe = null; fichaEl?.classList.remove('aberta'); }
 function atualizarFicha() {
   if (!fichaDe || !fichaCorpo) return;
+  // lista das manobras (botão "Manobras e sistemas")
+  if (fichaDe.lista) { fichaCorpo.innerHTML = `<div class="sim-tit grande">Manobras e sistemas</div><small>Ligações não escritas no projeto são inferidas (marcadas [CONFERIR]); os textos de manobra são didáticos.</small>${htmlEquipamento(rede, fichaDe.lista)}`; return; }
   const amb = CENA.ambientes[fichaDe.it[5]];
-  fichaCorpo.innerHTML = htmlFichaPonto(sim, fichaDe.id, { rotulo: fichaDe.t.rotulo, ambiente: amb ? amb.nome : '' });
+  // equipamento com interação e/ou painel com vista interna
+  if (fichaDe.rede?.length || fichaDe.painel) {
+    const topo = fichaDe.componente ? htmlFichaComponente(fichaDe.componente, { rotulo: fichaDe.t.rotulo, ambiente: amb ? amb.nome : '', altura: alturaDoItem(fichaDe.t, fichaDe.it), objeto: fichaDe.it[6] })
+      : `<div class="sim-tit grande">${esc(fichaDe.t.rotulo)}${fichaDe.it[6] ? ` · ${esc(fichaDe.it[6])}` : ''}</div><div class="sim-est">${amb ? esc(amb.nome) : ''}</div>`;
+    fichaCorpo.innerHTML = `${topo}${fichaDe.rede?.length ? htmlEquipamento(rede, fichaDe.rede) : ''}${fichaDe.painel ? `<div class="sim-bs"><button class="sim-b liga" data-painel="1">Abrir a vista interna (${fichaDe.painel === 'rack' ? 'rack' : 'central'})</button></div>` : ''}`;
+    return;
+  }
+  // equipamento do objetivo do projeto: a ficha do componente (relação de materiais, legenda, posição)
+  if (fichaDe.componente) { fichaCorpo.innerHTML = htmlFichaComponente(fichaDe.componente, { rotulo: fichaDe.t.rotulo, ambiente: amb ? amb.nome : '', altura: alturaDoItem(fichaDe.t, fichaDe.it), objeto: fichaDe.it[6] }); return; }
+  if (sim) fichaCorpo.innerHTML = htmlFichaPonto(sim, fichaDe.id, { rotulo: fichaDe.t.rotulo, ambiente: amb ? amb.nome : '' });
+}
+// Equipamentos do objetivo do projeto (cena.componentes, ../cenaDoObjetivo.js): o tipo da cena
+// guarda o id do componente; clique/toque nele abre a ficha
+const COMPONENTES = new Map((Array.isArray(CENA.componentes) ? CENA.componentes : []).map(c => [String(c.id), c]));
+function componenteDe(t) { return t && t.componente != null ? COMPONENTES.get(String(t.componente)) || null : null; }
+function clicarComponente(cx, cy) {
+  if (!COMPONENTES.size) return false;
+  const p = escolherDispositivo(cx, cy);
+  const c = p && componenteDe(p.t);
+  if (!c) return false;
+  dica.style.display = 'none';
+  abrirFicha({ t: p.t, it: p.it, componente: c });
+  return true;
 }
 
 // botões na barra: abrir cada quadro e religar tudo
@@ -1372,7 +1686,7 @@ if (sim) {
   const barra = $('#barra');
   const botao = (texto, titulo, fn) => { const b = document.createElement('button'); b.textContent = texto; b.title = titulo; b.addEventListener('click', fn); barra.insertBefore(b, antes || null); return b; };
   for (const q of sim.quadros().slice(0, 4)) botao(`Quadro ${q.tag}`, `Abrir o quadro ${q.tag}: porta, disjuntores com alavanca (desligar um disjuntor apaga o circuito no prédio)`, () => abrirQuadro(q.tag));
-  botao('Religar tudo', 'Simulação: volta tudo ao estado inicial (disjuntores ligados, luzes acesas)', () => { sim.reiniciar(); aviso('Simulação reiniciada: tudo ligado'); });
+  botao('Religar tudo', 'Simulação: volta tudo ao estado inicial (disjuntores ligados, luzes acesas)', () => { sim.reiniciar(); rede?.reiniciar(); aviso('Simulação reiniciada: tudo ligado'); });
   // fase 5: mapa de iluminância no piso (falsa-cor em lux), calculado aqui pelo mesmo módulo
   // ponto a ponto da skill — só na cena com o luminotécnico (fotometria das luminárias)
   mapa = criarMapa({
@@ -1387,6 +1701,26 @@ if (sim) {
     });
   }
   sim.assinar(aplicarEstadoSim);
+}
+
+// manobras e sistemas (subestação, incêndio, alarme, CFTV, acesso): a lista com os botões
+if (rede) {
+  const barra = $('#barra'), antes = $('#b-tela');
+  const comAcao = rede.lista().filter(e => (e.interacao.acoes || []).length || e.interacao.proxy).map(e => e.id);
+  if (comAcao.length) {
+    const b = document.createElement('button');
+    b.textContent = rede.lista().some(e => e.tipo === 'chave_seccionadora' || e.tipo === 'disjuntor_mt') ? 'Manobras da subestação' : 'Sistemas (operar)';
+    b.title = 'Operar os equipamentos: chaves, disjuntores, acionadores, armar/desarmar, switch PoE, fechaduras';
+    b.addEventListener('click', () => abrirFicha({ lista: comAcao }));
+    barra.insertBefore(b, antes || null);
+    if (!sim) {
+      const r = document.createElement('button');
+      r.textContent = 'Restabelecer';
+      r.title = 'Volta todos os equipamentos ao estado inicial';
+      r.addEventListener('click', () => { rede.reiniciar(); aviso('Equipamentos no estado inicial'); });
+      barra.insertBefore(r, antes || null);
+    }
+  }
 }
 
 // cenas do ambiente atual no painel "Dentro do ambiente" (fase 5): um grupo de botões por
@@ -1411,13 +1745,38 @@ let qsim = null; // { el, ctrl, tag }
 function abrirQuadro(tag) {
   const q = sim && sim.quadro(tag);
   if (!q) return;
+  const C = q.cena3d ? { ...q.cena3d } : cenaQuadroEsquematica(q, sim);
+  delete C.instalacao;
+  abrirSobreposto(`q:${tag}`, C, `${q.tag}${q.descricao ? ` — ${q.descricao}` : ''}${q.cena3d ? '' : ' (arranjo esquemático, dados do projeto)'}`, { sim, quadroTag: tag, titulo: 'Disjuntores — clique para ligar/desligar' });
+}
+// vista interna do rack / da central (painéis de outras disciplinas: dados do projeto ou da skill)
+function abrirPainel(t, it) {
+  const tipo = PAINEL_DO_SIMBOLO[t.simbolo];
+  if (!tipo) return;
+  const ids = rede ? noDoItem.get(it) || [] : [];
+  const conta = (re) => CENA.dispositivos.filter(x => re.test(x.simbolo || '')).reduce((s, x) => s + x.itens.length, 0);
+  const tag = it[6] ? String(it[6]) : tipo === 'rack' ? 'RACK' : 'CENTRAL';
+  // dados da skill quando a cena traz (cena.paineis: [{ tipo, ponto?, cabeamento?, cftv?, incendio? }])
+  const dadosSkill = (Array.isArray(CENA.paineis) ? CENA.paineis : []).find(p => p && p.tipo === tipo && (p.ponto == null || String(p.ponto) === String(it[6] || ''))) || null;
+  let C;
+  if (tipo === 'rack') {
+    C = cenaDoRack(dadosDoRack({ tag, equipamentoSwitch: ids[0] || null, cabeamento: dadosSkill?.cabeamento || null, cftv: dadosSkill?.cftv || null,
+      portasPainel: dadosSkill?.portasPainel, portasSwitch: dadosSkill?.portasSwitch,
+      contagem: { pontosRede: conta(/^HM-CAB-PONTO-REDE$/), aps: conta(/^HM-CAB-AP$/), cameras: conta(/^HM-CFTV-CAMERA$/) } }));
+  } else {
+    C = cenaDaCentral(dadosDaCentral({ tag, equipamentoCentral: ids[0] || null, calculo: dadosSkill?.incendio || null,
+      contagem: { detectores: conta(/^HM-INC-DETECTOR/), acionadores: conta(/^HM-INC-ACIONADOR$/), avisadores: conta(/^HM-INC-AVISADOR$/) } }));
+  }
+  abrirSobreposto(`p:${tipo}:${tag}`, C, C.titulo, { sim: null, titulo: tipo === 'rack' ? 'Equipamentos — clique para operar' : 'Central — clique para operar' });
+}
+function abrirSobreposto(chave, C, nome, { sim: simQ = null, quadroTag = null, titulo = '' } = {}) {
   if (!qsim) {
     const el = document.createElement('div');
     el.id = 'q-sim';
     el.innerHTML = `<canvas id="tela"></canvas><div id="etiquetas"></div>
 <nav id="barra"><button id="b-voltar-predio" title="Voltar ao prédio (Esc)">← Voltar ao prédio</button><span class="q-nome"></span>
 <button id="b-3d">Vista 3D</button><button id="b-frente">Vista frontal</button><button id="b-porta" title="Abrir ou fechar a porta">Porta aberta</button><button id="b-etiquetas">Etiquetas</button></nav>
-<aside><section><h2>Disjuntores — clique para ligar/desligar</h2><div id="simulacao"></div></section><section><h2>Dispositivo</h2><div id="info"></div></section></aside>`;
+<aside><section><h2 class="q-tit-sim">Disjuntores — clique para ligar/desligar</h2><div id="simulacao"></div></section><section><h2>Camadas</h2><div id="camadas"></div></section><section><h2>Dispositivo</h2><div id="info"></div></section></aside>`;
     document.body.appendChild(el);
     el.querySelectorAll('aside h2').forEach(h => { h.onclick = () => h.parentNode.classList.toggle('fechada'); });
     qsim = { el, ctrl: null, tag: null };
@@ -1426,14 +1785,14 @@ function abrirQuadro(tag) {
   qsim.el.classList.add('aberto');
   fecharFicha();
   dica.style.display = 'none';
-  if (qsim.tag !== tag) {
-    // outro quadro: desmonta o anterior (um contexto WebGL só) e começa num canvas novo
+  if (qsim.tag !== chave) {
+    // outro quadro/painel: desmonta o anterior (um contexto WebGL só) e começa num canvas novo
     if (qsim.ctrl) { qsim.ctrl.destruir(); const c = document.createElement('canvas'); c.id = 'tela'; qsim.el.querySelector('#tela').replaceWith(c); qsim.el.querySelector('#etiquetas').innerHTML = ''; }
-    const C = q.cena3d ? { ...q.cena3d } : cenaQuadroEsquematica(q, sim);
-    delete C.instalacao;
-    qsim.el.querySelector('.q-nome').textContent = `${q.tag}${q.descricao ? ` — ${q.descricao}` : ''}${q.cena3d ? '' : ' (arranjo esquemático)'}`;
-    qsim.ctrl = iniciarQuadro(C, { raiz: qsim.el, sim, quadroTag: tag, embutido: true, portaFechada: true, aoVoltar: fecharQuadro, aviso });
-    qsim.tag = tag;
+    qsim.el.querySelector('#camadas').innerHTML = '';
+    qsim.el.querySelector('.q-nome').textContent = nome;
+    qsim.el.querySelector('.q-tit-sim').textContent = titulo;
+    qsim.ctrl = iniciarQuadro(C, { raiz: qsim.el, sim: simQ, quadroTag, rede, embutido: true, portaFechada: true, aoVoltar: fecharQuadro, aviso });
+    qsim.tag = chave;
   } else {
     qsim.ctrl.ativar(true);
     qsim.ctrl.abrirAnimado();
@@ -1537,6 +1896,8 @@ window.HM3D = {
   olharPara: (x, y, z) => { if (modo === 'dentro') olharPara(W(x, y, z)); },
   irPara: (x, y) => { if (modo === 'dentro') { camera.position.set(x, ALTURA_OLHOS, -y); pedirDesenho(true); const a = ambienteNoPonto(x, y); if (a && a.i !== atual) { atual = a.i; trocarForro(a); mostrarPainel(a); } } },
   escolherDispositivo, mostrarDica, aoDuploClique,
+  // equipamentos do objetivo do projeto: a ficha do componente no clique
+  clicarComponente, get fichaAberta() { return fichaDe ? (fichaDe.componente ? fichaDe.componente.id : fichaDe.id) : null; },
   get modo() { return modo; }, get ambienteAtual() { return atual; },
   // desenho forçado (captura do PDF: services/modelo3d), etiquetas inclusive
   render: () => { pedirDesenho(true); desenhar(performance.now()); },
@@ -1544,6 +1905,15 @@ window.HM3D = {
   // 3D interativo (fase 2): simulador, quadro por cima do prédio, clique num ponto e a cor
   // por instância de um ponto do modelo (para a captura e o teste no navegador)
   sim, abrirQuadro, fecharQuadro, clicarInterativo,
+  // 09/11/2026: motor de interação (subestação, incêndio…), vista interna do rack/central,
+  // legenda de cores da infraestrutura por tipo (para a captura e o teste no navegador)
+  rede, legendaInfra: LEG_INFRA,
+  destacarInfra: (tipo) => { tipoDestacado = tipo || null; aplicarInfraTipos(); },
+  mostrarTipoInfra: (tipo, v = true) => { tipoVisivel[tipo] = !!v; aplicarInfraTipos(); },
+  abrirPainelDe: (simbolo, k = 0) => { const t = CENA.dispositivos.find(x => x.simbolo === simbolo); if (t?.itens[k]) abrirPainel(t, t.itens[k]); return !!t; },
+  fichaDoEquipamento: (id) => { const par = (itensDoNo.get(String(id)) || [])[0]; if (!par) { abrirFicha({ lista: [String(id)] }); return false; } abrirFicha({ t: par.t, it: par.t.itens[par.i], componente: componenteDe(par.t), rede: noDoItem.get(par.t.itens[par.i]), painel: PAINEL_DO_SIMBOLO[par.t.simbolo] || null }); return true; },
+  abrirManobras: () => { if (rede) abrirFicha({ lista: rede.lista().filter(e => (e.interacao.acoes || []).length || e.interacao.proxy).map(e => e.id) }); },
+  corDoItem: (simbolo, k = 0) => { const t = CENA.dispositivos.find(x => x.simbolo === simbolo || String(x.componente) === String(simbolo)); if (!t?.malha?.instanceColor) return null; const c = new Color(); t.malha.getColorAt(k, c); return [c.r, c.g, c.b].map(v => Math.round(v * 100) / 100); },
   get quadroAberto() { return quadroAberto; }, get quadro3d() { return qsim?.ctrl || null; },
   corDoPonto: (id) => { const x = interativos.find(k => k.id === id); if (!x?.t.malha.instanceColor) return null; const c = new Color(); x.t.malha.getColorAt(x.i, c); return [c.r, c.g, c.b].map(v => Math.round(v * 100) / 100); },
   get luzesAcesas() { return luzesSim.filter(l => l.intensity > 0).length; },

@@ -30,6 +30,7 @@ const { medirTrechos } = require('./medidasInfra');
 const { caixaPrincipal } = require('./fundoDoMapa');
 const { circuitoConferido } = require(path.join(CAD, 'circuitoDoDesenho.js'));
 const edicoesDoMapa = require('../edicoesDoMapa');
+const { filtroDoPonto } = require(path.join(CAD, 'objetivoDoProjeto.js'));
 // Ponto lido do desenho (símbolo explodido) → descrição do item: a linha da legenda do
 // projeto quando houver ("Tomada alta a 2,20m do piso"), senão o nome do símbolo na
 // biblioteca da H&M (skills/_comum/cad/simbolos.js), sem a altura típica
@@ -40,6 +41,11 @@ function descricaoDoPonto(pt) {
   if (proprio && !/^(Tomada|Interruptor|Ponto)$/.test(proprio)) return proprio.slice(0, 120);
   return (SIMBOLOS[pt.simbolo]?.legenda || NOME_EXTRA[pt.simbolo] || proprio || pt.simbolo).replace(/\s*\(h = [^)]*\)/, '');
 }
+// de onde veio o componente do objetivo (skills/_comum/cad/componentesDoProjeto.js) → texto da observação
+const NOME_DA_FONTE = {
+  relacao_materiais: 'relação de materiais do projeto', legenda: 'legenda do projeto', legenda_detalhe: 'legenda de detalhe do projeto',
+  legenda_simbolos: 'legenda de símbolos do projeto', texto: 'texto do desenho', diagrama: 'diagrama do projeto', bloco: 'bloco do desenho', layer: 'layer do desenho',
+};
 // disciplina do 3D (cor da peça) → disciplina do sistema
 const DISCIPLINA_DO_3D = { 'controle-acesso': 'controle_acesso', 'iluminacao-externa': 'iluminacao', veicular: 'carregador' };
 
@@ -254,7 +260,23 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
   // ambientes com área real da arquitetura (o rótulo "A=" do texto fica de reserva):
   // perímetro, polígono e retângulo mínimo vão junto (M8: a ponte para a skill estimava o
   // perímetro por 4·√área — corredor de 1,2 × 10 m: 13,9 m em vez de 22,4 m)
-  const ambientesArq = (r.arquitetura?.ambientes || []).filter(a => a.area_m2 >= 0.8);
+  // o que é o projeto (worker → skills/_comum/cad/objetivoDoProjeto.js): no abrigo/equipamento só vale a vista
+  // principal; em qualquer projeto, a vista de CONTEXTO e as camadas de base de outro projeto não contam
+  const objetivo = r.objetivo && !r.objetivo.erro ? r.objetivo : null;
+  const filtroObjetivo = objetivo ? filtroDoPonto(objetivo) : null;
+  const camadasContexto = new Set(objetivo?.camadasDeContexto || []);
+  const focado = !!objetivo && (objetivo.objeto || 'arquitetura') !== 'arquitetura';
+  const centroDe = (pol) => [(pol || []).reduce((t, q) => t + q[0], 0) / ((pol || []).length || 1), (pol || []).reduce((t, q) => t + q[1], 0) / ((pol || []).length || 1)];
+  let ambientesArq = (r.arquitetura?.ambientes || []).filter(a => a.area_m2 >= 0.8 && (!filtroObjetivo || filtroObjetivo(centroDe(a.poligono))));
+  // abrigo (subestação…): os ambientes são os compartimentos lidos pelas paredes da vista principal, com a medida real
+  // (escala pelas cotas) — os textos da relação, da legenda e do carimbo dentro de retângulos não são ambientes
+  const compartimentos = focado ? (objetivo.abrigo?.compartimentos || []).filter(c => Array.isArray(c.caixa) && c.caixa.length === 4) : [];
+  if (compartimentos.length) {
+    ambientesArq = compartimentos.map((c, i) => {
+      const [x0, y0, x1, y1] = c.caixa;
+      return { nome: (c.nome || `compartimento ${i + 1}`).toUpperCase(), area_m2: c.area_m2 ?? null, perimetro_m: c.largura_m && c.comprimento_m ? r2(2 * (c.largura_m + c.comprimento_m)) : null, poligono: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], origem: 'objetivo' };
+    });
+  }
   if (ambientesArq.length) {
     analise.ambientes = ambientesArq.map(a => ({
       nome: a.nome, area_m2: a.area_m2, perimetro_m: a.perimetro_m ?? null,
@@ -271,11 +293,22 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
   // (o disjuntor desenhado no diagrama não é uma tomada a mais) — 29/10/2026
   const folha = r.arquitetura?.folha || null;
   const regioesFora = folha?.regioesFora || [];
-  const naPlanta = ([x, y]) => !regioesFora.some(c => x >= c[0] && x <= c[2] && y >= c[1] && y <= c[3]);
-  const simbolosDaPlanta = p.simbolos.map(g => {
-    if (!regioesFora.length || g.posicoes.length !== g.quantidade) return g;
+  const naPlanta = ([x, y]) => !regioesFora.some(c => x >= c[0] && x <= c[2] && y >= c[1] && y <= c[3]) && (!filtroObjetivo || filtroObjetivo([x, y]));
+  const soContexto = (layers) => camadasContexto.size > 0 && (layers || []).length > 0 && layers.every(l => camadasContexto.has(l));
+  const simbolosDaPlanta = p.simbolos.filter(g => !soContexto(g.layers || [g.layer])).map(g => {
+    if ((!regioesFora.length && !filtroObjetivo) || g.posicoes.length !== g.quantidade) return g;
     return filtrarPosicoes(g, (i) => naPlanta(g.posicoes[i]));
   }).filter(g => g.quantidade > 0);
+  // traçados: sem as camadas de contexto; no abrigo/equipamento, só o trecho dentro da vista principal, na escala
+  // dela (a SE real desenhada ao dobro: 1 unidade = 0,5 m pelas cotas)
+  const escalaPrincipal = focado ? Number((objetivo.vistas || []).find(v => v.papel === 'principal')?.escala?.fator) || 1 : 1;
+  const linhasDoProjeto = p.linhas.filter(l => !camadasContexto.has(l.layer)).map(l => {
+    if (!focado || !filtroObjetivo || !(l.segmentos || []).length) return l;
+    const dentroSeg = l.segmentos.filter(([x1, y1, x2, y2]) => filtroObjetivo([(x1 + x2) / 2, (y1 + y2) / 2]));
+    if (!dentroSeg.length) return null;
+    const fracao = dentroSeg.reduce((t, [x1, y1, x2, y2]) => t + Math.hypot(x2 - x1, y2 - y1), 0) / (l.segmentos.reduce((t, [x1, y1, x2, y2]) => t + Math.hypot(x2 - x1, y2 - y1), 0) || 1);
+    return { ...l, segmentos: dentroSeg, metros: Math.round(l.metros * fracao * escalaPrincipal * 10) / 10 };
+  }).filter(Boolean);
 
   // o escritório do carimbo (o mesmo do mapa; sem planta legível, do texto da prancha) escolhe os blocos aprendidos
   let escritorio = r.desenho?.escritorio || '';
@@ -286,7 +319,7 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
   // Desenho todo dentro de xref (nada fora): nenhuma xref vira referência.
   const proprias = new Set();
   for (const { g, d } of descritos) if (d.disciplina && (g.xrefs || []).some(x => !x)) proprias.add(ramo(d.disciplina));
-  for (const l of p.linhas) { const dl = descreverLinha(l).disciplina; if (dl && !l.xref) proprias.add(ramo(dl)); }
+  for (const l of linhasDoProjeto) { const dl = descreverLinha(l).disciplina; if (dl && !l.xref) proprias.add(ramo(dl)); }
   const discXref = new Map();
   const xrefOutra = (x) => {
     if (!x || !proprias.size) return false;
@@ -409,7 +442,7 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
         ...(g.circuitos[i] ? { circuito: g.circuitos[i].circuito, comando: g.circuitos[i].comando } : {}) }));
     }
   }
-  for (const l of p.linhas) {
+  for (const l of linhasDoProjeto) {
     const d = descreverLinha(l);
     if (xrefOutra(l.xref)) { anotarXref(l.xref, 'metros', l.metros); continue; }
     // toda linha medida também é rota (comprimento do caminho, para o cálculo do cabo)
@@ -417,6 +450,46 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
       cabo: { rota_m: l.metros, descidas_m: null, condutores: null, formula: '(rota + descidas) × condutores' } });
     if (d.rota) continue; // fiação/cabeamento desenhado: rota, não material
     itens.push({ tipo: 'linha', descricao: d.descricao, metros: l.metros, rota_m: l.metros, tipoLinha: d.tipo, disciplina: d.disciplina, layer: l.layer, ambiguo: false });
+  }
+
+  // COMPONENTES DO PROJETO (abrigo/equipamento: subestação, casa de máquinas…): a relação de materiais e as legendas
+  // dizem o nome, a especificação e — quando escrevem — a quantidade (skills/_comum/cad/componentesDoProjeto.js). Elas
+  // valem mais que o bloco ou a layer da mesma disciplina (o bloco "TRANSFORMADOR A SECO 225KVA" na SE de 150 kVA):
+  // esses blocos saem da contagem e a divergência fica nos avisos do objetivo. Quantidade que o projeto não escreve
+  // entra como 0, marcada [CONFERIR] — nunca inventada.
+  const componentesDoObjetivo = [];
+  if (focado) {
+    const FONTE_DO_PROJETO = new Set(['relacao_materiais', 'legenda', 'legenda_detalhe', 'legenda_simbolos', 'texto', 'diagrama']);
+    const doProjeto = (objetivo.componentes || []).filter(c => c && FONTE_DO_PROJETO.has(c.fonte));
+    if (doProjeto.length) {
+      const disc = objetivo.disciplina;
+      for (let k = itens.length - 1; k >= 0; k--) {
+        const it = itens[k];
+        if (it.tipo === 'simbolo' && it.disciplina === disc && !['confirmado', 'inserido'].includes(it.origemDescricao)) itens.splice(k, 1);
+      }
+      for (const c of doProjeto) {
+        const q = c.quantidade !== null && c.quantidade !== undefined && Number.isFinite(Number(c.quantidade)) ? Number(c.quantidade) : null;
+        const fonte = NOME_DA_FONTE[c.fonte] || c.fonte;
+        const item = c.item != null && !/^lista sem/i.test(String(c.item)) ? ' (' + (/^\d+$/.test(String(c.item)) ? 'item ' : '') + c.item + ')' : '';
+        const observacao = fonte + item + (c.motivo ? ' — ' + c.motivo : '') + (q == null ? ' — quantidade não escrita no projeto [CONFERIR]' : c.conferir ? ' [CONFERIR]' : '');
+        const comum = {
+          descricao: String(c.descricao || c.tipo).slice(0, 240), disciplina: disc, origemDescricao: 'objetivo', componente: c.id, tipoComponente: c.tipo,
+          servico: c.servico || null, item: c.item ?? null, especificacao: c.especificacao || null, observacaoMaterial: observacao, conferir: !!c.conferir || q == null, ambiguo: false, layer: '',
+        };
+        const novo = /^m$/i.test(String(c.unidade || '').trim())
+          ? { tipo: 'linha', ...comum, metros: q, rota_m: q, tipoLinha: 'componente' }
+          : { tipo: 'simbolo', ...comum, quantidade: q ?? 0, semQuantidade: q == null, unidade: c.unidade || 'un', bloco: c.item != null ? 'item ' + c.item : c.tipo, posicoes: [] };
+        itens.push(novo);
+        componentesDoObjetivo.push(novo);
+      }
+      // a montagem inteira pelo tipo do projeto (subestação abrigada → mt_se_abrigada): serviço, não material
+      if (objetivo.servicoDoProjeto) {
+        itens.push({
+          tipo: 'simbolo', descricao: (objetivo.tipoRotulo || objetivo.tipo || 'Objeto do projeto') + ' — montagem (objetivo do projeto)', quantidade: 1, disciplina: disc, origemDescricao: 'objetivo',
+          servico: objetivo.servicoDoProjeto, semMaterial: true, ambiguo: false, bloco: objetivo.tipo || 'objetivo', layer: '', posicoes: [], observacaoMaterial: 'objetivo do projeto: ' + (objetivo.titulo || objetivo.tipo),
+        });
+      }
+    }
   }
 
   // tipo da legenda com QTD e nenhum símbolo na planta: também é divergência
@@ -456,6 +529,7 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
     ...(conferenciaLegenda.length ? { conferenciaLegenda } : {}),
     ...(deOutraDisciplina.size ? { xrefsDeOutraDisciplina: [...deOutraDisciplina.values()].map(x => ({ ...x, metros: Math.round(x.metros * 10) / 10 })) } : {}),
     ...(vazio ? { aviso: 'o desenho não tem texto nem blocos (parece um PDF convertido em DWG, só com traços) — envie o PDF do projeto' } : {}),
+    ...(objetivo ? { objetivo: resumoDoObjetivo(objetivo) } : {}),
   };
   const avisos = [
     r.avisoUnidade,
@@ -465,6 +539,9 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
     r.desenho?.erro ? `leitura dos símbolos desenhados falhou: ${r.desenho.erro}` : null,
     r.desenho?.mapa?.aviso || null,
     ...(r.avisosDiagrama || []),
+    r.objetivo?.erro ? `a leitura do objetivo do projeto falhou (${r.objetivo.erro}): análise feita como antes, sem separar a vista principal` : null,
+    focado ? `projeto entendido como ${objetivo.tipoRotulo || objetivo.tipo} (${objetivo.disciplina}): só a vista principal conta${camadasContexto.size ? ` e ${camadasContexto.size} camada(s) de base de outro projeto foram ignoradas` : ''}${componentesDoObjetivo.length ? `; ${componentesDoObjetivo.length} componente(s) pela relação de materiais e pelas legendas` : ''}` : null,
+    ...(objetivo?.avisos || []).slice(0, 12),
   ].filter(Boolean);
   if (avisos.length) pagina.aviso = [pagina.aviso, ...avisos].filter(Boolean).join('; ');
   const arquitetura = r.arquitetura?.ambientes?.length ? {
@@ -494,7 +571,8 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
     // material e medida pelo texto junto ao traçado, pela layer ou pela legenda — o
     // trecho com medidas diferentes vira um trecho por medida (medidasInfra.js)
     trechos: medirTrechos(
-      p.linhas.filter(l => !xrefOutra(l.xref)).map(l => ({ layer: l.layer, disciplina: descreverLinha(l).disciplina, segmentos: l.segmentos || [] })).filter(t => t.segmentos.length),
+      // cor do traçado (ACI da entidade ou da layer, ../../../skills/_comum/cad/projetoDxf.js): o 3D pinta a infraestrutura pelo tipo com a cor do projeto
+      linhasDoProjeto.filter(l => !xrefOutra(l.xref)).map(l => ({ layer: l.layer, disciplina: descreverLinha(l).disciplina, segmentos: l.segmentos || [], ...(l.cor_aci ? { cor_aci: l.cor_aci, cor_fonte: l.cor_fonte } : {}) })).filter(t => t.segmentos.length),
       p.textosMedida || []),
   };
   // o que a legenda das pranchas ensinou (services/simbolosAprendidos.js grava)
@@ -515,7 +593,7 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
     simbolos: r.desenho.mapa.simbolos.map(({ centros, ...m }, idx) => ({ idx, ...m, contados: contadosPorLinha.get(idx) || 0, ...(motivoPorLinha.has(idx) && !contadosPorLinha.get(idx) ? { foraDoOrcamento: motivoPorLinha.get(idx) } : {}) })),
     // uma medição só (CAD-10): os trechos do mapa são as MESMAS linhas medidas para o orçamento (sem as repetições,
     // com a disciplina pela layer e a mesma regra de layer) — antes o mapa media de novo, com outra regex e tudo "eletrica"
-    trechos: p.linhas.filter(l => !xrefOutra(l.xref)).map(l => {
+    trechos: linhasDoProjeto.filter(l => !xrefOutra(l.xref)).map(l => {
       const d = descreverLinha(l);
       return { layer: l.layer, tipo: d.tipo, disciplina: d.disciplina, comprimento_m: l.metros, ...(d.rota ? { rota: true } : {}), ...(l.xref ? { xref: l.xref } : {}) };
     }),
@@ -528,7 +606,32 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
   // fonte: quem ensina (services/votosAprendizado.js) — o projeto quando quem chama sabe (opcoes.fonte: obra/análise), senão
   // o CONTEÚDO do arquivo: reler o mesmo desenho não conta de novo, e "PLANTA.dwg" de duas obras são dois projetos
   const fonte = opcoes.fonte || `arquivo:${crypto.createHash('sha1').update(Buffer.from(buffer)).digest('hex')}`;
-  return { analise, pagina, pontosPorAmbiente, arquitetura, espacial, mapa, aprendizado: { legenda: r.desenho?.legenda || [], notas: r.desenho?.notas || [], escritorio, blocos: p.legendaItens || [], fonte } };
+  return { analise, pagina, pontosPorAmbiente, arquitetura, espacial, mapa, objetivo, aprendizado: { legenda: r.desenho?.legenda || [], notas: r.desenho?.notas || [], escritorio, blocos: p.legendaItens || [], fonte } };
+}
+
+// O que é o projeto, para a tela da análise e os achados: sem as coordenadas (a análise guardada não pode inchar)
+function resumoDoObjetivo(o) {
+  return {
+    disciplina: o.disciplina || null, tipo: o.tipo || null, tipoRotulo: o.tipoRotulo || null, objeto: o.objeto || null, titulo: o.titulo || '', confianca: o.confianca ?? null,
+    evidencias: (o.evidencias || []).slice(0, 10), servicoDoProjeto: o.servicoDoProjeto || null,
+    vistas: (o.vistas || []).filter(v => v.papel !== 'fora').slice(0, 40).map(v => ({ id: v.id, papel: v.papel, tipo: v.tipo || null, titulo: v.titulo || '', motivo: v.motivo || '', ...(v.escala ? { escala: v.escala } : {}) })),
+    camadasDeContexto: (o.camadasDeContexto || []).length,
+    componentes: (o.componentes || []).map(c => ({
+      id: c.id, tipo: c.tipo, descricao: c.descricao, item: c.item ?? null, fonte: c.fonte, quantidade: c.quantidade ?? null, unidade: c.unidade || null,
+      especificacao: c.especificacao || null, conferir: !!c.conferir, motivo: c.motivo || null, servico: c.servico || null, fontes: (c.fontes || []).slice(0, 5),
+    })),
+    legendas: (o.legendas || []).slice(0, 20).map(l => ({
+      titulo: l.titulo || '', tipo: l.tipo || null, contexto: !!l.contexto, doObjetivo: !!l.doObjetivo, faltando: l.faltando || [],
+      itens: (l.itens || []).slice(0, 80).map(i => ({ numero: i.numero ?? null, descricao: i.descricao || '', especificacao: i.especificacao || null })),
+    })),
+    dados: o.dados || {},
+    abrigo: o.abrigo ? {
+      largura_m: o.abrigo.largura_m ?? null, comprimento_m: o.abrigo.comprimento_m ?? null, area_m2: o.abrigo.area_m2 ?? null,
+      compartimentos: (o.abrigo.compartimentos || []).map(c => ({ nome: c.nome || '', largura_m: c.largura_m ?? null, comprimento_m: c.comprimento_m ?? null, area_m2: c.area_m2 ?? null })),
+      portas: (o.abrigo.portas || []).length, escala: o.abrigo.escala || null,
+    } : null,
+    avisos: (o.avisos || []).slice(0, 30),
+  };
 }
 
 // Planta da tela de confirmação do mapa: o desenho de fundo (./fundoDoMapa.js), o contorno dos ambientes e a posição

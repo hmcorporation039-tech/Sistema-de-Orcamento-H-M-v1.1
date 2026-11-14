@@ -444,8 +444,56 @@ function soIdentificacao(motor, analise, extraido, avisos) {
   return base(motor, analise, extraido);
 }
 
+// Média tensão: o que a leitura do DWG/DXF entendeu do projeto (objetivo — services/analiseCad →
+// skills/_comum/cad/objetivoDoProjeto.js): tensões, potência e impedância do transformador, demanda, cabo de MT,
+// proteção e malha, tudo ESCRITO no projeto (relação de materiais, unifilar, notas). Nada estimado pela norma.
+function mediaTensao(motor, analise, extraido, avisos) {
+  const o = extraido.map(e => e.objetivo).find(x => x && x.disciplina === 'media_tensao');
+  if (!o) return soIdentificacao(motor, analise, extraido, avisos);
+  const dados = base(motor, analise, extraido);
+  const d = o.dados || {};
+  const n = (v) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Number(v) : null);
+  const lidos = [];
+  const pega = (obj, campo, valor, rotulo) => { if (valor == null || !obj) return; obj[campo] = valor; lidos.push(rotulo); };
+  const f = dados.fornecimento || (dados.fornecimento = {});
+  pega(f, 'tensao_primaria_kv', n(d.tensao_primaria_kv), `tensão primária ${String(d.tensao_primaria_kv).replace(".", ",")} kV`);
+  pega(f, 'tensao_secundaria_v', n(d.tensao_secundaria_v), `secundária ${d.tensao_secundaria_v} V`);
+  pega(f, 'tensao_secundaria_fn', n(d.tensao_secundaria_fn_v), `${d.tensao_secundaria_fn_v} V fase-neutro`);
+  if (['poste', 'abrigada', 'blindada', 'ao_tempo'].includes(d.tipo_se)) pega(f, 'tipo_se', d.tipo_se, `subestação ${d.tipo_se}`);
+  const prot = String(d.protecao?.tipo || '');
+  if (/disjuntor/i.test(prot)) pega(f, 'protecao', 'disjuntor', 'proteção por disjuntor + relé');
+  else if (/fus[íi]vel/i.test(prot)) pega(f, 'protecao', 'fusivel', `proteção por ${prot}`);
+  const t = dados.transformador || (dados.transformador = {});
+  pega(t, 'potencia_kva', n(d.potencia_kva), `transformador ${d.potencia_kva} kVA`);
+  pega(t, 'z_pct', n(d.impedancia_pct), `Z ${String(d.impedancia_pct).replace('.', ',')} %`);
+  if (/^[óo]leo$/i.test(d.isolamento_trafo || '')) pega(t, 'isolamento', 'oleo', 'isolamento a óleo');
+  else if (/^seco$/i.test(d.isolamento_trafo || '')) pega(t, 'isolamento', 'seco', 'isolamento a seco');
+  const cg = dados.cargas || (dados.cargas = {});
+  pega(cg, 'carga_instalada_kw', n(d.carga_instalada_kw), `carga instalada ${String(d.carga_instalada_kw).replace(".", ",")} kW`);
+  // a skill pede a demanda em kW (kVA = kW ÷ FP): a demanda do projeto em kVA vira kW pelo FP do formulário, e o
+  // crescimento vai a zero — o projeto já escolheu o transformador por ela [CONFERIR as duas]
+  const demKva = n(d.demanda_kva);
+  if (demKva) {
+    const fp = Number(cg.fp_total) || 0.92;
+    cg.demanda_total_kw = Math.round(demKva * fp * 100) / 100;
+    cg.crescimento_pct = 0;
+    lidos.push(`demanda ${String(demKva).replace('.', ',')} kVA`);
+    avisos.push(`[CONFERIR] A demanda do projeto (${String(demKva).replace('.', ',')} kVA) entrou como ${String(cg.demanda_total_kw).replace('.', ',')} kW pelo FP ${String(fp).replace('.', ',')} do formulário, com crescimento 0 % (o projeto já dimensionou o transformador por ela).`);
+  }
+  const cabo = dados.cabo_mt || (dados.cabo_mt = {});
+  pega(cabo, 'secao_mm2', n(d.cabo_mt_mm2), `cabo de MT ${d.cabo_mt_mm2} mm²`);
+  const at = dados.aterramento || (dados.aterramento = {});
+  pega(at, 'resistencia_max_ohm', n(d.resistencia_malha_max_ohm), `malha ≤ ${d.resistencia_malha_max_ohm} Ω`);
+  pega(at, 'n_hastes', n(d.hastes), `${d.hastes} hastes`);
+  if (lidos.length) avisos.push(`Lido do projeto (${o.titulo || o.tipoRotulo || 'subestação'}): ${lidos.join(', ')}. Confira no formulário.`);
+  const conferir = (o.avisos || []).filter(a => /\[CONFERIR\]/.test(a)).slice(0, 6);
+  avisos.push(...conferir);
+  avisos.push('[CONFERIR] Comprimento do cabo de MT, resistividade do solo e dimensões da malha não estão escritos no projeto — preencha no formulário.');
+  return dados;
+}
+
 const MAPEADORES = {
-  eletrica, cftv, cabeamento, incendio, alarme, iluminacao, quadros: quadrosSkill,
+  eletrica, cftv, cabeamento, incendio, alarme, iluminacao, quadros: quadrosSkill, media_tensao: mediaTensao,
   spda: soIdentificacao, solar: soIdentificacao, carregador: soIdentificacao, automacao: soIdentificacao,
 };
 

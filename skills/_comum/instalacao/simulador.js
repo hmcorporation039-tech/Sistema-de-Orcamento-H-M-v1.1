@@ -43,6 +43,11 @@ function criarSimulador(instalacao, opcoes = {}) {
   const pontos = inst.pontos || [];
   const comandos = inst.comandos || [];
   const S = (v) => String(v ?? '');
+  // FONTE EXTERNA (09/11/2026 — subestação e média tensão no 3D): quem alimenta o quadro
+  // de fora da instalação de BT (o QGBT pelo trafo, a seccionadora, a chave fusível do
+  // poste). fonteExterna(tagDoQuadro) → null (alimentado) ou o motivo ("seccionadora
+  // SC-1 aberta"); o motor de interação (./interacao.js) liga a dele com definirFonteExterna.
+  let fonteExterna = typeof opcoes.fonteExterna === 'function' ? opcoes.fonteExterna : null;
 
   const quadroDe = new Map(quadros.map(q => [S(q.tag), q]));
   const circuitoDe = new Map(circuitos.map(c => [S(c.id), c]));
@@ -129,6 +134,11 @@ function criarSimulador(instalacao, opcoes = {}) {
       visitados.add(S(q.tag));
       const m = motivo(q.alimentado_por, visitados);
       if (m) return `${q.tag} sem alimentação (${m})`;
+    }
+    if (fonteExterna) {
+      let ext = null;
+      try { ext = fonteExterna(S(q.tag)); } catch (e) { ext = null; }
+      if (ext) return `${q.tag} sem alimentação (${ext})`;
     }
     if (q.geral?.tag && estado.protecao[chave(q.tag, q.geral.tag)] === false) return `disjuntor geral ${q.geral.tag} do ${q.tag} desligado`;
     for (const dr of q.drs || []) {
@@ -418,6 +428,32 @@ function criarSimulador(instalacao, opcoes = {}) {
     // ações
     definir, alternar, desligar: (tag, q) => definir(tag, false, q), ligar: (tag, q) => definir(tag, true, q),
     acionar, motor, emergenciaQuadro, reiniciar, exportar, importar,
+    // fonte externa (subestação/MT): troca a função e recalcula; reavaliar() avisa os ouvintes
+    // quando o estado de fora mudou (seccionadora aberta → o QGBT e os circuitos apagam)
+    definirFonteExterna(f) { fonteExterna = typeof f === 'function' ? f : null; mudou({ tipo: 'externo' }); },
+    reavaliar(evento) { mudou({ tipo: 'externo', ...(evento && typeof evento === 'object' ? evento : {}) }); },
+    // quadro alimentado (fonte externa, alimentador e geral ligados): o barramento tem tensão
+    quadroEnergizado(tag) {
+      const q = quadroDe.get(S(tag));
+      if (!q) return false;
+      if (fonteExterna) { try { if (fonteExterna(S(q.tag))) return false; } catch (e) { /* sem fonte externa */ } }
+      if (q.alimentado_por != null && q.alimentado_por !== '' && !alimentado(q.alimentado_por)) return false;
+      return !q.geral?.tag || estado.protecao[chave(q.tag, q.geral.tag)] !== false;
+    },
+    // chegada do quadro com tensão (fonte externa e alimentador), antes do geral: a fiação de entrada
+    entradaEnergizada(tag) {
+      const q = quadroDe.get(S(tag));
+      if (!q) return false;
+      if (fonteExterna) { try { if (fonteExterna(S(q.tag))) return false; } catch (e) { /* idem */ } }
+      return !(q.alimentado_por != null && q.alimentado_por !== '' && !alimentado(q.alimentado_por));
+    },
+    motivoDoQuadro(tag) {
+      const q = quadroDe.get(S(tag));
+      if (!q) return `quadro ${tag} não existe no modelo`;
+      if (fonteExterna) { try { const m = fonteExterna(S(q.tag)); if (m) return m; } catch (e) { /* idem */ } }
+      if (q.alimentado_por != null && q.alimentado_por !== '') { const m = motivo(q.alimentado_por); if (m) return `alimentador ${q.alimentado_por}: ${m}`; }
+      return q.geral?.tag && estado.protecao[chave(q.tag, q.geral.tag)] === false ? `disjuntor geral ${q.geral.tag} desligado` : null;
+    },
   };
 }
 

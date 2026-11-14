@@ -5,6 +5,12 @@
 // quadro "esquemático" para quando a cena não traz o do caderno de fabricação.
 // Texto vindo da cena sempre escapado (esc) — nada de HTML da cena na página.
 import { criarSimulador, ROTULO_PONTO } from '../../instalacao/simulador.js';
+// 09/11/2026: quadro fiel ao projeto com a fiação completa e o motor genérico de interação
+// (subestação, incêndio, alarme, CFTV, controle de acesso)
+import { montarQuadroEsquematico } from '../../instalacao/painelQuadro.js';
+import { criarInteracao, combinarRedes, redeDaSubestacao, redeDeSinal, ligarAoSimulador, PAPEL_DO_SIMBOLO } from '../../instalacao/interacao.js';
+
+export { criarInteracao, combinarRedes, redeDaSubestacao, redeDeSinal, ligarAoSimulador, PAPEL_DO_SIMBOLO };
 
 // corrente nominal do disjuntor/DR; a instalação estimada pelo desenho (../../instalacao/doDesenho.js) não tem
 const amp = (v) => (v != null && v !== '' ? `${v} A` : 'corrente a definir');
@@ -141,6 +147,45 @@ ${k ? `<table>${lin('Comando', `${esc(k.id)} — ${esc(TIPO_COMANDO[k.tipo] || k
 ${acoes ? `<div class="sim-bs">${acoes}</div>` : ''}${pn ? htmlPainel(pn) : ''}${p.circuito ? htmlCircuito(sim, p.circuito) : ''}`;
 }
 
+// ── Ficha de um EQUIPAMENTO do objetivo do projeto (09/11/2026) ─────────────
+// cena.componentes (../cenaDoObjetivo.js): a descrição como no projeto (relação de materiais /
+// legenda), o nº do item, a quantidade, a especificação lida (kVA, tensão, corrente, seção — em
+// objeto ou no texto da relação), de onde veio cada dado e "posição a conferir" quando a peça
+// não tem posição na planta. Os campos podem faltar: só aparece o que veio.
+const ROTULO_ESPEC = {
+  kva: ['Potência', 'kVA'], potencia_kva: ['Potência', 'kVA'], tensao_kv: ['Tensão', 'kV'], tensao_primaria_kv: ['Tensão primária', 'kV'],
+  tensao_secundaria_v: ['Tensão secundária', 'V'], tensao_v: ['Tensão', 'V'], corrente_a: ['Corrente', 'A'], corrente_nominal_a: ['Corrente nominal', 'A'],
+  secao_mm2: ['Seção', 'mm²'], icc_ka: ['Capacidade de interrupção', 'kA'], nbi_kv: ['NBI', 'kV'], polos: ['Polos', ''], isolamento: ['Isolamento', ''],
+  largura_m: ['Largura', 'm'], comprimento_m: ['Comprimento', 'm'], altura_m: ['Altura', 'm'], profundidade_m: ['Profundidade', 'm'], diametro_m: ['Diâmetro', 'm'],
+  material: ['Material', ''], classe: ['Classe', ''], capacidade: ['Capacidade', ''], tipo: ['Tipo', ''], modelo: ['Modelo', ''], fabricante: ['Fabricante', ''],
+};
+const ROTULO_FONTE = {
+  relacao: 'relação de materiais', relacao_materiais: 'relação de materiais', 'relação de materiais': 'relação de materiais', lista: 'relação de materiais',
+  legenda: 'legenda do projeto', balao: 'balão na planta', 'balão': 'balão na planta', bloco: 'bloco do desenho', layer: 'layer do desenho',
+  unifilar: 'diagrama unifilar', diagrama: 'diagrama unifilar', texto: 'texto da planta', nota: 'nota do projeto', memorial: 'memorial',
+};
+const nomeFonte = (f) => { const s = String(f ?? ''); const [k, ...resto] = s.split(':'); const base = ROTULO_FONTE[k.trim().toLowerCase()]; return base ? [base, resto.join(':').trim()].filter(Boolean).join(': ') : s; };
+const valorEsp = (v) => (typeof v === 'number' ? br(v, Number.isInteger(v) ? 0 : 2) : typeof v === 'boolean' ? (v ? 'sim' : 'não') : String(v));
+export function htmlFichaComponente(c, { rotulo = '', ambiente = '', altura = '', objeto = '' } = {}) {
+  if (!c) return '';
+  const esp = c.especificacao && typeof c.especificacao === 'object' ? c.especificacao : {};
+  const linhasEsp = Object.entries(esp).filter(([k, v]) => v != null && v !== '' && typeof v !== 'object' && !['texto', 'descricao'].includes(k)).map(([k, v]) => {
+    const [r, u] = ROTULO_ESPEC[k] || [k.replace(/_/g, ' '), ''];
+    return lin(r, `${esc(valorEsp(v))}${u ? ` ${esc(u)}` : ''}`);
+  }).join('');
+  const qtd = c.quantidade != null && c.quantidade !== '' ? `${esc(valorEsp(c.quantidade))}${c.unidade ? ` ${esc(c.unidade)}` : ''}` : '';
+  const pos = c.posicao === 'desenho' ? 'na planta do projeto' : c.posicao === 'patio' ? 'sem posição na planta — no pátio ao lado' : 'sem posição na planta — no lugar típico do tipo';
+  const dims = Array.isArray(c.dimensoes_m) ? c.dimensoes_m.map(v => br(v)).join(' × ') : '';
+  return `<div class="sim-tit">${esc(c.descricao || rotulo)}${c.conferir ? ' <b class="sim-off">[CONFERIR]</b>' : ''}</div>
+<table>${lin('Item da relação', c.item != null && c.item !== '' ? `nº ${esc(c.item)}` : '')}${lin('Quantidade no projeto', qtd)}
+${c.especificacaoTexto ? lin('Especificação', esc(c.especificacaoTexto)) : ''}${linhasEsp}
+${lin('Fonte', (c.fontes || []).map(f => esc(nomeFonte(f))).join(' · '))}
+${lin('Posição', c.posicaoAConferir ? `<b class="sim-off">a conferir</b> <small>(${esc(pos)})</small>` : esc(pos))}
+${lin('Local', esc([ambiente, altura].filter(Boolean).join(' · ')))}${objeto ? lin('Peça no 3D', esc(objeto)) : ''}
+${c.servico ? lin('Serviço', esc(c.servico)) : ''}${c.motivo ? lin('Observação', `<small>${esc(c.motivo)}</small>`) : ''}
+${lin('Forma no 3D', `<small>${esc(c.rotuloForma || c.forma || '')}${dims ? ` · ${esc(dims)} m` : ''} — dimensões ilustrativas (típicas)</small>`)}</table>`;
+}
+
 // lista dos disjuntores do quadro (com os motores dele) — painel lateral do quadro
 export function htmlQuadro(sim, tag) {
   const q = sim.quadro(tag);
@@ -193,52 +238,55 @@ export function criarAviso() {
 }
 
 // ── Quadro esquemático (cena sem o quadro do caderno de fabricação) ─────────
-// Fileiras de trilho DIN com o geral, cada DR seguido dos seus disjuntores e os demais;
-// 18 mm por polo, 90 mm de altura (medidas típicas). Mesmas TAGs do modelo único.
+// 09/11/2026: o quadro do projeto FIEL (../../instalacao/painelQuadro.js): cada disjuntor e
+// DR com polos, In, curva, Icu, IΔn, descrição e seção do projeto (e a fonte de cada dado;
+// o que falta, "[CONFERIR] — não consta no projeto"), barras N/PE com medidas, pente ou
+// barras de fase, canaletas, bornes e a fiação F/N/PE completa. Mesmas TAGs do modelo único.
 export function cenaQuadroEsquematica(q, sim) {
-  const MOD = 18, POR_FILA = 18, ALT = 90, PASSO = 150;
-  const itens = [];
-  const usados = new Set();
-  const dj = (d) => ({ tag: d.tag, l: Math.max(1, Number(d.polos) || 1) * MOD, tipo: 'disjuntor', d });
-  if (q.geral) itens.push({ tag: q.geral.tag, l: Math.max(1, Number(q.geral.polos) || 2) * MOD, tipo: 'geral', d: q.geral });
-  for (const dr of q.drs || []) {
-    if (dr.ddr) continue;
-    itens.push({ tag: dr.tag, l: (Number(dr.polos) >= 4 ? 4 : 2) * MOD, tipo: 'dr', d: dr });
-    for (const id of dr.circuitos || []) {
-      const d = (q.disjuntores || []).find(x => String(x.circuito) === String(id));
-      if (d && !usados.has(d.tag)) { usados.add(d.tag); itens.push(dj(d)); }
-    }
-  }
-  for (const d of q.disjuntores || []) if (!usados.has(d.tag)) itens.push(dj(d));
-  // fileiras
-  const filas = [[]];
-  let larg = 0;
-  for (const it of itens) {
-    if (larg + it.l > POR_FILA * MOD && filas[filas.length - 1].length) { filas.push([]); larg = 0; }
-    filas[filas.length - 1].push(it);
-    larg += it.l;
-  }
-  const L = Math.max(300, POR_FILA * MOD + 120), A = Math.max(400, filas.length * PASSO + 220), P = 120;
-  const caixas = [];
-  filas.forEach((fila, i) => {
-    const yc = A - 150 - i * PASSO;
-    caixas.push({ camada: 'trilhos', x: 60, y: yc - 17.5, z: 20, l: L - 120, a: 35, p: 7.5, cor: '#b8bcc2', metal: true, rotulo: 'Trilho DIN 35 mm', semEtiqueta: true, info: [['Peça', 'Trilho DIN 35 × 7,5 mm']] });
-    let x = 60 + 6;
-    for (const it of fila) {
-      const c = it.tipo === 'disjuntor' ? sim?.circuito(it.d.circuito) : null;
-      const desc = it.tipo === 'geral' ? `Disjuntor geral ${amp(it.d.In)}` : it.tipo === 'dr' ? `DR ${amp(it.d.In)} / ${ma(it.d)} — circuitos ${(it.d.circuitos || []).join(', ')}` : `Disjuntor ${amp(it.d.In)}${it.d.curva ? ` curva ${it.d.curva}` : ''} — circuito ${it.d.circuito}${c?.descricao ? ` (${c.descricao})` : ''}`;
-      caixas.push({ camada: 'protecao', tag: it.tag, x, y: yc - ALT / 2, z: 27.5, l: it.l, a: ALT, p: 70, cor: it.tipo === 'dr' ? '#cfe3ff' : '#f1f3f5', rotulo: it.tag, dica: `${it.tag} — ${desc}`,
-        info: [['TAG', it.tag], ['Dispositivo', desc], ['Medidas', `${it.l} × ${ALT} mm (típicas)`]] });
-      x += it.l;
-    }
+  return montarQuadroEsquematico(q, { circuito: (id) => (sim ? sim.circuito(id) : null) });
+}
+
+// Ficha "fiel ao projeto": campo · valor · fonte (o [CONFERIR] em destaque)
+export function htmlFichaFiel(linhas, { titulo = '' } = {}) {
+  if (!Array.isArray(linhas) || !linhas.length) return '';
+  return `${titulo ? `<div class="sim-tit">${esc(titulo)}</div>` : ''}<table class="fiel"><thead><tr><th>Dado</th><th>Valor</th><th>Fonte</th></tr></thead><tbody>${linhas.map(l => `<tr${l.conferir ? ' class="conferir"' : ''}><th>${esc(l.campo)}</th><td>${l.conferir ? `<b class="sim-off">${esc(l.valor)}</b>` : esc(l.valor)}</td><td><small>${esc(l.fonte)}</small></td></tr>`).join('')}</tbody></table>`;
+}
+
+// Ficha de um condutor do quadro (mouse/clique no cabo): circuito, função, seção, origem e destino
+const FUNCAO = { F: 'Fase', N: 'Neutro', PE: 'Terra (PE)', dados: 'Dados (cordão)', laco: 'Laço / zona', '24V': 'Alimentação 24 Vcc', bateria: 'Bateria' };
+export function htmlCondutor(c, { energizado = null } = {}) {
+  if (!c) return '';
+  const sec = c.secao_mm2 ? `${String(c.secao_mm2).replace('.', ',')} mm²` : '[CONFERIR] — não consta no projeto';
+  return `<div class="sim-tit">${esc(FUNCAO[c.funcao] || c.funcao)}${c.fase ? ` ${esc(c.fase)}` : ''}${c.circuito != null ? ` — circuito ${esc(c.circuito)}` : ''}</div>
+<table>${lin('Função', esc(`${FUNCAO[c.funcao] || c.funcao}${c.fase ? ` (${c.fase})` : c.funcao === 'F' ? ' (fase não consta no projeto)' : ''}`))}
+${lin('Seção', c.secao_mm2 ? `${esc(sec)} <small>(${esc(c.secao_fonte || 'projeto')})</small>` : `<b class="sim-off">${esc(sec)}</b>`)}
+${lin('Origem', esc(c.de || ''))}${lin('Destino', esc(c.para || ''))}
+${c.d_mm ? lin('Diâmetro no 3D', `${esc(String(c.d_mm).replace('.', ','))} mm <small>(pela seção; ilustrativo)</small>`) : ''}
+${energizado == null ? '' : lin('Estado', energizado ? '<b class="sim-on">energizado</b>' : c.funcao === 'PE' ? 'aterrado (o PE não é seccionado)' : '<b class="sim-off">sem tensão</b>')}
+${(c.conferir || []).length ? lin('Conferir', `<small>${c.conferir.map(esc).join('; ')}</small>`) : ''}</table>`;
+}
+
+// ── Equipamentos com interação declarada (../../instalacao/interacao.js) ─────
+const COR_APAR = { energizado: 'sim-on', apagado: 'sim-off', aberto: 'sim-off', falha: 'sim-off', alarme: 'sim-off', alerta: 'sim-off', normal: 'sim-on', armado: 'sim-on' };
+export function htmlEquipamento(rede, ids, { titulo = true } = {}) {
+  if (!rede) return '';
+  const lista = (Array.isArray(ids) ? ids : [ids]).filter(id => rede.tem(id));
+  return lista.map(id => {
+    const s = rede.situacao(id);
+    const acoes = rede.acoes(id);
+    return `<div class="sim-circ">${titulo ? `<div class="sim-tit">${esc(s.rotulo)}</div>` : ''}<table>${lin('Estado', `<b class="${COR_APAR[s.aparencia] || ''}">${esc(s.texto)}</b>`)}
+${['fonte', 'serie'].includes(rede.equipamento(id).interacao.regra) ? lin('Tensão a montante', s.tensao ? '<b class="sim-on">presente</b>' : '<b class="sim-off">ausente</b>') : ''}
+${s.motivo ? lin('Por quê', `<small>${esc(s.motivo)}</small>`) : ''}${s.nota ? lin('Ligação', `<small>${esc(s.nota)}</small>`) : ''}</table>
+${acoes.length ? `<div class="sim-bs">${acoes.map(a => `<button class="sim-b${a.permitida ? '' : ' recusa'}" data-int="${esc(a.alvo)}" data-acao="${esc(a.id)}" title="${esc(a.permitida ? a.rotulo : a.motivo)}">${esc(a.rotulo)}</button>`).join('')}</div>` : ''}</div>`;
+  }).join('');
+}
+// cliques nos botões data-int (delegação)
+export function ligarBotoesRede(el, rede, { aviso } = {}) {
+  el.addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-int]');
+    if (!b || !el.contains(b)) return;
+    ev.stopPropagation();
+    const r = rede.agir(b.dataset.int, b.dataset.acao);
+    if (r && aviso) aviso(r);
   });
-  return {
-    tipo: 'quadro', titulo: `${q.tag} — ${q.descricao || 'Quadro'}`, esquematico: true,
-    involucro: { L, A, P, espessura: 2, cor: '#d6d4cf', rotulo: `Quadro ${q.tag}`, info: [['Quadro', q.tag], ['Arranjo', 'esquemático (sem o caderno de fabricação)']] },
-    porta: { itens: [{ x: (L - 120) / 2, y: A - 70, l: 120, a: 40, p: 2, cor: '#f4f1e8', rotulo: q.tag, info: [['Placa de identificação', q.tag]] }], rotulo: 'Porta', info: [['Porta', 'frontal, articulada à esquerda']] },
-    portaAberta: true, caixas,
-    camadas: [{ id: 'protecao', rotulo: 'Proteção (disjuntores e DR)', cor: '#e9ecef' }, { id: 'trilhos', rotulo: 'Trilhos DIN', cor: '#b8bcc2' }],
-    numeros: [['disjuntores', String((q.disjuntores || []).length)], ['DR', String((q.drs || []).filter(d => !d.ddr).length)]],
-    avisos: ['Arranjo esquemático: o modelo não trouxe o quadro do caderno de fabricação (skill quadros).'],
-  };
 }

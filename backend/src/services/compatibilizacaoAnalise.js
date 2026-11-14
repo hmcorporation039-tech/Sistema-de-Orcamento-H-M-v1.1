@@ -315,6 +315,9 @@ async function analisarProjetoCompleto(todosArquivos, opcoes = {}) {
     ...(analises[i].origemCad ? { cad: analises[i].origemCad } : {}),
     // mapa do CAD (tela de confirmação do engenheiro): layers, tipos, quantidades e de onde veio cada tipo
     ...(cads[i]?.mapa ? { mapa_cad: cads[i].mapa } : {}),
+    // o que é o projeto (services/analiseCad → skills/_comum/cad/objetivoDoProjeto.js): disciplina, tipo, vistas usadas e
+    // ignoradas, legendas e componentes com a fonte — a tela mostra e a ponte para a skill (utils/ponteAnaliseSkill.js) usa
+    ...((vetoriais[i] || []).find(p => p.objetivo) ? { objetivo: (vetoriais[i] || []).find(p => p.objetivo).objetivo } : {}),
   }));
 
   return {

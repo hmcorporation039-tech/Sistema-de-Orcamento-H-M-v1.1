@@ -13,6 +13,11 @@
 // 2. ALTERAR só o que ele criou NESTA conversa (coluna assistente_conversa_id).
 //    Proposta, análise ou projeto de qualquer pessoa — inclusive do próprio
 //    usuário, feito na tela — volta 403 com o código ASSISTENTE_NAO_CRIOU.
+//    Exceção dos AGENTES PRÓPRIOS (services/agentes/executor.js): o registro que o
+//    usuário AUTORIZOU ao iniciar o agente (dono ou admin, conferido na rota
+//    /agentes/execucoes) entra em execucao.autorizados ('tabela:id') e pode ser
+//    alterado por aquela execução. Sobrescrever proposta Ativa que não foi criada
+//    na conversa continua recusado (vinculadas), autorizado ou não.
 // 3. MARCAÇÃO: o que ele cria pelas rotas de criação recebe a marca da conversa
 //    antes da resposta sair (a próxima chamada do MCP já enxerga a marca).
 // Posse e admin continuam valendo depois daqui, como para o próprio usuário.
@@ -93,6 +98,10 @@ const ROTAS = [
   ['GET', '/consultas/vencimentos'], ['GET', '/consultas/novidades-pastas'], ['GET', '/consultas/cotacoes'],
   ['GET', '/obras/:id/cronograma'],
   ['POST', '/assistente/ferramentas/acoes'],
+  // Agentes próprios (routes/v2/agentes.js): o assistente roda um agente e consulta a execução e a base de
+  // conhecimento; os agentes leem o 3D (situação) e geram os documentos da skill (só leitura, não grava)
+  ['GET', '/agentes'], ['POST', '/agentes/execucoes'], ['GET', '/agentes/execucoes/:id'], ['GET', '/agentes/conhecimento'],
+  ['GET', '/modelo-3d/:origem/:id'], ['GET', '/laudos/:id/documento/:tipo'],
 ];
 
 const MAPA = new Map(ROTAS.map(([m, c, r]) => [`${m} ${c}`, r || {}]));
@@ -159,7 +168,8 @@ async function aplicarEscopoAssistente(req, res, next, execucao) {
     }
     if (regra.exigir && idValido(req.params.id)) {
       const r = await conversaDoRegistro(regra.exigir, req.params.id);
-      if (r.existe && r.conversa !== execucao.conversaId) {
+      const autorizado = execucao.autorizados instanceof Set && execucao.autorizados.has(`${regra.exigir}:${Number(req.params.id)}`);
+      if (r.existe && r.conversa !== execucao.conversaId && !autorizado) {
         return res.status(403).json({ erro: NAO_CRIOU, codigo: 'ASSISTENTE_NAO_CRIOU' });
       }
     }

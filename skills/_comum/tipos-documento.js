@@ -26,6 +26,10 @@ const DOCUMENTOS = {
   ensaios: 'ambos',      // quadros: checklist de fabricação e ensaios de rotina — vai à oficina (projeto) e à inspeção (laudo)
   pmoc: 'ambos',         // climatização: PMOC — sai com o projeto (plano inicial) e com a vistoria/manutenção
   caderno: 'projeto',    // quadros, racks: caderno de fabricação e montagem (PDF — layout, componentes, materiais, plaquetas)
+  folhas: 'projeto',     // quadros pela especificação: anteprojeto FL01–FL07 (PDF A3)
+  pesquisa_precos: 'projeto', // quadros pela especificação: pesquisa de preços do material (Excel, formato da H&M)
+  ficha: 'projeto',      // quadros pela especificação: ficha técnica do quadro e dos componentes (PDF)
+  entrega: 'projeto',    // quadros pela especificação: texto de entrega para o cliente e o engenheiro (Markdown)
 };
 
 // Exceções por disciplina ({ [chave da skill]: { [tipo]: uso } }) — nenhuma hoje

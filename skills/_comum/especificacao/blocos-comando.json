@@ -1,0 +1,1593 @@
+{
+ "versao": 1,
+ "descricao": "Biblioteca de BLOCOS DE FUNÇÃO de comando por relés (24 Vcc). Cada bloco é um modelo: entradas (seletoras, botões, sinais de campo), relés, degraus da escada (expressões série/paralelo), equipamentos de campo (inversor, soft-starter), saídas de contato para o campo, cenários de verificação e textos. O compilador (comando.js) instancia os blocos pedidos pelo perfil, numera os contatos (11-14, 21-24…) e as réguas de bornes. Expressão: {s:[…]} série, {p:[…]} paralelo, {x:'SINAL', neg:true} contato; {p_de:'motores', leaf:{…}} repete por item. Placeholders: {i} {tag} {rotulo} {ROTULO} {acion} {m.tag} {e.tag} {e.sinal.pedido} {motores} {externos} {ultimo.tag}. Condição 'se': 'req:<id>', 'bloco:<id>', 'decisao:<chave>=<valor>', 'motores>=2', 'acionamento', 'acion_cliente', 'externos>=1'.",
+ "barras_base": [
+  {
+   "tag": "L+",
+   "rotulo": "+24 Vcc (fonte G1 / F1)",
+   "expr": {
+    "s": [
+     {
+      "x": "energia"
+     },
+     {
+      "x": "F1"
+     }
+    ]
+   }
+  },
+  {
+   "tag": "LV+",
+   "rotulo": "+24 V das válvulas (F2 — independente da emergência)",
+   "expr": {
+    "s": [
+     {
+      "x": "energia"
+     },
+     {
+      "x": "F2"
+     }
+    ]
+   },
+   "se": "bloco:valvula_por_equipamento"
+  },
+  {
+   "tag": "FN",
+   "rotulo": "220 Vca (fase-neutro, disjuntor de comando)",
+   "expr": {
+    "x": "energia"
+   }
+  }
+ ],
+ "entradas_base": [
+  {
+   "id": "energia",
+   "tipo": "energia",
+   "rotulo": "Alimentação do quadro"
+  },
+  {
+   "id": "F1",
+   "tipo": "fusivel",
+   "rotulo": "Fusível F1 (comando)"
+  },
+  {
+   "id": "F2",
+   "tipo": "fusivel",
+   "rotulo": "Fusível F2 (válvulas)",
+   "se": "bloco:valvula_por_equipamento"
+  },
+  {
+   "id": "CMD.AUT",
+   "tipo": "externo",
+   "rotulo": "Comando automático externo (contato seco na X3) [CONFERIR]",
+   "se": [
+    "bloco:motor_man_0_aut",
+    "!bloco:pedido_externo",
+    "!bloco:partida_por_alarme"
+   ],
+   "campo": {
+    "regua": "X3",
+    "rotulos": [
+     "comando automático externo (+24 V)",
+     "comando automático externo (retorno)"
+    ]
+   }
+  }
+ ],
+ "blocos": [
+  {
+   "id": "emergencia_rele",
+   "rotulo": "Emergência por relé auxiliar (KE)",
+   "se": [
+    "req:comando.emergencia"
+   ],
+   "entradas": [
+    {
+     "id": "S0",
+     "tipo": "emergencia",
+     "rotulo": "EMERGÊNCIA",
+     "porta": true,
+     "material": "emergencia",
+     "descricao": "Botão de emergência cogumelo Ø 40 mm, girar para soltar, 1 NF, com anel amarelo"
+    },
+    {
+     "id": "RFF",
+     "tipo": "supervisor",
+     "rotulo": "Relé de falta/sequência de fase (fase OK)",
+     "se": "req:forca.rff"
+    }
+   ],
+   "reles": [
+    {
+     "tag": "KE",
+     "rotulo": "emergência e fases OK"
+    }
+   ],
+   "degraus": [
+    {
+     "barra": "L+",
+     "expr": {
+      "s": [
+       {
+        "x": "RFF",
+        "se": "req:forca.rff",
+        "contato": "11-14",
+        "rotulo": "RFF fase OK"
+       },
+       {
+        "x": "S0",
+        "neg": true,
+        "rotulo": "S0 emergência"
+       }
+      ]
+     },
+     "saida": "KE",
+     "rotulo": "emergência / fases OK"
+    }
+   ],
+   "barras": [
+    {
+     "tag": "L+E",
+     "rotulo": "+24 Vcc após a emergência (KE)",
+     "expr": {
+      "x": "KE"
+     }
+    }
+   ],
+   "cenarios": [
+    {
+     "nome": "Emergência acionada desliga KE (cadeia L+E sem tensão)",
+     "entradas": {
+      "S0": true
+     },
+     "espera": {
+      "KE": false,
+      "L+E": false
+     }
+    },
+    {
+     "nome": "Falta de fase (RFF) desliga KE",
+     "se": "req:forca.rff",
+     "entradas": {
+      "RFF": false
+     },
+     "espera": {
+      "KE": false
+     }
+    }
+   ],
+   "logica": [
+    "S0 (emergência){rff_texto} em série alimentam KE; KE fecha a barra L+E. Sem KE, cai L+E: param os acionamentos e sai a liberação."
+   ],
+   "notas": [
+    "Emergência por relé auxiliar (KE): retira o comando de partida dos acionamentos e a liberação do equipamento externo; não secciona a força. A categoria de parada depende da parametrização do inversor (rampa = cat. 1; inércia = cat. 0) — NBR IEC 60204-1, 9.2.2 [CONFERIR com a apreciação de risco]."
+   ]
+  },
+  {
+   "id": "liberacao_externa",
+   "rotulo": "Liberação do equipamento externo (seletora + KL)",
+   "se": [
+    "req:comando.liberacao",
+    "externos>=1"
+   ],
+   "entradas": [
+    {
+     "id": "S{n_lib}",
+     "alias": "SLIB",
+     "tipo": "seletora",
+     "posicoes": [
+      "DESL",
+      "LIB"
+     ],
+     "padrao": "DESL",
+     "rotulo": "LIBERAÇÃO {EXTERNOS}",
+     "porta": true,
+     "material": "seletora2",
+     "descricao": "Seletora 22 mm 2 posições fixas (DESL · LIB)"
+    }
+   ],
+   "reles": [
+    {
+     "tag": "KL",
+     "rotulo": "libera {externos}"
+    }
+   ],
+   "degraus": [
+    {
+     "barra": "{barra_motor}",
+     "expr": {
+      "x": "SLIB=LIB"
+     },
+     "saida": "KL",
+     "rotulo": "liberação {externos}"
+    }
+   ],
+   "saidasCampo": [
+    {
+     "por": "externos",
+     "tag": "{e.tag}.LIBERADO",
+     "expr": {
+      "x": "KL"
+     },
+     "rotulo": "liberação remota {e.rotulo} ({e.sinal.liberacao})",
+     "borne": {
+      "regua": "X2",
+      "rotulos": [
+       "{e.tag} {e.sinal.liberacao} (KL)",
+       "{e.tag} {e.sinal.liberacao} comum"
+      ]
+     }
+    }
+   ],
+   "cenarios": [
+    {
+     "nome": "Liberação em LIB libera os equipamentos externos",
+     "entradas": {
+      "SLIB": "LIB"
+     },
+     "espera": {
+      "KL": true,
+      "{e1.tag}.LIBERADO": true
+     }
+    },
+    {
+     "nome": "Emergência retira a liberação",
+     "se": "bloco:emergencia_rele",
+     "entradas": {
+      "SLIB": "LIB",
+      "S0": true
+     },
+     "espera": {
+      "KL": false,
+      "{e1.tag}.LIBERADO": false
+     }
+    }
+   ],
+   "logica": [
+    "{SLIB} em LIB energiza KL (sob L+E); os contatos de KL vão à entrada de liberação de cada {externo} ({e1.sinal.liberacao})."
+   ]
+  },
+  {
+   "id": "pedido_externo",
+   "rotulo": "Pedido de partida pelo equipamento externo (KP)",
+   "se": [
+    "req:comando.automatico_pedido",
+    "externos>=1"
+   ],
+   "entradas": [
+    {
+     "por": "externos",
+     "id": "{e.tag}.PEDIDO",
+     "tipo": "externo",
+     "rotulo": "{e.rotulo} pede {motor} ({e.sinal.pedido})",
+     "campo": {
+      "regua": "X2",
+      "rotulos": [
+       "{e.tag} {e.sinal.pedido} (+24 V)",
+       "{e.tag} {e.sinal.pedido} (retorno KP)"
+      ]
+     }
+    }
+   ],
+   "reles": [
+    {
+     "tag": "KP",
+     "rotulo": "pedido de {motor}"
+    }
+   ],
+   "degraus": [
+    {
+     "barra": "L+",
+     "expr": {
+      "combinar_de": "externos",
+      "leaf": {
+       "x": "{e.tag}.PEDIDO",
+       "rotulo": "{e.sinal.pedido} {e.tag}"
+      }
+     },
+     "saida": "KP",
+     "rotulo": "pedido de {motor} ({combinacao})"
+    }
+   ],
+   "cenarios": [
+    {
+     "nome": "Pedido de um equipamento externo energiza KP",
+     "entradas": {
+      "{e1.tag}.PEDIDO": true
+     },
+     "espera": {
+      "KP": true
+     }
+    }
+   ],
+   "logica": [
+    "Os contatos de pedido ({e1.sinal.pedido}) dos {externos} em {combinacao_texto} energizam KP."
+   ]
+  },
+  {
+   "id": "titular_reserva",
+   "rotulo": "Seleção da titular (KT)",
+   "se": [
+    "req:comando.titular_reserva",
+    "motores==2"
+   ],
+   "entradas": [
+    {
+     "id": "S{n_tit}",
+     "alias": "STIT",
+     "tipo": "seletora",
+     "posicoes": [
+      "{m1.tag}",
+      "{ultimo.tag}"
+     ],
+     "padrao": "{m1.tag}",
+     "rotulo": "{MOTOR} TITULAR {m1.tag} · {ultimo.tag}",
+     "porta": true,
+     "material": "seletora2",
+     "descricao": "Seletora 22 mm 2 posições fixas ({m1.tag} · {ultimo.tag})"
+    },
+    {
+     "id": "AUT.TITULAR",
+     "tipo": "externo",
+     "rotulo": "Automação seleciona {ultimo.tag} como titular",
+     "se": "req:automacao.entrada_selecao_titular",
+     "campo": {
+      "regua": "X3",
+      "rotulos": [
+       "entrada seleção titular (+24 V)",
+       "entrada seleção titular (retorno KT)"
+      ]
+     }
+    }
+   ],
+   "reles": [
+    {
+     "tag": "KT",
+     "rotulo": "titular = {ultimo.tag}"
+    }
+   ],
+   "degraus": [
+    {
+     "barra": "L+",
+     "expr": {
+      "p": [
+       {
+        "x": "STIT={ultimo.tag}"
+       },
+       {
+        "x": "AUT.TITULAR",
+        "se": "req:automacao.entrada_selecao_titular",
+        "rotulo": "automação (X3)"
+       }
+      ]
+     },
+     "saida": "KT",
+     "rotulo": "titular = {ultimo.tag}"
+    }
+   ],
+   "variantes": {
+    "titular_automacao=REMOTO": {
+     "rotulo": "Seleção da titular com posição REM (a automação escolhe)",
+     "entradas": [
+      {
+       "id": "S{n_tit}",
+       "alias": "STIT",
+       "tipo": "seletora",
+       "posicoes": [
+        "{m1.tag}",
+        "REM",
+        "{ultimo.tag}"
+       ],
+       "padrao": "{m1.tag}",
+       "rotulo": "{MOTOR} TITULAR {m1.tag} · REM · {ultimo.tag}",
+       "porta": true,
+       "material": "seletora3",
+       "descricao": "Seletora 22 mm 3 posições fixas ({m1.tag} · REM · {ultimo.tag})"
+      },
+      {
+       "id": "AUT.TITULAR",
+       "tipo": "externo",
+       "rotulo": "Automação seleciona {ultimo.tag} como titular (em REM)",
+       "campo": {
+        "regua": "X3",
+        "rotulos": [
+         "entrada seleção titular (+24 V)",
+         "entrada seleção titular (retorno KT)"
+        ]
+       }
+      }
+     ],
+     "degraus": [
+      {
+       "barra": "L+",
+       "expr": {
+        "p": [
+         {
+          "x": "STIT={ultimo.tag}"
+         },
+         {
+          "s": [
+           {
+            "x": "STIT=REM"
+           },
+           {
+            "x": "AUT.TITULAR",
+            "rotulo": "automação (X3)"
+           }
+          ]
+         }
+        ]
+       },
+       "saida": "KT",
+       "rotulo": "titular = {ultimo.tag}"
+      }
+     ],
+     "logica": [
+      "{STIT} em {ultimo.tag} energiza KT; em REM quem escolhe é a automação (X3); em {m1.tag}, KT desligado (titular = {m1.tag})."
+     ]
+    },
+    "troca_automatica=SIM": {
+     "rotulo": "Seleção da titular com troca automática por falha",
+     "degraus": [
+      {
+       "barra": "L+",
+       "expr": {
+        "s": [
+         {
+          "p": [
+           {
+            "x": "STIT={ultimo.tag}"
+           },
+           {
+            "s": [
+             {
+              "x": "STIT=REM"
+             },
+             {
+              "x": "AUT.TITULAR",
+              "rotulo": "automação (X3)"
+             }
+            ],
+            "se": "decisao:titular_automacao=REMOTO"
+           },
+           {
+            "x": "AUT.TITULAR",
+            "rotulo": "automação (X3)",
+            "se": [
+             "!decisao:titular_automacao=REMOTO",
+             "req:automacao.entrada_selecao_titular"
+            ]
+           },
+           {
+            "x": "KF{m1.i}",
+            "rotulo": "falha {m1.tag} → troca",
+            "se": "bloco:status_acionamento"
+           }
+          ]
+         },
+         {
+          "x": "KF{ultimo.i}",
+          "neg": true,
+          "rotulo": "falha {ultimo.tag} → volta",
+          "se": "bloco:status_acionamento"
+         }
+        ]
+       },
+       "saida": "KT",
+       "rotulo": "titular = {ultimo.tag} (com troca por falha)"
+      }
+     ],
+     "cenarios": [
+      {
+       "nome": "Titular {ultimo.tag} pela seletora energiza KT",
+       "entradas": {
+        "STIT": "{ultimo.tag}"
+       },
+       "espera": {
+        "KT": true
+       }
+      },
+      {
+       "nome": "Troca automática: falha na titular {m1.tag} em AUT passa a titular para {ultimo.tag}",
+       "se": "bloco:pedido_externo",
+       "entradas": {
+        "S{m1.i}": "AUT",
+        "S{ultimo.i}": "AUT",
+        "STIT": "{m1.tag}",
+        "{e1.tag}.PEDIDO": true,
+        "{m1.acion}.falha": true
+       },
+       "espera": {
+        "KT": true,
+        "KB{ultimo.i}": true,
+        "KB{m1.i}": false
+       }
+      },
+      {
+       "nome": "Troca automática: falha na titular {ultimo.tag} volta para {m1.tag}",
+       "se": "bloco:pedido_externo",
+       "entradas": {
+        "S{m1.i}": "AUT",
+        "S{ultimo.i}": "AUT",
+        "STIT": "{ultimo.tag}",
+        "{e1.tag}.PEDIDO": true,
+        "{ultimo.acion}.falha": true
+       },
+       "espera": {
+        "KT": false,
+        "KB{m1.i}": true
+       }
+      }
+     ],
+     "logica": [
+      "{STIT} escolhe a titular; a falha da titular (KF) passa a titular para a outra (troca automática por falha), sem relé a mais."
+     ]
+    }
+   },
+   "cenarios": [
+    {
+     "nome": "Titular {ultimo.tag} pela seletora energiza KT",
+     "entradas": {
+      "STIT": "{ultimo.tag}"
+     },
+     "espera": {
+      "KT": true
+     }
+    },
+    {
+     "nome": "Automação seleciona {ultimo.tag} (entrada X3)",
+     "se": "req:automacao.entrada_selecao_titular",
+     "entradas": {
+      "STIT": "{remoto_pos}",
+      "AUT.TITULAR": true
+     },
+     "espera": {
+      "KT": true
+     }
+    }
+   ],
+   "logica": [
+    "{STIT} em {ultimo.tag} (ou a automação pela X3, em paralelo) energiza KT → titular = {ultimo.tag}; KT desligado → titular = {m1.tag}."
+   ]
+  },
+  {
+   "id": "motor_man_0_aut",
+   "rotulo": "Comando MAN-0-AUT por motor (KB)",
+   "por": "motores",
+   "se": [
+    "req:comando.seletora_man_0_aut"
+   ],
+   "entradas": [
+    {
+     "id": "S{i}",
+     "tipo": "seletora",
+     "posicoes": [
+      "MAN",
+      "0",
+      "AUT"
+     ],
+     "padrao": "0",
+     "rotulo": "{ROTULO} MAN · 0 · AUT",
+     "porta": true,
+     "material": "seletora3",
+     "descricao": "Seletora 22 mm 3 posições fixas MAN–0–AUT"
+    }
+   ],
+   "reles": [
+    {
+     "tag": "KB{i}",
+     "rotulo": "partida {tag}"
+    }
+   ],
+   "degraus": [
+    {
+     "barra": "{barra_motor}",
+     "expr": {
+      "p": [
+       {
+        "x": "S{i}=MAN",
+        "rotulo": "S{i} MAN"
+       },
+       {
+        "s": [
+         {
+          "x": "S{i}=AUT",
+          "rotulo": "S{i} AUT"
+         },
+         {
+          "x": "KP",
+          "se": "bloco:pedido_externo"
+         },
+         {
+          "x": "KT",
+          "neg": "{titular_neg}",
+          "se": "bloco:titular_reserva"
+         },
+         {
+          "x": "KA",
+          "se": "bloco:partida_por_alarme",
+          "rotulo": "KA comando automático"
+         },
+         {
+          "x": "KREV",
+          "neg": "{rev_neg}",
+          "se": "bloco:reversao_automatica"
+         },
+         {
+          "x": "CMD.AUT",
+          "rotulo": "comando automático externo (X3)",
+          "se": [
+           "!bloco:pedido_externo",
+           "!bloco:partida_por_alarme"
+          ]
+         }
+        ]
+       }
+      ]
+     },
+     "saida": "KB{i}",
+     "rotulo": "partida {tag}"
+    }
+   ],
+   "saidasCampo": [
+    {
+     "tag": "{acion}.DI",
+     "se": "acionamento",
+     "expr": {
+      "x": "KB{i}"
+     },
+     "rotulo": "partida {tag} (entrada digital do {acion})",
+     "borne": {
+      "se": "acion_cliente",
+      "regua": "X2",
+      "rotulos": [
+       "{acion} COM",
+       "{acion} DI1 (partida, KB{i})"
+      ]
+     }
+    }
+   ],
+   "equipamentos": [
+    {
+     "se": "acionamento",
+     "tag": "{acion}",
+     "rotulo": "{acionRotulo} {acion} ({tag})",
+     "saidas": {
+      "RUN": {
+       "s": [
+        {
+         "x": "{acion}.DI"
+        },
+        {
+         "x": "{acion}.falha",
+         "neg": true
+        },
+        {
+         "x": "energia"
+        }
+       ]
+      },
+      "FALHA": {
+       "x": "{acion}.falha"
+      }
+     }
+    }
+   ],
+   "entradasExtras": [
+    {
+     "se": "acionamento",
+     "id": "{acion}.falha",
+     "tipo": "falha",
+     "rotulo": "Falha no {acion} ({tag})"
+    }
+   ],
+   "cenarios": [
+    {
+     "nome": "{tag} em MAN parte sem o comando automático",
+     "entradas": {
+      "S{i}": "MAN"
+     },
+     "espera": {
+      "KB{i}": true,
+      "{acion}.RUN": true
+     }
+    },
+    {
+     "nome": "{tag} em 0 fica desligada mesmo com pedido",
+     "se": "bloco:pedido_externo",
+     "entradas": {
+      "S{i}": "0",
+      "{e1.tag}.PEDIDO": true,
+      "{titular_entradas}": ""
+     },
+     "espera": {
+      "KB{i}": false
+     }
+    },
+    {
+     "nome": "{tag} em AUT parte com o pedido de qualquer equipamento externo quando é a titular",
+     "se": "bloco:pedido_externo",
+     "entradas": {
+      "S{i}": "AUT",
+      "{ultimo_e.tag}.PEDIDO": true,
+      "{titular_entradas}": "{titular_pos}"
+     },
+     "espera": {
+      "KB{i}": true,
+      "{acion}.RUN": true
+     }
+    },
+    {
+     "nome": "{tag} em AUT não parte quando não é a titular",
+     "se": "bloco:titular_reserva",
+     "entradas": {
+      "S{i}": "AUT",
+      "{e1.tag}.PEDIDO": true,
+      "{titular_entradas}": "{nao_titular_pos}"
+     },
+     "espera": {
+      "KB{i}": false
+     }
+    },
+    {
+     "nome": "Emergência para a {tag} mesmo em MAN",
+     "se": "bloco:emergencia_rele",
+     "entradas": {
+      "S{i}": "MAN",
+      "S0": true
+     },
+     "espera": {
+      "KB{i}": false,
+      "{acion}.RUN": false
+     }
+    },
+    {
+     "nome": "{tag} em AUT parte com o alarme da central{lider_txt}",
+     "se": [
+      "bloco:partida_por_alarme",
+      "{so_lider}"
+     ],
+     "entradas": {
+      "S{i}": "AUT",
+      "CENTRAL.ALARME": true
+     },
+     "espera": {
+      "KB{i}": true
+     }
+    },
+    {
+     "nome": "{tag} em MAN parte mesmo com a central normal",
+     "se": "bloco:partida_por_alarme",
+     "entradas": {
+      "S{i}": "MAN"
+     },
+     "espera": {
+      "KB{i}": true
+     }
+    }
+   ],
+   "logica": [
+    "MAN: KB{i} liga direto pela seletora, sem depender do comando automático{sob_emergencia}.",
+    "AUT: KB{i} liga com o comando automático{aut_texto}{titular_texto}{reversao_texto}."
+   ],
+   "notas": [
+    "Partida/parada sempre pelo acionamento: KB{i} fecha a entrada digital de partida do {acion}."
+   ]
+  },
+  {
+   "id": "partida_por_alarme",
+   "rotulo": "Partida automática pelo alarme de incêndio (KA)",
+   "se": [
+    "req:comando.partida_alarme"
+   ],
+   "entradas": [
+    {
+     "id": "CENTRAL.ALARME",
+     "tipo": "externo",
+     "rotulo": "Central de alarme: alarme de incêndio (módulo de comando)",
+     "campo": {
+      "regua": "X2",
+      "rotulos": [
+       "central: contato do módulo de comando (+24 V)",
+       "central: retorno KA"
+      ]
+     }
+    },
+    {
+     "id": "DFM.FUMACA",
+     "tipo": "externo",
+     "rotulo": "Detector de fumaça da casa de máquinas atuado",
+     "se": "req:comando.inibicao_fumaca",
+     "campo": {
+      "regua": "X2",
+      "rotulos": [
+       "detector da casa de máquinas (+24 V)",
+       "detector da casa de máquinas (retorno)"
+      ]
+     }
+    },
+    {
+     "id": "ST",
+     "tipo": "seletora",
+     "posicoes": [
+      "NORMAL",
+      "TESTE"
+     ],
+     "padrao": "NORMAL",
+     "rotulo": "MODO NORMAL · TESTE (chave com segredo)",
+     "porta": true,
+     "material": "seletora_chave",
+     "descricao": "Seletora 22 mm com chave, 2 posições (NORMAL · TESTE)",
+     "se": "req:comando.modo_teste"
+    }
+   ],
+   "reles": [
+    {
+     "tag": "KA",
+     "rotulo": "comando automático (alarme ou teste)"
+    }
+   ],
+   "degraus": [
+    {
+     "barra": "L+",
+     "expr": {
+      "p": [
+       {
+        "s": [
+         {
+          "x": "CENTRAL.ALARME",
+          "rotulo": "central (módulo de comando)"
+         },
+         {
+          "x": "DFM.FUMACA",
+          "neg": true,
+          "se": "req:comando.inibicao_fumaca",
+          "rotulo": "fumaça casa de máquinas"
+         }
+        ]
+       },
+       {
+        "x": "ST=TESTE",
+        "se": "req:comando.modo_teste"
+       }
+      ]
+     },
+     "saida": "KA",
+     "rotulo": "comando automático"
+    }
+   ],
+   "cenarios": [
+    {
+     "nome": "Alarme da central energiza KA (partida automática imediata)",
+     "entradas": {
+      "CENTRAL.ALARME": true
+     },
+     "espera": {
+      "KA": true
+     }
+    },
+    {
+     "nome": "Fumaça na casa de máquinas inibe a partida automática",
+     "se": "req:comando.inibicao_fumaca",
+     "entradas": {
+      "CENTRAL.ALARME": true,
+      "DFM.FUMACA": true
+     },
+     "espera": {
+      "KA": false
+     }
+    },
+    {
+     "nome": "Chave em TESTE roda a pressurização sem a central",
+     "se": "req:comando.modo_teste",
+     "entradas": {
+      "ST": "TESTE"
+     },
+     "espera": {
+      "KA": true
+     }
+    }
+   ],
+   "logica": [
+    "KA (comando automático) liga com o alarme da central{inibe_txt}{teste_txt}; não há botão que pare o sistema fora do painel (parada só no painel)."
+   ]
+  },
+  {
+   "id": "reversao_automatica",
+   "rotulo": "Reversão automática para o reserva (KTR + KREV)",
+   "se": [
+    "req:comando.reversao",
+    "motores==2"
+   ],
+   "temporizadores": [
+    {
+     "tag": "KTR",
+     "rotulo": "temporizador da reversão ({tempo_reversao} s)",
+     "preset_s": "{tempo_reversao}"
+    }
+   ],
+   "reles": [
+    {
+     "tag": "KREV",
+     "rotulo": "reversão para {ultimo.tag}"
+    }
+   ],
+   "degraus": [
+    {
+     "barra": "L+",
+     "expr": {
+      "s": [
+       {
+        "x": "KB{m1.i}"
+       },
+       {
+        "x": "PS{m1.i}.FLUXO",
+        "neg": true,
+        "se": "bloco:pressostato_fluxo",
+        "rotulo": "pressostato de fluxo {m1.tag}",
+        "campo": {
+         "regua": "X2",
+         "rotulos": [
+          "pressostato {m1.tag} (+24 V)",
+          "pressostato {m1.tag} (retorno KTR)"
+         ]
+        }
+       }
+      ]
+     },
+     "saida": "KTR",
+     "rotulo": "sem fluxo no {m1.tag} → conta {tempo_reversao} s"
+    },
+    {
+     "barra": "L+",
+     "expr": {
+      "s": [
+       {
+        "p": [
+         {
+          "x": "KTR"
+         },
+         {
+          "x": "KF{m1.i}",
+          "se": "bloco:status_acionamento"
+         },
+         {
+          "x": "KREV",
+          "rotulo": "selo"
+         }
+        ]
+       },
+       {
+        "x": "KA",
+        "se": "bloco:partida_por_alarme"
+       }
+      ]
+     },
+     "saida": "KREV",
+     "rotulo": "reversão para {ultimo.tag}"
+    }
+   ],
+   "cenarios": [
+    {
+     "nome": "Sem fluxo no {m1.tag}: após {tempo_reversao} s a reversão parte {ultimo.tag}",
+     "se": "bloco:pressostato_fluxo",
+     "entradas": {
+      "S{m1.i}": "AUT",
+      "S{ultimo.i}": "AUT",
+      "CENTRAL.ALARME": true,
+      "{m1.tag}.sem_fluxo": true
+     },
+     "aguardar_s": "{tempo_reversao_mais}",
+     "espera": {
+      "KREV": true,
+      "KB{ultimo.i}": true,
+      "KB{m1.i}": false
+     }
+    },
+    {
+     "nome": "Antes do tempo de reversão o líder {m1.tag} continua",
+     "se": "bloco:pressostato_fluxo",
+     "entradas": {
+      "S{m1.i}": "AUT",
+      "S{ultimo.i}": "AUT",
+      "CENTRAL.ALARME": true,
+      "{m1.tag}.sem_fluxo": true
+     },
+     "espera": {
+      "KREV": false,
+      "KB{m1.i}": true,
+      "KB{ultimo.i}": false
+     }
+    },
+    {
+     "nome": "Falha no acionamento do {m1.tag}: reversão imediata para {ultimo.tag}",
+     "se": "bloco:status_acionamento",
+     "entradas": {
+      "S{m1.i}": "AUT",
+      "S{ultimo.i}": "AUT",
+      "CENTRAL.ALARME": true,
+      "{m1.acion}.falha": true
+     },
+     "espera": {
+      "KREV": true,
+      "KB{ultimo.i}": true
+     }
+    }
+   ],
+   "logica": [
+    "{m1.tag} é o líder; se o pressostato de fluxo não confirmar em {tempo_reversao} s (KTR) ou o acionamento falhar (KF{m1.i}), KREV sela, desliga {m1.tag} e parte {ultimo.tag}. O fim do alarme desfaz a reversão."
+   ]
+  },
+  {
+   "id": "pressostato_fluxo",
+   "rotulo": "Pressostato de fluxo por ventilador (prova de ar)",
+   "por": "motores",
+   "se": [
+    "req:comando.pressostato_fluxo"
+   ],
+   "equipamentos": [
+    {
+     "tag": "PS{i}",
+     "rotulo": "Pressostato de fluxo do {tag}",
+     "saidas": {
+      "FLUXO": {
+       "s": [
+        {
+         "x": "{run}"
+        },
+        {
+         "x": "{tag}.sem_fluxo",
+         "neg": true
+        }
+       ]
+      }
+     }
+    }
+   ],
+   "entradasExtras": [
+    {
+     "id": "{tag}.sem_fluxo",
+     "tipo": "falha",
+     "rotulo": "Sem fluxo no {tag} (correia/registro)"
+    }
+   ],
+   "logica": [
+    "PS{i}: pressostato diferencial de fluxo do {tag} (contato fecha com ar)."
+   ]
+  },
+  {
+   "id": "partida_direta",
+   "rotulo": "Partida direta por contator (KM) com proteção térmica",
+   "por": "motores",
+   "se": [
+    "!acionamento",
+    "req:comando.seletora_man_0_aut"
+   ],
+   "reles": [
+    {
+     "tag": "KM{i}",
+     "rotulo": "contator {tag}",
+     "tipo": "contator"
+    },
+    {
+     "tag": "KR{i}",
+     "rotulo": "{tag} operando"
+    },
+    {
+     "tag": "KF{i}",
+     "rotulo": "falha {tag}"
+    }
+   ],
+   "entradasExtras": [
+    {
+     "id": "{tag}.termico",
+     "tipo": "falha",
+     "rotulo": "Disparo térmico do {tag} (disjuntor-motor)"
+    }
+   ],
+   "degraus": [
+    {
+     "barra": "L+",
+     "expr": {
+      "s": [
+       {
+        "x": "KB{i}"
+       },
+       {
+        "x": "{tag}.termico",
+        "neg": true,
+        "rotulo": "disjuntor-motor {tag} (contato auxiliar)"
+       }
+      ]
+     },
+     "saida": "KM{i}",
+     "rotulo": "contator {tag}"
+    },
+    {
+     "barra": "L+",
+     "expr": {
+      "x": "KM{i}"
+     },
+     "saida": "KR{i}",
+     "rotulo": "{tag} operando"
+    },
+    {
+     "barra": "L+",
+     "expr": {
+      "x": "{tag}.termico",
+      "rotulo": "disparo do disjuntor-motor {tag}"
+     },
+     "saida": "KF{i}",
+     "rotulo": "falha {tag}"
+    }
+   ],
+   "cenarios": [
+    {
+     "nome": "{tag} em MAN liga o contator KM{i}",
+     "entradas": {
+      "S{i}": "MAN"
+     },
+     "espera": {
+      "KM{i}": true,
+      "KR{i}": true
+     }
+    },
+    {
+     "nome": "Disparo térmico do {tag}: KM{i} cai e KF{i} sinaliza a falha",
+     "entradas": {
+      "S{i}": "MAN",
+      "{tag}.termico": true
+     },
+     "espera": {
+      "KM{i}": false,
+      "KF{i}": true
+     }
+    }
+   ],
+   "logica": [
+    "{tag}: partida direta — KB{i} fecha o contator KM{i} pelo contato auxiliar do disjuntor-motor; o disparo térmico derruba KM{i} e liga KF{i}."
+   ]
+  },
+  {
+   "id": "modo_manual",
+   "rotulo": "Modo manual (KMAN)",
+   "se": [
+    "motores>=1",
+    "req:comando.seletora_man_0_aut"
+   ],
+   "reles": [
+    {
+     "tag": "KMAN",
+     "rotulo": "algum motor em MANUAL"
+    }
+   ],
+   "degraus": [
+    {
+     "barra": "L+",
+     "expr": {
+      "p_de": "motores",
+      "leaf": {
+       "x": "S{m.i}=MAN",
+       "rotulo": "S{m.i} MAN (2º bloco)"
+      }
+     },
+     "saida": "KMAN",
+     "rotulo": "modo manual"
+    }
+   ],
+   "cenarios": [
+    {
+     "nome": "Qualquer motor em MAN energiza KMAN (fora da emergência)",
+     "entradas": {
+      "S{m1.i}": "MAN",
+      "S0": true
+     },
+     "espera": {
+      "KMAN": true
+     }
+    }
+   ],
+   "logica": [
+    "KMAN fica em L+ (fora da emergência): qualquer seletora em MAN energiza KMAN."
+   ]
+  },
+  {
+   "id": "status_acionamento",
+   "rotulo": "Status real do acionamento (KR operando, KF falha)",
+   "por": "motores",
+   "se": [
+    "acionamento"
+   ],
+   "entradas": [],
+   "reles": [
+    {
+     "tag": "KR{i}",
+     "rotulo": "{tag} operando"
+    },
+    {
+     "tag": "KF{i}",
+     "rotulo": "falha {tag}"
+    }
+   ],
+   "degraus": [
+    {
+     "barra": "L+",
+     "expr": {
+      "x": "{acion}.RUN",
+      "rotulo": "{acion} saída \"em funcionamento\"",
+      "campo": {
+       "se": "acion_cliente",
+       "regua": "X2",
+       "rotulos": [
+        "{acion} DO (em funcionamento) +24 V",
+        "{acion} DO retorno KR{i}"
+       ]
+      }
+     },
+     "saida": "KR{i}",
+     "rotulo": "{tag} operando"
+    },
+    {
+     "barra": "L+",
+     "expr": {
+      "x": "{acion}.FALHA",
+      "rotulo": "{acion} relé de falha",
+      "campo": {
+       "se": "acion_cliente",
+       "regua": "X2",
+       "rotulos": [
+        "{acion} relé de falha TA (+24 V)",
+        "{acion} relé de falha TC (retorno KF{i})"
+       ]
+      }
+     },
+     "saida": "KF{i}",
+     "rotulo": "falha {tag}"
+    }
+   ],
+   "saidasCampo": [
+    {
+     "por_unico": "externos",
+     "se": "req:comando.contato_operando",
+     "tag": "{e.tag}.MOTOR_OPERANDO",
+     "expr": {
+      "p_de": "motores",
+      "leaf": {
+       "x": "KR{m.i}"
+      }
+     },
+     "rotulo": "{motor} operando → {e.rotulo} ({e.sinal.bomba_operando})",
+     "borne": {
+      "regua": "X2",
+      "rotulos": [
+       "{e.tag} {e.sinal.bomba_operando} (KR)",
+       "{e.tag} {e.sinal.bomba_operando} comum"
+      ]
+     }
+    }
+   ],
+   "cenarios": [
+    {
+     "nome": "{tag} operando lida do acionamento (status real, não só o comando)",
+     "entradas": {
+      "S{i}": "MAN"
+     },
+     "espera": {
+      "KR{i}": true
+     }
+    },
+    {
+     "nome": "{tag} operando enviada aos equipamentos externos",
+     "se": [
+      "req:comando.contato_operando",
+      "externos>=1"
+     ],
+     "entradas": {
+      "S{i}": "MAN"
+     },
+     "espera": {
+      "{e1.tag}.MOTOR_OPERANDO": true
+     }
+    },
+    {
+     "nome": "Falha no {acion}: KF{i} liga e {tag} para",
+     "entradas": {
+      "S{i}": "MAN",
+      "{acion}.falha": true
+     },
+     "espera": {
+      "KF{i}": true,
+      "KR{i}": false
+     }
+    },
+    {
+     "nome": "Falha no {acion}: o equipamento externo deixa de ver motor operando",
+     "se": [
+      "req:comando.contato_operando",
+      "externos>=1"
+     ],
+     "entradas": {
+      "S{i}": "MAN",
+      "{acion}.falha": true
+     },
+     "espera": {
+      "{e1.tag}.MOTOR_OPERANDO": false
+     }
+    }
+   ],
+   "logica": [
+    "KR{i} lê o status real do {acion} (motor girando), não só o comando; KF{i} lê o relé de falha."
+   ]
+  },
+  {
+   "id": "valvula_por_equipamento",
+   "rotulo": "Válvula de cada equipamento externo (abre pelo contato do equipamento ou por KMAN)",
+   "por": "valvulas",
+   "se": [
+    "req:valvulas.alimentacao"
+   ],
+   "entradas": [
+    {
+     "id": "{e.tag}.VALVULA",
+     "tipo": "externo",
+     "rotulo": "{e.rotulo} comanda abrir a válvula",
+     "se": "req:valvulas.contato_externo"
+    }
+   ],
+   "degraus": [
+    {
+     "barra": "{barra_valvula}",
+     "expr": {
+      "p": [
+       {
+        "x": "{e.tag}.VALVULA",
+        "se": "req:valvulas.contato_externo",
+        "rotulo": "contato {e.tag} ({e.sinal.valvula})"
+       },
+       {
+        "x": "KMAN",
+        "se": "req:valvulas.abre_em_manual"
+       }
+      ]
+     },
+     "saida": "{tag}",
+     "rotulo": "atuador {rotulo}"
+    }
+   ],
+   "bornes": [
+    {
+     "regua": "X2",
+     "rotulos": [
+      "{tag}: LV+ → contato {e.tag} ({e.sinal.valvula})",
+      "{tag}: retorno do contato {e.tag}",
+      "{tag}: Y atuador (24 V)",
+      "{tag}: 0 V atuador"
+     ]
+    }
+   ],
+   "cenarios": [
+    {
+     "nome": "Válvula {tag} abre pelo contato do {e.rotulo}",
+     "se": "req:valvulas.contato_externo",
+     "entradas": {
+      "{e.tag}.VALVULA": true
+     },
+     "espera": {
+      "{tag}": true
+     }
+    },
+    {
+     "nome": "Motor em MAN abre a válvula {tag} mesmo com a emergência acionada",
+     "se": [
+      "req:valvulas.abre_em_manual",
+      "req:valvulas.independente_emergencia"
+     ],
+     "entradas": {
+      "S{m1.i}": "MAN",
+      "S0": true
+     },
+     "espera": {
+      "{tag}": true
+     }
+    },
+    {
+     "nome": "Motor em MAN abre a válvula {tag}",
+     "se": [
+      "req:valvulas.abre_em_manual",
+      "!req:valvulas.independente_emergencia"
+     ],
+     "entradas": {
+      "S{m1.i}": "MAN"
+     },
+     "espera": {
+      "{tag}": true
+     }
+    }
+   ],
+   "logica": [
+    "Válvula {tag}: alimentada por F2 (LV+, fora da emergência); o contato do {e.rotulo} abre a válvula; KMAN em paralelo abre com qualquer motor em MANUAL."
+   ]
+  },
+  {
+   "id": "status_para_central",
+   "rotulo": "Operação e falha para a central de alarme",
+   "se": [
+    "req:automacao.status_central"
+   ],
+   "saidasCampo": [
+    {
+     "tag": "CENTRAL.OPERACAO",
+     "expr": {
+      "p_de": "motores",
+      "leaf": {
+       "x": "KB{m.i}"
+      }
+     },
+     "rotulo": "pressurização em operação → central (módulo de entrada)",
+     "borne": {
+      "regua": "X2",
+      "rotulos": [
+       "central: operação (contato)",
+       "central: operação comum"
+      ]
+     }
+    },
+    {
+     "tag": "CENTRAL.SEM_FALHA",
+     "se": "bloco:status_acionamento",
+     "expr": {
+      "s_de": "motores",
+      "leaf": {
+       "x": "KF{m.i}",
+       "neg": true
+      }
+     },
+     "rotulo": "falha → central (contato NF: abre na falha; fio partido também alarma)",
+     "borne": {
+      "regua": "X2",
+      "rotulos": [
+       "central: falha (NF)",
+       "central: falha comum"
+      ]
+     }
+    }
+   ],
+   "cenarios": [
+    {
+     "nome": "Falha num acionamento abre o contato de falha para a central",
+     "se": "bloco:status_acionamento",
+     "entradas": {
+      "S{m1.i}": "MAN",
+      "{m1.acion}.falha": true
+     },
+     "espera": {
+      "CENTRAL.SEM_FALHA": false
+     }
+    }
+   ],
+   "logica": [
+    "Operação e falha vão à central por módulos de entrada; a falha em contato NF (abre na falha)."
+   ]
+  },
+  {
+   "id": "sinalizacao",
+   "rotulo": "Sinalização na porta",
+   "de_lista": "sinalizacao.porta",
+   "prefixo": "H",
+   "mapa": [
+    {
+     "termos": [
+      "energizad",
+      "presen[çc]a de tens",
+      "ligado [àa] rede"
+     ],
+     "x": "energia",
+     "barra": "FN",
+     "cor": "branco",
+     "tensao": "220 Vca",
+     "sem_rele": true
+    },
+    {
+     "termos": [
+      "alarme",
+      "inc[êe]ndio"
+     ],
+     "x": "KA",
+     "cor": "vermelho"
+    },
+    {
+     "termos": [
+      "revers"
+     ],
+     "x": "KREV",
+     "cor": "amarelo"
+    },
+    {
+     "termos": [
+      "teste"
+     ],
+     "x": "ST=TESTE",
+     "sem_rele": true,
+     "cor": "azul"
+    },
+    {
+     "termos": [
+      "liberad"
+     ],
+     "x": "KL",
+     "cor": "verde"
+    },
+    {
+     "termos": [
+      "falha",
+      "defeito",
+      "disparad"
+     ],
+     "x": "KF{m.i}",
+     "por_motor": true,
+     "cor": "vermelho"
+    },
+    {
+     "termos": [
+      "operando",
+      "em funcionamento",
+      "ligad",
+      "em opera"
+     ],
+     "x": "KR{m.i}",
+     "por_motor": true,
+     "cor": "verde"
+    },
+    {
+     "termos": [
+      "manual"
+     ],
+     "x": "KMAN",
+     "cor": "amarelo"
+    },
+    {
+     "termos": [
+      "emerg"
+     ],
+     "x": "KE",
+     "neg": true,
+     "cor": "vermelho"
+    }
+   ],
+   "material": "sinaleiro",
+   "logica": [
+    "Sinaleiros LED 22 mm em 24 Vcc acionados por contatos dos relés; o de quadro energizado em 220 Vca."
+   ]
+  },
+  {
+   "id": "contatos_livres",
+   "rotulo": "Contatos secos livres para a automação",
+   "de_lista": "automacao.contatos_livres",
+   "regua": "X3",
+   "mapa": "sinalizacao",
+   "logica": [
+    "Contatos secos livres (sem tensão do quadro) na régua X3 para a automação futura."
+   ]
+  },
+  {
+   "id": "rede_serial",
+   "rotulo": "Rede RS-485 em régua dedicada",
+   "se": [
+    "req:automacao.rede"
+   ],
+   "bornes": [
+    {
+     "regua": "X4",
+     "rotulos": [
+      "A+ (RS-485)",
+      "B− (RS-485)",
+      "GND / blindagem"
+     ]
+    }
+   ],
+   "notas": [
+    "Rede RS-485 (Modbus RTU) dos acionamentos interligados em cabo par trançado blindado 1 par + GND; terminação 120 Ω na extremidade; endereços distintos; blindagem aterrada em um só ponto."
+   ]
+  }
+ ]
+}

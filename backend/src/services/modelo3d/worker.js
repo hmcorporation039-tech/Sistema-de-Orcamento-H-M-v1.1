@@ -19,6 +19,14 @@ try {
 
   const w = workerData;
   const arquitetura = lerArquitetura(w.dxf);
+  // O QUE É O PROJETO (skills/_comum/cad/objetivoDoProjeto.js — 09/11/2026): no abrigo/equipamento (subestação…) o 3D é
+  // o abrigo com os componentes da relação de materiais, na escala das cotas — não a planta de situação colada no
+  // desenho. Projeto predial segue como antes (uma cena por planta). Falha aqui não derruba o 3D.
+  let objetivo = null;
+  try {
+    const o = require(path.join(CAD, 'objetivoDoProjeto.js')).entenderProjeto(arquitetura, { nomeArquivo: w.nomeArquivo || '', disciplinas: w.disciplinasMarcadas || [] });
+    if ((o.objeto || 'arquitetura') !== 'arquitetura') objetivo = o;
+  } catch { objetivo = null; }
   const peDireito = Number(w.peDireito) > 1.5 ? Number(w.peDireito) : PE_DIREITO_PADRAO;
   const SEM_NADA = 'A arquitetura não tem ambientes com nome (textos dentro de polilinhas fechadas) nem pontos de instalação desenhados: sem eles não há como montar o 3D.';
   let r;
@@ -28,11 +36,12 @@ try {
       dispositivosReais: w.dispositivosReais, trechos: w.trechos || [],
       disciplinas: w.disciplinas, dadosPorDisciplina: w.dadosPorDisciplina,
       titulo: w.titulo, cliente: w.cliente, obra: w.obra, proposta: w.proposta, aprendidos: w.aprendidos || [],
+      ...(objetivo ? { objetivo } : {}),
     });
   } catch (e) {
-    throw arquitetura.ambientes.length ? e : new Error(SEM_NADA);
+    throw arquitetura.ambientes.length || objetivo ? e : new Error(SEM_NADA);
   }
-  if (!arquitetura.ambientes.length && !r.cenas.some(c => c.plantaInfo.pontos)) throw new Error(SEM_NADA);
+  if (!objetivo && !arquitetura.ambientes.length && !r.cenas.some(c => c.plantaInfo.pontos)) throw new Error(SEM_NADA);
   const { numeros, avisos } = resumoDasCenas(r);
   parentPort.postMessage({ ok: true, html: gerarHtml(r.cenas, { principal: r.principal }), numeros, avisos });
 } catch (err) {

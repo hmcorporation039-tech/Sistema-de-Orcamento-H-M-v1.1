@@ -66,6 +66,13 @@ const FONTE_RENDIMENTO = 0.9;
 const RELE_INTERFACE = { l: 6.2, h: 90, p: 80, consumo_ma: 17, perda_w: 0.4 }; // relé "slim" 24 Vcc com base
 const SWITCH = { l: 45, h: 110, p: 80, consumo_ma: 200, perda_w: 4.8 };
 const CONSUMO_24V_MA = { ihm: 500, sinaleiro: 20, sensor: 30, rele_seguranca: 100 };
+// comando por relés (projeto pela especificação): relé de 4 contatos reversíveis com base (tipo Finder 55.34 + 94.04),
+// temporizador modular e contator de comando — medidas e consumos típicos de catálogo [CONFERIR]
+const RELE_AUXILIAR = {
+  rele: { rotulo: 'Relé auxiliar 4 contatos reversíveis 24 Vcc com base, LED e diodo', l: 27, h: 80, p: 75, consumo_ma: 37, perda_w: 0.9 },
+  temporizador: { rotulo: 'Relé temporizador ao trabalho 24 Vcc (modular)', l: 17.5, h: 90, p: 65, consumo_ma: 25, perda_w: 0.6 },
+  contator: { rotulo: 'Contator tripolar AC-3, bobina 24 Vcc', consumo_ma: 100, perda_w: 2 },
+};
 
 // Bornes (largura em mm, por seção em mm²) — bornes de parafuso/mola [CONFERIR catálogo]
 const BORNE_LARGURA = { 1.5: 5.2, 2.5: 5.2, 4: 6.2, 6: 8.2, 10: 10.2, 16: 12.2, 25: 16, 35: 16, 50: 18.5, 70: 22, 95: 25 };
@@ -269,7 +276,7 @@ const dimPorCorrente = (lista, i) => lista.find(d => i <= d.ate + 1e-9) || lista
 module.exports = {
   MODULO_MM, MODULO_NOMINAL_MM, DIN_ALTURA, DIN_PROF, modulosDisjuntor, modulosDdr, modulosIdr, modulosDps,
   CAIXA_MOLDADA, CONTATOR_DIM, DISJUNTOR_MOTOR_DIM, RELE_SOBRECARGA_ALTURA, SOFT_DIM, INVERSOR_DIM,
-  CLP, CPU_IO_PADRAO, FONTES_24V_A, FONTE_DIM, FONTE_RENDIMENTO, RELE_INTERFACE, SWITCH, CONSUMO_24V_MA,
+  CLP, CPU_IO_PADRAO, RELE_AUXILIAR, FONTES_24V_A, FONTE_DIM, FONTE_RENDIMENTO, RELE_INTERFACE, SWITCH, CONSUMO_24V_MA,
   BORNE_LARGURA, BORNE_ALTURA, BORNE_POSTE_MM, CANALETAS, OCUPACAO_CANALETA, DIAMETRO_FIO, FIO_POR_CORRENTE, FIO_COMANDO, FIO_COMANDO_CA,
   INVOLUCROS, MARGEM_UTIL, FOLGA_PORTA,
   BARRAS_DIN43671, EXPOENTE_K2, PENTES, DENSIDADE_COBRE, RHO_20, ALFA_COBRE, K_ADIABATICO_COBRE, BETA_COBRE, THETA_FINAL_BARRA,

@@ -6,6 +6,7 @@ import {
   CheckCircle2, XCircle, AlertTriangle, FileText, History, ArrowLeft, Link2,
 } from 'lucide-react';
 import MarkdownSeguro from './MarkdownSeguro';
+import { SeloOrigem, AcoesDaResposta, ArquivosGerados, origemDaMensagem } from './OrigemResposta';
 import {
   statusAssistente, contextoAssistente, listarConversas, criarConversa, verConversa, alterarConversa, cancelarExecucao,
   aplicarAcao, descartarAcao, enviarArquivos, enviarMensagemStream, acompanharStream,
@@ -159,7 +160,7 @@ function CartaoAcao({ acao, aoMudar }) {
 }
 
 // ── Mensagem ─────────────────────────────────────────────────────────────
-function Mensagem({ m, acoes, aoMudarAcao, aoNavegar, aoVivo }) {
+function Mensagem({ m, acoes, aoMudarAcao, aoNavegar, aoVivo, aoMudarMensagem }) {
   if (m.papel === 'usuario') {
     return (
       <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '10px 0' }}>
@@ -184,6 +185,7 @@ function Mensagem({ m, acoes, aoMudarAcao, aoNavegar, aoVivo }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: OURO, fontWeight: 700, marginBottom: 4 }}>
         <Sparkles size={12} /> Assistente
         {m.tempo_ms != null && !vivo && <span style={{ color: APAGADO, fontWeight: 400 }}>· {Math.round(m.tempo_ms / 1000)} s</span>}
+        <SeloOrigem origem={origemDaMensagem(m, vivo)} />
       </div>
       {partes.map((p, i) => (p.tipo === 'texto'
         ? <MarkdownSeguro key={i} texto={p.texto} aoNavegar={aoNavegar} />
@@ -198,9 +200,10 @@ function Mensagem({ m, acoes, aoMudarAcao, aoNavegar, aoVivo }) {
           <Loader2 size={13} style={{ animation: 'hm-girar 1s linear infinite' }} /> Pensando…
         </div>
       )}
-      {criados.length > 0 && (
+      <ArquivosGerados criados={criados} />
+      {criados.some(c => c.link) && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-          {criados.map(c => (
+          {criados.filter(c => c.link).map(c => (
             <Link key={`${c.tipo}-${c.id}`} to={c.link} onClick={aoNavegar}
               style={{ ...botao({ fontSize: 12, color: OURO, borderColor: '#4a3d10', textDecoration: 'none' }) }}>
               <Link2 size={12} /> {c.rotulo}
@@ -209,6 +212,7 @@ function Mensagem({ m, acoes, aoMudarAcao, aoNavegar, aoVivo }) {
         </div>
       )}
       {acoes.map(a => <CartaoAcao key={a.id} acao={a} aoMudar={aoMudarAcao} />)}
+      {!vivo && <AcoesDaResposta m={m} aoMudar={aoMudarMensagem} />}
       {!vivo && m.erro && (
         <div style={{ fontSize: 12, color: status === 'cancelada' ? APAGADO : '#d06060', marginTop: 6, display: 'flex', gap: 6 }}>
           <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} /> {m.erro}
@@ -263,7 +267,7 @@ export default function PainelAssistente({ usuario }) {
       return;
     }
     if (ev.tipo === 'estado') {
-      setAoVivo({ mensagemId: ev.mensagemId, partes: ev.partes || [], criados: ev.criados || [], status: ev.status, posicao: ev.posicao });
+      setAoVivo({ mensagemId: ev.mensagemId, partes: ev.partes || [], criados: ev.criados || [], status: ev.status, posicao: ev.posicao, origem: ev.origem || null });
       if (ev.acoes?.length) setConversa(c => (c ? { ...c, acoes: [...c.acoes.filter(a => !ev.acoes.some(n => n.id === a.id)), ...ev.acoes] } : c));
       return;
     }
@@ -286,6 +290,7 @@ export default function PainelAssistente({ usuario }) {
       const partes = v.partes.slice();
       if (ev.tipo === 'fila') return { ...v, status: 'fila', posicao: ev.posicao };
       if (ev.tipo === 'executando') return { ...v, status: 'executando', posicao: null };
+      if (ev.tipo === 'origem') return { ...v, origem: ev.origem };
       if (ev.tipo === 'texto') {
         const ultima = partes[partes.length - 1];
         if (ultima && ultima.tipo === 'texto') partes[partes.length - 1] = { ...ultima, texto: ultima.texto + ev.delta };
@@ -422,6 +427,7 @@ export default function PainelAssistente({ usuario }) {
     } catch (e) { toast.error(e?.response?.data?.erro || 'Erro ao renomear.'); }
   }
 
+  const aoMudarMensagem = (nova) => setConversa(c => (c ? { ...c, mensagens: c.mensagens.map(x => (x.id === nova.id ? { ...x, ...nova } : x)) } : c));
   const aoMudarAcao = (nova) => setConversa(c => (c ? { ...c, acoes: c.acoes.map(a => (a.id === nova.id ? { ...a, ...nova } : a)) } : c));
   const aoNavegar = () => { if (celular) setAberto(false); };
   const acoesDa = (m) => (conversa?.acoes || []).filter(a => a.mensagem_id === m.id);
@@ -473,8 +479,8 @@ export default function PainelAssistente({ usuario }) {
           <div style={{ fontSize: 11.5, color: status?.disponivel ? '#5fae6b' : '#d08a40', display: 'flex', alignItems: 'center', gap: 4 }}>
             <span style={{ width: 6, height: 6, borderRadius: 3, background: status?.disponivel ? '#5fae6b' : '#d08a40', display: 'inline-block' }} />
             {status == null ? 'verificando…' : status.disponivel
-              ? `${status.provedor === 'api' ? 'API Anthropic' : 'Claude Max'} · ${status.modelo}${status.fila?.esperando ? ` · fila ${status.fila.esperando}` : ''} · hoje ${status.usadasHoje}${status.limiteDiario ? `/${status.limiteDiario}` : ''}`
-              : 'indisponível'}
+              ? `agentes próprios + ${status.provedor === 'api' ? 'API Anthropic' : 'Claude Max'} · ${status.modelo}${status.fila?.esperando ? ` · fila ${status.fila.esperando}` : ''} · IA hoje ${status.usadasHoje}${status.limiteDiario ? `/${status.limiteDiario}` : ''}`
+              : status.agentes ? 'só agentes próprios (IA indisponível)' : 'indisponível'}
           </div>
         </div>
         {!verLista && conversa && !renomeando && (
@@ -488,7 +494,7 @@ export default function PainelAssistente({ usuario }) {
       {/* Avisos de disponibilidade e contexto */}
       {status && !status.disponivel && (
         <div style={{ padding: '8px 12px', fontSize: 12, color: '#d08a40', borderBottom: `1px solid ${BORDA}`, background: '#140e05' }}>
-          <AlertTriangle size={13} style={{ verticalAlign: '-2px' }} /> {status.motivo || 'O assistente não está disponível agora.'}
+          <AlertTriangle size={13} style={{ verticalAlign: '-2px' }} /> {status.motivo || 'O assistente não está disponível agora.'}{status.agentes ? ' Os agentes próprios (analisar, projeto, orçamento, preços) continuam funcionando sem IA.' : ''}
         </div>
       )}
       <div style={{ padding: '6px 12px', fontSize: 12, color: APAGADO, borderBottom: `1px solid ${BORDA}`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
@@ -530,7 +536,7 @@ export default function PainelAssistente({ usuario }) {
           <div>
             {!conversa.mensagens.length && <BoasVindas />}
             {conversa.mensagens.map(m => (
-              <Mensagem key={m.id} m={m} acoes={acoesDa(m)} aoMudarAcao={aoMudarAcao} aoNavegar={aoNavegar} aoVivo={aoVivo} />
+              <Mensagem key={m.id} m={m} acoes={acoesDa(m)} aoMudarAcao={aoMudarAcao} aoNavegar={aoNavegar} aoVivo={aoVivo} aoMudarMensagem={aoMudarMensagem} />
             ))}
             {/* resposta ainda sem id (antes do servidor confirmar) */}
             {aoVivo && !aoVivo.mensagemId && (
@@ -585,7 +591,7 @@ export default function PainelAssistente({ usuario }) {
                 <Square size={16} />
               </button>
             ) : (
-              <button type="button" onClick={enviar} disabled={!texto.trim() || (status && !status.disponivel)}
+              <button type="button" onClick={enviar} disabled={!texto.trim() || (status && !status.disponivel && !status.agentes)}
                 style={botao({ padding: 8, background: texto.trim() ? OURO : 'transparent', color: texto.trim() ? '#000' : APAGADO, borderColor: OURO })}
                 title="Enviar" aria-label="Enviar">
                 <Send size={16} />
@@ -611,8 +617,9 @@ function BoasVindas() {
         <li>Anexe o PDF do projeto e peça "analise para orçamento de CFTV e monte o rascunho".</li>
         <li>"Dimensione a elétrica desta obra pela NBR 5410."</li>
         <li>"Quanto cobramos por ponto de rede da última vez?"</li>
+        <li>"Faça a pesquisa de preço do material" (planilha QF-CAG) — anexe a lista ou abra a proposta.</li>
       </ul>
-      O assistente lê os arquivos, usa as skills e o catálogo do sistema e cria rascunhos. O que muda algo importante aparece como um cartão para você aplicar.
+      Pedidos comuns (analisar, o que é o projeto, 3D, projeto da disciplina, orçamento, pesquisa de preços, quadro pela especificação) são feitos pelos <strong style={{ color: '#5fae6b' }}>agentes próprios, sem IA</strong>. O resto vai para a IA — ou peça "use a IA". "Pesquisa aprofundada" consulta o suporte Claude Max (só leitura e web). O que muda algo importante aparece como um cartão para você aplicar.
     </div>
   );
 }

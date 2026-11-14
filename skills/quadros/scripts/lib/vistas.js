@@ -137,7 +137,7 @@ function vistaInterna(p, calc, xI, yBase, P) {
     const yTopo = f.y;
     if (f.trilho) {
       const yc = yTopo + f.altura / 2;
-      p.ret(xUtil, Y(yc + 17.5), layout.larguraUtil, 35, 'QD-TRILHO');
+      p.ret(xUtil + (f.trilhoX || 0), Y(yc + 17.5), f.trilhoL ?? layout.larguraUtil, 35, 'QD-TRILHO');
     }
     for (const k of f.itens) {
       const h = k.altura || T.DIN_ALTURA;

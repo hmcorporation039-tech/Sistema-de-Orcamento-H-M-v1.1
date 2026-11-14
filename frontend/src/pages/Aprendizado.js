@@ -7,6 +7,7 @@ import { useAuth } from '../hooks/useAuth';
 import { estilos } from '../components/ui/estilos';
 import { dataHoraBr } from '../utils/format';
 import { mensagemDeErro } from '../utils/download';
+import AgentesProprios from '../components/aprendizado/AgentesProprios';
 
 // "O que o sistema sabe" (plano "sistema autônomo", 03/11/2026): o conhecimento que o sistema acumulou sem IA (vínculos
 // de material, símbolos e blocos por escritório, alturas), o treino com as obras da pasta dos clientes, quanto do
@@ -276,6 +277,8 @@ export default function Aprendizado() {
           </div>
         )) : <p style={estilos.ajuda}>Nenhuma consulta registrada no período.</p>}
       </div>
+
+      <AgentesProprios ehAdmin={ehAdmin} />
     </div>
   );
 }

@@ -45,7 +45,24 @@ const FERRAMENTAS = [
   { nome: 'cotacoes_fornecedores', rotulo: 'Consultando as cotações de fornecedores' },
   { nome: 'cronograma_obra', rotulo: 'Abrindo o cronograma da obra' },
   { nome: 'propor_acao', rotulo: 'Preparando uma ação para você confirmar' },
+  // Agentes próprios (09/11/2026): motores determinísticos, sem IA — preferir a eles a conversa livre
+  { nome: 'executar_agente', rotulo: 'Executando um agente próprio (sem IA)' },
+  { nome: 'ver_execucao', rotulo: 'Consultando a execução do agente' },
+  { nome: 'objetivo_do_projeto', rotulo: 'Lendo o objetivo do projeto' },
+  { nome: 'consultar_conhecimento', rotulo: 'Consultando a base de conhecimento' },
 ];
+
+// Ferramentas de SÓ LEITURA: as únicas que o SUPORTE Claude Max dos agentes (services/agentes/suporteClaude.js) e o
+// modo "pesquisa aprofundada" (com WebSearch/WebFetch) recebem — conteúdo de página da web pode tentar mandar o
+// modelo gravar algo (injeção de prompt), então ali não existe ferramenta que grave, crie, calcule pela cota ou
+// proponha ação. O financeiro fica de fora também (o suporte não precisa dele).
+const FERRAMENTAS_LEITURA = [
+  'buscar_obras', 'ver_obra', 'buscar_propostas', 'ver_proposta', 'buscar_clientes', 'buscar_materiais', 'buscar_servicos',
+  'buscar_kits', 'historico_preco', 'ler_arquivo', 'ver_analise', 'ver_projeto', 'consultar_norma', 'vencimentos',
+  'novidades_pastas', 'cotacoes_fornecedores', 'cronograma_obra', 'ver_execucao', 'objetivo_do_projeto', 'consultar_conhecimento',
+];
+// ferramentas embutidas do Claude Code liberadas SÓ no modo pesquisa aprofundada (nada de Bash/Read/Write/Edit)
+const EMBUTIDAS_CONSULTOR = ['WebSearch', 'WebFetch'];
 
 // Tipos de ação que o assistente pode PROPOR (propor_acao). A regra, a
 // validação e a execução de cada um ficam em services/assistente/acoes.js (o
@@ -61,7 +78,13 @@ const nomeCompleto = (nome) => `mcp__${NOME_SERVIDOR_MCP}__${nome}`;
 const ferramentaVisivel = (f, papel) => !papel || !f.papeis || papel === 'admin' || f.papeis.includes(papel);
 const ferramentasDoPapel = (papel) => FERRAMENTAS.filter(f => ferramentaVisivel(f, papel));
 const ferramentasPermitidas = (papel) => ferramentasDoPapel(papel).map(f => nomeCompleto(f.nome));
+// suporte: só as de leitura (mcp__hm__…); consultor: + WebSearch e WebFetch
+const ferramentasDoSuporte = ({ consultor = false } = {}) => [...FERRAMENTAS_LEITURA.map(nomeCompleto), ...(consultor ? EMBUTIDAS_CONSULTOR : [])];
 const nomeCurto = (nomeOuCompleto) => String(nomeOuCompleto || '').replace(`mcp__${NOME_SERVIDOR_MCP}__`, '');
-const rotuloDa = (nomeOuCompleto) => FERRAMENTAS.find(f => f.nome === nomeCurto(nomeOuCompleto))?.rotulo || nomeCurto(nomeOuCompleto);
+const ROTULOS_EMBUTIDAS = { WebSearch: 'Pesquisando na web', WebFetch: 'Lendo uma página da web' };
+const rotuloDa = (nomeOuCompleto) => FERRAMENTAS.find(f => f.nome === nomeCurto(nomeOuCompleto))?.rotulo || ROTULOS_EMBUTIDAS[nomeOuCompleto] || nomeCurto(nomeOuCompleto);
 
-module.exports = { FERRAMENTAS, PROIBIDAS, TIPOS_ACAO, PAPEIS_FINANCEIRO, ferramentasPermitidas, ferramentasDoPapel, ferramentaVisivel, rotuloDa, nomeCurto };
+module.exports = {
+  FERRAMENTAS, PROIBIDAS, TIPOS_ACAO, PAPEIS_FINANCEIRO, FERRAMENTAS_LEITURA, EMBUTIDAS_CONSULTOR,
+  ferramentasPermitidas, ferramentasDoPapel, ferramentaVisivel, ferramentasDoSuporte, rotuloDa, nomeCurto,
+};

@@ -55,3 +55,7 @@ Painel dedicado com controlador programável (pontos de E/S gerados com 20 % de 
 - A detecção dos halls é projetada pela skill de incêndio (NBR 17240); aqui entram só os módulos de integração (ou os detectores, se `sistema.deteccao_existente = false`).
 - Documento gerado é rascunho técnico: deve ser revisado e assinado pelo responsável técnico habilitado.
 - Ao mudar cálculo, atualize `testes/teste.js` e rode `npm test`.
+
+## Painel de pressurização pela especificação (09/11/2026)
+
+`dados/perfil-especificacao.json` (perfil `painel_pressurizacao`, herda o do quadro de força e comando) lê a especificação do painel — ventilador principal e reserva com inversor/soft-starter, partida pelo alarme da central, pressostato de fluxo com reversão temporizada, modo teste com chave, inibição pela fumaça na casa de máquinas, operação/falha para a central, parada só no painel — e gera o anteprojeto pelo motor de `skills/quadros/scripts/lib/especificacao.js` (blocos `partida_por_alarme`, `reversao_automatica`, `pressostato_fluxo`, `status_para_central`). Emergência que pare os ventiladores vira ponto a levantar. Teste: `testes/teste-especificacao.js` com `testes/especificacao-exemplo.txt` (fictício).

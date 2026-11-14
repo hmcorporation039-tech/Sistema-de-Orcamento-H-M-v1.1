@@ -5,6 +5,7 @@ import LaudosProjetos from '../../components/laudos/LaudosProjetos';
 import ListaObras from '../obras/ListaObras';
 import DetalheObra from '../obras/DetalheObra';
 import Aprendizado from '../Aprendizado';
+import ProjetoDaEspecificacao from '../../components/especificacao/ProjetoDaEspecificacao';
 
 // Grupo "Obras" (versão 2.0; abas separadas na 2.1). A lista de obras é a
 // primeira aba; depois vêm as três coisas que NÃO se misturam:
@@ -37,6 +38,8 @@ const ABAS = [
   { chave: 'analise', rotulo: 'Análise de projeto', render: () => <Compatibilizacao /> },
   { chave: 'projetos', rotulo: 'Projetos por disciplina', render: () => <LaudosProjetos key="projeto" tipo="projeto" /> },
   { chave: 'laudos', rotulo: 'Laudos', render: () => <LaudosProjetos key="laudo" tipo="laudo" /> },
+  // projeto do quadro/painel pela especificação do cliente, sem IA (09/11/2026)
+  { chave: 'especificacao', rotulo: 'Projeto pela especificação', render: () => <ProjetoDaEspecificacao /> },
   // o que o sistema aprendeu das análises e das obras já feitas, o acerto da leitura e o que falta conferir (03/11/2026)
   { chave: 'aprendizado', rotulo: 'O que o sistema sabe', render: () => <Aprendizado /> },
 ];

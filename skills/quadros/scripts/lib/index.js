@@ -20,6 +20,9 @@ const { gerarDesenho } = require('./desenho');
 const M3D = require('./modelo3d');
 const CAT = require('./catalogo');
 const CADERNO = require('./caderno');
+const ESPEC = require('./especificacao');
+const DOCS_ESPEC = require('../../../_comum/especificacao/documentos');
+const PRECOS_ESPEC = require('../../../_comum/especificacao/planilhaPrecos');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
 const MODELO = require('../../exemplos/modelo-vazio.json');
@@ -81,7 +84,19 @@ function processar(dados, opcoes = {}) {
   const parecer = I.parecer(checklist, ncs, [...med.isolamento, ...med.dieletrico, ...med.continuidade, ...med.funcional]);
   // modelo único da instalação: o quadro, os disjuntores (mesmas tags do caderno) e os circuitos
   const instalacao = instalacaoDoQuadro(calc, dados);
-  return { dados, calc, insp, checklist, ncs, med, parecer, instalacao, validacaoInstalacao: validarInstalacao(instalacao) };
+  // projeto gerado pela ESPECIFICAÇÃO do cliente (09/11/2026): os requisitos lidos ficam em
+  // dados.especificacao e a solução é refeita aqui, sem IA (mesmo motor da rota e do CLI)
+  const especificacao = projetoDaEspecificacao(dados);
+  return { dados, calc, insp, checklist, ncs, med, parecer, instalacao, validacaoInstalacao: validarInstalacao(instalacao), especificacao };
+}
+
+function projetoDaEspecificacao(dados) {
+  const esp = dados && dados.especificacao;
+  if (!esp || !esp.lidos) return null;
+  return ESPEC.solucionar(esp.lidos, {
+    aprendido: esp.aprendido || {}, decisoes: esp.decisoes || {}, respostas: esp.respostas || {}, pedido: esp.pedido || '',
+    cliente: dados.cliente?.nome || esp.cliente || '', obra: dados.obra?.nome || '', data: dados.meta?.data || null, revisao: dados.meta?.revisao || '0A', tag: esp.tag || undefined,
+  });
 }
 
 // ── Resumo para a tela ──────────────────────────────────────────────────────
@@ -463,7 +478,7 @@ const DOCUMENTOS = [
   { tipo: 'desenho', rotulo: 'Desenho de fabricação (vista frontal e layout interno)', formato: 'DXF', nome: 'Desenho_Quadro',
     gerar: async (res) => Buffer.from(gerarDesenho(res.calc, res.dados).dxf, 'utf8') },
   { tipo: 'modelo3d', rotulo: 'Modelo 3D do quadro (HTML)', formato: 'HTML', nome: 'Modelo_3D_Quadro',
-    gerar: async (res) => Buffer.from(M3D.gerarHtml(res.calc, res.dados), 'utf8') },
+    gerar: async (res) => Buffer.from(M3D.gerarHtml(res.calc, res.dados, { especificacao: res.especificacao }), 'utf8') },
   // pedido de 31/10/2026: todo quadro sai com o caderno de fabricação e montagem em PDF
   // (layout, componentes, barramentos, materiais da caixa aos parafusos, plaquetas, ensaios)
   { tipo: 'caderno', rotulo: 'Caderno de fabricação e montagem', formato: 'PDF', nome: 'Caderno_Fabricacao_Quadro',
@@ -472,6 +487,20 @@ const DOCUMENTOS = [
     gerar: (res) => D.docxParaBuffer(D.gerarChecklistCampo(res.dados, res.insp, cfgChecklist(res), res.checklist)) },
   { tipo: 'laudo', rotulo: 'Relatório de ensaios de rotina / inspeção do quadro', formato: 'Word', nome: 'Relatorio_Ensaios_Quadro',
     gerar: (res) => D.docxParaBuffer(D.gerarLaudoInspecao(res.dados, res.insp, cfgLaudo(res), { checklist: res.checklist, ncs: res.ncs, parecer: res.parecer, baseDir: res.baseDir, pastaFotos: res.pastaFotos })) },
+  // projeto pela especificação do cliente (só quando o projeto nasceu de uma especificação)
+  { tipo: 'folhas', rotulo: 'Anteprojeto pela especificação (FL01–FL07: unifilar, comando, interfaces, layout, cargas/materiais, memória)', formato: 'PDF', nome: 'Anteprojeto_Quadro',
+    exige: (res) => !!res.especificacao, motivo: 'Este projeto não foi gerado de uma especificação.', gerar: (res) => DOCS_ESPEC.gerarFolhasPdf(res.especificacao) },
+  { tipo: 'pesquisa_precos', rotulo: 'Pesquisa de preços do material (Excel)', formato: 'Excel', nome: 'Pesquisa_Precos_Material',
+    exige: (res) => !!res.especificacao, motivo: 'Este projeto não foi gerado de uma especificação.',
+    gerar: async (res) => (await PRECOS_ESPEC.gerarPlanilhaPrecos(res.especificacao, res.dados.especificacao.precos || {}, { contingencia: res.dados.especificacao.contingencia ?? 0.1 })).buffer },
+  { tipo: 'ficha', rotulo: 'Ficha técnica do quadro e dos componentes', formato: 'PDF', nome: 'Ficha_Tecnica_Quadro',
+    exige: (res) => !!res.especificacao, motivo: 'Este projeto não foi gerado de uma especificação.', gerar: (res) => DOCS_ESPEC.gerarFichaPdf(res.especificacao) },
+  { tipo: 'entrega', rotulo: 'Texto de entrega (resumo para o cliente e o engenheiro)', formato: 'Markdown', nome: 'Texto_Entrega',
+    exige: (res) => !!res.especificacao, motivo: 'Este projeto não foi gerado de uma especificação.',
+    gerar: async (res) => {
+      const pr = await PRECOS_ESPEC.gerarPlanilhaPrecos(res.especificacao, res.dados.especificacao.precos || {}, { contingencia: res.dados.especificacao.contingencia ?? 0.1 });
+      return Buffer.from(DOCS_ESPEC.textoEntrega(res.especificacao, pr.resumo), 'utf8');
+    } },
 ];
 
 // ── Orçamento ───────────────────────────────────────────────────────────────
@@ -685,11 +714,13 @@ const base = criarDisciplina({
 // O molde comum (_comum/disciplina.js) só conhece Word e Excel: o desenho DXF, o
 // 3D (HTML) e o caderno de fabricação (PDF) saem por aqui, com o mesmo padrão de nome de arquivo
 const gerarDocumentoBase = base.gerarDocumento;
-const FORA_DO_OFFICE = { desenho: { ext: 'dxf', mime: 'application/dxf' }, modelo3d: { ext: 'html', mime: 'text/html; charset=utf-8' }, caderno: { ext: 'pdf', mime: 'application/pdf' } };
+const FORA_DO_OFFICE = { desenho: { ext: 'dxf', mime: 'application/dxf' }, modelo3d: { ext: 'html', mime: 'text/html; charset=utf-8' }, caderno: { ext: 'pdf', mime: 'application/pdf' },
+  folhas: { ext: 'pdf', mime: 'application/pdf' }, ficha: { ext: 'pdf', mime: 'application/pdf' }, entrega: { ext: 'md', mime: 'text/markdown; charset=utf-8' } };
 base.gerarDocumento = async (res, tipo) => {
   const f = FORA_DO_OFFICE[tipo];
   if (!f) return gerarDocumentoBase(res, tipo);
   const d = DOCUMENTOS.find(x => x.tipo === tipo);
+  if (d.exige && !d.exige(res)) throw new Error(d.motivo || 'Preencha os dados necessários para gerar este documento.');
   return { buffer: await d.gerar(res), nomeArquivo: D.nomeArquivo(res.dados, d.nome, f.ext, true), mime: f.mime };
 };
 

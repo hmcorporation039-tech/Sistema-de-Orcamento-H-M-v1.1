@@ -23,6 +23,14 @@ function instalacaoDoQuadro(calc, dados = {}) {
       ...calc.circuitos.filter(x => x.dr === 'ddr').map(x => ({ tag: I.tagDisjuntor(x.n), In: x.disjuntor, idn_ma: x.drMa, polos: x.polos, circuitos: [x.n], ddr: true })),
     ],
     disjuntores: [], carga_instalada_va: 0,
+    // 3D fiel (09/11/2026): os dados vêm do caderno da skill quadros; os barramentos do cálculo dela
+    origem: 'quadros',
+    ...(calc.fio?.pot?.find(k => k.origem === 'entrada')?.secao ? { alimentador_secao_mm2: calc.fio.pot.find(k => k.origem === 'entrada').secao, alimentador_fonte: 'fiação de entrada do caderno (skill quadros)' } : {}),
+    ...(calc.barr ? { barramentos: {
+      tipo: calc.barr.tipo, fase: calc.barr.fase ? { l: calc.barr.fase.l, e: calc.barr.fase.e } : null, pente: calc.barr.pente ? { a: calc.barr.pente.a, s: calc.barr.pente.s } : null,
+      neutro: calc.barr.neutro ? { l: calc.barr.neutro.l, e: calc.barr.neutro.e } : null, secaoNeutro: calc.barr.secaoNeutro, pe: calc.barr.pe ? { l: calc.barr.pe.l, e: calc.barr.pe.e } : null,
+      fonte: 'calculado', icc_ka: c.icc, icc_informada: c.iccInformada, material: 'Cobre eletrolítico (Cu-ETP)',
+    } } : {}),
   };
   inst.quadros.push(q);
   for (const x of calc.circuitos) {
@@ -30,8 +38,10 @@ function instalacaoDoQuadro(calc, dados = {}) {
     inst.circuitos.push({
       id: x.n, quadro: c.tag, disjuntor: I.tagDisjuntor(x.n), tipo: TIPO_DO_CIRCUITO(x.tipo), descricao: x.descricao, potencia_va: va,
       ligacao: x.ligacao, fases: (x.fases || []).join(''), dr: !!x.dr, ambientes: [], pontos: [],
+      // seção da fiação interna (a do projeto, ou maior pela corrente do disjuntor — skill quadros)
+      ...(x.fio || x.secao ? { secao_mm2: x.fio || x.secao, fontes: { secao_mm2: x.secao && (!x.fio || x.fio === x.secao) ? 'projeto' : 'quadros' } } : {}),
     });
-    q.disjuntores.push({ tag: I.tagDisjuntor(x.n), circuito: x.n, polos: x.polos, In: x.disjuntor, curva: x.curva });
+    q.disjuntores.push({ tag: I.tagDisjuntor(x.n), circuito: x.n, polos: x.polos, In: x.disjuntor, curva: x.curva, ...(x.icu ? { icu_ka: x.icu } : {}) });
     q.carga_instalada_va += va;
   }
   // partida de motor: o "circuito" é o motor (tag M1…), protegido pelo Q1 do bloco de partida

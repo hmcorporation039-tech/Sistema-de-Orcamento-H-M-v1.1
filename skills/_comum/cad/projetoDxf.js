@@ -211,7 +211,16 @@ function lerProjetoDxf(textoDxf, { fator = 1, reLayerLinha = null } = {}) {
   const MAX_SEGMENTOS = 20000;
   function linhaDe(layer, xref) {
     const k = `${layer}|${xref || ''}`;
-    return linhasPorChave.get(k) || linhasPorChave.set(k, { layer, xref: xref || null, metros: 0, segmentos: [] }).get(k);
+    return linhasPorChave.get(k) || linhasPorChave.set(k, { layer, xref: xref || null, metros: 0, segmentos: [], cores: new Map() }).get(k);
+  }
+  // cor do traçado (09/11/2026 — infraestrutura por cor "de acordo com cada projeto"): a da
+  // entidade (ACI 1–255; 256 = BYLAYER e 0 = BYBLOCK não são cor) ou a da layer na tabela
+  const tabelaLayers = parsed.tables?.layers || {};
+  const corDaLayer = (layer) => { const l = tabelaLayers[layer]; const n = Math.abs(Number(l?.colorNumber)); return n >= 1 && n <= 255 ? n : null; };
+  function anotarCor(reg, e, layer, metros) {
+    const n = Number(e.colorNumber);
+    const k = n >= 1 && n <= 255 ? `entidade|${n}` : corDaLayer(layer) ? `layer|${corDaLayer(layer)}` : null;
+    if (k) reg.cores.set(k, (reg.cores.get(k) || 0) + metros);
   }
   function tracar(reg, pts) {
     for (let i = 1; i < pts.length && reg.segmentos.length < MAX_SEGMENTOS; i++) {
@@ -245,6 +254,7 @@ function lerProjetoDxf(textoDxf, { fator = 1, reLayerLinha = null } = {}) {
       if (!novo(layer, `arco|${chaveSegmento(corda[0], corda[4])}|${cm(corda[2][0])},${cm(corda[2][1])}`)) return;
       const reg = linhaDe(layer, xref);
       reg.metros += m(e.r * ang * escalaDe(transforms));
+      anotarCor(reg, e, layer, m(e.r * ang * escalaDe(transforms)));
       tracar(reg, corda);
       return;
     }
@@ -252,7 +262,7 @@ function lerProjetoDxf(textoDxf, { fator = 1, reLayerLinha = null } = {}) {
     const tp = transformar(pts, transforms);
     const reg = linhaDe(layer, xref);
     let trecho = [tp[0]];
-    const fechar = () => { if (trecho.length >= 2) { reg.metros += m(comprimento(trecho)); tracar(reg, trecho); } };
+    const fechar = () => { if (trecho.length >= 2) { reg.metros += m(comprimento(trecho)); anotarCor(reg, e, layer, m(comprimento(trecho))); tracar(reg, trecho); } };
     for (let i = 1; i < tp.length; i++) {
       if (novo(layer, chaveSegmento(tp[i - 1], tp[i]))) trecho.push(tp[i]);
       else { fechar(); trecho = [tp[i]]; }
@@ -319,7 +329,9 @@ function lerProjetoDxf(textoDxf, { fator = 1, reLayerLinha = null } = {}) {
 
   const legenda = lerLegenda(insercoes, textos);
   const simbolos = agruparSimbolos(insercoes, legenda);
-  const linhas = [...linhasPorChave.values()].map(l => ({ layer: l.layer, xref: l.xref, metros: Math.round(l.metros * 10) / 10, segmentos: l.segmentos }))
+  // a cor que mais mede no traçado da layer (cor_aci + cor_fonte 'entidade' | 'layer'): o 3D usa como a cor do tipo
+  const corDe = (l) => { const k = [...l.cores.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]; if (!k) return {}; const [fonte, n] = k.split('|'); return { cor_aci: Number(n), cor_fonte: fonte }; };
+  const linhas = [...linhasPorChave.values()].map(l => ({ layer: l.layer, xref: l.xref, metros: Math.round(l.metros * 10) / 10, segmentos: l.segmentos, ...corDe(l) }))
     .filter(l => l.metros >= 0.5)
     .sort((a, b) => b.metros - a.metros);
   return { texto: remontarTexto(textos), textos, simbolos, linhas, legenda: legenda.titulo, legendaItens: legenda.itens };
