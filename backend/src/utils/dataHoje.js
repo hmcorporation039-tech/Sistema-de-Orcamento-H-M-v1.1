@@ -33,4 +33,18 @@ function ehDataIso(s) {
   return dt.getUTCFullYear() === a && dt.getUTCMonth() === me - 1 && dt.getUTCDate() === d;
 }
 
-module.exports = { FUSO, hojeBrasilia, periodoMesAtualBrasilia, ehDataIso };
+// Coluna DATE lida pelo driver do pg vem como Date à meia-noite LOCAL: 'AAAA-MM-DD' pelas partes locais
+// (toISOString daria o dia anterior). Texto passa pelos 10 primeiros caracteres; vazio → null.
+// Fonte única desde a 2.38 (havia cópias em obras, campo, revisão pré-envio, vencimentos e cotações).
+function dataLocalIso(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (!(v instanceof Date)) {
+    if (typeof v === 'string') return v.slice(0, 10);
+    v = new Date(v);
+  }
+  if (Number.isNaN(v.getTime())) return null;
+  const p = (n) => String(n).padStart(2, '0');
+  return `${v.getFullYear()}-${p(v.getMonth() + 1)}-${p(v.getDate())}`;
+}
+
+module.exports = { FUSO, hojeBrasilia, periodoMesAtualBrasilia, ehDataIso, dataLocalIso };

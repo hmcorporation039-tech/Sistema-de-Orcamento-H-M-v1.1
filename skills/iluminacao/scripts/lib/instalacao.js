@@ -6,6 +6,7 @@
 // luminotécnico (SK-06): a planta elétrica sai com a grade calculada aqui.
 
 const I = require('../../../_comum/instalacao');
+const { drComercial } = require('../../../_comum/eletrico/tabelas'); // série comum de DR
 
 // símbolo e prefixo de cada ponto, por planta
 const PERFIL_ILUMINACAO = {
@@ -87,7 +88,7 @@ function circuitoDoModelo(x, quadro) {
   return {
     circuito: { id: String(x.id), quadro, disjuntor: I.tagDisjuntor(x.id), tipo: x.tipo || 'iluminacao', descricao: x.descricao, potencia_va: x.potencia_va, ligacao: x.ligacao, fases: x.fases || null, dr: !!x.dr, ambientes: [...(x.ambientes || [])], pontos: [], ...ficha },
     disjuntor: { tag: I.tagDisjuntor(x.id), circuito: String(x.id), polos: x.polos, In: x.disjuntor, curva: 'C' },
-    dr: x.dr ? { tag: I.tagDr(x.id), In: [25, 40, 63, 80, 100].find(v => v >= x.disjuntor) || 100, idn_ma: 30, polos: x.ligacao === 'FFF' ? 4 : 2, circuitos: [String(x.id)] } : null,
+    dr: x.dr ? { tag: I.tagDr(x.id), In: drComercial(x.disjuntor), idn_ma: 30, polos: x.ligacao === 'FFF' ? 4 : 2, circuitos: [String(x.id)] } : null,
   };
 }
 

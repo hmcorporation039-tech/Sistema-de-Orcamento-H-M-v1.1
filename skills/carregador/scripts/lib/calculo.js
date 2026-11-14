@@ -10,9 +10,12 @@
 
 const E = require('../../../_comum/eletrico/calculo');
 const T = require('../../../_comum/eletrico/tabelas');
-const { ucDps } = require('../../../_comum/dps');
+const { especificarDps, descricaoDps } = require('../../../_comum/dps');
 
 const FOLGA = 1.1;
+// In do DPS classe II adotado pelo projeto em todos os modos (prática de mercado, acima do mínimo de
+// 5 kA por modo da NBR 5410, 6.3.5.2.4 d) — o valor que esta skill já especificava
+const IN_DPS_ADOTADO_KA = 20;
 const RENDIMENTO_DC = 0.95; // carregador CC: potência de entrada = saída / rendimento
 
 function correntePorPonto(p, c) {
@@ -103,8 +106,11 @@ function calcular(dados) {
   }
 
   const publico = !!inst.uso_publico;
-  const uc = ucDps({ vfn: c.vfn, vff: c.vff, esquema: c.esquema }); // Tabela 49 — função comum
-  const dps = { obrigatorio: publico, qtd: (tri ? 3 : fasesSistema.length === 1 || c.vfn >= 200 ? 1 : 2) + 1, uc: uc.uc, texto: uc.texto };
+  // DPS: classe II, Uc (Tabela 49), In mínimo e quantidade (fases protegidas + N-PE onde há neutro) — a
+  // função comum de _comum/dps.js. Fases protegidas: 3 no trifásico; no mais, 1 (FN em 220 V) ou 2 (FF em 127/220 V)
+  const nFasesDps = tri ? 3 : fasesSistema.length === 1 || c.vfn >= 200 ? 1 : 2;
+  const esp = especificarDps({ classe: 'II', vfn: c.vfn, vff: c.vff, esquema: c.esquema, nFases: nFasesDps });
+  const dps = { obrigatorio: publico, qtd: esp.quantidade, uc: esp.uc.uc, texto: esp.uc.texto, especificacao: esp };
   const materiais = listaMateriais(circuitos, alimentador, dps, inst);
   const avisos = [];
   if (capacidade && !capacidade.atende) avisos.push(`A corrente prevista na fase ${capacidade.fase} (${capacidade.iExistente.toFixed(1)} A existentes + ${capacidade.iNovo.toFixed(1)} A de recarga = ${capacidade.iTotal.toFixed(1)} A) excede o disjuntor geral existente (${inGeral} A): solicitar aumento de carga à distribuidora, redistribuir as fases ou usar controle de recarga.`);
@@ -134,13 +140,14 @@ function listaMateriais(circuitos, alimentador, dps, inst) {
     .forEach(s => add(`CAB-${String(s).replace('.', ',')}`, `Cabo de cobre flexível ${String(s).replace('.', ',')} mm² 0,6/1 kV EPR/XLPE 90 °C`, 'm', Math.ceil(cabos[s]), 'NBR 5410, 6.2; NBR 17019'));
   for (const x of circuitos) {
     add('DISJ', `Disjuntor ${x.polos === 3 ? '3P' : x.polos === 2 ? '2P' : '1P'} ${x.disjuntor} A curva C — circuito exclusivo ${x.id}`, 'un', 1, 'NBR 17019, 6.3.4.101');
-    if (x.dr.exigido) add('DR', `DR ${x.ligacao === 'FFF' ? '4P' : '2P'} ${[25, 40, 63, 80, 100].find(v => v >= x.disjuntor) || 100} A 30 mA tipo ${x.dr.tipo} — ponto ${x.id}`, 'un', 1, 'NBR 17019, 5.1.1.3 e 6.3.3.2');
+    if (x.dr.exigido) add('DR', `DR ${x.ligacao === 'FFF' ? '4P' : '2P'} ${T.drComercial(x.disjuntor)} A 30 mA tipo ${x.dr.tipo} — ponto ${x.id}`, 'un', 1, 'NBR 17019, 5.1.1.3 e 6.3.3.2');
     add('SAVE', `Estação de recarga ${x.ponto.modo === 'modo4_dc' ? 'CC' : 'CA'} ${String(x.ponto.potencia_kw).replace('.', ',')} kW${x.ponto.modelo ? ` — ${x.ponto.modelo}` : ''} (IEC 61851)${x.ponto.fornecido_cliente ? ' — fornecida pelo cliente' : ''}`, 'un', x.ponto.fornecido_cliente ? 0 : 1, 'NBR 17019, 6.1.2.101');
     add('ELE', `Eletroduto ${inst.eletroduto || 'de aço galvanizado'} — circuito ${x.id}`, 'm', Math.ceil(x.comprimento), 'NBR 5410, 6.2.11');
   }
   if (alimentador) add('DISJ-G', `Disjuntor geral do quadro de recarga ${alimentador.polos}P ${alimentador.disjuntor} A`, 'un', 1, 'NBR 5410, 5.3.4');
   add('QD', `Quadro de proteção CA para ${circuitos.length} ponto(s) de recarga (disjuntores, DR e DPS)`, 'un', 1, 'NBR 17019');
-  add('DPS', `DPS classe II Uc ≥ ${dps.uc} V, In ≥ 20 kA${dps.obrigatorio ? '' : ' (recomendado)'}`, 'un', dps.qtd, 'NBR 17019, 5.4.2.1.101; NBR 5410, 6.3.5.2.4 e Tabela 49');
+  // texto da função comum; In ≥ 20 kA adotado pelo projeto em todos os modos (acima do mínimo da norma)
+  add('DPS', `${descricaoDps(dps.especificacao, { inMinimoKa: IN_DPS_ADOTADO_KA })}${dps.obrigatorio ? '' : ' (recomendado)'}`, 'un', dps.qtd, 'NBR 17019, 5.4.2.1.101; NBR 5410, 6.3.5.2.4 e Tabela 49');
   if (circuitos.some(x => x.ponto.protecao_impacto)) add('PROT', 'Proteção mecânica contra impacto (batente/defensa) junto ao carregador', 'un', circuitos.filter(x => x.ponto.protecao_impacto).length, 'NBR 17019, 6.1.3.2.103.2');
   if (inst.uso_publico) add('SIN', 'Placa de sinalização de vaga com recarga de veículo elétrico', 'un', circuitos.length, 'NBR 17019, 6.5.102.1');
   return itens.filter(i => i.quantidade > 0);

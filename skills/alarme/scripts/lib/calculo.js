@@ -89,6 +89,12 @@ const n0 = (v) => Math.max(0, Math.round(Number(v) || 0));
 const br = (v, c = 1) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
 const naLista = (lista, v) => lista.find(x => x >= v - 1e-9);
 
+// Regras comuns (14/11/2026): bateria pela autonomia e modelo comercial, queda de tensão em CC e DPS
+const { capacidadeBateriaAh, comercial } = require('../../../_comum/bateria');
+const { quedaCC } = require('../../../_comum/eletrico/calculo');
+const { especificarDps, descricaoDps } = require('../../../_comum/dps');
+const SECAO_CABO_SIRENE = 0.75; // mm² — cabo paralelo das sirenes
+
 function autonomiaDoGrau(grau, notificado) {
   const t = AUTONOMIA_H[grau] || AUTONOMIA_H[2];
   return notificado ? t.notificado : t.sem;
@@ -268,11 +274,10 @@ function calcular(dados) {
   }));
   const iRepouso = linhasBateria.reduce((t, l) => t + l.totalRepouso, 0);
   const iAlarme = linhasBateria.reduce((t, l) => t + l.totalAlarme, 0);
-  // C (Ah) = fator × (I_repouso × T_autonomia + I_alarme × t_alarme) / 1000
-  const bateriaAh = FATOR_BATERIA * (iRepouso * autonomiaH + iAlarme * tAlarmeMin / 60) / 1000;
-  const maior = BATERIAS_AH[BATERIAS_AH.length - 1];
-  const bateriaEscolhida = naLista(BATERIAS_AH, bateriaAh) || maior;
-  const nBaterias = bateriaAh > maior ? Math.ceil(bateriaAh / maior) : 1;
+  // C (Ah) = fator × (I_repouso × T_autonomia + I_alarme × t_alarme), correntes em A (a função comum)
+  const bateriaAh = capacidadeBateriaAh({ iRepouso: iRepouso / 1000, tRepouso: autonomiaH, iAlarme: iAlarme / 1000, tAlarme: tAlarmeMin / 60, fator: FATOR_BATERIA });
+  // modelo comercial: acima da maior bateria, unidades iguais em paralelo (a regra comum)
+  const { valor: bateriaEscolhida, qtd: nBaterias } = comercial(BATERIAS_AH, bateriaAh);
   const recargaH = RECARGA_H[grau];
   // fonte (regime contínuo): alimenta o repouso e recarrega 80 % da bateria no prazo do grau
   // (EN 50131-6). Em alarme (sirenes), a bateria complementa a fonte durante o tempo de alarme.
@@ -290,8 +295,9 @@ function calcular(dados) {
   const cabo4 = Math.ceil(zonas.reduce((t, z) => t + (z.cabo || 0), 0) + teclados * corridaTeclado);
   const cabo2 = Math.ceil((sirenesInternas + sirenesExternas) * corrida());
   const infra = Math.ceil((cabo4 + cabo2) * (Number(s.fator_infra) || 0.5));
-  // queda de tensão no ramal da sirene externa (pior caso de corrente): 2 · L · I · ρ / S
-  const quedaSireneV = sirenesExternas && !autoalimentada ? 2 * corrida() * (consumo.sirene_externa.alarme / 1000) * 0.0175 / 0.75 : 0;
+  // queda de tensão no ramal da sirene externa (pior caso de corrente): 2 · L · I · ρ / S — a função
+  // comum de CC, com o ρ do cobre em operação (0,0225; antes 0,0175 aqui). Limite 1,2 V = 10 % de 12 V.
+  const quedaSireneV = sirenesExternas && !autoalimentada ? quedaCC({ comprimento: corrida(), corrente: consumo.sirene_externa.alarme / 1000, secao: SECAO_CABO_SIRENE }).v : 0;
   if (quedaSireneV > 1.2) avisos.push(`Queda de tensão de ${br(quedaSireneV, 2)} V no ramal da sirene externa (cabo 0,75 mm²) — aumentar a seção. [CONFERIR]`);
 
   // ── Materiais ──
@@ -326,7 +332,11 @@ function calcular(dados) {
   add('CABO2', 'Cabo paralelo 2 × 0,75 mm² para sirenes', 'm', cabo2, '—');
   add('INFRA', 'Eletroduto flexível/canaleta 3/4" com acessórios para cabos de alarme', 'm', infra, `≈ ${Math.round((Number(s.fator_infra) || 0.5) * 100)} % do cabo [CONFERIR]`);
   add('CX', 'Caixa 4×2 para teclado', 'un', teclados, '—');
-  add('DPS-AC', 'DPS classe II 275 V para a alimentação da central (circuito exclusivo)', 'un', 1, 'NBR 5410 · NBR 5419-4');
+  // DPS da alimentação da central (circuito exclusivo, monofásico): Uc pela Tabela 49 e In mínimo de
+  // 6.3.5.2.4 d) — a regra comum (_comum/dps.js), um por fase + N-PE. Antes "275 V" fixo e 1 un.
+  // Tensão fase-neutro e esquema do sistema, ou 220 V TN-S (dá os mesmos 275 V de antes).
+  const dpsCa = especificarDps({ classe: 'II', vfn: Number(s.tensao_fn) || 220, esquema: s.esquema || 'TN-S', nFases: 1 });
+  add('DPS-AC', `${descricaoDps(dpsCa)} — alimentação da central (circuito exclusivo)`, 'un', dpsCa.quantidade, 'NBR 5410, 6.3.5.2.4 e Tabela 49 · NBR 5419-4');
   if (meios.includes('ethernet') || meios.includes('linha')) add('DPS-SIN', `DPS de sinal para ${meios.includes('ethernet') ? 'rede RJ-45' : 'linha telefônica'} do comunicador`, 'un', 1, 'NBR 5419-4');
   add('PLACA', 'Placa/adesivo de advertência "imóvel protegido por alarme monitorado"', 'un', Math.max(1, sirenesExternas), 'Dissuasão');
 
@@ -340,7 +350,7 @@ function calcular(dados) {
     nIvp: ambientes.reduce((t, a) => t + a.ivps, 0), nMag: ambientes.reduce((t, a) => t + a.magneticos, 0), nSensores,
     nBarreiras: externas.filter(e => e.tipo === 'barreira').reduce((t, e) => t + e.qtd, 0), nIvpExt: externas.filter(e => e.tipo === 'ivp_externo').reduce((t, e) => t + e.qtd, 0),
     bateria: { autonomiaH, tAlarmeMin, linhas: linhasBateria, iRepouso, iAlarme, bateriaAh, bateriaEscolhida, nBaterias, recargaH, iRecarga, fonteA, fonteEscolhida, fonteCentral, fonteAux, fator: FATOR_BATERIA },
-    cabo4, cabo2, infra, quedaSireneV, materiais: mat, avisos,
+    cabo4, cabo2, infra, quedaSireneV, dps: dpsCa, materiais: mat, avisos,
   };
 }
 

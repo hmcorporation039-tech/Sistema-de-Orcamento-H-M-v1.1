@@ -31,7 +31,7 @@ const TOLERANCIA_FUTURO_MS = 5 * 60 * 1000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ID_ITEM_RE = /^[A-Za-z0-9._-]{1,80}$/;
 const ID_EXTRA_RE = /^x-[A-Za-z0-9._-]{1,78}$/;
-const { ehDataIso } = require('./dataHoje');
+const { ehDataIso, dataLocalIso } = require('./dataHoje');
 
 const uuidValido = (s) => typeof s === 'string' && UUID_RE.test(s);
 const normalizarUuid = (s) => String(s).toLowerCase();
@@ -394,12 +394,7 @@ function dadosDaFoto(body = {}, agora = new Date()) {
 
 // ── objeto da OS devolvido pela API (docs/CAMPO-API.md) ────────────────
 const iso = (v) => (v ? new Date(v).toISOString() : null);
-const dataCurta = (v) => {
-  if (!v) return null;
-  if (!(v instanceof Date)) return String(v).slice(0, 10);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${v.getFullYear()}-${p(v.getMonth() + 1)}-${p(v.getDate())}`;
-};
+const dataCurta = dataLocalIso;
 
 function fotoParaApi(f) {
   return {

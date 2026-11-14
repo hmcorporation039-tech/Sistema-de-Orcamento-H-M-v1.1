@@ -16,7 +16,7 @@ const { versaoDoPedido, responderConflitoOuAusente } = require('../utils/versao'
 const { registrarAuditoria } = require('../services/auditoria');
 const { segmentoDoCliente } = require('../services/precosMaoDeObraReferencia');
 const { condicaoPodeAbrirOS } = require('../utils/campo');
-const { ehDataIso, hojeBrasilia } = require('../utils/dataHoje');
+const { ehDataIso, hojeBrasilia, dataLocalIso } = require('../utils/dataHoje');
 const { pastaDaObra, sincronizarObra, caminhoRegistrado, seguro, rotasDePasta } = require('../services/pastasRegistros');
 
 // regra de quem edita a obra: utils/obras.js (a mesma do cronograma e do campo)
@@ -45,12 +45,7 @@ const inteiroOuNull = (v) => {
   return Number.isInteger(n) && n > 0 && n <= 2147483647 ? { valor: n } : { erro: true };
 };
 // coluna DATE lida pelo pg vem como Date à meia-noite local → 'AAAA-MM-DD'
-const dataLocal = (v) => {
-  if (!v) return null;
-  if (!(v instanceof Date)) return String(v).slice(0, 10);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${v.getFullYear()}-${p(v.getMonth() + 1)}-${p(v.getDate())}`;
-};
+const dataLocal = dataLocalIso;
 const texto = (v, max) => (v == null ? null : String(v).trim().slice(0, max) || null);
 
 // Junta o pedido sobre a obra atual (edição parcial: campo ausente fica como

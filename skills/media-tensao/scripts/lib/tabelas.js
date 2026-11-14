@@ -3,6 +3,9 @@
 // marcado [CONFERIR]: as normas de fornecimento mudam e a tabela vale como
 // ponto de partida, não como valor definitivo.
 
+// séries de disjuntor de BT e barramentos DIN 43671: as tabelas comuns
+const ET = require('../../../_comum/eletrico/tabelas');
+
 // ── Transformadores (ABNT NBR 5356 / NBR 5440) ────────────────────────────
 // Potências trifásicas usuais no mercado brasileiro (kVA)
 const POTENCIAS_TRAFO = [45, 75, 112.5, 150, 225, 300, 500, 750, 1000, 1500, 2000, 2500, 3000];
@@ -167,17 +170,15 @@ const TIPOS_SE = {
 };
 
 // ── Baixa tensão (lado secundário) ─────────────────────────────────────────
-const DISJ_BT = [100, 125, 160, 200, 250, 320, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500, 3200, 4000, 5000, 6300];
+// Disjuntor geral de BT: a série comum de caixa moldada/abertos (_comum/eletrico/tabelas.js) a partir de 100 A
+const DISJ_BT = ET.serieDisjuntores(100);
 const ICU_BT = [25, 36, 50, 65, 70, 85, 100, 150];
-// Barras de cobre nu, CA, 1 barra por fase (ou conjunto), 35 °C ambiente /
-// 65 °C na barra — ordem de grandeza da DIN 43671 [CONFERIR com o fabricante do painel]
-const BARRAMENTOS = [
-  { barra: '1 × (20 × 5 mm)', a: 274 }, { barra: '1 × (30 × 5 mm)', a: 379 }, { barra: '1 × (40 × 5 mm)', a: 482 },
-  { barra: '1 × (50 × 5 mm)', a: 583 }, { barra: '1 × (40 × 10 mm)', a: 715 }, { barra: '1 × (50 × 10 mm)', a: 852 },
-  { barra: '1 × (60 × 10 mm)', a: 985 }, { barra: '1 × (80 × 10 mm)', a: 1240 }, { barra: '1 × (100 × 10 mm)', a: 1490 },
-  { barra: '2 × (80 × 10 mm)', a: 2110 }, { barra: '2 × (100 × 10 mm)', a: 2500 }, { barra: '3 × (100 × 10 mm)', a: 3310 },
-  { barra: '4 × (100 × 10 mm)', a: 4000 },
-];
+// Barramento do QGBT: a tabela DIN 43671 comum (barras simples e conjuntos de 2 a 4 barras nuas por fase,
+// os mesmos valores que estavam aqui) com a correção de temperatura k2 dos quadros. Antes a tabela valia
+// para 35 °C de ar e 65 °C na barra sem correção nenhuma. Premissas adotadas iguais às da skill de quadros
+// (ar no topo do quadro 50 °C, barra a 65 °C), editáveis no formulário [CONFERIR com o fabricante do painel].
+const TEMP_AR_QGBT_PADRAO = 50;
+const TEMP_BARRA_QGBT_PADRAO = 65;
 
 // ── Aterramento (NBR 15751 / IEEE Std 80) ──────────────────────────────────
 // Propriedades do cobre recozido (IEEE 80, Tabela 1) para a fórmula de Onderdonk
@@ -192,5 +193,5 @@ module.exports = {
   METODOS_MT, CAPACIDADE_MT, SECOES_MT, capacidadeMt, K_CURTO, SECAO_MIN_NORMA_MT, SECAO_MIN_DISTRIBUIDORA_MT, X_CABO_MT, classeMt,
   CURVAS_IEC, tempoCurva, TC_PRIMARIOS, FATOR_SOBRECORRENTE_TC, DISJ_MT_IN, DISJ_MT_ICN, RELE_PARTIDA_MIN_PCT_TC, ELO_FUSIVEL_13_8, FUSIVEL_HH, FATOR_HH,
   CHAVE_FUSIVEL_IN, CHAVE_FUSIVEL_ICN_SIM_KA, ELO_K_FATOR_CONTINUO, PARA_RAIOS_UR, PARA_RAIOS_MCOV_UR, FATOR_TENSAO_MAX,
-  DISTRIBUIDORA, TIPOS_SE, DISJ_BT, ICU_BT, BARRAMENTOS, COBRE, TEMP_CONEXAO, SECAO_MIN_MALHA, HASTE_PADRAO,
+  DISTRIBUIDORA, TIPOS_SE, DISJ_BT, ICU_BT, TEMP_AR_QGBT_PADRAO, TEMP_BARRA_QGBT_PADRAO, COBRE, TEMP_CONEXAO, SECAO_MIN_MALHA, HASTE_PADRAO,
 };

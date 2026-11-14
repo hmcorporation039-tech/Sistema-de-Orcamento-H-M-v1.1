@@ -26,15 +26,7 @@ const { textoDoResultado } = require('./textoDoResultado');
 const inteiro = (v, padrao, min = 1) => { const n = Math.floor(Number(v)); return Number.isFinite(n) && n >= min ? n : padrao; };
 const agora = () => new Date().toISOString();
 
-class FilaSimples {
-  constructor(maximo) { this.maximo = maximo; this.rodando = 0; this.esperando = []; }
-  adquirir(aoMudar = () => {}) {
-    if (this.rodando < this.maximo) { this.rodando++; return Promise.resolve(); }
-    return new Promise((resolve) => { this.esperando.push({ resolve, aoMudar }); this._avisar(); });
-  }
-  liberar() { const p = this.esperando.shift(); if (p) p.resolve(); else this.rodando = Math.max(0, this.rodando - 1); this._avisar(); }
-  _avisar() { this.esperando.forEach((e, i) => { try { e.aoMudar(i + 1); } catch { /* idem */ } }); }
-}
+const { Fila } = require('../../utils/fila'); // a mesma fila do assistente (2.38)
 
 class ErroExecucao extends Error { constructor(m, status = 400) { super(m); this.status = status; } }
 
@@ -47,7 +39,7 @@ function criarExecutor(opcoes = {}) {
     tempoLimiteMs: inteiro(process.env.AGENTES_TEMPO_LIMITE_MIN, 15) * 60 * 1000,
     ...(opcoes.config || {}),
   };
-  const fila = new FilaSimples(cfg.maxSimultaneas);
+  const fila = new Fila(cfg.maxSimultaneas);
   const ativas = new Map(); // id → { promessa, abort, cancelado }
   const fabricaFerramentas = opcoes.fabricaFerramentas || (({ token, conversaId, usuarioId, signal }) =>
     criarFerramentas({ api: criarClienteApi({ url: cfg.apiUrl, token, signal }), conversaId, usuarioId, db }));
@@ -109,7 +101,7 @@ function criarExecutor(opcoes = {}) {
     const estado = { passos: definicao, logs: [], pendencias: [], resultado: { secoes: [], links: [], arquivos: [], dados: {} }, motivoIa: null };
     const emitir = (ev) => { try { aoEvento(ev); } catch { /* ouvinte não derruba */ } };
     const log = (t, nivel = 'info') => estado.logs.push({ em: agora(), nivel, texto: String(t).slice(0, 500) });
-    await fila.adquirir((posicao) => emitir({ tipo: 'fila', posicao }));
+    await fila.adquirir(null, (posicao) => emitir({ tipo: 'fila', posicao }));
     const exec = S.novoIdExecucao();
     let status = 'concluida';
     let erro = null;

@@ -458,12 +458,4 @@ const base = criarDisciplina({
   montarOrcamento,
 });
 
-// O molde so gera Word/Excel: o caderno de fabricacao sai em PDF
-const gerarDocumentoBase = base.gerarDocumento;
-base.gerarDocumento = async (res, tipo) => {
-  if (tipo !== 'caderno') return gerarDocumentoBase(res, tipo);
-  const d = DOCUMENTOS.find(x => x.tipo === tipo);
-  return { buffer: await d.gerar(res), nomeArquivo: D.nomeArquivo(res.dados, d.nome, 'pdf', true), mime: 'application/pdf' };
-};
-
 module.exports = base;

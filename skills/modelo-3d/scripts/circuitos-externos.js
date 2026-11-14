@@ -22,19 +22,19 @@
 const fs = require('fs');
 const path = require('path');
 
-// NBR 5410, tabela 36 — cobre, isolação PVC 70 °C, método D (enterrado), solo a
-// 20 °C e 2,5 K·m/W: corrente (A) por seção (mm²) com 2 e 3 condutores carregados
-const SECOES = [2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120];
-const IZ_D = {
-  2: { 2.5: 29, 4: 38, 6: 47, 10: 63, 16: 81, 25: 104, 35: 125, 50: 148, 70: 183, 95: 216, 120: 246 },
-  3: { 2.5: 24, 4: 31, 6: 39, 10: 52, 16: 67, 25: 86, 35: 103, 50: 122, 70: 151, 95: 179, 120: 203 },
-};
+// Tabelas e cálculo da NBR 5410: os do motor comum (_comum/eletrico) — antes havia cópias aqui
+// (seções, Iz do método D, fator de agrupamento, série de disjuntores, ρ = 0,0214 e a fórmula da queda).
+const ET = require('../../_comum/eletrico/tabelas');
+const { quedaTrecho } = require('../../_comum/eletrico/calculo');
+// seções de 2,5 mm² (mínimo de força) a 120 mm² (até onde vai a tabela de diâmetros do cabo, abaixo)
+const SECOES = ET.SECOES.filter(s => s >= 2.5 && s <= 120);
+// NBR 5410, tabela 36 — cobre, isolação PVC 70 °C, método D (enterrado), solo a 20 °C e 2,5 K·m/W
+const izD = (secao, carregados) => ET.capacidade(secao, 'D', carregados, 'PVC');
 // NBR 5410, tabela 42 — fator de agrupamento de circuitos (em feixe / mesma vala)
-const FCA = [1, 1, 0.8, 0.7, 0.65, 0.6, 0.57, 0.54, 0.52, 0.5, 0.5, 0.5, 0.45, 0.45, 0.45, 0.45, 0.41, 0.41, 0.41, 0.41, 0.38];
-const fca = (n) => FCA[Math.min(n, FCA.length - 1)];
-const DISJUNTORES = [6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125];
-// cobre a 70 °C (Ω·mm²/m) e reatância típica de cabo unipolar (Ω/m)
-const RHO = 0.0214;
+const fca = (n) => ET.fatorAgrupamento(n);
+const DISJUNTORES = ET.DISJUNTORES;
+// cobre em operação (Ω·mm²/m, o da tabela comum: 0,0225; antes 0,0214 aqui) e reatância típica de cabo unipolar (Ω/m)
+const RHO = ET.RHO_COBRE;
 const X = 0.0001;
 // diâmetro externo típico do cabo unipolar 0,6/1 kV (mm) — para a taxa de ocupação
 const DIAMETRO_CABO = { 2.5: 6.2, 4: 6.8, 6: 7.4, 10: 8.4, 16: 9.6, 25: 11.4, 35: 12.6, 50: 14.4, 70: 16.4, 95: 18.6, 120: 20.4 };
@@ -46,11 +46,12 @@ const DUTOS = [
 const OCUPACAO_MAX = 0.4; // 3 ou mais cabos (NBR 5410, 6.2.11.1.6)
 // condutor de proteção pela tabela 58 — a função comum: acima de 35 mm² a metade da fase vai para a seção
 // comercial seguinte (a cópia que havia aqui devolvia S/2 cru: 95 → 47,5 mm², que não existe)
-const { secaoPE } = require('../../_comum/eletrico/tabelas');
+const { secaoPE } = ET;
+const { numeroFixoBr } = require('../../_comum/base/formato');
 
 const r1 = (v) => Math.round(v * 10) / 10;
 const r2 = (v) => Math.round(v * 100) / 100;
-const br = (v, c = 1) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+const br = (v, c = 1) => numeroFixoBr(v, c); // número pt-BR comum
 const manhattan = (a, b) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
 
 function main() {
@@ -69,7 +70,6 @@ function main() {
   const V = Number(obra.tensao_v) || 220;
   const lig = ['FN', 'FF', '3F'].includes(obra.ligacao) ? obra.ligacao : 'FN';
   const fp = Number(obra.fator_potencia) || 0.95;
-  const sen = Math.sqrt(1 - fp * fp);
   const quedaMax = Number(obra.queda_max_pct) || 4;
   const iMax = Number(obra.corrente_max_circuito_a) || 12.8;
   const caixaMax = Number(obra.caixa_a_cada_m) || 30;
@@ -225,19 +225,20 @@ function main() {
     c.comprimento = [...arestas].reduce((s, i) => s + manhattan(nos[pai[i]].pt, nos[i].pt), 0) + 3 + c.nos.length * 1.0;
     const quedaCom = (S) => Math.max(...c.nos.map(i => {
       let dv = 0;
-      for (let j = i; j > 0; j = pai[j]) dv += k * passa[j].get(c) * manhattan(nos[pai[j]].pt, nos[j].pt) * ((RHO / S) * fp + X * sen);
+      // trecho a trecho, com a corrente de cada trecho: ΔV = k·I·L·(ρ/S·cos φ + X·sen φ) — a função comum
+      for (let j = i; j > 0; j = pai[j]) dv += quedaTrecho({ comprimento: manhattan(nos[pai[j]].pt, nos[j].pt), corrente: passa[j].get(c), secao: S, rho: RHO, k, fp, x: X });
       return (100 * dv) / V;
     }));
     let escolha = null;
     for (const S of SECOES) {
-      const iz = IZ_D[carregados][S] * c.fca;
+      const iz = izD(S, carregados) * c.fca;
       if (iz < c.disjuntor) continue;
       const q = quedaCom(S);
       if (q <= quedaMax) { escolha = { S, iz, q }; break; }
     }
     if (!escolha) {
       const S = SECOES.at(-1);
-      escolha = { S, iz: IZ_D[carregados][S] * c.fca, q: quedaCom(S) };
+      escolha = { S, iz: izD(S, carregados) * c.fca, q: quedaCom(S) };
       avisos.push(`${c.nome}: nem ${S} mm² atende (queda ${br(escolha.q, 2)} %) — dividir o circuito, subir a tensão (FF/3F) ou aproximar o quadro.`);
     }
     Object.assign(c, { secao: escolha.S, iz: escolha.iz, queda: escolha.q, pe: secaoPE(escolha.S), arestas });

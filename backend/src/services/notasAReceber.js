@@ -14,7 +14,7 @@ const PRAZO_DIAS = 30;
 const CENTAVO = 0.01;
 const LIMITE_OBS = 300;
 
-const arred = (v) => Math.round(Number(v) * 100) / 100;
+const { arredondar: arred } = require(require('path').join(require('../config/caminhos').COMUM, 'base', 'dinheiro')); // fonte única (2.38)
 const diaIso = (v) => {
   if (!v) return null;
   if (typeof v === 'string') return v.slice(0, 10);

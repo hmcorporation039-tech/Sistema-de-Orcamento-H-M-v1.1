@@ -4,6 +4,7 @@ import { Plus, X } from 'lucide-react';
 import Select, { comparador } from './Select';
 import { getObras, criarObra, buscarTodasPaginas } from '../services/api';
 import { carregarClientes } from './ClienteSelect';
+import { chaveBusca } from '../utils/texto';
 
 // Seleção de OBRA (versão 2.0, Fase 2D) — usada em Contratos, Financeiro e,
 // pela Fase 2E, na Análise de Projeto, nos Laudos e no editor de Propostas.
@@ -46,7 +47,6 @@ async function carregarObras(forcar = false) {
 }
 
 const rotuloObra = (o) => `${o.nome}${o.cliente_nome ? ` · ${o.cliente_nome}` : ''} (${o.codigo})`;
-const semAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 export default function ObraSelect({
   value, onChange, clienteId = null, clienteNome = '', permitirNova = true,
@@ -64,8 +64,8 @@ export default function ObraSelect({
 
   const atual = value == null || value === '' ? '' : String(value);
   const visiveis = useMemo(() => {
-    const f = semAcento(filtro.trim());
-    const lista = f ? obras.filter(o => semAcento(`${o.codigo} ${o.nome} ${o.cliente_nome || ''} ${o.local || ''}`).includes(f)) : obras;
+    const f = chaveBusca(filtro.trim());
+    const lista = f ? obras.filter(o => chaveBusca(`${o.codigo} ${o.nome} ${o.cliente_nome || ''} ${o.local || ''}`).includes(f)) : obras;
     // a obra selecionada continua na lista mesmo fora do filtro
     const sel = atual && !lista.some(o => String(o.id) === atual) ? obras.find(o => String(o.id) === atual) : null;
     return sel ? [sel, ...lista] : lista;

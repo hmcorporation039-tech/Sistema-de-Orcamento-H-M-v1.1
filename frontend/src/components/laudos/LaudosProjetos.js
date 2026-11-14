@@ -23,6 +23,7 @@ import { baixarArquivo, salvarBlob, mensagemDeErro } from '../../utils/download'
 import { useAuth } from '../../hooks/useAuth';
 import useAlteracoesNaoSalvas from '../../hooks/useAlteracoesNaoSalvas';
 import { estilos } from '../ui/estilos';
+import { semAcento } from '../../utils/texto';
 
 // Projetos e laudos por disciplina — abas "Projetos por disciplina" e
 // "Laudos" do hub Obras (versão 2.1: separados). O mesmo componente atende os
@@ -481,7 +482,7 @@ export default function LaudosProjetos({ tipo = 'laudo' }) {
   }
 
   function exportarJson() {
-    const nome = `${(dados?.meta?.prefixo || dados?.obra?.nome || 'laudo').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').slice(0, 40)}_dados_${disciplina.toUpperCase()}.json`;
+    const nome = `${semAcento(dados?.meta?.prefixo || dados?.obra?.nome || 'laudo').replace(/[^A-Za-z0-9]+/g, '_').slice(0, 40)}_dados_${disciplina.toUpperCase()}.json`;
     salvarBlob(new Blob([JSON.stringify(dados, null, 1)], { type: 'application/json' }), nome);
   }
 
@@ -771,8 +772,5 @@ const seloProjeto = { background: '#12304a', color: '#8ab4f8', border: '1px soli
 const seloLaudo = { background: '#3a2a10', color: '#e0b050', border: '1px solid #5a4a12' };
 const tituloSecao = { fontSize: 15, color: '#c9a227', fontWeight: 700, marginBottom: 10 };
 const btnPrimario = { ...estilos.btnPrimario, display: 'flex', fontSize: 13 };
-const btnSecundario = {
-  display: 'flex', alignItems: 'center', padding: '8px 12px', background: 'transparent', border: '1px dashed #333',
-  borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
-};
+const btnSecundario = { ...estilos.btnTracejado, padding: '8px 12px' };
 const btnIcone = { ...estilos.btnIcone, display: 'flex' };

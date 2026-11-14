@@ -18,7 +18,7 @@
 // Sistemas centrais (chiller, fancoil/AHU, VAV, dutos e bombas): ./centrais.js.
 
 const T = require('./tabelas');
-const AUT = require('../../../automacao/scripts/lib/tabelas'); // AR_EXTERNO (NBR 16401-3), a mesma da automação
+const AUT = require('../../../_comum/ar-externo'); // AR_EXTERNO (NBR 16401-3): a tabela comum, a mesma da automação
 
 const num = (v, padrao = null) => (v === '' || v == null || !Number.isFinite(Number(v)) ? padrao : Number(v));
 const arred = (v, c = 2) => (v == null || !Number.isFinite(v) ? v : Math.round(v * 10 ** c) / 10 ** c);

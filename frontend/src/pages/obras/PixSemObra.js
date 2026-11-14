@@ -3,7 +3,7 @@ import toast from 'react-hot-toast';
 import { Link2 } from 'lucide-react';
 import { getPixSemObra, atribuirPixObra } from '../../services/api';
 import Modal from '../../components/ui/Modal';
-import { moeda, estilos as E } from './comum';
+import { moeda, estilos as E, Etiqueta } from './comum';
 import { dataBr } from '../../utils/format';
 
 // A margem de cada obra só conta os Pix LIGADOS a ela. Este aviso (só administrador) mostra quanto ainda
@@ -21,8 +21,8 @@ function SeloConfianca({ confianca }) {
   const c = CONFIANCA[confianca];
   if (!c) return null;
   return (
-    <span title={c.dica} data-testid={`confianca-${confianca}`} style={{ padding: '1px 7px', borderRadius: 20, fontSize: 10.5, fontWeight: 700, marginRight: 6,
-      whiteSpace: 'nowrap', color: c.cor, background: c.fundo, border: `1px solid ${c.borda}` }}>{c.rotulo}</span>
+    <Etiqueta titulo={c.dica} data-testid={`confianca-${confianca}`} cor={c.cor} bg={c.fundo} borda={c.borda}
+      style={{ padding: '1px 7px', fontSize: 10.5, marginRight: 6 }}>{c.rotulo}</Etiqueta>
   );
 }
 

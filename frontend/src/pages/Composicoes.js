@@ -8,6 +8,7 @@ import {
 import Select, { comparador } from '../components/Select';
 import { ROTULO_SEGMENTO } from '../utils/disciplinasServico';
 import { formatarMoeda } from '../utils/format';
+import { chaveBusca } from '../utils/texto';
 import useDisciplinas from '../hooks/useDisciplinas';
 import { useAuth } from '../hooks/useAuth';
 import { estilos } from '../components/ui/estilos';
@@ -27,10 +28,9 @@ const precoEmbalagem = (l) => (l.conversao?.preco_embalagem != null
   ? `${l.observacao_preco} (${formatarMoeda(l.conversao.preco_embalagem, { vazio: '—' })} a embalagem)`
   : l.observacao_preco);
 const notaConversao = { color: '#8fb3d9', fontSize: 10.5 };
-const semAcento = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const casaBusca = (txt, busca) => {
-  const palavras = semAcento(busca).split(/\s+/).filter(Boolean);
-  const alvo = semAcento(txt);
+  const palavras = chaveBusca(busca).split(/\s+/).filter(Boolean);
+  const alvo = chaveBusca(txt);
   return palavras.every(p => alvo.includes(p));
 };
 const FORM_VAZIO = { id: null, versao: null, codigo: '', descricao: '', unidade: 'un', disciplina: 'eletrica', observacao: '', itens: [] };
@@ -512,10 +512,7 @@ const td = { padding: '6px 8px 6px 0', verticalAlign: 'top' };
 const cabecalhoGrupo = { padding: '14px 0 6px', color: '#c9a227', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px' };
 const rotulo = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--texto-3)' };
 const btnPrimario = { ...estilos.btnPrimario, display: 'flex', fontSize: 13 };
-const btnSecundario = {
-  display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent', border: '1px dashed #333',
-  borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
-};
+const btnSecundario = estilos.btnTracejado;
 const btnIcone = { ...estilos.btnIcone, display: 'flex', color: '#c9a227', padding: 0 };
 const btnSeta = { background: 'none', border: 'none', color: 'var(--texto-3)', cursor: 'pointer', padding: 0, display: 'flex' };
 const btnLink = { background: 'none', border: 'none', color: '#8ab4f8', cursor: 'pointer', fontSize: 10.5, marginLeft: 6, textDecoration: 'underline', padding: 0 };

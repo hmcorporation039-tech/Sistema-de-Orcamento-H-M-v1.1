@@ -7,6 +7,7 @@
 
 const { cadernoDeCaixas } = require('../../../_comum/fabricacao/caixa');
 const { gerarCadernoPdf } = require('../../../_comum/fabricacao/caderno');
+const { descricaoDps } = require('../../../_comum/dps');
 
 const NORMAS = [
   { codigo: 'IEC 62642-1 / EN 50131-1', titulo: 'Sistemas de alarme de intrusão — requisitos gerais', aplicacao: 'grau de segurança, classe ambiental, autonomia da bateria, códigos de acesso e notificação' },
@@ -40,7 +41,7 @@ function montarCaixa(res) {
     ...arr(calc.expansores, i => ({ tipo: 'modulo', tag: `EXP-${i}`, descricao: 'Expansor de 8 zonas com fio', largura_mm: 100, altura_mm: 70, profundidade_mm: 25, fixacao: 'parafuso' })),
     ...arr(calc.receptores, i => ({ tipo: 'modulo', tag: `RX-${i}`, descricao: 'Receptor/módulo sem fio (até 64 dispositivos)', largura_mm: 100, altura_mm: 70, profundidade_mm: 25, fixacao: 'parafuso' })),
     ...calc.meios.filter(m => nomeCom[m]).map(m => ({ tipo: 'modulo', tag: `COM-${nomeCom[m][0]}`, descricao: nomeCom[m][1], largura_mm: 90, altura_mm: 60, profundidade_mm: 25, fixacao: 'parafuso' })),
-    { tipo: 'modulo', tag: 'DPS-AC', descricao: 'DPS classe II 275 V na entrada da alimentação (circuito exclusivo)', largura_mm: 36, altura_mm: 90, profundidade_mm: 65, fixacao: 'trilho' },
+    { tipo: 'modulo', tag: 'DPS-AC', descricao: calc.dps ? `${descricaoDps(calc.dps)} — ${calc.dps.quantidade} módulo(s) na entrada da alimentação (circuito exclusivo)` : 'DPS classe II na entrada da alimentação (circuito exclusivo)', largura_mm: 36, altura_mm: 90, profundidade_mm: 65, fixacao: 'trilho' },
     ...(calc.meios.includes('ethernet') || calc.meios.includes('linha') ? [{ tipo: 'modulo', tag: 'DPS-SIN', descricao: `DPS de sinal para ${calc.meios.includes('ethernet') ? 'rede RJ-45' : 'linha telefônica'} do comunicador`, largura_mm: 60, altura_mm: 40, profundidade_mm: 30, fixacao: 'parafuso' }] : []),
     // campo (fora da caixa)
     ...arr(calc.teclados, i => ({ tipo: 'campo', tag: `TEC-${i}`, descricao: 'Teclado LCD (campo, em caixa 4×2)', na_placa: false })),

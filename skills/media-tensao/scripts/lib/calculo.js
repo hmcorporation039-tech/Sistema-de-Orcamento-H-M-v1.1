@@ -45,7 +45,9 @@ function config(dados) {
     trafo: { kva: numero(t.potencia_kva), z: numero(t.z_pct), isolamento: t.isolamento === 'seco' ? 'seco' : 'oleo', ligacao: t.ligacao || 'Dyn1', fluido: t.fluido || (t.isolamento === 'seco' ? 'seco (resina epóxi)' : 'óleo mineral isolante') },
     caboMt: { L: numero(cm.comprimento_m) || 0, metodo: cm.metodo || 'eletroduto_enterrado', isolacao: cm.isolacao === 'XLPE' ? 'XLPE' : 'EPR', smin: numero(cm.secao_minima_mm2) || T.SECAO_MIN_DISTRIBUIDORA_MT, fc: numero(cm.fator_correcao) || 1, forcada: numero(cm.secao_mm2) },
     rele: { curva: T.CURVAS_IEC[p.curva] ? p.curva : 'MI', fatorFase: numero(p.fator_partida_fase) || 1.2, fatorNeutro: numero(p.fator_partida_neutro) || 0.3, dial: numero(p.dial) || 0.1 },
-    bt: { L: numero(bt.comprimento_m) || 10, metodo: bt.metodo || 'F', temperatura: numero(bt.temperatura) ?? 30, quedaMax: numero(bt.queda_max_pct) || 1, fca: numero(bt.fca), xr: numero(bt.xr) || 5 },
+    bt: { L: numero(bt.comprimento_m) || 10, metodo: bt.metodo || 'F', temperatura: numero(bt.temperatura) ?? 30, quedaMax: numero(bt.queda_max_pct) || 1, fca: numero(bt.fca), xr: numero(bt.xr) || 5,
+      // ar em volta do barramento do QGBT e temperatura máxima da barra (correção k2 da DIN 43671)
+      tempArQgbt: numero(bt.temperatura_ar_qgbt) ?? T.TEMP_AR_QGBT_PADRAO, tempBarra: numero(bt.temperatura_barra) ?? T.TEMP_BARRA_QGBT_PADRAO },
   };
 }
 
@@ -316,8 +318,14 @@ function ladoBt(trafo, corr, c, avisos) {
   if (!icuAtende) avisos.push(`Curto no secundário (${fmt(corr.iccSecInfKa)} kA) acima da maior capacidade de interrupção da tabela (${icu} kA): rever o arranjo (dividir o transformador) ou usar limitação de corrente. [CONFERIR]`);
   const kappa = 1.02 + 0.98 * Math.exp(-3 / c.bt.xr); // IEC 60909
   const ipk = kappa * Math.SQRT2 * corr.iccSecInfKa;
-  const barramento = T.BARRAMENTOS.find(b => b.a >= inDisj) || T.BARRAMENTOS[T.BARRAMENTOS.length - 1];
-  if (barramento.a < inDisj) avisos.push('Corrente do barramento acima da tabela: dimensionar com o fabricante do painel.');
+  // Barramento: tabela DIN 43671 comum (barras simples, depois conjuntos de 2 a 4 barras nuas) com a
+  // correção de temperatura k2 — as mesmas funções da skill de quadros
+  const k2 = ET.k2Temperatura(c.bt.tempBarra, c.bt.tempArQgbt);
+  const escolhida = ET.escolherBarra(inDisj, k2, false, { conjuntos: true });
+  const ultima = ET.CONJUNTOS_DIN43671[ET.CONJUNTOS_DIN43671.length - 1];
+  const b = escolhida || ultima;
+  const barramento = { barra: ET.rotuloBarra(b), a: b.nua * k2, aTabela: b.nua, k2, tempAr: c.bt.tempArQgbt, tempBarra: c.bt.tempBarra };
+  if (barramento.a < inDisj - 1e-9) avisos.push('Corrente do barramento acima da tabela: dimensionar com o fabricante do painel.');
   let cabos = cabosTrafoQgbt(inDisj, corr.inSec, c);
   if (!cabos) {
     cabos = barramentoBlindado(inDisj, c);

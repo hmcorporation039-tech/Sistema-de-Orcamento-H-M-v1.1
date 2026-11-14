@@ -42,6 +42,7 @@ import {
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { condutorEnergizado } from '../../instalacao/painelQuadro.js';
 import { iniciarComandoReles } from './comandoReles.js';
+import { escapeHtml } from '../../base/html.js';
 import { simuladorDaCena, htmlQuadro, htmlCircuito, htmlPainel, ligarBotoes, criarAviso, htmlFichaFiel, htmlCondutor, htmlEquipamento, ligarBotoesRede, criarInteracao, combinarRedes } from './interativo.js';
 // 09/11/2026 — QUADRO FIEL AO PROJETO COM O CABEAMENTO COMPLETO e VISTA INTERNA DE PAINEL:
 //   cena.condutores: [{ id, circuito, funcao: 'F'|'N'|'PE'|'dados'|…, fase, secao_mm2, d_mm, cor, cor2,
@@ -54,7 +55,7 @@ import { simuladorDaCena, htmlQuadro, htmlCircuito, htmlPainel, ligarBotoes, cri
 //     manobras; caixa.acendeEm: aparências em que a peça acende (LED de alarme, PoE…).
 
 const M = 0.001;
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+const esc = escapeHtml; // escape de HTML comum (skills/_comum/base)
 
 export function iniciarQuadro(C, op = {}) {
   // embutido no 3D do prédio: o DOM do quadro fica dentro de op.raiz (camada sobre o prédio)

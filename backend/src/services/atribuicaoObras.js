@@ -16,8 +16,10 @@ const TIPOS = ['recebido', 'realizado'];
 const STATUS_ENCERRADA = new Set(['concluida', 'cancelada']);
 
 const chaveNome = (nome) => normalizarTexto(nome).slice(0, 200);
-const arred = (n) => Math.round(n * 100) / 100;
-const isoDia = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
+const { arredondar: arred } = require(require('path').join(require('../config/caminhos').COMUM, 'base', 'dinheiro')); // fonte única (2.38)
+// dia do Pix no horário de Brasília (antes era o dia em UTC: um Pix das 22h caía no dia seguinte e saía do filtro)
+const isoDia = (d) => (d ? hojeBrasilia(new Date(d)) : null);
+const { hojeBrasilia } = require('../utils/dataHoje');
 
 // Agrupa por tipo + nome normalizado. `prestadores` junta os prestador_id vistos no grupo.
 function agrupar(movimentos) {

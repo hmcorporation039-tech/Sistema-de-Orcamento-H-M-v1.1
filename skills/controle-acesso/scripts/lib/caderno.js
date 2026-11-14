@@ -9,6 +9,7 @@
 
 const { cadernoDeCaixas } = require('../../../_comum/fabricacao/caixa');
 const { gerarCadernoPdf } = require('../../../_comum/fabricacao/caderno');
+const { descricaoDps } = require('../../../_comum/dps');
 
 const br = (v, c = 0) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
 const sim = (v) => v === true || v === 'true' || v === 'sim' || v === 1 || v === '1';
@@ -49,7 +50,8 @@ function montarCaixas(res) {
       ...(comRele ? [{ tag: 'RL-INC', tipo: 'modulo', descricao: `Relé de interface com a central de incêndio (contato NF da central corta a alimentação das fechaduras das rotas de fuga: ${rotas.map(p => p.id).join(', ')})`, largura_mm: 45, altura_mm: 90, profundidade_mm: 60 }] : []),
       ...(intertrav ? [{ tag: 'RL-INT', tipo: 'modulo', descricao: 'Relé de intertravamento (eclusa): trava uma porta enquanto a outra do par está aberta', largura_mm: 45, altura_mm: 90, profundidade_mm: 60 }] : []),
       ...(nEmerg ? [{ tag: 'MD-EMG', tipo: 'modulo', descricao: `Módulo de interface dos acionadores de emergência/quebra-vidro (${nEmerg}; contatos NF em série com a alimentação das fechaduras)`, largura_mm: 70, altura_mm: 90, profundidade_mm: 55 }] : []),
-      { tag: 'DPS', tipo: 'modulo', descricao: 'DPS classe II 275 V na entrada CA da fonte', largura_mm: 18, altura_mm: 90, profundidade_mm: 60 },
+      // DPS da entrada CA: o do cálculo (regra comum, _comum/dps.js) — um módulo de 18 mm por modo de proteção
+      { tag: 'DPS', tipo: 'modulo', descricao: calc.dpsCa ? `${descricaoDps(calc.dpsCa)} — entrada CA da fonte (${calc.dpsCa.quantidade} módulos)` : 'DPS classe II na entrada CA da fonte', largura_mm: 18 * (calc.dpsCa ? calc.dpsCa.quantidade : 1), altura_mm: 90, profundidade_mm: 60 },
       // campo (fora da caixa)
       ...(nLeit ? [{ tag: 'LEI', descricao: `Leitores (${nLeit})${tecnologias ? ` — ${tecnologias}` : ''}`, quantidade: nLeit, na_placa: false, largura_mm: 80, altura_mm: 120 }] : []),
       ...(nFech ? [{ tag: 'FCH', descricao: `Fechaduras eletromagnéticas/fechos elétricos (${nFech}), alimentadas por esta caixa`, quantidade: nFech, na_placa: false, largura_mm: 250, altura_mm: 50 }] : []),

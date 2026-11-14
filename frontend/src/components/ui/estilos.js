@@ -19,6 +19,17 @@ export const estilos = {
     display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--superficie-2)', border: '1px solid var(--borda-forte)',
     borderRadius: 8, color: 'var(--texto)', fontWeight: 500, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap', textDecoration: 'none',
   },
+  // Variantes transparentes do secundário (revisão de 14/11/2026 — estavam redefinidas tela a tela):
+  // tracejado = ação de apoio ("Cancelar", "Restaurar", "+ adicionar"); contorno = borda cheia apagada.
+  // Tela que precisa de outro tamanho espalha e muda só o padding/fonte.
+  btnTracejado: {
+    display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent', border: '1px dashed #333',
+    borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
+  },
+  btnContorno: {
+    padding: '9px 16px', background: 'transparent', border: '1px solid #2a2a2a',
+    borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer',
+  },
   btnIcone: {
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, background: 'var(--superficie-2)',
     border: '1px solid var(--borda-forte)', borderRadius: 6, color: 'var(--texto-2)', cursor: 'pointer',

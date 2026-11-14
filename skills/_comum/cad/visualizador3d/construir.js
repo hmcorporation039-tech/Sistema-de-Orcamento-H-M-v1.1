@@ -27,7 +27,11 @@ const FONTES = [ENTRADA, path.join(__dirname, 'quadro.js'), path.join(__dirname,
   path.join(__dirname, '..', '..', 'especificacao', 'blocos-comando.json'),
   path.join(__dirname, '..', '..', '..', 'pressurizacao', 'dados', 'perfil-especificacao.json'),
   // 2.37: busca de componente, medição e vista no endereço
-  path.join(__dirname, 'ferramentas.js')];
+  path.join(__dirname, 'ferramentas.js'),
+  // 14/11/2026: as tabelas que os quadros dividem com as outras skills (DIN 43671, Icw, séries de
+  // disjuntor e DR) vêm da tabela elétrica comum; o escape de HTML e o número pt-BR do 3D, do pacote base
+  path.join(__dirname, '..', '..', 'eletrico', 'tabelas.js'), path.join(__dirname, '..', '..', 'eletrico', 'dados', 'capacidade_conducao_cobre.json'),
+  path.join(__dirname, '..', '..', 'base', 'html.js'), path.join(__dirname, '..', '..', 'base', 'formato.js')];
 
 function assinatura() {
   const versaoThree = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'node_modules', 'three', 'package.json'), 'utf8')).version;

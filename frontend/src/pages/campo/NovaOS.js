@@ -7,8 +7,7 @@ import { ArrowLeft, Check, Search } from 'lucide-react';
 import { useCampo } from './CampoApp';
 import { ROTULO_TIPO_OS } from './operacoes';
 import { COR, Botao, Cartao } from './componentes';
-
-const ordemAZ = (a, b) => String(a).localeCompare(String(b), 'pt-BR', { sensitivity: 'base' });
+import { comparador } from '../../components/Select';
 
 export default function NovaOS() {
   const navigate = useNavigate();
@@ -41,10 +40,10 @@ export default function NovaOS() {
     return obras
       .filter(o => !['concluida', 'cancelada'].includes(o.status))
       .filter(o => !t || [o.nome, o.codigo, o.cliente_nome, o.local].some(x => String(x || '').toLowerCase().includes(t)))
-      .sort((a, b) => ordemAZ(a.nome, b.nome));
+      .sort((a, b) => comparador.compare(a.nome, b.nome));
   }, [obras, busca]);
-  const modelosAZ = useMemo(() => [...modelos].sort((a, b) => ordemAZ(a.rotulo, b.rotulo)), [modelos]);
-  const tiposAZ = useMemo(() => Object.entries(ROTULO_TIPO_OS).sort((a, b) => ordemAZ(a[1], b[1])), []);
+  const modelosAZ = useMemo(() => [...modelos].sort((a, b) => comparador.compare(a.rotulo, b.rotulo)), [modelos]);
+  const tiposAZ = useMemo(() => Object.entries(ROTULO_TIPO_OS).sort((a, b) => comparador.compare(a[1], b[1])), []);
   const obraSel = obras.find(o => o.id === obraId);
 
   async function criar() {

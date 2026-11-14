@@ -13,9 +13,7 @@
 // Desenho em milímetros na escala real; a folha (A3…A0) é escolhida pela
 // escala de plotagem que faz caber o quadro.
 
-const { point3d } = require('@tarikjabiri/dxf');
 const { DesenhoDxf } = require('../../../_comum/cad/dxf');
-const { EMPRESA } = require('../../../_comum/empresa');
 const T = require('./tabelas');
 // geometria das vistas: a mesma do caderno de fabricação em PDF (./caderno.js)
 const { vistaFrontal, vistaLateral, vistaInterna } = require('./vistas');
@@ -24,34 +22,9 @@ const FORMATOS = [['A3', 420, 297], ['A2', 594, 420], ['A1', 841, 594], ['A0', 1
 const ESCALAS = [5, 10, 15, 20, 25];
 const fmt = (v, c = 0) => (v == null ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: c }));
 
-// Carimbo H&M: mesmo desenho do bloco HM-CARIMBO de _comum/cad/planta.js
-// (180 × 90 mm de papel + 4 linhas de revisão), lá não exportado.
-const mmp = (v) => v / 1000;
-function definirCarimbo(d) {
-  const campos = [
-    ['DISCIPLINA', 140, 83, 3, 'DISCIPLINA'], ['TITULO1', 4, 72, 3.5, 'TÍTULO'], ['TITULO2', 4, 67.5, 2.5, null],
-    ['CLIENTE', 4, 58.5, 2.5, 'CLIENTE'], ['OBRA', 4, 52, 2.5, 'OBRA'], ['ENDERECO', 4, 44, 2, 'ENDEREÇO'],
-    ['FASE', 4, 31, 2.5, 'FASE'], ['ESCALA', 49, 31, 2.5, 'ESCALA'], ['DATA', 94, 31, 2.5, 'DATA'], ['FOLHA', 139, 31, 2.5, 'FOLHA'],
-    ['REVISAO', 4, 19, 2.5, 'REVISÃO'], ['FORMATO', 49, 19, 2.5, 'FORMATO'], ['ARQUIVO', 94, 19, 2, 'ARQUIVO'],
-    ['RT_NOME', 4, 8, 2, 'RESPONSÁVEL TÉCNICO'], ['RT_CREA', 4, 3, 2, null], ['ART', 64, 3, 2, 'ART'],
-    ['DESENHO', 124, 10, 1.6, 'DES.'], ['PROJETO', 124, 6.5, 1.6, 'PROJ.'], ['VERIFICACAO', 152, 10, 1.6, 'VERIF.'], ['APROVACAO', 152, 6.5, 1.6, 'APROV.'],
-  ];
-  const revisoes = [0, 1, 2, 3].flatMap(i => [[`REV${i}_DATA`, 4, 92 + i * 6, 1.8], [`REV${i}_DESC`, 30, 92 + i * 6, 1.8], [`REV${i}_POR`, 150, 92 + i * 6, 1.8]]);
-  d.bloco('HM-CARIMBO', (b) => {
-    const ln = (x1, y1, x2, y2) => b.addLine(point3d(mmp(x1), mmp(y1)), point3d(mmp(x2), mmp(y2)), { layerName: '0' });
-    const tx = (x, y, h, t) => b.addText(point3d(mmp(x), mmp(y)), mmp(h), t, { layerName: '0' });
-    [[0, 0, 180, 0], [180, 0, 180, 120], [180, 120, 0, 120], [0, 120, 0, 0], [0, 90, 180, 90]].forEach(l => ln(...l));
-    [80, 64, 50, 40, 28, 16].forEach(y => ln(0, y, 180, y));
-    [45, 90, 135].forEach(x => ln(x, 28, x, 40));
-    [45, 90].forEach(x => ln(x, 16, x, 28));
-    ln(120, 0, 120, 16); ln(60, 0, 60, 6.5);
-    [96, 102, 108, 114].forEach(y => ln(0, y, 180, y));
-    ln(26, 90, 26, 120); ln(146, 90, 146, 120);
-    tx(4, 83, 4.5, EMPRESA.nomeFantasia.toUpperCase());
-    tx(4, 116, 1.6, 'REV. / DATA'); tx(30, 116, 1.6, 'DESCRIÇÃO DA REVISÃO'); tx(150, 116, 1.6, 'POR');
-    for (const [, x, y, , rotulo] of campos) if (rotulo) tx(x, y + 4.2, 1.4, rotulo);
-  }, [...campos, ...revisoes].map(([tag, x, y, h]) => ({ tag, x: mmp(x), y: mmp(y), altura: mmp(h), padrao: '' })));
-}
+// Carimbo H&M: o bloco HM-CARIMBO das plantas (_comum/cad/planta.js — 180 × 90 mm de papel +
+// 4 linhas de revisão), exportado de lá desde 14/11/2026 (antes havia uma cópia literal aqui).
+const { definirCarimbo } = require('../../../_comum/cad/planta');
 
 // Adaptador: coordenadas em mm do mundo (DesenhoDxf recebe metros e grava mm)
 function pincel(d) {

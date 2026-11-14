@@ -11,6 +11,7 @@ import { formatarData } from '../utils/format';
 import Select from '../components/Select';
 import Modal from '../components/ui/Modal';
 import { estilos, Campo } from '../components/ui/estilos';
+import Etiqueta from '../components/ui/Etiqueta';
 
 const VAZIO = { nome: '', email: '', senha: '', role: 'user' };
 
@@ -187,13 +188,9 @@ export default function Usuarios() {
                 <td style={td}>{rotuloPapel(u.role)}</td>
                 <td style={{ ...td, color: u.totp_ativo ? '#3fb95f' : 'var(--texto-3)' }}>{u.totp_ativo ? 'Ativa' : '—'}</td>
                 <td style={td}>
-                  <span style={{
-                    padding: '3px 9px', borderRadius: 20, fontSize: 11.5, fontWeight: 700,
-                    background: u.ativo ? '#0a1a0f' : '#1a0a0a', color: u.ativo ? '#3fb95f' : '#b04040',
-                    border: `1px solid ${u.ativo ? '#1a4a26' : '#4a1a1a'}`
-                  }}>
+                  <Etiqueta bg={u.ativo ? '#0a1a0f' : '#1a0a0a'} cor={u.ativo ? '#3fb95f' : '#b04040'} borda={u.ativo ? '#1a4a26' : '#4a1a1a'}>
                     {u.ativo ? 'Ativo' : 'Desativado'}
-                  </span>
+                  </Etiqueta>
                 </td>
                 <td style={td}>{u.ultimo_acesso ? formatarData(u.ultimo_acesso) : 'nunca'}</td>
                 <td style={{ ...td, display: 'flex', gap: 6 }}>
@@ -293,10 +290,7 @@ export default function Usuarios() {
 }
 
 // Estilos do kit de tela (components/ui/estilos.js). O botão secundário desta
-// tela é um pouco maior e mais apagado que o do kit — mantido como era.
+// tela é o transparente de borda apagada do kit (btnContorno).
 const { th, td, tdVazio, btnPrimario, btnIcone } = estilos;
 
-const btnSecundario = {
-  padding: '9px 16px', background: 'transparent', border: '1px solid #2a2a2a',
-  borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer'
-};
+const btnSecundario = estilos.btnContorno;

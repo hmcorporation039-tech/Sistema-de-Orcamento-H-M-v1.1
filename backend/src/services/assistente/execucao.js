@@ -34,32 +34,8 @@ const { hojeBrasilia } = require('../../utils/dataHoje');
 
 const CAMINHO_MCP = path.join(__dirname, '..', '..', 'mcp', 'assistenteMcp.mjs');
 
-// ── Fila (semáforo com posição) ─────────────────────────────────────────
-class Fila {
-  constructor(maximo) { this.maximo = maximo; this.rodando = 0; this.esperando = []; }
-  adquirir(id, aoMudarPosicao = () => {}) {
-    if (this.rodando < this.maximo) { this.rodando++; return Promise.resolve(); }
-    return new Promise((resolve, reject) => {
-      this.esperando.push({ id, resolve, reject, aoMudarPosicao });
-      this._avisar();
-    });
-  }
-  liberar() {
-    const proximo = this.esperando.shift();
-    if (proximo) proximo.resolve(); else this.rodando = Math.max(0, this.rodando - 1);
-    this._avisar();
-  }
-  remover(id) {
-    const i = this.esperando.findIndex(e => e.id === id);
-    if (i < 0) return false;
-    const [e] = this.esperando.splice(i, 1);
-    e.reject(Object.assign(new Error('Cancelado pelo usuário.'), { cancelado: true }));
-    this._avisar();
-    return true;
-  }
-  _avisar() { this.esperando.forEach((e, i) => { try { e.aoMudarPosicao(i + 1); } catch { /* idem */ } }); }
-  estado() { return { rodando: this.rodando, esperando: this.esperando.length, maximo: this.maximo }; }
-}
+// Fila (semáforo com posição): utils/fila.js, a mesma do Claude Max, do PDF e das threads (2.38)
+const { Fila } = require('../../utils/fila');
 
 function criarGerenciador(opcoes = {}) {
   const cfg = { ...config(), ...(opcoes.config || {}) };

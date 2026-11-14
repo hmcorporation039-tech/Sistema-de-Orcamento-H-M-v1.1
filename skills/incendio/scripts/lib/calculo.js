@@ -9,6 +9,8 @@ const RAIO = { fumaca: 9 / Math.SQRT2, temperatura: 6 / Math.SQRT2 };
 const ALTURA_MAX = { fumaca: 8 }; // 5.4.1.1: detector pontual de fumaça até 8 m
 const CAMINHAMENTO_ACIONADOR = 30; // 5.5.3
 const BATERIAS_AH = [7, 12, 18, 26, 40, 55, 65, 100]; // capacidades comerciais (12 V; ligar 2 em série para 24 V)
+// bateria pela autonomia e modelo comercial: as regras comuns (alarme, controle de acesso, telefonia)
+const { capacidadeBateriaAh, comercial } = require('../../../_comum/bateria');
 
 // Consumos padrão (mA) — substituíveis pelos dados do fabricante no formulário
 const CONSUMO_PADRAO = {
@@ -134,8 +136,10 @@ function calcular(dados) {
   const tAlarme = Number(sis.tempo_alarme_min) || (sis.avisador_voz ? 15 : 5);
   if (!Number(sis.tempo_alarme_min)) avisos.push(`Bateria da central com ${tRepouso} h em repouso + ${tAlarme} min em alarme${sis.avisador_voz ? ' (avisador por voz)' : ''}: a IT/NT do corpo de bombeiros local pode exigir 15 min de alarme. [CONFERIR IT/NT local]`);
   const fonteA = 1.2 * iAlarme / 1000;
-  const bateriaAh = 1.2 * (tRepouso * iRepouso + (tAlarme / 60) * iAlarme) / 1000;
-  const bateriaEscolhida = BATERIAS_AH.find(b => b >= bateriaAh) || Math.ceil(bateriaAh);
+  // Anexo B pela função comum (_comum/bateria.js), correntes em A. Modelo comercial pela regra comum:
+  // acima de 100 Ah, pares de 24 V em paralelo (antes saía uma "bateria" de ⌈Ah⌉, fora da série)
+  const bateriaAh = capacidadeBateriaAh({ iRepouso: iRepouso / 1000, tRepouso, iAlarme: iAlarme / 1000, tAlarme: tAlarme / 60, fator: 1.2 });
+  const { valor: bateriaEscolhida, qtd: nConjuntos } = comercial(BATERIAS_AH, bateriaAh);
 
   const nAclar = iluminacao.reduce((s, x) => s + x.aclaramento, 0);
   const nBaliz = iluminacao.reduce((s, x) => s + x.balizamento, 0);
@@ -148,7 +152,7 @@ function calcular(dados) {
     { codigo: 'ACM', descricao: `Acionador manual tipo quebra-vidro/rearmável ${tipoSistema === 'enderecavel' ? 'endereçável' : 'convencional'}, vermelho`, unidade: 'un', quantidade: nAc, referencia: 'NBR 17240, 5.5' },
     { codigo: 'AV', descricao: 'Avisador audiovisual (sirene com strobo)', unidade: 'un', quantidade: nAv, referencia: 'NBR 17240, 5.6' },
     { codigo: 'CEN', descricao: tipoSistema === 'enderecavel' ? `Central de alarme endereçável com ${lacos} laço(s)` : `Central de alarme convencional com ${zonas} zona(s)`, unidade: 'un', quantidade: 1, referencia: 'NBR 17240, 5.3 e 6.1' },
-    { codigo: 'BAT', descricao: `Bateria selada 12 V ${bateriaEscolhida} Ah (par em série para 24 V)`, unidade: 'un', quantidade: 2, referencia: 'NBR 17240, Anexo B' },
+    { codigo: 'BAT', descricao: `Bateria selada 12 V ${bateriaEscolhida} Ah (par em série para 24 V${nConjuntos > 1 ? `; ${nConjuntos} pares em paralelo` : ''})`, unidade: 'un', quantidade: 2 * nConjuntos, referencia: 'NBR 17240, Anexo B' },
     ...(nMod ? [{ codigo: 'MOD', descricao: 'Módulo de comando/monitoramento (interfaces: portas, HVAC)', unidade: 'un', quantidade: nMod, referencia: 'NBR 17240, 5.7' }] : []),
     { codigo: 'CAB', descricao: 'Cabo blindado 2 × 1,5 mm² para laço de detecção e alarme (estimativa)', unidade: 'm', quantidade: caboLaco, referencia: 'NBR 17240, 6.8' },
     { codigo: 'ELE', descricao: 'Eletroduto exclusivo do sistema de alarme (estimativa)', unidade: 'm', quantidade: caboLaco, referencia: 'NBR 17240, 6.7' },
@@ -158,7 +162,7 @@ function calcular(dados) {
 
   return {
     tipoSistema, ambientes, pavimentos, iluminacao, nDet, nAc, nAv, nMod, dispositivos, lacos, zonas, limiteLaco,
-    bateria: { linhas, iRepouso, iAlarme, tRepouso, tAlarme, fonteA, bateriaAh, bateriaEscolhida },
+    bateria: { linhas, iRepouso, iAlarme, tRepouso, tAlarme, fonteA, bateriaAh, bateriaEscolhida, nConjuntos },
     nAclar, nBaliz, autonomiaEmergH, materiais, avisos,
   };
 }

@@ -64,14 +64,14 @@ const W_SWITCH = 20;
 const W_TERMINAL_IP = 4;
 const W_PORTARIA_IP = 6;
 const W_PORTEIRO_IP = 8;
-// Nobreak
-const FP_NOBREAK = 0.7;
-const MARGEM_NOBREAK = 1.25;
-const EFICIENCIA = 0.85;
-const TENSAO_BATERIA = 12;
-const FATOR_BATERIA = 1.25; // envelhecimento/temperatura [CONFERIR]
-const NOBREAKS_VA = [600, 1000, 1200, 1500, 2000, 3000];
-const BATERIAS_AH = [7, 9, 18, 26, 40, 60, 100];
+// Nobreak: o dimensionamento comum (_comum/bateria.js — o mesmo do CFTV); constantes e séries de lá
+const NB = require('../../../_comum/bateria');
+const { especificarDps, descricaoDps } = require('../../../_comum/dps'); // DPS da alimentação CA
+const { comercial } = NB;
+const { FP_NOBREAK, MARGEM_NOBREAK, NOBREAKS_VA } = NB;
+const EFICIENCIA = NB.EFICIENCIA_INVERSOR;
+const FATOR_BATERIA = NB.FATOR_BATERIA_NOBREAK; // envelhecimento/temperatura [CONFERIR]
+const BATERIAS_AH = NB.BATERIAS_NOBREAK_AH;
 
 const br = (v, c = 1) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
 const sim = (v) => v === true || v === 'true' || v === 'sim' || v === 1 || v === '1';
@@ -79,21 +79,10 @@ const nao = (v) => v === false || v === 'false' || v === 'nao' || v === 'não' |
 const numOu = (v, padrao) => (v === null || v === undefined || v === '' || Number.isNaN(Number(v)) ? padrao : Number(v));
 const pad2 = (n) => String(n).padStart(2, '0');
 
-function comercial(lista, necessario) {
-  const v = lista.find(x => x >= necessario);
-  if (v) return { qtd: 1, valor: v };
-  const maior = lista[lista.length - 1];
-  const qtd = Math.ceil(necessario / maior);
-  return { qtd, valor: lista.find(x => x * qtd >= necessario) || maior };
-}
-
+// modelo comercial (comercial) e nobreak: as funções comuns
 function nobreakPara(local, cargaW, autonomiaH) {
-  const vaNec = cargaW / FP_NOBREAK * MARGEM_NOBREAK;
-  const nb = comercial(NOBREAKS_VA, vaNec);
-  const whNec = cargaW * autonomiaH / EFICIENCIA;
-  const ahNec = whNec / TENSAO_BATERIA * FATOR_BATERIA;
-  const bat = autonomiaH > 0 ? comercial(BATERIAS_AH, ahNec) : { qtd: 0, valor: 0 };
-  return { local, cargaW, vaNec, va: nb.valor, nNobreaks: nb.qtd, whNec, ahNec, bateriaAh: bat.valor, nBaterias: bat.qtd };
+  const nb = NB.dimensionarNobreak({ cargaW, autonomiaH });
+  return { local, cargaW, vaNec: nb.vaNec, va: nb.va, nNobreaks: nb.nNobreaks, whNec: nb.whNec, ahNec: nb.ahNec, bateriaAh: nb.bateriaAh, nBaterias: nb.nBaterias };
 }
 
 function calcular(dados) {
@@ -476,7 +465,11 @@ function calcular(dados) {
   add('DPA', 'DPS de linha 1 par para ramal de área externa', 'un', dps.area, 'NBR 5410 6.3.5 / NBR 5419-4');
   add('DPE', 'DPS para rede Ethernet PoE (porteiro IP / ponto externo)', 'un', dps.ethernet, 'NBR 5419-4');
   add('DPM', 'Módulo de proteção para bloco de 10 pares (centelhadores a gás) — interligação entre edificações, nas duas pontas', 'un', dps.modulos, 'NBR 5419-4 / NBR 14306 [CONFERIR]');
-  add('DPC', 'DPS classe II 275 V 20 kA na alimentação CA da central/nobreak', 'un', dps.ca, 'NBR 5410 6.3.5');
+  // DPS da alimentação CA (circuito monofásico de cada central/nobreak): Uc pela Tabela 49 e In pela regra
+  // comum (_comum/dps.js), com os 20 kA que esta skill já adotava; um por fase + N-PE em cada local.
+  // Tensão fase-neutro e esquema do sistema, ou 220 V TN-S (dá os mesmos 275 V de antes).
+  const dpsCa = especificarDps({ classe: 'II', vfn: Number(s.tensao_fn) || 220, esquema: s.esquema || 'TN-S', nFases: 1 });
+  add('DPC', `${descricaoDps(dpsCa, { inMinimoKa: 20 })} — alimentação CA da central/nobreak (${dpsCa.quantidade} por local)`, 'un', dps.ca * dpsCa.quantidade, 'NBR 5410, 6.3.5.2.4 e Tabela 49');
   add('TAP', 'Barramento de aterramento de telecomunicações (TAP) no DG/rack, ligado ao BEP', 'un', taps, 'NBR 5410 6.4 / NBR 14306 [CONFERIR]');
   add('T16', 'Cabo de cobre 16 mm² verde-amarelo (TAP → BEP)', 'm', cabo16M, 'NBR 5410 6.4');
   if (!infraExistente) {

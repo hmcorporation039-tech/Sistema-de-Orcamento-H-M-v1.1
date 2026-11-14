@@ -20,7 +20,6 @@ const SUAVE = '#6b665a';
 const FUNDO = '#f4f1ea';
 const BORDA = '#e2dccd';
 
-const moeda = formatarMoeda;
 const qtd = (v) => (Number(v) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 });
 const pct = (v) => (Number(v) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 
@@ -200,7 +199,7 @@ export default function AprovacaoPublica() {
         </div>
         <div style={{ marginTop: 16, padding: '14px 16px', background: '#1d1b16', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ color: '#d9d2bf', fontSize: 13, textTransform: 'uppercase', letterSpacing: '.6px' }}>Total da proposta</span>
-          <span style={{ color: OURO, fontSize: 24, fontWeight: 800 }}>{moeda(p.totais.total)}</span>
+          <span style={{ color: OURO, fontSize: 24, fontWeight: 800 }}>{formatarMoeda(p.totais.total)}</span>
         </div>
         {pdfDisponivel && (
           <a href={urlPdfAprovacaoPublica(token)} target="_blank" rel="noopener noreferrer" style={{ ...btnClaro, marginTop: 12 }} data-testid="baixar-pdf">
@@ -243,10 +242,10 @@ export default function AprovacaoPublica() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 14.5, lineHeight: 1.35, wordBreak: 'break-word' }}>{it.descricao}</div>
                       <div style={{ fontSize: 12.5, color: SUAVE, marginTop: 3 }}>
-                        {qtd(it.quantidade)} {it.unidade || ''} × {moeda(it.valor_unitario)}{it.codigo ? ` · cód. ${it.codigo}` : ''}
+                        {qtd(it.quantidade)} {it.unidade || ''} × {formatarMoeda(it.valor_unitario)}{it.codigo ? ` · cód. ${it.codigo}` : ''}
                       </div>
                     </div>
-                    <div style={{ fontWeight: 700, fontSize: 14.5, whiteSpace: 'nowrap' }}>{moeda(it.valor_total)}</div>
+                    <div style={{ fontWeight: 700, fontSize: 14.5, whiteSpace: 'nowrap' }}>{formatarMoeda(it.valor_total)}</div>
                   </div>
                 </div>
               );
@@ -271,7 +270,7 @@ export default function AprovacaoPublica() {
           {p.totais.desconto_materiais_pct != null && <div style={notaDesconto}>Desconto de {pct(p.totais.desconto_materiais_pct)}% já aplicado aos valores de materiais</div>}
           {p.totais.desconto_mao_obra_pct != null && <div style={notaDesconto}>Desconto de {pct(p.totais.desconto_mao_obra_pct)}% já aplicado aos valores de mão de obra</div>}
           <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: `2px solid ${OURO}`, marginTop: 6, paddingTop: 8, fontSize: 18, fontWeight: 800, color: OURO_ESCURO }}>
-            <span>Total geral</span><span>{moeda(p.totais.total)}</span>
+            <span>Total geral</span><span>{formatarMoeda(p.totais.total)}</span>
           </div>
         </div>
       </section>
@@ -357,7 +356,7 @@ export default function AprovacaoPublica() {
                     {decisao === 'aprovada' ? 'Confirmar a aprovação?' : 'Confirmar a recusa?'}
                   </div>
                   <div style={{ fontSize: 14, lineHeight: 1.6 }}>
-                    Proposta <b>{p.numero}</b> · {moeda(p.totais.total)}<br />
+                    Proposta <b>{p.numero}</b> · {formatarMoeda(p.totais.total)}<br />
                     {form.nome.trim()} · {form.documento}
                   </div>
                   <div style={{ fontSize: 12, color: '#b8b09c', marginTop: 8, lineHeight: 1.45 }}>
@@ -397,7 +396,7 @@ function Comprovante({ c, token, pdfDisponivel }) {
       <div style={{ textAlign: 'center', fontFamily: 'Consolas, monospace', fontSize: 18, fontWeight: 700, letterSpacing: '.5px', marginBottom: 14 }}>{c.codigo}</div>
       <div style={gradeInfo}>
         <Info rotuloTexto="Proposta" valor={c.numero} />
-        <Info rotuloTexto="Valor total" valor={moeda(c.total)} />
+        <Info rotuloTexto="Valor total" valor={formatarMoeda(c.total)} />
         <Info rotuloTexto="Data e hora" valor={c.decidido_em_texto || dataHoraBr(c.decidido_em, { fuso: FUSO_BRASILIA })} />
         <Info rotuloTexto="Decisão" valor={aprovada ? 'Aprovada' : 'Recusada'} />
         <Info rotuloTexto="Nome" valor={c.nome} />
@@ -479,7 +478,7 @@ const Campo = ({ rotuloTexto, children }) => (
 );
 const LinhaTotal = ({ t, v }) => (
   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '4px 0' }}>
-    <span style={{ color: SUAVE }}>{t}</span><span>{moeda(v)}</span>
+    <span style={{ color: SUAVE }}>{t}</span><span>{formatarMoeda(v)}</span>
   </div>
 );
 

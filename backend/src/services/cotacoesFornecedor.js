@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const { unidadeBase } = require('./catalogoMateriais');
 const { formatarCnpj, soDigitos, cnpjValido } = require('../utils/cnpj');
+const { hojeBrasilia } = require('../utils/dataHoje');
 
 // Comparativo de fornecedores (02/11/2026): cada preço cotado fica guardado com o fornecedor
 // (tabela cotacoes_itens), e daqui sai quem cotou mais barato e se o custo do catálogo está acima do
@@ -24,10 +25,8 @@ const arred4 = (v) => Math.round(v * 10000) / 10000;
 const diasEntre = (de, ate) => Math.round((Date.parse(`${ate}T00:00:00Z`) - Date.parse(`${de}T00:00:00Z`)) / 86400000);
 const nomeDe = (cnpj, nome) => (nome && nome.trim()) || formatarCnpj(cnpj);
 
-function hojeIso() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+// hoje em Brasília (utils/dataHoje, fonte única desde a 2.38)
+const hojeIso = () => hojeBrasilia();
 
 // ── Cálculo puro ───────────────────────────────────────────────────────────
 

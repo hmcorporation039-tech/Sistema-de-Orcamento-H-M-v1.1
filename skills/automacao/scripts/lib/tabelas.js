@@ -24,17 +24,9 @@ const EQUIPAMENTOS = {
   outro: { rotulo: 'Outro (informar pontos)', di: 0, do: 0, ai: 0, ao: 0, rede: 0 },
 };
 
-// NBR 16401-3:2008, Tabela 1, nível 1 — Fp (L/s·pessoa) e Fa (L/s·m²);
-// mesmos valores da ASHRAE 62.1. [CONFERIR na norma para o uso específico]
-const AR_EXTERNO = {
-  escritorio: { rotulo: 'Escritório', fp: 2.5, fa: 0.3, densidade: 5 },
-  reuniao: { rotulo: 'Sala de reunião', fp: 2.5, fa: 0.3, densidade: 50 },
-  sala_aula: { rotulo: 'Sala de aula', fp: 5.0, fa: 0.6, densidade: 35 },
-  loja: { rotulo: 'Loja / varejo', fp: 3.8, fa: 0.6, densidade: 15 },
-  restaurante: { rotulo: 'Restaurante', fp: 3.8, fa: 0.9, densidade: 70 },
-  auditorio: { rotulo: 'Auditório', fp: 2.5, fa: 0.3, densidade: 150 },
-  outro: { rotulo: 'Outro (informar Fp e Fa)', fp: 2.5, fa: 0.3, densidade: 10 },
-};
+// NBR 16401-3:2008, Tabela 1 (Fp, Fa e densidade por uso) e a renovação mínima da Portaria MS
+// 3.523/1998: tabela comum da climatização e da automação (skills/_comum/ar-externo.js), reexportada aqui
+const { AR_EXTERNO, RENOVACAO_MINIMA_M3H_PESSOA } = require('../../../_comum/ar-externo');
 const CO2_PESSOA_LS = 0.0052; // geração de CO₂ por pessoa em atividade de escritório (L/s)
 const CO2_EXTERNO_PPM = 420;
 
@@ -84,8 +76,6 @@ const RESID = {
 
 const LICENCAS_PONTOS = [100, 250, 500, 1000, 2500, 5000, 10000];
 
-// Portaria MS 3.523/1998, art. 5º f: renovação mínima de 27 m³/h por pessoa — o mesmo de skills/climatizacao
-// (tabelas.js, RENOVACAO_MINIMA_M3H_PESSOA); vale junto com a NBR 16401-3 (o maior dos dois)
-const RENOVACAO_MINIMA_M3H_PESSOA = 27;
+// RENOVACAO_MINIMA_M3H_PESSOA (Portaria MS 3.523/1998, 27 m³/h·pessoa): da tabela comum, acima
 
 module.exports = { RENOVACAO_MINIMA_M3H_PESSOA, EQUIPAMENTOS, AR_EXTERNO, CO2_PESSOA_LS, CO2_EXTERNO_PPM, FATORES_BAC, FUNCOES_BAC, ORDEM_CLASSE, RESID, LICENCAS_PONTOS };

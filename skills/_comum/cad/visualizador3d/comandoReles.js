@@ -12,8 +12,7 @@
 //   passos?, espera, ok, falhas }], porta: [{ meshTag, id }], placa: { tagDaPeca: sinal } }
 
 import { avaliar, entradasDaInteracao } from '../../especificacao/logica.js';
-
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+import { escapeHtml as esc } from '../../base/html.js'; // escape de HTML comum (skills/_comum/base)
 
 // valor de uma entrada do cenário → estado do controle da interação
 function estadoDoValor(c, v) {

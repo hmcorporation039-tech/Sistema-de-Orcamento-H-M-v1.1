@@ -13,9 +13,9 @@ const pool = require('../config/database');
 const VALIDADE_PADRAO_MESES = 12;
 const ETAPAS = { nenhuma: 0, sessenta: 1, trinta: 2, vencido: 3 };
 
-const dataIso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-const hojeIso = (agora = new Date()) => dataIso(agora);
-const ehDataIso = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T12:00:00Z`)) && dataIso(new Date(`${s}T12:00:00`)) === s;
+const { dataLocalIso: dataIso, hojeBrasilia } = require('../utils/dataHoje'); // fonte única (2.38)
+const hojeIso = (agora = new Date()) => hojeBrasilia(agora);
+const { ehDataIso } = require('../utils/dataHoje'); // AAAA-MM-DD que existe no calendário (fonte única, 2.38)
 
 // Soma meses sem estourar o fim do mês (31/01 + 1 mês = 28/02, não 03/03).
 function somarMeses(iso, meses) {

@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { RefreshCw, Send, MessageCircle, Smartphone, Mic, ShieldCheck, CheckCircle2, XCircle, Loader2, AlertTriangle } from 'lucide-react';
 import api from '../services/api';
 import { estilos } from '../components/ui/estilos';
+import Etiqueta from '../components/ui/Etiqueta';
 import { dataHoraBr } from '../utils/format';
 
 // Canal remoto (Fase 6): falar com o sistema pelo Telegram ou WhatsApp. Só o administrador vê.
@@ -27,9 +28,9 @@ const CANAL = { telegram: 'Telegram', whatsapp: 'WhatsApp', simulador: 'Simulado
 const VIA = { interpretador: 'comando', assistente: 'assistente', acao: 'confirmação', vinculo: 'vínculo', voz: 'voz', outro: '—', ignorada: '—' };
 const corta = (t, n = 140) => { const s = String(t || ''); return s.length > n ? `${s.slice(0, n)}…` : s; };
 
-function Selo({ cor, children }) {
-  return <span style={{ display: 'inline-block', padding: '2px 9px', borderRadius: 20, fontSize: 11.5, fontWeight: 700, color: cor, border: `1px solid ${cor}55`, whiteSpace: 'nowrap' }}>{children}</span>;
-}
+// Etiqueta vazada do kit (sem fundo, borda na cor do texto), um pouco mais baixa
+const seloCanal = { display: 'inline-block', padding: '2px 9px' };
+const Selo = ({ cor, children }) => <Etiqueta vazada cor={cor} style={seloCanal}>{children}</Etiqueta>;
 
 function CartaoCanal({ titulo, Icone, ativo, configurado, faltando, extra }) {
   const ok = ativo && configurado;

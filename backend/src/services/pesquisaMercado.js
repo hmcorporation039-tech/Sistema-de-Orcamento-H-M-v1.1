@@ -120,7 +120,7 @@ function estatistica(ofertas) {
   return { media: Math.round(media * 100) / 100, minimo: Math.min(...validas), maximo: Math.max(...validas), n: validas.length };
 }
 
-const moeda = (v) => `R$ ${Number(v).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.')}`;
+const { moedaTexto: moeda } = require('../utils/moeda'); // fonte única (2.38)
 function textoDasOfertas(ofertas, est, obs) {
   const linhas = ofertas.map(o => `• ${o.fonte}: ${moeda(o.preco)} — ${o.produto}${o.mesmo_item ? '' : ' (variação diferente)'}${o.observacao ? ` — ${o.observacao}` : ''}${o.link ? `\n  ${o.link}` : ''}`);
   if (est.n) linhas.push(`\nMédia ${moeda(est.media)} (mín. ${moeda(est.minimo)}, máx. ${moeda(est.maximo)}, ${est.n} oferta(s) do mesmo item).`);

@@ -8,6 +8,7 @@ import { useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { FilePlus2, FolderOpen, X } from 'lucide-react';
 import Select from '../Select';
+import { estilos } from '../ui/estilos';
 import { enviarPacoteProjeto, descartarPacoteProjeto } from '../../services/api';
 
 const ACEITOS = /\.(pdf|dwg|dxf|zip)$/i;
@@ -148,7 +149,7 @@ export function ListaPacote({ itens, onMudar, disciplinas, token, onDescartar })
   );
 }
 
-const btn = { display: 'flex', alignItems: 'center', padding: '8px 12px', background: 'transparent', border: '1px dashed #333', borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
+const btn = { ...estilos.btnTracejado, padding: '8px 12px' };
 const th = { padding: '6px 8px', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.4px' };
 const td = { padding: '7px 8px', verticalAlign: 'top' };
 const chip = { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 4px 2px 8px', borderRadius: 10, background: '#2c2715', border: '1px solid #5a4a12', color: '#e2c35a', fontSize: 12 };

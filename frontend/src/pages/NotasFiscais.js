@@ -6,9 +6,10 @@ import useUltimoPedido from '../hooks/useUltimoPedido';
 import Paginacao from '../components/Paginacao';
 import { formatarCtribNac } from '../components/fiscal/BuscaCodigo';
 import { estilos } from '../components/ui/estilos';
+import Indicador from '../components/ui/Indicador';
 import { formatarMoeda, formatarData, formatarCpfCnpj } from '../utils/format';
 import { baixarArquivo, mensagemDeErro } from '../utils/download';
-import { BtnTexto, Indicador, ItemMenu, MenuAcoes, SITUACOES, sub } from './notasFiscais/comum';
+import { BtnTexto, ItemMenu, MenuAcoes, SITUACOES, sub } from './notasFiscais/comum';
 import { ModalNota } from './notasFiscais/ModalNota';
 import { ModalDuplicar } from './notasFiscais/ModalDuplicar';
 import { ModalPrevia } from './notasFiscais/ModalPrevia';
@@ -126,10 +127,10 @@ export default function NotasFiscais() {
       {/* ── indicadores resumo ── */}
       {t && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 18 }}>
-          <Indicador rotulo="Notas emitidas" valor={t.emitidas} />
-          <Indicador rotulo="Valor emitido" valor={formatarMoeda(t.valor_emitido)} destaque />
-          <Indicador rotulo="Líquido a receber" valor={formatarMoeda(t.liquido_emitido)} />
-          <Indicador rotulo="Rascunhos" valor={t.rascunhos} />
+          <Indicador variante="compacto" rotulo="Notas emitidas" valor={t.emitidas} />
+          <Indicador variante="compacto" rotulo="Valor emitido" valor={formatarMoeda(t.valor_emitido)} destaque />
+          <Indicador variante="compacto" rotulo="Líquido a receber" valor={formatarMoeda(t.liquido_emitido)} />
+          <Indicador variante="compacto" rotulo="Rascunhos" valor={t.rascunhos} />
         </div>
       )}
 

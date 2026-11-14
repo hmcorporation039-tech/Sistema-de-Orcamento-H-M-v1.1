@@ -22,6 +22,7 @@ import { AvisoNovidades } from '../../components/NovidadesPastas';
 import { invalidarCacheObras } from '../../components/ObraSelect';
 import { formatarData, hojeBrasilia, paraIso } from '../../utils/format';
 import { STATUS_OBRA, SEGMENTO, STATUS_PROPOSTA, BASE_ORCADO, Etiqueta, moeda, pct, corMargem, estilos as E, Campo } from './comum';
+import Indicador from '../../components/ui/Indicador';
 
 // Página da obra (/obras/:id), dentro do hub Obras. Abas em ?secao= (F5 e
 // "voltar" mantêm a aba). Itens novos criados daqui nascem ligados à obra:
@@ -203,19 +204,19 @@ function Resumo({ obra, recarregar, podeEditar }) {
   return (
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 16 }}>
-        <Cartao rotulo="Orçado" valor={moeda(r.orcado)} cor="#c9a227" nota={BASE_ORCADO[r.orcado_base]} />
-        <Cartao rotulo="Realizado (despesas)" valor={restrito ? '—' : moeda(r.realizado)} cor="#e08080"
-          nota={restrito ? 'só administradores' : (r.contratado ? `contratado com prestadores: ${moeda(r.contratado)}` : 'movimentos de saída ligados')} />
-        <Cartao rotulo="Recebido" valor={restrito ? '—' : moeda(r.recebido)} cor="#3fb95f" nota={restrito ? 'só administradores' : `a receber: ${moeda(r.a_receber)}`} />
+        <Indicador rotulo="Orçado" valor={moeda(r.orcado)} cor="#c9a227" sub={BASE_ORCADO[r.orcado_base]} />
+        <Indicador rotulo="Realizado (despesas)" valor={restrito ? '—' : moeda(r.realizado)} cor="#e08080"
+          sub={restrito ? 'só administradores' : (r.contratado ? `contratado com prestadores: ${moeda(r.contratado)}` : 'movimentos de saída ligados')} />
+        <Indicador rotulo="Recebido" valor={restrito ? '—' : moeda(r.recebido)} cor="#3fb95f" sub={restrito ? 'só administradores' : `a receber: ${moeda(r.a_receber)}`} />
         {/* notas fiscais emitidas das propostas da obra; a receber = líquido − recebido − baixas manuais */}
-        <Cartao rotulo="Faturado (notas)" valor={restrito ? '—' : moeda(r.faturado)} cor="#9fb3ff"
-          nota={restrito ? 'só administradores' : (r.qtd_notas ? `a receber do faturado: ${moeda(r.a_receber_faturado)}` : 'nenhuma nota emitida nas propostas')} />
-        <Cartao rotulo="Margem" valor={restrito ? '—' : moeda(r.margem)} cor={corMargem(restrito ? null : r.margem)}
-          nota={restrito ? 'só administradores' : (r.margem_pct != null ? `${pct(r.margem_pct)} do orçado (orçado − realizado)` : 'orçado − realizado')} />
-        <Cartao rotulo="% físico executado" valor={fisico ? pct(fisico.fisico_realizado.toFixed(1)) : '—'} cor="#5fc9c0"
-          nota={fisico ? `previsto até hoje: ${pct(fisico.fisico_previsto.toFixed(1))}` : (fisico === false ? 'sem cronograma (aba Execução)' : '...')} />
-        <Cartao rotulo="OS abertas" valor={osCampo ? osCampo.abertas + osCampo.execucao : '—'} cor="#8aa4c8"
-          nota={osCampo ? `${osCampo.execucao} em execução no campo · aba Campo (OS)` : (osCampo === false ? 'não foi possível carregar' : '...')} />
+        <Indicador rotulo="Faturado (notas)" valor={restrito ? '—' : moeda(r.faturado)} cor="#9fb3ff"
+          sub={restrito ? 'só administradores' : (r.qtd_notas ? `a receber do faturado: ${moeda(r.a_receber_faturado)}` : 'nenhuma nota emitida nas propostas')} />
+        <Indicador rotulo="Margem" valor={restrito ? '—' : moeda(r.margem)} cor={corMargem(restrito ? null : r.margem)}
+          sub={restrito ? 'só administradores' : (r.margem_pct != null ? `${pct(r.margem_pct)} do orçado (orçado − realizado)` : 'orçado − realizado')} />
+        <Indicador rotulo="% físico executado" valor={fisico ? pct(fisico.fisico_realizado.toFixed(1)) : '—'} cor="#5fc9c0"
+          sub={fisico ? `previsto até hoje: ${pct(fisico.fisico_previsto.toFixed(1))}` : (fisico === false ? 'sem cronograma (aba Execução)' : '...')} />
+        <Indicador rotulo="OS abertas" valor={osCampo ? osCampo.abertas + osCampo.execucao : '—'} cor="#8aa4c8"
+          sub={osCampo ? `${osCampo.execucao} em execução no campo · aba Campo (OS)` : (osCampo === false ? 'não foi possível carregar' : '...')} />
       </div>
 
       <form style={E.card} onSubmit={salvar}>
@@ -262,16 +263,6 @@ function Resumo({ obra, recarregar, podeEditar }) {
           {podeEditar && <button type="submit" disabled={!alterado || salvando} style={{ ...E.btnPrimario, opacity: alterado ? 1 : 0.5 }}><Save size={13} /> {salvando ? 'Salvando...' : 'Salvar'}</button>}
         </div>
       </form>
-    </div>
-  );
-}
-
-function Cartao({ rotulo, valor, cor, nota }) {
-  return (
-    <div style={{ ...E.card, marginBottom: 0 }}>
-      <div style={{ fontSize: 11.5, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>{rotulo}</div>
-      <div style={{ fontSize: 20, fontWeight: 700, color: cor }}>{valor}</div>
-      {nota && <div style={{ fontSize: 11.5, color: 'var(--texto-3)', marginTop: 4 }}>{nota}</div>}
     </div>
   );
 }

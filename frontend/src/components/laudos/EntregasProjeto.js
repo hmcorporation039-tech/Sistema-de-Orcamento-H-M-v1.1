@@ -4,6 +4,7 @@ import { PackageCheck, FolderDown } from 'lucide-react';
 import { getEntregasProjeto, gerarEntregaProjeto } from '../../services/api';
 import { baixarArquivo, mensagemDeErro } from '../../utils/download';
 import { hojeBrasilia } from '../../utils/format';
+import { estilos } from '../ui/estilos';
 
 // Entregas do PROJETO (versão 2.1): o projetista escolhe o que entregar —
 // Definições técnicas, As-built, DXF (DWG não é gerado), QElectroTech e PDF —
@@ -129,7 +130,5 @@ export default function EntregasProjeto({ laudo, desenhos, temArquitetura, revis
 const caixa = { marginTop: 10, padding: '10px 12px', border: '1px solid #2a2a2a', borderRadius: 8, background: '#101010' };
 const rotulo = { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--texto-2)' };
 const campo = { background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 5, color: '#ddd', fontSize: 12, padding: '4px 6px' };
-const btn = {
-  display: 'flex', alignItems: 'center', padding: '8px 12px', background: 'transparent', border: '1px dashed #333',
-  borderRadius: 6, fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
-};
+// tracejado do kit; a cor (texto e borda) vem de cada botão
+const btn = { ...estilos.btnTracejado, padding: '8px 12px' };

@@ -26,8 +26,9 @@ const DEMANDA_OUTRAS = {
 
 // Capacidade de interrupção (Icu) comercial (kA)
 const ICU_KA = [3, 4.5, 6, 10, 15, 16, 20, 25, 36, 40, 50, 65, 70, 85, 100, 150];
-// Corrente de curta duração (Icw, 1 s) e nominal de barramento de conjuntos IEC 61439
-const ICW_KA = [6, 10, 15, 20, 25, 35, 50, 65, 80, 100];
+// Corrente de curta duração (Icw, 1 s) — a série comum (a mesma dos quadros) — e nominal de barramento
+// de conjuntos IEC 61439
+const { ICW_KA } = require('../../../_comum/eletrico/tabelas');
 const BARRAMENTOS_A = [63, 100, 160, 250, 400, 630, 800, 1000, 1250, 1600, 2000, 2500, 3200, 4000];
 
 // Capacitores (kvar) — estágios comerciais
@@ -41,7 +42,7 @@ const FATOR_FUSIVEL_CAPACITOR = 1.65;
 const TRAFOS_KVA = [75, 112.5, 150, 225, 300, 500, 750, 1000, 1250, 1500, 2000, 2500, 3000];
 
 // Curto-circuito (RHO_QUENTE e X_CABO vêm do motor comum de motores)
-const RHO_20 = 0.0178;   // Ω·mm²/m — cobre a 20 °C (Icc máximo, IEC 60909)
+const RHO_20 = require('../../../_comum/eletrico/tabelas').RHO_COBRE_20; // Ω·mm²/m (0,0178) — cobre a 20 °C (Icc máximo, IEC 60909), da tabela comum
 const R_TRAFO_PCT_PADRAO = 1.0; // perdas em carga ≈ 1 % de S para trafos de 300 a 1000 kVA [CONFERIR na placa/ensaio]
 const XR_REDE = 10;       // X/R da rede de média tensão (IEC 60909: R ≈ 0,1·X)
 

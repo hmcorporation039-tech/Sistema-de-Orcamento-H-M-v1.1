@@ -10,6 +10,7 @@ const { classificarPendentes } = require('./classificacaoMateriais');
 const { executarComTrava } = require('./travaJob');
 const iaCache = require('./iaCache');
 const cotacoes = require('./cotacoesFornecedor');
+const { dataLocalIso } = require('../utils/dataHoje');
 
 // Pastas onde o usuário salva os orçamentos/cotações de fornecedor recebidos
 // (WhatsApp etc.): PDF com texto, PDF escaneado ou foto (PNG/JPG). A local
@@ -121,7 +122,7 @@ async function guardarCotacoesDoArquivo(client, { pasta, nome }, { indice, ler =
   const leitura = await ler(buffer, nome, { permitirIA: false });
   if (!leitura.fornecedor || !leitura.itens.length) return { itens: leitura.itens.length, guardados: 0, semFornecedor: !leitura.fornecedor && leitura.itens.length > 0 };
   const d = await dataDoArquivo(caminho);
-  const data = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const data = dataLocalIso(d); // data do arquivo no relógio do PC (utils/dataHoje, 2.38)
   const origem = /\bIA\b/.test(leitura.metodo || '') ? 'fornecedor_whatsapp_ia' : leitura.viaOcr ? 'fornecedor_whatsapp_ocr' : 'fornecedor_whatsapp';
   const documento = `arq:${hashArquivo(buffer)}`;
   let guardados = 0;

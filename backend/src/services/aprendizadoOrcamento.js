@@ -24,8 +24,7 @@ const MAX_SUGERIDOS = 40;           // teto de itens sugeridos por orçamento
 const SEMELHANCA_MESMO_ITEM = 0.75; // descrição já presente no orçamento (não sugere de novo)
 const UNIDADES_PONTO = new Set(['pt', 'un', 'und', 'unid', 'pc', 'par', 'cj', 'conj']);
 
-const ACENTOS = /[̀-ͯ]/g;
-const norm = (s) => String(s ?? '').normalize('NFD').replace(ACENTOS, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const { chaveBusca: norm } = require('../utils/texto'); // fonte única (2.38)
 const r2 = (v) => Math.round(Number(v) * 100) / 100;
 const mediana = (l) => {
   const v = [...l].sort((a, b) => a - b);

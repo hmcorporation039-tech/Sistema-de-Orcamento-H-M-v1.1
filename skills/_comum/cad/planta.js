@@ -249,4 +249,5 @@ function gerarPlanta({ arquitetura, pontos, carimbo: dadosCarimbo = {}, notas = 
   return { dxf: d.toString(), quantitativo, posicoes, naoEncontrados, avisos };
 }
 
-module.exports = { gerarPlanta, posicionarPontos, acharAmbiente, casaNome, normalizar, portasDoAmbiente };
+// definirCarimbo: também o desenho de fabricação dos quadros (quadros/scripts/lib/desenho.js)
+module.exports = { gerarPlanta, posicionarPontos, acharAmbiente, casaNome, normalizar, portasDoAmbiente, definirCarimbo };

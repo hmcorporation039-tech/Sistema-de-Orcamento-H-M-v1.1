@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { KeyRound } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { estilos } from './ui/estilos';
 
 // "Sua sessão expirou — entre de novo" (services/sessao.js): aparece por cima
 // da tela quando o servidor recusa o token (401) — token de 8 h vencido, senha
@@ -98,7 +99,4 @@ const btnPrimario = {
   padding: '10px 18px', background: '#c9a227', border: 'none', borderRadius: 6, color: '#000',
   fontWeight: 700, fontSize: 13, cursor: 'pointer',
 };
-const btnSecundario = {
-  padding: '10px 14px', background: 'transparent', border: '1px dashed #333', borderRadius: 6,
-  color: 'var(--texto-2)', fontWeight: 700, fontSize: 13, cursor: 'pointer',
-};
+const btnSecundario = { ...estilos.btnTracejado, padding: '10px 14px', fontSize: 13 };

@@ -12,6 +12,7 @@ import { salvarBlob, mensagemDeErro } from '../utils/download';
 import Select from '../components/Select';
 import Modal from '../components/ui/Modal';
 import { estilos, Campo } from '../components/ui/estilos';
+import Indicador from '../components/ui/Indicador';
 import ObraSelect from '../components/ObraSelect';
 import { Link } from 'react-router-dom';
 
@@ -290,9 +291,9 @@ export default function Financeiro() {
 
       {/* Resumo */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 16 }}>
-        <CardResumo label="Total recebido" valor={formatarMoeda(totais.recebido)} cor="#3fb95f" icone={<ArrowDownCircle size={16} />} />
-        <CardResumo label="Total realizado" valor={formatarMoeda(totais.realizado)} cor="#e08080" icone={<ArrowUpCircle size={16} />} />
-        <CardResumo label="Saldo do período" valor={formatarMoeda(totais.saldo)} cor="#c9a227" destaque />
+        <Indicador rotulo="Total recebido" valor={formatarMoeda(totais.recebido)} cor="#3fb95f" style={{ marginBottom: 16 }} icone={<ArrowDownCircle size={16} />} />
+        <Indicador rotulo="Total realizado" valor={formatarMoeda(totais.realizado)} cor="#e08080" style={{ marginBottom: 16 }} icone={<ArrowUpCircle size={16} />} />
+        <Indicador rotulo="Saldo do período" valor={formatarMoeda(totais.saldo)} cor="#c9a227" style={{ marginBottom: 16 }} destaque />
       </div>
 
       {/* Tabela */}
@@ -461,17 +462,6 @@ export default function Financeiro() {
   );
 }
 
-function CardResumo({ label, valor, cor, destaque, icone }) {
-  return (
-    <div style={card}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>
-        {icone} {label}
-      </div>
-      <div style={{ fontSize: 20, fontWeight: 700, color: destaque ? '#c9a227' : cor }}>{valor}</div>
-    </div>
-  );
-}
-
 // Estilos do kit de tela (components/ui/estilos.js). Os botões desta tela são
 // um pouco diferentes dos do kit (primário sem espaço entre ícone e texto,
 // secundário mais apagado, ícone de 24 px) — mantidos como eram.
@@ -483,10 +473,6 @@ const btnPrimario = {
   fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
 };
 
-const btnSecundario = {
-  display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent',
-  border: '1px solid #2a2a2a', borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700,
-  fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
-};
+const btnSecundario = { ...estilos.btnContorno, display: 'flex', alignItems: 'center', padding: '8px 14px', whiteSpace: 'nowrap' };
 
 const btnIcone = { ...estilos.btnIcone, width: 24, height: 24 };

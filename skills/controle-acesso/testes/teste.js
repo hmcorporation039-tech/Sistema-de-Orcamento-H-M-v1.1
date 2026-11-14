@@ -73,21 +73,23 @@ igual('modelo vazio pede portas', /ao menos uma porta/.test(erro), true);
 
 // Achado A2.6 (revisão 27/10/2026): queda de tensão do LEITOR pelo par 24 AWG da manga
 // (0,205 mm²) não era verificada. ΔV = 2·L·I·ρ ÷ 0,205, limite 10 % de 12 V (1,2 V).
-// P3 biometria 0,25 A, 35 m × 1,15 = 40,25 m → 2·40,25·0,25·0,0178/0,205 = 1,75 V (14,6 %)
+// P3 biometria 0,25 A, 35 m × 1,15 = 40,25 m → 2·40,25·0,25·0,0225/0,205 = 2,21 V (18,4 %)
+// (ρ do cobre em operação, o da tabela comum, desde 14/11/2026 — com 0,0178 dava 1,75 V)
 perto('P3 queda do leitor biométrico na manga', porta('P3').quedaLeitor, 2 * 40.25 * 0.25 * RHO / 0.205);
 igual('P3 leitor ganha par próprio PP 2 × 0,5 mm²', porta('P3').secaoLeitor, 0.5);
-// P6 MIFARE 0,12 A a 126,5 m → 2,64 V (22 %); P1 MIFARE a 17,25 m → 0,36 V (3 %) fica na manga
+// P6 MIFARE 0,12 A a 126,5 m → 3,33 V (28 %); P1 MIFARE a 17,25 m → 0,45 V (4 %) fica na manga
 igual('P6 acima de 10 % e P1 dentro', [porta('P6').quedaLeitorPct > 10, porta('P1').secaoLeitor], [true, null]);
-igual('aviso da queda do leitor P6', calc.avisos.some(a => a.startsWith('P6: queda de 2,64 V (22 %')), true);
-// PP dos leitores = (P3 2 leitores × 40,25 + P6 126,5) = 207 m
-igual('cabo PP dos leitores nos materiais', calc.materiais.find(m => /alimentação dos leitores/.test(m.descricao)).quantidade, 207);
+igual('aviso da queda do leitor P6', calc.avisos.some(a => a.startsWith('P6: queda de 3,33 V (28 %')), true);
+// PP dos leitores: P3 2 leitores × 40,25 m em 0,5 mm² (81 m) + P6 126,5 m em 0,75 mm² (127 m) — com ρ = 0,0225
+// o P6 passa a pedir 0,75 mm² (antes os 207 m saíam todos em 0,5 mm²)
+igual('cabo PP dos leitores nos materiais', calc.materiais.filter(m => /alimentação dos leitores/.test(m.descricao)).map(m => [m.descricao.match(/2 × ([\d,]+) mm²/)[1], m.quantidade]), [['0,5', 81], ['0,75', 127]]);
 igual('leitor facial IP (PoE) fora da verificação', porta('CT1').quedaLeitor, 0);
-// Cancela com leitor UHF 0,8 A a 30 m (34,5 m de cabo): 2·34,5·0,8·0,0178/0,205 = 4,79 V (40 %) → PP 1 mm²
+// Cancela com leitor UHF 0,8 A a 30 m (34,5 m de cabo): 2·34,5·0,8·0,0225/0,205 = 6,06 V (50 %) → PP 1,5 mm²
 const d5 = clonar(motor.exemplo());
 d5.portas.push({ id: 'CN1', local: 'Garagem', tipo: 'cancela', quantidade: 1, sentido: 'entrada', distancia_m: 30 });
 d5.sistema.veiculos = 50;
 const cn1 = motor.processar(d5).calc.pontos.find(p => p.id === 'CN1');
-igual('leitor UHF da cancela: 40 % de queda → PP 2 × 1 mm²', [Math.round(cn1.quedaLeitorPct), cn1.secaoLeitor], [40, 1]);
+igual('leitor UHF da cancela: 50 % de queda → PP 2 × 1,5 mm²', [Math.round(cn1.quedaLeitorPct), cn1.secaoLeitor], [50, 1.5]);
 
 {
   // Caderno: uma caixa por controladora; relé de incêndio nas caixas com rota de fuga; campo fora da placa

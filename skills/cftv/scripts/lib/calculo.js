@@ -14,6 +14,7 @@ const BITRATE_H265 = { 1: 1, 2: 2, 3: 2.5, 4: 3.5, 5: 4, 6: 5, 8: 6, 12: 8 };
 const POE_PADRAO = { dome: 6, bullet: 8, ptz: 25, fisheye: 8 };
 const CANAIS_NVR = [4, 8, 16, 32, 64, 128, 256];
 const NOBREAK_VA = [600, 1000, 1500, 2200, 3000, 6000, 10000];
+const { dimensionarNobreak } = require('../../../_comum/bateria'); // nobreak pela carga e pela autonomia
 // Potência disponível no equipamento alimentado (PD) por padrão PoE — IEEE 802.3af
 // 12,95 W; 802.3at (PoE+) 25,5 W; 802.3bt tipo 3 51 W e tipo 4 71,3 W.
 const POE_CLASSES = [{ w: 12.95, padrao: 'IEEE 802.3af' }, { w: 25.5, padrao: 'IEEE 802.3at' }, { w: 51, padrao: 'IEEE 802.3bt tipo 3' }, { w: 71.3, padrao: 'IEEE 802.3bt tipo 4' }];
@@ -88,9 +89,13 @@ function calcular(dados) {
   const switches = Math.ceil(portasSwitch / (Number(s.portas_switch) || 24));
   const nvrW = (Number(s.nvr_w) || 30) + hds * 8;
   const cargaW = poeTotal + nvrW + switches * 15;
-  const nobreakVa = NOBREAK_VA.find(v => v >= cargaW / 0.9 * 1.25) || Math.ceil(cargaW / 0.9 * 1.25);
+  // Nobreak: a função comum (_comum/bateria.js, a mesma da telefonia) — VA pela carga (FP 0,7, margem
+  // 1,25) e bateria pela autonomia (Wh ÷ rendimento do inversor → Ah em 12 V × 1,25). Antes o VA saía só
+  // da carga com FP 0,9 e a autonomia não dimensionava nada (aparecia só como Wh no texto).
   const autonomiaMin = Number(s.autonomia_min) || 30;
-  const energiaWh = cargaW * autonomiaMin / 60;
+  const nobreak = dimensionarNobreak({ cargaW, autonomiaH: autonomiaMin / 60, nobreaksVa: NOBREAK_VA });
+  const nobreakVa = nobreak.va;
+  const energiaWh = nobreak.whNec;
   const caboM = Math.ceil(cameras.reduce((a, c) => a + (c.cabo + 3) * c.qtd, 0));
   const placas = Number(s.placas_monitoramento) || Math.max(1, Number(s.acessos) || 1);
 
@@ -107,7 +112,8 @@ function calcular(dados) {
     { codigo: 'UTP', descricao: 'Cabo U/UTP Cat 6 externo/interno para câmeras', unidade: 'm', quantidade: caboM, referencia: 'NBR 14565' },
     { codigo: 'RJ', descricao: 'Conector RJ-45 Cat 6 (com capa) — 2 por câmera', unidade: 'un', quantidade: nCam * 2, referencia: '—' },
     { codigo: 'CX', descricao: 'Caixa de passagem/suporte para câmera', unidade: 'un', quantidade: nCam, referencia: '—' },
-    { codigo: 'NB', descricao: `Nobreak ${nobreakVa} VA (carga ≈ ${Math.round(cargaW)} W, autonomia desejada ${autonomiaMin} min ≈ ${Math.round(energiaWh)} Wh)`, unidade: 'un', quantidade: 1, referencia: 'Dimensionamento' },
+    { codigo: 'NB', descricao: `Nobreak ${nobreakVa} VA (carga ≈ ${Math.round(cargaW)} W, autonomia ${autonomiaMin} min ≈ ${Math.round(energiaWh)} Wh na bateria)`, unidade: 'un', quantidade: nobreak.nNobreaks, referencia: 'Carga ÷ 0,7 × 1,25' },
+    { codigo: 'BAT', descricao: `Bateria 12 V ${nobreak.bateriaAh} Ah para o nobreak (interna ou módulo externo, conforme o modelo) — autonomia de ${autonomiaMin} min [CONFERIR com o fabricante]`, unidade: 'un', quantidade: nobreak.nBaterias, referencia: `Carga × ${br(autonomiaMin / 60, 2)} h ÷ (12 V × 0,85) × 1,25` },
     ...(cameras.some(c => c.externa) ? [{ codigo: 'DPS', descricao: 'DPS de rede (RJ-45 PoE) para câmeras externas', unidade: 'un', quantidade: cameras.filter(c => c.externa).reduce((a, c) => a + c.qtd, 0), referencia: 'NBR 5419-4' }] : []),
     { codigo: 'PLACA', descricao: 'Placa "Ambiente monitorado por câmeras" (LGPD — transparência)', unidade: 'un', quantidade: placas, referencia: 'Lei 13.709/2018' },
   ];
@@ -123,7 +129,7 @@ function calcular(dados) {
     { codigo: 'PC', descricao: 'Patch cord Cat 6 1,5 m LSZH (patch panel → switch, switch → NVR e NVR → rede)', unidade: 'un', quantidade: nCam + switches + 1, referencia: 'NBR 14565' },
   );
   avisos.push('Bitrate e consumos típicos de mercado — conferir com a ficha técnica dos equipamentos escolhidos. [CONFERIR]');
-  return { cameras, nCam, banda, dias, horas, atividade, armazenamentoTb, hdTb, hds, hdsDados, portasBt, caboAcima90, raid, canais, poeTotal, poeComMargem, switches, cargaW, nobreakVa, autonomiaMin, energiaWh, caboM, materiais, avisos };
+  return { cameras, nCam, banda, dias, horas, atividade, armazenamentoTb, hdTb, hds, hdsDados, portasBt, caboAcima90, raid, canais, poeTotal, poeComMargem, switches, cargaW, nobreakVa, nobreak, autonomiaMin, energiaWh, caboM, materiais, avisos };
 }
 
 module.exports = { calcular, DORI, ROTULO_DORI, POE_CLASSES, hresDe };

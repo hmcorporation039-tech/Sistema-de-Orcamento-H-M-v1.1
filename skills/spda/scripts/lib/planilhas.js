@@ -4,18 +4,15 @@
 const ExcelJS = require('exceljs');
 const { rotuloNp } = require('./dimensionamento');
 const { EMPRESA, timbrarPastaDeTrabalho } = require('../../../_comum/empresa');
+const { cabecalhoTabela } = require('../../../_comum/excel-estilo');
 
-const PRETO = 'FF1A1A1A';
-const DOURADO = 'FFC9A227';
-
+// Cabeçalho da tabela (linha 1, títulos das colunas): o estilo único das planilhas H&M
+// (_comum/excel-estilo.js — fundo preto, texto branco em negrito, filete dourado), com a
+// linha congelada. Antes o SPDA tinha estilo próprio (texto dourado, outro tom de preto).
 function estilizarCabecalho(ws) {
-  const linha = ws.getRow(1);
-  linha.eachCell(c => {
-    c.font = { bold: true, color: { argb: DOURADO } };
-    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRETO } };
-    c.alignment = { vertical: 'middle', wrapText: true };
-  });
-  linha.height = 22;
+  const titulos = [];
+  ws.getRow(1).eachCell((c, col) => { titulos[col - 1] = c.value; });
+  cabecalhoTabela(ws, 1, titulos);
   ws.views = [{ state: 'frozen', ySplit: 1 }];
 }
 

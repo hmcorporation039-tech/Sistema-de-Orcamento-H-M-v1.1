@@ -18,6 +18,7 @@ const { categoriaLocal } = require('./classificacaoMateriais');
 const { registrarUso } = require('./iaCache');
 const { arredondar } = require(require('path').join(require('../config/caminhos').COMUM, 'base', 'dinheiro'));
 const { garantirServicoCadastrado } = require('../utils/servicosBase');
+const { materialAtivoPorDescricao } = require('./catalogoMateriais');
 
 // Só vira item de catálogo o que tem PREÇO e cara de item reutilizável
 // (decisão do usuário em 28/10/2026). O orçamento gerado de uma análise ou de
@@ -45,12 +46,9 @@ async function garantirMaterialCadastrado(client, { descricao, unidade, ncm, val
   if (origem_item === 'assistente') return null;
   if (!ehItemDeCatalogo(desc, valor_unitario)) return null;
 
-  const existente = await client.query(
-    // LOWER(TRIM(...)) — a mesma expressão do índice único ux_materiais_descricao_ativa, para a busca usar o índice
-    `SELECT id FROM materiais WHERE ativo = true AND LOWER(TRIM(descricao)) = LOWER(TRIM($1)) LIMIT 1`,
-    [desc]
-  );
-  if (existente.rows.length > 0) return existente.rows[0].id;
+  // mesma expressão do índice único (services/catalogoMateriais.materialAtivoPorDescricao)
+  const existente = await materialAtivoPorDescricao(client, desc, 'id');
+  if (existente) return existente.id;
 
   // Categoria pelo NCM, pelo material mais parecido do catálogo ou por
   // palavras-chave; sem nenhum, "Não classificado" até a rotina de IA rodar
@@ -68,7 +66,7 @@ async function garantirMaterialCadastrado(client, { descricao, unidade, ncm, val
     return novo.rows[0].id;
   }
   // cadastrado ao mesmo tempo por outra gravação: usa o que já existe (índice único do banco)
-  return (await client.query('SELECT id FROM materiais WHERE ativo = true AND TRIM(LOWER(descricao)) = TRIM(LOWER($1)) LIMIT 1', [desc])).rows[0]?.id || null;
+  return (await materialAtivoPorDescricao(client, desc, 'id'))?.id || null;
 }
 
 // Mão de obra: desde a versão 2.0 o item entra na BASE ÚNICA de serviços

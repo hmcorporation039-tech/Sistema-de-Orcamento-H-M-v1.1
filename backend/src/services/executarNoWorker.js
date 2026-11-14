@@ -15,27 +15,14 @@
 // mensagem (falta de memória, process.exit) rejeita com `codigo = 'SEM_RESPOSTA'`.
 // Quem chama traduz para a mensagem da sua tela.
 const { Worker } = require('worker_threads');
+const { criarFila } = require('../utils/fila');
 
 const MAX_SIMULTANEOS = 2;
-let ativos = 0;
-const fila = [];
-
-function liberar() {
-  ativos--;
-  const proximo = fila.shift();
-  if (proximo) proximo();
-}
-
-function reservar() {
-  if (ativos < MAX_SIMULTANEOS) { ativos++; return Promise.resolve(); }
-  return new Promise((ok) => fila.push(() => { ativos++; ok(); }));
-}
+const fila = criarFila(MAX_SIMULTANEOS); // utils/fila.js (fonte única das filas desde a 2.38)
 
 function executarNoWorker(caminhoDoScript, dados, { tempoLimiteMs = 180 * 1000, memoriaMb = 1024 } = {}) {
-  return reservar().then(() => new Promise((ok, falha) => {
+  return fila.reservar().then((soltar) => new Promise((ok, falha) => {
     let resolvido = false;
-    let liberado = false;
-    const soltar = () => { if (!liberado) { liberado = true; liberar(); } };
     let w;
     try {
       w = new Worker(caminhoDoScript, { workerData: dados, resourceLimits: { maxOldGenerationSizeMb: memoriaMb } });
@@ -65,6 +52,6 @@ function executarNoWorker(caminhoDoScript, dados, { tempoLimiteMs = 180 * 1000, 
 }
 
 // para os testes: quantos rodam e quantos esperam
-const estadoDoSemaforo = () => ({ ativos, naFila: fila.length, maximo: MAX_SIMULTANEOS });
+const estadoDoSemaforo = () => { const e = fila.situacao(); return { ativos: e.ativos, naFila: e.esperando, maximo: e.maximo }; };
 
 module.exports = { executarNoWorker, estadoDoSemaforo, MAX_SIMULTANEOS };

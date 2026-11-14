@@ -33,7 +33,7 @@ const ORIGEM = {
 function inseridosPorTipo(edicoes, nomeDoTipo) {
   const por = new Map();
   for (const a of edicoes?.adicionados || []) por.set(a.simbolo, (por.get(a.simbolo) || 0) + 1);
-  return [...por].map(([simbolo, quantidade]) => ({ simbolo, nome: nomeDoTipo(simbolo), quantidade })).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  return [...por].map(([simbolo, quantidade]) => ({ simbolo, nome: nomeDoTipo(simbolo), quantidade })).sort((a, b) => comparador.compare(a.nome, b.nome));
 }
 // de onde veio a altura sugerida (quando não é da legenda do desenho nem conferida)
 const ALTURA_DE = { nota: 'sugerida pela nota do desenho', nota_aprendida: 'costume deste escritório (notas anteriores)', nota_disciplina: 'confirmada pelo engenheiro em outro projeto da disciplina' };

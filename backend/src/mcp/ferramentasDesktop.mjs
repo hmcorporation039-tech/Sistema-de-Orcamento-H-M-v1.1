@@ -20,7 +20,7 @@ const { hojeBrasilia } = requerer('../utils/dataHoje.js');
 
 const ok = (texto) => ({ content: [{ type: 'text', text: texto }] });
 const falha = (texto) => ({ content: [{ type: 'text', text: `Erro: ${texto}` }], isError: true });
-const brl = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const { moedaTexto: brl } = requerer('../utils/moeda.js'); // fonte única (2.38)
 const MIME = { '.pdf': 'application/pdf', '.dwg': 'application/octet-stream', '.dxf': 'application/dxf' };
 
 // enriquecer_analise_projeto só ACRESCENTA: o PUT troca a lista inteira, então lê (GET), mescla por

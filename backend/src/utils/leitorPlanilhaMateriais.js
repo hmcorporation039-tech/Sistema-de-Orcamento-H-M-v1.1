@@ -9,8 +9,7 @@
 // Cada item leva a `secao` em que estava ({ chave } ou { fora }), quando o título da seção diz a disciplina.
 // Função pura (recebe a pasta de trabalho já carregada).
 const { disciplinaDoTexto } = require('./disciplinaDoArquivo');
-const ACENTOS = /[̀-ͯ]/g;
-const norm = (s) => String(s || '').normalize('NFD').replace(ACENTOS, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const { chaveBusca: norm } = require('./texto'); // fonte única (2.38)
 
 // abas que não são lista de materiais da obra: bases de preço (PINI, SINAPI…), composições, abas de apoio
 const RE_ABA_FORA = /pini|sinapi|sicro|orse|tcpo|anal[ií]tic|composi[cç]|instru[cç]|par[aâ]metro|resumo|cronograma|curva|fornecedor|diverg|pesquisa|comparativ|m[aã]o de obra|\bbdi\b|encargo|capa\b|lista de documentos|d[uú]vida/i;

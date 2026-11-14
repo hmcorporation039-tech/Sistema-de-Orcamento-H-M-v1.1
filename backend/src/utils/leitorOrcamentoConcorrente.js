@@ -7,8 +7,7 @@
 const { extrairUniversal, conferirTotal } = require('./leitorCotacaoUniversal');
 const { disciplinaDoTexto } = require('./disciplinaDoArquivo');
 
-const ACENTOS = /[̀-ͯ]/g;
-const norm = (s) => String(s ?? '').normalize('NFD').replace(ACENTOS, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const { chaveBusca: norm } = require('./texto'); // fonte única (2.38)
 const r2 = (v) => Math.round(Number(v) * 100) / 100;
 const MAX_LINHAS_ABA = 5000;
 const MAX_ITENS = 3000;

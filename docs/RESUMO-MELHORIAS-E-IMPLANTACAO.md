@@ -1357,3 +1357,26 @@ Pedido do usuário: "vamos seguir para as sugestões de 3 a 7, deixe a dois para
 - CSS com alternativa para navegador sem `color-mix` (Safari antigo); documentação do link do 3D corrigida (2 h, não 10 min).
 - **Testes:** `backend/testes/visualizador3dNavegador.test.js` abre a página no Chromium sem janela (WebGL por software) e confere que roda sem erro com as formas novas e o pilar, a busca leva a câmera ao componente, a medição dá a distância e a vista do endereço é aplicada; gzip conferido. `modelo3d.test.js` (cena, não página; gerador sem o visualizador), Jest da paleta com a cor do registro, climatização com forma própria desenhada.
 - **Ficou para depois:** o visualizador dentro da tela (seção 2) — e, com ele, trocar de planta sem recarregar, guardar o estado da simulação e capturar a vista escolhida pelo usuário para a proposta; acabamento visual (tom de câmera e reflexos) espera aprovação do visual; agrupar os tipos da análise por símbolo e juntar as chamadas de desenho da infraestrutura.
+
+### 14/11/2026: versão 2.38.0 — redundâncias viram uma fonte só (filas, datas, reais, cálculos comuns das skills e peças das telas) e o Pix das 22h no dia certo
+
+Pedido do usuário: seção 4 do relatório da revisão (redundâncias desnecessárias).
+- **Backend:**
+  - `utils/fila.js`: uma fila de vagas (ordem de chegada, prazo, cancelamento, posição) para o Claude Max (`services/ia.js`), o PDF (`pdfPuppeteer`), as threads de CAD/3D (`executarNoWorker`) e o assistente/agentes (classe `Fila`). Eram quatro cópias.
+  - Datas: `dataHoje.dataLocalIso` (coluna DATE → AAAA-MM-DD) e `ehDataIso` no lugar de cinco cópias; o "hoje" das cotações e dos vencimentos é o de Brasília (`hojeBrasilia`).
+  - `utils/moeda.moedaTexto`: reais em texto corrido (respostas e planilha dos agentes, pesquisa de mercado, revisão pré-envio, ferramentas MCP) a partir do `formatarMoeda` comum.
+  - `utils/texto.chaveBusca` (sem acento, minúsculas, espaços juntados) no aprendizado, comparador e leitores de planilha; arredondamento de centavos pelo `_comum/base/dinheiro`.
+  - `catalogoMateriais.materialAtivoPorDescricao`: a busca de material por descrição com a expressão do índice único, usada no catálogo, no auto-cadastro e no cadastro manual (uma das cópias não usava o índice).
+  - **Correção:** a atribuição de Pix às obras agrupava pelo dia em UTC — um Pix depois das 21h caía no dia seguinte; agora é o dia de Brasília.
+- **Frontend:** `ui/Indicador` (cartão de número, oito cópias), `ui/Etiqueta`, `ui/Info` (rótulo/valor), `btnTracejado`/`btnContorno` no kit, `utils/texto` (`semAcento`, `chaveBusca`, `normalizarNome`), `utils/ids.gerarId`, `erroDocumento` (CPF/CNPJ pela regra de cada tela), `comparador` no lugar de `localeCompare` nas listas e `formatarMoeda({ vazio: '—' })`. **Correção:** a tela Integrações quebrava ao mostrar a próxima execução de uma rotina (`dataHora` inexistente → `dataHoraBr`).
+- **Skills (`_comum`):** `quedaCC`/`quedaTrecho` (ρ 0,0225 Ω·mm²/m), `bateria.js` (bateria e nobreak), `dps.especificarDps`/`descricaoDps` (classe, Uc pela Tabela 49, In/Iimp e N-PE), `definirCarimbo` exportado, `criarDisciplina` com extensão/MIME pelo formato (saíram os remendos de PDF de 7 skills), SPDA com `excel-estilo`/`docx-base`, tabelas comuns (`ICW_KA`, série de caixa moldada, DIN 43671 com correção de temperatura, série de DR, `IP_IN_PADRAO`), `ar-externo.js`, helpers `esc`/`numeroFixoBr` no 3D (bundle refeito).
+- **Resultados que mudaram** (conferidos rodando os exemplos antes e depois):
+  - controle de acesso, alarme e circuitos externos do 3D: resistividade do cobre em operação (0,0225 em vez de 0,0178/0,0175/0,0214) — seções de alguns cabos sobem;
+  - texto do DPS com o modo N-PE e quantidade por modo (alarme, controle de acesso, telefonia, pressurização; hospitalar +1 no TN-C-S dos setoriais; carregador −1 sem neutro);
+  - DR acompanha o disjuntor acima de 100 A [CONFERIR modelo];
+  - CFTV: o nobreak passa a considerar a autonomia (bateria, FP 0,7 e eficiência do inversor) — antes a autonomia não dimensionava nada;
+  - alarme/incêndio: bateria grande em modelos comerciais (pares de 24 V no incêndio);
+  - média tensão: barramento do QGBT com correção de temperatura (ar 50 °C, barra 65 °C, como os quadros) — 800 A passa de 50×10 para 80×10 mm; campos novos `bt.temperatura_ar_qgbt` e `bt.temperatura_barra`;
+  - SPDA: só o visual do cabeçalho das planilhas.
+- **Testes:** `backend/testes/revisao238.test.js` (fila, datas, reais, chave de busca, material por descrição, Pix das 22h); Jest de Indicador/Etiqueta/Info, texto e erroDocumento (175); testes das skills atualizados para a resistividade nova.
+- **Ficou de fora:** dependências invertidas do `_comum` (cad → climatização/industrial, instalação → quadros/pressurização), séries de bateria/nobreak por skill (entram por parâmetro), `curvaAbc` do frontend (cópia conferida por teste com o backend).

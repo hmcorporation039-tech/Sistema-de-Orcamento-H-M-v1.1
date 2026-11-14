@@ -12,8 +12,9 @@
 // [CONFERIR]; quantidades de material saem por regra (campo `regra`).
 
 const { criarPincelSvg } = require('./svg');
+const { numeroFixoBr } = require('../base/formato');
 
-const br = (v, c = 0) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+const br = (v, c = 0) => numeroFixoBr(v, c);
 const maiusc = (s) => String(s ?? '').toUpperCase();
 
 // Invólucros padrão de mercado (L × A × P, mm), do menor ao maior

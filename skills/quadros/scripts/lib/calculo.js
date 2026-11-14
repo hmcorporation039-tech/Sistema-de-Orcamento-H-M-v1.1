@@ -9,7 +9,7 @@
 
 const T = require('./tabelas');
 const ET = require('../../../_comum/eletrico/tabelas');
-const { ucDps } = require('../../../_comum/dps');
+const { especificarDps } = require('../../../_comum/dps');
 const EI = require('../../../eletrica-industrial/scripts/lib/calculo');
 const XI = require('../../../eletrica-industrial/scripts/lib/tabelas');
 const { montarLayout } = require('./layout');
@@ -329,27 +329,9 @@ function gruposDr(circuitos, dados, c) {
 
 // ── DPS (NBR 5410, 6.3.5.2; NBR 5419-4, Anexo C) ────────────────────────────
 
+// Classe, Uc, In/Iimp e quantidade: a função comum (skills/_comum/dps.js), a mesma das outras skills
 function dps(c) {
-  if (c.dpsClasse === 'nenhum') return null;
-  const classe = c.dpsClasse !== 'auto' ? c.dpsClasse : (c.spda && c.pontoEntrada ? 'I+II' : 'II');
-  const uc = ucDps({ vfn: c.vfn, vff: c.vff, esquema: c.esquema });
-  const comNeutro = !['TN-C'].includes(c.esquema) && !(c.esquema.startsWith('IT'));
-  const fases = c.nFases;
-  const nFase = fases;
-  const nNeutro = comNeutro ? 1 : 0;
-  const trif = fases === 3;
-  const classeI = classe !== 'II';
-  return {
-    classe, uc, fases: nFase, neutroPe: nNeutro, quantidade: nFase + nNeutro,
-    in: classeI ? null : 5, inNeutroPe: classeI ? null : (trif ? 20 : 10),
-    iimp: classeI ? 12.5 : null, iimpNeutroPe: classeI ? (trif ? 50 : 25) : null,
-    peMin: classeI ? 16 : 4,
-    texto: classeI
-      ? `Classe I${classe === 'I+II' ? '+II' : ''} (ensaio com Iimp): Iimp ≥ 12,5 kA por modo de proteção e ≥ ${trif ? 50 : 25} kA no DPS N-PE, quando não determinada pela NBR 5419 (NBR 5410, 6.3.5.2.4 d); exigido no ponto de entrada quando a edificação tem SPDA (NBR 5419-4:2026, C.1.7)`
-      : `Classe II (ensaio com In): In ≥ 5 kA (8/20 µs) por modo de proteção e ≥ ${trif ? 20 : 10} kA no DPS N-PE do esquema de conexão 3 (NBR 5410, 6.3.5.2.4 d)`,
-    protecao: 'Proteção contra sobrecorrente do DPS conforme o fabricante (NBR 5410, 6.3.5.2.5) [CONFERIR]',
-    ligacao: `Condutores de ligação o mais curtos possível, total ≤ 0,5 m; DPS–PE ≥ ${classeI ? 16 : 4} mm² (NBR 5410, 6.3.5.2.9)`,
-  };
+  return especificarDps({ classe: c.dpsClasse, spda: c.spda, pontoEntrada: c.pontoEntrada, vfn: c.vfn, vff: c.vff, esquema: c.esquema, nFases: c.nFases });
 }
 
 // ── Automação ───────────────────────────────────────────────────────────────
@@ -815,17 +797,8 @@ function kAdiabatico(thetaI, thetaF = T.THETA_FINAL_BARRA) {
   return T.K_ADIABATICO_COBRE * Math.sqrt(Math.log((T.BETA_COBRE + thetaF) / (T.BETA_COBRE + thetaI)));
 }
 
-function k2Temperatura(thetaBarra, thetaAr) {
-  const dt = thetaBarra - thetaAr;
-  if (dt <= 0) return 0;
-  return (dt / 30) ** T.EXPOENTE_K2;
-}
-
-function escolherBarra(corrente, k2, pintada) {
-  const col = pintada ? 'pintada' : 'nua';
-  const ordenadas = [...T.BARRAS_DIN43671].sort((a, b) => a.l * a.e - b.l * b.e || a[col] - b[col]);
-  return ordenadas.find(b => b[col] * k2 >= corrente - 1e-9) || null;
-}
+// correção de temperatura (k2) e escolha da barra DIN 43671: as funções comuns (a média tensão usa as mesmas)
+const { k2Temperatura, escolherBarra } = ET;
 
 // Automático: pente até 125 A em quadro só de disjuntores modulares; barras acima disso, com
 // disjuntores de caixa moldada ou com partidas de motores (derivações para as partidas)

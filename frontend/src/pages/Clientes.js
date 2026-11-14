@@ -12,11 +12,12 @@ import BuscaCodigo, { formatarCep } from '../components/fiscal/BuscaCodigo';
 import PainelPasta from '../components/PainelPasta';
 import { AvisoNovidades } from '../components/NovidadesPastas';
 import Paginacao from '../components/Paginacao';
-import { formatarTelefone, formatarCpfCnpj, validarCpf, validarCnpj, validarCpfCnpj } from '../utils/format';
+import { formatarTelefone, formatarCpfCnpj, validarCpfCnpj, erroDocumento } from '../utils/format';
 import Select from '../components/Select';
 import Modal from '../components/ui/Modal';
 import { invalidarCacheClientes } from '../components/ClienteSelect';
 import { estilos, Campo } from '../components/ui/estilos';
+import Etiqueta from '../components/ui/Etiqueta';
 
 // 2.4: dados para a NFS-e (tomador) — endereço em campos com o município do
 // IBGE, inscrições, e-mail para a nota e retenção do ISS
@@ -105,17 +106,10 @@ export default function Clientes() {
       toast.error('Informe o nome do cliente');
       return;
     }
-    if (form.documento.trim()) {
-      const digitos = form.documento.replace(/\D/g, '');
-      if (form.tipo === 'Pessoa Física') {
-        if (digitos.length !== 11 || !validarCpf(digitos)) {
-          toast.error('CPF inválido');
-          return;
-        }
-      } else if (digitos.length !== 14 || !validarCnpj(digitos)) {
-        toast.error('CNPJ inválido');
-        return;
-      }
+    const erroDoc = erroDocumento(form.documento, { pessoaFisica: form.tipo === 'Pessoa Física' });
+    if (erroDoc) {
+      toast.error(erroDoc);
+      return;
     }
     setSalvando(true);
     const { municipio, ...resto } = form;
@@ -305,15 +299,13 @@ export default function Clientes() {
 function SeloNota({ pendencias }) {
   const ok = pendencias.length === 0;
   return (
-    <span
-      title={ok ? 'Cadastro pronto para a nota fiscal' : `Falta: ${pendencias.join(', ')}`}
-      style={{
-        display: 'inline-block', padding: '2px 8px', borderRadius: 20, fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap',
-        color: ok ? '#3fb95f' : '#d9a53a', background: ok ? '#0a1a0f' : '#1a150a', border: `1px solid ${ok ? '#1a4a26' : '#4a3a1a'}`,
-      }}
+    <Etiqueta
+      titulo={ok ? 'Cadastro pronto para a nota fiscal' : `Falta: ${pendencias.join(', ')}`}
+      cor={ok ? '#3fb95f' : '#d9a53a'} bg={ok ? '#0a1a0f' : '#1a150a'} borda={ok ? '#1a4a26' : '#4a3a1a'}
+      style={{ display: 'inline-block', padding: '2px 8px', fontWeight: 600 }}
     >
       {ok ? 'Pronto' : `Falta ${pendencias.length}`}
-    </span>
+    </Etiqueta>
   );
 }
 
@@ -473,10 +465,7 @@ function LigarPasta({ id, onLigada }) {
 }
 
 // Estilos do kit de tela (components/ui/estilos.js). O botão secundário desta
-// tela é um pouco maior e mais apagado que o do kit — mantido como era.
+// tela é o transparente de borda apagada do kit (btnContorno).
 const { th, td, tdVazio, btnPrimario, btnIcone } = estilos;
 
-const btnSecundario = {
-  padding: '9px 16px', background: 'transparent', border: '1px solid #2a2a2a',
-  borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer'
-};
+const btnSecundario = estilos.btnContorno;

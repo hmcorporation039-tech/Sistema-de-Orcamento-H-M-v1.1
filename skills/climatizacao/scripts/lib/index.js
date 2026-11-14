@@ -9,7 +9,7 @@ const I = require('../../../_comum/inspecao');
 const F = require('../../../_comum/formulario');
 const { fmtNum } = require('../../../_comum/docx-base');
 const T = require('./tabelas');
-const AUT = require('../../../automacao/scripts/lib/tabelas');
+const AUT = require('../../../_comum/ar-externo'); // AR_EXTERNO: a tabela comum (antes vinha da skill de automação)
 const { calcular } = require('./projeto');
 
 const CHECKLIST = require('../../dados/checklist_base.json');

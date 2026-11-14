@@ -7,6 +7,11 @@
 // Tabela 59, 5.1.3.2.2, 5.3.5.5.1, 6.3.5.2.4 d) e 6.3.5.2.9, Tabela 58
 // (conferidos em 29/10/2026); NBR 5419-4:2026 Anexo C (C.1.7). Os itens da
 // NBR IEC 61439 e da IEC TR 60890 não estavam na biblioteca: vão com [CONFERIR].
+// As tabelas que outras skills também usam (DIN 43671, Icw, séries de disjuntor e de DR, Ip/In
+// padrão) vêm de skills/_comum/eletrico/tabelas.js — este arquivo entra no bundle do 3D, e aquele
+// também pode entrar (não usa nada do Node).
+
+const ET = require('../../../_comum/eletrico/tabelas');
 
 // ── Espaço ──────────────────────────────────────────────────────────────────
 
@@ -117,22 +122,9 @@ const FOLGA_PORTA = 40; // profundidade além do dispositivo mais fundo (porta, 
 
 // ── Barramentos ─────────────────────────────────────────────────────────────
 
-// DIN 43671 (1975), Tabela 1 — barras retangulares de cobre E-Cu F30, CA 50/60 Hz,
-// uma barra por fase, ar ambiente 35 °C e barra a 65 °C (Δθ = 30 K): corrente
-// permanente (A) com barra nua e pintada. Valores reproduzidos de catálogos de
-// barramentos [CONFERIR com a tabela original].
-const BARRAS_DIN43671 = [
-  { l: 12, e: 2, nua: 108, pintada: 123 }, { l: 15, e: 2, nua: 128, pintada: 148 }, { l: 15, e: 3, nua: 162, pintada: 187 },
-  { l: 20, e: 3, nua: 204, pintada: 237 }, { l: 20, e: 5, nua: 274, pintada: 319 }, { l: 25, e: 5, nua: 327, pintada: 384 },
-  { l: 30, e: 5, nua: 379, pintada: 447 }, { l: 40, e: 5, nua: 482, pintada: 573 }, { l: 30, e: 10, nua: 573, pintada: 676 },
-  { l: 50, e: 5, nua: 583, pintada: 697 }, { l: 60, e: 5, nua: 688, pintada: 826 }, { l: 40, e: 10, nua: 715, pintada: 850 },
-  { l: 50, e: 10, nua: 852, pintada: 1020 }, { l: 80, e: 5, nua: 885, pintada: 1070 }, { l: 60, e: 10, nua: 985, pintada: 1180 },
-  { l: 100, e: 5, nua: 1080, pintada: 1300 }, { l: 80, e: 10, nua: 1240, pintada: 1500 }, { l: 100, e: 10, nua: 1490, pintada: 1810 },
-  { l: 120, e: 10, nua: 1740, pintada: 2110 },
-];
-// Correção de temperatura (DIN 43671, Figura 2) aproximada por k2 = ((θbarra − θar)/30)^0,61 —
-// a troca de calor por convecção natural e radiação cresce com Δθ^1,25 e I² ∝ calor [CONFERIR na curva]
-const EXPOENTE_K2 = 0.61;
+// DIN 43671 (barras de cobre por fase, nua e pintada) e a correção de temperatura k2 moram em
+// skills/_comum/eletrico/tabelas.js — a mesma tabela da média tensão; reexportadas abaixo.
+const { BARRAS_DIN43671, EXPOENTE_K2 } = ET;
 // Barramento tipo pente (DIN): corrente nominal (A) → seção (mm²) [CONFERIR catálogo]
 const PENTES = [{ a: 63, s: 10 }, { a: 80, s: 16 }, { a: 100, s: 25 }, { a: 125, s: 35 }];
 const DENSIDADE_COBRE = 8.96; // g/cm³ → kg = S(mm²) × L(m) × 0,00896
@@ -159,13 +151,14 @@ const RP02_COBRE = 200; // N/mm² — mínimo adotado para cobre semiduro [CONFE
 // NBR IEC 61439-1, Tabela 7 — relação n = Ipk/Icw (valor de crista / eficaz) pela corrente
 // de curto e fator de potência [CONFERIR]
 const FATOR_N_IPK = [{ ate: 5, n: 1.5, fp: 0.7 }, { ate: 10, n: 1.7, fp: 0.5 }, { ate: 20, n: 2.0, fp: 0.3 }, { ate: 50, n: 2.1, fp: 0.25 }, { ate: Infinity, n: 2.2, fp: 0.2 }];
-const ICW_KA = [6, 10, 15, 20, 25, 35, 50, 65, 80, 100];
+const { ICW_KA } = ET; // série comum (a mesma da elétrica industrial)
 
 // ── Proteção ────────────────────────────────────────────────────────────────
 
-// Disjuntores DIN (NBR NM 60898 até 63 A, IEC 60947-2 até 125 A) e caixa moldada (A)
+// Disjuntores DIN (NBR NM 60898 até 63 A, IEC 60947-2 até 125 A) e caixa moldada (A) — esta é a
+// série comum de caixa moldada/abertos recortada até 1600 A (acima disso, disjuntor aberto)
 const DISJUNTORES_DIN = [2, 4, 6, 10, 13, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125];
-const DISJUNTORES_CM = [16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250, 320, 400, 500, 630, 800, 1000, 1250, 1600];
+const DISJUNTORES_CM = ET.serieDisjuntores(0, 1600);
 // Capacidade de interrupção (kA): Icn NBR NM 60898 (até 10 kA na linha residencial);
 // DIN IEC 60947-2 até 25 kA; caixa moldada até 100 kA
 const ICN_60898 = [3, 4.5, 6, 10];
@@ -177,7 +170,7 @@ function icsDin(icn) {
   if (icn <= 10) return Math.max(6, 0.75 * icn);
   return Math.max(7.5, 0.5 * icn);
 }
-const IDR_IN = [25, 40, 63, 80, 100, 125];
+const IDR_IN = ET.DR_IN; // série comum de DR
 // Seletividade amperimétrica por razão de correntes nominais (regra prática) — a seletividade
 // total só se garante pela tabela do fabricante
 const RAZAO_SELETIVIDADE = 1.6;
@@ -266,7 +259,7 @@ const DISTANCIA_ESCOAMENTO = [[250, 4], [400, 6.3], [500, 8], [630, 10], [800, 1
 
 // ── Motores ─────────────────────────────────────────────────────────────────
 // Rendimento e FP típicos quando a placa não é informada [CONFERIR placa]
-const MOTOR_PADRAO = { eta: 0.88, fp: 0.84, ipIn: 7 };
+const MOTOR_PADRAO = { eta: 0.88, fp: 0.84, ipIn: ET.IP_IN_PADRAO };
 
 // ── Utilidades ──────────────────────────────────────────────────────────────
 const proximo = (lista, v) => lista.find(x => x >= v - 1e-9);

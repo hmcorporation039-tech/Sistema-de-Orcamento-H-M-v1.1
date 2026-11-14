@@ -6,6 +6,7 @@ import { reduzirImagem, obterPosicao } from './imagem';
 import { baixarArquivo } from './apiCampo';
 import { criarCacheBlob } from './cacheBlob';
 import { dataBr, dataHoraBr } from '../../utils/format';
+import Etiqueta from '../../components/ui/Etiqueta';
 
 export const COR = {
   fundo: '#000000',
@@ -76,12 +77,12 @@ export function Cartao({ children, style, ...props }) {
   );
 }
 
+// Etiqueta do kit no tamanho do celular: fundo cheio (`cor`), sem borda, letra maior
 export function Selo({ cor = COR.cinza, texto = '#fff', children, style }) {
   return (
-    <span style={{
-      display: 'inline-block', background: cor, color: texto, borderRadius: 999,
-      padding: '3px 10px', fontSize: 14, fontWeight: 700, whiteSpace: 'nowrap', ...style,
-    }}>{children}</span>
+    <Etiqueta bg={cor} cor={texto} style={{
+      display: 'inline-block', border: 'none', borderRadius: 999, padding: '3px 10px', fontSize: 14, ...style,
+    }}>{children}</Etiqueta>
   );
 }
 

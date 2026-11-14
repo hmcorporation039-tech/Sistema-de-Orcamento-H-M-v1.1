@@ -45,4 +45,11 @@ function numeroBr(v, casas = 2) {
   return Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: casas });
 }
 
-module.exports = { formatarMoeda, formatarData, formatarDataDeHoje, dataIsoBr, numeroBr };
+// Número em pt-BR com EXATAMENTE `casas` decimais (1.234,50): medidas e cotas do visualizador 3D,
+// cadernos de fabricação e memoriais de cálculo. Era o `br` copiado em cada arquivo do 3D (14/11/2026).
+// Sem tratamento de vazio (como as cópias): quem chama passa número. Roda no navegador (bundle do 3D).
+function numeroFixoBr(v, casas = 2) {
+  return Number(v).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
+}
+
+module.exports = { formatarMoeda, formatarData, formatarDataDeHoje, dataIsoBr, numeroBr, numeroFixoBr };

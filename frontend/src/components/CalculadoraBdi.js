@@ -227,4 +227,4 @@ const fundoBdi = { background: 'rgba(0,0,0,.7)', alignItems: 'flex-start', overf
 const janelaBdi = { borderRadius: 10, padding: 20, maxHeight: 'none', overflowY: 'visible', boxShadow: 'none' };
 // kit de tela (components/ui/estilos.js); o secundário tracejado é desta janela
 const { rotulo, btnPrimario } = estilos;
-const btnSecundario = { display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent', border: '1px dashed #333', borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
+const btnSecundario = estilos.btnTracejado;

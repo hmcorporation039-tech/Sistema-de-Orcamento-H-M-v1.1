@@ -11,6 +11,12 @@
 // e Lei 13.709/2018 (LGPD). Correntes, potências e forças são típicas de
 // mercado e saem com [CONFERIR] — usar a ficha técnica do equipamento escolhido.
 
+// Regras comuns (14/11/2026): queda de tensão em CC, bateria pela autonomia, modelo comercial e DPS
+const ET = require('../../../_comum/eletrico/tabelas');
+const { quedaCC } = require('../../../_comum/eletrico/calculo');
+const { capacidadeBateriaAh, comercial } = require('../../../_comum/bateria');
+const { especificarDps, descricaoDps } = require('../../../_comum/dps');
+
 const TIPOS = {
   simples: { rotulo: 'Porta simples', folhas: 1, fechaduraPadrao: 'eletroima' },
   dupla: { rotulo: 'Porta dupla', folhas: 2, fechaduraPadrao: 'eletroima' },
@@ -58,7 +64,9 @@ const CORRENTE_CONTROLADORA = 0.3; // A em 12 Vcc [CONFERIR]
 const FONTES_A = [3, 5, 10];
 const BATERIAS_AH = [7, 9, 12, 18, 26, 40];
 const SECOES_MM2 = [0.5, 0.75, 1, 1.5, 2.5];
-const RHO = 0.0178; // Ω·mm²/m — cobre
+// Ω·mm²/m — cobre em operação, o da tabela comum (_comum/eletrico/tabelas.js). Antes 0,0178 (cobre a
+// 20 °C), que subestimava a queda em ~26 % nos cabos aquecidos pela corrente.
+const RHO = ET.RHO_COBRE;
 const SECAO_24AWG = 0.205; // mm² — condutor da manga blindada 24 AWG (0,2047 mm²)
 const TENSAO = 12;
 const QUEDA_MAX = 0.10; // 10 % de 12 V na fechadura [CONFERIR com o fabricante]
@@ -78,19 +86,12 @@ function forcaRecomendada(p, tipo) {
   return Number(p.peso_kg) > 0 ? Math.max(porMaterial, forcaPorPeso(Number(p.peso_kg))) : porMaterial;
 }
 
+// queda de tensão em 12 Vcc (ida e volta): a função comum quedaCC (_comum/eletrico/calculo.js)
 function secaoAlimentacao(comprimento, corrente) {
   if (!corrente) return { secao: null, queda: 0 };
-  const queda = (s) => 2 * comprimento * corrente * RHO / s;
+  const queda = (s) => quedaCC({ comprimento, corrente, secao: s, rho: RHO }).v;
   const s = SECOES_MM2.find(x => queda(x) <= QUEDA_MAX * TENSAO);
   return { secao: s || SECOES_MM2[SECOES_MM2.length - 1], queda: queda(s || SECOES_MM2[SECOES_MM2.length - 1]), excede: !s };
-}
-
-function comercial(lista, necessario) {
-  const v = lista.find(x => x >= necessario);
-  if (v) return { qtd: 1, valor: v };
-  const maior = lista[lista.length - 1];
-  const qtd = Math.ceil(necessario / maior);
-  return { qtd, valor: lista.find(x => x * qtd >= necessario) || maior };
 }
 
 function calcular(dados) {
@@ -171,7 +172,7 @@ function calcular(dados) {
     // ΔV = 2·L·I·ρ ÷ 0,205 mm², mesmo limite da fechadura. Acima dele o leitor
     // recebe par de alimentação próprio (cabo PP dimensionado) ou fonte local.
     const iLeitor = cabosLeitor !== 'utp' ? Tec.a : 0;
-    const quedaLeitor = iLeitor ? 2 * comprimento * iLeitor * RHO / SECAO_24AWG : 0;
+    const quedaLeitor = iLeitor ? quedaCC({ comprimento, corrente: iLeitor, secao: SECAO_24AWG, rho: RHO }).v : 0;
     let alimLeitor = null;
     if (iLeitor && quedaLeitor > QUEDA_MAX * TENSAO) {
       alimLeitor = secaoAlimentacao(comprimento, iLeitor);
@@ -232,7 +233,7 @@ function calcular(dados) {
     const iPico = iRep + grp.reduce((a, u) => a + (u.correntePico - u.correnteCont), 0);
     const fonteNec = iPico * MARGEM_FONTE;
     const fonte = comercial(FONTES_A, fonteNec);
-    const ahNec = iRep * autonomiaH * FATOR_BATERIA;
+    const ahNec = capacidadeBateriaAh({ iRepouso: iRep, tRepouso: autonomiaH, fator: FATOR_BATERIA }); // _comum/bateria.js
     const bateria = comercial(BATERIAS_AH, ahNec);
     return { id: `CTRL${i + 1}`, portas: grp.map(u => u.uid), nPortas: grp.length, leitores: grp.reduce((a, u) => a + u.leitoresCtrl, 0), iRep, iPico, fonteNec, fonteA: fonte.valor, nFontes: fonte.qtd, ahNec, bateriaAh: bateria.valor, nBaterias: bateria.qtd };
   });
@@ -333,7 +334,10 @@ function calcular(dados) {
   add('CX', 'Caixa 4×2 para leitor/botoeira', 'un', soma(portas.filter(p => p.tipo !== 'cancela'), p => p.leitores + p.botoeiraSaida + p.botoeiraEmergencia), '—');
   if (!sim(s.infra_existente)) add('INF', 'Infraestrutura (eletroduto 3/4" ou eletrocalha compartilhada) com acessórios — rota até cada ponto [CONFERIR com o projeto de infraestrutura]', 'm', infraM, 'NBR 5410 / NBR 14565');
   add('DPS', 'DPS de sinal para cabos de leitor/comando que saem da edificação (portão/cancela)', 'un', soma(pontos.filter(p => p.externo), () => 1), 'NBR 5410 / NBR 5419-4');
-  add('DPSCA', 'DPS classe II na alimentação CA das fontes do controle de acesso', 'un', nCtrl ? 1 : 0, 'NBR 5410, 6.3.5');
+  // DPS da alimentação CA das fontes (circuito monofásico): Uc pela Tabela 49 e In mínimo de 6.3.5.2.4 d) —
+  // a regra comum (_comum/dps.js); um por fase + N-PE. Tensão e esquema do sistema, ou 220 V TN-S.
+  const dpsCa = especificarDps({ classe: 'II', vfn: Number(s.tensao_fn) || 220, esquema: s.esquema || 'TN-S', nFases: 1 });
+  add('DPSCA', `${descricaoDps(dpsCa)} — alimentação CA das fontes do controle de acesso`, 'un', nCtrl ? dpsCa.quantidade : 0, 'NBR 5410, 6.3.5.2.4 e Tabela 49');
   add('CRT', `Cartão ${tecSistema === 'proximidade' ? 'de proximidade 125 kHz' : (grau >= 3 ? 'MIFARE DESFire EV3 13,56 MHz' : 'MIFARE 13,56 MHz (DESFire EV2/EV3 recomendado)')} — usuários`, 'un', cartoes, 'Usuários × 1,1');
   add('CRV', 'Cartão de visitante (recolhido na saída)', 'un', cartoesVisitante, 'Visitantes simultâneos × 1,1');
   add('CAD', 'Leitor cadastrador de mesa (USB) para cartões', 'un', usaCartao || visitantes ? 1 : 0, '—');
@@ -346,7 +350,7 @@ function calcular(dados) {
     leitoresTotal, leitoresEntrada, leitoresIp, botoeirasSaida, botoeirasEmergencia, sensores, fechaduras, usuarios, visitantes, cartoes, cartoesVisitante, tags, veiculos,
     licenca, sensivel, perfis, portasRede, poeW, switches, nFontes, pontosEnergia,
     cabos: { mangaLeitor6, mangaLeitor4, mangaIo, utpM, alimPorSecao, alimLeitorPorSecao, caboIncendio, infraM },
-    materiais: M, avisos, ncsProjeto,
+    dpsCa, materiais: M, avisos, ncsProjeto,
   };
 }
 

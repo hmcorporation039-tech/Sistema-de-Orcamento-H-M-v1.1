@@ -90,16 +90,15 @@ const EQUIPAMENTOS_PADRAO_W_M2 = { escritorio: 15, reuniao: 5, sala_aula: 5, loj
 const ATIVIDADE_DO_USO = { escritorio: 'escritorio', reuniao: 'escritorio', sala_aula: 'sentado', loja: 'em_pe', restaurante: 'restaurante', auditorio: 'sentado', outro: 'escritorio' };
 
 // ── Ar externo (NBR 16401-3) ──────────────────────────────────────────────
-// Fp/Fa e densidade de ocupação vêm da skill de automação (mesma tabela, já marcada
-// [CONFERIR] lá): skills/automacao/scripts/lib/tabelas.js → AR_EXTERNO.
+// Fp/Fa e densidade de ocupação (AR_EXTERNO, já marcada [CONFERIR]) e a renovação mínima da Portaria
+// MS 3.523/1998 (27 m³/h·pessoa): tabela comum skills/_comum/ar-externo.js — a mesma da automação
+const { AR_EXTERNO, RENOVACAO_MINIMA_M3H_PESSOA } = require('../../../_comum/ar-externo');
 // Eficiência da distribuição Ez (NBR 16401-3 / ASHRAE 62.1 Tab. 6.2.2.2) [CONFERIR]
 const EZ = {
   teto_frio: { rotulo: 'Insuflamento frio pelo teto, retorno pelo teto', ez: 1.0 },
   piso_frio: { rotulo: 'Insuflamento frio pelo piso (deslocamento)', ez: 1.2 },
   teto_quente: { rotulo: 'Insuflamento quente pelo teto, retorno pelo teto', ez: 0.8 },
 };
-// Portaria MS 3.523/1998, art. 5º f — renovação mínima (conferido no texto)
-const RENOVACAO_MINIMA_M3H_PESSOA = 27;
 // Eficiência de ventilação do sistema multizona Ev pela maior fração Zpz
 // (ASHRAE 62.1, Tabela 6.2.5.2; mesmo procedimento na NBR 16401-3) [CONFERIR]
 const EV_POR_ZPZ = [[0.15, 1.0], [0.25, 0.9], [0.35, 0.8], [0.45, 0.7], [0.55, 0.6]];
@@ -265,7 +264,7 @@ const TIPOS_EQUIPAMENTO = {
 module.exports = {
   W_POR_TR, BTUH_POR_W, KCALH_POR_W, CP_AR_SECO, CP_VAPOR, H_VAPORIZACAO, RHO_AGUA, CP_AGUA, G,
   EXTERNO_PADRAO, INTERNO_PADRAO, RSE, IRRADIANCIA_PICO, ORIENTACOES, ABSORTANCIA, CONSTRUCOES, FRACAO_DT_DIVISA,
-  ATIVIDADES, ILUMINACAO_PADRAO_W_M2, EQUIPAMENTOS_PADRAO_W_M2, ATIVIDADE_DO_USO, EZ, RENOVACAO_MINIMA_M3H_PESSOA, EV_POR_ZPZ,
+  ATIVIDADES, ILUMINACAO_PADRAO_W_M2, EQUIPAMENTOS_PADRAO_W_M2, ATIVIDADE_DO_USO, AR_EXTERNO, EZ, RENOVACAO_MINIMA_M3H_PESSOA, EV_POR_ZPZ,
   SISTEMAS, CRITERIO_SISTEMA, SPLIT_BTUH, VRF_EVAP_KW, VRF_COND_KW, VRF_MODULOS_MAX, VRF_COMBINACAO, SELF_TR, CHILLER_TR,
   COP_TIPICO, FP_EQUIPAMENTO, IPLV_PESOS, AGUA_GELADA_PADRAO, CONDENSACAO_PADRAO, W_POR_TR_TORRE, MIN_CHILLER_90_1, TIPOS_CHILLER,
   HIDRAULICA, TUBOS_SCH40, AR, VAV_ENTRADAS_M, LIMITE_REAQUECIMENTO_90_1, FILTRAGEM, CRITERIOS_QAI, TOLERANCIA_VAZAO, FRACAO_DT_AGUA,

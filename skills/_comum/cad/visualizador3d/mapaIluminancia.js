@@ -10,9 +10,10 @@
 // cena grande demais: só o ambiente em que se está.
 import { Mesh, BufferGeometry, Float32BufferAttribute, MeshBasicMaterial, DoubleSide, Color, SRGBColorSpace } from 'three';
 import { avaliador, iluminanciaNoPonto, gradeNoPoligono, estatisticas, corFalsa, escala, malhaMedicao } from '../../fotometria/pontoAPonto.js';
+import { numeroFixoBr } from '../../base/formato.js';
 
 const ORCAMENTO = { celular: 4e5, computador: 1.5e6 }; // avaliações de luminária × ponto por cálculo
-const br = (v, c = 0) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+const br = (v, c = 0) => numeroFixoBr(v, c); // número pt-BR comum (skills/_comum/base)
 
 // opcoes: { CENA, INST, sim, interativos, pai (grupo three), altura (piso do mapa), celular, pedirDesenho, esc, ambienteAtual() }
 export function criarMapa(opcoes) {

@@ -23,7 +23,8 @@ const MAX_ITENS_PRECO = 150;
 const MAX_PESQUISAS_WEB = 8;
 const CONFERIR = /\[CONFERIR\]|conferir/i;
 const cortar = (t, n = 220) => { const s = String(t ?? '').replace(/\s+/g, ' ').trim(); return s.length > n ? `${s.slice(0, n)}…` : s; };
-const brl = (v) => (v == null ? '—' : `R$ ${Number(v).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.')}`);
+const { moedaTexto } = require('../../utils/moeda'); // fonte única (2.38)
+const brl = (v) => moedaTexto(v, { vazio: '—' });
 const hoje = () => require('../../utils/dataHoje').hojeBrasilia();
 
 // suporte: { tipo: 'dado_faltando' | 'regra_ausente' | 'pergunta_tecnica', pergunta, disciplina? } — o executor pede

@@ -9,6 +9,8 @@ import { criarSimulador, ROTULO_PONTO } from '../../instalacao/simulador.js';
 // (subestação, incêndio, alarme, CFTV, controle de acesso)
 import { montarQuadroEsquematico } from '../../instalacao/painelQuadro.js';
 import { criarInteracao, combinarRedes, redeDaSubestacao, redeDeSinal, ligarAoSimulador, PAPEL_DO_SIMBOLO } from '../../instalacao/interacao.js';
+import { escapeHtml } from '../../base/html.js';
+import { numeroFixoBr } from '../../base/formato.js';
 
 export { criarInteracao, combinarRedes, redeDaSubestacao, redeDeSinal, ligarAoSimulador, PAPEL_DO_SIMBOLO };
 
@@ -19,8 +21,9 @@ const ma = (d) => (d?.idn_ma != null ? `${d.idn_ma} mA` : d?.lido ? 'sensibilida
 
 export { criarSimulador, ROTULO_PONTO };
 
-export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
-const br = (v, c = 2) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+// escape de HTML e número pt-BR: os do pacote comum (skills/_comum/base)
+export const esc = escapeHtml;
+const br = (v, c = 2) => numeroFixoBr(v, c);
 
 export const TIPO_COMANDO = {
   interruptor_simples: 'Interruptor simples', interruptor_paralelo: 'Interruptores paralelos (three-way)',

@@ -49,7 +49,8 @@ const CHAVES_ANALISE = DISCIPLINAS.map(d => d.chave);
 const CHAVES_PROJETO = DISCIPLINAS_LAUDO.map(d => d.chave);
 
 // ── Utilidades ─────────────────────────────────────────────────────────────
-const brl = (v) => (v == null || v === '' ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+const { moedaTexto } = requerer('../utils/moeda.js'); // fonte única (2.38)
+const brl = (v) => moedaTexto(v, { vazio: '—' });
 const dataBR = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : '—');
 const cortar = (t, n) => { const s = String(t ?? ''); return s.length > n ? `${s.slice(0, n)}… [cortado]` : s; };
 const ok = (texto) => ({ content: [{ type: 'text', text: texto }] });

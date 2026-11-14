@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { Plus, Search, Pencil, Trash2 } from 'lucide-react';
 import { getPrestadores, criarPrestador, atualizarPrestador, removerPrestador } from '../services/api';
 import Paginacao from '../components/Paginacao';
-import { formatarTelefone, formatarCpfCnpj, validarCpf, validarCnpj, formatarMoeda } from '../utils/format';
+import { formatarTelefone, formatarCpfCnpj, erroDocumento, formatarMoeda } from '../utils/format';
 import Select from '../components/Select';
 import Modal from '../components/ui/Modal';
 import { estilos, Campo } from '../components/ui/estilos';
@@ -77,17 +77,10 @@ export default function Prestadores() {
       toast.error('Informe o nome do prestador');
       return;
     }
-    if (form.documento.trim()) {
-      const digitos = form.documento.replace(/\D/g, '');
-      if (form.tipo === 'Pessoa Jurídica') {
-        if (digitos.length !== 14 || !validarCnpj(digitos)) {
-          toast.error('CNPJ inválido');
-          return;
-        }
-      } else if (digitos.length !== 11 || !validarCpf(digitos)) {
-        toast.error('CPF inválido');
-        return;
-      }
+    const erroDoc = erroDocumento(form.documento, { pessoaFisica: form.tipo !== 'Pessoa Jurídica' });
+    if (erroDoc) {
+      toast.error(erroDoc);
+      return;
     }
     setSalvando(true);
     try {
@@ -303,10 +296,7 @@ export default function Prestadores() {
 }
 
 // Estilos do kit de tela (components/ui/estilos.js). O botão secundário desta
-// tela é um pouco maior e mais apagado que o do kit — mantido como era.
+// tela é o transparente de borda apagada do kit (btnContorno).
 const { th, td, tdVazio, btnPrimario, btnIcone } = estilos;
 
-const btnSecundario = {
-  padding: '9px 16px', background: 'transparent', border: '1px solid #2a2a2a',
-  borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer'
-};
+const btnSecundario = estilos.btnContorno;

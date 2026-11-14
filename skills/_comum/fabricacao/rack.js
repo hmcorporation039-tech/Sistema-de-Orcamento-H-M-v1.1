@@ -44,7 +44,8 @@ const TIPICOS = {
 
 // escape de HTML/SVG: pacote comum (base/html.js)
 const { escapeHtml: esc } = require('../base/html');
-const br = (v, c = 0) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+const { numeroFixoBr } = require('../base/formato');
+const br = (v, c = 0) => numeroFixoBr(v, c);
 const r1 = (v) => Math.round(v * 10) / 10;
 
 // ── Dimensionamento ───────────────────────────────────────────────────────

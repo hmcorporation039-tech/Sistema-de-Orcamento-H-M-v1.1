@@ -41,7 +41,7 @@ function resumir(res) {
       { rotulo: 'Armazenamento', valor: `${num(calc.armazenamentoTb, 1)} TB`, detalhe: `${calc.dias} dias · ${num(calc.banda, 1)} Mbps · ${calc.hds} HD de ${calc.hdTb} TB` },
       { rotulo: 'Gravador', valor: `NVR ${calc.canais} canais`, detalhe: `banda ≥ ${Math.ceil(calc.banda * 1.3)} Mbps` },
       { rotulo: 'PoE', valor: `${num(calc.poeTotal, 0)} W`, detalhe: `com margem ${num(calc.poeComMargem, 0)} W · ${calc.switches} switch(es)` },
-      { rotulo: 'Nobreak', valor: `${calc.nobreakVa} VA`, detalhe: `${num(calc.cargaW, 0)} W · ${calc.autonomiaMin} min ≈ ${num(calc.energiaWh, 0)} Wh` },
+      { rotulo: 'Nobreak', valor: `${calc.nobreakVa} VA`, detalhe: `${num(calc.cargaW, 0)} W · ${calc.autonomiaMin} min ≈ ${num(calc.energiaWh, 0)} Wh${calc.nobreak ? ` · bateria ${calc.nobreak.nBaterias} × ${calc.nobreak.bateriaAh} Ah` : ''}` },
     ],
     textos: calc.avisos,
     tabelas: [{ titulo: 'Câmeras (IEC 62676-4 — densidade de pixels)', colunas: ['Câmera', 'Local', 'Tipo', 'Qtd.', 'MP', 'Abertura', 'Objetivo', 'Dist. alvo', 'px/m', 'Alcance máx.', 'Situação'],
@@ -64,7 +64,7 @@ function secoesMemorial(res) {
       'Retenção definida em política escrita, com acesso restrito e registrado (LGPD, art. 6º e 46).',
     ] },
     { titulo: '4. Alimentação e rede', paragrafos: [
-      `Consumo PoE ${num(calc.poeTotal, 0)} W (com 20 % de margem: ${num(calc.poeComMargem, 0)} W) em ${calc.switches} switch(es). Carga total ≈ ${num(calc.cargaW, 0)} W → nobreak de ${calc.nobreakVa} VA; autonomia desejada de ${calc.autonomiaMin} min exige ≈ ${num(calc.energiaWh, 0)} Wh de bateria (conferir com o fabricante).`,
+      `Consumo PoE ${num(calc.poeTotal, 0)} W (com 20 % de margem: ${num(calc.poeComMargem, 0)} W) em ${calc.switches} switch(es). Carga total ≈ ${num(calc.cargaW, 0)} W → nobreak de ${calc.nobreakVa} VA (carga ÷ 0,7 × 1,25); autonomia de ${calc.autonomiaMin} min exige ≈ ${num(calc.energiaWh, 0)} Wh de bateria (carga × tempo ÷ 0,85 do inversor) → ${calc.nobreak ? `${calc.nobreak.nBaterias} × 12 V ${calc.nobreak.bateriaAh} Ah (× 1,25 de envelhecimento)` : 'bateria a definir'} (conferir com o fabricante).`,
       calc.caboAcima90.length
         ? `Cabos U/UTP Cat 6 por câmera (${num(calc.caboM, 0)} m no total), limitados a 90 m pela NBR 14565 — EXCEDEM o limite: ${calc.caboAcima90.map(c => `${c.id} (${num(c.cabo, 0)} m)`).join(', ')}; nesses pontos usar extensor PoE, switch intermediário ou fibra. Câmeras externas com DPS de rede e aterramento (NBR 5419-4).`
         : `Cabos U/UTP Cat 6 até 90 m por câmera (${num(calc.caboM, 0)} m no total). Câmeras externas com DPS de rede e aterramento (NBR 5419-4).`,
@@ -190,14 +190,5 @@ const base = criarDisciplina({
   ],
   montarOrcamento,
 });
-
-// O molde só gera Word/Excel: o caderno de fabricação sai em PDF (mesmo padrão
-// do FORA_DO_OFFICE da skill de quadros)
-const gerarDocumentoBase = base.gerarDocumento;
-base.gerarDocumento = async (res, tipo) => {
-  if (tipo !== 'caderno') return gerarDocumentoBase(res, tipo);
-  const d = DOCUMENTOS.find(x => x.tipo === tipo);
-  return { buffer: await d.gerar(res), nomeArquivo: D.nomeArquivo(res.dados, d.nome, 'pdf', true), mime: 'application/pdf' };
-};
 
 module.exports = base;

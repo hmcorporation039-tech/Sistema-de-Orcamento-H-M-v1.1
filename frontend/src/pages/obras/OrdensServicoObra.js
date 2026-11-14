@@ -11,6 +11,7 @@ import Select from '../../components/Select';
 import { baixarArquivo, mensagemDeErro } from '../../utils/download';
 import { dataBr, dataHoraBr } from '../../utils/format';
 import { Etiqueta, estilos as E, Campo } from './comum';
+import Info from '../../components/ui/Info';
 
 // Aba "Campo (OS)" da obra (versão 2.0, Fase 4J): ordens de serviço que o
 // técnico executa no app de campo (/campo, celular, sem rede). Aqui o
@@ -347,14 +348,14 @@ function VerOS({ id, modelos, ehAdmin, onFechar, onEditar, onMudou }) {
 
       <div style={E.card}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px 16px' }}>
-          <Info rotulo="Tipo" valor={TIPOS_OS[os.tipo] || os.tipo} />
-          <Info rotulo="Disciplina" valor={os.disciplina ? nomeDisciplina(modelos, os.disciplina) : '—'} />
-          <Info rotulo="Responsável" valor={os.responsavel_nome || 'sem responsável'} />
-          <Info rotulo="Agendada para" valor={dataBr(os.agendada_para, { vazio: '—' })} />
-          <Info rotulo="Iniciada" valor={dataHoraBr(os.iniciada_em)} nota={coord(os.inicio)} />
-          <Info rotulo="Concluída" valor={dataHoraBr(os.concluida_em)} nota={coord(os.conclusao)} />
-          {os.cancelada_em && <Info rotulo="Cancelada" valor={dataHoraBr(os.cancelada_em)} />}
-          <Info rotulo="Criada" valor={dataHoraBr(os.criado_em)} nota={os.criado_por_nome ? `por ${os.criado_por_nome}` : ''} />
+          <Info variante="ficha" rotulo="Tipo" valor={TIPOS_OS[os.tipo] || os.tipo} />
+          <Info variante="ficha" rotulo="Disciplina" valor={os.disciplina ? nomeDisciplina(modelos, os.disciplina) : '—'} />
+          <Info variante="ficha" rotulo="Responsável" valor={os.responsavel_nome || 'sem responsável'} />
+          <Info variante="ficha" rotulo="Agendada para" valor={dataBr(os.agendada_para, { vazio: '—' })} />
+          <Info variante="ficha" rotulo="Iniciada" valor={dataHoraBr(os.iniciada_em)} nota={coord(os.inicio)} />
+          <Info variante="ficha" rotulo="Concluída" valor={dataHoraBr(os.concluida_em)} nota={coord(os.conclusao)} />
+          {os.cancelada_em && <Info variante="ficha" rotulo="Cancelada" valor={dataHoraBr(os.cancelada_em)} />}
+          <Info variante="ficha" rotulo="Criada" valor={dataHoraBr(os.criado_em)} nota={os.criado_por_nome ? `por ${os.criado_por_nome}` : ''} />
         </div>
         {os.descricao && <p style={{ color: 'var(--texto-2)', fontSize: 12, whiteSpace: 'pre-wrap', margin: '14px 0 0' }}>{os.descricao}</p>}
       </div>
@@ -455,16 +456,6 @@ function descreverHistorico(h) {
   if (h.tipo === 'observacao_substituida') return `Observação final: "${h.texto}" (${quando}; ${motivo})`;
   if (h.tipo === 'assinatura_substituida') return `Assinatura de ${h.nome}${h.documento ? ` (${h.documento})` : ''} (${quando}; ${motivo})`;
   return `${h.tipo} (${quando})`;
-}
-
-function Info({ rotulo, valor, nota }) {
-  return (
-    <div>
-      <div style={E.rotulo}>{rotulo}</div>
-      <div style={{ color: '#ddd', fontSize: 12, fontWeight: 700 }}>{valor}</div>
-      {nota && <div style={{ color: 'var(--texto-3)', fontSize: 11.5 }}>{nota}</div>}
-    </div>
-  );
 }
 
 function Numero({ rotulo, valor, cor }) {

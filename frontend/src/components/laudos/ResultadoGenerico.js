@@ -1,23 +1,13 @@
 // Painel de resultado genérico: { indicadores[], textos[], tabelas[] } vindo do
 // resumir() da disciplina.
-
-function Indicador({ rotulo, valor, ok, detalhe }) {
-  const cor = ok === undefined || ok === null ? '#c9a227' : ok ? '#3fb95f' : '#e05050';
-  return (
-    <div style={{ background: '#0f0f0f', border: `1px solid ${ok === undefined || ok === null ? '#222' : cor}`, borderRadius: 8, padding: '10px 12px' }}>
-      <div style={{ fontSize: 11.5, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 4 }}>{rotulo}</div>
-      <div style={{ fontSize: 17, fontWeight: 700, color: cor }}>{valor}</div>
-      {detalhe && <div style={{ fontSize: 12, color: 'var(--texto-3)', marginTop: 3 }}>{detalhe}</div>}
-    </div>
-  );
-}
+import Indicador from '../ui/Indicador';
 
 export default function ResultadoGenerico({ resumo }) {
   if (!resumo) return null;
   return (
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10, marginBottom: 14 }}>
-        {(resumo.indicadores || []).map((ind, i) => <Indicador key={i} {...ind} />)}
+        {(resumo.indicadores || []).map((ind, i) => <Indicador key={i} variante="laudo" tamanho={17} rotulo={ind.rotulo} valor={ind.valor} ok={ind.ok} sub={ind.detalhe} />)}
       </div>
       {(resumo.textos || []).length > 0 && (
         <ul style={{ fontSize: 12, color: 'var(--texto-2)', lineHeight: 1.7, margin: '0 0 12px', paddingLeft: 18 }}>

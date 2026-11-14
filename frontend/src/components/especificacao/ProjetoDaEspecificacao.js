@@ -4,6 +4,7 @@ import { Upload, FileText, Play, Download, BookOpen, Search, CheckCircle2, Alert
 import Select from '../Select';
 import { estilos, Campo } from '../ui/estilos';
 import { baixarDocumentoLaudo } from '../../services/api';
+import { formatarMoeda } from '../../utils/format';
 import {
   getPerfisEspecificacao, lerEspecificacao, gerarProjetoEspecificacao, atualizarProjetoEspecificacao,
   simularProjetoEspecificacao, precosProjetoEspecificacao, aprovarProjetoEspecificacao,
@@ -21,7 +22,6 @@ const DOCS = [
   ['folhas', 'Anteprojeto FL01–FL07 (PDF)', 'pdf'], ['pesquisa_precos', 'Pesquisa de preços (Excel)', 'xlsx'], ['ficha', 'Ficha técnica (PDF)', 'pdf'],
   ['entrega', 'Texto de entrega (Markdown)', 'md'], ['caderno', 'Caderno de fabricação (PDF)', 'pdf'], ['memorial', 'Memorial (Word)', 'docx'], ['desenho', 'Desenho (DXF)', 'dxf'], ['modelo3d', 'Modelo 3D (HTML)', 'html'],
 ];
-const moeda = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
 const valorTexto = (v) => (v === true ? 'sim' : v === false ? 'NÃO' : v && typeof v === 'object' ? Object.entries(v).map(([k, x]) => `${k}: ${x}`).join(' · ') : String(v ?? ''));
 const etiqueta = (cor, texto) => <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 10, background: cor, color: '#111', fontWeight: 600 }}>{texto}</span>;
 
@@ -264,7 +264,7 @@ export default function ProjetoDaEspecificacao() {
                   {!simSaidas.estavel && etiqueta('#f2b0a8', 'oscilação')}
                 </div>)}
               </>)}
-              <h4 style={{ margin: '14px 0 6px' }}>Material — {moeda(R.precos.subtotal)} ({moeda(R.precos.total)} com contingência) · {R.precos.aCotar} a cotar</h4>
+              <h4 style={{ margin: '14px 0 6px' }}>Material — {formatarMoeda(R.precos.subtotal, { vazio: '—' })} ({formatarMoeda(R.precos.total, { vazio: '—' })} com contingência) · {R.precos.aCotar} a cotar</h4>
               <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
                 <button type="button" style={estilos.btnSecundario} onClick={() => buscarPrecos(false)} disabled={!!ocupado}><Search size={13} />Referências da H&M (sem IA)</button>
                 <button type="button" style={estilos.btnSecundario} onClick={() => buscarPrecos(true)} disabled={!!ocupado}><Search size={13} />Pesquisar na web os itens a cotar (IA, sugestão)</button>

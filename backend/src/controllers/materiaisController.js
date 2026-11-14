@@ -5,7 +5,7 @@ const { comTransacao } = require('../services/transacao');
 const { compararComCatalogo } = require('../utils/semelhancaMateriais');
 const rotinas = require('../services/rotinas');
 const { registrarAuditoria } = require('../services/auditoria');
-const { registrarHistoricoPreco } = require('../services/catalogoMateriais');
+const { registrarHistoricoPreco, materialAtivoPorDescricao } = require('../services/catalogoMateriais');
 const precosVendidosServico = require('../services/precosVendidos');
 const { arredondar } = require('../utils/calculoProposta');
 
@@ -81,8 +81,7 @@ async function criar(req, res) {
 
   try {
     // o banco não aceita dois materiais ativos com a mesma descrição (índice único)
-    const existente = await pool.query('SELECT id FROM materiais WHERE ativo = true AND LOWER(TRIM(descricao)) = LOWER(TRIM($1))', [d.descricao]);
-    if (existente.rows.length) return res.status(409).json({ erro: 'Já existe um material com essa descrição no catálogo' });
+    if (await materialAtivoPorDescricao(pool, d.descricao, 'id')) return res.status(409).json({ erro: 'Já existe um material com essa descrição no catálogo' });
     const result = await pool.query(
       // preço e categoria digitados pelo usuário: conferidos (services/catalogoMateriais.precoConferido) e base do kNN
       `INSERT INTO materiais (codigo, descricao, categoria, unidade, preco, preco_compra, marca, ncm, origem, preco_manual, preco_origem, categoria_origem)

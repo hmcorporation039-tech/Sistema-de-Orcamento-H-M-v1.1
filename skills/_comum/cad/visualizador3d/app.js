@@ -31,6 +31,9 @@ import { dadosDoRack, cenaDoRack, dadosDaCentral, cenaDaCentral, dadosDoClp, cen
 import { criarMapa } from './mapaIluminancia.js';
 import { iniciarEdicao } from './edicao.js';
 import { iniciarFerramentas } from './ferramentas.js';
+// escape de HTML e número pt-BR: os do pacote comum (skills/_comum/base), sem cópia aqui
+import { escapeHtml as esc } from '../../base/html.js';
+import { numeroFixoBr } from '../../base/formato.js';
 
 // Cena de QUADRO elétrico (skills/quadros): visualizador próprio em ./quadro.js.
 // A cena de prédio abaixo segue igual, só dentro de iniciarPredio().
@@ -41,8 +44,7 @@ function iniciarPredio() {
 
 const CENA = window.CENA;
 const $ = (s) => document.querySelector(s);
-const br = (v, c = 2) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+const br = (v, c = 2) => numeroFixoBr(v, c);
 const PD = CENA.peDireito;
 const INFRA = CENA.infra || [];
 const ALTURA_OLHOS = 1.6;

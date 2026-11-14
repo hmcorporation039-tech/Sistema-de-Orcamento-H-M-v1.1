@@ -5,10 +5,14 @@
 //   chave, nome, modelo, exemplo, checklistBase, formulario,
 //   processar(dados) → res,                  // cálculos + inspeção
 //   resumir(res) → { indicadores[], tabelas[], textos[], documentos[] },
-//   documentos: [{ tipo, rotulo, formato: 'Word'|'Excel', nome, gerar: async (res) → Buffer, exige?(res) → bool }],
+//   documentos: [{ tipo, rotulo, formato: 'Word'|'Excel'|'PDF'|'DXF'|'HTML'|'Markdown'|'Texto', nome,
+//                  ext?, mime?, gerar: async (res) → Buffer, exige?(res) → bool, motivo? }],
 //   modosOrcamento: [{ modo, rotulo, descricao }],
 //   montarOrcamento(res, modo) → { cliente_nome, escopo, observacoes, itens[] },
 // }
+// Extensão e tipo MIME saem do formato (ou de ext/mime do documento). Antes o molde só conhecia Word e
+// Excel, e sete skills remendavam gerarDocumento para o caderno de fabricação em PDF (e os quadros para
+// DXF, HTML, PDF e Markdown) — 14/11/2026: o molde gera todos.
 
 const { MIME_DOCX, MIME_XLSX, nomeArquivo } = require('./documentos');
 
@@ -47,6 +51,9 @@ const DOCS_ESPECIFICACAO = [
     } },
 ];
 const MIME_MD = 'text/markdown; charset=utf-8';
+// formato do documento → extensão; extensão → tipo MIME
+const EXT_DO_FORMATO = { Word: 'docx', Excel: 'xlsx', PDF: 'pdf', DXF: 'dxf', HTML: 'html', Markdown: 'md' };
+const MIME_DA_EXT = { docx: MIME_DOCX, xlsx: MIME_XLSX, md: MIME_MD, pdf: 'application/pdf', dxf: 'application/dxf', html: 'text/html; charset=utf-8' };
 
 function criarDisciplina(cfg) {
   cfg = { ...cfg, documentos: [...cfg.documentos, ...DOCS_ESPECIFICACAO.filter(d => !cfg.documentos.some(x => x.tipo === d.tipo))] };
@@ -61,8 +68,8 @@ function criarDisciplina(cfg) {
     if (!d) throw new Error(`Documento desconhecido: ${tipo}`);
     if (d.exige && !d.exige(res)) throw new Error(d.motivo || 'Preencha os dados necessários para gerar este documento.');
     const buffer = await d.gerar(res);
-    const ext = d.ext || (d.formato === 'Excel' ? 'xlsx' : 'docx');
-    const mime = ext === 'xlsx' ? MIME_XLSX : ext === 'md' ? MIME_MD : MIME_DOCX;
+    const ext = d.ext || EXT_DO_FORMATO[d.formato] || 'docx';
+    const mime = d.mime || MIME_DA_EXT[ext] || MIME_DOCX;
     return { buffer, nomeArquivo: nomeArquivo(res.dados, d.nome, ext, d.formato !== 'Excel'), mime };
   }
 

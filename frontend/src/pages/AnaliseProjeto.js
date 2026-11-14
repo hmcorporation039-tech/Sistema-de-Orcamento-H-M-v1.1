@@ -22,9 +22,9 @@ import ObjetivoDoProjeto from '../components/analise/ObjetivoDoProjeto';
 // editável depois; nenhuma das duas cria laudo. Lista e rótulos em utils/finalidades.
 import { FINALIDADES } from '../utils/finalidades';
 import { estilos } from '../components/ui/estilos';
-
-let contador = 0;
-const gerarId = () => `tmp_${Date.now()}_${contador++}`;
+import { gerarId } from '../utils/ids';
+import Indicador from '../components/ui/Indicador';
+import Info from '../components/ui/Info';
 
 // As disciplinas vêm do servidor (GET /projetos/disciplinas — fonte única em
 // backend/src/utils/disciplinasProjeto.js): cada área de atuação é uma
@@ -476,7 +476,7 @@ export default function Compatibilizacao() {
             </div>
             <PainelPasta carregar={carregarPasta} abrir={abrirPasta} atualizarQuando={salvoEm} />
             <div style={{ display: 'grid', gridTemplateColumns: `repeat(${tilesResumo.length}, 1fr)`, gap: 16 }}>
-              {tilesResumo.map(t => <Info key={t.label} label={t.label} valor={t.valor} />)}
+              {tilesResumo.map(t => <Info key={t.label} variante="destaque" rotulo={t.label} valor={t.valor} />)}
             </div>
           </div>
 
@@ -493,9 +493,9 @@ export default function Compatibilizacao() {
               )}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
-              <ResumoBloco rotulo="Bloco 1 — Mão de obra" valor={resumoOrcamento.blocoMaoDeObra} />
-              <ResumoBloco rotulo="Bloco 2 — Materiais e equipamentos" valor={resumoOrcamento.blocoMateriais} />
-              <ResumoBloco rotulo="Total estimado" valor={resumoOrcamento.total} destaque />
+              <Indicador variante="bloco" rotulo="Bloco 1 — Mão de obra" valor={formatarMoeda(resumoOrcamento.blocoMaoDeObra)} />
+              <Indicador variante="bloco" rotulo="Bloco 2 — Materiais e equipamentos" valor={formatarMoeda(resumoOrcamento.blocoMateriais)} />
+              <Indicador variante="bloco" rotulo="Total estimado" valor={formatarMoeda(resumoOrcamento.total)} destaque />
             </div>
             <p style={{ fontSize: 12, color: 'var(--texto-3)', marginTop: 12, lineHeight: 1.5 }}>
               Só informação: soma dos itens não marcados "já pronto", com o valor sugerido pela análise (serviço sem
@@ -841,18 +841,6 @@ function TabelaPontos({ titulo, prefixo, detalhe }) {
   );
 }
 
-function ResumoBloco({ rotulo, valor, destaque }) {
-  return (
-    <div style={{
-      border: '1px solid #1e1e1e', borderRadius: 8, padding: '12px 14px',
-      background: destaque ? '#1a1a1a' : 'transparent',
-    }}>
-      <div style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '.5px', color: destaque ? '#c9a227' : '#777', marginBottom: 4 }}>{rotulo}</div>
-      <div style={{ fontSize: 18, fontWeight: 700, color: destaque ? '#fff' : '#ccc' }}>{formatarMoeda(valor)}</div>
-    </div>
-  );
-}
-
 // Tabela "Pontos por Ambiente" — mesmo formato da planilha de referência da
 // empresa (Ambiente | Rede | TV/Antena | Câmeras | Total), colunas variando
 // conforme a disciplina selecionada. Sempre aproximada (ver
@@ -890,15 +878,6 @@ function TabelaPontosPorAmbiente({ linhas, disciplinas }) {
   );
 }
 
-function Info({ label, valor }) {
-  return (
-    <div>
-      <div style={{ fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>{label}</div>
-      <div style={{ fontSize: 19, color: '#c9a227', fontWeight: 700 }}>{valor}</div>
-    </div>
-  );
-}
-
 // Estilos do kit de tela (components/ui/estilos.js), com o que esta tela tem
 // de diferente por cima — o visual ficou como era.
 const card = { ...estilos.card, padding: 22 };
@@ -908,8 +887,4 @@ const inputPonto = { width: '100%', background: '#0f0f0f', border: '1px solid #2
 
 const btnPrimario = { ...estilos.btnPrimario, display: 'flex', fontSize: 13 };
 
-const btnSecundario = {
-  display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent',
-  border: '1px dashed #333', borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700,
-  fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
-};
+const btnSecundario = estilos.btnTracejado;

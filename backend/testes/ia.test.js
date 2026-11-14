@@ -217,25 +217,25 @@ caso('prazo total da cadeia: provedor lento esgota o prazo e a cadeia PARA (não
 
 caso('fila do Claude Max: no máximo N ao mesmo tempo; o cancelamento tira da fila; o tempo na fila não conta no provedor', async () => {
   const fila = ia.criarFila(() => 2);
-  const soltar1 = await fila.reservar(null, 1000);
-  const soltar2 = await fila.reservar(null, 1000);
+  const soltar1 = await fila.reservar({ prazoMs: 1000 });
+  const soltar2 = await fila.reservar({ prazoMs: 1000 });
   assert.deepStrictEqual(fila.situacao(), { ativos: 2, esperando: 0, maximo: 2 });
   let entrou = false;
-  const terceiro = fila.reservar(null, 1000).then((s) => { entrou = true; return s; });
+  const terceiro = fila.reservar({ prazoMs: 1000 }).then((s) => { entrou = true; return s; });
   await new Promise(r => setTimeout(r, 20));
   assert.strictEqual(entrou, false, 'o terceiro espera');
   const ctrl = new AbortController();
-  const quarto = fila.reservar(ctrl.signal, 1000);
+  const quarto = fila.reservar({ signal: ctrl.signal, prazoMs: 1000 });
   ctrl.abort();
   await assert.rejects(quarto, (e) => e.cancelado === true);
   soltar1(); soltar1(); // soltar duas vezes não libera duas vagas
   const soltar3 = await terceiro;
   assert.deepStrictEqual(fila.situacao(), { ativos: 2, esperando: 0, maximo: 2 });
   soltar2(); soltar3();
-  await assert.rejects(ia.criarFila(() => 0).reservar(null, 30), (e) => e.timeout === true); // sem vaga no prazo: erro
+  await assert.rejects(ia.criarFila(() => 0).reservar({ prazoMs: 30 }), (e) => e.timeout === true); // sem vaga no prazo: erro
   // na cadeia: o provedor com fila espera a vez e só então o relógio dele começa
   const filaProv = ia.criarFila(() => 1);
-  const ocupada = await filaProv.reservar(null, 1000);
+  const ocupada = await filaProv.reservar({ prazoMs: 1000 });
   const prov = { ...falso('max', { ok: 1 }), fila: filaProv, timeoutPadrao: () => 100 };
   const c = cadeia([prov]);
   const resposta = c.perguntarJSON('x');

@@ -9,7 +9,10 @@
 // pressurizacao e solar — mudança aqui vale para todas (rode o npm test de skills).
 
 const T = require('./tabelas');
-const { ucDps } = require('../dps');
+const { especificarDps, descricaoDps } = require('../dps');
+// In do DPS classe II adotado em todos os modos (prática de mercado, acima do mínimo de 5 kA por modo da
+// NBR 5410, 6.3.5.2.4 d) — o valor que a elétrica já especificava
+const IN_DPS_ADOTADO_KA = 20;
 
 const FOLGA = 1.1; // +10 % de cabo para sobras, emendas e chegada no quadro
 const arred = (v, c = 2) => Math.round(v * 10 ** c) / 10 ** c;
@@ -160,6 +163,23 @@ function sugerirCircuitos(previsao, c, semIluminacao = null) {
 
 function tensaoCircuito(ligacao, c) {
   return ligacao === 'FN' ? c.vfn : c.vff;
+}
+
+// Queda de tensão num trecho (V): ΔV = k · I · L · (ρ/S · cos φ + X · sen φ).
+// k = 2 (corrente contínua ou monofásico: ida e volta) ou √3 (trifásico); X em Ω/m (0 = só a
+// resistência, como no dimensionamento acima). ρ padrão: cobre em operação (Tabelas, RHO_COBRE).
+function quedaTrecho({ comprimento, corrente, secao, rho = T.RHO_COBRE, k = 2, fp = 1, x = 0 }) {
+  const sen = Math.sqrt(Math.max(0, 1 - fp * fp));
+  return k * corrente * comprimento * ((rho / secao) * fp + x * sen);
+}
+
+// Queda de tensão em corrente contínua, circuito de ida e volta: ΔV = 2 · L · I · ρ / S.
+// → { v (V), pct (% da tensão; null sem tensão) }. Uma regra só para a alimentação 12 Vcc das
+// fechaduras e leitores (controle de acesso), o ramal da sirene (alarme) e o cabo CC das strings
+// (solar) — antes cada uma com a sua fórmula e a sua resistividade (0,0178, 0,0175 e 0,0225).
+function quedaCC({ comprimento, corrente, secao, tensao, rho = T.RHO_COBRE }) {
+  const v = quedaTrecho({ comprimento, corrente, secao, rho });
+  return { v, pct: Number(tensao) > 0 ? (v / tensao) * 100 : null };
 }
 
 function dimensionarCircuito(circ, c, { minimo, limiteQueda }) {
@@ -364,12 +384,13 @@ function materiais(circuitos, alim, quadro, previsao, c) {
   add('DISJ-G', `Disjuntor geral ${alim.polos === 3 ? '3P' : alim.polos === 2 ? '2P' : '1P'} ${alim.disjuntor} A${icn}`, 'un', 1, 'NBR 5410, 5.3.4 e 5.3.5.5.1');
   const drs = {};
   for (const ci of circuitos.filter(x => x.dr)) {
-    const corrente = [25, 40, 63, 80, 100].find(x => x >= ci.disjuntor) || 100;
+    const corrente = T.drComercial(ci.disjuntor); // série comum de DR (Tabelas)
     const k = `${ci.ligacao === 'FFF' ? '4P' : '2P'} ${corrente} A 30 mA`;
     drs[k] = (drs[k] || 0) + 1;
   }
   Object.entries(drs).forEach(([k, q]) => add('DR', `Interruptor diferencial residual (DR) ${k} tipo AC/A`, 'un', q, 'NBR 5410, 5.1.3.2.2'));
-  add('DPS', `DPS classe II, Uc ≥ ${quadro.dpsUc} V, In ≥ 20 kA (8/20 µs)`, 'un', quadro.dpsQtd, 'NBR 5410, 6.3.5.2.4 e Tabela 49');
+  // texto da função comum; In ≥ 20 kA adotado em todos os modos (acima do mínimo de 5 kA da norma)
+  add('DPS', descricaoDps(quadro.dpsEspec, { inMinimoKa: IN_DPS_ADOTADO_KA }), 'un', quadro.dpsQtd, 'NBR 5410, 6.3.5.2.4 e Tabela 49');
   add('QD', `Quadro de distribuição de embutir para ${quadro.modulos} módulos DIN, com barramentos de fase, neutro e terra`, 'un', 1, 'NBR 5410, 6.5.4.7 e Tabela 59');
   const nTug = previsao.reduce((s, a) => s + a.nTug, 0);
   const nTue = circuitos.filter(x => x.tipo === 'tue').length;
@@ -466,10 +487,13 @@ function calcular(dados, opcoes = {}) {
   const reserva = T.reservaQuadro(circuitos.length);
   const drModulos = circuitos.filter(x => x.dr).length * 2;
   const nFases = c.sistema === 'trifasico' ? 3 : c.sistema === 'bifasico' ? 2 : 1;
-  const dpsQtd = nFases + (c.esquema === 'TT' || c.esquema === 'TN-S' ? 1 : 0);
-  const dps = ucDps({ vfn: c.vfn, vff: c.vff, esquema: c.esquema }); // Tabela 49 — função comum das skills elétricas
+  // DPS do quadro: Uc (Tabela 49), In e quantidade pela função comum (_comum/dps.js). O quadro da elétrica
+  // predial é onde o PEN se separa no TN-C-S (sem DPS N-PE ali) — a mesma regra da planilha do quadro.
+  const dpsEspec = especificarDps({ classe: 'II', vfn: c.vfn, vff: c.vff, esquema: c.esquema, nFases, separacaoPen: true });
+  const dpsQtd = dpsEspec.quantidade;
+  const dps = dpsEspec.uc;
   const modulos = polosCircuitos + drModulos + reserva + alim.polos + dpsQtd;
-  const quadro = { circuitos: circuitos.length, reserva, modulos: Math.ceil(modulos / 6) * 6, dpsQtd, dpsUc: dps.uc, dps, iccKa: falta.iccQuadro / 1000, icnKa: falta.icnKa };
+  const quadro = { circuitos: circuitos.length, reserva, modulos: Math.ceil(modulos / 6) * 6, dpsQtd, dpsUc: dps.uc, dps, dpsEspec, iccKa: falta.iccQuadro / 1000, icnKa: falta.icnKa };
   const mat = materiais(circuitos, alim, quadro, previsao, c);
   const quedaTotal = alim.queda + maiorQueda;
   const limiteTotal = c.pontoEntrega === 'trafo' ? T.QUEDA.total_trafo : T.QUEDA.total_bt;
@@ -488,4 +512,4 @@ function calcular(dados, opcoes = {}) {
   return { config: c, previsao, circuitos, fases, demanda: dem, alimentador: alim, quadro, falta, materiais: mat.itens, cabos: mat.cabos, maiorQueda, quedaTotal, limiteQuedaTotal: limiteTotal, avisos, circuitosSugeridos: !informados.length, ...(lum ? { luminotecnico: true } : {}) };
 }
 
-module.exports = { calcular, preverCargas, iluminacaoMinima, tomadasMinimas, dimensionarCircuito, config, ligacaoTue, balancearFases, protecaoFalta };
+module.exports = { calcular, preverCargas, iluminacaoMinima, tomadasMinimas, dimensionarCircuito, config, ligacaoTue, balancearFases, protecaoFalta, quedaTrecho, quedaCC };

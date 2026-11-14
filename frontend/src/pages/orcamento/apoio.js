@@ -1,5 +1,11 @@
 import { getTodosClientes, getTodosMateriais, getServicos } from '../../services/api';
 import { hojeBrasilia } from '../../utils/format';
+import { gerarId } from '../../utils/ids';
+import { normalizarNome } from '../../utils/texto';
+
+// gerarId e normalizarNome moram em utils/ (eram cópias aqui e na análise/histórico);
+// reexportados para o Orcamento.js continuar importando daqui.
+export { gerarId, normalizarNome };
 
 // Funções de apoio do editor de orçamento (pages/Orcamento.js): rascunho no navegador,
 // formulário vazio, seções padrão, origem da proposta e filtros do catálogo.
@@ -38,9 +44,6 @@ export function retrato(form, secoes, itens) {
   });
 }
 
-let contador = 0;
-export const gerarId = () => `tmp_${Date.now()}_${contador++}`;
-
 // `padroes` = BDI e impostos padrão do administrador (Integrações); sem valor definido o campo
 // nasce 0 — não há número de fábrica (as alíquotas da reforma tributária ainda não existem)
 export const formVazio = (padroes) => ({
@@ -76,13 +79,6 @@ export const SECOES_PADRAO = () => [
   { id: gerarId(), nome: 'Materiais' },
   { id: gerarId(), nome: 'Mão de Obra' },
 ];
-
-// Remove acentuação e normaliza caixa/espaços — usado pra comparar nome de
-// cliente sem falhar por causa de "CLINICA" x "CLÍNICA", maiúscula/minúscula
-// ou espaço a mais.
-export function normalizarNome(txt) {
-  return (txt || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
-}
 
 // Seções cujo nome sugere trabalho/serviço entram no subtotal de mão de obra; o restante conta como material.
 export function ehMaoDeObra(nome) {

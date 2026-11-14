@@ -46,7 +46,7 @@ const mediana = (lista) => {
   const m = Math.floor(v.length / 2);
   return r2(v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2);
 };
-const moeda = (v) => `R$ ${Number(v).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.')}`;
+const { moedaTexto: moeda } = require('../../utils/moeda'); // fonte única (2.38)
 const dataBr = (iso) => String(iso || '').slice(0, 10).split('-').reverse().join('/');
 
 // Classifica a origem do preço de UM item a partir das referências encontradas (sem IA):

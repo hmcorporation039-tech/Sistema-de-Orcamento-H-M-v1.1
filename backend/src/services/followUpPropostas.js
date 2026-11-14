@@ -17,8 +17,7 @@ const MIN_AMOSTRA_RESPOSTA = 3;
 const LIMITE_SEM_ENVIO = 50;
 const SQL_ENVIO = "e.acao IN ('email', 'envio_manual')";
 
-const ehDataIso = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T12:00:00Z`))
-  && new Date(`${s}T12:00:00Z`).toISOString().slice(0, 10) === s;
+const { ehDataIso } = require('../utils/dataHoje'); // fonte única (2.38)
 const utc = (iso) => Date.UTC(...iso.split('-').map((n, i) => (i === 1 ? Number(n) - 1 : Number(n))));
 const diasEntre = (de, ate) => Math.round((utc(ate) - utc(de)) / 86400000);
 const somarDias = (iso, n) => new Date(utc(iso) + n * 86400000).toISOString().slice(0, 10);

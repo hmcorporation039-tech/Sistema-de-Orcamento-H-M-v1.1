@@ -301,10 +301,7 @@ export default function Contratos() {
 }
 
 // Estilos do kit de tela (components/ui/estilos.js). O botão secundário desta
-// tela é um pouco maior e mais apagado que o do kit — mantido como era.
+// tela é o transparente de borda apagada do kit (btnContorno).
 const { th, td, tdVazio, btnPrimario, btnIcone } = estilos;
 
-const btnSecundario = {
-  padding: '9px 16px', background: 'transparent', border: '1px solid #2a2a2a',
-  borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer'
-};
+const btnSecundario = estilos.btnContorno;

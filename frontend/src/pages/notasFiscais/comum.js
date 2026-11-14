@@ -15,15 +15,6 @@ export const SITUACOES = {
 
 // ── componentes de UI locais ──────────────────────────────────────────────────
 
-export function Indicador({ rotulo, valor, destaque }) {
-  return (
-    <div style={{ ...estilos.card, padding: '12px 14px', marginBottom: 0 }}>
-      <div style={{ fontSize: 11.5, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.4px' }}>{rotulo}</div>
-      <div style={{ fontSize: 17, fontWeight: 700, color: destaque ? 'var(--ouro)' : 'var(--texto)', marginTop: 4 }}>{valor ?? '—'}</div>
-    </div>
-  );
-}
-
 export function BtnTexto({ onClick, children, icone, destaque, ocupado }) {
   return (
     <button type="button" onClick={onClick} disabled={ocupado}

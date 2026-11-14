@@ -198,29 +198,8 @@ const textoCabeNaCli = (documento) => !partesDoTexto(documento).parcial;
 // limite de uso; leituras de cotação, equipamentos e pesquisas chegando juntas abriam vários de uma vez. No máximo
 // IA_CLI_SIMULTANEOS (padrão 2) ao mesmo tempo; os outros esperam a vez (o tempo na fila não conta no tempo-limite do
 // provedor, mas conta no prazo total da cadeia, e o cancelamento tira da fila).
-function criarFila(maximo) {
-  let ativos = 0;
-  const espera = [];
-  const soltarUmaVez = () => { let solto = false; return () => { if (solto) return; solto = true; ativos--; proximo(); }; };
-  function proximo() {
-    while (ativos < maximo() && espera.length) { const e = espera.shift(); ativos++; e.entrar(soltarUmaVez()); }
-  }
-  function reservar(signal, prazoMs) {
-    if (signal?.aborted) return Promise.reject(erroCancelado(signal));
-    return new Promise((resolve, reject) => {
-      let timer = null;
-      const aoAbortar = () => sair(erroCancelado(signal));
-      const limpar = () => { clearTimeout(timer); signal?.removeEventListener('abort', aoAbortar); };
-      const e = { entrar: (soltar) => { limpar(); resolve(soltar); } };
-      function sair(erro) { const i = espera.indexOf(e); if (i >= 0) espera.splice(i, 1); limpar(); reject(erro); }
-      signal?.addEventListener('abort', aoAbortar, { once: true });
-      if (prazoMs > 0) timer = setTimeout(() => sair(Object.assign(new Error(`sem vaga na fila em ${Math.round(prazoMs / 1000)} s`), { timeout: true })), prazoMs);
-      espera.push(e);
-      proximo();
-    });
-  }
-  return { reservar, situacao: () => ({ ativos, esperando: espera.length, maximo: maximo() }) };
-}
+// (implementação comum em utils/fila.js desde a 2.38)
+const { criarFila } = require('../utils/fila');
 const filaClaudeMax = criarFila(() => Math.max(1, Number(process.env.IA_CLI_SIMULTANEOS) || 2));
 
 // O documento vai para uma pasta temporária própria (única pasta que a CLI
@@ -416,7 +395,7 @@ function criarIA({ provedores = PROVEDORES, ordem = ordemConfigurada, registrarL
         if (p.fila) {
           // espera a vez (com prazo total, no máximo o que sobra dele menos o mínimo para responder; sem prazo, até
           // vagar — cada processo da CLI tem o próprio tempo-limite); o relógio do provedor começa quando ele de fato roda
-          soltarFila = await p.fila.reservar(signal, prazo ? Math.max(1, resta() - prazoMinimoMs) : 0);
+          soltarFila = await p.fila.reservar({ signal, prazoMs: prazo ? Math.max(1, resta() - prazoMinimoMs) : 0, erroCancelado });
           if (prazo) limite = Math.min(limite, resta());
           inicio = Date.now();
         }

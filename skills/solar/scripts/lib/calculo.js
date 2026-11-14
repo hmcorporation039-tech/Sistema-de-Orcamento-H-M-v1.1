@@ -9,7 +9,8 @@ const E = require('../../../_comum/eletrico/calculo');
 const { ucDps } = require('../../../_comum/dps');
 
 const FOLGA = 1.1;
-const RHO_CC = 0.0225; // Ω·mm²/m — cobre estanhado próximo da temperatura de operação
+// Ω·mm²/m — cobre (estanhado) próximo da temperatura de operação: o ρ da tabela comum (mesmo valor)
+const RHO_CC = require('../../../_comum/eletrico/tabelas').RHO_COBRE;
 // Custo de disponibilidade (kWh/mês) do grupo B — REN 1000 (mesmos valores da RN 414, art. 98)
 const DISPONIBILIDADE = { monofasico: 30, bifasico: 50, trifasico: 100 };
 // NBR 16612, Tabela C.2 — cabos FV a 30 °C ambiente, condutor a 90 °C, modo 1
@@ -175,7 +176,7 @@ function calcular(dados) {
   let caboCc = null;
   for (const sec of SECOES_CC) {
     const iz = CABO_FV[exposicao][sec] * kt;
-    const queda = 2 * lCc * iOperacao * RHO_CC / (sec * vString) * 100;
+    const queda = E.quedaCC({ comprimento: lCc, corrente: iOperacao, secao: sec, tensao: vString, rho: RHO_CC }).pct; // função comum de CC
     if (iz >= iProjetoCc && queda <= quedaCcMax) { caboCc = { secao: sec, iz, queda }; break; }
   }
   if (!caboCc) throw new Error('Nenhuma seção de cabo CC até 16 mm² atende — reduzir a distância ou rever o arranjo.');

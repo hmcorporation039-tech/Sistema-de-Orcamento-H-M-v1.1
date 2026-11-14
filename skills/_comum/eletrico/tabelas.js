@@ -97,6 +97,69 @@ function reservaQuadro(n) {
 // Correntes nominais usuais de disjuntores (NBR NM 60898 / IEC 60947-2)
 const DISJUNTORES = [6, 10, 13, 16, 20, 25, 32, 40, 50, 63, 70, 80, 100, 125, 160, 200, 250, 320, 400, 500, 630];
 
+// Disjuntores de caixa moldada e abertos (A), IEC 60947-2 — série única (14/11/2026). Antes havia
+// três cópias com faixas diferentes: motores.js (16 a 4000 A, proteção de motor grande e geral),
+// quadros (16 a 1600 A, só caixa moldada) e média tensão (100 a 6300 A, geral de BT do trafo).
+// Os valores são os mesmos nas três; cada uso recorta a sua faixa com serieDisjuntores(de, ate).
+const DISJUNTORES_CM_ABERTOS = [16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250, 320, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500, 3200, 4000, 5000, 6300];
+const serieDisjuntores = (de = 0, ate = Infinity) => DISJUNTORES_CM_ABERTOS.filter(a => a >= de && a <= ate);
+
+// Correntes nominais de DR (interruptor diferencial) usuais (A). Antes [25, 40, 63, 80, 100] em linha
+// na elétrica, hospitalar, iluminação e carregador (sem o 125) e [25 … 125] nos quadros.
+const DR_IN = [25, 40, 63, 80, 100, 125];
+// Menor DR da série com In ≥ a corrente do disjuntor do circuito; acima da série, o próprio valor
+// (o DR não pode ficar abaixo do disjuntor — antes saía 100 A para qualquer disjuntor maior) [CONFERIR modelo]
+function drComercial(corrente) {
+  return DR_IN.find(v => v >= corrente - 1e-9) || corrente;
+}
+
+// Relação Ip/In (corrente de partida / nominal) adotada quando a placa do motor não é informada —
+// era o 7 repetido nos quadros, na industrial, na pressurização e em motores.js [CONFERIR placa]
+const IP_IN_PADRAO = 7;
+
+// Corrente de curta duração (Icw, 1 s) de conjuntos NBR IEC 61439 (kA) — era igual nos quadros e na industrial
+const ICW_KA = [6, 10, 15, 20, 25, 35, 50, 65, 80, 100];
+
+// ── Barramentos de cobre (DIN 43671) ────────────────────────────────────────
+// DIN 43671 (1975), Tabela 1 — barras retangulares de cobre E-Cu F30, CA 50/60 Hz,
+// uma barra por fase, ar ambiente 35 °C e barra a 65 °C (Δθ = 30 K): corrente
+// permanente (A) com barra nua e pintada. Valores reproduzidos de catálogos de
+// barramentos [CONFERIR com a tabela original]. (Vinham de quadros/scripts/lib/tabelas.js.)
+const BARRAS_DIN43671 = [
+  { l: 12, e: 2, nua: 108, pintada: 123 }, { l: 15, e: 2, nua: 128, pintada: 148 }, { l: 15, e: 3, nua: 162, pintada: 187 },
+  { l: 20, e: 3, nua: 204, pintada: 237 }, { l: 20, e: 5, nua: 274, pintada: 319 }, { l: 25, e: 5, nua: 327, pintada: 384 },
+  { l: 30, e: 5, nua: 379, pintada: 447 }, { l: 40, e: 5, nua: 482, pintada: 573 }, { l: 30, e: 10, nua: 573, pintada: 676 },
+  { l: 50, e: 5, nua: 583, pintada: 697 }, { l: 60, e: 5, nua: 688, pintada: 826 }, { l: 40, e: 10, nua: 715, pintada: 850 },
+  { l: 50, e: 10, nua: 852, pintada: 1020 }, { l: 80, e: 5, nua: 885, pintada: 1070 }, { l: 60, e: 10, nua: 985, pintada: 1180 },
+  { l: 100, e: 5, nua: 1080, pintada: 1300 }, { l: 80, e: 10, nua: 1240, pintada: 1500 }, { l: 100, e: 10, nua: 1490, pintada: 1810 },
+  { l: 120, e: 10, nua: 1740, pintada: 2110 },
+];
+// Conjuntos de 2 a 4 barras por fase (só barra nua), nas mesmas condições — os valores que a skill
+// de média tensão usava para o QGBT acima de uma barra, "ordem de grandeza da DIN 43671"
+// [CONFERIR com o fabricante do painel]. Não há valor de barra pintada para eles.
+const CONJUNTOS_DIN43671 = [
+  { n: 2, l: 80, e: 10, nua: 2110 }, { n: 2, l: 100, e: 10, nua: 2500 }, { n: 3, l: 100, e: 10, nua: 3310 }, { n: 4, l: 100, e: 10, nua: 4000 },
+];
+// Correção de temperatura (DIN 43671, Figura 2) aproximada por k2 = ((θbarra − θar)/30)^0,61 —
+// a troca de calor por convecção natural e radiação cresce com Δθ^1,25 e I² ∝ calor [CONFERIR na curva]
+const EXPOENTE_K2 = 0.61;
+function k2Temperatura(thetaBarra, thetaAr) {
+  const dt = thetaBarra - thetaAr;
+  if (dt <= 0) return 0;
+  return (dt / 30) ** EXPOENTE_K2;
+}
+// Menor barra (por seção) cuja corrente corrigida (tabela × k2) atende; null se nenhuma.
+// `conjuntos`: depois das barras simples, também os conjuntos de 2 a 4 barras por fase (só barra nua).
+function escolherBarra(corrente, k2, pintada, { conjuntos = false } = {}) {
+  const col = pintada ? 'pintada' : 'nua';
+  const ordenadas = [...BARRAS_DIN43671].sort((a, b) => a.l * a.e - b.l * b.e || a[col] - b[col]);
+  const simples = ordenadas.find(b => b[col] * k2 >= corrente - 1e-9);
+  if (simples || !conjuntos || pintada) return simples || null;
+  return CONJUNTOS_DIN43671.find(b => b.nua * k2 >= corrente - 1e-9) || null;
+}
+// Rótulo da barra: "1 × (40 × 10 mm)"
+const rotuloBarra = (b) => `${b.n || 1} × (${b.l} × ${b.e} mm)`;
+
 // Resistividade do cobre em operação (Ω·mm²/m) — valor conservador para 70 °C
 const RHO_COBRE = 0.0225;
 // Resistividade do cobre a 20 °C (1/56 Ω·mm²/m) — curto-circuito máximo (capacidade de interrupção)
@@ -144,6 +207,7 @@ const LOCAIS_600VA = ['banheiro', 'cozinha', 'area_servico'];
 
 module.exports = {
   SECOES, METODOS, capacidade, fatorTemperatura, fatorAgrupamento, SECAO_MINIMA, NEUTRO_REDUZIDO, secaoPE,
-  reservaQuadro, DISJUNTORES, RHO_COBRE, RHO_COBRE_20, kCurto, ICN_KA, CURVA_IA, QUEDA, ISOLAMENTO, DEMANDA_ILUM_TUG_PADRAO, DEMANDA_TUE_PADRAO,
+  reservaQuadro, DISJUNTORES, DISJUNTORES_CM_ABERTOS, serieDisjuntores, DR_IN, drComercial, IP_IN_PADRAO, ICW_KA,
+  BARRAS_DIN43671, CONJUNTOS_DIN43671, EXPOENTE_K2, k2Temperatura, escolherBarra, rotuloBarra, RHO_COBRE, RHO_COBRE_20, kCurto, ICN_KA, CURVA_IA, QUEDA, ISOLAMENTO, DEMANDA_ILUM_TUG_PADRAO, DEMANDA_TUE_PADRAO,
   LOCAIS_DR, LOCAIS_COZINHA, LOCAIS_600VA,
 };

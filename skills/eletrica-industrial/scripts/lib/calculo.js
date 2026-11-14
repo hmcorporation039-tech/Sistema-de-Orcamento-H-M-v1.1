@@ -16,7 +16,10 @@
 const E = require('../../../_comum/eletrico/calculo');
 const T = require('../../../_comum/eletrico/tabelas');
 const X = require('./tabelas');
-const { ucDps } = require('../../../_comum/dps');
+const { especificarDps, descricaoDps } = require('../../../_comum/dps');
+// In do DPS classe II adotado pelo projeto em todos os modos (prática de mercado, acima do mínimo de
+// 5 kA por modo da NBR 5410, 6.3.5.2.4 d) — o valor que esta skill já especificava
+const IN_DPS_ADOTADO_KA = 20;
 // Motores e partidas: motor comum (SK-08, 02/11/2026) — reexportados abaixo com os mesmos nomes
 const M = require('../../../_comum/eletrico/motores');
 
@@ -134,7 +137,7 @@ function lerMotores(dados, c, quadros) {
       eta = eta ?? 0.9; fp = fp ?? 0.85;
     }
     let ipIn = num(m.ip_in, null);
-    if (ipIn == null) { ipIn = 7; avisos.push(`${tag}: Ip/In não informado — adotado 7,0. [CONFERIR placa]`); }
+    if (ipIn == null) { ipIn = T.IP_IN_PADRAO; avisos.push(`${tag}: Ip/In não informado — adotado ${T.IP_IN_PADRAO.toFixed(1).replace('.', ',')}. [CONFERIR placa]`); }
     const partida = X.PARTIDAS[m.partida] ? m.partida : 'direta';
     const inCalc = correnteNominalMotor(pKw, c.vff, eta, fp);
     const inPlaca = num(m.in_placa_a, null);
@@ -512,7 +515,11 @@ function calcular(dados) {
   );
 
   const resultado = { config: c, unidades, outras, quadros, qgbt, demanda: dem, banco, entrada, trafo, kT, avisos, premissas };
-  resultado.dps = ucDps({ vfn: c.vfn, vff: c.vff, esquema: c.esquema, neutro: c.esquema === 'IT' ? false : undefined });
+  // DPS do QGBT: classe II, Uc (Tabela 49), In mínimo e quantidade — a função comum (_comum/dps.js).
+  // IT aqui é sem neutro distribuído (cabo de entrada sem N) → Uc ≥ U. calc.dps continua sendo o Uc.
+  // QGBT = onde o PEN se separa no TN-C-S (sem DPS N-PE ali, como antes: 4 no TN-S/TT, 3 nos demais)
+  resultado.dpsQgbt = especificarDps({ classe: 'II', vfn: c.vfn, vff: c.vff, esquema: c.esquema, nFases: 3, neutro: c.esquema === 'IT' ? false : undefined, separacaoPen: true });
+  resultado.dps = resultado.dpsQgbt.uc;
   resultado.materiais = materiais(resultado);
   return resultado;
 }
@@ -591,12 +598,10 @@ function materiais(calc) {
   for (const o of outras) add('DISJ', `Disjuntor ${o.circuito.polos}P ${o.circuito.disjuntor} A curva C — ${o.descricao}`, 'un', 1, 'NBR 5410, 5.3.4');
 
   // Quadros
-  const nDps = c.esquema === 'TN-S' || c.esquema === 'TT' ? 4 : 3;
-  // NBR 5410, Tabela 49 (função comum): IT aqui é sem neutro distribuído (cabo de entrada sem N) → Uc ≥ U
-  const uc = ucDps({ vfn: c.vfn, vff: c.vff, esquema: c.esquema, neutro: c.esquema === 'IT' ? false : undefined }).uc;
+  // DPS do QGBT pela função comum (calc.dpsQgbt): um por fase + N-PE onde há neutro (TN-S, TN-C-S, TT)
   add('QGBT', `QGBT em conjunto NBR IEC 61439-2: barramento ${qgbt.conjunto.barramento} A, Icw ≥ ${qgbt.conjunto.icw} kA/1 s, Ipk ≥ ${(qgbt.curto.ip / 1000).toFixed(1).replace('.', ',')} kA, IP54 [CONFERIR forma de separação]`, 'un', 1, 'NBR IEC 61439-1/-2');
   add('DG', `Disjuntor geral tripolar ${entrada.disjuntorGeral} A (caixa moldada/aberto) com unidade de proteção ajustável, Icu ≥ ${qgbt.curto.icuMin} kA em ${c.vff} V`, 'un', 1, 'NBR IEC 60947-2; NBR 5410, 5.3.5');
-  add('DPS', `DPS classe II, Uc ≥ ${uc} V, In ≥ 20 kA (8/20 µs) no QGBT`, 'un', nDps, 'NBR 5410, 6.3.5.2.4 e Tabela 49');
+  add('DPS', `${descricaoDps(calc.dpsQgbt, { inMinimoKa: IN_DPS_ADOTADO_KA })} no QGBT`, 'un', calc.dpsQgbt.quantidade, 'NBR 5410, 6.3.5.2.4 e Tabela 49');
   for (const q of quadros.filter(x => x.alim)) {
     add('DAL', `Disjuntor tripolar ${q.alim.disjuntor} A (caixa moldada) para o alimentador do ${q.id}, Icu ≥ ${qgbt.curto.icuMin} kA em ${c.vff} V`, 'un', 1, 'NBR IEC 60947-2; NBR 5410, 6.5.1');
     add('CCM', `${q.tipo === 'CCM' ? 'Centro de controle de motores' : 'Quadro de distribuição'} ${q.id} em conjunto NBR IEC 61439-2: barramento ${q.conjunto.barramento} A, Icw ≥ ${q.conjunto.icw} kA/1 s, Ipk ≥ ${(q.curto.ip / 1000).toFixed(1).replace('.', ',')} kA, ${X.FORMAS[q.forma] || 'forma ' + q.forma}, ${q.ip}, chave geral com bloqueio`, 'un', 1, 'NBR IEC 61439-1/-2');

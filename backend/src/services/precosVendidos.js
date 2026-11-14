@@ -22,13 +22,13 @@ function lerIds(bruto) {
   return ids;
 }
 
-const dinheiro = (v) => Math.round(Number(v) * 100) / 100;
+const { arredondar: dinheiro } = require(require('path').join(require('../config/caminhos').COMUM, 'base', 'dinheiro')); // fonte única (2.38)
 
 // Normalização da descrição para casar item sem material do catálogo com o que já foi vendido: sem acento,
 // caixa baixa e espaços únicos. O SQL e o JS fazem a MESMA conta (conferido no teste).
 const COM_ACENTO = 'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç';
 const SEM_ACENTO = 'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc';
-const normalizar = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const { chaveBusca: normalizar } = require('../utils/texto'); // fonte única (2.38)
 const sqlNormalizar = (col) => `btrim(regexp_replace(lower(translate(COALESCE(${col}, ''), '${COM_ACENTO}', '${SEM_ACENTO}')), '[[:space:]]+', ' ', 'g'))`;
 // chave de um item sem material: "descrição|unidade" normalizadas (unidade diferente é outro preço)
 const chaveDescricao = (descricao, unidade) => `${normalizar(descricao)}|${normalizar(unidade)}`;

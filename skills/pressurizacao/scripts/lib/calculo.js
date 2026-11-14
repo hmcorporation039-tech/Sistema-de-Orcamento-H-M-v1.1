@@ -24,9 +24,10 @@ const ET = require('../../../_comum/eletrico/tabelas');
 // motores e partidas (SK-08) e perda de carga em dutos (Altshul-Tsal): motores comuns em _comum
 const EI = require('../../../_comum/eletrico/motores');
 const { fatorAtrito, perdaAtrito } = require('../../../_comum/dutos');
+const { especificarDps, descricaoDps } = require('../../../_comum/dps');
 
 const RAIZ3 = Math.sqrt(3);
-const CV_KW = 0.7355;
+const { CV_KW } = EI; // 1 cv = 0,7355 kW (motor comum)
 const numero = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v));
 const arred = (v, c = 2) => (v == null || !Number.isFinite(v) ? v : Math.round(v * 10 ** c) / 10 ** c);
 const fmt = (v, c = 2) => (v == null || !Number.isFinite(v) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: c }));
@@ -56,9 +57,8 @@ function forcaPorta({ largura, altura, dp, fechador = T.FORCA.fechador_n, d = T.
   return fechador + (largura * largura * altura * dp) / (2 * (largura - d));
 }
 
-function motorComercial(kwMin) {
-  return T.MOTORES_CV.find(cv => cv * CV_KW >= kwMin - 1e-9) || null;
-}
+// menor motor comercial (cv) com potência ≥ kwMin: a função do motor comum (a mesma tabela MOTORES_CV)
+const { motorComercial } = EI;
 
 // Grelhas: no máximo 2 pavimentos entre grelhas, uma no térreo e uma no último (NT 13 GO 5.3.7)
 function numeroGrelhas(pavimentos) {
@@ -355,7 +355,8 @@ function alimentacao(vent, arr, c, avisos) {
     d.avisos.forEach(a => avisos.push(a));
     circuitos.push(d);
   }
-  const u = { in: vent.in, ipIn: 7, partida: c.partida, limitePartida: c.partida === 'soft_starter' ? 3 : 1.5, protecao: 'auto', tensao: el.vff, placa: [], regime: 'S1', pKw: vent.kw, tensaoPlaca: '', fs: 1 };
+  // Ip/In e limite de corrente da partida (soft-starter 3 × In, inversor 1,5 × In): as constantes do motor comum
+  const u = { in: vent.in, ipIn: EI.IP_IN_PADRAO, partida: c.partida, limitePartida: EI.limitePartidaPadrao(c.partida), protecao: 'auto', tensao: el.vff, placa: [], regime: 'S1', pKw: vent.kw, tensaoPlaca: '', fs: 1 };
   const partida = EI.dispositivosPartida(u);
   // fonte: gerador 4 h (CBMDF 4.3.1.10.2 o) salvo as isenções (p); fora do DF a NT 13 GO exige gerador sempre (5.3.8 b)
   const lim = T.DF.isencao_gerador_m[c.grupo];
@@ -493,7 +494,10 @@ function listaMateriais(x) {
   add('SINAL', 'Sinaleiro LED 22 mm 24 Vcc', 'un', aut.pontos.filter(pt => /^Sinaleiro/.test(pt.descricao)).length, 'Painel');
   add('RELE', 'Relé de interface 24 Vcc 1 NA/NF com base', 'un', aut.totais.SD, 'Painel');
   add('FONTE24', 'Fonte 24 Vcc 5 A para comando e transmissores', 'un', 1, 'Painel');
-  add('DPS-P', 'DPS classe II para o quadro de comando', 'un', 1, 'NBR 5410 6.3.5');
+  // DPS do quadro de comando (alimentação trifásica): Uc pela Tabela 49 e In mínimo de 6.3.5.2.4 d) — a
+  // regra comum (_comum/dps.js), um por fase + N-PE. Antes: "DPS classe II", sem Uc, 1 un.
+  const dpsP = especificarDps({ classe: 'II', vfn: c.eletrica.vfn, vff: c.eletrica.vff, esquema: c.eletrica.esquema || 'TN-S', nFases: 3 });
+  add('DPS-P', `${descricaoDps(dpsP)} — quadro de comando (o N-PE só se o painel receber neutro) [CONFERIR]`, 'un', dpsP.quantidade, 'NBR 5410, 6.3.5.2.4 e Tabela 49');
   // campo
   add('PT', 'Transmissor de pressão diferencial 0–100 Pa, saída 4–20 mA, com display, tomadas de pressão e mangueira', 'un', aut.nSensores, 'NT 13 GO 5.3.9 c');
   add('PDS', 'Pressostato diferencial de ar 20–300 Pa (prova de fluxo do ventilador)', 'un', arr.n, 'NT 13 GO 5.3.9 d');

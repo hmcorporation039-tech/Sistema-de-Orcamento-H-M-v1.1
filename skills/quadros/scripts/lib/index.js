@@ -720,19 +720,8 @@ const base = criarDisciplina({
   montarOrcamento,
 });
 
-// O molde comum (_comum/disciplina.js) só conhece Word e Excel: o desenho DXF, o
-// 3D (HTML) e o caderno de fabricação (PDF) saem por aqui, com o mesmo padrão de nome de arquivo
-const gerarDocumentoBase = base.gerarDocumento;
-const FORA_DO_OFFICE = { desenho: { ext: 'dxf', mime: 'application/dxf' }, modelo3d: { ext: 'html', mime: 'text/html; charset=utf-8' }, caderno: { ext: 'pdf', mime: 'application/pdf' },
-  folhas: { ext: 'pdf', mime: 'application/pdf' }, ficha: { ext: 'pdf', mime: 'application/pdf' }, entrega: { ext: 'md', mime: 'text/markdown; charset=utf-8' } };
-base.gerarDocumento = async (res, tipo) => {
-  const f = FORA_DO_OFFICE[tipo];
-  if (!f) return gerarDocumentoBase(res, tipo);
-  const d = DOCUMENTOS.find(x => x.tipo === tipo);
-  if (d.exige && !d.exige(res)) throw new Error(d.motivo || 'Preencha os dados necessários para gerar este documento.');
-  return { buffer: await d.gerar(res), nomeArquivo: D.nomeArquivo(res.dados, d.nome, f.ext, true), mime: f.mime };
-};
-
+// O desenho DXF, o 3D (HTML), o caderno, as folhas e a ficha (PDF) e o texto de entrega (Markdown)
+// saem pelo molde comum (_comum/disciplina.js), que tira a extensão e o MIME do formato de cada documento
 module.exports = base;
 module.exports.secoesMemorial = secoesMemorial;
 module.exports.montarCaderno = CADERNO.montarCaderno;

@@ -4,6 +4,7 @@ import { Layers, X } from 'lucide-react';
 import { getComposicoes, explodirComposicao } from '../services/api';
 import Select, { comparador } from './Select';
 import Modal from './ui/Modal';
+import { estilos } from './ui/estilos';
 import { formatarMoeda as moeda } from '../utils/format';
 import { ROTULO_SEGMENTO } from '../utils/disciplinasServico';
 import useDisciplinas from '../hooks/useDisciplinas';
@@ -239,7 +240,7 @@ const btnAbrir = {
   borderRadius: 6, color: '#c9a227', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
 };
 const btnPrimario = { padding: '9px 16px', background: '#c9a227', border: 'none', borderRadius: 6, color: '#000', fontWeight: 700, fontSize: 12, cursor: 'pointer' };
-const btnSecundario = { padding: '8px 14px', background: 'transparent', border: '1px dashed #333', borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer' };
+const btnSecundario = estilos.btnTracejado;
 const btnFechar = { background: 'none', border: 'none', color: 'var(--texto-3)', cursor: 'pointer', display: 'flex' };
 const rotulo = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--texto-3)' };
 const th = { padding: '5px 8px 5px 0', fontWeight: 600, fontSize: 12 };

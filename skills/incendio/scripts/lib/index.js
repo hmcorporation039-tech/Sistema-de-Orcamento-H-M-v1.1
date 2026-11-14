@@ -232,12 +232,4 @@ const base = criarDisciplina({
   montarOrcamento,
 });
 
-// O molde só gera Word/Excel: o caderno de fabricação sai em PDF (mesmo padrão do CFTV)
-const gerarDocumentoBase = base.gerarDocumento;
-base.gerarDocumento = async (res, tipo) => {
-  if (tipo !== 'caderno') return gerarDocumentoBase(res, tipo);
-  const d = DOCUMENTOS.find(x => x.tipo === tipo);
-  return { buffer: await d.gerar(res), nomeArquivo: D.nomeArquivo(res.dados, d.nome, 'pdf', true), mime: 'application/pdf' };
-};
-
 module.exports = base;

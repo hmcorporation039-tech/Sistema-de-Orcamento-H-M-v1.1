@@ -96,6 +96,15 @@ export function validarCpfCnpj(v) {
   return false;
 }
 
+// Erro do documento no cadastro (clientes, prestadores): o tipo de pessoa manda — pessoa física
+// exige CPF e jurídica exige CNPJ (validarCpfCnpj aceitaria um CNPJ válido numa pessoa física).
+// Devolve '' quando está certo ou em branco (documento é opcional), senão 'CPF inválido'/'CNPJ inválido'.
+export function erroDocumento(v, { pessoaFisica }) {
+  if (!String(v || '').trim()) return '';
+  if (pessoaFisica) return validarCpf(v) ? '' : 'CPF inválido';
+  return validarCnpj(v) ? '' : 'CNPJ inválido';
+}
+
 // Data ISO ('AAAA-MM-DD', ou o começo de um timestamp) → 'DD/MM/AAAA', sem passar por Date (não muda de dia
 // pelo fuso). Vazio ou nulo → `vazio` ('' por padrão; '—' na página do cliente e nas OS, 'Sem data' no app de campo).
 // Antes havia uma cópia em cada componente, e a de VencimentosLaudos quebrava com nulo.

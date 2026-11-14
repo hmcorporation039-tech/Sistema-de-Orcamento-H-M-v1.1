@@ -16,10 +16,6 @@ export const rotulo = estilos.rotulo;
 export const card = { ...estilos.card, padding: 20 };
 export const btnPrimario = { ...estilos.btnPrimario, display: 'flex' };
 
-export const btnSecundario = {
-  display: 'flex', alignItems: 'center', padding: '8px 14px', background: 'transparent',
-  border: '1px dashed #333', borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700,
-  fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap'
-};
+export const btnSecundario = estilos.btnTracejado;
 
 export const btnIcone = { ...estilos.btnIcone, display: 'flex' };

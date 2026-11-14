@@ -10,6 +10,7 @@
 
 const { cadernoDeCaixas } = require('../../../_comum/fabricacao/caixa');
 const { gerarCadernoPdf } = require('../../../_comum/fabricacao/caderno');
+const { especificarDps, descricaoDps } = require('../../../_comum/dps');
 
 const br = (v, c = 1) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
 
@@ -24,11 +25,14 @@ const NORMAS = [
 // Bateria selada 12 V por capacidade: [L, A, P] mm e massa kg (típicos) [CONFERIR]
 const BAT = { 7: [151, 94, 65, 2.1], 12: [151, 98, 95, 3.7], 18: [181, 167, 77, 5.4], 26: [166, 125, 175, 8.5], 40: [197, 170, 165, 13], 55: [229, 213, 138, 17], 65: [350, 174, 167, 20], 100: [330, 215, 173, 30] };
 
-function baterias(ah) {
+// conjuntos: pares de 24 V em paralelo (acima da maior bateria da série — regra comum de _comum/bateria.js)
+function baterias(ah, conjuntos = 1) {
   const [l, a, p, kg] = BAT[ah] || [Math.round(100 + ah * 3), 200, 170, +(0.3 * ah).toFixed(1)];
-  return [1, 2].map(n => ({
+  return Array.from({ length: 2 * conjuntos }, (_, i) => i + 1).map(n => ({
     tipo: 'bateria', tag: `BAT-${n}`, largura_mm: l, altura_mm: a, profundidade_mm: p, peso_kg: kg, fixacao: 'cinta',
-    descricao: `Bateria selada chumbo-ácido 12 V ${ah} Ah (BAT-1 e BAT-2 em série = 24 V)`,
+    descricao: conjuntos > 1
+      ? `Bateria selada chumbo-ácido 12 V ${ah} Ah (par ${Math.ceil(n / 2)} de ${conjuntos} em série = 24 V; pares em paralelo)`
+      : `Bateria selada chumbo-ácido 12 V ${ah} Ah (BAT-1 e BAT-2 em série = 24 V)`,
   }));
 }
 
@@ -45,10 +49,11 @@ function montarCaixa(res) {
       descricao: end ? `Módulo de laço ${i + 1} (até ${calc.limiteLaco} dispositivos endereçáveis, supervisão de curto e circuito aberto)` : `Módulo de zona ${i + 1} (supervisão de curto e circuito aberto, resistor de fim de linha)`,
     })),
     { tipo: 'modulo', tag: 'FNT', descricao: `Fonte chaveada 24 V CC, ≥ ${br(Math.max(b.fonteA, 1), 1)} A (1,2 × corrente de alarme = ${br(b.fonteA, 2)} A), com carregador de bateria, entrada 127/220 V`, largura_mm: 200, altura_mm: 110, profundidade_mm: 60, peso_kg: 1.2, dissipacao_w: Math.round(b.fonteA * 24 * 0.12) },
-    ...baterias(b.bateriaEscolhida),
+    ...baterias(b.bateriaEscolhida, b.nConjuntos || 1),
     { tipo: 'modulo', tag: 'COM', descricao: 'Módulo de comunicação (repetidor, rede/IP ou discadora para a monitoração)', largura_mm: 90, altura_mm: 70, profundidade_mm: 30 },
     { tipo: 'modulo', tag: 'SAIDA', descricao: 'Módulo de saídas supervisionadas para avisadores (sirenes) e relés auxiliares', largura_mm: 90, altura_mm: 70, profundidade_mm: 30 },
-    { tipo: 'modulo', tag: 'DPS-AC', descricao: 'DPS Classe II 275 V na entrada de alimentação, com disjuntor 10 A exclusivo', largura_mm: 36, altura_mm: 90, profundidade_mm: 65 },
+    // DPS da entrada (monofásica): a regra comum (_comum/dps.js) — Uc pela Tabela 49 (220 V ou a tensão do sistema)
+    { tipo: 'modulo', tag: 'DPS-AC', descricao: `${descricaoDps(especificarDps({ classe: 'II', vfn: Number((dados.sistema || {}).tensao_fn) || 220, esquema: (dados.sistema || {}).esquema || 'TN-S', nFases: 1 }))} na entrada de alimentação, com disjuntor 10 A exclusivo`, largura_mm: 36, altura_mm: 90, profundidade_mm: 65 },
   ];
   // Itens de campo (fora da caixa)
   const campo = (tag, descricao, quantidade) => { if (quantidade > 0) itens.push({ tipo: 'campo', tag, descricao, quantidade, na_placa: false, local: 'campo (fora da caixa)', fonte: 'quantidade do dimensionamento da skill' }); };
@@ -81,7 +86,7 @@ function montarCaixa(res) {
       ['Tipo', end ? `endereçável, ${calc.lacos} laço(s)` : `convencional, ${calc.zonas} zona(s)`],
       ['Dispositivos', String(calc.dispositivos)],
       ['Fonte', `24 V CC / ${br(Math.max(b.fonteA, 1), 1)} A`],
-      ['Baterias', `2 × 12 V ${b.bateriaEscolhida} Ah`],
+      ['Baterias', `${2 * (b.nConjuntos || 1)} × 12 V ${b.bateriaEscolhida} Ah`],
       ['Autonomia', `${br(b.tRepouso, 0)} h repouso + ${br(b.tAlarme, 0)} min alarme`],
     ],
     normas: NORMAS, normaInvolucro: 'ABNT NBR IEC 60529',

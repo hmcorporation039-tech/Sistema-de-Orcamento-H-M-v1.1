@@ -14,7 +14,7 @@ const D = require('../utils/duracaoCronograma');
 const { comTransacao } = require('../services/transacao');
 const { versaoDoPedido } = require('../utils/versao');
 const { registrarAuditoria } = require('../services/auditoria');
-const { hojeBrasilia } = require('../utils/dataHoje');
+const { hojeBrasilia, ehDataIso } = require('../utils/dataHoje');
 const { gerarPlanilhaCronograma } = require('../utils/planilhaCronograma');
 const { gerarHtmlBoletim } = require('../utils/boletimMedicaoTemplate');
 const { gerarFooterTemplate } = require('../utils/pdfTemplate');
@@ -28,14 +28,13 @@ const podeEditar = (req, obra) => require('../utils/obras').podeEditarObra(req.u
 const MSG_CONFLITO = 'O cronograma foi alterado por outra pessoa (ou em outra aba) depois que você o abriu. Recarregue a página — suas alterações não foram gravadas.';
 
 // ── validação ───────────────────────────────────────────────────────────
-const DATA_RE = /^\d{4}-\d{2}-\d{2}$/;
 function data(v, rotulo, obrigatoria = false) {
   if (v == null || v === '') {
     if (obrigatoria) throw new ErroHttp(400, `Informe ${rotulo}.`);
     return null;
   }
   const s = String(v).slice(0, 10);
-  if (!DATA_RE.test(s) || Number.isNaN(new Date(`${s}T12:00:00Z`).getTime()) || new Date(`${s}T12:00:00Z`).toISOString().slice(0, 10) !== s) {
+  if (!ehDataIso(s)) {
     throw new ErroHttp(400, `Data inválida em ${rotulo} (use AAAA-MM-DD).`);
   }
   return s;

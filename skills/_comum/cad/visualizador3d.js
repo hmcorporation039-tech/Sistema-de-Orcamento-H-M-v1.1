@@ -7,7 +7,7 @@ const path = require('path');
 const { EMPRESA } = require('../empresa');
 const { construir, bundleAtualizado, SAIDA, FONTES } = require('./visualizador3d/construir');
 
-const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const { escapeHtml } = require('../base/html'); // o escape comum (antes uma cópia aqui)
 // JSON dentro de <script>: sem "</script>" nem separadores de linha do JS
 const LS = String.fromCharCode(0x2028), PS = String.fromCharCode(0x2029);
 const jsonSeguro = (o) => JSON.stringify(o).split('<').join('\\u003c').split(LS).join('\\u2028').split(PS).join('\\u2029');

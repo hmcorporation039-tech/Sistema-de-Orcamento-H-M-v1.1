@@ -6,7 +6,7 @@
 // da execução e services/agentes/textoDoResultado.js transforma na resposta do chat.
 const { ORIGENS, resumirPorOrigem } = require('./planilhaPrecos');
 
-const moeda = (v) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.')}`;
+const { moedaTexto: moeda } = require('../../utils/moeda'); // fonte única (2.38)
 const milhar = (v) => (Math.abs(v) >= 1000 ? `≈ R$ ${(v / 1000).toFixed(1).replace('.', ',')} mil` : `≈ ${moeda(v)}`);
 const celula = (t) => String(t ?? '').replace(/\|/g, '/').replace(/\s+/g, ' ').trim();
 const lista = (...v) => v.find(Array.isArray) || [];

@@ -14,10 +14,13 @@
 
 const E = require('../../../_comum/eletrico/calculo');
 const T = require('../../../_comum/eletrico/tabelas');
-const { ucDps } = require('../../../_comum/dps');
+const { especificarDps, descricaoDps } = require('../../../_comum/dps');
 const TIPOS = require('../../dados/tipos_ambiente_rdc50.json').tipos;
 
 const FOLGA = 1.1; // +10 % de cabo
+// In do DPS classe II adotado pelo projeto em todos os modos (prática de mercado, acima do mínimo de
+// 5 kA por modo da NBR 5410, 6.3.5.2.4 d) — o valor que esta skill já especificava
+const IN_DPS_ADOTADO_KA = 20;
 const arred = (v, c = 2) => Math.round(v * 10 ** c) / 10 ** c;
 const n0 = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? 0 : Number(v));
 const vazio = (v) => v == null || v === '';
@@ -396,10 +399,12 @@ function calcular(dados) {
     q.reserva = T.reservaQuadro(todos.length);
     q.nDr = q.circuitos.filter(x => x.dr).length;
     const nFases = c.sistema === 'trifasico' ? 3 : c.sistema === 'bifasico' ? 2 : 1;
-    q.dpsQtd = nFases + (c.esquema === 'TT' || c.esquema === 'TN-S' ? 1 : 0);
-    const dps = ucDps({ vfn: c.vfn, vff: c.vff, esquema: c.esquema }); // NBR 5410, Tabela 49 — função comum
-    q.dpsUc = dps.uc;
-    q.dpsTexto = dps.texto;
+    // DPS do quadro: classe II, Uc (Tabela 49), In mínimo (6.3.5.2.4 d) e quantidade (um por fase + N-PE
+    // onde há neutro, inclusive no TN-C-S) — a função comum de _comum/dps.js, a mesma dos quadros
+    q.dps = especificarDps({ classe: 'II', vfn: c.vfn, vff: c.vff, esquema: c.esquema, nFases });
+    q.dpsQtd = q.dps.quantidade;
+    q.dpsUc = q.dps.uc.uc;
+    q.dpsTexto = q.dps.uc.texto;
     const modulos = todos.reduce((s, x) => s + x.polos, 0) + q.circuitos.filter(x => x.dr).reduce((s, x) => s + (x.ligacao === 'FFF' ? 4 : 2), 0) + q.reserva * 2 + (q.alimentador ? q.alimentador.polos : 0) + q.dpsQtd;
     q.modulos = Math.ceil(modulos / 6) * 6;
     q.essencial = todos.some(x => ordemClasse(x.classe) <= ordemClasse('15'));
@@ -544,13 +549,14 @@ function listaMateriais({ c, ambientes, sistemas, quadros, circuitos, fs }) {
   for (const q of quadros.filter(x => x.nCircuitos)) {
     add('Quadros e proteção', 'QD', `Quadro de distribuição setorial ${q.id}${q.nome && q.nome !== q.id ? ` (${q.nome})` : ''} em chapa de aço, ${q.modulos} módulos DIN, barramentos F/N/PE isolados${q.essencial ? ', identificado como alimentado pela fonte de segurança' : ''}`, 'un', 1, 'NBR 5410, 6.5.4; Tabela 59');
     if (q.alimentador) add('Quadros e proteção', 'DISJ-G', `Disjuntor geral ${q.alimentador.polos}P ${q.alimentador.disjuntor} A — ${q.id}`, 'un', 1, 'NBR 5410, 5.3.4');
-    add('Quadros e proteção', 'DPS', `DPS classe II Uc ≥ ${q.dpsUc} V, In ≥ 20 kA (8/20 µs) — ${q.id}`, 'un', q.dpsQtd, 'NBR 5410, 6.3.5.2.4 e Tabela 49');
+    // texto da função comum; In ≥ 20 kA adotado pelo projeto em todos os modos (acima do mínimo da norma)
+    add('Quadros e proteção', 'DPS', `${descricaoDps(q.dps, { inMinimoKa: IN_DPS_ADOTADO_KA })} — ${q.id}`, 'un', q.dpsQtd, 'NBR 5410, 6.3.5.2.4 e Tabela 49');
   }
   const disjTn = {};
   const drs = {};
   circuitos.filter(x => x.sistema === 'TN').forEach(x => {
     contar(disjTn, `${x.polos}P ${x.disjuntor} A curva C`);
-    if (x.dr) contar(drs, `${x.ligacao === 'FFF' ? '4P' : '2P'} ${[25, 40, 63, 80, 100].find(v => v >= x.disjuntor) || 100} A 30 mA tipo ${x.drTipo || 'A'}`);
+    if (x.dr) contar(drs, `${x.ligacao === 'FFF' ? '4P' : '2P'} ${T.drComercial(x.disjuntor)} A 30 mA tipo ${x.drTipo || 'A'}`);
   });
   Object.entries(disjTn).forEach(([k, q]) => add('Quadros e proteção', 'DISJ', `Disjuntor termomagnético ${k} (NBR NM 60898)`, 'un', q, 'NBR 5410, 5.3.4'));
   Object.entries(drs).forEach(([k, q]) => add('Quadros e proteção', 'DR', `Interruptor diferencial residual (DR) ${k} — tipo AC não permitido`, 'un', q, '710.413.1.3'));

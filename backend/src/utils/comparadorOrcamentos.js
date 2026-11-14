@@ -11,8 +11,7 @@ const CORTE = 0.45;               // igual ao casamento com o catálogo
 const DIF_QUANTIDADE = 0.2;       // quantidade 20 % diferente: conferir na planta
 const DIF_PRECO = 0.15;           // unitário 15 % acima do concorrente: revisar o preço
 const PRECO_SUSPEITO = 0.5;       // concorrente abaixo da metade: pode ser outro produto/qualidade
-const ACENTOS = /[̀-ͯ]/g;
-const norm = (s) => String(s ?? '').normalize('NFD').replace(ACENTOS, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const { chaveBusca: norm } = require('./texto'); // fonte única (2.38)
 const r2 = (v) => Math.round(Number(v) * 100) / 100;
 const pct = (v) => Math.round(v * 1000) / 10; // 0,1234 → 12,3
 const UNIDADE = { m: 'm', mt: 'm', mts: 'm', metro: 'm', metros: 'm', ml: 'm', un: 'un', und: 'un', unid: 'un', unidade: 'un', pc: 'un', pç: 'un', peca: 'un', pt: 'un', ponto: 'un', cj: 'cj', conj: 'cj', kit: 'cj', vb: 'vb', verba: 'vb', gl: 'vb', rl: 'rl', rolo: 'rl', par: 'par' };

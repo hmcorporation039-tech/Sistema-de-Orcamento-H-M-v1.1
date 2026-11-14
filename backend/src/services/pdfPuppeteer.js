@@ -1,4 +1,5 @@
 const puppeteer = require('puppeteer');
+const { criarFila } = require('../utils/fila');
 
 // Gera um PDF a partir de HTML, garantindo que NENHUM erro aconteça depois que
 // o chamador já enviou a resposta.
@@ -29,40 +30,18 @@ const MAX_SIMULTANEOS = Number(process.env.PDF_CONCORRENCIA) || 2;
 const PRAZO_FILA_MS = Number(process.env.PDF_PRAZO_FILA_MS) || 120 * 1000;
 // tempo-limite de cada operação na página (setContent, waitForSelector, pdf...)
 const TEMPO_PAGINA_MS = 60 * 1000;
-let emUso = 0;
-const espera = [];
+const fila = criarFila(MAX_SIMULTANEOS); // utils/fila.js (fonte única das filas desde a 2.38)
 
 const erroFilaCheia = () => Object.assign(
   new Error('A fila de PDF está cheia (muitos documentos sendo gerados ao mesmo tempo). Tente de novo em instantes.'),
   { status: 503, codigo: 'FILA_PDF_CHEIA' });
 
-function reservarVaga(prazoMs) {
-  if (emUso < MAX_SIMULTANEOS) { emUso++; return Promise.resolve(); }
-  return new Promise((ok, falha) => {
-    const item = { entrar: () => { clearTimeout(relogio); ok(); } };
-    const relogio = setTimeout(() => {
-      const i = espera.indexOf(item);
-      if (i >= 0) espera.splice(i, 1);
-      falha(erroFilaCheia());
-    }, prazoMs);
-    espera.push(item);
-  });
-}
-
-// A vaga passa direto para o próximo da fila (sem baixar e subir o contador:
-// assim ninguém "fura" a fila entre uma coisa e outra)
-function liberarVaga() {
-  const proximo = espera.shift();
-  if (proximo) proximo.entrar();
-  else emUso--;
-}
-
 async function comVaga(fn, prazoMs = PRAZO_FILA_MS) {
-  await reservarVaga(prazoMs);
+  const soltar = await fila.reservar({ prazoMs, erroPrazo: erroFilaCheia });
   try {
     return await fn();
   } finally {
-    liberarVaga();
+    soltar();
   }
 }
 

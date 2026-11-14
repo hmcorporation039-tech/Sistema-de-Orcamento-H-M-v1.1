@@ -65,7 +65,7 @@ function montarUnifilar(calc) {
       ref: 'QGBT', descricao: qgbt.descricao,
       disjuntor_geral: { ref: 'Q0', nominal_a: entrada.disjuntorGeral, icu_min_ka: qgbt.curto.icuMin },
       barramento_a: qgbt.conjunto.barramento, icw_min_ka: qgbt.conjunto.icw, curto: curto(qgbt),
-      dps: { quantidade: c.esquema === 'TN-S' || c.esquema === 'TT' ? 4 : 3, classe: 'II', uc_v: calc.dps.uc },
+      dps: { quantidade: calc.dpsQgbt ? calc.dpsQgbt.quantidade : (c.esquema === 'TN-S' || c.esquema === 'TT' ? 4 : 3), classe: 'II', uc_v: calc.dps.uc },
       saidas: [
         ...quadros.filter(q => q.alim).map((q, i) => ({
           tipo: 'alimentador', ref: `Q${i + 1}`, destino: q.id, nominal_a: q.alim.disjuntor, icu_min_ka: qgbt.curto.icuMin,

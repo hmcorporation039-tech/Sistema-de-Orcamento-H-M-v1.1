@@ -10,6 +10,7 @@ import {
 } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { estilos } from '../components/ui/estilos';
+import Etiqueta from '../components/ui/Etiqueta';
 import Select from '../components/Select';
 import { formatarMoeda, dataHoraBr } from '../utils/format';
 
@@ -34,19 +35,14 @@ function duracao(s) {
   return `${Math.floor(s / 60)} min ${s % 60} s`;
 }
 
-function Selo({ cor, bg, borda, children, titulo }) {
-  return (
-    <span title={titulo} style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 20,
-      fontSize: 11.5, fontWeight: 700, background: bg, color: cor, border: `1px solid ${borda}`, whiteSpace: 'nowrap',
-    }}>{children}</span>
-  );
-}
+// Etiqueta do kit (cor, bg, borda, titulo), em linha com o ícone que vem antes do texto
+const emLinha = { display: 'inline-flex', alignItems: 'center', gap: 5 };
+const Selo = (props) => <Etiqueta {...props} style={emLinha} />;
 
 function SeloStatus({ status }) {
   const s = STATUS[status] || STATUS.ignorada;
   const { Icone } = s;
-  return <Selo {...s}><Icone size={11} />{s.label}</Selo>;
+  return <Selo info={s}><Icone size={11} />{s.label}</Selo>;
 }
 
 function Linha({ rotulo, children }) {
@@ -83,7 +79,7 @@ function CartaoRotina({ rotina, executando, aoExecutar }) {
       )}
 
       <Linha rotulo="Horários">{(rotina.horarios || []).join(' e ')}</Linha>
-      <Linha rotulo="Próxima execução">{rotina.proximasExecucoes?.length ? rotina.proximasExecucoes.map(dataHora).join(' · ') : '—'}</Linha>
+      <Linha rotulo="Próxima execução">{rotina.proximasExecucoes?.length ? rotina.proximasExecucoes.map(dataHoraBr).join(' · ') : '—'}</Linha>
       {rotina.pastas && <Linha rotulo="Pastas">{rotina.pastas.join(' | ')}</Linha>}
 
       <div style={separador} />
@@ -662,10 +658,7 @@ const tdMini = { padding: '5px 4px', color: 'var(--texto-2)', verticalAlign: 'mi
 // de diferente por cima — o visual ficou como era.
 const btnPrimario = { ...estilos.btnPrimario, display: 'flex' };
 
-const btnSecundario = {
-  padding: '9px 16px', background: 'transparent', border: '1px solid #2a2a2a',
-  borderRadius: 6, color: 'var(--texto-2)', fontWeight: 700, fontSize: 12, cursor: 'pointer',
-};
+const btnSecundario = estilos.btnContorno;
 
 const btnTexto = {
   display: 'inline-flex', alignItems: 'center', gap: 4, padding: 0, background: 'transparent',

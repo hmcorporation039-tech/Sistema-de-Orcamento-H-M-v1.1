@@ -38,6 +38,10 @@ const PARTIDAS = {
 const LIMITE_SOFT_PADRAO = 3.0;
 // Inversor: corrente de aceleração limitada a ~1,5 × In (sobrecarga de 60 s) [CONFERIR]
 const LIMITE_INVERSOR_PADRAO = 1.5;
+// Ip/In adotado sem a placa do motor (a constante da tabela comum) [CONFERIR placa]
+const { IP_IN_PADRAO } = T;
+// Limite de corrente na partida pelo tipo: soft-starter 3 × In, inversor 1,5 × In (as constantes acima)
+const limitePartidaPadrao = (partida) => (partida === 'soft_starter' ? LIMITE_SOFT_PADRAO : LIMITE_INVERSOR_PADRAO);
 // FP durante a partida (rotor bloqueado) — típico 0,3 a 0,4 [CONFERIR com o fabricante]
 const FP_PARTIDA_PADRAO = 0.35;
 // O inversor absorve da rede quase só potência ativa (retificador a diodos)
@@ -76,11 +80,12 @@ const RELES = [
 // Fusíveis NH/Diazed (A)
 const FUSIVEIS = [2, 4, 6, 10, 16, 20, 25, 32, 35, 40, 50, 63, 80, 100, 125, 160, 200, 224, 250, 315, 355, 400, 500, 630, 800];
 
-// Disjuntores de caixa moldada / abertos (A) — proteção de motor grande, alimentadores e geral
-const DISJUNTORES_GERAIS = [16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250, 320, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500, 3200, 4000];
+// Disjuntores de caixa moldada / abertos (A) — proteção de motor grande, alimentadores e geral:
+// a série comum (Tabelas, DISJUNTORES_CM_ABERTOS) até 4000 A, a faixa que esta tabela sempre teve
+const DISJUNTORES_GERAIS = T.serieDisjuntores(0, 4000);
 
 // Cabo de cobre em serviço (queda de tensão na partida) e reatância típica de cabo BT
-const RHO_QUENTE = 0.0225; // Ω·mm²/m — mesmo valor da skill de elétrica (queda de tensão / Icc mínimo)
+const RHO_QUENTE = T.RHO_COBRE; // Ω·mm²/m (0,0225) — o da tabela comum (queda de tensão / Icc mínimo)
 const X_CABO = 0.08e-3;  // Ω/m — reatância típica de cabo BT [CONFERIR]
 
 // Regimes de serviço (IEC 60034-1 / NBR 17094-1)
@@ -139,7 +144,7 @@ const potenciaEixoBomba = (vazaoM3h, alturaM, rendimento) => (1000 * 9.81 * (vaz
 // Motor de uma carga (ventilador, bomba, compressor) a partir da potência no eixo:
 // motor comercial com folga, η/FP típicos (ou de placa), In e dispositivos de partida.
 // → { kwEixo, kwMin, cv, kw, eta, fp, in, partida }
-function motorDaCarga({ kwEixo, folga = 1.15, tensao = 380, partida = 'direta', eta = null, fp = null, ipIn = 7 }) {
+function motorDaCarga({ kwEixo, folga = 1.15, tensao = 380, partida = 'direta', eta = null, fp = null, ipIn = IP_IN_PADRAO }) {
   const kwMin = kwEixo * folga;
   const cv = motorComercial(kwMin);
   if (!cv) throw new Error(`Potência de ${arred(kwMin, 1)} kW acima da tabela de motores (${MOTORES_CV[MOTORES_CV.length - 1]} cv): dividir a carga.`);
@@ -149,7 +154,7 @@ function motorDaCarga({ kwEixo, folga = 1.15, tensao = 380, partida = 'direta', 
   const f = fp || tip.fp;
   const In = correnteNominalMotor(kw, tensao, e, f);
   const tipo = PARTIDAS[partida] ? partida : 'direta';
-  const u = { in: In, ipIn, partida: tipo, limitePartida: tipo === 'soft_starter' ? LIMITE_SOFT_PADRAO : LIMITE_INVERSOR_PADRAO, protecao: 'auto', tensao, placa: [], regime: 'S1', pKw: kw, tensaoPlaca: '', fs: 1 };
+  const u = { in: In, ipIn, partida: tipo, limitePartida: limitePartidaPadrao(tipo), protecao: 'auto', tensao, placa: [], regime: 'S1', pKw: kw, tensaoPlaca: '', fs: 1 };
   return { kwEixo, kwMin, cv, kw, eta: e, fp: f, in: In, partida: dispositivosPartida(u) };
 }
 
@@ -283,7 +288,7 @@ function quedaPartida(u, zAteQuadro, quedaRegimeQuadro, secao, c) {
 
 module.exports = {
   // tabelas
-  CV_KW, PARTIDAS, LIMITE_SOFT_PADRAO, LIMITE_INVERSOR_PADRAO, FP_PARTIDA_PADRAO, FP_PARTIDA_INVERSOR, FATOR_UTILIZACAO, fatorUtilizacao,
+  CV_KW, PARTIDAS, LIMITE_SOFT_PADRAO, LIMITE_INVERSOR_PADRAO, limitePartidaPadrao, IP_IN_PADRAO, FP_PARTIDA_PADRAO, FP_PARTIDA_INVERSOR, FATOR_UTILIZACAO, fatorUtilizacao,
   CONTATORES_AC3, DISJUNTOR_MOTOR, MAGNETICO_DM, RELES, FUSIVEIS, DISJUNTORES_GERAIS, RHO_QUENTE, X_CABO, REGIMES, REGIMES_AC4,
   MOTORES_CV, rendimentoFpMotor, proximo, faixa,
   // cálculo

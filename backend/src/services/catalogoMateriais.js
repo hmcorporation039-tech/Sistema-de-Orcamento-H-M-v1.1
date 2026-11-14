@@ -51,9 +51,18 @@ function indexar(indice, m) {
   }
 }
 
+// Material ATIVO com a mesma descrição — a mesma expressão do índice único ux_materiais_descricao_ativa
+// (LOWER(TRIM(...)) dos dois lados), para a busca usar o índice e bater com o que o banco recusa como
+// duplicado. Fonte única desde a 2.38: estava escrita em três lugares (uma com TRIM(LOWER()), que não usa o
+// índice, e outra comparando com a descrição de espaços juntados, que não é a chave do índice).
+async function materialAtivoPorDescricao(client, descricao, colunas = '*') {
+  const { rows } = await client.query(`SELECT ${colunas} FROM materiais WHERE ativo = true AND LOWER(TRIM(descricao)) = LOWER(TRIM($1)) LIMIT 1`, [String(descricao ?? '')]);
+  return rows[0] || null;
+}
+
 async function encontrarExistente(client, indice, descricao) {
-  const exato = await client.query('SELECT * FROM materiais WHERE LOWER(TRIM(descricao)) = $1 AND ativo = true LIMIT 1', [normalizar(descricao)]);
-  if (exato.rows.length) return { material: exato.rows[0], criterio: 'descrição igual' };
+  const igual = await materialAtivoPorDescricao(client, descricao);
+  if (igual) return { material: igual, criterio: 'descrição igual' };
   let id = indice.porChave.get(chaveDescricao(descricao));
   let criterio = 'descrição igual (sem acentos/pontuação)';
   if (id == null) {
@@ -95,7 +104,7 @@ async function inserirMaterial(client, indice, item, origem, margem) {
   );
   // outra leitura (e-mail/pasta/proposta) cadastrou o mesmo material no meio do caminho:
   // o índice único do banco segura a duplicata e fica valendo o que já existe
-  if (!r.rows.length) return (await client.query('SELECT id, descricao FROM materiais WHERE LOWER(TRIM(descricao)) = LOWER(TRIM($1)) AND ativo = true', [item.descricao])).rows[0];
+  if (!r.rows.length) return materialAtivoPorDescricao(client, item.descricao, 'id, descricao');
   indexar(indice, r.rows[0]);
   // classificado sem IA já no cadastro: entra na conta "quanto sai sem IA" (antes só a rotina em lote contava)
   if (categoriaOrigem) await registrarUso('classificacao_material', 'sem_ia');
@@ -218,5 +227,5 @@ async function obterMargemPadrao(client) {
   return parseFloat(r.rows[0]?.valor) || 0;
 }
 
-module.exports = { carregarIndice, indexar, encontrarExistente, registrarItemCotacao, registrarItemNotaFiscal, registrarHistoricoPreco, obterMargemPadrao, chaveDescricao, codigosFabricante, unidadeBase,
+module.exports = { carregarIndice, indexar, encontrarExistente, materialAtivoPorDescricao, registrarItemCotacao, registrarItemNotaFiscal, registrarHistoricoPreco, obterMargemPadrao, chaveDescricao, codigosFabricante, unidadeBase,
   precoConferido, idsComPrecoNaoConferido, ehOrigemDaIA, SQL_COLUNAS_PRECO };

@@ -213,7 +213,7 @@ function secoesMemorial(res) {
     bt.disjAtende
       ? `Disjuntor geral de BT ${bt.tipoDisj}, tripolar, In = ${bt.inDisj} A (≥ In secundária ${num(corr.inSec, 1)} A), capacidade de interrupção Icu ≥ ${bt.icu} kA (Icc ${num(corr.iccSecInfKa, 2)} kA)${bt.icuAtende ? '' : ' — ABAIXO do curto, NÃO ATENDE [CONFERIR]'} — NBR 5410, 5.3.4 e NBR IEC 60947-2.`
       : `ATENÇÃO: In secundária de ${num(corr.inSec, 0)} A acima do maior disjuntor geral de BT da tabela (${bt.inDisj} A) — NÃO HÁ proteção geral única que atenda; dividir em dois transformadores/QGBTs ou elevar a tensão secundária antes de emitir o projeto. [CONFERIR]`,
-    `Barramento do QGBT: cobre ${bt.barramento.barra} por fase (~${bt.barramento.a} A, ordem de grandeza DIN 43671 [CONFERIR com o fabricante])${bt.barramento.a < bt.inDisj ? ' — abaixo da corrente do disjuntor, dimensionar com o fabricante do painel' : ''}, suportabilidade Icw ≥ ${num(bt.icw, 1)} kA / 1 s e ipk ≥ ${num(bt.ipk, 1)} kA.`,
+    `Barramento do QGBT: cobre ${bt.barramento.barra} por fase (~${num(bt.barramento.a, 0)} A = ${num(bt.barramento.aTabela ?? bt.barramento.a, 0)} A da DIN 43671 a 35 °C × k2 = ${num(bt.barramento.k2 ?? 1, 2)} para ar a ${num(bt.barramento.tempAr ?? 35, 0)} °C e barra a ${num(bt.barramento.tempBarra ?? 65, 0)} °C [CONFERIR com o fabricante])${bt.barramento.a < bt.inDisj - 1e-9 ? ' — abaixo da corrente do disjuntor, dimensionar com o fabricante do painel' : ''}, suportabilidade Icw ≥ ${num(bt.icw, 1)} kA / 1 s e ipk ≥ ${num(bt.ipk, 1)} kA.`,
     bt.cabos.tipo === 'barramento_blindado'
       ? `Ligação transformador → QGBT (${num(bt.cabos.L, 0)} m): nenhuma combinação de até 10 cabos de até 300 mm² por fase atende ${bt.inDisj} A com os fatores de agrupamento da NBR 5410; adotado ${bt.cabos.descricao}.`
       : `Cabos transformador → QGBT (${num(bt.cabos.L, 0)} m, método ${bt.cabos.metodo}, EPR 90 °C — tabelas da NBR 5410 da skill de elétrica): ${bt.cabos.descricao}; Iz = ${num(bt.cabos.iz, 0)} A (FCA ${num(bt.cabos.fca)} para ${bt.cabos.n} circuito(s) em paralelo) ≥ ${bt.inDisj} A; queda ${num(bt.cabos.queda)} % (limite total de 7 % a partir do transformador, NBR 5410 6.2.7).`,
@@ -397,7 +397,7 @@ async function gerarPlanilha(res) {
         ['BT — queda de tensão', bt.cabos.queda, '%', `≤ ${c.bt.quedaMax} %`],
       ]),
       ['BT — disjuntor geral', `${bt.inDisj} A / ${bt.icu} kA`, '', bt.tipoDisj],
-      ['BT — barramento', bt.barramento.barra, '', `~${bt.barramento.a} A [CONFERIR]`],
+      ['BT — barramento', bt.barramento.barra, '', `~${num(bt.barramento.a, 0)} A (k2 = ${num(bt.barramento.k2 ?? 1, 2)}) [CONFERIR]`],
     ]),
     abaKv('Malha', [
       ['ρ1 / h1 / ρ2', `${malha.rho1} / ${malha.h1 ?? '—'} / ${malha.rho2 ?? '—'}`, 'Ω·m / m / Ω·m', 'NBR 7117-1'],
@@ -568,6 +568,8 @@ const FORMULARIO = [
       { caminho: 'bt.metodo', rotulo: 'Método (BT)', tipo: 'selecao', opcoes: OP.metodoBt },
       { caminho: 'bt.temperatura', rotulo: 'Temperatura ambiente BT (°C)', tipo: 'numero' },
       { caminho: 'bt.queda_max_pct', rotulo: 'Queda máx. trafo → QGBT (%)', tipo: 'numero' },
+      { caminho: 'bt.temperatura_ar_qgbt', rotulo: 'Ar em volta do barramento do QGBT (°C; vazio = 50)', tipo: 'numero' },
+      { caminho: 'bt.temperatura_barra', rotulo: 'Temperatura máxima da barra (°C; vazio = 65)', tipo: 'numero' },
     ] },
   ] },
   { titulo: '6. Proteção (ajustes indicativos do relé)', itens: [

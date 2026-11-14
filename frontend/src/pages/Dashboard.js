@@ -10,6 +10,7 @@ import { formatarMoeda, formatarData } from '../utils/format';
 // tabela única das cores de status (o Painel usa `cor` e o fundo translúcido `realce`)
 import { STATUS_PROPOSTA as STATUS_CORES } from '../utils/statusProposta';
 import { estilos } from '../components/ui/estilos';
+import Indicador from '../components/ui/Indicador';
 import VencimentosLaudos from '../components/VencimentosLaudos';
 import FollowUpPropostas from '../components/FollowUpPropostas';
 import NotasAReceber from '../components/NotasAReceber';
@@ -112,12 +113,12 @@ export default function Dashboard() {
 
       {/* Cards de resumo */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, marginBottom: 18 }}>
-        <CardResumo label="Propostas emitidas" valor={resumo.propostas} sub={formatarMoeda(resumo.valorTotal)} />
-        <CardResumo label="Valor aprovado" valor={formatarMoeda(resumo.valorAprovado)} destaque />
-        <CardResumo label="Taxa de aprovação" valor={`${resumo.taxaAprovacao.toFixed(1)}%`} />
-        <CardResumo label="Ticket médio" valor={formatarMoeda(resumo.ticketMedio)} />
-        <CardResumo
-          label="Cadastros"
+        <Indicador rotulo="Propostas emitidas" valor={resumo.propostas} sub={formatarMoeda(resumo.valorTotal)} />
+        <Indicador rotulo="Valor aprovado" valor={formatarMoeda(resumo.valorAprovado)} destaque />
+        <Indicador rotulo="Taxa de aprovação" valor={`${resumo.taxaAprovacao.toFixed(1)}%`} />
+        <Indicador rotulo="Ticket médio" valor={formatarMoeda(resumo.ticketMedio)} />
+        <Indicador
+          rotulo="Cadastros"
           valor={
             <span style={{ display: 'flex', gap: 14, fontSize: 15 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Users size={14} />{resumo.clientes}</span>
@@ -269,16 +270,6 @@ export default function Dashboard() {
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-function CardResumo({ label, valor, sub, destaque }) {
-  return (
-    <div style={card}>
-      <div style={{ fontSize: 11.5, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 700, color: destaque ? '#c9a227' : '#e8e0cc' }}>{valor}</div>
-      {sub && <div style={{ fontSize: 12, color: 'var(--texto-3)', marginTop: 3 }}>{sub}</div>}
     </div>
   );
 }

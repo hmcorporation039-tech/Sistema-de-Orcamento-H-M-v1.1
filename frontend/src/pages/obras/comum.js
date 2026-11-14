@@ -22,14 +22,8 @@ export const BASE_ORCADO = {
   nenhuma: 'sem proposta aprovada ou ativa',
 };
 
-export function Etiqueta({ info, children }) {
-  return (
-    <span style={{ padding: '3px 9px', borderRadius: 20, fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap',
-      background: info?.bg || '#151515', color: info?.cor || '#999', border: `1px solid ${info?.borda || '#2a2a2a'}` }}>
-      {children}
-    </span>
-  );
-}
+// a Etiqueta morou aqui até a revisão de 14/11/2026; agora é do kit de tela
+export { Etiqueta } from '../../components/ui/Etiqueta';
 
 // valor que ainda não existe (margem sem orçado, custo sem lançamento) aparece como '—', não como R$ 0,00
 export const moeda = (v) => formatarMoeda(v, { vazio: '—' });

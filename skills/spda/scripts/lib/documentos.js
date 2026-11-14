@@ -1,14 +1,14 @@
 // Gera um documento da skill em memória — usado pelo comando
 // scripts/gerar-documentos.js e pela tela Laudos de SPDA do sistema.
 
-const { Packer } = require('docx');
 const { gerarLaudo } = require('./doc-laudo');
 const { gerarMemorial } = require('./doc-memorial');
 const { gerarRelatorioRisco } = require('./doc-risco');
 const { gerarChecklistCampo } = require('./doc-checklist');
 const { gerarPlanilhaMedicoes, gerarPlanilhaMateriaisRisco } = require('./planilhas');
 
-const { MIME_DOCX, MIME_XLSX, nomeArquivo: nomeDoArquivo } = require('../../../_comum/documentos');
+// docxParaBuffer: o mesmo Packer.toBuffer das outras skills (antes o SPDA importava o Packer do docx direto)
+const { MIME_DOCX, MIME_XLSX, nomeArquivo: nomeDoArquivo, docxParaBuffer } = require('../../../_comum/documentos');
 
 const TIPOS = {
   laudo: { nome: 'Laudo_SPDA', ext: 'docx', gerar: gerarLaudo },
@@ -45,7 +45,7 @@ async function gerarDocumento(res, tipo) {
   if (!tiposDisponiveis(res).includes(tipo)) {
     throw new Error(t.exige === 'risco' ? 'Cadastre as zonas de estudo para gerar o relatório de risco.' : 'Informe o nível de proteção do SPDA (I a IV) para gerar este documento.');
   }
-  const buffer = t.planilha ? await t.planilha(res, null) : await Packer.toBuffer(t.gerar(res));
+  const buffer = t.planilha ? await t.planilha(res, null) : await docxParaBuffer(t.gerar(res));
   return { buffer, nomeArquivo: nomeArquivo(res.dados, tipo), mime: t.ext === 'docx' ? MIME_DOCX : MIME_XLSX };
 }
 

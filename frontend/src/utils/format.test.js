@@ -1,4 +1,4 @@
-import { dataBr, paraIso, hojeIso, hojeBrasilia, validarCpfCnpj, formatarMoeda, dataHoraBr, FUSO_BRASILIA } from './format';
+import { dataBr, paraIso, hojeIso, hojeBrasilia, validarCpfCnpj, erroDocumento, formatarMoeda, dataHoraBr, FUSO_BRASILIA } from './format';
 
 // 2.36: "hoje" para documento (as-built, proposta, nome de arquivo) é o dia em Brasília — em UTC, depois das 21h já era amanhã
 test('hojeBrasilia: 22h30 de 14/11 em Brasília (01h30 UTC de 15/11) ainda é 14/11', () => {
@@ -26,6 +26,17 @@ test('validarCpfCnpj escolhe CPF ou CNPJ pela quantidade de dígitos', () => {
   expect(validarCpfCnpj('11.222.333/0001-81')).toBe(true);
   expect(validarCpfCnpj('11.222.333/0001-80')).toBe(false);
   expect(validarCpfCnpj('123')).toBe(false);
+});
+
+// Cadastro de clientes e prestadores: o tipo de pessoa manda (antes cada tela tinha a sua cópia)
+test('erroDocumento: pessoa física exige CPF, jurídica exige CNPJ; em branco não é erro', () => {
+  expect(erroDocumento('', { pessoaFisica: true })).toBe('');
+  expect(erroDocumento('   ', { pessoaFisica: false })).toBe('');
+  expect(erroDocumento('529.982.247-25', { pessoaFisica: true })).toBe('');
+  expect(erroDocumento('529.982.247-24', { pessoaFisica: true })).toBe('CPF inválido');
+  expect(erroDocumento('11.222.333/0001-81', { pessoaFisica: true })).toBe('CPF inválido');   // CNPJ válido em pessoa física
+  expect(erroDocumento('11.222.333/0001-81', { pessoaFisica: false })).toBe('');
+  expect(erroDocumento('529.982.247-25', { pessoaFisica: false })).toBe('CNPJ inválido');
 });
 
 // Dinheiro e datas num lugar só (OP-09): as variações que as telas já mostravam viraram opções

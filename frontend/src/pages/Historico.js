@@ -8,6 +8,8 @@ import {
 } from '../services/api';
 import { formatarMoeda, formatarData, formatarNcm, paraIso, hojeIso, dataHoraBr } from '../utils/format';
 import { baixarArquivo, salvarBlob, mensagemDeErro } from '../utils/download';
+// acha o cliente pelo nome quando a proposta não está ligada por cliente_id ("CLINICA" x "CLÍNICA")
+import { normalizarNome } from '../utils/texto';
 import Paginacao from '../components/Paginacao';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
 import Select from '../components/Select';
@@ -15,6 +17,9 @@ import BotaoLinkAprovacao from '../components/BotaoLinkAprovacao';
 import { useClientes } from '../components/ClienteSelect';
 import Modal from '../components/ui/Modal';
 import { estilos } from '../components/ui/estilos';
+import Indicador from '../components/ui/Indicador';
+import Etiqueta from '../components/ui/Etiqueta';
+import Info from '../components/ui/Info';
 import { STATUS_PROPOSTA as STATUS_CORES } from '../utils/statusProposta';
 
 const ACAO_LABEL = {
@@ -41,24 +46,16 @@ function SeloDecisaoCliente({ decisao }) {
     + (quando ? `, ${dataHoraBr(quando)}` : '');
   const Icone = aprovou ? CheckCircle2 : XCircle;
   return (
-    <span title={dica} aria-label={dica} data-testid="selo-decisao-cliente"
+    <Etiqueta titulo={dica} aria-label={dica} data-testid="selo-decisao-cliente"
+      bg={aprovou ? '#0a1a0f' : '#1a0a0a'} cor={aprovou ? '#3fb95f' : '#d06060'}
       style={{
-        marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 20,
-        fontSize: 11.5, fontWeight: 700, verticalAlign: 'middle',
-        background: aprovou ? '#0a1a0f' : '#1a0a0a', color: aprovou ? '#3fb95f' : '#d06060',
-        border: `1px dashed ${aprovou ? '#1a4a26' : '#4a1a1a'}`,
+        marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', verticalAlign: 'middle',
+        whiteSpace: 'normal', border: `1px dashed ${aprovou ? '#1a4a26' : '#4a1a1a'}`,
       }}>
       <Icone size={11} /> {aprovou ? 'Cliente aprovou' : 'Cliente recusou'}
       {quando ? ` ${quando.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}` : ''}
-    </span>
+    </Etiqueta>
   );
-}
-
-// Remove acentuação e normaliza caixa/espaços — usado pra achar o cliente pelo
-// nome quando a proposta não está linkada por cliente_id (ex.: "CLINICA" na
-// proposta x "CLÍNICA" no cadastro são o mesmo cliente).
-function normalizarNome(txt) {
-  return (txt || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
 }
 
 // Só faz sentido avisar sobre vencimento de propostas que ainda estão em aberto.
@@ -384,9 +381,9 @@ export default function Historico() {
 
       {/* Resumo */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 16 }}>
-        <CardResumo label={temPeriodo ? 'Propostas no período' : 'Propostas (todo o histórico)'} valor={totais.propostas} />
-        <CardResumo label="Valor total" valor={formatarMoeda(totais.valorTotal)} />
-        <CardResumo label="Valor aprovado" valor={formatarMoeda(totais.valorAprovado)} destaque />
+        <Indicador rotulo={temPeriodo ? 'Propostas no período' : 'Propostas (todo o histórico)'} valor={totais.propostas} />
+        <Indicador rotulo="Valor total" valor={formatarMoeda(totais.valorTotal)} />
+        <Indicador rotulo="Valor aprovado" valor={formatarMoeda(totais.valorAprovado)} destaque />
       </div>
 
       <div style={{ background: '#131313', border: '1px solid #1e1e1e', borderRadius: 10, overflowX: 'auto' }}>
@@ -480,12 +477,12 @@ export default function Historico() {
             ) : (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 18, fontSize: 12 }}>
-                  <InfoLinha label="Cliente" valor={detalhe.cliente_nome} />
-                  <InfoLinha label="Data" valor={formatarData(detalhe.data)} />
-                  <InfoLinha label="Local da obra" valor={detalhe.local_obra || '—'} />
-                  <InfoLinha label="Validade" valor={`${detalhe.validade} dias`} />
-                  <InfoLinha label="Tipo" valor={detalhe.tipo || '—'} />
-                  <InfoLinha label="Porte" valor={detalhe.porte || '—'} />
+                  <Info rotulo="Cliente" valor={detalhe.cliente_nome} />
+                  <Info rotulo="Data" valor={formatarData(detalhe.data)} />
+                  <Info rotulo="Local da obra" valor={detalhe.local_obra || '—'} />
+                  <Info rotulo="Validade" valor={`${detalhe.validade} dias`} />
+                  <Info rotulo="Tipo" valor={detalhe.tipo || '—'} />
+                  <Info rotulo="Porte" valor={detalhe.porte || '—'} />
                 </div>
 
                 {detalhe.secoes?.map(sec => (
@@ -601,24 +598,6 @@ export default function Historico() {
         proposta={detalhe}
         emailInicial={detalhe?.cliente_email || clienteResolvidoPeloNome?.email || ''}
       />
-    </div>
-  );
-}
-
-function InfoLinha({ label, valor }) {
-  return (
-    <div>
-      <div style={{ fontSize: 11.5, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 3 }}>{label}</div>
-      <div style={{ color: '#ddd' }}>{valor}</div>
-    </div>
-  );
-}
-
-function CardResumo({ label, valor, destaque }) {
-  return (
-    <div style={{ ...card, marginBottom: 0 }}>
-      <div style={{ fontSize: 11.5, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 700, color: destaque ? '#c9a227' : '#e8e0cc' }}>{valor}</div>
     </div>
   );
 }

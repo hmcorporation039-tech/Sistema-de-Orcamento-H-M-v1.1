@@ -11,7 +11,7 @@
 const pool = require('../config/database');
 const { calcularTotais, arredondar, numeroSeguro, itemPertenceASecao, bdiMateriaisDefinido } = require('../utils/calculoProposta');
 const { faixasPorMaterial, faixasPorDescricao, chaveDescricao, normalizar, sqlNormalizar } = require('./precosVendidos');
-const { hojeBrasilia } = require('../utils/dataHoje');
+const { hojeBrasilia, dataLocalIso } = require('../utils/dataHoje');
 
 const TOLERANCIA_TOTAL = 0.05;     // R$: diferença de arredondamento aceitável entre o gravado e o recalculado
 const MARGEM_ABAIXO_VENDIDO = 0.95;
@@ -19,15 +19,10 @@ const MARGEM_ACIMA_VENDIDO = 1.5;
 const MAX_ITENS_NA_MENSAGEM = 5;
 const UNIDADES_INTEIRAS = new Set(['un', 'und', 'unid', 'pç', 'pc', 'pç.', 'cj', 'vb']);
 
-const moeda = (v) => 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const { moedaTexto: moeda } = require('../utils/moeda'); // fonte única (2.38)
 
 // A coluna DATE chega do driver como Date à meia-noite local (ver utils/validacaoProposta): usa a parte local.
-function diaIso(d) {
-  if (!d) return null;
-  if (typeof d === 'string') return d.slice(0, 10);
-  const x = new Date(d);
-  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
-}
+const diaIso = dataLocalIso;
 
 function somarDias(iso, dias) {
   const [a, m, d] = iso.split('-').map(Number);

@@ -5,6 +5,7 @@ import { getPrecosMaoDeObra, atualizarPrecosMaoDeObra, pesquisarReferenciaMaoDeO
 import Select, { comparador } from '../components/Select';
 import useDisciplinas from '../hooks/useDisciplinas';
 import { formatarMoeda, dataHoraBr } from '../utils/format';
+import { chaveBusca } from '../utils/texto';
 import { estilos } from '../components/ui/estilos';
 
 // Dois segmentos de referência de MERCADO (além do valor adotado pela H&M)
@@ -13,13 +14,11 @@ const SEGMENTOS = [
   { chave: 'privado', rotulo: 'Privado / particular', dica: 'Preço praticado para residências, condomínios e empresas (prestadores, sindicatos, tabelas de honorários)' },
 ];
 
-const semAcento = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-
 // Segunda referência de mão de obra: a tabela SINAPI local (Caixa, estado e regime de Integrações). Só mostra o que o SINAPI
 // tem para o serviço e deixa o administrador adotar o valor como referência "Oficial / governo" — nada muda sem ele confirmar
 // e salvar. A composição do SINAPI traz mão de obra + material: confira o escopo (o texto de cada item diz o que inclui).
 function ReferenciaSinapi({ item, onUsar }) {
-  const [termo, setTermo] = useState(() => semAcento(item.descricao).replace(/\([^)]*\)/g, ' ').split(/[^a-z0-9]+/).filter(t => t.length > 2).slice(0, 4).join(' '));
+  const [termo, setTermo] = useState(() => chaveBusca(item.descricao).replace(/\([^)]*\)/g, ' ').split(/[^a-z0-9]+/).filter(t => t.length > 2).slice(0, 4).join(' '));
   const [achados, setAchados] = useState(null);
   const [buscando, setBuscando] = useState(false);
 
@@ -187,9 +186,9 @@ export default function PrecosMaoDeObra() {
     padrao.reduce((g, it) => { (g[it.disciplina || 'outros'] = g[it.disciplina || 'outros'] || []).push(it); return g; }, {})
   ).map(([disc, lista]) => ({ disc, nome: nomeDisciplina(disc), lista })).sort((a, b) => comparador.compare(a.nome, b.nome)), [padrao, nomeDisciplina]);
 
-  const termo = semAcento(buscaLivres.trim());
+  const termo = chaveBusca(buscaLivres.trim());
   const livresVisiveis = livres
-    .filter(it => (verInativos || it.ativo !== false) && (!termo || semAcento(it.descricao).includes(termo)))
+    .filter(it => (verInativos || it.ativo !== false) && (!termo || chaveBusca(it.descricao).includes(termo)))
     .sort((a, b) => comparador.compare(a.descricao, b.descricao));
   const nInativos = livres.filter(it => it.ativo === false).length;
 
