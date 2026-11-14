@@ -5,13 +5,14 @@ description: Projeto, memorial, laudo de vistoria e orçamento de pontos de reca
 
 # Carregador veicular (NBR 17019) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 26 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
+Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 27 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
 
 | Documento | Tipo | Formato |
 |---|---|---|
 | Memorial do ponto de recarga | `memorial` | Word |
 | Planilha de circuitos e materiais | `planilha` | Excel |
 | Laudo de vistoria (NBR 17019) | `laudo` | Word |
+| Checklist de campo | `checklist` | Word |
 
 ## Também no sistema (aba Análise de Projeto)
 
@@ -40,7 +41,7 @@ O mesmo motor roda no Sistema de Orçamentos: **Análise de Projeto → Laudos e
 - Carregadores monofásicos não são somados como carga trifásica equilibrada: cada ponto fica numa fase (coluna "Fase no quadro" ou distribuição automática pela fase menos carregada) e a distribuição, o alimentador (Ib = fase mais carregada; disjuntor ≥ Ib e ≥ o maior a jusante) e o padrão de entrada (demanda existente equilibrada nas fases + recarga na fase mais carregada) são verificados por fase (NBR 5410, 5.3.4; NBR 17019, 7.1.101).
 - DPS obrigatório em local com público; Uc pela Tabela 49 da NBR 5410 (função comum `skills/_comum/dps.js`).
 
-O checklist de inspeção (18 itens) está em `dados/checklist_base.json`; itens não conformes viram não conformidades com prioridade (P1 48 h, P2 30 dias, P3 90 dias, P4 manutenção) e entram no orçamento do modo de inspeção.
+O checklist de inspeção (22 itens, com os ensaios de continuidade, isolamento, DR e recarga) está em `dados/checklist_base.json`; itens não conformes viram não conformidades com prioridade (P1 48 h, P2 30 dias, P3 90 dias, P4 manutenção) e entram no orçamento do modo de inspeção.
 
 ## Regras
 

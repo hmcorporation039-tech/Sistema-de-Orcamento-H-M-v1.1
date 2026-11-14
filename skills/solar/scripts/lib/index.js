@@ -139,6 +139,24 @@ const DOCUMENTOS = [
         proporcoes: [0.6, 0.6, 0.6, 0.8, 0.8, 0.6, 0.6, 0.9, 0.8],
         linhas: res.strings.map(m => [m.string, m.modulos ?? '', m.temp_modulo ?? '', m.esperado ? num(m.esperado, 1) : '', m.voc_medido ?? '', m.desvio == null ? '' : `${num(m.desvio, 1)} %`, m.isc_medido ?? '', `${m.iso_pos_mohm ?? ''} / ${m.iso_neg_mohm ?? ''}`, m.resultado === 'NV' && m.pendente ? `NV (falta ${m.pendente})` : m.resultado]) }],
     }, { checklist: res.checklist, ncs: res.ncs, parecer: res.parecer, baseDir: res.baseDir, pastaFotos: res.pastaFotos })) },
+  { tipo: 'checklist', rotulo: 'Checklist de campo', formato: 'Word', nome: 'Checklist_Campo_Usina_Solar',
+    gerar: (res) => D.docxParaBuffer(D.gerarChecklistCampo(res.dados, res.insp, {
+      titulo: 'CHECKLIST DE CAMPO — SISTEMA FOTOVOLTAICO', subtitulo: 'Inspeção e ensaios de comissionamento (ABNT NBR 16274, NBR 16690, NBR 5410)', tituloCurto: 'Checklist — usina solar', secoesChecklist: SECOES_CHECKLIST,
+      preparacao: [
+        'Levar: multímetro CC (≥ 1 000 V), alicate amperímetro CC, megôhmetro, termômetro de superfície (temperatura do módulo), irradiancímetro se houver, EPI para trabalho em telhado e etiquetas.',
+        'Ensaiar com o inversor desligado e a chave CC aberta; medir Voc e isolamento (+ e −) string a string e anotar a temperatura do módulo.',
+        'Combinar com o cliente o desligamento do disjuntor CA para o ensaio de desconexão (anti-ilhamento).',
+      ],
+      referencias: [
+        ['Gerador', `${res.calc.nTotal} × ${res.calc.wp} Wp = ${num(res.calc.pfv)} kWp`],
+        ['Strings (módulos)', res.calc.strings.join(' + ')],
+        [`Voc esperado por módulo a 25 °C / a ${res.calc.temperaturas.tMin} °C`, `${num(res.dados.modulo?.voc)} V / ${num(res.calc.temperaturas.vocTmin)} V`],
+        ['Inversor', `${res.calc.nInv} × ${res.dados.inversor?.modelo || ''} ${num(res.calc.pca)} kW`],
+        ['Disjuntor CA por inversor', `${res.calc.circuitosCa[0].polos}P ${res.calc.circuitosCa[0].disjuntor} A`],
+      ],
+      medicoes: [{ titulo: 'Ensaios por string', colunas: ['String', 'Módulos', 'T mód. (°C)', 'Polaridade', 'Voc (V)', 'Isc/Iop (A)', 'Iso + (MΩ)', 'Iso − (MΩ)'], proporcoes: [0.6, 0.6, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7],
+        linhas: res.calc.strings.map((m, i) => [`S${i + 1}`, String(m), '', '', '', '', '', '']) }],
+    }, res.checklist)) },
 ];
 
 function montarOrcamento(res, modo) {

@@ -15,6 +15,10 @@ const { lerAltura } = require('./textoCad');
 const PREFIXO_HM = {
   ELE: 'eletrica', ILU: 'iluminacao', CAB: 'rede', TEL: 'telefonia', ANT: 'antena', CFTV: 'cftv',
   ACE: 'controle_acesso', ALM: 'alarme', INC: 'incendio', SPDA: 'spda', AUT: 'automacao', FV: 'solar', VE: 'carregador',
+  // elétrica industrial, pressurização e média tensão (14/11/2026 — layers IND-*, PRZ-*, MT-* do padrão e blocos
+  // HM-IND-…, HM-PRZ-…, HM-MT-…): antes o painel HM-PRZ-PAINEL ficava sem disciplina na tabela da biblioteca e os
+  // traços das layers PRZ-* contavam como parede da arquitetura
+  IND: 'eletrica_industrial', PRZ: 'pressurizacao', MT: 'media_tensao',
   // só em nome de bloco (HM-HOSP-…, HM-SOL-…, HM-CLIM-…)
   HOSP: 'eletrica_hospitalar', SOL: 'solar', CLIM: 'climatizacao',
 };
@@ -24,6 +28,9 @@ const PREFIXO_OUTROS = {
   REDE: 'rede', TI: 'rede', TELECOM: 'rede', CABEAMENTO: 'rede', ILUM: 'iluminacao', LUM: 'iluminacao', ELET: 'eletrica', ELETRICA: 'eletrica',
   CFTV: 'cftv', CAM: 'cftv', ALARME: 'alarme', INCENDIO: 'incendio', TELEFONIA: 'telefonia', TELEF: 'telefonia', INTERFONE: 'telefonia',
   ANTENA: 'antena', TV: 'antena', CATV: 'antena', MATV: 'antena', SPDA: 'spda', AUTOMACAO: 'automacao', BMS: 'automacao', SOLAR: 'solar', FOTOVOLTAICO: 'solar',
+  // (14/11/2026) layer/bloco de CCM, de pressurização, hospitalar e de recarga de VE ("MOTOR" fica só como palavra da
+  // layer, em PALAVRAS: o bloco "MOTOR PORTAO" da elétrica predial não é da indústria)
+  CCM: 'eletrica_industrial', PRESSURIZACAO: 'pressurizacao', HOSPITALAR: 'eletrica_hospitalar', RECARGA: 'carregador',
 };
 // palavras em qualquer posição da layer ("INST - CFTV", "TUBULAÇÃO LÓGICA")
 const PALAVRAS = [
@@ -34,9 +41,16 @@ const PALAVRAS = [
   [/L[ÓO]GICA|\bDADOS\b|CABEAMENTO|TELECOM/i, 'rede'],
   [/TELEFONIA|TELEF[ÔO]N|INTERFON/i, 'telefonia'],
   [/ANTENA|\bCATV\b|\bMATV\b/i, 'antena'],
+  // (14/11/2026) antes do SPDA: o para-raios de média tensão ("PARA-RAIOS MT") não é captor
+  [/SUBESTA[ÇC][ÃA]O|CABINE.?PRIM|M[ÉE]DIA.?TENS[ÃA]O|PARA.?RAIOS?.{0,6}\b(MT|KV)\b/i, 'media_tensao'],
   [/\bSPDA\b|PARA.?RAIOS?/i, 'spda'],
   [/AUTOMA[ÇC][ÃA]O|\bBMS\b|SUPERVIS[ÓO]RIO/i, 'automacao'],
   [/FOTOVOLT|\bSOLAR\b/i, 'solar'],
+  // (14/11/2026) as disciplinas que só tinham o prefixo: "DUTO PRESSURIZAÇÃO", "FORÇA MOTORES", "TOMADAS HOSPITALAR"
+  [/PRESSURIZ/i, 'pressurizacao'],
+  [/\bCCM\b|\bMOTOR(ES)?\b|CAPACITOR/i, 'eletrica_industrial'],
+  [/HOSPITALAR|\bIT.?M[ÉE]DICO/i, 'eletrica_hospitalar'],
+  [/RECARGA|CARREGADOR.?VEIC|WALLBOX|ELETROPOSTO/i, 'carregador'],
   [/ILUMINA[ÇC][ÃA]O|LUMIN[ÁA]RIA/i, 'iluminacao'],
   [/EL[ÉE]TRIC|TOMADAS?\b|\bFOR[ÇC]A\b/i, 'eletrica'],
 ];
@@ -123,6 +137,10 @@ function tipoDoTracado(layer) {
 // contagem: services/analiseCad RE_OUTRA_AREA). Quando o arquivo é marcado com uma disciplina desta tabela, o que
 // casa com a regex dela deixa de ser "outra área". Nova disciplina: uma linha aqui (fase 3, 02/11/2026).
 const PROPRIOS_DA_DISCIPLINA = {
+  // pressurização (14/11/2026): o ventilador, o damper/registro de alívio, a grelha e o duto da escada são dela
+  pressurizacao: /PRESSURIZ|(^|[-_ ])PRZ([-_ ]|$)|VENTILADOR|EXAUSTOR|DAMPER|REGISTRO.{0,20}(AL[ÍI]VIO|SOBREPRESS)|VENEZIANA|GRELHA|\bDUTOS?\b/i,
+  // elétrica industrial: bomba, exaustor, ventilador e compressor são cargas (motores) do projeto
+  eletrica_industrial: /\bBOMBA|EXAUSTOR|VENTILADOR|COMPRESSOR|\bMOTOR/i,
   climatizacao: /HVAC|AVAC|CLIMATIZ|AR.?CONDICION|(^|[-_ ])MEC([-_ ]|$)|MEC[-_ ]?DUTOS?|\bDUTOS?\b|DIFUSOR|GRELHA|COLARINHO|DAMPER|VENEZIANA|FANCOIL|FAN ?COIL|FANCOLETE|EXAUSTOR|VENTILADOR|\bSPLIT\b|CONDENSADORA|EVAPORADORA|CHILLER|HI-?WALL|CASSETE|PISO.?TETO|TERMINAIS DE AR|\bVAV\b/i,
 };
 // o texto (nome do bloco + layers) é da própria disciplina de uma das `disciplinas` marcadas no arquivo?

@@ -122,7 +122,7 @@ igual('adaptador do unifilar de quadro (QET): QGBT com 3 alimentadores + banco',
 
 // Documentos e orçamento
 (async () => {
-  for (const tipo of motor.tiposDisponiveis(res)) {
+  for (const tipo of motor.tiposDisponiveis(res).filter(x => x !== 'caderno')) { // caderno (PDF): testes/teste-caderno.js
     const g = await motor.gerarDocumento(res, tipo);
     igual(`documento ${tipo} (zip válido)`, g.buffer.slice(0, 2).toString(), 'PK');
   }

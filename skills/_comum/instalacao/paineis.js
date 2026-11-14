@@ -275,17 +275,18 @@ function dadosDoPainelPressurizacao({ calculo = null, tag = 'QPE', tempoReversao
   const n = Number(c.arr?.n) || null;
   const partida = c.al?.partida?.tipo || c.c?.partida || null;
   return {
-    tag, fonte, nVentiladores: n, nUsado: n && n >= 1 ? Math.min(2, n) : 2, partida, partidaUsada: partida || 'inversor',
+    tag, fonte, nVentiladores: n, nUsado: n && n >= 1 ? Math.min(2, n) : 2, partida, partidaUsada: 'inversor', // padrão H&M: pressurização sempre com inversor (14/11/2026)
     cv: c.vent?.cv || null, inA: c.vent?.in ? Math.round(c.vent.in * 10) / 10 : null,
     tempoReversao: tempoReversao ?? CONJ_PRZ.regras?.variaveis_comando?.tempo_reversao ?? 15,
   };
 }
 
-const SINALIZACAO_PRZ = ['painel energizado', 'alarme de incêndio', 'ventilador V1 operando', 'ventilador V2 operando', 'falha V1', 'falha V2', 'modo manual'];
+const SINALIZACAO_PRZ = ['painel energizado', 'alarme de incêndio', 'ventilador V1 operando', 'ventilador V2 operando', 'falha V1', 'falha V2', 'falta de fase', 'modo manual'];
 function comandoDaPressurizacao(d) {
   const n = d.nUsado;
   const motores = Array.from({ length: n }, (_, k) => ({ i: k + 1, tag: `V${k + 1}`, rotulo: `Ventilador V${k + 1}`, acion: d.partidaUsada === 'direta' ? null : `U${k + 1}`, acionRotulo: d.partidaUsada === 'soft' ? 'Soft-starter' : 'Inversor de frequência' }));
-  const req = ['comando.partida_alarme', 'comando.pressostato_fluxo', 'comando.modo_teste', 'comando.inibicao_fumaca', 'automacao.status_central', 'comando.seletora_man_0_aut', ...(n === 2 ? ['comando.reversao'] : [])];
+  // relés (falta de fase, temporização e reversão) junto com o CLP (pressostatos, transmissor de ΔP e velocidade dos inversores)
+  const req = ['comando.partida_alarme', 'comando.pressostato_fluxo', 'comando.modo_teste', 'comando.inibicao_fumaca', 'automacao.status_central', 'comando.seletora_man_0_aut', 'forca.rff', ...(n === 2 ? ['comando.reversao'] : [])];
   const listas = { 'sinalizacao.porta': SINALIZACAO_PRZ.filter(t => n === 2 || !/V2/.test(t)).map(texto => ({ texto })), 'automacao.contatos_livres': [] };
   return CMD.compilarComando({ req: new Set(req), decisoes: {}, combinacao: 'qualquer', motores, externos: [], valvulas: [], rotuloMotor: 'ventilador', rotuloMotores: 'ventiladores', listas, tensaoComando: '24 Vcc', contatosPorRele: 4, variaveis: { tempo_reversao: d.tempoReversao } },
     { usar: (CONJ_PRZ.usar || []).filter(id => id !== 'emergencia_rele') });
@@ -313,6 +314,14 @@ function cenaDoPainelPressurizacao(d) {
       ficha: [lin('Função', `Proteção do ${acion === 'direta' ? 'motor' : acion === 'soft' ? 'soft-starter' : 'inversor'} do ventilador V${k + 1} (curto-circuito)`, fonte), lin('Motor', d.cv ? `${String(d.cv).replace('.', ',')} cv${d.inA ? `, In ≈ ${String(d.inA).replace('.', ',')} A` : ''}` : null, fonte), lin('Faixa', null)] };
     dm.push(b); pecas.push(b);
   }
+  // relé de falta/sequência de fase (RFF) com o minidisjuntor da medição (QRF): monitora as fases sem
+  // desligar a pressurização — na falta, KFF cai, acende o sinaleiro e abre a falha para a central
+  const xRf = 290 + n * 52 + 12;
+  const QRF = { camada: 'protecao', tag: 'QRF', x: xRf, y: 735, z: Z_PLACA + 8, l: 54, a: 90, p: 75, cor: COR_PECA.disjuntor, rotulo: 'QRF', dica: 'QRF — proteção do relé de falta de fase',
+    ficha: [lin('Função', 'Proteção da medição de tensão do relé de falta de fase', 'perfil de pressurização'), lin('Polos', '3P', 'perfil de pressurização'), lin('In', null)] };
+  const RFF = { camada: 'protecao', tag: 'RFF', x: xRf + 60, y: 735, z: Z_PLACA + 8, l: 36, a: 90, p: 70, cor: COR_PECA.rele, rotulo: 'RFF', dica: 'RFF — relé de falta e sequência de fase',
+    ficha: [lin('Função', 'Supervisiona falta e sequência de fase da alimentação; contato 11-14 mantém KFF (fases OK) — não desliga os ventiladores', 'perfil de pressurização'), lin('Tensão', null), lin('Modelo', null)] };
+  pecas.push(QRF, RFF);
   // linha B: relés e temporizadores da escada
   let xr = 80;
   const timers = new Set((cmd.modelo.temporizadores || []).map(t => t.tag));
@@ -330,9 +339,16 @@ function cenaDoPainelPressurizacao(d) {
     if (acion === 'direta') break;
     const inv = acion === 'inversor';
     const b = { camada: 'partidas', tag: `V${k + 1}/T1`, x: 90 + k * 130, y: 205, z: Z_PLACA + 8, l: inv ? 100 : 60, a: inv ? 240 : 150, p: inv ? 170 : 120, cor: inv ? COR_PECA.inversor : COR_PECA.soft, rotulo: `U${k + 1}`, dica: `U${k + 1} — ${inv ? 'inversor de frequência' : 'soft-starter'} do ventilador V${k + 1}`,
-      ficha: [lin('Acionamento', inv ? 'Inversor de frequência (PID pela pressão diferencial, relé de falha e saída em funcionamento)' : 'Soft-starter', d.partida ? fonte : 'perfil de pressurização (típico) [CONFERIR]'), lin('Referência', CONJ_PRZ.regras?.referencias?.[inv ? 'inversor' : 'soft'] || null, 'perfil de pressurização'), lin('Motor', d.cv ? `${String(d.cv).replace('.', ',')} cv` : null, fonte)] };
+      ficha: [lin('Acionamento', inv ? 'Inversor de frequência (velocidade pela referência do CLP — PID da pressão diferencial —, relé de falha e saída em funcionamento)' : 'Soft-starter', d.partida ? fonte : 'perfil de pressurização (típico) [CONFERIR]'), lin('Referência', CONJ_PRZ.regras?.referencias?.[inv ? 'inversor' : 'soft'] || null, 'perfil de pressurização'), lin('Motor', d.cv ? `${String(d.cv).replace('.', ',')} cv` : null, fonte)] };
     acs.push(b); pecas.push(b);
   }
+  // CLP: trabalha junto com os relés — lê os pressostatos de fluxo e o transmissor de ΔP (porta da escada no
+  // pavimento intermediário) e dá a referência de velocidade dos inversores (PID), sem passar de 50 Pa na escada;
+  // a segurança (falta de fase, temporização e reversão para o reserva) fica nos relés
+  const CLP = { camada: 'automacao', tag: 'CLP', x: 90 + n * 130 + 20, y: 205, z: Z_PLACA + 8, l: 90, a: 125, p: 80, cor: COR_PECA.clp, rotulo: 'CLP', dica: 'CLP — controle de pressão (PID → velocidade dos inversores)',
+    ficha: [lin('Função', 'Lê os pressostatos de fluxo e o transmissor de pressão diferencial (porta da escada no pavimento intermediário) e controla a velocidade dos inversores (PID), mantendo a escada em 50 Pa', 'perfil de pressurização'),
+      lin('Divisão', 'Relés: falta de fase, temporização e reversão para o reserva (segurança, sem depender do CLP). CLP: monitoramento e controle de velocidade', 'perfil de pressurização'), lin('Modelo', null)] };
+  pecas.push(CLP);
   // linha D: réguas X1 (força dos ventiladores) e X2 (campo — a ordem das conexões da escada)
   const x1 = [];
   for (let k = 0; k < n; k++) for (const f of ['U', 'V', 'W', 'PE']) x1.push({ rotulo: `V${k + 1} ${f}`, cor: f === 'PE' ? '#57b35a' : undefined });
@@ -390,12 +406,13 @@ function cenaDoPainelPressurizacao(d) {
     tipo: 'pressurizacao', tag: d.tag, titulo: `${d.tag} — painel de comando da pressurização de escada`,
     involucro: { L, A, P, cor: '#d4d2cc', rotulo: `Painel ${d.tag}`, info: [['Painel', d.tag], ['Invólucro', `${A} × ${L} × ${P} mm (A × L × P — típico) [CONFERIR com o arranjo de fabricação]`], ['Lógica', `${cmd.blocos.length} blocos de função, ${cmd.reles.length} relés, ${(cmd.verificacao || []).filter(v => v.ok).length}/${(cmd.verificacao || []).length} cenários simulados`]] },
     porta, pecas, conexoes,
-    camadas: [{ id: 'protecao', rotulo: 'Disjuntores, relés e temporizadores', cor: COR_PECA.rele }, { id: 'partidas', rotulo: acion === 'soft' ? 'Soft-starters' : 'Inversores', cor: COR_PECA.inversor }, { id: 'automacao', rotulo: 'Fonte 24 Vcc e fusível', cor: COR_PECA.fonte },
+    camadas: [{ id: 'protecao', rotulo: 'Disjuntores, relés e temporizadores', cor: COR_PECA.rele }, { id: 'partidas', rotulo: acion === 'soft' ? 'Soft-starters' : 'Inversores', cor: COR_PECA.inversor }, { id: 'automacao', rotulo: 'CLP, fonte 24 Vcc e fusível', cor: COR_PECA.fonte },
       { id: 'bornes', rotulo: 'Réguas X1 (força) e X2 (campo)', cor: COR_PECA.borne }, { id: 'canaletas', rotulo: 'Canaletas', cor: COR_PECA.canaleta }, { id: 'placa', rotulo: 'Placa de montagem', cor: COR_PECA.placa }, { id: 'forca', rotulo: 'Fiação de força (preto, anilha L1/L2/L3)', cor: '#202226' }],
     numeros: [['ventiladores', String(n)], ['acionamento', acion === 'soft' ? 'soft-starter' : acion === 'direta' ? 'direta' : 'inversor'], ['relés', String(cmd.reles.length)], ['cenários', `${(cmd.verificacao || []).filter(v => v.ok).length}/${(cmd.verificacao || []).length}`], ['reversão', n === 2 ? `${d.tempoReversao} s` : '—']],
     avisos: [
       `Lógica pelo perfil de pressurização da H&M (${cmd.blocos.map(b => b.id || b).join(', ')}): a mesma do projeto pela especificação. ${d.fonte ? '' : 'Sem o cálculo da skill: 2 ventiladores (principal + reserva) com inversor, arranjo típico [CONFERIR].'}`.trim(),
       'Parada só no painel: nenhum botão de emergência desliga os ventiladores durante o alarme (sistema de segurança contra incêndio).',
+      'Relés e CLP juntos: os relés fazem a segurança (falta de fase, temporização e reversão para o reserva quando o principal não confirma o funcionamento); o CLP lê os pressostatos e o transmissor de ΔP e controla a velocidade dos inversores para não passar de 50 Pa na escada.',
       'Invólucro, posições e medidas ilustrativos [CONFERIR com o arranjo de fabricação da skill quadros].',
     ],
   });

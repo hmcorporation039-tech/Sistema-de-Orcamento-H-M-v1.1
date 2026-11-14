@@ -1,4 +1,4 @@
-// Disciplina CABEAMENTO ESTRUTURADO (NBR 14565:2019) — contrato do sistema.
+// Disciplina CABEAMENTO ESTRUTURADO (NBR 14565:2025) — contrato do sistema.
 
 const { criarDisciplina } = require('../../../_comum/disciplina');
 const D = require('../../../_comum/documentos');
@@ -13,10 +13,11 @@ const MODELO = require('../../exemplos/modelo-vazio.json');
 const EXEMPLO = require('../../exemplos/exemplo-escritorio.json');
 
 const NORMAS = [
-  ['ABNT NBR 14565:2019', 'Cabeamento estruturado para edifícios comerciais'],
+  ['ABNT NBR 14565:2025', 'Cabeamento estruturado para edifícios comerciais (edição de 13/11/2025, que substituiu a de 2019; itens e tabelas citados conferidos na edição 2019 [CONFERIR numeração na 2025])'],
   ['ABNT NBR 16415', 'Caminhos e espaços para cabeamento estruturado'],
   ['ISO/IEC 14763-1', 'Administração do cabeamento'],
-  ['ABNT NBR 5410 e ABNT NBR 5419', 'Aterramento, equipotencialização e proteção contra surtos'],
+  ['ABNT NBR 5410:2004 (versão corrigida 2008) e ABNT NBR 5419', 'Aterramento, equipotencialização, proteção contra surtos (DPS, 6.3.5) e taxa de ocupação de eletrodutos (6.2.11.1.6)'],
+  ['ANSI/TIA-607-D', 'Aterramento e equipotencialização de telecomunicações — barra do rack e condutor ao TGB/BEP'],
 ];
 const SECOES_CHECKLIST = ['Documentação', 'Topologia e distâncias', 'Área de trabalho', 'Racks e distribuidores', 'Instalação'];
 const num = fmtNum; // número pt-BR; '—' quando vazio ou inválido
@@ -58,7 +59,7 @@ function secoesMemorial(res) {
   const { calc } = res;
   const c = calc.cfg;
   return [
-    { titulo: '1. Objeto', paragrafos: [`Sistema de cabeamento estruturado de ${res.dados.obra?.nome || 'a edificação'} conforme a ABNT NBR 14565:2019, classe ${calc.classe} (componentes Cat ${c.categoria}${c.blindado ? ', blindados' : ''}), topologia estrela a partir do(s) distribuidor(es) de piso.`] },
+    { titulo: '1. Objeto', paragrafos: [`Sistema de cabeamento estruturado de ${res.dados.obra?.nome || 'a edificação'} conforme a ABNT NBR 14565:2025, classe ${calc.classe} (componentes Cat ${c.categoria}${c.blindado ? ', blindados' : ''}), topologia estrela a partir do(s) distribuidor(es) de piso.`] },
     { titulo: '2. Pontos de telecomunicações (6.7.7 e Seção 15)', paragrafos: [
       `Área de trabalho adotada de ${num(c.areaTrabalho)} m² (dimensão conforme ABNT NBR 16415 — [CONFERIR] com o leiaute), com ${c.tomadasPorArea} tomadas por área de trabalho (6.7.7.1: mínimo de duas). Áreas de cobertura sem fio com duas tomadas por ponto de acesso (15.4), recomendando-se cabeamento Cat 6A/OM3 (15.3.4).`,
     ],
@@ -69,6 +70,15 @@ function secoesMemorial(res) {
     ] },
     { titulo: '4. Distribuidores, racks e ativos', tabela: { colunas: ['Pavimento', 'FD', 'Patch panels', 'Switches', 'U necessários por rack', 'Rack'], linhas: calc.pavimentos.map(p => [p.nome, p.fds, p.fds > 1 ? `${p.paineis} (${p.paineisPorFd} por FD)` : p.paineis, p.fds > 1 ? `${p.switches} (${p.switchesPorFd} por FD)` : p.switches, p.uNecessario, `${p.rackU}U`]), proporcoes: [1.6, 0.6, 1, 1, 1, 0.8] },
       notas: [`U por rack = (patch panels + switches) × 2U (cada um com organizador de 1U) + 2U de régua/bandeja, com reserva de ${c.reservaRack} %; cada distribuidor de piso tem os próprios patch panels e switches. Racks e blindagens aterrados ao BEP (12.3).${calc.backbone ? ` Backbone em fibra multimodo OM3 de ${num(calc.backboneM, 0)} m, um lance por distribuidor de piso (estimativa: subida + 15 m, e FDs adicionais do mesmo piso afastados ≈ distância máxima ÷ nº de FDs) [CONFERIR].` : ''}`] },
+    { titulo: '4.1 Energia, proteção e aterramento dos racks', marcadores: [
+      `DPS no circuito que alimenta cada rack: ${calc.dps.texto}; ${calc.dps.uc.texto}. [CONFERIR com o projeto elétrico]`,
+      ...calc.pavimentos.filter(p => p.nobreak).map(p => `${p.nome}: nobreak de ${p.nobreak.va} VA por distribuidor (carga ≈ ${num(p.cargaRackW, 0)} W: ${p.switchesPorFd} switch(es)${p.apsPorFd ? ` e ${p.apsPorFd} AP(s) por PoE` : ''}; FP 0,7 e margem de 1,25) com bateria de 12 V ${p.nobreak.bateriaAh} Ah${p.nobreak.nBaterias > 1 ? ` × ${p.nobreak.nBaterias}` : ''} para ${c.autonomiaMin} min (consumos típicos [CONFERIR]).`),
+      `Barra de aterramento em cada rack, com jumpers dos equipamentos e blindagens, ligada ao TGB/BEP por cabo de 16 mm² verde-amarelo (ANSI/TIA-607-D: mínimo 6 AWG) [CONFERIR com o projeto de aterramento/SPDA].`,
+    ] },
+    { titulo: '4.2 Encaminhamento (taxa de ocupação)', paragrafos: [
+      `Eletroduto de distribuição ${calc.eletroduto.bitola} (Ø interno ≈ ${num(calc.eletroduto.di, 1)} mm, catálogo [CONFERIR]): até ${calc.eletroduto.capacidade} cabos de Ø ${num(c.diametroCabo, 1)} mm na taxa de ocupação de 40 % (NBR 5410, 6.2.11.1.6: 53 % para 1 cabo, 31 % para 2, 40 % para 3 ou mais). Estimativa: ${num(calc.eletroduto.percursoCabos, 0)} m de percurso de cabos ÷ ${calc.eletroduto.capacidade} = ${calc.eletroduto.metros} m [CONFERIR traçado].`,
+      ...calc.pavimentos.map(p => `${p.nome}: saída de cada rack com ${p.pontosPorFd} cabos → ${p.troncoSaida.quantidade > 1 ? `${p.troncoSaida.quantidade} × ` : ''}eletroduto ${p.troncoSaida.bitola} (ou eletrocalha) no trecho junto ao rack.`),
+    ] },
     { titulo: '5. Lista de materiais (preliminar)', tabela: { colunas: ['Cód.', 'Descrição', 'Un.', 'Qtd.', 'Referência'], linhas: calc.materiais.map(m => [m.codigo, m.descricao, m.unidade, num(m.quantidade, 0), m.referencia]), proporcoes: [0.6, 4, 0.5, 0.6, 1.5] },
       notas: [`Cabo estimado por ponto = distância média + ${c.folgaPonto} m de folga (sobras no rack e na tomada).`] },
     ...(calc.avisos.length ? [{ titulo: 'Avisos', marcadores: calc.avisos }] : []),
@@ -77,7 +87,7 @@ function secoesMemorial(res) {
 
 const DOCUMENTOS = [
   { tipo: 'memorial', rotulo: 'Memorial de cabeamento estruturado', formato: 'Word', nome: 'Memorial_Cabeamento',
-    gerar: (res) => D.docxParaBuffer(D.gerarMemorial(res.dados, { titulo: 'MEMORIAL DESCRITIVO — CABEAMENTO ESTRUTURADO', subtitulo: 'ABNT NBR 14565:2019', tituloCurto: 'Memorial — cabeamento', sigla: 'MEM-CAB', secoes: secoesMemorial(res), listaNormas: NORMAS })) },
+    gerar: (res) => D.docxParaBuffer(D.gerarMemorial(res.dados, { titulo: 'MEMORIAL DESCRITIVO — CABEAMENTO ESTRUTURADO', subtitulo: 'ABNT NBR 14565:2025', tituloCurto: 'Memorial — cabeamento', sigla: 'MEM-CAB', secoes: secoesMemorial(res), listaNormas: NORMAS })) },
   { tipo: 'planilha', rotulo: 'Planilha de pontos e materiais', formato: 'Excel', nome: 'Cabeamento',
     gerar: (res) => D.gerarPlanilha([
       { nome: 'Pontos', colunas: [{ header: 'Pavimento', key: 'nome', width: 20 }, { header: 'Área útil (m²)', key: 'area' }, { header: 'Áreas de trabalho', key: 'areasTrabalho' }, { header: 'Tomadas', key: 'tomadasAt' }, { header: 'APs', key: 'aps' }, { header: 'Extras', key: 'extra' }, { header: 'Pontos', key: 'pontos' }, { header: 'Cabo (m)', key: 'cabo', numFmt: '0' }, { header: 'Rack (U)', key: 'rackU' }], linhas: res.calc.pavimentos },
@@ -86,13 +96,30 @@ const DOCUMENTOS = [
     ]) },
   { tipo: 'laudo', rotulo: 'Relatório de inspeção / certificação', formato: 'Word', nome: 'Laudo_Cabeamento',
     gerar: (res) => D.docxParaBuffer(D.gerarLaudoInspecao(res.dados, res.insp, {
-      titulo: 'RELATÓRIO DE INSPEÇÃO E CERTIFICAÇÃO — CABEAMENTO ESTRUTURADO', tipoInspecao: 'Verificação conforme a ABNT NBR 14565:2019', tituloCurto: 'Relatório — cabeamento', sigla: 'REL-CAB',
-      objetivo: 'Verificar a conformidade do cabeamento estruturado com a ABNT NBR 14565:2019: topologia, comprimentos, tomadas por área de trabalho, distribuidores, aterramento, identificação e resultados de certificação dos canais.',
+      titulo: 'RELATÓRIO DE INSPEÇÃO E CERTIFICAÇÃO — CABEAMENTO ESTRUTURADO', tipoInspecao: 'Verificação conforme a ABNT NBR 14565:2025', tituloCurto: 'Relatório — cabeamento', sigla: 'REL-CAB',
+      objetivo: 'Verificar a conformidade do cabeamento estruturado com a ABNT NBR 14565:2025: topologia, comprimentos, tomadas por área de trabalho, distribuidores, aterramento, identificação e resultados de certificação dos canais.',
       listaNormas: NORMAS, secoesChecklist: SECOES_CHECKLIST,
       descricao: [['Classe / categoria', `${res.calc.classe} / Cat ${res.calc.cfg.categoria}`], ['Pontos', String(res.calc.pontos)], ['Distribuidores de piso', String(res.calc.fds)]],
       metodologia: ['Inspeção visual de racks, encaminhamentos e tomadas.', 'Conferência dos relatórios de certificação (certificador de campo) por canal/enlace permanente.', 'Verificação de identificação e documentação (ISO/IEC 14763-1).'],
       medicoes: [{ titulo: '6.1 Certificação dos canais', colunas: ['Ponto', 'Comprimento (m)', 'Teste', 'Resultado'], proporcoes: [1.5, 1, 1.2, 0.8], linhas: res.certificacao.map(m => [m.ponto, m.comprimento_m ?? '', m.resultado_teste ?? '', m.resultado]), nota: 'Reprovado ou cabo horizontal acima de 90 m = NC.' }],
     }, { checklist: res.checklist, ncs: res.ncs, parecer: res.parecer, baseDir: res.baseDir, pastaFotos: res.pastaFotos })) },
+  { tipo: 'checklist', rotulo: 'Checklist de campo', formato: 'Word', nome: 'Checklist_Campo_Cabeamento',
+    gerar: (res) => D.docxParaBuffer(D.gerarChecklistCampo(res.dados, res.insp, {
+      titulo: 'CHECKLIST DE CAMPO — CABEAMENTO ESTRUTURADO', subtitulo: 'Inspeção e certificação (ABNT NBR 14565:2025, NBR 16415, NBR 5410)', tituloCurto: 'Checklist — cabeamento', secoesChecklist: SECOES_CHECKLIST,
+      preparacao: [
+        'Levar a planta com a identificação dos pontos, o certificador de campo com os adaptadores de enlace permanente/canal da categoria do projeto e a trena.',
+        'Combinar com o cliente o desligamento dos pontos em uso durante a certificação e o teste do nobreak sem energia.',
+        'Registrar em cada ponto: comprimento, resultado do certificador e identificação nas duas pontas.',
+      ],
+      referencias: [
+        ['Pontos de telecomunicações', String(res.calc.pontos)],
+        [`Cabo horizontal máximo (classe ${res.calc.classe})`, `${num(res.calc.hMax, 1)} m (Tabela 3)`],
+        ['Distribuidores de piso / racks', res.calc.pavimentos.map(p => `${p.nome}: ${p.fds} × ${p.rackU}U`).join(' · ')],
+        ...res.calc.pavimentos.filter(p => p.nobreak).map(p => [`Nobreak — ${p.nome}`, `${p.nobreak.va} VA · ${res.calc.cfg.autonomiaMin} min`]),
+        ['Eletroduto de distribuição', `${res.calc.eletroduto.bitola}: até ${res.calc.eletroduto.capacidade} cabos (taxa ≤ 40 %)`],
+      ],
+      medicoes: [{ titulo: 'Certificação ponto a ponto', colunas: ['Ponto', 'Comprimento (m)', 'Certificador', 'Identificação ok', 'Obs.'], proporcoes: [0.8, 0.9, 1, 0.9, 2], linhas: [] }],
+    }, res.checklist)) },
   // PDF: um rack por distribuidor de piso, um capítulo de desenhos/materiais por rack
   { tipo: 'caderno', rotulo: 'Caderno de fabricação e montagem do rack', formato: 'PDF', nome: 'Caderno_Fabricacao_Rack', gerar: (res) => gerarCaderno(res) },
 ];
@@ -126,6 +153,8 @@ const OP = {
   categoria: F.op([['5e', 'Cat 5e (classe D)'], ['6', 'Cat 6 (classe E)'], ['6A', 'Cat 6A (classe EA)'], ['7A', 'Cat 7A (classe FA)']]),
   modelo: F.op([['interconexao', 'Interconexão (patch panel → switch)'], ['conexao_cruzada', 'Conexão cruzada']]),
   teste: F.op([['', '—'], ['aprovado', 'Aprovado'], ['reprovado', 'Reprovado']]),
+  esquema: F.op([['TN-S', 'TN-S'], ['TN-C-S', 'TN-C-S'], ['TT', 'TT'], ['IT', 'IT']]),
+  eletroduto: F.op(['1/2"', '3/4"', '1"', '1 1/4"', '1 1/2"', '2"'].map(b => [b, `PVC rígido ${b}`])),
 };
 
 const FORMULARIO = [
@@ -146,6 +175,11 @@ const FORMULARIO = [
       { caminho: 'sistema.pe_direito_m', rotulo: 'Altura entre pavimentos (m)', tipo: 'numero' },
       { caminho: 'sistema.tensao_pdu_v', rotulo: 'Tensão da PDU do rack (V)', tipo: 'numero' },
       { caminho: 'sistema.distancia_tgb_m', rotulo: 'Distância do rack ao TGB/BEP (m)', tipo: 'numero' },
+      { caminho: 'sistema.esquema_aterramento', rotulo: 'Esquema de aterramento (DPS)', tipo: 'selecao', opcoes: OP.esquema },
+      { caminho: 'sistema.nobreak', rotulo: 'Nobreak por rack', tipo: 'check' },
+      { caminho: 'sistema.autonomia_min', rotulo: 'Autonomia do nobreak (min)', tipo: 'numero', dica: 'Padrão 30 min' },
+      { caminho: 'sistema.eletroduto_bitola', rotulo: 'Eletroduto de distribuição', tipo: 'selecao', opcoes: OP.eletroduto },
+      { caminho: 'sistema.diametro_cabo_mm', rotulo: 'Diâmetro externo do cabo (mm)', tipo: 'numero', dica: 'Ficha do cabo — Cat 6 U/UTP ≈ 6,0 mm' },
     ] },
   ] },
   { titulo: '3. Pavimentos', aberta: true, itens: [

@@ -3,7 +3,7 @@
   "cod": "D1",
   "secao": "Documentação",
   "item": "Projeto/as built com posição, tipo e campo de visão de cada câmera",
-  "requisito": "Boas práticas; IEC 62676-4",
+  "requisito": "IEC 62676-4 (documentação do projeto: posição, objetivo e campo de visão de cada câmera) [CONFERIR item]",
   "onde": "Escritório / cliente",
   "como": "Conferir documentos",
   "prioridade_padrao": "P3"
@@ -30,7 +30,7 @@
   "cod": "C1",
   "secao": "Câmeras",
   "item": "Cobertura e objetivo de cada câmera atendidos (detecção/observação/reconhecimento/identificação)",
-  "requisito": "IEC 62676-4 (DORI)",
+  "requisito": "IEC 62676-4 (densidade de pixels: DORI da edição 2014; a edição 2025 redefiniu as densidades) [CONFERIR]",
   "onde": "Câmeras",
   "como": "Conferir imagem no gravador com alvo na distância de projeto",
   "prioridade_padrao": "P3"
@@ -48,7 +48,7 @@
   "cod": "C3",
   "secao": "Câmeras",
   "item": "Imagem noturna adequada (IR/iluminação) sem ofuscamento ou reflexo",
-  "requisito": "IEC 62676-4",
+  "requisito": "IEC 62676-4 (condições de iluminação) [CONFERIR item]",
   "onde": "Câmeras",
   "como": "Testar à noite ou com ambiente escurecido",
   "prioridade_padrao": "P3"
@@ -57,9 +57,18 @@
   "cod": "C4",
   "secao": "Câmeras",
   "item": "Fixação firme, ângulo correto e lente limpa",
-  "requisito": "Boas práticas",
+  "requisito": "IEC 62676-4 (instalação e ajuste) [CONFERIR item]",
   "onde": "Câmeras",
   "como": "Inspeção visual",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "C5",
+  "secao": "Câmeras",
+  "item": "Densidade de pixels no alvo, na distância de projeto, igual ou maior que a do objetivo (conferida com mira de teste ou medida na imagem)",
+  "requisito": "IEC 62676-4 (critérios de observação e mira de teste) [CONFERIR anexo na edição 2025]",
+  "onde": "Câmeras",
+  "como": "Posicionar a mira/objeto de referência no alvo e medir px/m na imagem gravada",
   "prioridade_padrao": "P3"
  },
  {
@@ -75,7 +84,7 @@
   "cod": "G2",
   "secao": "Gravação",
   "item": "Data e hora sincronizadas (NTP) em gravador e câmeras",
-  "requisito": "Boas práticas (valor probatório)",
+  "requisito": "IEC 62676-1-1 (sincronização de data e hora) [CONFERIR item]; valor probatório das gravações",
   "onde": "Gravador",
   "como": "Comparar horário",
   "prioridade_padrao": "P3"
@@ -84,7 +93,7 @@
   "cod": "G3",
   "secao": "Gravação",
   "item": "Exportação de vídeo testada e funcionando",
-  "requisito": "Boas práticas",
+  "requisito": "IEC 62676-1-1 (exportação de dados) [CONFERIR item]",
   "onde": "Gravador",
   "como": "Exportar um trecho",
   "prioridade_padrao": "P3"
@@ -93,7 +102,7 @@
   "cod": "G4",
   "secao": "Gravação",
   "item": "Discos sem erros (S.M.A.R.T.) e, se houver, RAID íntegro",
-  "requisito": "Boas práticas",
+  "requisito": "Fabricante do gravador (S.M.A.R.T./RAID) — sem requisito normativo específico",
   "onde": "Gravador",
   "como": "Ver estado dos discos",
   "prioridade_padrao": "P3"
@@ -102,7 +111,7 @@
   "cod": "S1",
   "secao": "Segurança cibernética",
   "item": "Senhas padrão alteradas, usuários individuais e firmware atualizado",
-  "requisito": "Boas práticas; LGPD art. 46",
+  "requisito": "Lei 13.709/2018 (LGPD), art. 46; IEC 62676-1-1 (segurança do sistema) [CONFERIR item]",
   "onde": "Gravador / câmeras",
   "como": "Verificar usuários e versões",
   "prioridade_padrao": "P2"
@@ -111,7 +120,7 @@
   "cod": "S2",
   "secao": "Segurança cibernética",
   "item": "Acesso remoto seguro (VPN/serviço do fabricante) sem portas abertas desnecessárias",
-  "requisito": "Boas práticas; LGPD art. 46",
+  "requisito": "Lei 13.709/2018 (LGPD), art. 46; IEC 62676-1-1 (segurança do sistema) [CONFERIR item]",
   "onde": "Roteador / gravador",
   "como": "Verificar redirecionamento de portas",
   "prioridade_padrao": "P2"
@@ -138,7 +147,7 @@
   "cod": "I3",
   "secao": "Infraestrutura",
   "item": "Nobreak com autonomia adequada para gravador, switch e câmeras",
-  "requisito": "Projeto",
+  "requisito": "Critério de projeto (autonomia contratada) — sem requisito normativo específico",
   "onde": "Rack",
   "como": "Testar desligando a rede",
   "prioridade_padrao": "P3"

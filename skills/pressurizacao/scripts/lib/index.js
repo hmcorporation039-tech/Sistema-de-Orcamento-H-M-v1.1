@@ -129,7 +129,7 @@ function resumir(res) {
       { rotulo: 'Ventiladores', valor: textoArranjo(calc), detalhe: `${m3h(vent.qVent)} cada · eixo ${num(vent.pEixo / 1000, 2)} kW (η ${num(c.rendimento)}) · In ${num(vent.in, 1)} A` },
       { rotulo: 'Partida e controle', valor: T.PARTIDAS[c.partida], detalhe: `${aut.nSensores} transmissor(es) de ΔP · ${calc.arr.n} pressostato(s) de fluxo${vent.velocidadeMin ? ` · rotação mínima ~${num(vent.velocidadeMin * 100, 0)} %` : ''}` },
       { rotulo: 'Alimentação (NBR 5410)', valor: al.circuitos.map(ci => `${ci.id}: ${num(ci.secao)} mm² · ${ci.disjuntor} A`).join(' / '), detalhe: `${al.fonte === 'gerador' ? 'gerador 4 h' : 'antes da chave geral'} · queda ${num(al.circuitos[0].queda, 2)} % · cabo resistente ao fogo 2 h` },
-      { rotulo: 'Automação — pontos de E/S', valor: `ED ${aut.totais.ED} · SD ${aut.totais.SD} · EA ${aut.totais.EA} · SA ${aut.totais.SA}`, detalhe: `controlador com 20 % de reserva: ${aut.comReserva.ED}/${aut.comReserva.SD}/${aut.comReserva.EA}/${aut.comReserva.SA}` },
+      { rotulo: 'Automação — pontos de E/S', valor: `ED ${aut.totais.ED} · SD ${aut.totais.SD} · EA ${aut.totais.EA} · SA ${aut.totais.SA}`, detalhe: `CLP com 20 % de reserva: ${aut.comReserva.ED}/${aut.comReserva.SD}/${aut.comReserva.EA}/${aut.comReserva.SA} · segurança por relés: ${aut.relesLogica.auxiliares.length} relés, ${aut.relesLogica.temporizadores.length} temporizador e falta de fase` },
       ...(calc.existente ? [{ rotulo: 'Ventilador existente', valor: `${num(calc.existente.vazao, 0)} m³/h · ${num(calc.existente.pressao, 0)} Pa`, ok: calc.existente.atendeVazao !== false && calc.existente.atendePressao !== false, detalhe: `requerido ${num(vent.qVentM3h, 0)} m³/h · ${num(vent.pressao, 0)} Pa` }] : []),
       ...(temInspecao ? [{ rotulo: 'Parecer da inspeção', valor: res.parecer.situacao.replace(/_/g, ' '), ok: res.parecer.situacao === 'CONFORME' ? true : res.parecer.situacao === 'INCONCLUSIVO' ? undefined : false, detalhe: `NC ${res.ncs.length} · NV ${res.parecer.cont.NV}` }] : []),
     ],
@@ -209,10 +209,10 @@ function secoesMemorial(res) {
   ], tabela: { colunas: ['Circuito', 'Ib (A)', 'Seção (mm²)', 'PE (mm²)', 'Iz (A)', 'Proteção (A)', 'Queda (%)', 'Critério'], linhas: al.circuitos.map(ci => [ci.id, num(ci.ib, 1), num(ci.secao), num(ci.secaoPE), num(ci.iz, 1), ci.disjuntor, num(ci.queda, 2), ci.criterio]), proporcoes: [0.6, 0.6, 0.8, 0.7, 0.6, 0.8, 0.7, 1.6] },
   notas: [`Partida: ${al.partida.rotulo}. ${al.partida.dispositivos.map(x => x.especificacao || `${x.tipo} ${x.nominal_a || ''} A`).join('; ')}.`, ...al.partida.observacoes] });
   s.push({ titulo: '12. Automação e painel de comando', paragrafos: [
-    `Painel de comando dedicado, junto aos ventiladores, com controlador programável, ${T.PARTIDAS_CURTO[c.partida]}, ${aut.nSensores} transmissor(es) de pressão diferencial (${T.SENSORES[c.sensores].charAt(0).toLowerCase() + T.SENSORES[c.sensores].slice(1)}), pressostato de fluxo em cada ventilador, seletora MANUAL–0–AUTOMÁTICO, chave de TESTE, botoeiras e sinalização; integração com a central de detecção e alarme (NBR 17240) por módulo de comando e módulos de entrada.`,
+    `Painel de comando dedicado, junto aos ventiladores, com CLP de controle da pressão (pressostatos, transmissor de ΔP e velocidade dos inversores), lógica de segurança por relés (falta de fase, temporização e reversão para o reserva), ${T.PARTIDAS_CURTO[c.partida]}, ${aut.nSensores} transmissor(es) de pressão diferencial (${T.SENSORES[c.sensores].charAt(0).toLowerCase() + T.SENSORES[c.sensores].slice(1)}), pressostato de fluxo em cada ventilador, seletora MANUAL–0–AUTOMÁTICO, chave de TESTE, botoeiras e sinalização; integração com a central de detecção e alarme (NBR 17240) por módulo de comando e módulos de entrada.`,
   ], marcadores: aut.logica,
   tabela: { colunas: ['Tag', 'Tipo', 'Ponto', 'Origem'], linhas: aut.pontos.map(p => [p.tag, p.tipo, p.descricao, p.origem]), proporcoes: [0.6, 0.5, 4, 1.4], tamanho: 15 },
-  notas: [`Controlador: ${aut.comReserva.ED} ED, ${aut.comReserva.SD} SD, ${aut.comReserva.EA} EA e ${aut.comReserva.SA} SA (20 % de reserva).`, ...aut.intertravamentos.map(t => `Intertravamento: ${t}`)] });
+  notas: [`CLP: ${aut.comReserva.ED} ED, ${aut.comReserva.SD} SD, ${aut.comReserva.EA} EA e ${aut.comReserva.SA} SA (20 % de reserva).`, ...aut.intertravamentos.map(t => `Intertravamento: ${t}`)] });
   s.push({ titulo: '13. Acionamento pela detecção de incêndio', marcadores: [
     'Acionamento principal pela detecção automática de fumaça nos halls de acesso à escada, do lado de menor pressão das PCF — nunca dentro do espaço pressurizado (CBMDF 4.3.1.10.5 a/b). Detecção também na casa de máquinas (laço exclusivo) e na sala do gerador (NT 13 5.2.1 k).',
     'Acionadores manuais de alarme acionam a pressurização de forma complementar (4.3.1.10.5 e); sprinklers e outros sistemas não dispensam a detecção (4.3.1.10.5 d).',
@@ -382,6 +382,8 @@ const DOCUMENTOS = [
     motivo: 'Valores de projeto fora da norma (ΔP de projeto < 50 Pa, ΔP máxima > 60 Pa, velocidade < 1 m/s, PCF abertas abaixo da Tabela B1) ou altura da edificação não informada — veja os avisos BLOQUEANTE e corrija antes de gerar o memorial.',
     gerar: (res) => D.docxParaBuffer(D.gerarMemorial(res.dados, { titulo: 'MEMORIAL DESCRITIVO E DE CÁLCULO — PRESSURIZAÇÃO DE ESCADA DE SEGURANÇA', subtitulo: 'ABNT NBR 14880 — CBMDF NT 10/2015 — controle de fumaça e automação', tituloCurto: 'Memorial — pressurização de escada', sigla: 'MEM-PRES', secoes: secoesMemorial(res), listaNormas: NORMAS })) },
   { tipo: 'planilha', rotulo: 'Planilha de cálculo, automação e materiais', formato: 'Excel', nome: 'Pressurizacao', gerar: (res) => gerarPlanilha(res) },
+  // caderno de fabricação e montagem do painel de comando (mesmos dados da vista do painel no 3D) — ./caderno.js
+  { tipo: 'caderno', rotulo: 'Caderno de fabricação e montagem do painel de comando', formato: 'PDF', nome: 'Caderno_Fabricacao_Painel_Pressurizacao', gerar: (res) => require('./caderno').gerarCaderno(res) },
   { tipo: 'laudo', rotulo: 'Laudo de inspeção / comissionamento', formato: 'Word', nome: 'Laudo_Pressurizacao',
     gerar: (res) => D.docxParaBuffer(D.gerarLaudoInspecao(res.dados, res.insp, cfgLaudo(res), { checklist: res.checklist, ncs: res.ncs, parecer: res.parecer, baseDir: res.baseDir, pastaFotos: res.pastaFotos })) },
   { tipo: 'checklist', rotulo: 'Checklist de campo', formato: 'Word', nome: 'Checklist_Campo_Pressurizacao',
@@ -392,7 +394,7 @@ const DOCUMENTOS = [
 
 // Materiais do painel e da automação (modo "automacao": retrofit do comando, como o
 // serviço que a H&M executou em 2026 em três escadas pressurizadas de um hospital)
-const COD_AUTOMACAO = new Set(['PAINEL', 'CLP', 'INV', 'SOFT', 'PROT', 'K', 'KT', 'SELETORA', 'CH-TESTE', 'BOT', 'SINAL', 'RELE', 'FONTE24', 'DPS-P', 'PT', 'PDS', 'BOT-REM', 'MOD-CMD', 'MOD-ENT', 'CABO-C', 'CABO-S', 'ELET']);
+const COD_AUTOMACAO = new Set(['PAINEL', 'CLP', 'INV', 'SOFT', 'PROT', 'K', 'KT', 'SELETORA', 'CH-TESTE', 'BOT', 'SINAL', 'RELE', 'RFF', 'RELE-AUX', 'KTR', 'FONTE24', 'DPS-P', 'PT', 'PDS', 'BOT-REM', 'MOD-CMD', 'MOD-ENT', 'CABO-C', 'CABO-S', 'ELET']);
 
 function montarOrcamento(res, modo) {
   const { calc, dados } = res;
@@ -405,8 +407,8 @@ function montarOrcamento(res, modo) {
   const mCabosForca = calc.materiais.filter(m => /^CABO-F/.test(m.codigo)).reduce((s, m) => s + m.quantidade, 0);
   const mComando = qtd('CABO-C') + qtd('CABO-S');
   const comum = {
-    pres_painel: srv('pres_painel', `Montagem e instalação do painel de comando (${T.PARTIDAS_CURTO[c.partida]}, controlador, proteções e sinalização)`, 1, 'un'),
-    pres_programacao: srv('pres_programacao', 'Programação do controlador e parametrização dos acionamentos (PID de ΔP, reversão automática, modos manual/automático/teste, supervisão de falhas)', 1, 'vb'),
+    pres_painel: srv('pres_painel', `Montagem e instalação do painel de comando (${T.PARTIDAS_CURTO[c.partida]}, CLP, lógica de segurança por relés, proteções e sinalização)`, 1, 'un'),
+    pres_programacao: srv('pres_programacao', 'Programação do CLP (PID de ΔP → velocidade dos inversores, supervisão de falhas), teste da lógica por relés (falta de fase, reversão temporizada, modos manual/automático/teste) e parametrização dos inversores', 1, 'vb'),
     pres_sensores: srv('pres_sensores', 'Instalação de transmissores de pressão diferencial (com tomadas de pressão) e pressostatos de fluxo', aut.nSensores + arr.n, 'un'),
     pres_cabo_comando: srv('pres_cabo_comando', 'Lançamento e conexão de cabos de comando, sinal e instrumentação', mComando, 'm'),
     pres_infra: srv('pres_infra', 'Infraestrutura em eletroduto de aço galvanizado com fixações', qtd('ELET'), 'm'),
@@ -435,7 +437,7 @@ function montarOrcamento(res, modo) {
   if (modo === 'automacao') {
     return {
       cliente_nome: dados.cliente?.nome || '',
-      escopo: `Adequação do comando e automação do sistema de pressurização da escada de ${obra}: painel com ${T.PARTIDAS_CURTO[c.partida]}, controlador programável, ${aut.nSensores} transmissor(es) de pressão diferencial, ${arr.n} pressostato(s) de fluxo, reversão automática, modos manual/automático/teste, sinalização, acionadores remotos e integração com a central de alarme (NBR 17240), com comissionamento e ART.`,
+      escopo: `Adequação do comando e automação do sistema de pressurização da escada de ${obra}: painel com ${T.PARTIDAS_CURTO[c.partida]}, CLP de controle da pressão, lógica de segurança por relés (falta de fase e reversão temporizada), ${aut.nSensores} transmissor(es) de pressão diferencial, ${arr.n} pressostato(s) de fluxo, reversão automática, modos manual/automático/teste, sinalização, acionadores remotos e integração com a central de alarme (NBR 17240), com comissionamento e ART.`,
       observacoes: 'Rascunho gerado pela skill de pressurização (modo automação) — ventiladores, dutos e damper existentes mantidos. Conferir antes de enviar.',
       itens: [
         ...calc.materiais.filter(m => COD_AUTOMACAO.has(m.codigo)).map(mat),
@@ -595,7 +597,7 @@ module.exports = criarDisciplina({
   documentos: DOCUMENTOS,
   modosOrcamento: [
     { modo: 'execucao', rotulo: 'Instalação do sistema', descricao: 'Ventiladores, dutos, grelhas, tomada de ar, alívio, painel de comando, automação, cabos, integração com a central, comissionamento e projeto' },
-    { modo: 'automacao', rotulo: 'Automação / adequação do painel', descricao: 'Painel com inversor ou soft-starter, controlador, sensores de pressão, pressostatos, acionadores remotos e integração com a central (ventiladores e dutos existentes)' },
+    { modo: 'automacao', rotulo: 'Automação / adequação do painel', descricao: 'Painel com inversor de frequência, controlador, sensores de pressão, pressostatos, acionadores remotos e integração com a central (ventiladores e dutos existentes)' },
     { modo: 'inspecao', rotulo: 'Inspeção, manutenção e laudo', descricao: 'Ensaios de ΔP, velocidade, força e tempos, manutenção preventiva, laudo com ART e correção das não conformidades' },
   ],
   montarOrcamento,

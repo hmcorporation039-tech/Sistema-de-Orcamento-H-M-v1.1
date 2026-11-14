@@ -136,7 +136,7 @@ const ref = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'backend', 's
 const registrados = new Set([...ref.matchAll(/codigo: '(clim_[a-z_]+)'/g)].map(m => m[1]));
 
 (async () => {
-  for (const t of motor.tiposDisponiveis(res)) igual(`documento ${t}`, (await motor.gerarDocumento(res, t)).buffer.slice(0, 2).toString(), 'PK');
+  for (const t of motor.tiposDisponiveis(res).filter(x => x !== 'caderno')) igual(`documento ${t}`, (await motor.gerarDocumento(res, t)).buffer.slice(0, 2).toString(), 'PK');
   const usados = new Set();
   for (const modo of motor.modosOrcamento.map(m => m.modo)) {
     const o = motor.montarOrcamento(res, modo);

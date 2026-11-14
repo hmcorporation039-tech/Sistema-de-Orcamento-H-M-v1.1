@@ -1078,6 +1078,14 @@
    "uso": ""
   },
   {
+   "nome": "FV-QUADRO-CA",
+   "cor": 40,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.35,
+   "plota": true,
+   "uso": ""
+  },
+  {
    "nome": "FV-ESTRUTURA",
    "cor": 40,
    "tipoLinha": "CONTINUOUS",
@@ -1167,6 +1175,206 @@
   },
   {
    "nome": "VE-DEMOL",
+   "cor": 2,
+   "tipoLinha": "DASHED",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "IND-MOTOR",
+   "cor": 30,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": "motores (ponto de força)"
+  },
+  {
+   "nome": "IND-CCM",
+   "cor": 30,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.35,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "IND-CAPACITOR",
+   "cor": 30,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.35,
+   "plota": true,
+   "uso": "banco de capacitores"
+  },
+  {
+   "nome": "IND-INFRA",
+   "cor": 1,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "IND-TEXTO",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "IND-EXIST",
+   "cor": 8,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "IND-DEMOL",
+   "cor": 2,
+   "tipoLinha": "DASHED",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "PRZ-PAINEL",
+   "cor": 150,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.35,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "PRZ-VENTILADOR",
+   "cor": 150,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "PRZ-DAMPER",
+   "cor": 150,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": "damper / registro de alívio de sobrepressão"
+  },
+  {
+   "nome": "PRZ-SENSOR",
+   "cor": 150,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.25,
+   "plota": true,
+   "uso": "transmissor de pressão diferencial / pressostato"
+  },
+  {
+   "nome": "PRZ-DUTO",
+   "cor": 150,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "PRZ-INFRA",
+   "cor": 1,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "PRZ-TEXTO",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "PRZ-EXIST",
+   "cor": 8,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "PRZ-DEMOL",
+   "cor": 2,
+   "tipoLinha": "DASHED",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "MT-TRANSFORMADOR",
+   "cor": 10,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.35,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "MT-CUBICULO",
+   "cor": 10,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.35,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "MT-CHAVE",
+   "cor": 10,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": "chave seccionadora / chave fusível"
+  },
+  {
+   "nome": "MT-PARA-RAIOS",
+   "cor": 10,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "MT-MALHA",
+   "cor": 3,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": "malha de aterramento (hastes e cordoalha)"
+  },
+  {
+   "nome": "MT-INFRA",
+   "cor": 1,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.3,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "MT-TEXTO",
+   "cor": 7,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "MT-EXIST",
+   "cor": 8,
+   "tipoLinha": "CONTINUOUS",
+   "espessura_mm": 0.18,
+   "plota": true,
+   "uso": ""
+  },
+  {
+   "nome": "MT-DEMOL",
    "cor": 2,
    "tipoLinha": "DASHED",
    "espessura_mm": 0.18,

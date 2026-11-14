@@ -157,7 +157,7 @@ function blocosAtivos(ids, ctx, biblio) {
   const porId = new Map(biblio.blocos.map(b => [b.id, b]));
   const candidatos = ids.map(id => porId.get(id)).filter(Boolean);
   // 1ª passada sem as condições "bloco:"; depois até estabilizar
-  let ativos = new Set(candidatos.filter(b => condicao((b.se || []).filter(c => !c.startsWith('bloco:')), ctx, null) && listaOk(b, ctx)).map(b => b.id));
+  let ativos = new Set(candidatos.filter(b => condicao((b.se || []).filter(c => !c.replace(/^!/, '').startsWith('bloco:')), ctx, null) && listaOk(b, ctx)).map(b => b.id));
   for (let k = 0; k < 5; k++) {
     const novo = new Set([...ativos].filter(id => condicao(porId.get(id).se || [], ctx, ativos)));
     if (novo.size === ativos.size) break;

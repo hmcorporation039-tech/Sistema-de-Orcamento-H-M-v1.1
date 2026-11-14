@@ -153,6 +153,8 @@ const DOCUMENTOS = [
       ...(res.calc.resid ? [{ nome: 'Residencial', colunas: [{ header: 'Ambiente', key: 'nome', width: 24 }, { header: 'Luz liga/desliga', key: 'ilum_onoff' }, { header: 'Luz dimerizável', key: 'ilum_dimer' }, { header: 'Cortinas', key: 'cortinas' }, { header: 'Ar-cond.', key: 'ar_condicionado' }, { header: 'Tomadas', key: 'tomadas' }, { header: 'Sensores', key: 'sensores' }, { header: 'Cenas', key: 'cenas' }], linhas: res.calc.resid.ambientes }] : []),
       D.abaMateriais(res.calc.materiais),
     ]) },
+  // caderno de fabricação e montagem dos quadros DDC (BMS) — ./caderno.js
+  { tipo: 'caderno', rotulo: 'Caderno de fabricação e montagem dos quadros DDC', formato: 'PDF', nome: 'Caderno_Fabricacao_Quadros_DDC', exige: (res) => require('./caderno').exigeCaderno(res), motivo: 'Sem lista de pontos de BMS (controladores DDC).', gerar: (res) => require('./caderno').gerarCaderno(res) },
   { tipo: 'laudo', rotulo: 'Relatório de comissionamento / diagnóstico', formato: 'Word', nome: 'Relatorio_Automacao',
     gerar: (res) => D.docxParaBuffer(D.gerarLaudoInspecao(res.dados, res.insp, {
       titulo: 'RELATÓRIO DE COMISSIONAMENTO E DIAGNÓSTICO — AUTOMAÇÃO PREDIAL', tipoInspecao: 'Comissionamento ponto a ponto e avaliação das funções de automação', tituloCurto: 'Relatório — automação', sigla: 'REL-AUT',

@@ -1,4 +1,4 @@
-// Teste do cabeamento estruturado — Tabela 3 da NBR 14565:2019
+// Teste do cabeamento estruturado — Tabela 3 da NBR 14565 (conferida na edição 2019; a vigente é a 2025)
 const motor = require('../scripts/lib/index');
 const { comprimentoHorizontalMax } = require('../scripts/lib/calculo');
 const { perto, igual, fim } = require('../../_comum/teste').verificador('cabeamento');
@@ -36,6 +36,28 @@ igual('organizadores = patch panels + switches', res.calc.materiais.find(m => m.
   d2.pavimentos.push({ nome: 'Área externa', area_util_m2: 0, aps: 4, pontos_extra: 0 });
   const g2 = motor.processar(d2).calc;
   igual('pavimento só com APs entra (4 APs × 2 tomadas = 8 pontos)', g2.pavimentos.find(x => x.nome === 'Área externa')?.pontos, 8);
+}
+// ── Energia do rack e eletroduto pela taxa de ocupação (14/11/2026) ──
+{
+  const E = require('../../_comum/eletrico/calculo');
+  // NBR 5410, 6.2.11.1.6: 53 % (1), 31 % (2), 40 % (3 ou mais)
+  igual('taxa de ocupação 53/31/40 %', [E.taxaOcupacaoMax(1), E.taxaOcupacaoMax(2), E.taxaOcupacaoMax(3), E.taxaOcupacaoMax(20)], [0.53, 0.31, 0.4, 0.4]);
+  // ¾" (Ø int. 21,6 mm) com Cat 6 de 6,0 mm: (21,6/6)² = 12,96 → 5 cabos a 40 % (5 ≤ 5,18; 6 > 5,18)
+  igual('¾" leva 5 cabos Cat 6 de 6,0 mm; 1" leva 8', [E.cabosNoEletroduto(21.6, 6), E.cabosNoEletroduto(27.5, 6)], [5, 8]);
+  // antes: cabo total com folgas ÷ 6 = (92 × 40 + 86 × 35) ÷ 6 = 1 115 m; agora Σ pontos × distância média ÷ 5 = (92 × 35 + 86 × 30) ÷ 5 = 1 160 m
+  const ele = res.calc.materiais.find(m => m.codigo === 'ELE');
+  igual('eletroduto ¾" pela taxa de ocupação: 1 160 m (antes 1 115 m pelo ÷ 6)', [ele.quantidade, ele.descricao.includes('3/4"'), res.calc.eletroduto.capacidade], [1160, true, 5]);
+  igual('saída do rack do térreo: 92 cabos → eletroduto de 4" (119 cabos) com aviso', [t.troncoSaida.bitola, res.calc.avisos.some(a => /^Térreo: saída do rack com 92 cabos/.test(a))], ['4"', true]);
+  // DPS classe II em 220 V TN-S: Uc ≥ 1,1 × 220 = 242 → 275 V; fase + N-PE = 2 por rack × 2 racks
+  const dps = res.calc.materiais.find(m => m.codigo === 'DPS');
+  igual('DPS do rack: 2 por rack, Uc 275 V', [dps.quantidade, /Uc ≥ 275 V/.test(dps.descricao)], [4, true]);
+  // nobreak: 2 switches × 45 W + 3 APs × 15 W = 135 W → 135 ÷ 0,7 × 1,25 = 241 VA → 600 VA;
+  // bateria: 135 × 0,5 h ÷ 0,85 = 79,4 Wh → ÷ 12 V × 1,25 = 8,3 Ah → 9 Ah
+  igual('nobreak do térreo: 135 W → 600 VA, bateria 9 Ah', [t.cargaRackW, t.nobreak.va, t.nobreak.bateriaAh], [135, 600, 9]);
+  igual('aterramento: barra por rack e 16 mm² até o TGB (10 m × 1,1 → 11 m por rack)', [res.calc.materiais.find(m => m.codigo === 'BAR').quantidade, res.calc.materiais.find(m => m.codigo === 'TERRA').quantidade], [2, 22]);
+  const sem = JSON.parse(JSON.stringify(motor.exemplo())); sem.sistema.nobreak = false; sem.sistema.eletroduto_bitola = '1"'; sem.sistema.diametro_cabo_mm = 6;
+  const cs = motor.processar(sem).calc;
+  igual('sem nobreak; eletroduto 1" (8 cabos) → 5 800 ÷ 8 = 725 m, sem aviso de diâmetro', [cs.materiais.some(m => m.codigo === 'NB'), cs.materiais.find(m => m.codigo === 'ELE').quantidade, cs.avisos.some(a => /Diâmetro externo do cabo/.test(a))], [false, 725, false]);
 }
 // ── Caderno de fabricação e montagem dos racks (31/10/2026) ──
 const RK = require('../../_comum/fabricacao/rack');

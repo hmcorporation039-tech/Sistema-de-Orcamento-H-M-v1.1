@@ -32,6 +32,9 @@ const DISCIPLINA_PELO_PREFIXO = {
   // equipamentos da subestação (skills/_comum/cad/equipamentos3d.js): antes caíam no padrão 'eletrica' e o
   // transformador, o cubículo e a mufla inseridos no mapa iam para o orçamento de elétrica predial
   EQ: 'media_tensao',
+  // motor, CCM e banco de capacitores (HM-IND-…) e os símbolos de planta da subestação (HM-MT-…) — 14/11/2026: antes
+  // caíam no padrão 'eletrica' e o motor inserido no mapa ia para o orçamento de elétrica predial
+  IND: 'eletrica_industrial', MT: 'media_tensao',
   PRZ: 'pressurizacao', // painel de comando da pressurização de escadas (14/11/2026) // antes caía em 'eletrica': a evaporadora inserida no mapa ia para o orçamento de elétrica
 };
 const DISCIPLINA_EXTERNA = { 'HM-ILU-POSTE': 'iluminacao-externa', 'HM-ELE-CAIXA-PISO': 'iluminacao-externa' };

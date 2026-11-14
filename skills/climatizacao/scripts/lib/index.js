@@ -312,6 +312,8 @@ const DOCUMENTOS = [
     } },
   { tipo: 'pmoc', rotulo: 'PMOC — Plano de Manutenção, Operação e Controle', formato: 'Word', nome: 'PMOC',
     gerar: (res) => D.docxParaBuffer(D.gerarMemorial(res.dados, { titulo: 'PLANO DE MANUTENÇÃO, OPERAÇÃO E CONTROLE — PMOC', subtitulo: 'Lei 13.589/2018 · Portaria MS 3.523/1998 · ABNT NBR 13971 e NBR 17037', tituloCurto: 'PMOC', sigla: 'PMOC', secoes: secoesPmoc(res), listaNormas: NORMAS.filter(n => /13.589|3.523|RE 09|17037|13971|16401-3/.test(n[0])) })) },
+  // caderno de fabricação e montagem do quadro da central de água gelada — ./caderno.js
+  { tipo: 'caderno', rotulo: 'Caderno de fabricação e montagem do quadro da central de água gelada', formato: 'PDF', nome: 'Caderno_Fabricacao_Quadro_CAG', exige: (res) => require('./caderno').exigeCaderno(res), motivo: 'O projeto não tem central de água gelada (chiller).', gerar: (res) => require('./caderno').gerarCaderno(res) },
   { tipo: 'laudo', rotulo: 'Relatório de vistoria e medições', formato: 'Word', nome: 'Vistoria_Climatizacao',
     gerar: (res) => D.docxParaBuffer(D.gerarLaudoInspecao(res.dados, res.insp, cfgLaudo(res), { checklist: res.checklist, ncs: res.ncs, parecer: res.parecer, baseDir: res.baseDir, pastaFotos: res.pastaFotos })) },
   { tipo: 'checklist', rotulo: 'Checklist de campo', formato: 'Word', nome: 'Checklist_Campo_Climatizacao',

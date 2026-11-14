@@ -218,6 +218,20 @@ const ISOLAMENTO = [
   { ate: Infinity, tensaoEnsaio: 1000, minimo: 1, rotulo: 'acima de 500 V' },
 ];
 
+// 6.2.11.1.6 — taxa máxima de ocupação do eletroduto (área dos cabos ÷ área da seção interna):
+// 53 % com um condutor ou cabo, 31 % com dois e 40 % com três ou mais. Regra única de ocupação
+// para as skills (cabeamento de dados; antes só havia o 40 % em cópia no modelo-3d) — 14/11/2026.
+const OCUPACAO_ELETRODUTO = { um: 0.53, dois: 0.31, tresOuMais: 0.4 };
+// Eletroduto rígido de PVC roscável (NBR 15465): diâmetro interno = diâmetro externo médio − 2 × parede,
+// medidas "aproximadas" da ficha técnica Amanco Wavin (FT Eletroduto Soldável e Roscável, FTC000021):
+// ½" 20,8/2,2 · ¾" 26,2/2,3 · 1" 32,9/2,7 · 1¼" 41,9/3,0 · 1½" 47,4/3,0 · 2" 59,1/3,2 · 2½" 74,9/3,8 ·
+// 3" 87,6/4,0 · 4" 112,7/4,4 mm. Outros fabricantes/classes diferem [CONFERIR com o eletroduto adotado].
+const ELETRODUTOS_PVC_ROSCAVEL = [
+  { bitola: '1/2"', dn: 20, di: 16.4 }, { bitola: '3/4"', dn: 25, di: 21.6 }, { bitola: '1"', dn: 32, di: 27.5 },
+  { bitola: '1 1/4"', dn: 40, di: 35.9 }, { bitola: '1 1/2"', dn: 50, di: 41.4 }, { bitola: '2"', dn: 60, di: 52.7 },
+  { bitola: '2 1/2"', dn: 75, di: 67.3 }, { bitola: '3"', dn: 85, di: 79.6 }, { bitola: '4"', dn: 110, di: 103.9 },
+];
+
 // Fatores de demanda TÍPICOS de concessionária (residencial) — a NBR 5410 não
 // define demanda (4.2.3). Conferir com a norma da distribuidora local
 // (no DF: Neoenergia DIS-NOR-030 / DIS-NOR-053). Editáveis no formulário.
@@ -243,4 +257,5 @@ module.exports = {
   reservaQuadro, SERIE_DISJUNTORES, FAIXA_DISJUNTORES, disjuntoresDoTipo, DISJUNTORES, DISJUNTORES_DIN, DISJUNTORES_CM_ABERTOS, serieDisjuntores, DR_IN, drComercial, IP_IN_PADRAO, ICW_KA,
   BARRAS_DIN43671, CONJUNTOS_DIN43671, EXPOENTE_K2, k2Temperatura, escolherBarra, rotuloBarra, RHO_COBRE, RHO_COBRE_20, kCurto, ICN_KA, CURVA_IA, QUEDA, ISOLAMENTO, DEMANDA_ILUM_TUG_PADRAO, DEMANDA_TUE_PADRAO,
   LOCAIS_DR, LOCAIS_COZINHA, LOCAIS_600VA, MODULO_MM, MODULO_NOMINAL_MM, DIN_ALTURA, DIN_PROF, DIAMETRO_FIO,
+  OCUPACAO_ELETRODUTO, ELETRODUTOS_PVC_ROSCAVEL,
 };

@@ -5,13 +5,14 @@ description: Dimensionamento, memorial descritivo para a distribuidora, relatór
 
 # Usina solar fotovoltaica (NBR 16690 / REN 1000) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 41 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
+Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 42 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
 
 | Documento | Tipo | Formato |
 |---|---|---|
 | Memorial descritivo da usina | `memorial` | Word |
 | Planilha de dimensionamento e materiais | `planilha` | Excel |
 | Relatório de comissionamento / inspeção (NBR 16274) | `laudo` | Word |
+| Checklist de campo | `checklist` | Word |
 
 ## Também no sistema (aba Análise de Projeto)
 
@@ -40,6 +41,8 @@ O mesmo motor roda no Sistema de Orçamentos: **Análise de Projeto → Laudos e
 - Enquadramento micro/mini pela potência instalada = menor entre módulos (kWp) e inversores (kW) — critério da Neoenergia para a REN 1000 [CONFERIR artigo vigente]. Geração mês a mês com os dias de cada mês; ano = soma dos meses.
 - Ensaio por string (NBR 16274): "C" só com Voc e isolamento + / − medidos e dentro do critério; faltando um, "NV".
 - Cabo CC pela Tabela C.2 da NBR 16612 corrigida pela temperatura; fusível gPV com 3 ou mais strings em paralelo quando (n − 1) × 1,25 × Isc passa da corrente reversa do módulo (1,5–2,4 × Isc); DPS CC Ucpv ≥ 1,2 × Voc; DPS CA pela Tabela 49 da NBR 5410 (função comum); lado CA pelo motor da elétrica com corrente de projeto 1,25 × nominal.
+
+- Limites adotados sem fonte normativa conferida, quando o formulário não informa outro: queda CC ≤ 3 %, queda CA ≤ 2 %, cabo CC a 50 °C, ambiente máximo 35 °C, NOCT 45 °C — saem em aviso [CONFERIR]. Mínima do DF: 1,4 °C (INMET).
 
 O checklist de inspeção (28 itens) está em `dados/checklist_base.json`; itens não conformes viram não conformidades com prioridade (P1 48 h, P2 30 dias, P3 90 dias, P4 manutenção) e entram no orçamento do modo de inspeção.
 

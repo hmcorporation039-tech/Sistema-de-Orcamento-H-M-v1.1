@@ -56,7 +56,7 @@ igual('DPS Uc 275 V (220/380 V TN-S: 1,1·220 = 242 V, Tabela 49)', res.calc.dps
   igual('ponto trifásico em sistema bifásico → erro', /carregador trifásico em sistema bifasico/.test(erro || ''), true);
 }
 (async () => {
-  for (const t of motor.tiposDisponiveis(res)) igual(`documento ${t}`, (await motor.gerarDocumento(res, t)).buffer.slice(0, 2).toString(), 'PK');
+  for (const t of motor.tiposDisponiveis(res).filter(x => x !== 'caderno')) igual(`documento ${t}`, (await motor.gerarDocumento(res, t)).buffer.slice(0, 2).toString(), 'PK');
   igual('orçamento de instalação', motor.montarOrcamento(res, 'execucao').itens.length > 6, true);
   fim();
 })();

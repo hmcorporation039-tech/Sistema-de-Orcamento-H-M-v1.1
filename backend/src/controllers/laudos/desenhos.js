@@ -101,7 +101,7 @@ async function verArquitetura(req, res) {
 async function montarPlanta(laudo, { asBuilt = null } = {}) {
   const C = cad();
   const gerador = C.PLANTAS[laudo.disciplina];
-  if (!gerador) throw erro400('A planta automática ainda não existe para esta disciplina (disponível: elétrica predial e hospitalar, iluminação, incêndio, alarme, controle de acesso, CFTV, cabeamento, telefonia e antena).');
+  if (!gerador) throw erro400('A planta automática ainda não existe para esta disciplina (disponível: elétrica predial, hospitalar e industrial, iluminação, incêndio, alarme, controle de acesso, CFTV, cabeamento, automação, telefonia e antena).');
   const { rows: [arq] } = await pool.query('SELECT nome_arquivo, conteudo FROM laudos_projetos_arquitetura WHERE laudo_id = $1', [laudo.id]);
   if (!arq) throw erro400('Envie primeiro a arquitetura (.dwg, .dxf ou PDF) deste projeto.');
   const motor = motorDaDisciplina(laudo.disciplina);

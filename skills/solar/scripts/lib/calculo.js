@@ -19,7 +19,7 @@ const CABO_FV = {
   protegido: { 1.5: 26, 2.5: 35, 4: 47, 6: 60, 10: 83, 16: 110 },
   exposto: { 1.5: 23, 2.5: 31, 4: 41, 6: 51, 10: 71, 16: 93 },
 };
-const SECOES_CC = [4, 6, 10, 16]; // 4 mm² como mínimo de prática para cabo FV de string
+const SECOES_CC = [4, 6, 10, 16]; // 4 mm² como mínimo de prática para cabo FV de string [CONFERIR — sem fonte normativa na biblioteca]
 const FUSIVEIS_GPV = [10, 12, 15, 16, 20, 25, 30, 32];
 const DPS_CC_UCPV = [600, 1000, 1100, 1500];
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
@@ -27,8 +27,20 @@ const DIAS_MES = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]; // ano de 365
 // Temperatura ambiente mínima adotada quando não informada. Mínimas históricas do DF (INMET):
 // 1,4 °C no Gama em 19/05/2022 e 1,6 °C em Brasília em 18/07/1975; o módulo, ao amanhecer,
 // pode ficar abaixo do ar (irradiação para o céu). Fora do DF, informar a mínima do local.
-const TMIN_PADRAO = 0;
-const TMIN_DF = 1.4;
+const TMIN_PADRAO = 0; // adotado (abaixo da mínima histórica do DF) — [CONFERIR] com a mínima do local
+const TMIN_DF = 1.4;  // INMET (fonte acima)
+// Limites e temperaturas adotados SEM fonte normativa na biblioteca da H&M (revisão de 14/11/2026) — valem quando
+// o formulário não informa outro valor e saem no aviso [CONFERIR]:
+//   queda CC ≤ 3 % e queda CA ≤ 2 % (prática de projeto; a NBR 5410, 6.2.7, limita a queda total — 5 % / 7 % —
+//   e a dos circuitos terminais — 4 % —, não a do circuito do inversor isolado; a NBR 16690 não foi conferida
+//   quanto a um limite de queda no lado CC);
+//   cabo CC a 50 °C de ambiente; ambiente máximo de 35 °C; NOCT de 45 °C sem a folha de dados;
+//   coeficientes −0,28 %/°C (Voc) e −0,35 %/°C (Vmp) sem a folha de dados; corrente reversa de 20 A sem a folha de dados.
+const QUEDA_CC_PADRAO = 3;
+const QUEDA_CA_PADRAO = 2;
+const TEMP_CABO_PADRAO = 50;
+const TAMB_MAX_PADRAO = 35;
+const NOCT_PADRAO = 45;
 
 const n = (v, padrao) => (v == null || v === '' || Number.isNaN(Number(v)) ? padrao : Number(v));
 
@@ -88,13 +100,13 @@ function calcular(dados) {
   if (!nModulos) throw new Error('Informe o consumo (para dimensionar) ou a quantidade de módulos.');
 
   // ── Temperaturas e tensões (CRESESB Eq. 4.7) ───────────────────────────
-  const noct = n(mod.noct, 45);
+  const noct = n(mod.noct, NOCT_PADRAO);
   const tMinInformada = n(loc.tamb_min, null);
   const tMin = tMinInformada ?? TMIN_PADRAO;
   const noDf = String(dados.cliente?.uf || loc.uf || '').trim().toUpperCase() === 'DF';
   if (tMinInformada == null) avisos.push(`Temperatura mínima do local não informada: adotado ${TMIN_PADRAO} °C para o Voc máximo (no DF a mínima histórica é ${br(TMIN_DF, 1)} °C, INMET) — informe a mínima histórica do local. [CONFERIR]`);
   else if (noDf && tMin > TMIN_DF) avisos.push(`Temperatura mínima adotada de ${br(tMin, 1)} °C acima da mínima histórica do DF (${br(TMIN_DF, 1)} °C, INMET, Gama, 19/05/2022): o Voc máximo da string fica subestimado. [CONFERIR]`);
-  const tMaxAmb = n(loc.tamb_max, 35);
+  const tMaxAmb = n(loc.tamb_max, TAMB_MAX_PADRAO);
   const tModMax = tMaxAmb + (noct - 20) / 800 * 1000;
   // coeficientes de temperatura de tensão do silício são negativos: valor positivo é erro de
   // digitação (sinal) — com β > 0 o Voc a frio cairia em vez de subir e a string passaria do limite
@@ -167,12 +179,12 @@ function calcular(dados) {
 
   // ── Cabos CC (NBR 16612 Tabela C.2 + queda de tensão) ──────────────────
   const exposicao = s.cabo_exposto_sol === false ? 'protegido' : 'exposto';
-  const taCabo = n(s.temp_cabo, 50);
+  const taCabo = n(s.temp_cabo, TEMP_CABO_PADRAO);
   const kt = fatorTemperaturaFv(taCabo);
   const lCc = n(loc.dist_arranjo_inversor_m, n(loc.dist_arranjo_sb_m, 0) + n(loc.dist_sb_inversor_m, 0)) || 20;
   const iProjetoCc = precisaFusivel ? fusivel || iscMax : Math.max(iscMax, (stringsPorMppt - 1) * iscMax);
   const vString = nsMin * mod.vmp; // menor string = maior queda percentual
-  const quedaCcMax = n(s.queda_cc_max_pct, 3);
+  const quedaCcMax = n(s.queda_cc_max_pct, QUEDA_CC_PADRAO);
   const iOperacao = n(mod.imp, mod.isc * 0.94);
   let caboCc = null;
   for (const sec of SECOES_CC) {
@@ -186,7 +198,16 @@ function calcular(dados) {
   const c = E.config({ instalacao: { isolacao: 'PVC', metodo: 'B1', agrupamento: 1, ...inst } });
   const fasesInv = String(inv.fases || (ligacao === 'trifasico' ? '3' : '1'));
   const lig = fasesInv === '3' ? 'FFF' : (c.vfn >= 200 ? 'FN' : 'FF');
-  const quedaCaMax = n(inst.queda_ca_max_pct, 2);
+  const quedaCaMax = n(inst.queda_ca_max_pct, QUEDA_CA_PADRAO);
+  // limites/temperaturas adotados sem fonte (ver o topo do arquivo)
+  const adotados = [
+    s.queda_cc_max_pct == null || s.queda_cc_max_pct === '' ? `queda CC ≤ ${QUEDA_CC_PADRAO} %` : null,
+    inst.queda_ca_max_pct == null || inst.queda_ca_max_pct === '' ? `queda CA ≤ ${QUEDA_CA_PADRAO} %` : null,
+    s.temp_cabo == null || s.temp_cabo === '' ? `cabo CC a ${TEMP_CABO_PADRAO} °C` : null,
+    loc.tamb_max == null || loc.tamb_max === '' ? `ambiente máximo de ${TAMB_MAX_PADRAO} °C` : null,
+    mod.noct == null || mod.noct === '' ? `NOCT de ${NOCT_PADRAO} °C` : null,
+  ].filter(Boolean);
+  if (adotados.length) avisos.push(`Limites e temperaturas adotados sem fonte normativa conferida: ${adotados.join(', ')} — informe os do projeto/local. [CONFERIR]`);
   const circuitosCa = Array.from({ length: nInv }, (_, i) => E.dimensionarCircuito({
     id: `INV${i + 1}`, descricao: `Saída do inversor ${i + 1}`, tipo: 'tue', ligacao: lig,
     // corrente de projeto = 1,25 × corrente nominal de saída (regime contínuo) — prática; conferir o manual do inversor
@@ -228,7 +249,7 @@ function calcular(dados) {
 
   // DPS CC (classe II): Ucpv ≥ 1,2 × Voc da string; nas duas extremidades se o arranjo
   // estiver a mais de 10 m do inversor (CRESESB, legenda da Figura 7.29)
-  const ucpv = DPS_CC_UCPV.find(u => u >= 1.2 * ns * mod.voc) || 1500;
+  const ucpv = DPS_CC_UCPV.find(u => u >= 1.2 * ns * mod.voc) || 1500; // fator 1,2 × Voc(STC): prática de mercado [CONFERIR IEC 61643-32]
   const dpsCcQtd = entradasUsadas * (lCc > 10 ? 2 : 1);
   const stringBox = s.string_box !== false;
 

@@ -1,6 +1,7 @@
 // Padrão H&M de layers para os desenhos gerados pelas skills (padrao-hm.json):
 // <DISC>-<ELEMENTO>[-SUB][-EXIST|-DEMOL], uma disciplina por prefixo (ELE,
-// ILU, CAB, CFTV, ACE, ALM, INC, SPDA, AUT, FV, VE), G- para a folha (carimbo,
+// ILU, CAB, CFTV, ACE, ALM, INC, SPDA, AUT, FV, VE e, desde 14/11/2026, IND, PRZ
+// e MT), G- para a folha (carimbo,
 // legenda, notas), ARQ-BASE para a arquitetura recebida (cinza, só referência).
 // A NBR 5444 de simbologia foi cancelada em 2014 sem substituta; diagramas
 // seguem a IEC 60617. Desenho em milímetros, como as pranchas da empresa.

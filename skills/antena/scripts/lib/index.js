@@ -20,7 +20,7 @@ const NORMAS = [
   ['IEC/EN 60728-1', 'Redes de cabos para sinais de televisão — desempenho do sistema (níveis na tomada, MER, C/N)'],
   ['IEC/EN 60728-11', 'Redes de cabos para sinais de televisão — segurança (aterramento e equipotencialização do mastro e do headend)'],
   ['ABNT NBR 15601 / NBR 15604', 'TV digital terrestre ISDB-Tb — transmissão e receptores (sensibilidade e nível máximo de entrada)'],
-  ['ABNT NBR 14565:2019', 'Cabeamento estruturado — referência de topologia, caminhos e identificação'],
+  ['ABNT NBR 14565:2025', 'Cabeamento estruturado — referência de topologia, caminhos e identificação (edição de 11/2025, que substituiu a de 2019 [CONFERIR itens])'],
   ['ABNT NBR 5419-3 e NBR 5419-4', 'SPDA: mastro na zona de proteção e ligação equipotencial; DPS nas linhas de sinal'],
   ['ABNT NBR 5410', 'Equipotencialização e proteção contra surtos da instalação de baixa tensão'],
   ['ABNT NBR 6123', 'Forças devidas ao vento — fixação do mastro e das antenas'],

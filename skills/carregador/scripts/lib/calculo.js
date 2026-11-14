@@ -16,7 +16,7 @@ const FOLGA = 1.1;
 // In do DPS classe II adotado pelo projeto em todos os modos (prática de mercado, acima do mínimo de
 // 5 kA por modo da NBR 5410, 6.3.5.2.4 d) — o valor que esta skill já especificava
 const IN_DPS_ADOTADO_KA = 20;
-const RENDIMENTO_DC = 0.95; // carregador CC: potência de entrada = saída / rendimento
+const RENDIMENTO_DC = 0.95; // carregador CC: potência de entrada = saída / rendimento — típico [CONFERIR ficha da estação]
 
 function correntePorPonto(p, c) {
   const kw = Number(p.potencia_kw) || 0;

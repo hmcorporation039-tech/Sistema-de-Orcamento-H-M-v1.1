@@ -18,7 +18,8 @@ const NORMAS = [
   ['ABNT NBR 10898:2023', 'Sistema de iluminação de emergência'],
   ['ABNT NBR ISO 7240-7', 'Detectores pontuais de fumaça'],
   ['ABNT NBR 16820', 'Sistemas de sinalização de emergência'],
-  ['Instruções técnicas do Corpo de Bombeiros local', 'Exigências por ocupação e área (no DF: CBMDF)'],
+  ['CBMDF — NT 23/2022 (Sistemas de detecção e alarme de incêndio)', 'Aprovada pela Portaria nº 49 de 27/12/2022 (DODF nº 4 de 05/01/2023), em vigor 90 dias após a publicação; itens alterados pela Decisão Técnica DT 11 [CONFERIR vigência e itens no site do CBMDF]'],
+  ['Instruções/normas técnicas do Corpo de Bombeiros local', 'Exigências por ocupação e área (fora do DF, a IT/NT do estado)'],
 ];
 const SECOES_CHECKLIST = ['Documentação', 'Central', 'Detectores', 'Acionadores', 'Avisadores', 'Circuitos', 'Iluminação de emergência'];
 const num = fmtNum; // número pt-BR; '—' quando vazio ou inválido
@@ -86,6 +87,9 @@ function secoesMemorial(res) {
       `Capacidade mínima da fonte = 1,20 × ${num(b.iAlarme, 0)} mA / 1000 = ${num(b.fonteA, 2)} A. Capacidade mínima da bateria = 1,20 × (${b.tRepouso} h × ${num(b.iRepouso, 1)} mA + ${b.tAlarme}/60 h × ${num(b.iAlarme, 0)} mA) / 1000 = ${num(b.bateriaAh, 2)} Ah → bateria de ${b.bateriaEscolhida} Ah (Anexo B). Consumos ${res.dados.sistema?.consumos ? 'informados pelo fabricante' : 'típicos adotados — [CONFERIR] com a ficha técnica dos equipamentos'}.`,
     ],
     tabela: { colunas: ['Equipamento', 'Qtd.', 'Repouso (mA)', 'Total repouso', 'Alarme (mA)', 'Total alarme'], linhas: b.linhas.map(l => [l.equipamento, l.qtd, num(l.repouso, 2), num(l.totalRepouso, 1), num(l.alarme, 2), num(l.totalAlarme, 1)]), proporcoes: [2, 0.6, 1, 1, 1, 1] } },
+    ...(calc.quedaTensao.circuitos.length ? [{ titulo: '4.1 Queda de tensão nos circuitos', paragrafos: [
+      `Seção do cabo pela queda em corrente contínua, ΔV = 2 · L · I · ρ / S (ρ = 0,0225 Ω·mm²/m), com a corrente de alarme do circuito concentrada no fim (lado da segurança): a tensão no último dispositivo, ${num(calc.quedaTensao.vFonte, 1)} V − ΔV, deve ficar ≥ ${num(calc.quedaTensao.vMin, 1)} V (queda admissível ${num(calc.quedaTensao.quedaAdmissivel, 1)} V). ${calc.quedaTensao.avisadoresNoLaco ? 'Avisadores alimentados pelo laço.' : 'Avisadores em circuitos próprios.'} Tensões típicas — [CONFERIR] com a ficha da central (tensão no fim da bateria) e do avisador; limite de queda da NBR 17240 e da NT 23/2022-CBMDF não conferido [CONFERIR].`,
+    ], tabela: { colunas: ['Circuito', 'Qtd.', 'Comprimento (m)', 'Corrente em alarme (A)', 'Seção (mm²)', 'Queda (V)', 'Tensão no fim (V)', 'Situação'], linhas: calc.quedaTensao.circuitos.map(c => [c.circuito, c.quantidade, num(c.comprimento, 0), num(c.correnteA, 3), num(c.secao, 1), num(c.queda, 2), num(calc.quedaTensao.vFonte - c.queda, 1), c.atende ? 'atende' : 'NÃO atende']), proporcoes: [1, 0.5, 0.9, 1, 0.8, 0.7, 0.9, 0.8] } }] : []),
     ...(calc.iluminacao.length ? [{ titulo: '5. Iluminação de emergência (NBR 10898)', paragrafos: [
       `Autonomia mínima de ${num(calc.autonomiaEmergH, 1)} h (NBR 10898:2023, 4.9 — a edição de 2013 pedia 1 h; vale a maior exigência entre a norma e a IT/NT do Corpo de Bombeiros local [CONFERIR CBMDF]), aclaramento ≥ 3 lx em locais planos e ≥ 5 lx em escadas (5.1 e A.2.1), luminárias com fluxo ≥ 300 lm (6.1.2.4) junto a portas de saída, escadas, mudanças de direção e interseções (5.1.2), distância máxima entre luminárias de 4 vezes a altura de instalação (Anexo A) e balizamento a no máximo 15 m (14.18). O nível de iluminância deve ser confirmado por cálculo ponto a ponto ou software (14.14).`,
     ], tabela: { colunas: ['Ambiente', 'Altura (m)', 'Aclaramento', 'Balizamento', 'Nível mínimo'], linhas: calc.iluminacao.map(x => [x.nome, num(x.h), x.aclaramento, x.balizamento, `${x.nivelLux} lx`]), proporcoes: [2.2, 0.8, 1, 1, 1] } }] : []),
@@ -175,6 +179,12 @@ const FORMULARIO = [
       { caminho: 'sistema.tempo_repouso_h', rotulo: 'Tempo em repouso (h)', tipo: 'numero', dica: 'Anexo B: 24 h' },
       { caminho: 'sistema.tempo_alarme_min', rotulo: 'Tempo em alarme (min)', tipo: 'numero', dica: 'Anexo B: 5 min' },
       { caminho: 'sistema.autonomia_iluminacao_h', rotulo: 'Autonomia da iluminação de emergência (h)', tipo: 'numero', dica: 'Vazio = 2 h (NBR 10898:2023, 4.9); maior só se a IT/NT local exigir' },
+      { caminho: 'sistema.tensao_fonte_min_v', rotulo: 'Tensão da central no fim da bateria (V)', tipo: 'numero', dica: 'Ficha da central — vazio = 21 V (2 × 10,5 V)' },
+      { caminho: 'sistema.tensao_minima_dispositivo_v', rotulo: 'Tensão mínima do avisador/dispositivo (V)', tipo: 'numero', dica: 'Ficha do avisador — vazio = 18 V' },
+      { caminho: 'sistema.avisadores_no_laco', rotulo: 'Avisadores alimentados pelo laço', tipo: 'check' },
+      { caminho: 'sistema.circuitos_avisadores', rotulo: 'Circuitos de avisadores', tipo: 'numero', dica: 'Quando os avisadores têm circuito próprio' },
+      { caminho: 'sistema.comprimento_laco_m', rotulo: 'Comprimento de cada laço/zona (m)', tipo: 'numero', dica: 'Vazio = cabo estimado ÷ nº de laços' },
+      { caminho: 'sistema.comprimento_circuito_avisadores_m', rotulo: 'Comprimento do circuito de avisadores (m)', tipo: 'numero' },
     ] },
     { tipo: 'nota', texto: 'Consumos dos equipamentos (mA) para o cálculo da bateria — deixe vazio para usar valores típicos; preencha com a ficha técnica do fabricante.' },
     { tipo: 'grade', colunas: 5, campos: [

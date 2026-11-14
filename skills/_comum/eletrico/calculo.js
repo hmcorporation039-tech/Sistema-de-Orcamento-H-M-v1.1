@@ -182,6 +182,30 @@ function quedaCC({ comprimento, corrente, secao, tensao, rho = T.RHO_COBRE }) {
   return { v, pct: Number(tensao) > 0 ? (v / tensao) * 100 : null };
 }
 
+// ── Taxa de ocupação do eletroduto (NBR 5410, 6.2.11.1.6) ─────────────────
+// Máxima taxa para n condutores/cabos: 53 % (1), 31 % (2), 40 % (3 ou mais).
+function taxaOcupacaoMax(n) {
+  const O = T.OCUPACAO_ELETRODUTO;
+  return n <= 1 ? O.um : n === 2 ? O.dois : O.tresOuMais;
+}
+// Quantos cabos iguais de diâmetro externo `dCabo` (mm) cabem num eletroduto de diâmetro interno `di` (mm):
+// o maior n com n · π·d²/4 ≤ taxa(n) · π·di²/4.
+function cabosNoEletroduto(di, dCabo) {
+  const razao = (di * di) / (dCabo * dCabo); // área interna ÷ área de um cabo
+  let n = 0;
+  while (n + 1 <= taxaOcupacaoMax(n + 1) * razao + 1e-9) n++;
+  return n;
+}
+// Menor eletroduto da série que leva `n` cabos de diâmetro `dCabo` → { bitola, dn, di, capacidade, ocupacao, taxaMax }
+// ou null se nem o maior da série atende (aí: eletrodutos em paralelo ou eletrocalha).
+function eletrodutoPorOcupacao(n, dCabo, serie = T.ELETRODUTOS_PVC_ROSCAVEL) {
+  for (const e of serie) {
+    const capacidade = cabosNoEletroduto(e.di, dCabo);
+    if (capacidade >= n) return { ...e, capacidade, ocupacao: (n * dCabo * dCabo) / (e.di * e.di), taxaMax: taxaOcupacaoMax(n) };
+  }
+  return null;
+}
+
 function dimensionarCircuito(circ, c, { minimo, limiteQueda }) {
   const ligacao = circ.ligacao || 'FN';
   const v = tensaoCircuito(ligacao, c);
@@ -513,4 +537,4 @@ function calcular(dados, opcoes = {}) {
   return { config: c, previsao, circuitos, fases, demanda: dem, alimentador: alim, quadro, falta, materiais: mat.itens, cabos: mat.cabos, maiorQueda, quedaTotal, limiteQuedaTotal: limiteTotal, avisos, circuitosSugeridos: !informados.length, ...(lum ? { luminotecnico: true } : {}) };
 }
 
-module.exports = { calcular, preverCargas, iluminacaoMinima, tomadasMinimas, agrupar, dimensionarCircuito, config, ligacaoTue, balancearFases, protecaoFalta, quedaTrecho, quedaCC };
+module.exports = { calcular, preverCargas, iluminacaoMinima, tomadasMinimas, agrupar, dimensionarCircuito, config, ligacaoTue, balancearFases, protecaoFalta, quedaTrecho, quedaCC, taxaOcupacaoMax, cabosNoEletroduto, eletrodutoPorOcupacao };

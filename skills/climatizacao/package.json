@@ -4,6 +4,6 @@
   "private": true,
   "description": "Skill de climatização (NBR 16401) da H&M Engenharia — carga térmica, split/VRF/self/chiller, VAV, dutos, PMOC, vistoria e orçamento",
   "scripts": {
-    "test": "node testes/teste.js"
+    "test": "node testes/teste.js && node testes/teste-caderno.js"
   }
 }

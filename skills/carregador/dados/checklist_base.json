@@ -160,5 +160,41 @@
   "onde": "Quadro",
   "como": "Verificar etiquetas",
   "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "T1",
+  "secao": "Ensaios",
+  "item": "Continuidade do condutor de proteção até o ponto de conexão e da equipotencialização",
+  "requisito": "NBR 5410, 7.3 (ensaios) [CONFERIR item]",
+  "onde": "Quadro e ponto de recarga",
+  "como": "Ohmímetro de baixa resistência entre a barra PE e o terra do ponto",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "T2",
+  "secao": "Ensaios",
+  "item": "Resistência de isolamento do circuito ≥ 0,5 MΩ com 500 V CC",
+  "requisito": "NBR 5410, 7.3 e Tabela 60",
+  "onde": "Circuito do ponto de recarga",
+  "como": "Megôhmetro 500 V CC com o carregador desligado",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "T3",
+  "secao": "Ensaios",
+  "item": "DR atua no botão de teste e no ensaio com IΔn (tempo registrado)",
+  "requisito": "NBR 5410, 7.3 [CONFERIR item]; NBR 17019, 5.1.1.3",
+  "onde": "Quadro do ponto de recarga",
+  "como": "Testador de DR: IΔn e tempo de atuação",
+  "prioridade_padrao": "P1"
+ },
+ {
+  "cod": "T4",
+  "secao": "Ensaios",
+  "item": "Ensaio funcional de recarga (veículo ou simulador): início, corrente configurada e interrupção ao desconectar",
+  "requisito": "NBR IEC 61851-1 [CONFERIR item]; NBR 17019, 6.1.2.101",
+  "onde": "Estação de recarga",
+  "como": "Recarga com veículo ou simulador de VE",
+  "prioridade_padrao": "P2"
  }
 ]

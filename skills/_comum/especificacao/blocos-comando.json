@@ -1416,6 +1416,60 @@
    ]
   },
   {
+   "id": "falta_fase",
+   "rotulo": "Supervisão de falta/sequência de fase sem parar o sistema (RFF → KFF)",
+   "se": [
+    "req:forca.rff",
+    "!bloco:emergencia_rele"
+   ],
+   "entradas": [
+    {
+     "id": "RFF",
+     "tipo": "supervisor",
+     "rotulo": "Relé de falta/sequência de fase (fase OK)"
+    }
+   ],
+   "reles": [
+    {
+     "tag": "KFF",
+     "rotulo": "fases OK"
+    }
+   ],
+   "degraus": [
+    {
+     "barra": "L+",
+     "expr": {
+      "x": "RFF",
+      "contato": "11-14",
+      "rotulo": "RFF fase OK"
+     },
+     "saida": "KFF",
+     "rotulo": "fases OK (desenergiza na falta de fase)"
+    }
+   ],
+   "cenarios": [
+    {
+     "nome": "Fases OK: KFF energizado (sem alarme de falta de fase)",
+     "entradas": {},
+     "espera": {
+      "KFF": true
+     }
+    },
+    {
+     "nome": "Falta de fase: KFF cai (sinaliza e avisa a central) sem desligar o comando",
+     "entradas": {
+      "RFF": false
+     },
+     "espera": {
+      "KFF": false
+     }
+    }
+   ],
+   "logica": [
+    "RFF supervisiona falta e sequência de fase da alimentação; KFF fica energizado com as fases OK (falha segura: fio partido também alarma). Na falta de fase KFF cai, acende o sinaleiro e abre o contato de falha para a central, sem desligar o comando (sistema de segurança — parada só no painel). O ventilador que perde fase deixa de confirmar fluxo/operação, e a temporização da reversão (KTR) ou a falha do acionamento (KF) passa para o reserva."
+   ]
+  },
+  {
    "id": "status_para_central",
    "rotulo": "Operação e falha para a central de alarme",
    "se": [
@@ -1443,11 +1497,20 @@
      "tag": "CENTRAL.SEM_FALHA",
      "se": "bloco:status_acionamento",
      "expr": {
-      "s_de": "motores",
-      "leaf": {
-       "x": "KF{m.i}",
-       "neg": true
-      }
+      "s": [
+       {
+        "s_de": "motores",
+        "leaf": {
+         "x": "KF{m.i}",
+         "neg": true
+        }
+       },
+       {
+        "x": "KFF",
+        "se": "bloco:falta_fase",
+        "rotulo": "KFF fases OK"
+       }
+      ]
      },
      "rotulo": "falha → central (contato NF: abre na falha; fio partido também alarma)",
      "borne": {
@@ -1470,6 +1533,16 @@
      "espera": {
       "CENTRAL.SEM_FALHA": false
      }
+    },
+    {
+     "nome": "Falta de fase abre o contato de falha para a central",
+     "se": "bloco:falta_fase",
+     "entradas": {
+      "RFF": false
+     },
+     "espera": {
+      "CENTRAL.SEM_FALHA": false
+     }
     }
    ],
    "logica": [
@@ -1482,6 +1555,15 @@
    "de_lista": "sinalizacao.porta",
    "prefixo": "H",
    "mapa": [
+    {
+     "termos": [
+      "falta de fase",
+      "sequ[êe]ncia de fase"
+     ],
+     "x": "KFF",
+     "neg": true,
+     "cor": "vermelho"
+    },
     {
      "termos": [
       "energizad",
@@ -1942,6 +2024,7 @@
    "descricao": "Painel de pressurização de escadas (NBR 14880; CBMDF NT 10; IT 13 / CBMGO NT 13): partida pelo alarme da central, MAN-0-AUT por ventilador, reversão para o reserva, modo manual/teste, status para a central. Traz os blocos a usar e as regras padrão (tempo de reversão e referências de inversor/soft-starter). Usado pelo perfil de especificação da skill pressurização (blocos.conjunto) e pelo painel do 3D (instalacao/paineis.js) — 2.40: antes a lista ficava só no perfil da skill e o 3D lia o arquivo da skill.",
    "usar": [
     "emergencia_rele",
+    "falta_fase",
     "partida_por_alarme",
     "motor_man_0_aut",
     "pressostato_fluxo",
@@ -1958,7 +2041,7 @@
      "tempo_reversao": 15
     },
     "referencias": {
-     "inversor": "WEG CFW500 / Danfoss FC 101 / ABB ACH580 ou equivalente (função PID, relé de falha e saída em funcionamento)",
+     "inversor": "WEG CFW500 / Danfoss FC 101 / ABB ACH580 ou equivalente (referência de velocidade do CLP, relé de falha e saída em funcionamento)",
      "soft": "WEG SSW07 / ABB PSR ou equivalente"
     }
    }

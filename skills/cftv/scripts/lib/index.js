@@ -13,8 +13,9 @@ const MODELO = require('../../exemplos/modelo-vazio.json');
 const EXEMPLO = require('../../exemplos/exemplo-comercio.json');
 
 const NORMAS = [
-  ['IEC 62676-4', 'Sistemas de vigilância por vídeo — diretrizes de aplicação (densidade de pixels DORI)'],
-  ['ABNT NBR 14565:2019', 'Cabeamento estruturado (limite de 90 m do cabo horizontal)'],
+  ['IEC 62676-4:2025 (ed. 2.0)', 'Sistemas de vigilância por vídeo — diretrizes de aplicação; cancelou a edição 2014 e redefiniu as densidades de pixels (6.7). Os objetivos deste projeto usam o DORI da edição 2014 (25/62,5/125/250 px/m) [CONFERIR na edição 2025]'],
+  ['IEC 62676-1-1', 'Sistemas de vigilância por vídeo — requisitos do sistema [CONFERIR edição]'],
+  ['ABNT NBR 14565:2025', 'Cabeamento estruturado (limite de 90 m do cabo horizontal — conferido na edição 2019 [CONFERIR na 2025])'],
   ['IEEE 802.3af/at/bt', 'Alimentação PoE'],
   ['Lei 13.709/2018 (LGPD)', 'Tratamento de imagens: transparência, finalidade e segurança'],
   ['ABNT NBR 5410 e NBR 5419-4', 'Aterramento e proteção contra surtos'],
@@ -53,12 +54,16 @@ function secoesMemorial(res) {
   const { calc } = res;
   return [
     { titulo: '1. Objeto e critérios', paragrafos: [
-      `Sistema de CFTV IP de ${res.dados.obra?.nome || 'a edificação'} com ${calc.nCam} câmeras. Não há norma ABNT específica de projeto de CFTV; adotam-se os critérios de densidade de pixels da IEC 62676-4 (DORI): detecção ${DORI.deteccao} px/m, observação ${DORI.observacao} px/m, reconhecimento ${DORI.reconhecimento} px/m e identificação ${DORI.identificacao} px/m, o limite de 90 m do cabo horizontal da ABNT NBR 14565 e os princípios da LGPD para o tratamento das imagens.`,
-      'Densidade de pixels na distância do alvo: px/m = resolução horizontal ÷ (2 · d · tg(abertura/2)). Alcance máximo para o objetivo: d = resolução ÷ (px/m exigido · 2 · tg(abertura/2)).',
+      `Sistema de CFTV IP de ${res.dados.obra?.nome || 'a edificação'} com ${calc.nCam} câmeras. Não há norma ABNT específica de projeto de CFTV; adotam-se os critérios de densidade de pixels DORI da IEC 62676-4:2014: detecção ${num(DORI.deteccao, 0)} px/m, observação ${num(DORI.observacao, 1)} px/m, reconhecimento ${num(DORI.reconhecimento, 0)} px/m e identificação ${num(DORI.identificacao, 0)} px/m (a edição 2025 redefiniu as densidades em 20/40/80/125/250/500/1 500 px/m — a classe atingida no alvo aparece como informação [CONFERIR]), o limite de 90 m do cabo horizontal da ABNT NBR 14565 e os princípios da LGPD para o tratamento das imagens.`,
+      'Densidade de pixels na distância do alvo: px/m = resolução horizontal ÷ (2 · d · tg(abertura/2)). Alcance máximo para o objetivo: d = resolução ÷ (px/m exigido · 2 · tg(abertura/2)). Abertura pela ficha ou, sem ela, pelo sensor e pela focal: HFOV = 2 · atan(largura do sensor ÷ (2 · f)).',
     ] },
     { titulo: '2. Câmeras', tabela: { colunas: ['Câmera', 'Local', 'Tipo', 'Qtd.', 'MP', 'Abertura', 'Objetivo', 'px/m no alvo', 'Alcance', 'Situação'],
       linhas: calc.cameras.map(c => [c.id, c.local, c.tipo, c.qtd, c.resolucao_mp || 2, `${c.hfov}°`, ROTULO_DORI[c.objetivo], c.ppm ? num(c.ppm, 0) : '—', `${num(c.dMax, 1)} m`, c.atende == null ? '—' : c.atende ? 'atende' : 'NÃO atende']),
       proporcoes: [0.7, 1.6, 0.7, 0.4, 0.4, 0.6, 1, 0.8, 0.7, 0.8], tamanho: 15 } },
+    { titulo: '2.1 Cobertura por critério DORI (alcance e largura da cena)', tabela: { colunas: ['Câmera', 'Abertura', ...Object.keys(DORI).map(k => `${ROTULO_DORI[k]} (${num(DORI[k], k === 'observacao' ? 1 : 0)} px/m)`), 'Classe 2025 no alvo'],
+      linhas: calc.cameras.map(c => [c.id, `${num(c.hfov, 0)}°${c.origemHfov !== 'informada' ? ` (${c.origemHfov})` : ''}`, ...c.cobertura.map(k => `até ${num(k.alcance, 1)} m · cena ${num(k.largura, 1)} m`), c.classe2025 || '—']),
+      proporcoes: [0.6, 0.8, 1.1, 1.1, 1.1, 1.1, 0.9], tamanho: 14 },
+      notas: ['Cada célula: distância máxima em que a câmera atinge o critério e a largura da cena nessa distância (resolução ÷ px/m). Área do setor até o alcance ≈ d² · tg(abertura/2). Classe 2025: densidade da IEC 62676-4:2025 atingida no alvo, informativa [CONFERIR].'] },
     { titulo: '3. Gravação e armazenamento', paragrafos: [
       `Banda total ${num(calc.banda, 1)} Mbps (${res.dados.sistema?.codec || 'H.265'}, ${res.dados.sistema?.fps || 15} qps). Armazenamento = banda × 3 600 s × ${calc.horas} h × ${calc.dias} dias${calc.atividade < 1 ? ` × ${num(calc.atividade * 100, 0)} % de atividade` : ''} ÷ 8 = ${num(calc.armazenamentoTb, 2)} TB → ${calc.hds} disco(s) de ${calc.hdTb} TB${calc.raid ? ` em RAID 5 (${calc.hdsDados} de capacidade útil + 1 de paridade; mínimo de 3 discos)` : ''}. Gravador de ${calc.canais} canais.`,
       'Retenção definida em política escrita, com acesso restrito e registrado (LGPD, art. 6º e 46).',
@@ -92,6 +97,23 @@ const DOCUMENTOS = [
       metodologia: ['Inspeção visual das câmeras, gravador, rack e infraestrutura.', 'Teste de imagem (dia/noite) e de gravação de cada câmera; busca e exportação de trecho gravado.', 'Verificação de usuários, senhas, firmware, sincronismo de horário e acesso remoto.'],
       medicoes: [{ titulo: '6.1 Teste das câmeras', colunas: ['Câmera', 'Imagem', 'Gravação', 'Obs.', 'Resultado'], proporcoes: [1.2, 0.7, 0.8, 2.2, 0.8], linhas: res.testes.map(m => [m.camera, m.imagem_ok === false ? 'falha' : m.imagem_ok ? 'ok' : '', m.gravacao_ok === false ? 'falha' : m.gravacao_ok ? 'ok' : '', m.observacao || '', m.resultado]) }],
     }, { checklist: res.checklist, ncs: res.ncs, parecer: res.parecer, baseDir: res.baseDir, pastaFotos: res.pastaFotos })) },
+  { tipo: 'checklist', rotulo: 'Checklist de campo', formato: 'Word', nome: 'Checklist_Campo_CFTV',
+    gerar: (res) => D.docxParaBuffer(D.gerarChecklistCampo(res.dados, res.insp, {
+      titulo: 'CHECKLIST DE CAMPO — SISTEMA DE CFTV', subtitulo: 'Vistoria e comissionamento câmera a câmera (IEC 62676-4, NBR 14565, LGPD)', tituloCurto: 'Checklist — CFTV', secoesChecklist: SECOES_CHECKLIST,
+      preparacao: [
+        'Combinar com o cliente o acesso ao gravador (usuário administrador) e ao rack; levar notebook, trena a laser, mira de teste ou objeto de referência e multímetro.',
+        'Em cada câmera: conferir imagem de dia e de noite, gravação, data/hora e a densidade de pixels no alvo da distância de projeto.',
+        'Registrar foto da imagem de cada câmera e do local de instalação.',
+      ],
+      referencias: [
+        ['Câmeras', String(res.calc.nCam)],
+        ['Gravador / discos', `NVR ${res.calc.canais} canais — ${res.calc.hds} × ${res.calc.hdTb} TB (${res.calc.dias} dias)`],
+        ['Nobreak', `${res.calc.nobreakVa} VA · ${res.calc.autonomiaMin} min`],
+        ...res.calc.cameras.map(c => [`${c.id} — px/m exigido no alvo`, `${num(c.ppmNecessario, c.objetivo === 'observacao' ? 1 : 0)} px/m (${ROTULO_DORI[c.objetivo]}) a ${c.dAlvo ? `${num(c.dAlvo)} m` : '—'}; alcance ${num(c.dMax, 1)} m`]),
+      ],
+      medicoes: [{ titulo: 'Teste câmera a câmera', colunas: ['Câmera', 'Local', 'Imagem dia/noite', 'Gravação', 'px/m no alvo', 'Data/hora', 'Obs.'], proporcoes: [0.6, 1.4, 0.8, 0.7, 0.7, 0.6, 1.2],
+        linhas: res.calc.cameras.map(c => [c.id, c.local || '', '', '', '', '', '']) }],
+    }, res.checklist)) },
   // PDF: rack do CFTV (gravador, switches PoE, patch panel, nobreak, PDU) "do rack aos parafusos"
   { tipo: 'caderno', rotulo: 'Caderno de fabricação e montagem do rack', formato: 'PDF', nome: 'Caderno_Fabricacao_Rack_CFTV', gerar: (res) => gerarCaderno(res) },
 ];
@@ -130,7 +152,7 @@ const OP = {
   raid: F.op([['nenhum', 'Sem RAID'], ['raid5', 'RAID 5']]),
   tipo: F.op([['dome', 'Dome'], ['bullet', 'Bullet'], ['ptz', 'PTZ'], ['fisheye', 'Fisheye']]),
   mp: F.op([['2', '2 MP'], ['4', '4 MP'], ['5', '5 MP'], ['8', '8 MP (4K)'], ['12', '12 MP']]),
-  objetivo: F.op(Object.entries(ROTULO_DORI).map(([k, v]) => [k, `${v} (${DORI[k]} px/m)`])),
+  objetivo: F.op(Object.entries(ROTULO_DORI).map(([k, v]) => [k, `${v} (${num(DORI[k], k === 'observacao' ? 1 : 0)} px/m)`])),
 };
 
 const FORMULARIO = [
@@ -154,12 +176,12 @@ const FORMULARIO = [
     ] },
   ] },
   { titulo: '3. Câmeras', aberta: true, itens: [
-    { tipo: 'nota', texto: 'Abertura horizontal da lente: 2,8 mm ≈ 100°, 3,6 mm ≈ 80°, 6 mm ≈ 50°, 12 mm ≈ 25° (conferir ficha técnica). Distância do alvo: até onde a câmera precisa atingir o objetivo.' },
+    { tipo: 'nota', texto: 'Abertura horizontal da lente: 2,8 mm ≈ 100°, 3,6 mm ≈ 80°, 6 mm ≈ 50°, 12 mm ≈ 25° (conferir ficha técnica). Sem a abertura, informe a largura do sensor e a focal (HFOV = 2·atan(largura ÷ 2f)). Distância do alvo: até onde a câmera precisa atingir o objetivo.' },
     { tipo: 'tabela', caminho: 'cameras', rotuloAdicionar: 'Adicionar câmera', novaLinha: { id: 'CAM{n}', local: '', tipo: 'dome', quantidade: 1, resolucao_mp: '4', hfov_graus: 90, objetivo: 'observacao', distancia_alvo_m: null, distancia_cabo_m: 30, externa: false, modelo: '' },
       colunas: [
         { campo: 'id', rotulo: 'Id', largura: 70 }, { campo: 'local', rotulo: 'Local' }, { campo: 'tipo', rotulo: 'Tipo', tipo: 'selecao', opcoes: OP.tipo, largura: 100 },
         { campo: 'quantidade', rotulo: 'Qtd.', tipo: 'numero', largura: 60 }, { campo: 'resolucao_mp', rotulo: 'Resolução', tipo: 'selecao', opcoes: OP.mp, largura: 100 },
-        { campo: 'hfov_graus', rotulo: 'Abertura (°)', tipo: 'numero', largura: 80 }, { campo: 'objetivo', rotulo: 'Objetivo', tipo: 'selecao', opcoes: OP.objetivo, largura: 190 },
+        { campo: 'hfov_graus', rotulo: 'Abertura (°)', tipo: 'numero', largura: 80 }, { campo: 'sensor_largura_mm', rotulo: 'Sensor (mm larg.)', tipo: 'numero', largura: 90 }, { campo: 'focal_mm', rotulo: 'Focal (mm)', tipo: 'numero', largura: 75 }, { campo: 'objetivo', rotulo: 'Objetivo', tipo: 'selecao', opcoes: OP.objetivo, largura: 190 },
         { campo: 'distancia_alvo_m', rotulo: 'Dist. alvo (m)', tipo: 'numero', largura: 90 }, { campo: 'distancia_cabo_m', rotulo: 'Cabo (m)', tipo: 'numero', largura: 80 },
         { campo: 'externa', rotulo: 'Externa', tipo: 'check', largura: 60 }, { campo: 'modelo', rotulo: 'Modelo', largura: 120 },
       ] },

@@ -126,11 +126,9 @@ const FOLGA_MOTOR = 1.15;
 // do motor comum de motores (skills/_comum/eletrico/motores.js), mesmos valores de antes
 const { MOTORES_CV, rendimentoFpMotor } = require('../../../_comum/eletrico/motores');
 
+// padrão H&M: pressurização sempre com inversor (o formulário só oferece ele; PARTIDAS_CURTO nomeia o que vier pedido)
 const PARTIDAS = {
   inversor: 'Inversor de frequência (controle de pressão por PID)',
-  soft_starter: 'Soft-starter (vazão fixa, alívio pelo damper)',
-  direta: 'Partida direta (vazão fixa, alívio pelo damper)',
-  estrela_triangulo: 'Estrela-triângulo (vazão fixa, alívio pelo damper)',
 };
 const PARTIDAS_CURTO = { inversor: 'inversor de frequência', soft_starter: 'soft-starter', direta: 'partida direta', estrela_triangulo: 'partida estrela-triângulo' };
 const ALIVIOS = {

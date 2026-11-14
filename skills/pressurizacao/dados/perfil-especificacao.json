@@ -4,7 +4,7 @@
   "disciplina": "pressurizacao",
   "versao": 1,
   "nome": "Painel de comando da pressurização de escadas a partir da especificação",
-  "descricao": "Lê a especificação do painel de pressurização (ventilador principal e reserva com inversor ou soft-starter, partida pelo alarme da central, pressostato de fluxo com reversão automática, modos manual/automático/teste, inibição pela fumaça na casa de máquinas, operação e falha para a central) e gera o anteprojeto do painel pelo mesmo motor do quadro de força e comando.",
+  "descricao": "Lê a especificação do painel de pressurização (ventilador principal e reserva com inversor de frequência — padrão H&M —, partida pelo alarme da central, pressostato de fluxo com reversão automática, modos manual/automático/teste, inibição pela fumaça na casa de máquinas, operação e falha para a central) e gera o anteprojeto do painel pelo mesmo motor do quadro de força e comando.",
   "detectar": [
     "pressuriza[çc][ãa]o (?:da|de) escada",
     "escada pressurizada",

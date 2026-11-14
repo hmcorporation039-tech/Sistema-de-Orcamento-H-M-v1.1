@@ -5,13 +5,14 @@ description: Projeto (estudo de cobertura DORI, gravação, PoE e materiais), la
 
 # CFTV (IEC 62676-4 / LGPD) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 30 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
+Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 37 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
 
 | Documento | Tipo | Formato |
 |---|---|---|
 | Memorial do sistema de CFTV | `memorial` | Word |
 | Planilha de câmeras e materiais | `planilha` | Excel |
 | Laudo de vistoria do CFTV | `laudo` | Word |
+| Checklist de campo | `checklist` | Word |
 | Caderno de fabricação e montagem do rack do CFTV (NVR, switches PoE, patch panel, nobreak, PDU; materiais do rack aos parafusos e plaqueta H&M) | `caderno` | PDF |
 
 ## Também no sistema (aba Análise de Projeto)
@@ -45,11 +46,12 @@ Regra de posicionamento: câmeras nos cantos do ambiente indicado em "local", ap
 
 ## Critérios adotados
 
-- Densidade de pixels: px/m = resolução horizontal ÷ (2·d·tg(abertura/2)), comparada com DORI da IEC 62676-4 (25/62/125/250 px/m).
+- Densidade de pixels: px/m = resolução horizontal ÷ (2·d·tg(abertura/2)), comparada com o DORI da IEC 62676-4:2014 (25/62,5/125/250 px/m). A IEC 62676-4:2025 (ed. 2.0, 10/2025) cancelou a de 2014 e redefiniu as densidades (20/40/80/125/250/500/1 500 px/m): a classe de 2025 atingida no alvo sai como informação [CONFERIR].
+- Cobertura: para cada critério DORI, alcance = resolução ÷ (px/m · 2·tg(abertura/2)) e largura da cena = resolução ÷ px/m. Abertura da ficha ou, sem ela, pelo sensor e pela focal: HFOV = 2·atan(largura do sensor ÷ 2f).
 - Armazenamento (TB) = Mbps × 3 600 × horas × dias × atividade ÷ 8 ÷ 10⁶; NVR com 25 % de canais de reserva; PoE com 20 % de margem (câmera > 25,5 W exige porta IEEE 802.3bt; > 71,3 W fonte própria); RAID 5 com no mínimo 3 discos; cabo ≤ 90 m (NBR 14565) — o memorial lista as câmeras que excedem; quantidade 0 tira a câmera; 5 MP = 2592 px (4:3); teste de câmera só é C com imagem E gravação verificadas.
 - Bitrate e consumos são típicos de mercado e saem com [CONFERIR] — usar a ficha técnica do equipamento escolhido. Placa de ambiente monitorado e política de retenção (LGPD).
 
-O checklist de inspeção (17 itens) está em `dados/checklist_base.json`; itens não conformes viram não conformidades com prioridade (P1 48 h, P2 30 dias, P3 90 dias, P4 manutenção) e entram no orçamento do modo de inspeção.
+O checklist de inspeção (18 itens) está em `dados/checklist_base.json`; itens não conformes viram não conformidades com prioridade (P1 48 h, P2 30 dias, P3 90 dias, P4 manutenção) e entram no orçamento do modo de inspeção.
 
 ## Regras
 

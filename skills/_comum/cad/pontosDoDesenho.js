@@ -29,7 +29,10 @@ const COLA_M = 0.05;       // traços a até 5 cm um do outro são do mesmo sím
 const MAX_LINHAS_MAPA = 300;        // linhas do mapa (formas de símbolo) por desenho; o resto vai no aviso
 const MAX_FORMAS_PDF_SUGERIDAS = 8; // na cor do PDF, só as formas mais frequentes recebem tipo sugerido
 // layers de instalação (o resto — arquitetura, prancha — não tem pontos)
-const RE_INSTALACAO = /^PDF-COR-|^(EL|ELE|IFC|P|INC|CFTV|TEL|SPDA|PCI|HID|CAB|ACE|ALM|ANT|AUT|FV|VE|ILU)[-_ ]|SIMB|L[ÂA]MP|LUMIN|TOMAD|INTERRUP|CAIXA|QUADRO|POSTE|REFLET|PROJETOR|DETEC|C[ÂA]MERA|SENSOR|CONDUT|ELETROD|ELETROCALHA|LEITO|PERFILADO|EMERG|BALIZ|ACION|AVISAD|SIREN|CENTRAL|RACK|PORTEIRO|TELEF|INTERF|ANTENA|LEITOR|FECHAD|BOTOEIRA|CATRACA|\bIVP\b|INFRAV|MAGN[EÉ]T|TECLADO|CAPTOR|DESCIDA|INSPE[ÇC]|CARREG|WALLBOX|INVERSOR|FUMA[ÇC]|(^|[-_ ])(REDE|L[ÓO]GICA|DADOS|RJ.?45|WI.?FI|TV)([-_ ]|$)/i;
+// (14/11/2026: + as layers IND-, MT-, PRZ-, SOL-, HOSP- e os nomes de motor, CCM, banco de capacitores, pressurização,
+// subestação, módulo/string box, parabólica, DG, controladora, quebra-vidro e sensor de automação — antes esses
+// símbolos explodidos nem chegavam ao mapa do CAD)
+const RE_INSTALACAO = /^PDF-COR-|^(EL|ELE|IFC|P|INC|CFTV|TEL|SPDA|PCI|HID|CAB|ACE|ALM|ANT|AUT|FV|VE|ILU|IND|MT|PRZ|SOL|HOSP)[-_ ]|MOTOR|\bCCM\b|CAPACITOR|PRESSURIZ|PRESSOSTATO|DAMPER.{0,20}AL[ÍI]VIO|TRANSFORMADOR|TRAFO|CUB[ÍI]CULO|SECCIONADORA|M[ÓO]DULOS?.?(FV|FOTOV|SOLAR)|STRING.?BOX|PARAB[ÓO]LIC|CONTROLADORA|QUEBRA.?VIDRO|TERMOSTATO|\bDSI\b|(^|[-_ ])(DG|BEL)([-_ ]|$)|SIMB|L[ÂA]MP|LUMIN|TOMAD|INTERRUP|CAIXA|QUADRO|POSTE|REFLET|PROJETOR|DETEC|C[ÂA]MERA|SENSOR|CONDUT|ELETROD|ELETROCALHA|LEITO|PERFILADO|EMERG|BALIZ|ACION|AVISAD|SIREN|CENTRAL|RACK|PORTEIRO|TELEF|INTERF|ANTENA|LEITOR|FECHAD|BOTOEIRA|CATRACA|\bIVP\b|INFRAV|MAGN[EÉ]T|TECLADO|CAPTOR|DESCIDA|INSPE[ÇC]|CARREG|WALLBOX|INVERSOR|FUMA[ÇC]|(^|[-_ ])(REDE|L[ÓO]GICA|DADOS|RJ.?45|WI.?FI|TV)([-_ ]|$)/i;
 // (arquitetura e mobiliário também: "#ARQUITETURA SIMBOLOGIA" casava "SIMB" e o DWG só de
 // arquitetura da Paróquia saía com 8 linhas de mapa e 2 "postes" — CAD-13, 02/11/2026; a mesma
 // regra de RE_LAYER_FORA de ./projetoDxf.js, também na layer de xref "XREF$0$ARQ-…")

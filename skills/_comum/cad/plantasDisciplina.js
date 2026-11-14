@@ -1,7 +1,7 @@
 // Do resultado do cálculo de cada skill → pontos da planta (quantidades
 // normativas por ambiente). Uma função por disciplina; cada uma devolve
 // { pontos, notas } para gerarPlanta (./planta.js).
-const { normalizar, casaNome } = require('./planta');
+const { normalizar, casaNome, acharAmbiente } = require('./planta');
 const palavrasDe = (s) => normalizar(s).split(' ').filter(Boolean);
 
 // Pontos do modelo único da instalação (res.instalacao — skills/_comum/instalacao) por
@@ -375,9 +375,111 @@ function antena(res, arquitetura) {
   };
 }
 
+// Ambiente da arquitetura com o nome escrito (formulário) — null quando não há
+const ambienteEscrito = (arquitetura, nome) => (String(nome || '').trim() ? acharAmbiente(arquitetura, nome)?.nome || null : null);
+// sala técnica da arquitetura (elétrica, painéis, CPD, máquinas…), a primeira que houver
+const RE_SALA_TECNICA = /EL[ÉE]TRIC|PAIN[ÉE]IS|PAINEL|\bCCM\b|QGBT|T[ÉE]CNIC|UTILIDADES|M[ÁA]QUINAS|CPD|AUTOMA[ÇC]|SUPERVIS/i;
+const salaTecnica = (arquitetura) => (arquitetura.ambientes || []).find(a => RE_SALA_TECNICA.test(normalizar(a.nome)))?.nome || null;
+const maiorAmbiente = (arquitetura) => [...(arquitetura.ambientes || [])].sort((a, b) => (b.area_m2 || 0) - (a.area_m2 || 0))[0]?.nome || null;
+const numBr = (v, casas = 1) => String(Math.round(Number(v) * 10 ** casas) / 10 ** casas).replace('.', ',');
+// junta os itens do mesmo ambiente num grupo só (a planta posiciona os de parede juntos, sem sobrepor)
+function agruparPorAmbiente(lista) {
+  const grupos = new Map();
+  for (const { ambiente, item } of lista) {
+    if (!ambiente) continue;
+    (grupos.get(ambiente) || grupos.set(ambiente, []).get(ambiente)).push(item);
+  }
+  return [...grupos].map(([ambiente, itens]) => ({ ambiente, itens }));
+}
+
+// ── Elétrica industrial (NBR 5410 6.5.1, NBR IEC 61439) — 14/11/2026 ──
+// Motores, CCM/quadros, QGBT e banco de capacitores do CÁLCULO da skill (nada estimado pela área), cada um num ambiente
+// da arquitetura: o escrito no formulário ("ambiente" ou "local" do motor/quadro); sem ele, o motor vai para o ambiente
+// cujo nome tem a carga ("Compressor de ar" → "CASA DO COMPRESSOR", "Bomba" → "CASA DE BOMBAS"), para o ambiente escrito
+// do quadro que o alimenta ou para o maior ambiente (o galpão — o motor não vai para a sala elétrica só porque o CCM está
+// lá); o quadro, o QGBT e o banco vão para a sala elétrica/de painéis, senão o maior ambiente. Posições indicativas.
+function eletricaIndustrial(res, arquitetura) {
+  const { calc } = res;
+  const dados = res.dados || {};
+  const ambientes = (arquitetura.ambientes || []).filter(a => a?.nome);
+  const tecnica = salaTecnica(arquitetura);
+  const maior = maiorAmbiente(arquitetura);
+  // a carga no nome do ambiente: palavra de 5+ letras da descrição do motor que começa uma palavra do nome
+  const daCarga = (descricao) => {
+    const ps = palavrasDe(descricao).filter(p => p.length >= 5 && !/^(MOTOR|ELETRICO|TRIFASICO|RESERVA|LINHA)$/.test(p));
+    return ambientes.find(a => palavrasDe(a.nome).some(q => ps.some(p => q.startsWith(p.slice(0, 6)))))?.nome || null;
+  };
+  const quadrosDados = new Map((dados.quadros || []).map(q => [String(q.id), q]));
+  const escritoDoQuadro = (id) => ambienteEscrito(arquitetura, quadrosDados.get(String(id))?.ambiente || quadrosDados.get(String(id))?.local);
+  const ambienteDoQuadro = (id) => escritoDoQuadro(id) || tecnica || maior;
+  const lista = [];
+  const semLocal = [];
+  for (const u of calc.unidades || []) {
+    const m = (dados.motores || [])[u.linha] || {};
+    const escrito = ambienteEscrito(arquitetura, m.ambiente || m.local);
+    const pelaCarga = escrito ? null : daCarga(u.descricao);
+    const doQuadro = escrito || pelaCarga ? null : escritoDoQuadro(u.quadro);
+    const ambiente = escrito || pelaCarga || doQuadro || maior;
+    if (!escrito && !pelaCarga && !doQuadro) semLocal.push(u.tag);
+    const potencia = String(m.unidade || '').toLowerCase() === 'kw' ? `${numBr(u.pKw, 2)} kW` : `${numBr(u.cv, 2)} cv`;
+    lista.push({ ambiente, item: { simbolo: 'HM-IND-MOTOR', n: 1, regra: 'perimetro', ids: [u.tag], atributos: { POTENCIA: potencia } } });
+  }
+  for (const q of calc.quadros || []) {
+    const ccm = /CCM/i.test(`${q.tipo} ${q.id}`);
+    lista.push({ ambiente: ambienteDoQuadro(q.id), item: { simbolo: ccm ? 'HM-IND-CCM' : 'HM-ELE-QUADRO', n: 1, regra: 'perimetro', ids: [String(q.id)] } });
+  }
+  const ambQgbt = tecnica || maior;
+  if (calc.qgbt) lista.push({ ambiente: ambQgbt, item: { simbolo: 'HM-ELE-QUADRO', n: 1, regra: 'perimetro', ids: [String(calc.qgbt.id || 'QGBT')] } });
+  if (calc.banco?.necessario && Number(calc.banco.total) > 0) lista.push({ ambiente: ambQgbt, item: { simbolo: 'HM-IND-BANCO-CAPACITORES', n: 1, regra: 'perimetro', ids: ['BC'] } });
+  return {
+    pontos: agruparPorAmbiente(lista),
+    notas: [
+      'Motores, CCM, quadros e banco de capacitores do memorial de cálculo (NBR 5410 6.5.1 e NBR IEC 61439) — quantidades do projeto, posições indicativas.',
+      `Motor no ambiente indicado no formulário; sem ele, no ambiente com o nome da carga ou no do quadro que o alimenta, senão no maior ambiente${semLocal.length ? ` (sem local definido: ${semLocal.join(', ')})` : ''} — [CONFERIR] com o layout das máquinas.`,
+      `CCM, QGBT e banco de capacitores ${tecnica ? `na ${tecnica}` : 'no ambiente indicado (a arquitetura não tem sala elétrica identificada)'} — conferir os espaços de operação e manutenção na arquitetura.`,
+      'Alimentadores, circuitos dos motores (seccionadora local quando indicada) e eletrocalhas/eletrodutos a completar pelo projetista, conforme o memorial.',
+    ],
+  };
+}
+
+// ── Automação predial (ISO 16484 / NBR 16401-3) — 14/11/2026 ──
+// Sensor de cada zona de climatização (o tipo do controle da zona: termostato, temperatura, T + UR ou CO₂ + T + UR) no
+// ambiente de mesmo nome; quadros de automação (controladores DDC/CLP) na sala técnica; na residencial, os sensores de
+// presença/abertura de cada ambiente. Os equipamentos integrados (chiller, bombas, medidores…) ficam onde o formulário diz
+// (cobertura, subsolo) — fora da planta de ambientes, listados nas notas.
+const PREFIXO_SENSOR_ZONA = { co2: 'CO2-', sensor_tur: 'TU-', sensor_t: 'TS-', termostato: 'TT-' };
+function automacao(res, arquitetura) {
+  const { calc } = res;
+  const lista = [];
+  for (const z of calc.zonas || []) {
+    if (!PREFIXO_SENSOR_ZONA[z.controle]) continue;
+    lista.push({ ambiente: z.nome, item: { simbolo: 'HM-AUT-SENSOR', n: 1, regra: 'perimetro', ids: [`${PREFIXO_SENSOR_ZONA[z.controle]}${z.id || lista.length + 1}`] } });
+  }
+  for (const a of calc.resid?.ambientes || []) {
+    const n = Math.max(0, Math.round(Number(a.sensores) || 0));
+    if (n) lista.push({ ambiente: a.nome, item: { simbolo: 'HM-AUT-SENSOR', n, regra: 'perimetro', prefixo: 'SEN-' } });
+  }
+  const b = calc.bms;
+  const nQuadros = b ? Math.max(Number(b.quadros) || 0, b.controladores ? 1 : 0) : 0;
+  const ambQuadro = salaTecnica(arquitetura) || lista[0]?.ambiente || maiorAmbiente(arquitetura);
+  if (nQuadros && ambQuadro) lista.push({ ambiente: ambQuadro, item: { simbolo: 'HM-AUT-CONTROLADOR', n: nQuadros, regra: 'perimetro', prefixo: 'QA-' } });
+  const integrados = (b?.linhas || []).filter(l => l.tipo !== 'zona' && l.local).map(l => `${l.descricao || l.rotulo} (${l.local})`);
+  return {
+    pontos: agruparPorAmbiente(lista),
+    notas: [
+      'Sensor de cada zona pelo controle definido no memorial (TT termostato comunicante, TS temperatura, TU temperatura e umidade, CO2 CO₂ + temperatura + umidade — controle por CO₂ pela NBR 16401-3) na parede do ambiente, longe de insolação direta, difusores e fontes de calor — posição indicativa. [CONFERIR]',
+      `Quadro(s) de automação (controladores DDC/CLP) ${salaTecnica(arquitetura) ? `na ${salaTecnica(arquitetura)}` : 'no ambiente indicado — a arquitetura não tem sala técnica identificada'}; posicionar perto dos equipamentos que atendem.`,
+      ...(integrados.length ? [`Equipamentos integrados ao BMS fora da planta de ambientes: ${integrados.slice(0, 12).join('; ')}${integrados.length > 12 ? '…' : ''}.`] : []),
+      'Rede de campo (BACnet MS/TP, Modbus) e cabos de sinal conforme a lista de pontos e o memorial.',
+    ],
+  };
+}
+
 // ── Alarme e elétrica usam as portas detectadas quando existem ──
 const PLANTAS = { eletrica, incendio, cftv, cabeamento, alarme, iluminacao, eletrica_hospitalar: eletricaHospitalar, controle_acesso: controleAcesso, telefonia, antena,
   // climatização (fase 4): a planta automática fica em ./climatizacao.js (antes na skill)
-  climatizacao: (res, arq) => require('./climatizacao').planta(res, arq) };
+  climatizacao: (res, arq) => require('./climatizacao').planta(res, arq),
+  // elétrica industrial e automação (14/11/2026 — seção 6 da revisão geral)
+  eletrica_industrial: eletricaIndustrial, automacao };
 
 module.exports = { PLANTAS };

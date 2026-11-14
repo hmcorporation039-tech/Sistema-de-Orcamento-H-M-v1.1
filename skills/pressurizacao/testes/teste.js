@@ -7,7 +7,7 @@
 //    VPA = 0,86 m/s; QAT = 3,76 m³/s; QTS = 5,26 m³/s; QFT(60 Pa) = 3,52 m³/s; QD = 1,74 m³/s.
 // 2) Automação calibrada com o serviço real da H&M (adequação do comando de 3 escadas
 //    pressurizadas de um hospital no DF, 2026 — dados anonimizados): por escada, 2
-//    ventiladores (operante + reserva com reversão), 1 controlador, 1 transmissor de ΔP
+//    ventiladores (operante + reserva com reversão), 1 CLP (controle de pressão) + lógica de segurança por relés, 1 transmissor de ΔP
 //    e 1 pressostato de fluxo por ventilador. Não havia memorial de vazão para calibrar.
 // 3) Contas à mão: atrito no duto 0,75 × 0,75 m com 5,264 m³/s (Altshul-Tsal):
 //    V = 9,358 m/s; Re = 66 400·0,75·9,358 = 466 028; f' = 0,11·(0,00012 + 0,0001459)^0,25
@@ -59,7 +59,11 @@ igual('circuito do motor pela NBR 5410 (skill de elétrica): 2,5 mm²', k.al.cir
 // automação calibrada com o painel real da H&M (2 ventiladores, 1 transmissor por escada)
 const qtdMat = (cod) => k.materiais.filter(m => m.codigo === cod).reduce((s, m) => s + m.quantidade, 0);
 igual('automação: 1 controlador, 1 transmissor de ΔP, 2 pressostatos, 2 inversores', [qtdMat('CLP'), qtdMat('PT'), qtdMat('PDS'), qtdMat('INV')], [1, 1, 2, 2]);
-igual('automação: E/S (ED 15 · SD 10 · EA 1 · SA 2)', k.aut.totais, { ED: 15, SD: 10, EA: 1, SA: 2 });
+// relés e CLP juntos (decisão do usuário, 14/11/2026): o CLP só tem as saídas dele (pressão fora da faixa);
+// partida, retornos à central e sinaleiros de operação/falha/falta de fase são da lógica por relés
+igual('automação: E/S do CLP (ED 15 · SD 1 · EA 1 · SA 2)', k.aut.totais, { ED: 15, SD: 1, EA: 1, SA: 2 });
+igual('lógica de segurança por relés: falta de fase (RFF), 10 relés auxiliares, temporizador da reversão, 9 sinaleiros', [qtdMat('RFF'), qtdMat('RELE-AUX'), qtdMat('KTR'), qtdMat('SINAL'), k.aut.relesLogica.auxiliares.includes('KFF')], [1, 10, 1, 9, true]);
+igual('controle de pressão pelo CLP (PID → velocidade dos inversores) e segurança nos relés', [k.aut.logica.some(l => /CLP lê o transmissor de ΔP/.test(l)), k.aut.logica.some(l => /Relés e CLP juntos/.test(l))], [true, true]);
 igual('lógica traz reversão e parada só manual', [k.aut.logica.some(t => /Reversão automática/.test(t)), k.aut.logica.some(t => /PARADA em emergência só/.test(t))], [true, true]);
 
 // 3) residencial 30 m, duto de alvenaria, 9 acessos + 1 saída
@@ -95,7 +99,8 @@ perto('janela entra com N = 1,6', motor.processar(jan).calc.v.qft, 3.2163 + C.va
 const soft = motor.exemplo();
 soft.sistema.partida = 'soft_starter';
 const rs = motor.processar(soft).calc;
-igual('soft-starter com alívio pelo inversor → damper motorizado, sem SA', [rs.c.alivio, rs.aut.totais.SA, rs.materiais.some(m => m.codigo === 'SOFT')], ['damper_motorizado', 0, true]);
+// padrão H&M (14/11/2026): pressurização sempre com inversor — soft-starter pedido vira inversor, com aviso
+igual('soft-starter pedido → inversor (padrão H&M), com aviso e sem soft-starter na lista', [rs.c.partida, rs.avisos.some(a => /sempre com inversor/.test(a)), rs.materiais.some(m => m.codigo === 'SOFT'), rs.materiais.some(m => m.codigo === 'INV')], ['inversor', true, false, true]);
 
 // 4b) achado A2.4 (revisão 27/10/2026) — Nota 5 do Anexo B: 2 PCF de acesso por pavimento.
 //    Exemplo do Anexo F com 34 PCF de acesso (2 por pavimento-tipo) + 1 de saída:
@@ -170,7 +175,7 @@ const ref = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'backend', 's
 const registrados = new Set([...ref.matchAll(/codigo: '(pres_[a-z_]+)'/g)].map(m => m[1]));
 
 (async () => {
-  for (const t of motor.tiposDisponiveis(res)) igual(`documento ${t}`, (await motor.gerarDocumento(res, t)).buffer.slice(0, 2).toString(), 'PK');
+  for (const t of motor.tiposDisponiveis(res).filter(x => x !== 'caderno')) igual(`documento ${t}`, (await motor.gerarDocumento(res, t)).buffer.slice(0, 2).toString(), 'PK');
   const usados = new Set();
   for (const modo of motor.modosOrcamento.map(m => m.modo)) {
     const o = motor.montarOrcamento(res, modo);

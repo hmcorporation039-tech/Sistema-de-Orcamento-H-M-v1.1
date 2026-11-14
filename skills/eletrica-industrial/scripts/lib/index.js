@@ -347,6 +347,8 @@ const DOCUMENTOS = [
         D.abaMateriais(calc.materiais),
       ]);
     } },
+  // caderno de fabricação e montagem do CCM (partidas por motor, NBR IEC 61439 / 60947-4-1) — ./caderno.js
+  { tipo: 'caderno', rotulo: 'Caderno de fabricação e montagem do CCM', formato: 'PDF', nome: 'Caderno_Fabricacao_CCM', exige: (res) => require('./caderno').exigeCaderno(res), motivo: 'O projeto não tem motores em CCM/QGBT.', gerar: (res) => require('./caderno').gerarCaderno(res) },
   { tipo: 'laudo', rotulo: 'Laudo de inspeção (elétrica industrial)', formato: 'Word', nome: 'Laudo_Eletrica_Industrial',
     gerar: (res) => D.docxParaBuffer(D.gerarLaudoInspecao(res.dados, res.insp, cfgLaudo(res), { checklist: res.checklist, ncs: res.ncs, parecer: res.parecer, baseDir: res.baseDir, pastaFotos: res.pastaFotos })) },
   { tipo: 'checklist', rotulo: 'Checklist de campo', formato: 'Word', nome: 'Checklist_Campo_Industrial',

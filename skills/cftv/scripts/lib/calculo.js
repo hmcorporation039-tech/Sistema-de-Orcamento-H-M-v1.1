@@ -3,14 +3,29 @@
 // de projeto de CFTV na biblioteca: valores de bitrate e consumo são típicos e
 // devem ser conferidos com o fabricante (o laudo e o memorial deixam isso claro).
 
-// IEC 62676-4: densidade mínima de pixels (px/m) por objetivo
-const DORI = { deteccao: 25, observacao: 62, reconhecimento: 125, identificacao: 250 };
+// IEC 62676-4:2014 (ed. 1): densidade mínima de pixels (px/m) por critério de observação — sistema
+// MDORII: Monitor 12,5, Detect 25, Observe 62,5, Recognise 125, Identify 250 e Inspect 1 000 px/m
+// (valores confirmados no prefácio da IEC 62676-4:2025, que os substitui). Até 14/11/2026 a observação
+// estava em 62 px/m (arredondado) — corrigido para 62,5.
+// A IEC 62676-4:2025 (ed. 2.0, 10/2025) cancelou a de 2014 e redefiniu as densidades (6.7, "O2DCPVS"):
+// 20 / 40 / 80 / 125 / 250 / 500 / 1 500 px/m (nomes divulgados pela Axis: Overview, Outline, Discern,
+// Perceive, Characterize, Validate, Scrutinize). Os objetivos do cliente continuam no DORI de 2014; a
+// correspondência com as classes de 2025 é informativa [CONFERIR no texto da edição 2025].
+const DORI = { deteccao: 25, observacao: 62.5, reconhecimento: 125, identificacao: 250 };
 const ROTULO_DORI = { deteccao: 'Detecção', observacao: 'Observação', reconhecimento: 'Reconhecimento', identificacao: 'Identificação' };
+const DENSIDADES_IEC_2025 = [
+  { classe: 'Overview', ppm: 20 }, { classe: 'Outline', ppm: 40 }, { classe: 'Discern', ppm: 80 }, { classe: 'Perceive', ppm: 125 },
+  { classe: 'Characterize', ppm: 250 }, { classe: 'Validate', ppm: 500 }, { classe: 'Scrutinize', ppm: 1500 },
+];
+// Largura nominal do sensor (mm) pelo formato óptico — valores nominais de formato 4:3; a largura ativa
+// real depende do sensor e do recorte 16:9 [CONFERIR na ficha técnica: informe sensor_largura_mm]
+const SENSOR_LARGURA_MM = { '1/4"': 3.2, '1/3"': 4.8, '1/2.5"': 5.76, '1/2"': 6.4, '1/1.8"': 7.18, '2/3"': 8.8 };
 // Resolução horizontal típica por megapixel. 5 MP: 2592 × 1944 (sensor 4:3, o mais
-// comum) — o 2880 × 1620 (16:9) superestimava a densidade de pixels em 11 %.
+// comum) — o 2880 × 1620 (16:9) superestimava a densidade de pixels em 11 %. [CONFERIR ficha da câmera]
 const HRES = { 1: 1280, 2: 1920, 3: 2304, 4: 2560, 5: 2592, 6: 3072, 8: 3840, 12: 4000 };
-// Bitrate típico (Mbps) em H.265 a 15 qps; H.264 ≈ 1,8 ×
+// Bitrate típico (Mbps) em H.265 a 15 qps; H.264 ≈ 1,8 × — valores de mercado [CONFERIR com o fabricante]
 const BITRATE_H265 = { 1: 1, 2: 2, 3: 2.5, 4: 3.5, 5: 4, 6: 5, 8: 6, 12: 8 };
+// Consumo PoE típico por tipo de câmera (W) — valores de mercado [CONFERIR ficha técnica]
 const POE_PADRAO = { dome: 6, bullet: 8, ptz: 25, fisheye: 8 };
 const CANAIS_NVR = [4, 8, 16, 32, 64, 128, 256];
 // nobreak pela carga e pela autonomia, com a série de nobreak até 10 kVA e a bateria do nobreak (_comum/bateria.js)
@@ -26,6 +41,25 @@ function hresDe(c) {
   if (Number(c.hres) > 0) return Number(c.hres);
   const mp = Number(c.resolucao_mp) || 2;
   return HRES[mp] || Math.round(Math.sqrt(mp * 1e6 * 16 / 9));
+}
+
+// Abertura horizontal (graus): a informada; senão pelo sensor e pela focal, HFOV = 2 · atan(largura ÷ (2 · f))
+// (lente retilínea; fisheye não segue essa relação). → { hfov, origem }
+function hfovDe(c) {
+  if (Number(c.hfov_graus) > 0) return { hfov: Number(c.hfov_graus), origem: 'informada' };
+  const largura = Number(c.sensor_largura_mm) > 0 ? Number(c.sensor_largura_mm) : SENSOR_LARGURA_MM[String(c.sensor_formato || '').trim()];
+  const f = Number(c.focal_mm);
+  if (largura > 0 && f > 0) return { hfov: 2 * Math.atan(largura / (2 * f)) * 180 / Math.PI, origem: Number(c.sensor_largura_mm) > 0 ? 'sensor e focal' : 'formato nominal do sensor e focal' };
+  return { hfov: 90, origem: 'adotada' };
+}
+
+// Cobertura pela densidade de pixels: na distância d a cena tem largura W = 2 · d · tg(HFOV/2) e a densidade
+// é px/m = resolução horizontal ÷ W. Para cada critério (px/m exigido): alcance d = resolução ÷ (px/m · 2 · tg(HFOV/2)),
+// largura da cena no alcance = resolução ÷ px/m e área do setor até o alcance ≈ d² · tg(HFOV/2) (triângulo).
+function coberturaDori(hres, hfov, ppmExigido) {
+  const t = Math.tan((hfov * Math.PI / 180) / 2);
+  const alcance = hres / (ppmExigido * 2 * t);
+  return { ppm: ppmExigido, alcance, largura: hres / ppmExigido, area: alcance * alcance * t };
 }
 
 function bitrateDe(c, s) {
@@ -47,13 +81,15 @@ function calcular(dados) {
   const hdTb = Number(s.hd_tb) || 8;
   const avisos = [];
   // situação das normas (revisão de 04/11/2026): edição nova publicada depois da usada no cálculo
-  avisos.push("IEC 62676-4:2025 (Ed. 2, 10/2025) substituiu a de 2014 e redefiniu as densidades de pixels (sistema O2DCPVS: 20/40/80/125/250/500/1500 px/m); este cálculo usa o DORI da edição 2014 (25/62/125/250 px/m). [CONFERIR edição]");
+  avisos.push("IEC 62676-4:2025 (ed. 2.0, 10/2025) substituiu a de 2014 e redefiniu as densidades de pixels (6.7: 20/40/80/125/250/500/1500 px/m); este cálculo usa os critérios DORI da edição 2014 (25/62,5/125/250 px/m) e mostra a classe de 2025 atingida no alvo só como informação. [CONFERIR edição]");
 
   const cameras = (dados.cameras || []).filter(c => c && qtdDe(c) > 0 && c.local !== undefined).map((c, i) => {
     const qtd = qtdDe(c);
     const tipo = c.tipo || 'dome';
     const hres = hresDe(c);
-    const hfov = Number(c.hfov_graus) || 90;
+    const { hfov, origem: origemHfov } = hfovDe(c);
+    if (origemHfov === 'adotada') avisos.push(`${c.id || `CAM${i + 1}`}: abertura horizontal não informada (nem sensor e focal) — adotados 90°. [CONFERIR ficha da câmera/lente]`);
+    else if (origemHfov !== 'informada' && tipo === 'fisheye') avisos.push(`${c.id || `CAM${i + 1}`}: fisheye — a abertura pela focal (lente retilínea) não vale; informe a abertura da ficha. [CONFERIR]`);
     const largura = (d) => 2 * d * Math.tan((hfov * Math.PI / 180) / 2);
     const objetivo = c.objetivo || 'observacao';
     const ppmNecessario = DORI[objetivo] || 62;
@@ -61,6 +97,11 @@ function calcular(dados) {
     const ppm = dAlvo ? hres / largura(dAlvo) : null;
     const dMax = hres / (ppmNecessario * 2 * Math.tan((hfov * Math.PI / 180) / 2));
     const atende = ppm == null ? null : ppm >= ppmNecessario;
+    // alcance e largura da cena para cada critério DORI (o mapa de cobertura da câmera)
+    const cobertura = Object.keys(DORI).map(k => ({ nivel: k, rotulo: ROTULO_DORI[k], ...coberturaDori(hres, hfov, DORI[k]) }));
+    // largura da cena e classe da IEC 62676-4:2025 atingida no alvo (informativo) [CONFERIR]
+    const larguraAlvo = dAlvo ? largura(dAlvo) : null;
+    const classe2025 = ppm == null ? null : ([...DENSIDADES_IEC_2025].reverse().find(x => ppm >= x.ppm) || null);
     if (atende === false) avisos.push(`${c.id || `CAM${i + 1}`} (${c.local}): ${Math.round(ppm)} px/m a ${dAlvo} m — abaixo de ${ppmNecessario} px/m para ${ROTULO_DORI[objetivo]}. Alcance máximo com esta câmera/lente: ${br(dMax, 1)} m; reduzir o ângulo (lente maior) ou aumentar a resolução.`);
     const cabo = Number(c.distancia_cabo_m) || 30;
     if (cabo > 90) avisos.push(`${c.id || `CAM${i + 1}`}: cabo de ${cabo} m excede 90 m (NBR 14565) — usar extensor PoE, switch intermediário ou fibra.`);
@@ -69,7 +110,7 @@ function calcular(dados) {
     const classePoe = POE_CLASSES.find(k => poe <= k.w) || null;
     if (!classePoe) avisos.push(`${c.id || `CAM${i + 1}`}: consumo de ${br(poe, 1)} W acima de 71,3 W (limite do IEEE 802.3bt tipo 4) — alimentar por fonte/injetor próprio do fabricante.`);
     else if (poe > 25.5) avisos.push(`${c.id || `CAM${i + 1}`}: consumo de ${br(poe, 1)} W acima de 25,5 W (PoE+ 802.3at) — exige porta ${classePoe.padrao} no switch (ou injetor PoE++).`);
-    return { ...c, id: c.id || `CAM${i + 1}`, qtd, tipo, hres, hfov, objetivo, ppmNecessario, dAlvo, ppm, dMax, atende, cabo, bitrate, poe, poePadrao: classePoe ? classePoe.padrao : 'fonte própria', externa: !!c.externa };
+    return { ...c, id: c.id || `CAM${i + 1}`, qtd, tipo, hres, hfov, origemHfov, objetivo, ppmNecessario, dAlvo, ppm, dMax, atende, cobertura, larguraAlvo, classe2025: classe2025 ? classe2025.classe : null, cabo, bitrate, poe, poePadrao: classePoe ? classePoe.padrao : 'fonte própria', externa: !!c.externa };
   });
   if (!cameras.length) throw new Error('Cadastre ao menos uma câmera.');
 
@@ -134,4 +175,4 @@ function calcular(dados) {
   return { cameras, nCam, banda, dias, horas, atividade, armazenamentoTb, hdTb, hds, hdsDados, portasBt, caboAcima90, raid, canais, poeTotal, poeComMargem, switches, cargaW, nobreakVa, nobreak, autonomiaMin, energiaWh, caboM, materiais, avisos };
 }
 
-module.exports = { calcular, DORI, ROTULO_DORI, POE_CLASSES, hresDe };
+module.exports = { calcular, DORI, ROTULO_DORI, DENSIDADES_IEC_2025, SENSOR_LARGURA_MM, POE_CLASSES, hresDe, hfovDe, coberturaDori };

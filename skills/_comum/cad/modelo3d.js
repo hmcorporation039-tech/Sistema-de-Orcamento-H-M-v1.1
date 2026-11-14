@@ -131,7 +131,9 @@ const RE_GUARDA = /GUARDA|GRADIL|CORRIM|PARAPEITO/i;
 const RE_PAREDE_3D = new RegExp(`${RE_PAREDE.source}|(^|[^A-Z])ALV([^A-Z]|$)`, 'i');
 // layers das outras disciplinas e da prancha (QiBuilder/AltoQi: EL-Fios, DI-Barramento,
 // IFC-Luminária, P-SIMBOL; AutoCAD MEP) — fio, unifilar e símbolo nunca são parede
-const RE_OUTRA_DISCIPLINA = /^(EL|ELE|DI|IFC|P|HID|INC|CFTV|TEL|SPDA|AR|AC|MEC|HVAC|PCI)[-_ ]|CONDUT|(^|[^A-Z])FIOS?([^A-Z]|$)|BARRAMENTO|DIAGRAM|UNIFILAR|DISJUNT|L[ÂA]MPADA|TOMADA|INTERRUPTOR|CAIXAS?\s+DE\s+PASSAGEM|QUADRO|PRANCHA|MARGEM|TABELA|AR\s?COND|DUTO/i;
+// (14/11/2026: + IND, MT, PRZ, FV e VE — o motor, o ventilador e o módulo desenhados subiam como parede no desenho sem
+// layer de parede reconhecível)
+const RE_OUTRA_DISCIPLINA = /^(EL|ELE|DI|IFC|P|HID|INC|CFTV|TEL|SPDA|AR|AC|MEC|HVAC|PCI|IND|MT|PRZ|FV|VE)[-_ ]|CONDUT|(^|[^A-Z])FIOS?([^A-Z]|$)|BARRAMENTO|DIAGRAM|UNIFILAR|DISJUNT|L[ÂA]MPADA|TOMADA|INTERRUPTOR|CAIXAS?\s+DE\s+PASSAGEM|QUADRO|PRANCHA|MARGEM|TABELA|AR\s?COND|DUTO/i;
 // AsBEA, o que é vista/equipamento da arquitetura: louça, mobiliário, equipamento,
 // sanitário, piso, cobertura, projeção, porta, vegetação, cota, texto, hachura
 const RE_ARQ_NAO_PAREDE = /(^|[^A-Z])(LOU|MOB|MOV|EQP|SAN|PIS|COB|PRJ|ANT|URB|VIA|TXT|HCH|POR|VEG|COT)([^A-Z]|$)/i;
@@ -481,6 +483,32 @@ const ESPEC = {
   // painel de comando da pressurização de escadas (14/11/2026 — vista interna com a escada de relés)
   'HM-PRZ-PAINEL': { h: 1.4, forma: 'quadro', tam: [0.80, 1.00, 0.30] },
   'HM-SOL-INVERSOR': { h: 1.5, forma: 'quadro', tam: [0.45, 0.60, 0.20] }, 'HM-VE-CARREGADOR': { h: 1.2, forma: 'wallbox' },
+  // Disciplinas atrasadas no CAD (14/11/2026), com as formas que o visualizador JÁ tem (nenhuma forma nova; o bundle
+  // não muda). Tamanhos ilustrativos (o teste exige ≤ 1,2 m: CCM, transformador e cubículo reais são maiores, como o
+  // chiller). Piso: [largura (x), profundidade (y), ALTURA (z)].
+  // elétrica industrial: o motor é um cilindro deitado no piso (a forma do tubo da cordoalha), o CCM um armário no
+  // piso (cubículo) e o banco de capacitores um painel de parede
+  'HM-IND-MOTOR': { h: 'piso', forma: 'cordoalha', tam: [0.60, 0.35, 0.35] },
+  'HM-IND-CCM': { h: 'piso', forma: 'cubiculo', tam: [1.20, 0.50, 1.20] },
+  'HM-IND-BANCO-CAPACITORES': { h: 1.4, forma: 'quadro', tam: [0.60, 0.80, 0.30] },
+  // pressurização: ventilador (gabinete com o rotor na frente — a forma da condensadora), damper de alívio na parede
+  // (lâminas — a veneziana) e o transmissor de ΔP/pressostato (caixa pequena)
+  'HM-PRZ-VENTILADOR': { h: 'piso', forma: 'condensadora', tam: [1.00, 0.60, 1.00] },
+  'HM-PRZ-DAMPER': { h: 2.3, forma: 'veneziana', tam: [0.60, 0.40, 0.10] },
+  'HM-PRZ-SENSOR-PRESSAO': { h: 1.5, forma: 'caixa', tam: [0.12, 0.15, 0.08] },
+  // média tensão (planta): as formas dos equipamentos da subestação (./equipamentos3d.js)
+  'HM-MT-TRANSFORMADOR': { h: 'piso', forma: 'transformador', tam: [1.20, 0.90, 1.20] },
+  'HM-MT-CUBICULO': { h: 'piso', forma: 'cubiculo', tam: [1.00, 1.00, 1.20] },
+  'HM-MT-CHAVE': { h: 2.2, forma: 'seccionadora', tam: [0.80, 0.55, 0.40] },
+  'HM-MT-PARA-RAIOS': { h: 2.5, forma: 'para-raios', tam: [0.45, 0.40, 0.20] },
+  'HM-MT-MALHA': { h: 'piso', forma: 'haste', tam: [0.30, 0.30, 0.35] },
+  // solar: o modelo não tem cobertura — o módulo fica no forro (placa fina), como o captor do SPDA, só para localizar
+  'HM-SOL-MODULO': { h: 'teto', forma: 'tapete', tam: [1.20, 0.60, 0.04] },
+  'HM-SOL-STRING-BOX': { h: 1.5, forma: 'quadro', tam: [0.30, 0.40, 0.15] },
+  'HM-SOL-QUADRO-CA': { h: 1.5, forma: 'quadro', tam: [0.40, 0.50, 0.15] },
+  'HM-VE-QUADRO': { h: 1.5, forma: 'quadro', tam: [0.50, 0.60, 0.15] },
+  // antena parabólica: no forro (sem cobertura no modelo), a calota da forma do sensor
+  'HM-ANT-PARABOLICA': { h: 'teto', forma: 'sensor', tam: [0.60, 0.60, 0.30] },
   // SPDA: o modelo não tem cobertura — captor fica no forro e a descida na parede, só para localizar
   'HM-SPDA-CAIXA-INSPECAO': { h: 'piso', forma: 'caixa', tam: [0.30, 0.30, 0.05] }, 'HM-SPDA-CAPTOR': { h: 'teto', forma: 'barra', tam: [0.04, 0.04, 0.35] },
   'HM-SPDA-DESCIDA': { h: 1.5, forma: 'barra', tam: [0.03, 0.40, 0.03] },
@@ -512,7 +540,9 @@ const ALIAS_DISCIPLINA = { ...REGISTRO.ALIASES_CHAVE, cabeamento: 'rede' };
 const chaveDisciplina = (k) => ALIAS_DISCIPLINA[k] || k;
 // pelo prefixo do símbolo (HM-<prefixo>-…): PRZ (painel da pressurização) e EQ (equipamentos da subestação,
 // ./equipamentos3d.js) caíam em 'outros' — 31 símbolos do ESPEC sem disciplina na legenda (2.37)
-const DISCIPLINA_DO_PREFIXO = { ELE: 'eletrica', ILU: 'iluminacao', CAB: 'rede', CFTV: 'cftv', INC: 'incendio', ALM: 'alarme', ACE: 'controle_acesso', TEL: 'telefonia', ANT: 'antena', HOSP: 'eletrica_hospitalar', AUT: 'automacao', SOL: 'solar', VE: 'carregador', SPDA: 'spda', CLIM: 'climatizacao', PRZ: 'pressurizacao', EQ: 'media_tensao' };
+const DISCIPLINA_DO_PREFIXO = { ELE: 'eletrica', ILU: 'iluminacao', CAB: 'rede', CFTV: 'cftv', INC: 'incendio', ALM: 'alarme', ACE: 'controle_acesso', TEL: 'telefonia', ANT: 'antena', HOSP: 'eletrica_hospitalar', AUT: 'automacao', SOL: 'solar', VE: 'carregador', SPDA: 'spda', CLIM: 'climatizacao', PRZ: 'pressurizacao', EQ: 'media_tensao',
+  // (14/11/2026) motor, CCM e banco de capacitores (HM-IND-…) e os símbolos de planta da subestação (HM-MT-…)
+  IND: 'eletrica_industrial', MT: 'media_tensao' };
 const disciplinaDoSimbolo = (s) => DISCIPLINA_DO_PREFIXO[s.split('-')[1]] || 'outros';
 
 // ── Infraestrutura (eletrocalhas, eletrodutos, leitos, perfilados, fiação) ───
@@ -1195,4 +1225,4 @@ function montarCena(arquitetura, opcoes = {}) {
   };
 }
 
-module.exports = { chaveDisciplina, ALIAS_DISCIPLINA, montarCena, montarInfra, regiaoDoModelo, recortarArquitetura, extrairElementos, classeDaLayer, haLayerDeParede, simboloRedondo, encostar, espec, ESPEC, TAM_FORMA, TRECHOS, LIMITE_SEGMENTOS, ESPESSURA_MIN_DESENHO, DISCIPLINAS, TIPOS, AVISO, PE_DIREITO_PADRAO };
+module.exports = { chaveDisciplina, ALIAS_DISCIPLINA, disciplinaDoSimbolo, DISCIPLINA_DO_PREFIXO, montarCena, montarInfra, regiaoDoModelo, recortarArquitetura, extrairElementos, classeDaLayer, haLayerDeParede, simboloRedondo, encostar, espec, ESPEC, TAM_FORMA, TRECHOS, LIMITE_SEGMENTOS, ESPESSURA_MIN_DESENHO, DISCIPLINAS, TIPOS, AVISO, PE_DIREITO_PADRAO };

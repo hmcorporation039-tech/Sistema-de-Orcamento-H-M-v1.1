@@ -30,7 +30,7 @@
   "cod": "D4",
   "secao": "Documentação",
   "item": "ART de projeto/instalação e aprovação no Corpo de Bombeiros (quando exigida)",
-  "requisito": "Lei 6.496/77; regulamento do CBM",
+  "requisito": "Lei 6.496/77; regulamento do CBM (no DF: NT 23/2022-CBMDF — detecção e alarme)",
   "onde": "Escritório / cliente",
   "como": "Verificar números",
   "prioridade_padrao": "P3"
@@ -223,6 +223,15 @@
   "onde": "Interfaces",
   "como": "Testar a lógica de comando",
   "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "CI4",
+  "secao": "Circuitos",
+  "item": "Tensão no último dispositivo de cada laço/circuito de avisadores, em alarme e com a central em bateria, igual ou maior que a mínima do fabricante",
+  "requisito": "NBR 17240, 6.8 [CONFERIR item]; NT 23/2022-CBMDF [CONFERIR]; ficha técnica da central e do avisador",
+  "onde": "Último dispositivo de cada circuito",
+  "como": "Desligar a rede, acionar o alarme geral e medir a tensão no último avisador",
+  "prioridade_padrao": "P2"
  },
  {
   "cod": "IE1",

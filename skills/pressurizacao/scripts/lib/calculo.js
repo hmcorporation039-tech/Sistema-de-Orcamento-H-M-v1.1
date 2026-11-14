@@ -25,6 +25,8 @@ const ET = require('../../../_comum/eletrico/tabelas');
 const EI = require('../../../_comum/eletrico/motores');
 const { fatorAtrito, perdaAtrito } = require('../../../_comum/dutos');
 const { especificarDps, descricaoDps } = require('../../../_comum/dps');
+// a lógica de segurança por relés é a MESMA do painel no 3D e do caderno (perfil de pressurização)
+const PN = require('../../../_comum/instalacao/paineis');
 
 const RAIZ3 = Math.sqrt(3);
 const { CV_KW } = EI; // 1 cv = 0,7355 kW (motor comum)
@@ -80,7 +82,10 @@ function config(dados) {
   const altura = alturaInformada || pavimentos * 3;
   const limiteForcaInformado = numero(s.limite_forca_n) > 0 ? numero(s.limite_forca_n) : null;
   const tipoDuto = T.FATOR_DUTO[s.tipo_duto] != null ? s.tipo_duto : 'metalico';
-  const partida = T.PARTIDAS[s.partida] ? s.partida : 'inversor';
+  // padrão H&M (decisão de 14/11/2026): pressurização SEMPRE com inversor de frequência — soft-starter,
+  // partida direta ou estrela-triângulo pedidos na entrada viram inversor, com aviso no memorial
+  const partida = 'inversor';
+  const partidaPedida = s.partida && s.partida !== 'inversor' ? s.partida : null;
   return {
     grupo, pavimentos, altura, alturaEstimada: !alturaInformada,
     localReuniao: sim(ed.local_reuniao_publico),
@@ -103,7 +108,7 @@ function config(dados) {
     perdaRegistro: numero(s.perda_registro_pa) ?? T.PERDAS_PADRAO.registro_pa,
     rendimento: numero(s.rendimento_ventilador) || T.RENDIMENTO_VENTILADOR,
     arranjo: T.ARRANJOS[s.arranjo] ? s.arranjo : 'auto',
-    partida,
+    partida, partidaPedida,
     alivio: T.ALIVIOS[s.alivio] ? s.alivio : (partida === 'inversor' ? 'inversor_e_gravidade' : 'damper_motorizado'),
     sensores: T.SENSORES[s.sensores] ? s.sensores : 'meio',
     tomadaAr: s.tomada_ar === 'cobertura' ? 'cobertura' : 'terreo',
@@ -398,15 +403,12 @@ function automacao(c, arr, v, d, al) {
     add(`ED-${String(n0 + 1).padStart(2, '0')}`, 'ED', `V${i}: ${inv ? 'inversor' : 'soft-starter/partida'} em operação`, 'painel');
     add(`ED-${String(n0 + 2).padStart(2, '0')}`, 'ED', `V${i}: falha do ${inv ? 'inversor' : 'acionamento'} / disjuntor-motor desarmado`, 'painel');
   }
-  for (let s = 1; s <= nSens; s++) add(`EA-${String(s).padStart(2, '0')}`, 'EA', `Transmissor de pressão diferencial ${nSens > 1 ? `${s} ` : ''}(escada × pavimento), 0–100 Pa, 4–20 mA`, 'escada');
+  for (let s = 1; s <= nSens; s++) add(`EA-${String(s).padStart(2, '0')}`, 'EA', `Transmissor de pressão diferencial ${nSens > 1 ? `${s} ` : ''}(escada × pavimento${c.sensores === 'meio' ? ', na porta da escada do pavimento intermediário' : ''}), 0–100 Pa, 4–20 mA`, 'escada');
   let nsd = 0;
   const sd = (descricao, origem = 'painel') => add(`SD-${String(++nsd).padStart(2, '0')}`, 'SD', descricao, origem);
-  for (let i = 1; i <= arr.n; i++) sd(`V${i}: comando de partida (${inv ? 'habilita o inversor' : 'contator/soft-starter'})`);
+  // saídas do CLP: só o que é dele (controle de pressão). Partida dos ventiladores, retornos à central e
+  // sinaleiros de operação/falha/alarme/falta de fase são da lógica de segurança por relés (relesLogica abaixo)
   if (motorizado) sd('Damper de alívio motorizado: abrir (modulação por ΔP)', 'campo');
-  sd('Retorno à central: SISTEMA EM OPERAÇÃO (módulo de entrada)', 'central');
-  sd('Retorno à central: FALHA DA PRESSURIZAÇÃO (módulo de entrada)', 'central');
-  sd('Sinaleiro EMERGÊNCIA ACIONADA (painel e acionadores remotos)');
-  for (let i = 1; i <= arr.n; i++) { sd(`Sinaleiro V${i} EM OPERAÇÃO`); sd(`Sinaleiro V${i} FALHA`); }
   sd('Sinaleiro PRESSÃO FORA DA FAIXA (< 45 Pa ou > 60 Pa)');
   if (inv) for (let i = 1; i <= arr.n; i++) add(`SA-${String(i).padStart(2, '0')}`, 'SA', `V${i}: referência de velocidade do inversor (PID de ΔP), 0–10 V / 4–20 mA`, 'painel');
   const conta = (t) => pontos.filter(p => p.tipo === t).length;
@@ -418,10 +420,11 @@ function automacao(c, arr, v, d, al) {
     `Partida automática: o sinal de alarme da central (detector de fumaça ou acionador manual — NBR 17240) liga a pressurização na hora, sem esperar o alarme sonoro nem o reconhecimento na central (NT 13 GO 5.3.10 k; CBMDF NT 10, 4.3.1.10.5). Qualquer alarme ou defeito da central vale como alarme e não desliga o sistema.`,
     `Partida manual: botoeira LIGA no painel e acionadores remotos na portaria/sala de controle (CBMDF 4.3.1.10.5 f). A PARADA em emergência só pela botoeira DESLIGA do painel do ventilador (CBMDF 4.3.1.10.5 g); a central não desliga a pressurização.`,
     inv
-      ? `Controle de pressão: PID no inversor (ou no controlador) com o transmissor de ΔP — setpoint ${fmt(c.dp, 0)} Pa, limite ${fmt(c.dpMax, 0)} Pa; com todas as PCF fechadas o inversor reduz a vazão até ~${fmt((v.qftd / v.qts) * 100, 0)} % (QFT a 60 Pa / QTS); com portas abertas acelera até 100 %. Rampa de aceleração ≤ 10 s.`
+      ? `Controle de pressão: o CLP lê o transmissor de ΔP (porta da escada no pavimento intermediário) e os pressostatos de fluxo e, pelo PID, dá a referência de velocidade dos inversores para manter ${fmt(c.dp, 0)} Pa na escada sem passar do limite de ${fmt(c.dpMax, 0)} Pa; com todas as PCF fechadas o inversor reduz a vazão até ~${fmt((v.qftd / v.qts) * 100, 0)} % (QFT a 60 Pa / QTS); com portas abertas acelera até 100 %. Rampa de aceleração ≤ 10 s.`
       : `Vazão fixa (${T.PARTIDAS_CURTO[c.partida]}): a sobrepressão acima de ${fmt(c.dpMax, 0)} Pa é aliviada pelo ${c.alivio === 'damper_motorizado' ? 'damper motorizado modulado pelo transmissor de ΔP' : 'registro de sobrepressão por gravidade'} (QD = ${fmt(v.qd, 2)} m³/s).`,
     `Tempo: pressão de projeto atingida em até ${fmt(c.tempoPartidaMax, 0)} s após o alarme [CONFERIR]; PCF com destravador eletromagnético fecham em até ${T.TEMPO_FECHAMENTO_PCF_S} s (NT 13 GO 5.3.10 q).`,
-    ...(reserva ? [`Reversão automática: se o pressostato de fluxo de V1 não confirmar em ${fmt(c.tempoReversao, 0)} s (ou houver falha do acionamento), V1 é desligado e V2 parte (N+1 com reversão automática — NT 13 GO 5.3.2 d e 5.3.9 d). Alternância semanal do ventilador líder para igualar o desgaste.`] : []),
+    'Relés e CLP juntos: a segurança fica nos relés, sem depender do CLP — relé de falta e sequência de fase (sinaliza e avisa a central sem desligar a pressurização), temporização e reversão para o reserva; o CLP faz o monitoramento e o controle de velocidade.',
+    ...(reserva ? [`Reversão automática (relés): após a partida, se o pressostato de fluxo de V1 não confirmar o funcionamento em ${fmt(c.tempoReversao, 0)} s (temporizador KTR) ou houver falha do acionamento, V1 é desligado e V2 parte (N+1 com reversão automática — NT 13 GO 5.3.2 d e 5.3.9 d). Alternância semanal do ventilador líder para igualar o desgaste.`] : []),
     ...(arr.arranjo === 'paralelo_50' ? ['Dois ventiladores de 50 % em paralelo partem juntos; registros de retenção impedem o refluxo pelo ventilador parado (CBMDF 4.3.1.10.3 d). Falha de um: alarme de falha, o outro continua.'] : []),
     'Detector de fumaça da casa de máquinas (laço exclusivo): inibe a partida AUTOMÁTICA para não insuflar fumaça na escada, mantendo o alarme da central; a partida manual continua possível (NT 13 GO 5.3.10 l e n).',
     'Modo TESTE (chave com segredo): roda os ventiladores para o teste semanal (NT 13 GO 5.3.12 b) sem acionar a central; e a central pode ser testada sem partir a pressurização (5.3.10 f).',
@@ -435,7 +438,11 @@ function automacao(c, arr, v, d, al) {
     ...(motorizado ? ['Damper motorizado com posição de falha definida em projeto (normalmente aberto ao perder alimentação, para não sobrepressurizar). [CONFERIR]'] : []),
     'Retorno de falha de todos os acionamentos em série com o alarme de FALHA (contato NF — fio partido também alarma).',
   ];
-  return { pontos, totais, comReserva, nSensores: nSens, logica, intertravamentos, motorizado, inversor: inv };
+  // lógica de segurança por relés (a do painel no 3D e do caderno): relés auxiliares, temporizador e falta de fase
+  const cmd = PN.comandoDaPressurizacao(PN.dadosDoPainelPressurizacao({ calculo: { arr, al, c }, tempoReversao: c.tempoReversao }));
+  const timers = new Set((cmd.modelo.temporizadores || []).map(x => x.tag));
+  const relesLogica = { auxiliares: cmd.reles.filter(r => !timers.has(r.tag)).map(r => r.tag), temporizadores: [...timers], faltaFase: cmd.reles.some(r => r.tag === 'KFF'), sinaleiros: (cmd.sinaleiros || []).map(s => s.rotulo) };
+  return { pontos, totais, comReserva, nSensores: nSens, logica, intertravamentos, motorizado, inversor: inv, relesLogica };
 }
 
 // Sequência do diagrama de comando (base para desenho; QElectroTech não obrigatório)
@@ -450,7 +457,8 @@ function diagramaComando(c, arr, al, aut) {
     add(`T${i}`, c.partida === 'inversor' ? 'Inversor de frequência' : c.partida === 'soft_starter' ? 'Soft-starter' : 'Partida', 'força');
     add(`M${i}`, `Motor do ventilador V${i}`, 'força');
   }
-  add('CLP', `Controlador programável (ED ${aut.comReserva.ED} / SD ${aut.comReserva.SD} / EA ${aut.comReserva.EA} / SA ${aut.comReserva.SA} com 20 % de reserva)`, 'comando');
+  add('CLP', `CLP — controle de pressão: pressostatos, transmissor de ΔP e velocidade dos inversores (ED ${aut.comReserva.ED} / SD ${aut.comReserva.SD} / EA ${aut.comReserva.EA} / SA ${aut.comReserva.SA} com 20 % de reserva)`, 'comando');
+  add('RELES', `Lógica de segurança por relés: falta de fase (RFF/KFF), temporização (${aut.relesLogica.temporizadores.join(', ') || '—'}) e reversão para o reserva — ${aut.relesLogica.auxiliares.length} relés auxiliares`, 'comando');
   add('PT', `Transmissor(es) de ΔP (${aut.nSensores})`, 'comando');
   add('DPS', `Pressostatos de fluxo (${arr.n})`, 'comando');
   add('CENTRAL', 'Central de alarme (módulo de comando → ED-01; módulos de entrada ← operação/falha)', 'comando');
@@ -478,7 +486,11 @@ function listaMateriais(x) {
   if (c.alivio !== 'inversor') add('DAMPER', `${c.alivio === 'damper_motorizado' ? 'Damper de alívio motorizado com atuador 24 V' : 'Registro de sobrepressão por gravidade/contrapeso'} — ${fmt(v.qd, 2)} m³/s a ${fmt(c.dpMax, 0)} Pa, área livre ≥ ${fmt(v.areaDamper, 3)} m²`, 'un', v.qd > 0 ? 1 : 0, 'NT 13 GO 5.3.9 a/b');
   // painel
   add('PAINEL', `Quadro de comando da pressurização (IP54) com barramento, borneiras, ventilação, porta com visor — ${arr.n} ventilador(es)`, 'un', 1, 'NBR IEC 61439');
-  add('CLP', `Controlador programável com ${aut.comReserva.ED} ED, ${aut.comReserva.SD} SD, ${aut.comReserva.EA} EA, ${aut.comReserva.SA} SA (20 % de reserva) e comunicação BACnet/Modbus`, 'un', 1, 'Automação');
+  add('CLP', `CLP de controle da pressão (pressostatos, transmissor de ΔP e referência de velocidade dos inversores por PID) com ${aut.comReserva.ED} ED, ${aut.comReserva.SD} SD, ${aut.comReserva.EA} EA, ${aut.comReserva.SA} SA (20 % de reserva) e comunicação BACnet/Modbus`, 'un', 1, 'Automação');
+  // lógica de segurança por relés (trabalha junto com o CLP): a mesma do painel no 3D e do caderno
+  add('RFF', `Relé de falta e sequência de fase ${c.eletrica.vff} V, 1 NA/NF, com minidisjuntor 3P de proteção da medição`, 'un', aut.relesLogica.faltaFase ? 1 : 0, 'Painel (supervisão de fase)');
+  add('RELE-AUX', `Relé auxiliar 24 Vcc 4 contatos reversíveis com base — lógica de segurança (${aut.relesLogica.auxiliares.join(', ')})`, 'un', aut.relesLogica.auxiliares.length, 'Painel');
+  add('KTR', `Relé temporizador 24 Vcc, retardo na energização — reversão para o reserva (ajuste ${fmt(c.tempoReversao, 0)} s)`, 'un', aut.relesLogica.temporizadores.length, 'NBR IEC 60947-5-1');
   const p = al.partida.dispositivos;
   const acion = p.find(x2 => ['inversor', 'soft_starter'].includes(x2.tipo));
   if (acion) add(c.partida === 'inversor' ? 'INV' : 'SOFT', acion.especificacao, 'un', arr.n, c.partida === 'inversor' ? 'IEC 61800' : 'NBR IEC 60947-4-2');
@@ -491,8 +503,9 @@ function listaMateriais(x) {
   add('SELETORA', 'Chave seletora 3 posições MANUAL–0–AUTOMÁTICO, 22 mm', 'un', 1, 'Painel');
   add('CH-TESTE', 'Chave de TESTE com segredo (2 posições), 22 mm', 'un', 1, 'NT 13 GO 5.3.12');
   add('BOT', 'Botoeira LIGA (verde) e DESLIGA (vermelha) 22 mm', 'cj', 1, 'CBMDF NT 10 4.3.1.10.5 g');
-  add('SINAL', 'Sinaleiro LED 22 mm 24 Vcc', 'un', aut.pontos.filter(pt => /^Sinaleiro/.test(pt.descricao)).length, 'Painel');
-  add('RELE', 'Relé de interface 24 Vcc 1 NA/NF com base', 'un', aut.totais.SD, 'Painel');
+  // sinaleiros: os da lógica por relés (painel energizado, alarme, operação/falha, falta de fase, manual) + os do CLP
+  add('SINAL', 'Sinaleiro LED 22 mm 24 Vcc', 'un', aut.relesLogica.sinaleiros.length + aut.pontos.filter(pt => /^Sinaleiro/.test(pt.descricao)).length, 'Painel');
+  add('RELE', 'Relé de interface 24 Vcc 1 NA/NF com base (saídas do CLP)', 'un', aut.totais.SD, 'Painel');
   add('FONTE24', 'Fonte 24 Vcc 5 A para comando e transmissores', 'un', 1, 'Painel');
   // DPS do quadro de comando (alimentação trifásica): Uc pela Tabela 49 e In mínimo de 6.3.5.2.4 d) — a
   // regra comum (_comum/dps.js), um por fase + N-PE. Antes: "DPS classe II", sem Uc, 1 un.
@@ -528,6 +541,7 @@ function listaMateriais(x) {
 function calcular(dados) {
   const c = config(dados);
   const avisos = [];
+  if (c.partidaPedida) avisos.push(`Partida "${T.PARTIDAS_CURTO[c.partidaPedida] || c.partidaPedida}" informada: a pressurização da H&M é sempre com inversor de frequência (controle de pressão por PID) — adotado inversor.`);
   const v = calcularVazoes(dados, c, avisos);
   const bloqueios = verificarNorma(c, v);
   const criterios = criteriosLaudo(c);

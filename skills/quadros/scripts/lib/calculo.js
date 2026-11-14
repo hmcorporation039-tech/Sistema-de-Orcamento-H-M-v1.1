@@ -309,7 +309,8 @@ function relesAuxiliares(a) {
 function automacao(dados, c, motores) {
   const a = dados.automacao || {};
   const relesAux = relesAuxiliares(a);
-  const porta = (a.porta || []).filter(p => p && PORTA[p.tipo]).map(p => ({ ...PORTA[p.tipo], tipo: p.tipo, funcao: p.funcao || '', quantidade: Math.max(1, Math.round(num(p.quantidade, 1))) }));
+  // sem_clp: dispositivo de porta ligado só à lógica por relés (não ocupa E/S do CLP — ex.: pressurização, 2.41)
+  const porta = (a.porta || []).filter(p => p && PORTA[p.tipo]).map(p => ({ ...PORTA[p.tipo], tipo: p.tipo, funcao: p.funcao || '', quantidade: Math.max(1, Math.round(num(p.quantidade, 1))), ...(p.sem_clp ? { semClp: true } : {}) }));
   const ativo = !!a.ativo || c.tipo === 'automacao';
   if (c.maquina && !porta.some(p => p.tipo === 'emergencia')) porta.unshift({ ...PORTA.emergencia, tipo: 'emergencia', funcao: 'Parada de emergência (NBR IEC 60204-1 / NR-12)', quantidade: 1, automatico: true });
   if (!ativo) return { ativo: false, porta, releSeguranca: c.maquina, relesAux, cargas24: (a.cargas_24v || []).filter(Boolean), fonteInformada: num(a.fonte_a) };
@@ -329,6 +330,7 @@ function automacao(dados, c, motores) {
     }
   }
   for (const p of porta) {
+    if (p.semClp) continue;
     if (p.sinal === 'DI') usados.DI += p.quantidade;
     else if (p.sinal === 'DI2') usados.DI += 2 * p.quantidade;
     else if (p.sinal === 'DO') usados.DO += p.quantidade;

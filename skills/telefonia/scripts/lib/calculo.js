@@ -7,7 +7,7 @@
 // limite de 90 m do cabo horizontal (NBR 14565).
 //
 // Referências: práticas Telebrás e ABNT de tubulação telefônica em edifícios
-// (NBR 13726/13727/13822 [CONFERIR vigência]), ABNT NBR 14565:2019
+// (NBR 13726/13727/13822 [CONFERIR vigência]), ABNT NBR 14565:2025
 // (cabeamento estruturado), ABNT NBR 14306 (proteção elétrica e
 // compatibilidade eletromagnética em redes internas de telecomunicações
 // [CONFERIR vigência]), ABNT NBR 5410 (6.3.5 DPS, 6.4 equipotencialização),
@@ -49,9 +49,9 @@ const PARES_POR_RAMAL = 1; // ramal analógico de interfonia = 1 par
 const PARES_BLOCO = 10; // bloco IDC-110 / BLI de 10 pares
 const BLOCOS_POR_SUPORTE = 10; // suporte/bastidor para até 10 blocos [CONFERIR]
 const PARES_PORTEIRO = 4; // porteiro: áudio + chamada + comando da fechadura (CCI 4 pares)
-const FATOR_CABO = 1.15; // folgas, curvas e subidas
-const FOLGA_CI = 2; // m por cabo de prumada (arremate no DG e na caixa do andar)
-const DESCIDA_PADRAO = 3; // m — descida até o terminal em áreas comuns, portaria e portões
+const FATOR_CABO = 1.15; // folgas, curvas e subidas — estimativa [CONFERIR traçado]
+const FOLGA_CI = 2; // m por cabo de prumada (arremate no DG e na caixa do andar) — estimativa [CONFERIR]
+const DESCIDA_PADRAO = 3; // m — descida até o terminal em áreas comuns, portaria e portões — estimativa [CONFERIR]
 const JUMPER_M = 1.5; // m de fio jumper por cruzamento no DG [CONFERIR]
 const LIMITE_UTP = 90; // m — cabo horizontal (NBR 14565)
 const LIMITE_CCI = 500; // m — alcance prático do ramal analógico [CONFERIR com o fabricante]

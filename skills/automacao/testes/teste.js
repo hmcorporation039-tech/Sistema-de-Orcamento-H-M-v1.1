@@ -71,7 +71,7 @@ igual('uma linha KNX', rk.rede.linhas, 1);
 
 (async () => {
   for (const r of [res, motor.processar(require('../exemplos/exemplo-residencia.json'))])
-    for (const t of motor.tiposDisponiveis(r)) igual(`documento ${t}`, (await motor.gerarDocumento(r, t)).buffer.slice(0, 2).toString(), 'PK');
+    for (const t of motor.tiposDisponiveis(r).filter(x => x !== 'caderno')) igual(`documento ${t}`, (await motor.gerarDocumento(r, t)).buffer.slice(0, 2).toString(), 'PK');
   const orc = motor.montarOrcamento(res, 'execucao');
   igual('orçamento com pontos BMS', orc.itens.some(i => i.codigo === 'auto_pontos_bms' && i.quantidade === 99), true);
   igual('orçamento de diagnóstico', motor.montarOrcamento(res, 'diagnostico').itens[0].codigo, 'auto_inspecao');

@@ -13,7 +13,19 @@ const CAMINHAMENTO_ACIONADOR = 30; // 5.5.3
 const { capacidadeBateriaAh, comercial, SERIES_BATERIA, FATOR_ENVELHECIMENTO } = require('../../../_comum/bateria');
 const BATERIAS_AH = SERIES_BATERIA.vrla12vIncendio;
 
-// Consumos padrão (mA) — substituíveis pelos dados do fabricante no formulário
+// Queda de tensão nos laços e nos circuitos de avisadores (14/11/2026): antes o cabo era fixo em
+// 2 × 1,5 mm². Agora a seção sai da queda em CC (quedaCC do _comum/eletrico — ΔV = 2·L·I·ρ/S, ida e
+// volta) com a corrente de ALARME do circuito concentrada no fim (lado da segurança) e a tensão que
+// sobra no último dispositivo ≥ a tensão mínima de operação dele. A NBR 17240:2010 e a NT 23/2022-CBMDF
+// (Sistemas de detecção e alarme de incêndio) não foram conferidas quanto a um limite numérico de queda
+// [CONFERIR]; os valores de tensão abaixo são de catálogo/típicos [CONFERIR na ficha da central e do avisador].
+const { quedaCC } = require('../../../_comum/eletrico/calculo');
+const TENSAO_NOMINAL_V = 24;          // central de 24 Vcc (2 baterias de 12 V em série)
+const TENSAO_FIM_BATERIA_V = 21;      // 2 × 10,5 V — fim de descarga típico de bateria VRLA (1,75 V/elemento) [CONFERIR central]
+const TENSAO_MIN_DISPOSITIVO_V = 18;  // tensão mínima de operação adotada para avisadores/dispositivos de 24 V [CONFERIR ficha]
+const SECOES_CABO_ALARME = [1.5, 2.5, 4]; // cabo blindado 2 vias — seções comerciais; 1,5 mm² é a usual de partida [CONFERIR NBR 17240, 6.8]
+
+// Consumos padrão (mA) — valores típicos de mercado, substituíveis pelos dados do fabricante no formulário [CONFERIR]
 const CONSUMO_PADRAO = {
   central: { repouso: 150, alarme: 400 },
   detector: { repouso: 0.3, alarme: 0.5 },
@@ -142,11 +154,49 @@ function calcular(dados) {
   const bateriaAh = capacidadeBateriaAh({ iRepouso: iRepouso / 1000, tRepouso, iAlarme: iAlarme / 1000, tAlarme: tAlarme / 60, fator: FATOR_ENVELHECIMENTO.nbr17240 });
   const { valor: bateriaEscolhida, qtd: nConjuntos } = comercial(BATERIAS_AH, bateriaAh);
 
-  const nAclar = iluminacao.reduce((s, x) => s + x.aclaramento, 0);
-  const nBaliz = iluminacao.reduce((s, x) => s + x.balizamento, 0);
+  // cabo dos laços: perímetros dos ambientes + caminhamentos × 1,3 (estimativa de traçado) [CONFERIR]
   const caboEstimado = Math.ceil((ambientes.reduce((s, a) => s + a.L + a.W, 0) + pavimentos.reduce((s, p) => s + p.comp, 0)) * 1.3);
   const caboLaco = informado('cabo_m') && Number(qi.cabo_m) > 0 ? Math.ceil(Number(qi.cabo_m)) : caboEstimado;
   if (temInformadas && !caboLaco) avisos.push('Comprimento dos laços não informado: cabo blindado e eletroduto do sistema a levantar na planta. [CONFERIR]');
+  // ── Queda de tensão nos circuitos (laço/zona e avisadores) ──────────────
+  const vFonte = Number(sis.tensao_fonte_min_v) > 0 ? Number(sis.tensao_fonte_min_v) : TENSAO_FIM_BATERIA_V;
+  const vMin = Number(sis.tensao_minima_dispositivo_v) > 0 ? Number(sis.tensao_minima_dispositivo_v) : TENSAO_MIN_DISPOSITIVO_V;
+  const quedaAdmissivel = Math.max(0, vFonte - vMin);
+  const tensoesTipicas = !(Number(sis.tensao_fonte_min_v) > 0) || !(Number(sis.tensao_minima_dispositivo_v) > 0);
+  const avisadoresNoLaco = sis.avisadores_no_laco != null ? !!sis.avisadores_no_laco : tipoSistema === 'enderecavel';
+  const nCircLaco = Math.max(1, lacos || zonas || 1);
+  const escolherSecao = (L, iA) => {
+    for (const s of SECOES_CABO_ALARME) {
+      const q = quedaCC({ comprimento: L, corrente: iA, secao: s, tensao: vFonte });
+      if (q.v <= quedaAdmissivel + 1e-9) return { secao: s, queda: q.v, quedaPct: q.pct, atende: true };
+    }
+    const s = SECOES_CABO_ALARME[SECOES_CABO_ALARME.length - 1];
+    const q = quedaCC({ comprimento: L, corrente: iA, secao: s, tensao: vFonte });
+    return { secao: s, queda: q.v, quedaPct: q.pct, atende: false };
+  };
+  const circuitosQueda = [];
+  const iLacoTotal = nDet * consumo.detector.alarme + nAc * consumo.acionador.alarme + nMod * consumo.modulo.alarme + (avisadoresNoLaco ? nAv * consumo.avisador.alarme : 0);
+  const compLaco = Number(sis.comprimento_laco_m) > 0 ? Number(sis.comprimento_laco_m) : (caboLaco ? caboLaco / nCircLaco : 0);
+  if (compLaco > 0) {
+    const iA = iLacoTotal / nCircLaco / 1000;
+    circuitosQueda.push({ circuito: tipoSistema === 'enderecavel' ? 'Laço' : 'Zona', quantidade: nCircLaco, comprimento: compLaco, correnteA: iA, avisadores: avisadoresNoLaco ? Math.ceil(nAv / nCircLaco) : 0, ...escolherSecao(compLaco, iA) });
+  }
+  if (!avisadoresNoLaco && nAv) {
+    const nCircAv = Math.max(1, Number(sis.circuitos_avisadores) || nCircLaco);
+    const compAv = Number(sis.comprimento_circuito_avisadores_m) > 0 ? Number(sis.comprimento_circuito_avisadores_m) : (caboLaco ? caboLaco / nCircAv : 0);
+    if (compAv > 0) {
+      const avPorCirc = Math.ceil(nAv / nCircAv);
+      const iA = avPorCirc * consumo.avisador.alarme / 1000;
+      circuitosQueda.push({ circuito: 'Avisadores', quantidade: nCircAv, comprimento: compAv, correnteA: iA, avisadores: avPorCirc, ...escolherSecao(compAv, iA) });
+    }
+  }
+  for (const c of circuitosQueda.filter(x => !x.atende)) avisos.push(`${c.circuito}: ${String(Math.round(c.comprimento))} m com ${c.correnteA.toFixed(2).replace('.', ',')} A em alarme — queda de ${c.queda.toFixed(1).replace('.', ',')} V mesmo com 2 × ${String(c.secao).replace('.', ',')} mm² (admissível ${quedaAdmissivel.toFixed(1).replace('.', ',')} V): dividir em mais circuitos ou usar fonte auxiliar supervisionada. [CONFERIR]`);
+  if (tensoesTipicas && circuitosQueda.length) avisos.push(`Queda de tensão dos circuitos verificada com ${String(vFonte).replace('.', ',')} V na saída da central (fim da bateria) e ${String(vMin).replace('.', ',')} V mínimos no último dispositivo — valores típicos; informe os da ficha da central e do avisador. [CONFERIR]`);
+  const secaoCabo = circuitosQueda.length ? Math.max(...circuitosQueda.map(c => c.secao)) : SECOES_CABO_ALARME[0];
+  const quedaTensao = { vFonte, vMin, quedaAdmissivel, avisadoresNoLaco, circuitos: circuitosQueda, secao: secaoCabo };
+
+  const nAclar = iluminacao.reduce((s, x) => s + x.aclaramento, 0);
+  const nBaliz = iluminacao.reduce((s, x) => s + x.balizamento, 0);
   const materiais = [
     ...(detF ? [{ codigo: 'DET-F', descricao: `Detector pontual de fumaça óptico ${tipoSistema === 'enderecavel' ? 'endereçável' : 'convencional'} com base`, unidade: 'un', quantidade: detF, referencia: 'NBR 17240, 5.4.1' }] : []),
     ...(detT ? [{ codigo: 'DET-T', descricao: `Detector pontual de temperatura (termovelocimétrico) ${tipoSistema === 'enderecavel' ? 'endereçável' : 'convencional'} com base`, unidade: 'un', quantidade: detT, referencia: 'NBR 17240, 5.4.2' }] : []),
@@ -155,7 +205,7 @@ function calcular(dados) {
     { codigo: 'CEN', descricao: tipoSistema === 'enderecavel' ? `Central de alarme endereçável com ${lacos} laço(s)` : `Central de alarme convencional com ${zonas} zona(s)`, unidade: 'un', quantidade: 1, referencia: 'NBR 17240, 5.3 e 6.1' },
     { codigo: 'BAT', descricao: `Bateria selada 12 V ${bateriaEscolhida} Ah (par em série para 24 V${nConjuntos > 1 ? `; ${nConjuntos} pares em paralelo` : ''})`, unidade: 'un', quantidade: 2 * nConjuntos, referencia: 'NBR 17240, Anexo B' },
     ...(nMod ? [{ codigo: 'MOD', descricao: 'Módulo de comando/monitoramento (interfaces: portas, HVAC)', unidade: 'un', quantidade: nMod, referencia: 'NBR 17240, 5.7' }] : []),
-    { codigo: 'CAB', descricao: 'Cabo blindado 2 × 1,5 mm² para laço de detecção e alarme (estimativa)', unidade: 'm', quantidade: caboLaco, referencia: 'NBR 17240, 6.8' },
+    { codigo: 'CAB', descricao: `Cabo blindado 2 × ${String(secaoCabo).replace('.', ',')} mm² para laço de detecção e alarme (seção pela queda de tensão; comprimento estimado)`, unidade: 'm', quantidade: caboLaco, referencia: 'NBR 17240, 6.8; queda em CC (ΔV = 2·L·I·ρ/S)' },
     { codigo: 'ELE', descricao: 'Eletroduto exclusivo do sistema de alarme (estimativa)', unidade: 'm', quantidade: caboLaco, referencia: 'NBR 17240, 6.7' },
     ...(nAclar ? [{ codigo: 'LE', descricao: `Luminária de emergência bloco autônomo LED ≥ 300 lm, autonomia ≥ ${String(autonomiaEmergH).replace('.', ',')} h`, unidade: 'un', quantidade: nAclar, referencia: 'NBR 10898, 4.9 e 6.1.2.4' }] : []),
     ...(nBaliz ? [{ codigo: 'SIN', descricao: 'Sinalização de saída/rota de fuga iluminada (balizamento ≥ 30 lm)', unidade: 'un', quantidade: nBaliz, referencia: 'NBR 10898, 5.2 e 14.18' }] : []),
@@ -163,7 +213,7 @@ function calcular(dados) {
 
   return {
     tipoSistema, ambientes, pavimentos, iluminacao, nDet, nAc, nAv, nMod, dispositivos, lacos, zonas, limiteLaco,
-    bateria: { linhas, iRepouso, iAlarme, tRepouso, tAlarme, fonteA, bateriaAh, bateriaEscolhida, nConjuntos },
+    bateria: { linhas, iRepouso, iAlarme, tRepouso, tAlarme, fonteA, bateriaAh, bateriaEscolhida, nConjuntos }, quedaTensao,
     nAclar, nBaliz, autonomiaEmergH, materiais, avisos,
   };
 }

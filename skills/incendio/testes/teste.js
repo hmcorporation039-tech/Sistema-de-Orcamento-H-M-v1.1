@@ -31,6 +31,22 @@ igual('autonomia 2,5 h → C', res.med.autonomia[0].resultado, 'C');
   const r1 = cl(d => { d.sistema.autonomia_iluminacao_h = 1; });
   igual('autonomia informada < 2 h é recusada (fica 2 h, com aviso)', [r1.calc.autonomiaEmergH, r1.calc.avisos.some(a => a.startsWith('Autonomia da iluminação de emergência informada (1 h)'))], [2, true]);
 }
+// ── Queda de tensão nos laços e avisadores (14/11/2026) — antes o cabo era fixo em 2 × 1,5 mm² ──
+{
+  // exemplo: 1 laço de 220 m; alarme: 16 det × 0,5 + 2 acion. × 0,5 + 2 módulos × 3 + 2 avisadores × 30 = 75 mA
+  // ΔV = 2 × 220 × 0,075 × 0,0225 / 1,5 = 0,495 V ≤ 21 − 18 = 3 V → 1,5 mm²
+  const q = c.quedaTensao.circuitos[0];
+  igual('laço do exemplo: 75 mA, 220 m → 1,5 mm² (0,495 V)', [q.circuito, Math.round(q.correnteA * 1000), q.comprimento, q.secao, Math.round(q.queda * 1000) / 1000], ['Laço', 75, 220, 1.5, 0.495]);
+  // avisadores em circuito próprio: 30 × 30 mA = 0,9 A a 150 m → 1,5 mm²: 4,05 V; 2,5 mm²: 2,43 V ≤ 3 V → 2,5 mm²
+  const d = JSON.parse(JSON.stringify(motor.exemplo()));
+  Object.assign(d.sistema, { avisadores_no_laco: false, circuitos_avisadores: 1, comprimento_circuito_avisadores_m: 150, quantidades_informadas: { avisadores: 30 } });
+  const r2 = motor.processar(d).calc;
+  const av = r2.quedaTensao.circuitos.find(x => x.circuito === 'Avisadores');
+  igual('30 avisadores a 150 m: 2,5 mm² e cabo do material com a seção', [av.secao, Math.round(av.queda * 100) / 100, /2 × 2,5 mm²/.test(r2.materiais.find(m => m.codigo === 'CAB').descricao)], [2.5, 2.43, true]);
+  Object.assign(d.sistema, { comprimento_circuito_avisadores_m: 300 });
+  const r3 = motor.processar(d).calc;
+  igual('300 m: nem 4 mm² atende (3,04 V > 3 V) → aviso para dividir o circuito', [r3.quedaTensao.circuitos.find(x => x.circuito === 'Avisadores').atende, r3.avisos.some(a => /^Avisadores: 300 m/.test(a))], [false, true]);
+}
 // ── Caderno de fabricação e montagem da central de incêndio (31/10/2026) ──
 const { montarCaixa, montarCaderno } = require('../scripts/lib/caderno');
 {

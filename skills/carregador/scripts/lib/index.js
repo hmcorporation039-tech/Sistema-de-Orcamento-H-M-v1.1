@@ -19,7 +19,7 @@ const NORMAS = [
   ['IEC 62955', 'Dispositivo de detecção de corrente residual contínua (RDC-DD) para modo 3'],
   ['Norma técnica da distribuidora local', 'Aumento de carga e padrão de entrada'],
 ];
-const SECOES_CHECKLIST = ['Documentação', 'Circuito', 'Proteção diferencial', 'Proteção contra surtos', 'Equipamento', 'Sinalização e acesso'];
+const SECOES_CHECKLIST = ['Documentação', 'Circuito', 'Proteção diferencial', 'Proteção contra surtos', 'Equipamento', 'Sinalização e acesso', 'Ensaios'];
 const num = fmtNum; // número pt-BR; '—' quando vazio ou inválido
 const sec = require('../../../_comum/docx-base').fmtSecao; // "2,5 mm²" (o comum)
 const MODO = { modo2: 'Modo 2 (tomada + cabo IC-CPD)', modo3_ac: 'Modo 3 (estação CA / wallbox)', modo4_dc: 'Modo 4 (estação CC rápida)' };
@@ -90,6 +90,8 @@ const DOCUMENTOS = [
         linhas: res.calc.circuitos.map(x => ({ ...x, drTipo: x.dr.tipo })) },
       D.abaMateriais(res.calc.materiais),
     ]) },
+  // caderno de fabricação e montagem do quadro de recarga (QDVE) — ./caderno.js
+  { tipo: 'caderno', rotulo: 'Caderno de fabricação e montagem do quadro de recarga', formato: 'PDF', nome: 'Caderno_Fabricacao_Quadro_Recarga', gerar: (res) => require('./caderno').gerarCaderno(res) },
   { tipo: 'laudo', rotulo: 'Laudo de vistoria (NBR 17019)', formato: 'Word', nome: 'Laudo_Recarga_VE',
     gerar: (res) => D.docxParaBuffer(D.gerarLaudoInspecao(res.dados, res.insp, {
       titulo: 'LAUDO DE VISTORIA — PONTO DE RECARGA DE VEÍCULO ELÉTRICO', tipoInspecao: 'Verificação conforme a ABNT NBR 17019:2022 e a ABNT NBR 5410, Seção 7', tituloCurto: 'Laudo — recarga de VE', sigla: 'LAUDO-VE',
@@ -98,10 +100,25 @@ const DOCUMENTOS = [
       descricao: res.calc.circuitos.map(x => [`Ponto ${x.id}`, `${x.descricao} — ${MODO[x.ponto.modo] || ''}, ${num(x.ponto.potencia_kw)} kW, ${sec(x.secao)}, ${x.polos}P ${x.disjuntor} A, DR tipo ${x.dr.tipo}`]),
       metodologia: ['Inspeção visual do quadro, circuito e estação de recarga.', 'Ensaios de isolamento e funcionamento do DR (NBR 5410, 7.3).', 'Teste funcional de recarga com veículo ou simulador, quando disponível.'],
       medicoes: [
-        { titulo: '6.1 Ensaio do DR', colunas: ['Ponto', 'Tipo', 'IΔn (mA)', 'Tempo (ms)', 'Resultado'], proporcoes: [1.5, 0.8, 0.8, 0.8, 0.8], linhas: res.med.dr.map(m => [m.ponto, m.tipo || '', m.corrente_ma ?? 30, m.tempo_ms ?? '', m.resultado]) },
-        { titulo: '6.2 Resistência de isolamento (≥ 0,5 MΩ a 500 V CC)', colunas: ['Circuito', 'Medido (MΩ)', 'Resultado'], proporcoes: [2, 1, 0.8], linhas: res.med.isolamento.map(m => [m.circuito, m.valor_mohm ?? '', m.resultado]) },
+        { titulo: '6.1 Ensaio do DR (tempo ≤ 300 ms com IΔn — IEC 61008-1/61009-1 [CONFERIR])', colunas: ['Ponto', 'Tipo', 'IΔn (mA)', 'Tempo (ms)', 'Resultado'], proporcoes: [1.5, 0.8, 0.8, 0.8, 0.8], linhas: res.med.dr.map(m => [m.ponto, m.tipo || '', m.corrente_ma ?? 30, m.tempo_ms ?? '', m.resultado]) },
+        { titulo: '6.2 Resistência de isolamento (≥ 0,5 MΩ a 500 V CC — NBR 5410, Tabela 60)', colunas: ['Circuito', 'Medido (MΩ)', 'Resultado'], proporcoes: [2, 1, 0.8], linhas: res.med.isolamento.map(m => [m.circuito, m.valor_mohm ?? '', m.resultado]) },
       ],
     }, { checklist: res.checklist, ncs: res.ncs, parecer: res.parecer, baseDir: res.baseDir, pastaFotos: res.pastaFotos })) },
+  { tipo: 'checklist', rotulo: 'Checklist de campo', formato: 'Word', nome: 'Checklist_Campo_Recarga_VE',
+    gerar: (res) => D.docxParaBuffer(D.gerarChecklistCampo(res.dados, res.insp, {
+      titulo: 'CHECKLIST DE CAMPO — PONTO DE RECARGA DE VEÍCULO ELÉTRICO', subtitulo: 'Vistoria e ensaios (ABNT NBR 17019:2022 e ABNT NBR 5410)', tituloCurto: 'Checklist — recarga de VE', secoesChecklist: SECOES_CHECKLIST,
+      preparacao: [
+        'Levar: testador de DR (IΔn e tempo, com ensaio de CC 6 mA se houver RDC-DD), megôhmetro 500 V CC, ohmímetro de baixa resistência, multímetro e, se possível, simulador de veículo elétrico.',
+        'Combinar com o cliente/condomínio o desligamento do circuito para os ensaios de isolamento.',
+        'Conferir no quadro: circuito exclusivo, disjuntor, DR (tipo) e DPS de cada ponto contra o projeto.',
+      ],
+      referencias: [
+        ...res.calc.circuitos.map(x => [`Ponto ${x.id}`, `${sec(x.secao)} · ${x.polos}P ${x.disjuntor} A · DR tipo ${x.dr.tipo}`]),
+        ['DPS', `${res.calc.dps.qtd} un · Uc ≥ ${res.calc.dps.uc} V${res.calc.dps.obrigatorio ? ' (obrigatório: uso público)' : ' (recomendado)'}`],
+      ],
+      medicoes: [{ titulo: 'Ensaios por ponto', colunas: ['Ponto', 'Continuidade PE (Ω)', 'Isolamento (MΩ)', 'DR IΔn (mA)', 'DR tempo (ms)', 'Recarga ok', 'Obs.'], proporcoes: [0.6, 0.8, 0.8, 0.7, 0.7, 0.6, 1.3],
+        linhas: res.calc.circuitos.map(x => [x.id, '', '', '', '', '', '']) }],
+    }, res.checklist)) },
 ];
 
 function montarOrcamento(res, modo) {

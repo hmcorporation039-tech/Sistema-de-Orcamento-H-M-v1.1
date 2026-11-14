@@ -30,11 +30,11 @@ caso('pressurização: escada do perfil (mesmos blocos), cenários, porta e plac
   assert.ok(/sem o cálculo da skill/i.test(c.avisos[0]), 'arranjo típico declarado');
 });
 
-caso('pressurização com o cálculo da skill: 1 ventilador sem reversão; soft-starter no lugar do inversor', () => {
-  const c = PN.cenaDoPainelPressurizacao(PN.dadosDoPainelPressurizacao({ calculo: { arr: { n: 1 }, al: { partida: { tipo: 'soft' } }, vent: { cv: 5, in: 7.9 } } }));
+caso('pressurização com o cálculo da skill: 1 ventilador sem reversão; sempre inversor (padrão H&M, mesmo com soft-starter pedido)', () => {
+  const c = PN.cenaDoPainelPressurizacao(PN.dadosDoPainelPressurizacao({ calculo: { arr: { n: 1 }, al: { partida: { tipo: 'soft_starter' } }, vent: { cv: 5, in: 7.9 } } }));
   assert.ok(!c.comandoReles.modelo.degraus.some(d => d.saida === 'KREV'), 'sem reversão com um ventilador');
-  const soft = c.caixas.find(b => b.tag === 'V1/T1');
-  assert.ok(soft && soft.ficha.some(f => /Soft-starter/.test(f.valor)));
+  const acion = c.caixas.find(b => b.tag === 'V1/T1');
+  assert.ok(acion && acion.ficha.some(f => /Inversor de frequência/.test(f.valor)) && !acion.ficha.some(f => /Soft-starter/.test(f.valor)));
   assert.ok(c.comandoReles.cenarios.every(x => x.ok));
 });
 

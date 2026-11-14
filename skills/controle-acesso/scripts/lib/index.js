@@ -20,7 +20,7 @@ const NORMAS = [
   ['ABNT NBR 11785', 'Barra antipânico — requisitos'],
   ['ABNT NBR 17240', 'Sistemas de detecção e alarme de incêndio — interface para liberação de portas'],
   ['ABNT NBR 9050', 'Acessibilidade — altura de comandos e controles e passagem junto a catracas'],
-  ['ABNT NBR 14565:2019', 'Cabeamento estruturado (limite de 90 m do cabo horizontal)'],
+  ['ABNT NBR 14565:2025', 'Cabeamento estruturado (limite de 90 m do cabo horizontal — conferido na edição 2019 [CONFERIR na 2025])'],
   ['ABNT NBR 5410', 'Instalações elétricas de baixa tensão — circuito dedicado, DPS e aterramento'],
   ['Lei 13.709/2018 (LGPD)', 'Dados pessoais e dados sensíveis (biometria/face): transparência, base legal e segurança'],
 ];

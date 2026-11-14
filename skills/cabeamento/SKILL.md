@@ -1,17 +1,18 @@
 ---
 name: cabeamento-nbr14565
-description: Projeto (memorial, pontos, racks e materiais), relatório de certificação/inspeção e orçamento de cabeamento estruturado pela ABNT NBR 14565:2019, no padrão da H&M Engenharia. Use quando o pedido envolver pontos de rede, cabeamento Cat 5e/6/6A, rack, patch panel, distribuidor de piso, backbone óptico, certificação de rede ou orçamento de cabeamento.
+description: Projeto (memorial, pontos, racks e materiais), relatório de certificação/inspeção e orçamento de cabeamento estruturado pela ABNT NBR 14565:2025, no padrão da H&M Engenharia. Use quando o pedido envolver pontos de rede, cabeamento Cat 5e/6/6A, rack, patch panel, distribuidor de piso, backbone óptico, certificação de rede ou orçamento de cabeamento.
 ---
 
 # Cabeamento estruturado (NBR 14565) — H&M Engenharia
 
-Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 35 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
+Gera, a partir de **um arquivo JSON por obra**, os documentos e o rascunho de orçamento da disciplina. Os cálculos estão em `scripts/lib/` (teste `npm test` na pasta `skills`: 44 verificações desta disciplina). **Não refaça contas de cabeça: rode os scripts.**
 
 | Documento | Tipo | Formato |
 |---|---|---|
 | Memorial de cabeamento estruturado | `memorial` | Word |
 | Planilha de pontos e materiais | `planilha` | Excel |
 | Relatório de inspeção / certificação | `laudo` | Word |
+| Checklist de campo | `checklist` | Word |
 | Caderno de fabricação e montagem do rack (um rack por distribuidor de piso: elevações, materiais do rack aos parafusos, aterramento, plaquetas e plaqueta H&M) | `caderno` | PDF |
 
 ## Também no sistema (aba Análise de Projeto)
@@ -47,9 +48,13 @@ Regra de posicionamento: pontos de telecomunicações por área de trabalho em c
 
 - Duas tomadas por área de trabalho (6.7.7.1) e duas por ponto de acesso sem fio (Seção 15).
 - Comprimento máximo do cabo horizontal pela Tabela 3 (H = 107 − 3 − F·X para Cat 6 em interconexão), reduzido por temperatura (0,4 %/°C; 0,2 % blindado), limitado a 90 m.
+- Edição: ABNT NBR 14565:2025 (13/11/2025) substituiu a de 2019; os itens e tabelas citados foram conferidos na 2019 [CONFERIR numeração na 2025].
 - Um distribuidor de piso por pavimento e por 1 000 m² (6.7.3); cada FD com os próprios patch panels e switches; rack por FD = (patch panels + switches) × 2U (com organizador) + 2U, com reserva; backbone OM3 quando há mais de um distribuidor, um lance por FD.
 
-O checklist de inspeção (18 itens) está em `dados/checklist_base.json`; itens não conformes viram não conformidades com prioridade (P1 48 h, P2 30 dias, P3 90 dias, P4 manutenção) e entram no orçamento do modo de inspeção.
+- Energia do rack: DPS classe II no circuito que alimenta cada rack (Uc pela Tabela 49 — `_comum/dps.js`); nobreak por distribuidor pela carga dos switches e APs PoE e pela autonomia (`_comum/bateria.js`, padrão 30 min); barra de aterramento do rack e condutor de 16 mm² ao TGB/BEP (ANSI/TIA-607-D: mínimo 6 AWG). Consumos típicos [CONFERIR].
+- Eletroduto pela taxa de ocupação da NBR 5410, 6.2.11.1.6 (53 % / 31 % / 40 %) com o diâmetro externo do cabo (Cat 6 U/UTP 6,0 mm de catálogo; `sistema.diametro_cabo_mm`) e o diâmetro interno do eletroduto de PVC roscável (`_comum/eletrico/tabelas`): metros ≈ Σ pontos × distância média ÷ cabos por eletroduto (padrão ¾"); a saída de cada rack é verificada à parte [CONFERIR traçado].
+
+O checklist de inspeção (21 itens) está em `dados/checklist_base.json`; itens não conformes viram não conformidades com prioridade (P1 48 h, P2 30 dias, P3 90 dias, P4 manutenção) e entram no orçamento do modo de inspeção.
 
 ## Regras
 

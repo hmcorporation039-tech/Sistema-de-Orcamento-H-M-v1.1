@@ -68,6 +68,22 @@ const { montarRack, montarCaderno } = require('../scripts/lib/caderno');
   const q = (c) => res.calc.materiais.find(m => m.codigo === c)?.quantidade;
   igual('materiais: rack, patch panels, organizadores e patch cords vêm do mesmo rack do caderno', [q('RACK'), q('PP'), q('ORG'), q('PC')], [1, rk.ocupacao.filter(i => i.tipo === 'patch_panel').length, rk.ocupacao.filter(i => i.tipo === 'organizador').length, res.calc.nCam + res.calc.switches + 1]);
 }
+// ── Cobertura DORI (14/11/2026): IEC 62676-4:2014 — observação 62,5 px/m (antes 62) ──
+{
+  const C = require('../scripts/lib/calculo');
+  igual('DORI 2014: 25 / 62,5 / 125 / 250 px/m', Object.values(C.DORI), [25, 62.5, 125, 250]);
+  // CAM2: 2560 px, 100°, observação → alcance 2560 / (62,5 · 2 · tg 50°) = 17,18 m (antes 17,32 m com 62 px/m)
+  perto('CAM2 alcance de observação com 62,5 px/m', cam('CAM2').dMax, 2560 / (62.5 * 2 * Math.tan(50 * Math.PI / 180)));
+  // cobertura: largura da cena no alcance = resolução ÷ px/m (CAM1 identificação: 2560 / 250 = 10,24 m)
+  const idf = cam('CAM1').cobertura.find(k => k.nivel === 'identificacao');
+  perto('CAM1: cena de 10,24 m no alcance de identificação', idf.largura, 10.24);
+  perto('CAM1: alcance de identificação = dMax', idf.alcance, cam('CAM1').dMax);
+  // abertura pelo sensor e pela focal: 1/3" (4,8 mm) com 2,8 mm → 2·atan(4,8/5,6) = 81,2°
+  perto('HFOV pelo sensor 1/3" e focal 2,8 mm', C.hfovDe({ sensor_formato: '1/3"', focal_mm: 2.8 }).hfov, 2 * Math.atan(4.8 / 5.6) * 180 / Math.PI);
+  const d = clone(motor.exemplo()); d.cameras = [{ id: 'S1', local: 'x', tipo: 'dome', quantidade: 1, resolucao_mp: '4', sensor_largura_mm: 5.6, focal_mm: 4, objetivo: 'reconhecimento', distancia_alvo_m: 8 }];
+  const s1 = motor.processar(d).calc.cameras[0];
+  igual('sem abertura: HFOV pela largura do sensor e focal (70°) e classe 2025 no alvo informativa', [Math.round(s1.hfov), s1.origemHfov, s1.atende, s1.classe2025], [70, 'sensor e focal', true, 'Perceive']);
+}
 {
   const cad = montarCaderno(res);
   igual('caderno do CFTV: IEC 62676-4 nas normas e plaqueta H&M', [cad.normas.some(n => n.codigo === 'IEC 62676-4'), /H&M/.test(cad.plaqueta_hm.modelo)], [true, true]);

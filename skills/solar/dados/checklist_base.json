@@ -48,7 +48,7 @@
   "cod": "A1",
   "secao": "Arranjo fotovoltaico",
   "item": "Módulos sem trincas, delaminação, pontos quentes ou sujeira excessiva; sem sombreamento relevante",
-  "requisito": "NBR 16274; boas práticas",
+  "requisito": "NBR 16274 (inspeção do arranjo)",
   "onde": "Telhado / solo",
   "como": "Inspeção visual (termografia se possível)",
   "prioridade_padrao": "P2"
@@ -57,7 +57,7 @@
   "cod": "A2",
   "secao": "Arranjo fotovoltaico",
   "item": "Estrutura firme, sem corrosão, com vedação do telhado e torque dos fixadores",
-  "requisito": "Fabricante da estrutura",
+  "requisito": "NBR 16690 (estrutura e fixação) [CONFERIR item]; fabricante da estrutura",
   "onde": "Telhado / solo",
   "como": "Inspeção visual e aperto por amostragem",
   "prioridade_padrao": "P2"
@@ -129,7 +129,7 @@
   "cod": "I1",
   "secao": "Inversor",
   "item": "Instalado em local ventilado, protegido de sol e chuva, com os afastamentos do fabricante",
-  "requisito": "Fabricante; NBR 16274",
+  "requisito": "NBR 16274 (inspeção); manual do fabricante do inversor",
   "onde": "Local do inversor",
   "como": "Inspeção visual",
   "prioridade_padrao": "P3"
@@ -147,7 +147,7 @@
   "cod": "I3",
   "secao": "Inversor",
   "item": "Monitoramento comunicando e cliente com acesso",
-  "requisito": "Boas práticas",
+  "requisito": "NBR 16274 (avaliação de desempenho) [CONFERIR item]",
   "onde": "Inversor / aplicativo",
   "como": "Verificar",
   "prioridade_padrao": "P4"

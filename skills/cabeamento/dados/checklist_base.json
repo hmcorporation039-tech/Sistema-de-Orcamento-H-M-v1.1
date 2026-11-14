@@ -110,8 +110,8 @@
  {
   "cod": "R2",
   "secao": "Racks e distribuidores",
-  "item": "Aterramento dos racks e blindagens ligados ao BEP",
-  "requisito": "NBR 14565, 12.3; NBR 5410; NBR 5419",
+  "item": "Barra de aterramento em cada rack, jumpers dos equipamentos e blindagens e condutor até o TGB/BEP (mínimo 6 AWG; adotado 16 mm²)",
+  "requisito": "NBR 14565, 12.3; ANSI/TIA-607-D; NBR 5410, 6.4",
   "onde": "Salas de telecom",
   "como": "Verificar condutor de aterramento",
   "prioridade_padrao": "P2"
@@ -123,6 +123,24 @@
   "requisito": "NBR 14565, 12.3; NBR 5419-4",
   "onde": "Entrada de telecom",
   "como": "Verificar DPS de sinal",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "R4",
+  "secao": "Racks e distribuidores",
+  "item": "DPS classe II no circuito/quadro que alimenta o rack, com Uc conforme o esquema de aterramento",
+  "requisito": "NBR 5410, 6.3.5.2.4 e Tabela 49",
+  "onde": "Quadro que alimenta o rack",
+  "como": "Conferir DPS (Uc, In) e a ligação ≤ 0,5 m ao PE",
+  "prioridade_padrao": "P2"
+ },
+ {
+  "cod": "R5",
+  "secao": "Racks e distribuidores",
+  "item": "Nobreak do rack alimentando switches e APs PoE, com a autonomia de projeto comprovada em falta de energia",
+  "requisito": "Critério de projeto (autonomia contratada) — sem requisito normativo específico",
+  "onde": "Rack",
+  "como": "Desligar a alimentação e cronometrar a autonomia",
   "prioridade_padrao": "P3"
  },
  {
@@ -159,6 +177,15 @@
   "requisito": "NBR 14565, 12.2",
   "onde": "Tomadas / racks",
   "como": "Verificar terminação",
+  "prioridade_padrao": "P3"
+ },
+ {
+  "cod": "I5",
+  "secao": "Instalação",
+  "item": "Eletrodutos com taxa de ocupação ≤ 53 % (1 cabo), 31 % (2 cabos) e 40 % (3 ou mais), sem esmagar os cabos",
+  "requisito": "NBR 5410, 6.2.11.1.6 (critério adotado para os cabos de dados); NBR 16415 [CONFERIR]",
+  "onde": "Encaminhamentos e saída do rack",
+  "como": "Contar os cabos por eletroduto e comparar com a capacidade da bitola",
   "prioridade_padrao": "P3"
  }
 ]

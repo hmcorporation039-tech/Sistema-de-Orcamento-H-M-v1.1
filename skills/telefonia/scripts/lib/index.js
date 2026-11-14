@@ -15,7 +15,7 @@ const EXEMPLO = require('../../exemplos/exemplo-condominio.json');
 const NORMAS = [
   ['Práticas Telebrás de tubulação e rede telefônica em edifícios', 'Prumada, caixas de distribuição geral e de andar, cabos CI/CCI e distribuidor geral (DG) [CONFERIR versão adotada pela operadora]'],
   ['ABNT NBR 13726 / NBR 13727', 'Redes telefônicas internas em prédios — tubulação de entrada e partes componentes do projeto de tubulação telefônica [CONFERIR vigência]'],
-  ['ABNT NBR 14565:2019', 'Cabeamento estruturado para edifícios comerciais — pontos de voz IP, limite de 90 m do cabo horizontal e identificação'],
+  ['ABNT NBR 14565:2025', 'Cabeamento estruturado para edifícios comerciais — pontos de voz IP, limite de 90 m do cabo horizontal e identificação (conferidos na edição 2019 [CONFERIR na 2025])'],
   ['ABNT NBR 14306', 'Proteção elétrica e compatibilidade eletromagnética em redes internas de telecomunicações em edificações [CONFERIR vigência]'],
   ['ABNT NBR 5410', 'Instalações elétricas de baixa tensão — DPS (6.3.5), equipotencialização e aterramento (6.4), circuito dedicado'],
   ['ABNT NBR 5419-4', 'Proteção contra descargas atmosféricas — sistemas elétricos e eletrônicos internos (DPS em linhas de sinal)'],
@@ -102,7 +102,7 @@ function secoesMemorial(res) {
     { titulo: '2. Critérios normativos', marcadores: [
       'Rede interna (práticas Telebrás e NBR 13726/13727 [CONFERIR vigência]): entrada e DG no térreo/subsolo, prumada com caixa de distribuição em cada pavimento e ramal da caixa até a tomada da unidade; cabos de energia nunca na mesma tubulação dos cabos telefônicos (NBR 5410).',
       'Cabos: CI-50 (prumada, por pavimento) e CCI-50 2 pares (ramal de unidade: 1 par em uso + 1 de reserva) ou 4 pares (porteiro: áudio, chamada e comando). Terminação em blocos de engate rápido IDC-110/BLI de 10 pares no DG e nas caixas de andar.',
-      'Pontos IP (NBR 14565:2019): cabo U/UTP Cat 6 com no máximo 90 m do switch à tomada; acima disso, switch no bloco interligado por fibra.',
+      'Pontos IP (NBR 14565:2025): cabo U/UTP Cat 6 com no máximo 90 m do switch à tomada; acima disso, switch no bloco interligado por fibra.',
       'Proteção (NBR 5410 6.3.5, NBR 5419-4 e NBR 14306 [CONFERIR]): DPS de linha em todo par que sai da edificação (troncos da operadora, porteiros, áreas externas e interligação entre blocos), aterrado no barramento TAP do DG ligado ao BEP (6.4); DPS classe II na alimentação CA da central.',
       'Alimentação: central (e switches PoE) em nobreak com a autonomia definida, em circuito dedicado com disjuntor identificado.',
       'Equipamentos com certificação/homologação Anatel; terminais com comandos entre 0,80 m e 1,20 m (NBR 9050) [CONFERIR].',

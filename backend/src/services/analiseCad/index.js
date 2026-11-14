@@ -80,6 +80,30 @@ async function lerNoWorker(buffer, nome, aprendidos = [], confirmados = [], nota
 // de bloco curto ou em layer elétrica — num nome longo é outra coisa (caso
 // real: válvula "TA-Smart DN50" lida como tomada alta).
 const SIGLAS = [
+  // ── Disciplinas que estavam atrasadas no CAD (revisão geral, seção 6 — 14/11/2026) ──
+  // Antes: o bloco "CCM-01" e o "BANCO CAPACITORES" iam para "não identificados"; "QUADRO CA FV" e "QD-VE" viravam
+  // quadro da elétrica predial; a "CONTROLADORA" de acesso caía na automação (pelo "CONTROLADOR"); a tomada IT era
+  // tomada comum; o "INVERSOR DE FREQUÊNCIA" não tinha descrição. Ficam antes das siglas gerais.
+  [/\bCCM\b|CENTRO DE CONTROLE DE MOTORES/i, 'Centro de controle de motores (CCM)', 'eletrica_industrial'],
+  [/BANCO.?(DE.?)?CAP|CAPACITOR/i, 'Banco de capacitores (correção do fator de potência)', 'eletrica_industrial'],
+  [/INVERSOR.{0,4}(DE.?)?FREQ|\bVFD\b|SOFT.?STARTER/i, 'Inversor de frequência / soft-starter', 'eletrica_industrial'],
+  [/\bMOTOR(?!.*(PORT[ÃA]O|CANCELA|PERSIANA|CORTINA))|MOTOBOMBA/i, 'Motor elétrico', 'eletrica_industrial'],
+  [/QUADRO.?CA.{0,8}(FV|SOLAR|USINA|INVERSOR)|\bQCA\b/i, 'Quadro CA da usina fotovoltaica', 'solar'],
+  [/STRING.?BOX/i, 'String box (proteção CC dos módulos)', 'solar'],
+  [/M[ÓO]DULO.{0,6}(FV|FOTOV|SOLAR)|PLACA.?SOLAR|PAINEL.?(FV|SOLAR|FOTOV)/i, 'Módulo fotovoltaico', 'solar'],
+  [/MICRO.?INVERSOR|INVERSOR.{0,6}(FV|FOTOV|SOLAR|ON.?GRID|H[ÍI]BRIDO)/i, 'Inversor fotovoltaico', 'solar'],
+  [/QD.?VE\b|QUADRO.{0,12}(RECARGA|CARREG)/i, 'Quadro de distribuição da recarga veicular (QD-VE)', 'carregador'],
+  [/TOMADA.{0,10}\bIT\b|TOMADA.{0,10}HOSP/i, 'Tomada do sistema IT médico', 'eletrica_hospitalar'],
+  [/\bDSI\b|SUPERVISOR DE ISOLAMENTO|ALARME.{0,10}\bIT\b/i, 'Painel de alarme do DSI (IT médico)', 'eletrica_hospitalar'],
+  [/\bBEL\b|EQUIPOTENCIALIZA[ÇC][ÃA]O LOCAL/i, 'Barramento de equipotencialização local (BEL)', 'eletrica_hospitalar'],
+  [/TRAFO.{0,10}(\bIT\b|ISOLA|SEPARA)|TRANSFORMADOR.{0,12}(ISOLA|SEPARA)/i, 'Transformador de separação (IT médico)', 'eletrica_hospitalar'],
+  [/QUEBRA.?VIDRO|BOTOEIRA.{0,10}EMERG.{0,20}(PORTA|ACESSO)/i, 'Acionador de emergência (quebra-vidro) do controle de acesso', 'controle_acesso'],
+  [/CONTROLADORA(?!.{0,15}(DDC|BACNET|AUTOMA|CLP))/i, 'Controladora de acesso', 'controle_acesso'],
+  [/SENSOR.{0,10}(DE.)?PORTA(?!.*MAGN)/i, 'Sensor de porta (porta aberta/arrombada)', 'controle_acesso'],
+  [/PARAB[ÓO]LICA|\bLNBF?\b/i, 'Antena parabólica (satélite)', 'antena'],
+  [/DISTRIBUIDOR GERAL|\bPABX\b|CENTRAL (DE )?(INTERFONIA|PORTARIA)/i, 'DG / central de interfonia ou PABX', 'telefonia'],
+  [/^DG\b/i, 'DG / central de interfonia ou PABX', 'telefonia', true],
+  [/DAMPER.{0,20}AL[ÍI]VIO|REGISTRO.{0,20}(AL[ÍI]VIO|SOBREPRESS)/i, 'Damper / registro de alívio de sobrepressão', 'pressurizacao'],
   [/^T\s?B\s?T?\d*\b|^TB[-_ ]|^TBT/i, 'Tomada baixa 2P+T', 'eletrica', true],
   [/^T\s?M\s?T?\d*\b|^TM[-_ ]|^TMT/i, 'Tomada média 2P+T', 'eletrica', true],
   [/^T\s?A\s?T?\d*\b|^TA[-_ ]|^TAT/i, 'Tomada alta 2P+T', 'eletrica', true],
@@ -136,6 +160,27 @@ const SIGLAS_MT = [
   [/REL[ÉE] (DE )?PROTE|REL[ÉE]\b.*\b50\/51\b/i, 'Relé de proteção (50/51)', 'media_tensao'],
 ];
 const RE_TENSAO_MT = /\b(13[,.]8|15|24|34[,.]5|36)\s?KV\b/i;
+// (14/11/2026) malha/haste da subestação: só no contexto da MT (sozinha é do SPDA)
+SIGLAS_MT.push([/MALHA.{0,12}(ATERR|TERRA)|\bHASTE\b/i, 'Malha de aterramento — haste', 'media_tensao']);
+// Elétrica industrial e pressurização (14/11/2026): bomba, exaustor, ventilador e compressor são "outra área" (climatização,
+// hidráulica) nas disciplinas de sempre; no arquivo marcado com a disciplina — ou com IND-/CCM/PRZ-/PRESSURIZAÇÃO no bloco
+// ou na layer — são a carga (motor) da indústria e o ventilador/damper da escada pressurizada.
+const SIGLAS_IND = [
+  [/\bBOMBA|EXAUSTOR|VENTILADOR|COMPRESSOR|ESTEIRA|MOINHO|MISTURADOR|AGITADOR|EXTRUSORA|BRITADOR|TRANSPORTADOR/i, 'Motor elétrico (carga acionada)', 'eletrica_industrial'],
+];
+const SIGLAS_PRZ = [
+  // (o registro de gaveta da hidráulica e o transmissor de nível não são da pressurização, mesmo no arquivo dela)
+  [/PRESSOSTATO|PRESS[ÃA]O DIF|TRANSMISSOR.{0,15}(PRESS|\bDP\b)|\bDPT\b|\bPDT\b/i, 'Transmissor de pressão diferencial / pressostato', 'pressurizacao'],
+  [/DAMPER|REGISTRO.{0,20}(AL[ÍI]VIO|SOBREPRESS|PRESS)|AL[ÍI]VIO|VENEZIANA/i, 'Damper / registro de alívio de sobrepressão', 'pressurizacao'],
+  [/VENTILADOR|EXAUSTOR|INSUFLA/i, 'Ventilador de pressurização', 'pressurizacao'],
+  [/GRELHA/i, 'Grelha de insuflação da escada pressurizada', 'pressurizacao'],
+];
+// contexto: a disciplina marcada no arquivo, ou o texto (só o nome na MT — transformador e seccionadora existem na BT)
+const CONTEXTOS = [
+  { disciplina: 'media_tensao', siglas: SIGLAS_MT, re: RE_TENSAO_MT, soNome: true },
+  { disciplina: 'pressurizacao', siglas: SIGLAS_PRZ, re: /PRESSURIZ|(^|[-_ ])PRZ([-_ ]|$)/i },
+  { disciplina: 'eletrica_industrial', siglas: SIGLAS_IND, re: /(^|[-_ ])(IND|CCM)([-_ ]|$)/i },
+];
 // seta de cota do AutoCAD (bloco de sistema dentro da cota): não é equipamento nem "não identificado"
 const RE_SETA_DE_COTA = /^_?(ARCHTICK|OBLIQUE|CLOSED(BLANK)?|DOT(SMALL|BLANK)?|OPEN(30|90)?|INTEGRAL|ORIGIN2?|BOX(FILLED|BLANK)|DATUM(FILLED|BLANK)|SMALL|NONE)$/i;
 // climatização/hidráulica (não é disciplina da H&M): não vira material nem "não identificado"
@@ -166,8 +211,12 @@ function descreverSimbolo(g, opcoes = {}) {
   const hm = BLOCOS_HM[g.bloco] || BLOCOS_HM[g.nomeLimpo] || null;
   // sigla também no nome sem o prefixo de disciplina ("ELE QD" → "QD", "INC DET FUMACA")
   const semPrefixo = semPrefixoDeDisciplina(g.nomeLimpo);
-  const mt = (opcoes.disciplinas || []).includes('media_tensao') || RE_TENSAO_MT.test(`${g.nomeLimpo} ${g.bloco}`);
-  const sigla = (mt && SIGLAS_MT.find(([re]) => re.test(g.nomeLimpo) || re.test(g.bloco))) || SIGLAS.find(([re, , , curta]) => (!curta || nomeCurto || semPrefixo !== g.nomeLimpo) && (re.test(g.nomeLimpo) || re.test(g.bloco) || re.test(semPrefixo)));
+  // siglas do contexto (MT, pressurização, industrial): primeiro as que o nome/layer pede, depois as das disciplinas marcadas
+  const nomeEBloco = `${g.nomeLimpo} ${g.bloco}`;
+  const pedidos = CONTEXTOS.filter(c => c.re.test(c.soNome ? nomeEBloco : `${nomeEBloco} ${camadas}`));
+  const contextos = [...pedidos, ...CONTEXTOS.filter(c => !pedidos.includes(c) && (opcoes.disciplinas || []).includes(c.disciplina))];
+  const daContexto = contextos.flatMap(c => c.siglas).find(([re]) => re.test(g.nomeLimpo) || re.test(g.bloco));
+  const sigla = daContexto || SIGLAS.find(([re, , , curta]) => (!curta || nomeCurto || semPrefixo !== g.nomeLimpo) && (re.test(g.nomeLimpo) || re.test(g.bloco) || re.test(semPrefixo)));
   const daLegenda = textoDescritivo(g.descricaoLegenda) ? g.descricaoLegenda : null;
   // a prancha sem legenda: o que a legenda de outra prancha (do mesmo escritório, de preferência) disse deste bloco
   const aprendido = !daLegenda && !hm ? procurarBlocoAprendido(opcoes.blocosAprendidos, g.nomeLimpo, opcoes.escritorio, opcoes.disciplinas) : null;
@@ -204,7 +253,8 @@ function descreverSimbolo(g, opcoes = {}) {
   // altura de instalação do tipo (a da posição — atributo ALTURA — vale mais: alturasDoGrupo)
   const altura = alturaDoTexto(daLegenda || aprendido?.descricao || '') || (hm?.montagem ? { altura_m: hm.altura_m ?? null, montagem: hm.montagem } : null)
     || (sigla && /^Detector/.test(sigla[1]) ? { altura_m: null, montagem: 'teto' } : null);
-  return { descricao, origem, disciplina: outraArea ? null : disciplina, outraArea, altura };
+  const simbolo = hm ? (BLOCOS_HM[g.bloco] ? g.bloco : g.nomeLimpo) : null;
+  return { descricao, origem, disciplina: outraArea ? null : disciplina, outraArea, altura, ...(simbolo ? { simbolo } : {}) };
 }
 
 // O tipo de cada linha medida. Fiação e cabeamento desenhados são ROTA: virar
@@ -372,7 +422,7 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
     if (g.quantidadeLegenda != null && g.quantidadeLegenda !== g.quantidade) {
       conferenciaLegenda.push({ bloco: g.nomeLimpo, descricao: d.descricao, desenho: g.quantidade, legenda: g.quantidadeLegenda });
     }
-    g.posicoes.forEach(([x, y], i) => pontos.push({ x, y, descricao: d.descricao, disciplina: d.disciplina, classe: classeDoComponente(d.descricao), altura_m: alts[i].altura_m, montagem: alts[i].montagem }));
+    g.posicoes.forEach(([x, y], i) => pontos.push({ x, y, descricao: d.descricao, disciplina: d.disciplina, classe: classeDoComponente(d.descricao), altura_m: alts[i].altura_m, montagem: alts[i].montagem, ...(d.simbolo ? { simbolo: d.simbolo } : {}) }));
   }
   // Símbolos EXPLODIDOS (QiBuilder/AltoQi, PDF convertido em DWG): sem bloco, o desenho
   // ainda tem os pontos — lidos pela layer, pela medida e pela legenda da prancha (o mesmo
@@ -429,7 +479,9 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
       g.circuitos.push(circuitoConferido(pt));
     }
     for (const g of grupos.values()) {
-      const montagem = /LUMINARIA|PONTO-LUZ|DETECTOR|SENSOR|CAB-AP|CAPTOR|CAMERA/.test(g.simbolo) ? 'teto' : g.altura_m ? 'parede' : null;
+      // (14/11/2026: "SENSOR" punha no teto também o sensor de automação, o de porta e o de pressão — que são de parede;
+      // a parabólica e o módulo FV ficam no alto, como o captor)
+      const montagem = /LUMINARIA|PONTO-LUZ|DETECTOR|ILU-SENSOR|CAB-AP|CAPTOR|CAMERA|PARABOLICA|SOL-MODULO/.test(g.simbolo) ? 'teto' : g.altura_m ? 'parede' : null;
       itens.push({
         tipo: 'simbolo', descricao: g.descricao, quantidade: g.posicoes.length, disciplina: g.disciplina, origemDescricao: g.inserido ? 'inserido' : g.confirmado ? 'confirmado' : 'desenho',
         // tipo confirmado pelo engenheiro no mapa do CAD: conta no orçamento; o que ainda não foi conferido fica de fora

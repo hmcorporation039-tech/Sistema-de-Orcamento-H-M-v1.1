@@ -54,8 +54,8 @@ function comercial(lista, necessario) {
 
 // Nobreak (valores típicos de mercado, os que a skill de telefonia usava):
 const FP_NOBREAK = 0.7;          // fator de potência de saída do nobreak line-interactive [CONFERIR modelo]
-const MARGEM_NOBREAK = 1.25;     // folga sobre a carga
-const EFICIENCIA_INVERSOR = 0.85; // rendimento do inversor na descarga da bateria
+const MARGEM_NOBREAK = 1.25;     // folga sobre a carga — critério de projeto [CONFERIR]
+const EFICIENCIA_INVERSOR = 0.85; // rendimento do inversor na descarga da bateria — típico [CONFERIR modelo]
 const TENSAO_BATERIA = 12;       // V — bateria selada de 12 V
 // padrões do dimensionarNobreak (os nomes antigos continuam exportados)
 const FATOR_BATERIA_NOBREAK = FATOR_ENVELHECIMENTO.nobreak; // [CONFERIR]
