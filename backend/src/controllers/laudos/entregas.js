@@ -131,7 +131,8 @@ async function verDocumentoHtml(req, res) {
     'Cache-Control': 'no-store',
     'X-Robots-Tag': 'noindex, nofollow',
   });
-  res.send(p.html);
+  // o 3D do quadro também leva o visualizador (~1 MB): comprimido quando o navegador aceita
+  require('../../utils/respostaComprimida').enviarComprimido(req, res, p.html);
 }
 
 // "Salvar documentos na pasta": gera TODOS os documentos do padrão da

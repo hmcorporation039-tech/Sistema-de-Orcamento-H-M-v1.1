@@ -59,17 +59,19 @@ function contarPontos(blocos = []) {
 }
 
 // ── 3D (formato de skills/_comum/cad/modelo3d.js — ESPEC / DISCIPLINAS / disciplinaDoSimbolo) ──
-// Formas que o visualizador JÁ desenha (visualizador3d/app.js), em escala ilustrativa: o teste
-// teste-3d.js exige forma existente e tamanho ≤ 1,2 m. Chiller e fancoil reais são maiores.
-// [largura, altura, profundidade] em m; h = altura de instalação ('teto', 'piso' ou metros).
+// Formas próprias do visualizador (visualizador3d/app.js — 2.37: antes fancoil, condensadora e chiller
+// saíam como catraca, a evaporadora como luz de emergência e difusor/grelha/VAV como luminária), em escala
+// ilustrativa: o teste teste-3d.js exige forma existente e tamanho ≤ 1,2 m. Chiller e fancoil reais são maiores.
+// Teto e parede: [largura, altura, profundidade]; PISO: [largura (x), profundidade (y), ALTURA (z)], como os
+// equipamentos da subestação. h = altura de instalação ('teto', 'piso' ou metros).
 const ESPEC_3D = {
-  'HM-CLIM-DIFUSOR': { h: 'teto', forma: 'luminaria', tam: [0.60, 0.60, 0.05] },
-  'HM-CLIM-GRELHA': { h: 'teto', forma: 'luminaria', tam: [0.60, 0.30, 0.04] },
-  'HM-CLIM-VAV': { h: 'teto', forma: 'luminaria', tam: [0.50, 0.90, 0.35] },
-  'HM-CLIM-EVAPORADORA': { h: 2.3, forma: 'emergencia', tam: [0.90, 0.30, 0.22] },
-  'HM-CLIM-FANCOIL': { h: 'piso', forma: 'catraca', tam: [1.20, 0.90, 0.60] },
-  'HM-CLIM-CONDENSADORA': { h: 'piso', forma: 'catraca', tam: [0.85, 0.70, 0.35] },
-  'HM-CLIM-CHILLER': { h: 'piso', forma: 'catraca', tam: [1.20, 1.20, 1.20] },
+  'HM-CLIM-DIFUSOR': { h: 'teto', forma: 'difusor', tam: [0.60, 0.60, 0.05] },
+  'HM-CLIM-GRELHA': { h: 'teto', forma: 'grelha', tam: [0.60, 0.30, 0.04] },
+  'HM-CLIM-VAV': { h: 'teto', forma: 'vav', tam: [0.50, 0.90, 0.35] },
+  'HM-CLIM-EVAPORADORA': { h: 2.3, forma: 'evaporadora', tam: [0.90, 0.30, 0.22] },
+  'HM-CLIM-FANCOIL': { h: 'piso', forma: 'fancoil', tam: [1.20, 0.60, 0.90] },
+  'HM-CLIM-CONDENSADORA': { h: 'piso', forma: 'condensadora', tam: [0.85, 0.35, 0.70] },
+  'HM-CLIM-CHILLER': { h: 'piso', forma: 'chiller', tam: [1.20, 1.00, 1.20] },
 };
 const DISCIPLINA_3D = { [DISCIPLINA]: { rotulo: 'Climatização', cor: '#5ec8f2' } };
 // prefixo do símbolo → disciplina (modelo3d.disciplinaDoSimbolo usa a 2ª parte do nome: HM-CLIM-…)

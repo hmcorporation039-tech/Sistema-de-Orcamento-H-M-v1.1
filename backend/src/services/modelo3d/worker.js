@@ -3,7 +3,8 @@
 // principal isso travaria o sistema para todos os usuários nesse tempo.
 // Entrada (workerData): { dxf, disciplinas, dadosPorDisciplina, peDireito, titulo, cliente, obra, proposta,
 //                        dispositivosReais, trechos, semPontos }
-// Saída (postMessage): { ok, html, numeros, avisos } ou { ok: false, erro }
+// Saída (postMessage): { ok, cenas, principal, numeros, avisos } ou { ok: false, erro } — as CENAS, não a página:
+// a página é montada ao servir, com o visualizador do disco (index.js, paginaDoModelo; versão 2.37)
 // Um modelo POR PLANTA do desenho (skills/_comum/cad/modelosPorPlanta.js), com os
 // pontos do projeto ou os desenhados — nunca estimados pela área (01/11/2026).
 const path = require('path');
@@ -15,7 +16,6 @@ try {
   const { lerArquitetura } = require(path.join(CAD, 'arquitetura.js'));
   const { PE_DIREITO_PADRAO } = require(path.join(CAD, 'modelo3d.js'));
   const { montarCenasPorPlanta, resumoDasCenas } = require(path.join(CAD, 'modelosPorPlanta.js'));
-  const { gerarHtml } = require(path.join(CAD, 'visualizador3d.js'));
 
   const w = workerData;
   const arquitetura = lerArquitetura(w.dxf);
@@ -43,7 +43,7 @@ try {
   }
   if (!objetivo && !arquitetura.ambientes.length && !r.cenas.some(c => c.plantaInfo.pontos)) throw new Error(SEM_NADA);
   const { numeros, avisos } = resumoDasCenas(r);
-  parentPort.postMessage({ ok: true, html: gerarHtml(r.cenas, { principal: r.principal }), numeros, avisos });
+  parentPort.postMessage({ ok: true, cenas: r.cenas, principal: r.principal || 0, numeros, avisos });
 } catch (err) {
   parentPort.postMessage({ ok: false, erro: err.message });
 }

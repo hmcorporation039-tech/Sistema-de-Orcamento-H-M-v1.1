@@ -30,6 +30,7 @@ import { simuladorDaCena, htmlFichaPonto, htmlFichaComponente, ligarBotoes, cria
 import { dadosDoRack, cenaDoRack, dadosDaCentral, cenaDaCentral, dadosDoClp, cenaDoClp, dadosDoPainelPressurizacao, cenaDoPainelPressurizacao } from '../../instalacao/paineis.js';
 import { criarMapa } from './mapaIluminancia.js';
 import { iniciarEdicao } from './edicao.js';
+import { iniciarFerramentas } from './ferramentas.js';
 
 // Cena de QUADRO elétrico (skills/quadros): visualizador próprio em ./quadro.js.
 // A cena de prédio abaixo segue igual, só dentro de iniciarPredio().
@@ -287,17 +288,30 @@ const malhaParedes = caixas(CENA.paredes, matParede, 'paredes', { fantasma: true
 caixas(CENA.muretas, matMureta, 'paredes', { cores: ['#ddd5c6', '#5f594f', '#cfc8ba'], fantasma: true });
 caixas(CENA.guardas, matVidro, 'paredes');
 caixas(CENA.vidros, matVidro, 'paredes', { arestas: false });
-// pilares (o corte rebaixa os da frente pela escala)
-const matPilar = new MeshStandardMaterial({ color: '#a5a39c', roughness: 0.8 });
-const pilares = [];
-for (const p of CENA.pilares) {
-  if (p.length < 3) continue;
-  const g = new ExtrudeGeometry(new Shape(p.map(([x, y]) => new Vector2(x, y))), { depth: PD, bevelEnabled: false });
-  const m = new Mesh(g, matPilar);
-  m.rotation.x = -Math.PI / 2;
-  grupo('pilares').add(m);
-  pilares.push({ m, cx: p.reduce((s, q) => s + q[0], 0) / p.length, cz: -p.reduce((s, q) => s + q[1], 0) / p.length });
-}
+// pilares: TODOS numa geometria só, com o corte no shader como as paredes (2.37: antes um Mesh por pilar — uma
+// chamada de desenho cada — e o corte mudava a escala de cada um na CPU). aParede = centro do pilar, na base.
+const matPilar = comCorte(new MeshStandardMaterial({ color: '#a5a39c', roughness: 0.8 }));
+(function montarPilares() {
+  const pos = [], nor = [], par = [];
+  for (const p of CENA.pilares) {
+    if (p.length < 3) continue;
+    const g = new ExtrudeGeometry(new Shape(p.map(([x, y]) => new Vector2(x, y))), { depth: PD, bevelEnabled: false }).rotateX(-Math.PI / 2);
+    const gp = (g.index ? g.toNonIndexed() : g).attributes;
+    const cx = p.reduce((s, q) => s + q[0], 0) / p.length, cz = -p.reduce((s, q) => s + q[1], 0) / p.length;
+    for (let i = 0; i < gp.position.count; i++) {
+      pos.push(gp.position.getX(i), gp.position.getY(i), gp.position.getZ(i));
+      nor.push(gp.normal.getX(i), gp.normal.getY(i), gp.normal.getZ(i));
+      par.push(cx, 0, cz, 0);
+    }
+    g.dispose();
+  }
+  if (!pos.length) return;
+  const g = new BufferGeometry();
+  g.setAttribute('position', new Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new Float32BufferAttribute(nor, 3));
+  g.setAttribute('aParede', new Float32BufferAttribute(par, 4));
+  grupo('pilares').add(new Mesh(g, matPilar));
+})();
 // planta de referência no piso (mobiliário, louças, bancadas, escada): Int16 em cm
 if (CENA.planta) {
   const bin = atob(CENA.planta);
@@ -385,6 +399,53 @@ const FORMAS = {
     [bx(w * 0.55, 0.05, 0.05, w * 0.27, 0, d - 0.3), 0.55], [bx(0.42, h, 0.12, w * 0.55, 0, d - 0.42), 1.0], [bx(0.36, h * 0.8, 0.004, w * 0.55, 0, d - 0.424), 1.8]]),
   // caixa de passagem no piso: corpo e tampa
   'caixa-piso': (w, h, d) => juntar([[bx(w, h, d), 0.6], [bx(w * 0.9, h * 0.9, 0.004, 0, 0, d), 1.1]]),
+
+  // ── Climatização (2.37: antes fancoil, condensadora e chiller saíam como catraca, a evaporadora como luz de
+  // emergência e difusor, grelha e VAV como luminária). Ilustrativos. No PISO: w = x, h = profundidade (y),
+  // d = ALTURA (z); no TETO e na PAREDE: z sai da superfície (como as luminárias e as tomadas).
+  // fancoil de piso: gabinete, base, aletas do retorno na frente e grelha de insuflação em cima
+  fancoil: (w, h, d) => {
+    const p = [[bx(w * 0.98, h * 0.98, 0.06), 0.5], [bx(w, h, d - 0.06, 0, 0, 0.06), 0.95], [bx(w * 0.8, h * 0.55, 0.012, 0, 0, d), 0.4]];
+    for (let k = 0; k < 5; k++) p.push([bx(w * 0.82, 0.012, d * 0.05, 0, -h / 2 - 0.006, d * (0.14 + k * 0.1)), 0.45]);
+    return juntar(p);
+  },
+  // condensadora: pés, gabinete, ventilador na frente (disco e cubo) e tampa de serviço
+  condensadora: (w, h, d) => {
+    const R = Math.min(w * 0.3, d * 0.36), zc = 0.06 + d * 0.46;
+    return juntar([[bx(w * 0.9, h * 0.8, 0.06), 0.5], [bx(w, h, d - 0.06, 0, 0, 0.06), 0.95],
+      [new CylinderGeometry(R, R, 0.02, 20).translate(-w * 0.14, -h / 2 - 0.01, zc), 0.25],
+      [new CylinderGeometry(R * 0.22, R * 0.22, 0.03, 10).translate(-w * 0.14, -h / 2 - 0.02, zc), 0.75],
+      [bx(w * 0.2, 0.01, d * 0.5, w * 0.34, -h / 2 - 0.005, 0.06 + d * 0.2), 0.8]]);
+  },
+  // chiller (ilustrativo, menor que o real): base, gabinete, serpentinas nos lados e ventiladores no topo
+  chiller: (w, h, d) => {
+    const zb = 0.08, zc = zb + d * 0.55, topo = zc + d * 0.32;
+    const p = [[bx(w, h, zb), 0.5], [bx(w * 0.96, h * 0.9, d * 0.55, 0, 0, zb), 0.95],
+      [bx(w * 0.96, 0.03, d * 0.32, 0, -h * 0.43, zc), 0.6], [bx(w * 0.96, 0.03, d * 0.32, 0, h * 0.43, zc), 0.6],
+      [bx(w * 0.96, h * 0.8, 0.02, 0, 0, topo - 0.02), 0.8]];
+    for (const x of [-w * 0.3, 0, w * 0.3]) p.push([ci(Math.min(w, h) * 0.16, 0.04, x, 0, topo, 18), 0.28]);
+    return juntar(p);
+  },
+  // evaporadora hi-wall: corpo, aleta de saída embaixo, grade de retorno em cima e o visor
+  evaporadora: (w, h, d) => {
+    const p = [[bx(w, h, d), 1.05], [bx(w * 0.82, h * 0.16, 0.012, 0, -h * 0.3, d), 0.35], [bx(0.05, 0.02, 0.003, w * 0.32, -h * 0.05, d), ESC]];
+    for (let k = 0; k < 3; k++) p.push([bx(w * 0.9, 0.006, 0.004, 0, h * (0.32 - k * 0.07), d), 0.7]);
+    return juntar(p);
+  },
+  // difusor de teto: quadros concêntricos (aletas) alternando claro e escuro
+  difusor: (w, h, d) => juntar([[bx(w, h, d), 0.9], [bx(w * 0.78, h * 0.78, 0.004, 0, 0, d), 0.45], [bx(w * 0.56, h * 0.56, 0.006, 0, 0, d), 0.95],
+    [bx(w * 0.34, h * 0.34, 0.008, 0, 0, d), 0.45], [bx(w * 0.14, h * 0.14, 0.01, 0, 0, d), 0.95]]),
+  // grelha de retorno: moldura, fundo escuro e aletas paralelas
+  grelha: (w, h, d) => {
+    const n = Math.max(4, Math.round(w / 0.06));
+    const p = [[bx(w, h, d), 0.9], [bx(w * 0.9, h * 0.85, 0.004, 0, 0, d), 0.3]];
+    for (let k = 0; k < n; k++) p.push([bx(0.01, h * 0.85, 0.008, -w * 0.43 + (k * w * 0.86) / (n - 1), 0, d), 0.95]);
+    return juntar(p);
+  },
+  // caixa VAV abaixo do forro: corpo, colarinho redondo de entrada e o atuador do registro
+  vav: (w, h, d) => juntar([[bx(w * 0.7, h, d, w * 0.15), 0.95],
+    [new CylinderGeometry(d * 0.32, d * 0.32, w * 0.3, 14).rotateZ(Math.PI / 2).translate(-w * 0.35, 0, d / 2), 0.75],
+    [bx(0.08, 0.1, 0.06, w * 0.15, h / 2 + 0.05, d * 0.3), ESC * 3]]),
 
   // ── Equipamentos do objetivo do projeto (subestação e afins, 09/11/2026: ../equipamentos3d.js) ──
   // Dimensões típicas e ilustrativas. No PISO: w = largura (x), h = profundidade (y), d = ALTURA (z).
@@ -478,7 +539,7 @@ const FORMAS = {
   },
 };
 // equipamentos do piso: o eixo z local é o vertical (etiqueta acima de d)
-const PISO_ALTURA_Z = new Set(['poste', 'transformador', 'poste-mt', 'cabo', 'eletroduto-peca', 'poco', 'disjuntor-mt', 'cubiculo', 'haste', 'cordoalha', 'tapete', 'tela', 'canaleta']);
+const PISO_ALTURA_Z = new Set(['poste', 'transformador', 'poste-mt', 'cabo', 'eletroduto-peca', 'poco', 'disjuntor-mt', 'cubiculo', 'haste', 'cordoalha', 'tapete', 'tela', 'canaleta', 'fancoil', 'condensadora', 'chiller']);
 // cenas antigas (versão 1) não trazem tam/montagem
 const TAM_PADRAO = { tomada: [0.1, 0.16, 0.03], interruptor: [0.1, 0.16, 0.03], quadro: [0.6, 0.8, 0.15], rack: [0.6, 0.6, 0.45], luminaria: [0.62, 0.62, 0.06], 'ponto-luz': [0.26, 0.26, 0.1], detector: [0.16, 0.16, 0.07], sensor: [0.13, 0.13, 0.06], camera: [0.11, 0.11, 0.32], 'sensor-canto': [0.08, 0.13, 0.07], catraca: [0.3, 1, 0.8], barra: [0.3, 0.06, 0.05] };
 const NO_TETO = new Set(['luminaria', 'ponto-luz', 'detector', 'sensor', 'ap', 'dome']);
@@ -559,8 +620,12 @@ for (const t of CENA.dispositivos) {
   const mesh = new InstancedMesh(geo, mat, t.itens.length);
   mesh.userData = { tipo: t };
   mesh.renderOrder = 1;
-  mesh.frustumCulled = false; // a escala do shader aumenta a peça além da caixa calculada na CPU
   posicionarInstancias(t, mesh);
+  // a escala do shader aumenta a peça além da caixa calculada na CPU: a esfera das instâncias ganha a folga da
+  // maior escala (ESCALA_MAX) — assim o tipo inteiro fora da vista não é desenhado (2.37: antes, nunca recortado)
+  mesh.computeBoundingSphere();
+  mesh.boundingSphere.radius += t.tamMax * ESCALA_MAX;
+  mesh.frustumCulled = true;
   grupo(`disc:${t.disciplina}`).add(mesh);
   malhasDispositivos.push(mesh);
   t.malha = mesh;
@@ -1392,47 +1457,99 @@ if (LEG_INFRA.length && INFRA.length) {
 }
 
 // ── Ponto sob o mouse/dedo (na tela, com a mesma escala do shader) ──────────
-function escolherDispositivo(cx, cy) {
-  const r = tela.getBoundingClientRect();
-  const mx = cx - r.left, my = cy - r.top, w = r.width, h = r.height;
-  let melhor = null;
+// Grade na tela (2.37): antes cada movimento do mouse projetava TODOS os pontos e até 20.000 trechos de
+// infraestrutura. Agora a projeção é feita uma vez por posição da câmera (e por camadas ligadas) e guardada numa
+// grade de células de 64 px; o movimento do mouse só testa o que está na célula do cursor.
+const CELULA = 64;
+const vTmp2 = new Vector3();
+let cacheTela = { chave: '', disp: new Map(), infra: new Map(), grandes: [] };
+function chaveDaTela(w, h) {
+  const e = camera.matrixWorld.elements, p = camera.projectionMatrix.elements;
+  let s = `${w}|${h}|${UD.uPx.value}|${gInfra.visible ? 1 : 0}|`;
+  for (let i = 0; i < 16; i++) s += `${e[i].toFixed(4)},${p[i].toFixed(4)},`;
+  for (const t of CENA.dispositivos) s += t.malha && t.malha.visible && t.malha.parent.visible ? '1' : '0';
+  for (const g of INFRA) s += g.objeto && g.objeto.visible && g.objeto.parent.visible ? '1' : '0';
+  return s;
+}
+// põe a entrada nas células da caixa [x0,x1]×[y0,y1] (recortada na tela); devolve false se cobriria células demais
+function naGrade(grade, x0, y0, x1, y1, w, h, entrada, maxCelulas = Infinity) {
+  const gx0 = Math.floor(Math.max(0, x0) / CELULA), gx1 = Math.floor(Math.min(w, x1) / CELULA);
+  const gy0 = Math.floor(Math.max(0, y0) / CELULA), gy1 = Math.floor(Math.min(h, y1) / CELULA);
+  if (gx1 < gx0 || gy1 < gy0) return true; // fora da tela
+  if ((gx1 - gx0 + 1) * (gy1 - gy0 + 1) > maxCelulas) return false;
+  for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) {
+    const k = gx * 10000 + gy;
+    if (!grade.has(k)) grade.set(k, []);
+    grade.get(k).push(entrada);
+  }
+  return true;
+}
+function prepararTela(w, h) {
+  const chave = chaveDaTela(w, h);
+  if (cacheTela.chave === chave) return cacheTela;
+  const disp = new Map(), infra = new Map(), grandes = [];
   for (const t of CENA.dispositivos) {
     const m = t.malha;
     if (!m || !m.visible || !m.parent.visible) continue;
     for (const it of t.itens) {
-      if (it.fora) continue; // retirado no modo de edição (./edicao.js)
       vTmp.set(it[0], it[2], -it[1]);
       const d = camera.position.distanceTo(vTmp);
-      // dentro do ambiente: só os dele e os muito próximos (sem "ver" através da parede)
-      if (modo === 'dentro' && it[5] !== atual && d > 4) continue;
       vTmp.project(camera);
       if (vTmp.z > 1 || vTmp.z < -1) continue;
       const sx = (vTmp.x + 1) / 2 * w, sy = (1 - vTmp.y) / 2 * h;
       const raio = Math.max(10, (t.tamMax * escalaDe(t.tamMax, d)) / (d * UD.uPx.value) / 2);
-      const dd = Math.hypot(sx - mx, sy - my);
-      if (dd <= raio && (!melhor || dd < melhor.dd - 2 || (Math.abs(dd - melhor.dd) <= 2 && d < melhor.d))) melhor = { t, it, d, dd };
+      naGrade(disp, sx - raio, sy - raio, sx + raio, sy + raio, w, h, { t, it, d, sx, sy, raio });
     }
+  }
+  if (gInfra.visible) {
+    const tela2d = (x, y, z) => { vTmp2.set(x, y, z).project(camera); return vTmp2.z > 1 || vTmp2.z < -1 ? null : [(vTmp2.x + 1) / 2 * w, (1 - vTmp2.y) / 2 * h]; };
+    for (const g of INFRA) {
+      if (!g.objeto || !g.objeto.visible || !g.objeto.parent.visible) continue;
+      const s = g.segmentos || [], dsc = g.descidas || [];
+      const guardar = (a, b) => {
+        if (!a || !b) return;
+        const e = { g, a, b };
+        // trecho que cruza a tela inteira não entra em centenas de células: vai para a lista testada sempre
+        if (!naGrade(infra, Math.min(a[0], b[0]) - 8, Math.min(a[1], b[1]) - 8, Math.max(a[0], b[0]) + 8, Math.max(a[1], b[1]) + 8, w, h, e, 48)) grandes.push(e);
+      };
+      for (let i = 0; i + 3 < s.length; i += 4) guardar(tela2d(s[i], g.z, -s[i + 1]), tela2d(s[i + 2], g.z, -s[i + 3]));
+      for (let i = 0; i + 3 < dsc.length; i += 4) guardar(tela2d(dsc[i], dsc[i + 2], -dsc[i + 1]), tela2d(dsc[i], dsc[i + 3], -dsc[i + 1]));
+    }
+  }
+  cacheTela = { chave, disp, infra, grandes };
+  return cacheTela;
+}
+const naCelula = (grade, mx, my) => grade.get(Math.floor(mx / CELULA) * 10000 + Math.floor(my / CELULA)) || [];
+
+function escolherDispositivo(cx, cy) {
+  const r = tela.getBoundingClientRect();
+  const mx = cx - r.left, my = cy - r.top;
+  let melhor = null;
+  for (const e of naCelula(prepararTela(r.width, r.height).disp, mx, my)) {
+    const { it, d } = e;
+    if (it.fora) continue; // retirado no modo de edição (./edicao.js)
+    // dentro do ambiente: só os dele e os muito próximos (sem "ver" através da parede)
+    if (modo === 'dentro' && it[5] !== atual && d > 4) continue;
+    const dd = Math.hypot(e.sx - mx, e.sy - my);
+    if (dd <= e.raio && (!melhor || dd < melhor.dd - 2 || (Math.abs(dd - melhor.dd) <= 2 && d < melhor.d))) melhor = { t: e.t, it, d, dd };
   }
   return melhor;
 }
 // trecho de infraestrutura sob o cursor (até 8 px da linha na tela): segmentos e descidas
-const vTmp2 = new Vector3();
 function escolherInfra(cx, cy) {
   const r = tela.getBoundingClientRect();
-  const mx = cx - r.left, my = cy - r.top, w = r.width, h = r.height;
-  const tela2d = (x, y, z) => { vTmp2.set(x, y, z).project(camera); return vTmp2.z > 1 || vTmp2.z < -1 ? null : [(vTmp2.x + 1) / 2 * w, (1 - vTmp2.y) / 2 * h]; };
+  const mx = cx - r.left, my = cy - r.top;
+  if (!gInfra.visible) return null;
   const distSeg = (a, b) => {
     const vx = b[0] - a[0], vy = b[1] - a[1], L2 = vx * vx + vy * vy;
     const t = L2 ? Math.max(0, Math.min(1, ((mx - a[0]) * vx + (my - a[1]) * vy) / L2)) : 0;
     return Math.hypot(mx - a[0] - vx * t, my - a[1] - vy * t);
   };
+  const c = prepararTela(r.width, r.height);
   let melhor = null;
-  for (const g of INFRA) {
-    if (!g.objeto || !g.objeto.visible || !g.objeto.parent.visible || !gInfra.visible) continue;
-    const s = g.segmentos || [], dsc = g.descidas || [];
-    const testar = (a, b) => { if (!a || !b) return; const d = distSeg(a, b); if (d <= 8 && (!melhor || d < melhor.d)) melhor = { g, d }; };
-    for (let i = 0; i + 3 < s.length; i += 4) testar(tela2d(s[i], g.z, -s[i + 1]), tela2d(s[i + 2], g.z, -s[i + 3]));
-    for (let i = 0; i + 3 < dsc.length; i += 4) testar(tela2d(dsc[i], dsc[i + 2], -dsc[i + 1]), tela2d(dsc[i], dsc[i + 3], -dsc[i + 1]));
+  for (const e of [...naCelula(c.infra, mx, my), ...c.grandes]) {
+    const d = distSeg(e.a, e.b);
+    if (d <= 8 && (!melhor || d < melhor.d)) melhor = { g: e.g, d };
   }
   return melhor && melhor.g;
 }
@@ -1472,6 +1589,12 @@ function mostrarDica(cx, cy) {
 }
 // modo de edição de componentes (versão 2.30): só dentro da tela da análise, quando ela manda a paleta
 const edicao = iniciarEdicao({ CENA, tela, camera, cena, pisos, escolherDispositivo, pedirDesenho, esc });
+// busca de componente, medição e vista no endereço (2.37: ./ferramentas.js)
+const ferramentas = iniciarFerramentas({
+  CENA, tela, camera, cena, controles, barra: $('#barra'), antes: $('#b-tela'),
+  alvosDoClique: () => [...pisos, ...(malhaParedes && grupo('paredes').visible ? [malhaParedes] : []), ...grupo('pilares').children],
+  animar, pontoOlhado, sairDoAmbiente, modo: () => modo, pedirDesenho, esc, br,
+});
 let pendenteMouse = null;
 tela.addEventListener('pointermove', (ev) => {
   if (ev.pointerType !== 'mouse' || ev.buttons) return;
@@ -1545,6 +1668,8 @@ tela.addEventListener('pointerup', (ev) => {
   if (!curto) return;
   // modo de edição: o clique insere ou retira um componente
   if (edicao.ativo()) { edicao.clique(ev.clientX, ev.clientY); return; }
+  // medição ligada: o clique marca o ponto (./ferramentas.js)
+  if (ferramentas.ativo()) { ferramentas.clique(ev.clientX, ev.clientY); return; }
   // 3D interativo: clique (mouse) num ponto do modelo aciona e abre a ficha
   // (equipamento do objetivo do projeto: o clique abre a ficha do componente)
   if (ev.pointerType !== 'touch') { if (!(sim && clicarInterativo(ev.clientX, ev.clientY)) && !clicarRede(ev.clientX, ev.clientY)) clicarComponente(ev.clientX, ev.clientY); return; }
@@ -1831,11 +1956,7 @@ function atualizarCorte() {
   const deCima = modo !== 'dentro' && camera.position.y > PD + 0.3;
   for (const m of matsTeto) { m.opacity = deCima ? 0.45 : 1; m.depthWrite = !deCima; }
   for (const f of fantasmas) f.visible = k === 1 && estado.paredes === 0;
-  const dir = UC.uDir.value;
-  for (const p of pilares) {
-    const frente = k === 1 && (p.cx - alvo.x) * dir.x + (p.cz - alvo.z) * dir.y > UC.uMargem.value;
-    p.m.scale.z = frente ? ALTURA_CORTE / PD : 1;
-  }
+  // os pilares da frente descem no shader (matPilar com comCorte), como as paredes
 }
 // plano próximo acompanha a distância (precisão de profundidade nos modelos grandes)
 function ajustarPlanoProximo() {
@@ -1859,7 +1980,11 @@ window.addEventListener('load', redimensionar);
 redimensionar();
 aplicarParedes();
 aplicarGrandes();
-vista3d();
+// a vista que veio no endereço (#vista=…, "Copiar vista" — 2.37); sem ela, a vista 3D padrão
+{
+  const v = ferramentas.vistaDoEndereco();
+  if (v) { camera.position.set(v[0], v[1], v[2]); controles.target.set(v[3], v[4], v[5]); controles.update(); } else vista3d();
+}
 aplicarEstadoSim(); // 3D interativo: cores do estado salvo na aba (ou do inicial)
 
 let tAnterior = performance.now();

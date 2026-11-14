@@ -5,19 +5,27 @@
 const fs = require('fs');
 const path = require('path');
 const { EMPRESA } = require('../empresa');
-const { construir, bundleAtualizado, SAIDA } = require('./visualizador3d/construir');
+const { construir, bundleAtualizado, SAIDA, FONTES } = require('./visualizador3d/construir');
 
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 // JSON dentro de <script>: sem "</script>" nem separadores de linha do JS
 const LS = String.fromCharCode(0x2028), PS = String.fromCharCode(0x2029);
 const jsonSeguro = (o) => JSON.stringify(o).split('<').join('\\u003c').split(LS).join('\\u2028').split(PS).join('\\u2029');
 
+// Em memória enquanto nenhuma fonte nem o bundle mudam (data e tamanho): desde a 2.37 o sistema monta a página a
+// cada abertura do 3D (guarda só a cena), e conferir o hash de todas as fontes + ler ~0,9 MB toda vez sobrava.
+let bundleEmMemoria = { assinatura: null, texto: null };
+const assinaturaDosArquivos = () => [...FONTES, SAIDA].map(f => { try { const st = fs.statSync(f); return `${st.mtimeMs}:${st.size}`; } catch { return '-'; } }).join('|');
 function lerBundle() {
+  const antes = assinaturaDosArquivos();
+  if (bundleEmMemoria.assinatura === antes) return bundleEmMemoria.texto;
   // bundle velho (app.js mudou) é refeito quando o esbuild (devDependency) está instalado
   if (!bundleAtualizado()) {
     try { construir(); } catch (e) { if (!fs.existsSync(SAIDA)) throw new Error(`Visualizador 3D sem bundle: rode "npm run build:3d" na pasta skills (${e.message}).`); }
   }
-  return fs.readFileSync(SAIDA, 'utf8').replace(/<\/script/gi, '<\\/script');
+  const texto = fs.readFileSync(SAIDA, 'utf8').replace(/<\/script/gi, '<\\/script');
+  bundleEmMemoria = { assinatura: assinaturaDosArquivos(), texto };
+  return texto;
 }
 
 const CSS = `
@@ -38,7 +46,7 @@ header .meta b{color:var(--texto);font-weight:600}
 #barra button.ativo{background:#2c2715;border-color:var(--ouro);color:var(--ouro2)}
 #disciplinas{display:contents}
 #barra button.disc i{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--cor);margin-right:6px;opacity:.35}
-#barra button.disc.ativo{background:color-mix(in srgb,var(--cor) 18%,#1c1f25);border-color:var(--cor);color:var(--texto)}
+#barra button.disc.ativo{background:#2a2e36;background:color-mix(in srgb,var(--cor) 18%,#1c1f25);border-color:var(--cor);color:var(--texto)}
 #barra button.disc.ativo i{opacity:1}#barra button small{opacity:.7}
 aside{position:fixed;top:112px;right:16px;bottom:52px;width:330px;overflow:auto;z-index:4;display:flex;flex-direction:column;gap:10px}
 aside section{background:var(--painel);border:1px solid var(--borda);border-radius:8px;padding:10px 12px}
@@ -52,7 +60,7 @@ aside h2::after{content:"–";color:var(--suave)}aside section.fechada h2::after
 #lista-ambientes i,.tipos i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:0}
 .leg{display:flex;align-items:center;gap:9px;width:100%;background:none;border:0;border-bottom:1px solid rgba(255,255,255,.05);color:var(--texto);padding:6px 2px;font:inherit;text-align:left;cursor:pointer;opacity:.4}
 .leg.ativo{opacity:1}.leg span{flex:1;font-size:12.5px}.leg small{display:block;color:var(--suave);font-size:11px}.leg b{color:var(--ouro2);font-weight:600}
-.leg i{flex:none;width:16px;height:16px;background:var(--cor);border-radius:3px;box-shadow:0 0 6px color-mix(in srgb,var(--cor) 60%,transparent)}
+.leg i{flex:none;width:16px;height:16px;background:var(--cor);border-radius:3px;box-shadow:0 0 6px rgba(0,0,0,.4);box-shadow:0 0 6px color-mix(in srgb,var(--cor) 60%,transparent)}
 .leg i.f-tomada,.leg i.f-interruptor{width:12px;height:14px}.leg i.f-luminaria{width:18px;height:18px;border-radius:2px}.leg i.f-ponto-luz,.leg i.f-detector,.leg i.f-sensor{border-radius:50%}
 .leg i.f-rede,.leg i.f-coaxial,.leg i.f-teclado{width:12px;height:14px}.leg i.f-ap,.leg i.f-dome,.leg i.f-sirene{border-radius:50%}.leg i.f-emergencia{width:20px;height:8px}.leg i.f-wallbox{width:12px;height:16px}
 .leg i.f-infra{width:22px;height:6px;border-radius:1px}.leg i.f-infra.f-tubo{height:4px;border-radius:3px}.leg i.f-infra.f-linha{height:2px}
@@ -82,7 +90,7 @@ footer details{position:relative}footer summary{cursor:pointer;color:var(--texto
 #ficha th,.sim-circ th{color:var(--suave);font-weight:500;text-align:left;vertical-align:top;padding:2px 6px 2px 0;width:42%}#ficha td,.sim-circ td{padding:2px 0}.sim-circ small,.sim-est small{color:var(--suave)}
 .sim-bs{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}.sim-b{background:#1e2128;color:var(--texto);border:1px solid var(--borda);border-radius:6px;padding:5px 10px;font:inherit;font-size:12.5px;cursor:pointer}.sim-b:hover{border-color:var(--ouro)}
 .sim-b.liga{background:#1f5f30;border-color:#3fb950;font-weight:600}.sim-b.desliga{background:#26282d;border-color:#8a8f98;font-weight:600}.sim-b.emerg{background:#8a1c1c;border-color:#e5484d;color:#fff;font-weight:600}
-.sim-luzes{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:10.5px;color:var(--suave);margin:4px 0}.sim-luz i{display:inline-block;width:12px;height:12px;border-radius:50%;background:color-mix(in srgb,var(--c) 22%,#111);margin-right:4px;vertical-align:-2px;border:1px solid #444}
+.sim-luzes{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:10.5px;color:var(--suave);margin:4px 0}.sim-luz i{display:inline-block;width:12px;height:12px;border-radius:50%;background:#1d1d1d;background:color-mix(in srgb,var(--c) 22%,#111);margin-right:4px;vertical-align:-2px;border:1px solid #444}
 .sim-luz.acesa{color:var(--texto)}.sim-luz.acesa i{background:var(--c);box-shadow:0 0 8px var(--c)}.sim-painel,.sim-circ{border-top:1px solid var(--borda);margin-top:8px;padding-top:6px}
 .sim-lista{display:flex;flex-direction:column;gap:3px}.sim-dj{display:flex;align-items:center;gap:8px;background:none;border:1px solid var(--borda);border-radius:6px;padding:4px 8px;color:var(--texto);font:inherit;font-size:12px;text-align:left;cursor:pointer}
 .sim-dj:hover{border-color:var(--ouro)}.sim-dj i{flex:none;width:10px;height:18px;border-radius:2px;background:#2f9e44}.sim-dj.on i{background:#d62828}.sim-dj b{min-width:46px;color:var(--ouro2)}.sim-dj span small{display:block;color:var(--suave);font-size:11px}.sim-dj.off{opacity:.72}

@@ -8,6 +8,7 @@ const { contentDisposition } = require('../utils/nomeArquivoDownload');
 const { registrarAuditoria } = require('../services/auditoria');
 const P = require('../services/pastasSistema');
 const { pastaDoLaudo, pastaDoProjeto, seguro } = require('../services/pastasRegistros');
+const { enviarComprimido } = require('../utils/respostaComprimida');
 
 const ORIGENS = new Set(['laudo', 'analise', 'proposta']);
 const TABELA_ORIGEM = { laudo: 'laudos_projetos', analise: 'analises_projeto', proposta: 'propostas' };
@@ -72,18 +73,18 @@ async function arquivo(req, res) {
   if (!m) return res.status(400).json({ erro: 'Envie primeiro a arquitetura (.dwg, .dxf ou PDF) para gerar o modelo 3D.' });
   const nome = M.nomeArquivo(m.fonte);
   res.set({ 'Content-Type': 'text/html; charset=utf-8', 'Content-Disposition': contentDisposition(nome), 'X-Nome-Arquivo': encodeURIComponent(nome) });
-  res.send(Buffer.from(m.html, 'utf8'));
+  enviarComprimido(req, res, m.html);
 }
 
-// Página do 3D com a política própria (script embutido em sandbox)
-function enviarPagina(res, html, { embutido = false } = {}) {
+// Página do 3D com a política própria (script embutido em sandbox), comprimida (~1 MB → ~1/4)
+function enviarPagina(req, res, html, { embutido = false } = {}) {
   res.set({
     'Content-Type': 'text/html; charset=utf-8',
     'Content-Security-Policy': embutido ? M.CSP_MODELO_3D_EMBUTIDO : M.CSP_MODELO_3D,
     'Cache-Control': 'no-store',
     'X-Robots-Tag': 'noindex, nofollow',
   });
-  res.send(html);
+  enviarComprimido(req, res, html);
 }
 
 // GET /modelo-3d/ver/:token — sem login: o token curto (2 h) é a autorização
@@ -93,7 +94,7 @@ async function ver(req, res) {
   try {
     const m = await M.obterModelo(l.origemTipo, l.origemId);
     if (!m) return res.status(404).type('text/plain; charset=utf-8').send('Este registro não tem mais arquitetura para o modelo 3D.');
-    enviarPagina(res, m.html, { embutido: !!l.embutido });
+    enviarPagina(req, res, m.html, { embutido: !!l.embutido });
   } catch (err) {
     console.error('Erro ao servir o modelo 3D:', err.message);
     res.status(err.status && err.status < 500 ? err.status : 500).type('text/plain; charset=utf-8').send(err.status ? err.message : 'Erro ao gerar o modelo 3D.');

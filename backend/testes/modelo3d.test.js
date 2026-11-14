@@ -77,13 +77,16 @@ const caso = async (nome, fn) => { await fn(); ok++; };
 
   // 01/11/2026: o 3D nunca estima pontos pela área (a Arena saía com 868 tomadas que
   // não existem no projeto) — sem ponto desenhado nem formulário, só a arquitetura
-  await caso('gera o HTML na thread à parte, com os ambientes e SEM pontos estimados', async () => {
+  await caso('gera a CENA na thread à parte (a página é montada ao servir), com os ambientes e SEM pontos estimados', async () => {
     const r = await M.gerarNoWorker(fonte);
-    assert.ok(r.html.startsWith('<!doctype html>'));
+    // 2.37: o worker devolve as cenas, não a página com o visualizador (~0,9 MB) — isso fica fora do banco
+    assert.ok(Array.isArray(r.cenas) && r.cenas.length >= 1 && r.html === undefined);
+    const html = M.paginaDoModelo(r);
+    assert.ok(html.startsWith('<!doctype html>'));
     assert.strictEqual(r.numeros.ambientes, 2);
     assert.strictEqual(r.numeros.dispositivos.length, 0, JSON.stringify(r.numeros.dispositivos));
     assert.ok(r.avisos.some(a => /nada é estimado/.test(a)), r.avisos.join(' | '));
-    assert.ok(!r.html.includes('<script>alert(1)</script>'), 'título escapado');
+    assert.ok(!html.includes('<script>alert(1)</script>'), 'título escapado');
   });
 
   await caso('formulário do projeto que não posiciona pontos não cai na estimativa', async () => {
@@ -176,13 +179,17 @@ const caso = async (nome, fn) => { await fn(); ok++; };
     assert.notStrictEqual(k, M.chaveDa(fonte));
   });
 
-  await caso('versão do gerador: todos os .js/.json de _comum/cad e o empresa.js, sem testes', async () => {
+  await caso('versão do gerador: todos os .js/.json de _comum/cad e o empresa.js, sem testes e sem o visualizador', async () => {
     const nomes = M.arquivosDoGerador().map(f => path.relative(CAD, f).split(path.sep).join('/'));
-    for (const f of ['simbolos.js', 'disciplinasCad.js', 'planta.js', 'plantasDisciplina.js', 'posicionamento.js', 'modelo3d.js', 'infraestrutura.js', 'visualizador3d/app.bundle.js', 'padrao-hm.json']) assert.ok(nomes.includes(f), f);
+    for (const f of ['simbolos.js', 'disciplinasCad.js', 'planta.js', 'plantasDisciplina.js', 'posicionamento.js', 'modelo3d.js', 'infraestrutura.js', 'padrao-hm.json']) assert.ok(nomes.includes(f), f);
     assert.ok(!nomes.some(f => /(^|\/)teste-|node_modules/.test(f)), nomes.join(' '));
+    // 2.37: o visualizador (página + bundle) não muda a cena — mudar o 3D na tela não refaz todos os modelos
+    assert.ok(!nomes.some(f => /^visualizador3d(\/|\.js$)/.test(f)), nomes.filter(f => /visualizador/.test(f)).join(' '));
     const v = M.versaoDoGerador();
     assert.match(v, /^[0-9a-f]{64}$/);
     assert.strictEqual(M.versaoDoGerador(), v);
+    // a imagem do PDF é marcada com a versão do visualizador (outra versão desenha diferente: captura de novo)
+    assert.match(M.versaoDoVisualizador(), /^[0-9a-f]{32}$/);
   });
 
   await caso('componente do projeto entra no 3D com a chave do registro (carregador, controle_acesso)', async () => {
@@ -192,7 +199,7 @@ const caso = async (nome, fn) => { await fn(); ok++; };
     ], trechos: [] });
     assert.deepStrictEqual(dispositivos.map(d => d.disciplina), ['carregador', 'controle_acesso']);
     const r = await M.gerarNoWorker({ ...fonte, dispositivosReais: dispositivos });
-    const cena = JSON.parse(r.html.match(/window\.CENA=(.*?);document\.querySelectorAll/s)[1]);
+    const cena = JSON.parse(M.paginaDoModelo(r).match(/window\.CENA=(.*?);document\.querySelectorAll/s)[1]);
     assert.deepStrictEqual(Object.keys(cena.disciplinas).sort(), ['carregador', 'controle_acesso']);
     assert.ok(Object.values(cena.disciplinas).every(d => d.cor !== '#dddddd'), JSON.stringify(cena.disciplinas));
     // o componente lido do DWG vem sem ambiente: o 3D acha o da posição (3D-01)

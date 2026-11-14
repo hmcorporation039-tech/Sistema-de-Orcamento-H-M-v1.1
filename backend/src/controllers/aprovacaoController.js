@@ -309,7 +309,7 @@ async function modelo3dPublico(req, res) {
     if (!p.modelo_3d_cliente) return sem3d();
     const m = await require('../services/modelo3d').obterModelo('proposta', p.id);
     if (!m) return sem3d();
-    require('./modelo3dController').enviarPagina(res, m.html);
+    require('./modelo3dController').enviarPagina(req, res, m.html);
   } catch (err) {
     falhaPublica(res, 'modelo 3D', err);
   }

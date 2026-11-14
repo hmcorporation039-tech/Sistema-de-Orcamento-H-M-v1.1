@@ -25,7 +25,9 @@ const FONTES = [ENTRADA, path.join(__dirname, 'quadro.js'), path.join(__dirname,
   // faltavam aqui (mudar um deles deixava o bundle velho sem aviso). construir() agora confere.
   path.join(__dirname, '..', '..', 'instalacao', 'fiacaoComando.js'), path.join(__dirname, '..', '..', 'especificacao', 'comando.js'),
   path.join(__dirname, '..', '..', 'especificacao', 'blocos-comando.json'),
-  path.join(__dirname, '..', '..', '..', 'pressurizacao', 'dados', 'perfil-especificacao.json')];
+  path.join(__dirname, '..', '..', '..', 'pressurizacao', 'dados', 'perfil-especificacao.json'),
+  // 2.37: busca de componente, medição e vista no endereço
+  path.join(__dirname, 'ferramentas.js')];
 
 function assinatura() {
   const versaoThree = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'node_modules', 'three', 'package.json'), 'utf8')).version;

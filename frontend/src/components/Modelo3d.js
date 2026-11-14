@@ -10,7 +10,7 @@ import api, {
   abrirModelo3d, baixarModelo3d, urlModelo3d, enviarArquiteturaAnalise, getArquiteturaAnalise,
   getModelo3d, mostrarModelo3dAoCliente, getMapaCad,
 } from '../services/api';
-import Modelo3dEditor, { nomeDaDisciplina3d } from './analise/Modelo3dEditor';
+import Modelo3dEditor from './analise/Modelo3dEditor';
 import { baixarArquivo, mensagemDeErro } from '../utils/download';
 
 export const ACEITA_ARQUITETURA = '.dxf,.dwg,.pdf';
@@ -136,8 +136,8 @@ export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null,
         </button>
       )}
       {componentes && (
-        <Modelo3dEditor analiseId={id} componentes={componentes.lista} disciplinasDoProjeto={componentes.disciplinasDoProjeto} nomeDisciplina={nomeDaDisciplina3d}
-          onEditado={() => {}} onFechar={() => setComponentes(null)} />
+        <Modelo3dEditor analiseId={id} componentes={componentes.lista} disciplinasDoProjeto={componentes.disciplinasDoProjeto}
+          onFechar={() => setComponentes(null)} />
       )}
     </>
   );

@@ -14,6 +14,8 @@ import { mensagemDeErro } from '../../utils/download';
 import { hojeBrasilia } from '../../utils/format';
 import PlantaMapaCad, { SITUACAO, situacaoDaLinha, IconeComponente, COR_INSERIDO } from './PlantaMapaCad';
 import Modelo3dEditor from './Modelo3dEditor';
+import useDisciplinas from '../../hooks/useDisciplinas';
+import { comparador } from '../Select';
 
 const ORIGEM = {
   legenda: ['da legenda do desenho', '#4a9'],
@@ -26,13 +28,7 @@ const ORIGEM = {
   nao_reconhecido: ['não reconhecido', '#c06060'],
   confirmado: ['conferido', '#5fbf7a'],
 };
-const NOME_DISC = {
-  eletrica: 'Elétrica', iluminacao: 'Iluminação', 'iluminacao-externa': 'Iluminação externa', incendio: 'Incêndio', cftv: 'CFTV', rede: 'Rede',
-  alarme: 'Alarme', telefonia: 'Telefonia', antena: 'Antena', 'controle-acesso': 'Controle de acesso', automacao: 'Automação', spda: 'SPDA',
-  solar: 'Solar', veicular: 'Veicular', eletrica_hospitalar: 'Elétrica hospitalar', climatizacao: 'Climatização', pressurizacao: 'Pressurização',
-  media_tensao: 'Média tensão',
-};
-const nomeDisciplina = (d) => NOME_DISC[d] || d;
+// nome da disciplina: o curto do registro único (hooks/useDisciplinas — 2.37; antes uma tabela própria aqui)
 // componentes inseridos de um arquivo, por tipo: [{ simbolo, nome, quantidade }]
 function inseridosPorTipo(edicoes, nomeDoTipo) {
   const por = new Map();
@@ -86,6 +82,7 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
   const [incluirDisciplinas, setIncluirDisciplinas] = useState(true);
   const [editor3d, setEditor3d] = useState(false);
   const [blocoEdicao, setBlocoEdicao] = useState({}); // `${arquivo}|${bloco}` → { descricao, disciplina }
+  const { nomeCurto: nomeDisciplina } = useDisciplinas();
 
   useEffect(() => {
     let vivo = true;
@@ -99,8 +96,9 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
       if (!por.has(t.disciplina)) por.set(t.disciplina, []);
       por.get(t.disciplina).push(t);
     }
-    return [...por.entries()];
-  }, [mapa]);
+    // grupos da lista de tipos em ordem alfabética do nome (antes: a ordem em que o servidor mandou)
+    return [...por.entries()].sort((a, b) => comparador.compare(nomeDisciplina(a[0]), nomeDisciplina(b[0])));
+  }, [mapa, nomeDisciplina]);
   const nomes = useMemo(() => new Map((mapa?.tipos || []).map(t => [t.simbolo, t.nome])), [mapa]);
   const porSimbolo = useMemo(() => new Map((mapa?.componentes || []).map(c => [c.simbolo, c])), [mapa]);
   const nomeDoTipo = (simbolo) => nomes.get(simbolo) || porSimbolo.get(simbolo)?.nome || simbolo;
@@ -126,7 +124,7 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
     <select value={valorDe(arquivo, s).simbolo} onChange={(e) => mudar(arquivo, s, { simbolo: e.target.value })} style={{ ...campo, width: largura }} disabled={ocupado || s.confirmado} aria-label="Tipo do ponto">
       <option value="?">{s.origem === 'nao_reconhecido' && !s.confirmado ? '— escolha o tipo ou "não é ponto" —' : 'Não é ponto'}</option>
       {grupos.map(([disc, tipos]) => (
-        <optgroup key={disc} label={NOME_DISC[disc] || disc}>
+        <optgroup key={disc} label={nomeDisciplina(disc)}>
           {tipos.map(t => <option key={t.simbolo} value={t.simbolo}>{t.nome}</option>)}
         </optgroup>
       ))}
@@ -501,7 +499,7 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
         </label>
       </div>
       {editor3d && (
-        <Modelo3dEditor analiseId={analiseId} componentes={componentes} disciplinasDoProjeto={mapa.disciplinasDoProjeto} nomeDisciplina={nomeDisciplina}
+        <Modelo3dEditor analiseId={analiseId} componentes={componentes} disciplinasDoProjeto={mapa.disciplinasDoProjeto}
           onEditado={aoEditarNo3d} onFechar={() => setEditor3d(false)} />
       )}
     </div>

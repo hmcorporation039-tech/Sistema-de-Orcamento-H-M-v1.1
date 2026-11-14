@@ -6,12 +6,14 @@ import toast from 'react-hot-toast';
 import { FileDown, Layers } from 'lucide-react';
 import { baixarCompatibilizacaoDxf } from '../../services/api';
 import { baixarArquivo, mensagemDeErro } from '../../utils/download';
+import useDisciplinas from '../../hooks/useDisciplinas';
 
 const br = (v, c = 2) => Number(v).toFixed(c).replace('.', ',');
-const NOME_DISC = { eletrica: 'Elétrica', iluminacao: 'Iluminação', incendio: 'Incêndio', cftv: 'CFTV', cabeamento: 'Cabeamento', rede: 'Rede', alarme: 'Alarme', telefonia: 'Telefonia', antena: 'Antena', controle_acesso: 'Controle de acesso', automacao: 'Automação' };
-const lado = (l) => `${String(l.descricao || '').replace(/ — bloco .*/, '')} · ${l.disciplina ? (NOME_DISC[l.disciplina] || l.disciplina) : 'climatização/hidráulica'}`;
 
 export default function ConflitosCompatibilizacao({ analise, estiloCartao, estiloTitulo }) {
+  // nome curto do registro único (2.37: antes uma tabela própria, sem SPDA, solar, pressurização…)
+  const { nomeCurto } = useDisciplinas();
+  const lado = (l) => `${String(l.descricao || '').replace(/ — bloco .*/, '')} · ${l.disciplina ? nomeCurto(l.disciplina) : 'climatização/hidráulica'}`;
   const [baixando, setBaixando] = useState(false);
   const [todos, setTodos] = useState(false);
   const conflitos = analise.conflitos || [];

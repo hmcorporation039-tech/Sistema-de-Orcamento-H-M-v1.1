@@ -122,7 +122,11 @@ igual('"Caixa VAV 250 mm" é VAV', CAD.tipoDePontoClimatizacao({ layer: 'HVAC', 
 igual('layers de climatização reconhecidas', ['HVAC', 'AVAC', 'AR-CONDICIONADO', 'MEC-DUTOS', 'M-DIFUSORES'].map(CAD.ehLayerDaClimatizacao), [true, true, true, true, true]);
 igual('layer elétrica não é climatização', CAD.ehLayerDaClimatizacao('ELE-TOMADA'), false);
 igual('contagem de blocos por tipo', CAD.contarPontos([{ layer: 'HVAC-DIFUSOR', quantidade: 12 }, { layer: 'HVAC', nome: 'FANCOIL FC-01' }]).contagem['HM-CLIM-FANCOIL'], 1);
-igual('os 7 tipos têm símbolo de planta e ESPEC 3D (formas que o visualizador já desenha)', CAD.SIMBOLOS_CLIMATIZACAO.every(s => CAD.SIMBOLOS_PLANTA[s] && CAD.ESPEC_3D[s] && ['luminaria', 'emergencia', 'catraca'].includes(CAD.ESPEC_3D[s].forma) && CAD.ESPEC_3D[s].tam.every(v => v > 0 && v <= 1.2)), true);
+// 2.37: forma PRÓPRIA de cada equipamento (antes catraca, luz de emergência e luminária emprestadas), desenhada
+// no visualizador (FORMAS de _comum/cad/visualizador3d/app.js)
+const FONTE_APP = require('fs').readFileSync(require('path').join(__dirname, '..', '..', '_comum', 'cad', 'visualizador3d', 'app.js'), 'utf8');
+const formaDesenhada = (f) => new RegExp(`\\n  (${f}|'${f}'): \\(w, h, d\\) =>`).test(FONTE_APP);
+igual('os 7 tipos têm símbolo de planta e ESPEC 3D com forma própria desenhada no visualizador', CAD.SIMBOLOS_CLIMATIZACAO.every(s => CAD.SIMBOLOS_PLANTA[s] && CAD.ESPEC_3D[s] && formaDesenhada(CAD.ESPEC_3D[s].forma) && !['luminaria', 'emergencia', 'catraca'].includes(CAD.ESPEC_3D[s].forma) && CAD.ESPEC_3D[s].tam.every(v => v > 0 && v <= 1.2)), true);
 const pl = CAD.planta(res);
 igual('planta: difusores, grelhas e VAV por ambiente, só símbolos declarados', [pl.pontos.length, pl.pontos.every(p => p.itens.every(i => CAD.SIMBOLOS_PLANTA[i.simbolo] && i.n > 0))], [6, true]);
 

@@ -501,24 +501,19 @@ const espec = (simbolo) => { const e = ESPEC[simbolo] || ESPEC_PADRAO; return { 
 // 3D tinha as suas ('controle-acesso', 'veicular', HOSP como 'eletrica') e o ponto
 // do DWG lido na layer VE-* ('carregador') saía cinza, com a chave crua na legenda.
 // Só 'iluminacao-externa' é do 3D (postes e caixas: eletroduto enterrado à parte).
-const DISCIPLINAS = {
-  eletrica: { rotulo: 'Elétrica', cor: '#ff9f43' }, iluminacao: { rotulo: 'Iluminação', cor: '#ffe27a' }, rede: { rotulo: 'Rede (cabeamento)', cor: '#4fa3ff' },
-  eletrica_hospitalar: { rotulo: 'Elétrica hospitalar', cor: '#ff7a59' },
-  cftv: { rotulo: 'CFTV', cor: '#ff5c8a' }, incendio: { rotulo: 'Incêndio', cor: '#ff4b3e' }, alarme: { rotulo: 'Alarme', cor: '#b388ff' },
-  controle_acesso: { rotulo: 'Controle de acesso', cor: '#5ee38a' }, telefonia: { rotulo: 'Telefonia', cor: '#c49a6c' }, antena: { rotulo: 'Antena / TV', cor: '#3fd0c0' },
-  'iluminacao-externa': { rotulo: 'Iluminação externa', cor: '#ffb84d' },
-  automacao: { rotulo: 'Automação', cor: '#7fe0ff' }, solar: { rotulo: 'Solar', cor: '#f6c90e' }, carregador: { rotulo: 'Recarga veicular', cor: '#a4e05a' }, spda: { rotulo: 'SPDA', cor: '#bfc5cc' },
-  climatizacao: { rotulo: 'Climatização', cor: '#5ec8f2' },
-  // cena focada no objetivo do projeto (./cenaDoObjetivo.js): a subestação, a indústria e os quadros como objeto
-  media_tensao: { rotulo: 'Média tensão / subestação', cor: '#e8a33d' },
-  eletrica_industrial: { rotulo: 'Elétrica industrial', cor: '#ff8c5a' },
-  quadros: { rotulo: 'Quadros elétricos', cor: '#f0b35a' },
-};
+// Rótulo e cor vêm do registro (curto, cor — 2.37): antes ficavam só aqui, e o editor de componentes e o Mapa do CAD
+// tinham as suas, com cores diferentes (o marcador inserido saía numa cor e o modelo mostrava outra); a pressurização
+// não estava e saía cinza com a chave crua.
+const REGISTRO = require('../disciplinas');
+const DISCIPLINAS = Object.fromEntries([...REGISTRO.DISCIPLINAS, ...REGISTRO.EXTRAS_VISUAIS].map(d => [d.chave, { rotulo: d.curto, cor: d.cor }]));
 // nomes antigos (classificador de pontos, mapa do CAD, análises e caches gravados
 // antes da unificação) → chave do registro; cabeamento é a rede no 3D
-const ALIAS_DISCIPLINA = { 'controle-acesso': 'controle_acesso', veicular: 'carregador', cabeamento: 'rede', 'eletrica-hospitalar': 'eletrica_hospitalar' };
+const ALIAS_DISCIPLINA = { ...REGISTRO.ALIASES_CHAVE, cabeamento: 'rede' };
 const chaveDisciplina = (k) => ALIAS_DISCIPLINA[k] || k;
-const disciplinaDoSimbolo = (s) => ({ ELE: 'eletrica', ILU: 'iluminacao', CAB: 'rede', CFTV: 'cftv', INC: 'incendio', ALM: 'alarme', ACE: 'controle_acesso', TEL: 'telefonia', ANT: 'antena', HOSP: 'eletrica_hospitalar', AUT: 'automacao', SOL: 'solar', VE: 'carregador', SPDA: 'spda', CLIM: 'climatizacao' })[s.split('-')[1]] || 'outros';
+// pelo prefixo do símbolo (HM-<prefixo>-…): PRZ (painel da pressurização) e EQ (equipamentos da subestação,
+// ./equipamentos3d.js) caíam em 'outros' — 31 símbolos do ESPEC sem disciplina na legenda (2.37)
+const DISCIPLINA_DO_PREFIXO = { ELE: 'eletrica', ILU: 'iluminacao', CAB: 'rede', CFTV: 'cftv', INC: 'incendio', ALM: 'alarme', ACE: 'controle_acesso', TEL: 'telefonia', ANT: 'antena', HOSP: 'eletrica_hospitalar', AUT: 'automacao', SOL: 'solar', VE: 'carregador', SPDA: 'spda', CLIM: 'climatizacao', PRZ: 'pressurizacao', EQ: 'media_tensao' };
+const disciplinaDoSimbolo = (s) => DISCIPLINA_DO_PREFIXO[s.split('-')[1]] || 'outros';
 
 // ── Infraestrutura (eletrocalhas, eletrodutos, leitos, perfilados, fiação) ───
 // seção [largura, altura] em m e quanto fica abaixo do teto (centro da seção):

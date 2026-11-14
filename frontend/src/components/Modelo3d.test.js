@@ -1,7 +1,7 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BotoesModelo3d } from './Modelo3d';
-import { getMapaCad, abrirModelo3d } from '../services/api';
+import { getMapaCad, abrirModelo3d, getRegistroDisciplinas } from '../services/api';
 
 // "Editar componentes no 3D" (revisão de 04/11/2026: "a visualização em 3D ainda não tem a barra de ferramentas"):
 // só na análise; abre o 3D com a edição dentro da tela quando há Mapa do CAD. Dados SINTÉTICOS.
@@ -9,6 +9,7 @@ jest.mock('../services/api', () => ({
   __esModule: true, default: { post: jest.fn() },
   abrirModelo3d: jest.fn(), baixarModelo3d: jest.fn(), urlModelo3d: (u) => u, enviarArquiteturaAnalise: jest.fn(),
   getArquiteturaAnalise: jest.fn(), getModelo3d: jest.fn(), mostrarModelo3dAoCliente: jest.fn(), getMapaCad: jest.fn(), editarMapaCad: jest.fn(),
+  getRegistroDisciplinas: jest.fn(),
 }));
 jest.mock('react-hot-toast', () => { const t = jest.fn(); t.success = jest.fn(); t.error = jest.fn(); return { __esModule: true, default: t }; });
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -20,6 +21,8 @@ beforeEach(() => {
   document.body.appendChild(caixa);
   raiz = createRoot(caixa);
   [getMapaCad, abrirModelo3d].forEach(f => f.mockReset());
+  // registro único (GET /disciplinas): nome curto e cor da paleta, os mesmos da legenda do 3D (2.37)
+  getRegistroDisciplinas.mockResolvedValue({ data: { disciplinas: [{ chave: 'eletrica', curto: 'Elétrica', cor: '#ff9f43' }, { chave: 'incendio', curto: 'Incêndio', cor: '#ff4b3e' }], outros: { chave: 'outros' }, aliases: { 'controle-acesso': 'controle_acesso' }, extras: [] } });
 });
 afterEach(() => {
   act(() => raiz.unmount());
@@ -56,6 +59,8 @@ test('a paleta do 3D marca os componentes da disciplina da análise (os outros s
   await act(async () => { window.dispatchEvent(new MessageEvent('message', { data: { tipo: 'hm3d:pronto', comOrigem: true }, source: quadro.contentWindow })); });
   const msg = enviado.mock.calls.map(c => c[0]).find(m => m.tipo === 'hm3d:editar');
   expect(msg.paleta.map(p => [p.simbolo, p.doProjeto])).toEqual([['HM-ELE-TOMADA-BAIXA', false], ['HM-INC-DETECTOR-FUMACA', true]]);
+  // grupo e cor do marcador vêm do registro único — a mesma cor da disciplina no modelo (2.37)
+  expect(msg.paleta.map(p => [p.grupo, p.cor])).toEqual([['Elétrica', '#ff9f43'], ['Incêndio', '#ff4b3e']]);
 });
 
 test('sem Mapa do CAD, avisa e não abre', async () => {

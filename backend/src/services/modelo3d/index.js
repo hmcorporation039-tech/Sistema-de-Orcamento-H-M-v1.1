@@ -10,10 +10,13 @@
 //   Um modelo por planta do desenho (skills/_comum/cad/modelosPorPlanta.js).
 //   'proposta' — a origem da proposta (origem_tipo/origem_id)
 //
-// O HTML gerado é guardado em modelos_3d com uma chave (hash de tudo que entra
-// no modelo): enquanto nada muda, abrir de novo não recalcula. A imagem para o
-// PDF da proposta é capturada uma vez e guardada na mesma linha.
+// A CENA gerada é guardada em modelos_3d (comprimida) com uma chave (hash de tudo que entra
+// no modelo): enquanto nada muda, abrir de novo não recalcula. A página é montada ao servir,
+// com o visualizador do disco (versão 2.37: antes cada linha guardava a página inteira, com
+// ~0,9 MB de three.js, e mudar o visualizador refazia todos os modelos). A imagem para o PDF
+// da proposta é capturada uma vez e guardada na mesma linha, com a versão do visualizador.
 const crypto = require('crypto');
+const zlib = require('zlib');
 const fs = require('fs');
 const path = require('path');
 const { ErroHttp } = require('../../utils/erros');
@@ -55,9 +58,13 @@ const EXTRA_GERADOR = [
   path.join(RAIZ_SKILLS, 'iluminacao', 'scripts', 'lib', 'calculo.js'), path.join(RAIZ_SKILLS, 'iluminacao', 'scripts', 'lib', 'cenas.js'),
 ];
 const PASTA_QUADROS = path.join(RAIZ_SKILLS, 'quadros', 'scripts', 'lib');
+// O visualizador (a página: visualizador3d.js e a pasta visualizador3d/, com o bundle) NÃO entra na chave da cena:
+// ele muda como a cena é mostrada, não a cena — a página é montada ao servir (paginaDoModelo, versaoDoVisualizador).
+const DO_VISUALIZADOR = new Set(['visualizador3d', 'visualizador3d.js']);
 function arquivosDoGerador(pasta = CAD, lista = []) {
   for (const e of fs.readdirSync(pasta, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     const f = path.join(pasta, e.name);
+    if (pasta === CAD && DO_VISUALIZADOR.has(e.name)) continue;
     if (e.isDirectory()) { if (e.name !== 'node_modules' && !e.name.startsWith('.')) arquivosDoGerador(f, lista); continue; }
     if (/\.(js|json)$/i.test(e.name) && !/^teste[-.]/i.test(e.name)) lista.push(f);
   }
@@ -77,6 +84,31 @@ function versaoDoGerador() {
     return geradorCache.hash;
   } catch { return 'sem-gerador'; }
 }
+
+// Versão do visualizador (a página + o bundle): marca a imagem do PDF — capturada com outro visualizador, é refeita.
+const ARQUIVOS_VISUALIZADOR = [path.join(CAD, 'visualizador3d.js'), path.join(CAD, 'visualizador3d', 'app.bundle.js'), path.join(COMUM, 'assets', 'logo-pequeno.png')];
+let visualizadorCache = { assinatura: null, hash: null };
+function versaoDoVisualizador() {
+  try {
+    const assinatura = ARQUIVOS_VISUALIZADOR.map(f => { const st = fs.statSync(f); return `${st.mtimeMs}:${st.size}`; }).join('|');
+    if (visualizadorCache.assinatura !== assinatura) {
+      const h = crypto.createHash('sha256');
+      for (const f of ARQUIVOS_VISUALIZADOR) h.update(/\.png$/.test(f) ? fs.readFileSync(f) : fs.readFileSync(f, 'utf8').replace(/\r\n/g, '\n')).update('\0');
+      visualizadorCache = { assinatura, hash: h.digest('hex').slice(0, 32) };
+    }
+    return visualizadorCache.hash;
+  } catch { return 'sem-visualizador'; }
+}
+
+// Cena guardada (gzip de { cenas, principal }) ↔ página servida
+const guardarCena = (r) => zlib.gzipSync(Buffer.from(JSON.stringify({ cenas: r.cenas, principal: r.principal || 0 }), 'utf8'));
+const lerCena = (buf) => JSON.parse(zlib.gunzipSync(buf).toString('utf8'));
+// a página do modelo: as cenas + o visualizador atual (skills/_comum/cad/visualizador3d.js)
+function paginaDoModelo({ cenas, principal = 0 }) {
+  return require(path.join(CAD, 'visualizador3d.js')).gerarHtml(cenas, { principal });
+}
+// formato do que fica em modelos_3d: muda a chave → linhas do formato antigo (só o HTML) são geradas de novo
+const FORMATO_CACHE = 'cena-gzip-1';
 
 // as mensagens daqui são escritas para o usuário (inclusive as 5xx: "demorou demais")
 const erro = (status, mensagem) => new ErroHttp(status, mensagem, {}, { publico: true });
@@ -224,6 +256,7 @@ const hashAprendidos = (aprendidos) => crypto.createHash('sha256')
   .update(JSON.stringify((aprendidos || []).map(a => JSON.stringify(a)).sort())).digest('hex');
 function chaveDa(fonte, aprendidos = []) {
   const h = crypto.createHash('sha256');
+  h.update(FORMATO_CACHE);
   h.update(versaoDoGerador());
   h.update(hashAprendidos(aprendidos));
   h.update(crypto.createHash('sha256').update(fonte.dxf).digest('hex'));
@@ -270,24 +303,33 @@ async function obterModelo(origemTipo, origemId) {
   // proposta: o título leva o número dela, então o cache é da própria proposta
   const { tipoCache, idCache } = linhaDoCache(origemTipo, origemId, fonte);
   const { rows: [cache] } = await pool.query(
-    'SELECT html, resumo, gerado_em, chave FROM modelos_3d WHERE origem_tipo = $1 AND origem_id = $2', [tipoCache, idCache]);
-  if (cache && cache.chave === chave) return { html: cache.html, ...cache.resumo, gerado_em: cache.gerado_em, chave, fonte };
+    'SELECT cena, resumo, gerado_em, chave FROM modelos_3d WHERE origem_tipo = $1 AND origem_id = $2', [tipoCache, idCache]);
+  if (cache && cache.chave === chave && cache.cena) return comPagina({ cena: lerCena(cache.cena), ...cache.resumo, gerado_em: cache.gerado_em, chave, fonte });
 
   const k = `${tipoCache}:${idCache}:${chave}`;
   if (!emAndamento.has(k)) {
     emAndamento.set(k, (async () => {
       const r = await gerarNoWorker(fonte, aprendidos);
       const resumo = { numeros: r.numeros, avisos: r.avisos, nome_arquivo: fonte.nomeArquivo };
+      // html = NULL: a linha antiga (formato só HTML) deixa de ocupar ~1 MB
       const { rows: [g] } = await pool.query(
-        `INSERT INTO modelos_3d (origem_tipo, origem_id, chave, html, resumo, imagem, gerado_em)
-         VALUES ($1,$2,$3,$4,$5,NULL,NOW())
-         ON CONFLICT (origem_tipo, origem_id) DO UPDATE SET chave = EXCLUDED.chave, html = EXCLUDED.html, resumo = EXCLUDED.resumo, imagem = NULL, gerado_em = NOW()
+        `INSERT INTO modelos_3d (origem_tipo, origem_id, chave, html, cena, resumo, imagem, imagem_visualizador, gerado_em)
+         VALUES ($1,$2,$3,NULL,$4,$5,NULL,NULL,NOW())
+         ON CONFLICT (origem_tipo, origem_id) DO UPDATE SET chave = EXCLUDED.chave, html = NULL, cena = EXCLUDED.cena, resumo = EXCLUDED.resumo,
+           imagem = NULL, imagem_visualizador = NULL, gerado_em = NOW()
          RETURNING gerado_em`,
-        [tipoCache, idCache, chave, r.html, resumo]);
-      return { html: r.html, ...resumo, gerado_em: g.gerado_em, chave, fonte };
+        [tipoCache, idCache, chave, guardarCena(r), resumo]);
+      return comPagina({ cena: { cenas: r.cenas, principal: r.principal || 0 }, ...resumo, gerado_em: g.gerado_em, chave, fonte });
     })().finally(() => emAndamento.delete(k)));
   }
   return emAndamento.get(k);
+}
+
+// m.html montado só quando alguém lê (a página tem ~1 MB; quem só quer os números não paga por ela)
+function comPagina(m) {
+  let html = null;
+  Object.defineProperty(m, 'html', { enumerable: false, get: () => (html ??= paginaDoModelo(m.cena)) });
+  return m;
 }
 
 // "Gerar de novo" (dono do registro ou administrador: routes/v2/modelo3d.js): apaga o
@@ -322,9 +364,11 @@ async function imagemDoModelo(origemTipo, origemId) {
   const m = await obterModelo(origemTipo, origemId);
   if (!m) return null;
   const { tipoCache, idCache } = linhaDoCache(origemTipo, origemId, m.fonte);
-  const { rows: [s] } = await pool.query('SELECT imagem, chave FROM modelos_3d WHERE origem_tipo = $1 AND origem_id = $2', [tipoCache, idCache]);
-  if (s?.imagem && s.chave === m.chave) return s.imagem;
-  const k = `${tipoCache}:${idCache}:${m.chave}`;
+  const visualizador = versaoDoVisualizador();
+  const { rows: [s] } = await pool.query('SELECT imagem, chave, imagem_visualizador FROM modelos_3d WHERE origem_tipo = $1 AND origem_id = $2', [tipoCache, idCache]);
+  // a mesma cena E o mesmo visualizador: outro visualizador desenha diferente (cor, forma), a imagem é refeita
+  if (s?.imagem && s.chave === m.chave && s.imagem_visualizador === visualizador) return s.imagem;
+  const k = `${tipoCache}:${idCache}:${m.chave}:${visualizador}`;
   if (!capturasEmAndamento.has(k)) {
     capturasEmAndamento.set(k, (async () => {
       const png = await capturarImagemDeHtml(m.html, {
@@ -333,7 +377,7 @@ async function imagemDoModelo(origemTipo, origemId) {
         css: 'header,#barra,aside,footer,#dica{display:none!important}',
         antes: () => { const H = window.HM3D; if (H) { H.vista3d(); for (let i = 0; i < 3; i++) H.render(); } },
       });
-      await pool.query('UPDATE modelos_3d SET imagem = $1 WHERE origem_tipo = $2 AND origem_id = $3 AND chave = $4', [png, tipoCache, idCache, m.chave]);
+      await pool.query('UPDATE modelos_3d SET imagem = $1, imagem_visualizador = $5 WHERE origem_tipo = $2 AND origem_id = $3 AND chave = $4', [png, tipoCache, idCache, m.chave, visualizador]);
       return png;
     })().finally(() => capturasEmAndamento.delete(k)));
   }
@@ -373,5 +417,5 @@ function lerLink(token) {
 module.exports = {
   comEdicoes,
   CSP_MODELO_3D, CSP_MODELO_3D_EMBUTIDO, obterModelo, refazerModelo, situacao, imagemDoModelo, nomeArquivo, criarLink, lerLink,
-  chaveDa, versaoDoGerador, arquivosDoGerador, gerarNoWorker, dispositivosDoEspacial,
+  chaveDa, versaoDoGerador, versaoDoVisualizador, arquivosDoGerador, gerarNoWorker, dispositivosDoEspacial, paginaDoModelo,
 };
