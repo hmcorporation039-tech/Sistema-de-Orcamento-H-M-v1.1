@@ -235,7 +235,7 @@ export function definirFerramentasDesktop({ api, compartilhadas, pastasPdf, lerA
           secoes, itens: itensPayload,
         });
         const faltou = bdi == null && !padroes.definidos
-          ? ' ATENÇÃO: BDI e impostos padrão ainda não foram definidos pelo administrador (Integrações) — o que faltou ficou em 0 %. Pergunte ao usuário e ajuste na tela.'
+          ? ' ATENÇÃO: BDI e impostos padrão ainda não foram definidos pelo administrador (Integrações → Padrões de orçamento) — o que faltou ficou em 0 %. Pergunte ao usuário e ajuste na tela.'
           : '';
         return ok(`Proposta ${resultado.numero} criada como rascunho — total: ${brl(resultado.total)}. Está no Histórico do sistema pra revisão antes de enviar ao cliente.${faltou}`);
       },

@@ -57,6 +57,8 @@ const limitePesquisaMercado = rateLimit({
   legacyHeaders: false,
   message: { erro: 'Muitas pesquisas de mercado em pouco tempo. Aguarde um pouco e tente novamente.' },
 });
+// e cada pesquisa conta no limite por hora do USUÁRIO (utils/limiteUsoIa — o de cima é por IP e por pedido)
+const pesquisaIa = require('../utils/limiteUsoIa').exigirUsoIa('pesquisa');
 // Limite por CONTA (além do limite por IP): impede tentar senhas de uma
 // mesma conta a partir de vários computadores. A chave é conta + IP (revisão de segurança de 04/11/2026): só pela
 // conta, 10 senhas erradas de qualquer máquina travavam o login do dono, até com a senha certa, a cada 15 min.
@@ -327,10 +329,10 @@ router.delete('/laudos/:id', autenticar, validarId, posseLaudo, laudoCtrl.remove
 router.get('/precos-mao-de-obra', autenticar, admin, precosMOCtrl.listar);
 router.put('/precos-mao-de-obra', autenticar, admin, precosMOCtrl.atualizar);
 // referência de mercado oficial/governo ou particular pesquisada na web (mesmo limite da pesquisa de mercado)
-router.post('/precos-mao-de-obra/:codigo/pesquisar', autenticar, admin, limitePesquisaMercado, precosMOCtrl.pesquisar);
+router.post('/precos-mao-de-obra/:codigo/pesquisar', autenticar, admin, limitePesquisaMercado, pesquisaIa, precosMOCtrl.pesquisar);
 
 // ── PESQUISA DE MERCADO (Gemini + busca real) ────────────────────────────
-router.post('/pesquisa-mercado', autenticar, limitePesquisaMercado, pesqCtrl.pesquisar);
+router.post('/pesquisa-mercado', autenticar, limitePesquisaMercado, pesquisaIa, pesqCtrl.pesquisar);
 router.get('/pesquisa-mercado/historico', autenticar, pesqCtrl.historico);
 // Salvar uma pesquisa feita fora da API (ex.: busca do próprio Claude Desktop) —
 // só grava no banco, não chama IA, então não precisa do limite de IA.

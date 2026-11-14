@@ -48,9 +48,12 @@ async function carregarObras(forcar = false) {
 
 const rotuloObra = (o) => `${o.nome}${o.cliente_nome ? ` · ${o.cliente_nome}` : ''} (${o.codigo})`;
 
+// `id` vai para a lista de obras: o Campo do kit liga o rótulo a ela (ui/rotuloLigado.js)
+ObraSelect.encaminhaId = true;
+
 export default function ObraSelect({
   value, onChange, clienteId = null, clienteNome = '', permitirNova = true,
-  rotuloVazio = 'Sem obra', disabled = false, style,
+  rotuloVazio = 'Sem obra', disabled = false, style, id,
 }) {
   const [obras, setObras] = useState([]);
   const [filtro, setFiltro] = useState('');
@@ -122,7 +125,7 @@ export default function ObraSelect({
           style={{ flex: '0 0 38%', minWidth: 0 }}
           aria-label="Buscar obra"
         />
-        <Select value={atual} onChange={escolher} disabled={disabled} style={{ flex: 1, minWidth: 0, ...style }} aria-label="Obra">
+        <Select id={id} value={atual} onChange={escolher} disabled={disabled} style={{ flex: 1, minWidth: 0, ...style }} aria-label={id ? undefined : 'Obra'}>
           <option value="">{rotuloVazio}</option>
           {visiveis.map(o => <option key={o.id} value={String(o.id)}>{rotuloObra(o)}</option>)}
           {permitirNova && (

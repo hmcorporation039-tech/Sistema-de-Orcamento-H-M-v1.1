@@ -67,7 +67,8 @@ test('lê a especificação, mostra a frase de origem e gera o projeto', async (
   aprovarProjetoEspecificacao.mockResolvedValue({ data: { aprendidos: 1 } });
   atualizarProjetoEspecificacao.mockResolvedValue({ data: { resumo } });
   await act(async () => {
-    digitar(caixa.querySelector('input[type=number][min="0"]'), '120');
+    // 2.39: preço em CampoMoeda (aceita vírgula): "120,00" vira 120
+    digitar(caixa.querySelector('input[aria-label^="Preço de"]'), '120,00');
     digitar(caixa.querySelector('input[aria-label="Alternativa econômica"]'), 'Linha econômica X');
     digitar(caixa.querySelector('input[aria-label="Preço da alternativa"]'), '80');
     digitar(caixa.querySelector('input[aria-label="Equivalência"]'), 'marca A → marca B');

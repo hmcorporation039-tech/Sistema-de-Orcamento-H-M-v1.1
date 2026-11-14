@@ -7,7 +7,7 @@ import { ArrowLeft, Check, Search } from 'lucide-react';
 import { useCampo } from './CampoApp';
 import { ROTULO_TIPO_OS } from './operacoes';
 import { COR, Botao, Cartao } from './componentes';
-import { comparador } from '../../components/Select';
+import Select, { comparador } from '../../components/Select';
 
 export default function NovaOS() {
   const navigate = useNavigate();
@@ -101,14 +101,14 @@ export default function NovaOS() {
         <label htmlFor="nova-titulo" style={{ marginTop: 0 }}>Título</label>
         <input id="nova-titulo" value={titulo} onChange={e => setTitulo(e.target.value)} />
         <label htmlFor="nova-tipo">Tipo</label>
-        <select id="nova-tipo" value={tipo} onChange={e => setTipo(e.target.value)}>
+        <Select id="nova-tipo" value={tipo} onChange={e => setTipo(e.target.value)}>
           {tiposAZ.map(([v, r]) => <option key={v} value={v}>{r}</option>)}
-        </select>
+        </Select>
         <label htmlFor="nova-modelo">Checklist</label>
-        <select id="nova-modelo" value={modelo} onChange={e => setModelo(e.target.value)}>
+        <Select id="nova-modelo" value={modelo} onChange={e => setModelo(e.target.value)}>
           {modelosAZ.length === 0 && <option value="">Sem checklist (só itens extras)</option>}
           {modelosAZ.map(m => <option key={m.chave} value={m.chave}>{m.rotulo}</option>)}
-        </select>
+        </Select>
       </Cartao>
 
       <Botao grande onClick={criar} disabled={!obraSel || !titulo.trim() || salvando} style={{ width: '100%' }} data-testid="criar-os">

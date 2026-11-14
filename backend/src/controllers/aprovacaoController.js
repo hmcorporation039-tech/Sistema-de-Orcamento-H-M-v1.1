@@ -79,149 +79,139 @@ function comprovante(d, { publico = false } = {}) {
 
 // ════════════════════════ PARTE INTERNA (com login) ════════════════════════
 
-async function gerarLink(req, res, next) {
-  try {
-    const { rows } = await pool.query(SQL_PROPOSTA, [req.params.id]);
-    const proposta = rows[0];
-    if (!proposta) return res.status(404).json({ erro: 'Proposta não encontrada.' });
-    if (proposta.status !== 'Ativa') {
-      return res.status(409).json({ erro: `Só proposta Ativa pode receber link de aprovação (esta está ${proposta.status}).` });
-    }
-    if (A.propostaVencida(proposta.data_iso, proposta.validade)) {
-      return res.status(409).json({
-        erro: `A validade desta proposta terminou em ${A.dataBR(A.vencimentoProposta(proposta.data_iso, proposta.validade))}. Atualize a data ou a validade antes de gerar o link.`,
-      });
-    }
-    const expira = A.calcularExpiracao({ dataIso: proposta.data_iso, validade: proposta.validade, dias: req.body?.dias });
-    if (expira.erro) return res.status(400).json({ erro: expira.erro });
-
-    const token = A.gerarToken();
-    const link = await comTransacao(async (client) => {
-      const r = await client.query(
-        `INSERT INTO proposta_links_aprovacao (proposta_id, token_hash, criado_por, expira_em)
-         VALUES ($1, $2, $3, $4) RETURNING id, criado_em, expira_em`,
-        [proposta.id, A.hashToken(token), req.usuario.id, expira]
-      );
-      await registrarEvento(client, proposta.id, req.usuario.id, 'link_aprovacao',
-        `Link de aprovação #${r.rows[0].id} gerado (válido até ${A.dataHoraBR(r.rows[0].expira_em)})`);
-      await registrarAuditoria(client, {
-        entidade: 'propostas', entidadeId: proposta.id, acao: 'gerar_link_aprovacao', usuarioId: req.usuario.id,
-        detalhes: { link_id: r.rows[0].id, expira_em: r.rows[0].expira_em },
-      });
-      return r.rows[0];
-    });
-
-    // O token em claro só existe nesta resposta: depois, nem o sistema sabe montá-lo.
-    res.status(201).json({
-      id: link.id,
-      token,
-      caminho: `/aprovacao/${token}`,
-      url_publica_base: urlPublicaBase(),
-      expira_em: link.expira_em,
-      criado_em: link.criado_em,
-      numero: proposta.numero,
-      cliente_nome: proposta.cliente_nome,
-      total: Number(proposta.total),
-    });
-  } catch (err) {
-    next(err);
+async function gerarLink(req, res) {
+  const { rows } = await pool.query(SQL_PROPOSTA, [req.params.id]);
+  const proposta = rows[0];
+  if (!proposta) return res.status(404).json({ erro: 'Proposta não encontrada.' });
+  if (proposta.status !== 'Ativa') {
+    return res.status(409).json({ erro: `Só proposta Ativa pode receber link de aprovação (esta está ${proposta.status}).` });
   }
-}
+  if (A.propostaVencida(proposta.data_iso, proposta.validade)) {
+    return res.status(409).json({
+      erro: `A validade desta proposta terminou em ${A.dataBR(A.vencimentoProposta(proposta.data_iso, proposta.validade))}. Atualize a data ou a validade antes de gerar o link.`,
+    });
+  }
+  const expira = A.calcularExpiracao({ dataIso: proposta.data_iso, validade: proposta.validade, dias: req.body?.dias });
+  if (expira.erro) return res.status(400).json({ erro: expira.erro });
 
-async function listarLinks(req, res, next) {
-  try {
-    const existe = await pool.query('SELECT id FROM propostas WHERE id = $1', [req.params.id]);
-    if (!existe.rows.length) return res.status(404).json({ erro: 'Proposta não encontrada.' });
-    const { rows } = await pool.query(
-      `SELECT l.id, l.criado_em, l.expira_em, l.revogado_em, l.ultimo_acesso_em, l.acessos,
-              uc.nome AS criado_por_nome, ur.nome AS revogado_por_nome,
-              d.id AS decisao_id, d.decisao, d.nome AS decisao_nome, d.decidido_em
-         FROM proposta_links_aprovacao l
-         LEFT JOIN usuarios uc ON uc.id = l.criado_por
-         LEFT JOIN usuarios ur ON ur.id = l.revogado_por
-         LEFT JOIN proposta_decisoes_aprovacao d ON d.link_id = l.id
-        WHERE l.proposta_id = $1
-        ORDER BY l.criado_em DESC, l.id DESC`,
-      [req.params.id]
+  const token = A.gerarToken();
+  const link = await comTransacao(async (client) => {
+    const r = await client.query(
+      `INSERT INTO proposta_links_aprovacao (proposta_id, token_hash, criado_por, expira_em)
+       VALUES ($1, $2, $3, $4) RETURNING id, criado_em, expira_em`,
+      [proposta.id, A.hashToken(token), req.usuario.id, expira]
     );
-    const agora = new Date();
-    res.json({
-      url_publica_base: urlPublicaBase(),
-      links: rows.map(l => ({
-        id: l.id,
-        criado_em: l.criado_em,
-        criado_por_nome: l.criado_por_nome || null,
-        expira_em: l.expira_em,
-        revogado_em: l.revogado_em,
-        revogado_por_nome: l.revogado_por_nome || null,
-        ultimo_acesso_em: l.ultimo_acesso_em,
-        acessos: l.acessos,
-        // 'ativo' | 'expirado' | 'revogado' | 'usado' (já tem decisão)
-        estado: l.decisao_id ? 'usado' : A.estadoLink(l, agora),
-        decisao: l.decisao_id ? { id: l.decisao_id, decisao: l.decisao, nome: l.decisao_nome, decidido_em: l.decidido_em } : null,
-      })),
+    await registrarEvento(client, proposta.id, req.usuario.id, 'link_aprovacao',
+      `Link de aprovação #${r.rows[0].id} gerado (válido até ${A.dataHoraBR(r.rows[0].expira_em)})`);
+    await registrarAuditoria(client, {
+      entidade: 'propostas', entidadeId: proposta.id, acao: 'gerar_link_aprovacao', usuarioId: req.usuario.id,
+      detalhes: { link_id: r.rows[0].id, expira_em: r.rows[0].expira_em },
     });
-  } catch (err) {
-    next(err);
-  }
+    return r.rows[0];
+  });
+
+  // O token em claro só existe nesta resposta: depois, nem o sistema sabe montá-lo.
+  res.status(201).json({
+    id: link.id,
+    token,
+    caminho: `/aprovacao/${token}`,
+    url_publica_base: urlPublicaBase(),
+    expira_em: link.expira_em,
+    criado_em: link.criado_em,
+    numero: proposta.numero,
+    cliente_nome: proposta.cliente_nome,
+    total: Number(proposta.total),
+  });
 }
 
-async function revogarLink(req, res, next) {
+async function listarLinks(req, res) {
+  const existe = await pool.query('SELECT id FROM propostas WHERE id = $1', [req.params.id]);
+  if (!existe.rows.length) return res.status(404).json({ erro: 'Proposta não encontrada.' });
+  const { rows } = await pool.query(
+    `SELECT l.id, l.criado_em, l.expira_em, l.revogado_em, l.ultimo_acesso_em, l.acessos,
+            uc.nome AS criado_por_nome, ur.nome AS revogado_por_nome,
+            d.id AS decisao_id, d.decisao, d.nome AS decisao_nome, d.decidido_em
+       FROM proposta_links_aprovacao l
+       LEFT JOIN usuarios uc ON uc.id = l.criado_por
+       LEFT JOIN usuarios ur ON ur.id = l.revogado_por
+       LEFT JOIN proposta_decisoes_aprovacao d ON d.link_id = l.id
+      WHERE l.proposta_id = $1
+      ORDER BY l.criado_em DESC, l.id DESC`,
+    [req.params.id]
+  );
+  const agora = new Date();
+  res.json({
+    url_publica_base: urlPublicaBase(),
+    links: rows.map(l => ({
+      id: l.id,
+      criado_em: l.criado_em,
+      criado_por_nome: l.criado_por_nome || null,
+      expira_em: l.expira_em,
+      revogado_em: l.revogado_em,
+      revogado_por_nome: l.revogado_por_nome || null,
+      ultimo_acesso_em: l.ultimo_acesso_em,
+      acessos: l.acessos,
+      // 'ativo' | 'expirado' | 'revogado' | 'usado' (já tem decisão)
+      estado: l.decisao_id ? 'usado' : A.estadoLink(l, agora),
+      decisao: l.decisao_id ? { id: l.decisao_id, decisao: l.decisao, nome: l.decisao_nome, decidido_em: l.decidido_em } : null,
+    })),
+  });
+}
+
+async function revogarLink(req, res) {
   const linkId = Number(req.params.linkId);
   if (!Number.isInteger(linkId) || linkId < 1 || linkId > 2147483647) return res.status(400).json({ erro: 'Identificador inválido.' });
-  try {
-    const r = await comTransacao(async (client) => {
-      const atual = await client.query(
-        'SELECT id, revogado_em FROM proposta_links_aprovacao WHERE id = $1 AND proposta_id = $2 FOR UPDATE',
-        [linkId, req.params.id]
-      );
-      if (!atual.rows.length) return { http: 404, erro: 'Link não encontrado nesta proposta.' };
-      if (atual.rows[0].revogado_em) return { http: 409, erro: 'Este link já estava revogado.' };
-      const upd = await client.query(
-        'UPDATE proposta_links_aprovacao SET revogado_em = NOW(), revogado_por = $2 WHERE id = $1 RETURNING id, revogado_em',
-        [linkId, req.usuario.id]
-      );
-      await registrarEvento(client, req.params.id, req.usuario.id, 'link_revogado', `Link de aprovação #${linkId} revogado`);
-      await registrarAuditoria(client, {
-        entidade: 'propostas', entidadeId: Number(req.params.id), acao: 'revogar_link_aprovacao', usuarioId: req.usuario.id,
-        detalhes: { link_id: linkId },
-      });
-      return { link: upd.rows[0] };
+  const r = await comTransacao(async (client) => {
+    const atual = await client.query(
+      'SELECT id, revogado_em FROM proposta_links_aprovacao WHERE id = $1 AND proposta_id = $2 FOR UPDATE',
+      [linkId, req.params.id]
+    );
+    if (!atual.rows.length) return { http: 404, erro: 'Link não encontrado nesta proposta.' };
+    if (atual.rows[0].revogado_em) return { http: 409, erro: 'Este link já estava revogado.' };
+    const upd = await client.query(
+      'UPDATE proposta_links_aprovacao SET revogado_em = NOW(), revogado_por = $2 WHERE id = $1 RETURNING id, revogado_em',
+      [linkId, req.usuario.id]
+    );
+    await registrarEvento(client, req.params.id, req.usuario.id, 'link_revogado', `Link de aprovação #${linkId} revogado`);
+    await registrarAuditoria(client, {
+      entidade: 'propostas', entidadeId: Number(req.params.id), acao: 'revogar_link_aprovacao', usuarioId: req.usuario.id,
+      detalhes: { link_id: linkId },
     });
-    if (r.erro) return res.status(r.http).json({ erro: r.erro });
-    res.json({ mensagem: 'Link revogado. Quem tiver o endereço não consegue mais abrir a proposta.', ...r.link });
-  } catch (err) {
-    next(err);
-  }
+    return { link: upd.rows[0] };
+  });
+  if (r.erro) return res.status(r.http).json({ erro: r.erro });
+  res.json({ mensagem: 'Link revogado. Quem tiver o endereço não consegue mais abrir a proposta.', ...r.link });
 }
 
-async function listarDecisoes(req, res, next) {
-  try {
-    const existe = await pool.query('SELECT id FROM propostas WHERE id = $1', [req.params.id]);
-    if (!existe.rows.length) return res.status(404).json({ erro: 'Proposta não encontrada.' });
-    const completo = req.query.completo === '1';
-    const { rows } = await pool.query(
-      `SELECT * FROM proposta_decisoes_aprovacao WHERE proposta_id = $1 ORDER BY decidido_em DESC, id DESC`,
-      [req.params.id]
-    );
-    res.json(rows.map(d => ({
-      id: d.id,
-      link_id: d.link_id,
-      ...comprovante(d),
-      aceite_termos: d.aceite_termos,
-      user_agent: d.user_agent || null,
-      ...(completo ? { conteudo: d.conteudo } : {}),
-    })));
-  } catch (err) {
-    next(err);
-  }
+async function listarDecisoes(req, res) {
+  const existe = await pool.query('SELECT id FROM propostas WHERE id = $1', [req.params.id]);
+  if (!existe.rows.length) return res.status(404).json({ erro: 'Proposta não encontrada.' });
+  const completo = req.query.completo === '1';
+  const { rows } = await pool.query(
+    `SELECT * FROM proposta_decisoes_aprovacao WHERE proposta_id = $1 ORDER BY decidido_em DESC, id DESC`,
+    [req.params.id]
+  );
+  res.json(rows.map(d => ({
+    id: d.id,
+    link_id: d.link_id,
+    ...comprovante(d),
+    aceite_termos: d.aceite_termos,
+    user_agent: d.user_agent || null,
+    ...(completo ? { conteudo: d.conteudo } : {}),
+  })));
 }
 
 // ════════════════════════ PARTE PÚBLICA (sem login) ════════════════════════
 
-// Toda falha inesperada da parte pública: log sem o token, resposta genérica.
-function falhaPublica(res, onde, err) {
+// Toda falha inesperada da parte pública: log sem o token, resposta genérica. Entra também no resumo
+// diário de erros (antes só ia para o console), com o padrão da rota (/api/publico/aprovacao/:token/pdf)
+// no lugar do endereço pedido: o token vale como senha e não vai para a tabela nem para o e-mail.
+function falhaPublica(req, res, onde, err) {
   console.error(`[aprovação pública] erro em ${onde}:`, err?.message || err);
+  // fila de PDF cheia é passageira (o tratador central também não a registra)
+  if (err?.codigo !== 'FILA_PDF_CHEIA') {
+    require('../services/errosSistema').registrar({ method: req.method, originalUrl: `${req.baseUrl || '/api/publico/aprovacao'}${req.route?.path || '/:token'}` }, err);
+  }
   if (!res.headersSent) res.status(500).json({ erro: 'Não foi possível concluir agora. Tente de novo em alguns minutos.' });
 }
 
@@ -272,7 +262,7 @@ async function verPublico(req, res) {
       modelo_3d: proposta.modelo_3d_cliente === true && sit.situacao !== 'indisponivel',
     });
   } catch (err) {
-    falhaPublica(res, 'ver proposta', err);
+    falhaPublica(req, res, 'ver proposta', err);
   }
 }
 
@@ -291,7 +281,7 @@ async function pdfPublico(req, res) {
     // puppeteer 25 devolve Uint8Array; sem Buffer.from o Express 4 responde JSON ({"0":37,...})
     res.send(Buffer.from(r.pdf));
   } catch (err) {
-    falhaPublica(res, 'PDF', err);
+    falhaPublica(req, res, 'PDF', err);
   }
 }
 
@@ -311,7 +301,7 @@ async function modelo3dPublico(req, res) {
     if (!m) return sem3d();
     require('./modelo3dController').enviarPagina(req, res, m.html);
   } catch (err) {
-    falhaPublica(res, 'modelo 3D', err);
+    falhaPublica(req, res, 'modelo 3D', err);
   }
 }
 
@@ -371,7 +361,7 @@ async function decidirPublico(req, res) {
     if (err && err.code === '23505') {
       return res.status(409).json({ erro: 'Já existe uma decisão registrada por este link. Cada link aceita uma única decisão.', codigo: 'JA_DECIDIDA' });
     }
-    falhaPublica(res, 'registrar decisão', err);
+    falhaPublica(req, res, 'registrar decisão', err);
   }
 }
 

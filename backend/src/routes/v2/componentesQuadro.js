@@ -10,7 +10,8 @@ const ctrl = require('../../controllers/componentesQuadroController');
 module.exports = (router, { autenticar, admin, validarId, limitePesquisaMercado }) => {
   router.get('/componentes-quadro', autenticar, ctrl.listar);
   router.post('/componentes-quadro', autenticar, admin, ctrl.criar);
-  router.post('/componentes-quadro/pesquisar-medida', autenticar, limitePesquisaMercado, ctrl.pesquisarMedida);
+  // cada pesquisa conta no limite por hora do usuário; o lote conta item a item no serviço (utils/limiteUsoIa)
+  router.post('/componentes-quadro/pesquisar-medida', autenticar, limitePesquisaMercado, require('../../utils/limiteUsoIa').exigirUsoIa('pesquisa'), ctrl.pesquisarMedida);
   router.post('/componentes-quadro/pesquisar-medidas', autenticar, limitePesquisaMercado, ctrl.pesquisarEmLote);
   router.get('/componentes-quadro/pesquisas/:tarefa', autenticar, ctrl.tarefa);
   router.get('/componentes-quadro/:id', autenticar, validarId, ctrl.buscarUm);

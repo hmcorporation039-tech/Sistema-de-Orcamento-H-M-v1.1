@@ -1,4 +1,5 @@
 import ObraSelect from '../../components/ObraSelect';
+import CampoCliente from '../../components/CampoCliente';
 import { Sugestoes } from '../../components/Select';
 import { Campo } from '../../components/ui/estilos';
 import { card } from './estilos';
@@ -10,15 +11,10 @@ export default function DadosGerais({ clienteResolvido, clientes, form, setForm 
     <div style={card}>
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
         <Campo label="Cliente *">
-          <input
-            list="clientes-lista"
-            value={form.cliente_nome}
-            onChange={e => setForm({ ...form, cliente_nome: e.target.value })}
-            placeholder="Nome do cliente"
-          />
-          <Sugestoes id="clientes-lista">
-            {clientes.map(c => <option key={c.id} value={c.nome} />)}
-          </Sugestoes>
+          {/* 2.39: escolhido da lista do cadastro (manda cliente_id); nome novo também vale */}
+          <CampoCliente clientes={clientes} nome={form.cliente_nome} clienteId={form.cliente_id}
+            onChange={({ id, nome }) => setForm(f => ({ ...f, cliente_nome: nome, cliente_id: id }))}
+            data-testid="campo-cliente" />
         </Campo>
         <Campo label="Data">
           <input type="date" value={form.data} onChange={e => setForm({ ...form, data: e.target.value })} />
@@ -54,8 +50,8 @@ export default function DadosGerais({ clienteResolvido, clientes, form, setForm 
             clienteNome={form.cliente_nome}
             onChange={(id, obra) => setForm(f => ({
               ...f, obra_id: id,
-              // obra escolhida numa proposta ainda sem cliente: traz o cliente da obra
-              cliente_nome: f.cliente_nome.trim() || !obra?.cliente_nome ? f.cliente_nome : obra.cliente_nome,
+              // obra escolhida numa proposta ainda sem cliente: traz o cliente da obra (e o cadastro dele)
+              ...(f.cliente_nome.trim() || !obra?.cliente_nome ? {} : { cliente_nome: obra.cliente_nome, cliente_id: obra.cliente_id ?? null }),
             }))}
           />
         </Campo>

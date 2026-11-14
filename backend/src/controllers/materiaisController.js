@@ -133,15 +133,15 @@ async function remover(req, res) {
   res.json({ mensagem: 'Material removido' });
 }
 
-async function importar(req, res, next) {
+async function importar(req, res) {
   const { materiais } = req.body;
   if (!Array.isArray(materiais) || materiais.length === 0) {
     return res.status(400).json({ erro: 'Lista de materiais inválida' });
   }
 
   let semPreco = 0;
-  try {
-    const importados = await comTransacao(async (client) => {
+  // erro do banco: o tratador central (middleware/erros.js) faz o log, registra no resumo diário e responde
+  const importados = await comTransacao(async (client) => {
     let importados = 0;
     for (const m of materiais) {
       if (!m.descricao || !m.categoria || !m.unidade) continue;
@@ -161,17 +161,10 @@ async function importar(req, res, next) {
       );
       importados += r.rowCount;
     }
-      return importados;
-    });
+    return importados;
+  });
 
-    res.json({ mensagem: `${importados} materiais importados com sucesso${semPreco ? ` (${semPreco} sem preço ficaram fora do catálogo)` : ''}` });
-  } catch (err) {
-    // Antes esse catch descartava o erro sem logar: o usuário importava 500
-    // materiais, recebia "Erro ao importar materiais" e não havia nenhum
-    // rastro de qual linha causou o problema.
-    console.error('Erro ao importar materiais:', err);
-    next(err);
-  }
+  res.json({ mensagem: `${importados} materiais importados com sucesso${semPreco ? ` (${semPreco} sem preço ficaram fora do catálogo)` : ''}` });
 }
 
 async function extrairNota(req, res) {
@@ -207,8 +200,7 @@ async function verificarFornecedoresAgora(req, res, next) {
     const resumo = await rotinas.executarRotina('fornecedores-pastas', { origem: 'manual', usuarioId: req.usuario?.id });
     res.json(resumo);
   } catch (err) {
-    console.error('Erro ao verificar pasta de orçamentos de fornecedores:', err);
-    // erro interno vai para o tratarErros (registra no resumo de erros e não
+    // erro interno vai para o tratarErros (ele faz o log, registra no resumo de erros e não
     // mostra texto do banco/caminho na tela); erro com status/publico passa a mensagem
     return next(err);
   }

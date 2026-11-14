@@ -9,10 +9,12 @@ const DIAS_GUARDADOS = 90;
 const MAX_NO_EMAIL = 15;
 
 // "/api/obras/123/itens/45" e "/api/obras/9/itens/2" são o mesmo erro: números e UUIDs viram ":id"
-// e a query string sai.
+// e a query string sai. Token de link (aprovação pelo cliente, modelo 3D, documento, pacote — 20 ou mais
+// letras e números) vira ":token": o link vale como senha e não pode ir para a tabela nem para o e-mail.
 function normalizarRota(url) {
   return String(url || '').split('?')[0]
     .replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=\/|$)/gi, '/:id')
+    .replace(/\/(?=[^/]*\d)(?=[^/]*[A-Za-z])[A-Za-z0-9_-]{20,}(?=\/|$)/g, '/:token')
     .replace(/\/\d+(?=\/|$)/g, '/:id')
     .slice(0, 300);
 }

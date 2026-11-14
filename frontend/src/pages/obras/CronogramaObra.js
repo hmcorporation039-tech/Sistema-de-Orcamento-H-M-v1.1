@@ -6,7 +6,8 @@ import {
   baixarPlanilhaCronogramaObra, baixarBoletimMedicaoObra,
 } from '../../services/api';
 import Select from '../../components/Select';
-import { formatarData, hojeIso } from '../../utils/format';
+import { formatarData, hojeBrasilia } from '../../utils/format';
+import { paraNumeroBR } from '../../utils/dinheiro';
 import { baixarArquivo, mensagemDeErro } from '../../utils/download';
 import { moeda, estilos as E, Campo, Etiqueta } from './comum';
 import CurvaS from './CurvaS';
@@ -25,12 +26,12 @@ const SITUACAO = {
 };
 
 const pc = (v, casas = 1) => `${(Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas })}%`;
+// "1.234,56", "1234,56", "1.150" (milhar) ou "12.5" — a regra do servidor (utils/dinheiro.js);
+// vazio → null, texto que não é número → NaN (a tela avisa)
 const numeroBR = (v) => {
   const s = v == null ? '' : String(v).trim();
   if (s === '') return null;
-  // "1.234,56" (BR) ou "1234.56"
-  const n = Number(s.includes(',') ? s.replace(/\./g, '').replace(',', '.') : s);
-  return Number.isFinite(n) ? n : NaN;
+  return paraNumeroBR(s) ?? NaN;
 };
 // início do período (mesma regra do backend): 1º dia do mês ou segunda-feira
 function inicioPeriodo(iso, periodicidade) {
@@ -236,7 +237,7 @@ function PainelGerar({ dados, obra, onGerado, onFechar }) {
   const cfg = dados.cronograma;
   const [form, setForm] = useState({
     proposta_id: String(cfg?.proposta_id || dados.proposta_sugerida || ''),
-    data_inicio: cfg?.data_inicio || obra.inicio_previsto?.slice?.(0, 10) || hojeIso(),
+    data_inicio: cfg?.data_inicio || obra.inicio_previsto?.slice?.(0, 10) || hojeBrasilia(),
     periodicidade: cfg?.periodicidade || 'mensal',
     custo_hh: String(cfg?.custo_hh ?? dados.padroes.custo_hh).replace('.', ','),
     equipe: String(cfg?.equipe ?? dados.padroes.equipe),
@@ -427,7 +428,7 @@ function EditorCronograma({ dados, onSalvo, onCancelar, onRecarregar }) {
 function Medicoes({ obra, dados, pode, onRegistrado }) {
   const calc = dados.calculo;
   const per = calc.periodicidade;
-  const [dataMed, setDataMed] = useState(hojeIso());
+  const [dataMed, setDataMed] = useState(hojeBrasilia);
   const [periodoManual, setPeriodoManual] = useState('');
   const [obs, setObs] = useState('');
   const [valores, setValores] = useState({});

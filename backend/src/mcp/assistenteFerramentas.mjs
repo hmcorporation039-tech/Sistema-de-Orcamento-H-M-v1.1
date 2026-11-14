@@ -487,7 +487,7 @@ export function definirFerramentas({ api, contexto = {}, token = '', papel = nul
           const { payload } = aplicarOperacoes(base, { adicionar: itens });
           const criada = await api('POST', '/api/propostas', payloadParaEnvio(payload));
           r = { propostaId: criada.id, numero: criada.numero, criada: true,
-            mensagem: `Proposta ${criada.numero} criada.${padroes.definidos ? '' : ' ATENÇÃO: BDI e impostos padrão ainda não foram definidos pelo administrador (Integrações) — a proposta ficou com o que faltava em 0 %; pergunte ao usuário o BDI e os impostos e ajuste com editar_rascunho.'}` };
+            mensagem: `Proposta ${criada.numero} criada.${padroes.definidos ? '' : ' ATENÇÃO: BDI e impostos padrão ainda não foram definidos pelo administrador (Integrações → Padrões de orçamento) — a proposta ficou com o que faltava em 0 %; pergunte ao usuário o BDI e os impostos e ajuste com editar_rascunho.'}` };
         }
         const texto = await verPropostaTexto(r.propostaId);
         return ok(`${r.criada ? 'Rascunho criado' : 'Rascunho ATUALIZADO (já existia, criado por você)'}: Proposta ${r.numero} — link /propostas/editar/${r.propostaId}\n${r.mensagem || ''}\n\n${texto}`);

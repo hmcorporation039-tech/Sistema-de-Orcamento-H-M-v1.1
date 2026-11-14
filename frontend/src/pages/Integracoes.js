@@ -6,13 +6,14 @@ import {
 } from 'lucide-react';
 import {
   getRotinasIntegracoes, executarRotinaIntegracao, testarIAIntegracoes,
-  getBackupIntegracoes, executarBackupIntegracoes, getPadroesOrcamento, atualizarPadroesOrcamento, getSinapiSituacao, buscarSinapi, configurarSinapi,
+  getBackupIntegracoes, executarBackupIntegracoes, getPadroesOrcamento, atualizarPadroesOrcamento, getMargemPadrao, atualizarMargemPadrao, getSinapiSituacao, buscarSinapi, configurarSinapi,
 } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { estilos } from '../components/ui/estilos';
 import Etiqueta from '../components/ui/Etiqueta';
 import Select from '../components/Select';
 import { formatarMoeda, dataHoraBr } from '../utils/format';
+import { paraNumeroBR } from '../utils/dinheiro';
 
 // Painel de Integrações (2.0): as rotinas automáticas (notas e Pix por e-mail,
 // orçamentos de fornecedores nas pastas) e a cadeia de IA, numa visão só.
@@ -328,35 +329,62 @@ function CartaoBackup({ backup, rodando, aoExecutar }) {
   );
 }
 
-// BDI e impostos padrão das propostas NOVAS. Sem valor de fábrica: as alíquotas da reforma
-// tributária ainda não existem, então o administrador define e atualiza aqui. Proposta já salva
-// guarda o próprio valor e não muda. Campo vazio = "não definido".
+// Padrões de orçamento (2.39 — antes a margem ficava na tela Materiais e o BDI e os impostos num
+// cartão à parte aqui): o que o catálogo e as propostas usam quando ninguém digita outro valor.
+//   Margem de venda: sobre o preço de compra, sugere o preço de venda do material (cadastro,
+//     importação de nota e cotações). Endpoint /configuracoes/margem.
+//   BDI e impostos das propostas NOVAS: sem valor de fábrica — as alíquotas da reforma tributária
+//     ainda não existem, então o administrador define e atualiza aqui. Proposta já salva guarda o
+//     próprio valor e não muda. Campo vazio = "não definido". Endpoint /configuracoes/padroes-orcamento.
 const CAMPOS_PADRAO = [
   { chave: 'bdi', rotulo: 'BDI', dica: 'sobre material + mão de obra' },
   { chave: 'imposto_venda', rotulo: 'Imposto sobre a venda de material', dica: 'sobre o material' },
   { chave: 'imposto_servico', rotulo: 'Imposto sobre serviço', dica: 'sobre a mão de obra' },
 ];
+const MARGEM_MAXIMA = 300; // a mesma trava do servidor: acima disso é erro de digitação
+const comVirgula = (n) => (n == null ? '' : String(n).replace('.', ','));
+const numeroOuNulo = (t) => (String(t).trim() === '' ? null : paraNumeroBR(t));
+const linhaPadrao = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--texto-2)', padding: '4px 0' };
 
-function CartaoPadroes() {
+export function CartaoPadroes() {
   const [salvo, setSalvo] = useState(null);
   const [valores, setValores] = useState({ bdi: '', imposto_venda: '', imposto_servico: '' });
+  const [margemSalva, setMargemSalva] = useState(null);
+  const [margem, setMargem] = useState('');
   const [salvando, setSalvando] = useState(false);
 
   const aplicar = useCallback((p) => {
     setSalvo(p);
-    setValores(Object.fromEntries(CAMPOS_PADRAO.map(c => [c.chave, p[c.chave] == null ? '' : String(p[c.chave]).replace('.', ',')])));
+    setValores(Object.fromEntries(CAMPOS_PADRAO.map(c => [c.chave, comVirgula(p[c.chave])])));
   }, []);
-  useEffect(() => { getPadroesOrcamento().then(r => aplicar(r.data)).catch(() => {}); }, [aplicar]);
+  const aplicarMargem = useCallback((m) => { setMargemSalva(m); setMargem(comVirgula(m)); }, []);
+  useEffect(() => {
+    getPadroesOrcamento().then(r => aplicar(r.data)).catch(() => {});
+    getMargemPadrao().then(r => aplicarMargem(r.data.margem)).catch(() => {});
+  }, [aplicar, aplicarMargem]);
   if (!salvo) return null;
 
-  const mudou = CAMPOS_PADRAO.some(c => (valores[c.chave].trim() === '' ? null : Number(valores[c.chave].replace(',', '.'))) !== salvo[c.chave]);
+  const mudouPadroes = CAMPOS_PADRAO.some(c => numeroOuNulo(valores[c.chave]) !== salvo[c.chave]);
+  const margemNumero = numeroOuNulo(margem);
+  const mudouMargem = margemSalva != null && margemNumero !== Number(margemSalva);
+  const mudou = mudouPadroes || mudouMargem;
 
   async function salvar() {
+    if (mudouMargem && (margemNumero == null || margemNumero < 0 || margemNumero > MARGEM_MAXIMA)) {
+      toast.error(`Margem inválida (de 0 a ${MARGEM_MAXIMA}%)`);
+      return;
+    }
     setSalvando(true);
     try {
-      const res = await atualizarPadroesOrcamento(valores);
-      aplicar(res.data);
-      toast.success('BDI e impostos padrão salvos — valem para as propostas novas');
+      if (mudouMargem) {
+        const r = await atualizarMargemPadrao(margemNumero);
+        aplicarMargem(r.data.margem);
+      }
+      if (mudouPadroes) {
+        const res = await atualizarPadroesOrcamento(valores);
+        aplicar(res.data);
+      }
+      toast.success('Padrões de orçamento salvos — valem para os materiais e as propostas novas');
     } catch (err) {
       toast.error(err.response?.data?.erro || 'Erro ao salvar');
     } finally {
@@ -365,24 +393,32 @@ function CartaoPadroes() {
   }
 
   return (
-    <div style={cartao}>
+    <div style={cartao} data-testid="padroes-orcamento">
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
         <div style={iconeCaixa}><Percent size={17} /></div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ color: '#eee', fontWeight: 700, fontSize: 14 }}>BDI e impostos padrão</div>
+          <div style={{ color: '#eee', fontWeight: 700, fontSize: 14 }}>Padrões de orçamento</div>
           <div style={{ color: 'var(--texto-3)', fontSize: 12, marginTop: 2 }}>
-            Valem só para as propostas novas (orçamento, análise de projeto, laudos e assistente). A proposta já salva guarda o próprio valor. Deixe vazio o que ainda não estiver definido: o sistema não inventa número.
+            A margem sugere o preço de venda dos materiais (cadastro, nota fiscal e cotações). O BDI e os impostos valem só para as propostas novas (orçamento, análise de projeto, laudos e assistente); a proposta já salva guarda o próprio valor. Deixe vazio o que ainda não estiver definido: o sistema não inventa número.
           </div>
         </div>
         {salvo.definidos
           ? <Selo cor="#3fb95f" bg="#0a1a0f" borda="#1a4a26"><CheckCircle2 size={11} />Definidos</Selo>
           : <Selo cor="#d9a53a" bg="#1a150a" borda="#4a3a1a"><AlertTriangle size={11} />Faltam valores</Selo>}
       </div>
+      {margemSalva != null && (
+        <label style={linhaPadrao}>
+          <span style={{ flex: 1, minWidth: 0 }}>Margem de venda do material <span style={{ color: 'var(--texto-3)' }}>(sobre o preço de compra)</span></span>
+          <input type="text" inputMode="decimal" value={margem} onChange={e => setMargem(e.target.value)}
+            style={{ width: 96, textAlign: 'right' }} data-testid="padrao-margem" />
+          <span>%</span>
+        </label>
+      )}
       {CAMPOS_PADRAO.map(c => (
-        <label key={c.chave} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--texto-2)', padding: '4px 0' }}>
+        <label key={c.chave} style={linhaPadrao}>
           <span style={{ flex: 1, minWidth: 0 }}>{c.rotulo} <span style={{ color: 'var(--texto-3)' }}>({c.dica})</span></span>
           <input type="text" inputMode="decimal" placeholder="não definido" value={valores[c.chave]}
-            onChange={e => setValores(v => ({ ...v, [c.chave]: e.target.value }))} style={{ width: 96, textAlign: 'right' }} />
+            onChange={e => setValores(v => ({ ...v, [c.chave]: e.target.value }))} style={{ width: 96, textAlign: 'right' }} data-testid={`padrao-${c.chave}`} />
           <span>%</span>
         </label>
       ))}

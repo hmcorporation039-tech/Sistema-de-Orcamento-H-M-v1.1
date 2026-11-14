@@ -3,7 +3,7 @@
 // aprovar conhecimento do suporte, o administrador ou quem fez o pedido que gerou a sugestão.
 const pool = require('../config/database');
 const { listarAgentes } = require('../services/agentes/registro');
-const { executor, ErroExecucao, autorizadosDaEntrada } = require('../services/agentes/executor');
+const { executor, autorizadosDaEntrada } = require('../services/agentes/executor');
 const { sugerirRegraDoPedido } = require('../services/agentes/roteador');
 const { termosSignificativos } = require('../services/agentes/textoPedido');
 const adaptadorQuadros = require('../services/agentes/adaptadorQuadros');
@@ -46,14 +46,9 @@ async function iniciar(req, res) {
       conversaId = Number(req.body.conversa_id);
     }
   }
-  let inicio;
-  try {
-    if (!req.assistente) autorizados = await autorizadosDaEntrada(pool, req.usuario, entrada);
-    inicio = await executor().iniciar({ agente, entrada, usuario: req.usuario, conversaId, mensagemId, origem, autorizados });
-  } catch (e) {
-    if (e instanceof ErroExecucao) return res.status(e.status).json({ erro: e.message });
-    throw e;
-  }
+  // agente/entrada/conversa inválidos (ErroExecucao, 400/404): o tratador central responde { erro }
+  if (!req.assistente) autorizados = await autorizadosDaEntrada(pool, req.usuario, entrada);
+  const inicio = await executor().iniciar({ agente, entrada, usuario: req.usuario, conversaId, mensagemId, origem, autorizados });
   // pedido que caiu na IA e virou execução de agente: regra de vocabulário SUGERIDA (o admin aprova)
   if (req.assistente?.mensagemId) sugerirRegraDoPedido(pool, { respostaId: req.assistente.mensagemId, agente }).catch(() => {});
   if (aguardar === true) return res.json(await executor().aguardar(inicio.id, 240000));

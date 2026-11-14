@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { Link2 } from 'lucide-react';
 import { getPixSemObra, atribuirPixObra } from '../../services/api';
 import Modal from '../../components/ui/Modal';
+import Select from '../../components/Select';
 import { moeda, estilos as E, Etiqueta } from './comum';
 import { dataBr } from '../../utils/format';
 
@@ -45,10 +46,10 @@ function Linha({ grupo, obras, ocupado, onAtribuir }) {
         {sug.obra_id ? `Sugestão: ${sug.obra?.codigo} — ${sug.motivo}.` : `${sug.motivo}: ${(sug.candidatas || []).map(c => c.codigo).join(', ')}. Escolha a obra (ou use o período).`}
       </div>}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 }}>
-        <select value={obraId} onChange={e => setObraId(e.target.value)} style={{ minWidth: 220, flex: '1 1 220px' }} aria-label={`Obra de ${grupo.nome}`}>
+        <Select value={obraId} onChange={e => setObraId(e.target.value)} style={{ minWidth: 220, flex: '1 1 220px' }} aria-label={`Obra de ${grupo.nome}`}>
           <option value="">Escolha a obra…</option>
           {obras.map(o => <option key={o.id} value={o.id}>{o.codigo} — {o.nome}</option>)}
-        </select>
+        </Select>
         <label style={{ display: 'flex', gap: 4, alignItems: 'center', color: 'var(--texto-2)' }}>
           <input type="checkbox" checked={periodo} onChange={e => setPeriodo(e.target.checked)} /> só um período
         </label>

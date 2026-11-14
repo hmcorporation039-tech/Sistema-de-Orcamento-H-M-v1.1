@@ -106,25 +106,21 @@ async function exportarCsv(req, res) {
   res.send(bom + csv);
 }
 
-async function exportarPdf(req, res, next) {
-  try {
-    const dados = await buscarPropostasEtotais(req.query);
-    const html = gerarHtmlRelatorio(dados);
+// erro (banco, fila de PDF cheia, puppeteer): o tratador central faz o log, registra e responde
+async function exportarPdf(req, res) {
+  const dados = await buscarPropostasEtotais(req.query);
+  const html = gerarHtmlRelatorio(dados);
 
-    const pdf = await gerarPdfDeHtml(html, {
-      margin: { top: '12mm', bottom: '24mm', left: '14mm', right: '14mm' },
-      displayHeaderFooter: true,
-      headerTemplate: '<div></div>',
-      footerTemplate: gerarFooterTemplate(),
-    });
+  const pdf = await gerarPdfDeHtml(html, {
+    margin: { top: '12mm', bottom: '24mm', left: '14mm', right: '14mm' },
+    displayHeaderFooter: true,
+    headerTemplate: '<div></div>',
+    footerTemplate: gerarFooterTemplate(),
+  });
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', contentDisposition('relatório-propostas.pdf'));
-    res.send(pdf);
-  } catch (err) {
-    console.error('Erro ao exportar PDF do relatório:', err);
-    next(err);
-  }
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', contentDisposition('relatório-propostas.pdf'));
+  res.send(pdf);
 }
 
 module.exports = { listar, exportarCsv, exportarPdf };

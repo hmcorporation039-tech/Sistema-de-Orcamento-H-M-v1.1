@@ -2,6 +2,7 @@ const pool = require('../config/database');
 const { comTransacao } = require('../services/transacao');
 const { pesquisarReferenciaMaoDeObra, ErroPesquisaMercado } = require('../services/pesquisaMercado');
 const { sinalDaRequisicao } = require('../services/ia');
+const { registrarErroInesperado } = require('../middleware/erros');
 const { ITENS_REFERENCIA } = require('../services/precosMaoDeObraReferencia');
 const { DISCIPLINA_OUTROS } = require('../utils/servicosBase');
 
@@ -110,7 +111,7 @@ async function pesquisar(req, res) {
     res.json({ item: atual, resultado: r.resultado, deCache: r.deCache, encontrado: r.valor != null });
   } catch (err) {
     if (err instanceof ErroPesquisaMercado) return res.status(err.status).json({ erro: err.message });
-    console.error('Erro ao pesquisar referência de mão de obra:', err);
+    registrarErroInesperado(req, err);   // log + resumo diário de erros (antes só o console)
     res.status(500).json({ erro: 'Erro ao pesquisar a referência de mercado' });
   }
 }

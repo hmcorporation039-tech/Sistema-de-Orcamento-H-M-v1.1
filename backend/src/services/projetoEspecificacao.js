@@ -202,7 +202,7 @@ async function simular(id, entradas = {}, opcoes = {}) {
 }
 
 // Preços: referências internas (sem IA) e, só com web: true, a pesquisa de mercado (IA) como sugestão
-async function sugerirPrecos(id, { web = false, signal } = {}, { db = pool } = {}) {
+async function sugerirPrecos(id, { web = false, signal, usuarioId = null } = {}, { db = pool } = {}) {
   const l = await carregarRegistro(id, { db });
   const { projeto, especificacao } = solucaoDoRegistro(l.dados);
   const referencias = await referenciasDosMateriais(projeto, especificacao.precos?.aprendidos || [], { db });
@@ -210,7 +210,9 @@ async function sugerirPrecos(id, { web = false, signal } = {}, { db = pool } = {
   if (web) {
     const { pesquisarPrecoMercado } = require('./pesquisaMercado');
     const PL = skill.planilha();
-    const faltam = PL.resolverPrecos(projeto.materiais, { ...(especificacao.precos || {}), referencias }).filter(i => i.origem === PL.ORIGENS.cotar).slice(0, 8);
+    const cotar = PL.resolverPrecos(projeto.materiais, { ...(especificacao.precos || {}), referencias }).filter(i => i.origem === PL.ORIGENS.cotar).slice(0, 8);
+    // cada busca conta no limite por hora do usuário (utils/limiteUsoIa): pesquisa o que couber
+    const faltam = cotar.slice(0, require('../utils/limiteUsoIa').consumir('pesquisa', usuarioId, cotar.length, { parcial: true }));
     for (const m of faltam) {
       try {
         const r = await pesquisarPrecoMercado(`${m.descricao}${m.referencia && m.referencia !== '—' ? ` (${m.referencia.split(' / ')[0]})` : ''}`, { signal });

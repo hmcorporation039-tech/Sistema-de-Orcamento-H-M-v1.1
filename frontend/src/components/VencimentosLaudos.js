@@ -4,7 +4,7 @@ import { CalendarClock, Plus, RefreshCw, X, FilePlus2 } from 'lucide-react';
 import { getVencimentos, criarVencimento, renovarVencimento, encerrarVencimento, criarPropostaRenovacao } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import useDisciplinas from '../hooks/useDisciplinas';
-import { dataBr, hojeIso } from '../utils/format';
+import { dataBr, hojeBrasilia } from '../utils/format';
 import Select, { Sugestoes } from './Select';
 import { estilos } from './ui/estilos';
 
@@ -15,7 +15,7 @@ import { estilos } from './ui/estilos';
 const DOCUMENTOS = ['Certidão negativa federal', 'Certidão negativa estadual', 'Certidão negativa municipal', 'Certidão FGTS (CRF)',
   'Certidão trabalhista (CNDT)', 'Alvará de funcionamento', 'Anuidade do CREA', 'Seguro de responsabilidade civil'];
 const COR = { vencido: '#e5534b', urgente: '#d69a2d', atencao: '#c9a227', ok: 'var(--texto-3)' };
-const FORM_VAZIO = () => ({ tipo: 'laudo', disciplina: 'spda', descricao: '', cliente_nome: '', emitido_em: hojeIso(), validade_meses: 12 });
+const FORM_VAZIO = () => ({ tipo: 'laudo', disciplina: 'spda', descricao: '', cliente_nome: '', emitido_em: hojeBrasilia(), validade_meses: 12 });
 const FORM_DOCUMENTO = () => ({ tipo: 'empresa', descricao: '', vence_em: '' });
 
 // Disciplinas do laudo: as do registro único que têm laudo (skills/_comum/disciplinas.js, pelo useDisciplinas) e

@@ -1,54 +1,32 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import PainelPasta from '../components/PainelPasta';
-import { FileDown, Plus, Trash2, FilePlus2, Receipt, ExternalLink, DraftingCompass } from 'lucide-react';
+import { FilePlus2 } from 'lucide-react';
 import {
-  gerarRelatorioCompatibilizacao,
-  getAnaliseProjeto, atualizarAnaliseProjeto,
+  gerarRelatorioCompatibilizacao, getAnaliseProjeto,
   gerarOrcamentoDaAnalise, getPastaAnalise, abrirPastaAnalise, getDisciplinasProjeto, criarProjetoDeAnalise,
 } from '../services/api';
-import { formatarMoeda } from '../utils/format';
 import { baixarArquivo, mensagemDeErro } from '../utils/download';
-import BlocoPesquisaMercado from '../components/PesquisaMercado';
-import Select from '../components/Select';
+import { clientePorNome } from '../components/CampoCliente';
+import { useClientes } from '../components/ClienteSelect';
 import { CartaoModelo3dAnalise } from '../components/Modelo3d';
 import EnviarParaAnalise from '../components/analise/EnviarParaAnalise';
 import AnalisesSalvas from '../components/analise/ListaAnalises';
 import ConflitosCompatibilizacao from '../components/analise/ConflitosCompatibilizacao';
 import MapaCad from '../components/analise/MapaCad';
 import ObjetivoDoProjeto from '../components/analise/ObjetivoDoProjeto';
-// Finalidade da análise (versão 2.1 — análise ≠ laudo): escolhida ao enviar e
-// editável depois; nenhuma das duas cria laudo. Lista e rótulos em utils/finalidades.
-import { FINALIDADES } from '../utils/finalidades';
-import { estilos } from '../components/ui/estilos';
 import { gerarId } from '../utils/ids';
-import Indicador from '../components/ui/Indicador';
-import Info from '../components/ui/Info';
+import { card, tituloSecao, btnSecundario } from './analise/estilos';
+import useSalvamentoAnalise from './analise/useSalvamentoAnalise';
+import {
+  CabecalhoAnalise, CartaoEstimativa, CartaoFuncionamento, CartaoPendencias, CartaoProjetos, BarraAcoesAnalise,
+} from './analise/CartoesAnalise';
+import { CartaoPontosCodificados, CartaoPontosPorDisciplina } from './analise/CartoesPontos';
+import ItensExtraidos from './analise/ItensExtraidos';
 
 // As disciplinas vêm do servidor (GET /projetos/disciplinas — fonte única em
 // backend/src/utils/disciplinasProjeto.js): cada área de atuação é uma
 // disciplina separada, e a lista cresce junto com as skills.
-
-// Agrupa itens por subgrupo (na ordem em que aparecem, sem reordenar) —
-// mesma ideia do agrupamento por subgrupo já usado no Orçamento.
-function agruparPorSubgrupo(itens) {
-  const linhas = [];
-  let ultimo = null;
-  for (const it of itens) {
-    const sg = (it.subgrupo || '').trim() || null;
-    if (sg !== ultimo) {
-      if (sg) linhas.push({ tipo: 'cabecalho', nome: sg, key: `cab_${it.id}` });
-      ultimo = sg;
-    }
-    linhas.push({ tipo: 'item', item: it });
-  }
-  return linhas;
-}
-
-function formatarHora(data) {
-  return data ? data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
-}
 
 // Análise de projeto (PDF, e na 2.3 também DWG/DXF): compatibilização de projetos. Na versão
 // 2.0 vira a aba "Análise de projeto" do hub Obras (pages/hubs/ObrasHub.js).
@@ -56,6 +34,9 @@ function formatarHora(data) {
 // ou "Elaboração de projeto" (elaborar o projeto de cada disciplina e
 // entregar). Em nenhuma das duas sai laudo: o antigo "Calcular pela norma"
 // cria um PROJETO da disciplina (aba "Projetos por disciplina").
+// Divisão em 2.39: os cartões estão em pages/analise/ (CartoesAnalise, CartoesPontos,
+// ItensExtraidos) e o salvamento automático no gancho useSalvamentoAnalise; aqui ficam a
+// carga da análise, as edições e as ações (gerar orçamento, projeto, relatório).
 export default function Compatibilizacao() {
   const { id: idParam } = useParams();
   const navigate = useNavigate();
@@ -70,21 +51,18 @@ export default function Compatibilizacao() {
   const obraDaUrl = Number(busca.get('obra')) || null;
   const [carregandoAnalise, setCarregandoAnalise] = useState(false);
   const [analise, setAnalise] = useState(null);
+  // Cliente do cadastro (2.39): o escolhido na lista (analise.clienteId) manda; análise antiga sem
+  // ele liga só pelo nome IGUAL ao de um único cliente (a mesma regra do editor de proposta).
+  const clientes = useClientes();
+  const clienteIdDaAnalise = analise
+    ? (analise.clienteId ?? clientePorNome(clientes, analise.cliente)?.id ?? null)
+    : null;
   const [gerando, setGerando] = useState(false);
   const [gerandoOrcamento, setGerandoOrcamento] = useState(false);
-  const [salvando, setSalvando] = useState(false);
-  const [salvoEm, setSalvoEm] = useState(null);
   const [versaoLista, setVersaoLista] = useState(0); // muda para a lista de análises recarregar
-  const idAutosaveRef = useRef(null);
-  const pendenteRef = useRef(false); // há edição aguardando o autosave disparar
-  // Versão gravada no servidor (bloqueio otimista), POR ANÁLISE. Em ref, não
-  // em estado: mudar a versão não pode disparar outro autosave. Era uma só:
-  // a gravação da análise A terminando depois de abrir a B punha a versão de A
-  // no lugar da de B, e a próxima gravação de B dava 409 falso (revisão de 11/2026).
-  const versoesRef = useRef(new Map()); // id → versão
-  const filaSalvarRef = useRef(Promise.resolve()); // gravações em sequência, cada uma com a versão da anterior
-  const conflitosRef = useRef(new Set()); // ids que outra pessoa gravou: para o autosave até recarregar
-  const idAtualRef = useRef(null); // análise aberta agora (resposta de outra não mexe na tela)
+  const {
+    salvarAgora, salvando, salvoEm, setSalvoEm, registrarCarregada, esquecerAtual, gravarPendente,
+  } = useSalvamentoAnalise(analise, clienteIdDaAnalise);
 
   const popularAnalise = useCallback((dados) => {
     const servicosComId = dados.servicos.map(s => ({ ...s, id: gerarId() }));
@@ -94,27 +72,19 @@ export default function Compatibilizacao() {
       servicos: servicosComId,
       materiais: materiaisComId,
     });
-    idAtualRef.current = dados.id ?? null;
-    versoesRef.current.set(dados.id, dados.versao ?? null);
-    conflitosRef.current.delete(dados.id);
-    setSalvoEm(dados.atualizadoEm ? new Date(dados.atualizadoEm) : null);
+    registrarCarregada(dados);
     // A pesquisa de mercado que já tinha ficado salva num item
     // (pesquisa_mercado, de antes do editor único) continua aparecendo aqui,
     // recolhida e só como informação (ver TabelaItensLeitura); o editor da
     // proposta também a reaproveita.
-  }, []);
+  }, [registrarCarregada]);
 
   useEffect(() => {
     // Trocou de análise com edição esperando o autosave (< 1,5 s): grava a
-    // anterior AGORA. O timer dela é cancelado quando a nova chega e o
-    // "salvar ao sair" só roda ao desmontar — a edição se perdia. Aqui a
-    // função de salvar ainda é a da análise anterior (a tela não trocou).
-    if (pendenteRef.current) {
-      pendenteRef.current = false;
-      salvarAgoraRef.current?.();
-    }
+    // anterior AGORA (useSalvamentoAnalise.gravarPendente).
+    gravarPendente();
     if (!idParam) {
-      idAtualRef.current = null;
+      esquecerAtual();
       setAnalise(null);
       return;
     }
@@ -129,7 +99,7 @@ export default function Compatibilizacao() {
       })
       .finally(() => { if (!cancelado) setCarregandoAnalise(false); });
     return () => { cancelado = true; };
-  }, [idParam, navigate, popularAnalise]);
+  }, [idParam, navigate, popularAnalise, gravarPendente, esquecerAtual]);
 
   // volta para a aba de análise (envio novo). Antes ia para /obras, que abre a
   // aba "Obras" — e a aba "Análise de projeto", já marcada, não reage ao clique.
@@ -138,84 +108,9 @@ export default function Compatibilizacao() {
     setSalvoEm(null);
   }
 
-
-  // Salva automaticamente as edições (cliente, serviços, materiais) — é
-  // exatamente o que resolve a análise sumir ao trocar de tela: a partir do
-  // momento em que existe um id (a análise já foi persistida), toda edição
-  // vira uma gravação no banco, não só um estado do React.
-  const salvarAgora = useCallback(() => {
-    if (!analise?.id || conflitosRef.current.has(analise.id)) return Promise.resolve();
-    const id = analise.id;
-    const corpo = {
-      cliente_nome: analise.cliente,
-      nome_projeto: analise.nomeProjeto ?? '',
-      servicos: analise.servicos.map(({ id: _id, ...s }) => s),
-      materiais: analise.materiais.map(({ id: _id, ...m }) => m),
-      funcionamento: analise.funcionamento ?? '',
-      pontos_por_disciplina: analise.pontosPorDisciplina ?? [],
-      finalidade: analise.finalidade || 'orcamento',
-    };
-    // em fila: duas gravações ao mesmo tempo mandariam a mesma versão e a
-    // segunda seria recusada como conflito (falso alarme)
-    // A versão e o conflito são os DESTA análise (id): a gravação pode
-    // terminar depois de o usuário abrir outra.
-    filaSalvarRef.current = filaSalvarRef.current.then(async () => {
-      if (conflitosRef.current.has(id)) return;
-      setSalvando(true);
-      try {
-        const res = await atualizarAnaliseProjeto(id, { ...corpo, versao: versoesRef.current.get(id) ?? null });
-        versoesRef.current.set(id, res.data?.versao ?? null);
-        if (idAtualRef.current === id) setSalvoEm(new Date());
-      } catch (err) {
-        if (err.response?.status === 409) {
-          conflitosRef.current.add(id);
-          toast.error(err.response.data?.erro || 'A análise foi alterada em outro lugar. Recarregue a página.', { duration: 15000 });
-        } else if (err.response?.status === 403 && err.response?.data?.codigo !== 'SENHA_PROVISORIA') {
-          // análise de outro usuário (posse): não desloga mais; para o
-          // salvamento automático e diz por quê
-          conflitosRef.current.add(id);
-          toast.error(`${err.response.data?.erro || 'Você não pode alterar esta análise.'} As alterações feitas aqui não são gravadas.`, { duration: 15000 });
-        } else if (!err.sessaoEncerrada) {
-          toast.error(err.response?.data?.erro || 'Erro ao salvar automaticamente — tente novamente em instantes');
-        }
-      } finally {
-        setSalvando(false);
-      }
-    });
-    return filaSalvarRef.current;
-  }, [analise?.id, analise?.cliente, analise?.nomeProjeto, analise?.servicos, analise?.materiais, analise?.funcionamento, analise?.pontosPorDisciplina, analise?.finalidade]);
-
-  // Reseta o "já assentou" toda vez que o id muda (nova análise carregada) —
-  // assim a primeira renderização de cada análise não dispara um autosave à toa.
-  useEffect(() => { idAutosaveRef.current = null; }, [analise?.id]);
-
-  // Mantém a última versão da função de salvar acessível ao efeito de saída
-  // abaixo, sem reativar o debounce a cada digitada.
-  const salvarAgoraRef = useRef(salvarAgora);
-  useEffect(() => { salvarAgoraRef.current = salvarAgora; }, [salvarAgora]);
-
-  useEffect(() => {
-    if (!analise?.id) return;
-    if (idAutosaveRef.current !== analise.id) {
-      idAutosaveRef.current = analise.id;
-      return;
-    }
-    pendenteRef.current = true;
-    const timer = setTimeout(() => { pendenteRef.current = false; salvarAgora(); }, 1500);
-    return () => clearTimeout(timer);
-  }, [analise?.servicos, analise?.materiais, analise?.cliente, analise?.nomeProjeto, analise?.funcionamento, analise?.pontosPorDisciplina, analise?.finalidade]);
-
-  // Salva o que ficou pendente ao sair da tela. O efeito acima cancela o timer
-  // quando o componente desmonta, então quem editasse e trocasse de tela em
-  // menos de 1,5s perdia a última alteração — justamente no recurso feito para
-  // nada se perder. Deps vazias: este cleanup só roda na saída, não a cada
-  // digitada.
-  useEffect(() => () => {
-    if (pendenteRef.current) salvarAgoraRef.current?.();
-  }, []);
-
-  function atualizarCliente(valor) {
-    setAnalise(a => ({ ...a, cliente: valor }));
+  // cliente escolhido da lista (id) ou nome novo (id null) — components/CampoCliente.js
+  function atualizarCliente({ id, nome }) {
+    setAnalise(a => ({ ...a, cliente: nome, clienteId: id }));
   }
 
   const carregarPasta = useCallback(() => getPastaAnalise(analise.id), [analise?.id]);
@@ -385,32 +280,8 @@ export default function Compatibilizacao() {
   // Cartão "Elaborar projeto por disciplina" (foco na Elaboração de projeto) ou
   // "Dimensionar pela norma (projeto)" (opção secundária no Orçamento)
   const cartaoProjetos = (principal) => (
-    <div style={{ ...card, ...(principal ? { borderColor: '#2f4f6f' } : {}) }} data-testid="cartao-projetos">
-      <h3 style={{ ...tituloSecao, color: principal ? '#8ab4f8' : '#c9a227', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <DraftingCompass size={16} /> {principal ? 'Elaborar projeto por disciplina' : 'Dimensionar pela norma (projeto) — opcional'}
-      </h3>
-      <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 12, lineHeight: 1.6 }}>
-        {principal
-          ? <>Cada disciplina vira um <b>projeto</b> (aba "Projetos por disciplina") já preenchido com o que foi lido dos arquivos (PDF, DWG ou DXF): calcule pela norma, gere o memorial e os desenhos e escolha as <b>entregas</b> — definições técnicas, as-built, DXF (abre no AutoCAD), QElectroTech e PDF. <b>Não gera laudo</b>: laudo é pedido quando necessário, em Obras › Laudos.</>
-          : <>Cria o <b>projeto</b> da disciplina (não é laudo) já preenchido com o que foi lido dos arquivos, para quantificar melhor pela norma e gerar o orçamento de execução lá. O que for estimado vem marcado para conferir.</>}
-      </p>
-      {disciplinasComSkill.length === 0 ? (
-        <p style={{ fontSize: 12, color: 'var(--texto-3)', fontStyle: 'italic', margin: 0 }}>Nenhuma disciplina desta análise tem cálculo pela norma ainda.</p>
-      ) : (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {disciplinasComSkill.map(d => {
-            const existente = projetoDa(d.skill);
-            return (
-              <button key={d.skill} onClick={() => elaborarProjeto(d)} disabled={!!criandoProjeto}
-                style={{ ...btnSecundario, padding: '9px 14px', fontSize: 12, ...(existente ? { borderStyle: 'solid', borderColor: '#2f4f6f', color: '#8ab4f8' } : {}) }}
-                title={existente ? `Abre o projeto #${existente.id} desta disciplina` : 'Cria o projeto da disciplina a partir desta análise'}>
-                {criandoProjeto === d.skill ? 'Preparando...' : existente ? `Abrir projeto — ${d.nome}` : `${principal ? 'Elaborar projeto — ' : ''}${d.nome}`}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
+    <CartaoProjetos principal={principal} disciplinasComSkill={disciplinasComSkill} projetoDa={projetoDa}
+      criandoProjeto={criandoProjeto} onElaborar={elaborarProjeto} />
   );
 
   return (
@@ -447,211 +318,32 @@ export default function Compatibilizacao() {
 
       {analise && !carregandoAnalise && (
         <>
-          <div style={card}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
-              <div style={{ flex: '1 1 260px' }}>
-                <div style={{ fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Nome do projeto (pasta)</div>
-                <input value={analise.nomeProjeto || ''} onChange={e => atualizarNomeProjeto(e.target.value)} placeholder={analise.cliente || 'Nome do projeto'} style={{ fontSize: 15, fontWeight: 700, color: '#e8e8e8', background: 'transparent', border: 'none', padding: '2px 0' }} />
-              </div>
-              <div style={{ flex: '1 1 260px' }}>
-                <div style={{ fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Cliente</div>
-                <input value={analise.cliente || ''} onChange={e => atualizarCliente(e.target.value)} placeholder="Nome do cliente" style={{ fontSize: 15, fontWeight: 700, color: '#c9a227', background: 'transparent', border: 'none', padding: '2px 0' }} />
-              </div>
-              <div style={{ flex: '0 1 230px' }} title="Muda a tela desta análise: Orçamento (itens e gerar orçamento) ou Elaboração de projeto (projeto por disciplina e entregas). Nenhuma gera laudo.">
-                <div style={{ fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Finalidade</div>
-                <Select aria-label="Finalidade da análise" value={analise.finalidade || 'orcamento'} onChange={e => alterarFinalidade(e.target.value)}
-                  style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, color: elaboracao ? '#8ab4f8' : '#c9a227', padding: '6px 8px', fontSize: 13, fontWeight: 700 }}>
-                  {FINALIDADES.map(f => <option key={f.valor} value={f.valor}>{f.rotulo}</option>)}
-                </Select>
-              </div>
-              {analise.obra && (
-                <div style={{ flex: '0 1 260px' }}>
-                  <div style={{ fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Obra</div>
-                  <div style={{ fontSize: 13, color: '#ccc' }}>{analise.obra.nome} <span style={{ color: 'var(--texto-3)' }}>({analise.obra.codigo})</span></div>
-                </div>
-              )}
-              <div style={{ fontSize: 12, color: 'var(--texto-3)' }}>
-                {salvando ? 'Salvando...' : salvoEm ? `Salvo às ${formatarHora(salvoEm)}` : ''}
-              </div>
-            </div>
-            <PainelPasta carregar={carregarPasta} abrir={abrirPasta} atualizarQuando={salvoEm} />
-            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${tilesResumo.length}, 1fr)`, gap: 16 }}>
-              {tilesResumo.map(t => <Info key={t.label} variante="destaque" rotulo={t.label} valor={t.valor} />)}
-            </div>
-          </div>
+          <CabecalhoAnalise
+            analise={analise} clientes={clientes} clienteIdDaAnalise={clienteIdDaAnalise} elaboracao={elaboracao}
+            salvando={salvando} salvoEm={salvoEm} tilesResumo={tilesResumo}
+            onNomeProjeto={atualizarNomeProjeto} onCliente={atualizarCliente} onFinalidade={alterarFinalidade}
+            carregarPasta={carregarPasta} abrirPasta={abrirPasta}
+          />
 
           {/* Elaboração de projeto: o foco é o projeto por disciplina e as entregas */}
           {elaboracao && cartaoProjetos(true)}
 
-          {!elaboracao && <div style={card}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
-              <h3 style={{ ...tituloSecao, flex: 1, marginBottom: 0 }}>Estimativa pelo que foi extraído</h3>
-              {analise.propostaId && (
-                <button onClick={abrirNoEditor} style={{ ...btnSecundario, padding: '6px 12px' }}>
-                  <ExternalLink size={12} style={{ marginRight: 5 }} /> Orçamento {analise.propostaNumero} no editor
-                </button>
-              )}
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
-              <Indicador variante="bloco" rotulo="Bloco 1 — Mão de obra" valor={formatarMoeda(resumoOrcamento.blocoMaoDeObra)} />
-              <Indicador variante="bloco" rotulo="Bloco 2 — Materiais e equipamentos" valor={formatarMoeda(resumoOrcamento.blocoMateriais)} />
-              <Indicador variante="bloco" rotulo="Total estimado" valor={formatarMoeda(resumoOrcamento.total)} destaque />
-            </div>
-            <p style={{ fontSize: 12, color: 'var(--texto-3)', marginTop: 12, lineHeight: 1.5 }}>
-              Só informação: soma dos itens não marcados "já pronto", com o valor sugerido pela análise (serviço sem
-              referência ou material sem correspondência no catálogo entra como R$ 0,00). Quantidades, preços, pesquisa
-              de mercado e referências são revisados no editor do orçamento — o valor que vale é o da proposta.
-            </p>
-          </div>}
+          {!elaboracao && <CartaoEstimativa analise={analise} resumoOrcamento={resumoOrcamento} onAbrirNoEditor={abrirNoEditor} />}
 
-          <div style={card}>
-            <h3 style={tituloSecao}>Funcionamento do Projeto</h3>
-            <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 10, lineHeight: 1.6 }}>
-              Como o projeto opera — preenchido pela análise do Claude Desktop (visão do PDF) e editável aqui. Cobre só as disciplinas selecionadas.
-            </p>
-            <textarea
-              value={analise.funcionamento || ''}
-              onChange={(e) => atualizarFuncionamento(e.target.value)}
-              placeholder="Ex.: CFTV com N câmeras gravando em NVR de X canais; rede com switch PoE alimentando as câmeras; elétrica com quadro dedicado alimentando os racks..."
-              rows={5}
-              style={{ width: '100%', background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, color: '#ddd', fontSize: 13, padding: 10, lineHeight: 1.5, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
-            />
-          </div>
+          <CartaoFuncionamento valor={analise.funcionamento} onMudar={atualizarFuncionamento} />
 
-          {(analise.disciplinas?.includes('cftv') || analise.disciplinas?.includes('rede') || analise.disciplinas?.includes('antena')) && (
-            <div style={card}>
-              <h3 style={tituloSecao}>Pontos Identificados no Projeto</h3>
-              <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 14, lineHeight: 1.6 }}>
-                Cada ponto abaixo é identificado na planta por um código individual. "Ocorrências" é quantas vezes o
-                código aparece no texto do PDF; "Pontos únicos" é a quantidade real de pontos físicos distintos — é
-                esse o número usado no orçamento.
-              </p>
-              {analise.disciplinas.includes('cftv') && (
-                <TabelaPontos titulo="Câmeras" prefixo="CAM" detalhe={analise.cameras?.detalhePorArquivo} />
-              )}
-              {analise.disciplinas.includes('rede') && (
-                <TabelaPontos titulo="Pontos de rede" prefixo="R" detalhe={analise.pontosRedeAntena?.rede?.detalhePorArquivo} />
-              )}
-              {analise.disciplinas.includes('antena') && (
-                <TabelaPontos titulo="Pontos de TV/antena" prefixo="A" detalhe={analise.pontosRedeAntena?.antena?.detalhePorArquivo} />
-              )}
+          <CartaoPontosCodificados analise={analise} />
 
-              <div style={{ marginTop: 22, paddingTop: 18, borderTop: '1px solid #1e1e1e' }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#c9a227', marginBottom: 6 }}>Pontos por Ambiente</div>
-                <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 12, lineHeight: 1.6 }}>
-                  Distribuição <b>aproximada</b> — calculada pela posição de cada código no desenho, sem noção de
-                  parede ou fronteira entre salas. Confira sempre contra a planta antes de usar. Só aparece ambiente
-                  com pelo menos 1 ponto identificado.
-                </p>
-                <TabelaPontosPorAmbiente linhas={analise.pontosPorAmbiente} disciplinas={analise.disciplinas} />
-              </div>
-            </div>
-          )}
+          <CartaoPontosPorDisciplina analise={analise} disciplinas={DISCIPLINAS}
+            onAtualizar={atualizarPontoDisciplina} onRemover={removerPontoDisciplina} onAdicionar={adicionarPontoDisciplina} />
 
-          <div style={card}>
-            <h3 style={tituloSecao}>Pontos por Disciplina</h3>
-            <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 14, lineHeight: 1.6 }}>
-              Marcação por disciplina com tipo, modelo e quantidade — preenchida pela análise do Claude Desktop (inclusive elétrica, iluminação e outras que a contagem por código não alcança) e editável aqui. Só aparecem as disciplinas selecionadas na análise; sempre confira contra a planta.
-            </p>
-            {(analise.disciplinas || []).length === 0 && (
-              <p style={{ fontSize: 12, color: 'var(--texto-3)', fontStyle: 'italic', margin: 0 }}>Nenhuma disciplina selecionada nesta análise.</p>
-            )}
-            {(analise.disciplinas || []).map(disc => {
-              const grupo = (analise.pontosPorDisciplina || []).find(g => g.disciplina === disc);
-              const itens = grupo?.itens || [];
-              const nomeDisc = DISCIPLINAS.find(d => d.chave === disc)?.nome || disc;
-              return (
-                <div key={disc} style={{ marginBottom: 18, paddingBottom: 14, borderBottom: '1px solid #1e1e1e' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-                    <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: '#c9a227' }}>{nomeDisc}</div>
-                    <button type="button" onClick={() => adicionarPontoDisciplina(disc)} style={{ ...btnSecundario, padding: '3px 8px', fontSize: 12 }}>
-                      <Plus size={11} style={{ marginRight: 3 }} /> Adicionar ponto
-                    </button>
-                  </div>
-                  {itens.length === 0 ? (
-                    <p style={{ fontSize: 12, color: 'var(--texto-3)', fontStyle: 'italic', margin: 0 }}>Nenhum ponto marcado ainda para esta disciplina.</p>
-                  ) : (
-                    <div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '2.2fr 1fr 1.4fr 0.7fr 1.6fr 28px', gap: 8, fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>
-                        <span>Descrição</span><span>Tipo</span><span>Modelo</span><span>Qtd</span><span>Observação</span><span />
-                      </div>
-                      {itens.map((it, idx) => (
-                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2.2fr 1fr 1.4fr 0.7fr 1.6fr 28px', gap: 8, marginBottom: 6, alignItems: 'center' }}>
-                          <input value={it.descricao || ''} onChange={(e) => atualizarPontoDisciplina(disc, idx, 'descricao', e.target.value)} style={inputPonto} />
-                          <input value={it.tipo || ''} onChange={(e) => atualizarPontoDisciplina(disc, idx, 'tipo', e.target.value)} style={inputPonto} />
-                          <input value={it.modelo || ''} onChange={(e) => atualizarPontoDisciplina(disc, idx, 'modelo', e.target.value)} style={inputPonto} />
-                          <input type="number" min="0" value={it.quantidade ?? 0} onChange={(e) => atualizarPontoDisciplina(disc, idx, 'quantidade', e.target.value === '' ? 0 : Number(e.target.value))} style={{ ...inputPonto, textAlign: 'right' }} />
-                          <input value={it.observacao || ''} onChange={(e) => atualizarPontoDisciplina(disc, idx, 'observacao', e.target.value)} style={inputPonto} />
-                          <button type="button" title="Remover ponto" aria-label="Remover ponto"
-                            onClick={() => {
-                              // o salvamento automático grava em ~1,5 s: sem pergunta, um clique errado some com o ponto
-                              const nome = (it.descricao || '').trim();
-                              if (!window.confirm(`Remover o ponto${nome ? ` "${nome}"` : ''}${it.quantidade ? ` (${it.quantidade} un.)` : ''} da análise?`)) return;
-                              removerPontoDisciplina(disc, idx);
-                            }}
-                            style={{ background: 'none', border: 'none', color: '#8a4040', cursor: 'pointer', padding: 0 }}>
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {analise.achados.length > 0 && (
-            <div style={card}>
-              <h3 style={tituloSecao}>Compatibilização — Pendências e Observações</h3>
-              {analise.achados.map((a, i) => (
-                <div key={i} style={{ padding: '10px 0', borderTop: i > 0 ? '1px solid #1e1e1e' : 'none' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#c9a227', marginBottom: 3 }}>{a.tema}</div>
-                  <div style={{ fontSize: 13, color: 'var(--texto-2)' }}>{a.observacao}</div>
-                </div>
-              ))}
-            </div>
-          )}
+          <CartaoPendencias achados={analise.achados} />
 
           <ObjetivoDoProjeto analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
 
           <MapaCad key={analise.id} analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />
 
-          {(() => {
-            const tabelas = (
-              <>
-                <div style={card}>
-                  <h3 style={tituloSecao}>Serviços (Mão de Obra) — extraídos do projeto</h3>
-                  <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 10, lineHeight: 1.6 }}>
-                    Leitura do que a análise montou a partir dos arquivos do projeto. Quantidade, preço, pesquisa de mercado e referências são
-                    revisados no editor do orçamento ("Gerar orçamento e abrir no editor", abaixo). Marque "Já pronto" para o que
-                    não faz parte do seu escopo (ex.: cabeamento já passado) — sai do orçamento e do relatório como pendência.
-                  </p>
-                  <TabelaItensLeitura tipo="servico" itens={analise.servicos} disciplinas={DISCIPLINAS}
-                    onPronto={(id, v) => alternarPronto('servicos', id, v)} />
-                </div>
-
-                <div style={card}>
-                  <h3 style={tituloSecao}>Materiais / Equipamentos — extraídos do projeto</h3>
-                  {analise.materiais.length === 0 ? (
-                    <p style={{ fontSize: 13, color: 'var(--texto-3)', fontStyle: 'italic' }}>Nenhum material extraído do projeto — lance os materiais no editor do orçamento (catálogo ou digitados).</p>
-                  ) : (
-                    <TabelaItensLeitura tipo="material" itens={analise.materiais} disciplinas={DISCIPLINAS}
-                      onPronto={(id, v) => alternarPronto('materiais', id, v)} />
-                  )}
-                </div>
-              </>
-            );
-            // Elaboração de projeto: os itens do PDF ficam recolhidos, só como referência
-            return elaboracao ? (
-              <details style={{ ...card, padding: '14px 22px' }}>
-                <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--texto-2)', fontWeight: 700 }}>
-                  Itens extraídos do projeto (referência) — {analise.servicos.length} serviço(s), {analise.materiais.length} material(is)
-                </summary>
-                <div style={{ marginTop: 14 }}>{tabelas}</div>
-              </details>
-            ) : tabelas;
-          })()}
+          <ItensExtraidos analise={analise} disciplinas={DISCIPLINAS} elaboracao={elaboracao} onPronto={alternarPronto} />
 
           {/* Orçamento: dimensionar pela norma é opção secundária — cria um PROJETO, não laudo */}
           {!elaboracao && disciplinasComSkill.length > 0 && cartaoProjetos(false)}
@@ -662,229 +354,13 @@ export default function Compatibilizacao() {
 
           <CartaoModelo3dAnalise analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />
 
-          <div style={{ ...card, display: 'flex', justifyContent: 'flex-end', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12, color: 'var(--texto-3)', marginRight: 'auto', lineHeight: 1.5 }}>
-              {elaboracao
-                ? <>Elaboração de projeto: o orçamento de execução sai do projeto de cada disciplina.{analise.propostaNumero && <> Esta análise já tem o orçamento <b style={{ color: '#c9a227' }}>{analise.propostaNumero}</b>.</>}</>
-                : analise.propostaNumero
-                  ? <>Vinculada ao orçamento <b style={{ color: '#c9a227' }}>{analise.propostaNumero}</b>.</>
-                  : 'O orçamento é revisado no editor de propostas.'}
-              {!elaboracao && foraPorQuantidade > 0 && <><br /><span style={{ color: '#a08a3a' }}>{foraPorQuantidade} item(ns) com quantidade 0 ficam fora do rascunho — o editor lista para incluir.</span></>}
-            </span>
-            {analise.propostaId && (
-              <button onClick={abrirNoEditor} style={{ ...btnSecundario, padding: '13px 18px', fontSize: 13 }}>
-                <ExternalLink size={14} style={{ marginRight: 6 }} /> Abrir no editor
-              </button>
-            )}
-            {!elaboracao && (
-              <button onClick={gerarOrcamento} disabled={gerandoOrcamento} style={{ ...btnSecundario, padding: '13px 20px', fontSize: 13, borderStyle: 'solid', borderColor: '#c9a227', color: '#c9a227' }}
-                title={analise.propostaNumero ? 'Substitui os itens da proposta pelos desta análise e abre o editor' : 'Cria a proposta rascunho com os itens desta análise e abre o editor'}>
-                <Receipt size={14} style={{ marginRight: 6 }} />
-                {gerandoOrcamento ? 'Gerando...' : analise.propostaNumero ? `Atualizar orçamento (${analise.propostaNumero}) e abrir` : 'Gerar orçamento e abrir no editor'}
-              </button>
-            )}
-            <button onClick={baixarRelatorio} disabled={gerando} style={{ ...btnPrimario, padding: '13px 26px', fontSize: 13 }}>
-              <FileDown size={14} style={{ marginRight: 6 }} /> {gerando ? 'Gerando...' : 'Baixar Relatório PDF'}
-            </button>
-          </div>
+          <BarraAcoesAnalise
+            analise={analise} elaboracao={elaboracao} foraPorQuantidade={foraPorQuantidade}
+            gerandoOrcamento={gerandoOrcamento} gerando={gerando}
+            onAbrirNoEditor={abrirNoEditor} onGerarOrcamento={gerarOrcamento} onBaixarRelatorio={baixarRelatorio}
+          />
         </>
       )}
     </div>
   );
 }
-
-// Itens extraídos do projeto (serviços ou materiais), só LEITURA — versão 2.0,
-// editor único de orçamento: quantidade, valor unitário, "Ref.: … usar",
-// referências oficial/particular e "Pesquisar mercado" por item saíram daqui
-// e estão no editor da proposta (pages/Orcamento.js). Fica o que a análise
-// leu do PDF (descrição, quantidade, unidade, disciplina, observação/origem)
-// e a sugestão de preço como informação. Quantidade 0 = modelo da disciplina
-// ainda não conferido na planta: o gerar deixa de fora (o editor lista para
-// incluir). Só o "Já pronto" continua editável (escopo da obra).
-function TabelaItensLeitura({ tipo, itens, disciplinas, onPronto }) {
-  const servico = tipo === 'servico';
-  const colunas = '2.4fr 1fr 0.5fr 0.5fr 1.5fr 1.8fr 0.8fr';
-  const nomeDisc = (chave) => disciplinas.find(d => d.chave === chave)?.nome || chave;
-  return (
-    <div>
-      <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, marginBottom: 8, fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px' }}>
-        <span>Descrição</span><span>Disciplina</span><span>Qtd</span><span>Un.</span><span>Sugestão de preço</span><span>Observação / origem</span><span>Escopo</span>
-      </div>
-      {agruparPorSubgrupo(itens).map(linha => {
-        if (linha.tipo === 'cabecalho') {
-          return (
-            <div key={linha.key} style={{ fontSize: 13, fontWeight: 700, color: 'var(--texto-2)', textTransform: 'uppercase', letterSpacing: '.5px', borderTop: '1px solid #222', paddingTop: 10, marginTop: 6, marginBottom: 8 }}>
-              {linha.nome}
-            </div>
-          );
-        }
-        const it = linha.item;
-        const semQtd = !it.pronto && !(Number(it.quantidade) > 0);
-        return (
-          <div key={it.id} style={{ marginBottom: 10, borderBottom: '1px solid #1e1e1e', paddingBottom: 10, opacity: it.pronto ? 0.55 : 1 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, alignItems: 'start', fontSize: 13 }}>
-              <div style={{ color: '#ddd' }}>
-                {it.descricao || <i style={{ color: 'var(--texto-3)' }}>(sem descrição)</i>}
-                {it.referencia_fabricante && <div style={{ color: 'var(--texto-3)', fontSize: 12 }}>Ref. fabricante: {it.referencia_fabricante}</div>}
-                {it.sugerido_ia && (
-                  <span title={`Item lido pela IA${it.ia_de_cache ? ' (resposta guardada de uma leitura anterior)' : ''} — confira no projeto; entra no orçamento como "a cotar"`}
-                    style={{ display: 'inline-block', marginTop: 3, fontSize: 10.5, padding: '1px 6px', borderRadius: 3, border: '1px solid #4a3f6b', color: '#b9a6ff' }}>
-                    sugerido pela IA — conferir
-                  </span>
-                )}
-              </div>
-              <span style={{ color: 'var(--texto-2)', fontSize: 12 }}>{it.disciplina ? nomeDisc(it.disciplina) : (it.subgrupo || '—')}</span>
-              <span style={{ color: semQtd ? '#c9a227' : '#ccc', fontWeight: semQtd ? 700 : 400 }}
-                title={semQtd ? 'Quantidade 0: confira na planta — este item fica fora do rascunho do orçamento' : undefined}>
-                {Number(it.quantidade) || 0}
-              </span>
-              <span style={{ color: 'var(--texto-2)' }}>{it.unidade || '—'}</span>
-              <div style={{ fontSize: 12 }}>
-                {servico ? <SugestaoServico it={it} /> : <SugestaoMaterial it={it} />}
-              </div>
-              <span style={{ color: 'var(--texto-3)', fontSize: 12, lineHeight: 1.45 }}>
-                {it.observacao || '—'}
-                {semQtd && <div style={{ color: '#a08a3a', marginTop: 3 }}>Quantidade 0 — fica fora do rascunho; inclua no editor se fizer parte.</div>}
-              </span>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: it.pronto ? '#3fb95f' : '#999', whiteSpace: 'nowrap' }}
-                title='"Já pronto": já existe na obra, não faz parte do escopo orçado'>
-                <input type="checkbox" checked={!!it.pronto} onChange={e => onPronto(it.id, e.target.checked)} />
-                Já pronto
-              </label>
-            </div>
-            {/* pesquisa que ficou salva no item (de antes do editor único), só para consulta */}
-            {it.pesquisa_mercado?.resultado && (
-              <BlocoPesquisaMercado pesquisa={{ ...it.pesquisa_mercado, recolhidaInicial: true }} />
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// Serviço: o valor que a análise sugeriu (vai para o rascunho) e as referências
-// de mão de obra (H&M, oficial/governo, particular) — tudo como informação.
-function SugestaoServico({ it }) {
-  const valor = Number(it.valor_unitario) || 0;
-  const refs = [
-    ['Ref.', it.valor_referencia_mercado, 'Referência H&M (tela Preços de Mão de Obra)'],
-    ['oficial', it.referencias_mercado?.publico, 'Referência oficial / governo (SINAPI, ORSE, licitações)'],
-    ['particular', it.referencias_mercado?.privado, 'Referência do mercado particular'],
-  ].filter(([, v]) => v != null && Number(v) !== valor);
-  return (
-    <>
-      {valor > 0
-        ? <div style={{ color: '#c9a227' }}><b>{formatarMoeda(valor)}</b> <span style={{ color: 'var(--texto-3)' }}>(vai para o rascunho)</span></div>
-        : <div style={{ color: '#a08a3a' }}>Sem preço — entra "a cotar"</div>}
-      {refs.map(([rot, v, titulo]) => (
-        <div key={rot} style={{ fontSize: 12, color: '#6f7f8f', marginTop: 2 }} title={titulo}>{rot}: {formatarMoeda(v)}</div>
-      ))}
-    </>
-  );
-}
-
-// Material: preço adotado de uma pesquisa (tem prioridade ao gerar) e/ou a
-// correspondência no catálogo, com a confiança e a descrição do catálogo.
-function SugestaoMaterial({ it }) {
-  const adotado = Number(it.preco_unitario) > 0;
-  return (
-    <>
-      {adotado && (
-        <div style={{ color: '#c9a227' }}><b>{formatarMoeda(it.preco_unitario)}</b> <span style={{ color: 'var(--texto-3)' }}>(pesquisa de mercado adotada)</span></div>
-      )}
-      {it.preco_catalogo != null ? (
-        <div style={{ color: adotado ? '#777' : it.confianca_catalogo >= 70 ? '#3fb95f' : '#c9a227' }}>
-          {adotado ? 'catálogo: ' : ''}<b>{formatarMoeda(it.preco_catalogo)}</b> ({it.confianca_catalogo}% match)
-          <div style={{ color: 'var(--texto-3)', fontSize: 12 }} title={it.descricao_catalogo}>{it.descricao_catalogo}</div>
-        </div>
-      ) : !adotado && (
-        <div style={{ color: '#a08a3a' }}>Sem correspondência no catálogo — entra "a cotar"</div>
-      )}
-    </>
-  );
-}
-
-// Tabela de um tipo de ponto codificado (câmera/rede/antena) — mostra, por
-// arquivo, quantas ocorrências do código apareceram, quantos pontos únicos
-// isso representa, a lista dos próprios códigos encontrados e os avisos de
-// duplicidade/numeração com falha. Sem essa lista, o número sozinho ("77")
-// não dizia se era câmera, rede ou antena, nem dava pra conferir contra a
-// planta quais códigos entraram na conta.
-function TabelaPontos({ titulo, prefixo, detalhe }) {
-  return (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#c9a227', marginBottom: 8 }}>
-        {titulo} — código {prefixo}nº (ex.: {prefixo}1, {prefixo}2...)
-      </div>
-      {!detalhe || detalhe.length === 0 ? (
-        <p style={{ fontSize: 12, color: 'var(--texto-3)', fontStyle: 'italic' }}>Nenhum código {prefixo}nº identificado nos arquivos analisados.</p>
-      ) : (
-        detalhe.map((d, i) => (
-          <div key={i} style={{ padding: '10px 0', borderTop: i > 0 ? '1px solid #1e1e1e' : 'none', fontSize: 13 }}>
-            <div style={{ color: '#ccc', marginBottom: 4 }}>
-              <b>{d.arquivo}</b> — {d.ocorrencias} ocorrências, {d.total} pontos únicos
-            </div>
-            <div style={{ color: 'var(--texto-3)', fontSize: 12, marginBottom: 4 }}>
-              Códigos: {d.unicas.map(n => prefixo + n).join(', ')}
-            </div>
-            {d.repetidas.length > 0 && (
-              <div style={{ color: '#c9a227', fontSize: 12 }}>Repetidos: {d.repetidas.map(n => prefixo + n).join(', ')}</div>
-            )}
-            {d.faltando.length > 0 && (
-              <div style={{ color: '#c9a227', fontSize: 12 }}>Faltando na numeração: {d.faltando.map(n => prefixo + n).join(', ')}</div>
-            )}
-          </div>
-        ))
-      )}
-    </div>
-  );
-}
-
-// Tabela "Pontos por Ambiente" — mesmo formato da planilha de referência da
-// empresa (Ambiente | Rede | TV/Antena | Câmeras | Total), colunas variando
-// conforme a disciplina selecionada. Sempre aproximada (ver
-// utils/pontosPorAmbiente.js no backend) — daí o aviso logo acima, no card.
-function TabelaPontosPorAmbiente({ linhas, disciplinas }) {
-  const colunas = [
-    disciplinas?.includes('rede') && { chave: 'rede', titulo: 'Rede' },
-    disciplinas?.includes('antena') && { chave: 'antena', titulo: 'TV/Antena' },
-    disciplinas?.includes('cftv') && { chave: 'cftv', titulo: 'Câmeras' },
-  ].filter(Boolean);
-
-  if (!linhas || linhas.length === 0) {
-    return <p style={{ fontSize: 13, color: 'var(--texto-3)', fontStyle: 'italic' }}>Não foi possível estimar a distribuição por ambiente nos arquivos analisados.</p>;
-  }
-
-  return (
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-      <thead>
-        <tr style={{ fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', textAlign: 'left' }}>
-          <th style={{ padding: '4px 8px 8px 0' }}>Ambiente</th>
-          {colunas.map(c => <th key={c.chave} style={{ padding: '4px 8px 8px 0', textAlign: 'right' }}>{c.titulo}</th>)}
-          <th style={{ padding: '4px 0 8px 0', textAlign: 'right' }}>Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        {linhas.map(l => (
-          <tr key={l.ambiente} style={{ borderTop: '1px solid #1e1e1e' }}>
-            <td style={{ padding: '6px 8px 6px 0' }}>{l.ambiente}</td>
-            {colunas.map(c => <td key={c.chave} style={{ padding: '6px 8px 6px 0', textAlign: 'right', color: 'var(--texto-2)' }}>{l[c.chave]}</td>)}
-            <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 700, color: '#c9a227' }}>{l.total}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-// Estilos do kit de tela (components/ui/estilos.js), com o que esta tela tem
-// de diferente por cima — o visual ficou como era.
-const card = { ...estilos.card, padding: 22 };
-
-const tituloSecao = { fontSize: 15, color: '#c9a227', fontWeight: 700, marginBottom: 10 };
-const inputPonto = { width: '100%', background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 5, color: '#ddd', fontSize: 12, padding: '5px 7px', boxSizing: 'border-box', fontFamily: 'inherit' };
-
-const btnPrimario = { ...estilos.btnPrimario, display: 'flex', fontSize: 13 };
-
-const btnSecundario = estilos.btnTracejado;

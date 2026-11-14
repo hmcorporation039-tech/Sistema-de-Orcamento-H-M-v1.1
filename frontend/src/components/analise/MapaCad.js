@@ -15,7 +15,7 @@ import { hojeBrasilia } from '../../utils/format';
 import PlantaMapaCad, { SITUACAO, situacaoDaLinha, IconeComponente, COR_INSERIDO } from './PlantaMapaCad';
 import Modelo3dEditor from './Modelo3dEditor';
 import useDisciplinas from '../../hooks/useDisciplinas';
-import { comparador } from '../Select';
+import Select, { comparador } from '../Select';
 
 const ORIGEM = {
   legenda: ['da legenda do desenho', '#4a9'],
@@ -121,14 +121,14 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
 
   // controles de uma linha — os mesmos na tabela e na ficha da planta
   const seletorTipo = (arquivo, s, largura = '100%') => (
-    <select value={valorDe(arquivo, s).simbolo} onChange={(e) => mudar(arquivo, s, { simbolo: e.target.value })} style={{ ...campo, width: largura }} disabled={ocupado || s.confirmado} aria-label="Tipo do ponto">
+    <Select value={valorDe(arquivo, s).simbolo} onChange={(e) => mudar(arquivo, s, { simbolo: e.target.value })} style={{ ...campo, width: largura }} disabled={ocupado || s.confirmado} aria-label="Tipo do ponto">
       <option value="?">{s.origem === 'nao_reconhecido' && !s.confirmado ? '— escolha o tipo ou "não é ponto" —' : 'Não é ponto'}</option>
       {grupos.map(([disc, tipos]) => (
         <optgroup key={disc} label={nomeDisciplina(disc)}>
           {tipos.map(t => <option key={t.simbolo} value={t.simbolo}>{t.nome}</option>)}
         </optgroup>
       ))}
-    </select>
+    </Select>
   );
   const campoAltura = (arquivo, s) => (
     <input value={valorDe(arquivo, s).altura} onChange={(e) => mudar(arquivo, s, { altura: e.target.value })} placeholder="altura" inputMode="decimal" style={{ ...campo, width: 70 }} disabled={ocupado || s.confirmado} aria-label="Altura (m)" />
@@ -468,10 +468,10 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
                         : <>
                           <span style={{ color: b.situacao === 'aprendido' ? '#8ab4f8' : '#c06060' }}>{b.situacao === 'aprendido' ? 'aprendido — conferir' : 'não identificado'}</span>
                           <input value={v.descricao} onChange={(e) => mudarBloco(a.arquivo, b, { descricao: e.target.value })} placeholder="o que é (ex.: Tomada baixa 2P+T a 30 cm)" style={{ ...campo, width: 260 }} disabled={ocupado} aria-label={`O que é o bloco ${b.bloco}`} />
-                          <select value={v.disciplina} onChange={(e) => mudarBloco(a.arquivo, b, { disciplina: e.target.value })} style={{ ...campo, width: 170 }} disabled={ocupado} aria-label={`Disciplina do bloco ${b.bloco}`}>
+                          <Select value={v.disciplina} onChange={(e) => mudarBloco(a.arquivo, b, { disciplina: e.target.value })} style={{ ...campo, width: 170 }} disabled={ocupado} aria-label={`Disciplina do bloco ${b.bloco}`}>
                             <option value="">— disciplina —</option>
                             {(mapa.disciplinas || []).map(d => <option key={d.chave} value={d.chave}>{d.nome}</option>)}
-                          </select>
+                          </Select>
                           <button type="button" style={{ ...botao, borderColor: '#5fbf7a', color: '#5fbf7a' }} onClick={() => confirmarBloco(a.arquivo, b)} disabled={ocupado} data-testid={`confirmar-bloco-${b.bloco}`}>Confirmar bloco</button>
                         </>}
                     </div>

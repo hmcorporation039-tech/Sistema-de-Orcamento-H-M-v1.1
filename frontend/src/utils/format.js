@@ -147,3 +147,11 @@ export function hojeIso() {
 export function hojeBrasilia(agora = new Date()) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: FUSO_BRASILIA, year: 'numeric', month: '2-digit', day: '2-digit' }).format(agora);
 }
+
+// 'AAAA-MM-DD' + n dias (n negativo volta), em conta de calendário — sem fuso no meio. Com hojeBrasilia():
+// somarDias(hojeBrasilia(), 7) é "daqui a uma semana" no dia de Brasília.
+export function somarDias(iso, dias) {
+  const [a, m, d] = String(iso).slice(0, 10).split('-').map(Number);
+  const dt = new Date(Date.UTC(a, m - 1, d + (Number(dias) || 0)));
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+}

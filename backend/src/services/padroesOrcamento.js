@@ -66,7 +66,7 @@ async function padroesParaPropostaNova(executor = pool) {
   const p = await obterPadroes(executor);
   return {
     bdi: p.bdi ?? 0, imposto_venda: p.imposto_venda ?? 0, imposto_servico: p.imposto_servico ?? 0,
-    aviso: p.definidos ? null : 'BDI e impostos padrão ainda não foram definidos (Integrações → BDI e impostos padrão): a proposta nasceu com o que faltava em 0 %.',
+    aviso: p.definidos ? null : 'BDI e impostos padrão ainda não foram definidos (Integrações → Padrões de orçamento): a proposta nasceu com o que faltava em 0 %.',
   };
 }
 

@@ -4,13 +4,9 @@ const pool = require('../config/database');
 const C = require('../services/canal/consultas');
 const { historicoPreco } = require('../services/assistente/consultas');
 
+// obra/proposta não encontrada (ErroConsulta, 404): o tratador central responde { erro }
 const responder = (fn) => async (req, res) => {
-  try {
-    res.json(await fn(req));
-  } catch (e) {
-    if (e instanceof C.ErroConsulta) return res.status(e.status).json({ erro: e.message });
-    throw e;
-  }
+  res.json(await fn(req));
 };
 
 const custos = responder((req) => C.custosDaObra(Number(req.params.id), { mes: req.query.mes === '1' || req.query.mes === 'true' }));

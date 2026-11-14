@@ -4,6 +4,7 @@ import { Plus, FileDown, Mail, Copy } from 'lucide-react';
 import { previaAtestadoNotaFiscal, baixarAtestadoNotaFiscal, getPropostasCandidatasNotaFiscal, vincularPropostaNotaFiscal, enviarAtestadoNotaFiscal, getNotasCandidatasNotaFiscal } from '../../services/api';
 import Modal from '../../components/ui/Modal';
 import { estilos, Campo } from '../../components/ui/estilos';
+import Select from '../../components/Select';
 import { formatarMoeda, formatarData } from '../../utils/format';
 import { baixarArquivo, mensagemDeErro } from '../../utils/download';
 import { avisarObra, sub } from './comum';
@@ -118,10 +119,10 @@ export function ModalAtestado({ nota, onFechar, onVinculado }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
         <div style={{ display: 'grid', gap: 10, alignContent: 'start', minWidth: 0 }}>
           <Campo label="Proposta desta nota">
-            <select value={propostaId} onChange={(e) => trocarProposta(e.target.value)} data-testid="atestado-proposta">
+            <Select value={propostaId} onChange={(e) => trocarProposta(e.target.value)} data-testid="atestado-proposta">
               <option value="">{nota.cliente_id ? 'Sem proposta ligada' : 'Nota sem cliente cadastrado'}</option>
               {candidatas.map(p => <option key={p.id} value={p.id}>{p.numero} · {formatarMoeda(p.total)}{p.local_obra ? ` · ${p.local_obra}` : ''}{p.status !== 'Aprovada' ? ` (${p.status})` : ''}</option>)}
-            </select>
+            </Select>
           </Campo>
 
           {outrasNotas.length > 0 && (

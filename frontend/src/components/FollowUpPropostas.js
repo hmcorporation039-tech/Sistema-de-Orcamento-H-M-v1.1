@@ -3,16 +3,14 @@ import toast from 'react-hot-toast';
 import { PhoneCall, Clock, XCircle } from 'lucide-react';
 import { getFollowUpPropostas, registrarFollowUp, registrarEnvioProposta, atualizarStatus } from '../services/api';
 import { estilos } from './ui/estilos';
-import { dataBr, formatarMoeda } from '../utils/format';
+import { dataBr, formatarMoeda, hojeBrasilia, somarDias } from '../utils/format';
 
 // Propostas enviadas por e-mail e ainda sem resposta (services/followUpPropostas.js): quem precisa de um
 // contato hoje. "Fiz contato" recomeça a contagem; "Adiar" escolhe a data; depois de 3 contatos sem resposta
 // o sistema sugere encerrar. Os prazos (5 dias, depois 10) são sugestão da casa.
 const COR = { encerrar: '#e5534b', atrasado: '#d69a2d', hoje: '#c9a227', aguardando: 'var(--texto-3)' };
-const amanhaMais = (dias) => {
-  const d = new Date(); d.setDate(d.getDate() + dias);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
+// hoje + n dias no dia de Brasília (o "hoje" do computador podia ser outro dia fora do fuso)
+const amanhaMais = (dias) => somarDias(hojeBrasilia(), dias);
 const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
 
 function rotulo(i) {

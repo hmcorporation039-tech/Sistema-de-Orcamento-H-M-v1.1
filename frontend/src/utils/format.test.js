@@ -1,4 +1,4 @@
-import { dataBr, paraIso, hojeIso, hojeBrasilia, validarCpfCnpj, erroDocumento, formatarMoeda, dataHoraBr, FUSO_BRASILIA } from './format';
+import { dataBr, paraIso, hojeIso, hojeBrasilia, somarDias, validarCpfCnpj, erroDocumento, formatarMoeda, dataHoraBr, FUSO_BRASILIA } from './format';
 
 // 2.36: "hoje" para documento (as-built, proposta, nome de arquivo) é o dia em Brasília — em UTC, depois das 21h já era amanhã
 test('hojeBrasilia: 22h30 de 14/11 em Brasília (01h30 UTC de 15/11) ainda é 14/11', () => {
@@ -14,6 +14,15 @@ test('dataBr: ISO vira DD/MM/AAAA sem mudar de dia pelo fuso; vazio ou nulo vira
   expect(dataBr(null)).toBe('');
   expect(dataBr(undefined)).toBe('');
   expect(dataBr('')).toBe('');
+});
+
+// 2.39: "daqui a n dias" e "mês passado" a partir do dia de Brasília, em conta de calendário
+test('somarDias: vira o mês e o ano, volta com negativo, não muda pelo fuso', () => {
+  expect(somarDias('2026-11-14', 7)).toBe('2026-11-21');
+  expect(somarDias('2026-11-28', 5)).toBe('2026-12-03');
+  expect(somarDias('2026-12-31', 1)).toBe('2027-01-01');
+  expect(somarDias('2026-03-01', -1)).toBe('2026-02-28');
+  expect(somarDias('2026-11-14T23:59:00', 0)).toBe('2026-11-14');
 });
 
 test('paraIso e hojeIso usam o dia do calendário local', () => {

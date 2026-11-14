@@ -494,7 +494,8 @@ async function criarTabelas() {
         criado_em TIMESTAMP DEFAULT NOW()
       )
     `);
-    await client.query(`ALTER TABLE financeiro_movimentos ALTER COLUMN email_message_id DROP NOT NULL`);
+    // só se ainda for NOT NULL: o ALTER pegava trava exclusiva da tabela a cada partida (revisão 2.39)
+    await require('./apoioMigracoes').permitirNull(client, 'financeiro_movimentos', 'email_message_id');
     await client.query(`ALTER TABLE financeiro_movimentos ADD COLUMN IF NOT EXISTS origem VARCHAR(20) NOT NULL DEFAULT 'email'`);
     await client.query(`ALTER TABLE financeiro_movimentos ADD COLUMN IF NOT EXISTS usuario_id INTEGER REFERENCES usuarios(id)`);
     await client.query(`ALTER TABLE financeiro_movimentos ADD COLUMN IF NOT EXISTS prestador_id INTEGER REFERENCES prestadores(id)`);

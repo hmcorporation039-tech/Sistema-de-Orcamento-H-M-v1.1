@@ -19,4 +19,4 @@
 ## Gerar orçamento
 - Pela análise ou pelo projeto ("Gerar orçamento"): o motor casa cada material com o catálogo (preço → confirmado), põe a mão de obra pelo preço de referência e usa o aprendido nas propostas aprovadas da disciplina; o resto fica "a cotar".
 - "Gerar orçamento" não sobrescreve proposta de outro usuário (403). O agente também não sobrescreve proposta Ativa que não criou: pede confirmação.
-- BDI e impostos padrão vêm de Administração › Integrações; sem eles, ficam 0 e o sistema avisa.
+- BDI, impostos e margem padrão vêm de Administração › Integrações › Padrões de orçamento; sem BDI e impostos, ficam 0 e o sistema avisa.

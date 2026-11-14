@@ -1,99 +1,24 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Search, Trash2, FileDown, FileSpreadsheet, Copy, Send, Pencil, Plus, Link2, CheckCircle2, XCircle } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import {
   getPropostas, getProposta, atualizarStatus, removerProposta, duplicarProposta, getRelatorioPropostas,
   exportarRelatorioPropostas, baixarPdfProposta,
 } from '../services/api';
-import { formatarMoeda, formatarData, formatarNcm, paraIso, hojeIso, dataHoraBr } from '../utils/format';
+import { formatarMoeda, hojeBrasilia } from '../utils/format';
 import { baixarArquivo, salvarBlob, mensagemDeErro } from '../utils/download';
 // acha o cliente pelo nome quando a proposta não está ligada por cliente_id ("CLINICA" x "CLÍNICA")
 import { normalizarNome } from '../utils/texto';
 import Paginacao from '../components/Paginacao';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
-import Select from '../components/Select';
 import BotaoLinkAprovacao from '../components/BotaoLinkAprovacao';
 import { useClientes } from '../components/ClienteSelect';
-import Modal from '../components/ui/Modal';
-import { estilos } from '../components/ui/estilos';
 import Indicador from '../components/ui/Indicador';
-import Etiqueta from '../components/ui/Etiqueta';
-import Info from '../components/ui/Info';
-import { STATUS_PROPOSTA as STATUS_CORES } from '../utils/statusProposta';
-
-const ACAO_LABEL = {
-  criada: 'Criada',
-  editada: 'Editada',
-  status: 'Status alterado',
-  duplicada: 'Duplicada',
-  email: 'Enviada por e-mail',
-  link_aprovacao: 'Link de aprovação',
-  link_revogado: 'Link revogado',
-  aprovada_link: 'Aprovada pelo cliente (link)',
-  recusada_link: 'Recusada pelo cliente (link)',
-};
-
-// Decisão do cliente pelo link de aprovação (decisao_cliente da listagem:
-// { decisao, nome, data } da última decisão). Selo pequeno ao lado do status;
-// o nome e a hora ficam na dica (title) para não alargar a tabela.
-function SeloDecisaoCliente({ decisao }) {
-  if (!decisao?.decisao) return null;
-  const aprovou = decisao.decisao === 'aprovada';
-  const quando = decisao.data ? new Date(decisao.data) : null;
-  const dica = `${aprovou ? 'Aprovada' : 'Recusada'} pelo cliente pelo link de aprovação`
-    + (decisao.nome ? ` — ${decisao.nome}` : '')
-    + (quando ? `, ${dataHoraBr(quando)}` : '');
-  const Icone = aprovou ? CheckCircle2 : XCircle;
-  return (
-    <Etiqueta titulo={dica} aria-label={dica} data-testid="selo-decisao-cliente"
-      bg={aprovou ? '#0a1a0f' : '#1a0a0a'} cor={aprovou ? '#3fb95f' : '#d06060'}
-      style={{
-        marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', verticalAlign: 'middle',
-        whiteSpace: 'normal', border: `1px dashed ${aprovou ? '#1a4a26' : '#4a1a1a'}`,
-      }}>
-      <Icone size={11} /> {aprovou ? 'Cliente aprovou' : 'Cliente recusou'}
-      {quando ? ` ${quando.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}` : ''}
-    </Etiqueta>
-  );
-}
-
-// Só faz sentido avisar sobre vencimento de propostas que ainda estão em aberto.
-// As linhas que vêm do resumo por período (/relatorios/propostas) não trazem a
-// validade — sem ela não dá para calcular, e não se pode supor "0 dias" (isso
-// marcaria toda proposta ativa antiga como vencida).
-function diasParaVencer(p) {
-  if (p.status !== 'Ativa' || !p.data || p.validade == null) return null;
-  const dataLimite = new Date(p.data);
-  dataLimite.setUTCDate(dataLimite.getUTCDate() + (Number(p.validade) || 0));
-  const hoje = new Date();
-  const hojeUTC = Date.UTC(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
-  return Math.round((dataLimite.getTime() - hojeUTC) / 86400000);
-}
-
-// Mesmo tamanho de página do backend (utils/paginacao.js), para a lista ter o
-// mesmo jeito com ou sem período escolhido.
-const POR_PAGINA = 30;
-
-// A rota /relatorios/propostas sempre filtra por período (sem datas ela usa o
-// mês atual). Sem período escolhido aqui, a lista mostra todo o histórico —
-// então o resumo e a exportação vão de uma data bem antiga até hoje.
-const INICIO_DO_HISTORICO = '2000-01-01';
-
-const ATALHOS_PERIODO = [
-  { rotulo: 'Todo o histórico', calcular: () => ['', ''] },
-  { rotulo: 'Este mês', calcular: () => { const d = new Date(); return [paraIso(new Date(d.getFullYear(), d.getMonth(), 1)), hojeIso()]; } },
-  { rotulo: 'Mês passado', calcular: () => { const d = new Date(); return [paraIso(new Date(d.getFullYear(), d.getMonth() - 1, 1)), paraIso(new Date(d.getFullYear(), d.getMonth(), 0))]; } },
-  { rotulo: 'Este ano', calcular: () => [`${new Date().getFullYear()}-01-01`, hojeIso()] },
-];
-
-function filtrosDoRelatorio(dataInicio, dataFim, status, busca) {
-  return {
-    dataInicio, dataFim,
-    ...(status ? { status } : {}),
-    ...(busca ? { busca } : {}),
-  };
-}
+import { POR_PAGINA, INICIO_DO_HISTORICO, filtrosDoRelatorio, btnPrimario } from './historico/apoio';
+import FiltrosPropostas from './historico/FiltrosPropostas';
+import TabelaPropostas from './historico/TabelaPropostas';
+import DetalheProposta from './historico/DetalheProposta';
 
 // Lista de propostas (aba "Propostas" do hub Propostas). Na versão 2.0 juntou
 // o antigo Histórico com o antigo Relatórios: os filtros de período/status/
@@ -102,6 +27,8 @@ function filtrosDoRelatorio(dataInicio, dataFim, status, busca) {
 //     de vencimento) e o resumo de /relatorios/propostas com todo o histórico.
 //   - Com período: a mesma chamada de /relatorios/propostas dá o resumo e a
 //     lista (o /propostas não filtra por data), paginada aqui no navegador.
+// Divisão em 2.39: filtros, tabela e detalhe estão em pages/historico/; aqui ficam
+// os dados (lista, resumo, detalhe) e as ações.
 export default function Historico() {
   const navigate = useNavigate();
   const [propostas, setPropostas] = useState([]);
@@ -130,7 +57,7 @@ export default function Historico() {
 
   const temPeriodo = Boolean(dataInicio || dataFim);
   const inicioEfetivo = dataInicio || INICIO_DO_HISTORICO;
-  const fimEfetivo = dataFim || hojeIso();
+  const fimEfetivo = dataFim || hojeBrasilia();
 
   // Fallback pro e-mail do cliente quando a proposta não está linkada por
   // cliente_id (detalhe.cliente_email vem nulo) — busca pelo nome no cadastro.
@@ -196,17 +123,6 @@ export default function Historico() {
     ? (linhas.find(l => l.id === linkAprovacao.id)?.status || linkAprovacao.status)
     : null;
   const totais = relatorio.totais || { propostas: 0, valorTotal: 0, valorAprovado: 0 };
-
-  function aplicarAtalho(atalho) {
-    const [ini, fim] = atalho.calcular();
-    setDataInicio(ini);
-    setDataFim(fim);
-  }
-
-  function atalhoAtivo(atalho) {
-    const [ini, fim] = atalho.calcular();
-    return ini === dataInicio && fim === dataFim;
-  }
 
   async function exportar(tipo) {
     setExportando(tipo);
@@ -311,73 +227,11 @@ export default function Historico() {
         </button>
       </div>
 
-      {/* Filtros e exportação (antigo Relatórios) — valem para a lista e para os totais */}
-      <div style={card}>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <Campo label="Data início" largura={150}>
-            <input type="date" value={dataInicio} onChange={e => setDataInicio(e.target.value)} />
-          </Campo>
-          <Campo label="Data fim" largura={150}>
-            <input type="date" value={dataFim} onChange={e => setDataFim(e.target.value)} />
-          </Campo>
-          <Campo label="Status" largura={150}>
-            <Select value={statusFiltro} onChange={e => setStatusFiltro(e.target.value)}>
-              <option value="">Todos</option>
-              <option value="Ativa">Ativa</option>
-              <option value="Aprovada">Aprovada</option>
-              <option value="Recusada">Recusada</option>
-              <option value="Cancelada">Cancelada</option>
-            </Select>
-          </Campo>
-          <Campo label="Buscar" flexivel>
-            <div style={{ position: 'relative' }}>
-              <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--texto-3)' }} />
-              <input
-                value={busca}
-                onChange={e => setBusca(e.target.value)}
-                placeholder="Número, cliente ou local..."
-                style={{ paddingLeft: 30 }}
-              />
-            </div>
-          </Campo>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button
-              onClick={() => exportar('csv')}
-              disabled={!!exportando || totais.propostas === 0}
-              style={btnSecundario}
-            >
-              <FileSpreadsheet size={13} /> {exportando === 'csv' ? 'Gerando...' : 'Exportar CSV'}
-            </button>
-            <button
-              onClick={() => exportar('pdf')}
-              disabled={!!exportando || totais.propostas === 0}
-              style={btnPrimario}
-            >
-              <FileDown size={13} /> {exportando === 'pdf' ? 'Gerando...' : 'Exportar PDF'}
-            </button>
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 12 }}>
-          <span style={{ ...rotulo, marginBottom: 0, marginRight: 4 }}>Período:</span>
-          {ATALHOS_PERIODO.map(a => {
-            const ativo = atalhoAtivo(a);
-            return (
-              <button
-                key={a.rotulo}
-                onClick={() => aplicarAtalho(a)}
-                style={{
-                  padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                  border: ativo ? '1px solid #c9a227' : '1px solid #2a2a2a',
-                  background: ativo ? '#c9a227' : 'transparent',
-                  color: ativo ? '#000' : '#999',
-                }}
-              >
-                {a.rotulo}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <FiltrosPropostas
+        dataInicio={dataInicio} setDataInicio={setDataInicio} dataFim={dataFim} setDataFim={setDataFim}
+        statusFiltro={statusFiltro} setStatusFiltro={setStatusFiltro} busca={busca} setBusca={setBusca}
+        exportando={exportando} semPropostas={totais.propostas === 0} onExportar={exportar}
+      />
 
       {/* Resumo */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 16 }}>
@@ -386,81 +240,10 @@ export default function Historico() {
         <Indicador rotulo="Valor aprovado" valor={formatarMoeda(totais.valorAprovado)} destaque />
       </div>
 
-      <div style={{ background: '#131313', border: '1px solid #1e1e1e', borderRadius: 10, overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-          <thead>
-            <tr style={{ background: '#0f0f0f', textAlign: 'left' }}>
-              <th style={th}>Número</th>
-              <th style={th}>Data</th>
-              <th style={th}>Cliente</th>
-              <th style={th}>Local</th>
-              <th style={{ ...th, textAlign: 'right' }}>Total</th>
-              <th style={th}>Status</th>
-              <th style={{ ...th, width: 100 }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {carregandoLista && (
-              <tr><td colSpan={7} style={tdVazio}>Carregando...</td></tr>
-            )}
-            {!carregandoLista && linhas.length === 0 && (
-              <tr><td colSpan={7} style={tdVazio}>{temPeriodo ? 'Nenhuma proposta encontrada no período.' : 'Nenhuma proposta encontrada'}</td></tr>
-            )}
-            {!carregandoLista && linhas.map(p => {
-              const cor = STATUS_CORES[p.status] || STATUS_CORES.Ativa;
-              const dias = diasParaVencer(p);
-              return (
-                <tr key={p.id} style={{ borderTop: '1px solid #1e1e1e', cursor: 'pointer' }} onClick={() => abrirDetalhe(p.id)}>
-                  <td style={{ ...td, color: '#c9a227', fontWeight: 700 }}>
-                    {/* botão para abrir pelo teclado também (Tab + Enter); o clique na linha continua valendo */}
-                    <button type="button" style={estilos.botaoTexto} aria-label={`Abrir a proposta ${p.numero}`}
-                      onClick={(e) => { e.stopPropagation(); abrirDetalhe(p.id); }}>{p.numero}</button>
-                  </td>
-                  <td style={td}>{formatarData(p.data)}</td>
-                  <td style={td}>{p.cliente_nome}</td>
-                  <td style={td}>{p.local_obra || '—'}</td>
-                  <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{formatarMoeda(p.total)}</td>
-                  <td style={{ ...td, whiteSpace: 'nowrap' }}>
-                    <span style={{ padding: '3px 9px', borderRadius: 20, fontSize: 11.5, fontWeight: 700, background: cor.bg, color: cor.cor, border: `1px solid ${cor.borda}` }}>
-                      {p.status}
-                    </span>
-                    {dias !== null && dias < 0 && (
-                      <span style={{ marginLeft: 6, padding: '3px 9px', borderRadius: 20, fontSize: 11.5, fontWeight: 700, background: '#1a0a0a', color: '#b04040', border: '1px solid #4a1a1a' }}>
-                        Vencida
-                      </span>
-                    )}
-                    {dias !== null && dias >= 0 && dias <= 3 && (
-                      <span style={{ marginLeft: 6, padding: '3px 9px', borderRadius: 20, fontSize: 11.5, fontWeight: 700, background: '#1a1408', color: '#d69a2d', border: '1px solid #4a3a10' }}>
-                        {dias === 0 ? 'Vence hoje' : `Vence em ${dias}d`}
-                      </span>
-                    )}
-                    <SeloDecisaoCliente decisao={p.decisao_cliente} />
-                  </td>
-                  <td style={{ ...td }} onClick={e => e.stopPropagation()}>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={() => editar(p.id)} style={btnIcone} title="Editar">
-                        <Pencil size={13} />
-                      </button>
-                      {p.status === 'Ativa' && (
-                        <button onClick={() => setLinkAprovacao({ id: p.id, numero: p.numero, status: p.status })}
-                          style={btnIcone} title="Link de aprovação para o cliente"
-                          aria-label={`Link de aprovação da proposta ${p.numero}`} data-testid="abrir-link-aprovacao">
-                          <Link2 size={13} />
-                        </button>
-                      )}
-                      {/* mantém o "excluir" alinhado nas linhas sem o ícone do link */}
-                      {p.status !== 'Ativa' && <span aria-hidden="true" style={{ width: 26, flex: '0 0 26px' }} />}
-                      <button onClick={() => excluir(p)} style={{ ...btnIcone, color: '#b04040' }} title="Excluir">
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <TabelaPropostas
+        linhas={linhas} carregando={carregandoLista} temPeriodo={temPeriodo}
+        onAbrir={abrirDetalhe} onEditar={editar} onLinkAprovacao={setLinkAprovacao} onExcluir={excluir}
+      />
 
       {temPeriodo ? (
         <Paginacao pagina={paginaPeriodo} totalPaginas={totalPaginasPeriodo} total={doPeriodo.length} onMudarPagina={setPagina} />
@@ -469,117 +252,11 @@ export default function Historico() {
       )}
 
       {detalhe && (
-        // enquanto carrega, só o "Carregando..." (sem cabeçalho), como sempre foi
-        <Modal titulo={carregandoDetalhe || !detalhe.id ? null : `Proposta ${detalhe.numero}`} rotulo="Detalhe da proposta"
-          onFechar={() => setDetalhe(null)} largura={680} espacoTitulo={18} tamanhoTitulo={17} style={{ maxHeight: '88vh' }}>
-            {carregandoDetalhe || !detalhe.id ? (
-              <p style={{ color: 'var(--texto-3)', textAlign: 'center', padding: 30 }}>Carregando...</p>
-            ) : (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 18, fontSize: 12 }}>
-                  <Info rotulo="Cliente" valor={detalhe.cliente_nome} />
-                  <Info rotulo="Data" valor={formatarData(detalhe.data)} />
-                  <Info rotulo="Local da obra" valor={detalhe.local_obra || '—'} />
-                  <Info rotulo="Validade" valor={`${detalhe.validade} dias`} />
-                  <Info rotulo="Tipo" valor={detalhe.tipo || '—'} />
-                  <Info rotulo="Porte" valor={detalhe.porte || '—'} />
-                </div>
-
-                {detalhe.secoes?.map(sec => (
-                  <div key={sec.id} style={{ marginBottom: 14 }}>
-                    <h4 style={{ fontSize: 12, color: '#c9a227', fontWeight: 700, marginBottom: 8 }}>{sec.nome}</h4>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                      <tbody>
-                        {detalhe.itens?.filter(it => it.secao_id === sec.id).map(it => (
-                          <tr key={it.id} style={{ borderTop: '1px solid #1e1e1e' }}>
-                            <td style={{ padding: '6px 4px', color: '#ccc' }}>{it.descricao}</td>
-                            <td style={{ padding: '6px 4px', color: 'var(--texto-3)', width: 80 }}>{formatarNcm(it.ncm) || '—'}</td>
-                            <td style={{ padding: '6px 4px', color: 'var(--texto-3)', textAlign: 'right', width: 70 }}>{Number(it.quantidade)} {it.unidade}</td>
-                            <td style={{ padding: '6px 4px', color: 'var(--texto-3)', textAlign: 'right', width: 90 }}>{formatarMoeda(it.valor_unitario)}</td>
-                            <td style={{ padding: '6px 4px', color: '#ccc', textAlign: 'right', width: 100, fontWeight: 700 }}>{formatarMoeda(it.valor_total)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ))}
-
-                <div style={{ borderTop: '1px solid #2a2a2a', paddingTop: 14, marginTop: 6, display: 'flex', justifyContent: 'flex-end', gap: 26, fontSize: 12, flexWrap: 'wrap' }}>
-                  <span style={{ color: 'var(--texto-3)' }}>Materiais: <b style={{ color: '#ccc' }}>{formatarMoeda(detalhe.subtotal_materiais)}</b></span>
-                  {Number(detalhe.imposto_venda) > 0 && (
-                    <span style={{ color: 'var(--texto-3)' }}>Imp. Vendas ({detalhe.imposto_venda}%): <b style={{ color: '#ccc' }}>{formatarMoeda(detalhe.valor_imposto_venda)}</b></span>
-                  )}
-                  <span style={{ color: 'var(--texto-3)' }}>Mão de obra: <b style={{ color: '#ccc' }}>{formatarMoeda(detalhe.subtotal_mao_obra)}</b></span>
-                  {Number(detalhe.imposto_servico) > 0 && (
-                    <span style={{ color: 'var(--texto-3)' }}>Imp. Serviços ({detalhe.imposto_servico}%): <b style={{ color: '#ccc' }}>{formatarMoeda(detalhe.valor_imposto_servico)}</b></span>
-                  )}
-                  <span style={{ color: 'var(--texto-3)' }}>BDI ({detalhe.bdi}%): <b style={{ color: '#ccc' }}>{formatarMoeda(detalhe.valor_bdi)}</b></span>
-                  <span style={{ color: '#c9a227', fontSize: 14 }}>Total: <b>{formatarMoeda(detalhe.total)}</b></span>
-                </div>
-
-                <div style={{ display: 'flex', gap: 8, marginTop: 22, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <span style={{ fontSize: 12, color: 'var(--texto-3)', marginRight: 4 }}>Status:</span>
-                  {['Ativa', 'Aprovada', 'Recusada', 'Cancelada'].map(s => (
-                    <button
-                      key={s}
-                      onClick={() => mudarStatus(detalhe.id, s)}
-                      style={{
-                        padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                        border: detalhe.status === s ? '1px solid #c9a227' : '1px solid #2a2a2a',
-                        background: detalhe.status === s ? '#c9a227' : 'transparent',
-                        color: detalhe.status === s ? '#000' : '#999',
-                      }}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                  <button
-                    onClick={() => editar(detalhe.id)}
-                    style={{ ...btnSecundario, marginLeft: 'auto' }}
-                  >
-                    <Pencil size={13} /> Editar
-                  </button>
-                  <button
-                    onClick={() => duplicar(detalhe.id)}
-                    disabled={duplicando}
-                    style={btnSecundario}
-                  >
-                    <Copy size={13} /> {duplicando ? 'Duplicando...' : 'Duplicar'}
-                  </button>
-                  <button onClick={() => setModalEmail(true)} style={btnSecundario}>
-                    <Send size={13} /> Enviar por E-mail
-                  </button>
-                  <button
-                    onClick={() => baixarPdf(detalhe.id, detalhe.numero, detalhe.cliente_nome)}
-                    disabled={gerandoPdf}
-                    style={btnPrimario}
-                  >
-                    <FileDown size={13} /> {gerandoPdf ? 'Gerando...' : 'Baixar PDF'}
-                  </button>
-                </div>
-
-                {detalhe.eventos?.length > 0 && (
-                  <div style={{ marginTop: 22, borderTop: '1px solid #2a2a2a', paddingTop: 14 }}>
-                    <h4 style={{ fontSize: 12, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 10 }}>
-                      Histórico de alterações
-                    </h4>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {detalhe.eventos.map((ev, i) => (
-                        <div key={i} style={{ display: 'flex', gap: 10, fontSize: 12, color: 'var(--texto-3)', alignItems: 'baseline' }}>
-                          <span style={{ color: 'var(--texto-3)', whiteSpace: 'nowrap' }}>
-                            {new Date(ev.criado_em).toLocaleString('pt-BR')}
-                          </span>
-                          <span style={{ color: '#c9a227', fontWeight: 700 }}>{ACAO_LABEL[ev.acao] || ev.acao}</span>
-                          <span>{ev.detalhes}</span>
-                          <span style={{ marginLeft: 'auto', color: 'var(--texto-3)' }}>{ev.usuario_nome || '—'}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-        </Modal>
+        <DetalheProposta
+          detalhe={detalhe} carregando={carregandoDetalhe} onFechar={() => setDetalhe(null)}
+          onMudarStatus={mudarStatus} onEditar={editar} onDuplicar={duplicar} duplicando={duplicando}
+          onEnviarEmail={() => setModalEmail(true)} onBaixarPdf={baixarPdf} gerandoPdf={gerandoPdf}
+        />
       )}
 
       <BotaoLinkAprovacao
@@ -601,19 +278,3 @@ export default function Historico() {
     </div>
   );
 }
-
-// largura: coluna de tamanho fixo; flexivel: ocupa o que sobrar da linha
-// Campo com largura fixa ou flexível (a barra de filtros quebra em linhas)
-function Campo({ label, children, largura, flexivel }) {
-  return (
-    <div style={flexivel ? { flex: '1 1 220px', minWidth: 0 } : { width: largura, flex: '0 1 auto' }}>
-      <label style={rotulo}>{label}</label>
-      {children}
-    </div>
-  );
-}
-
-// Estilos do kit de tela (components/ui/estilos.js). O botão secundário desta
-// tela é um pouco maior e mais apagado que o do kit — mantido como era.
-const { rotulo, card, th, td, tdVazio, btnPrimario, btnIcone } = estilos;
-const btnSecundario = { ...estilos.btnSecundario, padding: '9px 16px', color: 'var(--texto-2)' };

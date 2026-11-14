@@ -1,34 +1,43 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, FolderPlus, Calculator, BarChart3, Scale } from 'lucide-react';
-import { getSegmentoCliente, getProximoNumero, criarProposta, atualizarProposta, getProposta, getPadroesOrcamento, getPrecosVendidos, pesquisarPrecoMercado, getAnaliseProjeto, getLaudo, getObra, duplicarProposta, baixarPdfProposta, baixarPlanilhaProposta } from '../services/api';
-import { formatarMoeda } from '../utils/format';
-import { categoriasComUsadas } from '../utils/categoriasMateriais';
-import { arred2, arredQtd, totalDaLinha } from '../utils/dinheiro';
+import { FolderPlus, BarChart3, Scale } from 'lucide-react';
+import { getProximoNumero, criarProposta, atualizarProposta, getProposta, getPadroesOrcamento, pesquisarPrecoMercado, getAnaliseProjeto, getLaudo, duplicarProposta, baixarPdfProposta, baixarPlanilhaProposta } from '../services/api';
+import { arred2 } from '../utils/dinheiro';
 import { baixarArquivo, mensagemDeErro } from '../utils/download';
 import { useAuth } from '../hooks/useAuth';
 import useAlteracoesNaoSalvas from '../hooks/useAlteracoesNaoSalvas';
 import ModalEnviarEmail from '../components/ModalEnviarEmail';
 import { resultadoDaPesquisa } from '../components/PesquisaMercado';
-import { comparador } from '../components/Select';
+import { clientePorNome } from '../components/CampoCliente';
 import useDisciplinas from '../hooks/useDisciplinas';
 // Fase 3F (2.0): BDI pela fórmula do TCU e curva ABC da proposta
 import CalculadoraBdi from '../components/CalculadoraBdi';
 import CurvaAbcPainel from '../components/CurvaAbcPainel';
-import { normalizarMemoriaBdi, tributosBdi } from '../utils/bdiTcu';
+import { normalizarMemoriaBdi } from '../utils/bdiTcu';
 // Fase 3 (2.0): kits da base de preços e aprovação da proposta por link
 import InserirComposicao, { distribuirNasSecoes } from '../components/InserirComposicao';
 import { OpcaoModelo3dProposta } from '../components/Modelo3d';
-import { BASES_DO_EDITOR, SECOES_PADRAO, SUBGRUPOS_PADRAO, apagarRascunho, chaveRascunho, ehMaoDeObra, formVazio, gerarId, gravarRascunho, lerRascunho, normalizarNome, origemDaProposta, pertenceASecao, retrato, temBdiMateriais } from './orcamento/apoio';
-import { btnIcone, btnPrimario, btnSecundario, card, fieldsetLimpo } from './orcamento/estilos';
+import { SECOES_PADRAO, apagarRascunho, chaveRascunho, ehMaoDeObra, formVazio, gerarId, gravarRascunho, lerRascunho, normalizarNome, origemDaProposta, retrato } from './orcamento/apoio';
+import {
+  avisosDoBdi, calcularTotais, formDaProposta, itensDaProposta, itensParaCurvaAbc, montarPayload, problemaParaSalvar, reordenarPorSubgrupo,
+} from './orcamento/calculos';
+import { useBasesDoEditor, usePrecosVendidos, useSegmentoProposta, useServicosDoEditor } from './orcamento/ganchos';
+import { btnSecundario, card, fieldsetLimpo } from './orcamento/estilos';
 import AvisoOrigem from './orcamento/AvisoOrigem';
+import {
+  AvisoBases, AvisoBdi, AvisoConflito, AvisoItensACotar, AvisoPadroesNaoDefinidos, AvisoRascunho, CabecalhoEditor, FaixaSomenteLeitura,
+} from './orcamento/Avisos';
 import DadosGerais from './orcamento/DadosGerais';
-import LinhaItem from './orcamento/LinhaItem';
+import SecaoOrcamento from './orcamento/SecaoOrcamento';
 import BarraTotais from './orcamento/BarraTotais';
 
-// Arredondamentos iguais aos do servidor (utils/dinheiro.js ↔ calculoProposta):
-// quantidade 3 casas, unitário 2, linha 2 (totalDaLinha), parcelas 2 (arred2).
+// Editor único de orçamento (proposta nova ou edição). Divisão em 2.39 (antes ~1.250 linhas
+// aqui), sem mudar o funcionamento: as contas e montagens sem estado estão em
+// orcamento/calculos.js; as bases (clientes, catálogo, serviços), o segmento do cliente/obra,
+// os serviços e os preços praticados em orcamento/ganchos.js; as faixas de aviso em
+// orcamento/Avisos.js e cada seção em orcamento/SecaoOrcamento.js. Aqui ficam o estado da
+// proposta (formulário, seções, itens), rascunho, carga, salvar e as ações da tela.
 
 // Proposta nova gravada: a URL vira /propostas/editar/:id e o React Router pode
 // montar a tela de novo — o que estava nela (inclusive as pesquisas de mercado
@@ -43,17 +52,6 @@ export default function Orcamento() {
   const obraDaUrl = Number(busca.get('obra')) || null; // /propostas?aba=editar&obra=ID
 
   const [proximoNumero, setProximoNumero] = useState(null);
-  const [clientes, setClientes] = useState([]);
-  const [materiais, setMateriais] = useState([]);
-  // Base única de serviços de mão de obra (versão 2.0): os padrão da Análise
-  // de Projeto/laudos + os já lançados em qualquer proposta, com as
-  // referências oficial e particular e a sugestão por segmento (ver
-  // aplicarServicoNoItem). Um serviço digitado à mão entra na base ao salvar
-  // a proposta (backend: utils/servicosBase.js).
-  const [servicos, setServicos] = useState([]);
-  // segmento do cliente da proposta: 'publico' (cadastro "Órgão Público" ou
-  // nome de órgão) usa a referência oficial; os demais, a particular
-  const [segmento, setSegmento] = useState('privado');
 
   const [form, setForm] = useState(formVazio);
   const [secoes, setSecoes] = useState(SECOES_PADRAO);
@@ -102,25 +100,13 @@ export default function Orcamento() {
   const [calculadoraBdiAberta, setCalculadoraBdiAberta] = useState(false);
   const [mostrarCurvaAbc, setMostrarCurvaAbc] = useState(false);
   const [anexosPdf, setAnexosPdf] = useState({ curva_abc: false, composicao_bdi: false });
-  // segmento da obra (obras.segmento) — órgão público pela obra OU pelo cliente
-  const [segmentoObra, setSegmentoObra] = useState(null);
   const calculadoraJaSugerida = useRef(null); // id da proposta em que o calculador já abriu sozinho
   // BDI e impostos padrão do administrador (null = ainda não carregou ou não conseguiu)
   const [padroesOrc, setPadroesOrc] = useState(null);
   const buscarPadroes = () => getPadroesOrcamento().then(r => { setPadroesOrc(r.data); return r.data; }).catch(() => null);
 
-  // catálogo e clientes inteiros (o servidor pagina em até 1000 por vez). Se uma base não carregar, avisa e
-  // oferece "Tentar de novo": antes o erro era engolido, e a lista vazia do "+ catálogo" parecia material não cadastrado.
-  const [basesComFalha, setBasesComFalha] = useState([]);
-  const carregarBases = useCallback((quais = Object.keys(BASES_DO_EDITOR)) => {
-    const guardar = { clientes: (d) => setClientes(d.itens), materiais: (d) => setMateriais(d.itens), servicos: (d) => setServicos(d.itens || []) };
-    setBasesComFalha(f => f.filter(b => !quais.includes(b)));
-    quais.forEach(b => BASES_DO_EDITOR[b].carregar().then(res => guardar[b](res.data)).catch(() => {
-      setBasesComFalha(f => (f.includes(b) ? f : [...f, b]));
-      toast.error(`Não foi possível carregar ${BASES_DO_EDITOR[b].nome}. Use "Tentar de novo" no aviso do topo.`, { id: `falha-base-${b}` });
-    }));
-  }, []);
-  useEffect(() => { carregarBases(); }, [carregarBases]);
+  // clientes, catálogo de materiais e base de serviços (inteiros), com o aviso de falha
+  const { clientes, materiais, servicos, basesComFalha, carregarBases } = useBasesDoEditor();
 
   // ── alteração não salva, rascunho e aviso ao sair ──
   const estadoAtual = useMemo(() => retrato(form, secoes, itens), [form, secoes, itens]);
@@ -164,27 +150,13 @@ export default function Orcamento() {
     setRascunhoPendente(null);
   }
 
-  // Segmento pelo backend (mesma regra dos laudos e da Análise de Projeto),
-  // só depois que o nome do cliente para de mudar
-  useEffect(() => {
-    const nome = (form.cliente_nome || '').trim();
-    if (!nome) { setSegmento('privado'); return undefined; }
-    const t = setTimeout(() => {
-      getSegmentoCliente(nome).then(res => setSegmento(res.data.segmento === 'publico' ? 'publico' : 'privado')).catch(() => {});
-    }, 500);
-    return () => clearTimeout(t);
-  }, [form.cliente_nome]);
-
-  useEffect(() => {
-    if (!form.obra_id) { setSegmentoObra(null); return; }
-    getObra(form.obra_id).then(res => setSegmentoObra(res.data?.segmento ?? res.data?.obra?.segmento ?? null)).catch(() => setSegmentoObra(null));
-  }, [form.obra_id]);
+  // segmento do cliente (pelo nome, no servidor) e da obra: órgão público pela obra OU pelo cliente
+  const { segmento, segmentoObra, ehPublico } = useSegmentoProposta(form.cliente_nome, form.obra_id);
 
   // Órgão público (cliente ou obra): a proposta precisa da composição do BDI
   // (memória do cálculo pelo TCU). Ao abrir uma proposta salva de órgão
   // público sem memória, o calculador abre sozinho (uma vez), já sugerido;
   // o PDF passa a sugerir o anexo da composição.
-  const ehPublico = segmento === 'publico' || segmentoObra === 'publico';
   const memoriaBdi = useMemo(() => normalizarMemoriaBdi(form.bdi_memoria), [form.bdi_memoria]);
   useEffect(() => {
     if (!editandoId || carregandoEdicao || !ehPublico || form.bdi_memoria) return;
@@ -196,36 +168,11 @@ export default function Orcamento() {
     setAnexosPdf(a => ({ ...a, composicao_bdi: ehPublico && !!memoriaBdi }));
   }, [ehPublico, memoriaBdi]);
 
-  const servicosPorCodigo = useMemo(() => Object.fromEntries(servicos.map(s => [s.codigo, s])), [servicos]);
-  // lista suspensa: um grupo por disciplina, grupos em ordem alfabética (as
-  // opções dentro de cada grupo o Select já ordena A–Z)
-  const gruposServicos = useMemo(() => {
-    const grupos = {};
-    for (const s of servicos) (grupos[s.disciplina || 'outros'] = grupos[s.disciplina || 'outros'] || []).push(s);
-    return Object.entries(grupos)
-      .map(([disc, lista]) => ({ disc, nome: nomeDisciplina(disc), lista }))
-      .sort((a, b) => comparador.compare(a.nome, b.nome));
-  }, [servicos, nomeDisciplina]);
-  const sugestaoDoServico = (s) => (s?.sugerido ? s.sugerido[segmento] : null);
-  // item sem código (veio digitado, ou de uma análise antiga) ainda acha o
-  // serviço da base pela descrição, para mostrar as referências
-  const servicosPorDescricao = useMemo(() => Object.fromEntries(servicos.map(s => [normalizarNome(s.descricao), s])), [servicos]);
-  const servicoDoItem = (it) => servicosPorCodigo[it.codigo] || servicosPorDescricao[normalizarNome(it.descricao)];
+  const { servicosPorCodigo, gruposServicos, sugestaoDoServico, servicoDoItem } = useServicosDoEditor(servicos, segmento, nomeDisciplina);
   const materiaisPorId = useMemo(() => Object.fromEntries(materiais.map(m => [String(m.id), m])), [materiais]);
 
-  // Faixa praticada (propostas aprovadas) dos materiais que estão nesta proposta. A tela da
-  // própria proposta não conta contra si; falha de rede só some com a dica.
-  const [vendidos, setVendidos] = useState({});
-  const idsMateriais = [...new Set(itens.map(i => Number(i.material_id)).filter(n => Number.isInteger(n) && n > 0))].sort((a, b) => a - b);
-  const chaveIdsMateriais = idsMateriais.join(',');
-  useEffect(() => {
-    if (!chaveIdsMateriais) { setVendidos({}); return undefined; }
-    let vivo = true;
-    getPrecosVendidos(chaveIdsMateriais.split(',').map(Number), editandoId)
-      .then(r => { if (vivo) setVendidos(r.data || {}); })
-      .catch(() => {});
-    return () => { vivo = false; };
-  }, [chaveIdsMateriais, editandoId]);
+  // Faixa praticada (propostas aprovadas) dos materiais que estão nesta proposta
+  const vendidos = usePrecosVendidos(itens, editandoId);
 
   // Carrega a proposta do servidor e tira o retrato "salvo" (base). Usado ao
   // abrir e no "Recarregar do servidor" do conflito de versão.
@@ -237,41 +184,9 @@ export default function Orcamento() {
       setNumeroEditando(p.numero);
       setCriadaPeloAssistente(p.assistente_conversa_id != null);
       setClienteEmailCadastro(p.cliente_email || '');
-      const formCarregado = {
-        data: (p.data || '').slice(0, 10),
-        validade: p.validade,
-        tipo: p.tipo || '',
-        porte: p.porte || '',
-        cliente_nome: p.cliente_nome || '',
-        responsavel: p.responsavel || '',
-        local_obra: p.local_obra || '',
-        escopo: p.escopo || '',
-        pagamento: p.pagamento || '',
-        observacoes: p.observacoes || '',
-        bdi: Number(p.bdi) || 0,
-        bdi_materiais: temBdiMateriais(p.bdi_materiais) ? Number(p.bdi_materiais) : null,
-        bdi_memoria: p.bdi_memoria || null,
-        imposto_venda: Number(p.imposto_venda) || 0,
-        imposto_servico: Number(p.imposto_servico) || 0,
-        desconto_materiais_pct: p.desconto_materiais_pct != null ? Number(p.desconto_materiais_pct) : null,
-        desconto_mao_obra_pct: p.desconto_mao_obra_pct != null ? Number(p.desconto_mao_obra_pct) : null,
-        obra_id: p.obra_id ?? null,
-      };
+      const formCarregado = formDaProposta(p);
       const secoesCarregadas = (p.secoes || []).map(s => ({ id: s.id, nome: s.nome }));
-      // Reagrupa por subgrupo já ao carregar — sem isso, uma proposta salva
-      // antes dessa correção (ou com itens lançados fora de ordem) só ficava
-      // reorganizada depois que alguém mexesse manualmente num subgrupo.
-      let itensCarregados = (p.itens || []).map(it => ({
-        id: gerarId(), sid: it.secao_id, material_id: it.material_id,
-        descricao: it.descricao, quantidade: Number(it.quantidade), unidade: it.unidade,
-        valor_unitario: Number(it.valor_unitario), ncm: it.ncm || '', codigo: it.codigo || '',
-        subgrupo: it.subgrupo || '', status: it.status || 'confirmado',
-        // 'assistente' = sugerido pela IA (assistente virtual): fica "a cotar" até o engenheiro confirmar aqui
-        origem_item: it.origem_item || null
-      }));
-      for (const sid of new Set(itensCarregados.map(it => it.sid))) {
-        itensCarregados = reordenarPorSubgrupo(itensCarregados, sid);
-      }
+      const itensCarregados = itensDaProposta(p);
       setForm(formCarregado);
       setSecoes(secoesCarregadas);
       setItens(itensCarregados);
@@ -418,83 +333,34 @@ export default function Orcamento() {
     }
   }
 
-  const clienteResolvido = useMemo(
-    // `c.nome` pode vir nulo do banco; sem a guarda, um único cliente sem nome
-    // derrubava a tela inteira a cada tecla digitada no campo Cliente.
-    // Ignora acentuação na comparação — "CLINICA" (proposta antiga, sem
-    // acento) e "CLÍNICA" (nome certo no cadastro) são o mesmo cliente, mas
-    // sem normalizar isso a busca falhava e o e-mail nunca era encontrado.
-    () => clientes.find(c => normalizarNome(c.nome) === normalizarNome(form.cliente_nome)),
-    [clientes, form.cliente_nome]
-  );
+  // Cliente do cadastro (2.39): o escolhido na lista (form.cliente_id) manda. Sem ele (proposta
+  // antiga ou rascunho de antes), só o nome IGUAL ao de um único cliente liga — sem acento e
+  // maiúsculas ("CLINICA" × "CLÍNICA"); com dois homônimos não liga mais o primeiro que achar.
+  // Cliente ligado que saiu da lista (inativo) continua ligado: não se perde o cliente_id ao salvar.
+  const clienteResolvido = useMemo(() => {
+    if (form.cliente_id != null && form.cliente_id !== '') {
+      return clientes.find(c => String(c.id) === String(form.cliente_id)) || { id: Number(form.cliente_id), nome: form.cliente_nome };
+    }
+    return clientePorNome(clientes, form.cliente_nome);
+  }, [clientes, form.cliente_id, form.cliente_nome]);
 
   // Botão de salvar, PDF/planilha/e-mail: "alterações não salvas" = sujo
   const alteracoesPendentes = sujo;
 
-  // Mesma conta do servidor (backend/src/utils/calculoProposta.js): quantidade
-  // com 3 casas, unitário com 2, total de cada linha arredondado, e cada
-  // componente (subtotais, BDI, impostos, total) arredondado — tela e PDF batem no centavo.
-  function subtotalSecao(sid) {
-    return itens
-      .filter(it => pertenceASecao(it, sid))
-      .reduce((s, it) => s + totalDaLinha(it.quantidade, it.valor_unitario), 0);
-  }
-
-  const { subtotalMateriais, subtotalMaoObra, valorBdi, valorBdiMateriais, valorBdiMaoObra, valorImpostoVenda, valorImpostoServico, total } = useMemo(() => {
-    let mat = 0, mao = 0;
-    for (const sec of secoes) {
-      const sub = subtotalSecao(sec.id);
-      if (ehMaoDeObra(sec.nome)) mao += sub;
-      else mat += sub;
-    }
-    mat = arred2(mat);
-    mao = arred2(mao);
-    const bdiPct = Number(form.bdi) || 0;
-    // BDI diferenciado (calculoProposta.detalharBdi): sem ele, a expressão de sempre
-    let vBdi, vBdiMat = null, vBdiMao = null;
-    if (temBdiMateriais(form.bdi_materiais)) {
-      vBdiMat = arred2(mat * (Number(form.bdi_materiais) / 100));
-      vBdiMao = arred2(mao * (bdiPct / 100));
-      vBdi = arred2(vBdiMat + vBdiMao);
-    } else {
-      vBdi = arred2((mat + mao) * (bdiPct / 100));
-    }
-    const vImpVenda = arred2(mat * ((Number(form.imposto_venda) || 0) / 100));
-    const vImpServico = arred2(mao * ((Number(form.imposto_servico) || 0) / 100));
-    return {
-      subtotalMateriais: mat, subtotalMaoObra: mao, valorBdi: vBdi, valorBdiMateriais: vBdiMat, valorBdiMaoObra: vBdiMao,
-      valorImpostoVenda: vImpVenda, valorImpostoServico: vImpServico,
-      total: arred2(mat + mao + vBdi + vImpVenda + vImpServico),
-    };
-  }, [itens, secoes, form.bdi, form.bdi_materiais, form.imposto_venda, form.imposto_servico]);
+  // Mesma conta do servidor (orcamento/calculos.js ↔ backend/src/utils/calculoProposta.js)
+  const { subtotalMateriais, subtotalMaoObra, valorBdi, valorBdiMateriais, valorBdiMaoObra, valorImpostoVenda, valorImpostoServico, total } = useMemo(
+    () => calcularTotais(itens, secoes, { bdi: form.bdi, bdi_materiais: form.bdi_materiais, imposto_venda: form.imposto_venda, imposto_servico: form.imposto_servico }),
+    [itens, secoes, form.bdi, form.bdi_materiais, form.imposto_venda, form.imposto_servico],
+  );
 
   // itens para a curva ABC (tipo pela seção, como no PDF e na planilha)
-  const itensCurvaAbc = useMemo(() => {
-    const tipoDaSecao = new Map(secoes.map(s => [s.id, ehMaoDeObra(s.nome) ? 'servico' : 'material']));
-    return itens.map(it => ({
-      // como o servidor grava (quantidade 3 casas, unitário 2): mesma curva do PDF
-      descricao: it.descricao, quantidade: arredQtd(it.quantidade), unidade: it.unidade,
-      valor_unitario: arred2(it.valor_unitario), codigo: it.codigo, tipo: tipoDaSecao.get(it.sid) || 'material',
-    }));
-  }, [itens, secoes]);
+  const itensCurvaAbc = useMemo(() => itensParaCurvaAbc(itens, secoes), [itens, secoes]);
 
-  // Avisos do BDI (Fase 3F): memória com tributos dentro + impostos por fora
-  // (imposto contado duas vezes) e BDI mudado à mão depois do cálculo.
-  const avisosBdi = useMemo(() => {
-    const lista = [];
-    if (!memoriaBdi) return lista;
-    const tributosDentro = tributosBdi(memoriaBdi.parcelas, memoriaBdi.regime) > 0;
-    if (tributosDentro && ((Number(form.imposto_venda) || 0) > 0 || (Number(form.imposto_servico) || 0) > 0)) {
-      lista.push('O BDI calculado já inclui os tributos (PIS, COFINS, ISS…) e a proposta ainda soma "Imp. Vendas"/"Imp. Serviços" por fora — o imposto entra duas vezes. Zere esses campos ou recalcule o BDI sem tributos.');
-    }
-    if (Math.abs((Number(form.bdi) || 0) - memoriaBdi.bdi) > 0.005) {
-      lista.push(`O BDI da proposta (${form.bdi} %) não é o da composição calculada (${memoriaBdi.bdi.toLocaleString('pt-BR')} %) — o anexo do PDF vai avisar a diferença. Abra o calculador e aplique de novo, ou remova a composição.`);
-    }
-    if (memoriaBdi.materiais && (!temBdiMateriais(form.bdi_materiais) || Math.abs(Number(form.bdi_materiais) - memoriaBdi.materiais.bdi) > 0.005)) {
-      lista.push(`O BDI de materiais da proposta não é o da composição (${memoriaBdi.materiais.bdi.toLocaleString('pt-BR')} %).`);
-    }
-    return lista;
-  }, [memoriaBdi, form.bdi, form.bdi_materiais, form.imposto_venda, form.imposto_servico]);
+  // Avisos do BDI (Fase 3F): memória com tributos dentro + impostos por fora e BDI mudado à mão
+  const avisosBdi = useMemo(
+    () => avisosDoBdi(memoriaBdi, { bdi: form.bdi, bdi_materiais: form.bdi_materiais, imposto_venda: form.imposto_venda, imposto_servico: form.imposto_servico }),
+    [memoriaBdi, form.bdi, form.bdi_materiais, form.imposto_venda, form.imposto_servico],
+  );
 
   function aplicarBdiCalculado({ bdi, bdi_materiais, memoria, zerarImpostos }) {
     setForm(f => ({
@@ -532,49 +398,6 @@ export default function Orcamento() {
     }]);
   }
 
-  // Sugestões de subgrupo: os padrões da empresa + os que já foram usados nessa seção
-  // (permite tanto escolher um dos padrões quanto reaproveitar um nome digitado antes)
-  function subgruposDaSecao(sid) {
-    const usados = itens.filter(it => it.sid === sid).map(it => (it.subgrupo || '').trim()).filter(Boolean);
-    return Array.from(new Set([...SUBGRUPOS_PADRAO, ...usados]));
-  }
-
-  // Agrupa os itens de uma seção por subgrupo, na ordem em que aparecem (os
-  // itens já chegam reordenados por reordenarPorSubgrupo — isso só monta os
-  // cabeçalhos e o subtotal de cada grupo), igual ao "Bloco X" do PDF de
-  // referência. Fecha o grupo anterior com um subtotal (soma dos totais dos
-  // itens dele) sempre que o subgrupo muda ou a lista acaba — sem subtotal
-  // pros itens sem subgrupo (não formam um "bloco" de verdade).
-  function itensAgrupados(sid) {
-    const lista = itens.filter(it => pertenceASecao(it, sid));
-    const linhas = [];
-    let ultimoSubgrupo = null;
-    let somaGrupo = 0;
-    const fecharGrupo = () => {
-      if (ultimoSubgrupo) linhas.push({ tipo: 'subtotal', nome: ultimoSubgrupo, soma: somaGrupo, key: `sub_${linhas.length}` });
-    };
-    for (const it of lista) {
-      const sg = (it.subgrupo || '').trim() || null;
-      if (sg !== ultimoSubgrupo) {
-        fecharGrupo();
-        if (sg) linhas.push({ tipo: 'cabecalho', nome: sg, key: `cab_${it.id}` });
-        ultimoSubgrupo = sg;
-        somaGrupo = 0;
-      }
-      somaGrupo += totalDaLinha(it.quantidade, it.valor_unitario);
-      linhas.push({ tipo: 'item', item: it });
-    }
-    fecharGrupo();
-    return linhas;
-  }
-
-  // Reagrupa os itens de UMA seção por subgrupo (mantendo as outras seções
-  // exatamente onde estavam) — sem isso, mudar o subgrupo de um item só
-  // trocava o rótulo dele, mas a posição na lista continuava a mesma, então
-  // ele não "se juntava" visualmente aos outros itens do mesmo subgrupo
-  // (itensAgrupados só detecta troca entre vizinhos, não reordena sozinho).
-  // Ordena pela primeira vez que cada subgrupo aparece na lista atual — o
-  // sort é estável, então a ordem relativa dentro de cada subgrupo não muda.
   // itens de um kit (InserirComposicao) entram como itens normais, cada um na
   // seção de materiais ou de serviços (criada se faltar), agrupados pelo subgrupo
   function inserirItensDoKit(novos) {
@@ -595,23 +418,6 @@ export default function Orcamento() {
       if (!alteracoesPendentes) versaoRef.current = res.data.versao ?? versaoRef.current;
       setPropostaSalva(ps => (ps ? { ...ps, status: res.data.status } : ps));
     }).catch(() => {});
-  }
-
-  function reordenarPorSubgrupo(lista, sid) {
-    const primeiraOcorrencia = new Map();
-    let posicao = 0;
-    for (const it of lista) {
-      if (it.sid !== sid) continue;
-      const sg = (it.subgrupo || '').trim();
-      if (!primeiraOcorrencia.has(sg)) primeiraOcorrencia.set(sg, posicao);
-      posicao++;
-    }
-    const daSecao = lista.filter(it => it.sid === sid);
-    const ordenados = [...daSecao].sort((a, b) =>
-      primeiraOcorrencia.get((a.subgrupo || '').trim()) - primeiraOcorrencia.get((b.subgrupo || '').trim())
-    );
-    let cursor = 0;
-    return lista.map(it => (it.sid === sid ? ordenados[cursor++] : it));
   }
 
   function atualizarItem(id, campo, valor) {
@@ -767,71 +573,9 @@ export default function Orcamento() {
 
   // Confere o que o servidor também recusaria, apontando o item com problema
   function validarParaSalvar() {
-    if (!form.cliente_nome.trim()) {
-      toast.error('Informe o cliente da proposta');
-      return false;
-    }
-    if (itens.length === 0) {
-      toast.error('Adicione ao menos um item à proposta');
-      return false;
-    }
-    for (const [i, it] of itens.entries()) {
-      if (!String(it.descricao || '').trim()) {
-        toast.error(`O item ${i + 1} está sem descrição`);
-        return false;
-      }
-      const qtd = Number(it.quantidade);
-      if (!Number.isFinite(qtd) || qtd < 0) {
-        toast.error(`Quantidade inválida no item ${i + 1}`);
-        return false;
-      }
-      const vu = Number(it.valor_unitario);
-      if (!Number.isFinite(vu) || vu < 0) {
-        toast.error(`Valor unitário inválido no item ${i + 1}`);
-        return false;
-      }
-    }
-    return true;
-  }
-
-  function montarPayload() {
-    return {
-      data: form.data,
-      validade: Number(form.validade) || 5,
-      tipo: form.tipo,
-      porte: form.porte,
-      cliente_id: clienteResolvido?.id || null,
-      cliente_nome: form.cliente_nome.trim(),
-      responsavel: form.responsavel,
-      local_obra: form.local_obra,
-      escopo: form.escopo,
-      pagamento: form.pagamento,
-      observacoes: form.observacoes,
-      bdi: Number(form.bdi) || 0,
-      // Fase 3F: sempre enviados — null limpa (BDI único / sem composição)
-      bdi_materiais: temBdiMateriais(form.bdi_materiais) ? Number(form.bdi_materiais) : null,
-      bdi_memoria: form.bdi_memoria || null,
-      imposto_venda: Number(form.imposto_venda) || 0,
-      imposto_servico: Number(form.imposto_servico) || 0,
-      desconto_materiais_pct: form.desconto_materiais_pct,
-      desconto_mao_obra_pct: form.desconto_mao_obra_pct,
-      // obra (2.0): sempre enviada — no PUT, null desliga a proposta da obra
-      obra_id: form.obra_id || null,
-      // Subtotais/BDI/impostos/total não são mais enviados: o backend
-      // recalcula tudo a partir dos itens (antes ele gravava o que o
-      // navegador mandasse, e uma quantidade zerada fazia o PDF sair com a
-      // linha valendo o preço cheio e o total geral sem ela).
-      secoes: secoes.map(s => ({ id: s.id, nome: s.nome })),
-      itens: itens.map(it => ({
-        // quantidade com 3 casas e unitário com 2, como o servidor grava
-        sid: it.sid, desc: it.descricao, qtd: arredQtd(it.quantidade),
-        un: it.unidade, vu: arred2(it.valor_unitario), ncm: it.ncm || null,
-        codigo: it.codigo || null, material_id: it.material_id || null,
-        subgrupo: it.subgrupo?.trim() || null, status: it.status || 'confirmado',
-        // a marca do item sugerido pela IA vai junto (o servidor o mantém "a cotar" e fora do catálogo enquanto existir)
-        origem_item: it.origem_item || null
-      })),
-    };
+    const problema = problemaParaSalvar(form, itens);
+    if (problema) toast.error(problema);
+    return !problema;
   }
 
   // Gravou: o que está na tela passa a ser o "salvo" e o rascunho sai
@@ -857,7 +601,7 @@ export default function Orcamento() {
     if (!validarParaSalvar()) return;
     setSalvando(true);
     try {
-      const payload = montarPayload();
+      const payload = montarPayload(form, secoes, itens, clienteResolvido?.id);
       // Depois de salvar uma proposta nova, novas gravações precisam ATUALIZAR
       // aquela proposta — antes o botão sumia e as correções feitas em seguida
       // não tinham como ser salvas (o PDF saía com os valores antigos).
@@ -912,7 +656,7 @@ export default function Orcamento() {
     setSalvando(true);
     try {
       const chaveAntiga = chaveDoRascunho;
-      const res = await criarProposta(montarPayload());
+      const res = await criarProposta(montarPayload(form, secoes, itens, clienteResolvido?.id));
       toast.success(`Salva como cópia: proposta ${res.data.numero || ''}`.trim());
       versaoRef.current = res.data.versao ?? null;
       setPropostaSalva(res.data);
@@ -938,117 +682,42 @@ export default function Orcamento() {
     return <p style={{ color: 'var(--texto-3)', textAlign: 'center', padding: 40 }}>Carregando proposta...</p>;
   }
 
+  // props comuns de cada linha de item (SecaoOrcamento → LinhaItem)
+  const linha = {
+    aplicarCategoriaMaoDeObra, aplicarMaterialNoItem, aplicarServicoNoItem, atualizarItem,
+    gruposServicos, materiaisPorId, pesquisarMercado, removerItem, servicoDoItem, sugestaoDoServico, vendidos,
+  };
+
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18 }}>
-        <h2 style={{ fontSize: 18, color: '#c9a227', fontWeight: 700, flex: 1 }}>
-          {editandoId ? `${somenteLeitura ? 'Proposta' : 'Editando Proposta'} ${numeroEditando}` : 'Novo Orçamento'}
-          {editandoId && criadaPeloAssistente && (
-            <span title="Rascunho montado pelo assistente virtual — revise antes de enviar ao cliente"
-              style={{ marginLeft: 10, fontSize: 11.5, fontWeight: 700, color: '#c9a227', border: '1px solid #4a3d10', background: '#17140a', borderRadius: 10, padding: '2px 8px', verticalAlign: 'middle' }}>
-              criada pelo assistente
-            </span>
-          )}
-        </h2>
-        {!editandoId && proximoNumero != null && (
-          <span style={{ fontSize: 12, color: 'var(--texto-3)' }}>
-            Próxima proposta: <b style={{ color: '#c9a227' }}>P{String(proximoNumero).padStart(3, '0')}</b>
-          </span>
-        )}
-      </div>
+      <CabecalhoEditor editandoId={editandoId} somenteLeitura={somenteLeitura} numeroEditando={numeroEditando}
+        criadaPeloAssistente={criadaPeloAssistente} proximoNumero={proximoNumero} />
 
-      {basesComFalha.length > 0 && (
-        <div data-testid="aviso-bases" role="alert" style={{ ...card, padding: '12px 16px', borderColor: '#6a2a2a', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 260, fontSize: 12.5, color: '#ddd', lineHeight: 1.5 }}>
-            Não foi possível carregar <b style={{ color: '#e0a050' }}>{basesComFalha.map(b => BASES_DO_EDITOR[b].nome).join(', ')}</b>.
-            As listas podem estar vazias ou incompletas: um material que não aparece no "+ catálogo" pode só não ter carregado.
-          </div>
-          <button type="button" onClick={() => carregarBases(basesComFalha)} style={{ ...btnSecundario, padding: '8px 14px' }}>Tentar de novo</button>
-        </div>
-      )}
+      <AvisoBases basesComFalha={basesComFalha} onTentarDeNovo={carregarBases} />
 
       {rascunhoPendente && (
-        <div data-testid="aviso-rascunho" style={{ ...card, padding: '12px 16px', borderColor: '#5a4a12', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 260, fontSize: 12.5, color: '#ddd', lineHeight: 1.5 }}>
-            Há um <b style={{ color: '#c9a227' }}>rascunho não salvo</b> desta {editandoId ? 'proposta' : 'proposta nova'} neste navegador
-            {rascunhoPendente.salvoEm ? `, de ${new Date(rascunhoPendente.salvoEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}` : ''}
-            {rascunhoPendente.form?.cliente_nome ? ` (cliente: ${rascunhoPendente.form.cliente_nome})` : ''}
-            {` — ${rascunhoPendente.itens.length} item(ns)`}.
-            {editandoId && rascunhoPendente.versao != null && versaoRef.current != null && rascunhoPendente.versao !== versaoRef.current && (
-              <span style={{ color: '#e0a050' }}> A proposta foi alterada no servidor depois desse rascunho: ao salvar, o sistema vai avisar do conflito.</span>
-            )}
-          </div>
-          <button type="button" onClick={restaurarRascunho} style={{ ...btnPrimario, padding: '8px 14px' }}>Restaurar rascunho</button>
-          <button type="button" onClick={() => { if (window.confirm('Descartar o rascunho? Ele não poderá ser recuperado.')) descartarRascunho(); }} style={btnSecundario}>Descartar</button>
-        </div>
+        <AvisoRascunho rascunho={rascunhoPendente} editandoId={editandoId} versaoAtual={versaoRef.current}
+          onRestaurar={restaurarRascunho} onDescartar={descartarRascunho} />
       )}
 
       {somenteLeitura && (
-        <div data-testid="faixa-somente-leitura" style={{ ...card, padding: '12px 16px', borderColor: '#2f4f6f', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 260, fontSize: 12.5, color: '#ddd', lineHeight: 1.5 }}>
-            <b style={{ color: '#8ab4f8' }}>Somente leitura</b> — {somenteLeitura.mensagem}
-            <span style={{ color: 'var(--texto-3)' }}>{sujo ? ' As alterações feitas aqui continuam na tela: salve-as numa cópia sua.' : ' Para trabalhar nela, faça uma cópia sua.'}</span>
-          </div>
-          <button type="button" onClick={salvarComoCopia} disabled={salvando} style={{ ...btnPrimario, padding: '8px 14px' }}>
-            {salvando ? 'Salvando…' : sujo ? 'Salvar como cópia minha' : 'Duplicar para mim'}
-          </button>
-        </div>
+        <FaixaSomenteLeitura somenteLeitura={somenteLeitura} sujo={sujo} salvando={salvando} onSalvarComoCopia={salvarComoCopia} />
       )}
 
       {conflito && (
-        <div data-testid="aviso-conflito" style={{ ...card, padding: '12px 16px', borderColor: '#6a2a2a', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 260, fontSize: 12.5, color: '#ddd', lineHeight: 1.5 }}>
-            <b style={{ color: '#e08080' }}>Não foi salvo:</b> {conflito.mensagem}
-            <span style={{ color: 'var(--texto-3)' }}> Nada foi sobrescrito. As suas alterações continuam na tela (e no rascunho deste navegador).</span>
-          </div>
-          <button type="button" onClick={recarregarDoServidor} disabled={salvando} style={btnSecundario}
-            title="Descarta as alterações desta tela e abre a versão que está gravada agora">Recarregar do servidor</button>
-          <button type="button" onClick={salvarComoCopia} disabled={salvando} style={{ ...btnPrimario, padding: '8px 14px' }}
-            title="Grava o que está na tela como uma proposta nova (outro número); a original fica como a outra pessoa deixou">
-            {salvando ? 'Salvando…' : 'Salvar como cópia'}
-          </button>
-        </div>
+        <AvisoConflito conflito={conflito} salvando={salvando} onRecarregar={recarregarDoServidor} onSalvarComoCopia={salvarComoCopia} />
       )}
 
       {origem && <AvisoOrigem origem={origem} incluirFaltante={incluirFaltante} />}
 
-      {(() => {
-        const aCotar = itens.filter(it => it.status === 'a_cotar').length;
-        const semPreco = itens.filter(it => !(Number(it.valor_unitario) > 0)).length;
-        if (!aCotar && !semPreco) return null;
-        return (
-          <div style={{ ...card, padding: '10px 16px', borderColor: '#4a3a12', fontSize: 12, color: '#c9a227' }}>
-            {[aCotar && `${aCotar} item(ns) "a cotar"`, semPreco && `${semPreco} item(ns) sem preço (R$ 0,00)`].filter(Boolean).join(' · ')}
-            <span style={{ color: 'var(--texto-3)' }}> — revise antes de enviar ao cliente: use "Pesquisar mercado", as referências ("usar") ou o catálogo em cada linha.</span>
-          </div>
-        );
-      })()}
+      <AvisoItensACotar itens={itens} />
 
       {/* Proposta nova com BDI/impostos padrão ainda não definidos pelo administrador */}
-      {!editandoId && padroesOrc && !padroesOrc.definidos && (
-        <div style={{ ...card, padding: '10px 16px', borderColor: '#4a3a12', fontSize: 12, color: '#c9a227' }}>
-          ⚠ O BDI e os impostos padrão ainda não foram definidos{usuario?.role === 'admin' ? <> (<Link to="/cadastros?aba=integracoes" style={{ color: '#c9a227', textDecoration: 'underline' }}>Integrações → BDI e impostos padrão</Link>)</> : ' — peça ao administrador (Integrações)'}.
-          Os campos abaixo vieram com 0 %: confira BDI, imposto sobre venda e imposto sobre serviço antes de salvar.
-        </div>
-      )}
+      {!editandoId && padroesOrc && !padroesOrc.definidos && <AvisoPadroesNaoDefinidos ehAdmin={usuario?.role === 'admin'} />}
 
       {/* BDI (Fase 3F): órgão público sem composição do BDI e avisos da composição */}
-      {((ehPublico && !memoriaBdi) || avisosBdi.length > 0) && (
-        <div style={{ ...card, padding: '10px 16px', borderColor: '#4a3a12', fontSize: 12, color: '#c9a227' }}>
-          {ehPublico && !memoriaBdi && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <span style={{ flex: 1, minWidth: 260 }}>
-                Cliente órgão público{segmentoObra === 'publico' && segmento !== 'publico' ? ' (pela obra)' : ''}: a proposta não tem a <b>composição do BDI</b>
-                <span style={{ color: 'var(--texto-3)' }}> (memória do cálculo pela fórmula do TCU, Acórdão 2.622/2013), que costuma ser exigida pelo órgão.</span>
-              </span>
-              <button type="button" onClick={() => setCalculadoraBdiAberta(true)} style={{ ...btnSecundario, borderStyle: 'solid', borderColor: '#5a4a12', color: '#c9a227' }}>
-                <Calculator size={13} style={{ marginRight: 4 }} /> Calcular BDI (TCU)
-              </button>
-            </div>
-          )}
-          {avisosBdi.map(a => <div key={a} style={{ marginTop: ehPublico && !memoriaBdi ? 6 : 0 }}>⚠ {a}</div>)}
-        </div>
-      )}
+      <AvisoBdi ehPublico={ehPublico} memoriaBdi={memoriaBdi} avisosBdi={avisosBdi} segmento={segmento} segmentoObra={segmentoObra}
+        onCalcular={() => setCalculadoraBdiAberta(true)} />
 
       {/* Somente leitura (proposta de outro usuário): o fieldset desabilita
           todos os campos e botões de edição de uma vez */}
@@ -1062,96 +731,20 @@ export default function Orcamento() {
       />
 
       {/* Seções e itens */}
-      {secoes.map(sec => {
-        const maoDeObra = ehMaoDeObra(sec.nome);
-        const colunas = maoDeObra
-          ? '0.9fr 1.2fr 3.1fr 0.7fr 0.7fr 0.9fr 0.9fr 1fr 32px'
-          : '0.9fr 1.2fr 2.4fr 0.9fr 0.7fr 0.7fr 0.9fr 0.9fr 1fr 32px';
-        // Seções de Materiais usam as categorias do cadastro de Materiais (coligado
-        // com o catálogo — ver filtro no dropdown "+ catálogo" abaixo); seções de
-        // Mão de Obra continuam com os subgrupos livres de sempre.
-        const opcoesSubgrupo = maoDeObra
-          ? subgruposDaSecao(sec.id)
-          : categoriasComUsadas(materiais.map(m => m.categoria));
-
-        return (
-          <div key={sec.id} style={card}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-              <input
-                value={sec.nome}
-                onChange={e => renomearSecao(sec.id, e.target.value)}
-                style={{ fontWeight: 700, color: '#c9a227', fontSize: 13, flex: 1, background: 'transparent', border: '1px solid transparent' }}
-                onFocus={e => e.target.style.border = '1px solid #2a2a2a'}
-                onBlur={e => e.target.style.border = '1px solid transparent'}
-              />
-              {maoDeObra && (
-                <span style={{ fontSize: 12, color: '#6f7f8f' }} title={'Define qual referência de mercado a lista de serviços sugere (cadastro do cliente: tipo "Órgão Público" → oficial)'}>
-                  Preços sugeridos: cliente {segmento === 'publico' ? 'órgão público (referência oficial)' : 'particular'}
-                </span>
-              )}
-              <span style={{ fontSize: 12, color: 'var(--texto-3)' }}>Subtotal: <b style={{ color: '#c9a227' }}>{formatarMoeda(subtotalSecao(sec.id))}</b></span>
-              <button onClick={() => removerSecao(sec.id)} style={{ ...btnIcone, color: '#b04040' }} title="Remover seção">
-                <Trash2 size={13} />
-              </button>
-            </div>
-
-            {itens.filter(it => it.sid === sec.id).length > 0 && (
-              <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 8, marginBottom: 6, fontSize: 11.5, color: 'var(--texto-3)', textTransform: 'uppercase', letterSpacing: '.5px' }}>
-                <span>{maoDeObra ? 'Subgrupo' : 'Categoria'}</span>
-                <span>{maoDeObra ? 'Serviço' : 'Catálogo'}</span>
-                <span>Descrição</span>
-                {!maoDeObra && <span>NCM/SH</span>}
-                <span>Qtd</span><span>Un.</span><span>Vlr. Unit.</span><span>Total</span><span>Status</span><span />
-              </div>
-            )}
-
-            {itensAgrupados(sec.id).map(linha => {
-              if (linha.tipo === 'cabecalho') {
-                return (
-                  <div key={linha.key} style={{ fontSize: 12, fontWeight: 700, color: 'var(--texto-2)', textTransform: 'uppercase', letterSpacing: '.5px', borderTop: '1px solid #222', paddingTop: 8, marginTop: 4, marginBottom: 6 }}>
-                    {linha.nome}
-                  </div>
-                );
-              }
-              if (linha.tipo === 'subtotal') {
-                return (
-                  <div key={linha.key} style={{ textAlign: 'right', fontSize: 12, color: 'var(--texto-3)', paddingRight: 4, marginBottom: 10 }}>
-                    Subtotal {linha.nome}: <b style={{ color: '#c9a227' }}>{formatarMoeda(linha.soma)}</b>
-                  </div>
-                );
-              }
-              const it = linha.item;
-              return (
-                <LinhaItem
-                  key={it.id}
-                  aplicarCategoriaMaoDeObra={aplicarCategoriaMaoDeObra}
-                  aplicarMaterialNoItem={aplicarMaterialNoItem}
-                  aplicarServicoNoItem={aplicarServicoNoItem}
-                  atualizarItem={atualizarItem}
-                  colunas={colunas}
-                  gruposServicos={gruposServicos}
-                  it={it}
-                  maoDeObra={maoDeObra}
-                  materiais={materiais}
-                  materiaisPorId={materiaisPorId}
-                  opcoesSubgrupo={opcoesSubgrupo}
-                  pesquisa={pesquisas[it.id]}
-                  pesquisarMercado={pesquisarMercado}
-                  removerItem={removerItem}
-                  segmento={segmento}
-                  servicoDoItem={servicoDoItem}
-                  sugestaoDoServico={sugestaoDoServico}
-                  vendidos={vendidos}
-                />
-              );
-            })}
-
-            <button onClick={() => adicionarItem(sec.id)} style={{ ...btnSecundario, marginTop: 4 }}>
-              <Plus size={13} style={{ marginRight: 4 }} /> Adicionar item
-            </button>
-          </div>
-        );
-      })}
+      {secoes.map(sec => (
+        <SecaoOrcamento
+          key={sec.id}
+          sec={sec}
+          itens={itens}
+          materiais={materiais}
+          segmento={segmento}
+          pesquisas={pesquisas}
+          linha={linha}
+          onRenomear={renomearSecao}
+          onRemover={removerSecao}
+          onAdicionarItem={adicionarItem}
+        />
+      ))}
       </fieldset>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>

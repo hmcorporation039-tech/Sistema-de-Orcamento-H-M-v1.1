@@ -52,3 +52,30 @@ test('editar e salvar sem mexer na hora manda a mesma hora (não soma 3 h)', asy
   act(() => raiz.unmount());
   caixa.remove();
 });
+
+// 2.39: o valor do lançamento é CampoMoeda — aceita vírgula e milhar (o type=number recusava "1.234,56")
+test('valor digitado com vírgula e milhar vai como número', async () => {
+  getPrestadores.mockResolvedValue({ data: { itens: [] } });
+  getFinanceiroMovimentos.mockResolvedValue({ data: {
+    dataInicio: '2026-11-01', dataFim: '2026-11-06',
+    movimentos: [{ id: 5, tipo: 'recebido', nome: 'Cliente X', valor: 100, data_hora: '2026-11-06T13:30:00.000Z', origem: 'manual', obra_id: null }],
+    totais: { recebido: 100, realizado: 0, saldo: 100, qtdRecebido: 1, qtdRealizado: 0 },
+  } });
+  atualizarFinanceiroMovimento.mockResolvedValue({ data: {} });
+  const caixa = document.createElement('div');
+  document.body.appendChild(caixa);
+  const raiz = createRoot(caixa);
+  await act(async () => { raiz.render(<MemoryRouter><Financeiro /></MemoryRouter>); });
+  for (let i = 0; i < 2; i++) await act(async () => { await new Promise(r => setTimeout(r, 400)); });
+  await act(async () => { document.querySelector('button[title="Editar"]').click(); });
+  const valor = document.querySelector('[data-testid=financeiro-valor]');
+  expect(valor.value.replace(/\s/g, ' ')).toBe('R$ 100,00');
+  act(() => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(valor, '1.234,56');
+    valor.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await act(async () => { valor.closest('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
+  expect(atualizarFinanceiroMovimento.mock.calls[0][1].valor).toBe(1234.56);
+  act(() => raiz.unmount());
+  caixa.remove();
+});

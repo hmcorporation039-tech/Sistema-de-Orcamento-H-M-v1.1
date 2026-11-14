@@ -13,6 +13,7 @@ const { comparar } = require('../utils/comparadorOrcamentos');
 const { ehMaoDeObra } = require('../utils/calculoProposta');
 const { disciplinaDoSubgrupo } = require('./aprendizadoOrcamento');
 const { registrarAuditoria } = require('./auditoria');
+const limiteUsoIa = require('../utils/limiteUsoIa');
 
 const EXTENSOES = /\.(pdf|xlsx|xlsm|xls)$/i;
 const r2 = (v) => Math.round(Number(v) * 100) / 100;
@@ -27,7 +28,7 @@ function tipoDoArquivo(buffer, nome = '') {
 }
 
 // Lê o arquivo do concorrente → { itens, metodo, totalDocumento, avisos, identificado, usouIA }
-async function lerArquivo(buffer, nome, { usarIA = false } = {}) {
+async function lerArquivo(buffer, nome, { usarIA = false, usuarioId = null } = {}) {
   const tipo = tipoDoArquivo(buffer, nome);
   if (!tipo) return { erro: 'Formato não suportado: envie o orçamento em PDF ou planilha Excel (.xlsx ou .xls).' };
   if (tipo === 'xlsx' || tipo === 'xls') {
@@ -53,6 +54,8 @@ async function lerArquivo(buffer, nome, { usarIA = false } = {}) {
   // IA: só a pedido do usuário e só quando a leitura local não achou nada (regra "IA por último")
   const { extrairComIA, iaDisponivel } = require('./leitorCotacaoIA');
   if (!iaDisponivel()) return { ...local, avisos: [...avisos, ...local.avisos, 'Nenhuma IA configurada para ler o arquivo.'], metodo: 'PDF', identificado, usouIA: false };
+  // leitura pela IA conta no limite por hora do usuário (antes não tinha limite: revisão 2.39)
+  if (!limiteUsoIa.consumir('leitura', usuarioId, 1)) return { ...local, avisos: [...avisos, ...local.avisos, limiteUsoIa.mensagemLimite('leitura', usuarioId)], metodo: 'PDF', identificado, usouIA: false };
   try {
     const r = await extrairComIA(buffer, 'pdf');
     const itens = r.itens.filter(i => i.descricao.length >= 4 && i.quantidade > 0 && i.precoImpresso > 0).map(i => ({
@@ -69,7 +72,7 @@ async function lerArquivo(buffer, nome, { usarIA = false } = {}) {
 }
 
 async function importar({ buffer, nome, propostaId = null, concorrente = null, cnpj = null, usarIA = false, usuarioId }) {
-  const lido = await lerArquivo(buffer, nome, { usarIA });
+  const lido = await lerArquivo(buffer, nome, { usarIA, usuarioId });
   if (lido.erro) return { erro: lido.erro };
   if (!lido.itens.length) return { erro: `Nenhum item foi lido do arquivo. ${lido.avisos.join(' ')}`.trim() };
   let obraId = null;

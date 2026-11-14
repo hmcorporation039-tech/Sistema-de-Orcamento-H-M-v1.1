@@ -10,6 +10,7 @@ import Select from '../components/Select';
 import Modal from '../components/ui/Modal';
 import { estilos, Campo } from '../components/ui/estilos';
 import ObraSelect from '../components/ObraSelect';
+import CampoMoeda from '../components/CampoMoeda';
 import { Link, useSearchParams } from 'react-router-dom';
 
 const VAZIO = { prestadorId: '', objeto: '', localObra: '', periodoInicio: '', periodoFim: '', valor: '', obraId: null };
@@ -277,11 +278,7 @@ export default function Contratos() {
                   <input type="date" value={form.periodoFim} onChange={e => setForm({ ...form, periodoFim: e.target.value })} />
                 </Campo>
                 <Campo label="Valor (R$) *">
-                  <input
-                    type="number" step="0.01" min="0.01"
-                    value={form.valor}
-                    onChange={e => setForm({ ...form, valor: e.target.value })}
-                  />
+                  <CampoMoeda value={form.valor} onChange={v => setForm({ ...form, valor: v })} data-testid="contrato-valor" />
                 </Campo>
               </div>
 

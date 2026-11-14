@@ -41,13 +41,16 @@ async function gerarOrcamento(req, res, next) {
     return res.status(400).json({ erro: 'Não há serviços nem materiais a orçar (itens marcados como "já pronto" ou com quantidade 0)' });
   }
 
-  // Tenta casar com um cliente já cadastrado pelo nome — se não achar, a
-  // proposta fica só com o nome (igual uma proposta manual com cliente avulso).
-  const clienteEncontrado = await pool.query(
-    'SELECT id FROM clientes WHERE LOWER(nome) = LOWER($1) AND ativo = true LIMIT 1',
-    [analise.cliente.trim()]
-  );
-  const clienteId = clienteEncontrado.rows[0]?.id || null;
+  // Cliente escolhido da lista na análise (2.39): vale o cliente_id dela. Sem ele (nome digitado, análise antiga),
+  // tenta casar com um cliente cadastrado pelo nome — se não achar, a proposta fica só com o nome (cliente avulso).
+  let clienteId = analise.clienteId || null;
+  if (!clienteId) {
+    const clienteEncontrado = await pool.query(
+      'SELECT id FROM clientes WHERE LOWER(nome) = LOWER($1) AND ativo = true LIMIT 1',
+      [String(analise.cliente || '').trim()]
+    );
+    clienteId = clienteEncontrado.rows[0]?.id || null;
+  }
 
   // material cujo preço foi lido POR IA (cotação lida pela IA, item do assistente) e ninguém conferiu: o preço do
   // catálogo dele não confirma o item sozinho — regra única "o que a IA lê é sugestão" (services/catalogoMateriais.js)

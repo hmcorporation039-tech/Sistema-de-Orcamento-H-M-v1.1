@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Upload, FileText, Play, Download, BookOpen, Search, CheckCircle2, AlertTriangle } from 'lucide-react';
 import Select from '../Select';
+import CampoMoeda from '../CampoMoeda';
 import { estilos, Campo } from '../ui/estilos';
 import { baixarDocumentoLaudo } from '../../services/api';
 import { formatarMoeda } from '../../utils/format';
@@ -275,11 +276,11 @@ export default function ProjetoDaEspecificacao() {
                 return (
                 <tr key={m.item} style={estilos.linhaTabela}>
                   <td style={estilos.td}>{m.tag}</td><td style={{ ...estilos.td, fontSize: 12 }}>{m.descricao}{m.obs ? <div style={{ fontSize: 11, color: 'var(--texto-3)' }}>{m.obs}</div> : null}</td><td style={estilos.td}>{m.quantidade} {m.unidade}</td>
-                  <td style={estilos.td}>{m.cliente ? '—' : <input className="input" style={{ width: 96 }} type="number" min="0" step="0.01" value={precos[m.chave] ?? (m.preco ?? '')} onChange={e => setPrecos(p => ({ ...p, [m.chave]: e.target.value }))} />}</td>
+                  <td style={estilos.td}>{m.cliente ? '—' : <CampoMoeda permiteVazio className="input" aria-label={`Preço de ${m.tag || m.descricao}`} style={{ width: 96 }} value={precos[m.chave] ?? (m.preco ?? '')} onChange={v => setPrecos(p => ({ ...p, [m.chave]: v }))} />}</td>
                   <td style={estilos.td}>{m.origem === 'A cotar' ? etiqueta('#fff4d6', 'a cotar') : m.origem === 'Estimativa H&M' ? etiqueta('#fff4d6', 'estimativa') : m.origem === 'Cliente' ? etiqueta('#d7dde8', 'cliente') : etiqueta('#9fd8a8', 'pesquisado')}</td>
                   <td style={estilos.td}>{m.cliente ? '—' : (<div style={{ display: 'flex', gap: 4 }}>
                     <input className="input" aria-label="Alternativa econômica" placeholder={m.alternativa?.referencia || 'ex.: linha econômica'} style={{ width: 130 }} value={x.altRef ?? ''} onChange={e => mudar('altRef', e.target.value)} />
-                    <input className="input" aria-label="Preço da alternativa" type="number" min="0" step="0.01" placeholder={m.alternativa?.preco ?? 'R$'} style={{ width: 80 }} value={x.altPreco ?? ''} onChange={e => mudar('altPreco', e.target.value)} />
+                    <CampoMoeda permiteVazio className="input" aria-label="Preço da alternativa" placeholder={m.alternativa?.preco ?? 'R$'} style={{ width: 80 }} value={x.altPreco ?? ''} onChange={v => mudar('altPreco', v)} />
                   </div>)}</td>
                   <td style={estilos.td}>{m.cliente ? '—' : <input className="input" aria-label="Equivalência" placeholder={m.equivale || 'ex.: marca A → marca B (equivalente)'} style={{ width: 180 }} value={x.equivale ?? ''} onChange={e => mudar('equivale', e.target.value)} />}</td>
                 </tr>);

@@ -18,12 +18,12 @@
 //    ('laudos'); a migração não move arquivos.
 // Idempotente; não apaga nada.
 const { classificarExistente } = require('../../utils/projetoLaudo');
+const { garantirNotNull } = require('../apoioMigracoes');
 
 module.exports = async (client) => {
   await client.query('ALTER TABLE analises_projeto ADD COLUMN IF NOT EXISTS finalidade VARCHAR(20)');
   await client.query("UPDATE analises_projeto SET finalidade = 'orcamento' WHERE finalidade IS NULL");
-  await client.query("ALTER TABLE analises_projeto ALTER COLUMN finalidade SET DEFAULT 'orcamento'");
-  await client.query('ALTER TABLE analises_projeto ALTER COLUMN finalidade SET NOT NULL');
+  await garantirNotNull(client, 'analises_projeto', 'finalidade', { padrao: "'orcamento'" }); // só se ainda não estiver: o ALTER trava a tabela
   await client.query(`
     DO $$ BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'analises_projeto_finalidade_check') THEN
@@ -45,8 +45,7 @@ module.exports = async (client) => {
   for (const r of rows) {
     await client.query('UPDATE laudos_projetos SET tipo = $1 WHERE id = $2 AND tipo IS NULL', [classificarExistente(r, r.total_fotos), r.id]);
   }
-  await client.query("ALTER TABLE laudos_projetos ALTER COLUMN tipo SET DEFAULT 'laudo'");
-  await client.query('ALTER TABLE laudos_projetos ALTER COLUMN tipo SET NOT NULL');
+  await garantirNotNull(client, 'laudos_projetos', 'tipo', { padrao: "'laudo'" });
   await client.query(`
     DO $$ BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'laudos_projetos_tipo_check') THEN

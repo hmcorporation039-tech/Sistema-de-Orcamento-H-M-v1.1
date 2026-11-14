@@ -21,6 +21,7 @@ const { lerFinalidade } = require('../../utils/projetoLaudo');
 const { ehArquivoCad } = require('../../services/analiseCad');
 const { ehConteudoCad, nomeUtf8, linhaParaAnalise } = require('./comum');
 const { podeAlterar } = require('../../middleware/posse');
+const { registrarErroInesperado } = require('../../middleware/erros');
 
 // Versão 2.1 — finalidade da análise (escolhida ao enviar, editável depois):
 //   'orcamento'  — orçar a partir do projeto recebido (itens + "Gerar orçamento")
@@ -165,7 +166,7 @@ async function executarAnalise(req, res, arquivos, corpo, opcoes = {}) {
       ? (await pool.query('SELECT id, cliente_id, cliente_nome FROM obras WHERE id = $1', [leituraObra.valor])).rows[0]
       : null;
   } catch (err) {
-    console.error('Erro ao ler a obra da análise:', err.message);
+    registrarErroInesperado(req, err);   // log + resumo diário de erros (antes só a mensagem no console)
     return res.status(500).json({ erro: 'Erro ao ler a obra da análise' });
   }
 
@@ -294,9 +295,20 @@ async function atualizar(req, res) {
   const leituraObra = lerObraId(req.body);
   const erroObra = await conferirObra(pool, leituraObra, { usuario: req.usuario, tabela: 'analises_projeto', id });
   if (erroObra) return res.status(400).json({ erro: erroObra });
+  // cliente (2.39, cliente escolhido da lista): cliente_id presente liga (cliente cadastrado) ou desliga (null =
+  // nome digitado, cliente novo); ausente mantém. Antes o orçamento gerado da análise adivinhava o cliente pelo nome.
+  const clientePresente = Object.prototype.hasOwnProperty.call(req.body, 'cliente_id');
+  let clienteId = null;
+  if (clientePresente && req.body.cliente_id != null && req.body.cliente_id !== '') {
+    clienteId = Number(req.body.cliente_id);
+    const existe = Number.isInteger(clienteId) && clienteId > 0
+      && (await pool.query('SELECT 1 FROM clientes WHERE id = $1', [clienteId])).rows.length > 0;
+    if (!existe) return res.status(400).json({ erro: 'Cliente não encontrado no cadastro.' });
+  }
   const result = await pool.query(
     `UPDATE analises_projeto SET
       cliente_nome = COALESCE($1, cliente_nome),
+      cliente_id = CASE WHEN $12::boolean THEN $13::int ELSE cliente_id END,
       servicos = COALESCE($2::jsonb, servicos),
       materiais = COALESCE($3::jsonb, materiais),
       funcionamento = COALESCE($4, funcionamento),
@@ -318,6 +330,7 @@ async function atualizar(req, res) {
       versaoDoPedido(req.body),
       leituraObra.presente, leituraObra.valor,
       finalidade,
+      clientePresente, clienteId,
     ]
   );
   if (result.rows.length === 0) return responderConflitoOuAusente(pool, res, 'analises_projeto', id);

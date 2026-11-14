@@ -7,6 +7,7 @@ import useDisciplinas from '../hooks/useDisciplinas';
 import { formatarMoeda, dataHoraBr } from '../utils/format';
 import { chaveBusca } from '../utils/texto';
 import { estilos } from '../components/ui/estilos';
+import CampoMoeda from '../components/CampoMoeda';
 
 // Dois segmentos de referência de MERCADO (além do valor adotado pela H&M)
 const SEGMENTOS = [
@@ -221,8 +222,8 @@ export default function PrecosMaoDeObra() {
             return (
               <div key={s.chave}>
                 <div style={{ display: 'flex', gap: 4 }}>
-                  <input type="number" step="0.01" min="0" placeholder="Sem referência" value={it[`valor_${s.chave}`] ?? ''}
-                    onChange={e => alterar(it.codigo, `valor_${s.chave}`, e.target.value)}
+                  <CampoMoeda permiteVazio placeholder="Sem referência" aria-label={`${it.descricao} — ${s.rotulo}`} value={it[`valor_${s.chave}`] ?? ''}
+                    onChange={v => alterar(it.codigo, `valor_${s.chave}`, v)}
                     style={{ fontSize: 13, flex: 1, minWidth: 0, borderColor: mudou ? '#c9a227' : undefined }} />
                   <button onClick={() => pesquisar(it, s.chave)} disabled={!!pesquisando[k] || !!lote} title={`Pesquisar referência ${s.rotulo.toLowerCase()} na web`} style={btnIcone}>
                     <Search size={12} />
@@ -240,8 +241,8 @@ export default function PrecosMaoDeObra() {
               </div>
             );
           })}
-          <input type="number" step="0.01" min="0" placeholder="Usar referência" value={it.valor_referencia ?? ''}
-            onChange={e => alterar(it.codigo, 'valor_referencia', e.target.value)}
+          <CampoMoeda permiteVazio placeholder="Usar referência" aria-label={`${it.descricao} — valor H&M`} value={it.valor_referencia ?? ''}
+            onChange={v => alterar(it.codigo, 'valor_referencia', v)}
             style={{ fontSize: 13, borderColor: alterados[it.codigo] && 'valor_referencia' in alterados[it.codigo] ? '#c9a227' : undefined }} />
         </div>
         {extra}

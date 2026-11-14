@@ -8,6 +8,7 @@ const { registrarAuditoria } = require('../services/auditoria');
 const { versaoDoPedido } = require('../utils/versao');
 const { segmentoPorNomeDoCliente } = require('../services/precosMaoDeObraReferencia');
 const C = require('../utils/composicoes');
+const { registrarErroInesperado } = require('../middleware/erros');
 
 const MSG_CONFLITO = 'Esta composição foi alterada por outra pessoa (ou em outra aba) depois que você a abriu. Recarregue para ver a versão atual — suas alterações não foram gravadas.';
 
@@ -140,9 +141,10 @@ async function codigoLivre(executor, disciplina) {
   return C.proximoCodigo(disciplina, rows.map(r => r.codigo));
 }
 
-const erroDeBanco = (res, err, acao) => {
+const erroDeBanco = (req, res, err, acao) => {
   if (err.code === '23505') return res.status(409).json({ erro: 'Já existe uma composição com esse código' });
-  console.error(`Erro ao ${acao} composição:`, err);
+  // log + resumo diário de erros, como o tratador central (antes só o console)
+  registrarErroInesperado(req, err);
   return res.status(500).json({ erro: `Erro ao ${acao} a composição` });
 };
 
@@ -165,7 +167,7 @@ async function criar(req, res) {
     if (resultado.erro) return res.status(resultado.status).json({ erro: resultado.erro });
     res.status(201).json({ mensagem: 'Composição criada', ...resultado.nova });
   } catch (err) {
-    erroDeBanco(res, err, 'criar');
+    erroDeBanco(req, res, err, 'criar');
   }
 }
 
@@ -207,7 +209,7 @@ async function atualizar(req, res) {
     }
     res.json({ mensagem: 'Composição salva', ...resultado.nova });
   } catch (err) {
-    erroDeBanco(res, err, 'salvar');
+    erroDeBanco(req, res, err, 'salvar');
   }
 }
 
@@ -229,7 +231,7 @@ async function duplicar(req, res) {
     if (resultado.erro) return res.status(resultado.status).json({ erro: resultado.erro });
     res.status(201).json({ mensagem: 'Composição duplicada', ...resultado.nova });
   } catch (err) {
-    erroDeBanco(res, err, 'duplicar');
+    erroDeBanco(req, res, err, 'duplicar');
   }
 }
 
@@ -244,7 +246,7 @@ async function definirAtivo(req, res) {
     if (!c) return res.status(404).json({ erro: 'Composição não encontrada' });
     res.json(c);
   } catch (err) {
-    erroDeBanco(res, err, 'alterar');
+    erroDeBanco(req, res, err, 'alterar');
   }
 }
 
@@ -264,7 +266,7 @@ async function remover(req, res) {
     await registrarAuditoria(pool, { entidade: 'composicao', entidadeId: resultado.id, acao: 'excluida', detalhes: { codigo, descricao, itens }, usuarioId: req.usuario.id });
     res.json({ mensagem: 'Composição excluída' });
   } catch (err) {
-    erroDeBanco(res, err, 'excluir');
+    erroDeBanco(req, res, err, 'excluir');
   }
 }
 

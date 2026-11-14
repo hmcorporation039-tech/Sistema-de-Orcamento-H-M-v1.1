@@ -14,6 +14,7 @@ import Modal from '../components/ui/Modal';
 import { estilos, Campo } from '../components/ui/estilos';
 import Indicador from '../components/ui/Indicador';
 import ObraSelect from '../components/ObraSelect';
+import CampoMoeda from '../components/CampoMoeda';
 import { Link } from 'react-router-dom';
 
 const TIPO_INFO = {
@@ -372,11 +373,7 @@ export default function Financeiro() {
                   </Select>
                 </Campo>
                 <Campo label="Valor (R$) *">
-                  <input
-                    type="number" step="0.01" min="0.01"
-                    value={form.valor}
-                    onChange={e => setForm({ ...form, valor: e.target.value })}
-                  />
+                  <CampoMoeda value={form.valor} onChange={v => setForm({ ...form, valor: v })} data-testid="financeiro-valor" />
                 </Campo>
               </div>
 

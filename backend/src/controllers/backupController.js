@@ -3,6 +3,7 @@ const backup = require('../services/backup');
 const testeRestauracao = require('../services/testeRestauracao');
 const { registrarAuditoria } = require('../services/auditoria');
 const pool = require('../config/database');
+const { registrarErroInesperado } = require('../middleware/erros');
 
 // Último teste de restauração (scripts/testar-restauracao.js, mensal): vai junto da situação do backup.
 function restauracao() {
@@ -25,6 +26,9 @@ async function executar(req, res) {
   try {
     r = await backup.executar({ usuarioId: req.usuario.id });
   } catch (err) {
+    // 409 (já em andamento) e 501 (fora do Windows) são avisos; o resto é inesperado e vai para o log e o
+    // resumo diário (antes o 500 não deixava rastro)
+    if (!err.status) registrarErroInesperado(req, err);
     return res.status(err.status || 500).json({ erro: err.message });
   }
   await registrarAuditoria(pool, {

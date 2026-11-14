@@ -107,9 +107,17 @@ function tratarErros(err, req, res, next) {
     return res.status(400).json({ erro: ERROS_DE_ENTRADA[err.code] });
   }
 
-  console.error(`Erro não tratado em ${req.method} ${req.originalUrl}:`, err);
-  require('../services/errosSistema').registrar(req, err);   // resumo diário por e-mail (rotina erros-sistema)
+  registrarErroInesperado(req, err);
   res.status(500).json({ erro: 'Erro interno do servidor.' });
 }
 
-module.exports = { protegerRotasAsync, tratarErros };
+// O registro de um erro inesperado: log com a rota e o resumo diário por e-mail (rotina erros-sistema,
+// services/errosSistema.js). Usado aqui e pelos controllers que respondem o 500 com mensagem própria
+// (ex.: "Erro ao gerar PDF da proposta") — antes esses erros iam só para o console, ou nem isso, e não
+// entravam no resumo (revisão 2.39). Nunca lança: o registro não pode atrapalhar a resposta.
+function registrarErroInesperado(req, err) {
+  console.error(`Erro não tratado em ${req?.method} ${req?.originalUrl}:`, err);
+  require('../services/errosSistema').registrar(req, err);
+}
+
+module.exports = { protegerRotasAsync, tratarErros, registrarErroInesperado };

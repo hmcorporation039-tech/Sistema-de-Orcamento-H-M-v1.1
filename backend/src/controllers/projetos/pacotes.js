@@ -30,13 +30,8 @@ async function analisarPacote(req, res) {
     return res.status(400).json({ erro: 'Cada arquivo precisa de ao menos uma disciplina, ou ser marcado como referência (arquitetura, estrutura, hidráulica, climatização).' });
   }
   if (!normalizadas.some(e => !e.referencia)) return res.status(400).json({ erro: 'Marque a disciplina de ao menos um arquivo: só arquivos de referência não geram análise.' });
-  let arquivos;
-  try {
-    arquivos = Pacotes.arquivosDoPacote(req.params.token, req.usuario, normalizadas);
-  } catch (err) {
-    if (err.status) return res.status(err.status).json({ erro: err.message });
-    throw err;
-  }
+  // pacote vencido/de outro usuário/escolha inválida (404/403/400): o tratador central responde { erro }
+  const arquivos = Pacotes.arquivosDoPacote(req.params.token, req.usuario, normalizadas);
   const invalido = arquivoInvalido(arquivos);
   if (invalido) return res.status(400).json({ erro: invalido });
   // nomes repetidos em pastas diferentes do pacote: o nome leva a pasta (a pasta do projeto guarda todos)

@@ -84,4 +84,30 @@ function ordenarMigracoes(nomes) {
   });
 }
 
-module.exports = { umaVez, inserirKits, ordenarMigracoes };
+// ALTER COLUMN pega trava exclusiva da tabela (e SET NOT NULL ainda varre a tabela inteira). Como as
+// migrações rodam em TODA partida, um ALTER COLUMN solto travava a tabela a cada reinício — com outra
+// conexão segurando a tabela, a partida esperava o lock_timeout. Estes só alteram quando a coluna ainda
+// não está como deveria (revisão 2.39).
+const IDENT = /^[a-z_][a-z0-9_]*$/;
+async function colunaInfo(client, tabela, coluna) {
+  if (!IDENT.test(tabela) || !IDENT.test(coluna)) throw new Error(`nome inválido: ${tabela}.${coluna}`);
+  const { rows } = await client.query(
+    `SELECT is_nullable, column_default FROM information_schema.columns
+      WHERE table_schema = current_schema() AND table_name = $1 AND column_name = $2`, [tabela, coluna]);
+  return rows[0] || null;
+}
+// padrao: o DEFAULT em SQL (ex.: "'laudo'"); o banco o guarda com o tipo ("'laudo'::character varying")
+async function garantirNotNull(client, tabela, coluna, { padrao } = {}) {
+  const info = await colunaInfo(client, tabela, coluna);
+  if (!info) return;
+  if (padrao != null && !String(info.column_default || '').startsWith(padrao)) {
+    await client.query(`ALTER TABLE ${tabela} ALTER COLUMN ${coluna} SET DEFAULT ${padrao}`);
+  }
+  if (info.is_nullable === 'YES') await client.query(`ALTER TABLE ${tabela} ALTER COLUMN ${coluna} SET NOT NULL`);
+}
+async function permitirNull(client, tabela, coluna) {
+  const info = await colunaInfo(client, tabela, coluna);
+  if (info && info.is_nullable === 'NO') await client.query(`ALTER TABLE ${tabela} ALTER COLUMN ${coluna} DROP NOT NULL`);
+}
+
+module.exports = { umaVez, inserirKits, ordenarMigracoes, garantirNotNull, permitirNull };

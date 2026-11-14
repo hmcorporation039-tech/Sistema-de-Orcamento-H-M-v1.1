@@ -28,6 +28,7 @@ const { RAIZ_SKILLS } = require('../config/caminhos');
 const { semAcento } = require('../utils/texto');
 const { ErroHttp } = require('../utils/erros');
 const { registrarAuditoria } = require('./auditoria');
+const limiteUsoIa = require('../utils/limiteUsoIa');
 
 const ARQUIVO_CATALOGO = path.join(RAIZ_SKILLS, 'quadros', 'dados', 'catalogo-componentes.json');
 
@@ -706,6 +707,16 @@ async function iniciarPesquisaEmLote(lista, usuario, { executar = pesquisarMedid
     }
     if (itens.filter(i => i.situacao === 'pendente').length >= LIMITE_LOTE) { ignorados++; continue; }
     itens.push({ ...base, situacao: 'pendente', pedido: p });
+  }
+  // cada pesquisa do lote conta no limite por hora do usuário (antes o lote inteiro contava como um pedido):
+  // pesquisa o que couber; o resto fica para o próximo lote
+  const pendentes = itens.filter(i => i.situacao === 'pendente');
+  const cabem = limiteUsoIa.consumir('pesquisa', usuario?.id, pendentes.length, { parcial: true });
+  if (pendentes.length && !cabem) throw new ErroHttp(429, limiteUsoIa.mensagemLimite('pesquisa', usuario?.id));
+  for (const item of pendentes.slice(cabem)) {
+    item.situacao = 'ignorado';
+    item.motivo = 'limite de pesquisas por hora — busque de novo mais tarde';
+    delete item.pedido;
   }
   itens.push(...recusados);
 

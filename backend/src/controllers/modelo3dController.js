@@ -9,6 +9,7 @@ const { registrarAuditoria } = require('../services/auditoria');
 const P = require('../services/pastasSistema');
 const { pastaDoLaudo, pastaDoProjeto, seguro } = require('../services/pastasRegistros');
 const { enviarComprimido } = require('../utils/respostaComprimida');
+const { registrarErroInesperado } = require('../middleware/erros');
 
 const ORIGENS = new Set(['laudo', 'analise', 'proposta']);
 const TABELA_ORIGEM = { laudo: 'laudos_projetos', analise: 'analises_projeto', proposta: 'propostas' };
@@ -96,7 +97,10 @@ async function ver(req, res) {
     if (!m) return res.status(404).type('text/plain; charset=utf-8').send('Este registro não tem mais arquitetura para o modelo 3D.');
     enviarPagina(req, res, m.html, { embutido: !!l.embutido });
   } catch (err) {
-    console.error('Erro ao servir o modelo 3D:', err.message);
+    // inesperado (sem status): log + resumo diário de erros, como o tratador central; o token do link
+    // não vai para o resumo (errosSistema.normalizarRota)
+    if (!err.status) registrarErroInesperado(req, err);
+    else console.error('Erro ao servir o modelo 3D:', err.message);
     res.status(err.status && err.status < 500 ? err.status : 500).type('text/plain; charset=utf-8').send(err.status ? err.message : 'Erro ao gerar o modelo 3D.');
   }
 }

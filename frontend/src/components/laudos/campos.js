@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import Select, { Sugestoes } from '../Select';
 
@@ -20,8 +20,12 @@ export function paraNumero(valor) {
   return Number.isFinite(n) ? n : null;
 }
 
+// id para ligar o <label> ao campo (htmlFor) — acessibilidade, 2.39
+const idDoCampo = (gerado) => `campo-laudo${gerado.replace(/:/g, '-')}`;
+
 export function Campo({ rotulo, valor, onChange, tipo = 'texto', placeholder, dica, largura }) {
-  const comum = { style: estiloInput, placeholder, title: dica };
+  const idCampo = idDoCampo(useId());
+  const comum = { id: idCampo, style: estiloInput, placeholder, title: dica };
   let entrada;
   if (tipo === 'area') {
     entrada = <textarea rows={3} {...comum} style={{ ...estiloInput, resize: 'vertical' }} value={valor ?? ''} onChange={e => onChange(e.target.value)} />;
@@ -34,7 +38,7 @@ export function Campo({ rotulo, valor, onChange, tipo = 'texto', placeholder, di
   }
   return (
     <div style={{ minWidth: 0, gridColumn: largura === 'inteira' ? '1 / -1' : undefined }}>
-      {rotulo && <label style={estiloRotulo}>{rotulo}</label>}
+      {rotulo && <label style={estiloRotulo} htmlFor={idCampo}>{rotulo}</label>}
       {entrada}
     </div>
   );
@@ -56,10 +60,11 @@ function CampoNumero({ valor, onChange, ...resto }) {
 }
 
 export function Selecao({ rotulo, valor, onChange, opcoes, largura }) {
+  const idCampo = idDoCampo(useId());
   return (
     <div style={{ minWidth: 0, gridColumn: largura === 'inteira' ? '1 / -1' : undefined }}>
-      {rotulo && <label style={estiloRotulo}>{rotulo}</label>}
-      <Select style={estiloInput} value={valor ?? ''} onChange={e => onChange(e.target.value)}>
+      {rotulo && <label style={estiloRotulo} htmlFor={idCampo}>{rotulo}</label>}
+      <Select id={idCampo} style={estiloInput} value={valor ?? ''} onChange={e => onChange(e.target.value)}>
         {opcoes.map(o => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
       </Select>
     </div>
@@ -71,16 +76,17 @@ export function Selecao({ rotulo, valor, onChange, opcoes, largura }) {
 let seqLista = 0;
 export function CampoSugestao({ rotulo, valor, onChange, opcoes, placeholder, dica, largura, estilo }) {
   const [id] = useState(() => `sugestoes-campo-${++seqLista}`);
+  const idCampo = idDoCampo(useId());
   const entrada = (
     <>
-      <input list={id} style={estilo || estiloInput} value={valor ?? ''} placeholder={placeholder || 'Escolha ou digite'} title={dica} onChange={e => onChange(e.target.value)} />
+      <input id={idCampo} list={id} style={estilo || estiloInput} value={valor ?? ''} placeholder={placeholder || 'Escolha ou digite'} title={dica} onChange={e => onChange(e.target.value)} />
       <Sugestoes id={id}>{(opcoes || []).filter(o => o.valor !== '').map(o => <option key={o.valor} value={o.valor}>{o.rotulo !== o.valor ? o.rotulo : undefined}</option>)}</Sugestoes>
     </>
   );
   if (!rotulo) return entrada;
   return (
     <div style={{ minWidth: 0, gridColumn: largura === 'inteira' ? '1 / -1' : undefined }}>
-      <label style={estiloRotulo}>{rotulo}</label>
+      <label style={estiloRotulo} htmlFor={idCampo}>{rotulo}</label>
       {entrada}
     </div>
   );

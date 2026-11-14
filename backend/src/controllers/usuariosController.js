@@ -4,6 +4,7 @@ const { invalidarCacheUsuario } = require('../middleware/auth');
 const { registrarAuditoria } = require('../services/auditoria');
 const { VALORES_PAPEIS } = require('../middleware/auth');
 const { revogarSessoesDoUsuario } = require('../services/sessoesUsuario');
+const { registrarErroInesperado } = require('../middleware/erros');
 
 async function listar(req, res) {
   const result = await pool.query(
@@ -151,6 +152,8 @@ async function remover(req, res) {
         erro: 'Este usuário já tem propostas ou ações registradas no sistema e não pode ser excluído. Desative-o em vez de excluir.'
       });
     }
+    // inesperado: registrado (log + resumo diário); antes o 500 saía sem rastro nenhum
+    registrarErroInesperado(req, err);
     res.status(500).json({ erro: 'Erro ao excluir usuário' });
   }
 }

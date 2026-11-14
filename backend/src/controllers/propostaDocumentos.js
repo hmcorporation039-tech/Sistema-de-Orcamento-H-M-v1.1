@@ -14,6 +14,8 @@ const { podeAlterar } = require('../middleware/posse');
 const { gerarPlanilhaCliente } = require('../services/planilhaOrcamentoCliente');
 const { contentDisposition } = require('../utils/nomeArquivoDownload');
 const { registrarEvento } = require('./propostasController');
+const { registrarErroInesperado } = require('../middleware/erros');
+const { revisarProposta } = require('../services/revisaoPreEnvio');
 
 // Assinatura padrão da empresa — entra sempre no final de todo e-mail
 // enviado ao cliente (mensagem padrão ou digitada à mão), sem exceção.
@@ -107,7 +109,7 @@ async function gerarPdf(req, res) {
   } catch (err) {
     // fila de PDF cheia (services/pdfPuppeteer.js): passageiro, a mensagem diz o que fazer
     if (err.codigo === 'FILA_PDF_CHEIA') return res.status(503).json({ erro: err.message });
-    console.error('Erro ao gerar PDF:', err);
+    registrarErroInesperado(req, err);   // log + resumo diário de erros (antes só o console)
     res.status(500).json({ erro: 'Erro ao gerar PDF da proposta' });
   }
 }
@@ -167,10 +169,18 @@ async function enviarEmail(req, res) {
   res.json({ mensagem: `Proposta ${proposta.numero} enviada para ${destinatario}` });
 }
 
+// Revisão da proposta antes do envio por e-mail (services/revisaoPreEnvio.js, a mesma conferência que o
+// assistente faz antes de enviar). Só leitura; rota em routes/v2/revisaoEnvio.js, com a posse do envio.
+async function revisaoEnvio(req, res) {
+  const revisao = await revisarProposta(req.params.id);
+  if (!revisao) return res.status(404).json({ erro: 'Proposta não encontrada' });
+  res.json(revisao);
+}
+
 module.exports = {
-  gerarPdf, gerarPlanilha, enviarEmail,
+  gerarPdf, gerarPlanilha, enviarEmail, revisaoEnvio,
   // PDF da proposta sem resposta HTTP (aprovação por link, cópia na pasta do projeto/laudo)
   montarPdfBuffer,
-  // a mesma assinatura no e-mail da nota fiscal (notasFiscaisController)
+  // a mesma assinatura no e-mail da nota fiscal (controllers/notasFiscais/)
   ASSINATURA_EMPRESA,
 };

@@ -53,6 +53,8 @@ export const formVazio = (padroes) => ({
   tipo: '',
   porte: '',
   cliente_nome: '',
+  // cliente escolhido da lista do cadastro (2.39); null = nome digitado sem cadastro
+  cliente_id: null,
   responsavel: '',
   local_obra: '',
   escopo: '',

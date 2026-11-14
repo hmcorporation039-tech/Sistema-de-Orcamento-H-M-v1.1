@@ -474,10 +474,11 @@ function Execucao({ obra, ligar, desligar }) {
 // ── Financeiro (movimentos ligados) ───────────────────────────────────
 function Financeiro({ obra, ligar, desligar }) {
   const carregar = useCallback(() => {
-    const hoje = new Date();
-    const inicio = paraIso(new Date(hoje.getFullYear(), hoje.getMonth() - 6, 1));
-    // fim em Brasília: em UTC, depois das 21h o período terminava amanhã
-    return getFinanceiroMovimentos({ obraId: 'sem', dataInicio: inicio, dataFim: hojeBrasilia(hoje) })
+    // período no dia de Brasília (em UTC, depois das 21h terminava amanhã): do 1º dia de 6 meses atrás até hoje
+    const hoje = hojeBrasilia();
+    const [ano, mes] = hoje.split('-').map(Number);
+    const inicio = paraIso(new Date(ano, mes - 1 - 6, 1));
+    return getFinanceiroMovimentos({ obraId: 'sem', dataInicio: inicio, dataFim: hoje })
       .then(r => (r.data.movimentos || []).map(m => ({
         id: m.id,
         rotulo: `${new Date(m.data_hora).toLocaleDateString('pt-BR')} — ${m.tipo === 'realizado' ? 'saída' : 'entrada'} ${moeda(m.valor)} — ${m.nome || 'sem nome'}`,

@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const { pesquisarPrecoMercado, salvarPesquisaManual, ErroPesquisaMercado } = require('../services/pesquisaMercado');
 const { sinalDaRequisicao } = require('../services/ia');
+const { registrarErroInesperado } = require('../middleware/erros');
 
 // Endpoint HTTP — a lógica de verdade (prompt, fallback Gemini→Claude, cache)
 // mora em services/pesquisaMercado.js, reaproveitada também pelas
@@ -17,7 +18,7 @@ async function pesquisar(req, res) {
     if (err instanceof ErroPesquisaMercado) {
       return res.status(err.status).json({ erro: err.message });
     }
-    console.error('Erro inesperado na pesquisa de mercado:', err);
+    registrarErroInesperado(req, err);   // log + resumo diário de erros (antes só o console)
     res.status(500).json({ erro: 'Erro ao pesquisar preço de mercado' });
   }
 }
@@ -34,7 +35,7 @@ async function salvar(req, res) {
     if (err instanceof ErroPesquisaMercado) {
       return res.status(err.status).json({ erro: err.message });
     }
-    console.error('Erro ao salvar pesquisa de mercado:', err);
+    registrarErroInesperado(req, err);
     res.status(500).json({ erro: 'Erro ao salvar pesquisa de mercado' });
   }
 }

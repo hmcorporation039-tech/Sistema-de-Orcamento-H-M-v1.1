@@ -1,8 +1,8 @@
-// Notas fiscais de serviço (versão 2.4) — controllers/notasFiscaisController.js.
+// Notas fiscais de serviço (versão 2.4) — controllers/notasFiscais/ (uma parte por assunto, 2.39).
 // Tudo só administrador (mesma regra do Financeiro, onde a tela fica).
 // Importação: XML soltos ou .zip, em memória (até 20 MB por arquivo, 300 arquivos).
 const { criarUpload, multer } = require('../../utils/upload');
-const ctrl = require('../../controllers/notasFiscaisController');
+const ctrl = require('../../controllers/notasFiscais');
 
 const uploadXml = criarUpload({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024, files: 300 } });
 

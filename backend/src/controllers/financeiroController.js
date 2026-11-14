@@ -243,10 +243,12 @@ async function verificarAgora(req, res, next) {
     const resumo = await rotinas.executarRotina('pix-email', { origem: 'manual', usuarioId: req.usuario?.id });
     res.json(resumo);
   } catch (err) {
-    console.error('Erro ao verificar Pix na caixa de entrada:', err);
     // falha de conexão com a caixa: mensagem escrita para o usuário; o resto vai
-    // para o tratarErros (registra no resumo de erros e não mostra texto interno)
-    if (err.code === 'EMAIL_CONEXAO') return res.status(503).json({ erro: err.message || 'Erro ao verificar Pix na caixa de entrada' });
+    // para o tratarErros (ele faz o log, registra no resumo de erros e não mostra texto interno)
+    if (err.code === 'EMAIL_CONEXAO') {
+      console.error('Erro ao verificar Pix na caixa de entrada:', err.message);
+      return res.status(503).json({ erro: err.message || 'Erro ao verificar Pix na caixa de entrada' });
+    }
     return next(err);
   }
 }

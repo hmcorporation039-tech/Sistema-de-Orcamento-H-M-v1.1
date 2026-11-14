@@ -1380,3 +1380,23 @@ Pedido do usuário: seção 4 do relatório da revisão (redundâncias desnecess
   - SPDA: só o visual do cabeçalho das planilhas.
 - **Testes:** `backend/testes/revisao238.test.js` (fila, datas, reais, chave de busca, material por descrição, Pix das 22h); Jest de Indicador/Etiqueta/Info, texto e erroDocumento (175); testes das skills atualizados para a resistividade nova.
 - **Ficou de fora:** dependências invertidas do `_comum` (cad → climatização/industrial, instalação → quadros/pressurização), séries de bateria/nobreak por skill (entram por parâmetro), `curvaAbc` do frontend (cópia conferida por teste com o backend).
+
+### 14/11/2026: versão 2.39.0 — servidor que não perde erro, limites da IA por pesquisa, banco no fuso de Brasília, cliente escolhido da lista e telas divididas
+
+Pedido do usuário: seção 5 do relatório da revisão (melhorias por área: servidor e telas).
+- **Servidor:**
+  - Erros 500 que não deixavam rastro (atribuição de Pix, vencimentos, exclusão de usuário, backup, composições, pesquisa de mercado, preços de mão de obra, análise, PDF da proposta, 3D, teste de IA, aprovação pública) passam por `middleware/erros.registrarErroInesperado` e entram no resumo diário; ~20 try/catch que repetiam o tratador central saíram (resposta igual) e logs em dobro sumiram. O endereço no resumo troca tokens de link por `:token` (antes o token da aprovação/3D ia para `erros_sistema` e para o e-mail).
+  - `controllers/notasFiscaisController.js` (839 linhas) dividido em `controllers/notasFiscais/` (cadastro, cancelamento, documentos, importação, atestado, vínculos); lógica tirada das rotas de follow-up, notas a receber, revisão de envio e especificação (`controllers/especificacaoController.js`).
+  - Banco: a conexão fixa `TimeZone=America/Sao_Paulo` (`config/database.js`) — o `CURRENT_DATE` do painel, do aprendizado e do uso da IA não depende mais da configuração do PostgreSQL; índice `idx_proposta_itens_material` (migração 2.0-58); `apoioMigracoes.garantirNotNull/permitirNull`: três ALTER COLUMN que travavam a tabela a cada partida (financeiro_movimentos, analises_projeto, laudos_projetos) só rodam quando a coluna ainda não está como deveria.
+  - Limite da IA por usuário e por peso (`utils/limiteUsoIa.js`): cada pesquisa na web conta (`IA_PESQUISAS_POR_HORA`, padrão 60) — o lote de medidas (até 15 buscas) contava como um pedido; no lote, o que passa do limite fica "ignorado" para o próximo; preços da especificação (até 8 buscas) idem. Leitura com IA do orçamento da concorrência: `IA_LEITURAS_POR_HORA`, padrão 10 (antes sem limite).
+  - Cliente da análise: `PUT /projetos/analises/:id` aceita `cliente_id` (presente liga/desliga; ausente mantém; inexistente → 400) e o orçamento gerado da análise usa esse cliente antes de procurar pelo nome. Margem padrão aceita vírgula (`paraNumeroBR`).
+- **Telas:**
+  - `hojeBrasilia()`/`somarDias` no follow-up, vencimentos, cronograma, histórico e Pix sem obra (o "hoje" vinha do relógio do computador).
+  - 7 listas suspensas no `Select` padrão (A–Z): Mapa do CAD, planta do Mapa do CAD, Pix sem obra, atestado, OS de campo.
+  - 10 campos de R$ com `CampoMoeda` (vírgula; `permiteVazio` para valores opcionais): especificação, materiais, preços de mão de obra, contratos, financeiro; cronograma lê "1.150" como mil cento e cinquenta.
+  - Cartão **"Padrões de orçamento"** em Integrações: margem + BDI + impostos num lugar só (Materiais só mostra a margem com o atalho).
+  - `components/CampoCliente.js`: cliente escolhido da lista (busca sem acento, A–Z, CPF/CNPJ para homônimos; nome novo continua valendo) no Orçamento e na Análise, mandando `cliente_id`.
+  - Acessibilidade: `useRotuloLigado` (rótulo ligado ao campo) no `Campo` do kit, nos campos dos laudos e nos componentes de seleção (166 de 182 `Campo` + 80 de laudo); paginação com nome.
+  - Divididas sem mudar o visual: Orçamento (1.247 → 840 linhas: `pages/orcamento/calculos|ganchos|Avisos|SecaoOrcamento`), Análise de Projeto (890 → 366, `pages/analise/`), Materiais (824 → 246, `pages/materiais/`), Histórico (619 → 280, `pages/historico/`).
+- **Testes:** `revisao239.test.js` (limite por peso, lote, migração sem trava, fuso, cliente da análise), `errosServidor239.test.js` (registro dos 500, token fora do resumo, respostas iguais, divisão das notas, middlewares das rotas movidas); Jest 194 (CampoCliente, CampoMoeda, rótulo ligado, Padrões de orçamento, cálculos do orçamento).
+- **Ficou de fora:** 16 `Campo` e 21 `<label>` soltos (componentes que não recebem `id`), rota do comparador da concorrência com lógica (fica para a correção do que ficou de fora) e o restante do Orçamento (carga, rascunho e salvar juntos de propósito).

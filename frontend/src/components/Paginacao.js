@@ -11,6 +11,9 @@ export default function Paginacao({ pagina, totalPaginas, total, onMudarPagina }
       <span>{total} {total === 1 ? 'registro' : 'registros'} · página {pagina} de {totalPaginas}</span>
       <div style={{ display: 'flex', gap: 6 }}>
         <button
+          type="button"
+          aria-label="Página anterior"
+          title="Página anterior"
           onClick={() => onMudarPagina(pagina - 1)}
           disabled={pagina <= 1}
           style={{ ...btn, opacity: pagina <= 1 ? 0.4 : 1, cursor: pagina <= 1 ? 'not-allowed' : 'pointer' }}
@@ -18,6 +21,9 @@ export default function Paginacao({ pagina, totalPaginas, total, onMudarPagina }
           <ChevronLeft size={14} />
         </button>
         <button
+          type="button"
+          aria-label="Próxima página"
+          title="Próxima página"
           onClick={() => onMudarPagina(pagina + 1)}
           disabled={pagina >= totalPaginas}
           style={{ ...btn, opacity: pagina >= totalPaginas ? 0.4 : 1, cursor: pagina >= totalPaginas ? 'not-allowed' : 'pointer' }}

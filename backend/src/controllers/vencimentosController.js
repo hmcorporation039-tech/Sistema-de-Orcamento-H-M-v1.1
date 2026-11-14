@@ -5,8 +5,14 @@ const venc = require('../services/vencimentos');
 const { criarPropostaRenovacao } = require('../services/propostaRenovacao');
 const { registrarAuditoria } = require('../services/auditoria');
 const pool = require('../config/database');
+const { registrarErroInesperado } = require('../middleware/erros');
 
-const responder = (res, err) => res.status(err.status || 500).json({ erro: err.status ? err.message : 'Não foi possível concluir. Tente de novo.' });
+// erro com status: a mensagem é para o usuário; sem status: inesperado — registrado (log + resumo diário) e
+// resposta genérica (antes o 500 não deixava rastro nenhum)
+const responder = (req, res, err) => {
+  if (!err.status) registrarErroInesperado(req, err);
+  res.status(err.status || 500).json({ erro: err.status ? err.message : 'Não foi possível concluir. Tente de novo.' });
+};
 
 const ehAdmin = (req) => req.usuario?.role === 'admin';
 const lista = (req) => venc.listar(pool, undefined, { incluirEmpresa: ehAdmin(req) });
@@ -22,7 +28,7 @@ async function listar(req, res) {
       await venc.sincronizarCertificado(pool);
     }
     res.json(await lista(req));
-  } catch (err) { responder(res, err); }
+  } catch (err) { responder(req, res, err); }
 }
 
 // Vencimento de documento da empresa: quem não é administrador não mexe.
@@ -38,7 +44,7 @@ async function criar(req, res) {
     const id = await venc.criar(pool, req.body || {}, req.usuario.id);
     await registrarAuditoria(pool, { entidade: 'vencimento_laudo', entidadeId: id, acao: 'criar', usuarioId: req.usuario.id, detalhes: { descricao: req.body?.descricao, emitido_em: req.body?.emitido_em } });
     res.status(201).json({ id, ...(await lista(req)) });
-  } catch (err) { responder(res, err); }
+  } catch (err) { responder(req, res, err); }
 }
 
 async function renovar(req, res) {
@@ -47,7 +53,7 @@ async function renovar(req, res) {
     await venc.renovar(pool, Number(req.params.id), req.body || {});
     await registrarAuditoria(pool, { entidade: 'vencimento_laudo', entidadeId: Number(req.params.id), acao: 'renovar', usuarioId: req.usuario.id, detalhes: req.body || {} });
     res.json(await lista(req));
-  } catch (err) { responder(res, err); }
+  } catch (err) { responder(req, res, err); }
 }
 
 async function encerrar(req, res) {
@@ -56,7 +62,7 @@ async function encerrar(req, res) {
     await venc.encerrar(pool, Number(req.params.id));
     await registrarAuditoria(pool, { entidade: 'vencimento_laudo', entidadeId: Number(req.params.id), acao: 'encerrar', usuarioId: req.usuario.id });
     res.json(await lista(req));
-  } catch (err) { responder(res, err); }
+  } catch (err) { responder(req, res, err); }
 }
 
 // Rascunho de proposta para renovar o laudo que está vencendo (services/propostaRenovacao.js). Só laudos.
@@ -65,7 +71,7 @@ async function propostaRenovacao(req, res) {
     const r = await criarPropostaRenovacao(Number(req.params.id), req.usuario);
     if (r.criada) await registrarAuditoria(pool, { entidade: 'vencimento_laudo', entidadeId: Number(req.params.id), acao: 'proposta_renovacao', usuarioId: req.usuario.id, detalhes: { proposta: r.numero } });
     res.status(r.criada ? 201 : 200).json({ ...r, ...(await lista(req)) });
-  } catch (err) { responder(res, err); }
+  } catch (err) { responder(req, res, err); }
 }
 
 module.exports = { listar, criar, renovar, encerrar, propostaRenovacao };

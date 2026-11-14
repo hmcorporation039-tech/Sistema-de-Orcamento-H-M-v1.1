@@ -3,6 +3,7 @@
 const rotinas = require('../services/rotinas');
 const ia = require('../services/ia');
 const iaCache = require('../services/iaCache');
+const { registrarErroInesperado } = require('../middleware/erros');
 
 async function listar(req, res) {
   const dados = await rotinas.statusRotinas();
@@ -18,10 +19,13 @@ async function executar(req, res, next) {
     const status = await rotinas.statusRotinas({ historico: 1 });
     res.json({ chave, resumo, rotina: status.rotinas.find(r => r.chave === chave) || null });
   } catch (err) {
-    console.error(`Erro ao executar a rotina ${chave}:`, err);
     // falha de conexão com a caixa de e-mail: mensagem escrita para o usuário; o
-    // resto vai para o tratarErros (registra no resumo de erros, sem texto interno)
-    if (err.code === 'EMAIL_CONEXAO') return res.status(503).json({ erro: err.message || 'Erro ao executar a rotina' });
+    // resto vai para o tratarErros (ele faz o log e registra no resumo de erros, sem texto interno —
+    // antes o log saía duas vezes)
+    if (err.code === 'EMAIL_CONEXAO') {
+      console.error(`Erro ao executar a rotina ${chave}:`, err.message);
+      return res.status(503).json({ erro: err.message || 'Erro ao executar a rotina' });
+    }
     return next(err);
   }
 }
@@ -33,6 +37,9 @@ async function testarIA(req, res) {
     const r = await ia.perguntarJSON('Teste de conexão do sistema H&M. Responda exatamente com o JSON {"ok": true}.', { finalidade: 'teste do painel', timeoutMs: 120000 });
     res.json({ ok: r.json?.ok === true, provedor: r.provedor, fonte: r.fonte, ms: r.ms, ia: ia.status() });
   } catch (err) {
+    // nenhuma IA configurada/disponível (503) é o próprio resultado do teste; o 500 é inesperado e vai
+    // para o log e o resumo diário de erros (antes não deixava rastro)
+    if (!err.indisponivel) registrarErroInesperado(req, err);
     res.status(err.indisponivel ? 503 : 500).json({ erro: `Nenhuma IA respondeu: ${String(err.message).slice(0, 400)}`, ia: ia.status() });
   }
 }

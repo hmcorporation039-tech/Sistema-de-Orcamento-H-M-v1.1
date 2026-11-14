@@ -2,7 +2,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import AnaliseProjeto from './AnaliseProjeto';
-import { getAnaliseProjeto, atualizarAnaliseProjeto, getDisciplinasProjeto, getPastaAnalise } from '../services/api';
+import { getAnaliseProjeto, atualizarAnaliseProjeto, getDisciplinasProjeto, getPastaAnalise, getTodosClientes } from '../services/api';
 
 // Salvamento automático da análise (revisão de 11/2026). Dados SINTÉTICOS.
 //  - a edição feita < 1,5 s antes de trocar de análise se perdia (timer cancelado; o "salvar ao sair" só
@@ -13,6 +13,7 @@ jest.mock('../services/api', () => ({
   gerarRelatorioCompatibilizacao: jest.fn(), getAnaliseProjeto: jest.fn(), atualizarAnaliseProjeto: jest.fn(),
   gerarOrcamentoDaAnalise: jest.fn(), getPastaAnalise: jest.fn(() => Promise.resolve({ data: {} })), abrirPastaAnalise: jest.fn(),
   getDisciplinasProjeto: jest.fn(() => Promise.resolve({ data: [] })), criarProjetoDeAnalise: jest.fn(),
+  getTodosClientes: jest.fn(),
 }));
 jest.mock('react-hot-toast', () => { const t = jest.fn(); t.success = jest.fn(); t.error = jest.fn(); return { __esModule: true, default: t }; });
 jest.mock('../components/PainelPasta', () => () => null);
@@ -44,6 +45,8 @@ beforeEach(() => {
   // o Jest do react-scripts zera as implementações antes de cada teste (resetMocks)
   getDisciplinasProjeto.mockResolvedValue({ data: [] });
   getPastaAnalise.mockResolvedValue({ data: {} });
+  // campo Cliente com a lista do cadastro (2.39)
+  getTodosClientes.mockResolvedValue({ data: { itens: [] } });
   getAnaliseProjeto.mockReset();
   getAnaliseProjeto.mockImplementation((id) => Promise.resolve({ data: dados(Number(id)) }));
   atualizarAnaliseProjeto.mockReset();

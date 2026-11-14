@@ -8,6 +8,7 @@
 // Coordenadas do desenho em metros; na tela o Y é invertido (y → −y) para a planta ficar na posição de leitura.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { marcarDoProjeto, gruposDaPaleta } from './componentesDoProjeto';
+import Select from '../Select';
 import { Crosshair, Maximize2, Minimize2, MousePointer2, Plus, Scan, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
 
 export const SITUACAO = {
@@ -372,14 +373,14 @@ export default function PlantaMapaCad({ planta, simbolos, nomeDoTipo, ativa, onE
             {modo === 'inserir' && (
               <span style={{ ...botao, padding: '0 6px', gap: 6 }}>
                 <IconeComponente componente={compEscolhido} tamanho={20} cor={COR_INSERIDO} />
-                <select value={compEscolhido?.simbolo || ''} onChange={(e) => setEscolhido(e.target.value)} aria-label="Componente a inserir" data-testid="componente-a-inserir"
+                <Select value={compEscolhido?.simbolo || ''} onChange={(e) => setEscolhido(e.target.value)} aria-label="Componente a inserir" data-testid="componente-a-inserir"
                   style={{ background: 'transparent', color: '#ddd', border: 'none', fontSize: 12, maxWidth: 260 }}>
                   {gruposComp.map(([g, cs]) => (
                     <optgroup key={g} label={g}>
                       {cs.map(c => <option key={c.simbolo} value={c.simbolo} style={{ color: '#111' }}>{c.nome}</option>)}
                     </optgroup>
                   ))}
-                </select>
+                </Select>
                 {temOutras && (
                   <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#bbb', whiteSpace: 'nowrap', cursor: 'pointer' }}
                     title="Mostra também os componentes das disciplinas que não são desta análise (o inserido entra na disciplina dele ao reprocessar)">
@@ -394,11 +395,11 @@ export default function PlantaMapaCad({ planta, simbolos, nomeDoTipo, ativa, onE
         {/* barra de ferramentas */}
         <div style={{ position: 'absolute', top: podeEditar ? 44 : 8, right: 8, display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 'calc(100% - 16px)' }}>
           {areas.length > 0 && (
-            <select value="" onChange={(e) => { const a = areas[Number(e.target.value)]; if (a) setVb(enquadrar(a.caixa, tamanho, 0.08)); }}
+            <Select value="" onChange={(e) => { const a = areas[Number(e.target.value)]; if (a) setVb(enquadrar(a.caixa, tamanho, 0.08)); }}
               style={{ ...botao, padding: '0 6px' }} aria-label="Ir para uma área da folha" data-testid="ir-para-area">
               <option value="">Ir para…</option>
               {areas.map((a, i) => <option key={i} value={i}>{a.nome} — {a.pontos} ponto(s)</option>)}
-            </select>
+            </Select>
           )}
           <button type="button" style={botao} onClick={() => zoom(0.7)} title="Aproximar (ou roda do mouse)" aria-label="Aproximar"><ZoomIn size={14} /></button>
           <button type="button" style={botao} onClick={() => zoom(1 / 0.7)} title="Afastar" aria-label="Afastar"><ZoomOut size={14} /></button>

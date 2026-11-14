@@ -213,13 +213,8 @@ async function enviarMensagem(req, res) {
     return res.status(429).json({ erro: `Limite diário do assistente atingido (${cfg.limiteDiario} mensagens por usuário). Volta amanhã — ou peça ao administrador para ajustar ASSISTENTE_LIMITE_DIARIO.` });
   }
   const g = gerenciador();
-  let inicio;
-  try {
-    inicio = await g.iniciar({ usuario: req.usuario, conversa: c, texto, contexto: normalizarContexto(req.body?.contexto), arquivos, rota });
-  } catch (e) {
-    if (e.status) return res.status(e.status).json({ erro: e.message });
-    throw e;
-  }
+  // conversa ainda respondendo (409): o tratador central responde { erro }, antes de abrir o stream
+  const inicio = await g.iniciar({ usuario: req.usuario, conversa: c, texto, contexto: normalizarContexto(req.body?.contexto), arquivos, rota });
   const stream = abrirStream(res);
   stream.enviar({ tipo: 'mensagens', usuario: inicio.mensagemUsuario, assistente: inicio.mensagemAssistente, titulo: inicio.titulo });
   const sair = g.acompanhar(c.id, (ev) => {
@@ -355,19 +350,15 @@ async function ferramentaHistoricoPreco(req, res) {
   res.json(await historicoPreco(pool, descricao));
 }
 
+// ação inválida (ErroAcao, 400/404): o tratador central responde { erro }
 async function ferramentaProporAcao(req, res) {
-  try {
-    const p = await prepararAcao(req.body || {});
-    const { rows: [acao] } = await pool.query(
-      `INSERT INTO assistente_acoes (conversa_id, mensagem_id, usuario_id, tipo, alvo_tipo, alvo_id, descricao, payload, impressao, expira_em)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, NOW() + make_interval(hours => $10::int)) RETURNING *`,
-      [req.assistente.conversaId, req.assistente.mensagemId, req.usuario.id, p.tipo, p.alvo_tipo, p.alvo_id, p.descricao, p.payload, p.impressao, config().acaoPrazoHoras]);
-    registrarAcao(req.assistente.exec, acao);
-    res.status(201).json({ id: acao.id, resumo: p.resumo, status: acao.status });
-  } catch (e) {
-    if (e instanceof ErroAcao) return res.status(e.status).json({ erro: e.message });
-    throw e;
-  }
+  const p = await prepararAcao(req.body || {});
+  const { rows: [acao] } = await pool.query(
+    `INSERT INTO assistente_acoes (conversa_id, mensagem_id, usuario_id, tipo, alvo_tipo, alvo_id, descricao, payload, impressao, expira_em)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, NOW() + make_interval(hours => $10::int)) RETURNING *`,
+    [req.assistente.conversaId, req.assistente.mensagemId, req.usuario.id, p.tipo, p.alvo_tipo, p.alvo_id, p.descricao, p.payload, p.impressao, config().acaoPrazoHoras]);
+  registrarAcao(req.assistente.exec, acao);
+  res.status(201).json({ id: acao.id, resumo: p.resumo, status: acao.status });
 }
 
 // POST /assistente/mensagens/:id/conhecimento — a resposta (da IA ou do suporte Claude Max) vira CONHECIMENTO aprovado:

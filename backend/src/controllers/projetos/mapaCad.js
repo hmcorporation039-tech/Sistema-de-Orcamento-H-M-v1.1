@@ -73,29 +73,25 @@ async function ler(req, res) {
 async function salvar(req, res) {
   const { id } = req.params;
   const { arquivo, linhas } = req.body || {};
-  let resultado;
-  try {
-    resultado = await comTransacao(async (client) => {
-      const { rows: [a] } = await client.query('SELECT dados_extraidos, obra_id FROM analises_projeto WHERE id = $1 FOR UPDATE', [id]);
-      if (!a) throw Object.assign(new Error('Análise não encontrada'), { status: 404 });
-      const dados = Array.isArray(a.dados_extraidos) ? a.dados_extraidos : [];
-      const i = dados.findIndex(d => d?.mapa_cad?.simbolos && (d.mapa_cad.arquivo || d.arquivo) === arquivo);
-      if (i < 0) throw Object.assign(new Error('Esta análise não tem mapa do CAD para esse arquivo (análise feita antes do mapa, ou arquivo que não é DWG/DXF).'), { status: 404 });
-      const erro = mapaCad.validarLinhas(linhas, dados[i].mapa_cad);
-      if (erro) throw Object.assign(new Error(erro), { status: 400 });
-      const { mapa, alteradas } = mapaCad.aplicarNoMapa(dados[i].mapa_cad, linhas);
-      dados[i] = { ...dados[i], mapa_cad: mapa };
-      await client.query('UPDATE analises_projeto SET dados_extraidos = $1 WHERE id = $2', [JSON.stringify(dados), id]);
-      await registrarAuditoria(client, {
-        entidade: 'analises_projeto', entidadeId: Number(id), acao: 'mapa_cad', usuarioId: req.usuario.id,
-        detalhes: { arquivo, linhas: alteradas.map(x => ({ layer: x.depois.layer, de: x.antes.simbolo, para: x.depois.simbolo, altura_m: x.depois.altura_m ?? null, desfeita: x.desfeita })) },
-      });
-      return { dados, alteradas, escritorio: dados[i].mapa_cad.escritorio || '', fonte: fonteDaAnalise(a, id), disciplinas: dados[i].disciplinas || [], mapa };
+  // erro com status (404/400) sai pelo tratador central (middleware/erros.js) como { erro: mensagem },
+  // aqui e em editar/confirmarBloco
+  const resultado = await comTransacao(async (client) => {
+    const { rows: [a] } = await client.query('SELECT dados_extraidos, obra_id FROM analises_projeto WHERE id = $1 FOR UPDATE', [id]);
+    if (!a) throw Object.assign(new Error('Análise não encontrada'), { status: 404 });
+    const dados = Array.isArray(a.dados_extraidos) ? a.dados_extraidos : [];
+    const i = dados.findIndex(d => d?.mapa_cad?.simbolos && (d.mapa_cad.arquivo || d.arquivo) === arquivo);
+    if (i < 0) throw Object.assign(new Error('Esta análise não tem mapa do CAD para esse arquivo (análise feita antes do mapa, ou arquivo que não é DWG/DXF).'), { status: 404 });
+    const erro = mapaCad.validarLinhas(linhas, dados[i].mapa_cad);
+    if (erro) throw Object.assign(new Error(erro), { status: 400 });
+    const { mapa, alteradas } = mapaCad.aplicarNoMapa(dados[i].mapa_cad, linhas);
+    dados[i] = { ...dados[i], mapa_cad: mapa };
+    await client.query('UPDATE analises_projeto SET dados_extraidos = $1 WHERE id = $2', [JSON.stringify(dados), id]);
+    await registrarAuditoria(client, {
+      entidade: 'analises_projeto', entidadeId: Number(id), acao: 'mapa_cad', usuarioId: req.usuario.id,
+      detalhes: { arquivo, linhas: alteradas.map(x => ({ layer: x.depois.layer, de: x.antes.simbolo, para: x.depois.simbolo, altura_m: x.depois.altura_m ?? null, desfeita: x.desfeita })) },
     });
-  } catch (e) {
-    if (e.status) return res.status(e.status).json({ erro: e.message });
-    throw e;
-  }
+    return { dados, alteradas, escritorio: dados[i].mapa_cad.escritorio || '', fonte: fonteDaAnalise(a, id), disciplinas: dados[i].disciplinas || [], mapa };
+  });
   // aprendizado fora da transação: se falhar, a correção da análise já está salva
   // (biblioteca de blocos: a medida real e o escritório do carimbo vão na chave — CAD-08). Cada confirmação é o voto
   // deste projeto (obra/análise); "não é ponto" também se aprende, pelas disciplinas marcadas no arquivo.
@@ -146,41 +142,35 @@ function pedidosDo3d(corpo, an) {
 async function editar(req, res) {
   const { id } = req.params;
   const corpo = req.body || {};
-  let resultado;
-  try {
-    resultado = await comTransacao(async (client) => {
-      const { rows: [a] } = await client.query('SELECT dados_extraidos, compatibilizacao, espacial FROM analises_projeto WHERE id = $1 FOR UPDATE', [id]);
-      if (!a) throw Object.assign(new Error('Análise não encontrada'), { status: 404 });
-      const dados = Array.isArray(a.dados_extraidos) ? a.dados_extraidos : [];
-      let pedidos;
-      if (corpo.sistema === '3d') {
-        pedidos = pedidosDo3d(corpo, a);
-        if (typeof pedidos === 'string') throw Object.assign(new Error(pedidos), { status: 400 });
-      } else {
-        pedidos = { [corpo.arquivo]: { adicionar: corpo.adicionar, remover: corpo.remover, desfazer: corpo.desfazer } };
-      }
-      const resumo = { adicionados: 0, removidos: 0, desfeitos: 0 };
-      for (const [arquivo, pedido] of Object.entries(pedidos)) {
-        const i = dados.findIndex(d => d?.mapa_cad?.simbolos && (d.mapa_cad.arquivo || d.arquivo) === arquivo);
-        if (i < 0) throw Object.assign(new Error('Esta análise não tem planta do CAD para esse arquivo (análise feita antes do mapa, ou arquivo que não é DWG/DXF).'), { status: 404 });
-        const erro = edicoesDoMapa.validarPedido(pedido, dados[i].mapa_cad);
-        if (erro) throw Object.assign(new Error(erro), { status: 400 });
-        const r = edicoesDoMapa.aplicarPedido(dados[i].mapa_cad.edicoes, pedido, req.usuario.id);
-        dados[i] = { ...dados[i], mapa_cad: { ...dados[i].mapa_cad, edicoes: r.edicoes, edicoesNoOrcamento: false } };
-        for (const k of Object.keys(resumo)) resumo[k] += r.resumo[k];
-      }
-      await client.query('UPDATE analises_projeto SET dados_extraidos = $1 WHERE id = $2', [JSON.stringify(dados), id]);
-      await registrarAuditoria(client, {
-        entidade: 'analises_projeto', entidadeId: Number(id), acao: 'mapa_cad_componentes', usuarioId: req.usuario.id,
-        detalhes: { arquivos: Object.keys(pedidos), origem: corpo.sistema === '3d' ? '3d' : 'planta', ...resumo,
-          inseridos: Object.values(pedidos).flatMap(p => (p.adicionar || []).map(x => x.simbolo)).slice(0, 50) },
-      });
-      return { dados, resumo };
+  const resultado = await comTransacao(async (client) => {
+    const { rows: [a] } = await client.query('SELECT dados_extraidos, compatibilizacao, espacial FROM analises_projeto WHERE id = $1 FOR UPDATE', [id]);
+    if (!a) throw Object.assign(new Error('Análise não encontrada'), { status: 404 });
+    const dados = Array.isArray(a.dados_extraidos) ? a.dados_extraidos : [];
+    let pedidos;
+    if (corpo.sistema === '3d') {
+      pedidos = pedidosDo3d(corpo, a);
+      if (typeof pedidos === 'string') throw Object.assign(new Error(pedidos), { status: 400 });
+    } else {
+      pedidos = { [corpo.arquivo]: { adicionar: corpo.adicionar, remover: corpo.remover, desfazer: corpo.desfazer } };
+    }
+    const resumo = { adicionados: 0, removidos: 0, desfeitos: 0 };
+    for (const [arquivo, pedido] of Object.entries(pedidos)) {
+      const i = dados.findIndex(d => d?.mapa_cad?.simbolos && (d.mapa_cad.arquivo || d.arquivo) === arquivo);
+      if (i < 0) throw Object.assign(new Error('Esta análise não tem planta do CAD para esse arquivo (análise feita antes do mapa, ou arquivo que não é DWG/DXF).'), { status: 404 });
+      const erro = edicoesDoMapa.validarPedido(pedido, dados[i].mapa_cad);
+      if (erro) throw Object.assign(new Error(erro), { status: 400 });
+      const r = edicoesDoMapa.aplicarPedido(dados[i].mapa_cad.edicoes, pedido, req.usuario.id);
+      dados[i] = { ...dados[i], mapa_cad: { ...dados[i].mapa_cad, edicoes: r.edicoes, edicoesNoOrcamento: false } };
+      for (const k of Object.keys(resumo)) resumo[k] += r.resumo[k];
+    }
+    await client.query('UPDATE analises_projeto SET dados_extraidos = $1 WHERE id = $2', [JSON.stringify(dados), id]);
+    await registrarAuditoria(client, {
+      entidade: 'analises_projeto', entidadeId: Number(id), acao: 'mapa_cad_componentes', usuarioId: req.usuario.id,
+      detalhes: { arquivos: Object.keys(pedidos), origem: corpo.sistema === '3d' ? '3d' : 'planta', ...resumo,
+        inseridos: Object.values(pedidos).flatMap(p => (p.adicionar || []).map(x => x.simbolo)).slice(0, 50) },
     });
-  } catch (e) {
-    if (e.status) return res.status(e.status).json({ erro: e.message });
-    throw e;
-  }
+    return { dados, resumo };
+  });
   res.json({ ...respostaDoMapa(resultado.dados), resumo: resultado.resumo });
 }
 
@@ -242,30 +232,24 @@ async function confirmarBloco(req, res) {
   const { id } = req.params;
   const { arquivo, bloco, descricao, disciplina } = req.body || {};
   if (!DISCIPLINAS.some(d => d.chave === disciplina)) return res.status(400).json({ erro: 'Escolha a disciplina do bloco.' });
-  let resultado;
-  try {
-    resultado = await comTransacao(async (client) => {
-      const { rows: [a] } = await client.query('SELECT dados_extraidos, obra_id FROM analises_projeto WHERE id = $1 FOR UPDATE', [id]);
-      if (!a) throw Object.assign(new Error('Análise não encontrada'), { status: 404 });
-      const dados = Array.isArray(a.dados_extraidos) ? a.dados_extraidos : [];
-      const i = dados.findIndex(x => x?.mapa_cad && (x.mapa_cad.arquivo || x.arquivo) === arquivo);
-      if (i < 0) throw Object.assign(new Error('Esta análise não tem mapa do CAD para esse arquivo.'), { status: 404 });
-      const blocos = dados[i].mapa_cad.blocos || [];
-      if (!blocos.some(b => b.bloco === bloco)) throw Object.assign(new Error('Bloco não encontrado neste arquivo: atualize a tela.'), { status: 400 });
-      const linha = await blocosAprendidos.confirmar({ nome: bloco, escritorio: dados[i].mapa_cad.escritorio || '', descricao, disciplina, fonte: fonteDaAnalise(a, id), arquivo }, client);
-      // fica guardado na análise: o reprocessamento conta o bloco como conferido (mapaCad.confirmadasDoMapa)
-      dados[i] = { ...dados[i], mapa_cad: { ...dados[i].mapa_cad, blocos: blocos.map(b => (b.bloco === bloco ? { ...b, situacao: 'confirmado', descricao: linha.descricao, disciplina } : b)) } };
-      await client.query('UPDATE analises_projeto SET dados_extraidos = $1 WHERE id = $2', [JSON.stringify(dados), id]);
-      await registrarAuditoria(client, {
-        entidade: 'analises_projeto', entidadeId: Number(id), acao: 'mapa_cad_bloco', usuarioId: req.usuario.id,
-        detalhes: { arquivo, bloco, descricao: linha.descricao, disciplina },
-      });
-      return { dados, linha };
+  const resultado = await comTransacao(async (client) => {
+    const { rows: [a] } = await client.query('SELECT dados_extraidos, obra_id FROM analises_projeto WHERE id = $1 FOR UPDATE', [id]);
+    if (!a) throw Object.assign(new Error('Análise não encontrada'), { status: 404 });
+    const dados = Array.isArray(a.dados_extraidos) ? a.dados_extraidos : [];
+    const i = dados.findIndex(x => x?.mapa_cad && (x.mapa_cad.arquivo || x.arquivo) === arquivo);
+    if (i < 0) throw Object.assign(new Error('Esta análise não tem mapa do CAD para esse arquivo.'), { status: 404 });
+    const blocos = dados[i].mapa_cad.blocos || [];
+    if (!blocos.some(b => b.bloco === bloco)) throw Object.assign(new Error('Bloco não encontrado neste arquivo: atualize a tela.'), { status: 400 });
+    const linha = await blocosAprendidos.confirmar({ nome: bloco, escritorio: dados[i].mapa_cad.escritorio || '', descricao, disciplina, fonte: fonteDaAnalise(a, id), arquivo }, client);
+    // fica guardado na análise: o reprocessamento conta o bloco como conferido (mapaCad.confirmadasDoMapa)
+    dados[i] = { ...dados[i], mapa_cad: { ...dados[i].mapa_cad, blocos: blocos.map(b => (b.bloco === bloco ? { ...b, situacao: 'confirmado', descricao: linha.descricao, disciplina } : b)) } };
+    await client.query('UPDATE analises_projeto SET dados_extraidos = $1 WHERE id = $2', [JSON.stringify(dados), id]);
+    await registrarAuditoria(client, {
+      entidade: 'analises_projeto', entidadeId: Number(id), acao: 'mapa_cad_bloco', usuarioId: req.usuario.id,
+      detalhes: { arquivo, bloco, descricao: linha.descricao, disciplina },
     });
-  } catch (e) {
-    if (e.status) return res.status(e.status).json({ erro: e.message });
-    throw e;
-  }
+    return { dados, linha };
+  });
   res.json({ ...respostaDoMapa(resultado.dados), bloco: resultado.linha });
 }
 

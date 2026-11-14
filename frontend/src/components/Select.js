@@ -48,5 +48,8 @@ function Sugestoes({ children, ...props }) {
   return <datalist {...props}>{ordenarOpcoes(children)}</datalist>;
 }
 
+// repassa o `id` ao <select>: o Campo do kit liga o rótulo a ele (ui/rotuloLigado.js)
+Select.encaminhaId = true;
+
 export default Select;
 export { Sugestoes, ordenarOpcoes, comparador };

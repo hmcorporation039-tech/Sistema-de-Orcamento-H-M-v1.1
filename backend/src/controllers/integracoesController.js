@@ -4,6 +4,7 @@ const rotinas = require('../services/rotinas');
 const { registrarAuditoria } = require('../services/auditoria');
 const { obterMargemPadrao } = require('../services/catalogoMateriais');
 const padroes = require('../services/padroesOrcamento');
+const { paraNumeroBR } = require('../utils/numeroBR');
 
 async function statusEmail(req, res) {
   const ultima = await pool.query(
@@ -22,10 +23,12 @@ async function verificarAgora(req, res, next) {
     const resumo = await rotinas.executarRotina('notas-email', { origem: 'manual', usuarioId: req.usuario?.id });
     res.json(resumo);
   } catch (err) {
-    console.error('Erro ao verificar caixa de entrada:', err);
     // falha de conexão com a caixa: mensagem escrita para o usuário; o resto vai
-    // para o tratarErros (registra no resumo de erros e não mostra texto interno)
-    if (err.code === 'EMAIL_CONEXAO') return res.status(503).json({ erro: err.message || 'Erro ao verificar caixa de entrada' });
+    // para o tratarErros (ele faz o log, registra no resumo de erros e não mostra texto interno)
+    if (err.code === 'EMAIL_CONEXAO') {
+      console.error('Erro ao verificar caixa de entrada:', err.message);
+      return res.status(503).json({ erro: err.message || 'Erro ao verificar caixa de entrada' });
+    }
     return next(err);
   }
 }
@@ -49,7 +52,8 @@ async function obterMargem(req, res) {
 
 async function atualizarMargem(req, res) {
   const { margem } = req.body;
-  const valor = parseFloat(margem);
+  // "35,5" (vírgula) vale 35,5 — o parseFloat lia 35 (2.39)
+  const valor = typeof margem === 'number' ? margem : paraNumeroBR(margem);
   // 300% já é muito acima de qualquer margem real; acima disso é erro de digitação
   if (!Number.isFinite(valor) || valor < 0 || valor > 300) {
     return res.status(400).json({ erro: 'Margem inválida (de 0 a 300%)' });

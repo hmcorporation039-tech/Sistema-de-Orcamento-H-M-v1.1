@@ -13,6 +13,14 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (err) { err.m
     assert.strictEqual(e.normalizarRota('/api/v2/relatorios'), '/api/v2/relatorios');
   });
 
+  await caso('token de link (vale como senha) não vai para o resumo; caminhos com palavras longas ficam', () => {
+    // tokens sintéticos no formato dos reais: base64url (aprovação) e hex (modelo 3D, documento, pacote)
+    assert.strictEqual(e.normalizarRota('/api/publico/aprovacao/Ab3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5zA7bC9d/pdf'), '/api/publico/aprovacao/:token/pdf');
+    assert.strictEqual(e.normalizarRota('/api/modelo-3d/ver/0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071'), '/api/modelo-3d/ver/:token');
+    assert.strictEqual(e.normalizarRota('/api/projetos/analises/12/compatibilizacao-dxf'), '/api/projetos/analises/:id/compatibilizacao-dxf');
+    assert.strictEqual(e.normalizarRota('/api/componentes-quadro/pesquisar-medidas'), '/api/componentes-quadro/pesquisar-medidas');
+  });
+
   await caso('mesma falha em registros diferentes tem a mesma assinatura; rota ou erro diferente, não', () => {
     const a = e.assinar('GET', '/api/obras/:id', 'coluna "x" não existe (linha 10)');
     assert.strictEqual(a, e.assinar('get', '/api/obras/:id', 'coluna "x" não existe (linha 99)'));

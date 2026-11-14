@@ -1,3 +1,5 @@
+import { useRotuloLigado } from './rotuloLigado';
+
 // Kit de tela do sistema: estilos e peças comuns (revisão de 28/10/2026 —
 // btnPrimario/overlay/Campo estavam copiados em até 19 páginas, com pequenas
 // diferenças). Página nova usa daqui; as antigas vão sendo trocadas.
@@ -41,11 +43,14 @@ export const estilos = {
   ajuda: { color: 'var(--texto-3)', fontSize: 13, margin: '0 0 10px', lineHeight: 1.6 },
 };
 
+// Rótulo + campo. O rótulo fica ligado ao campo (htmlFor/id gerado — ui/rotuloLigado.js)
+// quando o primeiro filho é um campo: leitor de tela lê o nome e o clique no rótulo foca.
 export function Campo({ label, children, style }) {
+  const { idCampo, filhos } = useRotuloLigado(children);
   return (
     <div style={style}>
-      <label style={estilos.rotulo}>{label}</label>
-      {children}
+      <label style={estilos.rotulo} htmlFor={idCampo || undefined}>{label}</label>
+      {filhos}
     </div>
   );
 }

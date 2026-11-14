@@ -16,16 +16,23 @@ export function paraNumero(texto) {
 // usuário digita — um <input type="number"> comum não aceita vírgula nem
 // formatação de milhar, então não dava pra mostrar em formato de moeda sem
 // travar a digitação.
-export default function CampoMoeda({ value, onChange, style, ...props }) {
+// `permiteVazio`: para valor opcional ("sem referência", "sem preço de compra"):
+// vazio aparece em branco (o placeholder fica à vista) e apagar tudo devolve
+// null em vez de 0 — sem isso, apagar o campo gravaria R$ 0,00.
+// repassa o `id` ao <input>: o Campo do kit liga o rótulo a ele (ui/rotuloLigado.js)
+CampoMoeda.encaminhaId = true;
+
+export default function CampoMoeda({ value, onChange, style, permiteVazio = false, ...props }) {
   const [editando, setEditando] = useState(false);
   const [texto, setTexto] = useState('');
+  const semValor = value == null || value === '';
 
   return (
     <input
       {...props}
       type="text"
       inputMode="decimal"
-      value={editando ? texto : formatarMoeda(value)}
+      value={editando ? texto : (permiteVazio && semValor ? '' : formatarMoeda(value))}
       onFocus={e => {
         setTexto(value ? String(value).replace('.', ',') : '');
         setEditando(true);
@@ -33,7 +40,7 @@ export default function CampoMoeda({ value, onChange, style, ...props }) {
       }}
       onChange={e => {
         setTexto(e.target.value);
-        onChange(paraNumero(e.target.value));
+        onChange(permiteVazio && !e.target.value.trim() ? null : paraNumero(e.target.value));
       }}
       onBlur={() => setEditando(false)}
       style={{ textAlign: 'right', ...style }}

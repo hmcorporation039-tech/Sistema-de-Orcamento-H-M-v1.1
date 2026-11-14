@@ -12,7 +12,8 @@ import { getTodosClientes } from '../services/api';
 // Interface:
 //   <ClienteSelect value={id} onChange={e => ...} rotuloVazio="Todos" disabled style />
 //     value/onChange iguais aos do <select> (e.target.value é o id em texto)
-//   useClientes()             → lista [{ id, nome, email, ... }] (vazia enquanto carrega)
+//   useClientes()             → lista [{ id, nome, email, ... }] (vazia enquanto carrega);
+//                               useClientes(false) não busca (quem chama já tem a lista)
 //   invalidarCacheClientes()  → chamar depois de criar/editar/excluir cliente
 
 let cache = null; // { quando, promessa }
@@ -29,17 +30,22 @@ export function carregarClientes(forcar = false) {
   return promessa;
 }
 
-export function useClientes() {
+// carregar = false: não busca (quem chama já tem a lista — ex.: o editor de proposta)
+export function useClientes(carregar = true) {
   const [clientes, setClientes] = useState([]);
   useEffect(() => {
+    if (!carregar) return undefined;
     let vivo = true;
     carregarClientes().then(lista => { if (vivo) setClientes(lista); }).catch(() => {});
     return () => { vivo = false; };
-  }, []);
+  }, [carregar]);
   return clientes;
 }
 
 // A ordem A–Z vem do Select (regra do projeto para toda lista suspensa)
+// repassa o `id` ao <select> (via Select): o Campo do kit liga o rótulo a ele
+ClienteSelect.encaminhaId = true;
+
 export default function ClienteSelect({ value, onChange, rotuloVazio = 'Sem cliente cadastrado', ...props }) {
   const clientes = useClientes();
   return (
