@@ -1,0 +1,790 @@
+{
+  "chave": "central_incendio",
+  "disciplina": "incendio",
+  "tipo_solucao": "skill",
+  "skill": "incendio",
+  "laudo": {
+    "disciplina": "incendio"
+  },
+  "tag_padrao": "CDI",
+  "versao": 1,
+  "nome": "Central de detecção e alarme de incêndio a partir da especificação",
+  "descricao": "Lê a especificação da central (endereçável ou convencional, quantidades de detectores, acionadores e avisadores, dispositivos e reserva por laço, autonomia da bateria, integrações com pressurização, elevadores, portas corta-fogo, ar-condicionado, chuveiros automáticos, controle de acesso, gás e BMS) e gera o projeto pela skill de incêndio (NBR 17240): laços, fonte e bateria (Anexo B), módulos de comando e monitoramento, matriz de causa e efeito, materiais, pendências e pontos a levantar.",
+  "detectar": [
+    "central de (?:detec[çc][ãa]o (?:e alarme )?|alarme )(?:de )?inc[êe]ndio",
+    "NBR\\s*17240",
+    "detectores? (?:pontuais? )?(?:óptico )?de fuma[çc]a",
+    "acionadores? manuais?",
+    "avisadores? (?:audiovisua|sonoro)",
+    "la[çc]os? (?:de detec|endere)"
+  ],
+  "detectar_forte": [
+    "central de (?:detec[çc][ãa]o (?:e alarme )?|alarme )(?:de )?inc[êe]ndio[^.]{0,60}(?:endere[çc][áa]vel|convencional|la[çc]os?)",
+    "matriz de causa e efeito"
+  ],
+  "detectar_exclui": [
+    "painel de comando da pressuriza"
+  ],
+  "solucao": "skills/_comum/especificacao/solucaoSkill.js",
+  "vocabulario": {
+    "meta": {},
+    "equipamentos": {
+      "elevador": {
+        "rotulo": "Elevador",
+        "plural": "elevadores",
+        "tag": "EL",
+        "categoria": "integracao",
+        "termos": [
+          "elevadores?"
+        ]
+      }
+    },
+    "atributos": {},
+    "requisitos": [
+      {
+        "id": "sistema.enderecavel",
+        "grupo": "sistema",
+        "rotulo": "Central endereçável",
+        "padroes": [
+          "endere[çc][áa]ve(?:l|is)",
+          "anal[óo]gico[- ]endere[çc]"
+        ]
+      },
+      {
+        "id": "sistema.convencional",
+        "grupo": "sistema",
+        "rotulo": "Central convencional (por zonas)",
+        "padroes": [
+          "central convencional",
+          "sistema convencional",
+          "convencional por zonas?"
+        ]
+      },
+      {
+        "id": "qtd.detectores_fumaca",
+        "grupo": "quantidades",
+        "rotulo": "Detectores de fumaça (quantidade)",
+        "padroes": [
+          "(\\d{1,4})\\s*detectores? (?:pontuais? )?(?:ópticos? )?(?:de )?fuma[çc]a",
+          "detectores? (?:pontuais? )?(?:ópticos? )?(?:de )?fuma[çc]a[^0-9.|]{0,30}(?:\\||:|–|-)\\s*(\\d{1,4})"
+        ],
+        "captura": {
+          "n": 1
+        },
+        "numeros": [
+          "n"
+        ]
+      },
+      {
+        "id": "qtd.detectores_temperatura",
+        "grupo": "quantidades",
+        "rotulo": "Detectores de temperatura (quantidade)",
+        "padroes": [
+          "(\\d{1,4})\\s*detectores? (?:pontuais? )?(?:de )?(?:temperatura|t[ée]rmicos?|termovelocim[ée]tricos?)",
+          "detectores? (?:pontuais? )?(?:de )?(?:temperatura|t[ée]rmicos?|termovelocim[ée]tricos?)[^0-9.|]{0,30}(?:\\||:|–|-)\\s*(\\d{1,4})"
+        ],
+        "captura": {
+          "n": 1
+        },
+        "numeros": [
+          "n"
+        ]
+      },
+      {
+        "id": "qtd.acionadores",
+        "grupo": "quantidades",
+        "rotulo": "Acionadores manuais (quantidade)",
+        "padroes": [
+          "(\\d{1,4})\\s*acionadores? manuais?",
+          "acionadores? manuais?[^0-9.|]{0,30}(?:\\||:|–|-)\\s*(\\d{1,4})"
+        ],
+        "captura": {
+          "n": 1
+        },
+        "numeros": [
+          "n"
+        ]
+      },
+      {
+        "id": "qtd.avisadores",
+        "grupo": "quantidades",
+        "rotulo": "Avisadores audiovisuais (quantidade)",
+        "padroes": [
+          "(\\d{1,4})\\s*avisadores?",
+          "avisadores? (?:audiovisua(?:l|is)|sonoros?)?[^0-9.|]{0,30}(?:\\||:|–|-)\\s*(\\d{1,4})"
+        ],
+        "captura": {
+          "n": 1
+        },
+        "numeros": [
+          "n"
+        ]
+      },
+      {
+        "id": "qtd.cabo",
+        "grupo": "quantidades",
+        "rotulo": "Comprimento dos laços (cabo)",
+        "padroes": [
+          "(\\d{2,6})\\s*m (?:de cabo|de la[çc]os?)",
+          "cabo[^.]{0,40}la[çc]os?[^0-9.]{0,20}(\\d{2,6})\\s*m\\b"
+        ],
+        "captura": {
+          "m": 1
+        },
+        "numeros": [
+          "m"
+        ]
+      },
+      {
+        "id": "laco.dispositivos",
+        "grupo": "laços",
+        "rotulo": "Dispositivos por laço (limite)",
+        "padroes": [
+          "(\\d{2,3})\\s*dispositivos? por la[çc]o",
+          "la[çc]os? (?:com|de) (?:at[ée] )?(\\d{2,3})\\s*(?:dispositivos|endere[çc]os)"
+        ],
+        "captura": {
+          "n": 1
+        },
+        "numeros": [
+          "n"
+        ]
+      },
+      {
+        "id": "laco.reserva",
+        "grupo": "laços",
+        "rotulo": "Reserva por laço",
+        "padroes": [
+          "reserva (?:de )?(\\d{1,2})\\s*%[^.]{0,50}la[çc]os?",
+          "la[çc]os?[^.]{0,50}reserva (?:de )?(\\d{1,2})\\s*%"
+        ],
+        "captura": {
+          "pct": 1
+        },
+        "numeros": [
+          "pct"
+        ]
+      },
+      {
+        "id": "bateria.repouso",
+        "grupo": "bateria",
+        "rotulo": "Autonomia em repouso (supervisão)",
+        "padroes": [
+          "(\\d{1,2})\\s*h(?:oras)?[^.]{0,40}(?:repouso|supervis[ãa]o|vig[íi]lia)",
+          "(?:repouso|supervis[ãa]o|vig[íi]lia)[^.]{0,40}?(\\d{1,2})\\s*h(?:oras)?\\b"
+        ],
+        "captura": {
+          "h": 1
+        },
+        "numeros": [
+          "h"
+        ]
+      },
+      {
+        "id": "bateria.alarme",
+        "grupo": "bateria",
+        "rotulo": "Autonomia em alarme",
+        "padroes": [
+          "(\\d{1,2})\\s*min(?:utos)?[^.]{0,40}(?:em )?alarme",
+          "alarme[^.]{0,40}?(\\d{1,2})\\s*min(?:utos)?"
+        ],
+        "captura": {
+          "min": 1
+        },
+        "numeros": [
+          "min"
+        ]
+      },
+      {
+        "id": "alarme.voz",
+        "grupo": "sistema",
+        "rotulo": "Avisador por mensagem de voz",
+        "padroes": [
+          "mensagens? de voz",
+          "evacua[çc][ãa]o por voz",
+          "avisadores? de voz",
+          "sonoriza[çc][ãa]o de emerg"
+        ]
+      },
+      {
+        "id": "alarme.dois_estagios",
+        "grupo": "sistema",
+        "rotulo": "Alarme em dois estágios (alerta e alarme geral)",
+        "padroes": [
+          "dois est[áa]gios",
+          "alerta e alarme geral",
+          "pr[ée]-?alarme"
+        ]
+      },
+      {
+        "id": "integracao.pressurizacao",
+        "grupo": "integrações",
+        "rotulo": "Partida da pressurização das escadas",
+        "padroes": [
+          "pressuriza[çc][ãa]o"
+        ]
+      },
+      {
+        "id": "integracao.elevadores",
+        "grupo": "integrações",
+        "rotulo": "Retorno dos elevadores ao pavimento de descarga",
+        "padroes": [
+          "elevadores?[^.]{0,60}(?:t[ée]rreo|descarga|retorn|recall|fase de emerg)",
+          "(?:retorno|recall)[^.]{0,40}elevadores?"
+        ]
+      },
+      {
+        "id": "integracao.portas",
+        "grupo": "integrações",
+        "rotulo": "Fechamento das portas corta-fogo (retentores)",
+        "padroes": [
+          "portas? corta-?fogo",
+          "retentores? (?:eletro)?magn[ée]ticos?"
+        ]
+      },
+      {
+        "id": "integracao.hvac",
+        "grupo": "integrações",
+        "rotulo": "Desligamento do ar-condicionado/ventilação",
+        "padroes": [
+          "(?:deslig\\w*|parada|parar)[^.]{0,50}(?:ar[- ]condicionado|climatiza|HVAC|fancoils?|ventila[çc][ãa]o|insufla)",
+          "(?:ar[- ]condicionado|climatiza[çc][ãa]o|HVAC|fancoils?)[^.]{0,50}(?:deslig|parad)"
+        ]
+      },
+      {
+        "id": "integracao.sprinkler",
+        "grupo": "integrações",
+        "rotulo": "Supervisão dos chuveiros automáticos (fluxo e válvulas)",
+        "padroes": [
+          "chuveiros? autom[áa]ticos?",
+          "sprinklers?",
+          "chaves? de fluxo",
+          "v[áa]lvulas? de governo"
+        ]
+      },
+      {
+        "id": "integracao.acesso",
+        "grupo": "integrações",
+        "rotulo": "Liberação do controle de acesso na rota de fuga",
+        "padroes": [
+          "(?:libera\\w*|destrav\\w*)[^.]{0,50}(?:controle de acesso|catracas?|fechaduras?|portas? de acesso)",
+          "controle de acesso[^.]{0,50}(?:libera|destrav)"
+        ]
+      },
+      {
+        "id": "integracao.gas",
+        "grupo": "integrações",
+        "rotulo": "Corte do gás",
+        "padroes": [
+          "(?:corte|bloqueio|fechamento)[^.]{0,30}g[áa]s",
+          "v[áa]lvula solen[óo]ide[^.]{0,30}g[áa]s"
+        ]
+      },
+      {
+        "id": "integracao.bms",
+        "grupo": "integrações",
+        "rotulo": "Estado da central para o BMS/supervisório",
+        "padroes": [
+          "\\bBMS\\b",
+          "supervis[óo]rio",
+          "BACnet",
+          "Modbus"
+        ]
+      },
+      {
+        "id": "integracao.monitoramento",
+        "grupo": "integrações",
+        "rotulo": "Comunicação com a central de monitoramento",
+        "padroes": [
+          "monitoramento (?:remoto|24 ?h)",
+          "central de monitoramento",
+          "comunicador"
+        ]
+      },
+      {
+        "id": "integracao.repetidor",
+        "grupo": "integrações",
+        "rotulo": "Painel repetidor",
+        "padroes": [
+          "painel repetidor",
+          "repetidora",
+          "anunciador remoto"
+        ]
+      },
+      {
+        "id": "normas",
+        "grupo": "normas",
+        "rotulo": "Norma citada",
+        "padroes": [
+          "(NBR\\s*\\d{4,5}(?:-\\d)?)",
+          "(NT\\s*\\d{1,3}(?:/\\d{2,4})?)",
+          "(IT\\s*\\d{1,3}(?:/\\d{2,4})?)"
+        ],
+        "captura": {
+          "norma": 1
+        },
+        "multiplo": true
+      }
+    ],
+    "listas": [
+      {
+        "id": "escopo.excluido",
+        "rotulo": "Fora do escopo",
+        "secoes": [
+          "n[ãa]o faz parte",
+          "exclu",
+          "fora do escopo"
+        ],
+        "tipos": [
+          "item",
+          "paragrafo"
+        ]
+      }
+    ],
+    "circuitos": [],
+    "obrigatorios": []
+  },
+  "limpar": [
+    "ambientes",
+    "pavimentos"
+  ],
+  "mapa": [
+    {
+      "requisito": "sistema.convencional",
+      "campo": "sistema.tipo",
+      "valor": "convencional",
+      "rotulo": "Tipo de central"
+    },
+    {
+      "requisito": "sistema.enderecavel",
+      "campo": "sistema.tipo",
+      "valor": "enderecavel",
+      "rotulo": "Tipo de central"
+    },
+    {
+      "requisito": "qtd.detectores_fumaca",
+      "campo": "sistema.quantidades_informadas.detectores_fumaca",
+      "de": "n",
+      "numero": true,
+      "rotulo": "Detectores de fumaça",
+      "unidade": "un"
+    },
+    {
+      "requisito": "qtd.detectores_temperatura",
+      "campo": "sistema.quantidades_informadas.detectores_temperatura",
+      "de": "n",
+      "numero": true,
+      "rotulo": "Detectores de temperatura",
+      "unidade": "un"
+    },
+    {
+      "requisito": "qtd.acionadores",
+      "campo": "sistema.quantidades_informadas.acionadores",
+      "de": "n",
+      "numero": true,
+      "rotulo": "Acionadores manuais",
+      "unidade": "un"
+    },
+    {
+      "requisito": "qtd.avisadores",
+      "campo": "sistema.quantidades_informadas.avisadores",
+      "de": "n",
+      "numero": true,
+      "rotulo": "Avisadores audiovisuais",
+      "unidade": "un"
+    },
+    {
+      "requisito": "qtd.cabo",
+      "campo": "sistema.quantidades_informadas.cabo_m",
+      "de": "m",
+      "numero": true,
+      "rotulo": "Comprimento dos laços",
+      "unidade": "m"
+    },
+    {
+      "requisito": "laco.dispositivos",
+      "campo": "sistema.dispositivos_por_laco",
+      "de": "n",
+      "numero": true,
+      "rotulo": "Dispositivos por laço (limite)",
+      "unidade": "dispositivos"
+    },
+    {
+      "requisito": "laco.reserva",
+      "campo": "sistema.reserva_laco_pct",
+      "de": "pct",
+      "numero": true,
+      "rotulo": "Reserva por laço",
+      "unidade": "%"
+    },
+    {
+      "requisito": "bateria.repouso",
+      "campo": "sistema.tempo_repouso_h",
+      "de": "h",
+      "numero": true,
+      "rotulo": "Autonomia em repouso",
+      "unidade": "h"
+    },
+    {
+      "requisito": "bateria.alarme",
+      "campo": "sistema.tempo_alarme_min",
+      "de": "min",
+      "numero": true,
+      "rotulo": "Autonomia em alarme",
+      "unidade": "min"
+    },
+    {
+      "requisito": "alarme.voz",
+      "campo": "sistema.avisador_voz",
+      "valor": true,
+      "rotulo": "Avisador por mensagem de voz"
+    }
+  ],
+  "padroes": [
+    {
+      "campo": "sistema.tipo",
+      "valor": "enderecavel",
+      "texto": "Tipo de central não especificado: adotada central endereçável (prática da H&M para edificações com integrações)"
+    }
+  ],
+  "obrigatorios_formulario": [
+    {
+      "campo": "sistema.quantidades_informadas.detectores_fumaca",
+      "texto": "Quantidade de detectores não informada na especificação: enviar a planta (a skill dimensiona pelos ambientes) ou a lista de dispositivos."
+    },
+    {
+      "campo": "sistema.quantidades_informadas.acionadores",
+      "texto": "Quantidade de acionadores manuais não informada: confirmar pelo caminhamento até 30 m (NBR 17240, 5.5)."
+    }
+  ],
+  "campo_modulos": "sistema.modulos_comando",
+  "variaveis": {
+    "lacos": "calc.lacos",
+    "zonas": "calc.zonas",
+    "dispositivos": "calc.dispositivos",
+    "limite": "calc.limiteLaco",
+    "bateria": "calc.bateria.bateriaEscolhida",
+    "fonte": "calc.bateria.fonteA",
+    "t_alarme": "calc.bateria.tAlarme",
+    "reserva": "dados.sistema.reserva_laco_pct"
+  },
+  "fatos": [
+    {
+      "id": "alarme_5min",
+      "caminho": "calc.bateria.tAlarme",
+      "op": "<",
+      "valor": 15
+    },
+    {
+      "id": "convencional",
+      "caminho": "calc.tipoSistema",
+      "op": "==",
+      "valor": "convencional"
+    },
+    {
+      "id": "varios_lacos",
+      "caminho": "calc.lacos",
+      "op": ">",
+      "valor": 1
+    }
+  ],
+  "verificacoes": {
+    "regras": [
+      {
+        "id": "convencional_com_integracoes",
+        "tipo": "ponto",
+        "se": [
+          "f:convencional",
+          "req:integracao.pressurizacao"
+        ],
+        "texto": "A especificação pede central convencional e integrações (pressurização e outras): numa central convencional cada interface sai por zona/relé, sem endereço — a matriz de causa e efeito fica limitada às zonas. Avaliar central endereçável.",
+        "sugestao": {
+          "decisao": "central_enderecavel",
+          "valor": "SIM",
+          "texto": "Central endereçável, com módulos de comando e monitoramento por interface."
+        },
+        "se_mantido": "Central convencional mantida a pedido do cliente: interfaces por zona (relés da central)."
+      },
+      {
+        "id": "alarme_15min",
+        "tipo": "ponto",
+        "se": [
+          "f:alarme_5min",
+          "!req:bateria.alarme"
+        ],
+        "texto": "A especificação não diz o tempo de alarme na bateria: a skill adotou {t_alarme} min (roteiro da NBR 17240); várias IT/NT de corpo de bombeiros pedem 15 min.",
+        "sugestao": {
+          "decisao": "alarme_15min",
+          "valor": "SIM",
+          "texto": "Bateria dimensionada para 24 h em repouso + 15 min em alarme."
+        }
+      },
+      {
+        "id": "pend_reserva_laco",
+        "tipo": "pendencia",
+        "se": [
+          "req:laco.reserva"
+        ],
+        "texto": "Reserva por laço de {reserva} %: {dispositivos} dispositivos em {lacos} laço(s) de até {limite} — confirmar o limite com o fabricante da central. [CONFERIR]"
+      },
+      {
+        "id": "pend_limite_laco",
+        "tipo": "pendencia",
+        "se": [
+          "f:varios_lacos",
+          "!req:laco.dispositivos"
+        ],
+        "texto": "Limite de dispositivos por laço não informado: adotados {limite} (padrão da skill) — confirmar com o fabricante da central. [CONFERIR]"
+      },
+      {
+        "id": "pend_dois_estagios",
+        "tipo": "pendencia",
+        "se": [
+          "req:alarme.dois_estagios"
+        ],
+        "texto": "Alarme em dois estágios pedido: definir o tempo de reconhecimento e a lógica de alerta/alarme geral na programação da central, conforme a IT/NT do corpo de bombeiros local. [CONFERIR]"
+      },
+      {
+        "id": "pend_pressurizacao",
+        "tipo": "pendencia",
+        "se": [
+          "req:integracao.pressurizacao"
+        ],
+        "texto": "Módulo de comando para o painel da pressurização: contato seco NA; a partida deve ser imediata ao alarme, sem esperar o reconhecimento na central (CBMDF NT 10 / IT 13). [CONFERIR com a IT local]"
+      },
+      {
+        "id": "pend_elevadores",
+        "tipo": "pendencia",
+        "se": [
+          "req:integracao.elevadores"
+        ],
+        "texto": "Elevadores: confirmar com o fornecedor o contato de retorno ao pavimento de descarga (operação de emergência) e a tensão do contato. [CONFERIR]"
+      },
+      {
+        "id": "pend_sprinkler",
+        "tipo": "pendencia",
+        "se": [
+          "req:integracao.sprinkler"
+        ],
+        "texto": "Chuveiros automáticos: número de chaves de fluxo e de válvulas de governo supervisionadas (um módulo de monitoramento por dispositivo) — conferir no projeto de hidráulica. [CONFERIR]"
+      },
+      {
+        "id": "pend_portas",
+        "tipo": "pendencia",
+        "se": [
+          "req:integracao.portas"
+        ],
+        "texto": "Portas corta-fogo com retentores: quantidade de retentores e de grupos de liberação (módulos) — conferir no projeto de arquitetura. [CONFERIR]"
+      },
+      {
+        "id": "exc_escopo",
+        "tipo": "excecao",
+        "se": [
+          "req:integracao.monitoramento"
+        ],
+        "texto": "Comunicação com a central de monitoramento: o comunicador e a contratação do serviço de monitoramento são do cliente, salvo pedido em contrário."
+      }
+    ]
+  },
+  "decisoes_campos": [
+    {
+      "decisao": "alarme_15min",
+      "valor": "SIM",
+      "campo": "sistema.tempo_alarme_min",
+      "para": 15,
+      "rotulo": "Autonomia em alarme"
+    },
+    {
+      "decisao": "central_enderecavel",
+      "valor": "SIM",
+      "campo": "sistema.tipo",
+      "para": "enderecavel",
+      "rotulo": "Tipo de central"
+    }
+  ],
+  "grupos": [
+    {
+      "grupo": "Central e bateria",
+      "codigos": [
+        "CEN",
+        "BAT"
+      ]
+    },
+    {
+      "grupo": "Detecção",
+      "codigos": [
+        "DET-F",
+        "DET-T"
+      ]
+    },
+    {
+      "grupo": "Acionadores e avisadores",
+      "codigos": [
+        "ACM",
+        "AV"
+      ]
+    },
+    {
+      "grupo": "Módulos e interfaces",
+      "codigos": [
+        "MOD"
+      ]
+    },
+    {
+      "grupo": "Cabos e infraestrutura",
+      "codigos": [
+        "CAB",
+        "ELE"
+      ]
+    },
+    {
+      "grupo": "Iluminação de emergência",
+      "codigos": [
+        "LE",
+        "SIN"
+      ]
+    }
+  ],
+  "causa_efeito": [
+    {
+      "id": "alarme_geral",
+      "causa": "Detector ou acionador manual em qualquer laço",
+      "efeitos": [
+        "Alarme na central (sinalização visual e sonora no painel)",
+        "Avisadores audiovisuais acionados conforme a lógica de alarme da central"
+      ],
+      "norma": "NBR 17240"
+    },
+    {
+      "id": "pressurizacao",
+      "se": [
+        "req:integracao.pressurizacao"
+      ],
+      "causa": "Alarme de incêndio (detector ou acionador)",
+      "efeitos": [
+        "Partida imediata da pressurização das escadas — módulo de comando → painel da pressurização"
+      ],
+      "modulo": "comando",
+      "modulos": 1,
+      "norma": "CBMDF NT 10; IT 13 [CONFERIR com a IT local]"
+    },
+    {
+      "id": "elevadores",
+      "se": [
+        "req:integracao.elevadores"
+      ],
+      "causa": "Alarme de incêndio",
+      "efeitos": [
+        "Elevadores retornam ao pavimento de descarga e ficam parados de portas abertas (contato de emergência do fornecedor)"
+      ],
+      "modulo": "comando",
+      "modulos": {
+        "equipamento": "elevador",
+        "minimo": 1
+      },
+      "norma": "NBR 17240 (interfaces); NBR 16858 / fornecedor [CONFERIR]"
+    },
+    {
+      "id": "portas",
+      "se": [
+        "req:integracao.portas"
+      ],
+      "causa": "Alarme de incêndio",
+      "efeitos": [
+        "Liberação dos retentores eletromagnéticos — as portas corta-fogo fecham"
+      ],
+      "modulo": "comando",
+      "modulos": 1,
+      "norma": "NBR 11742 [CONFERIR]"
+    },
+    {
+      "id": "hvac",
+      "se": [
+        "req:integracao.hvac"
+      ],
+      "causa": "Alarme de incêndio",
+      "efeitos": [
+        "Desligamento do ar-condicionado e da ventilação/insuflamento (não espalhar a fumaça)"
+      ],
+      "modulo": "comando",
+      "modulos": 1,
+      "norma": "NBR 17240 (interfaces) [CONFERIR com a IT local]"
+    },
+    {
+      "id": "acesso",
+      "se": [
+        "req:integracao.acesso"
+      ],
+      "causa": "Alarme de incêndio",
+      "efeitos": [
+        "Liberação das portas da rota de fuga (fechaduras fail-safe e catracas)"
+      ],
+      "modulo": "comando",
+      "modulos": 1,
+      "norma": "NBR 9077 / IT de saídas de emergência [CONFERIR]"
+    },
+    {
+      "id": "gas",
+      "se": [
+        "req:integracao.gas"
+      ],
+      "causa": "Alarme de incêndio",
+      "efeitos": [
+        "Corte do gás (válvula solenoide de bloqueio)"
+      ],
+      "modulo": "comando",
+      "modulos": 1,
+      "norma": "[CONFERIR com o projeto de gás]"
+    },
+    {
+      "id": "sprinkler",
+      "se": [
+        "req:integracao.sprinkler"
+      ],
+      "causa": "Fluxo de água nos chuveiros automáticos (chave de fluxo) ou válvula de governo fechada",
+      "efeitos": [
+        "Alarme (fluxo) ou falha/supervisão (válvula) na central"
+      ],
+      "modulo": "monitoramento",
+      "modulos": 2,
+      "norma": "NBR 10897 / NBR 17240 [CONFERIR]"
+    },
+    {
+      "id": "bms",
+      "se": [
+        "req:integracao.bms"
+      ],
+      "causa": "Alarme ou falha na central",
+      "efeitos": [
+        "Estado da central informado ao BMS/supervisório (relé ou protocolo do fabricante)"
+      ],
+      "modulo": "comando",
+      "modulos": 1,
+      "norma": "[CONFERIR protocolo com o fabricante]"
+    },
+    {
+      "id": "monitoramento",
+      "se": [
+        "req:integracao.monitoramento"
+      ],
+      "causa": "Alarme ou falha na central",
+      "efeitos": [
+        "Comunicação do evento à central de monitoramento (comunicador)"
+      ],
+      "norma": "—"
+    }
+  ],
+  "materiais_extras": [
+    {
+      "se": [
+        "req:integracao.repetidor"
+      ],
+      "codigo": "REP",
+      "descricao": "Painel repetidor da central (mesmo fabricante e protocolo da central)",
+      "quantidade": 1,
+      "unidade": "un",
+      "referencia": "NBR 17240 (indicação remota)",
+      "grupo": "Central e bateria"
+    }
+  ]
+}

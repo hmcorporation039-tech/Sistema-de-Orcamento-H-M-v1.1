@@ -1,0 +1,66 @@
+{
+  "chave": "cag_sequencia_chillers",
+  "herda": "quadro_forca_comando",
+  "disciplina": "climatizacao",
+  "versao": 1,
+  "nome": "Quadro da CAG com sequência de chillers (líder/rodízio e 2º estágio) a partir da especificação",
+  "descricao": "Lê a especificação do quadro de força e comando da central de água gelada com SEQUÊNCIA de chillers (líder fixo ou rodízio por relé alternador, entrada do 2º chiller pela demanda com anti-ciclagem, bomba primária dedicada por chiller, intertravamento bomba → fluxostato → habilitação do chiller) e gera o anteprojeto pelo mesmo motor do quadro de força e comando: unifilar, escada de relés com os cenários simulados, réguas, layout, materiais e pendências.",
+  "detectar": [
+    "rod[íi]zio[^.]{0,60}chillers?",
+    "chillers?[^.]{0,60}rod[íi]zio",
+    "sequenciamento (?:dos |de )?chillers?",
+    "chiller l[íi]der",
+    "l[íi]der[^.]{0,30}(?:reserva|rod[íi]zio)",
+    "segundo (?:chiller|est[áa]gio)",
+    "fluxostato"
+  ],
+  "detectar_forte": [
+    "sequ[êe]ncia (?:de (?:partida|opera[çc][ãa]o) )?(?:dos |de )?chillers?",
+    "altern[âa]ncia (?:dos |de )?chillers?"
+  ],
+  "solucao": "skills/quadros/scripts/lib/especificacao.js",
+  "vocabulario": {
+    "requisitos": [
+      { "id": "sequencia.lider_reserva", "grupo": "sequencia", "rotulo": "Sequência de chillers (líder fixo ou rodízio)", "padroes": ["l[íi]der", "rod[íi]zio", "altern[âa]ncia", "revezamento", "sequenciamento", "sequ[êe]ncia (?:de (?:partida|opera[çc][ãa]o) )?(?:dos |de )?chillers?"] },
+      { "id": "sequencia.estagio", "grupo": "sequencia", "rotulo": "Entrada do 2º chiller pela demanda (2º estágio)", "padroes": ["segundo (?:chiller|est[áa]gio)", "(?:entra|liga|parte)[^.]{0,30}segundo chiller", "demanda alta", "temperatura (?:da [áa]gua )?de retorno", "escalonamento"] },
+      { "id": "sequencia.tempo_estagio", "grupo": "sequencia", "rotulo": "Anti-ciclagem do 2º estágio", "padroes": ["(\\d{2,4})\\s*s(?:egundos)?[^.]{0,50}(?:anti-?ciclagem|segundo (?:chiller|est[áa]gio))", "(?:anti-?ciclagem|segundo (?:chiller|est[áa]gio))[^.]{0,50}?(\\d{2,4})\\s*s(?:egundos)?\\b"], "captura": { "s": 1 }, "numeros": ["s"] },
+      { "id": "sequencia.fluxostato", "grupo": "sequencia", "rotulo": "Fluxostato (prova de fluxo) por chiller", "padroes": ["fluxostatos?", "chaves? de fluxo", "prova de fluxo"] },
+      { "id": "sequencia.bomba_dedicada", "grupo": "sequencia", "rotulo": "Bomba primária dedicada por chiller", "padroes": ["bombas? (?:prim[áa]rias? )?dedicadas?", "uma bomba (?:prim[áa]ria )?(?:para cada|por) chiller", "cada chiller (?:tem|com) (?:a )?sua bomba"] }
+    ]
+  },
+  "regras": {
+    "variaveis_comando": { "tempo_estagio": 180 }
+  },
+  "verificacoes": {
+    "regras": [
+      { "id": "seq_sem_fluxostato", "tipo": "pendencia", "se": ["req:sequencia.lider_reserva"], "nao": ["req:sequencia.fluxostato"],
+        "texto": "A especificação não cita fluxostato: incluído um fluxostato por chiller no intertravamento (sem prova de fluxo o chiller pode partir sem água no evaporador — risco de congelamento). Confirmar o fornecimento e o ponto de instalação. [CONFERIR]" },
+      { "id": "seq_tempo_estagio", "tipo": "pendencia", "se": ["req:sequencia.estagio"], "nao": ["req:sequencia.tempo_estagio"],
+        "texto": "Anti-ciclagem do 2º estágio não informada: adotados {tempo_estagio} s (prática da H&M) — ajustar no comissionamento. [CONFERIR]" },
+      { "id": "seq_setpoint", "tipo": "pendencia", "se": ["req:sequencia.estagio"],
+        "texto": "Controlador de temperatura da água gelada de retorno (contato de demanda alta para o 2º estágio): setpoint e diferencial definidos no comissionamento com o fabricante dos chillers. [CONFERIR]" },
+      { "id": "seq_bomba_dedicada", "tipo": "ponto", "se": ["req:sequencia.lider_reserva"], "nao": ["req:sequencia.bomba_dedicada"],
+        "texto": "A especificação não diz se cada chiller tem bomba primária dedicada: a sequência foi montada com a bomba 1 ↔ chiller 1 e a bomba 2 ↔ chiller 2 (a bomba em AUT acompanha o comando do seu chiller).",
+        "sugestao": { "decisao": "bomba_dedicada", "valor": "SIM", "texto": "Bomba primária dedicada por chiller (pareadas pela ordem)." } }
+    ],
+    "remover": ["titular_x_automacao", "reserva_sem_troca"]
+  },
+  "blocos": {
+    "usar": [
+      "emergencia_rele",
+      "liberacao_externa",
+      "sequencia_chillers",
+      "comando_por_chiller",
+      "motor_man_0_aut",
+      "modo_manual",
+      "status_acionamento",
+      "valvula_por_equipamento",
+      "sinalizacao",
+      "contatos_livres",
+      "rede_serial"
+    ],
+    "variaveis": {
+      "tempo_estagio": { "requisito": "sequencia.tempo_estagio", "campo": "s" }
+    }
+  }
+}

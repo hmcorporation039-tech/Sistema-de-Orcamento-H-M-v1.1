@@ -1,0 +1,123 @@
+{
+  "chave": "automacao_bms",
+  "disciplina": "automacao",
+  "tipo_solucao": "skill",
+  "skill": "automacao",
+  "laudo": { "disciplina": "automacao" },
+  "tag_padrao": "BMS",
+  "versao": 1,
+  "nome": "Automação predial (BMS/supervisório) a partir da especificação",
+  "descricao": "Lê a especificação do BMS (equipamentos a integrar e quantidades — chillers, bombas, fancoils, VRF, exaustores, iluminação, medidores, geradores —, protocolo BACnet ou Modbus, reserva de pontos e pontos por controlador) e gera o projeto pela skill de automação (ISO 16484, ISO 52120-1): lista de pontos com reserva, controladores, quadros de automação, segmentos de rede, licença do supervisório, cabos, materiais, pendências e pontos a levantar. O quadro de automação (CLP/DDC) abre por dentro no 3D com os módulos de E/S calculados.",
+  "detectar": [
+    "\\bBMS\\b",
+    "supervis[óo]rio",
+    "BACnet",
+    "automa[çc][ãa]o predial",
+    "lista de pontos",
+    "controladores? (?:DDC|program[áa]ve)"
+  ],
+  "detectar_forte": [
+    "sistema de (?:automa[çc][ãa]o|supervis[ãa]o) predial",
+    "integra[çc][ãa]o (?:ao|no|com o) (?:BMS|supervis[óo]rio)[^.]{0,80}(?:chillers?|bombas?|fancoils?|medidores?)"
+  ],
+  "detectar_exclui": [
+    "central de (?:detec[çc][ãa]o (?:e alarme )?|alarme )(?:de )?inc[êe]ndio[^.]{0,60}(?:endere[çc][áa]vel|convencional)"
+  ],
+  "solucao": "skills/_comum/especificacao/solucaoSkill.js",
+  "vocabulario": {
+    "meta": {},
+    "equipamentos": {
+      "chiller": { "rotulo": "Chiller", "plural": "chillers", "tag": "CH", "termos": ["chillers?", "resfriadores? de (?:l[íi]quido|[áa]gua)", "unidades? resfriadoras?"] },
+      "bomba": { "rotulo": "Bomba", "plural": "bombas", "tag": "BAG", "termos": ["bombas?(?! de calor)"] },
+      "fancolete": { "rotulo": "Fancolete", "plural": "fancoletes", "tag": "FCT", "termos": ["fan-?coletes?"] },
+      "fancoil": { "rotulo": "Fancoil / climatizadora", "plural": "fancoils", "tag": "FC", "termos": ["fan-?coils?", "climatizadoras?", "\\bUTAs?\\b", "\\bAHUs?\\b"] },
+      "vrf": { "rotulo": "Sistema VRF", "plural": "sistemas VRF", "tag": "VRF", "termos": ["sistemas? VR[FV]", "\\bVR[FV]\\b"] },
+      "split": { "rotulo": "Split", "plural": "splits", "tag": "SPL", "termos": ["splits?", "hi-?walls?"] },
+      "torre": { "rotulo": "Torre de resfriamento", "plural": "torres", "tag": "TR", "termos": ["torres? de resfriamento"] },
+      "exaustor": { "rotulo": "Exaustor / ventilador", "plural": "exaustores", "tag": "EX", "termos": ["exaustores?", "ventiladores?(?! de pressuriza)"] },
+      "iluminacao": { "rotulo": "Circuito de iluminação", "plural": "circuitos de iluminação", "tag": "IL", "termos": ["circuitos? de ilumina[çc][ãa]o"] },
+      "medidor": { "rotulo": "Medidor de energia", "plural": "medidores", "tag": "ME", "termos": ["medidores? (?:de energia|multigrandezas)", "multimedidores?"] },
+      "gerador": { "rotulo": "Grupo gerador", "plural": "geradores", "tag": "GG", "termos": ["grupos? geradores?", "geradores?"] },
+      "nobreak": { "rotulo": "Nobreak (UPS)", "plural": "nobreaks", "tag": "UPS", "termos": ["nobreaks?", "\\bUPS\\b"] },
+      "reservatorio": { "rotulo": "Reservatório (nível)", "plural": "reservatórios", "tag": "RES", "termos": ["reservat[óo]rios?"] },
+      "sensor": { "rotulo": "Sensor ambiente", "plural": "sensores", "tag": "SA", "termos": ["sensores? (?:de )?(?:temperatura|CO2|CO₂|umidade|ambiente)"] }
+    },
+    "atributos": {},
+    "requisitos": [
+      { "id": "protocolo.modbus", "grupo": "rede", "rotulo": "Protocolo Modbus", "padroes": ["Modbus"] },
+      { "id": "protocolo.bacnet", "grupo": "rede", "rotulo": "Protocolo BACnet", "padroes": ["BACnet"] },
+      { "id": "reserva", "grupo": "pontos", "rotulo": "Reserva de pontos", "padroes": ["reserva[^.]{0,40}?(\\d{1,2})\\s*%", "(\\d{1,2})\\s*%[^.]{0,30}reserva"], "captura": { "pct": 1 }, "numeros": ["pct"] },
+      { "id": "pontos_controlador", "grupo": "pontos", "rotulo": "Pontos por controlador", "padroes": ["(\\d{2,3})\\s*pontos? (?:de E/S )?por controlador", "controladores? (?:de|com) (\\d{2,3})\\s*pontos"], "captura": { "n": 1 }, "numeros": ["n"] },
+      { "id": "controladores_quadro", "grupo": "pontos", "rotulo": "Controladores por quadro", "padroes": ["(\\d)\\s*controladores? por quadro"], "captura": { "n": 1 }, "numeros": ["n"] },
+      { "id": "supervisorio", "grupo": "software", "rotulo": "Supervisório com licença", "padroes": ["supervis[óo]rio", "software de supervis[ãa]o", "licen[çc]a"] },
+      { "id": "integracao_incendio", "grupo": "integrações", "rotulo": "Integração com a central de incêndio", "padroes": ["central de (?:detec[çc][ãa]o (?:e alarme )?|alarme )?(?:de )?inc[êe]ndio", "alarme de inc[êe]ndio"] },
+      { "id": "integracao_acesso", "grupo": "integrações", "rotulo": "Integração com o controle de acesso/CFTV", "padroes": ["controle de acesso", "\\bCFTV\\b"] },
+      { "id": "comissionamento", "grupo": "escopo", "rotulo": "Comissionamento ponto a ponto", "padroes": ["comissionamento", "teste ponto a ponto"] },
+      { "id": "treinamento", "grupo": "escopo", "rotulo": "Treinamento dos operadores", "padroes": ["treinamento"] },
+      { "id": "normas", "grupo": "normas", "rotulo": "Norma citada", "padroes": ["(ISO\\s*\\d{4,5}(?:-\\d)?)", "(NBR\\s*\\d{4,5}(?:-\\d)?)"], "captura": { "norma": 1 }, "multiplo": true }
+    ],
+    "listas": [
+      { "id": "escopo.excluido", "rotulo": "Fora do escopo", "secoes": ["n[ãa]o faz parte", "exclu", "fora do escopo"], "tipos": ["item", "paragrafo"] }
+    ],
+    "circuitos": [],
+    "obrigatorios": []
+  },
+  "limpar": ["equipamentos", "zonas", "residencial.ambientes"],
+  "mapa": [
+    { "requisito": "protocolo.modbus", "campo": "sistema.protocolo", "valor": "modbus", "rotulo": "Protocolo principal" },
+    { "requisito": "protocolo.bacnet", "campo": "sistema.protocolo", "valor": "bacnet", "rotulo": "Protocolo principal" },
+    { "requisito": "reserva", "campo": "sistema.reserva_pct", "de": "pct", "numero": true, "rotulo": "Reserva de pontos", "unidade": "%" },
+    { "requisito": "pontos_controlador", "campo": "sistema.pontos_por_controlador", "de": "n", "numero": true, "rotulo": "Pontos por controlador" },
+    { "requisito": "controladores_quadro", "campo": "sistema.controladores_por_quadro", "de": "n", "numero": true, "rotulo": "Controladores por quadro" }
+  ],
+  "equipamentos": {
+    "lista": "equipamentos",
+    "de": {
+      "chiller": { "tipo": "chiller" }, "bomba": { "tipo": "bomba" }, "fancoil": { "tipo": "ahu" }, "fancolete": { "tipo": "fancolete" },
+      "vrf": { "tipo": "vrf" }, "split": { "tipo": "split" }, "torre": { "tipo": "torre" }, "exaustor": { "tipo": "exaustor" },
+      "iluminacao": { "tipo": "iluminacao" }, "medidor": { "tipo": "medidor" }, "gerador": { "tipo": "gerador" }, "nobreak": { "tipo": "nobreak" },
+      "reservatorio": { "tipo": "reservatorio" }, "sensor": { "tipo": "sensor_ambiente" }
+    }
+  },
+  "padroes": [
+    { "campo": "sistema.protocolo", "valor": "bacnet", "texto": "Protocolo não especificado: adotado BACnet/IP (ISO 16484-5), aberto e padrão de mercado para BMS" },
+    { "campo": "sistema.reserva_pct", "valor": 20, "texto": "Reserva de pontos não especificada: adotados 20 % (padrão da skill de automação)" }
+  ],
+  "obrigatorios_formulario": [
+    { "campo": "equipamentos", "texto": "Nenhum equipamento a integrar identificado na especificação: informe a lista (tipo e quantidade) para montar a lista de pontos." }
+  ],
+  "variaveis": {
+    "pontos": "calc.bms.fisicos",
+    "com_reserva": "calc.bms.fisicosComReserva",
+    "controladores": "calc.bms.controladores",
+    "quadros": "calc.bms.quadros",
+    "licenca": "calc.bms.licenca",
+    "reserva": "dados.sistema.reserva_pct"
+  },
+  "fatos": [
+    { "id": "tem_bms", "caminho": "calc.bms", "op": "existe" }
+  ],
+  "verificacoes": {
+    "regras": [
+      { "id": "rede_mista", "tipo": "pendencia", "se": ["req:protocolo.modbus", "req:protocolo.bacnet"],
+        "texto": "Rede mista BACnet + Modbus: gateways Modbus → BACnet para os equipamentos com Modbus — confirmar o protocolo de cada fabricante. [CONFERIR]" },
+      { "id": "pontos_tipicos", "tipo": "pendencia", "se": ["f:tem_bms"],
+        "texto": "Lista de pontos por equipamento pelo padrão da skill ({pontos} pontos físicos, {com_reserva} com a reserva de {reserva} %) — confirmar com a folha de dados de cada fabricante e o descritivo de funcionamento. [CONFERIR]" },
+      { "id": "objetos_rede", "tipo": "pendencia", "se": ["f:tem_bms"],
+        "texto": "Equipamentos integrados por rede (chillers, VRF, medidores, geradores): pedir a cada fabricante a lista de objetos BACnet / mapa de registradores Modbus. [CONFERIR]" },
+      { "id": "incendio_bms", "tipo": "ponto", "se": ["req:integracao_incendio"],
+        "texto": "A especificação integra a central de incêndio ao BMS: o BMS só SUPERVISIONA o estado da central — as ações de segurança (pressurização, elevadores, portas) saem da própria central (NBR 17240), nunca do BMS.",
+        "sugestao": { "decisao": "incendio_so_supervisao", "valor": "SIM", "texto": "Central de incêndio no BMS só como supervisão (alarme/falha), sem comando." } },
+      { "id": "exc_comissionamento", "tipo": "excecao", "se": ["req:comissionamento"],
+        "texto": "Comissionamento ponto a ponto incluído: relatório com cada ponto testado (tag, valor esperado, valor lido) — ISO 16484." }
+    ]
+  },
+  "grupos": [
+    { "grupo": "Controladores e quadros", "codigos": ["DDC", "QA", "QAUT"], "re": "controlador|quadro de automa" },
+    { "grupo": "Supervisório e licenças", "re": "supervis|licen|software|esta[çc][ãa]o de opera" },
+    { "grupo": "Sensores e campo", "re": "sensor|transmissor|termostato|pressostato|chave de fluxo|atuador|v[áa]lvula" },
+    { "grupo": "Rede e gateways", "re": "gateway|switch|roteador|rede|RS-?485|BACnet|Modbus" },
+    { "grupo": "Cabos e infraestrutura", "re": "cabo|eletroduto|eletrocalha" },
+    { "grupo": "Materiais", "re": "." }
+  ]
+}

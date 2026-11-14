@@ -76,3 +76,33 @@ test('lê a especificação, mostra a frase de origem e gera o projeto', async (
   const corpo = aprovarProjetoEspecificacao.mock.calls[0][1];
   expect(corpo.precos[0]).toMatchObject({ chave: 'disjuntor', preco: 120, alternativa: { referencia: 'Linha econômica X', preco: 80 }, equivale: 'marca A → marca B' });
 });
+
+// 14/11/2026: projeto gerado pela SKILL da disciplina (ex.: central de incêndio) — indicadores, documentos da
+// própria skill e a matriz de causa e efeito; sem a simulação da escada de relés
+test('projeto pela skill da disciplina: indicadores, documentos da skill e matriz de causa e efeito', async () => {
+  getPerfisEspecificacao.mockResolvedValue({ data: { perfis: [{ chave: 'central_incendio', nome: 'Central de incêndio' }] } });
+  lerEspecificacao.mockResolvedValue({ data: { ...lida, perfil: 'central_incendio' } });
+  const resumoSkill = {
+    tipo: 'skill', disciplina: 'incendio', meta: { titulo: 'CDI-T — Central de teste', tag: 'CDI-T' },
+    indicadores: [{ rotulo: 'Central', valor: '2 laço(s)' }, { rotulo: 'Bateria (Anexo B)', valor: '7 Ah', detalhe: '24 h + 15 min' }],
+    documentos: [{ tipo: 'memorial', rotulo: 'Memorial descritivo', ext: 'docx' }, { tipo: 'precos_especificacao', rotulo: 'Pesquisa de preços do material (projeto pela especificação)', ext: 'xlsx' }],
+    causaEfeito: [{ id: 'pressurizacao', causa: 'Alarme de incêndio', efeitos: ['Partida imediata da pressurização'], modulo: 'comando', modulos: 1, norma: 'IT 13' }],
+    decisoes: [{ titulo: 'Detectores de fumaça', texto: '86 un — lido da especificação' }], premissas: [], pontos: [], pendencias: [{ n: 1, texto: 'Pendência da central' }], excecoes: [], avisos: [],
+    precos: { subtotal: 0, total: 0, aCotar: 1 }, materiais: [{ item: 1, tag: 'CEN', descricao: 'Central endereçável com 2 laços', quantidade: 1, unidade: 'un', preco: null, origem: 'A cotar', chave: 'cen' }],
+  };
+  gerarProjetoEspecificacao.mockResolvedValue({ data: { id: 9, resumo: resumoSkill } });
+  await act(async () => { raiz.render(<ProjetoDaEspecificacao />); });
+  const input = caixa.querySelector('input[type=file]');
+  Object.defineProperty(input, 'files', { value: [new File(['x'], 'cdi.txt', { type: 'text/plain' })] });
+  await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })); });
+  const botao = (texto) => [...caixa.querySelectorAll('button')].find(b => b.textContent.includes(texto));
+  await act(async () => { botao('Ler especificação').click(); });
+  await act(async () => { botao('Gerar projeto').click(); });
+  expect(caixa.textContent).toContain('2 laço(s)');
+  expect(caixa.textContent).toContain('Matriz de causa e efeito');
+  expect(caixa.textContent).toContain('Partida imediata da pressurização');
+  expect(botao('Memorial descritivo')).toBeTruthy();
+  expect(botao('Pesquisa de preços do material')).toBeTruthy();
+  expect(botao('Anteprojeto FL01')).toBeFalsy();
+  expect(caixa.textContent).not.toContain('Simulação do comando');
+});

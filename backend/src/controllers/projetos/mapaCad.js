@@ -24,6 +24,18 @@ const SUBPASTA_ARQUIVOS = 'Arquivos do projeto';
 const RE_ARQUIVO_DE_PROJETO = /\.(pdf|dwg|dxf)$/i;
 
 const arquivosComMapa = (dados) => (Array.isArray(dados) ? dados : []).filter(d => d?.mapa_cad?.simbolos);
+// Disciplinas da análise (chaves de utils/disciplinasProjeto): as marcadas no envio de cada arquivo com mapa, mais as que
+// o engenheiro trouxe ao conferir símbolos ou inserir componentes (mapaCad.disciplinasAIncluir — entram no orçamento).
+// Rede e cabeamento andam juntas. Em ordem alfabética das chaves.
+function disciplinasDoProjeto(dados) {
+  const chaves = new Set();
+  for (const d of arquivosComMapa(dados)) {
+    for (const c of Array.isArray(d.disciplinas) ? d.disciplinas : []) if (typeof c === 'string') chaves.add(c);
+    for (const g of mapaCad.disciplinasAIncluir(d.mapa_cad, d.disciplinas)) chaves.add(g.chave);
+  }
+  if (chaves.has('rede') || chaves.has('cabeamento')) { chaves.add('rede'); chaves.add('cabeamento'); }
+  return [...chaves].sort();
+}
 const respostaDoMapa = (dados) => ({
   disponivel: arquivosComMapa(dados).length > 0,
   arquivos: arquivosComMapa(dados).map(d => ({
@@ -33,6 +45,8 @@ const respostaDoMapa = (dados) => ({
   tipos: mapaCad.tiposDisponiveis(),
   // biblioteca de componentes por disciplina, com o símbolo de planta em SVG (inserir na planta e no 3D)
   componentes: componentes(),
+  // as disciplinas DESTA análise: a paleta mostra primeiro só os componentes delas, e os das outras sob pedido
+  disciplinasDoProjeto: disciplinasDoProjeto(dados),
   // disciplinas para "confirmar bloco" (o bloco aprendido vale dentro da disciplina dele)
   disciplinas: DISCIPLINAS.map(d => ({ chave: d.chave, nome: d.nome })).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
 });
@@ -275,4 +289,4 @@ async function importarBiblioteca(req, res) {
   res.json({ ...r, recusadas: erros.length, erros: erros.slice(0, 20) });
 }
 
-module.exports = { ler, salvar, editar, reprocessar, confirmarBloco, exportarBiblioteca, importarBiblioteca };
+module.exports = { ler, salvar, editar, reprocessar, confirmarBloco, exportarBiblioteca, importarBiblioteca, paraTestes: { disciplinasDoProjeto } };

@@ -1,0 +1,524 @@
+{
+  "chave": "quadro_distribuicao_predial",
+  "disciplina": "eletrica",
+  "tipo_solucao": "skill",
+  "skill": "quadros",
+  "laudo": {
+    "disciplina": "quadros"
+  },
+  "tag_padrao": "QD",
+  "versao": 1,
+  "nome": "Quadro de distribuição predial (QD) a partir da especificação",
+  "descricao": "Lê a especificação do quadro de distribuição (tensão, esquema, Icc, disjuntor geral, DPS, multimedidor, montagem, IP, reserva e a lista de circuitos com descrição, potência, disjuntor e DR) e gera o projeto de fabricação pela skill quadros (NBR IEC 61439, NBR 5410): invólucro, arranjo em fileiras DIN, barramento, DR, DPS, coordenação Icu × Icc, elevação de temperatura, materiais, caderno de fabricação, desenho e 3D.",
+  "detectar": [
+    "quadro de distribui[çc][ãa]o",
+    "\\bQD[-\\s]?\\d",
+    "circuitos? de (?:ilumina|tomadas)",
+    "tomadas de uso geral",
+    "\\bDR\\s*(?:de\\s*)?30\\s*mA"
+  ],
+  "detectar_forte": [
+    "(?:^|\\n|\\|)\\s*\\d{1,3}\\s*\\|[^|]{2,80}\\|\\s*\\d+(?:[.,]\\d+)?\\s*k?(?:W|VA)\\s*\\|"
+  ],
+  "detectar_exclui": [
+    "chillers?",
+    "pressuriza[çc][ãa]o",
+    "MAN(?:UAL)?\\s*[–·-]\\s*0\\s*[–·-]\\s*AUT"
+  ],
+  "solucao": "skills/_comum/especificacao/solucaoSkill.js",
+  "vocabulario": {
+    "meta": {},
+    "equipamentos": {},
+    "atributos": {},
+    "requisitos": [
+      {
+        "id": "alimentacao.tensao",
+        "grupo": "alimentacao",
+        "rotulo": "Tensão de alimentação",
+        "padroes": [
+          "(\\d{3})\\s*/\\s*(\\d{3})\\s*V"
+        ],
+        "captura": {
+          "ff": 1,
+          "fn": 2
+        },
+        "numeros": [
+          "ff",
+          "fn"
+        ]
+      },
+      {
+        "id": "alimentacao.monofasico",
+        "grupo": "alimentacao",
+        "rotulo": "Alimentação monofásica",
+        "padroes": [
+          "monof[áa]sic[oa]",
+          "\\b1F\\s*\\+\\s*N\\b"
+        ]
+      },
+      {
+        "id": "alimentacao.bifasico",
+        "grupo": "alimentacao",
+        "rotulo": "Alimentação bifásica",
+        "padroes": [
+          "bif[áa]sic[oa]",
+          "\\b2F\\s*\\+\\s*N\\b"
+        ]
+      },
+      {
+        "id": "alimentacao.esquema",
+        "grupo": "alimentacao",
+        "rotulo": "Esquema de aterramento",
+        "padroes": [
+          "\\b(TN-S|TN-C-S|TN-C|TT)\\b"
+        ],
+        "captura": {
+          "esquema": 1
+        }
+      },
+      {
+        "id": "alimentacao.icc_ka",
+        "grupo": "alimentacao",
+        "rotulo": "Icc presumido no ponto",
+        "padroes": [
+          "(?:Icc|corrente de curto(?:-circuito)?)[^.;]{0,40}?(\\d+(?:[.,]\\d+)?)\\s*kA"
+        ],
+        "captura": {
+          "icc_ka": 1
+        },
+        "numeros": [
+          "icc_ka"
+        ]
+      },
+      {
+        "id": "forca.disjuntor_geral",
+        "grupo": "forca",
+        "rotulo": "Disjuntor geral",
+        "padroes": [
+          "disjuntor geral[^.;]{0,40}?(\\d{2,4})\\s*A"
+        ],
+        "captura": {
+          "in_a": 1
+        },
+        "numeros": [
+          "in_a"
+        ]
+      },
+      {
+        "id": "forca.dr_geral",
+        "grupo": "forca",
+        "rotulo": "DR geral",
+        "padroes": [
+          "DR geral",
+          "interruptor diferencial geral"
+        ]
+      },
+      {
+        "id": "forca.dps",
+        "grupo": "forca",
+        "rotulo": "DPS (protetor contra surtos)",
+        "negavel": true,
+        "padroes": [
+          "\\bDPS\\b",
+          "protetor(?:es)? contra surtos"
+        ]
+      },
+      {
+        "id": "forca.multimedidor",
+        "grupo": "forca",
+        "rotulo": "Multimedidor",
+        "negavel": true,
+        "padroes": [
+          "multimedidor",
+          "medidor de energia",
+          "analisador de energia"
+        ]
+      },
+      {
+        "id": "construcao.montagem",
+        "grupo": "construcao",
+        "rotulo": "Montagem do invólucro",
+        "padroes": [
+          "\\b(sobrepor|embutir|autoportante|de piso)\\b"
+        ],
+        "captura": {
+          "tipo": 1
+        }
+      },
+      {
+        "id": "construcao.ip",
+        "grupo": "construcao",
+        "rotulo": "Grau de proteção",
+        "padroes": [
+          "\\bIP\\s?(\\d{2})\\b"
+        ],
+        "captura": {
+          "ip": 1
+        }
+      },
+      {
+        "id": "construcao.reserva_pct",
+        "grupo": "construcao",
+        "rotulo": "Reserva de espaço",
+        "padroes": [
+          "reserva de (\\d+)\\s*%"
+        ],
+        "captura": {
+          "pct": 1
+        },
+        "numeros": [
+          "pct"
+        ]
+      },
+      {
+        "id": "construcao.material",
+        "grupo": "construcao",
+        "rotulo": "Material do invólucro",
+        "padroes": [
+          "(?:quadro|inv[óo]lucro|painel)[^.]{0,40}?\\bem\\s+(a[çc]o(?: inox(?:id[áa]vel)?)?|inox|poli[ée]ster|alum[íi]nio|fibra)"
+        ],
+        "captura": {
+          "material": 1
+        }
+      },
+      {
+        "id": "construcao.entrada_cabos",
+        "grupo": "construcao",
+        "rotulo": "Entrada dos cabos",
+        "padroes": [
+          "entrada (superior|inferior)",
+          "cabos? entra(?:m)? por (cima|baixo)"
+        ],
+        "captura": {
+          "lado": 1
+        }
+      },
+      {
+        "id": "uso.residencial",
+        "grupo": "uso",
+        "rotulo": "Instalação residencial",
+        "padroes": [
+          "resid[êe]ncia",
+          "apartamento",
+          "unidade habitacional"
+        ]
+      },
+      {
+        "id": "normas",
+        "grupo": "normas",
+        "rotulo": "Norma citada",
+        "multiplo": true,
+        "padroes": [
+          "((?:ABNT\\s+)?NBR\\s?(?:IEC\\s?)?\\d{3,5}(?:[-‑]\\d(?:/\\d)?)?|NR[-\\s]?\\d{1,2})"
+        ],
+        "captura": {
+          "norma": 1
+        }
+      }
+    ],
+    "listas": [
+      {
+        "id": "escopo.excluido",
+        "rotulo": "Fora do escopo",
+        "secoes": [
+          "n[ãa]o faz parte",
+          "exclu",
+          "fora do escopo"
+        ],
+        "tipos": [
+          "item",
+          "paragrafo"
+        ]
+      }
+    ],
+    "circuitos": [
+      {
+        "id": "tabela",
+        "padrao": "^\\s*(?:circuito\\s*)?(\\d{1,3})\\s*\\|\\s*([^|]{2,80}?)\\s*\\|\\s*(\\d+(?:[.,]\\d+)?)\\s*(kW|W|kVA|VA)\\s*\\|\\s*(1P\\+N|1P|2P|3P\\+N|3P)\\s*(\\d{1,3})\\s*A",
+        "campos": {
+          "n": 1,
+          "descricao": 2,
+          "tipo": 2,
+          "potencia": 3,
+          "unidade_potencia": 4,
+          "polos": 5,
+          "in_a": 6
+        },
+        "numeros": [
+          "potencia"
+        ],
+        "tipos": {
+          "ilumina": "iluminacao",
+          "tomada": "tug",
+          "tug": "tug",
+          "chuveiro": "tue",
+          "torneira": "tue",
+          "forno": "tue",
+          "aquecedor": "tue",
+          "ar-condicionado": "ar_condicionado",
+          "ar condicionado": "ar_condicionado",
+          "split": "ar_condicionado",
+          "reserva": "reserva",
+          "uso espec": "tue",
+          "bomba": "tue",
+          "motor": "tue"
+        },
+        "dr": "DR\\s*(\\d+)\\s*mA"
+      },
+      {
+        "id": "texto",
+        "padrao": "circuito\\s*(\\d{1,3})\\s*[:–-]\\s*([^,;|]{2,80}?),\\s*(\\d+(?:[.,]\\d+)?)\\s*(kW|W|kVA|VA),\\s*disjuntor\\s*(1P\\+N|1P|2P|3P\\+N|3P)\\s*(\\d{1,3})\\s*A",
+        "campos": {
+          "n": 1,
+          "descricao": 2,
+          "tipo": 2,
+          "potencia": 3,
+          "unidade_potencia": 4,
+          "polos": 5,
+          "in_a": 6
+        },
+        "numeros": [
+          "potencia"
+        ],
+        "tipos": {
+          "ilumina": "iluminacao",
+          "tomada": "tug",
+          "tug": "tug",
+          "chuveiro": "tue",
+          "torneira": "tue",
+          "forno": "tue",
+          "aquecedor": "tue",
+          "ar-condicionado": "ar_condicionado",
+          "ar condicionado": "ar_condicionado",
+          "split": "ar_condicionado",
+          "reserva": "reserva",
+          "uso espec": "tue",
+          "bomba": "tue",
+          "motor": "tue"
+        },
+        "dr": "DR\\s*(\\d+)\\s*mA"
+      },
+      {
+        "id": "agrupado",
+        "padrao": "(\\d+|um|uma)\\s+circuitos?\\s+(?:de\\s+)?(ilumina[çc][ãa]o|tomadas? de uso geral|tomadas?|reserva|uso espec[íi]fico)[^:.]{0,40}?:?\\s*disjuntor\\s*(1P\\+N|2P|3P\\+N|3P|1P|bipolar|tripolar|monopolar)?\\s*(\\d+)\\s*A",
+        "campos": {
+          "quantidade": 1,
+          "tipo": 2,
+          "polos": 3,
+          "in_a": 4
+        },
+        "tipos": {
+          "ilumina": "iluminacao",
+          "uso geral": "tug",
+          "tomada": "tug",
+          "reserva": "reserva",
+          "uso espec": "tue"
+        },
+        "dr": "DR\\s*(\\d+)\\s*mA"
+      }
+    ],
+    "obrigatorios": []
+  },
+  "meta_campos": {
+    "tag": "quadro.tag",
+    "titulo": "quadro.descricao"
+  },
+  "mapa": [
+    {
+      "requisito": "alimentacao.tensao",
+      "campo": "quadro.tensao_ff",
+      "de": "ff",
+      "numero": true,
+      "rotulo": "Tensão fase-fase",
+      "unidade": "V"
+    },
+    {
+      "requisito": "alimentacao.tensao",
+      "campo": "quadro.tensao_fn",
+      "de": "fn",
+      "numero": true,
+      "rotulo": "Tensão fase-neutro",
+      "unidade": "V"
+    },
+    {
+      "requisito": "alimentacao.bifasico",
+      "campo": "quadro.sistema",
+      "valor": "bifasico",
+      "rotulo": "Sistema"
+    },
+    {
+      "requisito": "alimentacao.monofasico",
+      "campo": "quadro.sistema",
+      "valor": "monofasico",
+      "rotulo": "Sistema"
+    },
+    {
+      "requisito": "alimentacao.esquema",
+      "campo": "quadro.esquema",
+      "de": "esquema",
+      "rotulo": "Esquema de aterramento"
+    },
+    {
+      "requisito": "alimentacao.icc_ka",
+      "campo": "quadro.icc_ka",
+      "de": "icc_ka",
+      "numero": true,
+      "rotulo": "Icc no ponto",
+      "unidade": "kA"
+    },
+    {
+      "requisito": "forca.disjuntor_geral",
+      "campo": "quadro.disjuntor_geral_a",
+      "de": "in_a",
+      "numero": true,
+      "rotulo": "Disjuntor geral",
+      "unidade": "A"
+    },
+    {
+      "requisito": "forca.dr_geral",
+      "campo": "quadro.dr_geral",
+      "valor": true,
+      "rotulo": "DR geral"
+    },
+    {
+      "requisito": "forca.multimedidor",
+      "campo": "quadro.multimedidor",
+      "valor": true,
+      "rotulo": "Multimedidor"
+    },
+    {
+      "requisito": "construcao.montagem",
+      "campo": "quadro.montagem",
+      "de": "tipo",
+      "tabela": {
+        "sobrepor": "sobrepor",
+        "embutir": "embutir",
+        "autoportante": "autoportante",
+        "de piso": "autoportante"
+      },
+      "rotulo": "Montagem"
+    },
+    {
+      "requisito": "construcao.ip",
+      "campo": "quadro.ip",
+      "de": "ip",
+      "prefixo": "IP",
+      "rotulo": "Grau de proteção"
+    },
+    {
+      "requisito": "construcao.reserva_pct",
+      "campo": "quadro.reserva_pct",
+      "de": "pct",
+      "numero": true,
+      "rotulo": "Reserva de espaço",
+      "unidade": "%"
+    },
+    {
+      "requisito": "construcao.material",
+      "campo": "quadro.material",
+      "de": "material",
+      "tabela": {
+        "inox": "inox",
+        "aço": "aco",
+        "aco": "aco",
+        "poli": "poliester",
+        "fibra": "poliester",
+        "alum": "aluminio"
+      },
+      "rotulo": "Material do invólucro"
+    },
+    {
+      "requisito": "construcao.entrada_cabos",
+      "campo": "quadro.entrada_cabos",
+      "de": "lado",
+      "tabela": {
+        "superior": "superior",
+        "cima": "superior",
+        "inferior": "inferior",
+        "baixo": "inferior"
+      },
+      "rotulo": "Entrada dos cabos"
+    },
+    {
+      "requisito": "uso.residencial",
+      "campo": "quadro.residencial",
+      "valor": true,
+      "rotulo": "Instalação residencial"
+    }
+  ],
+  "limpar": [
+    "circuitos",
+    "drs",
+    "motores"
+  ],
+  "circuitos": {
+    "lista": "circuitos",
+    "campos": {
+      "n": "$n",
+      "descricao": "descricao",
+      "disjuntor_a": "in_a",
+      "curva": {
+        "const": "C"
+      }
+    },
+    "tipos": {
+      "outro": "tue"
+    },
+    "potencia_padrao": {
+      "reserva": 0
+    },
+    "balancear": true
+  },
+  "padroes": [],
+  "obrigatorios_formulario": [
+    {
+      "campo": "quadro.icc_ka",
+      "texto": "Icc presumido no ponto de instalação do quadro não informado: necessário para a capacidade de interrupção (Icu/Icn) dos disjuntores e o barramento."
+    },
+    {
+      "campo": "circuitos",
+      "texto": "Nenhum circuito lido na especificação: informe a lista (descrição, potência, disjuntor e DR) — o quadro sai só com o geral."
+    }
+  ],
+  "variaveis": {
+    "geral": "calc.geral.In",
+    "circuitos": "calc.circuitos.length"
+  },
+  "fatos": [],
+  "verificacoes": {
+    "regras": [
+      {
+        "id": "pend_secoes",
+        "tipo": "pendencia",
+        "se": [],
+        "texto": "Seções e queda de tensão dos circuitos de saída dependem do comprimento e do método de instalação (projeto de instalações, NBR 5410) — o projeto do quadro usa o método e a seção padrão da skill. [CONFERIR]"
+      }
+    ]
+  },
+  "grupos": [
+    {
+      "grupo": "Invólucro",
+      "re": "quadro de (?:sobrepor|embutir)|inv[óo]lucro|autoportante|porta|placa de montagem"
+    },
+    {
+      "grupo": "Proteção de força",
+      "re": "disjuntor|interruptor diferencial|\\bDR\\b|\\bIDR\\b|\\bDDR\\b|DPS|protetor contra surtos"
+    },
+    {
+      "grupo": "Barramento e bornes",
+      "re": "barr|pente|borne|isolador|barra de"
+    },
+    {
+      "grupo": "Comando e sinalização",
+      "re": "multimedidor|medidor|sinaleiro|botoeira|rel[ée]|contator|fonte"
+    },
+    {
+      "grupo": "Ventilação",
+      "re": "ventila|grelha|filtro|termostato"
+    },
+    {
+      "grupo": "Consumíveis",
+      "re": "."
+    }
+  ]
+}

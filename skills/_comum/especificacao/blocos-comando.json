@@ -63,7 +63,8 @@
    "se": [
     "bloco:motor_man_0_aut",
     "!bloco:pedido_externo",
-    "!bloco:partida_por_alarme"
+    "!bloco:partida_por_alarme",
+    "!bloco:comando_por_chiller"
    ],
    "campo": {
     "regua": "X3",
@@ -595,6 +596,11 @@
           "rotulo": "S{i} AUT"
          },
          {
+          "x": "KC{i}",
+          "se": "bloco:comando_por_chiller",
+          "rotulo": "KC{i} comando do chiller"
+         },
+         {
           "x": "KP",
           "se": "bloco:pedido_externo"
          },
@@ -618,7 +624,8 @@
           "rotulo": "comando automático externo (X3)",
           "se": [
            "!bloco:pedido_externo",
-           "!bloco:partida_por_alarme"
+           "!bloco:partida_por_alarme",
+           "!bloco:comando_por_chiller"
           ]
          }
         ]
@@ -1587,6 +1594,346 @@
    ],
    "notas": [
     "Rede RS-485 (Modbus RTU) dos acionamentos interligados em cabo par trançado blindado 1 par + GND; terminação 120 Ω na extremidade; endereços distintos; blindagem aterrada em um só ponto."
+   ]
+  },
+  {
+   "id": "sequencia_chillers",
+   "rotulo": "Sequência dos chillers: líder/rodízio e 2º estágio (KL2, KTS, KS2)",
+   "se": [
+    "req:sequencia.lider_reserva",
+    "externos==2",
+    "motores==2"
+   ],
+   "entradas": [
+    {
+     "id": "SLID",
+     "tipo": "seletora",
+     "posicoes": [
+      "{e1.tag}",
+      "ROD",
+      "{ultimo_e.tag}"
+     ],
+     "padrao": "ROD",
+     "rotulo": "LÍDER {e1.tag} · ROD · {ultimo_e.tag}",
+     "porta": true,
+     "material": "seletora3",
+     "descricao": "Seletora 22 mm 3 posições fixas (líder {e1.tag} · rodízio · líder {ultimo_e.tag})"
+    },
+    {
+     "id": "KALT.TROCA",
+     "tipo": "externo",
+     "rotulo": "Relé alternador KALT: {ultimo_e.tag} é o líder (troca a cada ciclo de partida)"
+    },
+    {
+     "id": "DEM.ALTA",
+     "tipo": "externo",
+     "rotulo": "Demanda alta: água gelada de retorno acima do ajuste (controlador de temperatura)",
+     "se": "req:sequencia.estagio",
+     "campo": {
+      "regua": "X3",
+      "rotulos": [
+       "controlador de temperatura — demanda alta (+24 V)",
+       "controlador de temperatura — retorno KTS"
+      ]
+     }
+    }
+   ],
+   "reles": [
+    {
+     "tag": "KL2",
+     "rotulo": "líder = {ultimo_e.tag}"
+    },
+    {
+     "tag": "KS2",
+     "rotulo": "2º estágio: os dois chillers",
+     "se": "req:sequencia.estagio"
+    }
+   ],
+   "temporizadores": [
+    {
+     "tag": "KTS",
+     "rotulo": "anti-ciclagem do 2º estágio ({tempo_estagio} s)",
+     "preset_s": "{tempo_estagio}",
+     "se": "req:sequencia.estagio"
+    }
+   ],
+   "degraus": [
+    {
+     "barra": "L+",
+     "expr": {
+      "p": [
+       {
+        "x": "SLID={ultimo_e.tag}",
+        "rotulo": "SLID {ultimo_e.tag}"
+       },
+       {
+        "s": [
+         {
+          "x": "SLID=ROD",
+          "rotulo": "SLID ROD"
+         },
+         {
+          "x": "KALT.TROCA",
+          "rotulo": "relé alternador KALT"
+         }
+        ]
+       }
+      ]
+     },
+     "saida": "KL2",
+     "rotulo": "líder = {ultimo_e.tag}"
+    },
+    {
+     "barra": "{barra_motor}",
+     "se": "req:sequencia.estagio",
+     "expr": {
+      "x": "DEM.ALTA",
+      "rotulo": "demanda alta (X3)"
+     },
+     "saida": "KTS",
+     "rotulo": "demanda alta → conta {tempo_estagio} s"
+    },
+    {
+     "barra": "{barra_motor}",
+     "se": "req:sequencia.estagio",
+     "expr": {
+      "x": "KTS",
+      "rotulo": "KTS (tempo cumprido)"
+     },
+     "saida": "KS2",
+     "rotulo": "2º estágio"
+    }
+   ],
+   "cenarios": [
+    {
+     "nome": "Rodízio: com o relé alternador trocado, o líder passa a ser {ultimo_e.tag}",
+     "entradas": {
+      "SLID": "ROD",
+      "KALT.TROCA": true
+     },
+     "espera": {
+      "KL2": true
+     }
+    },
+    {
+     "nome": "Líder fixo {e1.tag} pela seletora, mesmo com o alternador trocado",
+     "entradas": {
+      "SLID": "{e1.tag}",
+      "KALT.TROCA": true
+     },
+     "espera": {
+      "KL2": false
+     }
+    },
+    {
+     "nome": "Demanda alta por {tempo_estagio} s: entra o 2º estágio",
+     "se": "req:sequencia.estagio",
+     "entradas": {
+      "DEM.ALTA": true
+     },
+     "aguardar_s": "{tempo_estagio_mais}",
+     "espera": {
+      "KS2": true
+     }
+    },
+    {
+     "nome": "Demanda alta por menos de {tempo_estagio} s não liga o 2º estágio (anti-ciclagem)",
+     "se": "req:sequencia.estagio",
+     "entradas": {
+      "DEM.ALTA": true
+     },
+     "espera": {
+      "KS2": false
+     }
+    }
+   ],
+   "logica": [
+    "{SLID} escolhe o líder: {e1.tag} (KL2 desligado), {ultimo_e.tag} (KL2 ligado) ou ROD, em que o relé alternador KALT troca o líder a cada ciclo de partida. Com a demanda alta (controlador de temperatura da água gelada de retorno, X3) por {tempo_estagio} s, KTS energiza KS2 e o segundo chiller também é comandado."
+   ],
+   "notas": [
+    "Relé alternador (KALT): relé de alternância de cargas 24 Vcc (Finder 72.01 / Coel ou equivalente) — troca o líder a cada ciclo; na simulação, a entrada \"KALT.TROCA\". Ajuste de temperatura e diferencial do 2º estágio no comissionamento [CONFERIR]."
+   ]
+  },
+  {
+   "id": "comando_por_chiller",
+   "rotulo": "Comando de cada chiller com intertravamento bomba + fluxo (KC, FS)",
+   "por": "motores",
+   "se": [
+    "req:sequencia.lider_reserva",
+    "externos==2",
+    "motores==2"
+   ],
+   "reles": [
+    {
+     "tag": "KC{i}",
+     "rotulo": "comando {par.tag}"
+    }
+   ],
+   "degraus": [
+    {
+     "barra": "{barra_motor}",
+     "expr": {
+      "s": [
+       {
+        "x": "KL",
+        "se": "bloco:liberacao_externa",
+        "rotulo": "KL liberação"
+       },
+       {
+        "p": [
+         {
+          "x": "KL2",
+          "neg": "{lider_neg}",
+          "rotulo": "{par.tag} líder (KL2)"
+         },
+         {
+          "x": "KS2",
+          "se": "req:sequencia.estagio",
+          "rotulo": "2º estágio (KS2)"
+         }
+        ]
+       }
+      ]
+     },
+     "saida": "KC{i}",
+     "rotulo": "comando {par.tag}"
+    }
+   ],
+   "equipamentos": [
+    {
+     "tag": "FS{i}",
+     "rotulo": "Fluxostato da água gelada do {par.tag}",
+     "saidas": {
+      "FLUXO": {
+       "s": [
+        {
+         "x": "{run}"
+        },
+        {
+         "x": "{tag}.sem_fluxo",
+         "neg": true
+        }
+       ]
+      }
+     }
+    }
+   ],
+   "entradasExtras": [
+    {
+     "id": "{tag}.sem_fluxo",
+     "tipo": "falha",
+     "rotulo": "Sem fluxo de água no {par.tag} (fluxostato FS{i})"
+    }
+   ],
+   "saidasCampo": [
+    {
+     "tag": "{par.tag}.HABILITA",
+     "expr": {
+      "s": [
+       {
+        "x": "KC{i}",
+        "rotulo": "KC{i}"
+       },
+       {
+        "x": "FS{i}.FLUXO",
+        "rotulo": "fluxostato FS{i}",
+        "campo": {
+         "regua": "X2",
+         "rotulos": [
+          "fluxostato FS{i} do {par.tag} (+24 V)",
+          "fluxostato FS{i} do {par.tag} (retorno)"
+         ]
+        }
+       }
+      ]
+     },
+     "rotulo": "habilitação do {par.tag} (só com a bomba {tag} e o fluxo provado — intertravamento)",
+     "borne": {
+      "regua": "X2",
+      "rotulos": [
+       "{par.tag} habilitação (KC{i}/FS{i})",
+       "{par.tag} habilitação comum"
+      ]
+     }
+    }
+   ],
+   "cenarios": [
+    {
+     "nome": "{par.tag} líder: bomba {tag} em AUT parte e, com o fluxo provado, o {par.tag} é habilitado",
+     "se": "{so_primeiro}",
+     "entradas": {
+      "S{i}": "AUT",
+      "SLID": "ROD",
+      "SLIB": "LIB"
+     },
+     "espera": {
+      "KC{i}": true,
+      "KB{i}": true,
+      "{par.tag}.HABILITA": true
+     }
+    },
+    {
+     "nome": "Sem fluxo no {par.tag}: o chiller não é habilitado (intertravamento)",
+     "se": "{so_primeiro}",
+     "entradas": {
+      "S{i}": "AUT",
+      "SLID": "ROD",
+      "SLIB": "LIB",
+      "{tag}.sem_fluxo": true
+     },
+     "espera": {
+      "{par.tag}.HABILITA": false
+     }
+    },
+    {
+     "nome": "{par.tag} reserva fica parado enquanto o líder atende",
+     "se": "{so_ultimo}",
+     "entradas": {
+      "S{i}": "AUT",
+      "SLID": "ROD",
+      "SLIB": "LIB"
+     },
+     "espera": {
+      "KC{i}": false,
+      "{par.tag}.HABILITA": false
+     }
+    },
+    {
+     "nome": "Rodízio: com o alternador trocado, o {par.tag} vira líder e é habilitado",
+     "se": "{so_ultimo}",
+     "entradas": {
+      "S{i}": "AUT",
+      "SLID": "ROD",
+      "SLIB": "LIB",
+      "KALT.TROCA": true
+     },
+     "espera": {
+      "KC{i}": true,
+      "{par.tag}.HABILITA": true
+     }
+    },
+    {
+     "nome": "2º estágio: com a demanda alta o {par.tag} também é comandado",
+     "se": [
+      "req:sequencia.estagio",
+      "{so_ultimo}"
+     ],
+     "entradas": {
+      "S{m1.i}": "AUT",
+      "S{ultimo.i}": "AUT",
+      "SLID": "ROD",
+      "SLIB": "LIB",
+      "DEM.ALTA": true
+     },
+     "aguardar_s": "{tempo_estagio_mais}",
+     "espera": {
+      "KC{i}": true,
+      "{par.tag}.HABILITA": true
+     }
+    }
+   ],
+   "logica": [
+    "KC{i} comanda o {par.tag} quando ele é o líder (pela KL2) ou no 2º estágio (KS2); a bomba dedicada {tag} em AUT parte com KC{i}; o {par.tag} só é habilitado com KC{i} E o fluxostato FS{i} fechado (água circulando) — intertravamento bomba → fluxo → chiller."
    ]
   }
  ]

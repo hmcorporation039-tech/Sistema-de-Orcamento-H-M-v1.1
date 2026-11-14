@@ -336,11 +336,18 @@ function lerCircuitos(blocos, vocab) {
         const tipo = Object.entries(c.tipos || {}).find(([t]) => termoTipo.includes(semAcento(t).toLowerCase()))?.[1] || 'outro';
         const frase = fraseEm(texto, m.index);
         const dr = c.dr ? re(c.dr).exec(frase) : null;
-        out.push({
+        const circ = {
           tipo, rotulo: get('tipo') || tipo, quantidade: numero(get('quantidade')) ?? (PALAVRAS_NUM[semAcento(get('quantidade') || '').toLowerCase()] || 1),
           polos: (get('polos') || '').toUpperCase().replace('BIPOLAR', '2P').replace('TRIPOLAR', '3P').replace('MONOPOLAR', '1P'),
           in_a: numero(get('in_a')), dr_ma: dr ? numero(dr[1]) : null, origem: origemDe(b, m.index),
-        });
+        };
+        // campos extras do perfil (14/11/2026 — quadro predial: nº, descrição e potência de cada circuito)
+        for (const k of Object.keys(c.campos)) {
+          if (['quantidade', 'tipo', 'polos', 'in_a'].includes(k) || get(k) == null) continue;
+          circ[k] = (c.numeros || []).includes(k) ? numero(get(k)) : norm(get(k));
+        }
+        if (circ.n != null) circ.quantidade = 1;
+        out.push(circ);
       }
     }
   }

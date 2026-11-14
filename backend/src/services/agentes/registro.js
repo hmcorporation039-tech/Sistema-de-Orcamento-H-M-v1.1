@@ -141,9 +141,9 @@ const AGENTES = [
   },
   {
     chave: 'quadro_especificacao',
-    nome: 'Agente de quadro pela especificação',
-    resumo: 'Especificação do cliente → projeto completo do quadro pela skill quadros (unifilar, comando por relés, interfaces, layout, materiais, pendências, 3D com simulação e planilha de pesquisa de preço QF-CAG), com aprendizado. Depende do módulo de especificação da skill quadros.',
-    disciplinas: ['quadros'],
+    nome: 'Agente de projeto pela especificação',
+    resumo: 'Especificação do cliente → projeto completo pelo perfil da disciplina: quadro de força e comando, painel de pressurização e CAG com sequência de chillers (unifilar, comando por relés, interfaces, layout, 3D com simulação) e, pelas skills, QD predial, automação/BMS, central de incêndio (com a matriz de causa e efeito) e subestação de MT — com materiais, pendências, pontos a levantar, planilha de pesquisa de preço QF-CAG e aprendizado.',
+    disciplinas: ['quadros', 'pressurizacao', 'climatizacao', 'eletrica', 'automacao', 'incendio', 'media_tensao'],
     recebe: [
       { campo: 'arquivo_id', tipo: 'arquivo', formatos: ['pdf', 'docx', 'xlsx', 'csv'], descricao: 'especificação do cliente' },
       { campo: 'texto', tipo: 'texto', descricao: 'especificação escrita na conversa' },

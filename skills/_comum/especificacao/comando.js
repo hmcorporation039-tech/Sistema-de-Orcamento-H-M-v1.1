@@ -124,6 +124,9 @@ function variaveisGerais(ctx, ativos = new Set()) {
     ...(ctx.variaveis || {}),
   };
   vars.tempo_reversao_mais = Number(vars.tempo_reversao) + 1;
+  // sequência de chillers: anti-ciclagem do 2º estágio (s) — o perfil/especificação dá o valor
+  if (vars.tempo_estagio == null || vars.tempo_estagio === '') vars.tempo_estagio = 180;
+  vars.tempo_estagio_mais = Number(vars.tempo_estagio) + 1;
   return vars;
 }
 
@@ -140,6 +143,11 @@ function escopoMotor(mt, ctx, geral, titular) {
     titular_pos: titular ? (primeiro ? ctx.motores[0].tag : ctx.motores[n - 1].tag) : '',
     nao_titular_pos: titular ? (primeiro ? ctx.motores[n - 1].tag : ctx.motores[0].tag) : '',
     titular_texto: titular ? ` e só na titular (KT ${primeiro ? 'NF: titular = ' + ctx.motores[0].tag : 'NA: titular = ' + ctx.motores[n - 1].tag})` : '',
+    // sequência de chillers (14/11/2026): a bomba i é a dedicada do chiller i (o "par"); o 1º chiller é o
+    // líder com KL2 desligado (NF), o último com KL2 ligado (NA)
+    par: (ctx.externos || [])[mt.i - 1] || {},
+    lider_neg: primeiro ? 'true' : 'false',
+    so_primeiro: primeiro ? '' : 'nunca', so_ultimo: mt.i === n ? '' : 'nunca',
   };
 }
 

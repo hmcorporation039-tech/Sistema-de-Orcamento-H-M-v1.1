@@ -1,0 +1,22 @@
+BMS-01 — SISTEMA DE AUTOMAÇÃO PREDIAL DO EDIFÍCIO DE TESTE
+Especificação técnica para cotação
+Obra Fictícia de Teste — Edifício Exemplo · Rev. 00 · 06/11/2026
+
+1. OBJETIVO
+Fornecimento do sistema de automação predial (BMS) com supervisório, controladores DDC e integração dos sistemas de climatização, iluminação e energia.
+
+2. EQUIPAMENTOS A INTEGRAR
+Equipamento | Quantidade
+Chillers (2 un.) | integração por rede BACnet
+Bombas (3 un.) | bombas de água gelada primárias
+Fancoils (8 un.) | climatização dos pavimentos
+Exaustores (4 un.) | sanitários e garagem
+Circuitos de iluminação (16 un.) | áreas comuns
+Medidores de energia (5 un.) | quadros gerais, comunicação Modbus
+
+3. REQUISITOS
+- Protocolo principal BACnet/IP; medidores em Modbus RTU com gateway.
+- Reserva de 25% de pontos em cada controlador.
+- Supervisório com licença para todos os pontos e estação de operação.
+- Monitorar o alarme de incêndio da central de detecção.
+- Comissionamento ponto a ponto e treinamento dos operadores.

@@ -43,6 +43,21 @@ test('com Mapa do CAD, abre o 3D com a edição dentro da tela', async () => {
   expect(abrirModelo3d).toHaveBeenCalledWith('analise', 7, { embutido: true });
 });
 
+test('a paleta do 3D marca os componentes da disciplina da análise (os outros só com "outras disciplinas")', async () => {
+  getMapaCad.mockResolvedValue({ data: { disponivel: true, disciplinasDoProjeto: ['incendio'], componentes: [
+    { simbolo: 'HM-ELE-TOMADA-BAIXA', nome: 'Tomada baixa', disciplina: 'eletrica', disciplinas: ['eletrica', 'eletrica_hospitalar', 'eletrica_industrial'] },
+    { simbolo: 'HM-INC-DETECTOR-FUMACA', nome: 'Detector de fumaça', disciplina: 'incendio', disciplinas: ['incendio'] },
+  ] } });
+  abrirModelo3d.mockResolvedValue({ data: { url: '/modelo-3d/ver/abc' } });
+  act(() => raiz.render(<BotoesModelo3d origem="analise" id={7} />));
+  await act(async () => { caixa.querySelector('[data-testid="editar-3d"]').click(); });
+  const quadro = document.querySelector('[data-testid="editor-3d"] iframe');
+  const enviado = jest.spyOn(quadro.contentWindow, 'postMessage').mockImplementation(() => {});
+  await act(async () => { window.dispatchEvent(new MessageEvent('message', { data: { tipo: 'hm3d:pronto', comOrigem: true }, source: quadro.contentWindow })); });
+  const msg = enviado.mock.calls.map(c => c[0]).find(m => m.tipo === 'hm3d:editar');
+  expect(msg.paleta.map(p => [p.simbolo, p.doProjeto])).toEqual([['HM-ELE-TOMADA-BAIXA', false], ['HM-INC-DETECTOR-FUMACA', true]]);
+});
+
 test('sem Mapa do CAD, avisa e não abre', async () => {
   const toast = require('react-hot-toast').default;
   getMapaCad.mockResolvedValue({ data: { disponivel: false, componentes: [{ simbolo: 'X', nome: 'X' }] } });

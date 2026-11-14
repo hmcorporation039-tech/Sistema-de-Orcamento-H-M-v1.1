@@ -1,0 +1,30 @@
+QF-SEQ — QUADRO DE FORÇA E COMANDO DA CAG COM SEQUÊNCIA DE CHILLERS
+Especificação técnica para cotação
+Obra Fictícia de Teste — Prédio Exemplo · Rev. 01 · 08/11/2026
+
+1. OBJETIVO
+Fornecimento de um quadro de força e comando para a central de água gelada com sequência de operação dos chillers. O quadro alimenta 2 chillers e 2 bombas primárias dedicadas (uma para cada chiller).
+
+2. DADOS DE ENTRADA
+Item | Dado
+Alimentação | 380/220 V · 3F + N + PE · 60 Hz, vinda do QGBT do prédio
+Chillers (2 un.) | Genérico RX-80 · 380 V 3N~ · MCA 70 A / MFA 90 A cada
+Bombas (2 un.) | Genérica BX-75 7,5 cv, 380 V
+Inversores (2 un.) | Genérico GV-13 (380 V, 13 A), fornecidos pelo cliente para montagem dentro do quadro
+
+3. O QUE O QUADRO DEVE FAZER
+3.1 Força
+- Disjuntor geral e barramento, DPS e relé de falta/sequência de fase.
+- Barra de neutro e barra de terra (PE).
+3.2 Comando
+- Uma seletora por bomba: MANUAL – 0 – AUTOMÁTICO.
+- Seletora de liberação dos chillers.
+- Sequência dos chillers: chiller líder escolhido na porta (CH1, rodízio ou CH2); em rodízio, o líder alterna a cada ciclo.
+- O segundo chiller entra quando a temperatura de retorno ficar alta, com anti-ciclagem de 240 segundos.
+- Cada chiller só é habilitado com a sua bomba primária ligada e o fluxostato confirmando a água.
+- Partida das bombas sempre pelo inversor. Falha da bomba lida pelo relé de falha do inversor.
+- Botão de emergência: desliga as bombas e retira a liberação dos chillers.
+- Lógica por relés; CLP não é necessário.
+3.3 Automação futura
+- Contatos secos livres em bornes: bomba B1 operando, bomba B2 operando, falha B1, falha B2.
+- Reserva de 20% de espaço na placa de montagem e nas réguas de bornes.

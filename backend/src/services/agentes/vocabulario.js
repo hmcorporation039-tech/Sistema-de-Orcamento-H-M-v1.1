@@ -33,8 +33,11 @@ const INTENCOES = [
     gatilhos: [
       [['quadro*', 'painel', 'paineis', 'qgbt', 'ccm', 'qta', 'qcm'], ['especific*', 'requisit*', 'descric*', 'memorial', 'solicitad*']],
       { grupos: [VERBOS_FAZER, ['quadro*', 'painel', 'paineis', 'qgbt', 'ccm']], exclui: ['orcament*', 'proposta*', 'preco*', '3d', 'laudo*', 'inspec*'] },
+      // 14/11/2026: as demais disciplinas pela especificação (central de incêndio, subestação, BMS, chillers)
+      [['central*', 'subestac*', 'cabine*', 'bms', 'supervisori*', 'automac*', 'chiller*', 'pressuriz*'], ['especific*', 'requisit*', 'solicitad*']],
     ],
-    exemplos: ['De acordo com a descrição do cliente, sugira um projeto do quadro solicitado. Com projeto unifilar e 2…', 'monte o quadro desta especificação', 'projete o painel pela especificação do cliente'],
+    exemplos: ['De acordo com a descrição do cliente, sugira um projeto do quadro solicitado. Com projeto unifilar e 2…', 'monte o quadro desta especificação', 'projete o painel pela especificação do cliente',
+      'gere a central de incêndio desta especificação', 'projete a subestação pela especificação do cliente', 'monte o BMS pela especificação'],
   },
   {
     chave: 'orcamento', agente: 'orcamento', prioridade: 70,

@@ -96,16 +96,26 @@ function calcular(dados) {
     const avisadores = Math.max(acionadores, Math.ceil(area / (Number(sis.area_por_avisador_m2) || 400)));
     return { ...p, comp, acionadores, avisadores, area };
   });
-  if (!pavimentos.length) avisos.push('Cadastre os pavimentos (área e maior caminhamento) para dimensionar acionadores e avisadores. [CONFERIR]');
-  avisos.push('Quantidade de avisadores estimada pela área — confirmar a audibilidade em todos os pontos (5.6.1). [CONFERIR]');
+  // Quantidades INFORMADAS (14/11/2026 — projeto pela especificação do cliente: a especificação da central
+  // traz a contagem de dispositivos, não os ambientes). Valem sobre o que sairia dos ambientes/pavimentos.
+  const qi = sis.quantidades_informadas || {};
+  const informado = (k) => Number.isFinite(Number(qi[k])) && qi[k] !== null && qi[k] !== '' && Number(qi[k]) >= 0;
+  const temInformadas = ['detectores_fumaca', 'detectores_temperatura', 'acionadores', 'avisadores'].some(informado);
+  if (!pavimentos.length && !temInformadas) avisos.push('Cadastre os pavimentos (área e maior caminhamento) para dimensionar acionadores e avisadores. [CONFERIR]');
+  if (!temInformadas || !informado('avisadores')) avisos.push('Quantidade de avisadores estimada pela área — confirmar a audibilidade em todos os pontos (5.6.1). [CONFERIR]');
+  else avisos.push('Quantidades de detectores, acionadores e avisadores informadas pela especificação do cliente — confirmar a cobertura (5.4) e a audibilidade (5.6.1) na planta. [CONFERIR]');
 
-  const nDet = ambientes.reduce((s, a) => s + a.detectores, 0);
-  const nAc = pavimentos.reduce((s, p) => s + p.acionadores, 0);
-  const nAv = pavimentos.reduce((s, p) => s + p.avisadores, 0);
+  const detF = informado('detectores_fumaca') ? Number(qi.detectores_fumaca) : ambientes.filter(a => a.tipo === 'fumaca').reduce((s, a) => s + a.detectores, 0);
+  const detT = informado('detectores_temperatura') ? Number(qi.detectores_temperatura) : ambientes.filter(a => a.tipo === 'temperatura').reduce((s, a) => s + a.detectores, 0);
+  const nDet = temInformadas ? detF + detT : ambientes.reduce((s, a) => s + a.detectores, 0);
+  const nAc = informado('acionadores') ? Number(qi.acionadores) : pavimentos.reduce((s, p) => s + p.acionadores, 0);
+  const nAv = informado('avisadores') ? Number(qi.avisadores) : pavimentos.reduce((s, p) => s + p.avisadores, 0);
   const nMod = Number(sis.modulos_comando) || 0;
   const dispositivos = nDet + nAc + nAv + nMod;
   const limiteLaco = Number(sis.dispositivos_por_laco) || 125;
-  const lacos = tipoSistema === 'enderecavel' ? Math.max(1, Math.ceil(dispositivos / limiteLaco)) : null;
+  // reserva por laço pedida (ex.: "laços com 20 % de reserva"): os dispositivos com a reserva cabem no limite
+  const reservaLaco = Number(sis.reserva_laco_pct) > 0 ? Number(sis.reserva_laco_pct) / 100 : 0;
+  const lacos = tipoSistema === 'enderecavel' ? Math.max(1, Math.ceil(dispositivos * (1 + reservaLaco) / limiteLaco)) : null;
   const zonas = tipoSistema === 'convencional' ? Math.max(1, pavimentos.length || 1, Math.ceil((nDet + nAc) / (Number(sis.dispositivos_por_zona) || 20))) : null;
 
   // Anexo B: fonte e bateria (24 h em repouso + 5 min em alarme, fator 1,2)
@@ -129,10 +139,12 @@ function calcular(dados) {
 
   const nAclar = iluminacao.reduce((s, x) => s + x.aclaramento, 0);
   const nBaliz = iluminacao.reduce((s, x) => s + x.balizamento, 0);
-  const caboLaco = Math.ceil((ambientes.reduce((s, a) => s + a.L + a.W, 0) + pavimentos.reduce((s, p) => s + p.comp, 0)) * 1.3);
+  const caboEstimado = Math.ceil((ambientes.reduce((s, a) => s + a.L + a.W, 0) + pavimentos.reduce((s, p) => s + p.comp, 0)) * 1.3);
+  const caboLaco = informado('cabo_m') && Number(qi.cabo_m) > 0 ? Math.ceil(Number(qi.cabo_m)) : caboEstimado;
+  if (temInformadas && !caboLaco) avisos.push('Comprimento dos laços não informado: cabo blindado e eletroduto do sistema a levantar na planta. [CONFERIR]');
   const materiais = [
-    ...(ambientes.some(a => a.tipo === 'fumaca') ? [{ codigo: 'DET-F', descricao: `Detector pontual de fumaça óptico ${tipoSistema === 'enderecavel' ? 'endereçável' : 'convencional'} com base`, unidade: 'un', quantidade: ambientes.filter(a => a.tipo === 'fumaca').reduce((s, a) => s + a.detectores, 0), referencia: 'NBR 17240, 5.4.1' }] : []),
-    ...(ambientes.some(a => a.tipo === 'temperatura') ? [{ codigo: 'DET-T', descricao: `Detector pontual de temperatura (termovelocimétrico) ${tipoSistema === 'enderecavel' ? 'endereçável' : 'convencional'} com base`, unidade: 'un', quantidade: ambientes.filter(a => a.tipo === 'temperatura').reduce((s, a) => s + a.detectores, 0), referencia: 'NBR 17240, 5.4.2' }] : []),
+    ...(detF ? [{ codigo: 'DET-F', descricao: `Detector pontual de fumaça óptico ${tipoSistema === 'enderecavel' ? 'endereçável' : 'convencional'} com base`, unidade: 'un', quantidade: detF, referencia: 'NBR 17240, 5.4.1' }] : []),
+    ...(detT ? [{ codigo: 'DET-T', descricao: `Detector pontual de temperatura (termovelocimétrico) ${tipoSistema === 'enderecavel' ? 'endereçável' : 'convencional'} com base`, unidade: 'un', quantidade: detT, referencia: 'NBR 17240, 5.4.2' }] : []),
     { codigo: 'ACM', descricao: `Acionador manual tipo quebra-vidro/rearmável ${tipoSistema === 'enderecavel' ? 'endereçável' : 'convencional'}, vermelho`, unidade: 'un', quantidade: nAc, referencia: 'NBR 17240, 5.5' },
     { codigo: 'AV', descricao: 'Avisador audiovisual (sirene com strobo)', unidade: 'un', quantidade: nAv, referencia: 'NBR 17240, 5.6' },
     { codigo: 'CEN', descricao: tipoSistema === 'enderecavel' ? `Central de alarme endereçável com ${lacos} laço(s)` : `Central de alarme convencional com ${zonas} zona(s)`, unidade: 'un', quantidade: 1, referencia: 'NBR 17240, 5.3 e 6.1' },

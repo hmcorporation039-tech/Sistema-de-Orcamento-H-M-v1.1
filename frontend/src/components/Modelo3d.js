@@ -59,7 +59,7 @@ export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null,
       if (antes) await antes();
       const { data } = await getMapaCad(id);
       if (!data?.disponivel || !data.componentes?.length) { toast.error(data?.semMapa ? 'Esta análise foi lida antes do Mapa do CAD: use "Ler o DWG de novo" no Mapa do CAD e depois edite no 3D.' : 'Inserir e retirar componentes vale para a análise com DWG/DXF do projeto (Mapa do CAD).', { duration: 9000 }); return; }
-      setComponentes(data.componentes);
+      setComponentes({ lista: data.componentes, disciplinasDoProjeto: data.disciplinasDoProjeto || [] });
     } catch (err) {
       toast.error(await mensagemDeErro(err, 'Não consegui abrir a edição no 3D'), { duration: 9000 });
     } finally {
@@ -131,7 +131,7 @@ export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null,
         <RefreshCw size={13} style={{ marginRight: 5 }} /> {ocupado === 'refazer' ? 'Gerando de novo…' : 'Gerar de novo'}
       </button>
       {componentes && (
-        <Modelo3dEditor analiseId={id} componentes={componentes} nomeDisciplina={nomeDaDisciplina3d}
+        <Modelo3dEditor analiseId={id} componentes={componentes.lista} disciplinasDoProjeto={componentes.disciplinasDoProjeto} nomeDisciplina={nomeDaDisciplina3d}
           onEditado={() => {}} onFechar={() => setComponentes(null)} />
       )}
     </>

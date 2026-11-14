@@ -1,0 +1,22 @@
+QD-02 — QUADRO DE DISTRIBUIÇÃO DO PAVIMENTO DE TESTE
+Especificação técnica para cotação
+Obra Fictícia de Teste — Prédio Exemplo · Rev. 00 · 07/11/2026
+
+1. OBJETIVO
+Fornecimento de um quadro de distribuição de sobrepor em aço, IP41, para o pavimento tipo, conforme a NBR 5410 e a NBR IEC 61439.
+
+2. ALIMENTAÇÃO
+- 380/220 V, 3F + N + PE, esquema TN-S, Icc de 6 kA no ponto.
+- Disjuntor geral de 63 A e DPS classe II.
+- Reserva de 20% de espaço.
+
+3. CIRCUITOS
+Circuito | Descrição | Potência | Disjuntor | DR
+1 | Iluminação recepção | 1200 W | 1P+N 10 A | —
+2 | Iluminação salas | 1500 W | 1P+N 10 A | —
+3 | Tomadas recepção | 2000 W | 1P+N 20 A | DR 30 mA
+4 | Tomadas copa | 2500 W | 1P+N 20 A | DR 30 mA
+5 | Ar-condicionado sala 1 | 2600 W | 2P 20 A | —
+6 | Ar-condicionado sala 2 | 2600 W | 2P 20 A | —
+Circuito 7: chuveiro do vestiário, 5,5 kW, disjuntor 2P 32 A, DR 30 mA.
+2 circuitos de reserva: disjuntor 1P+N 16 A.

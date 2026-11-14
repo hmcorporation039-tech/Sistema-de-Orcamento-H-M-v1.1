@@ -140,7 +140,7 @@ async function rotinaEmLote(pool) {
       // rotina em lote (revisão do uso de IA de 06/11/2026): a categoria da IA fica marcada 'ia' e o material que a IA
       // já viu espera 7 dias — com a IA falsa (sem gastar nada) e materiais de teste
       await rotinaEmLote(pool);
-      const { rows } = await pool.query("SELECT descricao, categoria FROM materiais WHERE ativo = true AND COALESCE(categoria, '') NOT IN ('Não classificado', 'Geral', '') AND COALESCE(origem, '') <> 'acervo'");
+      const { rows } = await pool.query("SELECT descricao, categoria FROM materiais WHERE ativo = true AND COALESCE(categoria, '') NOT IN ('Não classificado', 'Geral', '') AND COALESCE(origem, '') <> 'acervo' ORDER BY id");
       if (rows.length < 200) {
         console.log(`classificadorMateriais: catálogo com ${rows.length} itens classificados — medição pulada (precisa de 200)`);
       } else {
@@ -166,7 +166,7 @@ async function rotinaEmLote(pool) {
         }
         const acertoKnn = acertouKnn / respondeu;
         const acertoBase = okBase / respBase; const acertoConj = okConjunto / respConjunto;
-        console.log(`  medição (10 sorteios): kNN responde ${(100 * respondeu / total).toFixed(0)} % e acerta ${(100 * acertoKnn).toFixed(1)} %; sem kNN ${(100 * acertoBase).toFixed(1)} %; com kNN ${(100 * acertoConj).toFixed(1)} %`);
+        console.log(`  medição (10 sorteios, ordem fixa): conjunto responde ${(100 * respConjunto / total).toFixed(1)} %; kNN responde ${(100 * respondeu / total).toFixed(0)} % e acerta ${(100 * acertoKnn).toFixed(1)} %; sem kNN ${(100 * acertoBase).toFixed(1)} %; com kNN ${(100 * acertoConj).toFixed(1)} %`);
         assert.ok(acertoKnn >= 0.92, `o kNN só pode responder se acertar ≥ 92 % (acertou ${(100 * acertoKnn).toFixed(1)} %)`);
         assert.ok(respondeu / total >= 0.4, 'o kNN precisa responder uma parte relevante dos itens');
         assert.ok(acertoConj >= acertoBase, 'com o kNN o conjunto não pode acertar menos que sem ele');

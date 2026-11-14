@@ -23,6 +23,7 @@ const CADERNO = require('./caderno');
 const ESPEC = require('./especificacao');
 const DOCS_ESPEC = require('../../../_comum/especificacao/documentos');
 const PRECOS_ESPEC = require('../../../_comum/especificacao/planilhaPrecos');
+const PERFIS_ESPEC = require('../../../_comum/especificacao/perfis');
 
 const CHECKLIST = require('../../dados/checklist_base.json');
 const MODELO = require('../../exemplos/modelo-vazio.json');
@@ -93,7 +94,15 @@ function processar(dados, opcoes = {}) {
 function projetoDaEspecificacao(dados) {
   const esp = dados && dados.especificacao;
   if (!esp || !esp.lidos) return null;
+  // o perfil gravado (painel de pressurização, sequência de chillers, QD predial…): sem ele a solução
+  // dos documentos saía pelo perfil do quadro de força e comando — corrigido em 14/11/2026
+  let perfil;
+  try { perfil = esp.perfil ? PERFIS_ESPEC.perfilDe(esp.perfil) : undefined; } catch (e) { perfil = undefined; }
+  // perfil de SKILL (QD predial): o quadro já é o formulário da skill; as folhas do painel de comando não se
+  // aplicam — a pesquisa de preços e o texto de entrega saem pelos documentos comuns (_comum/disciplina.js)
+  if (perfil && perfil.tipo_solucao === 'skill') return null;
   return ESPEC.solucionar(esp.lidos, {
+    perfil,
     aprendido: esp.aprendido || {}, decisoes: esp.decisoes || {}, respostas: esp.respostas || {}, pedido: esp.pedido || '',
     cliente: dados.cliente?.nome || esp.cliente || '', obra: dados.obra?.nome || '', data: dados.meta?.data || null, revisao: dados.meta?.revisao || '0A', tag: esp.tag || undefined,
   });

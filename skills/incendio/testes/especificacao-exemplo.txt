@@ -1,0 +1,30 @@
+CDI-01 — CENTRAL DE DETECÇÃO E ALARME DE INCÊNDIO DO EDIFÍCIO DE TESTE
+Especificação técnica para cotação
+Obra Fictícia de Teste — Edifício Exemplo · Rev. 01 · 03/11/2026
+
+1. OBJETIVO
+Fornecimento e instalação do sistema de detecção e alarme de incêndio conforme a NBR 17240, com central endereçável e integrações com os demais sistemas do edifício.
+
+2. QUANTIDADES
+Item | Quantidade
+Detectores pontuais de fumaça | 86
+Detectores de temperatura | 6
+Acionadores manuais | 14
+Avisadores audiovisuais | 16
+
+3. CENTRAL
+- Central endereçável analógica, laços com até 125 dispositivos e reserva de 20% em cada laço.
+- Bateria para 24 horas em supervisão.
+- Painel repetidor na portaria.
+
+4. INTEGRAÇÕES (MATRIZ DE CAUSA E EFEITO)
+- O alarme deve ligar a pressurização das escadas imediatamente.
+- Os 2 elevadores devem retornar ao térreo em caso de alarme.
+- Liberar os retentores eletromagnéticos das portas corta-fogo.
+- Desligar o ar-condicionado e a ventilação dos pavimentos.
+- Supervisionar as chaves de fluxo dos chuveiros automáticos.
+- Informar alarme e falha ao BMS do edifício.
+
+5. NÃO FAZ PARTE DO FORNECIMENTO
+- Contratação do serviço de monitoramento.
+- Infraestrutura civil (rasgos e recomposição).

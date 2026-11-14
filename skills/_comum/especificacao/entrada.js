@@ -18,14 +18,27 @@ const PRECOS = require('./planilhaPrecos');
 
 const PERFIL_PADRAO = 'quadro_forca_comando';
 
+// Com vários perfis (14/11/2026: quadro de força e comando, pressurização, sequência de chillers, QD
+// predial, automação/BMS, central de incêndio e média tensão) a 1ª palavra-chave que casa não basta (a
+// especificação da CAG fala de "automação futura"; a da pressurização, de "central de alarme"): vale o
+// perfil com MAIS termos característicos no texto (cada padrão de `detectar` que casa = 1 ponto; os de
+// `detectar_forte` = 3; um de `detectar_exclui` zera). Empate: a ordem alfabética do nome, como antes.
+// Nenhum: o do quadro de força e comando.
+function pontuarPerfil(perfil, texto) {
+  const n = (lista) => (lista || []).filter(r => new RegExp(r, 'iu').test(texto)).length;
+  if (n(perfil.detectar_exclui)) return 0;
+  return n(perfil.detectar) + 3 * n(perfil.detectar_forte);
+}
 function escolherPerfil(blocos, opcoes) {
   if (opcoes.perfil) return typeof opcoes.perfil === 'string' ? perfilDe(opcoes.perfil) : opcoes.perfil;
   const texto = blocos.map(b => b.texto).join(' ');
+  let melhor = null, pontos = 0;
   for (const p of listarPerfis()) {
     const completo = perfilDe(p.chave);
-    if ((completo.detectar || []).some(r => new RegExp(r, 'iu').test(texto))) return completo;
+    const s = pontuarPerfil(completo, texto);
+    if (s > pontos) { melhor = completo; pontos = s; }
   }
-  return perfilDe(PERFIL_PADRAO);
+  return melhor || perfilDe(PERFIL_PADRAO);
 }
 
 const ehCaminho = (s) => typeof s === 'string' && s.length < 400 && !/\n/.test(s) && /\.(pdf|docx|xlsx|xlsm|txt|md|csv)$/i.test(s.trim()) && fs.existsSync(s.trim());
@@ -54,25 +67,44 @@ function folhasDoProjeto(projeto) {
   return fl.map(([folha, titulo, conteudo]) => ({ folha, titulo, conteudo }));
 }
 
+// O motor da solução pelo tipo do perfil (14/11/2026): o do quadro de força e comando (escada de relés,
+// arranjo do painel) ou o da skill da disciplina (incêndio, média tensão, automação, quadro predial)
+function motorDoPerfil(perfil) {
+  if (perfil && perfil.tipo_solucao === 'skill') return require('./solucaoSkill');
+  return require(require('path').join(__dirname, '..', '..', 'quadros', 'scripts', 'lib', 'especificacao.js'));
+}
+// documentos do projeto da skill (os da própria skill + pesquisa de preços e texto de entrega)
+function documentosDaSkill(perfil, res) {
+  const skill = require('./solucaoSkill').motorDaSkill(perfil.skill);
+  const tipos = skill.tiposDisponiveis ? skill.tiposDisponiveis(res) : skill.documentos.map(d => d.tipo);
+  return skill.documentos.filter(d => tipos.includes(d.tipo)).map(d => ({ folha: d.tipo, titulo: d.rotulo, conteudo: d.formato }));
+}
+
 async function projetarPelaEspecificacao(especificacao, opcoes = {}) {
   const lida = especificacao && typeof especificacao === 'object' && !Buffer.isBuffer(especificacao) && especificacao.lidos
     ? especificacao : await lerEspecificacao(especificacao, opcoes);
   const perfil = perfilDe(lida.perfil || PERFIL_PADRAO);
-  const { solucionar } = require(require('path').join(__dirname, '..', '..', 'quadros', 'scripts', 'lib', 'especificacao.js'));
+  const { solucionar } = motorDoPerfil(perfil);
   const projeto = solucionar(lida.lidos, { ...opcoes, perfil });
   projeto.avisos.unshift(...(lida.avisos || []));
   const precos = await PRECOS.gerarPlanilhaPrecos(projeto, opcoes.precos || {}, { contingencia: opcoes.contingencia ?? 0.1 });
+  const ehSkill = projeto.tipoSolucao === 'skill';
+  let folhas;
+  if (ehSkill) {
+    const skill = require('./solucaoSkill').motorDaSkill(perfil.skill);
+    folhas = documentosDaSkill(perfil, skill.processar(projeto.dadosLaudo));
+  } else folhas = folhasDoProjeto(projeto);
   return {
     ...projeto,
     lidos: lida.lidos,
-    folhas: folhasDoProjeto(projeto),
+    folhas,
     decisoes: projeto.decisoes.map(d => `${d.titulo}: ${d.texto}${d.criterio ? ` (${d.criterio})` : ''}`),
     decisoesDetalhe: projeto.decisoes,
     pontosALevantar: projeto.pontos.map(p => `${p.texto}${p.sugestao ? ` Sugestão: ${p.sugestao.texto}` : ''}`),
     pontosDetalhe: projeto.pontos,
     faltaConfirmar: projeto.pendencias.map(p => p.texto),
     resumoPrecos: precos.resumo,
-    textoEntrega: DOCS.textoEntrega(projeto, precos.resumo),
+    textoEntrega: ehSkill ? DOCS.textoEntregaSkill(projeto, precos.resumo, folhas.map(f => f.titulo)) : DOCS.textoEntrega(projeto, precos.resumo),
   };
 }
 
@@ -82,4 +114,4 @@ async function gerarPlanilhaPesquisaPrecos(projeto, opcoes = {}) {
   return r.buffer;
 }
 
-module.exports = { lerEspecificacao, projetarPelaEspecificacao, gerarPlanilhaPesquisaPrecos, escolherPerfil, folhasDoProjeto, PERFIL_PADRAO };
+module.exports = { lerEspecificacao, projetarPelaEspecificacao, gerarPlanilhaPesquisaPrecos, escolherPerfil, folhasDoProjeto, motorDoPerfil, documentosDaSkill, PERFIL_PADRAO };

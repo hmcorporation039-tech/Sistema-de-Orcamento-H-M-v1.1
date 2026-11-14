@@ -139,6 +139,25 @@ test('Inserir: escolhe o componente da biblioteca e clica na planta (posição d
   expect(corpo.adicionar[0].y).toBeCloseTo(2.5, 1);
 });
 
+test('paleta só com a disciplina da análise; "outras disciplinas" chama as demais (depois das do projeto)', async () => {
+  const comDisc = componentes.map(c => ({ ...c, disciplinas: c.disciplina === 'eletrica' ? ['eletrica', 'eletrica_hospitalar', 'eletrica_industrial'] : ['incendio'] }));
+  await montar(resposta({ componentes: comDisc, disciplinasDoProjeto: ['eletrica'] }));
+  await act(async () => { caixa.querySelector('[data-testid="modo-inserir"]').click(); });
+  const grupos = () => [...caixa.querySelectorAll('[data-testid="componente-a-inserir"] optgroup')].map(g => g.label);
+  expect(grupos()).toEqual(['Elétrica']);
+  const outras = caixa.querySelector('[data-testid="outras-disciplinas"]');
+  expect(outras.checked).toBe(false);
+  await act(async () => { outras.click(); });
+  expect(grupos()).toEqual(['Elétrica', 'Outras — Incêndio']);
+  // análise antiga (sem disciplina conhecida): paleta inteira, sem a caixa
+  act(() => raiz.unmount());
+  raiz = createRoot(caixa);
+  await montar(resposta({ componentes: comDisc }));
+  await act(async () => { caixa.querySelector('[data-testid="modo-inserir"]').click(); });
+  expect(grupos()).toEqual(['Elétrica', 'Incêndio']);
+  expect(caixa.querySelector('[data-testid="outras-disciplinas"]')).toBeNull();
+});
+
 test('Retirar: clique no ponto manda a posição dele; inseridos e retirados aparecem na planta e no resumo', async () => {
   const r = resposta({ componentes });
   r.data.arquivos[0].edicoes = {

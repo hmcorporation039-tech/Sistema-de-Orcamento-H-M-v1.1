@@ -240,7 +240,11 @@ function blocosDoTexto(texto) {
     if (PAGINACAO.test(t)) continue;
     const md = /^(#{1,4})\s+(.*)$/.exec(t);
     const tm = TITULO_NUM.exec(t);
-    if (md || (tm && /^[A-ZÀ-Ý]/.test(tm[2]) && t.length <= 90 && !/[.;,]$/.test(t) && tm[2].split(/\s+/).length <= 8) || (maiusculas(t) && t.split(/\s+/).length <= 10 && !/\d{3}/.test(t))) {
+    // (14/11/2026) a 1ª linha do documento em maiúsculas começando pela TAG ("QF-SEQ — QUADRO DE FORÇA E COMANDO
+    // DA CAG COM SEQUÊNCIA DE CHILLERS") é o título, mesmo com mais de 10 palavras — senão a tag e o título do
+    // quadro saíam do "1. OBJETIVO"
+    const tituloComTag = !blocos.length && !atual && maiusculas(t) && /^[A-Z]{1,4}[-–][A-Z0-9]{1,8}\s*[—–-]\s/.test(t) && t.split(/\s+/).length <= 20;
+    if (md || tituloComTag || (tm && /^[A-ZÀ-Ý]/.test(tm[2]) && t.length <= 90 && !/[.;,]$/.test(t) && tm[2].split(/\s+/).length <= 8) || (maiusculas(t) && t.split(/\s+/).length <= 10 && !/\d{3}/.test(t))) {
       fechar();
       const nivel = md ? md[1].length : tm ? tm[1].split('.').length : 1;
       const titulo = md ? md[2] : t;

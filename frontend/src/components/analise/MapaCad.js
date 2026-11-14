@@ -28,7 +28,7 @@ const ORIGEM = {
 const NOME_DISC = {
   eletrica: 'Elétrica', iluminacao: 'Iluminação', 'iluminacao-externa': 'Iluminação externa', incendio: 'Incêndio', cftv: 'CFTV', rede: 'Rede',
   alarme: 'Alarme', telefonia: 'Telefonia', antena: 'Antena', 'controle-acesso': 'Controle de acesso', automacao: 'Automação', spda: 'SPDA',
-  solar: 'Solar', veicular: 'Veicular', eletrica_hospitalar: 'Elétrica hospitalar', climatizacao: 'Climatização',
+  solar: 'Solar', veicular: 'Veicular', eletrica_hospitalar: 'Elétrica hospitalar', climatizacao: 'Climatização', pressurizacao: 'Pressurização',
 };
 const nomeDisciplina = (d) => NOME_DISC[d] || d;
 // componentes inseridos de um arquivo, por tipo: [{ simbolo, nome, quantidade }]
@@ -354,7 +354,7 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
               <div style={{ marginBottom: 10 }}>
                 <PlantaMapaCad planta={a.planta} simbolos={a.simbolos} nomeDoTipo={nomeDoTipo} ativa={ativa[a.arquivo] ?? null} foco={foco[a.arquivo]}
                   onEscolher={(idx) => escolherNaPlanta(a, idx)}
-                  componentes={componentes} edicoes={a.edicoes} ocupado={ocupado} nomeDisciplina={nomeDisciplina}
+                  componentes={componentes} disciplinasDoProjeto={mapa.disciplinasDoProjeto} edicoes={a.edicoes} ocupado={ocupado} nomeDisciplina={nomeDisciplina}
                   onEditar={(pedido, mensagem) => editar(a.arquivo, pedido, mensagem)}
                   ficha={(s) => (
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -499,7 +499,7 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
         </label>
       </div>
       {editor3d && (
-        <Modelo3dEditor analiseId={analiseId} componentes={componentes} nomeDisciplina={nomeDisciplina}
+        <Modelo3dEditor analiseId={analiseId} componentes={componentes} disciplinasDoProjeto={mapa.disciplinasDoProjeto} nomeDisciplina={nomeDisciplina}
           onEditado={aoEditarNo3d} onFechar={() => setEditor3d(false)} />
       )}
     </div>

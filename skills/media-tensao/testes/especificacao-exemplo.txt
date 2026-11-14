@@ -1,0 +1,21 @@
+SE-01 — SUBESTAÇÃO ABRIGADA DO EDIFÍCIO DE TESTE
+Especificação técnica para cotação
+Obra Fictícia de Teste — Edifício Exemplo · Rev. 00 · 05/11/2026
+
+1. OBJETIVO
+Projeto e fornecimento de uma subestação abrigada em alvenaria, entrada em 13,8 kV da Neoenergia Brasília, conforme a NBR 14039.
+
+2. DADOS
+Item | Dado
+Transformador | 300 kVA, imerso em óleo mineral, impedância 4,5 %
+Tensões | 13,8 kV / 380/220 V
+Demanda | demanda prevista de 230 kW, fator de potência 0,92
+Reserva | crescimento de 15 %
+Curto no ponto de entrega | Icc trifásica de 6 kA (informada pela distribuidora)
+
+3. PROTEÇÃO E CABOS
+- Proteção geral por fusível (seccionadora com fusíveis HH).
+- Cabos de média tensão do poste de derivação até a subestação: 45 m em eletroduto enterrado.
+
+4. ATERRAMENTO
+- Malha de aterramento com resistência máxima de 10 ohms.

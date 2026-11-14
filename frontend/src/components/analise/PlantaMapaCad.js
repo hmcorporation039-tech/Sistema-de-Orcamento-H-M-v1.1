@@ -7,6 +7,7 @@
 // símbolo em dourado, o retirado com um X vermelho. Clicar de novo num deles (modo Retirar) desfaz.
 // Coordenadas do desenho em metros; na tela o Y é invertido (y → −y) para a planta ficar na posição de leitura.
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { marcarDoProjeto, gruposDaPaleta } from './componentesDoProjeto';
 import { Crosshair, Maximize2, Minimize2, MousePointer2, Plus, Scan, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
 
 export const SITUACAO = {
@@ -96,7 +97,7 @@ const idDoSimbolo = (simbolo) => `hm-sim-${String(simbolo).replace(/[^A-Za-z0-9-
 const MODOS = [['conferir', 'Conferir', MousePointer2], ['inserir', 'Inserir', Plus], ['retirar', 'Retirar', Trash2]];
 const semEdicoes = { adicionados: [], removidos: [] };
 
-export default function PlantaMapaCad({ planta, simbolos, nomeDoTipo, ativa, onEscolher, foco, ficha, componentes = [], edicoes = null, onEditar = null, ocupado = false, nomeDisciplina = (d) => d }) {
+export default function PlantaMapaCad({ planta, simbolos, nomeDoTipo, ativa, onEscolher, foco, ficha, componentes = [], disciplinasDoProjeto = [], edicoes = null, onEditar = null, ocupado = false, nomeDisciplina = (d) => d }) {
   const quadro = useRef(null);
   const svg = useRef(null);
   const [tamanho, setTamanho] = useState({ w: 900, h: ALTURA_NORMAL });
@@ -106,16 +107,18 @@ export default function PlantaMapaCad({ planta, simbolos, nomeDoTipo, ativa, onE
   const arrasto = useRef(null);
   const [modo, setModo] = useState('conferir'); // conferir | inserir | retirar
   const [escolhido, setEscolhido] = useState(null);
+  const [outras, setOutras] = useState(false); // paleta com os componentes de outras disciplinas
 
   const porIdx = useMemo(() => new Map(simbolos.map(s => [s.idx, s])), [simbolos]);
   const porSimbolo = useMemo(() => new Map(componentes.map(c => [c.simbolo, c])), [componentes]);
-  // paleta: por disciplina, em ordem alfabética
-  const gruposComp = useMemo(() => {
-    const por = new Map();
-    for (const c of componentes) { const g = nomeDisciplina(c.disciplina); if (!por.has(g)) por.set(g, []); por.get(g).push(c); }
-    return [...por.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR')).map(([g, cs]) => [g, [...cs].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))]);
-  }, [componentes, nomeDisciplina]);
-  const compEscolhido = porSimbolo.get(escolhido) || gruposComp[0]?.[1][0] || null;
+  // paleta: só as disciplinas da análise, por disciplina e em ordem alfabética; "outras disciplinas" chama as demais
+  const marcados = useMemo(() => marcarDoProjeto(componentes, disciplinasDoProjeto), [componentes, disciplinasDoProjeto]);
+  const temOutras = marcados.some(c => !c.doProjeto);
+  // nenhum componente da disciplina da análise: a lista já vem com as outras (nunca vazia)
+  const comOutras = outras || !marcados.some(c => c.doProjeto);
+  const gruposComp = useMemo(() => gruposDaPaleta(marcados, nomeDisciplina, comOutras), [marcados, nomeDisciplina, comOutras]);
+  const naPaleta = (s) => gruposComp.some(([, cs]) => cs.some(c => c.simbolo === s));
+  const compEscolhido = (naPaleta(escolhido) && porSimbolo.get(escolhido)) || gruposComp[0]?.[1][0] || null;
   const { adicionados: inseridos, removidos: retirados } = edicoes || semEdicoes;
   const estaRetirado = (x, y) => retirados.some(r => Math.hypot(r.x - x, r.y - y) <= TOLERANCIA_M);
   const podeEditar = !!onEditar && componentes.length > 0;
@@ -377,6 +380,12 @@ export default function PlantaMapaCad({ planta, simbolos, nomeDoTipo, ativa, onE
                     </optgroup>
                   ))}
                 </select>
+                {temOutras && (
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#bbb', whiteSpace: 'nowrap', cursor: 'pointer' }}
+                    title="Mostra também os componentes das disciplinas que não são desta análise (o inserido entra na disciplina dele ao reprocessar)">
+                    <input type="checkbox" checked={comOutras} onChange={(e) => setOutras(e.target.checked)} data-testid="outras-disciplinas" /> outras disciplinas
+                  </label>
+                )}
               </span>
             )}
           </div>

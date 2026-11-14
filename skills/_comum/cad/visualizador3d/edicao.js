@@ -6,7 +6,8 @@
 // Só liga quando a página está DENTRO de outra (iframe) e a tela manda a paleta: o arquivo baixado e o link do cliente
 // nunca mostram nada disto.
 //
-// Mensagens (tela → 3D): { tipo: 'hm3d:editar', paleta: [{ simbolo, nome, disciplina, grupo, montagem, altura_m, cor }] }
+// Mensagens (tela → 3D): { tipo: 'hm3d:editar', paleta: [{ simbolo, nome, disciplina, grupo, montagem, altura_m, cor, doProjeto }] }
+//                        doProjeto false = componente de outra disciplina: só aparece com "outras disciplinas" marcado
 //                        { tipo: 'hm3d:resultado', ok, texto }
 // Mensagens (3D → tela): { tipo: 'hm3d:pronto' }
 //                        { tipo: 'hm3d:adicionar', simbolo, x, y }          (coordenadas do desenho, em metros)
@@ -18,7 +19,7 @@ const ALTURA_ESPECIAL = { teto: null, piso: 0.05, canto: 2.3, 'topo-porta': 2.15
 export function iniciarEdicao(ctx) {
   const { CENA, tela, camera, cena, pisos, escolherDispositivo, pedirDesenho, esc } = ctx;
   const embutido = window.parent && window.parent !== window;
-  const estado = { ligado: false, modo: 'navegar', paleta: [], escolhido: null, inseridos: 0, retirados: 0 };
+  const estado = { ligado: false, modo: 'navegar', paleta: [], escolhido: null, outras: false, inseridos: 0, retirados: 0 };
   const nada = { ativo: () => false, clique: () => false, estado };
   if (!embutido) return nada;
   const origem = Array.isArray(CENA.origem) ? CENA.origem : null;
@@ -41,18 +42,32 @@ export function iniciarEdicao(ctx) {
 #hm-edicao .modos button{flex:1;padding:6px 4px;border-radius:6px;border:1px solid #556;background:#1d2633;color:#eef2f6;cursor:pointer;font-size:12px}
 #hm-edicao .modos button.ativo{background:#c9a227;color:#111;border-color:#c9a227;font-weight:600}
 #hm-edicao small{display:block;color:#aab4c0;margin-top:4px}
+#hm-edicao label.outras{display:flex;align-items:center;gap:5px;margin:-4px 0 6px;font-size:12px;color:#cfd6de;cursor:pointer}
 #hm-edicao .aviso{margin-top:6px;padding:5px 7px;border-radius:6px;background:#203046;display:none}
 #hm-edicao .aviso.erro{background:#5a1f1f}`;
     document.head.appendChild(css);
     painel = document.createElement('div');
     painel.id = 'hm-edicao';
-    const grupos = new Map();
-    for (const p of estado.paleta) { if (!grupos.has(p.grupo)) grupos.set(p.grupo, []); grupos.get(p.grupo).push(p); }
-    const opcoes = [...grupos.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'))
-      .map(([g, ps]) => `<optgroup label="${esc(g)}">${ps.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')).map(p => `<option value="${esc(p.simbolo)}">${esc(p.nome)}</option>`).join('')}</optgroup>`).join('');
+    // só os componentes das disciplinas da análise (doProjeto); "outras disciplinas" chama os demais, depois deles
+    const temOutras = estado.paleta.some(p => !p.doProjeto);
+    // nenhum componente da disciplina da análise: a lista já abre com as outras (nunca vazia)
+    if (!estado.paleta.some(p => p.doProjeto)) estado.outras = true;
+    const opcoes = () => {
+      const grupos = new Map();
+      for (const p of estado.paleta) {
+        if (!p.doProjeto && !estado.outras) continue;
+        const g = p.doProjeto ? p.grupo : `Outras — ${p.grupo}`;
+        if (!grupos.has(g)) grupos.set(g, { doProjeto: p.doProjeto, itens: [] });
+        grupos.get(g).itens.push(p);
+      }
+      return [...grupos.entries()]
+        .sort((a, b) => (a[1].doProjeto === b[1].doProjeto ? a[0].localeCompare(b[0], 'pt-BR') : a[1].doProjeto ? -1 : 1))
+        .map(([g, { itens }]) => `<optgroup label="${esc(g)}">${[...itens].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')).map(p => `<option value="${esc(p.simbolo)}">${esc(p.nome)}</option>`).join('')}</optgroup>`).join('');
+    };
     painel.innerHTML = `<h4>Editar componentes</h4>
 <div class="modos"><button data-m="navegar" class="ativo">Navegar</button><button data-m="inserir">Inserir</button><button data-m="retirar">Retirar</button></div>
-<select id="hm-comp">${opcoes}</select>
+<select id="hm-comp">${opcoes()}</select>
+${temOutras ? `<label class="outras" title="Mostra também os componentes das disciplinas que não são desta análise"><input type="checkbox" id="hm-outras"${estado.outras ? ' checked' : ''}> outras disciplinas</label>` : ''}
 <small id="hm-dica">Escolha "Inserir" e clique no piso onde vai o componente; "Retirar" e clique no componente.</small>
 <small id="hm-conta"></small>
 <div class="aviso" id="hm-aviso"></div>`;
@@ -61,6 +76,14 @@ export function iniciarEdicao(ctx) {
     const sel = painel.querySelector('#hm-comp');
     estado.escolhido = sel.value || null;
     sel.addEventListener('change', () => { estado.escolhido = sel.value; });
+    painel.querySelector('#hm-outras')?.addEventListener('change', (ev) => {
+      estado.outras = ev.target.checked;
+      const antes = estado.escolhido;
+      sel.innerHTML = opcoes();
+      // o escolhido continua, se ainda está na lista; senão, o primeiro
+      if (antes && [...sel.options].some(o => o.value === antes)) sel.value = antes;
+      estado.escolhido = sel.value || null;
+    });
     painel.querySelectorAll('.modos button').forEach(b => b.addEventListener('click', () => {
       estado.modo = b.dataset.m;
       painel.querySelectorAll('.modos button').forEach(x => x.classList.toggle('ativo', x === b));
@@ -134,7 +157,7 @@ export function iniciarEdicao(ctx) {
     if (!m || typeof m !== 'object') return;
     if (m.tipo === 'hm3d:editar' && !estado.ligado && origem && Array.isArray(m.paleta)) {
       estado.paleta = m.paleta.filter(p => p && typeof p.simbolo === 'string' && typeof p.nome === 'string')
-        .map(p => ({ simbolo: p.simbolo, nome: p.nome, grupo: String(p.grupo || p.disciplina || ''), montagem: p.montagem, altura_m: typeof p.altura_m === 'number' ? p.altura_m : null, cor: /^#[0-9a-f]{6}$/i.test(p.cor || '') ? p.cor : null }));
+        .map(p => ({ simbolo: p.simbolo, nome: p.nome, grupo: String(p.grupo || p.disciplina || ''), montagem: p.montagem, altura_m: typeof p.altura_m === 'number' ? p.altura_m : null, cor: /^#[0-9a-f]{6}$/i.test(p.cor || '') ? p.cor : null, doProjeto: p.doProjeto !== false }));
       if (!estado.paleta.length) return;
       estado.ligado = true;
       montarPainel();

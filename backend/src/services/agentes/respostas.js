@@ -57,20 +57,27 @@ function respostaQuadro({ projeto = null, truncado = false, aguardando = false, 
       ],
     });
   }
+  // projeto pela skill da disciplina (14/11/2026 — incêndio, MT, BMS, QD predial): os documentos da skill, os
+  // indicadores e a matriz de causa e efeito; os padrões de quadro elétrico abaixo não se aplicam
+  const daSkill = projeto?.tipoSolucao === 'skill';
   const folhas = lista(projeto?.folhas).length ? projeto.folhas : FOLHAS_QUADRO.filter(f => !truncado || PACOTE_PADRAO.includes(f.folha) || f.folha === 'FL05');
   secoes.push({
-    titulo: 'Folhas',
-    linhas: ['| Folha | Conteúdo |', '|---|---|', ...folhas.map(f => `| ${celula(f.folha || f.codigo)} | **${celula(f.titulo)}**${f.conteudo || f.descricao ? `: ${celula(f.conteudo || f.descricao)}` : ''} |`)],
+    titulo: daSkill ? 'Documentos' : 'Folhas',
+    linhas: [daSkill ? '| Documento | Formato |' : '| Folha | Conteúdo |', '|---|---|', ...folhas.map(f => (daSkill ? `| **${celula(f.titulo)}** | ${celula(f.conteudo || '')} |` : `| ${celula(f.folha || f.codigo)} | **${celula(f.titulo)}**${f.conteudo || f.descricao ? `: ${celula(f.conteudo || f.descricao)}` : ''} |`))],
   });
+  if (daSkill && lista(projeto.indicadores).length) secoes.push({ titulo: 'Resultado do cálculo', linhas: projeto.indicadores.slice(0, 14).map(i => `- ${i.rotulo}: **${i.valor}**${i.detalhe ? ` (${i.detalhe})` : ''}`) });
+  if (daSkill && lista(projeto.causaEfeito).length) {
+    secoes.push({ titulo: 'Matriz de causa e efeito', linhas: ['| Causa | Efeito |', '|---|---|', ...projeto.causaEfeito.map(c => `| ${celula(c.causa)} | ${celula(c.efeitos.join('; '))} |`)] });
+  }
   if (projeto) {
     const decisoes = lista(projeto.decisoes, projeto.principaisDecisoes, projeto.criterios).map(texto).filter(Boolean);
-    if (decisoes.length) secoes.push({ titulo: 'Principais decisões', linhas: decisoes.slice(0, 12).map(d => `- ${d}`) });
+    if (decisoes.length) secoes.push({ titulo: daSkill ? 'O que foi lido e adotado' : 'Principais decisões', linhas: decisoes.slice(0, 12).map(d => `- ${d}`) });
   }
-  const pontos = [...lista(projeto?.pontosALevantar, projeto?.pontos_a_levantar, projeto?.perguntas).map(texto), ...PONTOS_PADRAO_QUADRO];
-  secoes.push({ titulo: 'Pontos a levantar com o cliente', linhas: [...new Set(pontos.filter(Boolean))].slice(0, 10).map((p, i) => `${i + 1}. ${p}`) });
-  const falta = [...lista(projeto?.faltaConfirmar, projeto?.falta_confirmar).map(texto), ...FALTA_PADRAO_QUADRO];
-  secoes.push({ titulo: 'Falta confirmar', linhas: [...new Set(falta.filter(Boolean))].slice(0, 12).map(p => `- ${p}`) });
-  secoes.push({ titulo: 'Ressalvas', linhas: RESSALVAS_QUADRO.map(r => `- ${r}`) });
+  const pontos = [...lista(projeto?.pontosALevantar, projeto?.pontos_a_levantar, projeto?.perguntas).map(texto), ...(daSkill ? [] : PONTOS_PADRAO_QUADRO)];
+  if (pontos.length) secoes.push({ titulo: 'Pontos a levantar com o cliente', linhas: [...new Set(pontos.filter(Boolean))].slice(0, 10).map((p, i) => `${i + 1}. ${p}`) });
+  const falta = [...lista(projeto?.faltaConfirmar, projeto?.falta_confirmar).map(texto), ...(daSkill ? [] : FALTA_PADRAO_QUADRO)];
+  if (falta.length) secoes.push({ titulo: 'Falta confirmar', linhas: [...new Set(falta.filter(Boolean))].slice(0, 12).map(p => `- ${p}`) });
+  secoes.push({ titulo: 'Ressalvas', linhas: (daSkill ? ['Projeto calculado pela skill da disciplina com o formulário preenchido pela especificação: documento preliminar — exige conferência e ART do engenheiro responsável.'] : RESSALVAS_QUADRO).map(r => `- ${r}`) });
   return secoes;
 }
 

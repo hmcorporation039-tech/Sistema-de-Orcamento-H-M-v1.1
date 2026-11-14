@@ -8,27 +8,28 @@ import toast from 'react-hot-toast';
 import { RefreshCw, X } from 'lucide-react';
 import { abrirModelo3d, urlModelo3d, editarMapaCad } from '../../services/api';
 import { mensagemDeErro } from '../../utils/download';
+import { marcarDoProjeto } from './componentesDoProjeto';
 
 const botao = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 6, border: '1px solid #2f2f2f', background: '#1a1a1a', color: '#ddd', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
 // cor da disciplina no 3D (skills/_comum/disciplinas.js) para o marcador do componente inserido
-const COR_DISC = { eletrica: '#f2c14e', iluminacao: '#ffe680', 'iluminacao-externa': '#ffd34d', incendio: '#e5534b', cftv: '#6cb6ff', rede: '#57ab5a', telefonia: '#8ddb8c', antena: '#b083f0', 'controle-acesso': '#f69d50', alarme: '#ff938a', automacao: '#39c5cf', spda: '#adbac7', solar: '#e0823d', veicular: '#4fd1c5', eletrica_hospitalar: '#ffb3b3', climatizacao: '#5ec8f2' };
+const COR_DISC = { eletrica: '#f2c14e', iluminacao: '#ffe680', 'iluminacao-externa': '#ffd34d', incendio: '#e5534b', cftv: '#6cb6ff', rede: '#57ab5a', telefonia: '#8ddb8c', antena: '#b083f0', 'controle-acesso': '#f69d50', alarme: '#ff938a', automacao: '#39c5cf', spda: '#adbac7', solar: '#e0823d', veicular: '#4fd1c5', eletrica_hospitalar: '#ffb3b3', climatizacao: '#5ec8f2', pressurizacao: '#7fb2e5' };
 
 // nome da disciplina na paleta (quem abre o editor fora do Mapa do CAD: o cartão do 3D da análise, ../Modelo3d.js)
 const NOME_DISC = {
   eletrica: 'Elétrica', iluminacao: 'Iluminação', 'iluminacao-externa': 'Iluminação externa', incendio: 'Incêndio', cftv: 'CFTV', rede: 'Rede',
   alarme: 'Alarme', telefonia: 'Telefonia', antena: 'Antena', 'controle-acesso': 'Controle de acesso', automacao: 'Automação', spda: 'SPDA',
-  solar: 'Solar', veicular: 'Veicular', eletrica_hospitalar: 'Elétrica hospitalar', climatizacao: 'Climatização',
+  solar: 'Solar', veicular: 'Veicular', eletrica_hospitalar: 'Elétrica hospitalar', climatizacao: 'Climatização', pressurizacao: 'Pressurização',
 };
 export const nomeDaDisciplina3d = (d) => NOME_DISC[d] || d;
 
-export default function Modelo3dEditor({ analiseId, componentes, nomeDisciplina, onEditado, onFechar }) {
+export default function Modelo3dEditor({ analiseId, componentes, disciplinasDoProjeto = [], nomeDisciplina, onEditado, onFechar }) {
   const quadro = useRef(null);
   const [url, setUrl] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [contagem, setContagem] = useState({ adicionados: 0, removidos: 0 });
   // o que a mensagem usa sempre na versão mais nova, sem refazer o ouvinte a cada desenho da tela
   const atual = useRef({});
-  atual.current = { componentes, nomeDisciplina, onEditado, validos: new Set(componentes.map(c => c.simbolo)) };
+  atual.current = { componentes: marcarDoProjeto(componentes, disciplinasDoProjeto), nomeDisciplina, onEditado, validos: new Set(componentes.map(c => c.simbolo)) };
 
   async function abrir() {
     setCarregando(true);
@@ -65,7 +66,7 @@ export default function Modelo3dEditor({ analiseId, componentes, nomeDisciplina,
       const numero = (v) => typeof v === 'number' && Number.isFinite(v);
       if (m.tipo === 'hm3d:pronto') {
         if (!m.comOrigem) { toast('Este 3D foi gerado antes da edição de componentes: use "Atualizar 3D".', { icon: 'ℹ️' }); return; }
-        const paleta = atual.current.componentes.map(c => ({ simbolo: c.simbolo, nome: c.nome, disciplina: c.disciplina, grupo: atual.current.nomeDisciplina(c.disciplina), montagem: c.montagem, altura_m: c.altura_m, cor: COR_DISC[c.disciplina] || '#c9a227' }));
+        const paleta = atual.current.componentes.map(c => ({ simbolo: c.simbolo, nome: c.nome, disciplina: c.disciplina, grupo: atual.current.nomeDisciplina(c.disciplina), montagem: c.montagem, altura_m: c.altura_m, cor: COR_DISC[c.disciplina] || '#c9a227', doProjeto: c.doProjeto }));
         responder({ tipo: 'hm3d:editar', paleta });
       } else if (m.tipo === 'hm3d:adicionar' && atual.current.validos.has(m.simbolo) && numero(m.x) && numero(m.y)) {
         const nome = atual.current.componentes.find(c => c.simbolo === m.simbolo)?.nome || 'Componente';

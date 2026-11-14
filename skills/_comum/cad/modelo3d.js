@@ -478,6 +478,8 @@ const ESPEC = {
   'HM-INC-DETECTOR-FUMACA': { h: 'teto', forma: 'detector' }, 'HM-INC-DETECTOR-TEMP': { h: 'teto', forma: 'detector' }, 'HM-INC-ACIONADOR': { h: 1.2, forma: 'acionador' },
   'HM-INC-AVISADOR': { h: 2.3, forma: 'sirene' }, 'HM-INC-CENTRAL': { h: 1.5, forma: 'quadro', tam: [0.45, 0.55, 0.15] }, 'HM-INC-EMERGENCIA': { h: 2.2, forma: 'emergencia' },
   'HM-AUT-CONTROLADOR': { h: 1.5, forma: 'quadro', tam: [0.50, 0.60, 0.15] }, 'HM-AUT-SENSOR': { h: 1.5, forma: 'caixa', tam: [0.09, 0.12, 0.04] },
+  // painel de comando da pressurização de escadas (14/11/2026 — vista interna com a escada de relés)
+  'HM-PRZ-PAINEL': { h: 1.4, forma: 'quadro', tam: [0.80, 1.00, 0.30] },
   'HM-SOL-INVERSOR': { h: 1.5, forma: 'quadro', tam: [0.45, 0.60, 0.20] }, 'HM-VE-CARREGADOR': { h: 1.2, forma: 'wallbox' },
   // SPDA: o modelo não tem cobertura — captor fica no forro e a descida na parede, só para localizar
   'HM-SPDA-CAIXA-INSPECAO': { h: 'piso', forma: 'caixa', tam: [0.30, 0.30, 0.05] }, 'HM-SPDA-CAPTOR': { h: 'teto', forma: 'barra', tam: [0.04, 0.04, 0.35] },

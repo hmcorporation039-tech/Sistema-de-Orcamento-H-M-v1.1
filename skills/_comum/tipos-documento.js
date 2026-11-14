@@ -30,6 +30,8 @@ const DOCUMENTOS = {
   pesquisa_precos: 'projeto', // quadros pela especificação: pesquisa de preços do material (Excel, formato da H&M)
   ficha: 'projeto',      // quadros pela especificação: ficha técnica do quadro e dos componentes (PDF)
   entrega: 'projeto',    // quadros pela especificação: texto de entrega para o cliente e o engenheiro (Markdown)
+  precos_especificacao: 'projeto', // qualquer skill pela especificação (14/11/2026): pesquisa de preços no formato da H&M
+  entrega_especificacao: 'projeto', // qualquer skill pela especificação (14/11/2026): texto de entrega (Markdown)
 };
 
 // Exceções por disciplina ({ [chave da skill]: { [tipo]: uso } }) — nenhuma hoje

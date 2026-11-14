@@ -215,7 +215,8 @@ export function iniciarQuadro(C, op = {}) {
       mesh.instanceMatrix.needsUpdate = true;
       mesh.userData = { fioDe: pecas.map(p => p.fio) };
       for (let i = 0; i < pecas.length; i++) mesh.setColorAt(i, new Color('#ffffff'));
-      grupo(cam).add(mesh);
+      // chicote da porta (fiação de comando): no grupo da porta, acompanha a abertura
+      grupo(cam, lista[0].porta ? portaGrupo : cena).add(mesh);
       malhasFio.push(mesh);
     }
   }
@@ -254,7 +255,11 @@ export function iniciarQuadro(C, op = {}) {
   const aviso = sim || rede || CR ? (op.aviso || criarAviso()) : null;
   // condutor energizado? pelo circuito (disjuntor, DR, geral), pelos dispositivos a montante,
   // pela chegada do quadro ou pelo equipamento do painel; o PE não é seccionado
-  const fioEnergizado = (c) => condutorEnergizado(c, { sim, quadroTag, rede });
+  // fiação de comando (14/11/2026): acesa pelo sinal da escada de relés simulada (barra, bobina, saída de campo)
+  let releSim = null;
+  const fioEnergizado = (c) => (c?.energia?.tipo === 'comando'
+    ? (releSim ? !!releSim.estado().saidas[c.energia.sinal] : true)
+    : condutorEnergizado(c, { sim, quadroTag, rede }));
   function pintarFios() {
     for (const f of fios) {
       const on = fioEnergizado(f.c);
@@ -362,8 +367,10 @@ export function iniciarQuadro(C, op = {}) {
       const base = baseRele.get(mesh);
       porMaterial(mesh, on ? brilho(base, cor || `#${base.color.getHexString()}`, cor ? 0.7 : 1.6) : (cor ? base : escuro(base)));
     },
-    aoMudar: () => pedirDesenho(),
+    aoMudar: () => { if (releSim) pintarFios(); pedirDesenho(); },
   }) : null;
+  releSim = rele;
+  if (rele) pintarFios();
   // peças de equipamento (switch, central, bateria, LED): a cor pela aparência no motor
   const baseEquip = new Map(comEquip.map(m => [m, m.material]));
   function atualizarEquipamentos() {

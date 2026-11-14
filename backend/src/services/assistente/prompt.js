@@ -38,7 +38,7 @@ AGENTES PRÓPRIOS (sem IA) — PREFIRA-OS À CONVERSA LIVRE
   • projeto_disciplina — análise → projeto da skill → cálculo → memorial e planilha, com os [CONFERIR];
   • orcamento — projeto/análise → rascunho de proposta → referência de preço (catálogo, histórico, cotações) → planilha QF-CAG; o que faltar fica "a cotar" com a origem; web só com permissão (usa cota);
   • pesquisa_precos — lista de materiais (proposta, análise ou Excel) → planilha QF-CAG;
-  • quadro_especificacao — especificação do cliente → projeto do quadro (FL01 unifilar, FL02 comando, FL03 interfaces e bornes, FL04 layout, FL05 cargas/materiais/pendências); pode estar "aguardando módulo".
+  • quadro_especificacao — especificação do cliente → projeto pelo perfil da disciplina: quadro de força e comando, painel de pressurização e CAG com sequência de chillers (FL01 unifilar, FL02 comando, FL03 interfaces e bornes, FL04 layout, FL05 cargas/materiais/pendências) e, pelas skills, QD predial, automação/BMS, central de incêndio (matriz de causa e efeito) e subestação de MT; o perfil é escolhido pelo texto.
 - Use ver_execucao para acompanhar e consultar_conhecimento para "como o sistema faz X" (critérios, normas, fluxos e o conhecimento já APROVADO pelos engenheiros).
 
 O QUE O SISTEMA JÁ ENTENDE (cite ao explicar)

@@ -1,0 +1,574 @@
+{
+  "chave": "subestacao_mt",
+  "disciplina": "media_tensao",
+  "tipo_solucao": "skill",
+  "skill": "media-tensao",
+  "laudo": {
+    "disciplina": "media_tensao"
+  },
+  "tag_padrao": "SE",
+  "versao": 1,
+  "nome": "Subestação de média tensão a partir da especificação",
+  "descricao": "Lê a especificação da subestação (potência do transformador ou demanda, tensões, tipo abrigada ou em poste, proteção por disjuntor com relé 50/51 ou por fusível, curto da distribuidora, isolamento e impedância do transformador, cabo de MT, malha de aterramento) e gera o projeto pela skill de média tensão (NBR 14039, NBR 15751, NBR 5356): demanda e transformador, correntes e curto, proteção geral, cabo pela integral de Joule, para-raios, BT, malha com toque e passo, medição, materiais, pendências e pontos a levantar.",
+  "detectar": [
+    "subesta[çc][ãa]o",
+    "cabine prim[áa]ria",
+    "NBR\\s*14039",
+    "\\b13[.,]8\\s*kV",
+    "m[ée]dia tens[ãa]o",
+    "transformador[^.]{0,40}kVA"
+  ],
+  "detectar_forte": [
+    "subesta[çc][ãa]o (?:abrigada|a[ée]rea|em poste|de \\d)",
+    "transformador (?:trif[áa]sico )?(?:de )?\\d{2,4}\\s*kVA"
+  ],
+  "solucao": "skills/_comum/especificacao/solucaoSkill.js",
+  "vocabulario": {
+    "meta": {},
+    "equipamentos": {},
+    "atributos": {},
+    "requisitos": [
+      {
+        "id": "trafo.potencia",
+        "grupo": "transformador",
+        "rotulo": "Potência do transformador",
+        "padroes": [
+          "transformador[^.]{0,60}?(\\d{2,4}(?:[.,]\\d)?)\\s*kVA",
+          "(\\d{2,4}(?:[.,]\\d)?)\\s*kVA[^.]{0,40}transformador"
+        ],
+        "captura": {
+          "kva": 1
+        },
+        "numeros": [
+          "kva"
+        ]
+      },
+      {
+        "id": "trafo.seco",
+        "grupo": "transformador",
+        "rotulo": "Transformador a seco",
+        "padroes": [
+          "transformador (?:a )?seco",
+          "resina ep[óo]xi",
+          "isolamento a seco"
+        ]
+      },
+      {
+        "id": "trafo.oleo",
+        "grupo": "transformador",
+        "rotulo": "Transformador imerso em óleo",
+        "padroes": [
+          "imerso em [óo]leo",
+          "[óo]leo (?:mineral|vegetal)"
+        ]
+      },
+      {
+        "id": "trafo.impedancia",
+        "grupo": "transformador",
+        "rotulo": "Impedância do transformador",
+        "padroes": [
+          "imped[âa]ncia[^.]{0,25}?(\\d(?:[.,]\\d{1,2})?)\\s*%",
+          "Z\\s*=?\\s*(\\d(?:[.,]\\d{1,2})?)\\s*%"
+        ],
+        "captura": {
+          "pct": 1
+        },
+        "numeros": [
+          "pct"
+        ]
+      },
+      {
+        "id": "tensao.primaria",
+        "grupo": "fornecimento",
+        "rotulo": "Tensão primária",
+        "padroes": [
+          "(\\d{2}[.,]\\d)\\s*kV"
+        ],
+        "captura": {
+          "kv": 1
+        },
+        "numeros": [
+          "kv"
+        ]
+      },
+      {
+        "id": "tensao.secundaria",
+        "grupo": "fornecimento",
+        "rotulo": "Tensão secundária",
+        "padroes": [
+          "(\\d{3})\\s*/\\s*(\\d{3})\\s*V"
+        ],
+        "captura": {
+          "ff": 1,
+          "fn": 2
+        },
+        "numeros": [
+          "ff",
+          "fn"
+        ]
+      },
+      {
+        "id": "se.abrigada",
+        "grupo": "subestação",
+        "rotulo": "Subestação abrigada",
+        "padroes": [
+          "subesta[çc][ãa]o abrigada",
+          "abrigada em alvenaria",
+          "cub[íi]culos?"
+        ]
+      },
+      {
+        "id": "se.poste",
+        "grupo": "subestação",
+        "rotulo": "Subestação em poste",
+        "padroes": [
+          "subesta[çc][ãa]o (?:a[ée]rea|em poste)",
+          "transformador (?:instalado )?em poste",
+          "montada em poste"
+        ]
+      },
+      {
+        "id": "protecao.disjuntor",
+        "grupo": "proteção",
+        "rotulo": "Proteção geral por disjuntor com relé",
+        "padroes": [
+          "disjuntor (?:geral )?(?:de m[ée]dia tens[ãa]o|de MT|a v[áa]cuo)",
+          "rel[ée][^.]{0,20}50\\s*/\\s*51",
+          "rel[ée]s? secund[áa]rios?"
+        ]
+      },
+      {
+        "id": "protecao.fusivel",
+        "grupo": "proteção",
+        "rotulo": "Proteção geral por fusível",
+        "padroes": [
+          "seccionadora com fus[íi]veis",
+          "fus[íi]veis? HH",
+          "prote[çc][ãa]o (?:geral )?por fus[íi]vel"
+        ]
+      },
+      {
+        "id": "icc",
+        "grupo": "fornecimento",
+        "rotulo": "Curto-circuito trifásico no ponto de entrega",
+        "padroes": [
+          "(?:curto|Icc)[^.]{0,40}?(\\d{1,2}(?:[.,]\\d{1,2})?)\\s*kA",
+          "(\\d{1,2}(?:[.,]\\d{1,2})?)\\s*kA[^.]{0,30}(?:curto|Icc|ponto de entrega)"
+        ],
+        "captura": {
+          "ka": 1
+        },
+        "numeros": [
+          "ka"
+        ]
+      },
+      {
+        "id": "demanda",
+        "grupo": "cargas",
+        "rotulo": "Demanda",
+        "padroes": [
+          "demanda[^.]{0,40}?(\\d{2,5}(?:[.,]\\d)?)\\s*kW"
+        ],
+        "captura": {
+          "kw": 1
+        },
+        "numeros": [
+          "kw"
+        ]
+      },
+      {
+        "id": "carga_instalada",
+        "grupo": "cargas",
+        "rotulo": "Carga instalada",
+        "padroes": [
+          "carga instalada[^.]{0,30}?(\\d{2,5}(?:[.,]\\d)?)\\s*kW"
+        ],
+        "captura": {
+          "kw": 1
+        },
+        "numeros": [
+          "kw"
+        ]
+      },
+      {
+        "id": "fp",
+        "grupo": "cargas",
+        "rotulo": "Fator de potência",
+        "padroes": [
+          "fator de pot[êe]ncia[^.]{0,20}?(0[.,]\\d{1,2})"
+        ],
+        "captura": {
+          "fp": 1
+        },
+        "numeros": [
+          "fp"
+        ]
+      },
+      {
+        "id": "crescimento",
+        "grupo": "cargas",
+        "rotulo": "Reserva para crescimento",
+        "padroes": [
+          "(?:reserva|crescimento|expans[ãa]o)[^.]{0,30}?(\\d{1,3})\\s*%"
+        ],
+        "captura": {
+          "pct": 1
+        },
+        "numeros": [
+          "pct"
+        ]
+      },
+      {
+        "id": "cabo.comprimento",
+        "grupo": "cabo de MT",
+        "rotulo": "Comprimento do cabo de MT",
+        "padroes": [
+          "cabos? de m[ée]dia[^.]{0,60}?(\\d{1,4})\\s*m\\b",
+          "(\\d{1,4})\\s*m de cabos? (?:de )?(?:m[ée]dia|MT)"
+        ],
+        "captura": {
+          "m": 1
+        },
+        "numeros": [
+          "m"
+        ]
+      },
+      {
+        "id": "malha.resistencia",
+        "grupo": "aterramento",
+        "rotulo": "Resistência máxima da malha",
+        "padroes": [
+          "resist[êe]ncia[^.]{0,40}?(\\d{1,2}(?:[.,]\\d)?)\\s*(?:Ω|ohms?)"
+        ],
+        "captura": {
+          "ohm": 1
+        },
+        "numeros": [
+          "ohm"
+        ]
+      },
+      {
+        "id": "malha.resistividade",
+        "grupo": "aterramento",
+        "rotulo": "Resistividade do solo",
+        "padroes": [
+          "resistividade[^.]{0,40}?(\\d{2,5})\\s*(?:Ω|ohm)\\s*\\.?\\s*m"
+        ],
+        "captura": {
+          "ohm_m": 1
+        },
+        "numeros": [
+          "ohm_m"
+        ]
+      },
+      {
+        "id": "distribuidora",
+        "grupo": "fornecimento",
+        "rotulo": "Distribuidora",
+        "padroes": [
+          "(Neoenergia(?: Bras[íi]lia)?|CEB|Enel(?: [A-Z][a-z]+)?|CPFL(?: [A-Z][a-z]+)?|Cemig|Light|Equatorial(?: [A-Z][a-z]+)?|Energisa(?: [A-Z][a-z]+)?|Copel|Celesc|Coelba)"
+        ],
+        "captura": {
+          "nome": 1
+        }
+      },
+      {
+        "id": "normas",
+        "grupo": "normas",
+        "rotulo": "Norma citada",
+        "padroes": [
+          "(NBR\\s*\\d{4,5}(?:-\\d)?)"
+        ],
+        "captura": {
+          "norma": 1
+        },
+        "multiplo": true
+      }
+    ],
+    "listas": [
+      {
+        "id": "escopo.excluido",
+        "rotulo": "Fora do escopo",
+        "secoes": [
+          "n[ãa]o faz parte",
+          "exclu",
+          "fora do escopo"
+        ],
+        "tipos": [
+          "item",
+          "paragrafo"
+        ]
+      }
+    ],
+    "circuitos": [],
+    "obrigatorios": []
+  },
+  "mapa": [
+    {
+      "requisito": "trafo.potencia",
+      "campo": "transformador.potencia_kva",
+      "de": "kva",
+      "numero": true,
+      "rotulo": "Transformador",
+      "unidade": "kVA"
+    },
+    {
+      "requisito": "trafo.oleo",
+      "campo": "transformador.isolamento",
+      "valor": "oleo",
+      "rotulo": "Isolamento do transformador"
+    },
+    {
+      "requisito": "trafo.seco",
+      "campo": "transformador.isolamento",
+      "valor": "seco",
+      "rotulo": "Isolamento do transformador"
+    },
+    {
+      "requisito": "trafo.impedancia",
+      "campo": "transformador.z_pct",
+      "de": "pct",
+      "numero": true,
+      "rotulo": "Impedância do transformador",
+      "unidade": "%"
+    },
+    {
+      "requisito": "tensao.primaria",
+      "campo": "fornecimento.tensao_primaria_kv",
+      "de": "kv",
+      "numero": true,
+      "rotulo": "Tensão primária",
+      "unidade": "kV"
+    },
+    {
+      "requisito": "tensao.secundaria",
+      "campo": "fornecimento.tensao_secundaria_v",
+      "de": "ff",
+      "numero": true,
+      "rotulo": "Tensão secundária (fase-fase)",
+      "unidade": "V"
+    },
+    {
+      "requisito": "tensao.secundaria",
+      "campo": "fornecimento.tensao_secundaria_fn",
+      "de": "fn",
+      "numero": true,
+      "rotulo": "Tensão secundária (fase-neutro)",
+      "unidade": "V"
+    },
+    {
+      "requisito": "se.poste",
+      "campo": "fornecimento.tipo_se",
+      "valor": "poste",
+      "rotulo": "Tipo de subestação"
+    },
+    {
+      "requisito": "se.abrigada",
+      "campo": "fornecimento.tipo_se",
+      "valor": "abrigada",
+      "rotulo": "Tipo de subestação"
+    },
+    {
+      "requisito": "protecao.fusivel",
+      "campo": "fornecimento.protecao",
+      "valor": "fusivel",
+      "rotulo": "Proteção geral de MT"
+    },
+    {
+      "requisito": "protecao.disjuntor",
+      "campo": "fornecimento.protecao",
+      "valor": "disjuntor",
+      "rotulo": "Proteção geral de MT"
+    },
+    {
+      "requisito": "icc",
+      "campo": "fornecimento.icc_3f_ka",
+      "de": "ka",
+      "numero": true,
+      "rotulo": "Icc trifásica no ponto de entrega",
+      "unidade": "kA"
+    },
+    {
+      "requisito": "demanda",
+      "campo": "cargas.demanda_total_kw",
+      "de": "kw",
+      "numero": true,
+      "rotulo": "Demanda",
+      "unidade": "kW"
+    },
+    {
+      "requisito": "carga_instalada",
+      "campo": "cargas.carga_instalada_kw",
+      "de": "kw",
+      "numero": true,
+      "rotulo": "Carga instalada",
+      "unidade": "kW"
+    },
+    {
+      "requisito": "fp",
+      "campo": "cargas.fp_total",
+      "de": "fp",
+      "numero": true,
+      "rotulo": "Fator de potência"
+    },
+    {
+      "requisito": "crescimento",
+      "campo": "cargas.crescimento_pct",
+      "de": "pct",
+      "numero": true,
+      "rotulo": "Reserva para crescimento",
+      "unidade": "%"
+    },
+    {
+      "requisito": "cabo.comprimento",
+      "campo": "cabo_mt.comprimento_m",
+      "de": "m",
+      "numero": true,
+      "rotulo": "Comprimento do cabo de MT",
+      "unidade": "m"
+    },
+    {
+      "requisito": "malha.resistencia",
+      "campo": "aterramento.resistencia_max_ohm",
+      "de": "ohm",
+      "numero": true,
+      "rotulo": "Resistência máxima da malha",
+      "unidade": "Ω"
+    },
+    {
+      "requisito": "malha.resistividade",
+      "campo": "aterramento.rho1_ohm_m",
+      "de": "ohm_m",
+      "numero": true,
+      "rotulo": "Resistividade do solo",
+      "unidade": "Ω·m"
+    },
+    {
+      "requisito": "distribuidora",
+      "campo": "fornecimento.distribuidora",
+      "de": "nome",
+      "rotulo": "Distribuidora"
+    }
+  ],
+  "padroes": [],
+  "obrigatorios_formulario": [
+    {
+      "campo": "fornecimento.icc_3f_ka",
+      "texto": "Curto-circuito trifásico no ponto de entrega não informado: pedir à distribuidora (o cálculo usa o padrão da skill para a proteção e o cabo)."
+    },
+    {
+      "campo": "cabo_mt.comprimento_m",
+      "texto": "Comprimento do cabo de MT (ponto de entrega → subestação) não informado: levantar em campo ou na planta de situação."
+    }
+  ],
+  "variaveis": {
+    "kva": "calc.trafo.kva",
+    "modo": "calc.prot.modo",
+    "tipo_se": "calc.se.tipo"
+  },
+  "fatos": [
+    {
+      "id": "prot_disjuntor",
+      "caminho": "calc.prot.modo",
+      "op": "==",
+      "valor": "disjuntor"
+    },
+    {
+      "id": "se_abrigada",
+      "caminho": "calc.se.tipo",
+      "op": "==",
+      "valor": "abrigada"
+    },
+    {
+      "id": "sobrecarga",
+      "caminho": "calc.trafo.carregamento",
+      "op": ">",
+      "valor": 1
+    },
+    {
+      "id": "sem_potencia_sem_demanda",
+      "caminho": "dados.transformador.potencia_kva",
+      "op": "existe"
+    }
+  ],
+  "verificacoes": {
+    "regras": [
+      {
+        "id": "fusivel_x_potencia",
+        "tipo": "ponto",
+        "se": [
+          "req:protecao.fusivel",
+          "f:prot_disjuntor"
+        ],
+        "texto": "A especificação pede proteção geral por fusível, mas para {kva} kVA a skill adotou disjuntor com relé 50/51/50N/51N (o fusível não é admitido acima do limite da norma da distribuidora). Confirmar com a distribuidora.",
+        "se_mantido": "Proteção por fusível mantida a pedido do cliente acima do limite: depende de aceite formal da distribuidora."
+      },
+      {
+        "id": "poste_x_potencia",
+        "tipo": "ponto",
+        "se": [
+          "req:se.poste",
+          "f:se_abrigada"
+        ],
+        "texto": "A especificação pede subestação em poste, mas para {kva} kVA a skill indica subestação abrigada (limite de potência em poste da distribuidora). Confirmar com a distribuidora."
+      },
+      {
+        "id": "sobrecarga_trafo",
+        "tipo": "ponto",
+        "se": [
+          "req:trafo.potencia",
+          "f:sobrecarga"
+        ],
+        "texto": "O transformador especificado ({kva} kVA) fica acima de 100 % de carregamento com a demanda e a reserva: rever a potência ou a reserva de crescimento."
+      },
+      {
+        "id": "pend_distribuidora",
+        "tipo": "pendencia",
+        "se": [],
+        "texto": "Projeto para a distribuidora: consulta de acesso, padrão de entrada e aprovação conforme a norma técnica de fornecimento em MT da distribuidora local. [CONFERIR]"
+      },
+      {
+        "id": "pend_seletividade",
+        "tipo": "pendencia",
+        "se": [
+          "f:prot_disjuntor"
+        ],
+        "texto": "Ajustes do relé 50/51/50N/51N: estudo de seletividade com a proteção da distribuidora (dados do alimentador) antes da energização. [CONFERIR]"
+      }
+    ]
+  },
+  "grupos": [
+    {
+      "grupo": "Transformador",
+      "re": "^transformador"
+    },
+    {
+      "grupo": "Aterramento",
+      "re": "haste|cordoalha|cobre nu|malha|aterramento|caixa de inspe|solda exot|verde-amarelo"
+    },
+    {
+      "grupo": "Proteção e manobra de MT",
+      "re": "cub[íi]culo|disjuntor[^,]{0,30}(?:15 ?kV|v[áa]cuo|de MT)|rel[ée]|transformador(?:es)? de (?:corrente|potencial)|\bTC\b|\bTP\b|seccionadora|chave fus[íi]vel|fus[íi]vel"
+    },
+    {
+      "grupo": "Cabos e terminações",
+      "re": "cabo|mufla|termina[çc]|emenda|caixa de passagem"
+    },
+    {
+      "grupo": "Para-raios",
+      "re": "para-?raios"
+    },
+    {
+      "grupo": "Baixa tensão",
+      "re": "QGBT|disjuntor geral de BT|baixa tens|bus ?way"
+    },
+    {
+      "grupo": "Medição",
+      "re": "medi[çc][ãa]o|medidor"
+    },
+    {
+      "grupo": "Abrigo e acessórios",
+      "re": "."
+    }
+  ]
+}

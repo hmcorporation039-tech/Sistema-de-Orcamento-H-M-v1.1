@@ -27,7 +27,7 @@ import { iniciarQuadro } from './quadro.js';
 import { simuladorDaCena, htmlFichaPonto, htmlFichaComponente, ligarBotoes, criarAviso, cenaQuadroEsquematica, htmlCenas,
   criarInteracao, redeDaSubestacao, redeDeSinal, ligarAoSimulador, PAPEL_DO_SIMBOLO, htmlEquipamento, ligarBotoesRede } from './interativo.js';
 // vista interna do rack (cabeamento/CFTV) e da central de incêndio (09/11/2026)
-import { dadosDoRack, cenaDoRack, dadosDaCentral, cenaDaCentral } from '../../instalacao/paineis.js';
+import { dadosDoRack, cenaDoRack, dadosDaCentral, cenaDaCentral, dadosDoClp, cenaDoClp, dadosDoPainelPressurizacao, cenaDoPainelPressurizacao } from '../../instalacao/paineis.js';
 import { criarMapa } from './mapaIluminancia.js';
 import { iniciarEdicao } from './edicao.js';
 
@@ -1597,8 +1597,12 @@ function andarPeloTeclado(dt) {
 
 // ── 3D interativo: clique, ficha e o quadro por cima do prédio ──────────────
 const aviso = sim || rede ? criarAviso() : null;
-// painel com vista interna: o rack (cabeamento/CFTV) e a central de incêndio
-const PAINEL_DO_SIMBOLO = { 'HM-CAB-RACK': 'rack', 'HM-INC-CENTRAL': 'central_incendio' };
+// painel com vista interna: o rack (cabeamento/CFTV), a central de incêndio e (14/11/2026) o
+// quadro de automação (CLP/DDC) e o painel de comando da pressurização de escadas
+const PAINEL_DO_SIMBOLO = { 'HM-CAB-RACK': 'rack', 'HM-INC-CENTRAL': 'central_incendio', 'HM-AUT-CONTROLADOR': 'automacao', 'HM-PRZ-PAINEL': 'pressurizacao' };
+const TAG_PADRAO_PAINEL = { rack: 'RACK', central_incendio: 'CENTRAL', automacao: 'QA', pressurizacao: 'QPE' };
+const NOME_PAINEL = { rack: 'rack', central_incendio: 'central', automacao: 'quadro de automação', pressurizacao: 'painel de pressurização' };
+const TITULO_SIM_PAINEL = { rack: 'Equipamentos — clique para operar', central_incendio: 'Central — clique para operar', automacao: 'CLP — clique na CPU para RUN/STOP', pressurizacao: 'Simulação do comando por relés — seletoras na porta' };
 // clique num equipamento com interação (ou num rack/central): a ficha com as manobras
 function clicarRede(cx, cy) {
   const p = escolherDispositivo(cx, cy);
@@ -1659,7 +1663,7 @@ function atualizarFicha() {
   if (fichaDe.rede?.length || fichaDe.painel) {
     const topo = fichaDe.componente ? htmlFichaComponente(fichaDe.componente, { rotulo: fichaDe.t.rotulo, ambiente: amb ? amb.nome : '', altura: alturaDoItem(fichaDe.t, fichaDe.it), objeto: fichaDe.it[6] })
       : `<div class="sim-tit grande">${esc(fichaDe.t.rotulo)}${fichaDe.it[6] ? ` · ${esc(fichaDe.it[6])}` : ''}</div><div class="sim-est">${amb ? esc(amb.nome) : ''}</div>`;
-    fichaCorpo.innerHTML = `${topo}${fichaDe.rede?.length ? htmlEquipamento(rede, fichaDe.rede) : ''}${fichaDe.painel ? `<div class="sim-bs"><button class="sim-b liga" data-painel="1">Abrir a vista interna (${fichaDe.painel === 'rack' ? 'rack' : 'central'})</button></div>` : ''}`;
+    fichaCorpo.innerHTML = `${topo}${fichaDe.rede?.length ? htmlEquipamento(rede, fichaDe.rede) : ''}${fichaDe.painel ? `<div class="sim-bs"><button class="sim-b liga" data-painel="1">Abrir a vista interna (${NOME_PAINEL[fichaDe.painel] || 'painel'})</button></div>` : ''}`;
     return;
   }
   // equipamento do objetivo do projeto: a ficha do componente (relação de materiais, legenda, posição)
@@ -1755,19 +1759,26 @@ function abrirPainel(t, it) {
   if (!tipo) return;
   const ids = rede ? noDoItem.get(it) || [] : [];
   const conta = (re) => CENA.dispositivos.filter(x => re.test(x.simbolo || '')).reduce((s, x) => s + x.itens.length, 0);
-  const tag = it[6] ? String(it[6]) : tipo === 'rack' ? 'RACK' : 'CENTRAL';
-  // dados da skill quando a cena traz (cena.paineis: [{ tipo, ponto?, cabeamento?, cftv?, incendio? }])
+  const tag = it[6] ? String(it[6]) : TAG_PADRAO_PAINEL[tipo] || 'PAINEL';
+  // dados da skill quando a cena traz (cena.paineis: [{ tipo, ponto?, cabeamento?, cftv?, incendio?, automacao?, pressurizacao? }])
   const dadosSkill = (Array.isArray(CENA.paineis) ? CENA.paineis : []).find(p => p && p.tipo === tipo && (p.ponto == null || String(p.ponto) === String(it[6] || ''))) || null;
   let C;
   if (tipo === 'rack') {
     C = cenaDoRack(dadosDoRack({ tag, equipamentoSwitch: ids[0] || null, cabeamento: dadosSkill?.cabeamento || null, cftv: dadosSkill?.cftv || null,
       portasPainel: dadosSkill?.portasPainel, portasSwitch: dadosSkill?.portasSwitch,
       contagem: { pontosRede: conta(/^HM-CAB-PONTO-REDE$/), aps: conta(/^HM-CAB-AP$/), cameras: conta(/^HM-CFTV-CAMERA$/) } }));
+  } else if (tipo === 'automacao') {
+    // quadro de automação (CLP/DDC): pontos da skill automação ou os sensores do projeto (14/11/2026)
+    C = cenaDoClp(dadosDoClp({ tag, equipamentoClp: null, calculo: dadosSkill?.automacao || null,
+      contagem: { sensores: conta(/^HM-AUT-SENSOR$/), controladores: conta(/^HM-AUT-CONTROLADOR$/) } }));
+  } else if (tipo === 'pressurizacao') {
+    // painel da pressurização: a escada do perfil de pressurização, com a simulação e a fiação (14/11/2026)
+    C = cenaDoPainelPressurizacao(dadosDoPainelPressurizacao({ tag, calculo: dadosSkill?.pressurizacao || null }));
   } else {
     C = cenaDaCentral(dadosDaCentral({ tag, equipamentoCentral: ids[0] || null, calculo: dadosSkill?.incendio || null,
       contagem: { detectores: conta(/^HM-INC-DETECTOR/), acionadores: conta(/^HM-INC-ACIONADOR$/), avisadores: conta(/^HM-INC-AVISADOR$/) } }));
   }
-  abrirSobreposto(`p:${tipo}:${tag}`, C, C.titulo, { sim: null, titulo: tipo === 'rack' ? 'Equipamentos — clique para operar' : 'Central — clique para operar' });
+  abrirSobreposto(`p:${tipo}:${tag}`, C, C.titulo, { sim: null, titulo: TITULO_SIM_PAINEL[tipo] || 'Equipamentos — clique para operar' });
 }
 function abrirSobreposto(chave, C, nome, { sim: simQ = null, quadroTag = null, titulo = '' } = {}) {
   if (!qsim) {

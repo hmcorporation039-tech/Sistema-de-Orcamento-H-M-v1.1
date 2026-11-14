@@ -9,7 +9,7 @@ const path = require('path');
 const { CAD } = require('../config/caminhos');
 const { SIMBOLOS } = require(path.join(CAD, 'simbolos.js'));
 const { ESPEC } = require(path.join(CAD, 'modelo3d.js'));
-const { tiposDisponiveis } = require('./mapaCad');
+const { tiposDisponiveis, chaveDoProjeto } = require('./mapaCad');
 
 const r3 = (v) => Math.round(v * 1000) / 1000;
 
@@ -83,12 +83,30 @@ function instalacao(simbolo) {
   return { montagem: h || 'parede', altura_m: null };
 }
 
+// Disciplinas DE PROJETO (utils/disciplinasProjeto: as que o engenheiro marca no envio) que usam o componente (14/11/2026:
+// "coloque apenas os componentes que correspondem à disciplina usada, com a opção de chamar os de outras"). A disciplina
+// do 3D é mais grossa que a do projeto: a tomada é "eletrica" no 3D e serve à predial, à hospitalar e à industrial; os
+// equipamentos da subestação (HM-EQ-*) são da média tensão; a luminária entra também no projeto elétrico.
+const ELETRICAS = ['eletrica', 'eletrica_hospitalar', 'eletrica_industrial'];
+const ATERRAMENTO = new Set(['HM-EQ-HASTE', 'HM-EQ-CORDOALHA', 'HM-EQ-CAIXA-INSPECAO']);
+const A_MAIS = { 'HM-ELE-QUADRO': ['quadros', 'media_tensao'], 'HM-AUT-CONTROLADOR': ['climatizacao'], 'HM-PRZ-PAINEL': ['incendio'] };
+function disciplinasDoComponente(simbolo, disciplina) {
+  let base;
+  if (/^HM-EQ-/.test(simbolo)) base = ['media_tensao', 'eletrica_industrial', ...(ATERRAMENTO.has(simbolo) ? ['spda'] : [])];
+  else if (disciplina === 'eletrica') base = ELETRICAS;
+  else if (disciplina === 'iluminacao' || disciplina === 'iluminacao-externa') base = ['iluminacao', ...ELETRICAS];
+  else if (disciplina === 'rede') base = ['cabeamento', 'rede'];
+  else base = [chaveDoProjeto(disciplina) || disciplina];
+  return [...new Set([...base, ...(A_MAIS[simbolo] || [])])];
+}
+
 let emCache = null;
-// [{ simbolo, nome, disciplina, montagem, altura_m, svg: { d, textos, raio } | null }] em ordem de disciplina e nome
+// [{ simbolo, nome, disciplina, disciplinas, montagem, altura_m, svg: { d, textos, raio } | null }] em ordem de
+// disciplina e nome (disciplinas = as de projeto que usam o componente)
 function componentes() {
-  if (!emCache) emCache = tiposDisponiveis().map(t => ({ ...t, ...instalacao(t.simbolo), svg: svgDoSimbolo(t.simbolo) }));
+  if (!emCache) emCache = tiposDisponiveis().map(t => ({ ...t, disciplinas: disciplinasDoComponente(t.simbolo, t.disciplina), ...instalacao(t.simbolo), svg: svgDoSimbolo(t.simbolo) }));
   return emCache;
 }
 const componente = (simbolo) => componentes().find(c => c.simbolo === simbolo) || null;
 
-module.exports = { componentes, componente, svgDoSimbolo, instalacao };
+module.exports = { componentes, componente, svgDoSimbolo, instalacao, disciplinasDoComponente };

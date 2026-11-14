@@ -40,6 +40,11 @@ const TIPOS = [
   [/CAPTOR|FRANKLIN|TERMINAL.?A[ÉE]REO/i, /captor|franklin|terminal a[ée]reo/i, 'HM-SPDA-CAPTOR', 'spda'],
   [/DESCIDA/i, /descida/i, 'HM-SPDA-DESCIDA', 'spda'],
   [/INSPE[ÇC]|HASTE/i, /caixa de inspe[çc]|haste/i, 'HM-SPDA-CAIXA-INSPECAO', 'spda'],
+  // painéis com vista interna no 3D (14/11/2026): o painel da pressurização e o quadro de automação (CLP/DDC)
+  // antes caíam em HM-ELE-QUADRO pela linha QUADRO abaixo. Só pela layer do PAINEL (a layer de dutos e
+  // ventiladores da pressurização não vira painel)
+  [/PRZ[-_ ]?(PAINEL|QUADRO|QPE)|PRESSURIZ.{0,20}(PAINEL|QUADRO|QPE)/i, /painel.{0,40}pressuriza|(quadro|painel) de comando da pressuriza|\bQPE\b/i, 'HM-PRZ-PAINEL', 'pressurizacao'],
+  [/^AUT[-_ ].*(CONTROL|QUADRO|CLP|DDC)|(^|[-_ ])(CLP|DDC|PLC)([-_ ]|$)/i, /quadro de automa[çc][ãa]o|\bclp\b|\bddc\b|controlador (de |da )?automa/i, 'HM-AUT-CONTROLADOR', 'automacao'],
   [/CARREG|WALLBOX|^VE[-_ ]/i, /carregador|wallbox|recarga/i, 'HM-VE-CARREGADOR', 'veicular'],
   [/INVERSOR/i, /inversor/i, 'HM-SOL-INVERSOR', 'solar'],
   [/SENSOR/i, /sensor de presen[çc]a/i, 'HM-ILU-SENSOR', 'iluminacao'],

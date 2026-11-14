@@ -257,4 +257,44 @@ function textoEntrega(p, precos = null) {
   return L.join('\n');
 }
 
-module.exports = { htmlFolhas, gerarFolhasPdf, htmlFicha, gerarFichaPdf, textoEntrega, carimbo };
+// Texto de entrega do projeto gerado pela SKILL da disciplina (14/11/2026 — incêndio, MT, BMS, QD predial):
+// mesmo padrão do texto do quadro (interpretação, decisões com a frase de origem, pontos a levantar, o que
+// falta confirmar, matriz de causa e efeito quando há, e o resumo da pesquisa de preços)
+function textoEntregaSkill(p, precos = null, documentos = []) {
+  const L = [];
+  L.push(`# ${p.meta.titulo}`);
+  L.push(`${[p.meta.cliente, p.meta.obra].filter(Boolean).join(' · ')} · ${p.meta.referencia} · Rev. ${p.meta.revisao} · ${dataBr(p.meta.data || p.gerado_em)}`, '');
+  L.push('## Projeto pela especificação', '');
+  L.push(`Perfil: ${p.perfil} — o formulário da skill da disciplina foi preenchido com o que a especificação escreve (cada valor com a frase de origem) e calculado pela skill, sem IA.`, '');
+  if ((p.indicadores || []).length) {
+    L.push('| Resultado | Valor |', '|---|---|', ...p.indicadores.map(i => `| ${i.rotulo} | ${i.valor}${i.detalhe ? ` (${i.detalhe})` : ''} |`), '');
+  }
+  if (documentos.length) L.push(`**Documentos:** ${documentos.join('; ')}.`, '');
+  L.push('**O que foi lido e adotado**');
+  for (const d of p.decisoes) L.push(`- ${d.titulo}: ${d.texto}`);
+  for (const pr of p.premissas || []) L.push(`- Premissa: ${pr}`);
+  L.push('');
+  if (p.causaEfeito && p.causaEfeito.length) {
+    L.push('**Matriz de causa e efeito**', '', '| Causa | Efeito | Módulos | Referência |', '|---|---|---|---|');
+    for (const c of p.causaEfeito) L.push(`| ${c.causa} | ${c.efeitos.join('; ')} | ${c.modulos ? `${c.modulos} de ${c.modulo}` : '—'} | ${c.norma || '—'} |`);
+    L.push('');
+  }
+  if (p.pontos.length) {
+    L.push('**Pontos a levantar com o cliente**');
+    p.pontos.forEach((x, i) => L.push(`${i + 1}. ${x.texto}${x.sugestao ? ` Sugestão: ${x.sugestao.texto}` : ''}`));
+    L.push('');
+  }
+  if (p.pendencias.length) L.push(`**Falta confirmar:** ${p.pendencias.map(x => x.texto.replace(/\.$/, '')).join('; ')}.`, '');
+  if (p.excecoes.length) { L.push('**Exceções e observações a declarar**'); for (const x of p.excecoes) L.push(`- ${x.letra ? `${x.letra}) ` : ''}${x.texto}`); L.push(''); }
+  if (precos) {
+    L.push('## Pesquisa de preços do material (XLSX)', '');
+    L.push(`Material: **${moeda(precos.subtotal)}**, ou **${moeda(precos.total)}** com ${Math.round(precos.contingencia * 100)} % de contingência. Não inclui mão de obra nem BDI.${precos.aCotar ? ` ${precos.aCotar} item(ns) ainda sem preço (a cotar).` : ''}`, '');
+    if (precos.porGrupo.length) L.push('| Grupo | Total (R$) |', '|---|---|', ...precos.porGrupo.map(g => `| ${g.grupo} | ${moeda(g.total).replace('R$ ', '')} |`), '');
+    if (precos.top.length) L.push('**Itens que mais pesam**', '', ...precos.top.map(t => `- ${t.descricao}: ${moeda(t.preco)}${t.quantidade > 1 ? ` × ${fmt(t.quantidade, 0)}` : ''} (${t.fonte || t.origem})`), '');
+    L.push('- Preços de varejo: com CNPJ em distribuidor tende a sair menor — tratar como teto.', '');
+  }
+  L.push('Observações: marcas e modelos "ou equivalente"; documento preliminar — exige conferência e ART do engenheiro responsável.');
+  return L.join('\n');
+}
+
+module.exports = { htmlFolhas, gerarFolhasPdf, htmlFicha, gerarFichaPdf, textoEntrega, textoEntregaSkill, carimbo };

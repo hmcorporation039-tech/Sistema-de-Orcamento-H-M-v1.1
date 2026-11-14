@@ -231,4 +231,305 @@ function cenaDaCentral(d) {
   });
 }
 
-module.exports = { cenaDoPainel, dadosDoRack, cenaDoRack, dadosDaCentral, cenaDaCentral, U, CONFERIR };
+// ── Peças comuns dos painéis de comando (pressurização, automação) ──────────
+const Z_PLACA = 25;
+const COR_PECA = { disjuntor: '#e9e9e6', rele: '#d9dde3', temporizador: '#cfd8e6', fonte: '#7b68b5', inversor: '#2f5d8a', soft: '#3e6f8f', borne: '#a7afb8', canaleta: '#8d949c', placa: '#e4e1d8', clp: '#3b4a5a', modulo: '#55606d', switch: '#2b2e33' };
+// canaletas: verticais nas laterais e horizontais nas cotas pedidas (y = base da canaleta)
+function canaletas(L, A, ys, larg = 30) {
+  const out = [
+    { camada: 'canaletas', x: 25, y: 40, z: Z_PLACA, l: larg, a: A - 80, p: 60, cor: COR_PECA.canaleta, rotulo: `Canaleta ${larg} × 60 mm`, semEtiqueta: true },
+    { camada: 'canaletas', x: L - 25 - larg, y: 40, z: Z_PLACA, l: larg, a: A - 80, p: 60, cor: COR_PECA.canaleta, rotulo: `Canaleta ${larg} × 60 mm`, semEtiqueta: true },
+  ];
+  for (const y of ys) out.push({ camada: 'canaletas', x: 25 + larg, y, z: Z_PLACA, l: L - 50 - 2 * larg, a: larg, p: 60, cor: COR_PECA.canaleta, rotulo: `Canaleta ${larg} × 60 mm`, semEtiqueta: true });
+  return out;
+}
+// régua de bornes: barra do rótulo + uma peça de 5 mm por borne (a ordem das peças = a ordem da régua)
+function regua(tag, x, y, bornes, titulo) {
+  const pecas = [{ camada: 'bornes', tag, x, y: y + 64, z: Z_PLACA + 3, l: Math.max(20, bornes.length * 5.4 + 10), a: 8, p: 6, cor: '#f4f1e8', rotulo: `${tag} — ${titulo}`, ficha: [lin('Régua', `${tag} — ${titulo}`, 'painel'), lin('Bornes', `${bornes.length}`, 'painel')] }];
+  bornes.forEach((b, i) => pecas.push({ camada: 'bornes', tag, x: x + 5 + i * 5.4, y, z: Z_PLACA + 3, l: 5, a: 60, p: 40, cor: b.cor || COR_PECA.borne, rotulo: `${tag}:${i + 1}`, semEtiqueta: true, dica: `${tag}:${i + 1} — ${b.rotulo}`,
+    ficha: [lin('Borne', `${tag}:${i + 1}`, 'painel'), lin('Ligação', b.rotulo, b.fonte || 'painel'), lin('Seção', b.secao ? `${String(b.secao).replace('.', ',')} mm²` : null, b.secao ? 'painel' : null)] }));
+  return pecas;
+}
+// condutor reto por pontos (força e sinais que não passam pela escada)
+const cond = (id, funcao, camada, cor, d_mm, pts, de, para, energia, extra = {}) => ({ id, funcao, camada, cor, d_mm, pts: pts.map(p => p.map(v => Math.round(v * 10) / 10)), de, para, energia, ...extra });
+// terminal de peça (cima/baixo, coluna col de n)
+const termP = (b, col, n, lado, dy = 0) => ({ x: b.x + b.l * (col + 0.5) / Math.max(1, n), y: lado === 'cima' ? b.y + b.a - 9 - dy : b.y + 9 + dy, z: b.z + b.p - 14, lado });
+
+// ── PAINEL DE PRESSURIZAÇÃO DE ESCADAS (NBR 14880; CBMDF NT 10; IT 13 / CBMGO NT 13) ──
+// A lógica é a do PERFIL de especificação da skill pressurização (skills/pressurizacao/dados/
+// perfil-especificacao.json): os mesmos blocos de função compilados pela mesma escada
+// (../especificacao/comando.js) — partida pelo alarme da central, MAN-0-AUT por ventilador,
+// reversão para o reserva por falta de fluxo/falha do acionamento, modo TESTE com chave,
+// inibição pela fumaça na casa de máquinas e operação/falha para a central. A vista interna abre
+// com a simulação da escada (seletoras e sinaleiros na porta, relés na placa) e a fiação de força e
+// de comando desenhada (./fiacaoComando.js).
+const PERFIL_PRZ = require('../../pressurizacao/dados/perfil-especificacao.json');
+const CMD = require('../especificacao/comando');
+const FC = require('./fiacaoComando');
+
+// dadosDoPainelPressurizacao({ calculo (skill pressurizacao: arr, al.partida, vent), tag })
+function dadosDoPainelPressurizacao({ calculo = null, tag = 'QPE', tempoReversao = null } = {}) {
+  const c = calculo || {};
+  const fonte = calculo ? 'cálculo da skill pressurização (NBR 14880)' : null;
+  const n = Number(c.arr?.n) || null;
+  const partida = c.al?.partida?.tipo || c.c?.partida || null;
+  return {
+    tag, fonte, nVentiladores: n, nUsado: n && n >= 1 ? Math.min(2, n) : 2, partida, partidaUsada: partida || 'inversor',
+    cv: c.vent?.cv || null, inA: c.vent?.in ? Math.round(c.vent.in * 10) / 10 : null,
+    tempoReversao: tempoReversao ?? PERFIL_PRZ.regras?.variaveis_comando?.tempo_reversao ?? 15,
+  };
+}
+
+const SINALIZACAO_PRZ = ['painel energizado', 'alarme de incêndio', 'ventilador V1 operando', 'ventilador V2 operando', 'falha V1', 'falha V2', 'modo manual'];
+function comandoDaPressurizacao(d) {
+  const n = d.nUsado;
+  const motores = Array.from({ length: n }, (_, k) => ({ i: k + 1, tag: `V${k + 1}`, rotulo: `Ventilador V${k + 1}`, acion: d.partidaUsada === 'direta' ? null : `U${k + 1}`, acionRotulo: d.partidaUsada === 'soft' ? 'Soft-starter' : 'Inversor de frequência' }));
+  const req = ['comando.partida_alarme', 'comando.pressostato_fluxo', 'comando.modo_teste', 'comando.inibicao_fumaca', 'automacao.status_central', 'comando.seletora_man_0_aut', ...(n === 2 ? ['comando.reversao'] : [])];
+  const listas = { 'sinalizacao.porta': SINALIZACAO_PRZ.filter(t => n === 2 || !/V2/.test(t)).map(texto => ({ texto })), 'automacao.contatos_livres': [] };
+  return CMD.compilarComando({ req: new Set(req), decisoes: {}, combinacao: 'qualquer', motores, externos: [], valvulas: [], rotuloMotor: 'ventilador', rotuloMotores: 'ventiladores', listas, tensaoComando: '24 Vcc', contatosPorRele: 4, variaveis: { tempo_reversao: d.tempoReversao } },
+    { usar: (PERFIL_PRZ.blocos?.usar || []).filter(id => id !== 'emergencia_rele') });
+}
+
+const COR_PORTA = { seletora: '#202226', seletora_chave: '#202226', botao: '#2f9e44', emergencia: '#d62828', branco: '#f1f1f1', vermelho: '#e5484d', verde: '#3fb950', amarelo: '#f2c94c', azul: '#4c8dff' };
+function cenaDoPainelPressurizacao(d) {
+  const cmd = comandoDaPressurizacao(d);
+  const n = d.nUsado;
+  const L = 800, A = 1000, P = 300;
+  const fonte = d.fonte || 'perfil de pressurização da H&M (arranjo típico — sem o cálculo da skill) [CONFERIR]';
+  const pecas = [{ camada: 'placa', x: 20, y: 20, z: Z_PLACA - 3, l: L - 40, a: A - 40, p: 3, cor: COR_PECA.placa, rotulo: 'Placa de montagem', semEtiqueta: true }];
+  pecas.push(...canaletas(L, A, [880, 650, 465, 165]));
+  // linha A: geral, comando, fonte, fusível, disjuntores-motor
+  const acion = d.partidaUsada === 'soft' ? 'soft' : d.partidaUsada === 'direta' ? 'direta' : 'inversor';
+  const Q0 = { camada: 'protecao', tag: 'Q0', x: 80, y: 735, z: Z_PLACA + 8, l: 54, a: 90, p: 75, cor: COR_PECA.disjuntor, rotulo: 'Q0', dica: 'Q0 — disjuntor geral 3P',
+    ficha: [lin('Função', 'Disjuntor geral do painel (alimentação exclusiva, antes da chave geral do prédio — NT/IT do CBM)', 'perfil de pressurização'), lin('Polos', '3P', 'perfil de pressurização'), lin('In', null), lin('Icu', null)] };
+  const QC1 = { camada: 'protecao', tag: 'QC1', x: 140, y: 735, z: Z_PLACA + 8, l: 36, a: 90, p: 75, cor: COR_PECA.disjuntor, rotulo: 'QC1', dica: 'QC1 — disjuntor do comando 220 Vca', ficha: [lin('Função', 'Proteção do circuito de comando 220 Vca (fonte e sinaleiro de painel energizado)', 'perfil de pressurização'), lin('In', '6 A (padrão do perfil de comando)', 'perfil da especificação')] };
+  const G1 = { camada: 'automacao', tag: 'G1', x: 182, y: 735, z: Z_PLACA + 8, l: 54, a: 90, p: 60, cor: COR_PECA.fonte, rotulo: 'G1', dica: 'G1 — fonte 220 Vca / 24 Vcc', ficha: [lin('Função', 'Fonte do comando 24 Vcc (relés, sinaleiros, entradas de campo)', 'perfil da especificação'), lin('Corrente', null), lin('Modelo', null)] };
+  const F1 = { camada: 'automacao', tag: 'F1', x: 242, y: 735, z: Z_PLACA + 8, l: 18, a: 90, p: 60, cor: '#e7e2d3', rotulo: 'F1', dica: 'F1 — fusível do comando 24 Vcc', ficha: [lin('Função', 'Fusível do comando (L+)', 'perfil da especificação'), lin('Corrente', '2 A (padrão do perfil de comando)', 'perfil da especificação')] };
+  pecas.push(Q0, QC1, G1, F1);
+  const dm = [];
+  for (let k = 0; k < n; k++) {
+    const b = { camada: 'protecao', tag: `V${k + 1}-Q1`, x: 290 + k * 52, y: 735, z: Z_PLACA + 8, l: 45, a: 90, p: 80, cor: COR_PECA.disjuntor, rotulo: `V${k + 1}-Q1`, dica: `V${k + 1}-Q1 — disjuntor-motor do ventilador V${k + 1}`,
+      ficha: [lin('Função', `Proteção do ${acion === 'direta' ? 'motor' : acion === 'soft' ? 'soft-starter' : 'inversor'} do ventilador V${k + 1} (curto-circuito)`, fonte), lin('Motor', d.cv ? `${String(d.cv).replace('.', ',')} cv${d.inA ? `, In ≈ ${String(d.inA).replace('.', ',')} A` : ''}` : null, fonte), lin('Faixa', null)] };
+    dm.push(b); pecas.push(b);
+  }
+  // linha B: relés e temporizadores da escada
+  let xr = 80;
+  const timers = new Set((cmd.modelo.temporizadores || []).map(t => t.tag));
+  const rel = new Map();
+  for (const r of cmd.reles) {
+    const tim = timers.has(r.tag);
+    const b = { camada: 'protecao', tag: r.tag, x: xr, y: 525, z: Z_PLACA + 8, l: tim ? 18 : 27, a: tim ? 90 : 80, p: 70, cor: tim ? COR_PECA.temporizador : COR_PECA.rele, rotulo: r.tag, dica: `${r.tag} — ${r.rotulo || ''}`,
+      ficha: [lin('Função', r.rotulo, 'escada de relés do perfil de pressurização'), lin('Tipo', tim ? 'temporizador (retardo na energização)' : 'relé auxiliar 4 contatos reversíveis 24 Vcc', 'perfil da especificação'), lin('Contatos usados', (r.usos || []).map(c => `${c.contato} ${c.tipo} → ${c.uso}`).join('; ') || null, 'escada de relés')] };
+    rel.set(r.tag, b); pecas.push(b);
+    xr += b.l + 4;
+  }
+  // linha C: acionamentos
+  const acs = [];
+  for (let k = 0; k < n; k++) {
+    if (acion === 'direta') break;
+    const inv = acion === 'inversor';
+    const b = { camada: 'partidas', tag: `V${k + 1}/T1`, x: 90 + k * 130, y: 205, z: Z_PLACA + 8, l: inv ? 100 : 60, a: inv ? 240 : 150, p: inv ? 170 : 120, cor: inv ? COR_PECA.inversor : COR_PECA.soft, rotulo: `U${k + 1}`, dica: `U${k + 1} — ${inv ? 'inversor de frequência' : 'soft-starter'} do ventilador V${k + 1}`,
+      ficha: [lin('Acionamento', inv ? 'Inversor de frequência (PID pela pressão diferencial, relé de falha e saída em funcionamento)' : 'Soft-starter', d.partida ? fonte : 'perfil de pressurização (típico) [CONFERIR]'), lin('Referência', PERFIL_PRZ.regras?.referencias?.[inv ? 'inversor' : 'soft'] || null, 'perfil de pressurização'), lin('Motor', d.cv ? `${String(d.cv).replace('.', ',')} cv` : null, fonte)] };
+    acs.push(b); pecas.push(b);
+  }
+  // linha D: réguas X1 (força dos ventiladores) e X2 (campo — a ordem das conexões da escada)
+  const x1 = [];
+  for (let k = 0; k < n; k++) for (const f of ['U', 'V', 'W', 'PE']) x1.push({ rotulo: `V${k + 1} ${f}`, cor: f === 'PE' ? '#57b35a' : undefined });
+  pecas.push(...regua('X1', 80, 70, x1, 'força dos ventiladores'));
+  const x2 = cmd.conexoes.filter(c => c.regua === 'X2').map(c => ({ rotulo: c.rotulo, secao: 1.5 }));
+  pecas.push(...regua('X2', 80 + x1.length * 5.4 + 40, 70, x2, 'campo (central, detector, pressostatos)'));
+  // força: Q0 → disjuntores-motor → acionamento → X1 (preto, uma linha por fase)
+  const conexoes = [];
+  const xBorne1 = (i) => 80 + 5 + i * 5.4 + 2.5;
+  dm.forEach((b, k) => {
+    for (let f = 0; f < 3; f++) {
+      const a0 = termP(Q0, f, 3, 'baixo'), b0 = termP(b, f, 3, 'cima');
+      conexoes.push(cond(`F:Q0-${b.tag}-${f}`, 'F', 'forca', '#202226', 3.6, [[a0.x, a0.y, a0.z], [a0.x, 712 - f * 4 - k * 12, a0.z + 6], [b0.x, 712 - f * 4 - k * 12, a0.z + 6], [b0.x, b0.y + 30, b0.z]], 'Q0', b.tag, { tipo: 'comando', sinal: 'FN' }));
+      const ac = acs[k];
+      const dst = ac ? termP(ac, f, 3, 'cima') : { x: xBorne1(k * 4 + f), y: 130, z: Z_PLACA + 40 };
+      const a1 = termP(b, f, 3, 'baixo');
+      conexoes.push(cond(`F:${b.tag}-${f}`, 'F', 'forca', '#202226', 3.6, [[a1.x, a1.y, a1.z], [a1.x, 690 - f * 4, a1.z + 6], [55 + f * 4 + k * 12, 690 - f * 4, a1.z + 6], [55 + f * 4 + k * 12, dst.y + (ac ? 20 : 0), a1.z + 6], [dst.x, dst.y + (ac ? 20 : 0), dst.z]], b.tag, ac ? `U${k + 1}` : `X1 V${k + 1}`, { tipo: 'comando', sinal: 'FN' }));
+      if (ac) {
+        const s = termP(ac, f, 3, 'baixo');
+        const xb = xBorne1(k * 4 + f);
+        conexoes.push(cond(`F:U${k + 1}-X1-${f}`, 'F', 'forca', '#202226', 3.6, [[s.x, s.y, s.z], [s.x, 180 - f * 3, s.z], [xb, 180 - f * 3, s.z], [xb, 130, Z_PLACA + 40]], `U${k + 1} (saída)`, `X1 V${k + 1} ${'UVW'[f]}`, { tipo: 'comando', sinal: `U${k + 1}.RUN` }));
+      }
+    }
+  });
+  // porta: seletoras (escada) e sinaleiros
+  const porta = [];
+  const mapaPorta = [];
+  const ctrlPorta = (cmd.porta || []).filter(e => e.porta !== false);
+  const porDentro = (cx, cy) => porta.push({ x: cx - 15, y: cy - 15, z: -(2 + 40), l: 30, a: 30, p: 40, cor: '#2b2e33', semBorda: true });
+  ctrlPorta.forEach((e, i) => {
+    const cx = 110 + i * 110, cy = A - 170;
+    const tag = `${e.tipo}:${i + 1}`;
+    porta.push({ x: cx - 21, y: cy - 21, l: 42, a: 42, p: 6, cor: '#b0b4ba', forma: 'cilindro', semBorda: true });
+    porta.push({ tag, x: cx - 16, y: cy - 16, l: 32, a: 32, p: e.tipo === 'emergencia' ? 26 : 14, cor: COR_PORTA[e.material] || COR_PORTA[e.tipo] || '#202226', forma: 'cilindro', rotulo: e.id, dica: `${e.id} — ${e.rotulo}`,
+      info: [['Função', e.rotulo], ['Posições', (e.posicoes || []).join(' · ') || '—'], ['Descrição', e.descricao || '—'], ['Furação', 'Ø 22,3 mm']] });
+    porDentro(cx, cy);
+    mapaPorta.push({ meshTag: tag, id: e.id });
+  });
+  cmd.sinaleiros.forEach((s, i) => {
+    const cx = 110 + (i % 6) * 100, cy = A - 270 - Math.floor(i / 6) * 80;
+    const tag = `sinaleiro_${s.cor}:${i + 1}`;
+    porta.push({ x: cx - 17, y: cy - 17, l: 34, a: 34, p: 6, cor: '#b0b4ba', forma: 'cilindro', semBorda: true });
+    porta.push({ tag, x: cx - 12, y: cy - 12, l: 24, a: 24, p: 12, cor: COR_PORTA[s.cor] || '#ccc', forma: 'cilindro', rotulo: s.tag, dica: `${s.tag} — ${s.rotulo}`, info: [['Sinaleiro', `${s.tag} — ${s.rotulo}`], ['Cor', s.cor], ['Tensão', s.tensao || '24 Vcc']] });
+    porDentro(cx, cy);
+    mapaPorta.push({ meshTag: tag, id: s.tag });
+  });
+  porta.push({ x: 40, y: A - 90, l: 200, a: 50, p: 2, cor: '#f4f1e8', rotulo: d.tag, info: [['Painel', `${d.tag} — comando da pressurização de escada`], ['Norma', 'NBR 14880; NBR IEC 61439-1/-2; CBMDF NT 10 / IT 13 [CONFERIR com o corpo de bombeiros local]']] });
+  // o modelo da escada para o visualizador (comandoReles)
+  const placa = {};
+  for (const r of cmd.reles) placa[r.tag] = r.tag;
+  acs.forEach((b, k) => { placa[b.tag] = `U${k + 1}.RUN`; });
+  const res = new Map((cmd.verificacao || []).map(v => [v.nome, v]));
+  const CR = { modelo: cmd.modelo, interacao: cmd.interacao, cenarios: (cmd.cenarios || []).map(c => ({ nome: c.nome, entradas: c.entradas || {}, passos: c.passos || null, espera: c.espera || {}, ok: res.get(c.nome) ? res.get(c.nome).ok : true, falhas: res.get(c.nome) ? res.get(c.nome).falhas : [] })), porta: mapaPorta, placa };
+  const cena = cenaDoPainel({
+    tipo: 'pressurizacao', tag: d.tag, titulo: `${d.tag} — painel de comando da pressurização de escada`,
+    involucro: { L, A, P, cor: '#d4d2cc', rotulo: `Painel ${d.tag}`, info: [['Painel', d.tag], ['Invólucro', `${A} × ${L} × ${P} mm (A × L × P — típico) [CONFERIR com o arranjo de fabricação]`], ['Lógica', `${cmd.blocos.length} blocos de função, ${cmd.reles.length} relés, ${(cmd.verificacao || []).filter(v => v.ok).length}/${(cmd.verificacao || []).length} cenários simulados`]] },
+    porta, pecas, conexoes,
+    camadas: [{ id: 'protecao', rotulo: 'Disjuntores, relés e temporizadores', cor: COR_PECA.rele }, { id: 'partidas', rotulo: acion === 'soft' ? 'Soft-starters' : 'Inversores', cor: COR_PECA.inversor }, { id: 'automacao', rotulo: 'Fonte 24 Vcc e fusível', cor: COR_PECA.fonte },
+      { id: 'bornes', rotulo: 'Réguas X1 (força) e X2 (campo)', cor: COR_PECA.borne }, { id: 'canaletas', rotulo: 'Canaletas', cor: COR_PECA.canaleta }, { id: 'placa', rotulo: 'Placa de montagem', cor: COR_PECA.placa }, { id: 'forca', rotulo: 'Fiação de força (preto, anilha L1/L2/L3)', cor: '#202226' }],
+    numeros: [['ventiladores', String(n)], ['acionamento', acion === 'soft' ? 'soft-starter' : acion === 'direta' ? 'direta' : 'inversor'], ['relés', String(cmd.reles.length)], ['cenários', `${(cmd.verificacao || []).filter(v => v.ok).length}/${(cmd.verificacao || []).length}`], ['reversão', n === 2 ? `${d.tempoReversao} s` : '—']],
+    avisos: [
+      `Lógica pelo perfil de pressurização da H&M (${cmd.blocos.map(b => b.id || b).join(', ')}): a mesma do projeto pela especificação. ${d.fonte ? '' : 'Sem o cálculo da skill: 2 ventiladores (principal + reserva) com inversor, arranjo típico [CONFERIR].'}`.trim(),
+      'Parada só no painel: nenhum botão de emergência desliga os ventiladores durante o alarme (sistema de segurança contra incêndio).',
+      'Invólucro, posições e medidas ilustrativos [CONFERIR com o arranjo de fabricação da skill quadros].',
+    ],
+  });
+  cena.comandoReles = CR;
+  FC.completarCenaComComando(cena, { motores: Array.from({ length: n }, (_, k) => ({ id: `V${k + 1}`, acion: acion === 'direta' ? null : { tag: `U${k + 1}` } })), comando: { conexoes: cmd.conexoes } });
+  return cena;
+}
+
+// ── QUADRO DE AUTOMAÇÃO (CLP / controlador DDC) ──────────────────────────────
+// dadosDoClp({ calculo (skill automacao: tot { di, do, ai, ao }, reserva, protocolo, controladores),
+//              contagem: { sensores, controladores }, tag, equipamentoClp })
+// Os pontos vêm do cálculo da skill (lista de pontos com reserva) ou, no 3D sem a skill, da contagem
+// dos sensores do projeto (cada sensor = 1 entrada analógica, estimativa [CONFERIR]). Capacidade dos
+// módulos (16 DI, 16 DO, 8 AI, 4 AO) é típica de catálogo — ilustrativa [CONFERIR].
+const CAP_MODULO = { di: 16, do: 16, ai: 8, ao: 4 };
+const NOME_MODULO = { di: 'entradas digitais (DI)', do: 'saídas digitais a relé (DO)', ai: 'entradas analógicas (AI)', ao: 'saídas analógicas (AO)' };
+function dadosDoClp({ calculo = null, contagem = null, tag = 'QA', equipamentoClp = null } = {}) {
+  const c = calculo || {};
+  const nCtrl = Math.max(1, Number(c.controladores) || Number(contagem?.controladores) || 1);
+  let pontos = null, fonte = null;
+  if (calculo && c.tot) {
+    pontos = Object.fromEntries(['di', 'do', 'ai', 'ao'].map(k => [k, Math.ceil((Number(c.tot[k]) || 0) / nCtrl)]));
+    fonte = `cálculo da skill automação (lista de pontos${nCtrl > 1 ? `, ÷ ${nCtrl} controladores` : ''})`;
+  } else if (contagem && Number(contagem.sensores) > 0) {
+    pontos = { di: 0, do: 0, ai: Math.ceil(Number(contagem.sensores) / nCtrl), ao: 0 };
+    fonte = 'contagem dos sensores do projeto (1 sensor = 1 entrada analógica — estimativa) [CONFERIR com a lista de pontos]';
+  }
+  const reserva = c.reserva != null ? Number(c.reserva) : 0.2;
+  return { tag, equipamentoClp, pontos, fonte, reserva, protocolo: c.protocolo || null, controladores: nCtrl };
+}
+function cenaDoClp(d) {
+  const pts = d.pontos || { di: 0, do: 0, ai: 0, ao: 0 };
+  const res = d.reserva;
+  const mods = [];
+  for (const k of ['di', 'do', 'ai', 'ao']) {
+    const precisa = Math.ceil(pts[k] * (1 + res));
+    const nM = precisa ? Math.ceil(precisa / CAP_MODULO[k]) : 0;
+    for (let i = 0; i < nM; i++) mods.push({ k, i, usados: Math.max(0, Math.min(CAP_MODULO[k], pts[k] - i * CAP_MODULO[k])), cap: CAP_MODULO[k] });
+  }
+  const nDo = Math.min(48, pts.do);
+  const largMods = 90 + mods.length * 42 + 20;
+  const L = Math.max(600, Math.min(1200, Math.ceil((largMods + 160) / 100) * 100));
+  const A = 800, P = 250;
+  const idC = d.equipamentoClp || `${d.tag}:CLP`;
+  const equipamentos = d.equipamentoClp ? [] : [comPerfil({ id: idC, tipo: 'aut_clp', rotulo: `CLP ${d.tag}` }, 'aut_clp', { entradas: [] })];
+  const fonte = d.fonte;
+  const pecas = [{ camada: 'placa', x: 20, y: 20, z: Z_PLACA - 3, l: L - 40, a: A - 40, p: 3, cor: COR_PECA.placa, rotulo: 'Placa de montagem', semEtiqueta: true }];
+  pecas.push(...canaletas(L, A, [720, 560, 360, 175]));
+  // linha A: entrada, DPS, fonte, fusível, switch
+  const QF1 = { camada: 'alimentacao', tag: 'QF1', x: 80, y: 610, z: Z_PLACA + 8, l: 36, a: 90, p: 75, cor: COR_PECA.disjuntor, rotulo: 'QF1', ficha: [lin('Função', 'Disjuntor de entrada 220 Vca do quadro de automação', 'prática H&M'), lin('In', null)] };
+  const DPS = { camada: 'alimentacao', tag: 'FDPS', x: 122, y: 610, z: Z_PLACA + 8, l: 36, a: 90, p: 70, cor: '#e7e2d3', rotulo: 'DPS', ficha: [lin('Função', 'DPS classe II na entrada 220 Vca (NBR 5410, 6.3.5)', 'prática H&M'), lin('Uc / In', null)] };
+  const G1 = { camada: 'alimentacao', tag: 'G1', x: 164, y: 610, z: Z_PLACA + 8, l: 54, a: 90, p: 60, cor: COR_PECA.fonte, rotulo: 'G1', ficha: [lin('Função', 'Fonte 24 Vcc do CLP, módulos e campo', 'prática H&M'), lin('Corrente', null), lin('Modelo', null)] };
+  const F1 = { camada: 'alimentacao', tag: 'F1', x: 224, y: 610, z: Z_PLACA + 8, l: 18, a: 90, p: 60, cor: '#e7e2d3', rotulo: 'F1', ficha: [lin('Função', 'Fusível do 24 Vcc de campo', 'prática H&M')] };
+  const SW = { camada: 'rede', tag: 'SW', x: 260, y: 615, z: Z_PLACA + 8, l: 80, a: 80, p: 50, cor: COR_PECA.switch, rotulo: 'SW', equipamento: idC, ficha: [lin('Função', `Switch industrial (rede do supervisório${d.protocolo ? ` — ${String(d.protocolo).toUpperCase()}` : ''})`, d.protocolo ? fonte : 'prática H&M'), lin('Portas', null)] };
+  pecas.push(QF1, DPS, G1, F1, SW);
+  // linha B: CPU + módulos
+  const CPU = { camada: 'clp', tag: 'CPU', x: 80, y: 400, z: Z_PLACA + 8, l: 90, a: 125, p: 80, cor: COR_PECA.clp, rotulo: 'CPU', equipamento: idC, semTinta: true,
+    ficha: [lin('Controlador', `CLP/DDC ${d.tag}${d.controladores > 1 ? ` (1 de ${d.controladores})` : ''}`, fonte || null), lin('Protocolo', d.protocolo ? String(d.protocolo).toUpperCase() : null, fonte), lin('Modelo', null)] };
+  pecas.push(CPU);
+  pecas.push({ camada: 'clp', x: 92, y: 500, z: Z_PLACA + 88, l: 10, a: 8, p: 3, cor: '#3fb950', rotulo: 'RUN', dica: 'LED RUN', semEtiqueta: true, equipamento: idC, acendeEm: ['energizado'], corAceso: '#3fb950', semBorda: true });
+  pecas.push({ camada: 'clp', x: 108, y: 500, z: Z_PLACA + 88, l: 10, a: 8, p: 3, cor: '#e5484d', rotulo: 'ERR', dica: 'LED ERRO/STOP', semEtiqueta: true, equipamento: idC, acendeEm: ['falha', 'aberto'], corAceso: '#e5484d', semBorda: true });
+  const pm = [];
+  mods.forEach((m, j) => {
+    const b = { camada: 'clp', tag: `${m.k.toUpperCase()}${m.i + 1}`, x: 176 + j * 42, y: 400, z: Z_PLACA + 8, l: 40, a: 125, p: 75, cor: COR_PECA.modulo, rotulo: `${m.k.toUpperCase()}${m.i + 1}`, equipamento: idC, semTinta: true,
+      ficha: [lin('Módulo', `${m.cap} ${NOME_MODULO[m.k]} (capacidade típica) [CONFERIR com o catálogo]`, 'catálogo típico'), lin('Pontos usados', `${m.usados} de ${m.cap}`, fonte), lin('Reserva', `${m.cap - m.usados} (≥ ${Math.round(res * 100)} % do total pedido pela skill)`, fonte)] };
+    pm.push({ ...m, b }); pecas.push(b);
+    pecas.push({ camada: 'clp', x: b.x + 14, y: 505, z: Z_PLACA + 83, l: 12, a: 6, p: 3, cor: '#3fb950', semEtiqueta: true, rotulo: `${b.tag} OK`, equipamento: idC, acendeEm: ['energizado'], corAceso: '#3fb950', semBorda: true });
+  });
+  // linha C: relés de interface das saídas digitais (uma fileira; o que não cabe fica no aviso)
+  const rels = [];
+  const cabemRel = Math.floor((L - 160) / 18);
+  for (let i = 0; i < Math.min(nDo, cabemRel); i++) {
+    const b = { camada: 'interface', tag: `KI${i + 1}`, x: 80 + i * 18, y: 230, z: Z_PLACA + 8, l: 16, a: 75, p: 65, cor: COR_PECA.rele, rotulo: i === 0 || i === Math.min(nDo, cabemRel) - 1 ? `KI${i + 1}` : undefined, semEtiqueta: !(i === 0 || i === Math.min(nDo, cabemRel) - 1), dica: `KI${i + 1} — relé de interface da DO${Math.floor(i / 16) + 1}.${(i % 16) + 1}`,
+      equipamento: idC, acendeEm: ['energizado'], corAceso: '#9fe0ae', ficha: [lin('Função', `Relé de interface da saída DO${Math.floor(i / 16) + 1}.${(i % 16) + 1} (contato seco para o campo)`, fonte), lin('Bobina', '24 Vcc', 'prática H&M')] };
+    rels.push(b); pecas.push(b);
+  }
+  // linha D: réguas X1 (alimentação) e X2 (E/S de campo)
+  pecas.push(...regua('X1', 80, 70, [{ rotulo: 'L (220 Vca)' }, { rotulo: 'N' }, { rotulo: 'PE', cor: '#57b35a' }, { rotulo: '+24 Vcc campo' }, { rotulo: '0 V campo' }], 'alimentação'));
+  const x2 = [];
+  for (const k of ['di', 'do', 'ai', 'ao']) for (let i = 0; i < pts[k]; i++) x2.push({ rotulo: `${k.toUpperCase()} ${i + 1}`, k, cor: k === 'ai' || k === 'ao' ? '#8f97a3' : undefined });
+  const x2v = x2.slice(0, Math.floor((L - 230) / 5.4));
+  pecas.push(...regua('X2', 130, 70, x2v, `entradas e saídas de campo (${x2.length} pontos${x2v.length < x2.length ? `, ${x2v.length} desenhados` : ''})`));
+  // fiação: alimentação, 24 Vcc, rede, E/S → bornes
+  const conexoes = [];
+  const t = (b, c, nn, lado) => termP(b, c, nn, lado);
+  const via = (a, b, y, z, id, f, cam, cor, dmm, de, para, en) => conexoes.push(cond(id, f, cam, cor, dmm, [[a.x, a.y, a.z], [a.x, y, z], [b.x, y, z], [b.x, b.y, b.z]], de, para, en));
+  via(t(QF1, 0, 2, 'baixo'), t(G1, 0, 2, 'cima'), 590, Z_PLACA + 50, 'A:QF1-G1', 'F', 'alimentacao-fios', '#d0342c', 2.6, 'QF1', 'G1 (L)', { tipo: 'terra' });
+  via(t(G1, 0, 2, 'baixo'), t(F1, 0, 1, 'cima'), 588, Z_PLACA + 52, 'A:G1-F1', 'cc', 'alimentacao-fios', '#1f5fd1', 2.4, 'G1 +24 V', 'F1', { tipo: 'terra' });
+  [CPU, ...pm.map(m => m.b)].forEach((b, j) => {
+    via(t(G1, 1, 2, 'baixo'), t(b, 0, 2, 'cima'), 545 - (j % 4) * 3, Z_PLACA + 54, `A:G1-${b.tag}`, 'cc', 'alimentacao-fios', '#1f5fd1', 2.4, 'G1 +24 V / 0 V', `${b.tag} (alimentação)`, { tipo: 'terra' });
+  });
+  via(t(CPU, 1, 2, 'cima'), t(SW, 0, 2, 'baixo'), 548, Z_PLACA + 58, 'R:CPU-SW', 'rede', 'rede-fios', '#2fae5a', 5, 'CPU (Ethernet)', 'SW', { tipo: 'equipamento', id: idC });
+  // borne de campo do ponto g (0…) do tipo k: X2 em ordem DI, DO, AI, AO
+  const inicio = {};
+  ['di', 'do', 'ai', 'ao'].reduce((s, k) => { inicio[k] = s; return s + pts[k]; }, 0);
+  const xBorne = (k, g) => { const n = inicio[k] + g; return n < x2v.length ? 130 + 5 + n * 5.4 + 2.5 : null; };
+  for (const m of pm) {
+    for (let p = 0; p < m.usados; p++) {
+      const g = m.i * m.cap + p;
+      const a0 = t(m.b, p % 2, 2, 'baixo');
+      const yv = 190 - (p % 5) * 2;
+      if (m.k === 'do') {
+        const r = rels[g];
+        if (!r) continue;
+        // DO → bobina do relé de interface; contato do relé → borne de campo
+        via(a0, t(r, 0, 1, 'cima'), 345 + (p % 6) * 2, Z_PLACA + 50, `IO:${m.b.tag}-${r.tag}`, 'cc', 'io-fios', '#1f5fd1', 2.2, `${m.b.tag}.${p + 1}`, `${r.tag} (bobina)`, { tipo: 'equipamento', id: idC });
+        const xb = xBorne('do', g);
+        if (xb == null) continue;
+        const c0 = t(r, 0, 1, 'baixo');
+        conexoes.push(cond(`IO:${r.tag}-X2`, 'sinal', 'io-fios', '#f08a24', 2.2, [[c0.x, c0.y, c0.z], [c0.x, 186 - (p % 5) * 2, c0.z], [xb, 186 - (p % 5) * 2, c0.z], [xb, 130, Z_PLACA + 40]], `${r.tag} (contato)`, `X2:${inicio.do + g + 1} — DO ${g + 1}`, { tipo: 'equipamento', id: idC }));
+        continue;
+      }
+      const xb = xBorne(m.k, g);
+      if (xb == null) continue;
+      const an = m.k === 'ai' || m.k === 'ao';
+      conexoes.push(cond(`IO:${m.b.tag}-${p + 1}`, 'sinal', 'io-fios', an ? '#8f97a3' : '#f08a24', an ? 3.2 : 2.2,
+        [[a0.x, a0.y, a0.z], [a0.x, yv, a0.z], [xb, yv, a0.z], [xb, 130, Z_PLACA + 40]], `${m.b.tag}.${p + 1}`, `X2:${inicio[m.k] + g + 1} — ${m.k.toUpperCase()} ${g + 1}`, { tipo: 'equipamento', id: idC }));
+    }
+  }
+  const totalPts = pts.di + pts.do + pts.ai + pts.ao;
+  return cenaDoPainel({
+    tipo: 'automacao', tag: d.tag, titulo: `${d.tag} — quadro de automação (CLP/DDC)`,
+    involucro: { L, A, P, cor: '#d4d2cc', rotulo: `Quadro ${d.tag}`, info: [['Quadro', d.tag], ['Invólucro', `${A} × ${L} × ${P} mm (A × L × P — típico) [CONFERIR]`], ['Pontos', d.pontos ? `DI ${pts.di} · DO ${pts.do} · AI ${pts.ai} · AO ${pts.ao}` : CONFERIR]] },
+    porta: [{ x: 40, y: A - 90, l: 200, a: 50, p: 2, cor: '#f4f1e8', rotulo: d.tag, info: [['Quadro', `${d.tag} — automação`]] }],
+    pecas, conexoes, equipamentos, equipamentosPainel: [idC],
+    camadas: [{ id: 'clp', rotulo: 'CPU e módulos de E/S', cor: COR_PECA.clp }, { id: 'interface', rotulo: `Relés de interface (${rels.length})`, cor: COR_PECA.rele }, { id: 'alimentacao', rotulo: 'Entrada, DPS, fonte 24 Vcc', cor: COR_PECA.fonte }, { id: 'rede', rotulo: 'Switch de rede', cor: COR_PECA.switch },
+      { id: 'bornes', rotulo: 'Réguas X1 (alimentação) e X2 (E/S de campo)', cor: COR_PECA.borne }, { id: 'canaletas', rotulo: 'Canaletas', cor: COR_PECA.canaleta }, { id: 'placa', rotulo: 'Placa de montagem', cor: COR_PECA.placa },
+      { id: 'alimentacao-fios', rotulo: 'Fios de alimentação (220 Vca vermelho, 24 Vcc azul)', cor: '#1f5fd1' }, { id: 'io-fios', rotulo: 'Fios de E/S (digital laranja, analógico cinza blindado)', cor: '#f08a24' }, { id: 'rede-fios', rotulo: 'Cabo de rede (Ethernet)', cor: '#2fae5a' }],
+    numeros: [['pontos de E/S', d.pontos ? String(totalPts) : '?'], ['módulos', String(mods.length)], ['reserva', `${Math.round(res * 100)} %`], ['relés de interface', String(rels.length)]],
+    avisos: [
+      d.pontos ? `Pontos: ${fonte}. Módulos com a reserva de ${Math.round(res * 100)} % (lista de pontos da skill automação).` : 'Sem a lista de pontos (nem sensores no projeto): CPU sem módulos — informe os pontos na skill automação. [CONFERIR]',
+      'Capacidade dos módulos, invólucro e medidas típicos de catálogo — ilustrativos [CONFERIR com o fabricante do CLP/DDC].',
+      'Clique na CPU para colocar em RUN/STOP ou simular a falha da fonte: os LEDs e as saídas acompanham.',
+    ],
+  });
+}
+
+module.exports = { cenaDoPainel, dadosDoRack, cenaDoRack, dadosDaCentral, cenaDaCentral, dadosDoPainelPressurizacao, cenaDoPainelPressurizacao, comandoDaPressurizacao, dadosDoClp, cenaDoClp, U, CONFERIR };

@@ -25,6 +25,11 @@ const AMARELO = 'FFFFFF00';
 const DOURADO = 'FFF2B924';
 const AZUL = 'FF0000FF';
 const GRUPOS = ['Invólucro', 'Proteção de força', 'Acionamentos', 'Comando e sinalização', 'Ventilação', 'Barramento e bornes', 'Consumíveis', 'Fornecido pelo cliente'];
+// grupos na ordem: os do painel primeiro e, depois, os de cada disciplina (14/11/2026 — incêndio, MT, BMS…)
+const gruposDe = (itens) => [...GRUPOS.filter(g => itens.some(i => i.grupo === g)), ...[...new Set(itens.map(i => i.grupo))].filter(g => g && !GRUPOS.includes(g))];
+// tag/título do projeto (quadro ou projeto de outra disciplina) e o objeto da pesquisa
+const tagDe = (p) => p.quadro?.tag || p.meta?.tag || 'PRJ';
+const objetoDe = (p) => (p.quadro ? 'montagem do quadro' : 'material do projeto');
 const ORIGENS = { pesquisado: 'Pesquisado', estimativa: 'Estimativa H&M', cliente: 'Cliente', cotar: 'A cotar' };
 
 const norm = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -152,7 +157,7 @@ function resolverPrecos(materiais, fontes = {}) {
 // Resumo (também para o texto de entrega)
 function resumir(itens, { contingencia = 0.1, topN = 5 } = {}) {
   const total = (i) => (i.preco || 0) * i.quantidade;
-  const porGrupo = GRUPOS.map(g => ({ grupo: g, total: itens.filter(i => i.grupo === g).reduce((s, i) => s + total(i), 0), n: itens.filter(i => i.grupo === g).length })).filter(g => g.n && g.grupo !== 'Fornecido pelo cliente');
+  const porGrupo = gruposDe(itens).map(g => ({ grupo: g, total: itens.filter(i => i.grupo === g).reduce((s, i) => s + total(i), 0), n: itens.filter(i => i.grupo === g).length })).filter(g => g.n && g.grupo !== 'Fornecido pelo cliente');
   const pesquisado = itens.filter(i => i.origem === ORIGENS.pesquisado).reduce((s, i) => s + total(i), 0);
   const estimado = itens.filter(i => i.origem === ORIGENS.estimativa).reduce((s, i) => s + total(i), 0);
   const subtotal = pesquisado + estimado;
@@ -181,9 +186,9 @@ async function gerarPlanilhaPrecos(projeto, fontes = {}, opcoes = {}) {
   ws.columns = [5, 9, 44, 30, 6, 9, 12, 13, 14, 18, 24, 48].map(w => ({ width: w }));
   ws.pageSetup = { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.4, right: 0.4, top: 0.6, bottom: 0.6, header: 0.3, footer: 0.3 } };
   const m = projeto.meta;
-  ws.getCell('A1').value = `${projeto.quadro.tag} — Pesquisa de preços de material (montagem do quadro)`;
+  ws.getCell('A1').value = `${tagDe(projeto)} — Pesquisa de preços de material (${objetoDe(projeto)})`;
   ws.getCell('A1').font = { bold: true, size: 14, color: { argb: AZUL_ESCURO } };
-  ws.getCell('A2').value = `${m.obra ? `Obra: ${m.obra} · ` : ''}${m.cliente ? `Cliente: ${m.cliente} · ` : ''}Ref.: anteprojeto ${projeto.quadro.tag} Rev.${m.revisao || '0A'} · Data-base: ${res.dataBase} · Preços de varejo online (BRL), sem frete, sem BDI`;
+  ws.getCell('A2').value = `${m.obra ? `Obra: ${m.obra} · ` : ''}${m.cliente ? `Cliente: ${m.cliente} · ` : ''}Ref.: anteprojeto ${tagDe(projeto)} Rev.${m.revisao || '0A'} · Data-base: ${res.dataBase} · Preços de varejo online (BRL), sem frete, sem BDI`;
   ws.getCell('A2').font = { size: 9 };
   const cab = ['Item', 'Tag', 'Descrição', 'Referência pesquisada', 'Qtd', 'Un', 'Preço unit. (R$)', 'Total (R$)', 'Origem do preço', 'Faixa encontrada (R$)', 'Fonte', 'Observação'];
   const h = ws.getRow(4);
@@ -194,7 +199,7 @@ async function gerarPlanilhaPrecos(projeto, fontes = {}, opcoes = {}) {
   let n = 0;
   const linhaItem = {};
   const faixaGrupo = {};
-  for (const g of GRUPOS) {
+  for (const g of gruposDe(itens)) {
     const doGrupo = itens.filter(i => i.grupo === g);
     if (!doGrupo.length) continue;
     const rg = ws.getRow(r);
@@ -269,12 +274,12 @@ async function gerarPlanilhaPrecos(projeto, fontes = {}, opcoes = {}) {
     ws.getRow(r).height = t.length > 190 ? 26 : 15;
     r++;
   }
-  timbrarPlanilha(ws, `${projeto.quadro.tag} — Pesquisa de preços de material`);
+  timbrarPlanilha(ws, `${tagDe(projeto)} — Pesquisa de preços de material`);
 
   // ── Aba Resumo ─────────────────────────────────────────────────────────────
   const rs = wb.addWorksheet('Resumo');
   rs.columns = [{ width: 46 }, { width: 34 }, { width: 18 }, { width: 18 }, { width: 30 }];
-  rs.getCell('A1').value = `${projeto.quadro.tag} — Resumo da pesquisa de preços`;
+  rs.getCell('A1').value = `${tagDe(projeto)} — Resumo da pesquisa de preços`;
   rs.getCell('A1').font = { bold: true, size: 14, color: { argb: AZUL_ESCURO } };
   let y = 3;
   const titulo = (txt) => { rs.getCell(`A${y}`).value = txt; rs.getCell(`A${y}`).font = { bold: true, size: 11, color: { argb: AZUL_ESCURO } }; y++; };
@@ -282,7 +287,7 @@ async function gerarPlanilhaPrecos(projeto, fontes = {}, opcoes = {}) {
   titulo('Total por grupo');
   cabec(['Grupo', '', 'Total (R$)', '% do material']);
   const yGrupoIni = y;
-  for (const g of GRUPOS.filter(x => faixaGrupo[x] && x !== 'Fornecido pelo cliente')) {
+  for (const g of gruposDe(itens).filter(x => faixaGrupo[x] && x !== 'Fornecido pelo cliente')) {
     const [a, b] = faixaGrupo[g];
     rs.getCell(`A${y}`).value = g;
     rs.getCell(`C${y}`).value = { formula: `SUM(Materiais!H${a}:H${b})` };
@@ -331,10 +336,10 @@ async function gerarPlanilhaPrecos(projeto, fontes = {}, opcoes = {}) {
   if (res.mudancas.length) for (const t of res.mudancas) { rs.getCell(`A${y}`).value = t; y++; } else { rs.getCell(`A${y}`).value = 'Nenhuma: a pesquisa seguiu as referências do anteprojeto.'; y++; }
   y++;
   titulo('Itens cuja versão e preço dependem da Icc');
-  rs.getCell(`A${y}`).value = res.dependeIcc.length ? `${res.dependeIcc.join(', ')} — confirmar a Icc no ${projeto.quadro.origem} antes de comprar.` : '—';
+  rs.getCell(`A${y}`).value = res.dependeIcc.length ? `${res.dependeIcc.join(', ')} — confirmar a Icc no ${projeto.quadro?.origem || 'ponto de instalação'} antes de comprar.` : '—';
   rs.getColumn(1).alignment = { wrapText: true, vertical: 'top' };
   rs.getColumn(2).alignment = { wrapText: true, vertical: 'top' };
-  timbrarPlanilha(rs, `${projeto.quadro.tag} — Resumo da pesquisa de preços`);
+  timbrarPlanilha(rs, `${tagDe(projeto)} — Resumo da pesquisa de preços`);
 
   const buffer = Buffer.from(await wb.xlsx.writeBuffer());
   return { buffer, itens, resumo: res };

@@ -21,6 +21,8 @@ const V = require('../../../_comum/cad/visualizador3d');
 const { instalacaoDoQuadro } = require('./instalacao');
 // fiação completa e ficha fiel ao projeto (compartilhado com o 3D do projeto)
 const PQ = require('../../../_comum/instalacao/painelQuadro');
+// fiação de comando desenhada pela escada de relés (14/11/2026)
+const FC = require('../../../_comum/instalacao/fiacaoComando');
 const { EMPRESA } = require('../../../_comum/empresa');
 
 const Z_PLACA = 25;        // placa de montagem afastada do fundo (mm)
@@ -463,7 +465,10 @@ function comandoReles(calc, projeto) {
 function gerarHtml(calc, dados = {}, opcoes = {}) {
   const cena = montarCena(calc, dados);
   const cr = comandoReles(calc, opcoes.especificacao);
-  if (cr) cena.comandoReles = cr;
+  if (cr) {
+    cena.comandoReles = cr;
+    try { FC.completarCenaComComando(cena, opcoes.especificacao); } catch (e) { /* sem a fiação de comando: o quadro abre como antes */ }
+  }
   // 3D interativo (fase 2): o modelo único do quadro — disjuntores com alavanca, partidas
   // de motor com o painel (liga, desliga, emergência, sinaleiros, relé térmico)
   try { cena.instalacao = instalacaoDoQuadro(calc, dados); } catch (e) { /* sem simulação: o quadro abre como antes */ }

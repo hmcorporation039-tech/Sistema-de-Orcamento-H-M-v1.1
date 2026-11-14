@@ -111,6 +111,15 @@ const PERFIS = {
     acoes: [{ id: 'acionar', rotulo: 'Acionar a emergência (libera as portas)', de: ['normal'], para: 'acionada', efeitosTipos: [{ tipos: ['ace_fechadura'], estado: 'liberada' }] },
       { id: 'rearmar', rotulo: 'Rearmar a emergência', de: ['acionada'], para: 'normal' }] },
   ace_controladora: { regra: 'carga', textos: { energizado: 'em operação', desenergizado: 'sem energia' } },
+  // CLP/controlador DDC do quadro de automação (14/11/2026): RUN liga as saídas; STOP e a falha da fonte desligam
+  aut_clp: { regra: 'fonte', estados: ['em RUN', 'em STOP', 'fonte 24 Vcc disparada'], inicial: 'em RUN', conduz: ['em RUN'],
+    textos: { 'em RUN': 'em RUN — programa rodando, saídas comandadas', 'em STOP': 'em STOP — programa parado, saídas desligadas', 'fonte 24 Vcc disparada': 'FALHA — fonte 24 Vcc disparada (CPU, módulos e campo sem alimentação)' },
+    acoes: [
+      { id: 'stop', rotulo: 'Colocar em STOP', de: ['em RUN'], para: 'em STOP', texto: 'Em STOP as saídas digitais e analógicas vão para o estado de segurança: confira a posição segura de cada saída no descritivo de funcionamento.' },
+      { id: 'run', rotulo: 'Colocar em RUN', de: ['em STOP'], para: 'em RUN' },
+      { id: 'falha', rotulo: 'Simular falha da fonte 24 Vcc', de: ['em RUN', 'em STOP'], para: 'fonte 24 Vcc disparada' },
+      { id: 'rearmar', rotulo: 'Rearmar a fonte (o CLP volta em STOP)', de: ['fonte 24 Vcc disparada'], para: 'em STOP' },
+    ] },
 };
 
 // ── O motor ─────────────────────────────────────────────────────────────────

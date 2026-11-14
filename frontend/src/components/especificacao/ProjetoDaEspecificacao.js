@@ -14,6 +14,9 @@ import {
 // (folhas FL01–FL07, pesquisa de preços, ficha técnica, texto de entrega e os documentos de sempre da skill),
 // responde aos pontos a levantar, aprova preços e simula o comando. Tudo sem IA; a pesquisa na web só quando
 // pedida, e volta como sugestão.
+// 14/11/2026: também central de incêndio, subestação de MT, automação/BMS e QD predial (resumo.tipo 'skill':
+// indicadores da skill, os documentos da própria skill e, no incêndio, a matriz de causa e efeito) e a
+// sequência de chillers (painel, com a simulação do comando).
 const DOCS = [
   ['folhas', 'Anteprojeto FL01–FL07 (PDF)', 'pdf'], ['pesquisa_precos', 'Pesquisa de preços (Excel)', 'xlsx'], ['ficha', 'Ficha técnica (PDF)', 'pdf'],
   ['entrega', 'Texto de entrega (Markdown)', 'md'], ['caderno', 'Caderno de fabricação (PDF)', 'pdf'], ['memorial', 'Memorial (Word)', 'docx'], ['desenho', 'Desenho (DXF)', 'dxf'], ['modelo3d', 'Modelo 3D (HTML)', 'html'],
@@ -71,7 +74,10 @@ export default function ProjetoDaEspecificacao() {
   const gerar = () => tentar('gerar', async () => {
     const r = await gerarProjetoEspecificacao({ perfil: lida.perfil, lidos: lidosParaEnviar(), pedido, cliente, obra });
     setProjeto(r.data); setRespostas({}); setPrecos({}); setExtras({}); setSimSaidas(null);
-    toast.success(`Projeto #${r.data.id} gerado — ${r.data.resumo.funcional.filter(f => f.ok).length}/${r.data.resumo.funcional.length} cenários do comando atendidos.`);
+    const fun = r.data.resumo.funcional;
+    toast.success(r.data.resumo.tipo === 'skill' || !fun
+      ? `Projeto #${r.data.id} gerado pela skill da disciplina — ${r.data.resumo.pendencias.length} pendência(s), ${r.data.resumo.pontos.length} ponto(s) a levantar.`
+      : `Projeto #${r.data.id} gerado — ${fun.filter(f => f.ok).length}/${fun.length} cenários do comando atendidos.`);
   });
 
   const atualizar = (corpo) => tentar('atualizar', async () => {
@@ -137,11 +143,13 @@ export default function ProjetoDaEspecificacao() {
   });
 
   const R = projeto?.resumo;
+  const ehSkill = R?.tipo === 'skill';
+  const docs = ehSkill ? (R.documentos || []).map(d => [d.tipo, d.rotulo, d.ext]) : DOCS;
   return (
     <div>
       <div style={estilos.card}>
         <h3 style={{ margin: '0 0 6px', fontSize: 15 }}><FileText size={15} style={{ verticalAlign: -2, marginRight: 6 }} />Projeto pela especificação do cliente</h3>
-        <p style={estilos.ajuda}>Envie a especificação (PDF com texto, DOCX, XLSX ou TXT). O sistema lê os requisitos, mostra de que frase veio cada um e gera o projeto do quadro/painel pelo perfil da disciplina, sem IA. O que não estiver na especificação fica como pendência [CONFERIR].</p>
+        <p style={estilos.ajuda}>Envie a especificação (PDF com texto, DOCX, XLSX ou TXT). O sistema lê os requisitos, mostra de que frase veio cada um e gera o projeto pelo perfil da disciplina (quadro de força e comando, pressurização, sequência de chillers, QD predial, automação/BMS, central de incêndio ou subestação de MT), sem IA. O que não estiver na especificação fica como pendência [CONFERIR].</p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, alignItems: 'end' }}>
           <Campo label="Arquivo da especificação"><input type="file" accept=".pdf,.docx,.xlsx,.xlsm,.txt,.md" onChange={e => setArquivo(e.target.files[0] || null)} /></Campo>
           <Campo label="Perfil">
@@ -191,9 +199,21 @@ export default function ProjetoDaEspecificacao() {
       {R && (
         <div style={estilos.card}>
           <h3 style={{ margin: '0 0 6px', fontSize: 15 }}>{R.meta.titulo} — projeto #{projeto.id}</h3>
-          <p style={estilos.ajuda}>Geral {R.geral.texto} · demanda {Math.round(R.demanda.iProj)} A ({R.demanda.faseMax}) · {R.comando.reles.length} relés/temporizadores · fonte {R.comando.fonte.A} A · {R.funcional.filter(f => f.ok).length}/{R.funcional.length} cenários do comando atendidos · também em Obras → Projetos por disciplina.</p>
+          {ehSkill
+            ? (<>
+              <p style={estilos.ajuda}>Calculado pela skill da disciplina ({R.disciplina}) com o formulário preenchido pela especificação · também em Obras → Projetos por disciplina, onde o formulário pode ser editado.</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 8, marginBottom: 12 }}>
+                {(R.indicadores || []).map((i, k) => (
+                  <div key={k} style={{ border: '1px solid var(--borda)', borderRadius: 8, padding: '8px 10px' }}>
+                    <div style={{ fontSize: 11.5, color: 'var(--texto-2)' }}>{i.rotulo}</div>
+                    <div style={{ fontSize: 15, fontWeight: 600 }}>{i.valor}</div>
+                    {i.detalhe && <div style={{ fontSize: 11, color: 'var(--texto-3)' }}>{i.detalhe}</div>}
+                  </div>))}
+              </div>
+            </>)
+            : <p style={estilos.ajuda}>Geral {R.geral.texto} · demanda {Math.round(R.demanda.iProj)} A ({R.demanda.faseMax}) · {R.comando.reles.length} relés/temporizadores · fonte {R.comando.fonte.A} A · {R.funcional.filter(f => f.ok).length}/{R.funcional.length} cenários do comando atendidos · também em Obras → Projetos por disciplina.</p>}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-            {DOCS.map(([t, rot, ext]) => <button key={t} type="button" style={estilos.btnSecundario} onClick={() => baixar(t, ext)}><Download size={13} />{rot}</button>)}
+            {docs.map(([t, rot, ext]) => <button key={t} type="button" style={estilos.btnSecundario} onClick={() => baixar(t, ext)}><Download size={13} />{rot}</button>)}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16 }}>
             <div>
@@ -215,6 +235,15 @@ export default function ProjetoDaEspecificacao() {
               <ul style={{ margin: 0, fontSize: 13 }}>{R.excecoes.map(x => <li key={x.letra}>{x.letra}) {x.texto}</li>)}</ul>
             </div>
             <div>
+              {ehSkill && R.causaEfeito && R.causaEfeito.length > 0 && (<>
+                <h4 style={{ margin: '4px 0 6px' }}>Matriz de causa e efeito</h4>
+                <Tabela cab={['Causa', 'Efeito', 'Módulos', 'Referência']} linhas={R.causaEfeito.map(c => (
+                  <tr key={c.id} style={estilos.linhaTabela}>
+                    <td style={{ ...estilos.td, fontSize: 12 }}>{c.causa}</td><td style={{ ...estilos.td, fontSize: 12 }}>{c.efeitos.join('; ')}</td>
+                    <td style={estilos.td}>{c.modulos ? `${c.modulos} de ${c.modulo}` : '—'}</td><td style={{ ...estilos.td, fontSize: 11.5 }}>{c.norma || '—'}</td>
+                  </tr>))} />
+              </>)}
+              {!ehSkill && R.interacao && (<>
               <h4 style={{ margin: '4px 0 6px' }}>Simulação do comando (o mesmo modelo do 3D)</h4>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
                 {R.interacao.controles.map(c => (
@@ -234,6 +263,7 @@ export default function ProjetoDaEspecificacao() {
                     <span key={k} title={simSaidas.rotulos[k] || k} style={{ fontSize: 11.5, padding: '3px 8px', borderRadius: 10, background: v ? '#9fd8a8' : 'var(--superficie-2)', border: '1px solid var(--borda)' }}>{k}{v ? ' ●' : ''}</span>))}
                   {!simSaidas.estavel && etiqueta('#f2b0a8', 'oscilação')}
                 </div>)}
+              </>)}
               <h4 style={{ margin: '14px 0 6px' }}>Material — {moeda(R.precos.subtotal)} ({moeda(R.precos.total)} com contingência) · {R.precos.aCotar} a cotar</h4>
               <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
                 <button type="button" style={estilos.btnSecundario} onClick={() => buscarPrecos(false)} disabled={!!ocupado}><Search size={13} />Referências da H&M (sem IA)</button>

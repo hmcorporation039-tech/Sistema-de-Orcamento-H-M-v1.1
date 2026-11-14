@@ -152,6 +152,30 @@ const caso = async (nome, fn) => { try { await fn(); ok++; } catch (e) { e.messa
     assert.ok(!('embutido' in M.lerLink(M.criarLink('analise', 5))));
   });
 
+  // 14/11/2026: "coloque apenas os componentes que correspondem à disciplina usada, com a opção de chamar os de outras"
+  await caso('cada componente diz as disciplinas de projeto que o usam; a análise diz as dela', () => {
+    const { DISCIPLINAS } = require('../src/utils/disciplinasProjeto');
+    const chaves = new Set(DISCIPLINAS.map(d => d.chave));
+    const lista = componentes();
+    for (const c of lista) assert.ok(c.disciplinas.length && c.disciplinas.some(d => chaves.has(d)), `${c.simbolo} sem disciplina de projeto`);
+    // toda disciplina de projeto tem ao menos um componente (a paleta nunca abre vazia por falta de cadastro)
+    for (const k of chaves) assert.ok(lista.some(c => c.disciplinas.includes(k)), `disciplina ${k} sem componente`);
+    const de = (s) => componente(s).disciplinas;
+    assert.ok(de('HM-ELE-TOMADA-BAIXA').includes('eletrica_hospitalar') && !de('HM-ELE-TOMADA-BAIXA').includes('incendio'));
+    assert.deepStrictEqual(de('HM-INC-DETECTOR-FUMACA'), ['incendio']);
+    assert.ok(de('HM-EQ-TRANSFORMADOR').includes('media_tensao') && !de('HM-EQ-TRANSFORMADOR').includes('eletrica'), 'subestação não polui a predial');
+    assert.ok(de('HM-ELE-QUADRO').includes('quadros'));
+    const { paraTestes } = require('../src/controllers/projetos/mapaCad');
+    const mapa = { simbolos: [
+      { simbolo: 'HM-ELE-TOMADA-BAIXA', disciplina: 'eletrica', confirmado: true, quantidade: 3 },
+      { simbolo: 'HM-INC-DETECTOR-FUMACA', disciplina: 'incendio', confirmado: false, quantidade: 2 },
+    ], edicoes: { adicionados: [{ simbolo: 'HM-CFTV-CAMERA', disciplina: 'cftv' }] } };
+    // marcada no envio + inserida pelo engenheiro; o detector não conferido não puxa o incêndio
+    assert.deepStrictEqual(paraTestes.disciplinasDoProjeto([{ arquivo: 'a.dxf', disciplinas: ['eletrica'], mapa_cad: mapa }]), ['cftv', 'eletrica']);
+    assert.deepStrictEqual(paraTestes.disciplinasDoProjeto([{ disciplinas: ['rede'], mapa_cad: { simbolos: [] } }]), ['cabeamento', 'rede']);
+    assert.deepStrictEqual(paraTestes.disciplinasDoProjeto([{ disciplinas: ['eletrica'] }]), [], 'arquivo sem mapa não conta');
+  });
+
   await caso('rota das edições passa por autenticação e posse; o visualizador só edita dentro da tela', () => {
     const rotas = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'index.js'), 'utf8');
     assert.match(rotas, /router\.put\('\/projetos\/analises\/:id\/mapa\/edicoes', autenticar, validarId, posseAnalise, projCtrl\.editarMapaCad\)/);
