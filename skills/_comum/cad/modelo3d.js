@@ -598,12 +598,51 @@ function tom(hex, k) {
 }
 const alturaTexto = (e, pd) => (typeof e.h === 'number' ? `h = ${String(e.h.toFixed(2)).replace('.', ',')} m` : { teto: `no teto (${String(pd.toFixed(2)).replace('.', ',')} m)`, canto: 'no alto do canto', 'topo-porta': 'acima da porta', piso: 'no piso' }[e.h]);
 
+// trecho de parede `w` perto do trecho `ref` (caixas alargadas por `folga`): só esses
+// podem bater na peça encostada em `ref`
+function pertoDoTrecho(w, ref, folga) {
+  const cx = (p) => [Math.min(p.a[0], p.b[0]) - p.esp / 2, Math.min(p.a[1], p.b[1]) - p.esp / 2, Math.max(p.a[0], p.b[0]) + p.esp / 2, Math.max(p.a[1], p.b[1]) + p.esp / 2];
+  const [a0, a1, a2, a3] = cx(w), [b0, b1, b2, b3] = cx(ref);
+  return a0 <= b2 + folga && a2 >= b0 - folga && a1 <= b3 + folga && a3 >= b1 - folga;
+}
+
+// a peça em `p` (fundo no plano da parede, virada para (nx, ny); tam = [largura,
+// altura, profundidade]; z = centro) não entra no corpo de nenhum trecho de parede
+// (eixo ± esp/2, de z0 a z1)? Dois retângulos no plano pelo teste dos eixos
+// separadores; encostar (≤ 5 mm) não conta.
+function pegadaLivre(p, z, [largura, altura, prof], paredes) {
+  const u = [-p.ny, p.nx], n = [p.nx, p.ny];
+  const c1 = [p.x + n[0] * prof / 2, p.y + n[1] * prof / 2];
+  for (const w of paredes) {
+    if (z + altura / 2 <= w.z0 + 0.005 || z - altura / 2 >= w.z1 - 0.005) continue;
+    const v = [w.b[0] - w.a[0], w.b[1] - w.a[1]], L = Math.hypot(v[0], v[1]);
+    if (L < 1e-6) continue;
+    const a = [v[0] / L, v[1] / L], b = [-a[1], a[0]];
+    const c2 = [(w.a[0] + w.b[0]) / 2, (w.a[1] + w.b[1]) / 2];
+    const proj = (e, ax) => Math.abs(e[0] * ax[0] + e[1] * ax[1]);
+    let bate = true;
+    for (const ax of [u, n, a, b]) {
+      const r1 = (largura / 2) * proj(u, ax) + (prof / 2) * proj(n, ax);
+      const r2 = (L / 2) * proj(a, ax) + (w.esp / 2) * proj(b, ax);
+      if (r1 + r2 - proj([c2[0] - c1[0], c2[1] - c1[1]], ax) <= 0.005) { bate = false; break; }
+    }
+    if (bate) return false;
+  }
+  return true;
+}
+
 // face de parede mais próxima (até `raio`): o ponto encosta nela, virado para o
 // ambiente. Com `largura`/`altura` (quadro, rack) a parede precisa caber a peça
 // inteira — não fica metade no vão da porta nem em cima do peitoril da janela —
 // e, com `poligono`, a peça tem de cair dentro do ambiente do símbolo.
 // O fundo da peça fica a 1 cm da face (no visualizador o fundo é o plano z = 0).
-function encostar(x, y, z, faces, { raio = 0.8, largura = 0, altura = 0, poligono = null } = {}) {
+// Correção de 14/11/2026 (quadro "metade para fora, metade para dentro" do ambiente):
+// a peça fica sempre PARALELA à parede, virada para o lado do símbolo — antes, perto
+// da ponta da parede, a direção era a do símbolo até a ponta (quadro na diagonal) —
+// e, com `prof`, a peça inteira (largura × profundidade × altura) não pode entrar no
+// corpo de outra parede (canto, parede interna, batente): ela desliza ao longo da
+// parede até caber, ainda dentro do ambiente.
+function encostar(x, y, z, faces, { raio = 0.8, largura = 0, altura = 0, prof = 0, poligono = null } = {}) {
   const tentar = (estrito) => {
     const cand = [];
     for (const w of faces) {
@@ -617,18 +656,37 @@ function encostar(x, y, z, faces, { raio = 0.8, largura = 0, altura = 0, poligon
       const t = Math.max(m, Math.min(1 - m, ((x - w.a[0]) * v[0] + (y - w.a[1]) * v[1]) / L2));
       const q = [w.a[0] + v[0] * t, w.a[1] + v[1] * t];
       const d = Math.hypot(x - q[0], y - q[1]);
-      if (d < raio) cand.push({ w, q, d, v, L });
+      if (d < raio) cand.push({ w, q, d, v, L, t, m });
     }
     cand.sort((p, q) => (p.d - p.w.esp / 2) - (q.d - q.w.esp / 2));
     for (const c of cand) {
-      let nx = x - c.q[0], ny = y - c.q[1];
-      const Ln = Math.hypot(nx, ny);
-      // símbolo em cima da linha da parede: lado esquerdo do segmento
-      if (Ln < 1e-6) [nx, ny] = [-c.v[1] / c.L, c.v[0] / c.L]; else { nx /= Ln; ny /= Ln; }
+      // normal da parede, do lado do símbolo (em cima da linha: lado esquerdo do segmento)
+      const lado = c.v[0] * (y - c.w.a[1]) - c.v[1] * (x - c.w.a[0]);
+      const s = lado < -1e-9 ? -1 : 1;
+      const nx = (-c.v[1] / c.L) * s, ny = (c.v[0] / c.L) * s;
       const off = c.w.esp / 2 + 0.01;
-      const p = { x: c.q[0] + nx * off, y: c.q[1] + ny * off, nx, ny };
-      if (estrito && poligono && !dentro([p.x, p.y], poligono) && distanciaContorno([p.x, p.y], poligono) > 0.1) continue;
-      return p;
+      const naParede = (t) => ({ x: c.w.a[0] + c.v[0] * t + nx * off, y: c.w.a[1] + c.v[1] * t + ny * off, nx, ny });
+      const serve = (p) => !(estrito && poligono && !dentro([p.x, p.y], poligono) && distanciaContorno([p.x, p.y], poligono) > 0.1);
+      if (!(estrito && largura && prof)) {
+        const p = naParede(c.t);
+        if (serve(p)) return p;
+        continue;
+      }
+      // a posição mais perto do símbolo, nesta parede, onde a peça inteira fica livre
+      const perto = faces.filter(w => w !== c.w && pertoDoTrecho(w, c.w, largura + prof + 0.3));
+      const passo = 0.025 / c.L, maxK = Math.ceil(3 / 0.025);
+      for (let k = 0; k <= maxK; k++) {
+        let algum = false;
+        for (const sk of k ? [1, -1] : [1]) {
+          const t = c.t + sk * k * passo;
+          if (t < c.m - 1e-9 || t > 1 - c.m + 1e-9) continue;
+          algum = true;
+          const p = naParede(t);
+          // 2 cm de folga de cada lado: a peça não fica colada na parede do canto
+          if (serve(p) && pegadaLivre(p, z, [largura + 0.04, altura, prof], perto)) return p;
+        }
+        if (!algum && k) break;
+      }
     }
     return null;
   };
@@ -694,7 +752,7 @@ function posicionar3d(d, faces, peDireito) {
   let z = e.h === 'topo-porta' ? Math.min(ALTURA_PORTA + 0.08, peDireito - 0.08) : Math.min(e.h, teto);
   if (e.hMolhado && /BANH|W\.?\s?C|SANIT|LAVABO/i.test(d.ambiente)) z = Math.min(e.hMolhado, teto);
   const deParede = FORMAS_DE_PAREDE.has(e.forma);
-  const enc = encostar(d.x, d.y, z, faces, deParede ? { raio: 3, largura: e.tam[0], altura: e.tam[1], poligono: pol } : { altura: e.tam[1] });
+  const enc = encostar(d.x, d.y, z, faces, deParede ? { raio: 3, largura: e.tam[0], altura: e.tam[1], prof: e.tam[2] || 0, poligono: pol } : { altura: e.tam[1] });
   if (enc) return { ...enc, z };
   // sem parede por perto: ponto da planta, virado para o centro do ambiente
   const dx = c[0] - d.x, dy = c[1] - d.y, L = Math.hypot(dx, dy) || 1;
@@ -1000,16 +1058,21 @@ function caminhosSugeridos(infra, porDisc, peDireito, paredes, avisos) {
 // Quadro, rack e central de disciplinas diferentes costumam cair no MESMO ponto
 // da parede (cada estimativa escolhe a sala técnica): lado a lado, com 10 cm
 // de folga, em vez de um dentro do outro. `p` é ajustado no lugar.
-function afastarDosVizinhos(p, tam, postos) {
+// (14/11/2026) com `faces`: o lado para onde a peça vai não pode enfiá-la numa parede
+// (canto, parede interna) — se o lado mais curto bate, vai para o outro lado do vizinho
+function afastarDosVizinhos(p, tam, postos, faces = []) {
   const tx = -p.ny, ty = p.nx; // direção ao longo da parede
+  const livre = (x, y) => !faces.length || !tam[2] || pegadaLivre({ ...p, x, y }, p.z, tam, faces);
   for (let k = 0; k < 8; k++) {
     const viz = postos.find(q => q.nx * p.nx + q.ny * p.ny > 0.9 && Math.abs((p.x - q.x) * p.nx + (p.y - q.y) * p.ny) < 0.15
       && Math.abs(p.z - q.z) < (tam[1] + q.tam[1]) / 2 && Math.abs((p.x - q.x) * tx + (p.y - q.y) * ty) < (tam[0] + q.tam[0]) / 2 + 0.1);
     if (!viz) break;
     const ao = (p.x - viz.x) * tx + (p.y - viz.y) * ty;
-    const passo = (tam[0] + viz.tam[0]) / 2 + 0.1 - Math.abs(ao);
+    const vao = (tam[0] + viz.tam[0]) / 2 + 0.1;
     const s = ao >= 0 ? 1 : -1;
-    p.x += tx * s * (passo + 0.001); p.y += ty * s * (passo + 0.001);
+    const opcoes = [s * (vao - Math.abs(ao) + 0.001), -s * (vao + Math.abs(ao) + 0.001)];
+    const desloc = opcoes.find(dd => livre(p.x + tx * dd, p.y + ty * dd)) ?? opcoes[0];
+    p.x += tx * desloc; p.y += ty * desloc;
   }
   postos.push({ x: p.x, y: p.y, z: p.z, nx: p.nx, ny: p.ny, tam });
 }
@@ -1101,7 +1164,7 @@ function montarCena(arquitetura, opcoes = {}) {
     const p = d.posicaoFixa ? { x: d.x, y: d.y, z: Number(d.z_fixo) || 0, nx: 0, ny: 0 } : posicionar3d(d, faces, peDireito);
     if (!d.posicaoFixa && Number.isFinite(d.z_fixo)) p.z = d.z_fixo;
     if (Array.isArray(d.direcao) && (d.direcao[0] || d.direcao[1])) { const L = Math.hypot(d.direcao[0], d.direcao[1]); p.nx = d.direcao[0] / L; p.ny = d.direcao[1] / L; }
-    if (FORMAS_DE_PAREDE.has(t.forma) && !d.posicaoFixa) afastarDosVizinhos(p, t.tam, grandes);
+    if (FORMAS_DE_PAREDE.has(t.forma) && !d.posicaoFixa) afastarDosVizinhos(p, t.tam, grandes, faces);
     const [x, y] = P([p.x, p.y]);
     const temXY = Number.isFinite(d.x) && Number.isFinite(d.y);
     let amb = indiceAmb.has(d.ambiente) && !(temXY && nomesRepetidos.has(d.ambiente)) ? indiceAmb.get(d.ambiente) : temXY ? ambienteDoPonto(d.x, d.y) : -1;

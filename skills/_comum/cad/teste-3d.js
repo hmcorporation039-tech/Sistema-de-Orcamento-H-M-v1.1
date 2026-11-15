@@ -251,6 +251,47 @@ caso('quadro elétrico e central: encostados na parede mais próxima, inteiros, 
   assert.ok(ao >= (q.tam[0] + ce.tam[0]) / 2 + 0.09, `quadro e central sobrepostos (${ao.toFixed(2)} m entre centros)`);
 });
 
+// Correção de 14/11/2026: quadro perto do CANTO (ou da parede interna/batente) saía na
+// diagonal, metade dentro da parede do lado — "metade para fora, metade para dentro do
+// ambiente". Agora: paralelo à parede, inteiro dentro do ambiente, sem entrar em parede.
+function entraNaParede(it, tam, w) {
+  const [x, y, z, nx, ny] = it; const u = [-ny, nx];
+  if (z + tam[1] / 2 <= w[5] + 0.01 || z - tam[1] / 2 >= w[6] - 0.01) return 0;
+  const c1 = [x + nx * tam[2] / 2, y + ny * tam[2] / 2], e1 = [u, [nx, ny]], h1 = [tam[0] / 2, tam[2] / 2];
+  const v = [w[2] - w[0], w[3] - w[1]], L = Math.hypot(v[0], v[1]); if (L < 1e-6) return 0;
+  const a = [v[0] / L, v[1] / L], e2 = [a, [-a[1], a[0]]], h2 = [L / 2, w[4] / 2], c2 = [(w[0] + w[2]) / 2, (w[1] + w[3]) / 2];
+  const pr = (e, ax) => Math.abs(e[0] * ax[0] + e[1] * ax[1]);
+  return Math.min(...[...e1, ...e2].map(ax => h1[0] * pr(e1[0], ax) + h1[1] * pr(e1[1], ax) + h2[0] * pr(e2[0], ax) + h2[1] * pr(e2[1], ax) - pr([c2[0] - c1[0], c2[1] - c1[1]], ax)));
+}
+caso('quadros nos cantos, junto da parede interna e da porta: paralelos à parede, inteiros dentro do ambiente', () => {
+  const coz = arq.ambientes.find(a => a.nome === 'COZINHA');
+  const [ox, oy] = (() => { const r = regiaoDoModelo(arq).caixa; return [(r[0] + r[2]) / 2, (r[1] + r[3]) / 2]; })();
+  const pontos = [['QD-SO', 0.2, 0.2, sala], ['QD-SO2', 0.3, 0.25, sala], ['QD-NE', 4.8, 4.8, sala], ['QD-PORTA', 4.85, 2.2, sala],
+    ['QD-NO', 5.35, 4.8, coz], ['QD-SE', 7.8, 0.2, coz]];
+  const c = montarCena(arq, { peDireito: PD, dispositivos: [
+    ...pontos.map(([id, x, y, a]) => ({ simbolo: 'HM-ELE-QUADRO', id, ambiente: a.nome, x, y, poligono: a.poligono })),
+    { simbolo: 'HM-PRZ-PAINEL', id: 'PRZ', ambiente: 'COZINHA', x: 7.9, y: 4.9, poligono: coz.poligono },
+  ] });
+  for (const t of c.dispositivos.filter(d => d.forma === 'quadro')) {
+    for (const it of t.itens) {
+      const amb = pontos.find(p => p[0] === it[6])?.[3] || coz;
+      assert.ok(perto(Math.abs(it[3]) + Math.abs(it[4]), 1, 0.001), `${it[6]} na diagonal (${it[3]}, ${it[4]})`);
+      const pior = Math.max(...c.paredes.map(w => entraNaParede(it, t.tam, w)));
+      assert.ok(pior <= 0.01, `${it[6]} entra ${(pior * 100).toFixed(0)} cm na parede`);
+      // frente e as duas pontas da peça dentro do ambiente do símbolo (o contorno lido tem a grade de 5 cm)
+      const u = [-it[4], it[3]];
+      for (const s of [-1, 1]) {
+        const q = [it[0] + ox + u[0] * s * t.tam[0] / 2 + it[3] * t.tam[2], it[1] + oy + u[1] * s * t.tam[0] / 2 + it[4] * t.tam[2]];
+        assert.ok(dentro(q, amb.poligono) || distanciaContorno(q, amb.poligono) < 0.08, `${it[6]}: ponta ${s} fora do ambiente`);
+      }
+    }
+  }
+  // os dois do mesmo canto: lado a lado, sem sobrepor
+  const qd = c.dispositivos.find(t => t.simbolo === 'HM-ELE-QUADRO').itens, a = qd.find(i => i[6] === 'QD-SO'), b = qd.find(i => i[6] === 'QD-SO2');
+  const mesmaParede = perto(a[3], b[3], 0.01) && perto(a[4], b[4], 0.01);
+  if (mesmaParede) assert.ok(Math.abs((b[0] - a[0]) * -a[4] + (b[1] - a[1]) * a[3]) >= 0.6 - 0.001, 'QD-SO e QD-SO2 sobrepostos');
+});
+
 // ── Infraestrutura (opcoes.trechos) ─────────────────────────────────────────
 const regiao = regiaoDoModelo(arq).caixa;
 const origem = [(regiao[0] + regiao[2]) / 2, (regiao[1] + regiao[3]) / 2];

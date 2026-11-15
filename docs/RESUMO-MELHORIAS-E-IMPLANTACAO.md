@@ -1446,3 +1446,11 @@ Pedido do usuário: "Modelo 3D ilustrativo (para o cliente) e Editar no 3D poder
 - Análise sem Mapa do CAD (arquitetura em PDF, análise antiga): o 3D abre para conferir e salvar para o cliente, sem a paleta de inserir/retirar (antes só dava um erro).
 - **Testes:** `modelo3dClienteIntegracao.test.js` (permissão, arquivo na pasta, propostas da análise, "mudou depois de salvo", abrir não troca a cópia, salvar de novo troca); Jest do editor (salvar, painel, ligar na proposta, modo só conferir, aviso de desatualizado).
 - Avisos do 3D (editor, painel do cliente e "Editar e aprovar no 3D") embaixo, no centro: em cima à direita cobriam o botão "Aprovar e salvar para o cliente" (achado na conferência pelo navegador).
+
+### 14/11/2026: versão 2.43.1 — 3D: quadros inteiros dentro do ambiente
+
+Relato do usuário (com foto): "os quadros dos ambientes estão saindo errados nas paredes, metade para fora, metade para dentro do ambiente".
+- **Causa** (`skills/_comum/cad/modelo3d.js`, `encostar`): perto da ponta de uma parede (canto, parede interna, batente da porta) a direção do quadro era a do símbolo até a ponta — o quadro ficava na diagonal — e ninguém conferia se a largura dele entrava na parede do lado. Reproduzido na arquitetura sintética: 9 a 12 cm dentro da parede em todo canto.
+- **Correção:** a peça de parede (quadro, rack, central, painel…) fica sempre paralela à parede, virada para o lado do símbolo, e a pegada inteira (largura × profundidade × altura, com 2 cm de folga) não pode entrar no corpo de outra parede: ela desliza ao longo da parede até caber, dentro do ambiente. O afastamento entre quadros vizinhos também não empurra mais um quadro para dentro da parede (vai para o outro lado do vizinho).
+- O cache do 3D muda com o código do gerador: os 3D já gerados são refeitos na próxima abertura. 3D "salvo para o cliente" antes desta versão aparece como "mudou depois de salvo" — conferir e salvar de novo.
+- **Teste:** `teste-3d.js` — quadros nos 4 cantos, junto da parede interna e da porta, dois no mesmo canto e o painel de pressurização: paralelos à parede, sem entrar em parede, pontas dentro do ambiente.
