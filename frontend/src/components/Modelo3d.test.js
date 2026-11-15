@@ -1,7 +1,7 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BotoesModelo3d } from './Modelo3d';
-import { getMapaCad, abrirModelo3d, getRegistroDisciplinas } from '../services/api';
+import { getMapaCad, abrirModelo3d, getRegistroDisciplinas, getModelo3d, salvarModelo3dCliente, mostrarModelo3dAoCliente } from '../services/api';
 
 // "Editar componentes no 3D" (revisão de 04/11/2026: "a visualização em 3D ainda não tem a barra de ferramentas"):
 // só na análise; abre o 3D com a edição dentro da tela quando há Mapa do CAD. Dados SINTÉTICOS.
@@ -9,7 +9,7 @@ jest.mock('../services/api', () => ({
   __esModule: true, default: { post: jest.fn() },
   abrirModelo3d: jest.fn(), baixarModelo3d: jest.fn(), urlModelo3d: (u) => u, enviarArquiteturaAnalise: jest.fn(),
   getArquiteturaAnalise: jest.fn(), getModelo3d: jest.fn(), mostrarModelo3dAoCliente: jest.fn(), getMapaCad: jest.fn(), editarMapaCad: jest.fn(),
-  getRegistroDisciplinas: jest.fn(),
+  getRegistroDisciplinas: jest.fn(), salvarModelo3dCliente: jest.fn(),
 }));
 jest.mock('react-hot-toast', () => { const t = jest.fn(); t.success = jest.fn(); t.error = jest.fn(); return { __esModule: true, default: t }; });
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -63,13 +63,52 @@ test('a paleta do 3D marca os componentes da disciplina da análise (os outros s
   expect(msg.paleta.map(p => [p.grupo, p.cor])).toEqual([['Elétrica', '#ff9f43'], ['Incêndio', '#ff4b3e']]);
 });
 
-test('sem Mapa do CAD, avisa e não abre', async () => {
+// 2.43: sem Mapa do CAD (arquitetura em PDF, análise antiga) o 3D abre para CONFERIR e salvar para o cliente, sem a paleta
+test('sem Mapa do CAD, abre só para conferir e aprovar (sem a paleta de inserir/retirar)', async () => {
   const toast = require('react-hot-toast').default;
   getMapaCad.mockResolvedValue({ data: { disponivel: false, componentes: [{ simbolo: 'X', nome: 'X' }] } });
+  abrirModelo3d.mockResolvedValue({ data: { url: '/modelo-3d/ver/abc' } });
   act(() => raiz.render(<BotoesModelo3d origem="analise" id={8} />));
   await act(async () => { caixa.querySelector('[data-testid="editar-3d"]').click(); });
-  expect(document.querySelector('[data-testid="editor-3d"]')).toBeNull();
-  expect(toast.error).toHaveBeenCalled();
+  expect(document.querySelector('[data-testid="editor-3d"]')).not.toBeNull();
+  expect(document.querySelector('[data-testid="salvar-3d-cliente"]')).not.toBeNull();
+  expect(toast.error).not.toHaveBeenCalled();
+  const quadro = document.querySelector('[data-testid="editor-3d"] iframe');
+  const enviado = jest.spyOn(quadro.contentWindow, 'postMessage').mockImplementation(() => {});
+  await act(async () => { window.dispatchEvent(new MessageEvent('message', { data: { tipo: 'hm3d:pronto', comOrigem: true }, source: quadro.contentWindow })); });
+  expect(enviado.mock.calls.map(c => c[0]).find(m => m.tipo === 'hm3d:editar')).toBeUndefined();
+});
+
+// 2.43: aprovado no 3D, salva para o cliente ali mesmo — sem ir ao cartão de baixo gerar de novo
+test('Aprovar e salvar para o cliente: salva, mostra o arquivo e liga o 3D na proposta dali mesmo', async () => {
+  const salvo = { salvo_em: '2026-11-14T23:30:00.000Z', por: 'Engenheiro Teste', nome_arquivo: 'Modelo 3D - Casa.html', inseridos: 2, retirados: 1, atual: true };
+  let jaSalvo = false;
+  getModelo3d.mockImplementation(() => Promise.resolve({ data: { disponivel: true, salvo_cliente: jaSalvo ? salvo : null, propostas: [{ id: 31, numero: 'P031', status: 'Rascunho', modelo_3d_cliente: false }] } }));
+  getMapaCad.mockResolvedValue({ data: { disponivel: true, componentes: [{ simbolo: 'HM-ELE-TOMADA-BAIXA', nome: 'Tomada baixa', disciplina: 'eletrica' }] } });
+  abrirModelo3d.mockResolvedValue({ data: { url: '/modelo-3d/ver/abc' } });
+  salvarModelo3dCliente.mockImplementation(() => { jaSalvo = true; return Promise.resolve({ data: { ...salvo, na_pasta: true, url: '/api/modelo-3d/ver/x', propostas: [] } }); });
+  mostrarModelo3dAoCliente.mockResolvedValue({ data: { modelo_3d_cliente: true } });
+  act(() => raiz.render(<BotoesModelo3d origem="analise" id={9} />));
+  await act(async () => { caixa.querySelector('[data-testid="editar-3d"]').click(); });
+  expect(document.querySelector('[data-testid="3d-cliente-nao-salvo"]')).not.toBeNull();
+  const botao = document.querySelector('[data-testid="salvar-3d-cliente"]');
+  expect(botao.textContent).toContain('Aprovar e salvar para o cliente');
+  await act(async () => { botao.click(); });
+  expect(salvarModelo3dCliente).toHaveBeenCalledWith(9);
+  const painel = document.querySelector('[data-testid="3d-cliente-salvo"]');
+  expect(painel.textContent).toContain('Modelo 3D - Casa.html');
+  expect(painel.textContent).toContain('Engenheiro Teste');
+  expect(document.querySelector('[data-testid="baixar-3d-cliente"]')).not.toBeNull();
+  expect(document.querySelector('[data-testid="salvar-3d-cliente"]').textContent).toContain('Salvar de novo');
+  await act(async () => { document.querySelector('[data-testid="mostrar-proposta-31"]').click(); });
+  expect(mostrarModelo3dAoCliente).toHaveBeenCalledWith(31, true);
+});
+
+test('3D editado depois de salvo: avisa que a pasta continua com a versão salva', async () => {
+  const { PainelCliente } = require('./analise/Modelo3dCliente');
+  act(() => raiz.render(<PainelCliente analiseId={5} situacao={{ disponivel: true, salvo_cliente: { salvo_em: '2026-11-14T23:30:00.000Z', por: 'X', nome_arquivo: 'a.html', atual: false } }} />));
+  expect(caixa.querySelector('[data-testid="3d-cliente-desatualizado"]').textContent).toContain('mudou depois de salvo');
+  expect(caixa.querySelector('[data-testid="baixar-3d-cliente"]')).toBeNull();
 });
 
 // revisão de 11/2026: trocar de análise/proposta antes de a resposta chegar não mostra a da anterior

@@ -235,6 +235,8 @@ export const getModelo3d = (origem, id) => api.get(`/modelo-3d/${origem}/${id}`)
 export const abrirModelo3d = (origem, id, { embutido = false } = {}) => api.post(`/modelo-3d/${origem}/${id}/abrir`, embutido ? { embutido: true } : null, { timeout: 180000 });
 export const urlModelo3d = (caminho) => `${process.env.REACT_APP_API_URL || ''}${caminho}`;
 export const baixarModelo3d = (origem, id) => api.get(`/modelo-3d/${origem}/${id}/arquivo`, { responseType: 'blob', timeout: 180000 });
+// 2.43: "Aprovar e salvar para o cliente" do editor 3D → { nome_arquivo, na_pasta, salvo_em, por, inseridos, retirados, url, propostas }
+export const salvarModelo3dCliente = (id) => api.post(`/modelo-3d/analise/${id}/salvar-cliente`, null, { timeout: 180000 });
 export const enviarArquiteturaAnalise = (id, arquivo, opcoes) => api.post(`/projetos/analises/${id}/arquitetura`, formArquitetura(arquivo, opcoes), { timeout: 240000 });
 export const getArquiteturaAnalise = (id) => api.get(`/projetos/analises/${id}/arquitetura`);
 export const mostrarModelo3dAoCliente = (id, mostrar) => api.patch(`/propostas/${id}/modelo-3d-cliente`, { mostrar });

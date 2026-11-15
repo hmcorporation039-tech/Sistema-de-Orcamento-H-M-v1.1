@@ -153,6 +153,8 @@ async function fonteDoModelo(origemTipo, origemId, executor = pool) {
         semPontos: `Componentes e traçados nas posições do projeto recebido (DWG/DXF${an.espacial?.referencia ? `, alinhados a "${an.espacial.referencia}"` : ''}).${reais.genericos ? ` ${reais.genericos} componente(s) sem símbolo próprio aparecem como caixa com o nome do projeto.` : ''}${reais.inseridos || reais.retirados ? ` Edições do engenheiro: ${reais.inseridos} inserido(s), ${reais.retirados} retirado(s).` : ''}`,
         peDireito: null,
         titulo: `Modelo 3D — ${an.nome_projeto || 'Projeto'}`, cliente: an.cliente_nome || '', obra: '',
+        // fora da chave do cache (chaveDa lista os campos): só para contar no "salvo para o cliente"
+        edicoes: { inseridos: reais.inseridos || 0, retirados: reais.retirados || 0 },
       };
     }
     // sem posições do projeto: os pontos são os símbolos desenhados no próprio arquivo
@@ -344,7 +346,20 @@ async function refazerModelo(origemTipo, origemId) {
   return obterModelo(origemTipo, origemId);
 }
 
+// 3D da análise salvo para o cliente (2.43: botão "Aprovar e salvar para o cliente" do editor) — null se nunca foi
+async function salvoParaCliente(analiseId, executor = pool) {
+  const { rows: [s] } = await executor.query(
+    `SELECT s.chave, s.nome_arquivo, s.inseridos, s.retirados, s.salvo_em, u.nome AS por
+       FROM analises_modelo_3d_cliente s LEFT JOIN usuarios u ON u.id = s.usuario_id WHERE s.analise_id = $1`, [analiseId]);
+  return s || null;
+}
+
+const propostasDaAnalise = async (analiseId, executor = pool) => (await executor.query(
+  "SELECT id, numero, status, modelo_3d_cliente FROM propostas WHERE origem_tipo = 'analise' AND origem_id = $1 ORDER BY numero", [analiseId])).rows;
+
 // Situação sem gerar: tem arquitetura? quais disciplinas terão pontos?
+// Análise (ou proposta que veio de uma): se o 3D foi salvo para o cliente e se ainda é o mesmo
+// (atual: false = editado ou relido depois de salvo — a chave muda com as edições e a legenda aprendida)
 async function situacao(origemTipo, origemId) {
   const fonte = await fonteDoModelo(origemTipo, origemId);
   // proposta: e se o "mostrar ao cliente" está ligado
@@ -352,6 +367,16 @@ async function situacao(origemTipo, origemId) {
     ? { modelo_3d_cliente: (await pool.query('SELECT modelo_3d_cliente FROM propostas WHERE id = $1', [origemId])).rows[0]?.modelo_3d_cliente === true }
     : {};
   if (!fonte) return { disponivel: false, motivo: 'Envie a arquitetura (.dwg, .dxf ou PDF) para gerar o modelo 3D.', ...extra };
+  if (fonte.origemTipo === 'analise') {
+    const s = await salvoParaCliente(fonte.origemId);
+    // a chave da ANÁLISE (sem o número da proposta, que só muda o título)
+    extra.salvo_cliente = s && {
+      salvo_em: s.salvo_em, por: s.por || null, nome_arquivo: s.nome_arquivo, inseridos: s.inseridos, retirados: s.retirados,
+      atual: s.chave === chaveDa({ ...fonte, proposta: '' }, await simbolosAprendidos.carregar()),
+    };
+    // a própria análise: as propostas feitas dela, para ligar o 3D ali mesmo (editor e cartão)
+    if (origemTipo === 'analise') extra.propostas = await propostasDaAnalise(origemId);
+  }
   return { disponivel: true, arquivo: fonte.nomeArquivo, disciplinas: fonte.disciplinas, aviso: fonte.semPontos, ...extra };
 }
 
@@ -416,6 +441,6 @@ function lerLink(token) {
 
 module.exports = {
   comEdicoes,
-  CSP_MODELO_3D, CSP_MODELO_3D_EMBUTIDO, obterModelo, refazerModelo, situacao, imagemDoModelo, nomeArquivo, criarLink, lerLink,
+  CSP_MODELO_3D, CSP_MODELO_3D_EMBUTIDO, obterModelo, refazerModelo, situacao, salvoParaCliente, propostasDaAnalise, imagemDoModelo, nomeArquivo, criarLink, lerLink,
   chaveDa, versaoDoGerador, versaoDoVisualizador, arquivosDoGerador, gerarNoWorker, dispositivosDoEspacial, paginaDoModelo,
 };

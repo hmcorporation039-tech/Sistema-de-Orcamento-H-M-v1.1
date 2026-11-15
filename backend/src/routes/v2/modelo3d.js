@@ -21,6 +21,8 @@ module.exports = (router, { autenticar, validarId, posse, uploadArquitetura }) =
   router.post('/modelo-3d/:origem/:id/abrir', autenticar, validarId, ctrl.abrir);
   router.post('/modelo-3d/:origem/:id/gerar-de-novo', autenticar, validarId, posseDaOrigem, ctrl.gerarDeNovo);
   router.get('/modelo-3d/:origem/:id/arquivo', autenticar, validarId, ctrl.arquivo);
+  // 2.43: "Aprovar e salvar para o cliente" do editor 3D — grava a versão do cliente (dono da análise ou admin)
+  router.post('/modelo-3d/analise/:id/salvar-cliente', autenticar, validarId, posseAnalise, ctrl.salvarParaCliente);
 
   router.post('/projetos/analises/:id/arquitetura', autenticar, validarId, posseAnalise, uploadArquitetura.single('arquivo'), ctrl.enviarArquiteturaAnalise);
   router.get('/projetos/analises/:id/arquitetura', autenticar, validarId, ctrl.verArquiteturaAnalise);

@@ -280,8 +280,8 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
         <h3 style={{ ...estiloTitulo, flex: 1, marginBottom: 0 }}>Mapa do CAD — confira o que o sistema entendeu do desenho</h3>
         {componentes.length > 0 && (
           <button type="button" style={botao} onClick={() => setEditor3d(true)} disabled={ocupado} data-testid="editar-no-3d"
-            title="Abre o modelo 3D aqui, com a biblioteca de componentes para inserir e retirar">
-            <Box size={13} /> Editar no 3D
+            title="Abre o modelo 3D aqui, com a biblioteca de componentes para inserir e retirar — e, aprovado, salvar para o cliente">
+            <Box size={13} /> Editar e aprovar no 3D
           </button>
         )}
         {podeReprocessar && (

@@ -20,16 +20,26 @@ function lerOrigem(req, res) {
   return { origem, id: Number(req.params.id) };
 }
 
-// Cópia "Modelo 3D - <nome>.html" na pasta do projeto/análise (como a planta DXF)
+// Cópia "Modelo 3D - <nome>.html" na pasta do projeto/análise (como a planta DXF).
+// Devolve a pasta onde gravou, ou null (sem registro ou falha na pasta — já registrada no log).
 async function gravarNaPasta(m) {
   const { origemTipo, origemId } = m.fonte;
-  await seguro(`modelo 3D ${origemTipo} ${origemId}`, async () => {
+  return seguro(`modelo 3D ${origemTipo} ${origemId}`, async () => {
     const tabela = origemTipo === 'laudo' ? 'laudos_projetos' : 'analises_projeto';
     const { rows: [row] } = await pool.query(`SELECT * FROM ${tabela} WHERE id = $1`, [origemId]);
-    if (!row) return;
+    if (!row) return null;
     const pasta = origemTipo === 'laudo' ? await pastaDoLaudo(row) : await pastaDoProjeto(row);
     await P.gravarArquivo(pasta, M.nomeArquivo(m.fonte), Buffer.from(m.html, 'utf8'));
+    return pasta;
   });
+}
+
+// Ao abrir/gerar de novo, a cópia da pasta acompanha o 3D — menos na análise que já foi SALVA para o cliente
+// (2.43): lá a cópia é a versão aprovada, e só o "Aprovar e salvar para o cliente" a troca.
+async function copiarParaPasta(o, m) {
+  if (o.origem === 'proposta') return;
+  if (o.origem === 'analise' && await M.salvoParaCliente(o.id)) return;
+  await gravarNaPasta(m);
 }
 
 const resumoPublico = (m) => ({ numeros: m.numeros, avisos: m.avisos, gerado_em: m.gerado_em, arquivo: m.nome_arquivo });
@@ -48,7 +58,7 @@ async function abrir(req, res) {
   if (!o) return;
   const m = await M.obterModelo(o.origem, o.id);
   if (!m) return res.status(400).json({ erro: 'Envie primeiro a arquitetura (.dwg, .dxf ou PDF) para gerar o modelo 3D.' });
-  if (o.origem !== 'proposta') await gravarNaPasta(m);
+  await copiarParaPasta(o, m);
   // embutido (2.30): o 3D dentro da tela da análise, com o modo de edição de componentes
   const embutido = req.body?.embutido === true && o.origem === 'analise';
   res.json({ url: `/api/modelo-3d/ver/${M.criarLink(o.origem, o.id, { embutido })}`, ...resumoPublico(m) });
@@ -62,8 +72,34 @@ async function gerarDeNovo(req, res) {
   const m = await M.refazerModelo(o.origem, o.id);
   if (!m) return res.status(400).json({ erro: 'Envie primeiro a arquitetura (.dwg, .dxf ou PDF) para gerar o modelo 3D.' });
   await registrarAuditoria(pool, { entidade: TABELA_ORIGEM[o.origem], entidadeId: o.id, acao: 'modelo_3d_gerar_de_novo', usuarioId: req.usuario.id });
-  if (o.origem !== 'proposta') await gravarNaPasta(m);
+  await copiarParaPasta(o, m);
   res.json({ url: `/api/modelo-3d/ver/${M.criarLink(o.origem, o.id)}`, ...resumoPublico(m) });
+}
+
+// POST /modelo-3d/analise/:id/salvar-cliente (dono da análise ou administrador) — o "Aprovar e salvar para o
+// cliente" do editor 3D (2.43): gera o 3D com as edições de agora, grava "Modelo 3D - <nome>.html" na pasta do
+// cliente e guarda quem salvou e quando. Devolve o link para abrir, o nome do arquivo (para baixar) e as propostas
+// feitas desta análise, com o "mostrar ao cliente" de cada uma — a tela liga ali mesmo, sem ir ao cartão de baixo.
+async function salvarParaCliente(req, res) {
+  const id = Number(req.params.id);
+  const m = await M.obterModelo('analise', id);
+  if (!m) return res.status(400).json({ erro: 'Envie primeiro a arquitetura (.dwg, .dxf ou PDF) para gerar o modelo 3D.' });
+  const pasta = await gravarNaPasta(m);
+  const nome = M.nomeArquivo(m.fonte);
+  const ed = m.fonte.edicoes || { inseridos: 0, retirados: 0 };
+  const { rows: [s] } = await pool.query(
+    `INSERT INTO analises_modelo_3d_cliente (analise_id, chave, nome_arquivo, inseridos, retirados, usuario_id, salvo_em)
+     VALUES ($1,$2,$3,$4,$5,$6,NOW())
+     ON CONFLICT (analise_id) DO UPDATE SET chave = EXCLUDED.chave, nome_arquivo = EXCLUDED.nome_arquivo, inseridos = EXCLUDED.inseridos,
+       retirados = EXCLUDED.retirados, usuario_id = EXCLUDED.usuario_id, salvo_em = NOW()
+     RETURNING salvo_em`,
+    [id, m.chave, nome, ed.inseridos, ed.retirados, req.usuario.id]);
+  await registrarAuditoria(pool, { entidade: 'analises_projeto', entidadeId: id, acao: 'modelo_3d_salvo_cliente', detalhes: { arquivo: nome, ...ed }, usuarioId: req.usuario.id });
+  const propostas = await M.propostasDaAnalise(id);
+  res.json({
+    nome_arquivo: nome, na_pasta: !!pasta, salvo_em: s.salvo_em, por: req.usuario.nome || null, ...ed,
+    url: `/api/modelo-3d/ver/${M.criarLink('analise', id)}`, propostas, ...resumoPublico(m),
+  });
 }
 
 // GET /modelo-3d/:origem/:id/arquivo — o HTML para baixar (abre sem internet)
@@ -152,4 +188,4 @@ async function mostrarAoCliente(req, res) {
   res.json({ modelo_3d_cliente: mostrar });
 }
 
-module.exports = { situacao, abrir, gerarDeNovo, arquivo, ver, enviarPagina, enviarArquiteturaAnalise, verArquiteturaAnalise, mostrarAoCliente };
+module.exports = { situacao, abrir, gerarDeNovo, salvarParaCliente, arquivo, ver, enviarPagina, enviarArquiteturaAnalise, verArquiteturaAnalise, mostrarAoCliente };

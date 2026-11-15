@@ -11,6 +11,7 @@ import api, {
   getModelo3d, mostrarModelo3dAoCliente, getMapaCad,
 } from '../services/api';
 import Modelo3dEditor from './analise/Modelo3dEditor';
+import { PainelCliente, useSituacao3d, textoSalvo, EMBAIXO } from './analise/Modelo3dCliente';
 import { baixarArquivo, mensagemDeErro } from '../utils/download';
 import { estilos } from './ui/estilos';
 
@@ -60,7 +61,12 @@ export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null,
     try {
       if (antes) await antes();
       const { data } = await getMapaCad(id);
-      if (!data?.disponivel || !data.componentes?.length) { toast.error(data?.semMapa ? 'Esta análise foi lida antes do Mapa do CAD: use "Ler o DWG de novo" no Mapa do CAD e depois edite no 3D.' : 'Inserir e retirar componentes vale para a análise com DWG/DXF do projeto (Mapa do CAD).', { duration: 9000 }); return; }
+      // sem Mapa do CAD (arquitetura em PDF, análise antiga): abre para conferir e salvar para o cliente, sem a paleta (2.43)
+      if (!data?.disponivel || !data.componentes?.length) {
+        toast(data?.semMapa ? 'Esta análise foi lida antes do Mapa do CAD: dá para conferir e salvar para o cliente; para inserir e retirar componentes, use "Ler o DWG de novo" no Mapa do CAD.' : 'Inserir e retirar componentes vale para a análise com DWG/DXF do projeto (Mapa do CAD): aqui dá para conferir e salvar para o cliente.', { icon: 'ℹ️', duration: 9000, ...EMBAIXO });
+        setComponentes({ lista: [], disciplinasDoProjeto: [], somenteConferir: true });
+        return;
+      }
       setComponentes({ lista: data.componentes, disciplinasDoProjeto: data.disciplinasDoProjeto || [] });
     } catch (err) {
       toast.error(await mensagemDeErro(err, 'Não consegui abrir a edição no 3D'), { duration: 9000 });
@@ -122,8 +128,8 @@ export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null,
       </button>
       {origem === 'analise' && (
         <button type="button" style={{ ...btn3d, ...estilo, borderColor: '#c9a227', color: '#c9a227' }} disabled={desabilitado || !!ocupado} onClick={editar} data-testid="editar-3d"
-          title="Abre o 3D aqui na tela com a barra de ferramentas: inserir e retirar componentes da biblioteca H&M (com o símbolo), quadros, interruptores e luminárias com clique. Gravado na análise; entra no orçamento ao reprocessar.">
-          <PencilRuler size={13} style={{ marginRight: 5 }} /> {ocupado === 'editar' ? 'Abrindo…' : 'Editar componentes no 3D'}
+          title="Abre o 3D aqui na tela: inserir e retirar componentes da biblioteca H&M (gravado na análise; entra no orçamento ao reprocessar) e, aprovado, salvar para o cliente com um clique.">
+          <PencilRuler size={13} style={{ marginRight: 5 }} /> {ocupado === 'editar' ? 'Abrindo…' : 'Editar e aprovar no 3D'}
         </button>
       )}
       <button type="button" style={{ ...btn3d, ...estilo }} disabled={desabilitado || !!ocupado} onClick={baixar}
@@ -137,7 +143,7 @@ export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null,
         </button>
       )}
       {componentes && (
-        <Modelo3dEditor analiseId={id} componentes={componentes.lista} disciplinasDoProjeto={componentes.disciplinasDoProjeto}
+        <Modelo3dEditor analiseId={id} componentes={componentes.lista} disciplinasDoProjeto={componentes.disciplinasDoProjeto} somenteConferir={!!componentes.somenteConferir}
           onFechar={() => setComponentes(null)} />
       )}
     </>
@@ -149,6 +155,8 @@ export function CartaoModelo3dAnalise({ analiseId, estiloCartao, estiloTitulo })
   const entrada = useRef(null);
   const [arquitetura, setArquitetura] = useState(null);
   const [enviando, setEnviando] = useState(false);
+  // 2.43: salvo para o cliente (pelo 3D — daqui ou do Mapa do CAD), em dia ou mudou depois
+  const [situacao, recarregarSituacao] = useSituacao3d(analiseId);
 
   useEffect(() => {
     // trocou de análise antes da resposta chegar: a arquitetura da anterior não
@@ -162,7 +170,10 @@ export function CartaoModelo3dAnalise({ analiseId, estiloCartao, estiloTitulo })
   async function enviar(arquivo) {
     setEnviando(true);
     try {
-      if (await enviarArquitetura((a, op) => enviarArquiteturaAnalise(analiseId, a, op), arquivo)) setArquitetura((await getArquiteturaAnalise(analiseId)).data);
+      if (await enviarArquitetura((a, op) => enviarArquiteturaAnalise(analiseId, a, op), arquivo)) {
+        setArquitetura((await getArquiteturaAnalise(analiseId)).data);
+        recarregarSituacao(); // arquitetura nova: o 3D salvo para o cliente deixa de ser o atual
+      }
     } finally {
       setEnviando(false);
     }
@@ -179,6 +190,10 @@ export function CartaoModelo3dAnalise({ analiseId, estiloCartao, estiloTitulo })
         Serve para o cliente ter uma ideia de como vai ficar; não substitui o projeto executivo. O PDF precisa ser o exportado do AutoCAD/Revit (não escaneado).
         O projeto criado a partir desta análise já recebe a mesma arquitetura.
       </p>
+      <p style={{ fontSize: 12, color: 'var(--texto-2)', marginBottom: 12, lineHeight: 1.6 }}>
+        Para mandar ao cliente: <b>Editar e aprovar no 3D</b> → confira (insira ou retire o que faltar) → <b>Aprovar e salvar para o cliente</b>, lá dentro.
+        O arquivo vai para a pasta do cliente e dali mesmo você baixa ou liga o 3D na proposta — não precisa gerar de novo aqui.
+      </p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <input ref={entrada} type="file" accept={ACEITA_ARQUITETURA} style={{ display: 'none' }}
           onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) enviar(f); }} />
@@ -192,6 +207,12 @@ export function CartaoModelo3dAnalise({ analiseId, estiloCartao, estiloTitulo })
           </>
         )}
       </div>
+      {arquitetura && (
+        <div style={{ marginTop: 10 }}>
+          <PainelCliente analiseId={analiseId} situacao={situacao} acoes={false}
+            quandoNaoSalvo={<span>Ainda não salvo para o cliente: abra <b>Editar e aprovar no 3D</b>, confira e use <b>Aprovar e salvar para o cliente</b>.</span>} />
+        </div>
+      )}
     </div>
   );
 }
@@ -233,6 +254,10 @@ export function OpcaoModelo3dProposta({ propostaId, somenteLeitura = false }) {
         <Box size={14} style={{ color: '#8ab4f8' }} /> Mostrar o modelo 3D ao cliente (link de aprovação e anexo no PDF)
       </label>
       <span style={{ fontSize: 12, color: 'var(--texto-3)' }}>arquitetura: {situacao.arquivo}</span>
+      {/* 2.43: o 3D da análise de origem foi aprovado e salvo para o cliente? (o link mostra sempre o 3D de agora) */}
+      {situacao.salvo_cliente && (situacao.salvo_cliente.atual
+        ? <span style={{ fontSize: 12, color: '#9fe0b8' }} data-testid="proposta-3d-aprovado">✓ {textoSalvo(situacao.salvo_cliente).replace('Salvo para o cliente', '3D aprovado')}</span>
+        : <span style={{ fontSize: 12, color: '#e6c45a' }} data-testid="proposta-3d-mudou">⚠ O 3D da análise mudou depois de aprovado — o cliente veria a versão nova; confira e salve de novo no 3D da análise.</span>)}
       <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
         <BotoesModelo3d origem="proposta" id={propostaId} podeRefazer={!somenteLeitura} />
       </div>
