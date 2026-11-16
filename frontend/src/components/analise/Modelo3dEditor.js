@@ -100,14 +100,14 @@ export default function Modelo3dEditor({ analiseId, componentes, disciplinasDoPr
 
   return (
     <div role="dialog" aria-modal="true" aria-label="3D da análise — editar e aprovar para o cliente" data-testid="editor-3d"
-      style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.75)', display: 'flex', flexDirection: 'column', padding: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: '#121212', border: '1px solid #2a2a2a', borderBottom: 'none', borderRadius: '10px 10px 0 0', padding: '10px 14px' }}>
+      style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.75)', display: 'flex', flexDirection: 'column', padding: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: '#121212', border: '1px solid #2a2a2a', borderBottom: 'none', borderRadius: '10px 10px 0 0', padding: '6px 12px' }}>
         <b style={{ color: '#e6c45a', fontSize: 14, flex: 1 }}>{somenteConferir ? '3D da análise — conferir e aprovar para o cliente' : '3D da análise — editar e aprovar para o cliente'}</b>
-        <span style={{ fontSize: 12, color: 'var(--texto-3)' }}>
-          {contagem.adicionados || contagem.removidos ? `${contagem.adicionados} inserido(s), ${contagem.removidos} retirado(s) nesta sessão · ` : ''}
-          {somenteConferir
+        <span style={{ fontSize: 12, color: 'var(--texto-3)' }}
+          title={somenteConferir
             ? 'Sem o Mapa do CAD: aqui dá para conferir e salvar para o cliente (inserir e retirar valem para a análise com DWG/DXF do projeto).'
-            : 'Inserir e Retirar ficam no painel do 3D (canto superior direito). Gravado na análise; entra no orçamento ao reprocessar.'}
+            : 'Inserir e Retirar ficam no painel do 3D (à direita, abaixo da barra). Gravado na análise; entra no orçamento ao reprocessar.'}>
+          {contagem.adicionados || contagem.removidos ? `${contagem.adicionados} inserido(s), ${contagem.removidos} retirado(s) nesta sessão` : ''}
         </span>
         <button type="button" style={botao} onClick={abrir} disabled={carregando || salvando} data-testid="atualizar-3d">
           <RefreshCw size={13} /> {carregando ? 'Gerando…' : 'Atualizar 3D'}
@@ -119,9 +119,9 @@ export default function Modelo3dEditor({ analiseId, componentes, disciplinasDoPr
         </button>
         <button type="button" style={botao} onClick={onFechar} aria-label="Fechar o 3D"><X size={14} /> Fechar</button>
       </div>
-      <div style={{ background: '#121212', borderLeft: '1px solid #2a2a2a', borderRight: '1px solid #2a2a2a', padding: '0 14px 10px' }}>
+      <div style={{ background: '#121212', borderLeft: '1px solid #2a2a2a', borderRight: '1px solid #2a2a2a', padding: '0 12px 6px' }}>
         <PainelCliente analiseId={analiseId} situacao={situacao}
-          quandoNaoSalvo={<span>Ainda não salvo para o cliente. Quando o 3D estiver aprovado, use <b>Aprovar e salvar para o cliente</b>: o arquivo vai para a pasta do cliente e aqui mesmo você baixa ou liga na proposta — não precisa gerar de novo no cartão da análise.</span>} />
+          quandoNaoSalvo={<span title="O arquivo vai para a pasta do cliente e aqui mesmo você baixa ou liga na proposta — não precisa gerar de novo no cartão da análise.">Ainda não salvo para o cliente — quando aprovado, use <b>Aprovar e salvar para o cliente</b>.</span>} />
       </div>
       <div style={{ flex: 1, background: '#0b0d10', border: '1px solid #2a2a2a', borderRadius: '0 0 10px 10px', overflow: 'hidden' }}>
         {url

@@ -35,13 +35,14 @@ export function iniciarEdicao(ctx) {
   function montarPainel() {
     const css = document.createElement('style');
     css.textContent = `
-#hm-edicao{position:absolute;top:58px;right:12px;z-index:30;width:270px;background:rgba(18,24,33,.94);color:#eef2f6;border:1px solid #c9a227;border-radius:10px;padding:10px 12px;font:13px/1.35 system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.35)}
+#hm-edicao{position:absolute;top:var(--topo,58px);right:14px;z-index:6;width:250px;background:rgba(18,24,33,.94);color:#eef2f6;border:1px solid #c9a227;border-radius:10px;padding:8px 10px;font:13px/1.35 system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.35)}
+#hm-edicao:not(.inserindo) .so-inserir{display:none!important}
 #hm-edicao h4{margin:0 0 6px;font-size:13px;color:#e6c45a;letter-spacing:.3px}
-#hm-edicao select{width:100%;margin:4px 0 8px;padding:5px;border-radius:6px;border:1px solid #556;background:#0f141b;color:#eef2f6}
-#hm-edicao .modos{display:flex;gap:6px;margin-bottom:6px}
+#hm-edicao select{width:100%;margin:8px 0 6px;padding:5px;border-radius:6px;border:1px solid #556;background:#0f141b;color:#eef2f6}
+#hm-edicao .modos{display:flex;gap:6px}
 #hm-edicao .modos button{flex:1;padding:6px 4px;border-radius:6px;border:1px solid #556;background:#1d2633;color:#eef2f6;cursor:pointer;font-size:12px}
 #hm-edicao .modos button.ativo{background:#c9a227;color:#111;border-color:#c9a227;font-weight:600}
-#hm-edicao small{display:block;color:#aab4c0;margin-top:4px}
+#hm-edicao small{display:block;color:#aab4c0;margin-top:6px}#hm-edicao small:empty{display:none}
 #hm-edicao label.outras{display:flex;align-items:center;gap:5px;margin:-4px 0 6px;font-size:12px;color:#cfd6de;cursor:pointer}
 #hm-edicao .aviso{margin-top:6px;padding:5px 7px;border-radius:6px;background:#203046;display:none}
 #hm-edicao .aviso.erro{background:#5a1f1f}`;
@@ -66,13 +67,15 @@ export function iniciarEdicao(ctx) {
     };
     painel.innerHTML = `<h4>Editar componentes</h4>
 <div class="modos"><button data-m="navegar" class="ativo">Navegar</button><button data-m="inserir">Inserir</button><button data-m="retirar">Retirar</button></div>
-<select id="hm-comp">${opcoes()}</select>
-${temOutras ? `<label class="outras" title="Mostra também os componentes das disciplinas que não são desta análise"><input type="checkbox" id="hm-outras"${estado.outras ? ' checked' : ''}> outras disciplinas</label>` : ''}
-<small id="hm-dica">Escolha "Inserir" e clique no piso onde vai o componente; "Retirar" e clique no componente.</small>
+<select id="hm-comp" class="so-inserir" aria-label="Componente a inserir">${opcoes()}</select>
+${temOutras ? `<label class="outras so-inserir" title="Mostra também os componentes das disciplinas que não são desta análise"><input type="checkbox" id="hm-outras"${estado.outras ? ' checked' : ''}> outras disciplinas</label>` : ''}
+<small id="hm-dica"></small>
 <small id="hm-conta"></small>
 <div class="aviso" id="hm-aviso"></div>`;
     document.body.appendChild(painel);
+    painel.title = '"Inserir": escolha o componente e clique no piso onde ele vai. "Retirar": clique no componente.';
     aviso = painel.querySelector('#hm-aviso');
+    window.hmLayout?.();
     const sel = painel.querySelector('#hm-comp');
     estado.escolhido = sel.value || null;
     sel.addEventListener('change', () => { estado.escolhido = sel.value; });
@@ -88,12 +91,16 @@ ${temOutras ? `<label class="outras" title="Mostra também os componentes das di
       estado.modo = b.dataset.m;
       painel.querySelectorAll('.modos button').forEach(x => x.classList.toggle('ativo', x === b));
       tela.style.cursor = estado.modo === 'navegar' ? '' : 'crosshair';
+      painel.classList.toggle('inserindo', estado.modo === 'inserir');
+      painel.querySelector('#hm-dica').textContent = estado.modo === 'inserir' ? 'Clique no piso onde vai o componente.' : estado.modo === 'retirar' ? 'Clique no componente a retirar.' : '';
+      window.hmLayout?.();
     }));
     atualizarConta();
   }
   function atualizarConta() {
     const c = painel?.querySelector('#hm-conta');
-    if (c) c.textContent = estado.inseridos || estado.retirados ? `Nesta sessão: ${estado.inseridos} inserido(s), ${estado.retirados} retirado(s). Clique em "Atualizar 3D" na tela para ver a peça no lugar definitivo.` : '';
+    if (c) c.textContent = estado.inseridos || estado.retirados ? `${estado.inseridos} inserido(s), ${estado.retirados} retirado(s) — "Atualizar 3D" põe a peça no lugar definitivo.` : '';
+    window.hmLayout?.();
   }
   function mostrarAviso(texto, erro = false) {
     if (!aviso) return;

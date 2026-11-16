@@ -32,23 +32,32 @@ const CSS = `
 :root{--ouro:#c9a227;--ouro2:#e2c35a;--fundo:#111317;--painel:rgba(22,25,31,.97);--borda:#2c3038;--texto:#ebe8e1;--suave:#9ea3ab}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--fundo);color:var(--texto);font:14px/1.35 "Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;overflow:hidden}
 #tela{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
-header{position:fixed;top:0;left:0;right:0;display:flex;align-items:center;gap:14px;padding:10px 16px;background:linear-gradient(180deg,rgba(10,11,14,.95),rgba(10,11,14,.7));border-bottom:1px solid rgba(201,162,39,.35);z-index:5}
-header img{width:46px;height:46px;border-radius:50%;background:#fff;padding:2px;flex:none}
-header .marca{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ouro)}
-header h1{margin:1px 0 0;font-size:18px;font-weight:600;line-height:1.2}header h1 small{display:block;font-size:12.5px;font-weight:500;color:var(--ouro2)}
+header{position:fixed;top:0;left:0;right:0;display:flex;align-items:center;gap:10px;padding:6px 14px;background:linear-gradient(180deg,rgba(10,11,14,.95),rgba(10,11,14,.7));border-bottom:1px solid rgba(201,162,39,.35);z-index:5}
+header img{width:34px;height:34px;border-radius:50%;background:#fff;padding:2px;flex:none}
+header .marca{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ouro)}
+header h1{margin:0;font-size:15px;font-weight:600;line-height:1.2}header h1 small{display:block;font-size:11.5px;font-weight:500;color:var(--ouro2)}
 footer details ul[hidden]{display:none}#barra #ir-planta{max-width:340px;border-color:var(--ouro);color:var(--ouro2)}
-header .meta{margin-left:auto;text-align:right;font-size:12px;color:var(--suave);line-height:1.5}
+header .meta{margin-left:auto;text-align:right;font-size:11px;color:var(--suave);line-height:1.4}
 header .meta b{color:var(--texto);font-weight:600}
-#barra{position:fixed;top:68px;left:16px;right:16px;display:flex;flex-wrap:wrap;gap:6px;z-index:4}
-#barra button,#disciplinas button,#barra select{background:#1e2128;color:var(--suave);border:1px solid var(--borda);border-radius:6px;padding:6px 11px;font:inherit;font-size:13px;cursor:pointer}
+#barra{position:fixed;top:52px;left:14px;right:14px;display:flex;flex-wrap:wrap;align-items:center;gap:5px;z-index:7}
+#barra button,#disciplinas button,#barra select{background:#1e2128;color:var(--suave);border:1px solid var(--borda);border-radius:6px;padding:5px 10px;font:inherit;font-size:12.5px;cursor:pointer}
 #barra select{max-width:210px;color:var(--texto)}#barra select option{background:#1e2128;color:var(--texto)}
 #barra button:hover,#barra select:hover{border-color:var(--ouro);color:var(--texto)}
 #barra button.ativo{background:#2c2715;border-color:var(--ouro);color:var(--ouro2)}
 #disciplinas{display:contents}
+#barra #ir-ambiente{border-color:var(--ouro);color:var(--ouro2);font-weight:600;max-width:240px}
+#barra .par{display:inline-flex}#barra .par button:first-child{border-radius:6px 0 0 6px}#barra .par button+button{border-radius:0 6px 6px 0;margin-left:-1px}
+#barra .menu{position:relative;display:inline-flex}#barra .menu-abre::after{content:"▾";margin-left:6px;font-size:10px;opacity:.8}
+#barra .menu-lista{display:none;position:absolute;top:calc(100% + 5px);left:0;z-index:20;min-width:230px;max-height:calc(100vh - var(--topo,110px) - 16px);overflow:auto;flex-direction:column;gap:3px;padding:8px;background:var(--painel);border:1px solid var(--ouro);border-radius:9px;box-shadow:0 8px 28px rgba(0,0,0,.5)}
+#barra .menu.aberto .menu-lista{display:flex}#barra .menu.aberto>.menu-abre{border-color:var(--ouro);color:var(--ouro2)}
+#barra .menu-lista button{text-align:left;width:100%;white-space:nowrap}#barra .menu-lista #disciplinas{display:flex;flex-direction:column;gap:3px}
+#barra .menu-tit{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ouro);margin:7px 2px 1px}#barra .menu-tit:first-child{margin-top:0}
+#barra .fim{margin-left:auto}
+body.sem-painel>aside{display:none}body.embutido>header{display:none}
 #barra button.disc i{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--cor);margin-right:6px;opacity:.35}
 #barra button.disc.ativo{background:#2a2e36;background:color-mix(in srgb,var(--cor) 18%,#1c1f25);border-color:var(--cor);color:var(--texto)}
 #barra button.disc.ativo i{opacity:1}#barra button small{opacity:.7}
-aside{position:fixed;top:112px;right:16px;bottom:52px;width:330px;overflow:auto;z-index:4;display:flex;flex-direction:column;gap:10px}
+aside{position:fixed;top:96px;right:14px;bottom:44px;width:310px;overflow:auto;z-index:4;display:flex;flex-direction:column;gap:10px}
 aside section{background:var(--painel);border:1px solid var(--borda);border-radius:8px;padding:10px 12px}
 aside h2{margin:0 0 8px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ouro);display:flex;justify-content:space-between;cursor:pointer;user-select:none}
 aside h2::after{content:"–";color:var(--suave)}aside section.fechada h2::after{content:"+"}aside section.fechada>:not(h2){display:none!important}
@@ -72,16 +81,16 @@ aside h2::after{content:"–";color:var(--suave)}aside section.fechada h2::after
 #etiquetas-pontos{position:fixed;inset:0;pointer-events:none;z-index:2;overflow:hidden}
 .etq-p{position:absolute;left:0;top:0;padding:2px 7px 3px;border-radius:5px;background:rgba(12,13,16,.86);border:1px solid var(--cor,#c9a227);border-left-width:4px;white-space:nowrap;font-size:11px;line-height:1.25;text-align:left}
 .etq-p b{display:block;font-weight:600;color:#fff;font-size:11px}.etq-p span{color:var(--suave);font-size:10.5px}
-#dentro{position:fixed;left:50%;bottom:52px;transform:translateX(-50%);z-index:6;display:none;align-items:center;gap:12px;padding:8px 10px 8px 14px;background:var(--painel);border:1px solid var(--ouro);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.45);max-width:calc(100vw - 32px)}
+#dentro{position:fixed;left:50%;bottom:44px;transform:translateX(-50%);z-index:6;display:none;align-items:center;gap:10px;padding:6px 8px 6px 12px;background:var(--painel);border:1px solid var(--ouro);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.45);max-width:calc(100vw - 32px)}
 #dentro.aberto{display:flex}#dentro .onde{font-size:11px;color:var(--suave);line-height:1.3}#dentro .onde b{display:block;font-size:15px;color:var(--ouro2);font-weight:600}
-#dentro small{color:var(--suave);font-size:11px;max-width:330px;line-height:1.3}
-#dentro button{flex:none;background:var(--ouro);color:#15171b;border:0;border-radius:7px;padding:9px 14px;font:inherit;font-weight:600;cursor:pointer}
+#dentro small{color:var(--suave);font-size:11px;max-width:230px;line-height:1.3}
+#dentro button{flex:none;background:var(--ouro);color:#15171b;border:0;border-radius:7px;padding:7px 12px;font:inherit;font-weight:600;cursor:pointer}
 #dentro button:hover{background:var(--ouro2)}
 body.modo-dentro aside{display:none}
 #dica small{color:var(--suave)}
 #dica{position:fixed;display:none;z-index:6;pointer-events:none;background:rgba(12,13,16,.95);border:1px solid var(--ouro);border-radius:6px;padding:6px 9px;font-size:12px;max-width:280px}
 #dica b{color:var(--ouro2)}
-footer{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;gap:16px;align-items:center;padding:8px 16px;background:rgba(10,11,14,.9);border-top:1px solid rgba(201,162,39,.35);font-size:12px;color:var(--suave)}
+footer{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;gap:16px;align-items:center;padding:5px 14px;background:rgba(10,11,14,.9);border-top:1px solid rgba(201,162,39,.35);font-size:11.5px;color:var(--suave)}
 footer .aviso{color:var(--ouro2);font-weight:600}footer .comandos{margin-left:auto;white-space:nowrap}
 footer details{position:relative}footer summary{cursor:pointer;color:var(--texto)}footer details ul{position:absolute;bottom:28px;left:0;width:min(640px,90vw);max-height:40vh;overflow:auto;margin:0;padding:10px 14px 10px 28px;background:var(--painel);border:1px solid var(--borda);border-radius:8px;color:var(--texto)}
 #semwebgl{position:fixed;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:40px;z-index:9;background:var(--fundo)}
@@ -95,8 +104,8 @@ footer details{position:relative}footer summary{cursor:pointer;color:var(--texto
 .sim-lista{display:flex;flex-direction:column;gap:3px}.sim-dj{display:flex;align-items:center;gap:8px;background:none;border:1px solid var(--borda);border-radius:6px;padding:4px 8px;color:var(--texto);font:inherit;font-size:12px;text-align:left;cursor:pointer}
 .sim-dj:hover{border-color:var(--ouro)}.sim-dj i{flex:none;width:10px;height:18px;border-radius:2px;background:#2f9e44}.sim-dj.on i{background:#d62828}.sim-dj b{min-width:46px;color:var(--ouro2)}.sim-dj span small{display:block;color:var(--suave);font-size:11px}.sim-dj.off{opacity:.72}
 .sim-aviso{position:fixed;left:50%;bottom:62px;transform:translate(-50%,16px);opacity:0;transition:opacity .25s,transform .25s;z-index:12;background:rgba(12,13,16,.95);border:1px solid var(--ouro);border-radius:8px;padding:7px 14px;font-size:13px;pointer-events:none;max-width:90vw}.sim-aviso.visivel{opacity:1;transform:translate(-50%,0)}
-#ficha{position:fixed;left:16px;bottom:52px;width:350px;max-height:calc(100vh - 210px);overflow:auto;z-index:6;background:var(--painel);border:1px solid var(--ouro);border-radius:10px;padding:8px 12px;display:none;box-shadow:0 6px 24px rgba(0,0,0,.45)}
-#ficha.aberta{display:block}#ficha .fechar{position:absolute;right:6px;top:4px;background:none;border:0;color:var(--suave);font-size:20px;line-height:1;cursor:pointer}body.modo-dentro #ficha{bottom:118px}
+#ficha{position:fixed;left:14px;bottom:44px;width:330px;max-height:calc(100vh - var(--topo,110px) - 56px);overflow:auto;z-index:6;background:var(--painel);border:1px solid var(--ouro);border-radius:10px;padding:8px 12px;display:none;box-shadow:0 6px 24px rgba(0,0,0,.45)}
+#ficha.aberta{display:block}#ficha .fechar{position:absolute;right:6px;top:4px;background:none;border:0;color:var(--suave);font-size:20px;line-height:1;cursor:pointer}body.modo-dentro #ficha{bottom:100px;max-height:calc(100vh - var(--topo,110px) - 112px)}
 #q-sim{position:fixed;inset:0;z-index:10;background:var(--fundo);display:none}#q-sim.aberto{display:block}#q-sim #barra{top:12px}#q-sim aside{top:60px;bottom:16px;display:flex}
 #q-sim .q-nome{align-self:center;color:var(--ouro2);font-weight:600;margin:0 6px;flex:none;white-space:nowrap}body.modo-dentro .sim-aviso{bottom:118px}#q-sim #b-voltar-predio{background:var(--ouro);color:#15171b;border-color:var(--ouro);font-weight:600}
 .etq-q{position:absolute;left:0;top:0;padding:1px 5px;border-radius:4px;background:rgba(12,13,16,.78);border:1px solid rgba(201,162,39,.55);color:#fff;font-size:10.5px;white-space:nowrap}.etq-dica{position:fixed;z-index:11;pointer-events:none;border-color:var(--ouro);font-size:12px}
@@ -109,7 +118,7 @@ i.cor-infra{display:inline-block;width:14px;height:5px;border-radius:2px;backgro
 #mapa-lux{position:fixed;left:50%;bottom:52px;transform:translateX(-50%);z-index:6;width:min(380px,calc(100vw - 32px));background:var(--painel);border:1px solid var(--ouro);border-radius:10px;padding:8px 12px;display:none;font-size:12px;box-shadow:0 6px 24px rgba(0,0,0,.45)}#mapa-lux.aberto{display:block}body.modo-dentro #mapa-lux{bottom:118px}
 #mapa-lux .tit{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ouro)}#mapa-lux .barra{height:12px;border-radius:3px;margin:6px 0 2px}#mapa-lux .marcas{display:flex;justify-content:space-between;font-size:10.5px;color:var(--suave)}#mapa-lux .t{margin:6px 0 2px}#mapa-lux b{color:var(--ouro2)}#mapa-lux small{color:var(--suave);display:block;margin-top:6px;line-height:1.3}
 @media (max-width:900px){#ficha{left:12px;right:12px;width:auto;bottom:64px;max-height:45vh}#mapa-lux{left:12px;right:12px;width:auto;transform:none;bottom:64px}body.modo-dentro #mapa-lux{bottom:124px}#dentro{flex-wrap:wrap}#dentro-cenas{max-width:none;order:3;width:100%}#q-sim aside{top:auto;bottom:12px;max-height:42vh}}
-@media (max-width:900px){#dentro{left:12px;right:12px;bottom:58px;transform:none;justify-content:space-between}#dentro small{display:none}#barra select{flex:none}#barra{flex-wrap:nowrap;overflow-x:auto;left:0;right:0;padding:0 12px 4px;scrollbar-width:none}#barra button{flex:none}aside{top:auto!important;left:12px;right:12px;width:auto;max-height:40vh;bottom:64px}header .meta{display:none}footer .comandos{display:none}header h1{font-size:15px}}
+@media (max-width:900px){#dentro{left:12px;right:12px;bottom:58px;transform:none;justify-content:space-between}#dentro small{display:none}#barra select{flex:none;max-width:46vw}#barra{left:8px;right:8px}#barra button{flex:none}#barra .fim{margin-left:0}aside{top:auto!important;left:12px;right:12px;width:auto;max-height:40vh;bottom:64px}header .meta{display:none}footer .comandos{display:none}header h1{font-size:15px}}
 `;
 
 // Premissas de uma cena (rodapé "Premissas do modelo")
@@ -152,22 +161,28 @@ function gerarHtml(cenas, { principal = 0 } = {}) {
 </header>
 <nav id="barra">
 ${varias ? `  <select id="ir-planta" title="Cada planta da prancha é um modelo à parte">${lista.map((c, i) => `<option value="${i}">${escapeHtml(c.plantaInfo?.nome || `Planta ${i + 1}`)}</option>`).join('')}</select>
-` : ''}  <button id="b-3d" title="Voltar à vista em perspectiva">Vista 3D</button>
-  <button id="b-cima" title="Planta vista de cima">Vista de cima</button>
-  <button id="b-giro">Giro automático</button>
-  <select id="ir-ambiente" title="Entrar num ambiente (vista de dentro, na altura dos olhos)"><option value="">Ir para ambiente…</option></select>
+` : ''}  <select id="ir-ambiente" title="Entrar num ambiente (vista de dentro, na altura dos olhos)"><option value="">Ir para ambiente…</option></select>
+  <span class="par"><button id="b-3d" title="Voltar à vista em perspectiva">Vista 3D</button><button id="b-cima" title="Planta vista de cima">Vista de cima</button></span>
   <button id="b-paredes" title="Paredes sólidas, translúcidas ou ocultas">Paredes</button>
   <button id="b-corte" title="Rebaixa as paredes da frente para ver o interior">Corte</button>
-  <button id="b-ambientes">Ambientes</button>
-  <button id="b-etiquetas">Etiquetas</button>
-  <button id="b-portas">Portas</button>
-  <button id="b-planta" title="Linhas da planta no piso: mobiliário, louças, bancadas, escada">Mobiliário</button>
-  <span id="disciplinas"></span>
-  <button id="b-infra" title="Eletrocalhas, eletrodutos, leitos e perfilados">Infraestrutura</button>
-  <button id="b-sugerido" title="Caminhos de eletroduto sugeridos pelo sistema para ligar ao quadro/à rede os pontos que o projeto deixou soltos (translúcidos, em azul-claro)">Sugeridos</button>
-  <button id="b-campo" title="Campo de visão das câmeras e cobertura dos sensores (estimados)">Campo de visão</button>
-  <button id="b-grandes" title="Aumenta os símbolos dos pontos">Símbolos maiores</button>
-  <button id="b-tela">Tela cheia</button>
+  <div class="menu" id="m-exibir"><button type="button" class="menu-abre" aria-haspopup="true" aria-expanded="false" title="O que aparece no modelo: disciplinas, ambientes, portas, infraestrutura…">Exibir</button><div class="menu-lista">
+    <div class="menu-tit">Disciplinas</div><span id="disciplinas"></span>
+    <div class="menu-tit">Arquitetura</div>
+    <button id="b-ambientes" title="Piso colorido de cada ambiente">Ambientes</button>
+    <button id="b-etiquetas" title="Nome e área de cada ambiente">Etiquetas</button>
+    <button id="b-portas">Portas</button>
+    <button id="b-planta" title="Linhas da planta no piso: mobiliário, louças, bancadas, escada">Mobiliário</button>
+    <div class="menu-tit">Instalações</div>
+    <button id="b-infra" title="Eletrocalhas, eletrodutos, leitos e perfilados">Infraestrutura</button>
+    <button id="b-sugerido" title="Caminhos de eletroduto sugeridos pelo sistema para ligar ao quadro/à rede os pontos que o projeto deixou soltos (translúcidos, em azul-claro)">Sugeridos</button>
+    <button id="b-campo" title="Campo de visão das câmeras e cobertura dos sensores (estimados)">Campo de visão</button>
+    <button id="b-grandes" title="Aumenta os símbolos dos pontos">Símbolos maiores</button>
+  </div></div>
+  <div class="menu" id="m-ferr"><button type="button" class="menu-abre" aria-haspopup="true" aria-expanded="false" title="Medir, copiar a vista, giro automático e simulação">Ferramentas</button><div class="menu-lista">
+    <button id="b-giro">Giro automático</button>
+  </div></div>
+  <button id="b-painel" class="fim" title="Números do projeto, legenda dos pontos e lista dos ambientes">Legenda</button>
+  <button id="b-tela" title="Tela cheia">Tela cheia</button>
 </nav>
 <aside>
   <section><h2>Números do projeto</h2><div id="numeros"></div></section>
@@ -175,7 +190,7 @@ ${varias ? `  <select id="ir-planta" title="Cada planta da prancha é um modelo 
   <section class="fechada"><h2>Ambientes</h2><div id="lista-ambientes"></div></section>
 </aside>
 <div id="dica"></div>
-<div id="dentro"><div class="onde">Dentro do ambiente<b id="dentro-nome"></b></div><small>arraste para olhar em volta · roda ou pinça = zoom · duplo clique no piso = andar · Esc = voltar</small><button id="b-voltar">Voltar à vista geral</button></div>
+<div id="dentro"><div class="onde">Dentro do ambiente<b id="dentro-nome"></b></div><small title="arraste para olhar em volta · roda ou pinça = zoom · duplo clique no piso = andar · Esc = voltar">duplo clique no piso = andar · Esc = voltar</small><button id="b-voltar">Voltar à vista geral</button></div>
 <footer>
   <span class="aviso">Ilustração — não substitui o projeto executivo.</span>
   <details><summary>Premissas do modelo</summary>${lista.map((c, i) => `<ul data-planta="${i}"${c === cena ? '' : ' hidden'}>${premissasDa(c).map(p => `<li>${escapeHtml(p)}</li>`).join('')}</ul>`).join('')}</details>
@@ -184,7 +199,11 @@ ${varias ? `  <select id="ir-planta" title="Cada planta da prancha é um modelo 
 <div id="semwebgl"><div><h2>Seu navegador não abriu o 3D (WebGL desligado).</h2><p>Abra este arquivo no Chrome, Edge ou Firefox atualizados.</p></div></div>
 <script>${varias ? `window.CENAS=${jsonSeguro(lista)};(function(){var m=/planta=([0-9]+)/.exec(location.hash),i=m?Number(m[1])-1:${lista.indexOf(cena)};if(!(i>=0&&i<CENAS.length))i=${lista.indexOf(cena)};window.CENA=CENAS[i];document.querySelectorAll('footer ul[data-planta]').forEach(function(u){u.hidden=Number(u.dataset.planta)!==i});var s=document.getElementById('ir-planta');s.value=String(i);s.onchange=function(){location.hash='planta='+(Number(s.value)+1);location.reload()};document.getElementById('nome-planta').textContent=CENA.plantaInfo?CENA.plantaInfo.nome:''})();` : `window.CENA=${jsonSeguro(cena)};`}document.querySelectorAll('aside h2').forEach(function(h){h.onclick=function(){h.parentNode.classList.toggle('fechada')}});
 if(innerWidth<=900)document.querySelectorAll('aside section').forEach(function(s){s.classList.add('fechada')});
-function hmLayout(){var h=document.querySelector('header'),n=document.querySelector('#barra'),a=document.querySelector('aside');n.style.top=(h.offsetHeight+6)+'px';if(innerWidth>900)a.style.top=(n.offsetTop+n.offsetHeight+8)+'px'}addEventListener('resize',hmLayout);addEventListener('load',hmLayout);hmLayout();</script>
+function hmLayout(){var h=document.querySelector('header'),n=document.querySelector('#barra'),a=document.querySelector('body>aside'),e=document.getElementById('hm-edicao');n.style.top=(h.offsetHeight+(h.offsetHeight?5:8))+'px';var t=n.offsetTop+n.offsetHeight+6;document.documentElement.style.setProperty('--topo',t+'px');if(e){e.style.top=t+'px';t+=e.offsetHeight+8}if(innerWidth>900&&a)a.style.top=t+'px'}addEventListener('resize',hmLayout);addEventListener('load',hmLayout);
+(function(){var emb=false;try{emb=window.self!==window.top}catch(x){emb=true}var sem=emb||innerWidth<1200||innerHeight<760,b=document.getElementById('b-painel');document.body.classList.toggle('sem-painel',sem);document.body.classList.toggle('embutido',emb);b.classList.toggle('ativo',!sem);b.onclick=function(){var s=document.body.classList.toggle('sem-painel');b.classList.toggle('ativo',!s);hmLayout()};
+var fechar=function(){document.querySelectorAll('#barra .menu.aberto').forEach(function(m){m.classList.remove('aberto');var l=m.querySelector('.menu-lista');l.style.left=l.style.right='';m.querySelector('.menu-abre').setAttribute('aria-expanded','false')})};
+document.querySelectorAll('#barra .menu').forEach(function(m){var a=m.querySelector('.menu-abre');a.onclick=function(ev){ev.stopPropagation();var abrir=!m.classList.contains('aberto');fechar();if(abrir){m.classList.add('aberto');a.setAttribute('aria-expanded','true');var l=m.querySelector('.menu-lista'),r=l.getBoundingClientRect();if(r.right>innerWidth-6){l.style.left='auto';l.style.right=Math.min(0,m.getBoundingClientRect().right-innerWidth+6)+'px'}}}});
+document.addEventListener('pointerdown',function(ev){if(!ev.target.closest||!ev.target.closest('#barra .menu'))fechar()});document.addEventListener('keydown',function(ev){if(ev.key==='Escape')fechar()})})();hmLayout();</script>
 <script>${lerBundle()}</script>
 </body>
 </html>

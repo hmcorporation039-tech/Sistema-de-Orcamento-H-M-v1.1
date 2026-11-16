@@ -525,6 +525,24 @@ caso('página: corte, infraestrutura, "Ir para ambiente" e painel de dentro do a
   assert.deepStrictEqual(cru, [], 'texto da cena sem esc() em template de HTML');
 });
 
+caso('barra enxuta (2.44): à vista só ambiente, vistas, paredes e corte; camadas em "Exibir", ferramentas em "Ferramentas"; painel lateral sob "Legenda"', () => {
+  const html = gerarHtml(cT);
+  const nav = html.slice(html.indexOf('<nav id="barra">'), html.indexOf('</nav>'));
+  const exibir = nav.slice(nav.indexOf('id="m-exibir"'), nav.indexOf('id="m-ferr"'));
+  const ferr = nav.slice(nav.indexOf('id="m-ferr"'));
+  for (const id of ['disciplinas', 'b-ambientes', 'b-etiquetas', 'b-portas', 'b-planta', 'b-infra', 'b-sugerido', 'b-campo', 'b-grandes']) assert.ok(exibir.includes(`id="${id}"`), `#${id} fora do menu Exibir`);
+  assert.ok(ferr.includes('id="b-giro"'), 'giro fora do menu Ferramentas');
+  for (const id of ['ir-ambiente', 'b-3d', 'b-cima', 'b-paredes', 'b-corte', 'b-painel', 'b-tela']) assert.ok(nav.includes(`id="${id}"`), `sem #${id} na barra`);
+  // fora dos menus, no máximo 9 controles à vista (antes eram 17 + um por disciplina)
+  const avista = nav.replace(/<div class="menu-lista">[\s\S]*?<\/div><\/div>/g, '').match(/<(button|select)\b/g).length;
+  assert.ok(avista <= 9, `${avista} controles à vista`);
+  // embutido (tela da análise) e tela pequena: painel lateral fechado e sem o cabeçalho repetido
+  assert.ok(html.includes('body.embutido>header{display:none}'), 'cabeçalho repetido no 3D embutido');
+  assert.ok(html.includes('body.sem-painel>aside{display:none}'), 'painel lateral sem o botão Legenda');
+  // Medir, Copiar vista e a simulação vão para o menu; a busca fica na barra
+  assert.ok(FONTE_APP.includes("menu: $('#m-ferr .menu-lista')") && FONTE_APP.includes('function menuFerramentas('));
+});
+
 // ── Revisão de 02/11/2026: ambiente pelo polígono, chaves do registro, desempenho ──
 caso('3D-01 componente do DWG com ambiente null: vai para o menor ambiente que contém o ponto (ou o de contorno mais perto)', () => {
   const c = montarCena(arq, { peDireito: PD, dispositivos: [

@@ -1454,3 +1454,17 @@ Relato do usuário (com foto): "os quadros dos ambientes estão saindo errados n
 - **Correção:** a peça de parede (quadro, rack, central, painel…) fica sempre paralela à parede, virada para o lado do símbolo, e a pegada inteira (largura × profundidade × altura, com 2 cm de folga) não pode entrar no corpo de outra parede: ela desliza ao longo da parede até caber, dentro do ambiente. O afastamento entre quadros vizinhos também não empurra mais um quadro para dentro da parede (vai para o outro lado do vizinho).
 - O cache do 3D muda com o código do gerador: os 3D já gerados são refeitos na próxima abertura. 3D "salvo para o cliente" antes desta versão aparece como "mudou depois de salvo" — conferir e salvar de novo.
 - **Teste:** `teste-3d.js` — quadros nos 4 cantos, junto da parede interna e da porta, dois no mesmo canto e o painel de pressurização: paralelos à parede, sem entrar em parede, pontas dentro do ambiente.
+
+### 15/11/2026: versão 2.44.0 — 3D: tela limpa, focada nos ambientes
+
+Relato do usuário (com foto): "a tela 3D está muito poluída, com muitas janelas e botões; arrume para ficar mais focada nos ambientes".
+- **Barra numa linha só** (`skills/_comum/cad/visualizador3d.js`): à vista ficam só "Ir para ambiente…" (em destaque), Vista 3D / Vista de cima, Paredes, Corte, a busca, **Exibir ▾**, **Ferramentas ▾**, **Legenda** e Tela cheia. Antes eram 17 botões + um por disciplina, em até três linhas.
+  - **Exibir ▾**: disciplinas, ambientes, etiquetas, portas, mobiliário, infraestrutura, sugeridos, campo de visão e símbolos maiores (o menu fica aberto para ligar/desligar vários; fecha ao clicar fora ou Esc).
+  - **Ferramentas ▾**: giro automático, medir, copiar vista e a simulação (quadros, religar tudo, mapa de iluminância, manobras) — `app.js menuFerramentas`, `ferramentas.js` (opção `menu`).
+- **Painel lateral** (números, legenda, ambientes) atrás do botão **Legenda**: aberto só em tela grande fora do sistema (link do cliente/arquivo baixado); fechado no 3D da análise e em tela pequena.
+- **Cabeçalho** mais baixo; dentro da tela da análise ele some (a moldura do sistema já diz o que é). Rodapé e faixa "Dentro do ambiente" mais finos (a explicação longa virou dica ao passar o mouse).
+- **Editar componentes** (`edicao.js`): só Navegar / Inserir / Retirar; a lista de componentes aparece no "Inserir"; fica logo abaixo da barra e o painel lateral desce para não sobrepor.
+- **Ficha do componente** nunca passa por cima da barra (altura máxima pela posição real da barra).
+- **Tela da análise** (`Modelo3dEditor.js`): moldura mais fina e textos curtos (o detalhe ficou na dica).
+- Celular: a barra quebra linha (rolar de lado cortava os menus) e o menu não sai da tela.
+- **Teste:** `teste-3d.js` "barra enxuta (2.44)" — camadas no Exibir, giro no Ferramentas, no máximo 9 controles à vista, painel e cabeçalho escondidos no embutido.

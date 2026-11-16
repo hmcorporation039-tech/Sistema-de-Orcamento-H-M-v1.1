@@ -1526,6 +1526,8 @@ for (const [k, d] of Object.entries(CENA.disciplinas)) {
   barraDisc.appendChild(b);
 }
 if (!CENA.dispositivos.some(t => t.itens.some(it => Array.isArray(it[7])))) $('#b-campo')?.remove();
+// menu Exibir: sem pontos no modelo, sem o título Disciplinas vazio
+if (!barraDisc.children.length && barraDisc.previousElementSibling?.classList.contains('menu-tit')) barraDisc.previousElementSibling.remove();
 
 // ── Painéis: números do projeto e legenda ───────────────────────────────────
 const N = CENA.numeros;
@@ -1718,7 +1720,7 @@ function mostrarDica(cx, cy) {
 const edicao = iniciarEdicao({ CENA, tela, camera, cena, pisos, escolherDispositivo, pedirDesenho, esc });
 // busca de componente, medição e vista no endereço (2.37: ./ferramentas.js)
 const ferramentas = iniciarFerramentas({
-  CENA, tela, camera, cena, controles, barra: $('#barra'), antes: $('#b-tela'),
+  CENA, tela, camera, cena, controles, barra: $('#barra'), antes: $('#m-exibir'), menu: $('#m-ferr .menu-lista'),
   alvosDoClique: () => [...pisos, ...(malhaParedes && grupo('paredes').visible ? [malhaParedes] : []), ...grupo('pilares').children],
   animar, pontoOlhado, sairDoAmbiente, modo: () => modo, pedirDesenho, esc, br,
 });
@@ -1936,11 +1938,18 @@ function clicarComponente(cx, cy) {
   return true;
 }
 
-// botões na barra: abrir cada quadro e religar tudo
+// lista do menu "Ferramentas" (com um título de seção, quando dado); sem o menu, a própria barra
+function menuFerramentas(titulo) {
+  const lista = $('#m-ferr .menu-lista');
+  if (!lista) return $('#barra');
+  if (titulo) { const h = document.createElement('div'); h.className = 'menu-tit'; h.textContent = titulo; lista.appendChild(h); }
+  return lista;
+}
+// botões no menu "Ferramentas": abrir cada quadro e religar tudo
 if (sim) {
-  const antes = $('#b-tela');
-  const barra = $('#barra');
-  const botao = (texto, titulo, fn) => { const b = document.createElement('button'); b.textContent = texto; b.title = titulo; b.addEventListener('click', fn); barra.insertBefore(b, antes || null); return b; };
+  // no menu "Ferramentas" (2.44): a barra fica só com o essencial
+  const barra = menuFerramentas('Simulação');
+  const botao = (texto, titulo, fn) => { const b = document.createElement('button'); b.textContent = texto; b.title = titulo; b.addEventListener('click', fn); barra.appendChild(b); return b; };
   for (const q of sim.quadros().slice(0, 4)) botao(`Quadro ${q.tag}`, `Abrir o quadro ${q.tag}: porta, disjuntores com alavanca (desligar um disjuntor apaga o circuito no prédio)`, () => abrirQuadro(q.tag));
   botao('Religar tudo', 'Simulação: volta tudo ao estado inicial (disjuntores ligados, luzes acesas)', () => { sim.reiniciar(); rede?.reiniciar(); aviso('Simulação reiniciada: tudo ligado'); });
   // fase 5: mapa de iluminância no piso (falsa-cor em lux), calculado aqui pelo mesmo módulo
@@ -1961,20 +1970,20 @@ if (sim) {
 
 // manobras e sistemas (subestação, incêndio, alarme, CFTV, acesso): a lista com os botões
 if (rede) {
-  const barra = $('#barra'), antes = $('#b-tela');
   const comAcao = rede.lista().filter(e => (e.interacao.acoes || []).length || e.interacao.proxy).map(e => e.id);
   if (comAcao.length) {
     const b = document.createElement('button');
     b.textContent = rede.lista().some(e => e.tipo === 'chave_seccionadora' || e.tipo === 'disjuntor_mt') ? 'Manobras da subestação' : 'Sistemas (operar)';
     b.title = 'Operar os equipamentos: chaves, disjuntores, acionadores, armar/desarmar, switch PoE, fechaduras';
     b.addEventListener('click', () => abrirFicha({ lista: comAcao }));
-    barra.insertBefore(b, antes || null);
+    const barra = menuFerramentas(sim ? '' : 'Equipamentos');
+    barra.appendChild(b);
     if (!sim) {
       const r = document.createElement('button');
       r.textContent = 'Restabelecer';
       r.title = 'Volta todos os equipamentos ao estado inicial';
       r.addEventListener('click', () => { rede.reiniciar(); aviso('Equipamentos no estado inicial'); });
-      barra.insertBefore(r, antes || null);
+      barra.appendChild(r);
     }
   }
 }

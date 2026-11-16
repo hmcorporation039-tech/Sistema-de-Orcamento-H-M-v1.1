@@ -16,7 +16,7 @@ const semAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, ''
 const LIMITE_ACHADOS = 30;
 
 export function iniciarFerramentas(ctx) {
-  const { CENA, tela, camera, cena, controles, barra, antes, alvosDoClique, animar, pontoOlhado, sairDoAmbiente, modo, pedirDesenho, esc, br } = ctx;
+  const { CENA, tela, camera, cena, controles, barra, antes, menu, alvosDoClique, animar, pontoOlhado, sairDoAmbiente, modo, pedirDesenho, esc, br } = ctx;
   const estado = { medindo: false, ponto: null };
   const extras = new Group();
   extras.renderOrder = 20;
@@ -24,7 +24,8 @@ export function iniciarFerramentas(ctx) {
   const botao = (texto, titulo) => {
     const b = document.createElement('button');
     b.type = 'button'; b.textContent = texto; b.title = titulo;
-    barra.insertBefore(b, antes || null);
+    // no menu "Ferramentas" (2.44); a busca continua na barra
+    if (menu) menu.appendChild(b); else barra.insertBefore(b, antes || null);
     return b;
   };
   const avisar = (() => {
@@ -85,7 +86,7 @@ export function iniciarFerramentas(ctx) {
     campo.placeholder = 'Buscar componente…';
     campo.title = 'Nome, identificação (ID/TAG), ambiente ou circuito — Enter vai ao primeiro achado';
     campo.setAttribute('aria-label', 'Buscar componente no modelo');
-    campo.style.cssText = 'background:#1e2128;color:#eef2f6;border:1px solid #3a3f4a;border-radius:6px;padding:6px 9px;font:inherit;font-size:13px;width:190px';
+    campo.style.cssText = 'background:#1e2128;color:#eef2f6;border:1px solid #3a3f4a;border-radius:6px;padding:5px 9px;font:inherit;font-size:12.5px;width:170px';
     const lista = document.createElement('div');
     lista.style.cssText = 'position:absolute;top:100%;left:0;margin-top:4px;z-index:40;background:rgba(18,24,33,.97);border:1px solid #c9a227;border-radius:8px;max-height:320px;overflow:auto;min-width:300px;display:none;font-size:12.5px';
     caixa.append(campo, lista);
