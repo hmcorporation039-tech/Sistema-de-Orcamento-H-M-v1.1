@@ -96,9 +96,12 @@ const REGIOES_FORA = ['diagrama', 'vista_quadro', 'quadro_cargas', 'carimbo'];
         ambientes: arq.ambientes.map(a => ({ nome: a.nome, area_m2: a.area_m2, perimetro_m: a.perimetro_m, poligono: a.poligono, origem: a.origem, centro: a.centro,
           ...(a.pavimento ? { pavimento: a.pavimento } : {}), ...(a.area_projeto_m2 ? { area_projeto_m2: a.area_projeto_m2 } : {}),
           ...(a.areaDivergente ? { areaDivergente: true } : {}), ...(a.semNome ? { semNome: true } : {}) })),
-        pavimentos: (arq.pavimentos || []).map(p => ({ nome: p.nome, ordem: p.ordem, titulo: p.titulo, caixa: p.caixa, ambientes: p.ambientes, area_m2: p.area_m2 })),
+        pavimentos: (arq.pavimentos || []).map(p => ({ nome: p.nome, ordem: p.ordem, titulo: p.titulo, caixa: p.caixa, ambientes: p.ambientes, area_m2: p.area_m2,
+          // 2.46: nível do piso, altura entre pisos, pé-direito e o alinhamento vertical (skills/_comum/cad/pavimentos.js)
+          nivel_m: p.nivel_m ?? null, entre_pisos_m: p.entre_pisos_m ?? null, pe_direito_m: p.pe_direito_m ?? null, deslocamento: p.deslocamento || null, metodo: p.metodo || null })),
         // portas com o lado e os ambientes (o projetista põe acionador/sensor nas de saída)
-        listaPortas: arq.portas.map(p => ({ meio: p.meio, n: p.n, largura_m: p.largura_m, ambientes: p.ambientes || [], externa: !!p.externa })),
+        // (2.46) + dobradiça, batente e direção: a elétrica da elaboração põe o interruptor junto da porta (posicionamento.juntoPorta)
+        listaPortas: arq.portas.map(p => ({ meio: p.meio, n: p.n, u: p.u, largura_m: p.largura_m, dupla: !!p.dupla, dobradica: p.dobradica, batente: p.batente, abre_para: p.abre_para ?? null, outro_lado: p.outro_lado ?? null, id: p.id ?? null, ambientes: p.ambientes || [], externa: !!p.externa })),
         // o que o desenho é (planta × unifilar × quadro de cargas…) e as regiões que não
         // são planta, em metros (skills/_comum/cad/classificarPrancha.js)
         folha: arq.classificacao && {

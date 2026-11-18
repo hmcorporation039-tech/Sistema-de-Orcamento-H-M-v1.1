@@ -22,6 +22,8 @@ export function iniciarEdicao(ctx) {
   const estado = { ligado: false, modo: 'navegar', paleta: [], escolhido: null, outras: false, inseridos: 0, retirados: 0 };
   const nada = { ativo: () => false, clique: () => false, estado };
   if (!embutido) return nada;
+  // (2.46) a vista do prédio (pavimentos empilhados) só mostra: inserir/retirar é na planta de cada pavimento
+  if (CENA.plantaInfo && CENA.plantaInfo.predio) return nada;
   const origem = Array.isArray(CENA.origem) ? CENA.origem : null;
   const enviar = (msg) => { try { window.parent.postMessage(msg, '*'); } catch { /* tela fechada */ } };
   const marcas = new Group();

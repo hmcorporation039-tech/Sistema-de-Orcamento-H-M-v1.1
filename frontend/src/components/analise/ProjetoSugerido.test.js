@@ -79,3 +79,45 @@ test('pavimentos e ambientes: um grupo por pavimento, na ordem do prédio, com a
   expect(caixa.textContent).toContain('SALA - 02 — 67,03 m²');
   expect(caixa.textContent).toContain('lida pelas paredes: 10 m²');
 });
+
+// 2.46: pontos agrupados (n), nível/pé-direito do pavimento, critérios e "gerar de novo"
+test('2.46: soma os agrupados (n), mostra nível e pé-direito do pavimento e gera de novo com os critérios escolhidos', async () => {
+  const s = {
+    ...sugerido, componentes: 7,
+    pontos: [
+      { simbolo: 'HM-ILU-LUMINARIA', disciplina: 'iluminacao', rotulo: 'Luminária LED', ambiente: 'SECRETARIA', pavimento: 'Térreo', motivo: 'método dos lúmens', n: 6 },
+      { simbolo: 'HM-ELE-QUADRO', disciplina: 'eletrica', rotulo: 'Quadro de distribuição (QD)', ambiente: 'SECRETARIA', pavimento: 'Térreo', motivo: 'QD do Térreo', n: 1 },
+    ],
+    pavimentosInfo: [{ nome: 'Térreo', nivel_m: 0.1, pe_direito_m: 4.85, pe_direito_lido: true, metodo: 'referência' }, { nome: '1º pavimento', nivel_m: 5.15, pe_direito_m: 4.24, pe_direito_lido: true, metodo: 'pelas paredes que se repetem (40 % do contorno casado)' }],
+    criteriosUsados: { densidadeCftv: 'padrao', cftvExterno: true, ptz: true, incendio: 'total', redePor10m2: 2, classeSpda: 'III', excluir: [], peDireito: null },
+    disciplinas: ['iluminacao', 'eletrica', 'cftv'],
+  };
+  const pedidos = [];
+  act(() => raiz.render(<ProjetoSugerido analise={{ id: 9, dadosExtraidos: [{ arquivo: 'arq.dwg', projeto_sugerido: s }] }} estiloCartao={{}} estiloTitulo={{}} onRegerar={async (c) => { pedidos.push(c); }} />));
+  const txt = caixa.textContent;
+  expect(txt).toContain('SECRETARIA: 6 × Luminária LED');
+  expect(txt).toContain('Iluminação');
+  expect(caixa.querySelector('[data-testid="info-pavimento"]').textContent).toContain('Pé-direito 4,85 m (pelas cotas lidas)');
+  expect(caixa.querySelector('[data-testid="prancha-dxf"]').textContent).toContain('Prancha DXF — Térreo');
+  // aba do 1º pavimento: o alinhamento aparece
+  act(() => caixa.querySelectorAll('[data-testid="aba-pavimento"]')[1].click());
+  expect(caixa.querySelector('[data-testid="info-pavimento"]').textContent).toContain('alinhado ao prédio pelas paredes que se repetem');
+  // mudar os critérios e gerar de novo
+  const abrir = [...caixa.querySelectorAll('button')].find(b => /Mudar os critérios/.test(b.textContent));
+  act(() => abrir.click());
+  const sel = caixa.querySelector('#crit-densidade');
+  act(() => { sel.value = 'reforcada'; sel.dispatchEvent(new Event('change', { bubbles: true })); });
+  await act(async () => { caixa.querySelector('[data-testid="gerar-de-novo"]').click(); });
+  expect(pedidos).toHaveLength(1);
+  expect(pedidos[0].densidadeCftv).toBe('reforcada');
+  expect(pedidos[0].classeSpda).toBe('III');
+});
+
+test('2.46: critérios para o envio — pé-direito com vírgula vira número e a lista de fora sai limpa', () => {
+  const { criteriosParaEnvio, criteriosDoProjeto } = require('./CriteriosProjeto');
+  const c = criteriosParaEnvio({ peDireito: '3,5', excluir: ['CASA PAROQUIAL', '  ', 'SALA - 02 (Térreo)'] });
+  expect(c.peDireito).toBe(3.5);
+  expect(c.excluir).toEqual(['CASA PAROQUIAL', 'SALA - 02 (Térreo)']);
+  expect(criteriosParaEnvio({}).peDireito).toBeUndefined();
+  expect(criteriosDoProjeto({ peDireito: 4.2, excluir: ['X'] }).peDireito).toBe('4,2');
+});

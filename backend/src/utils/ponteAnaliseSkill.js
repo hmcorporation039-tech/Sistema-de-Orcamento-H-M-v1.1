@@ -335,13 +335,13 @@ function cftv(motor, analise, extraido, avisos) {
       const local = `${p.ambiente}${variosPav ? ` (${p.pavimento})` : ''}`;
       const k = `${local}|${externa ? 1 : 0}`;
       const g = porLocal.get(k) || porLocal.set(k, { local, externa, qtd: 0, cabo: 0 }).get(k);
-      g.qtd++;
+      g.qtd += Number(p.n) || 1; // (2.46: agrupados por ambiente, com n)
       g.cabo = Math.max(g.cabo, Number(p.cabo_m) || 0);
     }
     dados.cameras = [...porLocal.values()].map((g, i) => ({
       ...linha(g.local, g.qtd, i + 1), tipo: g.externa ? 'bullet' : 'dome', externa: g.externa, distancia_cabo_m: g.cabo > 0 ? Math.round(g.cabo) : 30,
     }));
-    avisos.push(`${sugeridas.length} câmeras do projeto sugerido pelo sistema em ${porLocal.size} ambiente(s), com o cabo medido pelo traçado até o rack (o maior de cada ambiente).`);
+    avisos.push(`${sugeridas.reduce((s, p) => s + (Number(p.n) || 1), 0)} câmeras do projeto sugerido pelo sistema em ${porLocal.size} ambiente(s), com o cabo medido pelo traçado até o rack (o maior de cada ambiente).`);
     avisos.push('[CONFERIR] resolução 4 MP, abertura 90°, objetivo "observação" e alvo a 10 m são valores típicos — defina a lente pelo que cada câmera precisa ver (DORI, IEC 62676-4).');
     return dados;
   }

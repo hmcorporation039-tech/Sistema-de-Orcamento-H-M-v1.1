@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { FilePlus2 } from 'lucide-react';
 import {
   gerarRelatorioCompatibilizacao, getAnaliseProjeto,
-  gerarOrcamentoDaAnalise, getPastaAnalise, abrirPastaAnalise, getDisciplinasProjeto, criarProjetoDeAnalise,
+  gerarOrcamentoDaAnalise, getPastaAnalise, abrirPastaAnalise, getDisciplinasProjeto, criarProjetoDeAnalise, reprocessarMapaCad,
 } from '../services/api';
 import { baixarArquivo, mensagemDeErro } from '../utils/download';
 import { clientePorNome } from '../components/CampoCliente';
@@ -332,7 +332,17 @@ export default function Compatibilizacao() {
           {elaboracao && (
             <>
               <ProjetoSugerido analise={analise} estiloCartao={card} estiloTitulo={tituloSecao}
-                onVer3d={() => document.getElementById('cartao-3d-analise')?.scrollIntoView({ behavior: 'smooth' })} />
+                onVer3d={() => document.getElementById('cartao-3d-analise')?.scrollIntoView({ behavior: 'smooth' })}
+                onRegerar={async (criterios) => {
+                  // 2.46: o projeto sugerido de novo com os critérios escolhidos — análise nova (a atual continua salva)
+                  try {
+                    const r = await reprocessarMapaCad(analise.id, { criterios });
+                    toast.success('Projeto gerado de novo com os critérios escolhidos — análise nova gravada; a anterior continua salva.', { duration: 7000 });
+                    navigate(`/obras/analise/${r.data.id}`);
+                  } catch (err) {
+                    toast.error(await mensagemDeErro(err, 'Não consegui gerar o projeto de novo'), { duration: 10000 });
+                  }
+                }} />
               <div id="cartao-3d-analise"><CartaoModelo3dAnalise analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} /></div>
               {cartaoProjetos(true)}
               <PavimentosDaAnalise analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />

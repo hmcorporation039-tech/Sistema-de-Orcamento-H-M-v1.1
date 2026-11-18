@@ -13,7 +13,7 @@
 // (`opcoes.layersAmbiente`, regex, restringe a etapa 1).
 const { Helper } = require('dxf');
 const { classificarFolha, NAO_PLANTA, RE_NOME_SALA } = require('./classificarPrancha');
-const { dividirPorPavimentos, ordemDoPavimento } = require('./pavimentos');
+const { dividirPorPavimentos, ordemDoPavimento, completarPavimentos } = require('./pavimentos');
 const { ehLayerDeInstalacao } = require('./disciplinasCad');
 const { limparMtext } = require('./textoCad');
 const { pontosDoSolido, pontosDaCurva, lacosDaHachura } = require('./geometriaCad');
@@ -1117,6 +1117,8 @@ function lerArquitetura(textoDxf, opcoes = {}) {
     const ambs = ambientes.filter(a => a.pavimento === r.pavimento.nome);
     pavimentos.push({ nome: r.pavimento.nome, ordem: r.pavimento.ordem, titulo: r.titulo || null, caixa: r.caixa, ambientes: ambs.length, area_m2: Math.round(ambs.reduce((s, a) => s + a.area_m2, 0) * 100) / 100 });
   }
+  // 2.46: nível do piso, altura entre pisos/pé-direito (cotas escritas) e o alinhamento vertical de cada pavimento
+  completarPavimentos(pavimentos, ambientes, textosDoDesenho);
 
   return {
     ambientes, portas, referencia: refM, extensao, fatorUnidade: fator, layers: [...new Set(ents.map(e => e.layer))],

@@ -989,7 +989,9 @@ function montarMateriaisDoDesenho(analises, vetoriais, catalogo) {
       }
       // cabo dos circuitos de força/iluminação
       const rotaCabo = rotaFiacao || rotaEletroduto;
-      if (DISCIPLINAS_DE_FORCA.has(disciplina) && rotaCabo > 0) {
+      // (2.46) o projeto sugerido (elaboração) já traz o cabo MEDIDO por circuito, na seção da skill: não estima de novo
+      const caboMedido = pags.some(p => (p.itens || []).some(it => it.tipo === 'linha' && it.origemDescricao === 'projetista' && it.tipoLinha === 'cabeamento' && (it.disciplina === disciplina || disciplinaDoItemDesenho(it, p, a.disciplinas) === disciplina)));
+      if (DISCIPLINAS_DE_FORCA.has(disciplina) && rotaCabo > 0 && !caboMedido) {
         const l0 = (g.fiacoes[0] || g.eletrodutos[0]);
         const metros = Math.ceil((rotaCabo * SOBRA_ROTA + desc.metros) * condutores.n);
         materiais.push(base(`Cabo flexível 750 V — ${condutores.n} condutores × (rota + descidas) (bitola conforme quadro de cargas)`, metros, 'm', disciplina,

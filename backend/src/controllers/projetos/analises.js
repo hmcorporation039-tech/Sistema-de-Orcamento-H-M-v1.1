@@ -144,6 +144,26 @@ function arquivoInvalido(arquivos) {
   return ehArquivoCad(ruim.nomeArquivo) ? `"${ruim.nomeArquivo}" não é um DWG nem um DXF válido` : `"${ruim.nomeArquivo}" não é um arquivo PDF válido (aceitos: PDF, DWG e DXF)`;
 }
 
+// Critérios do projetista (2.46): campo multipart/JSON "criterios" — densidade de câmeras, câmeras externas, PTZ,
+// cobertura do incêndio, tomadas de rede por área de trabalho, classe do SPDA, ambientes fora e pé-direito. Só as
+// chaves conhecidas passam; a skill (projetista.criteriosDe) normaliza os valores.
+const CHAVES_CRITERIOS = ['densidadeCftv', 'cftvExterno', 'ptz', 'incendio', 'redePor10m2', 'classeSpda', 'excluir', 'peDireito'];
+function lerCriterios(v) {
+  let c = v;
+  if (typeof c === 'string') {
+    if (!c.trim() || c.length > 8000) return null;
+    try { c = JSON.parse(c); } catch { return null; }
+  }
+  if (!c || typeof c !== 'object' || Array.isArray(c)) return null;
+  const out = {};
+  for (const k of CHAVES_CRITERIOS) if (c[k] !== undefined && c[k] !== null && c[k] !== '') out[k] = k === 'excluir' ? (Array.isArray(c[k]) ? c[k].map(String).slice(0, 200) : []) : c[k];
+  return Object.keys(out).length ? out : null;
+}
+function criteriosDaAnalise(a) {
+  const e = (Array.isArray(a?.dados_extraidos) ? a.dados_extraidos : []).find(x => x?.projeto_sugerido?.criteriosUsados);
+  return e ? lerCriterios(e.projeto_sugerido.criteriosUsados) : null;
+}
+
 // Parte comum do envio direto (multipart) e do pacote (2.3): obra, finalidade,
 // análise, gravação. `corpo`: { finalidade, obra_id, nome_projeto }. `opcoes.mapasConfirmados`: tipos conferidos no
 // mapa do CAD (controllers/projetos/mapaCad.js) quando a análise é um reprocessamento; `opcoes.analiseAnterior`: a análise
@@ -172,7 +192,9 @@ async function executarAnalise(req, res, arquivos, corpo, opcoes = {}) {
 
   try {
     // obraId: o aprendizado conta a obra como UM projeto (R01 e R02 do mesmo desenho não votam duas vezes)
-    const resultado = await analisarProjetoCompleto(arquivos, { ...opcoes, obraId: obraDaAnalise?.id || null, finalidade });
+    // critérios do projetista (2.46, elaboração): os do envio ou, ao gerar de novo, os da análise anterior
+    const criterios = finalidade === 'elaboracao' ? (lerCriterios(corpo.criterios) || criteriosDaAnalise(opcoes.analiseAnterior)) : null;
+    const resultado = await analisarProjetoCompleto(arquivos, { ...opcoes, obraId: obraDaAnalise?.id || null, finalidade, criterios });
     // o que foi LIDO (antes de qualquer edição) fica guardado nas análises com mapa do CAD: é a base para copiar edições num reprocessamento
     const temMapa = (resultado.dadosExtraidos || []).some(d => d?.mapa_cad);
     const leituraOriginal = temMapa ? { servicos: enxugarLeitura(resultado.servicos), materiais: enxugarLeitura(resultado.materiais) } : null;
@@ -395,6 +417,6 @@ const { pasta, abrirPasta } = rotasDePasta({
   naoEncontrado: 'Análise não encontrada',
 });
 
-module.exports = {
+module.exports = { lerCriterios, criteriosDaAnalise,
   listar, buscarUma, analisar, atualizar, remover, gerarRelatorio, pasta, abrirPasta, arquivoInvalido, executarAnalise,
 };

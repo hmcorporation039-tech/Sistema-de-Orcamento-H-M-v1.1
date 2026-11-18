@@ -16,6 +16,7 @@ const { pontosDasDisciplinas } = require('./estimativaArquitetura');
 const { juntarInstalacoes } = require('../instalacao');
 // 3D focado no objetivo do projeto (09/11/2026): só as vistas principais, sem a base de outro projeto
 const OBJ = require('./cenaDoObjetivo');
+const { cenaDoPredio } = require('./predioEmpilhado');
 
 const naCaixa = (c, [x, y], m = 0) => x >= c[0] - m && x <= c[2] + m && y >= c[1] - m && y <= c[3] + m;
 const meioDe = (pol) => [pol.reduce((s, p) => s + p[0], 0) / pol.length, pol.reduce((s, p) => s + p[1], 0) / pol.length];
@@ -131,15 +132,18 @@ function montarPlantas(arquitetura, plantas, opcoes, obj = null) {
     // vira modelo — na Arena (01/11/2026) saía uma "Planta 4" que ninguém sabia o que era
     // (a vista principal do objetivo do projeto sempre vira)
     if (!obj && varias && !dispositivos.length && !arq.ambientes.some(a => !a.semNome)) continue;
+    // (2.46) pé-direito do pavimento lido nas cotas (./pavimentos.js), quando ninguém informou um
+    const infoPav = p.pavimento ? (arquitetura.pavimentos || []).find(x => x.nome === p.pavimento.nome) : null;
+    const peDireito = !(opcoes.peDireitoInformado ?? opcoes.peDireito != null) && infoPav?.pe_direito_m > 1.8 && infoPav.pe_direito_m < 30 ? infoPav.pe_direito_m : opcoes.peDireito;
     const cena = montarCena(arq, {
-      peDireito: opcoes.peDireito, dispositivos, avisos, trechos, estimarInfra: false, sugerirInfra: opcoes.sugerirInfra !== false,
+      peDireito, dispositivos, avisos, trechos, estimarInfra: false, sugerirInfra: opcoes.sugerirInfra !== false,
       // circuitos originais dos quadros (unifilar/quadro de cargas, lidos no desenho inteiro) e os textos curtos da
       // planta (número do circuito junto do ponto, tag junto do quadro): ./quadrosDoDiagrama.js
       quadrosDoDiagrama: arquitetura.quadrosDoDiagrama || [], rotulos: arquitetura.rotulos || [],
       titulo: opcoes.titulo, cliente: opcoes.cliente, obra: opcoes.obra, proposta: opcoes.proposta,
       ...(instalacao ? { instalacao } : {}),
     });
-    cena.plantaInfo = { n: p.n, nome: p.nome, caixa: p.caixa.map(v => Math.round(v * 100) / 100), pontos: dispositivos.length, origem, area_m2: p.area_m2 };
+    cena.plantaInfo = { n: p.n, nome: p.nome, caixa: p.caixa.map(v => Math.round(v * 100) / 100), pontos: dispositivos.length, origem, area_m2: p.area_m2, ...(p.pavimento ? { pavimento: p.pavimento.nome } : {}) };
     if (obj) {
       cena.componentes = doObjetivo.componentes;
       const comps = (obj.componentes || []).filter(c => c && !/^port/i.test(String(c.tipo || '')));
@@ -150,9 +154,13 @@ function montarPlantas(arquitetura, plantas, opcoes, obj = null) {
   // plantas descartadas (sem ambiente nem ponto): a numeração segue sem buraco
   cenas.forEach((c, i) => { c.plantaInfo.nome = c.plantaInfo.nome.replace(/Planta [0-9]+/, `Planta ${i + 1}`); });
   if (!cenas.length) throw new Error('O desenho não tem planta com ambientes nem pontos de instalação para o 3D.');
+  // (2.46) com dois ou mais pavimentos alinhados: a vista do prédio inteiro, empilhada, no fim da lista (só para ver)
+  if (!obj && cenas.length > 1) {
+    try { const predio = cenaDoPredio(cenas, arquitetura); if (predio) cenas.push(predio); } catch { /* sem a vista do prédio: as plantas seguem */ }
+  }
   // a que abre (e a da imagem do PDF): a com mais pontos; empate, a maior
   let principal = 0;
-  cenas.forEach((c, i) => { const m = cenas[principal].plantaInfo; if (c.plantaInfo.pontos > m.pontos || (c.plantaInfo.pontos === m.pontos && c.plantaInfo.area_m2 > m.area_m2)) principal = i; });
+  cenas.forEach((c, i) => { const m = cenas[principal].plantaInfo; if (c.plantaInfo.predio) return; if (c.plantaInfo.pontos > m.pontos || (c.plantaInfo.pontos === m.pontos && c.plantaInfo.area_m2 > m.area_m2)) principal = i; });
   return { cenas, principal };
 }
 

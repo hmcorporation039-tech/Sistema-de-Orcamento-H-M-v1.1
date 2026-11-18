@@ -443,4 +443,6 @@ module.exports = {
   comEdicoes,
   CSP_MODELO_3D, CSP_MODELO_3D_EMBUTIDO, obterModelo, refazerModelo, situacao, salvoParaCliente, propostasDaAnalise, imagemDoModelo, nomeArquivo, criarLink, lerLink,
   chaveDa, versaoDoGerador, versaoDoVisualizador, arquivosDoGerador, gerarNoWorker, dispositivosDoEspacial, paginaDoModelo,
+  // 2.46: a prancha do projeto sugerido usa a mesma fonte (arquitetura guardada + pontos com as edições)
+  fonteDoModelo,
 };

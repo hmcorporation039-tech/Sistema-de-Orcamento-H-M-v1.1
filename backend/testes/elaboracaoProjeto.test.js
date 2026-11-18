@@ -99,9 +99,10 @@ const DXF = Buffer.from(dxfR([
     const pos = elab.espacial.pontos.find(p => p.simbolo === 'HM-CFTV-CAMERA');
     const edicoes = { adicionados: [], removidos: [{ id: 'r0123456789', x: pos.x, y: pos.y, simbolo: 'HM-CFTV-CAMERA' }] };
     const de2 = await lerArquivoCad(DXF, 'arquitetura-sintetica.dxf', { disciplinas: ['cftv'], finalidade: 'elaboracao', edicoes });
-    const antes = sug.pontos.filter(p => p.simbolo === 'HM-CFTV-CAMERA').length;
+    const soma = (l) => l.reduce((t, p) => t + (p.n || 1), 0); // (2.46: pontos agrupados com n)
+    const antes = soma(sug.pontos.filter(p => p.simbolo === 'HM-CFTV-CAMERA'));
     assert.ok(cap);
-    assert.strictEqual(de2.pagina.projetoSugerido.pontos.filter(p => p.simbolo === 'HM-CFTV-CAMERA').length, antes - 1);
+    assert.strictEqual(soma(de2.pagina.projetoSugerido.pontos.filter(p => p.simbolo === 'HM-CFTV-CAMERA')), antes - 1);
     assert.strictEqual(de2.pagina.projetoSugerido.retirados, 1);
   });
 
@@ -131,6 +132,35 @@ const DXF = Buffer.from(dxfR([
     assert.ok(!comProjeto.some(a => /Blocos do desenho não identificados|outras áreas/.test(a.tema)));
     const semProjeto = achadosDoDesenho(analises, [[{ origem: 'cad', naoIdentificados: [{ bloco: 'a.6sd50', quantidade: 24, layer: 'MOB' }], outraArea: 27 }]]);
     assert.ok(semProjeto.some(a => /Blocos do desenho não identificados/.test(a.tema)));
+  });
+
+  await caso('2.46: critérios do engenheiro chegam ao projetista; elétrica, SPDA e controle de acesso projetados; pontos agrupados', async () => {
+    const r = await lerArquivoCad(DXF, 'arquitetura-sintetica.dxf', { disciplinas: ['eletrica', 'spda', 'controle_acesso'], finalidade: 'elaboracao', criterios: { classeSpda: 'II', excluir: ['BANHEIRO'] } });
+    const s = r.pagina.projetoSugerido;
+    assert.ok(s && !s.erro, JSON.stringify(s));
+    assert.deepStrictEqual(s.disciplinas, ['eletrica', 'spda', 'controle_acesso']);
+    assert.strictEqual(s.criteriosUsados.classeSpda, 'II');
+    assert.ok(!s.pontos.some(p => p.ambiente === 'BANHEIRO'), 'ambiente excluído');
+    // agrupados: cada entrada com n ≥ 1 e a soma = componentes
+    assert.ok(s.pontos.every(p => p.n >= 1));
+    assert.strictEqual(s.pontos.reduce((t, p) => t + p.n, 0), s.componentes);
+    assert.ok(s.pontos.length < s.componentes, 'nada foi agrupado');
+    assert.strictEqual(s.pavimentosInfo.length, 2);
+    const linhas = r.pagina.itens.filter(i => i.tipo === 'linha' && i.origemDescricao === 'projetista');
+    assert.ok(linhas.some(l => /Cabo de cobre flexível/.test(l.descricao) && l.metros > 0), 'cabos da elétrica');
+    assert.ok(linhas.some(l => /Captação em malha 10 × 10 m/.test(l.descricao)), 'SPDA nível II');
+    assert.ok(r.pagina.itens.some(i => i.tipo === 'simbolo' && /Tomada de uso geral/.test(i.descricao) && i.origemDescricao === 'projetista'));
+  });
+
+  await caso('2.46: critérios do envio — só as chaves conhecidas; JSON inválido não passa; gerar de novo usa os da análise', async () => {
+    const { lerCriterios, criteriosDaAnalise } = require('../src/controllers/projetos/analises');
+    assert.deepStrictEqual(lerCriterios('{"densidadeCftv":"economica","hack":1,"excluir":["SALA"]}'), { densidadeCftv: 'economica', excluir: ['SALA'] });
+    assert.deepStrictEqual(lerCriterios({ classeSpda: 'I', incendio: 'rotas' }), { classeSpda: 'I', incendio: 'rotas' });
+    assert.strictEqual(lerCriterios('{nao é json'), null);
+    assert.strictEqual(lerCriterios([1, 2]), null);
+    assert.strictEqual(lerCriterios({ outra: 1 }), null);
+    assert.deepStrictEqual(criteriosDaAnalise({ dados_extraidos: [{}, { projeto_sugerido: { criteriosUsados: { ptz: false, fatorCftv: 1 } } }] }), { ptz: false });
+    assert.strictEqual(criteriosDaAnalise(null), null);
   });
 
   console.log(`elaboração de projeto: ${ok} casos ok`);

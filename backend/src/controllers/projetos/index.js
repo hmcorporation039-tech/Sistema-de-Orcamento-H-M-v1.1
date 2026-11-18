@@ -13,10 +13,12 @@ const { listar, buscarUma, analisar, atualizar, remover, gerarRelatorio, pasta, 
 const { receberPacote, analisarPacote, descartarPacote, compatibilizacaoDxf } = require('./pacotes');
 const { gerarOrcamento } = require('./orcamento');
 const mapaCad = require('./mapaCad');
+const pranchaSugerida = require('./pranchaSugerida');
 
 module.exports = {
   listar, buscarUma, analisar, atualizar, remover, gerarRelatorio, gerarOrcamento, pasta, abrirPasta,
   receberPacote, analisarPacote, descartarPacote, compatibilizacaoDxf,
   lerMapaCad: mapaCad.ler, salvarMapaCad: mapaCad.salvar, editarMapaCad: mapaCad.editar, reprocessarMapaCad: mapaCad.reprocessar, confirmarBlocoMapaCad: mapaCad.confirmarBloco,
   exportarBibliotecaBlocos: mapaCad.exportarBiblioteca, importarBibliotecaBlocos: mapaCad.importarBiblioteca,
+  pranchaSugerida: pranchaSugerida.prancha,
 };

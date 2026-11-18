@@ -32,7 +32,7 @@ try {
   let r;
   try {
     r = montarCenasPorPlanta(arquitetura, {
-      peDireito, avisos: w.semPontos ? [w.semPontos] : [],
+      peDireito, peDireitoInformado: Number(w.peDireito) > 1.5, avisos: w.semPontos ? [w.semPontos] : [],
       dispositivosReais: w.dispositivosReais, trechos: w.trechos || [],
       disciplinas: w.disciplinas, dadosPorDisciplina: w.dadosPorDisciplina,
       titulo: w.titulo, cliente: w.cliente, obra: w.obra, proposta: w.proposta, aprendidos: w.aprendidos || [],

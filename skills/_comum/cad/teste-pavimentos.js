@@ -181,10 +181,146 @@ caso('projetista: traçado (eletrocalha + eletrodutos) e cabo MEDIDO por ponto, 
 });
 
 caso('projetista: sem disciplina conhecida ou sem ambiente com nome, nada é inventado', () => {
-  assert.strictEqual(projetarDisciplinas(arq, ['eletrica']).pontos.length, 0);
+  assert.strictEqual(projetarDisciplinas(arq, ['pressurizacao']).pontos.length, 0);
   const semNome = projetarDisciplinas({ ambientes: [{ nome: 'Ambiente 1', semNome: true, area_m2: 20, poligono: [[0, 0], [5, 0], [5, 4], [0, 4]] }] }, ['cftv']);
   assert.strictEqual(semNome.pontos.length, 0);
   assert.ok(semNome.avisos.length >= 1);
+});
+
+// ── 2.46: níveis/pé-direito, alinhamento, roteamento, critérios, disciplinas novas, prancha e prédio empilhado ──
+// o mesmo desenho com as cotas de nível escritas (térreo +0,10 e 1º +3,40 → 3,30 m entre pisos)
+function desenhoComNiveis() {
+  const e = [
+    ...planta(0, ['SECRETARIA', 'CPD', 'CIRCULAÇÃO', 'BANHEIRO'], 'PLANTA BAIXA - TÉRREO'),
+    ...planta(20, ['QUARTO - 01', 'SALA DE ESTAR', 'CAPELA', 'DEPÓSITO'], 'PLANTA BAIXA - 1º PAVIMENTO'),
+    L(0, 12.5, 40, 12.5, 'LIMITE'),
+    ...[[3, 3], [16, 3], [3, 9]].map(([x, y]) => T('+0,10', x, y, 0.1, 'ARQ-SMB-NIV')),
+    ...[[23, 3], [36, 3], [23, 9], [36, 9]].map(([x, y]) => T('+3,40', x, y, 0.1, 'ARQ-SMB-NIV')),
+    T('-0,05', 8, 2, 0.1, 'ARQ-SMB-NIV'), // cota solta (degrau): não é o piso
+  ];
+  return dxfR(e);
+}
+const arqN = lerArquitetura(desenhoComNiveis());
+// porta entre a SECRETARIA e o CPD (no vão da divisória) e a da fachada na CIRCULAÇÃO (entrada)
+const comPortas = (a) => ({ ...a, portas: [
+  { meio: [10.07, 3.5], n: [1, 0], largura_m: 0.9, ambientes: ['SECRETARIA', 'CPD'], externa: false },
+  { meio: [1.07, 8.5], n: [1, 0], largura_m: 1.2, ambientes: ['CIRCULAÇÃO'], externa: true },
+] });
+
+caso('2.46 níveis: o piso de cada pavimento pela cota mais repetida, subindo; pé-direito = entre pisos − laje', () => {
+  const [t, p1] = arqN.pavimentos;
+  assert.strictEqual(t.nivel_m, 0.1);
+  assert.strictEqual(p1.nivel_m, 3.4);
+  assert.strictEqual(t.entre_pisos_m, 3.3);
+  assert.strictEqual(t.pe_direito_m, 3.1);
+  assert.strictEqual(p1.pe_direito_m, null, 'o último pavimento não tem o de cima lido');
+});
+
+caso('2.46 alinhamento: o 1º pavimento vai para cima do térreo pelas paredes que se repetem', () => {
+  const p1 = arqN.pavimentos[1];
+  assert.deepStrictEqual(p1.deslocamento, [-20, 0]);
+  assert.match(p1.metodo, /paredes que se repetem/);
+  assert.strictEqual(arqN.pavimentos[0].metodo, 'referência');
+});
+
+caso('2.46 roteamento: o caminho entre duas salas passa pelo vão da porta, não fura a parede', () => {
+  const { malhaDoPavimento, rota } = require('./projetista').paraTestes;
+  // parede de 50 cm entre as salas; a porta 1 m acima do caminho reto: a volta (≈ 2 m) custa menos que furar a parede
+  const salas = [{ pol: [[0, 0], [5, 0], [5, 5], [0, 5]] }, { pol: [[5.5, 0], [10, 0], [10, 5], [5.5, 5]] }];
+  const m = malhaDoPavimento(salas, [{ meio: [5.25, 2], largura_m: 0.9 }]);
+  const r = rota(m, [1, 1], [9, 1]);
+  assert.ok(r.pts.some(([x, y]) => x > 4.5 && x < 6 && y > 1.4 && y < 2.6), `não passou pela porta: ${JSON.stringify(r.pts)}`);
+  assert.ok(r.comp >= 8 && r.comp < 11, `comprimento ${r.comp}`);
+  // sem porta, fura a parede (caminho reto, acima do forro)
+  const reto = rota(malhaDoPavimento(salas, []), [1, 1], [9, 1]);
+  assert.ok(reto.comp < 8.6, `sem porta: ${reto.comp}`);
+});
+
+caso('2.46 critérios: densidade econômica, detecção só nas rotas, ambiente fora e pé-direito informado', () => {
+  const base = projetarDisciplinas(arqN, ['cftv', 'incendio']);
+  const crit = projetarDisciplinas(arqN, ['cftv', 'incendio'], { criterios: { densidadeCftv: 'economica', incendio: 'rotas', excluir: ['DEPÓSITO'], peDireito: 4 } });
+  const n = (r, s, a) => r.pontos.filter(p => p.simbolo === s && (!a || p.ambiente === a)).length;
+  assert.ok(n(crit, 'HM-CFTV-CAMERA') <= n(base, 'HM-CFTV-CAMERA'));
+  assert.strictEqual(n(crit, 'HM-INC-DETECTOR-FUMACA', 'SECRETARIA'), 0, 'detector fora das rotas');
+  assert.ok(n(crit, 'HM-INC-DETECTOR-FUMACA', 'CIRCULAÇÃO') >= 1, 'circulação é rota de fuga');
+  assert.ok(!crit.pontos.some(p => p.ambiente === 'DEPÓSITO'), 'ambiente excluído recebeu componente');
+  assert.ok(crit.pontos.filter(p => p.simbolo === 'HM-CFTV-CAMERA').every(p => p.altura_m === 3.5), 'câmera na altura do pé-direito informado');
+  assert.ok(crit.criterios.some(c => /Fora do projeto/.test(c)));
+  assert.strictEqual(crit.criteriosUsados.densidadeCftv, 'economica');
+  // o pé-direito lido entra no projeto
+  assert.strictEqual(base.pavimentosInfo.find(p => p.nome === 'Térreo').pe_direito_m, 3.1);
+});
+
+caso('2.46 elétrica e iluminação: pontos e circuitos pela skill, QD por pavimento, cabo por seção (F+N+PE)', () => {
+  const r = projetarDisciplinas(arqN, ['eletrica', 'iluminacao']);
+  const qd = r.pontos.filter(p => p.simbolo === 'HM-ELE-QUADRO');
+  assert.strictEqual(qd.length, 2, 'um QD por pavimento');
+  assert.ok(r.pontos.some(p => p.simbolo === 'HM-ELE-TOMADA-BAIXA' && p.circuito), 'tomada sem circuito');
+  assert.ok(r.pontos.some(p => p.simbolo === 'HM-ILU-LUMINARIA'), 'sem luminária');
+  assert.ok(!r.pontos.some(p => p.simbolo === 'HM-ELE-PONTO-LUZ'), 'ponto de luz da elétrica com a iluminação pedida');
+  assert.ok(r.metragens.some(m => /Cabo de cobre flexível 2,5 mm²/.test(m.descricao) && m.metros > 0));
+  assert.ok(r.metragens.some(m => /Cabo de cobre flexível 1,5 mm²/.test(m.descricao) && m.metros > 0));
+  assert.ok(r.metragens.some(m => /Alimentadores dos QDs/.test(m.descricao)));
+});
+
+caso('2.46 controle de acesso, telefonia, antena: nas portas e nos ambientes certos', () => {
+  const r = projetarDisciplinas(comPortas(arqN), ['controle_acesso', 'telefonia', 'antena']);
+  const de = (s) => r.pontos.filter(p => p.simbolo === s);
+  assert.ok(de('HM-ACE-LEITOR').some(p => p.ambiente === 'CPD'), 'porta do CPD sem leitor');
+  assert.strictEqual(de('HM-ACE-FECHADURA').length, de('HM-ACE-BOTOEIRA').length);
+  assert.ok(de('HM-ACE-EMERGENCIA').length >= 1, 'entrada (rota de fuga) sem acionador de emergência');
+  assert.strictEqual(de('HM-ACE-CONTROLADORA').length, 1);
+  assert.ok(de('HM-TEL-PONTO').some(p => p.ambiente === 'SECRETARIA'));
+  assert.strictEqual(de('HM-TEL-PORTEIRO').length, 1);
+  assert.ok(de('HM-ANT-PONTO').some(p => p.ambiente === 'SALA DE ESTAR'));
+  assert.ok(!de('HM-ANT-PONTO').some(p => p.ambiente === 'BANHEIRO'));
+});
+
+caso('2.46 SPDA: descidas pela classe (NBR 5419-3 Tabela 5), malha de captação e anel', () => {
+  const SP = require('../../spda/scripts/lib/tabelas');
+  for (const classe of ['II', 'IV']) {
+    const r = projetarDisciplinas(arqN, ['spda'], { criterios: { classeSpda: classe } });
+    const desc = r.pontos.filter(p => p.simbolo === 'HM-SPDA-DESCIDA');
+    // contorno do prédio alinhado: 18 × 10 m → 56 m de perímetro
+    assert.strictEqual(desc.length, Math.max(2, Math.ceil(56 / SP.NIVEL[classe].descidas)), `classe ${classe}: ${desc.length} descidas`);
+    assert.strictEqual(r.pontos.filter(p => p.simbolo === 'HM-SPDA-CAIXA-INSPECAO').length, desc.length);
+    assert.ok(r.metragens.some(m => /Captação em malha/.test(m.descricao) && m.metros >= 56));
+    assert.ok(r.metragens.some(m => /Anel de aterramento/.test(m.descricao)));
+  }
+});
+
+caso('2.46 prancha do pavimento: DXF com os blocos e a arquitetura de fundo, SVG e quantitativo só do pavimento', () => {
+  const { pranchaDoPavimento } = require('./pranchaSugerida');
+  const proj = projetarDisciplinas(arqN, ['cftv', 'incendio']);
+  const disp = proj.pontos.map(p => ({ simbolo: p.simbolo, x: p.x, y: p.y, disciplina: p.disciplina, rotulo: p.rotulo, id: p.id }));
+  const r = pranchaDoPavimento({ arquitetura: arqN, pavimento: '1º pavimento', dispositivos: disp, trechos: proj.trechos, notas: ['nota de teste'] });
+  const doPav = proj.pontos.filter(p => p.pavimento === '1º pavimento').length;
+  assert.strictEqual(r.quantitativo.reduce((s, q) => s + q.quantidade, 0), doPav);
+  assert.match(r.dxf, /HM-CFTV-CAMERA/);
+  assert.match(r.dxf, /ARQ-BASE/);
+  assert.match(r.svg, /^<svg/);
+  assert.match(r.svg, /CAPELA/);
+  assert.throws(() => pranchaDoPavimento({ arquitetura: arqN, pavimento: 'Mezanino', dispositivos: disp }), /não está na arquitetura/);
+});
+
+caso('2.46 3D: pé-direito lido em cada pavimento e a vista do prédio com os pavimentos empilhados', () => {
+  const { montarCenasPorPlanta } = require('./modelosPorPlanta');
+  const proj = projetarDisciplinas(arqN, ['cftv']);
+  const disp = proj.pontos.map(p => ({ simbolo: p.simbolo, x: p.x, y: p.y, disciplina: p.disciplina, rotulo: p.rotulo, id: p.id, rotacao: 0 }));
+  const { cenas, principal } = montarCenasPorPlanta(arqN, { dispositivosReais: disp, peDireito: 2.8, peDireitoInformado: false });
+  assert.strictEqual(cenas.length, 3);
+  assert.strictEqual(cenas[0].peDireito, 3.1, 'térreo com o pé-direito lido');
+  const predio = cenas[2];
+  assert.ok(predio.plantaInfo.predio);
+  assert.notStrictEqual(principal, 2, 'a vista do prédio não abre por padrão');
+  assert.deepStrictEqual([...new Set(predio.ambientes.map(a => a.z))], [0, 3.3]);
+  assert.ok(predio.paredes.some(w => w[5] >= 3.3), 'paredes do 1º pavimento não subiram');
+  // alinhado: as salas do 1º pavimento caem em cima das do térreo
+  const cap = predio.ambientes.find(a => a.nome === 'CAPELA (1º pavimento)'), circ = predio.ambientes.find(a => a.nome === 'CIRCULAÇÃO (Térreo)');
+  assert.ok(Math.hypot(cap.centro[0] - circ.centro[0], cap.centro[1] - circ.centro[1]) < 0.5, 'pavimentos desalinhados');
+  assert.strictEqual(predio.dispositivos.reduce((s, t) => s + t.itens.length, 0), disp.length);
+  // sem dois pavimentos: nada de vista do prédio
+  assert.strictEqual(require('./predioEmpilhado').cenaDoPredio(cenas.slice(0, 1), arqN), null);
 });
 
 console.log(`pavimentos e projetista: ${ok} casos ok`);

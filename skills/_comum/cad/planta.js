@@ -250,4 +250,4 @@ function gerarPlanta({ arquitetura, pontos, carimbo: dadosCarimbo = {}, notas = 
 }
 
 // definirCarimbo: também o desenho de fabricação dos quadros (quadros/scripts/lib/desenho.js)
-module.exports = { gerarPlanta, posicionarPontos, acharAmbiente, casaNome, normalizar, portasDoAmbiente, definirCarimbo };
+module.exports = { gerarPlanta, posicionarPontos, acharAmbiente, casaNome, normalizar, portasDoAmbiente, definirCarimbo, desenharReferencia, carimbo };

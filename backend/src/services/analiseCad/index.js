@@ -33,7 +33,19 @@ const edicoesDoMapa = require('../edicoesDoMapa');
 const { filtroDoPonto } = require(path.join(CAD, 'objetivoDoProjeto.js'));
 // elaboração de projeto (18/11/2026): a disciplina projetada em cima da arquitetura
 const { projetarDisciplinas, DISCIPLINAS: DISCIPLINAS_DO_PROJETISTA } = require(path.join(CAD, 'projetista.js'));
-const CHAVE_PROJETISTA = { cftv: 'cftv', cabeamento: 'rede', rede: 'rede', incendio: 'incendio', alarme: 'alarme' };
+// 2.46: + elétrica, iluminação, controle de acesso, telefonia, antena e SPDA
+const CHAVE_PROJETISTA = { cftv: 'cftv', cabeamento: 'rede', rede: 'rede', incendio: 'incendio', alarme: 'alarme', eletrica: 'eletrica', iluminacao: 'iluminacao', controle_acesso: 'controle_acesso', telefonia: 'telefonia', antena: 'antena', spda: 'spda' };
+// pontos do projeto sugerido → um por (disciplina, tipo, ambiente, pavimento, motivo), com n e o maior cabo
+function agruparPontosSugeridos(pontos) {
+  const g = new Map();
+  for (const p of pontos) {
+    const k = [p.disciplina, p.simbolo, p.rotulo, p.ambiente, p.pavimento, p.motivo].join('|');
+    const x = g.get(k) || g.set(k, { simbolo: p.simbolo, disciplina: p.disciplina, rotulo: p.rotulo, ambiente: p.ambiente, pavimento: p.pavimento, motivo: p.motivo, n: 0 }).get(k);
+    x.n++;
+    if (p.cabo_m) x.cabo_m = Math.max(x.cabo_m || 0, p.cabo_m);
+  }
+  return [...g.values()];
+}
 // Ponto lido do desenho (símbolo explodido) → descrição do item: a linha da legenda do
 // projeto quando houver ("Tomada alta a 2,20m do piso"), senão o nome do símbolo na
 // biblioteca da H&M (skills/_comum/cad/simbolos.js), sem a altura típica
@@ -480,7 +492,7 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
     const aProjetar = [...new Set((opcoes.disciplinas || []).map(d => CHAVE_PROJETISTA[d]).filter(d => d && DISCIPLINAS_DO_PROJETISTA[d] && !lidas.has(d)))];
     if (aProjetar.length) {
       try {
-        const proj = projetarDisciplinas({ ambientes: ambientesArq, portas: r.arquitetura?.listaPortas || [], pavimentos: r.arquitetura?.pavimentos || [] }, aProjetar);
+        const proj = projetarDisciplinas({ ambientes: ambientesArq, portas: r.arquitetura?.listaPortas || [], pavimentos: r.arquitetura?.pavimentos || [] }, aProjetar, { criterios: opcoes.criterios || null });
         const fora = edicoes ? edicoesDoMapa.indicesRetirados(proj.pontos.map(p => [p.x, p.y]), edicoes) : new Set();
         const pontosProj = proj.pontos.filter((_, i) => !fora.has(i));
         usados.push(...pontosProj.map(p => ({ simbolo: p.simbolo, x: p.x, y: p.y, disciplina: p.disciplina, rotulo: p.rotulo, ...(p.altura_m ? { altura_m: p.altura_m, alturaDe: 'projetista' } : {}), confirmado: true, projetista: true, linha: -1 })));
@@ -491,10 +503,15 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
           disciplinas: aProjetar, pavimentos: proj.pavimentos, componentes: pontosProj.length, retirados: proj.pontos.length - pontosProj.length,
           resumo: proj.resumo, criterios: proj.criterios, avisos: proj.avisos,
           metragens: proj.metragens.map(m => ({ disciplina: m.disciplina, descricao: m.descricao, metros: m.metros })),
-          cabo_max_m: proj.cabos.length ? Math.max(...proj.cabos.map(c => c.comprimento_m)) : null,
+          // maior cabo PONTO A PONTO (telecom, segurança): o circuito elétrico inteiro não entra (2.46)
+          cabo_max_m: proj.cabos.some(c => !c.secao_mm2 && c.ponto !== 'laço') ? Math.max(...proj.cabos.filter(c => !c.secao_mm2 && c.ponto !== 'laço').map(c => c.comprimento_m)) : null,
           // cada componente: onde e por quê (a tela agrupa por pavimento e ambiente)
-          pontos: pontosProj.map(p => ({ simbolo: p.simbolo, disciplina: p.disciplina, rotulo: p.rotulo, ambiente: p.ambiente, pavimento: p.pavimento, motivo: p.motivo, ...(p.cabo_m ? { cabo_m: p.cabo_m } : {}) })),
+          // (2.46) agrupados por tipo + ambiente + motivo, com a quantidade n e o maior cabo: a elaboração com elétrica e
+          // iluminação passa de 2.000 componentes e cada um repetia o mesmo motivo
+          pontos: agruparPontosSugeridos(pontosProj),
           ambientes: proj.ambientes,
+          // nível, pé-direito e alinhamento de cada pavimento e os critérios usados (a tela mostra; gerar de novo reaproveita)
+          pavimentosInfo: proj.pavimentosInfo, criteriosUsados: proj.criteriosUsados,
         };
       } catch (e) {
         projetoSugerido = { erro: `o projeto sugerido não foi gerado: ${e.message}`, disciplinas: aProjetar };
@@ -535,7 +552,9 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
   }
   // infraestrutura e cabos do projeto sugerido (projetista): medidos pelo traçado
   for (const m of metragensSugeridas) {
-    itens.push({ tipo: 'linha', descricao: m.descricao, metros: m.metros, rota_m: m.metros, tipoLinha: m.cabo ? 'cabeamento' : /ELETROCALHA/i.test(m.descricao) ? 'eletrocalha' : 'eletroduto',
+    // (2.46) sem rota_m: o cabo já vem MEDIDO pelo projetista (por ponto ou por circuito) — com ele, o cálculo genérico
+    // "rota × condutores" refazia o cabo da elétrica em cima do eletroduto e a análise acusava o mesmo item duas vezes
+    itens.push({ tipo: 'linha', descricao: m.descricao, metros: m.metros, tipoLinha: m.cabo ? 'cabeamento' : /ELETROCALHA/i.test(m.descricao) ? 'eletrocalha' : 'eletroduto',
       disciplina: m.disciplina, layer: '', ambiguo: false, origemDescricao: 'projetista', observacaoMaterial: 'traçado sugerido pelo sistema (elaboração) — conferir no 3D' });
   }
   for (const l of linhasDoProjeto) {
@@ -781,6 +800,8 @@ function plantaDoMapa(linhasDoMapa, ambientes, naPlanta, fundo = null) {
 function classeDoComponente(texto) {
   const s = String(texto || '');
   if (/^Detector|DETECTOR|FUMA[ÇC]/i.test(s)) return 'detector';
+  // (2.46) comando/interruptor da iluminação é de parede: "Comando de iluminação" casava LUMIN e virava luminária
+  if (/^(Comando|Interruptor)|INTERRUPTOR|COMANDO D[AE] ILUMINA/i.test(s)) return 'comando';
   if (/^Lumin[áa]ria|LUMIN|PLAFON|SPOT|PENDENTE|DOWNLIGHT|\d+\s?W.*\d+\s?lm/i.test(s)) return 'luminaria';
   if (/^C[âa]mera|C[ÂA]MERA|(?<![A-Z])DOME|BULLET/i.test(s)) return 'camera';
   if (/^Sensor de alarme|IVP|INFRAVERMELHO/i.test(s)) return 'sensor_alarme';

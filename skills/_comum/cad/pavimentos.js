@@ -143,4 +143,135 @@ function dividirPorPavimentos(regiao, { textos = [], segmentos = [] } = {}) {
 // ordem de leitura dos pavimentos (subsolo → térreo → andares → cobertura)
 const ordemDoPavimento = (p) => (p && Number.isFinite(p.ordem) ? p.ordem : 1e6);
 
-module.exports = { pavimentoDoTitulo, dividirPorPavimentos, ordemDoPavimento, paraTestes: { divisasDeMoldura, vale } };
+// ── Níveis de piso e alinhamento vertical (versão 2.46, 18/11/2026) ─────────────────────────────────────────
+// "Pé-direito por pavimento lido do corte" e "pavimentos alinhados na vertical". A cota de nível do piso está escrita
+// nas plantas e no corte ("+0,10", "-4,50", "+5,15"); cada planta tem muitas (rampa, degrau, piso elevado), mas a
+// MAIS repetida, na ordem do prédio e sempre subindo, é o piso do pavimento. No DWG da paróquia: subsolo −4,50, térreo
+// +0,10, 1º +5,15, 2º +9,59 e cobertura +15,02 — a altura entre pisos sai da diferença (4,60; 5,05; 4,44 m).
+const RE_NIVEL = /^\s*(?:N[ÍI]VEL|NV\.?|N\.|EL\.?)?\s*([+\-±])?\s*(\d{1,3}[.,]\d{2,3})\s*(?:m)?\s*$/i;
+const LAJE_ADOTADA_M = 0.2; // espessura de laje + forro descontada da altura entre pisos — critério [CONFERIR]
+function niveisDosPavimentos(pavimentos, textos = []) {
+  const candidatos = pavimentos.map((p) => {
+    const vals = [];
+    for (const t of textos) {
+      if (!(t.x >= p.caixa[0] && t.x <= p.caixa[2] && t.y >= p.caixa[1] && t.y <= p.caixa[3])) continue;
+      const m = RE_NIVEL.exec(String(t.s || ''));
+      if (!m) continue;
+      const v = (m[1] === '-' ? -1 : 1) * Number(m[2].replace(',', '.'));
+      if (Math.abs(v) <= 300) vals.push(v);
+    }
+    vals.sort((a, b) => a - b);
+    const grupos = [];
+    for (const v of vals) { const g = grupos[grupos.length - 1]; if (g && v - g.ult <= 0.05) { g.soma += v; g.n++; g.ult = v; } else grupos.push({ soma: v, n: 1, ult: v }); }
+    return grupos.filter(g => g.n >= 2).map(g => ({ v: Math.round((g.soma / g.n) * 100) / 100, n: g.n }));
+  });
+  // um nível por pavimento (ou nenhum), sempre subindo ≥ 2 m por pavimento, com o maior total de cotas
+  const k = pavimentos.length;
+  const melhor = []; // melhor[i][j] = { total, de: [i', j'] }
+  for (let i = 0; i < k; i++) {
+    melhor[i] = candidatos[i].map((c) => {
+      let m = { total: c.n, de: null };
+      for (let i2 = 0; i2 < i; i2++) candidatos[i2].forEach((c2, j2) => {
+        if (c.v - c2.v >= 2 * (i - i2) && melhor[i2][j2].total + c.n > m.total) m = { total: melhor[i2][j2].total + c.n, de: [i2, j2] };
+      });
+      return m;
+    });
+  }
+  let fim = null;
+  melhor.forEach((l, i) => l.forEach((m, j) => { if (!fim || m.total > fim.total) fim = { total: m.total, i, j }; }));
+  const escolhido = new Array(k).fill(null);
+  for (let at = fim && [fim.i, fim.j]; at; at = melhor[at[0]][at[1]].de) escolhido[at[0]] = candidatos[at[0]][at[1]];
+  if (escolhido.filter(Boolean).length < 2) return pavimentos.map(() => null);
+  return escolhido.map((c, i) => {
+    if (!c) return null;
+    const prox = escolhido.slice(i + 1).findIndex(Boolean);
+    const entre = prox === 0 ? Math.round((escolhido[i + 1].v - c.v) * 100) / 100 : null; // só com o pavimento de cima lido
+    return { nivel_m: c.v, cotas: c.n, entre_pisos_m: entre, pe_direito_m: entre ? Math.round((entre - LAJE_ADOTADA_M) * 100) / 100 : null };
+  });
+}
+
+// Alinhamento vertical: o deslocamento que leva cada planta para o lugar dela no prédio (as plantas ficam lado a lado
+// no desenho). Âncora: o que atravessa os pavimentos — escada, elevador, poço, shaft — casado com o do pavimento de
+// referência (térreo); sem âncora, a posição da planta dentro da moldura dela (as pranchas do arquiteto repetem a
+// moldura) — [CONFERIR]. coords no prédio = coords da planta + deslocamento.
+const RE_ANCORA = /ESCADA|ELEVADOR|\bPO[CÇ]O\b|SHAFT|PRUMADA/;
+function alinharPavimentos(pavimentos, ambientes) {
+  const doPav = (n) => ambientes.filter(a => a.pavimento === n);
+  const ref = pavimentos.find(p => /TERREO/.test(sem(p.nome)) && doPav(p.nome).length) || pavimentos.find(p => doPav(p.nome).length);
+  if (!ref) return pavimentos.map(() => null);
+  const ancoras = (n) => doPav(n).filter(a => RE_ANCORA.test(sem(a.nome)) && a.centro);
+  const ancRef = ancoras(ref.nome);
+  return pavimentos.map((p) => {
+    if (p === ref) return { deslocamento: [0, 0], metodo: 'referência' };
+    const daMoldura = [ref.caixa[0] - p.caixa[0], ref.caixa[1] - p.caixa[1]];
+    const larg = (c) => c[2] - c[0];
+    const molduraParecida = Math.abs(larg(p.caixa) - larg(ref.caixa)) <= 0.15 * larg(ref.caixa);
+    const anc = ancoras(p.nome);
+    let melhor = null;
+    for (const a of anc) for (const b of ancRef) {
+      if (sem(a.nome).split(' ')[0] !== sem(b.nome).split(' ')[0]) continue; // escada com escada, elevador com elevador
+      const t = [b.centro[0] - a.centro[0], b.centro[1] - a.centro[1]];
+      const casam = anc.filter(x => ancRef.some(y => Math.hypot(x.centro[0] + t[0] - y.centro[0], x.centro[1] + t[1] - y.centro[1]) <= 2)).length;
+      const longeDaMoldura = Math.hypot(t[0] - daMoldura[0], t[1] - daMoldura[1]);
+      const nota = casam * 10 - (molduraParecida ? Math.min(10, longeDaMoldura) : 0);
+      if (!melhor || nota > melhor.nota) melhor = { nota, t, casam, nomes: [a.nome, b.nome] };
+    }
+    if (melhor && (melhor.casam >= 2 || !molduraParecida || Math.hypot(melhor.t[0] - daMoldura[0], melhor.t[1] - daMoldura[1]) <= 6)) {
+      return { deslocamento: melhor.t.map(v => Math.round(v * 100) / 100), metodo: `pela ${melhor.nomes[0].toLowerCase()} (casada com a do ${ref.nome})` };
+    }
+    // sem escada/elevador casado: as PAREDES que se repetem de um pavimento para o outro (contorno das salas em células
+    // de 0,5 m) — o deslocamento que mais sobrepõe, perto do da moldura (ou do centro das salas)
+    const ml = doPav(p.nome);
+    if (!ml.length) return molduraParecida ? { deslocamento: daMoldura.map(v => Math.round(v * 100) / 100), metodo: 'pela moldura da planta [CONFERIR]' } : null;
+    const meio = (l) => [l.reduce((s, a) => s + a.centro[0], 0) / l.length, l.reduce((s, a) => s + a.centro[1], 0) / l.length];
+    const [mr, mp] = [meio(doPav(ref.nome)), meio(ml)];
+    const doCentro = [mr[0] - mp[0], mr[1] - mp[1]];
+    const corr = correlacionarParedes(ml, doPav(ref.nome), [daMoldura, doCentro]);
+    if (corr) return { deslocamento: corr.t.map(v => Math.round(v * 100) / 100), metodo: `pelas paredes que se repetem (${Math.round(corr.fracao * 100)} % do contorno casado)${corr.fracao < 0.35 ? ' [CONFERIR]' : ''}` };
+    if (molduraParecida) return { deslocamento: daMoldura.map(v => Math.round(v * 100) / 100), metodo: 'pela moldura da planta [CONFERIR]' };
+    return { deslocamento: doCentro.map(v => Math.round(v * 100) / 100), metodo: 'pelo centro das salas [CONFERIR]' };
+  });
+}
+
+// contorno das salas → células de 0,5 m; procura, a até 20 m de cada palpite, o deslocamento com mais células em comum
+const CEL = 0.5;
+function celulasDoContorno(ambs) {
+  const s = new Set();
+  for (const a of ambs) {
+    const pol = a.poligono || [];
+    for (let i = 0; i < pol.length; i++) {
+      const [x1, y1] = pol[i], [x2, y2] = pol[(i + 1) % pol.length];
+      const n = Math.max(1, Math.ceil(Math.hypot(x2 - x1, y2 - y1) / (CEL / 2)));
+      for (let k = 0; k <= n; k++) s.add(`${Math.round((x1 + ((x2 - x1) * k) / n) / CEL)},${Math.round((y1 + ((y2 - y1) * k) / n) / CEL)}`);
+    }
+  }
+  return [...s].map(k => k.split(',').map(Number));
+}
+function correlacionarParedes(doPav, daRef, palpites) {
+  const a = celulasDoContorno(doPav);
+  const b = new Set(celulasDoContorno(daRef).map(([x, y]) => `${x},${y}`));
+  if (a.length < 20 || b.size < 20) return null;
+  const R = Math.round(20 / CEL);
+  let melhor = null;
+  for (const t0 of palpites) {
+    const [cx, cy] = [Math.round(t0[0] / CEL), Math.round(t0[1] / CEL)];
+    for (let dx = -R; dx <= R; dx++) for (let dy = -R; dy <= R; dy++) {
+      let n = 0;
+      for (const [x, y] of a) if (b.has(`${x + cx + dx},${y + cy + dy}`)) n++;
+      if (!melhor || n > melhor.n) melhor = { n, t: [(cx + dx) * CEL, (cy + dy) * CEL] };
+    }
+  }
+  const fracao = melhor.n / Math.min(a.length, b.size);
+  return fracao >= 0.15 ? { t: melhor.t, fracao } : null;
+}
+
+// completa a lista de pavimentos da arquitetura com o nível, a altura entre pisos, o pé-direito e o alinhamento
+function completarPavimentos(pavimentos, ambientes, textos) {
+  if (!pavimentos.length) return pavimentos;
+  const niveis = niveisDosPavimentos(pavimentos, textos);
+  const alinhados = pavimentos.length > 1 ? alinharPavimentos(pavimentos, ambientes) : pavimentos.map(() => ({ deslocamento: [0, 0], metodo: 'referência' }));
+  pavimentos.forEach((p, i) => Object.assign(p, niveis[i] || {}, alinhados[i] || {}));
+  return pavimentos;
+}
+
+module.exports = { pavimentoDoTitulo, dividirPorPavimentos, ordemDoPavimento, niveisDosPavimentos, alinharPavimentos, completarPavimentos, LAJE_ADOTADA_M, paraTestes: { divisasDeMoldura, vale } };

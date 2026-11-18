@@ -117,7 +117,7 @@ async function analisarProjetoCompleto(todosArquivos, opcoes = {}) {
   // quem ensina (services/votosAprendizado.js): a obra, quando a análise é de uma; senão o conteúdo de cada arquivo
   const fonte = opcoes.obraId ? `obra:${opcoes.obraId}` : undefined;
   // (finalidade: na ELABORAÇÃO de projeto o projetista desenha a disciplina em cima da arquitetura — services/analiseCad)
-  const lerCad = ({ buffer, nomeArquivo, disciplinas, referencia }) => lerArquivoCad(buffer, nomeArquivo, { ...sabido, disciplinas: disciplinas || [], confirmados: opcoes.mapasConfirmados?.[nomeArquivo] || [], edicoes: opcoes.mapasEditados?.[nomeArquivo] || null, fonte, finalidade: referencia ? null : opcoes.finalidade || null })
+  const lerCad = ({ buffer, nomeArquivo, disciplinas, referencia }) => lerArquivoCad(buffer, nomeArquivo, { ...sabido, disciplinas: disciplinas || [], confirmados: opcoes.mapasConfirmados?.[nomeArquivo] || [], edicoes: opcoes.mapasEditados?.[nomeArquivo] || null, fonte, finalidade: referencia ? null : opcoes.finalidade || null, criterios: opcoes.criterios || null })
     .then((r) => {
       // (a releitura com o mapa confirmado não ensina de novo o que o primeiro envio já ensinou). Arquivo com UMA
       // disciplina marcada ensina por ela: a linha de legenda/bloco que não diz a sua fica com a do arquivo.

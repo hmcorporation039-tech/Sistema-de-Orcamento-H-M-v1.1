@@ -234,6 +234,8 @@ export const getModelo3d = (origem, id) => api.get(`/modelo-3d/${origem}/${id}`)
 // { url: '/api/modelo-3d/ver/<token>' (vale 2 h), numeros, avisos }; embutido: o 3D dentro da tela da análise (modo de edição)
 export const abrirModelo3d = (origem, id, { embutido = false } = {}) => api.post(`/modelo-3d/${origem}/${id}/abrir`, embutido ? { embutido: true } : null, { timeout: 180000 });
 export const urlModelo3d = (caminho) => `${process.env.REACT_APP_API_URL || ''}${caminho}`;
+// 2.46: prancha do projeto sugerido de um pavimento (DXF com a arquitetura de fundo, ou PDF)
+export const baixarPranchaSugerida = (id, pavimento, formato = 'dxf') => api.get(`/projetos/analises/${id}/projeto-sugerido/prancha`, { params: { pavimento, formato }, responseType: 'blob', timeout: 180000 });
 export const baixarModelo3d = (origem, id) => api.get(`/modelo-3d/${origem}/${id}/arquivo`, { responseType: 'blob', timeout: 180000 });
 // 2.43: "Aprovar e salvar para o cliente" do editor 3D → { nome_arquivo, na_pasta, salvo_em, por, inseridos, retirados, url, propostas }
 export const salvarModelo3dCliente = (id) => api.post(`/modelo-3d/analise/${id}/salvar-cliente`, null, { timeout: 180000 });

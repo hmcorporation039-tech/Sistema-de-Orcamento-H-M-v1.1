@@ -196,7 +196,9 @@ async function reprocessar(req, res) {
     if (req.body?.incluirDisciplinas !== false) disciplinasExtras[nome] = mapaCad.disciplinasAIncluir(d.mapa_cad, d.disciplinas).map(x => x.chave);
   }
   const comEdicao = Object.keys(mapasConfirmados).length + Object.keys(mapasEditados).length > 0;
-  if (!semMapa && !comEdicao) return res.status(400).json({ erro: 'Confirme o tipo de ao menos uma layer, ou insira/retire um componente na planta, antes de reprocessar.' });
+  // (2.46) gerar de novo o projeto sugerido com critérios novos não precisa de edição no mapa
+  const novosCriterios = a.finalidade === 'elaboracao' && req.body?.criterios && typeof req.body.criterios === 'object' ? req.body.criterios : null;
+  if (!semMapa && !comEdicao && !novosCriterios) return res.status(400).json({ erro: 'Confirme o tipo de ao menos uma layer, ou insira/retire um componente na planta, antes de reprocessar.' });
 
   // os arquivos originais ficam na pasta do projeto; os que não estão na lista da análise eram referência (arquitetura etc.)
   let pasta;
@@ -220,7 +222,7 @@ async function reprocessar(req, res) {
   if (!arquivos.length) return res.status(409).json({ erro: 'Não há arquivos do projeto para reprocessar.' });
 
   const base = String(a.nome_projeto || a.cliente_nome || 'Projeto').replace(/\s*\((mapa confirmado|lida de novo)\)$/, '');
-  const corpo = { finalidade: a.finalidade || 'orcamento', obra_id: a.obra_id, nome_projeto: `${base} (${comEdicao ? 'mapa confirmado' : 'lida de novo'})`.slice(0, 200) };
+  const corpo = { finalidade: a.finalidade || 'orcamento', obra_id: a.obra_id, nome_projeto: `${base} (${comEdicao ? 'mapa confirmado' : 'lida de novo'})`.slice(0, 200), ...(novosCriterios ? { criterios: novosCriterios } : {}) };
   await executarAnalise(req, res, arquivos, corpo, { mapasConfirmados, mapasEditados, analiseAnterior: a });
 }
 

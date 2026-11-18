@@ -15,6 +15,7 @@ import { BotoesPacote, ListaPacote, itensDoPacote } from './PacoteProjeto';
 import { analisarPacoteProjeto, pacoteDaPastaObra } from '../../services/api';
 import { FINALIDADES, corFinalidade } from '../../utils/finalidades';
 import { estilos } from '../ui/estilos';
+import CriteriosProjeto, { CRITERIOS_PADRAO, criteriosParaEnvio } from './CriteriosProjeto';
 
 // obraFixa: id da obra (dentro da página da obra) — sem ela, a obra é escolhida aqui (opcional)
 // iniciarComPasta: já lê a pasta da obra ao abrir (vindo de Obra › Arquivos › "Analisar os arquivos desta pasta")
@@ -26,6 +27,9 @@ export default function EnviarParaAnalise({ obraFixa = null, obraInicial = null,
   const [pacote, setPacote] = useState(null);
   const [analisando, setAnalisando] = useState(false);
   const [lendoPasta, setLendoPasta] = useState(false);
+  // 2.46: critérios do projeto sugerido (só na elaboração)
+  const [criterios, setCriterios] = useState(CRITERIOS_PADRAO);
+  const [verCriterios, setVerCriterios] = useState(false);
   const obraId = obraFixa || obra;
 
   function receber(p, { daPasta = false } = {}) {
@@ -64,10 +68,11 @@ export default function EnviarParaAnalise({ obraFixa = null, obraInicial = null,
       const r = await analisarPacoteProjeto(pacote.token, {
         arquivos: incluidos.map(i => ({ id: i.id, disciplinas: i.disciplinas, referencia: i.referencia, tipoReferencia: i.tipoReferencia, ...(Number(i.escala) > 0 ? { escala: Number(i.escala) } : {}) })),
         nome_projeto: nomeProjeto.trim(), obra_id: obraId || null, finalidade,
+        ...(finalidade === 'elaboracao' ? { criterios: criteriosParaEnvio(criterios) } : {}),
       });
       const conflitos = (r.data.conflitos || []).length;
       toast.success(`Projeto analisado: ${incluidos.length} arquivo(s), ${r.data.ambientes.length} ambientes${conflitos ? ` — ${conflitos} conflito(s) de posição entre disciplinas` : ''}`, { duration: 7000 });
-      setPacote(null); setFinalidade(''); setNomeProjeto('');
+      setPacote(null); setFinalidade(''); setNomeProjeto(''); setCriterios(CRITERIOS_PADRAO);
       onCriada(r.data);
     } catch (err) {
       toast.error(err.response?.data?.erro || 'Erro ao analisar o projeto', { duration: 9000 });
@@ -95,6 +100,19 @@ export default function EnviarParaAnalise({ obraFixa = null, obraInicial = null,
           })}
         </div>
         <p style={{ fontSize: 12, color: 'var(--texto-3)', margin: '6px 0 0' }}>Análise de projeto não gera laudo nem escolhe disciplina por conta própria. Laudo é pedido quando necessário, em Laudos.</p>
+        {finalidade === 'elaboracao' && (
+          <div style={{ marginTop: 10, border: '1px solid #2a2a2a', borderRadius: 8, padding: '8px 12px' }}>
+            <button type="button" onClick={() => setVerCriterios(v => !v)} data-testid="ver-criterios" style={{ background: 'none', border: 'none', color: '#c9a227', cursor: 'pointer', fontSize: 13, fontWeight: 700, padding: 0 }}>
+              {verCriterios ? '▾' : '▸'} Critérios do projeto (opcional)
+            </button>
+            <span style={{ fontSize: 12, color: 'var(--texto-3)' }}> — o sistema projeta as disciplinas que o desenho não traz; ajuste antes de gerar.</span>
+            {verCriterios && (
+              <div style={{ marginTop: 10 }}>
+                <CriteriosProjeto valor={criterios} onChange={setCriterios} disciplinas={[...new Set((pacote?.itens || []).filter(i => i.incluir && !i.referencia).flatMap(i => i.disciplinas))]} />
+              </div>
+            )}
+          </div>
+        )}
       </Passo>
 
       <Passo n={2} titulo="Arquivos do projeto">

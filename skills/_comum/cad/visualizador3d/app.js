@@ -168,7 +168,8 @@ const ALTURA_PLANTA = Math.max(0.03, alturaPiso(nivelPiso.reduce((m, n) => Math.
     const g = new ShapeGeometry(new Shape(a.poligono.map(([x, y]) => new Vector2(x, y))));
     const p = g.attributes.position.array;
     const c = new Color((CENA.tiposAmbiente[a.tipo] || CENA.tiposAmbiente.outros).cor);
-    const base = P.pos.length / 3, y = alturaPiso(n);
+    // (2.46) vista do prédio: cada ambiente no nível do pavimento dele (a.z); planta solta: 0
+    const base = P.pos.length / 3, y = alturaPiso(n) + (a.z || 0);
     // (x, y) da planta → (x, altura, −y): o mesmo que a rotação de −90° em x de antes
     for (let i = 0; i < p.length; i += 3) { P.pos.push(p[i], y, -p[i + 1]); P.cor.push(c.r, c.g, c.b); }
     const ix = g.index ? g.index.array : [...Array(p.length / 3).keys()];
@@ -1130,7 +1131,7 @@ const etiquetas = CENA.ambientes.map(a => {
   el.className = 'etq';
   el.innerHTML = `<b>${esc(a.nome)}</b><span>${br(a.area_m2)} m²</span>`;
   camadaEtiquetas.appendChild(el);
-  return { a, el, p: W(a.centro[0], a.centro[1], 0.05), lado: Math.sqrt(a.area_m2), ret: null };
+  return { a, el, p: W(a.centro[0], a.centro[1], (a.z || 0) + 0.05), lado: Math.sqrt(a.area_m2), ret: null };
 }).sort((p, q) => q.a.area_m2 - p.a.area_m2);
 function atualizarEtiquetas() {
   if (!estado.etiquetas || modo !== 'geral') { for (const e of etiquetas) { e.el.style.display = 'none'; e.ret = null; } return; }
@@ -1364,7 +1365,7 @@ function trocarForro(a) {
   if (!a || a.poligono.length < 3) return;
   forro = new Mesh(new ShapeGeometry(new Shape(a.poligono.map(([x, y]) => new Vector2(x, y)))), new MeshBasicMaterial({ color: '#cfccc4', side: DoubleSide }));
   forro.rotation.x = -Math.PI / 2;
-  forro.position.y = PD + 0.002;
+  forro.position.y = (a.z || 0) + (a.pd || PD) + 0.002;
   grupo('forro').add(forro);
   pedirDesenho();
 }
@@ -1389,7 +1390,7 @@ function entrarAmbiente(ref, op = {}) {
   const a = typeof ref === 'number' ? CENA.ambientes[ref] : CENA.ambientes.find(x => x.nome === ref);
   if (!a || a.poligono.length < 3) return false;
   const { olho, alvo, altura } = pontoDeVista(a);
-  const pos = W(olho[0], olho[1], ALTURA_OLHOS), look = W(alvo[0], alvo[1], altura || 1.1);
+  const pos = W(olho[0], olho[1], (a.z || 0) + ALTURA_OLHOS), look = W(alvo[0], alvo[1], (a.z || 0) + (altura || 1.1));
   const a0 = pontoOlhado(camera.position.distanceTo(look));
   if (modo === 'geral') salvo = { pos: camera.position.clone(), alvo: controles.target.clone(), fov: camera.fov };
   modo = 'dentro';

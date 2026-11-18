@@ -275,6 +275,8 @@ router.delete('/projetos/analises/:id', autenticar, validarId, posseAnalise, pro
 router.post('/projetos/analises/:id/gerar-orcamento', autenticar, validarId, posseAnalise, projCtrl.gerarOrcamento);
 // mapa do CAD: o que o sistema entendeu de cada layer do DWG/DXF; o engenheiro corrige e a correção vira aprendizado
 router.get('/projetos/analises/:id/mapa', autenticar, validarId, projCtrl.lerMapaCad);
+// 2.46: prancha DXF/PDF de um pavimento com o projeto sugerido (elaboração)
+router.get('/projetos/analises/:id/projeto-sugerido/prancha', autenticar, validarId, projCtrl.pranchaSugerida);
 router.put('/projetos/analises/:id/mapa', autenticar, validarId, posseAnalise, projCtrl.salvarMapaCad);
 // componentes inseridos e retirados pelo engenheiro (planta do mapa ou 3D), com os símbolos da biblioteca — 2.30
 router.put('/projetos/analises/:id/mapa/edicoes', autenticar, validarId, posseAnalise, projCtrl.editarMapaCad);
