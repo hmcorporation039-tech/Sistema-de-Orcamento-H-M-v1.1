@@ -71,24 +71,29 @@ function plantasDoDesenho(arq) {
   // desenho sem região de planta classificada: o desenho inteiro é a planta
   if (!lista.length) lista = [{ caixa: [arq.extensao.min[0], arq.extensao.min[1], arq.extensao.max[0], arq.extensao.max[1]], titulo: '' }];
   const folhas = molduras(arq);
-  const plantas = lista.map(r => {
+  let plantas = lista.map(r => {
     const ambientes = arq.ambientes.filter(a => naCaixa(r.caixa, centroide(a.poligono)));
     const meio = [(r.caixa[0] + r.caixa[2]) / 2, (r.caixa[1] + r.caixa[3]) / 2];
-    return { caixa: r.caixa, titulo: r.titulo || '', ambientes: ambientes.length, area_m2: Math.round(ambientes.reduce((s, a) => s + a.area_m2, 0) * 100) / 100, folha: folhas.findIndex(c => naCaixa(c, meio)), _amb: ambientes };
+    return { caixa: r.caixa, titulo: r.titulo || '', ...(r.pavimento ? { pavimento: r.pavimento } : {}), ambientes: ambientes.length, area_m2: Math.round(ambientes.reduce((s, a) => s + a.area_m2, 0) * 100) / 100, folha: folhas.findIndex(c => naCaixa(c, meio)), _amb: ambientes };
   });
+  // pavimento que aparece em duas regiões (o rótulo "TÉRREO ANTIGO" do corte, uma vista solta): fica a que tem ambientes
+  plantas = plantas.filter(p => !(p.pavimento && !p.ambientes && plantas.some(o => o !== p && o.pavimento?.chave === p.pavimento.chave && o.ambientes)));
   // ordem de leitura: pela prancha (as que têm planta, numeradas da esquerda para a
   // direita) e, dentro dela ou sem moldura, pela posição
   const usadas = [...new Set(plantas.map(p => p.folha).filter(f => f >= 0))].sort((a, b) => a - b);
   // (folha de PDF: pelo número da página)
   const xDe = (p) => (p.folha >= 0 ? (folhas[p.folha].folha ? folhas[p.folha].folha * 1e7 : folhas[p.folha][0]) : p.caixa[0]);
-  plantas.sort((a, b) => (xDe(a) - xDe(b)) || (b.caixa[3] - a.caixa[3]) || (a.caixa[0] - b.caixa[0]));
+  // com os pavimentos lidos (./pavimentos.js, 18/11/2026): a ordem do prédio — subsolo, térreo, andares, cobertura
+  const ordemPav = (p) => (p.pavimento && Number.isFinite(p.pavimento.ordem) ? p.pavimento.ordem : 1e6);
+  plantas.sort((a, b) => (ordemPav(a) - ordemPav(b)) || (xDe(a) - xDe(b)) || (b.caixa[3] - a.caixa[3]) || (a.caixa[0] - b.caixa[0]));
   const maior = plantas.reduce((m, p) => (p.area_m2 > m.area_m2 || (p.area_m2 === m.area_m2 && area(p.caixa) > area(m.caixa)) ? p : m), plantas[0]);
   return plantas.map((p, i) => {
-    const nome = nomeDaPlanta({ titulo: p.titulo, caixa: p.caixa }, p._amb, arq.classificacao?.regioes || []);
+    // (com o pavimento lido, o nome da planta é o do pavimento: "Planta 2 — Térreo")
+    const nome = p.pavimento ? p.pavimento.nome : nomeDaPlanta({ titulo: p.titulo, caixa: p.caixa }, p._amb, arq.classificacao?.regioes || []);
     const { _amb, folha, ...resto } = p;
     const prancha = folha >= 0 ? usadas.indexOf(folha) + 1 : null;
     const doPdf = folha >= 0 ? folhas[folha].folha : null;
-    return { n: i + 1, ...resto, prancha, principal: p === maior, nome: `${doPdf ? `Folha ${doPdf} · ` : prancha ? `Prancha ${prancha} · ` : ''}Planta ${i + 1}${nome ? ` — ${nome}` : ''}` };
+    return { n: i + 1, ...resto, prancha, principal: p === maior, nome: `${doPdf ? `Folha ${doPdf} · ` : prancha && !p.pavimento ? `Prancha ${prancha} · ` : ''}Planta ${i + 1}${nome ? ` — ${nome}` : ''}` };
   });
 }
 

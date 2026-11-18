@@ -13,6 +13,7 @@
 // (`opcoes.layersAmbiente`, regex, restringe a etapa 1).
 const { Helper } = require('dxf');
 const { classificarFolha, NAO_PLANTA, RE_NOME_SALA } = require('./classificarPrancha');
+const { dividirPorPavimentos, ordemDoPavimento } = require('./pavimentos');
 const { ehLayerDeInstalacao } = require('./disciplinasCad');
 const { limparMtext } = require('./textoCad');
 const { pontosDoSolido, pontosDaCurva, lacosDaHachura } = require('./geometriaCad');
@@ -80,6 +81,10 @@ const RE_NAO_NOME = new RegExp([
   // "PD SOB VIGA= 1,85m", "TOTAL VAGAS…", etiqueta de quadro "213-QLTF-VEST"
   /^[(*\-–]/, /%/, /^\d+\s+(LEITOS?|ESTA[ÇC][ÕO]ES|DEGRAUS|VAGAS?|MESAS|CADEIRAS|POSI[ÇC][ÕO]ES|ASSENTOS|POLTRONAS|LUGARES|UNIDADES)\b/, /\d\s*mA\b/,
   /=\s*[\d.,]+\s*m\b/, /^TOTAL\b/, /(^|[-_ ])(QGBT|QD[A-Z]{0,4}|QL[A-Z]{0,4}|QF[A-Z]{0,4}|CCM)([-_ ]|$)/,
+  // tabela e anotação da prancha de arquitetura que viravam "sala" (paróquia N. S. da Assunção, 18/11/2026): o quadro
+  // de especificações de portas e esquadrias, a legenda de cores, material de piso/cobertura e as notas de obra
+  /^(ESQUADRIAS?|PORTAS?|JANELAS?|PORTAS\s+E\s+JANELAS|QUADRO\s+DE\s+(ESPECIFICA|ESQUADRIA|ACABAMENTO|[ÁA]REAS)|LEGENDA|C[ÓO]DIGO|MATERIA(L|IS)|ACABAMENTOS?|CARPETE|SHINGLE|TELHAS?|TELHADO|LAJE|PREENCHIMENTOS?|JUNTA|MUROS?|GRADES?|GUARDA[\s-]?CORPO|CORRIM[ÃA]O|LIMITE|PROJE[ÇC][ÃA]O|ATERRO|NORTE|COMPLEMENTO|QUEBRA[\s-]?VISTA|NIVELAR|MEIA\s+PAREDE|CAIXA\s+EXISTENTE|INTERVEN[ÇC]|ALVENARIAS?|AL\.\s*\+|EXECUTAR|PREVIS[ÃA]O|ESTA\s+MEDIDA|O\s+EIXO|DEMOLI|A\s+CONSTRUIR|EXISTENTE$|COR\b|MODELO|TAMANHO|GIRO|DUPLO\s+GIRO|FIXA\b|MAXIM|BASCULANTE|PIVOTANTE|DE\s+CORRER|VAI\s+E\s+VEM|CAMAR[ÃA]O|RECOLHER|LAMINADO|PAVIMENTO\s+DE\s|VER\s+DETALHE|POD[EM]\s+VARIAR|S[ÍI]MBOLO|SIMBOLOGIA)/,
+  /^[ÁA]REA$/,
 ].map(r => r.source).join('|'), 'i');
 // sigla curta que é sala; fora delas, 1–3 letras sozinhas ("ST", "DI", "ALC") são código
 const RE_SIGLA_SALA = /^(WC|BWC|DML|CPD|ADM|LAV|COZ|QTO|SL|DEP|ALM|GAR|CME|UTI|RX|PS|HALL|LOJA|BAR|SPA)$/i;
@@ -87,7 +92,8 @@ const RE_SIGLA_SALA = /^(WC|BWC|DML|CPD|ADM|LAV|COZ|QTO|SL|DEP|ALM|GAR|CME|UTI|R
 // entre "\L" e o próximo ";" (CAD-01/CAD-11, 02/11/2026); o nome da sala fica numa linha só
 const limparTexto = (s) => limparMtext(s, { quebra: ' ' }).replace(/\s+/g, ' ').trim();
 // "AUDITÓRIO ÁREA = 108m²" → "AUDITÓRIO"
-const nomeLimpo = (s) => s.replace(/\s*[ÁA]REA\s*[:=].*$/i, '').replace(/\s*[\d.,]+\s*m[²2]\s*$/i, '').replace(/[\s:;,.\-–]+$/, '').replace(/\s+/g, ' ').trim();
+// ("DEPÓSITO GRUPO 5 7,5M³" → "DEPÓSITO GRUPO 5": o volume escrito junto também sai)
+const nomeLimpo = (s) => s.replace(/\s*[ÁA]REA\s*[:=].*$/i, '').replace(/\s*[\d.,]+\s*m[²2³3]\s*$/i, '').replace(/[\s:;,.\-–]+$/, '').replace(/\s+/g, ' ').trim();
 // Etiqueta de equipamento ("CAM-04", "FOG5", "DET 3", "AM-01"): em planta sem nome de
 // ambiente ela virava sala (limite anotado em 29/10/2026). Código curto (letras +
 // número) só é nome se as letras forem de cômodo ("SALA 01", "BWC 2", "APTO 101");
@@ -441,7 +447,10 @@ function semGradeRepetida(polis) {
 // ── Ambientes pelas paredes (sem polilinha de área) ───────────────────────
 // Layers que não são parede (mobiliário, piso, cotas, textos, tracejados de projeção…)
 const RE_NAO_PAREDE = /MOB|LOU[CÇ]A|PISO|HACH|COTA|TEXT|DIM|EIXO|TRACEJ|VEGET|LAYOUT|EQUIP|PAGIN|FORRO|ILUM|EL[EÉ]T|HIDR|SANIT|TUBUL|DEFPOINTS|VIEWPORT|CARIMBO|SELO|NOTA/i;
-const RE_PAREDE = /PAREDE|ALVEN|WALL|DRYWALL|DIVIS|ESTRUT|PILAR|COLUN|JANEL|ESQUAD|CAIXILH|VIDRO|WINDOW|FECHAMENTO|PERIM/i;
+// (18/11/2026: + muro/reboco e o vocabulário em espanhol — MUROS, VENTANAS, ENFOSCADO, YESO, TABIQUE — e as siglas
+// AsBEA ALV/PAR/PIL/EST/ESQ: a arquitetura da paróquia N. S. da Assunção tem as paredes em MUROS, REBOCO, ARQ_ALV_ALT,
+// ARQ-ALV-DIV e PAR; só ALVENARIA contava, as salas "vazavam" pelas paredes que faltavam e sumiam)
+const RE_PAREDE = /PAREDE|ALVEN|WALL|DRYWALL|DIVIS|ESTRUT|PILAR|COLUN|JANEL|ESQUAD|CAIXILH|VIDRO|WINDOW|FECHAMENTO|PERIM|MUROS?\b|REBOCO|ENFOSCADO|YESO|TABIQUE|VENTANA|(^|[^A-Z])(ALV|PAR|PRD|PIL|EST|ESQ)([^A-Z]|$)/i;
 
 // A grade de 5 cm é feita por REGIÃO do desenho (revisão de 06/11/2026). Antes era uma só, do tamanho do desenho
 // inteiro, com no máximo 16 milhões de células: com outra prancha a 1,3 km no mesmo espaço do modelo a célula
@@ -545,6 +554,7 @@ function ambientesPorParedesNaRegiao(segmentos, portas, textos, { areaMinima = 1
   const regiao = new Int32Array(W * H); // 0 = não visitado; −1 = exterior (vazou)
   const ambientes = [];
   const porRegiao = new Map();
+  const vazados = [];
   const fila = new Int32Array(W * H);
   const maxCelulas = areaMaxima / (c * c);
   let proxima = 1;
@@ -561,7 +571,7 @@ function ambientesPorParedesNaRegiao(segmentos, portas, textos, { areaMinima = 1
       if (!achou) continue;
     }
     const k0 = j * W + i;
-    if (regiao[k0] === -1) continue;
+    if (regiao[k0] === -1) { vazados.push(t); continue; }
     if (regiao[k0] > 0) { porRegiao.get(regiao[k0]).textos.push(t); continue; }
     const id = proxima++;
     let ini = 0, fim = 0, vazou = false;
@@ -577,8 +587,106 @@ function ambientesPorParedesNaRegiao(segmentos, portas, textos, { areaMinima = 1
       }
       if (vazou) break;
     }
-    if (vazou) { for (let q = 0; q < fim; q++) regiao[fila[q]] = -1; continue; }
+    if (vazou) { for (let q = 0; q < fim; q++) regiao[fila[q]] = -1; vazados.push(t); continue; }
     porRegiao.set(id, { id, celulas: fila.slice(0, fim), textos: [t] });
+  }
+
+  // Vão sem porta desenhada (18/11/2026): a capela, as circulações e o pátio da paróquia N. S. da Assunção têm
+  // passagens abertas de até ~1,2 m, a sala "vazava" para fora e sumia. Os nomes que vazaram tentam de novo com as
+  // paredes engrossadas (fecha vãos de 0,2 a 1,2 m); achada a sala, ela volta a crescer até a face da parede
+  // original (a área fica a da sala, não a da sala menos a parede engrossada).
+  // Sala que passou muito da área escrita pelo arquiteto (t.alvo, da etiqueta "Área: …"): juntou com a vizinha por um
+  // vão aberto — sai e tenta de novo fechando os vãos; se nada ficar perto da área escrita, ela volta como estava
+  const originais = new Map();
+  for (const r of [...porRegiao.values()]) {
+    const alvo = Math.max(0, ...r.textos.map(t => t.alvo || 0));
+    if (!alvo || r.celulas.length * c * c <= 1.6 * alvo + 2) continue;
+    porRegiao.delete(r.id);
+    for (const k of r.celulas) regiao[k] = 0;
+    for (const t of r.textos) { originais.set(t, r); vazados.push(t); }
+  }
+  const restaurar = (t) => {
+    const o = originais.get(t);
+    if (!o || porRegiao.has(o.id) || o.celulas.some(k => regiao[k] > 0)) return false;
+    for (const k of o.celulas) regiao[k] = o.id;
+    porRegiao.set(o.id, o);
+    return true;
+  };
+  // (vão de até 2 e 3 m — a nave da igreja aberta para as alas — só para a sala com área escrita: a conferência da área
+  // segura o fechamento grosso, que sem ela juntaria salas vizinhas)
+  const NIVEIS = vazados.some(t => t.alvo) ? [2, 4, 8, 12, 20, 30] : [2, 4, 8, 12];
+  if (vazados.length) {
+    const livreOriginal = (v) => !parede[v];
+    for (const r of NIVEIS) {
+      if (!vazados.length) break;
+      const ultimo = r === NIVEIS.at(-1);
+      const grossa = dilatar(parede, W, H, r);
+      const marca = new Int32Array(W * H);
+      const restam = [];
+      for (const t of vazados) {
+        if (r > 12 && !t.alvo) { restam.push(t); continue; }
+        let i = Math.round((t.x - x0) / c), j = Math.round((t.y - y0) / c);
+        if (i < 0 || j < 0 || i >= W || j >= H) continue;
+        if (grossa[j * W + i]) {
+          let achou = false;
+          for (let rr = 1; rr <= r + 4 && !achou; rr++) for (let a = -rr; a <= rr && !achou; a++) for (let b = -rr; b <= rr && !achou; b++) {
+            const ii = i + a, jj = j + b;
+            if (ii >= 0 && jj >= 0 && ii < W && jj < H && !grossa[jj * W + ii]) { i = ii; j = jj; achou = true; }
+          }
+          if (!achou) { restam.push(t); continue; }
+        }
+        const k0 = j * W + i;
+        // já caiu numa sala achada (nesta volta ou antes): é outro nome da mesma sala
+        if (regiao[k0] > 0) { porRegiao.get(regiao[k0]).textos.push(t); continue; }
+        if (marca[k0] > 0) { porRegiao.get(marca[k0]).textos.push(t); continue; }
+        if (marca[k0] === -1) { restam.push(t); continue; }
+        const id = proxima++;
+        let ini = 0, fim = 0, vazou = false;
+        fila[fim++] = k0; marca[k0] = id;
+        while (ini < fim) {
+          const k = fila[ini++];
+          const ci = k % W, cj = (k - ci) / W;
+          if (ci === 0 || cj === 0 || ci === W - 1 || cj === H - 1 || fim > maxCelulas) { vazou = true; break; }
+          for (const v of [k - 1, k + 1, k - W, k + W]) {
+            if (grossa[v] || regiao[v] > 0) continue;
+            if (marca[v] === -1) { vazou = true; break; }
+            if (!marca[v]) { marca[v] = id; fila[fim++] = v; }
+          }
+          if (vazou) break;
+        }
+        if (vazou) { for (let q = 0; q < fim; q++) marca[fila[q]] = -1; restam.push(t); continue; }
+        // volta a crescer pela parede engrossada (r células), sem passar da parede original nem entrar em outra sala
+        const celulas = Array.from(fila.subarray(0, fim));
+        let borda = celulas;
+        for (let passo = 0; passo < r; passo++) {
+          const nova = [];
+          for (const k of borda) for (const v of [k - 1, k + 1, k - W, k + W]) {
+            if (v < 0 || v >= W * H || marca[v] || regiao[v] > 0 || !livreOriginal(v)) continue;
+            marca[v] = id; nova.push(v);
+          }
+          celulas.push(...nova);
+          borda = nova;
+        }
+        // longe da área escrita: tenta com o vão maior; no último nível, volta a sala de antes (se havia) ou fica esta
+        const ac = celulas.length * c * c;
+        if (t.alvo && (ac > 1.6 * t.alvo + 2 || ac < 0.6 * t.alvo - 2)) {
+          const o = originais.get(t);
+          const melhorAntes = o && Math.abs(o.celulas.length * c * c - t.alvo) <= Math.abs(ac - t.alvo);
+          if (!ultimo || melhorAntes) {
+            for (const k of celulas) marca[k] = 0;
+            if (ultimo && restaurar(t)) continue;
+            restam.push(t);
+            continue;
+          }
+        }
+        for (const k of celulas) regiao[k] = id;
+        porRegiao.set(id, { id, celulas, textos: [t], vaoFechado: r * c });
+      }
+      vazados.length = 0;
+      vazados.push(...restam);
+    }
+    // o que não achou sala nenhuma com o vão fechado: a sala de antes, se havia
+    for (const t of vazados) restaurar(t);
   }
 
   for (const r of porRegiao.values()) {
@@ -590,9 +698,29 @@ function ambientesPorParedesNaRegiao(segmentos, portas, textos, { areaMinima = 1
     // a borda da máscara fica meia célula antes da face da parede
     const area = mascara.size * c * c + perimetro(pol) * c / 2;
     if (area < areaMinima || area > areaMaxima) continue;
-    ambientes.push({ nome: escolherNome(r.textos), area_m2: Math.round(area * 100) / 100, perimetro_m: Math.round(perimetro(pol) * 100) / 100, poligono: pol, centro: centroide(pol), origem: 'paredes' });
+    const etqs = [...new Set(r.textos.map(t => t.etq).filter(v => v != null))];
+    ambientes.push({ nome: escolherNome(r.textos), area_m2: Math.round(area * 100) / 100, perimetro_m: Math.round(perimetro(pol) * 100) / 100, poligono: pol, centro: centroide(pol), origem: 'paredes', ...(etqs.length ? { etqs } : {}) });
   }
   return ambientes;
+}
+
+// Parede engrossada r células para cada lado (caixa quadrada, em duas passadas 1D)
+function dilatar(grade, W, H, r) {
+  const h = new Uint8Array(W * H), out = new Uint8Array(W * H);
+  for (let j = 0; j < H; j++) {
+    let ultimo = -Infinity;
+    const base = j * W;
+    for (let i = 0; i < W; i++) { if (grade[base + i]) ultimo = i; if (i - ultimo <= r) h[base + i] = 1; }
+    ultimo = Infinity;
+    for (let i = W - 1; i >= 0; i--) { if (grade[base + i]) ultimo = i; if (ultimo - i <= r) h[base + i] = 1; }
+  }
+  for (let i = 0; i < W; i++) {
+    let ultimo = -Infinity;
+    for (let j = 0; j < H; j++) { if (h[j * W + i]) ultimo = j; if (j - ultimo <= r) out[j * W + i] = 1; }
+    ultimo = Infinity;
+    for (let j = H - 1; j >= 0; j--) { if (h[j * W + i]) ultimo = j; if (ultimo - j <= r) out[j * W + i] = 1; }
+  }
+  return out;
 }
 
 // Contorno externo de um conjunto de células: arestas de borda orientadas
@@ -671,6 +799,32 @@ function lerTexto(e) {
 }
 // para achar e nomear a sala: o nome sem as linhas de área/cota do MTEXT (lerTexto)
 const paraNome = (t) => (t.sNome ? { ...t, s: t.sNome } : t);
+
+// Etiqueta de sala: "Área: 12,10 m²" / "A: 18,43m²" / "A = 8,50 m²" / "12,10 m²" e o nome logo acima dele (até 5
+// alturas de letra ou 1,2 m, alinhado a até 3 m). Devolve [{ nome (o texto), area (m²), rotulo }].
+const RE_ROTULO_AREA = /^(?:[ÁA]REA\s*(?:[ÚU]TIL\s*)?[:=]?\s*|A\s*[:=]\s*)?(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)\s*m[²2]$/i;
+function lerEtiquetasDeSala(textos) {
+  const areas = textos.filter(t => RE_ROTULO_AREA.test(t.s.trim()));
+  if (areas.length < 3) return [];
+  const candidatos = textos.filter(t => !RE_ROTULO_AREA.test(t.s.trim()) && ehTextoDeSala(t) && !ehSiglaSolta(t.s) && !ehAtributoDeEquipamento(t));
+  const out = [];
+  for (const a of areas) {
+    const m = RE_ROTULO_AREA.exec(a.s.trim())[1];
+    const v = Number(/\.\d{3}/.test(m) ? m.replace(/\./g, '').replace(',', '.') : m.replace(',', '.'));
+    if (!(v > 0)) continue;
+    const h = a.h || 0.1;
+    const lim = Math.max(1.2, 5 * h);
+    let melhor = null, dm = Infinity;
+    for (const t of candidatos) {
+      const dy = t.y - a.y;
+      if (dy < -0.25 * h || dy > lim || Math.abs(t.x - a.x) > 3) continue;
+      const d = Math.hypot(t.x - a.x, dy);
+      if (d < dm) { dm = d; melhor = t; }
+    }
+    if (melhor) out.push({ nome: melhor, area: v, rotulo: a });
+  }
+  return out;
+}
 // "Tomada alta a 2,20m do piso", "h= 20 cm abaixo do forro", "altura: 97,5 cm", "H=1,10", "h: 1,10 m"; e
 // "a 1,20 m do chão", "H(m)=1,10" (06/11/2026)
 // (o valor é lido por ./textoCad.js; aqui só se separa o texto que fala de altura)
@@ -809,7 +963,17 @@ function lerArquitetura(textoDxf, opcoes = {}) {
       textosTodos = textosTodos.filter(t => !tira([t.x, t.y]));
     }
   }
-  const textosM = textosTodos.map(paraNome).filter(ehNome);
+  // Etiqueta de sala do arquiteto (18/11/2026): o nome com "Área: 12,10 m²" logo abaixo. Com várias delas no desenho
+  // (o arquiteto etiquetou as salas), SÓ o texto etiquetado é nome de sala: o resto é nota, material e especificação
+  // ("FIXA+MAXIM-AR", "VAI E VEM", "PAVIMENTO DE GRANITO" viravam sala na paróquia N. S. da Assunção). A área escrita
+  // fica no ambiente (area_projeto_m2) para conferir a área lida pelas paredes.
+  const etiquetasDeSala = lerEtiquetasDeSala(textosTodos.map(paraNome));
+  const soEtiquetadas = etiquetasDeSala.length >= 8;
+  // cada etiqueta semeia a sala duas vezes: no nome e no rótulo da área (o nome escrito em cima de uma divisória achava
+  // um pedaço de 2 m² da "SALA - 05"); fica a sala que bate com a área escrita (alvo) — ver a escolha por etiqueta abaixo
+  const textosM = soEtiquetadas
+    ? etiquetasDeSala.flatMap((e, i) => [{ ...e.nome, alvo: e.area, etq: i }, { ...e.rotulo, s: e.nome.s, h: e.nome.h, alvo: e.area, etq: i, semente: true }])
+    : textosTodos.map(paraNome).filter(ehNome);
   // número do circuito e tag do quadro escritos na planta (só os textos curtos que podem ser isso)
   const rotulos = textosTodos.filter(t => t.s.length <= 30 && (RE_TAG.test(t.s) || lerMarcacao(t.s))).map(({ s, x, y }) => ({ s, x, y }));
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -833,7 +997,9 @@ function lerArquitetura(textoDxf, opcoes = {}) {
   const soltos = [];
   // sementes sem nome: qualquer etiqueta com cara de código (CAM-04, QD-01, TUG 3…) ou
   // texto curto de layer de instalação. Fora do prédio a sala "vaza" e é descartada.
-  const etiquetas = textosTodos.map(paraNome)
+  // (com as salas etiquetadas pelo arquiteto, código solto não semeia sala: dava "Ambiente N" sem nome nos vãos da
+  // esquadria e da escada)
+  const etiquetas = soEtiquetadas ? [] : textosTodos.map(paraNome)
     .filter(t => !ehNome(t) && t.s.length <= 20 && (RE_CODIGO.test(t.s) || (RE_LAYER_INSTALACAO.test(t.layer || '') && /[A-Za-z]/.test(t.s))))
     .map(t => ({ ...t, etiqueta: true }));
   // desenho que não é planta (quadro, unifilar, detalhe): nenhuma sala — o painel
@@ -861,7 +1027,8 @@ function lerArquitetura(textoDxf, opcoes = {}) {
   }
   const ambientes = [...nomes.entries()].map(([i, ts]) => {
     const p = candidatos[i];
-    return { nome: escolherNome(ts), area_m2: Math.round(p.area * 100) / 100, perimetro_m: Math.round(perimetro(p.pts) * 100) / 100, poligono: p.pts, centro: centroide(p.pts), layer: p.layer, origem: 'polilinha' };
+    const etqs = [...new Set(ts.map(t => t.etq).filter(v => v != null))];
+    return { nome: escolherNome(ts), area_m2: Math.round(p.area * 100) / 100, perimetro_m: Math.round(perimetro(p.pts) * 100) / 100, poligono: p.pts, centro: centroide(p.pts), layer: p.layer, origem: 'polilinha', ...(etqs.length ? { etqs } : {}) };
   });
 
   // 2) nomes fora de polilinha: sala pelas paredes
@@ -876,6 +1043,24 @@ function lerArquitetura(textoDxf, opcoes = {}) {
     // segmento da folha da porta não é parede (não divide a sala)
     const folha = (s) => portas.some(p => (dist(s[0], p.dobradica) < 0.08 || dist(s[1], p.dobradica) < 0.08) && Math.min(dist(s[0], p.dobradica), dist(s[1], p.dobradica)) < 0.08 && Math.abs(dist(s[0], s[1]) - p.largura_m / (p.dupla ? 2 : 1)) < 0.1);
     ambientes.push(...ambientesPorParedes(segParede.filter(s => !folha(s)), portas, soltos, opcoes));
+    // Sala etiquetada pelo arquiteto que as layers de parede não fecharam (18/11/2026: a nave octogonal da paróquia —
+    // "ESPAÇO CELEBRATIVO 1.017 m²" — é desenho da igreja existente, em layers sem nome de parede): nova tentativa com
+    // TODAS as linhas de desenho (menos anotação, mobiliário, hachura e a moldura da prancha). Como essas linhas são
+    // ruidosas, só fica a sala cuja área bate com a escrita (0,6 a 1,6 ×).
+    if (soEtiquetadas && deParede.length) {
+      const comSala = new Set(ambientes.flatMap(a => a.etqs || []));
+      const faltam = textosM.filter(t => t.etq != null && !comSala.has(t.etq) && !ambientes.some(a => dentro([t.x, t.y], a.poligono)));
+      if (faltam.length) {
+        const todas = new Set(layers.filter(l => !RE_NAO_PAREDE.test(l || '') && !layerNaoEhAmbiente(l) && !/MOLDURA|MARGEM|PRANCHA|FOLHA|CARIMBO|SELO/i.test(l || '')));
+        const seg2 = retos.filter(r => todas.has(r.layer) && (!regioesPlanta.length || r.pts.some(([x, y]) => regioesPlanta.some(c => x >= c[0] && x <= c[2] && y >= c[1] && y <= c[3]))))
+          .flatMap(r => [...r.pts.slice(1).map((p, i) => [r.pts[i], p]), ...(r.fechada ? [[r.pts.at(-1), r.pts[0]]] : [])]);
+        const novos = ambientesPorParedes(seg2.filter(s => !folha(s)), portas, faltam, opcoes).filter(a => {
+          const alvo = Math.max(0, ...(a.etqs || []).map(i => etiquetasDeSala[i].area));
+          return alvo > 0 && a.area_m2 >= 0.6 * alvo && a.area_m2 <= 1.6 * alvo && !ambientes.some(o => dentro(a.centro, o.poligono));
+        });
+        ambientes.push(...novos);
+      }
+    }
   }
   // contorno com vários nomes em que as paredes não separaram os nomes (nenhuma sala, ou uma só com todos eles):
   // fica o polígono, com a área exata dele (como antes)
@@ -886,6 +1071,32 @@ function lerArquitetura(textoDxf, opcoes = {}) {
     if (salas.length === 1) ambientes.splice(ambientes.indexOf(salas[0]), 1);
     ambientes.push({ nome: escolherNome(ts), area_m2: Math.round(p.area * 100) / 100, perimetro_m: Math.round(perimetro(p.pts) * 100) / 100, poligono: p.pts, centro: centroide(p.pts), layer: p.layer, origem: 'polilinha' });
   }
+  // Cada etiqueta do arquiteto fica com UMA sala: a de área mais perto da escrita (as duas sementes — nome e rótulo —
+  // podem ter achado salas diferentes). A sala que fica sem etiqueta nenhuma sai (era o pedaço errado).
+  if (etiquetasDeSala.length) {
+    const porEtq = new Map();
+    for (const a of ambientes) for (const i of a.etqs || []) (porEtq.get(i) || porEtq.set(i, []).get(i)).push(a);
+    const perdeu = new Set();
+    for (const [i, lista] of porEtq) {
+      if (lista.length < 2) continue;
+      const alvo = etiquetasDeSala[i].area;
+      const melhor = lista.reduce((m, a) => (Math.abs(a.area_m2 - alvo) < Math.abs(m.area_m2 - alvo) ? a : m), lista[0]);
+      for (const a of lista) if (a !== melhor) { a.etqs = a.etqs.filter(k => k !== i); if (!a.etqs.length) perdeu.add(a); }
+    }
+    for (let k = ambientes.length - 1; k >= 0; k--) if (perdeu.has(ambientes[k])) ambientes.splice(k, 1);
+    // nome e área escrita: a etiqueta da sala de área mais perto da lida (a sala grande que engoliu a escada fica
+    // com o nome da circulação, não com "ESCADA DESCE SUBSOLO")
+    for (const a of ambientes) {
+      const doNome = (a.etqs || []).map(i => etiquetasDeSala[i]);
+      if (!doNome.length) continue;
+      const e = doNome.reduce((m, x) => (Math.abs(x.area - a.area_m2) < Math.abs(m.area - a.area_m2) ? x : m), doNome[0]);
+      a.nome = nomeLimpo(e.nome.s);
+      a.area_projeto_m2 = e.area;
+      // área lida pelas paredes longe da escrita (vão aberto, sala que não fechou direito): a conferir
+      if (Math.abs(a.area_m2 - a.area_projeto_m2) > Math.max(1, 0.25 * a.area_projeto_m2)) a.areaDivergente = true;
+    }
+    for (const a of ambientes) delete a.etqs;
+  }
   // sala achada só por etiqueta de equipamento: existe (o 3D e a contagem por ambiente
   // precisam dela), mas não leva o código do equipamento como nome
   let semNome = 0;
@@ -893,6 +1104,19 @@ function lerArquitetura(textoDxf, opcoes = {}) {
   for (const a of ambientes) if (!a.nome) { a.nome = `Ambiente ${++semNome}`; a.semNome = true; }
   ambientes.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }));
   associarPortas(portas, ambientes);
+  // pavimento de cada ambiente (./pavimentos.js): o da região de planta em que o centro dele cai — e a lista dos
+  // pavimentos do desenho, na ordem do prédio (subsolo → térreo → andares → cobertura)
+  const plantasComPav = (classificacao?.regioes || []).filter(r => r.tipo === 'planta' && r.pavimento);
+  for (const a of ambientes) {
+    const r = plantasComPav.find(q => a.centro[0] >= q.caixa[0] && a.centro[0] <= q.caixa[2] && a.centro[1] >= q.caixa[1] && a.centro[1] <= q.caixa[3]);
+    if (r) a.pavimento = r.pavimento.nome;
+  }
+  const pavimentos = [];
+  for (const r of plantasComPav.slice().sort((p, q) => ordemDoPavimento(p.pavimento) - ordemDoPavimento(q.pavimento))) {
+    if (pavimentos.some(p => p.nome === r.pavimento.nome)) continue;
+    const ambs = ambientes.filter(a => a.pavimento === r.pavimento.nome);
+    pavimentos.push({ nome: r.pavimento.nome, ordem: r.pavimento.ordem, titulo: r.titulo || null, caixa: r.caixa, ambientes: ambs.length, area_m2: Math.round(ambs.reduce((s, a) => s + a.area_m2, 0) * 100) / 100 });
+  }
 
   return {
     ambientes, portas, referencia: refM, extensao, fatorUnidade: fator, layers: [...new Set(ents.map(e => e.layer))],
@@ -902,7 +1126,8 @@ function lerArquitetura(textoDxf, opcoes = {}) {
     // desenho grande demais: blocos aninhados mais fundos ficaram fora (explodir, MAX_ENTIDADES)
     ...(ents.detalheReduzido ? { detalheReduzido: ents.detalheReduzido } : {}),
     // classificação da folha (planta × diagrama × tabela…) e as caixas de planta, em metros
-    classificacao: classificacao && { tipo: classificacao.tipo, resumo: classificacao.resumo, temPlanta: classificacao.temPlanta, semPlanta: classificacao.semPlanta, misto: classificacao.misto, regioes: classificacao.regioes.map(({ caixa, tipo, rotulo, titulo, confianca, motivos }) => ({ caixa, tipo, rotulo, titulo, confianca, motivos })) },
+    classificacao: classificacao && { tipo: classificacao.tipo, resumo: classificacao.resumo, temPlanta: classificacao.temPlanta, semPlanta: classificacao.semPlanta, misto: classificacao.misto, regioes: classificacao.regioes.map(({ caixa, tipo, rotulo, titulo, confianca, motivos, pavimento }) => ({ caixa, tipo, rotulo, titulo, confianca, motivos, ...(pavimento ? { pavimento } : {}) })) },
+    pavimentos,
     regioesPlanta,
     quadrosDoDiagrama, rotulos, avisosDiagrama,
     textosDoDesenho, circulos: circulosM, insercoes: insercoesM, blocosDefinidos,
@@ -925,11 +1150,16 @@ function classificarDesenho(refM, arcosM, textosM) {
   // traços, numa ponta do desenho) ficava fora da folha e não era classificado
   const caixa = [q(xs, 0.002), q(ys, 0.002), q(xs, 0.998), q(ys, 0.998)];
   if (!(caixa[2] > caixa[0]) || !(caixa[3] > caixa[1])) return null;
-  return classificarFolha({
+  const textos = textosM.map(t => ({ s: t.s, x: t.x, y: t.y, h: t.h }));
+  const cl = classificarFolha({
     caixa, yParaBaixo: false, metrosPorUnidade: 1, raioPorta: [0.55, 1.25], espessuraParede: [0.07, 0.4], segmentos,
     arcos: arcosM.map(a => ({ centro: a.centro, r: a.r, varredura: a.varredura, a: a.pts[0], b: a.pts.at(-1), layer: a.layer })),
-    textos: textosM.map(t => ({ s: t.s, x: t.x, y: t.y, h: t.h })),
+    textos,
   });
+  // pavimentos (./pavimentos.js, 18/11/2026): a região de planta com títulos de pavimentos diferentes (subsolo, térreo,
+  // 1º, 2º… encostados no espaço do modelo) é cortada em um pavimento por planta
+  if (cl?.regioes?.length) cl.regioes = cl.regioes.flatMap(r => (r.tipo === 'planta' ? dividirPorPavimentos(r, { textos, segmentos }) : [r]));
+  return cl;
 }
 
 module.exports = { lerArquitetura, areaPoligono, perimetro, dentro, centroide, distanciaContorno, transformar, RE_PAREDE, RE_NAO_PAREDE };

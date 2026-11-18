@@ -106,7 +106,11 @@ function ambientesComMedidas(analise) {
     (poligonos.get(k) || poligonos.set(k, []).get(k)).push(x.poligono);
   }
   const usados = new Set();
-  const lista = (analise.ambientes || []).filter(a => a.area_m2 > 0);
+  const lista0 = (analise.ambientes || []).filter(a => a.area_m2 > 0);
+  // vários pavimentos (skills/_comum/cad/pavimentos.js, 18/11/2026): o ambiente leva o pavimento no nome — "CAPELA
+  // (Térreo)" e "CAPELA (2º pavimento)" — e no campo pavimento; antes era tudo "Térreo", um pavimento só
+  const variosPav = new Set(lista0.map(a => a.pavimento).filter(Boolean)).size > 1;
+  const lista = variosPav ? lista0.map(a => (a.pavimento ? { ...a, nomeOriginal: a.nome, nome: `${a.nome} (${a.pavimento})` } : a)) : lista0;
   const nomes = new Set(lista.map(a => chaveAmb(a.nome)));
   const vezes = new Map();
   return lista.map(a => {
@@ -116,7 +120,7 @@ function ambientesComMedidas(analise) {
     while (n > 1 && nomes.has(chaveAmb(`${a.nome} ${n}`))) n++;
     vezes.set(k, n);
     if (n > 1) nomes.add(chaveAmb(`${a.nome} ${n}`));
-    return { ...a, ...(n > 1 ? { nome: `${a.nome} ${n}` } : {}), medidas: medidasDoAmbiente(a, poligonos, usados) };
+    return { ...a, ...(n > 1 ? { nome: `${a.nome} ${n}` } : {}), medidas: medidasDoAmbiente(a.nomeOriginal ? { ...a, nome: a.nomeOriginal } : a, poligonos, usados) };
   });
 }
 function avisoMedidas(amb, avisos, oQueEstima) {
@@ -319,6 +323,28 @@ function cftv(motor, analise, extraido, avisos) {
     externa: /EXTERN|FACHADA|ESTACION|P[ÁA]TIO|PORT[ÃA]O|PER[ÍI]METRO/i.test(local), modelo: '',
   });
   const somaAmb = porAmbiente.reduce((s, p) => s + p.cftv, 0);
+  // Projeto sugerido pelo sistema (elaboração, 18/11/2026 — skills/_comum/cad/projetista.js): as câmeras já têm o
+  // ambiente e o pavimento, o tipo (bullet na área externa) e o CABO MEDIDO pelo traçado até o rack — vão como estão,
+  // uma linha por ambiente, com o maior cabo do ambiente (não os 30 m típicos)
+  const sugeridas = extraido.flatMap(e => (e?.projeto_sugerido?.pontos || []).filter(p => p.simbolo === 'HM-CFTV-CAMERA'));
+  if (sugeridas.length) {
+    const variosPav = new Set(sugeridas.map(p => p.pavimento)).size > 1;
+    const porLocal = new Map();
+    for (const p of sugeridas) {
+      const externa = /BULLET|EXTERN/i.test(p.rotulo || '');
+      const local = `${p.ambiente}${variosPav ? ` (${p.pavimento})` : ''}`;
+      const k = `${local}|${externa ? 1 : 0}`;
+      const g = porLocal.get(k) || porLocal.set(k, { local, externa, qtd: 0, cabo: 0 }).get(k);
+      g.qtd++;
+      g.cabo = Math.max(g.cabo, Number(p.cabo_m) || 0);
+    }
+    dados.cameras = [...porLocal.values()].map((g, i) => ({
+      ...linha(g.local, g.qtd, i + 1), tipo: g.externa ? 'bullet' : 'dome', externa: g.externa, distancia_cabo_m: g.cabo > 0 ? Math.round(g.cabo) : 30,
+    }));
+    avisos.push(`${sugeridas.length} câmeras do projeto sugerido pelo sistema em ${porLocal.size} ambiente(s), com o cabo medido pelo traçado até o rack (o maior de cada ambiente).`);
+    avisos.push('[CONFERIR] resolução 4 MP, abertura 90°, objetivo "observação" e alvo a 10 m são valores típicos — defina a lente pelo que cada câmera precisa ver (DORI, IEC 62676-4).');
+    return dados;
+  }
   dados.cameras = porAmbiente.map((p, i) => linha(p.ambiente, p.cftv, i + 1));
   if (total > somaAmb) dados.cameras.push(linha('Sem ambiente identificado', total - somaAmb, dados.cameras.length + 1));
   if (dados.cameras.length) {
@@ -367,18 +393,22 @@ function incendio(motor, analise, extraido, avisos) {
   const dados = base(motor, analise, extraido);
   const amb = ambientesComMedidas(analise);
   dados.ambientes = amb.map(a => ({
-    nome: a.nome, pavimento: 'Térreo', comprimento_m: a.medidas.comprimento_m, largura_m: a.medidas.largura_m, pe_direito_m: a.medidas.pe_direito_m || PE_DIREITO_INCENDIO,
+    nome: a.nome, pavimento: a.pavimento || 'Térreo', comprimento_m: a.medidas.comprimento_m, largura_m: a.medidas.largura_m, pe_direito_m: a.medidas.pe_direito_m || PE_DIREITO_INCENDIO,
     detector: /BANH|WC|SANIT|COZINHA|COPA|CALDEIRA|GARAGEM/i.test(a.nome) ? 'temperatura' : 'fumaca', altura_viga_m: null,
     rota_fuga: /CORREDOR|CIRCULA|HALL|ESCADA|RAMPA|PATAMAR|ANTECÂMARA|ANTECAMARA/i.test(a.nome), escada: /ESCADA/i.test(a.nome),
     saidas: 0, mudancas_direcao: 0, altura_luminaria_m: null,
   }));
   const areaTotal = amb.reduce((s, a) => s + a.area_m2, 0);
-  dados.pavimentos = [{ nome: 'Térreo', area_m2: Math.round(areaTotal), maior_caminhamento_m: Math.round(Math.sqrt(areaTotal) * 1.5), saidas_emergencia: 1 }];
+  // um pavimento por pavimento lido na arquitetura (antes: sempre um "Térreo" com a área de tudo)
+  const nomesPav = [...new Set(amb.map(a => a.pavimento).filter(Boolean))];
+  dados.pavimentos = nomesPav.length
+    ? nomesPav.map(n => { const area = amb.filter(a => a.pavimento === n).reduce((s, a) => s + a.area_m2, 0); return { nome: n, area_m2: Math.round(area), maior_caminhamento_m: Math.round(Math.sqrt(area) * 1.5), saidas_emergencia: 1 }; })
+    : [{ nome: 'Térreo', area_m2: Math.round(areaTotal), maior_caminhamento_m: Math.round(Math.sqrt(areaTotal) * 1.5), saidas_emergencia: 1 }];
   if (amb.length) {
-    avisos.push(`${amb.length} ambientes com área lida do projeto.`);
+    avisos.push(`${amb.length} ambientes com área lida do projeto${nomesPav.length > 1 ? `, em ${nomesPav.length} pavimentos (${nomesPav.join(', ')})` : ''}.`);
     avisoMedidas(amb, avisos, 'comprimento × largura');
     const semPe = amb.filter(a => !a.medidas.pe_direito_m).length;
-    avisos.push(`[CONFERIR] ${semPe ? `pé-direito ${PE_DIREITO_INCENDIO} m adotado em ${semPe} ambiente(s), ` : ''}um único pavimento, maior caminhamento ≈ 1,5·√área e 1 saída — o PDF de planta não traz esses dados. Detector de temperatura em banheiros/cozinhas e rota de fuga em circulações deduzidos pelo nome.`);
+    avisos.push(`[CONFERIR] ${semPe ? `pé-direito ${PE_DIREITO_INCENDIO} m adotado em ${semPe} ambiente(s), ` : ''}${nomesPav.length > 1 ? '' : 'um único pavimento, '}maior caminhamento ≈ 1,5·√área e 1 saída por pavimento — a planta não traz esses dados. Detector de temperatura em banheiros/cozinhas e rota de fuga em circulações deduzidos pelo nome.`);
   }
   return dados;
 }

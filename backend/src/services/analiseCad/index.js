@@ -31,6 +31,9 @@ const { caixaPrincipal } = require('./fundoDoMapa');
 const { circuitoConferido } = require(path.join(CAD, 'circuitoDoDesenho.js'));
 const edicoesDoMapa = require('../edicoesDoMapa');
 const { filtroDoPonto } = require(path.join(CAD, 'objetivoDoProjeto.js'));
+// elaboração de projeto (18/11/2026): a disciplina projetada em cima da arquitetura
+const { projetarDisciplinas, DISCIPLINAS: DISCIPLINAS_DO_PROJETISTA } = require(path.join(CAD, 'projetista.js'));
+const CHAVE_PROJETISTA = { cftv: 'cftv', cabeamento: 'rede', rede: 'rede', incendio: 'incendio', alarme: 'alarme' };
 // Ponto lido do desenho (símbolo explodido) → descrição do item: a linha da legenda do
 // projeto quando houver ("Tomada alta a 2,20m do piso"), senão o nome do símbolo na
 // biblioteca da H&M (skills/_comum/cad/simbolos.js), sem a altura típica
@@ -331,6 +334,8 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
     analise.ambientes = ambientesArq.map(a => ({
       nome: a.nome, area_m2: a.area_m2, perimetro_m: a.perimetro_m ?? null,
       poligono: (a.poligono || []).map(([x, y]) => [r2(x), r2(y)]), retangulo: retanguloMinimo(a.poligono), origem: a.origem || null,
+      // pavimento (skills/_comum/cad/pavimentos.js) e a área escrita pelo arquiteto (a lida pelas paredes diverge: conferir)
+      ...(a.pavimento ? { pavimento: a.pavimento } : {}), ...(a.area_projeto_m2 ? { area_projeto_m2: a.area_projeto_m2 } : {}), ...(a.areaDivergente ? { area_divergente: true } : {}),
     }));
   }
 
@@ -463,14 +468,47 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
   // componente inserido da biblioteca: ponto conferido (entra no orçamento), sem linha do mapa
   const inseridos = edicoes ? edicoesDoMapa.pontosInseridos(edicoes) : [];
   usados.push(...inseridos);
+  // PROJETISTA (análise de ELABORAÇÃO, 18/11/2026 — skills/_comum/cad/projetista.js): a H&M vai projetar a disciplina em
+  // cima da arquitetura. Para cada disciplina marcada que o desenho NÃO traz (nenhum componente dela lido), o sistema
+  // projeta: cada componente no ambiente certo, por pavimento, com o motivo; o traçado da infraestrutura; e o cabo de
+  // cada ponto medido pelo caminho. Os pontos entram como os inseridos pelo engenheiro (contagem, pontos por ambiente,
+  // 3D e o editor de inserir/retirar), marcados "projetista"; o que o engenheiro retirou não volta.
+  let projetoSugerido = null, trechosSugeridos = [], metragensSugeridas = [];
+  if (opcoes.finalidade === 'elaboracao' && ambientesArq.length && !compartimentos.length) {
+    const lidas = new Set([...itens.filter(it => it.tipo === 'simbolo' && it.quantidade > 0).map(it => CHAVE_PROJETISTA[it.disciplina] || it.disciplina),
+      ...usados.filter(pt => !pt.edicao).map(pt => CHAVE_PROJETISTA[DISCIPLINA_DO_3D[pt.disciplina] || pt.disciplina] || pt.disciplina)]);
+    const aProjetar = [...new Set((opcoes.disciplinas || []).map(d => CHAVE_PROJETISTA[d]).filter(d => d && DISCIPLINAS_DO_PROJETISTA[d] && !lidas.has(d)))];
+    if (aProjetar.length) {
+      try {
+        const proj = projetarDisciplinas({ ambientes: ambientesArq, portas: r.arquitetura?.listaPortas || [], pavimentos: r.arquitetura?.pavimentos || [] }, aProjetar);
+        const fora = edicoes ? edicoesDoMapa.indicesRetirados(proj.pontos.map(p => [p.x, p.y]), edicoes) : new Set();
+        const pontosProj = proj.pontos.filter((_, i) => !fora.has(i));
+        usados.push(...pontosProj.map(p => ({ simbolo: p.simbolo, x: p.x, y: p.y, disciplina: p.disciplina, rotulo: p.rotulo, ...(p.altura_m ? { altura_m: p.altura_m, alturaDe: 'projetista' } : {}), confirmado: true, projetista: true, linha: -1 })));
+        trechosSugeridos = proj.trechos;
+        metragensSugeridas = proj.metragens;
+        // o que vai para a tela: sem coordenadas (a análise guardada não pode inchar)
+        projetoSugerido = {
+          disciplinas: aProjetar, pavimentos: proj.pavimentos, componentes: pontosProj.length, retirados: proj.pontos.length - pontosProj.length,
+          resumo: proj.resumo, criterios: proj.criterios, avisos: proj.avisos,
+          metragens: proj.metragens.map(m => ({ disciplina: m.disciplina, descricao: m.descricao, metros: m.metros })),
+          cabo_max_m: proj.cabos.length ? Math.max(...proj.cabos.map(c => c.comprimento_m)) : null,
+          // cada componente: onde e por quê (a tela agrupa por pavimento e ambiente)
+          pontos: pontosProj.map(p => ({ simbolo: p.simbolo, disciplina: p.disciplina, rotulo: p.rotulo, ambiente: p.ambiente, pavimento: p.pavimento, motivo: p.motivo, ...(p.cabo_m ? { cabo_m: p.cabo_m } : {}) })),
+          ambientes: proj.ambientes,
+        };
+      } catch (e) {
+        projetoSugerido = { erro: `o projeto sugerido não foi gerado: ${e.message}`, disciplinas: aProjetar };
+      }
+    }
+  }
   const usaMapa = usados.length > 0;
   if (usaMapa) {
     const grupos = new Map();
     for (const pt of usados) {
       const descricao = descricaoDoPonto(pt);
       const disciplina = DISCIPLINA_DO_3D[pt.disciplina] || pt.disciplina || 'eletrica';
-      const k = `${descricao}|${disciplina}|${pt.altura_m ?? ''}|${pt.confirmado ? 1 : 0}|${pt.edicao ? 1 : 0}`;
-      const g = grupos.get(k) || grupos.set(k, { descricao, disciplina, simbolo: pt.simbolo, altura_m: Number(pt.altura_m) > 0 ? Number(pt.altura_m) : null, alturaDe: pt.alturaDe || null, confirmado: !!pt.confirmado, inserido: !!pt.edicao, posicoes: [], circuitos: [], simbolos: [], edicoes: [] }).get(k);
+      const k = `${descricao}|${disciplina}|${pt.altura_m ?? ''}|${pt.confirmado ? 1 : 0}|${pt.edicao ? 1 : 0}|${pt.projetista ? 1 : 0}`;
+      const g = grupos.get(k) || grupos.set(k, { descricao, disciplina, simbolo: pt.simbolo, altura_m: Number(pt.altura_m) > 0 ? Number(pt.altura_m) : null, alturaDe: pt.alturaDe || null, confirmado: !!pt.confirmado, inserido: !!pt.edicao, projetista: !!pt.projetista, posicoes: [], circuitos: [], simbolos: [], edicoes: [] }).get(k);
       g.posicoes.push([pt.x, pt.y]);
       // o tipo exato vai ao 3D (antes ele adivinhava pela descrição) e o inserido leva o id da edição
       g.simbolos.push(pt.simbolo || null);
@@ -483,7 +521,8 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
       // a parabólica e o módulo FV ficam no alto, como o captor)
       const montagem = /LUMINARIA|PONTO-LUZ|DETECTOR|ILU-SENSOR|CAB-AP|CAPTOR|CAMERA|PARABOLICA|SOL-MODULO/.test(g.simbolo) ? 'teto' : g.altura_m ? 'parede' : null;
       itens.push({
-        tipo: 'simbolo', descricao: g.descricao, quantidade: g.posicoes.length, disciplina: g.disciplina, origemDescricao: g.inserido ? 'inserido' : g.confirmado ? 'confirmado' : 'desenho',
+        tipo: 'simbolo', descricao: g.descricao, quantidade: g.posicoes.length, disciplina: g.disciplina, origemDescricao: g.inserido ? 'inserido' : g.projetista ? 'projetista' : g.confirmado ? 'confirmado' : 'desenho',
+        ...(g.projetista ? { observacaoMaterial: 'projeto sugerido pelo sistema (elaboração) — posição e quantidade a conferir no 3D' } : {}),
         // tipo confirmado pelo engenheiro no mapa do CAD: conta no orçamento; o que ainda não foi conferido fica de fora
         bloco: g.simbolo, layer: '', posicoes: g.posicoes, ambiguo: !g.confirmado, conferir: !g.confirmado,
         ...(g.altura_m ? { altura_m: g.altura_m, montagem: montagem || 'parede', alturaDe: g.alturaDe } : montagem ? { montagem } : {}),
@@ -493,6 +532,11 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
         ...(g.simbolos[i] ? { simbolo: g.simbolos[i] } : {}), ...(g.edicoes[i] ? { edicao: g.edicoes[i] } : {}),
         ...(g.circuitos[i] ? { circuito: g.circuitos[i].circuito, comando: g.circuitos[i].comando } : {}) }));
     }
+  }
+  // infraestrutura e cabos do projeto sugerido (projetista): medidos pelo traçado
+  for (const m of metragensSugeridas) {
+    itens.push({ tipo: 'linha', descricao: m.descricao, metros: m.metros, rota_m: m.metros, tipoLinha: m.cabo ? 'cabeamento' : /ELETROCALHA/i.test(m.descricao) ? 'eletrocalha' : 'eletroduto',
+      disciplina: m.disciplina, layer: '', ambiguo: false, origemDescricao: 'projetista', observacaoMaterial: 'traçado sugerido pelo sistema (elaboração) — conferir no 3D' });
   }
   for (const l of linhasDoProjeto) {
     const d = descreverLinha(l);
@@ -557,12 +601,18 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
     for (const it of itens) {
       const col = COLUNA_POR_AMBIENTE[it.disciplina];
       if (it.tipo !== 'simbolo' || !col) continue;
+      // o rack / NVR / central não é ponto de câmera nem de rede do ambiente
+      if (/RACK|CENTRAL|NVR|\bDG\b/i.test(`${it.bloco || ''} ${it.descricao || ''}`) && it.origemDescricao === 'projetista') continue;
       for (const pos of it.posicoes) {
         const amb = ambientesArq.filter(a => dentro(pos, a.poligono)).sort((a, b) => a.area_m2 - b.area_m2)[0];
         if (!amb) continue;
-        const linha = porAmb.get(amb.nome) || { ambiente: amb.nome, cftv: 0, rede: 0, antena: 0 };
+        // com vários pavimentos, o ambiente leva o pavimento no nome ("CAPELA (Térreo)"): duas salas de mesmo nome em
+        // pavimentos diferentes não se somam
+        const variosPav = (r.arquitetura?.pavimentos || []).length > 1 && amb.pavimento;
+        const nomeAmb = variosPav ? `${amb.nome} (${amb.pavimento})` : amb.nome;
+        const linha = porAmb.get(nomeAmb) || { ambiente: nomeAmb, cftv: 0, rede: 0, antena: 0, ...(amb.pavimento ? { pavimento: amb.pavimento } : {}) };
         linha[col]++;
-        porAmb.set(amb.nome, linha);
+        porAmb.set(nomeAmb, linha);
       }
     }
     pontosPorAmbiente.push(...porAmb.values());
@@ -582,18 +632,22 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
     ...(deOutraDisciplina.size ? { xrefsDeOutraDisciplina: [...deOutraDisciplina.values()].map(x => ({ ...x, metros: Math.round(x.metros * 10) / 10 })) } : {}),
     ...(vazio ? { aviso: 'o desenho não tem texto nem blocos (parece um PDF convertido em DWG, só com traços) — envie o PDF do projeto' } : {}),
     ...(objetivo ? { objetivo: resumoDoObjetivo(objetivo) } : {}),
+    ...(projetoSugerido ? { projetoSugerido } : {}),
   };
   const avisos = [
     r.avisoUnidade,
     r.detalheReduzido ? `desenho muito pesado (${Math.round(r.detalheReduzido.entidades / 1000)} mil traços com os blocos explodidos): o detalhe interno dos blocos aninhados mais fundos não foi lido, para não esgotar a memória — os blocos de ponto contam normalmente; [CONFERIR] os símbolos explodidos` : null,
     edicoes ? `edições do engenheiro: ${inseridos.length} componente(s) inserido(s) da biblioteca e ${retiradosDoDesenho} retirado(s) do desenho` : null,
-    doDesenho.length ? `${doDesenho.filter(g => !g.inserido).reduce((s, g) => s + g.posicoes.length, 0)} pontos lidos dos símbolos desenhados (blocos explodidos), pela layer, pela medida e pela legenda da prancha — [CONFERIR] as quantidades` : null,
+    doDesenho.some(g => !g.inserido && !g.projetista) ? `${doDesenho.filter(g => !g.inserido && !g.projetista).reduce((s, g) => s + g.posicoes.length, 0)} pontos lidos dos símbolos desenhados (blocos explodidos), pela layer, pela medida e pela legenda da prancha — [CONFERIR] as quantidades` : null,
+    projetoSugerido && !projetoSugerido.erro ? `projeto sugerido pelo sistema (elaboração): ${projetoSugerido.componentes} componente(s) de ${projetoSugerido.disciplinas.join(', ')} em ${projetoSugerido.pavimentos.length} pavimento(s), com o traçado e os cabos medidos — confira no 3D (inserir/retirar)` : projetoSugerido?.erro || null,
     r.desenho?.erro ? `leitura dos símbolos desenhados falhou: ${r.desenho.erro}` : null,
     r.desenho?.mapa?.aviso || null,
     ...(r.avisosDiagrama || []),
     r.objetivo?.erro ? `a leitura do objetivo do projeto falhou (${r.objetivo.erro}): análise feita como antes, sem separar a vista principal` : null,
     focado ? `projeto entendido como ${objetivo.tipoRotulo || objetivo.tipo} (${objetivo.disciplina}): só a vista principal conta${camadasContexto.size ? ` e ${camadasContexto.size} camada(s) de base de outro projeto foram ignoradas` : ''}${componentesDoObjetivo.length ? `; ${componentesDoObjetivo.length} componente(s) pela relação de materiais e pelas legendas` : ''}` : null,
-    ...(objetivo?.avisos || []).slice(0, 12),
+    // (18/11/2026: na planta de arquitetura — objetivo não focado — os avisos de escala das vistas e de "o desenho parece
+    // de outra disciplina" não mudam nada na leitura e só confundiam; ficam os das camadas de base de outro projeto)
+    ...(focado ? objetivo?.avisos || [] : (objetivo?.avisos || []).filter(a => /camada|contexto|base de outro projeto/i.test(String(a)))).slice(0, 12),
   ].filter(Boolean);
   if (avisos.length) pagina.aviso = [pagina.aviso, ...avisos].filter(Boolean).join('; ');
   const arquitetura = r.arquitetura?.ambientes?.length ? {
@@ -627,6 +681,8 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
       linhasDoProjeto.filter(l => !xrefOutra(l.xref)).map(l => ({ layer: l.layer, disciplina: descreverLinha(l).disciplina, segmentos: l.segmentos || [], ...(l.cor_aci ? { cor_aci: l.cor_aci, cor_fonte: l.cor_fonte } : {}) })).filter(t => t.segmentos.length),
       p.textosMedida || []),
   };
+  // traçado do projeto sugerido (projetista): eletrocalha e eletrodutos, no 3D com o tipo e a medida
+  for (const t of trechosSugeridos) espacial.trechos.push({ layer: t.layer, disciplina: t.disciplina, tipo: t.tipo, segmentos: t.segmentos, material: t.material || null, medida: t.medida || null, origem_medida: 'projetista' });
   // o que a legenda das pranchas ensinou (services/simbolosAprendidos.js grava)
   // mapa do CAD (tela de confirmação): uma linha por layer × forma de símbolo, com o que o sistema entendeu e de onde veio
   // blocos nomeados que o engenheiro pode confirmar no mapa (POST …/mapa/blocos — services/blocosAprendidos.confirmar):
@@ -658,7 +714,7 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
   // fonte: quem ensina (services/votosAprendizado.js) — o projeto quando quem chama sabe (opcoes.fonte: obra/análise), senão
   // o CONTEÚDO do arquivo: reler o mesmo desenho não conta de novo, e "PLANTA.dwg" de duas obras são dois projetos
   const fonte = opcoes.fonte || `arquivo:${crypto.createHash('sha1').update(Buffer.from(buffer)).digest('hex')}`;
-  return { analise, pagina, pontosPorAmbiente, arquitetura, espacial, mapa, objetivo, aprendizado: { legenda: r.desenho?.legenda || [], notas: r.desenho?.notas || [], escritorio, blocos: p.legendaItens || [], fonte } };
+  return { analise, pagina, pontosPorAmbiente, arquitetura, espacial, mapa, objetivo, pavimentos: r.arquitetura?.pavimentos || [], aprendizado: { legenda: r.desenho?.legenda || [], notas: r.desenho?.notas || [], escritorio, blocos: p.legendaItens || [], fonte } };
 }
 
 // O que é o projeto, para a tela da análise e os achados: sem as coordenadas (a análise guardada não pode inchar)

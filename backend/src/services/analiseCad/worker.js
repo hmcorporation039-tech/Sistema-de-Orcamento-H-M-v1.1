@@ -91,7 +91,14 @@ const REGIOES_FORA = ['diagrama', 'vista_quadro', 'quadro_cargas', 'carimbo'];
       avisosDiagrama: arq?.avisosDiagrama || [],
       arquitetura: arq && {
         fatorUnidade: fator, portas: arq.portas.length, layers: arq.layers.length,
-        ambientes: arq.ambientes.map(a => ({ nome: a.nome, area_m2: a.area_m2, perimetro_m: a.perimetro_m, poligono: a.poligono, origem: a.origem })),
+        // (18/11/2026: o pavimento de cada ambiente, a área escrita pelo arquiteto e se a lida pelas paredes diverge dela —
+        // a análise mostra por pavimento e o projetista da elaboração usa: skills/_comum/cad/pavimentos.js e projetista.js)
+        ambientes: arq.ambientes.map(a => ({ nome: a.nome, area_m2: a.area_m2, perimetro_m: a.perimetro_m, poligono: a.poligono, origem: a.origem, centro: a.centro,
+          ...(a.pavimento ? { pavimento: a.pavimento } : {}), ...(a.area_projeto_m2 ? { area_projeto_m2: a.area_projeto_m2 } : {}),
+          ...(a.areaDivergente ? { areaDivergente: true } : {}), ...(a.semNome ? { semNome: true } : {}) })),
+        pavimentos: (arq.pavimentos || []).map(p => ({ nome: p.nome, ordem: p.ordem, titulo: p.titulo, caixa: p.caixa, ambientes: p.ambientes, area_m2: p.area_m2 })),
+        // portas com o lado e os ambientes (o projetista põe acionador/sensor nas de saída)
+        listaPortas: arq.portas.map(p => ({ meio: p.meio, n: p.n, largura_m: p.largura_m, ambientes: p.ambientes || [], externa: !!p.externa })),
         // o que o desenho é (planta × unifilar × quadro de cargas…) e as regiões que não
         // são planta, em metros (skills/_comum/cad/classificarPrancha.js)
         folha: arq.classificacao && {

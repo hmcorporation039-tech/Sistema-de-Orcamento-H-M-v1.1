@@ -172,7 +172,7 @@ async function executarAnalise(req, res, arquivos, corpo, opcoes = {}) {
 
   try {
     // obraId: o aprendizado conta a obra como UM projeto (R01 e R02 do mesmo desenho não votam duas vezes)
-    const resultado = await analisarProjetoCompleto(arquivos, { ...opcoes, obraId: obraDaAnalise?.id || null });
+    const resultado = await analisarProjetoCompleto(arquivos, { ...opcoes, obraId: obraDaAnalise?.id || null, finalidade });
     // o que foi LIDO (antes de qualquer edição) fica guardado nas análises com mapa do CAD: é a base para copiar edições num reprocessamento
     const temMapa = (resultado.dadosExtraidos || []).some(d => d?.mapa_cad);
     const leituraOriginal = temMapa ? { servicos: enxugarLeitura(resultado.servicos), materiais: enxugarLeitura(resultado.materiais) } : null;

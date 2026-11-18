@@ -116,7 +116,8 @@ async function analisarProjetoCompleto(todosArquivos, opcoes = {}) {
   const sabido = temCad ? await aprenderDoDesenho.conhecimento() : {};
   // quem ensina (services/votosAprendizado.js): a obra, quando a análise é de uma; senão o conteúdo de cada arquivo
   const fonte = opcoes.obraId ? `obra:${opcoes.obraId}` : undefined;
-  const lerCad = ({ buffer, nomeArquivo, disciplinas }) => lerArquivoCad(buffer, nomeArquivo, { ...sabido, disciplinas: disciplinas || [], confirmados: opcoes.mapasConfirmados?.[nomeArquivo] || [], edicoes: opcoes.mapasEditados?.[nomeArquivo] || null, fonte })
+  // (finalidade: na ELABORAÇÃO de projeto o projetista desenha a disciplina em cima da arquitetura — services/analiseCad)
+  const lerCad = ({ buffer, nomeArquivo, disciplinas, referencia }) => lerArquivoCad(buffer, nomeArquivo, { ...sabido, disciplinas: disciplinas || [], confirmados: opcoes.mapasConfirmados?.[nomeArquivo] || [], edicoes: opcoes.mapasEditados?.[nomeArquivo] || null, fonte, finalidade: referencia ? null : opcoes.finalidade || null })
     .then((r) => {
       // (a releitura com o mapa confirmado não ensina de novo o que o primeiro envio já ensinou). Arquivo com UMA
       // disciplina marcada ensina por ela: a linha de legenda/bloco que não diz a sua fica com a do arquivo.
@@ -318,6 +319,11 @@ async function analisarProjetoCompleto(todosArquivos, opcoes = {}) {
     // o que é o projeto (services/analiseCad → skills/_comum/cad/objetivoDoProjeto.js): disciplina, tipo, vistas usadas e
     // ignoradas, legendas e componentes com a fonte — a tela mostra e a ponte para a skill (utils/ponteAnaliseSkill.js) usa
     ...((vetoriais[i] || []).find(p => p.objetivo) ? { objetivo: (vetoriais[i] || []).find(p => p.objetivo).objetivo } : {}),
+    // projeto sugerido pelo sistema (análise de ELABORAÇÃO — skills/_comum/cad/projetista.js): critérios, avisos e o
+    // resumo por pavimento; os pontos e traçados estão nos itens, em espacial e no 3D
+    ...((vetoriais[i] || []).find(p => p.projetoSugerido) ? { projeto_sugerido: (vetoriais[i] || []).find(p => p.projetoSugerido).projetoSugerido } : {}),
+    // pavimentos lidos na arquitetura (skills/_comum/cad/pavimentos.js)
+    ...(cads[i]?.pavimentos?.length ? { pavimentos: cads[i].pavimentos } : {}),
   }));
 
   return {

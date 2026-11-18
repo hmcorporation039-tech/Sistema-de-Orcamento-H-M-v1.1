@@ -247,13 +247,17 @@ function achadosDoDesenho(analises, vetoriais, opcoes = {}) {
       });
     }
     for (const p of (vetoriais[i] || []).filter(p => p.origem === 'cad')) {
-      if (p.naoIdentificados?.length) {
+      // arquitetura na ELABORAÇÃO de projeto (projeto sugerido pelo sistema, 18/11/2026): os blocos da arquitetura
+      // (mobiliário, louça, esquadria) e os de climatização/hidráulica não são do projeto a fazer — esses dois achados
+      // só confundiam ("a.6sd50.a6d5a × 24", "27 blocos de climatização")
+      const projetando = !!p.projetoSugerido && !p.projetoSugerido.erro;
+      if (p.naoIdentificados?.length && !projetando) {
         achados.push({
           tema: 'Blocos do desenho não identificados',
           observacao: `"${a.arquivo}": ${p.naoIdentificados.slice(0, 15).map(b => `${b.bloco} × ${b.quantidade} (layer ${b.layer})`).join('; ')}${p.naoIdentificados.length > 15 ? ` (+${p.naoIdentificados.length - 15})` : ''}. Não viraram material: o nome do bloco não diz o que é. Se forem do orçamento, lance pela legenda da prancha.`,
         });
       }
-      if (p.outraArea) achados.push({ tema: 'Itens de outras áreas no desenho', observacao: `"${a.arquivo}": ${p.outraArea} bloco(s) de climatização/hidráulica (dutos, difusores, conexões) ficaram de fora — não são das disciplinas da H&M.` });
+      if (p.outraArea && !projetando) achados.push({ tema: 'Itens de outras áreas no desenho', observacao: `"${a.arquivo}": ${p.outraArea} bloco(s) de climatização/hidráulica (dutos, difusores, conexões) ficaram de fora — não são das disciplinas da H&M.` });
       // a mesma inserção repetida no mesmo ponto (xref inserida duas vezes) conta uma vez:
       // a deduplicação fica visível para o engenheiro conferir (DF Star: 510 → 184 câmeras)
       const sobrepostos = (p.itens || []).filter(it => it.tipo === 'simbolo' && Number(it.sobrepostas) > 0);

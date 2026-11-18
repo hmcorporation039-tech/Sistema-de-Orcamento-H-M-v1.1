@@ -15,6 +15,7 @@ import AnalisesSalvas from '../components/analise/ListaAnalises';
 import ConflitosCompatibilizacao from '../components/analise/ConflitosCompatibilizacao';
 import MapaCad from '../components/analise/MapaCad';
 import ObjetivoDoProjeto from '../components/analise/ObjetivoDoProjeto';
+import { ProjetoSugerido, PavimentosDaAnalise } from '../components/analise/ProjetoSugerido';
 import { gerarId } from '../utils/ids';
 import { card, tituloSecao, btnSecundario } from './analise/estilos';
 import useSalvamentoAnalise from './analise/useSalvamentoAnalise';
@@ -325,34 +326,59 @@ export default function Compatibilizacao() {
             carregarPasta={carregarPasta} abrirPasta={abrirPasta}
           />
 
-          {/* Elaboração de projeto: o foco é o projeto por disciplina e as entregas */}
-          {elaboracao && cartaoProjetos(true)}
+          {/* Elaboração de projeto (2.45): o foco é o projeto sugerido por pavimento, o 3D onde ele é conferido e o
+              projeto por disciplina; a leitura técnica do desenho (mapa do CAD, objetivo, itens, pontos codificados)
+              fica recolhida — era informação demais, e pouca dela importa para projetar */}
+          {elaboracao && (
+            <>
+              <ProjetoSugerido analise={analise} estiloCartao={card} estiloTitulo={tituloSecao}
+                onVer3d={() => document.getElementById('cartao-3d-analise')?.scrollIntoView({ behavior: 'smooth' })} />
+              <div id="cartao-3d-analise"><CartaoModelo3dAnalise analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} /></div>
+              {cartaoProjetos(true)}
+              <PavimentosDaAnalise analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
+              <CartaoPendencias achados={analise.achados} />
+              <details style={{ ...card, padding: '10px 16px' }} data-testid="detalhes-leitura">
+                <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 700, color: 'var(--texto-2)' }}>Detalhes da leitura do desenho (mapa do CAD, itens lidos, objetivo)</summary>
+                <ObjetivoDoProjeto analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
+                <MapaCad key={analise.id} analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />
+                <ItensExtraidos analise={analise} disciplinas={DISCIPLINAS} elaboracao={elaboracao} onPronto={alternarPronto} />
+                <CartaoPontosCodificados analise={analise} />
+                <ConflitosCompatibilizacao analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
+              </details>
+            </>
+          )}
 
-          {!elaboracao && <CartaoEstimativa analise={analise} resumoOrcamento={resumoOrcamento} onAbrirNoEditor={abrirNoEditor} />}
+          {!elaboracao && (
+            <>
+              <CartaoEstimativa analise={analise} resumoOrcamento={resumoOrcamento} onAbrirNoEditor={abrirNoEditor} />
 
-          <CartaoFuncionamento valor={analise.funcionamento} onMudar={atualizarFuncionamento} />
+              <CartaoFuncionamento valor={analise.funcionamento} onMudar={atualizarFuncionamento} />
 
-          <CartaoPontosCodificados analise={analise} />
+              <CartaoPontosCodificados analise={analise} />
 
-          <CartaoPontosPorDisciplina analise={analise} disciplinas={DISCIPLINAS}
-            onAtualizar={atualizarPontoDisciplina} onRemover={removerPontoDisciplina} onAdicionar={adicionarPontoDisciplina} />
+              <CartaoPontosPorDisciplina analise={analise} disciplinas={DISCIPLINAS}
+                onAtualizar={atualizarPontoDisciplina} onRemover={removerPontoDisciplina} onAdicionar={adicionarPontoDisciplina} />
 
-          <CartaoPendencias achados={analise.achados} />
+              <CartaoPendencias achados={analise.achados} />
 
-          <ObjetivoDoProjeto analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
+              <PavimentosDaAnalise analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
 
-          <MapaCad key={analise.id} analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />
+              <ObjetivoDoProjeto analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
 
-          <ItensExtraidos analise={analise} disciplinas={DISCIPLINAS} elaboracao={elaboracao} onPronto={alternarPronto} />
+              <MapaCad key={analise.id} analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />
 
-          {/* Orçamento: dimensionar pela norma é opção secundária — cria um PROJETO, não laudo */}
-          {!elaboracao && disciplinasComSkill.length > 0 && cartaoProjetos(false)}
+              <ItensExtraidos analise={analise} disciplinas={DISCIPLINAS} elaboracao={elaboracao} onPronto={alternarPronto} />
 
-          {/* 2.3: 3D ilustrativo a partir da arquitetura (DWG/DXF) — nas duas finalidades */}
-          {/* 2.3: conflitos de posição entre os DWG/DXF do pacote */}
-          <ConflitosCompatibilizacao analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
+              {/* Orçamento: dimensionar pela norma é opção secundária — cria um PROJETO, não laudo */}
+              {disciplinasComSkill.length > 0 && cartaoProjetos(false)}
 
-          <CartaoModelo3dAnalise analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />
+              {/* 2.3: conflitos de posição entre os DWG/DXF do pacote */}
+              <ConflitosCompatibilizacao analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
+
+              {/* 2.3: 3D ilustrativo a partir da arquitetura (DWG/DXF) — nas duas finalidades */}
+              <CartaoModelo3dAnalise analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />
+            </>
+          )}
 
           <BarraAcoesAnalise
             analise={analise} elaboracao={elaboracao} foraPorQuantidade={foraPorQuantidade}

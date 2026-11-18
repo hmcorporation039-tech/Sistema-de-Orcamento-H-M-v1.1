@@ -122,7 +122,7 @@ function crescerPelasParedes(arquitetura, caixa) {
 }
 
 // ── Classes de layer ─────────────────────────────────────────────────────────
-const RE_JANELA = /JANEL|ESQUAD|CAIXILH|VIDRO|WINDOW|(^|[^A-Z])ESQ([^A-Z]|$)/i;
+const RE_JANELA = /JANEL|ESQUAD|CAIXILH|VIDRO|WINDOW|VENTANA|(^|[^A-Z])ESQ([^A-Z]|$)/i;
 const RE_PILAR = /PILAR|COLUN|ESTRUT|(^|[^A-Z])EST([^A-Z]|$)/i;
 const RE_MURETA = /BAIX|MURET|PEITORIL/i;
 const RE_MEDIA = /M[EÉ]DIA/i;
