@@ -64,15 +64,15 @@ export default function AgentesProprios({ ehAdmin }) {
         </p>
       )}
       <h4 style={{ margin: '16px 0 6px', fontSize: 13.5 }}>Sugestões esperando aprovação ({sugestoes.length})</h4>
-      {!sugestoes.length && <p style={estilos.ajuda}>Nada pendente. As regras do roteador e as respostas do suporte Claude Max aparecem aqui antes de valer.</p>}
+      {!sugestoes.length && <p style={estilos.ajuda}>Nada pendente. As regras do roteador, as respostas do suporte Claude Max e as frases novas do campo de instruções aparecem aqui antes de valer.</p>}
       {sugestoes.map(s => (
         <div key={s.id} data-sugestao={s.id} style={{ borderTop: '1px solid var(--borda)', padding: '8px 0', fontSize: 12.5 }}>
           <div style={{ color: 'var(--texto-3)', fontSize: 11.5 }}>
-            {s.tipo === 'vocabulario' ? 'Regra do roteador' : 'Conhecimento'} · fonte {s.fonte}{s.modo ? ` (${s.modo})` : ''}{s.agente ? ` · ${NOMES[s.agente] || s.agente}` : ''} · {new Date(s.criado_em).toLocaleDateString('pt-BR')}{s.vezes > 1 ? ` · ${s.vezes}×` : ''}
+            {s.tipo === 'vocabulario' ? 'Regra do roteador' : s.tipo === 'instrucao' ? 'Frase do campo de instruções' : 'Conhecimento'} · fonte {s.fonte}{s.modo ? ` (${s.modo})` : ''}{s.agente ? ` · ${NOMES[s.agente] || s.agente}` : ''} · {new Date(s.criado_em).toLocaleDateString('pt-BR')}{s.vezes > 1 ? ` · ${s.vezes}×` : ''}
           </div>
           <div style={{ fontWeight: 600, margin: '2px 0' }}>{s.pergunta.slice(0, 240)}</div>
           <div style={{ whiteSpace: 'pre-wrap', color: 'var(--texto-2)', maxHeight: 160, overflowY: 'auto' }}>{s.resposta.slice(0, 2000)}</div>
-          {(s.tipo !== 'vocabulario' || ehAdmin) && (
+          {(!['vocabulario', 'instrucao'].includes(s.tipo) || ehAdmin) && (
             <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
               <button style={estilos.btnPrimario} onClick={() => decidir(s, 'aprovada')}><Check size={13} /> Aprovar</button>
               <button style={estilos.btnSecundario} onClick={() => decidir(s, 'recusada')}><X size={13} /> Recusar</button>

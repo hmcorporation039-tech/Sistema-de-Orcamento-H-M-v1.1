@@ -90,7 +90,7 @@ async function avaliarPedido(req, res) {
 }
 
 async function listarSugestoes(req, res) {
-  const tipo = ['vocabulario', 'conhecimento'].includes(req.query.tipo) ? req.query.tipo : null;
+  const tipo = ['vocabulario', 'conhecimento', 'instrucao'].includes(req.query.tipo) ? req.query.tipo : null;
   const situacao = ['pendente', 'aprovada', 'recusada'].includes(req.query.situacao) ? req.query.situacao : 'pendente';
   const { rows } = await pool.query(
     `SELECT s.id, s.tipo, s.fonte, s.modo, s.agente, s.intencao, s.disciplina, s.termos, s.pergunta, s.resposta, s.situacao, s.vezes,
@@ -110,6 +110,8 @@ async function decidirSugestao(req, res) {
   const { rows: [s] } = await pool.query('SELECT * FROM agentes_sugestoes WHERE id = $1', [req.params.id]);
   if (!s) return res.status(404).json({ erro: 'Sugestão não encontrada.' });
   if (s.tipo === 'vocabulario' && !ehAdmin(req)) return res.status(403).json({ erro: 'Só o administrador aprova regras do roteador.' });
+  // (2.47) frase do campo de instruções: também só o administrador (passa a valer sem IA para todos)
+  if (s.tipo === 'instrucao' && !ehAdmin(req)) return res.status(403).json({ erro: 'Só o administrador aprova frases do campo de instruções.' });
   if (s.tipo === 'conhecimento' && !ehAdmin(req) && s.usuario_id !== req.usuario.id) return res.status(403).json({ erro: 'Só o administrador ou quem fez o pedido aprova este conhecimento.' });
   const resposta = typeof req.body?.resposta === 'string' && req.body.resposta.trim() ? req.body.resposta.trim().slice(0, 20000) : s.resposta;
   const pergunta = typeof req.body?.pergunta === 'string' && req.body.pergunta.trim() ? req.body.pergunta.trim().slice(0, 2000) : s.pergunta;
@@ -117,6 +119,7 @@ async function decidirSugestao(req, res) {
   const { rows: [n] } = await pool.query(
     `UPDATE agentes_sugestoes SET situacao = $2, resposta = $3, pergunta = $4, termos = $5, decidido_por = $6, decidido_em = NOW(), atualizado_em = NOW()
       WHERE id = $1 RETURNING *`, [s.id, situacao, resposta, pergunta, termos, req.usuario.id]);
+  if (s.tipo === 'instrucao') require('../services/instrucoes/aprendidas').esquecerCache(); // a frase aprovada vale já
   res.json(n);
 }
 

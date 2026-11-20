@@ -278,6 +278,12 @@ router.get('/projetos/analises/:id/mapa', autenticar, validarId, projCtrl.lerMap
 // 2.46: prancha DXF/PDF de um pavimento com o projeto sugerido (elaboração)
 router.get('/projetos/analises/:id/projeto-sugerido/prancha', autenticar, validarId, projCtrl.pranchaSugerida);
 router.put('/projetos/analises/:id/mapa', autenticar, validarId, posseAnalise, projCtrl.salvarMapaCad);
+// 2.47: campo de instruções — o engenheiro escreve o que mudar; interpreta sem IA, aplica e recalcula a mesma análise
+router.get('/projetos/analises/:id/instrucoes', autenticar, validarId, projCtrl.listarInstrucoes);
+router.post('/projetos/analises/:id/instrucoes/interpretar', autenticar, validarId, projCtrl.interpretarInstrucao);
+router.post('/projetos/analises/:id/instrucoes/interpretar-ia', autenticar, validarId, posseAnalise, projCtrl.interpretarInstrucaoIa);
+router.post('/projetos/analises/:id/instrucoes', autenticar, validarId, posseAnalise, projCtrl.aplicarInstrucao);
+router.post('/projetos/analises/:id/instrucoes/:iid/desfazer', autenticar, validarId, posseAnalise, projCtrl.desfazerInstrucao);
 // componentes inseridos e retirados pelo engenheiro (planta do mapa ou 3D), com os símbolos da biblioteca — 2.30
 router.put('/projetos/analises/:id/mapa/edicoes', autenticar, validarId, posseAnalise, projCtrl.editarMapaCad);
 router.post('/projetos/analises/:id/mapa/reprocessar', autenticar, validarId, posseAnalise, projCtrl.reprocessarMapaCad);

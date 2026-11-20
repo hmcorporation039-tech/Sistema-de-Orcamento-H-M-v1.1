@@ -196,6 +196,12 @@ export const salvarMapaCad = (id, arquivo, linhas) => api.put(`/projetos/analise
 // componentes inseridos/retirados (2.30): { arquivo, adicionar, remover, desfazer } ou { sistema: '3d', adicionar, remover }
 export const editarMapaCad = (id, corpo) => api.put(`/projetos/analises/${id}/mapa/edicoes`, corpo);
 export const reprocessarMapaCad = (id, corpo = {}) => api.post(`/projetos/analises/${id}/mapa/reprocessar`, corpo, { timeout: 300000 });
+// campo de instruções (2.47): interpreta sem IA, aplica e recalcula a MESMA análise; desfaz a última
+export const listarInstrucoes = (id) => api.get(`/projetos/analises/${id}/instrucoes`);
+export const interpretarInstrucao = (id, texto) => api.post(`/projetos/analises/${id}/instrucoes/interpretar`, { texto });
+export const interpretarInstrucaoIa = (id, texto) => api.post(`/projetos/analises/${id}/instrucoes/interpretar-ia`, { texto }, { timeout: 180000 });
+export const aplicarInstrucao = (id, corpo) => api.post(`/projetos/analises/${id}/instrucoes`, corpo, { timeout: 300000 });
+export const desfazerInstrucao = (id, iid) => api.post(`/projetos/analises/${id}/instrucoes/${iid}/desfazer`, {}, { timeout: 300000 });
 // o engenheiro diz o que é um bloco nomeado do desenho: { arquivo, bloco, descricao, disciplina } — aprendizado confirmado
 export const confirmarBlocoMapaCad = (id, corpo) => api.put(`/projetos/analises/${id}/mapa/blocos`, corpo);
 // biblioteca de blocos (o que o mapa do CAD ensinou), em JSON: exportar (logado) e importar (administrador)

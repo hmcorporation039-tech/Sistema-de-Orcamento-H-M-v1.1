@@ -323,4 +323,26 @@ caso('2.46 3D: pé-direito lido em cada pavimento e a vista do prédio com os pa
   assert.strictEqual(require('./predioEmpilhado').cenaDoPredio(cenas.slice(0, 1), arqN), null);
 });
 
+caso('2.47 local escolhido pelo engenheiro: rack, central e QD na sala pedida; os cabos saem de lá; sala que não existe fica no calculado', () => {
+  const base = projetarDisciplinas(arqN, ['cftv', 'incendio', 'eletrica']);
+  const rackBase = base.pontos.find(p => p.simbolo === 'HM-CAB-RACK');
+  assert.strictEqual(rackBase.ambiente, 'CPD');
+  const r = projetarDisciplinas(arqN, ['cftv', 'incendio', 'eletrica'], { criterios: { centros: { telecom: { ambiente: 'DEPÓSITO', pavimento: '1º pavimento' }, incendio: 'SECRETARIA', 'eletrica|1º pavimento': { ambiente: 'CAPELA' } } } });
+  const rack = r.pontos.find(p => p.simbolo === 'HM-CAB-RACK');
+  assert.strictEqual(rack.ambiente, 'DEPÓSITO');
+  assert.match(rack.motivo, /escolhido pelo engenheiro/);
+  assert.strictEqual(r.pontos.find(p => p.simbolo === 'HM-INC-CENTRAL').ambiente, 'SECRETARIA');
+  assert.strictEqual(r.pontos.find(p => p.simbolo === 'HM-ELE-QUADRO' && p.pavimento === '1º pavimento').ambiente, 'CAPELA');
+  assert.notStrictEqual(r.pontos.find(p => p.simbolo === 'HM-ELE-QUADRO' && p.pavimento === 'Térreo').ambiente, 'CAPELA');
+  // o cabo das câmeras agora vai até o depósito: o comprimento muda
+  const somaCabo = (x) => x.cabos.filter(c => c.disciplina === 'cftv').reduce((t, c) => t + c.comprimento_m, 0);
+  assert.notStrictEqual(Math.round(somaCabo(r)), Math.round(somaCabo(base)));
+  assert.deepStrictEqual(r.criteriosUsados.centros.telecom, { ambiente: 'DEPÓSITO', pavimento: '1º pavimento' });
+  const errado = projetarDisciplinas(arqN, ['cftv'], { criterios: { centros: { telecom: 'SALA QUE NÃO EXISTE' } } });
+  assert.strictEqual(errado.pontos.find(p => p.simbolo === 'HM-CAB-RACK').ambiente, 'CPD');
+  assert.ok(errado.avisos.some(a => /SALA QUE NÃO EXISTE/.test(a) && /CONFERIR/.test(a)));
+  // chave estranha não entra nos critérios
+  assert.deepStrictEqual(projetarDisciplinas(arqN, ['cftv'], { criterios: { centros: { 'TELECOM; DROP': 'CPD', outro: '' } } }).criteriosUsados.centros, {});
+});
+
 console.log(`pavimentos e projetista: ${ok} casos ok`);

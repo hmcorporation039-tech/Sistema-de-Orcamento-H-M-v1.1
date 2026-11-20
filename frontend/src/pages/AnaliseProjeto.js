@@ -24,6 +24,7 @@ import {
 } from './analise/CartoesAnalise';
 import { CartaoPontosCodificados, CartaoPontosPorDisciplina } from './analise/CartoesPontos';
 import ItensExtraidos from './analise/ItensExtraidos';
+import InstrucoesDaAnalise from '../components/analise/InstrucoesDaAnalise';
 
 // As disciplinas vêm do servidor (GET /projetos/disciplinas — fonte única em
 // backend/src/utils/disciplinasProjeto.js): cada área de atuação é uma
@@ -273,6 +274,7 @@ export default function Compatibilizacao() {
 
   // Finalidade (2.1) e as disciplinas da análise que têm skill (podem virar projeto)
   const elaboracao = analise?.finalidade === 'elaboracao';
+  const temPlantaCad = !!analise && (analise.dadosExtraidos || []).some(d => d?.mapa_cad);
   const disciplinasComSkill = analise ? [...new Map(DISCIPLINAS
     .filter(d => d.skill && (analise.disciplinas || []).includes(d.chave))
     .map(d => [d.skill, d])).values()] : [];
@@ -326,6 +328,9 @@ export default function Compatibilizacao() {
             carregarPasta={carregarPasta} abrirPasta={abrirPasta}
           />
 
+          {/* 2.47: o engenheiro escreve o que mudar; a mesma análise é recalculada (só com planta do CAD) */}
+          {temPlantaCad && <InstrucoesDaAnalise analise={analise} onAtualizada={popularAnalise} />}
+
           {/* Elaboração de projeto (2.45): o foco é o projeto sugerido por pavimento, o 3D onde ele é conferido e o
               projeto por disciplina; a leitura técnica do desenho (mapa do CAD, objetivo, itens, pontos codificados)
               fica recolhida — era informação demais, e pouca dela importa para projetar */}
@@ -343,14 +348,14 @@ export default function Compatibilizacao() {
                     toast.error(await mensagemDeErro(err, 'Não consegui gerar o projeto de novo'), { duration: 10000 });
                   }
                 }} />
-              <div id="cartao-3d-analise"><CartaoModelo3dAnalise analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} /></div>
+              <div id="cartao-3d-analise"><CartaoModelo3dAnalise key={`3d-${analise.versao ?? 0}`} analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} /></div>
               {cartaoProjetos(true)}
               <PavimentosDaAnalise analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
               <CartaoPendencias achados={analise.achados} />
               <details style={{ ...card, padding: '10px 16px' }} data-testid="detalhes-leitura">
                 <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 700, color: 'var(--texto-2)' }}>Detalhes da leitura do desenho (mapa do CAD, itens lidos, objetivo)</summary>
                 <ObjetivoDoProjeto analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
-                <MapaCad key={analise.id} analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />
+                <MapaCad key={`${analise.id}-${analise.versao ?? 0}`} analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />
                 <ItensExtraidos analise={analise} disciplinas={DISCIPLINAS} elaboracao={elaboracao} onPronto={alternarPronto} />
                 <CartaoPontosCodificados analise={analise} />
                 <ConflitosCompatibilizacao analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
@@ -375,7 +380,7 @@ export default function Compatibilizacao() {
 
               <ObjetivoDoProjeto analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
 
-              <MapaCad key={analise.id} analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />
+              <MapaCad key={`${analise.id}-${analise.versao ?? 0}`} analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />
 
               <ItensExtraidos analise={analise} disciplinas={DISCIPLINAS} elaboracao={elaboracao} onPronto={alternarPronto} />
 
@@ -386,7 +391,7 @@ export default function Compatibilizacao() {
               <ConflitosCompatibilizacao analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
 
               {/* 2.3: 3D ilustrativo a partir da arquitetura (DWG/DXF) — nas duas finalidades */}
-              <CartaoModelo3dAnalise analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />
+              <CartaoModelo3dAnalise key={`3d-${analise.versao ?? 0}`} analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />
             </>
           )}
 

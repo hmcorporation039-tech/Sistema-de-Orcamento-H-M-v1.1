@@ -94,7 +94,22 @@ function criteriosDe(c = {}) {
     classeSpda: ['I', 'II', 'III', 'IV'].includes(c.classeSpda) ? c.classeSpda : 'III',
     excluir: [...new Set((Array.isArray(c.excluir) ? c.excluir : []).map(s => String(s || '').trim()).filter(Boolean))],
     peDireito: pd > 1.8 && pd < 30 ? pd : null,
+    centros: centrosDe(c.centros),
   };
+}
+
+// (2.47) local da ESTRUTURA escolhido pelo engenheiro (campo de instruções: "leve o rack para o CPD"): por grupo
+// (telecom, incendio, alarme, acesso, telefonia, antena) ou, para o QD de cada pavimento, "eletrica|<pavimento>" →
+// { ambiente, pavimento? }. A sala é procurada pelo nome; nome que não existe fica no local calculado, com aviso.
+function centrosDe(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+  const out = {};
+  for (const [k, x] of Object.entries(v).slice(0, 40)) {
+    const ambiente = String((x && typeof x === 'object' ? x.ambiente : x) || '').trim().slice(0, 120);
+    const pavimento = x && typeof x === 'object' && x.pavimento ? String(x.pavimento).trim().slice(0, 80) : null;
+    if (/^[a-z_]+(\|.{1,80})?$/.test(k) && ambiente) out[k] = { ambiente, ...(pavimento ? { pavimento } : {}) };
+  }
+  return out;
 }
 
 // ── 2) Regras por disciplina ─────────────────────────────────────────────
@@ -478,6 +493,16 @@ function projetarDisciplinas(arquitetura, disciplinas0 = [], opcoes = {}) {
   const ordemPav = (p) => { const i = ordem.indexOf(p); return i === -1 ? 50 : Math.abs(i - Math.max(0, ordem.findIndex(n => /T[ÉE]RREO/i.test(n)))); };
   const candidatosCentro = ambs.filter(a => prioridade(a) < 9 && a.area >= 3).sort((x, y) => prioridade(x) - prioridade(y) || ordemPav(x.pavimento) - ordemPav(y.pavimento) || x.area - y.area);
   const salaCentro = candidatosCentro[0] || ambs.slice().sort((x, y) => y.area - x.area)[0];
+  // (2.47) sala escolhida pelo engenheiro (crit.centros[chave] = { ambiente, pavimento? }); pavDoQd restringe ao pavimento
+  const avisosEscolha = [];
+  const salaEscolhida = (chave, pavDoQd = null) => {
+    const e = crit.centros?.[chave];
+    if (!e) return null;
+    const pav = pavDoQd || e.pavimento || null;
+    const achou = ambs.filter(a => sem(a.nome) === sem(e.ambiente) && (!pav || a.pavimento === pav)).sort((x, y) => y.area - x.area)[0] || null;
+    if (!achou) avisosEscolha.push(`O local escolhido para ${chave.replace('|', ' do ')} ("${e.ambiente}"${pav ? `, ${pav}` : ''}) não existe nesta arquitetura — ficou o local calculado [CONFERIR].`);
+    return achou;
+  };
 
   // prumada: a escada/shaft/poço que se repete na MESMA posição do prédio (pavimentos alinhados) em mais pavimentos;
   // num pavimento sem ela, a circulação maior (ou o centro) — e a diferença entra no cabo como desvio horizontal
@@ -621,10 +646,13 @@ function projetarDisciplinas(arquitetura, disciplinas0 = [], opcoes = {}) {
         pos = { x: prumada[pav].x + 0.6, y: prumada[pav].y };
         onde = { nome: prumada[pav].ambiente || pav, pavimento: pav, motivo: `antena e amplificador no ${pav} (o mais alto com salas), junto da prumada "${prumada[pav].ambiente || '—'}": cabo de descida mais curto — a antena vai na cobertura [CONFERIR]` };
       } else {
-        const [p0] = P.noPerimetro(salaCentro.pol, 1, { recuo: 0.2, fase: FASE_CENTRO[D.grupo] ?? 0.5 });
-        pos = p0 || { x: salaCentro.c[0], y: salaCentro.c[1] };
-        pav = salaCentro.pavimento;
-        onde = { nome: salaCentro.nome, pavimento: pav, motivo: `equipamento central na ${ROTULO_TIPO[salaCentro.tipo]} "${salaCentro.nome}" (${pav}): ${salaCentro.tipo === 'tecnica' ? 'sala técnica de acesso restrito' : 'local com supervisão'} [CONFERIR]` };
+        // (2.47) sala escolhida pelo engenheiro para a estrutura do grupo, se existir
+        const escolhida = salaEscolhida(D.grupo);
+        const sala = escolhida || salaCentro;
+        const [p0] = P.noPerimetro(sala.pol, 1, { recuo: 0.2, fase: FASE_CENTRO[D.grupo] ?? 0.5 });
+        pos = p0 || { x: sala.c[0], y: sala.c[1] };
+        pav = sala.pavimento;
+        onde = { nome: sala.nome, pavimento: pav, motivo: escolhida ? `equipamento central em "${sala.nome}" (${pav}): local escolhido pelo engenheiro` : `equipamento central na ${ROTULO_TIPO[sala.tipo]} "${sala.nome}" (${pav}): ${sala.tipo === 'tecnica' ? 'sala técnica de acesso restrito' : 'local com supervisão'} [CONFERIR]` };
       }
       central = { id: novoId(D.grupo === 'telecom' ? 'RK' : D.grupo === 'incendio' ? 'CI' : D.grupo === 'alarme' ? 'CA' : D.grupo.slice(0, 2).toUpperCase()), x: pos.x, y: pos.y, pavimento: pav, ambiente: onde.nome, simbolo: D.centro, rotulo: D.rotuloCentro };
       centrosPorGrupo[D.grupo] = central;
@@ -656,13 +684,18 @@ function projetarDisciplinas(arquitetura, disciplinas0 = [], opcoes = {}) {
           let pos = qd ? { x: qd.x, y: qd.y } : { x: pr.x + 0.6, y: pr.y };
           let amb = qd?.ambiente || pr.ambiente || nome;
           let mudou = false;
-          if (ruim(amb)) {
+          // (2.47) sala do QD escolhida pelo engenheiro para este pavimento
+          const escolhidaQd = salaEscolhida(`${D.grupo}|${nome}`, nome);
+          if (escolhidaQd) {
+            const [p0] = P.noPerimetro(escolhidaQd.pol, 1, { recuo: 0.15, fase: 0.6 });
+            pos = p0 || { x: escolhidaQd.c[0], y: escolhidaQd.c[1] }; amb = escolhidaQd.nome; mudou = 'escolha';
+          } else if (ruim(amb)) {
             const boa = [...doPav.filter(a => a.tipo === 'tecnica'), ...doPav.filter(a => a.tipo === 'deposito'), ...doPav.filter(a => a.tipo === 'circulacao').sort((x, y) => y.area - x.area), ...doPav.filter(a => !ruim(a.nome))][0];
             if (boa) { const [p0] = P.noPerimetro(boa.pol, 1, { recuo: 0.15, fase: 0.6 }); pos = p0 || { x: boa.c[0], y: boa.c[1] }; mudou = amb; amb = boa.nome; }
           }
           const c = { id: novoId('QD'), x: pos.x, y: pos.y, pavimento: nome, ambiente: amb, simbolo: 'HM-ELE-QUADRO', rotulo: 'Quadro de distribuição (QD)' };
           centrosPorGrupo[chaveQd] = c;
-          const q = { x: r2(c.x), y: r2(c.y), simbolo: 'HM-ELE-QUADRO', disciplina: disc, rotulo: `Quadro de distribuição (QD) — ${amb}`, ambiente: amb, pavimento: nome, motivo: `QD do ${nome}: circuitos dos ambientes do pavimento (${mudou ? `tirado de "${mudou}" — quadro não vai em sanitário/dormitório` : 'posição pelo cálculo da skill elétrica'}) [CONFERIR]`, id: c.id, central: true, altura_m: 1.5 };
+          const q = { x: r2(c.x), y: r2(c.y), simbolo: 'HM-ELE-QUADRO', disciplina: disc, rotulo: `Quadro de distribuição (QD) — ${amb}`, ambiente: amb, pavimento: nome, motivo: mudou === 'escolha' ? `QD do ${nome} em "${amb}": local escolhido pelo engenheiro` : `QD do ${nome}: circuitos dos ambientes do pavimento (${mudou ? `tirado de "${mudou}" — quadro não vai em sanitário/dormitório` : 'posição pelo cálculo da skill elétrica'}) [CONFERIR]`, id: c.id, central: true, altura_m: 1.5 };
           afastar(q); c.x = q.x; c.y = q.y;
           out.pontos.push(q);
         }
@@ -1015,6 +1048,7 @@ function projetarDisciplinas(arquitetura, disciplinas0 = [], opcoes = {}) {
   if (excluidos.length) out.criterios.push(`Fora do projeto (escolha do engenheiro): ${excluidos.map(a => `${a.nome} (${a.pavimento})`).join(', ')}.`);
   const naoAchados = crit.excluir.filter(n => !todos.some(a => sem(a.nome) === sem(n) || sem(`${a.nome} (${a.pavimento})`) === sem(n)));
   if (naoAchados.length) out.avisos.push(`Ambientes pedidos para ficar fora que não estão na planta: ${naoAchados.join(', ')} [CONFERIR].`);
+  out.avisos.push(...new Set(avisosEscolha));
   return out;
 }
 // NBR 17240 5.5.3: caminhamento máximo de 30 m até o acionador (o mesmo valor da skill de incêndio)

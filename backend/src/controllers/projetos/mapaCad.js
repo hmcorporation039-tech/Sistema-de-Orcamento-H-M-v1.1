@@ -180,9 +180,10 @@ async function editar(req, res) {
 // tinha sido marcada no envio entra na análise nova, salvo `incluirDisciplinas: false`.
 // Análise feita antes do mapa (semMapaComCad) ou do desenho de fundo (mapaSemFundo): reprocessa sem confirmação — a
 // análise nova vem com o mapa completo para conferir.
-async function reprocessar(req, res) {
-  const { rows: [a] } = await pool.query('SELECT * FROM analises_projeto WHERE id = $1', [req.params.id]);
-  if (!a) return res.status(404).json({ erro: 'Análise não encontrada' });
+// Os arquivos de uma análise lidos da pasta do projeto, com os tipos conferidos e as edições do mapa (reprocessar e, na
+// 2.47, o recálculo no lugar do campo de instruções). Devolve { arquivos, mapasConfirmados, mapasEditados, comEdicao,
+// semMapa } ou lança erro com status.
+function mapasDaAnalise(a, { incluirDisciplinas = true } = {}) {
   const semMapa = semMapaComCad(a) || mapaSemFundo(a);
   const mapas = arquivosComMapa(a.dados_extraidos);
   const mapasConfirmados = {};
@@ -193,16 +194,17 @@ async function reprocessar(req, res) {
     const nome = d.mapa_cad.arquivo || d.arquivo;
     if (confirmadas.length) mapasConfirmados[nome] = confirmadas;
     if (edicoesDoMapa.temEdicoes(d.mapa_cad.edicoes)) mapasEditados[nome] = d.mapa_cad.edicoes;
-    if (req.body?.incluirDisciplinas !== false) disciplinasExtras[nome] = mapaCad.disciplinasAIncluir(d.mapa_cad, d.disciplinas).map(x => x.chave);
+    if (incluirDisciplinas) disciplinasExtras[nome] = mapaCad.disciplinasAIncluir(d.mapa_cad, d.disciplinas).map(x => x.chave);
   }
   const comEdicao = Object.keys(mapasConfirmados).length + Object.keys(mapasEditados).length > 0;
-  // (2.46) gerar de novo o projeto sugerido com critérios novos não precisa de edição no mapa
-  const novosCriterios = a.finalidade === 'elaboracao' && req.body?.criterios && typeof req.body.criterios === 'object' ? req.body.criterios : null;
-  if (!semMapa && !comEdicao && !novosCriterios) return res.status(400).json({ erro: 'Confirme o tipo de ao menos uma layer, ou insira/retire um componente na planta, antes de reprocessar.' });
-
+  return { mapasConfirmados, mapasEditados, disciplinasExtras, comEdicao, semMapa };
+}
+async function arquivosDaAnalise(a, opcoes = {}) {
+  const { mapasConfirmados, mapasEditados, disciplinasExtras, comEdicao, semMapa } = mapasDaAnalise(a, opcoes);
+  const erro = (status, msg) => Object.assign(new Error(msg), { status });
   // os arquivos originais ficam na pasta do projeto; os que não estão na lista da análise eram referência (arquitetura etc.)
   let pasta;
-  try { pasta = path.join(await pastaDoProjeto(a), SUBPASTA_ARQUIVOS); } catch (e) { return res.status(409).json({ erro: `Não consegui abrir a pasta do projeto: ${e.message}` }); }
+  try { pasta = path.join(await pastaDoProjeto(a), SUBPASTA_ARQUIVOS); } catch (e) { throw erro(409, `Não consegui abrir a pasta do projeto: ${e.message}`); }
   const analisados = Array.isArray(a.arquivos_analisados) ? a.arquivos_analisados : [];
   let noDisco;
   try { noDisco = (await fsp.readdir(pasta)).filter(n => RE_ARQUIVO_DE_PROJETO.test(n)); } catch { noDisco = []; }
@@ -213,13 +215,27 @@ async function reprocessar(req, res) {
     if (!noDisco.includes(nome)) { faltando.push(q.arquivo); continue; }
     arquivos.push({ buffer: await fsp.readFile(path.join(pasta, nome)), nomeArquivo: q.arquivo, disciplinas: [...new Set([...(q.disciplinas || []), ...(disciplinasExtras[q.arquivo] || [])])], ...(q.escala ? { escala: q.escala } : {}) });
   }
-  if (faltando.length) return res.status(409).json({ erro: `Os arquivos originais não estão mais na pasta do projeto (${faltando.slice(0, 3).join(', ')}). Envie o projeto de novo para analisar.` });
+  if (faltando.length) throw erro(409, `Os arquivos originais não estão mais na pasta do projeto (${faltando.slice(0, 3).join(', ')}). Envie o projeto de novo para analisar.`);
   const nomesAnalisados = new Set(analisados.map(q => P.nomeSeguro(q.arquivo, 'arquivo')));
   for (const nome of noDisco) {
     if (nomesAnalisados.has(nome) || !ehArquivoCad(nome)) continue;
     arquivos.push({ buffer: await fsp.readFile(path.join(pasta, nome)), nomeArquivo: nome, disciplinas: [], referencia: true });
   }
-  if (!arquivos.length) return res.status(409).json({ erro: 'Não há arquivos do projeto para reprocessar.' });
+  if (!arquivos.length) throw erro(409, 'Não há arquivos do projeto para reprocessar.');
+  return { arquivos, mapasConfirmados, mapasEditados, comEdicao, semMapa };
+}
+
+async function reprocessar(req, res) {
+  const { rows: [a] } = await pool.query('SELECT * FROM analises_projeto WHERE id = $1', [req.params.id]);
+  if (!a) return res.status(404).json({ erro: 'Análise não encontrada' });
+  // (2.46) gerar de novo o projeto sugerido com critérios novos não precisa de edição no mapa
+  const novosCriterios = a.finalidade === 'elaboracao' && req.body?.criterios && typeof req.body.criterios === 'object' ? req.body.criterios : null;
+  const incluirDisciplinas = req.body?.incluirDisciplinas !== false;
+  const { comEdicao, semMapa } = mapasDaAnalise(a, { incluirDisciplinas });
+  if (!semMapa && !comEdicao && !novosCriterios) return res.status(400).json({ erro: 'Confirme o tipo de ao menos uma layer, ou insira/retire um componente na planta, antes de reprocessar.' });
+  let lidos;
+  try { lidos = await arquivosDaAnalise(a, { incluirDisciplinas }); } catch (e) { return res.status(e.status || 500).json({ erro: e.message }); }
+  const { arquivos, mapasConfirmados, mapasEditados } = lidos;
 
   const base = String(a.nome_projeto || a.cliente_nome || 'Projeto').replace(/\s*\((mapa confirmado|lida de novo)\)$/, '');
   const corpo = { finalidade: a.finalidade || 'orcamento', obra_id: a.obra_id, nome_projeto: `${base} (${comEdicao ? 'mapa confirmado' : 'lida de novo'})`.slice(0, 200), ...(novosCriterios ? { criterios: novosCriterios } : {}) };
@@ -276,4 +292,4 @@ async function importarBiblioteca(req, res) {
   res.json({ ...r, recusadas: erros.length, erros: erros.slice(0, 20) });
 }
 
-module.exports = { ler, salvar, editar, reprocessar, confirmarBloco, exportarBiblioteca, importarBiblioteca, paraTestes: { disciplinasDoProjeto } };
+module.exports = { ler, salvar, editar, reprocessar, confirmarBloco, exportarBiblioteca, importarBiblioteca, arquivosDaAnalise, pedidosDo3d, paraTestes: { disciplinasDoProjeto } };

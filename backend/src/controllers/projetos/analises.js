@@ -147,7 +147,8 @@ function arquivoInvalido(arquivos) {
 // Critérios do projetista (2.46): campo multipart/JSON "criterios" — densidade de câmeras, câmeras externas, PTZ,
 // cobertura do incêndio, tomadas de rede por área de trabalho, classe do SPDA, ambientes fora e pé-direito. Só as
 // chaves conhecidas passam; a skill (projetista.criteriosDe) normaliza os valores.
-const CHAVES_CRITERIOS = ['densidadeCftv', 'cftvExterno', 'ptz', 'incendio', 'redePor10m2', 'classeSpda', 'excluir', 'peDireito'];
+// (2.47) centros: o local da estrutura escolhido pelo engenheiro no campo de instruções (skills/_comum/cad/projetista.js centrosDe)
+const CHAVES_CRITERIOS = ['densidadeCftv', 'cftvExterno', 'ptz', 'incendio', 'redePor10m2', 'classeSpda', 'excluir', 'peDireito', 'centros'];
 function lerCriterios(v) {
   let c = v;
   if (typeof c === 'string') {
@@ -156,7 +157,12 @@ function lerCriterios(v) {
   }
   if (!c || typeof c !== 'object' || Array.isArray(c)) return null;
   const out = {};
-  for (const k of CHAVES_CRITERIOS) if (c[k] !== undefined && c[k] !== null && c[k] !== '') out[k] = k === 'excluir' ? (Array.isArray(c[k]) ? c[k].map(String).slice(0, 200) : []) : c[k];
+  for (const k of CHAVES_CRITERIOS) {
+    if (c[k] === undefined || c[k] === null || c[k] === '') continue;
+    if (k === 'excluir') out[k] = Array.isArray(c[k]) ? c[k].map(String).slice(0, 200) : [];
+    else if (k === 'centros') { if (typeof c[k] === 'object' && !Array.isArray(c[k]) && Object.keys(c[k]).length) out[k] = c[k]; }
+    else out[k] = c[k];
+  }
   return Object.keys(out).length ? out : null;
 }
 function criteriosDaAnalise(a) {
@@ -168,6 +174,9 @@ function criteriosDaAnalise(a) {
 // análise, gravação. `corpo`: { finalidade, obra_id, nome_projeto }. `opcoes.mapasConfirmados`: tipos conferidos no
 // mapa do CAD (controllers/projetos/mapaCad.js) quando a análise é um reprocessamento; `opcoes.analiseAnterior`: a análise
 // reprocessada (linha do banco), de onde vêm as edições do usuário (services/edicoesDaAnalise.js).
+// (2.47) `opcoes.substituir`: id da análise a RECALCULAR NO LUGAR (campo de instruções) — em vez de gravar uma análise nova,
+// a mesma linha recebe a leitura nova (nome, cliente, obra, proposta, funcionamento e pontos por disciplina ficam);
+// `opcoes.extraResposta` vai junto na resposta. Devolve true/false (a resposta já foi enviada).
 async function executarAnalise(req, res, arquivos, corpo, opcoes = {}) {
   // finalidade (2.1): campo multipart; ausente = 'orcamento' (o uso de sempre,
   // e o que o MCP manda quando não informa)
@@ -193,7 +202,10 @@ async function executarAnalise(req, res, arquivos, corpo, opcoes = {}) {
   try {
     // obraId: o aprendizado conta a obra como UM projeto (R01 e R02 do mesmo desenho não votam duas vezes)
     // critérios do projetista (2.46, elaboração): os do envio ou, ao gerar de novo, os da análise anterior
-    const criterios = finalidade === 'elaboracao' ? (lerCriterios(corpo.criterios) || criteriosDaAnalise(opcoes.analiseAnterior)) : null;
+    // (2.47) opcoes.criterios (campo de instruções): os critérios exatos do recálculo — no Desfazer, os de antes, sem herdar os da análise
+    const criterios = finalidade !== 'elaboracao' ? null
+      : 'criterios' in opcoes ? (opcoes.criterios && Object.keys(opcoes.criterios).length ? lerCriterios(opcoes.criterios) : null)
+        : (lerCriterios(corpo.criterios) || criteriosDaAnalise(opcoes.analiseAnterior));
     const resultado = await analisarProjetoCompleto(arquivos, { ...opcoes, obraId: obraDaAnalise?.id || null, finalidade, criterios });
     // o que foi LIDO (antes de qualquer edição) fica guardado nas análises com mapa do CAD: é a base para copiar edições num reprocessamento
     const temMapa = (resultado.dadosExtraidos || []).some(d => d?.mapa_cad);
@@ -211,6 +223,7 @@ async function executarAnalise(req, res, arquivos, corpo, opcoes = {}) {
     // INSERT deixava a análise gravada sem a base do 3D/compatibilização
     // (e o usuário via erro, analisava de novo e ficava com duas)
     const insert = await comTransacao(async (client) => {
+    if (opcoes.substituir) return { rows: [await substituirLeitura(client, opcoes.substituir, resultado, leituraOriginal)] };
     const ins = await client.query(
       `INSERT INTO analises_projeto
         (cliente_nome, disciplinas, arquivos_analisados, ambientes, pontos_por_ambiente, cameras,
@@ -266,17 +279,36 @@ async function executarAnalise(req, res, arquivos, corpo, opcoes = {}) {
     return ins;
     });
 
-    // Pasta do projeto (fora da transação): guarda os arquivos recebidos (antes eram lidos e descartados)
-    await sincronizarProjeto(insert.rows[0], arquivos);
+    // Pasta do projeto (fora da transação): guarda os arquivos recebidos (antes eram lidos e descartados); no recálculo
+    // no lugar os arquivos são os mesmos da pasta
+    if (!opcoes.substituir) await sincronizarProjeto(insert.rows[0], arquivos);
     const salvo = await pool.query(SQL_ANALISE_COMPLETA, [insert.rows[0].id]);
-    res.json({ ...linhaParaAnalise(salvo.rows[0]), ...(heranca ? { edicoesHerdadas: heranca } : {}) });
+    res.json({ ...linhaParaAnalise(salvo.rows[0]), ...(heranca ? { edicoesHerdadas: heranca } : {}), ...(opcoes.extraResposta || {}) });
     return true;
   } catch (err) {
     console.error('Erro ao analisar projeto:', err);
     // erros do banco/sistema (têm `code`) não vão para a tela — só os da leitura do projeto
+    if (res.headersSent) return false;
     res.status(422).json({ erro: (!err.code && err.message) || 'Erro ao analisar os arquivos do projeto' });
     return false;
   }
+}
+
+// (2.47) grava a leitura recalculada na MESMA análise (campo de instruções). As edições de item do usuário já vieram
+// herdadas em resultado.servicos/materiais (herdarEdicoes). A arquitetura do 3D não muda (os arquivos são os mesmos).
+async function substituirLeitura(client, id, resultado, leituraOriginal) {
+  const { rows: [linha] } = await client.query(
+    `UPDATE analises_projeto SET disciplinas = $2, arquivos_analisados = $3, ambientes = $4, pontos_por_ambiente = $5, cameras = $6,
+        pontos_rede_antena = $7, tabela_cabos = $8, achados = $9, servicos = $10, materiais = $11, dados_extraidos = $12,
+        conflitos = $13, compatibilizacao = $14, espacial = $15, leitura_original = COALESCE($16::jsonb, leitura_original), atualizado_em = NOW(), versao = versao + 1
+      WHERE id = $1 RETURNING *`,
+    [id, JSON.stringify(resultado.disciplinas), JSON.stringify(resultado.arquivosAnalisados), JSON.stringify(resultado.ambientes),
+      JSON.stringify(resultado.pontosPorAmbiente), JSON.stringify(resultado.cameras), JSON.stringify(resultado.pontosRedeAntena),
+      JSON.stringify(resultado.tabelaCabos), JSON.stringify(resultado.achados), JSON.stringify(resultado.servicos), JSON.stringify(resultado.materiais),
+      JSON.stringify(resultado.dadosExtraidos || []), JSON.stringify(resultado.conflitos || []), JSON.stringify(resultado.compatibilizacao || null),
+      JSON.stringify(resultado.espacial || null), leituraOriginal ? JSON.stringify(leituraOriginal) : null]);
+  if (!linha) throw Object.assign(new Error('Análise não encontrada'), { status: 404 });
+  return linha;
 }
 
 // Salva as edições feitas na revisão (cliente, serviços e materiais — o que
