@@ -37,6 +37,7 @@ const sugerido = {
 
 test('mostra o projeto sugerido por pavimento: componentes, ambiente a ambiente com o motivo, cabos e avisos', () => {
   act(() => raiz.render(<ProjetoSugerido analise={{ dadosExtraidos: [{ arquivo: 'arq.dwg', projeto_sugerido: sugerido }] }} estiloCartao={{}} estiloTitulo={{}} />));
+  act(() => [...caixa.querySelectorAll('button')].find(b => /Ambiente a ambiente/.test(b.textContent)).click()); // 2.48: começa fechado
   const txt = caixa.textContent;
   expect(txt).toContain('Projeto sugerido pelo sistema');
   expect(txt).toContain('4 componente(s) de CFTV, Detecção e alarme de incêndio em 2 pavimento(s)');
@@ -94,6 +95,7 @@ test('2.46: soma os agrupados (n), mostra nível e pé-direito do pavimento e ge
   };
   const pedidos = [];
   act(() => raiz.render(<ProjetoSugerido analise={{ id: 9, dadosExtraidos: [{ arquivo: 'arq.dwg', projeto_sugerido: s }] }} estiloCartao={{}} estiloTitulo={{}} onRegerar={async (c) => { pedidos.push(c); }} />));
+  act(() => [...caixa.querySelectorAll('button')].find(b => /Ambiente a ambiente/.test(b.textContent)).click()); // 2.48: começa fechado
   const txt = caixa.textContent;
   expect(txt).toContain('SECRETARIA: 6 × Luminária LED');
   expect(txt).toContain('Iluminação');

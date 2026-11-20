@@ -39,7 +39,7 @@ const sinal = (v) => (v > 0 ? `+${br(v, 2)}` : br(v, 2));
 function Sugerido({ arquivo, s, analiseId, onRegerar }) {
   const pavimentos = s.pavimentos || [];
   const [pav, setPav] = useState(pavimentos[0] || null);
-  const [aberto, setAberto] = useState({ ambientes: true, criterios: false, regerar: false });
+  const [aberto, setAberto] = useState({ ambientes: false, criterios: false, regerar: false }) // 2.48: ambiente a ambiente começa fechado (tela menor);
   const [criterios, setCriterios] = useState(() => criteriosDoProjeto(s.criteriosUsados));
   const [ocupado, setOcupado] = useState('');
   const pontos = (s.pontos || []).filter(p => !pav || p.pavimento === pav);

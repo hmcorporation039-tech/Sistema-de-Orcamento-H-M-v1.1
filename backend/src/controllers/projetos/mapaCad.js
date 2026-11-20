@@ -72,7 +72,11 @@ async function ler(req, res) {
 // confirmado: false desfaz a confirmação da linha (volta ao proposto e esquece o que ela ensinou)
 async function salvar(req, res) {
   const { id } = req.params;
-  const { arquivo, linhas } = req.body || {};
+  // aceitarSeguras: true → o servidor escolhe as linhas (mapaCad.linhasSeguras: legenda/aprendido coerentes) — botão
+  // "Aceitar as da legenda" da tela e o agente; as duvidosas voltam em `aConferir` com o motivo
+  const { arquivo, aceitarSeguras } = req.body || {};
+  let { linhas } = req.body || {};
+  let aConferir = [];
   // erro com status (404/400) sai pelo tratador central (middleware/erros.js) como { erro: mensagem },
   // aqui e em editar/confirmarBloco
   const resultado = await comTransacao(async (client) => {
@@ -81,6 +85,11 @@ async function salvar(req, res) {
     const dados = Array.isArray(a.dados_extraidos) ? a.dados_extraidos : [];
     const i = dados.findIndex(d => d?.mapa_cad?.simbolos && (d.mapa_cad.arquivo || d.arquivo) === arquivo);
     if (i < 0) throw Object.assign(new Error('Esta análise não tem mapa do CAD para esse arquivo (análise feita antes do mapa, ou arquivo que não é DWG/DXF).'), { status: 404 });
+    if (aceitarSeguras) {
+      const sel = mapaCad.linhasSeguras(dados[i].mapa_cad);
+      linhas = sel.seguras; aConferir = sel.aConferir;
+      if (!linhas.length) throw Object.assign(new Error('Nenhuma linha da legenda para aceitar: as que faltam precisam ser conferidas uma a uma.'), { status: 400 });
+    }
     const erro = mapaCad.validarLinhas(linhas, dados[i].mapa_cad);
     if (erro) throw Object.assign(new Error(erro), { status: 400 });
     const { mapa, alteradas } = mapaCad.aplicarNoMapa(dados[i].mapa_cad, linhas);
@@ -102,7 +111,7 @@ async function salvar(req, res) {
   // escritório no carimbo, da mesma disciplina (item 8)
   const alturasAprendidas = await notasAprendidas.aprenderConfirmadas(resultado.alteradas, escritorio, arquivo, undefined, { fonte });
   await notasAprendidas.esquecer(resultado.alteradas, escritorio, undefined, { fonte, arquivo, mapa: resultado.mapa });
-  res.json({ ...respostaDoMapa(resultado.dados), aprendidas, esquecidas, alturasAprendidas });
+  res.json({ ...respostaDoMapa(resultado.dados), aprendidas, esquecidas, alturasAprendidas, ...(aceitarSeguras ? { aceitas: resultado.alteradas.length, aConferir } : {}) });
 }
 
 // Pedido vindo do 3D (sistema: '3d'): as posições estão nas coordenadas da REFERÊNCIA (utils/compatibilidadeEspacial — o

@@ -419,5 +419,44 @@ caso('rota do cabeamento medida no desenho vira cabo (a conferir, sem preço) e 
   assert.strictEqual(I.montarServicosPadrao(a, ['cabeamento'], {}, {}, {}).find(s => s.codigo === 'cab_passagem').quantidade, 1);
 });
 
+caso('20/11: câmeras contadas viram instalação interna × externa (e o suporte da bullet)', () => {
+  const an = [analise('cftv.dwg', ['cftv'])];
+  const v = [[{ origem: 'cad', pagina: 'DWG', itens: [
+    sim('Câmera dome', 45, { bloco: 'HM-CFTV-CAMERA', layer: 'CFTV-CAMERA', disciplina: 'cftv' }),
+    sim('Câmera PTZ (speed dome)', 2, { bloco: 'HM-CFTV-CAMERA', layer: 'CFTV-CAMERA', disciplina: 'cftv' }),
+    sim('Câmera bullet externa IP67', 2, { bloco: 'HM-CFTV-CAMERA', layer: 'CFTV-CAMERA', disciplina: 'cftv' }),
+  ] }]];
+  const s = servicos(an, v, ['cftv']);
+  assert.strictEqual(s.cftv_ponto.quantidade, 49);
+  assert.strictEqual(s.cftv_camera_interna.quantidade, 47);
+  assert.strictEqual(s.cftv_camera_externa.quantidade, 2);
+  const cont = I.contagemDoDesenho(an, v);
+  assert.strictEqual(I.montarMateriaisInstalacaoPadrao(an, ['cftv'], cont).find(m => /bullet/.test(m.descricao)).quantidade, 2);
+});
+
+caso('20/11: tomada "(2x)" conta 2 por símbolo; tomada e interruptor do desenho chegam ao material sem duplicar', () => {
+  const an = [analise('ele.dwg', ['eletrica'])];
+  const v = [[{ origem: 'cad', pagina: 'DWG', itens: [
+    sim('Tomada 2P+T 10 A (2x) - baixa', 16, { bloco: 'HM-ELE-TOMADA-BAIXA', layer: 'EL-Tomadas', disciplina: 'eletrica' }),
+    sim('Condulete C - Tomada média', 32, { bloco: 'HM-ELE-TOMADA-BAIXA', layer: 'EL-Tomadas', disciplina: 'eletrica' }),
+    sim('Interruptor - 1x simples', 11, { bloco: 'HM-ELE-INTERRUPTOR', layer: 'EL-Interruptor', disciplina: 'eletrica' }),
+  ] }]];
+  const s = servicos(an, v, ['eletrica']);
+  assert.strictEqual(s.ele_tomada_baixa.quantidade, 32, '16 símbolos × 2');
+  assert.strictEqual(s.ele_tomada_media.quantidade, 32);
+  assert.strictEqual(s.ele_interruptor.quantidade, 11);
+  const cont = I.contagemDoDesenho(an, v);
+  const modelos = I.montarMateriaisInstalacaoPadrao(an, ['eletrica'], cont);
+  assert.strictEqual(modelos.find(m => /^Tomada 2P\+T/.test(m.descricao)).quantidade, 64);
+  assert.strictEqual(modelos.find(m => /^Interruptor/.test(m.descricao)).quantidade, 11);
+  // sem material lido do desenho: os modelos ficam (sem a marca interna)
+  const ficam = I.semModeloCoberto(modelos, []);
+  assert.strictEqual(ficam.find(m => /^Tomada 2P\+T/.test(m.descricao)).quantidade, 64);
+  assert.ok(ficam.every(m => !('_doDesenho' in m)));
+  // com a tomada lida do desenho como material próprio: o modelo genérico sai (não conta duas vezes)
+  const doDesenho = [{ descricao: 'Tomada 2P+T 10 A - baixa', quantidade: 32, disciplina: 'eletrica', observacao: 'Quantidade contada no DWG.' }];
+  assert.ok(!I.semModeloCoberto(modelos, doDesenho).some(m => /^Tomada 2P\+T/.test(m.descricao)));
+});
+
 console.log(`analiseProjetoItens: ${ok} casos ok`);
 process.exit(process.exitCode || 0);

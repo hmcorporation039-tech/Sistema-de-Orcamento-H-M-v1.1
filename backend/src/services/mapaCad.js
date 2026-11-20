@@ -232,6 +232,62 @@ function disciplinasAIncluir(mapa, marcadas) {
   return [...porChave.values()];
 }
 
+// ── "Aceitar as seguras" (20/11/2026) ────────────────────────────────────────────────────────────────────────────
+// Linhas que o engenheiro pode aceitar em um clique: o tipo veio da LEGENDA do próprio desenho ou do que ele já
+// confirmou em outro projeto ('aprendido'), e o texto da legenda não contradiz o tipo. Ficam de fora (a conferir):
+// 'regra' (nome da layer), 'semelhante', não reconhecidas, e a linha cujo texto fala de outra coisa — caso real do
+// LACE-LAB: o "DR tetrapolar" da legenda dos diagramas entrou como interruptor (6 pontos a mais).
+const ORIGENS_SEGURAS = new Set(['legenda', 'aprendido']);
+// texto de legenda que descreve PROTEÇÃO (vale mesmo com "interruptor" no texto: "Interruptor/disjuntor diferencial
+// residual tetrapolar" da legenda dos diagramas do LACE-LAB não é interruptor de parede)
+const RE_PROTECAO = /DISJUNTOR|DIFER[EÊ]NCIA|RESIDUAL|(^|[^A-Z])I?DRS?([^A-Z]|$)|(^|[^A-Z])DPS([^A-Z]|$)|SURTO|CURTO.?CIRCUITO/;
+// texto que descreve condutor/infra ou só o número de polos: não é ponto, a menos que nomeie um ponto
+const RE_NAO_E_PONTO = /TETRAPOLAR|TRIPOLAR|MONOPOLAR|UNIPOLAR|BARRAMENTO|CONDUTOR|(^|[^A-Z])CABOS?([^A-Z]|$)|ELETRODUTO|ELETROCALHA|PERFILADO|CIRCUITO|FIA[ÇC][ÃA]O|NEUTRO|TERRA([^A-Z]|$)|RETORNO|FASE([^A-Z]|$)/;
+const ALIAS_FAMILIA = { LUMINARIA: 'LUZ', POSTE: 'LUZ' };
+function familiaDe(simbolo) {
+  const s = String(simbolo || '');
+  if (s === 'HM-ELE-PONTO-LUZ') return 'LUZ';
+  const f = s.replace(/^HM-[A-Z]+-/, '').split('-')[0];
+  return ALIAS_FAMILIA[f] || f;
+}
+// tipo que o TEXTO da legenda sugere (a mesma lista de regras dos nomes de layer); null = o texto não diz
+function tipoDoTexto(texto) {
+  const t = String(texto || '').toUpperCase();
+  if (!t.trim()) return null;
+  return TIPOS.find(x => x[0].test(t))?.[2] || null;
+}
+// o texto da linha é compatível com o tipo proposto? { ok, motivo }
+function coerencia(s) {
+  const texto = String(s.rotulo || '').toUpperCase();
+  if (texto && ((RE_PROTECAO.test(texto) && !/TOMAD|LUMIN|L[ÂA]MP/.test(texto)) || (RE_NAO_E_PONTO.test(texto) && !/TOMAD|INTERRUP|LUMIN|L[ÂA]MP|QUADRO/.test(texto)))) {
+    return { ok: false, motivo: `o texto da legenda ("${String(s.rotulo).slice(0, 60)}") descreve proteção ou condutor, não um ponto` };
+  }
+  const doTexto = tipoDoTexto(texto);
+  if (!doTexto) return { ok: true };
+  const a = familiaDe(doTexto), b = familiaDe(s.simbolo);
+  if (a === b) return { ok: true };
+  // "ponto de parede" serve para tomada e interruptor
+  if ((a === 'PONTO' && ['TOMADA', 'INTERRUPTOR'].includes(b)) || (b === 'PONTO' && ['TOMADA', 'INTERRUPTOR'].includes(a))) return { ok: true };
+  return { ok: false, motivo: `o texto da legenda sugere ${nomeDoSimbolo(doTexto)}, não ${nomeDoSimbolo(s.simbolo)}` };
+}
+// { seguras: [linhas no formato do PUT], aConferir: [{ idx, layer, simbolo, motivo }] } — só as ainda não conferidas
+function linhasSeguras(mapa) {
+  const seguras = [], aConferir = [];
+  for (const s of mapa?.simbolos || []) {
+    if (s.confirmado || !(s.quantidade > 0) || s.foraDoOrcamento) continue;
+    if (!s.simbolo || s.simbolo === '?') continue;
+    // 'regra' é segura quando o NOME da layer diz o tipo com todas as letras ("EL-Lâmpada" → luminária; no LACE-LAB
+    // eram 88 luminárias que ficavam fora); layer genérica ("EL-SIMBOLOS", "Caixa de passagem") continua a conferir
+    const layerDiz = s.origem === 'regra' && tipoDoTexto(s.layer);
+    const regraClara = layerDiz && familiaDe(layerDiz) === familiaDe(s.simbolo);
+    if (!ORIGENS_SEGURAS.has(s.origem) && !regraClara) { aConferir.push({ idx: s.idx, layer: s.layer, simbolo: s.simbolo, motivo: s.origem === 'semelhante' ? 'parecido com outro projeto' : 'tipo pela regra do nome da layer' }); continue; }
+    const c = coerencia(s);
+    if (!c.ok) { aConferir.push({ idx: s.idx, layer: s.layer, simbolo: s.simbolo, motivo: c.motivo }); continue; }
+    seguras.push({ idx: s.idx, simbolo: s.simbolo, altura_m: s.altura_m > 0 ? s.altura_m : null, confirmado: true });
+  }
+  return { seguras, aConferir };
+}
+
 // resumo para a tela: quantas linhas, quantas conferidas, quantos pontos ainda não contam no orçamento
 function resumoDoMapa(mapa) {
   const simbolos = mapa?.simbolos || [];
@@ -247,7 +303,9 @@ function resumoDoMapa(mapa) {
     // componentes inseridos e retirados na planta ou no 3D (services/edicoesDoMapa.js)
     inseridos: mapa?.edicoes?.adicionados?.length || 0,
     retirados: mapa?.edicoes?.removidos?.length || 0,
+    // linhas que dá para aceitar em um clique (legenda/aprendido coerentes)
+    seguras: linhasSeguras(mapa).seguras.length,
   };
 }
 
-module.exports = { tiposDisponiveis, disciplinaDoSimbolo, nomeDoSimbolo, validarLinhas, aplicarNoMapa, confirmadasDoMapa, aprender, esquecer, resumoDoMapa, chaveAprendida, chaveDoProjeto, disciplinasAIncluir };
+module.exports = { tiposDisponiveis, disciplinaDoSimbolo, nomeDoSimbolo, validarLinhas, aplicarNoMapa, confirmadasDoMapa, aprender, esquecer, resumoDoMapa, chaveAprendida, chaveDoProjeto, disciplinasAIncluir, linhasSeguras, coerencia };

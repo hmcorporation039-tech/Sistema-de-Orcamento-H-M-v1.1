@@ -52,6 +52,9 @@ function perguntaDisciplina(contexto) {
   return `Qual a disciplina${contexto ? ` ${contexto}` : ''}? Ex.: elétrica, CFTV, cabeamento, incêndio, SPDA, média tensão, quadros, climatização. Responda, por exemplo, "analise este arquivo de CFTV".`;
 }
 
+// disciplinas com que o agente analisou o arquivo e de onde vieram (informadas no pedido ou deduzidas): o passo
+// 'disciplinas' só amplia a análise quando o usuário NÃO disse quais queria
+const DEDUZIDAS = new WeakMap();
 async function garantirAnalise(ctx, chavePasso, { finalidade }) {
   const e = ctx.entrada;
   if (e.analise_id && !e.arquivo_id) {
@@ -69,6 +72,7 @@ async function garantirAnalise(ctx, chavePasso, { finalidade }) {
         suporte: { tipo: 'dado_faltando', pergunta: `O arquivo "${reg?.nome_original || e.arquivo_id}" (${reg?.tipo || '?'}) chegou para análise sem disciplina no nome nem no texto. Como identificar a disciplina dele (use ler_arquivo com o id ${e.arquivo_id}) e que regra de nome/conteúdo o agente deveria usar?` } });
     }
     a = await ctx.f.analisarArquivo({ arquivo_id: e.arquivo_id, disciplinas, finalidade, obra_id: e.obra_id });
+    DEDUZIDAS.set(ctx, { disciplinas, origem, finalidade });
     ctx.dado('analise_id', a.id);
     return `Análise #${a.id} criada (${finalidade === 'elaboracao' ? 'elaboração' : 'orçamento'}) — disciplinas ${disciplinas.join(', ')} (pelo ${origem}).`;
   });
@@ -78,8 +82,26 @@ async function garantirAnalise(ctx, chavePasso, { finalidade }) {
 // ── 1. Análise de projeto ───────────────────────────────────────────────────
 async function analiseProjeto(ctx) {
   const e = ctx.entrada;
-  const a = await garantirAnalise(ctx, 'analisar', { finalidade: e.finalidade || 'orcamento' });
+  let a = await garantirAnalise(ctx, 'analisar', { finalidade: e.finalidade || 'orcamento' });
   if (!a) throw new Parada({ motivo: 'Falta o arquivo do projeto.', pergunta: 'Anexe o PDF, DWG ou DXF do projeto (ou abra a análise na tela) e peça de novo.' });
+  const L = require('./planilhaLevantamento');
+
+  // DISCIPLINAS PELO DESENHO (20/11/2026): sem disciplina no pedido, o agente deduz pelo nome do arquivo — e o desenho
+  // pode ter mais. LACE-LAB: "elétrica" pelo nome, mas 88 luminárias e 6 de emergência ficavam fora do orçamento.
+  // Pedido sem disciplina → a análise é refeita com as do desenho (≥ 3 pontos); disciplina informada → só avisa.
+  const deduzidas = DEDUZIDAS.get(ctx);
+  const sugeridas = L.disciplinasSugeridas(L.contagemDaAnalise(a));
+  if (deduzidas && deduzidas.origem !== 'informadas' && sugeridas.length) {
+    await ctx.passo('disciplinas', async () => {
+      const todas = [...new Set([...deduzidas.disciplinas, ...sugeridas.map(s => s.chave)])];
+      const anterior = a.id;
+      a = await ctx.f.analisarArquivo({ arquivo_id: e.arquivo_id, disciplinas: todas, finalidade: deduzidas.finalidade, obra_id: e.obra_id });
+      ctx.dado('analise_id', a.id);
+      ctx.log(`análise #${anterior} refeita como #${a.id} com ${todas.join(', ')}`);
+      return `O desenho também tem ${sugeridas.map(s => `${s.nome} (${s.pontos} ponto(s))`).join(', ')}: análise refeita como #${a.id} com ${todas.join(', ')} (a #${anterior} continua salva).`;
+    });
+  } else ctx.pular('disciplinas', !sugeridas.length ? 'o desenho não tem pontos de outra disciplina' : 'disciplinas informadas no pedido — as outras do desenho ficam como aviso');
+
   ctx.link(`Análise de projeto #${a.id}`, `/obras/analise/${a.id}`);
   ctx.dado('analise_id', a.id);
 
@@ -111,6 +133,70 @@ async function analiseProjeto(ctx) {
       if (semTexto) ctx.precisaIa('O PDF parece escaneado (sem texto): a IA pode enriquecer a análise lendo a imagem — só sugere, tudo fica a conferir.');
     }
     return `${achados.length} achado(s), ${mat.length} material(is), ${serv.length} serviço(s)`;
+  });
+
+  // CONTAGEM DE PONTOS e LEVANTAMENTO no padrão H&M (20/11/2026): antes a resposta só dizia quantos itens havia;
+  // agora mostra o que foi contado (item, quantidade, origem) e entrega a planilha de quantitativos
+  let contagem = [];
+  await ctx.passo('contagem', async () => {
+    contagem = L.contagemDaAnalise(a);
+    const marcadas = contagem.filter(c => c.marcada !== false);
+    const fora = contagem.filter(c => c.marcada === false);
+    const fmt = (q) => Number(q).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+    const linhas = [];
+    if (marcadas.length) {
+      linhas.push('| Disciplina | Item | Qtd | Un | |', '|---|---|---:|---|---|');
+      for (const c of marcadas.slice(0, 30)) linhas.push(`| ${L.nomeDisc(c.disciplina).replace(/\s*\(.*\)$/, '')} | ${cortar(c.descricao, 70).replace(/\|/g, '/')} | ${fmt(c.quantidade)} | ${c.unidade} | ${c.conferir ? '⚠ conferir' : ''} |`);
+      if (marcadas.length > 30) linhas.push(`| | … mais ${marcadas.length - 30} linha(s) na planilha | | | |`);
+    } else linhas.push('- Nenhum ponto contado nas disciplinas marcadas.');
+    const noMapa = marcadas.filter(c => c.pendenteMapa && c.unidade === 'un').reduce((s, c) => s + c.quantidade, 0);
+    if (noMapa) {
+      // quantas linhas do mapa dá para aceitar em um clique (tipo da legenda / layer que diz o tipo, texto coerente)
+      let seguras = 0, aConferir = 0;
+      try {
+        const { linhasSeguras } = require('../mapaCad');
+        for (const d of a.dadosExtraidos || []) {
+          if (!d?.mapa_cad?.simbolos) continue;
+          const s = linhasSeguras(d.mapa_cad);
+          seguras += s.seguras.reduce((t, l) => t + (d.mapa_cad.simbolos[l.idx]?.contados || 0), 0);
+          aConferir += s.aConferir.reduce((t, l) => t + (d.mapa_cad.simbolos[l.idx]?.contados || 0), 0);
+        }
+      } catch { /* sem o mapa: fica a mensagem geral */ }
+      linhas.push('', `- ${fmt(noMapa)} ponto(s) foram lidos de símbolos explodidos e **aguardam a conferência no mapa do CAD** ([análise #${a.id}](/obras/analise/${a.id}) → mapa do CAD): só depois entram no orçamento.`
+        + (seguras ? ` **${fmt(seguras)} deles vêm da legenda do próprio desenho** — o botão "Aceitar as da legenda e reprocessar" põe todos no orçamento em um clique${aConferir ? `; ${fmt(aConferir)} ficam para conferir um a um` : ''}.` : ''));
+      ctx.pendencia(`[CONFERIR] ${fmt(noMapa)} ponto(s) do desenho aguardam a conferência no mapa do CAD da análise #${a.id} para entrar no orçamento${seguras ? ` (${fmt(seguras)} aceitáveis em um clique pela legenda)` : ''}.`);
+    }
+    // disciplina marcada sem nenhum ponto lido: arquivo de outra disciplina, ou leitura que falhou
+    const zeradas = L.disciplinasZeradas(a, contagem);
+    if (zeradas.length && marcadas.length) {
+      linhas.push('', `- Nenhum ponto de **${zeradas.map(L.nomeDisc).join(', ')}** foi lido, embora a disciplina esteja marcada: confira se o arquivo é dessa disciplina.`);
+      ctx.pendencia(`[CONFERIR] disciplina marcada sem nenhum ponto lido: ${zeradas.map(L.nomeDisc).join(', ')}.`);
+    }
+    // CONFERÊNCIA VISUAL (20/11/2026): a IA não refaz a contagem — só olha onde o sistema tem dúvida
+    const duvidas = [];
+    if (noMapa) duvidas.push(`${fmt(noMapa)} ponto(s) de símbolo explodido ainda sem conferência`);
+    const implausiveis = marcadas.filter(c => /implaus/i.test(c.descricao));
+    if (implausiveis.length) duvidas.push(`${implausiveis.length} medida(s) de infraestrutura marcadas como implausíveis`);
+    if (zeradas.length) duvidas.push(`disciplina sem ponto lido (${zeradas.map(L.nomeDisc).join(', ')})`);
+    if (duvidas.length) ctx.precisaIa(`Conferência visual: o Claude pode olhar a prancha e conferir só as dúvidas da contagem — ${duvidas.join('; ')}. Ele não refaz a contagem; o que ele apontar entra como [CONFERIR] na análise #${a.id} (ferramenta enriquecer_analise_projeto).`);
+    if (fora.length) {
+      const porDisc = new Map();
+      fora.forEach(c => porDisc.set(c.disciplina, (porDisc.get(c.disciplina) || 0) + (c.unidade === 'un' ? c.quantidade : 0)));
+      linhas.push('', `- O desenho também tem ${[...porDisc].map(([d, q]) => `${fmt(q)} ponto(s) de ${L.nomeDisc(d).replace(/\s*\(.*\)$/, '')}`).join(', ')}, que **não entram no orçamento** porque a disciplina não foi marcada. Para incluir, peça de novo marcando a disciplina (ex.: "analise elétrica e iluminação").`);
+      ctx.pendencia(`[CONFERIR] itens de disciplina não marcada no desenho (${[...porDisc.keys()].map(L.nomeDisc).join(', ')}) ficaram fora do orçamento.`);
+    }
+    ctx.secao('Contagem de pontos', linhas);
+    ctx.dado('contagem', contagem.slice(0, 300).map(({ disciplina, descricao, quantidade, unidade, conferir, marcada }) => ({ disciplina, descricao, quantidade, unidade, conferir, marcada })));
+    const un = marcadas.filter(c => c.unidade === 'un').reduce((s, c) => s + c.quantidade, 0);
+    return `${fmt(un)} ponto(s) em ${marcadas.length} tipo(s)${fora.length ? ` + ${fora.length} tipo(s) de disciplina não marcada` : ''}`;
+  });
+
+  await ctx.passo('planilha', async () => {
+    const buffer = await L.gerarPlanilhaLevantamento({ analise: a, contagem });
+    const nome = `Levantamento de quantitativos - ${String(a.nomeProjeto || `Analise ${a.id}`).replace(/[^\w\- ]+/g, '').slice(0, 60) || `Analise ${a.id}`} - ${hoje()}.xlsx`;
+    const salvo = await ctx.f.salvarArquivo(nome, buffer, 'xlsx');
+    if (salvo) ctx.arquivo(salvo);
+    return salvo ? 'planilha padrão H&M (contagem, ambientes, serviços, materiais, pendências)' : 'a conversa não guardou o arquivo';
   });
 
   if (e.mostrar_3d) {

@@ -532,6 +532,7 @@ function entenderProjeto(arq, { nomeArquivo = '', disciplinas = [] } = {}) {
       if (v.tipo === 'planta' || v.origem === 'extensao' || candidatos.filter(c => c.tipo === 'planta').length === 0) { v.papel = 'principal'; v.motivo = v._motivos.length ? v._motivos.join('; ') : 'planta do projeto'; }
       else { v.papel = 'apoio'; v.motivo = 'vista não identificada (não é planta)'; }
     }
+    marcarRepeticoes(candidatos.filter(v => v.papel === 'principal'), (v) => segsPorVista[vistas.indexOf(v)]);
   } else {
     const ordem = [...candidatos].sort((a, b) => b._pontos - a._pontos || area(b.caixa) - area(a.caixa));
     const melhor = ordem[0];
@@ -691,6 +692,76 @@ function entenderProjeto(arq, { nomeArquivo = '', disciplinas = [] } = {}) {
   };
 }
 
+// A MESMA planta desenhada duas vezes na folha (20/11/2026 — LACE-LAB: "PLANTA DE PONTOS ELÉTRICOS" + "PLANTA DE
+// FIAÇÃO", o mesmo subsolo lado a lado). As duas viravam principal e cada tomada, interruptor e luminária contava 2×
+// (luminárias 184 no lugar de 91). Duas vistas do mesmo tamanho (±8 %) cujos traços — todos E os que não são da
+// arquitetura — caem nos mesmos lugares (≥ 60 %, no melhor alinhamento) são a mesma planta: fica a de PONTOS (ou a
+// primeira) e a outra vira 'repeticao' — não conta de novo. Pavimento tipo com a mesma arquitetura e pontos próprios
+// não passa (os traços do projeto diferem), nem dois títulos com pavimentos diferentes ("2º PAV." × "3º PAV.").
+function marcarRepeticoes(principais, segsDe) {
+  const dims = (c) => [c[2] - c[0], c[3] - c[1]];
+  const ordem = [...principais].sort((a, b) => Number(/PONTO/i.test(b.titulo || '')) - Number(/PONTO/i.test(a.titulo || '')));
+  // traços de cada vista em grade, relativos ao canto inferior esquerdo da caixa (a outra vista pode ter um título ou
+  // uma nota a mais: as caixas diferem um pouco — o deslocamento que mais casa os traços é procurado abaixo)
+  // soDoProjeto: só os traços que não são da arquitetura (paredes iguais de pavimentos tipo não podem decidir sozinhas)
+  const ARQ = /ARQ|PAREDE|ALVEN|WALL|PISO|ESQUAD|PORTA|JANELA|COTA|HACH|MOBIL|PILAR|ESTRUT|^0$|DEFPOINTS/i;
+  const grade = (v, cel, [cx, cy], soDoProjeto = false) => {
+    const s = new Set();
+    for (const g of segsDe(v) || []) {
+      if (soDoProjeto && ARQ.test(g.layer || '')) continue;
+      for (const p of [g.a, g.b]) if (p) s.add(`${Math.round((p[0] - cx) / cel)},${Math.round((p[1] - cy) / cel)}`);
+    }
+    return s;
+  };
+  // pavimento escrito no título: "2º PAVIMENTO" × "3º PAVIMENTO" são plantas diferentes mesmo com o desenho igual
+  const andar = (t) => (String(t || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .match(/\d+\s*[ºO°]?\s*(PAV\w*|ANDAR)|TERREO|SUBSOLO\s*\d*|COBERTURA|MEZANINO|COB\b/) || [null])[0];
+  const fracaoComum = (sa, sb, desloc) => {
+    let comum = 0;
+    for (const chave of sa) {
+      const [x0, y0] = chave.split(',').map(Number);
+      const x = x0 + desloc[0], y = y0 + desloc[1];
+      let achou = false;
+      for (let dx = -1; dx <= 1 && !achou; dx++) for (let dy = -1; dy <= 1 && !achou; dy++) achou = sb.has(`${x + dx},${y + dy}`);
+      if (achou) comum++;
+    }
+    return comum / Math.min(sa.size, sb.size);
+  };
+  const cantos = (c) => [[c[0], c[1]]];
+  for (let i = 0; i < ordem.length; i++) {
+    const A = ordem[i];
+    if (A.papel !== 'principal') continue;
+    for (let j = i + 1; j < ordem.length; j++) {
+      const B = ordem[j];
+      if (B.papel !== 'principal') continue;
+      const [la, aa] = dims(A.caixa), [lb, ab] = dims(B.caixa);
+      if (!(la > 0 && aa > 0) || Math.abs(la - lb) > 0.08 * Math.max(la, lb) || Math.abs(aa - ab) > 0.08 * Math.max(aa, ab)) continue;
+      if (andar(A.titulo) && andar(B.titulo) && andar(A.titulo) !== andar(B.titulo)) continue;
+      const cel = Math.max(la, aa) / 300;
+      // alinhamento: parte do canto inferior esquerdo e procura o deslocamento (em células) que mais casa os traços
+      const sa = grade(A, cel, cantos(A.caixa)[0]), sb = grade(B, cel, cantos(B.caixa)[0]);
+      if (sa.size < 40 || sb.size < 40) continue;
+      const pa = [...sa].map(k => k.split(',').map(Number));
+      const amostra = pa.filter((_, n) => n % Math.max(1, Math.floor(pa.length / 3000)) === 0);
+      const W = Math.ceil(Math.max(Math.abs(la - lb), Math.abs(aa - ab)) / cel) + 3;
+      let melhor = [0, 0], votos = -1;
+      for (let dx = -W; dx <= W; dx++) for (let dy = -W; dy <= W; dy++) {
+        let n = 0;
+        for (const [x, y] of amostra) if (sb.has(`${x + dx},${y + dy}`)) n++;
+        if (n > votos) { votos = n; melhor = [dx, dy]; }
+      }
+      const fracao = fracaoComum(sa, sb, melhor);
+      // e os traços do PROJETO (fora da arquitetura) também têm de bater: pavimento tipo com a mesma arquitetura e
+      // pontos diferentes não é repetição
+      const pa2 = grade(A, cel, cantos(A.caixa)[0], true), pb2 = grade(B, cel, cantos(B.caixa)[0], true);
+      const fracaoProjeto = pa2.size >= 40 && pb2.size >= 40 ? fracaoComum(pa2, pb2, melhor) : fracao;
+      if (fracao < 0.6 || fracaoProjeto < 0.6) continue;
+      B.papel = 'repeticao';
+      B.motivo = `mesma planta da vista ${A.id}${A.titulo ? ` ("${A.titulo}")` : ''} desenhada de novo${B.titulo ? ` ("${B.titulo}")` : ''} (${Math.round(fracao * 100)}% dos traços no mesmo lugar) — não é contada de novo`;
+    }
+  }
+}
+
 // ── Utilitários para o backend e o 3D ───────────────────────────────────────────────────────────────
 // papel do ponto [x, y]: 'principal' se cai numa vista principal; senão o papel da menor vista que o contém; null
 // fora de todas
@@ -718,8 +789,15 @@ const ehCamadaDeContexto = (objetivo, layer) => !!objetivo?.camadasDeContexto?.i
 function filtroDoPonto(objetivo) {
   if (!objetivo?.vistas?.length || objetivo.erro) return null;
   if ((objetivo.objeto || 'arquitetura') !== 'arquitetura') return (p) => naVistaPrincipal(objetivo, p);
-  if (!objetivo.vistas.some(v => v.papel === 'contexto')) return null;
-  return (p) => papelDoPonto(objetivo, p) !== 'contexto';
+  // contexto (base de outro projeto) e repetição (a mesma planta desenhada de novo: marcarRepeticoes) não contam
+  const FORA = new Set(['contexto', 'repeticao']);
+  if (!objetivo.vistas.some(v => FORA.has(v.papel))) return null;
+  // a caixa da vista repetida pode ficar um pouco aquém do desenho (a tomada na face externa da parede): folga de 3 %
+  const reps = objetivo.vistas.filter(v => v.papel === 'repeticao');
+  const principais = objetivo.vistas.filter(v => v.papel === 'principal');
+  const folga = (c) => 0.03 * Math.max(c[2] - c[0], c[3] - c[1]);
+  return (p) => !FORA.has(papelDoPonto(objetivo, p))
+    && !(reps.some(v => naCaixa(v.caixa, p, folga(v.caixa))) && !principais.some(v => naCaixa(v.caixa, p, 0.05)));
 }
 
-module.exports = { entenderProjeto, papelDoPonto, naVistaPrincipal, ehCamadaDeContexto, filtroDoPonto, paraTestes: { escalaDaVista, fatorDaUnidade, carimbosDe, construirVistas, atribuirTitulos, lerAbrigo, pontuarDisciplinas, arcoDosPontos, tipoDoTituloAmplo } };
+module.exports = { entenderProjeto, papelDoPonto, naVistaPrincipal, ehCamadaDeContexto, filtroDoPonto, paraTestes: { marcarRepeticoes, escalaDaVista, fatorDaUnidade, carimbosDe, construirVistas, atribuirTitulos, lerAbrigo, pontuarDisciplinas, arcoDosPontos, tipoDoTituloAmplo } };

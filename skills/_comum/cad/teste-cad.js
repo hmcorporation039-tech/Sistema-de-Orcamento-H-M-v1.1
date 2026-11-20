@@ -567,6 +567,15 @@ caso('quadros do diagrama: unifilar (disjuntor, seção, DR, geral, título) e q
     assert.deepStrictEqual(a.quadrosDoDiagrama, []);
     assert.match(a.avisosDiagrama.join(' '), /sem circuitos lidos.*\[CONFERIR\]/);
     assert.deepStrictEqual(lerArquitetura(dxfR([...T, ...tracos])).avisosDiagrama, []);
+    // (20/11/2026, LACE-LAB) só a LEGENDA dos diagramas no arquivo — sem corrente, circuito nem bitola: não é "diagrama
+    // sem circuitos lidos", é o quadro que está em outra prancha
+    const soLegenda = [textoR('Legenda Diagramas', 0, 10, 0.25, 'Textos'),
+      textoR('Disjuntor unipolar "X" A, corrente de curto-circuito "Y" KA e curva "Z"', 0, 9, 0.15, 'DI-Tabelas'),
+      textoR('Interruptor/disjuntor diferencial residual tetrapolar, 30mA', 0, 8, 0.15, 'DI-Tabelas'),
+      textoR('DR - DISP. DIFERENCIAL RESIDUAL / DPS - DISP. DE PROTEÇÃO CONTRA SURTO', 0, 7, 0.15, 'Textos')];
+    const avisos = lerArquitetura(dxfR(soLegenda)).avisosDiagrama.join(' ');
+    assert.doesNotMatch(avisos, /sem circuitos lidos/);
+    assert.match(avisos, /não está neste arquivo.*prancha dos diagramas/);
   });
 
   caso('R-10/R-11 tags QGBT-A × QGBT-B, CCM-BOMBAS, "QD 01"; QD01 = QD-01 = QD1; número "01" do diagrama vira "1"', () => {

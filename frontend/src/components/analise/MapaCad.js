@@ -8,10 +8,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Box, CheckCheck, Download, RefreshCw, Undo2, Upload } from 'lucide-react';
-import { getMapaCad, salvarMapaCad, editarMapaCad, reprocessarMapaCad, confirmarBlocoMapaCad, exportarBibliotecaBlocos, importarBibliotecaBlocos } from '../../services/api';
+import { Box, CheckCheck, RefreshCw, Undo2 } from 'lucide-react';
+import { getMapaCad, salvarMapaCad, aceitarSegurasMapaCad, editarMapaCad, reprocessarMapaCad, confirmarBlocoMapaCad } from '../../services/api';
 import { mensagemDeErro } from '../../utils/download';
-import { hojeBrasilia } from '../../utils/format';
 import PlantaMapaCad, { SITUACAO, situacaoDaLinha, IconeComponente, COR_INSERIDO } from './PlantaMapaCad';
 import Modelo3dEditor from './Modelo3dEditor';
 import useDisciplinas from '../../hooks/useDisciplinas';
@@ -109,6 +108,7 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
   if (!mapa?.disponivel && !mapa?.semMapa) return null;
   const totalConferidas = mapa.arquivos.reduce((t, a) => t + a.resumo.conferidas, 0);
   const totalPontosPendentes = mapa.arquivos.reduce((t, a) => t + a.resumo.pontosPendentes, 0);
+  const totalSeguras = mapa.arquivos.reduce((t, a) => t + (a.resumo.seguras || 0), 0);
   const disciplinasFaltando = mapa.arquivos.flatMap(a => (a.disciplinasAIncluir || []).map(d => ({ ...d, arquivo: a.arquivo })));
   const totalEditadas = mapa.arquivos.reduce((t, a) => t + (a.resumo.inseridos || 0) + (a.resumo.retirados || 0), 0);
   const edicoesForaDoOrcamento = mapa.arquivos.some(a => ((a.resumo.inseridos || 0) + (a.resumo.retirados || 0)) > 0 && !a.edicoesNoOrcamento);
@@ -214,6 +214,33 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
     return enviar(a.arquivo, linhas, () => `${linhas.length} linha(s) conferida(s)`);
   };
 
+  // "Aceitar as da legenda" (20/11/2026): o servidor confirma só as linhas cujo tipo veio da legenda do desenho ou de
+  // confirmação anterior, com texto coerente; as duvidosas ficam a conferir (e o motivo aparece no aviso)
+  async function aceitarDaLegenda(arquivos, depoisReprocessar = false) {
+    setOcupado(true);
+    let aceitas = 0; const duvidas = [];
+    try {
+      for (const a of arquivos) {
+        if (!(a.resumo?.seguras > 0)) continue;
+        const r = await aceitarSegurasMapaCad(analiseId, a.arquivo);
+        setMapa(m => ({ ...m, ...r.data }));
+        aceitas += r.data.aceitas || 0;
+        duvidas.push(...(r.data.aConferir || []));
+      }
+    } catch (err) {
+      toast.error(await mensagemDeErro(err, 'Não consegui aceitar as linhas da legenda'), { duration: 8000 });
+      setOcupado(false);
+      return;
+    }
+    setOcupado(false);
+    if (!aceitas) return toast('Nenhuma linha da legenda para aceitar.');
+    toast.success(`${aceitas} linha(s) da legenda aceita(s) — o sistema aprendeu.`);
+    if (duvidas.length) {
+      toast(`${duvidas.length} linha(s) ficaram para você conferir: ${duvidas.slice(0, 3).map(d => `${d.layer} (${d.motivo})`).join('; ')}${duvidas.length > 3 ? '…' : ''}`, { duration: 14000, icon: '⚠️' });
+    }
+    if (depoisReprocessar) await reprocessar();
+  }
+
   async function reprocessar() {
     setOcupado(true);
     try {
@@ -226,35 +253,6 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
       navigate(`/obras/analise/${r.data.id}`);
     } catch (err) {
       toast.error(await mensagemDeErro(err, 'Não consegui reprocessar a análise'), { duration: 10000 });
-    } finally { setOcupado(false); }
-  }
-
-  async function exportarBiblioteca() {
-    try {
-      const r = await exportarBibliotecaBlocos();
-      const url = URL.createObjectURL(new Blob([JSON.stringify(r.data, null, 2)], { type: 'application/json' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `biblioteca-blocos-hm-${hojeBrasilia()}.json`;
-      link.click();
-      URL.revokeObjectURL(url);
-      toast.success(`${r.data.linhas.length} linha(s) da biblioteca exportada(s)`);
-    } catch (err) {
-      toast.error(await mensagemDeErro(err, 'Não consegui exportar a biblioteca de blocos'), { duration: 8000 });
-    }
-  }
-
-  async function importarBiblioteca(e) {
-    const arquivo = e.target.files?.[0];
-    e.target.value = '';
-    if (!arquivo) return;
-    setOcupado(true);
-    try {
-      const json = JSON.parse(await arquivo.text());
-      const r = await importarBibliotecaBlocos(json);
-      toast.success(`Biblioteca importada: ${r.data.gravadas} linha(s) gravada(s), ${r.data.mantidas} mantida(s) (já conferidas aqui)${r.data.recusadas ? `, ${r.data.recusadas} recusada(s)` : ''}.`, { duration: 9000 });
-    } catch (err) {
-      toast.error(err instanceof SyntaxError ? 'O arquivo não é um JSON válido.' : await mensagemDeErro(err, 'Não consegui importar a biblioteca (só administrador)'), { duration: 9000 });
     } finally { setOcupado(false); }
   }
 
@@ -284,6 +282,12 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
             <Box size={13} /> Editar e aprovar no 3D
           </button>
         )}
+        {totalSeguras > 0 && (
+          <button type="button" style={{ ...botao, borderColor: '#5fbf7a', color: '#5fbf7a' }} onClick={() => aceitarDaLegenda(mapa.arquivos, true)} disabled={ocupado} data-testid="aceitar-legenda-reprocessar"
+            title="Confirma as linhas cujo tipo veio da legenda do próprio desenho (ou que você já confirmou em outro projeto) e grava a análise nova com elas no orçamento. As duvidosas ficam para conferir.">
+            <CheckCheck size={13} /> {ocupado ? 'Aplicando…' : `Aceitar as da legenda (${totalSeguras}) e reprocessar`}
+          </button>
+        )}
         {podeReprocessar && (
           <button type="button" style={{ ...botao, borderColor: '#c9a227', color: '#c9a227' }} onClick={reprocessar} disabled={ocupado} data-testid="reprocessar-mapa">
             <RefreshCw size={13} /> Reprocessar com o mapa conferido
@@ -297,10 +301,8 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
         )}
       </div>
       <p style={{ fontSize: 12, color: 'var(--texto-3)', lineHeight: 1.6, margin: '0 0 12px' }}>
-        Cada linha é uma layer × forma de símbolo do desenho. Confira o <b>tipo</b> e a <b>altura</b>: o que for conferido vira aprendizado do sistema
-        (o próximo desenho do escritório já vem certo) e, ao reprocessar, entra no orçamento. Pontos ainda não conferidos <b>não entram no orçamento</b>
-        {totalPontosPendentes > 0 ? ` — hoje são ${totalPontosPendentes} ponto(s) fora.` : '.'} "Não é ponto" tira a layer da contagem.
-        {componentes.length > 0 && <> Na planta, <b>Inserir</b> e <b>Retirar</b> põem e tiram componentes da biblioteca (com o símbolo de cada disciplina); o 3D mostra na hora.</>}
+        Cada linha é uma layer × símbolo do desenho: confira o <b>tipo</b> e a <b>altura</b> (vira aprendizado). Ponto não conferido não entra no orçamento
+        {totalPontosPendentes > 0 ? <> — hoje <b style={{ color: '#c9a227' }}>{totalPontosPendentes} fora</b>.</> : '.'}
       </p>
       {podeReprocessar && (
         <div style={{ fontSize: 12, color: '#c9a227', marginBottom: 10 }} data-testid="aviso-reprocessar">
@@ -487,17 +489,6 @@ export default function MapaCad({ analiseId, estiloCartao, estiloTitulo }) {
           </div>
         );
       })}
-      {/* biblioteca de blocos (fase 3, CAD-08): as confirmações por medida real e escritório, para levar a outra instalação */}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 12, fontSize: 12, color: 'var(--texto-3)' }}>
-        <span style={{ flex: 1, minWidth: 220 }}>Biblioteca de blocos: o que o sistema aprendeu das confirmações (pela medida real e pelo escritório do carimbo).</span>
-        <button type="button" style={botao} onClick={exportarBiblioteca} disabled={ocupado} data-testid="exportar-biblioteca">
-          <Download size={13} /> Exportar JSON
-        </button>
-        <label style={{ ...botao, cursor: ocupado ? 'default' : 'pointer' }} title="Só administrador. O que já foi conferido nesta instalação não é trocado">
-          <Upload size={13} /> Importar JSON
-          <input type="file" accept=".json,application/json" style={{ display: 'none' }} onChange={importarBiblioteca} disabled={ocupado} data-testid="importar-biblioteca" />
-        </label>
-      </div>
       {editor3d && (
         <Modelo3dEditor analiseId={analiseId} componentes={componentes} disciplinasDoProjeto={mapa.disciplinasDoProjeto}
           onEditado={aoEditarNo3d} onFechar={() => setEditor3d(false)} />

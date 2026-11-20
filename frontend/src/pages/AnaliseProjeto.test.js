@@ -109,3 +109,61 @@ test('gravação da análise anterior que termina depois não troca a versão da
   expect(id).toBe(2);
   expect(corpo.versao).toBe(9); // antes ia a 6 (de A) e o servidor respondia 409
 });
+
+// ── 2.48: tela única — cabeçalho com resumo numa linha, abas, "⋯ Mais" e barra de ações (dados SINTÉTICOS) ──
+const comItens = (id, extra = {}) => ({
+  ...dados(id),
+  servicos: [{ descricao: 'Instalação de câmera', quantidade: 2, unidade: 'un', valor_unitario: 100, subgrupo: 'CFTV' }],
+  materiais: [
+    { descricao: 'Câmera dome', quantidade: 2, unidade: 'un', preco_catalogo: 300, preco_unitario: 250, confianca_catalogo: 90 },
+    { descricao: 'Conector RJ-45', quantidade: 0, unidade: 'un', preco_catalogo: 2 },
+  ],
+  achados: [{ tema: 'Quadro sem circuito', observacao: 'Quadro QD-1 sem circuitos lidos' }],
+  ...extra,
+});
+const $t = (id) => caixa.querySelector(`[data-testid="${id}"]`);
+const clicarEm = async (el) => { await act(async () => { el.dispatchEvent(new MouseEvent('click', { bubbles: true })); }); await esperar(0); };
+
+test('Orçamento abre em "Itens e valores": tabela única, subtotal por bloco e estimativa com o preço adotado', async () => {
+  getAnaliseProjeto.mockImplementation((id) => Promise.resolve({ data: comItens(Number(id)) }));
+  await abrir(1);
+  expect($t('aba-itens')).not.toBeNull();
+  expect($t('aba-projeto')).toBeNull();
+  // mão de obra 2 × 100 = 200; materiais: 2 × 250 (pesquisa adotada vence o catálogo de 300) + 0 = 500
+  expect($t('estimativa').textContent).toMatch(/200,00/);
+  expect($t('estimativa').textContent).toMatch(/500,00/);
+  expect($t('estimativa').textContent).toMatch(/700,00/);
+  expect($t('resumo-analise').textContent).toMatch(/3 item\(ns\)/);
+  expect($t('resumo-analise').textContent).toMatch(/1 pendência/);
+  expect(caixa.querySelectorAll('[data-testid="linha-item"]')).toHaveLength(3);
+  expect($t('bloco-servico').textContent).toMatch(/Mão de obra/);
+  expect($t('bloco-material').textContent).toMatch(/500,00/);
+  // a lista de análises salvas não aparece com uma análise aberta
+  expect($t('nova-analise')).toBeNull();
+});
+
+test('Pendências: achados e "Ver os itens" abre a aba de itens filtrada nos sem quantidade', async () => {
+  getAnaliseProjeto.mockImplementation((id) => Promise.resolve({ data: comItens(Number(id)) }));
+  await abrir(1);
+  expect($t('guia-pendencias').textContent).toMatch(/2/); // 1 achado + itens sem quantidade
+  await clicarEm($t('guia-pendencias'));
+  expect(caixa.textContent).toMatch(/Quadro QD-1 sem circuitos lidos/);
+  expect(caixa.textContent).toMatch(/1 item\(ns\) com quantidade 0/);
+  await clicarEm([...caixa.querySelectorAll('button')].find(b => /Ver os itens/.test(b.textContent)));
+  const linhas = caixa.querySelectorAll('[data-testid="linha-item"]');
+  expect(linhas).toHaveLength(1);
+  expect(linhas[0].textContent).toMatch(/Conector RJ-45/);
+});
+
+test('Elaboração abre em "Projeto"; o "⋯ Mais" abre o funcionamento num painel e a barra oferece o projeto por disciplina', async () => {
+  getDisciplinasProjeto.mockResolvedValue({ data: [{ chave: 'cftv', nome: 'CFTV', skill: 'cftv-iec62676' }] });
+  getAnaliseProjeto.mockImplementation((id) => Promise.resolve({ data: comItens(Number(id), { finalidade: 'elaboracao', disciplinas: ['cftv'], funcionamento: 'Câmeras gravando em NVR' }) }));
+  await abrir(1);
+  expect($t('aba-projeto')).not.toBeNull();
+  expect($t('gerar-orcamento')).toBeNull(); // na Elaboração o orçamento sai do projeto de cada disciplina
+  await clicarEm($t('menu-mais'));
+  await clicarEm($t('mais-funcionamento'));
+  expect($t('painel-mais').querySelector('textarea').value).toBe('Câmeras gravando em NVR');
+  await clicarEm($t('menu-projeto'));
+  expect($t('projeto-cftv-iec62676').textContent).toMatch(/CFTV/);
+});

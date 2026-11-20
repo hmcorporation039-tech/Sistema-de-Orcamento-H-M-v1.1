@@ -189,9 +189,19 @@ caso('agente de análise: objetivo do projeto, achados, pendências e 3D', async
       componentes: [{ tipo: 'trafo', descricao: 'Transformador', fonte: 'relacao_materiais', conferir: false }, { tipo: 'pr', descricao: 'Para-raios', fonte: 'legenda', conferir: true, motivo: 'quantidade não escrita' }],
       legendas: [{ titulo: 'RELAÇÃO DE MATERIAIS', itens: [{}, {}] }] } }],
   };
-  const f = { verAnalise: async () => analise, situacao3d: async () => ({ disponivel: true, arquivo: 'SE.dwg', disciplinas: ['media_tensao'] }) };
+  analise.dadosExtraidos[0].desenho = [{ origem: 'cad', pagina: 'DWG', itens: [{ tipo: 'simbolo', descricao: 'Transformador 75 kVA', quantidade: 1, disciplina: 'media_tensao' }] }];
+  const salvos = [];
+  const f = { verAnalise: async () => analise, situacao3d: async () => ({ disponivel: true, arquivo: 'SE.dwg', disciplinas: ['media_tensao'] }),
+    salvarArquivo: async (nome, buffer, tipo) => { salvos.push({ nome, tipo, bytes: buffer.length }); return { id: 77, nome, tipo }; } };
   const { ctx, r } = ctxFalso({ analise_id: 40, mostrar_3d: true }, f);
   await PS.EXECUTORES.analise_projeto(ctx);
+  // 20/11/2026: a contagem de pontos aparece na resposta e a planilha de levantamento (padrão H&M) é entregue
+  const contagem = r.secoes.find(s => s.titulo === 'Contagem de pontos');
+  assert.ok(contagem && contagem.linhas.some(l => /Transformador 75 kVA \| 1 \| un/.test(l)), JSON.stringify(contagem));
+  assert.strictEqual(salvos.length, 1);
+  assert.match(salvos[0].nome, /^Levantamento de quantitativos - Analise 40 - .*\.xlsx$/);
+  assert.ok(salvos[0].bytes > 5000);
+  assert.deepStrictEqual(r.arquivos, [{ id: 77, nome: salvos[0].nome, tipo: 'xlsx' }]);
   const txt = r.secoes.map(s => s.linhas.join('\n')).join('\n');
   assert.match(txt, /subestação abrigada/);
   assert.match(txt, /1 principal .*1 de contexto .*1 de apoio/);
@@ -209,10 +219,44 @@ caso('agente de análise: sem disciplina deduzível para e marca o suporte (não
   await assert.rejects(PS.EXECUTORES.analise_projeto(ctx), (e) => e.parada && e.suporte?.tipo === 'dado_faltando' && /disciplina/i.test(e.pergunta));
   // pelo nome do arquivo, sim
   let enviadas = null;
-  const f2 = { arquivoDaConversa: async () => ({ nome_original: 'ELE-01 Planta.dwg', tipo: 'dwg' }), analisarArquivo: async (a) => { enviadas = a.disciplinas; return { id: 9, dadosExtraidos: [], materiais: [], servicos: [], achados: [], ambientes: [] }; } };
+  const f2 = { arquivoDaConversa: async () => ({ nome_original: 'ELE-01 Planta.dwg', tipo: 'dwg' }), analisarArquivo: async (a) => { enviadas = a.disciplinas; return { id: 9, dadosExtraidos: [], materiais: [], servicos: [], achados: [], ambientes: [] }; },
+    salvarArquivo: async (nome) => ({ id: 1, nome }) };
   const { ctx: c2 } = ctxFalso({ arquivo_id: 3 }, f2);
   await PS.EXECUTORES.analise_projeto(c2);
   assert.deepStrictEqual(enviadas, ['eletrica']);
+});
+
+caso('agente de análise: pedido sem disciplina inclui as do desenho; informada só avisa; dúvidas pedem conferência visual', async () => {
+  // desenho "elétrica" pelo nome, com 20 luminárias (iluminação) aguardando o mapa do CAD
+  const desenho = (disc) => [{ origem: 'cad', pagina: 'DWG', itens: [
+    { tipo: 'simbolo', descricao: 'Tomada baixa', quantidade: 12, disciplina: 'eletrica', ambiguo: true },
+    { tipo: 'simbolo', descricao: 'Luminária', quantidade: 20, disciplina: 'iluminacao', ambiguo: true },
+    { tipo: 'simbolo', descricao: 'Detector', quantidade: 1, disciplina: 'incendio' }, // 1 ponto só: não puxa disciplina
+  ] }].map(p => ({ ...p, disc }));
+  const analise = (id, disciplinas) => ({ id, disciplinas, dadosExtraidos: [{ arquivo: 'ELE.dwg', desenho: desenho() }], materiais: [], servicos: [], achados: [], ambientes: [] });
+  const chamadas = [];
+  const f = { arquivoDaConversa: async () => ({ nome_original: 'ELE-01 Planta.dwg', tipo: 'dwg' }),
+    analisarArquivo: async (x) => { chamadas.push(x.disciplinas); return analise(10 + chamadas.length, x.disciplinas); },
+    salvarArquivo: async (nome) => ({ id: 1, nome }) };
+  const { ctx, r } = ctxFalso({ arquivo_id: 3 }, f);
+  await PS.EXECUTORES.analise_projeto(ctx);
+  assert.deepStrictEqual(chamadas, [['eletrica'], ['eletrica', 'iluminacao']]);
+  assert.strictEqual(r.dados.analise_id, 12);
+  assert.ok(r.passos.some(([k, t]) => k === 'disciplinas' && /Ilumina/i.test(t) && /#12/.test(t)), JSON.stringify(r.passos));
+  assert.match(r.ia || '', /Conferência visual/);
+  assert.match(r.ia || '', /32 ponto\(s\) de símbolo explodido/);
+  // disciplina informada no pedido: não refaz, só avisa
+  chamadas.length = 0;
+  const { ctx: c2, r: r2 } = ctxFalso({ arquivo_id: 3, disciplinas: ['eletrica'] }, f);
+  await PS.EXECUTORES.analise_projeto(c2);
+  assert.deepStrictEqual(chamadas, [['eletrica']]);
+  assert.ok(r2.pulados.includes('disciplinas'));
+  assert.ok(r2.pendencias.some(p => /disciplina não marcada/.test(p)));
+  // disciplina marcada sem nenhum ponto lido
+  const f3 = { verAnalise: async () => ({ ...analise(50, ['eletrica', 'cftv']) }), salvarArquivo: async (nome) => ({ id: 1, nome }) };
+  const { ctx: c3, r: r3 } = ctxFalso({ analise_id: 50 }, f3);
+  await PS.EXECUTORES.analise_projeto(c3);
+  assert.ok(r3.pendencias.some(p => /sem nenhum ponto lido: CFTV/i.test(p)), JSON.stringify(r3.pendencias));
 });
 
 caso('agente de orçamento: não sobrescreve proposta de outra conversa (403 → pendência)', async () => {

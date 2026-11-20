@@ -369,8 +369,13 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
   // traçados: sem as camadas de contexto; no abrigo/equipamento, só o trecho dentro da vista principal, na escala
   // dela (a SE real desenhada ao dobro: 1 unidade = 0,5 m pelas cotas)
   const escalaPrincipal = focado ? Number((objetivo.vistas || []).find(v => v.papel === 'principal')?.escala?.fator) || 1 : 1;
-  const linhasDoProjeto = p.linhas.filter(l => !camadasContexto.has(l.layer)).map(l => {
-    if (!focado || !filtroObjetivo || !(l.segmentos || []).length) return l;
+  // (20/11/2026) no predial o filtro também vale para os traçados: a vista REPETIDA (planta de fiação desenhada ao lado
+  // da de pontos) e a de contexto não são medidas de novo — antes o eletroduto do LACE-LAB saía em dobro
+  // camadas de ACESSÓRIO do traçado no padrão QiBuilder ("EL-Textos fios …", "EL-Conexões …", "EL-Caixa …", "EL-Quadro de
+  // distribuição …"): o desenho da curva, da caixa e do texto não é comprimento de rota — antes entravam como metros
+  const RE_ACESSORIO_TRACADO = /^(EL|ELE|IL|ILU|TEL|CAB|INC|SPDA)[-_ ].*\b(TEXTOS?|CONEX[ÕO]ES|CAIXAS?|QUADROS?)\b/i;
+  const linhasDoProjeto = p.linhas.filter(l => !camadasContexto.has(l.layer) && !RE_ACESSORIO_TRACADO.test(l.layer || '')).map(l => {
+    if (!filtroObjetivo || !(l.segmentos || []).length) return l;
     const dentroSeg = l.segmentos.filter(([x1, y1, x2, y2]) => filtroObjetivo([(x1 + x2) / 2, (y1 + y2) / 2]));
     if (!dentroSeg.length) return null;
     const fracao = dentroSeg.reduce((t, [x1, y1, x2, y2]) => t + Math.hypot(x2 - x1, y2 - y1), 0) / (l.segmentos.reduce((t, [x1, y1, x2, y2]) => t + Math.hypot(x2 - x1, y2 - y1), 0) || 1);
@@ -557,9 +562,21 @@ async function lerArquivoCad(buffer, nome, opcoes = {}) {
     itens.push({ tipo: 'linha', descricao: m.descricao, metros: m.metros, tipoLinha: m.cabo ? 'cabeamento' : /ELETROCALHA/i.test(m.descricao) ? 'eletrocalha' : 'eletroduto',
       disciplina: m.disciplina, layer: '', ambiguo: false, origemDescricao: 'projetista', observacaoMaterial: 'traçado sugerido pelo sistema (elaboração) — conferir no 3D' });
   }
+  // medida IMPLAUSÍVEL (20/11/2026): uma layer de infraestrutura com mais de 4 × o perímetro das plantas principais não é
+  // rota — é a eletrocalha desenhada com contorno, tampa ou furação (LACE-LAB: 2.586 m de eletrocalha num subsolo de
+  // 51 × 24 m). Fica fora do orçamento, a conferir, em vez de virar 2,8 km de material.
+  const plantasPrincipais = (objetivo?.vistas || []).filter(v => v.papel === 'principal' && v.tipo === 'planta' && Array.isArray(v.caixa));
+  const limiteRota = plantasPrincipais.length
+    ? Math.max(200, plantasPrincipais.reduce((s, v) => s + 4 * 2 * ((v.caixa[2] - v.caixa[0]) + (v.caixa[3] - v.caixa[1])), 0))
+    : Infinity;
   for (const l of linhasDoProjeto) {
     const d = descreverLinha(l);
     if (xrefOutra(l.xref)) { anotarXref(l.xref, 'metros', l.metros); continue; }
+    if (l.metros > limiteRota) {
+      itens.push({ tipo: 'linha', descricao: `[CONFERIR] ${d.descricao} — ${Math.round(l.metros)} m é implausível para a planta (limite ${Math.round(limiteRota)} m): traçado com contorno/tampa/furação? Meça a rota na planta`,
+        metros: l.metros, tipoLinha: d.tipo, disciplina: d.disciplina, layer: l.layer, ambiguo: true, conferir: true });
+      continue;
+    }
     // toda linha medida também é rota (comprimento do caminho, para o cálculo do cabo)
     rotas.push({ layer: l.layer, tipo: d.tipo, disciplina: d.disciplina, rota_m: l.metros, ...(l.xref ? { xref: l.xref } : {}),
       cabo: { rota_m: l.metros, descidas_m: null, condutores: null, formula: '(rota + descidas) × condutores' } });

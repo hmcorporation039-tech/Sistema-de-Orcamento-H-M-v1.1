@@ -553,9 +553,21 @@ function aplicarMapa(arq, mapa) {
   //     mesmo quando as caixas se sobrepõem — o centro a menos de meio símbolo (a cópia sobreposta, o bloco
   //     inserido duas vezes no mesmo ponto).
   const vistos = []; // { x, y, simbolo, linha, meio }
+  // Amostra da LEGENDA não é ponto (20/11/2026 — LACE-LAB: os 20 símbolos da coluna da legenda entravam na contagem
+  // como tomada, interruptor, luminária e quadro). Fica fora o símbolo em cima de uma amostra da legenda ou logo à
+  // esquerda de um texto da legenda (a mesma janela que a leitura da legenda usa para ligar símbolo e texto).
+  const amostrasLegenda = (() => {
+    const porLayerLeg = new Map();
+    for (const r of arq.simbolosDaLegenda || []) (porLayerLeg.get(r.layer) || porLayerLeg.set(r.layer, []).get(r.layer)).push(r);
+    return [...porLayerLeg.values()].flatMap(refs => agrupar(refs).map(g => g.centro));
+  })();
+  const textosLegenda = (arq.notas || []).filter(n => n.legenda && String(n.s || '').trim() && Number.isFinite(n.x) && Number.isFinite(n.y));
+  const naLegenda = ([x, y]) => amostrasLegenda.some(c => Math.hypot(c[0] - x, c[1] - y) < 0.15)
+    || textosLegenda.some(n => x <= n.x + 0.1 && x >= n.x - 1.5 && Math.abs(y - n.y) <= 0.4);
   for (const [linha, m] of linhasDoMapa.entries()) {
     if (!m.simbolo || m.simbolo === '?') continue;
     for (const s of doMapa.get(linha) || []) {
+      if (naLegenda(s.centro)) continue;
       const meio = Math.max(0.02, s.medida[0] / 2);
       const repetido = vistos.some(o => o.simbolo === m.simbolo && Math.hypot(o.x - s.centro[0], o.y - s.centro[1]) < (o.linha === linha ? Math.max(meio, o.meio) : DUAS_LAYERS_M));
       if (repetido) continue;

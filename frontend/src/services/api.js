@@ -193,6 +193,8 @@ export const gerarOrcamentoDaAnalise = (id) => api.post(`/projetos/analises/${id
 // Mapa do CAD: o que o sistema entendeu de cada layer do DWG/DXF; a correção vira aprendizado; reprocessar grava uma análise nova
 export const getMapaCad = (id) => api.get(`/projetos/analises/${id}/mapa`);
 export const salvarMapaCad = (id, arquivo, linhas) => api.put(`/projetos/analises/${id}/mapa`, { arquivo, linhas });
+// o servidor escolhe as linhas seguras (tipo da legenda do desenho ou já confirmado em outro projeto, texto coerente)
+export const aceitarSegurasMapaCad = (id, arquivo) => api.put(`/projetos/analises/${id}/mapa`, { arquivo, aceitarSeguras: true });
 // componentes inseridos/retirados (2.30): { arquivo, adicionar, remover, desfazer } ou { sistema: '3d', adicionar, remover }
 export const editarMapaCad = (id, corpo) => api.put(`/projetos/analises/${id}/mapa/edicoes`, corpo);
 export const reprocessarMapaCad = (id, corpo = {}) => api.post(`/projetos/analises/${id}/mapa/reprocessar`, corpo, { timeout: 300000 });

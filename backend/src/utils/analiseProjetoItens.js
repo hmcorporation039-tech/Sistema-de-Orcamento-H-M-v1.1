@@ -106,12 +106,14 @@ const MODELO_COBERTO = [
   [/^Luminária LED/, /^(?!.*(emerg|perfil|caixa|eletroduto))(.*lumin[áa]ria|.*plafon|.*arandela|.*\bspot\b|.*downlight|.*pendente|.*embutid|.*balizador|.*espeto|.*projetor|.*refletor|.*\bgu10\b|.*dicr[óo]ica|.*\bled\b.*\d+\s?w\b)/i],
 ];
 const DO_DESENHO = /no (DWG|DXF)|no desenho de "/;
+// (20/11/2026) o modelo que pegou a quantidade da contagem do desenho (_doDesenho) também sai quando o material do
+// desenho já o cobre — senão a tomada contada entrava duas vezes (o modelo genérico e o material lido da legenda)
 function semModeloCoberto(modelos, doDesenho) {
   return modelos.filter(m => {
-    if (m.quantidade) return true;
+    if (m.quantidade && !m._doDesenho) return true;
     const regra = MODELO_COBERTO.find(([re]) => re.test(m.descricao));
     return !(regra && doDesenho.some(d => d.disciplina === m.disciplina && d.quantidade > 0 && regra[1].test(semMarcador(d.descricao)) && DO_DESENHO.test(d.observacao || '')));
-  });
+  }).map(({ _doDesenho, ...m }) => m);
 }
 // sobra sobre a rota medida na planta (curvas e emendas que o desenho não mostra)
 const SOBRA_ROTA = 1.1;
@@ -342,7 +344,16 @@ function contagemDoDesenho(analises, vetoriais = [], opcoes = {}) {
             continue;
           }
           const codigo = typeof cod === 'function' ? cod(desc, it) : cod;
-          entradas.push({ codigo, disciplina: discRegra, quantidade: Number(it.quantidade) || 0, fonte: cad ? 'cad' : 'pdf', arquivo: a.arquivo, rotulo });
+          // "Tomada 2P+T 10 A (2x)": um símbolo, duas tomadas (20/11/2026 — o LACE-LAB tinha 16 símbolos "(2x)")
+          const porSimbolo = /^ele_tomada/.test(codigo) ? Math.min(6, Number(/\((\d)\s*x\)/i.exec(desc)?.[1]) || 1) : 1;
+          const qtd = (Number(it.quantidade) || 0) * porSimbolo;
+          entradas.push({ codigo, disciplina: discRegra, quantidade: qtd, fonte: cad ? 'cad' : 'pdf', arquivo: a.arquivo, rotulo: porSimbolo > 1 ? `${rotulo} (${porSimbolo} por símbolo)` : rotulo });
+          // a câmera também conta na instalação por tipo (interna × externa): antes só ia para o ponto (cftv_ponto) e
+          // "Instalação de câmera interna/externa" ficava 0 com 45 domes e 2 bullets no desenho (análise #59)
+          if (codigo === 'cftv_ponto') {
+            const externa = /bullet|extern|\bIP6[5-8]\b|outdoor|poste/i.test(`${desc} ${it.bloco || ''}`);
+            entradas.push({ codigo: externa ? 'cftv_camera_externa' : 'cftv_camera_interna', disciplina: discRegra, quantidade: qtd, fonte: cad ? 'cad' : 'pdf', arquivo: a.arquivo, rotulo });
+          }
         }
       }
       // trechos (eletroduto, eletrocalha, fiação — no CAD novo a fiação só vem em `rotas`)
@@ -618,10 +629,21 @@ function montarMateriaisInstalacaoPadrao(analises, disciplinasEfetivas, cad = {}
   const totalRede = codificados.rede || cad.rede_ponto?.quantidade || 0;
   const totalAntena = codificados.antena || cad.antena_ponto?.quantidade || 0;
 
-  const item = (descricao, quantidade, unidade, disciplina, observacao) => ({
-    descricao, quantidade, unidade, subgrupo: nomeDaDisciplina(disciplina), disciplina, pronto: false, observacao,
-    referencia_fabricante: null, preco_catalogo: null, material_id: null, confianca_catalogo: null, descricao_catalogo: null,
-  });
+  // material sem quantidade pelo texto: a contagem do desenho dos serviços correspondentes (20/11/2026 — antes tomada,
+  // interruptor, luminária, quadro e suporte de bullet ficavam SEMPRE 0, mesmo com os símbolos contados no DWG)
+  const doDesenho = (codigos) => {
+    const achados = codigos.map(c => cad[c]).filter(c => c?.quantidade > 0 && c.metros == null);
+    return achados.length ? { quantidade: achados.reduce((s, c) => s + c.quantidade, 0), blocos: achados.flatMap(c => c.blocos || []) } : null;
+  };
+  const item = (descricao, quantidade0, unidade, disciplina, observacao0, codigos = []) => {
+    const d = !quantidade0 && codigos.length ? doDesenho(codigos) : null;
+    return {
+      descricao, quantidade: d ? d.quantidade : quantidade0, unidade, subgrupo: nomeDaDisciplina(disciplina), disciplina, pronto: false,
+      observacao: d ? `Quantidade = contagem no desenho (${d.blocos.slice(0, 4).join('; ')}${d.blocos.length > 4 ? '; …' : ''}) — conferir na planta.` : observacao0,
+      referencia_fabricante: null, preco_catalogo: null, material_id: null, confianca_catalogo: null, descricao_catalogo: null,
+      ...(d ? { _doDesenho: true } : {}),
+    };
+  };
 
   const todos = [
     item('Keystone/jack RJ-45 Cat.6 (lado usuário — pontos de rede)', totalRede, 'un', 'rede',
@@ -633,20 +655,20 @@ function montarMateriaisInstalacaoPadrao(analises, disciplinasEfetivas, cad = {}
     // reserva em percentual (perda na crimpagem/reteste): "+24" fixo dava 26 plugs para 2 câmeras
     item('Plug RJ-45 Cat.6 (terminação de câmeras) + reserva', totalCameras > 0 ? totalCameras + reservaPlugs(totalCameras) : 0, 'un', 'cftv',
       totalCameras > 0 ? `Quantidade = câmeras (${totalCameras}) + reserva de ${RESERVA_PLUG_RJ45 * 100} % (${reservaPlugs(totalCameras)}, mínimo ${RESERVA_PLUG_MIN}) — adotado, ajuste conforme necessário.` : 'Quantidade = nº de câmeras + reserva.'),
-    item('Suporte/braço de fixação p/ câmera externa (bullet)', 0, 'un', 'cftv', 'Quantidade = nº de câmeras externas (bullet).'),
+    item('Suporte/braço de fixação p/ câmera externa (bullet)', 0, 'un', 'cftv', 'Quantidade = nº de câmeras externas (bullet).', ['cftv_camera_externa']),
     item('Identificação (etiquetas/anilhas), abraçadeiras, parafusos e miudezas', 1, 'vb', 'cabeamento', 'Verba — ajuste conforme o porte do projeto.'),
 
     // Elétrica
     item('Disjuntor termomagnético (conforme quadro de cargas)', 0, 'un', 'eletrica', 'Símbolo gráfico no desenho — confirme quantidade e amperagem direto na planta/memorial.'),
-    item('Quadro de distribuição (padrão modular, nº de polos a definir)', 0, 'un', 'eletrica', 'Confirme quantidade e nº de polos direto no memorial elétrico.'),
-    item('Tomada 2P+T 10A/20A', 0, 'un', 'eletrica', 'Símbolo gráfico no desenho — confirme quantidade direto na planta.'),
-    item('Interruptor simples/paralelo', 0, 'un', 'eletrica', 'Símbolo gráfico no desenho — confirme quantidade direto na planta.'),
+    item('Quadro de distribuição (padrão modular, nº de polos a definir)', 0, 'un', 'eletrica', 'Confirme quantidade e nº de polos direto no memorial elétrico.', ['ele_qdg', 'ele_qd_setorial']),
+    item('Tomada 2P+T 10A/20A', 0, 'un', 'eletrica', 'Símbolo gráfico no desenho — confirme quantidade direto na planta.', ['ele_tomada_baixa', 'ele_tomada_media', 'ele_tomada_alta', 'ele_tomada_emergencia']),
+    item('Interruptor simples/paralelo', 0, 'un', 'eletrica', 'Símbolo gráfico no desenho — confirme quantidade direto na planta.', ['ele_interruptor']),
     item('Cabo elétrico flexível 750V (conforme bitola do projeto)', 0, 'm', 'eletrica', 'Quantidade depende do quadro de cargas/memorial — confirme antes de fechar.'),
     item('Eletroduto PVC (rígido ou corrugado, conforme projeto)', 0, 'm', 'eletrica', 'Quantidade depende do memorial elétrico — confirme antes de fechar.'),
 
     // Iluminação
-    item('Luminária LED de embutir', 0, 'un', 'iluminacao', 'Símbolo gráfico no desenho — confirme quantidade direto na planta.'),
-    item('Luminária LED de sobrepor', 0, 'un', 'iluminacao', 'Símbolo gráfico no desenho — confirme quantidade direto na planta.'),
+    item('Luminária LED de embutir', 0, 'un', 'iluminacao', 'Símbolo gráfico no desenho — confirme quantidade direto na planta.', ['ilum_luminaria_embutir']),
+    item('Luminária LED de sobrepor', 0, 'un', 'iluminacao', 'Símbolo gráfico no desenho — confirme quantidade direto na planta.', ['ilum_luminaria_sobrepor']),
     item('Perfil LED linear (embutir/sobrepor/marcenaria)', 0, 'm', 'iluminacao', 'Quantidade em metros lineares — confirme direto na planta.'),
   ];
 

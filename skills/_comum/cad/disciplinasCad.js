@@ -127,7 +127,10 @@ const RE_LAYER_INFRA = 'ELETRODUT|ELETROCALHA|PERFILADO|LEITO|CONDU[IÍ]TE|CONDU
 // tipo do traçado pela layer; fiação e cabeamento desenhados são ROTA (cabo = rota × condutores), não material
 function tipoDoTracado(layer) {
   const L = String(layer || '');
-  const tipo = /ELETROCALHA|\bCALHA/i.test(L) ? 'eletrocalha' : /PERFILADO/i.test(L) ? 'perfilado' : /LEITO/i.test(L) ? 'leito'
+  // QiBuilder: "EL-Fios (Fase 1) Eletrocalha perfurada1" é o FIO que passa na eletrocalha — fiação (rota), não
+  // eletrocalha (20/11/2026: o LACE-LAB somava 4.143 m de "eletrocalha" num subsolo de 50 × 24 m)
+  const tipo = /(^|[-_ (])FIOS?\b/i.test(L) ? 'fiacao'
+    : /ELETROCALHA|\bCALHA/i.test(L) ? 'eletrocalha' : /PERFILADO/i.test(L) ? 'perfilado' : /LEITO/i.test(L) ? 'leito'
     : /FIA[ÇC][ÃA]O|FIACAO/i.test(L) ? 'fiacao' : /CABEAMENTO/i.test(L) && !/INFRA|ELETROD|TUB/i.test(L) ? 'cabeamento' : 'eletroduto';
   return { tipo, rota: tipo === 'fiacao' || tipo === 'cabeamento' };
 }

@@ -31,7 +31,9 @@ function calcularResumo(servicos, materiais) {
   const blocoMaoDeObra = servicos.filter(s => !s.pronto)
     .reduce((soma, s) => soma + (Number(s.quantidade) || 0) * (Number(s.valor_unitario) || 0), 0);
   const blocoMateriais = materiais.filter(m => !m.pronto)
-    .reduce((soma, m) => soma + (Number(m.quantidade) || 0) * (Number(m.preco_catalogo) || 0), 0);
+    // o mesmo preço que vai para o rascunho (controllers/projetos/orcamento.js): a pesquisa de mercado adotada
+    // vence o catálogo (2.48 — antes a estimativa usava só o catálogo e não batia com o orçamento gerado)
+    .reduce((soma, m) => soma + (Number(m.quantidade) || 0) * (Number(m.preco_unitario) > 0 ? Number(m.preco_unitario) : (Number(m.preco_catalogo) || 0)), 0);
   return {
     blocoMaoDeObra,
     blocoMateriais,

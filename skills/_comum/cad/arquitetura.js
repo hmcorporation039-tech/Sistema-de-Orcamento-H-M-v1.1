@@ -321,7 +321,10 @@ function decidirFator(insUnits, arcos, extensao, miolo = extensao) {
   if (doCabecalho && plausivel(doCabecalho) && portasCom(doCabecalho) >= 3) return doCabecalho;
   const melhor = [1, 0.01, 0.001, 0.0254].filter(plausivel).map(f => ({ f, n: portasCom(f) })).sort((a, b) => b.n - a.n)[0];
   if (melhor && melhor.n >= 3) return melhor.f;
-  if (doCabecalho) return doCabecalho;
+  // o cabeçalho só vale sem porta quando dá ao desenho tamanho de edificação (20/11/2026: o LACE-LAB elétrico
+  // declarava mm e estava desenhado em metros; sem porta para conferir, a planta de ~50 m virava 5 cm, a folha inteira
+  // passava por "diagrama", e a análise saía com 0 ambiente, 0 tomada e 0 luminária). Implausível: decide pela largura.
+  if (doCabecalho && plausivel(doCabecalho)) return doCabecalho;
   // sem unidade e sem porta: pela LARGURA do desenho, não pela coordenada (revisão de 06/11/2026). Antes valia a
   // maior coordenada absoluta das polilinhas: o DWG em mm só com LINE (sem polilinha) era lido em metros, e a
   // planta em metros nas coordenadas UTM (> 2000) saía em mm. Mais de 2.000 unidades de largura é planta em mm
@@ -945,10 +948,20 @@ function lerArquitetura(textoDxf, opcoes = {}) {
   const avisosDiagrama = [];
   {
     const cruza = (a, b) => a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
-    const naoLidas = (classificacao?.regioes || []).filter(r => (r.tipo === 'diagrama' || r.tipo === 'quadro_cargas') && !quadrosDoDiagrama.some(q => cruza(q.caixa, r.caixa)));
-    const titulo = !quadrosDoDiagrama.length && [...textosTodos, ...notasM].some(t => /UNIFILAR|TRIFILAR|QUADRO\s+DE\s+CARGAS?|DIAGRAMA\s+(EL[ÉE]TRICO|DO\s+QUADRO|DE\s+FOR[ÇC]A)/i.test(t.s));
+    // (20/11/2026) região "de diagrama" sem NENHUM texto com cara de circuito (corrente "16 A", "C3", "TUG 2", bitola
+    // "2,5 mm²", "6 kA") é a LEGENDA dos diagramas ou as notas — não um diagrama que deixou de ser lido. No LACE-LAB o
+    // aviso dizia "2 regiões sem circuitos lidos" e o quadro de cargas nem estava no arquivo (está em outra prancha).
+    const RE_TEXTO_CIRCUITO = /^\s*\d+(?:[.,]\d+)?\s*A\b|\b\d+(?:[.,]\d+)?\s*kA\b|^\s*(?:C|CIRC\.?)\s*-?\s*\d+\s*$|^\s*(?:TUG|TUE|ILU|IL|TOM)\s*-?\s*\d+\b|\b\d+(?:[.,]\d+)?\s*mm\s*[²2]/i;
+    const textosDoDesenho = [...textosTodos, ...notasM];
+    const temCircuitos = (c) => textosDoDesenho.filter(t => t.x >= c[0] && t.x <= c[2] && t.y >= c[1] && t.y <= c[3] && RE_TEXTO_CIRCUITO.test(String(t.s || ''))).length >= 3;
+    const naoLidas = (classificacao?.regioes || []).filter(r => (r.tipo === 'diagrama' || r.tipo === 'quadro_cargas') && !quadrosDoDiagrama.some(q => cruza(q.caixa, r.caixa)) && temCircuitos(r.caixa));
+    const titulo = !quadrosDoDiagrama.length && textosDoDesenho.some(t => /UNIFILAR|TRIFILAR|QUADRO\s+DE\s+CARGAS?|DIAGRAMA\s+(EL[ÉE]TRICO|DO\s+QUADRO|DE\s+FOR[ÇC]A)/i.test(t.s))
+      && textosDoDesenho.filter(t => RE_TEXTO_CIRCUITO.test(String(t.s || ''))).length >= 3;
     if (naoLidas.length || titulo) {
       avisosDiagrama.push(`Diagrama unifilar / quadro de cargas no desenho${naoLidas.length ? ` (${naoLidas.length} região(ões))` : ''} sem circuitos lidos: o formato dos textos (disjuntor, potência, número do circuito) não foi reconhecido — o 3D usa circuitos ESTIMADOS; confira os circuitos no diagrama do projeto [CONFERIR].`);
+    } else if (!quadrosDoDiagrama.length && textosDoDesenho.some(t => /LEGENDA\s+(DOS?\s+)?DIAGRAMAS?|DIAGRAMAS?\s+UNIFILAR/i.test(t.s))) {
+      // só a legenda dos diagramas: o quadro está em outra prancha — o pedido certo é anexá-la
+      avisosDiagrama.push('O desenho tem a legenda dos diagramas, mas o quadro de cargas / unifilar não está neste arquivo: anexe a prancha dos diagramas para ler circuitos, disjuntores e bitolas (sem ela, disjuntores e cabos ficam pela estimativa) [CONFERIR].');
     }
   }
   if (classificacao) {
@@ -1164,4 +1177,4 @@ function classificarDesenho(refM, arcosM, textosM) {
   return cl;
 }
 
-module.exports = { lerArquitetura, areaPoligono, perimetro, dentro, centroide, distanciaContorno, transformar, RE_PAREDE, RE_NAO_PAREDE };
+module.exports = { decidirFator, lerArquitetura, areaPoligono, perimetro, dentro, centroide, distanciaContorno, transformar, RE_PAREDE, RE_NAO_PAREDE };

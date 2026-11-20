@@ -151,7 +151,8 @@ export function BotoesModelo3d({ origem, id, desabilitado = false, antes = null,
 }
 
 // Cartão da análise: arquitetura (DWG/DXF/PDF) → 3D com os pontos das disciplinas
-export function CartaoModelo3dAnalise({ analiseId, estiloCartao, estiloTitulo }) {
+// compacto (2.48, tela única da análise): uma linha no lugar das explicações longas
+export function CartaoModelo3dAnalise({ analiseId, estiloCartao, estiloTitulo, compacto = false }) {
   const entrada = useRef(null);
   const [arquitetura, setArquitetura] = useState(null);
   const [enviando, setEnviando] = useState(false);
@@ -182,18 +183,27 @@ export function CartaoModelo3dAnalise({ analiseId, estiloCartao, estiloTitulo })
   return (
     <div style={estiloCartao} data-testid="cartao-modelo-3d">
       <h3 style={{ ...estiloTitulo, display: 'flex', alignItems: 'center', gap: 8 }}><Box size={16} /> Modelo 3D ilustrativo (para o cliente)</h3>
-      <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 12, lineHeight: 1.6 }}>
-        Envie a <b>arquitetura em DWG, DXF ou PDF</b> (pode ser o próprio DWG do projeto) e o sistema monta <b>um 3D por planta</b> de cada
-        prancha/folha, com os pontos que estão <b>desenhados no projeto</b> — nada é estimado; planta sem ponto desenhado sai só com a arquitetura.
-        Eletrodutos e eletrocalhas vêm do desenho; o ponto que ficou solto ganha um <b>caminho sugerido</b> até o quadro ou a tubulação (camada à parte, para conferir).
-        PDF é sempre convertido em DXF (cada cor do traço numa layer) e o DXF fica na pasta do cliente, junto do original.
-        Serve para o cliente ter uma ideia de como vai ficar; não substitui o projeto executivo. O PDF precisa ser o exportado do AutoCAD/Revit (não escaneado).
-        O projeto criado a partir desta análise já recebe a mesma arquitetura.
-      </p>
-      <p style={{ fontSize: 12, color: 'var(--texto-2)', marginBottom: 12, lineHeight: 1.6 }}>
-        Para mandar ao cliente: <b>Editar e aprovar no 3D</b> → confira (insira ou retire o que faltar) → <b>Aprovar e salvar para o cliente</b>, lá dentro.
-        O arquivo vai para a pasta do cliente e dali mesmo você baixa ou liga o 3D na proposta — não precisa gerar de novo aqui.
-      </p>
+      {compacto ? (
+        <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 12, lineHeight: 1.6 }} data-testid="3d-compacto">
+          Um 3D por planta com os pontos do projeto, para o cliente ver como vai ficar. Para mandar: <b>Editar e aprovar no 3D</b> → confira →{' '}
+          <b>Aprovar e salvar para o cliente</b>.
+        </p>
+      ) : (
+        <>
+        <p style={{ fontSize: 12, color: 'var(--texto-3)', marginBottom: 12, lineHeight: 1.6 }}>
+          Envie a <b>arquitetura em DWG, DXF ou PDF</b> (pode ser o próprio DWG do projeto) e o sistema monta <b>um 3D por planta</b> de cada
+          prancha/folha, com os pontos que estão <b>desenhados no projeto</b> — nada é estimado; planta sem ponto desenhado sai só com a arquitetura.
+          Eletrodutos e eletrocalhas vêm do desenho; o ponto que ficou solto ganha um <b>caminho sugerido</b> até o quadro ou a tubulação (camada à parte, para conferir).
+          PDF é sempre convertido em DXF (cada cor do traço numa layer) e o DXF fica na pasta do cliente, junto do original.
+          Serve para o cliente ter uma ideia de como vai ficar; não substitui o projeto executivo. O PDF precisa ser o exportado do AutoCAD/Revit (não escaneado).
+          O projeto criado a partir desta análise já recebe a mesma arquitetura.
+        </p>
+        <p style={{ fontSize: 12, color: 'var(--texto-2)', marginBottom: 12, lineHeight: 1.6 }}>
+          Para mandar ao cliente: <b>Editar e aprovar no 3D</b> → confira (insira ou retire o que faltar) → <b>Aprovar e salvar para o cliente</b>, lá dentro.
+          O arquivo vai para a pasta do cliente e dali mesmo você baixa ou liga o 3D na proposta — não precisa gerar de novo aqui.
+        </p>
+        </>
+      )}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <input ref={entrada} type="file" accept={ACEITA_ARQUITETURA} style={{ display: 'none' }}
           onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) enviar(f); }} />

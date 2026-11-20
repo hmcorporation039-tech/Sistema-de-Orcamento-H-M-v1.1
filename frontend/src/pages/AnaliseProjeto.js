@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { FilePlus2 } from 'lucide-react';
+import { BookOpen, FilePlus2, FileText, FolderOpen, Target } from 'lucide-react';
 import {
   gerarRelatorioCompatibilizacao, getAnaliseProjeto,
   gerarOrcamentoDaAnalise, getPastaAnalise, abrirPastaAnalise, getDisciplinasProjeto, criarProjetoDeAnalise, reprocessarMapaCad,
@@ -12,18 +12,19 @@ import { useClientes } from '../components/ClienteSelect';
 import { CartaoModelo3dAnalise } from '../components/Modelo3d';
 import EnviarParaAnalise from '../components/analise/EnviarParaAnalise';
 import AnalisesSalvas from '../components/analise/ListaAnalises';
-import ConflitosCompatibilizacao from '../components/analise/ConflitosCompatibilizacao';
+import PainelPasta from '../components/PainelPasta';
 import MapaCad from '../components/analise/MapaCad';
 import ObjetivoDoProjeto from '../components/analise/ObjetivoDoProjeto';
 import { ProjetoSugerido, PavimentosDaAnalise } from '../components/analise/ProjetoSugerido';
 import { gerarId } from '../utils/ids';
-import { card, tituloSecao, btnSecundario } from './analise/estilos';
+import { card, tituloSecao } from './analise/estilos';
 import useSalvamentoAnalise from './analise/useSalvamentoAnalise';
 import {
-  CabecalhoAnalise, CartaoEstimativa, CartaoFuncionamento, CartaoPendencias, CartaoProjetos, BarraAcoesAnalise,
+  CabecalhoAnalise, PainelMais, CampoFuncionamento, AbasAnalise, Pendencias, BarraAcoesAnalise,
 } from './analise/CartoesAnalise';
-import { CartaoPontosCodificados, CartaoPontosPorDisciplina } from './analise/CartoesPontos';
-import ItensExtraidos from './analise/ItensExtraidos';
+import ItensEValores, { estimativaDa } from './analise/ItensEValores';
+import BibliotecaBlocos from './analise/BibliotecaBlocos';
+import { formatarMoeda } from '../utils/format';
 import InstrucoesDaAnalise from '../components/analise/InstrucoesDaAnalise';
 
 // As disciplinas vêm do servidor (GET /projetos/disciplinas — fonte única em
@@ -36,9 +37,10 @@ import InstrucoesDaAnalise from '../components/analise/InstrucoesDaAnalise';
 // ou "Elaboração de projeto" (elaborar o projeto de cada disciplina e
 // entregar). Em nenhuma das duas sai laudo: o antigo "Calcular pela norma"
 // cria um PROJETO da disciplina (aba "Projetos por disciplina").
-// Divisão em 2.39: os cartões estão em pages/analise/ (CartoesAnalise, CartoesPontos,
-// ItensExtraidos) e o salvamento automático no gancho useSalvamentoAnalise; aqui ficam a
-// carga da análise, as edições e as ações (gerar orçamento, projeto, relatório).
+// Divisão em 2.39: as peças estão em pages/analise/ e o salvamento automático no gancho useSalvamentoAnalise; aqui
+// ficam a carga da análise, as edições e as ações (gerar orçamento, projeto, relatório).
+// 2.48 (tela única): cabeçalho compacto com o resumo numa linha e o "⋯ Mais", o campo de instruções, as abas Projeto ·
+// Itens e valores · Pendências e a barra de ações fixa — as mesmas nas duas finalidades (antes, 13 cartões empilhados).
 export default function Compatibilizacao() {
   const { id: idParam } = useParams();
   const navigate = useNavigate();
@@ -49,7 +51,7 @@ export default function Compatibilizacao() {
       .catch(() => toast.error('Não foi possível carregar a lista de disciplinas'));
   }, []);
   // obra da análise nova (2.0): vem pré-selecionada de /obras?aba=analise&obra=ID
-  const [busca] = useSearchParams();
+  const [busca, setBusca] = useSearchParams();
   const obraDaUrl = Number(busca.get('obra')) || null;
   const [carregandoAnalise, setCarregandoAnalise] = useState(false);
   const [analise, setAnalise] = useState(null);
@@ -245,27 +247,6 @@ export default function Compatibilizacao() {
     setAnalise(a => ({ ...a, finalidade: valor }));
   }
 
-  // O rótulo traz o prefixo do código (CAMx/Rx/Ax) pra nunca deixar ambíguo
-  // qual tipo de ponto está sendo contado — "Ambientes" (salas/áreas, sem
-  // relação nenhuma com esses códigos) aparece à parte, com o mesmo cuidado.
-  const tilesResumo = analise ? [
-    { label: 'Ambientes (salas/áreas)', valor: analise.ambientes.length },
-    ...(analise.disciplinas?.includes('cftv') ? [{ label: 'Câmeras — código CAMnº', valor: analise.cameras.total }] : []),
-    ...(analise.disciplinas?.includes('rede') ? [{ label: 'Pontos de rede — código Rnº', valor: analise.pontosRedeAntena?.rede?.total ?? 0 }] : []),
-    ...(analise.disciplinas?.includes('antena') ? [{ label: 'Pontos de TV/antena — código Anº', valor: analise.pontosRedeAntena?.antena?.total ?? 0 }] : []),
-    { label: 'Pendências', valor: analise.achados.length },
-  ] : [];
-
-  // Estimativa pelo que foi extraído — mesmo cálculo do resumo "Orçamento
-  // Geral" do relatório PDF (calcularResumo em relatorioCompatibilizacaoTemplate.js).
-  // Só informação: o valor que vale é o da proposta, revisada no editor.
-  const resumoOrcamento = analise ? (() => {
-    const blocoMaoDeObra = analise.servicos.filter(s => !s.pronto)
-      .reduce((soma, s) => soma + (Number(s.quantidade) || 0) * (Number(s.valor_unitario) || 0), 0);
-    const blocoMateriais = analise.materiais.filter(m => !m.pronto)
-      .reduce((soma, m) => soma + (Number(m.quantidade) || 0) * (Number(m.preco_catalogo) || 0), 0);
-    return { blocoMaoDeObra, blocoMateriais, total: blocoMaoDeObra + blocoMateriais };
-  })() : null;
   // itens que o "Gerar orçamento" deixa de fora (quantidade 0, fora do "Já pronto")
   const foraPorQuantidade = analise
     ? [...analise.servicos, ...analise.materiais].filter(x => !x.pronto && !(Number(x.quantidade) > 0)).length
@@ -280,39 +261,74 @@ export default function Compatibilizacao() {
     .map(d => [d.skill, d])).values()] : [];
   const projetoDa = (skill) => (analise?.projetos || []).find(p => p.disciplina === skill && p.tipo === 'projeto');
 
-  // Cartão "Elaborar projeto por disciplina" (foco na Elaboração de projeto) ou
-  // "Dimensionar pela norma (projeto)" (opção secundária no Orçamento)
-  const cartaoProjetos = (principal) => (
-    <CartaoProjetos principal={principal} disciplinasComSkill={disciplinasComSkill} projetoDa={projetoDa}
-      criandoProjeto={criandoProjeto} onElaborar={elaborarProjeto} />
-  );
+  // ── Tela única (2.48): aba aberta (?vista=projeto|itens|pendencias, para o voltar do navegador e o link) e o painel
+  // do "⋯ Mais". A aba de entrada é a do trabalho de cada finalidade: o projeto na Elaboração, os itens no Orçamento.
+  const vista = ['projeto', 'itens', 'pendencias'].includes(busca.get('vista')) ? busca.get('vista') : (elaboracao ? 'projeto' : 'itens');
+  const trocarVista = (v) => setBusca(p => { const n = new URLSearchParams(p); n.set('vista', v); return n; }, { replace: true });
+  const [painel, setPainel] = useState(null);
+  useEffect(() => { setPainel(null); }, [analise?.id]);
+  const [semQuantidade, setSemQuantidade] = useState(0); // muda para a aba Itens abrir no filtro "Sem quantidade"
+
+  const temObjetivo = !!analise && (analise.dadosExtraidos || []).some(e => e?.objetivo);
+  const itensMais = analise ? [
+    { chave: 'pasta', testid: 'mais-pasta', icone: <FolderOpen size={14} />, rotulo: 'Pasta da análise', detalhe: 'Caminho e arquivos no servidor', onClick: () => setPainel('pasta') },
+    { chave: 'objetivo', testid: 'mais-objetivo', icone: <Target size={14} />, rotulo: 'O que é o projeto', detalhe: 'Vistas, legendas e componentes lidos do desenho', desabilitado: !temObjetivo, onClick: () => setPainel('objetivo') },
+    { chave: 'funcionamento', testid: 'mais-funcionamento', icone: <FileText size={14} />, rotulo: 'Funcionamento do projeto', detalhe: 'Texto que vai para o relatório', onClick: () => setPainel('funcionamento') },
+    { chave: 'biblioteca', testid: 'mais-biblioteca', icone: <BookOpen size={14} />, rotulo: 'Biblioteca de blocos do CAD', detalhe: 'Exportar ou importar o que o sistema aprendeu (JSON)', onClick: () => setPainel('biblioteca') },
+    { separador: true },
+    { chave: 'nova', testid: 'mais-nova', icone: <FilePlus2 size={14} />, rotulo: 'Nova análise', onClick: novaAnalise },
+  ] : [];
+  // (o painel do objetivo já traz o próprio título)
+  const TITULO_PAINEL = { pasta: 'Pasta da análise', objetivo: '', funcionamento: 'Funcionamento do projeto', biblioteca: 'Biblioteca de blocos do CAD' };
+
+  // resumo numa linha (no lugar dos 4–5 quadros grandes de números)
+  const resumo = (() => {
+    if (!analise) return [];
+    const pavs = new Set((analise.ambientes || []).map(a => a?.pavimento).filter(Boolean)).size;
+    const sugeridos = (analise.dadosExtraidos || []).reduce((t, e) => t + (Number(e?.projeto_sugerido?.componentes) || 0), 0);
+    const nPend = (analise.achados || []).length + (analise.conflitos || []).length;
+    const partes = [{ texto: `${analise.ambientes.length} ambiente(s)${pavs > 1 ? ` em ${pavs} pavimentos` : ''}` }];
+    if (sugeridos) partes.push({ texto: `${sugeridos} componente(s) no projeto sugerido` });
+    if (analise.disciplinas?.includes('cftv') && analise.cameras?.total) partes.push({ texto: `${analise.cameras.total} câmera(s) CAMnº` });
+    if (analise.disciplinas?.includes('rede') && analise.pontosRedeAntena?.rede?.total) partes.push({ texto: `${analise.pontosRedeAntena.rede.total} ponto(s) de rede Rnº` });
+    if (analise.disciplinas?.includes('antena') && analise.pontosRedeAntena?.antena?.total) partes.push({ texto: `${analise.pontosRedeAntena.antena.total} ponto(s) de TV Anº` });
+    partes.push({ texto: `${analise.servicos.length + analise.materiais.length} item(ns)` });
+    partes.push(nPend ? { texto: `${nPend} pendência(s)`, cor: '#e0a030' } : { texto: 'sem pendências' });
+    if (!elaboracao) partes.push({ texto: `estimativa ${formatarMoeda(estimativaDa(analise).total)}`, cor: '#c9a227' });
+    return partes;
+  })();
+  const nPendencias = analise ? (analise.achados || []).length + (analise.conflitos || []).length + (foraPorQuantidade > 0 ? 1 : 0) : 0;
+
+  const regerarProjeto = async (criterios) => {
+    // 2.46: o projeto sugerido de novo com os critérios escolhidos — análise nova (a atual continua salva)
+    try {
+      const r = await reprocessarMapaCad(analise.id, { criterios });
+      toast.success('Projeto gerado de novo com os critérios escolhidos — análise nova gravada; a anterior continua salva.', { duration: 7000 });
+      navigate(`/obras/analise/${r.data.id}`);
+    } catch (err) {
+      toast.error(await mensagemDeErro(err, 'Não consegui gerar o projeto de novo'), { duration: 10000 });
+    }
+  };
+  const mapa = analise && <MapaCad key={`${analise.id}-${analise.versao ?? 0}`} analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />;
+  const cartao3d = analise && <div id="cartao-3d-analise"><CartaoModelo3dAnalise compacto key={`3d-${analise.versao ?? 0}`} analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} /></div>;
 
   return (
     <div>
-      {analise && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-          <button onClick={novaAnalise} style={btnSecundario}>
-            <FilePlus2 size={13} style={{ marginRight: 5 }} /> Nova análise
-          </button>
-        </div>
-      )}
-
-      <div style={card}>
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
-          <h3 style={{ ...tituloSecao, flex: 1, marginBottom: 0 }}>Análises salvas</h3>
-        </div>
-        {/* 2.3: a mesma lista da obra (components/analise/ListaAnalises.js), com busca e páginas */}
-        <AnalisesSalvas disciplinas={DISCIPLINAS} ativaId={analise?.id} versao={versaoLista}
-          onExcluida={(a) => { if (String(analise?.id) === String(a.id)) novaAnalise(); }} />
-      </div>
-
-      {!analise && (
-        <div style={card} data-testid="nova-analise">
-          <h3 style={{ ...tituloSecao, marginBottom: 12 }}>Enviar o projeto para análise</h3>
-          {/* 2.3: o mesmo bloco da página da obra (aba Análises) — components/analise/EnviarParaAnalise.js */}
-          <EnviarParaAnalise obraInicial={obraDaUrl} disciplinas={DISCIPLINAS}
-            onCriada={(a) => { popularAnalise(a); navigate(`/obras/analise/${a.id}`); setVersaoLista(v => v + 1); }} />
-        </div>
+      {!analise && !carregandoAnalise && (
+        <>
+          <div style={card} data-testid="nova-analise">
+            <h3 style={{ ...tituloSecao, marginBottom: 12 }}>Enviar o projeto para análise</h3>
+            {/* 2.3: o mesmo bloco da página da obra (aba Análises) — components/analise/EnviarParaAnalise.js */}
+            <EnviarParaAnalise obraInicial={obraDaUrl} disciplinas={DISCIPLINAS}
+              onCriada={(a) => { popularAnalise(a); navigate(`/obras/analise/${a.id}`); setVersaoLista(v => v + 1); }} />
+          </div>
+          <div style={card}>
+            <h3 style={tituloSecao}>Análises salvas</h3>
+            {/* 2.3: a mesma lista da obra (components/analise/ListaAnalises.js), com busca e páginas. 2.48: só aqui, sem
+                análise aberta — com uma aberta, o ← do cabeçalho volta para cá */}
+            <AnalisesSalvas disciplinas={DISCIPLINAS} ativaId={null} versao={versaoLista} />
+          </div>
+        </>
       )}
 
       {carregandoAnalise && (
@@ -323,82 +339,76 @@ export default function Compatibilizacao() {
         <>
           <CabecalhoAnalise
             analise={analise} clientes={clientes} clienteIdDaAnalise={clienteIdDaAnalise} elaboracao={elaboracao}
-            salvando={salvando} salvoEm={salvoEm} tilesResumo={tilesResumo}
-            onNomeProjeto={atualizarNomeProjeto} onCliente={atualizarCliente} onFinalidade={alterarFinalidade}
-            carregarPasta={carregarPasta} abrirPasta={abrirPasta}
+            salvando={salvando} salvoEm={salvoEm} resumo={resumo} itensMais={itensMais}
+            onNomeProjeto={atualizarNomeProjeto} onCliente={atualizarCliente} onFinalidade={alterarFinalidade} onVoltar={novaAnalise}
           />
+
+          {painel && (
+            <PainelMais titulo={TITULO_PAINEL[painel]} onFechar={() => setPainel(null)}>
+              {painel === 'pasta' && <PainelPasta carregar={carregarPasta} abrir={abrirPasta} atualizarQuando={salvoEm} />}
+              {painel === 'objetivo' && <ObjetivoDoProjeto analise={analise} estiloCartao={{}} estiloTitulo={{ display: 'none' }} />}
+              {painel === 'funcionamento' && <CampoFuncionamento valor={analise.funcionamento} onMudar={atualizarFuncionamento} />}
+              {painel === 'biblioteca' && <BibliotecaBlocos />}
+            </PainelMais>
+          )}
 
           {/* 2.47: o engenheiro escreve o que mudar; a mesma análise é recalculada (só com planta do CAD) */}
           {temPlantaCad && <InstrucoesDaAnalise analise={analise} onAtualizada={popularAnalise} />}
 
-          {/* Elaboração de projeto (2.45): o foco é o projeto sugerido por pavimento, o 3D onde ele é conferido e o
-              projeto por disciplina; a leitura técnica do desenho (mapa do CAD, objetivo, itens, pontos codificados)
-              fica recolhida — era informação demais, e pouca dela importa para projetar */}
-          {elaboracao && (
-            <>
+          <AbasAnalise ativa={vista} onTrocar={trocarVista} abas={[
+            { chave: 'projeto', rotulo: 'Projeto' },
+            { chave: 'itens', rotulo: 'Itens e valores', n: analise.servicos.length + analise.materiais.length },
+            { chave: 'pendencias', rotulo: 'Pendências', n: nPendencias, alerta: true },
+          ]} />
+
+          {/* Projeto: na Elaboração, o projeto sugerido por pavimento e o 3D vêm primeiro e a leitura do desenho (mapa do
+              CAD) fica recolhida; no Orçamento, o mapa do CAD vem primeiro — é nele que os pontos entram no orçamento */}
+          {vista === 'projeto' && (
+            <div data-testid="aba-projeto">
               <ProjetoSugerido analise={analise} estiloCartao={card} estiloTitulo={tituloSecao}
                 onVer3d={() => document.getElementById('cartao-3d-analise')?.scrollIntoView({ behavior: 'smooth' })}
-                onRegerar={async (criterios) => {
-                  // 2.46: o projeto sugerido de novo com os critérios escolhidos — análise nova (a atual continua salva)
-                  try {
-                    const r = await reprocessarMapaCad(analise.id, { criterios });
-                    toast.success('Projeto gerado de novo com os critérios escolhidos — análise nova gravada; a anterior continua salva.', { duration: 7000 });
-                    navigate(`/obras/analise/${r.data.id}`);
-                  } catch (err) {
-                    toast.error(await mensagemDeErro(err, 'Não consegui gerar o projeto de novo'), { duration: 10000 });
-                  }
-                }} />
-              <div id="cartao-3d-analise"><CartaoModelo3dAnalise key={`3d-${analise.versao ?? 0}`} analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} /></div>
-              {cartaoProjetos(true)}
-              <PavimentosDaAnalise analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
-              <CartaoPendencias achados={analise.achados} />
-              <details style={{ ...card, padding: '10px 16px' }} data-testid="detalhes-leitura">
-                <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 700, color: 'var(--texto-2)' }}>Detalhes da leitura do desenho (mapa do CAD, itens lidos, objetivo)</summary>
-                <ObjetivoDoProjeto analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
-                <MapaCad key={`${analise.id}-${analise.versao ?? 0}`} analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />
-                <ItensExtraidos analise={analise} disciplinas={DISCIPLINAS} elaboracao={elaboracao} onPronto={alternarPronto} />
-                <CartaoPontosCodificados analise={analise} />
-                <ConflitosCompatibilizacao analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
-              </details>
-            </>
+                onRegerar={elaboracao ? regerarProjeto : undefined} />
+              {elaboracao ? (
+                <>
+                  {cartao3d}
+                  <PavimentosDaAnalise analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
+                  {temPlantaCad && (
+                    <details style={{ ...card, padding: '12px 18px' }} data-testid="detalhes-leitura">
+                      <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 700, color: 'var(--texto-2)' }}>Mapa do CAD — o que o sistema leu do desenho</summary>
+                      <div style={{ marginTop: 12 }}>{mapa}</div>
+                    </details>
+                  )}
+                </>
+              ) : (
+                <>
+                  {mapa}
+                  <PavimentosDaAnalise analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
+                  {cartao3d}
+                </>
+              )}
+            </div>
           )}
 
-          {!elaboracao && (
-            <>
-              <CartaoEstimativa analise={analise} resumoOrcamento={resumoOrcamento} onAbrirNoEditor={abrirNoEditor} />
+          {vista === 'itens' && (
+            <div style={card}>
+              <ItensEValores key={semQuantidade} filtroInicial={semQuantidade ? 'sem_qtd' : 'todos'} analise={analise} disciplinas={DISCIPLINAS} elaboracao={elaboracao}
+                onPronto={alternarPronto} onAbrirNoEditor={abrirNoEditor}
+                pontos={{ onAtualizar: atualizarPontoDisciplina, onRemover: removerPontoDisciplina, onAdicionar: adicionarPontoDisciplina }} />
+            </div>
+          )}
 
-              <CartaoFuncionamento valor={analise.funcionamento} onMudar={atualizarFuncionamento} />
-
-              <CartaoPontosCodificados analise={analise} />
-
-              <CartaoPontosPorDisciplina analise={analise} disciplinas={DISCIPLINAS}
-                onAtualizar={atualizarPontoDisciplina} onRemover={removerPontoDisciplina} onAdicionar={adicionarPontoDisciplina} />
-
-              <CartaoPendencias achados={analise.achados} />
-
-              <PavimentosDaAnalise analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
-
-              <ObjetivoDoProjeto analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
-
-              <MapaCad key={`${analise.id}-${analise.versao ?? 0}`} analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />
-
-              <ItensExtraidos analise={analise} disciplinas={DISCIPLINAS} elaboracao={elaboracao} onPronto={alternarPronto} />
-
-              {/* Orçamento: dimensionar pela norma é opção secundária — cria um PROJETO, não laudo */}
-              {disciplinasComSkill.length > 0 && cartaoProjetos(false)}
-
-              {/* 2.3: conflitos de posição entre os DWG/DXF do pacote */}
-              <ConflitosCompatibilizacao analise={analise} estiloCartao={card} estiloTitulo={tituloSecao} />
-
-              {/* 2.3: 3D ilustrativo a partir da arquitetura (DWG/DXF) — nas duas finalidades */}
-              <CartaoModelo3dAnalise key={`3d-${analise.versao ?? 0}`} analiseId={analise.id} estiloCartao={card} estiloTitulo={tituloSecao} />
-            </>
+          {vista === 'pendencias' && (
+            <div style={card}>
+              <Pendencias analise={analise} foraPorQuantidade={foraPorQuantidade}
+                onVerSemQuantidade={() => { setSemQuantidade(n => n + 1); trocarVista('itens'); }} />
+            </div>
           )}
 
           <BarraAcoesAnalise
             analise={analise} elaboracao={elaboracao} foraPorQuantidade={foraPorQuantidade}
             gerandoOrcamento={gerandoOrcamento} gerando={gerando}
             onAbrirNoEditor={abrirNoEditor} onGerarOrcamento={gerarOrcamento} onBaixarRelatorio={baixarRelatorio}
+            disciplinasComSkill={disciplinasComSkill} projetoDa={projetoDa} criandoProjeto={criandoProjeto} onElaborar={elaborarProjeto}
           />
         </>
       )}

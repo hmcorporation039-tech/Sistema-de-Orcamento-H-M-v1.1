@@ -1,11 +1,11 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import MapaCad from './MapaCad';
-import { getMapaCad, salvarMapaCad, editarMapaCad, reprocessarMapaCad, confirmarBlocoMapaCad, getRegistroDisciplinas } from '../../services/api';
+import { getMapaCad, salvarMapaCad, aceitarSegurasMapaCad, editarMapaCad, reprocessarMapaCad, confirmarBlocoMapaCad, getRegistroDisciplinas } from '../../services/api';
 
 // Mapa do CAD (03/11/2026): planta com o desenho de fundo, pontos coloridos pela situação, ficha para conferir na
 // própria planta, filtro da tabela e "Ir para" quando a folha tem várias plantas. Dados SINTÉTICOS.
-jest.mock('../../services/api', () => ({ getRegistroDisciplinas: jest.fn(), getMapaCad: jest.fn(), salvarMapaCad: jest.fn(), editarMapaCad: jest.fn(), reprocessarMapaCad: jest.fn(), confirmarBlocoMapaCad: jest.fn(), abrirModelo3d: jest.fn(), urlModelo3d: (u) => u, exportarBibliotecaBlocos: jest.fn(), importarBibliotecaBlocos: jest.fn() }));
+jest.mock('../../services/api', () => ({ getRegistroDisciplinas: jest.fn(), getMapaCad: jest.fn(), salvarMapaCad: jest.fn(), aceitarSegurasMapaCad: jest.fn(), editarMapaCad: jest.fn(), reprocessarMapaCad: jest.fn(), confirmarBlocoMapaCad: jest.fn(), abrirModelo3d: jest.fn(), urlModelo3d: (u) => u, exportarBibliotecaBlocos: jest.fn(), importarBibliotecaBlocos: jest.fn() }));
 jest.mock('react-router-dom', () => ({ useNavigate: () => jest.fn() }));
 jest.mock('react-hot-toast', () => { const t = jest.fn(); t.success = jest.fn(); t.error = jest.fn(); return { __esModule: true, default: t }; });
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -16,7 +16,7 @@ beforeEach(() => {
   caixa = document.createElement('div');
   document.body.appendChild(caixa);
   raiz = createRoot(caixa);
-  [getMapaCad, salvarMapaCad, editarMapaCad, reprocessarMapaCad].forEach(f => f.mockReset());
+  [getMapaCad, salvarMapaCad, aceitarSegurasMapaCad, editarMapaCad, reprocessarMapaCad].forEach(f => f.mockReset());
   // nome curto das disciplinas: o do registro único (GET /disciplinas — 2.37)
   getRegistroDisciplinas.mockResolvedValue({ data: { disciplinas: [{ chave: 'eletrica', curto: 'Elétrica', cor: '#ff9f43' }, { chave: 'incendio', curto: 'Incêndio', cor: '#ff4b3e' }], outros: { chave: 'outros' }, aliases: {}, extras: [] } });
 });
@@ -206,4 +206,22 @@ test('confirmar bloco: descrição e disciplina vão ao servidor e a linha fica 
   await act(async () => { caixa.querySelector('[data-testid="confirmar-bloco-ZQX-77"]').click(); });
   expect(confirmarBlocoMapaCad).toHaveBeenCalledWith(7, { arquivo: 'planta.dxf', bloco: 'ZQX-77', descricao: 'Tomada baixa 2P+T a 30 cm', disciplina: 'eletrica' });
   expect(caixa.querySelector('[data-testid="bloco-ZQX-77"]').textContent).toContain('confirmado: Tomada baixa 2P+T a 30 cm (Elétrica)');
+});
+
+test('"Aceitar as da legenda e reprocessar": o servidor escolhe as linhas e a análise nova é gravada', async () => {
+  const r = resposta();
+  r.data.arquivos[0].resumo = { ...r.data.arquivos[0].resumo, seguras: 1 };
+  await montar(r);
+  const botao = caixa.querySelector('[data-testid="aceitar-legenda-reprocessar"]');
+  expect(botao.textContent).toContain('Aceitar as da legenda (1) e reprocessar');
+  aceitarSegurasMapaCad.mockResolvedValue({ data: { ...resposta().data, aceitas: 1, aConferir: [{ idx: 1, layer: 'EL-SIMBOLOS', motivo: 'tipo pela regra do nome da layer' }] } });
+  reprocessarMapaCad.mockResolvedValue({ data: { id: 99 } });
+  await act(async () => { botao.click(); });
+  expect(aceitarSegurasMapaCad).toHaveBeenCalledWith(7, 'planta.dxf');
+  expect(reprocessarMapaCad).toHaveBeenCalledWith(7, { incluirDisciplinas: true });
+});
+
+test('sem linha da legenda para aceitar, o botão não aparece', async () => {
+  await montar(resposta());
+  expect(caixa.querySelector('[data-testid="aceitar-legenda-reprocessar"]')).toBeNull();
 });
