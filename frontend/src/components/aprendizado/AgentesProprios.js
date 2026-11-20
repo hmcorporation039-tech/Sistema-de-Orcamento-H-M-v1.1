@@ -35,15 +35,16 @@ export function TabelaDependencia({ porAgente }) {
   );
 }
 
-export default function AgentesProprios({ ehAdmin }) {
+// semSugestoes (2.49): a fila de aprovação fica na tela "O que o sistema sabe" (por disciplina); aqui só a dependência de IA
+export default function AgentesProprios({ ehAdmin, semSugestoes = false }) {
   const [ind, setInd] = useState(null);
   const [sugestoes, setSugestoes] = useState([]);
   const carregar = useCallback(async () => {
     try {
-      const [i, s] = await Promise.all([indicadoresAgentes(6), listarSugestoesAgentes({ situacao: 'pendente' })]);
+      const [i, s] = await Promise.all([indicadoresAgentes(6), semSugestoes ? Promise.resolve({ data: [] }) : listarSugestoesAgentes({ situacao: 'pendente' })]);
       setInd(i.data); setSugestoes(s.data);
     } catch { /* tabela ainda não migrada: a seção fica vazia */ }
-  }, []);
+  }, [semSugestoes]);
   useEffect(() => { carregar(); }, [carregar]);
 
   async function decidir(s, situacao) {
@@ -63,6 +64,7 @@ export default function AgentesProprios({ ehAdmin }) {
           Roteador do assistente: {ind.roteador.map(r => `${r.n} ${DECISAO[r.decisao] || r.decisao}${r.aceitos || r.recusados ? ` (${r.aceitos} serviram, ${r.recusados} não)` : ''}`).join(' · ')}.
         </p>
       )}
+      {!semSugestoes && <>
       <h4 style={{ margin: '16px 0 6px', fontSize: 13.5 }}>Sugestões esperando aprovação ({sugestoes.length})</h4>
       {!sugestoes.length && <p style={estilos.ajuda}>Nada pendente. As regras do roteador, as respostas do suporte Claude Max e as frases novas do campo de instruções aparecem aqui antes de valer.</p>}
       {sugestoes.map(s => (
@@ -80,6 +82,7 @@ export default function AgentesProprios({ ehAdmin }) {
           )}
         </div>
       ))}
+      </>}
     </div>
   );
 }

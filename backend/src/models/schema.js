@@ -776,12 +776,13 @@ async function criarTabelas() {
       )`);
     await client.query(`DO $$ BEGIN
       -- 2.47: tipo 'instrucao' (frases do campo de instruções da análise que a IA ajudou a entender)
+      -- 2.49: tipo 'regra_projetista' (correções repetidas pelo campo de instruções — services/instrucoes/regrasProjetista.js)
       IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_agentes_sugestoes_tipo'
-                  AND pg_get_constraintdef(oid) NOT LIKE '%instrucao%') THEN
+                  AND pg_get_constraintdef(oid) NOT LIKE '%regra_projetista%') THEN
         ALTER TABLE agentes_sugestoes DROP CONSTRAINT ck_agentes_sugestoes_tipo;
       END IF;
       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_agentes_sugestoes_tipo') THEN
-        ALTER TABLE agentes_sugestoes ADD CONSTRAINT ck_agentes_sugestoes_tipo CHECK (tipo IN ('vocabulario', 'conhecimento', 'instrucao'));
+        ALTER TABLE agentes_sugestoes ADD CONSTRAINT ck_agentes_sugestoes_tipo CHECK (tipo IN ('vocabulario', 'conhecimento', 'instrucao', 'regra_projetista'));
       END IF;
       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_agentes_sugestoes_situacao') THEN
         ALTER TABLE agentes_sugestoes ADD CONSTRAINT ck_agentes_sugestoes_situacao CHECK (situacao IN ('pendente', 'aprovada', 'recusada'));

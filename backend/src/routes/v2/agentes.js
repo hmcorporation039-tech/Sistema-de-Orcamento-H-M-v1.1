@@ -10,6 +10,7 @@
 //   GET  /agentes/sugestoes                 pendentes/aprovadas (admin vê todas; os outros, as próprias)
 //   PUT  /agentes/sugestoes/:id             aprovar/recusar (vocabulário: admin; conhecimento: admin ou o autor)
 //   GET  /agentes/indicadores               dependência de IA por agente (suporte Claude Max por mês)
+//   GET  /agentes/conhecimento-disciplinas  (2.49) regras do projetista (embutidas + aprendidas) e frases, por disciplina
 const ctrl = require('../../controllers/agentesController');
 
 module.exports = (router, { autenticar }) => {
@@ -23,4 +24,5 @@ module.exports = (router, { autenticar }) => {
   router.get('/agentes/sugestoes', autenticar, ctrl.listarSugestoes);
   router.put('/agentes/sugestoes/:id', autenticar, ctrl.decidirSugestao);
   router.get('/agentes/indicadores', autenticar, ctrl.indicadores);
+  router.get('/agentes/conhecimento-disciplinas', autenticar, ctrl.conhecimentoDisciplinas);
 };

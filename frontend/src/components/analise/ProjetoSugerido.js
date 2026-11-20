@@ -82,6 +82,10 @@ function Sugerido({ arquivo, s, analiseId, onRegerar }) {
         <b style={{ color: 'var(--texto-1)' }}>{br(s.componentes ?? total, 0)}</b> componente(s) de {(s.disciplinas || []).map(d => NOME_DISC[d] || d).join(', ')} em {pavimentos.length} pavimento(s)
         {s.retirados > 0 && <> · {s.retirados} retirado(s) por você</>} — <span style={{ color: 'var(--texto-3)' }}>{arquivo}</span>
       </div>
+      {/* 2.49: regra aprendida das instruções (aprovada pelo administrador) que o projetista aplicou — à vista, não só nos critérios */}
+      {(s.criterios || []).filter(c => /^Regras aprendidas/.test(c)).map((c, i) => (
+        <div key={i} style={{ fontSize: 12.5, color: '#8ab4f8', margin: '6px 0' }} data-testid="regras-aplicadas">🧠 {c}</div>
+      ))}
       {pavimentos.length > 1 && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '10px 0' }} role="tablist">
           {pavimentos.map(p => (

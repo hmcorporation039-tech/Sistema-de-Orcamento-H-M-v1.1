@@ -71,6 +71,20 @@ test('interpreta, desmarca uma operação e aplica só a marcada; a análise rec
   expect(api.listarInstrucoes).toHaveBeenCalledTimes(2); // recarrega o histórico
 });
 
+// 2.49: a mesma correção repetida (2 análises ou 3 ambientes do mesmo tipo) vira sugestão de regra do projetista
+test('correção repetida: avisa que virou sugestão de regra do projetista', async () => {
+  const toast = require('react-hot-toast').default;
+  api.interpretarInstrucao.mockResolvedValue({ data: { operacoes: [OPS[0]], duvidas: [], iaDisponivel: false } });
+  api.aplicarInstrucao.mockResolvedValue({ data: { id: 7, instrucao: { id: 2, regrasSugeridas: [{ id: 5, texto: 'Projetista de CFTV: em espaço de reunião de pessoas, acrescentar 2 × câmera de cftv' }] } } });
+  await montar();
+  escrever('acrescente 2 câmeras na capela');
+  await clicar($('instrucao-interpretar'));
+  await clicar($('instrucao-aplicar'));
+  const aviso = toast.mock.calls.map(c => c[0]).find(t => /sugestão de regra/.test(t));
+  expect(aviso).toMatch(/: em espaço de reunião de pessoas, acrescentar 2 × câmera/);
+  expect(aviso).not.toMatch(/Projetista de CFTV/);
+});
+
 test('não entendeu: mostra a dúvida e oferece a IA; o que a IA entendeu vai com as palavras novas para aprovação', async () => {
   api.interpretarInstrucao.mockResolvedValue({ data: { operacoes: [], duvidas: ['Não entendi: "speed"'], iaDisponivel: true } });
   api.interpretarInstrucaoIa.mockResolvedValue({ data: { operacoes: [OPS[0]], duvidas: [], termos: [{ frase: 'speed dome', simbolo: 'HM-CFTV-CAMERA' }] } });

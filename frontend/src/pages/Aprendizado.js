@@ -14,6 +14,8 @@ import AgentesProprios from '../components/aprendizado/AgentesProprios';
 // trabalho já sai sem IA, o ACERTO da leitura automática medido no que o engenheiro conferiu no mapa do CAD e a fila do
 // que falta conferir (mais pontos primeiro). O treino é por disciplina: arquivos lidos e materiais novos do acervo
 // aparecem separados por disciplina. Backend: controllers/aprendizadoController.js.
+// 2.49: a tela "O que o sistema sabe" passou a ser POR DISCIPLINA (pages/conhecimento/OQueOSistemaSabe.js); esta fica
+// como os detalhes dela (embutido: sem o cabeçalho, sem o quadro por disciplina e sem a fila de aprovação, que estão lá).
 
 const ORIGEM = { legenda: 'da legenda', aprendido: 'aprendido', semelhante: 'parecido', regra: 'regra da layer', nao_ponto: '"não é ponto" aprendido', nao_reconhecido: 'não reconhecido' };
 const corDaTaxa = (t) => (t == null ? 'var(--texto-3)' : t >= 90 ? '#3fb95f' : t >= 70 ? '#d9a53a' : '#e08080');
@@ -41,19 +43,20 @@ function Barra({ taxa }) {
   );
 }
 
-export default function Aprendizado() {
+export default function Aprendizado({ dadosIniciais = null, embutido = false }) {
   const { usuario } = useAuth();
   const ehAdmin = usuario?.role === 'admin';
-  const [dados, setDados] = useState(null);
+  const [dados, setDados] = useState(dadosIniciais);
   const [treino, setTreino] = useState(null);
-  const [carregando, setCarregando] = useState(true);
+  const [carregando, setCarregando] = useState(!dadosIniciais);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
     try { setDados((await getAprendizado()).data); setTreino(null); } catch (e) { toast.error(await mensagemDeErro(e, 'Não consegui carregar o aprendizado')); }
     setCarregando(false);
   }, []);
-  useEffect(() => { carregar(); }, [carregar]);
+  useEffect(() => { if (!dadosIniciais) carregar(); }, [carregar, dadosIniciais]);
+  useEffect(() => { if (dadosIniciais) setDados(dadosIniciais); }, [dadosIniciais]);
 
   // treino em andamento: acompanha a cada 5 s; ao terminar, recarrega os números
   const rodando = (treino || dados?.acervo?.rodada)?.rodando;
@@ -82,7 +85,7 @@ export default function Aprendizado() {
 
   return (
     <div data-testid="pagina-aprendizado">
-      <div style={{ ...estilos.card, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+      {!embutido && <div style={{ ...estilos.card, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
         <Brain size={22} color="var(--ouro)" style={{ flexShrink: 0, marginTop: 2 }} />
         <div style={{ flex: 1 }}>
           <p style={{ ...estilos.ajuda, margin: 0 }}>
@@ -91,7 +94,7 @@ export default function Aprendizado() {
           </p>
         </div>
         <button style={estilos.btnSecundario} onClick={carregar} disabled={carregando}><RefreshCw size={14} /> Atualizar</button>
-      </div>
+      </div>}
 
       <div style={estilos.card}>
         <Titulo Icone={Target}>Acerto da leitura automática</Titulo>
@@ -212,7 +215,7 @@ export default function Aprendizado() {
         )}
       </div>
 
-      <div style={estilos.card}>
+      {!embutido && <div style={estilos.card}>
         <Titulo Icone={Brain}>O que o sistema já sabe</Titulo>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <Numero valor={n((simbolos.conferidos || 0) + (simbolos.da_legenda || 0))} rotulo="formas de símbolo (DWG explodido)"
@@ -258,7 +261,7 @@ export default function Aprendizado() {
             </div>
           </div>
         )}
-      </div>
+      </div>}
 
       <div style={estilos.card}>
         <Titulo Icone={Cpu}>Quanto já sai sem IA (últimos {autonomia.dias} dias)</Titulo>
@@ -278,7 +281,7 @@ export default function Aprendizado() {
         )) : <p style={estilos.ajuda}>Nenhuma consulta registrada no período.</p>}
       </div>
 
-      <AgentesProprios ehAdmin={ehAdmin} />
+      <AgentesProprios ehAdmin={ehAdmin} semSugestoes={embutido} />
     </div>
   );
 }

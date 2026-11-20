@@ -257,16 +257,12 @@ function interpretar(texto, contexto = {}) {
   if (!bruto) return { operacoes, duvidas: ['Escreva o que mudar, por exemplo: "acrescente 2 câmeras na capela".'], entendeuAlgo: false };
   if (bruto.length > 1500) return { operacoes, duvidas: ['Instrução longa demais: divida em partes (até 1.500 caracteres).'], entendeuAlgo: false };
 
-  const dicionario = { ...nomesDaBiblioteca(), ...V.COMPONENTES };
-  for (const [frase, simbolos] of Object.entries(contexto.aprendidas || {})) {
-    const f = palavras(frase).map(singular).join(' ');
-    if (f && Array.isArray(simbolos) && simbolos.length) dicionario[f] = [...new Set([...simbolos, ...(dicionario[f] || [])])];
-  }
+  const dicionario = dicionarioDe(contexto.aprendidas);
   const lugaresDaAnalise = prepararLugares(contexto);
   const discAnalise = new Set((contexto.disciplinas || []).flatMap(d => [d, d === 'rede' ? 'cabeamento' : d, d === 'controle-acesso' ? 'controle_acesso' : d]));
   const projetadas = new Set(contexto.projetadas || []);
   // pontos com símbolo (o desenhado sem símbolo é reconhecido pela descrição)
-  const pontos = (contexto.pontos || []).filter(p => Number.isFinite(p?.x) && Number.isFinite(p?.y)).map(p => ({ ...p, simbolo: p.simbolo || simboloPelaDescricao(p.descricao, dicionario) }));
+  const pontos = pontosComSimbolo(contexto.pontos, dicionario);
   const salaDoPonto = (p) => lugaresDaAnalise.salas.find(s => s.pol && dentro([p.x, p.y], s.pol)) || null;
   const pontosNa = (salas) => pontos.filter(p => { const s = salaDoPonto(p); return s && salas.some(x => x.k === s.k); });
 
@@ -323,6 +319,21 @@ function nomesDaBiblioteca() {
     if (f && !/^hm /.test(f)) nomesCache[f] = [c.simbolo];
   }
   return nomesCache;
+}
+
+// vocabulário fixo + nomes da biblioteca + frases aprendidas e aprovadas
+function dicionarioDe(aprendidas = {}) {
+  const dicionario = { ...nomesDaBiblioteca(), ...V.COMPONENTES };
+  for (const [frase, simbolos] of Object.entries(aprendidas || {})) {
+    const f = palavras(frase).map(singular).join(' ');
+    if (f && Array.isArray(simbolos) && simbolos.length) dicionario[f] = [...new Set([...simbolos, ...(dicionario[f] || [])])];
+  }
+  return dicionario;
+}
+// pontos da análise com símbolo (o desenhado sem símbolo é reconhecido pela descrição) — também usado pelas regras
+// aprendidas (./regrasProjetista.js) para contar o que havia em cada ambiente
+function pontosComSimbolo(pontos, dicionario = dicionarioDe()) {
+  return (Array.isArray(pontos) ? pontos : []).filter(p => Number.isFinite(p?.x) && Number.isFinite(p?.y)).map(p => ({ ...p, simbolo: p.simbolo || simboloPelaDescricao(p.descricao, dicionario) }));
 }
 
 function simboloPelaDescricao(descricao, dicionario) {
@@ -491,4 +502,4 @@ function juntarEmMover(ret, ad) {
     remover: ret.remover, adicionar: ad.adicionar.length >= ret.remover.length ? ad.adicionar.slice(0, ret.remover.length) : ad.adicionar, n };
 }
 
-module.exports = { interpretar, paraTestes: { singular, tokensDe, trechos, marcarLugares, marcarComponentes, prepararLugares, posicoesNovas, escolherParaRetirar } };
+module.exports = { interpretar, pontosComSimbolo, dicionarioDe, paraTestes: { singular, tokensDe, trechos, marcarLugares, marcarComponentes, prepararLugares, posicoesNovas, escolherParaRetirar } };

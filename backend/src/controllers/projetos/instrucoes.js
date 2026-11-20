@@ -3,7 +3,9 @@
 //   2. APLICA o que o engenheiro confirmar — componentes inseridos/retirados pelo mesmo registro do 3D e do Mapa do CAD
 //      (services/edicoesDoMapa.js) e o local da estrutura pelo critério `centros` do projetista — e RECALCULA a MESMA
 //      análise (executarAnalise com `substituir`): orçamento, cabos, 3D e prancha saem atualizados, sem análise nova;
-//   3. guarda cada instrução (analises_instrucoes) com o que havia antes: "Desfazer" volta a última.
+//   3. guarda cada instrução (analises_instrucoes) com o que havia antes: "Desfazer" volta a última;
+//   4. (2.49) na elaboração, guarda os AJUSTES por ambiente: a mesma correção repetida vira sugestão de regra do
+//      projetista, que só vale depois da aprovação do administrador (services/instrucoes/regrasProjetista.js).
 // Quando as regras não entendem a frase, o engenheiro pode pedir à IA: ela só REESCREVE a frase no formato padrão
 // (a mesma leitura determinística resolve as posições) e as palavras novas viram sugestão de vocabulário, que só vale
 // depois da aprovação do administrador (services/instrucoes/aprendidas.js).
@@ -19,6 +21,7 @@ const { registrarAuditoria } = require('../../services/auditoria');
 const edicoesDoMapa = require('../../services/edicoesDoMapa');
 const { interpretar } = require('../../services/instrucoes/interpretar');
 const aprendidas = require('../../services/instrucoes/aprendidas');
+const regrasProjetista = require('../../services/instrucoes/regrasProjetista');
 const { componentes, componente } = require('../../services/bibliotecaComponentes');
 const ia = require('../../services/ia');
 const analises = require('./analises');
@@ -199,11 +202,14 @@ async function aplicar(req, res) {
       }
       const dados = comEdicoes(a0, porArquivo);
       await client.query('UPDATE analises_projeto SET dados_extraidos = $1 WHERE id = $2', [JSON.stringify(dados), id]);
+      // (2.49) o que a instrução mudou por ambiente (só na elaboração): base das regras aprendidas do projetista
+      let ajustes = [];
+      try { ajustes = regrasProjetista.ajustesDaInstrucao(a0, ops); } catch (e) { console.error('[instruções] ajustes não calculados:', e.message); }
       const { rows: [ins] } = await client.query(
-        `INSERT INTO analises_instrucoes (analise_id, texto, origem, operacoes, antes, depois, usuario_id) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+        `INSERT INTO analises_instrucoes (analise_id, texto, origem, operacoes, antes, depois, usuario_id, ajustes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
         [id, t || ops.map(o => o.descricao).join('; '), req.body?.origem === 'ia' ? 'ia' : 'regras',
           JSON.stringify(ops.map(o => ({ tipo: o.tipo, descricao: o.descricao, adicionados: o.adicionar.length, retirados: o.remover.length, centros: o.centros }))),
-          JSON.stringify(antes), JSON.stringify({ assinatura: assinatura(porArquivo), edicoes: porArquivo, criterios: depoisCriterios }), req.usuario.id]);
+          JSON.stringify(antes), JSON.stringify({ assinatura: assinatura(porArquivo), edicoes: porArquivo, criterios: depoisCriterios }), req.usuario.id, JSON.stringify(ajustes)]);
       instrucaoId = ins.id;
       await registrarAuditoria(client, { entidade: 'analises_projeto', entidadeId: id, acao: 'instrucao_aplicada', usuarioId: req.usuario.id,
         detalhes: { instrucao: ins.id, texto: t.slice(0, 300), operacoes: ops.map(o => o.descricao).slice(0, 20) } });
@@ -213,10 +219,12 @@ async function aplicar(req, res) {
     if (req.body?.origem === 'ia' && Array.isArray(req.body?.termos)) {
       await aprendidas.sugerir(pool, { termos: req.body.termos, texto: t, usuarioId: req.usuario.id }).catch(e => console.error('[instruções] sugestão não gravada:', e.message));
     }
-    const ok = await recalcular(req, res, a, depoisCriterios, { instrucao: { id: instrucaoId, texto: t, operacoes: ops.map(o => o.descricao) } });
-    if (!ok) { await voltarAoAntes(id, antes, instrucaoId); return; }
+    // (2.49) a correção repetida vira sugestão de regra do projetista (a tela avisa a que acabou de nascer)
+    const regrasSugeridas = await regrasProjetista.atualizarSugestoes(pool, { usuarioId: req.usuario.id }).catch((e) => { console.error('[instruções] regras não sugeridas:', e.message); return []; });
+    const ok = await recalcular(req, res, a, depoisCriterios, { instrucao: { id: instrucaoId, texto: t, operacoes: ops.map(o => o.descricao), regrasSugeridas } });
+    if (!ok) { await voltarAoAntes(id, antes, instrucaoId); await regrasProjetista.atualizarSugestoes(pool).catch(() => {}); return; }
   } catch (e) {
-    if (instrucaoId) await voltarAoAntes(id, antes, instrucaoId).catch(() => {});
+    if (instrucaoId) { await voltarAoAntes(id, antes, instrucaoId).catch(() => {}); await regrasProjetista.atualizarSugestoes(pool).catch(() => {}); }
     if (!res.headersSent) res.status(e.status || 500).json({ erro: e.status ? e.message : 'Erro ao aplicar a instrução.' });
     if (!e.status) console.error('[instruções] erro ao aplicar:', e);
   } finally {
@@ -266,6 +274,8 @@ async function desfazer(req, res) {
         await client.query('UPDATE analises_instrucoes SET desfeita_em = NULL, desfeita_por = NULL WHERE id = $1', [iid]);
       }).catch(e => console.error('[instruções] desfazer não voltou:', e.message));
     }
+    // (2.49) a instrução desfeita deixa de contar para as regras sugeridas (a resposta já foi enviada)
+    await regrasProjetista.atualizarSugestoes(pool).catch(e => console.error('[instruções] regras não atualizadas:', e.message));
   } catch (e) {
     if (!res.headersSent) res.status(e.status || 500).json({ erro: e.status ? e.message : 'Erro ao desfazer a instrução.' });
     if (!e.status) console.error('[instruções] erro ao desfazer:', e);

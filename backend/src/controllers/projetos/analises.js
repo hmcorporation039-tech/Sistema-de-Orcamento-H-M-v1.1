@@ -3,6 +3,7 @@
 // de compatibilização em PDF e a pasta da análise.
 const { gerarPdfDeHtml } = require('../../services/pdfPuppeteer');
 const pool = require('../../config/database');
+const regrasProjetista = require('../../services/instrucoes/regrasProjetista');
 const { contentDisposition } = require('../../utils/nomeArquivoDownload');
 const { registrarAuditoria } = require('../../services/auditoria');
 const { analisarProjetoCompleto } = require('../../services/compatibilizacaoAnalise');
@@ -148,7 +149,7 @@ function arquivoInvalido(arquivos) {
 // cobertura do incêndio, tomadas de rede por área de trabalho, classe do SPDA, ambientes fora e pé-direito. Só as
 // chaves conhecidas passam; a skill (projetista.criteriosDe) normaliza os valores.
 // (2.47) centros: o local da estrutura escolhido pelo engenheiro no campo de instruções (skills/_comum/cad/projetista.js centrosDe)
-const CHAVES_CRITERIOS = ['densidadeCftv', 'cftvExterno', 'ptz', 'incendio', 'redePor10m2', 'classeSpda', 'excluir', 'peDireito', 'centros'];
+const CHAVES_CRITERIOS = ['densidadeCftv', 'cftvExterno', 'ptz', 'incendio', 'redePor10m2', 'classeSpda', 'excluir', 'peDireito', 'centros', 'regras'];
 function lerCriterios(v) {
   let c = v;
   if (typeof c === 'string') {
@@ -160,6 +161,8 @@ function lerCriterios(v) {
   for (const k of CHAVES_CRITERIOS) {
     if (c[k] === undefined || c[k] === null || c[k] === '') continue;
     if (k === 'excluir') out[k] = Array.isArray(c[k]) ? c[k].map(String).slice(0, 200) : [];
+    // (2.49) regras aprendidas com que a análise foi feita (lista, mesmo vazia: "nenhuma" é diferente de "não sei")
+    else if (k === 'regras') { if (Array.isArray(c[k])) out[k] = c[k].slice(0, 60); }
     else if (k === 'centros') { if (typeof c[k] === 'object' && !Array.isArray(c[k]) && Object.keys(c[k]).length) out[k] = c[k]; }
     else out[k] = c[k];
   }
@@ -203,9 +206,17 @@ async function executarAnalise(req, res, arquivos, corpo, opcoes = {}) {
     // obraId: o aprendizado conta a obra como UM projeto (R01 e R02 do mesmo desenho não votam duas vezes)
     // critérios do projetista (2.46, elaboração): os do envio ou, ao gerar de novo, os da análise anterior
     // (2.47) opcoes.criterios (campo de instruções): os critérios exatos do recálculo — no Desfazer, os de antes, sem herdar os da análise
-    const criterios = finalidade !== 'elaboracao' ? null
+    let criterios = finalidade !== 'elaboracao' ? null
       : 'criterios' in opcoes ? (opcoes.criterios && Object.keys(opcoes.criterios).length ? lerCriterios(opcoes.criterios) : null)
         : (lerCriterios(corpo.criterios) || criteriosDaAnalise(opcoes.analiseAnterior));
+    // (2.49) regras aprendidas do projetista (services/instrucoes/regrasProjetista.js): a análise NOVA usa as aprovadas
+    // agora; recalcular ou gerar de novo usa as da análise anterior (nunca uma regra nova por cima das edições que a
+    // ensinaram — a análise anterior à 2.49 fica sem regra)
+    if (finalidade === 'elaboracao' && !Array.isArray(criterios?.regras)) {
+      const regras = opcoes.analiseAnterior ? (criteriosDaAnalise(opcoes.analiseAnterior)?.regras || [])
+        : await regrasProjetista.aprovadas(pool);
+      criterios = { ...(criterios || {}), regras };
+    }
     const resultado = await analisarProjetoCompleto(arquivos, { ...opcoes, obraId: obraDaAnalise?.id || null, finalidade, criterios });
     // o que foi LIDO (antes de qualquer edição) fica guardado nas análises com mapa do CAD: é a base para copiar edições num reprocessamento
     const temMapa = (resultado.dadosExtraidos || []).some(d => d?.mapa_cad);

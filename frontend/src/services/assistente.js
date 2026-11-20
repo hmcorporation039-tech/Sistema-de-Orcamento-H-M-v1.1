@@ -87,4 +87,6 @@ export const aprovarComoConhecimento = (mensagemId, resposta) => api.post(`/assi
 export const listarSugestoesAgentes = (params) => api.get('/agentes/sugestoes', { params });
 export const decidirSugestaoAgentes = (id, dados) => api.put(`/agentes/sugestoes/${id}`, dados);
 export const indicadoresAgentes = (meses = 6) => api.get('/agentes/indicadores', { params: { meses } });
+// 2.49: regras do projetista (embutidas e aprendidas) e frases do campo de instruções, por disciplina
+export const conhecimentoDisciplinas = () => api.get('/agentes/conhecimento-disciplinas');
 export const listarAgentes = () => api.get('/agentes');

@@ -95,7 +95,68 @@ function criteriosDe(c = {}) {
     excluir: [...new Set((Array.isArray(c.excluir) ? c.excluir : []).map(s => String(s || '').trim()).filter(Boolean))],
     peDireito: pd > 1.8 && pd < 30 ? pd : null,
     centros: centrosDe(c.centros),
+    regras: regrasDe(c.regras),
   };
+}
+
+// (2.49) REGRAS APRENDIDAS das instruções do engenheiro e aprovadas pelo administrador (backend:
+// services/instrucoes/regrasProjetista.js). Valem por disciplina e TIPO de ambiente:
+//   { modo: 'mais'|'menos', n } — acrescenta/retira n do componente em cada ambiente do tipo;
+//   { modo: 'nenhum' }          — o tipo de ambiente não leva o componente;
+//   { modo: 'centro', grupo }   — o equipamento central do grupo vai num ambiente do tipo.
+// A análise guarda as regras com que foi feita (criteriosUsados): recalcular a mesma análise não aplica regra nova por
+// cima das edições que a ensinaram.
+const MODOS_REGRA = new Set(['mais', 'menos', 'nenhum', 'centro']);
+const GRUPOS_CENTRO = new Set(['telecom', 'incendio', 'alarme', 'acesso', 'telefonia', 'antena']);
+function regrasDe(v) {
+  if (!Array.isArray(v)) return [];
+  const out = [];
+  for (const r of v.slice(0, 60)) {
+    if (!r || typeof r !== 'object' || !MODOS_REGRA.has(r.modo) || !ROTULO_TIPO[r.tipo]) continue;
+    const base = { id: Number.isInteger(r.id) ? r.id : null, modo: r.modo, tipo: r.tipo, nome: String(r.nome || '').slice(0, 80) };
+    if (r.modo === 'centro') { if (GRUPOS_CENTRO.has(r.grupo)) out.push({ ...base, grupo: r.grupo }); continue; }
+    if (!DISCIPLINAS[r.disciplina] || DISCIPLINAS[r.disciplina].motor || DISCIPLINAS[r.disciplina].especial || !/^HM-[A-Z0-9-]{2,40}$/.test(String(r.simbolo || ''))) continue;
+    const n = Math.round(Number(r.n));
+    if (r.modo !== 'nenhum' && !(n >= 1 && n <= 20)) continue;
+    out.push({ ...base, disciplina: r.disciplina, simbolo: r.simbolo, ...(r.modo === 'nenhum' ? {} : { n }) });
+  }
+  return out;
+}
+const POSICAO_PADRAO = { 'HM-CFTV-CAMERA': 'cantos', 'HM-ALM-IVP': 'cantos', 'HM-INC-DETECTOR-FUMACA': 'grade', 'HM-INC-DETECTOR-TEMP': 'grade', 'HM-CAB-AP': 'grade' };
+const MONTAGEM_PERIMETRO = /PONTO-REDE|TEL-PONTO|ANT-PONTO|TOMADA|LEITOR|BOTOEIRA|ACIONADOR|TECLADO|MAGNETICO/;
+const minuscula = (s) => String(s || '').replace(/^\p{Lu}(?=\p{Ll})/u, c => c.toLowerCase());
+function textoDaRegra(r) {
+  const tipo = ROTULO_TIPO[r.tipo] || r.tipo;
+  const nome = minuscula(r.nome || r.simbolo);
+  if (r.modo === 'nenhum') return `${tipo}: sem ${nome}`;
+  if (r.modo === 'centro') return `equipamento central (${r.grupo}) em ${tipo}`;
+  return `${tipo}: ${r.modo === 'mais' ? '+' : '−'}${r.n} ${nome}`;
+}
+// ajusta o que as regras da disciplina deram para o ambiente; usadas: Map(regra → nº de ambientes)
+function ajustarPelasRegras(itens, a, disc, regras, usadas) {
+  const minhas = regras.filter(r => r.modo !== 'centro' && r.disciplina === disc && r.tipo === a.tipo);
+  if (!minhas.length) return itens;
+  let lista = itens.map(i => ({ ...i }));
+  const marcar = (r) => usadas.set(r, (usadas.get(r) || 0) + 1);
+  // "nenhum" vale por último (se o engenheiro tirou o componente do tipo de ambiente, nada o põe de volta)
+  for (const r of [...minhas.filter(x => x.modo !== 'nenhum'), ...minhas.filter(x => x.modo === 'nenhum')]) {
+    const doSimbolo = lista.filter(i => i.simbolo === r.simbolo && i.n > 0);
+    const motivo = `regra aprendida das instruções do engenheiro (aprovada): ${textoDaRegra(r)}`;
+    if (r.modo === 'nenhum') {
+      if (doSimbolo.length) { lista = lista.filter(i => i.simbolo !== r.simbolo); marcar(r); }
+    } else if (r.modo === 'mais') {
+      if (doSimbolo.length) { doSimbolo[0].n += r.n; doSimbolo[0].motivo = `${doSimbolo[0].motivo}; + ${r.n} pela ${motivo}`; } else {
+        lista.push({ simbolo: r.simbolo, n: r.n, regra: POSICAO_PADRAO[r.simbolo] || (MONTAGEM_PERIMETRO.test(r.simbolo) ? 'perimetro' : 'cantos'), rotulo: `${r.nome || r.simbolo} — ${a.nome}`, motivo });
+      }
+      marcar(r);
+    } else if (r.modo === 'menos' && doSimbolo.length) {
+      let falta = r.n;
+      for (const i of doSimbolo) { const t = Math.min(i.n, falta); i.n -= t; falta -= t; i.motivo = `${i.motivo}; − ${t} pela ${motivo}`; }
+      lista = lista.filter(i => i.n > 0);
+      marcar(r);
+    }
+  }
+  return lista;
 }
 
 // (2.47) local da ESTRUTURA escolhido pelo engenheiro (campo de instruções: "leve o rack para o CPD"): por grupo
@@ -503,6 +564,15 @@ function projetarDisciplinas(arquitetura, disciplinas0 = [], opcoes = {}) {
     if (!achou) avisosEscolha.push(`O local escolhido para ${chave.replace('|', ' do ')} ("${e.ambiente}"${pav ? `, ${pav}` : ''}) não existe nesta arquitetura — ficou o local calculado [CONFERIR].`);
     return achou;
   };
+  // (2.49) sala do equipamento central pela regra aprendida: o ambiente do tipo ensinado (técnica no térreo antes)
+  const usadas = new Map();
+  const salaAprendida = (grupo) => {
+    const r = crit.regras.find(x => x.modo === 'centro' && x.grupo === grupo);
+    if (!r) return null;
+    const sala = ambs.filter(a => a.tipo === r.tipo && a.area >= 2).sort((x, y) => ordemPav(x.pavimento) - ordemPav(y.pavimento) || prioridade(x) - prioridade(y) || y.area - x.area)[0] || null;
+    if (sala) usadas.set(r, (usadas.get(r) || 0) + 1);
+    return sala;
+  };
 
   // prumada: a escada/shaft/poço que se repete na MESMA posição do prédio (pavimentos alinhados) em mais pavimentos;
   // num pavimento sem ela, a circulação maior (ou o centro) — e a diferença entra no cabo como desvio horizontal
@@ -648,11 +718,12 @@ function projetarDisciplinas(arquitetura, disciplinas0 = [], opcoes = {}) {
       } else {
         // (2.47) sala escolhida pelo engenheiro para a estrutura do grupo, se existir
         const escolhida = salaEscolhida(D.grupo);
-        const sala = escolhida || salaCentro;
+        const aprendida = !escolhida && salaAprendida(D.grupo);
+        const sala = escolhida || aprendida || salaCentro;
         const [p0] = P.noPerimetro(sala.pol, 1, { recuo: 0.2, fase: FASE_CENTRO[D.grupo] ?? 0.5 });
         pos = p0 || { x: sala.c[0], y: sala.c[1] };
         pav = sala.pavimento;
-        onde = { nome: sala.nome, pavimento: pav, motivo: escolhida ? `equipamento central em "${sala.nome}" (${pav}): local escolhido pelo engenheiro` : `equipamento central na ${ROTULO_TIPO[sala.tipo]} "${sala.nome}" (${pav}): ${sala.tipo === 'tecnica' ? 'sala técnica de acesso restrito' : 'local com supervisão'} [CONFERIR]` };
+        onde = { nome: sala.nome, pavimento: pav, motivo: escolhida ? `equipamento central em "${sala.nome}" (${pav}): local escolhido pelo engenheiro` : aprendida ? `equipamento central em "${sala.nome}" (${pav}): regra aprendida das instruções do engenheiro (aprovada) — ${ROTULO_TIPO[sala.tipo]}` : `equipamento central na ${ROTULO_TIPO[sala.tipo]} "${sala.nome}" (${pav}): ${sala.tipo === 'tecnica' ? 'sala técnica de acesso restrito' : 'local com supervisão'} [CONFERIR]` };
       }
       central = { id: novoId(D.grupo === 'telecom' ? 'RK' : D.grupo === 'incendio' ? 'CI' : D.grupo === 'alarme' ? 'CA' : D.grupo.slice(0, 2).toUpperCase()), x: pos.x, y: pos.y, pavimento: pav, ambiente: onde.nome, simbolo: D.centro, rotulo: D.rotuloCentro };
       centrosPorGrupo[D.grupo] = central;
@@ -714,7 +785,7 @@ function projetarDisciplinas(arquitetura, disciplinas0 = [], opcoes = {}) {
       out.criterios.push(`${D.rotulo}: pontos e circuitos pelo cálculo da skill (${disc === 'eletrica' ? 'NBR 5410 9.5.2 — tomadas pelo perímetro/uso e ponto de luz pela área; sem TUEs (chuveiro, ar-condicionado): inclua no formulário' : 'método dos lúmens com painel LED 4.000 lm de referência e a iluminância da atividade (NBR ISO/CIE 8995-1)'}) [CONFERIR].`);
     } else {
       for (const a of ambs) {
-        for (const regra of D.regras(a, { ...ctx, pd: pdDe(a.pavimento) })) {
+        for (const regra of ajustarPelasRegras(D.regras(a, { ...ctx, pd: pdDe(a.pavimento) }), a, disc, crit.regras, usadas)) {
           const pts = posicoes(a.pol, regra.n, regra.regra).filter(p => p && Number.isFinite(p.x));
           for (const p of pts) {
             const pt = { x: r2(p.x), y: r2(p.y), simbolo: regra.simbolo, disciplina: disc, rotulo: regra.rotulo, ambiente: a.nome, pavimento: a.pavimento, motivo: regra.motivo, id: novoId(regra.simbolo.split('-').slice(-1)[0].slice(0, 3)) };
@@ -1036,6 +1107,7 @@ function projetarDisciplinas(arquitetura, disciplinas0 = [], opcoes = {}) {
     'Infraestrutura roteada por dentro das salas e pelos vãos de porta (atravessa parede só quando a volta seria muito maior — sala sem porta lida); cabos medidos por esse caminho + subidas, com ' + Math.round(folga * 100) + ' % de folga e as sobras no rack/central.',
     'Sem câmera em sanitário, dormitório e nas áreas da residência (privacidade/LGPD); sem detector em sanitário, área aberta e poço/shaft.',
   );
+  if (usadas.size) out.criterios.push(`Regras aprendidas das instruções do engenheiro (aprovadas pelo administrador): ${[...usadas].map(([r, n]) => `${textoDaRegra(r)} (${n} ${r.modo === 'centro' ? 'grupo' : 'ambiente(s)'})`).join('; ')}.`);
   out.criterios = out.criterios.filter(Boolean);
   // rótulo = o TIPO do componente (agrupa as quantidades e casa com serviço/material); o lugar vai à parte
   for (const p of out.pontos) {
@@ -1126,4 +1198,4 @@ function projetarSpda({ out, ambs, nomesPav, alinhado, desl, nivelDe, pdDe, entr
   out.resumo.push({ disciplina: 'spda', pavimento: base, itens });
 }
 
-module.exports = { projetarDisciplinas, tipoDoAmbiente, criteriosDe, ROTULO_TIPO, DISCIPLINAS, APELIDOS, paraTestes: { arvore, distanciasNaArvore, ehResidencial, malhaDoPavimento, rota } };
+module.exports = { projetarDisciplinas, tipoDoAmbiente, criteriosDe, regrasDe, textoDaRegra, ROTULO_TIPO, DISCIPLINAS, APELIDOS, paraTestes: { arvore, distanciasNaArvore, ehResidencial, malhaDoPavimento, rota } };

@@ -7,7 +7,7 @@ import DadosFiscais from '../DadosFiscais';
 import MinhaConta from '../conta/MinhaConta';
 import Auditoria from '../conta/Auditoria';
 import CanalRemoto from '../CanalRemoto';
-import Aprendizado from '../Aprendizado';
+import OQueOSistemaSabe from '../conhecimento/OQueOSistemaSabe';
 
 // Grupo "Cadastros e administração": clientes (todos), dados fiscais da
 // empresa para a NFS-e, usuários e integrações (rotinas automáticas, e-mail,
@@ -23,7 +23,9 @@ const ABAS = [
   { chave: 'canal', rotulo: 'Canal remoto', admin: true, render: () => <CanalRemoto /> },
   { chave: 'auditoria', rotulo: 'Auditoria', admin: true, render: () => <Auditoria /> },
   // 2.42: o que o sistema aprendeu das análises e das obras (antes era uma aba de Obras: /obras?aba=aprendizado redireciona)
-  { chave: 'conhecimento', rotulo: 'O que o sistema sabe', render: () => <Aprendizado /> },
+  // 2.49: por disciplina, com o que já sabe orçar (era a aba "O que já sabe orçar" de Propostas) e a fila de aprovação
+  //   (?aba=conhecimento&disciplina=cftv)
+  { chave: 'conhecimento', rotulo: 'O que o sistema sabe', render: () => <OQueOSistemaSabe /> },
   { chave: 'conta', rotulo: 'Minha conta', render: () => <MinhaConta /> },
 ];
 

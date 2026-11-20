@@ -1,10 +1,10 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import Concorrencia from './Concorrencia';
-import AprendizadoOrcamento from './AprendizadoOrcamento';
 import { getConcorrencia, getComparacaoConcorrente, getPropostas, vincularItemConcorrente, getAprendizadoOrcamento } from '../services/api';
 
-// Comparador de orçamentos da concorrência e "O que já sabe orçar" (06/11/2026). Dados SINTÉTICOS.
+// Comparador de orçamentos da concorrência (06/11/2026). Dados SINTÉTICOS. ("O que já sabe orçar" foi para a tela
+// "O que o sistema sabe" por disciplina na 2.49 — pages/conhecimento/OQueOSistemaSabe.test.js.)
 let mockParametros = new URLSearchParams('');
 const mockDefinirParametros = jest.fn((p) => { mockParametros = new URLSearchParams(p); });
 jest.mock('../services/api', () => ({
@@ -67,11 +67,3 @@ test('mostra o resumo, as recomendações e vincula item só do concorrente', as
   expect(vincularItemConcorrente).toHaveBeenCalledWith('9', 31, { sem_par: true });
 });
 
-test('o que já sabe orçar: autonomia e itens que acompanham por disciplina', async () => {
-  getAprendizadoOrcamento.mockResolvedValue({ data: [{ disciplina: 'cftv', nome: 'CFTV', propostas: 4, itensConhecidos: 12, servicosComPreco: 5, materiaisComPreco: 6, precosQueConfirmam: 3, autonomia: 'boa',
-    itensQueAcompanham: [{ descricao: 'Patch cord 1,5 m', unidade: 'un', servico: false, ocorrencias: 4, porPonto: 2, preco: 25 }] }] });
-  await act(async () => { raiz.render(<AprendizadoOrcamento />); });
-  expect(caixa.textContent).toContain('Orça sozinho');
-  expect(caixa.textContent).toContain('Patch cord 1,5 m');
-  expect(caixa.textContent).toContain('4 de 4');
-});

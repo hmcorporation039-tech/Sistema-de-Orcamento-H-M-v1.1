@@ -57,6 +57,15 @@ test('mostra o projeto sugerido por pavimento: componentes, ambiente a ambiente 
   expect(caixa.textContent).not.toContain('guarda de valores');
 });
 
+// 2.49: a regra aprendida das instruções que o projetista aplicou fica à vista (não só em "Critérios adotados")
+test('regra aprendida aplicada aparece no topo do projeto sugerido', () => {
+  const comRegra = { ...sugerido, criterios: [...sugerido.criterios, 'Regras aprendidas das instruções do engenheiro (aprovadas pelo administrador): espaço de reunião de pessoas: +2 câmera de CFTV (1 ambiente(s)).'] };
+  act(() => raiz.render(<ProjetoSugerido analise={{ dadosExtraidos: [{ arquivo: 'arq.dwg', projeto_sugerido: comRegra }] }} estiloCartao={{}} estiloTitulo={{}} />));
+  expect(caixa.querySelector('[data-testid="regras-aplicadas"]').textContent).toContain('+2 câmera de CFTV');
+  act(() => raiz.render(<ProjetoSugerido analise={{ dadosExtraidos: [{ arquivo: 'arq.dwg', projeto_sugerido: sugerido }] }} estiloCartao={{}} estiloTitulo={{}} />));
+  expect(caixa.querySelector('[data-testid="regras-aplicadas"]')).toBeNull();
+});
+
 test('sem projeto sugerido, o cartão não aparece', () => {
   act(() => raiz.render(<ProjetoSugerido analise={{ dadosExtraidos: [{ arquivo: 'arq.dwg' }] }} estiloCartao={{}} estiloTitulo={{}} />));
   expect(caixa.textContent).toBe('');

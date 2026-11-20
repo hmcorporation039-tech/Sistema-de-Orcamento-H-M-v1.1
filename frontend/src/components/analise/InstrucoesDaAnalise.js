@@ -91,6 +91,9 @@ export default function InstrucoesDaAnalise({ analise, onAtualizada }) {
       onAtualizada?.(r.data);
       toast.success(`Instrução aplicada — análise recalculada (${operacoes.length} ${operacoes.length === 1 ? 'mudança' : 'mudanças'}).`, { duration: 6000 });
       if (leitura.origem === 'ia' && leitura.termos?.length) toast('As palavras novas foram para aprovação: depois de aprovadas, o sistema entende sem IA.', { icon: '📚', duration: 8000 });
+      // (2.49) a correção repetida virou sugestão de regra do projetista (o administrador aprova em "O que o sistema sabe")
+      const regras = r.data?.instrucao?.regrasSugeridas || [];
+      if (regras.length) toast(`Você já fez essa correção antes — virou sugestão de regra do projetista: ${regras.map(x => x.texto.replace(/^Projetista de [^:]+:\s*/, '')).join('; ')}. Aprovada em "O que o sistema sabe", o projetista faz sozinho nas próximas elaborações.`, { icon: '🧠', duration: 12000 });
       setTexto(''); setLeitura(null);
       carregarHistorico();
     } catch (err) {

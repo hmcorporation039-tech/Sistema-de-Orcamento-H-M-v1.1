@@ -9,6 +9,9 @@ const { termosSignificativos } = require('../services/agentes/textoPedido');
 const adaptadorQuadros = require('../services/agentes/adaptadorQuadros');
 const suporte = require('../services/agentes/suporteClaude');
 const conhecimento = require('../services/conhecimento');
+const regrasProjetista = require('../services/instrucoes/regrasProjetista');
+const { componente } = require('../services/bibliotecaComponentes');
+const { DISCIPLINAS: DISCIPLINAS_PROJETO, nomeDaDisciplina } = require('../utils/disciplinasProjeto');
 
 const idValido = (v) => /^\d{1,10}$/.test(String(v)) && Number(v) >= 1 && Number(v) <= 2147483647;
 const ehAdmin = (req) => req.usuario?.role === 'admin';
@@ -90,7 +93,7 @@ async function avaliarPedido(req, res) {
 }
 
 async function listarSugestoes(req, res) {
-  const tipo = ['vocabulario', 'conhecimento', 'instrucao'].includes(req.query.tipo) ? req.query.tipo : null;
+  const tipo = ['vocabulario', 'conhecimento', 'instrucao', 'regra_projetista'].includes(req.query.tipo) ? req.query.tipo : null;
   const situacao = ['pendente', 'aprovada', 'recusada'].includes(req.query.situacao) ? req.query.situacao : 'pendente';
   const { rows } = await pool.query(
     `SELECT s.id, s.tipo, s.fonte, s.modo, s.agente, s.intencao, s.disciplina, s.termos, s.pergunta, s.resposta, s.situacao, s.vezes,
@@ -112,6 +115,8 @@ async function decidirSugestao(req, res) {
   if (s.tipo === 'vocabulario' && !ehAdmin(req)) return res.status(403).json({ erro: 'Só o administrador aprova regras do roteador.' });
   // (2.47) frase do campo de instruções: também só o administrador (passa a valer sem IA para todos)
   if (s.tipo === 'instrucao' && !ehAdmin(req)) return res.status(403).json({ erro: 'Só o administrador aprova frases do campo de instruções.' });
+  // (2.49) regra aprendida do projetista: só o administrador (muda o projeto de todos)
+  if (s.tipo === 'regra_projetista' && !ehAdmin(req)) return res.status(403).json({ erro: 'Só o administrador aprova regras do projetista.' });
   if (s.tipo === 'conhecimento' && !ehAdmin(req) && s.usuario_id !== req.usuario.id) return res.status(403).json({ erro: 'Só o administrador ou quem fez o pedido aprova este conhecimento.' });
   const resposta = typeof req.body?.resposta === 'string' && req.body.resposta.trim() ? req.body.resposta.trim().slice(0, 20000) : s.resposta;
   const pergunta = typeof req.body?.pergunta === 'string' && req.body.pergunta.trim() ? req.body.pergunta.trim().slice(0, 2000) : s.pergunta;
@@ -120,7 +125,36 @@ async function decidirSugestao(req, res) {
     `UPDATE agentes_sugestoes SET situacao = $2, resposta = $3, pergunta = $4, termos = $5, decidido_por = $6, decidido_em = NOW(), atualizado_em = NOW()
       WHERE id = $1 RETURNING *`, [s.id, situacao, resposta, pergunta, termos, req.usuario.id]);
   if (s.tipo === 'instrucao') require('../services/instrucoes/aprendidas').esquecerCache(); // a frase aprovada vale já
+  if (s.tipo === 'regra_projetista') regrasProjetista.esquecerCache(); // a regra vale já na próxima análise
   res.json(n);
+}
+
+// (2.49) "O que o sistema sabe" por disciplina: o que o projetista já faz sozinho (embutidas), as regras aprendidas das
+// instruções (pendentes, aprovadas e desativadas) e as frases que o campo de instruções entende. chave = a da disciplina
+// no resto da tela (services/mapaCad.chaveDoProjeto: rede → cabeamento).
+async function conhecimentoDisciplinas(req, res) {
+  let rows = [];
+  try {
+    ({ rows } = await pool.query(
+      `SELECT s.id, s.tipo, s.intencao, s.disciplina, s.termos, s.pergunta, s.resposta, s.situacao, s.vezes, s.criado_em, s.decidido_em, u.nome AS decidido_por_nome
+         FROM agentes_sugestoes s LEFT JOIN usuarios u ON u.id = s.decidido_por
+        WHERE s.tipo IN ('regra_projetista', 'instrucao') ORDER BY s.vezes DESC, s.id DESC LIMIT 500`));
+  } catch { /* tabela ainda não migrada */ }
+  // nome de cada disciplina pela chave da tela (rede e cabeamento são a mesma)
+  const nomes = {};
+  for (const d of DISCIPLINAS_PROJETO) { const k = regrasProjetista.chaveTela(d.chave); if (!nomes[k]) nomes[k] = nomeDaDisciplina(k) || d.nome; }
+  res.json({
+    nomes,
+    embutidas: regrasProjetista.EMBUTIDAS,
+    regras: rows.filter(r => r.tipo === 'regra_projetista').map(r => ({
+      id: r.id, chave: regrasProjetista.chaveTela(r.disciplina), texto: r.pergunta.replace(/^Projetista de [^:]+:\s*/, ''), detalhe: r.resposta,
+      situacao: r.situacao, vezes: r.vezes, decidido_em: r.decidido_em, decidido_por_nome: r.decidido_por_nome,
+    })),
+    frases: rows.filter(r => r.tipo === 'instrucao').map(r => ({
+      id: r.id, chave: regrasProjetista.chaveTela(r.disciplina || componente(r.intencao)?.disciplina), frase: Array.isArray(r.termos) ? String(r.termos[0] || '') : '',
+      componente: componente(r.intencao)?.nome || r.intencao, situacao: r.situacao, vezes: r.vezes,
+    })),
+  });
 }
 
 // Indicador de dependência de IA: por agente, execuções × pedidos de suporte ao Claude Max, por mês; e o roteador
@@ -148,4 +182,4 @@ async function indicadores(req, res) {
   res.json({ meses, porAgente, roteador: ped.rows, sugestoes: sug.rows });
 }
 
-module.exports = { listar, listarExecucoes, iniciar, ver, cancelar, consultarConhecimento, avaliarPedido, listarSugestoes, decidirSugestao, indicadores };
+module.exports = { listar, listarExecucoes, iniciar, ver, cancelar, consultarConhecimento, avaliarPedido, listarSugestoes, decidirSugestao, indicadores, conhecimentoDisciplinas };
