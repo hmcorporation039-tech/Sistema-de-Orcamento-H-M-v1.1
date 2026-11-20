@@ -15,6 +15,7 @@ const ITENS_REFERENCIA = [
   { codigo: 'cftv_ponto', descricao: 'Conectorização de ponto de câmera (RJ-45 + patch panel + teste)', unidade: 'pt', disciplina: 'cftv' },
   { codigo: 'cftv_camera_interna', descricao: 'Instalação/config. de câmera interna (dome)', unidade: 'un', disciplina: 'cftv' },
   { codigo: 'cftv_camera_externa', descricao: 'Instalação/config. de câmera externa (bullet)', unidade: 'un', disciplina: 'cftv' },
+  { codigo: 'cftv_camera_ptz', descricao: 'Instalação/config. de câmera PTZ (speed dome) — suporte, presets e alimentação PoE++', unidade: 'un', disciplina: 'cftv' },
   { codigo: 'antena_ponto', descricao: 'Conectorização de ponto de TV/antena (conector coaxial RG-6)', unidade: 'pt', disciplina: 'antena' },
   { codigo: 'cab_racks', descricao: 'Montagem e organização dos racks (patch panels, guias, PDU)', unidade: 'un', disciplina: 'cabeamento' },
   { codigo: 'cab_nobreak', descricao: 'Instalação de nobreaks + kit de ventilação', unidade: 'un', disciplina: 'cabeamento' },

@@ -31,6 +31,9 @@
 const { dentro, centroide } = require('./arquitetura');
 const P = require('./posicionamento');
 const INC = require('../../incendio/scripts/lib/calculo');
+const ACE = require('../../controle-acesso/scripts/lib/calculo');
+const TEL = require('../../telefonia/scripts/lib/calculo');
+const ELE = require('../eletrico/tabelas');
 const SPDA = require('../../spda/scripts/lib/tabelas');
 // elétrica e iluminação: o cálculo normativo da skill sobre a planta (carregado só quando pedido)
 let motorDasPlantas = null;
@@ -65,6 +68,41 @@ const ROTULO_TIPO = {
   assembleia: 'espaço de reunião de pessoas', escritorio: 'escritório/atendimento', circulacao: 'circulação', dormitorio: 'dormitório',
   servico: 'área de serviço', externo: 'área externa/aberta', estar: 'estar/jantar', sala: 'sala de uso geral', outro: 'outro',
 };
+// (2.50) ambientes que não servem para rack/central (o engenheiro pode escolher, mas o sistema avisa o porquê)
+const LOCAL_INADEQUADO = {
+  sanitario: 'sanitário/vestiário tem umidade e água',
+  cozinha: 'cozinha/copa tem umidade, vapor e calor',
+  servico: 'área de serviço tem água e umidade',
+  externo: 'área externa/garagem fica exposta a umidade, poeira e acesso de terceiros',
+  escada: 'escada/rampa é rota de fuga e não pode ter equipamento',
+  dormitorio: 'dormitório é de uso privado',
+  poco: 'poço/shaft não dá acesso para manutenção',
+};
+// (2.50) o que o aviso sugere no lugar, por grupo (vale para qualquer disciplina)
+const LOCAL_BOM = {
+  telecom: 'Prefira sala técnica, CPD ou depósito fechado, ventilado e de acesso restrito (NBR 14565, sala de equipamentos)',
+  telefonia: 'Prefira sala técnica ou depósito fechado e de acesso restrito, junto da entrada dos cabos da operadora',
+  incendio: 'Prefira a portaria/recepção (vigilância permanente) ou uma sala técnica junto da entrada, de fácil acesso aos bombeiros (NBR 17240)',
+  alarme: 'Prefira sala técnica ou depósito fechado, dentro da área protegida e fora da vista',
+  acesso: 'Prefira sala técnica ou o lado protegido das portas, em local de acesso restrito',
+  eletrica: 'Prefira sala técnica, depósito ou circulação, em parede de fácil acesso e longe de água (NBR 5410)',
+};
+// (2.50) o que fica no equipamento ÚNICO de cada grupo, quando o engenheiro pede "tudo num só"
+const TUDO_NO_CENTRO = {
+  incendio: 'todos os laços, acionadores e avisadores saem dela',
+  alarme: 'todos os sensores, teclados e a sirene ligam nela',
+  acesso: 'todas as portas (leitor, fechadura e botoeira) ligam nela',
+  telefonia: 'todos os ramais e o porteiro saem dele',
+};
+// (2.50) limite de cabo por ponto das disciplinas sem norma de 90 m — os valores são os das skills (não novos)
+const LIMITE_CABO = {
+  acesso: { m: ACE.LIMITE.wiegand, oque: 'leitor(es)', ref: 'limite prático do cabo de leitor Wiegand adotado pela skill de controle de acesso', saida: 'use leitor RS-485/OSDP ou ponha uma controladora mais perto dessas portas (no pavimento delas)' },
+  telefonia: { m: TEL.LIMITE_CCI, oque: 'ramal(is)', ref: 'alcance prático do ramal analógico em cabo CCI adotado pela skill de telefonia', saida: 'use ramal IP ou uma caixa de distribuição/armário no pavimento' },
+};
+// (2.50) queda de tensão máxima dos circuitos terminais — a mesma da skill elétrica (NBR 5410 6.2.7.2)
+const LIMITE_QUEDA = ELE.QUEDA.terminal;
+// "central única", "rack único"
+const unicoDe = (rotulo) => (/^(Central|Controladora)/.test(rotulo) ? 'única' : 'único');
 function tipoDoAmbiente(nome) {
   const n = sem(nome);
   for (const [t, re] of TIPOS) if (re.test(n)) return t;
@@ -162,13 +200,17 @@ function ajustarPelasRegras(itens, a, disc, regras, usadas) {
 // (2.47) local da ESTRUTURA escolhido pelo engenheiro (campo de instruções: "leve o rack para o CPD"): por grupo
 // (telecom, incendio, alarme, acesso, telefonia, antena) ou, para o QD de cada pavimento, "eletrica|<pavimento>" →
 // { ambiente, pavimento? }. A sala é procurada pelo nome; nome que não existe fica no local calculado, com aviso.
+// (2.50) <grupo>.unico = CENTRO ÚNICO pedido pelo engenheiro ("toda a infraestrutura sai de um rack no subsolo e todos
+// os NVRs nesse rack", "quadro único", "todas as centrais no subsolo"), em qualquer disciplina: sem racks de piso nem
+// secundários (telecom), sem QD por pavimento (elétrica); o que passar do limite (90 m, queda de tensão…) vira aviso.
 function centrosDe(v) {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
   const out = {};
   for (const [k, x] of Object.entries(v).slice(0, 40)) {
     const ambiente = String((x && typeof x === 'object' ? x.ambiente : x) || '').trim().slice(0, 120);
     const pavimento = x && typeof x === 'object' && x.pavimento ? String(x.pavimento).trim().slice(0, 80) : null;
-    if (/^[a-z_]+(\|.{1,80})?$/.test(k) && ambiente) out[k] = { ambiente, ...(pavimento ? { pavimento } : {}) };
+    const unico = !k.includes('|') && k !== 'antena' && x && typeof x === 'object' && x.unico === true;
+    if (/^[a-z_]+(\|.{1,80})?$/.test(k) && ambiente) out[k] = { ambiente, ...(pavimento ? { pavimento } : {}), ...(unico ? { unico: true } : {}) };
   }
   return out;
 }
@@ -177,9 +219,11 @@ function centrosDe(v) {
 // Cada regra devolve, para um ambiente, [{ simbolo, n, regra, rotulo, motivo }] (n = 0: nada). ctx = { crit, pd }.
 // CFTV (IEC 62676-4 — a quantidade é critério de projeto, não número de norma): acesso, circulação, espaço de reunião,
 // guarda de valores (secretaria, sacristia, tesouraria, CPD) e área externa. Nunca em sanitário, dormitório nem na
-// residência (privacidade — LGPD). Densidade escolhida pelo engenheiro (econômica × 0,6, padrão, reforçada × 1,5); PTZ
-// nos espaços muito grandes, como o projeto R04 da paróquia entregue pela H&M (18 fixas + 2 PTZ).
-function regrasCftv(a, { crit }) {
+// residência (privacidade — LGPD). Densidade escolhida pelo engenheiro (econômica × 0,6, padrão, reforçada × 1,5).
+// PTZ (2.50): só no espaço de reunião do TÉRREO, para a transmissão ao vivo (celebrações/eventos) — como no projeto
+// R04 da paróquia entregue pela H&M. Não é câmera de vigilância: nem nos outros pavimentos nem na área externa (a
+// análise #63 punha uma PTZ em cada espaço grande).
+function regrasCftv(a, { crit, pavTerreo }) {
   const f = crit.fatorCftv;
   const nq = (base, min, max) => Math.min(Math.max(min, Math.round(max * f)), Math.max(min, Math.round(base * f)));
   const q = (n, regra, motivo, externa = false) => (n > 0 ? [{ simbolo: 'HM-CFTV-CAMERA', n, regra, rotulo: externa ? `Câmera bullet externa IP67 — ${a.nome}` : `Câmera dome — ${a.nome}`, motivo, externa }] : []);
@@ -188,13 +232,12 @@ function regrasCftv(a, { crit }) {
   if (a.residencial) return [];
   switch (a.tipo) {
     case 'assembleia': return [...q(nq(Math.ceil(a.area / 200), 2, 6), 'cantos', `espaço de reunião de pessoas (${r2(a.area)} m²): visão geral e das entradas — 1 câmera a cada ~200 m², de 2 a 6${dens} [CONFERIR]`),
-      ...(a.area >= 400 ? ptz(`espaço de reunião de ${r2(a.area)} m²: PTZ para acompanhar o que as fixas não detalham [CONFERIR]`) : [])];
+      ...(a.area >= 400 && (!pavTerreo || a.pavimento === pavTerreo) ? ptz(`espaço de reunião de ${r2(a.area)} m² no térreo: PTZ para a transmissão ao vivo das celebrações/eventos — confirme com o cliente a saída de vídeo (HDMI/SDI/NDI) e o controle (joystick) [CONFERIR]`) : [])];
     case 'circulacao': return a.area < 8 ? [] : q(nq(Math.ceil(a.area / 150), 1, 4), a.area > 150 ? 'grade' : 'cantos', `circulação: passagem obrigatória de quem entra — 1 câmera a cada ~150 m², até 4${dens} [CONFERIR]`);
     case 'escritorio': return a.area < 6 ? [] : q(1, 'cantos', 'guarda de valores e atendimento ao público [CONFERIR]');
     case 'tecnica': return a.area < 3 ? [] : q(1, 'cantos', 'sala técnica (rack/central): acesso restrito');
-    case 'externo': return !crit.cftvExterno || a.area < 8 || /LAJE|COBERTURA/.test(sem(a.nome)) ? [] : [
-      ...q(nq(Math.ceil(a.area / 150), 1, 8), 'cantos', `área externa/aberta: perímetro e acesso — 1 câmera a cada ~150 m²${dens} [CONFERIR]`, true),
-      ...(a.area >= 600 ? ptz(`área externa de ${r2(a.area)} m²: PTZ no pátio/estacionamento [CONFERIR]`) : [])];
+    case 'externo': return !crit.cftvExterno || a.area < 8 || /LAJE|COBERTURA/.test(sem(a.nome)) ? [] :
+      q(nq(Math.ceil(a.area / 150), 1, 8), 'cantos', `área externa/aberta: perímetro e acesso — 1 câmera a cada ~150 m²${dens} [CONFERIR]`, true);
     case 'deposito': return /RESTRITO|VALOR|COFRE/.test(sem(a.nome)) || a.area >= 20 ? q(1, 'cantos', 'depósito restrito/grande: proteção patrimonial [CONFERIR]') : [];
     default: return [];
   }
@@ -690,6 +733,24 @@ function projetarDisciplinas(arquitetura, disciplinas0 = [], opcoes = {}) {
   const portaDe = (p) => ({ p, a: ambs.find(x => (p.ambientes || []).includes(x.nome)) });
   const portasFachada = portas.filter(p => p.externa && p.meio).map(portaDe).filter(e => e.a && !e.a.residencial && naFachada(e.p, e.a.pavimento));
   const entradaPrincipal = portasFachada.find(e => e.a.pavimento === salaCentro.pavimento && ['circulacao', 'escritorio'].includes(e.a.tipo)) || portasFachada.find(e => e.a.pavimento === salaCentro.pavimento) || null;
+  // (2.50) a entrada do PRÉDIO (para a central de incêndio): a do pavimento de acesso (térreo) quando o equipamento
+  // central está em outro pavimento
+  const entradaDoPredio = portasFachada.slice().sort((x, y) => ordemPav(x.a.pavimento) - ordemPav(y.a.pavimento) || (['circulacao', 'escritorio'].includes(y.a.tipo) - ['circulacao', 'escritorio'].includes(x.a.tipo)))[0] || null;
+  // o térreo (para a PTZ da transmissão ao vivo): o pavimento com esse nome, senão o da entrada, senão o primeiro
+  const pavTerreo = ordem.find(n => /T[ÉE]RREO/i.test(n)) || entradaDoPredio?.a.pavimento || ordem[0] || null;
+  // (2.50) central de incêndio sem local escolhido: junto da entrada do prédio (portaria/recepção, a circulação ou o
+  // escritório da entrada) — vigilância permanente e acesso dos bombeiros (NBR 17240); antes ia para a sala do rack
+  const salaDaEntrada = () => {
+    if (!entradaDoPredio || entradaDoPredio.a.pavimento === salaCentro.pavimento) return null;
+    const e = entradaDoPredio;
+    const doPav = ambs.filter(a => a.pavimento === e.a.pavimento && a.area >= 2 && !a.residencial && !LOCAL_INADEQUADO[a.tipo]);
+    const perto = (lista) => lista.sort((x, y) => manhattan(x.c, e.p.meio) - manhattan(y.c, e.p.meio))[0];
+    return doPav.find(a => /PORTARIA|RECEP|GUARITA|VIGILAN|SEGURANCA/.test(sem(a.nome)))
+      || (['circulacao', 'escritorio'].includes(e.a.tipo) ? e.a : null)
+      || perto(doPav.filter(a => ['circulacao', 'escritorio'].includes(a.tipo)))
+      || perto(doPav.filter(a => a.tipo === 'tecnica'))
+      || (LOCAL_INADEQUADO[e.a.tipo] ? null : e.a);
+  };
   // lado de dentro de uma porta em relação à sala a
   const ladoDe = (p, a, d = 0.35) => {
     const n = p.n || [0, 1];
@@ -701,8 +762,12 @@ function projetarDisciplinas(arquitetura, disciplinas0 = [], opcoes = {}) {
   for (const disc of disciplinas) {
     const D = DISCIPLINAS[disc];
     if (D.especial) continue;
-    const ctx = { crit };
+    const ctx = { crit, pavTerreo };
     const pontosDisc = [];
+    // (2.50) CENTRO ÚNICO pedido pelo engenheiro (campo de instruções), em qualquer disciplina: rack único (CFTV e rede,
+    // o mesmo rack), quadro único (elétrica e iluminação, o mesmo QD), central/controladora/DG único
+    const centroUnico = !!crit.centros?.[D.grupo]?.unico;
+    const rackUnico = D.grupo === 'telecom' && centroUnico;
 
     // ── equipamento central ──
     // por pavimento (QD de cada pavimento: elétrica/iluminação) ou um só por grupo (rack, central)
@@ -719,15 +784,26 @@ function projetarDisciplinas(arquitetura, disciplinas0 = [], opcoes = {}) {
         // (2.47) sala escolhida pelo engenheiro para a estrutura do grupo, se existir
         const escolhida = salaEscolhida(D.grupo);
         const aprendida = !escolhida && salaAprendida(D.grupo);
-        const sala = escolhida || aprendida || salaCentro;
+        const daEntrada = !escolhida && !aprendida && D.grupo === 'incendio' ? salaDaEntrada() : null;
+        const sala = escolhida || aprendida || daEntrada || salaCentro;
         const [p0] = P.noPerimetro(sala.pol, 1, { recuo: 0.2, fase: FASE_CENTRO[D.grupo] ?? 0.5 });
         pos = p0 || { x: sala.c[0], y: sala.c[1] };
         pav = sala.pavimento;
-        onde = { nome: sala.nome, pavimento: pav, motivo: escolhida ? `equipamento central em "${sala.nome}" (${pav}): local escolhido pelo engenheiro` : aprendida ? `equipamento central em "${sala.nome}" (${pav}): regra aprendida das instruções do engenheiro (aprovada) — ${ROTULO_TIPO[sala.tipo]}` : `equipamento central na ${ROTULO_TIPO[sala.tipo]} "${sala.nome}" (${pav}): ${sala.tipo === 'tecnica' ? 'sala técnica de acesso restrito' : 'local com supervisão'} [CONFERIR]` };
+        // (2.50) local escolhido que não serve para equipamento central: avisa (a escolha do engenheiro é mantida)
+        if (escolhida && LOCAL_INADEQUADO[sala.tipo]) out.avisos.push(`FORA DO ADEQUADO: ${D.rotuloCentro} em "${sala.nome}" (${pav}) — ${LOCAL_INADEQUADO[sala.tipo]}. ${LOCAL_BOM[D.grupo] || LOCAL_BOM.telecom} [CONFERIR].`);
+        const unico = centroUnico && escolhida;
+        onde = { nome: sala.nome, pavimento: pav, motivo: unico ? (D.grupo === 'telecom'
+          ? `RACK ÚNICO em "${sala.nome}" (${pav}), pedido pelo engenheiro: todos os NVRs, switches PoE e o distribuidor ficam aqui e toda a infraestrutura de CFTV/rede sai dele — sem racks de piso nem secundários`
+          : `${D.rotuloCentro} ${unicoDe(D.rotuloCentro).toUpperCase()} em "${sala.nome}" (${pav}), pedido pelo engenheiro: ${TUDO_NO_CENTRO[D.grupo] || 'tudo sai daqui'}`) : escolhida ? `equipamento central em "${sala.nome}" (${pav}): local escolhido pelo engenheiro` : daEntrada ? `central de incêndio em "${sala.nome}" (${pav}), junto da entrada principal: vigilância permanente e acesso dos bombeiros (NBR 17240) [CONFERIR]` : aprendida ? `equipamento central em "${sala.nome}" (${pav}): regra aprendida das instruções do engenheiro (aprovada) — ${ROTULO_TIPO[sala.tipo]}` : `equipamento central na ${ROTULO_TIPO[sala.tipo]} "${sala.nome}" (${pav}): ${sala.tipo === 'tecnica' ? 'sala técnica de acesso restrito' : 'local com supervisão'} [CONFERIR]` };
       }
       central = { id: novoId(D.grupo === 'telecom' ? 'RK' : D.grupo === 'incendio' ? 'CI' : D.grupo === 'alarme' ? 'CA' : D.grupo.slice(0, 2).toUpperCase()), x: pos.x, y: pos.y, pavimento: pav, ambiente: onde.nome, simbolo: D.centro, rotulo: D.rotuloCentro };
       centrosPorGrupo[D.grupo] = central;
       out.pontos.push({ x: r2(central.x), y: r2(central.y), simbolo: D.centro, disciplina: disc, rotulo: `${D.rotuloCentro} — ${onde.nome}`, ambiente: onde.nome, pavimento: pav, motivo: onde.motivo, id: central.id, central: true });
+      // (2.50) central de incêndio fora do pavimento da entrada principal: longe da vigilância e de quem chega (bombeiros)
+      if (D.grupo === 'incendio' && entradaDoPredio && entradaDoPredio.a.pavimento !== pav) out.avisos.push(`FORA DO ADEQUADO: ${D.rotuloCentro} no ${pav}, fora do pavimento da entrada principal (${entradaDoPredio.a.pavimento}) — a central fica onde há vigilância permanente e os bombeiros chegam primeiro (NBR 17240). Mantenha-a aí só com um painel repetidor na portaria/entrada, ou leve-a para lá [CONFERIR].`);
+      // antena: a escolha de local não vale (a antena vai na cobertura) — diz em vez de ignorar calado
+      if (D.centroNoTopo && crit.centros?.[D.grupo]) out.avisos.push(`${D.rotulo}: o local pedido ("${crit.centros[D.grupo].ambiente}") não foi aplicado — a antena fica na cobertura e o amplificador junto da prumada do ${pav} (descida mais curta) [CONFERIR].`);
+      if (centroUnico && D.grupo !== 'telecom') out.criterios.push(`${D.rotuloCentro} ${unicoDe(D.rotuloCentro)} em "${central.ambiente}" (${central.pavimento}), como pedido pelo engenheiro: ${TUDO_NO_CENTRO[D.grupo] || 'tudo sai dele'}.`);
     }
 
     // ── componentes ──
@@ -746,7 +822,8 @@ function projetarDisciplinas(arquitetura, disciplinas0 = [], opcoes = {}) {
         const dispositivos = r.dispositivos.filter(d => !(disc === 'eletrica' && disciplinas.includes('iluminacao') && /PONTO-LUZ|INTERRUPTOR/.test(d.simbolo)));
         const qd = dispositivos.find(d => d.simbolo === 'HM-ELE-QUADRO');
         // QD do pavimento (um por pavimento para elétrica e iluminação juntas)
-        const chaveQd = `${D.grupo}|${nome}`;
+        // (2.50) QUADRO ÚNICO pedido pelo engenheiro: um QD só para todos os pavimentos (a queda de tensão é conferida)
+        const chaveQd = centroUnico ? `${D.grupo}|único` : `${D.grupo}|${nome}`;
         if (!centrosPorGrupo[chaveQd]) {
           const pr = prumada[nome];
           // QD fora de sanitário, dormitório, área externa e poço (o cálculo da skill pode pô-lo no banheiro): vai para a
@@ -756,17 +833,23 @@ function projetarDisciplinas(arquitetura, disciplinas0 = [], opcoes = {}) {
           let amb = qd?.ambiente || pr.ambiente || nome;
           let mudou = false;
           // (2.47) sala do QD escolhida pelo engenheiro para este pavimento
-          const escolhidaQd = salaEscolhida(`${D.grupo}|${nome}`, nome);
+          const escolhidaQd = centroUnico ? salaEscolhida(D.grupo) : salaEscolhida(`${D.grupo}|${nome}`, nome);
+          let pavQd = nome;
           if (escolhidaQd) {
             const [p0] = P.noPerimetro(escolhidaQd.pol, 1, { recuo: 0.15, fase: 0.6 });
-            pos = p0 || { x: escolhidaQd.c[0], y: escolhidaQd.c[1] }; amb = escolhidaQd.nome; mudou = 'escolha';
+            pos = p0 || { x: escolhidaQd.c[0], y: escolhidaQd.c[1] }; amb = escolhidaQd.nome; mudou = 'escolha'; pavQd = escolhidaQd.pavimento;
+            if (LOCAL_INADEQUADO[escolhidaQd.tipo]) out.avisos.push(`FORA DO ADEQUADO: Quadro de distribuição (QD) em "${amb}" (${pavQd}) — ${LOCAL_INADEQUADO[escolhidaQd.tipo]}. ${LOCAL_BOM.eletrica} [CONFERIR].`);
           } else if (ruim(amb)) {
             const boa = [...doPav.filter(a => a.tipo === 'tecnica'), ...doPav.filter(a => a.tipo === 'deposito'), ...doPav.filter(a => a.tipo === 'circulacao').sort((x, y) => y.area - x.area), ...doPav.filter(a => !ruim(a.nome))][0];
             if (boa) { const [p0] = P.noPerimetro(boa.pol, 1, { recuo: 0.15, fase: 0.6 }); pos = p0 || { x: boa.c[0], y: boa.c[1] }; mudou = amb; amb = boa.nome; }
           }
-          const c = { id: novoId('QD'), x: pos.x, y: pos.y, pavimento: nome, ambiente: amb, simbolo: 'HM-ELE-QUADRO', rotulo: 'Quadro de distribuição (QD)' };
+          const c = { id: novoId('QD'), x: pos.x, y: pos.y, pavimento: pavQd, ambiente: amb, simbolo: 'HM-ELE-QUADRO', rotulo: 'Quadro de distribuição (QD)' };
           centrosPorGrupo[chaveQd] = c;
-          const q = { x: r2(c.x), y: r2(c.y), simbolo: 'HM-ELE-QUADRO', disciplina: disc, rotulo: `Quadro de distribuição (QD) — ${amb}`, ambiente: amb, pavimento: nome, motivo: mudou === 'escolha' ? `QD do ${nome} em "${amb}": local escolhido pelo engenheiro` : `QD do ${nome}: circuitos dos ambientes do pavimento (${mudou ? `tirado de "${mudou}" — quadro não vai em sanitário/dormitório` : 'posição pelo cálculo da skill elétrica'}) [CONFERIR]`, id: c.id, central: true, altura_m: 1.5 };
+          const motivoQd = centroUnico && mudou === 'escolha'
+            ? `QUADRO ÚNICO em "${amb}" (${pavQd}), pedido pelo engenheiro: todos os circuitos de todos os pavimentos saem dele — sem QD por pavimento (a queda de tensão de cada circuito é conferida)`
+            : mudou === 'escolha' ? `QD do ${nome} em "${amb}": local escolhido pelo engenheiro` : `QD do ${nome}: circuitos dos ambientes do pavimento (${mudou ? `tirado de "${mudou}" — quadro não vai em sanitário/dormitório` : 'posição pelo cálculo da skill elétrica'}) [CONFERIR]`;
+          if (centroUnico) out.criterios.push(`Quadro único em "${amb}" (${pavQd}), como pedido pelo engenheiro: todos os circuitos saem dele, sem QD por pavimento; seção de cada circuito conferida pela queda de tensão no comprimento real (NBR 5410 6.2.7).`);
+          const q = { x: r2(c.x), y: r2(c.y), simbolo: 'HM-ELE-QUADRO', disciplina: disc, rotulo: `Quadro de distribuição (QD) — ${amb}`, ambiente: amb, pavimento: pavQd, motivo: motivoQd, id: c.id, central: true, altura_m: 1.5 };
           afastar(q); c.x = q.x; c.y = q.y;
           out.pontos.push(q);
         }
@@ -955,8 +1038,9 @@ function projetarDisciplinas(arquitetura, disciplinas0 = [], opcoes = {}) {
       const caboDe = (p) => ((Number.isFinite(naArvoreDe.get(p)) ? naArvoreDe.get(p) : 0) + vertical + naCentral + Math.abs(descidaDe(p))) * (1 + folga) + (D.grupo === 'telecom' ? 3 : 1);
       // NBR 14565 (canal horizontal ≤ 90 m): pavimento cujo cabo passaria de 90 m até o rack principal ganha um RACK DE
       // PISO na prumada (distribuidor secundário, um para CFTV e rede), ligado ao principal por backbone óptico
+      // (2.50) RACK ÚNICO pedido pelo engenheiro: nada de rack de piso nem secundário (o que passar de 90 m vira aviso)
       const chavePiso = `telecom|piso|${nome}`;
-      if (D.grupo === 'telecom' && !ehDaCentral && (centrosPorGrupo[chavePiso] || daArvore.some(p => caboDe(p) > 90))) {
+      if (D.grupo === 'telecom' && !rackUnico && !ehDaCentral && (centrosPorGrupo[chavePiso] || daArvore.some(p => caboDe(p) > 90))) {
         if (!centrosPorGrupo[chavePiso]) {
           const rp = { id: novoId('RK'), x: pr.x + 0.6, y: pr.y, pavimento: nome, ambiente: pr.ambiente || nome };
           centrosPorGrupo[chavePiso] = rp;
@@ -971,7 +1055,7 @@ function projetarDisciplinas(arquitetura, disciplinas0 = [], opcoes = {}) {
       daArvore.forEach((p) => { p.cabo_m = Math.round(caboDe(p) * 10) / 10; });
       // ainda passa de 90 m (salão longe do rack no mesmo pavimento): rack SECUNDÁRIO na sala técnica/depósito/
       // circulação mais perto desses pontos; cada ponto vai ao rack mais perto pelo caminho
-      if (D.grupo === 'telecom' && daArvore.some(p => p.cabo_m > 90)) {
+      if (D.grupo === 'telecom' && !rackUnico && daArvore.some(p => p.cabo_m > 90)) {
         const chaveSec = `telecom|sec|${nome}`;
         let rs = centrosPorGrupo[chaveSec];
         if (!rs) {
@@ -1000,6 +1084,7 @@ function projetarDisciplinas(arquitetura, disciplinas0 = [], opcoes = {}) {
     // × 3 condutores (F + N + PE), na seção do circuito calculada pela skill
     if (D.porPavimento) {
       const porSecao = new Map();
+      const quedas = { aumentadas: [], fora: [] };
       for (const nome of nomesPav) {
         const cen = centraisPav[nome];
         if (!cen) continue;
@@ -1007,23 +1092,53 @@ function projetarDisciplinas(arquitetura, disciplinas0 = [], opcoes = {}) {
         const pd = pdDe(nome);
         const grupos = new Map();
         for (const p of pontosDisc.filter(q => q.pavimento === nome && !q.central)) { const k = p.circuito || `amb:${p.ambiente}`; (grupos.get(k) || grupos.set(k, []).get(k)).push(p); }
+        // (2.50) QD em outro pavimento (quadro único): o circuito sobe/desce pela prumada até ele
+        const outroPav = cen.pavimento !== nome && prumada[nome] && prumada[cen.pavimento];
+        const ateQd = outroPav ? subida(nome, cen.pavimento) + desvio(nome, cen.pavimento) + rota(malhaDe(cen.pavimento, true), [prumada[cen.pavimento].x, prumada[cen.pavimento].y], [cen.x, cen.y]).comp : 0;
         for (const [k, pts] of grupos) {
           const circ = motores[disc].circuitos.get(`${nome}|${k}`);
-          const secao = circ?.secao_mm2 || (/ILU|LUZ|INTERRUPTOR|COMANDO/.test(pts[0].simbolo) ? 1.5 : 2.5);
-          let atual = [cen.x, cen.y], total = 0;
+          let secao = circ?.secao_mm2 || (/ILU|LUZ|INTERRUPTOR|COMANDO/.test(pts[0].simbolo) ? 1.5 : 2.5);
+          let atual = outroPav ? [prumada[nome].x, prumada[nome].y] : [cen.x, cen.y], total = ateQd;
           const resta = pts.slice();
+          // comprimento EQUIVALENTE para a queda de tensão: até o 1º ponto passa a corrente toda; cada trecho seguinte
+          // leva só a dos pontos que ainda faltam (carga dividida igualmente entre os pontos)
+          let equivalente = ateQd + 1.6;
           while (resta.length) {
             let j = 0;
             resta.forEach((p, i) => { if (manhattan(atual, [p.x, p.y]) < manhattan(atual, [resta[j].x, resta[j].y])) j = i; });
+            const fracao = resta.length / pts.length;
             const p = resta.splice(j, 1)[0];
-            total += rota(m, atual, [p.x, p.y]).comp + (pd - (p.altura_m ?? pd));
+            const trecho = rota(m, atual, [p.x, p.y]).comp + (pd - (p.altura_m ?? pd));
+            total += trecho;
+            equivalente += trecho * fracao;
             atual = [p.x, p.y];
           }
           const comp = Math.round((total + 1.6) * (1 + folga) * 10) / 10;
+          // (2.50) queda de tensão no comprimento REAL (a skill dimensiona com o comprimento padrão): ΔV é proporcional
+          // a L·I, então a queda da skill × L equivalente ÷ L da skill (a carga distribuída pelos pontos do circuito).
+          // Acima do limite (NBR 5410 6.2.7.2, o da skill): a menor seção que atende, até 10 mm²; senão, FORA DA NORMA
+          // (precisa de QD mais perto)
+          const qSkill = Number(circ?.queda_pct), lSkill = Number(circ?.comprimento_m);
+          if (qSkill > 0 && lSkill > 0) {
+            const q = qSkill * (equivalente * (1 + folga)) / lSkill * (circ.secao_mm2 / secao);
+            if (q > LIMITE_QUEDA) {
+              const nova = ELE.SECOES.find(s => s > secao && s <= 10 && q * secao / s <= LIMITE_QUEDA);
+              const item = { k, nome, comp, de: secao, q, ambientes: [...new Set(pts.map(p => p.ambiente))] };
+              if (nova) { item.para = nova; item.qNova = q * secao / nova; secao = nova; quedas.aumentadas.push(item); } else quedas.fora.push(item);
+            }
+          }
           for (const p of pts) p.cabo_m = p.cabo_m || null;
           cabos.push({ disciplina: disc, ponto: `circuito ${k} (${nome})`, descricao: `Circuito ${k} — ${pts.length} ponto(s)`, comprimento_m: comp, secao_mm2: secao });
           porSecao.set(secao, (porSecao.get(secao) || 0) + comp * 3);
         }
+      }
+      const pct = (v) => `${br(Math.round(v * 10) / 10)} %`;
+      const mm = (s) => `${String(s).replace('.', ',')} mm²`;
+      const qdUnico = centroUnico ? Object.values(centraisPav)[0] : null;
+      if (quedas.aumentadas.length) out.avisos.push(`${D.rotulo}: ${quedas.aumentadas.length} circuito(s) com a seção aumentada pela queda de tensão no comprimento real${qdUnico ? ` até o quadro único em "${qdUnico.ambiente}" (${qdUnico.pavimento})` : ''} (NBR 5410 6.2.7.2, até ${LIMITE_QUEDA} %): ${quedas.aumentadas.slice(0, 6).map(i => `${i.k} (${i.nome}, ${br(Math.round(i.comp))} m) ${mm(i.de)} → ${mm(i.para)}`).join('; ')}${quedas.aumentadas.length > 6 ? '…' : ''} [CONFERIR].`);
+      if (quedas.fora.length) {
+        const maior = quedas.fora.reduce((m, i) => (i.q > m.q ? i : m));
+        out.avisos.push(`FORA DA NORMA — ${D.rotulo}: ${qdUnico ? `com o quadro único em "${qdUnico.ambiente}" (${qdUnico.pavimento}), ` : ''}${quedas.fora.length} circuito(s) passam de ${LIMITE_QUEDA} % de queda de tensão mesmo com 10 mm² (o maior com ${pct(maior.q)} com ${mm(maior.de)} — ${pct(maior.q * maior.de / 10)} com 10 mm² — em ${br(Math.round(maior.comp))} m de cabo: ${maior.ambientes.slice(0, 3).join(', ')}, ${maior.nome}). A NBR 5410 (6.2.7.2) limita a queda nos circuitos terminais: ${qdUnico ? 'ponha um QD nos pavimentos mais longe (alimentado pelo quadro único) ou divida esses circuitos' : 'divida esses circuitos ou ponha um QD mais perto dessas cargas'} [CONFERIR].`);
       }
       for (const [secao, metros] of [...porSecao].sort((a, b) => a[0] - b[0])) {
         out.metragens.push({ disciplina: disc, descricao: `Cabo de cobre flexível ${String(secao).replace('.', ',')} mm² 450/750 V (F + N + PE dos circuitos — seção pela skill)`, metros: Math.round(metros * 10) / 10, cabo: true });
@@ -1083,7 +1198,30 @@ function projetarDisciplinas(arquitetura, disciplinas0 = [], opcoes = {}) {
     // NBR 14565: canal horizontal ≤ 90 m (cabo permanente)
     if (D.grupo === 'telecom') {
       const longos = cabos.filter(c => c.comprimento_m > 90);
-      if (longos.length) out.avisos.push(`${D.rotulo}: ${longos.length} cabo(s) passam de 90 m até o rack (NBR 14565, canal horizontal) — preveja um distribuidor de piso/rack secundário no pavimento mais longe [CONFERIR].`);
+      if (longos.length && rackUnico) {
+        // (2.50) o engenheiro pediu UM rack para tudo: o sistema obedece, mas diz o que fica fora da norma e a saída
+        const doCabo = (c) => out.pontos.find(p => p.id === c.ponto) || {};
+        const ambs90 = [...new Set(longos.map(c => { const p = doCabo(c); return p.ambiente ? `${p.ambiente}${p.pavimento ? ` (${p.pavimento})` : ''}` : null; }).filter(Boolean))];
+        const maior = Math.max(...longos.map(c => c.comprimento_m));
+        out.avisos.push(`FORA DA NORMA — ${D.rotulo}: com o rack único em "${central.ambiente}" (${central.pavimento}), ${longos.length} cabo(s) passam de 90 m (o maior com ${br(Math.round(maior))} m) — ${ambs90.slice(0, 6).join(', ')}${ambs90.length > 6 ? '…' : ''}. A NBR 14565 limita o cabo horizontal a 90 m (canal de 100 m, que é também o alcance do Ethernet/PoE): esses pontos podem não funcionar. Para manter o rack único${disc === 'cftv' ? ' com todos os NVRs' : ''}: leve fibra óptica até esses pavimentos e ponha só um switch${disc === 'cftv' ? ' PoE' : ''} remoto (caixa ou mini-rack)${disc === 'cftv' ? ', ou use extensor PoE' : ''} [CONFERIR].`);
+      } else if (longos.length) out.avisos.push(`${D.rotulo}: ${longos.length} cabo(s) passam de 90 m até o rack (NBR 14565, canal horizontal) — preveja um distribuidor de piso/rack secundário no pavimento mais longe [CONFERIR].`);
+    }
+    // (2.50) as outras disciplinas com limite de cabo por ponto (o da skill): avisa o que passar, com a saída
+    const lim = LIMITE_CABO[D.grupo];
+    if (lim && central) {
+      const longos = cabos.filter(c => c.comprimento_m > lim.m);
+      if (longos.length) {
+        const doCabo = (c) => out.pontos.find(p => p.id === c.ponto) || pontosDisc.find(p => p.id === c.ponto) || {};
+        const onde = [...new Set(longos.map(c => { const p = doCabo(c); return p.ambiente ? `${p.ambiente}${p.pavimento ? ` (${p.pavimento})` : ''}` : null; }).filter(Boolean))];
+        const maior = Math.max(...longos.map(c => c.comprimento_m));
+        out.avisos.push(`FORA DO ADEQUADO — ${D.rotulo}: ${centroUnico ? `com ${D.rotuloCentro.toLowerCase()} ${unicoDe(D.rotuloCentro)} em "${central.ambiente}" (${central.pavimento}), ` : ''}${longos.length} ${lim.oque} a mais de ${lim.m} m (o maior com ${br(Math.round(maior))} m) — ${onde.slice(0, 6).join(', ')}${onde.length > 6 ? '…' : ''}. Passa do ${lim.ref}: ${lim.saida} [CONFERIR com o fabricante].`);
+      }
+    }
+    // (2.50) onde ficam os NVRs e os switches PoE. Canais, discos e portas são dimensionados pela skill de CFTV no
+    // orçamento (skills/cftv/scripts/lib/calculo.js, com reserva) — aqui não, para não haver dois números diferentes
+    if (disc === 'cftv') {
+      const nCam = out.pontos.filter(p => p.disciplina === 'cftv' && p.simbolo === 'HM-CFTV-CAMERA').reduce((s, p) => s + (Number(p.n) || 1), 0);
+      if (nCam > 0) out.criterios.push(`Gravação: ${nCam} câmera(s) — NVR(s) e switches PoE ${rackUnico ? `todos no rack único em "${central.ambiente}" (${central.pavimento}), como pedido` : 'no rack principal'}; canais, discos e portas PoE dimensionados pela skill de CFTV no orçamento.`);
     }
     // resumo por pavimento
     for (const nome of nomesPav) {
@@ -1102,7 +1240,7 @@ function projetarDisciplinas(arquitetura, disciplinas0 = [], opcoes = {}) {
     crit.peDireito ? `Pé-direito informado: ${br(crit.peDireito)} m em todos os pavimentos.`
       : pdLidos.length ? `Pé-direito de cada pavimento pela diferença entre os níveis lidos, menos ${br(0.2)} m de laje/forro adotados [CONFERIR]: ${nomesPav.map(n => `${n} ${br(pdDe(n))} m`).join('; ')}.`
         : `Pé-direito adotado ${br(peDireito0)} m [CONFERIR].`,
-    disciplinas.includes('cftv') ? `Câmeras a ${nomesPav.map(n => `${br(alturaCamera(n))} m`).filter((v, i, l) => l.indexOf(v) === i).join(' / ')} (pé-direito − 0,30 m, entre 2,40 e 3,50 m como no projeto R04 da H&M); densidade ${ROTULO_DENSIDADE[crit.densidadeCftv]}${crit.cftvExterno ? '' : ', sem câmeras externas'}${crit.ptz ? ', PTZ nos espaços com 400 m² ou mais (externos com 600 m² ou mais)' : ', sem PTZ'}.` : '',
+    disciplinas.includes('cftv') ? `Câmeras a ${nomesPav.map(n => `${br(alturaCamera(n))} m`).filter((v, i, l) => l.indexOf(v) === i).join(' / ')} (pé-direito − 0,30 m, entre 2,40 e 3,50 m como no projeto R04 da H&M); densidade ${ROTULO_DENSIDADE[crit.densidadeCftv]}${crit.cftvExterno ? '' : ', sem câmeras externas'}${crit.ptz ? ', PTZ só no espaço de reunião do térreo (400 m² ou mais), para a transmissão ao vivo' : ', sem PTZ'}.` : '',
     disciplinas.includes('incendio') ? `Detecção: cobertura ${crit.incendio === 'rotas' ? 'só de rotas de fuga e áreas de risco [CONFERIR com a IT do Corpo de Bombeiros]' : 'total (todo ambiente fechado)'}.` : '',
     'Infraestrutura roteada por dentro das salas e pelos vãos de porta (atravessa parede só quando a volta seria muito maior — sala sem porta lida); cabos medidos por esse caminho + subidas, com ' + Math.round(folga * 100) + ' % de folga e as sobras no rack/central.',
     'Sem câmera em sanitário, dormitório e nas áreas da residência (privacidade/LGPD); sem detector em sanitário, área aberta e poço/shaft.',

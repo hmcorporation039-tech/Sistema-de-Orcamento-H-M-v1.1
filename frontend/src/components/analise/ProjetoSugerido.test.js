@@ -66,6 +66,20 @@ test('regra aprendida aplicada aparece no topo do projeto sugerido', () => {
   expect(caixa.querySelector('[data-testid="regras-aplicadas"]')).toBeNull();
 });
 
+// 2.50: o que ficou fora da norma (rack único com cabo > 90 m) ou num local inadequado vem em cima, em destaque
+test('fora da norma e local inadequado aparecem em destaque no topo, separados dos avisos comuns', () => {
+  const fora = { ...sugerido, avisos: [...sugerido.avisos, 'FORA DA NORMA — CFTV: com o rack único em "CPD" (Subsolo), 3 cabo(s) passam de 90 m [CONFERIR].', 'FORA DO ADEQUADO: Rack em "GARAGEM" (Subsolo) [CONFERIR].'] };
+  act(() => raiz.render(<ProjetoSugerido analise={{ dadosExtraidos: [{ arquivo: 'arq.dwg', projeto_sugerido: fora }] }} estiloCartao={{}} estiloTitulo={{}} />));
+  const caixaFora = caixa.querySelector('[data-testid="fora-da-norma"]');
+  expect(caixaFora.getAttribute('role')).toBe('alert');
+  expect(caixaFora.textContent).toContain('3 cabo(s) passam de 90 m');
+  expect(caixaFora.textContent).toContain('GARAGEM');
+  expect(caixaFora.textContent).not.toContain('1 cabo passa de 90 m');
+  expect(caixa.textContent.match(/rack único em/g).length).toBe(1); // não repete embaixo
+  act(() => raiz.render(<ProjetoSugerido analise={{ dadosExtraidos: [{ arquivo: 'arq.dwg', projeto_sugerido: sugerido }] }} estiloCartao={{}} estiloTitulo={{}} />));
+  expect(caixa.querySelector('[data-testid="fora-da-norma"]')).toBeNull();
+});
+
 test('sem projeto sugerido, o cartão não aparece', () => {
   act(() => raiz.render(<ProjetoSugerido analise={{ dadosExtraidos: [{ arquivo: 'arq.dwg' }] }} estiloCartao={{}} estiloTitulo={{}} />));
   expect(caixa.textContent).toBe('');

@@ -162,7 +162,7 @@ const esquecerCache = () => { cache = { em: 0, regras: null }; };
 const EMBUTIDAS = {
   cftv: [
     'Câmera em acesso, circulação, espaço de reunião, guarda de valores (secretaria, CPD) e área externa — 1 a cada ~150–200 m².',
-    'PTZ nos espaços de 400 m² ou mais (externos com 600 m² ou mais).',
+    'PTZ só no espaço de reunião do térreo (400 m² ou mais), para a transmissão ao vivo — não nos outros pavimentos nem na área externa.',
     'Nunca em sanitário, dormitório nem na residência (privacidade/LGPD).',
   ],
   cabeamento: [

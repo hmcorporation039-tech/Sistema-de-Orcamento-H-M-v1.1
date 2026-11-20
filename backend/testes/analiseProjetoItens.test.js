@@ -428,8 +428,10 @@ caso('20/11: câmeras contadas viram instalação interna × externa (e o suport
   ] }]];
   const s = servicos(an, v, ['cftv']);
   assert.strictEqual(s.cftv_ponto.quantidade, 49);
-  assert.strictEqual(s.cftv_camera_interna.quantidade, 47);
+  // a PTZ tem instalação própria (análise #63: as 2 PTZ iam como dome)
+  assert.strictEqual(s.cftv_camera_interna.quantidade, 45);
   assert.strictEqual(s.cftv_camera_externa.quantidade, 2);
+  assert.strictEqual(s.cftv_camera_ptz.quantidade, 2);
   const cont = I.contagemDoDesenho(an, v);
   assert.strictEqual(I.montarMateriaisInstalacaoPadrao(an, ['cftv'], cont).find(m => /bullet/.test(m.descricao)).quantidade, 2);
 });

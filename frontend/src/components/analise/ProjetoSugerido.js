@@ -26,6 +26,8 @@ const conferir = { color: '#e0a030' };
 const br = (v, c = 1) => (v == null || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: c }));
 const ordemDoTexto = (a, b) => String(a).localeCompare(String(b), 'pt-BR', { numeric: true });
 const qtd = (p) => Number(p.n) || 1;
+// (2.50) aviso de algo fora da norma ou num local inadequado (o projetista começa o texto assim)
+export const ehForaDaNorma = (a) => /^FORA D[AO] (NORMA|ADEQUADO)/.test(String(a || ''));
 const botaoLink = { background: 'none', border: 'none', color: '#c9a227', cursor: 'pointer', fontSize: 12, fontWeight: 700, padding: 0, display: 'inline-flex', alignItems: 'center', gap: 4 };
 
 function marcarConferir(texto) {
@@ -86,6 +88,12 @@ function Sugerido({ arquivo, s, analiseId, onRegerar }) {
       {(s.criterios || []).filter(c => /^Regras aprendidas/.test(c)).map((c, i) => (
         <div key={i} style={{ fontSize: 12.5, color: '#8ab4f8', margin: '6px 0' }} data-testid="regras-aplicadas">🧠 {c}</div>
       ))}
+      {/* 2.50: o que ficou FORA DA NORMA ou num local inadequado (ex.: rack único com cabo > 90 m) vem em cima, em destaque */}
+      {(s.avisos || []).filter(ehForaDaNorma).length > 0 && (
+        <div role="alert" data-testid="fora-da-norma" style={{ border: '1px solid #7a2e2e', background: '#1f1111', borderRadius: 8, padding: '8px 10px', margin: '8px 0' }}>
+          {(s.avisos || []).filter(ehForaDaNorma).map((a, i) => <div key={i} style={{ fontSize: 12.5, color: '#f2a5a5', padding: '3px 0' }}>⛔ {marcarConferir(a)}</div>)}
+        </div>
+      )}
       {pavimentos.length > 1 && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '10px 0' }} role="tablist">
           {pavimentos.map(p => (
@@ -154,7 +162,7 @@ function Sugerido({ arquivo, s, analiseId, onRegerar }) {
 
       {(s.avisos || []).length > 0 && (
         <div style={{ marginTop: 10 }}>
-          {(s.avisos || []).map((a, i) => <div key={i} style={{ fontSize: 12.5, color: 'var(--texto-2)', padding: '3px 0' }}>⚠ {marcarConferir(a)}</div>)}
+          {(s.avisos || []).filter(a => !ehForaDaNorma(a)).map((a, i) => <div key={i} style={{ fontSize: 12.5, color: 'var(--texto-2)', padding: '3px 0' }}>⚠ {marcarConferir(a)}</div>)}
         </div>
       )}
       {botao('criterios', 'Critérios adotados')}

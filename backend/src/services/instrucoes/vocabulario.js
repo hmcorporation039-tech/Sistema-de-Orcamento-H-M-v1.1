@@ -42,14 +42,14 @@ const COMPONENTES = {
   camera: ['HM-CFTV-CAMERA'], cam: ['HM-CFTV-CAMERA'], 'camera de cftv': ['HM-CFTV-CAMERA'], 'camera dome': ['HM-CFTV-CAMERA'], dome: ['HM-CFTV-CAMERA'],
   'camera bullet': ['HM-CFTV-CAMERA'], bullet: ['HM-CFTV-CAMERA'], 'camera ptz': ['HM-CFTV-CAMERA'], ptz: ['HM-CFTV-CAMERA'], 'speed dome': ['HM-CFTV-CAMERA'],
   'camera externa': ['HM-CFTV-CAMERA'], 'camera de seguranca': ['HM-CFTV-CAMERA'], cftv: ['HM-CFTV-CAMERA'],
-  nvr: ['HM-CAB-RACK'], dvr: ['HM-CAB-RACK'], gravador: ['HM-CAB-RACK'],
+  nvr: ['HM-CAB-RACK'], dvr: ['HM-CAB-RACK'], gravador: ['HM-CAB-RACK'], nvd: ['HM-CAB-RACK'], 'gravador de video': ['HM-CAB-RACK'],
   // rede
   'ponto de rede': ['HM-CAB-PONTO-REDE'], 'tomada de rede': ['HM-CAB-PONTO-REDE'], rj45: ['HM-CAB-PONTO-REDE'], 'rj 45': ['HM-CAB-PONTO-REDE'],
   'ponto de dado': ['HM-CAB-PONTO-REDE'], 'ponto logico': ['HM-CAB-PONTO-REDE'], 'ponto de telecom': ['HM-CAB-PONTO-REDE'], 'ponto de internet': ['HM-CAB-PONTO-REDE'],
   rede: ['HM-CAB-PONTO-REDE'],
   ap: ['HM-CAB-AP'], 'access point': ['HM-CAB-AP'], wifi: ['HM-CAB-AP'], 'wi fi': ['HM-CAB-AP'], 'ponto de acesso': ['HM-CAB-AP'], 'roteador wifi': ['HM-CAB-AP'],
   'antena wifi': ['HM-CAB-AP'],
-  rack: ['HM-CAB-RACK'], distribuidor: ['HM-CAB-RACK'], 'patch panel': ['HM-CAB-RACK'], switch: ['HM-CAB-RACK'], 'rack de rede': ['HM-CAB-RACK'],
+  rack: ['HM-CAB-RACK'], distribuidor: ['HM-CAB-RACK'], 'patch panel': ['HM-CAB-RACK'], switch: ['HM-CAB-RACK'], switche: ['HM-CAB-RACK'], 'switch poe': ['HM-CAB-RACK'], 'rack de rede': ['HM-CAB-RACK'],
   // incêndio
   detector: ['HM-INC-DETECTOR-FUMACA'], 'detector de fumaca': ['HM-INC-DETECTOR-FUMACA'], 'detector de incendio': ['HM-INC-DETECTOR-FUMACA'],
   'sensor de fumaca': ['HM-INC-DETECTOR-FUMACA'], 'detector optico': ['HM-INC-DETECTOR-FUMACA'],

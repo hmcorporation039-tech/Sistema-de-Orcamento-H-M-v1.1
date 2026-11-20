@@ -139,7 +139,7 @@ function lerOperacoes(lista) {
     const centros = {};
     for (const [k, v] of Object.entries(o?.centros && typeof o.centros === 'object' ? o.centros : {}).slice(0, 20)) {
       if (!/^[a-z_]+(\|.{1,80})?$/.test(k) || !v?.ambiente) return 'Local de estrutura inválido.';
-      centros[k] = { ambiente: String(v.ambiente).slice(0, 120), ...(v.pavimento ? { pavimento: String(v.pavimento).slice(0, 80) } : {}) };
+      centros[k] = { ambiente: String(v.ambiente).slice(0, 120), ...(v.pavimento ? { pavimento: String(v.pavimento).slice(0, 80) } : {}), ...(v.unico === true && !k.includes('|') && k !== 'antena' ? { unico: true } : {}) };
     }
     if (!adicionar.length && !remover.length && !Object.keys(centros).length) continue;
     ops.push({ tipo: String(o?.tipo || '').slice(0, 12), descricao: String(o?.descricao || '').slice(0, 300), adicionar, remover, centros });

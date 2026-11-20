@@ -85,6 +85,20 @@ test('correção repetida: avisa que virou sugestão de regra do projetista', as
   expect(aviso).not.toMatch(/Projetista de CFTV/);
 });
 
+// 2.50: depois de aplicar, o que ficou fora da norma (ex.: rack único com cabo > 90 m) é avisado na hora
+test('aplicou e ficou fora da norma: avisa com destaque', async () => {
+  const toast = require('react-hot-toast').default;
+  api.interpretarInstrucao.mockResolvedValue({ data: { operacoes: [OPS[0]], duvidas: [], iaDisponivel: false } });
+  const aviso = 'FORA DA NORMA — CFTV: com o rack único em "CPD" (Subsolo), 3 cabo(s) passam de 90 m [CONFERIR].';
+  api.aplicarInstrucao.mockResolvedValue({ data: { id: 7, instrucao: { id: 3 }, dadosExtraidos: [{ projeto_sugerido: { avisos: ['Pé-direito adotado [CONFERIR].', aviso] } }] } });
+  await montar();
+  escrever('rack único no subsolo');
+  await clicar($('instrucao-interpretar'));
+  await clicar($('instrucao-aplicar'));
+  const chamadas = toast.mock.calls.filter(c => c[1]?.icon === '⛔').map(c => c[0]);
+  expect(chamadas).toEqual([aviso]);
+});
+
 test('não entendeu: mostra a dúvida e oferece a IA; o que a IA entendeu vai com as palavras novas para aprovação', async () => {
   api.interpretarInstrucao.mockResolvedValue({ data: { operacoes: [], duvidas: ['Não entendi: "speed"'], iaDisponivel: true } });
   api.interpretarInstrucaoIa.mockResolvedValue({ data: { operacoes: [OPS[0]], duvidas: [], termos: [{ frase: 'speed dome', simbolo: 'HM-CFTV-CAMERA' }] } });

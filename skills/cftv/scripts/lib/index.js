@@ -122,8 +122,10 @@ function montarOrcamento(res, modo) {
   const { calc, dados } = res;
   const S = 'Serviços (Mão de Obra)';
   const srv = (codigo, descricao, quantidade, unidade) => ({ secao: S, subgrupo: 'CFTV', codigo, descricao, quantidade, unidade });
-  const internas = calc.cameras.filter(c => !c.externa).reduce((a, c) => a + c.qtd, 0);
-  const externas = calc.cameras.filter(c => c.externa).reduce((a, c) => a + c.qtd, 0);
+  // a PTZ tem instalação própria (suporte, presets, PoE++) — não entra como dome nem como bullet
+  const ptzs = calc.cameras.filter(c => c.tipo === 'ptz').reduce((a, c) => a + c.qtd, 0);
+  const internas = calc.cameras.filter(c => !c.externa && c.tipo !== 'ptz').reduce((a, c) => a + c.qtd, 0);
+  const externas = calc.cameras.filter(c => c.externa && c.tipo !== 'ptz').reduce((a, c) => a + c.qtd, 0);
   const itens = modo === 'vistoria'
     ? [srv('cftv_vistoria', 'Vistoria do sistema de CFTV (testes de imagem e gravação por câmera)', calc.nCam, 'un'), srv('cftv_laudo', 'Laudo de vistoria com ART', 1, 'vb'),
       ...res.ncs.map(n => ({ secao: S, subgrupo: 'Correção de não conformidades', descricao: `${n.id} (${n.item}) — ${n.recomendacao}`, quantidade: 1, unidade: 'vb' }))]
@@ -132,6 +134,7 @@ function montarOrcamento(res, modo) {
       srv('cftv_ponto', 'Conectorização de ponto de câmera (RJ-45 + patch panel + teste)', calc.nCam, 'pt'),
       ...(internas ? [srv('cftv_camera_interna', 'Instalação/config. de câmera interna (dome)', internas, 'un')] : []),
       ...(externas ? [srv('cftv_camera_externa', 'Instalação/config. de câmera externa (bullet)', externas, 'un')] : []),
+      ...(ptzs ? [srv('cftv_camera_ptz', 'Instalação/config. de câmera PTZ (speed dome) — suporte, presets e alimentação PoE++', ptzs, 'un')] : []),
       srv('cftv_nvr', 'Instalação e configuração do gravador, switch, nobreak e acesso remoto', 1, 'vb'),
       srv('cab_passagem', 'Passagem de cabeamento (infraestrutura + lançamento de cabos)', 1, 'vb'),
       srv('cftv_projeto', 'Projeto de CFTV com estudo de cobertura (DORI) e ART', 1, 'vb'),

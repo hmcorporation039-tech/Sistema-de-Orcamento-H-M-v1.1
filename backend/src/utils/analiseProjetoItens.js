@@ -350,9 +350,13 @@ function contagemDoDesenho(analises, vetoriais = [], opcoes = {}) {
           entradas.push({ codigo, disciplina: discRegra, quantidade: qtd, fonte: cad ? 'cad' : 'pdf', arquivo: a.arquivo, rotulo: porSimbolo > 1 ? `${rotulo} (${porSimbolo} por símbolo)` : rotulo });
           // a câmera também conta na instalação por tipo (interna × externa): antes só ia para o ponto (cftv_ponto) e
           // "Instalação de câmera interna/externa" ficava 0 com 45 domes e 2 bullets no desenho (análise #59)
+          // A PTZ (speed dome) tem instalação própria (suporte de parede/pendente, presets, PoE++/fonte): antes ia como
+          // "câmera interna (dome)" — análise #63, PTZ da transmissão ao vivo cobrada como dome
           if (codigo === 'cftv_ponto') {
-            const externa = /bullet|extern|\bIP6[5-8]\b|outdoor|poste/i.test(`${desc} ${it.bloco || ''}`);
-            entradas.push({ codigo: externa ? 'cftv_camera_externa' : 'cftv_camera_interna', disciplina: discRegra, quantidade: qtd, fonte: cad ? 'cad' : 'pdf', arquivo: a.arquivo, rotulo });
+            const txt = `${desc} ${it.bloco || ''}`;
+            const tipo = /\bPTZ\b|speed ?dome/i.test(txt) ? 'cftv_camera_ptz'
+              : /bullet|extern|\bIP6[5-8]\b|outdoor|poste/i.test(txt) ? 'cftv_camera_externa' : 'cftv_camera_interna';
+            entradas.push({ codigo: tipo, disciplina: discRegra, quantidade: qtd, fonte: cad ? 'cad' : 'pdf', arquivo: a.arquivo, rotulo });
           }
         }
       }
@@ -466,6 +470,7 @@ function montarServicosPadrao(analises, disciplinasEfetivas, precosReferencia = 
     item('cftv_camera_interna', 'Instalação/config. de câmera interna (dome)', 0, 'un', 'cftv',
       totalCameras > 0 ? `Total de câmeras no desenho: ${totalCameras} — divida entre interna/externa aqui.` : SEM_CODIGO),
     item('cftv_camera_externa', 'Instalação/config. de câmera externa (bullet)', 0, 'un', 'cftv', SEM_CODIGO),
+    item('cftv_camera_ptz', 'Instalação/config. de câmera PTZ (speed dome) — suporte, presets e alimentação PoE++', 0, 'un', 'cftv', SEM_CODIGO),
 
     // Antena/TV
     item('antena_ponto', 'Conectorização de ponto de TV/antena (conector coaxial RG-6)', codificados.antena, 'pt', 'antena',

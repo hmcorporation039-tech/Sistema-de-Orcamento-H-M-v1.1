@@ -5,6 +5,10 @@ import {
   listarInstrucoes, interpretarInstrucao, interpretarInstrucaoIa, aplicarInstrucao, desfazerInstrucao,
 } from '../../services/api';
 import { card, btnPrimario, btnSecundario } from '../../pages/analise/estilos';
+import { ehForaDaNorma } from './ProjetoSugerido';
+
+// (2.50) depois de aplicar: o que ficou fora da norma ou num local inadequado (ex.: rack único com cabo > 90 m)
+const foraDaNorma = (a) => [...new Set((a?.dadosExtraidos || []).flatMap(e => e?.projeto_sugerido?.avisos || []).filter(ehForaDaNorma))];
 
 // CAMPO DE INSTRUÇÕES da análise (2.47, 20/11/2026 — pedido do usuário: "tem que haver um campo do qual se possa inserir
 // instruções para alterar a análise, como por exemplo mude a estrutura para determinado lugar, acrescente um componente,
@@ -90,6 +94,7 @@ export default function InstrucoesDaAnalise({ analise, onAtualizada }) {
       const r = await aplicarInstrucao(id, { texto: texto.trim(), operacoes, origem: leitura.origem, termos: leitura.origem === 'ia' ? leitura.termos : undefined });
       onAtualizada?.(r.data);
       toast.success(`Instrução aplicada — análise recalculada (${operacoes.length} ${operacoes.length === 1 ? 'mudança' : 'mudanças'}).`, { duration: 6000 });
+      foraDaNorma(r.data).slice(0, 3).forEach(aviso => toast(aviso, { icon: '⛔', duration: 20000 }));
       if (leitura.origem === 'ia' && leitura.termos?.length) toast('As palavras novas foram para aprovação: depois de aprovadas, o sistema entende sem IA.', { icon: '📚', duration: 8000 });
       // (2.49) a correção repetida virou sugestão de regra do projetista (o administrador aprova em "O que o sistema sabe")
       const regras = r.data?.instrucao?.regrasSugeridas || [];

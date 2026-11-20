@@ -15,6 +15,7 @@ const path = require('path');
 const { CAD } = require('../../config/caminhos');
 const { dentro, centroide } = require(path.join(CAD, 'arquitetura.js'));
 const P = require(path.join(CAD, 'posicionamento.js'));
+const { tipoDoAmbiente } = require(path.join(CAD, 'projetista.js'));
 const { componente, componentes } = require('../bibliotecaComponentes');
 const { normalizar } = require('../agentes/textoPedido');
 const V = require('./vocabulario');
@@ -271,11 +272,18 @@ function interpretar(texto, contexto = {}) {
     const toks = tokensDe(frase.replace(/\bpor\s+favor\b/gi, ' ').replace(/\bpf\b/gi, ' '));
     const lugares = marcarLugares(toks, lugaresDaAnalise);
     const comps = marcarComponentes(toks, dicionario);
+    // (2.50) CENTRO ÚNICO (qualquer disciplina): "toda a infraestrutura sai de um rack no subsolo e todos os NVRs ficam
+    // nesse rack", "quadro único no térreo" — a frase inteira é uma operação só; os trechos que falam só do equipamento
+    // central não viram outra operação
+    const unico = centroUnico(toks, comps, lugares, { lugaresDaAnalise, projetadas, elaboracao: !!contexto.elaboracao });
+    if (unico?.duvida) duvidas.push(unico.duvida);
+    if (unico?.op) operacoes.push(unico.op);
     let anterior = null;
     for (const tr of trechos(toks)) {
       const ini = tr.toks[0]?.i ?? 0, fim = tr.toks[tr.toks.length - 1]?.i ?? 0;
       const meusComps = comps.filter(c => c.a >= ini && c.a <= fim);
       const meusLugares = lugares.filter(l => l.a >= ini && l.a <= fim);
+      if (unico && meusComps.every(ehEstruturaComp)) continue;
       if (!meusComps.length && !meusLugares.length && (!tr.acao || ['por', 'poe', 'mais', 'menos', 'sem', 'add'].includes(tr.verbo))) continue;
       // "acrescente 2 câmeras e 1 detector na capela": uma operação por componente (a troca usa os dois)
       const grupos = tr.acao !== 'trocar' && meusComps.length > 1 ? meusComps.map(c => [c]) : [meusComps];
@@ -354,6 +362,93 @@ function escolherSimbolo(comp, { discAnalise, existentes = [] }) {
 }
 
 const rotuloSala = (s) => (s.pavimento ? `${s.nome} (${s.pavimento})` : s.nome);
+
+// (2.50) a sala do equipamento central num PAVIMENTO citado sem sala ("leve o rack para o subsolo"): a sala técnica
+// (CPD/rack/telecom antes da de energia), depois o depósito, a secretaria/escritório e a circulação; senão a maior.
+// Mesma ordem do projetista (skills/_comum/cad/projetista.js, sala do equipamento central).
+function salaTecnicaDo(pavimento, { salas }) {
+  const prioridade = (s) => {
+    const t = tipoDoAmbiente(s.nome);
+    const n = normalizar(s.nome).toUpperCase();
+    if (t === 'tecnica') return /CPD|RACK|TELECOM|MONITORAMENTO|SERVIDOR|\bDG\b/.test(n) ? 0 : 1;
+    return { deposito: 2, escritorio: 3, circulacao: 4 }[t] ?? 9;
+  };
+  const doPav = salas.filter(s => s.pavimento === pavimento && s.pol && s.area >= 2);
+  return doPav.sort((x, y) => prioridade(x) - prioridade(y) || (prioridade(x) === 9 ? y.area - x.area : x.area - y.area))[0]
+    || salas.filter(s => s.pavimento === pavimento && s.pol).sort((x, y) => y.area - x.area)[0] || null;
+}
+
+// (2.50) CENTRO ÚNICO em qualquer disciplina: "rack único", "quadro único", "todas as centrais no subsolo", "toda a
+// infraestrutura sai de um rack no subsolo e todos os NVRs nesse rack" — o equipamento central de cada grupo citado fica
+// numa sala só e tudo do grupo sai dele (sem racks de piso/secundários, sem QD por pavimento). A antena não entra: ela
+// vai na cobertura.
+const ehEstruturaComp = (c) => c.estrutura || c.simbolos.some(s => V.ESTRUTURAS[s]);
+const SO_UNICO = {
+  telecom: { titulo: 'Rack único', tudo: 'toda a infraestrutura de CFTV/rede sai dele e todos os NVRs e switches ficam nele — sem racks de piso nem secundários', limite: 'os cabos que passarem de 90 m (NBR 14565)' },
+  eletrica: { titulo: 'Quadro único', tudo: 'todos os circuitos de todos os pavimentos saem dele — sem QD por pavimento', limite: 'a queda de tensão dos circuitos (NBR 5410)' },
+  incendio: { titulo: 'Central de incêndio única', tudo: 'todos os laços saem dela', limite: 'a central fora do pavimento da entrada (NBR 17240)' },
+  alarme: { titulo: 'Central de alarme única', tudo: 'todos os sensores, teclados e a sirene ligam nela', limite: 'local inadequado' },
+  acesso: { titulo: 'Controladora de acesso única', tudo: 'todas as portas ligam nela', limite: 'os leitores longe demais' },
+  telefonia: { titulo: 'DG / central telefônica único', tudo: 'todos os ramais saem dele', limite: 'os ramais longe demais' },
+};
+// os grupos que a frase pede "num só": as estruturas citadas (a 1ª projetada de cada componente); "a estrutura",
+// "as centrais" ou "infraestrutura" sem equipamento citado = todas as do projeto sugerido
+function gruposCitados(toks, comps, projetadas) {
+  const doProjeto = (s) => V.ESTRUTURAS[s] && SO_UNICO[V.ESTRUTURAS[s].grupo] && V.ESTRUTURAS[s].disciplinas.some(d => projetadas.has(d));
+  const especificos = comps.filter(c => !c.estrutura && c.simbolos.some(s => V.ESTRUTURAS[s]));
+  const simbolos = especificos.length ? especificos.map(c => c.simbolos.find(doProjeto)).filter(Boolean) : Object.keys(V.ESTRUTURAS).filter(doProjeto);
+  return [...new Set(simbolos.map(s => V.ESTRUTURAS[s].grupo))];
+}
+const NOME_DISC = { cftv: 'CFTV', rede: 'rede', incendio: 'incêndio', alarme: 'alarme', controle_acesso: 'controle de acesso', telefonia: 'telefonia', antena: 'antena', eletrica: 'elétrica', iluminacao: 'iluminação' };
+// pedido de UM equipamento central para tudo: "único", "concentre/centralize", "toda a infraestrutura sai de um",
+// "só um", "todos os NVRs nesse rack", "todos os quadros no subsolo", "sem rack/quadro de piso/por pavimento/secundário"
+function pedeUnico(toks, comps) {
+  const t = toks.map(x => x.t);
+  const ha = (re) => t.some(x => re.test(x));
+  const perto = (i, re, n = 3) => t.slice(Math.max(0, i - n), i + n + 1).some(x => re.test(x));
+  const iEst = comps.filter(ehEstruturaComp).map(c => c.a);
+  if (ha(/^unic[oa]s?$/) || ha(/^concentr/) || ha(/^centraliz/) || ha(/^infra(estrutura)?$/)) return true;
+  if (t.some((x, i) => (x === 'so' || x === 'apenas') && ['um', 'uma', '1'].includes(t[i + 1]))) return true;
+  if (t.some((x, i) => /^(sai|sair|saem|saindo|parte|partir|partindo|sairem)$/.test(x) && ['de', 'do', 'da'].includes(t[i + 1]) && ['um', 'uma', '1'].includes(t[i + 2]))) return true;
+  if (iEst.some(i => perto(i, /^(nesse|neste|nessa|nesta|mesmo|mesma)$/, 2))) return true;
+  if (t.some((x, i) => x === 'sem' && t.slice(i + 1, i + 5).some(y => /^(rack|quadro|qd|central|centrai|dg)/.test(y)) && t.slice(i + 1, i + 7).some(y => /^(piso|andar|pavimento|secundari)/.test(y)))) return true;
+  // "todos os NVRs/quadros/centrais no …" (não "retire todos os quadros do 2º pavimento")
+  const retira = toks.some(x => x.t !== 'sem' && verboDe(x.t) === 'retirar');
+  if (!retira && comps.some(c => ehEstruturaComp(c) && c.plural && quantidadeAntes(toks, c.a) === 'todos')) return true;
+  return false;
+}
+function centroUnico(toks, comps, lugares, { lugaresDaAnalise, projetadas, elaboracao }) {
+  if (!comps.some(ehEstruturaComp) && !toks.some(x => /^infra(estrutura)?$/.test(x.t))) return null;
+  if (!pedeUnico(toks, comps)) return null;
+  const grupos = gruposCitados(toks, comps, projetadas);
+  if (!grupos.length) {
+    const citou = comps.find(c => !c.estrutura && c.simbolos.some(s => V.ESTRUTURAS[s]));
+    const e = citou && V.ESTRUTURAS[citou.simbolos.find(s => V.ESTRUTURAS[s])];
+    if (e?.grupo === 'antena') return { duvida: 'A antena fica na cobertura (o sinal vem de cima): não dá para concentrá-la em outra sala.' };
+    if (e) return { duvida: `${SO_UNICO[e.grupo].titulo}: esta análise não tem ${e.disciplinas.map(d => NOME_DISC[d] || d).join(' nem ')} no projeto sugerido.` };
+    return { duvida: 'Concentrar a infraestrutura: esta análise não tem disciplina com equipamento central no projeto sugerido.' };
+  }
+  const titulo = grupos.length === 1 ? SO_UNICO[grupos[0]].titulo : 'Tudo concentrado';
+  if (!elaboracao) return { duvida: `${titulo} refazendo os cabos vale para a elaboração de projeto. Num projeto recebido, diga "retire" o que sobra e "acrescente" o equipamento na sala desejada.` };
+  const lugar = lugares.find(l => l.tipo === 'sala') || lugares.find(l => l.tipo === 'pavimento');
+  if (!lugar) return { duvida: `Em qual sala ou pavimento fica ${grupos.length === 1 ? `o ${titulo.toLowerCase()}` : 'tudo'}? Ex.: "${titulo.toLowerCase()} na área técnica do subsolo".` };
+  let sala, escolhida = false;
+  if (lugar.tipo === 'pavimento') {
+    sala = salaTecnicaDo(lugar.pavimento, lugaresDaAnalise);
+    escolhida = true;
+    if (!sala) return { duvida: `Não achei sala com contorno lido no ${lugar.pavimento} para ${titulo.toLowerCase()}: diga o nome da sala.` };
+  } else {
+    const { salas } = salasDoLugar(lugar, lugares, lugaresDaAnalise);
+    sala = salas.slice().sort((x, y) => y.area - x.area)[0];
+  }
+  const local = { ambiente: sala.nome, ...(sala.pavimento ? { pavimento: sala.pavimento } : {}), unico: true };
+  const partes = grupos.map(g => (grupos.length === 1 ? SO_UNICO[g].tudo : `${SO_UNICO[g].titulo.toLowerCase()} (${SO_UNICO[g].tudo})`));
+  const descricao = `${titulo} em ${rotuloSala(sala)}${escolhida ? ` (sala escolhida no ${sala.pavimento}; para outra, diga o nome da sala)` : ''}: `
+    + `${partes.join('; ')}; os cabos são refeitos a partir de lá e o sistema avisa ${grupos.map(g => SO_UNICO[g].limite).join(', ')} e o que ficar fora do adequado`;
+  const estrutura = Object.keys(V.ESTRUTURAS).find(s => V.ESTRUTURAS[s].grupo === grupos[0]);
+  return { op: { tipo: 'mover', descricao, simbolo: estrutura, nome: grupos.length === 1 ? `${titulo.toLowerCase()}` : 'equipamentos centrais (único)', quantidade: grupos.length, ambiente: sala.nome, adicionar: [], remover: [],
+    centros: Object.fromEntries(grupos.map(g => [g, { ...local }])) }, grupos };
+}
 const nomeDe = (simbolo) => componente(simbolo)?.nome || simbolo;
 const plural = (n, um, varios) => (n === 1 ? um : varios);
 
@@ -443,10 +538,13 @@ function resolverTrecho({ tr, toks, comps, lugares, anterior, ctx }) {
   if (acao === 'mover') {
     if (!destino) return { duvida: `Para onde mover "${comp.frase}"? Ex.: "leve o ${comp.frase} para o ${(lugaresDaAnalise.salas[0]?.nome || 'depósito').toLowerCase()}".` };
     const dest = salasDoLugar(destino, lugares, lugaresDaAnalise);
-    if (destino.tipo === 'pavimento') return { duvida: `Em qual ambiente do ${destino.pavimento}?` };
-    const ambD = ambiguo(destino, dest.salas);
+    // (2.50) estrutura (rack, central…) para um PAVIMENTO: a sala técnica dele ("leve o rack para o subsolo")
+    const ehEstrutura = comp.estrutura || comp.simbolos.some(s => V.ESTRUTURAS[s]);
+    const salaDoPav = destino.tipo === 'pavimento' && ehEstrutura && ctx.elaboracao ? salaTecnicaDo(destino.pavimento, lugaresDaAnalise) : null;
+    if (destino.tipo === 'pavimento' && !salaDoPav) return { duvida: `Em qual ambiente do ${destino.pavimento}?` };
+    const ambD = salaDoPav ? null : ambiguo(destino, dest.salas);
     if (ambD) return { duvida: ambD };
-    const salaDestino = dest.salas.slice().sort((x, y) => y.area - x.area)[0];
+    const salaDestino = salaDoPav || dest.salas.slice().sort((x, y) => y.area - x.area)[0];
     const orig = origem ? salasDoLugar(origem, lugares, lugaresDaAnalise) : null;
     const escopo = orig ? existentesEm(orig.salas) : pontos;
     // a estrutura (rack, central, QD…) do projeto sugerido: muda o local escolhido e o projetista refaz os cabos
